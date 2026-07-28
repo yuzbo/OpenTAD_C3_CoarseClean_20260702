@@ -553,3 +553,33 @@
   environment/Git identity probe before both precheck and actual execution.
   The new regression was red before the fix and green afterward; local
   compilation, Bash syntax and the expanded focused suite passed `97` tests.
+
+## 2026-07-28 — Recovery-v4 remotely verified and redeployed
+
+- Pushed exact implementation commit
+  `1b44fe3a35042d28c55b9e838f69107bd1461810`; an independent clean-commit
+  deployment audit returned `GO`.
+- Slurm code preflight `1200583` completed 194 authoritative Linux/Torch
+  contract tests. Full launcher/runtime preflight `1200601` then passed all
+  Phase-1 and dense-salvage checks, including a deliberate stale canonical
+  evaluator-commit injection that the new overwrite-bridge corrected before the
+  evaluator-equivalent identity probe. Precheck wrote no production output.
+- Froze production physical protocol
+  `2d416cddd923aa46693ad5361979558e845252947fcb50491cd5cc6c6e70be8c`
+  and production salvage manifest
+  `2fb3f9c1a7623e059f855227c34d7614ef2fb6c9e29ee5461e29b4cf5f107d11`.
+- Atomically released jobs `1200627`--`1200632` at
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_1b44fe3a_20260728_221502`.
+  Submission-manifest SHA-256 is
+  `ca72b350ccd7227671554e6e413281cd7059c97f5c3161e2ed93c7a087549767`;
+  released receipt SHA-256 is
+  `eca9e24a06ad7ff2a187066f2f255eb4d764a2f3c5362734444463fa6c128449`.
+- Code gate `1200627` and both salvage jobs `1200629`/`1200630` completed with
+  exit `0:0`. Both salvage arms crossed the former commit-identity failure,
+  completed formal engineering evaluation and emitted checkpoint evidence plus
+  passing recovery receipts. The receipts retain their original source jobs as
+  `FAILED` and restrict claims to engineering dense-reference recovery.
+- At `22:25 CST`, Phase 1 `1200628` was running; Phase 2 `1200631` and Phase-3
+  controller `1200632` remained dependency-held. Monitoring was rebound to these
+  exact identities. Phase 4 remains disabled, official-final remains sealed,
+  and no paper-admissible empirical conclusion is available.

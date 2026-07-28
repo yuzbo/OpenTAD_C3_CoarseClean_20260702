@@ -4,11 +4,11 @@
 
 - User authorization: `approved`
 - Design: `designed`
-- Stage-0 code: `recovery_v4_implemented / local_tested / remote_pending`
+- Stage-0 code: `recovery_v4_implemented / tested / deployed`
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v3_terminal_failed_closed`
+- Slurm recovery transaction: `recovery_v4_experiment_running`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -211,13 +211,50 @@ does not change model or experiment semantics. The regression failed before the
 bridge was implemented and passed afterward; compilation, Bash syntax and the
 expanded focused suite completed with `97 passed`.
 
+## Recovery v4 deployment
+
+Exact clean implementation commit
+`1b44fe3a35042d28c55b9e838f69107bd1461810` passed an independent deployment
+audit (`GO`). Remote Slurm code preflight `1200583` completed 194 authoritative
+Linux/Torch contract tests. Full launcher/runtime preflight `1200601` also
+completed after deliberately injecting a stale canonical evaluator commit before
+each salvage precheck; the launcher overwrite-bridge restored and verified the
+required exact commit. No production output was written by precheck.
+
+The production identities are:
+
+- physical protocol:
+  `2d416cddd923aa46693ad5361979558e845252947fcb50491cd5cc6c6e70be8c`;
+- salvage manifest:
+  `2fb3f9c1a7623e059f855227c34d7614ef2fb6c9e29ee5461e29b4cf5f107d11`;
+- transaction root:
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_1b44fe3a_20260728_221502`;
+- submission manifest:
+  `ca72b350ccd7227671554e6e413281cd7059c97f5c3161e2ed93c7a087549767`;
+- released submission receipt:
+  `eca9e24a06ad7ff2a187066f2f255eb4d764a2f3c5362734444463fa6c128449`.
+
+Jobs `1200627`--`1200632` are respectively code gate, Phase 1, ActionFormer
+salvage, TriDet salvage, Phase 2 and Phase-3 controller. At the validated
+`2026-07-28 22:25 CST` snapshot:
+
+- code gate `1200627` completed with exit `0:0`;
+- both salvage jobs `1200629`/`1200630` completed with exit `0:0` and emitted
+  their checkpoint evidence plus passing recovery receipts;
+- both recovery receipts preserve the source training-job state as `FAILED` and
+  restrict claims to
+  `engineering_dense_reference_recovery_not_method_evidence`;
+- Phase 1 `1200628` is running; Phase 2 `1200631` and the Phase-3 controller
+  `1200632` remain protected by dependencies;
+- Phase 4 remains disabled and official-final remains sealed.
+
+This proves only that the repaired deployment contract now executes through the
+actual formal evaluator and closes both dense recovery arms. It is not a model
+performance result.
+
 ## Next gate
 
-1. implement and test the recovery-v4 commit-environment bridge;
-2. repeat independent review, remote code gate and actual identity prechecks on
-   a fresh exact commit;
-3. freeze new manifests and deploy to a fresh root without reusing v3 outputs;
-4. require Phase-1, both dense recovery, Phase-2 and Phase-3 development
+1. require Phase-1, both dense recovery, Phase-2 and Phase-3 development
    receipts before running the held-out same-total-cost H-RIME oracle or learned
    planner training.
 

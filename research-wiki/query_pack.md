@@ -16,17 +16,17 @@ Current evidence level:
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `passed` |
-| Dense reference training | `recovery_v3_salvage_failed_before_inference / engineering_only` |
-| Phase 1 closure | `recovery_v3_cancelled_after_sibling_failure` |
-| Phase 2/3/4 | `recovery_v3_cancelled / phase4_never_opened` |
-| Latest four-stage transaction | `recovery_v3_terminal_failed_closed / recovery_v4_remote_pending` |
+| Dense reference training | `recovery_v4_salvage_completed / engineering_only` |
+| Phase 1 closure | `recovery_v4_experiment_running` |
+| Phase 2/3/4 | `recovery_v4_dependency_held / phase4_never_opened` |
+| Latest four-stage transaction | `recovery_v4_experiment_running` |
 | H-RIME scientific route | `user_approved / designed` |
-| Stage-0 repair implementation | `recovery_v4_implemented / local_tested / remote_pending` |
+| Stage-0 repair implementation | `recovery_v4_implemented / tested / deployed` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v3_terminal_failed_closed` |
+| H-RIME Stage-0 recovery transaction | `recovery_v4_experiment_running` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -231,6 +231,46 @@ formal evaluator. It does not change the model or scientific protocol. The new
 regression failed before implementation and passed afterward; Python
 compilation, Bash syntax and the expanded focused suite completed with
 `97 passed`.
+
+Recovery v4 is now remotely verified and deployed as `ENGINEERING_STATUS`:
+
+- exact clean source:
+  `1b44fe3a35042d28c55b9e838f69107bd1461810`;
+- independent clean-commit deployment audit: `GO`;
+- authoritative Slurm code preflight `1200583`: `COMPLETED`, with 194 remote
+  Linux/Torch contract tests passing;
+- full launcher/runtime preflight `1200601`: `COMPLETED`; it deliberately
+  injected a stale canonical evaluator commit before both salvage checks, and
+  the launcher overwrite-bridge restored and verified the exact required
+  identity without writing production output;
+- production physical-protocol SHA-256:
+  `2d416cddd923aa46693ad5361979558e845252947fcb50491cd5cc6c6e70be8c`;
+- production salvage-manifest SHA-256:
+  `2fb3f9c1a7623e059f855227c34d7614ef2fb6c9e29ee5461e29b4cf5f107d11`;
+- fresh transaction:
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_1b44fe3a_20260728_221502`;
+- submission-manifest SHA-256:
+  `ca72b350ccd7227671554e6e413281cd7059c97f5c3161e2ed93c7a087549767`;
+- released submission-receipt SHA-256:
+  `eca9e24a06ad7ff2a187066f2f255eb4d764a2f3c5362734444463fa6c128449`;
+- jobs: code gate `1200627`, Phase 1 `1200628`, ActionFormer salvage
+  `1200629`, TriDet salvage `1200630`, Phase 2 `1200631`, and Phase-3
+  controller `1200632`.
+
+Validated deployment snapshot at `2026-07-28 22:25 CST`:
+
+- code gate `1200627`: `COMPLETED`, exit `0:0`;
+- ActionFormer/TriDet salvage `1200629`/`1200630`: `COMPLETED`, exit `0:0`;
+  each produced its registered checkpoint evidence and passing recovery receipt,
+  while retaining the source training job as `FAILED` and the claim scope as
+  `engineering_dense_reference_recovery_not_method_evidence`;
+- Phase 1 `1200628`: `RUNNING`;
+- Phase 2 `1200631` and Phase-3 controller `1200632`: dependency-held;
+- Phase 4 remains disabled and official-final remains sealed.
+
+The commit bridge has therefore passed the actual formal-evaluator boundary
+that failed recovery v3. The transaction as a whole is not yet complete, and
+`No paper-admissible empirical conclusion is available yet`.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by
