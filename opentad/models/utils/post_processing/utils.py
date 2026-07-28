@@ -1,0 +1,275 @@
+import os
+import pickle
+import torch
+import torch.nn.functional as F
+
+
+def boundary_choose(score):
+    mask_high = score > score.max(dim=1, keepdim=True)[0] * 0.5
+    mask_peak = score == F.max_pool1d(score, kernel_size=3, stride=1, padding=1)
+    mask = mask_peak | mask_high
+    return mask
+
+
+def save_predictions(predictions, metas, folder):
+    for idx in range(len(metas)):
+        video_name = metas[idx]["video_name"]
+
+        file_path = os.path.join(folder, f"{video_name}.pkl")
+        prediction = [data[idx] for data in predictions]
+        with open(file_path, "wb") as outfile:
+            pickle.dump(prediction, outfile, pickle.HIGHEST_PROTOCOL)
+
+
+def load_single_prediction(metas, folder):
+    """Should not be used for sliding window. Since we saved the files with video name, and sliding window will have multiple files with the same name."""
+    predictions = []
+    for idx in range(len(metas)):
+        video_name = metas[idx]["video_name"]
+        file_path = os.path.join(folder, f"{video_name}.pkl")
+        with open(file_path, "rb") as infile:
+            prediction = pickle.load(infile)
+        predictions.append(prediction)
+
+    batched_predictions = []
+    for i in range(len(predictions[0])):
+        data = torch.stack([prediction[i] for prediction in predictions])
+        batched_predictions.append(data)
+    return batched_predictions
+
+
+def load_predictions(metas, infer_cfg):
+    if "fuse_list" in infer_cfg.keys():
+        predictions = []
+        predictions_list = [load_single_prediction(metas, folder) for folder in infer_cfg.fuse_list]
+        for i in range(len(predictions_list[0])):
+            predictions.append(torch.stack([pred[i] for pred in predictions_list]).mean(dim=0))
+        return predictions
+    else:
+        return load_single_prediction(metas, infer_cfg.folder)
+
+
+def _meta_float_tensor(meta, key, *, dtype, device):
+    if key not in meta:
+        return None
+    value = meta[key]
+    if isinstance(value, torch.Tensor):
+        return value.to(device=device, dtype=dtype).flatten()
+    return torch.as_tensor(value, dtype=dtype, device=device).flatten()
+
+
+def _flag_is_true(value):
+    if value is True:
+        return True
+    if isinstance(value, torch.Tensor):
+        return bool(value.detach().cpu().item()) if value.numel() == 1 else False
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes"}
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    return False
+
+
+def _validate_selected_axis_meta(coords, meta, positions, valid_len):
+    if _flag_is_true(meta.get("irregular_native_axis", False)):
+        raise ValueError(
+            "strict selected-axis conversion received irregular_native_axis=True metadata."
+        )
+    if positions.numel() == 0:
+        raise ValueError(
+            "strict selected-axis conversion requires non-empty irregular_selected_positions."
+        )
+    if not torch.isfinite(positions).all():
+        raise ValueError(
+            "strict selected-axis conversion requires finite irregular_selected_positions."
+        )
+    valid_len_tensor = torch.as_tensor(
+        valid_len,
+        dtype=coords.dtype,
+        device=coords.device,
+    )
+    if valid_len_tensor.numel() != 1 or not torch.isfinite(valid_len_tensor).all():
+        raise ValueError(
+            "strict selected-axis conversion requires finite irregular_selected_valid_len."
+        )
+    valid_len_value = float(valid_len_tensor.item())
+    if valid_len_value <= 0:
+        raise ValueError(
+            "strict selected-axis conversion requires positive irregular_selected_valid_len."
+        )
+    if positions.numel() > 1 and not (positions[1:] > positions[:-1]).all():
+        raise ValueError(
+            "strict selected-axis conversion requires monotonic increasing "
+            "irregular_selected_positions."
+        )
+    if (
+        float(positions[0].item()) < 0.0
+        or float(positions[-1].item()) > valid_len_value
+    ):
+        raise ValueError(
+            "strict selected-axis conversion requires irregular_selected_positions "
+            "within irregular_selected_valid_len."
+        )
+    if not torch.isfinite(coords).all():
+        raise ValueError(
+            "strict selected-axis conversion requires finite coordinates."
+        )
+
+
+def selected_axis_to_dense_axis(coords, meta, strict=False):
+    """Interpolate selected-axis coordinates onto the native dense axis."""
+
+    if meta is None:
+        if strict:
+            raise ValueError(
+                "strict selected-axis conversion requires selected-axis metadata."
+            )
+        return coords
+
+    positions = meta.get("irregular_selected_positions", None)
+    valid_len = meta.get("irregular_selected_valid_len", None)
+    if (
+        positions is None
+        or valid_len is None
+        or _flag_is_true(meta.get("irregular_native_axis", False))
+    ):
+        if strict:
+            raise ValueError(
+                "strict selected-axis conversion requires irregular_selected_positions, "
+                "irregular_selected_valid_len, and selected-axis metadata."
+            )
+        return coords
+
+    positions = torch.as_tensor(
+        positions,
+        dtype=coords.dtype,
+        device=coords.device,
+    ).reshape(-1)
+    if strict:
+        _validate_selected_axis_meta(coords, meta, positions, valid_len)
+    if positions.numel() == 0:
+        return coords
+
+    valid_len_value = torch.as_tensor(
+        valid_len,
+        dtype=coords.dtype,
+        device=coords.device,
+    ).reshape(-1)[0]
+    xp = torch.arange(
+        positions.numel(),
+        dtype=coords.dtype,
+        device=coords.device,
+    )
+    xp = torch.cat(
+        [xp, xp.new_tensor([float(positions.numel())])],
+        dim=0,
+    )
+    fp = torch.cat([positions, valid_len_value.reshape(1)], dim=0)
+
+    coord_shape = coords.shape
+    coord_flat = coords.reshape(-1).clamp(
+        min=0.0,
+        max=float(positions.numel()),
+    )
+    right_idx = torch.searchsorted(xp, coord_flat, right=True).clamp(
+        min=1,
+        max=xp.numel() - 1,
+    )
+    left_idx = right_idx - 1
+    x0 = xp[left_idx]
+    x1 = xp[right_idx]
+    y0 = fp[left_idx]
+    y1 = fp[right_idx]
+    weight = (coord_flat - x0) / (x1 - x0).clamp(min=1.0e-6)
+    return (y0 + weight * (y1 - y0)).reshape(coord_shape)
+
+
+def _selected_axis_segments_to_dense_axis(segments, meta):
+    if _flag_is_true(meta.get("irregular_native_axis", True)):
+        return segments
+    selected_positions = _meta_float_tensor(
+        meta,
+        "irregular_selected_positions",
+        dtype=segments.dtype,
+        device=segments.device,
+    )
+    if selected_positions is None:
+        return segments
+    if selected_positions.numel() == 0:
+        raise ValueError("irregular selected-axis post-processing requires non-empty irregular_selected_positions")
+    if selected_positions.numel() > 1 and torch.any(selected_positions[1:] < selected_positions[:-1]):
+        raise ValueError("irregular_selected_positions must be sorted for selected-axis post-processing")
+
+    valid_len = _meta_float_tensor(
+        meta,
+        "irregular_selected_valid_len",
+        dtype=segments.dtype,
+        device=segments.device,
+    )
+    if valid_len is None or valid_len.numel() == 0:
+        valid_value = selected_positions[-1] + 1.0
+    else:
+        valid_value = valid_len[0]
+    target_positions = torch.cat([selected_positions, valid_value.reshape(1)])
+    selected_count = int(selected_positions.numel())
+
+    coords = torch.clamp(segments, min=0.0, max=float(selected_count))
+    left = torch.floor(coords).to(dtype=torch.long).clamp(min=0, max=max(selected_count - 1, 0))
+    right = (left + 1).clamp(max=selected_count)
+    frac = coords - left.to(dtype=coords.dtype)
+    return target_positions[left] * (1.0 - frac) + target_positions[right] * frac
+
+
+def convert_to_seconds(
+    segments,
+    meta,
+    source_axis="auto",
+    strict=False,
+    allow_auto_axis=True,
+):
+    if source_axis not in {"auto", "selected", "native"}:
+        raise ValueError(
+            f"Unsupported source_axis for convert_to_seconds: {source_axis}"
+        )
+
+    explicitly_converted = source_axis in {"selected", "native"}
+    if source_axis == "selected":
+        selected_meta = dict(meta or {})
+        selected_meta["irregular_native_axis"] = False
+        segments = selected_axis_to_dense_axis(
+            segments,
+            selected_meta,
+            strict=True,
+        )
+    elif source_axis == "auto" and strict:
+        has_selected_axis_meta = (
+            meta is not None
+            and meta.get("irregular_selected_positions", None) is not None
+            and meta.get("irregular_selected_valid_len", None) is not None
+            and not _flag_is_true(meta.get("irregular_native_axis", False))
+        )
+        if has_selected_axis_meta and not allow_auto_axis:
+            raise ValueError(
+                "strict auto-axis conversion is ambiguous for irregular "
+                "selected-axis metadata; pass source_axis='selected' or 'native'."
+            )
+
+    if meta.get("prediction_time_unit") == "seconds":
+        if segments.shape[0] > 0:
+            segments.clamp_(min=0.0, max=float(meta["duration"]))
+        return segments
+    if meta["fps"] == -1:  # resize setting, like in anet / hacs
+        segments = segments / meta["resize_length"] * meta["duration"]
+    else:  # sliding window / padding setting, like in thumos / ego4d
+        if not explicitly_converted:
+            segments = _selected_axis_segments_to_dense_axis(segments, meta)
+        snippet_stride = meta["snippet_stride"]
+        offset_frames = meta["offset_frames"]
+        window_start_frame = meta["window_start_frame"] if "window_start_frame" in meta.keys() else 0
+        segments = (segments * snippet_stride + window_start_frame + offset_frames) / meta["fps"]
+
+    # truncate all boundaries within [0, duration]
+    if segments.shape[0] > 0:
+        segments[segments <= 0.0] *= 0.0
+        segments[segments >= meta["duration"]] = segments[segments >= meta["duration"]] * 0.0 + meta["duration"]
+    return segments
