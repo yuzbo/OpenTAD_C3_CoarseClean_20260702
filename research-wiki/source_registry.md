@@ -4,10 +4,28 @@
 |---|---|---|---|
 | U-TAKEOVER-1 | `C:/Users/skywalker/.codex/attachments/8dd661a0-1596-4394-ba09-e293fb3c9169/pasted-text.txt` | DUCA/AdapTok takeover report | absorbed |
 | U-TAKEOVER-2 | `C:/Users/skywalker/.codex/attachments/38deddb7-5b11-45e5-9f30-e8ecfe25a557/pasted-text.txt` | independent takeover report | absorbed |
+| U-PRO-CBCG-1 | `C:/Users/skywalker/.codex/attachments/c191e959-68a3-4b33-af06-69b78b5c68a8/pasted-text.txt` | repository audit and CBCG-RIME external review | absorbed as `PARTNER_CLAIM`; route conditionally accepted |
+| U-VIDEO-BUDGET-1 | Current task user correction, `2026-07-28` | whole-video total budget with 768-window AdaTAD execution | absorbed; H-RIME design subsequently user-approved |
+| U-PRO-HRIME-1 | `C:/Users/skywalker/.codex/attachments/4954e6a1-bd4d-406d-96bf-653d4438c604/pasted-text.txt` | full H-RIME architecture, implementation and publication audit | fully read; conditionally accepted with repository/math/evidence corrections |
+| P-ADAPTOK-1 | `https://arxiv.org/html/2505.17011` | official AdapTok paper and appendix | directly verified |
+| C-ADAPTOK-1 | `https://github.com/VisionXLab/AdapTok` | official AdapTok repository | directly verified |
+| P-EVATOK-1 | `https://openaccess.thecvf.com/content/CVPR2026/html/Xiong_EVATok_Adaptive_Length_Video_Tokenization_for_Efficient_Visual_Autoregressive_Generation_CVPR_2026_paper.html` | official EVATok paper page | directly verified |
+| C-EVATOK-1 | `https://github.com/HKU-MMLab/EVATok` | official EVATok repository | directly verified |
 | LOCAL-SPEC-1 | `docs/superpowers/specs/2026-07-27-duca-total60-prebackbone-plugin-cvpr-design.md` | superseded foundation specification | retained |
 | LOCAL-DESIGN-2 | `docs/methods/2026-07-28-duca-rime-mixed-k-baseline-design.md` | frozen U-mixed-K design | active |
+| LOCAL-DESIGN-3 | `docs/superpowers/specs/2026-07-28-hrime-v1-budget-conserving-design.md` | corrected, user-approved H-RIME v1 specification | active |
 
-No new external factual source was introduced during the implementation turn.
-Exact AdapTok paper/code provenance remains inherited from the two absorbed
-takeover reports and must be cited from the publication bibliography, not
-reconstructed from memory.
+`U-PRO-CBCG-1` was read in full. Its route analysis is retained as an external
+review, not as repository truth. Its linked `sandbox:/mnt/data/...` Patch A,
+Patch B, core, and test artifacts are not present in this repository and were
+not independently inspected; their hashes and reported test counts therefore
+do not establish `implemented` or `tested` status.
+
+AdapTok and EVATok paper/code provenance was independently registered from the
+official paper pages and repositories. Their adaptive-length ideas are prior
+art/competition context; neither repository has been copied into H-RIME.
+
+`U-PRO-HRIME-1` was read in full. Its main Approach-C architecture and staged
+admission route are accepted, while its suggested numeric gates remain
+unvalidated proposals. Referenced external sandbox artifacts are absent from
+this repository and do not establish implementation or test status.

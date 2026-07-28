@@ -9,7 +9,9 @@
 - Implementation: `implemented`
 - Focused local verification: `tested`
 - Remote authoritative verification: `passed`
-- Deployment: `experiment_running`
+- Latest transaction: `failed_closed_without_terminal_receipts`
+- Dense reference training: `training_loop_finished_but_jobs_failed_at_checkpoint_compaction`
+- Phase 2/3/4: `blocked_by_failed_dependency`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
 
@@ -69,10 +71,13 @@ remains evaluation-only from the corresponding RIME source.
 
 ## Corrected cost semantics
 
-Candidate and `U-same-K` must consume the same realized per-video K sequence
-within tolerance. `U-fixed` is retained for accuracy, not variable-K cost
+Candidate and `U-same-K` must consume the same realized per-window K map keyed by
+`(video_id, window_start_frame)` within tolerance. Per-window costs are then
+aggregated per video. `U-fixed` is retained for accuracy, not variable-K cost
 matching. Candidate, matched control, and dense reference all use measured
-full-stack latency, throughput, energy, and peak memory.
+full-stack latency, throughput, and peak memory. Energy is reported only when a
+trusted, registered power source is available; it is unavailable for the latest
+failed transaction and cannot support a claim.
 
 ## Provenance requirements
 
@@ -159,7 +164,7 @@ The next commit must additionally freeze
 `model.backbone.backbone.with_cp=False` for dense TriDet and reject drift in
 both the launcher precheck and code-gate config matrix.
 
-Active immutable submission:
+Latest immutable submission (terminally failed closed):
 
 - implementation commit:
   `d9d454cd49a3e7a87694fc948601d00ff4043cb0`;
@@ -170,12 +175,63 @@ Active immutable submission:
 - submission-manifest SHA-256:
   `ed374ae81991ca8241c0b01ab6588f13ea292b967b18a58115ec3f735440b038`;
 - code gate `1198113`: `COMPLETED`, 158 tests and 24 configs passed;
-- Phase 1 `1198114`: `RUNNING`;
-- dense ActionFormer `1198115`: `RUNNING`, stable through update 50;
-- dense TriDet `1198116`: `RUNNING`, stable through update 50;
-- Phase 2 `1198117`: dependency-pending on Phase 1;
-- Phase-3/4 controller `1198118`: dependency-pending on Phase 2 and both dense
-  references.
+- Phase 1 `1198114`: `FAILED` after 12m44s on the exact-K/no-padding ledger
+  gate. Uniform-K384 line 64 (`video_validation_0000686`, window 0) had
+  `dense_valid_len=231`, `effective_k=unique_k=231`, and
+  `backbone_input_k=padded_k=384`;
+- dense ActionFormer `1198115`: `FAILED` after its 60-epoch loop printed
+  `Training Over`; raw `epoch_59.pth` exists, but checkpoint compaction stopped
+  at `from tools.bata import duca_p0_training` with
+  `ModuleNotFoundError: No module named 'tools'`;
+- dense TriDet `1198116`: `FAILED` at the same compaction import after its
+  60-epoch training loop; raw `epoch_59.pth` exists;
+- neither dense arm emitted `terminal_ema.pth`, `training_receipt.json`,
+  evaluation evidence, or checkpoint binding;
+- Phase 2 `1198117`: `DependencyNeverSatisfied`;
+- Phase-3/4 controller `1198118`: dependency-pending and unauthorized.
+
+At the `2026-07-28 14:47 CST` verification, the expected Phase-1, Phase-2,
+Phase-3, and Phase-4 terminal receipts were all absent. The repository contains
+no registered job/artifact literally named `4B`; the user reference is mapped
+to this four-stage transaction by context. This transaction is not a completed
+experiment and produced no admissible model comparison.
+
+Verified raw-checkpoint recovery inputs:
+
+| Backend | Source path | Size | SHA-256 |
+|---|---|---:|---|
+| ActionFormer | `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_four_phase_d9d454cd_20260728_101256/dense_actionformer/train/gpu1_id0/checkpoint/epoch_59.pth` | `623799387` | `cd92f3d499360c834f7ddd6ccfd5cba172c870bf6922de566b2b7e3878680e11` |
+| TriDet | `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_four_phase_d9d454cd_20260728_101256/dense_tridet/train/gpu1_id0/checkpoint/epoch_59.pth` | `411540059` | `8940dbe756e8abfa3f7c8b042f3c658b26898d5c805d2876011a4e7510d11e12` |
+
+Both contain `epoch`, `state_dict`, `optimizer`, `scheduler`, `state_dict_ema`
+and `grad_scaler`, with `epoch=59`. They do not embed a complete
+commit/variant/seed audit. Any recovery must use a new immutable, hash-bound
+salvage transaction and explicitly label external provenance; the failed root
+is never modified or reclassified as successful.
+
+Raw Phase-1 development measurements produced before the fail-closed ledger
+gate were:
+
+| Control | Avg mAP | mAP@0.7 | Receipt |
+|---|---:|---:|---|
+| local dense A | 86.9867 | 74.9371 | passed |
+| local dense B | 86.9867 | 74.9371 | passed |
+| released dense | 92.8823 | 84.3745 | passed |
+| uniform K384 | 90.6759 | 80.3625 | missing |
+
+These are 20-video development controls with different checkpoint identities;
+they are not a method comparison. Uniform K384 is inadmissible as a completed
+Phase-1 artifact because its no-padding receipt did not pass.
+
+The 20 videos are selected from the 200-video THUMOS `training` subset by a
+180-video block list. The historical dense/uniform checkpoints follow configs
+whose training dataset is the same `training` subset; an exact per-checkpoint
+exclusion manifest was not found. The terminal values are therefore treated as
+high-confidence in-sample sanity measurements, not held-out accuracy.
+Independent recomputation with the pooled repository mAP evaluator reproduced
+all terminal values exactly. The high numbers are not caused by self-score
+normalization, `top_k=None`, or averaging the secondary per-video diagnostic
+mAP; the primary problem is training exposure and the narrow 20-video scope.
 
 Pre-deployment dense launcher precheck `1198049` completed. A dedicated TriDet
 smoke job `1198059` was deliberately canceled after stable update 50; its

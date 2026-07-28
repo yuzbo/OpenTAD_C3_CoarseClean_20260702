@@ -115,3 +115,163 @@
   dependency-gated.
 - Recorded `Pair-Risk Graph RIME` as a `discussed` post-v1 candidate. It is not
   designed, implemented, tested, or authorized to alter the frozen transaction.
+- Monitoring snapshot `2026-07-28 10:40 CST`: Phase 1 job `1198114` failed
+  closed after 12m44s in `finalize_duca_rime_inference_ledger.py`. Uniform-K384
+  ledger line 64 for `video_validation_0000686` recorded
+  `dense_valid_len=231`, `effective_k=unique_k=231`, but
+  `backbone_input_k=padded_k=384`, violating the frozen no-padding cost
+  contract. Its development localization JSON exists, but no evaluation
+  receipt was emitted. Phase 2 job `1198117` is
+  `DependencyNeverSatisfied`; controller `1198118` remains dependency-pending.
+  Dense ActionFormer `1198115` and dense TriDet `1198116` continued into epoch
+  9 with zero observed Traceback, OOM, non-finite-loss, or gradient-skip
+  matches. No official-final data were opened and no downstream stage is
+  authorized.
+- Audited the unexpectedly high Phase-1 terminal mAP. The split manifest has
+  200 `training` videos and uses a 180-ID block list to retain only 20
+  certification-development videos. Historical checkpoint configs train on
+  the same THUMOS `training` subset, and no checkpoint-specific exclusion
+  manifest was found, so the 20-video measurements are high-confidence
+  in-sample sanity controls. Pooled mAP was independently recomputed from the
+  immutable predictions and exactly matched the terminal JSON; no
+  self-normalization or `top_k=None` inflation was found. These numbers must
+  not be compared with the upstream 69.03 official validation result.
+- User froze a paper-responsibility contract: partial, training-domain,
+  intermediate, small-subset, single-seed, unmatched, or missing-receipt
+  results may be retained only as engineering status and must never be used to
+  explain model performance or support the paper. Froze the full contract in
+  mandatory-read `research-wiki/query_pack.md`. Until a complete comparable
+  experiment exists, the correct empirical statement is that no paper-
+  admissible conclusion is available; the only alternative is a self-contained
+  theoretical analysis with explicit assumptions and limits.
+
+## 2026-07-28 — CBCG-RIME external review absorbed and adjudicated
+
+- Fully read and registered external review `U-PRO-CBCG-1`. Its overall
+  freeze-v1 → same-K oracle → learned-head hold → causal/full-stack gates route
+  was conditionally accepted.
+- Corrected three stale execution claims in the review: the code gate has
+  already passed; Phase 1 has failed closed on the no-padding ledger; Phase
+  2/3/4 are dependency-blocked even though the two dense references were still
+  running at the last verified snapshot. “Wait for the four-stage run to finish”
+  and “immediately apply Patch A” are therefore not the current execution plan.
+- Retained `CBCG-RIME` only as a working refinement of the `discussed`
+  Pair-Risk Graph idea. It narrows generic pair risk to calibrated
+  boundary-coverage failure on consecutive physical-selection edges, while
+  preserving video-level risk for K selection.
+- Recorded hard design blockers before implementation: path-to-edge regret
+  attribution is underidentified without balanced perturbations and stability
+  evidence; source/sink gap masses are not yet mathematically normalized;
+  sparse complexity requires an enforced span cap; gap-only confounding,
+  hard/soft energy equality, cross-fit calibration, and bit-exact risk-off
+  behavior need explicit tests.
+- The report's linked sandbox patches, hashes, and reported test count are
+  unavailable in the repository and remain `PARTNER_CLAIM`; no code from them
+  was applied and no implementation/test status was promoted.
+- Standardized the comparison name to
+  `AdapTok-inspired TAD budget allocation baseline`. The official AdapTok paper
+  and repository still require direct provenance registration before
+  publication.
+- No empirical performance conclusion was added. The current project still has
+  no `PAPER_ADMISSIBLE_RESULT`.
+
+## 2026-07-28 — Risk granularity corrected and four-stage terminal state verified
+
+- Resolved the user annotation about AdaTAD's 768-point input. The current
+  controller does not compute whole-video risk: it pools cheap `[B,T,D]`
+  evidence per training crop or inference sliding window and returns a
+  window-level `[B,M]` utility/risk panel.
+- Froze the unit distinction for future designs and writing: model decisions are
+  per 768-candidate window; cross-fitting/statistics are grouped by video; costs
+  are the per-video sum over actual heavy inputs for all windows, including
+  overlap. `U-same-K` must replay each `(video_id, window_start_frame)` before
+  aggregation.
+- Compared three abstractions. Whole-video scalar K was rejected for v1 because
+  it is not implemented and can wash out local short-action/boundary demand.
+  Window-local K is the current recommended route. A hierarchical video prior
+  plus window residual is deferred until window-local v1 establishes genuine
+  headroom and cross-window correlation.
+- Independently queried Slurm at `2026-07-28 14:47 CST`. Code gate `1198113`
+  completed; Phase 1 `1198114` failed the no-padding ledger; dense ActionFormer
+  `1198115` and dense TriDet `1198116` both failed after their 60-epoch training
+  loops during checkpoint compaction; Phase 2 `1198117` and controller
+  `1198118` remain `DependencyNeverSatisfied`.
+- Both dense raw epoch-59 checkpoints exist, but neither terminal EMA,
+  training/evaluation receipt, checkpoint binding, nor any Phase-1/2/3/4
+  terminal receipt exists. The latest transaction is therefore terminally
+  failed closed, not complete.
+- Identified the dense post-training failure surface:
+  `python tools/bata/compact_duca_rime_checkpoint.py` cannot resolve
+  `from tools.bata import duca_p0_training` in the released environment.
+  No remote state was changed.
+- Preserved the raw checkpoints as possible inputs to a future, separately
+  hash-bound salvage transaction. They are engineering artifacts, not positive
+  experimental evidence.
+- No model code or launcher was modified because the corrected risk/execution
+  design is awaiting user approval under the brainstorming gate. No empirical
+  performance conclusion was added.
+
+## 2026-07-28 — Whole-video budget correction and H-RIME proposal
+
+- The user clarified that offline cheap scanning can plan over the complete
+  video even though AdaTAD continues to execute and detect on 768-candidate
+  windows. Accepted this as a substantive correction to the earlier
+  window-only final-model recommendation.
+- Distinguished a total video quota `B_v` from a uniform per-window K. The
+  proposed hierarchy is video-level budget prediction, joint window-level
+  `K_vw` allocation, and existing within-window exact-K physical selection.
+- Audited the current code contract: videos are flattened into overlapping
+  window rows; the current controller, target/replay path, and ledger are
+  per-window; no whole-video joint decision exists. H-RIME is recorded as
+  `discussed/designed/awaiting_user_approval`, not implemented or tested.
+- Froze truthful overlap accounting. Under the current no-cache backend, heavy
+  work in overlapping windows is recomputed, so formal cost is
+  `sum_w K_vw`; unique physical frames and the duplicate ratio are diagnostics,
+  not compute savings.
+- Promoted a held-out same-total-heavy-cost allocation oracle ahead of learned
+  implementation. It must compare uniform, independent-window, and joint
+  video-level allocation and stop the route if cross-window redistribution has
+  no material high-IoU/short-action headroom.
+- Reframed the failed four-stage RIME path as a required window-local baseline
+  and infrastructure source, not automatically the final publication model.
+  Phase-1 execution and dense checkpoint closure remain prerequisites.
+- No model/launcher code or remote scheduler state was changed. No empirical
+  performance claim was made.
+
+## 2026-07-28 — Pro H-RIME report absorbed and implementation authorized
+
+- Fully read and registered `U-PRO-HRIME-1`. The user approved the adjudicated
+  route and authorized implementation.
+- Accepted the main Approach-C architecture: shared full-video cheap scan,
+  normalized total-video budget, exact MCKP per-window allocation, reuse of the
+  existing exact-K selector, homogeneous-K heavy dispatch, and unchanged
+  AdaTAD/NMS.
+- Froze the corrected design at
+  `docs/superpowers/specs/2026-07-28-hrime-v1-budget-conserving-design.md` and its
+  implementation plan at
+  `docs/superpowers/plans/2026-07-28-hrime-v1-implementation.md`.
+- Did not accept the report verbatim. Numeric accuracy/calibration/cost gates
+  remain proposals until a training/calibration-only pre-registration; raw caps
+  are projected to reachable effective-K totals; official merge/NMS replay must
+  validate the additive oracle; risk evaluation extends beyond ECE; endpoints,
+  multiplicity, seed interpretation and deterministic MCKP ties are explicit.
+- Independently audited the current repository. It has a reusable exact-K
+  decoder and per-window replay, but flat window datasets, no whole-video
+  planner/allocator, no grouped two-pass dispatch and no shared video scan.
+  H-RIME is therefore `implementation_started`, not implemented/tested.
+- Independently verified the failed dense raw checkpoints:
+  ActionFormer source job `1198115`, size `623799387`, SHA-256
+  `cd92f3d499360c834f7ddd6ccfd5cba172c870bf6922de566b2b7e3878680e11`;
+  TriDet source job `1198116`, size `411540059`, SHA-256
+  `8940dbe756e8abfa3f7c8b042f3c658b26898d5c805d2876011a4e7510d11e12`.
+  Both are epoch-59 raw checkpoints with EMA state but lack complete embedded
+  commit/variant/seed provenance.
+- Froze a new immutable salvage requirement. The failed root remains unchanged,
+  and recovered artifacts must bind source job/path/size/hash plus explicitly
+  external provenance.
+- Scheduler energy fields were unavailable/zero and no trusted GPU monitor was
+  active, so no energy claim is permitted.
+- Directly registered official AdapTok and EVATok paper/code sources. Per-video
+  adaptive allocation/routing is prior-art context, not H-RIME's novelty claim.
+- No model performance claim was added. The project still has no
+  `PAPER_ADMISSIBLE_RESULT`.

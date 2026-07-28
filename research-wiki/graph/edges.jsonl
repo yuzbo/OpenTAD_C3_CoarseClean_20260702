@@ -6,3 +6,7 @@
 {"source":"ideas/duca-rime-graph","relation":"extends","target":"ideas/duca-rime"}
 {"source":"ideas/duca-rime-graph","relation":"compares_against","target":"models/adaptok-tad-direct"}
 {"source":"ideas/duca-rime-graph","relation":"eligible_after","target":"experiments/duca-dynamic-k-rime-oracle"}
+{"source":"sources/U-PRO-CBCG-1","relation":"reviews","target":"ideas/duca-rime-graph"}
+{"source":"sources/U-PRO-HRIME-1","relation":"reviews","target":"ideas/duca-rime-graph"}
+{"source":"ideas/duca-rime-graph","relation":"inspired_by","target":"sources/P-ADAPTOK-1"}
+{"source":"ideas/duca-rime-graph","relation":"differentiated_from","target":"sources/P-EVATOK-1"}
