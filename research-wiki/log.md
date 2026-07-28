@@ -1135,3 +1135,12 @@ append_only: true
   finite, and each arm recorded five recovered AMP retry attempts without
   exhaustion or any Traceback/OOM/checkpoint writer/non-finite-loss signature.
   No final checkpoint, stage result, selection receipt, or P1R metric existed.
+
+- 2026-07-28 18:10 CST: the primary ROI-free NativeTokenSelect arm `1199869`
+  changed from priority-pending to running. Dense, fixed,
+  fixed-plus-geometry, random, and free were at Epoch 14/13/7/6/1; ROI and
+  hybrid remained `PENDING(Priority)` and selector `1199872` remained
+  dependency-held. All active stderr files were empty, losses finite, and AMP
+  retry counts were 5/5/5/5/2 with successful recovery and no fatal signature.
+  No final checkpoint, stage result, selector receipt, accuracy metric, or
+  frozen cost result existed.

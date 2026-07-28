@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: experiment_running
-status: p1r_four_running_no_metric
+status: p1r_five_running_no_metric
 updated: 2026-07-28
 ---
 
@@ -258,6 +258,12 @@ benefit without extra total cost?
   losses were finite, and each arm had five recovered AMP retry attempts with
   no retry exhaustion or fatal signature. There was still no final checkpoint,
   stage result, selector receipt, or P1R metric.
+- At 18:10 CST, the primary ROI-free NativeTokenSelect arm `1199869` advanced
+  to `RUNNING`; dense/fixed/fixed-plus-geometry/random/free were at Epoch
+  14/13/7/6/1. ROI and hybrid remained `PENDING(Priority)`. Active stderr files
+  remained empty, losses finite, and recovered AMP retry counts were
+  5/5/5/5/2 without exhaustion. No final checkpoint, stage result, selector
+  receipt, accuracy metric, or frozen cost result existed.
 
 ## Frozen decision logic
 

@@ -12,7 +12,7 @@ max_chars: 8000
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be
   tested as a strict add-on.
-- Active replacement status: `p1r_four_running_no_metric`
+- Active replacement status: `p1r_five_running_no_metric`
   (`experiment_running`). The external Pro audit of exact
   commit `df3e54e0c6776544dba20807b2ec100e1a399654` returned
   `HOLD_FOR_CORRECTNESS_FIX`. The local replacement now implements floor-native
@@ -41,7 +41,9 @@ max_chars: 8000
   evidence exists. At 17:55 CST, fixed-plus-geometry `1199867` and random
   `1199868` had also started; the four running arms were at Epoch 10/9/3/2
   with five recovered AMP retry attempts each and empty stderr. Free, ROI, and
-  hybrid remained priority-pending.
+  hybrid remained priority-pending. At 18:10 CST, free NativeTokenSelect
+  `1199869` also started; five arms were at Epoch 14/13/7/6/1, with ROI and
+  hybrid still priority-pending and no final result artifact.
 - Historical P1 status remains
   `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)
