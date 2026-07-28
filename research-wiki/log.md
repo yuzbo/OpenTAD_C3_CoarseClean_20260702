@@ -1010,3 +1010,18 @@ append_only: true
   `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_adatad_6a9bba62_p1p3_20260727_222913`.
   This advances the route only to `experiment_running`; no P1 metric, cost
   result, P2/P3 job, official test, empirical support, or paper claim exists.
+
+- 2026-07-28: the complete status audit changed the GeoRoute P1 state from
+  `experiment_running` to
+  `failed_p1_infrastructure_storage_exhaustion_no_metric`. All seven matched
+  leaves `1196071`--`1196077` failed `1:0` after roughly 64--68 minutes with
+  `PytorchStreamWriter failed writing file` and `unexpected pos` during
+  checkpoint publication. The common namespace consumed 63 GB because
+  `checkpoint_interval=1` retained approximately 0.63 GB model/optimizer/EMA
+  files for every cell and epoch; JuiceFS `/data` was 100% used with 3.1 GB
+  free, while inode usage was only 1%. No P1 result JSON or selector receipt
+  exists, and `1196078` remains dependency-held. This is immutable
+  storage/deployment failure, not a dense/free/ROI/hybrid comparison. A
+  replacement requires a new namespace, aggregate storage-capacity preflight,
+  and final-EMA-only or explicitly bounded result-blind checkpoint retention.
+  P2/P3, official test, empirical support, and all paper claims remain closed.

@@ -1,37 +1,41 @@
 ---
 type: query_pack
-updated: 2026-07-27
+updated: 2026-07-28
 max_chars: 8000
 ---
 
 # Research Query Pack
 
-## Current Active Route: GeoRoute-AdaTAD (2026-07-27)
+## Current Active Route: GeoRoute-AdaTAD (2026-07-28)
 
 - Objective: offline TAD under a native VideoMAE token budget. Test whether
   continuous geometry support plus a free-token residual and depth routing
   preserve high-tIoU localization better than unstructured token selection at
   lower measured end-to-end cost.
-- Status: `experiment_running_p1_one_seed_screen`. The sealed P0 parent from
+- Status: `failed_p1_infrastructure_storage_exhaustion_no_metric`. The sealed P0 parent from
   [`4a9358d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/4a9358d1fba4bde9aa7693a94f7e4dfc95d31ecc)
   remains `PASS_MECHANICAL_ONLY`. Clean dispatcher snapshot
   [`6a9bba62`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/6a9bba6222c18a468c3bd410edac89a4afdea189)
   completed bootstrap Job `1196062` (`0:0`) and atomically submitted the seven
-  matched P1 leaves `1196071`--`1196077`; all seven reached real Epoch 0
-  batches. Result-blind selector `1196078` is dependency-held on all leaves.
-  This is running-state evidence only: no mAP, latency, energy, official test,
-  A-MoD result, empirical support, or paper claim exists.
+  matched P1 leaves `1196071`--`1196077`. All seven later failed `1:0` while
+  publishing per-epoch checkpoints after `/data` reached 100% usage; the
+  namespace had accumulated 63 GB. Result-blind selector `1196078` remains
+  dependency-held and emitted no decision. This is immutable infrastructure
+  failure evidence only: no P1 mAP, cost, A-MoD result, empirical support,
+  official-test evidence, or paper claim exists.
 - P1 is the first scientific screen: matched dense, fixed lattice,
   lattice-plus-geometry side-channel, random, free TokenSelect, ROI-only, and
   hybrid. Free TokenSelect winning both high tIoU and total cost kills the ROI
   main claim. P2 promotes only the winner to seeds/budgets; P3 is frozen,
   second-detector/dataset and sealed-test closure.
-- The prior quota hold is cleared. P0 replacement Gate `1181172` passed the
+- The prior quota hold was cleared, but P1 is now storage-held. P0 replacement Gate `1181172` passed the
   real uint8 180x320 path; roots `1181007` and `1181177` remain immutable
   scheduler diagnostics only. The fresh namespace is
   `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_adatad_6a9bba62_p1p3_20260727_222913`.
   Its bootstrap and submission receipts bind the sealed P0 suite SHA
   `a6f8ea041345cdc400c7f8a4f478c037cb66c8cfd3c19edb09d454ff363ce0b1`.
+  A replacement requires a new namespace, result-blind storage-capacity
+  preflight, and final-EMA-only or explicitly bounded checkpoint retention.
   P2/P3 remain absent and result-gated.
 - FlashVID was audited as a VLLM reference, not a GeoRoute result. Its 10%
   retention result is 57.9/58.4 = 99.1% relative score after a full vision

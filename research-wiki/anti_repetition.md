@@ -1,7 +1,18 @@
 ---
 type: anti_repetition
-updated: 2026-07-21
+updated: 2026-07-28
 ---
+
+## GeoRoute deployment anti-repetition
+
+0. Never launch a multi-cell 60-epoch GeoRoute matrix with per-epoch full
+   model/optimizer/EMA checkpoint retention and no aggregate storage
+   preflight. Jobs `1196071`--`1196077` accumulated 63 GB, filled `/data`, and
+   all failed during checkpoint publication before any result JSON. A
+   replacement must use a new namespace, prove aggregate headroom, and retain
+   final EMA only or an explicitly bounded result-blind checkpoint set. Partial
+   checkpoints and epoch logs are not P1 evidence and the failed namespace must
+   not be resumed.
 
 ## Continuous-RoI S2 deployment anti-repetition
 

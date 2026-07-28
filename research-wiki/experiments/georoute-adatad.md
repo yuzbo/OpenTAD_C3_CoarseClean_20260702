@@ -2,9 +2,9 @@
 type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
-stage: experiment_running
-status: experiment_running_p1_one_seed_screen
-updated: 2026-07-27
+stage: tested
+status: failed_p1_infrastructure_storage_exhaustion_no_metric
+updated: 2026-07-28
 ---
 
 # GeoRoute-AdaTAD native spatial routing
@@ -128,6 +128,20 @@ unstructured free TokenSelect at lower measured end-to-end cost?
   Selector `1196078` is pending with exact `afterok` dependencies on all seven
   leaves. P2/P3 and official test remain unopened. Partial training losses are
   heartbeat evidence only and authorize no performance, cost, or paper claim.
+- On 2026-07-28 accounting showed that every leaf `1196071`--`1196077` had
+  failed `1:0` after roughly 64--68 minutes. Each log ended in
+  `PytorchStreamWriter failed writing file` while saving a checkpoint, followed
+  by `unexpected pos`; this was common to dense and all sparse variants.
+  The namespace occupied 63 GB because the frozen config saved an approximately
+  0.63 GB model/optimizer/EMA checkpoint every epoch. At audit time the JuiceFS
+  `/data` filesystem was 100% used with 3.1 GB free, while inodes remained 99%
+  free. No P1 result JSON was published. Selector `1196078` therefore remains
+  `DependencyNeverSatisfied`/pending and has emitted no selection receipt.
+  This is storage/deployment failure, not evidence for or against dense, free,
+  ROI, hybrid, or geometry. The namespace remains immutable; any replacement
+  must use a new commit/namespace, preflight aggregate checkpoint headroom, and
+  retain only final EMA or an explicitly bounded result-blind checkpoint set.
+  P2/P3, official test, empirical support, and paper claims remain closed.
 
 ## Frozen decision logic
 
