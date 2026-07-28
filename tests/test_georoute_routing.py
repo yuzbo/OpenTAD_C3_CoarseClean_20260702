@@ -423,6 +423,9 @@ def test_free_route_uses_fixed_full_frame_geometry_without_geometry_gradient():
     fake.source_mean = torch.zeros(1, 3, 1, 1, 1)
     fake.source_std = torch.ones(1, 3, 1, 1, 1)
     fake.scout = FakeScout()
+    fake._fixed_full_frame_geometry = (
+        GeoRouteBackboneWrapper._fixed_full_frame_geometry.__get__(fake)
+    )
     fields = GeoRouteBackboneWrapper._compute_route_fields(
         fake,
         torch.zeros(1, 3, 4, 8, 8, dtype=torch.uint8),
