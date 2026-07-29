@@ -232,6 +232,12 @@ updated: 2026-07-29
   `3cf497d547f1cc38ece780d5af56b0455f3786387f182915d799e5fa9b567ef2`
   and
   `88289a14399a28789e2db97411604ab890fa6a92a55ac2ea4b99408b892320da`.
+  ROI-PL representation-on Job `1204313` remained process-active but logged its
+  eleventh AMP skip at `2026-07-29 22:47:59 CST` (batch 111, retry 1/8, scale
+  `64`), crossing the registered `>10` protocol hard-fail threshold. At audit
+  time its logged loss/cost was finite and it had no Traceback/OOM; the source
+  is the mutable stage stdout
+  `slurm/grep_roi_on.1204313.out`, so no premature file hash is registered.
   This namespace is incomplete execution provenance, not a contrast or
   performance result.
 

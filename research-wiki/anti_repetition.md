@@ -91,6 +91,13 @@ updated: 2026-07-29
    result. The namespace therefore cannot become performance evidence. Never
    mix either earlier namespace into it, rerun or resume the failed arm, bypass
    its all-six closeout, or interpret the other five arms.
+0. ROI-PL representation-on Job `1204313` is not a successful surviving arm
+   merely because its process continues. At `2026-07-29 22:47:59 CST`, it
+   logged its eleventh AMP gradient skip (batch 111, retry 1/8, scale `64`),
+   crossing the registered `>10` hard-fail threshold. Its logged loss/cost
+   remained finite and no Traceback/OOM occurred, but neither a terminal
+   `COMPLETED` state nor a future final checkpoint can convert this protocol
+   hard failure into performance evidence.
 0. Schema-v4 P0 from source `30f9ca6f` did not test full-graph AMP. Its model
    forward/backward was FP32, and the `T384/N220/K64` AMP KAT used an isolated
    logits leaf. Job `1204023` then exhausted all eight real-batch AMP retries at

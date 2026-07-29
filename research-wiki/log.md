@@ -1631,3 +1631,14 @@ append_only: true
   `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. No resume, arm replacement,
   partial result, selector, P2/P3, official test, Geometry Zoom, or paper claim
   is authorized.
+
+- 2026-07-29 22:47 CST: ROI-PL representation-on Job `1204313`, running only
+  for terminal provenance after the namespace was already invalid, logged its
+  eleventh AMP gradient skip at batch 111, retry 1/8, scale `64`. This crosses
+  the registered `>10` hard-fail threshold. Slurm still reported `RUNNING`;
+  logged loss/cost remained finite and no Traceback/OOM appeared. The process
+  is not canceled, but neither later completion nor a final checkpoint can
+  convert the arm into performance evidence. ROI-PL representation-off
+  `1204312` remained at exactly ten skips at this audit point. Closeout
+  `1204314` remains required to seal
+  `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`.

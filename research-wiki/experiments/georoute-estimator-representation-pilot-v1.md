@@ -4,7 +4,7 @@ node_id: exp:georoute-estimator-representation-pilot-v1
 title: "GeoRoute estimator/representation exploratory pilot v1"
 idea: idea:geo-route-adatad
 stage: experiment_running
-status: fresh_c822add3_real_batch_amp_hard_fail_waiting_closeout
+status: fresh_c822add3_multiple_amp_hard_fail_waiting_closeout
 verdict: incomplete_no_performance_inference_pending_closeout
 confidence: medium
 commit: c822add335c38a9f6c63e609237c4bfa9b9f468d
@@ -198,6 +198,17 @@ metric, or stage result exists. The other five stages run only to terminal
 provenance and may not be interpreted. No arm is resumed or replaced. Closeout
 `1204314` must seal `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with empty
 contrasts and all promotion guards false.
+
+ROI-PL representation-on Job `1204313` subsequently crossed the preregistered
+recoverable-skip boundary while still running for terminal provenance. Its
+eleventh `AMP skipped batch` event was logged at
+`2026-07-29 22:47:59 CST`, batch 111, retry 1/8, scale `64`. At the observation
+time, Slurm still reported `RUNNING`, the logged loss/cost remained finite, and
+there was no Traceback or OOM. Nevertheless, `>10` skips is a protocol hard
+failure; later process completion or a final checkpoint cannot make this arm or
+the namespace performance evidence. ROI-PL representation-off `1204312`
+remained at exactly ten skips at the same audit point and was not independently
+reclassified.
 
 The evidence narrows the execution diagnosis: schema-v5 synthetic full-graph
 AMP is mechanically valid but insufficient as a real-batch stability gate. It

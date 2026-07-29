@@ -37,7 +37,7 @@ max_chars: 8000
   `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
   A new independent study,
   `georoute_estimator_representation_pilot_v1`, is
-  `c822add3_real_batch_amp_hard_fail_waiting_closeout`.
+  `c822add3_multiple_amp_hard_fail_waiting_closeout`.
   Six single-seed, 20-epoch, K=64 arms isolate PL versus ST, fixed-support
   representation, ROI-support representation, and ROI versus residual support.
   The first clean runtime `02b6efe7` passed remote Linux tests `108/108`, but
@@ -170,8 +170,13 @@ max_chars: 8000
   (`5e55619291285a36a8410be9582a79f293b33cd135053b4c6a3967e9d8beb5c8`;
   file
   `77c9eff76c5881f8daa45ef68dd0d0d71bec2f5e171f31e2a8a97fc734b9f3c5`)
-  and the cell contains no checkpoint, metric, or stage result. The other five
-  stages continue only to reach terminal provenance; closeout `1204314` must
+  and the cell contains no checkpoint, metric, or stage result. While running
+  only for terminal provenance, ROI-PL representation-on Job `1204313` crossed
+  the registered `>10` recoverable-skip limit: its eleventh AMP skip occurred
+  at `2026-07-29 22:47:59 CST` (batch 111, scale `64`). The process remains
+  running with finite logged loss/cost and no Traceback/OOM, but the protocol
+  classifies the arm as another hard failure. The other stages continue only
+  to reach terminal provenance; closeout `1204314` must
   seal `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. This shows that the current
   synthetic full-graph P0 is not sufficient evidence of real-batch AMP
   stability. It does not yield a PL/ST scientific verdict. No rerun, partial

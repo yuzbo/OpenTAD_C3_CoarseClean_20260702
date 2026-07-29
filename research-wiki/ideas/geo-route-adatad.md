@@ -346,7 +346,10 @@ The failed `30f9ca6f` namespace has now sealed INCOMPLETE with empty contrasts.
 The complete fresh `c822add3` six-arm namespace passed all six schema-v5 P0
 leaves plus its finalizer, but residual-PL stage `1204309` again exhausted all
 eight AMP retries on real batch 0 and hard-failed without a checkpoint or
-metric. The remaining stages continue only for terminal provenance and
+metric. ROI-PL representation-on `1204313` subsequently crossed the registered
+`>10` AMP-skip hard-fail threshold while its process remained active; finite
+logged loss/cost and absence of Traceback/OOM do not restore protocol validity.
+The remaining stages continue only for terminal provenance and
 closeout `1204314` must seal no performance inference. This falsifies the
 sufficiency of the current synthetic full-graph P0 as a real-batch stability
 certificate, not the scientific PL hypothesis itself. GeoRoute/CER remains
