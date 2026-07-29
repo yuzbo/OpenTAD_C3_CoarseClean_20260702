@@ -28,7 +28,7 @@ from tools.bata.georoute_experiment_contract import canonical_sha256
 
 
 AMP_DIAGNOSTIC_STUDY_ID = "georoute_real_batch_amp_diagnostic_v1"
-AMP_DIAGNOSTIC_BINDING_SCHEMA = "georoute_real_batch_amp_binding_v1"
+AMP_DIAGNOSTIC_BINDING_SCHEMA = "georoute_real_batch_amp_binding_v2"
 AMP_DIAGNOSTIC_RECEIPT_SCHEMA = "georoute_real_batch_amp_receipt_v1"
 AMP_DIAGNOSTIC_STAGE_SCHEMA = "georoute_real_batch_amp_stage_v1"
 AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA = "georoute_real_batch_amp_deployment_v1"
@@ -162,12 +162,18 @@ def bind_amp_diagnostic_config(
         "manifest_file_sha256": parent_binding["manifest_file_sha256"],
         "fit_video_ids": list(parent_binding["fit_video_ids"]),
         "gate_video_ids": list(parent_binding["gate_video_ids"]),
-        # The failed estimator pilot intentionally trained on its frozen Gate
-        # population and used Fit only as the development evaluator population.
-        # Keep those historical semantics explicit instead of inferring them
-        # from the misleading legacy field names.
-        "training_video_ids": list(parent_binding["gate_video_ids"]),
-        "evaluation_video_ids": list(parent_binding["fit_video_ids"]),
+        # SlidingWindowDataset.block_list excludes the named videos.  The failed
+        # estimator pilot blocked Gate for train and Fit for val/test, so its
+        # actual populations were Fit for training and Gate for development.
+        # Bind both the included and excluded populations explicitly.
+        "training_video_ids": list(parent_binding["fit_video_ids"]),
+        "evaluation_video_ids": list(parent_binding["gate_video_ids"]),
+        "training_block_list_video_ids": list(
+            parent_binding["gate_video_ids"]
+        ),
+        "evaluation_block_list_video_ids": list(
+            parent_binding["fit_video_ids"]
+        ),
         "development_annotation": dict(
             parent_binding["development_annotation"]
         ),
@@ -247,10 +253,15 @@ def validate_amp_diagnostic_binding(
         "parent_pilot_binding_sha256",
     ):
         _full_hex(str(binding.get(key, "")), length=64, name=key)
-    if list(binding.get("training_video_ids", [])) != list(
-        binding.get("gate_video_ids", [])
-    ) or list(binding.get("evaluation_video_ids", [])) != list(
-        binding.get("fit_video_ids", [])
+    if (
+        list(binding.get("training_video_ids", []))
+        != list(binding.get("fit_video_ids", []))
+        or list(binding.get("evaluation_video_ids", []))
+        != list(binding.get("gate_video_ids", []))
+        or list(binding.get("training_block_list_video_ids", []))
+        != list(binding.get("gate_video_ids", []))
+        or list(binding.get("evaluation_block_list_video_ids", []))
+        != list(binding.get("fit_video_ids", []))
     ):
         raise ValueError("AMP diagnostic population binding changed")
     annotation = _mapping(
@@ -303,6 +314,15 @@ def validate_amp_diagnostic_config(cfg: Any, *, seed: int) -> dict[str, Any]:
     for split_name in ("train", "val", "test"):
         if cfg.dataset[split_name].get("subset_name") != "training":
             raise ValueError("AMP diagnostic dataset left the development subset")
+    if (
+        list(cfg.dataset.train.get("block_list", []))
+        != list(binding["training_block_list_video_ids"])
+        or list(cfg.dataset.val.get("block_list", []))
+        != list(binding["evaluation_block_list_video_ids"])
+        or list(cfg.dataset.test.get("block_list", []))
+        != list(binding["evaluation_block_list_video_ids"])
+    ):
+        raise ValueError("AMP diagnostic dataset block-list binding changed")
     return binding
 
 

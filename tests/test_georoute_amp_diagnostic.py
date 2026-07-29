@@ -15,6 +15,7 @@ from tools.bata.georoute_amp_diagnostic import (
     classify_amp_diagnostic_pair,
     diagnostic_cell_relative_path,
     validate_amp_diagnostic_binding,
+    validate_amp_diagnostic_config,
     validate_amp_diagnostic_job_receipt,
     validate_amp_diagnostic_receipt,
 )
@@ -62,8 +63,10 @@ def _binding(tmp_path: Path, arm: str) -> dict:
         "manifest_file_sha256": "c" * 64,
         "fit_video_ids": ["fit_a"],
         "gate_video_ids": ["gate_a"],
-        "training_video_ids": ["gate_a"],
-        "evaluation_video_ids": ["fit_a"],
+        "training_video_ids": ["fit_a"],
+        "evaluation_video_ids": ["gate_a"],
+        "training_block_list_video_ids": ["gate_a"],
+        "evaluation_block_list_video_ids": ["fit_a"],
         "development_annotation": {
             "path": str((tmp_path / "annotation.json").resolve()),
             "sha256": "d" * 64,
@@ -150,17 +153,19 @@ def _receipt(
     return payload
 
 
-def test_binding_preserves_historical_train_and_development_populations(
+def test_binding_preserves_historical_fit_train_and_gate_development_populations(
     tmp_path,
 ):
     binding = validate_amp_diagnostic_binding(
         _binding(tmp_path, "residual_pl_rep_off")
     )
-    assert binding["training_video_ids"] == binding["gate_video_ids"]
-    assert binding["evaluation_video_ids"] == binding["fit_video_ids"]
+    assert binding["training_video_ids"] == binding["fit_video_ids"]
+    assert binding["evaluation_video_ids"] == binding["gate_video_ids"]
+    assert binding["training_block_list_video_ids"] == binding["gate_video_ids"]
+    assert binding["evaluation_block_list_video_ids"] == binding["fit_video_ids"]
 
     tampered = copy.deepcopy(binding)
-    tampered["training_video_ids"] = tampered["fit_video_ids"]
+    tampered["training_video_ids"] = tampered["gate_video_ids"]
     tampered["binding_sha256"] = canonical_sha256(
         {key: value for key, value in tampered.items() if key != "binding_sha256"}
     )
@@ -214,6 +219,19 @@ def test_real_mmengine_config_binding_removes_parent_with_pop(tmp_path):
     )
     assert "georoute_estimator_pilot_binding" not in cfg
     assert cfg.georoute_amp_diagnostic_binding.arm == "residual_pl_rep_off"
+    binding = validate_amp_diagnostic_config(cfg, seed=PILOT_SEED)
+    assert binding["training_video_ids"] == ["fit"]
+    assert binding["evaluation_video_ids"] == ["gate"]
+    assert list(cfg.dataset.train.block_list) == ["gate"]
+    assert list(cfg.dataset.val.block_list) == ["fit"]
+    assert list(cfg.dataset.test.block_list) == ["fit"]
+
+    cfg.dataset.train.block_list = ["fit"]
+    with pytest.raises(
+        ValueError,
+        match="dataset block-list binding changed",
+    ):
+        validate_amp_diagnostic_config(cfg, seed=PILOT_SEED)
 
 
 def test_receipt_is_self_bound_to_arm_commit_and_slurm_job(tmp_path):
