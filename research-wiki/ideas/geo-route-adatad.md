@@ -337,10 +337,13 @@ it invalidates the execution evidence. The next method-neutral repair is an
 FP32 scout/score-function route branch plus full-graph AMP P0, with the same six
 arms and contrasts.
 
-This repair is now `implemented_local`: it changes numerical precision and
-gate coverage only. It is not a new CER component and supplies no empirical
-support until Linux tests, full-graph CUDA P0 and a wholly fresh six-arm
-namespace pass.
+This repair is now numerically `tested` at exact source `c822add3`: the clean
+Linux suite passed `121/121`, and full-graph CUDA P0 Job `1204087` passed
+schema v5 with FP32 scout execution, finite detector-plus-score-function
+gradients and an unchanged GradScaler floor. It changes precision and gate
+coverage only; it is not a new CER component and supplies no empirical support.
+The failed `30f9ca6f` namespace must seal INCOMPLETE before a wholly fresh
+six-arm namespace can test the frozen scientific contrasts.
 
 ## Connections
 

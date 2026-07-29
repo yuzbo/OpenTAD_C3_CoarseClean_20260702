@@ -135,15 +135,21 @@ max_chars: 8000
   is valid. The next source must keep the six-arm science fixed, execute the
   score-function scout/likelihood path safely in FP32, and pass a full-model
   autocast+GradScaler optimizer-update P0 before any further replacement.
-  That repair is now `implemented_local`: backbone schema v4 keeps the complete
-  scout/route forward and backward in FP32 outside autocast; P0 schema v5 runs
-  the actual score-function model graph under FP16 autocast and GradScaler at
-  floor scale `256`, unscales and audits required parameter gradients, then
-  requires a successful zero-learning-rate optimizer step. The estimator loss,
-  weight, six arms and contrasts are unchanged. Syntax and whitespace checks
-  pass; no-Torch local contract tests are `59 passed` with one environment-only
-  `mmengine` miss. Windows Torch cannot load `c10.dll`, so Linux and CUDA remain
-  mandatory before a clean source or new run exists.
+  Exact repair source
+  `c822add335c38a9f6c63e609237c4bfa9b9f468d` is now `tested` for the
+  numerical gate: backbone schema v4 keeps the complete scout/route forward and
+  backward in FP32 outside autocast; P0 schema v5 runs the actual score-function
+  model graph under FP16 autocast and GradScaler at floor scale `256`, unscales
+  and audits required parameter gradients, then requires a successful
+  zero-learning-rate optimizer step. The exact clean Linux snapshot passed
+  `121/121`. Standalone Slurm Job `1204087` completed `0:0`; its self-hash-valid
+  report records `T384/N220/K64`, FP16 source, FP32 likelihood/loss,
+  `|objective|=128637.0234375 > 65504`, full-graph scale `256 -> 256`, finite
+  required gradients, FP32 scout execution, a successful optimizer update and
+  zero checkpoints. The estimator loss, weight, six arms and contrasts are
+  unchanged. This is synthetic CUDA P0 evidence only: the old run must first
+  seal INCOMPLETE, then a wholly fresh all-six namespace must pass before any
+  descriptive contrast exists.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

@@ -90,6 +90,12 @@ updated: 2026-07-29
    scout/route FP32 outside autocast and a full-model GradScaler-256
    zero-learning-rate step. Never weaken this back to an isolated logits gate
    or silently add normalization/clipping to make it pass.
+0. Full-graph CUDA P0 Job `1204087` from exact source `c822add3` passed schema
+   v5, but it remains a synthetic numerical gate with zero checkpoints and no
+   metric. Never promote it to real-batch stability or performance evidence.
+   Do not start a replacement six-arm DAG until old closeout `1204028` seals
+   `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, and never reuse any of the five
+   surviving `30f9ca6f` arm outputs in the future namespace.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

@@ -169,14 +169,28 @@ updated: 2026-07-29
   autocast+GradScaler optimizer-update gate; no normalization/clipping or
   six-arm protocol change is accepted without a new scientific decision.
 
-- GeoRoute full-graph AMP repair implementation, 2026-07-29. Local uncommitted
-  source advances backbone audit schema to v4 and P0 to v5, forces the
-  scout/route graph to FP32 outside autocast, and requires a full-model
-  GradScaler-256 optimizer-update gate. Python syntax and `git diff --check`
-  pass; no-Torch contract tests are `59 passed`, with one environment-only
-  missing-`mmengine` test. Windows Torch fails to load `c10.dll`, so this is
-  local implementation evidence only pending clean commit, Linux suite and
-  Slurm CUDA P0.
+- GeoRoute full-graph AMP repair implementation and CUDA P0, 2026-07-29. Exact
+  source `c822add335c38a9f6c63e609237c4bfa9b9f468d`; exact clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_georoute_c822add3_20260729_fullgraphamp`;
+  complete GeoRoute plus required C3 Linux suite `121/121`. Backbone audit
+  schema v4 forces the scout/route graph to FP32 outside autocast; P0 schema v5
+  requires a full-model GradScaler-256 optimizer update. Standalone Slurm CUDA
+  P0 Job `1204087` completed `0:0` under
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_fullgraph_amp_p0_c822add3_20260729`.
+  Report internal/file SHA-256 values are
+  `4a9cd451e59417b6e606e841bcda47ebd5dd9b8b4c45ee3cfd42c0e0922d88aa`
+  and
+  `6dee7330c9e77c2bb78281e8410fbde4a768fedf88d841c422e2cb9458e40293`;
+  rendezvous internal/file SHA-256 values are
+  `74b7563df3b5e5f338ec3da198b52d2d20147aa822bd8ba1ab1f8f0dff8827c6`
+  and
+  `b1e6c336dcf0076fc0e24c294ab18f510614edeb8c42dcfabe83acd4a7e322ac`.
+  The gate records `T384/N220/K64`, FP16 source, FP32 likelihood/loss,
+  objective magnitude `128637.0234375 > 65504`, full-graph loss scale
+  `256 -> 256`, finite required gradients, FP32 scout execution, successful
+  optimizer update and zero checkpoints. This is numerical-correctness evidence
+  only, not real-batch stability, mAP, cost, model selection, Geometry Zoom or
+  paper evidence.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD

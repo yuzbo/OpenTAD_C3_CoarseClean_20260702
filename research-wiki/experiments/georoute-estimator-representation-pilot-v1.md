@@ -4,11 +4,11 @@ node_id: exp:georoute-estimator-representation-pilot-v1
 title: "GeoRoute estimator/representation exploratory pilot v1"
 idea: idea:geo-route-adatad
 stage: experiment_running
-status: fullgraph_amp_hard_fail_repair_implemented_local_pending_linux_cuda
+status: fullgraph_amp_p0_pass_waiting_old_closeout_and_fresh_six_arm_restart
 verdict: pending
 confidence: medium
-commit: 30f9ca6fff1572e2eabc6c1b6636c4cc23595a62
-jobs: 1204015-1204028
+commit: c822add335c38a9f6c63e609237c4bfa9b9f468d
+jobs: 1204015-1204028,1204087
 updated: 2026-07-29
 ---
 
@@ -133,15 +133,25 @@ suite did not test a scaled optimizer update across scout/detector/adapter/
 backbone. The frozen six-arm questions remain valid, but this namespace cannot
 emit any contrast and must close INCOMPLETE.
 
-The next source is implemented locally without changing the experiment:
-GeoRoute backbone schema v4 disables autocast for the complete FP32 scout/route
-graph, and P0 schema v5 now requires a real full-model FP16-autocast,
-GradScaler-256 backward, unscaled required-gradient audit, and successful
-zero-learning-rate optimizer step. The isolated production-horizon KAT remains
-but can no longer authorize stages alone. Local syntax/whitespace and 59
-contract tests pass; one config-materialization test lacks local `mmengine`,
-and Windows Torch fails before collection at `c10.dll`. State is
-`implemented_local`, not remotely tested or authorized.
+The next source was implemented without changing the experiment. GeoRoute
+backbone schema v4 disables autocast for the complete FP32 scout/route graph,
+and P0 schema v5 requires a real full-model FP16-autocast, GradScaler-256
+backward, unscaled required-gradient audit, and successful zero-learning-rate
+optimizer step. The isolated production-horizon KAT remains but can no longer
+authorize stages alone. Exact source
+`c822add335c38a9f6c63e609237c4bfa9b9f468d` passed the exact clean remote
+Linux suite `121/121`. Standalone CUDA P0 Job `1204087` completed `0:0`.
+Its schema-v5 report internal/file SHA-256 values are
+`4a9cd451e59417b6e606e841bcda47ebd5dd9b8b4c45ee3cfd42c0e0922d88aa`
+and
+`6dee7330c9e77c2bb78281e8410fbde4a768fedf88d841c422e2cb9458e40293`.
+It binds Slurm ID and same-leaf rendezvous, `180x320 -> 11x20/N=220`,
+`T=384/K=64`, FP16 source, FP32 likelihood/loss, objective
+`128637.0234375 > 65504`, full-graph scale `256 -> 256`, finite required
+gradients, FP32 scout execution and a successful optimizer update. It created
+zero checkpoints and no metric/test/claim. State is `tested` numerical
+correctness only; old run `1204028` must seal INCOMPLETE before a wholly fresh
+six-arm restart.
 
 ## Claim boundary
 

@@ -1581,3 +1581,18 @@ append_only: true
   Torch suite cannot collect on Windows because `c10.dll` fails to load. State
   is `implemented_local_pending_clean_commit_linux_cuda`, not a new run or
   result.
+
+- 2026-07-29 20:44 CST: exact repair source
+  `c822add335c38a9f6c63e609237c4bfa9b9f468d` passed the complete clean remote
+  Linux suite `121/121`. Standalone full-graph CUDA P0 Job `1204087` completed
+  `0:0`. Its schema-v5 report is self-hash-valid
+  (`4a9cd451...`; file `6dee7330...`) and binds same-leaf rendezvous
+  (`74b7563d...`; file `b1e6c336...`). Evidence is
+  `180x320 -> 11x20/N=220`, `T=384/K=64`, FP16 source, FP32
+  likelihood/loss, `|objective|=128637.0234375 > 65504`, a real
+  detector-plus-score-function autocast/GradScaler step at `256 -> 256`, finite
+  required gradients, FP32 scout execution, a successful zero-LR optimizer
+  update, and zero checkpoints. No metric, official test, selector, P2/P3,
+  Geometry Zoom, CER or paper claim opened. This advances only the precision
+  repair to `tested`; old closeout `1204028` must seal INCOMPLETE before a
+  fresh all-six restart.

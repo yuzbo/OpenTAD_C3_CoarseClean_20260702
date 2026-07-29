@@ -691,13 +691,20 @@ score-function route/scout precision path out of FP16 overflow, and gate a real
 full-model scaled optimizer update. Current five surviving stages are terminal
 provenance only; closeout `1204028` must be INCOMPLETE.
 
-An estimator-equivalent repair is now implemented locally. The low-cost
-scout/route graph is explicitly FP32 outside global autocast, while detector
-compute remains AMP. P0 schema v5 must run the actual model under autocast and
-GradScaler at scale `256`, unscale and inspect required trainable gradients,
-and complete a zero-learning-rate optimizer step. No temporal normalization,
-clipping, weight, arm, seed, budget, epoch or contrast changed. Remote Linux
-tests and a fresh CUDA gate remain required.
+The estimator-equivalent repair is now numerically `tested` at exact source
+`c822add335c38a9f6c63e609237c4bfa9b9f468d`. Its exact clean Linux snapshot
+passed `121/121`. Standalone CUDA P0 Job `1204087` completed `0:0`; schema-v5
+report self-hash
+`4a9cd451e59417b6e606e841bcda47ebd5dd9b8b4c45ee3cfd42c0e0922d88aa`
+records the real detector-plus-score-function graph under FP16 autocast,
+GradScaler `256 -> 256`, finite required gradients, a successful zero-LR
+optimizer update, and FP32 scout execution. The subordinate arithmetic evidence
+remains `T384/N220/K64`, FP16 source, FP32 likelihood/loss and
+`128637.0234375 > 65504`. It created zero checkpoints and no metric, test or
+claim. No temporal normalization, clipping, weight, arm, seed, budget, epoch or
+contrast changed. This passes only the replacement numerical gate; old closeout
+`1204028` must first seal INCOMPLETE, after which a fresh complete six-arm DAG
+is still required.
 
 ## Frozen decision logic
 
