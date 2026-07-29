@@ -28,6 +28,14 @@ ENVIRONMENT_MANIFEST_SCHEMA = "actionformer_environment_manifest_v1"
 RUN_MANIFEST_SCHEMA = "actionformer_official_run_manifest_v1"
 DATA_MANIFEST_SCHEMA = "actionformer_official_data_manifest_v2"
 OBSERVATION_MANIFEST_SCHEMA = "actionformer_official_feature_manifest_v2"
+EXACT_METRIC_MEAN_ATOL = 1.0e-10
+# The pinned evaluator prints every threshold and the aggregate independently
+# to two decimal percentage points.  In normalized units each displayed value
+# therefore has up to 5e-5 quantization error; comparing the displayed
+# aggregate with the mean of five independently displayed thresholds can
+# accumulate up to 1e-4.  Keep a small floating-point margin, but use this only
+# for values parsed from the official text log.
+LOGGED_METRIC_MEAN_ATOL = 1.01e-4
 
 EVIDENCE_STRATA = {
     "official_reproduction",
@@ -459,7 +467,7 @@ def parse_actionformer_eval_log(text):
     return metrics
 
 
-def _validate_metrics(metrics, *, name):
+def _validate_metrics(metrics, *, name, mean_atol=EXACT_METRIC_MEAN_ATOL):
     required = {"average_mAP"} | {
         f"mAP@{value:.1f}" for value in (0.3, 0.4, 0.5, 0.6, 0.7)
     }
@@ -476,14 +484,38 @@ def _validate_metrics(metrics, *, name):
     mean = sum(
         normalized[f"mAP@{value:.1f}"] for value in (0.3, 0.4, 0.5, 0.6, 0.7)
     ) / 5.0
-    if abs(mean - normalized["average_mAP"]) > 1.0e-10:
+    if abs(mean - normalized["average_mAP"]) > mean_atol:
         raise ProtocolError(f"{name}.average_mAP is not the five-threshold mean")
     return normalized
 
 
-def _assert_metrics_close(left, right, *, atol, label):
-    left = _validate_metrics(left, name=f"{label}.left")
-    right = _validate_metrics(right, name=f"{label}.right")
+def _assert_metrics_close(
+    left,
+    right,
+    *,
+    atol,
+    label,
+    left_is_logged=False,
+    right_is_logged=False,
+):
+    left = _validate_metrics(
+        left,
+        name=f"{label}.left",
+        mean_atol=(
+            LOGGED_METRIC_MEAN_ATOL
+            if left_is_logged
+            else EXACT_METRIC_MEAN_ATOL
+        ),
+    )
+    right = _validate_metrics(
+        right,
+        name=f"{label}.right",
+        mean_atol=(
+            LOGGED_METRIC_MEAN_ATOL
+            if right_is_logged
+            else EXACT_METRIC_MEAN_ATOL
+        ),
+    )
     maximum = max(abs(left[key] - right[key]) for key in left)
     if maximum > atol:
         raise ProtocolError(f"{label} metric mismatch: max_abs_delta={maximum}")
@@ -940,6 +972,8 @@ def _verify_manifests_and_attestation(record, receipts):
         logged_metrics,
         atol=1.0e-12,
         label="attestation_vs_eval_log",
+        left_is_logged=True,
+        right_is_logged=True,
     )
     _assert_metrics_close(
         attestation.get("recomputed_metrics"),
@@ -952,6 +986,7 @@ def _verify_manifests_and_attestation(record, receipts):
         attestation.get("recomputed_metrics"),
         atol=5.1e-5,
         label="official_log_vs_independent_recompute",
+        left_is_logged=True,
     )
     if abs(float(attestation.get("max_abs_delta", math.inf)) - maximum) > 1.0e-12:
         raise ProtocolError("metric attestation max_abs_delta mismatch")

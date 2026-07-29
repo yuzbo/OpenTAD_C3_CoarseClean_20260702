@@ -185,6 +185,30 @@ def test_assignment_mask_blocks_uncovered_positive_queries():
     assert debug["gt_without_assigned_query"] == 1
 
 
+def test_reservation_ties_request_stable_annotation_order(monkeypatch):
+    head = _head().train()
+    geometry = _geometry()
+    points = head.build_query_points(geometry)
+    observed_stable = []
+    original_argsort = torch.argsort
+
+    def recording_argsort(input_tensor, *args, **kwargs):
+        observed_stable.append(kwargs.get("stable"))
+        return original_argsort(input_tensor, *args, **kwargs)
+
+    monkeypatch.setattr(torch, "argsort", recording_argsort)
+    head._prepare_targets(
+        points,
+        geometry,
+        # Both GTs have the same duration and therefore the same candidate
+        # count; their input annotation order is the contractual tie-break.
+        gt_segments=[torch.tensor([[0.4, 0.6], [2.4, 2.6]])],
+        gt_labels=[torch.tensor([0, 1])],
+    )
+
+    assert observed_stable == [True]
+
+
 def test_projection_can_require_evidence_for_assignment_mask():
     projection = PhysTimeMeasureProjection(
         in_channels=2,

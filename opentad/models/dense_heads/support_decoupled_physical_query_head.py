@@ -249,7 +249,11 @@ class SupportDecoupledPhysicalQueryHead(nn.Module):
             gt_assigned = torch.zeros((segments.shape[0],), dtype=torch.bool, device=point.device)
             reserved_owner = torch.full((num_points,), -1, dtype=torch.long, device=point.device)
             candidate_counts = valid_candidates.sum(dim=0)
-            gt_order = torch.argsort(candidate_counts)
+            # Reservation is sequential, so tied candidate counts must have an
+            # explicit, cross-device tie-break.  Preserve annotation order just
+            # like the independent NumPy audit instead of inheriting an
+            # implementation-defined torch.argsort order.
+            gt_order = torch.argsort(candidate_counts, stable=True)
             for gt_idx in gt_order.tolist():
                 candidates = torch.nonzero(
                     valid_candidates[:, gt_idx] & (reserved_owner < 0),

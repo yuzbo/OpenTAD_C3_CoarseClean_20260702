@@ -587,6 +587,7 @@ def build_record(args):
         recomputed_metrics,
         atol=5.1e-5,
         label="official_log_vs_independent_recompute",
+        left_is_logged=True,
     )
     evaluator_manifest_sha = protocol.sha256_file(evaluator_manifest_path)
     raw_predictions_sha = protocol.sha256_file(raw_predictions_path)

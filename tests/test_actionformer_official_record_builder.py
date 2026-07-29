@@ -152,3 +152,67 @@ def test_environment_manifest_has_stable_comparability_fingerprint():
     assert fingerprint == builder.protocol.canonical_sha256(
         manifest["comparability"]
     )
+
+
+def test_official_eval_log_rounding_is_bounded_without_weakening_exact_metrics():
+    logged = builder.protocol.parse_actionformer_eval_log(
+        "\n".join(
+            (
+                "|tIoU = 0.30: mAP = 82.13 (%)",
+                "|tIoU = 0.40: mAP = 77.81 (%)",
+                "|tIoU = 0.50: mAP = 70.95 (%)",
+                "|tIoU = 0.60: mAP = 59.40 (%)",
+                "|tIoU = 0.70: mAP = 43.87 (%)",
+                "Average mAP: 66.83 (%)",
+            )
+        )
+    )
+    recomputed = {
+        key: value
+        for key, value in logged.items()
+        if key != "average_mAP"
+    }
+    recomputed["average_mAP"] = sum(recomputed.values()) / 5.0
+
+    maximum = builder.protocol._assert_metrics_close(
+        logged,
+        recomputed,
+        atol=5.1e-5,
+        label="official_log_vs_independent_recompute",
+        left_is_logged=True,
+    )
+
+    assert maximum == pytest.approx(2.0e-5)
+    with pytest.raises(
+        builder.protocol.ProtocolError,
+        match="average_mAP is not the five-threshold mean",
+    ):
+        builder.protocol._validate_metrics(logged, name="exact_metrics")
+
+
+def test_official_eval_log_rounding_does_not_hide_inconsistent_average():
+    logged = {
+        "mAP@0.3": 0.8213,
+        "mAP@0.4": 0.7781,
+        "mAP@0.5": 0.7095,
+        "mAP@0.6": 0.5940,
+        "mAP@0.7": 0.4387,
+        "average_mAP": 0.6700,
+    }
+    exact = dict(logged)
+    exact["average_mAP"] = sum(
+        exact[f"mAP@{threshold:.1f}"]
+        for threshold in (0.3, 0.4, 0.5, 0.6, 0.7)
+    ) / 5.0
+
+    with pytest.raises(
+        builder.protocol.ProtocolError,
+        match="average_mAP is not the five-threshold mean",
+    ):
+        builder.protocol._assert_metrics_close(
+            logged,
+            exact,
+            atol=5.1e-5,
+            label="official_log_vs_independent_recompute",
+            left_is_logged=True,
+        )
