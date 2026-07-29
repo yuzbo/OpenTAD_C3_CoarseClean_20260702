@@ -145,6 +145,35 @@ def test_official_effective_config_and_released_seed_are_pinned():
     assert builder.protocol.canonical_sha256(config) == (
         builder.protocol.OFFICIAL_EFFECTIVE_CONFIG_SHA256
     )
+    train_log = (
+        repo
+        / "pretrained"
+        / "thumos_i3d_reproduce"
+        / "thumos_reproduce_log.txt"
+    )
+    if not train_log.is_file():
+        pytest.skip("released ActionFormer train log is not present in the local clone")
+    raw_logged = builder.protocol.parse_actionformer_train_log_config(
+        train_log.read_text(encoding="utf-8", errors="strict")
+    )
+    normalized, attestation = (
+        builder.protocol.normalize_actionformer_train_log_config(raw_logged)
+    )
+    assert builder.protocol.canonical_sha256(raw_logged) == (
+        builder.protocol.OFFICIAL_TRAIN_LOG_RAW_EFFECTIVE_CONFIG_SHA256
+    )
+    assert normalized == config
+    assert attestation["applied_defaults"] == [
+        {
+            "path": "model.fpn_start_level",
+            "value": 0,
+            "source": {
+                "repository_url": builder.protocol.OFFICIAL_REPOSITORY_URL,
+                "commit": builder.protocol.OFFICIAL_COMMIT,
+                "file": "libs/core/config.py",
+            },
+        }
+    ]
 
 
 def test_train_log_effective_config_binding_rejects_wrong_seed():
@@ -152,6 +181,7 @@ def test_train_log_effective_config_binding_rejects_wrong_seed():
         "train_split": ["validation"],
         "val_split": ["test"],
         "init_rand_seed": 1234567891,
+        "model": {"fpn_start_level": 0},
     }
     parsed = builder.protocol.parse_actionformer_train_log_config(
         repr(config) + "\nUsing model EMA ...\n"
@@ -160,6 +190,71 @@ def test_train_log_effective_config_binding_rejects_wrong_seed():
     config["init_rand_seed"] = 0
     assert builder.protocol.canonical_sha256(config) != (
         builder.protocol.OFFICIAL_EFFECTIVE_CONFIG_SHA256
+    )
+
+
+def test_train_log_normalization_is_exactly_the_upstream_fpn_default():
+    source_config = {
+        "init_rand_seed": builder.protocol.OFFICIAL_TRAINING_SEED,
+        "model": {
+            "fpn_start_level": 0,
+            "head_num_layers": 3,
+        },
+    }
+    raw_logged = {
+        "init_rand_seed": builder.protocol.OFFICIAL_TRAINING_SEED,
+        "model": {"head_num_layers": 3},
+    }
+    normalized, attestation = (
+        builder.protocol.normalize_actionformer_train_log_config(raw_logged)
+    )
+    assert normalized == source_config
+    assert raw_logged["model"] == {"head_num_layers": 3}
+    assert attestation["normalized_effective_config_sha256"] == (
+        builder.protocol.canonical_sha256(source_config)
+    )
+    assert attestation["raw_effective_config_sha256"] == (
+        builder.protocol.canonical_sha256(raw_logged)
+    )
+
+    explicit, explicit_attestation = (
+        builder.protocol.normalize_actionformer_train_log_config(source_config)
+    )
+    assert explicit == source_config
+    assert explicit_attestation["applied_defaults"] == []
+
+    for invalid in (1, False, "0"):
+        invalid_config = {
+            "init_rand_seed": builder.protocol.OFFICIAL_TRAINING_SEED,
+            "model": {"fpn_start_level": invalid},
+        }
+        with pytest.raises(
+            builder.protocol.ProtocolError,
+            match="exact integer official default 0",
+        ):
+            builder.protocol.normalize_actionformer_train_log_config(
+                invalid_config
+            )
+
+
+def test_train_log_normalization_does_not_hide_any_other_difference():
+    source_config = {
+        "init_rand_seed": builder.protocol.OFFICIAL_TRAINING_SEED,
+        "model": {
+            "fpn_start_level": 0,
+            "head_num_layers": 3,
+        },
+    }
+    wrong_logged = {
+        "init_rand_seed": builder.protocol.OFFICIAL_TRAINING_SEED,
+        "model": {"head_num_layers": 4},
+    }
+    normalized, _ = builder.protocol.normalize_actionformer_train_log_config(
+        wrong_logged
+    )
+    assert normalized["model"]["fpn_start_level"] == 0
+    assert builder.protocol.canonical_sha256(normalized) != (
+        builder.protocol.canonical_sha256(source_config)
     )
 
 

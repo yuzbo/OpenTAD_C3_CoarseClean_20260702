@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import copy
 import hashlib
 import json
 import math
@@ -32,7 +33,10 @@ OUTPUT_SCHEMA = "actionformer_thumos_comparability_v4"
 METRIC_ATTESTATION_SCHEMA = "actionformer_official_metric_attestation_v1"
 EVALUATOR_MANIFEST_SCHEMA = "actionformer_official_evaluator_manifest_v1"
 ENVIRONMENT_MANIFEST_SCHEMA = "actionformer_environment_manifest_v1"
-RUN_MANIFEST_SCHEMA = "actionformer_official_run_manifest_v1"
+RUN_MANIFEST_SCHEMA = "actionformer_official_run_manifest_v2"
+TRAIN_LOG_NORMALIZATION_SCHEMA = (
+    "actionformer_train_log_effective_config_normalization_v1"
+)
 DATA_MANIFEST_SCHEMA = "actionformer_official_data_manifest_v2"
 OBSERVATION_MANIFEST_SCHEMA = "actionformer_official_feature_manifest_v2"
 EXACT_METRIC_MEAN_ATOL = 1.0e-10
@@ -68,6 +72,9 @@ OFFICIAL_README_SHA256 = (
 )
 OFFICIAL_EFFECTIVE_CONFIG_SHA256 = (
     "835cf30fbcfd27bd6af8885fff002813c8596e2948fce3adf29e3716f316dde4"
+)
+OFFICIAL_TRAIN_LOG_RAW_EFFECTIVE_CONFIG_SHA256 = (
+    "ad426e1a25be48423e21f854bbc6d815c6063388811350ad5fada5ac8933d3a7"
 )
 OFFICIAL_TRAINING_SEED = 1234567891
 OFFICIAL_THUMOS_ARCHIVE_MD5 = "375f76ffbf7447af1035e694971ec9b2"
@@ -505,6 +512,58 @@ def parse_actionformer_train_log_config(text):
     if "\nUsing model EMA" not in text:
         raise ProtocolError("train log does not attest EMA training")
     return config
+
+
+def normalize_actionformer_train_log_config(config):
+    """Canonicalize the one documented upstream-default omission.
+
+    The released THUMOS train log predates serialization of
+    ``model.fpn_start_level``.  The pinned official runtime fills the missing
+    key from ``libs/core/config.py`` with the integer value zero.  No other
+    missing key, alternate value, type coercion, or ignored field is allowed;
+    exact canonical equality with the live source-expanded config is checked
+    by the caller.
+    """
+
+    if not isinstance(config, dict) or not config:
+        raise ProtocolError("train log effective config is empty")
+    raw_config = copy.deepcopy(config)
+    normalized = copy.deepcopy(config)
+    model = normalized.get("model")
+    if not isinstance(model, dict):
+        raise ProtocolError(
+            "train log effective config is missing the model object"
+        )
+    applied_defaults = []
+    if "fpn_start_level" not in model:
+        model["fpn_start_level"] = 0
+        applied_defaults.append(
+            {
+                "path": "model.fpn_start_level",
+                "value": 0,
+                "source": {
+                    "repository_url": OFFICIAL_REPOSITORY_URL,
+                    "commit": OFFICIAL_COMMIT,
+                    "file": "libs/core/config.py",
+                },
+            }
+        )
+    else:
+        value = model["fpn_start_level"]
+        if type(value) is not int or value != 0:
+            raise ProtocolError(
+                "train log model.fpn_start_level must be the exact integer "
+                "official default 0"
+            )
+    attestation = {
+        "schema_version": TRAIN_LOG_NORMALIZATION_SCHEMA,
+        "validation_pass": True,
+        "policy": "inject_only_missing_official_model_fpn_start_level_zero",
+        "raw_effective_config_sha256": canonical_sha256(raw_config),
+        "normalized_effective_config_sha256": canonical_sha256(normalized),
+        "applied_defaults": applied_defaults,
+    }
+    return normalized, attestation
 
 
 def _verify_logged_effective_config(record, config):
@@ -1130,7 +1189,10 @@ def _verify_manifests_and_attestation(record, receipts):
         encoding="utf-8",
         errors="strict",
     )
-    logged_config = parse_actionformer_train_log_config(train_log_text)
+    raw_logged_config = parse_actionformer_train_log_config(train_log_text)
+    logged_config, train_log_normalization = (
+        normalize_actionformer_train_log_config(raw_logged_config)
+    )
     _verify_logged_effective_config(record, logged_config)
     if record["training"]["ema"] is not True:
         raise ProtocolError("ActionFormer paper-matched training must use EMA")
@@ -1208,6 +1270,15 @@ def _verify_manifests_and_attestation(record, receipts):
         "train_log_effective_config_sha256": record["model"][
             "effective_config_sha256"
         ],
+        "train_log_raw_effective_config_sha256": train_log_normalization[
+            "raw_effective_config_sha256"
+        ],
+        "train_log_normalized_effective_config_sha256": train_log_normalization[
+            "normalized_effective_config_sha256"
+        ],
+        "train_log_normalization_sha256": canonical_sha256(
+            train_log_normalization
+        ),
         "data_manifest_sha256": record["dataset"]["data_manifest_sha256"],
         "checkpoint_sha256": record["result"]["checkpoint_sha256"],
         "raw_predictions_sha256": record["result"]["raw_predictions_sha256"],
@@ -1226,6 +1297,27 @@ def _verify_manifests_and_attestation(record, receipts):
     for key, expected in run_bindings.items():
         if run_manifest.get(key) != expected:
             raise ProtocolError(f"run manifest binding mismatch: {key}")
+    if run_manifest.get("train_log_normalization") != train_log_normalization:
+        raise ProtocolError("run manifest train-log normalization mismatch")
+    if record["evidence_stratum"] == "official_reproduction":
+        if (
+            train_log_normalization["raw_effective_config_sha256"]
+            != OFFICIAL_TRAIN_LOG_RAW_EFFECTIVE_CONFIG_SHA256
+        ):
+            raise ProtocolError(
+                "official released train-log raw effective-config SHA-256 mismatch"
+            )
+        applied_defaults = train_log_normalization["applied_defaults"]
+        if (
+            len(applied_defaults) != 1
+            or applied_defaults[0].get("path") != "model.fpn_start_level"
+            or type(applied_defaults[0].get("value")) is not int
+            or applied_defaults[0]["value"] != 0
+        ):
+            raise ProtocolError(
+                "official released train log must attest only the upstream "
+                "model.fpn_start_level=0 default"
+            )
 
 
 def _verify_strict_types(record):

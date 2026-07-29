@@ -534,14 +534,37 @@ def build_record(args):
     if protocol.md5_file(archive) != protocol.OFFICIAL_THUMOS_ARCHIVE_MD5:
         raise protocol.ProtocolError("THUMOS archive MD5 is not the official release")
     effective_config = load_effective_config(repo)
-    train_log_config = protocol.parse_actionformer_train_log_config(
+    train_log_raw_config = protocol.parse_actionformer_train_log_config(
         train_log.read_text(encoding="utf-8", errors="strict")
     )
+    train_log_config, train_log_normalization = (
+        protocol.normalize_actionformer_train_log_config(train_log_raw_config)
+    )
     effective_config_sha = protocol.canonical_sha256(effective_config)
+    train_log_raw_config_sha = protocol.canonical_sha256(train_log_raw_config)
     train_log_config_sha = protocol.canonical_sha256(train_log_config)
     if effective_config_sha != train_log_config_sha:
         raise protocol.ProtocolError(
-            "released train log effective config differs from the pinned source config"
+            "normalized released train log effective config differs from the "
+            "pinned source config"
+        )
+    if (
+        train_log_raw_config_sha
+        != protocol.OFFICIAL_TRAIN_LOG_RAW_EFFECTIVE_CONFIG_SHA256
+    ):
+        raise protocol.ProtocolError(
+            "released train log raw effective-config SHA-256 mismatch"
+        )
+    applied_defaults = train_log_normalization["applied_defaults"]
+    if (
+        len(applied_defaults) != 1
+        or applied_defaults[0].get("path") != "model.fpn_start_level"
+        or type(applied_defaults[0].get("value")) is not int
+        or applied_defaults[0]["value"] != 0
+    ):
+        raise protocol.ProtocolError(
+            "released train log must require exactly the upstream "
+            "model.fpn_start_level=0 default"
         )
     if effective_config_sha != protocol.OFFICIAL_EFFECTIVE_CONFIG_SHA256:
         raise protocol.ProtocolError(
@@ -678,6 +701,12 @@ def build_record(args):
         ),
         "effective_config_sha256": effective_config_sha,
         "train_log_effective_config_sha256": train_log_config_sha,
+        "train_log_raw_effective_config_sha256": train_log_raw_config_sha,
+        "train_log_normalized_effective_config_sha256": train_log_config_sha,
+        "train_log_normalization": train_log_normalization,
+        "train_log_normalization_sha256": protocol.canonical_sha256(
+            train_log_normalization
+        ),
         "data_manifest_sha256": protocol.sha256_file(data_manifest_path),
         "checkpoint_sha256": protocol.sha256_file(checkpoint),
         "raw_predictions_sha256": raw_predictions_sha,

@@ -42,6 +42,7 @@ def _base_effective_config():
         "train_split": ["validation"],
         "val_split": ["test"],
         "init_rand_seed": comparability.OFFICIAL_TRAINING_SEED,
+        "model": {"fpn_start_level": 0},
         "dataset": {
             "input_dim": 2048,
             "num_frames": 16,
@@ -132,6 +133,11 @@ def _patch_official_constants(monkeypatch, fixture):
         comparability,
         "OFFICIAL_EFFECTIVE_CONFIG_SHA256",
         fixture["effective_config_sha256"],
+    )
+    monkeypatch.setattr(
+        comparability,
+        "OFFICIAL_TRAIN_LOG_RAW_EFFECTIVE_CONFIG_SHA256",
+        fixture["train_log_raw_effective_config_sha256"],
     )
     monkeypatch.setattr(
         comparability,
@@ -351,9 +357,16 @@ def _record(
     checkpoint = _write(root / "epoch_034.pth.tar", b"checkpoint\n")
     effective_config = _base_effective_config()
     effective_config_sha = comparability.canonical_sha256(effective_config)
+    train_log_config = copy.deepcopy(effective_config)
+    if stratum == "official_reproduction":
+        del train_log_config["model"]["fpn_start_level"]
+    normalized_train_log_config, train_log_normalization = (
+        comparability.normalize_actionformer_train_log_config(train_log_config)
+    )
+    assert normalized_train_log_config == effective_config
     train_log = _write(
         root / "train.log",
-        repr(effective_config) + "\nUsing model EMA ...\n",
+        repr(train_log_config) + "\nUsing model EMA ...\n",
     )
     eval_log = _write(root / "eval.log", _eval_log(metrics))
 
@@ -422,6 +435,16 @@ def _record(
             "config_sha256": comparability.sha256_file(config),
             "effective_config_sha256": effective_config_sha,
             "train_log_effective_config_sha256": effective_config_sha,
+            "train_log_raw_effective_config_sha256": comparability.canonical_sha256(
+                train_log_config
+            ),
+            "train_log_normalized_effective_config_sha256": (
+                effective_config_sha
+            ),
+            "train_log_normalization": train_log_normalization,
+            "train_log_normalization_sha256": comparability.canonical_sha256(
+                train_log_normalization
+            ),
             "data_manifest_sha256": comparability.sha256_file(data_manifest),
             "checkpoint_sha256": comparability.sha256_file(checkpoint),
             "raw_predictions_sha256": raw_sha,
@@ -594,6 +617,9 @@ def _record(
         "config_sha256": receipts["config"]["sha256"],
         "readme_sha256": receipts["readme"]["sha256"],
         "effective_config_sha256": effective_config_sha,
+        "train_log_raw_effective_config_sha256": comparability.canonical_sha256(
+            train_log_config
+        ),
         "archive_md5": receipts["data_archive"]["md5"],
         "evaluator_files": evaluator_files,
         "evaluator_fingerprint": evaluator_fingerprint,
@@ -761,6 +787,18 @@ def _refresh_candidate_manifests(candidate, source, attestation):
         "metric_attestation"
     ]["sha256"]
 
+    train_log_path = Path(candidate["receipts"]["train_log"]["path"])
+    raw_train_config = comparability.parse_actionformer_train_log_config(
+        train_log_path.read_text(encoding="utf-8")
+    )
+    normalized_train_config, train_log_normalization = (
+        comparability.normalize_actionformer_train_log_config(raw_train_config)
+    )
+    assert (
+        comparability.canonical_sha256(normalized_train_config)
+        == candidate["model"]["effective_config_sha256"]
+    )
+
     run_path = Path(candidate["receipts"]["run_manifest"]["path"])
     run = json.loads(run_path.read_text(encoding="utf-8"))
     run.update(
@@ -774,6 +812,16 @@ def _refresh_candidate_manifests(candidate, source, attestation):
             "train_log_effective_config_sha256": candidate["model"][
                 "effective_config_sha256"
             ],
+            "train_log_raw_effective_config_sha256": (
+                comparability.canonical_sha256(raw_train_config)
+            ),
+            "train_log_normalized_effective_config_sha256": candidate["model"][
+                "effective_config_sha256"
+            ],
+            "train_log_normalization": train_log_normalization,
+            "train_log_normalization_sha256": comparability.canonical_sha256(
+                train_log_normalization
+            ),
             "train_log_sha256": candidate["receipts"]["train_log"]["sha256"],
             "evaluator_manifest_sha256": evaluator_sha,
             "metric_attestation_sha256": candidate["result"][
@@ -826,8 +874,11 @@ def _matched_head_records(tmp_path, monkeypatch):
         repr(train_config) + "\nUsing model EMA ...\n",
     )
     candidate["receipts"]["train_log"] = _receipt(train_log_path)
+    normalized_train_config, _ = (
+        comparability.normalize_actionformer_train_log_config(train_config)
+    )
     candidate["model"]["effective_config_sha256"] = (
-        comparability.canonical_sha256(train_config)
+        comparability.canonical_sha256(normalized_train_config)
     )
     attestation = comparability.source_diff.collect_attestation(
         repository=source["repo"],
@@ -855,6 +906,88 @@ def test_official_record_is_main_table_eligible(tmp_path, monkeypatch):
     assert verdict["artifacts_verified"] is True
     assert verdict["official_actionformer_protocol_match"] is True
     assert verdict["claim_boundary"] == "paper_main_table"
+
+
+def test_train_log_normalization_attestation_tamper_fails_closed(
+    tmp_path,
+    monkeypatch,
+):
+    record, fixture = _record(tmp_path)
+    _patch_official_constants(monkeypatch, fixture)
+    run_path = Path(record["receipts"]["run_manifest"]["path"])
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    run["train_log_normalization"]["applied_defaults"][0]["value"] = 1
+    run["train_log_normalization_sha256"] = comparability.canonical_sha256(
+        run["train_log_normalization"]
+    )
+    _write_json(run_path, run)
+    record["receipts"]["run_manifest"] = _receipt(run_path)
+    record["result"]["run_manifest_sha256"] = record["receipts"]["run_manifest"][
+        "sha256"
+    ]
+
+    with pytest.raises(
+        comparability.ProtocolError,
+        match="train_log_normalization_sha256",
+    ):
+        comparability.classify(record)
+
+
+def test_official_train_log_raw_config_identity_fails_closed(
+    tmp_path,
+    monkeypatch,
+):
+    record, fixture = _record(tmp_path)
+    _patch_official_constants(monkeypatch, fixture)
+    train_log_path = Path(record["receipts"]["train_log"]["path"])
+    raw_config = comparability.parse_actionformer_train_log_config(
+        train_log_path.read_text(encoding="utf-8")
+    )
+    raw_config["model"]["fpn_start_level"] = 0
+    _write(
+        train_log_path,
+        repr(raw_config) + "\nUsing model EMA ...\n",
+    )
+    record["receipts"]["train_log"] = _receipt(train_log_path)
+    normalized, normalization = (
+        comparability.normalize_actionformer_train_log_config(raw_config)
+    )
+    assert (
+        comparability.canonical_sha256(normalized)
+        == record["model"]["effective_config_sha256"]
+    )
+
+    run_path = Path(record["receipts"]["run_manifest"]["path"])
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    run.update(
+        {
+            "train_log_effective_config_sha256": record["model"][
+                "effective_config_sha256"
+            ],
+            "train_log_raw_effective_config_sha256": (
+                normalization["raw_effective_config_sha256"]
+            ),
+            "train_log_normalized_effective_config_sha256": (
+                normalization["normalized_effective_config_sha256"]
+            ),
+            "train_log_normalization": normalization,
+            "train_log_normalization_sha256": comparability.canonical_sha256(
+                normalization
+            ),
+            "train_log_sha256": record["receipts"]["train_log"]["sha256"],
+        }
+    )
+    _write_json(run_path, run)
+    record["receipts"]["run_manifest"] = _receipt(run_path)
+    record["result"]["run_manifest_sha256"] = record["receipts"]["run_manifest"][
+        "sha256"
+    ]
+
+    with pytest.raises(
+        comparability.ProtocolError,
+        match="official released train-log raw effective-config SHA-256 mismatch",
+    ):
+        comparability.classify(record)
 
 
 def test_legacy_v3_official_record_remains_readable(tmp_path, monkeypatch):
