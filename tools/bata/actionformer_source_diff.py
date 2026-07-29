@@ -694,6 +694,141 @@ def collect_attestation(
     }
 
 
+def validate_attestation_snapshot(attestation):
+    """Validate a live-sealed attestation against its local snapshot offline.
+
+    The attestation itself must previously have been built with live remote
+    refs.  Runtime jobs use this validator so transient compute-node DNS is not
+    part of model execution.  Every local Git object, config expansion, diff,
+    allowlist and remote URL remains recomputed; only ``git ls-remote`` is not
+    repeated.
+    """
+
+    if not isinstance(attestation, dict):
+        raise SourceDiffError("source-diff attestation is not a JSON object")
+    if attestation.get("schema_version") != SOURCE_DIFF_ATTESTATION_SCHEMA:
+        raise SourceDiffError("unsupported source-diff attestation schema")
+    if attestation.get("validation_pass") is not True or attestation.get("issues") != []:
+        raise SourceDiffError("source-diff attestation did not pass cleanly")
+    base = attestation.get("base")
+    candidate = attestation.get("candidate")
+    if not isinstance(base, dict) or not isinstance(candidate, dict):
+        raise SourceDiffError("source-diff base/candidate payload is missing")
+
+    repository = Path(attestation.get("repository_root", "")).resolve()
+    base_commit = _resolve_commit(repository, base.get("commit", ""))
+    candidate_commit = _resolve_commit(repository, candidate.get("commit", ""))
+    _assert_clean_candidate(repository, candidate_commit)
+    _assert_base_ancestor(repository, base_commit, candidate_commit)
+    if _tree_for_commit(repository, base_commit) != base.get("tree"):
+        raise SourceDiffError("base tree differs from sealed source-diff attestation")
+    if _tree_for_commit(repository, candidate_commit) != candidate.get("tree"):
+        raise SourceDiffError(
+            "candidate tree differs from sealed source-diff attestation"
+        )
+    if _remote_url(repository, base.get("remote", "")) != base.get(
+        "repository_url"
+    ):
+        raise SourceDiffError("base remote URL differs from sealed attestation")
+    if _remote_url(repository, candidate.get("remote", "")) != candidate.get(
+        "repository_url"
+    ):
+        raise SourceDiffError("candidate remote URL differs from sealed attestation")
+    if base.get("remote_ref_commit") != base_commit:
+        raise SourceDiffError("sealed base remote ref does not bind the base commit")
+    if candidate.get("remote_ref_commit") != candidate_commit:
+        raise SourceDiffError(
+            "sealed candidate remote ref does not bind the candidate commit"
+        )
+    if candidate.get("clean") is not True:
+        raise SourceDiffError("sealed candidate cleanliness flag is not true")
+    if candidate.get("head_matches_candidate_commit") is not True:
+        raise SourceDiffError("sealed candidate HEAD binding flag is not true")
+    if candidate.get("remote_ref_matches_candidate_commit") is not True:
+        raise SourceDiffError("sealed candidate remote-ref binding flag is not true")
+
+    base_config_path = _validate_relative_path(base.get("config_path", ""))
+    candidate_config_path = _validate_relative_path(
+        candidate.get("config_path", "")
+    )
+    base_config = _git_blob(repository, base_commit, base_config_path)
+    candidate_config = _git_blob(repository, candidate_commit, candidate_config_path)
+    base_config_entry = _git_tree_entry(
+        repository,
+        base_commit,
+        base_config_path,
+        required=True,
+    )
+    candidate_config_entry = _git_tree_entry(
+        repository,
+        candidate_commit,
+        candidate_config_path,
+        required=True,
+    )
+    if base.get("config_blob_sha256") != _sha256_bytes(base_config):
+        raise SourceDiffError("base config hash differs from sealed attestation")
+    if candidate.get("config_blob_sha256") != _sha256_bytes(candidate_config):
+        raise SourceDiffError("candidate config hash differs from sealed attestation")
+    if base.get("config_tree_entry") != base_config_entry:
+        raise SourceDiffError("base config tree entry differs from sealed attestation")
+    if candidate.get("config_tree_entry") != candidate_config_entry:
+        raise SourceDiffError(
+            "candidate config tree entry differs from sealed attestation"
+        )
+
+    intervention = attestation.get("intervention", "")
+    binary_diff, name_status, entries = _source_diff(
+        repository,
+        base_commit,
+        candidate_commit,
+    )
+    detailed_entries = _validate_changed_entries(
+        repository,
+        base_commit,
+        candidate_commit,
+        entries,
+        intervention,
+    )
+    expected_diff = {
+        "binary_sha256": _sha256_bytes(binary_diff),
+        "name_status_sha256": _sha256_bytes(name_status),
+        "changed_paths": [entry["path"] for entry in detailed_entries],
+        "entries": detailed_entries,
+    }
+    if attestation.get("diff") != expected_diff:
+        raise SourceDiffError("source diff differs from sealed attestation")
+    effective_config = _effective_config_attestation(
+        repository,
+        base_commit,
+        candidate_commit,
+        base_config,
+        candidate_config,
+        intervention,
+    )
+    if attestation.get("effective_config") != effective_config:
+        raise SourceDiffError("effective config differs from sealed attestation")
+    if base.get("effective_config_sha256") != effective_config["base_sha256"]:
+        raise SourceDiffError("base effective-config hash differs from attestation")
+    if candidate.get("effective_config_sha256") != effective_config[
+        "candidate_sha256"
+    ]:
+        raise SourceDiffError(
+            "candidate effective-config hash differs from attestation"
+        )
+    expected_policy = {
+        "allowed_paths": sorted(SOURCE_INTERVENTION_ALLOWED_PATHS[intervention]),
+        "forbidden_prefixes": list(FORBIDDEN_SOURCE_PREFIXES),
+        "allowed_statuses": ["A", "M"],
+        "rename_copy_delete_allowed": False,
+        "allowed_effective_config_paths": sorted(
+            EFFECTIVE_CONFIG_ALLOWED_PATHS[intervention]
+        ),
+    }
+    if attestation.get("policy") != expected_policy:
+        raise SourceDiffError("source-diff policy differs from sealed attestation")
+    return attestation
+
+
 def validate_attestation_live(attestation):
     """Recompute an attestation from its sealed inputs and require exact equality."""
 

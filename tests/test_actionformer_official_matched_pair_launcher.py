@@ -28,6 +28,8 @@ def test_official_matched_pair_launcher_is_syntax_valid_and_fail_closed():
     assert source.count("-epoch 35") == 2
     assert "--saveonly" in source
     assert "evaluate_actionformer_raw_predictions.py" in source
+    assert "validate_attestation_snapshot" in source
+    assert "validate_attestation_live(payload)" not in source
     assert '"paper_main_table_eligible": False' in source
     assert '"end_to_end_cost_claim_allowed": False' in source
     assert "requires_preregistered_multiseed" in source

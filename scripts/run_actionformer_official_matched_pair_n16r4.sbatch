@@ -129,8 +129,8 @@ spec.loader.exec_module(module)
 payload = json.loads(
     Path(os.environ["SOURCE_DIFF_ATTESTATION"]).read_text(encoding="utf-8")
 )
-module.validate_attestation_live(payload)
-print("ACTIONFORMER_SOURCE_DIFF_LIVE_VALIDATION_PASS")
+module.validate_attestation_snapshot(payload)
+print("ACTIONFORMER_SOURCE_DIFF_OFFLINE_SNAPSHOT_VALIDATION_PASS")
 PY
 
 STAGE="official_data_identity"

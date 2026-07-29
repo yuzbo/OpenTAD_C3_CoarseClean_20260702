@@ -270,6 +270,25 @@ def test_native_grid_sparse_head_has_one_exact_fail_closed_intervention(tmp_path
     assert source_diff.validate_attestation_live(attestation) == attestation
 
 
+def test_live_sealed_attestation_can_be_revalidated_offline(tmp_path, monkeypatch):
+    repo, base, candidate = _native_sparse_repo(tmp_path)
+    attestation = _collect_native_sparse(repo, base, candidate)
+    monkeypatch.setattr(
+        source_diff,
+        "_remote_ref_commit",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("offline validation attempted a remote lookup")
+        ),
+    )
+
+    assert source_diff.validate_attestation_snapshot(attestation) == attestation
+
+    tampered = copy.deepcopy(attestation)
+    tampered["diff"]["binary_sha256"] = "0" * 64
+    with pytest.raises(source_diff.SourceDiffError, match="source diff differs"):
+        source_diff.validate_attestation_snapshot(tampered)
+
+
 def test_native_grid_sparse_head_cannot_hide_optimizer_drift(tmp_path):
     repo, base, _ = _native_sparse_repo(tmp_path)
     path = repo / "configs" / "thumos_i3d_sparsehead_k384_uniform.yaml"
