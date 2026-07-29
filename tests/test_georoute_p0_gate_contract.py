@@ -26,6 +26,10 @@ def _valid_payload() -> dict:
         "uses_resized_local_crop": False,
         "exact_k": {"target_k": 16, "observed_min": 16, "observed_max": 16, "duplicates": 0},
         "estimator": {"name": "straight_through", "claim": "biased_straight_through"},
+        "score_function_amp_horizon": {
+            "status": "NOT_APPLICABLE_NON_SCORE_FUNCTION",
+            "executed": False,
+        },
         "memory": {"peak_allocated_bytes": 4096, "peak_reserved_bytes": 8192},
         "losses": {"cost": 1.0},
         "gradient": {
@@ -55,7 +59,14 @@ def _valid_payload() -> dict:
             "detector_loss_keys": ["cls_loss", "reg_loss"],
         },
         "route_mode": "hybrid",
-        "source_grid": {"patch_capacity": 100},
+        "source_grid": {
+            "height": 180,
+            "width": 320,
+            "patch_size": 16,
+            "grid_height": 11,
+            "grid_width": 20,
+            "patch_capacity": 220,
+        },
         "native_route": {
             "selected_native_tubelet_shape": [1, 384, 16, 3, 2, 16, 16],
             "output_shape": [1, 384, 768],
@@ -129,6 +140,49 @@ def test_dense_p0_requires_the_reference_to_match_the_real_autograd_dispatch():
 
     payload["dense_native_reference"]["reference_autograd_mode"] = "no_grad"
     with pytest.raises(ValueError, match="dense P0"):
+        validate_p0_gate_report(build_p0_gate_report(payload))
+
+
+def test_score_function_p0_binds_amp_kat_to_the_real_route_horizon():
+    payload = _valid_payload()
+    payload["route_mode"] = "roi"
+    payload["exact_k"] = {
+        "target_k": 64,
+        "observed_min": 64,
+        "observed_max": 64,
+        "duplicates": 0,
+    }
+    payload["native_route"]["selected_native_tubelet_shape"][2] = 64
+    payload["native_route"]["selected_unique_count_min"] = 64
+    payload["native_route"]["selected_unique_count_max"] = 64
+    payload["estimator"] = {
+        "name": "score_function",
+        "claim": "score_function_candidate",
+    }
+    payload["score_function_detector_binding"] = {
+        "detector_loss_keys": ["cls_loss", "reg_loss"],
+    }
+    payload["score_function_amp_horizon"] = {
+        "status": "PASS_AMP_PRODUCTION_HORIZON",
+        "passed": True,
+        "source_dtype": "torch.float16",
+        "likelihood_dtype": "torch.float32",
+        "policy_loss_dtype": "torch.float32",
+        "tubelets": 384,
+        "patch_capacity": 220,
+        "target_k": 64,
+        "loss_scale": 256.0,
+        "all_likelihoods_finite": True,
+        "policy_loss_finite": True,
+        "all_scaled_gradients_finite": True,
+        "policy_loss_abs": 100000.0,
+        "fp16_max": 65504.0,
+    }
+
+    validate_p0_gate_report(build_p0_gate_report(payload))
+
+    payload["source_grid"]["patch_capacity"] = 100
+    with pytest.raises(ValueError, match="production-horizon"):
         validate_p0_gate_report(build_p0_gate_report(payload))
 
 

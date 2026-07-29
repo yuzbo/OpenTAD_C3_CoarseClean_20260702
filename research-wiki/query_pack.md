@@ -37,7 +37,7 @@ max_chars: 8000
   `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
   A new independent study,
   `georoute_estimator_representation_pilot_v1`, is
-  `mechanical_failure_repair_implemented_pending_remote_linux_and_fresh_p0`.
+  `residual_pl_amp_hard_fail_five_arms_running_pending_incomplete_closeout`.
   Six single-seed, 20-epoch, K=64 arms isolate PL versus ST, fixed-support
   representation, ROI-support representation, and ROI versus residual support.
   The first clean runtime `02b6efe7` passed remote Linux tests `108/108`, but
@@ -60,9 +60,31 @@ max_chars: 8000
   terminal non-promoting record. N16R4 Jobs
   `1203460/1203461` proved `srun --resv-ports=2` is unavailable
   (`Requires more ports than can be reserved`), so that mechanism is explicitly
-  rejected. A fresh commit, namespace, Linux suite, same-node gate, and P0 are
-  still required. There is no old selector, automatic promotion, P2/P3,
-  official test, efficiency claim, or paper claim.
+  rejected. Fresh runtime
+  `cbe0a08218a2f4550960f7c832f88c8cf77757c1` was proxy-synced with exact
+  HEAD/origin/clean-tree parity and passed remote Linux tests `118/118`.
+  Independent same-node Jobs `1203689/1203690` completed `0:0` concurrently
+  on `g0005` with distinct job-scoped loopback hosts and four distinct actual
+  TCPStore ports. The fresh pilot root is
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_cbe0a082_20260729_1849`.
+  P0 Jobs `1203707`--`1203712` and finalizer `1203713` all completed `0:0`;
+  sealed suite
+  `00b7c0e3251f3d384df91cf900267694918d1245b4a5803150e8e2e1465210d2`
+  is `PASS_MECHANICAL_ONLY`. Six leaves `1203714`--`1203719` started the
+  frozen study in parallel. Residual-PL Job `1203715` hard-failed on real
+  batch 0 after eight AMP retries from scale `32768` to `256`, with no
+  checkpoint or metric. Five leaves continue and closeout `1203720` remains
+  afterany, but the four contrasts cannot be completed from this namespace.
+  Root cause is a finite per-tubelet PL likelihood being temporally summed in
+  FP16 over the 384-tubelet production horizon; the float64 `T=1` KAT and
+  synthetic P0 missed it. A numerical-only FP32 likelihood/reduction repair
+  and mandatory AMP-shaped `T=384/N=220/K=64` P0 KAT are now implemented
+  locally. The validator binds this to the real decoded `180x320`,
+  floor-native `11x20` source grid rather than a mismatched synthetic capacity.
+  Clean commit, proxy sync and remote Linux/CUDA verification are still pending
+  before a new full six-arm run. There is no resume, partial-performance inference,
+  old selector, automatic promotion, P2/P3, official test, efficiency claim,
+  Geometry Zoom claim, or paper claim.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

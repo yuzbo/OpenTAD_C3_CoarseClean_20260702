@@ -1452,3 +1452,43 @@ append_only: true
   `mechanical_failure_repair_implemented_pending_remote_linux_and_fresh_p0`;
   no training, model result, official test, promotion, or paper claim was
   opened.
+
+- 2026-07-29 18:49 CST: committed repair runtime
+  `cbe0a08218a2f4550960f7c832f88c8cf77757c1`, pushed it through the
+  `RTK.md` academic proxy, and verified full local/remote HEAD parity plus a
+  clean tree. The exact clean N16R4 snapshot passed `118/118` remote Linux
+  tests. After two pre-workload launcher diagnostics (one site memory-policy
+  rejection before Job creation and `/bin/sh` rejecting Bash `pipefail` in
+  Jobs `1203684/1203685`), explicit Bash same-node gate Jobs
+  `1203689/1203690` ran concurrently on `g0005` and completed `0:0`. Their
+  job-scoped hosts differ and all four actual TCPStore ports differ. A fresh
+  six-arm pilot was then deployed under
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_cbe0a082_20260729_1849`.
+  P0 Jobs `1203707`--`1203712` and finalizer `1203713` all completed `0:0`;
+  suite
+  `00b7c0e3251f3d384df91cf900267694918d1245b4a5803150e8e2e1465210d2`
+  is `PASS_MECHANICAL_ONLY`. The six frozen 20-epoch leaves
+  `1203714`--`1203719` are now running concurrently and closeout `1203720`
+  remains dependency-held. State is `experiment_running`, with no metric,
+  selector, P2/P3, official test, efficiency, Geometry Zoom, or paper claim.
+
+- 2026-07-29: residual-PL Job `1203715` hard-failed on its first real batch
+  after eight AMP retries reduced scale `32768` to `256`; it produced no
+  checkpoint or metric. Failure JSON internal/file SHA-256 values are
+  `3e5962a3893dc0768c4eea4f0ecd98c8448e4dca8954b71f96c816a46d2f8605`
+  and
+  `b60ebd0e42ed0b93351343bdf8a2e7c0bb741151a03d35cad2907b8fb7d0990c`;
+  `train.out` and Slurm-stderr file SHA-256 values are
+  `04cb838679861997fe8f066697c533c1acf004324d7636e814f83c25459dd094`
+  and
+  `1965f6fc27710d4ff5e76047200389901e5c585c261fed61a1133c1db3d0f88e`.
+  The other five leaves continue only to preserve terminal provenance and
+  closeout `1203720` must emit
+  `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`; no partial contrast is allowed.
+  Root-cause audit found the production `T=384/N=220/K=64` Plackett--Luce
+  likelihood temporally accumulated in FP16 before GradScaler. Implemented a
+  numerical-only FP32 likelihood and unchanged sum-then-batch-mean reduction,
+  plus a P0-v4 AMP backward KAT whose objective exceeds FP16 range and whose
+  source horizon is bound to decoded `180x320`, floor-native `11x20` support.
+  State is `implemented_pending_clean_remote_linux_cuda_verification`, not an
+  empirical result, promotion, Geometry Zoom claim, or paper claim.

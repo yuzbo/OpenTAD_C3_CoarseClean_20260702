@@ -560,7 +560,7 @@ opened. Full diagnostics are in
 
 The independent six-arm study
 `georoute_estimator_representation_pilot_v1` is now
-`mechanical_failure_repair_implemented_pending_remote_linux_and_fresh_p0`. It
+`experiment_running_after_passed_fresh_p0`. It
 fixes K=64, seed 3407, 20 epochs,
 absolute VideoMAE position on, and all other data/optimizer/runtime settings.
 Its four preregistered contrasts are residual PL minus ST with representation
@@ -613,6 +613,34 @@ prevalidation/sealing exceptions write hashed fail-safe receipts before
 re-raising. This repair changes no frozen
 model, arm, seed, K, epoch budget, estimator, representation switch, data,
 contrast, or claim rule.
+
+The repair is now remotely verified and deployed without changing the frozen
+study. Exact runtime
+`cbe0a08218a2f4550960f7c832f88c8cf77757c1` was synced through the academic
+proxy to an exact clean snapshot and passed all GeoRoute plus required C3
+remote Linux tests `118/118`. Same-node gate Jobs `1203689/1203690` ran
+concurrently on `g0005` and completed `0:0`, using distinct job-scoped
+loopback hosts and four distinct actual TCPStore ports. The fresh pilot root
+is
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_cbe0a082_20260729_1849`.
+P0 Jobs `1203707`--`1203712` and afterany P0 finalizer `1203713` completed
+`0:0`; suite SHA
+`00b7c0e3251f3d384df91cf900267694918d1245b4a5803150e8e2e1465210d2`
+is `PASS_MECHANICAL_ONLY`. Six frozen leaves `1203714`--`1203719` started in
+parallel. Residual-PL Job `1203715` hard-failed on real batch 0 after eight AMP
+retries (scale `32768` to `256`) and produced no checkpoint or metric. The
+other five leaves continue only to terminal provenance; `1203720` is the
+afterany closeout and must seal
+`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with no contrasts. The failure is
+numerical correctness: a finite per-tubelet Plackett--Luce likelihood was
+temporally reduced in FP16 over the real 384-tubelet horizon and overflowed
+before GradScaler could recover. The local repair preserves the estimator and
+sum-then-batch-mean objective while evaluating half/bfloat likelihood and its
+temporal reduction in FP32. P0 schema v4 now requires an AMP backward KAT bound
+to the actual `180x320`, floor-native `11x20` grid (`N=220`) and `K=64`.
+This state is `implemented_pending_clean_remote_verification`; it is not a
+result, winner, P2/P3, official test, efficiency claim, Geometry Zoom claim, or
+paper claim.
 
 ## Frozen decision logic
 

@@ -127,6 +127,29 @@ def _p0_report(*, estimator: str, claim: str, target_k: int, scout_gradient: boo
         "uses_resized_local_crop": False,
         "exact_k": {"target_k": target_k, "observed_min": target_k, "observed_max": target_k, "duplicates": 0},
         "estimator": {"name": estimator, "claim": claim},
+        "score_function_amp_horizon": (
+            {
+                "status": "PASS_AMP_PRODUCTION_HORIZON",
+                "passed": True,
+                "source_dtype": "torch.float16",
+                "likelihood_dtype": "torch.float32",
+                "policy_loss_dtype": "torch.float32",
+                "tubelets": 384,
+                "patch_capacity": 220,
+                "target_k": target_k,
+                "loss_scale": 256.0,
+                "all_likelihoods_finite": True,
+                "policy_loss_finite": True,
+                "all_scaled_gradients_finite": True,
+                "policy_loss_abs": 100000.0,
+                "fp16_max": 65504.0,
+            }
+            if estimator == "score_function"
+            else {
+                "status": "NOT_APPLICABLE_NON_SCORE_FUNCTION",
+                "executed": False,
+            }
+        ),
         "memory": {"peak_allocated_bytes": 4, "peak_reserved_bytes": 8},
         "losses": {"cost": 1.0},
         "gradient": {
@@ -142,7 +165,18 @@ def _p0_report(*, estimator: str, claim: str, target_k: int, scout_gradient: boo
             "detector_loss_keys": ["cls_loss", "reg_loss"],
         },
         "route_mode": route_mode,
-        "source_grid": {"patch_capacity": 100},
+        "source_grid": (
+            {
+                "height": 180,
+                "width": 320,
+                "patch_size": 16,
+                "grid_height": 11,
+                "grid_width": 20,
+                "patch_capacity": 220,
+            }
+            if estimator == "score_function"
+            else {"patch_capacity": 100}
+        ),
         "native_route": {
             "selected_native_tubelet_shape": [1, 384, target_k, 3, 2, 16, 16],
             "output_shape": [1, 384, 768],
@@ -281,7 +315,7 @@ def test_p0_suite_requires_dense_native_parity_and_both_scout_gradient_paths():
         payloads = {
             "dense.json": _p0_report(estimator="none", claim="no_policy_gradient", target_k=100, scout_gradient=False),
             "hybrid.json": _p0_report(estimator="straight_through", claim="biased_straight_through", target_k=32, scout_gradient=True),
-            "score.json": _p0_report(estimator="score_function", claim="score_function_candidate", target_k=32, scout_gradient=True),
+            "score.json": _p0_report(estimator="score_function", claim="score_function_candidate", target_k=64, scout_gradient=True),
         }
         for index, (name, payload) in enumerate(payloads.items()):
             report_path = root / name
@@ -323,7 +357,7 @@ def test_p1_bootstrap_reuses_a_sealed_p0_parent_and_only_submits_p1(monkeypatch,
             estimator="straight_through", claim="biased_straight_through", target_k=32, scout_gradient=True
         ),
         "roi_score_function.json": _p0_report(
-            estimator="score_function", claim="score_function_candidate", target_k=32, scout_gradient=True
+            estimator="score_function", claim="score_function_candidate", target_k=64, scout_gradient=True
         ),
     }
     for index, (name, payload) in enumerate(payloads.items()):

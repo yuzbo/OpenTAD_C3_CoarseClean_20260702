@@ -43,6 +43,23 @@ updated: 2026-07-29
    P0 Jobs `1203380`--`1203385` failed mechanically before any model result;
    no training leaf ran and no performance conclusion exists. A repair requires
    a new commit and namespace.
+0. The fresh pilot namespace
+   `georoute_estimator_representation_pilot_cbe0a082_20260729_1849` is bound
+   to runtime `cbe0a08218a2f4550960f7c832f88c8cf77757c1` and its sealed P0
+   suite. Job `1203715` hard-failed at real batch 0 after eight AMP retries and
+   produced no checkpoint or metric. Never replace that arm, resume any
+   failed/running arm, or interpret an epoch log or the other five leaves as a
+   partial result. Its all-terminal finalizer may emit only
+   `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`; the four contrasts require a
+   new exact commit and full six-arm namespace.
+0. Do not repeat the FP16 production-horizon PL reduction. A finite
+   per-tubelet likelihood can overflow when summed over `T=384`. Half/bfloat
+   likelihood evaluation and the unchanged sum-then-batch-mean reduction must
+   run in FP32. Before a replacement pilot, a clean remote P0 must bind its AMP
+   KAT to the actual `180x320`, floor-native `11x20` grid (`N=220`) and `K=64`,
+   prove an objective magnitude above FP16 range, and prove finite scaled
+   gradients. A float64 `T=1` KAT or a mismatched `160x160` source gate is not
+   sufficient.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

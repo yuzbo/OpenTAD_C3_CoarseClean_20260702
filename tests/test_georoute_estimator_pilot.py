@@ -88,6 +88,29 @@ def _p0_payload(arm: str) -> dict:
             "name": spec["policy_estimator"],
             "claim": claim,
         },
+        "score_function_amp_horizon": (
+            {
+                "status": "PASS_AMP_PRODUCTION_HORIZON",
+                "passed": True,
+                "source_dtype": "torch.float16",
+                "likelihood_dtype": "torch.float32",
+                "policy_loss_dtype": "torch.float32",
+                "tubelets": 384,
+                "patch_capacity": 220,
+                "target_k": PILOT_K,
+                "loss_scale": 256.0,
+                "all_likelihoods_finite": True,
+                "policy_loss_finite": True,
+                "all_scaled_gradients_finite": True,
+                "policy_loss_abs": 100000.0,
+                "fp16_max": 65504.0,
+            }
+            if spec["policy_estimator"] == "score_function"
+            else {
+                "status": "NOT_APPLICABLE_NON_SCORE_FUNCTION",
+                "executed": False,
+            }
+        ),
         "pilot_arm": arm,
         "route_mode": spec["route_mode"],
         "route_parameters": {
@@ -117,7 +140,14 @@ def _p0_payload(arm: str) -> dict:
             "output_length": 768,
             "detector_loss_keys": ["cls_loss", "reg_loss"],
         },
-        "source_grid": {"patch_capacity": 100},
+        "source_grid": {
+            "height": 180,
+            "width": 320,
+            "patch_size": 16,
+            "grid_height": 11,
+            "grid_width": 20,
+            "patch_capacity": 220,
+        },
         "native_route": {
             "selected_native_tubelet_shape": [
                 1,
@@ -1053,6 +1083,8 @@ def test_pilot_deployer_and_launchers_do_not_reuse_old_selector_or_open_test():
     assert "select_p1_roi_candidate" not in deployer + finalizer
     assert "select_p2_roi_candidate" not in deployer + finalizer
     assert "PILOT_COMPLETE_NO_PROMOTION" in finalizer
+    assert '"GEOROUTE_P0_HEIGHT": "180"' in deployer
+    assert '"GEOROUTE_P0_WIDTH": "320"' in deployer
     assert '"p2_p3_opened": False' in deployer
     assert '"official_test_opened": False' in deployer
     assert '"p0_finalizer_afterany_all_p0": True' in deployer

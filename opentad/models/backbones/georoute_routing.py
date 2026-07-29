@@ -258,8 +258,21 @@ def ordered_plackett_luce_log_prob(
         available = valid_mask.clone()
         if bool((available.sum(dim=-1) < ordered_indices.shape[-1]).any().item()):
             raise ValueError("valid native patch count is smaller than ordered sample")
-    result = torch.zeros(logits.shape[:2], device=logits.device, dtype=logits.dtype)
-    scaled = logits / float(temperature)
+    # Route logits are produced under AMP in the real training path.  Summing
+    # K ordered log-probabilities in fp16 can lose precision before the later
+    # temporal reduction, so compute the likelihood in fp32 while preserving
+    # float64 known-answer tests.
+    likelihood_dtype = (
+        torch.float32
+        if logits.dtype in {torch.float16, torch.bfloat16}
+        else logits.dtype
+    )
+    result = torch.zeros(
+        logits.shape[:2],
+        device=logits.device,
+        dtype=likelihood_dtype,
+    )
+    scaled = logits.to(dtype=likelihood_dtype) / float(temperature)
     for slot in range(ordered_indices.shape[-1]):
         choice = ordered_indices[..., slot : slot + 1]
         candidate_logits = scaled.masked_fill(~available, float("-inf"))
@@ -540,5 +553,13 @@ def score_function_policy_loss(
         raise ValueError("baseline must be one finite scalar")
     if float(weight) < 0.0:
         raise ValueError("score-function weight must be non-negative")
-    advantage = detector_cost.detach() - baseline.detach()
-    return float(weight) * advantage * ordered_log_prob.sum(dim=1).mean()
+    # The production route has hundreds of temporal tubelets.  Even when each
+    # per-tubelet log-probability is finite, the fp16 temporal sum can exceed
+    # 65504 and become -inf before GradScaler can reduce its scale.  Upcasting
+    # changes only numerical evaluation, not the registered sum-then-batch-mean
+    # objective or its gradient direction.
+    advantage = detector_cost.detach().to(torch.float32) - baseline.detach().to(
+        torch.float32
+    )
+    joint_log_probability = ordered_log_prob.to(torch.float32).sum(dim=1)
+    return float(weight) * advantage * joint_log_probability.mean()

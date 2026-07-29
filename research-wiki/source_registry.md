@@ -60,6 +60,43 @@ updated: 2026-07-29
   it is not remote execution evidence, model evidence, or authorization for
   training/performance/paper claims.
 
+- GeoRoute estimator/representation pilot fresh deployment, 2026-07-29.
+  Exact runtime `cbe0a08218a2f4550960f7c832f88c8cf77757c1`; exact clean
+  snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_georoute_cbe0a082_20260729_pilotrepair`;
+  remote Linux suite `118/118`. Same-node rendezvous Jobs
+  `1203689/1203690` completed `0:0` on `g0005`. Their receipt file SHA-256
+  values are
+  `0c6544f2312bc77e339d0ba8d09801d8df1cca24e4b17f77e7fb436992d16a9f`
+  and
+  `73b126ca35d617c3b6a1a74aee47683dcc263ada357fbf1c9e047753964ea2f9`.
+  Fresh pilot root:
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_cbe0a082_20260729_1849`.
+  Deployment, finalizer-submission, P0-release, P0-suite, and storage-profile
+  file SHA-256 values are respectively
+  `cf1f4bab30ba594e1e9750c545f7520e94766367e341bae792a025c051199460`,
+  `a054111619764e2cd23be9d862e209fc3658742883409d0cb4a12e4dcf6e6cb0`,
+  `44a9406723894039cbd9337e86405c7d6eabd46086e024f20cd755069cb1b11f`,
+  `6e33c0e863f3c2cf2802271dd742fa92d09f4e22874616facffab5705d535652`,
+  and
+  `2ff778882a01557839285dc22d01a0948afe1a633149d1854bc4032bb8fdf8fc`.
+  P0 Jobs `1203707`--`1203712` and finalizer `1203713` completed `0:0`;
+  internal suite SHA
+  `00b7c0e3251f3d384df91cf900267694918d1245b4a5803150e8e2e1465210d2`
+  is `PASS_MECHANICAL_ONLY`. Residual-PL training Job `1203715` hard-failed at
+  real batch 0 after eight AMP retries and produced no checkpoint or metric.
+  Its failure JSON internal SHA-256 is
+  `3e5962a3893dc0768c4eea4f0ecd98c8448e4dca8954b71f96c816a46d2f8605`;
+  failure-JSON, `train.out`, and Slurm-stderr file SHA-256 values are
+  `b60ebd0e42ed0b93351343bdf8a2e7c0bb741151a03d35cad2907b8fb7d0990c`,
+  `04cb838679861997fe8f066697c533c1acf004324d7636e814f83c25459dd094`,
+  and
+  `1965f6fc27710d4ff5e76047200389901e5c585c261fed61a1133c1db3d0f88e`.
+  Jobs `1203714/1203716`--`1203719` and closeout `1203720` are terminal-
+  provenance work only. The local FP32 PL/KAT/P0-v4 repair is implemented but
+  not yet a clean remote source or CUDA gate; neither it nor this incomplete
+  namespace is result or claim evidence.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

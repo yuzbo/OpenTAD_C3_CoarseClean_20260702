@@ -10,6 +10,7 @@ from tools.bata.run_georoute_decode_census import (
     _window_descriptor,
 )
 from tools.bata.run_georoute_estimator_kat import (
+    _amp_horizon_kat,
     _pl_probability_kats,
     _representation_kats,
     _risk_sign_kat,
@@ -40,6 +41,7 @@ def test_estimator_and_representation_known_answers_pass():
         _pl_probability_kats(),
         _risk_sign_kat(),
         _st_vs_pl_reachability_kat(),
+        _amp_horizon_kat(device=torch.device("cpu")),
         _representation_kats(),
     )
     assert all(check["passed"] for check in checks)

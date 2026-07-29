@@ -176,7 +176,16 @@ def main() -> int:
         # select all 100 rather than merely exercising the dense route mode.
         "dense_native_parity": {"mode": "dense", "estimator": "none", "tokens": "100", "context": "0"},
         "hybrid_straight_through": {"mode": "hybrid", "estimator": "straight_through", "tokens": "32", "context": "4"},
-        "roi_score_function": {"mode": "roi", "estimator": "score_function", "tokens": "32", "context": "0"},
+        # The score-function gate reproduces the actual decoded 180x320
+        # production horizon (11x20 native patches, T=384, K=64).
+        "roi_score_function": {
+            "mode": "roi",
+            "estimator": "score_function",
+            "tokens": "64",
+            "context": "0",
+            "height": "180",
+            "width": "320",
+        },
     }
     prepared = []
     for label, spec in p0_specs.items():
@@ -188,6 +197,11 @@ def main() -> int:
             GEOROUTE_P0_TOKENS_PER_TUBELET=spec["tokens"],
             GEOROUTE_P0_CONTEXT_TOKENS=spec["context"],
         )
+        if spec["estimator"] == "score_function":
+            exports.update(
+                GEOROUTE_P0_HEIGHT=spec["height"],
+                GEOROUTE_P0_WIDTH=spec["width"],
+            )
         prepared.append((label, exports))
     dispatch_exports = dict(base_exports)
     dispatch_exports["GEOROUTE_DAG_ACTION"] = "p0-finalize"

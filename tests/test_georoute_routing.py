@@ -278,6 +278,38 @@ def test_score_function_sums_temporal_log_probability_then_averages_batch():
     assert loss.item() == pytest.approx(3.0)
 
 
+def test_score_function_promotes_amp_likelihood_and_long_temporal_reduction():
+    logits = torch.zeros(
+        1,
+        384,
+        220,
+        dtype=torch.float16,
+        requires_grad=True,
+    )
+    ordered = torch.arange(64).view(1, 1, 64).expand(1, 384, 64)
+    log_probability = ordered_plackett_luce_log_prob(
+        logits,
+        ordered,
+        temperature=0.7,
+    )
+    loss = score_function_policy_loss(
+        detector_cost=torch.tensor(2.0),
+        ordered_log_prob=log_probability,
+        baseline=torch.tensor(1.0),
+        weight=1.0,
+    )
+
+    assert log_probability.dtype == torch.float32
+    assert loss.dtype == torch.float32
+    assert torch.isfinite(log_probability).all()
+    assert torch.isfinite(loss)
+    assert loss.detach().abs() > torch.finfo(torch.float16).max
+    (loss * 256.0).backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
+    assert torch.count_nonzero(logits.grad) > 0
+
+
 def test_temporal_knot_interpolation_is_endpoint_aligned_and_differentiable():
     knots = torch.tensor([[[0.0], [1.0], [4.0], [9.0], [16.0]]], requires_grad=True)
     interpolated = interpolate_temporal_knots(knots, stride=2)

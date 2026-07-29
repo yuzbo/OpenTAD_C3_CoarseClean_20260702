@@ -400,6 +400,8 @@ def main() -> int:
             "GEOROUTE_P0_ROUTE_MODE": str(spec["route_mode"]),
             "GEOROUTE_P0_POLICY_ESTIMATOR": str(spec["policy_estimator"]),
             "GEOROUTE_P0_TOKENS_PER_TUBELET": str(PILOT_K),
+            "GEOROUTE_P0_HEIGHT": "180",
+            "GEOROUTE_P0_WIDTH": "320",
             "GEOROUTE_P0_CONTEXT_TOKENS": str(spec["context_tokens"]),
             "GEOROUTE_P0_ROI_FRACTION": str(spec["roi_fraction"]),
             "GEOROUTE_P0_GEOMETRY_SIDE_CHANNEL": str(

@@ -289,15 +289,20 @@ prediction-hash-preserving replays passed. It still authorizes no CER or paper
 claim.
 
 The separately frozen six-arm exploratory pilot is now
-`mechanical_failure_repair_implemented_pending_remote_linux_and_fresh_p0`.
-Its first runtime failed before model evidence and is not resumed. It remains
-the smallest design that
-identifies estimator, support, and representation effects without dynamic
-roles: residual ST/PL with representation off; fixed support with
-representation off/on; and ROI+PL with representation off/on. Single-seed
-results will be descriptive variance/effect estimates only and cannot select a
-paper method. Full CER remains conditional on these single-intervention
-comparisons and later disjoint confirmatory seeds.
+`residual_pl_amp_hard_fail_five_arms_running_pending_incomplete_closeout`.
+Its first runtime failed before model evidence and is not resumed. Fresh
+runtime `cbe0a082` passed the full remote Linux suite, concurrent same-node
+rendezvous gate, and all six P0 leaves, but residual-PL Job `1203715`
+hard-failed on real batch 0 after eight AMP retries and produced no checkpoint
+or metric. The other five leaves continue only to preserve complete failure
+provenance; they cannot be interpreted. Finalizer `1203720` must seal
+`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. The root cause is FP16 temporal PL
+accumulation at the real `T=384/N=220/K=64` horizon. An estimator-equivalent
+FP32 likelihood/reduction repair and a production-grid-bound AMP KAT are
+`implemented` locally but remain pending clean commit, proxy sync, remote
+Linux/CUDA verification, and a new full six-arm namespace. The design remains
+the smallest way to identify estimator, support, and representation effects,
+but no single-seed contrast or CER/paper method exists from the failed run.
 
 ## Connections
 

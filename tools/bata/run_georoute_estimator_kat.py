@@ -30,7 +30,7 @@ from opentad.models.backbones.georoute_wrapper import (  # noqa: E402
 )
 
 
-KAT_SCHEMA = "georoute_estimator_representation_kat_v1"
+KAT_SCHEMA = "georoute_estimator_representation_kat_v2"
 
 
 def _canonical_sha256(payload: Mapping[str, Any]) -> str:
@@ -293,6 +293,82 @@ def _st_vs_pl_reachability_kat() -> dict[str, Any]:
     return values
 
 
+def _amp_horizon_kat(
+    *,
+    device: torch.device | None = None,
+    tubelets: int = 384,
+    patch_capacity: int = 220,
+    target_k: int = 64,
+    loss_scale: float = 256.0,
+) -> dict[str, Any]:
+    """Reproduce the production PL horizon from an AMP-shaped fp16 source."""
+
+    if device is None:
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    if not 0 < int(target_k) <= int(patch_capacity):
+        raise ValueError("AMP horizon KAT requires 0 < K <= patch capacity")
+    logits = torch.zeros(
+        1,
+        int(tubelets),
+        int(patch_capacity),
+        dtype=torch.float16,
+        device=device,
+        requires_grad=True,
+    )
+    ordered = torch.arange(
+        int(target_k),
+        dtype=torch.long,
+        device=device,
+    ).view(1, 1, -1).expand(1, int(tubelets), -1)
+    log_probability = ordered_plackett_luce_log_prob(
+        logits,
+        ordered,
+        temperature=0.7,
+    )
+    policy_loss = score_function_policy_loss(
+        detector_cost=torch.tensor(2.0, device=device),
+        ordered_log_prob=log_probability,
+        baseline=torch.tensor(1.0, device=device),
+        weight=1.0,
+    )
+    gradient = torch.autograd.grad(
+        policy_loss * float(loss_scale),
+        logits,
+    )[0]
+    loss_magnitude = float(policy_loss.detach().abs().item())
+    gradient_max_abs = float(gradient.detach().abs().max().item())
+    passed = bool(
+        log_probability.dtype == torch.float32
+        and policy_loss.dtype == torch.float32
+        and torch.isfinite(log_probability).all().item()
+        and torch.isfinite(policy_loss).item()
+        and torch.isfinite(gradient).all().item()
+        and torch.count_nonzero(gradient).item() > 0
+        and loss_magnitude > torch.finfo(torch.float16).max
+    )
+    return {
+        "device_type": device.type,
+        "source_dtype": str(logits.dtype),
+        "likelihood_dtype": str(log_probability.dtype),
+        "policy_loss_dtype": str(policy_loss.dtype),
+        "tubelets": int(tubelets),
+        "patch_capacity": int(patch_capacity),
+        "target_k": int(target_k),
+        "loss_scale": float(loss_scale),
+        "policy_loss_abs": loss_magnitude,
+        "fp16_max": float(torch.finfo(torch.float16).max),
+        "gradient_max_abs": gradient_max_abs,
+        "all_likelihoods_finite": bool(
+            torch.isfinite(log_probability).all().item()
+        ),
+        "policy_loss_finite": bool(torch.isfinite(policy_loss).item()),
+        "all_scaled_gradients_finite": bool(
+            torch.isfinite(gradient).all().item()
+        ),
+        "passed": passed,
+    }
+
+
 def _representation_kats() -> dict[str, Any]:
     torch.manual_seed(41)
     adapter = GeoRouteSparseTemporalAdapter(channels=8).double()
@@ -413,6 +489,7 @@ def main() -> int:
         "pl_probability": _pl_probability_kats(),
         "risk_gradient_sign": _risk_sign_kat(),
         "st_vs_pl_reachability": _st_vs_pl_reachability_kat(),
+        "amp_production_horizon": _amp_horizon_kat(),
         "representation_isolation": _representation_kats(),
     }
     passed = all(bool(check["passed"]) for check in checks.values())

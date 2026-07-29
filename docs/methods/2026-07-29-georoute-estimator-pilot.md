@@ -4,7 +4,7 @@ Date: 2026-07-29
 
 Study ID: `georoute_estimator_representation_pilot_v1`
 
-Status: `mechanical_failure_repair_implemented_pending_remote_linux_and_fresh_p0`
+Status: `experiment_running_with_residual_pl_amp_hard_fail_pending_closeout`
 
 Authorization boundary: one development-only exploratory seed. This pilot has
 no automatic winner, selector promotion, P2/P3, official test, confirmatory
@@ -116,6 +116,53 @@ hashed failure sidecar, whole-process-group cleanup on failure, same-leaf node
 revalidation, and key-order-independent exact arm binding. Same-node
 Jobs `1203460/1203461` demonstrated that N16R4 cannot provide
 `srun --resv-ports=2`, so reserved ports are not part of this protocol.
+
+The fresh runtime is
+`cbe0a08218a2f4550960f7c832f88c8cf77757c1`, synced through the academic
+proxy to the exact clean snapshot
+`/data/run01/sczc063/yuzibo/projects/opentad_georoute_cbe0a082_20260729_pilotrepair`.
+All GeoRoute and required C3 remote Linux tests passed `118/118`. Independent
+same-node rendezvous Jobs `1203689/1203690` then ran concurrently on `g0005`
+and completed `0:0`; their job-scoped hosts were `127.19.167.237` and
+`127.19.167.238`, and all four observed TCPStore ports were distinct.
+
+The fresh pilot namespace is
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_cbe0a082_20260729_1849`.
+P0 Jobs `1203707`--`1203712` and afterany finalizer `1203713` all completed
+`0:0`. The sealed P0 suite has internal SHA-256
+`00b7c0e3251f3d384df91cf900267694918d1245b4a5803150e8e2e1465210d2`
+and file SHA-256
+`6e33c0e863f3c2cf2802271dd742fa92d09f4e22874616facffab5705d535652`;
+its decision is `PASS_MECHANICAL_ONLY`. Six training/evaluation leaves
+`1203714`--`1203719` were authorized in parallel, with afterany non-promoting
+closeout `1203720`.
+
+Job `1203715` (`residual_pl_rep_off`) hard-failed on the first real batch.
+AMP skipped the same batch eight times while reducing the scale from `32768`
+to `256`, then raised
+`FloatingPointError: S1 AMP could not produce a successful optimizer update
+after 8 retries`. It produced no checkpoint or metric. The other five leaves
+remain running and are not canceled, but the preregistered estimator and
+support contrasts are incomplete; finalizer `1203720` must therefore seal
+`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`.
+
+The root cause is a P0/KAT coverage gap with a concrete numerical mechanism.
+The production PL likelihood entered the temporal reduction in FP16. A finite
+per-tubelet log-probability summed over 384 tubelets can exceed FP16's `65504`
+range before GradScaler can act. The historical estimator KAT used float64 and
+`T=1`; the synthetic one-step P0 did not assert the production-horizon
+reduction. The next source revision promotes half/bfloat PL likelihood
+calculation and the unchanged sum-then-batch-mean policy reduction to FP32. It
+also adds an AMP-shaped `T=384`, native-capacity `N=220`, `K=64` backward KAT
+whose objective magnitude deliberately exceeds FP16 range, and makes that KAT
+mandatory in P0 schema v4 for every score-function arm. The gate binds those
+values to the actual decoded `180x320`, floor-native `11x20` source grid rather
+than allowing an unrelated `160x160` synthetic grid to stand in for production
+capacity. This is a numerical correctness repair, not temporal normalization
+or a changed estimator weight.
+The failed namespace is never resumed; a new full six-arm namespace may start
+only after the revised source is committed, proxy-synced, remotely tested, and
+passes the expanded P0.
 
 Any decode error, OOM, non-finite loss/cost, non-finite required gradient,
 missing update, rendezvous failure, missing artifact, input/hash mismatch,

@@ -25,7 +25,15 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-GEOROUTE_P0_GATE_SCHEMA = "georoute_adatad_p0_cuda_one_step_gate_v3"
+GEOROUTE_P0_GATE_SCHEMA = "georoute_adatad_p0_cuda_one_step_gate_v4"
+AMP_PRODUCTION_TUBELETS = 384
+AMP_PRODUCTION_SOURCE_HEIGHT = 180
+AMP_PRODUCTION_SOURCE_WIDTH = 320
+AMP_PRODUCTION_PATCH_SIZE = 16
+AMP_PRODUCTION_PATCH_CAPACITY = (
+    AMP_PRODUCTION_SOURCE_HEIGHT // AMP_PRODUCTION_PATCH_SIZE
+) * (AMP_PRODUCTION_SOURCE_WIDTH // AMP_PRODUCTION_PATCH_SIZE)
+AMP_PRODUCTION_TARGET_K = 64
 
 
 def _canonical_json(payload: Mapping[str, Any]) -> str:
@@ -148,6 +156,55 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
     }
     if not isinstance(estimator, Mapping) or (estimator.get("name"), estimator.get("claim")) not in valid_estimators:
         raise ValueError("P0 estimator label is invalid or overclaims unbiasedness")
+    source_grid = report.get("source_grid")
+    if not isinstance(source_grid, Mapping) or int(source_grid.get("patch_capacity", 0)) <= 0:
+        raise ValueError("P0 source-grid evidence is missing")
+    amp_horizon = report.get("score_function_amp_horizon")
+    if not isinstance(amp_horizon, Mapping):
+        raise ValueError("P0 score-function AMP horizon evidence is missing")
+    if estimator.get("name") == "score_function":
+        if (
+            amp_horizon.get("status") != "PASS_AMP_PRODUCTION_HORIZON"
+            or amp_horizon.get("passed") is not True
+            or amp_horizon.get("source_dtype") != "torch.float16"
+            or amp_horizon.get("likelihood_dtype") != "torch.float32"
+            or amp_horizon.get("policy_loss_dtype") != "torch.float32"
+            or int(amp_horizon.get("tubelets", -1))
+            != AMP_PRODUCTION_TUBELETS
+            or int(amp_horizon.get("patch_capacity", -1))
+            != AMP_PRODUCTION_PATCH_CAPACITY
+            or int(amp_horizon.get("patch_capacity", -1))
+            != int(source_grid.get("patch_capacity", -2))
+            or int(amp_horizon.get("target_k", -1))
+            != AMP_PRODUCTION_TARGET_K
+            or target != AMP_PRODUCTION_TARGET_K
+            or int(source_grid.get("height", -1))
+            != AMP_PRODUCTION_SOURCE_HEIGHT
+            or int(source_grid.get("width", -1))
+            != AMP_PRODUCTION_SOURCE_WIDTH
+            or int(source_grid.get("patch_size", -1))
+            != AMP_PRODUCTION_PATCH_SIZE
+            or int(source_grid.get("grid_height", -1))
+            != AMP_PRODUCTION_SOURCE_HEIGHT // AMP_PRODUCTION_PATCH_SIZE
+            or int(source_grid.get("grid_width", -1))
+            != AMP_PRODUCTION_SOURCE_WIDTH // AMP_PRODUCTION_PATCH_SIZE
+            or float(amp_horizon.get("loss_scale", -1.0)) != 256.0
+            or amp_horizon.get("all_likelihoods_finite") is not True
+            or amp_horizon.get("policy_loss_finite") is not True
+            or amp_horizon.get("all_scaled_gradients_finite") is not True
+            or float(amp_horizon.get("policy_loss_abs", 0.0))
+            <= float(amp_horizon.get("fp16_max", 0.0))
+        ):
+            raise ValueError(
+                "P0 score-function AMP production-horizon check did not pass"
+            )
+    elif (
+        amp_horizon.get("status") != "NOT_APPLICABLE_NON_SCORE_FUNCTION"
+        or amp_horizon.get("executed") is not False
+    ):
+        raise ValueError(
+            "P0 non-score-function arm has invalid AMP horizon evidence"
+        )
     memory = report.get("memory")
     if not isinstance(memory, Mapping) or int(memory.get("peak_allocated_bytes", 0)) <= 0:
         raise ValueError("P0 CUDA memory evidence is missing")
@@ -164,9 +221,6 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
         raise ValueError("P0 did not record nonzero gradient components")
     if gradient.get("missing_required_components"):
         raise ValueError("P0 is missing a required detector-to-router gradient path")
-    source_grid = report.get("source_grid")
-    if not isinstance(source_grid, Mapping) or int(source_grid.get("patch_capacity", 0)) <= 0:
-        raise ValueError("P0 source-grid evidence is missing")
     native_route = report.get("native_route")
     if not isinstance(native_route, Mapping):
         raise ValueError("P0 native-route evidence is missing")
@@ -571,6 +625,16 @@ def _run_cuda_gate(args) -> dict[str, Any]:
     source_capacity = (args.height // 16) * (args.width // 16)
     if source_capacity <= 0:
         raise ValueError("P0 source is smaller than one complete native patch")
+    if args.policy_estimator == "score_function" and (
+        int(args.height) != AMP_PRODUCTION_SOURCE_HEIGHT
+        or int(args.width) != AMP_PRODUCTION_SOURCE_WIDTH
+        or source_capacity != AMP_PRODUCTION_PATCH_CAPACITY
+        or int(args.tokens_per_tubelet) != AMP_PRODUCTION_TARGET_K
+    ):
+        raise ValueError(
+            "score-function P0 must reproduce the production "
+            "180x320/T384/N220/K64 route horizon"
+        )
     if args.tokens_per_tubelet <= 0 or args.tokens_per_tubelet > source_capacity:
         raise ValueError("P0 tokens_per_tubelet must lie in the native source-grid capacity")
     if args.route_mode == "dense" and args.tokens_per_tubelet != source_capacity:
@@ -654,6 +718,29 @@ def _run_cuda_gate(args) -> dict[str, Any]:
             "P0 detector-to-router gradient audit failed: "
             + ", ".join(gradient["missing_required_components"])
         )
+    if args.policy_estimator == "score_function":
+        from tools.bata.run_georoute_estimator_kat import _amp_horizon_kat
+
+        score_function_amp_horizon = _amp_horizon_kat(
+            device=device,
+            tubelets=AMP_PRODUCTION_TUBELETS,
+            patch_capacity=source_capacity,
+            target_k=int(args.tokens_per_tubelet),
+            loss_scale=256.0,
+        )
+        if score_function_amp_horizon.get("passed") is not True:
+            raise FloatingPointError(
+                "P0 score-function AMP production-horizon KAT failed"
+            )
+        score_function_amp_horizon = {
+            "status": "PASS_AMP_PRODUCTION_HORIZON",
+            **score_function_amp_horizon,
+        }
+    else:
+        score_function_amp_horizon = {
+            "status": "NOT_APPLICABLE_NON_SCORE_FUNCTION",
+            "executed": False,
+        }
     audit = dict(model.backbone.latest_georoute_audit or {})
     if not audit:
         raise RuntimeError("GeoRoute backbone did not emit its native packed audit")
@@ -736,6 +823,7 @@ def _run_cuda_gate(args) -> dict[str, Any]:
             "name": str(audit["policy_estimator"]),
             "claim": str(audit["estimator_claim"]),
         },
+        "score_function_amp_horizon": score_function_amp_horizon,
         "route_mode": str(audit["route_mode"]),
         "pilot_arm": args.pilot_arm,
         "route_parameters": {
