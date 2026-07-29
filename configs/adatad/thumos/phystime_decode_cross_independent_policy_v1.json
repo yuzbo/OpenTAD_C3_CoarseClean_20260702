@@ -1,0 +1,28 @@
+{
+  "filter_invalid_proposals": true,
+  "nms": {
+    "max_seg_num": 2000,
+    "method": 2,
+    "min_score": 0.0,
+    "multiclass": true,
+    "sigma": 0.7,
+    "use_soft_nms": true,
+    "voting_thresh": 0.7
+  },
+  "pre_nms_thresh": 0.001,
+  "pre_nms_topk": 2000,
+  "proposal_min_duration": 1e-06,
+  "round_after_cross_window_nms": false,
+  "round_before_cross_window_nms": false,
+  "schema_version": "phystime_independent_nms_policy_v1",
+  "score_round_digits": 4,
+  "segment_round_digits": 2,
+  "subset": "test",
+  "tiou_thresholds": [
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7
+  ]
+}
