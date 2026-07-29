@@ -829,3 +829,26 @@
   immutable. Phase 4 was never opened and official-final remains sealed.
 - This record is `ENGINEERING_STATUS` only. No model-quality or paper-admissible
   performance conclusion was drawn.
+
+## 2026-07-29 — Recovery-v6 gate premise and thresholds independently audited
+
+- Rechecked the exact gate implementation, ActionFormer physical head, integer
+  exact-uniform anchors, commit history, tests and immutable failure log.
+- The operational stop remains correct: the frozen gate rejected the run, so no
+  child experiment or official-final access was allowed.
+- The scientific root cause is not established. Integer round-half-to-even
+  anchors generally induce a piecewise-linear, non-affine selected-to-physical
+  map. The head's local stride approximation, center sampling, regression-range
+  assignment, normalized offsets and IoU/GIoU objective do not guarantee exact
+  loss equality with the legacy selected-axis parameterization.
+- Commit `ce5d03ebf` introduced the `1e-4` loss/proposal and `1e-6` target/score
+  tolerances without a registered derivation, null-repeat calibration or
+  FP16/FP32 error study. They are engineering tolerances, not validated
+  scientific thresholds.
+- The failure artifact omits full versus short-padded provenance, offending loss
+  key, error magnitude, applicable threshold and FP32 replay. It cannot
+  distinguish numerical miss, semantic implementation bug and over-strong gate
+  premise.
+- Corrected verdict:
+  `gate_failed_closed / root_cause_not_identified / gate_validity_under_review`.
+  No performance number or paper claim is authorized.

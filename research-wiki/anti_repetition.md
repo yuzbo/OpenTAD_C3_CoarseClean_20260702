@@ -231,3 +231,11 @@ These failures and naming mistakes must not be repeated.
     versus selected-axis detector-loss equivalence. This is a scientific
     admission failure requiring explicit research review; partial artifacts
     cannot be promoted to method evidence.
+76. Do not assume loss invariance under an integer-selected piecewise-linear time
+    warp. Prove the required coordinate conjugacy and loss invariance, or replace
+    the equality claim with structural invariants plus a held-out same-K
+    noninferiority experiment.
+77. Do not emit a generic parity failure without the window role, offending key,
+    absolute and normalized error, frozen threshold, dtype/autocast state and a
+    separate non-admission FP32 replay. A fail-closed gate still needs enough
+    evidence to identify what failed.

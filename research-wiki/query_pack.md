@@ -17,7 +17,7 @@ Current evidence level:
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `recovery_v6_preflight_passed_1201390 / production_gate_passed_1201416` |
 | Dense reference training | `recovery_v6_salvage_completed / engineering_only` |
-| Phase 1 closure | `recovery_v6_scientific_gate_failed_1201417 / no_terminal_receipt` |
+| Phase 1 closure | `recovery_v6_contract_gate_failed_1201417 / gate_validity_under_review / no_terminal_receipt` |
 | Phase 2/3/4 | `recovery_v6_children_cancelled / phase4_never_opened` |
 | Latest four-stage transaction | `recovery_v6_failed_closed / terminal` |
 | H-RIME scientific route | `user_approved / designed` |
@@ -26,7 +26,7 @@ Current evidence level:
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v6_phase1_running / salvage_complete` |
+| H-RIME Stage-0 recovery transaction | `recovery_v6_failed_closed / gate_validity_under_review` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -472,14 +472,38 @@ with SHA-256
 `0b9aedc943139e024939fa16bf5cf3007c7ae387e74f04bdae823551e3baee29`.
 No Phase-1 pipeline receipt exists.
 
-This is a frozen scientific/admission-contract failure, not a launcher, path,
-environment, or tensor-runtime exception. The bounded monitor therefore failed
-closed and made no code or protocol change and no automatic retry. Exact
-dependency-impossible children `1201420`/`1201421` were canceled. The production
-gate and two engineering-only dense-salvage receipts remain valid and immutable;
-Phase 4 was never opened and official-final remains sealed. This terminal state
-is `ENGINEERING_STATUS` only and is not a model-quality or paper-admissible
-performance conclusion.
+This is a failure of the frozen scientific/admission contract, not a launcher,
+path, environment, or tensor-runtime exception. The bounded monitor therefore
+correctly failed closed, made no code or protocol change, and did not retry.
+That operational classification does **not** prove that the model implementation
+is wrong: the gate's own equivalence premise now requires revalidation.
+
+An independent code-and-math audit found:
+
+- exact-uniform positions are integer round-half-to-even anchors; unless
+  `(valid_len - 1)` is divisible by `(K - 1)`, selected-to-physical time is
+  piecewise linear rather than globally affine;
+- the physical head maps centers and approximates a local physical stride,
+  while target assignment uses center sampling, regression ranges and
+  stride-normalized offsets; IoU/GIoU loss is invariant to one global positive
+  affine transform, not to a general piecewise-linear warp;
+- therefore exact physical-axis versus selected-axis detector-loss equality is
+  not a theorem for the implemented representation, even under uniform
+  selection;
+- the `1e-4` loss/proposal and `1e-6` target/score tolerances were introduced as
+  hard-coded engineering tolerances in commit `ce5d03ebf`; no derivation,
+  repeated-null calibration, or FP16/FP32 error study is registered;
+- the failure path records neither full versus short-padded window, offending
+  loss key, error magnitude, threshold, nor FP32 replay. The current artifact
+  therefore cannot distinguish a minor numeric miss, a true semantic bug, or an
+  over-strong equivalence premise.
+
+The corrected verdict is `gate_failed_closed / root_cause_not_identified /
+gate_validity_under_review`. Exact dependency-impossible children
+`1201420`/`1201421` were canceled. The production gate and two engineering-only
+dense-salvage receipts remain valid and immutable; Phase 4 was never opened and
+official-final remains sealed. This terminal state is `ENGINEERING_STATUS` only
+and is not a model-quality or paper-admissible performance conclusion.
 
 The apparently high Phase-1 terminal mAP values are also not official-final
 performance. The split manifest selects 20 of the 200 `training` videos by

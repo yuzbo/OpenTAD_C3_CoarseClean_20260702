@@ -4,7 +4,8 @@
 
 `designed / implemented / static_checked / independently_reviewed_GO /
 authoritative_preflight_passed / production_gate_passed /
-production_transaction_terminal_scientific_gate_failed / no_auto_retry`
+production_transaction_terminal_contract_gate_failed /
+gate_validity_under_review / no_auto_retry`
 
 ## Failure signature
 
@@ -69,3 +70,20 @@ bypassing, or changing the gate would alter the scientific protocol. Phase 2
 and Phase-3 jobs `1201420`/`1201421` were canceled by exact ID. Phase 4 was never
 opened, official-final remains sealed, and the dense-salvage receipts remain
 engineering-only evidence.
+
+## Post-failure gate audit
+
+The frozen gate was obeyed, but its rejection does not by itself prove a model
+implementation defect. Exact-uniform integer anchors generally define a
+piecewise-linear rather than globally affine selected-to-physical map. The
+physical head's local stride construction and ActionFormer center-sampling,
+regression-range, normalized-offset and IoU/GIoU operations therefore do not
+guarantee exact detector-loss equality with the legacy selected-axis
+parameterization.
+
+The gate's `1e-4` loss/proposal and `1e-6` target/score tolerances have no
+registered theoretical derivation, repeated-null calibration or FP16/FP32 error
+study. Its failure path also omits the window role, offending loss key, error
+magnitude and diagnostic FP32 replay. The scientifically accurate terminal
+classification is therefore `gate_failed_closed / root_cause_not_identified /
+gate_validity_under_review`, not proof that the model is invalid.

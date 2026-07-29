@@ -8,7 +8,7 @@
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v6_failed_closed_scientific_gate / salvage_complete`
+- Slurm recovery transaction: `recovery_v6_failed_closed / gate_validity_under_review / salvage_complete`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -488,13 +488,42 @@ its SHA-256 is
 No Phase-1 pipeline receipt was emitted. Exact dependency-impossible jobs
 `1201420` and `1201421` were canceled after the failure.
 
-This signature is a scientific/admission-contract failure rather than a
-protocol-preserving engineering defect. The bounded monitor therefore made no
-automatic code change, did not relax the equivalence gate, and did not redeploy.
-The production gate and both dense-salvage terminal receipts remain valid
-immutable engineering evidence. Phase 4 was never opened and official-final
-remains sealed. No model-quality or paper-admissible empirical conclusion is
-available.
+This signature is a failure of the frozen scientific/admission contract. The
+bounded monitor therefore correctly made no automatic code change, did not
+relax the equivalence gate, and did not redeploy. It does not yet identify the
+scientific root cause.
+
+## Recovery v6 gate-validity audit
+
+The post-failure audit found that the gate's loss-equivalence premise is stronger
+than the implementation can justify:
+
+1. Exact-uniform anchors use integer round-half-to-even placement. When
+   `(valid_len - 1) % (K - 1) != 0`, selected-to-physical time is a non-affine
+   piecewise-linear map.
+2. The physical head uses mapped centers plus a local finite-difference stride.
+   ActionFormer target assignment then applies center sampling, regression-range
+   limits and stride normalization, and its regression objective uses IoU/GIoU.
+   These operations are invariant under a shared positive affine transform, not
+   under an arbitrary piecewise-linear warp.
+3. Consequently, exact equality between physical-axis and remapped
+   selected-axis detector losses is not mathematically guaranteed for all valid
+   exact-uniform batches.
+4. The `1e-4` loss/proposal and `1e-6` target/score tolerances entered with
+   commit `ce5d03ebf` as hard-coded engineering tolerances. No theoretical error
+   bound, repeated-run null distribution, or mixed-precision calibration is
+   registered.
+5. On failure, the gate emits only the generic error. It does not preserve the
+   window class, offending loss key, observed error, applicable threshold, or an
+   FP32 diagnostic replay. The immutable Recovery-v6 evidence therefore cannot
+   decide whether the observed rejection was numerical, an implementation
+   mismatch, or an invalid equivalence assumption.
+
+The corrected state is `gate_failed_closed / root_cause_not_identified /
+gate_validity_under_review`. The production gate and both dense-salvage terminal
+receipts remain valid immutable engineering evidence. Phase 4 was never opened,
+official-final remains sealed, and no model-quality or paper-admissible
+empirical conclusion is available.
 
 Correct empirical statement:
 
