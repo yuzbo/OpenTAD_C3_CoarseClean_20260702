@@ -1,5 +1,32 @@
 # Research Log
 
+## 2026-07-29 — DUCA acquisition-v2 selected-axis implementation
+
+- Accepted the core Pro adjudication with bounded implementation corrections:
+  the paper mainline is the pure pre-backbone selected-axis acquisition plugin;
+  physical-time head injection remains a separately named integration route.
+- Implemented and locally audited the selected-axis coordinate contract,
+  standard-head restoration, exact-K/no-padding execution, GT remapping,
+  inverse mapping before NMS, content-bound Admission v2, numeric-null
+  calibration, and pre-candidate scientific-protocol freeze.
+- Commit `70cf49de82a9d0ed889ed94af9604edd61070e55` was pushed and transported by
+  SHA-bound Git bundle to a clean N16R4 checkout. Bundle SHA-256 is
+  `5347836c57564a151f10818908d36e7488211ca66a72e9bf4356c70405c6e9af`.
+- Authoritative Slurm code-gate job `1204048` failed closed with exit `1:0`;
+  247 tests passed and one stale assertion still expected the superseded
+  `duca_protected_physical_v1` Phase-1 protocol instead of
+  `duca_rime_selected_axis_plugin_v2`. No gate receipt was produced.
+- Failure signature:
+  `phase1_uniform_test_expected_superseded_physical_protocol`.
+  The correction updates only the regression expectation and adds assertions
+  that the selected-axis plugin uses the standard detector head. The focused
+  local regression passes. No model, loss, data, threshold, checkpoint,
+  metric, or scientific protocol changed.
+- The failed preflight root is immutable:
+  `/data/run01/sczc063/yuzibo/rime_preflight/duca_acquisition_v2_70cf49de_20260729_202923`.
+  Numeric calibration, scientific admission, Phase 1, Phase 4, and
+  official-final were not started.
+
 ## 2026-07-27 — DUCA-RIME four-stage implementation
 
 - Recorded user approval for direct four-stage execution.

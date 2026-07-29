@@ -17,12 +17,12 @@ Current evidence level:
 |---|---|
 | Scientific route | `user_approved` |
 | Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 / core_decision_accepted_with_implementation_corrections` |
-| Pure selected-axis coordinate refactor | `implemented / local_static_and_pure_tests_passed / remote_torch_pending` |
-| Acquisition admission-v2 | `implemented / artifact_and_runtime_bound / local_pure_tests_passed / Slurm_not_yet_run` |
+| Pure selected-axis coordinate refactor | `implemented / local_static_and_pure_tests_passed / first_remote_gate_reached_full_suite` |
+| Acquisition admission-v2 | `implemented / artifact_and_runtime_bound / first_Slurm_code_gate_failed_on_stale_test_expectation_before_admission` |
 | Phase-1 v2 closure | `not_yet_run / only_next_authorized_experiment` |
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
-| Remote authoritative code gate | `recovery_v6_preflight_passed_1201390 / production_gate_passed_1201416` |
+| Remote authoritative code gate | `acquisition_v2_job_1204048_failed_closed / 247_passed_1_stale_protocol_assertion / no_receipt / correction_local_tested` |
 | Dense reference training | `recovery_v6_salvage_completed / engineering_only` |
 | Phase 1 closure | `recovery_v6_contract_gate_failed_1201417 / universal_loss_equivalence_premise_invalid / observed_mismatch_component_unresolved / no_terminal_receipt` |
 | Phase 2/3/4 | `recovery_v6_children_cancelled / phase4_never_opened` |
@@ -37,6 +37,19 @@ Current evidence level:
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
+
+The first acquisition-v2 preflight used exact source commit
+`70cf49de82a9d0ed889ed94af9604edd61070e55`, clean remote checkout
+`/data/run01/sczc063/yuzibo/OpenTAD_DUCA_ACQUISITION_70cf49de`, and Slurm job
+`1204048`. It failed before any calibration or experiment because
+`tests/test_duca_rime_training_contract.py` retained the superseded
+`duca_protected_physical_v1` expectation for the Phase-1 uniform config.
+Failure signature:
+`phase1_uniform_test_expected_superseded_physical_protocol`.
+The correction changes only the test contract and does not change the model,
+loss, budget, threshold, data, checkpoint, evaluator, or scientific gate.
+The failed root is immutable and has no gate receipt:
+`/data/run01/sczc063/yuzibo/rime_preflight/duca_acquisition_v2_70cf49de_20260729_202923`.
 
 ## Paper responsibility
 

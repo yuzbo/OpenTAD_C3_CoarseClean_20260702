@@ -266,3 +266,9 @@ These failures and naming mistakes must not be repeated.
 83. Do not treat local pure-Python success as authoritative runtime validation.
     The selected-axis selector/head/backbone path remains
     `remote_torch_pending` until the exact clean Linux/PyTorch Slurm gate passes.
+84. Do not preserve a superseded physical-head protocol assertion in a
+    selected-axis Phase-1 regression. The failure signature
+    `phase1_uniform_test_expected_superseded_physical_protocol` is an
+    engineering test-contract mismatch: correct the expected protocol and
+    assert the standard-head boundary, but do not use it to change or relax any
+    model, numeric-null, scientific, or evidence gate.

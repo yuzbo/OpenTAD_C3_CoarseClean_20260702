@@ -296,7 +296,7 @@ def test_phase1_dense_config_uses_strict_exact_checkpoint_contract(
     assert cfg.evaluation.blocked_videos == str(block)
 
 
-def test_phase1_uniform_config_uses_registered_historical_checkpoint_contract(
+def test_phase1_uniform_config_uses_selected_axis_with_registered_checkpoint_contract(
     tmp_path,
     monkeypatch,
 ):
@@ -310,7 +310,11 @@ def test_phase1_uniform_config_uses_registered_historical_checkpoint_contract(
             / "configs/adatad/thumos/duca_rime_uniform_phase1_control.py"
         )
     )
-    assert cfg.workflow.formal_protocol == "duca_protected_physical_v1"
+    assert cfg.workflow.formal_protocol == "duca_rime_selected_axis_plugin_v2"
+    assert cfg.model.frame_selector.detector_coordinate_mode == "selected_axis_plugin"
+    assert cfg.model.rpn_head.physical_grid_actionformer is None
+    assert cfg.duca_rime_contract.pre_backbone_plugin is True
+    assert cfg.duca_rime_contract.detector_head_modified is False
     assert cfg.duca_rime_baseline_contract.phase == 1
     assert cfg.duca_rime_baseline_contract.variant == "uniform_k192"
     assert cfg.duca_rime_baseline_contract.position_policy == "exact_uniform"

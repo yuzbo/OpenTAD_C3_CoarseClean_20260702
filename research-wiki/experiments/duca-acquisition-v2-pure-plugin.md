@@ -8,12 +8,22 @@
 - Architecture: `selected_axis_pure_pre_backbone_plugin`
 - Implementation: `implemented`
 - Local verification: `static_and_pure_python_tested`
-- Runtime verification: `remote_linux_torch_pending`
+- Runtime verification: `first_code_gate_failed_closed_on_stale_test_contract`
 - Experiment: `not_yet_run`
 - Empirical support: `none`
 - Paper claim: `forbidden`
 - Phase 4: `sealed`
 - Official-final: `sealed`
+
+The first authoritative preflight was Slurm job `1204048` on exact commit
+`70cf49de82a9d0ed889ed94af9604edd61070e55`. It executed the full Linux/Torch
+suite: 247 tests passed and one stale Phase-1 test still expected the
+superseded physical-head protocol. No gate receipt was produced and no numeric
+calibration, scientific admission, Phase 1, or official-final work started.
+Failure signature:
+`phase1_uniform_test_expected_superseded_physical_protocol`. The remediation
+updates only that regression expectation and asserts selected-axis/standard-head
+state; the focused local test passes.
 
 ## Accepted scientific decision
 
