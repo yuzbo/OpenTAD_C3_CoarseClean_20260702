@@ -310,9 +310,14 @@ def build_sparse_head_execution_receipt(
     selected_masks,
     budget,
     policy,
+    training_loss_support,
 ):
     if type(budget) is not int or budget <= 0:
         raise ValueError("receipt budget must be a positive integer")
+    if training_loss_support != "selected_native_grid_queries":
+        raise ValueError(
+            "receipt must declare selected_native_grid_queries training support"
+        )
     valid_counts = []
     selected_counts = []
     for batch_idx in range(fpn_masks[0].shape[0]):
@@ -342,6 +347,7 @@ def build_sparse_head_execution_receipt(
         "schema_version": "actionformer_native_grid_sparse_head_execution_v1",
         "policy": policy,
         "budget": budget,
+        "training_loss_support": training_loss_support,
         "coordinate_grid": "original_full_video_fpn_physical_indices",
         "valid_counts_per_sample_level": valid_counts,
         "selected_counts_per_sample_level": selected_counts,

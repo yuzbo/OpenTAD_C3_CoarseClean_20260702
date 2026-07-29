@@ -189,8 +189,13 @@ def test_sparse_mac_ledger_counts_only_required_physical_outputs():
         selected,
         budget=8,
         policy="stratified_uniform",
+        training_loss_support="selected_native_grid_queries",
     )
     assert receipt["selected_count_contract_pass"] is True
+    assert (
+        receipt["training_loss_support"]
+        == "selected_native_grid_queries"
+    )
     assert receipt["selected_counts_per_sample_level"] == [[5, 2, 1]]
     assert 0.0 < receipt["theoretical_head_mac_fraction"] < 1.0
     assert receipt["wall_clock_claim_allowed"] is False

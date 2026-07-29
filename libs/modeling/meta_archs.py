@@ -248,13 +248,23 @@ class PtTransformer(nn.Module):
         self.test_nms_sigma = test_cfg['nms_sigma']
         self.test_voting_thresh = test_cfg['voting_thresh']
 
-        # Optional matched-method intervention. It changes only which physical
-        # FPN queries execute the classification/regression heads.
+        # Optional matched-method intervention. It changes which physical FPN
+        # queries execute the classification/regression heads and, during
+        # training, makes that selected query set the explicit loss support.
+        # This objective change is part of the declared intervention rather
+        # than an implicit consequence hidden behind the execution path.
         self.sparse_query_selector = None
+        self.sparse_training_loss_support = 'official_all_valid_fpn_queries'
         if sparse_head is not None:
             if not isinstance(sparse_head, dict):
                 raise ValueError("model.sparse_head must be a dictionary")
-            allowed_keys = {'enabled', 'budget', 'policy', 'hash_seed'}
+            allowed_keys = {
+                'enabled',
+                'budget',
+                'policy',
+                'hash_seed',
+                'training_loss_support',
+            }
             unknown_keys = set(sparse_head) - allowed_keys
             if unknown_keys:
                 raise ValueError(
@@ -263,6 +273,15 @@ class PtTransformer(nn.Module):
                     )
                 )
             if sparse_head.get('enabled', False):
+                training_loss_support = sparse_head.get(
+                    'training_loss_support'
+                )
+                if training_loss_support != 'selected_native_grid_queries':
+                    raise ValueError(
+                        "enabled sparse head requires "
+                        "training_loss_support=selected_native_grid_queries"
+                    )
+                self.sparse_training_loss_support = training_loss_support
                 self.sparse_query_selector = NativeGridSparseQuerySelector(
                     budget=sparse_head['budget'],
                     policy=sparse_head.get(
@@ -382,6 +401,14 @@ class PtTransformer(nn.Module):
             out_offsets = self.reg_head(fpn_feats, fpn_masks)
             head_masks = fpn_masks
         else:
+            if (
+                self.training
+                and self.sparse_training_loss_support
+                != 'selected_native_grid_queries'
+            ):
+                raise RuntimeError(
+                    "sparse training loss support contract changed at runtime"
+                )
             video_ids = None
             if self.sparse_query_selector.policy == 'video_hash_random':
                 video_ids = [sample['video_id'] for sample in video_list]
