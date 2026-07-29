@@ -7,6 +7,11 @@ from torch.nn import functional as F
 from .models import register_meta_arch, make_backbone, make_neck, make_generator
 from .blocks import MaskedConv1D, Scale, LayerNorm
 from .losses import ctr_diou_loss_1d, sigmoid_focal_loss
+from .sparse_heads import (
+    NativeGridSparseQuerySelector,
+    run_sparse_cls_head,
+    run_sparse_reg_head,
+)
 
 from ..utils import batched_nms
 
@@ -190,7 +195,8 @@ class PtTransformer(nn.Module):
         use_rel_pe,            # if to use rel position encoding
         num_classes,           # number of action classes
         train_cfg,             # other cfg for training
-        test_cfg               # other cfg for testing
+        test_cfg,              # other cfg for testing
+        sparse_head=None       # optional native-grid sparse head intervention
     ):
         super().__init__()
          # re-distribute params to backbone / neck / head
@@ -241,6 +247,31 @@ class PtTransformer(nn.Module):
         self.test_multiclass_nms = test_cfg['multiclass_nms']
         self.test_nms_sigma = test_cfg['nms_sigma']
         self.test_voting_thresh = test_cfg['voting_thresh']
+
+        # Optional matched-method intervention. It changes only which physical
+        # FPN queries execute the classification/regression heads.
+        self.sparse_query_selector = None
+        if sparse_head is not None:
+            if not isinstance(sparse_head, dict):
+                raise ValueError("model.sparse_head must be a dictionary")
+            allowed_keys = {'enabled', 'budget', 'policy', 'hash_seed'}
+            unknown_keys = set(sparse_head) - allowed_keys
+            if unknown_keys:
+                raise ValueError(
+                    "unknown model.sparse_head fields: {:s}".format(
+                        ", ".join(sorted(unknown_keys))
+                    )
+                )
+            if sparse_head.get('enabled', False):
+                self.sparse_query_selector = NativeGridSparseQuerySelector(
+                    budget=sparse_head['budget'],
+                    policy=sparse_head.get(
+                        'policy', 'stratified_uniform'
+                    ),
+                    hash_seed=sparse_head.get(
+                        'hash_seed', 1234567891
+                    ),
+                )
 
         # we will need a better way to dispatch the params to backbones / necks
         # backbone network: conv + transformer
@@ -344,10 +375,23 @@ class PtTransformer(nn.Module):
         # (shared across all samples in the mini-batch)
         points = self.point_generator(fpn_feats)
 
-        # out_cls: List[B, #cls + 1, T_i]
-        out_cls_logits = self.cls_head(fpn_feats, fpn_masks)
-        # out_offset: List[B, 2, T_i]
-        out_offsets = self.reg_head(fpn_feats, fpn_masks)
+        if self.sparse_query_selector is None:
+            # out_cls: List[B, #cls + 1, T_i]
+            out_cls_logits = self.cls_head(fpn_feats, fpn_masks)
+            # out_offset: List[B, 2, T_i]
+            out_offsets = self.reg_head(fpn_feats, fpn_masks)
+            head_masks = fpn_masks
+        else:
+            video_ids = None
+            if self.sparse_query_selector.policy == 'video_hash_random':
+                video_ids = [sample['video_id'] for sample in video_list]
+            head_masks = self.sparse_query_selector(fpn_masks, video_ids)
+            out_cls_logits = run_sparse_cls_head(
+                self.cls_head, fpn_feats, fpn_masks, head_masks
+            )
+            out_offsets = run_sparse_reg_head(
+                self.reg_head, fpn_feats, fpn_masks, head_masks
+            )
 
         # permute the outputs
         # out_cls: F List[B, #cls, T_i] -> F List[B, T_i, #cls]
@@ -355,7 +399,7 @@ class PtTransformer(nn.Module):
         # out_offset: F List[B, 2 (xC), T_i] -> F List[B, T_i, 2 (xC)]
         out_offsets = [x.permute(0, 2, 1) for x in out_offsets]
         # fpn_masks: F list[B, 1, T_i] -> F List[B, T_i]
-        fpn_masks = [x.squeeze(1) for x in fpn_masks]
+        fpn_masks = [x.squeeze(1) for x in head_masks]
 
         # return loss during training
         if self.training:
