@@ -25,6 +25,14 @@ HEX_SHA1_LENGTH = 40
 # Exact paths keep the source proof reviewable.  Extending one of these sets is
 # a protocol change and therefore requires code review plus regression tests.
 SOURCE_INTERVENTION_ALLOWED_PATHS = {
+    "native_grid_sparse_head_k384": {
+        "configs/thumos_i3d_sparsehead_k384_hash.yaml",
+        "configs/thumos_i3d_sparsehead_k384_uniform.yaml",
+        "libs/modeling/meta_archs.py",
+        "libs/modeling/sparse_heads.py",
+        "tests/test_native_grid_sparse_heads.py",
+        "tests/test_sparsehead_official_config.py",
+    },
     "selection_budget": {
         "configs/thumos_i3d_random_k384.yaml",
         "libs/datasets/deterministic_selection.py",
@@ -52,6 +60,12 @@ SOURCE_INTERVENTION_ALLOWED_PATHS["sparsehead_method"] = (
 # loader, dataset split, and post-processing—is compared after official config
 # expansion and must remain byte-for-byte equivalent under canonical JSON.
 EFFECTIVE_CONFIG_ALLOWED_PATHS = {
+    "native_grid_sparse_head_k384": {
+        "model.sparse_head.budget",
+        "model.sparse_head.enabled",
+        "model.sparse_head.hash_seed",
+        "model.sparse_head.policy",
+    },
     "selection_budget": {
         "dataset.selection_budget",
         "dataset.selection_coordinate_mode",

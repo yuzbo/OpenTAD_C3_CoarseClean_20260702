@@ -77,6 +77,15 @@ CANDIDATE_CONFIG = BASE_CONFIG + """\
   selection_seed: 1234567891
 """
 
+NATIVE_SPARSE_CONFIG = BASE_CONFIG + """\
+model:
+  sparse_head:
+    enabled: true
+    budget: 384
+    policy: stratified_uniform
+    hash_seed: 1234567891
+"""
+
 
 def _git(repo, *arguments):
     completed = subprocess.run(
@@ -142,6 +151,44 @@ def _publish_candidate(repo, candidate):
     _git(repo, "push", "--force", "origin", f"{candidate}:{CANDIDATE_REF}")
 
 
+def _native_sparse_repo(tmp_path):
+    upstream = tmp_path / "native-upstream.git"
+    origin = tmp_path / "native-origin.git"
+    _git(tmp_path, "init", "--bare", str(upstream))
+    _git(tmp_path, "init", "--bare", str(origin))
+    repo = tmp_path / "native-candidate"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.name", "Unit Test")
+    _git(repo, "config", "user.email", "unit@test.invalid")
+    _git(repo, "remote", "add", "upstream", upstream.resolve().as_uri())
+    _git(repo, "remote", "add", "origin", origin.resolve().as_uri())
+    _write(repo / "README.md", "official readme\n")
+    _write(repo / "eval.py", "official evaluator\n")
+    _write(repo / "train.py", "official trainer\n")
+    _write(repo / "configs" / "thumos_i3d.yaml", BASE_CONFIG)
+    _write(repo / "libs" / "core" / "config.py", CONFIG_LOADER)
+    _write(repo / "libs" / "modeling" / "meta_archs.py", "SPARSE = False\n")
+    base = _commit(repo, "native base")
+    _git(repo, "push", "upstream", f"{base}:{BASE_REF}")
+
+    for name, policy in (
+        ("thumos_i3d_sparsehead_k384_uniform.yaml", "stratified_uniform"),
+        ("thumos_i3d_sparsehead_k384_hash.yaml", "video_hash_random"),
+    ):
+        _write(
+            repo / "configs" / name,
+            NATIVE_SPARSE_CONFIG.replace("stratified_uniform", policy),
+        )
+    _write(repo / "libs" / "modeling" / "meta_archs.py", "SPARSE = True\n")
+    _write(repo / "libs" / "modeling" / "sparse_heads.py", "BUDGET = 384\n")
+    _write(repo / "tests" / "test_native_grid_sparse_heads.py", "def test_k(): pass\n")
+    _write(repo / "tests" / "test_sparsehead_official_config.py", "def test_cfg(): pass\n")
+    candidate = _commit(repo, "native sparse head")
+    _git(repo, "push", "origin", f"{candidate}:{CANDIDATE_REF}")
+    return repo, base, candidate
+
+
 def _collect(repo, base, candidate):
     return source_diff.collect_attestation(
         repository=repo,
@@ -156,6 +203,25 @@ def _collect(repo, base, candidate):
         base_config_path="configs/thumos_i3d.yaml",
         candidate_config_path="configs/thumos_i3d_random_k384.yaml",
         intervention="selection_budget",
+    )
+
+
+def _collect_native_sparse(repo, base, candidate):
+    return source_diff.collect_attestation(
+        repository=repo,
+        base_commit=base,
+        candidate_commit=candidate,
+        base_repository_url=_git(repo, "remote", "get-url", "upstream"),
+        candidate_repository_url=_git(repo, "remote", "get-url", "origin"),
+        base_remote="upstream",
+        candidate_remote="origin",
+        base_remote_ref=BASE_REF,
+        candidate_remote_ref=CANDIDATE_REF,
+        base_config_path="configs/thumos_i3d.yaml",
+        candidate_config_path=(
+            "configs/thumos_i3d_sparsehead_k384_uniform.yaml"
+        ),
+        intervention="native_grid_sparse_head_k384",
     )
 
 
@@ -182,6 +248,39 @@ def test_live_source_diff_attestation_recomputes_exactly(tmp_path):
         "libs/datasets/thumos14.py",
     ]
     assert source_diff.validate_attestation_live(attestation) == attestation
+
+
+def test_native_grid_sparse_head_has_one_exact_fail_closed_intervention(tmp_path):
+    repo, base, candidate = _native_sparse_repo(tmp_path)
+    attestation = _collect_native_sparse(repo, base, candidate)
+
+    assert attestation["validation_pass"] is True
+    assert attestation["intervention"] == "native_grid_sparse_head_k384"
+    assert attestation["diff"]["changed_paths"] == sorted(
+        source_diff.SOURCE_INTERVENTION_ALLOWED_PATHS[
+            "native_grid_sparse_head_k384"
+        ]
+    )
+    assert attestation["effective_config"]["changed_paths"] == sorted(
+        source_diff.EFFECTIVE_CONFIG_ALLOWED_PATHS[
+            "native_grid_sparse_head_k384"
+        ]
+    )
+    assert source_diff.validate_attestation_live(attestation) == attestation
+
+
+def test_native_grid_sparse_head_cannot_hide_optimizer_drift(tmp_path):
+    repo, base, _ = _native_sparse_repo(tmp_path)
+    path = repo / "configs" / "thumos_i3d_sparsehead_k384_uniform.yaml"
+    _write(path, path.read_text(encoding="utf-8") + "\nopt:\n  epochs: 29\n")
+    candidate = _commit(repo, "native sparse optimizer drift")
+    _publish_candidate(repo, candidate)
+
+    with pytest.raises(
+        source_diff.SourceDiffError,
+        match="effective config changes protected paths",
+    ):
+        _collect_native_sparse(repo, base, candidate)
 
 
 def test_tampered_diff_digest_fails_live_recomputation(tmp_path):

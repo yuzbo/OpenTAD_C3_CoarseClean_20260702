@@ -276,6 +276,20 @@ PAIR_OUTPUT_EXEMPT_PREFIXES = (
 # No arbitrary path prefixes are accepted.  A candidate declares exactly one
 # intervention, and the validator derives the only legal method-side changes.
 INTERVENTION_ALLOWED_PATHS = {
+    "native_grid_sparse_head_k384": {
+        "source.repository_url",
+        "source.commit",
+        "source.tree",
+        "source.config_path",
+        "source.config_sha256",
+        "source.implementation",
+        "receipts.config",
+        "input.observation_budget",
+        "input.selection_policy",
+        "model.head",
+        "model.query_geometry",
+        "model.effective_config_sha256",
+    },
     "selection_budget": {
         "source.repository_url",
         "source.commit",
