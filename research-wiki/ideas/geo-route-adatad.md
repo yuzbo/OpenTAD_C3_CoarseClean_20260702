@@ -337,6 +337,11 @@ it invalidates the execution evidence. The next method-neutral repair is an
 FP32 scout/score-function route branch plus full-graph AMP P0, with the same six
 arms and contrasts.
 
+This repair is now `implemented_local`: it changes numerical precision and
+gate coverage only. It is not a new CER component and supplies no empirical
+support until Linux tests, full-graph CUDA P0 and a wholly fresh six-arm
+namespace pass.
+
 ## Connections
 
 Relations are maintained only in `research-wiki/graph/edges.jsonl`.

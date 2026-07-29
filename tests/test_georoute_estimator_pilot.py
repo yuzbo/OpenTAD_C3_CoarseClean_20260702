@@ -111,6 +111,26 @@ def _p0_payload(arm: str) -> dict:
                 "executed": False,
             }
         ),
+        "score_function_full_graph_amp": (
+            {
+                "status": "PASS_FULL_GRAPH_AMP_OPTIMIZER_UPDATE",
+                "executed": True,
+                "autocast_dtype": "torch.float16",
+                "loss_scale_before": 256.0,
+                "loss_scale_after": 256.0,
+                "optimizer": "sgd_lr_zero_overflow_probe",
+                "optimizer_update_succeeded": True,
+                "all_required_gradients_finite": True,
+                "scout_autocast_enabled": False,
+                "scout_compute_dtype": "torch.float32",
+                "model_backward_scope": "detector_plus_score_function",
+            }
+            if spec["policy_estimator"] == "score_function"
+            else {
+                "status": "NOT_APPLICABLE_NON_SCORE_FUNCTION",
+                "executed": False,
+            }
+        ),
         "pilot_arm": arm,
         "route_mode": spec["route_mode"],
         "route_parameters": {
@@ -118,9 +138,7 @@ def _p0_payload(arm: str) -> dict:
             "roi_fraction": spec["roi_fraction"],
             "policy_temperature": spec["policy_temperature"],
             "score_function_weight": spec["score_function_weight"],
-            "score_function_baseline_momentum": spec[
-                "score_function_baseline_momentum"
-            ],
+            "score_function_baseline_momentum": spec["score_function_baseline_momentum"],
         },
         "representation": representation,
         "memory": {
@@ -165,11 +183,7 @@ def _p0_payload(arm: str) -> dict:
             "native_packed_invocation_counter_after": 5,
         },
         "dense_native_reference": None,
-        "score_function_detector_binding": (
-            {"detector_loss_keys": ["cls_loss", "reg_loss"]}
-            if spec["policy_estimator"] == "score_function"
-            else None
-        ),
+        "score_function_detector_binding": ({"detector_loss_keys": ["cls_loss", "reg_loss"]} if spec["policy_estimator"] == "score_function" else None),
         "component_trace": {
             "packed_attention_forward_count": 12,
             "packed_mlp_forward_count": 12,
@@ -213,13 +227,7 @@ def _p0_payload(arm: str) -> dict:
 
 
 def _rehash_stage_result(result: dict) -> dict:
-    result["stage_result_sha256"] = canonical_sha256(
-        {
-            key: value
-            for key, value in result.items()
-            if key != "stage_result_sha256"
-        }
-    )
+    result["stage_result_sha256"] = canonical_sha256({key: value for key, value in result.items() if key != "stage_result_sha256"})
     return result
 
 
@@ -286,17 +294,14 @@ def _stage_result(
     job_id = str(1205000 + job_index)
     binding = _binding(
         arm,
-        work_dir=work_dir
-        or f"/data/run01/sczc063/yuzibo/{arm}",
+        work_dir=work_dir or f"/data/run01/sczc063/yuzibo/{arm}",
     )
     audit = {
         "route_mode": spec["route_mode"],
         "policy_estimator": spec["policy_estimator"],
         "policy_temperature": spec["policy_temperature"],
         "score_function_weight": spec["score_function_weight"],
-        "score_function_baseline_momentum": spec[
-            "score_function_baseline_momentum"
-        ],
+        "score_function_baseline_momentum": spec["score_function_baseline_momentum"],
         "geometry_smoothness_weight": spec["geometry_smoothness_weight"],
         "area_prior_weight": spec["area_prior_weight"],
         "pooling_mode": spec["pooling_mode"],
@@ -380,23 +385,15 @@ def _stage_result(
             "policy": "final_only_atomic",
         },
         "storage_receipt": {"status": "PASS_STORAGE_PREFLIGHT"},
-        "prediction_path": (
-            f"/data/run01/sczc063/yuzibo/{arm}/result_detection.json"
-        ),
+        "prediction_path": (f"/data/run01/sczc063/yuzibo/{arm}/result_detection.json"),
         "prediction_sha256": "e" * 64,
-        "profile_path": (
-            f"/data/run01/sczc063/yuzibo/{arm}/georoute_development_profile.json"
-        ),
-        "telemetry_path": (
-            f"/data/run01/sczc063/yuzibo/{arm}/georoute_diagnostic_telemetry.json"
-        ),
+        "profile_path": (f"/data/run01/sczc063/yuzibo/{arm}/georoute_development_profile.json"),
+        "telemetry_path": (f"/data/run01/sczc063/yuzibo/{arm}/georoute_diagnostic_telemetry.json"),
         "test_log_path": f"/data/run01/sczc063/yuzibo/{arm}/test.out",
         "test_log_sha256": "f" * 64,
         "runtime_commit": "a" * 40,
         "rendezvous": {
-            "isolation_policy": (
-                "job_scoped_loopback_kernel_assigned_endpoint_and_unique_cell_phase_id"
-            ),
+            "isolation_policy": ("job_scoped_loopback_kernel_assigned_endpoint_and_unique_cell_phase_id"),
             "train": _rendezvous(arm, phase="train", job_id=job_id),
             "test": _rendezvous(arm, phase="test", job_id=job_id),
         },
@@ -417,9 +414,7 @@ def _stage_result(
         "paper_grade_result_record_emitted": False,
         "paper_claim_allowed": False,
     }
-    result["telemetry_summary"]["summary_sha256"] = canonical_sha256(
-        result["telemetry_summary"]
-    )
+    result["telemetry_summary"]["summary_sha256"] = canonical_sha256(result["telemetry_summary"])
     return _rehash_stage_result(result)
 
 
@@ -432,9 +427,7 @@ def _telemetry_payload(arm: str, *, population_shift: float = 0.0) -> dict:
         "residual": 0,
         "free": PILOT_K if pilot_arm_spec(arm)["route_mode"] == "free" else 0,
         "dense": 0,
-        "uniform": (
-            PILOT_K if pilot_arm_spec(arm)["route_mode"] == "uniform" else 0
-        ),
+        "uniform": (PILOT_K if pilot_arm_spec(arm)["route_mode"] == "uniform" else 0),
         "random": 0,
     }
     for index in range(2):
@@ -443,8 +436,7 @@ def _telemetry_payload(arm: str, *, population_shift: float = 0.0) -> dict:
             "video_id": f"video_{index}",
             "window_center_count": 2,
             "window_center_first": float(index * 10),
-            "window_center_last": float(index * 10 + 5)
-            + (population_shift if index == 1 else 0.0),
+            "window_center_last": float(index * 10 + 5) + (population_shift if index == 1 else 0.0),
         }
         descriptor_sha256 = hashlib.sha256(
             json.dumps(
@@ -462,9 +454,7 @@ def _telemetry_payload(arm: str, *, population_shift: float = 0.0) -> dict:
             {
                 **population_row,
                 "route": {
-                    "selected_index_sha256": hashlib.sha256(
-                        f"{arm}-{index}".encode("utf-8")
-                    ).hexdigest(),
+                    "selected_index_sha256": hashlib.sha256(f"{arm}-{index}".encode("utf-8")).hexdigest(),
                     "role_counts": role_counts,
                 },
             }
@@ -505,12 +495,7 @@ def _materialize_stage_result(
         seed=PILOT_SEED,
     )
     cell.mkdir(parents=True)
-    bound_config = (
-        run_root
-        / "control"
-        / "bound_configs"
-        / f"{arm}_seed{PILOT_SEED}.py"
-    )
+    bound_config = run_root / "control" / "bound_configs" / f"{arm}_seed{PILOT_SEED}.py"
     bound_config.parent.mkdir(parents=True, exist_ok=True)
     bound_config.write_text(f"arm = {arm!r}\n", encoding="utf-8")
     prediction = cell / "result_detection.json"
@@ -624,10 +609,13 @@ def test_six_arm_contract_is_single_intervention_and_single_seed():
         assert spec["context_tokens"] == 0
         assert spec["absolute_position_enabled"] is True
         assert len({spec[key] for key in REPRESENTATION_KEYS}) == 1
-        assert pilot_cell_relative_path(
-            arm=arm,
-            seed=PILOT_SEED,
-        ).parts[-1] == f"seed{PILOT_SEED}"
+        assert (
+            pilot_cell_relative_path(
+                arm=arm,
+                seed=PILOT_SEED,
+            ).parts[-1]
+            == f"seed{PILOT_SEED}"
+        )
     with pytest.raises(ValueError, match="frozen exploratory seed"):
         pilot_cell_relative_path(arm=PILOT_ARM_ORDER[0], seed=3408)
 
@@ -656,13 +644,7 @@ def test_bound_configs_materialize_all_representation_switches(tmp_path):
     )
     class_map.write_text("{}", encoding="utf-8")
     pretrained.write_bytes(b"test")
-    source_config = (
-        ROOT
-        / "configs"
-        / "adatad"
-        / "thumos"
-        / "georoute_adatad_development_base.py"
-    )
+    source_config = ROOT / "configs" / "adatad" / "thumos" / "georoute_adatad_development_base.py"
 
     for arm in PILOT_ARM_ORDER:
         cfg = bind_pilot_config(
@@ -683,10 +665,7 @@ def test_bound_configs_materialize_all_representation_switches(tmp_path):
         assert custom.georoute_absolute_position_enabled is True
         for key in REPRESENTATION_KEYS:
             assert getattr(custom, f"georoute_{key}") is spec[key]
-        assert (
-            custom.georoute_geometry_side_channel
-            is spec["geometry_side_channel"]
-        )
+        assert custom.georoute_geometry_side_channel is spec["geometry_side_channel"]
         assert cfg.scheduler.max_epoch == PILOT_EPOCHS
         assert cfg.georoute_estimator_pilot_binding.paper_claim_allowed is False
 
@@ -696,9 +675,7 @@ def test_p0_validator_accepts_each_exact_pilot_arm_and_rejects_leakage(arm):
     report = build_p0_gate_report(_p0_payload(arm))
     validate_p0_gate_report(report)
 
-    report["representation"]["absolute_coordinates_enabled"] = not report[
-        "representation"
-    ]["absolute_coordinates_enabled"]
+    report["representation"]["absolute_coordinates_enabled"] = not report["representation"]["absolute_coordinates_enabled"]
     report = build_p0_gate_report(report)
     with pytest.raises(ValueError, match="representation"):
         validate_p0_gate_report(report)
@@ -714,13 +691,7 @@ def test_stage_result_validator_binds_exact_arm_k_and_claim_boundary(arm):
     )
 
     result["token_budget"] = 32
-    result["stage_result_sha256"] = canonical_sha256(
-        {
-            key: value
-            for key, value in result.items()
-            if key != "stage_result_sha256"
-        }
-    )
+    result["stage_result_sha256"] = canonical_sha256({key: value for key, value in result.items() if key != "stage_result_sha256"})
     with pytest.raises(ValueError, match="contract"):
         validate_pilot_stage_result(result, expected_arm=arm)
 
@@ -735,13 +706,7 @@ def test_stage_result_validator_rejects_binding_cost_and_test_job_tampering():
 
     result = _stage_result(arm)
     result["binding"]["epochs"] = PILOT_EPOCHS + 1
-    result["binding"]["binding_sha256"] = canonical_sha256(
-        {
-            key: value
-            for key, value in result["binding"].items()
-            if key != "binding_sha256"
-        }
-    )
+    result["binding"]["binding_sha256"] = canonical_sha256({key: value for key, value in result["binding"].items() if key != "binding_sha256"})
     result["binding_sha256"] = result["binding"]["binding_sha256"]
     _rehash_stage_result(result)
     with pytest.raises(ValueError, match="immutable binding"):
@@ -771,13 +736,7 @@ def test_telemetry_summary_recomputes_window_and_population_hashes(tmp_path):
     path.write_text(json.dumps(payload), encoding="utf-8")
     summary = summarize_pilot_telemetry(path)
     assert summary["population_sha256"] == payload["population_sha256"]
-    assert summary["summary_sha256"] == canonical_sha256(
-        {
-            key: value
-            for key, value in summary.items()
-            if key != "summary_sha256"
-        }
-    )
+    assert summary["summary_sha256"] == canonical_sha256({key: value for key, value in summary.items() if key != "summary_sha256"})
 
     payload["population_sha256"] = "0" * 64
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -806,10 +765,7 @@ def test_exploratory_finalizer_emits_contrasts_but_never_a_winner(
     finalization = pilot_finalizer.finalize_pilot_results(
         run_root=run_root,
         expected_commit="a" * 40,
-        expected_stage_jobs={
-            arm: str(1205000 + index)
-            for index, arm in enumerate(PILOT_ARM_ORDER)
-        },
+        expected_stage_jobs={arm: str(1205000 + index) for index, arm in enumerate(PILOT_ARM_ORDER)},
     )
     assert finalization["decision"] == "PILOT_COMPLETE_NO_PROMOTION"
     assert set(finalization["descriptive_contrasts"]) == set(PILOT_CONTRASTS)
@@ -837,14 +793,9 @@ def test_exploratory_finalizer_rejects_cross_arm_population_change(tmp_path):
     finalization = pilot_finalizer.finalize_pilot_results(
         run_root=run_root,
         expected_commit="a" * 40,
-        expected_stage_jobs={
-            arm: str(1205000 + index)
-            for index, arm in enumerate(PILOT_ARM_ORDER)
-        },
+        expected_stage_jobs={arm: str(1205000 + index) for index, arm in enumerate(PILOT_ARM_ORDER)},
     )
-    assert finalization["decision"] == (
-        "PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE"
-    )
+    assert finalization["decision"] == ("PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE")
     assert finalization["all_six_arms_passed"] is False
     assert finalization["descriptive_contrasts"] == {}
 
@@ -866,11 +817,7 @@ def test_exploratory_finalizer_rejects_noncanonical_p0_parent(tmp_path):
     alternate_parent = run_root / "control" / "alternate_p0_suite.json"
     alternate_parent.write_text(json.dumps(parent_payload), encoding="utf-8")
     arm = PILOT_ARM_ORDER[0]
-    result_path = (
-        run_root
-        / pilot_cell_relative_path(arm=arm, seed=PILOT_SEED)
-        / "stage_result.json"
-    )
+    result_path = run_root / pilot_cell_relative_path(arm=arm, seed=PILOT_SEED) / "stage_result.json"
     result = json.loads(result_path.read_text(encoding="utf-8"))
     result["parent_p0_suite"] = {
         "path": str(alternate_parent.resolve()),
@@ -883,18 +830,11 @@ def test_exploratory_finalizer_rejects_noncanonical_p0_parent(tmp_path):
     finalization = pilot_finalizer.finalize_pilot_results(
         run_root=run_root,
         expected_commit="a" * 40,
-        expected_stage_jobs={
-            name: str(1205000 + index)
-            for index, name in enumerate(PILOT_ARM_ORDER)
-        },
+        expected_stage_jobs={name: str(1205000 + index) for index, name in enumerate(PILOT_ARM_ORDER)},
     )
-    assert finalization["decision"] == (
-        "PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE"
-    )
+    assert finalization["decision"] == ("PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE")
     assert finalization["failures"][arm]["status"] == "INVALID_STAGE_RESULT"
-    assert "P0 parent file changed" in finalization["failures"][arm][
-        "exception_message"
-    ]
+    assert "P0 parent file changed" in finalization["failures"][arm]["exception_message"]
 
 
 def test_exploratory_finalizer_seals_missing_leaves_without_performance_inference(
@@ -903,10 +843,7 @@ def test_exploratory_finalizer_seals_missing_leaves_without_performance_inferenc
     finalization = pilot_finalizer.finalize_pilot_results(
         run_root=tmp_path / "run",
         expected_commit="a" * 40,
-        expected_stage_jobs={
-            arm: str(1205000 + index)
-            for index, arm in enumerate(PILOT_ARM_ORDER)
-        },
+        expected_stage_jobs={arm: str(1205000 + index) for index, arm in enumerate(PILOT_ARM_ORDER)},
     )
     assert finalization["status"] == "INCOMPLETE_EXPLORATORY_PILOT"
     assert finalization["decision"] == "PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE"
@@ -1037,15 +974,9 @@ def test_p0_script_mode_import_bootstraps_repository_root(tmp_path):
 
 def test_pilot_job_receipt_survives_sorted_json_key_order():
     jobs = {
-        "p0": {
-            arm: str(1206000 + index)
-            for index, arm in enumerate(PILOT_ARM_ORDER)
-        },
+        "p0": {arm: str(1206000 + index) for index, arm in enumerate(PILOT_ARM_ORDER)},
         "p0_finalizer": "1206010",
-        "stage": {
-            arm: str(1206020 + index)
-            for index, arm in enumerate(PILOT_ARM_ORDER)
-        },
+        "stage": {arm: str(1206020 + index) for index, arm in enumerate(PILOT_ARM_ORDER)},
     }
     sorted_round_trip = json.loads(json.dumps(jobs, sort_keys=True))
     validated = validate_pilot_job_receipt(
@@ -1062,23 +993,9 @@ def test_pilot_job_receipt_survives_sorted_json_key_order():
 
 
 def test_pilot_deployer_and_launchers_do_not_reuse_old_selector_or_open_test():
-    deployer = (
-        ROOT
-        / "tools"
-        / "bata"
-        / "deploy_georoute_estimator_pilot.py"
-    ).read_text(encoding="utf-8")
-    finalizer = (
-        ROOT
-        / "tools"
-        / "bata"
-        / "finalize_georoute_estimator_pilot.py"
-    ).read_text(encoding="utf-8")
-    stage_launcher = (
-        ROOT
-        / "scripts"
-        / "run_georoute_estimator_pilot_stage_slurm.sh"
-    ).read_text(encoding="utf-8")
+    deployer = (ROOT / "tools" / "bata" / "deploy_georoute_estimator_pilot.py").read_text(encoding="utf-8")
+    finalizer = (ROOT / "tools" / "bata" / "finalize_georoute_estimator_pilot.py").read_text(encoding="utf-8")
+    stage_launcher = (ROOT / "scripts" / "run_georoute_estimator_pilot_stage_slurm.sh").read_text(encoding="utf-8")
 
     assert "select_p1_roi_candidate" not in deployer + finalizer
     assert "select_p2_roi_candidate" not in deployer + finalizer

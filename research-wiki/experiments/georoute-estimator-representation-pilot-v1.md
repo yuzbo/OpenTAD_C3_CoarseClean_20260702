@@ -4,7 +4,7 @@ node_id: exp:georoute-estimator-representation-pilot-v1
 title: "GeoRoute estimator/representation exploratory pilot v1"
 idea: idea:geo-route-adatad
 stage: experiment_running
-status: fullgraph_amp_hard_fail_five_arms_running_pending_incomplete_closeout
+status: fullgraph_amp_hard_fail_repair_implemented_local_pending_linux_cuda
 verdict: pending
 confidence: medium
 commit: 30f9ca6fff1572e2eabc6c1b6636c4cc23595a62
@@ -132,6 +132,16 @@ production-horizon AMP assertion only on an isolated logits leaf. Thus the
 suite did not test a scaled optimizer update across scout/detector/adapter/
 backbone. The frozen six-arm questions remain valid, but this namespace cannot
 emit any contrast and must close INCOMPLETE.
+
+The next source is implemented locally without changing the experiment:
+GeoRoute backbone schema v4 disables autocast for the complete FP32 scout/route
+graph, and P0 schema v5 now requires a real full-model FP16-autocast,
+GradScaler-256 backward, unscaled required-gradient audit, and successful
+zero-learning-rate optimizer step. The isolated production-horizon KAT remains
+but can no longer authorize stages alone. Local syntax/whitespace and 59
+contract tests pass; one config-materialization test lacks local `mmengine`,
+and Windows Torch fails before collection at `c10.dll`. State is
+`implemented_local`, not remotely tested or authorized.
 
 ## Claim boundary
 

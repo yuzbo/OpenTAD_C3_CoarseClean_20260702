@@ -169,6 +169,15 @@ updated: 2026-07-29
   autocast+GradScaler optimizer-update gate; no normalization/clipping or
   six-arm protocol change is accepted without a new scientific decision.
 
+- GeoRoute full-graph AMP repair implementation, 2026-07-29. Local uncommitted
+  source advances backbone audit schema to v4 and P0 to v5, forces the
+  scout/route graph to FP32 outside autocast, and requires a full-model
+  GradScaler-256 optimizer-update gate. Python syntax and `git diff --check`
+  pass; no-Torch contract tests are `59 passed`, with one environment-only
+  missing-`mmengine` test. Windows Torch fails to load `c10.dll`, so this is
+  local implementation evidence only pending clean commit, Linux suite and
+  Slurm CUDA P0.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

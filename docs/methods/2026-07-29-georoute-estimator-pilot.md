@@ -142,9 +142,8 @@ AMP skipped the same batch eight times while reducing the scale from `32768`
 to `256`, then raised
 `FloatingPointError: S1 AMP could not produce a successful optimizer update
 after 8 retries`. It produced no checkpoint or metric. The other five leaves
-remain running and are not canceled, but the preregistered estimator and
-support contrasts are incomplete; finalizer `1203720` must therefore seal
-`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`.
+completed only for terminal provenance, and finalizer `1203720` sealed
+`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with an empty contrast set.
 
 The root cause is a P0/KAT coverage gap with a concrete numerical mechanism.
 The production PL likelihood entered the temporal reduction in FP16. A finite
@@ -173,6 +172,24 @@ and
 This passes numerical correctness only. A new full six-arm namespace may start
 only after the old run seals INCOMPLETE and the new source passes its expanded
 per-arm P0.
+
+That replacement was deployed as Jobs `1204015`--`1204028` after the old
+closeout and all-at-once capacity gates passed. All six schema-v4 P0 leaves and
+P0 finalizer `1204021` completed, but residual-PL stage `1204023` again failed
+on real batch 0 after the scale-256 attempt. The v4 P0 had a second coverage
+gap: its model forward/backward ran without autocast or GradScaler, while its
+AMP horizon KAT differentiated only an isolated logits tensor. It did not test
+the scaled gradient through actual scout and model parameters.
+
+The next numerical revision therefore keeps the same PL likelihood,
+sum-then-batch-mean objective, estimator weight, six arms, seed, K and epochs,
+but executes the complete low-cost scout/route graph in FP32 outside autocast.
+P0 schema v5 replaces the disconnected assurance with a full-model AMP
+forward, scaled backward, unscale, required-parameter finiteness check and
+zero-learning-rate optimizer step at the registered floor scale `256`. The
+isolated `T384/N220/K64` KAT remains a subordinate arithmetic check. This is
+precision hardening, not loss normalization, clipping, or a scientific
+intervention.
 
 Any decode error, OOM, non-finite loss/cost, non-finite required gradient,
 missing update, rendezvous failure, missing artifact, input/hash mismatch,

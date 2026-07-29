@@ -5,6 +5,7 @@ import torch
 
 from opentad.models.backbones.georoute_wrapper import (
     GeoRouteBackboneWrapper,
+    GeoRouteScout,
     GeoRouteSparseTemporalAdapter,
     extract_native_tubelets,
 )
@@ -57,14 +58,10 @@ def test_native_patch_centers_are_row_major_and_normalized():
 def test_native_tubelet_gather_preserves_the_btk_video_layout():
     """The [B,T,K] route index must expand to native video's seven dimensions."""
 
-    native = torch.arange(1 * 2 * 5 * 3 * 2 * 2 * 2, dtype=torch.uint8).reshape(
-        1, 2, 5, 3, 2, 2, 2
-    )
+    native = torch.arange(1 * 2 * 5 * 3 * 2 * 2 * 2, dtype=torch.uint8).reshape(1, 2, 5, 3, 2, 2, 2)
     indices = torch.tensor([[[4, 1, 3], [0, 2, 4]]], dtype=torch.long)
 
-    gathered = GeoRouteBackboneWrapper._gather_selected_native_tubelets(
-        None, native, indices
-    )
+    gathered = GeoRouteBackboneWrapper._gather_selected_native_tubelets(None, native, indices)
 
     assert gathered.shape == (1, 2, 3, 3, 2, 2, 2)
     assert torch.equal(gathered[0, 0, 0], native[0, 0, 4])
@@ -95,11 +92,7 @@ def test_native_tubelets_floor_crop_nondivisible_ncthw_without_synthetic_pixels(
     assert valid_mask.shape == (1, 1, 220)
     assert bool(valid_mask.all())
 
-    restored = (
-        native.reshape(1, 1, 11, 20, 3, 2, 16, 16)
-        .permute(0, 4, 1, 5, 2, 6, 3, 7)
-        .reshape(1, 3, 2, 176, 320)
-    )
+    restored = native.reshape(1, 1, 11, 20, 3, 2, 16, 16).permute(0, 4, 1, 5, 2, 6, 3, 7).reshape(1, 3, 2, 176, 320)
     assert torch.equal(restored, source[..., :176, :])
 
 
@@ -123,11 +116,7 @@ def test_native_tubelets_floor_crop_both_uint8_boundaries():
     assert native.dtype == torch.uint8
     assert bool(valid_mask.all())
 
-    restored = (
-        native.reshape(1, 1, 1, 1, 3, 2, 16, 16)
-        .permute(0, 4, 1, 5, 2, 6, 3, 7)
-        .reshape(1, 3, 2, 16, 16)
-    )
+    restored = native.reshape(1, 1, 1, 1, 3, 2, 16, 16).permute(0, 4, 1, 5, 2, 6, 3, 7).reshape(1, 3, 2, 16, 16)
     assert torch.equal(restored, source[..., :16, :16])
 
 
@@ -190,9 +179,7 @@ def test_st_gate_is_hard_in_forward_but_has_a_biased_surrogate_gradient():
     context_in_sorted_route = route["indices"] == context
     assert torch.equal(
         route["selected_surrogate"].masked_select(context_in_sorted_route),
-        torch.zeros_like(
-            route["selected_surrogate"].masked_select(context_in_sorted_route)
-        ),
+        torch.zeros_like(route["selected_surrogate"].masked_select(context_in_sorted_route)),
     )
     route["st_gate"].sum().backward()
     assert roi.grad is not None and residual.grad is not None
@@ -384,9 +371,7 @@ def test_score_function_and_training_contracts_fail_closed_when_semantics_are_in
 
 def test_exact_k_never_selects_invalid_native_patches_and_fails_when_k_is_too_large():
     roi, residual = _logits(batch=1, tubelets=2, patches=8)
-    valid_mask = torch.tensor(
-        [[[True, False, True, True, False, True, True, False]]]
-    ).expand(1, 2, 8)
+    valid_mask = torch.tensor([[[True, False, True, True, False, True, True, False]]]).expand(1, 2, 8)
     route = select_exact_k(
         roi_logits=roi,
         residual_logits=residual,
@@ -420,9 +405,7 @@ def test_uniform_selected_pooling_is_independent_of_route_logits():
     torch.manual_seed(29)
     adapter = GeoRouteSparseTemporalAdapter(channels=8)
     selected = torch.randn(1, 3, 4, 8)
-    geometry = torch.tensor(
-        [[[0.5, 0.5, 1.0, 1.0]]]
-    ).expand(1, 3, 4)
+    geometry = torch.tensor([[[0.5, 0.5, 1.0, 1.0]]]).expand(1, 3, 4)
     coordinates = torch.rand(1, 3, 4, 2)
     first = adapter(
         selected,
@@ -468,9 +451,7 @@ def test_pl_reaches_unselected_logits_while_selected_only_st_does_not():
     st_route["st_gate"].sum().backward()
     assert st_logits.grad is not None
     assert torch.count_nonzero(st_logits.grad.masked_select(st_route["selected_mask"])) > 0
-    assert torch.count_nonzero(
-        st_logits.grad.masked_select(~st_route["selected_mask"])
-    ) == 0
+    assert torch.count_nonzero(st_logits.grad.masked_select(~st_route["selected_mask"])) == 0
 
     pl_logits = st_logits.detach().clone().requires_grad_(True)
     torch.manual_seed(37)
@@ -489,12 +470,8 @@ def test_pl_reaches_unselected_logits_while_selected_only_st_does_not():
     pl_route["ordered_log_prob"].sum().backward()
     assert pl_logits.grad is not None
     assert torch.isfinite(pl_logits.grad).all()
-    assert torch.count_nonzero(
-        pl_logits.grad.masked_select(pl_route["selected_mask"])
-    ) > 0
-    assert torch.count_nonzero(
-        pl_logits.grad.masked_select(~pl_route["selected_mask"])
-    ) > 0
+    assert torch.count_nonzero(pl_logits.grad.masked_select(pl_route["selected_mask"])) > 0
+    assert torch.count_nonzero(pl_logits.grad.masked_select(~pl_route["selected_mask"])) > 0
 
 
 def _legacy_sparse_adapter_forward(
@@ -504,24 +481,16 @@ def _legacy_sparse_adapter_forward(
     geometry,
     selected_coordinates,
 ):
-    relative = (
-        selected_coordinates - geometry[:, :, None, :2]
-    ) / geometry[:, :, None, 2:].clamp_min(1e-6)
-    coordinate_features = torch.cat(
-        (selected_coordinates, relative), dim=-1
-    )
-    selected_features = selected_features + adapter.coordinate_projection(
-        coordinate_features
-    )
+    relative = (selected_coordinates - geometry[:, :, None, :2]) / geometry[:, :, None, 2:].clamp_min(1e-6)
+    coordinate_features = torch.cat((selected_coordinates, relative), dim=-1)
+    selected_features = selected_features + adapter.coordinate_projection(coordinate_features)
     weights = torch.full_like(
         selected_scores,
         1.0 / float(selected_scores.shape[-1]),
     ).unsqueeze(-1)
     pooled = (weights * selected_features).sum(dim=2)
     pooled = adapter.norm(pooled + adapter.geometry_projection(geometry))
-    temporal = adapter.output(
-        adapter.temporal(pooled.transpose(1, 2))
-    ).transpose(1, 2)
+    temporal = adapter.output(adapter.temporal(pooled.transpose(1, 2))).transpose(1, 2)
     return (pooled + temporal).transpose(1, 2)
 
 
@@ -530,10 +499,15 @@ def test_sparse_adapter_representation_channels_are_independently_isolated():
     adapter = GeoRouteSparseTemporalAdapter(channels=8)
     selected = torch.randn(1, 3, 4, 8)
     scores = torch.randn(1, 3, 4)
-    geometry = torch.tensor(
-        [[[0.4, 0.6, 0.7, 0.8]]],
-        dtype=torch.float32,
-    ).expand(1, 3, 4).clone().requires_grad_(True)
+    geometry = (
+        torch.tensor(
+            [[[0.4, 0.6, 0.7, 0.8]]],
+            dtype=torch.float32,
+        )
+        .expand(1, 3, 4)
+        .clone()
+        .requires_grad_(True)
+    )
     coordinates = torch.rand(1, 3, 4, 2, requires_grad=True)
 
     disabled = adapter(
@@ -582,9 +556,7 @@ def test_sparse_adapter_representation_channels_are_independently_isolated():
         use_geometry_projection=True,
         pooling_mode="uniform_selected",
     )
-    assert torch.allclose(
-        legacy, split_all_enabled, atol=1e-7, rtol=1e-7
-    )
+    assert torch.allclose(legacy, split_all_enabled, atol=1e-7, rtol=1e-7)
 
     absolute_only = adapter(
         selected,
@@ -639,9 +611,7 @@ def test_free_route_uses_fixed_full_frame_geometry_without_geometry_gradient():
     fake.source_mean = torch.zeros(1, 3, 1, 1, 1)
     fake.source_std = torch.ones(1, 3, 1, 1, 1)
     fake.scout = FakeScout()
-    fake._fixed_full_frame_geometry = (
-        GeoRouteBackboneWrapper._fixed_full_frame_geometry
-    )
+    fake._fixed_full_frame_geometry = GeoRouteBackboneWrapper._fixed_full_frame_geometry
     fields = GeoRouteBackboneWrapper._compute_route_fields(
         fake,
         torch.zeros(1, 3, 4, 8, 8, dtype=torch.uint8),
@@ -655,3 +625,37 @@ def test_free_route_uses_fixed_full_frame_geometry_without_geometry_gradient():
     residual.sum().backward()
     assert fake.scout.residual_logits.grad is not None
     assert fake.scout.geometry_logits.grad is None
+
+
+def test_route_scout_stays_fp32_inside_outer_autocast():
+    fake = type("AutocastRouteFields", (), {})()
+    fake.route_mode = "free"
+    fake.geometry_side_channel = False
+    fake.window_size = 4
+    fake.tubelet_size = 2
+    fake.source_mean = torch.zeros(1, 3, 1, 1, 1)
+    fake.source_std = torch.ones(1, 3, 1, 1, 1)
+    fake.scout = GeoRouteScout(channels=8)
+    fake._fixed_full_frame_geometry = GeoRouteBackboneWrapper._fixed_full_frame_geometry
+
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        (
+            geometry,
+            residual,
+            regularization,
+        ) = GeoRouteBackboneWrapper._compute_route_fields(
+            fake,
+            torch.zeros(
+                1,
+                3,
+                4,
+                16,
+                16,
+                dtype=torch.uint8,
+            ),
+            source_grid_hw=(2, 3),
+        )
+
+    assert geometry.dtype == torch.float32
+    assert residual.dtype == torch.float32
+    assert regularization.dtype == torch.float32

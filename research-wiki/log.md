@@ -1568,3 +1568,16 @@ append_only: true
   only make an estimator-equivalent precision repair and add a full-graph
   autocast+GradScaler P0; no partial performance, normalization/clipping,
   P2/P3, official test, efficiency, CER, Geometry Zoom, or paper claim opens.
+
+- 2026-07-29: implemented the independent audit's method-neutral repair.
+  GeoRoute backbone schema v4 runs the complete low-cost scout/route graph in
+  FP32 outside autocast. P0 schema v5 now runs the actual score-function model
+  graph under FP16 autocast with GradScaler at the protocol floor `256`,
+  unscales and checks required parameter gradients, and requires a successful
+  zero-learning-rate optimizer step. The PL objective, estimator weight, arms,
+  seed, K, epochs and contrasts are unchanged; normalization and clipping were
+  not introduced. Local Python syntax and whitespace pass. Contract tests are
+  `59 passed`; one test is blocked only by missing local `mmengine`, while the
+  Torch suite cannot collect on Windows because `c10.dll` fails to load. State
+  is `implemented_local_pending_clean_commit_linux_cuda`, not a new run or
+  result.

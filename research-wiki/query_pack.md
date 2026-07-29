@@ -37,7 +37,7 @@ max_chars: 8000
   `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
   A new independent study,
   `georoute_estimator_representation_pilot_v1`, is
-  `fullgraph_amp_hard_fail_five_arms_running_pending_incomplete_closeout`.
+  `fullgraph_amp_hard_fail_repair_implemented_local_pending_linux_cuda`.
   Six single-seed, 20-epoch, K=64 arms isolate PL versus ST, fixed-support
   representation, ROI-support representation, and ROI versus residual support.
   The first clean runtime `02b6efe7` passed remote Linux tests `108/108`, but
@@ -135,6 +135,15 @@ max_chars: 8000
   is valid. The next source must keep the six-arm science fixed, execute the
   score-function scout/likelihood path safely in FP32, and pass a full-model
   autocast+GradScaler optimizer-update P0 before any further replacement.
+  That repair is now `implemented_local`: backbone schema v4 keeps the complete
+  scout/route forward and backward in FP32 outside autocast; P0 schema v5 runs
+  the actual score-function model graph under FP16 autocast and GradScaler at
+  floor scale `256`, unscales and audits required parameter gradients, then
+  requires a successful zero-learning-rate optimizer step. The estimator loss,
+  weight, six arms and contrasts are unchanged. Syntax and whitespace checks
+  pass; no-Torch local contract tests are `59 passed` with one environment-only
+  `mmengine` miss. Windows Torch cannot load `c10.dll`, so Linux and CUDA remain
+  mandatory before a clean source or new run exists.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

@@ -125,7 +125,12 @@ def _p0_report(*, estimator: str, claim: str, target_k: int, scout_gradient: boo
         "shared_backbone_instances": 1,
         "uses_grid_sample": False,
         "uses_resized_local_crop": False,
-        "exact_k": {"target_k": target_k, "observed_min": target_k, "observed_max": target_k, "duplicates": 0},
+        "exact_k": {
+            "target_k": target_k,
+            "observed_min": target_k,
+            "observed_max": target_k,
+            "duplicates": 0,
+        },
         "estimator": {"name": estimator, "claim": claim},
         "score_function_amp_horizon": (
             {
@@ -143,6 +148,26 @@ def _p0_report(*, estimator: str, claim: str, target_k: int, scout_gradient: boo
                 "all_scaled_gradients_finite": True,
                 "policy_loss_abs": 100000.0,
                 "fp16_max": 65504.0,
+            }
+            if estimator == "score_function"
+            else {
+                "status": "NOT_APPLICABLE_NON_SCORE_FUNCTION",
+                "executed": False,
+            }
+        ),
+        "score_function_full_graph_amp": (
+            {
+                "status": "PASS_FULL_GRAPH_AMP_OPTIMIZER_UPDATE",
+                "executed": True,
+                "autocast_dtype": "torch.float16",
+                "loss_scale_before": 256.0,
+                "loss_scale_after": 256.0,
+                "optimizer": "sgd_lr_zero_overflow_probe",
+                "optimizer_update_succeeded": True,
+                "all_required_gradients_finite": True,
+                "scout_autocast_enabled": False,
+                "scout_compute_dtype": "torch.float32",
+                "model_backward_scope": "detector_plus_score_function",
             }
             if estimator == "score_function"
             else {
@@ -195,11 +220,7 @@ def _p0_report(*, estimator: str, claim: str, target_k: int, scout_gradient: boo
             if route_mode == "dense"
             else None
         ),
-        "score_function_detector_binding": (
-            {"detector_loss_keys": ["cls_loss", "reg_loss"]}
-            if estimator == "score_function"
-            else None
-        ),
+        "score_function_detector_binding": ({"detector_loss_keys": ["cls_loss", "reg_loss"]} if estimator == "score_function" else None),
         "component_trace": {
             "packed_attention_forward_count": 12,
             "packed_mlp_forward_count": 12,
@@ -226,7 +247,11 @@ def _p0_report(*, estimator: str, claim: str, target_k: int, scout_gradient: boo
             "safety_bytes": 1024,
             "measurement_method": "unit_test",
         },
-        "p0_scope": {"synthetic_inputs_only": True, "full_training": False, "official_evaluation": False},
+        "p0_scope": {
+            "synthetic_inputs_only": True,
+            "full_training": False,
+            "official_evaluation": False,
+        },
     }
     return build_p0_gate_report(report)
 
@@ -313,9 +338,24 @@ def test_p0_suite_requires_dense_native_parity_and_both_scout_gradient_paths():
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         payloads = {
-            "dense.json": _p0_report(estimator="none", claim="no_policy_gradient", target_k=100, scout_gradient=False),
-            "hybrid.json": _p0_report(estimator="straight_through", claim="biased_straight_through", target_k=32, scout_gradient=True),
-            "score.json": _p0_report(estimator="score_function", claim="score_function_candidate", target_k=64, scout_gradient=True),
+            "dense.json": _p0_report(
+                estimator="none",
+                claim="no_policy_gradient",
+                target_k=100,
+                scout_gradient=False,
+            ),
+            "hybrid.json": _p0_report(
+                estimator="straight_through",
+                claim="biased_straight_through",
+                target_k=32,
+                scout_gradient=True,
+            ),
+            "score.json": _p0_report(
+                estimator="score_function",
+                claim="score_function_candidate",
+                target_k=64,
+                scout_gradient=True,
+            ),
         }
         for index, (name, payload) in enumerate(payloads.items()):
             report_path = root / name
@@ -324,7 +364,11 @@ def test_p0_suite_requires_dense_native_parity_and_both_scout_gradient_paths():
                 payload,
                 slurm_job_id=str(1000 + index),
             )
-        summary = finalize(dense=root / "dense.json", hybrid=root / "hybrid.json", score_function=root / "score.json")
+        summary = finalize(
+            dense=root / "dense.json",
+            hybrid=root / "hybrid.json",
+            score_function=root / "score.json",
+        )
         dense_rendezvous = root / "dense.rendezvous.json"
         dense_original = dense_rendezvous.read_text(encoding="utf-8")
         dense_rendezvous.write_text(
@@ -351,13 +395,22 @@ def test_p1_bootstrap_reuses_a_sealed_p0_parent_and_only_submits_p1(monkeypatch,
     p0_dir.mkdir(parents=True)
     payloads = {
         "dense_native_parity.json": _p0_report(
-            estimator="none", claim="no_policy_gradient", target_k=100, scout_gradient=False
+            estimator="none",
+            claim="no_policy_gradient",
+            target_k=100,
+            scout_gradient=False,
         ),
         "hybrid_straight_through.json": _p0_report(
-            estimator="straight_through", claim="biased_straight_through", target_k=32, scout_gradient=True
+            estimator="straight_through",
+            claim="biased_straight_through",
+            target_k=32,
+            scout_gradient=True,
         ),
         "roi_score_function.json": _p0_report(
-            estimator="score_function", claim="score_function_candidate", target_k=64, scout_gradient=True
+            estimator="score_function",
+            claim="score_function_candidate",
+            target_k=64,
+            scout_gradient=True,
         ),
     }
     for index, (name, payload) in enumerate(payloads.items()):
@@ -373,9 +426,7 @@ def test_p1_bootstrap_reuses_a_sealed_p0_parent_and_only_submits_p1(monkeypatch,
         score_function=p0_dir / "roi_score_function.json",
     )
     (p0_root / "control").mkdir()
-    (p0_root / "control" / "p0_finalization.json").write_text(
-        json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8"
-    )
+    (p0_root / "control" / "p0_finalization.json").write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
 
     source_config = tmp_path / "source.py"
     manifest = tmp_path / "manifest.json"
@@ -423,7 +474,13 @@ def test_stage_matrix_uses_scheduler_test_only_for_every_leaf_before_submission(
     tmp_path: Path,
 ):
     monkeypatch.delenv("SLURM_JOB_ID", raising=False)
-    for name in ("config.py", "manifest.json", "annotation.json", "class_map.txt", "pretrained.pth"):
+    for name in (
+        "config.py",
+        "manifest.json",
+        "annotation.json",
+        "class_map.txt",
+        "pretrained.pth",
+    ):
         (tmp_path / name).write_text("placeholder", encoding="utf-8")
     video_root = tmp_path / "validation_videos"
     video_root.mkdir()
@@ -496,7 +553,13 @@ def test_submit_capacity_rejects_a_matrix_before_any_leaf_is_created(monkeypatch
 
 def test_stage_matrix_cancels_submitted_leaves_when_selector_submission_fails(monkeypatch, tmp_path: Path):
     monkeypatch.delenv("SLURM_JOB_ID", raising=False)
-    for name in ("config.py", "manifest.json", "annotation.json", "class_map.txt", "pretrained.pth"):
+    for name in (
+        "config.py",
+        "manifest.json",
+        "annotation.json",
+        "class_map.txt",
+        "pretrained.pth",
+    ):
         (tmp_path / name).write_text("placeholder", encoding="utf-8")
     video_root = tmp_path / "validation_videos"
     video_root.mkdir()
@@ -546,7 +609,11 @@ def test_p1_and_p2_selection_are_predeclared_and_result_blind():
         "dense_native": _record(stage="p1", variant="dense_native", seed=3407, high_iou=64.0, cost=50.0),
         "fixed_lattice": _record(stage="p1", variant="fixed_lattice", seed=3407, high_iou=60.0, cost=12.0),
         "fixed_lattice_geometry": _record(
-            stage="p1", variant="fixed_lattice_geometry", seed=3407, high_iou=61.0, cost=14.0
+            stage="p1",
+            variant="fixed_lattice_geometry",
+            seed=3407,
+            high_iou=61.0,
+            cost=14.0,
         ),
         "random": _record(stage="p1", variant="random", seed=3407, high_iou=59.0, cost=14.0),
         "free": _record(stage="p1", variant="free", seed=3407, high_iou=62.0, cost=14.0),
@@ -566,7 +633,13 @@ def test_p1_and_p2_selection_are_predeclared_and_result_blind():
         ("hybrid", 63.0, 14.0),
     ):
         p2[variant] = [
-            _record(stage="p2", variant=variant, seed=seed, high_iou=base_score + 0.1 * index, cost=base_cost)
+            _record(
+                stage="p2",
+                variant=variant,
+                seed=seed,
+                high_iou=base_score + 0.1 * index,
+                cost=base_cost,
+            )
             for index, seed in enumerate(DEVELOPMENT_SEEDS)
         ]
     p2_decision = select_p2_roi_candidate(p2, candidate_variant="hybrid")
@@ -685,10 +758,7 @@ def test_georoute_torchrun_uses_job_scoped_kernel_assigned_rendezvous():
         assert f"--rdzv_endpoint={receipt['endpoint']}" in command
         assert receipt["endpoint"].startswith("127.")
         assert receipt["endpoint"].endswith(":0")
-        assert (
-            receipt["endpoint_policy"]
-            == "job_scoped_loopback_and_kernel_assigned_port"
-        )
+        assert receipt["endpoint_policy"] == "job_scoped_loopback_and_kernel_assigned_port"
         assert f"--rdzv_id=georoute-1199999-p1-free-s3407-{phase}" in command
     validated = _validate_rendezvous_receipt(
         receipts,
@@ -728,9 +798,7 @@ def test_georoute_rendezvous_gate_receipt_fails_closed_on_store_reuse():
         )
 
     reused = copy.deepcopy(receipt)
-    reused["probes"]["long"]["runtime_identity"]["master_port"] = reused[
-        "probes"
-    ]["short"]["runtime_identity"]["master_port"]
+    reused["probes"]["long"]["runtime_identity"]["master_port"] = reused["probes"]["short"]["runtime_identity"]["master_port"]
     core = dict(reused)
     core.pop("gate_sha256")
     reused["gate_sha256"] = canonical_sha256(core)
@@ -759,9 +827,7 @@ def test_georoute_rendezvous_failure_writes_hashed_diagnostics_and_stops_groups(
     monkeypatch.setattr(
         rdzv_gate,
         "_git_output",
-        lambda *arguments: (
-            expected_commit if arguments == ("rev-parse", "HEAD") else ""
-        ),
+        lambda *arguments: (expected_commit if arguments == ("rev-parse", "HEAD") else ""),
     )
 
     def fake_prefix(**kwargs):
@@ -772,9 +838,7 @@ def test_georoute_rendezvous_failure_writes_hashed_diagnostics_and_stops_groups(
                 "backend": "c10d",
                 "endpoint": "127.1.1.1:0",
                 "endpoint_host": "127.1.1.1",
-                "endpoint_policy": (
-                    "job_scoped_loopback_and_kernel_assigned_port"
-                ),
+                "endpoint_policy": ("job_scoped_loopback_and_kernel_assigned_port"),
                 "rendezvous_slot": kwargs["rendezvous_slot"],
                 "rendezvous_id": f"synthetic-{kwargs['variant']}",
                 "slurm_job_id": kwargs["slurm_job_id"],
@@ -790,9 +854,7 @@ def test_georoute_rendezvous_failure_writes_hashed_diagnostics_and_stops_groups(
     monkeypatch.setattr(
         rdzv_gate,
         "_wait_until_ready",
-        lambda **_: (_ for _ in ()).throw(
-            TimeoutError("synthetic rendezvous timeout")
-        ),
+        lambda **_: (_ for _ in ()).throw(TimeoutError("synthetic rendezvous timeout")),
     )
     original_popen = subprocess.Popen
     processes = []
@@ -817,10 +879,7 @@ def test_georoute_rendezvous_failure_writes_hashed_diagnostics_and_stops_groups(
     assert payload["model_forward_executed"] is False
     assert payload["paper_claim_allowed"] is False
     assert set(payload["probes"]) == {"short", "long"}
-    assert all(
-        "output_sha256" in probe and "output_tail" in probe
-        for probe in payload["probes"].values()
-    )
+    assert all("output_sha256" in probe and "output_tail" in probe for probe in payload["probes"].values())
     assert digest == canonical_sha256(payload)
     assert processes and all(process.poll() is not None for process in processes)
 
@@ -854,18 +913,12 @@ def test_georoute_rendezvous_prevalidation_failure_is_sealed(
 
 
 def test_p0_launcher_runs_rendezvous_isolation_before_model_gate():
-    launcher = (ROOT / "scripts" / "run_georoute_p0_slurm.sh").read_text(
-        encoding="utf-8"
-    )
-    runner = (
-        ROOT / "tools" / "bata" / "georoute_stage_runner.py"
-    ).read_text(encoding="utf-8")
+    launcher = (ROOT / "scripts" / "run_georoute_p0_slurm.sh").read_text(encoding="utf-8")
+    runner = (ROOT / "tools" / "bata" / "georoute_stage_runner.py").read_text(encoding="utf-8")
     assert "--standalone" not in runner
     assert "job_scoped_loopback_and_kernel_assigned_port" in runner
     assert "tools.bata.georoute_rendezvous_gate" in launcher
-    assert launcher.index("tools.bata.georoute_rendezvous_gate") < launcher.index(
-        "tools.bata.run_georoute_p0_gate"
-    )
+    assert launcher.index("tools.bata.georoute_rendezvous_gate") < launcher.index("tools.bata.run_georoute_p0_gate")
 
 
 def test_p3_cell_namespaces_include_exact_k_to_prevent_budget_curve_overwrites():
@@ -877,12 +930,8 @@ def test_p3_cell_namespaces_include_exact_k_to_prevent_budget_curve_overwrites()
 
 
 def test_gpu_submission_uses_n16r4_outer_resources_and_exact_inner_step():
-    deployer = (ROOT / "tools" / "bata" / "deploy_georoute_development_dag.py").read_text(
-        encoding="utf-8"
-    )
-    dispatcher = (ROOT / "tools" / "bata" / "georoute_dag_dispatch.py").read_text(
-        encoding="utf-8"
-    )
+    deployer = (ROOT / "tools" / "bata" / "deploy_georoute_development_dag.py").read_text(encoding="utf-8")
+    dispatcher = (ROOT / "tools" / "bata" / "georoute_dag_dispatch.py").read_text(encoding="utf-8")
     p0_launcher = (ROOT / "scripts" / "run_georoute_p0_slurm.sh").read_text(encoding="utf-8")
     stage_launcher = (ROOT / "scripts" / "run_georoute_stage_slurm.sh").read_text(encoding="utf-8")
 

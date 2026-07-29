@@ -26,7 +26,7 @@ from .georoute_routing import (
 from .native_crop_wrapper import deterministic_linear_2x
 
 
-GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v3"
+GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v4"
 
 
 class GeoRouteScout(nn.Module):
@@ -40,7 +40,15 @@ class GeoRouteScout(nn.Module):
             nn.Conv3d(3, channels, kernel_size=(2, 8, 8), stride=(2, 8, 8), bias=False),
             nn.GroupNorm(num_groups=min(8, channels), num_channels=channels),
             nn.GELU(),
-            nn.Conv3d(channels, channels, kernel_size=3, stride=1, padding=1, groups=channels, bias=False),
+            nn.Conv3d(
+                channels,
+                channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                groups=channels,
+                bias=False,
+            ),
             nn.GroupNorm(num_groups=min(8, channels), num_channels=channels),
             nn.GELU(),
         )
@@ -113,14 +121,8 @@ class GeoRouteSparseTemporalAdapter(nn.Module):
         if not bool(torch.isfinite(selected_coordinates).all().item()):
             raise ValueError("selected native coordinates must be finite")
         if use_absolute_coordinates or use_roi_relative_coordinates:
-            absolute = (
-                selected_coordinates
-                if use_absolute_coordinates
-                else torch.zeros_like(selected_coordinates)
-            )
-            relative = (
-                selected_coordinates - geometry[:, :, None, :2]
-            ) / geometry[:, :, None, 2:].clamp_min(1e-6)
+            absolute = selected_coordinates if use_absolute_coordinates else torch.zeros_like(selected_coordinates)
+            relative = (selected_coordinates - geometry[:, :, None, :2]) / geometry[:, :, None, 2:].clamp_min(1e-6)
             if not use_roi_relative_coordinates:
                 relative = torch.zeros_like(relative)
             coordinate_features = torch.cat((absolute, relative), dim=-1)
@@ -183,7 +185,15 @@ def extract_native_tubelets(
             patch_size,
         )
         .permute(0, 2, 4, 6, 1, 3, 5, 7)
-        .reshape(batch, tubelets, grid_height * grid_width, channels, tubelet_size, patch_size, patch_size)
+        .reshape(
+            batch,
+            tubelets,
+            grid_height * grid_width,
+            channels,
+            tubelet_size,
+            patch_size,
+            patch_size,
+        )
         .contiguous()
     )
     valid_patch_mask = torch.ones(
@@ -224,15 +234,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.policy_temperature = float(getattr(custom_cfg, "georoute_policy_temperature", 0.5))
         self.random_seed = int(getattr(custom_cfg, "georoute_random_seed", 3407))
         self.roi_temperature = float(getattr(custom_cfg, "georoute_roi_temperature", 0.25))
-        self.geometry_stride_tubelets = int(
-            getattr(custom_cfg, "georoute_geometry_stride_tubelets", 1)
-        )
-        self.absolute_position_enabled = bool(
-            getattr(custom_cfg, "georoute_absolute_position_enabled", True)
-        )
-        self.absolute_coordinates_enabled = bool(
-            getattr(custom_cfg, "georoute_absolute_coordinates_enabled", True)
-        )
+        self.geometry_stride_tubelets = int(getattr(custom_cfg, "georoute_geometry_stride_tubelets", 1))
+        self.absolute_position_enabled = bool(getattr(custom_cfg, "georoute_absolute_position_enabled", True))
+        self.absolute_coordinates_enabled = bool(getattr(custom_cfg, "georoute_absolute_coordinates_enabled", True))
         self.roi_relative_coordinates_enabled = bool(
             getattr(
                 custom_cfg,
@@ -240,15 +244,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 self.absolute_coordinates_enabled,
             )
         )
-        self.geometry_projection_enabled = bool(
-            getattr(custom_cfg, "georoute_geometry_projection_enabled", True)
-        )
-        self.diagnostic_telemetry_enabled = bool(
-            getattr(custom_cfg, "georoute_diagnostic_telemetry_enabled", False)
-        )
-        self.pooling_mode = str(
-            getattr(custom_cfg, "georoute_pooling_mode", "uniform_selected")
-        )
+        self.geometry_projection_enabled = bool(getattr(custom_cfg, "georoute_geometry_projection_enabled", True))
+        self.diagnostic_telemetry_enabled = bool(getattr(custom_cfg, "georoute_diagnostic_telemetry_enabled", False))
+        self.pooling_mode = str(getattr(custom_cfg, "georoute_pooling_mode", "uniform_selected"))
         self.adapter_mode = str(
             getattr(
                 custom_cfg,
@@ -260,24 +258,18 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         # aggregation adapter while keeping a fixed token lattice.  It tests
         # whether a gain comes from spatial *selection*, rather than merely
         # adding an extra geometry-conditioned feature pathway.
-        self.geometry_side_channel = bool(
-            getattr(custom_cfg, "georoute_geometry_side_channel", False)
-        )
+        self.geometry_side_channel = bool(getattr(custom_cfg, "georoute_geometry_side_channel", False))
         self.min_roi_extent = float(getattr(custom_cfg, "georoute_min_roi_extent", 0.20))
         self.max_roi_extent = float(getattr(custom_cfg, "georoute_max_roi_extent", 1.00))
         self.geometry_smoothness_weight = float(getattr(custom_cfg, "georoute_geometry_smoothness_weight", 0.0))
         self.area_prior_weight = float(getattr(custom_cfg, "georoute_area_prior_weight", 0.0))
         self.area_prior = float(getattr(custom_cfg, "georoute_area_prior", 0.30))
         self.score_function_weight = float(getattr(custom_cfg, "georoute_score_function_weight", 1.0))
-        self.score_function_baseline_momentum = float(
-            getattr(custom_cfg, "georoute_score_function_baseline_momentum", 0.95)
-        )
+        self.score_function_baseline_momentum = float(getattr(custom_cfg, "georoute_score_function_baseline_momentum", 0.95))
         # This switch is intentionally P0-only.  It runs a dense numerical
         # reference before the real packed call and is forbidden in ordinary
         # development/paper cells so it can never be mistaken for model cost.
-        self.p0_dense_reference_check = bool(
-            getattr(custom_cfg, "georoute_p0_dense_reference_check", False)
-        )
+        self.p0_dense_reference_check = bool(getattr(custom_cfg, "georoute_p0_dense_reference_check", False))
         self.output_length = int(getattr(custom_cfg, "georoute_output_length", self.window_size))
         self.max_batch_size = int(getattr(custom_cfg, "georoute_max_batch_size", 1))
         if self.route_mode not in ROUTE_MODES:
@@ -285,14 +277,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         if self.policy_estimator not in POLICY_ESTIMATORS:
             raise ValueError(f"unsupported GeoRoute estimator {self.policy_estimator!r}")
         if self.pooling_mode not in {"uniform_selected", "route_score_ablation"}:
-            raise ValueError(
-                "georoute_pooling_mode must be uniform_selected or route_score_ablation"
-            )
+            raise ValueError("georoute_pooling_mode must be uniform_selected or route_score_ablation")
         if self.adapter_mode != "coordinate_lineage_packed":
-            raise ValueError(
-                "GeoRoute correctness protocol requires "
-                "georoute_adapter_mode='coordinate_lineage_packed'"
-            )
+            raise ValueError("GeoRoute correctness protocol requires " "georoute_adapter_mode='coordinate_lineage_packed'")
         if self.window_size <= 0 or self.window_size % self.tubelet_size:
             raise ValueError("GeoRoute window size must be divisible by its tubelet size")
         if self.window_size % 16:
@@ -308,9 +295,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         if self.p0_dense_reference_check and self.route_mode != "dense":
             raise ValueError("GeoRoute dense numerical reference is valid only for route_mode='dense'")
         if self.geometry_side_channel and self.route_mode not in {"uniform", "random"}:
-            raise ValueError(
-                "GeoRoute geometry-side-channel control is valid only for fixed uniform/random routes"
-            )
+            raise ValueError("GeoRoute geometry-side-channel control is valid only for fixed uniform/random routes")
         super().__init__(cfg)
         if int(self.model.backbone.patch_size) != self.patch_size:
             raise ValueError("GeoRoute patch size must match the loaded VideoMAE")
@@ -368,11 +353,11 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self._successful_update_index = int(index)
 
     def _validate_inputs(self, frames: Mapping[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
-        if not isinstance(frames, Mapping) or set(frames) != {self.source_key, self.scout_key}:
-            raise ValueError(
-                "GeoRoute inputs are fail-closed; expected exactly "
-                f"{sorted((self.source_key, self.scout_key))}"
-            )
+        if not isinstance(frames, Mapping) or set(frames) != {
+            self.source_key,
+            self.scout_key,
+        }:
+            raise ValueError("GeoRoute inputs are fail-closed; expected exactly " f"{sorted((self.source_key, self.scout_key))}")
         source = frames[self.source_key]
         scout = frames[self.scout_key]
         if not isinstance(source, torch.Tensor) or source.ndim != 6 or source.shape[1:3] != (1, 3):
@@ -419,9 +404,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             dtype=torch.float32,
         )
         gather_index = indices[..., None].expand(*indices.shape, 2)
-        return centres.view(1, 1, -1, 2).expand(indices.shape[0], indices.shape[1], -1, 2).gather(
-            2, gather_index
-        )
+        return centres.view(1, 1, -1, 2).expand(indices.shape[0], indices.shape[1], -1, 2).gather(2, gather_index)
 
     def _regularization(self, geometry: torch.Tensor) -> torch.Tensor:
         smoothness = geometry.new_zeros(())
@@ -461,15 +444,24 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         needs_scout = needs_geometry or needs_residual
 
         if needs_scout:
-            normalized_scout = _normalize_uint8_video(
-                scout,
-                self.source_mean,
-                self.source_std,
-            )
-            geometry_logits, residual_logits = self.scout(
-                normalized_scout,
-                source_grid_hw=source_grid_hw,
-            )
+            # REINFORCE multiplies the joint route log-probability by a
+            # detector-derived advantage.  Even when the scalar loss is FP32,
+            # propagating its scaled gradient through an autocast FP16 scout
+            # can overflow before GradScaler can unscale it.  The scout is the
+            # low-cost route path, so keep its complete forward/backward graph
+            # in FP32 without changing the registered estimator or objective.
+            with torch.autocast(device_type=scout.device.type, enabled=False):
+                normalized_scout = _normalize_uint8_video(
+                    scout,
+                    self.source_mean,
+                    self.source_std,
+                )
+                geometry_logits, residual_logits = self.scout(
+                    normalized_scout,
+                    source_grid_hw=source_grid_hw,
+                )
+            if geometry_logits.dtype != torch.float32 or residual_logits.dtype != torch.float32:
+                raise FloatingPointError("GeoRoute scout must remain FP32 outside autocast")
         else:
             geometry_logits = torch.zeros(
                 (batch_size, tubelets, 4),
@@ -520,26 +512,14 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         unselected_mask = valid_mask & ~selected_mask
         unselected = scores.detach().masked_select(unselected_mask)
         result: dict[str, float | None] = {
-            "selected_mean": (
-                float(selected.float().mean().item()) if selected.numel() else None
-            ),
-            "unselected_mean": (
-                float(unselected.float().mean().item())
-                if unselected.numel()
-                else None
-            ),
+            "selected_mean": (float(selected.float().mean().item()) if selected.numel() else None),
+            "unselected_mean": (float(unselected.float().mean().item()) if unselected.numel() else None),
             "hard_margin_mean": None,
         }
         if bool(unselected_mask.any().item()):
-            selected_floor = scores.detach().masked_fill(
-                ~selected_mask, float("inf")
-            ).amin(dim=-1)
-            unselected_ceiling = scores.detach().masked_fill(
-                ~unselected_mask, float("-inf")
-            ).amax(dim=-1)
-            result["hard_margin_mean"] = float(
-                (selected_floor - unselected_ceiling).float().mean().item()
-            )
+            selected_floor = scores.detach().masked_fill(~selected_mask, float("inf")).amin(dim=-1)
+            unselected_ceiling = scores.detach().masked_fill(~unselected_mask, float("-inf")).amax(dim=-1)
+            result["hard_margin_mean"] = float((selected_floor - unselected_ceiling).float().mean().item())
         return result
 
     @classmethod
@@ -567,12 +547,8 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             union = (previous | following).sum(dim=-1).float()
             adjacent_jaccard = intersection / union.clamp_min(1.0)
             lineage_retention = intersection / float(route["target_k"])
-            center_step = (
-                geometry[:, 1:, :2] - geometry[:, :-1, :2]
-            ).square().sum(dim=-1).sqrt()
-            extent_step = (
-                geometry[:, 1:, 2:] - geometry[:, :-1, 2:]
-            ).square().sum(dim=-1).sqrt()
+            center_step = (geometry[:, 1:, :2] - geometry[:, :-1, :2]).square().sum(dim=-1).sqrt()
+            extent_step = (geometry[:, 1:, 2:] - geometry[:, :-1, 2:]).square().sum(dim=-1).sqrt()
         else:
             intersection = geometry.new_zeros((geometry.shape[0], 0))
             union = geometry.new_zeros((geometry.shape[0], 0))
@@ -594,13 +570,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         surrogate = route["soft_membership"].detach().float()
         valid_surrogate = surrogate.masked_select(valid_patch_mask)
         selected_surrogate = surrogate.masked_select(selected_mask)
-        unselected_surrogate = surrogate.masked_select(
-            valid_patch_mask & ~selected_mask
-        )
+        unselected_surrogate = surrogate.masked_select(valid_patch_mask & ~selected_mask)
         hard = selected_mask.to(dtype=surrogate.dtype)
-        hard_soft_l1 = (
-            (surrogate - hard).abs().masked_select(valid_patch_mask).mean()
-        )
+        hard_soft_l1 = (surrogate - hard).abs().masked_select(valid_patch_mask).mean()
         indices = route["indices"].detach().to("cpu").contiguous()
 
         def _mean_or_zero(value: torch.Tensor) -> float:
@@ -612,9 +584,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "tubelet_count": int(selected_mask.shape[1]),
             "item_count": int(selected_mask.shape[2]),
             "target_k": int(route["target_k"]),
-            "selected_index_sha256": hashlib.sha256(
-                indices.numpy().tobytes()
-            ).hexdigest(),
+            "selected_index_sha256": hashlib.sha256(indices.numpy().tobytes()).hexdigest(),
             "adjacent": {
                 "pair_count": int(intersection.numel()),
                 "intersection_mean": _mean_or_zero(intersection),
@@ -625,21 +595,12 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "coordinates": {
                 "x_mean": float(x.mean().item()),
                 "y_mean": float(y.mean().item()),
-                "x_span_mean": float(
-                    (x.amax(dim=-1) - x.amin(dim=-1)).mean().item()
-                ),
-                "y_span_mean": float(
-                    (y.amax(dim=-1) - y.amin(dim=-1)).mean().item()
-                ),
-                "quadrant_fraction": [
-                    float(value)
-                    for value in (quadrants / float(selected_count)).tolist()
-                ],
+                "x_span_mean": float((x.amax(dim=-1) - x.amin(dim=-1)).mean().item()),
+                "y_span_mean": float((y.amax(dim=-1) - y.amin(dim=-1)).mean().item()),
+                "quadrant_fraction": [float(value) for value in (quadrants / float(selected_count)).tolist()],
             },
             "geometry": {
-                "area_mean": float(
-                    (geometry[..., 2] * geometry[..., 3]).mean().item()
-                ),
+                "area_mean": float((geometry[..., 2] * geometry[..., 3]).mean().item()),
                 "center_step_l2_mean": _mean_or_zero(center_step),
                 "extent_step_l2_mean": _mean_or_zero(extent_step),
             },
@@ -667,7 +628,12 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
     def forward(self, frames, masks=None):
         source, scout = self._validate_inputs(frames)
         self.set_norm_layer()
-        native, source_grid_hw, ignored_remainder, valid_patch_mask = extract_native_tubelets(
+        (
+            native,
+            source_grid_hw,
+            ignored_remainder,
+            valid_patch_mask,
+        ) = extract_native_tubelets(
             source,
             patch_size=self.patch_size,
             tubelet_size=self.tubelet_size,
@@ -738,11 +704,15 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             max_abs_error = float(difference.max().item())
             mean_abs_error = float(difference.mean().item())
             tolerance = 1e-4
-            if not bool(torch.allclose(selected_features.detach(), reference, rtol=tolerance, atol=tolerance)):
-                raise RuntimeError(
-                    "GeoRoute native packed all-token output disagrees with its dense P0 reference: "
-                    f"max_abs_error={max_abs_error:.8g}"
+            if not bool(
+                torch.allclose(
+                    selected_features.detach(),
+                    reference,
+                    rtol=tolerance,
+                    atol=tolerance,
                 )
+            ):
+                raise RuntimeError("GeoRoute native packed all-token output disagrees with its dense P0 reference: " f"max_abs_error={max_abs_error:.8g}")
             dense_reference_audit = {
                 "enabled": True,
                 "reference_heavy_backbone_forward_count": 1,
@@ -784,7 +754,11 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             pooling_mode=self.pooling_mode,
         )
         output = deterministic_linear_2x(intermediate)
-        if output.shape != (source.shape[0], int(self.model.backbone.embed_dims), self.output_length):
+        if output.shape != (
+            source.shape[0],
+            int(self.model.backbone.embed_dims),
+            self.output_length,
+        ):
             raise RuntimeError("GeoRoute violated the AdaTAD [B,384,768] backbone contract")
         if masks is not None:
             if masks.shape != (output.shape[0], output.shape[-1]):
@@ -809,9 +783,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         packed = dict(self.model.backbone.latest_native_packed_summary or {})
         sorted_indices = route["indices"]
         if sorted_indices.shape[-1] > 1:
-            duplicate_count = int(
-                (sorted_indices[..., 1:] == sorted_indices[..., :-1]).sum().item()
-            )
+            duplicate_count = int((sorted_indices[..., 1:] == sorted_indices[..., :-1]).sum().item())
             unique_counts = 1 + (sorted_indices[..., 1:] != sorted_indices[..., :-1]).sum(dim=-1)
         else:
             duplicate_count = 0
@@ -821,14 +793,18 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "routing_schema": GEOROUTE_ROUTING_SCHEMA,
             "route_mode": self.route_mode,
             "policy_estimator": self.policy_estimator,
+            "scout_autocast_enabled": False,
+            "scout_compute_dtype": str(residual_logits.dtype),
             "policy_temperature": self.policy_temperature,
             "score_function_weight": self.score_function_weight,
-            "score_function_baseline_momentum": (
-                self.score_function_baseline_momentum
-            ),
+            "score_function_baseline_momentum": (self.score_function_baseline_momentum),
             "geometry_smoothness_weight": self.geometry_smoothness_weight,
             "area_prior_weight": self.area_prior_weight,
-            "estimator_claim": "biased_straight_through" if self.policy_estimator == "straight_through" else "score_function_candidate" if self.policy_estimator == "score_function" else "no_policy_gradient",
+            "estimator_claim": "biased_straight_through"
+            if self.policy_estimator == "straight_through"
+            else "score_function_candidate"
+            if self.policy_estimator == "score_function"
+            else "no_policy_gradient",
             "shared_backbone_instances": 1,
             "heavy_backbone_forward_count": packed_invocation_delta,
             "native_packed_invocation_counter_before": packed_invocations_before,
@@ -847,28 +823,16 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "geometry_stride_tubelets": self.geometry_stride_tubelets,
             "absolute_position_enabled": self.absolute_position_enabled,
             "absolute_coordinates_enabled": self.absolute_coordinates_enabled,
-            "roi_relative_coordinates_enabled": (
-                self.roi_relative_coordinates_enabled
-            ),
+            "roi_relative_coordinates_enabled": (self.roi_relative_coordinates_enabled),
             "geometry_projection_enabled": self.geometry_projection_enabled,
             "diagnostic_telemetry_enabled": self.diagnostic_telemetry_enabled,
             "pooling_mode": self.pooling_mode,
             "adapter_mode": self.adapter_mode,
             "geometry_side_channel": self.geometry_side_channel,
-            "learned_geometry_enabled": bool(
-                self.route_mode in {"roi", "hybrid"}
-                or self.geometry_side_channel
-            ),
+            "learned_geometry_enabled": bool(self.route_mode in {"roi", "hybrid"} or self.geometry_side_channel),
             "learned_residual_enabled": self.route_mode in {"free", "hybrid"},
-            "free_control_is_roi_free": bool(
-                self.route_mode != "free"
-                or (
-                    self.route_mode == "free"
-                    and not self.geometry_side_channel
-                )
-            ),
-            "route_logits_used_for_pooling": self.pooling_mode
-            == "route_score_ablation",
+            "free_control_is_roi_free": bool(self.route_mode != "free" or (self.route_mode == "free" and not self.geometry_side_channel)),
+            "route_logits_used_for_pooling": self.pooling_mode == "route_score_ablation",
             "geometry_min": float(geometry.detach().min().item()),
             "geometry_max": float(geometry.detach().max().item()),
             "target_k": int(route["target_k"]),
@@ -887,9 +851,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "uses_test_evidence": False,
         }
         if diagnostic_telemetry is not None:
-            self.latest_georoute_audit[
-                "diagnostic_telemetry"
-            ] = diagnostic_telemetry
+            self.latest_georoute_audit["diagnostic_telemetry"] = diagnostic_telemetry
         return output.to(torch.float32)
 
     def consume_training_auxiliary_losses(
@@ -930,9 +892,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         with torch.no_grad():
             reward = detector_cost.detach()
             if bool(self.score_function_baseline_initialized.item()):
-                self.score_function_baseline.mul_(self.score_function_baseline_momentum).add_(
-                    reward * (1.0 - self.score_function_baseline_momentum)
-                )
+                self.score_function_baseline.mul_(self.score_function_baseline_momentum).add_(reward * (1.0 - self.score_function_baseline_momentum))
             else:
                 self.score_function_baseline.copy_(reward)
                 self.score_function_baseline_initialized.fill_(True)
@@ -941,9 +901,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             self.latest_georoute_audit["score_function_reward"] = float(detector_cost.detach().item())
             self.latest_georoute_audit["score_function_baseline"] = float(baseline.detach().item())
             self.latest_georoute_audit["score_function_detector_binding"] = {
-                "detector_loss_keys": sorted(
-                    str(name) for name, value in detector_losses.items() if torch.is_tensor(value)
-                ),
+                "detector_loss_keys": sorted(str(name) for name, value in detector_losses.items() if torch.is_tensor(value)),
                 "detector_cost_finite": bool(torch.isfinite(detector_cost).item()),
                 "policy_objective_sign": "positive_(detector_loss-baseline)*log_probability_for_risk_minimization",
             }

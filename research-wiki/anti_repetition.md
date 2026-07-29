@@ -86,6 +86,10 @@ updated: 2026-07-29
    A replacement must run the actual model under autocast plus GradScaler,
    unscale and inspect all required trainable gradients, and prove a successful
    optimizer step at the registered floor scale before releasing any stage.
+   The implemented replacement is backbone schema v4 plus P0 schema v5:
+   scout/route FP32 outside autocast and a full-model GradScaler-256
+   zero-learning-rate step. Never weaken this back to an isolated logits gate
+   or silently add normalization/clipping to make it pass.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

@@ -691,6 +691,14 @@ score-function route/scout precision path out of FP16 overflow, and gate a real
 full-model scaled optimizer update. Current five surviving stages are terminal
 provenance only; closeout `1204028` must be INCOMPLETE.
 
+An estimator-equivalent repair is now implemented locally. The low-cost
+scout/route graph is explicitly FP32 outside global autocast, while detector
+compute remains AMP. P0 schema v5 must run the actual model under autocast and
+GradScaler at scale `256`, unscale and inspect required trainable gradients,
+and complete a zero-learning-rate optimizer step. No temporal normalization,
+clipping, weight, arm, seed, budget, epoch or contrast changed. Remote Linux
+tests and a fresh CUDA gate remain required.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

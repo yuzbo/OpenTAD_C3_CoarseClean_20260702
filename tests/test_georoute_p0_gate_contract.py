@@ -24,9 +24,18 @@ def _valid_payload() -> dict:
         "shared_backbone_instances": 1,
         "uses_grid_sample": False,
         "uses_resized_local_crop": False,
-        "exact_k": {"target_k": 16, "observed_min": 16, "observed_max": 16, "duplicates": 0},
+        "exact_k": {
+            "target_k": 16,
+            "observed_min": 16,
+            "observed_max": 16,
+            "duplicates": 0,
+        },
         "estimator": {"name": "straight_through", "claim": "biased_straight_through"},
         "score_function_amp_horizon": {
+            "status": "NOT_APPLICABLE_NON_SCORE_FUNCTION",
+            "executed": False,
+        },
+        "score_function_full_graph_amp": {
             "status": "NOT_APPLICABLE_NON_SCORE_FUNCTION",
             "executed": False,
         },
@@ -111,7 +120,11 @@ def _valid_payload() -> dict:
             "safety_bytes": 1024,
             "measurement_method": "unit_test",
         },
-        "p0_scope": {"synthetic_inputs_only": True, "full_training": False, "official_evaluation": False},
+        "p0_scope": {
+            "synthetic_inputs_only": True,
+            "full_training": False,
+            "official_evaluation": False,
+        },
     }
 
 
@@ -178,11 +191,29 @@ def test_score_function_p0_binds_amp_kat_to_the_real_route_horizon():
         "policy_loss_abs": 100000.0,
         "fp16_max": 65504.0,
     }
+    payload["score_function_full_graph_amp"] = {
+        "status": "PASS_FULL_GRAPH_AMP_OPTIMIZER_UPDATE",
+        "executed": True,
+        "autocast_dtype": "torch.float16",
+        "loss_scale_before": 256.0,
+        "loss_scale_after": 256.0,
+        "optimizer": "sgd_lr_zero_overflow_probe",
+        "optimizer_update_succeeded": True,
+        "all_required_gradients_finite": True,
+        "scout_autocast_enabled": False,
+        "scout_compute_dtype": "torch.float32",
+        "model_backward_scope": "detector_plus_score_function",
+    }
 
     validate_p0_gate_report(build_p0_gate_report(payload))
 
     payload["source_grid"]["patch_capacity"] = 100
     with pytest.raises(ValueError, match="production-horizon"):
+        validate_p0_gate_report(build_p0_gate_report(payload))
+
+    payload["source_grid"]["patch_capacity"] = 220
+    payload["score_function_full_graph_amp"]["optimizer_update_succeeded"] = False
+    with pytest.raises(ValueError, match="full-graph"):
         validate_p0_gate_report(build_p0_gate_report(payload))
 
 
@@ -224,7 +255,7 @@ def test_p0_tool_is_statically_bound_to_georoute_and_never_to_official_test_or_s
     assert "forward_test(" not in source
     assert "F.grid_sample(" not in wrapper
     assert wrapper.count("forward_native_packed(") == 1
-    assert "uses_resized_local_crop\": False" in wrapper
+    assert 'uses_resized_local_crop": False' in wrapper
     assert "consume_detector_policy_loss" in detector
     assert "detector_losses=loc_losses" in detector
 
