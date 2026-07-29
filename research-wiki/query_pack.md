@@ -37,11 +37,32 @@ max_chars: 8000
   `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
   A new independent study,
   `georoute_estimator_representation_pilot_v1`, is
-  `implemented_pending_remote_test_and_p0`: six parallel single-seed,
-  20-epoch, K=64 arms isolate PL versus ST, fixed-support representation,
-  ROI-support representation, and ROI versus residual support. It has a new
-  contract/DAG/finalizer, no old selector, no automatic promotion, and no
-  P2/P3 or official test.
+  `mechanical_failure_repair_implemented_pending_remote_linux_and_fresh_p0`.
+  Six single-seed, 20-epoch, K=64 arms isolate PL versus ST, fixed-support
+  representation, ROI-support representation, and ROI versus residual support.
+  The first clean runtime `02b6efe7` passed remote Linux tests `108/108`, but
+  P0 Jobs `1203380`--`1203385` all failed before a model result: the two
+  single-tenant leaves passed the rendezvous gate and then exposed a script-mode
+  `tools` import defect, while four co-located leaves exceeded the old
+  30-second readiness threshold. No training leaf ran. Descendants
+  `1203386`--`1203392` were canceled only after becoming impossible; finalizer
+  `1203393` then exposed a JSON-key-order validation defect and produced no
+  pilot finalization. This namespace is immutable deployment-failure evidence,
+  not model evidence. The v2 repair launches P0 by module, installs the source
+  root before dynamic imports, uses a decimal-Slurm-job-scoped `127/8` address
+  plus a kernel-assigned port and unique run ID, raises readiness to 120 seconds
+  with a hashed failure sidecar, terminates the entire torchrun process group on
+  failure, validates the current node and arm maps independent of sorted JSON
+  order, and changes all gating dependencies to `afterany` while stage wrappers
+  fail before cell creation unless the sealed P0 suite passed. P0-finalizer and
+  final-closeout prevalidation exceptions also produce hashed mechanical
+  failure/INCOMPLETE receipts. Thus both success and failure paths reach a
+  terminal non-promoting record. N16R4 Jobs
+  `1203460/1203461` proved `srun --resv-ports=2` is unavailable
+  (`Requires more ports than can be reserved`), so that mechanism is explicitly
+  rejected. A fresh commit, namespace, Linux suite, same-node gate, and P0 are
+  still required. There is no old selector, automatic promotion, P2/P3,
+  official test, efficiency claim, or paper claim.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

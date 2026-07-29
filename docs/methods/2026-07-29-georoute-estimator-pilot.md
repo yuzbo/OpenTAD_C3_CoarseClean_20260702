@@ -4,7 +4,7 @@ Date: 2026-07-29
 
 Study ID: `georoute_estimator_representation_pilot_v1`
 
-Status: `implemented_pending_remote_test_and_p0`
+Status: `mechanical_failure_repair_implemented_pending_remote_linux_and_fresh_p0`
 
 Authorization boundary: one development-only exploratory seed. This pilot has
 no automatic winner, selector promotion, P2/P3, official test, confirmatory
@@ -79,11 +79,13 @@ No post-result `+0.50/+0.30 pp` threshold is used.
 The independent DAG is:
 
 1. six parallel CUDA one-step P0 leaves;
-2. an afterok P0 finalizer that validates exact arm bindings, detector
+2. an afterany P0 finalizer that validates exact arm bindings, detector
    gradients, unique rendezvous namespaces, final-only storage bounds, and the
    sealed D/K/M parent;
-3. six parallel 20-epoch training/evaluation leaves after the P0 suite;
-4. an afterany exploratory finalizer.
+3. six parallel fail-closed wrappers afterany the P0 finalizer; each wrapper
+   must validate the sealed PASS P0 suite before creating a cell, and only then
+   may run the 20-epoch training/evaluation leaf;
+4. an afterany exploratory finalizer over all terminal leaves.
 
 All P0 leaves are submitted held and released only after immutable deployment
 and finalizer receipts exist. Every training leaf uses a unique Slurm job,
@@ -93,6 +95,27 @@ experiment commit, and finalization SHA. Each training result carries its full
 immutable binding; the finalizer rereads the raw profile and telemetry,
 recomputes window, population, and summary hashes, requires the canonical P0
 suite path, and verifies that train and test share the expected Slurm leaf.
+
+This all-terminal dependency shape is a mechanical closeout guarantee, not a
+relaxation of P0. If any P0 report is missing or invalid, the P0 finalizer seals
+a mechanical failure receipt and exits nonzero; all six wrappers then fail
+before cell creation because no PASS suite exists; and the finalizer emits
+`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. It avoids a permanent
+`DependencyNeverSatisfied` chain while never authorizing training after failed
+P0. P0-finalizer and final-closeout prevalidation or sealing failures also
+write hashed fail-safe receipts before re-raising, so a terminal mechanical
+record survives a nonzero control Job.
+
+The first runtime `02b6efe7` is retained as immutable deployment-failure
+evidence. P0 Jobs `1203380`--`1203385` failed before model reports due to
+script-mode import and under-instrumented readiness failures; no training ran.
+Finalizer `1203393` separately exposed JSON-key-order validation. The repair
+uses module-mode P0, source-root bootstrap, a Slurm-job-scoped `127/8` endpoint
+with a kernel-assigned port and unique ID, a 120-second readiness bound with a
+hashed failure sidecar, whole-process-group cleanup on failure, same-leaf node
+revalidation, and key-order-independent exact arm binding. Same-node
+Jobs `1203460/1203461` demonstrated that N16R4 cannot provide
+`srun --resv-ports=2`, so reserved ports are not part of this protocol.
 
 Any decode error, OOM, non-finite loss/cost, non-finite required gradient,
 missing update, rendezvous failure, missing artifact, input/hash mismatch,

@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -23,9 +24,11 @@ from tools.bata.georoute_estimator_pilot_contract import (  # noqa: E402
     PILOT_ARM_ORDER,
     PILOT_DEPLOYMENT_SCHEMA,
     PILOT_K,
+    PILOT_P0_FAILURE_SCHEMA,
     PILOT_P0_SUITE_SCHEMA,
     PILOT_STUDY_ID,
     pilot_arm_spec,
+    validate_pilot_job_receipt,
 )
 from tools.bata.georoute_experiment_contract import (  # noqa: E402
     canonical_sha256,
@@ -321,8 +324,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = _parse_args()
+def _run_main(args: argparse.Namespace) -> int:
     run_root = args.run_root.resolve()
     boundary = Path("/data/run01/sczc063/yuzibo").resolve()
     if not _inside(run_root, boundary) or run_root == boundary:
@@ -338,7 +340,13 @@ def main() -> int:
         raise RuntimeError("estimator pilot P0 finalizer requires Slurm")
     deployment_path = run_root / "control" / "deployment.json"
     deployment = _read_json(deployment_path)
-    jobs = deployment.get("jobs")
+    try:
+        jobs = validate_pilot_job_receipt(
+            deployment.get("jobs"),
+            expected_p0_finalizer=slurm_job_id,
+        )
+    except ValueError:
+        jobs = None
     if (
         deployment.get("schema_version") != PILOT_DEPLOYMENT_SCHEMA
         or deployment.get("status") != "SUBMITTED_SIX_ARM_EXPLORATORY_PILOT"
@@ -346,49 +354,135 @@ def main() -> int:
         or deployment.get("runtime_commit") != expected_commit
         or tuple(deployment.get("arms", [])) != PILOT_ARM_ORDER
         or not _self_hash_matches(deployment, "deployment_sha256")
-        or not isinstance(jobs, Mapping)
-        or not isinstance(jobs.get("p0"), Mapping)
-        or tuple(jobs["p0"]) != PILOT_ARM_ORDER
-        or jobs.get("p0_finalizer") != slurm_job_id
+        or jobs is None
     ):
         raise RuntimeError("estimator pilot deployment receipt is invalid")
+    assert jobs is not None
     report_paths = {
         arm: run_root / "p0" / f"{arm}.json"
         for arm in PILOT_ARM_ORDER
     }
-    suite, storage_profile = finalize_pilot_p0(
-        report_paths=report_paths,
-        expected_commit=expected_commit,
-        parent_finalization_path=Path(
-            deployment["preexperiment_parent"]["path"]
-        ).resolve(),
-        parent_finalization_file_sha256=str(
-            deployment["preexperiment_parent"]["file_sha256"]
-        ),
-        expected_parent_runtime_commit=str(
-            deployment["preexperiment_parent"]["expected_runtime_commit"]
-        ),
-        expected_source_experiment_commit=str(
-            deployment["preexperiment_parent"][
-                "expected_source_experiment_commit"
-            ]
-        ),
-        expected_parent_finalization_sha256=str(
-            deployment["preexperiment_parent"]["expected_finalization_sha256"]
-        ),
-        expected_jobs={
-            arm: str(jobs["p0"][arm])
-            for arm in PILOT_ARM_ORDER
-        },
-    )
     suite_path = run_root / "control" / "pilot_p0_suite.json"
     profile_path = run_root / "control" / "georoute_storage_profile.json"
-    if suite_path.exists() or profile_path.exists():
-        raise FileExistsError("estimator pilot P0 suite is already sealed")
+    failure_path = run_root / "control" / "pilot_p0_failure.json"
+    if suite_path.exists() or profile_path.exists() or failure_path.exists():
+        raise FileExistsError("estimator pilot P0 finalization is already sealed")
+    try:
+        suite, storage_profile = finalize_pilot_p0(
+            report_paths=report_paths,
+            expected_commit=expected_commit,
+            parent_finalization_path=Path(
+                deployment["preexperiment_parent"]["path"]
+            ).resolve(),
+            parent_finalization_file_sha256=str(
+                deployment["preexperiment_parent"]["file_sha256"]
+            ),
+            expected_parent_runtime_commit=str(
+                deployment["preexperiment_parent"]["expected_runtime_commit"]
+            ),
+            expected_source_experiment_commit=str(
+                deployment["preexperiment_parent"][
+                    "expected_source_experiment_commit"
+                ]
+            ),
+            expected_parent_finalization_sha256=str(
+                deployment["preexperiment_parent"]["expected_finalization_sha256"]
+            ),
+            expected_jobs={
+                arm: str(jobs["p0"][arm])
+                for arm in PILOT_ARM_ORDER
+            },
+        )
+    except Exception as error:
+        failure_core: dict[str, Any] = {
+            "schema_version": PILOT_P0_FAILURE_SCHEMA,
+            "status": "FAIL_P0_SUITE_MECHANICAL_ONLY",
+            "study_id": PILOT_STUDY_ID,
+            "runtime_commit": expected_commit,
+            "p0_finalizer_job_id": slurm_job_id,
+            "p0_job_ids": {
+                arm: str(jobs["p0"][arm])
+                for arm in PILOT_ARM_ORDER
+            },
+            "reports": {
+                arm: {
+                    "path": str(path),
+                    "exists": path.is_file(),
+                    "file_sha256": sha256_file(path) if path.is_file() else None,
+                }
+                for arm, path in report_paths.items()
+            },
+            "exception_type": type(error).__name__,
+            "exception_message": str(error),
+            "traceback": traceback.format_exc(),
+            "training_authorized": False,
+            "performance_inference_allowed": False,
+            "official_test_opened": False,
+            "p2_p3_opened": False,
+            "paper_claim_allowed": False,
+        }
+        failure = {
+            **failure_core,
+            "failure_sha256": canonical_sha256(failure_core),
+        }
+        _atomic_write_json(failure_path, failure)
+        raise
     _atomic_write_json(suite_path, suite)
     _atomic_write_json(profile_path, storage_profile)
     print(json.dumps(suite, sort_keys=True))
     return 0
+
+
+def _write_failsafe_failure(
+    *,
+    args: argparse.Namespace,
+    error: Exception,
+) -> None:
+    run_root = args.run_root.resolve()
+    boundary = Path("/data/run01/sczc063/yuzibo").resolve()
+    if not _inside(run_root, boundary) or run_root == boundary:
+        return
+    failure_path = run_root / "control" / "pilot_p0_failure.json"
+    if failure_path.exists():
+        return
+    try:
+        observed_commit = _git_output("rev-parse", "HEAD").lower()
+    except Exception:
+        observed_commit = None
+    failure_core: dict[str, Any] = {
+        "schema_version": PILOT_P0_FAILURE_SCHEMA,
+        "status": "FAIL_P0_FINALIZER_MECHANICAL_ONLY",
+        "study_id": PILOT_STUDY_ID,
+        "runtime_commit": str(args.expected_commit).lower(),
+        "observed_runtime_commit": observed_commit,
+        "p0_finalizer_job_id": os.environ.get("SLURM_JOB_ID"),
+        "failure_phase": "p0_finalizer_prevalidation_or_sealing",
+        "exception_type": type(error).__name__,
+        "exception_message": str(error),
+        "traceback": traceback.format_exc(),
+        "training_authorized": False,
+        "performance_inference_allowed": False,
+        "official_test_opened": False,
+        "p2_p3_opened": False,
+        "paper_claim_allowed": False,
+    }
+    failure = {
+        **failure_core,
+        "failure_sha256": canonical_sha256(failure_core),
+    }
+    _atomic_write_json(failure_path, failure)
+
+
+def main() -> int:
+    args = _parse_args()
+    try:
+        return _run_main(args)
+    except Exception as error:
+        try:
+            _write_failsafe_failure(args=args, error=error)
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":

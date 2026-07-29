@@ -14,6 +14,7 @@ import json
 import math
 import os
 import random
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,9 @@ from typing import Any, Mapping
 
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 GEOROUTE_P0_GATE_SCHEMA = "georoute_adatad_p0_cuda_one_step_gate_v3"
 
 
@@ -75,6 +79,7 @@ def _load_rendezvous_binding(
     validate_rendezvous_gate_receipt(
         payload,
         expected_commit=runtime_commit,
+        expected_node_name=socket.gethostname(),
     )
     if str(payload.get("slurm_job_id")) != slurm_job_id:
         raise ValueError("P0 model gate and rendezvous gate used different Slurm leaves")
@@ -585,8 +590,6 @@ def _run_cuda_gate(args) -> dict[str, Any]:
         raise FileNotFoundError(config_path)
     cfg = _configure_in_memory(config_path, args)
 
-    if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
     from opentad.models import build_detector
 
     model = build_detector(cfg.model).to(device)

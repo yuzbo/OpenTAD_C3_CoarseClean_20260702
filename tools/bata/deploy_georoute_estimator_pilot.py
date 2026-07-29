@@ -495,7 +495,7 @@ def main() -> int:
             exports=p0_finalizer_exports,
             gpu=False,
             dependency=list(jobs["p0"].values()),
-            dependency_type="afterok",
+            dependency_type="afterany",
         )
         submitted.append(jobs["p0_finalizer"])
         for arm in PILOT_ARM_ORDER:
@@ -506,7 +506,7 @@ def main() -> int:
                 exports=stage_exports[arm],
                 gpu=True,
                 dependency=[jobs["p0_finalizer"]],
-                dependency_type="afterok",
+                dependency_type="afterany",
             )
             jobs["stage"][arm] = job_id
             submitted.append(job_id)
@@ -553,8 +553,9 @@ def main() -> int:
             "jobs": jobs,
             "dependency_policy": {
                 "p0_six_parallel": True,
-                "p0_finalizer_afterok_all_p0": True,
-                "training_six_parallel_afterok_p0_suite": True,
+                "p0_finalizer_afterany_all_p0": True,
+                "training_wrappers_afterany_p0_finalizer": True,
+                "training_requires_valid_p0_suite_before_cell_creation": True,
                 "exploratory_finalizer_afterany_all_leaves": True,
                 "p0_held_until_receipts_written": True,
             },

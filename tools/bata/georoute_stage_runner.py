@@ -15,8 +15,11 @@ import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -45,6 +48,10 @@ _TIOU_MAP = re.compile(
     r"mAP at tIoU\s+([0-9]+(?:\.[0-9]+)?)\s+is\s+([0-9]+(?:\.[0-9]+)?)%"
 )
 _RENDEZVOUS_COMPONENT = re.compile(r"^[A-Za-z0-9_.-]+$")
+_JOB_SCOPED_LOOPBACK_RADIX = 254
+_MAX_JOB_SCOPED_LOOPBACK_ID = _JOB_SCOPED_LOOPBACK_RADIX**3
+_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
+_LOG_DRAIN_TIMEOUT_SECONDS = 5.0
 
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
@@ -61,8 +68,47 @@ def _read_json(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _inside(path: Path, boundary: Path) -> bool:
+    try:
+        path.relative_to(boundary)
+    except ValueError:
+        return False
+    return path != boundary
+
+
+def _signal_process_group(
+    process: subprocess.Popen[str],
+    requested_signal: signal.Signals,
+) -> None:
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, requested_signal)
+        elif process.poll() is None:
+            if requested_signal == signal.SIGTERM:
+                process.terminate()
+            else:
+                process.kill()
+    except ProcessLookupError:
+        return
+
+
+def _stop_logged_process_group(process: subprocess.Popen[str]) -> None:
+    """Bound cleanup of a torchrun parent and every process in its session."""
+
+    _signal_process_group(process, signal.SIGTERM)
+    deadline = time.monotonic() + _LOG_DRAIN_TIMEOUT_SECONDS
+    while time.monotonic() < deadline and process.poll() is None:
+        time.sleep(0.05)
+    _signal_process_group(process, _KILL_SIGNAL)
+    if process.poll() is None:
+        try:
+            process.wait(timeout=_LOG_DRAIN_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            return
+
+
 def _run_logged(command: list[str], *, log_path: Path, env: Mapping[str, str]) -> None:
-    """Stream one command to an immutable per-cell text log."""
+    """Stream one command to an immutable log and fail closed on process leaks."""
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("x", encoding="utf-8") as handle:
@@ -76,13 +122,45 @@ def _run_logged(command: list[str], *, log_path: Path, env: Mapping[str, str]) -
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            start_new_session=True,
         )
         assert process.stdout is not None
-        for line in process.stdout:
-            handle.write(line)
-            handle.flush()
-            print(line, end="", flush=True)
-        return_code = process.wait()
+        reader_errors: list[BaseException] = []
+
+        def _drain_output() -> None:
+            try:
+                for line in process.stdout:
+                    handle.write(line)
+                    handle.flush()
+                    print(line, end="", flush=True)
+            except BaseException as error:
+                reader_errors.append(error)
+
+        reader = threading.Thread(
+            target=_drain_output,
+            name="georoute-log-drain",
+            daemon=True,
+        )
+        reader.start()
+        try:
+            return_code = process.wait()
+            if return_code != 0:
+                _stop_logged_process_group(process)
+            reader.join(timeout=_LOG_DRAIN_TIMEOUT_SECONDS)
+            if reader.is_alive():
+                _stop_logged_process_group(process)
+                reader.join(timeout=_LOG_DRAIN_TIMEOUT_SECONDS)
+            if reader.is_alive():
+                raise RuntimeError(
+                    "GeoRoute command output pipe remained open after bounded "
+                    "process-group cleanup"
+                )
+            if reader_errors:
+                raise RuntimeError("GeoRoute command log drain failed") from reader_errors[0]
+        except BaseException:
+            _stop_logged_process_group(process)
+            reader.join(timeout=_LOG_DRAIN_TIMEOUT_SECONDS)
+            raise
     if return_code != 0:
         raise RuntimeError(f"command failed with exit code {return_code}: {' '.join(command)}")
 
@@ -135,6 +213,27 @@ def _current_commit() -> str:
     return commit
 
 
+def _job_scoped_loopback(slurm_job_id: str) -> str:
+    """Encode one decimal Slurm job ID into a distinct Linux loopback address."""
+
+    value = str(slurm_job_id)
+    if not value.isdigit():
+        raise ValueError(f"unsafe GeoRoute rendezvous slurm_job_id: {value!r}")
+    numeric = int(value)
+    if not 1 <= numeric <= _MAX_JOB_SCOPED_LOOPBACK_ID:
+        raise ValueError(
+            "GeoRoute Slurm job ID exceeds the audited job-scoped loopback range"
+        )
+    remainder = numeric - 1
+    octets = []
+    for _ in range(3):
+        remainder, digit = divmod(remainder, _JOB_SCOPED_LOOPBACK_RADIX)
+        octets.append(digit + 1)
+    if remainder:
+        raise AssertionError("job-scoped loopback encoding overflow")
+    return f"127.{octets[2]}.{octets[1]}.{octets[0]}"
+
+
 def build_torchrun_prefix(
     *,
     phase: str,
@@ -142,6 +241,7 @@ def build_torchrun_prefix(
     stage: str,
     variant: str,
     seed: int,
+    rendezvous_slot: int | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     """Build one collision-isolated single-node torchrun prefix and receipt."""
 
@@ -154,17 +254,25 @@ def build_torchrun_prefix(
     }
     if phase not in {"train", "test"}:
         raise ValueError("GeoRoute rendezvous phase must be train or test")
+    if rendezvous_slot is None:
+        rendezvous_slot = 0 if phase == "train" else 1
+    if not isinstance(rendezvous_slot, int) or rendezvous_slot not in {0, 1}:
+        raise ValueError("GeoRoute rendezvous slot must be 0 or 1")
     for name, value in components.items():
         if not value or _RENDEZVOUS_COMPONENT.fullmatch(value) is None:
             raise ValueError(f"unsafe GeoRoute rendezvous {name}: {value!r}")
+    endpoint_host = _job_scoped_loopback(slurm_job_id)
+    endpoint = f"{endpoint_host}:0"
     rendezvous_id = (
         f"georoute-{slurm_job_id}-{stage}-{variant}-s{int(seed)}-{phase}"
     )
     receipt: dict[str, Any] = {
         "phase": phase,
         "backend": "c10d",
-        "endpoint": "127.0.0.1:0",
-        "endpoint_policy": "kernel_assigned_loopback_port",
+        "endpoint": endpoint,
+        "endpoint_host": endpoint_host,
+        "endpoint_policy": "job_scoped_loopback_and_kernel_assigned_port",
+        "rendezvous_slot": rendezvous_slot,
         "rendezvous_id": rendezvous_id,
         "slurm_job_id": slurm_job_id,
         "stage": stage,
@@ -180,7 +288,7 @@ def build_torchrun_prefix(
         "--nnodes=1",
         "--nproc_per_node=1",
         "--rdzv_backend=c10d",
-        "--rdzv_endpoint=127.0.0.1:0",
+        f"--rdzv_endpoint={endpoint}",
         f"--rdzv_id={rendezvous_id}",
     ]
     return command, receipt
@@ -203,8 +311,6 @@ def _validate_rendezvous_receipt(
         if (
             record.get("phase") != phase
             or record.get("backend") != "c10d"
-            or record.get("endpoint") != "127.0.0.1:0"
-            or record.get("endpoint_policy") != "kernel_assigned_loopback_port"
             or record.get("stage") != stage
             or record.get("variant") != variant
             or int(record.get("seed", -1)) != int(seed)
@@ -216,6 +322,18 @@ def _validate_rendezvous_receipt(
         slurm_job_id = record.get("slurm_job_id")
         if not isinstance(rendezvous_id, str) or not isinstance(slurm_job_id, str):
             raise ValueError(f"GeoRoute {phase} rendezvous identity is missing")
+        expected_endpoint_host = _job_scoped_loopback(slurm_job_id)
+        expected_slot = 0 if phase == "train" else 1
+        if (
+            record.get("endpoint") != f"{expected_endpoint_host}:0"
+            or record.get("endpoint_host") != expected_endpoint_host
+            or record.get("endpoint_policy")
+            != "job_scoped_loopback_and_kernel_assigned_port"
+            or int(record.get("rendezvous_slot", -1)) != expected_slot
+        ):
+            raise ValueError(
+                f"GeoRoute {phase} rendezvous endpoint is not job-scoped"
+            )
         expected_id = (
             f"georoute-{slurm_job_id}-{stage}-{variant}-s{int(seed)}-{phase}"
         )
@@ -227,7 +345,9 @@ def _validate_rendezvous_receipt(
     if validated["train"]["slurm_job_id"] != validated["test"]["slurm_job_id"]:
         raise ValueError("GeoRoute train and test must share the bound Slurm leaf")
     return {
-        "isolation_policy": "kernel_assigned_endpoint_and_unique_cell_phase_id",
+        "isolation_policy": (
+            "job_scoped_loopback_kernel_assigned_endpoint_and_unique_cell_phase_id"
+        ),
         **validated,
     }
 
@@ -338,7 +458,8 @@ def main() -> int:
         raise RuntimeError("GeoRoute development cell must see exactly one Slurm GPU")
 
     run_root = args.run_root.resolve()
-    if "/data/run01/sczc063/yuzibo/" not in run_root.as_posix() + "/":
+    write_boundary = Path("/data/run01/sczc063/yuzibo").resolve()
+    if not _inside(run_root, write_boundary):
         raise ValueError("GeoRoute run root must remain inside the remote write boundary")
     cell_path = stage_cell_relative_path(
         stage=args.stage,

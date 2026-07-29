@@ -38,6 +38,25 @@ updated: 2026-07-29
    post-result margins to promote an arm. First report the four frozen
    contrasts; only then may its variance inform a new protocol with disjoint
    confirmatory seeds.
+0. Never resume or interpret
+   `georoute_estimator_representation_pilot_02b6efe7_20260729_1805`.
+   P0 Jobs `1203380`--`1203385` failed mechanically before any model result;
+   no training leaf ran and no performance conclusion exists. A repair requires
+   a new commit and namespace.
+0. JSON object key order is not experimental arm order. Deployment validators
+   must compare the exact arm-key set, normalize it back to the frozen arm
+   order, require unique numeric Slurm IDs, and then bind by arm. Never reject
+   a valid receipt merely because atomic `sort_keys=True` serialization changed
+   insertion order.
+0. Never put an `afterany` closeout behind descendants that can remain
+   `DependencyNeverSatisfied`. For the estimator pilot, P0 finalization runs
+   `afterany` over all P0 leaves; every training wrapper runs `afterany` over
+   that finalizer but must verify the sealed PASS P0 suite before creating its
+   cell or launching training; the final closeout then runs `afterany` over all
+   terminal leaves. A failed P0 must end in an INCOMPLETE receipt without
+   partial-performance inference. P0-finalizer and final-closeout
+   prevalidation/sealing exceptions must write hashed fail-safe receipts before
+   re-raising.
 0. Never launch a multi-cell 60-epoch GeoRoute matrix with per-epoch full
    model/optimizer/EMA checkpoint retention and no aggregate storage
    preflight. Jobs `1196071`--`1196077` accumulated 63 GB, filled `/data`, and
@@ -85,6 +104,15 @@ updated: 2026-07-29
    such as the already audited `127.0.0.1:0` pattern, bind a unique rendezvous
    ID, and pass an intentional same-node concurrent isolation gate. A bind
    collision invalidates the cell; never resume or infer model utility from it.
+0. On N16R4, do not rely on `srun --resv-ports`: co-located diagnostic Jobs
+   `1203460/1203461` both failed immediately with `Requires more ports than can
+   be reserved`. The repaired GeoRoute contract instead derives a distinct
+   `127/8` loopback address from the decimal Slurm job ID, retains a
+   kernel-assigned port and cell/phase-bound rendezvous ID, and records the
+   actual runtime port. Keep the audited 120-second readiness bound and hashed
+   per-probe failure sidecar; terminate the whole torchrun process group on
+   failure so no worker or TCPStore survives its parent. A bare timeout string
+   is not sufficient evidence.
 
 ## Continuous-RoI S2 deployment anti-repetition
 

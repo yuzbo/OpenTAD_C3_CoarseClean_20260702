@@ -3,11 +3,15 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
+from tools.bata import georoute_rendezvous_gate as rdzv_gate
+from tools.bata import georoute_stage_runner as stage_runner
 from tools.bata import georoute_dag_dispatch as dag
 from tools.bata.finalize_georoute_p0_gate import finalize
 from tools.bata.georoute_dag_dispatch import GEOROUTE_STAGE_RESULT_SCHEMA
@@ -25,6 +29,7 @@ from tools.bata.georoute_experiment_contract import (
 )
 from tools.bata.georoute_rendezvous_gate import (
     GEOROUTE_RENDEZVOUS_GATE_SCHEMA,
+    READINESS_TIMEOUT_SECONDS,
     validate_rendezvous_gate_receipt,
 )
 from tools.bata.georoute_stage_runner import (
@@ -39,6 +44,56 @@ from tools.bata.run_georoute_p0_gate import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_stage_runner_write_boundary_is_path_structural(tmp_path):
+    boundary = (tmp_path / "yuzibo").resolve()
+    assert stage_runner._inside((boundary / "pilot").resolve(), boundary)
+    assert not stage_runner._inside(boundary, boundary)
+    assert not stage_runner._inside(
+        (tmp_path / "yuzibo_evil" / "pilot").resolve(),
+        boundary,
+    )
+
+
+def test_run_logged_starts_session_and_cleans_failed_process_group(
+    tmp_path,
+    monkeypatch,
+):
+    observed: dict[str, object] = {}
+
+    class FakeProcess:
+        pid = 1207001
+        stdout = iter(("one line\n",))
+
+        def wait(self, timeout=None):
+            observed.setdefault("wait_timeouts", []).append(timeout)
+            return 7
+
+        def poll(self):
+            return 7
+
+    def fake_popen(command, **kwargs):
+        observed["command"] = command
+        observed["start_new_session"] = kwargs.get("start_new_session")
+        return FakeProcess()
+
+    cleaned: list[FakeProcess] = []
+    monkeypatch.setattr(stage_runner.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        stage_runner,
+        "_stop_logged_process_group",
+        lambda process: cleaned.append(process),
+    )
+    with pytest.raises(RuntimeError, match="command failed with exit code 7"):
+        stage_runner._run_logged(
+            ["synthetic", "failure"],
+            log_path=tmp_path / "train.out",
+            env={},
+        )
+    assert observed["start_new_session"] is True
+    assert cleaned
+    assert "one line" in (tmp_path / "train.out").read_text(encoding="utf-8")
 
 
 def _record(*, stage: str, variant: str, seed: int, high_iou: float, cost: float) -> dict:
@@ -151,6 +206,7 @@ def _rendezvous_receipt(*, slurm_job_id: str) -> dict:
             stage="p0",
             variant=f"rendezvous_probe_{label}",
             seed=3407,
+            rendezvous_slot=1 if label == "short" else 0,
         )
         probes[label] = {
             "rendezvous": rendezvous,
@@ -182,6 +238,7 @@ def _rendezvous_receipt(*, slurm_job_id: str) -> dict:
         "long_probe_alive_after_short_exit": True,
         "release_to_short_exit_seconds": 0.6,
         "release_to_long_exit_seconds": 2.1,
+        "readiness_timeout_seconds": READINESS_TIMEOUT_SECONDS,
         "elapsed_seconds": 3.0,
         "probes": probes,
         "official_test_opened": False,
@@ -574,7 +631,7 @@ def test_paper_names_are_frozen_and_log_parser_requires_all_iou_thresholds():
     assert metrics["mAP@0.7"] == 48.0
 
 
-def test_georoute_torchrun_uses_kernel_assigned_unique_rendezvous():
+def test_georoute_torchrun_uses_job_scoped_kernel_assigned_rendezvous():
     commands = {}
     receipts = {}
     for phase in ("train", "test"):
@@ -591,7 +648,13 @@ def test_georoute_torchrun_uses_kernel_assigned_unique_rendezvous():
         assert "--standalone" not in joined
         assert "--master_port" not in joined
         assert "--rdzv_backend=c10d" in command
-        assert "--rdzv_endpoint=127.0.0.1:0" in command
+        assert f"--rdzv_endpoint={receipt['endpoint']}" in command
+        assert receipt["endpoint"].startswith("127.")
+        assert receipt["endpoint"].endswith(":0")
+        assert (
+            receipt["endpoint_policy"]
+            == "job_scoped_loopback_and_kernel_assigned_port"
+        )
         assert f"--rdzv_id=georoute-1199999-p1-free-s3407-{phase}" in command
     validated = _validate_rendezvous_receipt(
         receipts,
@@ -609,6 +672,7 @@ def test_georoute_torchrun_uses_kernel_assigned_unique_rendezvous():
         seed=3407,
     )
     assert other_leaf["rendezvous_id"] != receipts["train"]["rendezvous_id"]
+    assert other_leaf["endpoint_host"] != receipts["train"]["endpoint_host"]
     with pytest.raises(ValueError, match="unsafe GeoRoute rendezvous slurm_job_id"):
         build_torchrun_prefix(
             phase="train",
@@ -622,6 +686,12 @@ def test_georoute_torchrun_uses_kernel_assigned_unique_rendezvous():
 def test_georoute_rendezvous_gate_receipt_fails_closed_on_store_reuse():
     receipt = _rendezvous_receipt(slurm_job_id="1199999")
     validate_rendezvous_gate_receipt(receipt, expected_commit="a" * 40)
+    with pytest.raises(ValueError, match="differs from the current leaf"):
+        validate_rendezvous_gate_receipt(
+            receipt,
+            expected_commit="a" * 40,
+            expected_node_name="g9999",
+        )
 
     reused = copy.deepcopy(receipt)
     reused["probes"]["long"]["runtime_identity"]["master_port"] = reused[
@@ -645,6 +715,110 @@ def test_georoute_rendezvous_gate_receipt_fails_closed_on_store_reuse():
         )
 
 
+def test_georoute_rendezvous_failure_writes_hashed_diagnostics_and_stops_groups(
+    tmp_path,
+    monkeypatch,
+):
+    expected_commit = "a" * 40
+    output = tmp_path / "run" / "p0" / "probe.rendezvous.json"
+    monkeypatch.setenv("SLURM_JOB_ID", "1206999")
+    monkeypatch.setattr(
+        rdzv_gate,
+        "_git_output",
+        lambda *arguments: (
+            expected_commit if arguments == ("rev-parse", "HEAD") else ""
+        ),
+    )
+
+    def fake_prefix(**kwargs):
+        return (
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            {
+                "phase": kwargs["phase"],
+                "backend": "c10d",
+                "endpoint": "127.1.1.1:0",
+                "endpoint_host": "127.1.1.1",
+                "endpoint_policy": (
+                    "job_scoped_loopback_and_kernel_assigned_port"
+                ),
+                "rendezvous_slot": kwargs["rendezvous_slot"],
+                "rendezvous_id": f"synthetic-{kwargs['variant']}",
+                "slurm_job_id": kwargs["slurm_job_id"],
+                "stage": kwargs["stage"],
+                "variant": kwargs["variant"],
+                "seed": kwargs["seed"],
+                "nnodes": 1,
+                "nproc_per_node": 1,
+            },
+        )
+
+    monkeypatch.setattr(rdzv_gate, "build_torchrun_prefix", fake_prefix)
+    monkeypatch.setattr(
+        rdzv_gate,
+        "_wait_until_ready",
+        lambda **_: (_ for _ in ()).throw(
+            TimeoutError("synthetic rendezvous timeout")
+        ),
+    )
+    original_popen = subprocess.Popen
+    processes = []
+
+    def recording_popen(*args, **kwargs):
+        process = original_popen(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(rdzv_gate.subprocess, "Popen", recording_popen)
+    with pytest.raises(RuntimeError, match="rendezvous failure receipt"):
+        rdzv_gate.run_gate(
+            output=output,
+            expected_commit=expected_commit,
+            write_boundary=tmp_path,
+        )
+    failure_path = output.with_suffix(".failure.json")
+    payload = json.loads(failure_path.read_text(encoding="utf-8"))
+    digest = payload.pop("failure_sha256")
+    assert payload["status"] == "FAIL_CONCURRENT_RENDEZVOUS_ISOLATION"
+    assert payload["exception_type"] == "TimeoutError"
+    assert payload["model_forward_executed"] is False
+    assert payload["paper_claim_allowed"] is False
+    assert set(payload["probes"]) == {"short", "long"}
+    assert all(
+        "output_sha256" in probe and "output_tail" in probe
+        for probe in payload["probes"].values()
+    )
+    assert digest == canonical_sha256(payload)
+    assert processes and all(process.poll() is not None for process in processes)
+
+
+def test_georoute_rendezvous_prevalidation_failure_is_sealed(
+    tmp_path,
+    monkeypatch,
+):
+    expected_commit = "a" * 40
+    output = tmp_path / "run" / "p0" / "preflight.rendezvous.json"
+    monkeypatch.setattr(
+        rdzv_gate,
+        "_git_output",
+        lambda *_: "b" * 40,
+    )
+    rdzv_gate._write_gate_failsafe_failure(
+        output=output,
+        expected_commit=expected_commit,
+        error=RuntimeError("synthetic clean-tree mismatch"),
+        write_boundary=tmp_path,
+    )
+    failure_path = output.with_suffix(".failure.json")
+    payload = json.loads(failure_path.read_text(encoding="utf-8"))
+    digest = payload.pop("failure_sha256")
+    assert payload["failure_phase"] == "gate_prevalidation_or_namespace_setup"
+    assert payload["expected_runtime_commit"] == expected_commit
+    assert payload["probes"] == {}
+    assert payload["model_forward_executed"] is False
+    assert payload["paper_claim_allowed"] is False
+    assert digest == canonical_sha256(payload)
+
+
 def test_p0_launcher_runs_rendezvous_isolation_before_model_gate():
     launcher = (ROOT / "scripts" / "run_georoute_p0_slurm.sh").read_text(
         encoding="utf-8"
@@ -653,10 +827,10 @@ def test_p0_launcher_runs_rendezvous_isolation_before_model_gate():
         ROOT / "tools" / "bata" / "georoute_stage_runner.py"
     ).read_text(encoding="utf-8")
     assert "--standalone" not in runner
-    assert "--rdzv_endpoint=127.0.0.1:0" in runner
+    assert "job_scoped_loopback_and_kernel_assigned_port" in runner
     assert "tools.bata.georoute_rendezvous_gate" in launcher
     assert launcher.index("tools.bata.georoute_rendezvous_gate") < launcher.index(
-        "tools/bata/run_georoute_p0_gate.py"
+        "tools.bata.run_georoute_p0_gate"
     )
 
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from tools.bata.georoute_experiment_contract import (
     assert_development_annotation,
@@ -22,10 +22,11 @@ from tools.bata.georoute_experiment_contract import (
 
 PILOT_STUDY_ID = "georoute_estimator_representation_pilot_v1"
 PILOT_CONTRACT_SCHEMA = "georoute_estimator_representation_pilot_contract_v1"
-PILOT_DEPLOYMENT_SCHEMA = "georoute_estimator_representation_pilot_deployment_v1"
+PILOT_DEPLOYMENT_SCHEMA = "georoute_estimator_representation_pilot_deployment_v2"
 PILOT_STAGE_RESULT_SCHEMA = "georoute_estimator_representation_pilot_stage_result_v1"
 PILOT_P0_SUITE_SCHEMA = "georoute_estimator_representation_pilot_p0_suite_v1"
-PILOT_FINALIZATION_SCHEMA = "georoute_estimator_representation_pilot_finalization_v1"
+PILOT_P0_FAILURE_SCHEMA = "georoute_estimator_representation_pilot_p0_failure_v1"
+PILOT_FINALIZATION_SCHEMA = "georoute_estimator_representation_pilot_finalization_v2"
 PILOT_SEED = 3407
 PILOT_EPOCHS = 20
 PILOT_K = 64
@@ -161,6 +162,49 @@ PILOT_CONTRASTS = {
         "residual_pl_rep_off",
     ),
 }
+
+
+def validate_pilot_job_receipt(
+    jobs: Any,
+    *,
+    expected_p0_finalizer: str | None = None,
+) -> dict[str, Any]:
+    """Normalize a JSON-sorted pilot job map without relying on key order."""
+
+    if not isinstance(jobs, Mapping):
+        raise ValueError("estimator pilot job receipt is not a mapping")
+    p0 = jobs.get("p0")
+    stage = jobs.get("stage")
+    p0_finalizer = str(jobs.get("p0_finalizer", ""))
+    if (
+        not isinstance(p0, Mapping)
+        or not isinstance(stage, Mapping)
+        or set(p0) != set(PILOT_ARM_ORDER)
+        or set(stage) != set(PILOT_ARM_ORDER)
+        or not p0_finalizer.isdigit()
+    ):
+        raise ValueError("estimator pilot job receipt has the wrong arm set")
+    normalized_p0 = {arm: str(p0[arm]) for arm in PILOT_ARM_ORDER}
+    normalized_stage = {arm: str(stage[arm]) for arm in PILOT_ARM_ORDER}
+    all_ids = [
+        *normalized_p0.values(),
+        p0_finalizer,
+        *normalized_stage.values(),
+    ]
+    if any(not job_id.isdigit() for job_id in all_ids):
+        raise ValueError("estimator pilot job receipt contains a nonnumeric job ID")
+    if len(set(all_ids)) != len(all_ids):
+        raise ValueError("estimator pilot job receipt reuses a Slurm job ID")
+    if (
+        expected_p0_finalizer is not None
+        and p0_finalizer != str(expected_p0_finalizer)
+    ):
+        raise ValueError("estimator pilot P0 finalizer job ID is not self-bound")
+    return {
+        "p0": normalized_p0,
+        "p0_finalizer": p0_finalizer,
+        "stage": normalized_stage,
+    }
 
 
 def pilot_arm_spec(name: str) -> dict[str, Any]:

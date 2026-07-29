@@ -3,7 +3,7 @@ type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
 stage: tested
-status: free_v1_closed_cer_discussed_preexperiment_implemented_pending_remote_test
+status: free_v1_closed_cer_discussed_pilot_mechanical_repair_pending_remote_p0
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
 ---
@@ -57,7 +57,7 @@ against NativeTokenSelect, and they do not authorize geometry, P2/P3, official
 test, an efficiency claim, or a paper claim. A valid future test must repeat
 the complete frozen matrix in a new namespace with a unique or kernel-assigned
 per-leaf rendezvous endpoint and an explicit concurrent-node isolation gate.
-That replacement now uses c10d `127.0.0.1:0` with a
+That historical replacement used c10d `127.0.0.1:0` with a
 Slurm/job/stage/variant/seed/phase-bound ID; a P0 same-node concurrent gate
 verifies the two actual runtime ports, run IDs, and independent lifetimes; and
 each P0 model report is hash-bound to the isolation receipt from the same
@@ -90,6 +90,21 @@ decode failure prevented the frozen selector receipt, so it is not promoted to
 a formal empirical verdict. Hybrid reached `13.23/11.35/8.81`; it cannot rescue
 or authorize geometry because the native base did not pass first. The
 replacement idea remains not empirically supported.
+
+The later independent estimator/representation pilot did not change this
+scientific verdict. Its first runtime `02b6efe7` passed Linux tests but all six
+P0 leaves `1203380`--`1203385` failed before model evidence: two exposed a
+script-mode import bug after a passing rendezvous gate and four co-located
+leaves exceeded an under-instrumented 30-second readiness bound. No training
+ran. Finalizer `1203393` additionally exposed JSON-key-order validation and
+wrote no finalization. The repair is implemented with module-mode P0, early
+source-root bootstrap, Slurm-job-scoped `127/8` plus kernel port, 120-second
+diagnostic readiness with whole-process-group cleanup,
+key-order-independent arm binding, fail-safe control receipts, and an
+all-terminal fail-closed DAG. `srun --resv-ports` is explicitly unavailable on N16R4 by Jobs
+`1203460/1203461`. Until a fresh Linux suite, same-node gate, six P0 leaves, and
+all six exploratory arms complete, CER stays `discussed`, the pilot stays
+non-empirical, and Geometry Zoom remains unauthorized.
 
 ## Why geometry is conditional
 
@@ -274,7 +289,9 @@ prediction-hash-preserving replays passed. It still authorizes no CER or paper
 claim.
 
 The separately frozen six-arm exploratory pilot is now
-`implemented_pending_remote_test_and_p0`. It is the smallest design that
+`mechanical_failure_repair_implemented_pending_remote_linux_and_fresh_p0`.
+Its first runtime failed before model evidence and is not resumed. It remains
+the smallest design that
 identifies estimator, support, and representation effects without dynamic
 roles: residual ST/PL with representation off; fixed support with
 representation off/on; and ROI+PL with representation off/on. Single-seed

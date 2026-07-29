@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from tools.bata import finalize_georoute_estimator_pilot as pilot_finalizer
+from tools.bata import finalize_georoute_estimator_pilot_p0 as pilot_p0_finalizer
 from tools.bata import georoute_estimator_pilot_stage_runner as pilot_stage
 from tools.bata.georoute_estimator_pilot_contract import (
     PILOT_ARM_ORDER,
@@ -16,6 +20,7 @@ from tools.bata.georoute_estimator_pilot_contract import (
     PILOT_EPOCHS,
     PILOT_K,
     PILOT_P0_SUITE_SCHEMA,
+    PILOT_P0_FAILURE_SCHEMA,
     PILOT_SEED,
     PILOT_STAGE_RESULT_SCHEMA,
     PILOT_STUDY_ID,
@@ -23,12 +28,14 @@ from tools.bata.georoute_estimator_pilot_contract import (
     bind_pilot_config,
     pilot_arm_spec,
     pilot_cell_relative_path,
+    validate_pilot_job_receipt,
 )
 from tools.bata.georoute_estimator_pilot_stage_runner import (
     summarize_pilot_telemetry,
     validate_pilot_stage_result,
 )
 from tools.bata.georoute_experiment_contract import canonical_sha256, sha256_file
+from tools.bata.georoute_stage_runner import build_torchrun_prefix
 from tools.bata.run_georoute_p0_gate import (
     GEOROUTE_P0_GATE_SCHEMA,
     build_p0_gate_report,
@@ -187,21 +194,14 @@ def _rehash_stage_result(result: dict) -> dict:
 
 
 def _rendezvous(arm: str, *, phase: str, job_id: str) -> dict:
-    return {
-        "phase": phase,
-        "backend": "c10d",
-        "endpoint": "127.0.0.1:0",
-        "endpoint_policy": "kernel_assigned_loopback_port",
-        "rendezvous_id": (
-            f"georoute-{job_id}-estimator_pilot-{arm}-s{PILOT_SEED}-{phase}"
-        ),
-        "slurm_job_id": job_id,
-        "stage": "estimator_pilot",
-        "variant": arm,
-        "seed": PILOT_SEED,
-        "nnodes": 1,
-        "nproc_per_node": 1,
-    }
+    _, receipt = build_torchrun_prefix(
+        phase=phase,
+        slurm_job_id=job_id,
+        stage="estimator_pilot",
+        variant=arm,
+        seed=PILOT_SEED,
+    )
+    return receipt
 
 
 def _binding(arm: str, *, work_dir: str) -> dict:
@@ -365,7 +365,7 @@ def _stage_result(
         "runtime_commit": "a" * 40,
         "rendezvous": {
             "isolation_policy": (
-                "kernel_assigned_endpoint_and_unique_cell_phase_id"
+                "job_scoped_loopback_kernel_assigned_endpoint_and_unique_cell_phase_id"
             ),
             "train": _rendezvous(arm, phase="train", job_id=job_id),
             "test": _rendezvous(arm, phase="test", job_id=job_id),
@@ -867,6 +867,170 @@ def test_exploratory_finalizer_rejects_noncanonical_p0_parent(tmp_path):
     ]
 
 
+def test_exploratory_finalizer_seals_missing_leaves_without_performance_inference(
+    tmp_path,
+):
+    finalization = pilot_finalizer.finalize_pilot_results(
+        run_root=tmp_path / "run",
+        expected_commit="a" * 40,
+        expected_stage_jobs={
+            arm: str(1205000 + index)
+            for index, arm in enumerate(PILOT_ARM_ORDER)
+        },
+    )
+    assert finalization["status"] == "INCOMPLETE_EXPLORATORY_PILOT"
+    assert finalization["decision"] == "PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE"
+    assert finalization["arms"] == {}
+    assert set(finalization["failures"]) == set(PILOT_ARM_ORDER)
+    assert finalization["descriptive_contrasts"] == {}
+    assert finalization["paper_claim_allowed"] is False
+
+
+def test_p0_finalizer_failsafe_receipt_is_hashed_and_blocks_training(
+    tmp_path,
+    monkeypatch,
+):
+    run_root = tmp_path / "run"
+    args = argparse.Namespace(
+        run_root=run_root,
+        expected_commit="a" * 40,
+    )
+    monkeypatch.setattr(pilot_p0_finalizer, "_inside", lambda *_: True)
+    monkeypatch.setattr(
+        pilot_p0_finalizer,
+        "_git_output",
+        lambda *_: "a" * 40,
+    )
+    monkeypatch.setenv("SLURM_JOB_ID", "1206010")
+    try:
+        raise RuntimeError("synthetic prevalidation failure")
+    except RuntimeError as error:
+        pilot_p0_finalizer._write_failsafe_failure(args=args, error=error)
+    path = run_root / "control" / "pilot_p0_failure.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    digest = payload.pop("failure_sha256")
+    assert payload["schema_version"] == PILOT_P0_FAILURE_SCHEMA
+    assert payload["status"] == "FAIL_P0_FINALIZER_MECHANICAL_ONLY"
+    assert payload["training_authorized"] is False
+    assert payload["performance_inference_allowed"] is False
+    assert digest == canonical_sha256(payload)
+
+
+def test_finalizer_failsafe_seals_incomplete_without_metrics(
+    tmp_path,
+    monkeypatch,
+):
+    run_root = tmp_path / "run"
+    args = argparse.Namespace(
+        run_root=run_root,
+        expected_commit="a" * 40,
+    )
+    monkeypatch.setattr(pilot_finalizer, "_inside", lambda *_: True)
+    monkeypatch.setattr(pilot_finalizer, "_git_output", lambda *_: "a" * 40)
+    monkeypatch.setenv("SLURM_JOB_ID", "1206099")
+    try:
+        raise RuntimeError("synthetic finalizer validation failure")
+    except RuntimeError as error:
+        pilot_finalizer._write_failsafe_finalization(args=args, error=error)
+    path = run_root / "control" / "pilot_finalization.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    digest = payload.pop("finalization_sha256")
+    assert payload["status"] == "INCOMPLETE_EXPLORATORY_PILOT"
+    assert payload["decision"] == "PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE"
+    assert payload["arms"] == {}
+    assert payload["descriptive_contrasts"] == {}
+    assert payload["receipt_validation_passed"] is False
+    assert payload["paper_claim_allowed"] is False
+    assert digest == canonical_sha256(payload)
+
+
+def test_stage_wrapper_checks_pass_p0_before_cell_creation_or_training(
+    tmp_path,
+    monkeypatch,
+):
+    run_root = tmp_path / "run"
+    cell_root = run_root / pilot_cell_relative_path(
+        arm=PILOT_ARM_ORDER[0],
+        seed=PILOT_SEED,
+    )
+    args = argparse.Namespace(
+        arm=PILOT_ARM_ORDER[0],
+        run_root=run_root,
+        expected_commit="a" * 40,
+    )
+    monkeypatch.setattr(pilot_stage, "_current_commit", lambda: "a" * 40)
+    monkeypatch.setattr(pilot_stage, "_inside", lambda *_: True)
+    monkeypatch.setattr(
+        pilot_stage.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="",
+            stderr="",
+        ),
+    )
+    launches: list[list[str]] = []
+    monkeypatch.setattr(
+        pilot_stage,
+        "_run_logged",
+        lambda command, **_: launches.append(command),
+    )
+    monkeypatch.setenv("SLURM_JOB_ID", "1206020")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    with pytest.raises(
+        FileNotFoundError,
+        match="requires its sealed P0 suite",
+    ):
+        pilot_stage._execute(args, cell_root=cell_root)
+    assert not cell_root.exists()
+    assert launches == []
+
+
+def test_p0_script_mode_import_bootstraps_repository_root(tmp_path):
+    script = ROOT / "tools" / "bata" / "run_georoute_p0_gate.py"
+    code = (
+        "import runpy, sys\n"
+        f"namespace = runpy.run_path({str(script)!r}, run_name='p0_import_probe')\n"
+        "assert str(namespace['ROOT']) in sys.path\n"
+        "import tools.bata.georoute_estimator_pilot_contract\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-I", "-c", code],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_pilot_job_receipt_survives_sorted_json_key_order():
+    jobs = {
+        "p0": {
+            arm: str(1206000 + index)
+            for index, arm in enumerate(PILOT_ARM_ORDER)
+        },
+        "p0_finalizer": "1206010",
+        "stage": {
+            arm: str(1206020 + index)
+            for index, arm in enumerate(PILOT_ARM_ORDER)
+        },
+    }
+    sorted_round_trip = json.loads(json.dumps(jobs, sort_keys=True))
+    validated = validate_pilot_job_receipt(
+        sorted_round_trip,
+        expected_p0_finalizer="1206010",
+    )
+    assert tuple(validated["p0"]) == PILOT_ARM_ORDER
+    assert tuple(validated["stage"]) == PILOT_ARM_ORDER
+
+    duplicated = json.loads(json.dumps(jobs))
+    duplicated["stage"][PILOT_ARM_ORDER[0]] = duplicated["p0"][PILOT_ARM_ORDER[0]]
+    with pytest.raises(ValueError, match="reuses a Slurm job ID"):
+        validate_pilot_job_receipt(duplicated)
+
+
 def test_pilot_deployer_and_launchers_do_not_reuse_old_selector_or_open_test():
     deployer = (
         ROOT
@@ -891,5 +1055,10 @@ def test_pilot_deployer_and_launchers_do_not_reuse_old_selector_or_open_test():
     assert "PILOT_COMPLETE_NO_PROMOTION" in finalizer
     assert '"p2_p3_opened": False' in deployer
     assert '"official_test_opened": False' in deployer
+    assert '"p0_finalizer_afterany_all_p0": True' in deployer
+    assert '"training_wrappers_afterany_p0_finalizer": True' in deployer
+    assert "p0_finalizer_afterok_all_p0" not in deployer
+    assert "training_six_parallel_afterok_p0_suite" not in deployer
+    assert deployer.count('dependency_type="afterany"') >= 3
     assert "--not_eval" not in stage_launcher
     assert "tools.bata.georoute_estimator_pilot_stage_runner" in stage_launcher

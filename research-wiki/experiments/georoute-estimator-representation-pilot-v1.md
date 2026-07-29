@@ -4,11 +4,11 @@ node_id: exp:georoute-estimator-representation-pilot-v1
 title: "GeoRoute estimator/representation exploratory pilot v1"
 idea: idea:geo-route-adatad
 stage: implemented
-status: pending_remote_linux_test_and_p0
+status: mechanical_failure_repair_pending_remote_linux_and_fresh_p0
 verdict: pending
 confidence: medium
-commit: pending_clean_pilot_commit
-jobs: none
+commit: 02b6efe71bd9c62de304467adf0981799eba6b1e_failed_repair_commit_pending
+jobs: 1203380-1203393
 updated: 2026-07-29
 ---
 
@@ -26,15 +26,26 @@ support under matched PL and representation-off settings?
 Six arms use exact `K=64`, seed `3407`, 20 epochs, absolute pretrained
 position enabled, uniform-selected pooling, final-only checkpoints, and the
 same immutable inputs. Four contrasts are preregistered. The Slurm DAG is six
-parallel P0 leaves, one afterok P0 finalizer, six parallel training/evaluation
-leaves, and one afterany non-promoting finalizer.
+parallel P0 leaves, one afterany P0 finalizer, six afterany fail-closed wrappers
+that require the sealed PASS P0 suite before cell creation, and one afterany
+non-promoting finalizer over all terminal leaves.
 
 ## Current state
 
-The contract, launchers, receipts, full population/telemetry integrity checks,
-and tests are implemented locally. Remote Linux tests, CUDA P0, and all
-training arms are pending; therefore this node is not `tested`,
-`experiment_running`, `empirically_supported`, or `paper_ready`.
+Exact runtime `02b6efe7` passed remote Linux tests `108/108`, but its six P0
+Jobs `1203380`--`1203385` all failed mechanically before model reports and no
+training ran. Jobs `1203386`--`1203392` were canceled after becoming
+impossible; finalizer `1203393` exposed JSON-key-order validation and wrote no
+finalization. The namespace is immutable failure evidence. A v2 repair is
+implemented locally: module-mode P0 and early root bootstrap; Slurm-job-scoped
+`127/8`, kernel-assigned ports, 120-second readiness and hashed failure
+diagnostics with whole-process-group cleanup and same-leaf node revalidation;
+arm-set normalization independent of JSON key order; fail-safe P0/final
+control receipts; and the all-terminal fail-closed DAG above. N16R4 probes
+`1203460/1203461` rejected `--resv-ports=2`, so it is not used. A fresh clean
+commit, remote Linux tests, real same-node gate, and all six P0 leaves are
+pending; therefore this node is not `experiment_running`,
+`empirically_supported`, or `paper_ready`.
 
 ## Claim boundary
 

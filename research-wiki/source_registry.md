@@ -23,6 +23,43 @@ updated: 2026-07-29
   CER, official-test, or paper result. Project record:
   `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
 
+- GeoRoute estimator/representation pilot first mechanical failure, 2026-07-29.
+  Exact runtime commit
+  `02b6efe71bd9c62de304467adf0981799eba6b1e`; remote root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_02b6efe7_20260729_1805`.
+  P0 Jobs `1203380`--`1203385` failed `1:0` before model reports; descendants
+  `1203386`--`1203392` were canceled after the P0 failure made them impossible;
+  finalizer `1203393` failed receipt validation and no
+  `pilot_finalization.json` exists. Deployment file SHA-256 is
+  `ee91fa7a5c58371f4d2c57b75038896e87b6a6a9c669492a4fb81c26554529a6`;
+  finalizer-submission file SHA-256 is
+  `a53f217a303d9752610b747a6c887123328dc09d77a2d0cf97eca6f96a1763e3`;
+  P0-release file SHA-256 is
+  `33242a551e4a08b75440c5200bf160ffa6514d365a78238faa38c189cfc66890`.
+  This is immutable infrastructure-failure evidence only: no checkpoint,
+  stage result, performance, efficiency, Geometry Zoom, CER, official-test, or
+  paper claim follows.
+
+- N16R4 Slurm reserved-port negative capability probe, 2026-07-29. Same-node
+  Jobs `1203460` and `1203461` both failed immediately before any workload with
+  `srun: ... Requires more ports than can be reserved`. The stderr SHA-256
+  values are
+  `ce079a60529c01a515d770bb254c0e41699182902ad6ea57252aa918b163ffd6`
+  and
+  `9f580ca4ab1814a238a9c7031805baf7544c5df27652bff4d528307b53b07084`.
+  This rejects `srun --resv-ports=2` for the current site; it is a deployment
+  capability fact, not model evidence.
+
+- GeoRoute estimator/representation pilot mechanical repair, 2026-07-29.
+  Project-authored source changes repair script-mode imports, Slurm-job-scoped
+  loopback rendezvous, bounded process-group cleanup, structural remote-write
+  containment, failure receipts, all-terminal DAG closeout, and sorted-JSON job
+  validation. This entry records an implemented local source state only. Until
+  that source is committed, pushed through the academic proxy, verified in an
+  exact clean remote snapshot, and passes a real same-node gate plus fresh P0,
+  it is not remote execution evidence, model evidence, or authorization for
+  training/performance/paper claims.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

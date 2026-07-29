@@ -1390,3 +1390,65 @@ append_only: true
   experiment graph nodes. Python compile, Bash syntax, `git diff --check`, and
   `34` focused pure contract/finalizer tests pass locally. State remains
   `implemented_pending_remote_test_and_p0`; no training has been submitted.
+
+- 2026-07-29 18:03--18:08 CST: exact clean pilot runtime
+  `02b6efe71bd9c62de304467adf0981799eba6b1e` passed remote Linux tests
+  `108/108` and submitted six held-then-released P0 leaves
+  `1203380`--`1203385` under
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_02b6efe7_20260729_1805`.
+  All six failed mechanically before a P0 model report. The two single-tenant
+  leaves passed rendezvous and then failed because script-mode P0 had not put
+  the repository root on `sys.path` before importing `tools`; the four
+  co-located leaves exceeded the old 30-second readiness bound and the old gate
+  retained no child diagnostics. No training job ran. After exact state
+  verification, only impossible pilot descendants `1203386`--`1203392` were
+  canceled; no unrelated job was touched. Finalizer `1203393` then ran but
+  exposed a sorted-JSON key-order bug in deployment validation, so no
+  `pilot_finalization.json` exists. Deployment file SHA-256 is
+  `ee91fa7a5c58371f4d2c57b75038896e87b6a6a9c669492a4fb81c26554529a6`.
+  The namespace is preserved as infrastructure-failure evidence and supports no
+  performance inference.
+
+- 2026-07-29 18:26 CST: implemented the fresh-source mechanical repair without
+  changing any frozen model or experimental factor. P0 now bootstraps the
+  repository root before dynamic imports and launches by module. Rendezvous v4
+  uses a collision-separated Slurm-job-scoped `127/8` address, kernel-assigned
+  port, unique cell/phase ID, 120-second readiness bound, and a hashed bounded
+  failure sidecar. Deployment/finalization schemas moved to v2; job maps are
+  normalized by exact arm set rather than JSON key order and reject reused job
+  IDs. The P0 finalizer and stage wrappers now run `afterany`; a stage wrapper
+  requires a sealed PASS P0 suite before cell creation, so failure descendants
+  terminate mechanically and the final `afterany` closeout can seal INCOMPLETE
+  without performance inference. Same-node capability probes
+  `1203460/1203461` proved N16R4 cannot satisfy `--resv-ports=2`, so reserved
+  ports were rejected. Python compile and `38/38` focused pure tests pass
+  locally. State is
+  `implemented_repair_pending_remote_linux_same_node_gate_and_fresh_p0`, not
+  `experiment_running`, `empirically_supported`, or `paper_ready`.
+
+- 2026-07-29 18:34 CST: completed an independent pre-commit review of the pilot
+  repair and hardened the remaining fail-safe edges. Rendezvous failures now
+  terminate the complete torchrun process groups with bounded output draining,
+  constrain output to the remote write boundary, and revalidate the receipt
+  node from the same P0 leaf. P0-finalizer prevalidation/sealing failures write
+  a hashed `pilot_p0_failure.json`; final-closeout validation/sealing failures
+  write a hashed `INCOMPLETE_EXPLORATORY_PILOT` receipt before re-raising.
+  Added behavior tests for both fail-safe receipts, P0-suite-before-cell
+  enforcement, rendezvous timeout sidecar hashing, node mismatch rejection, and
+  process termination. Focused pure tests now pass `42/42`; no model training,
+  P2/P3, official test, or performance inference was opened.
+
+- 2026-07-29: closed the final local execution-safety review before committing
+  the fresh pilot source. The shared stage logger now launches every torchrun
+  command in a new session, drains output with a bound, and terminates the whole
+  process group on non-zero exit, interruption, or a stuck inherited pipe.
+  Remote-write containment now uses structural `Path.relative_to` semantics and
+  rejects both the boundary root and prefix-confusion paths such as
+  `yuzibo_evil`. Added behavior tests for both properties and registered the
+  repair itself as local source evidence pending remote verification. Python
+  compile, Bash syntax, `git diff --check`, and the complete focused suite pass
+  locally (`65/65`: GeoRoute repair/contract plus the required C3 regression
+  files). State remains
+  `mechanical_failure_repair_implemented_pending_remote_linux_and_fresh_p0`;
+  no training, model result, official test, promotion, or paper claim was
+  opened.

@@ -91,4 +91,4 @@ for binding in \
     args+=("--${flag}" "${value}")
   fi
 done
-python tools/bata/run_georoute_p0_gate.py "${args[@]}"
+python -m tools.bata.run_georoute_p0_gate "${args[@]}"

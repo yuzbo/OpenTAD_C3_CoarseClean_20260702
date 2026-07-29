@@ -560,7 +560,8 @@ opened. Full diagnostics are in
 
 The independent six-arm study
 `georoute_estimator_representation_pilot_v1` is now
-`implemented_pending_remote_test_and_p0`. It fixes K=64, seed 3407, 20 epochs,
+`mechanical_failure_repair_implemented_pending_remote_linux_and_fresh_p0`. It
+fixes K=64, seed 3407, 20 epochs,
 absolute VideoMAE position on, and all other data/optimizer/runtime settings.
 Its four preregistered contrasts are residual PL minus ST with representation
 off, fixed representation on minus off, ROI representation on minus off, and
@@ -569,6 +570,49 @@ training leaves are parallel; the finalizer emits descriptive single-seed
 contrasts without a winner or promotion. The old selector, P2/P3, and official
 test are absent. Frozen protocol:
 `docs/methods/2026-07-29-georoute-estimator-pilot.md`.
+
+The first deployment of that protocol is sealed as infrastructure-invalid, not
+as a pilot result. Exact clean runtime
+`02b6efe71bd9c62de304467adf0981799eba6b1e` passed remote Linux tests
+`108/108` and was deployed at
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_02b6efe7_20260729_1805`.
+P0 Jobs `1203380`--`1203385` all ended `FAILED 1:0`. Jobs `1203380` and
+`1203383`, each alone on its node, passed the concurrent rendezvous gate and
+then failed before the CUDA model gate because script-mode execution had not
+inserted the repository root before importing `tools`. The four co-located
+leaves on `g0005` and `g0003` exceeded the old 30-second readiness bound; the
+old gate discarded child output on this path, so this is classified as an
+under-instrumented rendezvous-readiness failure rather than a model failure.
+No P0 model report, training checkpoint, stage result, or metric was produced.
+After all P0 leaves were terminal, impossible descendants
+`1203386`--`1203392` were canceled without touching unrelated jobs. Finalizer
+`1203393` ran and exposed a fourth mechanical defect: its validator compared
+JSON mapping insertion order after `sort_keys=True` serialization. It therefore
+failed before writing `pilot_finalization.json`. The immutable deployment file
+hash is
+`ee91fa7a5c58371f4d2c57b75038896e87b6a6a9c669492a4fb81c26554529a6`;
+the absence of a finalization is explicitly retained as failure evidence.
+
+The repair is `implemented_pending_remote_linux_and_fresh_p0`. P0 now launches
+as a module and inserts the repository root before any dynamic import.
+Rendezvous v4 encodes the decimal Slurm job into a unique audited `127/8`
+address, retains a kernel-assigned port and unique cell/phase run ID, raises the
+readiness bound to 120 seconds, and writes a hashed sidecar containing command,
+return code, marker state, selected Slurm environment, and bounded child output
+on failure while terminating the entire torchrun process group. It also
+revalidates the gate node from the same P0 leaf. Two same-node Slurm capability
+probes, Jobs `1203460/1203461`,
+both showed that this site cannot reserve two step ports, so
+`--resv-ports` is rejected rather than silently assumed. Deployment schema v2
+normalizes exact arm-key sets independent of JSON order and rejects duplicate
+job IDs. P0 finalization, fail-closed stage wrappers, and final closeout all use
+`afterany`; a stage wrapper checks the sealed PASS P0 suite before creating a
+cell, so a P0 failure reaches an auditable INCOMPLETE finalization without
+launching training or inferring performance. P0-finalizer and final-closeout
+prevalidation/sealing exceptions write hashed fail-safe receipts before
+re-raising. This repair changes no frozen
+model, arm, seed, K, epoch budget, estimator, representation switch, data,
+contrast, or claim rule.
 
 ## Frozen decision logic
 

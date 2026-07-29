@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -21,10 +22,12 @@ from tools.bata.georoute_estimator_pilot_contract import (  # noqa: E402
     PILOT_CONTRASTS,
     PILOT_DEPLOYMENT_SCHEMA,
     PILOT_FINALIZATION_SCHEMA,
+    PILOT_P0_FAILURE_SCHEMA,
     PILOT_P0_SUITE_SCHEMA,
     PILOT_SEED,
     PILOT_STUDY_ID,
     pilot_cell_relative_path,
+    validate_pilot_job_receipt,
 )
 from tools.bata.georoute_estimator_pilot_stage_runner import (  # noqa: E402
     _pilot_profile,
@@ -382,8 +385,7 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = _parse_args()
+def _run_main(args: argparse.Namespace) -> int:
     run_root = args.run_root.resolve()
     boundary = Path("/data/run01/sczc063/yuzibo").resolve()
     if not _inside(run_root, boundary) or run_root == boundary:
@@ -399,7 +401,10 @@ def main() -> int:
 
     deployment_path = run_root / "control" / "deployment.json"
     deployment = _read_json(deployment_path)
-    jobs = deployment.get("jobs")
+    try:
+        jobs = validate_pilot_job_receipt(deployment.get("jobs"))
+    except ValueError:
+        jobs = None
     if (
         deployment.get("schema_version") != PILOT_DEPLOYMENT_SCHEMA
         or deployment.get("status") != "SUBMITTED_SIX_ARM_EXPLORATORY_PILOT"
@@ -407,11 +412,10 @@ def main() -> int:
         or deployment.get("runtime_commit") != expected_commit
         or tuple(deployment.get("arms", [])) != PILOT_ARM_ORDER
         or not _self_hash_matches(deployment, "deployment_sha256")
-        or not isinstance(jobs, Mapping)
-        or not isinstance(jobs.get("stage"), Mapping)
-        or tuple(jobs["stage"]) != PILOT_ARM_ORDER
+        or jobs is None
     ):
         raise RuntimeError("estimator pilot deployment receipt is invalid")
+    assert jobs is not None
     submission_path = run_root / "control" / "finalizer_submission.json"
     submission = _read_json(submission_path)
     predecessor_ids = [
@@ -433,6 +437,9 @@ def main() -> int:
     ):
         raise RuntimeError("estimator pilot finalizer submission is invalid")
     p0_suite_path = run_root / "control" / "pilot_p0_suite.json"
+    p0_failure_path = run_root / "control" / "pilot_p0_failure.json"
+    if p0_suite_path.is_file() and p0_failure_path.is_file():
+        raise RuntimeError("estimator pilot P0 has both pass and failure receipts")
     if p0_suite_path.is_file():
         p0_suite = _read_json(p0_suite_path)
         if (
@@ -442,6 +449,21 @@ def main() -> int:
             or not _self_hash_matches(p0_suite, "suite_sha256")
         ):
             raise RuntimeError("estimator pilot P0 suite is invalid")
+    if p0_failure_path.is_file():
+        p0_failure = _read_json(p0_failure_path)
+        if (
+            p0_failure.get("schema_version") != PILOT_P0_FAILURE_SCHEMA
+            or p0_failure.get("status")
+            not in {
+                "FAIL_P0_SUITE_MECHANICAL_ONLY",
+                "FAIL_P0_FINALIZER_MECHANICAL_ONLY",
+            }
+            or p0_failure.get("runtime_commit") != expected_commit
+            or p0_failure.get("performance_inference_allowed") is not False
+            or p0_failure.get("paper_claim_allowed") is not False
+            or not _self_hash_matches(p0_failure, "failure_sha256")
+        ):
+            raise RuntimeError("estimator pilot P0 failure receipt is invalid")
     finalization = finalize_pilot_results(
         run_root=run_root,
         expected_commit=expected_commit,
@@ -462,6 +484,12 @@ def main() -> int:
     finalization["p0_suite_file_sha256"] = (
         sha256_file(p0_suite_path) if p0_suite_path.is_file() else None
     )
+    finalization["p0_failure_path"] = (
+        str(p0_failure_path) if p0_failure_path.is_file() else None
+    )
+    finalization["p0_failure_file_sha256"] = (
+        sha256_file(p0_failure_path) if p0_failure_path.is_file() else None
+    )
     finalization.pop("finalization_sha256")
     finalization["finalization_sha256"] = canonical_sha256(finalization)
     output = run_root / "control" / "pilot_finalization.json"
@@ -470,6 +498,86 @@ def main() -> int:
     _atomic_write_json(output, finalization)
     print(json.dumps(finalization, sort_keys=True))
     return 0
+
+
+def _write_failsafe_finalization(
+    *,
+    args: argparse.Namespace,
+    error: Exception,
+) -> None:
+    run_root = args.run_root.resolve()
+    boundary = Path("/data/run01/sczc063/yuzibo").resolve()
+    if not _inside(run_root, boundary) or run_root == boundary:
+        return
+    output = run_root / "control" / "pilot_finalization.json"
+    if output.exists():
+        return
+    try:
+        observed_commit = _git_output("rev-parse", "HEAD").lower()
+    except Exception:
+        observed_commit = None
+    artifact_paths = {
+        "deployment": run_root / "control" / "deployment.json",
+        "finalizer_submission": (
+            run_root / "control" / "finalizer_submission.json"
+        ),
+        "p0_suite": run_root / "control" / "pilot_p0_suite.json",
+        "p0_failure": run_root / "control" / "pilot_p0_failure.json",
+    }
+    finalization: dict[str, Any] = {
+        "schema_version": PILOT_FINALIZATION_SCHEMA,
+        "status": "INCOMPLETE_EXPLORATORY_PILOT",
+        "decision": "PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE",
+        "study_id": PILOT_STUDY_ID,
+        "runtime_commit": str(args.expected_commit).lower(),
+        "observed_runtime_commit": observed_commit,
+        "seed": PILOT_SEED,
+        "arms": {},
+        "failures": {
+            "finalizer": {
+                "status": "FAIL_FINALIZER_PREVALIDATION_OR_SEALING",
+                "exception_type": type(error).__name__,
+                "exception_message": str(error),
+                "traceback": traceback.format_exc(),
+                "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+            }
+        },
+        "receipt_validation_passed": False,
+        "artifact_receipts": {
+            name: {
+                "path": str(path),
+                "exists": path.is_file(),
+                "file_sha256": sha256_file(path) if path.is_file() else None,
+            }
+            for name, path in artifact_paths.items()
+        },
+        "all_six_arms_passed": False,
+        "cross_arm_population_and_artifact_consistent": False,
+        "descriptive_contrasts": {},
+        "selection_rule": "descriptive_only_no_automatic_winner_or_promotion",
+        "single_seed_exploratory": True,
+        "confirmatory_margin_frozen": False,
+        "confirmatory_seed_used": False,
+        "old_selector_reused": False,
+        "selector_emitted": False,
+        "p2_p3_opened": False,
+        "official_test_opened": False,
+        "paper_claim_allowed": False,
+    }
+    finalization["finalization_sha256"] = canonical_sha256(finalization)
+    _atomic_write_json(output, finalization)
+
+
+def main() -> int:
+    args = _parse_args()
+    try:
+        return _run_main(args)
+    except Exception as error:
+        try:
+            _write_failsafe_finalization(args=args, error=error)
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import socket
 import subprocess
 import tempfile
@@ -16,11 +17,18 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from tools.bata.georoute_experiment_contract import canonical_sha256
-from tools.bata.georoute_stage_runner import build_torchrun_prefix
+from tools.bata.georoute_stage_runner import (
+    _job_scoped_loopback,
+    build_torchrun_prefix,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
-GEOROUTE_RENDEZVOUS_GATE_SCHEMA = "georoute_rendezvous_isolation_gate_v3"
+GEOROUTE_RENDEZVOUS_GATE_SCHEMA = "georoute_rendezvous_isolation_gate_v4"
+GEOROUTE_RENDEZVOUS_FAILURE_SCHEMA = "georoute_rendezvous_isolation_failure_v1"
+READINESS_TIMEOUT_SECONDS = 120.0
+_DIAGNOSTIC_OUTPUT_LIMIT = 32 * 1024
+_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -57,6 +65,7 @@ def validate_rendezvous_gate_receipt(
     payload: Mapping[str, Any],
     *,
     expected_commit: str | None = None,
+    expected_node_name: str | None = None,
 ) -> None:
     digest_payload = dict(payload)
     digest = digest_payload.pop("gate_sha256", None)
@@ -72,6 +81,8 @@ def validate_rendezvous_gate_receipt(
         raise ValueError("GeoRoute rendezvous gate did not run concurrently on one node")
     if payload.get("long_probe_alive_after_short_exit") is not True:
         raise ValueError("GeoRoute rendezvous lifetime isolation was not demonstrated")
+    if float(payload.get("readiness_timeout_seconds", -1.0)) != READINESS_TIMEOUT_SECONDS:
+        raise ValueError("GeoRoute rendezvous readiness timeout is not the audited value")
     short_exit = float(payload.get("release_to_short_exit_seconds", -1.0))
     long_exit = float(payload.get("release_to_long_exit_seconds", -1.0))
     if short_exit <= 0 or long_exit <= short_exit:
@@ -82,6 +93,8 @@ def validate_rendezvous_gate_receipt(
     node_name = payload.get("node_name")
     if not isinstance(node_name, str) or not node_name:
         raise ValueError("GeoRoute rendezvous gate lacks its node identity")
+    if expected_node_name is not None and node_name != expected_node_name:
+        raise ValueError("GeoRoute rendezvous gate node differs from the current leaf")
     probes = payload.get("probes")
     if not isinstance(probes, Mapping) or set(probes) != {"short", "long"}:
         raise ValueError("GeoRoute rendezvous gate lacks both probes")
@@ -94,12 +107,16 @@ def validate_rendezvous_gate_receipt(
         rendezvous = probe.get("rendezvous")
         if not isinstance(rendezvous, Mapping):
             raise ValueError(f"GeoRoute {label} probe lacks a rendezvous receipt")
+        endpoint_host = _job_scoped_loopback(slurm_job_id)
+        expected_slot = 0 if label == "long" else 1
         if (
             rendezvous.get("phase") != "train"
             or rendezvous.get("backend") != "c10d"
-            or rendezvous.get("endpoint") != "127.0.0.1:0"
+            or rendezvous.get("endpoint") != f"{endpoint_host}:0"
+            or rendezvous.get("endpoint_host") != endpoint_host
             or rendezvous.get("endpoint_policy")
-            != "kernel_assigned_loopback_port"
+            != "job_scoped_loopback_and_kernel_assigned_port"
+            or int(rendezvous.get("rendezvous_slot", -1)) != expected_slot
             or rendezvous.get("slurm_job_id") != slurm_job_id
             or rendezvous.get("stage") != "p0"
             or rendezvous.get("variant") != f"rendezvous_probe_{label}"
@@ -172,13 +189,100 @@ def _wait_until_ready(
                 f"GeoRoute rendezvous probe exited before both were ready: {failed}"
             )
         if time.monotonic() >= deadline:
-            raise TimeoutError("GeoRoute concurrent rendezvous readiness timed out")
+            ready = {
+                label: path.is_file()
+                for label, path in ready_files.items()
+            }
+            states = {
+                label: process.poll()
+                for label, process in processes.items()
+            }
+            raise TimeoutError(
+                "GeoRoute concurrent rendezvous readiness timed out: "
+                f"ready={ready}, returncodes={states}, timeout_seconds={timeout_seconds}"
+            )
         time.sleep(0.05)
 
 
-def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
-    if output.exists():
-        raise FileExistsError(output)
+def _diagnostic_output(text: str) -> dict[str, Any]:
+    encoded = text.encode("utf-8", errors="replace")
+    truncated = len(encoded) > _DIAGNOSTIC_OUTPUT_LIMIT
+    if truncated:
+        tail = encoded[-_DIAGNOSTIC_OUTPUT_LIMIT:].decode(
+            "utf-8",
+            errors="replace",
+        )
+    else:
+        tail = text
+    return {
+        "output_sha256": _sha256_text(text),
+        "output_bytes": len(encoded),
+        "output_truncated_to_tail": truncated,
+        "output_tail": tail,
+    }
+
+
+def _signal_process_group(
+    process: subprocess.Popen[str],
+    requested_signal: signal.Signals,
+) -> None:
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, requested_signal)
+        elif process.poll() is None:
+            if requested_signal == signal.SIGTERM:
+                process.terminate()
+            else:
+                process.kill()
+    except ProcessLookupError:
+        return
+
+
+def _stop_process_groups(
+    processes: Mapping[str, subprocess.Popen[str]],
+) -> None:
+    for process in processes.values():
+        _signal_process_group(process, signal.SIGTERM)
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        if all(process.poll() is not None for process in processes.values()):
+            break
+        time.sleep(0.05)
+    for process in processes.values():
+        _signal_process_group(process, _KILL_SIGNAL)
+    for process in processes.values():
+        if process.poll() is None:
+            try:
+                process.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                continue
+
+
+def run_gate(
+    *,
+    output: Path,
+    expected_commit: str,
+    write_boundary: Path | None = None,
+) -> dict[str, Any]:
+    failure_output = output.with_suffix(".failure.json")
+    if output.exists() or failure_output.exists():
+        raise FileExistsError(output if output.exists() else failure_output)
+    boundary = (
+        Path("/data/run01/sczc063/yuzibo")
+        if write_boundary is None
+        else write_boundary
+    ).resolve()
+    resolved_output = output.resolve()
+    try:
+        resolved_output.relative_to(boundary)
+    except ValueError as error:
+        raise ValueError(
+            "GeoRoute rendezvous gate output leaves the remote write boundary"
+        ) from error
+    if resolved_output == boundary:
+        raise ValueError("GeoRoute rendezvous gate output cannot be the boundary root")
+    output = resolved_output
+    failure_output = output.with_suffix(".failure.json")
     slurm_job_id = os.environ.get("SLURM_JOB_ID")
     if not slurm_job_id:
         raise RuntimeError("GeoRoute rendezvous gate must run inside Slurm")
@@ -209,8 +313,11 @@ def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
         durations = {"short": 0.1, "long": 0.1}
         processes: dict[str, subprocess.Popen[str]] = {}
         rendezvous_receipts: dict[str, dict[str, Any]] = {}
-        short_output = ""
-        long_output = ""
+        commands: dict[str, list[str]] = {}
+        outputs = {"short": "", "long": ""}
+        collected: set[str] = set()
+        runtime_identities: dict[str, dict[str, Any]] = {}
+        failure: Exception | None = None
         release_to_short_exit = -1.0
         release_to_long_exit = -1.0
         long_alive_after_short = False
@@ -221,6 +328,7 @@ def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
                 stage="p0",
                 variant=f"rendezvous_probe_{label}",
                 seed=3407,
+                rendezvous_slot=0 if label == "long" else 1,
             )
             command = [
                 *prefix,
@@ -249,13 +357,15 @@ def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                start_new_session=True,
             )
+            commands[label] = command
             rendezvous_receipts[label] = rendezvous
         try:
             _wait_until_ready(
                 processes=processes,
                 ready_files=ready_files,
-                timeout_seconds=30.0,
+                timeout_seconds=READINESS_TIMEOUT_SECONDS,
             )
             runtime_identities = {
                 label: json.loads(path.read_text(encoding="utf-8"))
@@ -263,24 +373,92 @@ def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
             }
             release_file.write_text("release\n", encoding="utf-8")
             released = time.monotonic()
-            short_output, _ = processes["short"].communicate(timeout=30.0)
+            outputs["short"], _ = processes["short"].communicate(timeout=30.0)
+            collected.add("short")
             release_to_short_exit = time.monotonic() - released
             long_alive_after_short = processes["long"].poll() is None
             short_exited_file.write_text("short exited\n", encoding="utf-8")
-            long_output, _ = processes["long"].communicate(timeout=30.0)
+            outputs["long"], _ = processes["long"].communicate(timeout=30.0)
+            collected.add("long")
             release_to_long_exit = time.monotonic() - released
+        except Exception as error:
+            failure = error
         finally:
-            for process in processes.values():
-                if process.poll() is None:
-                    process.terminate()
-            for process in processes.values():
-                if process.poll() is None:
+            if failure is not None or any(
+                process.poll() is None for process in processes.values()
+            ):
+                _stop_process_groups(processes)
+            for label, process in processes.items():
+                if label not in collected:
                     try:
-                        process.wait(timeout=5.0)
+                        captured, _ = process.communicate(timeout=5.0)
                     except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait(timeout=5.0)
-        outputs = {"short": short_output, "long": long_output}
+                        _signal_process_group(process, _KILL_SIGNAL)
+                        try:
+                            captured, _ = process.communicate(timeout=5.0)
+                        except subprocess.TimeoutExpired:
+                            captured = (
+                                "[GeoRoute diagnostic drain timed out after "
+                                "process-group SIGKILL]\n"
+                            )
+                    outputs[label] = captured or ""
+                    collected.add(label)
+        if failure is not None:
+            ready_payloads: dict[str, Any] = {}
+            for label, path in ready_files.items():
+                if path.is_file():
+                    try:
+                        ready_payloads[label] = json.loads(
+                            path.read_text(encoding="utf-8")
+                        )
+                    except Exception as parse_error:
+                        ready_payloads[label] = {
+                            "parse_error": type(parse_error).__name__,
+                            "file_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                        }
+            failure_core: dict[str, Any] = {
+                "schema_version": GEOROUTE_RENDEZVOUS_FAILURE_SCHEMA,
+                "status": "FAIL_CONCURRENT_RENDEZVOUS_ISOLATION",
+                "runtime_commit": runtime_commit,
+                "slurm_job_id": slurm_job_id,
+                "node_name": socket.gethostname(),
+                "readiness_timeout_seconds": READINESS_TIMEOUT_SECONDS,
+                "elapsed_seconds": time.monotonic() - started,
+                "exception_type": type(failure).__name__,
+                "exception_message": str(failure),
+                "probes": {
+                    label: {
+                        "command": commands[label],
+                        "rendezvous": rendezvous_receipts[label],
+                        "return_code": processes[label].returncode,
+                        "ready_marker_seen": ready_files[label].is_file(),
+                        "runtime_identity": ready_payloads.get(label),
+                        **_diagnostic_output(outputs[label]),
+                    }
+                    for label in ("short", "long")
+                },
+                "selected_environment": {
+                    key: inherited.get(key)
+                    for key in (
+                        "SLURM_JOB_ID",
+                        "SLURM_STEP_ID",
+                        "SLURM_NODEID",
+                        "CUDA_VISIBLE_DEVICES",
+                        "OMP_NUM_THREADS",
+                    )
+                },
+                "official_test_opened": False,
+                "model_forward_executed": False,
+                "paper_claim_allowed": False,
+            }
+            failure_payload = {
+                **failure_core,
+                "failure_sha256": canonical_sha256(failure_core),
+            }
+            _atomic_write_json(failure_output, failure_payload)
+            raise RuntimeError(
+                f"{failure}; rendezvous failure receipt: {failure_output}"
+            ) from failure
         for label in ("short", "long"):
             output_text = outputs[label]
             probe_records[label] = {
@@ -309,6 +487,7 @@ def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
         "long_probe_alive_after_short_exit": long_alive_after_short,
         "release_to_short_exit_seconds": release_to_short_exit,
         "release_to_long_exit_seconds": release_to_long_exit,
+        "readiness_timeout_seconds": READINESS_TIMEOUT_SECONDS,
         "elapsed_seconds": time.monotonic() - started,
         "probes": probe_records,
         "official_test_opened": False,
@@ -316,9 +495,64 @@ def run_gate(*, output: Path, expected_commit: str) -> dict[str, Any]:
         "paper_claim_allowed": False,
     }
     payload = {**core, "gate_sha256": canonical_sha256(core)}
-    validate_rendezvous_gate_receipt(payload, expected_commit=runtime_commit)
+    validate_rendezvous_gate_receipt(
+        payload,
+        expected_commit=runtime_commit,
+        expected_node_name=socket.gethostname(),
+    )
     _atomic_write_json(output, payload)
     return payload
+
+
+def _write_gate_failsafe_failure(
+    *,
+    output: Path,
+    expected_commit: str,
+    error: Exception,
+    write_boundary: Path | None = None,
+) -> None:
+    boundary = (
+        Path("/data/run01/sczc063/yuzibo")
+        if write_boundary is None
+        else write_boundary
+    ).resolve()
+    resolved_output = output.resolve()
+    try:
+        resolved_output.relative_to(boundary)
+    except ValueError:
+        return
+    failure_output = resolved_output.with_suffix(".failure.json")
+    if (
+        resolved_output == boundary
+        or resolved_output.exists()
+        or failure_output.exists()
+    ):
+        return
+    try:
+        runtime_commit = _git_output("rev-parse", "HEAD").lower()
+    except Exception:
+        runtime_commit = None
+    failure_core: dict[str, Any] = {
+        "schema_version": GEOROUTE_RENDEZVOUS_FAILURE_SCHEMA,
+        "status": "FAIL_CONCURRENT_RENDEZVOUS_ISOLATION",
+        "runtime_commit": runtime_commit,
+        "expected_runtime_commit": expected_commit.lower(),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "node_name": socket.gethostname(),
+        "failure_phase": "gate_prevalidation_or_namespace_setup",
+        "readiness_timeout_seconds": READINESS_TIMEOUT_SECONDS,
+        "exception_type": type(error).__name__,
+        "exception_message": str(error),
+        "probes": {},
+        "official_test_opened": False,
+        "model_forward_executed": False,
+        "paper_claim_allowed": False,
+    }
+    failure = {
+        **failure_core,
+        "failure_sha256": canonical_sha256(failure_core),
+    }
+    _atomic_write_json(failure_output, failure)
 
 
 def main() -> int:
@@ -332,6 +566,14 @@ def main() -> int:
             expected_commit=args.expected_commit.lower(),
         )
     except Exception as exc:
+        try:
+            _write_gate_failsafe_failure(
+                output=args.output,
+                expected_commit=args.expected_commit,
+                error=exc,
+            )
+        except Exception:
+            pass
         print(
             json.dumps(
                 {
