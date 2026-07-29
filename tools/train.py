@@ -265,8 +265,20 @@ def main():
     set_seed(
         args.seed,
         args.disable_deterministic,
-        deterministic_warn_only=formal_binding is None,
+        deterministic_warn_only=(
+            bool(amp_diagnostic_binding["deterministic_warn_only"])
+            if amp_diagnostic_binding is not None
+            else formal_binding is None
+        ),
     )
+    if amp_diagnostic_binding is not None and (
+        not torch.are_deterministic_algorithms_enabled()
+        or not torch.is_deterministic_algorithms_warn_only_enabled()
+    ):
+        raise RuntimeError(
+            "GeoRoute AMP diagnosis did not preserve the historical pilot "
+            "deterministic warn-only seed policy"
+        )
     if formal_binding is None:
         cfg = update_workdir(cfg, args.id, args.world_size)
     elif args.id != 0:

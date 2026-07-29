@@ -81,6 +81,9 @@ def _binding(tmp_path: Path, arm: str) -> dict:
         "parent_pilot_binding_sha256": "1" * 64,
         "deterministic_same_config_reproduction": True,
         "exact_historical_batch_replay_claimed": False,
+        "deterministic_algorithms_enabled": True,
+        "deterministic_warn_only": True,
+        "historical_pilot_seed_policy_matched": True,
         "amp_diagnostic_telemetry_enabled": True,
         "checkpoint_disabled": True,
         "evaluator_invoked": False,
@@ -559,6 +562,7 @@ def test_finalizer_authorizes_only_a_no_metric_repair_step(tmp_path):
 
 def test_launchers_and_deployer_freeze_diagnostic_only_scope():
     root = Path(__file__).resolve().parents[1]
+    train = (root / "tools" / "train.py").read_text(encoding="utf-8")
     deployer = (
         root / "tools" / "bata" / "deploy_georoute_amp_diagnostic.py"
     ).read_text(encoding="utf-8")
@@ -578,5 +582,7 @@ def test_launchers_and_deployer_freeze_diagnostic_only_scope():
     assert "--hold" in deployer
     assert "tools/test.py" not in stage
     assert "--not_eval" not in stage
+    assert 'amp_diagnostic_binding["deterministic_warn_only"]' in train
+    assert "torch.is_deterministic_algorithms_warn_only_enabled()" in train
     assert '"performance_metrics": {}' in finalizer
     assert '"paper_claim_allowed": False' in finalizer

@@ -28,7 +28,7 @@ from tools.bata.georoute_experiment_contract import canonical_sha256
 
 
 AMP_DIAGNOSTIC_STUDY_ID = "georoute_real_batch_amp_diagnostic_v1"
-AMP_DIAGNOSTIC_BINDING_SCHEMA = "georoute_real_batch_amp_binding_v2"
+AMP_DIAGNOSTIC_BINDING_SCHEMA = "georoute_real_batch_amp_binding_v3"
 AMP_DIAGNOSTIC_RECEIPT_SCHEMA = "georoute_real_batch_amp_receipt_v1"
 AMP_DIAGNOSTIC_STAGE_SCHEMA = "georoute_real_batch_amp_stage_v1"
 AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA = "georoute_real_batch_amp_deployment_v1"
@@ -189,6 +189,9 @@ def bind_amp_diagnostic_config(
         "parent_pilot_binding_sha256": parent_binding["binding_sha256"],
         "deterministic_same_config_reproduction": True,
         "exact_historical_batch_replay_claimed": False,
+        "deterministic_algorithms_enabled": True,
+        "deterministic_warn_only": True,
+        "historical_pilot_seed_policy_matched": True,
         "amp_diagnostic_telemetry_enabled": True,
         "checkpoint_disabled": True,
         "evaluator_invoked": False,
@@ -229,6 +232,9 @@ def validate_amp_diagnostic_binding(
         != AMP_DIAGNOSTIC_INITIAL_SCALE
         or binding.get("deterministic_same_config_reproduction") is not True
         or binding.get("exact_historical_batch_replay_claimed") is not False
+        or binding.get("deterministic_algorithms_enabled") is not True
+        or binding.get("deterministic_warn_only") is not True
+        or binding.get("historical_pilot_seed_policy_matched") is not True
         or binding.get("amp_diagnostic_telemetry_enabled") is not True
         or binding.get("checkpoint_disabled") is not True
         or binding.get("evaluator_invoked") is not False
