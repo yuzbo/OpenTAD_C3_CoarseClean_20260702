@@ -70,6 +70,7 @@ unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
   tools/bata/duca_evidence_io.py \
   tools/bata/duca_gate_diagnostics.py \
   tools/bata/duca_acquisition_gate_schema.py \
+  tools/bata/audit_duca_acquisition_v2_1_feasibility.py \
   tools/bata/run_duca_acquisition_runtime_gate_v2.py \
   tools/bata/verify_duca_acquisition_admission_v2.py \
   tools/bata/calibrate_duca_numeric_null.py \
@@ -167,6 +168,7 @@ bash -n \
   tests/test_duca_rime_tridet.py \
   tests/test_duca_gate_diagnostics.py \
   tests/test_duca_acquisition_admission_v2.py \
+  tests/test_duca_acquisition_v2_1_feasibility.py \
   tests/test_duca_rime_selected_axis.py \
   tests/test_c3_coarse_classifier_model_matrix.py \
   tests/test_c3_asformer_delta_ledger_full_train.py \

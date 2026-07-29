@@ -63,7 +63,7 @@ def _artifact_binding(value: Any, label: str) -> Mapping[str, Any]:
     return binding
 
 
-def validate_duca_acquisition_admission_v2(
+def _inspect_superseded_duca_acquisition_admission_v2(
     payload: Mapping[str, Any],
     *,
     expected_commit: str | None = None,
@@ -339,6 +339,41 @@ def validate_duca_acquisition_admission_v2(
         "Recovery-v6 immutable history was altered",
     )
     return evidence
+
+
+def inspect_superseded_duca_acquisition_admission_v2(
+    payload: Mapping[str, Any],
+    *,
+    expected_commit: str | None = None,
+) -> dict[str, Any]:
+    """Inspect immutable v2 history without granting admission authority."""
+
+    return _inspect_superseded_duca_acquisition_admission_v2(
+        payload,
+        expected_commit=expected_commit,
+        require_passed=True,
+    )
+
+
+def validate_duca_acquisition_admission_v2(
+    payload: Mapping[str, Any],
+    *,
+    expected_commit: str | None = None,
+    require_passed: bool = True,
+) -> dict[str, Any]:
+    evidence = dict(payload)
+    if require_passed:
+        _require(
+            "content_sha256" in evidence,
+            "passed admission must be content-bound",
+        )
+    if "content_sha256" in evidence:
+        verify_content_sha256(evidence)
+    _require(evidence.get("schema") == ADMISSION_SCHEMA, "invalid admission schema")
+    raise ValueError(
+        "Admission v2 is superseded and cannot authorize Phase 1; "
+        "a verified Admission v2.1 receipt is required"
+    )
 
 
 def _sha256_path(path: Path) -> str:

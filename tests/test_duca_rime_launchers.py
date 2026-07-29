@@ -510,6 +510,7 @@ def test_phase4_submission_is_exactly_twelve_transactional_cells():
     assert 'export "${name}"' in submit
     assert "run_duca_rime_phase4_train_cell.sh" in pipeline
     assert '[[ "${DUCA_RIME_ENABLE_PHASE4:-0}" == 1 ]]' in pipeline
+    assert "full-200-video, global-batch-2 refit" in pipeline
     assert pipeline.count("run_duca_rime_evaluate_arm.sh") == 1
     assert "run_duca_rime_phase4_seal_cell.sh" in pipeline
     assert "stale Phase-4 sibling output is forbidden" in pipeline
@@ -517,18 +518,20 @@ def test_phase4_submission_is_exactly_twelve_transactional_cells():
     assert ".same_k_replay" in pipeline
 
 
-def test_acquisition_v2_runtime_launcher_is_calibration_and_admission_bound():
+def test_acquisition_v2_runtime_launcher_is_fixture_only_and_formal_fail_closed():
     text = (
         ROOT / "scripts" / "run_duca_acquisition_admission_v2.sh"
     ).read_text(encoding="utf-8")
     assert "DUCA_ACQUISITION_V2_MODE" in text
-    assert "calibrate or admit" in text
+    assert "only engineering-fixture is allowed" in text
     assert "run_duca_acquisition_runtime_gate_v2" in text
     assert "run_duca_acquisition_admission_v2" not in text
-    assert '--evidence-output "${receipt}"' in text
+    assert '--engineering-fixture-output "${fixture}"' in text
+    assert "--evidence-output" not in text
+    assert "--calibration-output" not in text
     assert "--code-gate-receipt" in text
-    assert "DUCA_ACQUISITION_NUMERIC_CALIBRATION_SHA256" in text
-    assert "DUCA_ACQUISITION_SCIENTIFIC_PROTOCOL_SHA256" in text
+    assert "admission_effect=false" in text
+    assert "phase1_v2_authorized=false" in text
     assert '[[ "${DUCA_RIME_ENABLE_PHASE4:-0}" == 0 ]]' in text
     assert '[[ "${DUCA_RIME_OFFICIAL_FINAL_CONSUMED:-0}" == 0 ]]' in text
 

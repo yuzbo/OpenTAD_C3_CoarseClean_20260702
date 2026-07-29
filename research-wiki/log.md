@@ -1,5 +1,60 @@
 # Research Log
 
+## 2026-07-29 — Official full-train boundary corrected
+
+- Audited the complete Phase-4 training and evaluation path in response to the
+  user's official-comparability correction.
+- Confirmed that the registered training set has 200 videos, while the current
+  Phase-4 trainer exports the `detector_selector_train` block list and trains
+  RIME plus matched controls on only 100. This is a valid development partition
+  but cannot support the paper main table or direct published-number claims.
+- Confirmed that the evaluation path requires `block_list=None`, the exact
+  registered official-final video-key set, and rejects missing or extra
+  predictions. OpenTAD's data contract intentionally excludes two
+  malformed/empty THUMOS test videos, leaving a complete comparable set of 211.
+- Identified the required refit contract: frozen method, leakage-safe OOF
+  targets for all 200 training videos, global effective batch two, 60 epochs,
+  100 optimizer updates per epoch, 6000 total updates, matched controls and the
+  unchanged upstream evaluator/NMS.
+- Hard-disabled the current Phase-4 cell entrypoint. No official-final
+  experiment may start until the full-200 refit producer, receipts and code
+  gate exist. No current result is paper-admissible.
+- Current focused checks pass (`66 passed`); the broad non-Torch contract suite
+  passes (`219 passed, 3 skipped`). Full Torch collection remains unavailable
+  on the Windows host due the known `c10.dll` WinError 1114, so an exact
+  clean-commit Linux/PyTorch Slurm gate is still required.
+
+## 2026-07-29 — Admission v2.1 audit adjudicated; impossible window contract found
+
+- Fully read and registered `U-PRO-ADMISSION-V21-1`. Accepted its current
+  formal-v2 `NO-GO`, all twelve P0 findings, preservation of the pure
+  selected-axis model, and the real-video/full-model/disjoint-holdout direction.
+- Did not accept the proposed protocol verbatim. Independently identified four
+  blockers: the fixed natural-window coverage is physically infeasible, the
+  sparse video/process bootstrap and catastrophic bound are underdefined,
+  `2 * reporting quantum` is not a scientific NI-margin justification, and
+  repository-level Slurm code cannot prove hard network/mount/object-lock
+  isolation without cluster support.
+- Read-only remote verification bound split manifest SHA-256
+  `41349cd39a6a550b6e1613de968577b1605c93902edd52a88309121b9e90c057`.
+  Its `detector_selector_train` pool has 100 videos. Production-compatible
+  enumeration from immutable annotation metadata gives 70 full-only, 30
+  short-only, zero with both, and fixed short-bin counts 7/13/10. Thus `3 x 32`
+  is count-feasible, but the proposed per-video full-plus-short rule and
+  minimum-eight first short bin are not.
+- Implemented the noncontroversial Stage-0 response. Old Admission v2 formal
+  calibration/admission now fails closed; the random-head path is
+  engineering-fixture-only; old v2 receipts require explicit
+  historical-read-only parsing and cannot authorize production entrypoints.
+- Added a pure metadata v2.1 feasibility auditor and focused tests. It mirrors
+  `SlidingWindowDataset.split_video_to_windows`, emits a finite exclusive
+  content-bound typed failure, consumes no decoded frames or candidate output,
+  and never authorizes Phase 1.
+- Full v2.1 calibration and Phase 1 remain unstarted. The next decision must
+  freeze role-level window coverage, exact crossed statistics, a justified NI
+  margin and enforceable isolation claims. Phase 4 and official-final remain
+  sealed; no model-performance or paper-admissible empirical conclusion exists.
+
 ## 2026-07-29 — DUCA acquisition-v2 selected-axis implementation
 
 - Accepted the core Pro adjudication with bounded implementation corrections:

@@ -17,6 +17,8 @@
 | REMOTE-RIME-V6-GATE-1 | `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_5a599e90_20260729_003600/logs/rime-phase1-1201417.out`, SHA-256 `0b9aedc943139e024939fa16bf5cf3007c7ae387e74f04bdae823551e3baee29` | immutable Recovery-v6 protected-gate failure evidence | directly verified; insufficient to identify offending loss component |
 | LOCAL-GATE-DIAG-1 | Git commit `69136de3ed8d8f977c78cfe5258dae3d57f7e238` | fail-closed coordinate/loss diagnostic remediation | implemented; focused local suite passed; published on `codex/duca-rime-20260727` |
 | U-PRO-PURE-PLUGIN-1 | `C:/Users/skywalker/.codex/attachments/80ec2ddd-9eed-4e97-ac1d-8be0c3071fd5/pasted-text.txt` | selected-axis pure-plugin architecture adjudication, AdapTok competition audit, replacement admission-v2 and experiment DAG | fully read; core scientific verdict accepted, implementation details independently adjudicated |
+| U-PRO-ADMISSION-V21-1 | `C:/Users/skywalker/.codex/attachments/d63bb109-7f99-4078-acc9-1bbdf6e895b2/pasted-text.txt`; SHA-256 `40a42ad184391ebb89f54d3adbdc972d3370294f870bc8cd59b19d90863893c8`; 45,892 bytes | full Admission-v2 audit and proposed real-video crossed-null v2.1 protocol | fully read; current formal v2 NO-GO and core repair direction accepted; fixed window coverage, crossed bound, NI-margin and hard-isolation details rejected pending correction |
+| C-OPENTAD-THUMOS-SPLIT-1 | `tools/prepare_data/thumos/README.md`; upstream `https://github.com/sming256/OpenTAD/blob/main/tools/prepare_data/thumos/README.md` | OpenTAD THUMOS evaluation-set definition | directly verified; two malformed/empty test videos excluded, complete registered evaluation set is 211 videos |
 
 `U-PRO-CBCG-1` was read in full. Its route analysis is retained as an external
 review, not as repository truth. Its linked `sandbox:/mnt/data/...` Patch A,
@@ -42,3 +44,20 @@ fully gated standard `AnchorFreeHead` instead of immediately extracting
 physical subclasses, because selected-axis configs and runtime validation
 restore the unmodified standard path; subclass extraction remains required
 only before a physical integration arm can make a separate experimental claim.
+
+`U-PRO-ADMISSION-V21-1` was read in full. Its twelve P0 findings, preservation
+of the selected-axis architecture, rejection of synthetic formal calibration,
+and real-video/full-model/disjoint-holdout evidence direction are accepted.
+Independent repository and immutable-metadata checks found that its per-video
+full-plus-short requirement is impossible under the current sliding enumerator,
+its catastrophic crossed bound is not fully defined, `2 * reporting quantum`
+does not justify a scientific NI margin, and repository jobs cannot truthfully
+claim hard network/mount/object-lock isolation without cluster support. These
+are protocol blockers, not reasons to revert the model.
+
+The local OpenTAD data-preparation contract was also checked directly. It
+documents removal of `video_test_0000270` (wrong annotations) and
+`video_test_0001292` (empty annotations), leaving 211 evaluation videos for all
+THUMOS experiments. This is the registered comparable evaluation set, whereas
+the repository's 100-video `detector_selector_train` role is only an internal
+development partition of the 200 training videos.

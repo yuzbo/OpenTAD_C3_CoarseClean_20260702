@@ -20,6 +20,7 @@ check_sha256() {
 
 [[ "${DUCA_RIME_ENABLE_PHASE4:-0}" == 1 ]] \
   || fail "Phase-4 and official-final remain sealed pending an explicit authorized release"
+fail "Phase-4 official-final is disabled: the current trainer uses only the 100-video detector_selector_train development role; a hash-bound full-200-video, global-batch-2 refit with complete out-of-fold targets must be implemented and authorized first"
 
 for name in \
   DUCA_RIME_REPO_ROOT \

@@ -153,7 +153,7 @@ def test_evaluation_config_hash_serializes_frozen_training_protocol() -> None:
     payload = {"workflow": {"training_protocol": protocol}}
     plain_protocol = {
         "name": "official60",
-        "purpose": "official_adatad_length_matched_paper_protocol",
+        "purpose": "adatad_schedule_length_matched_development_protocol_not_full_split",
         "end_epoch": 60,
         "steps_per_epoch": 100,
         "checkpoint_interval": 5,

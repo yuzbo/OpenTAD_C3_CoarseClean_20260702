@@ -34,3 +34,7 @@
 {"source":"experiments/duca-acquisition-v2-pure-plugin","relation":"implements_decision_from","target":"sources/U-PRO-PURE-PLUGIN-1"}
 {"source":"experiments/duca-acquisition-v2-pure-plugin","relation":"replaces_gate_in","target":"experiments/hrime-v1-stage0-recovery"}
 {"source":"experiments/duca-acquisition-v2-pure-plugin","relation":"gates","target":"experiments/duca-dynamic-k-rime-oracle"}
+{"source":"sources/U-PRO-ADMISSION-V21-1","relation":"audits","target":"experiments/duca-acquisition-v2-pure-plugin"}
+{"source":"experiments/duca-acquisition-v2-pure-plugin","relation":"blocked_by","target":"protocols/duca-admission-v2-1-window-statistics-margin-isolation"}
+{"source":"experiments/duca-dynamic-k-rime-oracle","relation":"blocked_before_paper_evidence_by","target":"plans/duca-official-full-train-refit"}
+{"source":"plans/duca-official-full-train-refit","relation":"uses_split_definition_from","target":"sources/C-OPENTAD-THUMOS-SPLIT-1"}

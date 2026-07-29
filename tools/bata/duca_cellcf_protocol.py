@@ -57,7 +57,7 @@ TRAINING_PROTOCOLS = {
     ),
     "official60": CellCFTrainingProtocol(
         name="official60",
-        purpose="official_adatad_length_matched_paper_protocol",
+        purpose="adatad_schedule_length_matched_development_protocol_not_full_split",
         end_epoch=60,
         steps_per_epoch=100,
     ),

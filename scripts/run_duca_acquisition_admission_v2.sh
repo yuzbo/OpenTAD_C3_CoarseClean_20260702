@@ -43,9 +43,8 @@ for name in \
   required "${name}"
 done
 
-[[ "${DUCA_ACQUISITION_V2_MODE}" == calibrate || \
-   "${DUCA_ACQUISITION_V2_MODE}" == admit ]] \
-  || fail "DUCA_ACQUISITION_V2_MODE must be calibrate or admit"
+[[ "${DUCA_ACQUISITION_V2_MODE}" == engineering-fixture ]] \
+  || fail "legacy Admission v2 formal calibrate/admit is disabled; only engineering-fixture is allowed until Admission v2.1 exists"
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "the runtime gate must run inside Slurm"
 [[ "${DUCA_RIME_EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
   || fail "an exact expected commit is required"
@@ -110,55 +109,22 @@ common_args=(
   --code-gate-receipt "${DUCA_RIME_CODE_GATE_RECEIPT}"
 )
 
-if [[ "${DUCA_ACQUISITION_V2_MODE}" == calibrate ]]; then
-  python -m tools.bata.run_duca_acquisition_runtime_gate_v2 \
-    "${common_args[@]}" \
-    --calibration-output \
-    "${DUCA_ACQUISITION_V2_ROOT}/numeric_calibration.json"
-  printf '%s\n' \
-    "schema=duca_acquisition_numeric_calibration_receipt_v1" \
-    "status=frozen" \
-    "commit=${DUCA_RIME_EXPECTED_COMMIT}" \
-    "slurm_job_id=${SLURM_JOB_ID}" \
-    "uses_official_final=false" \
-    "phase4_submission_enabled=false" \
-    "calibration_sha256=$(sha256sum "${DUCA_ACQUISITION_V2_ROOT}/numeric_calibration.json" | awk '{print $1}')" \
-    > "${DUCA_ACQUISITION_V2_ROOT}/calibration.receipt"
-  echo "[DUCA_ACQUISITION_V2] CALIBRATION PASS ${DUCA_ACQUISITION_V2_ROOT}"
-  exit 0
-fi
-
-for name in \
-  DUCA_ACQUISITION_NUMERIC_CALIBRATION \
-  DUCA_ACQUISITION_NUMERIC_CALIBRATION_SHA256 \
-  DUCA_ACQUISITION_SCIENTIFIC_PROTOCOL \
-  DUCA_ACQUISITION_SCIENTIFIC_PROTOCOL_SHA256; do
-  required "${name}"
-done
-check_sha256 \
-  "${DUCA_ACQUISITION_NUMERIC_CALIBRATION}" \
-  "${DUCA_ACQUISITION_NUMERIC_CALIBRATION_SHA256}" \
-  "numeric calibration"
-check_sha256 \
-  "${DUCA_ACQUISITION_SCIENTIFIC_PROTOCOL}" \
-  "${DUCA_ACQUISITION_SCIENTIFIC_PROTOCOL_SHA256}" \
-  "scientific protocol"
-
-receipt="${DUCA_ACQUISITION_V2_ROOT}/admission_v2.receipt.json"
+fixture="${DUCA_ACQUISITION_V2_ROOT}/engineering_fixture.json"
 python -m tools.bata.run_duca_acquisition_runtime_gate_v2 \
   "${common_args[@]}" \
-  --numeric-calibration "${DUCA_ACQUISITION_NUMERIC_CALIBRATION}" \
-  --scientific-protocol "${DUCA_ACQUISITION_SCIENTIFIC_PROTOCOL}" \
-  --evidence-output "${receipt}"
+  --engineering-fixture-output "${fixture}"
 
 printf '%s\n' \
-  "schema=duca_acquisition_admission_runtime_receipt_v2" \
+  "schema=duca_acquisition_engineering_fixture_receipt_v1" \
   "status=passed" \
   "commit=${DUCA_RIME_EXPECTED_COMMIT}" \
   "slurm_job_id=${SLURM_JOB_ID}" \
+  "fixture=true" \
+  "admission_effect=false" \
+  "phase1_v2_authorized=false" \
   "uses_official_final=false" \
   "phase4_submission_enabled=false" \
   "producer=tools.bata.run_duca_acquisition_runtime_gate_v2" \
-  "admission_sha256=$(sha256sum "${receipt}" | awk '{print $1}')" \
-  > "${DUCA_ACQUISITION_V2_ROOT}/runtime_gate.receipt"
-echo "[DUCA_ACQUISITION_V2] ADMISSION PASS ${receipt}"
+  "fixture_sha256=$(sha256sum "${fixture}" | awk '{print $1}')" \
+  > "${DUCA_ACQUISITION_V2_ROOT}/engineering_fixture.receipt"
+echo "[DUCA_ACQUISITION_V2] ENGINEERING FIXTURE PASS ${fixture}"

@@ -474,8 +474,10 @@ def _run_head_null(
         "run_id": f"{backend.lower()}-seed{int(seed)}",
         "backend": str(backend),
         "seed": int(seed),
-        "split_scope": "train_only_calibration",
+        "split_scope": "engineering_fixture",
         "uses_official_final": False,
+        "fixture": True,
+        "admission_effect": False,
         "autocast_enabled": bool(autocast_enabled),
         "amp_dtype": "float16" if autocast_enabled else None,
         "metric_errors": {"output_max_abs": error},
@@ -972,6 +974,7 @@ def run_runtime_gate(
     data_manifest: str | Path,
     split_assignment: str | Path,
     code_gate_receipt: str | Path,
+    engineering_fixture_output: str | Path | None,
     calibration_output: str | Path | None,
     numeric_calibration: str | Path | None,
     scientific_protocol: str | Path | None,
@@ -979,6 +982,21 @@ def run_runtime_gate(
     safety_multiplier: float,
     absolute_floor: float,
 ) -> dict[str, Any]:
+    formal_options = (
+        calibration_output,
+        numeric_calibration,
+        scientific_protocol,
+        evidence_output,
+    )
+    _require(
+        all(value is None for value in formal_options),
+        "Admission v2 formal calibrate/admit paths are disabled; "
+        "implement and verify Admission v2.1 instead",
+    )
+    _require(
+        engineering_fixture_output is not None,
+        "the superseded v2 runtime may run only as an engineering fixture",
+    )
     identity, runtime = _bind_runtime(expected_commit, expected_branch)
     identity["repo_root"] = str(ROOT)
     runtime_fingerprint = _runtime_fingerprint(runtime)
@@ -1037,6 +1055,77 @@ def run_runtime_gate(
                         autocast_enabled=True,
                     )
                 )
+        if engineering_fixture_output is not None:
+            output_path = _assert_external_output(engineering_fixture_output)
+            _restore_runtime_state(modules, baseline_state)
+            state_after_sha256 = _runtime_state_sha256(
+                _capture_runtime_state(modules)
+            )
+            _require(
+                state_after_sha256 == state_before_sha256,
+                "engineering fixture did not restore model/RNG/debug state",
+            )
+            fixture = with_content_sha256(
+                {
+                    "schema": "duca_acquisition_engineering_fixture_v1",
+                    "status": "passed",
+                    "fixture": True,
+                    "split_scope": "engineering_fixture",
+                    "admission_effect": False,
+                    "formal_numeric_calibration_allowed": False,
+                    "phase1_v2_authorized": False,
+                    "paper_claim_allowed": False,
+                    "uses_official_final": False,
+                    "phase4_submission_enabled": False,
+                    "official_final_sealed": True,
+                    "identity": identity,
+                    "runtime": runtime,
+                    "runtime_fingerprint_sha256": runtime_fingerprint,
+                    "producer": {
+                        "module": (
+                            "tools.bata.run_duca_acquisition_runtime_gate_v2"
+                        ),
+                        "mode": "engineering-fixture",
+                        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+                    },
+                    "artifact_bindings": {
+                        "code_gate_receipt": _artifact_binding(
+                            code_gate_receipt
+                        ),
+                        "actionformer_checkpoint": _artifact_binding(
+                            actionformer_checkpoint
+                        ),
+                        "tridet_checkpoint": _artifact_binding(
+                            tridet_checkpoint
+                        ),
+                        "train_block_list": _artifact_binding(
+                            train_block_list
+                        ),
+                        "development_block_list": _artifact_binding(
+                            development_block_list
+                        ),
+                        "targets_jsonl": _artifact_binding(targets_jsonl),
+                        "budget_protocol": _artifact_binding(budget_protocol),
+                        "data_manifest": _artifact_binding(data_manifest),
+                        "split_assignment": _artifact_binding(
+                            split_assignment
+                        ),
+                    },
+                    "head_only_random_feature_rows": amp_rows,
+                    "state_before_sha256": state_before_sha256,
+                    "state_after_sha256": state_after_sha256,
+                    "limitations": [
+                        "synthetic_random_head_features",
+                        "no_real_video_execution",
+                        "no_full_model_forward_or_backward",
+                        "no_independent_process_grouping",
+                        "not_numeric_calibration",
+                        "not_scientific_admission",
+                    ],
+                }
+            )
+            write_json_exclusive_atomic(output_path, fixture)
+            return fixture
         if calibration_output is not None:
             output_path = _assert_external_output(calibration_output)
             calibration = calibrate_numeric_null(
@@ -1379,8 +1468,8 @@ def run_runtime_gate(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Run the Slurm/CUDA selected-axis structural and numeric gate that "
-            "produces a DUCA acquisition admission-v2 evidence draft."
+            "Run the superseded DUCA acquisition-v2 head-only engineering "
+            "fixture. Formal calibration/admission flags fail closed."
         )
     )
     parser.add_argument("--expected-commit", required=True)
@@ -1399,6 +1488,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--split-assignment", required=True)
     parser.add_argument("--code-gate-receipt", required=True)
     mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--engineering-fixture-output")
     mode.add_argument("--calibration-output")
     mode.add_argument("--evidence-output")
     parser.add_argument("--numeric-calibration")
@@ -1422,6 +1512,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         data_manifest=args.data_manifest,
         split_assignment=args.split_assignment,
         code_gate_receipt=args.code_gate_receipt,
+        engineering_fixture_output=args.engineering_fixture_output,
         calibration_output=args.calibration_output,
         numeric_calibration=args.numeric_calibration,
         scientific_protocol=args.scientific_protocol,

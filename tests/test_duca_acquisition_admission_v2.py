@@ -6,6 +6,7 @@ import pytest
 
 from tools.bata.calibrate_duca_numeric_null import calibrate_numeric_null
 from tools.bata.duca_acquisition_gate_schema import (
+    inspect_superseded_duca_acquisition_admission_v2,
     validate_duca_acquisition_admission_v2,
 )
 from tools.bata.duca_evidence_io import (
@@ -187,27 +188,41 @@ def _receipt():
     return with_content_sha256(payload)
 
 
-def test_admission_v2_accepts_hash_bound_pure_plugin_receipt():
+def test_admission_v2_can_be_parsed_only_as_superseded_history():
     receipt = _receipt()
-    validated = validate_duca_acquisition_admission_v2(
+    validated = inspect_superseded_duca_acquisition_admission_v2(
         receipt,
         expected_commit=COMMIT,
     )
     assert validated["status"] == "passed"
 
 
+def test_admission_v2_cannot_authorize_new_work():
+    with pytest.raises(ValueError, match="superseded"):
+        validate_duca_acquisition_admission_v2(
+            _receipt(),
+            expected_commit=COMMIT,
+        )
+
+
 def test_admission_v2_rejects_unsigned_or_non_runtime_produced_json():
     unsigned = _receipt()
     unsigned.pop("content_sha256")
     with pytest.raises(ValueError, match="content-bound"):
-        validate_duca_acquisition_admission_v2(unsigned, expected_commit=COMMIT)
+        inspect_superseded_duca_acquisition_admission_v2(
+            unsigned,
+            expected_commit=COMMIT,
+        )
 
     forged = _receipt()
     forged.pop("content_sha256")
     forged["producer"]["finalized_in_runtime_producer"] = False
     forged = with_content_sha256(forged)
     with pytest.raises(ValueError, match="producer identity"):
-        validate_duca_acquisition_admission_v2(forged, expected_commit=COMMIT)
+        inspect_superseded_duca_acquisition_admission_v2(
+            forged,
+            expected_commit=COMMIT,
+        )
 
 
 @pytest.mark.parametrize(
@@ -246,7 +261,7 @@ def test_admission_v2_fails_closed_on_contract_drift(mutator, match):
     mutator(receipt)
     receipt = with_content_sha256(receipt)
     with pytest.raises(ValueError, match=match):
-        validate_duca_acquisition_admission_v2(
+        inspect_superseded_duca_acquisition_admission_v2(
             receipt,
             expected_commit=COMMIT,
         )
@@ -265,42 +280,14 @@ def test_atomic_writer_is_finite_exclusive_and_cleans_temporary_files(tmp_path):
     assert list(tmp_path.glob(".*.tmp")) == []
 
 
-def test_numeric_null_calibration_is_train_only_and_separate_from_science():
-    manifest = calibrate_numeric_null(
-        [
-            {
-                "run_id": "a",
-                "split_scope": "training",
-                "uses_official_final": False,
-                "metric_errors": {"proposal": 1.0e-6, "score": 2.0e-7},
-            },
-            {
-                "run_id": "b",
-                "split_scope": "train_only_calibration",
-                "uses_official_final": False,
-                "metric_errors": {"proposal": 2.0e-6, "score": 1.0e-7},
-            },
-        ],
-        git_commit=COMMIT,
-        safety_multiplier=2.0,
-        absolute_floor=1.0e-7,
-    )
-    assert manifest["thresholds"] == {
-        "proposal": 4.0e-6,
-        "score": 4.0e-7,
-    }
-    assert manifest["scientific_noninferiority_margin"] is None
-    assert manifest["uses_official_final"] is False
-
-
-def test_numeric_null_calibration_rejects_official_final():
-    with pytest.raises(ValueError, match="split scope"):
+def test_legacy_numeric_null_calibration_is_disabled_even_for_training_rows():
+    with pytest.raises(RuntimeError, match="Admission v2 formal numeric calibration"):
         calibrate_numeric_null(
             [
                 {
-                    "run_id": "bad",
-                    "split_scope": "official_final",
-                    "uses_official_final": True,
+                    "run_id": "training-shaped-but-insufficient",
+                    "split_scope": "training",
+                    "uses_official_final": False,
                     "metric_errors": {"proposal": 0.0},
                 }
             ],

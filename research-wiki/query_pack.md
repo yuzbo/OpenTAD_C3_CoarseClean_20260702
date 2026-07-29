@@ -16,16 +16,19 @@ Current evidence level:
 | Item | State |
 |---|---|
 | Scientific route | `user_approved` |
-| Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 / core_decision_accepted_with_implementation_corrections` |
+| Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 + U-PRO-ADMISSION-V21-1 / core_decisions_accepted_with_protocol_corrections` |
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
-| Acquisition admission-v2 | `implemented_draft / blocked_before_calibration_by_P0_real_data_and_grouped_null_gap` |
-| Phase-1 v2 closure | `not_yet_run / only_next_authorized_experiment` |
+| Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
+| Acquisition admission-v2.1 | `stage0_fail_closed_slice_implemented / full_protocol_blocked_by_window_statistics_margin_and_isolation_decisions` |
+| V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
+| Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `acquisition_v2_job_1204067_completed_0_0 / receipt_sha256_d664a619007f1cafbd4e52f2fd6a053fb0e3b5336dcb2be2b16302912286e5c8` |
 | Dense reference training | `recovery_v6_salvage_completed / engineering_only` |
 | Phase 1 closure | `recovery_v6_contract_gate_failed_1201417 / universal_loss_equivalence_premise_invalid / observed_mismatch_component_unresolved / no_terminal_receipt` |
 | Phase 2/3/4 | `recovery_v6_children_cancelled / phase4_never_opened` |
+| Phase-4 official comparability | `blocked / current trainer uses 100-of-200 development role / entry hard-disabled pending full-train refit` |
 | Latest four-stage transaction | `recovery_v6_failed_closed / terminal` |
 | H-RIME scientific route | `user_approved / designed` |
 | Stage-0 repair implementation | `recovery_v6_exact_commit_5a599e90 / authoritative_preflight_passed` |
@@ -63,6 +66,54 @@ processes, or freeze the prescribed normalized statistic and denominator
 floor. Remote inventory also found no admissible non-fixture training-target
 JSONL, acquisition data manifest, or NI-margin source. This is a P0 protocol
 implementation gap, not model-performance evidence.
+
+External audit `U-PRO-ADMISSION-V21-1` confirmed those six P0s and added six
+more: cloned-head tautology, no full-model train/backward path, no immutable raw
+distribution, self-declared schemas, unverifiable development non-access, and
+no immutable failure receipt. Its architecture-preserving, real-video v2.1
+direction is accepted, but four frozen details are not.
+
+The exact split-manifest SHA-256 is
+`41349cd39a6a550b6e1613de968577b1605c93902edd52a88309121b9e90c057`.
+Its `detector_selector_train` pool has 100 videos, so three disjoint 32-video
+roles are count-feasible. The production sliding enumerator nevertheless
+back-shifts a long video's terminal window to 768. Immutable annotation
+metadata therefore yields 70 full-only videos, 30 short-only videos and zero
+videos with both; short-bin counts are 7/13/10 for `1-256`, `257-512` and
+`513-767`. The proposed requirement that every video contain both a natural
+full and short window is impossible, and the first fixed short bin also misses
+the proposed minimum of eight. No synthetic crop/padding workaround is
+permitted.
+
+The Stage-0 response is implemented: old v2 formal calibration/admission fails
+closed, its random-head path is engineering-fixture-only, old v2 receipts are
+historical-read-only and cannot authorize production, and a metadata-only
+v2.1 feasibility auditor emits typed content-bound failure. Full v2.1 work
+remains blocked until the role-level window contract, exact crossed bootstrap
+and catastrophic bound, scientifically justified NI margin, and enforceable
+versus observational isolation claims are frozen.
+
+The number 100 has a strictly limited meaning: it is the
+`detector_selector_train` development role, not the official training split.
+The registered THUMOS training set contains 200 videos. Read-only code audit
+found that the current Phase-4 pipeline exports the 100-video role block list
+to both RIME and matched controls. Its nominal `official60` schedule matches 60
+epochs and 6000 optimizer updates only by using batch size one on 100 videos;
+it is therefore not a full-data OpenTAD/AdaTAD training recipe.
+
+Paper-facing training must instead refit every candidate and trainable control
+on all 200 videos after the method is frozen. To match the upstream AdaTAD
+effective batch and update schedule, use global batch two, 60 epochs, 100
+optimizer updates per epoch and 6000 total updates. The selected method also
+requires out-of-fold utility/risk targets covering all 200 training videos.
+The current Phase-4 entrypoint is hard-disabled until that hash-bound refit
+contract exists.
+
+The evaluation side is different: the Phase-4 evaluator already requires the
+complete registered `validation` key set with no missing or extra predictions.
+OpenTAD deliberately removes two malformed/empty THUMOS test videos and uses
+the remaining 211 for fair comparison. Thus 211 is the complete
+OpenTAD-comparable evaluation set, not an arbitrary test subset.
 
 ## Paper responsibility
 
@@ -758,24 +809,24 @@ Until those artifacts exist, the correct status is `implemented/tested` or
 Current priority, superseding the operational order below while retaining it as
 negative-history context:
 
-1. Publish the implemented pure selected-axis/admission-v2 change as one exact
-   clean commit on `codex/duca-rime-20260727`.
+1. Publish the fail-closed Admission-v2 Stage-0 correction and metadata
+   feasibility auditor as one exact clean commit on
+   `codex/duca-rime-20260727`.
 2. Run the authoritative Linux/PyTorch Slurm code gate from a fresh clean
    checkout. Local Windows Torch is not evidence because `c10.dll` cannot load.
-3. Run training/calibration-only repeated AMP nulls for both ActionFormer and
-   TriDet and freeze the runtime-bound numeric calibration manifest. Do not
-   choose a threshold from development behavior.
-4. Before candidate outputs exist, freeze the primary endpoint, video-cluster
-   unit, NI margin source/rule, multiplicity, guardrails, stopping rules, exact
-   Git tree and fresh candidate-output root in the scientific protocol.
-5. Run the single-GPU acquisition-v2 producer. It must directly emit the final
-   immutable receipt and re-bind every config, checkpoint, data, split,
-   calibration, scientific-protocol and code-gate artifact. External JSON
-   finalization is forbidden.
-6. Only after admission-v2 passes, run
-   `DUCA-P1-V2-PURE-PLUGIN-CLOSURE` for the full registered Phase-1 controls.
-   The output remains engineering/scientific-admission evidence, not a
-   performance result.
+3. Do not launch calibration or Phase 1. First freeze corrected definitions for
+   role-level natural full/short coverage, the exact sparse crossed-bootstrap
+   algorithm and catastrophic bound, a scientifically justified NI margin, and
+   enforced-versus-observed runtime isolation.
+4. Only after that decision, implement the real inventory/roles/windows/targets,
+   independent geometry, full-model executor pair, immutable raw shards,
+   grouped aggregation, typed scientific protocol and v2.1 verifier.
+5. Run scale-fit, calibration and disjoint admission holdout only through a new
+   exact-commit Slurm DAG with success and failure receipts. FP32 remains
+   diagnostic and cannot rescue AMP.
+6. Only a verified `duca_acquisition_admission_v2_1` passed receipt may release
+   `DUCA-P1-V2-PURE-PLUGIN-CLOSURE`. Admission itself remains engineering and
+   scientific-entry evidence, not a performance result.
 7. Do not begin Phase 2/3, learned H-RIME, Phase 4 or official-final until their
    previously registered terminal prerequisites pass. Recovery-v6 remains
    immutable failed history and is never reclassified.

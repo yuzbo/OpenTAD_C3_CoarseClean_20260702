@@ -281,3 +281,40 @@ These failures and naming mistakes must not be repeated.
     result as a calibration source, or invent an NI practical-relevance floor.
     Missing formal targets, data manifest, or margin source blocks Admission v2
     before Phase 1.
+87. Do not require every source video to have both a natural 768 window and a
+    natural short terminal window under the current sliding enumerator. Long
+    videos are terminally back-shifted to a full 768 window; immutable training
+    metadata has 70 full-only, 30 short-only and zero both. Coverage must be
+    redesigned at role level before v2.1, never manufactured with synthetic
+    crops, padding or replicated frames.
+88. Do not implement “two-way bootstrap” from prose alone. Freeze the exact
+    sparse video-by-process incidence weighting, duplicate/empty-cell semantics,
+    estimand, quantile rule, Monte Carlo error, max-family registry and
+    catastrophic bound before calibration rows exist.
+89. Do not use evaluator reporting precision as the scientific
+    noninferiority margin. `2 * reporting_quantum` addresses serialization
+    resolution, not acceptable localization degradation. The margin needs an
+    independent effect-preservation or domain-materiality justification;
+    calibration variability only gates assay sensitivity.
+90. Do not claim network disablement, mount denial, complete file-access
+    auditing or object lock merely because a Slurm script records an environment
+    allowlist or fingerprint. Distinguish cluster-enforced isolation from
+    observational evidence and fail closed if the frozen protocol requires a
+    control that the runtime cannot enforce.
+91. Do not let an old `duca_acquisition_admission_v2` receipt authorize any new
+    stage. V2 is historical-read-only; its random-head path is an engineering
+    fixture with `admission_effect=false`. Phase 1 requires a future verified
+    v2.1 receipt.
+92. Do not call the 100-video `detector_selector_train` role the official
+    THUMOS training split. It is a development role carved from the registered
+    200-video training set. Any model trained only on that role is development
+    evidence and cannot be compared directly with published full-train results.
+93. Do not equate the `official60` identifier with a complete official-data
+    recipe. It currently records a 60-epoch/100-update schedule on the
+    role-scoped loader. Paper-facing refit requires all 200 training videos,
+    upstream-equivalent global batch two, 100 optimizer updates per epoch and
+    6000 total updates.
+94. Do not describe OpenTAD's 211-video THUMOS evaluation set as an arbitrary
+    reduced test subset. OpenTAD deliberately excludes two malformed/empty
+    test videos and uses the remaining 211 for fair comparison. Completeness
+    means exact agreement with that registered 211-key set and evaluator.
