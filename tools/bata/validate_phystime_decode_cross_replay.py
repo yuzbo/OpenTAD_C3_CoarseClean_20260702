@@ -619,7 +619,7 @@ def scan_logs(run_dir):
         r"\bpytorchstreamwriter\b",
         r"\bdependencyneversatisfied\b",
     )
-    findings = {}
+    findings = []
     for path in (
         run_dir / "inference.out",
         run_dir / "replay.out",
@@ -632,8 +632,16 @@ def scan_logs(run_dir):
             for pattern in patterns
             if re.search(pattern, text, flags=re.IGNORECASE)
         ]
-        if hits:
-            findings[str(path)] = hits
+        findings.extend(
+            {"path": str(path), "pattern": pattern}
+            for pattern in hits
+        )
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("[PhysTime") and " ERROR:" in stripped:
+                findings.append(
+                    {"path": str(path), "marker": stripped[:200]}
+                )
     require(not findings, f"fatal log patterns found: {findings}")
     return findings
 

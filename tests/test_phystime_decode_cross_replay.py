@@ -317,6 +317,23 @@ def test_validator_carries_validated_numeric_precision_into_completion():
     assert producer["numeric_precision"]["score_sort_dtype"] == "float16"
 
 
+def test_replay_log_findings_match_suite_completion_contract(tmp_path):
+    for name in ("inference.out", "replay.out", "validator.out"):
+        (tmp_path / name).write_text(
+            "decode-cross evidence clean\n",
+            encoding="utf-8",
+        )
+
+    assert validator.scan_logs(tmp_path) == []
+
+    (tmp_path / "validator.out").write_text(
+        "[PhysTime decode cross] ERROR: contract mismatch\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="fatal log patterns found"):
+        validator.scan_logs(tmp_path)
+
+
 def _synthetic_dense_arrays():
     base_points = np.asarray(
         [
