@@ -564,6 +564,10 @@ budget, threshold, split, checkpoint, metric, or the fail-closed admission
 decision. It instruments the next authorized run so an observed mismatch can
 be localized without turning a diagnostic into paper evidence.
 
+The diagnostic commit and this analysis record are published on GitHub branch
+`codex/duca-rime-20260727`. Remote synchronization was directly verified before
+the scientific review prompt was issued.
+
 The next scientific action is a bounded architecture-and-gate review. It must
 decide whether the paper mainline preserves a pure pre-backbone selected-axis
 detector with external coordinate remapping, keeps the current physical-head

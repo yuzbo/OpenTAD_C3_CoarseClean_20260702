@@ -874,6 +874,9 @@
 - The commit changes no model, loss, budget, threshold, data, checkpoint,
   metric, or admission outcome. Compilation, `git diff --check`, and the
   focused diagnostic/evidence suite passed with `32 passed`.
+- The diagnostic commit and research analysis were pushed to
+  `codex/duca-rime-20260727`; direct remote-ref verification confirmed the
+  published branch identity before preparing the Pro review.
 - One bounded Pro review is now warranted to select the paper architecture and
   replace the invalid universal equality premise with a justified scientific
   gate. No new transaction or Phase 4 access is authorized by this analysis.

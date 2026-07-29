@@ -729,8 +729,9 @@ negative-history context:
    `69136de3ed8d8f977c78cfe5258dae3d57f7e238` as the audited analysis surface.
    It records coordinate applicability, per-loss errors and a non-admission
    FP32 replay without changing the frozen threshold or pass/fail semantics.
-2. Push the exact commit and research-memory update, then run the focused
-   Linux/PyTorch checks from a clean checkout before any new Slurm transaction.
+   It is published on branch `codex/duca-rime-20260727`.
+2. Run the focused Linux/PyTorch checks from a clean checkout of the published
+   branch before any new Slurm transaction.
 3. Conduct one bounded Pro review of the repository and require a single
    architecture decision plus a mathematically justified replacement gate.
    The review must distinguish the invalid universal gate premise from the
