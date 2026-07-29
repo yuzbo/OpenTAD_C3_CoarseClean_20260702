@@ -239,7 +239,15 @@ The first `832caedd` diagnostic namespace failed before model execution in both
 arms because the diagnostic binder used unsupported `Config.__delitem__`.
 Afterany closeout correctly sealed no-repair/no-metric evidence. Minimal
 `Config.pop` repair source is `64d991f9`; this does not alter or rehabilitate
-the pilot and still has no numerical diagnosis.
+the pilot. The next `64d991f9` namespace failed before observer construction
+because the diagnostic inverted exclusion-list semantics. Source `047f643f`
+corrected the population receipt and reached a matched real batch, but both PL
+and ST then stopped before backward on a diagnostic-only strict-determinism
+error. Their data/CPU/CUDA RNG hashes match and forward losses are finite, but
+there are zero optimizer attempts, so finalizer `1204910` correctly emitted
+`DIAGNOSTIC_INCOMPLETE_NO_REPAIR`. Candidate `861e9b1e` restores the historical
+pilot's deterministic warn-only seed policy and still supplies no numerical or
+performance conclusion.
 
 ## Claim boundary
 

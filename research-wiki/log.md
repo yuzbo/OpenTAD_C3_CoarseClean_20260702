@@ -1723,3 +1723,30 @@ append_only: true
   deletion with tested `Config.pop` and adds a real Config binder regression;
   local combined checks pass `71/71`. The failed namespace is immutable and a
   clean proxy-synced source plus fresh namespace are required.
+
+- 2026-07-30 00:50 CST: clean `64d991f9` passed remote `99/99` and submitted
+  PL/ST/finalizer Jobs `1204864/1204865/1204866`. Both leaves stopped before
+  observer construction because the diagnostic treated
+  `SlidingWindowDataset.block_list` as included IDs. Finalizer `1204866` sealed
+  `DIAGNOSTIC_INCOMPLETE_NO_REPAIR`; self/file SHA-256 values are
+  `3de84a8b5260485ca2b583be6a99f4994e92b20378dd3aaf1879de056803acd0`
+  /
+  `5a7d69afda7745d442de6dde1261123ea7bb771d1fe8dbcbbda748f76f64f37f`.
+  Source `047f643f4f78f5a954364d4f9b8e694c93f16079` corrected the receipt to
+  Fit-train/Gate-development and separately bound Gate/Fit exclusion lists.
+
+- 2026-07-30 01:00 CST: exact clean `047f643f` passed remote `149/149` and ran
+  PL/ST/finalizer Jobs `1204908/1204909/1204910`. Both arms reached one matched
+  real batch with identical data/CPU/CUDA RNG hashes and finite forward losses,
+  but strict deterministic error mode rejected
+  `upsample_bilinear2d_backward_out_cuda` before any optimizer attempt. The
+  historical pilot used deterministic warn-only mode, so this is a diagnostic
+  execution mismatch, not PL/ST evidence. Finalizer `1204910` sealed
+  `DIAGNOSTIC_INCOMPLETE_NO_REPAIR`; self/file SHA-256 values are
+  `7755f777d4dbecb3c5024100f0752c3147dc70f81a4d099ba9e77ece6ae6deac`
+  /
+  `1aea037cda2504f3a4a3a7c57d2628c7242829189722a8c8d1e78a0af838c19f`.
+  Candidate `861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` explicitly binds and
+  verifies the historical warn-only seed policy; local combined checks pass
+  `71/71`. No metric, checkpoint, prediction, evaluator, official test, PL/ST
+  numerical conclusion, or paper claim exists.

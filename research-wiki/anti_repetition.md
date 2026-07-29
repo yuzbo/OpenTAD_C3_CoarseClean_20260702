@@ -168,6 +168,20 @@ updated: 2026-07-29
    tested `Config.pop` API and execute a real Config materialization regression.
    Jobs `1204847/1204848` proved that pure receipt tests alone do not cover this
    launcher boundary.
+0. `SlidingWindowDataset.block_list` excludes videos; it is not the included
+   population. The historical estimator pilot blocks Gate for train and Fit for
+   val/test, so its actual populations are Fit-train and Gate-development.
+   Bind included and blocked IDs separately. Jobs `1204864/1204865` proved that
+   swapping these meanings prevents observer execution even when all input-file
+   hashes match.
+0. Do not make the real-batch diagnostic stricter than the failed pilot and
+   call the result a same-config reproduction. The pilot ran through the
+   ordinary train path with deterministic algorithms in warn-only mode. Jobs
+   `1204908/1204909` used identical real-batch and RNG hashes and finite forward
+   losses, but strict error mode rejected nondeterministic CUDA bilinear
+   backward before any optimizer attempt. The diagnostic must receipt-bind
+   `deterministic_warn_only=true`; this is an execution-contract correction,
+   not a model repair or PL/ST result.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

@@ -373,7 +373,15 @@ The first exact-source DAG proved only one missing execution contract:
 execution. Both stage jobs failed symmetrically and the afterany finalizer
 sealed `DIAGNOSTIC_INCOMPLETE_NO_REPAIR`. Minimal `Config.pop` repair
 `64d991f9` changes no estimator, representation, data, seed, K or decision rule;
-it requires a fresh clean namespace and supplies no method evidence.
+its fresh namespace instead exposed that `block_list` is an exclusion list.
+Corrected source `047f643f` passed remote `149/149` and brought both arms to
+the same real batch with matching input/RNG hashes and finite forward losses.
+Both nevertheless stopped before backward because the diagnostic accidentally
+used strict deterministic error mode while the failed pilot used deterministic
+warn-only mode. Finalizer `1204910` sealed
+`DIAGNOSTIC_INCOMPLETE_NO_REPAIR`, so no model hypothesis was updated. Candidate
+`861e9b1e` binds the historical warn-only seed policy without changing the
+model or scientific intervention; it still requires clean remote execution.
 
 The publication path is explicitly separate: the one-seed 20-epoch pilot is
 exploratory. A paper result must first reproduce the official AdaTAD recipe and

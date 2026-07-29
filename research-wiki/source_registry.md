@@ -286,7 +286,29 @@ updated: 2026-07-29
   false. Exact minimal binder repair
   `64d991f96981a3e60b10f47d6d093d5457da9c60` uses `Config.pop` and adds real
   Config materialization coverage. This is infrastructure failure/repair
-  evidence only; fresh remote replay and namespace are pending.
+  evidence only.
+
+- GeoRoute second and third real-batch AMP diagnostic closures, 2026-07-30.
+  Exact `64d991f9` root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_real_batch_amp_diag_64d991f9_20260730_0050`,
+  Jobs `1204864/1204865/1204866`, exposed inverted block-list population
+  semantics before observer execution. Finalization internal/file SHA-256:
+  `3de84a8b5260485ca2b583be6a99f4994e92b20378dd3aaf1879de056803acd0`
+  /
+  `5a7d69afda7745d442de6dde1261123ea7bb771d1fe8dbcbbda748f76f64f37f`.
+  Exact source `047f643f4f78f5a954364d4f9b8e694c93f16079` passed the remote
+  suite `149/149`; root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_real_batch_amp_diag_047f643f_20260730_0059`,
+  Jobs `1204908/1204909/1204910`, proved matched input/CPU/CUDA RNG and finite
+  forwards before a common strict-determinism CUDA backward rejection. Its
+  finalization internal/file SHA-256 values are
+  `7755f777d4dbecb3c5024100f0752c3147dc70f81a4d099ba9e77ece6ae6deac`
+  /
+  `1aea037cda2504f3a4a3a7c57d2628c7242829189722a8c8d1e78a0af838c19f`.
+  Both decisions are `DIAGNOSTIC_INCOMPLETE_NO_REPAIR`; neither is model or
+  paper evidence. Candidate source
+  `861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` receipt-binds the historical
+  deterministic warn-only seed policy; local combined checks pass `71/71`.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD

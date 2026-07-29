@@ -771,7 +771,26 @@ the binder called unsupported `mmengine.Config.__delitem__`. Finalizer
 no arms, metrics, checkpoints, predictions, evaluator or official test.
 Minimal repair `64d991f96981a3e60b10f47d6d093d5457da9c60` uses `Config.pop` and
 adds a real binder regression; local combined checks pass `71/71`. This
-authorizes only clean remote replay and a fresh diagnostic namespace.
+authorized only clean remote replay and a fresh diagnostic namespace.
+
+That `64d991f9` namespace (Jobs `1204864/1204865/1204866`) was sealed
+`DIAGNOSTIC_INCOMPLETE_NO_REPAIR` because the binder inverted
+`SlidingWindowDataset.block_list` semantics before observer execution. Exact
+source `047f643f4f78f5a954364d4f9b8e694c93f16079` corrected the receipt to
+Fit-train/Gate-development while retaining Gate/Fit as the corresponding
+exclusion lists and passed the remote suite `149/149`. Jobs
+`1204908/1204909` then reached one identical real batch with matching
+data/CPU/CUDA RNG hashes and finite forward losses, but both stopped before
+backward because strict deterministic error mode rejected
+`upsample_bilinear2d_backward_out_cuda`. Finalizer `1204910` again sealed
+`DIAGNOSTIC_INCOMPLETE_NO_REPAIR` (self/file SHA-256
+`7755f777d4dbecb3c5024100f0752c3147dc70f81a4d099ba9e77ece6ae6deac`
+/
+`1aea037cda2504f3a4a3a7c57d2628c7242829189722a8c8d1e78a0af838c19f`).
+The failed parent pilot used the ordinary non-formal train path and therefore
+deterministic warn-only mode. Candidate source
+`861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` explicitly binds that same seed
+policy. No PL/ST, accuracy, efficiency, or paper conclusion exists yet.
 
 ## Frozen decision logic
 

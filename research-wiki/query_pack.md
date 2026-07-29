@@ -212,8 +212,18 @@ max_chars: 8000
   `mmengine.Config` has no `__delitem__`. Afterany finalizer `1204849` sealed
   `DIAGNOSTIC_INCOMPLETE_NO_REPAIR` with no performance artifacts. Minimal
   source `64d991f96981a3e60b10f47d6d093d5457da9c60` uses `Config.pop` and adds a
-  real binder regression; local combined checks pass `71/71`. It still requires
-  proxy sync, clean Linux replay and a fresh namespace, so there is still no
+  real binder regression; local combined checks pass `71/71`. Its clean replay
+  passed remote `99/99`, but PL/ST Jobs `1204864/1204865` stopped before the
+  observer because the binding inverted exclusion-list semantics; finalizer
+  `1204866` sealed no-repair. Corrected source `047f643f` passed remote
+  `149/149`; Jobs `1204908/1204909` reached an identical real batch with matched
+  input/CPU/CUDA RNG hashes and finite forward losses, then both stopped before
+  backward because the diagnostic enabled strict deterministic error mode,
+  unlike the historical pilot's warn-only policy. Finalizer `1204910` sealed
+  `DIAGNOSTIC_INCOMPLETE_NO_REPAIR` (self-hash `7755f777...`). Exact candidate
+  `861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` restores and receipt-binds the
+  historical deterministic warn-only seed policy. Local combined checks pass
+  `71/71`; remote replay and a new namespace are pending. There is still no
   PL/ST numerical conclusion.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction

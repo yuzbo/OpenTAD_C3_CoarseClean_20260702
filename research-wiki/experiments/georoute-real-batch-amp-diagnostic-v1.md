@@ -4,12 +4,12 @@ node_id: exp:georoute-real-batch-amp-diagnostic-v1
 title: "GeoRoute real-batch AMP diagnostic v1"
 idea: idea:geo-route-adatad
 stage: implemented
-status: first_namespace_sealed_binder_failure_repair_pending_remote_linux
+status: third_namespace_sealed_common_determinism_failure_repair_pending_remote_linux
 verdict: pending
 confidence: high
-commit: 64d991f96981a3e60b10f47d6d093d5457da9c60
-jobs: [1204847, 1204848, 1204849]
-updated: 2026-07-29
+commit: 861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58
+jobs: [1204847, 1204848, 1204849, 1204864, 1204865, 1204866, 1204908, 1204909, 1204910]
+updated: 2026-07-30
 ---
 
 # GeoRoute real-batch AMP diagnostic v1
@@ -91,8 +91,49 @@ This is a common binder infrastructure failure, not PL/ST evidence.
 Exact repair `64d991f96981a3e60b10f47d6d093d5457da9c60` replaces only
 `del cfg[key]` with the already supported `Config.pop` and adds a real
 `mmengine.Config` binder regression. Local diagnostic/pilot/train-engine/C3
-checks pass `71/71`. A clean proxy-synced snapshot, complete remote Linux suite
-and a wholly new namespace are required; the failed namespace is not resumed.
+checks pass `71/71`.
+
+The exact clean `64d991f9` snapshot passed the remote suite `99/99`, then
+created root
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_real_batch_amp_diag_64d991f9_20260730_0050`
+with PL/ST/finalizer Jobs `1204864/1204865/1204866`. Both leaves stopped before
+observer construction because the binding incorrectly treated
+`SlidingWindowDataset.block_list` as an inclusion list. The historical pilot
+actually blocks Gate for train and Fit for val/test, yielding Fit-train and
+Gate-development populations. Finalizer `1204866` sealed
+`DIAGNOSTIC_INCOMPLETE_NO_REPAIR`; internal/file SHA-256 values are
+`3de84a8b5260485ca2b583be6a99f4994e92b20378dd3aaf1879de056803acd0`
+/
+`5a7d69afda7745d442de6dde1261123ea7bb771d1fe8dbcbbda748f76f64f37f`.
+No observer receipt or numerical conclusion exists.
+
+Population-contract source
+`047f643f4f78f5a954364d4f9b8e694c93f16079` upgrades the binding schema,
+records included and blocked populations separately, and passed the exact
+remote suite `149/149`. Fresh root
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_real_batch_amp_diag_047f643f_20260730_0059`
+ran PL/ST/finalizer Jobs `1204908/1204909/1204910`. The leaves reached the same
+real batch with identical data/CPU/CUDA RNG SHA-256 values
+`1248e7d69aebe0ceed796b00d2c5564eef5c07eba6187147e69dbc1bf7766ee5`,
+`a1426d06adb3fc7defd9067b40b71fb7005b3ba3693e71e9f719caffc5cf10c0`,
+and
+`a8d5ab7f2d377467715101488b9d063ccf88eb2eb1cbd9179935e78c7cd3ec7d`.
+Both forwards had finite losses, but both stopped before the first optimizer
+attempt because the diagnostic classified itself as a formal binding and
+therefore enabled strict deterministic error mode, unlike the historical
+pilot's deterministic warn-only seed policy. Finalizer `1204910` sealed
+`DIAGNOSTIC_INCOMPLETE_NO_REPAIR`; internal/file SHA-256 values are
+`7755f777d4dbecb3c5024100f0752c3147dc70f81a4d099ba9e77ece6ae6deac`
+/
+`1aea037cda2504f3a4a3a7c57d2628c7242829189722a8c8d1e78a0af838c19f`.
+
+Exact candidate `861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` binds
+`deterministic_algorithms_enabled=true` and `deterministic_warn_only=true`,
+uses that receipt field in `tools/train.py`, and fail-closes if the runtime
+seed policy differs. This matches the historical pilot and changes no data,
+model, estimator, seed, K, optimizer, or frozen classifier. Local combined
+checks pass `71/71`; clean proxy sync, complete remote replay and another new
+namespace are required.
 
 ## Paper boundary
 
