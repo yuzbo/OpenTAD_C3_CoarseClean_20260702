@@ -277,6 +277,9 @@ def test_protected_effective_config_change_is_rejected(tmp_path):
 def test_candidate_config_must_be_regular_non_executable_blob(tmp_path):
     repo, base, _ = _selection_repo(tmp_path)
     relative = "configs/thumos_i3d_random_k384.yaml"
+    if sys.platform != "win32":
+        config_path = repo / relative
+        config_path.chmod(config_path.stat().st_mode | 0o111)
     _git(repo, "update-index", "--chmod=+x", relative)
     # Commit the staged index change directly. Calling _commit() would run
     # ``git add -A`` and, on POSIX, restore the non-executable worktree mode.
