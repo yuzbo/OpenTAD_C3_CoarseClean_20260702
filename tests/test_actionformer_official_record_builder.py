@@ -93,6 +93,18 @@ def test_pinned_evaluator_manifest_matches_exact_official_clone():
     assert fingerprint == builder.protocol.OFFICIAL_EVALUATOR_FINGERPRINT_SHA256
 
 
+def test_official_source_hashes_pin_git_lf_bytes_not_windows_checkout_bytes():
+    assert builder.protocol.OFFICIAL_CONFIG_SHA256 == (
+        "c0ac0df560cd564941b56cd9391ad0bd5cea386d2e4b6cf9fc8ffcab821955cd"
+    )
+    assert builder.protocol.OFFICIAL_README_SHA256 == (
+        "f0431584b4df0702fa08f961fb0038e1277f41c12b7df47b7d2bfed47e59af23"
+    )
+    assert builder.protocol.OFFICIAL_EVALUATOR_FINGERPRINT_SHA256 == (
+        "1d18fbb07a774422a1594946dcf2c59a741c5de3a55d42fa029636ffc43c30b6"
+    )
+
+
 def test_environment_manifest_has_stable_comparability_fingerprint():
     manifest, fingerprint = builder.environment_manifest()
     assert manifest["schema_version"] == builder.protocol.ENVIRONMENT_MANIFEST_SCHEMA

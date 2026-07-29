@@ -50,6 +50,16 @@ def _run_git(repo, *arguments):
     return completed.stdout.strip()
 
 
+def _git_blob_sha256(repo, relative):
+    completed = subprocess.run(
+        ["git", "show", f"HEAD:{relative}"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    return hashlib.sha256(completed.stdout).hexdigest()
+
+
 def verify_official_source(repo):
     repo = Path(repo).resolve()
     if not (repo / ".git").exists():
@@ -69,9 +79,11 @@ def verify_official_source(repo):
         raise protocol.ProtocolError("official source worktree is not clean")
     config = repo / "configs" / "thumos_i3d.yaml"
     readme = repo / "README.md"
-    if protocol.sha256_file(config) != protocol.OFFICIAL_CONFIG_SHA256:
+    if _git_blob_sha256(repo, "configs/thumos_i3d.yaml") != (
+        protocol.OFFICIAL_CONFIG_SHA256
+    ):
         raise protocol.ProtocolError("official ActionFormer config hash mismatch")
-    if protocol.sha256_file(readme) != protocol.OFFICIAL_README_SHA256:
+    if _git_blob_sha256(repo, "README.md") != protocol.OFFICIAL_README_SHA256:
         raise protocol.ProtocolError("official ActionFormer README hash mismatch")
     return repo, commit, tree
 
@@ -82,7 +94,7 @@ def build_evaluator_manifest(repo, commit, tree):
         path = repo / relative
         if not path.is_file():
             raise protocol.ProtocolError(f"missing official evaluator file: {relative}")
-        observed = protocol.sha256_file(path)
+        observed = _git_blob_sha256(repo, relative)
         if observed != expected_sha:
             raise protocol.ProtocolError(
                 f"official evaluator file hash mismatch: {relative}"

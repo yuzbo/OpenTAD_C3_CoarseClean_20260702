@@ -40,33 +40,35 @@ HEX_MD5 = re.compile(r"^[0-9a-f]{32}$")
 OFFICIAL_REPOSITORY_URL = "https://github.com/happyharrycn/actionformer_release"
 OFFICIAL_COMMIT = "61ea7eb9308a568b0cf45e3804830836e30061de"
 OFFICIAL_TREE = "7b06c5261ba244788c942a0d73e304581bc35154"
+# These are SHA-256 values of the canonical LF bytes stored in the pinned Git
+# tree.  Do not regenerate them from a Windows CRLF checkout.
 OFFICIAL_CONFIG_SHA256 = (
-    "73f8aeaf7deef93aba57259badd4c454990ec1e0ce6eaa7c3434db44baaeeaf0"
+    "c0ac0df560cd564941b56cd9391ad0bd5cea386d2e4b6cf9fc8ffcab821955cd"
 )
 OFFICIAL_README_SHA256 = (
-    "bdee4eb088a74e190935097742c7dbfaf254eb912f79729dccd73b9b36b33db8"
+    "f0431584b4df0702fa08f961fb0038e1277f41c12b7df47b7d2bfed47e59af23"
 )
 OFFICIAL_THUMOS_ARCHIVE_MD5 = "375f76ffbf7447af1035e694971ec9b2"
 OFFICIAL_EVALUATOR_FILES = {
-    "eval.py": "525d859ff0ae9dfcee3c91b3fd96227cbd67d0774f4ed062f196a1b888fafcc4",
+    "eval.py": "adf7babd04f78ca8ef232a1ceb23323df25887220f2677913e04a5372d34b158",
     "libs/core/config.py": (
-        "6bdee9397f033b02494f416defc2adb4499780e6fb48cd80e7c110add6cb0615"
+        "014f1000ac09eb1687d2e6b59bdf9f0afa1dc0a2daed909ee988808929723bc8"
     ),
     "libs/datasets/thumos14.py": (
-        "614077a884a51da496c753222879d2408968d13b01598d3dd19f9b368b680c5a"
+        "ed4bf6767311d00dbf05c5ca381f206d4db40a8efeefe53cf3baba6926a4286b"
     ),
     "libs/utils/metrics.py": (
-        "b937a20f8ee06d43669eef57d12a01708d68eed6937bfd9074fd764a7551a535"
+        "e73afc6afe960aafdb7d607a01eeef07afb5a15a2c9a7a0d1217546adf889480"
     ),
     "libs/utils/nms.py": (
-        "b3234a72126cf82ace87b1653d85438a425d6c5a3947f7f68f9ad61e7c83ba42"
+        "b1346a66cb2e5374afcdac9c4adb4889eb1b8ea2343942c107483dadb3450068"
     ),
     "libs/utils/train_utils.py": (
-        "a05ddd1c9493f3190833e0b12fb673688cecebc61beb46c9d1aa643364e61e1e"
+        "60d1cdf0953786b071c0d6a6eecb68a87f546553a7fa7191c5ea79c0992138c6"
     ),
 }
 OFFICIAL_EVALUATOR_FINGERPRINT_SHA256 = (
-    "63ece4fbeeacdcfe21664bc6bcd082c115e779fa1451b9b69e87be8e0be1f644"
+    "1d18fbb07a774422a1594946dcf2c59a741c5de3a55d42fa029636ffc43c30b6"
 )
 
 RECEIPT_NAMES = (
