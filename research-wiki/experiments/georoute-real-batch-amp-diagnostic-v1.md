@@ -4,11 +4,11 @@ node_id: exp:georoute-real-batch-amp-diagnostic-v1
 title: "GeoRoute real-batch AMP diagnostic v1"
 idea: idea:geo-route-adatad
 stage: implemented
-status: local_validation_passed_pending_proxy_sync_remote_linux_cuda
+status: first_namespace_sealed_binder_failure_repair_pending_remote_linux
 verdict: pending
 confidence: high
-commit: 832caedd3713f477cb4b2f29a692acba9cd5a836
-jobs: pending
+commit: 64d991f96981a3e60b10f47d6d093d5457da9c60
+jobs: [1204847, 1204848, 1204849]
 updated: 2026-07-29
 ---
 
@@ -75,6 +75,24 @@ regressions pass `20/20`; Python compilation, Bash syntax and
 `git diff --check` pass. Windows cannot load the local Torch `c10.dll`, so the
 model/observer path is not marked remotely tested. Clean N16R4 Linux/CUDA
 replay is mandatory before either diagnostic job may be submitted.
+
+The exact `832caedd` clean N16R4 snapshot subsequently passed the combined
+Linux/Torch suite `98/98`. Its first no-metric namespace is
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_real_batch_amp_diag_832caedd_20260730_0040`.
+PL `1204847` and ST `1204848` both failed in six seconds before config
+publication, observer construction, data loading or model forward because
+`mmengine.Config` does not implement `__delitem__`. Afterany finalizer
+`1204849` completed and sealed
+`DIAGNOSTIC_INCOMPLETE_NO_REPAIR`, empty arms/metrics and all performance/test
+guards false; finalization self-hash is
+`feda83e084ece379faa07e828a88e017e5bb698eba7c78d1c4866c8cd09c77da`.
+This is a common binder infrastructure failure, not PL/ST evidence.
+
+Exact repair `64d991f96981a3e60b10f47d6d093d5457da9c60` replaces only
+`del cfg[key]` with the already supported `Config.pop` and adds a real
+`mmengine.Config` binder regression. Local diagnostic/pilot/train-engine/C3
+checks pass `71/71`. A clean proxy-synced snapshot, complete remote Linux suite
+and a wholly new namespace are required; the failed namespace is not resumed.
 
 ## Paper boundary
 

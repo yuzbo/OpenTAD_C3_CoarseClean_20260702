@@ -235,6 +235,11 @@ diagnostic-only and cannot rehabilitate this namespace. Because Job `1204309`
 did not record exact batch indices or RNG state, the new study is not an exact
 historical replay. Local protocol tests pass, but clean N16R4 Linux/CUDA
 validation and deployment are pending; no diagnosis has yet been observed.
+The first `832caedd` diagnostic namespace failed before model execution in both
+arms because the diagnostic binder used unsupported `Config.__delitem__`.
+Afterany closeout correctly sealed no-repair/no-metric evidence. Minimal
+`Config.pop` repair source is `64d991f9`; this does not alter or rehabilitate
+the pilot and still has no numerical diagnosis.
 
 ## Claim boundary
 

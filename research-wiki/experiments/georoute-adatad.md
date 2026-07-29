@@ -763,6 +763,16 @@ Only an exact official reproduction plus same-recipe native-source dense and
 candidate arms, disjoint seeds, sealed test, and full decode-to-NMS
 latency/memory/energy may become paper evidence.
 
+The first diagnostic deployment used exact clean source `832caedd`, whose
+combined remote Linux/Torch suite passed `98/98`. PL `1204847` and ST `1204848`
+then failed identically before config publication or model execution because
+the binder called unsupported `mmengine.Config.__delitem__`. Finalizer
+`1204849` sealed a self-hashed `DIAGNOSTIC_INCOMPLETE_NO_REPAIR` receipt with
+no arms, metrics, checkpoints, predictions, evaluator or official test.
+Minimal repair `64d991f96981a3e60b10f47d6d093d5457da9c60` uses `Config.pop` and
+adds a real binder regression; local combined checks pass `71/71`. This
+authorizes only clean remote replay and a fresh diagnostic namespace.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

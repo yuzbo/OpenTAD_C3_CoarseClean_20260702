@@ -274,6 +274,20 @@ updated: 2026-07-29
   diagnostic receipts are pending. This source is implementation evidence, not
   a model metric, official AdaTAD comparison, repair result or paper claim.
 
+- GeoRoute first real-batch AMP diagnostic deployment failure and binder repair,
+  2026-07-30. Exact first source `832caedd3713f477cb4b2f29a692acba9cd5a836`;
+  root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_real_batch_amp_diag_832caedd_20260730_0040`;
+  PL/ST/finalizer Jobs `1204847/1204848/1204849`. Both leaves failed before
+  observer/model execution with `AttributeError: __delitem__`; the finalizer
+  sealed self-hash
+  `feda83e084ece379faa07e828a88e017e5bb698eba7c78d1c4866c8cd09c77da`,
+  `DIAGNOSTIC_INCOMPLETE_NO_REPAIR`, empty metrics and all claim/test guards
+  false. Exact minimal binder repair
+  `64d991f96981a3e60b10f47d6d093d5457da9c60` uses `Config.pop` and adds real
+  Config materialization coverage. This is infrastructure failure/repair
+  evidence only; fresh remote replay and namespace are pending.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

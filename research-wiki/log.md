@@ -1707,3 +1707,19 @@ append_only: true
   official-comparable results; a paper row still requires an exact official
   AdaTAD reproduction and same-recipe native-source controls, disjoint seeds,
   sealed test, matched evaluator/NMS, and full decode-to-NMS cost.
+
+- 2026-07-30 00:40 CST: exact clean diagnostic source `832caedd` passed the
+  combined remote Linux/Torch suite `98/98` and atomically deployed no-metric
+  PL/ST Jobs `1204847/1204848` plus afterany finalizer `1204849` under
+  `georoute_real_batch_amp_diag_832caedd_20260730_0040`. Capacity and storage
+  preflights passed. Both stages failed symmetrically in six seconds before
+  observer construction, data loading or model forward because
+  `mmengine.Config` does not support `del cfg[key]`. The finalizer completed and
+  sealed `DIAGNOSTIC_INCOMPLETE_NO_REPAIR`, empty performance metrics and all
+  checkpoint/prediction/evaluator/test/claim guards false; self-hash is
+  `feda83e084ece379faa07e828a88e017e5bb698eba7c78d1c4866c8cd09c77da`.
+  No PL/ST numerical conclusion exists. Minimal repair source
+  `64d991f96981a3e60b10f47d6d093d5457da9c60` replaces only the unsupported
+  deletion with tested `Config.pop` and adds a real Config binder regression;
+  local combined checks pass `71/71`. The failed namespace is immutable and a
+  clean proxy-synced source plus fresh namespace are required.

@@ -163,6 +163,11 @@ updated: 2026-07-29
    evaluator/NMS and final-only checkpointing are not the official recipe.
    Paper comparison requires a separately frozen official reproduction and
    same-recipe native-source dense/GeoRoute arms.
+0. `mmengine.Config` is not a normal dict and does not implement
+   `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
+   tested `Config.pop` API and execute a real Config materialization regression.
+   Jobs `1204847/1204848` proved that pure receipt tests alone do not cover this
+   launcher boundary.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

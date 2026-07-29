@@ -206,6 +206,15 @@ max_chars: 8000
   `50/50`, required C3 regressions pass `20/20`, and Python/Bash/whitespace
   checks pass. Clean proxy-synced N16R4 Linux/CUDA validation and all three
   Slurm jobs are still pending, so no numerical diagnosis exists yet.
+  The first exact-source attempt is now sealed as an infrastructure failure:
+  clean `832caedd` passed the remote Linux/Torch suite `98/98`, but both PL
+  `1204847` and ST `1204848` failed before observer/model execution because
+  `mmengine.Config` has no `__delitem__`. Afterany finalizer `1204849` sealed
+  `DIAGNOSTIC_INCOMPLETE_NO_REPAIR` with no performance artifacts. Minimal
+  source `64d991f96981a3e60b10f47d6d093d5457da9c60` uses `Config.pop` and adds a
+  real binder regression; local combined checks pass `71/71`. It still requires
+  proxy sync, clean Linux replay and a fresh namespace, so there is still no
+  PL/ST numerical conclusion.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch

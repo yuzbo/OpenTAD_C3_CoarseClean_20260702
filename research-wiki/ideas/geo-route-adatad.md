@@ -368,6 +368,12 @@ It may authorize only a minimal cause-matched numerical repair followed by a
 fresh real-data stability gate. It does not add CER/Geometry components or
 produce accuracy evidence. Local pure checks and required C3 regressions pass;
 remote Linux/CUDA validation and the three-job no-metric DAG remain pending.
+The first exact-source DAG proved only one missing execution contract:
+`mmengine.Config` rejected `del cfg[key]` before either arm reached data/model
+execution. Both stage jobs failed symmetrically and the afterany finalizer
+sealed `DIAGNOSTIC_INCOMPLETE_NO_REPAIR`. Minimal `Config.pop` repair
+`64d991f9` changes no estimator, representation, data, seed, K or decision rule;
+it requires a fresh clean namespace and supplies no method evidence.
 
 The publication path is explicitly separate: the one-seed 20-epoch pilot is
 exploratory. A paper result must first reproduce the official AdaTAD recipe and
