@@ -1538,3 +1538,20 @@ append_only: true
   No five-arm metric, epoch log, or partial checkpoint was interpreted. The old
   closeout gate is satisfied; only all-at-once 14-job capacity and fresh
   schema-v4 P0 remain before exact source `30f9ca6f` may run the replacement.
+
+- 2026-07-29 20:23 CST: the replacement pilot passed both remaining deployment
+  gates. With two unrelated active jobs, the all-or-none preflight admitted all
+  14 jobs at once (`2 + 14 = MaxSubmitJobs 16`) without splitting the DAG or
+  cancelling other work. Exact clean source
+  `30f9ca6fff1572e2eabc6c1b6636c4cc23595a62` created
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_30f9ca6f_20260729_2023`.
+  Deployment internal/file hashes are `09e837c5...` / `6bdd2742...`. P0 Jobs
+  `1204015`--`1204020` and finalizer `1204021` completed `0:0`; suite
+  `2aea448be4c8d72957b3c904bb22c5ae39689cb0010c3b18a4914bd71f5265ec`
+  is self-hash-valid `PASS_MECHANICAL_ONLY`. The repaired score-function report
+  is schema v4 and passed Job `1204016`, `180x320 -> 11x20/N=220`,
+  `T=384/K=64`, FP16 source, FP32 likelihood/loss, objective
+  `128637.0234375 > 65504`, and finite scaled gradients. All six frozen stage
+  Jobs `1204022`--`1204027` run concurrently; afterany closeout `1204028`
+  remains dependency-held. No selector, P2/P3, official test, efficiency,
+  Geometry Zoom, CER, or paper claim is open.

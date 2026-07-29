@@ -3,12 +3,12 @@ type: experiment
 node_id: exp:georoute-estimator-representation-pilot-v1
 title: "GeoRoute estimator/representation exploratory pilot v1"
 idea: idea:geo-route-adatad
-stage: tested
-status: old_namespace_sealed_incomplete_replacement_ready_capacity_gate
-verdict: incomplete_no_performance_inference
+stage: experiment_running
+status: fresh_schema_v4_p0_pass_six_arms_parallel
+verdict: pending
 confidence: medium
-commit: cbe0a08218a2f4550960f7c832f88c8cf77757c1
-jobs: 1203707-1203720
+commit: 30f9ca6fff1572e2eabc6c1b6636c4cc23595a62
+jobs: 1204015-1204028
 updated: 2026-07-29
 ---
 
@@ -91,6 +91,31 @@ discussion before the minimal pilot, but it does not bypass old closeout,
 submit capacity, fresh per-arm P0, or all-six completion. The audit is archived
 at
 `docs/methods/reviews/2026-07-29-georoute-estimator-pilot-independent-agent-audit.md`.
+
+The old closeout and all-at-once capacity conditions are now satisfied. With
+two unrelated active jobs, the deployer admitted its complete 14-job DAG at the
+account limit `2 + 14 = MaxSubmitJobs 16`; it did not split or cancel work.
+Exact clean runtime `30f9ca6fff1572e2eabc6c1b6636c4cc23595a62` created
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_30f9ca6f_20260729_2023`.
+Deployment internal/file SHA-256 values are
+`09e837c5d1815ce4a60e58eb06b91ca366edcf71043362dd7a04ad0e986d1ca1`
+and
+`6bdd27425ab95eace6bfe93db361299be8966fc97b70ae6d30958964378d0b7c`.
+P0 Jobs `1204015`--`1204020` and finalizer `1204021` completed `0:0`.
+Suite internal/file SHA-256 values are
+`2aea448be4c8d72957b3c904bb22c5ae39689cb0010c3b18a4914bd71f5265ec`
+and
+`6d832d164fcce9889733bcf8ef5bcb6506d787b79147b56640645ec9a02a9a37`;
+status is `PASS_MECHANICAL_ONLY`. Critical score-function P0 `1204016` is
+schema v4 and passed the real `180x320`, `11x20/N=220`, `T=384/K=64` AMP
+horizon with FP16 source, FP32 likelihood/loss, objective
+`128637.0234375 > 65504`, and finite scaled gradients. Its report internal/file
+SHA-256 values are
+`ab0b1304c62168dc6c257a18b6efc06eddbe12af8a62d0a5bedab63f5a2ce747`
+and
+`85eaea59cfb56ab40bd7b30c8815b46a959904b0c9b0c05e1b68a8e918589358`.
+Six stage Jobs `1204022`--`1204027` now run in parallel; afterany closeout
+`1204028` remains dependency-held. This is `experiment_running`, not a result.
 
 ## Claim boundary
 

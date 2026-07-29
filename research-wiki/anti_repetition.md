@@ -71,6 +71,14 @@ updated: 2026-07-29
    the complete 14-job DAG to fit current capacity. The old `cbe0a082` closeout
    has now sealed INCOMPLETE, but that does not bypass the fresh capacity or P0
    gates; never treat reviewer approval as a P0 or performance receipt.
+0. The replacement namespace
+   `georoute_estimator_representation_pilot_30f9ca6f_20260729_2023` is the only
+   current performance namespace. It is bound to exact runtime `30f9ca6f`,
+   P0 Jobs `1204015`--`1204020`, suite self-hash
+   `2aea448be4c8d72957b3c904bb22c5ae39689cb0010c3b18a4914bd71f5265ec`,
+   stage Jobs `1204022`--`1204027`, and closeout `1204028`. Never mix any old
+   `cbe0a082` artifact into it, manually replace a stage, interpret a partial
+   stage, or bypass the all-six closeout.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

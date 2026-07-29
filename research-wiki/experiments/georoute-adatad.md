@@ -666,6 +666,19 @@ only. It authorizes no partial submission and does not replace the old
 INCOMPLETE closeout or the new source's six expanded P0 leaves. The old
 closeout gate is now satisfied; the capacity and fresh-P0 gates remain.
 
+Both remaining gates subsequently passed without changing the study. At
+deployment, two unrelated jobs were active and the complete 14-job DAG exactly
+filled `MaxSubmitJobs=16`. Exact clean source `30f9ca6f` created
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_30f9ca6f_20260729_2023`.
+P0 Jobs `1204015`--`1204020` and finalizer `1204021` completed `0:0`; sealed
+suite self-hash
+`2aea448be4c8d72957b3c904bb22c5ae39689cb0010c3b18a4914bd71f5265ec`
+is `PASS_MECHANICAL_ONLY`. The repaired PL arm passed schema-v4 production AMP
+evidence at `180x320`, `N=220`, `T=384`, `K=64`, FP32 likelihood/loss and
+finite scaled gradients. Six frozen stages `1204022`--`1204027` now run
+concurrently, with afterany closeout `1204028`. State is
+`experiment_running`; no result or promotion surface is open.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

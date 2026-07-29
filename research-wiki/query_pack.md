@@ -37,7 +37,7 @@ max_chars: 8000
   `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
   A new independent study,
   `georoute_estimator_representation_pilot_v1`, is
-  `old_namespace_sealed_incomplete_replacement_ready_capacity_gate`.
+  `experiment_running_fresh_schema_v4_p0_pass_six_arms_parallel`.
   Six single-seed, 20-epoch, K=64 arms isolate PL versus ST, fixed-support
   representation, ROI-support representation, and ROI versus residual support.
   The first clean runtime `02b6efe7` passed remote Linux tests `108/108`, but
@@ -108,6 +108,19 @@ max_chars: 8000
   `DEPLOY_AFTER_OLD_CLOSEOUT_AND_CAPACITY`: no further Pro discussion is needed.
   The old-closeout condition is now satisfied; Slurm must still admit all 14
   new jobs at once. This is code/protocol review evidence, not a model result.
+  That capacity gate has now passed atomically: active jobs `2` plus all `14`
+  new jobs exactly matched `MaxSubmitJobs=16`. Exact clean source
+  `30f9ca6fff1572e2eabc6c1b6636c4cc23595a62` deployed a new namespace at
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_30f9ca6f_20260729_2023`.
+  P0 Jobs `1204015`--`1204020` and afterany finalizer `1204021` completed
+  `0:0`; suite
+  `2aea448be4c8d72957b3c904bb22c5ae39689cb0010c3b18a4914bd71f5265ec`
+  is self-hash-valid `PASS_MECHANICAL_ONLY`. The repaired score-function report
+  is schema v4 and binds Job `1204016`, `180x320 -> 11x20/N=220`,
+  `T=384/K=64`, FP16 source, FP32 likelihood/loss,
+  `|objective|=128637.0234375 > 65504`, and finite scaled gradients. All six
+  frozen stage Jobs `1204022`--`1204027` are running in parallel; afterany
+  closeout is `1204028`. No selector, P2/P3, official test, or claim is open.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

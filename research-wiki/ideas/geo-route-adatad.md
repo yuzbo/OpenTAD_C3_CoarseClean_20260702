@@ -321,6 +321,14 @@ pass all six P0/stage paths. The old-closeout condition is now satisfied. This
 review does not advance CER beyond
 `discussed` and is not empirical support.
 
+The complete replacement is now `experiment_running` from exact source
+`30f9ca6f`, not a new method version. Its all-at-once capacity preflight passed,
+six schema-v4 P0 Jobs `1204015`--`1204020` plus finalizer `1204021` passed, and
+six frozen stages `1204022`--`1204027` run in parallel under new closeout
+`1204028`. This may identify estimator/support/representation effects only if
+all six finish; it still does not implement or establish full CER or Geometry
+Zoom.
+
 ## Connections
 
 Relations are maintained only in `research-wiki/graph/edges.jsonl`.

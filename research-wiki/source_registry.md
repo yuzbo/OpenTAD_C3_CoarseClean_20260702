@@ -129,6 +129,27 @@ updated: 2026-07-29
   This is numerical-correctness evidence, not mAP, cost, model selection,
   Geometry Zoom, or paper evidence.
 
+- GeoRoute estimator/representation replacement pilot, 2026-07-29. Exact clean
+  runtime `30f9ca6fff1572e2eabc6c1b6636c4cc23595a62`; root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_30f9ca6f_20260729_2023`.
+  Submit capacity was `active=2`, `additional=14`, `MaxSubmitJobs=16`.
+  Deployment internal/file SHA-256 values are
+  `09e837c5d1815ce4a60e58eb06b91ca366edcf71043362dd7a04ad0e986d1ca1`
+  /
+  `6bdd27425ab95eace6bfe93db361299be8966fc97b70ae6d30958964378d0b7c`.
+  P0 Jobs `1204015`--`1204020` and finalizer `1204021` completed `0:0`.
+  P0-suite internal/file SHA-256 values are
+  `2aea448be4c8d72957b3c904bb22c5ae39689cb0010c3b18a4914bd71f5265ec`
+  /
+  `6d832d164fcce9889733bcf8ef5bcb6506d787b79147b56640645ec9a02a9a37`;
+  status is `PASS_MECHANICAL_ONLY`. Score-function schema-v4 report
+  internal/file SHA-256 values are
+  `ab0b1304c62168dc6c257a18b6efc06eddbe12af8a62d0a5bedab63f5a2ce747`
+  /
+  `85eaea59cfb56ab40bd7b30c8815b46a959904b0c9b0c05e1b68a8e918589358`.
+  Stage Jobs `1204022`--`1204027` run concurrently; closeout is `1204028`.
+  This is execution provenance only until all six stage receipts pass.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned
