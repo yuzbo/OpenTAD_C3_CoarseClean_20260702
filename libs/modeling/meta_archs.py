@@ -9,8 +9,7 @@ from .blocks import MaskedConv1D, Scale, LayerNorm
 from .losses import ctr_diou_loss_1d, sigmoid_focal_loss
 from .sparse_heads import (
     NativeGridSparseQuerySelector,
-    run_sparse_cls_head,
-    run_sparse_reg_head,
+    run_sparse_heads,
 )
 
 from ..utils import batched_nms
@@ -413,11 +412,12 @@ class PtTransformer(nn.Module):
             if self.sparse_query_selector.policy == 'video_hash_random':
                 video_ids = [sample['video_id'] for sample in video_list]
             head_masks = self.sparse_query_selector(fpn_masks, video_ids)
-            out_cls_logits = run_sparse_cls_head(
-                self.cls_head, fpn_feats, fpn_masks, head_masks
-            )
-            out_offsets = run_sparse_reg_head(
-                self.reg_head, fpn_feats, fpn_masks, head_masks
+            out_cls_logits, out_offsets = run_sparse_heads(
+                self.cls_head,
+                self.reg_head,
+                fpn_feats,
+                fpn_masks,
+                head_masks,
             )
 
         # permute the outputs

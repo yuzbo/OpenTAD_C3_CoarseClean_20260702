@@ -8,6 +8,7 @@ from libs.modeling.sparse_heads import (
     build_sparse_head_execution_receipt,
     estimate_sparse_head_macs,
     run_sparse_cls_head,
+    run_sparse_heads,
     run_sparse_reg_head,
 )
 
@@ -71,8 +72,9 @@ def test_sparse_heads_equal_dense_heads_at_selected_physical_indices():
     )
     dense_cls = cls_head(feats, masks)
     dense_reg = reg_head(feats, masks)
-    sparse_cls = run_sparse_cls_head(cls_head, feats, masks, selected)
-    sparse_reg = run_sparse_reg_head(reg_head, feats, masks, selected)
+    sparse_cls, sparse_reg = run_sparse_heads(
+        cls_head, reg_head, feats, masks, selected
+    )
 
     for dense, sparse, sparse_mask in zip(dense_cls, sparse_cls, selected):
         expanded = sparse_mask.expand_as(dense)
@@ -158,6 +160,36 @@ def test_sparse_selected_all_is_dense_equivalent():
     torch.testing.assert_close(sparse, dense, rtol=1e-5, atol=1e-6)
 
 
+def test_sparse_global_guard_prevents_cross_job_leakage_for_radius_two():
+    torch.manual_seed(18)
+    feat = torch.randn(2, 4, 13)
+    feat[1] = feat[1] + 1000.0
+    mask = _make_mask([13, 11], 13)
+    selected = torch.zeros_like(mask)
+    selected[0, 0, [0, 1, 11, 12]] = True
+    selected[1, 0, [0, 1, 9, 10]] = True
+    cls_head = PtTransformerClsHead(
+        4, 6, 3, num_layers=3, kernel_size=5, with_ln=True
+    )
+    reg_head = PtTransformerRegHead(
+        4, 6, 1, num_layers=3, kernel_size=5, with_ln=True
+    )
+    dense_cls = cls_head((feat,), (mask,))
+    dense_reg = reg_head((feat,), (mask,))
+    sparse_cls, sparse_reg = run_sparse_heads(
+        cls_head, reg_head, (feat,), (mask,), (selected,)
+    )
+    for dense, sparse in (
+        (dense_cls[0], sparse_cls[0]),
+        (dense_reg[0], sparse_reg[0]),
+    ):
+        expanded = selected.expand_as(dense)
+        torch.testing.assert_close(
+            sparse[expanded], dense[expanded], rtol=1e-5, atol=1e-6
+        )
+        assert torch.count_nonzero(sparse[~expanded]).item() == 0
+
+
 def test_sparse_head_packs_all_samples_and_levels_into_one_linear_per_layer(
     monkeypatch,
 ):
@@ -199,6 +231,55 @@ def test_sparse_head_packs_all_samples_and_levels_into_one_linear_per_layer(
     run_sparse_cls_head(head, feats, masks, selected)
     assert linear_launch_count == 3
     assert conv_launch_count == 0
+
+
+def test_sparse_heads_share_one_plan_and_scatter_only_final_outputs(monkeypatch):
+    torch.manual_seed(23)
+    feats = (
+        torch.randn(2, 4, 31),
+        torch.randn(2, 4, 17),
+        torch.randn(2, 4, 9),
+    )
+    masks = (
+        _make_mask([29, 23], 31),
+        _make_mask([15, 11], 17),
+        _make_mask([7, 5], 9),
+    )
+    selector = NativeGridSparseQuerySelector(
+        12, policy="stratified_uniform"
+    )
+    selected = selector(masks, ["video_a", "video_b"])
+    cls_head = PtTransformerClsHead(
+        4, 6, 3, num_layers=3, kernel_size=3, with_ln=True
+    )
+    reg_head = PtTransformerRegHead(
+        4, 6, 3, num_layers=3, kernel_size=3, with_ln=True
+    )
+
+    import libs.modeling.sparse_heads as sparse_heads
+
+    original_plan = sparse_heads._sparse_layer_positions
+    original_scatter = sparse_heads._scatter_physical
+    plan_count = 0
+    scatter_count = 0
+
+    def counted_plan(*args, **kwargs):
+        nonlocal plan_count
+        plan_count += 1
+        return original_plan(*args, **kwargs)
+
+    def counted_scatter(*args, **kwargs):
+        nonlocal scatter_count
+        scatter_count += 1
+        return original_scatter(*args, **kwargs)
+
+    monkeypatch.setattr(sparse_heads, "_sparse_layer_positions", counted_plan)
+    monkeypatch.setattr(sparse_heads, "_scatter_physical", counted_scatter)
+    run_sparse_heads(cls_head, reg_head, feats, masks, selected)
+
+    job_count = sum(feat.shape[0] for feat in feats)
+    assert plan_count == 1
+    assert scatter_count == 2 * job_count
 
 
 def test_sparse_mac_ledger_counts_only_required_physical_outputs():

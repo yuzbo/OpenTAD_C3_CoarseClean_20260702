@@ -203,77 +203,217 @@ def _sparse_layer_positions(valid_mask, selected_mask, layers):
     return selected_positions, layer_positions
 
 
-def _sparse_stack_packed(
-    dense_inputs,
-    valid_masks,
+def build_native_grid_sparse_execution_plan(
+    fpn_feats,
+    fpn_masks,
     selected_masks,
+    layers,
+):
+    """Build one physical-position plan shared by classification/regression."""
+    dense_inputs, valid_masks, sparse_masks, batch_sizes = _flatten_sparse_jobs(
+        fpn_feats, fpn_masks, selected_masks
+    )
+    if not dense_inputs:
+        raise ValueError("sparse execution requires at least one FPN job")
+
+    layers = list(layers)
+    layer_radii = tuple(_masked_conv_spec(layer)[1] for layer in layers)
+    guard_size = max(layer_radii, default=0)
+    time_sizes = tuple(int(dense_input.shape[-1]) for dense_input in dense_inputs)
+    packed_dense_parts = []
+    packed_valid_parts = []
+    packed_selected_parts = []
+    job_offsets = []
+    running_offset = 0
+    for job_idx, (dense_input, valid_mask, selected_mask) in enumerate(
+        zip(dense_inputs, valid_masks, sparse_masks)
+    ):
+        job_offsets.append(running_offset)
+        packed_dense_parts.append(dense_input)
+        packed_valid_parts.append(valid_mask)
+        packed_selected_parts.append(selected_mask)
+        running_offset += dense_input.shape[-1]
+        if job_idx + 1 < len(dense_inputs) and guard_size > 0:
+            packed_dense_parts.append(
+                dense_input.new_zeros((dense_input.shape[0], guard_size))
+            )
+            packed_valid_parts.append(
+                valid_mask.new_zeros((guard_size,))
+            )
+            packed_selected_parts.append(
+                selected_mask.new_zeros((guard_size,))
+            )
+            running_offset += guard_size
+
+    packed_dense_input = torch.cat(packed_dense_parts, dim=-1)
+    packed_valid_mask = torch.cat(packed_valid_parts, dim=0)
+    packed_selected_mask = torch.cat(packed_selected_parts, dim=0)
+    _, global_layer_positions = _sparse_layer_positions(
+        packed_valid_mask, packed_selected_mask, layers
+    )
+    per_job_positions = tuple(
+        selected_mask.nonzero(as_tuple=True)[0]
+        for selected_mask in sparse_masks
+    )
+    final_counts = tuple(
+        int(positions.numel()) for positions in per_job_positions
+    )
+    if sum(final_counts) != global_layer_positions[-1].numel():
+        raise RuntimeError("packed sparse selection-count mismatch")
+
+    layer_plans = []
+    for layer_idx, (positions, radius) in enumerate(
+        zip(global_layer_positions, layer_radii)
+    ):
+        offsets = torch.arange(
+            -radius, radius + 1,
+            dtype=torch.long,
+            device=positions.device,
+        )
+        candidate_positions = positions[:, None] + offsets[None, :]
+        if layer_idx == 0:
+            present = torch.logical_and(
+                candidate_positions >= 0,
+                candidate_positions < packed_dense_input.shape[-1],
+            )
+            gather_indices = candidate_positions.clamp(
+                0, packed_dense_input.shape[-1] - 1
+            )
+        else:
+            previous_positions = global_layer_positions[layer_idx - 1]
+            if previous_positions.numel() == 0:
+                gather_indices = torch.zeros_like(candidate_positions)
+                present = torch.zeros_like(
+                    candidate_positions, dtype=torch.bool
+                )
+            else:
+                insertion_indices = torch.searchsorted(
+                    previous_positions, candidate_positions
+                )
+                gather_indices = insertion_indices.clamp(
+                    max=previous_positions.numel() - 1
+                )
+                present = torch.logical_and(
+                    insertion_indices < previous_positions.numel(),
+                    previous_positions[gather_indices] == candidate_positions,
+                )
+        layer_plans.append(
+            {
+                "gather_indices": gather_indices,
+                "gather_present": present,
+                "global_positions": positions,
+            }
+        )
+    first_plan = layer_plans[0]
+    first_patches = packed_dense_input[:, first_plan["gather_indices"]]
+    first_patches = first_patches.permute(1, 0, 2).contiguous()
+    first_patches = first_patches * first_plan["gather_present"][
+        :, None, :
+    ].to(first_patches.dtype)
+    return {
+        "batch_sizes": tuple(batch_sizes),
+        "final_counts": final_counts,
+        "first_patches": first_patches,
+        "job_offsets": tuple(job_offsets),
+        "layer_plans": tuple(layer_plans),
+        "layer_radii": layer_radii,
+        "packed_dense_input": packed_dense_input,
+        "per_job_selected_positions": per_job_positions,
+        "time_sizes": time_sizes,
+    }
+
+
+def _gather_packed_patches(packed_values, layer_plan):
+    """Gather a sparse state with plan indices shared by both official heads."""
+    if layer_plan["global_positions"].numel() == 0:
+        kernel_size = layer_plan["gather_indices"].shape[-1]
+        return packed_values.new_zeros(
+            (0, packed_values.shape[-1], kernel_size)
+        )
+    patches = packed_values[layer_plan["gather_indices"]].permute(0, 2, 1)
+    return patches.contiguous() * layer_plan["gather_present"][
+        :, None, :
+    ].to(patches.dtype)
+
+
+def _sparse_stack_packed(
+    execution_plan,
     hidden_layers,
     norms,
     activation,
     final_layer,
 ):
-    """Run one Conv kernel per head layer across all samples and FPN levels."""
-    if not (
-        len(dense_inputs) == len(valid_masks) == len(selected_masks)
-    ):
-        raise ValueError("packed sparse stack inputs must have matching lengths")
+    """Keep hidden states globally sparse and scatter only final API outputs."""
     layers = list(hidden_layers) + [final_layer]
-    plans = [
-        _sparse_layer_positions(valid_mask, selected_mask, layers)
-        for valid_mask, selected_mask in zip(valid_masks, selected_masks)
-    ]
-    current_dense = list(dense_inputs)
+    layer_radii = tuple(_masked_conv_spec(layer)[1] for layer in layers)
+    if layer_radii != execution_plan["layer_radii"]:
+        raise ValueError("sparse execution-plan layer geometry mismatch")
+    packed_values = None
     for layer_idx, layer in enumerate(layers):
-        conv, radius = _masked_conv_spec(layer)
-        positions = [plan[1][layer_idx] for plan in plans]
-        patches = [
-            _gather_conv_patches(dense_input, output_positions, radius)
-            for dense_input, output_positions in zip(current_dense, positions)
-        ]
-        counts = [patch.shape[0] for patch in patches]
-        total_count = sum(counts)
-        if total_count > 0:
-            packed_values = _conv_patches(torch.cat(patches, dim=0), conv)
+        conv, _ = _masked_conv_spec(layer)
+        layer_plan = execution_plan["layer_plans"][layer_idx]
+        if layer_idx == 0:
+            patches = execution_plan["first_patches"]
         else:
-            packed_values = current_dense[0].new_zeros((0, conv.out_channels))
+            patches = _gather_packed_patches(
+                packed_values,
+                layer_plan,
+            )
+        packed_values = _conv_patches(patches, conv)
         if layer_idx < len(hidden_layers):
             if packed_values.numel() > 0:
                 packed_values = norms[layer_idx](
                     packed_values.transpose(0, 1).unsqueeze(0)
                 ).squeeze(0).transpose(0, 1)
                 packed_values = activation(packed_values)
-        per_job_values = torch.split(packed_values, counts, dim=0)
-        if layer_idx < len(hidden_layers):
-            current_dense = [
-                _scatter_physical(
-                    values,
-                    output_positions,
-                    dense_input.shape[-1],
-                    out_channels=conv.out_channels,
-                )
-                for values, output_positions, dense_input in zip(
-                    per_job_values, positions, dense_inputs
-                )
-            ]
+
+    final_plan = execution_plan["layer_plans"][-1]
+    per_job_values = torch.split(
+        packed_values, execution_plan["final_counts"], dim=0
+    )
     return [
         _scatter_physical(
             values,
             selected_positions,
-            dense_input.shape[-1],
+            time_size,
             out_channels=final_layer.conv.out_channels,
         )
-        for values, (selected_positions, _), dense_input in zip(
-            per_job_values, plans, dense_inputs
+        for values, selected_positions, time_size in zip(
+            per_job_values,
+            execution_plan["per_job_selected_positions"],
+            execution_plan["time_sizes"],
         )
     ]
 
 
 def _flatten_sparse_jobs(fpn_feats, fpn_masks, selected_masks):
+    if not (
+        len(fpn_feats) == len(fpn_masks) == len(selected_masks)
+    ):
+        raise ValueError("sparse FPN feature/mask tuple lengths must match")
+    if len(fpn_feats) == 0:
+        raise ValueError("sparse execution requires at least one FPN level")
     dense_inputs = []
     valid_masks = []
     sparse_masks = []
     batch_sizes = []
     for feat, mask, selected in zip(fpn_feats, fpn_masks, selected_masks):
+        if feat.ndim != 3:
+            raise ValueError("sparse FPN features must be [B, C, T]")
+        if (
+            mask.dtype != torch.bool
+            or selected.dtype != torch.bool
+            or mask.ndim != 3
+            or selected.ndim != 3
+            or mask.shape[1] != 1
+            or selected.shape[1] != 1
+            or mask.shape != selected.shape
+            or mask.shape[0] != feat.shape[0]
+            or mask.shape[-1] != feat.shape[-1]
+        ):
+            raise ValueError(
+                "sparse FPN masks must be matching boolean [B, 1, T] tensors"
+            )
         batch_sizes.append(feat.shape[0])
         for batch_idx in range(feat.shape[0]):
             dense_inputs.append(feat[batch_idx])
@@ -293,40 +433,92 @@ def _restore_fpn_batches(flat_outputs, batch_sizes):
     return tuple(outputs)
 
 
-def run_sparse_cls_head(cls_head, fpn_feats, fpn_masks, selected_masks):
-    dense_inputs, valid_masks, sparse_masks, batch_sizes = _flatten_sparse_jobs(
-        fpn_feats, fpn_masks, selected_masks
-    )
+def run_sparse_cls_head(
+    cls_head,
+    fpn_feats,
+    fpn_masks,
+    selected_masks,
+    execution_plan=None,
+):
+    layers = list(cls_head.head) + [cls_head.cls_head]
+    if execution_plan is None:
+        execution_plan = build_native_grid_sparse_execution_plan(
+            fpn_feats, fpn_masks, selected_masks, layers
+        )
     flat_outputs = _sparse_stack_packed(
-        dense_inputs,
-        valid_masks,
-        sparse_masks,
+        execution_plan,
         cls_head.head,
         cls_head.norm,
         cls_head.act,
         cls_head.cls_head,
     )
-    return _restore_fpn_batches(flat_outputs, batch_sizes)
-
-
-def run_sparse_reg_head(reg_head, fpn_feats, fpn_masks, selected_masks):
-    dense_inputs, valid_masks, sparse_masks, batch_sizes = _flatten_sparse_jobs(
-        fpn_feats, fpn_masks, selected_masks
+    return _restore_fpn_batches(
+        flat_outputs, execution_plan["batch_sizes"]
     )
+
+
+def run_sparse_reg_head(
+    reg_head,
+    fpn_feats,
+    fpn_masks,
+    selected_masks,
+    execution_plan=None,
+):
+    layers = list(reg_head.head) + [reg_head.offset_head]
+    if execution_plan is None:
+        execution_plan = build_native_grid_sparse_execution_plan(
+            fpn_feats, fpn_masks, selected_masks, layers
+        )
     flat_outputs = _sparse_stack_packed(
-        dense_inputs,
-        valid_masks,
-        sparse_masks,
+        execution_plan,
         reg_head.head,
         reg_head.norm,
         reg_head.act,
         reg_head.offset_head,
     )
-    raw_outputs = _restore_fpn_batches(flat_outputs, batch_sizes)
+    raw_outputs = _restore_fpn_batches(
+        flat_outputs, execution_plan["batch_sizes"]
+    )
     outputs = []
     for level_idx, raw in enumerate(raw_outputs):
         outputs.append(F.relu(reg_head.scale[level_idx](raw)))
     return tuple(outputs)
+
+
+def run_sparse_heads(
+    cls_head,
+    reg_head,
+    fpn_feats,
+    fpn_masks,
+    selected_masks,
+):
+    """Run both official heads from one shared native-grid execution plan."""
+    cls_layers = list(cls_head.head) + [cls_head.cls_head]
+    reg_layers = list(reg_head.head) + [reg_head.offset_head]
+    cls_radii = tuple(_masked_conv_spec(layer)[1] for layer in cls_layers)
+    reg_radii = tuple(_masked_conv_spec(layer)[1] for layer in reg_layers)
+    if cls_radii != reg_radii:
+        raise ValueError(
+            "classification/regression sparse-head geometry must match"
+        )
+    execution_plan = build_native_grid_sparse_execution_plan(
+        fpn_feats, fpn_masks, selected_masks, cls_layers
+    )
+    cls_outputs = run_sparse_cls_head(
+        cls_head,
+        fpn_feats,
+        fpn_masks,
+        selected_masks,
+        execution_plan=execution_plan,
+    )
+    reg_outputs = run_sparse_reg_head(
+        reg_head,
+        fpn_feats,
+        fpn_masks,
+        selected_masks,
+        execution_plan=execution_plan,
+    )
+    return cls_outputs, reg_outputs
 
 
 def _conv_macs(masked_conv, output_count):
