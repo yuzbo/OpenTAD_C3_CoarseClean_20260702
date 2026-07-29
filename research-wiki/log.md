@@ -1555,3 +1555,16 @@ append_only: true
   Jobs `1204022`--`1204027` run concurrently; afterany closeout `1204028`
   remains dependency-held. No selector, P2/P3, official test, efficiency,
   Geometry Zoom, CER, or paper claim is open.
+
+- 2026-07-29 20:25 CST: residual-PL stage `1204023` hard-failed on real batch 0
+  after eight AMP retries, including the scale-256 attempt, with no checkpoint
+  or metric. Failure self/file SHA-256 values are `f70b0a54...` /
+  `e36556f2...`; traceback SHA-256 is `405b761d...`. Five other stages continue
+  only to terminal provenance and closeout `1204028` must seal INCOMPLETE. A
+  single fresh history-free independent agent returned `HOLD -> REPAIR` and
+  identified the missed contract: P0 ran the full model in FP32, then ran the
+  AMP horizon only on isolated logits, so it never tested a scaled full-model
+  optimizer update. The six-arm causal design remains frozen. A new source may
+  only make an estimator-equivalent precision repair and add a full-graph
+  autocast+GradScaler P0; no partial performance, normalization/clipping,
+  P2/P3, official test, efficiency, CER, Geometry Zoom, or paper claim opens.

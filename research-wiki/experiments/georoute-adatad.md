@@ -679,6 +679,18 @@ finite scaled gradients. Six frozen stages `1204022`--`1204027` now run
 concurrently, with afterany closeout `1204028`. State is
 `experiment_running`; no result or promotion surface is open.
 
+That P0 coverage was still insufficient. Residual-PL stage `1204023`
+hard-failed on real batch 0 after eight AMP retries, including the scale-256
+attempt, and wrote only a self-hash-valid failure receipt
+`f70b0a541cbfbbcf6595e8dfe7d7ef46ce16426d09a5ff7bc9fc921273c9eb81`.
+A single fresh independent agent found that the P0 full model ran without
+autocast or GradScaler and the subsequent AMP KAT was disconnected from model
+parameters. Verdict is `HOLD -> REPAIR`, not estimator rejection. The next
+numerical source must keep the scientific matrix fixed, force the complete
+score-function route/scout precision path out of FP16 overflow, and gate a real
+full-model scaled optimizer update. Current five surviving stages are terminal
+provenance only; closeout `1204028` must be INCOMPLETE.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

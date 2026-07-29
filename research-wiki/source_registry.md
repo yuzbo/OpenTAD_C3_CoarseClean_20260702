@@ -148,7 +148,26 @@ updated: 2026-07-29
   /
   `85eaea59cfb56ab40bd7b30c8815b46a959904b0c9b0c05e1b68a8e918589358`.
   Stage Jobs `1204022`--`1204027` run concurrently; closeout is `1204028`.
-  This is execution provenance only until all six stage receipts pass.
+  Residual-PL Job `1204023` hard-failed on real batch 0 after eight AMP retries.
+  Failure internal/file SHA-256 values are
+  `f70b0a541cbfbbcf6595e8dfe7d7ef46ce16426d09a5ff7bc9fc921273c9eb81`
+  /
+  `e36556f20a5cdbf138779fd46efc2f31462aaec19dc49296bb23fa94180edb5e`;
+  train.out, Slurm stdout and stderr SHA-256 values are
+  `1c6916111db00fef228ca58842451b7231e0decb071ec6451a44c58f31b63894`,
+  `2319ea0a9d2bc7f0dac25a37e6b0c5eefc7f8ac8d09c03abc0d6020391928d48`,
+  and
+  `812f9727fe9c7877b07ab9775b92521ea068a68050c5fbcdd391b67e922cee4d`.
+  This namespace is incomplete execution provenance, not performance evidence.
+
+- GeoRoute full-graph AMP failure independent-agent audit, 2026-07-29. One
+  fresh default agent with no inherited conversation history reviewed the P0,
+  estimator KAT, routing path and train engine. Verdict `HOLD -> REPAIR`: the
+  P0 real model backward was FP32 without autocast/GradScaler, while the AMP
+  KAT differentiated an isolated logits tensor only. Recommended remedy is an
+  estimator-equivalent FP32 score-function/scout path plus a full-model
+  autocast+GradScaler optimizer-update gate; no normalization/clipping or
+  six-arm protocol change is accepted without a new scientific decision.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD

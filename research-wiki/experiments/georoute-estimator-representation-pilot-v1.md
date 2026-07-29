@@ -4,7 +4,7 @@ node_id: exp:georoute-estimator-representation-pilot-v1
 title: "GeoRoute estimator/representation exploratory pilot v1"
 idea: idea:geo-route-adatad
 stage: experiment_running
-status: fresh_schema_v4_p0_pass_six_arms_parallel
+status: fullgraph_amp_hard_fail_five_arms_running_pending_incomplete_closeout
 verdict: pending
 confidence: medium
 commit: 30f9ca6fff1572e2eabc6c1b6636c4cc23595a62
@@ -116,6 +116,22 @@ and
 `85eaea59cfb56ab40bd7b30c8815b46a959904b0c9b0c05e1b68a8e918589358`.
 Six stage Jobs `1204022`--`1204027` now run in parallel; afterany closeout
 `1204028` remains dependency-held. This is `experiment_running`, not a result.
+
+Residual-PL stage `1204023` then failed on its first real batch after all eight
+AMP retries (`32768` down to the attempted floor scale `256`) without a
+checkpoint or metric. Failure internal/file SHA-256 values are
+`f70b0a541cbfbbcf6595e8dfe7d7ef46ce16426d09a5ff7bc9fc921273c9eb81`
+and
+`e36556f20a5cdbf138779fd46efc2f31462aaec19dc49296bb23fa94180edb5e`;
+traceback SHA-256 is
+`405b761dcf158daf952752095df3d01e9c815147b294d3816899809a73400fc7`.
+The other five jobs continue only for terminal provenance. One new
+history-free independent agent returned `HOLD -> REPAIR`: P0 wrapped neither
+its real model forward nor backward in autocast/GradScaler, then ran the
+production-horizon AMP assertion only on an isolated logits leaf. Thus the
+suite did not test a scaled optimizer update across scout/detector/adapter/
+backbone. The frozen six-arm questions remain valid, but this namespace cannot
+emit any contrast and must close INCOMPLETE.
 
 ## Claim boundary
 

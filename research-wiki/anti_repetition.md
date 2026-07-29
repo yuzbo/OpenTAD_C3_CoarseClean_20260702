@@ -79,6 +79,13 @@ updated: 2026-07-29
    stage Jobs `1204022`--`1204027`, and closeout `1204028`. Never mix any old
    `cbe0a082` artifact into it, manually replace a stage, interpret a partial
    stage, or bypass the all-six closeout.
+0. Schema-v4 P0 from source `30f9ca6f` did not test full-graph AMP. Its model
+   forward/backward was FP32, and the `T384/N220/K64` AMP KAT used an isolated
+   logits leaf. Job `1204023` then exhausted all eight real-batch AMP retries at
+   scale `256`. Never accept an isolated logits KAT as an optimizer-update gate.
+   A replacement must run the actual model under autocast plus GradScaler,
+   unscale and inspect all required trainable gradients, and prove a successful
+   optimizer step at the registered floor scale before releasing any stage.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

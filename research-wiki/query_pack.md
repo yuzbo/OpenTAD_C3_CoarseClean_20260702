@@ -37,7 +37,7 @@ max_chars: 8000
   `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
   A new independent study,
   `georoute_estimator_representation_pilot_v1`, is
-  `experiment_running_fresh_schema_v4_p0_pass_six_arms_parallel`.
+  `fullgraph_amp_hard_fail_five_arms_running_pending_incomplete_closeout`.
   Six single-seed, 20-epoch, K=64 arms isolate PL versus ST, fixed-support
   representation, ROI-support representation, and ROI versus residual support.
   The first clean runtime `02b6efe7` passed remote Linux tests `108/108`, but
@@ -121,6 +121,20 @@ max_chars: 8000
   `|objective|=128637.0234375 > 65504`, and finite scaled gradients. All six
   frozen stage Jobs `1204022`--`1204027` are running in parallel; afterany
   closeout is `1204028`. No selector, P2/P3, official test, or claim is open.
+  The repaired residual-PL stage `1204023` nevertheless hard-failed on real
+  batch 0 after eight AMP retries, again at floor scale `256`, with no
+  checkpoint or metric. Its failure self/file SHA-256 values are
+  `f70b0a541cbfbbcf6595e8dfe7d7ef46ce16426d09a5ff7bc9fc921273c9eb81`
+  /
+  `e36556f20a5cdbf138779fd46efc2f31462aaec19dc49296bb23fa94180edb5e`.
+  A single fresh independent agent audited the discrepancy and returned
+  `HOLD -> REPAIR`: the P0 model backward was FP32 without autocast/GradScaler,
+  while its AMP KAT differentiated only isolated route logits. It therefore
+  missed the scaled full graph through detector, scout, adapter, and backbone.
+  The other five stages continue only to terminal provenance; no partial result
+  is valid. The next source must keep the six-arm science fixed, execute the
+  score-function scout/likelihood path safely in FP32, and pass a full-model
+  autocast+GradScaler optimizer-update P0 before any further replacement.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

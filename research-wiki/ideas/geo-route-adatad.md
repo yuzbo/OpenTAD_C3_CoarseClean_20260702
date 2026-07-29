@@ -329,6 +329,14 @@ six frozen stages `1204022`--`1204027` run in parallel under new closeout
 all six finish; it still does not implement or establish full CER or Geometry
 Zoom.
 
+The replacement exposed a second, narrower numerical gap: Job `1204023`
+exhausted full-model AMP retries even though isolated PL arithmetic passed P0.
+Independent review showed P0 never combined autocast, GradScaler, the real
+model graph, and an optimizer update. This does not falsify PL versus ST;
+it invalidates the execution evidence. The next method-neutral repair is an
+FP32 scout/score-function route branch plus full-graph AMP P0, with the same six
+arms and contrasts.
+
 ## Connections
 
 Relations are maintained only in `research-wiki/graph/edges.jsonl`.
