@@ -11,6 +11,14 @@ SPEC = importlib.util.spec_from_file_location("independent_recompute", MODULE_PA
 independent = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(independent)
 
+PINNED_RUNTIME_SORT = {
+    "operation": "sort_descending",
+    "provider": "pytorch_cpu",
+    "stable": False,
+    "torch_git_version": "e9ebda29d87ce0916ab08c06ab26fd3766a870e5",
+    "torch_version": "2.0.1",
+}
+
 
 def build_axis_capture(axis_values, count=2):
     axis_values = np.asarray([axis_values], dtype=np.float32)
@@ -181,6 +189,108 @@ def test_stable_gaussian_soft_nms_preserves_equal_score_input_order():
     assert output_indices.tolist() == indices.tolist()
 
 
+def test_pinned_torch_sort_reproduces_sealed_unstable_tie_order():
+    values = np.asarray(
+        [
+            0.8,
+            0.7,
+            0.8,
+            0.6,
+            0.8,
+            0.7,
+            0.8,
+            0.6,
+            0.8,
+            0.7,
+            0.8,
+            0.6,
+            0.8,
+            0.7,
+            0.8,
+            0.6,
+            0.8,
+            0.7,
+            0.8,
+            0.6,
+        ],
+        dtype=np.float32,
+    )
+    order = independent.pinned_torch_descending_order(
+        values,
+        PINNED_RUNTIME_SORT,
+    )
+    assert order.tolist() == [
+        0,
+        2,
+        18,
+        4,
+        6,
+        16,
+        8,
+        14,
+        10,
+        12,
+        1,
+        17,
+        13,
+        9,
+        5,
+        11,
+        15,
+        7,
+        3,
+        19,
+    ]
+
+
+def test_float32_gaussian_soft_nms_matches_compiled_source_near_ties():
+    try:
+        import nms_1d_cpu
+        import torch
+    except (ImportError, OSError) as error:
+        pytest.skip(f"compiled production NMS is unavailable: {error}")
+
+    segments = torch.tensor(
+        [
+            [0.0, 2.0],
+            [0.00003, 2.00004],
+            [1.0, 3.0],
+            [4.0, 5.0],
+            [4.00002, 5.00003],
+        ],
+        dtype=torch.float32,
+    )
+    scores = torch.tensor(
+        [0.8000001, 0.8, 0.8000001, 0.7, 0.7],
+        dtype=torch.float32,
+    )
+    dets = segments.new_empty((segments.size(0), 3), device="cpu")
+    expected_indices = nms_1d_cpu.softnms(
+        segments,
+        scores,
+        dets,
+        iou_threshold=0.0,
+        sigma=0.7,
+        min_score=0.0,
+        method=2,
+        t1=0.0,
+        t2=0.0,
+    )
+    observed_segments, observed_scores, observed_indices = (
+        independent.gaussian_soft_nms(
+            segments.numpy(),
+            scores.numpy(),
+            np.arange(segments.size(0), dtype=np.int64),
+            sigma=0.7,
+            min_score=0.0,
+        )
+    )
+    count = int(expected_indices.numel())
+    np.testing.assert_array_equal(observed_segments, dets[:count, :2].numpy())
+    np.testing.assert_array_equal(observed_scores, dets[:count, 2].numpy())
+    np.testing.assert_array_equal(observed_indices, expected_indices.numpy())
+
+
 def test_independent_thumos_ap_perfect_prediction():
     annotation = {
         "database": {
@@ -222,7 +332,9 @@ def test_cross_window_nms_is_multiclass_and_caps_global_output():
             "sigma": 0.7,
             "min_score": 0.0,
             "max_seg_num": 2,
+            "numeric_dtype": "float32",
         },
+        "runtime_sort": PINNED_RUNTIME_SORT,
     }
     pre_cross = {
         "video": [

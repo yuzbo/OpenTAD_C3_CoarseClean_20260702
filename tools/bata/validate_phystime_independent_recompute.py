@@ -2,9 +2,11 @@
 """Independent NumPy closure for frozen PhysTime decode artifacts.
 
 This file intentionally does not import OpenTAD decode, NMS, or evaluation
-implementations. It only consumes their sealed artifact schemas. Geometry is
-recomputed with the sealed source float32 semantics; NMS and evaluation use
-float64.
+implementations. It only consumes their sealed artifact schemas. Geometry and
+the independently ported Soft-NMS use the sealed source float32 semantics;
+evaluation uses float64. The two score-ordering sites use a version-pinned
+PyTorch CPU sort primitive because the production contract used PyTorch's
+unstable tie ordering.
 """
 
 from __future__ import annotations
@@ -20,8 +22,8 @@ from pathlib import Path
 import numpy as np
 
 
-OUTPUT_SCHEMA = "phystime_independent_recompute_v2"
-POLICY_SCHEMA = "phystime_independent_nms_policy_v1"
+OUTPUT_SCHEMA = "phystime_independent_recompute_v3"
+POLICY_SCHEMA = "phystime_independent_nms_policy_v2"
 COMPLETION_SCHEMA = "phystime_decode_cross_completion_v1"
 CAPTURE_SCHEMA = "phystime_decode_replay_inputs_v2"
 AXIS_ARRAYS = {
@@ -38,6 +40,7 @@ METRIC_KEYS = (
     "mAP@0.7",
 )
 TIOS = np.asarray([0.3, 0.4, 0.5, 0.6, 0.7], dtype=np.float64)
+_SORT_RUNTIME_CACHE = {}
 
 
 class IndependentClosureError(ValueError):
@@ -47,6 +50,56 @@ class IndependentClosureError(ValueError):
 def require(condition, message):
     if not condition:
         raise IndependentClosureError(message)
+
+
+def _load_pinned_sort_runtime(contract):
+    require(isinstance(contract, dict), "runtime sort contract is missing")
+    require(
+        contract.get("provider") == "pytorch_cpu"
+        and contract.get("operation") == "sort_descending"
+        and contract.get("stable") is False,
+        "runtime sort contract mismatch",
+    )
+    expected_version = str(contract.get("torch_version", ""))
+    expected_git = str(contract.get("torch_git_version", ""))
+    cache_key = (expected_version, expected_git)
+    if cache_key in _SORT_RUNTIME_CACHE:
+        return _SORT_RUNTIME_CACHE[cache_key]
+    try:
+        import torch
+    except (ImportError, OSError) as error:
+        raise IndependentClosureError(
+            f"pinned PyTorch CPU sort runtime is unavailable: {error}"
+        ) from error
+    actual_version = str(torch.__version__).split("+", 1)[0]
+    actual_git = str(torch.version.git_version)
+    require(
+        actual_version == expected_version,
+        (
+            "PyTorch sort runtime version mismatch: "
+            f"expected {expected_version}, observed {actual_version}"
+        ),
+    )
+    require(
+        actual_git == expected_git,
+        (
+            "PyTorch sort runtime Git identity mismatch: "
+            f"expected {expected_git}, observed {actual_git}"
+        ),
+    )
+    _SORT_RUNTIME_CACHE[cache_key] = torch
+    return torch
+
+
+def pinned_torch_descending_order(values, contract):
+    """Return the exact CPU ordering of the sealed PyTorch sort primitive."""
+    values = np.ascontiguousarray(np.asarray(values, dtype=np.float32))
+    require(values.ndim == 1, "runtime sort values must be one-dimensional")
+    require(np.isfinite(values).all(), "runtime sort values contain non-finite values")
+    torch = _load_pinned_sort_runtime(contract)
+    tensor = torch.from_numpy(values.copy())
+    _, order = tensor.sort(descending=True)
+    return order.numpy().astype(np.int64, copy=False)
 
 
 def sha256_file(path):
@@ -173,6 +226,11 @@ def validate_policy(policy):
         math.isfinite(min_score) and min_score >= 0.0,
         "NMS score floor must be finite and non-negative",
     )
+    require(
+        nms.get("numeric_dtype") == "float32",
+        "independent Soft-NMS must retain source float32 semantics",
+    )
+    _load_pinned_sort_runtime(policy.get("runtime_sort"))
     return policy
 
 
@@ -488,7 +546,10 @@ def build_pre_cross(dense_proposals, valid_mask, scores, capture, policy):
         flat_scores = window_scores.reshape(-1)
         kept_flat_indices = np.flatnonzero(flat_scores > threshold)
         kept_scores = flat_scores[kept_flat_indices]
-        order = np.argsort(-kept_scores, kind="stable")
+        order = pinned_torch_descending_order(
+            kept_scores,
+            policy["runtime_sort"],
+        )
         if order.size > topk:
             sorted_scores = kept_scores[order]
             if sorted_scores[topk - 1] == sorted_scores[topk]:
@@ -557,9 +618,9 @@ def _validate_detections(detections, minimum_duration):
 
 
 def gaussian_soft_nms(segments, scores, original_indices, *, sigma, min_score):
-    """Stable NumPy/float64 port of the sealed Gaussian Soft-NMS semantics."""
-    segments = np.asarray(segments, dtype=np.float64).copy()
-    scores = np.asarray(scores, dtype=np.float64).copy()
+    """Independent NumPy/float32 port of the sealed C++ Gaussian Soft-NMS."""
+    segments = np.asarray(segments, dtype=np.float32).copy()
+    scores = np.asarray(scores, dtype=np.float32).copy()
     original_indices = np.asarray(original_indices, dtype=np.int64).copy()
     require(segments.shape == (scores.size, 2), "Soft-NMS shape mismatch")
     require(original_indices.shape == scores.shape, "Soft-NMS index mismatch")
@@ -571,46 +632,59 @@ def gaussian_soft_nms(segments, scores, original_indices, *, sigma, min_score):
         math.isfinite(min_score) and min_score >= 0.0,
         "invalid Soft-NMS score floor",
     )
+    sigma = np.float32(sigma)
+    min_score = np.float32(min_score)
     n = scores.size
-    output_segments = np.empty((n, 2), dtype=np.float64)
-    output_scores = np.empty(n, dtype=np.float64)
+    output_segments = np.empty((n, 2), dtype=np.float32)
+    output_scores = np.empty(n, dtype=np.float32)
     output_indices = np.empty(n, dtype=np.int64)
-    areas = segments[:, 1] - segments[:, 0] + 1.0e-6
+    areas = (
+        segments[:, 1] - segments[:, 0] + np.float32(1.0e-6)
+    ).astype(np.float32, copy=False)
     i = 0
     while i < n:
-        tail = scores[i:n]
-        max_offset = int(np.argmax(tail))
-        max_pos = i + max_offset
+        max_score = scores[i]
+        max_pos = i
+        pos = i + 1
+        while pos < n:
+            if max_score < scores[pos]:
+                max_score = scores[pos]
+                max_pos = pos
+            pos += 1
         if max_pos != i:
             segments[[i, max_pos]] = segments[[max_pos, i]]
             scores[[i, max_pos]] = scores[[max_pos, i]]
             areas[[i, max_pos]] = areas[[max_pos, i]]
             original_indices[[i, max_pos]] = original_indices[[max_pos, i]]
         selected = segments[i].copy()
-        selected_score = float(scores[i])
+        selected_score = scores[i]
         output_segments[i] = selected
         output_scores[i] = selected_score
         output_indices[i] = original_indices[i]
         if i + 1 < n:
-            left = np.maximum(selected[0], segments[i + 1 : n, 0])
-            right = np.minimum(selected[1], segments[i + 1 : n, 1])
-            intersection = np.maximum(0.0, right - left)
-            overlap = intersection / (
-                areas[i] + areas[i + 1 : n] - intersection
-            )
-            scores[i + 1 : n] *= np.exp(-(overlap * overlap) / sigma)
-            if min_score > 0.0:
-                pos = i + 1
-                while pos < n:
-                    if scores[pos] < min_score:
-                        last = n - 1
-                        segments[pos] = segments[last]
-                        scores[pos] = scores[last]
-                        areas[pos] = areas[last]
-                        original_indices[pos] = original_indices[last]
-                        n -= 1
-                    else:
-                        pos += 1
+            pos = i + 1
+            while pos < n:
+                left = np.float32(max(selected[0], segments[pos, 0]))
+                right = np.float32(min(selected[1], segments[pos, 1]))
+                intersection = np.float32(max(np.float32(0.0), right - left))
+                denominator = np.float32(
+                    np.float32(areas[i] + areas[pos]) - intersection
+                )
+                overlap = np.float32(intersection / denominator)
+                exponent = np.float32(
+                    -np.float32(overlap * overlap) / sigma
+                )
+                weight = np.float32(np.exp(exponent))
+                scores[pos] = np.float32(scores[pos] * weight)
+                if scores[pos] < min_score:
+                    last = n - 1
+                    segments[pos] = segments[last]
+                    scores[pos] = scores[last]
+                    areas[pos] = areas[last]
+                    original_indices[pos] = original_indices[last]
+                    n -= 1
+                    pos -= 1
+                pos += 1
         i += 1
     return (
         output_segments[:n],
@@ -678,11 +752,11 @@ def independent_cross_window_nms(pre_cross, policy):
             rows = by_class[label]
             segments = np.asarray(
                 [item["segment"] for _, item in rows],
-                dtype=np.float64,
+                dtype=np.float32,
             )
             scores = np.asarray(
                 [item["score"] for _, item in rows],
-                dtype=np.float64,
+                dtype=np.float32,
             )
             indices = np.asarray([index for index, _ in rows], dtype=np.int64)
             _, counts = np.unique(scores, return_counts=True)
@@ -704,9 +778,15 @@ def independent_cross_window_nms(pre_cross, policy):
                     (float(score), int(original_index), label, segment)
                 )
 
-        # Stable score ordering with original sequence index as the tie breaker.
-        class_outputs.sort(key=lambda row: (-row[0], row[1]))
-        class_outputs = class_outputs[:max_segments]
+        if class_outputs:
+            global_order = pinned_torch_descending_order(
+                np.asarray([row[0] for row in class_outputs], dtype=np.float32),
+                policy["runtime_sort"],
+            )
+            class_outputs = [
+                class_outputs[int(index)]
+                for index in global_order[:max_segments]
+            ]
         video_output = []
         for score, _, label, segment in class_outputs:
             segment_value = [float(segment[0]), float(segment[1])]
@@ -1525,12 +1605,14 @@ def main():
         "validation_pass": not issues,
         "new_training": False,
         "independent_implementation": {
-            "language": "python_numpy",
+            "language": "python_numpy_with_version_pinned_pytorch_sort_primitive",
             "geometry_dtype": "source_float32",
             "geometry_domain_storage_dtype": "float64_quantized_to_source_float32",
-            "nms_dtype": "float64",
+            "nms_dtype": "source_float32",
             "evaluation_dtype": "float64",
-            "stable_tie_breaker": "original_sequence_index",
+            "pre_nms_sort": policy["runtime_sort"],
+            "post_nms_sort": policy["runtime_sort"],
+            "soft_nms_tie_breaker": "first_maximum_strict_less_than",
             "imports_opentad_decode_nms_or_evaluator": False,
         },
         "proposal_atol_seconds": args.proposal_atol,

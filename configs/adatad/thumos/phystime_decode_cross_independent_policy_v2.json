@@ -1,0 +1,40 @@
+{
+  "filter_invalid_proposals": true,
+  "nms": {
+    "max_seg_num": 2000,
+    "method": 2,
+    "min_score": 0.0,
+    "multiclass": true,
+    "numeric_dtype": "float32",
+    "sigma": 0.7,
+    "use_soft_nms": true,
+    "voting_thresh": 0.7
+  },
+  "pre_nms_thresh": 0.001,
+  "pre_nms_topk": 2000,
+  "proposal_min_duration": 1e-06,
+  "round_after_cross_window_nms": false,
+  "round_before_cross_window_nms": false,
+  "runtime_sort": {
+    "operation": "sort_descending",
+    "provider": "pytorch_cpu",
+    "stable": false,
+    "torch_git_version": "e9ebda29d87ce0916ab08c06ab26fd3766a870e5",
+    "torch_version": "2.0.1"
+  },
+  "schema_version": "phystime_independent_nms_policy_v2",
+  "score_round_digits": 4,
+  "segment_round_digits": 2,
+  "annotation_subset": "validation",
+  "expected_annotation_class_count": 20,
+  "expected_annotation_gt_count": 3325,
+  "expected_annotation_video_count": 211,
+  "subset": "test",
+  "tiou_thresholds": [
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7
+  ]
+}
