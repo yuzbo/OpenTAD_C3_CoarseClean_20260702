@@ -4,8 +4,8 @@ node_id: exp:georoute-estimator-representation-pilot-v1
 title: "GeoRoute estimator/representation exploratory pilot v1"
 idea: idea:geo-route-adatad
 stage: experiment_running
-status: fresh_c822add3_six_arm_p0_submitted
-verdict: pending
+status: fresh_c822add3_real_batch_amp_hard_fail_waiting_closeout
+verdict: incomplete_no_performance_inference_pending_closeout
 confidence: medium
 commit: c822add335c38a9f6c63e609237c4bfa9b9f468d
 jobs: 1204301-1204314
@@ -176,15 +176,46 @@ P0 jobs are `1204301`--`1204306`, P0 finalizer is `1204307`, stages are
 `1204308`--`1204313`, and afterany closeout is `1204314`. Arms, seed `3407`,
 `K=64`, 20 epochs, inputs, preexperiment parent and four contrasts are unchanged.
 
+All six P0 Jobs and finalizer `1204307` completed `0:0`. The sealed P0 suite is
+self-hash-valid `PASS_MECHANICAL_ONLY`; its internal/file SHA-256 values are
+`f6f423670c9c2417aadfca97c67d794427ee337c359ba2d2509faee53a5ccdb6`
+and
+`114cef2be09cc674429d6d732991048a73345c0a8d3583f56310a5a05344bba0`.
+This did not predict the real batch. Residual-PL Job `1204309` started epoch 0,
+retried the first batch at GradScaler values
+`32768,16384,8192,4096,2048,1024,512,256`, and then raised
+`FloatingPointError: S1 AMP could not produce a successful optimizer update
+after 8 retries`. Slurm accounting is `FAILED 1:0`, with no OOM or rendezvous
+error. Failure receipt internal/file SHA-256 values are
+`5e55619291285a36a8410be9582a79f293b33cd135053b4c6a3967e9d8beb5c8`
+and
+`77c9eff76c5881f8daa45ef68dd0d0d71bec2f5e171f31e2a8a97fc734b9f3c5`;
+traceback SHA-256 is
+`17ec9adb5a41b48a16d0a76221248a4bfe4f123e99ec03e16f6397b0919649ad`.
+The failed cell inventory contains only its hashed failure receipt, storage
+preflight, bound config, `train.out`, and `log.json`: no checkpoint, prediction,
+metric, or stage result exists. The other five stages run only to terminal
+provenance and may not be interpreted. No arm is resumed or replaced. Closeout
+`1204314` must seal `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with empty
+contrasts and all promotion guards false.
+
+The evidence narrows the execution diagnosis: schema-v5 synthetic full-graph
+AMP is mechanically valid but insufficient as a real-batch stability gate. It
+does not establish that PL is scientifically inferior to ST, nor does it
+support another estimator repair without a new cause analysis and experiment
+decision.
+
 ## Claim boundary
 
-For the sealed namespace, finalizer `1203720` emitted
+For the sealed `cbe0a082` namespace, finalizer `1203720` emitted
 `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with an empty contrast set; none of
-the five completed-arm outputs may be interpreted. A future fresh namespace may
-emit descriptive single-seed contrasts only
-if all six arms pass. No finalizer can emit a winner, reuse the historical
-selector, promote P2/P3, open official test, or authorize an efficiency,
-Geometry Zoom, or paper claim.
+the five completed-arm outputs may be interpreted. The `30f9ca6f` namespace is
+also sealed under the same decision, and the current `c822add3` namespace has
+already hard-failed one arm and must do likewise when `1204314` runs. A future
+fresh namespace may emit descriptive single-seed contrasts only if all six arms
+pass. No finalizer can emit a winner, reuse the historical selector, promote
+P2/P3, open official test, or authorize an efficiency, Geometry Zoom, or paper
+claim.
 
 ## Provenance
 

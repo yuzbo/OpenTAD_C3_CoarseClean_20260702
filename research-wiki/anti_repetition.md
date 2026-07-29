@@ -81,13 +81,16 @@ updated: 2026-07-29
    stage, or bypass the all-six closeout. Job `1204028` emitted only
    `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with empty contrasts
    (self-hash `60c9dab575e65830b7b849437963de2c7f789743caedb130b499c142c49c76ab`).
-0. The only current performance namespace is
+0. The latest candidate performance namespace is
    `georoute_estimator_representation_pilot_c822add3_20260729_2149`, exact
    runtime `c822add335c38a9f6c63e609237c4bfa9b9f468d`. It contains P0
    `1204301`--`1204306`, P0 finalizer `1204307`, stages
-   `1204308`--`1204313`, and closeout `1204314`. Never mix either earlier
-   namespace into it, bypass its sealed P0 suite, or interpret fewer than all
-   six stage receipts.
+   `1204308`--`1204313`, and closeout `1204314`. Its six P0 leaves and finalizer
+   passed mechanically, but residual-PL stage `1204309` exhausted all eight AMP
+   retries on real batch 0 and failed with no checkpoint, metric, or stage
+   result. The namespace therefore cannot become performance evidence. Never
+   mix either earlier namespace into it, rerun or resume the failed arm, bypass
+   its all-six closeout, or interpret the other five arms.
 0. Schema-v4 P0 from source `30f9ca6f` did not test full-graph AMP. Its model
    forward/backward was FP32, and the `T384/N220/K64` AMP KAT used an isolated
    logits leaf. Job `1204023` then exhausted all eight real-batch AMP retries at
@@ -105,6 +108,17 @@ updated: 2026-07-29
    Do not start a replacement six-arm DAG until old closeout `1204028` seals
    `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, and never reuse any of the five
    surviving `30f9ca6f` arm outputs in the future namespace.
+0. The fresh namespace's own schema-v5 suite also passed
+   `PASS_MECHANICAL_ONLY` (self-hash
+   `f6f423670c9c2417aadfca97c67d794427ee337c359ba2d2509faee53a5ccdb6`),
+   yet real-batch residual-PL Job `1204309` still failed after scales
+   `32768,16384,8192,4096,2048,1024,512,256`. Therefore neither the standalone
+   nor per-arm synthetic full-graph gate may be treated as a real-batch
+   stability certificate. Preserve the namespace, let unrelated arms terminate
+   naturally, require closeout `1204314` to emit only
+   `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, and make no further numerical
+   repair or replacement run without a new cause analysis and explicit
+   experiment decision.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

@@ -343,9 +343,15 @@ schema v5 with FP32 scout execution, finite detector-plus-score-function
 gradients and an unchanged GradScaler floor. It changes precision and gate
 coverage only; it is not a new CER component and supplies no empirical support.
 The failed `30f9ca6f` namespace has now sealed INCOMPLETE with empty contrasts.
-The complete fresh `c822add3` six-arm namespace is `experiment_running` under
-P0 Jobs `1204301`--`1204306`, stage wrappers `1204308`--`1204313`, and
-closeout `1204314`. This still supplies no empirical support until all six pass.
+The complete fresh `c822add3` six-arm namespace passed all six schema-v5 P0
+leaves plus its finalizer, but residual-PL stage `1204309` again exhausted all
+eight AMP retries on real batch 0 and hard-failed without a checkpoint or
+metric. The remaining stages continue only for terminal provenance and
+closeout `1204314` must seal no performance inference. This falsifies the
+sufficiency of the current synthetic full-graph P0 as a real-batch stability
+certificate, not the scientific PL hypothesis itself. GeoRoute/CER remains
+without empirical support; no further repair is designed until a new cause
+analysis and experiment decision are recorded.
 
 ## Connections
 

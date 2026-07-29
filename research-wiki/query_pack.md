@@ -37,7 +37,7 @@ max_chars: 8000
   `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
   A new independent study,
   `georoute_estimator_representation_pilot_v1`, is
-  `fullgraph_amp_hard_fail_repair_implemented_local_pending_linux_cuda`.
+  `c822add3_real_batch_amp_hard_fail_waiting_closeout`.
   Six single-seed, 20-epoch, K=64 arms isolate PL versus ST, fixed-support
   representation, ROI-support representation, and ROI versus residual support.
   The first clean runtime `02b6efe7` passed remote Linux tests `108/108`, but
@@ -161,7 +161,21 @@ max_chars: 8000
   `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_c822add3_20260729_2149`.
   P0 Jobs `1204301`--`1204306`, P0 finalizer `1204307`, six stage wrappers
   `1204308`--`1204313`, and afterany closeout `1204314` were submitted
-  atomically. This is `experiment_running`, not a descriptive contrast.
+  atomically. All six P0 leaves and the finalizer completed `0:0`; sealed suite
+  `f6f423670c9c2417aadfca97c67d794427ee337c359ba2d2509faee53a5ccdb6`
+  is self-hash-valid `PASS_MECHANICAL_ONLY`. Residual-PL stage `1204309`
+  nevertheless hard-failed on real batch 0 after exhausting all eight AMP
+  retries from scale `32768` through `256`. Its failure receipt is
+  self-hash-valid
+  (`5e55619291285a36a8410be9582a79f293b33cd135053b4c6a3967e9d8beb5c8`;
+  file
+  `77c9eff76c5881f8daa45ef68dd0d0d71bec2f5e171f31e2a8a97fc734b9f3c5`)
+  and the cell contains no checkpoint, metric, or stage result. The other five
+  stages continue only to reach terminal provenance; closeout `1204314` must
+  seal `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. This shows that the current
+  synthetic full-graph P0 is not sufficient evidence of real-batch AMP
+  stability. It does not yield a PL/ST scientific verdict. No rerun, partial
+  contrast, selector, P2/P3, official test, or claim is authorized.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

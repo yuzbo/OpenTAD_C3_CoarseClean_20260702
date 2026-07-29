@@ -215,8 +215,25 @@ updated: 2026-07-29
   finalizer-submission file SHA-256 is
   `999f89233e7474ba365fa9b4d12930fc3c1a9f089e01a27fef631c2b6ec658c7`.
   P0 Jobs are `1204301`--`1204306`, P0 finalizer `1204307`, stage wrappers
-  `1204308`--`1204313`, and closeout `1204314`. This is deployment evidence,
-  not a contrast or performance result.
+  `1204308`--`1204313`, and closeout `1204314`. All six P0 leaves and the
+  finalizer completed `0:0`; suite internal/file SHA-256 values are
+  `f6f423670c9c2417aadfca97c67d794427ee337c359ba2d2509faee53a5ccdb6`
+  and
+  `114cef2be09cc674429d6d732991048a73345c0a8d3583f56310a5a05344bba0`.
+  Residual-PL stage `1204309` then failed `1:0` on real batch 0 after eight AMP
+  retries through scale `256`. Failure internal/file SHA-256 values are
+  `5e55619291285a36a8410be9582a79f293b33cd135053b4c6a3967e9d8beb5c8`
+  and
+  `77c9eff76c5881f8daa45ef68dd0d0d71bec2f5e171f31e2a8a97fc734b9f3c5`;
+  traceback SHA-256 is
+  `17ec9adb5a41b48a16d0a76221248a4bfe4f123e99ec03e16f6397b0919649ad`.
+  The failed cell has no checkpoint, metric, prediction, or stage result.
+  Slurm stdout/stderr file SHA-256 values are
+  `3cf497d547f1cc38ece780d5af56b0455f3786387f182915d799e5fa9b567ef2`
+  and
+  `88289a14399a28789e2db97411604ab890fa6a92a55ac2ea4b99408b892320da`.
+  This namespace is incomplete execution provenance, not a contrast or
+  performance result.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD

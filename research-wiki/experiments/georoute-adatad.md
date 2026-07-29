@@ -717,8 +717,21 @@ Deployment self/file SHA-256 values are
 /
 `48f19fd88741361e9290ae6f444ccbd38f07030c82bc0c2726abad514de1158b`.
 P0 Jobs `1204301`--`1204306`, P0 finalizer `1204307`, stage wrappers
-`1204308`--`1204313`, and afterany closeout `1204314` are now submitted.
-No result surface is open until all six stages and closeout pass.
+`1204308`--`1204313`, and afterany closeout `1204314` were submitted.
+All six P0 leaves plus finalizer passed `0:0`, and suite self-hash
+`f6f423670c9c2417aadfca97c67d794427ee337c359ba2d2509faee53a5ccdb6`
+records `PASS_MECHANICAL_ONLY`. Residual-PL stage `1204309` then hard-failed
+on real batch 0 after all eight AMP retries down to scale `256`, with no
+checkpoint, metric, or stage result. Failure receipt self/file SHA-256 values
+are
+`5e55619291285a36a8410be9582a79f293b33cd135053b4c6a3967e9d8beb5c8`
+/
+`77c9eff76c5881f8daa45ef68dd0d0d71bec2f5e171f31e2a8a97fc734b9f3c5`.
+The other five stages continue only for terminal provenance; closeout
+`1204314` must seal the namespace incomplete with no performance inference.
+Thus the current synthetic full-graph P0 is not a sufficient real-batch AMP
+stability certificate. This is not a PL/ST scientific verdict and opens no
+result surface, rerun, selector, P2/P3, official test, Geometry Zoom, or claim.
 
 ## Frozen decision logic
 

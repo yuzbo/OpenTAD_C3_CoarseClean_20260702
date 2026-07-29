@@ -1614,3 +1614,20 @@ append_only: true
   `1204308`--`1204313`, and closeout `1204314` are submitted. State is
   `experiment_running`; no metric, contrast, winner, P2/P3, official test,
   Geometry Zoom or paper claim is open.
+
+- 2026-07-29 21:55 CST: all six fresh `c822add3` P0 leaves
+  `1204301`--`1204306` and finalizer `1204307` completed `0:0`. The sealed
+  schema-v5 suite is self-hash-valid `PASS_MECHANICAL_ONLY`
+  (`f6f42367...`; file `114cef2b...`). Residual-PL stage `1204309`
+  nevertheless failed `1:0` on real batch 0 after exhausting eight GradScaler
+  retries from `32768` through `256`; there was no OOM or rendezvous error.
+  Its self-hash-valid failure receipt is `5e556192...` (file `77c9eff7...`,
+  traceback `17ec9adb...`), and the cell contains no checkpoint, prediction,
+  metric, or stage result. This makes the fresh namespace incomplete and shows
+  only that the current synthetic full-graph P0 is not sufficient evidence of
+  real-batch AMP stability; it does not decide PL versus ST. Jobs
+  `1204308/1204310`--`1204313` continue solely for terminal provenance, and
+  closeout `1204314` must emit
+  `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. No resume, arm replacement,
+  partial result, selector, P2/P3, official test, Geometry Zoom, or paper claim
+  is authorized.
