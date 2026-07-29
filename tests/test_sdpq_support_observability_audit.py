@@ -162,3 +162,39 @@ def test_module_does_not_call_loss_backward_or_optimizer():
         "._losses(",
     )
     assert not any(token in source for token in forbidden)
+
+
+def test_checkpoint_selector_accepts_explicit_epoch19_online_state():
+    state = {"weight": object()}
+    observed_epoch, state_key, selected = support_audit._select_checkpoint_state(
+        {"epoch": 19, "state_dict": state},
+        "online",
+        19,
+    )
+    assert observed_epoch == 19
+    assert state_key == "state_dict"
+    assert selected is state
+
+
+def test_checkpoint_selector_rejects_epoch_mismatch():
+    with pytest.raises(
+        support_audit.SupportAuditError,
+        match="checkpoint epoch mismatch: expected 59, observed 19",
+    ):
+        support_audit._select_checkpoint_state(
+            {"epoch": 19, "state_dict": {"weight": object()}},
+            "online",
+            59,
+        )
+
+
+def test_checkpoint_selector_does_not_substitute_online_for_missing_ema():
+    with pytest.raises(
+        support_audit.SupportAuditError,
+        match="checkpoint is missing state_dict_ema",
+    ):
+        support_audit._select_checkpoint_state(
+            {"epoch": 19, "state_dict": {"weight": object()}},
+            "ema",
+            19,
+        )

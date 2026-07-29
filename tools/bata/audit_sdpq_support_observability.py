@@ -726,11 +726,42 @@ def _target_error(independent, production):
     return error
 
 
+def _select_checkpoint_state(checkpoint, weights_source, expected_epoch):
+    require(
+        isinstance(expected_epoch, int) and expected_epoch >= 0,
+        "expected checkpoint epoch must be a non-negative integer",
+    )
+    observed_epoch = checkpoint.get("epoch")
+    require(
+        isinstance(observed_epoch, (int, np.integer)),
+        "checkpoint epoch is missing or non-integral",
+    )
+    observed_epoch = int(observed_epoch)
+    require(
+        observed_epoch == expected_epoch,
+        (
+            "checkpoint epoch mismatch: "
+            f"expected {expected_epoch}, observed {observed_epoch}"
+        ),
+    )
+    require(
+        weights_source in {"online", "ema"},
+        f"unsupported checkpoint weights source: {weights_source}",
+    )
+    state_key = "state_dict_ema" if weights_source == "ema" else "state_dict"
+    require(
+        isinstance(checkpoint.get(state_key), dict) and checkpoint[state_key],
+        f"checkpoint is missing {state_key}",
+    )
+    return observed_epoch, state_key, checkpoint[state_key]
+
+
 def _run_formal_audit(
     cfg,
     *,
     checkpoint_path,
     weights_source,
+    expected_checkpoint_epoch,
     videomae_checkpoint,
     seed,
     window_count,
@@ -744,13 +775,12 @@ def _run_formal_audit(
     if cfg.model.get("backbone") and cfg.model.backbone.get("custom"):
         cfg.model.backbone.custom.pretrain = str(Path(videomae_checkpoint).resolve())
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    require(int(checkpoint.get("epoch", -1)) == 59, "checkpoint is not epoch 59")
-    state_key = "state_dict_ema" if weights_source == "ema" else "state_dict"
-    require(
-        isinstance(checkpoint.get(state_key), dict) and checkpoint[state_key],
-        f"checkpoint is missing {state_key}",
+    checkpoint_epoch, state_key, checkpoint_state = _select_checkpoint_state(
+        checkpoint,
+        weights_source,
+        expected_checkpoint_epoch,
     )
-    state = _normalize_state_dict(checkpoint[state_key])
+    state = _normalize_state_dict(checkpoint_state)
     require(
         all(torch.isfinite(value).all() for value in state.values()),
         "checkpoint contains non-finite tensors",
@@ -890,6 +920,7 @@ def _run_formal_audit(
         "rows": rows,
         "summary": aggregate_rows(rows),
         "max_production_target_abs_error": max_target_error,
+        "checkpoint_epoch": checkpoint_epoch,
         "checkpoint_state_key": state_key,
         "checkpoint_state_dict_sha256": _torch_state_sha256(state),
         "model_state_sha256_before": state_before,
@@ -906,6 +937,7 @@ def parse_args():
     )
     parser.add_argument("--config", required=True)
     parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--expected-checkpoint-epoch", type=int, required=True)
     parser.add_argument("--weights-source", choices=("online", "ema"), required=True)
     parser.add_argument("--videomae-checkpoint", required=True)
     parser.add_argument("--expected-runtime-commit", required=True)
@@ -920,6 +952,10 @@ def main():
     args = parse_args()
     require(args.seed == 42, "formal support audit seed must be 42")
     require(args.num_windows == 64, "formal support audit requires exactly 64 windows")
+    require(
+        args.expected_checkpoint_epoch >= 0,
+        "expected checkpoint epoch must be non-negative",
+    )
     require(
         os.environ.get("SLURM_JOB_ID") and os.environ.get("CUDA_VISIBLE_DEVICES"),
         "formal support audit requires a Slurm-assigned CUDA device",
@@ -959,6 +995,7 @@ def main():
         cfg,
         checkpoint_path=checkpoint_path,
         weights_source=args.weights_source,
+        expected_checkpoint_epoch=args.expected_checkpoint_epoch,
         videomae_checkpoint=videomae_path,
         seed=args.seed,
         window_count=args.num_windows,
@@ -993,6 +1030,7 @@ def main():
         "checkpoint": {
             "path": str(checkpoint_path),
             "sha256": sha256_file(checkpoint_path),
+            "epoch": audit["checkpoint_epoch"],
             "weights_source": args.weights_source,
             "state_dict_sha256": audit["checkpoint_state_dict_sha256"],
         },
