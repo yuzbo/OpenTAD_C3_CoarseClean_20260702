@@ -9,6 +9,7 @@ reproduction and may differ only through one named intervention bundle.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import math
@@ -19,9 +20,15 @@ from pathlib import Path
 
 import numpy as np
 
+try:
+    from tools.bata import actionformer_source_diff as source_diff
+except ModuleNotFoundError:
+    import actionformer_source_diff as source_diff
 
-RECORD_SCHEMA = "actionformer_thumos_protocol_record_v3"
-OUTPUT_SCHEMA = "actionformer_thumos_comparability_v3"
+
+RECORD_SCHEMA = "actionformer_thumos_protocol_record_v4"
+LEGACY_OFFICIAL_RECORD_SCHEMA = "actionformer_thumos_protocol_record_v3"
+OUTPUT_SCHEMA = "actionformer_thumos_comparability_v4"
 METRIC_ATTESTATION_SCHEMA = "actionformer_official_metric_attestation_v1"
 EVALUATOR_MANIFEST_SCHEMA = "actionformer_official_evaluator_manifest_v1"
 ENVIRONMENT_MANIFEST_SCHEMA = "actionformer_environment_manifest_v1"
@@ -59,6 +66,10 @@ OFFICIAL_CONFIG_SHA256 = (
 OFFICIAL_README_SHA256 = (
     "f0431584b4df0702fa08f961fb0038e1277f41c12b7df47b7d2bfed47e59af23"
 )
+OFFICIAL_EFFECTIVE_CONFIG_SHA256 = (
+    "835cf30fbcfd27bd6af8885fff002813c8596e2948fce3adf29e3716f316dde4"
+)
+OFFICIAL_TRAINING_SEED = 1234567891
 OFFICIAL_THUMOS_ARCHIVE_MD5 = "375f76ffbf7447af1035e694971ec9b2"
 OFFICIAL_EVALUATOR_FILES = {
     "eval.py": "adf7babd04f78ca8ef232a1ceb23323df25887220f2677913e04a5372d34b158",
@@ -127,6 +138,7 @@ RECEIPT_NAMES = (
     "metric_attestation",
     "run_manifest",
 )
+SOURCE_DIFF_RECEIPT_NAME = "source_diff_attestation"
 
 REQUIRED_PATHS = (
     "schema_version",
@@ -226,6 +238,7 @@ SHA_PATHS = {path for path in REQUIRED_PATHS if path.endswith("_sha256")}
 # These are result identities, not protected protocol inputs.  Each record is
 # still independently verified against its receipts and metric attestation.
 PAIR_OUTPUT_EXEMPT_PREFIXES = (
+    "schema_version",
     "record_id",
     "evidence_stratum",
     "result.artifact_path",
@@ -235,6 +248,7 @@ PAIR_OUTPUT_EXEMPT_PREFIXES = (
     "result.eval_log_sha256",
     "result.metric_attestation_sha256",
     "result.run_manifest_sha256",
+    "result.source_diff_attestation_sha256",
     "result.prediction_count",
     "result.prediction_video_count",
     "result.prediction_video_ids_sha256",
@@ -245,6 +259,7 @@ PAIR_OUTPUT_EXEMPT_PREFIXES = (
     "receipts.eval_log",
     "receipts.metric_attestation",
     "receipts.run_manifest",
+    "receipts.source_diff_attestation",
     "receipts.environment_manifest",
     "receipts.evaluator_manifest",
     "environment.manifest_sha256",
@@ -258,6 +273,7 @@ INTERVENTION_ALLOWED_PATHS = {
         "source.repository_url",
         "source.commit",
         "source.tree",
+        "source.config_path",
         "source.config_sha256",
         "source.implementation",
         "receipts.config",
@@ -272,6 +288,7 @@ INTERVENTION_ALLOWED_PATHS = {
         "source.repository_url",
         "source.commit",
         "source.tree",
+        "source.config_path",
         "source.config_sha256",
         "source.implementation",
         "receipts.config",
@@ -283,6 +300,7 @@ INTERVENTION_ALLOWED_PATHS = {
         "source.repository_url",
         "source.commit",
         "source.tree",
+        "source.config_path",
         "source.config_sha256",
         "source.implementation",
         "receipts.config",
@@ -290,6 +308,11 @@ INTERVENTION_ALLOWED_PATHS = {
         "model.effective_config_sha256",
     },
 }
+INTERVENTION_ALLOWED_PATHS["sparsehead_method"] = (
+    INTERVENTION_ALLOWED_PATHS["selection_budget"]
+    | INTERVENTION_ALLOWED_PATHS["head_projection"]
+    | INTERVENTION_ALLOWED_PATHS["coordinate_geometry"]
+)
 
 OFFICIAL_ACTIONFORMER_EXPECTED = {
     "source.repository_url": OFFICIAL_REPOSITORY_URL,
@@ -329,12 +352,13 @@ OFFICIAL_ACTIONFORMER_EXPECTED = {
     "model.head": "ActionFormerHead",
     "model.projection": "ActionFormerIdentityFPN",
     "model.query_geometry": "uniform_i3d_feature_grid",
+    "model.effective_config_sha256": OFFICIAL_EFFECTIVE_CONFIG_SHA256,
     "training.optimizer": "AdamW",
     "training.learning_rate": 0.0001,
     "training.weight_decay": 0.05,
     "training.epochs": 30,
     "training.batch_size": 2,
-    "training.seed": 0,
+    "training.seed": OFFICIAL_TRAINING_SEED,
     "training.amp": False,
     "training.ema": True,
     "training.command": (
@@ -467,6 +491,82 @@ def parse_actionformer_eval_log(text):
     return metrics
 
 
+def parse_actionformer_train_log_config(text):
+    marker = "\nUsing model EMA"
+    if marker not in text:
+        raise ProtocolError("train log is missing the effective-config/EMA boundary")
+    config_text = text.split(marker, 1)[0].strip()
+    try:
+        config = ast.literal_eval(config_text)
+    except (SyntaxError, ValueError) as error:
+        raise ProtocolError("train log effective config is not a Python literal") from error
+    if not isinstance(config, dict) or not config:
+        raise ProtocolError("train log effective config is empty")
+    if "\nUsing model EMA" not in text:
+        raise ProtocolError("train log does not attest EMA training")
+    return config
+
+
+def _verify_logged_effective_config(record, config):
+    try:
+        bindings = {
+            "input.input_dim": config["dataset"]["input_dim"],
+            "input.clip_frames": config["dataset"]["num_frames"],
+            "input.frame_stride": config["dataset"]["feat_stride"],
+            "input.max_seq_len": config["dataset"]["max_seq_len"],
+            "training.optimizer": config["opt"]["type"],
+            "training.learning_rate": config["opt"]["learning_rate"],
+            "training.weight_decay": config["opt"]["weight_decay"],
+            "training.epochs": config["opt"]["epochs"],
+            "training.batch_size": config["loader"]["batch_size"],
+            "training.seed": config["init_rand_seed"],
+            "post_processing.pre_nms_thresh": config["test_cfg"][
+                "pre_nms_thresh"
+            ],
+            "post_processing.pre_nms_topk": config["test_cfg"]["pre_nms_topk"],
+            "post_processing.sigma": config["test_cfg"]["nms_sigma"],
+            "post_processing.nms_iou_threshold": config["test_cfg"][
+                "iou_threshold"
+            ],
+            "post_processing.nms_min_score": config["test_cfg"]["min_score"],
+            "post_processing.max_seg_num": config["test_cfg"]["max_seg_num"],
+            "post_processing.multiclass": config["test_cfg"][
+                "multiclass_nms"
+            ],
+            "post_processing.voting_thresh": config["test_cfg"][
+                "voting_thresh"
+            ],
+        }
+    except (KeyError, TypeError) as error:
+        raise ProtocolError(
+            "train log effective config is missing a protected protocol field"
+        ) from error
+    split_bindings = {
+        "dataset.train_split": config["train_split"],
+        "dataset.eval_split": config["val_split"],
+    }
+    for dotted_path, observed in split_bindings.items():
+        if observed != [_get_path(record, dotted_path)]:
+            raise ProtocolError(
+                f"train log effective-config binding mismatch: {dotted_path}"
+            )
+    for dotted_path, expected in bindings.items():
+        if _get_path(record, dotted_path) != expected:
+            raise ProtocolError(
+                f"train log effective-config binding mismatch: {dotted_path}"
+            )
+    nms_method = config["test_cfg"].get("nms_method")
+    if record["post_processing"]["use_soft_nms"] != (nms_method == "soft"):
+        raise ProtocolError(
+            "train log effective-config binding mismatch: "
+            "post_processing.use_soft_nms"
+        )
+    effective_sha = canonical_sha256(config)
+    if record["model"]["effective_config_sha256"] != effective_sha:
+        raise ProtocolError("effective config SHA-256 differs from the train log")
+    return effective_sha
+
+
 def _validate_metrics(metrics, *, name, mean_atol=EXACT_METRIC_MEAN_ATOL):
     required = {"average_mAP"} | {
         f"mAP@{value:.1f}" for value in (0.3, 0.4, 0.5, 0.6, 0.7)
@@ -524,9 +624,12 @@ def _assert_metrics_close(
 
 def _verify_receipts(record):
     receipts = record.get("receipts")
-    if not isinstance(receipts, dict) or set(receipts) != set(RECEIPT_NAMES):
+    expected_names = set(RECEIPT_NAMES)
+    if record.get("evidence_stratum") == "matched_method_control":
+        expected_names.add(SOURCE_DIFF_RECEIPT_NAME)
+    if not isinstance(receipts, dict) or set(receipts) != expected_names:
         raise ProtocolError("receipt set is incomplete or contains unknown entries")
-    for name in RECEIPT_NAMES:
+    for name in sorted(expected_names):
         receipt = receipts[name]
         if not isinstance(receipt, dict):
             raise ProtocolError(f"receipt is not an object: {name}")
@@ -580,12 +683,104 @@ def _verify_receipts(record):
     for dotted_path, expected in bindings.items():
         if _get_path(record, dotted_path) != expected:
             raise ProtocolError(f"receipt binding mismatch: {dotted_path}")
+    if record.get("evidence_stratum") == "matched_method_control":
+        source_diff_sha = _get_path(
+            record,
+            "result.source_diff_attestation_sha256",
+        )
+        if source_diff_sha != receipts[SOURCE_DIFF_RECEIPT_NAME]["sha256"]:
+            raise ProtocolError(
+                "receipt binding mismatch: result.source_diff_attestation_sha256"
+            )
     if (
         Path(record["result"]["artifact_path"]).resolve()
         != Path(receipts["raw_predictions"]["path"]).resolve()
     ):
         raise ProtocolError("result artifact path differs from raw prediction receipt")
     return receipts
+
+
+def _verify_source_diff_attestation(record, receipts):
+    if record["evidence_stratum"] != "matched_method_control":
+        return None
+    source_diff_sha = _get_path(record, "result.source_diff_attestation_sha256")
+    if not isinstance(source_diff_sha, str) or not HEX_SHA256.fullmatch(source_diff_sha):
+        raise ProtocolError(
+            "invalid SHA-256 field: result.source_diff_attestation_sha256"
+        )
+    try:
+        attestation = source_diff.validate_attestation_live(
+            load_json(receipts[SOURCE_DIFF_RECEIPT_NAME]["path"])
+        )
+    except source_diff.SourceDiffError as error:
+        raise ProtocolError(f"source-diff attestation failed: {error}") from error
+    candidate = attestation["candidate"]
+    candidate_bindings = {
+        "repository_url": record["source"]["repository_url"],
+        "commit": record["source"]["commit"],
+        "tree": record["source"]["tree"],
+        "config_path": record["source"]["config_path"],
+        "config_blob_sha256": record["source"]["config_sha256"],
+        "effective_config_sha256": record["model"][
+            "effective_config_sha256"
+        ],
+    }
+    for key, expected in candidate_bindings.items():
+        if candidate.get(key) != expected:
+            raise ProtocolError(
+                f"source-diff candidate binding mismatch: {key}"
+            )
+    intervention = attestation.get("intervention")
+    expected_allowed_paths = source_diff.SOURCE_INTERVENTION_ALLOWED_PATHS.get(
+        intervention
+    )
+    if expected_allowed_paths is None:
+        raise ProtocolError("source-diff attestation names an unknown intervention")
+    if attestation["policy"].get("allowed_paths") != sorted(expected_allowed_paths):
+        raise ProtocolError("source-diff source-path allowlist mismatch")
+    expected_effective_paths = source_diff.EFFECTIVE_CONFIG_ALLOWED_PATHS.get(
+        intervention
+    )
+    if expected_effective_paths is None:
+        raise ProtocolError(
+            "source-diff attestation names an unknown effective-config intervention"
+        )
+    if attestation["policy"].get("allowed_effective_config_paths") != sorted(
+        expected_effective_paths
+    ):
+        raise ProtocolError("source-diff effective-config allowlist mismatch")
+    effective_config = attestation.get("effective_config")
+    if not isinstance(effective_config, dict):
+        raise ProtocolError("source-diff effective-config proof is missing")
+    if effective_config.get("candidate_sha256") != record["model"][
+        "effective_config_sha256"
+    ]:
+        raise ProtocolError(
+            "source-diff candidate effective-config SHA-256 mismatch"
+        )
+    return attestation
+
+
+def _bind_source_diff_to_reference(attestation, reference, intervention):
+    if attestation is None:
+        raise ProtocolError("matched control is missing a source-diff attestation")
+    if attestation.get("intervention") != intervention:
+        raise ProtocolError("source-diff intervention does not match the classifier")
+    base = attestation["base"]
+    reference_bindings = {
+        "repository_url": reference["source"]["repository_url"],
+        "commit": reference["source"]["commit"],
+        "tree": reference["source"]["tree"],
+        "config_path": reference["source"]["config_path"],
+        "config_blob_sha256": reference["source"]["config_sha256"],
+        "effective_config_sha256": reference["model"][
+            "effective_config_sha256"
+        ],
+    }
+    for key, expected in reference_bindings.items():
+        if base.get(key) != expected:
+            raise ProtocolError(f"source-diff base binding mismatch: {key}")
+    return True
 
 
 def _verify_evaluator_manifest(record, receipts):
@@ -931,6 +1126,15 @@ def _verify_manifests_and_attestation(record, receipts):
     ):
         raise ProtocolError("environment comparability fingerprint mismatch")
 
+    train_log_text = Path(receipts["train_log"]["path"]).read_text(
+        encoding="utf-8",
+        errors="strict",
+    )
+    logged_config = parse_actionformer_train_log_config(train_log_text)
+    _verify_logged_effective_config(record, logged_config)
+    if record["training"]["ema"] is not True:
+        raise ProtocolError("ActionFormer paper-matched training must use EMA")
+
     logged_metrics = parse_actionformer_eval_log(
         Path(receipts["eval_log"]["path"]).read_text(
             encoding="utf-8", errors="strict"
@@ -998,6 +1202,12 @@ def _verify_manifests_and_attestation(record, receipts):
         "source_commit": record["source"]["commit"],
         "source_tree": record["source"]["tree"],
         "config_sha256": record["source"]["config_sha256"],
+        "effective_config_sha256": record["model"][
+            "effective_config_sha256"
+        ],
+        "train_log_effective_config_sha256": record["model"][
+            "effective_config_sha256"
+        ],
         "data_manifest_sha256": record["dataset"]["data_manifest_sha256"],
         "checkpoint_sha256": record["result"]["checkpoint_sha256"],
         "raw_predictions_sha256": record["result"]["raw_predictions_sha256"],
@@ -1010,6 +1220,8 @@ def _verify_manifests_and_attestation(record, receipts):
             "metric_attestation_sha256"
         ],
         "environment_manifest_sha256": record["environment"]["manifest_sha256"],
+        "training_command": record["training"]["command"],
+        "evaluation_command": record["evaluation"]["command"],
     }
     for key, expected in run_bindings.items():
         if run_manifest.get(key) != expected:
@@ -1154,7 +1366,10 @@ def validate_record(record):
             "input.observation_budget",
         }:
             raise ProtocolError(f"required field is empty: {path}")
-    if record["schema_version"] != RECORD_SCHEMA:
+    accepted_schemas = {RECORD_SCHEMA}
+    if record["evidence_stratum"] != "matched_method_control":
+        accepted_schemas.add(LEGACY_OFFICIAL_RECORD_SCHEMA)
+    if record["schema_version"] not in accepted_schemas:
         raise ProtocolError("unsupported protocol record schema")
     if record["evidence_stratum"] not in EVIDENCE_STRATA:
         raise ProtocolError("unknown evidence stratum")
@@ -1187,7 +1402,15 @@ def validate_record(record):
     _validate_metrics(record["result"]["metrics"], name="result.metrics")
 
     receipts = _verify_receipts(record)
+    source_diff_attestation = _verify_source_diff_attestation(record, receipts)
     evaluator_manifest = _verify_evaluator_manifest(record, receipts)
+    if source_diff_attestation is not None and (
+        Path(evaluator_manifest["source_root"]).resolve()
+        != Path(source_diff_attestation["repository_root"]).resolve()
+    ):
+        raise ProtocolError(
+            "matched evaluator source root differs from the source-diff repository"
+        )
     _verify_manifests_and_attestation(record, receipts)
 
     if record["evidence_stratum"] in MAIN_TABLE_STRATA:
@@ -1275,8 +1498,12 @@ def classify(record, *, reference=None, intervention=None):
 
     stratum = record["evidence_stratum"]
     official_mismatches = official_expectation_mismatches(record)
+    reference_official_mismatches = (
+        [] if reference is None else official_expectation_mismatches(reference)
+    )
     pair_mismatches = []
     reasons = []
+    source_diff_attestation_verified = False
 
     if stratum == "official_reproduction":
         if intervention is not None:
@@ -1294,6 +1521,10 @@ def classify(record, *, reference=None, intervention=None):
             reasons.append("matched control requires a reference record")
         elif reference["evidence_stratum"] != "official_reproduction":
             reasons.append("matched control must be anchored to an official reproduction")
+        elif reference_official_mismatches:
+            reasons.append(
+                "matched control reference does not match the official ActionFormer protocol"
+            )
         elif intervention is None:
             reasons.append("matched control requires one named intervention")
         else:
@@ -1302,12 +1533,10 @@ def classify(record, *, reference=None, intervention=None):
             pair_mismatches = compare_records(reference, record, intervention)
             if pair_mismatches:
                 reasons.append("protected matched-protocol fields differ")
-            # A field-level record comparison cannot prove that an arbitrary
-            # candidate repository changed only the declared method component.
-            # Keep matched rows fail-closed until a live, base-anchored Git
-            # source-diff attestation is part of the record schema.
-            reasons.append(
-                "matched control lacks a verified source-diff attestation"
+            source_diff_attestation_verified = _bind_source_diff_to_reference(
+                _verify_source_diff_attestation(record, record["receipts"]),
+                reference,
+                intervention,
             )
     elif stratum == "external_reference_only":
         reasons.append("external/historical reference cannot define a matched delta")
@@ -1328,8 +1557,10 @@ def classify(record, *, reference=None, intervention=None):
         ),
         "official_actionformer_protocol_match": not official_mismatches,
         "official_protocol_mismatches": official_mismatches,
+        "reference_official_protocol_mismatches": reference_official_mismatches,
         "pair_mismatches": pair_mismatches,
         "intervention": intervention,
+        "source_diff_attestation_verified": source_diff_attestation_verified,
         "allowed_method_differences": (
             []
             if intervention is None

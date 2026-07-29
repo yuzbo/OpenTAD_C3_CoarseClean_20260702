@@ -134,6 +134,35 @@ def test_pinned_evaluator_manifest_matches_exact_official_clone():
     assert fingerprint == builder.protocol.OFFICIAL_EVALUATOR_FINGERPRINT_SHA256
 
 
+def test_official_effective_config_and_released_seed_are_pinned():
+    repo = ROOT.parent / "official_actionformer_release"
+    if not repo.is_dir():
+        pytest.skip("pinned official ActionFormer clone is not present")
+    config = builder.load_effective_config(repo)
+
+    assert config["init_rand_seed"] == 1234567891
+    assert config["init_rand_seed"] == builder.protocol.OFFICIAL_TRAINING_SEED
+    assert builder.protocol.canonical_sha256(config) == (
+        builder.protocol.OFFICIAL_EFFECTIVE_CONFIG_SHA256
+    )
+
+
+def test_train_log_effective_config_binding_rejects_wrong_seed():
+    config = {
+        "train_split": ["validation"],
+        "val_split": ["test"],
+        "init_rand_seed": 1234567891,
+    }
+    parsed = builder.protocol.parse_actionformer_train_log_config(
+        repr(config) + "\nUsing model EMA ...\n"
+    )
+    assert parsed == config
+    config["init_rand_seed"] = 0
+    assert builder.protocol.canonical_sha256(config) != (
+        builder.protocol.OFFICIAL_EFFECTIVE_CONFIG_SHA256
+    )
+
+
 def test_official_source_hashes_pin_git_lf_bytes_not_windows_checkout_bytes():
     assert builder.protocol.OFFICIAL_CONFIG_SHA256 == (
         "c0ac0df560cd564941b56cd9391ad0bd5cea386d2e4b6cf9fc8ffcab821955cd"

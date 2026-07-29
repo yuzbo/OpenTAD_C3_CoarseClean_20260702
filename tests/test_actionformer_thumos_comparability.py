@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 import pickle
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +25,54 @@ OFFICIAL_METRICS = {
     "mAP@0.6": 0.5940,
     "mAP@0.7": 0.4387,
 }
+
+SOURCE_CONFIG_LOADER = b"""\
+import yaml
+
+DEFAULTS = {}
+
+def load_config(config_file, defaults=DEFAULTS):
+    with open(config_file, "r", encoding="utf-8") as handle:
+        return yaml.load(handle, Loader=yaml.FullLoader)
+"""
+
+
+def _base_effective_config():
+    return {
+        "train_split": ["validation"],
+        "val_split": ["test"],
+        "init_rand_seed": comparability.OFFICIAL_TRAINING_SEED,
+        "dataset": {
+            "input_dim": 2048,
+            "num_frames": 16,
+            "feat_stride": 4,
+            "max_seq_len": 2304,
+        },
+        "opt": {
+            "type": "AdamW",
+            "learning_rate": 0.0001,
+            "weight_decay": 0.05,
+            "epochs": 30,
+        },
+        "loader": {"batch_size": 2},
+        "test_cfg": {
+            "pre_nms_thresh": 0.001,
+            "pre_nms_topk": 2000,
+            "nms_method": "soft",
+            "nms_sigma": 0.5,
+            "iou_threshold": 0.1,
+            "min_score": 0.001,
+            "max_seg_num": 200,
+            "multiclass_nms": True,
+            "voting_thresh": 0.7,
+        },
+    }
+
+
+def _config_bytes(config):
+    return (
+        json.dumps(config, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    ).encode("utf-8")
 
 
 def _sha_bytes(value):
@@ -81,6 +130,11 @@ def _patch_official_constants(monkeypatch, fixture):
     )
     monkeypatch.setattr(
         comparability,
+        "OFFICIAL_EFFECTIVE_CONFIG_SHA256",
+        fixture["effective_config_sha256"],
+    )
+    monkeypatch.setattr(
+        comparability,
         "OFFICIAL_THUMOS_ARCHIVE_MD5",
         fixture["archive_md5"],
     )
@@ -127,6 +181,7 @@ def _patch_official_constants(monkeypatch, fixture):
     expected_updates = {
         "source.config_sha256": fixture["config_sha256"],
         "source.readme_sha256": fixture["readme_sha256"],
+        "model.effective_config_sha256": fixture["effective_config_sha256"],
         "dataset.data_archive_md5": fixture["archive_md5"],
         "dataset.nominal_split_counts": fixture["nominal_split_counts"],
         "dataset.annotation_split_counts": fixture["annotation_split_counts"],
@@ -294,7 +349,12 @@ def _record(
             handle,
         )
     checkpoint = _write(root / "epoch_034.pth.tar", b"checkpoint\n")
-    train_log = _write(root / "train.log", "training complete\n")
+    effective_config = _base_effective_config()
+    effective_config_sha = comparability.canonical_sha256(effective_config)
+    train_log = _write(
+        root / "train.log",
+        repr(effective_config) + "\nUsing model EMA ...\n",
+    )
     eval_log = _write(root / "eval.log", _eval_log(metrics))
 
     archive_sha = comparability.sha256_file(archive)
@@ -360,6 +420,8 @@ def _record(
             "source_commit": comparability.OFFICIAL_COMMIT,
             "source_tree": comparability.OFFICIAL_TREE,
             "config_sha256": comparability.sha256_file(config),
+            "effective_config_sha256": effective_config_sha,
+            "train_log_effective_config_sha256": effective_config_sha,
             "data_manifest_sha256": comparability.sha256_file(data_manifest),
             "checkpoint_sha256": comparability.sha256_file(checkpoint),
             "raw_predictions_sha256": raw_sha,
@@ -368,6 +430,12 @@ def _record(
             "evaluator_manifest_sha256": evaluator_manifest_sha,
             "metric_attestation_sha256": metric_attestation_sha,
             "environment_manifest_sha256": environment_manifest_sha,
+            "training_command": comparability.OFFICIAL_ACTIONFORMER_EXPECTED[
+                "training.command"
+            ],
+            "evaluation_command": comparability.OFFICIAL_ACTIONFORMER_EXPECTED[
+                "evaluation.command"
+            ],
         },
     )
 
@@ -451,7 +519,7 @@ def _record(
             "head": "ActionFormerHead",
             "projection": "ActionFormerIdentityFPN",
             "query_geometry": "uniform_i3d_feature_grid",
-            "effective_config_sha256": receipts["config"]["sha256"],
+            "effective_config_sha256": effective_config_sha,
         },
         "training": {
             "optimizer": "AdamW",
@@ -459,7 +527,7 @@ def _record(
             "weight_decay": 0.05,
             "epochs": 30,
             "batch_size": 2,
-            "seed": 0,
+            "seed": comparability.OFFICIAL_TRAINING_SEED,
             "amp": False,
             "ema": True,
             "checkpoint_rule": "ema_epoch_034",
@@ -525,6 +593,7 @@ def _record(
     fixture = {
         "config_sha256": receipts["config"]["sha256"],
         "readme_sha256": receipts["readme"]["sha256"],
+        "effective_config_sha256": effective_config_sha,
         "archive_md5": receipts["data_archive"]["md5"],
         "evaluator_files": evaluator_files,
         "evaluator_fingerprint": evaluator_fingerprint,
@@ -539,6 +608,245 @@ def _record(
     return record, fixture
 
 
+def _git(repo, *arguments):
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
+def _matched_head_source_repo(tmp_path):
+    upstream = tmp_path / "matched_upstream.git"
+    origin = tmp_path / "matched_origin.git"
+    _git(tmp_path, "init", "--bare", str(upstream))
+    _git(tmp_path, "init", "--bare", str(origin))
+    repo = tmp_path / "matched_source_repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.name", "Unit Test")
+    _git(repo, "config", "user.email", "unit@test.invalid")
+    base_url = upstream.resolve().as_uri()
+    candidate_url = origin.resolve().as_uri()
+    _git(repo, "remote", "add", "upstream", base_url)
+    _git(repo, "remote", "add", "origin", candidate_url)
+    base_config = _base_effective_config()
+    candidate_config = copy.deepcopy(base_config)
+    candidate_config["model_intervention"] = {
+        "head": "SupportDecoupledPhysicalQueryHead",
+        "projection": "PhysTimeMeasureProjection",
+    }
+    base_config_bytes = _config_bytes(base_config)
+    candidate_config_bytes = _config_bytes(candidate_config)
+    _write(repo / "README.md", b"official-readme\n")
+    _write(repo / "eval.py", b"official-evaluator\n")
+    _write(repo / "train.py", b"official-trainer\n")
+    _write(repo / "configs" / "thumos_i3d.yaml", base_config_bytes)
+    _write(repo / "libs" / "core" / "config.py", SOURCE_CONFIG_LOADER)
+    _write(repo / "libs" / "modeling" / "meta_archs.py", b"HEAD = 'official'\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "official base")
+    base_commit = _git(repo, "rev-parse", "HEAD")
+    base_tree = _git(repo, "rev-parse", "HEAD^{tree}")
+    base_ref = "refs/heads/main"
+    candidate_ref = "refs/heads/candidate"
+    _git(repo, "push", "upstream", f"{base_commit}:{base_ref}")
+
+    _write(
+        repo / "configs" / "thumos_i3d_random_k384_sdpq.yaml",
+        candidate_config_bytes,
+    )
+    _write(
+        repo / "libs" / "modeling" / "meta_archs.py",
+        b"from .sdpq import SupportDecoupledPhysicalQueryHead\n",
+    )
+    _write(
+        repo / "libs" / "modeling" / "sdpq.py",
+        b"class SupportDecoupledPhysicalQueryHead:\n    pass\n",
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "matched head")
+    candidate_commit = _git(repo, "rev-parse", "HEAD")
+    candidate_tree = _git(repo, "rev-parse", "HEAD^{tree}")
+    _git(repo, "push", "origin", f"{candidate_commit}:{candidate_ref}")
+    return {
+        "repo": repo,
+        "base_url": base_url,
+        "candidate_url": candidate_url,
+        "base_commit": base_commit,
+        "base_tree": base_tree,
+        "candidate_commit": candidate_commit,
+        "candidate_tree": candidate_tree,
+        "base_ref": base_ref,
+        "candidate_ref": candidate_ref,
+        "base_config_bytes": base_config_bytes,
+        "candidate_config_bytes": candidate_config_bytes,
+    }
+
+
+def _patch_official_source_identity(monkeypatch, source):
+    monkeypatch.setattr(
+        comparability,
+        "OFFICIAL_REPOSITORY_URL",
+        source["base_url"],
+    )
+    monkeypatch.setattr(comparability, "OFFICIAL_COMMIT", source["base_commit"])
+    monkeypatch.setattr(comparability, "OFFICIAL_TREE", source["base_tree"])
+    monkeypatch.setitem(
+        comparability.OFFICIAL_ACTIONFORMER_EXPECTED,
+        "source.repository_url",
+        source["base_url"],
+    )
+    monkeypatch.setitem(
+        comparability.OFFICIAL_ACTIONFORMER_EXPECTED,
+        "source.commit",
+        source["base_commit"],
+    )
+    monkeypatch.setitem(
+        comparability.OFFICIAL_ACTIONFORMER_EXPECTED,
+        "source.tree",
+        source["base_tree"],
+    )
+
+
+def _refresh_candidate_manifests(candidate, source, attestation):
+    candidate["source"].update(
+        {
+            "repository_url": source["candidate_url"],
+            "commit": source["candidate_commit"],
+            "tree": source["candidate_tree"],
+            "config_path": "configs/thumos_i3d_random_k384_sdpq.yaml",
+            "implementation": "official_actionformer_plus_sdpq",
+        }
+    )
+    assert (
+        candidate["source"]["config_sha256"]
+        == attestation["candidate"]["config_blob_sha256"]
+    )
+
+    evaluator_path = Path(candidate["receipts"]["evaluator_manifest"]["path"])
+    evaluator = json.loads(evaluator_path.read_text(encoding="utf-8"))
+    evaluator.update(
+        {
+            "source_root": str(source["repo"]),
+            "repository_url": source["candidate_url"],
+            "commit": source["candidate_commit"],
+            "tree": source["candidate_tree"],
+        }
+    )
+    _write_json(evaluator_path, evaluator)
+    candidate["receipts"]["evaluator_manifest"] = _receipt(evaluator_path)
+    evaluator_sha = candidate["receipts"]["evaluator_manifest"]["sha256"]
+    candidate["evaluation"]["evaluator_manifest_sha256"] = evaluator_sha
+
+    attestation_path = (
+        Path(candidate["receipts"]["config"]["path"]).parents[1]
+        / "SOURCE_DIFF_ATTESTATION.json"
+    )
+    _write_json(attestation_path, attestation)
+    candidate["receipts"]["source_diff_attestation"] = _receipt(attestation_path)
+    candidate["result"]["source_diff_attestation_sha256"] = candidate["receipts"][
+        "source_diff_attestation"
+    ]["sha256"]
+
+    metric_path = Path(candidate["receipts"]["metric_attestation"]["path"])
+    metric = json.loads(metric_path.read_text(encoding="utf-8"))
+    metric["evaluator_manifest_sha256"] = evaluator_sha
+    _write_json(metric_path, metric)
+    candidate["receipts"]["metric_attestation"] = _receipt(metric_path)
+    candidate["result"]["metric_attestation_sha256"] = candidate["receipts"][
+        "metric_attestation"
+    ]["sha256"]
+
+    run_path = Path(candidate["receipts"]["run_manifest"]["path"])
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    run.update(
+        {
+            "source_commit": source["candidate_commit"],
+            "source_tree": source["candidate_tree"],
+            "config_sha256": candidate["source"]["config_sha256"],
+            "effective_config_sha256": candidate["model"][
+                "effective_config_sha256"
+            ],
+            "train_log_effective_config_sha256": candidate["model"][
+                "effective_config_sha256"
+            ],
+            "train_log_sha256": candidate["receipts"]["train_log"]["sha256"],
+            "evaluator_manifest_sha256": evaluator_sha,
+            "metric_attestation_sha256": candidate["result"][
+                "metric_attestation_sha256"
+            ],
+        }
+    )
+    _write_json(run_path, run)
+    candidate["receipts"]["run_manifest"] = _receipt(run_path)
+    candidate["result"]["run_manifest_sha256"] = candidate["receipts"][
+        "run_manifest"
+    ]["sha256"]
+
+
+def _matched_head_records(tmp_path, monkeypatch):
+    source = _matched_head_source_repo(tmp_path)
+    _patch_official_source_identity(monkeypatch, source)
+    reference, fixture = _record(
+        tmp_path,
+        record_id="official-reference",
+        config_bytes=source["base_config_bytes"],
+    )
+    _patch_official_constants(monkeypatch, fixture)
+    candidate, _ = _record(
+        tmp_path,
+        record_id="matched-head",
+        stratum="matched_method_control",
+        metrics={
+            "average_mAP": 0.60,
+            "mAP@0.3": 0.75,
+            "mAP@0.4": 0.70,
+            "mAP@0.5": 0.62,
+            "mAP@0.6": 0.52,
+            "mAP@0.7": 0.41,
+        },
+        config_bytes=source["candidate_config_bytes"],
+    )
+    candidate["model"]["head"] = "SupportDecoupledPhysicalQueryHead"
+    candidate["model"]["projection"] = "PhysTimeMeasureProjection"
+    train_log_path = Path(candidate["receipts"]["train_log"]["path"])
+    train_config = comparability.parse_actionformer_train_log_config(
+        train_log_path.read_text(encoding="utf-8")
+    )
+    train_config["model_intervention"] = {
+        "head": "SupportDecoupledPhysicalQueryHead",
+        "projection": "PhysTimeMeasureProjection",
+    }
+    _write(
+        train_log_path,
+        repr(train_config) + "\nUsing model EMA ...\n",
+    )
+    candidate["receipts"]["train_log"] = _receipt(train_log_path)
+    candidate["model"]["effective_config_sha256"] = (
+        comparability.canonical_sha256(train_config)
+    )
+    attestation = comparability.source_diff.collect_attestation(
+        repository=source["repo"],
+        base_commit=source["base_commit"],
+        candidate_commit=source["candidate_commit"],
+        base_repository_url=source["base_url"],
+        candidate_repository_url=source["candidate_url"],
+        base_remote="upstream",
+        candidate_remote="origin",
+        base_remote_ref=source["base_ref"],
+        candidate_remote_ref=source["candidate_ref"],
+        base_config_path="configs/thumos_i3d.yaml",
+        candidate_config_path="configs/thumos_i3d_random_k384_sdpq.yaml",
+        intervention="head_projection",
+    )
+    _refresh_candidate_manifests(candidate, source, attestation)
+    return reference, candidate, source
+
+
 def test_official_record_is_main_table_eligible(tmp_path, monkeypatch):
     record, fixture = _record(tmp_path)
     _patch_official_constants(monkeypatch, fixture)
@@ -549,16 +857,31 @@ def test_official_record_is_main_table_eligible(tmp_path, monkeypatch):
     assert verdict["claim_boundary"] == "paper_main_table"
 
 
+def test_legacy_v3_official_record_remains_readable(tmp_path, monkeypatch):
+    record, fixture = _record(tmp_path, record_id="legacy-v3-official")
+    _patch_official_constants(monkeypatch, fixture)
+    record["schema_version"] = comparability.LEGACY_OFFICIAL_RECORD_SCHEMA
+
+    verdict = comparability.classify(record)
+
+    assert verdict["main_table_eligible"] is True
+    assert verdict["official_actionformer_protocol_match"] is True
+
+
 def test_non_official_protocol_stays_out_of_main_table(tmp_path, monkeypatch):
     record, fixture = _record(tmp_path)
     _patch_official_constants(monkeypatch, fixture)
     record["training"]["epochs"] = 60
-    verdict = comparability.classify(record)
-    assert verdict["main_table_eligible"] is False
+    mismatches = comparability.official_expectation_mismatches(record)
     assert any(
         item["path"] == "training.epochs"
-        for item in verdict["official_protocol_mismatches"]
+        for item in mismatches
     )
+    with pytest.raises(
+        comparability.ProtocolError,
+        match="effective-config binding mismatch: training.epochs",
+    ):
+        comparability.classify(record)
 
 
 def test_matched_control_requires_source_diff_attestation(tmp_path, monkeypatch):
@@ -584,30 +907,100 @@ def test_matched_control_requires_source_diff_attestation(tmp_path, monkeypatch)
         "config_sha256"
     ]
 
-    verdict = comparability.classify(
-        candidate,
-        reference=reference,
-        intervention="head_projection",
-    )
-    assert verdict["main_table_eligible"] is False
-    assert verdict["matched_delta_allowed"] is False
-    assert verdict["intervention"] == "head_projection"
-    assert any(
-        "source-diff attestation" in reason
-        for reason in verdict["ineligibility_reasons"]
-    )
+    with pytest.raises(comparability.ProtocolError, match="receipt set"):
+        comparability.classify(
+            candidate,
+            reference=reference,
+            intervention="head_projection",
+        )
 
     candidate["post_processing"]["max_seg_num"] = 2000
+    mismatches = comparability.compare_records(
+        reference,
+        candidate,
+        "head_projection",
+    )
+    assert any(
+        item["path"] == "post_processing.max_seg_num"
+        for item in mismatches
+    )
+
+
+def test_live_source_diff_can_unlock_matched_main_table(tmp_path, monkeypatch):
+    reference, candidate, _ = _matched_head_records(tmp_path, monkeypatch)
+
     verdict = comparability.classify(
         candidate,
         reference=reference,
         intervention="head_projection",
     )
-    assert verdict["main_table_eligible"] is False
-    assert any(
-        item["path"] == "post_processing.max_seg_num"
-        for item in verdict["pair_mismatches"]
+
+    assert verdict["main_table_eligible"] is True
+    assert verdict["matched_delta_allowed"] is True
+    assert verdict["source_diff_attestation_verified"] is True
+    assert verdict["claim_boundary"] == "paper_main_table"
+    assert verdict["pair_mismatches"] == []
+
+
+def test_source_diff_tamper_fails_closed_after_receipt_rebinding(
+    tmp_path,
+    monkeypatch,
+):
+    reference, candidate, _ = _matched_head_records(tmp_path, monkeypatch)
+    attestation_path = Path(
+        candidate["receipts"]["source_diff_attestation"]["path"]
     )
+    attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+    attestation["diff"]["binary_sha256"] = "0" * 64
+    _write_json(attestation_path, attestation)
+    candidate["receipts"]["source_diff_attestation"] = _receipt(attestation_path)
+    candidate["result"]["source_diff_attestation_sha256"] = candidate["receipts"][
+        "source_diff_attestation"
+    ]["sha256"]
+
+    with pytest.raises(comparability.ProtocolError, match="source-diff attestation"):
+        comparability.classify(
+            candidate,
+            reference=reference,
+            intervention="head_projection",
+        )
+
+
+def test_source_diff_intervention_and_base_are_bound(tmp_path, monkeypatch):
+    reference, candidate, _ = _matched_head_records(tmp_path, monkeypatch)
+    attestation = comparability._verify_source_diff_attestation(
+        candidate,
+        candidate["receipts"],
+    )
+
+    with pytest.raises(comparability.ProtocolError, match="intervention"):
+        comparability._bind_source_diff_to_reference(
+            attestation,
+            reference,
+            "selection_budget",
+        )
+
+    changed_reference = copy.deepcopy(reference)
+    changed_reference["source"]["config_path"] = "configs/not_the_base.yaml"
+    with pytest.raises(comparability.ProtocolError, match="base binding"):
+        comparability._bind_source_diff_to_reference(
+            attestation,
+            changed_reference,
+            "head_projection",
+        )
+
+
+def test_official_record_rejects_extra_source_diff_receipt(tmp_path, monkeypatch):
+    record, fixture = _record(tmp_path)
+    _patch_official_constants(monkeypatch, fixture)
+    path = _write_json(
+        tmp_path / "unexpected_source_diff.json",
+        {"schema_version": "unexpected"},
+    )
+    record["receipts"]["source_diff_attestation"] = _receipt(path)
+
+    with pytest.raises(comparability.ProtocolError, match="receipt set"):
+        comparability.validate_record(record)
 
 
 def test_arbitrary_difference_prefix_is_rejected(tmp_path, monkeypatch):
@@ -623,17 +1016,8 @@ def test_arbitrary_difference_prefix_is_rejected(tmp_path, monkeypatch):
 
 
 def test_non_official_reference_cannot_anchor_matched_delta(tmp_path, monkeypatch):
-    reference, fixture = _record(
-        tmp_path,
-        record_id="historical-reference",
-        stratum="external_reference_only",
-    )
-    _patch_official_constants(monkeypatch, fixture)
-    candidate, _ = _record(
-        tmp_path,
-        record_id="matched",
-        stratum="matched_method_control",
-    )
+    reference, candidate, _ = _matched_head_records(tmp_path, monkeypatch)
+    reference["evidence_stratum"] = "external_reference_only"
     verdict = comparability.classify(
         candidate,
         reference=reference,
@@ -641,6 +1025,28 @@ def test_non_official_reference_cannot_anchor_matched_delta(tmp_path, monkeypatc
     )
     assert verdict["main_table_eligible"] is False
     assert any("official reproduction" in reason for reason in verdict["ineligibility_reasons"])
+
+
+def test_nonofficial_protocol_reference_cannot_anchor_matched_delta(
+    tmp_path,
+    monkeypatch,
+):
+    reference, candidate, _ = _matched_head_records(tmp_path, monkeypatch)
+    reference["source"]["implementation"] = "nonofficial_actionformer_wrapper"
+
+    verdict = comparability.classify(
+        candidate,
+        reference=reference,
+        intervention="head_projection",
+    )
+
+    assert verdict["main_table_eligible"] is False
+    assert verdict["matched_delta_allowed"] is False
+    assert verdict["reference_official_protocol_mismatches"]
+    assert any(
+        "reference does not match" in reason
+        for reason in verdict["ineligibility_reasons"]
+    )
 
 
 def test_eval_log_metric_binding_fails_closed(tmp_path, monkeypatch):

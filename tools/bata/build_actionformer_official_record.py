@@ -10,6 +10,7 @@ only then asks the comparability gate to issue a main-table verdict.
 from __future__ import annotations
 
 import argparse
+import copy
 import contextlib
 import hashlib
 import importlib
@@ -86,6 +87,37 @@ def verify_official_source(repo):
     if _git_blob_sha256(repo, "README.md") != protocol.OFFICIAL_README_SHA256:
         raise protocol.ProtocolError("official ActionFormer README hash mismatch")
     return repo, commit, tree
+
+
+def load_effective_config(repo, relative="configs/thumos_i3d.yaml"):
+    previous_path = list(sys.path)
+    previous_modules = {
+        key: value
+        for key, value in sys.modules.items()
+        if key == "libs" or key.startswith("libs.")
+    }
+    for key in list(previous_modules):
+        del sys.modules[key]
+    sys.path.insert(0, str(repo))
+    try:
+        config_module = importlib.import_module("libs.core.config")
+        config = config_module.load_config(
+            str(repo / relative),
+            defaults=copy.deepcopy(config_module.DEFAULTS),
+        )
+    except Exception as error:
+        raise protocol.ProtocolError(
+            f"cannot load pinned official effective config: {error}"
+        ) from error
+    finally:
+        sys.path[:] = previous_path
+        for key in list(sys.modules):
+            if key == "libs" or key.startswith("libs."):
+                del sys.modules[key]
+        sys.modules.update(previous_modules)
+    if not isinstance(config, dict) or not config:
+        raise protocol.ProtocolError("pinned official effective config is empty")
+    return config
 
 
 def build_evaluator_manifest(repo, commit, tree):
@@ -501,6 +533,25 @@ def build_record(args):
             raise protocol.ProtocolError(f"missing official run artifact: {name}: {path}")
     if protocol.md5_file(archive) != protocol.OFFICIAL_THUMOS_ARCHIVE_MD5:
         raise protocol.ProtocolError("THUMOS archive MD5 is not the official release")
+    effective_config = load_effective_config(repo)
+    train_log_config = protocol.parse_actionformer_train_log_config(
+        train_log.read_text(encoding="utf-8", errors="strict")
+    )
+    effective_config_sha = protocol.canonical_sha256(effective_config)
+    train_log_config_sha = protocol.canonical_sha256(train_log_config)
+    if effective_config_sha != train_log_config_sha:
+        raise protocol.ProtocolError(
+            "released train log effective config differs from the pinned source config"
+        )
+    if effective_config_sha != protocol.OFFICIAL_EFFECTIVE_CONFIG_SHA256:
+        raise protocol.ProtocolError(
+            "pinned official effective-config SHA-256 mismatch"
+        )
+    if (
+        effective_config.get("init_rand_seed")
+        != protocol.OFFICIAL_TRAINING_SEED
+    ):
+        raise protocol.ProtocolError("pinned official training seed mismatch")
 
     class_map, split_counts, videos = parse_annotation(annotation)
     feature_manifest = build_feature_manifest(args.feature_dir, videos)
@@ -625,6 +676,8 @@ def build_record(args):
         "config_sha256": protocol.sha256_file(
             repo / "configs" / "thumos_i3d.yaml"
         ),
+        "effective_config_sha256": effective_config_sha,
+        "train_log_effective_config_sha256": train_log_config_sha,
         "data_manifest_sha256": protocol.sha256_file(data_manifest_path),
         "checkpoint_sha256": protocol.sha256_file(checkpoint),
         "raw_predictions_sha256": raw_predictions_sha,
@@ -732,7 +785,7 @@ def build_record(args):
             "head": "ActionFormerHead",
             "projection": "ActionFormerIdentityFPN",
             "query_geometry": "uniform_i3d_feature_grid",
-            "effective_config_sha256": receipts["config"]["sha256"],
+            "effective_config_sha256": effective_config_sha,
         },
         "training": {
             "optimizer": "AdamW",
@@ -740,7 +793,7 @@ def build_record(args):
             "weight_decay": 0.05,
             "epochs": 30,
             "batch_size": 2,
-            "seed": 0,
+            "seed": effective_config["init_rand_seed"],
             "amp": False,
             "ema": True,
             "checkpoint_rule": args.checkpoint_rule,
