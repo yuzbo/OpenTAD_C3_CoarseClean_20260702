@@ -342,8 +342,10 @@ Linux suite passed `121/121`, and full-graph CUDA P0 Job `1204087` passed
 schema v5 with FP32 scout execution, finite detector-plus-score-function
 gradients and an unchanged GradScaler floor. It changes precision and gate
 coverage only; it is not a new CER component and supplies no empirical support.
-The failed `30f9ca6f` namespace must seal INCOMPLETE before a wholly fresh
-six-arm namespace can test the frozen scientific contrasts.
+The failed `30f9ca6f` namespace has now sealed INCOMPLETE with empty contrasts.
+The complete fresh `c822add3` six-arm namespace is `experiment_running` under
+P0 Jobs `1204301`--`1204306`, stage wrappers `1204308`--`1204313`, and
+closeout `1204314`. This still supplies no empirical support until all six pass.
 
 ## Connections
 

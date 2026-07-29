@@ -131,8 +131,16 @@ max_chars: 8000
   `HOLD -> REPAIR`: the P0 model backward was FP32 without autocast/GradScaler,
   while its AMP KAT differentiated only isolated route logits. It therefore
   missed the scaled full graph through detector, scout, adapter, and backbone.
-  The other five stages continue only to terminal provenance; no partial result
-  is valid. The next source must keep the six-arm science fixed, execute the
+  The other five stages completed only for terminal provenance; no partial
+  result is valid. Closeout Job `1204028` completed `0:0` and sealed
+  `INCOMPLETE_EXPLORATORY_PILOT /
+  PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, with `all_six_arms_passed=false`,
+  an empty contrast set, and selector/P2/P3/official-test/paper guards false.
+  Its self/file SHA-256 values are
+  `60c9dab575e65830b7b849437963de2c7f789743caedb130b499c142c49c76ab`
+  /
+  `6ad32b7822042685b353f378c6eb9ea14be061e7f22d7db7288a129cbe080f06`.
+  The next source must keep the six-arm science fixed, execute the
   score-function scout/likelihood path safely in FP32, and pass a full-model
   autocast+GradScaler optimizer-update P0 before any further replacement.
   Exact repair source
@@ -147,9 +155,13 @@ max_chars: 8000
   `|objective|=128637.0234375 > 65504`, full-graph scale `256 -> 256`, finite
   required gradients, FP32 scout execution, a successful optimizer update and
   zero checkpoints. The estimator loss, weight, six arms and contrasts are
-  unchanged. This is synthetic CUDA P0 evidence only: the old run must first
-  seal INCOMPLETE, then a wholly fresh all-six namespace must pass before any
-  descriptive contrast exists.
+  unchanged. The old closeout and all-at-once capacity gates then passed.
+  With `active=2`, the full 14-job DAG exactly filled `MaxSubmitJobs=16`.
+  Exact source `c822add3` created fresh root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_c822add3_20260729_2149`.
+  P0 Jobs `1204301`--`1204306`, P0 finalizer `1204307`, six stage wrappers
+  `1204308`--`1204313`, and afterany closeout `1204314` were submitted
+  atomically. This is `experiment_running`, not a descriptive contrast.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

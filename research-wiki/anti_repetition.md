@@ -72,13 +72,22 @@ updated: 2026-07-29
    has now sealed INCOMPLETE, but that does not bypass the fresh capacity or P0
    gates; never treat reviewer approval as a P0 or performance receipt.
 0. The replacement namespace
-   `georoute_estimator_representation_pilot_30f9ca6f_20260729_2023` is the only
-   current performance namespace. It is bound to exact runtime `30f9ca6f`,
+   `georoute_estimator_representation_pilot_30f9ca6f_20260729_2023` is sealed
+   incomplete. It is bound to exact runtime `30f9ca6f`,
    P0 Jobs `1204015`--`1204020`, suite self-hash
    `2aea448be4c8d72957b3c904bb22c5ae39689cb0010c3b18a4914bd71f5265ec`,
    stage Jobs `1204022`--`1204027`, and closeout `1204028`. Never mix any old
    `cbe0a082` artifact into it, manually replace a stage, interpret a partial
-   stage, or bypass the all-six closeout.
+   stage, or bypass the all-six closeout. Job `1204028` emitted only
+   `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with empty contrasts
+   (self-hash `60c9dab575e65830b7b849437963de2c7f789743caedb130b499c142c49c76ab`).
+0. The only current performance namespace is
+   `georoute_estimator_representation_pilot_c822add3_20260729_2149`, exact
+   runtime `c822add335c38a9f6c63e609237c4bfa9b9f468d`. It contains P0
+   `1204301`--`1204306`, P0 finalizer `1204307`, stages
+   `1204308`--`1204313`, and closeout `1204314`. Never mix either earlier
+   namespace into it, bypass its sealed P0 suite, or interpret fewer than all
+   six stage receipts.
 0. Schema-v4 P0 from source `30f9ca6f` did not test full-graph AMP. Its model
    forward/backward was FP32, and the `T384/N220/K64` AMP KAT used an isolated
    logits leaf. Job `1204023` then exhausted all eight real-batch AMP retries at

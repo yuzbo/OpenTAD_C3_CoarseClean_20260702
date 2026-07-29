@@ -192,6 +192,32 @@ updated: 2026-07-29
   only, not real-batch stability, mAP, cost, model selection, Geometry Zoom or
   paper evidence.
 
+- GeoRoute source-`30f9ca6f` incomplete closeout, 2026-07-29. Stage Jobs
+  `1204022` and `1204024`--`1204027` completed only for terminal provenance;
+  `1204023` remained the sole hard failure. Closeout `1204028` completed `0:0`
+  and wrote
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_30f9ca6f_20260729_2023/control/pilot_finalization.json`.
+  Finalization internal/file SHA-256 values are
+  `60c9dab575e65830b7b849437963de2c7f789743caedb130b499c142c49c76ab`
+  and
+  `6ad32b7822042685b353f378c6eb9ea14be061e7f22d7db7288a129cbe080f06`.
+  It records `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, false all-six,
+  empty contrasts, and no selector/P2/P3/official-test/paper claim.
+
+- GeoRoute full-graph-AMP fresh six-arm deployment, 2026-07-29. Exact runtime
+  `c822add335c38a9f6c63e609237c4bfa9b9f468d`; root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_c822add3_20260729_2149`.
+  Capacity was `active=2 + additional=14 = MaxSubmitJobs=16`. Deployment
+  internal/file SHA-256 values are
+  `7f445af550cf359b3d13d174f1199fa9b45192223461291f73f66a001c97b202`
+  and
+  `48f19fd88741361e9290ae6f444ccbd38f07030c82bc0c2726abad514de1158b`;
+  finalizer-submission file SHA-256 is
+  `999f89233e7474ba365fa9b4d12930fc3c1a9f089e01a27fef631c2b6ec658c7`.
+  P0 Jobs are `1204301`--`1204306`, P0 finalizer `1204307`, stage wrappers
+  `1204308`--`1204313`, and closeout `1204314`. This is deployment evidence,
+  not a contrast or performance result.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

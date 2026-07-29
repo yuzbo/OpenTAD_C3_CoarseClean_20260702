@@ -4,11 +4,11 @@ node_id: exp:georoute-estimator-representation-pilot-v1
 title: "GeoRoute estimator/representation exploratory pilot v1"
 idea: idea:geo-route-adatad
 stage: experiment_running
-status: fullgraph_amp_p0_pass_waiting_old_closeout_and_fresh_six_arm_restart
+status: fresh_c822add3_six_arm_p0_submitted
 verdict: pending
 confidence: medium
 commit: c822add335c38a9f6c63e609237c4bfa9b9f468d
-jobs: 1204015-1204028,1204087
+jobs: 1204301-1204314
 updated: 2026-07-29
 ---
 
@@ -152,6 +152,29 @@ gradients, FP32 scout execution and a successful optimizer update. It created
 zero checkpoints and no metric/test/claim. State is `tested` numerical
 correctness only; old run `1204028` must seal INCOMPLETE before a wholly fresh
 six-arm restart.
+
+That closeout condition is now satisfied. The five surviving jobs completed
+only for provenance, and Job `1204028` completed `0:0`. Finalization status is
+`INCOMPLETE_EXPLORATORY_PILOT`, decision is
+`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, `all_six_arms_passed=false`, and
+the contrast map is empty. Self/file SHA-256 values are
+`60c9dab575e65830b7b849437963de2c7f789743caedb130b499c142c49c76ab`
+and
+`6ad32b7822042685b353f378c6eb9ea14be061e7f22d7db7288a129cbe080f06`.
+No five-arm metric is interpreted.
+
+The complete fresh restart is now `experiment_running`. Capacity preflight
+recorded `active=2`, `additional=14`, `MaxSubmitJobs=16`, with zero remaining
+headroom. Exact clean source `c822add335c38a9f6c63e609237c4bfa9b9f468d`
+created
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_c822add3_20260729_2149`.
+Deployment self/file SHA-256 values are
+`7f445af550cf359b3d13d174f1199fa9b45192223461291f73f66a001c97b202`
+and
+`48f19fd88741361e9290ae6f444ccbd38f07030c82bc0c2726abad514de1158b`.
+P0 jobs are `1204301`--`1204306`, P0 finalizer is `1204307`, stages are
+`1204308`--`1204313`, and afterany closeout is `1204314`. Arms, seed `3407`,
+`K=64`, 20 epochs, inputs, preexperiment parent and four contrasts are unchanged.
 
 ## Claim boundary
 

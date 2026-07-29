@@ -688,8 +688,13 @@ autocast or GradScaler and the subsequent AMP KAT was disconnected from model
 parameters. Verdict is `HOLD -> REPAIR`, not estimator rejection. The next
 numerical source must keep the scientific matrix fixed, force the complete
 score-function route/scout precision path out of FP16 overflow, and gate a real
-full-model scaled optimizer update. Current five surviving stages are terminal
-provenance only; closeout `1204028` must be INCOMPLETE.
+full-model scaled optimizer update. The five surviving stages completed only
+for terminal provenance. Closeout `1204028` completed `0:0` and sealed
+`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, empty contrasts, and all promotion
+guards false. Its self/file SHA-256 values are
+`60c9dab575e65830b7b849437963de2c7f789743caedb130b499c142c49c76ab`
+/
+`6ad32b7822042685b353f378c6eb9ea14be061e7f22d7db7288a129cbe080f06`.
 
 The estimator-equivalent repair is now numerically `tested` at exact source
 `c822add335c38a9f6c63e609237c4bfa9b9f468d`. Its exact clean Linux snapshot
@@ -702,9 +707,18 @@ optimizer update, and FP32 scout execution. The subordinate arithmetic evidence
 remains `T384/N220/K64`, FP16 source, FP32 likelihood/loss and
 `128637.0234375 > 65504`. It created zero checkpoints and no metric, test or
 claim. No temporal normalization, clipping, weight, arm, seed, budget, epoch or
-contrast changed. This passes only the replacement numerical gate; old closeout
-`1204028` must first seal INCOMPLETE, after which a fresh complete six-arm DAG
-is still required.
+contrast changed. This passes only the replacement numerical gate. After the
+old closeout sealed INCOMPLETE, capacity preflight admitted the complete
+replacement DAG at exactly `active 2 + additional 14 = MaxSubmitJobs 16`.
+Exact clean source `c822add3` created root
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_representation_pilot_c822add3_20260729_2149`.
+Deployment self/file SHA-256 values are
+`7f445af550cf359b3d13d174f1199fa9b45192223461291f73f66a001c97b202`
+/
+`48f19fd88741361e9290ae6f444ccbd38f07030c82bc0c2726abad514de1158b`.
+P0 Jobs `1204301`--`1204306`, P0 finalizer `1204307`, stage wrappers
+`1204308`--`1204313`, and afterany closeout `1204314` are now submitted.
+No result surface is open until all six stages and closeout pass.
 
 ## Frozen decision logic
 

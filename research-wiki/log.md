@@ -1596,3 +1596,21 @@ append_only: true
   Geometry Zoom, CER or paper claim opened. This advances only the precision
   repair to `tested`; old closeout `1204028` must seal INCOMPLETE before a
   fresh all-six restart.
+
+- 2026-07-29 21:49 CST: the immutable `30f9ca6f` run reached its required
+  terminal closeout. Five surviving stages completed only for provenance;
+  residual-PL `1204023` remained failed. Closeout `1204028` completed `0:0`
+  and sealed `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, false all-six, empty
+  contrasts and all promotion guards false. Finalization self/file SHA-256
+  values are `60c9dab5...` / `6ad32b78...`. No five-arm performance was used.
+
+- 2026-07-29 21:52 CST: with the old closeout and full-graph CUDA P0 passed,
+  capacity preflight admitted exactly `active 2 + additional 14 =
+  MaxSubmitJobs 16`. Exact clean source `c822add3` atomically deployed the
+  unchanged six-arm/seed-3407/K64/20-epoch study at
+  `georoute_estimator_representation_pilot_c822add3_20260729_2149`.
+  Deployment self/file SHA-256 values are `7f445af5...` / `48f19fd8...`.
+  P0 Jobs `1204301`--`1204306`, finalizer `1204307`, stages
+  `1204308`--`1204313`, and closeout `1204314` are submitted. State is
+  `experiment_running`; no metric, contrast, winner, P2/P3, official test,
+  Geometry Zoom or paper claim is open.
