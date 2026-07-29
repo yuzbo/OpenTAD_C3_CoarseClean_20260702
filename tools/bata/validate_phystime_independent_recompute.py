@@ -893,44 +893,209 @@ def _validate_result_payload(payload, description):
     return payload["results"]
 
 
-def compare_detection_maps(expected, observed, *, segment_atol, score_atol):
-    """Compare ordered prediction maps without relying on production code."""
+def _validated_detection_rows(rows, video_name, source_name):
+    require(isinstance(rows, list), f"detection rows are not lists: {video_name}")
+    validated = []
+    for row_index, row in enumerate(rows):
+        valid, invalid = _validate_detections([row], -1.0)
+        require(
+            invalid == 0,
+            f"malformed {source_name} detection at {video_name}[{row_index}]",
+        )
+        validated.append(valid[0])
+    return validated
+
+
+def _label_key(label):
+    return json.dumps(
+        label,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+
+
+def _maximum_tolerance_matching(
+    expected_rows,
+    observed_rows,
+    *,
+    segment_atol,
+    score_atol,
+):
+    """Return a deterministic maximum-cardinality matching within both tolerances."""
+    expected_by_label = {}
+    observed_by_label = {}
+    for index, row in enumerate(expected_rows):
+        expected_by_label.setdefault(_label_key(row["label"]), []).append(index)
+    for index, row in enumerate(observed_rows):
+        observed_by_label.setdefault(_label_key(row["label"]), []).append(index)
+
+    candidate_edges = {}
+    for label in sorted(set(expected_by_label) | set(observed_by_label)):
+        expected_indices = expected_by_label.get(label, [])
+        observed_indices = observed_by_label.get(label, [])
+        if not expected_indices or not observed_indices:
+            for expected_index in expected_indices:
+                candidate_edges[expected_index] = []
+            continue
+        observed_segments = np.asarray(
+            [observed_rows[index]["segment"] for index in observed_indices],
+            dtype=np.float64,
+        )
+        observed_scores = np.asarray(
+            [observed_rows[index]["score"] for index in observed_indices],
+            dtype=np.float64,
+        )
+        for expected_index in expected_indices:
+            expected_row = expected_rows[expected_index]
+            segment_errors = np.max(
+                np.abs(
+                    observed_segments
+                    - np.asarray(expected_row["segment"], dtype=np.float64)
+                ),
+                axis=1,
+            )
+            score_errors = np.abs(
+                observed_scores - float(expected_row["score"])
+            )
+            eligible = np.flatnonzero(
+                (segment_errors <= segment_atol)
+                & (score_errors <= score_atol)
+            )
+            edges = [
+                (
+                    float(segment_errors[local_index]),
+                    float(score_errors[local_index]),
+                    observed_indices[int(local_index)],
+                )
+                for local_index in eligible.tolist()
+            ]
+            segment_scale = segment_atol if segment_atol > 0.0 else 1.0
+            score_scale = score_atol if score_atol > 0.0 else 1.0
+            edges.sort(
+                key=lambda item: (
+                    item[0] / segment_scale,
+                    item[1] / score_scale,
+                    item[2],
+                )
+            )
+            candidate_edges[expected_index] = edges
+
+    expected_to_observed = {}
+    observed_to_expected = {}
+    root_order = sorted(
+        range(len(expected_rows)),
+        key=lambda index: (len(candidate_edges.get(index, ())), index),
+    )
+    for root in root_order:
+        if root in expected_to_observed:
+            continue
+        queued_expected = {root}
+        visited_observed = set()
+        parent_observed = {}
+        queue = [root]
+        queue_cursor = 0
+        free_observed = None
+        while queue_cursor < len(queue) and free_observed is None:
+            expected_index = queue[queue_cursor]
+            queue_cursor += 1
+            for _, _, observed_index in candidate_edges.get(expected_index, ()):
+                if observed_index in visited_observed:
+                    continue
+                visited_observed.add(observed_index)
+                parent_observed[observed_index] = expected_index
+                previous_expected = observed_to_expected.get(observed_index)
+                if previous_expected is None:
+                    free_observed = observed_index
+                    break
+                if previous_expected not in queued_expected:
+                    queued_expected.add(previous_expected)
+                    queue.append(previous_expected)
+        if free_observed is None:
+            continue
+        observed_index = free_observed
+        while True:
+            expected_index = parent_observed[observed_index]
+            previous_observed = expected_to_observed.get(expected_index)
+            expected_to_observed[expected_index] = observed_index
+            observed_to_expected[observed_index] = expected_index
+            if previous_observed is None:
+                break
+            observed_index = previous_observed
+
+    return expected_to_observed
+
+
+def compare_detection_maps(
+    expected,
+    observed,
+    *,
+    segment_atol,
+    score_atol,
+    max_issues=32,
+):
+    """Compare prediction maps as tolerance-bounded multisets.
+
+    Canonical exactness remains sequence-sensitive and is reported separately;
+    the semantic match is invariant to benign list permutations.
+    """
     require(isinstance(expected, dict), "expected detections are not an object")
     require(isinstance(observed, dict), "observed detections are not an object")
+    require(segment_atol >= 0.0, "segment tolerance must be non-negative")
+    require(score_atol >= 0.0, "score tolerance must be non-negative")
+    require(
+        isinstance(max_issues, int) and max_issues >= 0,
+        "max_issues must be a non-negative integer",
+    )
     issues = []
+    issue_count = 0
     max_segment_error = 0.0
     max_score_error = 0.0
+    expected_detection_count = 0
+    observed_detection_count = 0
+    matched_detection_count = 0
+    video_reports = {}
+
+    def append_issue(message):
+        nonlocal issue_count
+        issue_count += 1
+        if len(issues) < max_issues:
+            issues.append(message)
+
     if set(expected) != set(observed):
-        issues.append("video key set differs")
-    for video_name in sorted(set(expected) & set(observed)):
-        expected_rows = expected[video_name]
-        observed_rows = observed[video_name]
-        require(
-            isinstance(expected_rows, list) and isinstance(observed_rows, list),
-            f"detection rows are not lists: {video_name}",
+        append_issue("video key set differs")
+    for video_name in sorted(set(expected) | set(observed)):
+        expected_rows = _validated_detection_rows(
+            expected.get(video_name, []),
+            video_name,
+            "expected",
         )
+        observed_rows = _validated_detection_rows(
+            observed.get(video_name, []),
+            video_name,
+            "observed",
+        )
+        expected_detection_count += len(expected_rows)
+        observed_detection_count += len(observed_rows)
         if len(expected_rows) != len(observed_rows):
-            issues.append(
+            append_issue(
                 f"{video_name}: detection count {len(observed_rows)} "
                 f"!= {len(expected_rows)}"
             )
-        for row_index, (expected_row, observed_row) in enumerate(
-            zip(expected_rows, observed_rows)
-        ):
-            expected_valid, expected_invalid = _validate_detections(
-                [expected_row], -1.0
-            )
-            observed_valid, observed_invalid = _validate_detections(
-                [observed_row], -1.0
-            )
-            require(
-                expected_invalid == 0 and observed_invalid == 0,
-                f"malformed detection at {video_name}[{row_index}]",
-            )
-            expected_item = expected_valid[0]
-            observed_item = observed_valid[0]
-            if expected_item["label"] != observed_item["label"]:
-                issues.append(f"{video_name}[{row_index}]: label differs")
+        matching = _maximum_tolerance_matching(
+            expected_rows,
+            observed_rows,
+            segment_atol=segment_atol,
+            score_atol=score_atol,
+        )
+        matched_detection_count += len(matching)
+        unmatched_expected = sorted(set(range(len(expected_rows))) - set(matching))
+        unmatched_observed = sorted(
+            set(range(len(observed_rows))) - set(matching.values())
+        )
+        for expected_index, observed_index in sorted(matching.items()):
+            expected_item = expected_rows[expected_index]
+            observed_item = observed_rows[observed_index]
             segment_error = float(
                 np.max(
                     np.abs(
@@ -942,23 +1107,45 @@ def compare_detection_maps(expected, observed, *, segment_atol, score_atol):
             score_error = abs(expected_item["score"] - observed_item["score"])
             max_segment_error = max(max_segment_error, segment_error)
             max_score_error = max(max_score_error, score_error)
-            if segment_error > segment_atol:
-                issues.append(
-                    f"{video_name}[{row_index}]: segment error "
-                    f"{segment_error} > {segment_atol}"
-                )
-            if score_error > score_atol:
-                issues.append(
-                    f"{video_name}[{row_index}]: score error "
-                    f"{score_error} > {score_atol}"
-                )
+        if unmatched_expected or unmatched_observed:
+            append_issue(
+                f"{video_name}: semantic one-to-one match failed: "
+                f"unmatched_expected={len(unmatched_expected)} "
+                f"unmatched_observed={len(unmatched_observed)}"
+            )
+        video_reports[video_name] = {
+            "expected_count": len(expected_rows),
+            "observed_count": len(observed_rows),
+            "matched_count": len(matching),
+            "unmatched_expected_count": len(unmatched_expected),
+            "unmatched_observed_count": len(unmatched_observed),
+            "unmatched_expected_indices_sample": unmatched_expected[:16],
+            "unmatched_observed_indices_sample": unmatched_observed[:16],
+        }
+    canonical_exact_match = (
+        canonical_sha256(expected) == canonical_sha256(observed)
+    )
     return {
-        "match": not issues,
+        "match": issue_count == 0,
         "issues": issues,
+        "issue_count": issue_count,
+        "suppressed_issue_count": issue_count - len(issues),
+        "issues_truncated": issue_count > len(issues),
+        "expected_detection_count": expected_detection_count,
+        "observed_detection_count": observed_detection_count,
+        "matched_detection_count": matched_detection_count,
+        "unmatched_expected_count": (
+            expected_detection_count - matched_detection_count
+        ),
+        "unmatched_observed_count": (
+            observed_detection_count - matched_detection_count
+        ),
         "max_abs_segment_error_seconds": max_segment_error,
         "max_abs_score_error": max_score_error,
-        "canonical_exact_match": canonical_sha256(expected)
-        == canonical_sha256(observed),
+        "canonical_exact_match": canonical_exact_match,
+        "sequence_order_exact_match": canonical_exact_match,
+        "ordering_only_difference": issue_count == 0 and not canonical_exact_match,
+        "video_reports": video_reports,
     }
 
 

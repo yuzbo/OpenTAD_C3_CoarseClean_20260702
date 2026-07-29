@@ -154,6 +154,68 @@ def test_malformed_gt_fails_closed(segments, labels):
         run(segments, labels)
 
 
+def test_padded_zero_query_geometry_matches_production_clamp_contract():
+    padded_geometry = geometry()
+    padded_geometry[0] = {
+        key: np.concatenate(
+            (
+                value,
+                (
+                    np.zeros((1, 2), dtype=value.dtype)
+                    if key == "intervals_sec"
+                    else np.zeros(1, dtype=value.dtype)
+                ),
+            ),
+            axis=0,
+        )
+        for key, value in padded_geometry[0].items()
+    }
+    for key in (
+        "domain_valid_mask",
+        "valid_mask",
+        "evidence_mask",
+        "assignment_mask",
+    ):
+        padded_geometry[0][key][-1] = False
+    result = support_audit.recompute_sdpq_targets(
+        padded_geometry,
+        np.asarray([[1.9, 2.1]], dtype=np.float64),
+        np.asarray([0], dtype=np.int64),
+        num_classes=2,
+        regression_ranges_sec=((0.0, 100.0),),
+        center_sample_radius=0.25,
+        width_reference_multiplier=2.0,
+        max_abs_delta_center=8.0,
+        min_log_width=-6.0,
+        max_log_width=6.0,
+    )
+    assert result["geometry"]["widths"][-1] == 0.0
+    assert result["geometry"]["width_reference"][-1] == pytest.approx(2.0e-8)
+    assert result["assigned_gt"][-1] == -1
+
+
+def test_domain_valid_zero_width_query_fails_closed():
+    invalid_geometry = geometry()
+    invalid_geometry[0]["widths_sec"][-1] = 0.0
+    invalid_geometry[0]["intervals_sec"][-1] = 0.0
+    with pytest.raises(
+        support_audit.SupportAuditError,
+        match="domain-valid physical query widths must be positive",
+    ):
+        support_audit.recompute_sdpq_targets(
+            invalid_geometry,
+            np.asarray([[1.9, 2.1]], dtype=np.float64),
+            np.asarray([0], dtype=np.int64),
+            num_classes=2,
+            regression_ranges_sec=((0.0, 100.0),),
+            center_sample_radius=0.25,
+            width_reference_multiplier=2.0,
+            max_abs_delta_center=8.0,
+            min_log_width=-6.0,
+            max_log_width=6.0,
+        )
+
+
 def test_module_does_not_call_loss_backward_or_optimizer():
     source = MODULE_PATH.read_text(encoding="utf-8")
     forbidden = (

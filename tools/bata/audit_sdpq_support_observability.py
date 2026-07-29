@@ -131,11 +131,6 @@ def _geometry_arrays(level_geometry, regression_ranges_sec, width_multiplier):
             widths.shape == centers.shape and intervals.shape == (centers.size, 2),
             "physical query geometry shape mismatch",
         )
-        require(np.all(widths > 0.0), "physical query widths must be positive")
-        require(
-            np.all(intervals[:, 1] > intervals[:, 0]),
-            "physical query intervals must be positive",
-        )
         lower, upper = (float(value) for value in regression_range)
         require(
             math.isfinite(lower)
@@ -166,7 +161,32 @@ def _geometry_arrays(level_geometry, regression_ranges_sec, width_multiplier):
         ):
             require(mask.shape == centers.shape, f"{name} shape mismatch")
         require(coverage.shape == centers.shape, "coverage shape mismatch")
+        require(
+            np.all(widths[domain_valid] > 0.0),
+            "domain-valid physical query widths must be positive",
+        )
+        require(
+            np.all(intervals[domain_valid, 1] > intervals[domain_valid, 0]),
+            "domain-valid physical query intervals must be positive",
+        )
+        padding = ~domain_valid
+        require(
+            np.all(widths[padding] == 0.0)
+            and np.all(intervals[padding] == 0.0)
+            and np.all(centers[padding] == 0.0),
+            "physical query padding must use zero geometry",
+        )
+        require(
+            not np.any(model_valid & padding)
+            and not np.any(evidence & padding)
+            and not np.any(assignable & padding),
+            "physical query masks must not enable padded geometry",
+        )
         require(np.all(coverage >= 0.0), "coverage must be non-negative")
+        require(
+            np.all(coverage[padding] == 0.0),
+            "physical query padding must have zero coverage",
+        )
         pieces["centers"].append(centers)
         pieces["widths"].append(widths)
         pieces["intervals"].append(intervals)
@@ -183,12 +203,17 @@ def _geometry_arrays(level_geometry, regression_ranges_sec, width_multiplier):
         name: np.concatenate(values, axis=0)
         for name, values in pieces.items()
     }
-    concatenated["width_reference"] = (
-        concatenated["widths"] * float(width_multiplier)
-    )
+    width_multiplier = float(width_multiplier)
     require(
-        np.all(concatenated["width_reference"] > 0.0),
-        "width references must be positive",
+        math.isfinite(width_multiplier) and width_multiplier > 0.0,
+        "width reference multiplier must be finite and positive",
+    )
+    # Production clamps padded zero widths before constructing query points.
+    # Preserve raw widths for observability while reproducing that exact target
+    # reference for every tensor slot, including batch padding.
+    concatenated["width_reference"] = np.maximum(
+        np.maximum(concatenated["widths"], 1.0e-8) * width_multiplier,
+        1.0e-8,
     )
     concatenated["level_counts"] = level_counts
     return concatenated

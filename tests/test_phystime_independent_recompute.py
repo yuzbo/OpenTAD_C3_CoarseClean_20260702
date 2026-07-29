@@ -243,7 +243,7 @@ def test_non_finite_and_invalid_geometry_fail_closed(tmp_path):
         )
 
 
-def test_detection_map_comparison_is_ordered_and_tolerance_bounded():
+def test_detection_map_comparison_is_permutation_invariant_and_tolerance_bounded():
     expected = {
         "video": [
             {"label": "A", "segment": [0.0, 1.0], "score": 0.9},
@@ -272,7 +272,86 @@ def test_detection_map_comparison_is_ordered_and_tolerance_bounded():
         segment_atol=1.0e-4,
         score_atol=1.0e-4,
     )
+    assert comparison["match"] is True
+    assert comparison["canonical_exact_match"] is False
+    assert comparison["sequence_order_exact_match"] is False
+    assert comparison["ordering_only_difference"] is True
+    assert comparison["matched_detection_count"] == 2
+    assert comparison["unmatched_expected_count"] == 0
+    assert comparison["unmatched_observed_count"] == 0
+
+
+def test_detection_map_comparison_fails_true_out_of_tolerance_difference():
+    expected = {
+        "video": [
+            {"label": "A", "segment": [0.0, 1.0], "score": 0.9},
+        ]
+    }
+    observed = {
+        "video": [
+            {"label": "A", "segment": [0.0, 1.001], "score": 0.9},
+        ]
+    }
+    comparison = independent.compare_detection_maps(
+        expected,
+        observed,
+        segment_atol=1.0e-4,
+        score_atol=1.0e-4,
+    )
     assert comparison["match"] is False
+    assert comparison["matched_detection_count"] == 0
+    assert comparison["unmatched_expected_count"] == 1
+    assert comparison["unmatched_observed_count"] == 1
+
+
+def test_detection_map_comparison_uses_one_to_one_matching_for_near_duplicates():
+    expected = {
+        "video": [
+            {"label": "A", "segment": [0.0, 1.0], "score": 0.9},
+            {"label": "A", "segment": [0.00008, 1.00008], "score": 0.9},
+        ]
+    }
+    observed = {
+        "video": [
+            {"label": "A", "segment": [0.00009, 1.00009], "score": 0.9},
+            {"label": "A", "segment": [0.0, 1.0], "score": 0.9},
+        ]
+    }
+    comparison = independent.compare_detection_maps(
+        expected,
+        observed,
+        segment_atol=1.0e-4,
+        score_atol=1.0e-4,
+    )
+    assert comparison["match"] is True
+    assert comparison["matched_detection_count"] == 2
+
+
+def test_detection_map_comparison_bounds_issue_payload():
+    expected = {
+        f"expected_{index}": [
+            {"label": "A", "segment": [0.0, 1.0], "score": 0.9},
+        ]
+        for index in range(5)
+    }
+    observed = {
+        f"observed_{index}": [
+            {"label": "B", "segment": [0.0, 1.0], "score": 0.9},
+        ]
+        for index in range(5)
+    }
+    comparison = independent.compare_detection_maps(
+        expected,
+        observed,
+        segment_atol=1.0e-4,
+        score_atol=1.0e-4,
+        max_issues=2,
+    )
+    assert comparison["match"] is False
+    assert len(comparison["issues"]) == 2
+    assert comparison["issue_count"] > len(comparison["issues"])
+    assert comparison["suppressed_issue_count"] > 0
+    assert comparison["issues_truncated"] is True
 
 
 def test_independent_thumos_ap_counts_duplicate_predictions_as_false_positive():
