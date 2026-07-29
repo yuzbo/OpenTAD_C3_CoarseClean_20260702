@@ -299,10 +299,13 @@ provenance; they cannot be interpreted. Finalizer `1203720` must seal
 `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. The root cause is FP16 temporal PL
 accumulation at the real `T=384/N=220/K=64` horizon. An estimator-equivalent
 FP32 likelihood/reduction repair and a production-grid-bound AMP KAT are
-`implemented` locally but remain pending clean commit, proxy sync, remote
-Linux/CUDA verification, and a new full six-arm namespace. The design remains
-the smallest way to identify estimator, support, and representation effects,
-but no single-seed contrast or CER/paper method exists from the failed run.
+now `tested` for numerical correctness at exact commit `30f9ca6f`: remote
+Linux `120/120` and CUDA KAT Job `1203873` passed with an FP32 objective above
+the FP16 range and finite scaled gradients. The old run must still seal
+INCOMPLETE, and the repair must pass fresh per-arm P0 plus a full new six-arm
+namespace. The design remains the smallest way to identify estimator, support,
+and representation effects, but no single-seed contrast or CER/paper method
+exists from the failed run or the KAT.
 
 ## Connections
 

@@ -60,6 +60,10 @@ updated: 2026-07-29
    prove an objective magnitude above FP16 range, and prove finite scaled
    gradients. A float64 `T=1` KAT or a mismatched `160x160` source gate is not
    sufficient.
+   Exact repair `30f9ca6f` has now passed remote Linux `120/120` and standalone
+   CUDA KAT Job `1203873`; do not reinterpret that mechanical/numerical pass as
+   detector utility. Only a fresh six-arm namespace whose own schema-v4 P0 and
+   all six stage receipts pass can supply the four descriptive contrasts.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

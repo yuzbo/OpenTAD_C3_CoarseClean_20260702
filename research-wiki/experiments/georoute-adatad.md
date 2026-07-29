@@ -638,9 +638,18 @@ before GradScaler could recover. The local repair preserves the estimator and
 sum-then-batch-mean objective while evaluating half/bfloat likelihood and its
 temporal reduction in FP32. P0 schema v4 now requires an AMP backward KAT bound
 to the actual `180x320`, floor-native `11x20` grid (`N=220`) and `K=64`.
-This state is `implemented_pending_clean_remote_verification`; it is not a
-result, winner, P2/P3, official test, efficiency claim, Geometry Zoom claim, or
-paper claim.
+Repair commit `30f9ca6fff1572e2eabc6c1b6636c4cc23595a62` is proxy-synced to
+an exact clean snapshot and passed the complete remote Linux suite `120/120`.
+Standalone CUDA KAT Job `1203873` completed `0:0` on `g0051`; the AMP horizon
+check recorded FP16 source, FP32 likelihood/loss, objective
+`128637.0234375 > 65504`, and finite scaled gradients. Its receipt internal/file
+SHA-256 values are
+`7d0ccc346b95180d02a5ddcf4253ac0278e83f39a6f7e434357c86067e3c8e84`
+/
+`75ef280473f5032fd734fb86f1f58207702c1999d34c5c7132d40ff5017ae4a4`.
+This state is `tested_numerical_correctness_pending_old_closeout_and_fresh_p0`;
+it is not a result, winner, P2/P3, official test, efficiency claim, Geometry
+Zoom claim, or paper claim.
 
 ## Frozen decision logic
 

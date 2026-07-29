@@ -79,10 +79,18 @@ max_chars: 8000
   FP16 over the 384-tubelet production horizon; the float64 `T=1` KAT and
   synthetic P0 missed it. A numerical-only FP32 likelihood/reduction repair
   and mandatory AMP-shaped `T=384/N=220/K=64` P0 KAT are now implemented
-  locally. The validator binds this to the real decoded `180x320`,
-  floor-native `11x20` source grid rather than a mismatched synthetic capacity.
-  Clean commit, proxy sync and remote Linux/CUDA verification are still pending
-  before a new full six-arm run. There is no resume, partial-performance inference,
+  in exact commit `30f9ca6fff1572e2eabc6c1b6636c4cc23595a62`.
+  The validator binds this to the real decoded `180x320`, floor-native `11x20`
+  source grid rather than a mismatched synthetic capacity. The commit was
+  proxy-synced to an exact clean remote snapshot, passed the complete Linux
+  suite `120/120`, and standalone CUDA KAT Job `1203873` completed `0:0`.
+  Its objective magnitude was `128637.0234375 > 65504`, all scaled gradients
+  were finite, and receipt internal/file SHA-256 values are
+  `7d0ccc346b95180d02a5ddcf4253ac0278e83f39a6f7e434357c86067e3c8e84`
+  /
+  `75ef280473f5032fd734fb86f1f58207702c1999d34c5c7132d40ff5017ae4a4`.
+  This authorizes only old-run closeout and a future fresh full six-arm P0/run,
+  not a result. There is no resume, partial-performance inference,
   old selector, automatic promotion, P2/P3, official test, efficiency claim,
   Geometry Zoom claim, or paper claim.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection

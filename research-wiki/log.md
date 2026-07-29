@@ -1492,3 +1492,20 @@ append_only: true
   source horizon is bound to decoded `180x320`, floor-native `11x20` support.
   State is `implemented_pending_clean_remote_linux_cuda_verification`, not an
   empirical result, promotion, Geometry Zoom claim, or paper claim.
+
+- 2026-07-29: committed the estimator-equivalent PL AMP repair as
+  `30f9ca6fff1572e2eabc6c1b6636c4cc23595a62`, pushed from the first GitHub
+  request through the `RTK.md` academic proxy, and verified local HEAD, origin
+  ref, clean remote snapshot and clean tree parity. The exact snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_georoute_30f9ca6f_20260729_plamp`
+  passed the complete Linux suite `120/120`. Standalone CUDA KAT Job `1203873`
+  completed `0:0` on `g0051`; its `T=384/N=220/K=64` check used FP16 source,
+  FP32 likelihood/loss, objective `128637.0234375 > 65504`, and finite scaled
+  gradients. Receipt internal/file SHA-256 values are
+  `7d0ccc346b95180d02a5ddcf4253ac0278e83f39a6f7e434357c86067e3c8e84`
+  and
+  `75ef280473f5032fd734fb86f1f58207702c1999d34c5c7132d40ff5017ae4a4`.
+  This closes only numerical correctness. The old five leaves still run to
+  terminal provenance, `1203720` must seal INCOMPLETE, and no fresh performance
+  run, P2/P3, official test, efficiency, Geometry Zoom, or paper claim is yet
+  authorized.

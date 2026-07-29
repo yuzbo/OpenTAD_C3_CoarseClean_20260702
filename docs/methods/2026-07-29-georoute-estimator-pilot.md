@@ -160,9 +160,19 @@ values to the actual decoded `180x320`, floor-native `11x20` source grid rather
 than allowing an unrelated `160x160` synthetic grid to stand in for production
 capacity. This is a numerical correctness repair, not temporal normalization
 or a changed estimator weight.
-The failed namespace is never resumed; a new full six-arm namespace may start
-only after the revised source is committed, proxy-synced, remotely tested, and
-passes the expanded P0.
+The failed namespace is never resumed. The numerical repair is exact commit
+`30f9ca6fff1572e2eabc6c1b6636c4cc23595a62`, proxy-synced to clean snapshot
+`/data/run01/sczc063/yuzibo/projects/opentad_georoute_30f9ca6f_20260729_plamp`.
+The complete remote Linux suite passed `120/120`. Standalone CUDA KAT Job
+`1203873` completed `0:0` on `g0051`; its production-horizon objective was
+`128637.0234375`, all scaled gradients were finite, and its internal/file
+SHA-256 values are
+`7d0ccc346b95180d02a5ddcf4253ac0278e83f39a6f7e434357c86067e3c8e84`
+and
+`75ef280473f5032fd734fb86f1f58207702c1999d34c5c7132d40ff5017ae4a4`.
+This passes numerical correctness only. A new full six-arm namespace may start
+only after the old run seals INCOMPLETE and the new source passes its expanded
+per-arm P0.
 
 Any decode error, OOM, non-finite loss/cost, non-finite required gradient,
 missing update, rendezvous failure, missing artifact, input/hash mismatch,

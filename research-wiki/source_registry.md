@@ -97,6 +97,21 @@ updated: 2026-07-29
   not yet a clean remote source or CUDA gate; neither it nor this incomplete
   namespace is result or claim evidence.
 
+- GeoRoute PL AMP production-horizon repair, 2026-07-29. Exact runtime
+  `30f9ca6fff1572e2eabc6c1b6636c4cc23595a62`; exact clean remote snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_georoute_30f9ca6f_20260729_plamp`;
+  complete GeoRoute plus required C3 Linux suite `120/120`. Standalone
+  no-data/no-metric CUDA KAT Job `1203873` completed `0:0` on `g0051` under
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_plamp_kat_30f9ca6f_20260729`.
+  It recorded `T=384/N=220/K=64`, FP16 source, FP32 likelihood and policy loss,
+  objective magnitude `128637.0234375 > 65504`, and finite scaled gradients.
+  Receipt internal/file SHA-256 values are
+  `7d0ccc346b95180d02a5ddcf4253ac0278e83f39a6f7e434357c86067e3c8e84`
+  and
+  `75ef280473f5032fd734fb86f1f58207702c1999d34c5c7132d40ff5017ae4a4`.
+  This is numerical-correctness evidence, not mAP, cost, model selection,
+  Geometry Zoom, or paper evidence.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

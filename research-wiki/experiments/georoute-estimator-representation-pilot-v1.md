@@ -4,7 +4,7 @@ node_id: exp:georoute-estimator-representation-pilot-v1
 title: "GeoRoute estimator/representation exploratory pilot v1"
 idea: idea:geo-route-adatad
 stage: experiment_running
-status: residual_pl_amp_hard_fail_five_arms_running_pending_incomplete_closeout
+status: amp_repair_cuda_pass_five_arms_running_pending_incomplete_closeout
 verdict: pending
 confidence: medium
 commit: cbe0a08218a2f4550960f7c832f88c8cf77757c1
@@ -62,8 +62,18 @@ after all leaves become terminal. Root cause is the FP16 production-horizon PL
 temporal sum overflowing before GradScaler can recover, a case missed by the
 float64 `T=1` KAT and synthetic P0. An FP32 likelihood/reduction repair plus
 mandatory `T=384/N=220/K=64` AMP P0 KAT is implemented locally for a future
-fresh source and full restart. The current node is `experiment_running` with a
-hard-failed arm, not `empirically_supported` or `paper_ready`.
+fresh source and full restart. Repair commit
+`30f9ca6fff1572e2eabc6c1b6636c4cc23595a62` is now proxy-synced in an exact
+clean snapshot and passed the complete remote Linux suite `120/120`.
+Standalone CUDA KAT Job `1203873` completed `0:0`: half source, FP32
+likelihood/loss, objective magnitude `128637.0234375 > 65504`, and finite
+scaled gradients. Receipt internal/file SHA-256 values are
+`7d0ccc346b95180d02a5ddcf4253ac0278e83f39a6f7e434357c86067e3c8e84`
+and
+`75ef280473f5032fd734fb86f1f58207702c1999d34c5c7132d40ff5017ae4a4`.
+This is `tested` numerical-correctness evidence only. The current experimental
+node still has a hard-failed arm and is not `empirically_supported` or
+`paper_ready`.
 
 ## Claim boundary
 
