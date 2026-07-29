@@ -173,6 +173,12 @@ updated: 2026-07-30
    Any replacement numerical gate must be versioned, use an independent data
    order, match the intended official AMP semantics, keep all performance/test
    surfaces closed, and never silently relax the sealed v1 rule.
+0. Stability-v2 is a new contract, not a corrected v1 receipt. Its frozen
+   profile uses seed/order `4417`, 64 consumed batches, the default dynamic
+   GradScaler, zero retry/replay, scheduler and EMA advancement on every batch,
+   at most two nonconsecutive skips, scale floor `16384`, and a successful
+   final-16 tail. Never edit v1, reuse paper seeds `3407/3408/3409`, tune these
+   thresholds after seeing v2, or call a 64-batch prefix a full official run.
 0. `mmengine.Config` is not a normal dict and does not implement
    `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
    tested `Config.pop` API and execute a real Config materialization regression.

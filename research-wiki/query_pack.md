@@ -242,6 +242,12 @@ max_chars: 8000
   cannot be called an official-comparability criterion; an official-semantics,
   no-metric replacement gate must be separately frozen on an independent data
   order before any performance run.
+  That replacement is now `designed` and approved by heartbeat as
+  `exp:georoute-real-data-amp-stability-v2`: seed/order `4417`, 64 batches,
+  default dynamic GradScaler, zero retry/replay, official scheduler/EMA
+  per-batch transitions, at most two nonconsecutive skips, scale floor
+  `16384`, and a fully successful final-16 tail. It remains unimplemented and
+  produces no metric, checkpoint, test or paper evidence.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch

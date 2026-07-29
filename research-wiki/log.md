@@ -1782,3 +1782,13 @@ append_only: true
   not an official-comparability or estimator verdict. A versioned,
   official-semantics, no-metric gate on an independent data order is required
   before freezing any paper experiment.
+
+- 2026-07-30: heartbeat approved the separately versioned
+  `stability_official_semantics_v2` design. It freezes diagnostic seed/order
+  `4417`, 64 real-data batches, the default dynamic GradScaler, zero
+  retry/replay, official scheduler/EMA per-batch transitions, at most two
+  nonconsecutive skips, minimum/final scale `16384`, and a completely successful
+  final-16 tail. The design is recorded in
+  `docs/superpowers/specs/2026-07-30-georoute-official-semantics-amp-stability-v2-design.md`.
+  It does not modify sealed v1 and does not authorize metrics, checkpoints,
+  official test or a paper claim.

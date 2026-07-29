@@ -337,6 +337,15 @@ updated: 2026-07-30
   All metric/checkpoint/prediction/test/claim guards are false. This is a sealed
   numerical HOLD, not an official AdaTAD or performance result.
 
+- GeoRoute official-semantics AMP stability-v2 design, 2026-07-30.
+  Project-authored frozen specification
+  `docs/superpowers/specs/2026-07-30-georoute-official-semantics-amp-stability-v2-design.md`.
+  It preregisters a seed-4417 independent 64-batch PL/ST prefix with the
+  official dynamic GradScaler, zero retry/replay, scheduler/EMA advancement on
+  every consumed batch, bounded backoff and a stable final-16 tail. It is
+  design evidence only and emits no model metric, official-test result or paper
+  claim.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned
