@@ -174,16 +174,11 @@ def _gather_conv_patches(dense_input, output_positions, radius):
 def _conv_patches(patches, conv):
     if patches.shape[0] == 0:
         return patches.new_zeros((0, conv.out_channels))
-    values = F.conv1d(
-        patches,
-        conv.weight,
+    return F.linear(
+        patches.reshape(patches.shape[0], -1),
+        conv.weight.reshape(conv.out_channels, -1),
         conv.bias,
-        stride=1,
-        padding=0,
-        dilation=1,
-        groups=1,
     )
-    return values.squeeze(-1)
 
 
 def _scatter_physical(values, positions, time_size, out_channels=None):
