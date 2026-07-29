@@ -102,10 +102,17 @@ updated: 2026-07-29
   `04cb838679861997fe8f066697c533c1acf004324d7636e814f83c25459dd094`,
   and
   `1965f6fc27710d4ff5e76047200389901e5c585c261fed61a1133c1db3d0f88e`.
-  Jobs `1203714/1203716`--`1203719` and closeout `1203720` are terminal-
-  provenance work only. The local FP32 PL/KAT/P0-v4 repair is implemented but
-  not yet a clean remote source or CUDA gate; neither it nor this incomplete
-  namespace is result or claim evidence.
+  Jobs `1203714/1203716`--`1203719` completed `0:0` only for terminal
+  provenance. Closeout `1203720` completed `0:0` and sealed schema-v2
+  `INCOMPLETE_EXPLORATORY_PILOT /
+  PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, with
+  `all_six_arms_passed=false`, an empty contrast set, and all no-promotion
+  guards false. Canonical self-hash and file SHA-256 are
+  `738e9875de2e9e08408263fd7d359e60f5ba1ca1912d0fbb9062a462c58cbf3a`
+  and
+  `63f73a353e356bc77a7a701972f22f62620b35e46b0c8f3eba0fc3c9816db0cc`.
+  Neither the five completed arms nor this incomplete namespace is result or
+  claim evidence.
 
 - GeoRoute PL AMP production-horizon repair, 2026-07-29. Exact runtime
   `30f9ca6fff1572e2eabc6c1b6636c4cc23595a62`; exact clean remote snapshot

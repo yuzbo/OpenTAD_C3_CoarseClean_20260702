@@ -37,7 +37,7 @@ max_chars: 8000
   `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
   A new independent study,
   `georoute_estimator_representation_pilot_v1`, is
-  `residual_pl_amp_hard_fail_five_arms_running_pending_incomplete_closeout`.
+  `old_namespace_sealed_incomplete_replacement_ready_capacity_gate`.
   Six single-seed, 20-epoch, K=64 arms isolate PL versus ST, fixed-support
   representation, ROI-support representation, and ROI versus residual support.
   The first clean runtime `02b6efe7` passed remote Linux tests `108/108`, but
@@ -73,8 +73,16 @@ max_chars: 8000
   is `PASS_MECHANICAL_ONLY`. Six leaves `1203714`--`1203719` started the
   frozen study in parallel. Residual-PL Job `1203715` hard-failed on real
   batch 0 after eight AMP retries from scale `32768` to `256`, with no
-  checkpoint or metric. Five leaves continue and closeout `1203720` remains
-  afterany, but the four contrasts cannot be completed from this namespace.
+  checkpoint or metric. The other five leaves completed `0:0` only for terminal
+  provenance. Afterany closeout `1203720` completed `0:0` and sealed schema-v2
+  status `INCOMPLETE_EXPLORATORY_PILOT` with decision
+  `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, `all_six_arms_passed=false`, an
+  empty contrast set, and all selector/P2/P3/official-test/paper-claim guards
+  false. Its canonical self-hash is
+  `738e9875de2e9e08408263fd7d359e60f5ba1ca1912d0fbb9062a462c58cbf3a`;
+  file SHA-256 is
+  `63f73a353e356bc77a7a701972f22f62620b35e46b0c8f3eba0fc3c9816db0cc`.
+  The four contrasts cannot be completed from this namespace.
   Root cause is a finite per-tubelet PL likelihood being temporally summed in
   FP16 over the 384-tubelet production horizon; the float64 `T=1` KAT and
   synthetic P0 missed it. A numerical-only FP32 likelihood/reduction repair
@@ -89,15 +97,16 @@ max_chars: 8000
   `7d0ccc346b95180d02a5ddcf4253ac0278e83f39a6f7e434357c86067e3c8e84`
   /
   `75ef280473f5032fd734fb86f1f58207702c1999d34c5c7132d40ff5017ae4a4`.
-  This authorizes only old-run closeout and a future fresh full six-arm P0/run,
-  not a result. There is no resume, partial-performance inference,
+  The numerical repair plus the sealed old closeout permits only an all-at-once
+  capacity check and a future fresh full six-arm P0/run, not a result. There is
+  no resume, partial-performance inference,
   old selector, automatic promotion, P2/P3, official test, efficiency claim,
   Geometry Zoom claim, or paper claim.
   A fresh history-free agent independently audited the Pro absorption,
   six-arm contract, numerical repair, no-leak paths, all-six finalizer, and
   14-job fail-closed deployer. Its verdict is
-  `DEPLOY_AFTER_OLD_CLOSEOUT_AND_CAPACITY`: no further Pro discussion is needed,
-  but the old namespace must first seal INCOMPLETE and Slurm must admit all 14
+  `DEPLOY_AFTER_OLD_CLOSEOUT_AND_CAPACITY`: no further Pro discussion is needed.
+  The old-closeout condition is now satisfied; Slurm must still admit all 14
   new jobs at once. This is code/protocol review evidence, not a model result.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower

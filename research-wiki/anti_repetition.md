@@ -48,10 +48,11 @@ updated: 2026-07-29
    to runtime `cbe0a08218a2f4550960f7c832f88c8cf77757c1` and its sealed P0
    suite. Job `1203715` hard-failed at real batch 0 after eight AMP retries and
    produced no checkpoint or metric. Never replace that arm, resume any
-   failed/running arm, or interpret an epoch log or the other five leaves as a
-   partial result. Its all-terminal finalizer may emit only
-   `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`; the four contrasts require a
-   new exact commit and full six-arm namespace.
+   arm, or interpret an epoch log or the other five completed leaves as a
+   partial result. All-terminal finalizer `1203720` emitted only
+   `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with an empty contrast set
+   (self-hash `738e9875de2e9e08408263fd7d359e60f5ba1ca1912d0fbb9062a462c58cbf3a`);
+   the four contrasts require a new exact commit and full six-arm namespace.
 0. Do not repeat the FP16 production-horizon PL reduction. A finite
    per-tubelet likelihood can overflow when summed over `T=384`. Half/bfloat
    likelihood evaluation and the unchanged sum-then-batch-mean reduction must
@@ -67,9 +68,9 @@ updated: 2026-07-29
 0. The independent-agent verdict
    `DEPLOY_AFTER_OLD_CLOSEOUT_AND_CAPACITY` is a code/protocol audit, not a
    runtime authorization that bypasses either gate. Never submit fewer than
-   the complete 14-job DAG to fit current capacity, deploy before the old
-   `cbe0a082` closeout seals INCOMPLETE, or treat reviewer approval as a P0 or
-   performance receipt.
+   the complete 14-job DAG to fit current capacity. The old `cbe0a082` closeout
+   has now sealed INCOMPLETE, but that does not bypass the fresh capacity or P0
+   gates; never treat reviewer approval as a P0 or performance receipt.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

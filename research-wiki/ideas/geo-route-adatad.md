@@ -289,21 +289,25 @@ prediction-hash-preserving replays passed. It still authorizes no CER or paper
 claim.
 
 The separately frozen six-arm exploratory pilot is now
-`residual_pl_amp_hard_fail_five_arms_running_pending_incomplete_closeout`.
+`old_namespace_sealed_incomplete_replacement_ready_capacity_gate`.
 Its first runtime failed before model evidence and is not resumed. Fresh
 runtime `cbe0a082` passed the full remote Linux suite, concurrent same-node
 rendezvous gate, and all six P0 leaves, but residual-PL Job `1203715`
 hard-failed on real batch 0 after eight AMP retries and produced no checkpoint
-or metric. The other five leaves continue only to preserve complete failure
-provenance; they cannot be interpreted. Finalizer `1203720` must seal
-`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. The root cause is FP16 temporal PL
+or metric. The other five leaves completed only to preserve complete failure
+provenance; they cannot be interpreted. Finalizer `1203720` completed `0:0`
+and sealed `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with an empty contrast
+set and self-hash
+`738e9875de2e9e08408263fd7d359e60f5ba1ca1912d0fbb9062a462c58cbf3a`.
+The root cause is FP16 temporal PL
 accumulation at the real `T=384/N=220/K=64` horizon. An estimator-equivalent
 FP32 likelihood/reduction repair and a production-grid-bound AMP KAT are
 now `tested` for numerical correctness at exact commit `30f9ca6f`: remote
 Linux `120/120` and CUDA KAT Job `1203873` passed with an FP32 objective above
-the FP16 range and finite scaled gradients. The old run must still seal
-INCOMPLETE, and the repair must pass fresh per-arm P0 plus a full new six-arm
-namespace. The design remains the smallest way to identify estimator, support,
+the FP16 range and finite scaled gradients. The old run has now sealed
+INCOMPLETE; the repair must still pass the all-at-once capacity check, fresh
+per-arm P0, and a full new six-arm namespace. The design remains the smallest
+way to identify estimator, support,
 and representation effects, but no single-seed contrast or CER/paper method
 exists from the failed run or the KAT.
 
@@ -312,8 +316,9 @@ audited the absorption, six-arm causal contract, no-leak binding, PL AMP repair,
 and all-or-none DAG. Its verdict is
 `DEPLOY_AFTER_OLD_CLOSEOUT_AND_CAPACITY`: the minimal exploratory pilot is
 specified well enough that another Pro discussion is unnecessary, but the old
-namespace must first seal INCOMPLETE and the new exact `30f9ca6f` namespace
-must pass all six P0/stage paths. This review does not advance CER beyond
+namespace had to seal INCOMPLETE and the new exact `30f9ca6f` namespace must
+pass all six P0/stage paths. The old-closeout condition is now satisfied. This
+review does not advance CER beyond
 `discussed` and is not empirical support.
 
 ## Connections

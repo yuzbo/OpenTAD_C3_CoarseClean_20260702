@@ -629,9 +629,16 @@ P0 Jobs `1203707`--`1203712` and afterany P0 finalizer `1203713` completed
 is `PASS_MECHANICAL_ONLY`. Six frozen leaves `1203714`--`1203719` started in
 parallel. Residual-PL Job `1203715` hard-failed on real batch 0 after eight AMP
 retries (scale `32768` to `256`) and produced no checkpoint or metric. The
-other five leaves continue only to terminal provenance; `1203720` is the
-afterany closeout and must seal
-`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with no contrasts. The failure is
+other five leaves completed `0:0` only for terminal provenance. Afterany
+closeout `1203720` completed `0:0` and sealed
+`INCOMPLETE_EXPLORATORY_PILOT /
+PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, `all_six_arms_passed=false`, an
+empty contrast set, and false selector/P2/P3/official-test/paper-claim guards.
+Its canonical self-hash is
+`738e9875de2e9e08408263fd7d359e60f5ba1ca1912d0fbb9062a462c58cbf3a`;
+file SHA-256 is
+`63f73a353e356bc77a7a701972f22f62620b35e46b0c8f3eba0fc3c9816db0cc`.
+The failure is
 numerical correctness: a finite per-tubelet Plackett--Luce likelihood was
 temporally reduced in FP16 over the real 384-tubelet horizon and overflowed
 before GradScaler could recover. The local repair preserves the estimator and
@@ -647,7 +654,7 @@ SHA-256 values are
 `7d0ccc346b95180d02a5ddcf4253ac0278e83f39a6f7e434357c86067e3c8e84`
 /
 `75ef280473f5032fd734fb86f1f58207702c1999d34c5c7132d40ff5017ae4a4`.
-This state is `tested_numerical_correctness_pending_old_closeout_and_fresh_p0`;
+This state is `old_namespace_sealed_incomplete_pending_capacity_and_fresh_p0`;
 it is not a result, winner, P2/P3, official test, efficiency claim, Geometry
 Zoom claim, or paper claim.
 
@@ -656,7 +663,8 @@ An independent history-free agent subsequently returned
 review, project absorption, frozen six-arm intervention, numerical repair,
 no-leak contracts, and fail-closed 14-job DAG. This is protocol-review evidence
 only. It authorizes no partial submission and does not replace the old
-INCOMPLETE closeout or the new source's six expanded P0 leaves.
+INCOMPLETE closeout or the new source's six expanded P0 leaves. The old
+closeout gate is now satisfied; the capacity and fresh-P0 gates remain.
 
 ## Frozen decision logic
 

@@ -3,9 +3,9 @@ type: experiment
 node_id: exp:georoute-estimator-representation-pilot-v1
 title: "GeoRoute estimator/representation exploratory pilot v1"
 idea: idea:geo-route-adatad
-stage: experiment_running
-status: amp_repair_cuda_pass_five_arms_running_pending_incomplete_closeout
-verdict: pending
+stage: tested
+status: old_namespace_sealed_incomplete_replacement_ready_capacity_gate
+verdict: incomplete_no_performance_inference
 confidence: medium
 commit: cbe0a08218a2f4550960f7c832f88c8cf77757c1
 jobs: 1203707-1203720
@@ -57,8 +57,16 @@ is `PASS_MECHANICAL_ONLY`. Six training/evaluation leaves
 `1203714`--`1203719` started in parallel. Job `1203715`
 (`residual_pl_rep_off`) then hard-failed on real batch 0 after eight AMP
 retries (scale `32768` down to `256`) and produced no checkpoint or metric.
-The other five leaves remain running; closeout `1203720` must seal INCOMPLETE
-after all leaves become terminal. Root cause is the FP16 production-horizon PL
+The other five leaves completed `0:0` only to preserve terminal provenance.
+Afterany closeout `1203720` completed `0:0` and sealed
+`INCOMPLETE_EXPLORATORY_PILOT /
+PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, with
+`all_six_arms_passed=false`, an empty contrast set, and selector/P2/P3/official
+test/paper claim all false. Its canonical self-hash and file SHA-256 are
+`738e9875de2e9e08408263fd7d359e60f5ba1ca1912d0fbb9062a462c58cbf3a`
+and
+`63f73a353e356bc77a7a701972f22f62620b35e46b0c8f3eba0fc3c9816db0cc`.
+Root cause is the FP16 production-horizon PL
 temporal sum overflowing before GradScaler can recover, a case missed by the
 float64 `T=1` KAT and synthetic P0. An FP32 likelihood/reduction repair plus
 mandatory `T=384/N=220/K=64` AMP P0 KAT is implemented locally for a future
@@ -86,9 +94,10 @@ at
 
 ## Claim boundary
 
-For the current namespace, the hard-failed arm means finalizer `1203720` may
-emit only `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, with an empty contrast
-set. A future fresh namespace may emit descriptive single-seed contrasts only
+For the sealed namespace, finalizer `1203720` emitted
+`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with an empty contrast set; none of
+the five completed-arm outputs may be interpreted. A future fresh namespace may
+emit descriptive single-seed contrasts only
 if all six arms pass. No finalizer can emit a winner, reuse the historical
 selector, promote P2/P3, open official test, or authorize an efficiency,
 Geometry Zoom, or paper claim.

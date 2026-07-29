@@ -1522,3 +1522,19 @@ append_only: true
   new namespace. This is code/protocol review evidence only, not a P0,
   performance, CER, Geometry Zoom, P2/P3, official-test, efficiency, or paper
   result.
+
+- 2026-07-29 20:15 CST: the immutable `cbe0a082` pilot reached complete
+  terminal provenance without intervention. Jobs
+  `1203714/1203716`--`1203719` completed `0:0`; residual-PL `1203715` remained
+  the sole hard failure. Afterany closeout `1203720` completed `0:0` and sealed
+  schema-v2 `INCOMPLETE_EXPLORATORY_PILOT /
+  PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, with
+  `all_six_arms_passed=false`, an empty descriptive-contrast object, and
+  selector/old-selector/P2/P3/official-test/paper-claim guards all false. Its
+  canonical self-hash recomputed exactly as
+  `738e9875de2e9e08408263fd7d359e60f5ba1ca1912d0fbb9062a462c58cbf3a`;
+  file SHA-256 is
+  `63f73a353e356bc77a7a701972f22f62620b35e46b0c8f3eba0fc3c9816db0cc`.
+  No five-arm metric, epoch log, or partial checkpoint was interpreted. The old
+  closeout gate is satisfied; only all-at-once 14-job capacity and fresh
+  schema-v4 P0 remain before exact source `30f9ca6f` may run the replacement.
