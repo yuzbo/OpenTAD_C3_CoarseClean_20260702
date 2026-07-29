@@ -296,3 +296,61 @@ def test_independent_thumos_ap_counts_duplicate_predictions_as_false_positive():
     }
     metrics, _ = independent.independent_thumos_evaluate(annotation, predictions)
     assert 0.0 < metrics["average_mAP"] < 1.0
+
+
+def test_annotation_contract_explicitly_binds_logical_test_to_validation():
+    annotation = {
+        "database": {
+            "video_test_1": {
+                "subset": "validation",
+                "annotations": [
+                    {"label": "Diving", "segment": [1.0, 2.0]},
+                ],
+            },
+            "video_train_1": {
+                "subset": "training",
+                "annotations": [],
+            },
+        }
+    }
+    policy = {
+        "subset": "test",
+        "annotation_subset": "validation",
+        "expected_annotation_video_count": 1,
+        "expected_annotation_gt_count": 1,
+        "expected_annotation_class_count": 1,
+    }
+    contract = independent.validate_annotation_contract(annotation, policy)
+    assert contract == {
+        "logical_evaluation_subset": "test",
+        "annotation_subset": "validation",
+        "video_count": 1,
+        "ground_truth_count": 1,
+        "class_count": 1,
+        "video_subset_histogram": {"validation": 1, "training": 1},
+    }
+
+
+def test_annotation_contract_rejects_wrong_validation_video_count():
+    annotation = {
+        "database": {
+            "video_test_1": {
+                "subset": "validation",
+                "annotations": [
+                    {"label": "Diving", "segment": [1.0, 2.0]},
+                ],
+            },
+        }
+    }
+    policy = {
+        "subset": "test",
+        "annotation_subset": "validation",
+        "expected_annotation_video_count": 2,
+        "expected_annotation_gt_count": 1,
+        "expected_annotation_class_count": 1,
+    }
+    with pytest.raises(
+        independent.IndependentClosureError,
+        match="annotation subset validation video count mismatch",
+    ):
+        independent.validate_annotation_contract(annotation, policy)

@@ -122,6 +122,22 @@ def validate_artifact_record(record, description):
 def validate_policy(policy):
     require(policy.get("schema_version") == POLICY_SCHEMA, "policy schema mismatch")
     require(policy.get("subset") == "test", "THUMOS14 evaluation subset must be test")
+    require(
+        policy.get("annotation_subset") == "validation",
+        "OpenTAD THUMOS14 annotation subset must be validation",
+    )
+    require(
+        int(policy.get("expected_annotation_video_count", -1)) == 211,
+        "THUMOS14 validation video count contract mismatch",
+    )
+    require(
+        int(policy.get("expected_annotation_gt_count", -1)) == 3325,
+        "THUMOS14 validation ground-truth count contract mismatch",
+    )
+    require(
+        int(policy.get("expected_annotation_class_count", -1)) == 20,
+        "THUMOS14 validation class count contract mismatch",
+    )
     thresholds = [float(value) for value in policy.get("tiou_thresholds", [])]
     require(thresholds == TIOS.tolist(), "policy tIoU thresholds mismatch")
     pre_nms_thresh = float(policy["pre_nms_thresh"])
@@ -156,6 +172,63 @@ def validate_policy(policy):
         "NMS score floor must be finite and non-negative",
     )
     return policy
+
+
+def validate_annotation_contract(annotation, policy):
+    database = annotation.get("database")
+    require(isinstance(database, dict), "annotation database is missing")
+    subset = policy["annotation_subset"]
+    records = [
+        (video_name, record)
+        for video_name, record in database.items()
+        if record.get("subset") == subset
+    ]
+    require(
+        len(records) == int(policy["expected_annotation_video_count"]),
+        (
+            f"annotation subset {subset} video count mismatch: "
+            f"expected {policy['expected_annotation_video_count']}, "
+            f"observed {len(records)}"
+        ),
+    )
+    annotations = []
+    for video_name, record in records:
+        rows = record.get("annotations")
+        require(
+            isinstance(rows, list),
+            f"annotation rows are not a list: {video_name}",
+        )
+        annotations.extend(rows)
+    require(
+        len(annotations) == int(policy["expected_annotation_gt_count"]),
+        (
+            f"annotation subset {subset} ground-truth count mismatch: "
+            f"expected {policy['expected_annotation_gt_count']}, "
+            f"observed {len(annotations)}"
+        ),
+    )
+    labels = {row.get("label") for row in annotations}
+    require(None not in labels, "annotation contains a missing class label")
+    require(
+        len(labels) == int(policy["expected_annotation_class_count"]),
+        (
+            f"annotation subset {subset} class count mismatch: "
+            f"expected {policy['expected_annotation_class_count']}, "
+            f"observed {len(labels)}"
+        ),
+    )
+    subset_histogram = {}
+    for record in database.values():
+        name = record.get("subset")
+        subset_histogram[name] = subset_histogram.get(name, 0) + 1
+    return {
+        "logical_evaluation_subset": policy["subset"],
+        "annotation_subset": subset,
+        "video_count": len(records),
+        "ground_truth_count": len(annotations),
+        "class_count": len(labels),
+        "video_subset_histogram": subset_histogram,
+    }
 
 
 def load_capture(completion):
@@ -1010,7 +1083,7 @@ def validate_completion(
         independent_metrics, per_class = independent_thumos_evaluate(
             annotation,
             independently_merged,
-            subset=policy["subset"],
+            subset=policy["annotation_subset"],
         )
         stored_result_payload = load_json(result_path)
         stored_result = _validate_result_payload(
@@ -1170,6 +1243,7 @@ def main():
     require(annotation_path.is_file(), "annotation file is missing")
     policy = validate_policy(load_json(policy_path))
     annotation = load_json(annotation_path)
+    annotation_contract = validate_annotation_contract(annotation, policy)
     reports = [
         validate_completion(
             completion,
@@ -1226,6 +1300,7 @@ def main():
         "annotation": {
             "path": str(annotation_path),
             "sha256": sha256_file(annotation_path),
+            **annotation_contract,
         },
         "policy": {
             "path": str(policy_path),

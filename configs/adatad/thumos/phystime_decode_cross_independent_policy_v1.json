@@ -17,6 +17,10 @@
   "schema_version": "phystime_independent_nms_policy_v1",
   "score_round_digits": 4,
   "segment_round_digits": 2,
+  "annotation_subset": "validation",
+  "expected_annotation_class_count": 20,
+  "expected_annotation_gt_count": 3325,
+  "expected_annotation_video_count": 211,
   "subset": "test",
   "tiou_thresholds": [
     0.3,
