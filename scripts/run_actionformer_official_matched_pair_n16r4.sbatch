@@ -30,6 +30,9 @@ source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 : "${EXPECTED_DATA_MANIFEST_SHA256:?missing EXPECTED_DATA_MANIFEST_SHA256}"
 : "${EXPECTED_FEATURE_MANIFEST_SHA256:?missing EXPECTED_FEATURE_MANIFEST_SHA256}"
 : "${EXPECTED_EVALUATOR_MANIFEST_SHA256:?missing EXPECTED_EVALUATOR_MANIFEST_SHA256}"
+: "${ACTIONFORMER_PYTHON_ENV:?missing ACTIONFORMER_PYTHON_ENV}"
+: "${ACTIONFORMER_ENVIRONMENT_RECEIPT:?missing ACTIONFORMER_ENVIRONMENT_RECEIPT}"
+: "${EXPECTED_ENVIRONMENT_RECEIPT_SHA256:?missing EXPECTED_ENVIRONMENT_RECEIPT_SHA256}"
 
 SCREENING_SEED="${SCREENING_SEED:-1234567891}"
 EXPECTED_TERMINAL_EPOCH="${EXPECTED_TERMINAL_EPOCH:-35}"
@@ -90,6 +93,43 @@ PY
   fi
 }
 trap failure_receipt EXIT
+
+STAGE="python_environment"
+case "$ACTIONFORMER_PYTHON_ENV" in
+  /data/run01/sczc063/yuzibo/projects/python_envs/*) ;;
+  *) echo "ACTIONFORMER_PYTHON_ENV is outside the project boundary" >&2; exit 2 ;;
+esac
+test -x "$ACTIONFORMER_PYTHON_ENV/bin/python"
+test -f "$ACTIONFORMER_ENVIRONMENT_RECEIPT"
+test "$(sha256sum "$ACTIONFORMER_ENVIRONMENT_RECEIPT" | awk '{print $1}')" = \
+  "$EXPECTED_ENVIRONMENT_RECEIPT_SHA256"
+export PATH="$ACTIONFORMER_PYTHON_ENV/bin:$PATH"
+export PYTHONNOUSERSITE=1
+hash -r
+test "$(readlink -f "$(command -v python)")" = \
+  "$(readlink -f "$ACTIONFORMER_PYTHON_ENV/bin/python")"
+ACTIONFORMER_PYTHON_ENV="$ACTIONFORMER_PYTHON_ENV" python - <<'PY'
+import os
+import sys
+
+import numpy
+import tensorboard
+import torch
+from torch.utils.tensorboard import SummaryWriter
+
+assert sys.prefix == os.environ["ACTIONFORMER_PYTHON_ENV"]
+assert torch.__version__ == "2.0.1"
+assert torch.version.cuda == "11.8"
+assert numpy.__version__ == "1.23.5"
+assert tensorboard.__version__ == "2.20.0"
+assert SummaryWriter is not None
+print({
+    "python_prefix": sys.prefix,
+    "torch": torch.__version__,
+    "numpy": numpy.__version__,
+    "tensorboard": tensorboard.__version__,
+})
+PY
 
 STAGE="source_identity"
 candidate_commit=$(git -C "$CANDIDATE_ROOT" rev-parse HEAD)
@@ -379,6 +419,7 @@ STAGE="pair_completion"
 export RUN_ROOT RUN_LOG SOURCE_DIFF_ATTESTATION data_manifest feature_manifest
 export evaluator_manifest candidate_commit candidate_tree audit_commit audit_tree
 export official_commit official_tree SCREENING_SEED
+export ACTIONFORMER_ENVIRONMENT_RECEIPT
 python - <<'PY'
 import hashlib
 import json
@@ -416,6 +457,13 @@ payload = {
         "data_manifest": receipt(os.environ["data_manifest"]),
         "feature_manifest": receipt(os.environ["feature_manifest"]),
         "evaluator_manifest": receipt(os.environ["evaluator_manifest"]),
+    },
+    "environment": {
+        "tensorboard_layer": receipt(
+            os.environ["ACTIONFORMER_ENVIRONMENT_RECEIPT"]
+        ),
+        "same_environment_for_both_arms": True,
+        "logging_dependency_only": True,
     },
     "arms": {
         "dense": receipt(root / "dense" / "ARM_COMPLETE.json"),

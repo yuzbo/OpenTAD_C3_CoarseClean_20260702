@@ -30,6 +30,11 @@ def test_official_matched_pair_launcher_is_syntax_valid_and_fail_closed():
     assert "evaluate_actionformer_raw_predictions.py" in source
     assert "validate_attestation_snapshot" in source
     assert "validate_attestation_live(payload)" not in source
+    assert ': "${ACTIONFORMER_PYTHON_ENV:?' in source
+    assert ': "${ACTIONFORMER_ENVIRONMENT_RECEIPT:?' in source
+    assert "EXPECTED_ENVIRONMENT_RECEIPT_SHA256" in source
+    assert 'assert tensorboard.__version__ == "2.20.0"' in source
+    assert 'assert numpy.__version__ == "1.23.5"' in source
     assert '"paper_main_table_eligible": False' in source
     assert '"end_to_end_cost_claim_allowed": False' in source
     assert "requires_preregistered_multiseed" in source
