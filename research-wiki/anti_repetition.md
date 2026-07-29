@@ -239,3 +239,8 @@ These failures and naming mistakes must not be repeated.
     absolute and normalized error, frozen threshold, dtype/autocast state and a
     separate non-admission FP32 replay. A fail-closed gate still needs enough
     evidence to identify what failed.
+78. Do not collapse two different conclusions into “the root cause is known.”
+    The universal loss-equivalence premise is invalid for a non-affine integer
+    grid, but the particular runtime loss/key/precision component observed in
+    Recovery-v6 remains unknown until a diagnostic receipt records it. Neither
+    statement is evidence of model quality.

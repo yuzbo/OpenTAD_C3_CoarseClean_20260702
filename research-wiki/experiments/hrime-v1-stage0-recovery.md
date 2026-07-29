@@ -8,7 +8,7 @@
 - Deterministic H-RIME core: `implemented`
 - Focused pure-CPU verification: `tested`
 - Torch-dependent verification: `remote_unit_tested / launchers_prechecked`
-- Slurm recovery transaction: `recovery_v6_failed_closed / gate_validity_under_review / salvage_complete`
+- Slurm recovery transaction: `recovery_v6_failed_closed / universal_loss_equivalence_premise_invalid / observed_mismatch_component_unresolved / salvage_complete`
 - Same-total-cost oracle: `not_yet_run`
 - Learned H-RIME: `not_yet_implemented`
 - Empirical support: `not_yet_empirically_supported`
@@ -528,3 +528,45 @@ empirical conclusion is available.
 Correct empirical statement:
 
 `No paper-admissible empirical conclusion is available yet.`
+
+## Recovery v6 strict result analysis and diagnostic remediation
+
+The post-failure result is now separated into two claims:
+
+1. `THEORETICAL_ANALYSIS`: the frozen gate's universal scalar
+   loss-equivalence premise is invalid for the implemented general case. For
+   `T=768, K=384`, exact-uniform integer anchors have 382 physical steps of two
+   and one step of three because `767 % 383 != 0`. The induced
+   selected-to-physical map is therefore not globally affine. Center sampling,
+   regression-range assignment, stride-normalized offsets and IoU/GIoU losses
+   do not supply invariance under that piecewise-linear warp.
+2. `ENGINEERING_STATUS`: the immutable Recovery-v6 artifact still cannot name
+   the particular loss key, error magnitude, window role, precision effect or
+   implementation component that triggered job `1201417`. The observed runtime
+   mismatch component remains unresolved because the old failure path did not
+   record those fields.
+
+Diagnostic-only commit
+`69136de3ed8d8f977c78cfe5258dae3d57f7e238` adds:
+
+- an explicit affine-coordinate applicability report for every exact-uniform
+  row;
+- per-loss physical/selected values, absolute and normalized errors, and the
+  unchanged registered threshold;
+- a separate FP32 replay whose result has no admission effect;
+- an exclusive, non-overwriting failure JSON outside the Git worktree;
+- focused invalid-input, singleton, non-finite, key-mismatch and geometry
+  regressions.
+
+Compilation, `git diff --check`, and the focused diagnostic/evidence suite pass
+with `32 passed`. This commit does not change the model, loss, selector,
+budget, threshold, split, checkpoint, metric, or the fail-closed admission
+decision. It instruments the next authorized run so an observed mismatch can
+be localized without turning a diagnostic into paper evidence.
+
+The next scientific action is a bounded architecture-and-gate review. It must
+decide whether the paper mainline preserves a pure pre-backbone selected-axis
+detector with external coordinate remapping, keeps the current physical-head
+integration with a weaker justified contract, or records both as separate
+research arms. No new Recovery-v6-style transaction should be released until
+that decision and its replacement gate are frozen. Phase 4 remains sealed.

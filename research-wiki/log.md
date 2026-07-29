@@ -852,3 +852,28 @@
 - Corrected verdict:
   `gate_failed_closed / root_cause_not_identified / gate_validity_under_review`.
   No performance number or paper claim is authorized.
+
+## 2026-07-29 — Gate contract root-cause class established; diagnostics committed
+
+- The result is in post-failure scientific-contract analysis, not model
+  performance analysis. No paper-admissible empirical result exists.
+- The universal gate premise is now rejected as a theorem for the implemented
+  general case. At `T=768, K=384`, round-half-to-even integer anchors produce
+  382 steps of two and one step of three, hence a non-affine coordinate warp.
+  The physical head's target assignment and IoU/GIoU loss are not guaranteed to
+  be scalar-loss conjugate to the selected-axis formulation under that warp.
+- The exact observed component in job `1201417` remains unresolved. Its
+  immutable log records no window role, loss key, error magnitude, threshold
+  comparison or FP32 replay. The correct state is
+  `universal_loss_equivalence_premise_invalid /
+  observed_mismatch_component_unresolved`.
+- Diagnostic-only commit
+  `69136de3ed8d8f977c78cfe5258dae3d57f7e238` records affine applicability,
+  per-loss errors, unchanged tolerance, AMP state and a separate diagnostic-only
+  FP32 replay; failures produce exclusive JSON outside the Git worktree.
+- The commit changes no model, loss, budget, threshold, data, checkpoint,
+  metric, or admission outcome. Compilation, `git diff --check`, and the
+  focused diagnostic/evidence suite passed with `32 passed`.
+- One bounded Pro review is now warranted to select the paper architecture and
+  replace the invalid universal equality premise with a justified scientific
+  gate. No new transaction or Phase 4 access is authorized by this analysis.

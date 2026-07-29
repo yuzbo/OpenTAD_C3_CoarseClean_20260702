@@ -28,3 +28,5 @@
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"repaired_by","target":"models/duca-rime-runtime-temporal-adapter-v6"}
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"deployed_as","target":"deployments/duca-rime-recovery-5a599e90-v6"}
 {"source":"experiments/hrime-v1-stage0-recovery","relation":"failed_closed_as","target":"deployments/duca-rime-recovery-5a599e90-v6"}
+{"source":"deployments/duca-rime-recovery-5a599e90-v6","relation":"diagnosed_by","target":"sources/REMOTE-RIME-V6-GATE-1"}
+{"source":"experiments/hrime-v1-stage0-recovery","relation":"instrumented_by","target":"sources/LOCAL-GATE-DIAG-1"}

@@ -14,6 +14,8 @@
 | LOCAL-SPEC-1 | `docs/superpowers/specs/2026-07-27-duca-total60-prebackbone-plugin-cvpr-design.md` | superseded foundation specification | retained |
 | LOCAL-DESIGN-2 | `docs/methods/2026-07-28-duca-rime-mixed-k-baseline-design.md` | frozen U-mixed-K design | active |
 | LOCAL-DESIGN-3 | `docs/superpowers/specs/2026-07-28-hrime-v1-budget-conserving-design.md` | corrected, user-approved H-RIME v1 specification | active |
+| REMOTE-RIME-V6-GATE-1 | `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_5a599e90_20260729_003600/logs/rime-phase1-1201417.out`, SHA-256 `0b9aedc943139e024939fa16bf5cf3007c7ae387e74f04bdae823551e3baee29` | immutable Recovery-v6 protected-gate failure evidence | directly verified; insufficient to identify offending loss component |
+| LOCAL-GATE-DIAG-1 | Git commit `69136de3ed8d8f977c78cfe5258dae3d57f7e238` | fail-closed coordinate/loss diagnostic remediation | implemented; focused local suite passed |
 
 `U-PRO-CBCG-1` was read in full. Its route analysis is retained as an external
 review, not as repository truth. Its linked `sandbox:/mnt/data/...` Patch A,

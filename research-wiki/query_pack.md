@@ -17,7 +17,7 @@ Current evidence level:
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `recovery_v6_preflight_passed_1201390 / production_gate_passed_1201416` |
 | Dense reference training | `recovery_v6_salvage_completed / engineering_only` |
-| Phase 1 closure | `recovery_v6_contract_gate_failed_1201417 / gate_validity_under_review / no_terminal_receipt` |
+| Phase 1 closure | `recovery_v6_contract_gate_failed_1201417 / universal_loss_equivalence_premise_invalid / observed_mismatch_component_unresolved / no_terminal_receipt` |
 | Phase 2/3/4 | `recovery_v6_children_cancelled / phase4_never_opened` |
 | Latest four-stage transaction | `recovery_v6_failed_closed / terminal` |
 | H-RIME scientific route | `user_approved / designed` |
@@ -26,7 +26,7 @@ Current evidence level:
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
 | H-RIME shared-scan/model integration | `not_yet_implemented` |
 | H-RIME same-total-cost oracle | `not_yet_run` |
-| H-RIME Stage-0 recovery transaction | `recovery_v6_failed_closed / gate_validity_under_review` |
+| H-RIME Stage-0 recovery transaction | `recovery_v6_failed_closed / diagnostic_remediation_local_tested / scientific_contract_review_required` |
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
@@ -498,8 +498,9 @@ An independent code-and-math audit found:
   therefore cannot distinguish a minor numeric miss, a true semantic bug, or an
   over-strong equivalence premise.
 
-The corrected verdict is `gate_failed_closed / root_cause_not_identified /
-gate_validity_under_review`. Exact dependency-impossible children
+The corrected verdict is `gate_failed_closed /
+universal_loss_equivalence_premise_invalid /
+observed_mismatch_component_unresolved`. Exact dependency-impossible children
 `1201420`/`1201421` were canceled. The production gate and two engineering-only
 dense-salvage receipts remain valid and immutable; Phase 4 was never opened and
 official-final remains sealed. This terminal state is `ENGINEERING_STATUS` only
@@ -720,6 +721,26 @@ Until those artifacts exist, the correct status is `implemented/tested` or
 `experiment_running`, never `empirically_supported` or `paper_ready`.
 
 ## Immediate execution
+
+Current priority, superseding the operational order below while retaining it as
+negative-history context:
+
+1. Use diagnostic-only commit
+   `69136de3ed8d8f977c78cfe5258dae3d57f7e238` as the audited analysis surface.
+   It records coordinate applicability, per-loss errors and a non-admission
+   FP32 replay without changing the frozen threshold or pass/fail semantics.
+2. Push the exact commit and research-memory update, then run the focused
+   Linux/PyTorch checks from a clean checkout before any new Slurm transaction.
+3. Conduct one bounded Pro review of the repository and require a single
+   architecture decision plus a mathematically justified replacement gate.
+   The review must distinguish the invalid universal gate premise from the
+   still-unobserved component that triggered job `1201417`.
+4. Implement only the frozen review decision, add focused regressions, and
+   release a fresh immutable root. Never overwrite or reinterpret Recovery-v6.
+5. Resume Phase 1/2/3 only after the replacement scientific contract passes.
+   Keep Phase 4 disabled and official-final sealed.
+
+Retained earlier recovery instructions:
 
 1. Treat transaction `d9d454cd` as terminally failed closed. Do not release its
    dependency-blocked Phase 2/controller or reuse missing receipts as evidence.
