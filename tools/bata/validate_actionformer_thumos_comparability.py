@@ -13,18 +13,21 @@ import hashlib
 import json
 import math
 import os
+import pickle
 import re
 from pathlib import Path
 
+import numpy as np
 
-RECORD_SCHEMA = "actionformer_thumos_protocol_record_v2"
-OUTPUT_SCHEMA = "actionformer_thumos_comparability_v2"
+
+RECORD_SCHEMA = "actionformer_thumos_protocol_record_v3"
+OUTPUT_SCHEMA = "actionformer_thumos_comparability_v3"
 METRIC_ATTESTATION_SCHEMA = "actionformer_official_metric_attestation_v1"
 EVALUATOR_MANIFEST_SCHEMA = "actionformer_official_evaluator_manifest_v1"
 ENVIRONMENT_MANIFEST_SCHEMA = "actionformer_environment_manifest_v1"
 RUN_MANIFEST_SCHEMA = "actionformer_official_run_manifest_v1"
-DATA_MANIFEST_SCHEMA = "actionformer_official_data_manifest_v1"
-OBSERVATION_MANIFEST_SCHEMA = "actionformer_official_feature_manifest_v1"
+DATA_MANIFEST_SCHEMA = "actionformer_official_data_manifest_v2"
+OBSERVATION_MANIFEST_SCHEMA = "actionformer_official_feature_manifest_v2"
 
 EVIDENCE_STRATA = {
     "official_reproduction",
@@ -70,6 +73,34 @@ OFFICIAL_EVALUATOR_FILES = {
 OFFICIAL_EVALUATOR_FINGERPRINT_SHA256 = (
     "1d18fbb07a774422a1594946dcf2c59a741c5de3a55d42fa029636ffc43c30b6"
 )
+OFFICIAL_NOMINAL_SPLIT_COUNTS = {"test": 213, "validation": 200}
+OFFICIAL_ANNOTATION_SPLIT_COUNTS = {"test": 212, "validation": 200}
+OFFICIAL_ANNOTATION_DATABASE_VIDEO_COUNT = 412
+OFFICIAL_EVALUATED_VIDEO_COUNT = 212
+OFFICIAL_FEATURE_INVENTORY_VIDEO_COUNT = 413
+OFFICIAL_FEATURE_ONLY_UNANNOTATED_VIDEOS = ("video_test_0001292",)
+OFFICIAL_THUMOS_CLASS_NAMES = (
+    "BaseballPitch",
+    "BasketballDunk",
+    "Billiards",
+    "CleanAndJerk",
+    "CliffDiving",
+    "CricketBowling",
+    "CricketShot",
+    "Diving",
+    "FrisbeeCatch",
+    "GolfSwing",
+    "HammerThrow",
+    "HighJump",
+    "JavelinThrow",
+    "LongJump",
+    "PoleVault",
+    "Shotput",
+    "SoccerPenalty",
+    "TennisSwing",
+    "ThrowDiscus",
+    "VolleyballSpiking",
+)
 
 RECEIPT_NAMES = (
     "config",
@@ -110,10 +141,19 @@ REQUIRED_PATHS = (
     "dataset.data_archive_md5",
     "dataset.data_archive_sha256",
     "dataset.num_classes",
-    "dataset.eval_video_count",
+    "dataset.nominal_split_counts",
+    "dataset.annotation_split_counts",
+    "dataset.annotation_database_video_count",
+    "dataset.evaluated_video_count",
+    "dataset.evaluated_video_ids_sha256",
     "dataset.blocked_videos",
+    "dataset.feature_only_unannotated_videos",
     "input.feature_family",
     "input.feature_provenance_sha256",
+    "input.feature_inventory_video_count",
+    "input.annotation_feature_backed_video_count",
+    "input.evaluated_feature_backed_video_count",
+    "input.missing_annotated_feature_videos",
     "input.input_dim",
     "input.clip_frames",
     "input.frame_stride",
@@ -169,6 +209,8 @@ REQUIRED_PATHS = (
     "result.run_manifest_sha256",
     "result.metrics_source",
     "result.prediction_count",
+    "result.prediction_video_count",
+    "result.prediction_video_ids_sha256",
     "result.metrics",
 )
 SHA_PATHS = {path for path in REQUIRED_PATHS if path.endswith("_sha256")}
@@ -186,6 +228,8 @@ PAIR_OUTPUT_EXEMPT_PREFIXES = (
     "result.metric_attestation_sha256",
     "result.run_manifest_sha256",
     "result.prediction_count",
+    "result.prediction_video_count",
+    "result.prediction_video_ids_sha256",
     "result.metrics",
     "receipts.checkpoint",
     "receipts.raw_predictions",
@@ -251,9 +295,22 @@ OFFICIAL_ACTIONFORMER_EXPECTED = {
     "dataset.train_split": "validation",
     "dataset.eval_split": "test",
     "dataset.num_classes": 20,
-    "dataset.eval_video_count": 213,
+    "dataset.nominal_split_counts": OFFICIAL_NOMINAL_SPLIT_COUNTS,
+    "dataset.annotation_split_counts": OFFICIAL_ANNOTATION_SPLIT_COUNTS,
+    "dataset.annotation_database_video_count": OFFICIAL_ANNOTATION_DATABASE_VIDEO_COUNT,
+    "dataset.evaluated_video_count": OFFICIAL_EVALUATED_VIDEO_COUNT,
+    "dataset.blocked_videos": [],
+    "dataset.feature_only_unannotated_videos": list(
+        OFFICIAL_FEATURE_ONLY_UNANNOTATED_VIDEOS
+    ),
     "dataset.data_archive_md5": OFFICIAL_THUMOS_ARCHIVE_MD5,
     "input.feature_family": "two_stream_i3d_kinetics",
+    "input.feature_inventory_video_count": OFFICIAL_FEATURE_INVENTORY_VIDEO_COUNT,
+    "input.annotation_feature_backed_video_count": (
+        OFFICIAL_ANNOTATION_DATABASE_VIDEO_COUNT
+    ),
+    "input.evaluated_feature_backed_video_count": OFFICIAL_EVALUATED_VIDEO_COUNT,
+    "input.missing_annotated_feature_videos": [],
     "input.input_dim": 2048,
     "input.clip_frames": 16,
     "input.frame_stride": 4,
@@ -296,6 +353,7 @@ OFFICIAL_ACTIONFORMER_EXPECTED = {
     "result.metrics_source": (
         "official_actionformer_eval_log_and_independent_recompute"
     ),
+    "result.prediction_video_count": OFFICIAL_EVALUATED_VIDEO_COUNT,
 }
 
 
@@ -505,6 +563,8 @@ def _verify_evaluator_manifest(record, receipts):
     source_root = Path(manifest.get("source_root", "")).resolve()
     if not source_root.is_dir():
         raise ProtocolError("evaluator manifest source root is missing")
+    if manifest.get("repository_url") != record["source"]["repository_url"]:
+        raise ProtocolError("evaluator manifest repository URL mismatch")
     if manifest.get("commit") != record["source"]["commit"]:
         raise ProtocolError("evaluator manifest commit mismatch")
     if manifest.get("tree") != record["source"]["tree"]:
@@ -533,6 +593,251 @@ def _verify_evaluator_manifest(record, receipts):
     return manifest
 
 
+def _official_class_map_payload():
+    return {
+        "schema_version": "actionformer_thumos_class_map_v1",
+        "labels": [
+            {"label_id": label_id, "label": label}
+            for label_id, label in enumerate(OFFICIAL_THUMOS_CLASS_NAMES)
+        ],
+    }
+
+
+def _annotation_video_sets(annotation_path, class_map_path):
+    class_map = load_json(class_map_path)
+    if class_map != _official_class_map_payload():
+        raise ProtocolError("THUMOS class map differs from the pinned official mapping")
+    payload = load_json(annotation_path)
+    database = payload.get("database")
+    if not isinstance(database, dict) or not database:
+        raise ProtocolError("THUMOS annotation database is empty")
+    split_video_ids = {"test": set(), "validation": set()}
+    observed_label_ids = set()
+    for video_id, entry in database.items():
+        if not isinstance(video_id, str) or not video_id:
+            raise ProtocolError("THUMOS annotation contains an invalid video ID")
+        if not isinstance(entry, dict) or not isinstance(entry.get("subset"), str):
+            raise ProtocolError(f"THUMOS annotation subset is invalid: {video_id}")
+        subset = entry["subset"].casefold()
+        if subset not in split_video_ids:
+            raise ProtocolError(
+                f"THUMOS annotation contains an unexpected subset: {video_id}"
+            )
+        split_video_ids[subset].add(video_id)
+        annotations = entry.get("annotations", [])
+        if not isinstance(annotations, list):
+            raise ProtocolError(f"THUMOS annotations are invalid: {video_id}")
+        for action in annotations:
+            if not isinstance(action, dict):
+                raise ProtocolError(f"THUMOS action is invalid: {video_id}")
+            label_id = action.get("label_id")
+            label = action.get("label")
+            if (
+                type(label_id) is not int
+                or not 0 <= label_id < len(OFFICIAL_THUMOS_CLASS_NAMES)
+                or label != OFFICIAL_THUMOS_CLASS_NAMES[label_id]
+            ):
+                raise ProtocolError(
+                    f"THUMOS annotation label mapping mismatch: {video_id}"
+                )
+            observed_label_ids.add(label_id)
+    split_counts = {
+        subset: len(video_ids)
+        for subset, video_ids in sorted(split_video_ids.items())
+    }
+    if sum(split_counts.values()) != len(database):
+        raise ProtocolError("THUMOS annotation video IDs are not unique")
+    if observed_label_ids != set(range(len(OFFICIAL_THUMOS_CLASS_NAMES))):
+        raise ProtocolError("THUMOS annotation does not cover all official classes")
+    return split_video_ids, split_counts
+
+
+def _verify_feature_manifest(record, receipts, annotation_sets):
+    manifest = load_json(receipts["observation_manifest"]["path"])
+    if manifest.get("schema_version") != OBSERVATION_MANIFEST_SCHEMA:
+        raise ProtocolError("unsupported feature manifest schema")
+    if manifest.get("feature_family") != record["input"]["feature_family"]:
+        raise ProtocolError("feature manifest family mismatch")
+    feature_root = Path(manifest.get("feature_root", "")).resolve()
+    if not feature_root.is_dir():
+        raise ProtocolError("feature manifest root is missing")
+    entries = manifest.get("features")
+    if not isinstance(entries, list) or not entries:
+        raise ProtocolError("feature manifest entries are empty")
+
+    annotation_ids = set().union(*annotation_sets.values())
+    feature_ids = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ProtocolError("feature manifest entry is not an object")
+        video_id = entry.get("video_id")
+        relative = entry.get("file")
+        if not isinstance(video_id, str) or not video_id:
+            raise ProtocolError("feature manifest contains an invalid video ID")
+        if video_id in feature_ids:
+            raise ProtocolError(f"duplicate feature video ID: {video_id}")
+        feature_ids.add(video_id)
+        if relative != f"{video_id}.npy":
+            raise ProtocolError(f"feature filename does not match video ID: {video_id}")
+        path = (feature_root / relative).resolve()
+        try:
+            path.relative_to(feature_root)
+        except ValueError as error:
+            raise ProtocolError("feature manifest path escapes feature root") from error
+        if not path.is_file():
+            raise ProtocolError(f"feature file is missing: {video_id}")
+        if entry.get("sha256") != sha256_file(path):
+            raise ProtocolError(f"feature SHA-256 mismatch: {video_id}")
+        size = entry.get("size_bytes")
+        if type(size) is not int or size != path.stat().st_size:
+            raise ProtocolError(f"feature size mismatch: {video_id}")
+        try:
+            array = np.load(path, mmap_mode="r", allow_pickle=False)
+        except Exception as error:
+            raise ProtocolError(
+                f"cannot load pinned official feature: {video_id}: {error}"
+            ) from error
+        if (
+            array.ndim != 2
+            or int(array.shape[0]) <= 0
+            or int(array.shape[1]) != 2048
+        ):
+            raise ProtocolError(
+                f"official feature must be non-empty T x 2048: {video_id}"
+            )
+        if entry.get("dtype") != str(array.dtype) or entry.get("shape") != [
+            int(value) for value in array.shape
+        ]:
+            raise ProtocolError(f"feature dtype/shape receipt mismatch: {video_id}")
+        for start in range(0, int(array.shape[0]), 4096):
+            if not np.isfinite(np.asarray(array[start : start + 4096])).all():
+                raise ProtocolError(f"official feature contains NaN/Inf: {video_id}")
+        expected_subset = next(
+            (
+                subset
+                for subset, video_ids in annotation_sets.items()
+                if video_id in video_ids
+            ),
+            None,
+        )
+        if entry.get("annotation_subset") != expected_subset:
+            raise ProtocolError(f"feature annotation-subset mismatch: {video_id}")
+
+    root_feature_ids = {
+        path.stem for path in feature_root.glob("*.npy") if path.is_file()
+    }
+    if root_feature_ids != feature_ids:
+        raise ProtocolError("feature manifest does not cover the full .npy inventory")
+
+    missing_ids = sorted(annotation_ids - feature_ids)
+    feature_only_ids = sorted(feature_ids - annotation_ids)
+    evaluated_ids = sorted(annotation_sets["test"] & feature_ids)
+    annotation_feature_backed_ids = sorted(annotation_ids & feature_ids)
+    expected_manifest = {
+        "feature_inventory_video_count": len(feature_ids),
+        "annotation_feature_backed_video_count": len(
+            annotation_feature_backed_ids
+        ),
+        "evaluated_feature_backed_video_count": len(evaluated_ids),
+        "missing_annotated_feature_videos": missing_ids,
+        "feature_only_unannotated_videos": feature_only_ids,
+        "annotation_video_ids_sha256": canonical_sha256(sorted(annotation_ids)),
+        "evaluated_video_ids": evaluated_ids,
+        "evaluated_video_ids_sha256": canonical_sha256(evaluated_ids),
+    }
+    for key, expected in expected_manifest.items():
+        if manifest.get(key) != expected:
+            raise ProtocolError(f"feature manifest set binding mismatch: {key}")
+
+    record_bindings = {
+        "feature_inventory_video_count": record["input"][
+            "feature_inventory_video_count"
+        ],
+        "annotation_feature_backed_video_count": record["input"][
+            "annotation_feature_backed_video_count"
+        ],
+        "evaluated_feature_backed_video_count": record["input"][
+            "evaluated_feature_backed_video_count"
+        ],
+        "missing_annotated_feature_videos": record["input"][
+            "missing_annotated_feature_videos"
+        ],
+        "feature_only_unannotated_videos": record["dataset"][
+            "feature_only_unannotated_videos"
+        ],
+        "evaluated_video_ids_sha256": record["dataset"][
+            "evaluated_video_ids_sha256"
+        ],
+    }
+    for key, expected in record_bindings.items():
+        if manifest.get(key) != expected:
+            raise ProtocolError(f"feature manifest record binding mismatch: {key}")
+    if len(evaluated_ids) != record["dataset"]["evaluated_video_count"]:
+        raise ProtocolError("feature-backed evaluated-video count mismatch")
+    return manifest
+
+
+def _verify_raw_prediction_identity(record, receipts, evaluated_video_ids):
+    try:
+        with Path(receipts["raw_predictions"]["path"]).open("rb") as handle:
+            payload = pickle.load(handle)
+    except Exception as error:
+        raise ProtocolError(f"cannot load raw prediction artifact: {error}") from error
+    required = {"video-id", "t-start", "t-end", "label", "score"}
+    if not isinstance(payload, dict) or set(payload) != required:
+        raise ProtocolError("raw prediction artifact has an unexpected key set")
+    video_ids = list(payload["video-id"])
+    arrays = {
+        key: np.asarray(payload[key]).reshape(-1)
+        for key in ("t-start", "t-end", "label", "score")
+    }
+    counts = {len(video_ids)} | {int(array.size) for array in arrays.values()}
+    if len(counts) != 1:
+        raise ProtocolError("raw prediction arrays have unequal lengths")
+    if any(not isinstance(video_id, str) or not video_id for video_id in video_ids):
+        raise ProtocolError("raw predictions contain invalid video IDs")
+    for key in ("t-start", "t-end", "score"):
+        if not np.isfinite(np.asarray(arrays[key], dtype=np.float64)).all():
+            raise ProtocolError(f"raw predictions contain NaN/Inf: {key}")
+    labels = np.asarray(arrays["label"])
+    integer_labels = labels.astype(np.int64)
+    if not np.array_equal(labels, integer_labels):
+        raise ProtocolError("raw prediction labels are not integers")
+    if integer_labels.size and (
+        int(integer_labels.min()) < 0
+        or int(integer_labels.max()) >= len(OFFICIAL_THUMOS_CLASS_NAMES)
+    ):
+        raise ProtocolError("raw prediction labels are outside the official class range")
+    starts = np.asarray(arrays["t-start"], dtype=np.float64)
+    ends = np.asarray(arrays["t-end"], dtype=np.float64)
+    scores = np.asarray(arrays["score"], dtype=np.float64)
+    if np.any(ends <= starts):
+        raise ProtocolError("raw predictions contain non-positive segments")
+    if np.any(scores < 0.0):
+        raise ProtocolError("raw predictions contain negative scores")
+
+    prediction_video_ids = sorted(set(video_ids))
+    if not set(prediction_video_ids).issubset(set(evaluated_video_ids)):
+        raise ProtocolError("raw predictions contain videos outside the evaluated set")
+    if (
+        record["evidence_stratum"] == "official_reproduction"
+        and prediction_video_ids != sorted(evaluated_video_ids)
+    ):
+        raise ProtocolError(
+            "official reproduction raw predictions do not cover the exact "
+            "feature-backed evaluated-video set"
+        )
+    bindings = {
+        "prediction_count": counts.pop(),
+        "prediction_video_count": len(prediction_video_ids),
+        "prediction_video_ids_sha256": canonical_sha256(prediction_video_ids),
+    }
+    for key, expected in bindings.items():
+        if record["result"].get(key) != expected:
+            raise ProtocolError(f"raw prediction identity binding mismatch: {key}")
+    return prediction_video_ids
+
+
 def _verify_manifests_and_attestation(record, receipts):
     data_manifest = load_json(receipts["data_manifest"]["path"])
     if data_manifest.get("schema_version") != DATA_MANIFEST_SCHEMA:
@@ -545,19 +850,42 @@ def _verify_manifests_and_attestation(record, receipts):
         "feature_manifest_sha256": record["input"][
             "observation_manifest_sha256"
         ],
-        "eval_video_count": record["dataset"]["eval_video_count"],
+        "nominal_split_counts": record["dataset"]["nominal_split_counts"],
+        "annotation_split_counts": record["dataset"]["annotation_split_counts"],
+        "annotation_database_video_count": record["dataset"][
+            "annotation_database_video_count"
+        ],
+        "evaluated_video_count": record["dataset"]["evaluated_video_count"],
+        "evaluated_video_ids_sha256": record["dataset"][
+            "evaluated_video_ids_sha256"
+        ],
+        "blocked_videos": record["dataset"]["blocked_videos"],
+        "feature_only_unannotated_videos": record["dataset"][
+            "feature_only_unannotated_videos"
+        ],
     }
     for key, expected in data_bindings.items():
         if data_manifest.get(key) != expected:
             raise ProtocolError(f"data manifest binding mismatch: {key}")
 
-    observation_manifest = load_json(receipts["observation_manifest"]["path"])
-    if observation_manifest.get("schema_version") != OBSERVATION_MANIFEST_SCHEMA:
-        raise ProtocolError("unsupported feature manifest schema")
-    if observation_manifest.get("missing_videos") != record["dataset"]["blocked_videos"]:
-        raise ProtocolError("feature manifest missing-video list mismatch")
-    if observation_manifest.get("feature_family") != record["input"]["feature_family"]:
-        raise ProtocolError("feature manifest family mismatch")
+    annotation_sets, annotation_split_counts = _annotation_video_sets(
+        receipts["annotation"]["path"],
+        receipts["class_map"]["path"],
+    )
+    if annotation_split_counts != record["dataset"]["annotation_split_counts"]:
+        raise ProtocolError("annotation split-count binding mismatch")
+    if sum(annotation_split_counts.values()) != record["dataset"][
+        "annotation_database_video_count"
+    ]:
+        raise ProtocolError("annotation database-count binding mismatch")
+    observation_manifest = _verify_feature_manifest(
+        record, receipts, annotation_sets
+    )
+    prediction_video_ids = _verify_raw_prediction_identity(
+        record,
+        receipts,
+        observation_manifest["evaluated_video_ids"],
+    )
 
     environment_manifest = load_json(receipts["environment_manifest"]["path"])
     if environment_manifest.get("schema_version") != ENVIRONMENT_MANIFEST_SCHEMA:
@@ -590,10 +918,23 @@ def _verify_manifests_and_attestation(record, receipts):
         ],
         "annotation_sha256": record["dataset"]["annotation_sha256"],
         "prediction_count": record["result"]["prediction_count"],
+        "prediction_video_count": record["result"]["prediction_video_count"],
+        "prediction_video_ids_sha256": record["result"][
+            "prediction_video_ids_sha256"
+        ],
+        "evaluated_video_count": record["dataset"]["evaluated_video_count"],
+        "evaluated_video_ids_sha256": record["dataset"][
+            "evaluated_video_ids_sha256"
+        ],
+        "prediction_videos_within_evaluated_set": True,
     }
     for key, expected in attestation_bindings.items():
         if attestation.get(key) != expected:
             raise ProtocolError(f"metric attestation binding mismatch: {key}")
+    if attestation.get("prediction_video_ids_sha256") != canonical_sha256(
+        prediction_video_ids
+    ):
+        raise ProtocolError("metric attestation prediction-video identity mismatch")
     _assert_metrics_close(
         attestation.get("logged_metrics"),
         logged_metrics,
@@ -683,7 +1024,11 @@ def _verify_strict_types(record):
             raise ProtocolError(f"field must be a boolean: {path}")
     positive_int_paths = (
         "dataset.num_classes",
-        "dataset.eval_video_count",
+        "dataset.annotation_database_video_count",
+        "dataset.evaluated_video_count",
+        "input.feature_inventory_video_count",
+        "input.annotation_feature_backed_video_count",
+        "input.evaluated_feature_backed_video_count",
         "input.input_dim",
         "input.clip_frames",
         "input.frame_stride",
@@ -700,11 +1045,60 @@ def _verify_strict_types(record):
     prediction_count = record["result"]["prediction_count"]
     if type(prediction_count) is not int or prediction_count < 0:
         raise ProtocolError("result.prediction_count must be a non-negative integer")
+    prediction_video_count = record["result"]["prediction_video_count"]
+    if type(prediction_video_count) is not int or prediction_video_count < 0:
+        raise ProtocolError(
+            "result.prediction_video_count must be a non-negative integer"
+        )
+    if prediction_video_count > record["dataset"]["evaluated_video_count"]:
+        raise ProtocolError(
+            "result.prediction_video_count exceeds the evaluated-video count"
+        )
+    seed = record["training"]["seed"]
+    if type(seed) is not int or seed < 0:
+        raise ProtocolError("training.seed must be a non-negative integer")
+    numeric_ranges = {
+        "input.seconds_per_feature": (0.0, math.inf, False),
+        "training.learning_rate": (0.0, math.inf, False),
+        "training.weight_decay": (0.0, math.inf, True),
+        "post_processing.pre_nms_thresh": (0.0, math.inf, True),
+        "post_processing.sigma": (0.0, math.inf, False),
+        "post_processing.nms_iou_threshold": (0.0, 1.0, True),
+        "post_processing.nms_min_score": (0.0, math.inf, True),
+        "post_processing.voting_thresh": (0.0, 1.0, True),
+    }
+    for path, (lower, upper, lower_inclusive) in numeric_ranges.items():
+        value = _get_path(record, path)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ProtocolError(f"field must be numeric: {path}")
+        value = float(value)
+        lower_ok = value >= lower if lower_inclusive else value > lower
+        if not math.isfinite(value) or not lower_ok or value > upper:
+            raise ProtocolError(f"numeric field is outside its valid range: {path}")
     budget = record["input"]["observation_budget"]
     if budget is not None and (type(budget) is not int or budget <= 0):
         raise ProtocolError("input.observation_budget must be null or a positive integer")
-    if not isinstance(record["dataset"]["blocked_videos"], list):
-        raise ProtocolError("dataset.blocked_videos must be an array")
+    for path in (
+        "dataset.blocked_videos",
+        "dataset.feature_only_unannotated_videos",
+        "input.missing_annotated_feature_videos",
+    ):
+        values = _get_path(record, path)
+        if (
+            not isinstance(values, list)
+            or any(not isinstance(value, str) or not value for value in values)
+            or values != sorted(set(values))
+        ):
+            raise ProtocolError(f"field must be a sorted unique string array: {path}")
+    for path in (
+        "dataset.nominal_split_counts",
+        "dataset.annotation_split_counts",
+    ):
+        counts = _get_path(record, path)
+        if not isinstance(counts, dict) or set(counts) != {"test", "validation"}:
+            raise ProtocolError(f"field must contain test/validation counts: {path}")
+        if any(type(value) is not int or value <= 0 for value in counts.values()):
+            raise ProtocolError(f"field contains a non-positive count: {path}")
 
 
 def validate_record(record):
@@ -721,6 +1115,7 @@ def validate_record(record):
         value = _get_path(record, path)
         if _is_empty(value) and path not in {
             "dataset.blocked_videos",
+            "input.missing_annotated_feature_videos",
             "input.observation_budget",
         }:
             raise ProtocolError(f"required field is empty: {path}")
@@ -872,6 +1267,13 @@ def classify(record, *, reference=None, intervention=None):
             pair_mismatches = compare_records(reference, record, intervention)
             if pair_mismatches:
                 reasons.append("protected matched-protocol fields differ")
+            # A field-level record comparison cannot prove that an arbitrary
+            # candidate repository changed only the declared method component.
+            # Keep matched rows fail-closed until a live, base-anchored Git
+            # source-diff attestation is part of the record schema.
+            reasons.append(
+                "matched control lacks a verified source-diff attestation"
+            )
     elif stratum == "external_reference_only":
         reasons.append("external/historical reference cannot define a matched delta")
     elif stratum == "diagnostic_only":

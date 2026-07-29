@@ -127,6 +127,46 @@ def test_projection_can_keep_uncovered_queries_with_null_evidence():
     assert torch.isfinite(projection.level_attentions[0].null_evidence.grad).all()
 
 
+def test_support_overlap_masks_variable_duration_query_padding_exactly():
+    projection = PhysTimeMeasureProjection(
+        in_channels=2,
+        out_channels=4,
+        attention_channels=4,
+        base_spacing_sec=1.0,
+        num_levels=1,
+        observation_measure="support_overlap",
+        keep_uncovered_queries=True,
+        use_null_evidence=True,
+    )
+    inputs = torch.randn(2, 2, 1)
+    masks = torch.ones((2, 1), dtype=torch.bool)
+    metas = [
+        {
+            "phystime_timestamps_sec": [0.25],
+            "phystime_support_intervals_sec": [[0.0, 0.5]],
+            "phystime_duration_sec": duration,
+            "phystime_domain_start_sec": 0.0,
+            "phystime_domain_end_sec": duration,
+            "phystime_support_provenance": "synthetic_explicit_support",
+        }
+        for duration in (2.0, 4.0)
+    ]
+
+    features, level_masks, level_geometry = projection(inputs, masks, metas)
+
+    domain_valid = level_geometry[0]["domain_valid_mask"]
+    padding = ~domain_valid
+    assert domain_valid.tolist() == [
+        [True, True, False, False],
+        [True, True, True, True],
+    ]
+    assert torch.count_nonzero(level_geometry[0]["coverage_sec"][padding]) == 0
+    assert not torch.any(level_geometry[0]["evidence_mask"][padding])
+    assert not torch.any(level_geometry[0]["assignment_mask"][padding])
+    assert not torch.any(level_masks[0][padding])
+    assert torch.count_nonzero(features[0].transpose(1, 2)[padding]) == 0
+
+
 def test_assignment_mask_blocks_uncovered_positive_queries():
     head = _head().train()
     geometry = _geometry()

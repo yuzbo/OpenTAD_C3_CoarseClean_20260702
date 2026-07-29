@@ -141,7 +141,9 @@ class SupportIntegratedMeasureAttention(nn.Module):
             mass = torch.exp(-0.5 * normalized_distance.square())
             mass = mass * (normalized_distance <= self.point_radius_cells).to(mass.dtype)
             mass = mass * observation_mask[:, None, :].to(mass.dtype)
-            mass = mass * query_mask[:, :, None].to(mass.dtype)
+        # Query-pyramid padding uses zero geometry.  The epsilon-clamped context
+        # interval can otherwise overlap support at t=0 in support-overlap mode.
+        mass = mass * query_mask[:, :, None].to(mass.dtype)
         logits = observations.new_zeros(mass.shape)
         if self.content_logits:
             queries = self.query_embedding(query_centers, query_widths, duration)

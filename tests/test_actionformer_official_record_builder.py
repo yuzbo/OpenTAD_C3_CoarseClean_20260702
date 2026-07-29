@@ -41,14 +41,29 @@ def test_raw_prediction_pickle_contract(tmp_path):
         builder.load_and_validate_raw_predictions(path)
 
 
-def test_annotation_class_map_and_official_test_count(tmp_path):
+def test_annotation_class_map_and_pinned_release_split_counts(tmp_path):
     database = {}
-    for index in range(213):
-        database[f"video_test_{index:07d}"] = {
-            "subset": "test",
+    for index in range(200):
+        database[f"video_validation_{index:07d}"] = {
+            "subset": "Validation",
             "annotations": [
                 {
-                    "label": f"class-{index % 20}",
+                    "label": builder.protocol.OFFICIAL_THUMOS_CLASS_NAMES[
+                        index % 20
+                    ],
+                    "label_id": index % 20,
+                    "segment": [1.0, 2.0],
+                }
+            ],
+        }
+    for index in range(212):
+        database[f"video_test_{index:07d}"] = {
+            "subset": "Test",
+            "annotations": [
+                {
+                    "label": builder.protocol.OFFICIAL_THUMOS_CLASS_NAMES[
+                        index % 20
+                    ],
                     "label_id": index % 20,
                     "segment": [1.0, 2.0],
                 }
@@ -57,28 +72,54 @@ def test_annotation_class_map_and_official_test_count(tmp_path):
     annotation = tmp_path / "thumos14.json"
     annotation.write_text(json.dumps({"database": database}), encoding="utf-8")
     class_map, split_counts, videos = builder.parse_annotation(annotation)
-    assert split_counts == {"test": 213}
+    assert split_counts == {"test": 212, "validation": 200}
     assert len(class_map["labels"]) == 20
-    assert len(videos) == 213
+    assert len(videos) == 412
+    assert {subset for _, subset in videos} == {"test", "validation"}
 
 
-def test_feature_manifest_checks_shape_and_finiteness(tmp_path):
+def test_feature_manifest_checks_full_inventory_and_finiteness(
+    tmp_path, monkeypatch
+):
     feature_dir = tmp_path / "i3d_features"
     feature_dir.mkdir()
     np.save(feature_dir / "video_a.npy", np.ones((3, 2048), dtype=np.float32))
+    np.save(
+        feature_dir / "video_extra.npy",
+        np.ones((2, 2048), dtype=np.float32),
+    )
+    monkeypatch.setattr(builder.protocol, "OFFICIAL_FEATURE_INVENTORY_VIDEO_COUNT", 2)
+    monkeypatch.setattr(
+        builder.protocol,
+        "OFFICIAL_FEATURE_ONLY_UNANNOTATED_VIDEOS",
+        ("video_extra",),
+    )
+    monkeypatch.setattr(builder.protocol, "OFFICIAL_EVALUATED_VIDEO_COUNT", 1)
     manifest = builder.build_feature_manifest(
         feature_dir,
         [("video_a", "test")],
     )
-    assert manifest["feature_count"] == 1
+    assert manifest["feature_inventory_video_count"] == 2
+    assert manifest["annotation_feature_backed_video_count"] == 1
+    assert manifest["evaluated_feature_backed_video_count"] == 1
+    assert manifest["feature_only_unannotated_videos"] == ["video_extra"]
+    assert manifest["evaluated_video_ids"] == ["video_a"]
     assert manifest["features"][0]["shape"] == [3, 2048]
 
+    invalid_dir = tmp_path / "invalid_i3d_features"
+    invalid_dir.mkdir()
     invalid = np.ones((2, 2048), dtype=np.float32)
     invalid[0, 10] = np.inf
-    np.save(feature_dir / "video_b.npy", invalid)
+    np.save(invalid_dir / "video_b.npy", invalid)
+    monkeypatch.setattr(builder.protocol, "OFFICIAL_FEATURE_INVENTORY_VIDEO_COUNT", 1)
+    monkeypatch.setattr(
+        builder.protocol,
+        "OFFICIAL_FEATURE_ONLY_UNANNOTATED_VIDEOS",
+        (),
+    )
     with pytest.raises(builder.protocol.ProtocolError, match="NaN/Inf"):
         builder.build_feature_manifest(
-            feature_dir,
+            invalid_dir,
             [("video_b", "test")],
         )
 

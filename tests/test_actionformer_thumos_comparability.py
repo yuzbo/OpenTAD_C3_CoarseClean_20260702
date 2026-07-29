@@ -2,8 +2,10 @@ import copy
 import hashlib
 import importlib.util
 import json
+import pickle
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 
@@ -92,11 +94,62 @@ def _patch_official_constants(monkeypatch, fixture):
         "OFFICIAL_EVALUATOR_FINGERPRINT_SHA256",
         fixture["evaluator_fingerprint"],
     )
+    monkeypatch.setattr(
+        comparability,
+        "OFFICIAL_NOMINAL_SPLIT_COUNTS",
+        fixture["nominal_split_counts"],
+    )
+    monkeypatch.setattr(
+        comparability,
+        "OFFICIAL_ANNOTATION_SPLIT_COUNTS",
+        fixture["annotation_split_counts"],
+    )
+    monkeypatch.setattr(
+        comparability,
+        "OFFICIAL_ANNOTATION_DATABASE_VIDEO_COUNT",
+        fixture["annotation_database_video_count"],
+    )
+    monkeypatch.setattr(
+        comparability,
+        "OFFICIAL_EVALUATED_VIDEO_COUNT",
+        fixture["evaluated_video_count"],
+    )
+    monkeypatch.setattr(
+        comparability,
+        "OFFICIAL_FEATURE_INVENTORY_VIDEO_COUNT",
+        fixture["feature_inventory_video_count"],
+    )
+    monkeypatch.setattr(
+        comparability,
+        "OFFICIAL_FEATURE_ONLY_UNANNOTATED_VIDEOS",
+        tuple(fixture["feature_only_unannotated_videos"]),
+    )
     expected_updates = {
         "source.config_sha256": fixture["config_sha256"],
         "source.readme_sha256": fixture["readme_sha256"],
         "dataset.data_archive_md5": fixture["archive_md5"],
+        "dataset.nominal_split_counts": fixture["nominal_split_counts"],
+        "dataset.annotation_split_counts": fixture["annotation_split_counts"],
+        "dataset.annotation_database_video_count": fixture[
+            "annotation_database_video_count"
+        ],
+        "dataset.evaluated_video_count": fixture["evaluated_video_count"],
+        "dataset.blocked_videos": [],
+        "dataset.feature_only_unannotated_videos": fixture[
+            "feature_only_unannotated_videos"
+        ],
+        "input.feature_inventory_video_count": fixture[
+            "feature_inventory_video_count"
+        ],
+        "input.annotation_feature_backed_video_count": fixture[
+            "annotation_feature_backed_video_count"
+        ],
+        "input.evaluated_feature_backed_video_count": fixture[
+            "evaluated_video_count"
+        ],
+        "input.missing_annotated_feature_videos": [],
         "evaluation.evaluator_sha256": fixture["evaluator_fingerprint"],
+        "result.prediction_video_count": fixture["evaluated_video_count"],
     }
     for path, value in expected_updates.items():
         monkeypatch.setitem(
@@ -121,18 +174,76 @@ def _record(
     config = _write(root / "configs" / "thumos_i3d.yaml", config_bytes)
     readme = _write(root / "README.md", b"official-readme\n")
     archive = _write(root / "thumos.tar.gz", b"official-thumos-archive\n")
-    annotation = _write_json(root / "thumos14.json", {"database": {}})
+    annotation_database = {
+        "video_test_0000001": {
+            "subset": "Test",
+            "annotations": [
+                {
+                    "label_id": label_id,
+                    "label": label,
+                    "segment": [1.0, 2.0],
+                }
+                for label_id, label in enumerate(
+                    comparability.OFFICIAL_THUMOS_CLASS_NAMES
+                )
+            ],
+        },
+        "video_validation_0000001": {
+            "subset": "Validation",
+            "annotations": [],
+        },
+    }
+    annotation = _write_json(
+        root / "thumos14.json",
+        {"database": annotation_database},
+    )
     class_map = _write_json(
         root / "OFFICIAL_CLASS_MAP.json",
-        {"labels": [{"label_id": index, "label": f"class-{index}"} for index in range(20)]},
+        comparability._official_class_map_payload(),
     )
+    feature_root = tmp_path / "shared_i3d_features"
+    feature_ids_and_subsets = (
+        ("video_test_0000001", "test"),
+        ("video_test_0001292", None),
+        ("video_validation_0000001", "validation"),
+    )
+    feature_entries = []
+    for video_id, subset in feature_ids_and_subsets:
+        feature_root.mkdir(parents=True, exist_ok=True)
+        feature_path = feature_root / f"{video_id}.npy"
+        np.save(feature_path, np.ones((1, 2048), dtype=np.float32))
+        feature_entries.append(
+            {
+                "video_id": video_id,
+                "annotation_subset": subset,
+                "file": feature_path.name,
+                "sha256": comparability.sha256_file(feature_path),
+                "size_bytes": feature_path.stat().st_size,
+                "dtype": "float32",
+                "shape": [1, 2048],
+            }
+        )
+    annotation_video_ids = sorted(annotation_database)
+    evaluated_video_ids = ["video_test_0000001"]
     observation_manifest = _write_json(
         root / "OFFICIAL_FEATURE_MANIFEST.json",
         {
             "schema_version": comparability.OBSERVATION_MANIFEST_SCHEMA,
             "feature_family": "two_stream_i3d_kinetics",
-            "missing_videos": [],
-            "features": [],
+            "feature_root": str(feature_root),
+            "feature_inventory_video_count": 3,
+            "annotation_feature_backed_video_count": 2,
+            "evaluated_feature_backed_video_count": 1,
+            "missing_annotated_feature_videos": [],
+            "feature_only_unannotated_videos": ["video_test_0001292"],
+            "annotation_video_ids_sha256": comparability.canonical_sha256(
+                annotation_video_ids
+            ),
+            "evaluated_video_ids": evaluated_video_ids,
+            "evaluated_video_ids_sha256": comparability.canonical_sha256(
+                evaluated_video_ids
+            ),
+            "features": feature_entries,
         },
     )
 
@@ -170,7 +281,18 @@ def _record(
     )
     environment_fingerprint = comparability.canonical_sha256(environment_payload)
 
-    raw_predictions = _write(root / "eval_results.pkl", b"raw-predictions\n")
+    raw_predictions = root / "eval_results.pkl"
+    with raw_predictions.open("wb") as handle:
+        pickle.dump(
+            {
+                "video-id": ["video_test_0000001"],
+                "t-start": np.asarray([1.0], dtype=np.float32),
+                "t-end": np.asarray([2.0], dtype=np.float32),
+                "label": np.asarray([0], dtype=np.int64),
+                "score": np.asarray([0.9], dtype=np.float32),
+            },
+            handle,
+        )
     checkpoint = _write(root / "epoch_034.pth.tar", b"checkpoint\n")
     train_log = _write(root / "train.log", "training complete\n")
     eval_log = _write(root / "eval.log", _eval_log(metrics))
@@ -189,7 +311,15 @@ def _record(
             "annotation_sha256": annotation_sha,
             "class_map_sha256": class_map_sha,
             "feature_manifest_sha256": observation_sha,
-            "eval_video_count": 213,
+            "nominal_split_counts": {"test": 2, "validation": 1},
+            "annotation_split_counts": {"test": 1, "validation": 1},
+            "annotation_database_video_count": 2,
+            "evaluated_video_count": 1,
+            "evaluated_video_ids_sha256": comparability.canonical_sha256(
+                evaluated_video_ids
+            ),
+            "blocked_videos": [],
+            "feature_only_unannotated_videos": ["video_test_0001292"],
         },
     )
 
@@ -206,7 +336,16 @@ def _record(
             "evaluator_fingerprint_sha256": evaluator_fingerprint,
             "evaluator_manifest_sha256": evaluator_manifest_sha,
             "annotation_sha256": annotation_sha,
-            "prediction_count": 20000,
+            "prediction_count": 1,
+            "prediction_video_count": 1,
+            "prediction_video_ids_sha256": comparability.canonical_sha256(
+                evaluated_video_ids
+            ),
+            "evaluated_video_count": 1,
+            "evaluated_video_ids_sha256": comparability.canonical_sha256(
+                evaluated_video_ids
+            ),
+            "prediction_videos_within_evaluated_set": True,
             "logged_metrics": metrics,
             "recomputed_metrics": metrics,
             "max_abs_delta": 0.0,
@@ -277,14 +416,25 @@ def _record(
             "data_archive_md5": receipts["data_archive"]["md5"],
             "data_archive_sha256": receipts["data_archive"]["sha256"],
             "num_classes": 20,
-            "eval_video_count": 213,
+            "nominal_split_counts": {"test": 2, "validation": 1},
+            "annotation_split_counts": {"test": 1, "validation": 1},
+            "annotation_database_video_count": 2,
+            "evaluated_video_count": 1,
+            "evaluated_video_ids_sha256": comparability.canonical_sha256(
+                evaluated_video_ids
+            ),
             "blocked_videos": [],
+            "feature_only_unannotated_videos": ["video_test_0001292"],
         },
         "input": {
             "feature_family": "two_stream_i3d_kinetics",
             "feature_provenance_sha256": receipts[
                 "observation_manifest"
             ]["sha256"],
+            "feature_inventory_video_count": 3,
+            "annotation_feature_backed_video_count": 2,
+            "evaluated_feature_backed_video_count": 1,
+            "missing_annotated_feature_videos": [],
             "input_dim": 2048,
             "clip_frames": 16,
             "frame_stride": 4,
@@ -363,7 +513,11 @@ def _record(
             "metrics_source": (
                 "official_actionformer_eval_log_and_independent_recompute"
             ),
-            "prediction_count": 20000,
+            "prediction_count": 1,
+            "prediction_video_count": 1,
+            "prediction_video_ids_sha256": comparability.canonical_sha256(
+                evaluated_video_ids
+            ),
             "metrics": metrics,
         },
         "receipts": receipts,
@@ -374,6 +528,13 @@ def _record(
         "archive_md5": receipts["data_archive"]["md5"],
         "evaluator_files": evaluator_files,
         "evaluator_fingerprint": evaluator_fingerprint,
+        "nominal_split_counts": {"test": 2, "validation": 1},
+        "annotation_split_counts": {"test": 1, "validation": 1},
+        "annotation_database_video_count": 2,
+        "evaluated_video_count": 1,
+        "feature_inventory_video_count": 3,
+        "annotation_feature_backed_video_count": 2,
+        "feature_only_unannotated_videos": ["video_test_0001292"],
     }
     return record, fixture
 
@@ -400,7 +561,7 @@ def test_non_official_protocol_stays_out_of_main_table(tmp_path, monkeypatch):
     )
 
 
-def test_matched_control_allows_one_named_method_intervention(tmp_path, monkeypatch):
+def test_matched_control_requires_source_diff_attestation(tmp_path, monkeypatch):
     reference, fixture = _record(tmp_path, record_id="official-reference")
     _patch_official_constants(monkeypatch, fixture)
     candidate, _ = _record(
@@ -428,9 +589,13 @@ def test_matched_control_allows_one_named_method_intervention(tmp_path, monkeypa
         reference=reference,
         intervention="head_projection",
     )
-    assert verdict["main_table_eligible"] is True
-    assert verdict["matched_delta_allowed"] is True
+    assert verdict["main_table_eligible"] is False
+    assert verdict["matched_delta_allowed"] is False
     assert verdict["intervention"] == "head_projection"
+    assert any(
+        "source-diff attestation" in reason
+        for reason in verdict["ineligibility_reasons"]
+    )
 
     candidate["post_processing"]["max_seg_num"] = 2000
     verdict = comparability.classify(
@@ -505,6 +670,112 @@ def test_readme_and_evaluator_bytes_are_live_verified(tmp_path, monkeypatch):
     source_file.write_text("tampered evaluator\n")
     with pytest.raises(comparability.ProtocolError, match="evaluator source file"):
         comparability.validate_record(record)
+
+
+def test_class_map_and_annotation_labels_are_semantically_pinned(tmp_path):
+    record, _ = _record(tmp_path)
+    class_map_path = Path(record["receipts"]["class_map"]["path"])
+    payload = json.loads(class_map_path.read_text(encoding="utf-8"))
+    payload["labels"][0]["label"] = "NotBaseballPitch"
+    _write_json(class_map_path, payload)
+
+    with pytest.raises(comparability.ProtocolError, match="class map"):
+        comparability._annotation_video_sets(
+            record["receipts"]["annotation"]["path"],
+            class_map_path,
+        )
+
+
+def test_feature_manifest_reloads_real_npy_content(tmp_path):
+    record, _ = _record(tmp_path)
+    manifest_path = Path(record["receipts"]["observation_manifest"]["path"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    feature_root = Path(manifest["feature_root"])
+    target = feature_root / "video_test_0001292.npy"
+    np.save(target, np.ones((1, 1024), dtype=np.float32))
+    entry = next(
+        item
+        for item in manifest["features"]
+        if item["video_id"] == "video_test_0001292"
+    )
+    entry["sha256"] = comparability.sha256_file(target)
+    entry["size_bytes"] = target.stat().st_size
+    entry["shape"] = [1, 1024]
+    _write_json(manifest_path, manifest)
+    annotation_sets, _ = comparability._annotation_video_sets(
+        record["receipts"]["annotation"]["path"],
+        record["receipts"]["class_map"]["path"],
+    )
+
+    with pytest.raises(comparability.ProtocolError, match="T x 2048"):
+        comparability._verify_feature_manifest(
+            record,
+            record["receipts"],
+            annotation_sets,
+        )
+
+
+def test_unmanifested_feature_inventory_fails_closed(tmp_path, monkeypatch):
+    record, fixture = _record(tmp_path)
+    _patch_official_constants(monkeypatch, fixture)
+    manifest = json.loads(
+        Path(record["receipts"]["observation_manifest"]["path"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    np.save(
+        Path(manifest["feature_root"]) / "video_test_rogue.npy",
+        np.ones((1, 2048), dtype=np.float32),
+    )
+
+    with pytest.raises(comparability.ProtocolError, match="full .npy inventory"):
+        comparability.validate_record(record)
+
+
+def test_raw_prediction_video_ids_must_be_evaluated(tmp_path):
+    record, _ = _record(tmp_path)
+    raw_path = Path(record["receipts"]["raw_predictions"]["path"])
+    with raw_path.open("wb") as handle:
+        pickle.dump(
+            {
+                "video-id": ["video_test_not_evaluated"],
+                "t-start": np.asarray([1.0], dtype=np.float32),
+                "t-end": np.asarray([2.0], dtype=np.float32),
+                "label": np.asarray([0], dtype=np.int64),
+                "score": np.asarray([0.9], dtype=np.float32),
+            },
+            handle,
+        )
+
+    with pytest.raises(comparability.ProtocolError, match="outside the evaluated set"):
+        comparability._verify_raw_prediction_identity(
+            record,
+            record["receipts"],
+            ["video_test_0000001"],
+        )
+
+
+def test_official_raw_predictions_must_cover_exact_evaluated_set(tmp_path):
+    record, _ = _record(tmp_path)
+    raw_path = Path(record["receipts"]["raw_predictions"]["path"])
+    with raw_path.open("wb") as handle:
+        pickle.dump(
+            {
+                "video-id": [],
+                "t-start": np.asarray([], dtype=np.float32),
+                "t-end": np.asarray([], dtype=np.float32),
+                "label": np.asarray([], dtype=np.int64),
+                "score": np.asarray([], dtype=np.float32),
+            },
+            handle,
+        )
+
+    with pytest.raises(comparability.ProtocolError, match="exact"):
+        comparability._verify_raw_prediction_identity(
+            record,
+            record["receipts"],
+            ["video_test_0000001"],
+        )
 
 
 def test_forbidden_test_information_fails_closed(tmp_path, monkeypatch):

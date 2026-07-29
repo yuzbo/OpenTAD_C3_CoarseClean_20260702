@@ -125,12 +125,26 @@ def parse_annotation(annotation_path):
     for video_id, record in sorted(database.items()):
         if not isinstance(record, dict):
             raise protocol.ProtocolError(f"invalid annotation record: {video_id}")
-        subset = record.get("subset")
-        if not isinstance(subset, str):
+        raw_subset = record.get("subset")
+        if not isinstance(raw_subset, str):
             raise protocol.ProtocolError(f"missing subset for video: {video_id}")
+        subset = raw_subset.casefold()
+        if subset not in {"validation", "test"}:
+            raise protocol.ProtocolError(
+                f"unexpected THUMOS annotation subset: {video_id}: {raw_subset}"
+            )
         split_counts[subset] = split_counts.get(subset, 0) + 1
         videos.append((video_id, subset))
-        for action in record.get("annotations", []):
+        actions = record.get("annotations", [])
+        if not isinstance(actions, list):
+            raise protocol.ProtocolError(
+                f"invalid annotation list in video: {video_id}"
+            )
+        for action in actions:
+            if not isinstance(action, dict):
+                raise protocol.ProtocolError(
+                    f"invalid action annotation in video: {video_id}"
+                )
             label = action.get("label")
             label_id = action.get("label_id")
             if type(label_id) is not int or not isinstance(label, str):
@@ -144,10 +158,23 @@ def parse_annotation(annotation_path):
                 )
     if sorted(labels_by_id) != list(range(20)):
         raise protocol.ProtocolError("THUMOS annotation does not define label IDs 0..19")
-    if split_counts.get("test") != 213:
+    expected_labels = {
+        label_id: label
+        for label_id, label in enumerate(protocol.OFFICIAL_THUMOS_CLASS_NAMES)
+    }
+    if labels_by_id != expected_labels:
         raise protocol.ProtocolError(
-            f"official THUMOS test split must contain 213 videos, got "
-            f"{split_counts.get('test')}"
+            "pinned official THUMOS label-ID mapping mismatch"
+        )
+    if split_counts != protocol.OFFICIAL_ANNOTATION_SPLIT_COUNTS:
+        raise protocol.ProtocolError(
+            "pinned official THUMOS annotation split mismatch: "
+            f"{split_counts} != {protocol.OFFICIAL_ANNOTATION_SPLIT_COUNTS}"
+        )
+    if len(database) != protocol.OFFICIAL_ANNOTATION_DATABASE_VIDEO_COUNT:
+        raise protocol.ProtocolError(
+            "pinned official THUMOS annotation database count mismatch: "
+            f"{len(database)} != {protocol.OFFICIAL_ANNOTATION_DATABASE_VIDEO_COUNT}"
         )
     class_map = {
         "schema_version": "actionformer_thumos_class_map_v1",
@@ -171,13 +198,37 @@ def build_feature_manifest(feature_dir, videos):
     feature_dir = Path(feature_dir).resolve()
     if not feature_dir.is_dir():
         raise protocol.ProtocolError(f"I3D feature directory is missing: {feature_dir}")
+    annotation_subsets = dict(videos)
+    annotation_ids = set(annotation_subsets)
+    feature_paths = sorted(feature_dir.glob("*.npy"), key=lambda path: path.name)
+    feature_ids = [path.stem for path in feature_paths]
+    if len(set(feature_ids)) != len(feature_ids):
+        raise protocol.ProtocolError("official feature inventory contains duplicate video IDs")
+    feature_id_set = set(feature_ids)
+    missing = sorted(annotation_ids - feature_id_set)
+    feature_only = sorted(feature_id_set - annotation_ids)
+    expected_feature_only = sorted(
+        protocol.OFFICIAL_FEATURE_ONLY_UNANNOTATED_VIDEOS
+    )
+    if missing:
+        raise protocol.ProtocolError(
+            f"official feature set is incomplete: {len(missing)} annotated videos missing"
+        )
+    if feature_only != expected_feature_only:
+        raise protocol.ProtocolError(
+            "pinned official feature-only video set mismatch: "
+            f"{feature_only} != {expected_feature_only}"
+        )
+    if len(feature_paths) != protocol.OFFICIAL_FEATURE_INVENTORY_VIDEO_COUNT:
+        raise protocol.ProtocolError(
+            "pinned official feature inventory count mismatch: "
+            f"{len(feature_paths)} != {protocol.OFFICIAL_FEATURE_INVENTORY_VIDEO_COUNT}"
+        )
+
     entries = []
-    missing = []
-    for video_id, subset in videos:
-        path = feature_dir / f"{video_id}.npy"
-        if not path.is_file():
-            missing.append(video_id)
-            continue
+    for path in feature_paths:
+        video_id = path.stem
+        subset = annotation_subsets.get(video_id)
         try:
             array = np.load(path, mmap_mode="r", allow_pickle=False)
         except Exception as error:
@@ -195,7 +246,7 @@ def build_feature_manifest(feature_dir, videos):
         entries.append(
             {
                 "video_id": video_id,
-                "subset": subset,
+                "annotation_subset": subset,
                 "file": f"{video_id}.npy",
                 "sha256": protocol.sha256_file(path),
                 "size_bytes": path.stat().st_size,
@@ -203,16 +254,35 @@ def build_feature_manifest(feature_dir, videos):
                 "shape": [int(value) for value in array.shape],
             }
         )
-    if missing:
+    evaluated_video_ids = sorted(
+        video_id
+        for video_id, subset in videos
+        if subset == "test" and video_id in feature_id_set
+    )
+    annotation_feature_backed_ids = sorted(annotation_ids & feature_id_set)
+    if len(evaluated_video_ids) != protocol.OFFICIAL_EVALUATED_VIDEO_COUNT:
         raise protocol.ProtocolError(
-            f"official feature set is incomplete: {len(missing)} missing videos"
+            "pinned official evaluated-video count mismatch: "
+            f"{len(evaluated_video_ids)} != {protocol.OFFICIAL_EVALUATED_VIDEO_COUNT}"
         )
     return {
         "schema_version": protocol.OBSERVATION_MANIFEST_SCHEMA,
         "feature_family": "two_stream_i3d_kinetics",
         "feature_root": str(feature_dir),
-        "feature_count": len(entries),
-        "missing_videos": [],
+        "feature_inventory_video_count": len(entries),
+        "annotation_feature_backed_video_count": len(
+            annotation_feature_backed_ids
+        ),
+        "evaluated_feature_backed_video_count": len(evaluated_video_ids),
+        "missing_annotated_feature_videos": missing,
+        "feature_only_unannotated_videos": feature_only,
+        "annotation_video_ids_sha256": protocol.canonical_sha256(
+            sorted(annotation_ids)
+        ),
+        "evaluated_video_ids": evaluated_video_ids,
+        "evaluated_video_ids_sha256": protocol.canonical_sha256(
+            evaluated_video_ids
+        ),
         "features": entries,
     }
 
@@ -460,6 +530,8 @@ def build_record(args):
     annotation_sha = protocol.sha256_file(annotation)
     class_map_sha = protocol.sha256_file(class_map_path)
     feature_manifest_sha = protocol.sha256_file(feature_manifest_path)
+    evaluated_video_ids = feature_manifest["evaluated_video_ids"]
+    evaluated_video_ids_sha = feature_manifest["evaluated_video_ids_sha256"]
     data_manifest = {
         "schema_version": protocol.DATA_MANIFEST_SCHEMA,
         "archive_sha256": archive_sha,
@@ -467,8 +539,15 @@ def build_record(args):
         "annotation_sha256": annotation_sha,
         "class_map_sha256": class_map_sha,
         "feature_manifest_sha256": feature_manifest_sha,
-        "split_counts": split_counts,
-        "eval_video_count": split_counts["test"],
+        "nominal_split_counts": protocol.OFFICIAL_NOMINAL_SPLIT_COUNTS,
+        "annotation_split_counts": split_counts,
+        "annotation_database_video_count": len(videos),
+        "evaluated_video_count": len(evaluated_video_ids),
+        "evaluated_video_ids_sha256": evaluated_video_ids_sha,
+        "blocked_videos": [],
+        "feature_only_unannotated_videos": feature_manifest[
+            "feature_only_unannotated_videos"
+        ],
     }
     data_manifest_path = _write_json(
         output_dir / "OFFICIAL_DATA_MANIFEST.json",
@@ -478,6 +557,23 @@ def build_record(args):
     raw_predictions, prediction_count = load_and_validate_raw_predictions(
         raw_predictions_path
     )
+    prediction_video_ids = sorted(set(raw_predictions["video-id"]))
+    unexpected_prediction_videos = sorted(
+        set(prediction_video_ids) - set(evaluated_video_ids)
+    )
+    if unexpected_prediction_videos:
+        raise protocol.ProtocolError(
+            "raw predictions contain videos outside the feature-backed official "
+            f"test set: {unexpected_prediction_videos[:8]}"
+        )
+    missing_prediction_videos = sorted(
+        set(evaluated_video_ids) - set(prediction_video_ids)
+    )
+    if missing_prediction_videos:
+        raise protocol.ProtocolError(
+            "pinned official reproduction produced no raw predictions for "
+            f"{len(missing_prediction_videos)} evaluated videos"
+        )
     logged_metrics = protocol.parse_actionformer_eval_log(
         eval_log.read_text(encoding="utf-8", errors="strict")
     )
@@ -504,6 +600,13 @@ def build_record(args):
         "evaluator_manifest_sha256": evaluator_manifest_sha,
         "annotation_sha256": annotation_sha,
         "prediction_count": prediction_count,
+        "prediction_video_count": len(prediction_video_ids),
+        "prediction_video_ids_sha256": protocol.canonical_sha256(
+            prediction_video_ids
+        ),
+        "evaluated_video_count": len(evaluated_video_ids),
+        "evaluated_video_ids_sha256": evaluated_video_ids_sha,
+        "prediction_videos_within_evaluated_set": True,
         "logged_metrics": logged_metrics,
         "recomputed_metrics": recomputed_metrics,
         "max_abs_delta": maximum_delta,
@@ -589,12 +692,31 @@ def build_record(args):
             "data_archive_md5": archive_md5,
             "data_archive_sha256": archive_sha,
             "num_classes": 20,
-            "eval_video_count": split_counts["test"],
+            "nominal_split_counts": protocol.OFFICIAL_NOMINAL_SPLIT_COUNTS,
+            "annotation_split_counts": split_counts,
+            "annotation_database_video_count": len(videos),
+            "evaluated_video_count": len(evaluated_video_ids),
+            "evaluated_video_ids_sha256": evaluated_video_ids_sha,
             "blocked_videos": [],
+            "feature_only_unannotated_videos": feature_manifest[
+                "feature_only_unannotated_videos"
+            ],
         },
         "input": {
             "feature_family": "two_stream_i3d_kinetics",
             "feature_provenance_sha256": feature_manifest_sha,
+            "feature_inventory_video_count": feature_manifest[
+                "feature_inventory_video_count"
+            ],
+            "annotation_feature_backed_video_count": feature_manifest[
+                "annotation_feature_backed_video_count"
+            ],
+            "evaluated_feature_backed_video_count": feature_manifest[
+                "evaluated_feature_backed_video_count"
+            ],
+            "missing_annotated_feature_videos": feature_manifest[
+                "missing_annotated_feature_videos"
+            ],
             "input_dim": 2048,
             "clip_frames": 16,
             "frame_stride": 4,
@@ -670,6 +792,10 @@ def build_record(args):
                 "official_actionformer_eval_log_and_independent_recompute"
             ),
             "prediction_count": prediction_count,
+            "prediction_video_count": len(prediction_video_ids),
+            "prediction_video_ids_sha256": protocol.canonical_sha256(
+                prediction_video_ids
+            ),
             "metrics": recomputed_metrics,
         },
         "receipts": receipts,
