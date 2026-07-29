@@ -517,14 +517,20 @@ def _validate_config_and_checkpoint_binding(
 
     gate_checkpoint = gate["checkpoints"][arm]
     preflight_checkpoint = preflight["checkpoints"][arm]
-    require(
-        gate_checkpoint == preflight_checkpoint,
-        f"{variant} checkpoint binding differs between preflight and gate",
-    )
-    checkpoint_path = validate_artifact_record(
+    gate_checkpoint_path = validate_artifact_record(
         gate_checkpoint,
         f"{arm} frozen checkpoint",
     )
+    preflight_checkpoint_path = validate_artifact_record(
+        preflight_checkpoint,
+        f"{arm} preflight frozen checkpoint",
+    )
+    require(
+        gate_checkpoint_path == preflight_checkpoint_path
+        and gate_checkpoint["sha256"] == preflight_checkpoint["sha256"],
+        f"{variant} checkpoint binding differs between preflight and gate",
+    )
+    checkpoint_path = gate_checkpoint_path
     validate_artifact_record(
         completion_artifacts["checkpoint"],
         f"{variant} completion checkpoint",

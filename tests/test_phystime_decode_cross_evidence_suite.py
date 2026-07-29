@@ -66,6 +66,90 @@ def test_artifact_record_checks_path_hash_and_size(tmp_path):
         )
 
 
+def test_checkpoint_binding_compares_artifact_identity_not_record_shape(tmp_path):
+    config = tmp_path / "config.py"
+    config.write_text("model = dict() \n", encoding="utf-8")
+    checkpoint = tmp_path / "epoch_59.pth"
+    checkpoint.write_bytes(b"frozen checkpoint")
+
+    def artifact_record(path):
+        return {
+            "path": str(path),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "size_bytes": path.stat().st_size,
+        }
+
+    config_binding = {
+        "canonical_config_sha256": "1" * 64,
+        "coordinate_modes": ["uniform_rank_seconds", "physical_time_seconds"],
+        "inference_semantic_sha256": "2" * 64,
+        "p0_base_inference_semantic_sha256": "3" * 64,
+        "dataset_bindings": {"annotation_sha256": "4" * 64},
+    }
+    preflight_checkpoint = artifact_record(checkpoint)
+    gate_checkpoint = {
+        "path": str(checkpoint),
+        "sha256": preflight_checkpoint["sha256"],
+        "epoch": 59,
+        "online_tensor_count": 499,
+        "ema_tensor_count": 499,
+        "online_state_dict_sha256": "5" * 64,
+        "ema_state_dict_sha256": "6" * 64,
+    }
+    preflight = {
+        "configs": {
+            "selected_axis": {
+                **artifact_record(config),
+                **config_binding,
+            }
+        },
+        "checkpoints": {"selected_axis": preflight_checkpoint},
+    }
+    gate = {
+        "configs": {"selected_axis": dict(config_binding)},
+        "checkpoints": {"selected_axis": gate_checkpoint},
+        "real_windows": {
+            "selected_online": {
+                "checkpoint_state_dict_sha256": gate_checkpoint[
+                    "online_state_dict_sha256"
+                ]
+            }
+        },
+    }
+    manifest = {
+        "config": str(config),
+        "effective_config_sha256": "7" * 64,
+        "checkpoint": str(checkpoint),
+        "checkpoint_sha256": gate_checkpoint["sha256"],
+        "checkpoint_state_dict_sha256": gate_checkpoint[
+            "online_state_dict_sha256"
+        ],
+    }
+    suite._validate_config_and_checkpoint_binding(
+        variant="selected_online",
+        arm="selected_axis",
+        weights="online",
+        completion_artifacts={"checkpoint": artifact_record(checkpoint)},
+        manifest=manifest,
+        preflight=preflight,
+        gate=gate,
+    )
+
+    other_checkpoint = tmp_path / "other_epoch_59.pth"
+    other_checkpoint.write_bytes(checkpoint.read_bytes())
+    preflight["checkpoints"]["selected_axis"] = artifact_record(other_checkpoint)
+    with pytest.raises(ValueError, match="checkpoint binding differs"):
+        suite._validate_config_and_checkpoint_binding(
+            variant="selected_online",
+            arm="selected_axis",
+            weights="online",
+            completion_artifacts={"checkpoint": artifact_record(checkpoint)},
+            manifest=manifest,
+            preflight=preflight,
+            gate=gate,
+        )
+
+
 @pytest.mark.parametrize(
     "fatal_text",
     [
