@@ -193,18 +193,29 @@ max_chars: 8000
   stability; it does not yield a PL/ST, representation, efficiency, or Geometry
   Zoom verdict. No rerun, partial contrast, selector, P2/P3, official test, or
   claim is authorized.
-  The approved next step is
+  The approved next step is now implemented locally at exact source
+  `832caedd3713f477cb4b2f29a692acba9cd5a836` as
   `exp:georoute-real-batch-amp-diagnostic-v1`: matched residual-PL/ST on the
   production data/training path, with input/RNG hashes and scaled/unscaled/
   clipped gradient localization. The old job lacks sample indices and RNG
   state, so this is not described as bitwise replay. It emits no metrics,
   checkpoint, prediction or test evidence. Only a localized cause can authorize
-  a minimal repair and a fresh real-data stability gate.
+  a minimal repair and a fresh real-data stability gate. The observer is
+  opt-in; parent pilot runtime/file hash, stage and wrapper-failure
+  self-hashes, Slurm IDs and rendezvous are bound. Local pure checks pass
+  `50/50`, required C3 regressions pass `20/20`, and Python/Bash/whitespace
+  checks pass. Clean proxy-synced N16R4 Linux/CUDA validation and all three
+  Slurm jobs are still pending, so no numerical diagnosis exists yet.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch
   size, EMA, evaluator/NMS, sealed-test policy and decode-to-NMS
-  latency/memory/energy across disjoint seeds.
+  latency/memory/energy across disjoint seeds. The current GeoRoute development
+  recipe uses a development-only population, batch size `1`, warmup `2`, no
+  validation evaluator/NMS and final-only checkpointing, whereas the official
+  AdaTAD anchor uses its official split/evaluator recipe, effective batch
+  `2`, warmup `5`, and scheduled validation/checkpointing. Their numbers must
+  never share a paper comparison row.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

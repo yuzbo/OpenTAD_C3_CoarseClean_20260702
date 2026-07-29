@@ -3,11 +3,11 @@ type: experiment
 node_id: exp:georoute-real-batch-amp-diagnostic-v1
 title: "GeoRoute real-batch AMP diagnostic v1"
 idea: idea:geo-route-adatad
-stage: designed
-status: approved_design_pending_implementation
+stage: implemented
+status: local_validation_passed_pending_proxy_sync_remote_linux_cuda
 verdict: pending
 confidence: high
-commit: pending
+commit: 832caedd3713f477cb4b2f29a692acba9cd5a836
 jobs: pending
 updated: 2026-07-29
 ---
@@ -57,6 +57,25 @@ change supported by the observed failing stage and parameter group.
 A repaired source must then pass a fresh production-path real-data stability
 gate before another six-arm study is considered.
 
+## Implementation status
+
+Exact implementation source is
+`832caedd3713f477cb4b2f29a692acba9cd5a836`. The diagnostic observer is
+strictly opt-in and the default train path does not publish or compute
+diagnostic telemetry. The two held GPU leaves run in parallel and feed one
+`afterany` finalizer. Capacity, storage, and all three `sbatch --test-only`
+admission checks precede namespace creation. The deployment explicitly binds
+the failed parent runtime `c822add335c38a9f6c63e609237c4bfa9b9f468d` and
+parent finalization file hash; stage results and wrapper failures bind arm,
+runtime, Slurm Job ID, self-hash, rendezvous and zero-performance-artifact
+guards.
+
+Local pure contract/finalizer/train-engine checks pass `50/50`; required C3
+regressions pass `20/20`; Python compilation, Bash syntax and
+`git diff --check` pass. Windows cannot load the local Torch `c10.dll`, so the
+model/observer path is not marked remotely tested. Clean N16R4 Linux/CUDA
+replay is mandatory before either diagnostic job may be submitted.
+
 ## Paper boundary
 
 This diagnostic can never enter a paper performance table. The historical
@@ -64,6 +83,10 @@ This diagnostic can never enter a paper performance table. The historical
 requires an official AdaTAD reproduction, a matched native-source dense
 control, identical optimization/evaluator/NMS contracts, disjoint multi-seed
 confirmation, sealed official test, and decode-to-NMS latency/memory/energy.
+The current development config differs from the official recipe in data
+population, batch size, warmup, EMA/optimizer surface, checkpoint/evaluation
+workflow and post-processing; therefore even a successful diagnostic or
+replacement pilot is not an official-comparable result.
 
 Full design:
 `docs/superpowers/specs/2026-07-29-georoute-real-batch-amp-diagnostic-design.md`.

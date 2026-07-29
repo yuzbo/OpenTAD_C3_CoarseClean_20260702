@@ -149,6 +149,20 @@ updated: 2026-07-29
    split/windows/padding, effective batch/updates/schedule/AMP/EMA,
    evaluator/NMS; disjoint multi-seed confirmation; sealed official test; and
    selector-inclusive decode-to-NMS latency, memory and energy.
+0. Real-batch AMP telemetry is opt-in diagnostic instrumentation. Never enable
+   `georoute_amp_diagnostic_enabled` or attach its observer in a production or
+   official-comparable run, and never reinterpret a diagnostic loss scale,
+   gradient group, retry count or repair authorization as accuracy evidence.
+0. A diagnostic child must explicitly bind both its own exact runtime commit
+   and the sealed failed parent's distinct runtime commit plus canonical file
+   hash. Wrapper-failure evidence is usable only when its self-hash, arm,
+   expected runtime, observed runtime, Slurm Job ID and zero-performance guards
+   all validate.
+0. Do not place the current GeoRoute development config beside an official
+   AdaTAD number. Development-only population, batch `1`, warmup `2`, disabled
+   evaluator/NMS and final-only checkpointing are not the official recipe.
+   Paper comparison requires a separately frozen official reproduction and
+   same-recipe native-source dense/GeoRoute arms.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

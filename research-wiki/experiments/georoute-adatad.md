@@ -746,6 +746,23 @@ full-graph P0 is not a sufficient real-batch AMP stability certificate. This is
 not a PL/ST or representation scientific verdict and opens no result surface,
 rerun, selector, P2/P3, official test, Geometry Zoom, or claim.
 
+The approved real-batch PL/ST cause analysis is implemented at exact source
+`832caedd3713f477cb4b2f29a692acba9cd5a836`. It adds an opt-in observer to the
+unchanged production train engine, a two-arm held-and-parallel stage DAG, and an
+`afterany` numerical-only finalizer. Every path forbids checkpoints,
+predictions, evaluator output, official test and performance inference. Local
+protocol tests are `50/50` and required C3 regressions are `20/20`; clean
+N16R4 Linux/CUDA validation and jobs are pending. This implementation does not
+authorize a blind six-arm rerun.
+
+The paper protocol is a separate future object. The current development recipe
+differs from the official AdaTAD anchor in data population, batch size,
+warmup/optimization surface, validation/checkpoint workflow and
+evaluator/NMS. No diagnostic or 20-epoch pilot number is officially comparable.
+Only an exact official reproduction plus same-recipe native-source dense and
+candidate arms, disjoint seeds, sealed test, and full decode-to-NMS
+latency/memory/energy may become paper evidence.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

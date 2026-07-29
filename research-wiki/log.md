@@ -1690,3 +1690,20 @@ append_only: true
   reproduction plus matched native-source dense control, matched
   optimization/EMA/evaluator/NMS, disjoint multi-seed confirmation, sealed
   official test, and selector-inclusive decode-to-NMS latency/memory/energy.
+
+- 2026-07-29: implemented the approved numerical-only real-batch AMP diagnosis
+  at exact source `832caedd3713f477cb4b2f29a692acba9cd5a836`. The unchanged
+  production training engine now exposes an opt-in observer for input/RNG,
+  loss/audit and scaled/unscaled/clipped gradient state; matched residual-PL/ST
+  leaves run held and concurrently, followed by one `afterany` finalizer. The
+  DAG disables and audits checkpoints, predictions, evaluator, official test,
+  metrics and performance inference. Deployment binds the distinct failed
+  parent runtime `c822add3` and canonical closeout file hash; stage and wrapper
+  failure evidence bind self-hash, runtime, arm, Slurm ID and rendezvous. Local
+  pure protocol/train-engine checks pass `50/50`, required C3 regressions pass
+  `20/20`, and Python compilation, Bash syntax and whitespace checks pass.
+  Clean academic-proxy sync, remote Linux/CUDA validation and all three Jobs
+  remain pending. The diagnostic and the single-seed 20-epoch pilot are not
+  official-comparable results; a paper row still requires an exact official
+  AdaTAD reproduction and same-recipe native-source controls, disjoint seeds,
+  sealed test, matched evaluator/NMS, and full decode-to-NMS cost.

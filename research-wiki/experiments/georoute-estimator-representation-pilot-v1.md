@@ -227,12 +227,14 @@ does not establish that PL is scientifically inferior to ST, nor does it
 support another estimator repair without a new cause analysis and experiment
 decision.
 
-That next cause-analysis study is now designed as
+That next cause-analysis study is now implemented locally at exact source
+`832caedd3713f477cb4b2f29a692acba9cd5a836` as
 `exp:georoute-real-batch-amp-diagnostic-v1`. It instruments the production
 training path and compares matched residual-PL/ST real batches. It is
 diagnostic-only and cannot rehabilitate this namespace. Because Job `1204309`
 did not record exact batch indices or RNG state, the new study is not an exact
-historical replay.
+historical replay. Local protocol tests pass, but clean N16R4 Linux/CUDA
+validation and deployment are pending; no diagnosis has yet been observed.
 
 ## Claim boundary
 

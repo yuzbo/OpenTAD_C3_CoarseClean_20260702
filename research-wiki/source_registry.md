@@ -260,6 +260,20 @@ updated: 2026-07-29
   This namespace is sealed incomplete execution provenance, not a contrast or
   performance result.
 
+- GeoRoute real-batch AMP diagnostic implementation, 2026-07-29. Exact code
+  source `832caedd3713f477cb4b2f29a692acba9cd5a836`; immutable failed parent
+  runtime `c822add335c38a9f6c63e609237c4bfa9b9f468d` and parent closeout file
+  SHA-256
+  `c95c1694dccbda2687b1b9e6e07bb9016ebe80181e2288d172874afa791d8f1c`.
+  The implementation adds strictly opt-in production-engine AMP observation,
+  matched residual-PL/ST one-batch stages, zero-performance-artifact audits,
+  and an `afterany` numerical finalizer. Parent/source/Slurm/rendezvous and
+  wrapper-failure self-hashes are fail-closed. Local pure checks pass `50/50`,
+  required C3 regressions pass `20/20`, and Python/Bash/whitespace checks pass.
+  Clean RTK-proxy synchronization, remote Linux/CUDA tests, Job IDs and
+  diagnostic receipts are pending. This source is implementation evidence, not
+  a model metric, official AdaTAD comparison, repair result or paper claim.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned
