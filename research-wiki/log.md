@@ -1352,3 +1352,41 @@ append_only: true
   compile, Bash syntax, and `git diff --check` pass locally. State is
   `implemented_pending_remote_test`, not `tested`, `experiment_running`, or
   `empirically_supported`.
+
+- 2026-07-29 16:43--17:30 CST: correction to the preceding prospective
+  timestamp: the clean runtime snapshot was already deployed at approximately
+  16:43 CST. Remote Linux tests passed `88/88`; the first Slurm test wrapper
+  `1203087` failed before Python because `/bin/sh` did not support
+  `set -o pipefail`, and corrected Bash Job `1203089` completed `0:0`.
+  D/K/M Jobs `1203105`--`1203113` all completed `0:0` under
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_repiso_0c20f2e8_dkm_20260729_1643`.
+  The census retrieved 272/272 items over two passes, every estimator and
+  representation KAT passed, and all six Phase-M leaves reproduced prediction
+  SHA on one 136-window population. Finalization
+  `78b0598c70c9966dfd4e7bfa0cce35cfe3ec7d00ed016d0c3268a214e36e86fc`
+  emitted `GO_PILOT_DESIGN_ONLY`, with training, P2/P3, official test, and
+  paper claim all false.
+
+- 2026-07-29: froze and implemented the independent
+  `georoute_estimator_representation_pilot_v1` protocol. The six K=64,
+  seed-3407, 20-epoch arms isolate residual PL versus ST with representation
+  off, fixed-support representation on/off, ROI-support representation on/off,
+  and ROI versus residual support under PL/representation-off. Added an
+  independent contract, explicit P0 bindings for all representation switches,
+  six-P0 -> six-training fail-closed Slurm DAG, final-only artifact receipts,
+  full route/cost telemetry, and a non-promoting exploratory finalizer. The old
+  selector, P2/P3, official test, confirmatory margin, and paper claim remain
+  closed. State is `implemented_pending_remote_test_and_p0`, not
+  `experiment_running` or `empirically_supported`.
+
+- 2026-07-29: completed a post-implementation independent integrity audit of
+  the six-arm pilot before deployment. Tightened fail-closed validation by
+  recomputing every window descriptor, the complete development population,
+  and telemetry summary from raw artifacts; rereading the raw cost profile;
+  validating the full immutable arm binding and actual runtime estimator
+  hyperparameters; binding train/test to one expected Slurm leaf; requiring
+  the canonical P0 suite; and explicitly pinning the D/K/M runtime commit,
+  source experiment commit, and finalization SHA. Added the two missing
+  experiment graph nodes. Python compile, Bash syntax, `git diff --check`, and
+  `34` focused pure contract/finalizer tests pass locally. State remains
+  `implemented_pending_remote_test_and_p0`; no training has been submitted.

@@ -26,12 +26,22 @@ max_chars: 8000
   review-proposed `+0.50/+0.30 pp` margins are not accepted as confirmatory
   thresholds because they lack an independent variance/power basis. Full design:
   `docs/methods/2026-07-29-georoute-estimator-representation-preexperiment.md`.
-  The D/K/M code is `implemented_pending_remote_test`: representation channels
-  are independently switchable, Phase M is inference-only with evaluation
-  disabled, and deployment/finalization receipts bind source artifacts,
-  prediction parity, frozen variants, Slurm jobs, and the clean runtime commit.
-  Static checks pass; remote Linux Torch tests and Slurm execution remain
-  pending, so no training or performance claim has been opened.
+  D/K/M is now `tested_complete_go_pilot_design_only` at runtime commit
+  `0c20f2e89e6af8bac0e3612776e03f80c0a9f3fb`. Jobs
+  `1203105`--`1203113` all completed `0:0`; the two-pass census retrieved
+  `272/272` items, every KAT passed, and all six Phase-M leaves preserved
+  prediction SHA and a common 136-window population. Sealed finalization
+  `78b0598c70c9966dfd4e7bfa0cce35cfe3ec7d00ed016d0c3268a214e36e86fc`
+  emitted `GO_PILOT_DESIGN_ONLY`, with training/P2/P3/official test/paper claim
+  all false. Results:
+  `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
+  A new independent study,
+  `georoute_estimator_representation_pilot_v1`, is
+  `implemented_pending_remote_test_and_p0`: six parallel single-seed,
+  20-epoch, K=64 arms isolate PL versus ST, fixed-support representation,
+  ROI-support representation, and ROI versus residual support. It has a new
+  contract/DAG/finalizer, no old selector, no automatic promotion, and no
+  P2/P3 or official test.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

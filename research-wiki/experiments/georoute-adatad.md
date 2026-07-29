@@ -3,8 +3,8 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: implemented
-status: estimator_representation_preexperiment_implemented_pending_remote_test
-outcome: free_v1_negative_cer_not_ready_dkm_gate_pending
+status: dkm_tested_go_pilot_design_only_pilot_implemented_pending_remote_p0
+outcome: free_v1_negative_cer_not_ready_six_arm_exploratory_pilot_next
 updated: 2026-07-29
 ---
 
@@ -546,16 +546,29 @@ are diagnostic only and cannot complete the old selector or authorize P2/P3.
 The exact frozen design is
 `docs/methods/2026-07-29-georoute-estimator-representation-preexperiment.md`.
 
-The D/K/M implementation is complete locally and remains
-`implemented_pending_remote_test`. It separates absolute coordinates,
-ROI-relative coordinates, and pooled geometry projection; adds opt-in
-per-window route telemetry; runs Phase M inference with evaluation disabled;
-requires exact source config/checkpoint/prediction hashes and prediction-byte
-parity; and binds every receipt to the clean runtime commit, Slurm job, old run
-root, frozen six-arm set, and dependency DAG. The two-pass decode census and
-all outputs are fail-closed inside the remote write boundary. Static Python,
-Bash, and diff checks pass; Linux Torch tests and Slurm receipts are not yet
-available, so the status is not `tested` or `experiment_running`.
+The D/K/M preexperiment is now `tested_complete_go_pilot_design_only`.
+Runtime commit
+`0c20f2e89e6af8bac0e3612776e03f80c0a9f3fb`, Jobs
+`1203105`--`1203113`, and finalization SHA
+`78b0598c70c9966dfd4e7bfa0cce35cfe3ec7d00ed016d0c3268a214e36e86fc`
+are sealed. D retrieved 272/272 items over two complete passes with zero
+failure; K passed likelihood, risk-sign, ST/PL reachability, and representation
+isolation checks; all six M replays preserved prediction SHA and a common
+136-window population. No training, P2/P3, official test, or paper claim was
+opened. Full diagnostics are in
+`docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
+
+The independent six-arm study
+`georoute_estimator_representation_pilot_v1` is now
+`implemented_pending_remote_test_and_p0`. It fixes K=64, seed 3407, 20 epochs,
+absolute VideoMAE position on, and all other data/optimizer/runtime settings.
+Its four preregistered contrasts are residual PL minus ST with representation
+off, fixed representation on minus off, ROI representation on minus off, and
+ROI minus residual support under PL/representation-off. Six P0 leaves and six
+training leaves are parallel; the finalizer emits descriptive single-seed
+contrasts without a winner or promotion. The old selector, P2/P3, and official
+test are absent. Frozen protocol:
+`docs/methods/2026-07-29-georoute-estimator-pilot.md`.
 
 ## Frozen decision logic
 

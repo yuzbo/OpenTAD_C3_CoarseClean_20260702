@@ -2,7 +2,7 @@
 
 Date: 2026-07-29
 
-Status: `implemented_pending_remote_test`
+Status: `tested_complete_go_pilot_design_only`
 
 Authorization boundary: development diagnostics only. This protocol does not
 authorize a new P1/P2/P3 study, official test, efficiency claim, Geometry Zoom
@@ -168,6 +168,11 @@ variance and then tested on disjoint confirmatory seeds. The review-proposed
   not observationally neutral and cannot be used.
 - `GO_PILOT_DESIGN_ONLY`: D, K, and all six M leaves pass. This authorizes
   freezing the six-arm exploratory pilot, not launching full CER.
+
+The sealed remote result is `GO_PILOT_DESIGN_ONLY`; see
+`docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`. The
+independent pilot is frozen in
+`docs/methods/2026-07-29-georoute-estimator-pilot.md`.
 
 ## Claim boundary
 

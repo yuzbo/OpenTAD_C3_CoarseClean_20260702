@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import random
 import subprocess
@@ -37,6 +38,15 @@ def _sha256_file(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _optional_bool(value: str) -> bool:
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError(f"expected a boolean value, got {value!r}")
 
 
 def _load_rendezvous_binding(
@@ -171,7 +181,7 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
     after = int(native_route.get("native_packed_invocation_counter_after", -1))
     if before < 0 or after - before != 1:
         raise ValueError("P0 native packed invocation counter is inconsistent with one heavy forward")
-    if report.get("route_mode") not in {"dense", "roi", "free", "hybrid"}:
+    if report.get("route_mode") not in {"dense", "uniform", "roi", "free", "hybrid"}:
         raise ValueError("P0 route mode is missing or unsupported")
     if report.get("route_mode") == "dense":
         dense_reference = report.get("dense_native_reference")
@@ -238,6 +248,69 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
         or len(str(rendezvous.get("file_sha256"))) != 64
     ):
         raise ValueError("P0 report is not bound to its same-leaf rendezvous gate")
+    pilot_arm = report.get("pilot_arm")
+    if pilot_arm is not None:
+        from tools.bata.georoute_estimator_pilot_contract import (
+            REPRESENTATION_KEYS,
+            pilot_arm_spec,
+        )
+
+        if not isinstance(pilot_arm, str):
+            raise ValueError("P0 pilot arm must be a registered string")
+        spec = pilot_arm_spec(pilot_arm)
+        route_parameters = report.get("route_parameters")
+        representation = report.get("representation")
+        if not isinstance(route_parameters, Mapping):
+            raise ValueError("P0 pilot route-parameter binding is missing")
+        if not isinstance(representation, Mapping):
+            raise ValueError("P0 pilot representation binding is missing")
+        if (
+            report.get("route_mode") != spec["route_mode"]
+            or estimator.get("name") != spec["policy_estimator"]
+            or target != int(spec["tokens_per_tubelet"])
+            or int(route_parameters.get("context_tokens", -1))
+            != int(spec["context_tokens"])
+            or float(route_parameters.get("roi_fraction", -1.0))
+            != float(spec["roi_fraction"])
+            or float(route_parameters.get("policy_temperature", -1.0))
+            != float(spec["policy_temperature"])
+            or float(route_parameters.get("score_function_weight", -1.0))
+            != float(spec["score_function_weight"])
+            or float(
+                route_parameters.get(
+                    "score_function_baseline_momentum",
+                    -1.0,
+                )
+            )
+            != float(spec["score_function_baseline_momentum"])
+        ):
+            raise ValueError("P0 pilot route binding differs from the frozen arm")
+        expected_representation = {
+            "absolute_position_enabled": bool(spec["absolute_position_enabled"]),
+            "geometry_side_channel": bool(spec["geometry_side_channel"]),
+            "learned_geometry_enabled": bool(spec["learned_geometry_enabled"]),
+            "learned_residual_enabled": bool(spec["learned_residual_enabled"]),
+            **{key: bool(spec[key]) for key in REPRESENTATION_KEYS},
+        }
+        if {
+            key: representation.get(key)
+            for key in expected_representation
+        } != expected_representation:
+            raise ValueError(
+                "P0 pilot representation binding differs from the frozen arm"
+            )
+        required = {
+            "rpn_head",
+            "projection",
+            "sparse_adapter",
+            "videomae_adapter",
+        }
+        if spec["learned_geometry_enabled"]:
+            required.add("scout_geometry")
+        if spec["learned_residual_enabled"]:
+            required.add("scout_residual")
+        if set(gradient.get("required_components", [])) != required:
+            raise ValueError("P0 pilot gradient contract differs from the frozen arm")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -246,7 +319,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True, help="Atomic JSON report path.")
     parser.add_argument("--pretrained", default=None, help="Optional VideoMAE checkpoint overriding config.custom.pretrain.")
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--route-mode", choices=("dense", "roi", "free", "hybrid"), default="hybrid")
+    parser.add_argument(
+        "--route-mode",
+        choices=("dense", "uniform", "roi", "free", "hybrid"),
+        default="hybrid",
+    )
     parser.add_argument(
         "--policy-estimator",
         choices=("none", "straight_through", "score_function"),
@@ -254,6 +331,30 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--tokens-per-tubelet", type=int, default=32)
     parser.add_argument("--context-tokens", type=int, default=4)
+    parser.add_argument("--roi-fraction", type=float, default=0.5)
+    parser.add_argument("--policy-temperature", type=float, default=0.7)
+    parser.add_argument("--score-function-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--score-function-baseline-momentum",
+        type=float,
+        default=0.95,
+    )
+    parser.add_argument("--pilot-arm", default=None)
+    parser.add_argument(
+        "--geometry-side-channel", type=_optional_bool, default=None
+    )
+    parser.add_argument(
+        "--absolute-position-enabled", type=_optional_bool, default=None
+    )
+    parser.add_argument(
+        "--absolute-coordinates-enabled", type=_optional_bool, default=None
+    )
+    parser.add_argument(
+        "--roi-relative-coordinates-enabled", type=_optional_bool, default=None
+    )
+    parser.add_argument(
+        "--geometry-projection-enabled", type=_optional_bool, default=None
+    )
     parser.add_argument("--height", type=int, default=160)
     parser.add_argument("--width", type=int, default=160)
     parser.add_argument("--seed", type=int, default=3407)
@@ -264,6 +365,15 @@ def _configure_in_memory(config_path: Path, args):
     from mmengine.config import Config
 
     cfg = Config.fromfile(str(config_path))
+    if (
+        not math.isfinite(float(args.policy_temperature))
+        or float(args.policy_temperature) <= 0.0
+        or not math.isfinite(float(args.score_function_weight))
+        or float(args.score_function_weight) <= 0.0
+        or not math.isfinite(float(args.score_function_baseline_momentum))
+        or not 0.0 <= float(args.score_function_baseline_momentum) < 1.0
+    ):
+        raise ValueError("P0 estimator hyperparameters are outside the frozen domain")
     backbone = cfg.model.backbone
     backbone.backbone.with_cp = False
     custom = backbone.custom
@@ -276,10 +386,14 @@ def _configure_in_memory(config_path: Path, args):
     custom.georoute_tubelet_size = 2
     custom.georoute_tokens_per_tubelet = int(args.tokens_per_tubelet)
     custom.georoute_context_tokens = int(args.context_tokens)
-    custom.georoute_roi_fraction = 0.5
+    custom.georoute_roi_fraction = float(args.roi_fraction)
     custom.georoute_route_mode = str(args.route_mode)
     custom.georoute_policy_estimator = str(args.policy_estimator)
-    custom.georoute_policy_temperature = 0.7
+    custom.georoute_policy_temperature = float(args.policy_temperature)
+    custom.georoute_score_function_weight = float(args.score_function_weight)
+    custom.georoute_score_function_baseline_momentum = float(
+        args.score_function_baseline_momentum
+    )
     custom.georoute_pooling_mode = "uniform_selected"
     custom.georoute_adapter_mode = "coordinate_lineage_packed"
     custom.georoute_roi_temperature = 0.25
@@ -287,6 +401,19 @@ def _configure_in_memory(config_path: Path, args):
     custom.georoute_max_roi_extent = 1.0
     custom.georoute_geometry_smoothness_weight = 0.0
     custom.georoute_area_prior_weight = 0.0
+    for argument_name, config_name in (
+        ("geometry_side_channel", "georoute_geometry_side_channel"),
+        ("absolute_position_enabled", "georoute_absolute_position_enabled"),
+        ("absolute_coordinates_enabled", "georoute_absolute_coordinates_enabled"),
+        (
+            "roi_relative_coordinates_enabled",
+            "georoute_roi_relative_coordinates_enabled",
+        ),
+        ("geometry_projection_enabled", "georoute_geometry_projection_enabled"),
+    ):
+        value = getattr(args, argument_name)
+        if value is not None:
+            setattr(custom, config_name, bool(value))
     custom.georoute_p0_dense_reference_check = args.route_mode == "dense"
     custom.georoute_max_batch_size = 1
     custom.norm_eval = False
@@ -306,8 +433,58 @@ def _configure_in_memory(config_path: Path, args):
         raise ValueError("dense P0 parity uses estimator=none")
     if args.route_mode == "dense" and args.context_tokens != 0:
         raise ValueError("dense P0 parity requires context_tokens=0")
-    if args.route_mode != "dense" and args.policy_estimator == "none":
+    if (
+        args.route_mode not in {"dense", "uniform"}
+        and args.policy_estimator == "none"
+    ):
         raise ValueError("learned P0 routes require an explicit estimator")
+    if args.route_mode == "uniform" and args.policy_estimator != "none":
+        raise ValueError("uniform P0 control requires estimator=none")
+    if args.pilot_arm is not None:
+        from tools.bata.georoute_estimator_pilot_contract import pilot_arm_spec
+
+        spec = pilot_arm_spec(args.pilot_arm)
+        observed = {
+            "route_mode": str(args.route_mode),
+            "policy_estimator": str(args.policy_estimator),
+            "tokens_per_tubelet": int(args.tokens_per_tubelet),
+            "context_tokens": int(args.context_tokens),
+            "roi_fraction": float(args.roi_fraction),
+            "policy_temperature": float(args.policy_temperature),
+            "score_function_weight": float(args.score_function_weight),
+            "score_function_baseline_momentum": float(
+                args.score_function_baseline_momentum
+            ),
+            "geometry_side_channel": bool(
+                getattr(custom, "georoute_geometry_side_channel", False)
+            ),
+            "absolute_position_enabled": bool(
+                getattr(custom, "georoute_absolute_position_enabled", True)
+            ),
+            "absolute_coordinates_enabled": bool(
+                getattr(custom, "georoute_absolute_coordinates_enabled", True)
+            ),
+            "roi_relative_coordinates_enabled": bool(
+                getattr(
+                    custom,
+                    "georoute_roi_relative_coordinates_enabled",
+                    getattr(
+                        custom,
+                        "georoute_absolute_coordinates_enabled",
+                        True,
+                    ),
+                )
+            ),
+            "geometry_projection_enabled": bool(
+                getattr(custom, "georoute_geometry_projection_enabled", True)
+            ),
+        }
+        for key, value in observed.items():
+            if value != spec[key]:
+                raise ValueError(
+                    f"P0 pilot arm {args.pilot_arm!r} has mismatched {key}: "
+                    f"{value!r} != {spec[key]!r}"
+                )
     return cfg
 
 
@@ -450,6 +627,14 @@ def _run_cuda_gate(args) -> dict[str, Any]:
         required_components.update(("scout_geometry", "scout_residual"))
     elif args.route_mode in {"roi", "free"}:
         required_components.add("scout_geometry" if args.route_mode == "roi" else "scout_residual")
+    elif args.route_mode == "uniform" and bool(
+        getattr(
+            cfg.model.backbone.custom,
+            "georoute_geometry_side_channel",
+            False,
+        )
+    ):
+        required_components.add("scout_geometry")
     backward_objective = detector_cost
     policy_loss = None
     if args.policy_estimator == "score_function":
@@ -549,6 +734,41 @@ def _run_cuda_gate(args) -> dict[str, Any]:
             "claim": str(audit["estimator_claim"]),
         },
         "route_mode": str(audit["route_mode"]),
+        "pilot_arm": args.pilot_arm,
+        "route_parameters": {
+            "context_tokens": int(args.context_tokens),
+            "roi_fraction": float(args.roi_fraction),
+            "policy_temperature": float(
+                cfg.model.backbone.custom.georoute_policy_temperature
+            ),
+            "score_function_weight": float(
+                cfg.model.backbone.custom.georoute_score_function_weight
+            ),
+            "score_function_baseline_momentum": float(
+                cfg.model.backbone.custom.georoute_score_function_baseline_momentum
+            ),
+        },
+        "representation": {
+            "absolute_position_enabled": bool(
+                audit["absolute_position_enabled"]
+            ),
+            "absolute_coordinates_enabled": bool(
+                audit["absolute_coordinates_enabled"]
+            ),
+            "roi_relative_coordinates_enabled": bool(
+                audit["roi_relative_coordinates_enabled"]
+            ),
+            "geometry_projection_enabled": bool(
+                audit["geometry_projection_enabled"]
+            ),
+            "geometry_side_channel": bool(audit["geometry_side_channel"]),
+            "learned_geometry_enabled": bool(
+                audit["learned_geometry_enabled"]
+            ),
+            "learned_residual_enabled": bool(
+                audit["learned_residual_enabled"]
+            ),
+        },
         "memory": memory,
         "losses": {key: float(value.detach().item()) for key, value in losses.items()},
         "gradient": gradient,

@@ -17,6 +17,10 @@ ROUTE_MODE="${GEOROUTE_P0_ROUTE_MODE:?set GEOROUTE_P0_ROUTE_MODE}"
 ESTIMATOR="${GEOROUTE_P0_POLICY_ESTIMATOR:?set GEOROUTE_P0_POLICY_ESTIMATOR}"
 TOKENS="${GEOROUTE_P0_TOKENS_PER_TUBELET:-32}"
 CONTEXT="${GEOROUTE_P0_CONTEXT_TOKENS:-0}"
+ROI_FRACTION="${GEOROUTE_P0_ROI_FRACTION:-0.5}"
+POLICY_TEMPERATURE="${GEOROUTE_P0_POLICY_TEMPERATURE:-0.7}"
+SCORE_FUNCTION_WEIGHT="${GEOROUTE_P0_SCORE_FUNCTION_WEIGHT:-1.0}"
+SCORE_FUNCTION_BASELINE_MOMENTUM="${GEOROUTE_P0_SCORE_FUNCTION_BASELINE_MOMENTUM:-0.95}"
 HEIGHT="${GEOROUTE_P0_HEIGHT:-160}"
 WIDTH="${GEOROUTE_P0_WIDTH:-160}"
 
@@ -54,13 +58,37 @@ python -m tools.bata.georoute_rendezvous_gate \
   --expected-commit "${EXPECTED_COMMIT}"
 export GEOROUTE_P0_RENDEZVOUS_RECEIPT="${RENDEZVOUS_OUTPUT}"
 
-python tools/bata/run_georoute_p0_gate.py \
-  --config "${CONFIG}" \
-  --pretrained "${PRETRAINED}" \
-  --output "${OUTPUT}" \
-  --device cuda:0 \
-  --route-mode "${ROUTE_MODE}" \
-  --policy-estimator "${ESTIMATOR}" \
-  --tokens-per-tubelet "${TOKENS}" \
-  --context-tokens "${CONTEXT}" \
-  --height "${HEIGHT}" --width "${WIDTH}" --seed 3407
+args=(
+  --config "${CONFIG}"
+  --pretrained "${PRETRAINED}"
+  --output "${OUTPUT}"
+  --device cuda:0
+  --route-mode "${ROUTE_MODE}"
+  --policy-estimator "${ESTIMATOR}"
+  --tokens-per-tubelet "${TOKENS}"
+  --context-tokens "${CONTEXT}"
+  --roi-fraction "${ROI_FRACTION}"
+  --policy-temperature "${POLICY_TEMPERATURE}"
+  --score-function-weight "${SCORE_FUNCTION_WEIGHT}"
+  --score-function-baseline-momentum "${SCORE_FUNCTION_BASELINE_MOMENTUM}"
+  --height "${HEIGHT}"
+  --width "${WIDTH}"
+  --seed 3407
+)
+if [[ -n "${GEOROUTE_P0_PILOT_ARM:-}" ]]; then
+  args+=(--pilot-arm "${GEOROUTE_P0_PILOT_ARM}")
+fi
+for binding in \
+  "geometry-side-channel:GEOROUTE_P0_GEOMETRY_SIDE_CHANNEL" \
+  "absolute-position-enabled:GEOROUTE_P0_ABSOLUTE_POSITION_ENABLED" \
+  "absolute-coordinates-enabled:GEOROUTE_P0_ABSOLUTE_COORDINATES_ENABLED" \
+  "roi-relative-coordinates-enabled:GEOROUTE_P0_ROI_RELATIVE_COORDINATES_ENABLED" \
+  "geometry-projection-enabled:GEOROUTE_P0_GEOMETRY_PROJECTION_ENABLED"; do
+  flag="${binding%%:*}"
+  variable="${binding#*:}"
+  value="${!variable:-}"
+  if [[ -n "${value}" ]]; then
+    args+=("--${flag}" "${value}")
+  fi
+done
+python tools/bata/run_georoute_p0_gate.py "${args[@]}"

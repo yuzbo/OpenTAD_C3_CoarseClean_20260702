@@ -12,6 +12,17 @@ updated: 2026-07-29
   Verdict is `ACCEPT_WITH_MAJOR_REVISION / READY_PREEXPERIMENT_ONLY`; it is
   design-review evidence, not an implemented model or experiment result.
 
+- GeoRoute estimator/representation D/K/M preexperiment, 2026-07-29. Runtime
+  commit `0c20f2e89e6af8bac0e3612776e03f80c0a9f3fb`; source experiment
+  `7be8363ea6e26b320bffafeb03f0e82d8b660779`; remote run root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_estimator_repiso_0c20f2e8_dkm_20260729_1643`.
+  Jobs `1203105`--`1203113` completed `0:0`. Finalization SHA-256
+  `78b0598c70c9966dfd4e7bfa0cce35cfe3ec7d00ed016d0c3268a214e36e86fc`
+  emitted `GO_PILOT_DESIGN_ONLY`. This is mechanical and diagnostic
+  development evidence; it is not a full training, efficiency, Geometry Zoom,
+  CER, official-test, or paper result. Project record:
+  `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

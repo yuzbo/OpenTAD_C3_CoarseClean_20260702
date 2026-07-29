@@ -25,6 +25,19 @@ updated: 2026-07-29
 0. Instrumentation replay is valid only in a new diagnostic namespace with
    exact prediction-SHA and population parity. It cannot repair the old ROI
    decode failure, complete the old selector, or create paper evidence.
+0. D/K/M finalization
+   `78b0598c70c9966dfd4e7bfa0cce35cfe3ec7d00ed016d0c3268a214e36e86fc`
+   authorizes only the independent six-arm exploratory pilot. Never reinterpret
+   `GO_PILOT_DESIGN_ONLY` as CER implementation, P2/P3 authorization, official
+   test permission, or paper evidence.
+0. In `georoute_estimator_representation_pilot_v1`, keep
+   `absolute_position_enabled=true` in all arms. Representation-off means only
+   the three new detector-visible paths are off: absolute source coordinates,
+   ROI-relative coordinates, and geometry projection.
+0. The exploratory pilot has no automatic winner. Do not use one seed or
+   post-result margins to promote an arm. First report the four frozen
+   contrasts; only then may its variance inform a new protocol with disjoint
+   confirmatory seeds.
 0. Never launch a multi-cell 60-epoch GeoRoute matrix with per-epoch full
    model/optimizer/EMA checkpoint retention and no aggregate storage
    preflight. Jobs `1196071`--`1196077` accumulated 63 GB, filled `/data`, and

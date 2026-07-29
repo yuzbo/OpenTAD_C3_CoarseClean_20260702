@@ -821,6 +821,13 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "routing_schema": GEOROUTE_ROUTING_SCHEMA,
             "route_mode": self.route_mode,
             "policy_estimator": self.policy_estimator,
+            "policy_temperature": self.policy_temperature,
+            "score_function_weight": self.score_function_weight,
+            "score_function_baseline_momentum": (
+                self.score_function_baseline_momentum
+            ),
+            "geometry_smoothness_weight": self.geometry_smoothness_weight,
+            "area_prior_weight": self.area_prior_weight,
             "estimator_claim": "biased_straight_through" if self.policy_estimator == "straight_through" else "score_function_candidate" if self.policy_estimator == "score_function" else "no_policy_gradient",
             "shared_backbone_instances": 1,
             "heavy_backbone_forward_count": packed_invocation_delta,

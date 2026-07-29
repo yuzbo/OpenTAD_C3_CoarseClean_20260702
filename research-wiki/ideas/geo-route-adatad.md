@@ -268,12 +268,19 @@ both absolute and ROI-relative coordinates, while geometry is always projected
 into the pooled feature.
 
 The estimator/representation preexperiment is now
-`implemented_pending_remote_test`:
-full exact-index decode census, numerical PL/ST and representation-isolation
-KATs, and prediction-hash-preserving diagnostic replay of the six complete
-prediction-bearing checkpoints. It authorizes no training or paper claim. A
-passing receipt may authorize a separately frozen six-arm exploratory pilot;
-failure stops the corresponding estimator, instrumentation, or data path.
+`tested_complete_go_pilot_design_only`: its full exact-index decode census,
+numerical PL/ST and representation-isolation KATs, and all six
+prediction-hash-preserving replays passed. It still authorizes no CER or paper
+claim.
+
+The separately frozen six-arm exploratory pilot is now
+`implemented_pending_remote_test_and_p0`. It is the smallest design that
+identifies estimator, support, and representation effects without dynamic
+roles: residual ST/PL with representation off; fixed support with
+representation off/on; and ROI+PL with representation off/on. Single-seed
+results will be descriptive variance/effect estimates only and cannot select a
+paper method. Full CER remains conditional on these single-intervention
+comparisons and later disjoint confirmatory seeds.
 
 ## Connections
 
