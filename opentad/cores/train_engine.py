@@ -36,6 +36,11 @@ def _set_successful_update_index(model, index, *, required):
     return True
 
 
+def _emit_amp_diagnostic(observer, event, **payload):
+    if observer is not None:
+        observer(event, **payload)
+
+
 def train_one_epoch(
     train_loader,
     model,
@@ -54,6 +59,7 @@ def train_one_epoch(
     successful_update_start=0,
     require_successful_update_hook=False,
     schedule_and_ema_on_success_only=False,
+    amp_diagnostic_observer=None,
 ):
     """Training the model for one epoch"""
 
@@ -102,6 +108,20 @@ def train_one_epoch(
             cpu_rng_state = torch.get_rng_state()
             cuda_rng_states = torch.cuda.get_rng_state_all()
             model_buffer_state = _capture_model_buffers(model)
+        if use_amp:
+            _emit_amp_diagnostic(
+                amp_diagnostic_observer,
+                "batch_start",
+                model=model,
+                data_dict=data_dict,
+                iter_idx=iter_idx,
+                retry_count=retry_count,
+                cpu_rng_state=cpu_rng_state,
+                cuda_rng_states=cuda_rng_states,
+                successful_update_index=successful_update_start
+                + successful_updates,
+                scale=float(scaler.get_scale()),
+            )
 
         while True:
             if retry_count > 0:
@@ -113,6 +133,16 @@ def train_one_epoch(
             # successful update still corresponds to this exact sampled batch.
             with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
                 losses = model(**data_dict, return_loss=True)
+            if use_amp:
+                _emit_amp_diagnostic(
+                    amp_diagnostic_observer,
+                    "forward_complete",
+                    model=model,
+                    losses=losses,
+                    iter_idx=iter_idx,
+                    retry_count=retry_count,
+                    scale=float(scaler.get_scale()),
+                )
             if max_amp_retries_per_batch > 0 and not bool(
                 torch.isfinite(losses["cost"]).all()
             ):
@@ -122,13 +152,48 @@ def train_one_epoch(
 
             if use_amp:
                 scaler.scale(losses["cost"]).backward()
+                _emit_amp_diagnostic(
+                    amp_diagnostic_observer,
+                    "scaled_backward",
+                    model=model,
+                    iter_idx=iter_idx,
+                    retry_count=retry_count,
+                    scale=float(scaler.get_scale()),
+                )
             else:
                 losses["cost"].backward()
 
             if clip_grad_l2norm > 0.0:
                 if use_amp:
                     scaler.unscale_(optimizer)
+                    _emit_amp_diagnostic(
+                        amp_diagnostic_observer,
+                        "unscaled",
+                        model=model,
+                        iter_idx=iter_idx,
+                        retry_count=retry_count,
+                        scale=float(scaler.get_scale()),
+                    )
+                    _emit_amp_diagnostic(
+                        amp_diagnostic_observer,
+                        "pre_clip",
+                        model=model,
+                        iter_idx=iter_idx,
+                        retry_count=retry_count,
+                        scale=float(scaler.get_scale()),
+                        clip_grad_l2norm=float(clip_grad_l2norm),
+                    )
                 torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_l2norm)
+                if use_amp:
+                    _emit_amp_diagnostic(
+                        amp_diagnostic_observer,
+                        "post_clip",
+                        model=model,
+                        iter_idx=iter_idx,
+                        retry_count=retry_count,
+                        scale=float(scaler.get_scale()),
+                        clip_grad_l2norm=float(clip_grad_l2norm),
+                    )
 
             if update_audit is not None:
                 update_audit["optimizer_attempts"] += 1
@@ -138,6 +203,16 @@ def train_one_epoch(
                 scaler.update()
                 scale_after = float(scaler.get_scale())
                 update_succeeded = scale_after >= scale_before
+                _emit_amp_diagnostic(
+                    amp_diagnostic_observer,
+                    "scaler_result",
+                    model=model,
+                    iter_idx=iter_idx,
+                    retry_count=retry_count,
+                    scale_before=scale_before,
+                    scale_after=scale_after,
+                    update_succeeded=bool(update_succeeded),
+                )
             else:
                 optimizer.step()
                 update_succeeded = True
@@ -169,6 +244,17 @@ def train_one_epoch(
             )
 
         successful_updates += int(update_succeeded)
+        if use_amp:
+            _emit_amp_diagnostic(
+                amp_diagnostic_observer,
+                "batch_complete",
+                model=model,
+                iter_idx=iter_idx,
+                retry_count=retry_count,
+                update_succeeded=bool(update_succeeded),
+                successful_updates=successful_updates,
+                scale=float(scaler.get_scale()),
+            )
 
         # Registered protocols may advance optimization state only on a real
         # optimizer update. The default preserves legacy OpenTAD behavior.

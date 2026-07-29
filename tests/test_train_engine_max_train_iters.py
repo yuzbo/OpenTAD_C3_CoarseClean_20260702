@@ -113,6 +113,12 @@ class _ToyModel:
     def named_buffers(self):
         return [("loss_normalizer", self.loss_normalizer)]
 
+    def named_parameters(self):
+        return []
+
+    def parameters(self):
+        return []
+
 
 class _UpdateHook:
     def __init__(self):
@@ -276,6 +282,138 @@ def test_train_one_epoch_replays_a_skipped_amp_batch_before_advancing(monkeypatc
         "max_amp_retries_observed": 1,
     }
     assert any("retry 1/4" in message for message in logger.messages)
+
+
+def test_train_one_epoch_amp_diagnostic_observes_retry_order(monkeypatch):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    events = []
+
+    def observer(event, **payload):
+        events.append(
+            (
+                event,
+                payload["iter_idx"],
+                payload["retry_count"],
+                payload.get("scale_before"),
+                payload.get("scale_after"),
+                payload.get("update_succeeded"),
+            )
+        )
+
+    updates = train_engine.train_one_epoch(
+        train_loader=_ToyLoader(1),
+        model=_ToyModel(mutate_buffer=True),
+        optimizer=_ToyOptimizer(),
+        scheduler=_ToyScheduler(),
+        curr_epoch=0,
+        logger=_Logger(),
+        scaler=_ToyScaler(skipped_attempts=1),
+        clip_grad_l2norm=1.0,
+        fail_on_skipped_update=True,
+        max_amp_retries_per_batch=2,
+        amp_diagnostic_observer=observer,
+    )
+
+    assert updates == 1
+    assert [event[0] for event in events] == [
+        "batch_start",
+        "forward_complete",
+        "scaled_backward",
+        "unscaled",
+        "pre_clip",
+        "post_clip",
+        "scaler_result",
+        "forward_complete",
+        "scaled_backward",
+        "unscaled",
+        "pre_clip",
+        "post_clip",
+        "scaler_result",
+        "batch_complete",
+    ]
+    scaler_results = [event for event in events if event[0] == "scaler_result"]
+    assert scaler_results == [
+        ("scaler_result", 0, 0, 65536.0, 32768.0, False),
+        ("scaler_result", 0, 1, 32768.0, 32768.0, True),
+    ]
+
+
+def test_train_one_epoch_amp_diagnostic_omits_unscale_when_clipping_is_off(
+    monkeypatch,
+):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    events = []
+
+    train_engine.train_one_epoch(
+        train_loader=_ToyLoader(1),
+        model=_ToyModel(),
+        optimizer=_ToyOptimizer(),
+        scheduler=_ToyScheduler(),
+        curr_epoch=0,
+        logger=_Logger(),
+        scaler=_ToyScaler(skipped_attempts=0),
+        clip_grad_l2norm=-1,
+        amp_diagnostic_observer=lambda event, **_payload: events.append(event),
+    )
+
+    assert events == [
+        "batch_start",
+        "forward_complete",
+        "scaled_backward",
+        "scaler_result",
+        "batch_complete",
+    ]
+
+
+def test_train_one_epoch_amp_diagnostic_records_failed_result_before_exception(
+    monkeypatch,
+):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    events = []
+
+    with pytest.raises(FloatingPointError, match="could not produce"):
+        train_engine.train_one_epoch(
+            train_loader=_ToyLoader(1),
+            model=_ToyModel(mutate_buffer=True),
+            optimizer=_ToyOptimizer(),
+            scheduler=_ToyScheduler(),
+            curr_epoch=0,
+            logger=_Logger(),
+            scaler=_ToyScaler(skipped_attempts=3),
+            clip_grad_l2norm=1.0,
+            fail_on_skipped_update=True,
+            max_amp_retries_per_batch=1,
+            amp_diagnostic_observer=lambda event, **payload: events.append(
+                (event, payload)
+            ),
+        )
+
+    scaler_results = [
+        payload for event, payload in events if event == "scaler_result"
+    ]
+    assert [payload["update_succeeded"] for payload in scaler_results] == [
+        False,
+        False,
+    ]
+    assert [payload["retry_count"] for payload in scaler_results] == [0, 1]
+    assert not any(event == "batch_complete" for event, _payload in events)
+
+
+def test_train_one_epoch_non_amp_does_not_emit_amp_diagnostic_events(monkeypatch):
+    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
+    events = []
+
+    train_engine.train_one_epoch(
+        train_loader=_ToyLoader(1),
+        model=_ToyModel(),
+        optimizer=_ToyOptimizer(),
+        scheduler=_ToyScheduler(),
+        curr_epoch=0,
+        logger=_Logger(),
+        amp_diagnostic_observer=lambda event, **_payload: events.append(event),
+    )
+
+    assert events == []
 
 
 def test_train_one_epoch_fails_when_amp_retry_limit_is_exhausted(monkeypatch):

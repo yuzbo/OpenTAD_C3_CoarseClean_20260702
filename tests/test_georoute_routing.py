@@ -265,6 +265,90 @@ def test_score_function_sums_temporal_log_probability_then_averages_batch():
     assert loss.item() == pytest.approx(3.0)
 
 
+def test_score_function_detector_binding_records_detached_numeric_state():
+    fake = type("ScoreFunctionAudit", (), {})()
+    fake.training = True
+    ordered_log_prob = torch.tensor(
+        [[-1.0, -2.0, -3.0], [-2.0, -2.0, -2.0]],
+        requires_grad=True,
+    )
+    fake._pending_score_function = {"ordered_log_prob": ordered_log_prob}
+    fake.score_function_baseline = torch.tensor(0.5)
+    fake.score_function_baseline_initialized = torch.tensor(True)
+    fake.score_function_baseline_momentum = 0.95
+    fake.score_function_weight = 1.0
+    fake.amp_diagnostic_enabled = True
+    fake.latest_georoute_audit = {}
+    fake._detached_tensor_statistics = (
+        GeoRouteBackboneWrapper._detached_tensor_statistics
+    )
+
+    output = GeoRouteBackboneWrapper.consume_detector_policy_loss(
+        fake,
+        detector_losses={
+            "cls_loss": torch.tensor(1.25, requires_grad=True),
+            "reg_loss": torch.tensor(0.75, requires_grad=True),
+            "metadata": "ignored",
+        },
+    )
+
+    policy_loss = output["georoute_score_function_loss"]
+    policy_loss.backward()
+    binding = fake.latest_georoute_audit["score_function_detector_binding"]
+    assert binding["detector_loss_keys"] == ["cls_loss", "reg_loss"]
+    assert binding["detector_cost"]["dtype"] == "torch.float32"
+    assert binding["detector_cost"]["scalar_value"] == pytest.approx(2.0)
+    assert binding["baseline"]["scalar_value"] == pytest.approx(0.5)
+    assert binding["advantage"]["scalar_value"] == pytest.approx(1.5)
+    assert binding["ordered_log_prob"]["finite"] is True
+    assert binding["joint_log_probability"]["finite_mean"] == pytest.approx(-6.0)
+    assert binding["policy_loss"]["scalar_value"] == pytest.approx(-9.0)
+    assert ordered_log_prob.grad is not None
+    assert fake._pending_score_function is None
+
+
+def test_detached_tensor_statistics_preserves_nonfinite_counts_without_json_inf():
+    summary = GeoRouteBackboneWrapper._detached_tensor_statistics(
+        torch.tensor([1.0, float("inf"), float("nan")])
+    )
+
+    assert summary["finite"] is False
+    assert summary["finite_count"] == 1
+    assert summary["nonfinite_count"] == 2
+    assert summary["finite_min"] == pytest.approx(1.0)
+    assert summary["finite_max"] == pytest.approx(1.0)
+    assert summary["scalar_value"] is None
+
+
+def test_score_function_detailed_numeric_state_is_diagnostic_opt_in():
+    fake = type("ScoreFunctionAudit", (), {})()
+    fake.training = True
+    fake._pending_score_function = {
+        "ordered_log_prob": torch.tensor([[-1.0]], requires_grad=True)
+    }
+    fake.score_function_baseline = torch.tensor(0.0)
+    fake.score_function_baseline_initialized = torch.tensor(False)
+    fake.score_function_baseline_momentum = 0.95
+    fake.score_function_weight = 1.0
+    fake.amp_diagnostic_enabled = False
+    fake.latest_georoute_audit = {}
+    fake._detached_tensor_statistics = (
+        GeoRouteBackboneWrapper._detached_tensor_statistics
+    )
+
+    GeoRouteBackboneWrapper.consume_detector_policy_loss(
+        fake,
+        detector_losses={"cls_loss": torch.tensor(1.0, requires_grad=True)},
+    )
+
+    binding = fake.latest_georoute_audit["score_function_detector_binding"]
+    assert set(binding) == {
+        "detector_loss_keys",
+        "detector_cost_finite",
+        "policy_objective_sign",
+    }
+
+
 def test_score_function_promotes_amp_likelihood_and_long_temporal_reduction():
     logits = torch.zeros(
         1,

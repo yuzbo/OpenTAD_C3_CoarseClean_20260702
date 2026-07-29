@@ -1,6 +1,7 @@
 import copy
 import os
 import sys
+from pathlib import Path
 
 sys.dont_write_bytecode = True
 path = os.path.join(os.path.dirname(__file__), "..")
@@ -102,6 +103,8 @@ def main():
     s2_checkpoint_sidecar_schema = None
     s2_runtime_gate_binding = None
     s2_runtime_gate_sidecar_schema = None
+    amp_diagnostic_binding = None
+    amp_diagnostic_observer_cls = None
     if "spatial_zoom_s1_contract" in cfg:
         from tools.bata.spatial_zoom_s1_training import (
             S1_CHECKPOINT_SIDECAR_SCHEMA,
@@ -195,12 +198,51 @@ def main():
                 "Continuous-RoI S2 runtime Gate forbids overrides, resume, "
                 "nondeterminism, and disabled evaluation"
             )
+    if "georoute_amp_diagnostic_binding" in cfg:
+        from tools.bata.georoute_amp_diagnostic import (
+            RealBatchAmpDiagnosticObserver,
+            require_clean_git_checkout as require_clean_amp_git_checkout,
+            require_slurm_single_gpu as require_amp_slurm_single_gpu,
+            validate_amp_diagnostic_config,
+        )
+
+        if (
+            s1_binding is not None
+            or s2_binding is not None
+            or s2_runtime_gate_binding is not None
+        ):
+            raise RuntimeError(
+                "GeoRoute AMP diagnosis cannot share another formal binding"
+            )
+        require_amp_slurm_single_gpu()
+        amp_diagnostic_binding = validate_amp_diagnostic_config(
+            cfg,
+            seed=args.seed,
+        )
+        require_clean_amp_git_checkout(
+            expected_commit=amp_diagnostic_binding["runtime_commit"],
+            root=Path(path).resolve(),
+        )
+        if (
+            args.cfg_options is not None
+            or args.resume is not None
+            or args.disable_deterministic
+            or args.not_eval
+            or args.id != 0
+        ):
+            raise ValueError(
+                "GeoRoute AMP diagnosis forbids overrides, resume, "
+                "nondeterminism, disabled evaluation, and nonzero id"
+            )
+        amp_diagnostic_observer_cls = RealBatchAmpDiagnosticObserver
     formal_binding = (
         s1_binding
         if s1_binding is not None
         else s2_binding
         if s2_binding is not None
         else s2_runtime_gate_binding
+        if s2_runtime_gate_binding is not None
+        else amp_diagnostic_binding
     )
     assert_safe_entrypoint_args_for_gated_config(cfg, args, entrypoint="tools/train.py")
     assert_detector_training_allowed(cfg, entrypoint="tools/train.py")
@@ -329,6 +371,28 @@ def main():
             s2_runtime_gate_binding["train_batches_per_epoch"]
         ):
             raise RuntimeError("runtime Gate requires the real 80-batch loader")
+    if amp_diagnostic_binding is not None:
+        runtime_ids = {
+            "train": {str(row[0]) for row in train_dataset.data_list},
+            "val": {str(row[0]) for row in val_dataset.data_list},
+            "test": {str(row[0]) for row in test_dataset.data_list},
+        }
+        if runtime_ids["train"] != set(
+            amp_diagnostic_binding["training_video_ids"]
+        ):
+            raise ValueError(
+                "AMP diagnostic train dataset differs from the historical "
+                "pilot training population"
+            )
+        if runtime_ids["val"] != set(
+            amp_diagnostic_binding["evaluation_video_ids"]
+        ) or runtime_ids["test"] != set(
+            amp_diagnostic_binding["evaluation_video_ids"]
+        ):
+            raise ValueError(
+                "AMP diagnostic loaders differ from the historical pilot "
+                "development population"
+            )
 
     # build model
     model = build_detector(cfg.model)
@@ -363,9 +427,24 @@ def main():
     use_amp = getattr(cfg.solver, "amp", False)
     if use_amp:
         logger.info("Using Automatic Mixed Precision...")
-        scaler = GradScaler()
+        if amp_diagnostic_binding is not None:
+            scaler = GradScaler(
+                init_scale=float(amp_diagnostic_binding["initial_scale"])
+            )
+        else:
+            scaler = GradScaler()
     else:
         scaler = None
+
+    amp_diagnostic_observer = None
+    if amp_diagnostic_binding is not None:
+        amp_diagnostic_observer = amp_diagnostic_observer_cls(
+            binding=amp_diagnostic_binding,
+            output_path=amp_diagnostic_binding["output_path"],
+            runtime_commit=amp_diagnostic_binding["runtime_commit"],
+            slurm_job_id=os.environ["SLURM_JOB_ID"],
+            rank=args.rank,
+        )
 
     # build optimizer and scheduler
     optimizer = build_optimizer(copy.deepcopy(cfg.optimizer), model, logger)
@@ -406,7 +485,9 @@ def main():
         "max_amp_retries_observed": 0,
     }
     protocol_amp_retry_limit = (
-        8
+        int(amp_diagnostic_binding["max_amp_retries_per_batch"])
+        if amp_diagnostic_binding is not None
+        else 8
         if formal_binding is not None
         else int(cfg.workflow.get("max_amp_retries_per_batch", 0))
     )
@@ -423,29 +504,39 @@ def main():
         train_loader.sampler.set_epoch(epoch)
 
         # train for one epoch
-        successful_updates += train_one_epoch(
-            train_loader,
-            model,
-            optimizer,
-            scheduler,
-            epoch,
-            logger,
-            model_ema=model_ema,
-            clip_grad_l2norm=cfg.solver.clip_grad_norm,
-            logging_interval=cfg.workflow.logging_interval,
-            scaler=scaler,
-            max_train_iters=cfg.workflow.get("max_train_iters", None),
-            fail_on_skipped_update=protocol_fail_on_skip,
-            max_amp_retries_per_batch=protocol_amp_retry_limit,
-            update_audit=update_audit if protocol_update_audit else None,
-            successful_update_start=successful_updates,
-            require_successful_update_hook=cfg.workflow.get(
-                "require_successful_update_hook", False
-            ),
-            schedule_and_ema_on_success_only=cfg.workflow.get(
-                "schedule_and_ema_on_success_only", False
-            ),
-        )
+        try:
+            successful_updates += train_one_epoch(
+                train_loader,
+                model,
+                optimizer,
+                scheduler,
+                epoch,
+                logger,
+                model_ema=model_ema,
+                clip_grad_l2norm=cfg.solver.clip_grad_norm,
+                logging_interval=cfg.workflow.logging_interval,
+                scaler=scaler,
+                max_train_iters=cfg.workflow.get("max_train_iters", None),
+                fail_on_skipped_update=protocol_fail_on_skip,
+                max_amp_retries_per_batch=protocol_amp_retry_limit,
+                update_audit=update_audit if protocol_update_audit else None,
+                successful_update_start=successful_updates,
+                require_successful_update_hook=cfg.workflow.get(
+                    "require_successful_update_hook", False
+                ),
+                schedule_and_ema_on_success_only=cfg.workflow.get(
+                    "schedule_and_ema_on_success_only", False
+                ),
+                amp_diagnostic_observer=amp_diagnostic_observer,
+            )
+        except BaseException as error:
+            if amp_diagnostic_observer is not None:
+                amp_diagnostic_observer.finalize_failure(
+                    error,
+                    successful_updates=successful_updates,
+                    update_audit=update_audit,
+                )
+            raise
 
         # save checkpoint
         should_save_checkpoint = should_save_training_checkpoint(
@@ -568,6 +659,19 @@ def main():
                     not_eval=args.not_eval,
                     epoch=epoch,
                 )
+    if amp_diagnostic_observer is not None:
+        try:
+            amp_diagnostic_observer.finalize_success(
+                successful_updates=successful_updates,
+                update_audit=update_audit,
+            )
+        except BaseException as error:
+            amp_diagnostic_observer.finalize_failure(
+                error,
+                successful_updates=successful_updates,
+                update_audit=update_audit,
+            )
+            raise
     logger.info("Training Over...\n")
 
 

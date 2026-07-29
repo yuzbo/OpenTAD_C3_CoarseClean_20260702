@@ -246,6 +246,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         )
         self.geometry_projection_enabled = bool(getattr(custom_cfg, "georoute_geometry_projection_enabled", True))
         self.diagnostic_telemetry_enabled = bool(getattr(custom_cfg, "georoute_diagnostic_telemetry_enabled", False))
+        self.amp_diagnostic_enabled = bool(
+            getattr(custom_cfg, "georoute_amp_diagnostic_enabled", False)
+        )
         self.pooling_mode = str(getattr(custom_cfg, "georoute_pooling_mode", "uniform_selected"))
         self.adapter_mode = str(
             getattr(
@@ -521,6 +524,36 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             unselected_ceiling = scores.detach().masked_fill(~unselected_mask, float("-inf")).amax(dim=-1)
             result["hard_margin_mean"] = float((selected_floor - unselected_ceiling).float().mean().item())
         return result
+
+    @staticmethod
+    def _detached_tensor_statistics(value: torch.Tensor) -> dict[str, Any]:
+        detached = value.detach()
+        finite_mask = torch.isfinite(detached)
+        finite_count = int(finite_mask.sum().item())
+        total_count = int(detached.numel())
+        finite_values = detached.float().masked_select(finite_mask)
+        return {
+            "dtype": str(detached.dtype),
+            "device": str(detached.device),
+            "shape": list(detached.shape),
+            "finite": finite_count == total_count,
+            "finite_count": finite_count,
+            "nonfinite_count": total_count - finite_count,
+            "finite_min": (
+                float(finite_values.min().item()) if finite_count else None
+            ),
+            "finite_max": (
+                float(finite_values.max().item()) if finite_count else None
+            ),
+            "finite_mean": (
+                float(finite_values.mean().item()) if finite_count else None
+            ),
+            "scalar_value": (
+                float(finite_values.item())
+                if total_count == 1 and finite_count == 1
+                else None
+            ),
+        }
 
     @classmethod
     def _diagnostic_route_telemetry(
@@ -850,6 +883,12 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "uses_oracle": False,
             "uses_test_evidence": False,
         }
+        if self.amp_diagnostic_enabled:
+            self.latest_georoute_audit["amp_diagnostic_enabled"] = True
+            self.latest_georoute_audit["route_logits"] = {
+                "roi": self._detached_tensor_statistics(roi_logits),
+                "residual": self._detached_tensor_statistics(residual_logits),
+            }
         if diagnostic_telemetry is not None:
             self.latest_georoute_audit["diagnostic_telemetry"] = diagnostic_telemetry
         return output.to(torch.float32)
@@ -876,16 +915,23 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
     ) -> dict[str, torch.Tensor]:
         if not self.training or self._pending_score_function is None:
             return {}
-        detector_cost = sum(value for value in detector_losses.values() if torch.is_tensor(value))
+        tensor_losses = [
+            (str(name), value)
+            for name, value in detector_losses.items()
+            if torch.is_tensor(value)
+        ]
+        detector_cost = sum(value for _name, value in tensor_losses)
         if detector_cost.ndim != 0:
             raise ValueError("GeoRoute detector policy hook requires scalar detector losses")
         if bool(self.score_function_baseline_initialized.item()):
             baseline = self.score_function_baseline
         else:
             baseline = torch.zeros_like(detector_cost)
+        baseline_for_policy = baseline.detach().clone()
+        ordered_log_prob = self._pending_score_function["ordered_log_prob"]
         policy_loss = score_function_policy_loss(
             detector_cost=detector_cost,
-            ordered_log_prob=self._pending_score_function["ordered_log_prob"],
+            ordered_log_prob=ordered_log_prob,
             baseline=baseline,
             weight=self.score_function_weight,
         )
@@ -899,10 +945,51 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self._pending_score_function = None
         if self.latest_georoute_audit is not None:
             self.latest_georoute_audit["score_function_reward"] = float(detector_cost.detach().item())
-            self.latest_georoute_audit["score_function_baseline"] = float(baseline.detach().item())
-            self.latest_georoute_audit["score_function_detector_binding"] = {
-                "detector_loss_keys": sorted(str(name) for name, value in detector_losses.items() if torch.is_tensor(value)),
+            self.latest_georoute_audit["score_function_baseline"] = float(
+                baseline_for_policy.item()
+            )
+            detector_binding = {
+                "detector_loss_keys": sorted(name for name, _value in tensor_losses),
                 "detector_cost_finite": bool(torch.isfinite(detector_cost).item()),
                 "policy_objective_sign": "positive_(detector_loss-baseline)*log_probability_for_risk_minimization",
             }
+            if self.amp_diagnostic_enabled:
+                advantage = (
+                    detector_cost.detach().to(torch.float32)
+                    - baseline_for_policy.to(torch.float32)
+                )
+                joint_log_probability = (
+                    ordered_log_prob.detach().to(torch.float32).sum(dim=1)
+                )
+                detector_binding.update(
+                    {
+                        "detector_losses": {
+                            name: self._detached_tensor_statistics(value)
+                            for name, value in tensor_losses
+                        },
+                        "detector_cost": self._detached_tensor_statistics(
+                            detector_cost
+                        ),
+                        "baseline": self._detached_tensor_statistics(
+                            baseline_for_policy
+                        ),
+                        "advantage": self._detached_tensor_statistics(
+                            advantage
+                        ),
+                        "ordered_log_prob": (
+                            self._detached_tensor_statistics(ordered_log_prob)
+                        ),
+                        "joint_log_probability": (
+                            self._detached_tensor_statistics(
+                                joint_log_probability
+                            )
+                        ),
+                        "policy_loss": self._detached_tensor_statistics(
+                            policy_loss
+                        ),
+                    }
+                )
+            self.latest_georoute_audit[
+                "score_function_detector_binding"
+            ] = detector_binding
         return {"georoute_score_function_loss": policy_loss}
