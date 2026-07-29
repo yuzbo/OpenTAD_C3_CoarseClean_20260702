@@ -8,7 +8,8 @@
 - Architecture: `selected_axis_pure_pre_backbone_plugin`
 - Implementation: `implemented`
 - Local verification: `static_and_pure_python_tested`
-- Runtime verification: `first_code_gate_failed_closed_on_stale_test_contract`
+- Runtime verification: `authoritative_code_gate_passed_1204067`
+- Numeric calibration: `blocked / implemented_draft_not_protocol_valid`
 - Experiment: `not_yet_run`
 - Empirical support: `none`
 - Paper claim: `forbidden`
@@ -24,6 +25,17 @@ Failure signature:
 `phase1_uniform_test_expected_superseded_physical_protocol`. The remediation
 updates only that regression expectation and asserts selected-axis/standard-head
 state; the focused local test passes.
+
+Remediation commit `119db2f83756281729506632a18bfed607794d13`
+passed Slurm code-gate job `1204067`; gate-receipt SHA-256 is
+`d664a619007f1cafbd4e52f2fd6a053fb0e3b5336dcb2be2b16302912286e5c8`.
+The next layer did not start. Audit showed that the current calibrator uses
+synthetic head fixtures, does not consume registered training/calibration
+videos, lacks video/process-grouped null distributions and independent process
+launches, and does not freeze the specified normalized statistic plus
+denominator floor. No admissible non-fixture targets, acquisition data manifest,
+or NI-margin source is currently registered. These are P0 prerequisites for
+Admission v2, not optional polish.
 
 ## Accepted scientific decision
 

@@ -272,3 +272,12 @@ These failures and naming mistakes must not be repeated.
     engineering test-contract mismatch: correct the expected protocol and
     assert the standard-head boundary, but do not use it to change or relax any
     model, numeric-null, scientific, or evidence gate.
+85. Do not label a synthetic random head-feature fixture
+    `train_only_calibration`. A valid numeric null must execute registered
+    training/calibration videos, retain video and independent-process grouping,
+    freeze the preregistered statistic and denominator floor, and bind the raw
+    row distribution before any candidate development result is read.
+86. Do not use code-gate fixture targets/block lists, reuse a development/final
+    result as a calibration source, or invent an NI practical-relevance floor.
+    Missing formal targets, data manifest, or margin source blocks Admission v2
+    before Phase 1.

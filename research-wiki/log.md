@@ -26,6 +26,25 @@
   `/data/run01/sczc063/yuzibo/rime_preflight/duca_acquisition_v2_70cf49de_20260729_202923`.
   Numeric calibration, scientific admission, Phase 1, Phase 4, and
   official-final were not started.
+- Remediation commit `119db2f83756281729506632a18bfed607794d13`
+  passed authoritative Slurm code-gate job `1204067` with exit `0:0`.
+  Gate-receipt SHA-256 is
+  `d664a619007f1cafbd4e52f2fd6a053fb0e3b5336dcb2be2b16302912286e5c8`.
+- A post-gate evidence audit stopped the workflow before numeric calibration.
+  No non-fixture training-target JSONL, acquisition data manifest, or
+  `duca_acquisition_ni_margin_source_v1` exists in the registered remote
+  assets. Code-gate fixture targets and block lists are forbidden substitutes.
+- An independent specification-to-code audit found a P0 protocol gap in the
+  current numeric calibrator: it runs synthetic head-feature fixtures while
+  declaring `train_only_calibration`, does not consume real role-scoped videos,
+  has no video/process-grouped null distribution or independent process
+  launches, and does not freeze the registered normalized statistic and
+  denominator floor. Therefore the calibrator is an implemented draft, not a
+  valid Admission-v2 producer.
+- Admission v2, Phase 1, Phase 4, and official-final remain unopened. The next
+  authorized work is to repair and preregister the real-data numeric
+  calibration protocol and generate its train/calibration-only input assets;
+  no performance claim is available.
 
 ## 2026-07-27 — DUCA-RIME four-stage implementation
 

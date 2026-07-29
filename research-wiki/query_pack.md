@@ -17,12 +17,12 @@ Current evidence level:
 |---|---|
 | Scientific route | `user_approved` |
 | Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 / core_decision_accepted_with_implementation_corrections` |
-| Pure selected-axis coordinate refactor | `implemented / local_static_and_pure_tests_passed / first_remote_gate_reached_full_suite` |
-| Acquisition admission-v2 | `implemented / artifact_and_runtime_bound / first_Slurm_code_gate_failed_on_stale_test_expectation_before_admission` |
+| Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
+| Acquisition admission-v2 | `implemented_draft / blocked_before_calibration_by_P0_real_data_and_grouped_null_gap` |
 | Phase-1 v2 closure | `not_yet_run / only_next_authorized_experiment` |
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
-| Remote authoritative code gate | `acquisition_v2_job_1204048_failed_closed / 247_passed_1_stale_protocol_assertion / no_receipt / correction_local_tested` |
+| Remote authoritative code gate | `acquisition_v2_job_1204067_completed_0_0 / receipt_sha256_d664a619007f1cafbd4e52f2fd6a053fb0e3b5336dcb2be2b16302912286e5c8` |
 | Dense reference training | `recovery_v6_salvage_completed / engineering_only` |
 | Phase 1 closure | `recovery_v6_contract_gate_failed_1201417 / universal_loss_equivalence_premise_invalid / observed_mismatch_component_unresolved / no_terminal_receipt` |
 | Phase 2/3/4 | `recovery_v6_children_cancelled / phase4_never_opened` |
@@ -50,6 +50,19 @@ The correction changes only the test contract and does not change the model,
 loss, budget, threshold, data, checkpoint, evaluator, or scientific gate.
 The failed root is immutable and has no gate receipt:
 `/data/run01/sczc063/yuzibo/rime_preflight/duca_acquisition_v2_70cf49de_20260729_202923`.
+
+Remediation commit `119db2f83756281729506632a18bfed607794d13`
+subsequently passed Slurm code-gate job `1204067` with exit `0:0`; the
+content-bound gate receipt SHA-256 is
+`d664a619007f1cafbd4e52f2fd6a053fb0e3b5336dcb2be2b16302912286e5c8`.
+The workflow nevertheless stops before numeric calibration because the current
+producer uses synthetic head features while labeling rows
+`train_only_calibration`. It does not consume registered role-scoped videos,
+form video/process-grouped null distributions, launch independent repeated
+processes, or freeze the prescribed normalized statistic and denominator
+floor. Remote inventory also found no admissible non-fixture training-target
+JSONL, acquisition data manifest, or NI-margin source. This is a P0 protocol
+implementation gap, not model-performance evidence.
 
 ## Paper responsibility
 
