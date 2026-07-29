@@ -38,6 +38,10 @@ from opentad.datasets import build_dataloader, build_dataset
 from opentad.models import build_detector
 from opentad.models.duca.structured_selection import exact_uniform_positions
 from opentad.utils import ModelEma
+from tools.bata.duca_gate_diagnostics import (
+    detector_loss_parity_report,
+    uniform_axis_geometry_report,
+)
 
 
 SCHEMA = "duca_protected_physical_full_model_gate_v1"
@@ -53,7 +57,14 @@ HOMOTOPY_ARM = "protected_e2e_homotopy025"
 
 
 class ProtectedPhysicalGateFailure(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        diagnostics: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.diagnostics = dict(diagnostics or {})
 
 
 def _require(condition: bool, message: str) -> None:
@@ -842,12 +853,13 @@ def _detector_loss_report(
     gt_segments,
     gt_labels,
     mutable_state: Mapping[str, Any],
+    autocast_enabled: bool = True,
 ) -> dict[str, float]:
     _restore_mutable_state(model, mutable_state)
     with torch.no_grad(), torch.autocast(
         device_type="cuda",
         dtype=torch.float16,
-        enabled=True,
+        enabled=bool(autocast_enabled),
         cache_enabled=False,
     ):
         losses = model.forward_train(
@@ -992,8 +1004,19 @@ def _uniform_physical_legacy_parity(
     *,
     batch: Mapping[str, Any],
     mutable_state: Mapping[str, Any],
+    window_role: str,
 ) -> dict[str, Any]:
     positions = _exact_uniform_position_tensor(batch["masks"])
+    geometry = []
+    for batch_index, row in enumerate(positions):
+        valid_len = int(batch["masks"][batch_index].sum().item())
+        active = row[row >= 0].detach().cpu().tolist()
+        geometry.append(
+            uniform_axis_geometry_report(
+                valid_len=valid_len,
+                positions=active,
+            )
+        )
     materialized = model.frame_selector.materialize_hard_positions(
         batch["inputs"],
         batch["masks"],
@@ -1028,22 +1051,84 @@ def _uniform_physical_legacy_parity(
         )
     finally:
         _restore_physical_head_state(model.rpn_head, head_state)
-    loss_errors = {
-        key: abs(physical_losses[key] - legacy_losses[key]) for key in physical_losses
-    }
-    _require(
-        all(
-            error
-            <= 1.0e-4
-            * max(
-                1.0,
-                abs(physical_losses[key]),
-                abs(legacy_losses[key]),
-            )
-            for key, error in loss_errors.items()
-        ),
-        "exact-uniform physical and selected-axis detector losses disagree",
+    loss_parity = detector_loss_parity_report(
+        physical_losses,
+        legacy_losses,
+        relative_tolerance=1.0e-4,
     )
+    loss_errors = {
+        key: float(row["absolute_error"])
+        for key, row in loss_parity["per_key"].items()
+    }
+    if not loss_parity["all_equal_within_registered_tolerance"]:
+        fp32_replay: dict[str, Any]
+        try:
+            physical_fp32 = _detector_loss_report(
+                model,
+                selected_inputs=materialized["inputs"],
+                selected_masks=materialized["masks"],
+                metas=materialized["metas"],
+                gt_segments=batch["gt_segments"],
+                gt_labels=batch["gt_labels"],
+                mutable_state=mutable_state,
+                autocast_enabled=False,
+            )
+            head_state = _set_physical_head_enabled(model.rpn_head, False)
+            try:
+                legacy_fp32 = _detector_loss_report(
+                    model,
+                    selected_inputs=materialized["inputs"],
+                    selected_masks=materialized["masks"],
+                    metas=batch["metas"],
+                    gt_segments=legacy_segments,
+                    gt_labels=batch["gt_labels"],
+                    mutable_state=mutable_state,
+                    autocast_enabled=False,
+                )
+            finally:
+                _restore_physical_head_state(model.rpn_head, head_state)
+            fp32_replay = {
+                "completed": True,
+                "admission_effect": "diagnostic_only",
+                "loss_parity": detector_loss_parity_report(
+                    physical_fp32,
+                    legacy_fp32,
+                    relative_tolerance=1.0e-4,
+                ),
+            }
+        except Exception as fp32_error:
+            fp32_replay = {
+                "completed": False,
+                "admission_effect": "diagnostic_only",
+                "error_type": fp32_error.__class__.__name__,
+                "error": str(fp32_error),
+            }
+        worst_key = loss_parity["worst_key"]
+        worst = loss_parity["per_key"].get(worst_key, {})
+        raise ProtectedPhysicalGateFailure(
+            "protected physical full-model gate failed: exact-uniform physical "
+            "and selected-axis detector losses disagree; "
+            f"window_role={window_role}; worst_key={worst_key}; "
+            f"absolute_error={worst.get('absolute_error')}; "
+            f"threshold={worst.get('threshold')}",
+            diagnostics={
+                "failure_stage": "exact_uniform_physical_selected_axis_loss_parity",
+                "window_role": str(window_role),
+                "coordinate_geometry": geometry,
+                "amp_loss_parity": loss_parity,
+                "fp32_non_admission_replay": fp32_replay,
+                "numeric_contract": {
+                    "amp_autocast": True,
+                    "amp_dtype": "float16",
+                    "registered_relative_tolerance": 1.0e-4,
+                },
+                "scientific_interpretation": (
+                    "a non-affine coordinate report means scalar loss equality is "
+                    "not a derived invariant; this failure does not by itself "
+                    "identify a model-quality regression"
+                ),
+            },
+        )
 
     _restore_mutable_state(model, mutable_state)
     model.eval()
@@ -1143,6 +1228,8 @@ def _uniform_physical_legacy_parity(
         "physical_losses": physical_losses,
         "legacy_selected_axis_losses": legacy_losses,
         "loss_abs_errors": loss_errors,
+        "loss_parity": loss_parity,
+        "coordinate_geometry": geometry,
         "proposal_max_abs_error": max(proposal_errors, default=0.0),
         "score_max_abs_error": max(score_errors, default=0.0),
         "physical_head_debug": physical_debug,
@@ -1899,11 +1986,13 @@ def run_gate(
         model,
         batch=batch,
         mutable_state=mutable_state,
+        window_role="full_window",
     )
     padded_uniform_parity = _uniform_physical_legacy_parity(
         model,
         batch=short_padded_batch,
         mutable_state=mutable_state,
+        window_role="short_padded_window",
     )
     uniform_parity = {
         "full_window": full_uniform_parity,
@@ -2022,19 +2111,45 @@ def main(argv: list[str] | None = None) -> int:
             output_json=args.output_json,
         )
     except Exception as exc:
-        print(
-            json.dumps(
-                {
-                    "schema": SCHEMA,
-                    "ok": False,
-                    "status": "p1_p2_full_model_gate_failed",
-                    "error_type": exc.__class__.__name__,
-                    "error": str(exc),
-                },
-                indent=2,
-                sort_keys=True,
+        failure_payload = {
+            "schema": SCHEMA,
+            "ok": False,
+            "status": "p1_p2_full_model_gate_failed",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc),
+            "diagnostics": dict(getattr(exc, "diagnostics", {}) or {}),
+            "paper_claim_allowed": False,
+        }
+        failure_output = Path(args.output_json).expanduser().resolve()
+        try:
+            try:
+                failure_output.relative_to(ROOT)
+            except ValueError:
+                pass
+            else:
+                raise ProtectedPhysicalGateFailure(
+                    "failure evidence must be outside the Git worktree"
+                )
+            failure_output.parent.mkdir(parents=True, exist_ok=True)
+            with failure_output.open("x", encoding="utf-8") as handle:
+                json.dump(
+                    failure_payload,
+                    handle,
+                    indent=2,
+                    sort_keys=True,
+                    ensure_ascii=True,
+                    allow_nan=False,
+                )
+                handle.write("\n")
+        except FileExistsError:
+            failure_payload["failure_artifact_write_error"] = (
+                "refusing to overwrite existing output"
             )
-        )
+        except Exception as write_error:
+            failure_payload["failure_artifact_write_error"] = (
+                f"{write_error.__class__.__name__}: {write_error}"
+            )
+        print(json.dumps(failure_payload, indent=2, sort_keys=True))
         return 1
     finally:
         if dist.is_initialized():
