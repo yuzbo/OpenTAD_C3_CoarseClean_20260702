@@ -20,7 +20,7 @@ from tools.bata.finalize_duca_rime_inference_ledger import (
 
 
 RECEIPT_SCHEMA = "duca_rime_stage_receipt_v1"
-PHASE1_CONTROL_SCHEMA = "duca_rime_phase1_control_v1"
+PHASE1_CONTROL_SCHEMA = "duca_rime_phase1_control_v2"
 PHASE3_RESULT_SCHEMA = "duca_rime_phase3_arm_result_v1"
 PHASE4_RESULT_SCHEMA = "duca_rime_phase4_result_v1"
 REQUIRED_PHASE1_CONTROLS = (
@@ -28,7 +28,7 @@ REQUIRED_PHASE1_CONTROLS = (
     "local_dense",
     "uniform_k384",
     "uniform_k192",
-    "wrapper_parity",
+    "acquisition_admission",
     "q_to_t_before_nms",
     "no_probe_uniform_cost",
     "probe_uniform_cost",
@@ -527,21 +527,23 @@ def seal_phase1(
             or ledger.get("constant_evidence_exact_uniform_identity") is not True
         ):
             raise ValueError(f"{name} violates exact native-K execution")
-    parity = by_name["wrapper_parity"].get("checks")
+    admission = by_name["acquisition_admission"].get("checks")
     if (
-        not isinstance(parity, Mapping)
-        or parity.get("mask_equal") is not True
-        or float(parity.get("tensor_max_abs", math.inf)) > 1.0e-6
-        or float(parity.get("raw_proposal_max_abs", math.inf)) > 1.0e-4
-        or float(parity.get("raw_score_max_abs", math.inf)) > 1.0e-6
-        or float(parity.get("physical_target_max_abs", math.inf)) > 1.0e-4
-        or float(parity.get("coordinate_roundtrip_max_abs", math.inf)) > 1.0e-6
-        or parity.get("target_assignment_parity") is not True
-        or parity.get("decode_parity") is not True
-        or parity.get("full_and_short_padded_windows_covered") is not True
-        or parity.get("remap_before_official_nms") is not True
+        not isinstance(admission, Mapping)
+        or admission.get("selected_axis_plugin") is not True
+        or admission.get("physical_head_enabled") is not False
+        or admission.get("standard_detector_restored") is not True
+        or admission.get("gt_remapped_to_selected_axis") is not True
+        or admission.get("inverse_map_before_official_nms") is not True
+        or admission.get("mapping_applied_exactly_once") is not True
+        or admission.get("exact_k_no_padding") is not True
+        or admission.get("full_and_short_windows_covered") is not True
+        or admission.get("state_neutral") is not True
+        or admission.get("legacy_scalar_loss_equivalence_required") is not False
+        or float(admission.get("coordinate_roundtrip_max_abs", math.inf))
+        > 1.0e-6
     ):
-        raise ValueError("clean/wrapper parity is outside the frozen tolerance")
+        raise ValueError("acquisition admission-v2 contract did not pass")
     geometry = by_name["q_to_t_before_nms"].get("checks")
     if (
         not isinstance(geometry, Mapping)
@@ -560,15 +562,20 @@ def seal_phase1(
     ):
         raise ValueError("q -> physical time -> official NMS contract failed")
 
-    wrapper_json_sources = source_indexes["wrapper_parity"][1]
+    admission_json_sources = source_indexes["acquisition_admission"][1]
     if not any(
-        payload.get("schema") == "duca_protected_physical_full_model_gate_v1"
-        and payload.get("ok") is True
-        and isinstance(payload.get("runtime"), Mapping)
-        and payload["runtime"].get("git_commit") == str(expected_commit)
-        for _path, payload in wrapper_json_sources
+        payload.get("schema") == "duca_acquisition_admission_v2"
+        and payload.get("status") == "passed"
+        and payload.get("admission_effect") is True
+        and isinstance(payload.get("identity"), Mapping)
+        and payload["identity"].get("git_commit") == str(expected_commit)
+        and payload.get("scientific_scope", {}).get("uses_official_final")
+        is False
+        for _path, payload in admission_json_sources
     ):
-        raise ValueError("wrapper parity lacks its full-model gate source")
+        raise ValueError(
+            "acquisition control lacks its admission-v2 source"
+        )
     geometry_sources = [
         payload
         for _path, payload in source_indexes["q_to_t_before_nms"][1]

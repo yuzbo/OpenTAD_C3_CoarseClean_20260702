@@ -14,6 +14,9 @@ required() {
 for name in \
   DUCA_RIME_REPO_ROOT \
   DUCA_RIME_EXPECTED_COMMIT \
+  DUCA_RIME_EXPECTED_BRANCH \
+  DUCA_RIME_ACQUISITION_ADMISSION \
+  DUCA_RIME_ACQUISITION_ADMISSION_SHA256 \
   DUCA_RIME_PHASE4_AUTHORIZATION \
   DUCA_RIME_PHASE4_AUTHORIZATION_SHA256 \
   DUCA_RIME_PHASE4_CELLS_ROOT \
@@ -58,6 +61,16 @@ cd "${DUCA_RIME_REPO_ROOT}"
   || fail "Git commit drift"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] \
   || fail "Git tree is dirty"
+[[ "$(sha256sum "${DUCA_RIME_ACQUISITION_ADMISSION}" | awk '{print $1}')" == \
+  "${DUCA_RIME_ACQUISITION_ADMISSION_SHA256}" ]] \
+  || fail "acquisition admission-v2 SHA-256 drift"
+python -m tools.bata.verify_duca_acquisition_admission_v2 \
+  --receipt "${DUCA_RIME_ACQUISITION_ADMISSION}" \
+  --expected-sha256 "${DUCA_RIME_ACQUISITION_ADMISSION_SHA256}" \
+  --expected-commit "${DUCA_RIME_EXPECTED_COMMIT}" \
+  --repo-root "${DUCA_RIME_REPO_ROOT}" \
+  --expected-branch "${DUCA_RIME_EXPECTED_BRANCH}" \
+  --expected-artifact "split_assignment=${DUCA_RIME_SPLIT_MANIFEST}"
 [[ ! -e "${DUCA_RIME_PHASE4_CELLS_ROOT}" ]] \
   || fail "a fresh Phase-4 cells root is required"
 [[ ! -e "${DUCA_RIME_PHASE4_SUBMISSION_ROOT}" ]] \

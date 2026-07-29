@@ -67,6 +67,13 @@ unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
   tools/bata/build_duca_rime_gate_records.py \
   tools/bata/build_duca_rime_source_manifest.py \
   tools/bata/build_duca_rime_phase1_controls.py \
+  tools/bata/duca_evidence_io.py \
+  tools/bata/duca_gate_diagnostics.py \
+  tools/bata/duca_acquisition_gate_schema.py \
+  tools/bata/run_duca_acquisition_runtime_gate_v2.py \
+  tools/bata/verify_duca_acquisition_admission_v2.py \
+  tools/bata/calibrate_duca_numeric_null.py \
+  tools/bata/freeze_duca_acquisition_scientific_protocol.py \
   tools/bata/profile_duca_full_stack_cost.py \
   tools/bata/audit_duca_rime_phase1_geometry.py \
   tools/bata/duca_p0_evaluation.py \
@@ -87,6 +94,8 @@ unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
   opentad/models/selectors/duca_rime_frame_selector.py \
   opentad/models/backbones/backbone_wrapper.py \
   opentad/models/backbones/vit_adapter.py \
+  opentad/models/utils/truetime_geometry.py \
+  opentad/models/detectors/single_stage.py \
   opentad/models/detectors/actionformer.py \
   opentad/models/detectors/tridet.py \
   opentad/models/dense_heads/tridet_head.py \
@@ -95,6 +104,7 @@ unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
 
 bash -n \
   scripts/run_duca_rime_code_gate.sh \
+  scripts/run_duca_acquisition_admission_v2.sh \
   scripts/run_duca_rime_phase1_gate.sh \
   scripts/run_duca_rime_phase2_gates.sh \
   scripts/run_duca_rime_phase3_train_arm.sh \
@@ -155,6 +165,9 @@ bash -n \
   tests/test_duca_protected_e2e_detector_contract.py \
   tests/test_profile_duca_full_stack_cost_cli.py \
   tests/test_duca_rime_tridet.py \
+  tests/test_duca_gate_diagnostics.py \
+  tests/test_duca_acquisition_admission_v2.py \
+  tests/test_duca_rime_selected_axis.py \
   tests/test_c3_coarse_classifier_model_matrix.py \
   tests/test_c3_asformer_delta_ledger_full_train.py \
   -q 2>&1 | tee "${OUTPUT_ROOT}/logs/pytest.out"
@@ -179,6 +192,9 @@ configs = (
     "configs/adatad/thumos/duca_adaptok_tad_direct_total60.py",
     "configs/adatad/thumos/duca_rime_full_total60.py",
     "configs/adatad/thumos/duca_rime_full_tridet_total60.py",
+    "configs/adatad/thumos/duca_rime_full_selected_axis_total60.py",
+    "configs/adatad/thumos/duca_rime_uniform_mixed_k_selected_axis_total60.py",
+    "configs/adatad/thumos/duca_rime_full_tridet_selected_axis_total60.py",
     "configs/adatad/thumos/duca_rime_uniform_fixed_tridet_total60.py",
     "configs/adatad/thumos/duca_rime_dense_actionformer_total60.py",
     "configs/adatad/thumos/duca_rime_dense_tridet_total60.py",
@@ -198,6 +214,11 @@ phase1_cost_configs = {
 dense_reference_configs = {
     "configs/adatad/thumos/duca_rime_dense_actionformer_total60.py",
     "configs/adatad/thumos/duca_rime_dense_tridet_total60.py",
+}
+selected_axis_configs = {
+    "configs/adatad/thumos/duca_rime_full_selected_axis_total60.py",
+    "configs/adatad/thumos/duca_rime_uniform_mixed_k_selected_axis_total60.py",
+    "configs/adatad/thumos/duca_rime_full_tridet_selected_axis_total60.py",
 }
 for path in configs:
     cfg = Config.fromfile(path)
@@ -219,6 +240,11 @@ for path in configs:
         assert cfg.workflow.seal_eval_dataloaders_during_training is True
         assert cfg.workflow.val_loss_interval == -1
         assert cfg.workflow.val_eval_interval == -1
+    if path in selected_axis_configs:
+        assert cfg.model.frame_selector.detector_coordinate_mode == "selected_axis_plugin"
+        assert cfg.model.rpn_head.physical_grid_actionformer is None
+        assert cfg.duca_rime_contract.pre_backbone_plugin is True
+        assert cfg.duca_rime_contract.detector_head_modified is False
     if "duca_rime_contract" in cfg:
         assert cfg.duca_rime_contract.pad_to_kmax is False
         assert cfg.duca_rime_contract.execution_quantum == 16

@@ -34,6 +34,7 @@ evaluation = dict(
 model = dict(
     frame_selector=dict(
         budget=fixed_budget,
+        detector_coordinate_mode="selected_axis_plugin",
     ),
     backbone=dict(
         backbone=dict(total_frames=fixed_budget),
@@ -64,6 +65,9 @@ model = dict(
         ),
     ),
     projection=dict(max_seq_len=512),
+    rpn_head=dict(
+        physical_grid_actionformer=None,
+    ),
 )
 
 solver = dict(
@@ -93,6 +97,17 @@ duca_rime_contract = dict(
     pad_to_kmax=False,
     target_mean_cost=float(fixed_budget),
     execution_quantum=16,
+    pre_backbone_plugin=True,
+    detector_coordinate_mode="selected_axis_plugin",
+    detector_output_coordinate_space="selected_axis_index",
+    inverse_map_before_official_nms=True,
+    physical_head_enabled=False,
+    detector_head_modified=False,
+    paper_mainline_allowed=True,
+)
+
+workflow = dict(
+    formal_protocol="duca_rime_selected_axis_plugin_v2",
 )
 
 work_dir = (

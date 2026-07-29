@@ -34,6 +34,11 @@ from ..duca.transition_only import (
     transition_distribution_loss,
     transition_utility_paths,
 )
+from ..utils.truetime_geometry import (
+    SELECTED_AXIS,
+    TRUE_TIME_AXIS,
+    truetime_map_from_metadata,
+)
 
 
 _ARMS = {
@@ -47,6 +52,11 @@ _ARMS = {
     "protected_e2e_rho001",
 }
 _PROTECTED_CONTRACT = "duca_protected_e2e_physical_v1"
+_PROTECTED_SELECTED_AXIS_CONTRACT = "duca_protected_e2e_selected_axis_plugin_v2"
+_DETECTOR_COORDINATE_MODES = {
+    "physical_head_integration",
+    "selected_axis_plugin",
+}
 _DETECTOR_BRIDGE_SCALES = {
     "exact_uniform": 0.0,
     "probe_uniform": 0.0,
@@ -523,6 +533,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         strict_physical_metadata: bool = True,
         forbid_raw_prediction_cache: bool = True,
+        detector_coordinate_mode: str = "physical_head_integration",
         **extra_config: Any,
     ) -> None:
         super().__init__()
@@ -567,6 +578,12 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         )
         self.strict_physical_metadata = bool(strict_physical_metadata)
         self.forbid_raw_prediction_cache = bool(forbid_raw_prediction_cache)
+        self.detector_coordinate_mode = str(detector_coordinate_mode)
+        if self.detector_coordinate_mode not in _DETECTOR_COORDINATE_MODES:
+            raise ValueError(
+                "detector_coordinate_mode must be one of "
+                f"{sorted(_DETECTOR_COORDINATE_MODES)}"
+            )
         self.extra_config = dict(extra_config)
 
         if not math.isclose(
@@ -644,13 +661,27 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 persistent=True,
             )
 
-        self.selector_variant = "protected_e2e_physical"
+        selected_axis_plugin = (
+            self.detector_coordinate_mode == "selected_axis_plugin"
+        )
+        self.selector_variant = (
+            "protected_e2e_selected_axis"
+            if selected_axis_plugin
+            else "protected_e2e_physical"
+        )
+        self.detector_coordinate_contract = (
+            _PROTECTED_SELECTED_AXIS_CONTRACT
+            if selected_axis_plugin
+            else _PROTECTED_CONTRACT
+        )
         self.require_counterfactual_utility_teacher = False
-        self.remap_gt_to_selected_axis = False
-        self.selected_axis_remap_required = False
+        self.remap_gt_to_selected_axis = selected_axis_plugin
+        self.selected_axis_remap_required = selected_axis_plugin
         self.no_ledger_decision = True
-        self.detector_output_coordinate_space = "dense_physical"
-        self.detector_prediction_inverse_map_required = False
+        self.detector_output_coordinate_space = (
+            SELECTED_AXIS if selected_axis_plugin else "dense_physical"
+        )
+        self.detector_prediction_inverse_map_required = selected_axis_plugin
         self.separate_detector_rng = True
         self.last_forward_summary: dict[str, Any] = {}
         self._last_selected_positions: Optional[torch.Tensor] = None
@@ -880,12 +911,19 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             "inference_uses_gt": False,
             "counterfactual_teacher": False,
             "utility_distillation": False,
-            "selected_axis_gt_remap": False,
+            "selected_axis_gt_remap": bool(self.remap_gt_to_selected_axis),
         }
+        gt_segments, gt_labels, detector_metas = (
+            self._remap_train_targets_to_selected_axis(
+                gt_segments,
+                gt_labels,
+                selected["metas"],
+            )
+        )
         return {
             "inputs": selected["inputs"],
             "masks": selected["masks"],
-            "metas": selected["metas"],
+            "metas": detector_metas,
             "gt_segments": gt_segments,
             "gt_labels": gt_labels,
             "losses": losses,
@@ -943,7 +981,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         )
         selector_state: dict[str, Any] = {
             "arm": self.arm,
-            "contract": _PROTECTED_CONTRACT,
+            "contract": self.detector_coordinate_contract,
             "valid_mask": valid_mask,
             "physical_seconds": physical_seconds,
             "decoded_source_frames": source_frames,
@@ -1212,7 +1250,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         else:
             selected_inputs = hard_selected
 
-        output_metas = self._write_physical_metadata(
+        output_metas = self._write_detector_metadata(
             metas,
             hard,
             physical_seconds,
@@ -1267,8 +1305,8 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             "learned_detector_count": int(
                 detector_bridge_mask.detach().sum().cpu().item()
             ),
-            "selected_axis_gt_remap": False,
-            "contract": _PROTECTED_CONTRACT,
+            "selected_axis_gt_remap": bool(self.remap_gt_to_selected_axis),
+            "contract": self.detector_coordinate_contract,
         }
         if homotopy_state["enabled"]:
             self.last_forward_summary["policy_homotopy"] = dict(homotopy_state)
@@ -1366,7 +1404,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             max_gap_seconds=caps,
         )
         selected_inputs = _hard_gather(inputs, positions, slot_mask)
-        output_metas = self._write_physical_metadata(
+        output_metas = self._write_detector_metadata(
             metas,
             hard,
             physical_seconds,
@@ -1484,6 +1522,126 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             seconds_rows.append(padded_frames / fps)
         return torch.stack(seconds_rows), torch.stack(frame_rows)
 
+    def _write_detector_metadata(
+        self,
+        metas,
+        hard: PhysicalExactKHardOutput,
+        physical_seconds: torch.Tensor,
+        source_frames: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> list[dict[str, Any]]:
+        if self.detector_coordinate_mode == "selected_axis_plugin":
+            return self._write_selected_axis_metadata(
+                metas,
+                hard,
+                physical_seconds,
+                source_frames,
+                valid_mask,
+            )
+        return self._write_physical_metadata(
+            metas,
+            hard,
+            physical_seconds,
+            source_frames,
+            valid_mask,
+        )
+
+    def _write_selected_axis_metadata(
+        self,
+        metas,
+        hard: PhysicalExactKHardOutput,
+        physical_seconds: torch.Tensor,
+        source_frames: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> list[dict[str, Any]]:
+        output = self._write_physical_metadata(
+            metas,
+            hard,
+            physical_seconds,
+            source_frames,
+            valid_mask,
+        )
+        for batch_idx, meta in enumerate(output):
+            effective_k = int(hard.effective_k[batch_idx].item())
+            dense_valid_len = int(valid_mask[batch_idx].sum().item())
+            positions = hard.hard_positions[batch_idx, :effective_k]
+            dense_positions = [
+                int(value) for value in positions.detach().cpu().tolist()
+            ]
+            meta.update(
+                {
+                    "duca_contract": self.detector_coordinate_contract,
+                    "detector_coordinate_mode": self.detector_coordinate_mode,
+                    "selected_axis_to_true_time_dense_index": dense_positions,
+                    "truetime_selected_positions": dense_positions,
+                    "truetime_dense_len": int(self.dense_window_size),
+                    "truetime_dense_valid_len": dense_valid_len,
+                    "irregular_selected_positions": dense_positions,
+                    "irregular_selected_count": effective_k,
+                    "irregular_selected_valid_len": effective_k,
+                    "selected_valid_len": effective_k,
+                    "irregular_dense_valid_len": dense_valid_len,
+                    "remap_gt_to_selected_axis": True,
+                    "gt_remapped_to_selected_axis": False,
+                    "pc_ot_mras_prebackbone_remap_gt_to_selected_axis": True,
+                    "selected_axis_remap_required": True,
+                    "detector_prediction_inverse_map_required": True,
+                    "detector_output_coordinate_space": SELECTED_AXIS,
+                    "proposal_axis": SELECTED_AXIS,
+                    "selected_axis_remap": {
+                        "source": SELECTED_AXIS,
+                        "target": TRUE_TIME_AXIS,
+                        "selected_axis_to_true_time_dense_index": dense_positions,
+                    },
+                }
+            )
+            meta.pop("physical_grid_contract", None)
+            meta.pop("physical_grid_actionformer", None)
+        return output
+
+    def _remap_train_targets_to_selected_axis(
+        self,
+        gt_segments,
+        gt_labels,
+        metas,
+    ):
+        if gt_segments is None or not self.remap_gt_to_selected_axis:
+            return gt_segments, gt_labels, metas
+        if not isinstance(metas, (list, tuple)) or len(gt_segments) != len(metas):
+            raise ValueError("GT remap requires one selected-axis metadata row per sample")
+        remapped_segments = []
+        updated_metas = [dict(meta) for meta in metas]
+        for batch_idx, (segments, meta) in enumerate(
+            zip(gt_segments, updated_metas)
+        ):
+            if segments is None:
+                remapped_segments.append(None)
+                continue
+            segment_tensor = (
+                segments
+                if torch.is_tensor(segments)
+                else torch.as_tensor(segments, dtype=torch.float32)
+            )
+            time_map = truetime_map_from_metadata(
+                meta,
+                require_inverse_map=True,
+            )
+            remapped = time_map.remap_segments(
+                segment_tensor,
+                source_coordinate_space=TRUE_TIME_AXIS,
+                target_coordinate_space=SELECTED_AXIS,
+            ).to(device=segment_tensor.device, dtype=segment_tensor.dtype)
+            remapped_segments.append(remapped)
+            meta["gt_segments_original_time"] = (
+                segment_tensor.detach().cpu().tolist()
+            )
+            meta["gt_segments_selected_axis"] = remapped.detach().cpu().tolist()
+            meta["gt_remapped_to_selected_axis"] = True
+            meta["gt_coordinate_space"] = SELECTED_AXIS
+            meta["gt_original_coordinate_space"] = TRUE_TIME_AXIS
+            updated_metas[batch_idx] = meta
+        return remapped_segments, gt_labels, updated_metas
+
     def _write_physical_metadata(
         self,
         metas,
@@ -1535,6 +1693,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             meta.update(
                 {
                     "duca_contract": _PROTECTED_CONTRACT,
+                    "detector_coordinate_mode": "physical_head_integration",
                     "duca_arm": self.arm,
                     "irregular_selected_positions": dense_positions,
                     "selected_dense_indices": dense_positions,

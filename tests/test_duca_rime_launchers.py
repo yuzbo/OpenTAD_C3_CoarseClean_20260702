@@ -17,7 +17,7 @@ def test_phase1_launcher_requires_all_clean_controls_and_hashes():
         "local_dense",
         "uniform_k384",
         "uniform_k192",
-        "wrapper_parity",
+        "acquisition_admission",
         "q_to_t_before_nms",
         "no_probe_uniform_cost",
         "probe_uniform_cost",
@@ -239,10 +239,13 @@ def test_phase1_evidence_pipeline_uses_real_controls_before_sealing():
     ).read_text(encoding="utf-8")
     assert text.count("run_duca_rime_phase1_dense_eval.sh") >= 2
     assert "for budget in 384 192" in text
-    assert "run_duca_protected_physical_full_model_gate_gpu1.sh" in text
+    assert "DUCA_RIME_ACQUISITION_ADMISSION" in text
+    assert "DUCA_RIME_ACQUISITION_ADMISSION_SHA256" in text
+    assert "verify_duca_acquisition_admission_v2" in text
+    assert "actionformer_checkpoint=${DUCA_RIME_RELEASED_DENSE_CHECKPOINT}" in text
     assert "run_duca_rime_phase1_cost_controls.sh" in text
     assert "run_duca_rime_phase1_seal.sh" in text
-    assert "bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh" in text
+    assert "run_duca_protected_physical_full_model_gate_gpu1.sh" not in text
     assert "phase1_receipt_sha256" in text
 
 
@@ -331,6 +334,9 @@ def test_four_phase_submitter_records_and_releases_a_fail_closed_dag():
     assert '"phase4": None' in text
     assert '"phase4_submission_enabled": False' in text
     assert '"official_final_sealed": True' in text
+    assert "DUCA_RIME_ALLOW_LEGACY_PHYSICAL_DAG" in text
+    assert '"paper_mainline_allowed": False' in text
+    assert '"legacy_physical_head_engineering_diagnostic_only"' in text
     assert "this recovery DAG keeps official-final Phase 4 sealed" in text
     assert 'DUCA_RIME_DECODER_FAMILY}" == "weak_overlap"' in text
     assert 'DUCA_RIME_O4_MAX_BRIER}" == "0.25"' in text
@@ -503,11 +509,41 @@ def test_phase4_submission_is_exactly_twelve_transactional_cells():
     assert "os.replace" in submit
     assert 'export "${name}"' in submit
     assert "run_duca_rime_phase4_train_cell.sh" in pipeline
+    assert '[[ "${DUCA_RIME_ENABLE_PHASE4:-0}" == 1 ]]' in pipeline
     assert pipeline.count("run_duca_rime_evaluate_arm.sh") == 1
     assert "run_duca_rime_phase4_seal_cell.sh" in pipeline
     assert "stale Phase-4 sibling output is forbidden" in pipeline
     assert "--mode paired" in pipeline
     assert ".same_k_replay" in pipeline
+
+
+def test_acquisition_v2_runtime_launcher_is_calibration_and_admission_bound():
+    text = (
+        ROOT / "scripts" / "run_duca_acquisition_admission_v2.sh"
+    ).read_text(encoding="utf-8")
+    assert "DUCA_ACQUISITION_V2_MODE" in text
+    assert "calibrate or admit" in text
+    assert "run_duca_acquisition_runtime_gate_v2" in text
+    assert "run_duca_acquisition_admission_v2" not in text
+    assert '--evidence-output "${receipt}"' in text
+    assert "--code-gate-receipt" in text
+    assert "DUCA_ACQUISITION_NUMERIC_CALIBRATION_SHA256" in text
+    assert "DUCA_ACQUISITION_SCIENTIFIC_PROTOCOL_SHA256" in text
+    assert '[[ "${DUCA_RIME_ENABLE_PHASE4:-0}" == 0 ]]' in text
+    assert '[[ "${DUCA_RIME_OFFICIAL_FINAL_CONSUMED:-0}" == 0 ]]' in text
+
+
+def test_phase3_and_phase4_entrypoints_require_verified_acquisition_v2():
+    for name in (
+        "run_duca_rime_phase3_submit_controller.sh",
+        "run_duca_rime_phase4_submit_controller.sh",
+        "submit_duca_rime_phase4_matrix.sh",
+        "run_duca_rime_phase4_cell_pipeline.sh",
+    ):
+        text = (ROOT / "scripts" / name).read_text(encoding="utf-8")
+        assert "DUCA_RIME_ACQUISITION_ADMISSION" in text
+        assert "DUCA_RIME_ACQUISITION_ADMISSION_SHA256" in text
+        assert "verify_duca_acquisition_admission_v2" in text
 
 
 def test_rime_development_configs_bind_dataset_and_official_evaluator_to_same_role():

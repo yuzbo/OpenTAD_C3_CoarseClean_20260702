@@ -73,12 +73,13 @@ class SingleStageDetector(BaseDetector):
         dynamic_temporal_bucket = bool(
             getattr(self.backbone, "dynamic_temporal_bucket", False)
         )
-        if (
-            selector_variant == "duca_rime_physical"
-            and not dynamic_temporal_bucket
-        ):
+        if selector_variant in {
+            "protected_e2e_selected_axis",
+            "duca_rime_physical",
+            "duca_rime_selected_axis",
+        } and not dynamic_temporal_bucket:
             raise RuntimeError(
-                "DUCA-RIME physical selection requires a dynamic temporal backbone"
+                "DUCA-RIME exact-K selection requires a dynamic temporal backbone"
             )
         if dynamic_temporal_bucket:
             return self.backbone(inputs, masks=masks)
@@ -111,7 +112,18 @@ class SingleStageDetector(BaseDetector):
             self._merge_selector_losses(losses, selector_outputs.get("losses", {}))
             selector_loss_keys = set(losses)
 
-        if self.with_backbone:
+        selector_variant = getattr(
+            getattr(self, "frame_selector", None),
+            "selector_variant",
+            None,
+        )
+        if self.with_backbone and selector_variant in {
+            "protected_e2e_selected_axis",
+            "duca_rime_physical",
+            "duca_rime_selected_axis",
+        }:
+            x = self._forward_backbone_with_temporal_mask(inputs, masks)
+        elif self.with_backbone:
             x = self.backbone(inputs, masks)
         else:
             x = inputs
@@ -155,7 +167,18 @@ class SingleStageDetector(BaseDetector):
             metas = selector_outputs.get("metas", metas)
             self._require_selector_remap_metadata(metas)
 
-        if self.with_backbone:
+        selector_variant = getattr(
+            getattr(self, "frame_selector", None),
+            "selector_variant",
+            None,
+        )
+        if self.with_backbone and selector_variant in {
+            "protected_e2e_selected_axis",
+            "duca_rime_physical",
+            "duca_rime_selected_axis",
+        }:
+            x = self._forward_backbone_with_temporal_mask(inputs, masks)
+        elif self.with_backbone:
             x = self.backbone(inputs, masks)
         else:
             x = inputs

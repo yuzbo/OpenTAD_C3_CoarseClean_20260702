@@ -626,9 +626,15 @@ class ActionFormer(SingleStageDetector):
         transition_only = getattr(selector, "selector_variant", None) == "transition_only"
         protected_e2e = (
             getattr(selector, "selector_variant", None)
-            == "protected_e2e_physical"
+            in {
+                "protected_e2e_physical",
+                "protected_e2e_selected_axis",
+            }
         )
-        rime = getattr(selector, "selector_variant", None) == "duca_rime_physical"
+        rime = getattr(selector, "selector_variant", None) in {
+            "duca_rime_physical",
+            "duca_rime_selected_axis",
+        }
 
         def parameter_lr(name):
             scorer_prefixes = (
@@ -736,6 +742,20 @@ class ActionFormer(SingleStageDetector):
     ):
         selector = getattr(self, "frame_selector", None)
         selector_variant = getattr(selector, "selector_variant", None)
+        if selector_variant in {
+            "protected_e2e_selected_axis",
+            "duca_rime_selected_axis",
+        }:
+            self._validate_rime_selected_axis_contract(
+                inputs,
+                masks,
+                metas,
+                gt_segments=gt_segments,
+                gt_labels=gt_labels,
+                original_gt_segments=original_gt_segments,
+                original_gt_labels=original_gt_labels,
+            )
+            return
         if selector_variant not in {"protected_e2e_physical", "duca_rime_physical"}:
             return
         if masks.ndim != 2 or int(masks.shape[1]) > int(selector.budget):
@@ -822,6 +842,159 @@ class ActionFormer(SingleStageDetector):
             raise RuntimeError("protected DUCA must preserve dense GT segment objects")
         if original_gt_labels is not None and gt_labels is not original_gt_labels:
             raise RuntimeError("protected DUCA must preserve dense GT label objects")
+
+    def _validate_rime_selected_axis_contract(
+        self,
+        inputs,
+        masks,
+        metas,
+        *,
+        gt_segments=None,
+        gt_labels=None,
+        original_gt_segments=None,
+        original_gt_labels=None,
+    ):
+        if bool(getattr(self.rpn_head, "physical_grid_enabled", False)) or bool(
+            getattr(self.rpn_head, "physical_grid_required", False)
+        ):
+            raise RuntimeError(
+                "pure selected-axis RIME requires the standard detector head"
+            )
+        if masks.ndim != 2 or not bool(
+            masks.to(dtype=torch.bool).all().item()
+        ):
+            raise RuntimeError(
+                "selected-axis RIME detector mask must be exact-K and padding-free"
+            )
+        temporal_dim = 3 if inputs.ndim == 6 else 2
+        if inputs.ndim not in {3, 5, 6} or int(inputs.shape[temporal_dim]) != int(
+            masks.shape[1]
+        ):
+            raise RuntimeError(
+                "selected-axis RIME detector input and mask temporal axes disagree"
+            )
+        if not isinstance(metas, (list, tuple)) or len(metas) != int(
+            inputs.shape[0]
+        ):
+            raise RuntimeError(
+                "selected-axis RIME requires one detector meta per sample"
+            )
+        for meta, mask in zip(metas, masks):
+            expected_contract = str(
+                getattr(
+                    getattr(self, "frame_selector", None),
+                    "detector_coordinate_contract",
+                    "",
+                )
+            )
+            if meta.get("duca_contract") != expected_contract:
+                raise RuntimeError(
+                    "selected-axis RIME metadata contract is missing"
+                )
+            if meta.get("detector_coordinate_mode") != "selected_axis_plugin":
+                raise RuntimeError(
+                    "selected-axis RIME coordinate mode is not explicit"
+                )
+            if meta.get("physical_grid_contract") is not None or bool(
+                meta.get("physical_grid_actionformer", False)
+            ):
+                raise RuntimeError(
+                    "pure selected-axis RIME metadata contains physical-head state"
+                )
+            required_flags = (
+                "remap_gt_to_selected_axis",
+                "selected_axis_remap_required",
+                "detector_prediction_inverse_map_required",
+            )
+            if not all(bool(meta.get(key, False)) for key in required_flags):
+                raise RuntimeError(
+                    "selected-axis RIME mapping contract is incomplete"
+                )
+            if (
+                meta.get("detector_output_coordinate_space")
+                != "selected_axis_index"
+                or meta.get("proposal_axis") != "selected_axis_index"
+            ):
+                raise RuntimeError(
+                    "pure RIME detector outputs must stay on the selected axis"
+                )
+            positions = meta.get("selected_axis_to_true_time_dense_index")
+            if not isinstance(positions, (list, tuple)) or not positions:
+                raise RuntimeError(
+                    "selected-axis RIME inverse-map positions are missing"
+                )
+            positions = [int(value) for value in positions]
+            if any(
+                right <= left for left, right in zip(positions, positions[1:])
+            ):
+                raise RuntimeError(
+                    "selected-axis RIME inverse-map positions are not ordered"
+                )
+            dense_valid_len = int(meta.get("irregular_dense_valid_len", -1))
+            true_time_dense_valid_len = int(
+                meta.get("truetime_dense_valid_len", -1)
+            )
+            if (
+                dense_valid_len <= 0
+                or true_time_dense_valid_len != dense_valid_len
+                or any(
+                    position < 0 or position >= dense_valid_len
+                    for position in positions
+                )
+            ):
+                raise RuntimeError(
+                    "selected-axis RIME inverse-map positions exceed the "
+                    "declared dense valid axis"
+                )
+            selected_count = int(meta.get("irregular_selected_count", -1))
+            active_count = int(mask.to(dtype=torch.bool).sum().item())
+            if selected_count != len(positions) or selected_count != active_count:
+                raise RuntimeError(
+                    "selected-axis RIME selected-count contract is inconsistent"
+                )
+            requested = int(meta.get("duca_requested_k", -1))
+            effective = int(meta.get("duca_effective_k", -1))
+            unique = int(meta.get("duca_unique_k", -1))
+            backbone = int(meta.get("duca_backbone_input_k", -1))
+            padded = int(meta.get("duca_padded_k", -1))
+            if not (
+                requested >= effective
+                and effective
+                == unique
+                == backbone
+                == padded
+                == selected_count
+            ):
+                raise RuntimeError(
+                    "selected-axis RIME exact-K execution ledger is inconsistent"
+                )
+            if meta.get("duca_dynamic_compute_realized") is not True:
+                raise RuntimeError(
+                    "selected-axis RIME must realize dynamic heavy compute"
+                )
+            if (
+                meta.get("duca_backbone_tail_padding_mode")
+                != "none_exact_k_bucket"
+            ):
+                raise RuntimeError(
+                    "selected-axis RIME forbids padded heavy execution"
+                )
+        if original_gt_segments is not None:
+            if gt_segments is original_gt_segments:
+                raise RuntimeError(
+                    "selected-axis RIME must remap dense GT before the head"
+                )
+            if not all(
+                bool(meta.get("gt_remapped_to_selected_axis", False))
+                for meta in metas
+            ):
+                raise RuntimeError(
+                    "selected-axis RIME GT remap receipt is missing"
+                )
+        if original_gt_labels is not None and gt_labels is not original_gt_labels:
+            raise RuntimeError(
+                "selected-axis RIME must preserve GT label objects"
+            )
 
     def _freeze_non_selector_trainable_parameters(self):
         for name, param in self.named_parameters():

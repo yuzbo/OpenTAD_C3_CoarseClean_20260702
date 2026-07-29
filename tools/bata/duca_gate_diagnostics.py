@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 from numbers import Integral
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -68,6 +69,103 @@ def uniform_axis_geometry_report(
             "global affine coordinate conjugacy remains only a necessary precondition"
             if globally_affine
             else "scalar detector-loss equality is not implied by this non-affine integer grid"
+        ),
+    }
+
+
+def implemented_uniform_axis_geometry_report(
+    *,
+    valid_len: int,
+    positions: Sequence[int],
+) -> dict[str, Any]:
+    """Report the complete half-open map implemented by ``TrueTimeMap``.
+
+    The legacy anchor-only report omits the terminal selected coordinate
+    ``K -> valid_len`` and, when the first selected anchor is positive, the
+    leading ``-1 -> 0`` knot.  Both extensions affect the actual piecewise
+    linear coordinate map and therefore must be represented in evidence.
+    """
+
+    anchor_report = uniform_axis_geometry_report(
+        valid_len=valid_len,
+        positions=positions,
+    )
+    anchors = [int(value) for value in positions]
+    effective_k = len(anchors)
+
+    selected_knots = list(range(effective_k))
+    physical_knots = list(anchors)
+    leading_extension = anchors[0] > 0
+    if leading_extension:
+        selected_knots.insert(0, -1)
+        physical_knots.insert(0, 0)
+
+    # This terminal knot is always present for valid integer anchors because
+    # the last anchor is at most valid_len - 1.
+    terminal_extension = anchors[-1] < int(valid_len)
+    if terminal_extension:
+        selected_knots.append(effective_k)
+        physical_knots.append(int(valid_len))
+
+    selected_steps = [
+        right - left for left, right in zip(selected_knots, selected_knots[1:])
+    ]
+    physical_steps = [
+        right - left for left, right in zip(physical_knots, physical_knots[1:])
+    ]
+    if any(step <= 0 for step in selected_steps) or any(
+        step <= 0 for step in physical_steps
+    ):
+        raise ValueError("implemented coordinate map must be strictly increasing")
+
+    slope_pairs = [
+        (physical_step, selected_step)
+        for physical_step, selected_step in zip(physical_steps, selected_steps)
+    ]
+    slope_histogram = Counter(
+        f"{physical_step}/{selected_step}"
+        for physical_step, selected_step in slope_pairs
+    )
+    implemented_global_affine = len(set(slope_pairs)) == 1
+    identity_map = (
+        selected_knots == physical_knots and implemented_global_affine
+    )
+    return {
+        "schema": "duca_implemented_axis_geometry_v2",
+        "valid_len": int(valid_len),
+        "effective_k": effective_k,
+        "anchor_grid": anchor_report,
+        "anchor_grid_affine": bool(
+            anchor_report[
+                "global_affine_coordinate_precondition_satisfied"
+            ]
+        ),
+        "implemented_selected_knots": selected_knots,
+        "implemented_physical_knots": physical_knots,
+        "leading_half_open_extension": {
+            "applied": leading_extension,
+            "selected_knot": -1 if leading_extension else None,
+            "physical_knot": 0 if leading_extension else None,
+        },
+        "terminal_half_open_extension": {
+            "applied": terminal_extension,
+            "selected_knot": effective_k if terminal_extension else None,
+            "physical_knot": int(valid_len) if terminal_extension else None,
+        },
+        "implemented_physical_step_histogram": {
+            str(step): int(count)
+            for step, count in sorted(Counter(physical_steps).items())
+        },
+        "implemented_slope_histogram": {
+            key: int(value) for key, value in sorted(slope_histogram.items())
+        },
+        "implemented_global_affine": bool(implemented_global_affine),
+        "identity_map": bool(identity_map),
+        "general_loss_conjugacy_applicable": bool(identity_map),
+        "interpretation": (
+            "identity/no-op conjugacy fixture"
+            if identity_map
+            else "physical-vs-selected scalar loss equality is diagnostic only"
         ),
     }
 

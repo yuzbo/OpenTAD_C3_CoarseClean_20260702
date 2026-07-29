@@ -6,6 +6,7 @@ import pytest
 
 from tools.bata.duca_gate_diagnostics import (
     detector_loss_parity_report,
+    implemented_uniform_axis_geometry_report,
     uniform_axis_geometry_report,
 )
 
@@ -54,6 +55,65 @@ def test_uniform_axis_geometry_handles_singleton_identity_axis() -> None:
     assert report["divisibility_precondition_satisfied"] is True
     assert report["global_affine_coordinate_precondition_satisfied"] is True
     assert report["nominal_physical_step"] is None
+
+
+def test_implemented_map_includes_terminal_knot_for_768_to_384() -> None:
+    report = implemented_uniform_axis_geometry_report(
+        valid_len=768,
+        positions=_exact_uniform_anchor_list(768, 384),
+    )
+
+    assert report["anchor_grid_affine"] is False
+    assert report["terminal_half_open_extension"] == {
+        "applied": True,
+        "selected_knot": 384,
+        "physical_knot": 768,
+    }
+    assert report["implemented_physical_step_histogram"] == {
+        "1": 1,
+        "2": 382,
+        "3": 1,
+    }
+    assert report["implemented_global_affine"] is False
+    assert report["general_loss_conjugacy_applicable"] is False
+
+
+def test_anchor_affine_can_be_implemented_map_non_affine() -> None:
+    report = implemented_uniform_axis_geometry_report(
+        valid_len=7,
+        positions=[0, 2, 4, 6],
+    )
+
+    assert report["anchor_grid_affine"] is True
+    assert report["implemented_physical_step_histogram"] == {"1": 1, "2": 3}
+    assert report["implemented_global_affine"] is False
+
+
+def test_identity_map_is_only_general_conjugacy_fixture() -> None:
+    report = implemented_uniform_axis_geometry_report(
+        valid_len=4,
+        positions=[0, 1, 2, 3],
+    )
+
+    assert report["implemented_selected_knots"] == [0, 1, 2, 3, 4]
+    assert report["implemented_physical_knots"] == [0, 1, 2, 3, 4]
+    assert report["identity_map"] is True
+    assert report["general_loss_conjugacy_applicable"] is True
+
+
+def test_implemented_map_records_optional_leading_knot() -> None:
+    report = implemented_uniform_axis_geometry_report(
+        valid_len=6,
+        positions=[2, 4],
+    )
+
+    assert report["leading_half_open_extension"] == {
+        "applied": True,
+        "selected_knot": -1,
+        "physical_knot": 0,
+    }
+    assert report["implemented_selected_knots"] == [-1, 0, 1, 2]
+    assert report["implemented_physical_knots"] == [0, 2, 4, 6]
 
 
 @pytest.mark.parametrize(

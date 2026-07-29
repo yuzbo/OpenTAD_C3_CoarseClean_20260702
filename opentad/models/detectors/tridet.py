@@ -40,7 +40,7 @@ class TriDet(SingleStageDetector):
                 "selector_variant",
                 None,
             )
-            == "duca_rime_physical"
+            in {"duca_rime_physical", "duca_rime_selected_axis"}
         )
 
     def pad_data(self, inputs, masks, *, pad_to_max_seq_len=True):
@@ -278,7 +278,22 @@ class TriDet(SingleStageDetector):
         original_gt_labels=None,
     ):
         selector = getattr(self, "frame_selector", None)
-        if getattr(selector, "selector_variant", None) != "duca_rime_physical":
+        selector_variant = getattr(selector, "selector_variant", None)
+        if selector_variant == "duca_rime_selected_axis":
+            from .actionformer import ActionFormer
+
+            ActionFormer._validate_rime_selected_axis_contract(
+                self,
+                inputs,
+                masks,
+                metas,
+                gt_segments=gt_segments,
+                gt_labels=gt_labels,
+                original_gt_segments=original_gt_segments,
+                original_gt_labels=original_gt_labels,
+            )
+            return
+        if selector_variant != "duca_rime_physical":
             return
         if masks.ndim != 2 or not bool(masks.to(dtype=torch.bool).all().item()):
             raise RuntimeError("TriDet RIME requires an exact-K, padding-free detector mask")

@@ -69,7 +69,7 @@ control_names=(
   local_dense
   uniform_k384
   uniform_k192
-  wrapper_parity
+  acquisition_admission
   q_to_t_before_nms
   no_probe_uniform_cost
   probe_uniform_cost

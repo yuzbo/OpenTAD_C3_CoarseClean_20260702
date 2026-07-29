@@ -1,6 +1,6 @@
 # DUCA-RIME Anti-Repetition Memory
 
-Last updated: `2026-07-28`
+Last updated: `2026-07-29`
 
 These failures and naming mistakes must not be repeated.
 
@@ -244,3 +244,25 @@ These failures and naming mistakes must not be repeated.
     grid, but the particular runtime loss/key/precision component observed in
     Recovery-v6 remains unknown until a diagnostic receipt records it. Neither
     statement is evidence of model quality.
+79. Do not call the physical-time integrated head the paper's pure-plugin,
+    detector-agnostic, or plug-and-play method. The mainline uses selected-axis
+    GT, the standard detector head/loss/decode, and one proposal remap before
+    official NMS; physical integration is a separately named diagnostic arm.
+80. Do not restore the general physical-vs-selected scalar-loss-equivalence
+    requirement under a new name. It is diagnostic outside a proved identity
+    or fully affine applicability domain; admission uses structural invariants,
+    calibrated same-semantics numeric nulls, and held-out same-total-cost
+    scientific noninferiority.
+81. Do not accept a passed admission JSON merely because its booleans and
+    64-character strings look valid. The Slurm/CUDA runtime producer must write
+    the final content-bound receipt directly, and every artifact path, raw hash,
+    content hash, Git identity, runtime fingerprint and code-gate receipt must
+    be independently re-hashed before Phase 1/3/4.
+82. Do not freeze numeric thresholds or the NI margin after candidate
+    development output exists. Numeric nulls use training/calibration roles;
+    the scientific protocol binds the clean commit/tree, fresh candidate root,
+    margin source, endpoint, multiplicity, guardrails and stopping rules before
+    the candidate result is read.
+83. Do not treat local pure-Python success as authoritative runtime validation.
+    The selected-axis selector/head/backbone path remains
+    `remote_torch_pending` until the exact clean Linux/PyTorch Slurm gate passes.

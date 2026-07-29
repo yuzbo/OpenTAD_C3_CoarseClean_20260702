@@ -1,3 +1,4 @@
+import copy
 import math
 import torch
 import torch.nn as nn
@@ -367,6 +368,22 @@ class AnchorFreeHead(nn.Module):
 
     def collect_debug_state(self):
         return dict(self._physical_grid_debug)
+
+    def capture_amp_replay_state(self):
+        frozen = getattr(self, "_duca_frozen_loss_normalizer", None)
+        return {
+            "physical_grid_debug": copy.deepcopy(self._physical_grid_debug),
+            "frozen_loss_normalizer": (
+                None if frozen is None else frozen.detach().clone()
+            ),
+        }
+
+    def restore_amp_replay_state(self, snapshot):
+        self._physical_grid_debug = copy.deepcopy(
+            snapshot.get("physical_grid_debug", {})
+        )
+        frozen = snapshot.get("frozen_loss_normalizer")
+        self.duca_set_frozen_loss_normalizer(frozen)
 
     def _init_layers(self):
         """Initialize layers of the head."""

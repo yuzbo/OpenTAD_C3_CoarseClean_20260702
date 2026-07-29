@@ -8,6 +8,17 @@
 `deterministic_core_implemented`, `deterministic_core_locally_tested`,
 `not_yet_end_to_end_implemented`, `not_empirically_supported`
 
+### 2026-07-29 paper-mainline coordinate adjudication
+
+Source `U-PRO-PURE-PLUGIN-1` conditionally approved Route C organization with
+Route A as the only paper mainline. H-RIME therefore conserves whole-video
+heavy budget and selects exact-K physical frames before a **standard
+selected-axis detector**: GT is mapped to selected time for training and
+proposals are mapped once to physical time before official NMS. The
+detector-integrated physical-time head is isolated as a future experimental
+arm. This coordinate refactor and acquisition-v2 are implemented and locally
+tested, but remain `remote_torch_pending` and `not_empirically_supported`.
+
 ### User correction and decision
 
 The user correctly distinguished whole-video planning from AdaTAD execution.

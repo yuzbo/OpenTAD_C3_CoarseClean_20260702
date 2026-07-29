@@ -4,15 +4,22 @@ Last updated: `2026-07-29`
 
 ## Current decision
 
-The user approved direct execution of the four-stage DUCA-RIME adjudication.
-The route is an **offline TAD pre-backbone acquisition plugin**. It is not
-Online TAD, and it is not yet the paper's final method.
+The user approved the bounded Pro adjudication and direct implementation of
+its accepted decision. The paper mainline is now an **offline TAD pure
+selected-axis pre-backbone acquisition plugin**. Physical-time head injection
+is a separately named integration/diagnostic route and cannot support the
+pure-plugin claim. This is not Online TAD and is not yet the paper's final
+empirically supported method.
 
 Current evidence level:
 
 | Item | State |
 |---|---|
 | Scientific route | `user_approved` |
+| Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 / core_decision_accepted_with_implementation_corrections` |
+| Pure selected-axis coordinate refactor | `implemented / local_static_and_pure_tests_passed / remote_torch_pending` |
+| Acquisition admission-v2 | `implemented / artifact_and_runtime_bound / local_pure_tests_passed / Slurm_not_yet_run` |
+| Phase-1 v2 closure | `not_yet_run / only_next_authorized_experiment` |
 | Four-stage implementation | `implemented` |
 | Focused local checks | `tested` |
 | Remote authoritative code gate | `recovery_v6_preflight_passed_1201390 / production_gate_passed_1201416` |
@@ -725,21 +732,27 @@ Until those artifacts exist, the correct status is `implemented/tested` or
 Current priority, superseding the operational order below while retaining it as
 negative-history context:
 
-1. Use diagnostic-only commit
-   `69136de3ed8d8f977c78cfe5258dae3d57f7e238` as the audited analysis surface.
-   It records coordinate applicability, per-loss errors and a non-admission
-   FP32 replay without changing the frozen threshold or pass/fail semantics.
-   It is published on branch `codex/duca-rime-20260727`.
-2. Run the focused Linux/PyTorch checks from a clean checkout of the published
-   branch before any new Slurm transaction.
-3. Conduct one bounded Pro review of the repository and require a single
-   architecture decision plus a mathematically justified replacement gate.
-   The review must distinguish the invalid universal gate premise from the
-   still-unobserved component that triggered job `1201417`.
-4. Implement only the frozen review decision, add focused regressions, and
-   release a fresh immutable root. Never overwrite or reinterpret Recovery-v6.
-5. Resume Phase 1/2/3 only after the replacement scientific contract passes.
-   Keep Phase 4 disabled and official-final sealed.
+1. Publish the implemented pure selected-axis/admission-v2 change as one exact
+   clean commit on `codex/duca-rime-20260727`.
+2. Run the authoritative Linux/PyTorch Slurm code gate from a fresh clean
+   checkout. Local Windows Torch is not evidence because `c10.dll` cannot load.
+3. Run training/calibration-only repeated AMP nulls for both ActionFormer and
+   TriDet and freeze the runtime-bound numeric calibration manifest. Do not
+   choose a threshold from development behavior.
+4. Before candidate outputs exist, freeze the primary endpoint, video-cluster
+   unit, NI margin source/rule, multiplicity, guardrails, stopping rules, exact
+   Git tree and fresh candidate-output root in the scientific protocol.
+5. Run the single-GPU acquisition-v2 producer. It must directly emit the final
+   immutable receipt and re-bind every config, checkpoint, data, split,
+   calibration, scientific-protocol and code-gate artifact. External JSON
+   finalization is forbidden.
+6. Only after admission-v2 passes, run
+   `DUCA-P1-V2-PURE-PLUGIN-CLOSURE` for the full registered Phase-1 controls.
+   The output remains engineering/scientific-admission evidence, not a
+   performance result.
+7. Do not begin Phase 2/3, learned H-RIME, Phase 4 or official-final until their
+   previously registered terminal prerequisites pass. Recovery-v6 remains
+   immutable failed history and is never reclassified.
 
 Retained earlier recovery instructions:
 

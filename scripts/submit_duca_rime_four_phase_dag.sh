@@ -18,6 +18,12 @@ check_sha256() {
     || fail "${label} SHA-256 drift"
 }
 
+# This launcher preserves the historical physical-head recovery DAG only.  The
+# paper mainline moved to the selected-axis acquisition-v2 contract, so an
+# unattended/default invocation must never release these legacy jobs.
+[[ "${DUCA_RIME_ALLOW_LEGACY_PHYSICAL_DAG:-0}" == 1 ]] \
+  || fail "legacy physical-head four-phase DAG is sealed; use the selected-axis Phase-1 v2 launcher"
+
 dense_recovery_mode="${DUCA_RIME_DENSE_RECOVERY_MODE:-fresh_train}"
 [[ "${dense_recovery_mode}" == fresh_train || "${dense_recovery_mode}" == salvage ]] \
   || fail "DUCA_RIME_DENSE_RECOVERY_MODE must be fresh_train or salvage"
@@ -402,6 +408,8 @@ payload = {
     },
     "phase4_submission_enabled": False,
     "official_final_sealed": True,
+    "paper_mainline_allowed": False,
+    "claim_scope": "legacy_physical_head_engineering_diagnostic_only",
     "release_is_transactional": True,
 }
 text = json.dumps(payload, indent=2, sort_keys=True) + "\n"

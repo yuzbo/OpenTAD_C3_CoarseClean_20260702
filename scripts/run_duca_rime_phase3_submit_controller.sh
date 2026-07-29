@@ -21,6 +21,9 @@ check_sha256() {
 for name in \
   DUCA_RIME_REPO_ROOT \
   DUCA_RIME_EXPECTED_COMMIT \
+  DUCA_RIME_EXPECTED_BRANCH \
+  DUCA_RIME_ACQUISITION_ADMISSION \
+  DUCA_RIME_ACQUISITION_ADMISSION_SHA256 \
   DUCA_RIME_PHASE3_CONTROLLER_ROOT \
   DUCA_RIME_PHASE2_PIPELINE_RECEIPT \
   DUCA_RIME_PHASE3_ASSET_ROOT \
@@ -56,6 +59,17 @@ cd "${DUCA_RIME_REPO_ROOT}"
   || fail "Git commit drift"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] \
   || fail "Git tree is dirty"
+check_sha256 \
+  "${DUCA_RIME_ACQUISITION_ADMISSION}" \
+  "${DUCA_RIME_ACQUISITION_ADMISSION_SHA256}" \
+  "acquisition admission-v2"
+python -m tools.bata.verify_duca_acquisition_admission_v2 \
+  --receipt "${DUCA_RIME_ACQUISITION_ADMISSION}" \
+  --expected-sha256 "${DUCA_RIME_ACQUISITION_ADMISSION_SHA256}" \
+  --expected-commit "${DUCA_RIME_EXPECTED_COMMIT}" \
+  --repo-root "${DUCA_RIME_REPO_ROOT}" \
+  --expected-branch "${DUCA_RIME_EXPECTED_BRANCH}" \
+  --expected-artifact "split_assignment=${DUCA_RIME_SPLIT_MANIFEST}"
 [[ -f "${DUCA_RIME_PHASE2_PIPELINE_RECEIPT}" ]] \
   || fail "Phase-2 pipeline receipt is missing"
 export DUCA_RIME_PHASE2_PIPELINE_RECEIPT_SHA256="$(

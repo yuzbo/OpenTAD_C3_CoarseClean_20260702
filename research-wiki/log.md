@@ -880,3 +880,38 @@
 - One bounded Pro review is now warranted to select the paper architecture and
   replace the invalid universal equality premise with a justified scientific
   gate. No new transaction or Phase 4 access is authorized by this analysis.
+
+## 2026-07-29 — Pure selected-axis architecture accepted and acquisition-v2 implemented
+
+- Fully read and registered `U-PRO-PURE-PLUGIN-1`. Accepted its
+  `CONDITIONAL GO`: organizational Route C, Route A as the only paper mainline,
+  physical-time head as an isolated integration/diagnostic arm, and replacement
+  of the invalid general loss-equivalence gate.
+- Implemented selected-axis GT mapping, standard-head restoration,
+  exact-once proposal remap before official NMS, full implemented-map
+  diagnostics, and selected-axis ActionFormer/TriDet configs. The existing
+  fully gated `AnchorFreeHead` was not split into subclasses because the
+  selected-axis route never enables its physical branch; subclass extraction
+  is deferred until a physical integration experiment is separately
+  authorized.
+- Implemented a Slurm/CUDA acquisition-v2 runtime producer. It strict-loads
+  real dense checkpoints into standard and selected heads, checks full/short
+  exact-K execution, GT roundtrip, NMS ordering, AMP nulls and complete
+  state/RNG/debug restoration.
+- Removed external JSON finalization. The runtime producer now writes the final
+  finite, exclusive, content-bound receipt directly. Verification re-hashes
+  config, checkpoint, data, split, code-gate, calibration, scientific protocol
+  and NI-margin-source artifacts and re-binds exact Git/runtime identity.
+- Added pre-candidate scientific-protocol anchoring to a clean commit/tree,
+  fresh candidate output root, training/calibration NI-margin source, endpoint,
+  multiplicity, guardrails and stopping rules. Phase 1, Phase 3 and all Phase 4
+  entrypoints require the same verified admission-v2 prerequisite.
+- Local compilation, Bash syntax and `git diff --check` passed. The pure
+  admission/geometry/stage/launcher suites plus mandatory C3 regressions passed
+  `95 tests`; one warning is unrelated. Independent read-only audits found no
+  P0 in the selected-axis or admission chain.
+- The Torch model suite remains `remote_torch_pending`: the Windows host fails
+  loading PyTorch `c10.dll` with WinError 1114. This is not model evidence.
+- Current state is `implemented/local_tested/remote_pending`; no experiment has
+  run, no performance value was interpreted, Phase 4 and official-final remain
+  sealed, and no paper-admissible empirical conclusion exists.

@@ -55,6 +55,7 @@ _RIME_ARMS = {
     "hrime_stage1_uniform_positions",
 }
 _DYNAMIC_ARMS = {"dynamic_no_risk", "rime_full"}
+_RIME_SELECTED_AXIS_CONTRACT = "duca_rime_selected_axis_plugin_v2"
 _HRIME_STAGE1_ARMS = {
     "hrime_stage1_learned_positions",
     "hrime_stage1_uniform_positions",
@@ -378,9 +379,25 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         ) < 0.0:
             raise ValueError("RIME loss weights must be non-negative")
 
-        self.selector_variant = "duca_rime_physical"
+        selected_axis_plugin = (
+            self.detector_coordinate_mode == "selected_axis_plugin"
+        )
+        self.selector_variant = (
+            "duca_rime_selected_axis"
+            if selected_axis_plugin
+            else "duca_rime_physical"
+        )
+        self.detector_coordinate_contract = (
+            _RIME_SELECTED_AXIS_CONTRACT
+            if selected_axis_plugin
+            else RIME_CONTRACT
+        )
         self.no_ledger_decision = False
         self.require_counterfactual_utility_teacher = False
+        self._last_replay_effective_k: tuple[int | None, ...] = ()
+        self._last_decision_provenance: tuple[dict[str, Any] | None, ...] = ()
+        self._last_mixed_k_schedule_indices: tuple[int, ...] = ()
+        self._last_mixed_k_schedule_source: str | None = None
         self.register_buffer(
             "_loss_weight_schedule_step",
             torch.zeros((), dtype=torch.long),
@@ -401,6 +418,46 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             )
             if arm in _DYNAMIC_ARMS or arm in _HRIME_STAGE1_ARMS
             else None
+        )
+
+    def capture_amp_replay_state(self) -> dict[str, Any]:
+        snapshot = super().capture_amp_replay_state()
+        snapshot.update(
+            {
+                "rime_last_replay_effective_k": tuple(
+                    self._last_replay_effective_k
+                ),
+                "rime_last_decision_provenance": copy.deepcopy(
+                    self._last_decision_provenance
+                ),
+                "rime_last_mixed_k_schedule_indices": tuple(
+                    self._last_mixed_k_schedule_indices
+                ),
+                "rime_last_mixed_k_schedule_source": (
+                    self._last_mixed_k_schedule_source
+                ),
+            }
+        )
+        return snapshot
+
+    def restore_amp_replay_state(self, snapshot: Mapping[str, Any]) -> None:
+        super().restore_amp_replay_state(snapshot)
+        self._last_replay_effective_k = tuple(
+            snapshot.get("rime_last_replay_effective_k", ())
+        )
+        self._last_decision_provenance = copy.deepcopy(
+            tuple(snapshot.get("rime_last_decision_provenance", ()))
+        )
+        self._last_mixed_k_schedule_indices = tuple(
+            int(value)
+            for value in snapshot.get(
+                "rime_last_mixed_k_schedule_indices",
+                (),
+            )
+        )
+        source = snapshot.get("rime_last_mixed_k_schedule_source")
+        self._last_mixed_k_schedule_source = (
+            None if source is None else str(source)
         )
 
     def after_optimizer_step(self) -> dict[str, Any]:
@@ -785,7 +842,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             effective_k=decoded.effective_k,
             max_gap_seconds=decoded.max_gap_seconds,
         )
-        output_metas = self._write_physical_metadata(
+        output_metas = self._write_detector_metadata(
             metas,
             hard,
             physical_seconds,
@@ -796,8 +853,8 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         for batch_index, meta in enumerate(output_metas):
             meta.update(
                 {
-                    "duca_contract": RIME_CONTRACT,
-                    "physical_grid_contract": RIME_CONTRACT,
+                    "duca_contract": self.detector_coordinate_contract,
+                    "detector_coordinate_mode": self.detector_coordinate_mode,
                     "duca_arm": self.rime_arm,
                     "duca_requested_k": ledger["requested_k"][batch_index],
                     "duca_effective_k": ledger["effective_k"][batch_index],
@@ -813,6 +870,10 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                     "duca_rime_allocation_mode": self.allocation_mode,
                 }
             )
+            if self.detector_coordinate_mode == "physical_head_integration":
+                meta["physical_grid_contract"] = RIME_CONTRACT
+            else:
+                meta.pop("physical_grid_contract", None)
             decision_provenance = self._last_decision_provenance[batch_index]
             if isinstance(decision_provenance, Mapping):
                 meta["duca_decision_provenance"] = copy.deepcopy(
@@ -975,7 +1036,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
 
         state: dict[str, Any] = {
             "arm": self.rime_arm,
-            "contract": RIME_CONTRACT,
+            "contract": self.detector_coordinate_contract,
             "valid_mask": valid_mask,
             "physical_seconds": physical_seconds,
             "decoded_source_frames": source_frames,
@@ -1006,7 +1067,11 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             "detector_input": selected_inputs,
             "hard_detector_input": hard_detector_input,
             "backbone_tail_padding_mode": "none_exact_k_bucket",
-            "train_inference_hard_decoder": "same_rime_physical_exact_k",
+            "train_inference_hard_decoder": (
+                "same_rime_selected_axis_exact_k"
+                if self.detector_coordinate_mode == "selected_axis_plugin"
+                else "same_rime_physical_exact_k"
+            ),
             "coarse_provenance": source["provenance"],
             "coarse_compute_profile": source.get("compute_profile"),
             "decision_provenance": tuple(
@@ -1066,7 +1131,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             "padded_k": list(ledger["padded_k"]),
             "risk_fallback": list(ledger["risk_fallback"]),
             "dynamic_compute_realized": True,
-            "contract": RIME_CONTRACT,
+            "contract": self.detector_coordinate_contract,
             "mixed_k_schedule_sha256": self.mixed_k_schedule_sha256,
             "allocation_mode": self.allocation_mode,
             "decision_provenance": [
@@ -1210,7 +1275,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             max_gap_seconds=caps,
         )
         selected_inputs = _hard_gather(inputs, positions, slot_mask)
-        output_metas = self._write_physical_metadata(
+        output_metas = self._write_detector_metadata(
             metas,
             hard,
             physical_seconds,
@@ -1230,8 +1295,8 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         for meta in output_metas:
             meta.update(
                 {
-                    "duca_contract": RIME_CONTRACT,
-                    "physical_grid_contract": RIME_CONTRACT,
+                    "duca_contract": self.detector_coordinate_contract,
+                    "detector_coordinate_mode": self.detector_coordinate_mode,
                     "duca_arm": scope,
                     "duca_requested_k": requested,
                     "duca_effective_k": effective_value,
@@ -1245,6 +1310,10 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                     "duca_execution_quantum": self.execution_quantum,
                 }
             )
+            if self.detector_coordinate_mode == "physical_head_integration":
+                meta["physical_grid_contract"] = RIME_CONTRACT
+            else:
+                meta.pop("physical_grid_contract", None)
         return {
             "inputs": selected_inputs,
             "masks": slot_mask,
@@ -1293,15 +1362,24 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                 "inference_uses_gt": False,
                 "inference_uses_teacher": False,
                 "inference_uses_prediction_cache": False,
-                "selected_axis_gt_remap": False,
+                "selected_axis_gt_remap": bool(
+                    self.remap_gt_to_selected_axis
+                ),
                 "coarse_probe_executed": False,
             }
+            detector_segments, detector_labels, detector_metas = (
+                self._remap_train_targets_to_selected_axis(
+                    gt_segments,
+                    gt_labels,
+                    selected["metas"],
+                )
+            )
             return {
                 "inputs": selected["inputs"],
                 "masks": selected["masks"],
-                "metas": selected["metas"],
-                "gt_segments": gt_segments,
-                "gt_labels": gt_labels,
+                "metas": detector_metas,
+                "gt_segments": detector_segments,
+                "gt_labels": detector_labels,
                 "losses": {},
                 "selector_outputs": state,
                 "counterfactual_request": None,
@@ -1422,14 +1500,21 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             "inference_uses_gt": False,
             "inference_uses_teacher": False,
             "inference_uses_prediction_cache": False,
-            "selected_axis_gt_remap": False,
+            "selected_axis_gt_remap": bool(self.remap_gt_to_selected_axis),
         }
+        detector_segments, detector_labels, detector_metas = (
+            self._remap_train_targets_to_selected_axis(
+                gt_segments,
+                gt_labels,
+                selected["metas"],
+            )
+        )
         return {
             "inputs": selected["inputs"],
             "masks": selected["masks"],
-            "metas": selected["metas"],
-            "gt_segments": gt_segments,
-            "gt_labels": gt_labels,
+            "metas": detector_metas,
+            "gt_segments": detector_segments,
+            "gt_labels": detector_labels,
             "losses": losses,
             "selector_outputs": state,
             "counterfactual_request": None,

@@ -105,7 +105,9 @@ from mmengine.config import Config
 cfg = Config.fromfile(sys.argv[1])
 budget = int(sys.argv[2])
 cfg.model.backbone.custom.pretrain = sys.argv[3]
-assert cfg.workflow.formal_protocol == "duca_protected_physical_v1"
+assert cfg.workflow.formal_protocol == "duca_rime_selected_axis_plugin_v2"
+assert cfg.model.frame_selector.detector_coordinate_mode == "selected_axis_plugin"
+assert cfg.model.rpn_head.physical_grid_actionformer is None
 assert cfg.duca_rime_baseline_contract.phase == 1
 assert cfg.duca_rime_baseline_contract.variant == f"uniform_k{budget}"
 assert cfg.duca_rime_baseline_contract.position_policy == "exact_uniform"

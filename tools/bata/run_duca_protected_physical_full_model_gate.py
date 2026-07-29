@@ -40,8 +40,10 @@ from opentad.models.duca.structured_selection import exact_uniform_positions
 from opentad.utils import ModelEma
 from tools.bata.duca_gate_diagnostics import (
     detector_loss_parity_report,
+    implemented_uniform_axis_geometry_report,
     uniform_axis_geometry_report,
 )
+from tools.bata.duca_evidence_io import write_json_exclusive_atomic
 
 
 SCHEMA = "duca_protected_physical_full_model_gate_v1"
@@ -1012,10 +1014,16 @@ def _uniform_physical_legacy_parity(
         valid_len = int(batch["masks"][batch_index].sum().item())
         active = row[row >= 0].detach().cpu().tolist()
         geometry.append(
-            uniform_axis_geometry_report(
-                valid_len=valid_len,
-                positions=active,
-            )
+            {
+                "anchor_grid": uniform_axis_geometry_report(
+                    valid_len=valid_len,
+                    positions=active,
+                ),
+                "implemented_map": implemented_uniform_axis_geometry_report(
+                    valid_len=valid_len,
+                    positions=active,
+                ),
+            }
         )
     materialized = model.frame_selector.materialize_hard_positions(
         batch["inputs"],
@@ -1982,18 +1990,21 @@ def run_gate(
         int(head_debug.get("physical_grid_actionformer_selected_count", -1)) == 384,
         "physical head did not consume exact K=384",
     )
-    full_uniform_parity = _uniform_physical_legacy_parity(
-        model,
-        batch=batch,
-        mutable_state=mutable_state,
-        window_role="full_window",
-    )
-    padded_uniform_parity = _uniform_physical_legacy_parity(
-        model,
-        batch=short_padded_batch,
-        mutable_state=mutable_state,
-        window_role="short_padded_window",
-    )
+    try:
+        full_uniform_parity = _uniform_physical_legacy_parity(
+            model,
+            batch=batch,
+            mutable_state=mutable_state,
+            window_role="full_window",
+        )
+        padded_uniform_parity = _uniform_physical_legacy_parity(
+            model,
+            batch=short_padded_batch,
+            mutable_state=mutable_state,
+            window_role="short_padded_window",
+        )
+    finally:
+        _restore_mutable_state(model, mutable_state)
     uniform_parity = {
         "full_window": full_uniform_parity,
         "short_padded_window": padded_uniform_parity,
@@ -2025,6 +2036,9 @@ def run_gate(
         "schema": SCHEMA,
         "ok": True,
         "status": "p1_p2_full_model_gate_passed",
+        "legacy_v1_read_only": True,
+        "admission_effect": False,
+        "authorizes_phase1_v2": False,
         "runtime": runtime,
         "protocol_manifest": {
             "path": str(protocol_path),
@@ -2083,9 +2097,8 @@ def run_gate(
         },
         "paper_claim_allowed": False,
     }
-    output.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(payload, indent=2, sort_keys=True)
-    output.write_text(text + "\n", encoding="utf-8")
+    write_json_exclusive_atomic(output, payload)
+    text = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
     print(text)
     return payload
 
@@ -2130,17 +2143,22 @@ def main(argv: list[str] | None = None) -> int:
                 raise ProtectedPhysicalGateFailure(
                     "failure evidence must be outside the Git worktree"
                 )
-            failure_output.parent.mkdir(parents=True, exist_ok=True)
-            with failure_output.open("x", encoding="utf-8") as handle:
-                json.dump(
-                    failure_payload,
-                    handle,
-                    indent=2,
-                    sort_keys=True,
-                    ensure_ascii=True,
-                    allow_nan=False,
-                )
-                handle.write("\n")
+            try:
+                write_json_exclusive_atomic(failure_output, failure_payload)
+            except (TypeError, ValueError):
+                minimal_failure = {
+                    "schema": SCHEMA,
+                    "ok": False,
+                    "status": "failed",
+                    "legacy_v1_read_only": True,
+                    "admission_effect": False,
+                    "authorizes_phase1_v2": False,
+                    "error_type": exc.__class__.__name__,
+                    "error": str(exc),
+                    "diagnostics_serialization_failed": True,
+                    "paper_claim_allowed": False,
+                }
+                write_json_exclusive_atomic(failure_output, minimal_failure)
         except FileExistsError:
             failure_payload["failure_artifact_write_error"] = (
                 "refusing to overwrite existing output"

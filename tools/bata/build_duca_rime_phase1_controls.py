@@ -15,6 +15,10 @@ from tools.bata.duca_full_stack_cost import (
     PROFILE_SCHEMA_VERSION,
     validate_and_rebuild_profile_summary,
 )
+from tools.bata.duca_acquisition_gate_schema import (
+    ADMISSION_SCHEMA,
+    validate_duca_acquisition_admission_v2,
+)
 from tools.bata.duca_rime_stage_contract import PHASE1_CONTROL_SCHEMA
 from tools.bata.finalize_duca_rime_inference_ledger import (
     exact_uniform_positions,
@@ -30,7 +34,6 @@ METRICS_SCHEMA = "duca_rime_localization_metrics_v1"
 LEDGER_SUMMARY_SCHEMA = "duca_rime_inference_ledger_summary_v1"
 LEDGER_SCHEMA = "duca_rime_inference_ledger_v1"
 GEOMETRY_SCHEMA = "duca_rime_phase1_geometry_audit_v1"
-FULL_MODEL_GATE_SCHEMA = "duca_protected_physical_full_model_gate_v1"
 _DENSE_VARIANTS = {"released_dense", "local_dense"}
 _UNIFORM_VARIANTS = {"uniform_k384": 384, "uniform_k192": 192}
 _PROFILE_CONTRACTS = {
@@ -423,77 +426,53 @@ def _validate_geometry(
     }
 
 
-def _validate_full_model_gate(
+def _validate_acquisition_admission(
     path: str | Path,
     *,
     expected_commit: str,
 ) -> dict[str, Any]:
-    gate_path, gate = _load_json(path)
-    runtime = gate.get("runtime")
-    parity = gate.get("exact_uniform_physical_legacy_parity")
-    if (
-        gate.get("schema") != FULL_MODEL_GATE_SCHEMA
-        or gate.get("ok") is not True
-        or gate.get("status") != "p1_p2_full_model_gate_passed"
-        or not isinstance(runtime, Mapping)
-        or runtime.get("git_commit") != expected_commit
-        or gate.get("hard_forward_equals_real_backbone_input") is not True
-        or gate.get("paper_claim_allowed") is not False
-        or not isinstance(parity, Mapping)
-        or parity.get("target_assignment_parity") is not True
-        or parity.get("decode_parity") is not True
-        or parity.get("target_and_decode_parity") is not True
-    ):
-        raise ValueError("protected physical full-model parity gate is invalid")
-    proposal_errors = []
-    score_errors = []
-    target_errors = []
-    for name in ("full_window", "short_padded_window"):
-        row = parity.get(name)
-        target = row.get("target_assignment") if isinstance(row, Mapping) else None
-        if (
-            not isinstance(row, Mapping)
-            or row.get("target_and_decode_parity") is not True
-            or row.get("target_assignment_parity") is not True
-            or row.get("decode_parity") is not True
-            or not isinstance(target, Mapping)
-            or target.get("classification_targets_equal") is not True
-            or target.get("positive_masks_equal") is not True
-            or target.get("physical_regression_targets_equal") is not True
-        ):
-            raise ValueError(f"full-model parity failed on {name}")
-        proposal_errors.append(float(row.get("proposal_max_abs_error", math.inf)))
-        score_errors.append(float(row.get("score_max_abs_error", math.inf)))
-        target_errors.append(
-            float(target.get("physical_regression_target_max_abs_error", math.inf))
-        )
-    if (
-        max(proposal_errors) > 1.0e-4
-        or max(score_errors) > 1.0e-6
-        or max(target_errors) > 1.0e-4
-    ):
-        raise ValueError("full-model exact-uniform parity exceeds tolerance")
-    perturbation = gate.get("unselected_perturbation_audit")
-    if (
-        not isinstance(perturbation, Mapping)
-        or perturbation.get("hard_gather_equal") is not True
-        or float(perturbation.get("max_abs_error", math.inf)) > 1.0e-6
-    ):
-        raise ValueError("full-model hard gather parity failed")
+    admission_path, admission = _load_json(path)
+    validate_duca_acquisition_admission_v2(
+        admission,
+        expected_commit=expected_commit,
+        require_passed=True,
+    )
+    if admission.get("schema") != ADMISSION_SCHEMA:
+        raise ValueError("acquisition admission-v2 schema drift")
+    geometry = admission["geometry"]
+    numeric = admission["numeric"]
+    execution = admission["execution"]
     return {
-        "path": gate_path,
-        "payload": gate,
+        "path": admission_path,
+        "payload": admission,
         "checks": {
-            "mask_equal": True,
-            "tensor_max_abs": float(perturbation["max_abs_error"]),
-            "raw_proposal_max_abs": max(proposal_errors),
-            "raw_score_max_abs": max(score_errors),
-            "physical_target_max_abs": max(target_errors),
-            "target_assignment_parity": True,
-            "decode_parity": True,
-            "full_and_short_padded_windows_covered": True,
+            "selected_axis_plugin": True,
+            "physical_head_enabled": False,
+            "standard_detector_restored": True,
+            "gt_remapped_to_selected_axis": True,
+            "inverse_map_before_official_nms": True,
+            "mapping_applied_exactly_once": True,
+            "exact_k_no_padding": all(
+                int(effective) == int(padded)
+                for effective, padded in zip(
+                    execution["effective_k"],
+                    execution["padded_k"],
+                )
+            ),
+            "full_and_short_windows_covered": (
+                {"full_window", "short_window"}
+                .issubset(set(execution["window_roles"]))
+            ),
+            "coordinate_roundtrip_max_abs": float(
+                geometry["roundtrip_max_abs_error"]
+            ),
+            "state_neutral": (
+                numeric["state_before_sha256"]
+                == numeric["state_after_sha256"]
+            ),
+            "legacy_scalar_loss_equivalence_required": False,
         },
-        "source_artifacts": [_binding(gate_path)],
+        "source_artifacts": [_binding(admission_path)],
     }
 
 
@@ -602,7 +581,7 @@ def build_phase1_controls(
     uniform_k384_ledger_summary: str | Path,
     uniform_k192_metrics: str | Path,
     uniform_k192_ledger_summary: str | Path,
-    wrapper_gate: str | Path,
+    acquisition_admission: str | Path,
     geometry_audit: str | Path,
     no_probe_profile: str | Path,
     probe_profile: str | Path,
@@ -665,8 +644,8 @@ def build_phase1_controls(
         expected_commit=expected_commit,
         assignment_sha256=split_validation["assignment_sha256"],
     )
-    parity = _validate_full_model_gate(
-        wrapper_gate,
+    admission = _validate_acquisition_admission(
+        acquisition_admission,
         expected_commit=expected_commit,
     )
     profiles = {
@@ -760,21 +739,20 @@ def build_phase1_controls(
             ],
             "claim_scope": "phase1_exact_uniform_execution_and_localization_control",
         }
-    payloads["wrapper_parity"] = {
+    payloads["acquisition_admission"] = {
         **common,
-        "control": "wrapper_parity",
+        "control": "acquisition_admission",
         "checks": {
-            **parity["checks"],
+            **admission["checks"],
             "coordinate_roundtrip_max_abs": float(
                 geometry["checks"]["coordinate_roundtrip_max_abs"]
             ),
-            "remap_before_official_nms": True,
         },
         "source_artifacts": [
-            *parity["source_artifacts"],
+            *admission["source_artifacts"],
             *geometry["source_artifacts"],
         ],
-        "claim_scope": "phase1_full_model_wrapper_infrastructure_parity_only",
+        "claim_scope": "phase1_selected_axis_acquisition_admission_v2_only",
     }
     payloads["q_to_t_before_nms"] = {
         **common,
@@ -878,7 +856,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--uniform-k384-ledger-summary", required=True)
     parser.add_argument("--uniform-k192-metrics", required=True)
     parser.add_argument("--uniform-k192-ledger-summary", required=True)
-    parser.add_argument("--wrapper-gate", required=True)
+    parser.add_argument("--acquisition-admission", required=True)
     parser.add_argument("--geometry-audit", required=True)
     parser.add_argument("--no-probe-profile", required=True)
     parser.add_argument("--probe-profile", required=True)
@@ -895,7 +873,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         uniform_k384_ledger_summary=args.uniform_k384_ledger_summary,
         uniform_k192_metrics=args.uniform_k192_metrics,
         uniform_k192_ledger_summary=args.uniform_k192_ledger_summary,
-        wrapper_gate=args.wrapper_gate,
+        acquisition_admission=args.acquisition_admission,
         geometry_audit=args.geometry_audit,
         no_probe_profile=args.no_probe_profile,
         probe_profile=args.probe_profile,

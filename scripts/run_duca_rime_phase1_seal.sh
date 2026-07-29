@@ -43,8 +43,8 @@ for name in \
   DUCA_RIME_UNIFORM_K192_METRICS_SHA256 \
   DUCA_RIME_UNIFORM_K192_LEDGER_SUMMARY \
   DUCA_RIME_UNIFORM_K192_LEDGER_SUMMARY_SHA256 \
-  DUCA_RIME_WRAPPER_GATE \
-  DUCA_RIME_WRAPPER_GATE_SHA256 \
+  DUCA_RIME_ACQUISITION_ADMISSION \
+  DUCA_RIME_ACQUISITION_ADMISSION_SHA256 \
   DUCA_RIME_NO_PROBE_PROFILE \
   DUCA_RIME_NO_PROBE_PROFILE_SHA256 \
   DUCA_RIME_PROBE_PROFILE \
@@ -83,7 +83,7 @@ for prefix in \
   UNIFORM_K384_LEDGER_SUMMARY \
   UNIFORM_K192_METRICS \
   UNIFORM_K192_LEDGER_SUMMARY \
-  WRAPPER_GATE \
+  ACQUISITION_ADMISSION \
   NO_PROBE_PROFILE \
   PROBE_PROFILE; do
   path_var="DUCA_RIME_${prefix}"
@@ -163,7 +163,7 @@ python tools/bata/build_duca_rime_phase1_controls.py \
   --uniform-k192-metrics "${DUCA_RIME_UNIFORM_K192_METRICS}" \
   --uniform-k192-ledger-summary \
   "${DUCA_RIME_UNIFORM_K192_LEDGER_SUMMARY}" \
-  --wrapper-gate "${DUCA_RIME_WRAPPER_GATE}" \
+  --acquisition-admission "${DUCA_RIME_ACQUISITION_ADMISSION}" \
   --geometry-audit "${DUCA_RIME_PHASE1_SEAL_ROOT}/geometry_audit.json" \
   --no-probe-profile "${DUCA_RIME_NO_PROBE_PROFILE}" \
   --probe-profile "${DUCA_RIME_PROBE_PROFILE}" \
@@ -176,7 +176,7 @@ for control in \
   local_dense \
   uniform_k384 \
   uniform_k192 \
-  wrapper_parity \
+  acquisition_admission \
   q_to_t_before_nms \
   no_probe_uniform_cost \
   probe_uniform_cost; do

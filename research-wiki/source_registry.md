@@ -16,6 +16,7 @@
 | LOCAL-DESIGN-3 | `docs/superpowers/specs/2026-07-28-hrime-v1-budget-conserving-design.md` | corrected, user-approved H-RIME v1 specification | active |
 | REMOTE-RIME-V6-GATE-1 | `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_5a599e90_20260729_003600/logs/rime-phase1-1201417.out`, SHA-256 `0b9aedc943139e024939fa16bf5cf3007c7ae387e74f04bdae823551e3baee29` | immutable Recovery-v6 protected-gate failure evidence | directly verified; insufficient to identify offending loss component |
 | LOCAL-GATE-DIAG-1 | Git commit `69136de3ed8d8f977c78cfe5258dae3d57f7e238` | fail-closed coordinate/loss diagnostic remediation | implemented; focused local suite passed; published on `codex/duca-rime-20260727` |
+| U-PRO-PURE-PLUGIN-1 | `C:/Users/skywalker/.codex/attachments/80ec2ddd-9eed-4e97-ac1d-8be0c3071fd5/pasted-text.txt` | selected-axis pure-plugin architecture adjudication, AdapTok competition audit, replacement admission-v2 and experiment DAG | fully read; core scientific verdict accepted, implementation details independently adjudicated |
 
 `U-PRO-CBCG-1` was read in full. Its route analysis is retained as an external
 review, not as repository truth. Its linked `sandbox:/mnt/data/...` Patch A,
@@ -31,3 +32,13 @@ art/competition context; neither repository has been copied into H-RIME.
 admission route are accepted, while its suggested numeric gates remain
 unvalidated proposals. Referenced external sandbox artifacts are absent from
 this repository and do not establish implementation or test status.
+
+`U-PRO-PURE-PLUGIN-1` was read in full. Its `CONDITIONAL GO`, paper-mainline
+selected-axis plugin, diagnostic-only physical integration, abolition of the
+general scalar-loss-equivalence gate, calibrated numeric null, and held-out
+same-total-cost scientific gate are accepted. Its proposed code is design
+input rather than repository truth. The implementation keeps the existing
+fully gated standard `AnchorFreeHead` instead of immediately extracting
+physical subclasses, because selected-axis configs and runtime validation
+restore the unmodified standard path; subclass extraction remains required
+only before a physical integration arm can make a separate experimental claim.

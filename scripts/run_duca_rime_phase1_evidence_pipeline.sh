@@ -21,6 +21,7 @@ check_sha256() {
 for name in \
   DUCA_RIME_REPO_ROOT \
   DUCA_RIME_EXPECTED_COMMIT \
+  DUCA_RIME_EXPECTED_BRANCH \
   DUCA_RIME_PHASE1_PIPELINE_ROOT \
   DUCA_RIME_SPLIT_MANIFEST \
   DUCA_RIME_SPLIT_MANIFEST_SHA256 \
@@ -46,6 +47,8 @@ for name in \
   DUCA_RIME_PRETRAIN_SHA256 \
   DUCA_RIME_PHASE1_PROTOCOL_MANIFEST \
   DUCA_RIME_PHASE1_PROTOCOL_MANIFEST_SHA256 \
+  DUCA_RIME_ACQUISITION_ADMISSION \
+  DUCA_RIME_ACQUISITION_ADMISSION_SHA256 \
   DUCA_RIME_SHORT_MAX_SECONDS \
   DUCA_RIME_MEDIUM_MAX_SECONDS; do
   required "${name}"
@@ -80,6 +83,19 @@ for binding in \
   IFS='|' read -r path expected label <<<"${binding}"
   check_sha256 "${path}" "${expected}" "${label}"
 done
+check_sha256 \
+  "${DUCA_RIME_ACQUISITION_ADMISSION}" \
+  "${DUCA_RIME_ACQUISITION_ADMISSION_SHA256}" \
+  "acquisition admission-v2"
+python -m tools.bata.verify_duca_acquisition_admission_v2 \
+  --receipt "${DUCA_RIME_ACQUISITION_ADMISSION}" \
+  --expected-sha256 "${DUCA_RIME_ACQUISITION_ADMISSION_SHA256}" \
+  --expected-commit "${DUCA_RIME_EXPECTED_COMMIT}" \
+  --repo-root "${DUCA_RIME_REPO_ROOT}" \
+  --expected-branch "${DUCA_RIME_EXPECTED_BRANCH}" \
+  --expected-artifact "split_assignment=${DUCA_RIME_SPLIT_MANIFEST}" \
+  --expected-artifact \
+  "actionformer_checkpoint=${DUCA_RIME_RELEASED_DENSE_CHECKPOINT}"
 
 readarray -t split_values < <(
   python - \
@@ -155,12 +171,6 @@ for budget in 384 192; do
   scripts/run_duca_rime_phase1_uniform_eval.sh
 done
 
-wrapper_gate="${DUCA_RIME_PHASE1_PIPELINE_ROOT}/wrapper_gate.json"
-export DUCA_EXPECTED_COMMIT="${DUCA_RIME_EXPECTED_COMMIT}"
-export DUCA_PROTECTED_GATE_ARM=protected_e2e
-export DUCA_PROTECTED_GATE_OUTPUT_JSON="${wrapper_gate}"
-bash scripts/run_duca_protected_physical_full_model_gate_gpu1.sh
-
 export DUCA_RIME_PHASE1_COST_ROOT="${DUCA_RIME_PHASE1_PIPELINE_ROOT}/cost"
 export DUCA_RIME_ADATAD_PRETRAIN="${DUCA_RIME_PRETRAIN_PATH}"
 export DUCA_RIME_ADATAD_PRETRAIN_SHA256="${DUCA_RIME_PRETRAIN_SHA256}"
@@ -201,8 +211,6 @@ export DUCA_RIME_UNIFORM_K192_LEDGER_SUMMARY="${DUCA_RIME_PHASE1_PIPELINE_ROOT}/
 export DUCA_RIME_UNIFORM_K192_LEDGER_SUMMARY_SHA256="$(
   sha256sum "${DUCA_RIME_UNIFORM_K192_LEDGER_SUMMARY}" | awk '{print $1}'
 )"
-export DUCA_RIME_WRAPPER_GATE="${wrapper_gate}"
-export DUCA_RIME_WRAPPER_GATE_SHA256="$(sha256sum "${wrapper_gate}" | awk '{print $1}')"
 export DUCA_RIME_NO_PROBE_PROFILE="${DUCA_RIME_PHASE1_PIPELINE_ROOT}/cost/no_probe_uniform.summary.json"
 export DUCA_RIME_NO_PROBE_PROFILE_SHA256="$(
   sha256sum "${DUCA_RIME_NO_PROBE_PROFILE}" | awk '{print $1}'

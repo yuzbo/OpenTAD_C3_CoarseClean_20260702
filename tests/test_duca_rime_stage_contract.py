@@ -18,6 +18,9 @@ from tools.bata.duca_rime_stage_contract import (
     seal_phase3,
     seal_phase4,
 )
+from tools.bata.duca_gate_diagnostics import (
+    implemented_uniform_axis_geometry_report,
+)
 from tools.bata.finalize_duca_rime_inference_ledger import (
     exact_uniform_positions,
 )
@@ -66,6 +69,153 @@ def _split(tmp_path: Path):
     )
     annotation = _write_json(tmp_path / "annotation.json", {"database": database})
     return create_rime_splits(annotation, tmp_path / "split")
+
+
+def _admission_receipt():
+    sha = "b" * 64
+    binding = {"path": "/immutable/artifact", "sha256": sha}
+    windows = [
+        {
+            "valid_len": 32,
+            "selected_positions": [0, 10, 21, 31],
+        },
+        {
+            "valid_len": 17,
+            "selected_positions": [0, 5, 11, 16],
+        },
+    ]
+    for row in windows:
+        row["implemented_map"] = implemented_uniform_axis_geometry_report(
+            valid_len=row["valid_len"],
+            positions=row["selected_positions"],
+        )
+    return _with_content_sha({
+        "schema": "duca_acquisition_admission_v2",
+        "status": "passed",
+        "admission_effect": True,
+        "identity": {
+            "remote": "https://github.com/example/repo.git",
+            "branch": "codex/test",
+            "git_commit": COMMIT,
+            "git_tree": "c" * 40,
+            "tracked_tree_clean": True,
+            "repo_root": "/immutable/repo",
+            "config_sha256": sha,
+            "checkpoint_sha256": sha,
+            "data_manifest_sha256": sha,
+            "split_assignment_sha256": sha,
+        },
+        "runtime": {
+            "python": "3.10",
+            "torch": "2.1",
+            "cuda_runtime": "11.8",
+            "gpu_name": "test-gpu",
+            "driver": "test-driver",
+            "amp_enabled": True,
+            "amp_dtype": "float16",
+            "deterministic_flags": {"cudnn_benchmark": False},
+            "slurm_job_id": "12345",
+        },
+        "producer": {
+            "schema": "duca_acquisition_runtime_producer_v2",
+            "module": "tools.bata.run_duca_acquisition_runtime_gate_v2",
+            "script": binding,
+            "launcher": binding,
+            "slurm_job_id": "12345",
+            "git_commit": COMMIT,
+            "git_tree": "c" * 40,
+            "finalized_in_runtime_producer": True,
+            "created_at_utc": "2026-07-29T00:00:00+00:00",
+        },
+        "artifact_bindings": {
+            key: binding
+            for key in (
+                "code_gate_receipt",
+                "selected_actionformer_config",
+                "standard_actionformer_config",
+                "actionformer_checkpoint",
+                "selected_tridet_config",
+                "standard_tridet_config",
+                "tridet_checkpoint",
+                "train_block_list",
+                "development_block_list",
+                "targets_jsonl",
+                "budget_protocol",
+                "data_manifest",
+                "split_assignment",
+                "numeric_calibration",
+                "scientific_protocol",
+            )
+        },
+        "coordinate_contract": {
+            "mode": "selected_axis_plugin",
+            "selector_contract": "duca_rime_selected_axis_plugin_v2",
+            "detector_output_coordinate_space": "selected_axis_index",
+            "inverse_map_before_official_nms": True,
+            "mapping_applied_exactly_once": True,
+            "physical_head_enabled": False,
+            "gt_remapped_to_selected_axis": True,
+            "standard_detector_head_unchanged": True,
+        },
+        "execution": {
+            "window_roles": ["full_window", "short_window"],
+            "requested_k": [4, 8],
+            "effective_k": [4, 4],
+            "backbone_input_k": [4, 4],
+            "active_mask_count": [4, 4],
+            "padded_k": [4, 4],
+            "positions_sha256": sha,
+            "bucket_order_sha256": sha,
+        },
+        "geometry": {
+            "windows": windows,
+            "roundtrip_max_abs_error": 0.0,
+            "mapping_applied_exactly_once": True,
+        },
+        "standard_detector_restoration": {
+            backend: {
+                "status": "passed",
+                "physical_head_enabled": False,
+                "selector_disabled_null_passed": True,
+                "standard_head_state_dict_compatible": True,
+                "standard_config_sha256": sha,
+            }
+            for backend in ("actionformer", "tridet")
+        },
+        "numeric": {
+            "calibration_manifest_sha256": sha,
+            "calibration_content_sha256": sha,
+            "runtime_fingerprint_sha256": sha,
+            "amp_null_runs": [{"within_frozen_thresholds": True}],
+            "autocast_disabled_non_admission_replay": {
+                "admission_effect": False,
+            },
+            "state_before_sha256": sha,
+            "state_after_sha256": sha,
+        },
+        "gates": {
+            "structural_gate_passed": True,
+            "numeric_gate_passed": True,
+            "scientific_protocol_preregistered": True,
+            "scientific_protocol_sha256": sha,
+            "scientific_protocol_content_sha256": sha,
+            "legacy_scalar_loss_equivalence_required": False,
+        },
+        "scientific_scope": {
+            "uses_official_final": False,
+            "paper_claim_allowed": False,
+            "phase4_submission_enabled": False,
+            "official_final_sealed": True,
+            "primary_endpoint": "paired_video_avg_map_same_total_cost",
+            "noninferiority_margin": 0.1,
+            "multiplicity_procedure": "holm",
+        },
+        "predecessor_evidence": {
+            "recovery_v6_job": "1201417",
+            "historical_status": "failed_under_v1",
+            "historical_outcome_reclassified": False,
+        },
+    })
 
 
 def _phase1(tmp_path: Path):
@@ -156,13 +306,9 @@ def _phase1(tmp_path: Path):
             }
         ),
     )
-    wrapper_source = _write_json(
-        tmp_path / "wrapper_source.json",
-        {
-            "schema": "duca_protected_physical_full_model_gate_v1",
-            "ok": True,
-            "runtime": {"git_commit": COMMIT},
-        },
+    admission_source = _write_json(
+        tmp_path / "admission_source.json",
+        _admission_receipt(),
     )
 
     def metric_sources(name: str, target_cost: int):
@@ -273,7 +419,7 @@ def _phase1(tmp_path: Path):
     controls = []
     for name in REQUIRED_PHASE1_CONTROLS:
         payload = {
-            "schema_version": "duca_rime_phase1_control_v1",
+            "schema_version": "duca_rime_phase1_control_v2",
             "control": name,
             "gate_pass": True,
             "git_commit": COMMIT,
@@ -377,22 +523,26 @@ def _phase1(tmp_path: Path):
                 "max_observed_gap_seconds": 1.0,
                 "constant_evidence_exact_uniform_identity": True,
             }
-        if name == "wrapper_parity":
+        if name == "acquisition_admission":
             payload["source_artifacts"] = [
-                {"path": str(wrapper_source), "sha256": _sha(wrapper_source)},
+                {
+                    "path": str(admission_source),
+                    "sha256": _sha(admission_source),
+                },
                 {"path": str(geometry_source), "sha256": _sha(geometry_source)},
             ]
             payload["checks"] = {
-                "mask_equal": True,
-                "tensor_max_abs": 0.0,
-                "raw_proposal_max_abs": 0.0,
-                "raw_score_max_abs": 0.0,
-                "physical_target_max_abs": 0.0,
+                "selected_axis_plugin": True,
+                "physical_head_enabled": False,
+                "standard_detector_restored": True,
+                "gt_remapped_to_selected_axis": True,
+                "inverse_map_before_official_nms": True,
+                "mapping_applied_exactly_once": True,
+                "exact_k_no_padding": True,
+                "full_and_short_windows_covered": True,
                 "coordinate_roundtrip_max_abs": 0.0,
-                "target_assignment_parity": True,
-                "decode_parity": True,
-                "full_and_short_padded_windows_covered": True,
-                "remap_before_official_nms": True,
+                "state_neutral": True,
+                "legacy_scalar_loss_equivalence_required": False,
             }
         if name == "q_to_t_before_nms":
             payload["source_artifacts"] = [
