@@ -25,8 +25,14 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[2]
-OUTPUT_SCHEMA = "sdpq_support_observability_audit_v1"
+OUTPUT_SCHEMA = "sdpq_support_observability_audit_v2"
 SEAL_SCHEMA = "sdpq_support_observability_sample_seal_v1"
+TARGET_ERROR_ATOL_BY_FIELD = {
+    "cls_target": 0.0,
+    "offset_target": 5.0e-5,
+    "segment_target": 0.0,
+    "endpoint_target": 0.0,
+}
 DURATION_BUCKETS = (
     ("lt_1s", 0.0, 1.0),
     ("1_to_4s", 1.0, 4.0),
@@ -815,9 +821,48 @@ def _target_error(independent, production):
         expected = independent[name]
         observed = observed.detach().cpu().numpy().astype(np.float64)
         require(expected.shape == observed.shape, f"{name} shape mismatch")
+        require(
+            np.isfinite(expected).all(),
+            f"{name} independent target contains non-finite values",
+        )
+        require(
+            np.isfinite(observed).all(),
+            f"{name} production target contains non-finite values",
+        )
         difference = np.abs(expected - observed)
+        require(
+            np.isfinite(difference).all(),
+            f"{name} target difference contains non-finite values",
+        )
         error[name] = float(difference.max()) if difference.size else 0.0
     return error
+
+
+def _validate_target_error_contract(max_target_error):
+    require(
+        set(max_target_error) == set(TARGET_ERROR_ATOL_BY_FIELD),
+        "target error fields do not match the formal tolerance contract",
+    )
+    for name, atol in TARGET_ERROR_ATOL_BY_FIELD.items():
+        error = float(max_target_error[name])
+        require(
+            math.isfinite(error) and error >= 0.0,
+            f"{name} target error must be finite and non-negative",
+        )
+        if atol == 0.0:
+            require(
+                error == 0.0,
+                f"{name} must match production exactly; observed error={error}",
+            )
+        else:
+            require(
+                error <= atol,
+                (
+                    f"{name} differs from production beyond its numerical "
+                    f"tolerance: error={error} atol={atol}"
+                ),
+            )
+    return True
 
 
 def _select_checkpoint_state(checkpoint, weights_source, expected_epoch):
@@ -1015,10 +1060,7 @@ def _run_formal_audit(
             )
         seal_cursor += batch_size
     require(len(rows) == window_count, "formal replay did not audit 64 windows")
-    require(
-        max(max_target_error.values()) <= 1.0e-5,
-        f"independent assignment differs from production: {max_target_error}",
-    )
+    _validate_target_error_contract(max_target_error)
     state_after = _torch_state_sha256(model.state_dict())
     require(state_before == state_after, "model state changed during no-loss audit")
     return {
@@ -1164,7 +1206,12 @@ def main():
         "summary": audit["summary"],
         "independent_production_cross_check": {
             "max_abs_error": audit["max_production_target_abs_error"],
-            "atol": 1.0e-5,
+            "atol_by_field": dict(TARGET_ERROR_ATOL_BY_FIELD),
+            "exact_match_fields": [
+                name
+                for name, atol in TARGET_ERROR_ATOL_BY_FIELD.items()
+                if atol == 0.0
+            ],
             "pass": True,
         },
         "model_state_immutable": audit["model_state_immutable"],

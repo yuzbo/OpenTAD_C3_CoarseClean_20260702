@@ -93,6 +93,38 @@ def test_dense_decode_accepts_contractual_nan_axis_padding():
     assert mask.tolist() == [[True, True]]
 
 
+def test_dense_decode_preserves_sealed_source_float32_geometry_semantics():
+    capture = build_axis_capture(
+        [0.06684980541467667, 0.33424901962280273],
+    )
+    capture["domain_sec"] = np.asarray([[0.0, 33.826]], dtype=np.float64)
+    dense, _, points = independent.recompute_dense_decode(
+        capture,
+        "physical_time_seconds",
+    )
+    assert dense.dtype == np.float32
+    assert points.dtype == np.float32
+    mapped = independent.map_rank_to_seconds(
+        capture["base_points"][:, 0],
+        capture["physical_axis_sec"][0],
+        capture["domain_sec"][0, 0],
+        capture["domain_sec"][0, 1],
+        compute_dtype=np.float32,
+    )
+    assert mapped.dtype == np.float32
+    np.testing.assert_array_equal(points[0, :, 0], mapped)
+
+
+def test_dense_decode_rejects_widened_geometry_artifact():
+    capture = build_axis_capture([0.0, 1.0])
+    capture["base_points"] = capture["base_points"].astype(np.float64)
+    with pytest.raises(
+        independent.IndependentClosureError,
+        match="base_points must retain sealed source float32 semantics",
+    ):
+        independent.recompute_dense_decode(capture, "physical_time_seconds")
+
+
 @pytest.mark.parametrize(
     "axis_values",
     (

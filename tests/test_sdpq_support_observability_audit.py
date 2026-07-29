@@ -345,3 +345,91 @@ def test_formal_replay_does_not_reexecute_stochastic_training_loader():
     assert "sealed_batches" in source
     assert "pre-model replay validation" in source
     assert "post-model replay validation" in source
+
+
+def test_target_error_contract_allows_only_bounded_offset_roundoff():
+    errors = {
+        "cls_target": 0.0,
+        "offset_target": 3.0517578125e-5,
+        "segment_target": 0.0,
+        "endpoint_target": 0.0,
+    }
+    assert support_audit._validate_target_error_contract(errors) is True
+
+
+def test_target_error_contract_rejects_offset_beyond_bound():
+    errors = {
+        "cls_target": 0.0,
+        "offset_target": 5.0001e-5,
+        "segment_target": 0.0,
+        "endpoint_target": 0.0,
+    }
+    with pytest.raises(
+        support_audit.SupportAuditError,
+        match="offset_target differs from production beyond its numerical tolerance",
+    ):
+        support_audit._validate_target_error_contract(errors)
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("cls_target", "segment_target", "endpoint_target"),
+)
+def test_target_error_contract_requires_exact_semantic_targets(field):
+    errors = {
+        "cls_target": 0.0,
+        "offset_target": 0.0,
+        "segment_target": 0.0,
+        "endpoint_target": 0.0,
+    }
+    errors[field] = 1.0e-12
+    with pytest.raises(
+        support_audit.SupportAuditError,
+        match=rf"{field} must match production exactly",
+    ):
+        support_audit._validate_target_error_contract(errors)
+
+
+def test_target_error_contract_rejects_non_finite_error():
+    errors = {
+        "cls_target": 0.0,
+        "offset_target": np.nan,
+        "segment_target": 0.0,
+        "endpoint_target": 0.0,
+    }
+    with pytest.raises(
+        support_audit.SupportAuditError,
+        match="offset_target target error must be finite",
+    ):
+        support_audit._validate_target_error_contract(errors)
+
+
+def test_target_error_rejects_non_finite_production_tensor():
+    class FakeTensor:
+        def __init__(self, value):
+            self.value = np.asarray(value)
+
+        def detach(self):
+            return self
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self.value
+
+    independent = {
+        name: np.zeros((1,), dtype=np.float64)
+        for name in support_audit.TARGET_ERROR_ATOL_BY_FIELD
+    }
+    production = [
+        FakeTensor([0.0]),
+        FakeTensor([np.nan]),
+        FakeTensor([0.0]),
+        FakeTensor([0.0]),
+    ]
+    with pytest.raises(
+        support_audit.SupportAuditError,
+        match="offset_target production target contains non-finite values",
+    ):
+        support_audit._target_error(independent, production)

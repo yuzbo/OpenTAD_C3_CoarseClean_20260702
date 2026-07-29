@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Independent NumPy/float64 closure for frozen PhysTime decode artifacts.
+"""Independent NumPy closure for frozen PhysTime decode artifacts.
 
 This file intentionally does not import OpenTAD decode, NMS, or evaluation
-implementations. It only consumes their sealed artifact schemas.
+implementations. It only consumes their sealed artifact schemas. Geometry is
+recomputed with the sealed source float32 semantics; NMS and evaluation use
+float64.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 
-OUTPUT_SCHEMA = "phystime_independent_recompute_v1"
+OUTPUT_SCHEMA = "phystime_independent_recompute_v2"
 POLICY_SCHEMA = "phystime_independent_nms_policy_v1"
 COMPLETION_SCHEMA = "phystime_decode_cross_completion_v1"
 CAPTURE_SCHEMA = "phystime_decode_replay_inputs_v2"
@@ -268,12 +270,25 @@ def load_capture(completion):
     return manifest, arrays
 
 
-def map_rank_to_seconds(coords, positions, domain_start, domain_end):
-    """Piecewise-linear selected-rank map implemented only with NumPy/float64."""
-    coords = np.asarray(coords, dtype=np.float64)
-    positions = np.asarray(positions, dtype=np.float64).reshape(-1)
-    domain_start = float(domain_start)
-    domain_end = float(domain_end)
+def map_rank_to_seconds(
+    coords,
+    positions,
+    domain_start,
+    domain_end,
+    *,
+    compute_dtype=np.float64,
+):
+    """Piecewise-linear selected-rank map implemented only with NumPy."""
+    compute_dtype = np.dtype(compute_dtype)
+    require(
+        compute_dtype in {np.dtype(np.float32), np.dtype(np.float64)},
+        "rank-map compute dtype must be float32 or float64",
+    )
+    scalar_type = compute_dtype.type
+    coords = np.asarray(coords, dtype=compute_dtype)
+    positions = np.asarray(positions, dtype=compute_dtype).reshape(-1)
+    domain_start = scalar_type(domain_start)
+    domain_end = scalar_type(domain_end)
     require(np.isfinite(coords).all(), "rank coordinates contain non-finite values")
     require(
         math.isfinite(domain_start)
@@ -287,26 +302,33 @@ def map_rank_to_seconds(coords, positions, domain_start, domain_end):
         positions.size == 1 or np.all(np.diff(positions) > 0.0),
         "axis positions must be strictly increasing",
     )
-    ranks = np.arange(positions.size, dtype=np.float64)
+    ranks = np.arange(positions.size, dtype=compute_dtype)
     xp = np.concatenate(
         (
-            np.asarray([-0.5], dtype=np.float64),
+            np.asarray([-0.5], dtype=compute_dtype),
             ranks,
-            np.asarray([positions.size - 0.5], dtype=np.float64),
+            np.asarray([positions.size - 0.5], dtype=compute_dtype),
         )
     )
     fp = np.concatenate(
         (
-            np.asarray([domain_start], dtype=np.float64),
+            np.asarray([domain_start], dtype=compute_dtype),
             positions,
-            np.asarray([domain_end], dtype=np.float64),
+            np.asarray([domain_end], dtype=compute_dtype),
         )
     )
-    values = np.clip(coords.reshape(-1), -0.5, positions.size - 0.5)
+    values = np.clip(
+        coords.reshape(-1),
+        scalar_type(-0.5),
+        scalar_type(positions.size - 0.5),
+    )
     upper = np.searchsorted(xp, values, side="right")
     upper = np.clip(upper, 1, xp.size - 1)
     lower = upper - 1
-    denominator = np.maximum(xp[upper] - xp[lower], 1.0e-12)
+    denominator = np.maximum(
+        xp[upper] - xp[lower],
+        scalar_type(1.0e-6),
+    )
     fraction = (values - xp[lower]) / denominator
     mapped = fp[lower] + fraction * (fp[upper] - fp[lower])
     return mapped.reshape(coords.shape)
@@ -314,14 +336,28 @@ def map_rank_to_seconds(coords, positions, domain_start, domain_end):
 
 def recompute_dense_decode(capture_arrays, axis_name):
     require(axis_name in AXIS_ARRAYS, f"unknown decode axis: {axis_name}")
-    base = np.asarray(capture_arrays["base_points"], dtype=np.float64)
-    reg = np.asarray(capture_arrays["reg_distances"], dtype=np.float64)
+    for name in (
+        "base_points",
+        "reg_distances",
+        "uniform_axis_sec",
+        "physical_axis_sec",
+    ):
+        require(
+            np.asarray(capture_arrays[name]).dtype == np.float32,
+            f"{name} must retain sealed source float32 semantics",
+        )
+    require(
+        np.asarray(capture_arrays["domain_sec"]).dtype == np.float64,
+        "domain_sec must retain its sealed float64 storage contract",
+    )
+    base = np.asarray(capture_arrays["base_points"], dtype=np.float32)
+    reg = np.asarray(capture_arrays["reg_distances"], dtype=np.float32)
     base_mask = np.asarray(capture_arrays["base_mask"], dtype=np.bool_)
     counts = np.asarray(capture_arrays["native_valid_count"], dtype=np.int64)
     domains = np.asarray(capture_arrays["domain_sec"], dtype=np.float64)
     axis_values = np.asarray(
         capture_arrays[AXIS_ARRAYS[axis_name]],
-        dtype=np.float64,
+        dtype=np.float32,
     )
     require(base.ndim == 2 and base.shape[1] == 4, "base point shape mismatch")
     require(
@@ -343,11 +379,11 @@ def recompute_dense_decode(capture_arrays, axis_name):
     require(np.isfinite(reg).all(), "regression distances contain non-finite values")
     require(np.isfinite(domains).all(), "decode domains contain non-finite values")
     require(np.all(reg >= 0.0), "regression distances must be non-negative")
-    dense = np.empty(reg.shape[:2] + (2,), dtype=np.float64)
-    points_all = np.empty(reg.shape[:2] + (4,), dtype=np.float64)
+    dense = np.empty(reg.shape[:2] + (2,), dtype=np.float32)
+    points_all = np.empty(reg.shape[:2] + (4,), dtype=np.float32)
     masks = np.empty(reg.shape[:2], dtype=np.bool_)
     center = base[:, 0]
-    nominal_stride = np.maximum(base[:, 3], 1.0e-12)
+    nominal_stride = np.maximum(base[:, 3], np.float32(1.0e-6))
     for window_idx in range(reg.shape[0]):
         count = int(counts[window_idx])
         require(0 < count <= axis_values.shape[1], "invalid native count")
@@ -362,22 +398,35 @@ def recompute_dense_decode(capture_arrays, axis_name):
             "axis valid prefix must be strictly increasing",
         )
         require(np.isnan(padding).all(), "axis padding must contain only NaN")
-        start, end = domains[window_idx]
+        start64, end64 = domains[window_idx]
+        start = np.float32(start64)
+        end = np.float32(end64)
         require(start < end, "decode domain must be strictly increasing")
-        mapped_center = map_rank_to_seconds(center, positions, start, end)
-        mapped_left = map_rank_to_seconds(
-            center - 0.5 * nominal_stride,
+        mapped_center = map_rank_to_seconds(
+            center,
             positions,
             start,
             end,
+            compute_dtype=np.float32,
+        )
+        mapped_left = map_rank_to_seconds(
+            center - np.float32(0.5) * nominal_stride,
+            positions,
+            start,
+            end,
+            compute_dtype=np.float32,
         )
         mapped_right = map_rank_to_seconds(
-            center + 0.5 * nominal_stride,
+            center + np.float32(0.5) * nominal_stride,
             positions,
             start,
             end,
+            compute_dtype=np.float32,
         )
-        physical_stride = np.maximum(mapped_right - mapped_left, 1.0e-12)
+        physical_stride = np.maximum(
+            mapped_right - mapped_left,
+            np.float32(1.0e-6),
+        )
         scale = physical_stride / nominal_stride
         points = base.copy()
         points[:, 0] = mapped_center
@@ -1477,8 +1526,10 @@ def main():
         "new_training": False,
         "independent_implementation": {
             "language": "python_numpy",
-            "geometry_dtype": "float64",
+            "geometry_dtype": "source_float32",
+            "geometry_domain_storage_dtype": "float64_quantized_to_source_float32",
             "nms_dtype": "float64",
+            "evaluation_dtype": "float64",
             "stable_tie_breaker": "original_sequence_index",
             "imports_opentad_decode_nms_or_evaluator": False,
         },
