@@ -133,6 +133,19 @@ def _validate_deployment(
         )
     ):
         raise RuntimeError("AMP diagnostic deployment receipt is invalid")
+    if protocol_profile == AMP_STABILITY_PROFILE:
+        matched_inputs = deployment.get("matched_diagnostic_inputs")
+        parent = deployment.get("parent_diagnostic")
+        if (
+            not isinstance(matched_inputs, Mapping)
+            or matched_inputs.get("all_equal") is not True
+            or not isinstance(parent, Mapping)
+            or parent.get("decision")
+            != "ROOT_CAUSE_LOCALIZED_REPAIR_AUTHORIZED"
+        ):
+            raise RuntimeError(
+                "AMP stability deployment lacks matched diagnostic provenance"
+            )
     return deployment
 
 

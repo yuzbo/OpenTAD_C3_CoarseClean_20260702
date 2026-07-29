@@ -337,6 +337,33 @@ def _validate_diagnostic_parent(
     return parent
 
 
+def _validate_diagnostic_parent_deployment(
+    parent: Mapping[str, Any],
+) -> dict[str, Any]:
+    deployment_path = Path(str(parent.get("deployment_path", ""))).resolve()
+    if (
+        not deployment_path.is_file()
+        or sha256_file(deployment_path)
+        != parent.get("deployment_file_sha256")
+    ):
+        raise ValueError(
+            "repair-authorizing diagnostic deployment artifact changed"
+        )
+    deployment = _read_json(deployment_path)
+    if (
+        deployment.get("schema_version")
+        != AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA
+        or deployment.get("study_id") != AMP_DIAGNOSTIC_STUDY_ID
+        or deployment.get("runtime_commit") != parent.get("runtime_commit")
+        or not isinstance(deployment.get("input_receipts"), Mapping)
+        or not _self_hash_matches(deployment, field="deployment_sha256")
+    ):
+        raise ValueError(
+            "repair-authorizing diagnostic deployment is invalid"
+        )
+    return deployment
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-root", type=Path, required=True)
@@ -396,6 +423,7 @@ def main() -> int:
         expected_runtime_commit=expected_parent_runtime_commit,
     )
     diagnostic_parent = None
+    diagnostic_parent_deployment = None
     diagnostic_parent_path = None
     expected_diagnostic_file_sha256 = None
     if args.protocol_profile == AMP_STABILITY_PROFILE:
@@ -424,6 +452,9 @@ def main() -> int:
             diagnostic_parent_path,
             expected_file_sha256=expected_diagnostic_file_sha256,
             expected_runtime_commit=expected_diagnostic_runtime_commit,
+        )
+        diagnostic_parent_deployment = (
+            _validate_diagnostic_parent_deployment(diagnostic_parent)
         )
     elif any(
         value is not None
@@ -461,6 +492,36 @@ def main() -> int:
                 )
         elif not input_path.is_file():
             raise FileNotFoundError(input_path)
+    if (
+        args.protocol_profile == AMP_STABILITY_PROFILE
+        and not _inside(inputs["GEOROUTE_SOURCE_CONFIG"], ROOT)
+    ):
+        raise ValueError(
+            "AMP stability source config must come from the exact runtime checkout"
+        )
+    input_receipts = {
+        name: {
+            "path": str(path),
+            "sha256": sha256_file(path) if path.is_file() else None,
+        }
+        for name, path in inputs.items()
+    }
+    matched_parent_input_names = (
+        "GEOROUTE_MANIFEST",
+        "GEOROUTE_DEVELOPMENT_ANNOTATION",
+        "GEOROUTE_CLASS_MAP",
+        "GEOROUTE_DEVELOPMENT_VIDEO_ROOT",
+        "GEOROUTE_PRETRAINED",
+    )
+    if diagnostic_parent_deployment is not None:
+        parent_inputs = diagnostic_parent_deployment["input_receipts"]
+        if any(
+            input_receipts[name] != parent_inputs.get(name)
+            for name in matched_parent_input_names
+        ):
+            raise ValueError(
+                "AMP stability immutable inputs differ from matched diagnostic"
+            )
 
     # All admission gates precede immutable namespace creation.
     capacity = _require_submit_capacity(additional_jobs=3)
@@ -566,13 +627,21 @@ def main() -> int:
             "arms": list(AMP_DIAGNOSTIC_ARMS),
             "seed": PILOT_SEED,
             "jobs": jobs,
-            "input_receipts": {
-                name: {
-                    "path": str(path),
-                    "sha256": sha256_file(path) if path.is_file() else None,
+            "input_receipts": input_receipts,
+            "matched_diagnostic_inputs": (
+                {
+                    "names": list(matched_parent_input_names),
+                    "all_equal": True,
+                    "diagnostic_deployment_path": str(
+                        diagnostic_parent["deployment_path"]
+                    ),
+                    "diagnostic_deployment_file_sha256": (
+                        diagnostic_parent["deployment_file_sha256"]
+                    ),
                 }
-                for name, path in inputs.items()
-            },
+                if diagnostic_parent is not None
+                else None
+            ),
             "parent_pilot": {
                 "path": str(parent_path),
                 "file_sha256": expected_parent_file_sha256,

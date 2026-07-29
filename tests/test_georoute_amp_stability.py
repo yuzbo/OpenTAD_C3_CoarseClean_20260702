@@ -26,10 +26,16 @@ from tools.bata.georoute_estimator_pilot_contract import (
     PILOT_K,
     PILOT_SEED,
 )
-from tools.bata.georoute_experiment_contract import canonical_sha256
+from tools.bata.georoute_experiment_contract import (
+    canonical_sha256,
+    sha256_file,
+)
 from tools.bata.georoute_stage_runner import build_torchrun_prefix
 from tools.bata.georoute_amp_diagnostic_stage_runner import (
     validate_amp_diagnostic_stage_result,
+)
+from tools.bata.deploy_georoute_amp_diagnostic import (
+    _validate_diagnostic_parent_deployment,
 )
 
 
@@ -353,6 +359,39 @@ def test_stability_stage_result_is_profile_bound_and_no_metric(tmp_path):
             wrong_profile,
             expected_profile=AMP_STABILITY_PROFILE,
         )
+
+
+def test_stability_parent_reloads_immutable_diagnostic_inputs(tmp_path):
+    deployment_path = tmp_path / "deployment.json"
+    deployment = {
+        "schema_version": "georoute_real_batch_amp_deployment_v1",
+        "study_id": "georoute_real_batch_amp_diagnostic_v1",
+        "runtime_commit": "c" * 40,
+        "input_receipts": {
+            "GEOROUTE_MANIFEST": {
+                "path": "/frozen/manifest.json",
+                "sha256": "1" * 64,
+            }
+        },
+    }
+    deployment["deployment_sha256"] = canonical_sha256(deployment)
+    deployment_path.write_text(
+        json.dumps(deployment, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    parent = {
+        "deployment_path": str(deployment_path.resolve()),
+        "deployment_file_sha256": sha256_file(deployment_path),
+        "runtime_commit": "c" * 40,
+    }
+
+    assert (
+        _validate_diagnostic_parent_deployment(parent)["input_receipts"]
+        == deployment["input_receipts"]
+    )
+    deployment_path.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="artifact changed"):
+        _validate_diagnostic_parent_deployment(parent)
 
 
 def test_stability_profile_is_not_a_performance_or_paper_result_surface():
