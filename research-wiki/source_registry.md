@@ -232,18 +232,22 @@ updated: 2026-07-29
   `3cf497d547f1cc38ece780d5af56b0455f3786387f182915d799e5fa9b567ef2`
   and
   `88289a14399a28789e2db97411604ab890fa6a92a55ac2ea4b99408b892320da`.
-  ROI-PL representation-on Job `1204313` remained process-active but logged its
-  eleventh AMP skip at `2026-07-29 22:47:59 CST` (batch 111, retry 1/8, scale
-  `64`), crossing the registered `>10` protocol hard-fail threshold. At audit
-  time its logged loss/cost was finite and it had no Traceback/OOM; the source
-  is the mutable stage stdout
-  `slurm/grep_roi_on.1204313.out`, so no premature file hash is registered.
-  ROI-PL representation-off Job `1204312` then logged its eleventh AMP skip at
-  `2026-07-29 23:02:08 CST` (batch 63, retry 1/8, scale `64`), also crossing
-  the `>10` threshold while process-active with finite logged loss/cost and no
-  Traceback/OOM. Its mutable source is
-  `slurm/grep_roi_off.1204312.out`; no premature hash is registered.
-  This namespace is incomplete execution provenance, not a contrast or
+  Jobs `1204308` and `1204310`--`1204313` completed `0:0`; each surviving cell
+  contains exactly one final epoch-19 checkpoint, one stage result, and zero
+  temporary checkpoints. ROI-PL representation-on/off Jobs `1204313/1204312`
+  each logged 11 cumulative failed AMP optimizer attempts before successful
+  replay, reaching scale `64`. This is numerical-stress telemetry, not a formal
+  stage failure: the source contract hard-fails only when a single batch
+  exhausts `max_amp_retries_per_batch=8`. Closeout `1204314` completed `0:0`
+  and wrote schema-v2 `pilot_finalization.json` with
+  `INCOMPLETE_EXPLORATORY_PILOT /
+  PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, false all-six, empty contrasts,
+  cross-arm consistency false, and every promotion guard false. Finalization
+  internal/file SHA-256 values are
+  `a02e551ba9007b49670103e2e4db3bf1c1d917cb5a7bb5c4dd724274b9379a2a`
+  and
+  `c95c1694dccbda2687b1b9e6e07bb9016ebe80181e2288d172874afa791d8f1c`.
+  This namespace is sealed incomplete execution provenance, not a contrast or
   performance result.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The

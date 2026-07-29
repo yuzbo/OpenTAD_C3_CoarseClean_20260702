@@ -37,7 +37,7 @@ max_chars: 8000
   `docs/methods/2026-07-29-georoute-estimator-preexperiment-results.md`.
   A new independent study,
   `georoute_estimator_representation_pilot_v1`, is
-  `c822add3_multiple_amp_hard_fail_waiting_closeout`.
+  `c822add3_sealed_incomplete_no_performance_inference`.
   Six single-seed, 20-epoch, K=64 arms isolate PL versus ST, fixed-support
   representation, ROI-support representation, and ROI versus residual support.
   The first clean runtime `02b6efe7` passed remote Linux tests `108/108`, but
@@ -170,20 +170,29 @@ max_chars: 8000
   (`5e55619291285a36a8410be9582a79f293b33cd135053b4c6a3967e9d8beb5c8`;
   file
   `77c9eff76c5881f8daa45ef68dd0d0d71bec2f5e171f31e2a8a97fc734b9f3c5`)
-  and the cell contains no checkpoint, metric, or stage result. While running
-  only for terminal provenance, ROI-PL representation-on Job `1204313` crossed
-  the registered `>10` recoverable-skip limit: its eleventh AMP skip occurred
-  at `2026-07-29 22:47:59 CST` (batch 111, scale `64`). The process remains
-  running with finite logged loss/cost and no Traceback/OOM, but the protocol
-  classifies the arm as another hard failure. ROI-PL representation-off Job
-  `1204312` also crossed the same boundary when its eleventh skip occurred at
-  `2026-07-29 23:02:08 CST` (batch 63, scale `64`), likewise with finite logged
-  loss/cost and no Traceback/OOM. The other stages continue only
-  to reach terminal provenance; closeout `1204314` must
-  seal `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. This shows that the current
-  synthetic full-graph P0 is not sufficient evidence of real-batch AMP
-  stability. It does not yield a PL/ST scientific verdict. No rerun, partial
-  contrast, selector, P2/P3, official test, or claim is authorized.
+  and the cell contains no checkpoint, metric, or stage result. The other five
+  stages and closeout `1204314` completed `0:0`; each surviving stage has one
+  final epoch-19 checkpoint, one stage result, and zero temporary checkpoints,
+  but all are terminal provenance only. ROI-PL Jobs `1204312/1204313` each
+  logged 11 cumulative failed AMP optimizer attempts before later successful
+  updates, with scale reaching `64`. The earlier monitor classified cumulative
+  count `>10` as a protocol hard failure; this is corrected. The source contract
+  sets `max_amp_retries_per_batch=8`, and hard-fails only when one batch cannot
+  produce a successful update after those retries. The cumulative counter is a
+  numerical-stress alert, not a sealed experiment decision threshold.
+  Closeout `1204314` sealed schema-v2
+  `INCOMPLETE_EXPLORATORY_PILOT /
+  PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, with
+  `all_six_arms_passed=false`, empty contrasts, and all promotion guards false.
+  Its canonical self/file SHA-256 values are
+  `a02e551ba9007b49670103e2e4db3bf1c1d917cb5a7bb5c4dd724274b9379a2a`
+  /
+  `c95c1694dccbda2687b1b9e6e07bb9016ebe80181e2288d172874afa791d8f1c`.
+  Thus `1204309` is the sole formal stage hard failure. The run shows that the
+  current synthetic full-graph P0 is insufficient evidence of real-batch AMP
+  stability; it does not yield a PL/ST, representation, efficiency, or Geometry
+  Zoom verdict. No rerun, partial contrast, selector, P2/P3, official test, or
+  claim is authorized.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

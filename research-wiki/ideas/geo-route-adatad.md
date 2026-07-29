@@ -346,17 +346,18 @@ The failed `30f9ca6f` namespace has now sealed INCOMPLETE with empty contrasts.
 The complete fresh `c822add3` six-arm namespace passed all six schema-v5 P0
 leaves plus its finalizer, but residual-PL stage `1204309` again exhausted all
 eight AMP retries on real batch 0 and hard-failed without a checkpoint or
-metric. ROI-PL representation-on `1204313` subsequently crossed the registered
-`>10` AMP-skip hard-fail threshold while its process remained active; finite
-logged loss/cost and absence of Traceback/OOM do not restore protocol validity.
-ROI-PL representation-off `1204312` later crossed the same threshold, leaving
-neither ROI arm eligible for a descriptive representation contrast.
-The remaining stages continue only for terminal provenance and
-closeout `1204314` must seal no performance inference. This falsifies the
-sufficiency of the current synthetic full-graph P0 as a real-batch stability
-certificate, not the scientific PL hypothesis itself. GeoRoute/CER remains
-without empirical support; no further repair is designed until a new cause
-analysis and experiment decision are recorded.
+metric. The other five stages completed only for terminal provenance. ROI-PL
+Jobs `1204312/1204313` each accumulated 11 failed optimizer attempts before
+successful replay and reached GradScaler `64`; this is a numerical-stress
+signal, not a formal failure, because the registered source rule is eight
+exhausted retries within one batch rather than cumulative count `>10`.
+Closeout `1204314` sealed
+`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, false all-six, empty contrasts,
+and all promotion guards false. This falsifies the sufficiency of the current
+synthetic full-graph P0 as a real-batch stability certificate, not the
+scientific PL hypothesis itself. GeoRoute/CER remains without empirical
+support; no further repair is designed until a new real-batch cause analysis
+and experiment decision are recorded.
 
 ## Connections
 

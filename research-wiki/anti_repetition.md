@@ -81,28 +81,31 @@ updated: 2026-07-29
    stage, or bypass the all-six closeout. Job `1204028` emitted only
    `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with empty contrasts
    (self-hash `60c9dab575e65830b7b849437963de2c7f789743caedb130b499c142c49c76ab`).
-0. The latest candidate performance namespace is
+0. The latest candidate performance namespace is sealed incomplete:
    `georoute_estimator_representation_pilot_c822add3_20260729_2149`, exact
    runtime `c822add335c38a9f6c63e609237c4bfa9b9f468d`. It contains P0
    `1204301`--`1204306`, P0 finalizer `1204307`, stages
    `1204308`--`1204313`, and closeout `1204314`. Its six P0 leaves and finalizer
    passed mechanically, but residual-PL stage `1204309` exhausted all eight AMP
    retries on real batch 0 and failed with no checkpoint, metric, or stage
-   result. The namespace therefore cannot become performance evidence. Never
-   mix either earlier namespace into it, rerun or resume the failed arm, bypass
-   its all-six closeout, or interpret the other five arms.
-0. ROI-PL representation-on Job `1204313` is not a successful surviving arm
-   merely because its process continues. At `2026-07-29 22:47:59 CST`, it
-   logged its eleventh AMP gradient skip (batch 111, retry 1/8, scale `64`),
-   crossing the registered `>10` hard-fail threshold. Its logged loss/cost
-   remained finite and no Traceback/OOM occurred, but neither a terminal
-   `COMPLETED` state nor a future final checkpoint can convert this protocol
-   hard failure into performance evidence.
-0. The same rule applies to ROI-PL representation-off Job `1204312`. Its
-   eleventh AMP skip occurred at `2026-07-29 23:02:08 CST` (batch 63,
-   retry 1/8, scale `64`), so it too crossed the registered hard-fail threshold
-   despite remaining process-active with finite logged loss/cost and no
-   Traceback/OOM. Do not contrast the two ROI arms or salvage either output.
+   result. Closeout `1204314` completed `0:0` and sealed
+   `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, false all-six, empty contrasts,
+   and all promotion guards false (self/file SHA-256
+   `a02e551ba9007b49670103e2e4db3bf1c1d917cb5a7bb5c4dd724274b9379a2a`
+   /
+   `c95c1694dccbda2687b1b9e6e07bb9016ebe80181e2288d172874afa791d8f1c`).
+   Never mix either earlier namespace into it, rerun or resume the failed arm,
+   bypass the all-six decision, or interpret the other five arms.
+0. Do not confuse cumulative AMP retry telemetry with the per-batch hard-fail
+   rule. ROI-PL representation-on/off Jobs `1204313/1204312` each logged 11
+   cumulative failed optimizer attempts, and both reached scale `64`, but each
+   replayed the affected batch successfully and completed all 20 epochs. The
+   experiment source hard-fails only when one batch exhausts all
+   `max_amp_retries_per_batch=8` retries without a successful optimizer update.
+   The generic monitor heuristic `count>10` is an alert for clustered numerical
+   stress, not a preregistered or finalizer-enforced invalidation threshold.
+   Their outputs remain unusable here because the all-six namespace is
+   incomplete, not because cumulative retry count itself formally failed them.
 0. Schema-v4 P0 from source `30f9ca6f` did not test full-graph AMP. Its model
    forward/backward was FP32, and the `T384/N220/K64` AMP KAT used an isolated
    logits leaf. Job `1204023` then exhausted all eight real-batch AMP retries at
@@ -126,11 +129,10 @@ updated: 2026-07-29
    yet real-batch residual-PL Job `1204309` still failed after scales
    `32768,16384,8192,4096,2048,1024,512,256`. Therefore neither the standalone
    nor per-arm synthetic full-graph gate may be treated as a real-batch
-   stability certificate. Preserve the namespace, let unrelated arms terminate
-   naturally, require closeout `1204314` to emit only
-   `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, and make no further numerical
-   repair or replacement run without a new cause analysis and explicit
-   experiment decision.
+   stability certificate. The namespace is preserved and closeout `1204314`
+   has emitted only `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. Make no further
+   numerical repair or replacement run without a new real-batch cause analysis
+   and explicit experiment decision.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

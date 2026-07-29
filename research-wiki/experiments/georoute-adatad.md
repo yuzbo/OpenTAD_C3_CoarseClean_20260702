@@ -727,17 +727,24 @@ are
 `5e55619291285a36a8410be9582a79f293b33cd135053b4c6a3967e9d8beb5c8`
 /
 `77c9eff76c5881f8daa45ef68dd0d0d71bec2f5e171f31e2a8a97fc734b9f3c5`.
-ROI-PL representation-on Job `1204313` later logged an eleventh AMP skip
-(`2026-07-29 22:47:59 CST`, batch 111, scale `64`), crossing the registered
-`>10` protocol hard-fail threshold despite finite logged loss/cost and no
-Traceback/OOM. ROI-PL representation-off `1204312` crossed the same threshold
-with its eleventh skip at `2026-07-29 23:02:08 CST`, batch 63, scale `64`,
-again without non-finite loss/cost, Traceback, or OOM. The other stages continue
-only for terminal provenance; closeout
-`1204314` must seal the namespace incomplete with no performance inference.
-Thus the current synthetic full-graph P0 is not a sufficient real-batch AMP
-stability certificate. This is not a PL/ST scientific verdict and opens no
-result surface, rerun, selector, P2/P3, official test, Geometry Zoom, or claim.
+The other five stages and closeout `1204314` completed `0:0`; each surviving
+stage has exactly one final epoch-19 checkpoint, one stage result, and zero
+temporary checkpoints. ROI-PL representation-on/off Jobs `1204313/1204312`
+each logged 11 cumulative failed optimizer attempts before successful replay,
+with scale reaching `64`. This is numerical-stress telemetry, not a formal
+failure: the source hard-fail rule is exhaustion of eight retries within one
+batch, not cumulative count `>10` across training. Closeout `1204314` sealed
+schema-v2 `INCOMPLETE_EXPLORATORY_PILOT /
+PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, `all_six_arms_passed=false`, empty
+contrasts, and all selector/P2/P3/official-test/paper guards false. Its
+canonical self/file SHA-256 values are
+`a02e551ba9007b49670103e2e4db3bf1c1d917cb5a7bb5c4dd724274b9379a2a`
+/
+`c95c1694dccbda2687b1b9e6e07bb9016ebe80181e2288d172874afa791d8f1c`.
+Thus `1204309` is the sole formal stage hard failure, and the current synthetic
+full-graph P0 is not a sufficient real-batch AMP stability certificate. This is
+not a PL/ST or representation scientific verdict and opens no result surface,
+rerun, selector, P2/P3, official test, Geometry Zoom, or claim.
 
 ## Frozen decision logic
 

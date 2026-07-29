@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:georoute-estimator-representation-pilot-v1
 title: "GeoRoute estimator/representation exploratory pilot v1"
 idea: idea:geo-route-adatad
-stage: experiment_running
-status: fresh_c822add3_multiple_amp_hard_fail_waiting_closeout
-verdict: incomplete_no_performance_inference_pending_closeout
-confidence: medium
+stage: tested
+status: fresh_c822add3_sealed_incomplete_no_performance_inference
+verdict: no_valid_contrast
+confidence: high
 commit: c822add335c38a9f6c63e609237c4bfa9b9f468d
 jobs: 1204301-1204314
 updated: 2026-07-29
@@ -163,7 +163,7 @@ and
 `6ad32b7822042685b353f378c6eb9ea14be061e7f22d7db7288a129cbe080f06`.
 No five-arm metric is interpreted.
 
-The complete fresh restart is now `experiment_running`. Capacity preflight
+The complete fresh restart is now sealed. Capacity preflight
 recorded `active=2`, `additional=14`, `MaxSubmitJobs=16`, with zero remaining
 headroom. Exact clean source `c822add335c38a9f6c63e609237c4bfa9b9f468d`
 created
@@ -194,24 +194,32 @@ traceback SHA-256 is
 `17ec9adb5a41b48a16d0a76221248a4bfe4f123e99ec03e16f6397b0919649ad`.
 The failed cell inventory contains only its hashed failure receipt, storage
 preflight, bound config, `train.out`, and `log.json`: no checkpoint, prediction,
-metric, or stage result exists. The other five stages run only to terminal
-provenance and may not be interpreted. No arm is resumed or replaced. Closeout
-`1204314` must seal `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with empty
-contrasts and all promotion guards false.
+metric, or stage result exists. The other five stages completed `0:0` only for
+terminal provenance and may not be interpreted. Each has exactly one final
+epoch-19 checkpoint, one stage result, and zero temporary checkpoints. No arm
+was resumed or replaced.
 
-ROI-PL representation-on Job `1204313` subsequently crossed the preregistered
-recoverable-skip boundary while still running for terminal provenance. Its
-eleventh `AMP skipped batch` event was logged at
-`2026-07-29 22:47:59 CST`, batch 111, retry 1/8, scale `64`. At the observation
-time, Slurm still reported `RUNNING`, the logged loss/cost remained finite, and
-there was no Traceback or OOM. Nevertheless, `>10` skips is a protocol hard
-failure; later process completion or a final checkpoint cannot make this arm or
-the namespace performance evidence. ROI-PL representation-off `1204312`
-subsequently logged its eleventh skip at `2026-07-29 23:02:08 CST`, batch 63,
-retry 1/8, scale `64`, and therefore crossed the same protocol hard-fail
-boundary. It also remained process-active with finite logged loss/cost and no
-Traceback/OOM at observation time. Neither ROI arm can supply a representation
-contrast.
+ROI-PL representation-on/off Jobs `1204313/1204312` each logged 11 cumulative
+failed AMP optimizer attempts before successful replay, with scale reaching
+`64`. The earlier monitor called cumulative count `>10` a protocol hard
+failure. That classification was incorrect: the frozen config sets
+`max_amp_retries_per_batch=8`, and the train engine raises a formal failure only
+if one batch still cannot produce a successful optimizer update after those
+retries. The cumulative counter spans training and counts failed attempts, not
+failed batches. Both ROI jobs completed all 20 epochs; their retries remain a
+numerical-stress alert, not another formal stage failure. Their outputs are
+nevertheless unusable because the all-six namespace failed.
+
+Afterany closeout `1204314` completed `0:0` and sealed schema-v2
+`INCOMPLETE_EXPLORATORY_PILOT /
+PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, with
+`all_six_arms_passed=false`, `cross_arm_population_and_artifact_consistent=false`,
+an empty descriptive-contrast map, and all selector/P2/P3/official-test/paper
+guards false. Its canonical self-hash recomputes exactly as
+`a02e551ba9007b49670103e2e4db3bf1c1d917cb5a7bb5c4dd724274b9379a2a`;
+file SHA-256 is
+`c95c1694dccbda2687b1b9e6e07bb9016ebe80181e2288d172874afa791d8f1c`.
+Residual-PL `1204309` is the sole formal stage hard failure.
 
 The evidence narrows the execution diagnosis: schema-v5 synthetic full-graph
 AMP is mechanically valid but insufficient as a real-batch stability gate. It
@@ -224,12 +232,12 @@ decision.
 For the sealed `cbe0a082` namespace, finalizer `1203720` emitted
 `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE` with an empty contrast set; none of
 the five completed-arm outputs may be interpreted. The `30f9ca6f` namespace is
-also sealed under the same decision, and the current `c822add3` namespace has
-already hard-failed one arm and must do likewise when `1204314` runs. A future
-fresh namespace may emit descriptive single-seed contrasts only if all six arms
-pass. No finalizer can emit a winner, reuse the historical selector, promote
-P2/P3, open official test, or authorize an efficiency, Geometry Zoom, or paper
-claim.
+also sealed under the same decision. The `c822add3` namespace is now likewise
+sealed with one formal failed arm, empty contrasts, and no performance
+inference. A future fresh namespace may emit descriptive single-seed contrasts
+only if all six arms pass. No finalizer can emit a winner, reuse the historical
+selector, promote P2/P3, open official test, or authorize an efficiency,
+Geometry Zoom, or paper claim.
 
 ## Provenance
 

@@ -1651,3 +1651,27 @@ append_only: true
   contrast, regardless of later process completion or checkpoint publication.
   They continue only for terminal provenance; no cancellation, partial
   inference, selector, test, or claim is opened.
+
+- 2026-07-29 23:18 CST: correction and terminal closeout. The two preceding
+  monitoring entries incorrectly promoted the generic cumulative `count>10`
+  alert to a formal experiment hard-fail threshold. Exact source `c822add3`
+  instead sets `max_amp_retries_per_batch=8`: the train engine restores and
+  replays the same batch after a failed scaled optimizer attempt and raises only
+  when one batch exhausts all eight retries without a successful update.
+  Therefore the 11 cumulative failed attempts in each ROI-PL arm are
+  numerical-stress telemetry (both reached scale `64`), not formal arm
+  failures; Jobs `1204312/1204313` later completed all 20 epochs. This
+  correction does not open their results, because residual-PL Job `1204309`
+  remains the sole formal stage hard failure and breaks the all-six contract.
+  Jobs `1204308` and `1204310`--`1204313` all completed `0:0`, each with one
+  final epoch-19 checkpoint, one stage result, and zero temporary checkpoints.
+  Afterany closeout `1204314` completed `0:0` and sealed schema-v2
+  `INCOMPLETE_EXPLORATORY_PILOT /
+  PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, `all_six_arms_passed=false`,
+  cross-arm consistency false, empty contrasts, and every promotion guard
+  false. Its canonical self/file SHA-256 values are
+  `a02e551ba9007b49670103e2e4db3bf1c1d917cb5a7bb5c4dd724274b9379a2a`
+  /
+  `c95c1694dccbda2687b1b9e6e07bb9016ebe80181e2288d172874afa791d8f1c`.
+  No five-arm metric, winner, P2/P3, official test, efficiency, Geometry Zoom,
+  CER, or paper claim is inferred.
