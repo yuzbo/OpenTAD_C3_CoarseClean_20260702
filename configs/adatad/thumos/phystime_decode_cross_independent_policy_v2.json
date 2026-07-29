@@ -1,5 +1,12 @@
 {
   "filter_invalid_proposals": true,
+  "float_math": {
+    "function": "expf",
+    "library": "libm.so.6",
+    "probe_input_float32_hex": "1c8a22be",
+    "probe_output_float32_hex": "116d5a3f",
+    "provider": "system_libm"
+  },
   "nms": {
     "max_seg_num": 2000,
     "method": 2,

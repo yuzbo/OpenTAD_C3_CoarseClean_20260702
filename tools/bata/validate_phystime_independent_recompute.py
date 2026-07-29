@@ -12,6 +12,7 @@ unstable tie ordering.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import gzip
 import hashlib
 import json
@@ -41,6 +42,7 @@ METRIC_KEYS = (
 )
 TIOS = np.asarray([0.3, 0.4, 0.5, 0.6, 0.7], dtype=np.float64)
 _SORT_RUNTIME_CACHE = {}
+_EXPF_RUNTIME_CACHE = {}
 
 
 class IndependentClosureError(ValueError):
@@ -100,6 +102,63 @@ def pinned_torch_descending_order(values, contract):
     tensor = torch.from_numpy(values.copy())
     _, order = tensor.sort(descending=True)
     return order.numpy().astype(np.int64, copy=False)
+
+
+def _load_pinned_expf_runtime(contract):
+    require(isinstance(contract, dict), "float-math runtime contract is missing")
+    require(
+        contract.get("provider") == "system_libm"
+        and contract.get("function") == "expf",
+        "float-math runtime contract mismatch",
+    )
+    library = str(contract.get("library", ""))
+    probe_input_hex = str(contract.get("probe_input_float32_hex", ""))
+    probe_output_hex = str(contract.get("probe_output_float32_hex", ""))
+    cache_key = (library, probe_input_hex, probe_output_hex)
+    if cache_key in _EXPF_RUNTIME_CACHE:
+        return _EXPF_RUNTIME_CACHE[cache_key]
+    try:
+        libm = ctypes.CDLL(library)
+        expf = libm.expf
+        expf.argtypes = [ctypes.c_float]
+        expf.restype = ctypes.c_float
+    except (AttributeError, OSError) as error:
+        raise IndependentClosureError(
+            f"pinned float-math runtime is unavailable: {error}"
+        ) from error
+    try:
+        probe_input = np.frombuffer(
+            bytes.fromhex(probe_input_hex),
+            dtype="<f4",
+        )[0]
+    except (TypeError, ValueError) as error:
+        raise IndependentClosureError(
+            "float-math probe input is not valid float32 hex"
+        ) from error
+    require(
+        len(probe_output_hex) == 8,
+        "float-math probe output is not valid float32 hex",
+    )
+    observed = np.float32(expf(ctypes.c_float(float(probe_input))))
+    observed_hex = np.asarray(observed, dtype="<f4").tobytes().hex()
+    require(
+        observed_hex == probe_output_hex,
+        (
+            "float-math runtime probe mismatch: "
+            f"expected {probe_output_hex}, observed {observed_hex}"
+        ),
+    )
+    _EXPF_RUNTIME_CACHE[cache_key] = expf
+    return expf
+
+
+def pinned_expf(value, contract=None):
+    """Evaluate exp with the sealed source float32 math semantics."""
+    value = np.float32(value)
+    if contract is None:
+        return np.float32(math.exp(float(value)))
+    expf = _load_pinned_expf_runtime(contract)
+    return np.float32(expf(ctypes.c_float(float(value))))
 
 
 def sha256_file(path):
@@ -231,6 +290,7 @@ def validate_policy(policy):
         "independent Soft-NMS must retain source float32 semantics",
     )
     _load_pinned_sort_runtime(policy.get("runtime_sort"))
+    _load_pinned_expf_runtime(policy.get("float_math"))
     return policy
 
 
@@ -617,7 +677,15 @@ def _validate_detections(detections, minimum_duration):
     return valid, invalid
 
 
-def gaussian_soft_nms(segments, scores, original_indices, *, sigma, min_score):
+def gaussian_soft_nms(
+    segments,
+    scores,
+    original_indices,
+    *,
+    sigma,
+    min_score,
+    exp_contract=None,
+):
     """Independent NumPy/float32 port of the sealed C++ Gaussian Soft-NMS."""
     segments = np.asarray(segments, dtype=np.float32).copy()
     scores = np.asarray(scores, dtype=np.float32).copy()
@@ -674,7 +742,7 @@ def gaussian_soft_nms(segments, scores, original_indices, *, sigma, min_score):
                 exponent = np.float32(
                     -np.float32(overlap * overlap) / sigma
                 )
-                weight = np.float32(np.exp(exponent))
+                weight = pinned_expf(exponent, exp_contract)
                 scores[pos] = np.float32(scores[pos] * weight)
                 if scores[pos] < min_score:
                     last = n - 1
@@ -767,6 +835,7 @@ def independent_cross_window_nms(pre_cross, policy):
                 indices,
                 sigma=sigma,
                 min_score=min_score,
+                exp_contract=policy["float_math"],
             )
             class_limit = min(max_segments, out_scores.size)
             for segment, score, original_index in zip(
@@ -1612,6 +1681,7 @@ def main():
             "evaluation_dtype": "float64",
             "pre_nms_sort": policy["runtime_sort"],
             "post_nms_sort": policy["runtime_sort"],
+            "float_math": policy["float_math"],
             "soft_nms_tie_breaker": "first_maximum_strict_less_than",
             "imports_opentad_decode_nms_or_evaluator": False,
         },

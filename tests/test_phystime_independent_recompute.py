@@ -18,6 +18,13 @@ PINNED_RUNTIME_SORT = {
     "torch_git_version": "e9ebda29d87ce0916ab08c06ab26fd3766a870e5",
     "torch_version": "2.0.1",
 }
+PINNED_FLOAT_MATH = {
+    "function": "expf",
+    "library": "libm.so.6",
+    "probe_input_float32_hex": "1c8a22be",
+    "probe_output_float32_hex": "116d5a3f",
+    "provider": "system_libm",
+}
 
 
 def build_axis_capture(axis_values, count=2):
@@ -283,6 +290,7 @@ def test_float32_gaussian_soft_nms_matches_compiled_source_near_ties():
             np.arange(segments.size(0), dtype=np.int64),
             sigma=0.7,
             min_score=0.0,
+            exp_contract=PINNED_FLOAT_MATH,
         )
     )
     count = int(expected_indices.numel())
@@ -335,6 +343,7 @@ def test_cross_window_nms_is_multiclass_and_caps_global_output():
             "numeric_dtype": "float32",
         },
         "runtime_sort": PINNED_RUNTIME_SORT,
+        "float_math": PINNED_FLOAT_MATH,
     }
     pre_cross = {
         "video": [
