@@ -193,7 +193,7 @@ def bind_amp_diagnostic_config(
     }
     binding["binding_sha256"] = canonical_sha256(binding)
     if "georoute_estimator_pilot_binding" in cfg:
-        del cfg["georoute_estimator_pilot_binding"]
+        cfg.pop("georoute_estimator_pilot_binding")
     cfg.georoute_amp_diagnostic_binding = binding
     cfg.georoute_runtime_binding = binding
     return cfg

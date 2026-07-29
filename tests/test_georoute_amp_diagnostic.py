@@ -11,6 +11,7 @@ from tools.bata.georoute_amp_diagnostic import (
     AMP_DIAGNOSTIC_RECEIPT_SCHEMA,
     AMP_DIAGNOSTIC_STAGE_SCHEMA,
     AMP_DIAGNOSTIC_STUDY_ID,
+    bind_amp_diagnostic_config,
     classify_amp_diagnostic_pair,
     diagnostic_cell_relative_path,
     validate_amp_diagnostic_binding,
@@ -165,6 +166,54 @@ def test_binding_preserves_historical_train_and_development_populations(
     )
     with pytest.raises(ValueError, match="population binding changed"):
         validate_amp_diagnostic_binding(tampered)
+
+
+def test_real_mmengine_config_binding_removes_parent_with_pop(tmp_path):
+    manifest = tmp_path / "manifest.json"
+    annotation = tmp_path / "annotation.json"
+    class_map = tmp_path / "class_map.json"
+    pretrained = tmp_path / "pretrained.pth"
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    manifest.write_text(
+        json.dumps({"splits": {"fit": ["fit"], "gate": ["gate"]}}),
+        encoding="utf-8",
+    )
+    annotation.write_text(
+        json.dumps(
+            {
+                "database": {
+                    "fit": {"subset": "training"},
+                    "gate": {"subset": "training"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    class_map.write_text("{}", encoding="utf-8")
+    pretrained.write_bytes(b"test")
+    source_config = (
+        Path(__file__).resolve().parents[1]
+        / "configs"
+        / "adatad"
+        / "thumos"
+        / "georoute_adatad_development_base.py"
+    )
+
+    cfg = bind_amp_diagnostic_config(
+        source_config_path=source_config,
+        arm="residual_pl_rep_off",
+        seed=PILOT_SEED,
+        work_dir=tmp_path / "cell",
+        manifest_path=manifest,
+        development_annotation_path=annotation,
+        class_map_path=class_map,
+        development_video_root=videos,
+        pretrained_checkpoint_path=pretrained,
+        runtime_commit="a" * 40,
+    )
+    assert "georoute_estimator_pilot_binding" not in cfg
+    assert cfg.georoute_amp_diagnostic_binding.arm == "residual_pl_rep_off"
 
 
 def test_receipt_is_self_bound_to_arm_commit_and_slurm_job(tmp_path):
