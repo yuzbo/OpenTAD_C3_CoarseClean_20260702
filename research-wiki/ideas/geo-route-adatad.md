@@ -359,6 +359,20 @@ scientific PL hypothesis itself. GeoRoute/CER remains without empirical
 support; no further repair is designed until a new real-batch cause analysis
 and experiment decision are recorded.
 
+That cause analysis is now `designed` as
+`exp:georoute-real-batch-amp-diagnostic-v1`. The chosen route observes the
+unchanged production train engine for paired residual-PL/ST real batches,
+fingerprints inputs/RNG, and localizes scaled, unscaled and clipped gradients.
+It may authorize only a minimal cause-matched numerical repair followed by a
+fresh real-data stability gate. It does not add CER/Geometry components or
+produce accuracy evidence.
+
+The publication path is explicitly separate: the one-seed 20-epoch pilot is
+exploratory. A paper result must first reproduce the official AdaTAD recipe and
+compare against a matched native-source dense control under identical training,
+EMA, evaluator/NMS and full decode-to-NMS cost, followed by disjoint multi-seed
+confirmation and one sealed official-test opening.
+
 ## Connections
 
 Relations are maintained only in `research-wiki/graph/edges.jsonl`.

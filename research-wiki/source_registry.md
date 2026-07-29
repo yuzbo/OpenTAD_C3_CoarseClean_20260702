@@ -3,6 +3,16 @@ type: source_registry
 updated: 2026-07-29
 ---
 
+- GeoRoute real-batch AMP diagnostic design, 2026-07-29. Project-authored
+  design
+  `docs/superpowers/specs/2026-07-29-georoute-real-batch-amp-diagnostic-design.md`
+  binds the immutable `c822add3` failure, rejects any claim of exact historical
+  batch replay, and freezes a matched residual-PL/ST production-path diagnosis
+  with no metrics/checkpoints/test. It also records the paper-comparability
+  gate: exact official AdaTAD reproduction, matched native-source dense
+  control, matched optimization/evaluator/NMS, multi-seed confirmation and
+  full decode-to-NMS cost. This is design evidence only.
+
 - GeoRoute estimator/representation pilot independent-agent audit,
   2026-07-29. A fresh default agent with no inherited conversation history
   directly read the raw CER-TAD Pro review, its project absorption, frozen

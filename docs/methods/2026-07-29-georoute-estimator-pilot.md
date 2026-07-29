@@ -4,7 +4,7 @@ Date: 2026-07-29
 
 Study ID: `georoute_estimator_representation_pilot_v1`
 
-Status: `experiment_running_with_residual_pl_amp_hard_fail_pending_closeout`
+Status: `sealed_incomplete_no_performance_inference`
 
 Authorization boundary: one development-only exploratory seed. This pilot has
 no automatic winner, selector promotion, P2/P3, official test, confirmatory
@@ -220,3 +220,26 @@ The finalizer emits only:
 Only after a promising contrast is observed may pilot variance inform a new,
 disjoint multi-seed confirmatory protocol. Geometry Zoom remains conditional
 because this pilot never resamples a denser continuous source-coordinate crop.
+
+## Terminal c822add3 outcome and next action
+
+Exact source `c822add335c38a9f6c63e609237c4bfa9b9f468d` passed schema-v5
+synthetic full-graph P0, but residual-PL stage `1204309` failed the first real
+batch after all eight AMP retries. The five other stages completed only for
+terminal provenance. Closeout `1204314` sealed
+`PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`, false all-six and empty contrasts.
+
+The cumulative 11 skipped AMP attempts in each ROI-PL arm are numerical-stress
+telemetry, not formal hard failures: the implemented threshold is eight
+exhausted retries within one batch. Residual-PL is the sole formal failed arm.
+
+The next approved study is the no-metric matched PL/ST real-batch diagnostic in
+`docs/superpowers/specs/2026-07-29-georoute-real-batch-amp-diagnostic-design.md`.
+The historical job lacks batch indices and complete RNG state, so it cannot be
+claimed as an exact replay.
+
+This pilot is one seed and 20 development epochs and is not paper-comparable.
+Any future paper experiment requires an exact official AdaTAD reproduction and
+a matched native-source dense control with matched optimizer schedule,
+effective batch/updates, AMP, EMA, evaluator/NMS, disjoint multi-seed
+confirmation, sealed official test, and complete decode-to-NMS cost.

@@ -227,6 +227,13 @@ does not establish that PL is scientifically inferior to ST, nor does it
 support another estimator repair without a new cause analysis and experiment
 decision.
 
+That next cause-analysis study is now designed as
+`exp:georoute-real-batch-amp-diagnostic-v1`. It instruments the production
+training path and compares matched residual-PL/ST real batches. It is
+diagnostic-only and cannot rehabilitate this namespace. Because Job `1204309`
+did not record exact batch indices or RNG state, the new study is not an exact
+historical replay.
+
 ## Claim boundary
 
 For the sealed `cbe0a082` namespace, finalizer `1203720` emitted
@@ -238,6 +245,12 @@ inference. A future fresh namespace may emit descriptive single-seed contrasts
 only if all six arms pass. No finalizer can emit a winner, reuse the historical
 selector, promote P2/P3, open official test, or authorize an efficiency,
 Geometry Zoom, or paper claim.
+
+The pilot's 20 epochs and one development seed are not officially comparable
+paper evidence even if a later replacement completes. Confirmatory paper
+eligibility requires a separately frozen official AdaTAD reproduction and
+matched native-source dense control with matched optimization,
+evaluator/post-processing and full-stack cost.
 
 ## Provenance
 

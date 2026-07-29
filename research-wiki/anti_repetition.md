@@ -133,6 +133,22 @@ updated: 2026-07-29
    has emitted only `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. Make no further
    numerical repair or replacement run without a new real-batch cause analysis
    and explicit experiment decision.
+0. Do not claim an exact replay of residual-PL Job `1204309`. The failed run
+   did not persist sample indices, full input tensors, sampler state or complete
+   pre-forward RNG state. A new run can be a deterministic same-config,
+   same-data-path reproduction only, and must fingerprint its own input and RNG
+   state before interpretation.
+0. A diagnosis-only retry below loss scale `256` is not a training protocol or
+   performance result. It may localize whether finite unscaled gradients
+   overflow only when scaled, but its retry limit/floor cannot silently enter a
+   scientific run. Any resulting repair requires a fresh production-path
+   real-data stability gate.
+0. Do not put the 20-epoch, seed-3407 estimator pilot or its model-only cost in
+   a paper table. Paper eligibility requires an exact official AdaTAD
+   reproduction plus matched native-source dense control; matched
+   split/windows/padding, effective batch/updates/schedule/AMP/EMA,
+   evaluator/NMS; disjoint multi-seed confirmation; sealed official test; and
+   selector-inclusive decode-to-NMS latency, memory and energy.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject

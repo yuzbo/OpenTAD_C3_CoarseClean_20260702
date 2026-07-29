@@ -1675,3 +1675,18 @@ append_only: true
   `c95c1694dccbda2687b1b9e6e07bb9016ebe80181e2288d172874afa791d8f1c`.
   No five-arm metric, winner, P2/P3, official test, efficiency, Geometry Zoom,
   CER, or paper claim is inferred.
+
+- 2026-07-29 23:45 CST: approved the next real-batch-first diagnosis rather
+  than another blind six-arm rerun. The design freezes paired residual-PL/ST
+  execution through the production train path, input/RNG fingerprints,
+  loss-component telemetry and scaled/unscaled/clipped gradient localization.
+  Job `1204309` did not preserve enough state for bitwise replay, so the new
+  study is explicitly a deterministic same-config reproduction. Diagnostic
+  retries may probe below scale `256`, but produce no checkpoint, metric,
+  prediction, evaluator or official-test evidence and cannot become a training
+  policy without a separately authorized repair and real-data stability gate.
+  The publication boundary is also frozen: the 20-epoch single-seed pilot is
+  not paper-comparable; a future claim requires an exact official AdaTAD
+  reproduction plus matched native-source dense control, matched
+  optimization/EMA/evaluator/NMS, disjoint multi-seed confirmation, sealed
+  official test, and selector-inclusive decode-to-NMS latency/memory/energy.

@@ -193,6 +193,18 @@ max_chars: 8000
   stability; it does not yield a PL/ST, representation, efficiency, or Geometry
   Zoom verdict. No rerun, partial contrast, selector, P2/P3, official test, or
   claim is authorized.
+  The approved next step is
+  `exp:georoute-real-batch-amp-diagnostic-v1`: matched residual-PL/ST on the
+  production data/training path, with input/RNG hashes and scaled/unscaled/
+  clipped gradient localization. The old job lacks sample indices and RNG
+  state, so this is not described as bitwise replay. It emits no metrics,
+  checkpoint, prediction or test evidence. Only a localized cause can authorize
+  a minimal repair and a fresh real-data stability gate.
+  The single-seed 20-epoch pilot is not an official paper result. A future
+  confirmatory study must include both an exact official AdaTAD reproduction
+  and a matched native-source dense control, then match updates, effective batch
+  size, EMA, evaluator/NMS, sealed-test policy and decode-to-NMS
+  latency/memory/energy across disjoint seeds.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be
@@ -397,8 +409,10 @@ max_chars: 8000
 
 ## Non-Negotiable Evidence Rules
 
-1. Match commit, data, pretrained initialization, updates, seeds, token budget
-   and detector/head before comparing selection methods.
+1. Match commit, data, pretrained initialization, updates, effective batch
+   size, AMP, EMA, seeds, token budget, detector/head, evaluator and effective
+   NMS before comparing selection methods. Pair an exact official reproduction
+   with a matched native-source dense control whenever preprocessing changes.
 2. Report high-tIoU, short-action/boundary diagnostics and measured full-stack
    p50/p95 latency, memory and energy. FLOPs or random-init profiling alone
    cannot establish efficiency.
