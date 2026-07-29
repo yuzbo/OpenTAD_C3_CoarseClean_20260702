@@ -175,7 +175,10 @@ max_chars: 8000
   the registered `>10` recoverable-skip limit: its eleventh AMP skip occurred
   at `2026-07-29 22:47:59 CST` (batch 111, scale `64`). The process remains
   running with finite logged loss/cost and no Traceback/OOM, but the protocol
-  classifies the arm as another hard failure. The other stages continue only
+  classifies the arm as another hard failure. ROI-PL representation-off Job
+  `1204312` also crossed the same boundary when its eleventh skip occurred at
+  `2026-07-29 23:02:08 CST` (batch 63, scale `64`), likewise with finite logged
+  loss/cost and no Traceback/OOM. The other stages continue only
   to reach terminal provenance; closeout `1204314` must
   seal `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`. This shows that the current
   synthetic full-graph P0 is not sufficient evidence of real-batch AMP

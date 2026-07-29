@@ -238,6 +238,11 @@ updated: 2026-07-29
   time its logged loss/cost was finite and it had no Traceback/OOM; the source
   is the mutable stage stdout
   `slurm/grep_roi_on.1204313.out`, so no premature file hash is registered.
+  ROI-PL representation-off Job `1204312` then logged its eleventh AMP skip at
+  `2026-07-29 23:02:08 CST` (batch 63, retry 1/8, scale `64`), also crossing
+  the `>10` threshold while process-active with finite logged loss/cost and no
+  Traceback/OOM. Its mutable source is
+  `slurm/grep_roi_off.1204312.out`; no premature hash is registered.
   This namespace is incomplete execution provenance, not a contrast or
   performance result.
 

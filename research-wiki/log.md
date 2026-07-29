@@ -1642,3 +1642,12 @@ append_only: true
   `1204312` remained at exactly ten skips at this audit point. Closeout
   `1204314` remains required to seal
   `PILOT_INCOMPLETE_NO_PERFORMANCE_INFERENCE`.
+
+- 2026-07-29 23:02 CST: ROI-PL representation-off Job `1204312` logged its
+  eleventh AMP gradient skip at batch 63, retry 1/8, scale `64`, crossing the
+  same registered hard-fail threshold as `1204313`. It remained `RUNNING` with
+  finite logged loss/cost and no Traceback/OOM. Both ROI arms are now
+  protocol-hard-failed and cannot supply their preregistered representation
+  contrast, regardless of later process completion or checkpoint publication.
+  They continue only for terminal provenance; no cancellation, partial
+  inference, selector, test, or claim is opened.

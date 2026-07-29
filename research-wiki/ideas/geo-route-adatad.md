@@ -349,6 +349,8 @@ eight AMP retries on real batch 0 and hard-failed without a checkpoint or
 metric. ROI-PL representation-on `1204313` subsequently crossed the registered
 `>10` AMP-skip hard-fail threshold while its process remained active; finite
 logged loss/cost and absence of Traceback/OOM do not restore protocol validity.
+ROI-PL representation-off `1204312` later crossed the same threshold, leaving
+neither ROI arm eligible for a descriptive representation contrast.
 The remaining stages continue only for terminal provenance and
 closeout `1204314` must seal no performance inference. This falsifies the
 sufficiency of the current synthetic full-graph P0 as a real-batch stability

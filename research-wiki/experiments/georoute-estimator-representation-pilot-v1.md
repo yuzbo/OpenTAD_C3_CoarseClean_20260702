@@ -207,8 +207,11 @@ time, Slurm still reported `RUNNING`, the logged loss/cost remained finite, and
 there was no Traceback or OOM. Nevertheless, `>10` skips is a protocol hard
 failure; later process completion or a final checkpoint cannot make this arm or
 the namespace performance evidence. ROI-PL representation-off `1204312`
-remained at exactly ten skips at the same audit point and was not independently
-reclassified.
+subsequently logged its eleventh skip at `2026-07-29 23:02:08 CST`, batch 63,
+retry 1/8, scale `64`, and therefore crossed the same protocol hard-fail
+boundary. It also remained process-active with finite logged loss/cost and no
+Traceback/OOM at observation time. Neither ROI arm can supply a representation
+contrast.
 
 The evidence narrows the execution diagnosis: schema-v5 synthetic full-graph
 AMP is mechanically valid but insufficient as a real-batch stability gate. It

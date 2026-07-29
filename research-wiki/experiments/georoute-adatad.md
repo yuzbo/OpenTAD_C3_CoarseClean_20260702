@@ -730,7 +730,10 @@ are
 ROI-PL representation-on Job `1204313` later logged an eleventh AMP skip
 (`2026-07-29 22:47:59 CST`, batch 111, scale `64`), crossing the registered
 `>10` protocol hard-fail threshold despite finite logged loss/cost and no
-Traceback/OOM. The other stages continue only for terminal provenance; closeout
+Traceback/OOM. ROI-PL representation-off `1204312` crossed the same threshold
+with its eleventh skip at `2026-07-29 23:02:08 CST`, batch 63, scale `64`,
+again without non-finite loss/cost, Traceback, or OOM. The other stages continue
+only for terminal provenance; closeout
 `1204314` must seal the namespace incomplete with no performance inference.
 Thus the current synthetic full-graph P0 is not a sufficient real-batch AMP
 stability certificate. This is not a PL/ST scientific verdict and opens no

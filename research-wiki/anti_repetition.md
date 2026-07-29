@@ -98,6 +98,11 @@ updated: 2026-07-29
    remained finite and no Traceback/OOM occurred, but neither a terminal
    `COMPLETED` state nor a future final checkpoint can convert this protocol
    hard failure into performance evidence.
+0. The same rule applies to ROI-PL representation-off Job `1204312`. Its
+   eleventh AMP skip occurred at `2026-07-29 23:02:08 CST` (batch 63,
+   retry 1/8, scale `64`), so it too crossed the registered hard-fail threshold
+   despite remaining process-active with finite logged loss/cost and no
+   Traceback/OOM. Do not contrast the two ROI arms or salvage either output.
 0. Schema-v4 P0 from source `30f9ca6f` did not test full-graph AMP. Its model
    forward/backward was FP32, and the `T384/N220/K64` AMP KAT used an isolated
    logits leaf. Job `1204023` then exhausted all eight real-batch AMP retries at
