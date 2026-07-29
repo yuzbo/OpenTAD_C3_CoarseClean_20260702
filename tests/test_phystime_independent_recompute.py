@@ -12,6 +12,25 @@ independent = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(independent)
 
 
+def build_axis_capture(axis_values, count=2):
+    axis_values = np.asarray([axis_values], dtype=np.float32)
+    return {
+        "base_points": np.asarray(
+            [[0.0, 0.0, 10.0, 1.0], [1.0, 0.0, 10.0, 1.0]],
+            dtype=np.float32,
+        ),
+        "reg_distances": np.asarray(
+            [[[1.0, 1.0], [1.0, 1.0]]],
+            dtype=np.float32,
+        ),
+        "base_mask": np.asarray([[True, True]], dtype=np.bool_),
+        "native_valid_count": np.asarray([count], dtype=np.int32),
+        "domain_sec": np.asarray([[-0.5, 1.5]], dtype=np.float64),
+        "uniform_axis_sec": axis_values.copy(),
+        "physical_axis_sec": axis_values.copy(),
+    }
+
+
 def test_module_does_not_import_production_decode_nms_or_evaluator():
     source = MODULE_PATH.read_text(encoding="utf-8")
     forbidden = (
@@ -61,6 +80,58 @@ def test_dense_decode_uses_same_mask_but_changes_physical_geometry():
     assert np.array_equal(uniform_mask, physical_mask)
     assert not np.allclose(uniform, physical)
     assert physical[0, 1, 0] > uniform[0, 1, 0]
+
+
+def test_dense_decode_accepts_contractual_nan_axis_padding():
+    capture = build_axis_capture([0.0, 1.0, np.nan])
+    dense, mask, points = independent.recompute_dense_decode(
+        capture,
+        "physical_time_seconds",
+    )
+    assert np.isfinite(dense).all()
+    assert np.isfinite(points).all()
+    assert mask.tolist() == [[True, True]]
+
+
+@pytest.mark.parametrize(
+    "axis_values",
+    (
+        [0.0, np.nan, np.nan],
+        [0.0, np.inf, np.nan],
+    ),
+)
+def test_dense_decode_rejects_non_finite_axis_valid_prefix(axis_values):
+    capture = build_axis_capture(axis_values)
+    with pytest.raises(
+        independent.IndependentClosureError,
+        match="axis valid prefix contains non-finite values",
+    ):
+        independent.recompute_dense_decode(capture, "physical_time_seconds")
+
+
+def test_dense_decode_rejects_finite_axis_padding():
+    capture = build_axis_capture([0.0, 1.0, 2.0])
+    with pytest.raises(
+        independent.IndependentClosureError,
+        match="axis padding must contain only NaN",
+    ):
+        independent.recompute_dense_decode(capture, "physical_time_seconds")
+
+
+@pytest.mark.parametrize(
+    "axis_values",
+    (
+        [1.0, 1.0, np.nan],
+        [1.0, 0.0, np.nan],
+    ),
+)
+def test_dense_decode_rejects_non_increasing_axis_valid_prefix(axis_values):
+    capture = build_axis_capture(axis_values)
+    with pytest.raises(
+        independent.IndependentClosureError,
+        match="axis valid prefix must be strictly increasing",
+    ):
+        independent.recompute_dense_decode(capture, "physical_time_seconds")
 
 
 def test_stable_gaussian_soft_nms_preserves_equal_score_input_order():

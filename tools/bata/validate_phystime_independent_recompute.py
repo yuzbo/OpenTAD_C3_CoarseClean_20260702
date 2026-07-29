@@ -269,7 +269,6 @@ def recompute_dense_decode(capture_arrays, axis_name):
     require(np.isfinite(base).all(), "base points contain non-finite values")
     require(np.isfinite(reg).all(), "regression distances contain non-finite values")
     require(np.isfinite(domains).all(), "decode domains contain non-finite values")
-    require(np.isfinite(axis_values).all(), "axis values contain non-finite values")
     require(np.all(reg >= 0.0), "regression distances must be non-negative")
     dense = np.empty(reg.shape[:2] + (2,), dtype=np.float64)
     points_all = np.empty(reg.shape[:2] + (4,), dtype=np.float64)
@@ -280,6 +279,16 @@ def recompute_dense_decode(capture_arrays, axis_name):
         count = int(counts[window_idx])
         require(0 < count <= axis_values.shape[1], "invalid native count")
         positions = axis_values[window_idx, :count]
+        padding = axis_values[window_idx, count:]
+        require(
+            np.isfinite(positions).all(),
+            "axis valid prefix contains non-finite values",
+        )
+        require(
+            positions.size == 1 or np.all(np.diff(positions) > 0.0),
+            "axis valid prefix must be strictly increasing",
+        )
+        require(np.isnan(padding).all(), "axis padding must contain only NaN")
         start, end = domains[window_idx]
         require(start < end, "decode domain must be strictly increasing")
         mapped_center = map_rank_to_seconds(center, positions, start, end)
