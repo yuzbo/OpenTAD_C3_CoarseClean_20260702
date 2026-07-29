@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-07-29
+updated: 2026-07-30
 ---
 
 - GeoRoute real-batch AMP diagnostic design, 2026-07-29. Project-authored
@@ -309,6 +309,33 @@ updated: 2026-07-29
   paper evidence. Candidate source
   `861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` receipt-binds the historical
   deterministic warn-only seed policy; local combined checks pass `71/71`.
+
+- GeoRoute completed matched real-batch AMP diagnosis, 2026-07-30. Exact source
+  `861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58`; root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_real_batch_amp_diag_861e9b1e_20260730_0107`;
+  PL/ST/finalizer Jobs `1204944/1204945/1204946`. PL failed nine scaled attempts
+  from `65536` through `256` only in `scout_score_function` and first succeeded
+  at `128`; ST had zero failures and succeeded at `65536` on matched data and
+  RNG hashes. Finalization internal/file SHA-256 values are
+  `3960f747f0c5de9ba9e7de3046812f01f3474c67b63661c8382e78a4647b3c4c`
+  /
+  `d725e589e315434eca3fd0e0245cffa6e01e1b3490d10b6cae27ec361620a0d0`.
+  Decision `ROOT_CAUSE_LOCALIZED_REPAIR_AUTHORIZED` is numerical-only.
+
+- GeoRoute temporal-mean repair and stability-v1 closure, 2026-07-30. Source
+  `768e1a30d75b61d32f5ccc4b6113537cbe52204a` implemented the explicit
+  per-tubelet temporal mean; exact execution source
+  `86ff1dde6ddb058ca9250f968972c255f19dab92` added fail-closed diagnostic/input
+  binding and passed the clean remote GeoRoute suite `124/124`. Stability root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_real_data_amp_stability_86ff1dde_20260730_0132`;
+  Jobs `1205033/1205034/1205035`. PL failed the zero-skip rule on batch 3 in
+  `scout_score_function`; ST failed it on batch 21 in `detector`. Finalization
+  internal/file SHA-256 values are
+  `aca065dc4d3dd32325909105ac461a9c32783a133b643bedfcfa8c48b0be1871`
+  /
+  `d62a017c656975495bb55e7059bd77b080c6f83d49a45a14156620566ea2100e`.
+  All metric/checkpoint/prediction/test/claim guards are false. This is a sealed
+  numerical HOLD, not an official AdaTAD or performance result.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD

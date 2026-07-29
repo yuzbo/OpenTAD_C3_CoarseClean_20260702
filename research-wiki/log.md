@@ -1750,3 +1750,35 @@ append_only: true
   verifies the historical warn-only seed policy; local combined checks pass
   `71/71`. No metric, checkpoint, prediction, evaluator, official test, PL/ST
   numerical conclusion, or paper claim exists.
+
+- 2026-07-30 01:07 CST: exact source
+  `861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` completed the matched PL/ST
+  real-batch diagnosis under the historical warn-only seed policy. Jobs
+  `1204944/1204945/1204946` completed `0:0`. PL failed nine scaled attempts
+  (`65536` through `256`) only in `scout_score_function` and first succeeded at
+  `128`; ST had zero failures and succeeded at `65536`. Data/CPU/CUDA RNG hashes
+  matched. Finalizer emitted `ROOT_CAUSE_LOCALIZED_REPAIR_AUTHORIZED`
+  (internal/file SHA-256
+  `3960f747f0c5de9ba9e7de3046812f01f3474c67b63661c8382e78a4647b3c4c`
+  /
+  `d725e589e315434eca3fd0e0245cffa6e01e1b3490d10b6cae27ec361620a0d0`).
+  No performance, checkpoint, prediction, evaluator or official-test artifact
+  was created.
+
+- 2026-07-30 01:32 CST: per-tubelet temporal-mean repair source `768e1a30` and
+  fail-closed execution source
+  `86ff1dde6ddb058ca9250f968972c255f19dab92` passed clean remote GeoRoute checks
+  `124/124`, then launched strict stability-v1 Jobs
+  `1205033/1205034/1205035`. PL passed two batches at scale `65536` before
+  batch 3 produced two nonfinite `residual_head.weight` gradients. ST passed
+  twenty batches before batch 21 produced detector-head nonfinite gradients.
+  Both violated the preregistered 32-batch zero-skip contract; finalizer sealed
+  `STABILITY_GATE_INCOMPLETE_HOLD` (internal/file SHA-256
+  `aca065dc4d3dd32325909105ac461a9c32783a133b643bedfcfa8c48b0be1871`
+  /
+  `d62a017c656975495bb55e7059bd77b080c6f83d49a45a14156620566ea2100e`),
+  with all performance/test/claim guards false. Exact official AdaTAD uses
+  dynamic GradScaler and does not require zero skip, so v1 is a numerical HOLD,
+  not an official-comparability or estimator verdict. A versioned,
+  official-semantics, no-metric gate on an independent data order is required
+  before freezing any paper experiment.

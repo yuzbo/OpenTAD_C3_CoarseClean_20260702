@@ -3,12 +3,12 @@ type: experiment
 node_id: exp:georoute-real-batch-amp-diagnostic-v1
 title: "GeoRoute real-batch AMP diagnostic v1"
 idea: idea:geo-route-adatad
-stage: implemented
-status: third_namespace_sealed_common_determinism_failure_repair_pending_remote_linux
-verdict: pending
+stage: tested
+status: matched_diagnosis_complete_localized_repair_authorized
+verdict: root_cause_localized_repair_authorized
 confidence: high
 commit: 861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58
-jobs: [1204847, 1204848, 1204849, 1204864, 1204865, 1204866, 1204908, 1204909, 1204910]
+jobs: [1204847, 1204848, 1204849, 1204864, 1204865, 1204866, 1204908, 1204909, 1204910, 1204944, 1204945, 1204946]
 updated: 2026-07-30
 ---
 
@@ -132,8 +132,34 @@ Exact candidate `861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` binds
 uses that receipt field in `tools/train.py`, and fail-closes if the runtime
 seed policy differs. This matches the historical pilot and changes no data,
 model, estimator, seed, K, optimizer, or frozen classifier. Local combined
-checks pass `71/71`; clean proxy sync, complete remote replay and another new
-namespace are required.
+checks pass `71/71`.
+
+The clean matched namespace
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_real_batch_amp_diag_861e9b1e_20260730_0107`
+ran PL/ST/finalizer Jobs `1204944/1204945/1204946`, all `COMPLETED 0:0`.
+PL recorded nine failed scaled attempts from `65536` through `256`, always and
+only in `scout_score_function`, then its first successful update at `128`.
+Matched ST recorded zero failures and succeeded at `65536`. The two arms had
+identical data, CPU RNG and CUDA RNG SHA-256 values
+`1248e7d69aebe0ceed796b00d2c5564eef5c07eba6187147e69dbc1bf7766ee5`,
+`a1426d06adb3fc7defd9067b40b71fb7005b3ba3693e71e9f719caffc5cf10c0`,
+and
+`a8d5ab7f2d377467715101488b9d063ccf88eb2eb1cbd9179935e78c7cd3ec7d`.
+Finalizer `1204946` emitted `COMPLETE_NUMERICAL_DIAGNOSTIC_ONLY /
+ROOT_CAUSE_LOCALIZED_REPAIR_AUTHORIZED`; internal/file SHA-256 values are
+`3960f747f0c5de9ba9e7de3046812f01f3474c67b63661c8382e78a4647b3c4c`
+/
+`d725e589e315434eca3fd0e0245cffa6e01e1b3490d10b6cae27ec361620a0d0`.
+There were no checkpoints, predictions, evaluators, metrics or official-test
+artifacts.
+
+This authorized only a cause-matched numerical repair. Source `768e1a30`
+introduced an explicit, backward-compatible temporal reduction and selected
+`mean` for the development candidate; source `86ff1dde` additionally bound
+every stability input to this exact diagnosis. It did not authorize a
+performance run. Stability-v1 subsequently failed its deliberately stricter
+zero-skip-at-65536 rule in both arms and is recorded separately as
+`exp:georoute-real-data-amp-stability-v1`.
 
 ## Paper boundary
 

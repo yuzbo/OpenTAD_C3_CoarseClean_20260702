@@ -3,9 +3,10 @@ type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
 stage: tested
-status: free_v1_closed_cer_discussed_pilot_mechanical_repair_pending_remote_p0
+status: free_v1_closed_cer_discussed_numerical_repair_stability_v1_hold
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
+updated: 2026-07-30
 ---
 
 # NativeTokenSelect-first Routing for Offline TAD
@@ -380,8 +381,18 @@ Both nevertheless stopped before backward because the diagnostic accidentally
 used strict deterministic error mode while the failed pilot used deterministic
 warn-only mode. Finalizer `1204910` sealed
 `DIAGNOSTIC_INCOMPLETE_NO_REPAIR`, so no model hypothesis was updated. Candidate
-`861e9b1e` binds the historical warn-only seed policy without changing the
-model or scientific intervention; it still requires clean remote execution.
+`861e9b1e` bound the historical warn-only seed policy without changing the
+model or scientific intervention. Its matched PL/ST run localized the original
+failure to PL score-function gradient scale: PL required scale `128`, while ST
+succeeded at `65536` on the identical batch/RNG state. Per-tubelet temporal
+mean was therefore implemented as the minimal model-component normalization.
+The subsequent 32-batch zero-skip stability-v1 did not pass: PL backed off at
+batch 3 in the score-function head and ST backed off at batch 21 in the detector
+head. Because exact official AdaTAD uses dynamic loss scaling rather than a
+zero-skip-at-65536 rule, this is a numerical gate HOLD, not a scientific
+estimator or performance verdict. The next admissible step is a separately
+versioned, no-metric stability gate matching official AMP semantics on an
+independent data order.
 
 The publication path is explicitly separate: the one-seed 20-epoch pilot is
 exploratory. A paper result must first reproduce the official AdaTAD recipe and

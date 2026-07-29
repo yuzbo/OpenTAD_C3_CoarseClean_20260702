@@ -9,7 +9,7 @@ verdict: no_valid_contrast
 confidence: high
 commit: c822add335c38a9f6c63e609237c4bfa9b9f468d
 jobs: 1204301-1204314
-updated: 2026-07-29
+updated: 2026-07-30
 ---
 
 # GeoRoute estimator/representation exploratory pilot v1
@@ -245,9 +245,13 @@ corrected the population receipt and reached a matched real batch, but both PL
 and ST then stopped before backward on a diagnostic-only strict-determinism
 error. Their data/CPU/CUDA RNG hashes match and forward losses are finite, but
 there are zero optimizer attempts, so finalizer `1204910` correctly emitted
-`DIAGNOSTIC_INCOMPLETE_NO_REPAIR`. Candidate `861e9b1e` restores the historical
-pilot's deterministic warn-only seed policy and still supplies no numerical or
-performance conclusion.
+`DIAGNOSTIC_INCOMPLETE_NO_REPAIR`. Source `861e9b1e` restored the historical
+pilot's deterministic warn-only seed policy and completed a separate matched
+diagnosis: only PL's score-function group overflowed through scale `256`, while
+ST succeeded at `65536`, authorizing per-tubelet temporal normalization only.
+The repaired source then failed a separate zero-skip stability-v1 in both PL
+and ST at different batches/groups. Neither diagnostic changes or rehabilitates
+this sealed pilot, and neither supplies a performance conclusion.
 
 ## Claim boundary
 

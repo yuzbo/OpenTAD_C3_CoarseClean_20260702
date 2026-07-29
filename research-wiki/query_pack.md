@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-29
+updated: 2026-07-30
 max_chars: 8000
 ---
 
@@ -221,10 +221,27 @@ max_chars: 8000
   backward because the diagnostic enabled strict deterministic error mode,
   unlike the historical pilot's warn-only policy. Finalizer `1204910` sealed
   `DIAGNOSTIC_INCOMPLETE_NO_REPAIR` (self-hash `7755f777...`). Exact candidate
-  `861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` restores and receipt-binds the
-  historical deterministic warn-only seed policy. Local combined checks pass
-  `71/71`; remote replay and a new namespace are pending. There is still no
-  PL/ST numerical conclusion.
+  `861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` restored and receipt-bound the
+  historical deterministic warn-only seed policy. Its clean matched run
+  `1204944/1204945/1204946` sealed
+  `ROOT_CAUSE_LOCALIZED_REPAIR_AUTHORIZED`: PL failed nine scaled attempts from
+  `65536` through `256` only in `scout_score_function` and first succeeded at
+  `128`, whereas matched ST had zero failures and succeeded at `65536`; the
+  batch/input/CPU/CUDA RNG hashes matched and no performance artifact existed.
+  Source `768e1a30` then implemented an explicit per-tubelet temporal mean for
+  the PL score-function loss, and exact source
+  `86ff1dde6ddb058ca9250f968972c255f19dab92` fail-closed the real-data gate's
+  parent/input bindings; clean remote GeoRoute checks passed `124/124`.
+  Stability-v1 Jobs `1205033/1205034/1205035` are now sealed HOLD. Repaired PL
+  passed its first two batches at `65536` but had two nonfinite
+  `residual_head.weight` gradients on batch 3; ST passed twenty batches at
+  `65536` but had detector-head nonfinite gradients on batch 21. Both therefore
+  violated the preregistered 32-batch zero-skip rule. This is a failure of that
+  numerical gate, not a performance or PL/ST verdict. The exact official AdaTAD
+  path uses dynamic GradScaler and does not require zero skip, so stability-v1
+  cannot be called an official-comparability criterion; an official-semantics,
+  no-metric replacement gate must be separately frozen on an independent data
+  order before any performance run.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch

@@ -3,9 +3,9 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: implemented
-status: dkm_tested_go_pilot_design_only_pilot_implemented_pending_remote_p0
-outcome: free_v1_negative_cer_not_ready_six_arm_exploratory_pilot_next
-updated: 2026-07-29
+status: numerical_repair_implemented_stability_v1_hold_official_protocol_blocked
+outcome: no_performance_result_official_semantics_stability_gate_next
+updated: 2026-07-30
 ---
 
 # GeoRoute-AdaTAD native spatial routing
@@ -788,9 +788,25 @@ backward because strict deterministic error mode rejected
 /
 `1aea037cda2504f3a4a3a7c57d2628c7242829189722a8c8d1e78a0af838c19f`).
 The failed parent pilot used the ordinary non-formal train path and therefore
-deterministic warn-only mode. Candidate source
-`861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` explicitly binds that same seed
-policy. No PL/ST, accuracy, efficiency, or paper conclusion exists yet.
+deterministic warn-only mode. Source
+`861e9b1edba5baf1b96fe0d4ed1c3c08d1e2da58` bound that same seed policy and
+completed the matched diagnosis: PL failed nine loss scales through `256` only
+in `scout_score_function` and first succeeded at `128`, while ST succeeded at
+`65536`. Finalizer `1204946` authorized only a localized numerical repair.
+
+Source `768e1a30` implemented a per-tubelet temporal mean for the PL
+score-function loss; source `86ff1dde6ddb058ca9250f968972c255f19dab92`
+fail-closed all diagnostic-parent and input bindings and passed clean remote
+GeoRoute checks `124/124`. The corresponding stability-v1 Jobs
+`1205033/1205034/1205035` were sealed
+`INCOMPLETE_REAL_DATA_AMP_STABILITY_GATE / STABILITY_GATE_INCOMPLETE_HOLD`.
+PL passed two batches at scale `65536` before two nonfinite
+`residual_head.weight` gradients; ST passed twenty batches before detector-head
+nonfinite gradients at the same scale. Both forwards remained finite and no
+performance artifact was created. Because this gate required zero skips whereas
+the exact official AdaTAD path uses dynamic GradScaler, it is not an official
+comparability predicate and cannot freeze a paper protocol. No PL/ST, accuracy,
+efficiency, or paper conclusion exists yet.
 
 ## Frozen decision logic
 

@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-07-29
+updated: 2026-07-30
 ---
 
 ## GeoRoute deployment anti-repetition
@@ -163,6 +163,16 @@ updated: 2026-07-29
    evaluator/NMS and final-only checkpointing are not the official recipe.
    Paper comparison requires a separately frozen official reproduction and
    same-recipe native-source dense/GeoRoute arms.
+0. Do not mistake “zero AMP skip at initial scale 65536” for an official
+   AdaTAD requirement. The official config uses the default dynamic
+   `GradScaler`; with no formal binding, the legacy train path permits a skipped
+   update and advances normally after the scaler backs off. Stability-v1
+   `1205033/1205034` deliberately imposed a stricter 32-batch zero-skip rule and
+   rejected both PL (batch 3, scout score-function) and ST (batch 21, detector).
+   That HOLD cannot reject either estimator or authorize a paper protocol.
+   Any replacement numerical gate must be versioned, use an independent data
+   order, match the intended official AMP semantics, keep all performance/test
+   surfaces closed, and never silently relax the sealed v1 rule.
 0. `mmengine.Config` is not a normal dict and does not implement
    `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
    tested `Config.pop` API and execute a real Config materialization regression.
