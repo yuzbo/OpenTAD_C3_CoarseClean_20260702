@@ -278,7 +278,10 @@ def test_candidate_config_must_be_regular_non_executable_blob(tmp_path):
     repo, base, _ = _selection_repo(tmp_path)
     relative = "configs/thumos_i3d_random_k384.yaml"
     _git(repo, "update-index", "--chmod=+x", relative)
-    candidate = _commit(repo, "executable candidate config")
+    # Commit the staged index change directly. Calling _commit() would run
+    # ``git add -A`` and, on POSIX, restore the non-executable worktree mode.
+    _git(repo, "commit", "-m", "executable candidate config")
+    candidate = _git(repo, "rev-parse", "HEAD")
     _publish_candidate(repo, candidate)
 
     with pytest.raises(
