@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -25,7 +26,7 @@ from .georoute_routing import (
 from .native_crop_wrapper import deterministic_linear_2x
 
 
-GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v2"
+GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v3"
 
 
 class GeoRouteScout(nn.Module):
@@ -97,6 +98,8 @@ class GeoRouteSparseTemporalAdapter(nn.Module):
         selected_coordinates: torch.Tensor,
         *,
         use_absolute_coordinates: bool,
+        use_roi_relative_coordinates: bool,
+        use_geometry_projection: bool,
         pooling_mode: str,
     ) -> torch.Tensor:
         if selected_features.ndim != 4:
@@ -109,14 +112,18 @@ class GeoRouteSparseTemporalAdapter(nn.Module):
             raise ValueError("selected coordinates must be [B,T,K,2]")
         if not bool(torch.isfinite(selected_coordinates).all().item()):
             raise ValueError("selected native coordinates must be finite")
-        if use_absolute_coordinates:
-            # [absolute x/y, coordinate relative to the current ROI].  The
-            # latter exposes the structured region prior to the aggregator
-            # without changing the native token support or pixel scale.
+        if use_absolute_coordinates or use_roi_relative_coordinates:
+            absolute = (
+                selected_coordinates
+                if use_absolute_coordinates
+                else torch.zeros_like(selected_coordinates)
+            )
             relative = (
                 selected_coordinates - geometry[:, :, None, :2]
             ) / geometry[:, :, None, 2:].clamp_min(1e-6)
-            coordinate_features = torch.cat((selected_coordinates, relative), dim=-1)
+            if not use_roi_relative_coordinates:
+                relative = torch.zeros_like(relative)
+            coordinate_features = torch.cat((absolute, relative), dim=-1)
             selected_features = selected_features + self.coordinate_projection(coordinate_features)
         if pooling_mode == "uniform_selected":
             weights = torch.full_like(
@@ -128,7 +135,9 @@ class GeoRouteSparseTemporalAdapter(nn.Module):
         else:
             raise ValueError(f"unsupported GeoRoute pooling mode {pooling_mode!r}")
         pooled = (weights * selected_features).sum(dim=2)
-        pooled = self.norm(pooled + self.geometry_projection(geometry))
+        if use_geometry_projection:
+            pooled = pooled + self.geometry_projection(geometry)
+        pooled = self.norm(pooled)
         temporal = self.output(self.temporal(pooled.transpose(1, 2))).transpose(1, 2)
         return (pooled + temporal).transpose(1, 2)
 
@@ -223,6 +232,19 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         )
         self.absolute_coordinates_enabled = bool(
             getattr(custom_cfg, "georoute_absolute_coordinates_enabled", True)
+        )
+        self.roi_relative_coordinates_enabled = bool(
+            getattr(
+                custom_cfg,
+                "georoute_roi_relative_coordinates_enabled",
+                self.absolute_coordinates_enabled,
+            )
+        )
+        self.geometry_projection_enabled = bool(
+            getattr(custom_cfg, "georoute_geometry_projection_enabled", True)
+        )
+        self.diagnostic_telemetry_enabled = bool(
+            getattr(custom_cfg, "georoute_diagnostic_telemetry_enabled", False)
         )
         self.pooling_mode = str(
             getattr(custom_cfg, "georoute_pooling_mode", "uniform_selected")
@@ -487,6 +509,161 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             )
         return geometry, residual_logits, regularization
 
+    @staticmethod
+    def _route_score_statistics(
+        scores: torch.Tensor,
+        *,
+        selected_mask: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> dict[str, float | None]:
+        selected = scores.detach().masked_select(selected_mask)
+        unselected_mask = valid_mask & ~selected_mask
+        unselected = scores.detach().masked_select(unselected_mask)
+        result: dict[str, float | None] = {
+            "selected_mean": (
+                float(selected.float().mean().item()) if selected.numel() else None
+            ),
+            "unselected_mean": (
+                float(unselected.float().mean().item())
+                if unselected.numel()
+                else None
+            ),
+            "hard_margin_mean": None,
+        }
+        if bool(unselected_mask.any().item()):
+            selected_floor = scores.detach().masked_fill(
+                ~selected_mask, float("inf")
+            ).amin(dim=-1)
+            unselected_ceiling = scores.detach().masked_fill(
+                ~unselected_mask, float("-inf")
+            ).amax(dim=-1)
+            result["hard_margin_mean"] = float(
+                (selected_floor - unselected_ceiling).float().mean().item()
+            )
+        return result
+
+    @classmethod
+    def _diagnostic_route_telemetry(
+        cls,
+        *,
+        route: Mapping[str, Any],
+        roi_logits: torch.Tensor,
+        residual_logits: torch.Tensor,
+        valid_patch_mask: torch.Tensor,
+        selected_coordinates: torch.Tensor,
+        geometry: torch.Tensor,
+    ) -> dict[str, Any]:
+        selected_mask = route["selected_mask"].detach()
+        selected_coordinates = selected_coordinates.detach().float()
+        geometry = geometry.detach().float()
+        selected_count = int(selected_mask.sum().item())
+        if selected_count <= 0:
+            raise RuntimeError("GeoRoute telemetry observed an empty hard route")
+
+        if selected_mask.shape[1] > 1:
+            previous = selected_mask[:, :-1]
+            following = selected_mask[:, 1:]
+            intersection = (previous & following).sum(dim=-1).float()
+            union = (previous | following).sum(dim=-1).float()
+            adjacent_jaccard = intersection / union.clamp_min(1.0)
+            lineage_retention = intersection / float(route["target_k"])
+            center_step = (
+                geometry[:, 1:, :2] - geometry[:, :-1, :2]
+            ).square().sum(dim=-1).sqrt()
+            extent_step = (
+                geometry[:, 1:, 2:] - geometry[:, :-1, 2:]
+            ).square().sum(dim=-1).sqrt()
+        else:
+            intersection = geometry.new_zeros((geometry.shape[0], 0))
+            union = geometry.new_zeros((geometry.shape[0], 0))
+            adjacent_jaccard = geometry.new_zeros((geometry.shape[0], 0))
+            lineage_retention = geometry.new_zeros((geometry.shape[0], 0))
+            center_step = geometry.new_zeros((geometry.shape[0], 0))
+            extent_step = geometry.new_zeros((geometry.shape[0], 0))
+
+        x = selected_coordinates[..., 0]
+        y = selected_coordinates[..., 1]
+        quadrants = torch.stack(
+            (
+                ((x < 0.5) & (y < 0.5)).sum(),
+                ((x >= 0.5) & (y < 0.5)).sum(),
+                ((x < 0.5) & (y >= 0.5)).sum(),
+                ((x >= 0.5) & (y >= 0.5)).sum(),
+            )
+        ).float()
+        surrogate = route["soft_membership"].detach().float()
+        valid_surrogate = surrogate.masked_select(valid_patch_mask)
+        selected_surrogate = surrogate.masked_select(selected_mask)
+        unselected_surrogate = surrogate.masked_select(
+            valid_patch_mask & ~selected_mask
+        )
+        hard = selected_mask.to(dtype=surrogate.dtype)
+        hard_soft_l1 = (
+            (surrogate - hard).abs().masked_select(valid_patch_mask).mean()
+        )
+        indices = route["indices"].detach().to("cpu").contiguous()
+
+        def _mean_or_zero(value: torch.Tensor) -> float:
+            return float(value.mean().item()) if value.numel() else 0.0
+
+        return {
+            "schema_version": "georoute_diagnostic_window_telemetry_v1",
+            "batch_size": int(selected_mask.shape[0]),
+            "tubelet_count": int(selected_mask.shape[1]),
+            "item_count": int(selected_mask.shape[2]),
+            "target_k": int(route["target_k"]),
+            "selected_index_sha256": hashlib.sha256(
+                indices.numpy().tobytes()
+            ).hexdigest(),
+            "adjacent": {
+                "pair_count": int(intersection.numel()),
+                "intersection_mean": _mean_or_zero(intersection),
+                "union_mean": _mean_or_zero(union),
+                "jaccard_mean": _mean_or_zero(adjacent_jaccard),
+                "lineage_retention_mean": _mean_or_zero(lineage_retention),
+            },
+            "coordinates": {
+                "x_mean": float(x.mean().item()),
+                "y_mean": float(y.mean().item()),
+                "x_span_mean": float(
+                    (x.amax(dim=-1) - x.amin(dim=-1)).mean().item()
+                ),
+                "y_span_mean": float(
+                    (y.amax(dim=-1) - y.amin(dim=-1)).mean().item()
+                ),
+                "quadrant_fraction": [
+                    float(value)
+                    for value in (quadrants / float(selected_count)).tolist()
+                ],
+            },
+            "geometry": {
+                "area_mean": float(
+                    (geometry[..., 2] * geometry[..., 3]).mean().item()
+                ),
+                "center_step_l2_mean": _mean_or_zero(center_step),
+                "extent_step_l2_mean": _mean_or_zero(extent_step),
+            },
+            "scores": {
+                "roi": cls._route_score_statistics(
+                    roi_logits,
+                    selected_mask=selected_mask,
+                    valid_mask=valid_patch_mask,
+                ),
+                "residual": cls._route_score_statistics(
+                    residual_logits,
+                    selected_mask=selected_mask,
+                    valid_mask=valid_patch_mask,
+                ),
+            },
+            "surrogate": {
+                "valid_mean": _mean_or_zero(valid_surrogate),
+                "selected_mean": _mean_or_zero(selected_surrogate),
+                "unselected_mean": _mean_or_zero(unselected_surrogate),
+                "hard_soft_l1_mean": float(hard_soft_l1.item()),
+            },
+            "role_counts": dict(route["role_counts"]),
+        }
+
     def forward(self, frames, masks=None):
         source, scout = self._validate_inputs(frames)
         self.set_norm_layer()
@@ -586,12 +763,24 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             route["indices"],
             source_grid_hw=source_grid_hw,
         ).to(dtype=selected_features.dtype)
+        diagnostic_telemetry = None
+        if self.diagnostic_telemetry_enabled:
+            diagnostic_telemetry = self._diagnostic_route_telemetry(
+                route=route,
+                roi_logits=roi_logits,
+                residual_logits=residual_logits,
+                valid_patch_mask=valid_patch_mask,
+                selected_coordinates=selected_coordinates,
+                geometry=geometry,
+            )
         intermediate = self.sparse_adapter(
             selected_features,
             selected_scores,
             geometry,
             selected_coordinates,
             use_absolute_coordinates=self.absolute_coordinates_enabled,
+            use_roi_relative_coordinates=self.roi_relative_coordinates_enabled,
+            use_geometry_projection=self.geometry_projection_enabled,
             pooling_mode=self.pooling_mode,
         )
         output = deterministic_linear_2x(intermediate)
@@ -651,6 +840,11 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "geometry_stride_tubelets": self.geometry_stride_tubelets,
             "absolute_position_enabled": self.absolute_position_enabled,
             "absolute_coordinates_enabled": self.absolute_coordinates_enabled,
+            "roi_relative_coordinates_enabled": (
+                self.roi_relative_coordinates_enabled
+            ),
+            "geometry_projection_enabled": self.geometry_projection_enabled,
+            "diagnostic_telemetry_enabled": self.diagnostic_telemetry_enabled,
             "pooling_mode": self.pooling_mode,
             "adapter_mode": self.adapter_mode,
             "geometry_side_channel": self.geometry_side_channel,
@@ -685,6 +879,10 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "uses_oracle": False,
             "uses_test_evidence": False,
         }
+        if diagnostic_telemetry is not None:
+            self.latest_georoute_audit[
+                "diagnostic_telemetry"
+            ] = diagnostic_telemetry
         return output.to(torch.float32)
 
     def consume_training_auxiliary_losses(

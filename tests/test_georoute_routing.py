@@ -336,6 +336,12 @@ def test_score_function_and_training_contracts_fail_closed_when_semantics_are_in
         select_exact_k(mode="hybrid", estimator="score_function", **kwargs)
     with pytest.raises(ValueError, match="explicit gradient estimator"):
         select_exact_k(mode="roi", estimator="none", **kwargs)
+    with pytest.raises(ValueError, match="positive temperature"):
+        select_exact_k(
+            mode="free",
+            estimator="straight_through",
+            **{**kwargs, "temperature": 0.0},
+        )
     with pytest.raises(ValueError, match="duplicate"):
         ordered_plackett_luce_log_prob(
             roi,
@@ -392,6 +398,8 @@ def test_uniform_selected_pooling_is_independent_of_route_logits():
         geometry,
         coordinates,
         use_absolute_coordinates=True,
+        use_roi_relative_coordinates=True,
+        use_geometry_projection=True,
         pooling_mode="uniform_selected",
     )
     second = adapter(
@@ -400,9 +408,185 @@ def test_uniform_selected_pooling_is_independent_of_route_logits():
         geometry,
         coordinates,
         use_absolute_coordinates=True,
+        use_roi_relative_coordinates=True,
+        use_geometry_projection=True,
         pooling_mode="uniform_selected",
     )
     assert torch.equal(first, second)
+
+
+def test_pl_reaches_unselected_logits_while_selected_only_st_does_not():
+    roi = torch.zeros(1, 1, 8)
+    st_logits = torch.tensor(
+        [[[1.7, -0.4, 0.8, 2.1, -1.2, 0.3, 1.1, -0.7]]],
+        requires_grad=True,
+    )
+    st_route = select_exact_k(
+        roi_logits=roi,
+        residual_logits=st_logits,
+        mode="free",
+        tokens_per_tubelet=3,
+        context_tokens=0,
+        roi_fraction=0.0,
+        training=True,
+        estimator="straight_through",
+        temperature=0.7,
+        valid_mask=torch.ones_like(st_logits, dtype=torch.bool),
+    )
+    st_route["st_gate"].sum().backward()
+    assert st_logits.grad is not None
+    assert torch.count_nonzero(st_logits.grad.masked_select(st_route["selected_mask"])) > 0
+    assert torch.count_nonzero(
+        st_logits.grad.masked_select(~st_route["selected_mask"])
+    ) == 0
+
+    pl_logits = st_logits.detach().clone().requires_grad_(True)
+    torch.manual_seed(37)
+    pl_route = select_exact_k(
+        roi_logits=roi,
+        residual_logits=pl_logits,
+        mode="free",
+        tokens_per_tubelet=3,
+        context_tokens=0,
+        roi_fraction=0.0,
+        training=True,
+        estimator="score_function",
+        temperature=0.7,
+        valid_mask=torch.ones_like(pl_logits, dtype=torch.bool),
+    )
+    pl_route["ordered_log_prob"].sum().backward()
+    assert pl_logits.grad is not None
+    assert torch.isfinite(pl_logits.grad).all()
+    assert torch.count_nonzero(
+        pl_logits.grad.masked_select(pl_route["selected_mask"])
+    ) > 0
+    assert torch.count_nonzero(
+        pl_logits.grad.masked_select(~pl_route["selected_mask"])
+    ) > 0
+
+
+def _legacy_sparse_adapter_forward(
+    adapter,
+    selected_features,
+    selected_scores,
+    geometry,
+    selected_coordinates,
+):
+    relative = (
+        selected_coordinates - geometry[:, :, None, :2]
+    ) / geometry[:, :, None, 2:].clamp_min(1e-6)
+    coordinate_features = torch.cat(
+        (selected_coordinates, relative), dim=-1
+    )
+    selected_features = selected_features + adapter.coordinate_projection(
+        coordinate_features
+    )
+    weights = torch.full_like(
+        selected_scores,
+        1.0 / float(selected_scores.shape[-1]),
+    ).unsqueeze(-1)
+    pooled = (weights * selected_features).sum(dim=2)
+    pooled = adapter.norm(pooled + adapter.geometry_projection(geometry))
+    temporal = adapter.output(
+        adapter.temporal(pooled.transpose(1, 2))
+    ).transpose(1, 2)
+    return (pooled + temporal).transpose(1, 2)
+
+
+def test_sparse_adapter_representation_channels_are_independently_isolated():
+    torch.manual_seed(41)
+    adapter = GeoRouteSparseTemporalAdapter(channels=8)
+    selected = torch.randn(1, 3, 4, 8)
+    scores = torch.randn(1, 3, 4)
+    geometry = torch.tensor(
+        [[[0.4, 0.6, 0.7, 0.8]]],
+        dtype=torch.float32,
+    ).expand(1, 3, 4).clone().requires_grad_(True)
+    coordinates = torch.rand(1, 3, 4, 2, requires_grad=True)
+
+    disabled = adapter(
+        selected,
+        scores,
+        geometry,
+        coordinates,
+        use_absolute_coordinates=False,
+        use_roi_relative_coordinates=False,
+        use_geometry_projection=False,
+        pooling_mode="uniform_selected",
+    )
+    changed = adapter(
+        selected,
+        scores,
+        geometry.detach() + 0.05,
+        (coordinates.detach() + 0.1).clamp_max(1.0),
+        use_absolute_coordinates=False,
+        use_roi_relative_coordinates=False,
+        use_geometry_projection=False,
+        pooling_mode="uniform_selected",
+    )
+    assert torch.equal(disabled, changed)
+    geometry_grad, coordinate_grad = torch.autograd.grad(
+        disabled.sum(),
+        (geometry, coordinates),
+        allow_unused=True,
+    )
+    assert geometry_grad is None
+    assert coordinate_grad is None
+
+    legacy = _legacy_sparse_adapter_forward(
+        adapter,
+        selected,
+        scores,
+        geometry.detach(),
+        coordinates.detach(),
+    )
+    split_all_enabled = adapter(
+        selected,
+        scores,
+        geometry.detach(),
+        coordinates.detach(),
+        use_absolute_coordinates=True,
+        use_roi_relative_coordinates=True,
+        use_geometry_projection=True,
+        pooling_mode="uniform_selected",
+    )
+    assert torch.allclose(
+        legacy, split_all_enabled, atol=1e-7, rtol=1e-7
+    )
+
+    absolute_only = adapter(
+        selected,
+        scores,
+        geometry.detach(),
+        coordinates.detach(),
+        use_absolute_coordinates=True,
+        use_roi_relative_coordinates=False,
+        use_geometry_projection=False,
+        pooling_mode="uniform_selected",
+    )
+    relative_only = adapter(
+        selected,
+        scores,
+        geometry.detach(),
+        coordinates.detach(),
+        use_absolute_coordinates=False,
+        use_roi_relative_coordinates=True,
+        use_geometry_projection=False,
+        pooling_mode="uniform_selected",
+    )
+    geometry_only = adapter(
+        selected,
+        scores,
+        geometry.detach(),
+        coordinates.detach(),
+        use_absolute_coordinates=False,
+        use_roi_relative_coordinates=False,
+        use_geometry_projection=True,
+        pooling_mode="uniform_selected",
+    )
+    assert not torch.equal(absolute_only, disabled)
+    assert not torch.equal(relative_only, disabled)
+    assert not torch.equal(geometry_only, disabled)
 
 
 def test_free_route_uses_fixed_full_frame_geometry_without_geometry_gradient():

@@ -1,7 +1,16 @@
 ---
 type: source_registry
-updated: 2026-07-28
+updated: 2026-07-29
 ---
+
+- CER-TAD complementary-routing Pro review, 2026-07-29. User-provided raw
+  review archived at
+  `docs/methods/reviews/2026-07-29-cer-tad-pro-review-raw.txt`, SHA-256
+  `2b96aed1ec8a7f2ff694d8265698a0025cac5170ca24aef8c827865f70605b53`.
+  Project absorption:
+  `docs/methods/reviews/2026-07-29-cer-tad-pro-review-absorption.md`.
+  Verdict is `ACCEPT_WITH_MAJOR_REVISION / READY_PREEXPERIMENT_ONLY`; it is
+  design-review evidence, not an implemented model or experiment result.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD

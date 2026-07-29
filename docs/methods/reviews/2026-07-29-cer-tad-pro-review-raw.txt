@@ -1,0 +1,1942 @@
+## 0. Source verification
+
+### 0.1 远端版本核验
+
+| 核验项                  | 裁决                                          |
+| -------------------- | ------------------------------------------- |
+| Repository           | `yuzbo/OpenTAD_C3_CoarseClean_20260702` 可访问 |
+| 指定 branch            | `codex/spatial-zoom-s1-audit-fix-20260715`  |
+| 远端 branch tip        | `3293b646963d74e2cea8b3ef4e72754246b0ad9b`  |
+| 本轮实验提交               | `7be8363ea6e26b320bffafeb03f0e82d8b660779`  |
+| `7be8363e..3293b646` | ahead 2、behind 0                            |
+| 变更文件                 | 仅 4 个 `research-wiki/*.md`                  |
+| 模型实现是否变化             | **否。远端当前模型源码与实验提交一致**                       |
+
+远端 branch ref 确实解析到 `3293b646...`，提交说明为记录 GeoRoute P1 终止状态。
+
+远端等价的 `git diff --name-status 7be8363e..3293b646` 为：
+
+```text
+M  research-wiki/experiments/georoute-adatad.md
+M  research-wiki/ideas/geo-route-adatad.md
+M  research-wiki/log.md
+M  research-wiki/query_pack.md
+```
+
+没有以下类型变更：
+
+```text
+opentad/models/**
+configs/**
+tools/bata/*.py
+scripts/**
+tests/**
+```
+
+因此，**远端 `3293b646` 下的 GeoRoute 模型、训练合同、stage runner 和 selector 与 `7be8363e` 实验代码一致**。关键文件 blob 也保持一致：
+
+```text
+georoute_wrapper.py          5e75566d...
+georoute_routing.py          f9b03e6b...
+vit_adapter.py               9e4d921b...
+georoute_experiment_contract.py 1b22ef0d...
+```
+
+### 0.2 无法从当前环境核验的内容
+
+我无法访问用户 Windows 工作区：
+
+```text
+E:\DeskTop\TAD\OpenTAD_SpatialZoom_S1_AuditFix_20260715
+```
+
+因此以下三项不能被我当作已验证事实：
+
+```bash
+git -C E:\DeskTop\TAD\OpenTAD_SpatialZoom_S1_AuditFix_20260715 rev-parse HEAD
+git -C E:\DeskTop\TAD\OpenTAD_SpatialZoom_S1_AuditFix_20260715 status --porcelain
+git -C E:\DeskTop\TAD\OpenTAD_SpatialZoom_S1_AuditFix_20260715 symbolic-ref --short HEAD
+```
+
+准确表述是：
+
+* **远端 branch/ref 已核验为 `3293b646...`；**
+* **远端源码与 `7be8363e` 一致；**
+* **本地工作树是否 clean、是否存在未提交修改，当前不可验证。**
+
+同样，我不能直接挂载两个 `/data/run01/...` 运行目录并重新计算 checkpoint、prediction 或 profile 的 SHA。实验结果属于“由用户提供的密封事实并由仓库终止日志交叉印证”，而不是我在当前运行环境中重新读取所有 artifact 后独立重算。仓库日志确实记录了六臂结果、Free 未过门、ROI-only decode 失败、selector 无 receipt，以及 P2/P3/official test 均不存在。
+
+### 0.3 阅读门
+
+已完整读取：
+
+```text
+RTK.md
+research-wiki/query_pack.md
+research-wiki/anti_repetition.md
+research-wiki/ideas/geo-route-adatad.md
+research-wiki/experiments/georoute-adatad.md
+research-wiki/log.md 中最新 GeoRoute 记录
+```
+
+---
+
+## 1. Executive verdict
+
+# `NEW_PRIMARY_HYPOTHESIS_JUSTIFIED`
+
+同时包含两个不可拆开的子裁决：
+
+1. **关闭 Free NativeTokenSelect v1。**
+2. **把 Hybrid 仅用于提出一个新的、独立预注册的 Structured Complementary Routing 假设，不得用它追认旧假设。**
+
+最重要的研究判断是：
+
+> **Hybrid 的信号首先说明“受约束的互补支持集合与较低方差的离散搜索空间”可能有效，而不是证明自由 token saliency、learned geometry 或 Geometry Zoom 有效。**
+
+目前最合理的下一代模型不是“给 Free 增加更多 head 和 loss”，而是重新定义决策变量：
+
+```text
+从：64 个无角色的自由 learned slots
+改为：global context / geometry support / complementary residual
+     三种具有不同计算职责的 exact-K 联合决策
+```
+
+而且必须使用对**真实 hard set 概率**有效的优化方法，不能继续依赖当前 selected-only straight-through 幅度代理。
+
+当前方向应定位为：
+
+> **source-native pre-backbone token routing**
+
+而不是：
+
+> **Geometry Zoom**
+
+只有真正引入 source-coordinate continuous crop、variable scale/aspect、局部 source-density 放大，并在 heavy backbone 之前执行，才有资格恢复 Zoom 叙事。
+
+---
+
+## 2. Evidence ledger
+
+### 2.1 Code-proven
+
+| 事实                                                                   | 状态  |
+| -------------------------------------------------------------------- | --- |
+| Free 使用固定 full-frame geometry `[0.5,0.5,1,1]`                        | 已证明 |
+| Free 下 geometry head 冻结，不产生 learned geometry                         | 已证明 |
+| Free 的 K=64 全部属于 residual/free slots                                 | 已证明 |
+| hard top-K membership 本身不通过索引反传                                      | 已证明 |
+| 当前 ST 只 gather hard-selected token 的 surrogate                       | 已证明 |
+| 未选 token 没有直接的 replacement/membership gradient                       | 已证明 |
+| uniform pooling 丢弃 route score magnitude                             | 已证明 |
+| Hybrid 的 8/28/28 由 `context_tokens=8, roi_fraction=.5, K=64` 固定产生    | 已证明 |
+| context、ROI、residual 按顺序排除，最终无重复                                     | 已证明 |
+| Hybrid 的 learned geometry 同时改变 support 和 representation              | 已证明 |
+| selected tokens 只执行一次 packed VideoMAE heavy forward                  | 已证明 |
+| attention、MLP、Adapter 的算子只作用于 selected positions                     | 已证明 |
+| 当前实现仍会物化 dense positional carrier 并执行 clone/scatter                  | 已证明 |
+| packed Adapter 只有相邻 tubelet 选中相同 native index 时才传播 temporal neighbor | 已证明 |
+| old selector 明确禁止 Hybrid 越过失败的 Free gate                             | 已证明 |
+| development profiler 不能作为 paper-grade full-stack cost                | 已证明 |
+
+### 2.2 Artifact-attested
+
+由仓库终止记录和用户提供的密封运行事实共同支持，但未在当前环境重新挂载验证：
+
+* 六个成功臂均有 final checkpoint 和 development-only result。
+* Free 为 `10.03 / 7.80 / 5.27`。
+* Hybrid 为 `13.23 / 11.35 / 8.81`。
+* ROI-only 完成训练后在 development decode 阶段因 Decord EOF 失败。
+* selector 为 `DependencyNeverSatisfied`，没有 formal receipt。
+* 没有 P2/P3 或 official-test artifact。
+* 成功 sparse arms 为 K=64、duplicate=0、一次 heavy forward。
+
+### 2.3 Descriptive-only
+
+以下只能作为单 seed、20 epoch、incomplete-matrix diagnostics：
+
+* Free 明显弱于 fixed/random。
+* Hybrid 明显强于 Free。
+* Hybrid 在 `mAP@0.7` 描述性地比 dense 高 `0.07`。
+* Hybrid 在高 tIoU 下的恢复幅度较强。
+* fixed+geometry 与 fixed 的差异很小，而且在 `@0.6/@0.7` 并未改善。
+
+这些不能建立统计因果，也不能授权论文 claim。
+
+### 2.4 Unproven
+
+尚未证明：
+
+* Free 是否发生空间 collapse。
+* Free 是否发生严重 temporal jitter。
+* Hybrid 是否主要受益于 context。
+* 28/28 quota 是否是主要机制。
+* learned geometry support 是否真正有用。
+* geometry projection 是否与 support 存在正交增益。
+* residual 与 ROI 是否具有可重复的互补性。
+* boundary-aware utility 是否改善短动作和高 tIoU。
+* 任一 sparse 方法是否具有 full-stack latency/energy Pareto。
+* 方法是否跨 seed、detector、dataset 泛化。
+
+### 2.5 Prohibited claim
+
+当前绝对不能写：
+
+```text
+GeoRoute proves learned spatial routing is effective.
+Hybrid proves geometry is useful.
+The method performs Geometry Zoom.
+The straight-through estimator optimizes hard top-K membership.
+Hybrid statistically matches or beats dense.
+The model achieves end-to-end acceleration or energy reduction.
+The method has passed the official test.
+The current results are paper-grade.
+```
+
+---
+
+## 3. Code audit
+
+| Finding                                              | File:line                                                                                   | Severity | Scientific consequence                                      | Required action                                                 |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------- | -------: | ----------------------------------------------------------- | --------------------------------------------------------------- |
+| Free 的 geometry head 被冻结                             | `georoute_wrapper.py:321-334::_configure_scout_trainability`                                |     HIGH | Free 不学习 geometry；它是 residual-only selector                 | 保留为明确负基线，不得描述为 geometry-free architecture discovery             |
+| Free 使用固定全帧 geometry                                 | `georoute_wrapper.py:412-426::_fixed_full_frame_geometry`、`:428-488::_compute_route_fields` |     HIGH | Free 与 Hybrid 的差异不仅是 score 来源                               | 所有新对照需显式报告 geometry support 与 representation 开关                 |
+| Free 的 64 个位置全部由 residual logits 排序                  | `georoute_routing.py:410-428::select_exact_k`                                               | CRITICAL | 搜索空间完全无 coverage/context 先验                                 | 关闭 Free v1 作为主方法                                                |
+| ST threshold 被 detach                                | `georoute_routing.py:273-279::_soft_topk_gate`                                              | CRITICAL | 不学习 K/K+1 threshold 对 membership 的真实影响                      | 改用 hard-set likelihood 或独立可证伪 estimator                         |
+| ST 只 gather hard-selected surrogate                  | `georoute_routing.py:484-496::select_exact_k`                                               | CRITICAL | 未选 token 没有直接替换信用；优化的是已选 feature amplitude                  | 加入 unselected-gradient KAT；主模型改用 PL/Gumbel-top-K score function |
+| uniform pooling 把 selected score 置零                  | `georoute_wrapper.py:580-585::forward`                                                      |     HIGH | scorer magnitude 在表示聚合时被丢弃，但 selected identity 仍然有效         | 不得声称 scorer 信息“完全消失”；做 matched-support pooling ablation         |
+| Sparse adapter 将 token 坐标与 ROI-relative 坐标加入表示       | `georoute_wrapper.py:92-133::GeoRouteSparseTemporalAdapter.forward`                         | CRITICAL | Hybrid 同时改变 support 和 representation                        | 推荐主模型关闭 geometry projection 与 ROI-relative coordinates          |
+| Hybrid 的 8/28/28 是固定 quota                           | `georoute_routing.py:429-474::select_exact_k`                                               |     HIGH | Hybrid 搜索空间被结构化，可能显著降低方差                                    | 新模型将 quota 作为小型 exact-K 动态决策，而不是永久固定                            |
+| Hybrid 按 context→ROI→residual 去重                     | 同上                                                                                          |     PASS | exact-K、no-duplicate 是可信实现事实                                | 复用该排除逻辑                                                         |
+| selected native tubelets 只执行一次 heavy call            | `georoute_wrapper.py:548-560::forward`                                                      |     PASS | one-heavy-forward claim 在代码路径中成立                            | P0 继续用 invocation counter fail-closed                           |
+| attention/MLP 仅处理 packed selected tokens             | `vit_adapter.py:792-806::_packed_attention_mlp_forward`                                     |     PASS | heavy arithmetic sparsity是真实的                               | 继续复用                                                            |
+| 仍物化 dense carrier，并在每层 clone/scatter                 | `vit_adapter.py:1197-1215::_prepare_native_packed_lattice`、`:792-806`                       |     HIGH | FLOP 稀疏不等于系统高效；可解释 fixed 比 dense 慢的异常                       | 在论文成本中单列 carrier/scatter memory traffic；科学胜出前不做大改写              |
+| Adapter 仅匹配相同 spatial lineage                        | `vit_adapter.py:113-231::Adapter.forward_native_packed`                                     |     HIGH | route jitter 会把相邻 temporal neighbor 置零                      | Phase M 强制统计 lineage survival / temporal Jaccard                |
+| 最终每个 tubelet 被均值成一个 feature                          | `georoute_wrapper.py:121-133::GeoRouteSparseTemporalAdapter.forward`                        |     HIGH | 细粒度空间身份过早消失，可能限制边界敏感信息                                      | 主实验保持一致以免新增混杂；另做 detached weighted-pooling 诊断                   |
+| 真正 detector loss policy hook 已存在，但只服务 score-function | `georoute_wrapper.py:705-745::consume_detector_policy_loss`、`actionformer.py:208-215`       | CRITICAL | 现行 ST 未使用真实 hard-route likelihood；已有 PL 路径可用于最小决定性实验        | 先跑 residual-PL，不必先实现整个新模型                                       |
+| detector 提供的是全局标量 cls/reg risk                       | `anchor_free_head.py:364-412::losses`                                                       |     HIGH | spatial credit assignment 方差高，边界信息间接                        | 用角色结构、critic、训练期 boundary auxiliary 降方差                         |
+| old selector 强制 Free-first                           | `georoute_experiment_contract.py:392-482::select_p1_roi_candidate`                          | CRITICAL | Hybrid 不可能合法救活旧假设                                           | 关闭旧 selector；创建独立 study ID 和新预注册合同                              |
+| paper schema 要求完整成本与 energy                          | `georoute_result_schema.py:196-245::validate_record`                                        | CRITICAL | 当前 p50/p95 不足以支持效率 claim                                    | P2 才做 decode-to-NMS、energy、evaluator 完整测量                       |
+| 当前 audit 只有 aggregate summary                        | `georoute_wrapper.py:632-689::latest_georoute_audit`                                        |     HIGH | 无法从现有 stage result判断 coverage、jitter、margin、role trajectory | 新增只读 per-window telemetry；不得伪造 Phase M 结论                       |
+
+Free/Hybrid 的关键代码事实分别可由固定 geometry、scout trainability、quota 和 ST 路径直接确认。
+
+Hybrid 的表示混杂也是明确的：absolute coordinates、ROI-relative coordinates、`coordinate_projection` 和 `geometry_projection` 均进入聚合。
+
+### 3.1 Hard top-K 的真实梯度
+
+令：
+
+[
+S(z)=\operatorname{TopK}_K(z),\qquad
+h_i(z)=\mathbb{1}[i\in S(z)].
+]
+
+当第 K 与 K+1 名不存在 tie 时，总存在一个足够小邻域，使排序和集合 (S) 不变。因此：
+
+[
+\frac{\partial h_i}{\partial z_j}=0
+]
+
+几乎处处成立；在排序交换的 tie 超平面上则不可导。
+
+PyTorch 对由 integer indices 执行的 gather 不会自动产生“把 token (j) 换成 token (i)”的梯度。
+
+### 3.2 当前 ST 实际优化什么
+
+代码定义：
+
+[
+\tau=\operatorname{sg}\left(\operatorname{Kth}(z)\right),
+\qquad
+s_i=\sigma\left(\frac{z_i-\tau}{T}\right).
+]
+
+对 hard-selected set (S) 中的 token：
+
+[
+g_i=1+s_i-\operatorname{sg}(s_i).
+]
+
+forward 时：
+
+[
+g_i=1.
+]
+
+selected feature 为：
+
+[
+y_i=g_i f_i,\quad i\in S.
+]
+
+忽略共享网络导致的间接耦合，其直接梯度为：
+
+[
+\frac{\partial L}{\partial z_j}
+===============================
+
+\mathbb{1}[j\in S]
+\left\langle
+\frac{\partial L}{\partial y_j},f_j
+\right\rangle
+\frac{s_j(1-s_j)}{T}.
+]
+
+因此：
+
+* 对 (j\notin S)，直接 membership gradient 为零。
+* K/K+1 threshold 的梯度被 detach。
+* 当前梯度并不近似：
+
+[
+\Delta_{i\rightarrow j}
+=======================
+
+L\left(S\setminus{i}\cup{j}\right)-L(S).
+]
+
+它近似的是：
+
+> “已经被选中的 feature 若被连续缩放，detector loss 如何变化”。
+
+这不是 hard membership 的交换信用。
+
+现有代码实际上已实现对单一 Free/ROI family 的 Plackett–Luce score-function 候选，并能把真实 detector loss 绑定到 ordered log-probability。
+
+### 3.3 为什么 64 个 Free slots 特别困难
+
+在 uniform pooling 下，每个 selected token 的直接聚合系数是 (1/K=1/64)。虽然 VideoMAE 内部仍有 selected-token interactions，但 router 得到的 amplitude credit 被平均削弱。
+
+同时 Free 面对的支持集合约为：
+
+[
+\binom{220}{64}.
+]
+
+它没有：
+
+* mandatory global coverage；
+* role decomposition；
+* spatial diversity；
+* temporal persistence；
+* boundary-conditioned transition；
+* hard-set replacement credit。
+
+Hybrid 强制包含 8 个 deterministic context token，并把剩余决策拆成 28 ROI 和 28 residual。即使 learned geometry 没有任何真正语义，它也已经：
+
+1. 缩小并重构搜索空间；
+2. 固定最低 coverage；
+3. 降低 residual slots 的竞争；
+4. 给各 role 提供不同 score 分布；
+5. 增大相邻 tubelet support overlap 的可能性。
+
+这足以形成一个新的 primary hypothesis。
+
+---
+
+## 4. Ranked failure mechanisms
+
+### 4.1 因果优先级
+
+| Rank | Mechanism                                                  | 因果置信度 |
+| ---: | ---------------------------------------------------------- | ----: |
+|    1 | H1：selected-only ST 与 hard membership 严重失配                 |  0.80 |
+|    2 | H4/H6：Hybrid 的结构化角色约束与互补 support 降低了搜索方差                   |  0.65 |
+|    3 | H2：Free 缺少 coverage/stability，可能破坏 Adapter spatial lineage |  0.55 |
+|    4 | H5：Hybrid 的 geometry representation side-channel 构成重要混杂    |  0.55 |
+|    5 | H3：8 个 deterministic context token 提供 coverage floor       |  0.50 |
+|    6 | H7：uniform pooling 丢弃 score magnitude                      |  0.40 |
+|    7 | H8：Free 偏向动作内部而损害边界                                        |  0.30 |
+
+H9 是证据强度限制，H10 是命名事实，不是性能机制。
+
+### 4.2 H1–H10 逐项裁决
+
+| Hypothesis                                            | 当前证据                                                                             | 反证/限制                                                                                        | 代码可确认                   | 最小可证伪实验                                                                                                         | 成立后的含义                                                  |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| **H1 ST 与 hard membership 失配**                        | surrogate 只在 hard-selected indices 上 gather；未选 token 无直接信用                       | Hybrid 同样使用 ST 却明显恢复，说明 ST 不是唯一原因                                                            | **是**                   | residual-only：ST vs PL score-function，其他完全匹配；增加 unselected-gradient KAT                                         | 主模型必须优化 hard-set likelihood，而非继续叠加 ST loss              |
+| **H2 缺少 coverage/diversity 导致聚集或 jitter**             | Free 无任何 coverage、diversity、stability 项；Adapter 要求相邻同 index 才有 temporal neighbor | exact-K、duplicate=0 已通过，但不等于 coverage 良好；当前无轨迹 telemetry                                     | 部分                      | Phase M 统计 covering radius、quadrant occupancy、temporal Jaccard、lineage survival；再做同 estimator 的 coverage-on/off | 新模型必须有 context floor 和 boundary-conditioned persistence |
+| **H3 Hybrid 主要来自 8 context tokens**                   | Hybrid 唯一强制 8 个 deterministic anchors                                            | 没有 `context+residual` 对照；8/64 较少，不足以单独解释全部增益                                                 | context 存在可确认，因果不能      | residual-PL vs context8+residual56-PL                                                                           | 若成立，删除 geometry，改写为 coverage-regularized routing        |
+| **H4 28/28 quota 带来 variance reduction**              | quota 固定且严格互斥；Free 的 64 slots 被拆为两个较小角色                                          | geometry representation、context 同时变化                                                         | quota 可确认，因果不能          | fixed 28/28、dynamic budget、quota-shuffled 三臂                                                                    | 若成立，role budget 是主创新，而不是 ROI head                       |
+| **H5 geometry projection/relative coordinates 是主要收益** | Hybrid 的 geometry 两次进入表示；属于明确多重干预                                                | fixed+geometry 相对 fixed 仅 Avg `+0.21`，且 `@0.6 -0.35`、`@0.7 -0.08`，side-channel 单独没有高 tIoU 改善 | **混杂存在可确认**             | 固定完全相同 indices，geometry projection 和 ROI-relative coords on/off                                                 | 若成立，论文应是 geometry-conditioned representation，不是 routing |
+| **H6 ROI 与 residual support 真正互补**                    | Hybrid 比 fixed+geometry、random 更好，特别是 `@0.7`                                     | 单 seed；context、quota、representation 均未隔离                                                     | support union 可确认，因果不能  | context+geometry、context+residual、full 三臂；geometry-shuffled control                                             | 若成立，支持 CER-TAD                                          |
+| **H7 uniform pooling 稀释 scorer 优势**                   | route score 在 pooling 前被置零                                                       | selected identity、heavy features 和坐标仍保留，不能说“完全丢失”                                            | **是，限 score magnitude** | 冻结同一 route，uniform vs detached calibrated score weighting                                                       | 若成立，可增加后验 weighting，但不能用其替代 hard membership 学习          |
+| **H8 Free 关注动作内部而忽略边界**                               | Free 在高 tIoU 下损失明显；detector risk 是全局 scalar                                      | Free 在所有阈值都差，未显示边界特异性；无 boundary-conditioned route telemetry                                 | 否                       | 按 GT 后处理分成 start/end/interior/background；boundary head on/off                                                   | 成立后才保留 boundary-sensitive utility                       |
+| **H9 Hybrid 单 seed 可能是随机波动**                          | 当前只有一个 seed 和 incomplete selector                                                | 无反证                                                                                          | **是，证据限制确定**            | P2 三 seed、paired bootstrap                                                                                      | 所有性能和因果 claim 必须等待 P2                                   |
+| **H10 当前不是 Geometry Zoom**                            | `uses_grid_sample=False`、`uses_resized_local_crop=False`，只是 native token gather  | 无反证                                                                                          | **是**                   | 不需要实验；只有实现真正连续 source-density crop 才能改变                                                                         | 当前论文必须采用 routing 命名                                     |
+
+packed Adapter 的 temporal neighbor 只在相邻 tubelet 选择同一 native index 时存在；因此 temporal jitter 不只是视觉不稳定，还会直接切断 Adapter 的 temporal convolution 输入。
+
+---
+
+## 5. Competing model proposals
+
+### 5.1 方向比较
+
+| 方向                                                | 核心机制                                                                                                       | 数学目标                                               | 额外复杂度                                     |                                                现有代码复用 | 主要风险                             | 最小决定性实验                                                                     |                                      Novelty | 裁决                                                              |         |          |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------: | -------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------: | --------------------------------------------------------------- | ------- | -------- |
+| **A. Structured Complementary Routing / CER-TAD** | context、geometry、residual 三角色；动态 exact-K budget；hard PL policy；boundary-conditioned stability              | (\min_\pi E[L_{\rm det}+\lambda C+\mu J]) under (  | C\cup G\cup R                             |                                                   =K) | routing (O(TNK))，N=220，远小于 heavy | 70–80%                                                                      |               policy variance；geometry 可能无增益 | residual-ST vs PL；context/residual/geometry/full matched matrix | **4/5** | **唯一推荐** |
+| **B. Trajectory Geometry Zoom**                   | scout 预测连续 center/scale/aspect trajectory；在 raw source 上裁出高 source-density local regions，再一次 heavy forward | 优化连续 trajectory、crop coverage、global/local balance | crop/grid generation + local heavy tokens |                                                40–55% | 与 AdaFocus 系高度接近；训练和成本风险大        | matched source-area、matched heavy-token budget 下，continuous crop vs routing |                                 4.5/5，但高先验占位 | 暂不实施                                                            |         |          |
+| **C. Coverage-aware Non-rectangular Routing**     | facility-location/submodular relevance+diversity+motion+boundary                                           | (\max_{                                            | S                                         | =K}\sum_i\max_{j\in S}s_{ij}+\lambda\sum_{j\in S}r_j) | greedy (O(TNK))                  | 75%                                                                         | 容易被评价为 token pruning + diversity regularizer | same scorer 下 top-K vs facility-location                        | 3/5     | A 失败后的后备 |
+
+### 5.2 方向 A：Structured Complementary Routing
+
+关键变化不是“加入 ROI head”，而是为计算分配赋予三个角色：
+
+* **Context**：保证全局场景、人物—物体关系和背景覆盖。
+* **Geometry**：选择 scout 认为属于连续动作相关区域的 source-native support。
+* **Residual**：主动寻找 geometry 未覆盖但对 detector 有用的补充证据。
+
+预算不再永久固定 `8/28/28`，而从小型可行集合中动态选择：
+
+[
+\mathcal B_K=
+\left{
+(k_c,k_g,k_r):
+k_c+k_g+k_r=K,;
+k_c\in{4,8,12},;
+k_g,k_r\ge 8,;
+k_g,k_r\in4\mathbb Z
+\right}.
+]
+
+预算以一个 VideoMAE 16-frame chunk，即 8 个 tubelets 为粒度保持恒定，避免逐 tubelet 剧烈震荡。
+
+### 5.3 方向 B：真正的 Geometry Zoom
+
+真正的 Zoom 必须执行：
+
+[
+\theta_t=(c^x_t,c^y_t,\log s_t,\log a_t)
+]
+
+并在 raw source 上构建：
+
+[
+X^{\rm local}_t
+===============
+
+\operatorname{SampleGrid}(X_t,\theta_t).
+]
+
+固定大小的 local canvas 对应源图上可变面积，因此 local patch 在源坐标上的采样密度随 (s_t) 变化，这才是“放大”。
+
+heavy backbone 的输入应是：
+
+```text
+small mandatory global context
++
+one or more source-coordinate continuous local trajectories
+```
+
+而不是：
+
+```text
+先完整执行 dense heavy backbone
+→ 再裁 feature ROI
+```
+
+AdaFocus 及 AdaFocus V2 已采用轻量全局网络定位 patch，再由高容量网络处理局部 patch；Uni-AdaFocus 进一步把 patch 的位置、大小及时间/样本预算纳入动态计算。因此，一个新 Geometry Zoom 方法必须靠 TAD-specific boundary trajectories、source-density allocation 和严谨 full-stack Pareto 区分，而不能只复用“scout + crop”。([Open Access CVF][1])
+
+### 5.4 方向 C：Coverage-aware routing
+
+定义 scout token 描述符 (u_{t,i})，目标：
+
+[
+F_t(S)=
+\lambda_r\sum_{j\in S}r_{t,j}
++
+\lambda_m\sum_{j\in S}m_{t,j}
++
+\lambda_f\sum_{i=1}^{N}\max_{j\in S}\operatorname{sim}(u_{t,i},u_{t,j})
+-----------------------------------------------------------------------
+
+\lambda_o\sum_{j\ne k\in S}\operatorname{overlap}(j,k).
+]
+
+它与 Free 的区别是：
+
+* Free 只优化独立 saliency score。
+* Coverage routing 优化集合层面的代表性和互补性。
+* 与 ToMe 的区别是它在 heavy backbone **之前**选 source-native support，而 ToMe 在 transformer 中逐层合并已有 token。ToMe、DynamicViT、ATS 和 TokenLearner 已经充分占据一般 token reduction 叙事。([ICLR][2])
+
+---
+
+## 6. Recommended model
+
+# CER-TAD
+
+## Complementary Evidence Routing for Temporal Action Detection
+
+### 6.1 诚实的 claim 名称
+
+**Boundary-Conditioned Complementary Pre-Backbone Routing**
+
+不要使用：
+
+```text
+Spatial Zoom
+Geometry Zoom
+Adaptive resolution
+Native-density magnification
+```
+
+### 6.2 一句话贡献
+
+> CER-TAD 将离线 TAD 的空间计算分配建模为 context、geometry 与 residual 三类互补证据的 exact-K 离散联合决策，并通过真实 hard-route likelihood 与 detector risk 优化该决策，而不是训练一个无约束 saliency top-K。
+
+### 6.3 数据流
+
+```text
+raw source RGB [B,3,768,H,W]
+        │
+        ├── low-cost 96×96 scout
+        │       ├── scout state h_t             [B,384,D]
+        │       ├── geometry θ_t                [B,384,4]
+        │       ├── geometry/ROI logits z^g     [B,384,220]
+        │       ├── residual logits z^r         [B,384,220]
+        │       └── boundary probability p_t    [B,384]
+        │
+        ├── block-wise dynamic exact-K role budget
+        │       b_q=(k_c,k_g,k_r)
+        │
+        ├── deterministic context anchors C_t
+        ├── hard geometry support G_t
+        ├── hard complementary residual R_t
+        │
+        └── S_t=C_t∪G_t∪R_t, |S_t|=K, duplicate=0
+                │
+                ├── gather native 2×16×16 tubelets
+                ├── one packed VideoMAE forward
+                ├── coordinate-lineage packed Adapter
+                ├── absolute-coordinate-only aggregation
+                ├── deterministic 384→768 restoration
+                └── ActionFormer / TAD detector
+```
+
+### 6.4 Exact-K 角色预算
+
+每个 16-frame block (q)：
+
+[
+b_q=(k^c_q,k^g_q,k^r_q)
+\sim
+\pi_b(\cdot\mid \bar h_q,\bar p_q),
+]
+
+满足：
+
+[
+k^c_q+k^g_q+k^r_q=K.
+]
+
+推理时：
+
+[
+b_q=\arg\max_{b\in\mathcal B_K}\pi_b(b\mid\bar h_q,\bar p_q).
+]
+
+### 6.5 Context role
+
+从所有 valid native coordinates 中使用 deterministic farthest-point anchors：
+
+[
+C_t=\operatorname{FPS2D}(U,k^c_q).
+]
+
+它不依赖 label、teacher 或 prediction cache。
+
+### 6.6 Geometry role
+
+从排除 context 后的 support 中：
+
+[
+G_t\sim
+\operatorname{PL-WOR}
+\left(
+z^g_t,;
+k^g_q,;
+U\setminus C_t
+\right).
+]
+
+其中 `PL-WOR` 是 Plackett–Luce without replacement。
+
+### 6.7 Residual role
+
+定义互补 residual score：
+
+[
+\tilde z^r_{t,i}
+================
+
+z^r_{t,i}
+-\alpha\sigma(z^g_{t,i})
+-\beta\max_{j\in G_t}
+\exp\left(
+-\frac{|u_i-u_j|^2}{2\sigma^2}
+\right).
+]
+
+再从剩余 support 中采样：
+
+[
+R_t\sim
+\operatorname{PL-WOR}
+\left(
+\tilde z^r_t,;
+k^r_q,;
+U\setminus(C_t\cup G_t)
+\right).
+]
+
+因此：
+
+[
+C_t\cap G_t=C_t\cap R_t=G_t\cap R_t=\varnothing.
+]
+
+### 6.8 Hard selection 的梯度
+
+训练时使用 Gumbel-top-K 得到 exact without-replacement hard sample；其 ordered set 对应可计算的 Plackett–Luce likelihood。Gumbel-top-K 是从类别分布中精确无放回抽取 K 项的标准构造。([Proceedings of Machine Learning Research][3])
+
+令完整 route 为：
+
+[
+a=(b_{1:Q},G_{1:T},R_{1:T}).
+]
+
+定义 detector risk：
+
+[
+\mathcal R(a)=
+\mathcal L_{\rm det}(a)
++
+\lambda_{\rm cov}\mathcal C(a)
++
+\lambda_{\rm stab}\mathcal J(a).
+]
+
+使用 state-only critic (V_\psi(h))：
+
+[
+\mathcal L_{\rm policy}
+=======================
+
+\mathbb E_a
+\left[
+\left(
+\operatorname{sg}[\mathcal R(a)]
+--------------------------------
+
+\operatorname{sg}[V_\psi(h)]
+\right)
+\log\pi_\theta(a\mid h)
+\right].
+]
+
+因为这里优化的是 risk，梯度下降会降低高 risk route 的 log-probability。
+
+critic：
+
+[
+\mathcal L_{\rm value}
+======================
+
+\left(
+V_\psi(h)-\operatorname{sg}[\mathcal R(a)]
+\right)^2.
+]
+
+与当前 ST 相比，PL denominator 包含仍可选的全部 token，因此未被选择的 token 也获得直接 score-function credit。
+
+### 6.9 Coverage 与 collapse 防护
+
+[
+\mathcal C(S_t)
+===============
+
+\frac1N
+\sum_{i=1}^{N}
+\min_{j\in S_t}
+|u_i-u_j|_2^2.
+]
+
+同时固定最小 role budget：
+
+```text
+k_context ≥ 4
+k_geometry ≥ 8
+k_residual ≥ 8
+```
+
+这些是可行域约束，不是事后 penalty 调参。
+
+### 6.10 Temporal consistency
+
+定义：
+
+[
+J_t=
+1-
+\frac{|S_t\cap S_{t-1}|}
+{|S_t\cup S_{t-1}|}.
+]
+
+但不应在真实动作边界强行保持相同 support，因此：
+
+[
+\mathcal J
+==========
+
+\frac1{T-1}
+\sum_{t=2}^{T}
+\left(
+1-\max(\hat p_{t-1},\hat p_t)
+\right)J_t.
+]
+
+* 动作内部：鼓励稳定 support，保护 Adapter lineage。
+* 预测边界附近：允许 route 快速变化。
+
+### 6.11 Boundary-sensitive mechanism
+
+训练期从标准 GT segment 构造边界带：
+
+[
+y^{\rm bdry}_t
+==============
+
+\mathbb 1
+\left[
+\min_m
+\left{
+|t-s_m|,\ |t-e_m|
+\right}
+\le r
+\right].
+]
+
+训练：
+
+[
+\mathcal L_{\rm bdry}
+=====================
+
+\operatorname{BalancedBCE}
+(\hat p_t,y^{\rm bdry}_t).
+]
+
+推理时 router 只使用自身预测 (\hat p_t)，不存在 GT、teacher 或 oracle 输入。
+
+### 6.12 完整训练目标
+
+[
+\mathcal L=
+\mathcal L_{\rm cls}
++
+\mathcal L_{\rm reg}
++
+\lambda_\pi\mathcal L_{\rm policy}
++
+\lambda_v\mathcal L_{\rm value}
++
+\lambda_b\mathcal L_{\rm bdry}
+------------------------------
+
+\lambda_H H(\pi_b).
+]
+
+coverage 和 temporal stability 放入 detached policy risk，而不是直接对 hard indices 求梯度。
+
+### 6.13 Geometry/support 与 representation 解耦
+
+推荐主模型中：
+
+```text
+geometry affects membership:       YES
+geometry_projection into adapter:  NO
+ROI-relative coordinate features:  NO
+absolute source coordinates:       YES, all sparse arms matched
+pooling:                            uniform_selected
+```
+
+只有在独立 ablation 中才重新打开：
+
+```text
+geometry_projection
+ROI-relative coordinates
+```
+
+否则无法判断增益来自 support 还是 side-channel。
+
+### 6.14 No-leak 证明
+
+router forward 的允许输入：
+
+```text
+raw/scout video
+valid native mask
+source coordinates
+learned parameters
+```
+
+禁止输入：
+
+```text
+validation/test GT
+teacher output
+oracle ROI
+manual ROI
+raw prediction cache
+official-test result
+```
+
+GT 只在 training loss 构造 boundary target 时使用，不进入 router forward，也不保存为 inference dependency。
+
+### 6.15 One-heavy-forward 证明
+
+CER-TAD 只替换 `select_exact_k` 之前的 route policy。其后继续调用一次：
+
+```python
+self.model.backbone.forward_native_packed(...)
+```
+
+当前 packed implementation 已显式检查 invocation delta 必须等于 1。
+
+VideoMAE 的 patch embed 只作用于 gathered native tubelets，12 个 block 的 attention/MLP/Adapter 均使用 selected mask。
+
+### 6.16 复杂度
+
+设每个 VideoMAE chunk 有 (m=8) 个 tubelets，空间 token 数 (N=220)，选择 K 个。
+
+Router：
+
+[
+O(BTNK)
+]
+
+最坏来自 residual 对 geometry support 的 complement distance；N 和 K 都很小。
+
+Heavy backbone：
+
+[
+O\left(
+LBQ
+\left[
+(mK)^2C + mKC^2
+\right]
+\right),
+\qquad Q=T/m.
+]
+
+Adapter：
+
+[
+O(LBTKC).
+]
+
+必须额外实测当前 dense positional carrier、clone/scatter、decode 和 postprocess 成本，不能只报告上述理想算子复杂度。
+
+### 6.17 失败回退
+
+* dynamic budget collapse，但 fixed-role union 有效：冻结预注册 fixed budget，论文降级为 fixed complementary routing。
+* geometry+context 不优于 context-only：删除 geometry role 和 geometry claim。
+* residual 不提供增量：删除 residual role。
+* boundary head无增量：移除 boundary-sensitive claim。
+* P2 无 full-stack Pareto：**终止整个效率论文方向**。
+* 仅 accuracy 改善而无真实成本改善：不能包装为高效方法。
+
+### 6.18 为什么不是 Free v1 加 head/loss
+
+CER-TAD 改变了四个根本对象：
+
+1. **动作空间**：无角色集合 → 互补角色 exact-K 集合。
+2. **估计器**：selected-only ST → hard route likelihood。
+3. **因果边界**：support 与 geometry representation 解耦。
+4. **时间结构**：无稳定性 → boundary-conditioned persistence。
+
+这不是 loss weight 调整。
+
+---
+
+## 7. Core implementation
+
+完整接口级研究实现框架：
+
+[下载 CER-TAD 核心实现框架](sandbox:/mnt/data/cer_tad_core_implementation_framework.md)
+
+该文件包含：
+
+```text
+opentad/models/backbones/complementary_routing.py
+georoute_wrapper.py 接入 diff
+GeoRouteSparseTemporalAdapter 去混杂 diff
+dynamic exact-K role budget
+Gumbel/Plackett–Luce hard route
+context/geometry/residual 去重
+boundary auxiliary
+policy/value/entropy losses
+route telemetry contract
+config 示例
+最小单元测试
+```
+
+这是**尚未合入、尚未在 CUDA 上执行的研究实现框架**；不能将其描述为已通过 P0。
+
+### 7.1 Hard PL without replacement
+
+```python
+def plackett_luce_without_replacement(
+    logits: Tensor,       # [N]
+    available: Tensor,    # [N] bool
+    count: int,
+    *,
+    temperature: float,
+    stochastic: bool,
+) -> tuple[Tensor, Tensor]:
+    if logits.ndim != 1 or available.shape != logits.shape:
+        raise ValueError("PL inputs must be matching [N] tensors")
+    if available.dtype != torch.bool:
+        raise TypeError("available must be bool")
+    if not 0 <= count <= int(available.sum().item()):
+        raise ValueError("count exceeds valid support")
+
+    scaled = logits / temperature
+    ranking = scaled.masked_fill(~available, float("-inf"))
+
+    if stochastic:
+        u = torch.rand_like(ranking).clamp_(1e-6, 1.0 - 1e-6)
+        ranking = ranking - torch.log(-torch.log(u))
+
+    ordered = torch.topk(
+        ranking, k=count, dim=-1, sorted=True
+    ).indices
+
+    remaining = available.clone()
+    log_prob = logits.new_zeros(())
+    for slot in range(count):
+        choice = ordered[slot]
+        candidate = scaled.masked_fill(
+            ~remaining, float("-inf")
+        )
+        log_prob = (
+            log_prob
+            + F.log_softmax(candidate, dim=-1)[choice]
+        )
+        remaining[choice] = False
+
+    return ordered, log_prob
+```
+
+关键 KAT：
+
+```python
+def test_pl_likelihood_credits_unselected_candidates():
+    logits = torch.zeros(10, requires_grad=True)
+    available = torch.ones(10, dtype=torch.bool)
+
+    torch.manual_seed(3)
+    selected, log_prob = plackett_luce_without_replacement(
+        logits,
+        available,
+        count=3,
+        temperature=1.0,
+        stochastic=True,
+    )
+
+    (2.0 * log_prob).backward()
+
+    hard_mask = torch.zeros(10, dtype=torch.bool)
+    hard_mask[selected] = True
+
+    assert logits.grad is not None
+    assert torch.any(logits.grad[~hard_mask].abs() > 0)
+```
+
+当前 ST 无法通过这个测试。
+
+### 7.2 Dynamic exact-K role budget
+
+```python
+def enumerate_exact_budgets(
+    total_k: int,
+    context_options=(4, 8, 12),
+    min_geometry: int = 8,
+    min_residual: int = 8,
+    role_step: int = 4,
+) -> Tensor:
+    triples = []
+    for kc in context_options:
+        for kg in range(min_geometry, total_k + 1, role_step):
+            kr = total_k - kc - kg
+            if kr < min_residual or kr % role_step:
+                continue
+            triples.append((kc, kg, kr))
+
+    if not triples:
+        raise ValueError("no feasible exact-K role budget")
+
+    return torch.tensor(
+        sorted(set(triples)),
+        dtype=torch.long,
+    )  # [M,3]
+```
+
+核心去重：
+
+```python
+context = deterministic_farthest_context(
+    valid, coordinates, kc
+)
+available = valid.clone()
+available[context] = False
+
+geometry, geometry_log_prob = (
+    plackett_luce_without_replacement(
+        roi_logits,
+        available,
+        kg,
+        temperature=self.policy_temperature,
+        stochastic=self.training,
+    )
+)
+available[geometry] = False
+
+residual_score = self._residual_scores(
+    residual_logits,
+    roi_logits,
+    geometry,
+    coordinates,
+)
+residual, residual_log_prob = (
+    plackett_luce_without_replacement(
+        residual_score,
+        available,
+        kr,
+        temperature=self.policy_temperature,
+        stochastic=self.training,
+    )
+)
+
+indices = torch.cat(
+    (context, geometry, residual), dim=0
+)
+indices, permutation = indices.sort()
+
+if torch.any(indices[1:] == indices[:-1]):
+    raise RuntimeError("duplicate role support")
+if indices.numel() != total_k:
+    raise RuntimeError("effective K mismatch")
+```
+
+### 7.3 Detector-bound policy loss
+
+```python
+def detector_bound_policy_losses(
+    *,
+    detector_losses: dict[str, Tensor],
+    route: ComplementaryRoute,
+    policy_weight: float,
+    critic_weight: float,
+    budget_entropy_weight: float,
+) -> dict[str, Tensor]:
+    detector_risk = sum(
+        value
+        for value in detector_losses.values()
+        if torch.is_tensor(value)
+    )
+    if detector_risk.ndim != 0:
+        raise ValueError("detector risk must be scalar")
+
+    risk = (
+        detector_risk.detach().expand_as(
+            route.value_baseline
+        )
+        + route.route_penalty.detach()
+    )
+    advantage = risk - route.value_baseline.detach()
+
+    return {
+        "cer_policy_loss":
+            policy_weight
+            * (advantage * route.mean_log_prob).mean(),
+
+        "cer_value_loss":
+            critic_weight
+            * F.mse_loss(route.value_baseline, risk),
+
+        "cer_budget_entropy_loss":
+            -budget_entropy_weight
+            * route.budget_entropy.mean(),
+    }
+```
+
+### 7.4 Wrapper 接入点
+
+```diff
+@@ GeoRouteBackboneWrapper.forward
+- route = select_exact_k(...)
++ if self.route_mode == "complementary":
++     cer_route = self.complementary_router(
++         state=route_state,                  # [B,T,D]
++         boundary_logits=boundary_logits,   # [B,T]
++         roi_logits=roi_logits,             # [B,T,N]
++         residual_logits=residual_logits,   # [B,T,N]
++         valid_mask=valid_patch_mask,        # [B,T,N]
++         coordinates=native_coordinates,    # [N,2]
++     )
++     route = {
++         "indices": cer_route.indices,       # [B,T,K]
++         "selected_mask": cer_route.selected_mask,
++         "st_gate": torch.ones_like(
++             cer_route.indices,
++             dtype=roi_logits.dtype,
++         ),
++         "selected_aggregation_logits":
++             torch.zeros_like(
++                 cer_route.indices,
++                 dtype=roi_logits.dtype,
++             ),
++         "target_k": self.tokens_per_tubelet,
++         "item_count": roi_logits.shape[-1],
++     }
++     self._pending_complementary_route = cer_route
++ else:
++     route = select_exact_k(...)
+```
+
+同时必须加入：
+
+```diff
+- ROUTE_MODES = {...}
++ ROUTE_MODES = {..., "complementary"}
+```
+
+### 7.5 去除 geometry representation confound
+
+```diff
+@@ GeoRouteSparseTemporalAdapter.forward
+- relative = (
+-     selected_coordinates - geometry[..., None, :2]
+- ) / geometry[..., None, 2:].clamp_min(1e-6)
+- coordinate_input = torch.cat(
+-     (selected_coordinates, relative), dim=-1
+- )
++ if coordinate_mode == "absolute_only":
++     coordinate_input = torch.cat(
++         (
++             selected_coordinates,
++             torch.zeros_like(selected_coordinates),
++         ),
++         dim=-1,
++     )
++ else:
++     relative = (
++         selected_coordinates - geometry[..., None, :2]
++     ) / geometry[..., None, 2:].clamp_min(1e-6)
++     coordinate_input = torch.cat(
++         (selected_coordinates, relative), dim=-1
++     )
+
+@@
+- pooled = self.norm(
+-     pooled + self.geometry_projection(geometry)
+- )
++ if add_geometry_projection:
++     pooled = pooled + self.geometry_projection(geometry)
++ pooled = self.norm(pooled)
+```
+
+推荐主臂：
+
+```python
+coordinate_mode = "absolute_only"
+add_geometry_projection = False
+pooling_mode = "uniform_selected"
+```
+
+### 7.6 Config
+
+```python
+model = dict(
+    backbone=dict(
+        custom=dict(
+            georoute_route_mode="complementary",
+            georoute_policy_estimator="score_function",
+            georoute_tokens_per_tubelet=64,
+            georoute_pooling_mode="uniform_selected",
+
+            cer_block_tubelets=8,
+            cer_context_options=(4, 8, 12),
+            cer_min_geometry=8,
+            cer_min_residual=8,
+            cer_role_step=4,
+
+            cer_policy_temperature=0.7,
+            cer_coverage_weight=0.10,
+            cer_temporal_stability_weight=0.05,
+
+            cer_policy_weight=1.0,
+            cer_critic_weight=0.5,
+            cer_budget_entropy_weight=0.01,
+            cer_boundary_weight=0.20,
+            cer_boundary_radius_frames=8,
+        )
+    )
+)
+```
+
+这些数值是预注册初始值，不是已验证最优值，禁止根据 official test 调整。
+
+### 7.7 Route telemetry
+
+每个 window 必须写出：
+
+```python
+{
+    "video_id": str,
+    "window_start": int,
+    "indices": int16[T, K],
+    "roles": uint8[T, K],
+    "budgets": uint8[T, 3],
+    "geometry": float16[T, 4],
+    "boundary_probability": float16[T],
+    "roi_k_margin": float16[T],
+    "residual_k_margin": float16[T],
+    "requested_k": int,
+    "effective_k": int,
+    "duplicates": int,
+    "padding_tokens": int,
+    "runtime_commit": str,
+    "checkpoint_sha256": str,
+    "config_sha256": str,
+}
+```
+
+telemetry 只能作为只读分析输出，不能被后续 router 或 inference 读取。
+
+---
+
+## 8. Complete experiment plan
+
+## Phase M：失败机制审计
+
+### M0. 当前 artifact 是否充分
+
+**不充分。**
+
+当前 `latest_georoute_audit` 只有：
+
+* aggregate K/duplicate；
+* role count；
+* shape；
+* packed call count；
+* geometry min/max；
+* no-leak flags。
+
+缺少：
+
+* per-video/window selected indices；
+* per-role indices；
+* ROI/residual logits；
+* K/K+1 margin；
+* soft gate；
+* geometry trajectory；
+* per-tubelet coverage；
+* temporal overlap；
+* Adapter lineage survival；
+* hard/soft mismatch；
+* role gradient；
+* boundary-conditioned route statistics。
+
+因此不能从现有 `stage_result.json` 合法断言 collapse、jitter 或 action-interior bias。
+
+### M1. 无训练只读 replay
+
+在 instrumentation-only commit 上重放成功 checkpoints；要求：
+
+```text
+prediction JSON bitwise hash unchanged
+metrics unchanged
+one-heavy-forward unchanged
+route forward unchanged
+```
+
+记录：
+
+| 诊断                          | 定义                                                 |
+| --------------------------- | -------------------------------------------------- |
+| Spatial covering radius     | 每个 native point 到最近 selected point 的最大/均值距离        |
+| Quadrant occupancy          | 11×20 grid 的分区覆盖                                   |
+| Pairwise diversity          | selected coordinates 两两距离                          |
+| Dataset occupancy entropy   | 每个 native location 的跨数据选中频率熵                       |
+| Temporal Jaccard            | (J(S_t,S_{t-1}))                                   |
+| Lineage survival            | 相邻 tubelet 中相同 native index 保留比例                   |
+| Route displacement          | 匹配后 selected coordinate 平均位移                       |
+| Fixed/random/hybrid overlap | support Jaccard                                    |
+| Geometry trajectory         | center、area、aspect、velocity、acceleration           |
+| Role contribution           | role-specific pooled norm、detector gradient norm   |
+| Role entropy                | dynamic/fixed role usage                           |
+| K/K+1 margin                | scorer stability                                   |
+| Hard-soft mismatch          | soft mass outside hard set、hard/soft top-K overlap |
+| Scorer calibration          | score 与 selected-feature detector gradient 的相关性    |
+
+GT 只在 route 生成完毕后用于后处理分组：
+
+```text
+pre-start
+start boundary
+action interior
+end boundary
+background
+short / medium / long actions
+```
+
+这不构成推理泄漏。
+
+### M2. Phase M 决策
+
+* Hybrid 的提升若完全由 deterministic context 和 geometry representation 解释：**删除 geometry-support primary hypothesis**。
+* Hybrid 显示 ROI/residual role 在同一 window 中覆盖互补区域，且 full support 的 lineage/coverage 优于两者单独：允许进入 CER P0。
+* Free 未显示 collapse，但 residual-PL 明显可能修复：先测试 estimator，不立即实现复杂结构。
+
+---
+
+## Phase P0：机械正确性
+
+### P0-A Source and data gate
+
+在训练前对整个 development corpus 执行 exact-index decode census：
+
+1. 由真实 dataset sampler 枚举每个 video/window 请求的全部 frame indices。
+2. 包含末尾窗口、重复索引、最后一帧和 padding 前后的实际索引。
+3. 使用与训练/测试相同的 Decord backend、thread 和 `get_batch` 路径读取。
+4. 同时记录：
+
+   * file SHA256；
+   * container frame count；
+   * decoded frame count；
+   * max requested index；
+   * FPS、PTS monotonicity；
+   * resolution；
+   * exact-index decode status。
+5. 任一失败则 **fail before training**。
+
+不允许仅增加：
+
+```text
+DECORD_EOF_RETRY_MAX
+```
+
+若必须 re-mux/re-encode：
+
+* 生成新的不可变 dataset manifest；
+* 更新所有文件 hash；
+* 所有 P1 arms 在同一修复后 corpus 上重跑；
+* 不允许只重跑 ROI-only。
+
+### P0-B Router KAT
+
+必须全部通过：
+
+```text
+exact requested K
+effective K == requested K
+duplicate == 0
+padding token == 0
+indices within valid mask
+role budgets sum to K
+deterministic eval
+stochastic train
+full-K parity
+```
+
+### P0-C Gradient KAT
+
+| KAT                      | PASS 条件                                                      |
+| ------------------------ | ------------------------------------------------------------ |
+| ST reference             | unselected direct gradient = 0，确认旧事实                         |
+| PL route                 | 至少一个未选 valid logit 有非零 policy gradient                       |
+| Budget head              | detector risk 改变时 budget logits gradient 非零                  |
+| Geometry role            | geometry logits gradient 非零                                  |
+| Residual role            | residual logits gradient 非零                                  |
+| No leakage               | 清空 GT 后 inference route 不变化                                  |
+| Representation isolation | support/absolute coords 固定时，改变 geometry 不改变主臂 adapter output |
+
+### P0-D Packed backbone
+
+```text
+native_packed_forward_invocations delta == 1
+packed attention calls == 12
+packed MLP calls == 12
+packed Adapter calls == 12
+dense Adapter calls == 0
+full-K max error <= 1e-4
+```
+
+当前 packed path 确实只对 selected tokens 执行 attention/MLP，再 scatter 回 carrier。
+
+### P0-E Systems gate
+
+```text
+storage preflight
+atomic final-only checkpoint
+unique run namespace
+train/test rendezvous isolation
+no overwrite/resume
+decode population census PASS
+prediction/profile population preflight
+```
+
+---
+
+## Phase P1：新假设单 seed screen
+
+固定：
+
+```text
+seed = 3407
+epochs = 20
+K = 64
+source grid = 11×20
+same repaired development manifest
+same VideoMAE/Adapter/ActionFormer
+same optimizer/schedule
+same absolute coordinates
+uniform pooling, except explicit representation control
+one heavy forward
+```
+
+### P1 matched matrix
+
+|  ID | Arm                             | 唯一变化                                                     | 回答的问题                     |
+| --: | ------------------------------- | -------------------------------------------------------- | ------------------------- |
+|  A0 | dense native                    | K=220                                                    | upper-compute reference   |
+|  A1 | fixed lattice                   | deterministic K64                                        | 非学习 coverage 基线           |
+|  A2 | random                          | stateless random K64                                     | selector 是否优于随机           |
+|  A3 | fixed + geometry representation | same fixed support + geometry projection/relative coords | H5 side-channel 是否单独有效    |
+|  A4 | residual-only ST                | Free v1                                                  | 冻结负基线                     |
+|  A5 | residual-only PL                | estimator only                                           | H1 是否为主要根因                |
+|  A6 | context8 + residual56 PL        | 无 learned geometry                                       | H3 context floor          |
+|  A7 | context8 + geometry56 PL        | 无 residual，geometry support-only                         | geometry support 是否单独有效   |
+|  A8 | CER dynamic, no boundary        | dynamic complementary roles                              | H4/H6 互补与动态 budget        |
+|  A9 | **CER full**                    | A8 + predicted boundary conditioning                     | 推荐模型                      |
+| A10 | CER geometry-shuffled           | 同结构/参数/预算，打乱 geometry spatial semantics                  | learned geometry 是否真有语义贡献 |
+
+为避免容量混杂：
+
+* 所有 learned sparse arms 实例化相同 scout stem 和 heads。
+* 不使用的 head 仍计入参数量，但不能影响 support/representation。
+* A3 是唯一打开 geometry representation side-channel 的主矩阵臂。
+* A5–A10 均关闭 geometry projection 与 ROI-relative coordinates。
+
+### P1 primary metric
+
+[
+H=\frac12
+\left(
+mAP@0.6+mAP@0.7
+\right).
+]
+
+Secondary：
+
+```text
+Avg-mAP
+mAP@0.7
+short-action mAP
+start/end boundary error
+route coverage
+lineage survival
+development p50/p95，描述性，不作效率 claim
+```
+
+### P1 进入 P2 的门
+
+A9 必须同时满足：
+
+1. (H) 比 A1/A2/A5/A6/A7 中最佳者高至少 `+0.50 pp`。
+2. `mAP@0.7` 比最佳 K64 control 高至少 `+0.30 pp`。
+3. A9 相对 A6 和 A7 各至少 `+0.30 pp H`，否则不存在互补性。
+4. A10 比 A9 至少低 `0.30 pp H`，否则 learned geometry 没有语义贡献。
+5. exact-K、one-heavy、no-leak 和 data census 全部通过。
+
+状态：
+
+```text
+GO    满足全部条件
+HOLD  A9 最优但未达到 margin，或 geometry-shuffled 无法区分
+KILL  A9 不优于 A6/A7，或 A5 已经解释全部增益
+```
+
+P1 jobs 可以并行提交，但分析脚本必须一次性读取完整预注册矩阵，禁止观察中间结果后追加对照或换主方法。
+
+---
+
+## Phase P2：多 seed 与预算 Pareto
+
+### P2-A Seeds
+
+```text
+3407
+3408
+3409
+```
+
+### P2-B Schedule
+
+```text
+60 epochs
+final-only checkpoint
+same augmentation
+same initialization protocol
+no best-epoch selection
+```
+
+### P2-C Budget matrix
+
+完整 budget curve：
+
+```text
+K ∈ {32, 48, 64, 96}
+```
+
+每个 K 跑：
+
+```text
+fixed
+random
+P1 最强简化 learned control
+CER-TAD
+```
+
+dense K=220 每 seed 一次。
+
+机制 controls 只在 K64 跑三 seed：
+
+```text
+residual-PL
+context+residual
+context+geometry
+CER no-boundary
+CER full
+CER geometry-shuffled
+CER + geometry representation side-channel
+```
+
+### P2-D Full-stack cost
+
+必须覆盖：
+
+```text
+decode
+preprocess
+host-to-device
+scout
+route
+patch embed
+packed backbone
+Adapter
+detector
+NMS
+evaluator
+```
+
+记录：
+
+```text
+end-to-end p50 / p95
+peak allocated memory
+peak reserved memory
+process/system peak
+gross GPU energy
+net GPU energy after idle subtraction
+throughput
+route and carrier/scatter time
+```
+
+采用：
+
+* 同节点、同 driver、同 clock policy；
+* warm-up 后测量；
+* randomized ABBA method order；
+* 至少 100 个相同 window；
+* 每个视频保持 paired measurement。
+
+当前 result schema 本身也要求完整 cost scope、energy 和 evidence hashes；现有 development profile 不满足该 paper schema。
+
+### P2-E 不确定性
+
+使用两层 paired bootstrap：
+
+1. seed 层；
+2. video cluster 层。
+
+报告：
+
+```text
+paired mean difference
+95% confidence interval
+per-seed values
+video-cluster bootstrap distribution
+```
+
+### P2-F GO/HOLD/KILL
+
+#### GO
+
+全部满足：
+
+1. CER 相对 strongest K-matched control：
+
+[
+\Delta H\ge +0.75\ \text{pp}
+]
+
+且 paired 95% CI lower bound (>0)。
+
+2. CER 相对 context+residual 与 context+geometry 均有正增量，95% CI lower bound (>0)。
+
+3. K64 下：
+
+[
+mAP@0.7_{\rm CER}
+\ge
+mAP@0.7_{\rm dense}-0.50\ \text{pp}.
+]
+
+4. short-action mAP 和 boundary error 无显著退化。
+
+5. 相对 dense：
+
+```text
+full-stack p50 至少降低 15%
+gross energy 至少降低 15%
+各自 ratio 的 95% CI upper bound < 0.90
+```
+
+#### HOLD
+
+* 准确率条件通过，但 cost reduction 为 `5–15%`；
+* 或差值正但 CI 跨 0；
+* 或一个 role 没有可重复增量。
+
+HOLD 只能授权：
+
+* 增加一个预注册 seed；
+* 重复系统测量；
+* 删除无效 role 并重新命名。
+
+不能授权观察结果后换 loss、换预算或换 primary metric。
+
+#### KILL
+
+出现任一项：
+
+* CER 在两个或更多 K 上不优于 strongest simple control。
+* geometry 或 residual role 在三 seed 下始终无增量。
+* `mAP@0.7` 比 dense 低超过 `1.0 pp` 且没有更低预算 Pareto。
+* full-stack latency/energy 相对 dense 改善不足 `5%`。
+* packed carrier/scatter 开销抵消 heavy compute 节省。
+* no-leak、exact-K、decode census 或 evidence hash 失败。
+
+---
+
+## Phase P3：论文闭环
+
+只有 P2 为 GO 后才能执行：
+
+1. 第二 detector：
+
+   * 优先选择与 ActionFormer 机制不同的 TAD head；
+   * 候选可为 TemporalMaxer/TriDet，但必须先核验当前 raw-video e2e 接口。
+
+2. 第二 dataset：
+
+   * 优先标准 TAD generalization dataset；
+   * ActivityNet-1.3 是稳妥候选；
+   * 若强调短动作与边界，可增加 FineAction，但不能替代标准 benchmark。
+
+3. 一次性 sealed official test。
+
+4. 完整 decode-to-NMS/energy。
+
+5. 跨视频分辨率与 grid shape 泛化。
+
+6. K 预算迁移，不针对 test 调 budget。
+
+7. 可视化只能在方法冻结后生成，禁止用可视化挑选最终模型。
+
+---
+
+## 9. Paper plan
+
+### 9.1 足以成为主方法的贡献
+
+唯一足够强的候选贡献是：
+
+> **将 TAD 的 pre-backbone spatial allocation 从独立 token saliency ranking 重新定义为具有 context/geometry/residual 角色的 complementary exact-K structured decision，并使用真实 hard-route likelihood 与 boundary-conditioned detector risk 训练。**
+
+单独的以下贡献不够：
+
+```text
+增加 geometry head
+增加 context tokens
+增加 diversity loss
+把 8/28/28 改成动态比例
+加入 boundary BCE
+使用 Gumbel-top-K
+```
+
+论文价值来自它们共同支撑一个新的问题定义和可证伪机制，而不是模块数量。
+
+### 9.2 与相关方向的本质区别
+
+#### DynamicViT / ATS / A-ViT / ToMe
+
+这些方法主要在 transformer 内部依据已经产生的 feature token 进行 pruning、halting、sampling 或 merging；DynamicViT 通过中间层预测模块和 attention masking 逐层裁剪，ATS 是插入 block 内的自适应采样，ToMe 在 block 内合并相似 token。([arXiv][4])
+
+CER-TAD 的差异必须是：
+
+```text
+before heavy backbone
+source-native support
+exact-K
+offline TAD detector utility
+boundary-sensitive temporal role allocation
+```
+
+#### TokenLearner
+
+TokenLearner 生成少量自适应聚合 token，而 CER-TAD 保留真实 source-coordinate native support，不是软聚合的 latent token。([arXiv][5])
+
+#### AdaFocus / Uni-AdaFocus
+
+它们是 Geometry Zoom 路线最接近的先验：低成本全局网络选局部 patch，再由高容量网络处理。因此当前方法若没有 continuous crop/source-density 放大，不能把 token gather 描述为 Zoom。([Open Access CVF][1])
+
+#### EVAD
+
+EVAD 在 spatio-temporal action detection 中保留 keyframe tokens、选择其他帧中的 motion-relevant tokens，并用 context refinement 恢复检测信息。它会成为“动作检测中 token dropout 与 context”的直接审稿先验。CER-TAD 必须强调任务是 offline temporal action detection、决策在 heavy backbone 前、exact source-native support，以及边界/短动作效用。([Open Access CVF][6])
+
+#### TAD sampling / AdaTAD
+
+SCSampler 主要选择 salient temporal clips；AdaTAD/TIA 主要解决长输入、巨型 backbone 的端到端训练和 temporal adapter，而不是动态 spatial support。([Open Access CVF][7])
+
+#### 2026 动态 token allocation
+
+AdapTok 已研究内容自适应的时序 token allocation，MeToM 已使用视频元数据执行动态 budget 和 token merging，尽管它们分别面向生成式 tokenizer 与 Video-LLM。因而“动态分配 token budget”本身已不足以成为新颖性；必须建立 TAD-specific complementary roles、hard credit 与 boundary mechanism。([Open Access CVF][8])
+
+### 9.3 当前结果最多支持什么
+
+可以写进内部研究记录：
+
+> 在 K=64 的单 seed development-only screen 中，无约束 Free NativeTokenSelect 明显弱于 fixed/random，而一个同时引入 deterministic context、learned geometry support、role quota 和 geometry-conditioned representation 的 Hybrid 恢复至接近 dense。该结果否定 Free v1，并提出结构化互补路由假设，但由于多重干预、单 seed、ROI decode failure 和 selector 缺失，不能建立因果或论文性能结论。
+
+### 9.4 当前绝对不能写什么
+
+```text
+Hybrid validates geometry.
+Geometry Zoom preserves dense accuracy.
+Our learned router outperforms random/fixed.
+Our method achieves real-time or end-to-end acceleration.
+Our method reduces energy.
+Our method is statistically significant.
+Our method generalizes.
+Our method is state of the art.
+```
+
+### 9.5 至少还缺的实验
+
+1. residual ST vs PL。
+2. context+residual。
+3. context+geometry。
+4. support-only geometry。
+5. same-support geometry representation on/off。
+6. geometry-shuffled。
+7. dynamic vs fixed quota。
+8. boundary on/off。
+9. 三 seed。
+10. K curve。
+11. short-action/boundary-conditioned analysis。
+12. full-stack cost与energy。
+13. 第二 detector。
+14. 第二 dataset。
+15. one-time official test。
+
+### 9.6 最可能的三条拒稿意见
+
+#### Attack 1：Hybrid 是多重干预，作者无法证明 geometry 或 complementarity
+
+模型层解决：
+
+* 主模型关闭 geometry representation。
+* context/residual/geometry/full 四臂完整分解。
+* geometry-shuffled control。
+* 同架构、同参数、同 K。
+
+#### Attack 2：hard top-K 训练是错误 surrogate，结果可能只是偶然搜索偏差
+
+模型层解决：
+
+* PL hard likelihood。
+* unselected-gradient KAT。
+* detector-bound score-function。
+* state-only critic。
+* 三 seed、paired uncertainty。
+
+#### Attack 3：这不是 Zoom，而且系统成本不可信
+
+模型层解决：
+
+* 改名为 CER-TAD。
+* 明确 `uses_grid_sample=False`、`uses_resized_local_crop=False`。
+* 完整 decode-to-NMS/energy ledger。
+* 若未来做 Zoom，单独实现 TrajectoryZoom，不追溯改名。
+
+### 9.7 推荐标题
+
+首选：
+
+> **CER-TAD: Complementary Evidence Routing for Efficient Offline Temporal Action Detection**
+
+更保守版本：
+
+> **Complementary Pre-Backbone Spatial Routing for Boundary-Sensitive Temporal Action Detection**
+
+不推荐：
+
+```text
+GeoRoute-AdaTAD
+Spatial Zoom for TAD
+Geometry Zoom
+Adaptive Resolution TAD
+```
+
+### 9.8 图表计划
+
+#### Figure 1
+
+CER-TAD 数据流：
+
+```text
+scout
+→ dynamic role budget
+→ context/geometry/residual support
+→ one packed heavy backbone
+→ TAD
+```
+
+#### Figure 2
+
+当前 ST 与 PL 的梯度差异：
+
+```text
+selected-only amplitude credit
+vs
+hard-set likelihood credit including unselected candidates
+```
+
+#### Figure 3
+
+每个动作阶段的：
+
+```text
+support maps
+role maps
+temporal Jaccard
+lineage survival
+boundary probability
+```
+
+#### Figure 4
+
+```text
+mAP@0.7 – full-stack latency – energy Pareto
+```
+
+#### Table 1
+
+P1/P2 causal decomposition。
+
+#### Table 2
+
+K={32,48,64,96} budget curve。
+
+#### Table 3
+
+第二 detector/dataset generalization。
+
+#### Table 4
+
+full-stack cost scope 与 energy。
+
+### 9.9 Token-routing 还是 Geometry Zoom
+
+**当前必须是 token-routing 论文。**
+
+只有方向 B 被真实实现并通过：
+
+```text
+continuous source-coordinate geometry
+variable scale/aspect/trajectory
+raw-source crop before heavy backbone
+native-density increase
+one heavy forward
+matched AdaFocus-like controls
+```
+
+才允许重新选择 Geometry Zoom 叙事。
+
+---
+
+## 10. Immediate next actions
+
+| 优先级 | 未来 24–48 小时任务                                                          | 必须产出的证据                                           | 失败条件                                       |
+| --: | ---------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------ |
+|  P0 | 在用户本地保存 source receipt                                                 | HEAD、branch、clean status、`7be..3293` diff         | local tree 非 clean 且差异未解释                  |
+|  P0 | 对完整 development corpus 做 exact-index decode census                     | 每个视频 hash、请求索引、decode status、末帧 status            | 任一索引无法读取                                   |
+|  M1 | 给现有六个成功 checkpoint 做 instrumentation-only replay                       | prediction hash parity、per-window route telemetry | instrumentation 改变 prediction              |
+|  M2 | 计算 coverage、jitter、lineage、role、margin、boundary-conditioned statistics | 统一 Phase M report                                 | telemetry 不足时不得下机制结论                       |
+|  P0 | 直接启用现有 Free score-function 路径，做 residual-PL KAT                        | 未选 logits 非零 gradient、真实 detector binding         | PL 路径数值不稳或 gradient KAT 失败                 |
+|  P0 | 实现 geometry support/representation 独立开关                                | same-support geometry-invariance KAT              | 改 geometry 仍改变 support-only adapter output |
+|  P0 | 移植 CER router、dynamic role budget、boundary head                        | exact-K、dedup、one-heavy、no-leak 全 PASS            | 任一机械门失败                                    |
+|  P1 | 在 P0 全通过后并行提交 A0–A10                                                   | 完整不可变 job matrix 和 result-blind analyzer          | 任一臂缺失，不授权 selector                         |
+|  P1 | 只按冻结门决定 P2                                                             | GO/HOLD/KILL receipt                              | 不允许手工挑选 Hybrid/CER                         |
+
+### 整个方向的立即停止条件
+
+满足任一项即停止当前 Spatial Routing 论文路线：
+
+1. Phase M 表明 Hybrid 的恢复完全由 context 与 representation side-channel 解释，learned support 没有互补证据。
+2. residual-PL 仍明显弱于 fixed/random，说明 estimator 修复不足以挽救 learned routing。
+3. CER 在 P1 不优于 `context+residual` 或 `context+geometry`。
+4. geometry-shuffled 与真实 geometry 无差异。
+5. P2 三 seed 下高 tIoU 增益不稳定。
+6. full-stack latency/energy 没有 Pareto。
+7. dense carrier/scatter 开销使真实系统成本无法下降。
+
+### 最终冻结指令
+
+```text
+KILL Free NativeTokenSelect v1 as a primary method.
+
+Do not promote the existing Hybrid.
+Do not reuse the old NativeTokenSelect-first selector.
+Do not call the current implementation Zoom.
+
+First complete Phase M and the residual-ST-vs-PL decision experiment.
+Then implement CER-TAD as a new study with support/representation isolation.
+Only a P1 causal win authorizes P2.
+Only a multi-seed accuracy-and-energy Pareto authorizes P3 and a paper claim.
+```
+
+[1]: https://openaccess.thecvf.com/content/ICCV2021/html/Wang_Adaptive_Focus_for_Efficient_Video_Recognition_ICCV_2021_paper.html "https://openaccess.thecvf.com/content/ICCV2021/html/Wang_Adaptive_Focus_for_Efficient_Video_Recognition_ICCV_2021_paper.html"
+[2]: https://iclr.cc/virtual/2023/poster/12173 "https://iclr.cc/virtual/2023/poster/12173"
+[3]: https://proceedings.mlr.press/v97/kool19a.html "https://proceedings.mlr.press/v97/kool19a.html"
+[4]: https://arxiv.org/abs/2106.02034 "https://arxiv.org/abs/2106.02034"
+[5]: https://arxiv.org/abs/2106.11297 "https://arxiv.org/abs/2106.11297"
+[6]: https://openaccess.thecvf.com/content/ICCV2023/html/Chen_Efficient_Video_Action_Detection_with_Token_Dropout_and_Context_Refinement_ICCV_2023_paper.html "https://openaccess.thecvf.com/content/ICCV2023/html/Chen_Efficient_Video_Action_Detection_with_Token_Dropout_and_Context_Refinement_ICCV_2023_paper.html"
+[7]: https://openaccess.thecvf.com/content_ICCV_2019/html/Korbar_SCSampler_Sampling_Salient_Clips_From_Video_for_Efficient_Action_Recognition_ICCV_2019_paper.html "https://openaccess.thecvf.com/content_ICCV_2019/html/Korbar_SCSampler_Sampling_Salient_Clips_From_Video_for_Efficient_Action_Recognition_ICCV_2019_paper.html"
+[8]: https://openaccess.thecvf.com/content/CVPR2026/html/Li_AdapTok_Learning_Adaptive_and_Temporally_Causal_Video_Tokenization_in_a_CVPR_2026_paper.html "https://openaccess.thecvf.com/content/CVPR2026/html/Li_AdapTok_Learning_Adaptive_and_Temporally_Causal_Video_Tokenization_in_a_CVPR_2026_paper.html"

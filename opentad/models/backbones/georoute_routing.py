@@ -362,6 +362,8 @@ def select_exact_k(
         raise ValueError("context_tokens must lie in [0,K)")
     if not (0.0 <= float(roi_fraction) <= 1.0):
         raise ValueError("roi_fraction must lie in [0,1]")
+    if mode in {"roi", "free", "hybrid"} and float(temperature) <= 0.0:
+        raise ValueError("learned GeoRoute modes require a positive temperature")
     if estimator == "score_function" and mode not in {"roi", "free"}:
         raise ValueError("score_function is only valid for single-family roi/free routes")
     if estimator == "none" and mode in {"roi", "free", "hybrid"} and training:
@@ -502,6 +504,7 @@ def select_exact_k(
         "ordered_indices": ordered,
         "selected_mask": selected_mask,
         "selected_surrogate": selected_surrogate,
+        "soft_membership": surrogate,
         "selected_aggregation_logits": selected_aggregation_logits,
         "st_gate": st_gate,
         "ordered_log_prob": ordered_log_prob,

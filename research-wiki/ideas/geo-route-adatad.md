@@ -3,7 +3,7 @@ type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
 stage: tested
-status: p1r_data_decode_failure_no_selector_exact_source_7be8363e
+status: free_v1_closed_cer_discussed_preexperiment_implemented_pending_remote_test
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
 ---
@@ -248,6 +248,32 @@ against a labelled straight-through surrogate for variance, detector utility,
 and total cost before it is made the main algorithm. Semantic violations kill
 the claim; an early gather or adapter bottleneck is a HOLD/pivot condition, not
 automatic evidence that the research hypothesis is false.
+
+## CER-TAD review absorption and narrowed next hypothesis (2026-07-29)
+
+The new Pro review is accepted with major revision, not wholesale. It correctly
+closes the present Free v1 as the primary candidate on strong descriptive
+negative evidence, forbids promoting Hybrid through a failed hierarchy, and
+identifies the current path as token routing rather than Geometry Zoom. Its
+context / geometry / residual role decomposition is a plausible successor
+hypothesis, provisionally named boundary-conditioned complementary
+pre-backbone routing.
+
+The full successor is only `discussed`. Dynamic role counts at fixed total K,
+the count likelihood, critic, boundary auxiliary, temporal-stability loss,
+coverage penalty, and their weights are not reproducibly specified. The
+eleven-arm matrix also cannot reuse the old seven-arm selector. Moreover, the
+current sparse adapter confounds support and representation: one switch controls
+both absolute and ROI-relative coordinates, while geometry is always projected
+into the pooled feature.
+
+The estimator/representation preexperiment is now
+`implemented_pending_remote_test`:
+full exact-index decode census, numerical PL/ST and representation-isolation
+KATs, and prediction-hash-preserving diagnostic replay of the six complete
+prediction-bearing checkpoints. It authorizes no training or paper claim. A
+passing receipt may authorize a separately frozen six-arm exploratory pilot;
+failure stops the corresponding estimator, instrumentation, or data path.
 
 ## Connections
 

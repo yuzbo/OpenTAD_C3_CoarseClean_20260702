@@ -1,10 +1,30 @@
 ---
 type: anti_repetition
-updated: 2026-07-28
+updated: 2026-07-29
 ---
 
 ## GeoRoute deployment anti-repetition
 
+0. Do not treat a Pro proposal as an implementation receipt. The 2026-07-29
+   CER-TAD review correctly diagnoses Free v1 and motivates complementary
+   evidence routing, but its dynamic role-count likelihood, critic, boundary
+   head, coverage/stability losses, and numerical weights are underspecified.
+   They remain `discussed` until the estimator/representation preexperiment
+   passes.
+0. Do not reuse the old seven-arm Free-first selector or its failed namespace
+   for a new CER or estimator study. A changed arm set requires a new study ID,
+   contract, selector, source commit, and namespace.
+0. Do not claim a support-selection gain while absolute coordinates,
+   ROI-relative coordinates, or the geometry projection differ between arms.
+   These three representation paths must be independently switchable and
+   matched.
+0. Do not adopt the review-proposed `+0.50 pp` / `+0.30 pp` accuracy margins as
+   confirmatory gates. They were proposed after the old development results and
+   lack independent variance/power justification. Pilot estimates are
+   exploratory and must be separated from confirmatory seeds.
+0. Instrumentation replay is valid only in a new diagnostic namespace with
+   exact prediction-SHA and population parity. It cannot repair the old ROI
+   decode failure, complete the old selector, or create paper evidence.
 0. Never launch a multi-cell 60-epoch GeoRoute matrix with per-epoch full
    model/optimizer/EMA checkpoint retention and no aggregate storage
    preflight. Jobs `1196071`--`1196077` accumulated 63 GB, filled `/data`, and

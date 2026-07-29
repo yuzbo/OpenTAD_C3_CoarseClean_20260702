@@ -1324,3 +1324,31 @@ append_only: true
   absent. Because the frozen matrix and selector are incomplete, the available
   six-arm numbers are descriptive diagnostics only. Status is `tested`, not
   `empirically_supported`; no efficiency or paper claim is authorized.
+
+- 2026-07-29 16:30 CST: archived and adjudicated the user-provided CER-TAD Pro
+  review. Verdict is `ACCEPT_WITH_MAJOR_REVISION /
+  READY_PREEXPERIMENT_ONLY`, not full acceptance. Free v1 is closed as the
+  primary candidate on descriptive negative evidence; Hybrid v1, the failed
+  namespace, and the old selector are not promoted or reused. Accepted
+  mathematical facts are limited to the existing single-family ordered
+  Plackett-Luce likelihood and correct risk-minimization sign. Full CER remains
+  `discussed` because geometry representation is not isolated and dynamic role
+  likelihood, critic, boundary, coverage, stability, and numerical gates are
+  underspecified or post-hoc. Froze a new development-only D/K/M
+  estimator/representation preexperiment: two-pass exact-index decode census,
+  numerical PL/ST plus representation-isolation KATs, and six
+  prediction-SHA-preserving diagnostic replays. No training, P2/P3, official
+  test, efficiency claim, or paper claim is authorized by these gates.
+
+- 2026-07-29 18:10 CST: implemented the frozen D/K/M preexperiment without
+  launching training. Added independent absolute-coordinate,
+  ROI-relative-coordinate, and geometry-projection switches; opt-in no-GT
+  route telemetry; a two-pass full decode census; PL/ST and representation
+  known-answer tests; and six conditional, prediction-SHA-preserving replay
+  jobs. A post-implementation audit tightened positive-temperature and CUDA
+  profiling guards, remote-path containment, source-artifact binding,
+  inference-only `--not_eval`, deployment/result self-hashes, Slurm job
+  identity, population consistency, and finalizer failure receipts. Python
+  compile, Bash syntax, and `git diff --check` pass locally. State is
+  `implemented_pending_remote_test`, not `tested`, `experiment_running`, or
+  `empirically_supported`.

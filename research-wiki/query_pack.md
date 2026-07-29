@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-07-28
+updated: 2026-07-29
 max_chars: 8000
 ---
 
@@ -8,6 +8,30 @@ max_chars: 8000
 
 ## Current Active Route: NativeTokenSelect-first GeoRoute-AdaTAD (2026-07-28)
 
+- 2026-07-29 Pro-review absorption verdict:
+  `ACCEPT_WITH_MAJOR_REVISION / READY_PREEXPERIMENT_ONLY`. Free
+  NativeTokenSelect v1 is closed as the primary candidate on strong descriptive
+  negative evidence; this does not manufacture the missing old selector receipt.
+  Hybrid v1, the failed namespace, and the old Free-first selector are not
+  promoted or reused. The current implementation is source-native token routing,
+  not Geometry Zoom. The proposed CER-TAD context/geometry/residual model remains
+  `discussed`: dynamic role allocation, critic, boundary head, coverage/stability
+  objectives, and the review-proposed eleven-arm matrix are not implementation
+  ready. The immediate independent preexperiment is only (D) a two-pass
+  full-development exact-index decode census, (K) numerical PL/ST and
+  representation-isolation KATs, and (M) prediction-SHA-preserving diagnostic
+  replay of the six old arms that have both a final checkpoint and prediction.
+  ROI lacks a source prediction and is excluded from parity. Any decode, KAT,
+  prediction-hash, or population mismatch stops before training. The
+  review-proposed `+0.50/+0.30 pp` margins are not accepted as confirmatory
+  thresholds because they lack an independent variance/power basis. Full design:
+  `docs/methods/2026-07-29-georoute-estimator-representation-preexperiment.md`.
+  The D/K/M code is `implemented_pending_remote_test`: representation channels
+  are independently switchable, Phase M is inference-only with evaluation
+  disabled, and deployment/finalization receipts bind source artifacts,
+  prediction parity, frozen variants, Slurm jobs, and the clean runtime commit.
+  Static checks pass; remote Linux Torch tests and Slurm execution remain
+  pending, so no training or performance claim has been opened.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

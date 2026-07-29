@@ -1,5 +1,6 @@
 import os
 import copy
+import hashlib
 import json
 import time
 import tqdm
@@ -42,7 +43,21 @@ def eval_one_epoch(
     # later frozen protocol.
     georoute_profile_cfg = cfg.get("georoute_development_profile", {})
     georoute_profile_enabled = bool(georoute_profile_cfg.get("enabled", False))
+    if georoute_profile_enabled and not torch.cuda.is_available():
+        raise ValueError("GeoRoute development profiling requires CUDA")
+    georoute_telemetry_cfg = cfg.get("georoute_diagnostic_telemetry", {})
+    georoute_telemetry_enabled = bool(
+        georoute_telemetry_cfg.get("enabled", False)
+    )
+    if georoute_telemetry_enabled:
+        if max_batches is not None:
+            raise ValueError("GeoRoute diagnostic telemetry requires complete inference")
+        if int(world_size) != 1:
+            raise ValueError("GeoRoute diagnostic telemetry requires world_size=1")
+        if int(cfg.solver.test.get("batch_size", 1)) != 1:
+            raise ValueError("GeoRoute diagnostic telemetry requires batch_size=1")
     georoute_samples = []
+    georoute_telemetry_records = []
     previous_window_end = time.perf_counter()
 
     # load the ema dict for evaluation
@@ -71,9 +86,11 @@ def eval_one_epoch(
     # model forward
     model.eval()
     result_dict = {}
-    for data_dict in tqdm.tqdm(
-        iter_limited_batches(test_loader, max_batches=max_batches),
-        disable=(rank != 0),
+    for batch_idx, data_dict in enumerate(
+        tqdm.tqdm(
+            iter_limited_batches(test_loader, max_batches=max_batches),
+            disable=(rank != 0),
+        )
     ):
         loader_ready = time.perf_counter()
         if georoute_profile_enabled:
@@ -100,6 +117,45 @@ def eval_one_epoch(
                 }
             )
             previous_window_end = window_end
+        if georoute_telemetry_enabled:
+            unwrapped_model = getattr(model, "module", model)
+            backbone = getattr(unwrapped_model, "backbone", None)
+            latest_audit = getattr(backbone, "latest_georoute_audit", None)
+            telemetry = (
+                latest_audit.get("diagnostic_telemetry")
+                if isinstance(latest_audit, dict)
+                else None
+            )
+            if not isinstance(telemetry, dict):
+                raise RuntimeError(
+                    "GeoRoute diagnostic replay did not emit window telemetry"
+                )
+            dataset_row = test_loader.dataset.data_list[batch_idx]
+            video_id = str(dataset_row[0])
+            centers = dataset_row[3]
+            descriptor = {
+                "dataset_index": int(batch_idx),
+                "video_id": video_id,
+                "window_center_count": int(len(centers)),
+                "window_center_first": (
+                    float(centers[0]) if len(centers) else None
+                ),
+                "window_center_last": (
+                    float(centers[-1]) if len(centers) else None
+                ),
+            }
+            descriptor_bytes = json.dumps(
+                descriptor, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+            georoute_telemetry_records.append(
+                {
+                    **descriptor,
+                    "window_descriptor_sha256": hashlib.sha256(
+                        descriptor_bytes
+                    ).hexdigest(),
+                    "route": telemetry,
+                }
+            )
 
         # update the result dict
         for k, v in results.items():
@@ -195,6 +251,55 @@ def eval_one_epoch(
             profile_path = os.path.join(cfg.work_dir, "georoute_development_profile.json")
             with open(profile_path, "w", encoding="utf-8") as handle:
                 json.dump(profile_payload, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+        if georoute_telemetry_enabled:
+            if len(georoute_telemetry_records) != len(
+                test_loader.dataset.data_list
+            ):
+                raise RuntimeError(
+                    "GeoRoute diagnostic telemetry population is incomplete"
+                )
+            population_bytes = json.dumps(
+                [
+                    {
+                        key: record[key]
+                        for key in (
+                            "dataset_index",
+                            "video_id",
+                            "window_center_count",
+                            "window_center_first",
+                            "window_center_last",
+                            "window_descriptor_sha256",
+                        )
+                    }
+                    for record in georoute_telemetry_records
+                ],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            telemetry_payload = {
+                "schema_version": "georoute_diagnostic_telemetry_v1",
+                "development_only": True,
+                "official_test_opened": False,
+                "gt_for_route_used": False,
+                "teacher_for_route_used": False,
+                "oracle_used": False,
+                "raw_prediction_cache_used": False,
+                "dataset_count": len(test_loader.dataset.data_list),
+                "record_count": len(georoute_telemetry_records),
+                "population_sha256": hashlib.sha256(
+                    population_bytes
+                ).hexdigest(),
+                "phase_m_binding": dict(
+                    cfg.get("georoute_phase_m_binding", {})
+                ),
+                "records": georoute_telemetry_records,
+            }
+            telemetry_path = os.path.join(
+                cfg.work_dir, "georoute_diagnostic_telemetry.json"
+            )
+            with open(telemetry_path, "w", encoding="utf-8") as handle:
+                json.dump(telemetry_payload, handle, indent=2, sort_keys=True)
                 handle.write("\n")
     return metrics_dict
 

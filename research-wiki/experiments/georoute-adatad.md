@@ -3,9 +3,9 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: implemented
-status: node_bound_rendezvous_gate_fix_implemented_pending_gate_only_validation
-outcome: second_replacement_master_addr_assertion_false_negative_no_model
-updated: 2026-07-28
+status: estimator_representation_preexperiment_implemented_pending_remote_test
+outcome: free_v1_negative_cer_not_ready_dkm_gate_pending
+updated: 2026-07-29
 ---
 
 # GeoRoute-AdaTAD native spatial routing
@@ -511,6 +511,51 @@ failed and the frozen selector emitted no receipt, these are descriptive
 diagnostics rather than a formal selector verdict. Final status is
 `tested_p1_data_decode_failure_no_selector`, not `empirically_supported` or
 `paper_ready`.
+
+## 2026-07-29 Pro review adjudication and preexperiment
+
+The user-provided CER-TAD Pro review has been archived and independently checked
+against the exact implementation and experiment contract. Project verdict is
+`ACCEPT_WITH_MAJOR_REVISION / READY_PREEXPERIMENT_ONLY`.
+
+Accepted findings are: Free v1 is residual-only with fixed full-frame geometry;
+its ST amplitude surrogate gives no direct membership gradient to unselected
+tokens; Hybrid uses deterministic quotas and has no hard-route likelihood; the
+current geometry/coordinate adapter confounds support and representation; and
+the current path is native-token routing rather than Geometry Zoom. The
+single-family Gumbel-top-k / ordered Plackett-Luce likelihood and positive
+risk-minimization policy-loss sign are mathematically coherent.
+
+Not accepted for deployment are the full eleven-arm matrix, post-result
+`+0.50/+0.30 pp` gates, dynamic role budget, critic, boundary head,
+coverage/stability objectives, and immediate CER promotion. They are either
+incompatible with the old selector, lack a variance/power basis, or remain
+underspecified.
+
+The new development-only preexperiment has three gates:
+
+1. D: retrieve every exact development sliding-window item for two complete
+   passes; any Decord failure stops all descendants.
+2. K: pass frozen PL probability/sign/selected-and-unselected-gradient and
+   support/representation isolation known-answer tests.
+3. M: replay dense, fixed, fixed-plus-geometry, random, Free v1, and Hybrid v1
+   under opt-in telemetry and reproduce every original prediction SHA-256.
+
+ROI is excluded from parity because it has no source prediction. D/K/M outputs
+are diagnostic only and cannot complete the old selector or authorize P2/P3.
+The exact frozen design is
+`docs/methods/2026-07-29-georoute-estimator-representation-preexperiment.md`.
+
+The D/K/M implementation is complete locally and remains
+`implemented_pending_remote_test`. It separates absolute coordinates,
+ROI-relative coordinates, and pooled geometry projection; adds opt-in
+per-window route telemetry; runs Phase M inference with evaluation disabled;
+requires exact source config/checkpoint/prediction hashes and prediction-byte
+parity; and binds every receipt to the clean runtime commit, Slurm job, old run
+root, frozen six-arm set, and dependency DAG. The two-pass decode census and
+all outputs are fail-closed inside the remote write boundary. Static Python,
+Bash, and diff checks pass; Linux Torch tests and Slurm receipts are not yet
+available, so the status is not `tested` or `experiment_running`.
 
 ## Frozen decision logic
 
