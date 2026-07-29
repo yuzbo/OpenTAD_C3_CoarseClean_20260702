@@ -212,8 +212,7 @@ def main():
     from libs.modeling.sparse_heads import (
         NativeGridSparseQuerySelector,
         build_sparse_head_execution_receipt,
-        run_sparse_cls_head,
-        run_sparse_reg_head,
+        run_sparse_heads,
     )
 
     if not torch.cuda.is_available():
@@ -337,11 +336,12 @@ def main():
     with torch.inference_mode():
         dense_cls = cls_head(fpn_feats, fpn_masks)
         dense_reg = reg_head(fpn_feats, fpn_masks)
-        sparse_cls = run_sparse_cls_head(
-            cls_head, fpn_feats, fpn_masks, selected_masks
-        )
-        sparse_reg = run_sparse_reg_head(
-            reg_head, fpn_feats, fpn_masks, selected_masks
+        sparse_cls, sparse_reg = run_sparse_heads(
+            cls_head,
+            reg_head,
+            fpn_feats,
+            fpn_masks,
+            selected_masks,
         )
     maximum_abs_error = 0.0
     unselected_nonzero = 0
@@ -385,11 +385,12 @@ def main():
     with torch.inference_mode():
         boundary_dense_cls = cls_head(fpn_feats, boundary_masks)
         boundary_dense_reg = reg_head(fpn_feats, boundary_masks)
-        boundary_sparse_cls = run_sparse_cls_head(
-            cls_head, fpn_feats, boundary_masks, boundary_selected_masks
-        )
-        boundary_sparse_reg = run_sparse_reg_head(
-            reg_head, fpn_feats, boundary_masks, boundary_selected_masks
+        boundary_sparse_cls, boundary_sparse_reg = run_sparse_heads(
+            cls_head,
+            reg_head,
+            fpn_feats,
+            boundary_masks,
+            boundary_selected_masks,
         )
     boundary_maximum_abs_error = 0.0
     boundary_unselected_nonzero = 0
@@ -435,13 +436,15 @@ def main():
         reg_head(fpn_feats, fpn_masks)
 
     def sparse_preselected_function():
-        run_sparse_cls_head(cls_head, fpn_feats, fpn_masks, selected_masks)
-        run_sparse_reg_head(reg_head, fpn_feats, fpn_masks, selected_masks)
+        run_sparse_heads(
+            cls_head, reg_head, fpn_feats, fpn_masks, selected_masks
+        )
 
     def sparse_with_selector_function():
         live_selected = selector(fpn_masks, None)
-        run_sparse_cls_head(cls_head, fpn_feats, fpn_masks, live_selected)
-        run_sparse_reg_head(reg_head, fpn_feats, fpn_masks, live_selected)
+        run_sparse_heads(
+            cls_head, reg_head, fpn_feats, fpn_masks, live_selected
+        )
 
     timings = measure_cuda_suite(
         torch,
