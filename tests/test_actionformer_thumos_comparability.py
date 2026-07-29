@@ -1017,6 +1017,38 @@ def test_non_official_protocol_stays_out_of_main_table(tmp_path, monkeypatch):
         comparability.classify(record)
 
 
+def test_native_grid_contract_distinguishes_head_queries_from_input_budget():
+    record = {
+        "input": {
+            "observation_budget": None,
+            "selection_policy": "dense_all_i3d_features",
+        },
+        "model": {
+            "head": "ActionFormerNativeGridSparseHead",
+            "query_budget": 384,
+            "query_geometry": "original_full_video_fpn_physical_indices",
+            "query_selection_policy": "stratified_uniform",
+        },
+        "training": {
+            "loss_support": "selected_native_grid_queries",
+        },
+    }
+    assert (
+        comparability._native_grid_sparse_head_contract_mismatches(record)
+        == []
+    )
+
+    record["input"]["observation_budget"] = 384
+    record["training"].pop("loss_support")
+    mismatches = comparability._native_grid_sparse_head_contract_mismatches(
+        record
+    )
+    assert {item["path"] for item in mismatches} == {
+        "input.observation_budget",
+        "training.loss_support",
+    }
+
+
 def test_matched_control_requires_source_diff_attestation(tmp_path, monkeypatch):
     reference, fixture = _record(tmp_path, record_id="official-reference")
     _patch_official_constants(monkeypatch, fixture)

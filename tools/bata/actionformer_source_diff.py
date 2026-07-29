@@ -65,6 +65,7 @@ EFFECTIVE_CONFIG_ALLOWED_PATHS = {
         "model.sparse_head.enabled",
         "model.sparse_head.hash_seed",
         "model.sparse_head.policy",
+        "model.sparse_head.training_loss_support",
     },
     "selection_budget": {
         "dataset.selection_budget",

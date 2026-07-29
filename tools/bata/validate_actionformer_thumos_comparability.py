@@ -284,11 +284,12 @@ INTERVENTION_ALLOWED_PATHS = {
         "source.config_sha256",
         "source.implementation",
         "receipts.config",
-        "input.observation_budget",
-        "input.selection_policy",
         "model.head",
+        "model.query_budget",
         "model.query_geometry",
+        "model.query_selection_policy",
         "model.effective_config_sha256",
+        "training.loss_support",
     },
     "selection_budget": {
         "source.repository_url",
@@ -1567,6 +1568,55 @@ def _path_matches_prefix(path, prefixes):
     return any(path == prefix or path.startswith(f"{prefix}.") for prefix in prefixes)
 
 
+def _native_grid_sparse_head_contract_mismatches(record):
+    """Return undeclared or ambiguous method-contract fields.
+
+    The backbone still observes every official I3D feature.  K=384 applies to
+    physical FPN head queries, and the selected set is also the declared
+    training-loss support.  Keeping these as distinct record fields prevents a
+    query budget from being misreported as input-frame sampling.
+    """
+
+    flattened = _flatten(record)
+    expected = {
+        "input.observation_budget": None,
+        "input.selection_policy": "dense_all_i3d_features",
+        "model.head": "ActionFormerNativeGridSparseHead",
+        "model.query_budget": 384,
+        "model.query_geometry": "original_full_video_fpn_physical_indices",
+        "training.loss_support": "selected_native_grid_queries",
+    }
+    mismatches = []
+    for path, expected_value in expected.items():
+        observed = flattened.get(path, "<missing>")
+        if observed != expected_value:
+            mismatches.append(
+                {
+                    "path": path,
+                    "expected": expected_value,
+                    "observed": observed,
+                }
+            )
+    selection_policy = flattened.get(
+        "model.query_selection_policy", "<missing>"
+    )
+    if selection_policy not in {
+        "stratified_uniform",
+        "video_hash_random",
+    }:
+        mismatches.append(
+            {
+                "path": "model.query_selection_policy",
+                "expected": [
+                    "stratified_uniform",
+                    "video_hash_random",
+                ],
+                "observed": selection_policy,
+            }
+        )
+    return mismatches
+
+
 def compare_records(reference, candidate, intervention):
     if intervention not in INTERVENTION_ALLOWED_PATHS:
         raise ProtocolError(f"unknown matched intervention: {intervention}")
@@ -1608,6 +1658,7 @@ def classify(record, *, reference=None, intervention=None):
         [] if reference is None else official_expectation_mismatches(reference)
     )
     pair_mismatches = []
+    method_contract_mismatches = []
     reasons = []
     source_diff_attestation_verified = False
 
@@ -1634,6 +1685,14 @@ def classify(record, *, reference=None, intervention=None):
         elif intervention is None:
             reasons.append("matched control requires one named intervention")
         else:
+            if intervention == "native_grid_sparse_head_k384":
+                method_contract_mismatches = (
+                    _native_grid_sparse_head_contract_mismatches(record)
+                )
+                if method_contract_mismatches:
+                    reasons.append(
+                        "native-grid sparse-head method contract is incomplete"
+                    )
             if record["protocol_family"] != reference["protocol_family"]:
                 reasons.append("matched records use different protocol families")
             pair_mismatches = compare_records(reference, record, intervention)
@@ -1665,6 +1724,7 @@ def classify(record, *, reference=None, intervention=None):
         "official_protocol_mismatches": official_mismatches,
         "reference_official_protocol_mismatches": reference_official_mismatches,
         "pair_mismatches": pair_mismatches,
+        "method_contract_mismatches": method_contract_mismatches,
         "intervention": intervention,
         "source_diff_attestation_verified": source_diff_attestation_verified,
         "allowed_method_differences": (

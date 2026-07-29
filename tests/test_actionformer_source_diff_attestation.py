@@ -84,6 +84,7 @@ model:
     budget: 384
     policy: stratified_uniform
     hash_seed: 1234567891
+    training_loss_support: selected_native_grid_queries
 """
 
 
