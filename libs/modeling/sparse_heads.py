@@ -150,6 +150,15 @@ def _sparse_conv_at_positions(dense_input, output_positions, masked_conv):
     conv, radius = _masked_conv_spec(masked_conv)
     if output_positions.numel() == 0:
         return dense_input.new_zeros((0, conv.out_channels))
+    patches = _gather_conv_patches(dense_input, output_positions, radius)
+    return _conv_patches(patches, conv)
+
+
+def _gather_conv_patches(dense_input, output_positions, radius):
+    """Gather exact physical Conv1d neighborhoods without executing the Conv."""
+    kernel_size = 2 * radius + 1
+    if output_positions.numel() == 0:
+        return dense_input.new_zeros((0, dense_input.shape[0], kernel_size))
     time_size = dense_input.shape[-1]
     offsets = torch.arange(
         -radius, radius + 1, dtype=torch.long, device=output_positions.device
@@ -159,6 +168,12 @@ def _sparse_conv_at_positions(dense_input, output_positions, masked_conv):
     gather_indices = gather_indices.clamp(0, time_size - 1)
     patches = dense_input[:, gather_indices].permute(1, 0, 2).contiguous()
     patches = patches * in_bounds[:, None, :].to(patches.dtype)
+    return patches
+
+
+def _conv_patches(patches, conv):
+    if patches.shape[0] == 0:
+        return patches.new_zeros((0, conv.out_channels))
     values = F.conv1d(
         patches,
         conv.weight,
@@ -181,16 +196,7 @@ def _scatter_physical(values, positions, time_size, out_channels=None):
     return dense.scatter(1, indices, values.transpose(0, 1))
 
 
-def _sparse_stack_single_sample(
-    dense_input,
-    valid_mask,
-    selected_mask,
-    hidden_layers,
-    norms,
-    activation,
-    final_layer,
-):
-    layers = list(hidden_layers) + [final_layer]
+def _sparse_layer_positions(valid_mask, selected_mask, layers):
     selected_positions = selected_mask.nonzero(as_tuple=True)[0]
     layer_positions = [None] * len(layers)
     required = selected_positions
@@ -199,71 +205,131 @@ def _sparse_stack_single_sample(
         if layer_idx > 0:
             _, radius = _masked_conv_spec(layers[layer_idx])
             required = _expand_valid_positions(required, radius, valid_mask)
+    return selected_positions, layer_positions
 
-    current_dense = dense_input
-    for layer_idx, (layer, positions) in enumerate(
-        zip(layers, layer_positions)
+
+def _sparse_stack_packed(
+    dense_inputs,
+    valid_masks,
+    selected_masks,
+    hidden_layers,
+    norms,
+    activation,
+    final_layer,
+):
+    """Run one Conv kernel per head layer across all samples and FPN levels."""
+    if not (
+        len(dense_inputs) == len(valid_masks) == len(selected_masks)
     ):
-        values = _sparse_conv_at_positions(current_dense, positions, layer)
+        raise ValueError("packed sparse stack inputs must have matching lengths")
+    layers = list(hidden_layers) + [final_layer]
+    plans = [
+        _sparse_layer_positions(valid_mask, selected_mask, layers)
+        for valid_mask, selected_mask in zip(valid_masks, selected_masks)
+    ]
+    current_dense = list(dense_inputs)
+    for layer_idx, layer in enumerate(layers):
+        conv, radius = _masked_conv_spec(layer)
+        positions = [plan[1][layer_idx] for plan in plans]
+        patches = [
+            _gather_conv_patches(dense_input, output_positions, radius)
+            for dense_input, output_positions in zip(current_dense, positions)
+        ]
+        counts = [patch.shape[0] for patch in patches]
+        total_count = sum(counts)
+        if total_count > 0:
+            packed_values = _conv_patches(torch.cat(patches, dim=0), conv)
+        else:
+            packed_values = current_dense[0].new_zeros((0, conv.out_channels))
         if layer_idx < len(hidden_layers):
-            if values.numel() > 0:
-                values = norms[layer_idx](
-                    values.transpose(0, 1).unsqueeze(0)
+            if packed_values.numel() > 0:
+                packed_values = norms[layer_idx](
+                    packed_values.transpose(0, 1).unsqueeze(0)
                 ).squeeze(0).transpose(0, 1)
-                values = activation(values)
-            current_dense = _scatter_physical(
-                values,
-                positions,
-                dense_input.shape[-1],
-                out_channels=layer.conv.out_channels,
-            )
-    return _scatter_physical(
-        values,
-        selected_positions,
-        dense_input.shape[-1],
-        out_channels=final_layer.conv.out_channels,
-    )
-
-
-def run_sparse_cls_head(cls_head, fpn_feats, fpn_masks, selected_masks):
-    outputs = []
-    for feat, mask, selected in zip(fpn_feats, fpn_masks, selected_masks):
-        per_sample = []
-        for batch_idx in range(feat.shape[0]):
-            per_sample.append(
-                _sparse_stack_single_sample(
-                    feat[batch_idx],
-                    mask[batch_idx, 0],
-                    selected[batch_idx, 0],
-                    cls_head.head,
-                    cls_head.norm,
-                    cls_head.act,
-                    cls_head.cls_head,
+                packed_values = activation(packed_values)
+        per_job_values = torch.split(packed_values, counts, dim=0)
+        if layer_idx < len(hidden_layers):
+            current_dense = [
+                _scatter_physical(
+                    values,
+                    output_positions,
+                    dense_input.shape[-1],
+                    out_channels=conv.out_channels,
                 )
-            )
-        outputs.append(torch.stack(per_sample, dim=0))
+                for values, output_positions, dense_input in zip(
+                    per_job_values, positions, dense_inputs
+                )
+            ]
+    return [
+        _scatter_physical(
+            values,
+            selected_positions,
+            dense_input.shape[-1],
+            out_channels=final_layer.conv.out_channels,
+        )
+        for values, (selected_positions, _), dense_input in zip(
+            per_job_values, plans, dense_inputs
+        )
+    ]
+
+
+def _flatten_sparse_jobs(fpn_feats, fpn_masks, selected_masks):
+    dense_inputs = []
+    valid_masks = []
+    sparse_masks = []
+    batch_sizes = []
+    for feat, mask, selected in zip(fpn_feats, fpn_masks, selected_masks):
+        batch_sizes.append(feat.shape[0])
+        for batch_idx in range(feat.shape[0]):
+            dense_inputs.append(feat[batch_idx])
+            valid_masks.append(mask[batch_idx, 0])
+            sparse_masks.append(selected[batch_idx, 0])
+    return dense_inputs, valid_masks, sparse_masks, batch_sizes
+
+
+def _restore_fpn_batches(flat_outputs, batch_sizes):
+    outputs = []
+    cursor = 0
+    for batch_size in batch_sizes:
+        outputs.append(torch.stack(flat_outputs[cursor : cursor + batch_size], dim=0))
+        cursor += batch_size
+    if cursor != len(flat_outputs):
+        raise RuntimeError("packed sparse stack output count mismatch")
     return tuple(outputs)
 
 
+def run_sparse_cls_head(cls_head, fpn_feats, fpn_masks, selected_masks):
+    dense_inputs, valid_masks, sparse_masks, batch_sizes = _flatten_sparse_jobs(
+        fpn_feats, fpn_masks, selected_masks
+    )
+    flat_outputs = _sparse_stack_packed(
+        dense_inputs,
+        valid_masks,
+        sparse_masks,
+        cls_head.head,
+        cls_head.norm,
+        cls_head.act,
+        cls_head.cls_head,
+    )
+    return _restore_fpn_batches(flat_outputs, batch_sizes)
+
+
 def run_sparse_reg_head(reg_head, fpn_feats, fpn_masks, selected_masks):
+    dense_inputs, valid_masks, sparse_masks, batch_sizes = _flatten_sparse_jobs(
+        fpn_feats, fpn_masks, selected_masks
+    )
+    flat_outputs = _sparse_stack_packed(
+        dense_inputs,
+        valid_masks,
+        sparse_masks,
+        reg_head.head,
+        reg_head.norm,
+        reg_head.act,
+        reg_head.offset_head,
+    )
+    raw_outputs = _restore_fpn_batches(flat_outputs, batch_sizes)
     outputs = []
-    for level_idx, (feat, mask, selected) in enumerate(
-        zip(fpn_feats, fpn_masks, selected_masks)
-    ):
-        per_sample = []
-        for batch_idx in range(feat.shape[0]):
-            per_sample.append(
-                _sparse_stack_single_sample(
-                    feat[batch_idx],
-                    mask[batch_idx, 0],
-                    selected[batch_idx, 0],
-                    reg_head.head,
-                    reg_head.norm,
-                    reg_head.act,
-                    reg_head.offset_head,
-                )
-            )
-        raw = torch.stack(per_sample, dim=0)
+    for level_idx, raw in enumerate(raw_outputs):
         outputs.append(F.relu(reg_head.scale[level_idx](raw)))
     return tuple(outputs)
 

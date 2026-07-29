@@ -158,6 +158,42 @@ def test_sparse_selected_all_is_dense_equivalent():
     torch.testing.assert_close(sparse, dense, rtol=1e-5, atol=1e-6)
 
 
+def test_sparse_head_packs_all_samples_and_levels_into_one_conv_per_layer(
+    monkeypatch,
+):
+    torch.manual_seed(19)
+    feats = (
+        torch.randn(2, 4, 31),
+        torch.randn(2, 4, 17),
+        torch.randn(2, 4, 9),
+    )
+    masks = (
+        _make_mask([29, 23], 31),
+        _make_mask([15, 11], 17),
+        _make_mask([7, 5], 9),
+    )
+    selector = NativeGridSparseQuerySelector(
+        12, policy="stratified_uniform"
+    )
+    selected = selector(masks, ["video_a", "video_b"])
+    head = PtTransformerClsHead(
+        4, 6, 3, num_layers=3, kernel_size=3, with_ln=True
+    )
+    original_conv1d = torch.nn.functional.conv1d
+    launch_count = 0
+
+    def counted_conv1d(*args, **kwargs):
+        nonlocal launch_count
+        launch_count += 1
+        return original_conv1d(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "libs.modeling.sparse_heads.F.conv1d", counted_conv1d
+    )
+    run_sparse_cls_head(head, feats, masks, selected)
+    assert launch_count == 3
+
+
 def test_sparse_mac_ledger_counts_only_required_physical_outputs():
     masks = (
         _make_mask([64], 64),
