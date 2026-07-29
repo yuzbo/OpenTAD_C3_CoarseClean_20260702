@@ -1792,3 +1792,17 @@ append_only: true
   `docs/superpowers/specs/2026-07-30-georoute-official-semantics-amp-stability-v2-design.md`.
   It does not modify sealed v1 and does not authorize metrics, checkpoints,
   official test or a paper claim.
+
+- 2026-07-30: implemented and locally verified the approved
+  `stability_official_semantics_v2` contract. The production train engine now
+  audits consumed batches, actual replays, scheduler advances and EMA updates;
+  v2 alone captures batch-start RNG, rejects non-finite forward losses, uses
+  the default GradScaler, tolerates at most the frozen bounded backoff, and
+  validates the final stable tail. Deployment additionally requires the sealed
+  stability-v1 HOLD, exact origin-ref parity and a hashed official AdaTAD
+  reference. Focused diagnostic/v1/v2, train-engine, pilot and required C3
+  regressions pass locally. Torch-importing Windows tests remain blocked by the
+  documented user-site `c10.dll` failure and must pass on clean Linux before
+  Slurm submission. The receipt explicitly says the development scheduler
+  hyperparameters and full official recipe are unmatched, so no performance or
+  paper claim is authorized.

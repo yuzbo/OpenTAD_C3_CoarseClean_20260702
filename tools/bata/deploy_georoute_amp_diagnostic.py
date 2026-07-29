@@ -22,14 +22,16 @@ from tools.bata.georoute_amp_diagnostic import (  # noqa: E402
     AMP_DIAGNOSTIC_FINALIZATION_SCHEMA,
     AMP_DIAGNOSTIC_PROFILE,
     AMP_DIAGNOSTIC_STUDY_ID,
+    AMP_STABILITY_FINALIZATION_SCHEMA,
     AMP_STABILITY_PROFILE,
+    AMP_STABILITY_STUDY_ID,
+    AMP_STABILITY_V2_PROFILE,
     amp_protocol_spec,
     validate_amp_diagnostic_job_receipt,
 )
 from tools.bata.georoute_estimator_pilot_contract import (  # noqa: E402
     PILOT_ARMS,
     PILOT_FINALIZATION_SCHEMA,
-    PILOT_SEED,
     PILOT_STUDY_ID,
 )
 from tools.bata.georoute_experiment_contract import (  # noqa: E402
@@ -364,6 +366,38 @@ def _validate_diagnostic_parent_deployment(
     return deployment
 
 
+def _validate_stability_v1_parent(
+    path: Path,
+    *,
+    expected_file_sha256: str,
+    expected_runtime_commit: str,
+) -> dict[str, Any]:
+    if not path.is_file() or path.is_symlink():
+        raise FileNotFoundError(
+            "official-semantics stability v2 requires sealed stability-v1 HOLD"
+        )
+    if sha256_file(path) != expected_file_sha256:
+        raise ValueError("stability-v1 parent file hash mismatch")
+    parent = _read_json(path)
+    if (
+        parent.get("schema_version") != AMP_STABILITY_FINALIZATION_SCHEMA
+        or parent.get("study_id") != AMP_STABILITY_STUDY_ID
+        or parent.get("status")
+        != "INCOMPLETE_REAL_DATA_AMP_STABILITY_GATE"
+        or parent.get("decision") != "STABILITY_GATE_INCOMPLETE_HOLD"
+        or parent.get("runtime_commit") != expected_runtime_commit
+        or parent.get("stability_gate_passed") is not False
+        or parent.get("official_protocol_freeze_authorized") is not False
+        or parent.get("performance_metrics") != {}
+        or parent.get("performance_inference_allowed") is not False
+        or parent.get("official_test_opened") is not False
+        or parent.get("paper_claim_allowed") is not False
+        or not _self_hash_matches(parent, field="finalization_sha256")
+    ):
+        raise ValueError("stability-v1 parent is not the sealed fail-closed HOLD")
+    return parent
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-root", type=Path, required=True)
@@ -379,12 +413,21 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument(
         "--protocol-profile",
-        choices=(AMP_DIAGNOSTIC_PROFILE, AMP_STABILITY_PROFILE),
+        choices=(
+            AMP_DIAGNOSTIC_PROFILE,
+            AMP_STABILITY_PROFILE,
+            AMP_STABILITY_V2_PROFILE,
+        ),
         default=AMP_DIAGNOSTIC_PROFILE,
     )
     parser.add_argument("--parent-diagnostic-finalization", type=Path)
     parser.add_argument("--expected-diagnostic-file-sha256")
     parser.add_argument("--expected-diagnostic-runtime-commit")
+    parser.add_argument("--parent-stability-v1-finalization", type=Path)
+    parser.add_argument("--expected-stability-v1-file-sha256")
+    parser.add_argument("--expected-stability-v1-runtime-commit")
+    parser.add_argument("--official-reference-config", type=Path)
+    parser.add_argument("--expected-origin-ref")
     return parser.parse_args()
 
 
@@ -416,6 +459,28 @@ def main() -> int:
         raise RuntimeError("AMP diagnostic source differs from --expected-commit")
     if _git_output("status", "--porcelain=v1", "--untracked-files=all"):
         raise RuntimeError("AMP diagnostic deployment requires clean source")
+    expected_origin_ref = None
+    if args.protocol_profile == AMP_STABILITY_V2_PROFILE:
+        expected_origin_ref = str(args.expected_origin_ref or "")
+        if (
+            not expected_origin_ref.startswith("refs/remotes/origin/")
+            or any(
+                character in expected_origin_ref
+                for character in (" ", "\t", "\n", "\r", "\x00")
+            )
+        ):
+            raise ValueError(
+                "official-semantics stability v2 requires a full origin ref"
+            )
+        if (
+            _git_output("rev-parse", "--verify", expected_origin_ref).lower()
+            != expected_commit
+        ):
+            raise RuntimeError(
+                "official-semantics stability v2 origin ref differs from source"
+            )
+    elif args.expected_origin_ref is not None:
+        raise ValueError("expected-origin-ref is stability-v2 only")
     parent_path = args.parent_pilot_finalization.resolve()
     parent = _validate_parent(
         parent_path,
@@ -426,7 +491,10 @@ def main() -> int:
     diagnostic_parent_deployment = None
     diagnostic_parent_path = None
     expected_diagnostic_file_sha256 = None
-    if args.protocol_profile == AMP_STABILITY_PROFILE:
+    if args.protocol_profile in {
+        AMP_STABILITY_PROFILE,
+        AMP_STABILITY_V2_PROFILE,
+    }:
         if (
             args.parent_diagnostic_finalization is None
             or args.expected_diagnostic_file_sha256 is None
@@ -468,6 +536,51 @@ def main() -> int:
             "diagnostic-parent arguments are stability-gate only"
         )
 
+    stability_v1_parent = None
+    stability_v1_parent_path = None
+    expected_stability_v1_file_sha256 = None
+    if args.protocol_profile == AMP_STABILITY_V2_PROFILE:
+        if (
+            args.parent_stability_v1_finalization is None
+            or args.expected_stability_v1_file_sha256 is None
+            or args.expected_stability_v1_runtime_commit is None
+            or args.official_reference_config is None
+        ):
+            raise ValueError(
+                "official-semantics stability v2 requires sealed v1 HOLD "
+                "and official-reference arguments"
+            )
+        stability_v1_parent_path = (
+            args.parent_stability_v1_finalization.resolve()
+        )
+        expected_stability_v1_file_sha256 = _full_hex(
+            args.expected_stability_v1_file_sha256,
+            length=64,
+            name="--expected-stability-v1-file-sha256",
+        )
+        expected_stability_v1_runtime_commit = _full_hex(
+            args.expected_stability_v1_runtime_commit,
+            length=40,
+            name="--expected-stability-v1-runtime-commit",
+        )
+        stability_v1_parent = _validate_stability_v1_parent(
+            stability_v1_parent_path,
+            expected_file_sha256=expected_stability_v1_file_sha256,
+            expected_runtime_commit=expected_stability_v1_runtime_commit,
+        )
+    elif any(
+        value is not None
+        for value in (
+            args.parent_stability_v1_finalization,
+            args.expected_stability_v1_file_sha256,
+            args.expected_stability_v1_runtime_commit,
+            args.official_reference_config,
+        )
+    ):
+        raise ValueError(
+            "stability-v1 parent and official reference are stability-v2 only"
+        )
+
     inputs = {
         "GEOROUTE_SOURCE_CONFIG": args.source_config.resolve(),
         "GEOROUTE_MANIFEST": args.manifest.resolve(),
@@ -480,6 +593,10 @@ def main() -> int:
         ),
         "GEOROUTE_PRETRAINED": args.pretrained.resolve(),
     }
+    if args.protocol_profile == AMP_STABILITY_V2_PROFILE:
+        inputs["GEOROUTE_OFFICIAL_REFERENCE_CONFIG"] = (
+            args.official_reference_config.resolve()
+        )
     for name, input_path in inputs.items():
         if name == "GEOROUTE_DEVELOPMENT_VIDEO_ROOT":
             if not input_path.is_dir() or any(
@@ -493,11 +610,19 @@ def main() -> int:
         elif not input_path.is_file():
             raise FileNotFoundError(input_path)
     if (
-        args.protocol_profile == AMP_STABILITY_PROFILE
+        args.protocol_profile
+        in {AMP_STABILITY_PROFILE, AMP_STABILITY_V2_PROFILE}
         and not _inside(inputs["GEOROUTE_SOURCE_CONFIG"], ROOT)
     ):
         raise ValueError(
             "AMP stability source config must come from the exact runtime checkout"
+        )
+    if (
+        args.protocol_profile == AMP_STABILITY_V2_PROFILE
+        and not _inside(inputs["GEOROUTE_OFFICIAL_REFERENCE_CONFIG"], ROOT)
+    ):
+        raise ValueError(
+            "official reference config must come from the exact runtime checkout"
         )
     input_receipts = {
         name: {
@@ -576,7 +701,7 @@ def main() -> int:
     )
 
     run_root.mkdir(parents=True, exist_ok=False)
-    for directory in ("diagnostic", "control", "slurm"):
+    for directory in (str(spec["cell_directory"]), "control", "slurm"):
         (run_root / directory).mkdir()
     _atomic_write_json(
         run_root / "control" / "submit_capacity_preflight.json",
@@ -625,9 +750,15 @@ def main() -> int:
             "runtime_commit": expected_commit,
             "run_root": str(run_root),
             "arms": list(AMP_DIAGNOSTIC_ARMS),
-            "seed": PILOT_SEED,
+            "seed": int(spec["seed"]),
             "jobs": jobs,
             "input_receipts": input_receipts,
+            "expected_origin_ref": expected_origin_ref,
+            "origin_ref_parity_verified": (
+                True
+                if args.protocol_profile == AMP_STABILITY_V2_PROFILE
+                else None
+            ),
             "matched_diagnostic_inputs": (
                 {
                     "names": list(matched_parent_input_names),
@@ -660,6 +791,33 @@ def main() -> int:
                     "decision": diagnostic_parent["decision"],
                 }
                 if diagnostic_parent is not None
+                else None
+            ),
+            "parent_stability_v1": (
+                {
+                    "path": str(stability_v1_parent_path),
+                    "file_sha256": expected_stability_v1_file_sha256,
+                    "finalization_sha256": stability_v1_parent[
+                        "finalization_sha256"
+                    ],
+                    "runtime_commit": stability_v1_parent["runtime_commit"],
+                    "decision": stability_v1_parent["decision"],
+                }
+                if stability_v1_parent is not None
+                else None
+            ),
+            "official_reference_binding": (
+                {
+                    "bound": True,
+                    "path": input_receipts[
+                        "GEOROUTE_OFFICIAL_REFERENCE_CONFIG"
+                    ]["path"],
+                    "sha256": input_receipts[
+                        "GEOROUTE_OFFICIAL_REFERENCE_CONFIG"
+                    ]["sha256"],
+                    "full_official_training_claimed": False,
+                }
+                if args.protocol_profile == AMP_STABILITY_V2_PROFILE
                 else None
             ),
             "submit_capacity_preflight": capacity,

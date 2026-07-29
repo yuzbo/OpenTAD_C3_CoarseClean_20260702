@@ -25,14 +25,12 @@ from tools.bata.georoute_amp_diagnostic import (  # noqa: E402
     AMP_DIAGNOSTIC_STAGE_SCHEMA,
     AMP_DIAGNOSTIC_STUDY_ID,
     AMP_STABILITY_PROFILE,
+    AMP_STABILITY_V2_PROFILE,
     amp_protocol_spec,
     bind_amp_diagnostic_config,
     diagnostic_cell_relative_path,
     validate_amp_diagnostic_job_receipt,
     validate_amp_diagnostic_receipt,
-)
-from tools.bata.georoute_estimator_pilot_contract import (  # noqa: E402
-    PILOT_SEED,
 )
 from tools.bata.georoute_experiment_contract import (  # noqa: E402
     canonical_sha256,
@@ -122,6 +120,7 @@ def _validate_deployment(
         != spec["profile"]
         or deployment.get("runtime_commit") != expected_commit
         or tuple(deployment.get("arms", [])) != AMP_DIAGNOSTIC_ARMS
+        or int(deployment.get("seed", -1)) != int(spec["seed"])
         or jobs["stage"][arm] != expected_job_id
         or deployment.get("checkpoint_emitted") is not False
         or deployment.get("evaluator_invoked") is not False
@@ -133,7 +132,10 @@ def _validate_deployment(
         )
     ):
         raise RuntimeError("AMP diagnostic deployment receipt is invalid")
-    if protocol_profile == AMP_STABILITY_PROFILE:
+    if protocol_profile in {
+        AMP_STABILITY_PROFILE,
+        AMP_STABILITY_V2_PROFILE,
+    }:
         matched_inputs = deployment.get("matched_diagnostic_inputs")
         parent = deployment.get("parent_diagnostic")
         if (
@@ -146,6 +148,21 @@ def _validate_deployment(
             raise RuntimeError(
                 "AMP stability deployment lacks matched diagnostic provenance"
             )
+    if protocol_profile == AMP_STABILITY_V2_PROFILE:
+        stability_v1_parent = deployment.get("parent_stability_v1")
+        official_reference = deployment.get("official_reference_binding")
+        if (
+            not isinstance(stability_v1_parent, Mapping)
+            or stability_v1_parent.get("decision")
+            != "STABILITY_GATE_INCOMPLETE_HOLD"
+            or not isinstance(official_reference, Mapping)
+            or official_reference.get("bound") is not True
+            or deployment.get("origin_ref_parity_verified") is not True
+        ):
+            raise RuntimeError(
+                "AMP stability v2 deployment lacks sealed v1 HOLD or "
+                "official-reference provenance"
+            )
     return deployment
 
 
@@ -157,16 +174,17 @@ def _validate_train_rendezvous(
     protocol_profile: str = AMP_DIAGNOSTIC_PROFILE,
 ) -> dict[str, Any]:
     spec = amp_protocol_spec(protocol_profile)
+    seed = int(spec["seed"])
     stage = str(spec["rendezvous_stage"])
     expected_id = (
-        f"georoute-{slurm_job_id}-{stage}-{arm}-s{PILOT_SEED}-train"
+        f"georoute-{slurm_job_id}-{stage}-{arm}-s{seed}-train"
     )
     if (
         receipt.get("phase") != "train"
         or receipt.get("backend") != "c10d"
         or receipt.get("stage") != stage
         or receipt.get("variant") != arm
-        or int(receipt.get("seed", -1)) != PILOT_SEED
+        or int(receipt.get("seed", -1)) != seed
         or receipt.get("slurm_job_id") != slurm_job_id
         or receipt.get("rendezvous_id") != expected_id
         or int(receipt.get("nnodes", -1)) != 1
@@ -248,7 +266,7 @@ def validate_amp_diagnostic_stage_result(
             spec["stage_pass_status"],
             spec["stage_fail_status"],
         }
-        or int(result.get("seed", -1)) != PILOT_SEED
+        or int(result.get("seed", -1)) != int(spec["seed"])
         or result.get("checkpoint_emitted") is not False
         or result.get("prediction_emitted") is not False
         or result.get("evaluator_invoked") is not False
@@ -326,14 +344,20 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument(
         "--protocol-profile",
-        choices=(AMP_DIAGNOSTIC_PROFILE, AMP_STABILITY_PROFILE),
+        choices=(
+            AMP_DIAGNOSTIC_PROFILE,
+            AMP_STABILITY_PROFILE,
+            AMP_STABILITY_V2_PROFILE,
+        ),
         default=AMP_DIAGNOSTIC_PROFILE,
     )
+    parser.add_argument("--official-reference-config", type=Path)
     return parser.parse_args()
 
 
 def _execute(args: argparse.Namespace) -> dict[str, Any]:
     spec = amp_protocol_spec(args.protocol_profile)
+    execution_seed = int(spec["seed"])
     expected_commit = str(args.expected_commit).lower()
     if _git_output("rev-parse", "HEAD").lower() != expected_commit:
         raise RuntimeError("AMP diagnostic source differs from its bound commit")
@@ -364,7 +388,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         run_root
         / "control"
         / "bound_configs"
-        / f"{spec['study_id']}_{args.arm}_seed{PILOT_SEED}.py"
+        / f"{spec['study_id']}_{args.arm}_seed{execution_seed}.py"
     )
     train_log = run_root / "control" / "train_logs" / f"{args.arm}.out"
     if cell_root.exists() or bound_config.exists() or train_log.exists():
@@ -375,7 +399,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
     cfg = bind_amp_diagnostic_config(
         source_config_path=args.source_config,
         arm=args.arm,
-        seed=PILOT_SEED,
+        seed=execution_seed,
         work_dir=cell_root,
         manifest_path=args.manifest,
         development_annotation_path=args.development_annotation,
@@ -384,6 +408,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         pretrained_checkpoint_path=args.pretrained,
         runtime_commit=expected_commit,
         protocol_profile=args.protocol_profile,
+        official_reference_config_path=args.official_reference_config,
     )
     expected_inputs = deployment["input_receipts"]
     if (
@@ -403,6 +428,13 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         != expected_inputs["GEOROUTE_PRETRAINED"]["sha256"]
         or cfg.georoute_amp_diagnostic_binding["development_video_root"]
         != expected_inputs["GEOROUTE_DEVELOPMENT_VIDEO_ROOT"]["path"]
+        or (
+            args.protocol_profile == AMP_STABILITY_V2_PROFILE
+            and cfg.georoute_amp_diagnostic_binding[
+                "official_reference_config_sha256"
+            ]
+            != expected_inputs["GEOROUTE_OFFICIAL_REFERENCE_CONFIG"]["sha256"]
+        )
     ):
         raise RuntimeError("AMP diagnostic immutable input binding changed")
     bound_config.parent.mkdir(parents=True, exist_ok=True)
@@ -416,7 +448,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         slurm_job_id=slurm_job_id,
         stage=str(spec["rendezvous_stage"]),
         variant=args.arm,
-        seed=PILOT_SEED,
+        seed=execution_seed,
     )
     train_error: BaseException | None = None
     try:
@@ -426,7 +458,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
                 "tools/train.py",
                 str(bound_config),
                 "--seed",
-                str(PILOT_SEED),
+                str(execution_seed),
                 "--id",
                 "0",
             ],
@@ -464,7 +496,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         "study_id": spec["study_id"],
         "protocol_profile": spec["profile"],
         "arm": args.arm,
-        "seed": PILOT_SEED,
+        "seed": execution_seed,
         "runtime_commit": expected_commit,
         "slurm_job_id": slurm_job_id,
         "binding": dict(cfg.georoute_amp_diagnostic_binding),
@@ -530,7 +562,7 @@ def _write_wrapper_failure(
         "study_id": spec["study_id"],
         "protocol_profile": spec["profile"],
         "arm": args.arm,
-        "seed": PILOT_SEED,
+        "seed": int(spec["seed"]),
         "expected_runtime_commit": str(args.expected_commit).lower(),
         "observed_runtime_commit": (
             _git_output("rev-parse", "HEAD").lower()

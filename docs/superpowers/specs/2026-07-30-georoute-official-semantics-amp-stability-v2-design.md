@@ -2,7 +2,7 @@
 
 Date: 2026-07-30
 
-Status: `approved_by_heartbeat_pending_implementation`
+Status: `implemented_and_local_verified_pending_remote_execution`
 
 Scope: numerical stability and official-protocol freeze authorization only.
 This design does not authorize accuracy measurement, checkpoint selection,
@@ -255,4 +255,3 @@ The later paper experiment must contain:
 Geometry is tested only after NativeTokenSelect defeats fixed/random at high
 tIoU and costs less than native-source dense. No development pilot, diagnostic
 or stability-gate value enters a paper performance table.
-

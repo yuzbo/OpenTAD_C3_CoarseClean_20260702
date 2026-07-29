@@ -24,7 +24,7 @@ from tools.bata.georoute_estimator_pilot_contract import (
     bind_pilot_config,
     pilot_arm_spec,
 )
-from tools.bata.georoute_experiment_contract import canonical_sha256
+from tools.bata.georoute_experiment_contract import canonical_sha256, sha256_file
 
 
 AMP_DIAGNOSTIC_STUDY_ID = "georoute_real_batch_amp_diagnostic_v1"
@@ -57,6 +57,34 @@ AMP_STABILITY_FINALIZATION_SCHEMA = (
 AMP_STABILITY_MAX_BATCHES = 32
 AMP_STABILITY_RETRY_LIMIT = 0
 
+AMP_STABILITY_V2_PROFILE = "stability_official_semantics_v2"
+AMP_STABILITY_V2_STUDY_ID = "georoute_real_data_amp_stability_v2"
+AMP_STABILITY_V2_BINDING_SCHEMA = (
+    "georoute_real_data_amp_stability_official_semantics_binding_v2"
+)
+AMP_STABILITY_V2_RECEIPT_SCHEMA = (
+    "georoute_real_data_amp_stability_official_semantics_receipt_v2"
+)
+AMP_STABILITY_V2_STAGE_SCHEMA = (
+    "georoute_real_data_amp_stability_official_semantics_stage_v2"
+)
+AMP_STABILITY_V2_DEPLOYMENT_SCHEMA = (
+    "georoute_real_data_amp_stability_official_semantics_deployment_v2"
+)
+AMP_STABILITY_V2_FINALIZATION_SCHEMA = (
+    "georoute_real_data_amp_stability_official_semantics_finalization_v2"
+)
+AMP_STABILITY_V2_SEED = 4417
+AMP_STABILITY_V2_FORBIDDEN_PAPER_SEEDS = (3407, 3408, 3409)
+AMP_STABILITY_V2_MAX_BATCHES = 64
+AMP_STABILITY_V2_RETRY_LIMIT = 0
+AMP_STABILITY_V2_MAX_SKIPS = 2
+AMP_STABILITY_V2_MAX_CONSECUTIVE_SKIPS = 1
+AMP_STABILITY_V2_MIN_SCALE = 16384.0
+AMP_STABILITY_V2_STABLE_TAIL_BATCHES = 16
+AMP_STABILITY_V2_MAX_CROSS_ARM_SKIP_DELTA = 1
+AMP_STABILITY_V2_MAX_FINAL_SCALE_RATIO = 2.0
+
 
 def amp_protocol_spec(profile: str) -> dict[str, Any]:
     """Return the immutable numerical-only execution contract for one profile."""
@@ -74,6 +102,7 @@ def amp_protocol_spec(profile: str) -> dict[str, Any]:
             "max_batches": AMP_DIAGNOSTIC_MAX_BATCHES,
             "retry_limit": AMP_DIAGNOSTIC_RETRY_LIMIT,
             "initial_scale": AMP_DIAGNOSTIC_INITIAL_SCALE,
+            "seed": PILOT_SEED,
             "temporal_reduction": "sum",
             "zero_failed_attempts_required": False,
             "cell_directory": "diagnostic",
@@ -113,6 +142,7 @@ def amp_protocol_spec(profile: str) -> dict[str, Any]:
             "max_batches": AMP_STABILITY_MAX_BATCHES,
             "retry_limit": AMP_STABILITY_RETRY_LIMIT,
             "initial_scale": AMP_DIAGNOSTIC_INITIAL_SCALE,
+            "seed": PILOT_SEED,
             "temporal_reduction": "mean",
             "zero_failed_attempts_required": True,
             "cell_directory": "stability",
@@ -141,6 +171,76 @@ def amp_protocol_spec(profile: str) -> dict[str, Any]:
             ),
             "incomplete_status": "INCOMPLETE_REAL_DATA_AMP_STABILITY_GATE",
             "job_prefix": "grstab",
+        }
+    if profile == AMP_STABILITY_V2_PROFILE:
+        return {
+            "profile": AMP_STABILITY_V2_PROFILE,
+            "study_id": AMP_STABILITY_V2_STUDY_ID,
+            "binding_schema": AMP_STABILITY_V2_BINDING_SCHEMA,
+            "receipt_schema": AMP_STABILITY_V2_RECEIPT_SCHEMA,
+            "stage_schema": AMP_STABILITY_V2_STAGE_SCHEMA,
+            "deployment_schema": AMP_STABILITY_V2_DEPLOYMENT_SCHEMA,
+            "finalization_schema": AMP_STABILITY_V2_FINALIZATION_SCHEMA,
+            "max_batches": AMP_STABILITY_V2_MAX_BATCHES,
+            "retry_limit": AMP_STABILITY_V2_RETRY_LIMIT,
+            "initial_scale": AMP_DIAGNOSTIC_INITIAL_SCALE,
+            "seed": AMP_STABILITY_V2_SEED,
+            "temporal_reduction": "mean",
+            "zero_failed_attempts_required": False,
+            "max_skipped_attempts": AMP_STABILITY_V2_MAX_SKIPS,
+            "max_consecutive_skips": AMP_STABILITY_V2_MAX_CONSECUTIVE_SKIPS,
+            "minimum_scale": AMP_STABILITY_V2_MIN_SCALE,
+            "stable_tail_batches": AMP_STABILITY_V2_STABLE_TAIL_BATCHES,
+            "minimum_successful_updates": (
+                AMP_STABILITY_V2_MAX_BATCHES - AMP_STABILITY_V2_MAX_SKIPS
+            ),
+            "max_cross_arm_skip_delta": (
+                AMP_STABILITY_V2_MAX_CROSS_ARM_SKIP_DELTA
+            ),
+            "max_final_scale_ratio": AMP_STABILITY_V2_MAX_FINAL_SCALE_RATIO,
+            "use_default_grad_scaler_constructor": True,
+            "fail_on_skipped_update": False,
+            "schedule_and_ema_on_success_only": False,
+            "capture_amp_rng_state": True,
+            "fail_on_nonfinite_loss": True,
+            "cell_directory": "stability_v2",
+            "receipt_filename": "amp_stability_v2.json",
+            "rendezvous_stage": "ampstablev2",
+            "config_status": "official_semantics_amp_stability_v2_only",
+            "receipt_running_status": (
+                "RUNNING_OFFICIAL_SEMANTICS_AMP_STABILITY_V2_ONLY"
+            ),
+            "receipt_pass_status": (
+                "PASS_OFFICIAL_SEMANTICS_AMP_STABILITY_V2_EXECUTION_ONLY"
+            ),
+            "receipt_fail_status": (
+                "FAIL_OFFICIAL_SEMANTICS_AMP_STABILITY_V2_EXECUTION"
+            ),
+            "stage_pass_status": (
+                "PASS_STAGE_OFFICIAL_SEMANTICS_AMP_STABILITY_V2_ONLY"
+            ),
+            "stage_fail_status": (
+                "FAIL_STAGE_OFFICIAL_SEMANTICS_AMP_STABILITY_V2_EXECUTION"
+            ),
+            "stage_wrapper_fail_status": (
+                "FAIL_OFFICIAL_SEMANTICS_AMP_STABILITY_V2_STAGE_WRAPPER"
+            ),
+            "deployment_status": (
+                "SUBMITTED_OFFICIAL_SEMANTICS_AMP_STABILITY_V2_ONLY"
+            ),
+            "finalizer_submission_status": (
+                "SUBMITTED_OFFICIAL_SEMANTICS_AMP_STABILITY_V2_FINALIZER_AFTERANY"
+            ),
+            "stage_release_status": (
+                "RELEASED_OFFICIAL_SEMANTICS_AMP_STABILITY_V2_STAGES"
+            ),
+            "complete_status": (
+                "COMPLETE_OFFICIAL_SEMANTICS_AMP_STABILITY_V2_ONLY"
+            ),
+            "incomplete_status": (
+                "INCOMPLETE_OFFICIAL_SEMANTICS_AMP_STABILITY_V2"
+            ),
+            "job_prefix": "grstabv2",
         }
     raise ValueError(f"unsupported AMP numerical protocol profile {profile!r}")
 
@@ -212,12 +312,15 @@ def bind_amp_diagnostic_config(
     pretrained_checkpoint_path: str | Path,
     runtime_commit: str,
     protocol_profile: str = AMP_DIAGNOSTIC_PROFILE,
+    official_reference_config_path: str | Path | None = None,
 ):
     """Build one immutable, no-metric residual-PL/ST diagnostic config."""
 
     spec = amp_protocol_spec(protocol_profile)
     if arm not in AMP_DIAGNOSTIC_ARMS:
         raise ValueError("AMP diagnostic arm must be residual PL or matched ST")
+    if int(seed) != int(spec["seed"]):
+        raise ValueError("AMP diagnostic seed differs from its protocol profile")
     runtime_commit = _full_hex(
         runtime_commit,
         length=40,
@@ -226,7 +329,10 @@ def bind_amp_diagnostic_config(
     cfg = bind_pilot_config(
         source_config_path=source_config_path,
         arm=arm,
-        seed=seed,
+        # The pilot binder is reused only as a frozen configuration template.
+        # The v2 execution/data-order seed is rebound below and is recorded
+        # separately from this historical exploratory template seed.
+        seed=PILOT_SEED,
         work_dir=work_dir,
         manifest_path=manifest_path,
         development_annotation_path=development_annotation_path,
@@ -239,6 +345,7 @@ def bind_amp_diagnostic_config(
     output_path = work_dir / str(spec["receipt_filename"])
 
     cfg.model.backbone.custom.georoute_amp_diagnostic_enabled = True
+    cfg.model.backbone.custom.georoute_random_seed = int(spec["seed"])
     cfg.model.backbone.custom.georoute_score_function_temporal_reduction = (
         spec["temporal_reduction"]
     )
@@ -249,9 +356,19 @@ def bind_amp_diagnostic_config(
     cfg.workflow.disable_checkpoint = True
     cfg.workflow.max_train_iters = int(spec["max_batches"])
     cfg.workflow.max_amp_retries_per_batch = int(spec["retry_limit"])
-    cfg.workflow.fail_on_skipped_update = True
+    cfg.workflow.fail_on_skipped_update = bool(
+        spec.get("fail_on_skipped_update", True)
+    )
     cfg.workflow.require_successful_update_hook = True
-    cfg.workflow.schedule_and_ema_on_success_only = True
+    cfg.workflow.schedule_and_ema_on_success_only = bool(
+        spec.get("schedule_and_ema_on_success_only", True)
+    )
+    cfg.workflow.capture_amp_rng_state = bool(
+        spec.get("capture_amp_rng_state", False)
+    )
+    cfg.workflow.fail_on_nonfinite_loss = bool(
+        spec.get("fail_on_nonfinite_loss", False)
+    )
     cfg.post_processing.save_dict = False
     cfg.inference.load_from_raw_predictions = False
     cfg.inference.save_raw_prediction = False
@@ -264,7 +381,7 @@ def bind_amp_diagnostic_config(
         "protocol_profile": spec["profile"],
         "arm": arm,
         "arm_spec": pilot_arm_spec(arm),
-        "seed": PILOT_SEED,
+        "seed": int(spec["seed"]),
         "token_budget": PILOT_K,
         "runtime_commit": runtime_commit,
         "work_dir": str(work_dir),
@@ -313,7 +430,9 @@ def bind_amp_diagnostic_config(
         "exact_historical_batch_replay_claimed": False,
         "deterministic_algorithms_enabled": True,
         "deterministic_warn_only": True,
-        "historical_pilot_seed_policy_matched": True,
+        "historical_pilot_seed_policy_matched": (
+            spec["profile"] != AMP_STABILITY_V2_PROFILE
+        ),
         "amp_diagnostic_telemetry_enabled": True,
         "checkpoint_disabled": True,
         "evaluator_invoked": False,
@@ -322,6 +441,100 @@ def bind_amp_diagnostic_config(
         "p2_p3_opened": False,
         "paper_claim_allowed": False,
     }
+    if spec["profile"] == AMP_STABILITY_V2_PROFILE:
+        if official_reference_config_path is None:
+            raise ValueError(
+                "official-semantics stability v2 requires an official reference config"
+            )
+        official_reference = Path(official_reference_config_path).resolve()
+        if not official_reference.is_file() or official_reference.is_symlink():
+            raise FileNotFoundError(
+                "official-semantics stability v2 reference config is invalid"
+            )
+        from mmengine.config import Config
+
+        official_cfg = Config.fromfile(str(official_reference))
+        official_solver = _mapping(
+            official_cfg.solver,
+            name="official reference solver",
+        )
+        official_workflow = _mapping(
+            official_cfg.workflow,
+            name="official reference workflow",
+        )
+        official_transitions = {
+            "amp_enabled": official_solver.get("amp") is True,
+            "ema_enabled": official_solver.get("ema") is True,
+            "clip_grad_l2norm": float(
+                official_solver.get("clip_grad_norm", -1.0)
+            ),
+            "max_amp_retries_per_batch": int(
+                official_workflow.get("max_amp_retries_per_batch", 0)
+            ),
+            "fail_on_skipped_update": bool(
+                official_workflow.get("fail_on_skipped_update", False)
+            ),
+            "schedule_and_ema_on_success_only": bool(
+                official_workflow.get(
+                    "schedule_and_ema_on_success_only",
+                    False,
+                )
+            ),
+        }
+        if official_transitions != {
+            "amp_enabled": True,
+            "ema_enabled": True,
+            "clip_grad_l2norm": 1.0,
+            "max_amp_retries_per_batch": 0,
+            "fail_on_skipped_update": False,
+            "schedule_and_ema_on_success_only": False,
+        }:
+            raise ValueError(
+                "official reference no longer has the frozen AMP/scheduler/EMA "
+                "transition semantics"
+            )
+        binding.update(
+            {
+                "template_seed": PILOT_SEED,
+                "execution_seed": AMP_STABILITY_V2_SEED,
+                "forbidden_future_paper_seeds": list(
+                    AMP_STABILITY_V2_FORBIDDEN_PAPER_SEEDS
+                ),
+                "paper_seed_disjoint": (
+                    AMP_STABILITY_V2_SEED
+                    not in AMP_STABILITY_V2_FORBIDDEN_PAPER_SEEDS
+                ),
+                "use_default_grad_scaler_constructor": True,
+                "observed_initial_scale_required": float(
+                    AMP_DIAGNOSTIC_INITIAL_SCALE
+                ),
+                "fail_on_skipped_update": False,
+                "max_amp_retries_per_batch": 0,
+                "batch_replay_allowed": False,
+                "schedule_and_ema_on_success_only": False,
+                "scheduler_advances_per_consumed_batch": True,
+                "ema_updates_per_consumed_batch": True,
+                "capture_amp_rng_state": True,
+                "fail_on_nonfinite_loss": True,
+                "official_reference_config": str(official_reference),
+                "official_reference_config_sha256": sha256_file(
+                    official_reference
+                ),
+                "official_reference_transition_semantics": (
+                    official_transitions
+                ),
+                "official_reference_transition_semantics_sha256": (
+                    canonical_sha256(official_transitions)
+                ),
+                "official_prefix_transition_semantics_matched": True,
+                "official_scheduler_advance_cadence_matched": True,
+                "official_scheduler_hyperparameters_matched": False,
+                "full_official_recipe_matched": False,
+                "official_performance_comparable": False,
+                "full_official_training_claimed": False,
+                "development_prefix_only": True,
+            }
+        )
     binding["binding_sha256"] = canonical_sha256(binding)
     if "georoute_estimator_pilot_binding" in cfg:
         cfg.pop("georoute_estimator_pilot_binding")
@@ -345,7 +558,7 @@ def validate_amp_diagnostic_binding(
         or binding.get("study_id") != spec["study_id"]
         or arm not in AMP_DIAGNOSTIC_ARMS
         or binding.get("arm_spec") != PILOT_ARMS[arm]
-        or int(binding.get("seed", -1)) != PILOT_SEED
+        or int(binding.get("seed", -1)) != int(spec["seed"])
         or int(binding.get("token_budget", -1)) != PILOT_K
         or int(binding.get("max_batches", -1))
         != int(spec["max_batches"])
@@ -371,7 +584,8 @@ def validate_amp_diagnostic_binding(
         or binding.get("exact_historical_batch_replay_claimed") is not False
         or binding.get("deterministic_algorithms_enabled") is not True
         or binding.get("deterministic_warn_only") is not True
-        or binding.get("historical_pilot_seed_policy_matched") is not True
+        or bool(binding.get("historical_pilot_seed_policy_matched"))
+        is not bool(spec["profile"] != AMP_STABILITY_V2_PROFILE)
         or binding.get("amp_diagnostic_telemetry_enabled") is not True
         or binding.get("checkpoint_disabled") is not True
         or binding.get("evaluator_invoked") is not False
@@ -381,6 +595,66 @@ def validate_amp_diagnostic_binding(
         or binding.get("paper_claim_allowed") is not False
     ):
         raise ValueError("AMP diagnostic binding contract is invalid")
+    if spec["profile"] == AMP_STABILITY_V2_PROFILE:
+        if (
+            int(binding.get("template_seed", -1)) != PILOT_SEED
+            or int(binding.get("execution_seed", -1))
+            != AMP_STABILITY_V2_SEED
+            or tuple(binding.get("forbidden_future_paper_seeds", ()))
+            != AMP_STABILITY_V2_FORBIDDEN_PAPER_SEEDS
+            or binding.get("paper_seed_disjoint") is not True
+            or binding.get("use_default_grad_scaler_constructor") is not True
+            or float(binding.get("observed_initial_scale_required", -1.0))
+            != float(AMP_DIAGNOSTIC_INITIAL_SCALE)
+            or binding.get("fail_on_skipped_update") is not False
+            or binding.get("batch_replay_allowed") is not False
+            or binding.get("schedule_and_ema_on_success_only") is not False
+            or binding.get("scheduler_advances_per_consumed_batch") is not True
+            or binding.get("ema_updates_per_consumed_batch") is not True
+            or binding.get("capture_amp_rng_state") is not True
+            or binding.get("fail_on_nonfinite_loss") is not True
+            or binding.get("official_prefix_transition_semantics_matched")
+            is not True
+            or binding.get("official_scheduler_advance_cadence_matched")
+            is not True
+            or binding.get("official_scheduler_hyperparameters_matched")
+            is not False
+            or binding.get("full_official_recipe_matched") is not False
+            or binding.get("official_performance_comparable") is not False
+            or binding.get("full_official_training_claimed") is not False
+            or binding.get("development_prefix_only") is not True
+        ):
+            raise ValueError(
+                "official-semantics stability v2 binding contract is invalid"
+            )
+        _full_hex(
+            str(binding.get("official_reference_config_sha256", "")),
+            length=64,
+            name="official_reference_config_sha256",
+        )
+        official_transitions = _mapping(
+            binding.get("official_reference_transition_semantics"),
+            name="official reference transition semantics",
+        )
+        if (
+            dict(official_transitions)
+            != {
+                "amp_enabled": True,
+                "ema_enabled": True,
+                "clip_grad_l2norm": 1.0,
+                "max_amp_retries_per_batch": 0,
+                "fail_on_skipped_update": False,
+                "schedule_and_ema_on_success_only": False,
+            }
+            or binding.get(
+                "official_reference_transition_semantics_sha256"
+            )
+            != canonical_sha256(official_transitions)
+        ):
+            raise ValueError(
+                "official-semantics stability v2 reference transition binding "
+                "is invalid"
+            )
     if seed is not None and int(seed) != int(binding["seed"]):
         raise ValueError("AMP diagnostic CLI seed differs from its binding")
     _full_hex(
@@ -437,9 +711,11 @@ def validate_amp_diagnostic_config(cfg: Any, *, seed: int) -> dict[str, Any]:
         or int(workflow.get("max_amp_retries_per_batch", -1))
         != int(spec["retry_limit"])
         or workflow.get("disable_checkpoint") is not True
-        or workflow.get("fail_on_skipped_update") is not True
+        or workflow.get("fail_on_skipped_update")
+        is not bool(spec.get("fail_on_skipped_update", True))
         or workflow.get("require_successful_update_hook") is not True
-        or workflow.get("schedule_and_ema_on_success_only") is not True
+        or workflow.get("schedule_and_ema_on_success_only")
+        is not bool(spec.get("schedule_and_ema_on_success_only", True))
         or int(workflow.get("val_start_epoch", -1)) < 1
         or int(workflow.get("val_loss_interval", 0)) != -1
         or int(workflow.get("val_eval_interval", 0)) != -1
@@ -459,6 +735,18 @@ def validate_amp_diagnostic_config(cfg: Any, *, seed: int) -> dict[str, Any]:
         != spec["temporal_reduction"]
     ):
         raise ValueError("AMP diagnostic config violates its no-metric protocol")
+    if spec["profile"] == AMP_STABILITY_V2_PROFILE and (
+        workflow.get("capture_amp_rng_state") is not True
+        or workflow.get("fail_on_nonfinite_loss") is not True
+        or solver.get("ema") is not True
+        or int(
+            cfg.model.backbone.custom.get("georoute_random_seed", -1)
+        )
+        != AMP_STABILITY_V2_SEED
+    ):
+        raise ValueError(
+            "official-semantics stability v2 config changed its frozen transitions"
+        )
     for split_name in ("train", "val", "test"):
         if cfg.dataset[split_name].get("subset_name") != "training":
             raise ValueError("AMP diagnostic dataset left the development subset")
@@ -869,7 +1157,10 @@ class RealBatchAmpDiagnosticObserver:
             return
         raise ValueError(f"unsupported AMP diagnostic event {event!r}")
 
-    def _summary(self) -> dict[str, Any]:
+    def _summary(
+        self,
+        update_audit: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         scaler_results = [
             event
             for event in self.payload["events"]
@@ -903,6 +1194,33 @@ class RealBatchAmpDiagnosticObserver:
                 )
             }
         )
+        success_flags = [
+            bool(event.get("update_succeeded")) for event in scaler_results
+        ]
+        current_skip_streak = 0
+        max_skip_streak = 0
+        for succeeded in success_flags:
+            if succeeded:
+                current_skip_streak = 0
+            else:
+                current_skip_streak += 1
+                max_skip_streak = max(max_skip_streak, current_skip_streak)
+        scales_before = [
+            float(event["scale_before"]) for event in scaler_results
+        ]
+        scales_after = [
+            float(event["scale_after"]) for event in scaler_results
+        ]
+        all_scales = [*scales_before, *scales_after]
+        stable_tail_batches = int(
+            self.spec.get("stable_tail_batches", 0)
+        )
+        stable_tail = (
+            success_flags[-stable_tail_batches:]
+            if stable_tail_batches > 0
+            else []
+        )
+        audit = dict(update_audit or {})
         return {
             "batch_count": len(batches),
             "data_fingerprint_sha256_by_batch": [
@@ -923,6 +1241,9 @@ class RealBatchAmpDiagnosticObserver:
             ),
             "optimizer_attempt_count": len(scaler_results),
             "failed_attempt_count": len(failed),
+            "skipped_batch_indices": [
+                int(event["iter_idx"]) for event in failed
+            ],
             "failed_attempt_scales": [
                 float(event["scale_before"]) for event in failed
             ],
@@ -932,6 +1253,35 @@ class RealBatchAmpDiagnosticObserver:
             "successful_scales_by_batch": [
                 float(event["scale_before"]) for event in successful
             ],
+            "scale_before_by_attempt": scales_before,
+            "scale_after_by_attempt": scales_after,
+            "update_succeeded_by_attempt": success_flags,
+            "max_consecutive_skipped_attempts": max_skip_streak,
+            "minimum_observed_scale": min(all_scales) if all_scales else None,
+            "final_scale": scales_after[-1] if scales_after else None,
+            "observed_initial_scale": (
+                float(batches[0]["scale"]) if batches else None
+            ),
+            "stable_tail_batches": stable_tail_batches,
+            "stable_tail_success_count": sum(stable_tail),
+            "stable_tail_all_success": (
+                len(stable_tail) == stable_tail_batches
+                and all(stable_tail)
+                if stable_tail_batches > 0
+                else None
+            ),
+            "retry_attempt_count": sum(
+                int(event.get("retry_count", 0)) > 0
+                for event in scaler_results
+            ),
+            "replay_attempt_count": int(audit.get("replay_attempts", 0)),
+            "consumed_batch_count": int(
+                audit.get("consumed_batches", len(batches))
+            ),
+            "scheduler_advance_count": int(
+                audit.get("scheduler_advances", 0)
+            ),
+            "ema_update_count": int(audit.get("ema_updates", 0)),
             "failed_attempt_nonfinite_groups": nonfinite_groups,
             "forward_attempt_count": len(forwards),
             "all_forward_losses_finite": bool(forwards) and all(
@@ -948,26 +1298,63 @@ class RealBatchAmpDiagnosticObserver:
     ) -> None:
         if self.payload["status"] != self.spec["receipt_running_status"]:
             raise RuntimeError("AMP diagnostic observer was already finalized")
-        summary = self._summary()
+        summary = self._summary(update_audit)
         expected_batches = int(self.spec["max_batches"])
-        if (
-            int(successful_updates) != expected_batches
-            or summary["batch_count"] != expected_batches
-            or summary["first_successful_scale"] is None
-            or summary["all_forward_losses_finite"] is not True
-            or (
-                bool(self.spec["zero_failed_attempts_required"])
+        common_complete = bool(
+            summary["batch_count"] == expected_batches
+            and summary["optimizer_attempt_count"] == expected_batches
+            and summary["forward_attempt_count"] == expected_batches
+            and summary["first_successful_scale"] is not None
+            and summary["all_forward_losses_finite"] is True
+        )
+        if self.spec["profile"] == AMP_STABILITY_V2_PROFILE:
+            v2_complete = bool(
+                common_complete
+                and int(successful_updates)
+                >= int(self.spec["minimum_successful_updates"])
+                and int(successful_updates) <= expected_batches
+                and int(summary["failed_attempt_count"])
+                <= int(self.spec["max_skipped_attempts"])
+                and int(summary["max_consecutive_skipped_attempts"])
+                <= int(self.spec["max_consecutive_skips"])
+                and int(summary["retry_attempt_count"]) == 0
+                and int(summary["replay_attempt_count"]) == 0
+                and float(summary["observed_initial_scale"])
+                == float(self.spec["initial_scale"])
+                and float(summary["minimum_observed_scale"])
+                >= float(self.spec["minimum_scale"])
+                and float(summary["final_scale"])
+                >= float(self.spec["minimum_scale"])
+                and summary["stable_tail_all_success"] is True
+                and int(summary["scheduler_advance_count"])
+                == expected_batches
+                and int(summary["ema_update_count"]) == expected_batches
+                and int(summary["consumed_batch_count"])
+                == expected_batches
+                and int(update_audit.get("optimizer_attempts", -1))
+                == expected_batches
+                and int(update_audit.get("amp_skipped_attempts", -1))
+                == int(summary["failed_attempt_count"])
+                and int(update_audit.get("max_amp_retries_observed", -1))
+                == 0
+            )
+            success_conditions_complete = v2_complete
+        else:
+            success_conditions_complete = bool(
+                common_complete
+                and int(successful_updates) == expected_batches
                 and (
-                    int(summary["failed_attempt_count"]) != 0
-                    or int(summary["optimizer_attempt_count"])
-                    != expected_batches
-                    or any(
-                        float(scale) != float(self.spec["initial_scale"])
-                        for scale in summary["successful_scales_by_batch"]
+                    not bool(self.spec["zero_failed_attempts_required"])
+                    or (
+                        int(summary["failed_attempt_count"]) == 0
+                        and all(
+                            float(scale) == float(self.spec["initial_scale"])
+                            for scale in summary["successful_scales_by_batch"]
+                        )
                     )
                 )
             )
-        ):
+        if not success_conditions_complete:
             raise RuntimeError("AMP diagnostic success conditions are incomplete")
         self.payload["status"] = self.spec["receipt_pass_status"]
         self.payload["summary"] = summary
@@ -986,7 +1373,7 @@ class RealBatchAmpDiagnosticObserver:
             return
         trace = traceback.format_exc()
         self.payload["status"] = self.spec["receipt_fail_status"]
-        self.payload["summary"] = self._summary()
+        self.payload["summary"] = self._summary(update_audit)
         self.payload["successful_updates"] = int(successful_updates)
         self.payload["update_audit"] = dict(update_audit)
         self.payload["failure"] = {
@@ -997,6 +1384,118 @@ class RealBatchAmpDiagnosticObserver:
             ).hexdigest(),
         }
         self._publish()
+
+
+def _validate_amp_stability_v2_summary(
+    *,
+    payload: Mapping[str, Any],
+    summary: Mapping[str, Any],
+    spec: Mapping[str, Any],
+    status: str,
+) -> None:
+    expected_batches = int(spec["max_batches"])
+    batch_count = int(summary.get("batch_count", -1))
+    attempt_count = int(summary.get("optimizer_attempt_count", -1))
+    if not (0 <= batch_count <= expected_batches):
+        raise ValueError("AMP stability v2 batch count is invalid")
+    if not (0 <= attempt_count <= batch_count):
+        raise ValueError("AMP stability v2 optimizer-attempt count is invalid")
+    for key, expected_length in (
+        ("data_fingerprint_sha256_by_batch", batch_count),
+        ("cpu_rng_sha256_by_batch", batch_count),
+        ("cuda_rng_sha256_by_batch", batch_count),
+        ("scale_before_by_attempt", attempt_count),
+        ("scale_after_by_attempt", attempt_count),
+        ("update_succeeded_by_attempt", attempt_count),
+    ):
+        values = summary.get(key)
+        if not isinstance(values, list) or len(values) != expected_length:
+            raise ValueError(
+                f"AMP stability v2 summary has incomplete ordered telemetry: {key}"
+            )
+    if any(
+        not isinstance(value, str) or len(value) != 64
+        for key in (
+            "data_fingerprint_sha256_by_batch",
+            "cpu_rng_sha256_by_batch",
+            "cuda_rng_sha256_by_batch",
+        )
+        for value in summary[key]
+    ):
+        raise ValueError("AMP stability v2 fingerprint sequence is invalid")
+    success_flags = summary["update_succeeded_by_attempt"]
+    if any(type(value) is not bool for value in success_flags):
+        raise ValueError("AMP stability v2 update-success sequence is invalid")
+    skipped = sum(not value for value in success_flags)
+    successful = sum(success_flags)
+    skipped_indices = summary.get("skipped_batch_indices")
+    if (
+        not isinstance(skipped_indices, list)
+        or len(skipped_indices) != skipped
+        or int(summary.get("failed_attempt_count", -1)) != skipped
+        or int(payload.get("successful_updates", -1)) != successful
+    ):
+        raise ValueError("AMP stability v2 skip/update accounting is invalid")
+    audit = _mapping(payload.get("update_audit"), name="update audit")
+    if (
+        int(audit.get("optimizer_attempts", -1)) != attempt_count
+        or int(audit.get("amp_skipped_attempts", -1)) != skipped
+        or int(audit.get("max_amp_retries_observed", -1)) != 0
+        or int(audit.get("replay_attempts", -1))
+        != int(summary.get("replay_attempt_count", -2))
+        or int(audit.get("consumed_batches", -1))
+        != int(summary.get("consumed_batch_count", -2))
+        or int(audit.get("scheduler_advances", -1))
+        != int(summary.get("scheduler_advance_count", -2))
+        or int(audit.get("ema_updates", -1))
+        != int(summary.get("ema_update_count", -2))
+    ):
+        raise ValueError("AMP stability v2 transition audit is inconsistent")
+    observed_initial_scale = summary.get("observed_initial_scale")
+    if batch_count > 0 and (
+        not isinstance(summary.get("data_fingerprint_sha256"), str)
+        or len(str(summary["data_fingerprint_sha256"])) != 64
+        or not isinstance(observed_initial_scale, (int, float))
+        or float(observed_initial_scale) != float(spec["initial_scale"])
+    ):
+        raise ValueError("AMP stability v2 initial provenance is incomplete")
+    if status != spec["receipt_pass_status"]:
+        if status != spec["receipt_fail_status"] or not isinstance(
+            payload.get("failure"), Mapping
+        ):
+            raise ValueError("AMP stability v2 failure receipt is incomplete")
+        return
+
+    final_scale = summary.get("final_scale")
+    minimum_scale = summary.get("minimum_observed_scale")
+    if (
+        batch_count != expected_batches
+        or attempt_count != expected_batches
+        or int(summary.get("forward_attempt_count", -1)) != expected_batches
+        or summary.get("all_forward_losses_finite") is not True
+        or successful < int(spec["minimum_successful_updates"])
+        or skipped > int(spec["max_skipped_attempts"])
+        or int(summary.get("max_consecutive_skipped_attempts", -1))
+        > int(spec["max_consecutive_skips"])
+        or int(summary.get("retry_attempt_count", -1)) != 0
+        or int(summary.get("replay_attempt_count", -1)) != 0
+        or not isinstance(minimum_scale, (int, float))
+        or float(minimum_scale) < float(spec["minimum_scale"])
+        or not isinstance(final_scale, (int, float))
+        or float(final_scale) < float(spec["minimum_scale"])
+        or int(summary.get("stable_tail_batches", -1))
+        != int(spec["stable_tail_batches"])
+        or int(summary.get("stable_tail_success_count", -1))
+        != int(spec["stable_tail_batches"])
+        or summary.get("stable_tail_all_success") is not True
+        or int(summary.get("consumed_batch_count", -1)) != expected_batches
+        or int(summary.get("scheduler_advance_count", -1))
+        != expected_batches
+        or int(summary.get("ema_update_count", -1)) != expected_batches
+    ):
+        raise ValueError(
+            "passing AMP stability v2 receipt violates its frozen threshold"
+        )
 
 
 def validate_amp_diagnostic_receipt(
@@ -1060,6 +1559,14 @@ def validate_amp_diagnostic_receipt(
         raise ValueError("AMP diagnostic receipt Slurm ID mismatch")
     summary = _mapping(payload.get("summary"), name="receipt summary")
     expected_batches = int(spec["max_batches"])
+    if spec["profile"] == AMP_STABILITY_V2_PROFILE:
+        _validate_amp_stability_v2_summary(
+            payload=payload,
+            summary=summary,
+            spec=spec,
+            status=str(status),
+        )
+        return payload
     if (
         int(summary.get("batch_count", -1)) != expected_batches
         or not isinstance(summary.get("data_fingerprint_sha256"), str)
@@ -1330,4 +1837,161 @@ def classify_amp_stability_pair(
         )
         if matched_data_sequence
         else None,
+    }
+
+
+def classify_amp_stability_v2_pair(
+    receipts: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Apply the frozen official-semantics 64-batch stability-v2 rule."""
+
+    hold = {
+        "decision": "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD",
+        "stability_gate_passed": False,
+        "official_protocol_freeze_authorized": False,
+    }
+    if set(receipts) != set(AMP_DIAGNOSTIC_ARMS):
+        return {**hold, "reason": "missing_or_extra_arm"}
+    validated: dict[str, dict[str, Any]] = {}
+    try:
+        for arm in AMP_DIAGNOSTIC_ARMS:
+            validated[arm] = validate_amp_diagnostic_receipt(
+                receipts[arm],
+                expected_arm=arm,
+                expected_profile=AMP_STABILITY_V2_PROFILE,
+            )
+    except (TypeError, ValueError) as error:
+        return {
+            **hold,
+            "reason": f"invalid_receipt:{type(error).__name__}",
+        }
+    spec = amp_protocol_spec(AMP_STABILITY_V2_PROFILE)
+    if any(
+        receipt["status"] != spec["receipt_pass_status"]
+        for receipt in validated.values()
+    ):
+        return {**hold, "reason": "one_or_more_arms_failed_execution"}
+
+    summaries = {
+        arm: validated[arm]["summary"] for arm in AMP_DIAGNOSTIC_ARMS
+    }
+    data_sequences = {
+        arm: list(summary["data_fingerprint_sha256_by_batch"])
+        for arm, summary in summaries.items()
+    }
+    matched_data_sequence = (
+        data_sequences[AMP_DIAGNOSTIC_ARMS[0]]
+        == data_sequences[AMP_DIAGNOSTIC_ARMS[1]]
+    )
+    matched_seed = all(
+        int(validated[arm]["binding"]["execution_seed"])
+        == AMP_STABILITY_V2_SEED
+        and int(validated[arm]["binding"]["seed"])
+        == AMP_STABILITY_V2_SEED
+        for arm in AMP_DIAGNOSTIC_ARMS
+    )
+    matched_input_fields = (
+        "source_config_sha256",
+        "manifest_file_sha256",
+        "development_annotation",
+        "class_map_sha256",
+        "development_video_root",
+        "pretrained_checkpoint_sha256",
+        "official_reference_config_sha256",
+    )
+    matched_inputs = all(
+        validated[AMP_DIAGNOSTIC_ARMS[0]]["binding"].get(field)
+        == validated[AMP_DIAGNOSTIC_ARMS[1]]["binding"].get(field)
+        for field in matched_input_fields
+    )
+    skip_counts = {
+        arm: int(summaries[arm]["failed_attempt_count"])
+        for arm in AMP_DIAGNOSTIC_ARMS
+    }
+    skip_delta = abs(
+        skip_counts[AMP_DIAGNOSTIC_ARMS[0]]
+        - skip_counts[AMP_DIAGNOSTIC_ARMS[1]]
+    )
+    final_scales = {
+        arm: float(summaries[arm]["final_scale"])
+        for arm in AMP_DIAGNOSTIC_ARMS
+    }
+    scale_floor = min(final_scales.values())
+    final_scale_ratio = (
+        max(final_scales.values()) / scale_floor
+        if scale_floor > 0.0
+        else math.inf
+    )
+    per_arm_pass = {
+        arm: bool(
+            int(summary["batch_count"]) == int(spec["max_batches"])
+            and int(summary["optimizer_attempt_count"])
+            == int(spec["max_batches"])
+            and int(summary["failed_attempt_count"])
+            <= int(spec["max_skipped_attempts"])
+            and int(summary["max_consecutive_skipped_attempts"])
+            <= int(spec["max_consecutive_skips"])
+            and int(validated[arm]["successful_updates"])
+            >= int(spec["minimum_successful_updates"])
+            and float(summary["minimum_observed_scale"])
+            >= float(spec["minimum_scale"])
+            and float(summary["final_scale"]) >= float(spec["minimum_scale"])
+            and summary["stable_tail_all_success"] is True
+            and int(summary["retry_attempt_count"]) == 0
+            and int(summary["replay_attempt_count"]) == 0
+            and int(summary["scheduler_advance_count"])
+            == int(spec["max_batches"])
+            and int(summary["ema_update_count"]) == int(spec["max_batches"])
+            and summary["all_forward_losses_finite"] is True
+            and validated[arm]["binding"][
+                "official_prefix_transition_semantics_matched"
+            ]
+            is True
+            and validated[arm]["binding"]["full_official_training_claimed"]
+            is False
+        )
+        for arm, summary in summaries.items()
+    }
+    passed = bool(
+        matched_data_sequence
+        and matched_seed
+        and matched_inputs
+        and skip_delta <= int(spec["max_cross_arm_skip_delta"])
+        and final_scale_ratio <= float(spec["max_final_scale_ratio"])
+        and all(per_arm_pass.values())
+    )
+    return {
+        "decision": (
+            "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_PASS_PROTOCOL_FREEZE_AUTHORIZED"
+            if passed
+            else "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD"
+        ),
+        "stability_gate_passed": passed,
+        "official_protocol_freeze_authorized": passed,
+        "reason": (
+            "matched_bounded_dynamic_scaler_adaptation_with_stable_tail"
+            if passed
+            else "frozen_official_semantics_stability_v2_rule_not_satisfied"
+        ),
+        "matched_data_sequence": matched_data_sequence,
+        "matched_execution_seed": matched_seed,
+        "matched_input_bindings": matched_inputs,
+        "batch_count": int(spec["max_batches"]),
+        "execution_seed": AMP_STABILITY_V2_SEED,
+        "per_arm_pass": per_arm_pass,
+        "per_arm_skip_count": skip_counts,
+        "cross_arm_skip_delta": skip_delta,
+        "per_arm_final_scale": final_scales,
+        "final_scale_ratio": final_scale_ratio,
+        "data_sequence_sha256": (
+            canonical_sha256(
+                {
+                    "fingerprints": data_sequences[
+                        AMP_DIAGNOSTIC_ARMS[0]
+                    ]
+                }
+            )
+            if matched_data_sequence
+            else None
+        ),
     }

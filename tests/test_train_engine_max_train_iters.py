@@ -152,6 +152,14 @@ class _ToyScheduler:
         self.steps += 1
 
 
+class _ToyEma:
+    def __init__(self):
+        self.updates = 0
+
+    def update(self, _model):
+        self.updates += 1
+
+
 class _ToyScaler:
     def __init__(self, skipped_attempts=1):
         self.remaining_skips = int(skipped_attempts)
@@ -280,6 +288,10 @@ def test_train_one_epoch_replays_a_skipped_amp_batch_before_advancing(monkeypatc
         "optimizer_attempts": 3,
         "amp_skipped_attempts": 1,
         "max_amp_retries_observed": 1,
+        "consumed_batches": 2,
+        "replay_attempts": 1,
+        "scheduler_advances": 2,
+        "ema_updates": 0,
     }
     assert any("retry 1/4" in message for message in logger.messages)
 
@@ -445,6 +457,8 @@ def test_train_one_epoch_preserves_legacy_zero_retry_behavior(monkeypatch):
     model = _ToyModel(mutate_buffer=True)
     optimizer = _ToyOptimizer()
     scheduler = _ToyScheduler()
+    model_ema = _ToyEma()
+    audit = {}
 
     train_engine.train_one_epoch(
         train_loader=_ToyLoader(1),
@@ -453,13 +467,25 @@ def test_train_one_epoch_preserves_legacy_zero_retry_behavior(monkeypatch):
         scheduler=scheduler,
         curr_epoch=0,
         logger=_Logger(),
+        model_ema=model_ema,
         scaler=_ToyScaler(skipped_attempts=1),
         max_amp_retries_per_batch=0,
+        update_audit=audit,
     )
 
     assert optimizer.steps == 0
     assert scheduler.steps == 1
+    assert model_ema.updates == 1
     assert model.loss_normalizer.value == 1
+    assert audit == {
+        "optimizer_attempts": 1,
+        "amp_skipped_attempts": 1,
+        "max_amp_retries_observed": 0,
+        "consumed_batches": 1,
+        "replay_attempts": 0,
+        "scheduler_advances": 1,
+        "ema_updates": 1,
+    }
 
 
 def test_train_one_epoch_binds_retry_stable_success_index_and_strict_schedule(

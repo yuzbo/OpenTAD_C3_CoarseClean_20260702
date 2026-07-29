@@ -346,6 +346,17 @@ updated: 2026-07-30
   design evidence only and emits no model metric, official-test result or paper
   claim.
 
+- GeoRoute official-semantics AMP stability-v2 implementation, 2026-07-30.
+  Project-authored implementation adds a separately versioned seed-4417
+  binding, official-reference transition verification, default GradScaler,
+  zero-retry/no-replay execution, per-consumed-batch scheduler/EMA auditing,
+  bounded-backoff/stable-tail receipts, sealed-v1-HOLD provenance, exact
+  origin-ref parity, fail-closed finalization and focused v2 regressions.
+  The implementation records that scheduler hyperparameters and the full
+  official recipe are unmatched; it is numerical-gate code, not performance
+  evidence. The exact runtime commit and Slurm receipts will be registered only
+  after proxy-synced remote verification and deployment.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

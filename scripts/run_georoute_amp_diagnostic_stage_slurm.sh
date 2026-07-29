@@ -42,6 +42,11 @@ fi
 source "${BASE}/conda_envs/opentad/bin/activate"
 python -c 'import numpy; assert numpy.__version__ == "1.23.5", numpy.__version__'
 
+EXTRA_ARGS=()
+if [[ -n "${GEOROUTE_OFFICIAL_REFERENCE_CONFIG:-}" ]]; then
+  EXTRA_ARGS+=(--official-reference-config "${GEOROUTE_OFFICIAL_REFERENCE_CONFIG}")
+fi
+
 python -m tools.bata.georoute_amp_diagnostic_stage_runner \
   --arm "${ARM}" \
   --run-root "${RUN_ROOT}" \
@@ -52,4 +57,5 @@ python -m tools.bata.georoute_amp_diagnostic_stage_runner \
   --development-video-root "${GEOROUTE_DEVELOPMENT_VIDEO_ROOT}" \
   --pretrained "${GEOROUTE_PRETRAINED}" \
   --expected-commit "${EXPECTED_COMMIT}" \
-  --protocol-profile "${PROTOCOL_PROFILE}"
+  --protocol-profile "${PROTOCOL_PROFILE}" \
+  "${EXTRA_ARGS[@]}"

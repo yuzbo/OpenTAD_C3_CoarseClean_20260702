@@ -439,7 +439,15 @@ def main():
     use_amp = getattr(cfg.solver, "amp", False)
     if use_amp:
         logger.info("Using Automatic Mixed Precision...")
-        if amp_diagnostic_binding is not None:
+        if (
+            amp_diagnostic_binding is not None
+            and not bool(
+                amp_diagnostic_binding.get(
+                    "use_default_grad_scaler_constructor",
+                    False,
+                )
+            )
+        ):
             scaler = GradScaler(
                 init_scale=float(amp_diagnostic_binding["initial_scale"])
             )
@@ -495,6 +503,10 @@ def main():
         "optimizer_attempts": 0,
         "amp_skipped_attempts": 0,
         "max_amp_retries_observed": 0,
+        "consumed_batches": 0,
+        "replay_attempts": 0,
+        "scheduler_advances": 0,
+        "ema_updates": 0,
     }
     protocol_amp_retry_limit = (
         int(amp_diagnostic_binding["max_amp_retries_per_batch"])
@@ -504,7 +516,14 @@ def main():
         else int(cfg.workflow.get("max_amp_retries_per_batch", 0))
     )
     protocol_fail_on_skip = (
-        formal_binding is not None
+        bool(
+            amp_diagnostic_binding.get(
+                "fail_on_skipped_update",
+                cfg.workflow.get("fail_on_skipped_update", False),
+            )
+        )
+        if amp_diagnostic_binding is not None
+        else formal_binding is not None
         or bool(cfg.workflow.get("fail_on_skipped_update", False))
     )
     protocol_update_audit = (
@@ -538,6 +557,12 @@ def main():
                 ),
                 schedule_and_ema_on_success_only=cfg.workflow.get(
                     "schedule_and_ema_on_success_only", False
+                ),
+                capture_amp_rng_state=cfg.workflow.get(
+                    "capture_amp_rng_state", False
+                ),
+                fail_on_nonfinite_loss=cfg.workflow.get(
+                    "fail_on_nonfinite_loss", False
                 ),
                 amp_diagnostic_observer=amp_diagnostic_observer,
             )

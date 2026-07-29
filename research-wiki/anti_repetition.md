@@ -179,6 +179,12 @@ updated: 2026-07-30
    at most two nonconsecutive skips, scale floor `16384`, and a successful
    final-16 tail. Never edit v1, reuse paper seeds `3407/3408/3409`, tune these
    thresholds after seeing v2, or call a 64-batch prefix a full official run.
+   The implementation deliberately records
+   `official_scheduler_hyperparameters_matched=false`,
+   `full_official_recipe_matched=false` and
+   `official_performance_comparable=false`. Never cite a v2 PASS beside an
+   official AdaTAD mAP number; it can authorize only freezing a later
+   same-recipe paper experiment.
 0. `mmengine.Config` is not a normal dict and does not implement
    `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
    tested `Config.pop` API and execute a real Config materialization regression.

@@ -3,7 +3,7 @@ type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
 stage: tested
-status: free_v1_closed_cer_discussed_numerical_repair_stability_v1_hold
+status: free_v1_closed_cer_discussed_stability_v2_local_verified
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
 updated: 2026-07-30
@@ -393,6 +393,13 @@ zero-skip-at-65536 rule, this is a numerical gate HOLD, not a scientific
 estimator or performance verdict. The next admissible step is a separately
 versioned, no-metric stability gate matching official AMP semantics on an
 independent data order.
+
+That v2 numerical gate is now implemented and locally `tested`. It uses the
+official default dynamic-scaler and per-batch scheduler/EMA transition cadence,
+but explicitly does not match the official scheduler hyperparameters or full
+training recipe. Remote clean-Linux verification and the fresh two-arm Slurm
+run remain pending. Passing it would authorize only protocol freezing, not an
+accuracy, estimator, efficiency or paper conclusion.
 
 The publication path is explicitly separate: the one-seed 20-epoch pilot is
 exploratory. A paper result must first reproduce the official AdaTAD recipe and

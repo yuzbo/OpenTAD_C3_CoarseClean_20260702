@@ -242,12 +242,15 @@ max_chars: 8000
   cannot be called an official-comparability criterion; an official-semantics,
   no-metric replacement gate must be separately frozen on an independent data
   order before any performance run.
-  That replacement is now `designed` and approved by heartbeat as
+  That replacement is now implemented and locally `tested` as
   `exp:georoute-real-data-amp-stability-v2`: seed/order `4417`, 64 batches,
   default dynamic GradScaler, zero retry/replay, official scheduler/EMA
   per-batch transitions, at most two nonconsecutive skips, scale floor
-  `16384`, and a fully successful final-16 tail. It remains unimplemented and
-  produces no metric, checkpoint, test or paper evidence.
+  `16384`, and a fully successful final-16 tail. Its binding explicitly records
+  that only transition cadence is matched: scheduler hyperparameters and the
+  full official recipe are not matched, so the gate is not performance
+  comparable. Remote clean-Linux verification and the two-arm Slurm execution
+  remain pending; it produces no metric, checkpoint, test or paper evidence.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch

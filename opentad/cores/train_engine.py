@@ -59,6 +59,8 @@ def train_one_epoch(
     successful_update_start=0,
     require_successful_update_hook=False,
     schedule_and_ema_on_success_only=False,
+    capture_amp_rng_state=False,
+    fail_on_nonfinite_loss=False,
     amp_diagnostic_observer=None,
 ):
     """Training the model for one epoch"""
@@ -83,11 +85,17 @@ def train_one_epoch(
         update_audit.setdefault("optimizer_attempts", 0)
         update_audit.setdefault("amp_skipped_attempts", 0)
         update_audit.setdefault("max_amp_retries_observed", 0)
+        update_audit.setdefault("consumed_batches", 0)
+        update_audit.setdefault("replay_attempts", 0)
+        update_audit.setdefault("scheduler_advances", 0)
+        update_audit.setdefault("ema_updates", 0)
     use_amp = False if scaler is None else True
 
     model.train()
     successful_updates = 0
     for iter_idx, data_dict in enumerate(train_loader):
+        if update_audit is not None:
+            update_audit["consumed_batches"] += 1
         _set_successful_update_index(
             model,
             successful_update_start + successful_updates,
@@ -104,9 +112,10 @@ def train_one_epoch(
         cpu_rng_state = None
         cuda_rng_states = None
         model_buffer_state = None
-        if max_amp_retries_per_batch > 0:
+        if max_amp_retries_per_batch > 0 or capture_amp_rng_state:
             cpu_rng_state = torch.get_rng_state()
             cuda_rng_states = torch.cuda.get_rng_state_all()
+        if max_amp_retries_per_batch > 0:
             model_buffer_state = _capture_model_buffers(model)
         if use_amp:
             _emit_amp_diagnostic(
@@ -125,6 +134,8 @@ def train_one_epoch(
 
         while True:
             if retry_count > 0:
+                if update_audit is not None:
+                    update_audit["replay_attempts"] += 1
                 torch.set_rng_state(cpu_rng_state)
                 torch.cuda.set_rng_state_all(cuda_rng_states)
             optimizer.zero_grad()
@@ -143,8 +154,24 @@ def train_one_epoch(
                     retry_count=retry_count,
                     scale=float(scaler.get_scale()),
                 )
-            if max_amp_retries_per_batch > 0 and not bool(
-                torch.isfinite(losses["cost"]).all()
+            nonfinite_loss_names = (
+                [
+                    str(name)
+                    for name, value in losses.items()
+                    if hasattr(value, "detach")
+                    and not bool(torch.isfinite(value).all())
+                ]
+                if fail_on_nonfinite_loss
+                else []
+            )
+            if fail_on_nonfinite_loss and nonfinite_loss_names:
+                raise FloatingPointError(
+                    "S1 produced non-finite losses before AMP scaling: "
+                    + ",".join(nonfinite_loss_names)
+                )
+            if (
+                max_amp_retries_per_batch > 0
+                and not bool(torch.isfinite(losses["cost"]).all())
             ):
                 raise FloatingPointError(
                     "S1 produced a non-finite loss before AMP scaling"
@@ -224,10 +251,6 @@ def train_one_epoch(
             if model_buffer_state is not None:
                 _restore_model_buffers(model, model_buffer_state)
             retry_count += 1
-            if update_audit is not None:
-                update_audit["max_amp_retries_observed"] = max(
-                    update_audit["max_amp_retries_observed"], retry_count
-                )
             if retry_count > max_amp_retries_per_batch:
                 if fail_on_skipped_update:
                     raise FloatingPointError(
@@ -235,6 +258,10 @@ def train_one_epoch(
                         f"after {max_amp_retries_per_batch} retries"
                     )
                 break
+            if update_audit is not None:
+                update_audit["max_amp_retries_observed"] = max(
+                    update_audit["max_amp_retries_observed"], retry_count
+                )
             logger.info(
                 "[Train]: AMP skipped batch %d; retry %d/%d with scale %.1f",
                 iter_idx,
@@ -260,12 +287,16 @@ def train_one_epoch(
         # optimizer update. The default preserves legacy OpenTAD behavior.
         if update_succeeded or not schedule_and_ema_on_success_only:
             scheduler.step()
+            if update_audit is not None:
+                update_audit["scheduler_advances"] += 1
 
         # update ema
         if model_ema is not None and (
             update_succeeded or not schedule_and_ema_on_success_only
         ):
             model_ema.update(model)
+            if update_audit is not None:
+                update_audit["ema_updates"] += 1
 
         # track all losses
         losses = reduce_loss(losses)  # only for log

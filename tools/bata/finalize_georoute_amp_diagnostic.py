@@ -25,18 +25,17 @@ from tools.bata.georoute_amp_diagnostic import (  # noqa: E402
     AMP_DIAGNOSTIC_STAGE_SCHEMA,
     AMP_DIAGNOSTIC_STUDY_ID,
     AMP_STABILITY_PROFILE,
+    AMP_STABILITY_V2_PROFILE,
     amp_protocol_spec,
     classify_amp_diagnostic_pair,
     classify_amp_stability_pair,
+    classify_amp_stability_v2_pair,
     diagnostic_cell_relative_path,
     validate_amp_diagnostic_job_receipt,
 )
 from tools.bata.georoute_amp_diagnostic_stage_runner import (  # noqa: E402
     audit_no_performance_artifacts,
     validate_amp_diagnostic_stage_result,
-)
-from tools.bata.georoute_estimator_pilot_contract import (  # noqa: E402
-    PILOT_SEED,
 )
 from tools.bata.georoute_experiment_contract import (  # noqa: E402
     canonical_sha256,
@@ -129,7 +128,7 @@ def _validate_wrapper_failure(
         )
         != spec["profile"]
         or failure.get("arm") != expected_arm
-        or int(failure.get("seed", -1)) != PILOT_SEED
+        or int(failure.get("seed", -1)) != int(spec["seed"])
         or failure.get("expected_runtime_commit") != expected_commit
         or not _is_full_hex(failure.get("observed_runtime_commit"), length=40)
         or str(failure.get("slurm_job_id", "")) != str(expected_job_id)
@@ -290,16 +289,15 @@ def finalize_amp_diagnostic(
                 "file_sha256": sha256_file(result_path),
             }
 
-    classification = (
-        classify_amp_diagnostic_pair(receipts)
-        if protocol_profile == AMP_DIAGNOSTIC_PROFILE
-        else classify_amp_stability_pair(receipts)
-    )
-    incomplete_decision = (
-        "DIAGNOSTIC_INCOMPLETE_NO_REPAIR"
-        if protocol_profile == AMP_DIAGNOSTIC_PROFILE
-        else "STABILITY_GATE_INCOMPLETE_HOLD"
-    )
+    if protocol_profile == AMP_DIAGNOSTIC_PROFILE:
+        classification = classify_amp_diagnostic_pair(receipts)
+        incomplete_decision = "DIAGNOSTIC_INCOMPLETE_NO_REPAIR"
+    elif protocol_profile == AMP_STABILITY_PROFILE:
+        classification = classify_amp_stability_pair(receipts)
+        incomplete_decision = "STABILITY_GATE_INCOMPLETE_HOLD"
+    else:
+        classification = classify_amp_stability_v2_pair(receipts)
+        incomplete_decision = "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD"
     if failures and classification["decision"] != incomplete_decision:
         classification = {
             "decision": incomplete_decision,
@@ -334,7 +332,7 @@ def finalize_amp_diagnostic(
         "study_id": spec["study_id"],
         "protocol_profile": spec["profile"],
         "runtime_commit": expected_commit,
-        "seed": PILOT_SEED,
+        "seed": int(spec["seed"]),
         "arms": arms,
         "failures": failures,
         "all_arms_passed": all_arms_passed,
@@ -370,7 +368,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument(
         "--protocol-profile",
-        choices=(AMP_DIAGNOSTIC_PROFILE, AMP_STABILITY_PROFILE),
+        choices=(
+            AMP_DIAGNOSTIC_PROFILE,
+            AMP_STABILITY_PROFILE,
+            AMP_STABILITY_V2_PROFILE,
+        ),
         default=AMP_DIAGNOSTIC_PROFILE,
     )
     return parser.parse_args()
@@ -411,6 +413,7 @@ def _run_main(args: argparse.Namespace) -> int:
         != spec["profile"]
         or deployment.get("runtime_commit") != expected_commit
         or tuple(deployment.get("arms", [])) != AMP_DIAGNOSTIC_ARMS
+        or int(deployment.get("seed", -1)) != int(spec["seed"])
         or not _self_hash_matches(
             deployment,
             field="deployment_sha256",
@@ -487,6 +490,8 @@ def _write_failsafe(
             "DIAGNOSTIC_INCOMPLETE_NO_REPAIR"
             if args.protocol_profile == AMP_DIAGNOSTIC_PROFILE
             else "STABILITY_GATE_INCOMPLETE_HOLD"
+            if args.protocol_profile == AMP_STABILITY_PROFILE
+            else "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD"
         ),
         "study_id": spec["study_id"],
         "protocol_profile": spec["profile"],
@@ -496,7 +501,7 @@ def _write_failsafe(
             if (ROOT / ".git").exists()
             else None
         ),
-        "seed": PILOT_SEED,
+        "seed": int(spec["seed"]),
         "arms": {},
         "failures": {
             "finalizer": {
@@ -518,6 +523,13 @@ def _write_failsafe(
             if args.protocol_profile == AMP_DIAGNOSTIC_PROFILE
             else {
                 "decision": "STABILITY_GATE_INCOMPLETE_HOLD",
+                "stability_gate_passed": False,
+                "official_protocol_freeze_authorized": False,
+                "reason": "finalizer_failure",
+            }
+            if args.protocol_profile == AMP_STABILITY_PROFILE
+            else {
+                "decision": "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD",
                 "stability_gate_passed": False,
                 "official_protocol_freeze_authorized": False,
                 "reason": "finalizer_failure",
