@@ -11,6 +11,7 @@ computes a loss, calls backward, steps an optimizer, or changes a checkpoint.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import math
@@ -493,10 +494,7 @@ def aggregate_rows(rows):
 
 
 def _canonical_meta_value(value):
-    try:
-        import torch
-    except ImportError:
-        torch = None
+    torch = sys.modules.get("torch")
     if torch is not None and torch.is_tensor(value):
         return value.detach().cpu().tolist()
     if isinstance(value, np.ndarray):
@@ -569,6 +567,74 @@ def _sample_fingerprint(batch, batch_index, sample_index, sequence_index):
     return record
 
 
+def _clone_sealed_value(value):
+    torch = sys.modules.get("torch")
+    if torch is not None and torch.is_tensor(value):
+        return value.detach().cpu().clone()
+    if isinstance(value, np.ndarray):
+        return value.copy()
+    if isinstance(value, dict):
+        return {key: _clone_sealed_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_clone_sealed_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_clone_sealed_value(item) for item in value)
+    return copy.deepcopy(value)
+
+
+def _clone_sealed_batch(batch):
+    required = {"inputs", "masks", "metas", "gt_segments", "gt_labels"}
+    missing = sorted(required.difference(batch))
+    require(not missing, f"sealed batch is missing required fields: {missing}")
+    return {
+        key: _clone_sealed_value(value)
+        for key, value in batch.items()
+        if key
+        in required
+        | {
+            "paired_inputs",
+            "paired_masks",
+            "paired_metas",
+        }
+    }
+
+
+def _fingerprint_diff(expected, observed):
+    keys = sorted(set(expected) | set(observed))
+    return [
+        key
+        for key in keys
+        if key != "fingerprint_sha256" and expected.get(key) != observed.get(key)
+    ]
+
+
+def _validate_sealed_sample(
+    batch,
+    *,
+    batch_index,
+    sample_index,
+    sequence_index,
+    expected,
+    phase,
+):
+    observed = _sample_fingerprint(
+        batch,
+        batch_index,
+        sample_index,
+        sequence_index,
+    )
+    differing_fields = _fingerprint_diff(expected, observed)
+    require(
+        not differing_fields and observed == expected,
+        (
+            f"sealed training window changed during {phase}: "
+            f"sequence_index={sequence_index} batch_index={batch_index} "
+            f"sample_index={sample_index} differing_fields={differing_fields}"
+        ),
+    )
+    return observed
+
+
 def _set_seed(seed):
     import torch
 
@@ -600,9 +666,11 @@ def _seal_windows(cfg, *, seed, window_count, seal_path):
     _set_seed(seed)
     loader = _build_train_loader(cfg)
     records = []
+    sealed_batches = []
     batch_count = 0
     for batch_index, batch in enumerate(loader):
-        batch_size = len(batch["metas"])
+        sealed_batch = _clone_sealed_batch(batch)
+        batch_size = len(sealed_batch["metas"])
         require(
             len(records) + batch_size <= window_count,
             "requested window count cuts through a batch; refuse ambiguous slicing",
@@ -610,12 +678,13 @@ def _seal_windows(cfg, *, seed, window_count, seal_path):
         for sample_index in range(batch_size):
             records.append(
                 _sample_fingerprint(
-                    batch,
+                    sealed_batch,
                     batch_index,
                     sample_index,
                     len(records),
                 )
             )
+        sealed_batches.append(sealed_batch)
         batch_count += 1
         if len(records) == window_count:
             break
@@ -634,7 +703,7 @@ def _seal_windows(cfg, *, seed, window_count, seal_path):
     }
     atomic_write_json(seal_path, payload)
     payload["artifact_sha256"] = sha256_file(seal_path)
-    return payload
+    return payload, sealed_batches
 
 
 def _git_identity():
@@ -679,7 +748,7 @@ def _move_primary_batch(batch, device):
     return {
         "inputs": batch["inputs"].to(device, non_blocking=True),
         "masks": batch["masks"].to(device, non_blocking=True),
-        "metas": [dict(meta) for meta in batch["metas"]],
+        "metas": [copy.deepcopy(meta) for meta in batch["metas"]],
         "gt_segments": [
             item.to(device, non_blocking=True) for item in batch["gt_segments"]
         ],
@@ -766,6 +835,7 @@ def _run_formal_audit(
     seed,
     window_count,
     seal,
+    sealed_batches,
 ):
     import torch
     from mmengine.config import Config
@@ -792,6 +862,8 @@ def _run_formal_audit(
         not missing and not unexpected,
         f"checkpoint load mismatch: missing={missing[:5]} unexpected={unexpected[:5]}",
     )
+    checkpoint_state_sha256 = _torch_state_sha256(state)
+    del checkpoint, checkpoint_state, state
     require(
         model.rpn_head.__class__.__name__ == "SupportDecoupledPhysicalQueryHead",
         "formal support audit requires the SDPQ head",
@@ -811,8 +883,11 @@ def _run_formal_audit(
         "min_log_width": float(head.min_log_width),
         "max_log_width": float(head.max_log_width),
     }
-    _set_seed(seed)
-    loader = _build_train_loader(cfg)
+    require(seed == int(seal["seed"]), "sealed replay seed mismatch")
+    require(
+        len(sealed_batches) == int(seal["batch_count"]),
+        "sealed replay batch count mismatch",
+    )
     rows = []
     max_target_error = {
         "cls_target": 0.0,
@@ -822,7 +897,7 @@ def _run_formal_audit(
     }
     seal_cursor = 0
     amp_enabled = bool(cfg.solver.get("amp", False))
-    for batch_index, cpu_batch in enumerate(loader):
+    for batch_index, cpu_batch in enumerate(sealed_batches):
         if seal_cursor >= window_count:
             break
         batch_size = len(cpu_batch["metas"])
@@ -831,16 +906,13 @@ def _run_formal_audit(
             "replay batch crosses the sealed window boundary",
         )
         for sample_index in range(batch_size):
-            observed_fingerprint = _sample_fingerprint(
+            _validate_sealed_sample(
                 cpu_batch,
-                batch_index,
-                sample_index,
-                seal_cursor + sample_index,
-            )
-            require(
-                observed_fingerprint
-                == seal["records"][seal_cursor + sample_index],
-                "replayed training window differs from the sealed manifest",
+                batch_index=batch_index,
+                sample_index=sample_index,
+                sequence_index=seal_cursor + sample_index,
+                expected=seal["records"][seal_cursor + sample_index],
+                phase="pre-model replay validation",
             )
         batch = _move_primary_batch(cpu_batch, device)
         with torch.no_grad(), torch.cuda.amp.autocast(
@@ -908,6 +980,14 @@ def _run_formal_audit(
                 }
             )
             rows.append(row)
+            _validate_sealed_sample(
+                cpu_batch,
+                batch_index=batch_index,
+                sample_index=sample_index,
+                sequence_index=seal_cursor + sample_index,
+                expected=sealed_record,
+                phase="post-model replay validation",
+            )
         seal_cursor += batch_size
     require(len(rows) == window_count, "formal replay did not audit 64 windows")
     require(
@@ -922,12 +1002,14 @@ def _run_formal_audit(
         "max_production_target_abs_error": max_target_error,
         "checkpoint_epoch": checkpoint_epoch,
         "checkpoint_state_key": state_key,
-        "checkpoint_state_dict_sha256": _torch_state_sha256(state),
+        "checkpoint_state_dict_sha256": checkpoint_state_sha256,
         "model_state_sha256_before": state_before,
         "model_state_sha256_after": state_after,
         "model_state_immutable": True,
         "parameters": parameters,
         "amp_enabled_for_backbone": amp_enabled,
+        "replay_mode": "in_memory_sealed_cpu_batches",
+        "stochastic_training_pipeline_reexecuted": False,
     }
 
 
@@ -985,7 +1067,7 @@ def main():
     output_dir.mkdir(parents=True)
     cfg = Config.fromfile(config_path, lazy_import=False)
     seal_path = output_dir / "SAMPLE_SEAL.json"
-    seal = _seal_windows(
+    seal, sealed_batches = _seal_windows(
         cfg,
         seed=args.seed,
         window_count=args.num_windows,
@@ -1000,6 +1082,7 @@ def main():
         seed=args.seed,
         window_count=args.num_windows,
         seal=seal,
+        sealed_batches=sealed_batches,
     )
     rows_path = output_dir / "support_observability_rows.json"
     atomic_write_json(rows_path, audit["rows"])
@@ -1042,6 +1125,11 @@ def main():
             "path": str(seal_path),
             "sha256": sha256_file(seal_path),
             "window_sequence_sha256": seal["window_sequence_sha256"],
+            "batch_count": seal["batch_count"],
+            "replay_mode": audit["replay_mode"],
+            "stochastic_training_pipeline_reexecuted": audit[
+                "stochastic_training_pipeline_reexecuted"
+            ],
         },
         "rows": {
             "path": str(rows_path),

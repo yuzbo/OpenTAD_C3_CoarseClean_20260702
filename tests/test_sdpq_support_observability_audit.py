@@ -1,4 +1,5 @@
 import importlib.util
+import inspect
 from pathlib import Path
 
 import numpy as np
@@ -198,3 +199,87 @@ def test_checkpoint_selector_does_not_substitute_online_for_missing_ema():
             "ema",
             19,
         )
+
+
+def _fake_sealed_batch():
+    return {
+        "inputs": np.arange(12, dtype=np.float32).reshape(2, 2, 3),
+        "masks": np.ones((2, 3), dtype=np.bool_),
+        "metas": [
+            {
+                "video_name": "video_a",
+                "window_start": 0,
+                "duration": 1.0,
+                "phystime_native_token_timestamps_sec": [0.25, 0.75],
+            },
+            {
+                "video_name": "video_b",
+                "window_start": 2,
+                "duration": 2.0,
+                "phystime_native_token_timestamps_sec": [0.5, 1.5],
+            },
+        ],
+        "gt_segments": [
+            np.asarray([[0.0, 1.0]], dtype=np.float32),
+            np.asarray([[0.5, 1.5]], dtype=np.float32),
+        ],
+        "gt_labels": [np.asarray([0]), np.asarray([1])],
+    }
+
+
+def test_cloned_sealed_batch_is_immutable_after_source_mutation():
+    batch = _fake_sealed_batch()
+    sealed = support_audit._clone_sealed_batch(batch)
+    before = support_audit.canonical_sha256(
+        support_audit._canonical_meta_value(sealed)
+    )
+    batch["inputs"][0, 0, 0] = -100.0
+    batch["metas"][0]["video_name"] = "mutated"
+    batch["metas"][0]["phystime_native_token_timestamps_sec"][0] = -1.0
+    batch["gt_segments"][0][0, 0] = -1.0
+    after = support_audit.canonical_sha256(
+        support_audit._canonical_meta_value(sealed)
+    )
+    assert after == before
+
+
+def test_sealed_sample_validator_reports_exact_changed_fields(monkeypatch):
+    batch = _fake_sealed_batch()
+    expected = {
+        "sequence_index": 0,
+        "batch_index": 0,
+        "sample_index": 0,
+        "inputs_sha256": "before",
+        "fingerprint_sha256": "before-fingerprint",
+    }
+    observed = dict(expected)
+    observed["inputs_sha256"] = "after"
+    observed["fingerprint_sha256"] = "after-fingerprint"
+    monkeypatch.setattr(
+        support_audit,
+        "_sample_fingerprint",
+        lambda *args, **kwargs: observed,
+    )
+    with pytest.raises(
+        support_audit.SupportAuditError,
+        match=(
+            r"sequence_index=0 batch_index=0 sample_index=0 "
+            r"differing_fields=\['inputs_sha256'\]"
+        ),
+    ):
+        support_audit._validate_sealed_sample(
+            batch,
+            batch_index=0,
+            sample_index=0,
+            sequence_index=0,
+            expected=expected,
+            phase="test",
+        )
+
+
+def test_formal_replay_does_not_reexecute_stochastic_training_loader():
+    source = inspect.getsource(support_audit._run_formal_audit)
+    assert "_build_train_loader" not in source
+    assert "sealed_batches" in source
+    assert "pre-model replay validation" in source
+    assert "post-model replay validation" in source
