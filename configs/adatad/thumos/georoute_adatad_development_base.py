@@ -95,6 +95,9 @@ model = dict(
             georoute_route_mode="hybrid",
             georoute_policy_estimator="straight_through",
             georoute_policy_temperature=0.5,
+            # Per-tubelet normalization preserves the exact-K Plackett-Luce
+            # policy-gradient direction without scaling it by T=384.
+            georoute_score_function_temporal_reduction="mean",
             georoute_roi_temperature=0.25,
             georoute_geometry_stride_tubelets=1,
             georoute_absolute_position_enabled=True,
@@ -173,7 +176,7 @@ evaluation = dict(
 )
 
 georoute_protocol = dict(
-    schema_version="georoute_adatad_development_v2",
+    schema_version="georoute_adatad_development_v3",
     route="native-token-select-first-conditional-geometry-routing",
     status="development_only",
     official_test_open_allowed=False,
@@ -186,6 +189,7 @@ georoute_protocol = dict(
     local_crop_resize_allowed=False,
     detector_contract="[B,384,768]",
     detector_losses=["FocalLoss", "DIOULoss"],
+    score_function_temporal_reduction="mean_per_tubelet",
     valid_native_support="floor_complete_patches_with_explicit_mask",
     pooling_mode="uniform_selected",
     adapter_mode="coordinate_lineage_packed",

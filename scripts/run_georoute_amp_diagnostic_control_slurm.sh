@@ -11,6 +11,7 @@ BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 RUN_ROOT="${GEOROUTE_AMP_DIAGNOSTIC_RUN_ROOT:?set GEOROUTE_AMP_DIAGNOSTIC_RUN_ROOT}"
 EXPECTED_COMMIT="${GEOROUTE_EXPECTED_COMMIT:?set GEOROUTE_EXPECTED_COMMIT}"
 ACTION="${GEOROUTE_AMP_DIAGNOSTIC_ACTION:?set GEOROUTE_AMP_DIAGNOSTIC_ACTION}"
+PROTOCOL_PROFILE="${GEOROUTE_AMP_PROTOCOL_PROFILE:-diagnostic}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail 'diagnostic control action requires Slurm'
 [[ -e "${ROOT}/.git" ]] || fail 'diagnostic source root is not a git checkout'
@@ -36,7 +37,8 @@ case "${ACTION}" in
   finalize)
     python -m tools.bata.finalize_georoute_amp_diagnostic \
       --run-root "${RUN_ROOT}" \
-      --expected-commit "${EXPECTED_COMMIT}"
+      --expected-commit "${EXPECTED_COMMIT}" \
+      --protocol-profile "${PROTOCOL_PROFILE}"
     ;;
   *)
     fail "unsupported diagnostic control action: ${ACTION}"

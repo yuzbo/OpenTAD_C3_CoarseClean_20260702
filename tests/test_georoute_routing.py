@@ -265,6 +265,51 @@ def test_score_function_sums_temporal_log_probability_then_averages_batch():
     assert loss.item() == pytest.approx(3.0)
 
 
+def test_score_function_temporal_mean_preserves_direction_and_divides_by_t():
+    ordered = torch.tensor(
+        [[1.0, 2.0, 3.0], [2.0, 2.0, 2.0]],
+        requires_grad=True,
+    )
+    summed = score_function_policy_loss(
+        detector_cost=torch.tensor(2.0),
+        ordered_log_prob=ordered,
+        baseline=torch.tensor(1.0),
+        weight=0.5,
+        temporal_reduction="sum",
+    )
+    summed_gradient = torch.autograd.grad(
+        summed,
+        ordered,
+        retain_graph=True,
+    )[0]
+    averaged = score_function_policy_loss(
+        detector_cost=torch.tensor(2.0),
+        ordered_log_prob=ordered,
+        baseline=torch.tensor(1.0),
+        weight=0.5,
+        temporal_reduction="mean",
+    )
+    averaged_gradient = torch.autograd.grad(averaged, ordered)[0]
+
+    assert averaged.item() == pytest.approx(summed.item() / ordered.shape[1])
+    assert torch.allclose(
+        averaged_gradient,
+        summed_gradient / ordered.shape[1],
+    )
+    assert torch.nn.functional.cosine_similarity(
+        averaged_gradient.reshape(1, -1),
+        summed_gradient.reshape(1, -1),
+    ).item() == pytest.approx(1.0)
+    with pytest.raises(ValueError, match="temporal reduction"):
+        score_function_policy_loss(
+            detector_cost=torch.tensor(2.0),
+            ordered_log_prob=ordered.detach(),
+            baseline=torch.tensor(1.0),
+            weight=0.5,
+            temporal_reduction="median",
+        )
+
+
 def test_score_function_detector_binding_records_detached_numeric_state():
     fake = type("ScoreFunctionAudit", (), {})()
     fake.training = True
@@ -277,6 +322,7 @@ def test_score_function_detector_binding_records_detached_numeric_state():
     fake.score_function_baseline_initialized = torch.tensor(True)
     fake.score_function_baseline_momentum = 0.95
     fake.score_function_weight = 1.0
+    fake.score_function_temporal_reduction = "sum"
     fake.amp_diagnostic_enabled = True
     fake.latest_georoute_audit = {}
     fake._detached_tensor_statistics = (
@@ -330,6 +376,7 @@ def test_score_function_detailed_numeric_state_is_diagnostic_opt_in():
     fake.score_function_baseline_initialized = torch.tensor(False)
     fake.score_function_baseline_momentum = 0.95
     fake.score_function_weight = 1.0
+    fake.score_function_temporal_reduction = "sum"
     fake.amp_diagnostic_enabled = False
     fake.latest_georoute_audit = {}
     fake._detached_tensor_statistics = (
@@ -376,6 +423,36 @@ def test_score_function_promotes_amp_likelihood_and_long_temporal_reduction():
     assert torch.isfinite(loss)
     assert loss.detach().abs() > torch.finfo(torch.float16).max
     (loss * 256.0).backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
+    assert torch.count_nonzero(logits.grad) > 0
+
+
+def test_temporal_mean_keeps_production_shape_scaled_leaf_gradient_finite():
+    logits = torch.zeros(
+        1,
+        384,
+        220,
+        dtype=torch.float16,
+        requires_grad=True,
+    )
+    ordered = torch.arange(64).view(1, 1, 64).expand(1, 384, 64)
+    log_probability = ordered_plackett_luce_log_prob(
+        logits,
+        ordered,
+        temperature=0.7,
+    )
+    loss = score_function_policy_loss(
+        detector_cost=torch.tensor(2.0),
+        ordered_log_prob=log_probability,
+        baseline=torch.tensor(1.0),
+        weight=1.0,
+        temporal_reduction="mean",
+    )
+
+    assert torch.isfinite(loss)
+    assert loss.detach().abs() < torch.finfo(torch.float16).max
+    (loss * 65536.0).backward()
     assert logits.grad is not None
     assert torch.isfinite(logits.grad).all()
     assert torch.count_nonzero(logits.grad) > 0

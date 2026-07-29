@@ -19,7 +19,11 @@ if str(ROOT) not in sys.path:
 from tools.bata.georoute_amp_diagnostic import (  # noqa: E402
     AMP_DIAGNOSTIC_ARMS,
     AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA,
+    AMP_DIAGNOSTIC_FINALIZATION_SCHEMA,
+    AMP_DIAGNOSTIC_PROFILE,
     AMP_DIAGNOSTIC_STUDY_ID,
+    AMP_STABILITY_PROFILE,
+    amp_protocol_spec,
     validate_amp_diagnostic_job_receipt,
 )
 from tools.bata.georoute_estimator_pilot_contract import (  # noqa: E402
@@ -299,6 +303,40 @@ def _validate_parent(
     return parent
 
 
+def _validate_diagnostic_parent(
+    path: Path,
+    *,
+    expected_file_sha256: str,
+    expected_runtime_commit: str,
+) -> dict[str, Any]:
+    if not path.is_file() or path.is_symlink():
+        raise FileNotFoundError(
+            "AMP stability gate requires the sealed matched diagnostic"
+        )
+    if sha256_file(path) != expected_file_sha256:
+        raise ValueError("AMP stability diagnostic-parent file hash mismatch")
+    parent = _read_json(path)
+    if (
+        parent.get("schema_version") != AMP_DIAGNOSTIC_FINALIZATION_SCHEMA
+        or parent.get("study_id") != AMP_DIAGNOSTIC_STUDY_ID
+        or parent.get("status") != "COMPLETE_NUMERICAL_DIAGNOSTIC_ONLY"
+        or parent.get("decision")
+        != "ROOT_CAUSE_LOCALIZED_REPAIR_AUTHORIZED"
+        or parent.get("runtime_commit") != expected_runtime_commit
+        or parent.get("all_arms_passed") is not True
+        or parent.get("repair_authorized") is not True
+        or parent.get("performance_metrics") != {}
+        or parent.get("performance_inference_allowed") is not False
+        or parent.get("official_test_opened") is not False
+        or parent.get("paper_claim_allowed") is not False
+        or not _self_hash_matches(parent, field="finalization_sha256")
+    ):
+        raise ValueError(
+            "AMP stability parent is not the repair-authorizing diagnostic"
+        )
+    return parent
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-root", type=Path, required=True)
@@ -312,11 +350,20 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--development-video-root", type=Path, required=True)
     parser.add_argument("--pretrained", type=Path, required=True)
     parser.add_argument("--expected-commit", required=True)
+    parser.add_argument(
+        "--protocol-profile",
+        choices=(AMP_DIAGNOSTIC_PROFILE, AMP_STABILITY_PROFILE),
+        default=AMP_DIAGNOSTIC_PROFILE,
+    )
+    parser.add_argument("--parent-diagnostic-finalization", type=Path)
+    parser.add_argument("--expected-diagnostic-file-sha256")
+    parser.add_argument("--expected-diagnostic-runtime-commit")
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
+    spec = amp_protocol_spec(args.protocol_profile)
     run_root = args.run_root.resolve()
     boundary = Path("/data/run01/sczc063/yuzibo").resolve()
     if not _inside(run_root, boundary):
@@ -348,6 +395,47 @@ def main() -> int:
         expected_file_sha256=expected_parent_file_sha256,
         expected_runtime_commit=expected_parent_runtime_commit,
     )
+    diagnostic_parent = None
+    diagnostic_parent_path = None
+    expected_diagnostic_file_sha256 = None
+    if args.protocol_profile == AMP_STABILITY_PROFILE:
+        if (
+            args.parent_diagnostic_finalization is None
+            or args.expected_diagnostic_file_sha256 is None
+            or args.expected_diagnostic_runtime_commit is None
+        ):
+            raise ValueError(
+                "AMP stability gate requires exact diagnostic-parent arguments"
+            )
+        diagnostic_parent_path = (
+            args.parent_diagnostic_finalization.resolve()
+        )
+        expected_diagnostic_file_sha256 = _full_hex(
+            args.expected_diagnostic_file_sha256,
+            length=64,
+            name="--expected-diagnostic-file-sha256",
+        )
+        expected_diagnostic_runtime_commit = _full_hex(
+            args.expected_diagnostic_runtime_commit,
+            length=40,
+            name="--expected-diagnostic-runtime-commit",
+        )
+        diagnostic_parent = _validate_diagnostic_parent(
+            diagnostic_parent_path,
+            expected_file_sha256=expected_diagnostic_file_sha256,
+            expected_runtime_commit=expected_diagnostic_runtime_commit,
+        )
+    elif any(
+        value is not None
+        for value in (
+            args.parent_diagnostic_finalization,
+            args.expected_diagnostic_file_sha256,
+            args.expected_diagnostic_runtime_commit,
+        )
+    ):
+        raise ValueError(
+            "diagnostic-parent arguments are stability-gate only"
+        )
 
     inputs = {
         "GEOROUTE_SOURCE_CONFIG": args.source_config.resolve(),
@@ -389,6 +477,7 @@ def main() -> int:
         "GEOROUTE_SOURCE_ROOT": str(ROOT),
         "GEOROUTE_AMP_DIAGNOSTIC_RUN_ROOT": str(run_root),
         "GEOROUTE_EXPECTED_COMMIT": expected_commit,
+        "GEOROUTE_AMP_PROTOCOL_PROFILE": args.protocol_profile,
         **{name: str(path) for name, path in inputs.items()},
     }
     base_exports = {
@@ -409,7 +498,7 @@ def main() -> int:
     logs = run_root / "slurm"
     for arm in AMP_DIAGNOSTIC_ARMS:
         _sbatch(
-            name=f"gramp_{PILOT_ARMS[arm]['slug']}",
+            name=f"{spec['job_prefix']}_{PILOT_ARMS[arm]['slug']}",
             script=stage_script,
             logs=logs,
             exports=stage_exports[arm],
@@ -417,7 +506,7 @@ def main() -> int:
             test_only=True,
         )
     _sbatch(
-        name="gramp_finalize",
+        name=f"{spec['job_prefix']}_finalize",
         script=control_script,
         logs=logs,
         exports=finalizer_exports,
@@ -442,7 +531,7 @@ def main() -> int:
         stage_jobs: dict[str, str] = {}
         for arm in AMP_DIAGNOSTIC_ARMS:
             job_id = _sbatch(
-                name=f"gramp_{PILOT_ARMS[arm]['slug']}",
+                name=f"{spec['job_prefix']}_{PILOT_ARMS[arm]['slug']}",
                 script=stage_script,
                 logs=logs,
                 exports=stage_exports[arm],
@@ -452,7 +541,7 @@ def main() -> int:
             stage_jobs[arm] = job_id
             submitted.append(job_id)
         finalizer_job = _sbatch(
-            name="gramp_finalize",
+            name=f"{spec['job_prefix']}_finalize",
             script=control_script,
             logs=logs,
             exports=finalizer_exports,
@@ -468,9 +557,10 @@ def main() -> int:
             }
         )
         deployment: dict[str, Any] = {
-            "schema_version": AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA,
-            "status": "SUBMITTED_REAL_BATCH_AMP_DIAGNOSTIC_ONLY",
-            "study_id": AMP_DIAGNOSTIC_STUDY_ID,
+            "schema_version": spec["deployment_schema"],
+            "status": spec["deployment_status"],
+            "study_id": spec["study_id"],
+            "protocol_profile": spec["profile"],
             "runtime_commit": expected_commit,
             "run_root": str(run_root),
             "arms": list(AMP_DIAGNOSTIC_ARMS),
@@ -490,6 +580,19 @@ def main() -> int:
                 "runtime_commit": parent["runtime_commit"],
                 "decision": parent["decision"],
             },
+            "parent_diagnostic": (
+                {
+                    "path": str(diagnostic_parent_path),
+                    "file_sha256": expected_diagnostic_file_sha256,
+                    "finalization_sha256": diagnostic_parent[
+                        "finalization_sha256"
+                    ],
+                    "runtime_commit": diagnostic_parent["runtime_commit"],
+                    "decision": diagnostic_parent["decision"],
+                }
+                if diagnostic_parent is not None
+                else None
+            ),
             "submit_capacity_preflight": capacity,
             "storage_preflight": storage,
             "dependency_policy": {
@@ -510,8 +613,9 @@ def main() -> int:
         _atomic_write_json(deployment_path, deployment)
 
         submission: dict[str, Any] = {
-            "schema_version": AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA,
-            "status": "SUBMITTED_DIAGNOSTIC_FINALIZER_AFTERANY",
+            "schema_version": spec["deployment_schema"],
+            "status": spec["finalizer_submission_status"],
+            "protocol_profile": spec["profile"],
             "runtime_commit": expected_commit,
             "deployment_file_sha256": sha256_file(deployment_path),
             "finalizer_job_id": finalizer_job,
@@ -523,8 +627,9 @@ def main() -> int:
         _atomic_write_json(submission_path, submission)
         _release_jobs(list(stage_jobs.values()))
         release: dict[str, Any] = {
-            "schema_version": AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA,
-            "status": "RELEASED_DIAGNOSTIC_STAGES_AFTER_IMMUTABLE_RECEIPTS",
+            "schema_version": spec["deployment_schema"],
+            "status": spec["stage_release_status"],
+            "protocol_profile": spec["profile"],
             "runtime_commit": expected_commit,
             "stage_job_ids": list(stage_jobs.values()),
             "deployment_file_sha256": sha256_file(deployment_path),

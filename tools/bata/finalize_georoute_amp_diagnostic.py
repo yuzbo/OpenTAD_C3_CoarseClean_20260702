@@ -21,9 +21,13 @@ from tools.bata.georoute_amp_diagnostic import (  # noqa: E402
     AMP_DIAGNOSTIC_ARMS,
     AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA,
     AMP_DIAGNOSTIC_FINALIZATION_SCHEMA,
+    AMP_DIAGNOSTIC_PROFILE,
     AMP_DIAGNOSTIC_STAGE_SCHEMA,
     AMP_DIAGNOSTIC_STUDY_ID,
+    AMP_STABILITY_PROFILE,
+    amp_protocol_spec,
     classify_amp_diagnostic_pair,
+    classify_amp_stability_pair,
     diagnostic_cell_relative_path,
     validate_amp_diagnostic_job_receipt,
 )
@@ -106,15 +110,24 @@ def _validate_wrapper_failure(
     expected_arm: str,
     expected_commit: str,
     expected_job_id: str,
+    protocol_profile: str = AMP_DIAGNOSTIC_PROFILE,
 ) -> dict[str, Any]:
+    spec = amp_protocol_spec(protocol_profile)
     failure = dict(payload)
     if not _self_hash_matches(failure, field="failure_sha256"):
         raise ValueError("AMP diagnostic wrapper-failure self-hash mismatch")
     if (
-        failure.get("schema_version") != AMP_DIAGNOSTIC_STAGE_SCHEMA
+        failure.get("schema_version") != spec["stage_schema"]
         or failure.get("status")
-        != "FAIL_STAGE_WRAPPER_PREVALIDATION_OR_SEALING"
-        or failure.get("study_id") != AMP_DIAGNOSTIC_STUDY_ID
+        != spec["stage_wrapper_fail_status"]
+        or failure.get("study_id") != spec["study_id"]
+        or str(
+            failure.get(
+                "protocol_profile",
+                AMP_DIAGNOSTIC_PROFILE,
+            )
+        )
+        != spec["profile"]
         or failure.get("arm") != expected_arm
         or int(failure.get("seed", -1)) != PILOT_SEED
         or failure.get("expected_runtime_commit") != expected_commit
@@ -136,7 +149,9 @@ def _validate_artifact_paths(
     *,
     run_root: Path,
     cell_root: Path,
+    protocol_profile: str = AMP_DIAGNOSTIC_PROFILE,
 ) -> None:
+    spec = amp_protocol_spec(protocol_profile)
     paths = (
         ("diagnostic_receipt_path", "diagnostic_receipt_file_sha256"),
         ("bound_config_path", "bound_config_sha256"),
@@ -153,7 +168,9 @@ def _validate_artifact_paths(
                 f"AMP diagnostic artifact changed or escaped: {path_field}"
             )
     diagnostic_path = Path(result["diagnostic_receipt_path"]).resolve()
-    if diagnostic_path != (cell_root / "amp_diagnostic.json").resolve():
+    if diagnostic_path != (
+        cell_root / str(spec["receipt_filename"])
+    ).resolve():
         raise ValueError("AMP diagnostic receipt is outside its cell")
     if _read_json(diagnostic_path) != result["diagnostic_receipt"]:
         raise ValueError("AMP diagnostic embedded receipt differs from file")
@@ -166,12 +183,17 @@ def finalize_amp_diagnostic(
     run_root: Path,
     expected_commit: str,
     expected_stage_jobs: Mapping[str, str],
+    protocol_profile: str = AMP_DIAGNOSTIC_PROFILE,
 ) -> dict[str, Any]:
+    spec = amp_protocol_spec(protocol_profile)
     arms: dict[str, Any] = {}
     failures: dict[str, Any] = {}
     receipts: dict[str, Mapping[str, Any]] = {}
     for arm in AMP_DIAGNOSTIC_ARMS:
-        cell_root = run_root / diagnostic_cell_relative_path(arm=arm)
+        cell_root = run_root / diagnostic_cell_relative_path(
+            arm=arm,
+            protocol_profile=protocol_profile,
+        )
         result_path = cell_root / "stage_result.json"
         wrapper_failure_path = (
             run_root / "control" / "stage_failures" / f"{arm}.json"
@@ -190,6 +212,7 @@ def finalize_amp_diagnostic(
                     expected_arm=arm,
                     expected_commit=expected_commit,
                     expected_job_id=str(expected_stage_jobs[arm]),
+                    protocol_profile=protocol_profile,
                 )
                 failures[arm] = {
                     "status": failure["status"],
@@ -227,11 +250,13 @@ def finalize_amp_diagnostic(
                 expected_arm=arm,
                 expected_commit=expected_commit,
                 expected_job_id=str(expected_stage_jobs[arm]),
+                expected_profile=protocol_profile,
             )
             _validate_artifact_paths(
                 result,
                 run_root=run_root,
                 cell_root=cell_root,
+                protocol_profile=protocol_profile,
             )
             diagnostic = result["diagnostic_receipt"]
             receipts[arm] = diagnostic
@@ -250,7 +275,7 @@ def finalize_amp_diagnostic(
                 "stage_result_file_sha256": sha256_file(result_path),
                 "stage_result_sha256": result["stage_result_sha256"],
             }
-            if result["status"] != "PASS_STAGE_DIAGNOSTIC_ONLY":
+            if result["status"] != spec["stage_pass_status"]:
                 failures[arm] = {
                     "status": result["status"],
                     "diagnostic_status": diagnostic["status"],
@@ -265,31 +290,49 @@ def finalize_amp_diagnostic(
                 "file_sha256": sha256_file(result_path),
             }
 
-    classification = classify_amp_diagnostic_pair(receipts)
-    if failures and classification["decision"] != "DIAGNOSTIC_INCOMPLETE_NO_REPAIR":
+    classification = (
+        classify_amp_diagnostic_pair(receipts)
+        if protocol_profile == AMP_DIAGNOSTIC_PROFILE
+        else classify_amp_stability_pair(receipts)
+    )
+    incomplete_decision = (
+        "DIAGNOSTIC_INCOMPLETE_NO_REPAIR"
+        if protocol_profile == AMP_DIAGNOSTIC_PROFILE
+        else "STABILITY_GATE_INCOMPLETE_HOLD"
+    )
+    if failures and classification["decision"] != incomplete_decision:
         classification = {
-            "decision": "DIAGNOSTIC_INCOMPLETE_NO_REPAIR",
-            "root_cause_localized": False,
-            "repair_authorized": False,
+            "decision": incomplete_decision,
             "reason": "stage_failure_or_invalid_artifact",
         }
+        if protocol_profile == AMP_DIAGNOSTIC_PROFILE:
+            classification.update(
+                root_cause_localized=False,
+                repair_authorized=False,
+            )
+        else:
+            classification.update(
+                stability_gate_passed=False,
+                official_protocol_freeze_authorized=False,
+            )
     all_arms_passed = (
         set(arms) == set(AMP_DIAGNOSTIC_ARMS)
         and not failures
         and all(
-            arms[arm]["status"] == "PASS_STAGE_DIAGNOSTIC_ONLY"
+            arms[arm]["status"] == spec["stage_pass_status"]
             for arm in AMP_DIAGNOSTIC_ARMS
         )
     )
     finalization: dict[str, Any] = {
-        "schema_version": AMP_DIAGNOSTIC_FINALIZATION_SCHEMA,
+        "schema_version": spec["finalization_schema"],
         "status": (
-            "COMPLETE_NUMERICAL_DIAGNOSTIC_ONLY"
+            spec["complete_status"]
             if all_arms_passed
-            else "INCOMPLETE_NUMERICAL_DIAGNOSTIC"
+            else spec["incomplete_status"]
         ),
         "decision": classification["decision"],
-        "study_id": AMP_DIAGNOSTIC_STUDY_ID,
+        "study_id": spec["study_id"],
+        "protocol_profile": spec["profile"],
         "runtime_commit": expected_commit,
         "seed": PILOT_SEED,
         "arms": arms,
@@ -298,6 +341,15 @@ def finalize_amp_diagnostic(
         "classification": classification,
         "repair_authorized": bool(
             classification.get("repair_authorized", False)
+        ),
+        "stability_gate_passed": bool(
+            classification.get("stability_gate_passed", False)
+        ),
+        "official_protocol_freeze_authorized": bool(
+            classification.get(
+                "official_protocol_freeze_authorized",
+                False,
+            )
         ),
         "performance_metrics": {},
         "performance_inference_allowed": False,
@@ -316,10 +368,16 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--expected-commit", required=True)
+    parser.add_argument(
+        "--protocol-profile",
+        choices=(AMP_DIAGNOSTIC_PROFILE, AMP_STABILITY_PROFILE),
+        default=AMP_DIAGNOSTIC_PROFILE,
+    )
     return parser.parse_args()
 
 
 def _run_main(args: argparse.Namespace) -> int:
+    spec = amp_protocol_spec(args.protocol_profile)
     run_root = args.run_root.resolve()
     boundary = Path("/data/run01/sczc063/yuzibo").resolve()
     if not _inside(run_root, boundary):
@@ -340,11 +398,17 @@ def _run_main(args: argparse.Namespace) -> int:
         expected_finalizer=finalizer_job_id,
     )
     if (
-        deployment.get("schema_version")
-        != AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA
+        deployment.get("schema_version") != spec["deployment_schema"]
         or deployment.get("status")
-        != "SUBMITTED_REAL_BATCH_AMP_DIAGNOSTIC_ONLY"
-        or deployment.get("study_id") != AMP_DIAGNOSTIC_STUDY_ID
+        != spec["deployment_status"]
+        or deployment.get("study_id") != spec["study_id"]
+        or str(
+            deployment.get(
+                "protocol_profile",
+                AMP_DIAGNOSTIC_PROFILE,
+            )
+        )
+        != spec["profile"]
         or deployment.get("runtime_commit") != expected_commit
         or tuple(deployment.get("arms", [])) != AMP_DIAGNOSTIC_ARMS
         or not _self_hash_matches(
@@ -356,10 +420,16 @@ def _run_main(args: argparse.Namespace) -> int:
     submission_path = run_root / "control" / "finalizer_submission.json"
     submission = _read_json(submission_path)
     if (
-        submission.get("schema_version")
-        != AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA
+        submission.get("schema_version") != spec["deployment_schema"]
         or submission.get("status")
-        != "SUBMITTED_DIAGNOSTIC_FINALIZER_AFTERANY"
+        != spec["finalizer_submission_status"]
+        or str(
+            submission.get(
+                "protocol_profile",
+                AMP_DIAGNOSTIC_PROFILE,
+            )
+        )
+        != spec["profile"]
         or submission.get("runtime_commit") != expected_commit
         or submission.get("deployment_file_sha256")
         != sha256_file(deployment_path)
@@ -379,6 +449,7 @@ def _run_main(args: argparse.Namespace) -> int:
         run_root=run_root,
         expected_commit=expected_commit,
         expected_stage_jobs=jobs["stage"],
+        protocol_profile=args.protocol_profile,
     )
     finalization["deployment_path"] = str(deployment_path)
     finalization["deployment_file_sha256"] = sha256_file(deployment_path)
@@ -401,6 +472,7 @@ def _write_failsafe(
     args: argparse.Namespace,
     error: BaseException,
 ) -> None:
+    spec = amp_protocol_spec(args.protocol_profile)
     run_root = args.run_root.resolve()
     boundary = Path("/data/run01/sczc063/yuzibo").resolve()
     if not _inside(run_root, boundary):
@@ -409,10 +481,15 @@ def _write_failsafe(
     if output.exists():
         return
     payload: dict[str, Any] = {
-        "schema_version": AMP_DIAGNOSTIC_FINALIZATION_SCHEMA,
-        "status": "INCOMPLETE_NUMERICAL_DIAGNOSTIC",
-        "decision": "DIAGNOSTIC_INCOMPLETE_NO_REPAIR",
-        "study_id": AMP_DIAGNOSTIC_STUDY_ID,
+        "schema_version": spec["finalization_schema"],
+        "status": spec["incomplete_status"],
+        "decision": (
+            "DIAGNOSTIC_INCOMPLETE_NO_REPAIR"
+            if args.protocol_profile == AMP_DIAGNOSTIC_PROFILE
+            else "STABILITY_GATE_INCOMPLETE_HOLD"
+        ),
+        "study_id": spec["study_id"],
+        "protocol_profile": spec["profile"],
         "runtime_commit": str(args.expected_commit).lower(),
         "observed_runtime_commit": (
             _git_output("rev-parse", "HEAD").lower()
@@ -431,13 +508,24 @@ def _write_failsafe(
             }
         },
         "all_arms_passed": False,
-        "classification": {
-            "decision": "DIAGNOSTIC_INCOMPLETE_NO_REPAIR",
-            "root_cause_localized": False,
-            "repair_authorized": False,
-            "reason": "finalizer_failure",
-        },
+        "classification": (
+            {
+                "decision": "DIAGNOSTIC_INCOMPLETE_NO_REPAIR",
+                "root_cause_localized": False,
+                "repair_authorized": False,
+                "reason": "finalizer_failure",
+            }
+            if args.protocol_profile == AMP_DIAGNOSTIC_PROFILE
+            else {
+                "decision": "STABILITY_GATE_INCOMPLETE_HOLD",
+                "stability_gate_passed": False,
+                "official_protocol_freeze_authorized": False,
+                "reason": "finalizer_failure",
+            }
+        ),
         "repair_authorized": False,
+        "stability_gate_passed": False,
+        "official_protocol_freeze_authorized": False,
         "performance_metrics": {},
         "performance_inference_allowed": False,
         "checkpoint_emitted": False,

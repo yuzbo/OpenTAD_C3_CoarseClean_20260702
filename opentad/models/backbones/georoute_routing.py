@@ -21,6 +21,7 @@ import torch.nn.functional as F
 GEOROUTE_ROUTING_SCHEMA = "georoute_native_routing_v2"
 ROUTE_MODES = frozenset({"dense", "uniform", "random", "free", "roi", "hybrid"})
 POLICY_ESTIMATORS = frozenset({"none", "straight_through", "score_function"})
+SCORE_FUNCTION_TEMPORAL_REDUCTIONS = frozenset({"sum", "mean"})
 
 
 def decode_continuous_geometry(
@@ -535,6 +536,7 @@ def score_function_policy_loss(
     ordered_log_prob: torch.Tensor,
     baseline: torch.Tensor,
     weight: float,
+    temporal_reduction: str = "sum",
 ) -> torch.Tensor:
     """Minimization objective whose gradient is the REINFORCE risk gradient.
 
@@ -543,6 +545,12 @@ def score_function_policy_loss(
     scalar, so the loss must carry the **positive** advantage times log
     probability.  A leading minus sign would reward routes with higher
     detector loss and silently reverse the policy update.
+
+    ``temporal_reduction="sum"`` retains the historical joint-window
+    objective.  ``"mean"`` is the explicit per-tubelet normalization used by
+    the repaired estimator: it preserves every ordered exact-K
+    Plackett-Luce likelihood and the policy-gradient direction while removing
+    the otherwise linear dependence of gradient scale on window length.
     """
 
     if detector_cost.ndim != 0 or not bool(torch.isfinite(detector_cost).item()):
@@ -553,6 +561,10 @@ def score_function_policy_loss(
         raise ValueError("baseline must be one finite scalar")
     if float(weight) < 0.0:
         raise ValueError("score-function weight must be non-negative")
+    if temporal_reduction not in SCORE_FUNCTION_TEMPORAL_REDUCTIONS:
+        raise ValueError(
+            "score-function temporal reduction must be 'sum' or 'mean'"
+        )
     # The production route has hundreds of temporal tubelets.  Even when each
     # per-tubelet log-probability is finite, the fp16 temporal sum can exceed
     # 65504 and become -inf before GradScaler can reduce its scale.  Upcasting
@@ -561,5 +573,9 @@ def score_function_policy_loss(
     advantage = detector_cost.detach().to(torch.float32) - baseline.detach().to(
         torch.float32
     )
-    joint_log_probability = ordered_log_prob.to(torch.float32).sum(dim=1)
+    ordered_log_prob = ordered_log_prob.to(torch.float32)
+    if temporal_reduction == "sum":
+        joint_log_probability = ordered_log_prob.sum(dim=1)
+    else:
+        joint_log_probability = ordered_log_prob.mean(dim=1)
     return float(weight) * advantage * joint_log_probability.mean()

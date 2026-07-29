@@ -11,6 +11,7 @@ BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 RUN_ROOT="${GEOROUTE_AMP_DIAGNOSTIC_RUN_ROOT:?set GEOROUTE_AMP_DIAGNOSTIC_RUN_ROOT}"
 ARM="${GEOROUTE_AMP_DIAGNOSTIC_ARM:?set GEOROUTE_AMP_DIAGNOSTIC_ARM}"
 EXPECTED_COMMIT="${GEOROUTE_EXPECTED_COMMIT:?set GEOROUTE_EXPECTED_COMMIT}"
+PROTOCOL_PROFILE="${GEOROUTE_AMP_PROTOCOL_PROFILE:-diagnostic}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail 'diagnostic stage requires Slurm'
 if [[ "${GEOROUTE_INNER_STEP:-0}" != "1" && "${SLURM_GPUS_ON_NODE:-1}" != "1" ]]; then
@@ -50,4 +51,5 @@ python -m tools.bata.georoute_amp_diagnostic_stage_runner \
   --class-map "${GEOROUTE_CLASS_MAP}" \
   --development-video-root "${GEOROUTE_DEVELOPMENT_VIDEO_ROOT}" \
   --pretrained "${GEOROUTE_PRETRAINED}" \
-  --expected-commit "${EXPECTED_COMMIT}"
+  --expected-commit "${EXPECTED_COMMIT}" \
+  --protocol-profile "${PROTOCOL_PROFILE}"

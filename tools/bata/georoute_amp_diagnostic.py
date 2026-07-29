@@ -41,6 +41,116 @@ AMP_DIAGNOSTIC_MAX_BATCHES = 1
 AMP_DIAGNOSTIC_RETRY_LIMIT = 12
 AMP_DIAGNOSTIC_INITIAL_SCALE = 65536.0
 AMP_DIAGNOSTIC_PL_MAX_LOCALIZED_SUCCESS_SCALE = 128.0
+AMP_DIAGNOSTIC_PROFILE = "diagnostic"
+
+AMP_STABILITY_PROFILE = "stability_gate"
+AMP_STABILITY_STUDY_ID = "georoute_real_data_amp_stability_v1"
+AMP_STABILITY_BINDING_SCHEMA = "georoute_real_data_amp_stability_binding_v1"
+AMP_STABILITY_RECEIPT_SCHEMA = "georoute_real_data_amp_stability_receipt_v1"
+AMP_STABILITY_STAGE_SCHEMA = "georoute_real_data_amp_stability_stage_v1"
+AMP_STABILITY_DEPLOYMENT_SCHEMA = (
+    "georoute_real_data_amp_stability_deployment_v1"
+)
+AMP_STABILITY_FINALIZATION_SCHEMA = (
+    "georoute_real_data_amp_stability_finalization_v1"
+)
+AMP_STABILITY_MAX_BATCHES = 32
+AMP_STABILITY_RETRY_LIMIT = 0
+
+
+def amp_protocol_spec(profile: str) -> dict[str, Any]:
+    """Return the immutable numerical-only execution contract for one profile."""
+
+    profile = str(profile)
+    if profile == AMP_DIAGNOSTIC_PROFILE:
+        return {
+            "profile": AMP_DIAGNOSTIC_PROFILE,
+            "study_id": AMP_DIAGNOSTIC_STUDY_ID,
+            "binding_schema": AMP_DIAGNOSTIC_BINDING_SCHEMA,
+            "receipt_schema": AMP_DIAGNOSTIC_RECEIPT_SCHEMA,
+            "stage_schema": AMP_DIAGNOSTIC_STAGE_SCHEMA,
+            "deployment_schema": AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA,
+            "finalization_schema": AMP_DIAGNOSTIC_FINALIZATION_SCHEMA,
+            "max_batches": AMP_DIAGNOSTIC_MAX_BATCHES,
+            "retry_limit": AMP_DIAGNOSTIC_RETRY_LIMIT,
+            "initial_scale": AMP_DIAGNOSTIC_INITIAL_SCALE,
+            "temporal_reduction": "sum",
+            "zero_failed_attempts_required": False,
+            "cell_directory": "diagnostic",
+            "receipt_filename": "amp_diagnostic.json",
+            "rendezvous_stage": "ampdiag",
+            "config_status": "real_batch_amp_diagnostic_only",
+            "receipt_running_status": "RUNNING_DIAGNOSTIC_ONLY",
+            "receipt_pass_status": "PASS_DIAGNOSTIC_EXECUTION_ONLY",
+            "receipt_fail_status": "FAIL_DIAGNOSTIC_EXECUTION",
+            "stage_pass_status": "PASS_STAGE_DIAGNOSTIC_ONLY",
+            "stage_fail_status": "FAIL_STAGE_DIAGNOSTIC_EXECUTION",
+            "stage_wrapper_fail_status": (
+                "FAIL_STAGE_WRAPPER_PREVALIDATION_OR_SEALING"
+            ),
+            "deployment_status": (
+                "SUBMITTED_REAL_BATCH_AMP_DIAGNOSTIC_ONLY"
+            ),
+            "finalizer_submission_status": (
+                "SUBMITTED_DIAGNOSTIC_FINALIZER_AFTERANY"
+            ),
+            "stage_release_status": (
+                "RELEASED_DIAGNOSTIC_STAGES_AFTER_IMMUTABLE_RECEIPTS"
+            ),
+            "complete_status": "COMPLETE_NUMERICAL_DIAGNOSTIC_ONLY",
+            "incomplete_status": "INCOMPLETE_NUMERICAL_DIAGNOSTIC",
+            "job_prefix": "gramp",
+        }
+    if profile == AMP_STABILITY_PROFILE:
+        return {
+            "profile": AMP_STABILITY_PROFILE,
+            "study_id": AMP_STABILITY_STUDY_ID,
+            "binding_schema": AMP_STABILITY_BINDING_SCHEMA,
+            "receipt_schema": AMP_STABILITY_RECEIPT_SCHEMA,
+            "stage_schema": AMP_STABILITY_STAGE_SCHEMA,
+            "deployment_schema": AMP_STABILITY_DEPLOYMENT_SCHEMA,
+            "finalization_schema": AMP_STABILITY_FINALIZATION_SCHEMA,
+            "max_batches": AMP_STABILITY_MAX_BATCHES,
+            "retry_limit": AMP_STABILITY_RETRY_LIMIT,
+            "initial_scale": AMP_DIAGNOSTIC_INITIAL_SCALE,
+            "temporal_reduction": "mean",
+            "zero_failed_attempts_required": True,
+            "cell_directory": "stability",
+            "receipt_filename": "amp_stability.json",
+            "rendezvous_stage": "ampstable",
+            "config_status": "real_data_amp_stability_gate_only",
+            "receipt_running_status": "RUNNING_STABILITY_GATE_ONLY",
+            "receipt_pass_status": "PASS_STABILITY_GATE_EXECUTION_ONLY",
+            "receipt_fail_status": "FAIL_STABILITY_GATE_EXECUTION",
+            "stage_pass_status": "PASS_STAGE_STABILITY_GATE_ONLY",
+            "stage_fail_status": "FAIL_STAGE_STABILITY_GATE_EXECUTION",
+            "stage_wrapper_fail_status": (
+                "FAIL_STABILITY_STAGE_WRAPPER_PREVALIDATION_OR_SEALING"
+            ),
+            "deployment_status": (
+                "SUBMITTED_REAL_DATA_AMP_STABILITY_GATE_ONLY"
+            ),
+            "finalizer_submission_status": (
+                "SUBMITTED_STABILITY_FINALIZER_AFTERANY"
+            ),
+            "stage_release_status": (
+                "RELEASED_STABILITY_STAGES_AFTER_IMMUTABLE_RECEIPTS"
+            ),
+            "complete_status": (
+                "COMPLETE_REAL_DATA_AMP_STABILITY_GATE_ONLY"
+            ),
+            "incomplete_status": "INCOMPLETE_REAL_DATA_AMP_STABILITY_GATE",
+            "job_prefix": "grstab",
+        }
+    raise ValueError(f"unsupported AMP numerical protocol profile {profile!r}")
+
+
+def amp_protocol_spec_for_binding(
+    binding: Mapping[str, Any],
+) -> dict[str, Any]:
+    return amp_protocol_spec(
+        str(binding.get("protocol_profile", AMP_DIAGNOSTIC_PROFILE))
+    )
 
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
@@ -101,9 +211,11 @@ def bind_amp_diagnostic_config(
     development_video_root: str | Path,
     pretrained_checkpoint_path: str | Path,
     runtime_commit: str,
+    protocol_profile: str = AMP_DIAGNOSTIC_PROFILE,
 ):
     """Build one immutable, no-metric residual-PL/ST diagnostic config."""
 
+    spec = amp_protocol_spec(protocol_profile)
     if arm not in AMP_DIAGNOSTIC_ARMS:
         raise ValueError("AMP diagnostic arm must be residual PL or matched ST")
     runtime_commit = _full_hex(
@@ -124,28 +236,32 @@ def bind_amp_diagnostic_config(
     )
     parent_binding = dict(cfg.georoute_estimator_pilot_binding)
     work_dir = Path(work_dir).resolve()
-    output_path = work_dir / "amp_diagnostic.json"
+    output_path = work_dir / str(spec["receipt_filename"])
 
     cfg.model.backbone.custom.georoute_amp_diagnostic_enabled = True
+    cfg.model.backbone.custom.georoute_score_function_temporal_reduction = (
+        spec["temporal_reduction"]
+    )
     cfg.workflow.end_epoch = 1
     cfg.workflow.val_start_epoch = 1
     cfg.workflow.val_loss_interval = -1
     cfg.workflow.val_eval_interval = -1
     cfg.workflow.disable_checkpoint = True
-    cfg.workflow.max_train_iters = AMP_DIAGNOSTIC_MAX_BATCHES
-    cfg.workflow.max_amp_retries_per_batch = AMP_DIAGNOSTIC_RETRY_LIMIT
+    cfg.workflow.max_train_iters = int(spec["max_batches"])
+    cfg.workflow.max_amp_retries_per_batch = int(spec["retry_limit"])
     cfg.workflow.fail_on_skipped_update = True
     cfg.workflow.require_successful_update_hook = True
     cfg.workflow.schedule_and_ema_on_success_only = True
     cfg.post_processing.save_dict = False
     cfg.inference.load_from_raw_predictions = False
     cfg.inference.save_raw_prediction = False
-    cfg.georoute_protocol.status = "real_batch_amp_diagnostic_only"
+    cfg.georoute_protocol.status = str(spec["config_status"])
     cfg.work_dir = str(work_dir)
 
     binding: dict[str, Any] = {
-        "schema_version": AMP_DIAGNOSTIC_BINDING_SCHEMA,
-        "study_id": AMP_DIAGNOSTIC_STUDY_ID,
+        "schema_version": spec["binding_schema"],
+        "study_id": spec["study_id"],
+        "protocol_profile": spec["profile"],
         "arm": arm,
         "arm_spec": pilot_arm_spec(arm),
         "seed": PILOT_SEED,
@@ -153,9 +269,15 @@ def bind_amp_diagnostic_config(
         "runtime_commit": runtime_commit,
         "work_dir": str(work_dir),
         "output_path": str(output_path),
-        "max_batches": AMP_DIAGNOSTIC_MAX_BATCHES,
-        "max_amp_retries_per_batch": AMP_DIAGNOSTIC_RETRY_LIMIT,
-        "initial_scale": AMP_DIAGNOSTIC_INITIAL_SCALE,
+        "max_batches": spec["max_batches"],
+        "max_amp_retries_per_batch": spec["retry_limit"],
+        "initial_scale": spec["initial_scale"],
+        "score_function_temporal_reduction": spec[
+            "temporal_reduction"
+        ],
+        "zero_failed_attempts_required": spec[
+            "zero_failed_attempts_required"
+        ],
         "source_config": parent_binding["source_config"],
         "source_config_sha256": parent_binding["source_config_sha256"],
         "manifest_path": parent_binding["manifest_path"],
@@ -216,20 +338,35 @@ def validate_amp_diagnostic_binding(
     binding = dict(_mapping(binding, name="AMP diagnostic binding"))
     if not _self_hash_matches(binding, field="binding_sha256"):
         raise ValueError("AMP diagnostic binding self-hash mismatch")
+    spec = amp_protocol_spec_for_binding(binding)
     arm = str(binding.get("arm", ""))
     if (
-        binding.get("schema_version") != AMP_DIAGNOSTIC_BINDING_SCHEMA
-        or binding.get("study_id") != AMP_DIAGNOSTIC_STUDY_ID
+        binding.get("schema_version") != spec["binding_schema"]
+        or binding.get("study_id") != spec["study_id"]
         or arm not in AMP_DIAGNOSTIC_ARMS
         or binding.get("arm_spec") != PILOT_ARMS[arm]
         or int(binding.get("seed", -1)) != PILOT_SEED
         or int(binding.get("token_budget", -1)) != PILOT_K
         or int(binding.get("max_batches", -1))
-        != AMP_DIAGNOSTIC_MAX_BATCHES
+        != int(spec["max_batches"])
         or int(binding.get("max_amp_retries_per_batch", -1))
-        != AMP_DIAGNOSTIC_RETRY_LIMIT
+        != int(spec["retry_limit"])
         or float(binding.get("initial_scale", -1.0))
-        != AMP_DIAGNOSTIC_INITIAL_SCALE
+        != float(spec["initial_scale"])
+        or str(
+            binding.get(
+                "score_function_temporal_reduction",
+                "sum",
+            )
+        )
+        != spec["temporal_reduction"]
+        or bool(
+            binding.get(
+                "zero_failed_attempts_required",
+                False,
+            )
+        )
+        is not bool(spec["zero_failed_attempts_required"])
         or binding.get("deterministic_same_config_reproduction") is not True
         or binding.get("exact_historical_batch_replay_claimed") is not False
         or binding.get("deterministic_algorithms_enabled") is not True
@@ -277,7 +414,7 @@ def validate_amp_diagnostic_binding(
     _full_hex(str(annotation.get("sha256", "")), length=64, name="annotation")
     work_dir = Path(str(binding.get("work_dir", ""))).resolve()
     output_path = Path(str(binding.get("output_path", ""))).resolve()
-    if output_path != work_dir / "amp_diagnostic.json":
+    if output_path != work_dir / str(spec["receipt_filename"]):
         raise ValueError("AMP diagnostic output path is not work-dir bound")
     return binding
 
@@ -291,13 +428,14 @@ def validate_amp_diagnostic_config(cfg: Any, *, seed: int) -> dict[str, Any]:
     )
     workflow = _mapping(cfg.workflow, name="workflow")
     solver = _mapping(cfg.solver, name="solver")
+    spec = amp_protocol_spec_for_binding(binding)
     if (
         str(Path(cfg.work_dir).resolve()) != binding["work_dir"]
         or int(workflow.get("end_epoch", -1)) != 1
         or int(workflow.get("max_train_iters", -1))
-        != AMP_DIAGNOSTIC_MAX_BATCHES
+        != int(spec["max_batches"])
         or int(workflow.get("max_amp_retries_per_batch", -1))
-        != AMP_DIAGNOSTIC_RETRY_LIMIT
+        != int(spec["retry_limit"])
         or workflow.get("disable_checkpoint") is not True
         or workflow.get("fail_on_skipped_update") is not True
         or workflow.get("require_successful_update_hook") is not True
@@ -315,6 +453,10 @@ def validate_amp_diagnostic_config(cfg: Any, *, seed: int) -> dict[str, Any]:
             "georoute_amp_diagnostic_enabled"
         )
         is not True
+        or cfg.model.backbone.custom.get(
+            "georoute_score_function_temporal_reduction"
+        )
+        != spec["temporal_reduction"]
     ):
         raise ValueError("AMP diagnostic config violates its no-metric protocol")
     for split_name in ("train", "val", "test"):
@@ -366,10 +508,17 @@ def require_slurm_single_gpu() -> str:
     return job_id
 
 
-def diagnostic_cell_relative_path(*, arm: str) -> Path:
+def diagnostic_cell_relative_path(
+    *,
+    arm: str,
+    protocol_profile: str = AMP_DIAGNOSTIC_PROFILE,
+) -> Path:
     if arm not in AMP_DIAGNOSTIC_ARMS:
         raise ValueError("unsupported AMP diagnostic arm")
-    return Path("diagnostic") / f"{PILOT_ARMS[arm]['slug']}_{arm}"
+    spec = amp_protocol_spec(protocol_profile)
+    return Path(str(spec["cell_directory"])) / (
+        f"{PILOT_ARMS[arm]['slug']}_{arm}"
+    )
 
 
 def validate_amp_diagnostic_job_receipt(
@@ -593,6 +742,7 @@ class RealBatchAmpDiagnosticObserver:
         rank: int,
     ) -> None:
         self.binding = validate_amp_diagnostic_binding(binding)
+        self.spec = amp_protocol_spec_for_binding(self.binding)
         self.output_path = Path(output_path).resolve()
         if self.output_path != Path(self.binding["output_path"]).resolve():
             raise ValueError("AMP observer output differs from its binding")
@@ -605,9 +755,10 @@ class RealBatchAmpDiagnosticObserver:
         if self.output_path.exists():
             raise FileExistsError("AMP diagnostic receipt already exists")
         self.payload: dict[str, Any] = {
-            "schema_version": AMP_DIAGNOSTIC_RECEIPT_SCHEMA,
-            "status": "RUNNING_DIAGNOSTIC_ONLY",
-            "study_id": AMP_DIAGNOSTIC_STUDY_ID,
+            "schema_version": self.spec["receipt_schema"],
+            "status": self.spec["receipt_running_status"],
+            "study_id": self.spec["study_id"],
+            "protocol_profile": self.spec["profile"],
             "arm": self.binding["arm"],
             "runtime_commit": self.binding["runtime_commit"],
             "slurm_job_id": str(slurm_job_id),
@@ -754,6 +905,15 @@ class RealBatchAmpDiagnosticObserver:
         )
         return {
             "batch_count": len(batches),
+            "data_fingerprint_sha256_by_batch": [
+                event.get("data_fingerprint_sha256") for event in batches
+            ],
+            "cpu_rng_sha256_by_batch": [
+                event.get("cpu_rng_sha256") for event in batches
+            ],
+            "cuda_rng_sha256_by_batch": [
+                event.get("cuda_rng_sha256") for event in batches
+            ],
             "data_fingerprint_sha256": (
                 batches[0].get("data_fingerprint_sha256") if batches else None
             ),
@@ -769,6 +929,9 @@ class RealBatchAmpDiagnosticObserver:
             "first_successful_scale": (
                 float(successful[0]["scale_before"]) if successful else None
             ),
+            "successful_scales_by_batch": [
+                float(event["scale_before"]) for event in successful
+            ],
             "failed_attempt_nonfinite_groups": nonfinite_groups,
             "forward_attempt_count": len(forwards),
             "all_forward_losses_finite": bool(forwards) and all(
@@ -783,17 +946,30 @@ class RealBatchAmpDiagnosticObserver:
         successful_updates: int,
         update_audit: Mapping[str, Any],
     ) -> None:
-        if self.payload["status"] != "RUNNING_DIAGNOSTIC_ONLY":
+        if self.payload["status"] != self.spec["receipt_running_status"]:
             raise RuntimeError("AMP diagnostic observer was already finalized")
         summary = self._summary()
+        expected_batches = int(self.spec["max_batches"])
         if (
-            int(successful_updates) != AMP_DIAGNOSTIC_MAX_BATCHES
-            or summary["batch_count"] != AMP_DIAGNOSTIC_MAX_BATCHES
+            int(successful_updates) != expected_batches
+            or summary["batch_count"] != expected_batches
             or summary["first_successful_scale"] is None
             or summary["all_forward_losses_finite"] is not True
+            or (
+                bool(self.spec["zero_failed_attempts_required"])
+                and (
+                    int(summary["failed_attempt_count"]) != 0
+                    or int(summary["optimizer_attempt_count"])
+                    != expected_batches
+                    or any(
+                        float(scale) != float(self.spec["initial_scale"])
+                        for scale in summary["successful_scales_by_batch"]
+                    )
+                )
+            )
         ):
             raise RuntimeError("AMP diagnostic success conditions are incomplete")
-        self.payload["status"] = "PASS_DIAGNOSTIC_EXECUTION_ONLY"
+        self.payload["status"] = self.spec["receipt_pass_status"]
         self.payload["summary"] = summary
         self.payload["successful_updates"] = int(successful_updates)
         self.payload["update_audit"] = dict(update_audit)
@@ -806,10 +982,10 @@ class RealBatchAmpDiagnosticObserver:
         successful_updates: int,
         update_audit: Mapping[str, Any],
     ) -> None:
-        if self.payload["status"] != "RUNNING_DIAGNOSTIC_ONLY":
+        if self.payload["status"] != self.spec["receipt_running_status"]:
             return
         trace = traceback.format_exc()
-        self.payload["status"] = "FAIL_DIAGNOSTIC_EXECUTION"
+        self.payload["status"] = self.spec["receipt_fail_status"]
         self.payload["summary"] = self._summary()
         self.payload["successful_updates"] = int(successful_updates)
         self.payload["update_audit"] = dict(update_audit)
@@ -829,19 +1005,33 @@ def validate_amp_diagnostic_receipt(
     expected_arm: str | None = None,
     expected_commit: str | None = None,
     expected_slurm_job_id: str | None = None,
+    expected_profile: str | None = None,
 ) -> dict[str, Any]:
     payload = dict(_mapping(payload, name="AMP diagnostic receipt"))
     if not _self_hash_matches(payload, field="receipt_sha256"):
         raise ValueError("AMP diagnostic receipt self-hash mismatch")
     status = payload.get("status")
     arm = str(payload.get("arm", ""))
+    validated_binding = validate_amp_diagnostic_binding(
+        _mapping(payload.get("binding"), name="receipt binding")
+    )
+    spec = amp_protocol_spec_for_binding(validated_binding)
+    if expected_profile is not None and spec["profile"] != expected_profile:
+        raise ValueError("AMP diagnostic receipt protocol profile mismatch")
     if (
-        payload.get("schema_version") != AMP_DIAGNOSTIC_RECEIPT_SCHEMA
-        or payload.get("study_id") != AMP_DIAGNOSTIC_STUDY_ID
+        payload.get("schema_version") != spec["receipt_schema"]
+        or payload.get("study_id") != spec["study_id"]
+        or str(
+            payload.get(
+                "protocol_profile",
+                AMP_DIAGNOSTIC_PROFILE,
+            )
+        )
+        != spec["profile"]
         or status
         not in {
-            "PASS_DIAGNOSTIC_EXECUTION_ONLY",
-            "FAIL_DIAGNOSTIC_EXECUTION",
+            spec["receipt_pass_status"],
+            spec["receipt_fail_status"],
         }
         or arm not in AMP_DIAGNOSTIC_ARMS
         or payload.get("checkpoint_emitted") is not False
@@ -851,9 +1041,6 @@ def validate_amp_diagnostic_receipt(
         or payload.get("paper_claim_allowed") is not False
     ):
         raise ValueError("AMP diagnostic receipt contract is invalid")
-    validate_amp_diagnostic_binding(
-        _mapping(payload.get("binding"), name="receipt binding")
-    )
     if payload["binding"].get("runtime_commit") != payload.get("runtime_commit"):
         raise ValueError("AMP diagnostic receipt and binding commits differ")
     if expected_arm is not None and arm != expected_arm:
@@ -872,17 +1059,56 @@ def validate_amp_diagnostic_receipt(
     ):
         raise ValueError("AMP diagnostic receipt Slurm ID mismatch")
     summary = _mapping(payload.get("summary"), name="receipt summary")
+    expected_batches = int(spec["max_batches"])
     if (
-        int(summary.get("batch_count", -1)) != AMP_DIAGNOSTIC_MAX_BATCHES
+        int(summary.get("batch_count", -1)) != expected_batches
         or not isinstance(summary.get("data_fingerprint_sha256"), str)
         or len(str(summary["data_fingerprint_sha256"])) != 64
         or summary.get("all_forward_losses_finite") is not True
     ):
         raise ValueError("AMP diagnostic receipt summary is incomplete")
-    if status == "PASS_DIAGNOSTIC_EXECUTION_ONLY" and (
+    if spec["profile"] == AMP_STABILITY_PROFILE:
+        for key in (
+            "data_fingerprint_sha256_by_batch",
+            "cpu_rng_sha256_by_batch",
+            "cuda_rng_sha256_by_batch",
+            "successful_scales_by_batch",
+        ):
+            values = summary.get(key)
+            if not isinstance(values, list) or len(values) != expected_batches:
+                raise ValueError(
+                    "AMP stability receipt lacks complete per-batch provenance"
+                )
+        if (
+            any(
+                not isinstance(value, str) or len(value) != 64
+                for value in summary["data_fingerprint_sha256_by_batch"]
+            )
+            or int(summary.get("failed_attempt_count", -1)) != 0
+            or int(summary.get("optimizer_attempt_count", -1))
+            != expected_batches
+            or any(
+                float(scale) != float(spec["initial_scale"])
+                for scale in summary["successful_scales_by_batch"]
+            )
+        ):
+            raise ValueError("AMP stability zero-skip contract is invalid")
+    if status == spec["receipt_pass_status"] and (
         summary.get("first_successful_scale") is None
         or int(payload.get("successful_updates", -1))
-        != AMP_DIAGNOSTIC_MAX_BATCHES
+        != expected_batches
+        or (
+            bool(spec["zero_failed_attempts_required"])
+            and (
+                int(
+                    _mapping(
+                        payload.get("update_audit"),
+                        name="update audit",
+                    ).get("amp_skipped_attempts", -1)
+                )
+                != 0
+            )
+        )
     ):
         raise ValueError("passing AMP diagnostic lacks an optimizer update")
     return payload
@@ -906,6 +1132,7 @@ def classify_amp_diagnostic_pair(
             validated[arm] = validate_amp_diagnostic_receipt(
                 receipts[arm],
                 expected_arm=arm,
+                expected_profile=AMP_DIAGNOSTIC_PROFILE,
             )
     except (TypeError, ValueError) as error:
         return {
@@ -1002,4 +1229,105 @@ def classify_amp_diagnostic_pair(
         "st_failed_attempt_count": int(st.get("failed_attempt_count", 0)),
         "st_first_successful_scale": st_scale,
         "st_failed_attempt_nonfinite_groups": sorted(st_groups),
+    }
+
+
+def classify_amp_stability_pair(
+    receipts: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Require 32 matched real-data batches with no AMP skip in either arm."""
+
+    if set(receipts) != set(AMP_DIAGNOSTIC_ARMS):
+        return {
+            "decision": "STABILITY_GATE_INCOMPLETE_HOLD",
+            "stability_gate_passed": False,
+            "official_protocol_freeze_authorized": False,
+            "reason": "missing_or_extra_arm",
+        }
+    validated: dict[str, dict[str, Any]] = {}
+    try:
+        for arm in AMP_DIAGNOSTIC_ARMS:
+            validated[arm] = validate_amp_diagnostic_receipt(
+                receipts[arm],
+                expected_arm=arm,
+                expected_profile=AMP_STABILITY_PROFILE,
+            )
+    except (TypeError, ValueError) as error:
+        return {
+            "decision": "STABILITY_GATE_INCOMPLETE_HOLD",
+            "stability_gate_passed": False,
+            "official_protocol_freeze_authorized": False,
+            "reason": f"invalid_receipt:{type(error).__name__}",
+        }
+    spec = amp_protocol_spec(AMP_STABILITY_PROFILE)
+    if any(
+        receipt["status"] != spec["receipt_pass_status"]
+        for receipt in validated.values()
+    ):
+        return {
+            "decision": "STABILITY_GATE_INCOMPLETE_HOLD",
+            "stability_gate_passed": False,
+            "official_protocol_freeze_authorized": False,
+            "reason": "one_or_more_arms_failed_execution",
+        }
+
+    summaries = {
+        arm: validated[arm]["summary"] for arm in AMP_DIAGNOSTIC_ARMS
+    }
+    data_sequences = {
+        arm: list(summary["data_fingerprint_sha256_by_batch"])
+        for arm, summary in summaries.items()
+    }
+    matched_data_sequence = (
+        data_sequences[AMP_DIAGNOSTIC_ARMS[0]]
+        == data_sequences[AMP_DIAGNOSTIC_ARMS[1]]
+    )
+    per_arm_zero_skip = {
+        arm: bool(
+            int(summary["batch_count"]) == int(spec["max_batches"])
+            and int(summary["failed_attempt_count"]) == 0
+            and int(summary["optimizer_attempt_count"])
+            == int(spec["max_batches"])
+            and float(summary["first_successful_scale"])
+            == float(spec["initial_scale"])
+            and all(
+                float(scale) == float(spec["initial_scale"])
+                for scale in summary["successful_scales_by_batch"]
+            )
+            and summary["all_forward_losses_finite"] is True
+            and int(validated[arm]["successful_updates"])
+            == int(spec["max_batches"])
+            and validated[arm]["binding"][
+                "score_function_temporal_reduction"
+            ]
+            == "mean"
+        )
+        for arm, summary in summaries.items()
+    }
+    passed = bool(
+        matched_data_sequence and all(per_arm_zero_skip.values())
+    )
+    return {
+        "decision": (
+            "REAL_DATA_AMP_STABILITY_PASS_PROTOCOL_FREEZE_AUTHORIZED"
+            if passed
+            else "REAL_DATA_AMP_STABILITY_HOLD"
+        ),
+        "stability_gate_passed": passed,
+        "official_protocol_freeze_authorized": passed,
+        "reason": (
+            "matched_32_batch_PL_ST_zero_skip_at_initial_scale"
+            if passed
+            else "frozen_stability_rule_not_satisfied"
+        ),
+        "matched_data_sequence": matched_data_sequence,
+        "batch_count": int(spec["max_batches"]),
+        "initial_scale": float(spec["initial_scale"]),
+        "score_function_temporal_reduction": "mean",
+        "per_arm_zero_skip": per_arm_zero_skip,
+        "data_sequence_sha256": canonical_sha256(
+            {"fingerprints": data_sequences[AMP_DIAGNOSTIC_ARMS[0]]}
+        )
+        if matched_data_sequence
+        else None,
     }

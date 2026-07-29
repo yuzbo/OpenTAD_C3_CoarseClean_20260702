@@ -21,8 +21,11 @@ if str(ROOT) not in sys.path:
 from tools.bata.georoute_amp_diagnostic import (  # noqa: E402
     AMP_DIAGNOSTIC_ARMS,
     AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA,
+    AMP_DIAGNOSTIC_PROFILE,
     AMP_DIAGNOSTIC_STAGE_SCHEMA,
     AMP_DIAGNOSTIC_STUDY_ID,
+    AMP_STABILITY_PROFILE,
+    amp_protocol_spec,
     bind_amp_diagnostic_config,
     diagnostic_cell_relative_path,
     validate_amp_diagnostic_job_receipt,
@@ -100,15 +103,23 @@ def _validate_deployment(
     expected_commit: str,
     expected_job_id: str,
     arm: str,
+    protocol_profile: str = AMP_DIAGNOSTIC_PROFILE,
 ) -> dict[str, Any]:
+    spec = amp_protocol_spec(protocol_profile)
     deployment = _read_json(path)
     jobs = validate_amp_diagnostic_job_receipt(deployment.get("jobs"))
     if (
-        deployment.get("schema_version")
-        != AMP_DIAGNOSTIC_DEPLOYMENT_SCHEMA
+        deployment.get("schema_version") != spec["deployment_schema"]
         or deployment.get("status")
-        != "SUBMITTED_REAL_BATCH_AMP_DIAGNOSTIC_ONLY"
-        or deployment.get("study_id") != AMP_DIAGNOSTIC_STUDY_ID
+        != spec["deployment_status"]
+        or deployment.get("study_id") != spec["study_id"]
+        or str(
+            deployment.get(
+                "protocol_profile",
+                AMP_DIAGNOSTIC_PROFILE,
+            )
+        )
+        != spec["profile"]
         or deployment.get("runtime_commit") != expected_commit
         or tuple(deployment.get("arms", [])) != AMP_DIAGNOSTIC_ARMS
         or jobs["stage"][arm] != expected_job_id
@@ -130,14 +141,17 @@ def _validate_train_rendezvous(
     *,
     arm: str,
     slurm_job_id: str,
+    protocol_profile: str = AMP_DIAGNOSTIC_PROFILE,
 ) -> dict[str, Any]:
+    spec = amp_protocol_spec(protocol_profile)
+    stage = str(spec["rendezvous_stage"])
     expected_id = (
-        f"georoute-{slurm_job_id}-ampdiag-{arm}-s{PILOT_SEED}-train"
+        f"georoute-{slurm_job_id}-{stage}-{arm}-s{PILOT_SEED}-train"
     )
     if (
         receipt.get("phase") != "train"
         or receipt.get("backend") != "c10d"
-        or receipt.get("stage") != "ampdiag"
+        or receipt.get("stage") != stage
         or receipt.get("variant") != arm
         or int(receipt.get("seed", -1)) != PILOT_SEED
         or receipt.get("slurm_job_id") != slurm_job_id
@@ -196,20 +210,30 @@ def validate_amp_diagnostic_stage_result(
     expected_arm: str | None = None,
     expected_commit: str | None = None,
     expected_job_id: str | None = None,
+    expected_profile: str | None = None,
 ) -> dict[str, Any]:
     result = dict(result)
     if not _self_hash_matches(result, field="stage_result_sha256"):
         raise ValueError("AMP diagnostic stage-result self-hash mismatch")
     arm = str(result.get("arm", ""))
     status = result.get("status")
+    profile = str(
+        result.get(
+            "protocol_profile",
+            AMP_DIAGNOSTIC_PROFILE,
+        )
+    )
+    spec = amp_protocol_spec(profile)
+    if expected_profile is not None and profile != expected_profile:
+        raise ValueError("AMP stage-result protocol profile mismatch")
     if (
-        result.get("schema_version") != AMP_DIAGNOSTIC_STAGE_SCHEMA
-        or result.get("study_id") != AMP_DIAGNOSTIC_STUDY_ID
+        result.get("schema_version") != spec["stage_schema"]
+        or result.get("study_id") != spec["study_id"]
         or arm not in AMP_DIAGNOSTIC_ARMS
         or status
         not in {
-            "PASS_STAGE_DIAGNOSTIC_ONLY",
-            "FAIL_STAGE_DIAGNOSTIC_EXECUTION",
+            spec["stage_pass_status"],
+            spec["stage_fail_status"],
         }
         or int(result.get("seed", -1)) != PILOT_SEED
         or result.get("checkpoint_emitted") is not False
@@ -251,6 +275,7 @@ def validate_amp_diagnostic_stage_result(
         expected_arm=arm,
         expected_commit=result["runtime_commit"],
         expected_slurm_job_id=job_id,
+        expected_profile=profile,
     )
     if (
         result.get("binding") != validated["binding"]
@@ -259,10 +284,10 @@ def validate_amp_diagnostic_stage_result(
     ):
         raise ValueError("AMP diagnostic stage and observer bindings differ")
     expected_status = (
-        "PASS_STAGE_DIAGNOSTIC_ONLY"
-        if validated["status"] == "PASS_DIAGNOSTIC_EXECUTION_ONLY"
+        spec["stage_pass_status"]
+        if validated["status"] == spec["receipt_pass_status"]
         and result.get("execution_error") is None
-        else "FAIL_STAGE_DIAGNOSTIC_EXECUTION"
+        else spec["stage_fail_status"]
     )
     if status != expected_status:
         raise ValueError("AMP diagnostic stage status differs from observer")
@@ -270,6 +295,7 @@ def validate_amp_diagnostic_stage_result(
         result.get("rendezvous", {}),
         arm=arm,
         slurm_job_id=job_id,
+        protocol_profile=profile,
     )
     return result
 
@@ -285,10 +311,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--development-video-root", type=Path, required=True)
     parser.add_argument("--pretrained", type=Path, required=True)
     parser.add_argument("--expected-commit", required=True)
+    parser.add_argument(
+        "--protocol-profile",
+        choices=(AMP_DIAGNOSTIC_PROFILE, AMP_STABILITY_PROFILE),
+        default=AMP_DIAGNOSTIC_PROFILE,
+    )
     return parser.parse_args()
 
 
 def _execute(args: argparse.Namespace) -> dict[str, Any]:
+    spec = amp_protocol_spec(args.protocol_profile)
     expected_commit = str(args.expected_commit).lower()
     if _git_output("rev-parse", "HEAD").lower() != expected_commit:
         raise RuntimeError("AMP diagnostic source differs from its bound commit")
@@ -309,13 +341,17 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         expected_commit=expected_commit,
         expected_job_id=slurm_job_id,
         arm=args.arm,
+        protocol_profile=args.protocol_profile,
     )
-    cell_root = run_root / diagnostic_cell_relative_path(arm=args.arm)
+    cell_root = run_root / diagnostic_cell_relative_path(
+        arm=args.arm,
+        protocol_profile=args.protocol_profile,
+    )
     bound_config = (
         run_root
         / "control"
         / "bound_configs"
-        / f"{AMP_DIAGNOSTIC_STUDY_ID}_{args.arm}_seed{PILOT_SEED}.py"
+        / f"{spec['study_id']}_{args.arm}_seed{PILOT_SEED}.py"
     )
     train_log = run_root / "control" / "train_logs" / f"{args.arm}.out"
     if cell_root.exists() or bound_config.exists() or train_log.exists():
@@ -334,6 +370,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         development_video_root=args.development_video_root,
         pretrained_checkpoint_path=args.pretrained,
         runtime_commit=expected_commit,
+        protocol_profile=args.protocol_profile,
     )
     expected_inputs = deployment["input_receipts"]
     if (
@@ -364,7 +401,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
     train_prefix, rendezvous = build_torchrun_prefix(
         phase="train",
         slurm_job_id=slurm_job_id,
-        stage="ampdiag",
+        stage=str(spec["rendezvous_stage"]),
         variant=args.arm,
         seed=PILOT_SEED,
     )
@@ -386,7 +423,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
     except BaseException as error:
         train_error = error
 
-    diagnostic_path = cell_root / "amp_diagnostic.json"
+    diagnostic_path = cell_root / str(spec["receipt_filename"])
     if not diagnostic_path.is_file():
         if train_error is not None:
             raise RuntimeError(
@@ -399,18 +436,20 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         expected_arm=args.arm,
         expected_commit=expected_commit,
         expected_slurm_job_id=slurm_job_id,
+        expected_profile=args.protocol_profile,
     )
     artifact_audit = audit_no_performance_artifacts(cell_root)
     status = (
-        "PASS_STAGE_DIAGNOSTIC_ONLY"
-        if diagnostic["status"] == "PASS_DIAGNOSTIC_EXECUTION_ONLY"
+        spec["stage_pass_status"]
+        if diagnostic["status"] == spec["receipt_pass_status"]
         and train_error is None
-        else "FAIL_STAGE_DIAGNOSTIC_EXECUTION"
+        else spec["stage_fail_status"]
     )
     result: dict[str, Any] = {
-        "schema_version": AMP_DIAGNOSTIC_STAGE_SCHEMA,
+        "schema_version": spec["stage_schema"],
         "status": status,
-        "study_id": AMP_DIAGNOSTIC_STUDY_ID,
+        "study_id": spec["study_id"],
+        "protocol_profile": spec["profile"],
         "arm": args.arm,
         "seed": PILOT_SEED,
         "runtime_commit": expected_commit,
@@ -430,6 +469,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
             rendezvous,
             arm=args.arm,
             slurm_job_id=slurm_job_id,
+            protocol_profile=args.protocol_profile,
         ),
         "artifact_audit": artifact_audit,
         "execution_error": (
@@ -453,6 +493,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         expected_arm=args.arm,
         expected_commit=expected_commit,
         expected_job_id=slurm_job_id,
+        expected_profile=args.protocol_profile,
     )
 
 
@@ -461,6 +502,7 @@ def _write_wrapper_failure(
     args: argparse.Namespace,
     error: BaseException,
 ) -> None:
+    spec = amp_protocol_spec(args.protocol_profile)
     run_root = args.run_root.resolve()
     boundary = Path("/data/run01/sczc063/yuzibo").resolve()
     if not _inside(run_root, boundary):
@@ -470,9 +512,10 @@ def _write_wrapper_failure(
         return
     trace = traceback.format_exc()
     payload: dict[str, Any] = {
-        "schema_version": AMP_DIAGNOSTIC_STAGE_SCHEMA,
-        "status": "FAIL_STAGE_WRAPPER_PREVALIDATION_OR_SEALING",
-        "study_id": AMP_DIAGNOSTIC_STUDY_ID,
+        "schema_version": spec["stage_schema"],
+        "status": spec["stage_wrapper_fail_status"],
+        "study_id": spec["study_id"],
+        "protocol_profile": spec["profile"],
         "arm": args.arm,
         "seed": PILOT_SEED,
         "expected_runtime_commit": str(args.expected_commit).lower(),
@@ -509,14 +552,16 @@ def main() -> int:
             pass
         raise
     cell_root = args.run_root.resolve() / diagnostic_cell_relative_path(
-        arm=args.arm
+        arm=args.arm,
+        protocol_profile=args.protocol_profile,
     )
     result_path = cell_root / "stage_result.json"
     if result_path.exists():
         raise FileExistsError("AMP diagnostic stage result already exists")
     _atomic_write_json(result_path, result)
     print(json.dumps(result, sort_keys=True))
-    return 0 if result["status"] == "PASS_STAGE_DIAGNOSTIC_ONLY" else 1
+    spec = amp_protocol_spec(args.protocol_profile)
+    return 0 if result["status"] == spec["stage_pass_status"] else 1
 
 
 if __name__ == "__main__":

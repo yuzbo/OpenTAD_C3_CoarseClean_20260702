@@ -16,6 +16,7 @@ from .georoute_routing import (
     GEOROUTE_ROUTING_SCHEMA,
     POLICY_ESTIMATORS,
     ROUTE_MODES,
+    SCORE_FUNCTION_TEMPORAL_REDUCTIONS,
     decode_continuous_geometry,
     interpolate_temporal_knots,
     native_patch_centers,
@@ -269,6 +270,13 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.area_prior = float(getattr(custom_cfg, "georoute_area_prior", 0.30))
         self.score_function_weight = float(getattr(custom_cfg, "georoute_score_function_weight", 1.0))
         self.score_function_baseline_momentum = float(getattr(custom_cfg, "georoute_score_function_baseline_momentum", 0.95))
+        self.score_function_temporal_reduction = str(
+            getattr(
+                custom_cfg,
+                "georoute_score_function_temporal_reduction",
+                "sum",
+            )
+        )
         # This switch is intentionally P0-only.  It runs a dense numerical
         # reference before the real packed call and is forbidden in ordinary
         # development/paper cells so it can never be mistaken for model cost.
@@ -293,6 +301,13 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             raise ValueError("GeoRoute scout size must be a positive multiple of 16")
         if not (0.0 <= self.score_function_baseline_momentum < 1.0):
             raise ValueError("score-function baseline momentum must lie in [0,1)")
+        if (
+            self.score_function_temporal_reduction
+            not in SCORE_FUNCTION_TEMPORAL_REDUCTIONS
+        ):
+            raise ValueError(
+                "georoute_score_function_temporal_reduction must be sum or mean"
+            )
         if self.geometry_stride_tubelets <= 0:
             raise ValueError("GeoRoute geometry stride must be positive")
         if self.p0_dense_reference_check and self.route_mode != "dense":
@@ -831,6 +846,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "policy_temperature": self.policy_temperature,
             "score_function_weight": self.score_function_weight,
             "score_function_baseline_momentum": (self.score_function_baseline_momentum),
+            "score_function_temporal_reduction": (
+                self.score_function_temporal_reduction
+            ),
             "geometry_smoothness_weight": self.geometry_smoothness_weight,
             "area_prior_weight": self.area_prior_weight,
             "estimator_claim": "biased_straight_through"
@@ -934,6 +952,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             ordered_log_prob=ordered_log_prob,
             baseline=baseline,
             weight=self.score_function_weight,
+            temporal_reduction=self.score_function_temporal_reduction,
         )
         with torch.no_grad():
             reward = detector_cost.detach()
@@ -958,11 +977,20 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                     detector_cost.detach().to(torch.float32)
                     - baseline_for_policy.to(torch.float32)
                 )
-                joint_log_probability = (
-                    ordered_log_prob.detach().to(torch.float32).sum(dim=1)
+                detached_log_probability = ordered_log_prob.detach().to(
+                    torch.float32
                 )
+                if self.score_function_temporal_reduction == "sum":
+                    joint_log_probability = detached_log_probability.sum(dim=1)
+                else:
+                    joint_log_probability = detached_log_probability.mean(
+                        dim=1
+                    )
                 detector_binding.update(
                     {
+                        "temporal_reduction": (
+                            self.score_function_temporal_reduction
+                        ),
                         "detector_losses": {
                             name: self._detached_tensor_statistics(value)
                             for name, value in tensor_losses
