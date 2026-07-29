@@ -93,6 +93,12 @@ max_chars: 8000
   not a result. There is no resume, partial-performance inference,
   old selector, automatic promotion, P2/P3, official test, efficiency claim,
   Geometry Zoom claim, or paper claim.
+  A fresh history-free agent independently audited the Pro absorption,
+  six-arm contract, numerical repair, no-leak paths, all-six finalizer, and
+  14-job fail-closed deployer. Its verdict is
+  `DEPLOY_AFTER_OLD_CLOSEOUT_AND_CAPACITY`: no further Pro discussion is needed,
+  but the old namespace must first seal INCOMPLETE and Slurm must admit all 14
+  new jobs at once. This is code/protocol review evidence, not a model result.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

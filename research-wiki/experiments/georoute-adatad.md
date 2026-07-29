@@ -651,6 +651,13 @@ This state is `tested_numerical_correctness_pending_old_closeout_and_fresh_p0`;
 it is not a result, winner, P2/P3, official test, efficiency claim, Geometry
 Zoom claim, or paper claim.
 
+An independent history-free agent subsequently returned
+`DEPLOY_AFTER_OLD_CLOSEOUT_AND_CAPACITY` after a read-only audit of the raw Pro
+review, project absorption, frozen six-arm intervention, numerical repair,
+no-leak contracts, and fail-closed 14-job DAG. This is protocol-review evidence
+only. It authorizes no partial submission and does not replace the old
+INCOMPLETE closeout or the new source's six expanded P0 leaves.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

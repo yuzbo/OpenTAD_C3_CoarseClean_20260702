@@ -75,6 +75,15 @@ This is `tested` numerical-correctness evidence only. The current experimental
 node still has a hard-failed arm and is not `empirically_supported` or
 `paper_ready`.
 
+A fresh history-free agent independently audited the raw Pro review and its
+absorption, frozen six-arm contract, no-leak paths, PL AMP repair, P0/finalizer
+logic, and all-or-none 14-job deployer. It returned
+`DEPLOY_AFTER_OLD_CLOSEOUT_AND_CAPACITY`. This closes the need for another Pro
+discussion before the minimal pilot, but it does not bypass old closeout,
+submit capacity, fresh per-arm P0, or all-six completion. The audit is archived
+at
+`docs/methods/reviews/2026-07-29-georoute-estimator-pilot-independent-agent-audit.md`.
+
 ## Claim boundary
 
 For the current namespace, the hard-failed arm means finalizer `1203720` may

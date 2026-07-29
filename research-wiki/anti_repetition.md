@@ -64,6 +64,12 @@ updated: 2026-07-29
    CUDA KAT Job `1203873`; do not reinterpret that mechanical/numerical pass as
    detector utility. Only a fresh six-arm namespace whose own schema-v4 P0 and
    all six stage receipts pass can supply the four descriptive contrasts.
+0. The independent-agent verdict
+   `DEPLOY_AFTER_OLD_CLOSEOUT_AND_CAPACITY` is a code/protocol audit, not a
+   runtime authorization that bypasses either gate. Never submit fewer than
+   the complete 14-job DAG to fit current capacity, deploy before the old
+   `cbe0a082` closeout seals INCOMPLETE, or treat reviewer approval as a P0 or
+   performance receipt.
 0. JSON object key order is not experimental arm order. Deployment validators
    must compare the exact arm-key set, normalize it back to the frozen arm
    order, require unique numeric Slurm IDs, and then bind by arm. Never reject
