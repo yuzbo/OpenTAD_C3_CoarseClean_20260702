@@ -512,7 +512,36 @@ updated: 2026-07-30
   `481b40a04ace7ba5fc265001a7fe4ee0db66a9d39db8edaab7999d5fde414a7d`
   and
   `5d03c3e8ff95bb1732b8771dfaa07608a8694ca104e8658f3718f3ef345baead`.
-  This is KAT/deployment/experiment-running evidence, not performance evidence.
+  All three Jobs completed `0:0`. Both arms consumed 64 batches, skipped only
+  `20/29`, made 62 successful updates, ended at scale `16384`, and passed the
+  final-16 tail; data/CPU RNG sequences, initial CUDA RNG, seed and immutable
+  inputs match. PL receipt/stage self/file SHA-256 are
+  `ee5ffde458d334c1555fb8ae8ba6d77832ff312712a2ce4be5eefb62c9b42a9c`
+  /
+  `12d851b69068dd1cf87171ceccbcd7cf431951b5b22c594f868ae347a78be879`
+  and
+  `a2adf0284e756b10edd0fe785ac788f4d8a0031297791b8f221d532f4f56944a`
+  /
+  `652669c6432bd16db5e385d41817a32830cc3a17e6fb15c88af2e2232674016b`;
+  ST are
+  `847a1847b8f1599f8ee1c5a931fcb9ec8134a81a7492505e9d4e25aaf19442ab`
+  /
+  `f406bf87ed6e1a21e961981b7c2cd71ae94f70443ef4f67a9ae1d5beff8d84ef`
+  and
+  `efabbd7b5815837a8a21f1d3cd4f6aaab5cb155424a0c7f6d21030b16a6b42a2`
+  /
+  `c5fafe6756caeaa691d4b74360bf91533969f78c6c90f426105aa53f06203ec3`.
+  Finalization status/decision are
+  `COMPLETE_DDP_FP16_CAST_REPAIR_GATE_ONLY` /
+  `DDP_FP16_CAST_REPAIR_GATE_PASS_MATCHED_FORMAL_PROTOCOL_FREEZE_AUTHORIZED`;
+  self/file SHA-256 are
+  `ad556812454f2ff02161587979ac99c33d9a4983b5c8fcd97d26efe47a936185`
+  /
+  `f8ef174c934b42ef4efb98e91f16ee4a0a79d0b9f0bbc9c3e174ad3b64bd77e3`.
+  Independent validation reproduced all hashes/classification and found no
+  fatal log signature or forbidden artifact. This is numerical repair evidence
+  and matched-formal-protocol-freeze authorization only, not official
+  reproduction, performance, official-test or paper evidence.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD

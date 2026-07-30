@@ -3,9 +3,9 @@ type: experiment
 node_id: exp:georoute-ddp-fp16-cast-repair-gate-v1
 title: "GeoRoute DDP FP16-cast no-compression repair gate v1"
 idea: idea:geo-route-adatad
-stage: experiment_running
-status: exact_source_kat_passed_two_arm_gate_running
-verdict: pending
+stage: tested
+status: complete_repair_gate_pass_matched_formal_protocol_freeze_authorized
+verdict: DDP_FP16_CAST_REPAIR_GATE_PASS_MATCHED_FORMAL_PROTOCOL_FREEZE_AUTHORIZED
 confidence: high
 updated: 2026-07-30
 ---
@@ -71,19 +71,59 @@ official-test output.
 
 The fresh gate was then admitted from the same clean commit under
 `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_ddp_fp16_cast_repair_gate_v1_685f935e_s2307_20260730_2314`.
-PL Job `1207554` and ST Job `1207555` are running in parallel; afterany
-finalizer Job `1207556` is dependency-held. Deployment self/file SHA-256 are
+PL Job `1207554`, ST Job `1207555` and afterany finalizer Job `1207556` all
+completed `0:0`. Deployment self/file SHA-256 are
 `da8e79727ec4ce758e23d996ac2b238568bee715493dd0e6dec767342e155451`
 /
 `380b85e781691e2956f978b828ba071ffec4192e0df8acaa7529ada9c281f3e0`.
 Admission bound the exact gradient parent, KAT, origin ref, official-reference
 config, immutable inputs, `active=2 + additional=3 <= MaxSubmitJobs=16`, and
-storage `100456517632` free versus `47244640256` required. The current status
-is `experiment_running`, not a numerical PASS or performance result.
+storage `100456517632` free versus `47244640256` required.
+
+## Terminal evidence
+
+Each arm consumed 64 batches with finite forward losses, 64 optimizer attempts,
+zero retry/replay, 64 scheduler advances and 64 EMA advances. PL and ST both
+skipped only batches `20/29`, made 62 successful updates, had maximum
+consecutive skip `1`, reached minimum/final scale `16384`, and passed the
+registered final-16 stable tail. The pair matched its full data sequence and
+CPU RNG sequence, initial CUDA RNG, execution seed and immutable inputs. Its
+cross-arm skip delta is `0` and final-scale ratio is `1.0`.
+
+PL receipt self/file SHA-256 are
+`ee5ffde458d334c1555fb8ae8ba6d77832ff312712a2ce4be5eefb62c9b42a9c`
+/
+`12d851b69068dd1cf87171ceccbcd7cf431951b5b22c594f868ae347a78be879`;
+PL stage self/file SHA-256 are
+`a2adf0284e756b10edd0fe785ac788f4d8a0031297791b8f221d532f4f56944a`
+/
+`652669c6432bd16db5e385d41817a32830cc3a17e6fb15c88af2e2232674016b`.
+ST receipt self/file SHA-256 are
+`847a1847b8f1599f8ee1c5a931fcb9ec8134a81a7492505e9d4e25aaf19442ab`
+/
+`f406bf87ed6e1a21e961981b7c2cd71ae94f70443ef4f67a9ae1d5beff8d84ef`;
+ST stage self/file SHA-256 are
+`efabbd7b5815837a8a21f1d3cd4f6aaab5cb155424a0c7f6d21030b16a6b42a2`
+/
+`c5fafe6756caeaa691d4b74360bf91533969f78c6c90f426105aa53f06203ec3`.
+
+Finalizer status/decision are
+`COMPLETE_DDP_FP16_CAST_REPAIR_GATE_ONLY` /
+`DDP_FP16_CAST_REPAIR_GATE_PASS_MATCHED_FORMAL_PROTOCOL_FREEZE_AUTHORIZED`;
+its self/file SHA-256 are
+`ad556812454f2ff02161587979ac99c33d9a4983b5c8fcd97d26efe47a936185`
+/
+`f8ef174c934b42ef4efb98e91f16ee4a0a79d0b9f0bbc9c3e174ad3b64bd77e3`.
+Independent validation recomputed the receipt, stage, deployment, submission
+and finalization hashes and reproduced the pair classifier. Slurm and log
+audits found no Traceback, OOM, rendezvous or fatal signature. The
+255,761,847-byte namespace contains no wrapper failure, `.tmp`, checkpoint,
+prediction, metric, evaluator/NMS or official-test artifact.
 
 ## Claim boundary
 
-Even a pass is numerical repair evidence only. It may authorize freezing a
-separate official-comparable performance protocol, but it cannot rank PL/ST,
-report mAP/cost, select a winner, open official test, start P2/P3, or support a
-paper result.
+This pass is numerical repair evidence only. It authorizes freezing a separate
+matched formal performance protocol, but `official_protocol_freeze_authorized`
+remains false because this gate is not an exact official AdaTAD reproduction.
+It cannot rank PL/ST, report mAP/cost, select a winner, open official test,
+start P2/P3, or support a paper result.

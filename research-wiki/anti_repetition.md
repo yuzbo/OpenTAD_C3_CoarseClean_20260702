@@ -258,12 +258,16 @@ updated: 2026-07-30
    `d957514816f660a8eb43b922dfb3325baf36f1bbb706f398d0a54cc0a37df3ae`.
    Never reuse this KAT with a different runtime commit or treat it as
    real-batch stability or performance evidence.
-0. The only active no-compression gate namespace is
+0. The no-compression gate namespace
    `georoute_ddp_fp16_cast_repair_gate_v1_685f935e_s2307_20260730_2314`,
    exact source `685f935e759d5d78f94e5f208997644e07bf4654`, with PL/ST/finalizer
-   Jobs `1207554/1207555/1207556`. Do not resume, replace one arm, change the
-   registered thresholds, infer performance from live scaler telemetry, or
-   submit a duplicate gate while this namespace is active.
+   Jobs `1207554/1207555/1207556`, is terminal and immutable. All jobs completed
+   `0:0`; both arms skipped only batches `20/29`, made 62 updates, ended at
+   scale `16384`, and passed the final-16 tail, so the registered pairwise repair
+   gate passed. Do not resume, replace one arm, relax thresholds, or submit a
+   duplicate gate. The PASS authorizes freezing a matched formal protocol only;
+   it is not official AdaTAD reproduction, mAP/cost evidence, an official-test
+   opening, or permission to claim Geometry Zoom/paper readiness.
 0. `mmengine.Config` is not a normal dict and does not implement
    `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
    tested `Config.pop` API and execute a real Config materialization regression.

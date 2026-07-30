@@ -876,9 +876,25 @@ FP16 shadow overflowed, unscale stayed finite, and an optimizer update
 completed, with no performance artifacts. The KAT therefore authorized the
 fresh no-performance run at
 `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_ddp_fp16_cast_repair_gate_v1_685f935e_s2307_20260730_2314`.
-PL/ST/finalizer Jobs `1207554/1207555/1207556` are deployed, with both leaves
-running concurrently and the finalizer bound by `afterany`. This is only an
-active numerical gate; no official-comparable performance protocol is open.
+PL/ST/finalizer Jobs `1207554/1207555/1207556` all completed `0:0`. Both
+matched arms consumed all 64 batches, retained finite forward losses, skipped
+only batches `20/29`, made 62 successful updates, reached minimum/final scale
+`16384`, and completed a successful final-16 tail. Their data and CPU RNG
+sequences, initial CUDA RNG, seed and immutable inputs match; skip delta is `0`
+and final-scale ratio is `1.0`. Finalizer sealed
+`COMPLETE_DDP_FP16_CAST_REPAIR_GATE_ONLY /
+DDP_FP16_CAST_REPAIR_GATE_PASS_MATCHED_FORMAL_PROTOCOL_FREEZE_AUTHORIZED`.
+Finalization self/file SHA-256 are
+`ad556812454f2ff02161587979ac99c33d9a4983b5c8fcd97d26efe47a936185`
+/
+`f8ef174c934b42ef4efb98e91f16ee4a0a79d0b9f0bbc9c3e174ad3b64bd77e3`.
+The 255,761,847-byte namespace has no temporary, checkpoint, prediction,
+metric, evaluator/NMS or official-test artifact and no fatal log signature.
+This supports only the registered no-compression numerical repair and
+authorizes freezing a matched formal protocol. Because the repaired recipe
+differs from the exact official AdaTAD communication setting, the final receipt
+correctly leaves `official_protocol_freeze_authorized=false`; no
+official-comparable performance experiment or paper claim is open yet.
 
 ## Frozen decision logic
 

@@ -2010,3 +2010,23 @@ append_only: true
   `380b85e781691e2956f978b828ba071ffec4192e0df8acaa7529ada9c281f3e0`.
   This is `experiment_running`; performance, official test, P2/P3, Geometry
   Zoom and paper claims remain closed.
+
+- 2026-07-30: repair-gate PL/ST/finalizer Jobs `1207554/1207555/1207556`
+  all completed `0:0`. Both arms consumed 64 batches with finite forward losses,
+  skipped only batches `20/29`, made 62 successful updates, reached
+  minimum/final scale `16384`, and completed the final-16 stable tail with zero
+  retry/replay. Data and CPU RNG sequences, initial CUDA RNG, seed and immutable
+  inputs match; skip delta is `0` and final-scale ratio is `1.0`. Finalizer
+  sealed `COMPLETE_DDP_FP16_CAST_REPAIR_GATE_ONLY /
+  DDP_FP16_CAST_REPAIR_GATE_PASS_MATCHED_FORMAL_PROTOCOL_FREEZE_AUTHORIZED`;
+  self/file SHA-256 are
+  `ad556812454f2ff02161587979ac99c33d9a4983b5c8fcd97d26efe47a936185`
+  /
+  `f8ef174c934b42ef4efb98e91f16ee4a0a79d0b9f0bbc9c3e174ad3b64bd77e3`.
+  Independent validation recomputed receipt/stage/deployment/submission/final
+  hashes and classification. The 255,761,847-byte namespace contains no
+  wrapper failure, temporary, checkpoint, prediction, metric, evaluator/NMS or
+  official-test artifact; logs contain no fatal signature. This validates only
+  the registered no-compression numerical repair and authorizes freezing a
+  matched formal protocol. Exact official reproduction, performance, official
+  test, P2/P3, Geometry Zoom and paper claims remain closed.

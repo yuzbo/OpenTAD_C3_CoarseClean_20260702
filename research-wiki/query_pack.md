@@ -326,10 +326,26 @@ max_chars: 8000
   `257436d617b79413b4b790cda754d6dec56602d52edb07e50c03cdcd28f78b4f`
   /
   `d957514816f660a8eb43b922dfb3325baf36f1bbb706f398d0a54cc0a37df3ae`.
-  The fresh gate root is
+  The fresh gate is now terminal at
   `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_ddp_fp16_cast_repair_gate_v1_685f935e_s2307_20260730_2314`;
-  PL/ST/finalizer Jobs `1207554/1207555/1207556` were submitted together and
-  the two leaves are running in parallel. This remains no-performance evidence.
+  PL/ST/finalizer Jobs `1207554/1207555/1207556` all completed `0:0`.
+  Both arms consumed 64 matched batches with finite forward losses, default
+  dynamic GradScaler, zero retry/replay and exactly the registered
+  `solver.fp16_compress=false` intervention. Both skipped only batches `20/29`,
+  made 62 successful updates, reached final/minimum scale `16384`, and completed
+  a successful final-16 tail. Data and CPU RNG sequences, initial CUDA RNG,
+  seed and immutable input bindings match; cross-arm skip delta is `0` and
+  final-scale ratio is `1.0`. Finalizer sealed
+  `COMPLETE_DDP_FP16_CAST_REPAIR_GATE_ONLY /
+  DDP_FP16_CAST_REPAIR_GATE_PASS_MATCHED_FORMAL_PROTOCOL_FREEZE_AUTHORIZED`;
+  finalization self/file SHA-256 are
+  `ad556812454f2ff02161587979ac99c33d9a4983b5c8fcd97d26efe47a936185`
+  /
+  `f8ef174c934b42ef4efb98e91f16ee4a0a79d0b9f0bbc9c3e174ad3b64bd77e3`.
+  This validates the no-compression numerical repair and authorizes freezing a
+  later matched formal protocol only. It explicitly leaves
+  `official_protocol_freeze_authorized=false` and all metric, checkpoint,
+  prediction, evaluator/NMS, official-test and paper guards closed.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch
