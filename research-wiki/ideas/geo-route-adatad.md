@@ -398,15 +398,18 @@ That v2 numerical gate is now implemented and locally `tested`. It uses the
 official default dynamic-scaler and per-batch scheduler/EMA transition cadence,
 but explicitly does not match the official scheduler hyperparameters or full
 training recipe. Exact runtime source `27fba03c` passed the clean remote
-Linux/Torch suite `168/168`; the fresh two-arm run now consists of PL/ST Jobs
-`1205588/1205589` and afterany finalizer `1205590`. Passing it would authorize
+Linux/Torch suite `168/168`; the terminal two-arm run consists of PL/ST Jobs
+`1205588/1205589` and afterany finalizer `1205590`. Passing it could authorize
 only protocol freezing, not an accuracy, estimator, efficiency or paper
 conclusion.
 
-PL then crossed the frozen numerical rule: its third nonconsecutive skip at
-batch `29` reduced scale to `8192`, below the `16384` floor. This makes v2
-irreversibly HOLD while the jobs run to canonical closeout. It is a numerical
-stability finding only and does not rank PL versus ST or change the model claim.
+PL crossed the frozen numerical rule: its third nonconsecutive skip at batch
+`29` reduced scale to `8192`, below the `16384` floor. PL eventually completed
+61/64 updates and ST 62/64; both had finite forward losses and stable final-16
+tails. Finalizer `1205590` nevertheless correctly sealed
+`OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD`. It is a numerical stability finding
+only and does not rank PL versus ST, change the model claim, or authorize the
+formal paper protocol.
 
 The publication path is explicitly separate: the one-seed 20-epoch pilot is
 exploratory. A paper result must first reproduce the official AdaTAD recipe and

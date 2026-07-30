@@ -369,10 +369,25 @@ updated: 2026-07-30
   PL/ST/finalizer Jobs `1205588/1205589/1205590`; deployment self-hash
   `8c9ec92f927a1f5e7902c3abc0d5422eb8029b544a7b500dd51655daa17e543e`.
   This source is the runtime identity; later documentation commits are not.
-  Live numerical provenance later made the gate irreversibly HOLD: PL scaler
-  skips at batches `11/20/29` reached `8192`, exceeding the two-skip limit and
-  violating the `16384` floor. Final receipt hashes remain pending terminal
-  closeout and are not inferred from this live record.
+  Terminal numerical provenance made the gate HOLD: PL scaler skips at batches
+  `11/20/29` reached `8192`, exceeding the two-skip limit and violating the
+  `16384` floor; ST skipped at `20/29` and ended at `16384`. PL/ST/finalizer
+  states were `FAILED 1:0` / `COMPLETED 0:0` / `COMPLETED 0:0`. Finalizer
+  status/decision were
+  `INCOMPLETE_OFFICIAL_SEMANTICS_AMP_STABILITY_V2 /
+  OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD`.
+  Finalization internal/file SHA-256:
+  `ab7ea3e5fca378532b689f8dce8d3ed57631ca78eec99b91a77a96a5e8e29d56` /
+  `c7f59dbcec609430bdf4aafe99cc5ef3272ef93362b7f44ba74bcbc337c85ab0`;
+  PL receipt internal/file SHA-256:
+  `ec2c2e5f52b5d4aa56ca8d130bf60c6fb96cbcd16bd76af05db8074430f7c9f2` /
+  `6667c8f0f357984fc19dd18d9bbe466241749dc77b6d5ce434b2e106ef7da277`;
+  ST receipt internal/file SHA-256:
+  `9340be6c8b19b99111109faf1b9bcda09a2e86af85c0acd7c2e3cd67e6d6e17a` /
+  `cdc3947bb42e63799a5c8591274d54d508c3bdbda99ecbea8d05eb7df01c555d`.
+  Self-hashes were independently recomputed and artifact audits found no
+  checkpoint, prediction, metric, evaluator, test or temporary payload. This
+  registry entry is numerical provenance, not performance evidence.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD

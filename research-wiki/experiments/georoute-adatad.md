@@ -808,22 +808,26 @@ the exact official AdaTAD path uses dynamic GradScaler, it is not an official
 comparability predicate and cannot freeze a paper protocol. No PL/ST, accuracy,
 efficiency, or paper conclusion exists yet.
 
-The separately versioned official-transition-semantics v2 is now
-`experiment_running` at exact runtime source
+The separately versioned official-transition-semantics v2 is now terminal
+`tested` at exact runtime source
 `27fba03cb6d4932ee10cb4545b97984dff28c28c`. Its clean remote Linux/Torch
-suite passed `168/168`; PL/ST Jobs `1205588/1205589` run in
+suite passed `168/168`; PL/ST Jobs `1205588/1205589` ran in
 `georoute_official_semantics_amp_stability_v2_27fba03c_20260730_0800`, with
 afterany finalizer `1205590`. It binds the sealed v1 HOLD and official reference
 hash but explicitly does not match official scheduler hyperparameters or the
 full recipe. Therefore it remains a no-metric numerical gate and cannot enter a
 paper comparison.
 
-The v2 gate is already irreversibly failed before closeout: PL skipped scaler
-updates at batches `11`, `20` and `29`, with the third backoff reaching `8192`.
-This exceeds the registered two-skip bound and violates the `16384` scale floor.
-ST had two skips at batches `20/29` and reached `16384` at the same observation.
-Jobs continue only for terminal provenance and afterany finalization; no rerun,
-performance inference or protocol freeze is allowed.
+The v2 gate is sealed HOLD. PL consumed 64 batches, made 61 successful updates,
+and skipped scaler updates at batches `11`, `20` and `29`, with the third
+backoff reaching `8192`. This exceeds the registered two-skip bound and violates
+the `16384` scale floor. ST consumed 64 batches, made 62 successful updates,
+and its two skips at `20/29` ended at scale `16384`. Both had finite forwards
+and stable final-16 tails, but these facts do not undo PL's registered failure.
+Finalizer `1205590` completed with
+`INCOMPLETE_OFFICIAL_SEMANTICS_AMP_STABILITY_V2 /
+OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD`; no rerun, performance inference,
+formal protocol freeze, or paper comparison is allowed.
 
 ## Frozen decision logic
 

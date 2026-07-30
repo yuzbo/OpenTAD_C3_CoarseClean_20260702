@@ -251,14 +251,20 @@ max_chars: 8000
   full official recipe are not matched, so the gate is not performance
   comparable. Exact runtime source
   `27fba03cb6d4932ee10cb4545b97984dff28c28c` passed the clean remote
-  Linux/Torch suite `168/168`; PL/ST Jobs `1205588/1205589` now run in the
-  fresh v2 namespace with afterany finalizer `1205590`. This is
-  `experiment_running`, not a result, and produces no metric, checkpoint, test
-  or paper evidence. During the run, PL's third nonconsecutive scaler skip at
-  batch `29` reduced scale `16384 -> 8192`, irreversibly violating both the
-  frozen skip count and scale floor. The run must therefore close as HOLD after
-  natural terminal provenance; do not cancel, rerun, supplement or infer model
-  performance.
+  Linux/Torch suite `168/168`; PL/ST/finalizer Jobs
+  `1205588/1205589/1205590` are now terminal. PL consumed 64 batches with 61
+  successful updates and skips at `11/20/29`, ending at scale `8192`; ST
+  consumed 64 batches with 62 successful updates and skips at `20/29`, ending
+  at `16384`. Both had finite forward losses and a successful final-16 tail,
+  but PL violated the frozen two-skip limit and scale floor. The canonical
+  finalizer emitted
+  `INCOMPLETE_OFFICIAL_SEMANTICS_AMP_STABILITY_V2 /
+  OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD`; protocol freeze and every
+  performance/test/paper guard are false. Finalization internal/file SHA-256:
+  `ab7ea3e5fca378532b689f8dce8d3ed57631ca78eec99b91a77a96a5e8e29d56` /
+  `c7f59dbcec609430bdf4aafe99cc5ef3272ef93362b7f44ba74bcbc337c85ab0`.
+  This is terminal numerical-gate evidence only: do not rerun, supplement,
+  change thresholds, infer model performance or launch the formal protocol.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch

@@ -1827,3 +1827,23 @@ append_only: true
   reached `16384`. Both jobs continue naturally so finalizer `1205590` can seal
   canonical terminal evidence. No cancellation, resume, single-arm replacement,
   protocol freeze, performance inference or paper claim is allowed.
+
+- 2026-07-30: sealed the official-semantics stability-v2 terminal record.
+  PL Job `1205588` consumed 64 batches, completed 61 optimizer updates and
+  recorded three nonconsecutive `scout_score_function` skips at `11/20/29`,
+  ending at scale `8192`; ST Job `1205589` consumed 64 batches, completed 62
+  updates and recorded detector skips at `20/29`, ending at `16384`. Both
+  forwards remained finite, both completed a successful final-16 tail, and
+  scheduler/EMA each advanced 64 times with zero retry/replay. Identical
+  data/CPU-RNG/CUDA-RNG hashes confirm the bound order and initial stochastic
+  state. PL terminated `FAILED 1:0`, ST `COMPLETED 0:0`, and afterany finalizer
+  `1205590` `COMPLETED 0:0`, sealing
+  `INCOMPLETE_OFFICIAL_SEMANTICS_AMP_STABILITY_V2 /
+  OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD`. Finalization internal/file
+  SHA-256 are
+  `ab7ea3e5fca378532b689f8dce8d3ed57631ca78eec99b91a77a96a5e8e29d56` /
+  `c7f59dbcec609430bdf4aafe99cc5ef3272ef93362b7f44ba74bcbc337c85ab0`;
+  all self-hashes recomputed and all checkpoint/prediction/evaluator/test/
+  temporary artifact counts are zero. This closes only the numerical gate:
+  protocol freeze, performance inference, official test, P2/P3 and paper claims
+  remain unauthorized.

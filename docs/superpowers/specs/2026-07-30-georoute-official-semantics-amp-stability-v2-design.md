@@ -2,12 +2,22 @@
 
 Date: 2026-07-30
 
-Status: `threshold_exceeded_waiting_fail_closed_closeout`
+Status: `sealed_terminal_hold`
 
 Scope: numerical stability and official-protocol freeze authorization only.
 This design does not authorize accuracy measurement, checkpoint selection,
 model promotion, P2/P3, Geometry Zoom, an official-test opening, or a paper
 claim.
+
+Terminal outcome: exact runtime source
+`27fba03cb6d4932ee10cb4545b97984dff28c28c` completed the frozen two-arm
+diagnostic under Jobs `1205588/1205589` and afterany finalizer `1205590`.
+Residual-PL consumed all 64 batches but recorded three nonconsecutive skipped
+updates at zero-based batches `11/20/29`, ending at scale `8192`; residual-ST
+recorded two at `20/29`, ending at `16384`. The PL arm therefore violated the
+frozen two-skip bound and scale floor. Final decision:
+`OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD`. This terminal record does not alter
+the scope above and does not authorize an official-comparable performance run.
 
 ## 1. Evidence and problem statement
 
