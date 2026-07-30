@@ -11,8 +11,7 @@ LAUNCHER = ROOT / "scripts" / "run_dcsr_g0_g1_internal_n16r4.sbatch"
 def test_dcsr_launcher_uses_three_disjoint_development_seeds():
     text = LAUNCHER.read_text(encoding="utf-8")
     assert "#SBATCH --array=0-2" in text
-    assert "#SBATCH --mem=55G" in text
-    assert "#SBATCH --mem=64G" not in text
+    assert "#SBATCH --mem=" not in text
     assert EXPECTED_DEV_SEEDS == (
         2026073001,
         2026073002,
