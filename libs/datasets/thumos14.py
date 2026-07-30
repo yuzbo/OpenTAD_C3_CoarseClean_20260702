@@ -1,5 +1,6 @@
 import os
 import json
+import hashlib
 import numpy as np
 
 import torch
@@ -28,7 +29,10 @@ class THUMOS14Dataset(Dataset):
         num_classes,     # number of action categories
         file_prefix,     # feature file prefix if any
         file_ext,        # feature file extension if any
-        force_upsampling # force to upsample to max_seq_len
+        force_upsampling, # force to upsample to max_seq_len
+        video_id_manifest=None,
+        video_id_manifest_sha256=None,
+        video_id_manifest_subset=None,
     ):
         # file path
         assert os.path.exists(feat_folder) and os.path.exists(json_file)
@@ -57,12 +61,92 @@ class THUMOS14Dataset(Dataset):
         self.num_classes = num_classes
         self.label_dict = None
         self.crop_ratio = crop_ratio
+        self.video_id_filter = None
+        self.video_id_manifest_info = None
+        manifest_fields = (
+            video_id_manifest,
+            video_id_manifest_sha256,
+            video_id_manifest_subset,
+        )
+        if any(value is not None for value in manifest_fields):
+            if not all(value is not None for value in manifest_fields):
+                raise ValueError(
+                    "THUMOS internal holdout requires manifest path, SHA-256, "
+                    "and subset together"
+                )
+            manifest_path = os.path.expandvars(video_id_manifest)
+            expected_sha256 = os.path.expandvars(
+                video_id_manifest_sha256
+            )
+            manifest_subset = os.path.expandvars(
+                video_id_manifest_subset
+            )
+            if manifest_subset not in ("train", "holdout"):
+                raise ValueError(
+                    "THUMOS internal holdout subset must be train or holdout"
+                )
+            with open(manifest_path, "rb") as fid:
+                manifest_bytes = fid.read()
+            actual_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+            if actual_sha256 != expected_sha256:
+                raise ValueError(
+                    "THUMOS internal holdout manifest SHA-256 mismatch"
+                )
+            manifest = json.loads(manifest_bytes.decode("utf-8"))
+            if (
+                manifest.get("schema_version")
+                != "actionformer_dcsr_internal_holdout_v1"
+            ):
+                raise ValueError(
+                    "unsupported THUMOS internal holdout manifest schema"
+                )
+            with open(self.json_file, "rb") as fid:
+                annotation_sha256 = hashlib.sha256(fid.read()).hexdigest()
+            if (
+                manifest.get("source_annotation_sha256")
+                != annotation_sha256
+            ):
+                raise ValueError(
+                    "THUMOS internal holdout annotation identity mismatch"
+                )
+            if set(self.split) != {"validation"}:
+                raise ValueError(
+                    "THUMOS internal holdout may only filter validation"
+                )
+            manifest_key = manifest_subset + "_video_ids"
+            video_ids = manifest.get(manifest_key)
+            if not isinstance(video_ids, list) or not video_ids:
+                raise ValueError(
+                    "THUMOS internal holdout manifest has no requested IDs"
+                )
+            if len(video_ids) != len(set(video_ids)):
+                raise ValueError(
+                    "THUMOS internal holdout manifest contains duplicate IDs"
+                )
+            self.video_id_filter = frozenset(video_ids)
+            self.video_id_manifest_info = {
+                "path": manifest_path,
+                "sha256": actual_sha256,
+                "subset": manifest_subset,
+            }
 
         # load database and select the subset
         dict_db, label_dict = self._load_json_db(self.json_file)
         assert len(label_dict) == num_classes
         self.data_list = dict_db
         self.label_dict = label_dict
+        if self.video_id_filter is not None:
+            loaded_ids = {item["id"] for item in self.data_list}
+            missing_ids = self.video_id_filter - loaded_ids
+            if missing_ids:
+                raise ValueError(
+                    "THUMOS internal holdout IDs missing features: {:s}".format(
+                        ", ".join(sorted(missing_ids))
+                    )
+                )
+            self.evaluation_video_ids = tuple(sorted(loaded_ids))
+        else:
+            self.evaluation_video_ids = None
 
         # dataset specific attributes
         self.db_attributes = {
@@ -85,6 +169,11 @@ class THUMOS14Dataset(Dataset):
         if self.label_dict is None:
             label_dict = {}
             for key, value in json_db.items():
+                if (
+                    self.video_id_filter is not None
+                    and value['subset'].lower() not in self.split
+                ):
+                    continue
                 for act in value['annotations']:
                     label_dict[act['label']] = act['label_id']
 
@@ -93,6 +182,11 @@ class THUMOS14Dataset(Dataset):
         for key, value in json_db.items():
             # skip the video if not in the split
             if value['subset'].lower() not in self.split:
+                continue
+            if (
+                self.video_id_filter is not None
+                and key not in self.video_id_filter
+            ):
                 continue
             # or does not have the feature file
             feat_file = os.path.join(self.feat_folder,

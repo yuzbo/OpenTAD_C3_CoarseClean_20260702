@@ -9,6 +9,7 @@ from .blocks import MaskedConv1D, Scale, LayerNorm
 from .losses import ctr_diou_loss_1d, sigmoid_focal_loss
 from .sparse_heads import (
     NativeGridSparseQuerySelector,
+    run_dcsr_heads,
     run_sparse_heads,
 )
 
@@ -195,7 +196,8 @@ class PtTransformer(nn.Module):
         num_classes,           # number of action classes
         train_cfg,             # other cfg for training
         test_cfg,              # other cfg for testing
-        sparse_head=None       # optional native-grid sparse head intervention
+        sparse_head=None,      # optional native-grid sparse head intervention
+        dcsr_head=None         # optional dense-scaffold sparse-refinement head
     ):
         super().__init__()
          # re-distribute params to backbone / neck / head
@@ -254,6 +256,12 @@ class PtTransformer(nn.Module):
         # than an implicit consequence hidden behind the execution path.
         self.sparse_query_selector = None
         self.sparse_training_loss_support = 'official_all_valid_fpn_queries'
+        self.dcsr_query_selector = None
+        self.dcsr_mode = None
+        self.dcsr_residual_enabled = False
+        self.dcsr_residual_scale = 1.0
+        self.dcsr_scaffold_num_layers = None
+        self.dcsr_training_loss_support = 'official_all_valid_fpn_queries'
         if sparse_head is not None:
             if not isinstance(sparse_head, dict):
                 raise ValueError("model.sparse_head must be a dictionary")
@@ -287,6 +295,106 @@ class PtTransformer(nn.Module):
                         'policy', 'stratified_uniform'
                     ),
                     hash_seed=sparse_head.get(
+                        'hash_seed', 1234567891
+                    ),
+                )
+        if dcsr_head is not None:
+            if not isinstance(dcsr_head, dict):
+                raise ValueError("model.dcsr_head must be a dictionary")
+            allowed_keys = {
+                'enabled',
+                'mode',
+                'budget',
+                'policy',
+                'hash_seed',
+                'scaffold_num_layers',
+                'residual_enabled',
+                'residual_scale',
+                'training_loss_support',
+            }
+            unknown_keys = set(dcsr_head) - allowed_keys
+            if unknown_keys:
+                raise ValueError(
+                    "unknown model.dcsr_head fields: {:s}".format(
+                        ", ".join(sorted(unknown_keys))
+                    )
+                )
+            if dcsr_head.get('enabled', False):
+                if self.sparse_query_selector is not None:
+                    raise ValueError(
+                        "model.sparse_head and model.dcsr_head are mutually exclusive"
+                    )
+                training_loss_support = dcsr_head.get(
+                    'training_loss_support'
+                )
+                if (
+                    training_loss_support
+                    != 'official_all_valid_fpn_queries'
+                ):
+                    raise ValueError(
+                        "enabled DCSR requires training_loss_support="
+                        "official_all_valid_fpn_queries"
+                    )
+                mode = dcsr_head.get('mode')
+                if mode not in ('official_identity', 'cheap_dense_scaffold'):
+                    raise ValueError(
+                        "DCSR mode must be official_identity or "
+                        "cheap_dense_scaffold"
+                    )
+                residual_enabled = dcsr_head.get('residual_enabled')
+                if type(residual_enabled) is not bool:
+                    raise ValueError(
+                        "DCSR residual_enabled must be explicitly boolean"
+                    )
+                scaffold_num_layers = dcsr_head.get(
+                    'scaffold_num_layers'
+                )
+                if (
+                    type(scaffold_num_layers) is not int
+                    or scaffold_num_layers <= 0
+                ):
+                    raise ValueError(
+                        "DCSR scaffold_num_layers must be a positive integer"
+                    )
+                if mode == 'official_identity':
+                    if residual_enabled:
+                        raise ValueError(
+                            "official_identity DCSR must disable residuals"
+                        )
+                    if scaffold_num_layers != head_num_layers:
+                        raise ValueError(
+                            "official_identity DCSR must match official "
+                            "head_num_layers"
+                        )
+                else:
+                    if not residual_enabled:
+                        raise ValueError(
+                            "cheap_dense_scaffold DCSR requires residuals"
+                        )
+                    if scaffold_num_layers >= head_num_layers:
+                        raise ValueError(
+                            "cheap DCSR scaffold must be shallower than the "
+                            "official residual head"
+                        )
+                residual_scale = dcsr_head.get('residual_scale', 1.0)
+                if (
+                    not isinstance(residual_scale, (int, float))
+                    or residual_scale <= 0
+                ):
+                    raise ValueError(
+                        "DCSR residual_scale must be positive"
+                    )
+                self.dcsr_mode = mode
+                self.dcsr_residual_enabled = residual_enabled
+                self.dcsr_residual_scale = float(residual_scale)
+                self.dcsr_scaffold_num_layers = scaffold_num_layers
+                self.dcsr_training_loss_support = training_loss_support
+                self.dcsr_query_selector = NativeGridSparseQuerySelector(
+                    budget=dcsr_head['budget'],
+                    policy=dcsr_head.get(
+                        'policy', 'stratified_uniform'
+                    ),
+                    hash_seed=dcsr_head.get(
                         'hash_seed', 1234567891
                     ),
                 )
@@ -367,6 +475,38 @@ class PtTransformer(nn.Module):
             num_layers=head_num_layers,
             with_ln=head_with_ln
         )
+        self.dcsr_scaffold_cls_head = None
+        self.dcsr_scaffold_reg_head = None
+        if self.dcsr_mode == 'cheap_dense_scaffold':
+            self.dcsr_scaffold_cls_head = PtTransformerClsHead(
+                fpn_dim, fpn_dim, self.num_classes,
+                kernel_size=head_kernel_size,
+                prior_prob=self.train_cls_prior_prob,
+                with_ln=head_with_ln,
+                num_layers=self.dcsr_scaffold_num_layers,
+                empty_cls=train_cfg['head_empty_cls']
+            )
+            self.dcsr_scaffold_reg_head = PtTransformerRegHead(
+                fpn_dim, fpn_dim, len(self.fpn_strides),
+                kernel_size=head_kernel_size,
+                num_layers=self.dcsr_scaffold_num_layers,
+                with_ln=head_with_ln
+            )
+            # A residual branch must start as a no-op.  The scaffold therefore
+            # owns the initial proposal floor, while later optimization can
+            # learn signed corrections at selected physical queries.
+            torch.nn.init.constant_(
+                self.cls_head.cls_head.conv.weight, 0.0
+            )
+            torch.nn.init.constant_(
+                self.cls_head.cls_head.conv.bias, 0.0
+            )
+            torch.nn.init.constant_(
+                self.reg_head.offset_head.conv.weight, 0.0
+            )
+            torch.nn.init.constant_(
+                self.reg_head.offset_head.conv.bias, 0.0
+            )
 
         # maintain an EMA of #foreground to stabilize the loss normalizer
         # useful for small mini-batch training
@@ -393,13 +533,16 @@ class PtTransformer(nn.Module):
         # (shared across all samples in the mini-batch)
         points = self.point_generator(fpn_feats)
 
-        if self.sparse_query_selector is None:
+        if (
+            self.sparse_query_selector is None
+            and self.dcsr_query_selector is None
+        ):
             # out_cls: List[B, #cls + 1, T_i]
             out_cls_logits = self.cls_head(fpn_feats, fpn_masks)
             # out_offset: List[B, 2, T_i]
             out_offsets = self.reg_head(fpn_feats, fpn_masks)
             head_masks = fpn_masks
-        else:
+        elif self.sparse_query_selector is not None:
             if (
                 self.training
                 and self.sparse_training_loss_support
@@ -419,6 +562,48 @@ class PtTransformer(nn.Module):
                 fpn_masks,
                 head_masks,
             )
+        else:
+            if (
+                self.dcsr_training_loss_support
+                != 'official_all_valid_fpn_queries'
+            ):
+                raise RuntimeError(
+                    "DCSR full-grid training support contract changed at runtime"
+                )
+            video_ids = None
+            if self.dcsr_query_selector.policy == 'video_hash_random':
+                video_ids = [sample['video_id'] for sample in video_list]
+            residual_masks = self.dcsr_query_selector(
+                fpn_masks, video_ids
+            )
+            if self.dcsr_mode == 'official_identity':
+                scaffold_cls_head = self.cls_head
+                scaffold_reg_head = self.reg_head
+            else:
+                scaffold_cls_head = self.dcsr_scaffold_cls_head
+                scaffold_reg_head = self.dcsr_scaffold_reg_head
+            out_cls_logits, out_offsets = run_dcsr_heads(
+                scaffold_cls_head,
+                scaffold_reg_head,
+                fpn_feats,
+                fpn_masks,
+                residual_masks,
+                residual_cls_head=(
+                    self.cls_head
+                    if self.dcsr_residual_enabled
+                    else None
+                ),
+                residual_reg_head=(
+                    self.reg_head
+                    if self.dcsr_residual_enabled
+                    else None
+                ),
+                residual_enabled=self.dcsr_residual_enabled,
+                residual_scale=self.dcsr_residual_scale,
+            )
+            # DCSR never narrows proposal or loss support.  Selection applies
+            # only to the additive expensive residual.
+            head_masks = fpn_masks
 
         # permute the outputs
         # out_cls: F List[B, #cls, T_i] -> F List[B, T_i, #cls]

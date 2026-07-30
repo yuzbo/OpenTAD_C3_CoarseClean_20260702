@@ -83,7 +83,10 @@ def main(args):
         det_eval = ANETdetection(
             val_dataset.json_file,
             val_dataset.split[0],
-            tiou_thresholds = val_db_vars['tiou_thresholds']
+            tiou_thresholds = val_db_vars['tiou_thresholds'],
+            video_ids=getattr(
+                val_dataset, "evaluation_video_ids", None
+            ),
         )
     else:
         output_file = os.path.join(os.path.split(ckpt_file)[0], 'eval_results.pkl')

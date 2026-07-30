@@ -485,6 +485,40 @@ def run_sparse_reg_head(
     return tuple(outputs)
 
 
+def run_sparse_reg_residual_head(
+    reg_head,
+    fpn_feats,
+    fpn_masks,
+    selected_masks,
+    execution_plan=None,
+):
+    """Run the official regression stack as a signed sparse residual.
+
+    The ordinary regression head applies ReLU because it predicts absolute
+    left/right distances.  DCSR refines an already-positive dense scaffold, so
+    its residual must remain signed until after it is added to that scaffold.
+    """
+    layers = list(reg_head.head) + [reg_head.offset_head]
+    if execution_plan is None:
+        execution_plan = build_native_grid_sparse_execution_plan(
+            fpn_feats, fpn_masks, selected_masks, layers
+        )
+    flat_outputs = _sparse_stack_packed(
+        execution_plan,
+        reg_head.head,
+        reg_head.norm,
+        reg_head.act,
+        reg_head.offset_head,
+    )
+    raw_outputs = _restore_fpn_batches(
+        flat_outputs, execution_plan["batch_sizes"]
+    )
+    return tuple(
+        reg_head.scale[level_idx](raw)
+        for level_idx, raw in enumerate(raw_outputs)
+    )
+
+
 def run_sparse_heads(
     cls_head,
     reg_head,
@@ -519,6 +553,117 @@ def run_sparse_heads(
         execution_plan=execution_plan,
     )
     return cls_outputs, reg_outputs
+
+
+def run_sparse_residual_heads(
+    cls_head,
+    reg_head,
+    fpn_feats,
+    fpn_masks,
+    selected_masks,
+):
+    """Run classification and signed regression residuals from one plan."""
+    cls_layers = list(cls_head.head) + [cls_head.cls_head]
+    reg_layers = list(reg_head.head) + [reg_head.offset_head]
+    cls_radii = tuple(_masked_conv_spec(layer)[1] for layer in cls_layers)
+    reg_radii = tuple(_masked_conv_spec(layer)[1] for layer in reg_layers)
+    if cls_radii != reg_radii:
+        raise ValueError(
+            "classification/regression residual-head geometry must match"
+        )
+    execution_plan = build_native_grid_sparse_execution_plan(
+        fpn_feats, fpn_masks, selected_masks, cls_layers
+    )
+    cls_outputs = run_sparse_cls_head(
+        cls_head,
+        fpn_feats,
+        fpn_masks,
+        selected_masks,
+        execution_plan=execution_plan,
+    )
+    reg_outputs = run_sparse_reg_residual_head(
+        reg_head,
+        fpn_feats,
+        fpn_masks,
+        selected_masks,
+        execution_plan=execution_plan,
+    )
+    return cls_outputs, reg_outputs
+
+
+def run_dcsr_heads(
+    scaffold_cls_head,
+    scaffold_reg_head,
+    fpn_feats,
+    fpn_masks,
+    selected_masks,
+    residual_cls_head=None,
+    residual_reg_head=None,
+    residual_enabled=True,
+    residual_scale=1.0,
+):
+    """Dense proposal floor plus sparse expensive residual refinement.
+
+    Dense scaffold outputs and the original valid FPN masks remain the public
+    prediction and supervision support.  Sparse outputs are additive residuals
+    only; they can never erase an unselected query.
+    """
+    if type(residual_enabled) is not bool:
+        raise ValueError("DCSR residual_enabled must be boolean")
+    if not isinstance(residual_scale, (int, float)) or residual_scale <= 0:
+        raise ValueError("DCSR residual_scale must be positive")
+
+    scaffold_cls = scaffold_cls_head(fpn_feats, fpn_masks)
+    scaffold_reg = scaffold_reg_head(fpn_feats, fpn_masks)
+    if not residual_enabled:
+        return scaffold_cls, scaffold_reg
+    if residual_cls_head is None or residual_reg_head is None:
+        raise ValueError("enabled DCSR residual requires both residual heads")
+
+    residual_cls, residual_reg = run_sparse_residual_heads(
+        residual_cls_head,
+        residual_reg_head,
+        fpn_feats,
+        fpn_masks,
+        selected_masks,
+    )
+    out_cls = []
+    out_reg = []
+    for (
+        base_cls,
+        base_reg,
+        cls_delta,
+        reg_delta,
+        valid_mask,
+        selected_mask,
+    ) in zip(
+        scaffold_cls,
+        scaffold_reg,
+        residual_cls,
+        residual_reg,
+        fpn_masks,
+        selected_masks,
+    ):
+        if not (
+            base_cls.shape == cls_delta.shape
+            and base_reg.shape == reg_delta.shape
+            and valid_mask.shape == selected_mask.shape
+            and base_cls.shape[0] == valid_mask.shape[0]
+            and base_cls.shape[-1] == valid_mask.shape[-1]
+            and base_reg.shape[0] == valid_mask.shape[0]
+            and base_reg.shape[-1] == valid_mask.shape[-1]
+        ):
+            raise RuntimeError("DCSR scaffold/residual grid shape mismatch")
+        # NativeGridSparseQuerySelector constructs selected_mask as a subset
+        # of valid_mask, while the sparse executor structurally zero-scatters
+        # every unselected residual.  Do not re-check tensor values with
+        # ``.item()`` here: that would force a CUDA synchronization in every
+        # detector forward and invalidate the later cost study.
+        out_cls.append(base_cls + float(residual_scale) * cls_delta)
+        out_reg.append(
+            F.relu(base_reg + float(residual_scale) * reg_delta)
+        )
+    return tuple(out_cls), tuple(out_reg)
 
 
 def _conv_macs(masked_conv, output_count):
@@ -612,6 +757,79 @@ def build_sparse_head_execution_receipt(
         "theoretical_head_mac_fraction": (
             float(sparse_macs) / float(dense_macs)
             if dense_macs > 0
+            else 0.0
+        ),
+        "wall_clock_claim_allowed": False,
+    }
+
+
+def build_dcsr_head_execution_receipt(
+    scaffold_cls_head,
+    scaffold_reg_head,
+    residual_cls_head,
+    residual_reg_head,
+    fpn_masks,
+    selected_masks,
+    budget,
+    policy,
+    training_loss_support,
+):
+    """Build a theoretical head-only receipt; never a wall-clock claim."""
+    if training_loss_support != "official_all_valid_fpn_queries":
+        raise ValueError(
+            "DCSR receipt requires official_all_valid_fpn_queries support"
+        )
+    scaffold_cls = estimate_sparse_head_macs(
+        scaffold_cls_head, fpn_masks, fpn_masks, "cls_head"
+    )
+    scaffold_reg = estimate_sparse_head_macs(
+        scaffold_reg_head, fpn_masks, fpn_masks, "offset_head"
+    )
+    residual_cls = estimate_sparse_head_macs(
+        residual_cls_head, fpn_masks, selected_masks, "cls_head"
+    )
+    residual_reg = estimate_sparse_head_macs(
+        residual_reg_head, fpn_masks, selected_masks, "offset_head"
+    )
+    official_dense_macs = (
+        residual_cls["dense_macs"] + residual_reg["dense_macs"]
+    )
+    scaffold_dense_macs = (
+        scaffold_cls["dense_macs"] + scaffold_reg["dense_macs"]
+    )
+    residual_sparse_macs = (
+        residual_cls["sparse_macs"] + residual_reg["sparse_macs"]
+    )
+    total_dcsr_macs = scaffold_dense_macs + residual_sparse_macs
+    valid_counts = []
+    selected_counts = []
+    for batch_idx in range(fpn_masks[0].shape[0]):
+        valid_per_level = [
+            int(mask[batch_idx, 0].sum().item()) for mask in fpn_masks
+        ]
+        selected_per_level = [
+            int(mask[batch_idx, 0].sum().item()) for mask in selected_masks
+        ]
+        expected = min(budget, sum(valid_per_level))
+        if sum(selected_per_level) != expected:
+            raise RuntimeError("DCSR selected query count violates budget")
+        valid_counts.append(valid_per_level)
+        selected_counts.append(selected_per_level)
+    return {
+        "schema_version": "actionformer_dcsr_head_execution_v1",
+        "policy": policy,
+        "budget": budget,
+        "training_loss_support": training_loss_support,
+        "unselected_queries_keep_dense_scaffold": True,
+        "valid_counts_per_sample_level": valid_counts,
+        "selected_counts_per_sample_level": selected_counts,
+        "official_dense_head_macs": official_dense_macs,
+        "dense_scaffold_macs": scaffold_dense_macs,
+        "sparse_residual_macs": residual_sparse_macs,
+        "combined_dcsr_head_macs": total_dcsr_macs,
+        "theoretical_head_mac_fraction": (
+            float(total_dcsr_macs) / float(official_dense_macs)
+            if official_dense_macs > 0
             else 0.0
         ),
         "wall_clock_claim_allowed": False,

@@ -32,6 +32,8 @@ def main(args):
         cfg = load_config(args.config)
     else:
         raise ValueError("Config file does not exist.")
+    if args.seed is not None:
+        cfg['init_rand_seed'] = args.seed
     pprint(cfg)
 
     # prep for output folder (based on time stamp)
@@ -174,5 +176,7 @@ if __name__ == '__main__':
                         help='name of exp folder (default: none)')
     parser.add_argument('--resume', default='', type=str, metavar='PATH',
                         help='path to a checkpoint (default: none)')
+    parser.add_argument('--seed', default=None, type=int,
+                        help='override init_rand_seed for preregistered runs')
     args = parser.parse_args()
     main(args)

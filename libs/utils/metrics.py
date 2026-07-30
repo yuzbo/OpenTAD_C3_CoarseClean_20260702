@@ -31,17 +31,26 @@ def remove_duplicate_annotations(ants, tol=1e-3):
     return valid_events
 
 
-def load_gt_seg_from_json(json_file, split=None, label='label_id', label_offset=0):
+def load_gt_seg_from_json(
+    json_file,
+    split=None,
+    label='label_id',
+    label_offset=0,
+    video_ids=None,
+):
     # load json file
     with open(json_file, "r", encoding="utf8") as f:
         json_db = json.load(f)
     json_db = json_db['database']
 
     vids, starts, stops, labels = [], [], [], []
+    allowed_video_ids = None if video_ids is None else frozenset(video_ids)
     for k, v in json_db.items():
 
         # filter based on split
         if (split is not None) and v['subset'].lower() != split:
+            continue
+        if allowed_video_ids is not None and k not in allowed_video_ids:
             continue
         # remove duplicated instances
         ants = remove_duplicate_annotations(v['annotations'])
@@ -122,6 +131,7 @@ class ANETdetection(object):
         label_offset=0,
         num_workers=8,
         dataset_name=None,
+        video_ids=None,
     ):
 
         self.tiou_thresholds = tiou_thresholds
@@ -135,8 +145,18 @@ class ANETdetection(object):
 
         # Import ground truth and predictions
         self.split = split
+        self.video_ids = (
+            None if video_ids is None else frozenset(video_ids)
+        )
         self.ground_truth = load_gt_seg_from_json(
-            ant_file, split=self.split, label=label, label_offset=label_offset)
+            ant_file,
+            split=self.split,
+            label=label,
+            label_offset=label_offset,
+            video_ids=self.video_ids,
+        )
+        if self.ground_truth.empty:
+            raise ValueError("evaluation ground truth is empty")
 
         # remove labels that does not exists in gt
         self.activity_index = {j: i for i, j in enumerate(sorted(self.ground_truth['label'].unique()))}
@@ -220,6 +240,15 @@ class ANETdetection(object):
             })
         # always reset ap
         self.ap = None
+        if self.video_ids is not None:
+            prediction_video_ids = frozenset(preds['video-id'].unique())
+            unexpected = prediction_video_ids - self.video_ids
+            if unexpected:
+                raise ValueError(
+                    "predictions escaped internal holdout: {:s}".format(
+                        ", ".join(sorted(unexpected))
+                    )
+                )
 
         # make the label ids consistent
         preds['label'] = preds['label'].replace(self.activity_index)
