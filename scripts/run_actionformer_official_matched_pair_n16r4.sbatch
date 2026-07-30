@@ -128,9 +128,9 @@ import sys
 from pathlib import Path
 
 import numpy
+import torch
 import nms_1d_cpu
 import tensorboard
-import torch
 from torch.utils.tensorboard import SummaryWriter
 
 assert sys.prefix == os.environ["ACTIONFORMER_PYTHON_ENV"]

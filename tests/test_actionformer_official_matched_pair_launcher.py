@@ -39,6 +39,13 @@ def test_official_matched_pair_launcher_is_syntax_valid_and_fail_closed():
     assert 'assert numpy.__version__ == "1.23.5"' in source
     assert 'module_path = Path(nms_1d_cpu.__file__).resolve()' in source
     assert "assert module_path == expected_module_path" in source
+    environment_probe = source[
+        source.index('ACTIONFORMER_PYTHON_ENV="$ACTIONFORMER_PYTHON_ENV"') :
+        source.index('STAGE="source_identity"')
+    ]
+    assert environment_probe.index("import torch") < environment_probe.index(
+        "import nms_1d_cpu"
+    )
     assert "indices = nms_1d_cpu.softnms(" in source
     assert '"nms_softnms_7arg_probe": True' in source
     assert '"official_nms_extension": receipt(' in source
