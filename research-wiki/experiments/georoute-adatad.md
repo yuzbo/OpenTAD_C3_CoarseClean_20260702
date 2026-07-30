@@ -818,6 +818,13 @@ hash but explicitly does not match official scheduler hyperparameters or the
 full recipe. Therefore it remains a no-metric numerical gate and cannot enter a
 paper comparison.
 
+The v2 gate is already irreversibly failed before closeout: PL skipped scaler
+updates at batches `11`, `20` and `29`, with the third backoff reaching `8192`.
+This exceeds the registered two-skip bound and violates the `16384` scale floor.
+ST had two skips at batches `20/29` and reached `16384` at the same observation.
+Jobs continue only for terminal provenance and afterany finalization; no rerun,
+performance inference or protocol freeze is allowed.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

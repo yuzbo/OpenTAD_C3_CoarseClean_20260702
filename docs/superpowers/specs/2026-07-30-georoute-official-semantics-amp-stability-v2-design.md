@@ -2,7 +2,7 @@
 
 Date: 2026-07-30
 
-Status: `implemented_remote_verified_experiment_running`
+Status: `threshold_exceeded_waiting_fail_closed_closeout`
 
 Scope: numerical stability and official-protocol freeze authorization only.
 This design does not authorize accuracy measurement, checkpoint selection,

@@ -190,6 +190,9 @@ updated: 2026-07-30
    from runtime source `27fba03c`, Jobs `1205588/1205589/1205590`. Do not
    resume, replace one arm, tune thresholds from its live telemetry, or use
    later docs-only commits as its runtime source.
+   PL has already crossed the frozen rule with skips at batches `11/20/29` and
+   scale `8192`. Do not reinterpret later stable batches as recovery: v2 is
+   irreversibly HOLD and must only be allowed to reach natural closeout.
 0. `mmengine.Config` is not a normal dict and does not implement
    `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
    tested `Config.pop` API and execute a real Config materialization regression.

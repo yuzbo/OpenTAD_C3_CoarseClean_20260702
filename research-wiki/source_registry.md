@@ -369,6 +369,10 @@ updated: 2026-07-30
   PL/ST/finalizer Jobs `1205588/1205589/1205590`; deployment self-hash
   `8c9ec92f927a1f5e7902c3abc0d5422eb8029b544a7b500dd51655daa17e543e`.
   This source is the runtime identity; later documentation commits are not.
+  Live numerical provenance later made the gate irreversibly HOLD: PL scaler
+  skips at batches `11/20/29` reached `8192`, exceeding the two-skip limit and
+  violating the `16384` floor. Final receipt hashes remain pending terminal
+  closeout and are not inferred from this live record.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD

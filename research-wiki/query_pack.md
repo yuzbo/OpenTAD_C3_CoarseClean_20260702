@@ -254,7 +254,11 @@ max_chars: 8000
   Linux/Torch suite `168/168`; PL/ST Jobs `1205588/1205589` now run in the
   fresh v2 namespace with afterany finalizer `1205590`. This is
   `experiment_running`, not a result, and produces no metric, checkpoint, test
-  or paper evidence.
+  or paper evidence. During the run, PL's third nonconsecutive scaler skip at
+  batch `29` reduced scale `16384 -> 8192`, irreversibly violating both the
+  frozen skip count and scale floor. The run must therefore close as HOLD after
+  natural terminal provenance; do not cancel, rerun, supplement or infer model
+  performance.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch

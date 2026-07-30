@@ -1818,3 +1818,12 @@ append_only: true
   `8c9ec92f927a1f5e7902c3abc0d5422eb8029b544a7b500dd51655daa17e543e`.
   All performance/test/claim guards remain false. This is
   `experiment_running`, not a numerical or model result.
+
+- 2026-07-30: v2 became irreversibly HOLD while still running. PL Job
+  `1205588` recorded nonconsecutive `scout_score_function` skips at zero-based
+  batches `11`, `20` and `29`; the third backoff changed scale
+  `16384 -> 8192`, crossing both the frozen `<=2` skip limit and `>=16384`
+  scale floor. ST Job `1205589` had detector skips at batches `20/29` and
+  reached `16384`. Both jobs continue naturally so finalizer `1205590` can seal
+  canonical terminal evidence. No cancellation, resume, single-arm replacement,
+  protocol freeze, performance inference or paper claim is allowed.

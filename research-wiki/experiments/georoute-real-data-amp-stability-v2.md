@@ -4,7 +4,7 @@ node_id: exp:georoute-real-data-amp-stability-v2
 title: "GeoRoute official-semantics real-data AMP stability v2"
 idea: idea:geo-route-adatad
 stage: experiment_running
-status: jobs_1205588_1205589_running_finalizer_1205590_dependency
+status: pl_threshold_exceeded_waiting_terminal_closeout
 verdict: pending
 confidence: high
 updated: 2026-07-30
@@ -65,6 +65,21 @@ finalizer `1205590` is dependency-held. Deployment self-hash is
 `8c9ec92f927a1f5e7902c3abc0d5422eb8029b544a7b500dd51655daa17e543e`.
 The preflight recorded `2/16` preexisting submissions and
 `142833188864` free bytes. No performance artifact or conclusion exists.
+
+## Irreversible live gate state
+
+PL produced nonconsecutive score-function scaler skips at zero-based batches
+`11`, `20` and `29`: `65536 -> 32768 -> 16384 -> 8192`. The third skip exceeds
+the frozen maximum of two and the resulting scale is below the frozen `16384`
+floor. Therefore this namespace can no longer pass, regardless of later
+successful updates. ST had detector-group skips at batches `20` and `29`,
+reaching scale `16384`, exactly its per-arm limit at that observation.
+
+Both stages remain allowed to reach natural terminal state so the afterany
+finalizer can seal canonical evidence. They will not be cancelled, resumed,
+rerun or supplemented. The only admissible final decision is now
+`OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD`; no PL/ST performance or estimator
+inference follows from this numerical failure.
 
 ## Paper boundary
 

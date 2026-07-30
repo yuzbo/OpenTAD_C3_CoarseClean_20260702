@@ -403,6 +403,11 @@ Linux/Torch suite `168/168`; the fresh two-arm run now consists of PL/ST Jobs
 only protocol freezing, not an accuracy, estimator, efficiency or paper
 conclusion.
 
+PL then crossed the frozen numerical rule: its third nonconsecutive skip at
+batch `29` reduced scale to `8192`, below the `16384` floor. This makes v2
+irreversibly HOLD while the jobs run to canonical closeout. It is a numerical
+stability finding only and does not rank PL versus ST or change the model claim.
+
 The publication path is explicitly separate: the one-seed 20-epoch pilot is
 exploratory. A paper result must first reproduce the official AdaTAD recipe and
 compare against a matched native-source dense control under identical training,
