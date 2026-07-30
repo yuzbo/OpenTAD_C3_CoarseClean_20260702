@@ -1,6 +1,6 @@
 # DUCA-RIME Current Query Pack
 
-Last updated: `2026-07-29`
+Last updated: `2026-07-30`
 
 ## Current decision
 
@@ -114,6 +114,21 @@ complete registered `validation` key set with no missing or extra predictions.
 OpenTAD deliberately removes two malformed/empty THUMOS test videos and uses
 the remaining 211 for fair comparison. Thus 211 is the complete
 OpenTAD-comparable evaluation set, not an arbitrary test subset.
+
+The fail-closed correction and official-comparability guard were published on
+`codex/duca-rime-20260727` as commit
+`505cc4e48b2511a13ad4936c295dfcb084d8d7fd`. Local focused checks passed, but
+the exact-commit Linux/PyTorch Slurm code gate remains pending.
+
+The next scientific action is one bounded Pro adjudication, not another broad
+ideation round and not formal training. It must issue one implementation-ready
+decision for: role-level natural-window coverage; the exact sparse
+video-by-process uncertainty algorithm and catastrophic statistic; a
+candidate-independent scientific noninferiority policy; enforceable versus
+observed runtime isolation; and the all-200-video OOF/global-batch-two final
+refit. Until those definitions are frozen, Admission v2.1, Phase 1, learned
+H-RIME training and official-final evaluation remain unauthorized. The remote
+code gate is the only directly executable step that may proceed independently.
 
 ## Paper responsibility
 

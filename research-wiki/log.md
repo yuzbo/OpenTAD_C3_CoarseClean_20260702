@@ -1,5 +1,25 @@
 # Research Log
 
+## 2026-07-30 — Next phase requires bounded Pro scientific adjudication
+
+- Recovered the full project state from `query_pack.md`,
+  `anti_repetition.md`, the Admission-v2.1 repair plan and the approved H-RIME
+  specification. Local branch and GitHub branch were clean and identical at
+  `505cc4e48b2511a13ad4936c295dfcb084d8d7fd`.
+- Determined that formal training is not authorized. Admission v2.1 still lacks
+  frozen role-level window coverage, exact crossed uncertainty/catastrophic
+  statistics, a candidate-independent NI policy and truthful enforceable versus
+  observed isolation semantics. The all-200-video OOF/global-batch-two refit is
+  also not implemented.
+- The next discussion is therefore a bounded decision review, not general
+  ideation. It must return formulas, deterministic algorithms, role manifests,
+  receipt schemas, tests, file-level implementation order and explicit
+  GO/NO-GO gates. The exact Linux/PyTorch code gate may proceed as independent
+  engineering verification; no calibration, model training or official-final
+  evaluation may start before the scientific decision is frozen.
+- No new empirical result was produced. The evidence status remains
+  `No paper-admissible empirical conclusion is available yet`.
+
 ## 2026-07-29 — Official full-train boundary corrected
 
 - Audited the complete Phase-4 training and evaluation path in response to the
