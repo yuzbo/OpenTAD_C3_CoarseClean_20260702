@@ -110,10 +110,13 @@ class _ScaledBucketProbe(torch.nn.Module):
         super().__init__()
         self.weight = torch.nn.Parameter(torch.ones(2, dtype=torch.float32))
 
-    def forward(self) -> torch.Tensor:
+    def forward(self, dummy: torch.Tensor) -> torch.Tensor:
         # With scale 65536 this yields a finite FP32 gradient of 70000, which is
         # outside the finite FP16 range and therefore exercises the exact cast.
-        return self.weight.sum() * (70000.0 / 65536.0)
+        return (
+            self.weight.sum() * (70000.0 / 65536.0)
+            + dummy.to(torch.float32).sum() * 0.0
+        )
 
 
 def _analytic_direction_kat(device: torch.device) -> dict[str, Any]:
@@ -228,7 +231,7 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
             },
         )
         ddp.register_comm_hook(state=state, hook=observed_fp16_compress_hook)
-        scaler.scale(ddp()).backward()
+        scaler.scale(ddp(torch.zeros(1, device=device))).backward()
         torch.cuda.synchronize()
         if (
             not observer.records

@@ -1893,3 +1893,15 @@ append_only: true
   annotation evaluation from the hook module and adds an exact runtime-annotation
   regression; it does not change the bucket, authoritative Future, model,
   estimator, numerical hypothesis, or experiment protocol.
+
+- 2026-07-30: exact candidate `fe6e7816` again passed the clean remote suite
+  `161/161`; CUDA/DDP KAT Job `1207459` then passed concrete hook registration
+  but failed closed at the KAT-only zero-argument DDP forward. PyTorch 2.0.1's
+  DDP wrapper indexes `inputs[0]`, so the zero-argument micro-module raised
+  `IndexError` before backward. Failure receipt self-hash
+  `4d4a19219974c7b3bbb6c8bc6257626af5a33b3e7baec7f8c2f4c2784d2c1cfd`,
+  file SHA-256
+  `400e9787a7e11ab2e2c29639a9a9f96cf82ede33dfc0cd13674cbcbd71709ce9`.
+  The failed namespace is sealed and not reused. The harness correction passes a
+  zero-contribution dummy CUDA tensor to DDP; it cannot change the deliberately
+  constructed parameter gradient, hook, bucket observation, or experiment.
