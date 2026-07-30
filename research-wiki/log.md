@@ -1872,3 +1872,12 @@ append_only: true
   Python compilation passes. Local Torch tests remain unavailable because the
   Windows user-site `c10.dll` cannot initialize; clean remote Linux/CUDA
   validation is the next hard gate.
+
+- 2026-07-30: the first clean remote full `tests/test_georoute*.py` regression
+  on candidate `11a67f0b` reported `139 passed, 2 failed`. Both failures were
+  legacy unit-test fakes that call `consume_detector_policy_loss` without
+  constructing the new opt-in transient payload attribute. No real model,
+  gradient, estimator, or receipt path failed. The compatibility correction
+  reads the optional payload with `getattr(..., None)` and leaves all production
+  and diagnostic semantics unchanged. Candidate `11a67f0b` is not deployable;
+  a new exact source must pass the entire suite before the CUDA KAT.

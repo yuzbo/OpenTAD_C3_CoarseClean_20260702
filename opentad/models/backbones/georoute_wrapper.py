@@ -975,8 +975,13 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         detector_cost = sum(value for _name, value in tensor_losses)
         if detector_cost.ndim != 0:
             raise ValueError("GeoRoute detector policy hook requires scalar detector losses")
-        if self._gradient_decomposition_payload is not None:
-            self._gradient_decomposition_payload.update(
+        gradient_decomposition_payload = getattr(
+            self,
+            "_gradient_decomposition_payload",
+            None,
+        )
+        if gradient_decomposition_payload is not None:
+            gradient_decomposition_payload.update(
                 {
                     "detector_cost": detector_cost.detach(),
                     "detector_loss_keys": tuple(
@@ -999,8 +1004,8 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             weight=self.score_function_weight,
             temporal_reduction=self.score_function_temporal_reduction,
         )
-        if self._gradient_decomposition_payload is not None:
-            self._gradient_decomposition_payload.update(
+        if gradient_decomposition_payload is not None:
+            gradient_decomposition_payload.update(
                 {
                     "baseline": baseline_for_policy,
                     "advantage": (
