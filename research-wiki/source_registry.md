@@ -433,6 +433,31 @@ updated: 2026-07-30
   evidence. Source `664180b6` remains valid KAT evidence but is not the
   deployed diagnostic runtime.
 
+- GeoRoute gradient-decomposition admitted execution, 2026-07-30. Exact runtime
+  `33f721be83e0ad7f7a36e853491e7a14f148814b`; exact clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_georoute_33f721be_20260730_graddecompbind`;
+  full HEAD/origin-ref parity, clean tree, and remote suite `162/162`.
+  Same-commit CUDA/DDP KAT Job `1207480` completed `0:0` under
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_gradient_decomposition_kat_33f721be_20260730_2255`;
+  receipt self/file SHA-256 are
+  `d31d34144e60bdde6103acc36cff42301ba7fbd80a40eb6f04ead63ddb6901b4`
+  /
+  `09e2ed0ec6f6e3372871ea00f0aa610027bbedd81d098b60ea6a2529aed0e6f4`.
+  Fresh diagnostic root:
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_pl_gradient_decomposition_v1_33f721be_s7367_20260730_2300`;
+  PL/ST/finalizer Jobs `1207484/1207485/1207486`. Deployment self/file
+  SHA-256 are
+  `9e038d872f7869cd184a1835827c61c2c3527fa565bc7928ef17824f905297a2`
+  /
+  `12e785c78f1fdff3d39bd83222836548f3d803990cd1c62862c07ecbcd7ecc66`;
+  finalizer-submission and stage-release file SHA-256 are
+  `3fc07f9072f8af46684b2ac7bea80d48fc8b3b2829f5dcae7328d2e97e6dce05`
+  and
+  `6450e38ca008eea26893a6f6884d008c4de8b589bf6b35fc4513093e94d61349`.
+  Capacity (`active=1`, `additional=3`, `MaxSubmitJobs=16`) and storage
+  (`105399025664` free, `47244640256` required) passed. This execution is a
+  no-performance numerical mechanism diagnosis only.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

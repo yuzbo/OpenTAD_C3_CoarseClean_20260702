@@ -3,8 +3,8 @@ type: experiment
 node_id: exp:georoute-gradient-decomposition-diagnostic-v1
 title: "GeoRoute PL/ST matched gradient decomposition diagnostic v1"
 idea: idea:geo-route-adatad
-stage: tested
-status: deployment_admission_correction
+stage: experiment_running
+status: two_arm_diagnostic_running
 verdict: ACCEPT_WITH_IMPLEMENTATION_CORRECTIONS
 confidence: high
 updated: 2026-07-30
@@ -87,6 +87,27 @@ serialization, validates a sorted unique nonnegative list, and does not alter
 the model, optimizer, observer, frozen protocol, or parent evidence. A new exact
 source, full remote suite, and same-commit CUDA KAT are required before
 deployment.
+
+The corrected exact source
+`33f721be83e0ad7f7a36e853491e7a14f148814b` passed the clean remote
+Linux/Torch suite `162/162`; its full HEAD and origin ref match and its tree is
+clean. Same-commit CUDA/DDP KAT Job `1207480` completed `0:0` with receipt
+self/file SHA-256
+`d31d34144e60bdde6103acc36cff42301ba7fbd80a40eb6f04ead63ddb6901b4`
+/
+`09e2ed0ec6f6e3372871ea00f0aa610027bbedd81d098b60ea6a2529aed0e6f4`.
+
+The fresh no-resume diagnostic root is
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_pl_gradient_decomposition_v1_33f721be_s7367_20260730_2300`.
+PL/ST Jobs `1207484/1207485` were released simultaneously and are running on
+separate Slurm nodes; afterany finalizer `1207486` remains dependency-held.
+Deployment self/file SHA-256 are
+`9e038d872f7869cd184a1835827c61c2c3527fa565bc7928ef17824f905297a2`
+/
+`12e785c78f1fdff3d39bd83222836548f3d803990cd1c62862c07ecbcd7ecc66`.
+Initial stderr files are empty, no performance or checkpoint artifacts exist,
+and the storage/capacity gates passed. This raises the experiment only to
+`experiment_running`.
 
 ## Decision boundary
 

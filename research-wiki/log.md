@@ -1925,3 +1925,26 @@ append_only: true
   it cannot affect model execution, gradient observation, estimator, RNG,
   optimizer or the frozen two-arm protocol. A fresh source and same-commit KAT
   are required before deployment.
+
+- 2026-07-30: corrected exact source
+  `33f721be83e0ad7f7a36e853491e7a14f148814b` was pushed through the
+  academic proxy, cloned through that proxy into a fresh clean snapshot, and
+  passed the complete remote suite `162/162`. Full HEAD and origin ref match and
+  the tree is clean. Same-commit CUDA/DDP KAT Job `1207480` completed `0:0`;
+  receipt self/file SHA-256 are
+  `d31d34144e60bdde6103acc36cff42301ba7fbd80a40eb6f04ead63ddb6901b4`
+  /
+  `09e2ed0ec6f6e3372871ea00f0aa610027bbedd81d098b60ea6a2529aed0e6f4`.
+
+- 2026-07-30: admitted the fresh seed-7367 no-performance mechanism diagnosis
+  at root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_pl_gradient_decomposition_v1_33f721be_s7367_20260730_2300`.
+  PL/ST Jobs `1207484/1207485` were released together and started in parallel on
+  `g0067/g0050`; afterany finalizer `1207486` is dependency-held. Deployment
+  self/file SHA-256 are
+  `9e038d872f7869cd184a1835827c61c2c3527fa565bc7928ef17824f905297a2`
+  /
+  `12e785c78f1fdff3d39bd83222836548f3d803990cd1c62862c07ecbcd7ecc66`.
+  Initial stderr is empty and all checkpoint/prediction/metric/evaluator/test/
+  performance/paper surfaces remain closed. This is `experiment_running`, not a
+  performance result.

@@ -223,6 +223,12 @@ updated: 2026-07-30
    the former as a sorted unique nonnegative list. The `664180b6` deployment
    admission failure occurred before namespace creation and `sbatch`; never
    fabricate, alias, or silently default this parent field.
+0. The only admitted gradient-decomposition DAG is exact runtime
+   `33f721be83e0ad7f7a36e853491e7a14f148814b`, root
+   `georoute_pl_gradient_decomposition_v1_33f721be_s7367_20260730_2300`,
+   PL/ST/finalizer Jobs `1207484/1207485/1207486`. Do not resume, replay,
+   supplement one arm, change the 64-batch order, infer performance from live
+   telemetry, or treat a later documentation commit as this runtime source.
 0. `mmengine.Config` is not a normal dict and does not implement
    `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
    tested `Config.pop` API and execute a real Config materialization regression.

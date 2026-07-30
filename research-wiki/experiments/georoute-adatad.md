@@ -843,6 +843,18 @@ class authorizes only one minimal repair followed by a new no-performance gate.
 It cannot produce or authorize mAP, cost, official-test, Geometry Zoom, P2/P3,
 or paper claims.
 
+That diagnosis is now `experiment_running` at exact source
+`33f721be83e0ad7f7a36e853491e7a14f148814b`, after the clean remote suite
+passed `162/162` and same-commit CUDA/DDP KAT Job `1207480` passed. Its fresh
+root is
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_pl_gradient_decomposition_v1_33f721be_s7367_20260730_2300`;
+PL/ST Jobs `1207484/1207485` run in parallel and afterany finalizer `1207486`
+is dependency-held. Deployment self/file SHA-256 are
+`9e038d872f7869cd184a1835827c61c2c3527fa565bc7928ef17824f905297a2`
+/
+`12e785c78f1fdff3d39bd83222836548f3d803990cd1c62862c07ecbcd7ecc66`.
+This remains a mechanism diagnosis with all metric/test/paper surfaces closed.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

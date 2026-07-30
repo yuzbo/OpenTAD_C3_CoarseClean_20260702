@@ -429,6 +429,13 @@ replay/reset. This is a protocol correction, not a model intervention. Formal
 accuracy/cost experiments remain blocked until one mechanism-specific repair
 passes a fresh no-performance gate.
 
+The corrected diagnostic runtime is now
+`33f721be83e0ad7f7a36e853491e7a14f148814b`. It passed the full clean remote
+suite `162/162` and same-commit CUDA/DDP KAT `1207480`, then admitted the fresh
+parallel PL/ST DAG as Jobs `1207484/1207485` with afterany finalizer `1207486`.
+This is execution of the mechanism falsification experiment, not a change to
+the GeoRoute scientific method and not evidence for accuracy or efficiency.
+
 The publication path is explicitly separate: the one-seed 20-epoch pilot is
 exploratory. A paper result must first reproduce the official AdaTAD recipe and
 compare against a matched native-source dense control under identical training,
