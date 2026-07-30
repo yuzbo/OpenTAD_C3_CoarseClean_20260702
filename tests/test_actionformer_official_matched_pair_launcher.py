@@ -33,8 +33,15 @@ def test_official_matched_pair_launcher_is_syntax_valid_and_fail_closed():
     assert ': "${ACTIONFORMER_PYTHON_ENV:?' in source
     assert ': "${ACTIONFORMER_ENVIRONMENT_RECEIPT:?' in source
     assert "EXPECTED_ENVIRONMENT_RECEIPT_SHA256" in source
+    assert ': "${ACTIONFORMER_NMS_EXTENSION:?' in source
+    assert "EXPECTED_ACTIONFORMER_NMS_EXTENSION_SHA256" in source
     assert 'assert tensorboard.__version__ == "2.20.0"' in source
     assert 'assert numpy.__version__ == "1.23.5"' in source
+    assert 'module_path = Path(nms_1d_cpu.__file__).resolve()' in source
+    assert "assert module_path == expected_module_path" in source
+    assert "indices = nms_1d_cpu.softnms(" in source
+    assert '"nms_softnms_7arg_probe": True' in source
+    assert '"official_nms_extension": receipt(' in source
     assert '"paper_main_table_eligible": False' in source
     assert '"end_to_end_cost_claim_allowed": False' in source
     assert "requires_preregistered_multiseed" in source
@@ -48,3 +55,18 @@ def test_launcher_never_resumes_or_changes_the_official_seed():
     assert "state_dict_ema" in source
     assert "optimizer_epochs" in source
     assert "warmup_epochs" in source
+
+
+def test_launcher_rejects_the_shadowing_open_tad_softnms_abi():
+    source = LAUNCHER.read_text(encoding="utf-8")
+    assert "ACTIONFORMER_NMS_EXTENSION is outside the pinned Python environment" in source
+    assert 'test -f "$ACTIONFORMER_NMS_EXTENSION"' in source
+    assert (
+        'sha256sum "$ACTIONFORMER_NMS_EXTENSION"'
+        in source
+    )
+    probe = source[source.index("indices = nms_1d_cpu.softnms(") :]
+    probe = probe[: probe.index("assert indices.numel()")]
+    assert "t1" not in probe
+    assert "t2" not in probe
+    assert probe.count(",") == 7

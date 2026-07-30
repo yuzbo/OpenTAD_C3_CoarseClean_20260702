@@ -33,6 +33,8 @@ source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 : "${ACTIONFORMER_PYTHON_ENV:?missing ACTIONFORMER_PYTHON_ENV}"
 : "${ACTIONFORMER_ENVIRONMENT_RECEIPT:?missing ACTIONFORMER_ENVIRONMENT_RECEIPT}"
 : "${EXPECTED_ENVIRONMENT_RECEIPT_SHA256:?missing EXPECTED_ENVIRONMENT_RECEIPT_SHA256}"
+: "${ACTIONFORMER_NMS_EXTENSION:?missing ACTIONFORMER_NMS_EXTENSION}"
+: "${EXPECTED_ACTIONFORMER_NMS_EXTENSION_SHA256:?missing EXPECTED_ACTIONFORMER_NMS_EXTENSION_SHA256}"
 
 SCREENING_SEED="${SCREENING_SEED:-1234567891}"
 EXPECTED_TERMINAL_EPOCH="${EXPECTED_TERMINAL_EPOCH:-35}"
@@ -103,16 +105,30 @@ test -x "$ACTIONFORMER_PYTHON_ENV/bin/python"
 test -f "$ACTIONFORMER_ENVIRONMENT_RECEIPT"
 test "$(sha256sum "$ACTIONFORMER_ENVIRONMENT_RECEIPT" | awk '{print $1}')" = \
   "$EXPECTED_ENVIRONMENT_RECEIPT_SHA256"
+case "$ACTIONFORMER_NMS_EXTENSION" in
+  "$ACTIONFORMER_PYTHON_ENV"/lib/python3.10/site-packages/nms_1d_cpu*.so) ;;
+  *) echo "ACTIONFORMER_NMS_EXTENSION is outside the pinned Python environment" >&2; exit 2 ;;
+esac
+test -f "$ACTIONFORMER_NMS_EXTENSION"
+test "$(sha256sum "$ACTIONFORMER_NMS_EXTENSION" | awk '{print $1}')" = \
+  "$EXPECTED_ACTIONFORMER_NMS_EXTENSION_SHA256"
 export PATH="$ACTIONFORMER_PYTHON_ENV/bin:$PATH"
 export PYTHONNOUSERSITE=1
+export PYTHONPATH="$(dirname "$ACTIONFORMER_NMS_EXTENSION")${PYTHONPATH:+:$PYTHONPATH}"
 hash -r
 test "$(readlink -f "$(command -v python)")" = \
   "$(readlink -f "$ACTIONFORMER_PYTHON_ENV/bin/python")"
-ACTIONFORMER_PYTHON_ENV="$ACTIONFORMER_PYTHON_ENV" python - <<'PY'
+ACTIONFORMER_PYTHON_ENV="$ACTIONFORMER_PYTHON_ENV" \
+ACTIONFORMER_NMS_EXTENSION="$ACTIONFORMER_NMS_EXTENSION" \
+EXPECTED_ACTIONFORMER_NMS_EXTENSION_SHA256="$EXPECTED_ACTIONFORMER_NMS_EXTENSION_SHA256" \
+python - <<'PY'
+import hashlib
 import os
 import sys
+from pathlib import Path
 
 import numpy
+import nms_1d_cpu
 import tensorboard
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -123,11 +139,35 @@ assert torch.version.cuda == "11.8"
 assert numpy.__version__ == "1.23.5"
 assert tensorboard.__version__ == "2.20.0"
 assert SummaryWriter is not None
+module_path = Path(nms_1d_cpu.__file__).resolve()
+expected_module_path = Path(os.environ["ACTIONFORMER_NMS_EXTENSION"]).resolve()
+assert module_path == expected_module_path
+assert (
+    hashlib.sha256(module_path.read_bytes()).hexdigest()
+    == os.environ["EXPECTED_ACTIONFORMER_NMS_EXTENSION_SHA256"]
+)
+segments = torch.tensor([[0.0, 1.0], [0.1, 1.1]], dtype=torch.float32)
+scores = torch.tensor([0.9, 0.8], dtype=torch.float32)
+detections = segments.new_empty((2, 3), device="cpu")
+indices = nms_1d_cpu.softnms(
+    segments,
+    scores,
+    detections,
+    0.1,
+    0.5,
+    0.001,
+    2,
+)
+assert indices.numel() == 2
+assert torch.isfinite(detections).all()
 print({
     "python_prefix": sys.prefix,
     "torch": torch.__version__,
     "numpy": numpy.__version__,
     "tensorboard": tensorboard.__version__,
+    "nms_module_path": str(module_path),
+    "nms_module_sha256": hashlib.sha256(module_path.read_bytes()).hexdigest(),
+    "nms_softnms_7arg_probe": True,
 })
 PY
 
@@ -419,7 +459,7 @@ STAGE="pair_completion"
 export RUN_ROOT RUN_LOG SOURCE_DIFF_ATTESTATION data_manifest feature_manifest
 export evaluator_manifest candidate_commit candidate_tree audit_commit audit_tree
 export official_commit official_tree SCREENING_SEED
-export ACTIONFORMER_ENVIRONMENT_RECEIPT
+export ACTIONFORMER_ENVIRONMENT_RECEIPT ACTIONFORMER_NMS_EXTENSION
 python - <<'PY'
 import hashlib
 import json
@@ -459,11 +499,14 @@ payload = {
         "evaluator_manifest": receipt(os.environ["evaluator_manifest"]),
     },
     "environment": {
-        "tensorboard_layer": receipt(
+        "official_runtime_environment": receipt(
             os.environ["ACTIONFORMER_ENVIRONMENT_RECEIPT"]
         ),
+        "official_nms_extension": receipt(
+            os.environ["ACTIONFORMER_NMS_EXTENSION"]
+        ),
         "same_environment_for_both_arms": True,
-        "logging_dependency_only": True,
+        "official_softnms_7arg_probe": True,
     },
     "arms": {
         "dense": receipt(root / "dense" / "ARM_COMPLETE.json"),
