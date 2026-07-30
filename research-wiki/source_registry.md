@@ -18,6 +18,7 @@
 | LOCAL-GATE-DIAG-1 | Git commit `69136de3ed8d8f977c78cfe5258dae3d57f7e238` | fail-closed coordinate/loss diagnostic remediation | implemented; focused local suite passed; published on `codex/duca-rime-20260727` |
 | U-PRO-PURE-PLUGIN-1 | `C:/Users/skywalker/.codex/attachments/80ec2ddd-9eed-4e97-ac1d-8be0c3071fd5/pasted-text.txt` | selected-axis pure-plugin architecture adjudication, AdapTok competition audit, replacement admission-v2 and experiment DAG | fully read; core scientific verdict accepted, implementation details independently adjudicated |
 | U-PRO-ADMISSION-V21-1 | `C:/Users/skywalker/.codex/attachments/d63bb109-7f99-4078-acc9-1bbdf6e895b2/pasted-text.txt`; SHA-256 `40a42ad184391ebb89f54d3adbdc972d3370294f870bc8cd59b19d90863893c8`; 45,892 bytes | full Admission-v2 audit and proposed real-video crossed-null v2.1 protocol | fully read; current formal v2 NO-GO and core repair direction accepted; fixed window coverage, crossed bound, NI-margin and hard-isolation details rejected pending correction |
+| U-PRO-V21-FINAL-1 | `C:/Users/skywalker/.codex/attachments/934f541a-db6e-4bc8-94cc-272905f3d42c/pasted-text.txt`; SHA-256 `9e7efa045f0b2a01dfc52755a6376205346bf76673483b61573dd55951d7c871`; 94,487 bytes | bounded Admission v2.1, full-200 refit and H-RIME final adjudication | fully read; architecture/role/NI/refit/oracle-order decisions accepted; crossed-bootstrap, catastrophic max-ratio, MC-stability and mandatory admin-isolation rules require a final corrigendum |
 | C-OPENTAD-THUMOS-SPLIT-1 | `tools/prepare_data/thumos/README.md`; upstream `https://github.com/sming256/OpenTAD/blob/main/tools/prepare_data/thumos/README.md` | OpenTAD THUMOS evaluation-set definition | directly verified; two malformed/empty test videos excluded, complete registered evaluation set is 211 videos |
 
 `U-PRO-CBCG-1` was read in full. Its route analysis is retained as an external
@@ -61,3 +62,14 @@ documents removal of `video_test_0000270` (wrong annotations) and
 THUMOS experiments. This is the registered comparable evaluation set, whereas
 the repository's 100-video `detector_selector_train` role is only an internal
 development partition of the 200 training videos.
+
+`U-PRO-V21-FINAL-1` was read in full and bound to its exact source hash. Its
+selected-axis mainline, role-level 32/32/32 coverage, margin-free Admission,
+full-200 OOF/DDP2 refit, exact-211 release, H-RIME stage order and AdapTok
+naming are retained. It is not accepted verbatim: fixed-scale maxT is
+mislabeled as studentized, sparse multinomial empty-row handling changes the
+equal-video estimand without a coverage argument, binary stream agreement is
+not a calibrated Monte Carlo error measure, and the catastrophic max-over-max
+ratio is sample-count dependent. Mandatory administrator network/mount
+attestation also requires an explicit threat model and cluster-feasibility
+decision before it can become a scientific hard gate.

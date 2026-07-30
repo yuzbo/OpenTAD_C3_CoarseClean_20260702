@@ -4,22 +4,24 @@ Last updated: `2026-07-30`
 
 ## Current decision
 
-The user approved the bounded Pro adjudication and direct implementation of
-its accepted decision. The paper mainline is now an **offline TAD pure
-selected-axis pre-backbone acquisition plugin**. Physical-time head injection
-is a separately named integration/diagnostic route and cannot support the
-pure-plugin claim. This is not Online TAD and is not yet the paper's final
-empirically supported method.
+The user approved a bounded Pro adjudication. `U-PRO-V21-FINAL-1` has now been
+read in full. Its paper architecture, role-level coverage, margin-free
+Admission, full-200 refit, H-RIME ordering and AdapTok boundaries are accepted,
+but its statistical protocol is not accepted verbatim. The paper mainline
+remains an **offline TAD pure selected-axis pre-backbone acquisition plugin**.
+Physical-time head injection is a separately named integration/diagnostic
+route and cannot support the pure-plugin claim. This is not Online TAD and is
+not yet the paper's final empirically supported method.
 
 Current evidence level:
 
 | Item | State |
 |---|---|
 | Scientific route | `user_approved` |
-| Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 + U-PRO-ADMISSION-V21-1 / core_decisions_accepted_with_protocol_corrections` |
+| Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 + U-PRO-ADMISSION-V21-1 + U-PRO-V21-FINAL-1 / core_decisions_accepted / final_statistical_corrigendum_required` |
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
-| Acquisition admission-v2.1 | `stage0_fail_closed_slice_implemented / full_protocol_blocked_by_window_statistics_margin_and_isolation_decisions` |
+| Acquisition admission-v2.1 | `stage0_fail_closed_slice_implemented / roles_and_margin_policy_decided / production_protocol_blocked_by_crossed_uncertainty_catastrophic_tail_and_isolation_corrigendum` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -120,15 +122,28 @@ The fail-closed correction and official-comparability guard were published on
 `505cc4e48b2511a13ad4936c295dfcb084d8d7fd`. Local focused checks passed, but
 the exact-commit Linux/PyTorch Slurm code gate remains pending.
 
-The next scientific action is one bounded Pro adjudication, not another broad
-ideation round and not formal training. It must issue one implementation-ready
-decision for: role-level natural-window coverage; the exact sparse
-video-by-process uncertainty algorithm and catastrophic statistic; a
-candidate-independent scientific noninferiority policy; enforceable versus
-observed runtime isolation; and the all-200-video OOF/global-batch-two final
-refit. Until those definitions are frozen, Admission v2.1, Phase 1, learned
-H-RIME training and official-final evaluation remain unauthorized. The remote
-code gate is the only directly executable step that may proceed independently.
+The bounded Pro response `U-PRO-V21-FINAL-1` returned
+`GO_IMPLEMENT_V2_1`, but independent mathematical and repository audit gives
+`CONDITIONAL_ACCEPT_WITH_CORRIGENDUM`, not verbatim acceptance. The 32/32/32
+role-level coverage, `NO-GO_FOR_NI` Admission policy, full-200 five-by-forty
+OOF refit, two-GPU DDP global batch two, exact-211 transaction, H-RIME stage
+order and AdapTok naming are frozen. Three statistical details remain unsafe
+to encode: sparse multinomial `D_v=0` handling changes the equal-video
+estimand without a coverage proof; the fixed-scale maxT is not strictly
+studentized and binary two-stream agreement is not a calibrated Monte Carlo
+criterion; and the catastrophic holdout-max/calibration-max ratio depends on
+sample counts and can be unstable. The additional mandatory administrator
+network/mount attestation also needs an explicit threat model and N16R4
+feasibility decision.
+
+The next discussion is therefore a narrow statistical-protocol corrigendum,
+not another architecture/innovation round. Its exact contract is recorded in
+`docs/superpowers/plans/2026-07-30-duca-v2-1-pro-response-adjudication.md`.
+Until it returns an implementation-ready decision, production Admission v2.1,
+Phase 1, learned H-RIME, full-200 artifact generation and official-final remain
+unauthorized. Exact-clean Linux/PyTorch code gating, read-only metadata checks,
+candidate-free statistical simulations and cluster-isolation feasibility
+checks may proceed independently.
 
 ## Paper responsibility
 

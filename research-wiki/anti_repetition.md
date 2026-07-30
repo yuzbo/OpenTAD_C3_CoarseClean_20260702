@@ -1,6 +1,6 @@
 # DUCA-RIME Anti-Repetition Memory
 
-Last updated: `2026-07-29`
+Last updated: `2026-07-30`
 
 These failures and naming mistakes must not be repeated.
 
@@ -318,3 +318,33 @@ These failures and naming mistakes must not be repeated.
     reduced test subset. OpenTAD deliberately excludes two malformed/empty
     test videos and uses the remaining 211 for fair comparison. Completeness
     means exact agreement with that registered 211-key set and evaluator.
+95. Do not call a maxT statistic with one fixed bootstrap-estimated scale per
+    metric a fully studentized/bootstrap-t procedure. Either register it as
+    fixed-scale standardized maxT or implement replicate-specific
+    studentization and its coverage contract.
+96. Do not silently remove a video when a sparse crossed-bootstrap column draw
+    gives it zero observed process weight. That changes the equal-video
+    estimand. Freeze a positive-weight, conditional-redraw, or alternative
+    incidence algorithm with a proof/simulation contract before implementation.
+97. Do not use agreement of two binary pass vectors as the sole Monte Carlo
+    convergence criterion. Bind numerical error for the critical value and
+    bounds, an escalation rule, and a final fail-closed tolerance.
+98. Do not compare a holdout maximum with a calibration maximum as if their
+    ratio were a family-wise calibrated catastrophic test. The distribution
+    depends on video, process, window and component counts; exact structural
+    catastrophes and numeric-tail inference must be separate.
+99. Do not claim duration or window-count balance merely because sorted long
+    videos were allocated in local three-item blocks. Report achieved
+    diagnostics, or preregister an objective and acceptance bound.
+100. Do not make administrator network/mount sandboxing a scientific hard gate
+     without an explicit threat model and verified cluster feasibility.
+     Repository-enforced controls, cluster attestations, observations and
+     unavoidable limitations must remain separate.
+101. Do not run the current H-RIME Stage-1 finalizer under the future oracle
+     claim without correcting its configurable NI-style/mean gates, explicit
+     shuffle-null attribution, simultaneous guardrails and absolute surrogate
+     error envelope.
+102. Do not translate external protocol pseudocode directly into production
+     merely because its report says `GO_IMPLEMENT`. Mathematical definitions,
+     code behavior and operational feasibility must survive independent
+     adjudication first.

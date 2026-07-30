@@ -1,5 +1,36 @@
 # Research Log
 
+## 2026-07-30 — Final v2.1 Pro response conditionally accepted; statistical corrigendum required
+
+- Fully read and hash-registered `U-PRO-V21-FINAL-1`:
+  `C:/Users/skywalker/.codex/attachments/934f541a-db6e-4bc8-94cc-272905f3d42c/pasted-text.txt`,
+  SHA-256
+  `9e7efa045f0b2a01dfc52755a6376205346bf76673483b61573dd55951d7c871`,
+  94,487 bytes.
+- Accepted the selected-axis mainline, role-level 32/32/32 coverage,
+  margin-free Admission, full-200 five-by-forty OOF/DDP2 refit, exact-211
+  release, H-RIME stage order and AdapTok naming/novelty boundaries.
+- Did not accept `GO_IMPLEMENT_V2_1` verbatim. Independent audit found that
+  sparse multinomial empty-row handling changes the equal-video estimand
+  without a coverage proof; the fixed-scale maxT is mislabeled as studentized;
+  binary two-stream agreement is not a calibrated Monte Carlo error criterion;
+  and the catastrophic holdout-max/calibration-max ratio is count-dependent and
+  unstable.
+- Classified administrator network/mount/read-only attestations as unresolved
+  until the threat model and N16R4 feasibility are explicit. Exact repository,
+  path, process, shard and receipt controls remain hard; observations may not be
+  labeled enforced.
+- Recorded that the current H-RIME Stage-1 finalizer does not yet implement the
+  future primary/maxT/shuffle-null/absolute-surrogate gate. No H-RIME code
+  change is authorized before Admission and selected-axis Phase 1 close.
+- Prepared a narrow statistical-protocol corrigendum prompt and post-decision
+  implementation order in
+  `docs/superpowers/plans/2026-07-30-duca-v2-1-pro-response-adjudication.md`.
+  No model code, calibration, training, Phase 1, full-200 artifact or
+  official-final action was started.
+- Evidence status remains
+  `No paper-admissible empirical conclusion is available yet`.
+
 ## 2026-07-30 — Next phase requires bounded Pro scientific adjudication
 
 - Recovered the full project state from `query_pack.md`,
