@@ -3,8 +3,8 @@ type: experiment
 node_id: exp:georoute-ddp-fp16-cast-repair-gate-v1
 title: "GeoRoute DDP FP16-cast no-compression repair gate v1"
 idea: idea:geo-route-adatad
-stage: implemented
-status: local_tests_passed_pending_remote_kat
+stage: experiment_running
+status: exact_source_kat_passed_two_arm_gate_running
 verdict: pending
 confidence: high
 updated: 2026-07-30
@@ -55,9 +55,31 @@ gradient-parent/KAT admission, a CUDA/DDP KAT proving finite `70000` FP32
 reduction survives while its detached FP16 shadow overflows, and fail-closed
 stage/finalizer support.
 
-Local focused AMP/repair tests pass `32/32`; remote Linux/Torch full-suite,
-same-commit KAT and Slurm gate execution remain pending. This is `implemented`,
-not yet `experiment_running`.
+Exact clean source
+`685f935e759d5d78f94e5f208997644e07bf4654` passes local focused
+AMP/repair tests `32/32` and the complete remote GeoRoute suite `145/145`.
+The same-commit real CUDA/NCCL/DDP KAT ran as Slurm Job `1207542` and completed
+`0:0`. It records no compression-hook registration, finite scaled FP32 gradient
+maximum `70000`, a nonfinite detached FP16 shadow, finite unscaled gradient,
+and a successful optimizer update. Its status is
+`PASS_DDP_FP16_CAST_REPAIR_CUDA_KAT_ONLY`; self/file SHA-256 are
+`257436d617b79413b4b790cda754d6dec56602d52edb07e50c03cdcd28f78b4f`
+/
+`d957514816f660a8eb43b922dfb3325baf36f1bbb706f398d0a54cc0a37df3ae`.
+The artifact audit found no checkpoint, metric, prediction, evaluator/NMS, or
+official-test output.
+
+The fresh gate was then admitted from the same clean commit under
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_ddp_fp16_cast_repair_gate_v1_685f935e_s2307_20260730_2314`.
+PL Job `1207554` and ST Job `1207555` are running in parallel; afterany
+finalizer Job `1207556` is dependency-held. Deployment self/file SHA-256 are
+`da8e79727ec4ce758e23d996ac2b238568bee715493dd0e6dec767342e155451`
+/
+`380b85e781691e2956f978b828ba071ffec4192e0df8acaa7529ada9c281f3e0`.
+Admission bound the exact gradient parent, KAT, origin ref, official-reference
+config, immutable inputs, `active=2 + additional=3 <= MaxSubmitJobs=16`, and
+storage `100456517632` free versus `47244640256` required. The current status
+is `experiment_running`, not a numerical PASS or performance result.
 
 ## Claim boundary
 

@@ -454,6 +454,17 @@ must preserve a finite scaled gradient above FP16 range while a detached FP16
 shadow overflows. Passing this gate would support the numerical repair, not the
 accuracy or efficiency of GeoRoute.
 
+The implementation is now running at exact clean source
+`685f935e759d5d78f94e5f208997644e07bf4654`. The complete remote GeoRoute
+suite passed `145/145`, and same-commit CUDA/NCCL/DDP KAT Job `1207542`
+completed `0:0` with the registered finite-FP32/nonfinite-FP16-shadow
+mechanism and no performance surface. Fresh matched PL/ST Jobs
+`1207554/1207555` and afterany finalizer `1207556` were therefore deployed
+under seed `2307`. Until that finalizer seals a pairwise PASS, this remains
+`experiment_running`; even a PASS changes only the numerical protocol and
+cannot establish model accuracy, efficiency, estimator superiority, or
+Geometry Zoom.
+
 The publication path is explicitly separate: the one-seed 20-epoch pilot is
 exploratory. A paper result must first reproduce the official AdaTAD recipe and
 compare against a matched native-source dense control under identical training,

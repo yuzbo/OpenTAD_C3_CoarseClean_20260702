@@ -1984,3 +1984,29 @@ append_only: true
   hook while a detached FP16 shadow overflows. Focused local AMP/repair tests
   pass `32/32`. Remote clean-source validation, KAT and Slurm execution remain
   pending; no performance surface is open.
+
+- 2026-07-30: exact clean repair source
+  `685f935e759d5d78f94e5f208997644e07bf4654` passed the complete remote
+  GeoRoute suite `145/145`. Same-commit real CUDA/NCCL/DDP KAT Job `1207542`
+  completed `0:0` and sealed
+  `PASS_DDP_FP16_CAST_REPAIR_CUDA_KAT_ONLY`: no compression hook was
+  registered, default FP32 reduction preserved a finite scaled gradient of
+  `70000`, its detached FP16 shadow overflowed, unscale remained finite, and the
+  optimizer update completed. KAT self/file SHA-256 are
+  `257436d617b79413b4b790cda754d6dec56602d52edb07e50c03cdcd28f78b4f`
+  /
+  `d957514816f660a8eb43b922dfb3325baf36f1bbb706f398d0a54cc0a37df3ae`;
+  the KAT emitted no performance artifact.
+
+- 2026-07-30: after full HEAD/origin/clean-tree, parent, KAT, immutable-input,
+  capacity and storage admission, deployed the fresh no-performance root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_ddp_fp16_cast_repair_gate_v1_685f935e_s2307_20260730_2314`.
+  PL/ST Jobs `1207554/1207555` were released together and are running in
+  parallel; afterany finalizer `1207556` is dependency-held. The sole
+  intervention in both arms is `solver.fp16_compress: true -> false`.
+  Deployment self/file SHA-256 are
+  `da8e79727ec4ce758e23d996ac2b238568bee715493dd0e6dec767342e155451`
+  /
+  `380b85e781691e2956f978b828ba071ffec4192e0df8acaa7529ada9c281f3e0`.
+  This is `experiment_running`; performance, official test, P2/P3, Geometry
+  Zoom and paper claims remain closed.

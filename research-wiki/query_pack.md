@@ -315,9 +315,21 @@ max_chars: 8000
   bounded-scaler thresholds, with `solver.fp16_compress=false` as the sole
   intervention in both arms. A same-commit real CUDA/DDP KAT must first prove
   that a finite scaled FP32 gradient above `65504` survives default FP32 DDP
-  reduction, while a detached FP16 shadow cast overflows. Focused local
-  AMP/repair tests pass `32/32`; remote full-suite, KAT and gate deployment are
-  pending. This remains no-performance evidence.
+  reduction, while a detached FP16 shadow cast overflows. Exact clean source
+  `685f935e759d5d78f94e5f208997644e07bf4654` passed focused local
+  AMP/repair tests `32/32` and the complete remote GeoRoute suite `145/145`.
+  Same-commit Slurm KAT Job `1207542` completed `0:0` and sealed
+  `PASS_DDP_FP16_CAST_REPAIR_CUDA_KAT_ONLY`: a finite FP32 scaled gradient of
+  `70000` survived default NCCL/DDP reduction without a compression hook, its
+  detached FP16 shadow overflowed, unscale remained finite, and the optimizer
+  update succeeded. KAT self/file SHA-256 are
+  `257436d617b79413b4b790cda754d6dec56602d52edb07e50c03cdcd28f78b4f`
+  /
+  `d957514816f660a8eb43b922dfb3325baf36f1bbb706f398d0a54cc0a37df3ae`.
+  The fresh gate root is
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_ddp_fp16_cast_repair_gate_v1_685f935e_s2307_20260730_2314`;
+  PL/ST/finalizer Jobs `1207554/1207555/1207556` were submitted together and
+  the two leaves are running in parallel. This remains no-performance evidence.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch

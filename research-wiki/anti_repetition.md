@@ -251,6 +251,19 @@ updated: 2026-07-30
    scaled FP32 gradient of `70000`, observe a nonfinite detached FP16 shadow,
    unscale finitely and complete an optimizer update. A unit-test mock or
    synthetic receipt cannot replace the Slurm KAT.
+   Exact-source KAT Job `1207542` has now satisfied this contract; its self/file
+   hashes are
+   `257436d617b79413b4b790cda754d6dec56602d52edb07e50c03cdcd28f78b4f`
+   /
+   `d957514816f660a8eb43b922dfb3325baf36f1bbb706f398d0a54cc0a37df3ae`.
+   Never reuse this KAT with a different runtime commit or treat it as
+   real-batch stability or performance evidence.
+0. The only active no-compression gate namespace is
+   `georoute_ddp_fp16_cast_repair_gate_v1_685f935e_s2307_20260730_2314`,
+   exact source `685f935e759d5d78f94e5f208997644e07bf4654`, with PL/ST/finalizer
+   Jobs `1207554/1207555/1207556`. Do not resume, replace one arm, change the
+   registered thresholds, infer performance from live scaler telemetry, or
+   submit a duplicate gate while this namespace is active.
 0. `mmengine.Config` is not a normal dict and does not implement
    `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
    tested `Config.pop` API and execute a real Config materialization regression.

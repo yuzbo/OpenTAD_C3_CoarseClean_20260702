@@ -868,6 +868,18 @@ A real same-commit CUDA/DDP KAT is mandatory before deployment. The gate cannot
 emit performance artifacts; only a complete pairwise pass may authorize
 freezing a later official-comparable multi-seed protocol.
 
+Exact source `685f935e759d5d78f94e5f208997644e07bf4654` passed the complete
+remote GeoRoute suite `145/145`. Same-commit KAT Job `1207542` completed
+`0:0` and proved the registered no-compression numerical surface: default FP32
+NCCL/DDP reduction preserved a finite scaled gradient of `70000`, the detached
+FP16 shadow overflowed, unscale stayed finite, and an optimizer update
+completed, with no performance artifacts. The KAT therefore authorized the
+fresh no-performance run at
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_ddp_fp16_cast_repair_gate_v1_685f935e_s2307_20260730_2314`.
+PL/ST/finalizer Jobs `1207554/1207555/1207556` are deployed, with both leaves
+running concurrently and the finalizer bound by `afterany`. This is only an
+active numerical gate; no official-comparable performance protocol is open.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

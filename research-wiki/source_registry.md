@@ -490,10 +490,29 @@ updated: 2026-07-30
   derives disjoint seed `2307`, applies only
   `solver.fp16_compress: true -> false` to both matched arms, inherits the
   preregistered 64-batch bounded dynamic-scaler thresholds, and requires a
-  same-commit Slurm CUDA/DDP KAT before submission. The implementation and
-  focused local AMP/repair suite pass `32/32`; remote full-suite and numerical
-  execution evidence are pending. This source is design/implementation
-  evidence, not performance evidence.
+  same-commit Slurm CUDA/DDP KAT before submission. Exact clean source
+  `685f935e759d5d78f94e5f208997644e07bf4654` passes focused local
+  AMP/repair tests `32/32` and the complete remote GeoRoute suite `145/145`.
+  Same-commit KAT Job `1207542` completed `0:0`; its status is
+  `PASS_DDP_FP16_CAST_REPAIR_CUDA_KAT_ONLY`, self/file SHA-256 are
+  `257436d617b79413b4b790cda754d6dec56602d52edb07e50c03cdcd28f78b4f`
+  /
+  `d957514816f660a8eb43b922dfb3325baf36f1bbb706f398d0a54cc0a37df3ae`.
+  It registered no compression hook, preserved finite FP32 scaled gradient
+  maximum `70000`, observed a nonfinite detached FP16 shadow, unscaled
+  finitely, completed an optimizer update, and emitted no performance artifact.
+  The admitted run root is
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_ddp_fp16_cast_repair_gate_v1_685f935e_s2307_20260730_2314`;
+  PL/ST/finalizer Jobs are `1207554/1207555/1207556`. Deployment self/file
+  SHA-256 are
+  `da8e79727ec4ce758e23d996ac2b238568bee715493dd0e6dec767342e155451`
+  /
+  `380b85e781691e2956f978b828ba071ffec4192e0df8acaa7529ada9c281f3e0`;
+  finalizer-submission and stage-release file SHA-256 are
+  `481b40a04ace7ba5fc265001a7fe4ee0db66a9d39db8edaab7999d5fde414a7d`
+  and
+  `5d03c3e8ff95bb1732b8771dfaa07608a8694ca104e8658f3718f3ef345baead`.
+  This is KAT/deployment/experiment-running evidence, not performance evidence.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
