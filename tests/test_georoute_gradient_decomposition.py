@@ -199,6 +199,10 @@ def test_pair_classifier_holds_without_a_pl_failed_attempt(
 def test_observed_hook_records_before_calling_authoritative_hook(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    assert (
+        gradient.observed_fp16_compress_hook.__annotations__["bucket"]
+        is torch.distributed.GradBucket
+    )
     order: list[str] = []
 
     class Observer:

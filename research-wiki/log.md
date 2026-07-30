@@ -1881,3 +1881,15 @@ append_only: true
   reads the optional payload with `getattr(..., None)` and leaves all production
   and diagnostic semantics unchanged. Candidate `11a67f0b` is not deployable;
   a new exact source must pass the entire suite before the CUDA KAT.
+
+- 2026-07-30: exact candidate `64551eda` passed the clean remote Linux/Torch
+  suite `161/161`, then independent CUDA/DDP KAT Job `1207452` failed closed
+  before backward. PyTorch DDP rejected the hook registration because postponed
+  annotations represented `bucket: dist.GradBucket` as a string rather than the
+  required runtime class object. Failure receipt self-hash
+  `03ea04a02ed83d5931bfc8843f44aa62914985c6383a65009eab1f0f846b5cdb`
+  was sealed with no checkpoint, prediction, metric, evaluator, test or claim.
+  The namespace is not reused. The implementation correction removes postponed
+  annotation evaluation from the hook module and adds an exact runtime-annotation
+  regression; it does not change the bucket, authoritative Future, model,
+  estimator, numerical hypothesis, or experiment protocol.

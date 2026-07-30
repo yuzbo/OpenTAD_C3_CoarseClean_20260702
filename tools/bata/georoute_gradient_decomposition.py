@@ -5,8 +5,6 @@ GradScaler and DDP FP16 communication path without replacing the authoritative
 PyTorch hook, changing an optimizer transition, or serializing raw tensors.
 """
 
-from __future__ import annotations
-
 import copy
 import hashlib
 import inspect
