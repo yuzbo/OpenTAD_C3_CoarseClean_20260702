@@ -31,7 +31,9 @@ def test_dcsr_launcher_uses_three_disjoint_development_seeds():
 
 def test_dcsr_launcher_preserves_slurm_cuda_and_validation_only_holdout():
     text = LAUNCHER.read_text(encoding="utf-8")
+    assert text.startswith("#!/bin/bash\n")
     assert text.index("source /etc/profile") < text.index("set -u")
+    assert text.index("source /etc/profile") < text.index("module load cuda/11.8")
     assert 'test -n "${CUDA_VISIBLE_DEVICES:-}"' in text
     assert "export CUDA_VISIBLE_DEVICES=" not in text
     assert "thumos_i3d_dcsr_dev_dense.yaml" in text
@@ -48,6 +50,29 @@ def test_dcsr_launcher_preserves_slurm_cuda_and_validation_only_holdout():
         assert cfg["val_split"] == ["validation"]
         assert "test" not in cfg["train_split"]
         assert "test" not in cfg["val_split"]
+
+
+def test_dcsr_launcher_has_fail_closed_direct_g0_only_mode():
+    text = LAUNCHER.read_text(encoding="utf-8")
+    assert 'DCSR_RUN_MODE="${DCSR_RUN_MODE:-g1_pair}"' in text
+    assert "g0_only|g1_pair" in text
+    assert 'if [ "$DCSR_RUN_MODE" = g0_only ]; then' in text
+    assert text.index("validate_dcsr_g0_equivalence.py") < text.index(
+        'if [ "$DCSR_RUN_MODE" = g0_only ]; then'
+    )
+    assert text.index('if [ "$DCSR_RUN_MODE" = g0_only ]; then') < text.index(
+        "run_arm dense"
+    )
+    assert "ACTIONFORMER_DCSR_G0_ONLY_COMPLETE" in text
+    for required in (
+        "CANDIDATE_ROOT",
+        "RUN_ROOT",
+        "EXPECTED_CANDIDATE_COMMIT",
+        "EXPECTED_CANDIDATE_TREE",
+        "ACTIONFORMER_PYTHON_ENV",
+        "ACTIONFORMER_NMS_EXTENSION",
+    ):
+        assert f'${{{required}:?missing {required}}}' in text
 
 
 def test_dcsr_launcher_treats_negative_metrics_as_model_results():

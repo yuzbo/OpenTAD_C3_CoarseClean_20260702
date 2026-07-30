@@ -27,6 +27,11 @@ source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 : "${ACTIONFORMER_NMS_EXTENSION:?missing ACTIONFORMER_NMS_EXTENSION}"
 : "${EXPECTED_ACTIONFORMER_NMS_EXTENSION_SHA256:?missing EXPECTED_ACTIONFORMER_NMS_EXTENSION_SHA256}"
 
+DCSR_RUN_MODE="${DCSR_RUN_MODE:-g1_pair}"
+case "$DCSR_RUN_MODE" in
+  g0_only|g1_pair) ;;
+  *) echo "unexpected DCSR_RUN_MODE" >&2; exit 2 ;;
+esac
 case "${SLURM_ARRAY_TASK_ID:?missing SLURM_ARRAY_TASK_ID}" in
   0) DEV_SEED=2026073001 ;;
   1) DEV_SEED=2026073002 ;;
@@ -146,6 +151,13 @@ STAGE=g0_exact_equivalence
     --seed "$DEV_SEED" \
     --output "$TASK_ROOT/DCSR_G0_EQUIVALENCE.json"
 ) | tee "$TASK_ROOT/g0.log"
+
+if [ "$DCSR_RUN_MODE" = g0_only ]; then
+  trap - EXIT
+  rm -f "$TASK_ROOT/ENGINEERING_FAILURE.json"
+  echo "ACTIONFORMER_DCSR_G0_ONLY_COMPLETE seed=$DEV_SEED"
+  exit 0
+fi
 
 WORK_ROOT="$TASK_ROOT/work"
 mkdir -p "$WORK_ROOT/data"
