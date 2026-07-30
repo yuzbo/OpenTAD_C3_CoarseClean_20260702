@@ -3,8 +3,8 @@ type: experiment
 node_id: exp:georoute-real-data-amp-stability-v2
 title: "GeoRoute official-semantics real-data AMP stability v2"
 idea: idea:geo-route-adatad
-stage: tested
-status: local_verified_pending_remote_execution
+stage: experiment_running
+status: jobs_1205588_1205589_running_finalizer_1205590_dependency
 verdict: pending
 confidence: high
 updated: 2026-07-30
@@ -52,8 +52,19 @@ and `full_official_training_claimed=false`.
 
 Local compilation and all non-Torch focused tests pass. Windows tests that
 import the user-site Torch binary remain unavailable because `c10.dll` cannot
-initialize; the clean Linux/Torch suite is therefore a mandatory remote
-pre-deployment gate. No Slurm namespace or performance artifact exists yet.
+initialize.
+
+Exact runtime source
+`27fba03cb6d4932ee10cb4545b97984dff28c28c` was proxy-resolved, cloned and
+verified against
+`refs/remotes/origin/codex/spatial-zoom-s1-audit-fix-20260715` with a clean
+tree. The remote Linux/Torch suite passed `168/168`. The fresh no-resume run is
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_official_semantics_amp_stability_v2_27fba03c_20260730_0800`.
+PL Job `1205588` and ST Job `1205589` were released in parallel; afterany
+finalizer `1205590` is dependency-held. Deployment self-hash is
+`8c9ec92f927a1f5e7902c3abc0d5422eb8029b544a7b500dd51655daa17e543e`.
+The preflight recorded `2/16` preexisting submissions and
+`142833188864` free bytes. No performance artifact or conclusion exists.
 
 ## Paper boundary
 

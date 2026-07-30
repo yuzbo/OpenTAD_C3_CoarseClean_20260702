@@ -185,6 +185,11 @@ updated: 2026-07-30
    `official_performance_comparable=false`. Never cite a v2 PASS beside an
    official AdaTAD mAP number; it can authorize only freezing a later
    same-recipe paper experiment.
+   The only active v2 namespace is
+   `georoute_official_semantics_amp_stability_v2_27fba03c_20260730_0800`
+   from runtime source `27fba03c`, Jobs `1205588/1205589/1205590`. Do not
+   resume, replace one arm, tune thresholds from its live telemetry, or use
+   later docs-only commits as its runtime source.
 0. `mmengine.Config` is not a normal dict and does not implement
    `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
    tested `Config.pop` API and execute a real Config materialization regression.

@@ -2,7 +2,7 @@
 
 Date: 2026-07-30
 
-Status: `implemented_and_local_verified_pending_remote_execution`
+Status: `implemented_remote_verified_experiment_running`
 
 Scope: numerical stability and official-protocol freeze authorization only.
 This design does not authorize accuracy measurement, checkpoint selection,

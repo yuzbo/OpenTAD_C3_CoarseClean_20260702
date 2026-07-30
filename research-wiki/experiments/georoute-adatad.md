@@ -3,8 +3,8 @@ type: experiment
 node_id: exp:georoute-adatad
 title: "GeoRoute-AdaTAD native spatial routing"
 stage: implemented
-status: numerical_repair_implemented_stability_v1_hold_official_protocol_blocked
-outcome: no_performance_result_official_semantics_stability_gate_next
+status: official_semantics_stability_v2_running
+outcome: no_performance_result_waiting_v2_finalizer
 updated: 2026-07-30
 ---
 
@@ -807,6 +807,16 @@ performance artifact was created. Because this gate required zero skips whereas
 the exact official AdaTAD path uses dynamic GradScaler, it is not an official
 comparability predicate and cannot freeze a paper protocol. No PL/ST, accuracy,
 efficiency, or paper conclusion exists yet.
+
+The separately versioned official-transition-semantics v2 is now
+`experiment_running` at exact runtime source
+`27fba03cb6d4932ee10cb4545b97984dff28c28c`. Its clean remote Linux/Torch
+suite passed `168/168`; PL/ST Jobs `1205588/1205589` run in
+`georoute_official_semantics_amp_stability_v2_27fba03c_20260730_0800`, with
+afterany finalizer `1205590`. It binds the sealed v1 HOLD and official reference
+hash but explicitly does not match official scheduler hyperparameters or the
+full recipe. Therefore it remains a no-metric numerical gate and cannot enter a
+paper comparison.
 
 ## Frozen decision logic
 

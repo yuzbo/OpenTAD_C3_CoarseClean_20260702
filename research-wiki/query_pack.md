@@ -249,8 +249,12 @@ max_chars: 8000
   `16384`, and a fully successful final-16 tail. Its binding explicitly records
   that only transition cadence is matched: scheduler hyperparameters and the
   full official recipe are not matched, so the gate is not performance
-  comparable. Remote clean-Linux verification and the two-arm Slurm execution
-  remain pending; it produces no metric, checkpoint, test or paper evidence.
+  comparable. Exact runtime source
+  `27fba03cb6d4932ee10cb4545b97984dff28c28c` passed the clean remote
+  Linux/Torch suite `168/168`; PL/ST Jobs `1205588/1205589` now run in the
+  fresh v2 namespace with afterany finalizer `1205590`. This is
+  `experiment_running`, not a result, and produces no metric, checkpoint, test
+  or paper evidence.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch

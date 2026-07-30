@@ -1806,3 +1806,15 @@ append_only: true
   Slurm submission. The receipt explicitly says the development scheduler
   hyperparameters and full official recipe are unmatched, so no performance or
   paper claim is authorized.
+
+- 2026-07-30: proxy-resolved and cloned exact v2 runtime source
+  `27fba03cb6d4932ee10cb4545b97984dff28c28c`; full HEAD, origin-tracking ref
+  and clean tree matched. The remote Linux/Torch suite passed `168/168`.
+  Storage/capacity preflight observed `142833188864` free bytes and only
+  `2/16` preexisting submissions. A fresh no-resume namespace
+  `georoute_official_semantics_amp_stability_v2_27fba03c_20260730_0800`
+  released PL/ST Jobs `1205588/1205589` in parallel plus afterany finalizer
+  `1205590`; deployment self-hash
+  `8c9ec92f927a1f5e7902c3abc0d5422eb8029b544a7b500dd51655daa17e543e`.
+  All performance/test/claim guards remain false. This is
+  `experiment_running`, not a numerical or model result.

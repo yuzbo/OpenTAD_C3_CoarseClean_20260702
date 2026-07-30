@@ -354,8 +354,21 @@ updated: 2026-07-30
   origin-ref parity, fail-closed finalization and focused v2 regressions.
   The implementation records that scheduler hyperparameters and the full
   official recipe are unmatched; it is numerical-gate code, not performance
-  evidence. The exact runtime commit and Slurm receipts will be registered only
-  after proxy-synced remote verification and deployment.
+  evidence. The exact runtime commit and Slurm receipts are registered in the
+  following execution entry after proxy-synced remote verification.
+
+- GeoRoute official-semantics AMP stability-v2 execution source and deployment,
+  2026-07-30. Exact runtime source
+  `27fba03cb6d4932ee10cb4545b97984dff28c28c`; clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_georoute_27fba03c_20260730_ampstablev2`;
+  full HEAD and
+  `refs/remotes/origin/codex/spatial-zoom-s1-audit-fix-20260715` matched and
+  the tree was clean. Remote Linux/Torch suite: `168/168`.
+  Run root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_official_semantics_amp_stability_v2_27fba03c_20260730_0800`;
+  PL/ST/finalizer Jobs `1205588/1205589/1205590`; deployment self-hash
+  `8c9ec92f927a1f5e7902c3abc0d5422eb8029b544a7b500dd51655daa17e543e`.
+  This source is the runtime identity; later documentation commits are not.
 
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
