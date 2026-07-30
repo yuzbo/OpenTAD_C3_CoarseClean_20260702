@@ -411,6 +411,24 @@ tails. Finalizer `1205590` nevertheless correctly sealed
 only and does not rank PL versus ST, change the model claim, or authorize the
 formal paper protocol.
 
+The route therefore advances only to a matched mechanism decomposition, not to
+an estimator choice. The user-provided Pro audit recommends
+`NEW_MATCHED_DIAGNOSIS_BEFORE_REPAIR`; the project accepts the central verdict
+and implements a seed-7367 PL/ST study that observes analytic policy gradients,
+actual residual-logit gradients, FP32 pre-hook GradBuckets, detached FP16 casts,
+and post-unscale/clip states while retaining the standard hook. This tests
+whether PL-specific pressure is intrinsically nonfinite, amplified in the scout
+VJP, or merely crosses FP16 communication range, and whether detector failures
+are shared.
+
+The implementation corrects an impossible literal matchedness requirement:
+after batch zero, PL and ST cannot be required to share CUDA RNG state because
+only PL samples Gumbel noise. Data and CPU RNG remain matched across all 64
+batches; CUDA RNG is matched initially and later divergence is recorded without
+replay/reset. This is a protocol correction, not a model intervention. Formal
+accuracy/cost experiments remain blocked until one mechanism-specific repair
+passes a fresh no-performance gate.
+
 The publication path is explicitly separate: the one-seed 20-epoch pilot is
 exploratory. A paper result must first reproduce the official AdaTAD recipe and
 compare against a matched native-source dense control under identical training,

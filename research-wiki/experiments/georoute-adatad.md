@@ -829,6 +829,20 @@ Finalizer `1205590` completed with
 OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD`; no rerun, performance inference,
 formal protocol freeze, or paper comparison is allowed.
 
+The accepted next step is not a repair or a performance rerun. The new
+`georoute_pl_gradient_decomposition_diagnostic_v1` is implemented as a
+no-performance matched PL/ST mechanism diagnosis at seed `7367`. It instruments
+the production scaled-backward/DDP FP16 path while leaving hard sampling,
+ordered likelihood, policy loss, temperature `0.7`, `K=64`, baseline,
+temporal mean, GradScaler transitions, and the authoritative communication hook
+unchanged. A separate real CUDA/DDP KAT must pass before the two parallel
+64-batch leaves and `afterany` finalizer may be submitted. The diagnosis can
+only distinguish FP16-cast overflow, upstream score nonfinite, scout VJP
+nonfinite, shared detector overflow, or ambiguity. Even a unique mechanism
+class authorizes only one minimal repair followed by a new no-performance gate.
+It cannot produce or authorize mAP, cost, official-test, Geometry Zoom, P2/P3,
+or paper claims.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

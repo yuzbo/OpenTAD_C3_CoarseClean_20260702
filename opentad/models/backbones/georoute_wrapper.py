@@ -250,6 +250,15 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.amp_diagnostic_enabled = bool(
             getattr(custom_cfg, "georoute_amp_diagnostic_enabled", False)
         )
+        self.gradient_decomposition_enabled = bool(
+            getattr(
+                custom_cfg,
+                "georoute_gradient_decomposition_enabled",
+                False,
+            )
+        )
+        if self.gradient_decomposition_enabled and not self.amp_diagnostic_enabled:
+            raise ValueError("gradient decomposition requires AMP diagnostics")
         self.pooling_mode = str(getattr(custom_cfg, "georoute_pooling_mode", "uniform_selected"))
         self.adapter_mode = str(
             getattr(
@@ -330,6 +339,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self._successful_update_index: int | None = None
         self._pending_regularization: dict[str, torch.Tensor] | None = None
         self._pending_score_function: dict[str, torch.Tensor] | None = None
+        self._gradient_decomposition_payload: dict[str, Any] | None = None
         self.latest_georoute_audit: dict[str, Any] | None = None
 
     def _freeze_shared_backbone_except_adapters(self) -> None:
@@ -709,6 +719,30 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             valid_mask=valid_patch_mask,
             random_seed=self.random_seed,
         )
+        if self.gradient_decomposition_enabled:
+            if self._gradient_decomposition_payload is not None:
+                raise RuntimeError(
+                    "gradient decomposition payload was not consumed exactly once"
+                )
+            self._gradient_decomposition_payload = {
+                "policy_estimator": self.policy_estimator,
+                "logits": residual_logits,
+                "ordered_indices": route["ordered_indices"].detach(),
+                "ordered_log_prob": (
+                    None
+                    if route["ordered_log_prob"] is None
+                    else route["ordered_log_prob"].detach()
+                ),
+                "valid_mask": valid_patch_mask.detach(),
+                "temperature": float(self.policy_temperature),
+                "weight": float(self.score_function_weight),
+                "baseline_momentum": float(
+                    self.score_function_baseline_momentum
+                ),
+                "temporal_reduction": self.score_function_temporal_reduction,
+                "target_k": int(route["target_k"]),
+                "item_count": int(route["item_count"]),
+            }
         if not bool(valid_patch_mask.gather(-1, route["indices"]).all().item()):
             raise RuntimeError("GeoRoute selected an invalid native patch")
         selected_native = self._gather_selected_native_tubelets(native, route["indices"])
@@ -931,7 +965,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         *,
         detector_losses: Mapping[str, torch.Tensor],
     ) -> dict[str, torch.Tensor]:
-        if not self.training or self._pending_score_function is None:
+        if not self.training:
             return {}
         tensor_losses = [
             (str(name), value)
@@ -941,6 +975,17 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         detector_cost = sum(value for _name, value in tensor_losses)
         if detector_cost.ndim != 0:
             raise ValueError("GeoRoute detector policy hook requires scalar detector losses")
+        if self._gradient_decomposition_payload is not None:
+            self._gradient_decomposition_payload.update(
+                {
+                    "detector_cost": detector_cost.detach(),
+                    "detector_loss_keys": tuple(
+                        sorted(name for name, _value in tensor_losses)
+                    ),
+                }
+            )
+        if self._pending_score_function is None:
+            return {}
         if bool(self.score_function_baseline_initialized.item()):
             baseline = self.score_function_baseline
         else:
@@ -954,6 +999,17 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             weight=self.score_function_weight,
             temporal_reduction=self.score_function_temporal_reduction,
         )
+        if self._gradient_decomposition_payload is not None:
+            self._gradient_decomposition_payload.update(
+                {
+                    "baseline": baseline_for_policy,
+                    "advantage": (
+                        detector_cost.detach().to(torch.float32)
+                        - baseline_for_policy.to(torch.float32)
+                    ),
+                    "policy_loss": policy_loss.detach(),
+                }
+            )
         with torch.no_grad():
             reward = detector_cost.detach()
             if bool(self.score_function_baseline_initialized.item()):
@@ -1021,3 +1077,17 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 "score_function_detector_binding"
             ] = detector_binding
         return {"georoute_score_function_loss": policy_loss}
+
+    def peek_gradient_decomposition_payload(self) -> Mapping[str, Any]:
+        if not self.gradient_decomposition_enabled:
+            raise RuntimeError("gradient decomposition is not enabled")
+        if self._gradient_decomposition_payload is None:
+            raise RuntimeError("no gradient decomposition payload is pending")
+        return self._gradient_decomposition_payload
+
+    def clear_gradient_decomposition_payload(self) -> None:
+        if not self.gradient_decomposition_enabled:
+            raise RuntimeError("gradient decomposition is not enabled")
+        if self._gradient_decomposition_payload is None:
+            raise RuntimeError("gradient decomposition payload was already cleared")
+        self._gradient_decomposition_payload = None

@@ -1847,3 +1847,28 @@ append_only: true
   temporary artifact counts are zero. This closes only the numerical gate:
   protocol freeze, performance inference, official test, P2/P3 and paper claims
   remain unauthorized.
+
+- 2026-07-30: absorbed the user-provided GeoRoute numerical Pro audit, attachment
+  SHA-256
+  `22f5802f62689f687667f56ddd6aacb35e07242c213a591cf93a4e50942c6e83`,
+  with verdict `ACCEPT_WITH_IMPLEMENTATION_CORRECTIONS`. Accepted the central
+  `NEW_MATCHED_DIAGNOSIS_BEFORE_REPAIR` decision, the DDP scaled-bucket FP16-cast
+  hypothesis, frozen PL/ST arms, seed `7367`, no-performance boundary, mechanism
+  classes, and later two-anchor publication protocol. Corrected the matched RNG
+  rule so all-batch data/CPU fingerprints and batch-zero CUDA RNG must match,
+  while later CUDA divergence is recorded because only PL consumes Gumbel RNG.
+  Added a mandatory same-commit Slurm CUDA/DDP KAT parent.
+
+- 2026-07-30: implemented
+  `georoute_pl_gradient_decomposition_diagnostic_v1`. Added an opt-in transient
+  wrapper payload; event-connected analytic/actual residual-logit, grouped
+  gradient and DDP GradBucket telemetry; a detached shadow matching PyTorch's
+  cast-then-divide FP16 hook order; an observer wrapper that returns the
+  authoritative hook Future; self-hashed KAT/binding/receipt/stage/deployment/
+  finalization contracts; no-resume parallel Slurm leaves and afterany
+  finalizer; and focused tests. Hard sampling, ordered likelihood, policy loss,
+  temperature, K, baseline, temporal mean, standard hook, old schemas, official
+  config, metrics/checkpoints/test surfaces, and paper claims remain unchanged.
+  Python compilation passes. Local Torch tests remain unavailable because the
+  Windows user-site `c10.dll` cannot initialize; clean remote Linux/CUDA
+  validation is the next hard gate.

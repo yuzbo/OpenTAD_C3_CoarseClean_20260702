@@ -265,6 +265,25 @@ max_chars: 8000
   `c7f59dbcec609430bdf4aafe99cc5ef3272ef93362b7f44ba74bcbc337c85ab0`.
   This is terminal numerical-gate evidence only: do not rerun, supplement,
   change thresholds, infer model performance or launch the formal protocol.
+  The next registered step is
+  `exp:georoute-gradient-decomposition-diagnostic-v1`, following the
+  user-provided Pro verdict `NEW_MATCHED_DIAGNOSIS_BEFORE_REPAIR` (attachment
+  SHA-256
+  `22f5802f62689f687667f56ddd6aacb35e07242c213a591cf93a4e50942c6e83`).
+  It is now `implemented`, pending clean remote Linux tests and an independent
+  one-GPU CUDA/DDP observer KAT. The study freezes seed `7367`, matched
+  residual-PL/ST, 64 consumed batches, `T/N/K=384/220/64`, temperature `0.7`,
+  temporal mean, default GradScaler, the production FP16 compression hook, zero
+  retry/replay, and no performance artifacts. It observes the analytic PL
+  score, actual residual-logit gradient, pre-hook FP32 buckets, detached FP16
+  shadow casts, unscaled/clipped gradients, and scaler/scheduler/EMA transitions.
+  The Pro recommendation is accepted with one necessary matchedness correction:
+  data and CPU RNG must match across all 64 batches and CUDA RNG at batch zero;
+  later CUDA RNG equality is not required because PL Gumbel sampling consumes
+  CUDA RNG while ST does not. No replay/reset may hide that divergence. A
+  uniquely identified class may authorize only one minimal numerical repair and
+  a fresh no-performance gate; HOLD/INCOMPLETE authorize no model change or
+  performance run.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch

@@ -389,6 +389,31 @@ updated: 2026-07-30
   checkpoint, prediction, metric, evaluator, test or temporary payload. This
   registry entry is numerical provenance, not performance evidence.
 
+- GeoRoute gradient-decomposition Pro audit, 2026-07-30. User-provided source
+  attachment
+  `C:\Users\skywalker\.codex\attachments\c4c0c744-e2cf-435d-8825-5d4437635410\pasted-text.txt`,
+  file SHA-256
+  `22f5802f62689f687667f56ddd6aacb35e07242c213a591cf93a4e50942c6e83`.
+  Its executive verdict is `NEW_MATCHED_DIAGNOSIS_BEFORE_REPAIR`. The complete
+  project acceptance matrix, implementation corrections, frozen surfaces,
+  mechanism classes, and paper boundary are recorded in
+  `docs/methods/reviews/2026-07-30-georoute-gradient-decomposition-pro-absorption.md`.
+  This is design/code-audit evidence, not numerical or performance evidence.
+
+- GeoRoute PL gradient-decomposition diagnostic-v1 design and implementation,
+  2026-07-30. Project-authored frozen specification
+  `docs/superpowers/specs/2026-07-30-georoute-gradient-decomposition-diagnostic-v1-design.md`.
+  The implementation adds an opt-in transient wrapper payload, event-connected
+  analytic/actual gradient and DDP-bucket observer, detached cast-then-divide
+  FP16 shadow, authoritative-hook wrapper, independent CUDA/DDP KAT, immutable
+  binder, no-resume stage/deployment/finalization contracts, Slurm launchers,
+  and focused regressions. It freezes matched residual-PL/ST, seed `7367`, 64
+  consumed batches, `T/N/K=384/220/64`, temperature `0.7`, weight `1.0`,
+  baseline momentum `0.95`, temporal mean, default GradScaler, zero
+  retry/replay, and no performance surface. Runtime/deployment identity is
+  intentionally pending remote verification and must be registered separately;
+  this entry is implementation evidence only.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

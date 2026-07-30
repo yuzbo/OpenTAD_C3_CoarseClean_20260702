@@ -105,6 +105,8 @@ def main():
     s2_runtime_gate_sidecar_schema = None
     amp_diagnostic_binding = None
     amp_diagnostic_observer_cls = None
+    gradient_decomposition_binding = None
+    gradient_decomposition_observer_cls = None
     if "spatial_zoom_s1_contract" in cfg:
         from tools.bata.spatial_zoom_s1_training import (
             S1_CHECKPOINT_SIDECAR_SCHEMA,
@@ -235,6 +237,44 @@ def main():
                 "nondeterminism, disabled evaluation, and nonzero id"
             )
         amp_diagnostic_observer_cls = RealBatchAmpDiagnosticObserver
+    if "georoute_gradient_decomposition_binding" in cfg:
+        from tools.bata.georoute_gradient_decomposition import (
+            GradientDecompositionObserver,
+            require_clean_git_checkout as require_clean_gradient_git_checkout,
+            require_slurm_single_gpu as require_gradient_slurm_single_gpu,
+            validate_config as validate_gradient_decomposition_config,
+        )
+
+        if (
+            s1_binding is not None
+            or s2_binding is not None
+            or s2_runtime_gate_binding is not None
+            or amp_diagnostic_binding is not None
+        ):
+            raise RuntimeError(
+                "GeoRoute gradient decomposition cannot share another formal binding"
+            )
+        require_gradient_slurm_single_gpu()
+        gradient_decomposition_binding = validate_gradient_decomposition_config(
+            cfg,
+            seed=args.seed,
+        )
+        require_clean_gradient_git_checkout(
+            expected_commit=gradient_decomposition_binding["runtime_commit"],
+            root=Path(path).resolve(),
+        )
+        if (
+            args.cfg_options is not None
+            or args.resume is not None
+            or args.disable_deterministic
+            or args.not_eval
+            or args.id != 0
+        ):
+            raise ValueError(
+                "GeoRoute gradient decomposition forbids overrides, resume, "
+                "nondeterminism, disabled evaluation, and nonzero id"
+            )
+        gradient_decomposition_observer_cls = GradientDecompositionObserver
     formal_binding = (
         s1_binding
         if s1_binding is not None
@@ -243,6 +283,8 @@ def main():
         else s2_runtime_gate_binding
         if s2_runtime_gate_binding is not None
         else amp_diagnostic_binding
+        if amp_diagnostic_binding is not None
+        else gradient_decomposition_binding
     )
     assert_safe_entrypoint_args_for_gated_config(cfg, args, entrypoint="tools/train.py")
     assert_detector_training_allowed(cfg, entrypoint="tools/train.py")
@@ -268,6 +310,10 @@ def main():
         deterministic_warn_only=(
             bool(amp_diagnostic_binding["deterministic_warn_only"])
             if amp_diagnostic_binding is not None
+            else bool(
+                gradient_decomposition_binding["deterministic_warn_only"]
+            )
+            if gradient_decomposition_binding is not None
             else formal_binding is None
         ),
     )
@@ -278,6 +324,14 @@ def main():
         raise RuntimeError(
             "GeoRoute AMP diagnosis did not preserve the historical pilot "
             "deterministic warn-only seed policy"
+        )
+    if gradient_decomposition_binding is not None and (
+        not torch.are_deterministic_algorithms_enabled()
+        or not torch.is_deterministic_algorithms_warn_only_enabled()
+    ):
+        raise RuntimeError(
+            "GeoRoute gradient decomposition did not preserve deterministic "
+            "warn-only execution"
         )
     if formal_binding is None:
         cfg = update_workdir(cfg, args.id, args.world_size)
@@ -405,6 +459,26 @@ def main():
                 "AMP diagnostic loaders differ from the historical pilot "
                 "development population"
             )
+    if gradient_decomposition_binding is not None:
+        runtime_ids = {
+            "train": {str(row[0]) for row in train_dataset.data_list},
+            "val": {str(row[0]) for row in val_dataset.data_list},
+            "test": {str(row[0]) for row in test_dataset.data_list},
+        }
+        if runtime_ids["train"] != set(
+            gradient_decomposition_binding["training_video_ids"]
+        ):
+            raise ValueError(
+                "gradient-decomposition train population changed"
+            )
+        if runtime_ids["val"] != set(
+            gradient_decomposition_binding["evaluation_video_ids"]
+        ) or runtime_ids["test"] != set(
+            gradient_decomposition_binding["evaluation_video_ids"]
+        ):
+            raise ValueError(
+                "gradient-decomposition development population changed"
+            )
 
     # build model
     model = build_detector(cfg.model)
@@ -422,10 +496,41 @@ def main():
     logger.info(f"Using DDP with total {args.world_size} GPUS...")
 
     # FP16 compression
+    amp_diagnostic_observer = None
     use_fp16_compress = getattr(cfg.solver, "fp16_compress", False)
     if use_fp16_compress:
         logger.info("Using FP16 compression ...")
-        model.register_comm_hook(state=None, hook=comm_hooks.fp16_compress_hook)
+        if gradient_decomposition_binding is None:
+            model.register_comm_hook(
+                state=None,
+                hook=comm_hooks.fp16_compress_hook,
+            )
+        else:
+            from tools.bata.georoute_gradient_decomposition import (
+                ObservedFp16HookState,
+                observed_fp16_compress_hook,
+            )
+
+            amp_diagnostic_observer = gradient_decomposition_observer_cls(
+                binding=gradient_decomposition_binding,
+                output_path=gradient_decomposition_binding["output_path"],
+                runtime_commit=gradient_decomposition_binding[
+                    "runtime_commit"
+                ],
+                slurm_job_id=os.environ["SLURM_JOB_ID"],
+                rank=args.rank,
+            )
+            hook_state = ObservedFp16HookState(
+                observer=amp_diagnostic_observer,
+                parameter_names={
+                    id(parameter): name
+                    for name, parameter in model.named_parameters()
+                },
+            )
+            model.register_comm_hook(
+                state=hook_state,
+                hook=observed_fp16_compress_hook,
+            )
 
     # Model EMA
     use_ema = getattr(cfg.solver, "ema", False)
@@ -456,8 +561,7 @@ def main():
     else:
         scaler = None
 
-    amp_diagnostic_observer = None
-    if amp_diagnostic_binding is not None:
+    if amp_diagnostic_binding is not None and amp_diagnostic_observer is None:
         amp_diagnostic_observer = amp_diagnostic_observer_cls(
             binding=amp_diagnostic_binding,
             output_path=amp_diagnostic_binding["output_path"],
@@ -511,6 +615,8 @@ def main():
     protocol_amp_retry_limit = (
         int(amp_diagnostic_binding["max_amp_retries_per_batch"])
         if amp_diagnostic_binding is not None
+        else 0
+        if gradient_decomposition_binding is not None
         else 8
         if formal_binding is not None
         else int(cfg.workflow.get("max_amp_retries_per_batch", 0))
@@ -523,6 +629,8 @@ def main():
             )
         )
         if amp_diagnostic_binding is not None
+        else False
+        if gradient_decomposition_binding is not None
         else formal_binding is not None
         or bool(cfg.workflow.get("fail_on_skipped_update", False))
     )

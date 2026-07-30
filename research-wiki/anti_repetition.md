@@ -197,6 +197,26 @@ updated: 2026-07-30
    OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD`. Do not reinterpret PL's later
    successful final-16 tail as recovery, treat ST's arm-only PASS as a pairwise
    gate PASS, or launch a formal performance run from this HOLD.
+0. Do not repair PL, drop PL, freeze ST, lower the initial loss scale, disable
+   FP16 communication, clip the advantage, or change temperature/weight/K from
+   the sealed stability-v2 HOLD. The only authorized successor is the new
+   seed-7367 matched gradient-decomposition diagnosis. It must retain the
+   authoritative standard FP16 hook and observe it through a detached wrapper;
+   any observer mutation of a bucket or replacement of the hook Future makes
+   the result incomplete.
+0. Do not require PL and ST CUDA RNG states to remain identical after their
+   first matched batch start. PL Gumbel sampling consumes CUDA RNG while ST does
+   not; all-batch equality would require forbidden replay/reset or an estimator
+   change. For the gradient-decomposition study require all-batch data and CPU
+   RNG equality plus batch-zero CUDA equality, then record the expected later
+   divergence. Do not use that corrected gate outside this versioned study
+   without a new preregistration.
+0. The gradient-decomposition KAT is a hard parent, not an optional unit test.
+   It must run under Slurm on one visible GPU at the exact clean runtime commit,
+   exercise a real world-size-one DDP/GradScaler/standard-FP16-hook backward,
+   prove the observer leaves the pre-hook bucket unchanged, detect an FP16
+   shadow-cast overflow, and seal a self-hashed no-performance receipt. Do not
+   submit the two-arm DAG if this KAT is missing or failed.
 0. `mmengine.Config` is not a normal dict and does not implement
    `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
    tested `Config.pop` API and execute a real Config materialization regression.
