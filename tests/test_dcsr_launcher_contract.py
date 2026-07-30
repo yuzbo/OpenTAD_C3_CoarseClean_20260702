@@ -57,7 +57,11 @@ def test_dcsr_launcher_has_fail_closed_direct_g0_only_mode():
     assert 'DCSR_RUN_MODE="${DCSR_RUN_MODE:-g1_pair}"' in text
     assert "g0_only|g1_pair" in text
     assert 'if [ "$DCSR_RUN_MODE" = g0_only ]; then' in text
-    assert text.index("validate_dcsr_g0_equivalence.py") < text.index(
+    assert "python tools/" not in text
+    assert "python -m tools.validate_dcsr_g0_equivalence" in text
+    assert "python -m tools.evaluate_dcsr_internal_predictions" in text
+    assert "python -m tools.finalize_dcsr_internal_pair" in text
+    assert text.index("tools.validate_dcsr_g0_equivalence") < text.index(
         'if [ "$DCSR_RUN_MODE" = g0_only ]; then'
     )
     assert text.index('if [ "$DCSR_RUN_MODE" = g0_only ]; then') < text.index(
@@ -80,7 +84,7 @@ def test_dcsr_launcher_treats_negative_metrics_as_model_results():
     aggregator = (
         ROOT / "tools" / "aggregate_dcsr_internal_pairs.py"
     ).read_text(encoding="utf-8")
-    assert "finalize_dcsr_internal_pair.py" in launcher
+    assert "tools.finalize_dcsr_internal_pair" in launcher
     assert '"g1_gate_pass": g1_gate_pass' in aggregator
     assert "raise SystemExit(3)" not in aggregator
     assert '"next_step_if_fail": "terminate SparseHead route"' in aggregator

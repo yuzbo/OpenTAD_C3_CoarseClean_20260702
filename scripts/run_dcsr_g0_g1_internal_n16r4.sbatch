@@ -146,7 +146,7 @@ STAGE=focused_tests
 STAGE=g0_exact_equivalence
 (
   cd "$CANDIDATE_ROOT"
-  python tools/validate_dcsr_g0_equivalence.py \
+  python -m tools.validate_dcsr_g0_equivalence \
     --device cuda:0 \
     --seed "$DEV_SEED" \
     --output "$TASK_ROOT/DCSR_G0_EQUIVALENCE.json"
@@ -213,7 +213,7 @@ run_arm() {
   STAGE="${arm}_independent_holdout_eval"
   (
     cd "$CANDIDATE_ROOT"
-    python tools/evaluate_dcsr_internal_predictions.py \
+    python -m tools.evaluate_dcsr_internal_predictions \
       --annotation "$annotation" \
       --expected-annotation-sha256 "$EXPECTED_ANNOTATION_SHA256" \
       --manifest "$DCSR_INTERNAL_HOLDOUT_MANIFEST" \
@@ -230,7 +230,7 @@ run_arm dcsr "configs/thumos_i3d_dcsr_dev_g1_uniform.yaml"
 STAGE=pair_completion
 (
   cd "$CANDIDATE_ROOT"
-  python tools/finalize_dcsr_internal_pair.py \
+  python -m tools.finalize_dcsr_internal_pair \
     --seed "$DEV_SEED" \
     --g0-receipt "$TASK_ROOT/DCSR_G0_EQUIVALENCE.json" \
     --dense-metric "$TASK_ROOT/dense/METRIC_ATTESTATION.json" \
