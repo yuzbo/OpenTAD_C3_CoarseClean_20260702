@@ -414,6 +414,25 @@ updated: 2026-07-30
   intentionally pending remote verification and must be registered separately;
   this entry is implementation evidence only.
 
+- GeoRoute gradient-decomposition first remote validation and deployment
+  admission, 2026-07-30. Exact source
+  `664180b6e2645aa3f9bde8b3a67fc7c224b3915c`, clean snapshot
+  `/data/run01/sczc063/yuzibo/projects/opentad_georoute_664180b6_20260730_graddecomp`,
+  full HEAD/origin-ref parity and clean tree; full remote suite `161/161`.
+  CUDA/DDP KAT Job `1207467` completed `0:0` under
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_gradient_decomposition_kat_664180b6_20260730_2240`.
+  KAT internal/file SHA-256 are
+  `b4f5f197326c1a6e66315836515bd0de6b9310163499e14cc03a0c499093c47b`
+  /
+  `3b8f6814496d6a62a09039d707ca04cba08d37a18abc3f78e48596b26a56d7bb`.
+  DAG admission then failed before namespace creation and before any `sbatch`
+  because its provenance builder requested nonexistent parent key
+  `summary.failed_batch_indices`; the sealed stability-v2 schema exposes
+  `summary.skipped_batch_indices`. This is a fail-closed deployment-code
+  compatibility finding, not model, gradient, numerical or performance
+  evidence. Source `664180b6` remains valid KAT evidence but is not the
+  deployed diagnostic runtime.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

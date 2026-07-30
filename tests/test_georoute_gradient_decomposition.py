@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from tools.bata import georoute_gradient_decomposition as gradient
+from tools.bata import deploy_georoute_gradient_decomposition as deployment
 
 
 def test_seed_is_mechanically_derived_and_disjoint() -> None:
@@ -13,6 +14,19 @@ def test_seed_is_mechanically_derived_and_disjoint() -> None:
     expected = 1000 + (int(digest[:8], 16) % 9000)
     assert gradient.SEED == expected == 7367
     assert gradient.SEED not in gradient.FORBIDDEN_SEEDS
+
+
+def test_deployment_reads_parent_stability_skipped_batches() -> None:
+    receipt = {"summary": {"skipped_batch_indices": [11, 20, 29]}}
+    assert deployment._stability_v2_skipped_batch_indices(receipt) == [
+        11,
+        20,
+        29,
+    ]
+    with pytest.raises(ValueError, match="skipped_batch_indices"):
+        deployment._stability_v2_skipped_batch_indices(
+            {"summary": {"skipped_batch_indices": [20, 11]}}
+        )
 
 
 def _differentiable_ordered_log_probability(

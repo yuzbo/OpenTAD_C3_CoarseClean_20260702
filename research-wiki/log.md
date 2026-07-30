@@ -1905,3 +1905,23 @@ append_only: true
   The failed namespace is sealed and not reused. The harness correction passes a
   zero-contribution dummy CUDA tensor to DDP; it cannot change the deliberately
   constructed parameter gradient, hook, bucket observation, or experiment.
+
+- 2026-07-30: exact source
+  `664180b6e2645aa3f9bde8b3a67fc7c224b3915c` passed the clean remote
+  Linux/Torch suite `161/161`. CUDA/DDP KAT Job `1207467` completed `0:0`;
+  receipt internal/file SHA-256 are
+  `b4f5f197326c1a6e66315836515bd0de6b9310163499e14cc03a0c499093c47b`
+  /
+  `3b8f6814496d6a62a09039d707ca04cba08d37a18abc3f78e48596b26a56d7bb`.
+  It verified the standard Future, bitwise observer noninterference, intentional
+  finite-FP32-to-nonfinite-FP16 cast witness, and analytic gradient direction,
+  with no checkpoint/prediction/metric/evaluator/test/claim.
+
+- 2026-07-30: the first diagnostic DAG admission attempt failed before
+  namespace creation and before any `sbatch`. The deployer requested parent
+  `summary.failed_batch_indices`, but the sealed stability-v2 receipt schema
+  uses `summary.skipped_batch_indices`. Added strict sorted/unique/nonnegative
+  validation and a focused regression. This changes only copied provenance;
+  it cannot affect model execution, gradient observation, estimator, RNG,
+  optimizer or the frozen two-arm protocol. A fresh source and same-commit KAT
+  are required before deployment.

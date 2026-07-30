@@ -270,8 +270,17 @@ max_chars: 8000
   user-provided Pro verdict `NEW_MATCHED_DIAGNOSIS_BEFORE_REPAIR` (attachment
   SHA-256
   `22f5802f62689f687667f56ddd6aacb35e07242c213a591cf93a4e50942c6e83`).
-  It is now `implemented`, pending clean remote Linux tests and an independent
-  one-GPU CUDA/DDP observer KAT. The study freezes seed `7367`, matched
+  Exact source `664180b6e2645aa3f9bde8b3a67fc7c224b3915c` passed the clean
+  remote Linux/Torch suite `161/161`; same-commit CUDA/DDP KAT Job `1207467`
+  completed `0:0` with self/file SHA-256
+  `b4f5f197326c1a6e66315836515bd0de6b9310163499e14cc03a0c499093c47b`
+  /
+  `3b8f6814496d6a62a09039d707ca04cba08d37a18abc3f78e48596b26a56d7bb`.
+  The first DAG admission stopped before namespace creation and before any
+  `sbatch` because the deployer used the wrong parent provenance key
+  (`failed_batch_indices` rather than sealed-v2 `skipped_batch_indices`).
+  A provenance-only correction and regression are in progress; a fresh exact
+  source and same-commit KAT remain mandatory. The study freezes seed `7367`, matched
   residual-PL/ST, 64 consumed batches, `T/N/K=384/220/64`, temperature `0.7`,
   temporal mean, default GradScaler, the production FP16 compression hook, zero
   retry/replay, and no performance artifacts. It observes the analytic PL

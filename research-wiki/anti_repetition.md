@@ -217,6 +217,12 @@ updated: 2026-07-30
    prove the observer leaves the pre-hook bucket unchanged, detect an FP16
    shadow-cast overflow, and seal a self-hashed no-performance receipt. Do not
    submit the two-arm DAG if this KAT is missing or failed.
+0. The sealed stability-v2 receipt names dynamic-scaler non-update batches
+   `summary.skipped_batch_indices`; it does not expose
+   `summary.failed_batch_indices`. Any successor provenance reader must validate
+   the former as a sorted unique nonnegative list. The `664180b6` deployment
+   admission failure occurred before namespace creation and `sbatch`; never
+   fabricate, alias, or silently default this parent field.
 0. `mmengine.Config` is not a normal dict and does not implement
    `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
    tested `Config.pop` API and execute a real Config materialization regression.

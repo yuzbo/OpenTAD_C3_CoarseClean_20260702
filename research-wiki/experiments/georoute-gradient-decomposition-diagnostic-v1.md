@@ -3,8 +3,8 @@ type: experiment
 node_id: exp:georoute-gradient-decomposition-diagnostic-v1
 title: "GeoRoute PL/ST matched gradient decomposition diagnostic v1"
 idea: idea:geo-route-adatad
-stage: implemented
-status: awaiting_remote_cuda_kat
+stage: tested
+status: deployment_admission_correction
 verdict: ACCEPT_WITH_IMPLEMENTATION_CORRECTIONS
 confidence: high
 updated: 2026-07-30
@@ -73,9 +73,20 @@ The implementation adds:
 - held parallel leaves, `afterany` finalizer, no-resume namespace, storage and
   origin-ref gates.
 
-Local Python compilation passes. The local Windows Torch binary cannot load
-`c10.dll`, so Torch tests and the CUDA KAT must run in the clean N16R4 Linux
-environment before deployment.
+Exact source `664180b6e2645aa3f9bde8b3a67fc7c224b3915c` passed the clean
+N16R4 Linux/Torch suite `161/161`. CUDA/DDP KAT Job `1207467` completed `0:0`
+and proved that the observer leaves the authoritative bucket unchanged, the
+standard hook Future completes, a finite FP32 value can become nonfinite at the
+FP16 cast, and the analytic ordered-PL gradient agrees with autograd.
+
+The first DAG admission attempt then failed before namespace creation or
+`sbatch`: the deployer read the parent stability-v2 field as
+`failed_batch_indices`, while the sealed v2 schema correctly calls it
+`skipped_batch_indices`. The correction is restricted to parent-provenance
+serialization, validates a sorted unique nonnegative list, and does not alter
+the model, optimizer, observer, frozen protocol, or parent evidence. A new exact
+source, full remote suite, and same-commit CUDA KAT are required before
+deployment.
 
 ## Decision boundary
 

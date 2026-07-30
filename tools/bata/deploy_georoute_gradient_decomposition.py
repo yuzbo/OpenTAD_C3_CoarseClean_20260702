@@ -75,6 +75,24 @@ def _self_hash_matches(payload: Mapping[str, Any], *, field: str) -> bool:
     return isinstance(observed, str) and observed == canonical_sha256(unsigned)
 
 
+def _stability_v2_skipped_batch_indices(
+    receipt: Mapping[str, Any],
+) -> list[int]:
+    summary = receipt.get("summary")
+    if not isinstance(summary, Mapping):
+        raise ValueError("stability-v2 receipt lacks a summary")
+    values = summary.get("skipped_batch_indices")
+    if (
+        not isinstance(values, list)
+        or any(not isinstance(value, int) or value < 0 for value in values)
+        or values != sorted(set(values))
+    ):
+        raise ValueError(
+            "stability-v2 receipt has invalid skipped_batch_indices"
+        )
+    return list(values)
+
+
 def _validate_parent(
     path: Path,
     *,
@@ -374,8 +392,8 @@ def main() -> int:
                 "path": parent["arms"][arm]["diagnostic_receipt_path"],
                 "file_sha256": expected_arm_hashes[arm],
                 "receipt_sha256": parent_receipts[arm]["receipt_sha256"],
-                "failed_batch_indices": list(
-                    parent_receipts[arm]["summary"]["failed_batch_indices"]
+                "skipped_batch_indices": _stability_v2_skipped_batch_indices(
+                    parent_receipts[arm]
                 ),
             }
             for arm in ARMS
