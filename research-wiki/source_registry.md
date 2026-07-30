@@ -458,6 +458,43 @@ updated: 2026-07-30
   (`105399025664` free, `47244640256` required) passed. This execution is a
   no-performance numerical mechanism diagnosis only.
 
+- GeoRoute gradient-decomposition terminal mechanism evidence, 2026-07-30.
+  PL/ST/finalizer Jobs `1207484/1207485/1207486` all completed `0:0`. PL
+  receipt self/file SHA-256:
+  `28e778bea724a736cbf43acb02f847b02a7699613baedd91e4154352627ab23f`
+  /
+  `9f402fc46ff9398e2677130596a5b0bd7bed5a94dcac2e36ba3e6d46ec476a2f`;
+  ST:
+  `67a3d5cd718b2e8d166bcd1b452ed509fa7432d3bc89763ef520133dc58b33de`
+  /
+  `9dfaa40b153af57cd04516ea37d96bf84f91b23037370c2bd8f4421d508d962d`.
+  PL consumed 64 batches with 61 updates and skips at `2/20/29`; every failure
+  was uniquely `DDP_FP16_CAST_OVERFLOW`. ST consumed 64 batches with 62 updates
+  and detector-only FP32 pre-hook failures at `14/29`. Data/CPU sequences and
+  initial CUDA RNG matched; later CUDA divergence was the registered PL Gumbel
+  effect. Finalization status/decision:
+  `COMPLETE_GRADIENT_DECOMPOSITION_DIAGNOSTIC_ONLY` /
+  `PL_NUMERICAL_MECHANISM_LOCALIZED_REPAIR_CLASS_IDENTIFIED`; self/file SHA-256:
+  `52d4dfd698ed0679a976e6d468fb4b0d1ede9ea630df32f808115c9f118f681e`
+  /
+  `816819086374f964264d3a8bb4810842f97ef554d5661d2ec4a6b85fd135bc9c`.
+  All eight canonical self-hashes were independently recomputed; namespace size
+  is 22,072,228 bytes with zero forbidden artifacts or fatal log signatures.
+  This authorizes one no-FP16-compression native-family repair and a fresh
+  no-performance gate only, not performance or paper evidence.
+
+- GeoRoute DDP FP16-cast repair-gate v1 design and implementation,
+  2026-07-30. Frozen project specification:
+  `docs/superpowers/specs/2026-07-30-georoute-ddp-fp16-cast-repair-gate-v1-design.md`.
+  It binds the terminal gradient finalization and both arm receipts above,
+  derives disjoint seed `2307`, applies only
+  `solver.fp16_compress: true -> false` to both matched arms, inherits the
+  preregistered 64-batch bounded dynamic-scaler thresholds, and requires a
+  same-commit Slurm CUDA/DDP KAT before submission. The implementation and
+  focused local AMP/repair suite pass `32/32`; remote full-suite and numerical
+  execution evidence are pending. This source is design/implementation
+  evidence, not performance evidence.
+
 - GeoRoute correctness and replacement-plan Pro audit, 2026-07-28. The
   user-provided review audited exact branch HEAD
   `df3e54e0c6776544dba20807b2ec100e1a399654` and returned

@@ -433,8 +433,26 @@ The corrected diagnostic runtime is now
 `33f721be83e0ad7f7a36e853491e7a14f148814b`. It passed the full clean remote
 suite `162/162` and same-commit CUDA/DDP KAT `1207480`, then admitted the fresh
 parallel PL/ST DAG as Jobs `1207484/1207485` with afterany finalizer `1207486`.
-This is execution of the mechanism falsification experiment, not a change to
-the GeoRoute scientific method and not evidence for accuracy or efficiency.
+All three jobs completed `0:0`; every PL-specific failure was uniquely
+`DDP_FP16_CAST_OVERFLOW`, with finite analytic/actual logit gradients and finite
+FP32 pre-hook buckets before the detached FP16 cast introduced nonfinite
+values. This falsifies upstream score/VJP as the immediate cause on this
+registered trajectory. It does not rank PL versus ST or establish accuracy.
+
+The resulting method decision is deliberately narrow: keep the ordered-PL
+estimator and objective intact, disable DDP FP16 compression for all matched
+native arms, and require a fresh independent-seed no-performance stability
+gate. No-compression is preferred over BF16 here because it removes the
+identified cast without adding a new hardware-dependent quantizer.
+
+That gate is now implemented as
+`georoute_ddp_fp16_cast_repair_gate_v1`, seed `2307`. It inherits the 64-batch
+official-prefix dynamic-scaler thresholds and changes only
+`solver.fp16_compress` from true to false in both arms. Its separate CUDA/DDP
+KAT directly tests the causal numerical surface: default FP32 DDP reduction
+must preserve a finite scaled gradient above FP16 range while a detached FP16
+shadow overflows. Passing this gate would support the numerical repair, not the
+accuracy or efficiency of GeoRoute.
 
 The publication path is explicitly separate: the one-seed 20-epoch pilot is
 exploratory. A paper result must first reproduce the official AdaTAD recipe and

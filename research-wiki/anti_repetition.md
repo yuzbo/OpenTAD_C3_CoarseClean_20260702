@@ -223,12 +223,34 @@ updated: 2026-07-30
    the former as a sorted unique nonnegative list. The `664180b6` deployment
    admission failure occurred before namespace creation and `sbatch`; never
    fabricate, alias, or silently default this parent field.
-0. The only admitted gradient-decomposition DAG is exact runtime
+0. The only gradient-decomposition DAG is the sealed exact runtime
    `33f721be83e0ad7f7a36e853491e7a14f148814b`, root
    `georoute_pl_gradient_decomposition_v1_33f721be_s7367_20260730_2300`,
-   PL/ST/finalizer Jobs `1207484/1207485/1207486`. Do not resume, replay,
+   PL/ST/finalizer Jobs `1207484/1207485/1207486`, all `COMPLETED 0:0`.
+   Finalizer uniquely identified `DDP_FP16_CAST_OVERFLOW` from all three
+   PL-specific failures; its self/file hashes are
+   `52d4dfd698ed0679a976e6d468fb4b0d1ede9ea630df32f808115c9f118f681e`
+   /
+   `816819086374f964264d3a8bb4810842f97ef554d5661d2ec4a6b85fd135bc9c`.
+   Do not resume, replay,
    supplement one arm, change the 64-batch order, infer performance from live
    telemetry, or treat a later documentation commit as this runtime source.
+0. The unique class authorizes exactly one communication repair. The selected
+   repair is disabling DDP FP16 compression for every arm in the matched native
+   family, followed by a new independent-seed no-performance stability gate.
+   Do not combine it with BF16 compression, lower initial scale, clipping,
+   temperature/weight/K changes, PL dropping, performance training or official
+   test; those would add unregistered variables.
+0. The only authorized repair study is
+   `georoute_ddp_fp16_cast_repair_gate_v1`, seed `2307`, two arms and 64
+   batches. Its inherited skip/scale/tail/pairwise thresholds were frozen before
+   execution and cannot be relaxed after observing telemetry. Both arms must
+   set `solver.fp16_compress=false`; an arm-specific hook choice is invalid.
+0. The no-compression CUDA/DDP KAT is a hard same-commit parent. It must use
+   real NCCL DDP without registering a communication hook, preserve a finite
+   scaled FP32 gradient of `70000`, observe a nonfinite detached FP16 shadow,
+   unscale finitely and complete an optimizer update. A unit-test mock or
+   synthetic receipt cannot replace the Slurm KAT.
 0. `mmengine.Config` is not a normal dict and does not implement
    `__delitem__`. Never use `del cfg[key]` in a bound-config builder; use the
    tested `Config.pop` API and execute a real Config materialization regression.

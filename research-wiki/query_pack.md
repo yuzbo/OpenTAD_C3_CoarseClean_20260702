@@ -280,10 +280,22 @@ max_chars: 8000
   `d31d34144e60bdde6103acc36cff42301ba7fbd80a40eb6f04ead63ddb6901b4`
   /
   `09e2ed0ec6f6e3372871ea00f0aa610027bbedd81d098b60ea6a2529aed0e6f4`.
-  The fresh diagnostic root is
+  The sealed diagnostic root is
   `georoute_pl_gradient_decomposition_v1_33f721be_s7367_20260730_2300`;
-  PL/ST Jobs `1207484/1207485` are running in parallel and afterany finalizer
-  `1207486` is dependency-held. The study freezes seed `7367`, matched
+  PL/ST/finalizer Jobs `1207484/1207485/1207486` all completed `0:0`.
+  Both arms consumed 64 matched batches with finite forwards, zero retry/replay
+  and 64 scheduler/EMA advances. PL skips at `2/20/29` were all uniquely
+  `DDP_FP16_CAST_OVERFLOW`: analytic and actual residual-logit gradients plus
+  pre-hook FP32 buckets were finite, while the detached FP16 cast introduced
+  the first nonfinite. ST skips at `14/29` were detector-only and already
+  nonfinite in FP32 pre-hook, so they do not explain the PL scout failures.
+  Finalizer classified
+  `PL_NUMERICAL_MECHANISM_LOCALIZED_REPAIR_CLASS_IDENTIFIED`; self/file SHA-256
+  are
+  `52d4dfd698ed0679a976e6d468fb4b0d1ede9ea630df32f808115c9f118f681e`
+  /
+  `816819086374f964264d3a8bb4810842f97ef554d5661d2ec4a6b85fd135bc9c`.
+  All hashes and the zero-artifact audit independently pass. The study froze seed `7367`, matched
   residual-PL/ST, 64 consumed batches, `T/N/K=384/220/64`, temperature `0.7`,
   temporal mean, default GradScaler, the production FP16 compression hook, zero
   retry/replay, and no performance artifacts. It observes the analytic PL
@@ -293,9 +305,19 @@ max_chars: 8000
   data and CPU RNG must match across all 64 batches and CUDA RNG at batch zero;
   later CUDA RNG equality is not required because PL Gumbel sampling consumes
   CUDA RNG while ST does not. No replay/reset may hide that divergence. A
-  uniquely identified class may authorize only one minimal numerical repair and
-  a fresh no-performance gate; HOLD/INCOMPLETE authorize no model change or
-  performance run.
+  identified class authorizes only one minimal numerical repair and a fresh
+  no-performance gate. The preregistered next repair is to disable DDP FP16
+  compression across the matched native family; no estimator/objective change
+  or performance run is authorized.
+  That successor is now implemented as
+  `exp:georoute-ddp-fp16-cast-repair-gate-v1`: independent mechanically derived
+  seed `2307`, the same 64-batch official-prefix PL/ST protocol and inherited
+  bounded-scaler thresholds, with `solver.fp16_compress=false` as the sole
+  intervention in both arms. A same-commit real CUDA/DDP KAT must first prove
+  that a finite scaled FP32 gradient above `65504` survives default FP32 DDP
+  reduction, while a detached FP16 shadow cast overflows. Focused local
+  AMP/repair tests pass `32/32`; remote full-suite, KAT and gate deployment are
+  pending. This remains no-performance evidence.
   The single-seed 20-epoch pilot is not an official paper result. A future
   confirmatory study must include both an exact official AdaTAD reproduction
   and a matched native-source dense control, then match updates, effective batch

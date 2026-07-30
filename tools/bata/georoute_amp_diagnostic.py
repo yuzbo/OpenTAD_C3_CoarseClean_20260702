@@ -85,6 +85,27 @@ AMP_STABILITY_V2_STABLE_TAIL_BATCHES = 16
 AMP_STABILITY_V2_MAX_CROSS_ARM_SKIP_DELTA = 1
 AMP_STABILITY_V2_MAX_FINAL_SCALE_RATIO = 2.0
 
+AMP_REPAIR_PROFILE = "ddp_fp16_cast_repair_no_compression_v1"
+AMP_REPAIR_STUDY_ID = "georoute_ddp_fp16_cast_repair_gate_v1"
+AMP_REPAIR_BINDING_SCHEMA = "georoute_ddp_fp16_cast_repair_binding_v1"
+AMP_REPAIR_RECEIPT_SCHEMA = "georoute_ddp_fp16_cast_repair_receipt_v1"
+AMP_REPAIR_STAGE_SCHEMA = "georoute_ddp_fp16_cast_repair_stage_v1"
+AMP_REPAIR_DEPLOYMENT_SCHEMA = "georoute_ddp_fp16_cast_repair_deployment_v1"
+AMP_REPAIR_FINALIZATION_SCHEMA = "georoute_ddp_fp16_cast_repair_finalization_v1"
+AMP_REPAIR_SEED = 2307
+AMP_REPAIR_FORBIDDEN_SEEDS = (7367, 4417, 3407, 3408, 3409)
+AMP_REPAIR_MAX_BATCHES = 64
+AMP_REPAIR_RETRY_LIMIT = 0
+AMP_REPAIR_REGISTERED_CLASS = "DDP_FP16_CAST_OVERFLOW"
+AMP_REPAIR_INTERVENTION = "disable_ddp_fp16_compression"
+
+AMP_OFFICIAL_PREFIX_PROFILES = frozenset(
+    {AMP_STABILITY_V2_PROFILE, AMP_REPAIR_PROFILE}
+)
+AMP_BOUNDED_DYNAMIC_SCALER_PROFILES = frozenset(
+    {AMP_STABILITY_V2_PROFILE, AMP_REPAIR_PROFILE}
+)
+
 
 def amp_protocol_spec(profile: str) -> dict[str, Any]:
     """Return the immutable numerical-only execution contract for one profile."""
@@ -104,6 +125,7 @@ def amp_protocol_spec(profile: str) -> dict[str, Any]:
             "initial_scale": AMP_DIAGNOSTIC_INITIAL_SCALE,
             "seed": PILOT_SEED,
             "temporal_reduction": "sum",
+            "ddp_fp16_compress_enabled": True,
             "zero_failed_attempts_required": False,
             "cell_directory": "diagnostic",
             "receipt_filename": "amp_diagnostic.json",
@@ -144,6 +166,7 @@ def amp_protocol_spec(profile: str) -> dict[str, Any]:
             "initial_scale": AMP_DIAGNOSTIC_INITIAL_SCALE,
             "seed": PILOT_SEED,
             "temporal_reduction": "mean",
+            "ddp_fp16_compress_enabled": True,
             "zero_failed_attempts_required": True,
             "cell_directory": "stability",
             "receipt_filename": "amp_stability.json",
@@ -185,7 +208,11 @@ def amp_protocol_spec(profile: str) -> dict[str, Any]:
             "retry_limit": AMP_STABILITY_V2_RETRY_LIMIT,
             "initial_scale": AMP_DIAGNOSTIC_INITIAL_SCALE,
             "seed": AMP_STABILITY_V2_SEED,
+            "forbidden_future_paper_seeds": (
+                AMP_STABILITY_V2_FORBIDDEN_PAPER_SEEDS
+            ),
             "temporal_reduction": "mean",
+            "ddp_fp16_compress_enabled": True,
             "zero_failed_attempts_required": False,
             "max_skipped_attempts": AMP_STABILITY_V2_MAX_SKIPS,
             "max_consecutive_skips": AMP_STABILITY_V2_MAX_CONSECUTIVE_SKIPS,
@@ -241,6 +268,72 @@ def amp_protocol_spec(profile: str) -> dict[str, Any]:
                 "INCOMPLETE_OFFICIAL_SEMANTICS_AMP_STABILITY_V2"
             ),
             "job_prefix": "grstabv2",
+        }
+    if profile == AMP_REPAIR_PROFILE:
+        return {
+            "profile": AMP_REPAIR_PROFILE,
+            "study_id": AMP_REPAIR_STUDY_ID,
+            "binding_schema": AMP_REPAIR_BINDING_SCHEMA,
+            "receipt_schema": AMP_REPAIR_RECEIPT_SCHEMA,
+            "stage_schema": AMP_REPAIR_STAGE_SCHEMA,
+            "deployment_schema": AMP_REPAIR_DEPLOYMENT_SCHEMA,
+            "finalization_schema": AMP_REPAIR_FINALIZATION_SCHEMA,
+            "max_batches": AMP_REPAIR_MAX_BATCHES,
+            "retry_limit": AMP_REPAIR_RETRY_LIMIT,
+            "initial_scale": AMP_DIAGNOSTIC_INITIAL_SCALE,
+            "seed": AMP_REPAIR_SEED,
+            "forbidden_future_paper_seeds": AMP_REPAIR_FORBIDDEN_SEEDS,
+            "temporal_reduction": "mean",
+            "ddp_fp16_compress_enabled": False,
+            "zero_failed_attempts_required": False,
+            "max_skipped_attempts": AMP_STABILITY_V2_MAX_SKIPS,
+            "max_consecutive_skips": AMP_STABILITY_V2_MAX_CONSECUTIVE_SKIPS,
+            "minimum_scale": AMP_STABILITY_V2_MIN_SCALE,
+            "stable_tail_batches": AMP_STABILITY_V2_STABLE_TAIL_BATCHES,
+            "minimum_successful_updates": (
+                AMP_REPAIR_MAX_BATCHES - AMP_STABILITY_V2_MAX_SKIPS
+            ),
+            "max_cross_arm_skip_delta": (
+                AMP_STABILITY_V2_MAX_CROSS_ARM_SKIP_DELTA
+            ),
+            "max_final_scale_ratio": AMP_STABILITY_V2_MAX_FINAL_SCALE_RATIO,
+            "use_default_grad_scaler_constructor": True,
+            "fail_on_skipped_update": False,
+            "schedule_and_ema_on_success_only": False,
+            "capture_amp_rng_state": True,
+            "fail_on_nonfinite_loss": True,
+            "registered_repair_class": AMP_REPAIR_REGISTERED_CLASS,
+            "registered_single_variable_intervention": AMP_REPAIR_INTERVENTION,
+            "cell_directory": "repair_v1",
+            "receipt_filename": "amp_repair_gate_v1.json",
+            "rendezvous_stage": "amprepairv1",
+            "config_status": "ddp_fp16_cast_repair_gate_v1_only",
+            "receipt_running_status": "RUNNING_DDP_FP16_CAST_REPAIR_GATE_ONLY",
+            "receipt_pass_status": (
+                "PASS_DDP_FP16_CAST_REPAIR_GATE_EXECUTION_ONLY"
+            ),
+            "receipt_fail_status": "FAIL_DDP_FP16_CAST_REPAIR_GATE_EXECUTION",
+            "stage_pass_status": (
+                "PASS_STAGE_DDP_FP16_CAST_REPAIR_GATE_ONLY"
+            ),
+            "stage_fail_status": (
+                "FAIL_STAGE_DDP_FP16_CAST_REPAIR_GATE_EXECUTION"
+            ),
+            "stage_wrapper_fail_status": (
+                "FAIL_DDP_FP16_CAST_REPAIR_GATE_STAGE_WRAPPER"
+            ),
+            "deployment_status": (
+                "SUBMITTED_DDP_FP16_CAST_REPAIR_GATE_ONLY"
+            ),
+            "finalizer_submission_status": (
+                "SUBMITTED_DDP_FP16_CAST_REPAIR_GATE_FINALIZER_AFTERANY"
+            ),
+            "stage_release_status": (
+                "RELEASED_DDP_FP16_CAST_REPAIR_GATE_STAGES"
+            ),
+            "complete_status": "COMPLETE_DDP_FP16_CAST_REPAIR_GATE_ONLY",
+            "incomplete_status": "INCOMPLETE_DDP_FP16_CAST_REPAIR_GATE",
+            "job_prefix": "grrepair",
         }
     raise ValueError(f"unsupported AMP numerical protocol profile {profile!r}")
 
@@ -369,6 +462,7 @@ def bind_amp_diagnostic_config(
     cfg.workflow.fail_on_nonfinite_loss = bool(
         spec.get("fail_on_nonfinite_loss", False)
     )
+    cfg.solver.fp16_compress = bool(spec["ddp_fp16_compress_enabled"])
     cfg.post_processing.save_dict = False
     cfg.inference.load_from_raw_predictions = False
     cfg.inference.save_raw_prediction = False
@@ -392,6 +486,9 @@ def bind_amp_diagnostic_config(
         "score_function_temporal_reduction": spec[
             "temporal_reduction"
         ],
+        "ddp_fp16_compress_enabled": bool(
+            spec["ddp_fp16_compress_enabled"]
+        ),
         "zero_failed_attempts_required": spec[
             "zero_failed_attempts_required"
         ],
@@ -431,7 +528,7 @@ def bind_amp_diagnostic_config(
         "deterministic_algorithms_enabled": True,
         "deterministic_warn_only": True,
         "historical_pilot_seed_policy_matched": (
-            spec["profile"] != AMP_STABILITY_V2_PROFILE
+            spec["profile"] not in AMP_OFFICIAL_PREFIX_PROFILES
         ),
         "amp_diagnostic_telemetry_enabled": True,
         "checkpoint_disabled": True,
@@ -441,15 +538,15 @@ def bind_amp_diagnostic_config(
         "p2_p3_opened": False,
         "paper_claim_allowed": False,
     }
-    if spec["profile"] == AMP_STABILITY_V2_PROFILE:
+    if spec["profile"] in AMP_OFFICIAL_PREFIX_PROFILES:
         if official_reference_config_path is None:
             raise ValueError(
-                "official-semantics stability v2 requires an official reference config"
+                "official-prefix AMP gate requires an official reference config"
             )
         official_reference = Path(official_reference_config_path).resolve()
         if not official_reference.is_file() or official_reference.is_symlink():
             raise FileNotFoundError(
-                "official-semantics stability v2 reference config is invalid"
+                "official-prefix AMP gate reference config is invalid"
             )
         from mmengine.config import Config
 
@@ -493,16 +590,21 @@ def bind_amp_diagnostic_config(
                 "official reference no longer has the frozen AMP/scheduler/EMA "
                 "transition semantics"
             )
+        if official_solver.get("fp16_compress") is not True:
+            raise ValueError(
+                "official reference no longer enables the frozen FP16 DDP "
+                "communication hook"
+            )
         binding.update(
             {
                 "template_seed": PILOT_SEED,
-                "execution_seed": AMP_STABILITY_V2_SEED,
+                "execution_seed": int(spec["seed"]),
                 "forbidden_future_paper_seeds": list(
-                    AMP_STABILITY_V2_FORBIDDEN_PAPER_SEEDS
+                    spec["forbidden_future_paper_seeds"]
                 ),
                 "paper_seed_disjoint": (
-                    AMP_STABILITY_V2_SEED
-                    not in AMP_STABILITY_V2_FORBIDDEN_PAPER_SEEDS
+                    int(spec["seed"])
+                    not in spec["forbidden_future_paper_seeds"]
                 ),
                 "use_default_grad_scaler_constructor": True,
                 "observed_initial_scale_required": float(
@@ -526,6 +628,7 @@ def bind_amp_diagnostic_config(
                 "official_reference_transition_semantics_sha256": (
                     canonical_sha256(official_transitions)
                 ),
+                "official_reference_ddp_fp16_compress_enabled": True,
                 "official_prefix_transition_semantics_matched": True,
                 "official_scheduler_advance_cadence_matched": True,
                 "official_scheduler_hyperparameters_matched": False,
@@ -535,6 +638,27 @@ def bind_amp_diagnostic_config(
                 "development_prefix_only": True,
             }
         )
+        if spec["profile"] == AMP_REPAIR_PROFILE:
+            binding.update(
+                {
+                    "registered_repair_class": AMP_REPAIR_REGISTERED_CLASS,
+                    "registered_single_variable_intervention": (
+                        AMP_REPAIR_INTERVENTION
+                    ),
+                    "registered_intervention_count": 1,
+                    "ddp_fp16_compress_before": True,
+                    "ddp_fp16_compress_after": False,
+                    "official_ddp_compression_matched": False,
+                    "official_prefix_transition_semantics_matched_except_"
+                    "registered_ddp_compression": True,
+                    "estimator_changed": False,
+                    "objective_changed": False,
+                    "initial_scale_changed": False,
+                    "gradient_clipping_changed": False,
+                    "selector_changed": False,
+                    "data_order_changed": False,
+                }
+            )
     binding["binding_sha256"] = canonical_sha256(binding)
     if "georoute_estimator_pilot_binding" in cfg:
         cfg.pop("georoute_estimator_pilot_binding")
@@ -585,7 +709,9 @@ def validate_amp_diagnostic_binding(
         or binding.get("deterministic_algorithms_enabled") is not True
         or binding.get("deterministic_warn_only") is not True
         or bool(binding.get("historical_pilot_seed_policy_matched"))
-        is not bool(spec["profile"] != AMP_STABILITY_V2_PROFILE)
+        is not bool(spec["profile"] not in AMP_OFFICIAL_PREFIX_PROFILES)
+        or bool(binding.get("ddp_fp16_compress_enabled", True))
+        is not bool(spec["ddp_fp16_compress_enabled"])
         or binding.get("amp_diagnostic_telemetry_enabled") is not True
         or binding.get("checkpoint_disabled") is not True
         or binding.get("evaluator_invoked") is not False
@@ -595,13 +721,13 @@ def validate_amp_diagnostic_binding(
         or binding.get("paper_claim_allowed") is not False
     ):
         raise ValueError("AMP diagnostic binding contract is invalid")
-    if spec["profile"] == AMP_STABILITY_V2_PROFILE:
+    if spec["profile"] in AMP_OFFICIAL_PREFIX_PROFILES:
         if (
             int(binding.get("template_seed", -1)) != PILOT_SEED
             or int(binding.get("execution_seed", -1))
-            != AMP_STABILITY_V2_SEED
+            != int(spec["seed"])
             or tuple(binding.get("forbidden_future_paper_seeds", ()))
-            != AMP_STABILITY_V2_FORBIDDEN_PAPER_SEEDS
+            != tuple(spec["forbidden_future_paper_seeds"])
             or binding.get("paper_seed_disjoint") is not True
             or binding.get("use_default_grad_scaler_constructor") is not True
             or float(binding.get("observed_initial_scale_required", -1.0))
@@ -623,9 +749,16 @@ def validate_amp_diagnostic_binding(
             or binding.get("official_performance_comparable") is not False
             or binding.get("full_official_training_claimed") is not False
             or binding.get("development_prefix_only") is not True
+            or bool(
+                binding.get(
+                    "official_reference_ddp_fp16_compress_enabled",
+                    True,
+                )
+            )
+            is not True
         ):
             raise ValueError(
-                "official-semantics stability v2 binding contract is invalid"
+                "official-prefix AMP binding contract is invalid"
             )
         _full_hex(
             str(binding.get("official_reference_config_sha256", "")),
@@ -654,6 +787,36 @@ def validate_amp_diagnostic_binding(
             raise ValueError(
                 "official-semantics stability v2 reference transition binding "
                 "is invalid"
+            )
+        if spec["profile"] == AMP_REPAIR_PROFILE and (
+            binding.get("registered_repair_class")
+            != AMP_REPAIR_REGISTERED_CLASS
+            or binding.get("registered_single_variable_intervention")
+            != AMP_REPAIR_INTERVENTION
+            or int(binding.get("registered_intervention_count", -1)) != 1
+            or binding.get("ddp_fp16_compress_before") is not True
+            or binding.get("ddp_fp16_compress_after") is not False
+            or binding.get("official_ddp_compression_matched") is not False
+            or binding.get(
+                "official_prefix_transition_semantics_matched_except_"
+                "registered_ddp_compression"
+            )
+            is not True
+            or any(
+                binding.get(field) is not False
+                for field in (
+                    "estimator_changed",
+                    "objective_changed",
+                    "initial_scale_changed",
+                    "gradient_clipping_changed",
+                    "selector_changed",
+                    "data_order_changed",
+                )
+            )
+        ):
+            raise ValueError(
+                "DDP FP16-cast repair binding changed more than its "
+                "registered communication intervention"
             )
     if seed is not None and int(seed) != int(binding["seed"]):
         raise ValueError("AMP diagnostic CLI seed differs from its binding")
@@ -720,6 +883,8 @@ def validate_amp_diagnostic_config(cfg: Any, *, seed: int) -> dict[str, Any]:
         or int(workflow.get("val_loss_interval", 0)) != -1
         or int(workflow.get("val_eval_interval", 0)) != -1
         or solver.get("amp") is not True
+        or bool(solver.get("fp16_compress", False))
+        is not bool(spec["ddp_fp16_compress_enabled"])
         or float(solver.get("clip_grad_norm", -1.0)) <= 0.0
         or cfg.inference.get("load_from_raw_predictions") is not False
         or cfg.inference.get("save_raw_prediction") is not False
@@ -735,17 +900,17 @@ def validate_amp_diagnostic_config(cfg: Any, *, seed: int) -> dict[str, Any]:
         != spec["temporal_reduction"]
     ):
         raise ValueError("AMP diagnostic config violates its no-metric protocol")
-    if spec["profile"] == AMP_STABILITY_V2_PROFILE and (
+    if spec["profile"] in AMP_OFFICIAL_PREFIX_PROFILES and (
         workflow.get("capture_amp_rng_state") is not True
         or workflow.get("fail_on_nonfinite_loss") is not True
         or solver.get("ema") is not True
         or int(
             cfg.model.backbone.custom.get("georoute_random_seed", -1)
         )
-        != AMP_STABILITY_V2_SEED
+        != int(spec["seed"])
     ):
         raise ValueError(
-            "official-semantics stability v2 config changed its frozen transitions"
+            "official-prefix AMP config changed its frozen transitions"
         )
     for split_name in ("train", "val", "test"):
         if cfg.dataset[split_name].get("subset_name") != "training":
@@ -1307,7 +1472,7 @@ class RealBatchAmpDiagnosticObserver:
             and summary["first_successful_scale"] is not None
             and summary["all_forward_losses_finite"] is True
         )
-        if self.spec["profile"] == AMP_STABILITY_V2_PROFILE:
+        if self.spec["profile"] in AMP_BOUNDED_DYNAMIC_SCALER_PROFILES:
             v2_complete = bool(
                 common_complete
                 and int(successful_updates)
@@ -1386,7 +1551,7 @@ class RealBatchAmpDiagnosticObserver:
         self._publish()
 
 
-def _validate_amp_stability_v2_summary(
+def _validate_bounded_dynamic_scaler_summary(
     *,
     payload: Mapping[str, Any],
     summary: Mapping[str, Any],
@@ -1397,9 +1562,9 @@ def _validate_amp_stability_v2_summary(
     batch_count = int(summary.get("batch_count", -1))
     attempt_count = int(summary.get("optimizer_attempt_count", -1))
     if not (0 <= batch_count <= expected_batches):
-        raise ValueError("AMP stability v2 batch count is invalid")
+        raise ValueError("bounded AMP gate batch count is invalid")
     if not (0 <= attempt_count <= batch_count):
-        raise ValueError("AMP stability v2 optimizer-attempt count is invalid")
+        raise ValueError("bounded AMP gate optimizer-attempt count is invalid")
     for key, expected_length in (
         ("data_fingerprint_sha256_by_batch", batch_count),
         ("cpu_rng_sha256_by_batch", batch_count),
@@ -1411,7 +1576,7 @@ def _validate_amp_stability_v2_summary(
         values = summary.get(key)
         if not isinstance(values, list) or len(values) != expected_length:
             raise ValueError(
-                f"AMP stability v2 summary has incomplete ordered telemetry: {key}"
+                f"bounded AMP gate summary has incomplete ordered telemetry: {key}"
             )
     if any(
         not isinstance(value, str) or len(value) != 64
@@ -1422,10 +1587,10 @@ def _validate_amp_stability_v2_summary(
         )
         for value in summary[key]
     ):
-        raise ValueError("AMP stability v2 fingerprint sequence is invalid")
+        raise ValueError("bounded AMP gate fingerprint sequence is invalid")
     success_flags = summary["update_succeeded_by_attempt"]
     if any(type(value) is not bool for value in success_flags):
-        raise ValueError("AMP stability v2 update-success sequence is invalid")
+        raise ValueError("bounded AMP gate update-success sequence is invalid")
     skipped = sum(not value for value in success_flags)
     successful = sum(success_flags)
     skipped_indices = summary.get("skipped_batch_indices")
@@ -1435,7 +1600,7 @@ def _validate_amp_stability_v2_summary(
         or int(summary.get("failed_attempt_count", -1)) != skipped
         or int(payload.get("successful_updates", -1)) != successful
     ):
-        raise ValueError("AMP stability v2 skip/update accounting is invalid")
+        raise ValueError("bounded AMP gate skip/update accounting is invalid")
     audit = _mapping(payload.get("update_audit"), name="update audit")
     if (
         int(audit.get("optimizer_attempts", -1)) != attempt_count
@@ -1450,7 +1615,7 @@ def _validate_amp_stability_v2_summary(
         or int(audit.get("ema_updates", -1))
         != int(summary.get("ema_update_count", -2))
     ):
-        raise ValueError("AMP stability v2 transition audit is inconsistent")
+        raise ValueError("bounded AMP gate transition audit is inconsistent")
     observed_initial_scale = summary.get("observed_initial_scale")
     if batch_count > 0 and (
         not isinstance(summary.get("data_fingerprint_sha256"), str)
@@ -1458,12 +1623,12 @@ def _validate_amp_stability_v2_summary(
         or not isinstance(observed_initial_scale, (int, float))
         or float(observed_initial_scale) != float(spec["initial_scale"])
     ):
-        raise ValueError("AMP stability v2 initial provenance is incomplete")
+        raise ValueError("bounded AMP gate initial provenance is incomplete")
     if status != spec["receipt_pass_status"]:
         if status != spec["receipt_fail_status"] or not isinstance(
             payload.get("failure"), Mapping
         ):
-            raise ValueError("AMP stability v2 failure receipt is incomplete")
+            raise ValueError("bounded AMP gate failure receipt is incomplete")
         return
 
     final_scale = summary.get("final_scale")
@@ -1494,7 +1659,7 @@ def _validate_amp_stability_v2_summary(
         or int(summary.get("ema_update_count", -1)) != expected_batches
     ):
         raise ValueError(
-            "passing AMP stability v2 receipt violates its frozen threshold"
+            "passing bounded AMP gate receipt violates its frozen threshold"
         )
 
 
@@ -1559,8 +1724,8 @@ def validate_amp_diagnostic_receipt(
         raise ValueError("AMP diagnostic receipt Slurm ID mismatch")
     summary = _mapping(payload.get("summary"), name="receipt summary")
     expected_batches = int(spec["max_batches"])
-    if spec["profile"] == AMP_STABILITY_V2_PROFILE:
-        _validate_amp_stability_v2_summary(
+    if spec["profile"] in AMP_BOUNDED_DYNAMIC_SCALER_PROFILES:
+        _validate_bounded_dynamic_scaler_summary(
             payload=payload,
             summary=summary,
             spec=spec,
@@ -1840,15 +2005,31 @@ def classify_amp_stability_pair(
     }
 
 
-def classify_amp_stability_v2_pair(
+def _classify_bounded_dynamic_scaler_pair(
     receipts: Mapping[str, Mapping[str, Any]],
+    *,
+    protocol_profile: str,
 ) -> dict[str, Any]:
-    """Apply the frozen official-semantics 64-batch stability-v2 rule."""
+    """Apply one frozen 64-batch bounded dynamic-scaler rule."""
 
+    spec = amp_protocol_spec(protocol_profile)
+    is_repair = protocol_profile == AMP_REPAIR_PROFILE
+    hold_decision = (
+        "DDP_FP16_CAST_REPAIR_GATE_HOLD"
+        if is_repair
+        else "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD"
+    )
+    pass_decision = (
+        "DDP_FP16_CAST_REPAIR_GATE_PASS_MATCHED_FORMAL_PROTOCOL_FREEZE_AUTHORIZED"
+        if is_repair
+        else "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_PASS_PROTOCOL_FREEZE_AUTHORIZED"
+    )
     hold = {
-        "decision": "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD",
+        "decision": hold_decision,
         "stability_gate_passed": False,
         "official_protocol_freeze_authorized": False,
+        "repair_gate_passed": False,
+        "matched_formal_protocol_freeze_authorized": False,
     }
     if set(receipts) != set(AMP_DIAGNOSTIC_ARMS):
         return {**hold, "reason": "missing_or_extra_arm"}
@@ -1858,14 +2039,13 @@ def classify_amp_stability_v2_pair(
             validated[arm] = validate_amp_diagnostic_receipt(
                 receipts[arm],
                 expected_arm=arm,
-                expected_profile=AMP_STABILITY_V2_PROFILE,
+                expected_profile=protocol_profile,
             )
     except (TypeError, ValueError) as error:
         return {
             **hold,
             "reason": f"invalid_receipt:{type(error).__name__}",
         }
-    spec = amp_protocol_spec(AMP_STABILITY_V2_PROFILE)
     if any(
         receipt["status"] != spec["receipt_pass_status"]
         for receipt in validated.values()
@@ -1883,11 +2063,29 @@ def classify_amp_stability_v2_pair(
         data_sequences[AMP_DIAGNOSTIC_ARMS[0]]
         == data_sequences[AMP_DIAGNOSTIC_ARMS[1]]
     )
+    cpu_rng_sequences = {
+        arm: list(summary["cpu_rng_sha256_by_batch"])
+        for arm, summary in summaries.items()
+    }
+    matched_cpu_rng_sequence = (
+        cpu_rng_sequences[AMP_DIAGNOSTIC_ARMS[0]]
+        == cpu_rng_sequences[AMP_DIAGNOSTIC_ARMS[1]]
+    )
+    cuda_rng_sequences = {
+        arm: list(summary["cuda_rng_sha256_by_batch"])
+        for arm, summary in summaries.items()
+    }
+    matched_initial_cuda_rng = bool(
+        cuda_rng_sequences[AMP_DIAGNOSTIC_ARMS[0]]
+        and cuda_rng_sequences[AMP_DIAGNOSTIC_ARMS[1]]
+        and cuda_rng_sequences[AMP_DIAGNOSTIC_ARMS[0]][0]
+        == cuda_rng_sequences[AMP_DIAGNOSTIC_ARMS[1]][0]
+    )
     matched_seed = all(
         int(validated[arm]["binding"]["execution_seed"])
-        == AMP_STABILITY_V2_SEED
+        == int(spec["seed"])
         and int(validated[arm]["binding"]["seed"])
-        == AMP_STABILITY_V2_SEED
+        == int(spec["seed"])
         for arm in AMP_DIAGNOSTIC_ARMS
     )
     matched_input_fields = (
@@ -1949,35 +2147,81 @@ def classify_amp_stability_v2_pair(
             is True
             and validated[arm]["binding"]["full_official_training_claimed"]
             is False
+            and bool(
+                validated[arm]["binding"].get(
+                    "ddp_fp16_compress_enabled",
+                    True,
+                )
+            )
+            is bool(spec["ddp_fp16_compress_enabled"])
         )
         for arm, summary in summaries.items()
     }
+    registered_repair_matched = (
+        all(
+            validated[arm]["binding"].get("registered_repair_class")
+            == AMP_REPAIR_REGISTERED_CLASS
+            and validated[arm]["binding"].get(
+                "registered_single_variable_intervention"
+            )
+            == AMP_REPAIR_INTERVENTION
+            and int(
+                validated[arm]["binding"].get(
+                    "registered_intervention_count",
+                    -1,
+                )
+            )
+            == 1
+            for arm in AMP_DIAGNOSTIC_ARMS
+        )
+        if is_repair
+        else True
+    )
     passed = bool(
         matched_data_sequence
+        and (not is_repair or matched_cpu_rng_sequence)
+        and (not is_repair or matched_initial_cuda_rng)
         and matched_seed
         and matched_inputs
         and skip_delta <= int(spec["max_cross_arm_skip_delta"])
         and final_scale_ratio <= float(spec["max_final_scale_ratio"])
         and all(per_arm_pass.values())
+        and registered_repair_matched
     )
     return {
-        "decision": (
-            "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_PASS_PROTOCOL_FREEZE_AUTHORIZED"
-            if passed
-            else "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD"
-        ),
+        "decision": pass_decision if passed else hold_decision,
         "stability_gate_passed": passed,
-        "official_protocol_freeze_authorized": passed,
+        "official_protocol_freeze_authorized": passed and not is_repair,
+        "repair_gate_passed": passed if is_repair else False,
+        "matched_formal_protocol_freeze_authorized": (
+            passed if is_repair else False
+        ),
         "reason": (
-            "matched_bounded_dynamic_scaler_adaptation_with_stable_tail"
+            "matched_no_fp16_compression_bounded_dynamic_scaler_with_stable_tail"
+            if passed and is_repair
+            else "matched_bounded_dynamic_scaler_adaptation_with_stable_tail"
             if passed
+            else "frozen_ddp_fp16_cast_repair_gate_rule_not_satisfied"
+            if is_repair
             else "frozen_official_semantics_stability_v2_rule_not_satisfied"
         ),
         "matched_data_sequence": matched_data_sequence,
+        "matched_cpu_rng_sequence": matched_cpu_rng_sequence,
+        "matched_initial_cuda_rng": matched_initial_cuda_rng,
         "matched_execution_seed": matched_seed,
         "matched_input_bindings": matched_inputs,
         "batch_count": int(spec["max_batches"]),
-        "execution_seed": AMP_STABILITY_V2_SEED,
+        "execution_seed": int(spec["seed"]),
+        "ddp_fp16_compress_enabled": bool(
+            spec["ddp_fp16_compress_enabled"]
+        ),
+        "registered_repair_class": (
+            AMP_REPAIR_REGISTERED_CLASS if is_repair else None
+        ),
+        "registered_single_variable_intervention": (
+            AMP_REPAIR_INTERVENTION if is_repair else None
+        ),
+        "registered_repair_matched": registered_repair_matched,
         "per_arm_pass": per_arm_pass,
         "per_arm_skip_count": skip_counts,
         "cross_arm_skip_delta": skip_delta,
@@ -1995,3 +2239,25 @@ def classify_amp_stability_v2_pair(
             else None
         ),
     }
+
+
+def classify_amp_stability_v2_pair(
+    receipts: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Apply the frozen official-semantics 64-batch stability-v2 rule."""
+
+    return _classify_bounded_dynamic_scaler_pair(
+        receipts,
+        protocol_profile=AMP_STABILITY_V2_PROFILE,
+    )
+
+
+def classify_amp_repair_pair(
+    receipts: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Apply the frozen no-compression DDP FP16-cast repair gate."""
+
+    return _classify_bounded_dynamic_scaler_pair(
+        receipts,
+        protocol_profile=AMP_REPAIR_PROFILE,
+    )

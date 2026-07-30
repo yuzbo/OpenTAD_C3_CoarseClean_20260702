@@ -24,10 +24,12 @@ from tools.bata.georoute_amp_diagnostic import (  # noqa: E402
     AMP_DIAGNOSTIC_PROFILE,
     AMP_DIAGNOSTIC_STAGE_SCHEMA,
     AMP_DIAGNOSTIC_STUDY_ID,
+    AMP_REPAIR_PROFILE,
     AMP_STABILITY_PROFILE,
     AMP_STABILITY_V2_PROFILE,
     amp_protocol_spec,
     classify_amp_diagnostic_pair,
+    classify_amp_repair_pair,
     classify_amp_stability_pair,
     classify_amp_stability_v2_pair,
     diagnostic_cell_relative_path,
@@ -295,9 +297,12 @@ def finalize_amp_diagnostic(
     elif protocol_profile == AMP_STABILITY_PROFILE:
         classification = classify_amp_stability_pair(receipts)
         incomplete_decision = "STABILITY_GATE_INCOMPLETE_HOLD"
-    else:
+    elif protocol_profile == AMP_STABILITY_V2_PROFILE:
         classification = classify_amp_stability_v2_pair(receipts)
         incomplete_decision = "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD"
+    else:
+        classification = classify_amp_repair_pair(receipts)
+        incomplete_decision = "DDP_FP16_CAST_REPAIR_GATE_HOLD"
     if failures and classification["decision"] != incomplete_decision:
         classification = {
             "decision": incomplete_decision,
@@ -308,10 +313,20 @@ def finalize_amp_diagnostic(
                 root_cause_localized=False,
                 repair_authorized=False,
             )
+        elif protocol_profile in {
+            AMP_STABILITY_PROFILE,
+            AMP_STABILITY_V2_PROFILE,
+        }:
+            classification.update(
+                stability_gate_passed=False,
+                official_protocol_freeze_authorized=False,
+            )
         else:
             classification.update(
                 stability_gate_passed=False,
                 official_protocol_freeze_authorized=False,
+                repair_gate_passed=False,
+                matched_formal_protocol_freeze_authorized=False,
             )
     all_arms_passed = (
         set(arms) == set(AMP_DIAGNOSTIC_ARMS)
@@ -349,6 +364,15 @@ def finalize_amp_diagnostic(
                 False,
             )
         ),
+        "repair_gate_passed": bool(
+            classification.get("repair_gate_passed", False)
+        ),
+        "matched_formal_protocol_freeze_authorized": bool(
+            classification.get(
+                "matched_formal_protocol_freeze_authorized",
+                False,
+            )
+        ),
         "performance_metrics": {},
         "performance_inference_allowed": False,
         "checkpoint_emitted": False,
@@ -372,6 +396,7 @@ def _parse_args() -> argparse.Namespace:
             AMP_DIAGNOSTIC_PROFILE,
             AMP_STABILITY_PROFILE,
             AMP_STABILITY_V2_PROFILE,
+            AMP_REPAIR_PROFILE,
         ),
         default=AMP_DIAGNOSTIC_PROFILE,
     )
@@ -492,6 +517,8 @@ def _write_failsafe(
             else "STABILITY_GATE_INCOMPLETE_HOLD"
             if args.protocol_profile == AMP_STABILITY_PROFILE
             else "OFFICIAL_SEMANTICS_AMP_STABILITY_V2_HOLD"
+            if args.protocol_profile == AMP_STABILITY_V2_PROFILE
+            else "DDP_FP16_CAST_REPAIR_GATE_HOLD"
         ),
         "study_id": spec["study_id"],
         "protocol_profile": spec["profile"],
@@ -534,10 +561,21 @@ def _write_failsafe(
                 "official_protocol_freeze_authorized": False,
                 "reason": "finalizer_failure",
             }
+            if args.protocol_profile == AMP_STABILITY_V2_PROFILE
+            else {
+                "decision": "DDP_FP16_CAST_REPAIR_GATE_HOLD",
+                "stability_gate_passed": False,
+                "official_protocol_freeze_authorized": False,
+                "repair_gate_passed": False,
+                "matched_formal_protocol_freeze_authorized": False,
+                "reason": "finalizer_failure",
+            }
         ),
         "repair_authorized": False,
         "stability_gate_passed": False,
         "official_protocol_freeze_authorized": False,
+        "repair_gate_passed": False,
+        "matched_formal_protocol_freeze_authorized": False,
         "performance_metrics": {},
         "performance_inference_allowed": False,
         "checkpoint_emitted": False,

@@ -22,12 +22,20 @@ from tools.bata.georoute_amp_diagnostic import (  # noqa: E402
     AMP_DIAGNOSTIC_FINALIZATION_SCHEMA,
     AMP_DIAGNOSTIC_PROFILE,
     AMP_DIAGNOSTIC_STUDY_ID,
+    AMP_REPAIR_INTERVENTION,
+    AMP_REPAIR_PROFILE,
+    AMP_REPAIR_REGISTERED_CLASS,
     AMP_STABILITY_FINALIZATION_SCHEMA,
     AMP_STABILITY_PROFILE,
     AMP_STABILITY_STUDY_ID,
     AMP_STABILITY_V2_PROFILE,
     amp_protocol_spec,
     validate_amp_diagnostic_job_receipt,
+)
+from tools.bata.georoute_ddp_fp16_cast_repair import (  # noqa: E402
+    KAT_PASS_STATUS as REPAIR_KAT_PASS_STATUS,
+    KAT_SCHEMA as REPAIR_KAT_SCHEMA,
+    validate_kat_receipt as validate_repair_kat_receipt,
 )
 from tools.bata.georoute_estimator_pilot_contract import (  # noqa: E402
     PILOT_ARMS,
@@ -43,6 +51,7 @@ from tools.bata.georoute_storage import storage_capacity_receipt  # noqa: E402
 
 GPU_OUTER_SLURM_ARGS = ("--gpus", "2", "--cpus-per-task", "8")
 CONTROL_SLURM_ARGS = ("--gpus", "1", "--cpus-per-task", "1")
+GRADIENT_ARMS = AMP_DIAGNOSTIC_ARMS
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -398,6 +407,126 @@ def _validate_stability_v1_parent(
     return parent
 
 
+def _validate_gradient_parent(
+    path: Path,
+    *,
+    expected_file_sha256: str,
+    expected_runtime_commit: str,
+    expected_arm_receipt_file_sha256: Mapping[str, str],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, dict[str, Any]]]:
+    # Keep the torch-dependent diagnostic module lazy so control-plane parsing
+    # and legacy profile validation do not require loading CUDA/PyTorch.
+    from tools.bata.georoute_gradient_decomposition import (
+        COMPLETE_STATUS as GRADIENT_COMPLETE_STATUS,
+        DECISION_REPAIR as GRADIENT_DECISION_REPAIR,
+        DEPLOYMENT_SCHEMA as GRADIENT_DEPLOYMENT_SCHEMA,
+        DEPLOYMENT_STATUS as GRADIENT_DEPLOYMENT_STATUS,
+        FINALIZATION_SCHEMA as GRADIENT_FINALIZATION_SCHEMA,
+        PASS_STATUS as GRADIENT_PASS_STATUS,
+        PROFILE as GRADIENT_PROFILE,
+        STUDY_ID as GRADIENT_STUDY_ID,
+        validate_receipt as validate_gradient_receipt,
+    )
+
+    if not path.is_file() or path.is_symlink():
+        raise FileNotFoundError(
+            "DDP FP16-cast repair gate requires the sealed gradient diagnosis"
+        )
+    if sha256_file(path) != expected_file_sha256:
+        raise ValueError("gradient-decomposition parent finalization changed")
+    parent = _read_json(path)
+    classification = parent.get("classification")
+    if (
+        parent.get("schema_version") != GRADIENT_FINALIZATION_SCHEMA
+        or parent.get("study_id") != GRADIENT_STUDY_ID
+        or parent.get("profile") != GRADIENT_PROFILE
+        or parent.get("status") != GRADIENT_COMPLETE_STATUS
+        or parent.get("decision") != GRADIENT_DECISION_REPAIR
+        or parent.get("runtime_commit") != expected_runtime_commit
+        or parent.get("all_arms_passed") is not True
+        or parent.get("repair_class_identified") is not True
+        or parent.get("repair_class") != AMP_REPAIR_REGISTERED_CLASS
+        or parent.get("repair_authorized") is not True
+        or not isinstance(classification, Mapping)
+        or classification.get("repair_class") != AMP_REPAIR_REGISTERED_CLASS
+        or parent.get("performance_metrics") != {}
+        or parent.get("performance_inference_allowed") is not False
+        or parent.get("official_test_opened") is not False
+        or parent.get("paper_claim_allowed") is not False
+        or not _self_hash_matches(parent, field="finalization_sha256")
+    ):
+        raise ValueError(
+            "gradient parent did not uniquely authorize DDP_FP16_CAST_OVERFLOW "
+            "repair"
+        )
+    deployment_path = Path(str(parent.get("deployment_path", ""))).resolve()
+    if (
+        not deployment_path.is_file()
+        or sha256_file(deployment_path) != parent.get("deployment_file_sha256")
+    ):
+        raise ValueError("gradient parent deployment changed")
+    deployment = _read_json(deployment_path)
+    if (
+        deployment.get("schema_version") != GRADIENT_DEPLOYMENT_SCHEMA
+        or deployment.get("status") != GRADIENT_DEPLOYMENT_STATUS
+        or deployment.get("study_id") != GRADIENT_STUDY_ID
+        or deployment.get("profile") != GRADIENT_PROFILE
+        or deployment.get("runtime_commit") != expected_runtime_commit
+        or not isinstance(deployment.get("input_receipts"), Mapping)
+        or not _self_hash_matches(deployment, field="deployment_sha256")
+    ):
+        raise ValueError("gradient parent deployment is invalid")
+
+    receipts: dict[str, dict[str, Any]] = {}
+    for arm in GRADIENT_ARMS:
+        arm_record = parent.get("arms", {}).get(arm)
+        if not isinstance(arm_record, Mapping):
+            raise ValueError(f"gradient parent lacks arm {arm}")
+        receipt_path = Path(
+            str(arm_record.get("diagnostic_receipt_path", ""))
+        ).resolve()
+        expected_hash = expected_arm_receipt_file_sha256[arm]
+        if (
+            not receipt_path.is_file()
+            or sha256_file(receipt_path) != expected_hash
+            or arm_record.get("diagnostic_receipt_file_sha256") != expected_hash
+        ):
+            raise ValueError(f"gradient parent {arm} receipt changed")
+        receipt = validate_gradient_receipt(
+            _read_json(receipt_path),
+            expected_arm=arm,
+            expected_commit=expected_runtime_commit,
+        )
+        if receipt.get("status") != GRADIENT_PASS_STATUS:
+            raise ValueError(f"gradient parent {arm} did not pass execution")
+        receipts[arm] = receipt
+    return parent, deployment, receipts
+
+
+def _validate_repair_kat(
+    path: Path,
+    *,
+    expected_file_sha256: str,
+    expected_runtime_commit: str,
+) -> dict[str, Any]:
+    if not path.is_file() or path.is_symlink():
+        raise FileNotFoundError(
+            "DDP FP16-cast repair gate requires its sealed CUDA KAT"
+        )
+    if sha256_file(path) != expected_file_sha256:
+        raise ValueError("DDP FP16-cast repair CUDA KAT changed")
+    kat = validate_repair_kat_receipt(
+        _read_json(path),
+        expected_commit=expected_runtime_commit,
+    )
+    if (
+        kat.get("schema_version") != REPAIR_KAT_SCHEMA
+        or kat.get("status") != REPAIR_KAT_PASS_STATUS
+    ):
+        raise ValueError("DDP FP16-cast repair CUDA KAT did not pass")
+    return kat
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-root", type=Path, required=True)
@@ -417,6 +546,7 @@ def _parse_args() -> argparse.Namespace:
             AMP_DIAGNOSTIC_PROFILE,
             AMP_STABILITY_PROFILE,
             AMP_STABILITY_V2_PROFILE,
+            AMP_REPAIR_PROFILE,
         ),
         default=AMP_DIAGNOSTIC_PROFILE,
     )
@@ -428,6 +558,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-stability-v1-runtime-commit")
     parser.add_argument("--official-reference-config", type=Path)
     parser.add_argument("--expected-origin-ref")
+    parser.add_argument("--parent-gradient-finalization", type=Path)
+    parser.add_argument("--expected-gradient-file-sha256")
+    parser.add_argument("--expected-gradient-runtime-commit")
+    parser.add_argument("--expected-gradient-pl-receipt-file-sha256")
+    parser.add_argument("--expected-gradient-st-receipt-file-sha256")
+    parser.add_argument("--repair-kat-receipt", type=Path)
+    parser.add_argument("--expected-repair-kat-file-sha256")
     return parser.parse_args()
 
 
@@ -460,7 +597,10 @@ def main() -> int:
     if _git_output("status", "--porcelain=v1", "--untracked-files=all"):
         raise RuntimeError("AMP diagnostic deployment requires clean source")
     expected_origin_ref = None
-    if args.protocol_profile == AMP_STABILITY_V2_PROFILE:
+    if args.protocol_profile in {
+        AMP_STABILITY_V2_PROFILE,
+        AMP_REPAIR_PROFILE,
+    }:
         expected_origin_ref = str(args.expected_origin_ref or "")
         if (
             not expected_origin_ref.startswith("refs/remotes/origin/")
@@ -470,17 +610,17 @@ def main() -> int:
             )
         ):
             raise ValueError(
-                "official-semantics stability v2 requires a full origin ref"
+                "official-prefix AMP gate requires a full origin ref"
             )
         if (
             _git_output("rev-parse", "--verify", expected_origin_ref).lower()
             != expected_commit
         ):
             raise RuntimeError(
-                "official-semantics stability v2 origin ref differs from source"
+                "official-prefix AMP gate origin ref differs from source"
             )
     elif args.expected_origin_ref is not None:
-        raise ValueError("expected-origin-ref is stability-v2 only")
+        raise ValueError("expected-origin-ref is official-prefix AMP-gate only")
     parent_path = args.parent_pilot_finalization.resolve()
     parent = _validate_parent(
         parent_path,
@@ -574,11 +714,120 @@ def main() -> int:
             args.parent_stability_v1_finalization,
             args.expected_stability_v1_file_sha256,
             args.expected_stability_v1_runtime_commit,
-            args.official_reference_config,
         )
     ):
         raise ValueError(
-            "stability-v1 parent and official reference are stability-v2 only"
+            "stability-v1 parent arguments are stability-v2 only"
+        )
+
+    gradient_parent = None
+    gradient_parent_deployment = None
+    gradient_parent_receipts = None
+    gradient_parent_path = None
+    expected_gradient_file_sha256 = None
+    expected_gradient_arm_hashes = None
+    repair_kat = None
+    repair_kat_path = None
+    expected_repair_kat_file_sha256 = None
+    if args.protocol_profile == AMP_REPAIR_PROFILE:
+        required_repair_arguments = (
+            args.parent_gradient_finalization,
+            args.expected_gradient_file_sha256,
+            args.expected_gradient_runtime_commit,
+            args.expected_gradient_pl_receipt_file_sha256,
+            args.expected_gradient_st_receipt_file_sha256,
+            args.repair_kat_receipt,
+            args.expected_repair_kat_file_sha256,
+            args.official_reference_config,
+        )
+        if any(value is None for value in required_repair_arguments):
+            raise ValueError(
+                "DDP FP16-cast repair gate requires exact gradient-parent, "
+                "CUDA KAT, and official-reference arguments"
+            )
+        gradient_parent_path = args.parent_gradient_finalization.resolve()
+        expected_gradient_file_sha256 = _full_hex(
+            args.expected_gradient_file_sha256,
+            length=64,
+            name="--expected-gradient-file-sha256",
+        )
+        expected_gradient_runtime_commit = _full_hex(
+            args.expected_gradient_runtime_commit,
+            length=40,
+            name="--expected-gradient-runtime-commit",
+        )
+        expected_gradient_arm_hashes = {
+            GRADIENT_ARMS[0]: _full_hex(
+                args.expected_gradient_pl_receipt_file_sha256,
+                length=64,
+                name="--expected-gradient-pl-receipt-file-sha256",
+            ),
+            GRADIENT_ARMS[1]: _full_hex(
+                args.expected_gradient_st_receipt_file_sha256,
+                length=64,
+                name="--expected-gradient-st-receipt-file-sha256",
+            ),
+        }
+        (
+            gradient_parent,
+            gradient_parent_deployment,
+            gradient_parent_receipts,
+        ) = _validate_gradient_parent(
+            gradient_parent_path,
+            expected_file_sha256=expected_gradient_file_sha256,
+            expected_runtime_commit=expected_gradient_runtime_commit,
+            expected_arm_receipt_file_sha256=expected_gradient_arm_hashes,
+        )
+        transitive_chain = gradient_parent_deployment.get(
+            "parent_evidence", {}
+        ).get("transitive_parent_chain", {})
+        transitive_pilot = (
+            transitive_chain.get("parent_pilot")
+            if isinstance(transitive_chain, Mapping)
+            else None
+        )
+        if (
+            not isinstance(transitive_pilot, Mapping)
+            or transitive_pilot.get("file_sha256")
+            != expected_parent_file_sha256
+            or transitive_pilot.get("runtime_commit")
+            != expected_parent_runtime_commit
+        ):
+            raise ValueError(
+                "repair gate pilot parent differs from the gradient "
+                "diagnosis transitive chain"
+            )
+        repair_kat_path = args.repair_kat_receipt.resolve()
+        expected_repair_kat_file_sha256 = _full_hex(
+            args.expected_repair_kat_file_sha256,
+            length=64,
+            name="--expected-repair-kat-file-sha256",
+        )
+        repair_kat = _validate_repair_kat(
+            repair_kat_path,
+            expected_file_sha256=expected_repair_kat_file_sha256,
+            expected_runtime_commit=expected_commit,
+        )
+    elif any(
+        value is not None
+        for value in (
+            args.parent_gradient_finalization,
+            args.expected_gradient_file_sha256,
+            args.expected_gradient_runtime_commit,
+            args.expected_gradient_pl_receipt_file_sha256,
+            args.expected_gradient_st_receipt_file_sha256,
+            args.repair_kat_receipt,
+            args.expected_repair_kat_file_sha256,
+        )
+    ):
+        raise ValueError("gradient-parent and repair-KAT arguments are repair-only")
+    if (
+        args.protocol_profile
+        not in {AMP_STABILITY_V2_PROFILE, AMP_REPAIR_PROFILE}
+        and args.official_reference_config is not None
+    ):
+        raise ValueError(
+            "official reference is only allowed for official-prefix AMP gates"
         )
 
     inputs = {
@@ -593,7 +842,10 @@ def main() -> int:
         ),
         "GEOROUTE_PRETRAINED": args.pretrained.resolve(),
     }
-    if args.protocol_profile == AMP_STABILITY_V2_PROFILE:
+    if args.protocol_profile in {
+        AMP_STABILITY_V2_PROFILE,
+        AMP_REPAIR_PROFILE,
+    }:
         inputs["GEOROUTE_OFFICIAL_REFERENCE_CONFIG"] = (
             args.official_reference_config.resolve()
         )
@@ -611,14 +863,19 @@ def main() -> int:
             raise FileNotFoundError(input_path)
     if (
         args.protocol_profile
-        in {AMP_STABILITY_PROFILE, AMP_STABILITY_V2_PROFILE}
+        in {
+            AMP_STABILITY_PROFILE,
+            AMP_STABILITY_V2_PROFILE,
+            AMP_REPAIR_PROFILE,
+        }
         and not _inside(inputs["GEOROUTE_SOURCE_CONFIG"], ROOT)
     ):
         raise ValueError(
             "AMP stability source config must come from the exact runtime checkout"
         )
     if (
-        args.protocol_profile == AMP_STABILITY_V2_PROFILE
+        args.protocol_profile
+        in {AMP_STABILITY_V2_PROFILE, AMP_REPAIR_PROFILE}
         and not _inside(inputs["GEOROUTE_OFFICIAL_REFERENCE_CONFIG"], ROOT)
     ):
         raise ValueError(
@@ -647,6 +904,26 @@ def main() -> int:
             raise ValueError(
                 "AMP stability immutable inputs differ from matched diagnostic"
             )
+    if gradient_parent_deployment is not None:
+        gradient_inputs = gradient_parent_deployment["input_receipts"]
+        if any(
+            input_receipts[name] != gradient_inputs.get(name)
+            for name in matched_parent_input_names
+        ):
+            raise ValueError(
+                "DDP FP16-cast repair inputs differ from the gradient diagnosis"
+            )
+        for name in (
+            "GEOROUTE_SOURCE_CONFIG",
+            "GEOROUTE_OFFICIAL_REFERENCE_CONFIG",
+        ):
+            if input_receipts[name]["sha256"] != gradient_inputs.get(
+                name, {}
+            ).get("sha256"):
+                raise ValueError(
+                    f"DDP FP16-cast repair {name} content differs from the "
+                    "gradient diagnosis"
+                )
 
     # All admission gates precede immutable namespace creation.
     capacity = _require_submit_capacity(additional_jobs=3)
@@ -756,7 +1033,8 @@ def main() -> int:
             "expected_origin_ref": expected_origin_ref,
             "origin_ref_parity_verified": (
                 True
-                if args.protocol_profile == AMP_STABILITY_V2_PROFILE
+                if args.protocol_profile
+                in {AMP_STABILITY_V2_PROFILE, AMP_REPAIR_PROFILE}
                 else None
             ),
             "matched_diagnostic_inputs": (
@@ -771,6 +1049,26 @@ def main() -> int:
                     ),
                 }
                 if diagnostic_parent is not None
+                else None
+            ),
+            "matched_gradient_inputs": (
+                {
+                    "exact_path_and_content_names": list(
+                        matched_parent_input_names
+                    ),
+                    "content_matched_runtime_config_names": [
+                        "GEOROUTE_SOURCE_CONFIG",
+                        "GEOROUTE_OFFICIAL_REFERENCE_CONFIG",
+                    ],
+                    "all_equal": True,
+                    "gradient_deployment_path": str(
+                        gradient_parent["deployment_path"]
+                    ),
+                    "gradient_deployment_file_sha256": gradient_parent[
+                        "deployment_file_sha256"
+                    ],
+                }
+                if gradient_parent is not None
                 else None
             ),
             "parent_pilot": {
@@ -806,6 +1104,56 @@ def main() -> int:
                 if stability_v1_parent is not None
                 else None
             ),
+            "parent_gradient_decomposition": (
+                {
+                    "path": str(gradient_parent_path),
+                    "file_sha256": expected_gradient_file_sha256,
+                    "finalization_sha256": gradient_parent[
+                        "finalization_sha256"
+                    ],
+                    "runtime_commit": gradient_parent["runtime_commit"],
+                    "decision": gradient_parent["decision"],
+                    "repair_class": gradient_parent["repair_class"],
+                    "arm_receipts": {
+                        arm: {
+                            "path": gradient_parent["arms"][arm][
+                                "diagnostic_receipt_path"
+                            ],
+                            "file_sha256": expected_gradient_arm_hashes[arm],
+                            "receipt_sha256": gradient_parent_receipts[arm][
+                                "receipt_sha256"
+                            ],
+                        }
+                        for arm in GRADIENT_ARMS
+                    },
+                }
+                if gradient_parent is not None
+                else None
+            ),
+            "repair_cuda_kat": (
+                {
+                    "path": str(repair_kat_path),
+                    "file_sha256": expected_repair_kat_file_sha256,
+                    "kat_sha256": repair_kat["kat_sha256"],
+                    "slurm_job_id": repair_kat["slurm_job_id"],
+                    "status": repair_kat["status"],
+                }
+                if repair_kat is not None
+                else None
+            ),
+            "registered_repair_intervention": (
+                {
+                    "repair_class": AMP_REPAIR_REGISTERED_CLASS,
+                    "name": AMP_REPAIR_INTERVENTION,
+                    "count": 1,
+                    "field": "solver.fp16_compress",
+                    "before": True,
+                    "after": False,
+                    "all_other_registered_factors_frozen": True,
+                }
+                if args.protocol_profile == AMP_REPAIR_PROFILE
+                else None
+            ),
             "official_reference_binding": (
                 {
                     "bound": True,
@@ -817,7 +1165,8 @@ def main() -> int:
                     ]["sha256"],
                     "full_official_training_claimed": False,
                 }
-                if args.protocol_profile == AMP_STABILITY_V2_PROFILE
+                if args.protocol_profile
+                in {AMP_STABILITY_V2_PROFILE, AMP_REPAIR_PROFILE}
                 else None
             ),
             "submit_capacity_preflight": capacity,

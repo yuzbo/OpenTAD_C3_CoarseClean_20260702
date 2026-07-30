@@ -24,6 +24,9 @@ from tools.bata.georoute_amp_diagnostic import (  # noqa: E402
     AMP_DIAGNOSTIC_PROFILE,
     AMP_DIAGNOSTIC_STAGE_SCHEMA,
     AMP_DIAGNOSTIC_STUDY_ID,
+    AMP_REPAIR_INTERVENTION,
+    AMP_REPAIR_PROFILE,
+    AMP_REPAIR_REGISTERED_CLASS,
     AMP_STABILITY_PROFILE,
     AMP_STABILITY_V2_PROFILE,
     amp_protocol_spec,
@@ -162,6 +165,36 @@ def _validate_deployment(
             raise RuntimeError(
                 "AMP stability v2 deployment lacks sealed v1 HOLD or "
                 "official-reference provenance"
+            )
+    if protocol_profile == AMP_REPAIR_PROFILE:
+        gradient_parent = deployment.get("parent_gradient_decomposition")
+        matched_inputs = deployment.get("matched_gradient_inputs")
+        official_reference = deployment.get("official_reference_binding")
+        intervention = deployment.get("registered_repair_intervention")
+        repair_kat = deployment.get("repair_cuda_kat")
+        if (
+            not isinstance(gradient_parent, Mapping)
+            or gradient_parent.get("decision")
+            != "PL_NUMERICAL_MECHANISM_LOCALIZED_REPAIR_CLASS_IDENTIFIED"
+            or gradient_parent.get("repair_class")
+            != AMP_REPAIR_REGISTERED_CLASS
+            or not isinstance(matched_inputs, Mapping)
+            or matched_inputs.get("all_equal") is not True
+            or not isinstance(official_reference, Mapping)
+            or official_reference.get("bound") is not True
+            or not isinstance(intervention, Mapping)
+            or intervention.get("name") != AMP_REPAIR_INTERVENTION
+            or intervention.get("count") != 1
+            or intervention.get("before") is not True
+            or intervention.get("after") is not False
+            or not isinstance(repair_kat, Mapping)
+            or repair_kat.get("status")
+            != "PASS_DDP_FP16_CAST_REPAIR_CUDA_KAT_ONLY"
+            or deployment.get("origin_ref_parity_verified") is not True
+        ):
+            raise RuntimeError(
+                "DDP FP16-cast repair deployment lacks its exact localized "
+                "mechanism parent or single-variable intervention"
             )
     return deployment
 
@@ -348,6 +381,7 @@ def _parse_args() -> argparse.Namespace:
             AMP_DIAGNOSTIC_PROFILE,
             AMP_STABILITY_PROFILE,
             AMP_STABILITY_V2_PROFILE,
+            AMP_REPAIR_PROFILE,
         ),
         default=AMP_DIAGNOSTIC_PROFILE,
     )
@@ -429,7 +463,8 @@ def _execute(args: argparse.Namespace) -> dict[str, Any]:
         or cfg.georoute_amp_diagnostic_binding["development_video_root"]
         != expected_inputs["GEOROUTE_DEVELOPMENT_VIDEO_ROOT"]["path"]
         or (
-            args.protocol_profile == AMP_STABILITY_V2_PROFILE
+            args.protocol_profile
+            in {AMP_STABILITY_V2_PROFILE, AMP_REPAIR_PROFILE}
             and cfg.georoute_amp_diagnostic_binding[
                 "official_reference_config_sha256"
             ]

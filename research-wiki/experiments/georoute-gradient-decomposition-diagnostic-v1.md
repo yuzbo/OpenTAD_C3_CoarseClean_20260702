@@ -3,9 +3,9 @@ type: experiment
 node_id: exp:georoute-gradient-decomposition-diagnostic-v1
 title: "GeoRoute PL/ST matched gradient decomposition diagnostic v1"
 idea: idea:geo-route-adatad
-stage: experiment_running
-status: two_arm_diagnostic_running
-verdict: ACCEPT_WITH_IMPLEMENTATION_CORRECTIONS
+stage: tested
+status: complete_repair_class_identified
+verdict: DDP_FP16_CAST_OVERFLOW
 confidence: high
 updated: 2026-07-30
 ---
@@ -97,17 +97,56 @@ self/file SHA-256
 /
 `09e2ed0ec6f6e3372871ea00f0aa610027bbedd81d098b60ea6a2529aed0e6f4`.
 
-The fresh no-resume diagnostic root is
+The sealed no-resume diagnostic root is
 `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_pl_gradient_decomposition_v1_33f721be_s7367_20260730_2300`.
-PL/ST Jobs `1207484/1207485` were released simultaneously and are running on
-separate Slurm nodes; afterany finalizer `1207486` remains dependency-held.
+PL/ST Jobs `1207484/1207485` ran simultaneously on separate Slurm nodes and
+afterany finalizer `1207486` completed; all three are `COMPLETED 0:0`.
 Deployment self/file SHA-256 are
 `9e038d872f7869cd184a1835827c61c2c3527fa565bc7928ef17824f905297a2`
 /
 `12e785c78f1fdff3d39bd83222836548f3d803990cd1c62862c07ecbcd7ecc66`.
-Initial stderr files are empty, no performance or checkpoint artifacts exist,
-and the storage/capacity gates passed. This raises the experiment only to
-`experiment_running`.
+All stderr files are empty.
+
+## Terminal result
+
+Both arms consumed 64 batches with identical data and CPU-RNG sequences,
+identical batch-zero CUDA RNG, and the registered later CUDA divergence. PL made
+61 updates and had three scaler skips at batches `2/20/29`; ST made 62 updates
+and skipped at `14/29`. Both advanced scheduler and EMA exactly 64 times with
+zero retry/replay and finite forward losses.
+
+Every PL-specific failed attempt was uniquely
+`DDP_FP16_CAST_OVERFLOW`:
+
+- analytic and actual residual-logit gradients remained finite and had positive
+  direction (cosine approximately one);
+- affected pre-hook FP32 buckets were finite with maxima
+  `76010.9/172535.8/126026.6`;
+- the detached FP16 casts introduced `1/6/1` nonfinite values;
+- the corresponding hypothetical unscaled FP32 maxima
+  `1.16/5.27/7.69` remained finite.
+
+ST's two failures were detector-only values already nonfinite in FP32 before
+the hook. They are shared-protocol stress evidence, not the cause of PL's
+scout-specific cast failures and not an estimator comparison.
+
+Finalizer status/decision are
+`COMPLETE_GRADIENT_DECOMPOSITION_DIAGNOSTIC_ONLY` /
+`PL_NUMERICAL_MECHANISM_LOCALIZED_REPAIR_CLASS_IDENTIFIED`; the unique repair
+class is `DDP_FP16_CAST_OVERFLOW`. Finalization self/file SHA-256 are
+`52d4dfd698ed0679a976e6d468fb4b0d1ede9ea630df32f808115c9f118f681e`
+/
+`816819086374f964264d3a8bb4810842f97ef554d5661d2ec4a6b85fd135bc9c`.
+All deployment, release, arm receipt, stage and finalization self-hashes were
+independently recomputed. The 22,072,228-byte namespace contains zero
+checkpoint, prediction, metric, evaluator/NMS, official-test, latency, energy
+or temporary artifacts.
+
+This authorizes one preregistered communication-precision repair and a new
+no-performance gate only. The selected minimal repair is to disable DDP FP16
+compression for the entire matched native family; it leaves the estimator and
+objective unchanged and avoids adding BF16 hardware/quantization as a second
+variable.
 
 ## Decision boundary
 

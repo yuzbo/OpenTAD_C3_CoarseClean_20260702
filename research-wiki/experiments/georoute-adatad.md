@@ -843,17 +843,30 @@ class authorizes only one minimal repair followed by a new no-performance gate.
 It cannot produce or authorize mAP, cost, official-test, Geometry Zoom, P2/P3,
 or paper claims.
 
-That diagnosis is now `experiment_running` at exact source
+That diagnosis is terminal `tested` at exact source
 `33f721be83e0ad7f7a36e853491e7a14f148814b`, after the clean remote suite
-passed `162/162` and same-commit CUDA/DDP KAT Job `1207480` passed. Its fresh
+passed `162/162` and same-commit CUDA/DDP KAT Job `1207480` passed. Its sealed
 root is
 `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_pl_gradient_decomposition_v1_33f721be_s7367_20260730_2300`;
-PL/ST Jobs `1207484/1207485` run in parallel and afterany finalizer `1207486`
-is dependency-held. Deployment self/file SHA-256 are
-`9e038d872f7869cd184a1835827c61c2c3527fa565bc7928ef17824f905297a2`
+PL/ST/finalizer Jobs `1207484/1207485/1207486` all completed `0:0`.
+All three PL failures were finite FP32 pre-hook buckets made nonfinite by the
+FP16 cast, so finalizer uniquely identified `DDP_FP16_CAST_OVERFLOW`.
+Finalization self/file SHA-256 are
+`52d4dfd698ed0679a976e6d468fb4b0d1ede9ea630df32f808115c9f118f681e`
 /
-`12e785c78f1fdff3d39bd83222836548f3d803990cd1c62862c07ecbcd7ecc66`.
-This remains a mechanism diagnosis with all metric/test/paper surfaces closed.
+`816819086374f964264d3a8bb4810842f97ef554d5661d2ec4a6b85fd135bc9c`.
+This authorizes only a new matched no-performance gate with DDP FP16
+compression disabled across the native family; all metric/test/paper surfaces
+remain closed.
+
+The authorized successor is implemented as
+`exp:georoute-ddp-fp16-cast-repair-gate-v1`. It freezes independent seed `2307`,
+the same two residual PL/ST arms, 64 real batches, default GradScaler,
+scheduler/EMA per consumed batch and the stability-v2 skip/scale/tail pairwise
+rule. The sole intervention is disabling DDP FP16 communication in both arms.
+A real same-commit CUDA/DDP KAT is mandatory before deployment. The gate cannot
+emit performance artifacts; only a complete pairwise pass may authorize
+freezing a later official-comparable multi-seed protocol.
 
 ## Frozen decision logic
 

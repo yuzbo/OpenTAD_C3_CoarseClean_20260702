@@ -1948,3 +1948,39 @@ append_only: true
   Initial stderr is empty and all checkpoint/prediction/metric/evaluator/test/
   performance/paper surfaces remain closed. This is `experiment_running`, not a
   performance result.
+
+- 2026-07-30: the gradient-decomposition DAG reached a complete sealed terminal
+  state. PL/ST/finalizer Jobs `1207484/1207485/1207486` all completed `0:0`;
+  stderr and fatal-signature scans are empty. Both arms consumed 64 matched
+  batches with finite forward losses, zero retry/replay and 64 scheduler/EMA
+  advances. PL completed 61 updates and skipped at `2/20/29`; all three failures
+  had finite analytic/actual residual-logit gradients, finite FP32 pre-hook
+  buckets and first became nonfinite in the detached FP16 cast, so every one was
+  uniquely `DDP_FP16_CAST_OVERFLOW`. ST completed 62 updates and had
+  detector-only FP32 pre-hook failures at `14/29`; these do not explain PL's
+  scout-specific cast failures.
+
+- 2026-07-30: finalizer `1207486` sealed
+  `COMPLETE_GRADIENT_DECOMPOSITION_DIAGNOSTIC_ONLY /
+  PL_NUMERICAL_MECHANISM_LOCALIZED_REPAIR_CLASS_IDENTIFIED`, repair class
+  `DDP_FP16_CAST_OVERFLOW`. Finalization self/file SHA-256 are
+  `52d4dfd698ed0679a976e6d468fb4b0d1ede9ea630df32f808115c9f118f681e`
+  /
+  `816819086374f964264d3a8bb4810842f97ef554d5661d2ec4a6b85fd135bc9c`.
+  Independently recomputed all deployment/release/receipt/stage/finalizer
+  self-hashes; the 22,072,228-byte namespace has zero checkpoint, prediction,
+  metric, evaluator/NMS, official-test, latency, energy or temporary artifacts.
+  This authorizes only one preregistered repair: disable DDP FP16 compression
+  for every matched native arm and run a fresh independent-seed no-performance
+  gate. No performance, P2/P3, Geometry Zoom or paper claim is open.
+
+- 2026-07-30: preregistered and implemented
+  `georoute_ddp_fp16_cast_repair_gate_v1`. The mechanically derived independent
+  seed is `2307`; both matched PL/ST arms inherit the 64-batch
+  official-prefix dynamic-GradScaler protocol and thresholds. The only changed
+  factor is `solver.fp16_compress=false` in both arms. Added an exact
+  gradient-parent admission gate and a same-commit real CUDA/DDP KAT that must
+  preserve a finite scaled FP32 gradient of `70000` without a communication
+  hook while a detached FP16 shadow overflows. Focused local AMP/repair tests
+  pass `32/32`. Remote clean-source validation, KAT and Slurm execution remain
+  pending; no performance surface is open.
