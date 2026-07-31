@@ -12,10 +12,24 @@ from typing import Any, Mapping
 
 GEOROUTE_STORAGE_SCHEMA = "georoute_storage_preflight_v1"
 GIB = 1024**3
+MIB = 1024**2
 DEFAULT_PERSISTENT_BYTES_PER_CELL = 4 * GIB
 DEFAULT_ATOMIC_TEMP_BYTES_PER_CELL = 2 * GIB
 DEFAULT_RESERVE_BYTES = 32 * GIB
 GEOROUTE_STORAGE_PROFILE_SCHEMA = "georoute_storage_profile_v1"
+GEOROUTE_NO_ARTIFACT_STORAGE_SCHEMA = (
+    "georoute_no_artifact_storage_preflight_v1"
+)
+NO_ARTIFACT_BYTES_PER_LEAF = 512 * MIB
+NO_ARTIFACT_FIXED_OVERHEAD_BYTES = 1 * GIB
+NO_ARTIFACT_RESERVE_BYTES = 24 * GIB
+NO_ARTIFACT_FORBIDDEN_OUTPUTS = (
+    "checkpoint",
+    "prediction",
+    "metric",
+    "evaluator",
+    "official_test",
+)
 
 
 def _positive_env_bytes(name: str, default: int) -> int:
@@ -138,5 +152,63 @@ def storage_capacity_receipt(
             "GeoRoute aggregate storage preflight failed: "
             f"free={free_bytes}, required={required_bytes}, "
             f"cells={cell_count}, anchor={anchor}"
+        )
+    return receipt
+
+
+def no_artifact_storage_capacity_receipt(
+    path: str | Path,
+    *,
+    leaf_count: int,
+) -> dict[str, Any]:
+    """Guard a preflight whose contract forbids every large model artifact.
+
+    Unlike a training cell, an official-comparability preflight may not write a
+    checkpoint, prediction, metric, evaluator output, or official-test output.
+    Reusing the training-cell estimate would reserve atomic checkpoint copies
+    that the protocol makes impossible.  This fixed, non-environment-tunable
+    profile still holds 512 MiB per leaf, 1 GiB of shared overhead, and a
+    24-GiB filesystem reserve.
+    """
+
+    if int(leaf_count) <= 0:
+        raise ValueError("GeoRoute no-artifact leaf_count must be positive")
+    target = Path(path).resolve()
+    anchor = _existing_anchor(target)
+    if hasattr(os, "statvfs"):
+        stat = os.statvfs(anchor)
+        free_bytes = int(stat.f_bavail) * int(stat.f_frsize)
+    else:
+        free_bytes = int(shutil.disk_usage(anchor).free)
+    required_bytes = (
+        int(leaf_count) * NO_ARTIFACT_BYTES_PER_LEAF
+        + NO_ARTIFACT_FIXED_OVERHEAD_BYTES
+        + NO_ARTIFACT_RESERVE_BYTES
+    )
+    receipt = {
+        "schema_version": GEOROUTE_NO_ARTIFACT_STORAGE_SCHEMA,
+        "target_path": str(target),
+        "measured_anchor": str(anchor),
+        "leaf_count": int(leaf_count),
+        "artifact_policy": "NO_LARGE_ARTIFACTS_ALLOWED",
+        "forbidden_outputs": list(NO_ARTIFACT_FORBIDDEN_OUTPUTS),
+        "bytes_per_leaf": NO_ARTIFACT_BYTES_PER_LEAF,
+        "fixed_overhead_bytes": NO_ARTIFACT_FIXED_OVERHEAD_BYTES,
+        "reserve_bytes": NO_ARTIFACT_RESERVE_BYTES,
+        "required_free_bytes": required_bytes,
+        "observed_free_bytes": free_bytes,
+        "headroom_after_required_bytes": free_bytes - required_bytes,
+        "atomic_publish_peak_included": False,
+        "status": (
+            "PASS_STORAGE_PREFLIGHT"
+            if free_bytes >= required_bytes
+            else "FAIL_STORAGE_PREFLIGHT"
+        ),
+    }
+    if free_bytes < required_bytes:
+        raise RuntimeError(
+            "GeoRoute no-artifact storage preflight failed: "
+            f"free={free_bytes}, required={required_bytes}, "
+            f"leaves={leaf_count}, anchor={anchor}"
         )
     return receipt

@@ -265,6 +265,7 @@ def test_slurm_world2_gate_uses_two_logical_gpus_without_physical_indices():
     assert '"--mem"' not in deployer
     assert "additional_jobs=4" in deployer
     assert "OFFICIAL_UPSTREAM_TRACKING_REF" in deployer
+    assert "no_artifact_storage_capacity_receipt" in deployer
 
 
 def test_formal_development_dag_reserves_all_fifteen_cells_plus_finalizer():

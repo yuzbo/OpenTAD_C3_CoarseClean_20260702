@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from tools.bata.georoute_storage import storage_capacity_receipt
+from tools.bata.georoute_storage import (
+    GIB,
+    GEOROUTE_NO_ARTIFACT_STORAGE_SCHEMA,
+    no_artifact_storage_capacity_receipt,
+    storage_capacity_receipt,
+)
 
 
 def _profile(commit: str) -> dict:
@@ -41,3 +46,23 @@ def test_storage_preflight_binds_same_commit_profile_and_atomic_peak(tmp_path: P
             storage_profile=_profile(commit),
             expected_commit="b" * 40,
         )
+
+
+def test_no_artifact_preflight_does_not_reserve_impossible_checkpoints(
+    tmp_path: Path,
+):
+    receipt = no_artifact_storage_capacity_receipt(tmp_path, leaf_count=2)
+    assert receipt["schema_version"] == GEOROUTE_NO_ARTIFACT_STORAGE_SCHEMA
+    assert receipt["status"] == "PASS_STORAGE_PREFLIGHT"
+    assert receipt["artifact_policy"] == "NO_LARGE_ARTIFACTS_ALLOWED"
+    assert receipt["required_free_bytes"] == 26 * GIB
+    assert receipt["atomic_publish_peak_included"] is False
+    assert set(receipt["forbidden_outputs"]) == {
+        "checkpoint",
+        "prediction",
+        "metric",
+        "evaluator",
+        "official_test",
+    }
+    with pytest.raises(ValueError, match="leaf_count"):
+        no_artifact_storage_capacity_receipt(tmp_path, leaf_count=0)

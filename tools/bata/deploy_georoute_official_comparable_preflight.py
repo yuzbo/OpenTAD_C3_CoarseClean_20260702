@@ -44,7 +44,9 @@ from tools.bata.georoute_official_comparable_contract import (  # noqa: E402
     build_protocol_manifest,
     read_json,
 )
-from tools.bata.georoute_storage import storage_capacity_receipt  # noqa: E402
+from tools.bata.georoute_storage import (  # noqa: E402
+    no_artifact_storage_capacity_receipt,
+)
 
 
 BOUNDARY = Path("/data/run01/sczc063/yuzibo")
@@ -349,7 +351,10 @@ def main() -> int:
     }
 
     capacity = _require_submit_capacity(additional_jobs=4)
-    storage = storage_capacity_receipt(run_root, cell_count=2)
+    storage = no_artifact_storage_capacity_receipt(
+        run_root,
+        leaf_count=len(AMP_DIAGNOSTIC_ARMS),
+    )
     stage_script = ROOT / "scripts" / "run_georoute_amp_diagnostic_stage_slurm.sh"
     kat_script = (
         ROOT / "scripts" / "run_georoute_official_world2_ddp_kat_slurm.sh"
