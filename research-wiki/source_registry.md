@@ -19,6 +19,8 @@
 | U-PRO-PURE-PLUGIN-1 | `C:/Users/skywalker/.codex/attachments/80ec2ddd-9eed-4e97-ac1d-8be0c3071fd5/pasted-text.txt` | selected-axis pure-plugin architecture adjudication, AdapTok competition audit, replacement admission-v2 and experiment DAG | fully read; core scientific verdict accepted, implementation details independently adjudicated |
 | U-PRO-ADMISSION-V21-1 | `C:/Users/skywalker/.codex/attachments/d63bb109-7f99-4078-acc9-1bbdf6e895b2/pasted-text.txt`; SHA-256 `40a42ad184391ebb89f54d3adbdc972d3370294f870bc8cd59b19d90863893c8`; 45,892 bytes | full Admission-v2 audit and proposed real-video crossed-null v2.1 protocol | fully read; current formal v2 NO-GO and core repair direction accepted; fixed window coverage, crossed bound, NI-margin and hard-isolation details rejected pending correction |
 | U-PRO-V21-FINAL-1 | `C:/Users/skywalker/.codex/attachments/934f541a-db6e-4bc8-94cc-272905f3d42c/pasted-text.txt`; SHA-256 `9e7efa045f0b2a01dfc52755a6376205346bf76673483b61573dd55951d7c871`; 94,487 bytes | bounded Admission v2.1, full-200 refit and H-RIME final adjudication | fully read; architecture/role/NI/refit/oracle-order decisions accepted; crossed-bootstrap, catastrophic max-ratio, MC-stability and mandatory admin-isolation rules require a final corrigendum |
+| U-PRO-V21-CORRIGENDUM-1 | `C:/Users/skywalker/.codex/attachments/39eb4169-2000-4a3e-ba57-5bfe441bab1f/pasted-text.txt`; SHA-256 `12a324b2eb43086397a0e54d5c64dae84c86fec96cef03ab0c8decc095cc7f37`; 67,868 bytes | proposed final statistical-protocol corrigendum for Admission v2.1 | fully read; positive multiplier, fixed estimating equation, fixed-scale maxT, structural/tail split and threat-model direction accepted; direct implementation rejected pending canonical order, triplet estimand, multiplier scaling, non-vacuity/MC calibration and closed receipt correction |
+| P-OWEN-ECKLES-1 | `https://arxiv.org/abs/1106.2125`; published as `https://doi.org/10.1214/12-AOAS547` | primary source for product reweighting of crossed arrays | directly verified; supports independent factor product weights and qualified mild conservatism, not the proposed `sqrt(V/(V-1))*sqrt(P/(P-1))` scalar |
 | C-OPENTAD-THUMOS-SPLIT-1 | `tools/prepare_data/thumos/README.md`; upstream `https://github.com/sming256/OpenTAD/blob/main/tools/prepare_data/thumos/README.md` | OpenTAD THUMOS evaluation-set definition | directly verified; two malformed/empty test videos excluded, complete registered evaluation set is 211 videos |
 
 `U-PRO-CBCG-1` was read in full. Its route analysis is retained as an external
@@ -73,3 +75,15 @@ not a calibrated Monte Carlo error measure, and the catastrophic max-over-max
 ratio is sample-count dependent. Mandatory administrator network/mount
 attestation also requires an explicit threat model and cluster-feasibility
 decision before it can become a scientific hard gate.
+
+`U-PRO-V21-CORRIGENDUM-1` was read in full and independently checked against
+the repository and Owen--Eckles primary source. Its positive factor
+multipliers, fixed equal-video estimating equation, fixed-scale maxT name,
+deterministic MC extension, structural/numeric-tail separation and scoped
+threat model are retained. It is not implementation-ready as written. Manifest
+rank conflicts with its own row-permutation invariant; tail pseudocode stores a
+calibration/holdout pair as a `video_id`; the asserted finite-level scalar
+inflates already-conservative variance gains; the simulation registry is
+under-specified and coverage-only; and the runtime receipt is not a closed
+authorization schema. The exact independent audit and next Pro contract are in
+`docs/superpowers/plans/2026-07-31-duca-v2-1-corrigendum-independent-audit.md`.

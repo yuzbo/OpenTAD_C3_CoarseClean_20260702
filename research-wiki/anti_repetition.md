@@ -348,3 +348,28 @@ These failures and naming mistakes must not be repeated.
      merely because its report says `GO_IMPLEMENT`. Mathematical definitions,
      code behavior and operational feasibility must survive independent
      adjudication first.
+103. Do not assign a sparse incidence from mutable input-row rank while claiming
+     row-permutation invariance. Derive rank from a fully specified immutable,
+     candidate-independent canonical order and bind that order into the
+     incidence and stream hashes.
+104. Do not store a calibration/holdout pair or triplet in a `video_id` field.
+     Distinct videos remain distinct identities. If a paired/block-randomized
+     contrast is selected, declare the pair as the resampling block, record
+     every member explicitly and justify the target estimand.
+105. Do not call `sqrt(V/(V-1))*sqrt(P/(P-1))` an established finite-cluster
+     correction for product reweighting. On the frozen 32-by-8 graph it further
+     inflates already-conservative row, process and interaction variance gains.
+     Any multiplier scale requires a derivation plus coverage and non-vacuity
+     certification before candidate data exist.
+106. Do not accept a crossed-bootstrap simulation from coverage alone. Freeze
+     the complete data-generating registry and require bound width/non-vacuity,
+     finite-shift power or sensitivity, false-alarm and MC-half-width
+     calibration in addition to simultaneous coverage.
+107. Do not treat a delete-one-batch jackknife hand fixture as calibration of
+     Monte Carlo error for a nonsmooth maxT order statistic and joint bounds.
+     Validate its claimed confidence against independent repeated streams or
+     another preregistered reference before it has authorization authority.
+108. Do not let receipt strings act as free-form evidence. Status, control
+     classification and claim state require closed enums, unique control IDs,
+     parent/planned-cell bindings and cross-field invariants that make
+     authorization impossible when a required attestation is missing.

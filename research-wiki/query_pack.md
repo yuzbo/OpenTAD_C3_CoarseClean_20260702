@@ -1,13 +1,16 @@
 # DUCA-RIME Current Query Pack
 
-Last updated: `2026-07-30`
+Last updated: `2026-07-31`
 
 ## Current decision
 
-The user approved a bounded Pro adjudication. `U-PRO-V21-FINAL-1` has now been
-read in full. Its paper architecture, role-level coverage, margin-free
-Admission, full-200 refit, H-RIME ordering and AdapTok boundaries are accepted,
-but its statistical protocol is not accepted verbatim. The paper mainline
+The user approved a bounded Pro adjudication and supplied its proposed final
+statistical corrigendum. `U-PRO-V21-CORRIGENDUM-1` has now been read in full and
+independently audited against the live repository and the Owen--Eckles primary
+source. Its architecture boundary, role-level coverage, margin-free Admission,
+positive multiplier direction, fixed estimating equation, fixed-scale maxT
+name, structural/tail split, MC-extension direction and scoped threat model are
+accepted, but the protocol is still not implementation-ready. The paper mainline
 remains an **offline TAD pure selected-axis pre-backbone acquisition plugin**.
 Physical-time head injection is a separately named integration/diagnostic
 route and cannot support the pure-plugin claim. This is not Online TAD and is
@@ -18,10 +21,10 @@ Current evidence level:
 | Item | State |
 |---|---|
 | Scientific route | `user_approved` |
-| Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 + U-PRO-ADMISSION-V21-1 + U-PRO-V21-FINAL-1 / core_decisions_accepted / final_statistical_corrigendum_required` |
+| Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 + U-PRO-ADMISSION-V21-1 + U-PRO-V21-FINAL-1 + U-PRO-V21-CORRIGENDUM-1 / core_decisions_accepted / proposed_corrigendum_not_implementation_ready` |
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
-| Acquisition admission-v2.1 | `stage0_fail_closed_slice_implemented / roles_and_margin_policy_decided / production_protocol_blocked_by_crossed_uncertainty_catastrophic_tail_and_isolation_corrigendum` |
+| Acquisition admission-v2.1 | `stage0_fail_closed_slice_implemented / production_protocol_code_not_started / blocked_by_canonical_order_triplet_estimand_multiplier_scaling_mc_nonvacuity_and_closed_receipt` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -136,14 +139,36 @@ sample counts and can be unstable. The additional mandatory administrator
 network/mount attestation also needs an explicit threat model and N16R4
 feasibility decision.
 
-The next discussion is therefore a narrow statistical-protocol corrigendum,
-not another architecture/innovation round. Its exact contract is recorded in
-`docs/superpowers/plans/2026-07-30-duca-v2-1-pro-response-adjudication.md`.
-Until it returns an implementation-ready decision, production Admission v2.1,
-Phase 1, learned H-RIME, full-200 artifact generation and official-final remain
-unauthorized. Exact-clean Linux/PyTorch code gating, read-only metadata checks,
-candidate-free statistical simulations and cluster-isolation feasibility
-checks may proceed independently.
+That audit requested a narrow statistical-protocol corrigendum, not another
+architecture/innovation round. Its input contract is retained in
+`docs/superpowers/plans/2026-07-30-duca-v2-1-pro-response-adjudication.md` as
+the provenance for the returned response below.
+
+The returned corrigendum `U-PRO-V21-CORRIGENDUM-1` resolves the earlier
+positive-weight, fixed-denominator, naming, structural-tail and threat-model
+questions, but independent audit gives `NO_GO_PROTOCOL_IMPLEMENTATION_AS_WRITTEN`.
+Five P0s remain:
+
+1. incidence depends on manifest row rank while a mandatory test requires row
+   permutation invariance;
+2. calibration/holdout tail pseudocode assigns a triplet/block to `video_id`,
+   silently changing the declared video statistical unit;
+3. `kappa^2=(32/31)(8/7)` is not derived by the cited product-bootstrap theory
+   and inflates exact variance gains from `117/64`, `69/64`, `181/64` to
+   `468/217`, `276/217`, `724/217`;
+4. the simulation registry is not fully reproducible and coverage-only can
+   accept a vacuously conservative method; the batch-jackknife MC certificate
+   is not calibrated for maxT quantiles and bounds;
+5. runtime receipt enums, cross-field authorization invariants, planned-cell
+   bindings and cluster attestations are not closed.
+
+The next and only needed discussion is one narrower correction, not another
+model-innovation review. Its exact input, required decisions and post-decision
+implementation order are frozen in
+`docs/superpowers/plans/2026-07-31-duca-v2-1-corrigendum-independent-audit.md`.
+Until that contract returns implementation-ready, no v2.1 protocol code,
+production worker, holdout access, Phase 1, H-RIME training, full-200 artifact
+or official-final action is authorized.
 
 ## Paper responsibility
 
@@ -839,25 +864,32 @@ Until those artifacts exist, the correct status is `implemented/tested` or
 Current priority, superseding the operational order below while retaining it as
 negative-history context:
 
-1. Publish the fail-closed Admission-v2 Stage-0 correction and metadata
-   feasibility auditor as one exact clean commit on
-   `codex/duca-rime-20260727`.
-2. Run the authoritative Linux/PyTorch Slurm code gate from a fresh clean
-   checkout. Local Windows Torch is not evidence because `c10.dll` cannot load.
-3. Do not launch calibration or Phase 1. First freeze corrected definitions for
-   role-level natural full/short coverage, the exact sparse crossed-bootstrap
-   algorithm and catastrophic bound, a scientifically justified NI margin, and
-   enforced-versus-observed runtime isolation.
-4. Only after that decision, implement the real inventory/roles/windows/targets,
+1. Keep the existing old-v2 and v2.1 Stage-0 paths fail-closed; do not modify
+   their authorization semantics.
+2. Run exactly one narrow Pro correction using
+   `docs/superpowers/plans/2026-07-31-duca-v2-1-corrigendum-independent-audit.md`.
+   It must close canonical ordering, the tail contrast's statistical unit,
+   crossed-multiplier scaling, a reproducible non-vacuous simulation/MC
+   contract and the runtime receipt invariants.
+3. Do not write v2.1 production protocol code, launch calibration or start
+   Phase 1 before that correction is accepted.
+4. After acceptance, implement deterministic candidate-free role/incidence,
+   pure-statistics and receipt modules first. All authorization fields remain
+   false through this slice.
+5. Run unit/property checks and the fully registered candidate-free
+   coverage/non-vacuity/power/MC-calibration grid before any real-video worker.
+6. Run the authoritative exact-clean Linux/PyTorch/Slurm runtime gate from a
+   fresh checkout. Local Windows Torch is not runtime evidence.
+7. Only after a separate production release decision, implement the real inventory/roles/windows/targets,
    independent geometry, full-model executor pair, immutable raw shards,
    grouped aggregation, typed scientific protocol and v2.1 verifier.
-5. Run scale-fit, calibration and disjoint admission holdout only through a new
+8. Run scale-fit, calibration and disjoint admission holdout only through a new
    exact-commit Slurm DAG with success and failure receipts. FP32 remains
    diagnostic and cannot rescue AMP.
-6. Only a verified `duca_acquisition_admission_v2_1` passed receipt may release
+9. Only a verified `duca_acquisition_admission_v2_1` passed receipt may release
    `DUCA-P1-V2-PURE-PLUGIN-CLOSURE`. Admission itself remains engineering and
    scientific-entry evidence, not a performance result.
-7. Do not begin Phase 2/3, learned H-RIME, Phase 4 or official-final until their
+10. Do not begin Phase 2/3, learned H-RIME, Phase 4 or official-final until their
    previously registered terminal prerequisites pass. Recovery-v6 remains
    immutable failed history and is never reclassified.
 

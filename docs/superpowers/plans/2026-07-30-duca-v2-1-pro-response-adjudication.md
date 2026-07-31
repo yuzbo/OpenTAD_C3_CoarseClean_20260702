@@ -2,7 +2,7 @@
 
 Date: `2026-07-30`
 
-Status: `conditional_accept_with_statistical_corrigendum_required`
+Status: `corrigendum_returned_but_not_implementation_ready`
 
 Source: `U-PRO-V21-FINAL-1`
 
@@ -21,6 +21,11 @@ proposed uncertainty and catastrophic gates are not yet implementation-ready.
 The report therefore authorizes a final protocol-correction discussion and
 pure engineering checks; it does not yet authorize production Admission v2.1,
 Phase 1, formal training, learned H-RIME, Phase 4, or official-final.
+
+The requested response returned as `U-PRO-V21-CORRIGENDUM-1`. Independent
+audit found five remaining P0 issues and supersedes the execution decision in
+this document. See
+`docs/superpowers/plans/2026-07-31-duca-v2-1-corrigendum-independent-audit.md`.
 
 The correct current evidence statement remains:
 
@@ -298,4 +303,3 @@ Only after the corrigendum returns an implementation-ready `GO`:
 8. implement real-video/full-model process workers and the held Slurm DAG;
 9. run scale-fit, seal calibration, and open holdout once;
 10. release Phase 1 only from a verified v2.1 receipt.
-

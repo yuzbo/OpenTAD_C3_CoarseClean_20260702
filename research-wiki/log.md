@@ -1,5 +1,42 @@
 # Research Log
 
+## 2026-07-31 — Proposed v2.1 corrigendum independently rejected as implementation-ready
+
+- Fully read and hash-registered `U-PRO-V21-CORRIGENDUM-1`:
+  `C:/Users/skywalker/.codex/attachments/39eb4169-2000-4a3e-ba57-5bfe441bab1f/pasted-text.txt`,
+  SHA-256
+  `12a324b2eb43086397a0e54d5c64dae84c86fec96cef03ab0c8decc095cc7f37`,
+  67,868 bytes.
+- Verified the live local/GitHub branch identity at
+  `d3e9814afd16739dadc273f181deb9a065c151d4`, tree
+  `c2f74b963bc6291b96a3d18133fb90c9eb3e3901`, with a clean worktree before
+  this documentation update.
+- Accepted the positive factor-multiplier direction, fixed equal-video
+  estimating equation, fixed-scale maxT naming, deterministic MC extension,
+  structural/numeric-tail separation and scoped trusted-program threat model.
+- Did not accept `protocol_implementation = GO` as written. The incidence uses
+  mutable manifest row rank while demanding row-permutation invariance; the
+  tail pseudocode puts a calibration/holdout block in `video_id`; role/triplet
+  formation and reserve assignment are not byte-level deterministic.
+- Independently checked the proposed finite scalar on the exact 32-by-8 graph.
+  Product weighting without the scalar has expected row/process/interaction
+  variance gains `117/64`, `69/64`, and `181/64`. Multiplying by
+  `(32/31)(8/7)` changes them to `468/217`, `276/217`, and `724/217`.
+  Owen--Eckles supports product factor weights and qualified conservatism, not
+  this asserted finite-level scalar.
+- Found that the coverage grid is not fully reproducible and has no
+  non-vacuity/power acceptance, while the batch-jackknife MC half-width is not
+  calibrated for the nonsmooth maxT quantile and joint bounds.
+- Found that runtime receipt enums, planned-cell/parent bindings,
+  status-to-authorization invariants and cluster attestations remain open.
+- Recorded the final narrow correction contract and a ready-to-send Pro prompt
+  in
+  `docs/superpowers/plans/2026-07-31-duca-v2-1-corrigendum-independent-audit.md`.
+  No protocol/model code, real-video worker, holdout, training, full-200 refit
+  or official-final action was started.
+- Evidence status remains
+  `No paper-admissible empirical conclusion is available yet`.
+
 ## 2026-07-30 — Final v2.1 Pro response conditionally accepted; statistical corrigendum required
 
 - Fully read and hash-registered `U-PRO-V21-FINAL-1`:
