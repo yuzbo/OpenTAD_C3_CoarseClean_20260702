@@ -896,7 +896,7 @@ differs from the exact official AdaTAD communication setting, the final receipt
 correctly leaves `official_protocol_freeze_authorized=false`; no
 official-comparable performance experiment or paper claim is open yet.
 
-## Official-comparable protocol v1 (implemented, preflight pending)
+## Official-comparable protocol v1 (F0 passed, F1 admission pending)
 
 The authorized protocol is now implemented as
 `exp:georoute-official-comparable-protocol-v1`. It pins upstream OpenTAD release
@@ -912,18 +912,23 @@ single-rank batch-2 resource stresses over 32 real batches plus a two-rank
 default-FP32-DDP reduction KAT. It emits no metric/checkpoint/prediction/
 evaluator/test evidence. Only all-three PASS can authorize F1.
 
-Exact source `4a03339b13b0f65047ed0349615889ade06050e8` passed remote Linux
-focused `105/105` and complete GeoRoute `153/153`, and its current/upstream
-snapshots passed full commit/ref/clean/hash verification. The first F0 root
-`georoute_official_comparable_preflight_v1_4a03339b_20260731_1145` is
-mechanically incomplete: world-two KAT Job `1209274` failed before Python/CUDA
-because its inner 192-GB step exceeded the outer default memory allocation.
-PL/ST `1209272/1209273` continue only to allow after-any finalizer `1209275` to
-seal complete provenance. This is not ST/PL evidence. N16R4 test-only probes
-showed that the site rejects explicit memory overrides and assigns 55 GB per
-GPU. The resource-only replacement requests two GPUs at the outer job and lets
-the inner step inherit that allocation; it must run from a new exact source
-and namespace, and F1 remains closed.
+The first source-`4a03339b` F0 remains sealed incomplete because its world-two
+KAT never entered Python. The corrected exact source
+`3d8c2b487fa983d6d6240b347177cc423a37748b` passed remote focused `25/25`,
+complete GeoRoute `154/154`, source parity, and fresh F0 Jobs
+`1209309/1209310/1209311/1209312`. PL/ST each completed 32 matched batches with
+one default-scaler skip, final scale `32768`, and a successful final-16 tail;
+the world-two default FP32 DDP KAT passed. Finalization internal/file SHA-256
+are `313da95faeae9e600965fe4ac5c7ad5816f652d5ff2c97cf9734f7028d888a3c` /
+`22f5dcab4c19d843bc807c5dd60e5f97605378617f67d3a3f507a7a768c57679`,
+with `FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`. No performance or official-test
+artifact exists.
+
+F1 is scientifically authorized but physically unsubmitted: current admission
+is `active=2, required=16, limit=16`, and storage is `31,646,543,872` free
+versus `130,996,502,528` required. The matrix is not split, unrelated
+EventMATR/DUCA jobs are not cancelled, and the training storage gate is not
+relaxed.
 
 F1 freezes five arms (native dense, fixed K64, random K64, residual ST K64,
 residual ordered-PL K64) across seeds 3407/3408/3409, 60 epochs, official

@@ -376,19 +376,22 @@ max_chars: 8000
   dominance. Ambiguity is `HOLD_NO_OFFICIAL_TEST`; Geometry is excluded. A
   later F2 still requires the official reproduction/bridge stack, complete
   decode-to-NMS cost and one separately sealed official-test open.
-  Exact source `4a03339b13b0f65047ed0349615889ade06050e8` passed remote Linux
-  focused `105/105` and all GeoRoute `153/153` checks, and both its source
-  snapshot and pinned upstream `01c58b9` snapshot were verified against full
-  HEAD/origin ref/clean-tree/config hashes. Its first F0 deployment is not
-  scientific evidence: KAT Job `1209274` failed before Python/CUDA because an
-  inner `srun --mem=192000M` exceeded the outer job's default memory
-  allocation. PL/ST `1209272/1209273` and finalizer `1209275` only close the
-  namespace. Test-only probes showed that N16R4 rejects every explicit
-  `--mem` override and accepts the site contract that assigns 55 GB per
-  requested GPU. The new-source/new-namespace replacement therefore requests
-  two GPUs once and makes the inner KAT inherit that allocation; no model,
-  data, seed, threshold or selector changes. F1 remains closed until that
-  replacement F0 passes completely.
+  Exact source `3d8c2b487fa983d6d6240b347177cc423a37748b` passed remote Linux
+  focused `25/25` and all GeoRoute `154/154`; source and pinned upstream
+  `01c58b9` snapshots have full HEAD/origin-ref/clean/config parity. Fresh F0
+  root `georoute_official_comparable_preflight_v1_3d8c2b48_20260731_122316`
+  completed PL/ST/KAT/finalizer Jobs `1209309`--`1209312` at `0:0`. Both
+  real-data leaves consumed 32 matched batches, recorded one official-semantic
+  scaler skip, ended at scale `32768`, and passed the final-16 stable tail;
+  world-two default FP32 DDP reduction/update passed. Finalizer
+  `313da95faeae9e600965fe4ac5c7ad5816f652d5ff2c97cf9734f7028d888a3c`
+  authorizes only the complete F1 development matrix. It emitted no
+  checkpoint, prediction, metric, evaluator or official-test artifact and
+  supplies no mAP/model evidence. F1 remains unsubmitted because its immutable
+  16-submission gate currently sees two unrelated active jobs and its
+  conservative training storage gate sees `31,646,543,872` free versus
+  `130,996,502,528` required bytes. Do not split the matrix, cancel unrelated
+  jobs, or relax either gate.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

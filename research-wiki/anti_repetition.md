@@ -192,6 +192,13 @@ updated: 2026-07-30
    fresh exact-source/fresh-namespace F0 that requests two GPUs once and lets
    the inner KAT inherit that allocation. This is a deployment repair, not
    evidence about ST, PL or mAP.
+0. Do not turn the successful replacement F0 into model evidence. Exact source
+   `3d8c2b48`, Jobs `1209309`--`1209312`, and finalization
+   `313da95faeae9e600965fe4ac5c7ad5816f652d5ff2c97cf9734f7028d888a3c`
+   authorize only one complete all-at-once F1 development matrix. The F0 has no
+   metric/checkpoint/prediction/evaluator/test surface. F1 must not be split or
+   partially submitted to evade `MaxSubmitJobs`, and its 15-cell conservative
+   training storage gate must not be replaced by F0's no-artifact profile.
 0. Do not mistake “zero AMP skip at initial scale 65536” for an official
    AdaTAD requirement. The official config uses the default dynamic
    `GradScaler`; with no formal binding, the legacy train path permits a skipped

@@ -4,11 +4,11 @@ node_id: exp:georoute-official-comparable-protocol-v1
 title: "GeoRoute official-comparable protocol v1"
 idea: idea:geo-route-adatad
 stage: experiment_running
-status: first_f0_sealed_incomplete_site_memory_contract_replacement_implemented
-verdict: REPLACE_F0_EXECUTION_NO_SCIENTIFIC_INFERENCE
+status: f0_pass_f1_authorized_capacity_storage_hold
+verdict: F0_PASS_F1_AUTHORIZED_WAIT_CAPACITY_STORAGE
 confidence: high
-commit: 4a03339b13b0f65047ed0349615889ade06050e8
-jobs: [1209272, 1209273, 1209274, 1209275]
+commit: 3d8c2b487fa983d6d6240b347177cc423a37748b
+jobs: [1209309, 1209310, 1209311, 1209312]
 updated: 2026-07-31
 ---
 
@@ -16,10 +16,10 @@ updated: 2026-07-31
 
 ## Current verdict
 
-No further Pro discussion is required. Exact source `4a03339b` passed the
-remote Linux focused suite `105/105` and complete GeoRoute suite `153/153`;
-its HEAD, origin ref and tree are exact/clean. The pinned upstream snapshot is
-also exact/clean at `01c58b9`.
+No further Pro discussion is required. Exact source `3d8c2b48` passed the
+remote Linux focused suite `25/25` and complete GeoRoute suite `154/154`; its
+HEAD, origin ref and tree are exact/clean. The pinned upstream snapshot remains
+exact/clean at `01c58b9`.
 
 The first F0 namespace is an execution failure, not numerical or model
 evidence. World-two KAT Job `1209274` failed in one second before Python/CUDA
@@ -41,7 +41,29 @@ the inner KAT step inherit N16R4's site-bound memory. The site's submit Lua
 assigns 55 GB per GPU and rejects every explicit `--mem` override; test-only
 probes confirmed that an omitted memory override is the accepted contract. The
 replacement changes no model, data, seed, threshold or claim rule and must use
-a new exact commit and namespace. F1 remains closed.
+a new exact commit and namespace.
+
+That replacement F0 is now terminally complete under run root
+`georoute_official_comparable_preflight_v1_3d8c2b48_20260731_122316`.
+PL/ST/KAT/finalizer Jobs `1209309/1209310/1209311/1209312` all completed
+`0:0`. PL and ST each consumed 32 matched real-data batches, each recorded one
+default-GradScaler skip, each finished at scale `32768`, and each passed a
+16-batch stable tail. Their 32 data fingerprints and scale traces match. The
+world-two KAT passed default NCCL FP32 reduction/update while its detached
+FP16 shadow overflowed as required. Finalizer decision is
+`PASS_OFFICIAL_COMPARABLE_PREFLIGHT_ONLY /
+FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`; finalization internal/file SHA-256 are
+`313da95faeae9e600965fe4ac5c7ad5816f652d5ff2c97cf9734f7028d888a3c` /
+`22f5dcab4c19d843bc807c5dd60e5f97605378617f67d3a3f507a7a768c57679`.
+No checkpoint, prediction, metric, evaluator, temporary payload or official
+test exists. This authorizes F1 execution only and is not model-performance
+evidence.
+
+F1 is not submitted yet. The unchanged all-at-once admission gate observes two
+unrelated active submissions, so `active=2 + required=16 > MaxSubmitJobs=16`.
+Its unchanged training storage gate observes `31,646,543,872` free versus
+`130,996,502,528` required bytes. No unrelated job is cancelled, the matrix is
+not split, and neither gate is relaxed.
 
 ## Parent evidence
 
@@ -96,11 +118,15 @@ Pre-deployment review also corrected the F0 KAT reservation from four GPUs to
 its registered two-GPU allocation and restored AdaTAD's
 deterministic-warn-only test semantics.
 
-N16R4 currently reports `70 GiB` free, `MaxSubmitJobs=16`, one unrelated
-running job and one unrelated `DependencyNeverSatisfied` job. This is enough
-for the conservative four-job F0 (`44 GiB` requirement), but not yet for the
-16-submission/15-cell F1 or its conservative `122 GiB` peak. No unrelated job
-may be cancelled. F1 therefore remains result- and capacity-gated even if F0
-passes. The first deployment root is
-`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_official_comparable_preflight_v1_4a03339b_20260731_1145`;
-it is terminally sealed incomplete with no admissible performance inference.
+The generic training storage gate initially blocked replacement source
+`2156811f` before namespace creation: `45,628,272,640` free versus
+`47,244,640,256` required. Authorized checkpoint retention then removed ten
+earlier RIME epochs (5,176,692,497 bytes) only after SHA-256 dry-run and CPU
+load validation, retaining and postvalidating both epoch-59 checkpoints.
+Postverify receipt SHA-256 is
+`ad5396edb82e1724d89979a5d495d485a799299b1b81c63a7f9566ac87deafed`.
+Because F0 contractually forbids all large artifacts and the sealed first F0
+occupied only about 129 MB, source `3d8c2b48` introduced a fixed no-artifact
+F0 storage contract: 512 MiB per leaf, 1 GiB fixed overhead and a 24-GiB
+filesystem reserve (26 GiB total). This does not change F1's conservative
+training storage contract.

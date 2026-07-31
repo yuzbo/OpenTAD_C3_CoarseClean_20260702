@@ -3,6 +3,32 @@ type: source_registry
 updated: 2026-07-31
 ---
 
+- GeoRoute official-comparable F0 successful replacement, 2026-07-31. Exact
+  clean source `3d8c2b487fa983d6d6240b347177cc423a37748b` passed remote
+  focused `25/25` and complete GeoRoute `154/154`; pinned upstream release
+  `01c58b9f2370e914150cf94d392208a4e211c053` remained exact/clean with config
+  SHA-256 `5521b6ce28cc6770e662d3dfdd4621479bc228be6131e300a92285fb4961a49c`.
+  Run root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_official_comparable_preflight_v1_3d8c2b48_20260731_122316`,
+  Jobs `1209309/1209310/1209311/1209312`, finalizer
+  `PASS_OFFICIAL_COMPARABLE_PREFLIGHT_ONLY /
+  FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`. Finalization internal/file SHA-256:
+  `313da95faeae9e600965fe4ac5c7ad5816f652d5ff2c97cf9734f7028d888a3c` /
+  `22f5dcab4c19d843bc807c5dd60e5f97605378617f67d3a3f507a7a768c57679`.
+  This is no-performance admission evidence only. F1 has no jobs yet because
+  its unchanged 16-submit and `130,996,502,528`-byte storage gates fail.
+
+- GeoRoute checkpoint retention cleanup, 2026-07-31. Dry-run manifest
+  `/data/run01/sczc063/yuzibo/storage_cleanup_receipts/checkpoint_prune_rime_20260731_121453/dry_run_manifest.json`
+  SHA-256
+  `0a2e4744e6f79251697120c45da6cd2bbbc35516323694015f627bea01ad4a49`
+  bound ten earlier RIME epochs totaling `5,176,692,497` bytes. Both retained
+  epoch-59 checkpoints loaded on CPU before and after deletion. Postverify
+  receipt SHA-256
+  `ad5396edb82e1724d89979a5d495d485a799299b1b81c63a7f9566ac87deafed`.
+  No pretrained, singleton, best/final, receipt, config, log, data or cache was
+  removed.
+
 - GeoRoute official-comparable F0 first execution, 2026-07-31. Exact clean
   current snapshot `4a03339b13b0f65047ed0349615889ade06050e8` passed remote
   Linux focused `105/105` and complete GeoRoute `153/153`; pinned upstream

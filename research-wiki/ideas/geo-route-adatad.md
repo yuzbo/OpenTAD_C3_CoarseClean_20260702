@@ -487,16 +487,14 @@ dominance. Geometry is absent. F1 remains development-only; the upstream
 official anchor, current-source bridges, full-system cost and one sealed test
 opening are still required in F2 before any paper claim.
 
-The first F0 execution does not update this hypothesis. Exact source
-`4a03339b` and pinned upstream `01c58b9` passed their code/source gates, but
-world-two KAT Job `1209274` was rejected by Slurm before Python because its
-inner 192-GB memory request was not bound in the outer allocation. PL/ST
-terminal behavior in that incomplete namespace is non-comparative provenance.
-N16R4 test-only probes established the site contract: 55 GB is assigned per
-GPU and explicit memory overrides are rejected. The replacement changes only
-the wrapper so the two-rank KAT inherits its two-GPU allocation; until a fresh
-all-three F0 PASS, NativeTokenSelect remains `implemented`, not
-`empirically_supported`.
+The replacement F0 now passes all three admission leaves under exact source
+`3d8c2b48`: matched PL/ST real-batch official-scaler semantics and default
+world-two FP32 DDP reduction/update. This closes a numerical/deployment
+correctness gap only. It does not update the NativeTokenSelect hypothesis
+because F0 contains no mAP, control comparison or cost measurement.
+NativeTokenSelect therefore remains `implemented`, not
+`empirically_supported`. The complete three-seed F1 is authorized but waits
+for its unchanged 16-slot and 122-GiB training admission gates.
 
 ## Connections
 

@@ -2104,3 +2104,41 @@ append_only: true
   and removes the inner memory override so the KAT inherits that allocation.
   This changes no scientific input or decision rule; a fresh exact-source,
   fresh-namespace all-three F0 PASS is still required before F1.
+
+- 2026-07-31: source `2156811f6cab8c7cbb1882da764010e2ce08f0a9`
+  passed remote focused `23/23` and complete GeoRoute `153/153`, but its
+  replacement F0 was rejected before namespace creation or Slurm submission by
+  the generic training storage gate: `45,628,272,640` free versus
+  `47,244,640,256` required. A global bounded scan found only two new
+  multi-epoch checkpoint directories, both in the old RIME run. After hashing
+  all candidates and CPU-loading both epoch-59 keepers, ten epochs
+  9/19/29/39/49 totaling `5,176,692,497` bytes were deleted. Postverification
+  reloaded both keepers and wrote receipt
+  `ad5396edb82e1724d89979a5d495d485a799299b1b81c63a7f9566ac87deafed`.
+  No singleton/final/best/pretrained/data/cache/receipt/config/log was removed.
+
+- 2026-07-31: implemented a versioned F0-only no-artifact storage contract in
+  source `3d8c2b487fa983d6d6240b347177cc423a37748b`. F0 forbids checkpoint,
+  prediction, metric, evaluator and official-test outputs, so it reserves
+  512 MiB per leaf, 1 GiB shared overhead and 24 GiB filesystem safety instead
+  of impossible checkpoint copies. The first sealed F0 occupied about 129 MB.
+  F1's conservative 15-cell training storage contract is unchanged. Academic-
+  proxy synchronization verified full HEAD/origin-ref/clean parity; remote
+  focused tests passed `25/25` and all GeoRoute tests passed `154/154`.
+  Fresh root
+  `georoute_official_comparable_preflight_v1_3d8c2b48_20260731_122316`
+  submitted PL/ST/KAT/finalizer Jobs `1209309/1209310/1209311/1209312`.
+
+- 2026-07-31: the replacement F0 passed completely. All four jobs completed
+  `0:0`; PL/ST each consumed 32 matched batches, recorded one default-scaler
+  skip, ended at `32768`, and passed a final-16 stable tail. World-two default
+  NCCL FP32 reduction/update passed and the detached FP16 shadow overflowed as
+  required. No forbidden artifact exists. Finalizer emitted
+  `PASS_OFFICIAL_COMPARABLE_PREFLIGHT_ONLY /
+  FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`; internal/file SHA-256 are
+  `313da95faeae9e600965fe4ac5c7ad5816f652d5ff2c97cf9734f7028d888a3c` /
+  `22f5dcab4c19d843bc807c5dd60e5f97605378617f67d3a3f507a7a768c57679`.
+  This authorizes F1 execution only. F1 remains unsubmitted because current
+  admission is `active=2, required=16, limit=16` and storage is
+  `31,646,543,872` free versus `130,996,502,528` required; no unrelated job is
+  cancelled and neither gate is relaxed.
