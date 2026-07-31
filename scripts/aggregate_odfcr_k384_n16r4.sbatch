@@ -4,9 +4,9 @@
 #SBATCH --time=01:00:00
 #SBATCH -J af-odfcr-g3
 
-set -eo pipefail
+set -o pipefail
 source /etc/profile >/dev/null 2>&1
-set -u
+set -eu
 module load miniforge3/24.11
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 

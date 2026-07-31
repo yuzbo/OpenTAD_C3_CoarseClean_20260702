@@ -6,9 +6,9 @@
 #SBATCH --array=0-2
 #SBATCH -J af-odfcr
 
-set -eo pipefail
+set -o pipefail
 source /etc/profile >/dev/null 2>&1
-set -u
+set -eu
 module load cuda/11.8
 module load miniforge3/24.11
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate

@@ -38,10 +38,12 @@ def test_odfcr_launcher_uses_frozen_seeds_and_four_serial_arms():
 def test_odfcr_launcher_preserves_slurm_cuda_and_validation_only_data():
     text = LAUNCHER.read_text(encoding="utf-8")
     assert text.startswith("#!/bin/bash\n")
-    assert text.index("source /etc/profile") < text.index("set -u")
+    assert text.index("set -o pipefail") < text.index("source /etc/profile")
+    assert text.index("source /etc/profile") < text.index("set -eu")
     assert text.index("source /etc/profile") < text.index(
         "module load cuda/11.8"
     )
+    assert "set -eo pipefail" not in text
     assert 'test -n "${CUDA_VISIBLE_DEVICES:-}"' in text
     assert "export CUDA_VISIBLE_DEVICES=" not in text
     assert "ODFCR_PREVIOUS_HOLDOUT_MANIFEST" in text
@@ -91,6 +93,12 @@ def test_odfcr_followup_launchers_separate_g2_from_conditional_g3():
     g2_text = G2_LAUNCHER.read_text(encoding="utf-8")
     replay_text = K384_LAUNCHER.read_text(encoding="utf-8")
     g3_text = G3_LAUNCHER.read_text(encoding="utf-8")
+    for text in (g2_text, replay_text, g3_text):
+        assert text.index("set -o pipefail") < text.index(
+            "source /etc/profile"
+        )
+        assert text.index("source /etc/profile") < text.index("set -eu")
+        assert "set -eo pipefail" not in text
     assert "tools.aggregate_odfcr_internal_matrices" in g2_text
     assert "ODFCR_G2_AGGREGATE_COMPLETE.json" in g2_text
     assert "#SBATCH --array=0-2" in replay_text
