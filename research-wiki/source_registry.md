@@ -1,7 +1,20 @@
 ---
 type: source_registry
-updated: 2026-07-30
+updated: 2026-07-31
 ---
+
+- GeoRoute official-comparable protocol v1 design, 2026-07-31. Project-authored
+  design
+  `docs/superpowers/specs/2026-07-31-georoute-official-comparable-protocol-v1-design.md`
+  pins upstream OpenTAD release commit
+  `01c58b9f2370e914150cf94d392208a4e211c053`, official config SHA-256
+  `5521b6ce28cc6770e662d3dfdd4621479bc228be6131e300a92285fb4961a49c`,
+  the repaired no-compression parent, a no-performance F0, and a 15-cell
+  training-only F1 with a frozen every-seed/Pareto selector. It records the
+  corrected global-batch-two/local-batch-one semantics and keeps the official
+  reproduction, bridge stack, full cost and official test in a later sealed F2.
+  This is implemented protocol evidence only until an exact clean remote commit
+  passes and produces sealed Slurm receipts.
 
 - GeoRoute real-batch AMP diagnostic design, 2026-07-29. Project-authored
   design

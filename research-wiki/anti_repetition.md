@@ -163,6 +163,25 @@ updated: 2026-07-30
    evaluator/NMS and final-only checkpointing are not the official recipe.
    Paper comparison requires a separately frozen official reproduction and
    same-recipe native-source dense/GeoRoute arms.
+0. Do not interpret OpenTAD config `batch_size=2` as two samples per GPU.
+   `build_dataloader` divides that job-global value by world size; the frozen
+   two-rank official-comparable recipe is local batch `1`, global batch `2`.
+   Any run or table using local batch `2`/global batch `4` is a different
+   optimization protocol. The F0 single-rank batch-2 leaves are deliberately
+   stronger resource stresses and explicitly not a full world-size-two recipe.
+0. Do not put F0 preflight/KAT output, an individual F1 cell, or a partial F1
+   matrix in a performance table. F1 inference exists only if all 15
+   dense/fixed/random/ST/PL x three-seed cells and all artifact/population
+   bindings pass. Even a complete F1 result is Fit/Gate development selection,
+   not official-test or paper evidence. It cannot establish end-to-end
+   efficiency because its profiler excludes decode, evaluator, energy and
+   full-system orchestration.
+0. Do not select NativeTokenSelect from averages alone. Every paired seed must
+   beat fixed and random at mean(mAP@0.6,mAP@0.7), and every paired seed must
+   have lower matched development model-plus-postprocess p50 than dense. ST
+   versus PL additionally requires non-inferiority on both axes for every seed
+   and strict improvement on both mean axes. Any tie, crossing, missing cell or
+   population mismatch means `HOLD_NO_OFFICIAL_TEST`. Geometry is not an F1 arm.
 0. Do not mistake “zero AMP skip at initial scale 65536” for an official
    AdaTAD requirement. The official config uses the default dynamic
    `GradScaler`; with no formal binding, the legacy train path permits a skipped

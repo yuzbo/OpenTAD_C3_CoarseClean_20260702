@@ -356,6 +356,26 @@ max_chars: 8000
   AdaTAD anchor uses its official split/evaluator recipe, effective batch
   `2`, warmup `5`, and scheduled validation/checkpointing. Their numbers must
   never share a paper comparison row.
+  The authorized successor is now implemented locally as
+  `exp:georoute-official-comparable-protocol-v1`, with remote execution still
+  pending. Its pinned upstream anchor is OpenTAD commit
+  `01c58b9f2370e914150cf94d392208a4e211c053`; the byte-identical THUMOS
+  VideoMAE-S Adapter config has SHA-256
+  `5521b6ce28cc6770e662d3dfdd4621479bc228be6131e300a92285fb4961a49c`.
+  A key implementation correction is frozen: OpenTAD divides the configured
+  batch by world size, so official config batch `2` under two ranks means
+  global batch `2` and local batch `1`, not global batch `4`. F0 is a
+  no-performance admission gate with two parallel 32-batch real-data
+  single-rank stress leaves plus a world-size-two FP32-DDP KAT. Only F0 PASS
+  may release F1: dense/fixed/random/ST/PL x seeds `3407/3408/3409`, 60 epochs,
+  exact K=64, official scheduler 5/100, AMP/EMA/static graph, no FP16
+  communication, final EMA only and complete Fit/Gate evaluation. F1 metrics
+  remain development-only. Each selector must beat fixed and random at
+  mean(mAP@0.6,mAP@0.7) on every seed and cost less than dense on every seed;
+  ST versus PL additionally requires strict paired-seed accuracy/cost Pareto
+  dominance. Ambiguity is `HOLD_NO_OFFICIAL_TEST`; Geometry is excluded. A
+  later F2 still requires the official reproduction/bridge stack, complete
+  decode-to-NMS cost and one separately sealed official-test open.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

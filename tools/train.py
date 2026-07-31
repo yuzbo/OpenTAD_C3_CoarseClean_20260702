@@ -107,6 +107,8 @@ def main():
     amp_diagnostic_observer_cls = None
     gradient_decomposition_binding = None
     gradient_decomposition_observer_cls = None
+    georoute_official_development_binding = None
+    georoute_official_development_sidecar_schema = None
     if "spatial_zoom_s1_contract" in cfg:
         from tools.bata.spatial_zoom_s1_training import (
             S1_CHECKPOINT_SIDECAR_SCHEMA,
@@ -275,6 +277,52 @@ def main():
                 "nondeterminism, disabled evaluation, and nonzero id"
             )
         gradient_decomposition_observer_cls = GradientDecompositionObserver
+    if "georoute_official_development_binding" in cfg:
+        from tools.bata.georoute_official_comparable_contract import (
+            FORMAL_DEVELOPMENT_CHECKPOINT_SIDECAR_SCHEMA,
+            build_formal_checkpoint_metadata,
+            require_clean_formal_checkout,
+            require_formal_world2_slurm,
+            validate_formal_development_config,
+        )
+
+        if any(
+            binding is not None
+            for binding in (
+                s1_binding,
+                s2_binding,
+                s2_runtime_gate_binding,
+                amp_diagnostic_binding,
+                gradient_decomposition_binding,
+            )
+        ):
+            raise RuntimeError(
+                "formal GeoRoute development cannot share another binding"
+            )
+        require_formal_world2_slurm()
+        georoute_official_development_binding = (
+            validate_formal_development_config(cfg, seed=args.seed)
+        )
+        georoute_official_development_sidecar_schema = (
+            FORMAL_DEVELOPMENT_CHECKPOINT_SIDECAR_SCHEMA
+        )
+        require_clean_formal_checkout(
+            expected_commit=georoute_official_development_binding[
+                "runtime_commit"
+            ],
+            root=Path(path).resolve(),
+        )
+        if (
+            args.cfg_options is not None
+            or args.resume is not None
+            or args.disable_deterministic
+            or args.not_eval
+            or args.id != 0
+        ):
+            raise ValueError(
+                "formal GeoRoute development forbids overrides, resume, "
+                "nondeterminism, disabled evaluation, and nonzero id"
+            )
     formal_binding = (
         s1_binding
         if s1_binding is not None
@@ -285,6 +333,8 @@ def main():
         else amp_diagnostic_binding
         if amp_diagnostic_binding is not None
         else gradient_decomposition_binding
+        if gradient_decomposition_binding is not None
+        else georoute_official_development_binding
     )
     assert_safe_entrypoint_args_for_gated_config(cfg, args, entrypoint="tools/train.py")
     assert_detector_training_allowed(cfg, entrypoint="tools/train.py")
@@ -293,9 +343,17 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
-    if formal_binding is not None and args.world_size != 1:
+    expected_formal_world_size = (
+        int(formal_binding.get("world_size", 1))
+        if formal_binding is not None
+        else None
+    )
+    if (
+        formal_binding is not None
+        and args.world_size != expected_formal_world_size
+    ):
         raise RuntimeError(
-            "formal registered training is frozen to one Slurm GPU process"
+            "formal registered training world size differs from its binding"
         )
     print(
         f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})"
@@ -314,6 +372,12 @@ def main():
                 gradient_decomposition_binding["deterministic_warn_only"]
             )
             if gradient_decomposition_binding is not None
+            else bool(
+                georoute_official_development_binding[
+                    "deterministic_warn_only"
+                ]
+            )
+            if georoute_official_development_binding is not None
             else formal_binding is None
         ),
     )
@@ -479,6 +543,30 @@ def main():
             raise ValueError(
                 "gradient-decomposition development population changed"
             )
+    if georoute_official_development_binding is not None:
+        runtime_ids = {
+            "train": {str(row[0]) for row in train_dataset.data_list},
+            "val": {str(row[0]) for row in val_dataset.data_list},
+            "test": {str(row[0]) for row in test_dataset.data_list},
+        }
+        if runtime_ids["train"] != set(
+            georoute_official_development_binding["training_video_ids"]
+        ):
+            raise ValueError(
+                "formal GeoRoute train population differs from frozen Fit"
+            )
+        if runtime_ids["val"] != set(
+            georoute_official_development_binding[
+                "evaluation_video_ids"
+            ]
+        ) or runtime_ids["test"] != set(
+            georoute_official_development_binding[
+                "evaluation_video_ids"
+            ]
+        ):
+            raise ValueError(
+                "formal GeoRoute evaluation population differs from frozen Gate"
+            )
 
     # build model
     model = build_detector(cfg.model)
@@ -617,6 +705,12 @@ def main():
         if amp_diagnostic_binding is not None
         else 0
         if gradient_decomposition_binding is not None
+        else int(
+            georoute_official_development_binding[
+                "max_amp_retries_per_batch"
+            ]
+        )
+        if georoute_official_development_binding is not None
         else 8
         if formal_binding is not None
         else int(cfg.workflow.get("max_amp_retries_per_batch", 0))
@@ -631,6 +725,12 @@ def main():
         if amp_diagnostic_binding is not None
         else False
         if gradient_decomposition_binding is not None
+        else bool(
+            georoute_official_development_binding[
+                "fail_on_skipped_update"
+            ]
+        )
+        if georoute_official_development_binding is not None
         else formal_binding is not None
         or bool(cfg.workflow.get("fail_on_skipped_update", False))
     )
@@ -749,6 +849,24 @@ def main():
                     )
                     checkpoint_sidecar_schema = (
                         s2_runtime_gate_sidecar_schema
+                    )
+                elif georoute_official_development_binding is not None:
+                    checkpoint_metadata = build_formal_checkpoint_metadata(
+                        cfg,
+                        seed=args.seed,
+                        epoch=epoch,
+                        successful_updates=successful_updates,
+                        train_batches_per_epoch=len(train_loader),
+                        amp_skipped_attempts=update_audit[
+                            "amp_skipped_attempts"
+                        ],
+                        max_amp_retries_observed=update_audit[
+                            "max_amp_retries_observed"
+                        ],
+                        world_size=args.world_size,
+                    )
+                    checkpoint_sidecar_schema = (
+                        georoute_official_development_sidecar_schema
                     )
                 save_checkpoint(
                     model,

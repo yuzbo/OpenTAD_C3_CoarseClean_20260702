@@ -896,6 +896,34 @@ differs from the exact official AdaTAD communication setting, the final receipt
 correctly leaves `official_protocol_freeze_authorized=false`; no
 official-comparable performance experiment or paper claim is open yet.
 
+## Official-comparable protocol v1 (implemented, preflight pending)
+
+The authorized protocol is now implemented as
+`exp:georoute-official-comparable-protocol-v1`. It pins upstream OpenTAD release
+commit `01c58b9f2370e914150cf94d392208a4e211c053` and the exact official THUMOS
+VideoMAE-S Adapter config SHA-256
+`5521b6ce28cc6770e662d3dfdd4621479bc228be6131e300a92285fb4961a49c`.
+The implementation corrects the batch interpretation before any run:
+OpenTAD's configured batch `2` is job-global, so the two-rank formal recipe is
+one sample per rank and global batch two.
+
+The first deployable surface is F0 only: parallel residual-ST/residual-PL
+single-rank batch-2 resource stresses over 32 real batches plus a two-rank
+default-FP32-DDP reduction KAT. It emits no metric/checkpoint/prediction/
+evaluator/test evidence. Only all-three PASS can authorize F1.
+
+F1 freezes five arms (native dense, fixed K64, random K64, residual ST K64,
+residual ordered-PL K64) across seeds 3407/3408/3409, 60 epochs, official
+scheduler 5/100, two ranks/global batch two, AMP/EMA/static graph, no FP16
+communication and one final EMA checkpoint. All 15 leaves are submitted
+together and an after-any finalizer allows selection only after complete
+artifact and Gate-population validation. Every selector seed must beat fixed
+and random at the high-IoU composite and cost less than dense; ST/PL requires
+strict paired accuracy/cost Pareto dominance. Otherwise official test stays
+closed. F1 is development-only and Geometry remains excluded. The official
+reproduction/bridge stack and full decode-to-NMS cost remain a later separately
+sealed F2.
+
 ## Frozen decision logic
 
 P0R proves only implementation facts. P1R first tests whether ROI-free

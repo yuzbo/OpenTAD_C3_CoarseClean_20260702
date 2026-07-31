@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 
 sys.dont_write_bytecode = True
 path = os.path.join(os.path.dirname(__file__), "..")
@@ -78,6 +79,7 @@ def main():
         cfg.merge_from_dict(args.cfg_options)
     s1_binding = None
     s1_bound_cfg = None
+    georoute_official_development_binding = None
     if "spatial_zoom_s1_contract" in cfg:
         if args.checkpoint == "none" or not args.s1_test_open_certificate:
             raise ValueError(
@@ -175,6 +177,46 @@ def main():
         raise ValueError(
             "--s1-profile-recovery-certificate is valid only for formal S1 configs"
         )
+    if "georoute_official_development_binding" in cfg:
+        if s1_binding is not None:
+            raise RuntimeError(
+                "formal GeoRoute development test cannot share an S1 binding"
+            )
+        if (
+            args.checkpoint == "none"
+            or args.cfg_options is not None
+            or args.id != 0
+            or args.not_eval
+            or args.max_batches is not None
+        ):
+            raise ValueError(
+                "formal GeoRoute development evaluation requires an explicit "
+                "checkpoint and forbids overrides, alternate ids, partial "
+                "inference, and no-eval mode"
+            )
+        from tools.bata.georoute_official_comparable_contract import (
+            require_clean_formal_checkout,
+            require_formal_world2_slurm,
+            validate_formal_checkpoint_sidecar,
+            validate_formal_development_config,
+        )
+
+        require_formal_world2_slurm()
+        georoute_official_development_binding = (
+            validate_formal_development_config(cfg, seed=args.seed)
+        )
+        require_clean_formal_checkout(
+            expected_commit=georoute_official_development_binding[
+                "runtime_commit"
+            ],
+            root=Path(path).resolve(),
+        )
+        georoute_official_checkpoint_sidecar = (
+            validate_formal_checkpoint_sidecar(
+                args.checkpoint,
+                binding=georoute_official_development_binding,
+            )
+        )
     assert_detector_training_allowed(cfg, entrypoint="tools/test.py")
     assert_no_raw_prediction_shortcut_for_pc_ot_mras(cfg)
 
@@ -184,6 +226,14 @@ def main():
     args.rank = int(os.environ["RANK"])
     if s1_binding is not None and args.world_size != 1:
         raise RuntimeError("formal S1 test is frozen to one Slurm GPU process")
+    if (
+        georoute_official_development_binding is not None
+        and args.world_size
+        != int(georoute_official_development_binding["world_size"])
+    ):
+        raise RuntimeError(
+            "formal GeoRoute development evaluation world size changed"
+        )
     print(
         f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})"
     )
@@ -191,7 +241,14 @@ def main():
     torch.cuda.set_device(args.local_rank)
 
     # set random seed, create work_dir
-    set_seed(args.seed, deterministic_warn_only=s1_binding is None)
+    set_seed(
+        args.seed,
+        # The pinned AdaTAD recipe uses the repository's legacy
+        # deterministic-warn-only semantics.  GeoRoute development must keep
+        # that transition behavior; only the separately sealed S1 protocol
+        # opts into strict deterministic algorithms.
+        deterministic_warn_only=(s1_binding is None),
+    )
     cfg = update_workdir(cfg, args.id, torch.cuda.device_count())
     if s1_binding is not None:
         marker_path = os.path.join(cfg.work_dir, "test_open_started.json")
@@ -249,6 +306,16 @@ def main():
             raise ValueError(
                 "formal S1 test dataset does not match the sealed test split"
             )
+    if georoute_official_development_binding is not None:
+        runtime_test_ids = {str(row[0]) for row in test_dataset.data_list}
+        if runtime_test_ids != set(
+            georoute_official_development_binding[
+                "evaluation_video_ids"
+            ]
+        ):
+            raise ValueError(
+                "formal GeoRoute evaluation left the frozen development Gate"
+            )
     test_loader = build_dataloader(
         test_dataset,
         rank=args.rank,
@@ -294,6 +361,25 @@ def main():
                 cfg.spatial_zoom_s1_test_binding.checkpoint_epoch
             ):
                 raise ValueError("S1 test checkpoint epoch mismatch")
+        if georoute_official_development_binding is not None:
+            if (
+                checkpoint.get("experiment_metadata")
+                != georoute_official_checkpoint_sidecar[
+                    "experiment_metadata"
+                ]
+            ):
+                raise ValueError(
+                    "formal GeoRoute checkpoint payload metadata does not "
+                    "match its sidecar"
+                )
+            if int(checkpoint.get("epoch", -1)) != int(
+                georoute_official_checkpoint_sidecar[
+                    "experiment_metadata"
+                ]["epoch"]
+            ):
+                raise ValueError(
+                    "formal GeoRoute checkpoint epoch differs from its sidecar"
+                )
 
         # Model EMA
         use_ema = getattr(cfg.solver, "ema", False)

@@ -99,11 +99,49 @@ AMP_REPAIR_RETRY_LIMIT = 0
 AMP_REPAIR_REGISTERED_CLASS = "DDP_FP16_CAST_OVERFLOW"
 AMP_REPAIR_INTERVENTION = "disable_ddp_fp16_compression"
 
+AMP_FORMAL_PREFLIGHT_PROFILE = "official_comparable_resource_preflight_v1"
+AMP_FORMAL_PREFLIGHT_STUDY_ID = (
+    "georoute_official_comparable_resource_preflight_v1"
+)
+AMP_FORMAL_PREFLIGHT_BINDING_SCHEMA = (
+    "georoute_official_comparable_resource_preflight_binding_v1"
+)
+AMP_FORMAL_PREFLIGHT_RECEIPT_SCHEMA = (
+    "georoute_official_comparable_resource_preflight_receipt_v1"
+)
+AMP_FORMAL_PREFLIGHT_STAGE_SCHEMA = (
+    "georoute_official_comparable_resource_preflight_stage_v1"
+)
+AMP_FORMAL_PREFLIGHT_DEPLOYMENT_SCHEMA = (
+    "georoute_official_comparable_resource_preflight_deployment_v1"
+)
+AMP_FORMAL_PREFLIGHT_FINALIZATION_SCHEMA = (
+    "georoute_official_comparable_resource_preflight_finalization_v1"
+)
+AMP_FORMAL_PREFLIGHT_SEED = 2311
+AMP_FORMAL_PREFLIGHT_FORBIDDEN_SEEDS = (42, 7367, 4417, 3407, 3408, 3409)
+AMP_FORMAL_PREFLIGHT_MAX_BATCHES = 32
+AMP_FORMAL_PREFLIGHT_RETRY_LIMIT = 0
+AMP_FORMAL_PREFLIGHT_SINGLE_RANK_STRESS_BATCH_SIZE = 2
+AMP_FORMAL_TARGET_CONFIG_BATCH_SIZE = 2
+AMP_FORMAL_TARGET_WORLD_SIZE = 2
+AMP_FORMAL_TARGET_PER_RANK_BATCH_SIZE = (
+    AMP_FORMAL_TARGET_CONFIG_BATCH_SIZE // AMP_FORMAL_TARGET_WORLD_SIZE
+)
+
 AMP_OFFICIAL_PREFIX_PROFILES = frozenset(
-    {AMP_STABILITY_V2_PROFILE, AMP_REPAIR_PROFILE}
+    {
+        AMP_STABILITY_V2_PROFILE,
+        AMP_REPAIR_PROFILE,
+        AMP_FORMAL_PREFLIGHT_PROFILE,
+    }
 )
 AMP_BOUNDED_DYNAMIC_SCALER_PROFILES = frozenset(
-    {AMP_STABILITY_V2_PROFILE, AMP_REPAIR_PROFILE}
+    {
+        AMP_STABILITY_V2_PROFILE,
+        AMP_REPAIR_PROFILE,
+        AMP_FORMAL_PREFLIGHT_PROFILE,
+    }
 )
 
 
@@ -335,6 +373,92 @@ def amp_protocol_spec(profile: str) -> dict[str, Any]:
             "incomplete_status": "INCOMPLETE_DDP_FP16_CAST_REPAIR_GATE",
             "job_prefix": "grrepair",
         }
+    if profile == AMP_FORMAL_PREFLIGHT_PROFILE:
+        return {
+            "profile": AMP_FORMAL_PREFLIGHT_PROFILE,
+            "study_id": AMP_FORMAL_PREFLIGHT_STUDY_ID,
+            "binding_schema": AMP_FORMAL_PREFLIGHT_BINDING_SCHEMA,
+            "receipt_schema": AMP_FORMAL_PREFLIGHT_RECEIPT_SCHEMA,
+            "stage_schema": AMP_FORMAL_PREFLIGHT_STAGE_SCHEMA,
+            "deployment_schema": AMP_FORMAL_PREFLIGHT_DEPLOYMENT_SCHEMA,
+            "finalization_schema": AMP_FORMAL_PREFLIGHT_FINALIZATION_SCHEMA,
+            "max_batches": AMP_FORMAL_PREFLIGHT_MAX_BATCHES,
+            "retry_limit": AMP_FORMAL_PREFLIGHT_RETRY_LIMIT,
+            "initial_scale": AMP_DIAGNOSTIC_INITIAL_SCALE,
+            "seed": AMP_FORMAL_PREFLIGHT_SEED,
+            "forbidden_future_paper_seeds": (
+                AMP_FORMAL_PREFLIGHT_FORBIDDEN_SEEDS
+            ),
+            "temporal_reduction": "mean",
+            "ddp_fp16_compress_enabled": False,
+            "zero_failed_attempts_required": False,
+            "max_skipped_attempts": AMP_STABILITY_V2_MAX_SKIPS,
+            "max_consecutive_skips": AMP_STABILITY_V2_MAX_CONSECUTIVE_SKIPS,
+            "minimum_scale": AMP_STABILITY_V2_MIN_SCALE,
+            "stable_tail_batches": AMP_STABILITY_V2_STABLE_TAIL_BATCHES,
+            "minimum_successful_updates": (
+                AMP_FORMAL_PREFLIGHT_MAX_BATCHES
+                - AMP_STABILITY_V2_MAX_SKIPS
+            ),
+            "max_cross_arm_skip_delta": (
+                AMP_STABILITY_V2_MAX_CROSS_ARM_SKIP_DELTA
+            ),
+            "max_final_scale_ratio": AMP_STABILITY_V2_MAX_FINAL_SCALE_RATIO,
+            "use_default_grad_scaler_constructor": True,
+            "fail_on_skipped_update": False,
+            "schedule_and_ema_on_success_only": False,
+            "capture_amp_rng_state": True,
+            "fail_on_nonfinite_loss": True,
+            "single_rank_stress_batch_size": (
+                AMP_FORMAL_PREFLIGHT_SINGLE_RANK_STRESS_BATCH_SIZE
+            ),
+            "formal_target_config_batch_size": (
+                AMP_FORMAL_TARGET_CONFIG_BATCH_SIZE
+            ),
+            "formal_target_per_rank_batch_size": (
+                AMP_FORMAL_TARGET_PER_RANK_BATCH_SIZE
+            ),
+            "formal_target_world_size": AMP_FORMAL_TARGET_WORLD_SIZE,
+            "official_scheduler_hyperparameters_matched": True,
+            "cell_directory": "formal_resource_preflight",
+            "receipt_filename": "formal_resource_preflight.json",
+            "rendezvous_stage": "formalresourcev1",
+            "config_status": "official_comparable_resource_preflight_only",
+            "receipt_running_status": (
+                "RUNNING_OFFICIAL_COMPARABLE_RESOURCE_PREFLIGHT_ONLY"
+            ),
+            "receipt_pass_status": (
+                "PASS_OFFICIAL_COMPARABLE_RESOURCE_PREFLIGHT_EXECUTION_ONLY"
+            ),
+            "receipt_fail_status": (
+                "FAIL_OFFICIAL_COMPARABLE_RESOURCE_PREFLIGHT_EXECUTION"
+            ),
+            "stage_pass_status": (
+                "PASS_STAGE_OFFICIAL_COMPARABLE_RESOURCE_PREFLIGHT_ONLY"
+            ),
+            "stage_fail_status": (
+                "FAIL_STAGE_OFFICIAL_COMPARABLE_RESOURCE_PREFLIGHT_EXECUTION"
+            ),
+            "stage_wrapper_fail_status": (
+                "FAIL_OFFICIAL_COMPARABLE_RESOURCE_PREFLIGHT_STAGE_WRAPPER"
+            ),
+            "deployment_status": (
+                "SUBMITTED_OFFICIAL_COMPARABLE_RESOURCE_PREFLIGHT_ONLY"
+            ),
+            "finalizer_submission_status": (
+                "SUBMITTED_OFFICIAL_COMPARABLE_PREFLIGHT_FINALIZER_AFTERANY"
+            ),
+            "stage_release_status": (
+                "RELEASED_OFFICIAL_COMPARABLE_RESOURCE_PREFLIGHT_STAGES"
+            ),
+            "complete_status": (
+                "COMPLETE_OFFICIAL_COMPARABLE_RESOURCE_PREFLIGHT_ONLY"
+            ),
+            "incomplete_status": (
+                "INCOMPLETE_OFFICIAL_COMPARABLE_RESOURCE_PREFLIGHT"
+            ),
+            "job_prefix": "grformalpre",
+        }
     raise ValueError(f"unsupported AMP numerical protocol profile {profile!r}")
 
 
@@ -463,6 +587,16 @@ def bind_amp_diagnostic_config(
         spec.get("fail_on_nonfinite_loss", False)
     )
     cfg.solver.fp16_compress = bool(spec["ddp_fp16_compress_enabled"])
+    if spec["profile"] == AMP_FORMAL_PREFLIGHT_PROFILE:
+        for split_name in ("train", "val", "test"):
+            cfg.solver[split_name].batch_size = int(
+                spec["single_rank_stress_batch_size"]
+            )
+        cfg.model.backbone.custom.georoute_max_batch_size = int(
+            spec["single_rank_stress_batch_size"]
+        )
+        cfg.scheduler.warmup_epoch = 5
+        cfg.scheduler.max_epoch = 100
     cfg.post_processing.save_dict = False
     cfg.inference.load_from_raw_predictions = False
     cfg.inference.save_raw_prediction = False
@@ -631,7 +765,9 @@ def bind_amp_diagnostic_config(
                 "official_reference_ddp_fp16_compress_enabled": True,
                 "official_prefix_transition_semantics_matched": True,
                 "official_scheduler_advance_cadence_matched": True,
-                "official_scheduler_hyperparameters_matched": False,
+                "official_scheduler_hyperparameters_matched": bool(
+                    spec.get("official_scheduler_hyperparameters_matched", False)
+                ),
                 "full_official_recipe_matched": False,
                 "official_performance_comparable": False,
                 "full_official_training_claimed": False,
@@ -657,6 +793,36 @@ def bind_amp_diagnostic_config(
                     "gradient_clipping_changed": False,
                     "selector_changed": False,
                     "data_order_changed": False,
+                }
+            )
+        if spec["profile"] == AMP_FORMAL_PREFLIGHT_PROFILE:
+            binding.update(
+                {
+                    "single_rank_stress_batch_size": int(
+                        spec["single_rank_stress_batch_size"]
+                    ),
+                    "formal_target_config_batch_size": int(
+                        spec["formal_target_config_batch_size"]
+                    ),
+                    "formal_target_per_rank_batch_size": int(
+                        spec["formal_target_per_rank_batch_size"]
+                    ),
+                    "formal_target_world_size": int(
+                        spec["formal_target_world_size"]
+                    ),
+                    "formal_target_global_batch_size": int(
+                        spec["formal_target_config_batch_size"]
+                    ),
+                    "single_rank_resource_stress_not_exact_world2_recipe": True,
+                    "scheduler_type": "LinearWarmupCosineAnnealingLR",
+                    "scheduler_warmup_epoch": 5,
+                    "scheduler_max_epoch": 100,
+                    "registered_repair_parent_required": True,
+                    "world2_fp32_ddp_kat_required": True,
+                    "full_official_recipe_matched": False,
+                    "official_performance_comparable": False,
+                    "full_official_training_claimed": False,
+                    "development_prefix_only": True,
                 }
             )
     binding["binding_sha256"] = canonical_sha256(binding)
@@ -743,8 +909,10 @@ def validate_amp_diagnostic_binding(
             is not True
             or binding.get("official_scheduler_advance_cadence_matched")
             is not True
-            or binding.get("official_scheduler_hyperparameters_matched")
-            is not False
+            or bool(binding.get("official_scheduler_hyperparameters_matched"))
+            is not bool(
+                spec.get("official_scheduler_hyperparameters_matched", False)
+            )
             or binding.get("full_official_recipe_matched") is not False
             or binding.get("official_performance_comparable") is not False
             or binding.get("full_official_training_claimed") is not False
@@ -817,6 +985,32 @@ def validate_amp_diagnostic_binding(
             raise ValueError(
                 "DDP FP16-cast repair binding changed more than its "
                 "registered communication intervention"
+            )
+        if spec["profile"] == AMP_FORMAL_PREFLIGHT_PROFILE and (
+            int(binding.get("single_rank_stress_batch_size", -1))
+            != int(spec["single_rank_stress_batch_size"])
+            or int(binding.get("formal_target_config_batch_size", -1))
+            != int(spec["formal_target_config_batch_size"])
+            or int(binding.get("formal_target_per_rank_batch_size", -1))
+            != int(spec["formal_target_per_rank_batch_size"])
+            or int(binding.get("formal_target_world_size", -1))
+            != int(spec["formal_target_world_size"])
+            or int(binding.get("formal_target_global_batch_size", -1))
+            != int(spec["formal_target_config_batch_size"])
+            or binding.get(
+                "single_rank_resource_stress_not_exact_world2_recipe"
+            )
+            is not True
+            or binding.get("scheduler_type")
+            != "LinearWarmupCosineAnnealingLR"
+            or int(binding.get("scheduler_warmup_epoch", -1)) != 5
+            or int(binding.get("scheduler_max_epoch", -1)) != 100
+            or binding.get("registered_repair_parent_required") is not True
+            or binding.get("world2_fp32_ddp_kat_required") is not True
+        ):
+            raise ValueError(
+                "official-comparable resource preflight binding changed its "
+                "frozen batch, scheduler, or admission requirements"
             )
     if seed is not None and int(seed) != int(binding["seed"]):
         raise ValueError("AMP diagnostic CLI seed differs from its binding")
@@ -912,6 +1106,26 @@ def validate_amp_diagnostic_config(cfg: Any, *, seed: int) -> dict[str, Any]:
         raise ValueError(
             "official-prefix AMP config changed its frozen transitions"
         )
+    if spec["profile"] == AMP_FORMAL_PREFLIGHT_PROFILE:
+        if (
+            any(
+                int(solver[split_name].get("batch_size", -1))
+                != int(spec["single_rank_stress_batch_size"])
+                for split_name in ("train", "val", "test")
+            )
+            or int(
+                cfg.model.backbone.custom.get("georoute_max_batch_size", -1)
+            )
+            != int(spec["single_rank_stress_batch_size"])
+            or str(cfg.scheduler.get("type", ""))
+            != "LinearWarmupCosineAnnealingLR"
+            or int(cfg.scheduler.get("warmup_epoch", -1)) != 5
+            or int(cfg.scheduler.get("max_epoch", -1)) != 100
+        ):
+            raise ValueError(
+                "official-comparable resource preflight changed the formal "
+                "per-GPU batch or official scheduler hyperparameters"
+            )
     for split_name in ("train", "val", "test"):
         if cfg.dataset[split_name].get("subset_name") != "training":
             raise ValueError("AMP diagnostic dataset left the development subset")

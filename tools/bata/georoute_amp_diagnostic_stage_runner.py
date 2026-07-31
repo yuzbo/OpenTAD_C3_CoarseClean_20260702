@@ -24,6 +24,7 @@ from tools.bata.georoute_amp_diagnostic import (  # noqa: E402
     AMP_DIAGNOSTIC_PROFILE,
     AMP_DIAGNOSTIC_STAGE_SCHEMA,
     AMP_DIAGNOSTIC_STUDY_ID,
+    AMP_FORMAL_PREFLIGHT_PROFILE,
     AMP_REPAIR_INTERVENTION,
     AMP_REPAIR_PROFILE,
     AMP_REPAIR_REGISTERED_CLASS,
@@ -195,6 +196,28 @@ def _validate_deployment(
             raise RuntimeError(
                 "DDP FP16-cast repair deployment lacks its exact localized "
                 "mechanism parent or single-variable intervention"
+            )
+    if protocol_profile == AMP_FORMAL_PREFLIGHT_PROFILE:
+        repair_parent = deployment.get("parent_repair_gate")
+        official_reference = deployment.get("official_reference_binding")
+        world2_kat = deployment.get("world2_fp32_ddp_kat")
+        if (
+            not isinstance(repair_parent, Mapping)
+            or repair_parent.get("decision")
+            != (
+                "DDP_FP16_CAST_REPAIR_GATE_PASS_"
+                "MATCHED_FORMAL_PROTOCOL_FREEZE_AUTHORIZED"
+            )
+            or not isinstance(official_reference, Mapping)
+            or official_reference.get("bound") is not True
+            or not isinstance(world2_kat, Mapping)
+            or world2_kat.get("required") is not True
+            or not str(world2_kat.get("job_id", "")).isdigit()
+            or deployment.get("origin_ref_parity_verified") is not True
+        ):
+            raise RuntimeError(
+                "official-comparable resource preflight lacks its sealed repair "
+                "parent, official reference, or two-rank DDP KAT binding"
             )
     return deployment
 
@@ -382,6 +405,7 @@ def _parse_args() -> argparse.Namespace:
             AMP_STABILITY_PROFILE,
             AMP_STABILITY_V2_PROFILE,
             AMP_REPAIR_PROFILE,
+            AMP_FORMAL_PREFLIGHT_PROFILE,
         ),
         default=AMP_DIAGNOSTIC_PROFILE,
     )

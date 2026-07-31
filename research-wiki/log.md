@@ -2030,3 +2030,35 @@ append_only: true
   the registered no-compression numerical repair and authorizes freezing a
   matched formal protocol. Exact official reproduction, performance, official
   test, P2/P3, Geometry Zoom and paper claims remain closed.
+
+- 2026-07-31: froze and implemented
+  `georoute_official_comparable_protocol_v1`; no new Pro discussion is needed
+  before its admission gate. The immutable external anchor is upstream OpenTAD
+  commit `01c58b9f2370e914150cf94d392208a4e211c053` with exact official config
+  SHA-256
+  `5521b6ce28cc6770e662d3dfdd4621479bc228be6131e300a92285fb4961a49c`.
+  Corrected a pre-deployment matchedness error: OpenTAD divides configured
+  batch by world size, so config/global batch `2` over two ranks is local batch
+  `1`, not global batch `4`. Added the no-performance two-arm real-data F0,
+  two-rank FP32-DDP KAT, protocol/finalization contracts, atomic final
+  checkpoint sidecar validation, two-rank Fit/Gate telemetry, 15-cell
+  dense/fixed/random/ST/PL x three-seed development DAG, and a result-blind
+  after-any selector requiring every-seed high-IoU control wins, every-seed
+  dense-cost reduction and strict ST/PL accuracy-cost Pareto dominance.
+  Geometry, official test, paper-grade efficiency and paper claims remain
+  closed. Initial combined official-protocol/AMP/GeoRoute focused tests pass
+  `85/85`; exact clean commit, remote Linux/CUDA checks and Slurm F0 remain
+  pending.
+
+- 2026-07-31: completed the pre-commit audit of the official-comparable
+  implementation. Corrected the world-size-two KAT Slurm request from four
+  reserved GPUs to two and restored the pinned AdaTAD deterministic-warn-only
+  evaluation semantics. Combined protocol/AMP/GeoRoute/required-C3 checks now
+  pass `105/105`, and all four new launchers pass `bash -n`. A wider local
+  Windows collection is non-evidence because the host PyTorch installation
+  cannot initialize `c10.dll`; the remote Linux suite remains mandatory.
+  N16R4 reports `70 GiB` free and `MaxSubmitJobs=16`, with one unrelated
+  running job and one unrelated dependency-failed pending job. The conservative
+  four-job F0 admission gate has enough storage/capacity; F1 does not and stays
+  closed without cancelling unrelated work or weakening its pre-registered
+  storage/capacity guards.

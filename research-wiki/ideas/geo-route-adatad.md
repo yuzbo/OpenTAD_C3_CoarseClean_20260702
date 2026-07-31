@@ -2,11 +2,11 @@
 type: idea
 node_id: idea:geo-route-adatad
 title: "NativeTokenSelect-first routing for offline TAD"
-stage: tested
-status: free_v1_closed_cer_discussed_stability_v2_running
+stage: implemented
+status: official_comparable_protocol_v1_preflight_pending
 tags: ["offline-tad", "native-token", "token-selection", "geometry", "adatad"]
 added: 2026-07-22
-updated: 2026-07-30
+updated: 2026-07-31
 ---
 
 # NativeTokenSelect-first Routing for Offline TAD
@@ -474,6 +474,18 @@ exploratory. A paper result must first reproduce the official AdaTAD recipe and
 compare against a matched native-source dense control under identical training,
 EMA, evaluator/NMS and full decode-to-NMS cost, followed by disjoint multi-seed
 confirmation and one sealed official-test opening.
+
+That path is now an implemented, fail-closed protocol rather than an informal
+future requirement. F0 contains only two real-data numerical/resource stress
+leaves and a world-size-two FP32-DDP KAT. F1 then tests dense, fixed, random,
+residual ST and residual ordered-PL over three seeds on the training-only
+Fit/Gate population. The implementation fixes an important matchedness fact:
+OpenTAD config batch `2` is global and becomes one sample per rank under two
+ranks. F1 can select a native estimator only under every-seed high-IoU control
+improvement, every-seed dense-cost reduction and strict ST/PL Pareto
+dominance. Geometry is absent. F1 remains development-only; the upstream
+official anchor, current-source bridges, full-system cost and one sealed test
+opening are still required in F2 before any paper claim.
 
 ## Connections
 

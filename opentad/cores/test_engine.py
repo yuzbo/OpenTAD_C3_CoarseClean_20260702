@@ -49,13 +49,35 @@ def eval_one_epoch(
     georoute_telemetry_enabled = bool(
         georoute_telemetry_cfg.get("enabled", False)
     )
+    formal_georoute_binding = cfg.get(
+        "georoute_official_development_binding", None
+    )
+    georoute_telemetry_sampler_indices = []
     if georoute_telemetry_enabled:
         if max_batches is not None:
             raise ValueError("GeoRoute diagnostic telemetry requires complete inference")
-        if int(world_size) != 1:
-            raise ValueError("GeoRoute diagnostic telemetry requires world_size=1")
-        if int(cfg.solver.test.get("batch_size", 1)) != 1:
-            raise ValueError("GeoRoute diagnostic telemetry requires batch_size=1")
+        expected_world_size = (
+            int(formal_georoute_binding["world_size"])
+            if formal_georoute_binding is not None
+            else 1
+        )
+        if int(world_size) != expected_world_size:
+            raise ValueError(
+                "GeoRoute diagnostic telemetry world size differs from its "
+                "registered protocol"
+            )
+        # ``solver.test.batch_size`` is job-global; the dataloader divides it
+        # by world size.  Route telemetry is sample-level only when the local
+        # batch is exactly one.
+        if int(test_loader.batch_size) != 1:
+            raise ValueError(
+                "GeoRoute diagnostic telemetry requires one sample per rank"
+            )
+        georoute_telemetry_sampler_indices = list(iter(test_loader.sampler))
+        if len(georoute_telemetry_sampler_indices) != len(test_loader):
+            raise ValueError(
+                "GeoRoute telemetry requires one sampler index per local batch"
+            )
     georoute_samples = []
     georoute_telemetry_records = []
     previous_window_end = time.perf_counter()
@@ -130,11 +152,14 @@ def eval_one_epoch(
                 raise RuntimeError(
                     "GeoRoute diagnostic replay did not emit window telemetry"
                 )
-            dataset_row = test_loader.dataset.data_list[batch_idx]
+            dataset_index = int(
+                georoute_telemetry_sampler_indices[batch_idx]
+            )
+            dataset_row = test_loader.dataset.data_list[dataset_index]
             video_id = str(dataset_row[0])
             centers = dataset_row[3]
             descriptor = {
-                "dataset_index": int(batch_idx),
+                "dataset_index": dataset_index,
                 "video_id": video_id,
                 "window_center_count": int(len(centers)),
                 "window_center_first": (
@@ -144,6 +169,11 @@ def eval_one_epoch(
                     float(centers[-1]) if len(centers) else None
                 ),
             }
+            if formal_georoute_binding is not None:
+                descriptor.update(
+                    rank=int(rank),
+                    local_batch_index=int(batch_idx),
+                )
             descriptor_bytes = json.dumps(
                 descriptor, sort_keys=True, separators=(",", ":")
             ).encode("utf-8")
@@ -165,6 +195,24 @@ def eval_one_epoch(
                 result_dict[k] = v
 
     result_dict = gather_ddp_results(world_size, result_dict, post_processing_cfg)
+    if georoute_telemetry_enabled and int(world_size) > 1:
+        gathered_telemetry = [None for _ in range(int(world_size))]
+        dist.all_gather_object(
+            gathered_telemetry,
+            georoute_telemetry_records,
+        )
+        georoute_telemetry_records = sorted(
+            [
+                record
+                for rank_records in gathered_telemetry
+                for record in rank_records
+            ],
+            key=lambda record: (
+                int(record["dataset_index"]),
+                int(record["rank"]),
+                int(record["local_batch_index"]),
+            ),
+        )
 
     # load back the normal model dict
     if model_ema != None:
@@ -253,24 +301,45 @@ def eval_one_epoch(
                 json.dump(profile_payload, handle, indent=2, sort_keys=True)
                 handle.write("\n")
         if georoute_telemetry_enabled:
-            if len(georoute_telemetry_records) != len(
-                test_loader.dataset.data_list
-            ):
+            dataset_count = len(test_loader.dataset.data_list)
+            unique_dataset_indices = {
+                int(record["dataset_index"])
+                for record in georoute_telemetry_records
+            }
+            if unique_dataset_indices != set(range(dataset_count)):
                 raise RuntimeError(
                     "GeoRoute diagnostic telemetry population is incomplete"
                 )
+            formal_world2 = formal_georoute_binding is not None
+            if not formal_world2 and len(georoute_telemetry_records) != dataset_count:
+                raise RuntimeError(
+                    "single-rank GeoRoute telemetry repeated the population"
+                )
+            descriptor_keys = (
+                (
+                    "dataset_index",
+                    "rank",
+                    "local_batch_index",
+                    "video_id",
+                    "window_center_count",
+                    "window_center_first",
+                    "window_center_last",
+                    "window_descriptor_sha256",
+                )
+                if formal_world2
+                else (
+                    "dataset_index",
+                    "video_id",
+                    "window_center_count",
+                    "window_center_first",
+                    "window_center_last",
+                    "window_descriptor_sha256",
+                )
+            )
             population_bytes = json.dumps(
                 [
                     {
-                        key: record[key]
-                        for key in (
-                            "dataset_index",
-                            "video_id",
-                            "window_center_count",
-                            "window_center_first",
-                            "window_center_last",
-                            "window_descriptor_sha256",
-                        )
+                        key: record[key] for key in descriptor_keys
                     }
                     for record in georoute_telemetry_records
                 ],
@@ -278,15 +347,25 @@ def eval_one_epoch(
                 separators=(",", ":"),
             ).encode("utf-8")
             telemetry_payload = {
-                "schema_version": "georoute_diagnostic_telemetry_v1",
+                "schema_version": (
+                    "georoute_formal_development_telemetry_v1"
+                    if formal_world2
+                    else "georoute_diagnostic_telemetry_v1"
+                ),
                 "development_only": True,
                 "official_test_opened": False,
                 "gt_for_route_used": False,
                 "teacher_for_route_used": False,
                 "oracle_used": False,
                 "raw_prediction_cache_used": False,
-                "dataset_count": len(test_loader.dataset.data_list),
+                "world_size": int(world_size),
+                "local_batch_size": int(test_loader.batch_size),
+                "dataset_count": dataset_count,
                 "record_count": len(georoute_telemetry_records),
+                "unique_dataset_count": len(unique_dataset_indices),
+                "sampler_padding_count": (
+                    len(georoute_telemetry_records) - dataset_count
+                ),
                 "population_sha256": hashlib.sha256(
                     population_bytes
                 ).hexdigest(),

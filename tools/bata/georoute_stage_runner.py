@@ -242,6 +242,7 @@ def build_torchrun_prefix(
     variant: str,
     seed: int,
     rendezvous_slot: int | None = None,
+    nproc_per_node: int = 1,
 ) -> tuple[list[str], dict[str, Any]]:
     """Build one collision-isolated single-node torchrun prefix and receipt."""
 
@@ -258,6 +259,8 @@ def build_torchrun_prefix(
         rendezvous_slot = 0 if phase == "train" else 1
     if not isinstance(rendezvous_slot, int) or rendezvous_slot not in {0, 1}:
         raise ValueError("GeoRoute rendezvous slot must be 0 or 1")
+    if not isinstance(nproc_per_node, int) or nproc_per_node <= 0:
+        raise ValueError("GeoRoute rendezvous process count must be positive")
     for name, value in components.items():
         if not value or _RENDEZVOUS_COMPONENT.fullmatch(value) is None:
             raise ValueError(f"unsafe GeoRoute rendezvous {name}: {value!r}")
@@ -279,14 +282,14 @@ def build_torchrun_prefix(
         "variant": variant,
         "seed": int(seed),
         "nnodes": 1,
-        "nproc_per_node": 1,
+        "nproc_per_node": int(nproc_per_node),
     }
     command = [
         sys.executable,
         "-m",
         "torch.distributed.run",
         "--nnodes=1",
-        "--nproc_per_node=1",
+        f"--nproc_per_node={int(nproc_per_node)}",
         "--rdzv_backend=c10d",
         f"--rdzv_endpoint={endpoint}",
         f"--rdzv_id={rendezvous_id}",
@@ -300,6 +303,7 @@ def _validate_rendezvous_receipt(
     stage: str,
     variant: str,
     seed: int,
+    nproc_per_node: int = 1,
 ) -> dict[str, Any]:
     """Fail closed if a stage result is not bound to two isolated launches."""
 
@@ -315,7 +319,8 @@ def _validate_rendezvous_receipt(
             or record.get("variant") != variant
             or int(record.get("seed", -1)) != int(seed)
             or int(record.get("nnodes", -1)) != 1
-            or int(record.get("nproc_per_node", -1)) != 1
+            or int(record.get("nproc_per_node", -1))
+            != int(nproc_per_node)
         ):
             raise ValueError(f"invalid GeoRoute {phase} rendezvous receipt")
         rendezvous_id = record.get("rendezvous_id")
