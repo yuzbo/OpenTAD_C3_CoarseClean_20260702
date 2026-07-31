@@ -89,6 +89,20 @@ def test_odfcr_launcher_does_not_train_or_tune_k384():
     assert "2026073100" not in text
 
 
+def test_odfcr_yaml_support_tokens_remain_strings_after_parsing():
+    for arm in ARMS:
+        cfg = load_config(
+            str(
+                ROOT
+                / "configs"
+                / "thumos_i3d_odfcr_dev_{:s}.yaml".format(arm)
+            )
+        )
+        support = cfg["model"]["odfcr_head"]["residual_execution_support"]
+        assert type(support) is str
+        assert support == ("all_valid" if arm.endswith("_all") else "off")
+
+
 def test_odfcr_followup_launchers_separate_g2_from_conditional_g3():
     g2_text = G2_LAUNCHER.read_text(encoding="utf-8")
     replay_text = K384_LAUNCHER.read_text(encoding="utf-8")

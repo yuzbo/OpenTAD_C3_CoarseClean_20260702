@@ -26,7 +26,7 @@ model: {
     mode: official_dense_floor_factorial,
     scaffold_num_layers: 1,
     residual_enabled: False,
-    residual_execution_support: off,
+    residual_execution_support: 'off',
     residual_num_layers: 3,
     residual_scale: 1.0,
     training_loss_support: official_all_valid_fpn_queries,
