@@ -919,9 +919,11 @@ snapshots passed full commit/ref/clean/hash verification. The first F0 root
 mechanically incomplete: world-two KAT Job `1209274` failed before Python/CUDA
 because its inner 192-GB step exceeded the outer default memory allocation.
 PL/ST `1209272/1209273` continue only to allow after-any finalizer `1209275` to
-seal complete provenance. This is not ST/PL evidence. A resource-only
-replacement now binds both KAT allocation layers to `32000M` and must run from
-a new exact source and namespace; F1 remains closed.
+seal complete provenance. This is not ST/PL evidence. N16R4 test-only probes
+showed that the site rejects explicit memory overrides and assigns 55 GB per
+GPU. The resource-only replacement requests two GPUs at the outer job and lets
+the inner step inherit that allocation; it must run from a new exact source
+and namespace, and F1 remains closed.
 
 F1 freezes five arms (native dense, fixed K64, random K64, residual ST K64,
 residual ordered-PL K64) across seeds 3407/3408/3409, 60 epochs, official

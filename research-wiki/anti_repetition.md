@@ -187,9 +187,11 @@ updated: 2026-07-30
    World-two KAT Job `1209274` never entered Python/CUDA; Slurm rejected its
    inner 192-GB step because the outer allocation did not reserve matching
    memory. PL/ST terminal outputs in that namespace cannot compensate for the
-   missing KAT. The only admissible successor is a fresh exact-source,
-   fresh-namespace F0 whose outer and inner two-GPU KAT reservations both bind
-   `32000M`; this is a deployment repair, not evidence about ST, PL or mAP.
+   missing KAT. N16R4's submit Lua rejects explicit `--mem` overrides and
+   assigns 55 GB per requested GPU, so the only admissible successor is a
+   fresh exact-source/fresh-namespace F0 that requests two GPUs once and lets
+   the inner KAT inherit that allocation. This is a deployment repair, not
+   evidence about ST, PL or mAP.
 0. Do not mistake “zero AMP skip at initial scale 65536” for an official
    AdaTAD requirement. The official config uses the default dynamic
    `GradScaler`; with no formal binding, the legacy train path permits a skipped

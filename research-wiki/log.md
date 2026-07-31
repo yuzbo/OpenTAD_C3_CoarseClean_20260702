@@ -2085,3 +2085,22 @@ append_only: true
   replacement that binds both outer and inner two-GPU KAT steps to `32000M`;
   local focused repair checks pass `23/23`. No model, data, seed, threshold,
   selector or claim rule changed, and F1 remains closed.
+
+- 2026-07-31: the first F0 namespace is now terminally sealed. PL/ST Jobs
+  `1209272/1209273` completed their own 32-batch default-GradScaler contracts,
+  but cannot substitute for the missing world-two KAT. After-any finalizer
+  `1209275` emitted `INCOMPLETE_OFFICIAL_COMPARABLE_PREFLIGHT /
+  OFFICIAL_COMPARABLE_PREFLIGHT_HOLD`; its internal/file SHA-256 are
+  `f6da6db381260c40e6f90a07203e1eb1c38c50182cfda5b4e3edb0f52ec55cef` /
+  `72a910b6ad2d79f895462cc8b0d6dc8c34e85774a810836b76713688e9387ca7`.
+  Independent receipt validation found no checkpoint, prediction, evaluator,
+  metric, official-test or temporary performance artifact.
+
+- 2026-07-31: correction to the immediately preceding resource-repair entry.
+  N16R4's submit Lua rejects every explicit `--mem` override and assigns 55 GB
+  per requested GPU. The `32000M` source `5b447255` was therefore rejected by
+  `sbatch --test-only` before any replacement namespace or Slurm job existed.
+  The final resource-only wrapper requests two GPUs in the outer allocation
+  and removes the inner memory override so the KAT inherits that allocation.
+  This changes no scientific input or decision rule; a fresh exact-source,
+  fresh-namespace all-three F0 PASS is still required before F1.

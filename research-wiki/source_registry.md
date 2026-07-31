@@ -14,8 +14,17 @@ updated: 2026-07-31
   `1209272/1209273/1209274/1209275`. KAT failed before Python/CUDA with
   Slurm's `Memory required by task is not available`; therefore this source is
   execution-failure provenance only, with no numerical, performance or paper
-  evidence. A resource-only new-commit replacement binds the outer and inner
-  KAT memory to `32000M`.
+  evidence. The after-any finalizer sealed
+  `INCOMPLETE_OFFICIAL_COMPARABLE_PREFLIGHT /
+  OFFICIAL_COMPARABLE_PREFLIGHT_HOLD`, internal SHA-256
+  `f6da6db381260c40e6f90a07203e1eb1c38c50182cfda5b4e3edb0f52ec55cef`
+  and file SHA-256
+  `72a910b6ad2d79f895462cc8b0d6dc8c34e85774a810836b76713688e9387ca7`.
+  Site test-only probes then established that N16R4 assigns 55 GB per GPU and
+  rejects explicit `--mem` overrides. Source `5b447255` implemented an
+  explicit 32-GB attempt but was rejected by `sbatch --test-only` before any
+  replacement namespace or Slurm job was created. The corrected successor
+  requests two GPUs once and makes the inner KAT inherit that allocation.
 
 - GeoRoute official-comparable protocol v1 design, 2026-07-31. Project-authored
   design

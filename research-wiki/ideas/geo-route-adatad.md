@@ -492,9 +492,11 @@ The first F0 execution does not update this hypothesis. Exact source
 world-two KAT Job `1209274` was rejected by Slurm before Python because its
 inner 192-GB memory request was not bound in the outer allocation. PL/ST
 terminal behavior in that incomplete namespace is non-comparative provenance.
-The replacement changes only the outer/inner KAT reservation to an explicit
-`32000M`; until a fresh all-three F0 PASS, NativeTokenSelect remains
-`implemented`, not `empirically_supported`.
+N16R4 test-only probes established the site contract: 55 GB is assigned per
+GPU and explicit memory overrides are rejected. The replacement changes only
+the wrapper so the two-rank KAT inherits its two-GPU allocation; until a fresh
+all-three F0 PASS, NativeTokenSelect remains `implemented`, not
+`empirically_supported`.
 
 ## Connections
 

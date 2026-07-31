@@ -383,9 +383,12 @@ max_chars: 8000
   scientific evidence: KAT Job `1209274` failed before Python/CUDA because an
   inner `srun --mem=192000M` exceeded the outer job's default memory
   allocation. PL/ST `1209272/1209273` and finalizer `1209275` only close the
-  namespace. A new-source/new-namespace replacement binds both outer and inner
-  KAT memory to `32000M`; no model, data, seed, threshold or selector changes.
-  F1 remains closed until that replacement F0 passes completely.
+  namespace. Test-only probes showed that N16R4 rejects every explicit
+  `--mem` override and accepts the site contract that assigns 55 GB per
+  requested GPU. The new-source/new-namespace replacement therefore requests
+  two GPUs once and makes the inner KAT inherit that allocation; no model,
+  data, seed, threshold or selector changes. F1 remains closed until that
+  replacement F0 passes completely.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be
