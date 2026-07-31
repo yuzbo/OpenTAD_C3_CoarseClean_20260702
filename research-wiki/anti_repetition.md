@@ -182,6 +182,14 @@ updated: 2026-07-30
    versus PL additionally requires non-inferiority on both axes for every seed
    and strict improvement on both mean axes. Any tie, crossing, missing cell or
    population mismatch means `HOLD_NO_OFFICIAL_TEST`. Geometry is not an F1 arm.
+0. Do not resume or reinterpret F0 namespace
+   `georoute_official_comparable_preflight_v1_4a03339b_20260731_1145`.
+   World-two KAT Job `1209274` never entered Python/CUDA; Slurm rejected its
+   inner 192-GB step because the outer allocation did not reserve matching
+   memory. PL/ST terminal outputs in that namespace cannot compensate for the
+   missing KAT. The only admissible successor is a fresh exact-source,
+   fresh-namespace F0 whose outer and inner two-GPU KAT reservations both bind
+   `32000M`; this is a deployment repair, not evidence about ST, PL or mAP.
 0. Do not mistake “zero AMP skip at initial scale 65536” for an official
    AdaTAD requirement. The official config uses the default dynamic
    `GradScaler`; with no formal binding, the legacy train path permits a skipped

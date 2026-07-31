@@ -3,6 +3,20 @@ type: source_registry
 updated: 2026-07-31
 ---
 
+- GeoRoute official-comparable F0 first execution, 2026-07-31. Exact clean
+  current snapshot `4a03339b13b0f65047ed0349615889ade06050e8` passed remote
+  Linux focused `105/105` and complete GeoRoute `153/153`; pinned upstream
+  snapshot `01c58b9f2370e914150cf94d392208a4e211c053` and config SHA-256
+  `5521b6ce28cc6770e662d3dfdd4621479bc228be6131e300a92285fb4961a49c`
+  were independently bound. Run root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_official_comparable_preflight_v1_4a03339b_20260731_1145`
+  submitted PL/ST/KAT/finalizer Jobs
+  `1209272/1209273/1209274/1209275`. KAT failed before Python/CUDA with
+  Slurm's `Memory required by task is not available`; therefore this source is
+  execution-failure provenance only, with no numerical, performance or paper
+  evidence. A resource-only new-commit replacement binds the outer and inner
+  KAT memory to `32000M`.
+
 - GeoRoute official-comparable protocol v1 design, 2026-07-31. Project-authored
   design
   `docs/superpowers/specs/2026-07-31-georoute-official-comparable-protocol-v1-design.md`

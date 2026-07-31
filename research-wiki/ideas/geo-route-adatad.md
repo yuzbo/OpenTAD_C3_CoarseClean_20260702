@@ -487,6 +487,15 @@ dominance. Geometry is absent. F1 remains development-only; the upstream
 official anchor, current-source bridges, full-system cost and one sealed test
 opening are still required in F2 before any paper claim.
 
+The first F0 execution does not update this hypothesis. Exact source
+`4a03339b` and pinned upstream `01c58b9` passed their code/source gates, but
+world-two KAT Job `1209274` was rejected by Slurm before Python because its
+inner 192-GB memory request was not bound in the outer allocation. PL/ST
+terminal behavior in that incomplete namespace is non-comparative provenance.
+The replacement changes only the outer/inner KAT reservation to an explicit
+`32000M`; until a fresh all-three F0 PASS, NativeTokenSelect remains
+`implemented`, not `empirically_supported`.
+
 ## Connections
 
 Relations are maintained only in `research-wiki/graph/edges.jsonl`.

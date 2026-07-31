@@ -912,6 +912,17 @@ single-rank batch-2 resource stresses over 32 real batches plus a two-rank
 default-FP32-DDP reduction KAT. It emits no metric/checkpoint/prediction/
 evaluator/test evidence. Only all-three PASS can authorize F1.
 
+Exact source `4a03339b13b0f65047ed0349615889ade06050e8` passed remote Linux
+focused `105/105` and complete GeoRoute `153/153`, and its current/upstream
+snapshots passed full commit/ref/clean/hash verification. The first F0 root
+`georoute_official_comparable_preflight_v1_4a03339b_20260731_1145` is
+mechanically incomplete: world-two KAT Job `1209274` failed before Python/CUDA
+because its inner 192-GB step exceeded the outer default memory allocation.
+PL/ST `1209272/1209273` continue only to allow after-any finalizer `1209275` to
+seal complete provenance. This is not ST/PL evidence. A resource-only
+replacement now binds both KAT allocation layers to `32000M` and must run from
+a new exact source and namespace; F1 remains closed.
+
 F1 freezes five arms (native dense, fixed K64, random K64, residual ST K64,
 residual ordered-PL K64) across seeds 3407/3408/3409, 60 epochs, official
 scheduler 5/100, two ranks/global batch two, AMP/EMA/static graph, no FP16

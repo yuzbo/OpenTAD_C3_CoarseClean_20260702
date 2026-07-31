@@ -376,6 +376,16 @@ max_chars: 8000
   dominance. Ambiguity is `HOLD_NO_OFFICIAL_TEST`; Geometry is excluded. A
   later F2 still requires the official reproduction/bridge stack, complete
   decode-to-NMS cost and one separately sealed official-test open.
+  Exact source `4a03339b13b0f65047ed0349615889ade06050e8` passed remote Linux
+  focused `105/105` and all GeoRoute `153/153` checks, and both its source
+  snapshot and pinned upstream `01c58b9` snapshot were verified against full
+  HEAD/origin ref/clean-tree/config hashes. Its first F0 deployment is not
+  scientific evidence: KAT Job `1209274` failed before Python/CUDA because an
+  inner `srun --mem=192000M` exceeded the outer job's default memory
+  allocation. PL/ST `1209272/1209273` and finalizer `1209275` only close the
+  namespace. A new-source/new-namespace replacement binds both outer and inner
+  KAT memory to `32000M`; no model, data, seed, threshold or selector changes.
+  F1 remains closed until that replacement F0 passes completely.
 - Objective: first test whether detector-supervised, ROI-free exact-K selection
   of source-native VideoMAE tubelets protects high-tIoU offline TAD at lower
   measured total cost. Only after that base passes may continuous geometry be

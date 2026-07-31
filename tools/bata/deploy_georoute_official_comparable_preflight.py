@@ -115,7 +115,13 @@ def _sbatch_world2(
         command.append("--test-only")
     if hold and not test_only:
         command.append("--hold")
-    command.extend(["--gpus", "2", "--cpus-per-task", "12"])
+    # Keep the outer Slurm allocation identical to the inner two-rank step.
+    # The KAT itself is tiny; an explicit 32 GB reservation prevents the
+    # scheduler from rejecting an inner step that asks for more memory than
+    # the default CPU-derived allocation.
+    command.extend(
+        ["--gpus", "2", "--cpus-per-task", "12", "--mem", "32000M"]
+    )
     command.extend(
         [
             "--export",

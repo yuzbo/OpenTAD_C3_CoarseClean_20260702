@@ -2062,3 +2062,26 @@ append_only: true
   four-job F0 admission gate has enough storage/capacity; F1 does not and stays
   closed without cancelling unrelated work or weakening its pre-registered
   storage/capacity guards.
+
+- 2026-07-31: pushed exact official-comparable source
+  `4a03339b13b0f65047ed0349615889ade06050e8` through the academic proxy and
+  verified local and N16R4 HEAD/origin-ref/clean-tree parity. A separately
+  proxied upstream snapshot is detached at
+  `01c58b9f2370e914150cf94d392208a4e211c053`, with the registered official
+  config SHA-256. Remote Linux focused tests passed `105/105` and the complete
+  GeoRoute suite passed `153/153`. F0 root
+  `georoute_official_comparable_preflight_v1_4a03339b_20260731_1145`
+  submitted PL/ST/KAT/finalizer Jobs
+  `1209272/1209273/1209274/1209275`; storage passed with 67,006,177,280 free
+  versus 47,244,640,256 required bytes.
+
+- 2026-07-31: F0 KAT Job `1209274` failed `1:0` after one second before
+  Python/CUDA. Slurm reported `Memory required by task is not available`
+  because the outer allocation did not reserve the inner
+  `srun --mem=192000M` request. No KAT receipt, checkpoint, prediction,
+  evaluator, metric or official-test artifact exists. PL/ST continue only to
+  permit after-any finalizer `1209275` to seal the namespace incomplete; their
+  outputs cannot substitute for the missing KAT. Implemented a resource-only
+  replacement that binds both outer and inner two-GPU KAT steps to `32000M`;
+  local focused repair checks pass `23/23`. No model, data, seed, threshold,
+  selector or claim rule changed, and F1 remains closed.

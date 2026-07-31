@@ -3,12 +3,12 @@ type: experiment
 node_id: exp:georoute-official-comparable-protocol-v1
 title: "GeoRoute official-comparable protocol v1"
 idea: idea:geo-route-adatad
-stage: implemented
-status: preflight_pending
-verdict: PREFLIGHT_BEFORE_F1
+stage: experiment_running
+status: first_f0_namespace_closing_incomplete_memory_binding_replacement_implemented
+verdict: REPLACE_F0_EXECUTION_NO_SCIENTIFIC_INFERENCE
 confidence: high
-commit: pending
-jobs: []
+commit: 4a03339b13b0f65047ed0349615889ade06050e8
+jobs: [1209272, 1209273, 1209274, 1209275]
 updated: 2026-07-31
 ---
 
@@ -16,10 +16,24 @@ updated: 2026-07-31
 
 ## Current verdict
 
-No further Pro discussion is required. The numerical cause, single permitted
-repair, official source anchor, development matrix, selector rule and sealed
-test boundary are specified. The next admissible action is remote validation
-and F0 deployment from one exact clean commit.
+No further Pro discussion is required. Exact source `4a03339b` passed the
+remote Linux focused suite `105/105` and complete GeoRoute suite `153/153`;
+its HEAD, origin ref and tree are exact/clean. The pinned upstream snapshot is
+also exact/clean at `01c58b9`.
+
+The first F0 namespace is an execution failure, not numerical or model
+evidence. World-two KAT Job `1209274` failed in one second before Python/CUDA
+because its outer allocation did not bind memory while the inner `srun`
+requested `192000M`:
+`Unable to create step ... Memory required by task is not available`.
+PL/ST Jobs `1209272/1209273` are allowed to finish only for terminal
+provenance, and after-any finalizer `1209275` must seal the namespace
+incomplete. No resume or same-namespace replacement is allowed.
+
+The resource-only replacement explicitly binds both outer and inner KAT steps
+to two GPUs and `32000M`; it changes no model, data, seed, threshold or claim
+rule. It must use a new exact commit and namespace after the first closeout.
+F1 remains closed.
 
 ## Parent evidence
 
@@ -78,4 +92,6 @@ running job and one unrelated `DependencyNeverSatisfied` job. This is enough
 for the conservative four-job F0 (`44 GiB` requirement), but not yet for the
 16-submission/15-cell F1 or its conservative `122 GiB` peak. No unrelated job
 may be cancelled. F1 therefore remains result- and capacity-gated even if F0
-passes. Runtime commit, remote snapshot, jobs and receipts remain pending.
+passes. The first deployment root is
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_official_comparable_preflight_v1_4a03339b_20260731_1145`;
+its terminal finalization remains pending.

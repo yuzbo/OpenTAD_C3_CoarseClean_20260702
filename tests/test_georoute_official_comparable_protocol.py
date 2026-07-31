@@ -257,10 +257,13 @@ def test_slurm_world2_gate_uses_two_logical_gpus_without_physical_indices():
         / "bata"
         / "deploy_georoute_official_comparable_preflight.py"
     ).read_text(encoding="utf-8")
-    assert "srun --exact --ntasks=1 --gpus=2" in launcher
+    assert (
+        "srun --exact --ntasks=1 --gpus=2 --cpus-per-task=10 --mem=32000M"
+        in launcher
+    )
     assert "--nproc_per_node=2" in launcher
     assert "CUDA_VISIBLE_DEVICES=" not in launcher
-    assert 'command.extend(["--gpus", "2", "--cpus-per-task", "12"])' in deployer
+    assert '"--gpus", "2", "--cpus-per-task", "12", "--mem", "32000M"' in deployer
     assert "additional_jobs=4" in deployer
     assert "OFFICIAL_UPSTREAM_TRACKING_REF" in deployer
 

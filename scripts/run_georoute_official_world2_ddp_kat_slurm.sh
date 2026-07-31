@@ -14,7 +14,7 @@ EXPECTED_COMMIT="${GEOROUTE_EXPECTED_COMMIT:?set GEOROUTE_EXPECTED_COMMIT}"
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail 'world2 KAT requires Slurm'
 if [[ "${GEOROUTE_INNER_STEP:-0}" != "1" ]]; then
   export GEOROUTE_INNER_STEP=1
-  exec srun --exact --ntasks=1 --gpus=2 --cpus-per-task=10 --mem=192000M \
+  exec srun --exact --ntasks=1 --gpus=2 --cpus-per-task=10 --mem=32000M \
     bash "${ROOT}/scripts/run_georoute_official_world2_ddp_kat_slurm.sh"
 fi
 
