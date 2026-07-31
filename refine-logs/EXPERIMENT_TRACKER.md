@@ -2,7 +2,7 @@
 
 | Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
 |---|---|---|---|---|---|---|---|---|
-| ODFCR-M0 | M0 | freeze data and contracts | holdout-v2 + focused tests | validation 160/40 v2 | schema/class/leak checks | MUST | TODO | no test subset |
+| ODFCR-M0 | M0 | freeze data and contracts | holdout-v2 + focused tests | validation 160/40 v2 | schema/class/leak checks | MUST | IMPLEMENTED_LOCAL | builder/consumer/evidence contracts and pure tests pass; real assets + Linux pending |
 | ODFCR-G0 | M1 | exact official floor identity | official dense vs d3_off | validation probe | tensor/output exact | MUST | TODO | blocks training |
 | ODFCR-S1-D1O | M2 | depth/residual factorial | d1_off, seed 2026073101 | holdout-v2 | Avg, 0.3--0.7 | MUST | TODO | paired |
 | ODFCR-S1-D1A | M2 | depth/residual factorial | d1_all, seed 2026073101 | holdout-v2 | Avg, 0.3--0.7 | MUST | TODO | paired |

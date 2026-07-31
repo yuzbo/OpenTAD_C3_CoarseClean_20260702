@@ -24,6 +24,7 @@ class NativeGridSparseQuerySelector(nn.Module):
         self.budget = budget
         self.policy = policy
         self.hash_seed = hash_seed
+        self.audit_callback = None
 
     @staticmethod
     def allocate_level_quotas(valid_lengths, budget):
@@ -113,7 +114,10 @@ class NativeGridSparseQuerySelector(nn.Module):
                         indices.device,
                     )
                 selected_masks[level_idx][batch_idx, 0, indices[ranks]] = True
-        return tuple(selected_masks)
+        selected_masks = tuple(selected_masks)
+        if self.audit_callback is not None:
+            self.audit_callback(fpn_masks, selected_masks, video_ids)
+        return selected_masks
 
 
 def _masked_conv_spec(masked_conv):
@@ -591,6 +595,42 @@ def run_sparse_residual_heads(
     return cls_outputs, reg_outputs
 
 
+def run_dense_reg_residual_head(
+    reg_head,
+    fpn_feats,
+    fpn_masks,
+):
+    """Run the official regression stack densely without the final ReLU."""
+    if not (
+        len(fpn_feats) == len(fpn_masks) == reg_head.fpn_levels
+    ):
+        raise ValueError("dense residual FPN feature/mask lengths must match")
+    out_offsets = tuple()
+    for level_idx, (cur_feat, cur_mask) in enumerate(
+        zip(fpn_feats, fpn_masks)
+    ):
+        cur_out = cur_feat
+        for layer_idx in range(len(reg_head.head)):
+            cur_out, _ = reg_head.head[layer_idx](cur_out, cur_mask)
+            cur_out = reg_head.act(reg_head.norm[layer_idx](cur_out))
+        cur_offsets, _ = reg_head.offset_head(cur_out, cur_mask)
+        out_offsets += (reg_head.scale[level_idx](cur_offsets),)
+    return out_offsets
+
+
+def run_dense_residual_heads(
+    cls_head,
+    reg_head,
+    fpn_feats,
+    fpn_masks,
+):
+    """Run all-query classification and signed regression residuals densely."""
+    return (
+        cls_head(fpn_feats, fpn_masks),
+        run_dense_reg_residual_head(reg_head, fpn_feats, fpn_masks),
+    )
+
+
 def run_dcsr_heads(
     scaffold_cls_head,
     scaffold_reg_head,
@@ -601,6 +641,7 @@ def run_dcsr_heads(
     residual_reg_head=None,
     residual_enabled=True,
     residual_scale=1.0,
+    residual_execution="sparse",
 ):
     """Dense proposal floor plus sparse expensive residual refinement.
 
@@ -612,6 +653,8 @@ def run_dcsr_heads(
         raise ValueError("DCSR residual_enabled must be boolean")
     if not isinstance(residual_scale, (int, float)) or residual_scale <= 0:
         raise ValueError("DCSR residual_scale must be positive")
+    if residual_execution not in ("sparse", "dense"):
+        raise ValueError("DCSR residual_execution must be sparse or dense")
 
     scaffold_cls = scaffold_cls_head(fpn_feats, fpn_masks)
     scaffold_reg = scaffold_reg_head(fpn_feats, fpn_masks)
@@ -620,13 +663,25 @@ def run_dcsr_heads(
     if residual_cls_head is None or residual_reg_head is None:
         raise ValueError("enabled DCSR residual requires both residual heads")
 
-    residual_cls, residual_reg = run_sparse_residual_heads(
-        residual_cls_head,
-        residual_reg_head,
-        fpn_feats,
-        fpn_masks,
-        selected_masks,
-    )
+    if residual_execution == "dense":
+        if selected_masks is not fpn_masks:
+            raise ValueError(
+                "dense residual execution requires the original FPN masks"
+            )
+        residual_cls, residual_reg = run_dense_residual_heads(
+            residual_cls_head,
+            residual_reg_head,
+            fpn_feats,
+            fpn_masks,
+        )
+    else:
+        residual_cls, residual_reg = run_sparse_residual_heads(
+            residual_cls_head,
+            residual_reg_head,
+            fpn_feats,
+            fpn_masks,
+            selected_masks,
+        )
     out_cls = []
     out_reg = []
     for (

@@ -197,7 +197,8 @@ class PtTransformer(nn.Module):
         train_cfg,             # other cfg for training
         test_cfg,              # other cfg for testing
         sparse_head=None,      # optional native-grid sparse head intervention
-        dcsr_head=None         # optional dense-scaffold sparse-refinement head
+        dcsr_head=None,        # optional dense-scaffold sparse-refinement head
+        odfcr_head=None        # official dense floor + conditional residual
     ):
         super().__init__()
          # re-distribute params to backbone / neck / head
@@ -262,6 +263,16 @@ class PtTransformer(nn.Module):
         self.dcsr_residual_scale = 1.0
         self.dcsr_scaffold_num_layers = None
         self.dcsr_training_loss_support = 'official_all_valid_fpn_queries'
+        self.odfcr_mode = None
+        self.odfcr_scaffold_num_layers = None
+        self.odfcr_residual_enabled = False
+        self.odfcr_residual_execution_support = None
+        self.odfcr_residual_num_layers = None
+        self.odfcr_residual_scale = 1.0
+        self.odfcr_training_loss_support = (
+            'official_all_valid_fpn_queries'
+        )
+        self.odfcr_replay_query_selector = None
         if sparse_head is not None:
             if not isinstance(sparse_head, dict):
                 raise ValueError("model.sparse_head must be a dictionary")
@@ -398,6 +409,113 @@ class PtTransformer(nn.Module):
                         'hash_seed', 1234567891
                     ),
                 )
+        if odfcr_head is not None:
+            if not isinstance(odfcr_head, dict):
+                raise ValueError("model.odfcr_head must be a dictionary")
+            allowed_keys = {
+                'enabled',
+                'mode',
+                'scaffold_num_layers',
+                'residual_enabled',
+                'residual_execution_support',
+                'residual_num_layers',
+                'residual_scale',
+                'training_loss_support',
+            }
+            unknown_keys = set(odfcr_head) - allowed_keys
+            if unknown_keys:
+                raise ValueError(
+                    "unknown model.odfcr_head fields: {:s}".format(
+                        ", ".join(sorted(unknown_keys))
+                    )
+                )
+            enabled = odfcr_head.get('enabled')
+            if type(enabled) is not bool:
+                raise ValueError(
+                    "model.odfcr_head.enabled must be explicitly boolean"
+                )
+            if not enabled and set(odfcr_head) != {'enabled'}:
+                raise ValueError(
+                    "disabled model.odfcr_head accepts only enabled=False"
+                )
+            if enabled:
+                if (
+                    self.sparse_query_selector is not None
+                    or self.dcsr_mode is not None
+                ):
+                    raise ValueError(
+                        "model.odfcr_head is mutually exclusive with sparse "
+                        "and DCSR heads"
+                    )
+                mode = odfcr_head.get('mode')
+                if mode != 'official_dense_floor_factorial':
+                    raise ValueError(
+                        "ODF-CR mode must be official_dense_floor_factorial"
+                    )
+                training_loss_support = odfcr_head.get(
+                    'training_loss_support'
+                )
+                if (
+                    training_loss_support
+                    != 'official_all_valid_fpn_queries'
+                ):
+                    raise ValueError(
+                        "enabled ODF-CR requires training_loss_support="
+                        "official_all_valid_fpn_queries"
+                    )
+                scaffold_num_layers = odfcr_head.get(
+                    'scaffold_num_layers'
+                )
+                if (
+                    type(scaffold_num_layers) is not int
+                    or scaffold_num_layers not in (1, head_num_layers)
+                ):
+                    raise ValueError(
+                        "ODF-CR scaffold_num_layers must be 1 or the "
+                        "official head_num_layers"
+                    )
+                residual_enabled = odfcr_head.get('residual_enabled')
+                if type(residual_enabled) is not bool:
+                    raise ValueError(
+                        "ODF-CR residual_enabled must be explicitly boolean"
+                    )
+                residual_execution_support = odfcr_head.get(
+                    'residual_execution_support'
+                )
+                expected_support = (
+                    'all_valid' if residual_enabled else 'off'
+                )
+                if residual_execution_support != expected_support:
+                    raise ValueError(
+                        "ODF-CR residual_execution_support must be {:s}".format(
+                            expected_support
+                        )
+                    )
+                residual_num_layers = odfcr_head.get(
+                    'residual_num_layers'
+                )
+                if residual_num_layers != head_num_layers:
+                    raise ValueError(
+                        "ODF-CR residual_num_layers must equal the official "
+                        "head_num_layers"
+                    )
+                residual_scale = odfcr_head.get('residual_scale')
+                if (
+                    type(residual_scale) not in (int, float)
+                    or float(residual_scale) != 1.0
+                ):
+                    raise ValueError(
+                        "ODF-CR residual_scale must be exactly 1.0"
+                    )
+                self.odfcr_mode = mode
+                self.odfcr_scaffold_num_layers = scaffold_num_layers
+                self.odfcr_residual_enabled = residual_enabled
+                self.odfcr_residual_execution_support = (
+                    residual_execution_support
+                )
+                self.odfcr_residual_num_layers = residual_num_layers
+                self.odfcr_residual_scale = float(residual_scale)
+                self.odfcr_training_loss_support = training_loss_support
 
         # we will need a better way to dispatch the params to backbones / necks
         # backbone network: conv + transformer
@@ -507,6 +625,58 @@ class PtTransformer(nn.Module):
             torch.nn.init.constant_(
                 self.reg_head.offset_head.conv.bias, 0.0
             )
+        self.odfcr_scaffold_cls_head = None
+        self.odfcr_scaffold_reg_head = None
+        self.odfcr_residual_cls_head = None
+        self.odfcr_residual_reg_head = None
+        if (
+            self.odfcr_mode == 'official_dense_floor_factorial'
+            and self.odfcr_scaffold_num_layers == 1
+        ):
+            self.odfcr_scaffold_cls_head = PtTransformerClsHead(
+                fpn_dim, fpn_dim, self.num_classes,
+                kernel_size=head_kernel_size,
+                prior_prob=self.train_cls_prior_prob,
+                with_ln=head_with_ln,
+                num_layers=1,
+                empty_cls=train_cfg['head_empty_cls']
+            )
+            self.odfcr_scaffold_reg_head = PtTransformerRegHead(
+                fpn_dim, fpn_dim, len(self.fpn_strides),
+                kernel_size=head_kernel_size,
+                num_layers=1,
+                with_ln=head_with_ln
+            )
+        if (
+            self.odfcr_mode == 'official_dense_floor_factorial'
+            and self.odfcr_residual_enabled
+        ):
+            self.odfcr_residual_cls_head = PtTransformerClsHead(
+                fpn_dim, head_dim, self.num_classes,
+                kernel_size=head_kernel_size,
+                prior_prob=self.train_cls_prior_prob,
+                with_ln=head_with_ln,
+                num_layers=self.odfcr_residual_num_layers,
+                empty_cls=train_cfg['head_empty_cls']
+            )
+            self.odfcr_residual_reg_head = PtTransformerRegHead(
+                fpn_dim, head_dim, len(self.fpn_strides),
+                kernel_size=head_kernel_size,
+                num_layers=self.odfcr_residual_num_layers,
+                with_ln=head_with_ln
+            )
+            torch.nn.init.constant_(
+                self.odfcr_residual_cls_head.cls_head.conv.weight, 0.0
+            )
+            torch.nn.init.constant_(
+                self.odfcr_residual_cls_head.cls_head.conv.bias, 0.0
+            )
+            torch.nn.init.constant_(
+                self.odfcr_residual_reg_head.offset_head.conv.weight, 0.0
+            )
+            torch.nn.init.constant_(
+                self.odfcr_residual_reg_head.offset_head.conv.bias, 0.0
+            )
 
         # maintain an EMA of #foreground to stabilize the loss normalizer
         # useful for small mini-batch training
@@ -519,7 +689,47 @@ class PtTransformer(nn.Module):
         # will throw an error if parameters are on different devices
         return list(set(p.device for p in self.parameters()))[0]
 
+    def configure_odfcr_frozen_replay(
+        self,
+        budget,
+        policy='stratified_uniform',
+        hash_seed=2026073100,
+    ):
+        if self.training:
+            raise RuntimeError(
+                "ODF-CR replay selector can only be configured in eval mode"
+            )
+        if (
+            self.odfcr_mode != 'official_dense_floor_factorial'
+            or not self.odfcr_residual_enabled
+            or self.odfcr_residual_execution_support != 'all_valid'
+        ):
+            raise RuntimeError(
+                "ODF-CR replay requires an all-valid residual checkpoint"
+            )
+        if (
+            budget != 384
+            or policy != 'stratified_uniform'
+            or hash_seed != 2026073100
+        ):
+            raise RuntimeError(
+                "ODF-CR frozen replay is fixed to "
+                "stratified_uniform/K384/hash_seed=2026073100"
+            )
+        self.odfcr_replay_query_selector = NativeGridSparseQuerySelector(
+            budget=budget,
+            policy=policy,
+            hash_seed=hash_seed,
+        )
+
+    def clear_odfcr_frozen_replay(self):
+        self.odfcr_replay_query_selector = None
+
     def forward(self, video_list):
+        if self.training and self.odfcr_replay_query_selector is not None:
+            raise RuntimeError(
+                "ODF-CR replay selector cannot remain active in training mode"
+            )
         # batch the video list into feats (B, C, T) and masks (B, 1, T)
         batched_inputs, batched_masks = self.preprocessing(video_list)
 
@@ -533,7 +743,49 @@ class PtTransformer(nn.Module):
         # (shared across all samples in the mini-batch)
         points = self.point_generator(fpn_feats)
 
-        if (
+        if self.odfcr_mode == 'official_dense_floor_factorial':
+            if (
+                self.odfcr_training_loss_support
+                != 'official_all_valid_fpn_queries'
+            ):
+                raise RuntimeError(
+                    "ODF-CR full-grid training support contract changed"
+                )
+            if self.odfcr_scaffold_num_layers == 1:
+                scaffold_cls_head = self.odfcr_scaffold_cls_head
+                scaffold_reg_head = self.odfcr_scaffold_reg_head
+            else:
+                scaffold_cls_head = self.cls_head
+                scaffold_reg_head = self.reg_head
+            if not self.odfcr_residual_enabled:
+                out_cls_logits = scaffold_cls_head(fpn_feats, fpn_masks)
+                out_offsets = scaffold_reg_head(fpn_feats, fpn_masks)
+            else:
+                if self.odfcr_replay_query_selector is None:
+                    residual_masks = fpn_masks
+                    residual_execution = 'dense'
+                else:
+                    video_ids = [
+                        sample['video_id'] for sample in video_list
+                    ]
+                    residual_masks = self.odfcr_replay_query_selector(
+                        fpn_masks, video_ids
+                    )
+                    residual_execution = 'sparse'
+                out_cls_logits, out_offsets = run_dcsr_heads(
+                    scaffold_cls_head,
+                    scaffold_reg_head,
+                    fpn_feats,
+                    fpn_masks,
+                    residual_masks,
+                    residual_cls_head=self.odfcr_residual_cls_head,
+                    residual_reg_head=self.odfcr_residual_reg_head,
+                    residual_enabled=True,
+                    residual_scale=self.odfcr_residual_scale,
+                    residual_execution=residual_execution,
+                )
+            head_masks = fpn_masks
+        elif (
             self.sparse_query_selector is None
             and self.dcsr_query_selector is None
         ):

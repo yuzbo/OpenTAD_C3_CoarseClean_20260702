@@ -93,9 +93,10 @@ class THUMOS14Dataset(Dataset):
                     "THUMOS internal holdout manifest SHA-256 mismatch"
                 )
             manifest = json.loads(manifest_bytes.decode("utf-8"))
-            if (
-                manifest.get("schema_version")
-                != "actionformer_dcsr_internal_holdout_v1"
+            manifest_schema = manifest.get("schema_version")
+            if manifest_schema not in (
+                "actionformer_dcsr_internal_holdout_v1",
+                "actionformer_odfcr_internal_holdout_v2",
             ):
                 raise ValueError(
                     "unsupported THUMOS internal holdout manifest schema"
@@ -113,6 +114,49 @@ class THUMOS14Dataset(Dataset):
                 raise ValueError(
                     "THUMOS internal holdout may only filter validation"
                 )
+            if manifest_schema == "actionformer_odfcr_internal_holdout_v2":
+                previous_train = manifest.get("previous_train_video_ids")
+                previous_holdout = manifest.get(
+                    "previous_holdout_video_ids"
+                )
+                candidate_pool = manifest.get("candidate_pool_video_ids")
+                current_train = manifest.get("train_video_ids")
+                current_holdout = manifest.get("holdout_video_ids")
+                if (
+                    not all(
+                        isinstance(ids, list)
+                        for ids in (
+                            previous_train,
+                            previous_holdout,
+                            candidate_pool,
+                            current_train,
+                            current_holdout,
+                        )
+                    )
+                    or len(previous_train) != 160
+                    or len(previous_holdout) != 40
+                    or len(current_train) != 160
+                    or len(current_holdout) != 40
+                    or set(candidate_pool) != set(previous_train)
+                    or not set(current_holdout) <= set(previous_train)
+                    or set(current_holdout) & set(previous_holdout)
+                    or set(current_train) & set(current_holdout)
+                    or (
+                        set(current_train) | set(current_holdout)
+                        != set(previous_train) | set(previous_holdout)
+                    )
+                    or manifest.get(
+                        "candidate_pool_is_previous_train_only"
+                    ) is not True
+                    or manifest.get(
+                        "new_holdout_disjoint_previous_holdout"
+                    ) is not True
+                    or manifest.get("test_records_selected") is not False
+                    or manifest.get("official_test_authorized") is not False
+                ):
+                    raise ValueError(
+                        "invalid ODF-CR holdout-v2 set-membership contract"
+                    )
             manifest_key = manifest_subset + "_video_ids"
             video_ids = manifest.get(manifest_key)
             if not isinstance(video_ids, list) or not video_ids:

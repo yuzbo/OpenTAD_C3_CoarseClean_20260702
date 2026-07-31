@@ -4,7 +4,7 @@ Date: 2026-07-31
 
 Branch: `codex/actionformer-densefloor-factorial-20260731`
 
-Status: `designed`
+Status: `implemented` (`tested` remains blocked on Linux/real-CUDA gates)
 
 Paper status: `paper_ready=false`
 
@@ -48,10 +48,10 @@ separates the residual into its own module. It asks, in order:
 
 ### 3.1 New isolated mode
 
-Add a new mode, `official_dense_floor_factorial`. Do not change the semantics
-or checkpoint loading of `official_identity` or `cheap_dense_scaffold`.
-The current code does not implement this mode; no existing mode may be
-relabeled or reinterpreted to stand in for it.
+The isolated mode `official_dense_floor_factorial` is implemented without
+changing the semantics or checkpoint loading of `official_identity` or
+`cheap_dense_scaffold`. No existing mode is relabeled or reinterpreted to
+stand in for it.
 
 The new mode has these fields:
 
@@ -169,6 +169,11 @@ All four arms share:
 - pre-NMS/NMS settings;
 - random seed and deterministic flags;
 - full-grid loss support and normalizer.
+
+`thumos_i3d_odfcr_dev_dense_reference.yaml` is an identity-only G0 reference
+using the same holdout-v2 environment variables as all four arms. It is not a
+fifth trained arm. The older DCSR dense configuration remains unchanged and is
+not used as the ODF-CR identity reference.
 
 Only scaffold depth and residual presence change during training. K384 changes
 only residual execution masks during frozen replay.
@@ -289,6 +294,15 @@ four frozen arm IDs.
 Negative model gates write a valid completion with `gate_pass=false` and exit
 zero. Traceback, OOM, non-finite loss, identity mismatch or missing artifacts
 are engineering failures and exit nonzero.
+
+The implementation includes the four frozen configs, holdout-v2 builder and
+consumer validation, exact G0 producer, independent prediction evaluator,
+per-seed matrix finalizer, three-seed G2 aggregate, conditional frozen K384
+replay, G3 aggregate, fail-closed Slurm launchers and focused regression tests.
+Local Python compilation, shell syntax and pure evidence-contract tests pass.
+Windows PyTorch cannot load `c10.dll` in the current workstation environment,
+so model/import tests, Linux full-content preflight and real-CUDA G0 remain
+mandatory remote gates; they are not implied by the local result.
 
 ## 9. Claim boundary
 
