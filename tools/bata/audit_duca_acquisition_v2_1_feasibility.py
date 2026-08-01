@@ -14,6 +14,8 @@ from tools.bata.duca_evidence_io import (
     with_content_sha256,
     write_json_exclusive_atomic,
 )
+from tools.bata.duca_admission_v2_1_roles import build_role_manifest
+from tools.bata.duca_admission_v2_1_hashing import canonical_text
 
 
 PROTOCOL_ID = "DUCA-ADMISSION-V2.1-REALVIDEO-CROSSED-NULL"
@@ -118,10 +120,12 @@ def _build_feasibility_receipt(
     videos = role.get("videos")
     if not isinstance(videos, Sequence) or isinstance(videos, (str, bytes)):
         raise ValueError("detector_selector_train videos must be a sequence")
-    video_ids = [str(video_id) for video_id in videos]
+    if any(not isinstance(video_id, str) for video_id in videos):
+        raise ValueError("detector_selector_train video IDs must be strings")
+    video_ids = [canonical_text(video_id, field_name="video_id").decode("utf-8") for video_id in videos]
     if not video_ids or len(video_ids) != len(set(video_ids)):
         raise ValueError("detector_selector_train video IDs must be unique")
-    if int(role.get("video_count", -1)) != len(video_ids):
+    if type(role.get("video_count")) is not int or role["video_count"] != len(video_ids):
         raise ValueError("detector_selector_train video count drift")
     if split_manifest.get("annotation_sha256") != annotation_sha256:
         raise ValueError("annotation SHA-256 drift")
@@ -257,27 +261,120 @@ def audit_feasibility(
     split_manifest_path: str | Path,
     expected_split_manifest_sha256: str,
 ) -> dict[str, Any]:
+    """Build the corrected metadata-only 70/30 role manifest.
+
+    This function consumes immutable split/annotation metadata only.  It cannot
+    authorize a real-video worker, holdout access, Phase 1, or a paper claim.
+    The superseded per-video full+short proposal remains available through
+    ``audit_legacy_feasibility`` for historical regression tests.
+    """
+
+    _split_path, split_sha, split_manifest, annotation, _annotation_sha = _load_sources(
+        split_manifest_path=split_manifest_path,
+        expected_split_manifest_sha256=expected_split_manifest_sha256,
+    )
+    roles = split_manifest.get("train_roles")
+    if not isinstance(roles, Mapping) or SOURCE_ROLE not in roles:
+        raise ValueError("detector_selector_train role is missing")
+    role = roles[SOURCE_ROLE]
+    if not isinstance(role, Mapping):
+        raise ValueError("detector_selector_train role is invalid")
+    videos = role.get("videos")
+    if not isinstance(videos, Sequence) or isinstance(videos, (str, bytes)):
+        raise ValueError("detector_selector_train videos must be a sequence")
+    if any(not isinstance(video_id, str) for video_id in videos):
+        raise ValueError("detector_selector_train video IDs must be strings")
+    video_ids = [
+        canonical_text(video_id, field_name="video_id").decode("utf-8")
+        for video_id in videos
+    ]
+    if not video_ids or len(video_ids) != len(set(video_ids)):
+        raise ValueError("detector_selector_train video IDs must be unique")
+    if type(role.get("video_count")) is not int or role["video_count"] != len(video_ids):
+        raise ValueError("detector_selector_train video count drift")
+    database = annotation.get("database")
+    if not isinstance(database, Mapping):
+        raise ValueError("annotation database is missing")
+    source_subset = split_manifest.get("train_source_subset")
+    if source_subset != "training":
+        raise ValueError("corrected role audit requires the exact training source subset")
+    records = []
+    for video_id in video_ids:
+        video = database.get(video_id)
+        if not isinstance(video, Mapping):
+            raise ValueError(f"annotation is missing source video {video_id}")
+        if video.get("subset") != source_subset:
+            raise ValueError(f"annotation subset drift for {video_id}")
+        frame_count = video.get("frame")
+        if type(frame_count) is not int or frame_count <= 0:
+            raise ValueError(f"annotation frame count is invalid for {video_id}")
+        valid_lengths = enumerate_natural_window_valid_lengths(
+            frame_count=frame_count,
+            duration=float(video.get("duration", 0.0)),
+            fps=FPS,
+        )
+        records.append(
+            {
+                "video_id": video_id,
+                "source_subset": source_subset,
+                "frame_count": frame_count,
+                "snippet_count": (frame_count + SNIPPET_STRIDE - 1) // SNIPPET_STRIDE,
+                "natural_window_valid_lengths": list(valid_lengths),
+            }
+        )
+    return build_role_manifest(
+        inventory_records=records,
+        source_split_artifact_sha256=split_sha,
+    )
+
+
+def _load_sources(
+    *,
+    split_manifest_path: str | Path,
+    expected_split_manifest_sha256: str,
+) -> tuple[Path, str, Mapping[str, Any], Mapping[str, Any], str]:
     split_path = Path(split_manifest_path).expanduser().resolve()
     if not split_path.is_file():
         raise FileNotFoundError(split_path)
     split_sha = _sha256_file(split_path)
     if split_sha != str(expected_split_manifest_sha256):
         raise ValueError("split manifest SHA-256 drift")
-    split_manifest = json.loads(split_path.read_text(encoding="utf-8"))
+    split_manifest = json.loads(
+        split_path.read_bytes().decode("utf-8", errors="strict")
+    )
     if not isinstance(split_manifest, Mapping):
         raise ValueError("split manifest must be a JSON object")
-    annotation_path = Path(
-        str(split_manifest.get("annotation_path", ""))
-    ).expanduser()
+    annotation_path_value = split_manifest.get("annotation_path")
+    if not isinstance(annotation_path_value, str) or not annotation_path_value:
+        raise ValueError("annotation_path must be a nonempty string")
+    annotation_path = Path(annotation_path_value).expanduser()
     if not annotation_path.is_absolute():
         annotation_path = split_path.parent / annotation_path
     annotation_path = annotation_path.resolve()
     if not annotation_path.is_file():
         raise FileNotFoundError(annotation_path)
     annotation_sha = _sha256_file(annotation_path)
-    annotation = json.loads(annotation_path.read_text(encoding="utf-8"))
+    if split_manifest.get("annotation_sha256") != annotation_sha:
+        raise ValueError("annotation SHA-256 drift")
+    annotation = json.loads(
+        annotation_path.read_bytes().decode("utf-8", errors="strict")
+    )
     if not isinstance(annotation, Mapping):
         raise ValueError("annotation must be a JSON object")
+    return split_path, split_sha, split_manifest, annotation, annotation_sha
+
+
+def audit_legacy_feasibility(
+    *,
+    split_manifest_path: str | Path,
+    expected_split_manifest_sha256: str,
+) -> dict[str, Any]:
+    """Evaluate the superseded per-video full+short proposal, always no-authority."""
+
+    _split_path, split_sha, split_manifest, annotation, annotation_sha = _load_sources(
+        split_manifest_path=split_manifest_path,
+        expected_split_manifest_sha256=expected_split_manifest_sha256,
+    )
     return _build_feasibility_receipt(
         split_manifest=split_manifest,
         split_manifest_sha256=split_sha,
@@ -303,7 +400,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     write_json_exclusive_atomic(args.output_json, payload)
     print(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
-    return 0 if payload["status"] == "passed" else 2
+    return 0 if payload["status"] == "PASSED" else 2
 
 
 if __name__ == "__main__":

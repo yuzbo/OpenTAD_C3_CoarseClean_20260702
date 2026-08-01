@@ -70,6 +70,15 @@ unset DUCA_RIME_REPLAY_JSONL DUCA_RIME_REPLAY_SHA256
   tools/bata/duca_evidence_io.py \
   tools/bata/duca_gate_diagnostics.py \
   tools/bata/duca_acquisition_gate_schema.py \
+  tools/bata/duca_admission_v2_1_hashing.py \
+  tools/bata/duca_admission_v2_1_roles.py \
+  tools/bata/duca_admission_v2_1_incidence.py \
+  tools/bata/duca_admission_v2_1_metrics.py \
+  tools/bata/duca_admission_v2_1_statistics.py \
+  tools/bata/duca_admission_v2_1_mc.py \
+  tools/bata/duca_admission_v2_1_simulation.py \
+  tools/bata/duca_admission_v2_1_runtime_receipt.py \
+  tools/bata/duca_safe_publication.py \
   tools/bata/audit_duca_acquisition_v2_1_feasibility.py \
   tools/bata/run_duca_acquisition_runtime_gate_v2.py \
   tools/bata/verify_duca_acquisition_admission_v2.py \
@@ -169,6 +178,11 @@ bash -n \
   tests/test_duca_gate_diagnostics.py \
   tests/test_duca_acquisition_admission_v2.py \
   tests/test_duca_acquisition_v2_1_feasibility.py \
+  tests/test_duca_admission_v2_1_primitives.py \
+  tests/test_duca_admission_v2_1_statistics.py \
+  tests/test_duca_admission_v2_1_mc.py \
+  tests/test_duca_admission_v2_1_runtime.py \
+  tests/test_duca_admission_v2_1_simulation.py \
   tests/test_duca_rime_selected_axis.py \
   tests/test_c3_coarse_classifier_model_matrix.py \
   tests/test_c3_asformer_delta_ledger_full_train.py \

@@ -1,0 +1,442 @@
+{
+  "schema": "duca_admission_v2_1_control_registry_v1",
+  "protocol_id": "DUCA-ADMISSION-V2.1-REALVIDEO-CROSSED-NULL",
+  "enums": {
+    "status": [
+      "PASSED",
+      "FAILED_CLOSED"
+    ],
+    "classification": [
+      "REPOSITORY_ENFORCED",
+      "CLUSTER_ATTESTED",
+      "OBSERVED_ONLY",
+      "OPTIONAL_STRENGTHENING",
+      "UNAVAILABLE_LIMITATION"
+    ],
+    "claim_state": [
+      "VERIFIED",
+      "ATTESTED",
+      "OBSERVED",
+      "NOT_AVAILABLE",
+      "FAILED"
+    ],
+    "authorization_scope": [
+      "NONE",
+      "HOLDOUT_ONCE",
+      "PHASE1_V2"
+    ]
+  },
+  "controls": [
+    {
+      "control_id": "R01_REMOTE",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R02_BRANCH",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R03_HEAD",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R04_TREE",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R05_WORKTREE_CLEAN",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R06_PATH_DIFF_ALLOWLIST",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R07_PARENT_RECEIPTS",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R08_ROLE_MANIFEST",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R09_INCIDENCE",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R10_METRIC_REGISTRY",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R11_SIMULATION_REGISTRY",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R12_PLANNED_CELL_MANIFEST",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R13_EXECUTABLE_HASHES",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R14_CONFIG_CHECKPOINT_HASHES",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R15_ALLOWLISTED_OUTPUT_ROOT",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R16_NO_SYMLINK_ANCESTORS",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R17_FRESH_OUTPUT_ROOT",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R18_ATOMIC_PUBLICATION_SELFTEST",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R19_EXCLUSIVE_PUBLICATION",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R20_ALL_PLANNED_CELLS_PRESENT",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R21_NO_EXTRA_CELLS",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "R22_RECEIPT_CONTENT_HASH",
+      "classification": "REPOSITORY_ENFORCED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "C01_SLURM_JOB",
+      "classification": "CLUSTER_ATTESTED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "ATTESTED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "C02_SLURM_STEP",
+      "classification": "CLUSTER_ATTESTED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "ATTESTED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "C03_PID_START",
+      "classification": "CLUSTER_ATTESTED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "ATTESTED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "C04_CGROUP",
+      "classification": "CLUSTER_ATTESTED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "ATTESTED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "C05_HOST_BOOT_ID",
+      "classification": "CLUSTER_ATTESTED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "ATTESTED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "C06_CUDA_ALLOCATION",
+      "classification": "CLUSTER_ATTESTED",
+      "mandatory_record": true,
+      "pass_required": true,
+      "allowed_claim_states": [
+        "ATTESTED",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "O01_MOUNT_TABLE",
+      "classification": "OBSERVED_ONLY",
+      "mandatory_record": true,
+      "pass_required": false,
+      "allowed_claim_states": [
+        "OBSERVED",
+        "NOT_AVAILABLE",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "O02_NETWORK_ROUTES",
+      "classification": "OBSERVED_ONLY",
+      "mandatory_record": true,
+      "pass_required": false,
+      "allowed_claim_states": [
+        "OBSERVED",
+        "NOT_AVAILABLE",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "O03_OPEN_SOCKETS",
+      "classification": "OBSERVED_ONLY",
+      "mandatory_record": true,
+      "pass_required": false,
+      "allowed_claim_states": [
+        "OBSERVED",
+        "NOT_AVAILABLE",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "O04_ENVIRONMENT_FINGERPRINT",
+      "classification": "OBSERVED_ONLY",
+      "mandatory_record": true,
+      "pass_required": false,
+      "allowed_claim_states": [
+        "OBSERVED",
+        "NOT_AVAILABLE",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "S01_NETWORK_DENY",
+      "classification": "OPTIONAL_STRENGTHENING",
+      "mandatory_record": true,
+      "pass_required": false,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "ATTESTED",
+        "OBSERVED",
+        "NOT_AVAILABLE",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "S02_MOUNT_NAMESPACE_ALLOWLIST",
+      "classification": "OPTIONAL_STRENGTHENING",
+      "mandatory_record": true,
+      "pass_required": false,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "ATTESTED",
+        "OBSERVED",
+        "NOT_AVAILABLE",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "S03_INPUT_MOUNTS_READ_ONLY",
+      "classification": "OPTIONAL_STRENGTHENING",
+      "mandatory_record": true,
+      "pass_required": false,
+      "allowed_claim_states": [
+        "VERIFIED",
+        "ATTESTED",
+        "OBSERVED",
+        "NOT_AVAILABLE",
+        "FAILED"
+      ]
+    },
+    {
+      "control_id": "L01_COMPLETE_FILE_ACCESS_AUDIT",
+      "classification": "UNAVAILABLE_LIMITATION",
+      "mandatory_record": true,
+      "pass_required": false,
+      "allowed_claim_states": [
+        "NOT_AVAILABLE"
+      ]
+    },
+    {
+      "control_id": "L02_OBJECT_STORAGE_LOCK",
+      "classification": "UNAVAILABLE_LIMITATION",
+      "mandatory_record": true,
+      "pass_required": false,
+      "allowed_claim_states": [
+        "NOT_AVAILABLE"
+      ]
+    }
+  ],
+  "failure_codes": [
+    "IDENTITY_MISMATCH",
+    "SCHEMA_INVALID",
+    "HASH_MISMATCH",
+    "SOURCE_INVENTORY_MISMATCH",
+    "ROLE_ASSIGNMENT_INVALID",
+    "INCIDENCE_INVALID",
+    "PLAN_INCOMPLETE",
+    "STRUCTURAL_CATASTROPHE",
+    "DEGENERATE_SCALE",
+    "INVALID_TYPE1_ORDER_INDEX",
+    "NUMERIC_TAIL_ALARM",
+    "MC_UNSTABLE",
+    "SIMULATION_GATE_FAILED",
+    "MC_HALF_WIDTH_CALIBRATION_FAILED",
+    "RUNTIME_ATTESTATION_MISSING",
+    "FILESYSTEM_POLICY_FAILED",
+    "PUBLICATION_FAILED",
+    "PARENT_RECEIPT_INVALID",
+    "UNEXPECTED_EXCEPTION"
+  ],
+  "authorization_invariants": {
+    "protocol_implementation_receipt_scope": "NONE",
+    "simulation_receipt_scope": "NONE",
+    "runtime_preflight_receipt_scope": "NONE",
+    "official_final_sealed": true,
+    "learned_hrime_authorized": false,
+    "full_200_refit_authorized": false,
+    "phase4_authorized": false
+  }
+}

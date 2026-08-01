@@ -373,3 +373,25 @@ These failures and naming mistakes must not be repeated.
      classification and claim state require closed enums, unique control IDs,
      parent/planned-cell bindings and cross-field invariants that make
      authorization impossible when a required attestation is missing.
+109. Do not report a frozen simulation registry, generator or synthetic unit
+     fixture as a completed calibration experiment. Only all registered outer
+     datasets and independent MC streams, sealed by terminal receipts, can
+     change `not_run` to `empirically_supported`.
+110. Do not treat `value == 0.0` as the exact-zero contract. Admission v2.1 uses
+     the IEEE-754 binary64 positive-zero bit pattern; negative zero and integer
+     zero do not enter the exact-zero branch.
+111. Do not average the two central observations when the frozen quantile is
+     type 1. For 64 values, the median is the lower order statistic at zero-based
+     index 31.
+112. Do not reopen an allowlisted root or parent receipt by pathname after a
+     successful check and call the operation descriptor-bound. Authoritative
+     POSIX reads and publications must retain no-follow directory/file
+     descriptors, compare inode/device identity and use the same file descriptor
+     for read and hash.
+113. Do not permit a `PASSED` runtime receipt to self-certify with an empty or
+     merely self-hashed evidence object. Every mandatory enforced or attested
+     control requires a closed evidence record and an independent semantic
+     verifier.
+114. Do not interpret a Windows skip as evidence for Linux `openat`, Slurm,
+     cgroup or CUDA/NVML invariants. Those controls remain outstanding until an
+     exact-clean Linux/Slurm gate produces content-bound receipts.

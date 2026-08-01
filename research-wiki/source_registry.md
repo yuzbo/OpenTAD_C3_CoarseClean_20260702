@@ -20,6 +20,7 @@
 | U-PRO-ADMISSION-V21-1 | `C:/Users/skywalker/.codex/attachments/d63bb109-7f99-4078-acc9-1bbdf6e895b2/pasted-text.txt`; SHA-256 `40a42ad184391ebb89f54d3adbdc972d3370294f870bc8cd59b19d90863893c8`; 45,892 bytes | full Admission-v2 audit and proposed real-video crossed-null v2.1 protocol | fully read; current formal v2 NO-GO and core repair direction accepted; fixed window coverage, crossed bound, NI-margin and hard-isolation details rejected pending correction |
 | U-PRO-V21-FINAL-1 | `C:/Users/skywalker/.codex/attachments/934f541a-db6e-4bc8-94cc-272905f3d42c/pasted-text.txt`; SHA-256 `9e7efa045f0b2a01dfc52755a6376205346bf76673483b61573dd55951d7c871`; 94,487 bytes | bounded Admission v2.1, full-200 refit and H-RIME final adjudication | fully read; architecture/role/NI/refit/oracle-order decisions accepted; crossed-bootstrap, catastrophic max-ratio, MC-stability and mandatory admin-isolation rules require a final corrigendum |
 | U-PRO-V21-CORRIGENDUM-1 | `C:/Users/skywalker/.codex/attachments/39eb4169-2000-4a3e-ba57-5bfe441bab1f/pasted-text.txt`; SHA-256 `12a324b2eb43086397a0e54d5c64dae84c86fec96cef03ab0c8decc095cc7f37`; 67,868 bytes | proposed final statistical-protocol corrigendum for Admission v2.1 | fully read; positive multiplier, fixed estimating equation, fixed-scale maxT, structural/tail split and threat-model direction accepted; direct implementation rejected pending canonical order, triplet estimand, multiplier scaling, non-vacuity/MC calibration and closed receipt correction |
+| U-PRO-V21-FINAL-REPAIR-1 | `C:/Users/skywalker/.codex/attachments/a09b8a5b-c1ae-462a-94e3-c2681c29ad86/pasted-text.txt`; SHA-256 `9b62a23d29d1cd74063f34127a64ba7a100805a3a60456ec9212163a8398da04`; 68,504 bytes | final narrow Admission v2.1 statistical/runtime repair and bounded implementation contract | fully read; core and Stage A--D protocol implementation accepted; production Admission remains NO-GO and all empirical/authorization blockers remain explicit |
 | P-OWEN-ECKLES-1 | `https://arxiv.org/abs/1106.2125`; published as `https://doi.org/10.1214/12-AOAS547` | primary source for product reweighting of crossed arrays | directly verified; supports independent factor product weights and qualified mild conservatism, not the proposed `sqrt(V/(V-1))*sqrt(P/(P-1))` scalar |
 | C-OPENTAD-THUMOS-SPLIT-1 | `tools/prepare_data/thumos/README.md`; upstream `https://github.com/sming256/OpenTAD/blob/main/tools/prepare_data/thumos/README.md` | OpenTAD THUMOS evaluation-set definition | directly verified; two malformed/empty test videos excluded, complete registered evaluation set is 211 videos |
 
@@ -87,3 +88,13 @@ inflates already-conservative variance gains; the simulation registry is
 under-specified and coverage-only; and the runtime receipt is not a closed
 authorization schema. The exact independent audit and next Pro contract are in
 `docs/superpowers/plans/2026-07-31-duca-v2-1-corrigendum-independent-audit.md`.
+
+`U-PRO-V21-FINAL-REPAIR-1` was read in full and bound to its exact source hash.
+Its canonical identity, independent-role estimand, `kappa=1` positive product
+multiplier, fixed-scale maxT, non-vacuity/power simulation registry, MC
+calibration and closed runtime-receipt decisions are accepted and implemented
+within the protocol-only boundary. Exact positive-zero, type-1 median and
+finite-value semantics were made explicit. This source authorizes no real-video
+worker, holdout opening, training, full-200 refit, official-final access or
+paper claim. The implementation record is
+`docs/superpowers/plans/2026-08-01-duca-admission-v2-1-final-repair-implementation.md`.

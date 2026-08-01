@@ -1,5 +1,43 @@
 # Research Log
 
+## 2026-08-01 — Final v2.1 narrow repair accepted and Stage A--D implemented
+
+- Fully read and hash-registered `U-PRO-V21-FINAL-REPAIR-1`:
+  `C:/Users/skywalker/.codex/attachments/a09b8a5b-c1ae-462a-94e3-c2681c29ad86/pasted-text.txt`,
+  SHA-256
+  `9b62a23d29d1cd74063f34127a64ba7a100805a3a60456ec9212163a8398da04`,
+  68,504 bytes.
+- Accepted the core route and bounded protocol implementation. Independently
+  fixed exact-zero to binary64 positive zero, the 64-value type-1 median to
+  zero-based index 31, and finite/positive requirements for all nonzero-branch
+  scales, bounds and MC normalizers.
+- Implemented deterministic source roles/reserves/triplets, canonical ranks,
+  the role-specific connected 32-by-8 incidence, 192-cell manifest, 12-metric
+  registry, independent role contrast, positive two-point product multiplier
+  with `kappa=1`, fixed-scale maxT, prefix-extensible MC and delete-one-1000
+  jackknife.
+- Implemented the exact 52-scenario and 24-scenario MC-calibration registries,
+  generators, one-outer executor, acceptance aggregators and strict receipt
+  validators. These code paths are candidate-free. The full 52-by-500 and
+  24-by-200 executions have not run and remain blockers, not results.
+- Implemented the 37-row runtime registry, planned-cell/worker bindings,
+  mandatory independent evidence verifiers for any `PASSED` receipt, explicit
+  old-v2 rejection and descriptor-bound allowlisted POSIX publication. An Ubuntu
+  smoke check passed fresh-root, atomic hard-link, parent-hash and symlink
+  rejection paths; authoritative exact-clean Slurm receipts remain absent.
+- Focused checks currently pass (`49 passed, 2 skipped` on Windows); the two
+  skips are POSIX-only and are not counted as Linux/Slurm evidence. The broad
+  non-Torch DUCA/C3 contract suite passes (`247 passed, 5 skipped`). The full
+  Torch collection remains unavailable on this Windows host because `c10.dll`
+  fails to initialize; that is an environment limitation, not a test pass.
+- No detector/backbone/loss/budget/selector/checkpoint/evaluator code changed.
+  Real-video workers, scale-fit, calibration, holdout, Phase 1+, learned H-RIME,
+  full-200 refit and official-final remain unauthorized.
+- Full adjudication and implementation status are recorded in
+  `docs/superpowers/plans/2026-08-01-duca-admission-v2-1-final-repair-implementation.md`.
+- Evidence status remains:
+  `No paper-admissible empirical conclusion is available yet`.
+
 ## 2026-07-31 — Proposed v2.1 corrigendum independently rejected as implementation-ready
 
 - Fully read and hash-registered `U-PRO-V21-CORRIGENDUM-1`:

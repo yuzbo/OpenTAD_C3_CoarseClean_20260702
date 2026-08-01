@@ -1,0 +1,672 @@
+{
+  "schema": "duca_admission_v2_1_simulation_registry_v1",
+  "protocol_id": "DUCA-ADMISSION-V2.1-REALVIDEO-CROSSED-NULL",
+  "claim_scope": "scenario-conditional empirical calibration on the registered DUCA 32x8 incidence grid",
+  "reference_environment": {
+    "python_version": "3.11.7",
+    "numpy_version": "1.23.5",
+    "bit_generator": "numpy.random.Philox",
+    "golden_seed": 0,
+    "golden_raw_byte_count": 4096,
+    "golden_raw_sha256": "d391e4f5c20f9e3df8971ba584af858ff37611d5a8005c5267725ddd3b98743d"
+  },
+  "metric_ids": [
+    "M00",
+    "M01",
+    "M02",
+    "M03",
+    "M04",
+    "M05",
+    "M06",
+    "M07",
+    "M08",
+    "M09",
+    "M10",
+    "M11"
+  ],
+  "effect_mixes": {
+    "ROW": {
+      "sigma_v": 1,
+      "sigma_p": 0,
+      "sigma_e": 0
+    },
+    "PROCESS": {
+      "sigma_v": 0,
+      "sigma_p": 1,
+      "sigma_e": 0
+    },
+    "CELL": {
+      "sigma_v": 0,
+      "sigma_p": 0,
+      "sigma_e": 1
+    },
+    "EQUAL": {
+      "sigma_v": "1/sqrt(3)",
+      "sigma_p": "1/sqrt(3)",
+      "sigma_e": "1/sqrt(3)"
+    },
+    "ZERO": {
+      "sigma_v": 0,
+      "sigma_p": 0,
+      "sigma_e": 0
+    }
+  },
+  "distributions": {
+    "GAUSS": {
+      "definition": "N(0,R)"
+    },
+    "T5": {
+      "degrees_of_freedom": 5,
+      "scale": "sqrt(3/5)",
+      "shared_chi_square_across_12_metrics": true
+    },
+    "LOGN075": {
+      "lambda": 0.75,
+      "centered": true,
+      "unit_marginal_variance": true
+    },
+    "EXACT_ZERO": {
+      "binary64_positive_zero": true
+    }
+  },
+  "count_laws": {
+    "N16": {
+      "n": 16,
+      "h": 1
+    },
+    "NLINK": {
+      "natural_short": "1+((3*i+5*p+slot) mod 4)",
+      "natural_full": "8+((7*i+3*p+slot) mod 57)",
+      "h": "min(4,max(0.5,sqrt(16/n)))"
+    }
+  },
+  "shift_profiles": {
+    "NULL": {
+      "multiplier_true_se": 0,
+      "metrics": "all"
+    },
+    "SAFE_ALL_M6": {
+      "multiplier_true_se": -6,
+      "metrics": "all"
+    },
+    "HARM_ONE_P4": {
+      "multiplier_true_se": 4,
+      "metrics": [
+        "M00"
+      ]
+    },
+    "HARM_ONE_P6": {
+      "multiplier_true_se": 6,
+      "metrics": [
+        "M00"
+      ]
+    },
+    "HARM_ALL_P3": {
+      "multiplier_true_se": 3,
+      "metrics": "all"
+    }
+  },
+  "execution": {
+    "outer_datasets_per_scenario": 500,
+    "initial_inner_replicates": 100000,
+    "maximum_inner_replicates": 200000,
+    "alpha_tail": 0.05,
+    "jackknife_batch_size": 1000,
+    "outer_seed_domain": "DUCA-V21-SIM-OUTER-V1",
+    "inner_factor_domain": "product-multiplier-factor",
+    "recompute_per_outer": [
+      "q_plus",
+      "q_minus",
+      "scales",
+      "lower",
+      "upper",
+      "mc_certificate"
+    ]
+  },
+  "gates": {
+    "nonzero_scenario": {
+      "simultaneous_upper_coverage_min_count": 477,
+      "simultaneous_lower_coverage_min_count": 477,
+      "null_false_alarm_max_count": 23,
+      "mc_unstable_max_count": 5,
+      "denominator": 500
+    },
+    "ordinary_S000_S047": {
+      "median_vir_max": 3.25,
+      "type1_p95_vir_max": 5,
+      "median_nwr_max": 2.25,
+      "type1_p95_nwr_max": 3.25
+    },
+    "boundary_S048_S049_S051": {
+      "median_vir_max": 4,
+      "type1_p95_vir_max": 8,
+      "median_nwr_max": 2.75,
+      "type1_p95_nwr_max": 4.5
+    },
+    "exact_zero_S050": {
+      "exact_zero_branch_min_count": 500,
+      "denominator": 500
+    },
+    "power": {
+      "SAFE_ALL_M6_pass_min_count": 398,
+      "HARM_ONE_P4_alarm_min_count": 250,
+      "HARM_ONE_P6_alarm_min_count": 398,
+      "HARM_ALL_P3_alarm_min_count": 398,
+      "denominator": 500
+    },
+    "mc_half_width": {
+      "scenario_parameter_coverage_min_count": 197,
+      "scenario_parameter_denominator": 200,
+      "pooled_parameter_coverage_min_count": 4727,
+      "pooled_parameter_denominator": 4800,
+      "reference_replicates": 4000000,
+      "reference_half_replicates": 2000000,
+      "half_difference_over_median_operational_h_max": 0.25,
+      "median_h200k_over_h100k_max": 0.8,
+      "type1_p95_h200k_over_h100k_max": 1.05
+    }
+  },
+  "mc_calibration_scenarios": [
+    "S002",
+    "S003",
+    "S006",
+    "S007",
+    "S010",
+    "S011",
+    "S014",
+    "S015",
+    "S018",
+    "S019",
+    "S022",
+    "S023",
+    "S026",
+    "S027",
+    "S030",
+    "S031",
+    "S034",
+    "S035",
+    "S038",
+    "S039",
+    "S042",
+    "S043",
+    "S046",
+    "S047"
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "S000_ROW_GAUSS_R035_N16",
+      "effect_mix": "ROW",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S001_ROW_GAUSS_R035_NLINK",
+      "effect_mix": "ROW",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S002_ROW_GAUSS_R085_N16",
+      "effect_mix": "ROW",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S003_ROW_GAUSS_R085_NLINK",
+      "effect_mix": "ROW",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S004_ROW_T5_R035_N16",
+      "effect_mix": "ROW",
+      "effect_distribution": "T5",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S005_ROW_T5_R035_NLINK",
+      "effect_mix": "ROW",
+      "effect_distribution": "T5",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S006_ROW_T5_R085_N16",
+      "effect_mix": "ROW",
+      "effect_distribution": "T5",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S007_ROW_T5_R085_NLINK",
+      "effect_mix": "ROW",
+      "effect_distribution": "T5",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S008_ROW_LOGN075_R035_N16",
+      "effect_mix": "ROW",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S009_ROW_LOGN075_R035_NLINK",
+      "effect_mix": "ROW",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S010_ROW_LOGN075_R085_N16",
+      "effect_mix": "ROW",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S011_ROW_LOGN075_R085_NLINK",
+      "effect_mix": "ROW",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S012_PROCESS_GAUSS_R035_N16",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S013_PROCESS_GAUSS_R035_NLINK",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S014_PROCESS_GAUSS_R085_N16",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S015_PROCESS_GAUSS_R085_NLINK",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S016_PROCESS_T5_R035_N16",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "T5",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S017_PROCESS_T5_R035_NLINK",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "T5",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S018_PROCESS_T5_R085_N16",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "T5",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S019_PROCESS_T5_R085_NLINK",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "T5",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S020_PROCESS_LOGN075_R035_N16",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S021_PROCESS_LOGN075_R035_NLINK",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S022_PROCESS_LOGN075_R085_N16",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S023_PROCESS_LOGN075_R085_NLINK",
+      "effect_mix": "PROCESS",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S024_CELL_GAUSS_R035_N16",
+      "effect_mix": "CELL",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S025_CELL_GAUSS_R035_NLINK",
+      "effect_mix": "CELL",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S026_CELL_GAUSS_R085_N16",
+      "effect_mix": "CELL",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S027_CELL_GAUSS_R085_NLINK",
+      "effect_mix": "CELL",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S028_CELL_T5_R035_N16",
+      "effect_mix": "CELL",
+      "effect_distribution": "T5",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S029_CELL_T5_R035_NLINK",
+      "effect_mix": "CELL",
+      "effect_distribution": "T5",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S030_CELL_T5_R085_N16",
+      "effect_mix": "CELL",
+      "effect_distribution": "T5",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S031_CELL_T5_R085_NLINK",
+      "effect_mix": "CELL",
+      "effect_distribution": "T5",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S032_CELL_LOGN075_R035_N16",
+      "effect_mix": "CELL",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S033_CELL_LOGN075_R035_NLINK",
+      "effect_mix": "CELL",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S034_CELL_LOGN075_R085_N16",
+      "effect_mix": "CELL",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S035_CELL_LOGN075_R085_NLINK",
+      "effect_mix": "CELL",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S036_EQUAL_GAUSS_R035_N16",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S037_EQUAL_GAUSS_R035_NLINK",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S038_EQUAL_GAUSS_R085_N16",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S039_EQUAL_GAUSS_R085_NLINK",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S040_EQUAL_T5_R035_N16",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "T5",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S041_EQUAL_T5_R035_NLINK",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "T5",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S042_EQUAL_T5_R085_N16",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "T5",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S043_EQUAL_T5_R085_NLINK",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "T5",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S044_EQUAL_LOGN075_R035_N16",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S045_EQUAL_LOGN075_R035_NLINK",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R035",
+      "rho": 0.35,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S046_EQUAL_LOGN075_R085_N16",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": null
+    },
+    {
+      "scenario_id": "S047_EQUAL_LOGN075_R085_NLINK",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": null
+    },
+    {
+      "scenario_id": "S048_TINY_SCALE_EQUAL_GAUSS_R085_N16",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "GAUSS",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "N16",
+      "special": "all_sigmas_times_2_pow_minus_20"
+    },
+    {
+      "scenario_id": "S049_SINGLE_CELL_LEVERAGE_EQUAL_T5_R085_NLINK",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "T5",
+      "correlation_id": "R085",
+      "rho": 0.85,
+      "count_law": "NLINK",
+      "special": "rank0_slot0_interaction_h_equals_8"
+    },
+    {
+      "scenario_id": "S050_ALL_ZERO",
+      "effect_mix": "ZERO",
+      "effect_distribution": "EXACT_ZERO",
+      "correlation_id": "NONE",
+      "rho": 0,
+      "count_law": "N16",
+      "special": "binary64_positive_zero"
+    },
+    {
+      "scenario_id": "S051_NEAR_COLLINEAR_EQUAL_LOGN075_R0999_NLINK",
+      "effect_mix": "EQUAL",
+      "effect_distribution": "LOGN075",
+      "correlation_id": "R0999",
+      "rho": 0.999,
+      "count_law": "NLINK",
+      "special": "near_collinear"
+    }
+  ],
+  "authorization": {
+    "authorization_scope": "NONE",
+    "phase1_v2_authorized": false,
+    "holdout_open_authorized": false,
+    "paper_claim_allowed": false,
+    "official_final_sealed": true
+  }
+}

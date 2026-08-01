@@ -2,16 +2,16 @@
 
 ## Status
 
-- Date: `2026-07-29`
-- Source decision: `U-PRO-PURE-PLUGIN-1`, audited by `U-PRO-ADMISSION-V21-1`
+- Date: `2026-08-01`
+- Source decision: `U-PRO-PURE-PLUGIN-1`, audited and repaired through `U-PRO-V21-FINAL-REPAIR-1`
 - User authorization: `approved_for_direct_implementation`
 - Architecture: `selected_axis_pure_pre_backbone_plugin`
 - Implementation: `implemented`
 - Local verification: `static_and_pure_python_tested`
 - Runtime verification: `authoritative_code_gate_passed_1204067`
 - Admission v2 formal path: `disabled / historical_read_only_or_engineering_fixture`
-- Admission v2.1: `stage0_fail_closed_slice_implemented / full_design_blocked`
-- Numeric calibration: `not_started / old_implementation_disabled`
+- Admission v2.1: `stage_A_D_protocol_implemented / focused_tested / production_NO_GO`
+- Numeric calibration: `candidate_free_registry_implemented / full_52x500_and_24x200_not_run / old_implementation_disabled`
 - Data feasibility: `failed_for_proposed_per_video_full_plus_short_contract`
 - Experiment: `not_yet_run`
 - Empirical support: `none`
@@ -129,6 +129,20 @@ The report is not accepted verbatim in three implementation details:
   but its training result is development-only. The Phase-4 cell entry is now
   hard-disabled pending a full-200-video, global-batch-2 refit and complete
   out-of-fold targets.
+- The final v2.1 narrow repair now implements deterministic 70/30 role
+  allocation, four long reserves, allocation-only triplets, canonical
+  row-order-independent ranks, the exact role-specific 32-by-8 incidence and
+  the 192-cell plan.
+- The statistical layer now fixes the independent calibration-versus-holdout
+  estimand, coefficient `1/64`, positive `{0.5,3.0}` product factors with
+  `kappa=1`, fixed-scale maxT, binary64 positive-zero semantics and deterministic
+  100k-to-200k MC extension with delete-one-1000 jackknife.
+- The candidate-free 52-scenario/24-calibration-scenario registry, generators,
+  evaluators and closed receipts are implemented but have not been fully run.
+- Runtime receipts now require closed evidence plus independent verifiers for a
+  passing mandatory control; safe publication binds allowlisted mode-0700 fresh
+  roots and parent reads to no-follow descriptors. These are protocol code and
+  tests, not authoritative Slurm receipts.
 
 ## Verification receipt
 
@@ -152,17 +166,18 @@ The report is not accepted verbatim in three implementation details:
   Linux/PyTorch Slurm code gate is still required before runtime completion;
   this environment error is not a model result.
 
-## Superseded DAG and current stop
+## Current bounded DAG and stop
 
 The earlier v2 calibration → admission → Phase-1 DAG is superseded. Current
 execution is:
 
-1. Commit and code-gate the old-v2 fail-closed/fixture-only correction and
-   metadata feasibility auditor.
-2. Freeze corrected role-level window coverage, exact crossed statistics,
-   scientifically justified NI margin and enforceable isolation contract.
-3. Implement the complete real-video v2.1 evidence chain only after step 2.
-4. Run no calibration and no Phase 1 before a verified v2.1 receipt exists.
+1. Commit and exact-clean Linux-code-gate the implemented Stage A--D protocol.
+2. Run and seal the complete candidate-free 52-by-500 simulation and 24-by-200
+   independent MC calibration.
+3. Produce and independently audit Linux/Slurm/filesystem runtime-preflight
+   receipts without consuming candidate output.
+4. Stop for an explicit production authorization decision. Run no real-video
+   worker, scale-fit, calibration, holdout or Phase 1 automatically.
 
 No Phase 2/3/4 job is authorized by this node. No performance number from these
 steps may enter the paper.

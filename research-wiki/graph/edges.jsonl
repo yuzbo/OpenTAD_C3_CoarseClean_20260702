@@ -41,3 +41,7 @@
 {"source":"sources/U-PRO-V21-CORRIGENDUM-1","relation":"proposes_resolution_for","target":"protocols/duca-admission-v2-1-window-statistics-margin-isolation"}
 {"source":"protocols/duca-admission-v2-1-window-statistics-margin-isolation","relation":"informed_by","target":"sources/P-OWEN-ECKLES-1"}
 {"source":"protocols/duca-admission-v2-1-window-statistics-margin-isolation","relation":"blocked_by","target":"plans/duca-v2-1-corrigendum-independent-audit"}
+{"source":"sources/U-PRO-V21-FINAL-REPAIR-1","relation":"resolves","target":"plans/duca-v2-1-corrigendum-independent-audit"}
+{"source":"protocols/duca-admission-v2-1-final-repair","relation":"implements_decision_from","target":"sources/U-PRO-V21-FINAL-REPAIR-1"}
+{"source":"protocols/duca-admission-v2-1-final-repair","relation":"gates","target":"experiments/duca-acquisition-v2-pure-plugin"}
+{"source":"protocols/duca-admission-v2-1-final-repair","relation":"blocked_by","target":"experiments/duca-admission-v2-1-full-simulation"}

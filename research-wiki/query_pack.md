@@ -1,17 +1,20 @@
 # DUCA-RIME Current Query Pack
 
-Last updated: `2026-07-31`
+Last updated: `2026-08-01`
 
 ## Current decision
 
-The user approved a bounded Pro adjudication and supplied its proposed final
-statistical corrigendum. `U-PRO-V21-CORRIGENDUM-1` has now been read in full and
-independently audited against the live repository and the Owen--Eckles primary
-source. Its architecture boundary, role-level coverage, margin-free Admission,
-positive multiplier direction, fixed estimating equation, fixed-scale maxT
-name, structural/tail split, MC-extension direction and scoped threat model are
-accepted, but the protocol is still not implementation-ready. The paper mainline
-remains an **offline TAD pure selected-axis pre-backbone acquisition plugin**.
+The user supplied and approved the final narrow repair
+`U-PRO-V21-FINAL-REPAIR-1`. It has been read in full, source-hash registered and
+implemented within its exact Stage A--D boundary. The core decision and protocol
+implementation route are accepted; no further Pro round is required before the
+candidate-free code gates. Deterministic role/incidence construction, the fixed
+`1/64` independent role contrast, positive two-point product multiplier with
+`kappa=1`, fixed-scale maxT, MC extension/jackknife, the 52-scenario registry,
+closed runtime receipts and safe publication are now `implemented / focused-tested`.
+The complete simulation and authoritative Linux/Slurm receipts have not been
+run, so production Admission remains `NO_GO`. The paper mainline remains an
+**offline TAD pure selected-axis pre-backbone acquisition plugin**.
 Physical-time head injection is a separately named integration/diagnostic
 route and cannot support the pure-plugin claim. This is not Online TAD and is
 not yet the paper's final empirically supported method.
@@ -21,14 +24,14 @@ Current evidence level:
 | Item | State |
 |---|---|
 | Scientific route | `user_approved` |
-| Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 + U-PRO-ADMISSION-V21-1 + U-PRO-V21-FINAL-1 + U-PRO-V21-CORRIGENDUM-1 / core_decisions_accepted / proposed_corrigendum_not_implementation_ready` |
+| Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 + U-PRO-ADMISSION-V21-1 + U-PRO-V21-FINAL-1 + U-PRO-V21-CORRIGENDUM-1 + U-PRO-V21-FINAL-REPAIR-1 / final_repair_core_accepted` |
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
-| Acquisition admission-v2.1 | `stage0_fail_closed_slice_implemented / production_protocol_code_not_started / blocked_by_canonical_order_triplet_estimand_multiplier_scaling_mc_nonvacuity_and_closed_receipt` |
+| Acquisition admission-v2.1 | `stage_A_D_protocol_implemented / focused_tested / production_NO_GO / full_52x500_and_24x200_not_run / authoritative_runtime_receipts_absent` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
-| Focused local checks | `tested` |
+| Focused local checks | `49_passed_2_POSIX_skipped_on_Windows / broad_nonTorch_247_passed_5_skipped / Ubuntu_POSIX_runtime-policy_smoke_passed` |
 | Remote authoritative code gate | `acquisition_v2_job_1204067_completed_0_0 / receipt_sha256_d664a619007f1cafbd4e52f2fd6a053fb0e3b5336dcb2be2b16302912286e5c8` |
 | Dense reference training | `recovery_v6_salvage_completed / engineering_only` |
 | Phase 1 closure | `recovery_v6_contract_gate_failed_1201417 / universal_loss_equivalence_premise_invalid / observed_mismatch_component_unresolved / no_terminal_receipt` |
@@ -144,31 +147,20 @@ architecture/innovation round. Its input contract is retained in
 `docs/superpowers/plans/2026-07-30-duca-v2-1-pro-response-adjudication.md` as
 the provenance for the returned response below.
 
-The returned corrigendum `U-PRO-V21-CORRIGENDUM-1` resolves the earlier
-positive-weight, fixed-denominator, naming, structural-tail and threat-model
-questions, but independent audit gives `NO_GO_PROTOCOL_IMPLEMENTATION_AS_WRITTEN`.
-Five P0s remain:
+The returned final repair `U-PRO-V21-FINAL-REPAIR-1` resolves those five P0s and
+is accepted for protocol implementation. Canonical ranks no longer depend on
+input order; triplets are allocation-only while video remains the statistical
+unit; `kappa=1`; the exact 52-scenario non-vacuity/power and 24-scenario MC
+calibration registries are closed; and runtime receipts now require closed
+evidence, independent verifiers and hard authorization invariants. The complete
+record is
+`docs/superpowers/plans/2026-08-01-duca-admission-v2-1-final-repair-implementation.md`.
 
-1. incidence depends on manifest row rank while a mandatory test requires row
-   permutation invariance;
-2. calibration/holdout tail pseudocode assigns a triplet/block to `video_id`,
-   silently changing the declared video statistical unit;
-3. `kappa^2=(32/31)(8/7)` is not derived by the cited product-bootstrap theory
-   and inflates exact variance gains from `117/64`, `69/64`, `181/64` to
-   `468/217`, `276/217`, `724/217`;
-4. the simulation registry is not fully reproducible and coverage-only can
-   accept a vacuously conservative method; the batch-jackknife MC certificate
-   is not calibrated for maxT quantiles and bounds;
-5. runtime receipt enums, cross-field authorization invariants, planned-cell
-   bindings and cluster attestations are not closed.
-
-The next and only needed discussion is one narrower correction, not another
-model-innovation review. Its exact input, required decisions and post-decision
-implementation order are frozen in
-`docs/superpowers/plans/2026-07-31-duca-v2-1-corrigendum-independent-audit.md`.
-Until that contract returns implementation-ready, no v2.1 protocol code,
-production worker, holdout access, Phase 1, H-RIME training, full-200 artifact
-or official-final action is authorized.
+This closes implementation blocker 2 only. Complete 52-by-500 execution,
+24-by-200 independent MC calibration and authoritative exact-clean Linux/Slurm
+runtime receipts remain outstanding. Real-video production workers, scale-fit,
+calibration, holdout opening, Phase 1+, learned H-RIME, full-200 refit and
+official-final remain unauthorized. No paper-admissible empirical result exists.
 
 ## Paper responsibility
 
