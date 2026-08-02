@@ -31,8 +31,19 @@ updated: 2026-08-02
   `142d0e64f67ddc5c4c72ff41e6cf2d346f4688e101d0116b4402c2c4905d1762`.
   Deployment receipt
   `6dc3abebdb662393dc6faa8eac4bdf052622c0ea041a2c7eec8f232365c2b3f9`
-  binds A0--A8 to Jobs `1213694--1213702` and finalizer `1213703`. These are
-  execution facts only; all-complete performance and cost evidence is pending.
+  binds A0--A8 to Jobs `1213694--1213702` and finalizer `1213703`. All nine
+  stages completed `0:0` and published stage-result/final-checkpoint artifacts,
+  but finalizer `1213703` failed `1:0` and sealed
+  `FAIL_UNTRUSTED_FINALIZER_INPUT` with empty contrasts. Its internal/file
+  SHA-256 are
+  `29a97472e0358e3379d7ce8b217eefb9368a2a7b3ebe0cfb493fa840fc66ebdd` /
+  `42f83bfa264e92f1fcb8bfaa8e4a0b2c586c2b4b464de12f4f80424fa71fcd7c`.
+  A predicate audit isolated the failure to mapping insertion-order comparison
+  after canonical sorted-key JSON serialization; the receipt hash, exact stage
+  key set, Job/dependency bindings, and every other deployment predicate pass.
+  The immutable run root, Slurm accounting, deployment/P0/failure receipts, and
+  nine stage artifacts are raw sources only. No performance or cost inference
+  is allowed before a separately versioned recovery finalizer validates them.
 
 - GeoRoute official-comparable F0 successful replacement, 2026-07-31. Exact
   clean source `3d8c2b487fa983d6d6240b347177cc423a37748b` passed remote

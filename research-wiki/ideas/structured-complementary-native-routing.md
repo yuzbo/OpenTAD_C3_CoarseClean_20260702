@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:structured-complementary-native-routing
 title: "Structured Complementary Native Routing for offline TAD"
-stage: experiment_running
-status: pilot_running_after_p0_pass_no_empirical_support
+stage: tested
+status: pilot_terminal_finalizer_input_failure_no_empirical_support
 tags: ["offline-tad", "native-token", "roi", "token-selection", "structured-routing", "adatad"]
 added: 2026-08-02
 updated: 2026-08-02
@@ -90,10 +90,15 @@ promote fixed `8/28/28` as the final architecture.
 The old Hybrid number is descriptive motivation only. Exact runtime `0f64218d`
 passed remote Linux/CUDA tests and the no-performance mechanical P0, including
 exact role counts, private role RNG, finite ROI/residual branch gradients, and a
-world-two FP32-DDP KAT. All nine single-seed cells are submitted and the study is
-therefore `experiment_running`; no performance result exists yet. The route is
-not empirically supported, paper-ready, Online TAD, Geometry Zoom, or a complete
-system-efficiency result.
+world-two FP32-DDP KAT. All nine single-seed stage Jobs completed `0:0`, but
+finalizer `1213703` failed closed on an order-sensitive deployment-receipt check:
+canonical JSON sorted the `jobs.stages` mapping while the validator compared
+mapping insertion order with the frozen arm order. The canonical receipt hash,
+stage-key set, Job bindings, and every other deployment predicate passed. The
+sealed result has empty contrasts, so the route is not empirically supported,
+paper-ready, Online TAD, Geometry Zoom, or a complete system-efficiency result.
+A separately versioned immutable-input recovery finalizer is required before
+reading performance.
 
 ## Pro review
 

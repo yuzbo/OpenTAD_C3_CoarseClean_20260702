@@ -69,6 +69,14 @@ updated: 2026-08-02
 0. `georoute_hybrid_causal_pilot_v1` is seed5227, 20 epochs, exactly nine arms.
    Do not run a subset, resume a cell, reuse an old checkpoint/prediction, or
    interpret survivors. Missing/invalid cells require empty contrasts.
+0. The nine stage Jobs `1213694--1213702` completed, but finalizer `1213703`
+   sealed `FAIL_UNTRUSTED_FINALIZER_INPUT` because it compared JSON mapping
+   insertion order against arm order after canonical sorted-key serialization.
+   Do not hand-read metrics, rewrite the deployment receipt, remove the sealed
+   failure, or rerun inside the old namespace. A recovery must be a new
+   versioned exact source and output namespace, bind every immutable old
+   artifact/hash/Job, compare the stage key set and then explicitly iterate the
+   frozen `arm_order`, and preserve empty contrasts on any mismatch.
 0. The single-seed screen has no automatic scientific winner and no
    multiple-comparison-adjusted claim. It can only admit a separately frozen
    confirmatory protocol. Official test and paper claims remain closed.

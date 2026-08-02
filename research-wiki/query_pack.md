@@ -45,15 +45,22 @@ max_chars: 8000
   20 epochs, nine all-complete arms A0 Dense, A1 Fixed64, A2 Random64, A3
   residual-PL64, A4 context8+residual56, A5 context8+ROI56, A6 Hybrid-ST,
   A7 Hybrid-PL, A8 A7 with temporal geometry trajectory shift127.
-- State is `experiment_running`, not empirically supported. Exact clean runtime
+- State is `tested_incomplete_finalizer_input_failure`, not empirically
+  supported. Exact clean runtime
   `0f64218d` passed remote Linux/CUDA checks (`20/20` required C3 and `171/171`
   GeoRoute, one skipped) plus real binder SHA
   `202d8d75b024ae6f080caba461ba05c33edd0790b99d683c9751b4f449f2e78d`.
   No-performance P0 Jobs `1213665--1213667` sealed
-  `PASS_MECHANICAL_ONLY`; the nine held leaves were then released as Jobs
-  `1213694--1213702`, with after-any finalizer `1213703`.
-  Accuracy/telemetry and cost timing are separate replays; after-any closeout
-  emits no contrasts unless every arm and common population validate.
+  `PASS_MECHANICAL_ONLY`; all nine held leaves `1213694--1213702` completed
+  `0:0` and each published a stage result and final checkpoint. After-any
+  finalizer `1213703` failed closed before artifact/metric interpretation because
+  it compared the insertion order of the canonically sorted `jobs.stages` JSON
+  mapping with the frozen arm order. Every other deployment predicate passed,
+  including the canonical hash and stage-key set. Its sealed failure status is
+  `FAIL_UNTRUSTED_FINALIZER_INPUT`, with empty contrasts. Accuracy/telemetry and
+  cost timing remain uninterpreted until a separately versioned, immutable-input
+  recovery finalizer validates the full population; the old namespace is not
+  rerun or edited.
 - A single-seed pass authorizes only a separately frozen disjoint-seed study.
   If that future study claims PL over ST, matched Hybrid-ST must remain across
   seeds; otherwise estimator-superiority language is removed. No official test,

@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:georoute-hybrid-causal-pilot-v1
 title: "GeoRoute Hybrid causal exploratory pilot v1"
-stage: experiment_running
-status: nine_arm_screen_running_no_performance_result
+stage: tested
+status: terminal_finalizer_input_failure_no_performance_inference
 tags: ["georoute", "hybrid", "causal-ablation", "plackett-luce", "development-only"]
 added: 2026-08-02
 updated: 2026-08-02
@@ -93,10 +93,29 @@ It recorded exact `8/28/28` roles, distinct ROI/residual private RNG seeds,
 Pilot deployment receipt SHA-256 is
 `6dc3abebdb662393dc6faa8eac4bdf052622c0ea041a2c7eec8f232365c2b3f9`.
 Jobs `1213694--1213702` bind A0--A8 respectively; after-any Job `1213703`
-finalizes only after every cell is terminal. The study is running. Submission,
-finite early detector losses, or a negative signed score-function term are not
-performance evidence; checkpoint, prediction, common-population, metric, cost,
-and final contrast validation remain pending.
+was responsible for finalization. All nine stage Jobs completed `0:0`; nine
+`stage_result.json` files and nine final `epoch_19.pth` files exist. This is not
+yet a complete scientific result: finalizer `1213703` failed `1:0` after two
+seconds and sealed `FAIL_UNTRUSTED_FINALIZER_INPUT` with empty contrasts.
+
+The isolated cause is the deployment validator's order-sensitive condition
+`tuple(stage_jobs) == HYBRID_CAUSAL_ARM_ORDER`. The deployment receipt was
+canonically serialized with sorted mapping keys, so its `jobs.stages` insertion
+order is alphabetical rather than experimental. A predicate audit showed that
+all other checks pass: schema, phase, status, study, runtime commit, explicit
+`arm_order`, canonical deployment hash, mapping type, finalizer Job, after-any
+dependency type and Job set, no-partial-inference guard, and sealed-test guard.
+The stage key set itself exactly matches all nine frozen arms.
+
+The failure receipt internal SHA-256 is
+`29a97472e0358e3379d7ce8b217eefb9368a2a7b3ebe0cfb493fa840fc66ebdd`;
+its file SHA-256 is
+`42f83bfa264e92f1fcb8bfaa8e4a0b2c586c2b4b464de12f4f80424fa71fcd7c`.
+No stage metric, common population, cost, or contrast may be interpreted. The
+old namespace and receipt are immutable. Any recovery must use a new versioned
+source/output namespace, bind all old Job and artifact hashes, compare key sets
+and explicitly iterate `arm_order`, and fail closed before contrasts on any
+mismatch.
 
 ## Connections
 

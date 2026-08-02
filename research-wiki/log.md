@@ -2256,3 +2256,18 @@ append_only: true
   independent, separately trained ablations; they cannot be inference-time
   switches or share the main checkpoint's interpretation. This decision is
   `designed`, not implemented or tested; no running pilot was changed.
+
+- 2026-08-02: the fixed-budget Hybrid causal pilot became terminal but not
+  interpretable. All A0--A8 Jobs `1213694--1213702` completed `0:0` and nine
+  stage results/final checkpoints exist. After-any finalizer `1213703` failed
+  `1:0` after two seconds and atomically sealed
+  `FAIL_UNTRUSTED_FINALIZER_INPUT` with empty contrasts (internal/file SHA-256
+  `29a97472e0358e3379d7ce8b217eefb9368a2a7b3ebe0cfb493fa840fc66ebdd` /
+  `42f83bfa264e92f1fcb8bfaa8e4a0b2c586c2b4b464de12f4f80424fa71fcd7c`).
+  Read-only predicate replay proved a single deployment-validator defect:
+  canonical JSON sorted the `jobs.stages` mapping, while the finalizer compared
+  mapping insertion order to frozen arm order. Schema, commit, explicit
+  `arm_order`, canonical hash, exact stage-key set, finalizer/dependency Job
+  bindings, no-partial and no-test guards all passed. No metrics were read. The
+  old namespace remains immutable; only a new versioned, hash-bound recovery
+  finalizer may validate and interpret the complete population.

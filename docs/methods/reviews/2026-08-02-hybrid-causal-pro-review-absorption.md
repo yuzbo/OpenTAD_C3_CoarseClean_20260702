@@ -197,17 +197,21 @@ Implemented in the current working tree:
 - single structured-model P0 plus world-size-two DDP KAT;
 - held Slurm deployments, storage/capacity gates, and all-terminal finalizers.
 
-Current stage is `experiment_running`, not `empirically_supported`. Exact clean
+Current stage is `tested_incomplete_finalizer_input_failure`, not
+`empirically_supported`. Exact clean
 runtime `0f64218d8f404ef652934844dcd97a3f9607c580` passed remote Linux/CUDA
 pycompile, required C3 tests (`20 passed`), complete GeoRoute tests
 (`171 passed, 1 skipped`), and the real data/config binder. No-performance P0
 Jobs `1213665--1213667` completed `0:0` and sealed `PASS_MECHANICAL_ONLY`,
 including exact roles, private role RNG, finite nonzero ROI/residual branch
-gradients, and the world-size-two FP32-DDP KAT. The nine performance leaves are
-Jobs `1213694--1213702`; all-terminal finalizer `1213703` remains responsible
-for fail-closed interpretation. No complete checkpoint/prediction population,
-metric contrast, empirical result, official-test result, or paper evidence
-exists yet.
+gradients, and the world-size-two FP32-DDP KAT. All nine performance Jobs
+`1213694--1213702` completed `0:0`, but all-terminal finalizer `1213703` failed
+closed on an order-sensitive deployment check: canonical JSON sorted the
+`jobs.stages` mapping while the validator compared its insertion order with the
+frozen arm order. The canonical receipt hash, stage-key set, Job/dependency
+bindings, and every other deployment predicate passed. The sealed failure
+receipt contains empty contrasts, so no metric contrast, empirical result,
+official-test result, or paper evidence exists yet.
 
 ## Next executable sequence
 
@@ -215,10 +219,15 @@ exists yet.
 2. Completed: no-performance P0 DAG.
 3. Completed: structured A7 full-graph P0 and world-size-two FP32 DDP KAT sealed
    `PASS_MECHANICAL_ONLY`.
-4. Completed: all nine held performance leaves and their after-any finalizer
-   were released in one immutable namespace.
-5. In progress: interpret nothing until the finalizer validates all nine results,
-   artifact hashes, common population, exact-K, one-forward, and no-leak rules.
-6. On a complete screen, either freeze a disjoint-seed confirmatory study or
+4. Completed: all nine held performance leaves were released together and
+   completed `0:0` in one immutable namespace.
+5. Blocked from interpretation: finalizer `1213703` sealed
+   `FAIL_UNTRUSTED_FINALIZER_INPUT` before stage validation because of its JSON
+   mapping-order bug. Do not read partial metrics or mutate/rerun the namespace.
+6. Next mechanical action: freeze and test a separately versioned recovery
+   finalizer that binds the immutable old receipts/artifacts, checks exact stage
+   key-set equality, iterates the explicit frozen arm order, and writes to a new
+   recovery namespace. Only its complete validation may emit contrasts.
+7. On a complete recovered screen, either freeze a disjoint-seed confirmatory study or
    issue `HOLD_MECHANISM_AMBIGUOUS`; do not open official test or write a paper
    claim.
