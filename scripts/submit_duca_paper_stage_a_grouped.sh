@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 fail() {
-  echo "[DUCA_PAPER_STAGE_A_SUBMIT][FAIL] $*" >&2
+  echo "[DUCA_PAPER_STAGE_A_GROUPED_SUBMIT][FAIL] $*" >&2
   exit 1
 }
 
@@ -35,13 +35,20 @@ cd "${DUCA_PAPER_REPO_ROOT}"
   || fail "Git tree is dirty"
 [[ ! -e "${DUCA_PAPER_RUN_ROOT}" ]] || fail "a fresh Stage-A root is required"
 
+active_jobs="$(squeue -h -u "$(id -un)" | wc -l)"
+max_jobs="${DUCA_PAPER_MAX_SUBMIT_JOBS:-16}"
+[[ "${max_jobs}" =~ ^[0-9]+$ && "${active_jobs}" =~ ^[0-9]+$ ]] \
+  || fail "invalid scheduler job-count contract"
+(( active_jobs + 4 <= max_jobs )) \
+  || fail "four scheduler slots are not available for grouped Stage A"
+
 for binding in \
   "${DUCA_PAPER_PRETRAIN_PATH}|${DUCA_PAPER_PRETRAIN_SHA256}|VideoMAE initialization" \
   "${DUCA_PAPER_ANNOTATION_PATH}|${DUCA_PAPER_ANNOTATION_SHA256}|THUMOS14 annotation" \
   "${DUCA_PAPER_CLASS_MAP_PATH}|${DUCA_PAPER_CLASS_MAP_SHA256}|THUMOS14 class map"; do
   IFS='|' read -r path expected label <<<"${binding}"
   [[ -f "${path}" ]] || fail "${label} is missing: ${path}"
-  [[ "$(sha256sum "${path}" | awk '{print $1}')" == "${expected}" ]] \
+  [[ "$(sha256sum "${path}" | cut -d ' ' -f 1)" == "${expected}" ]] \
     || fail "${label} SHA-256 drift"
 done
 
@@ -57,7 +64,7 @@ python -m tools.bata.build_duca_paper_matrix_manifest \
   --class-map "${DUCA_PAPER_CLASS_MAP_PATH}" \
   --output "${DUCA_PAPER_MATRIX_MANIFEST}"
 export DUCA_PAPER_MATRIX_MANIFEST_SHA256="$(
-  sha256sum "${DUCA_PAPER_MATRIX_MANIFEST}" | awk '{print $1}'
+  sha256sum "${DUCA_PAPER_MATRIX_MANIFEST}" | cut -d ' ' -f 1
 )"
 
 export DUCA_PAPER_REPO_ROOT DUCA_PAPER_EXPECTED_COMMIT
@@ -75,49 +82,23 @@ cleanup_held_jobs() {
 }
 trap cleanup_held_jobs ERR INT TERM
 
-config_for_arm() {
-  case "$1" in
-    dense)
-      echo "${DUCA_PAPER_REPO_ROOT}/configs/adatad/thumos/duca_paper_dense_actionformer_full200.py"
-      ;;
-    uniform_fixed_k384)
-      echo "${DUCA_PAPER_REPO_ROOT}/configs/adatad/thumos/duca_paper_uniform_fixed_k384_full200.py"
-      ;;
-    uniform_mixed_train_k384_eval)
-      echo "${DUCA_PAPER_REPO_ROOT}/configs/adatad/thumos/duca_paper_uniform_mixed_train_k384_eval_full200.py"
-      ;;
-    duca_fixed_k384)
-      echo "${DUCA_PAPER_REPO_ROOT}/configs/adatad/thumos/duca_paper_duca_fixed_k384_full200.py"
-      ;;
-    *) fail "unregistered Stage-A arm: $1" ;;
-  esac
-}
-
-for arm in \
-  dense \
-  uniform_fixed_k384 \
-  uniform_mixed_train_k384_eval \
-  duca_fixed_k384; do
-  config="$(config_for_arm "${arm}")"
-  for seed in 5801 8123 12011; do
-    cell_root="${DUCA_PAPER_CELLS_ROOT}/${arm}/seed${seed}"
-    job_id="$(
-      sbatch \
-        --parsable \
-        --hold \
-        --partition=gpu \
-        --gres=gpu:2 \
-        --cpus-per-task="${DUCA_PAPER_CPUS:-16}" \
-        --time="${DUCA_PAPER_TIME:-7-00:00:00}" \
-        --job-name="ducaA-${arm:0:8}-s${seed}" \
-        --output="${DUCA_PAPER_RUN_ROOT}/logs/%x-%j.out" \
-        --export="ALL,DUCA_PAPER_ARM=${arm},DUCA_PAPER_CONFIG=${config},DUCA_PAPER_CELL_ROOT=${cell_root},DUCA_PAPER_SEED=${seed}" \
-        --wrap="/bin/bash ${DUCA_PAPER_REPO_ROOT}/scripts/run_duca_paper_stage_a_cell.sh"
-    )"
-    job_ids+=("${job_id%%;*}")
-  done
+for seed in 5801 8123 12011; do
+  job_id="$(
+    sbatch \
+      --parsable \
+      --hold \
+      --partition=gpu \
+      --gres=gpu:2 \
+      --cpus-per-task="${DUCA_PAPER_CPUS:-16}" \
+      --time="${DUCA_PAPER_GROUPED_TIME:-7-00:00:00}" \
+      --job-name="ducaA-seed${seed}" \
+      --output="${DUCA_PAPER_RUN_ROOT}/logs/%x-%j.out" \
+      --export="ALL,DUCA_PAPER_SEED=${seed}" \
+      --wrap="/bin/bash ${DUCA_PAPER_REPO_ROOT}/scripts/run_duca_paper_stage_a_seed.sh"
+  )"
+  job_ids+=("${job_id%%;*}")
 done
-[[ "${#job_ids[@]}" == 12 ]] || fail "Stage-A did not create exactly twelve cells"
+[[ "${#job_ids[@]}" == 3 ]] || fail "Stage-A did not create three seed groups"
 
 dependency="$(IFS=:; echo "${job_ids[*]}")"
 seal_job="$(
@@ -144,14 +125,14 @@ python - \
   "${DUCA_PAPER_MATRIX_MANIFEST_SHA256}" \
   "${DUCA_PAPER_CELLS_ROOT}" \
   "${seal_job}" \
-  "${job_ids[@]:0:12}" <<'PY'
+  "${job_ids[@]:0:3}" <<'PY'
 import hashlib
 import json
 import os
 import pathlib
 import sys
 
-output, commit, protocol, protocol_sha, cells_root, seal_job, *cell_jobs = sys.argv[1:]
+output, commit, protocol, protocol_sha, cells_root, seal_job, *seed_jobs = sys.argv[1:]
 arms = (
     "dense",
     "uniform_fixed_k384",
@@ -159,22 +140,25 @@ arms = (
     "duca_fixed_k384",
 )
 seeds = (5801, 8123, 12011)
-coordinates = [
-    {"arm": arm, "seed": seed} for arm in arms for seed in seeds
-]
-if len(cell_jobs) != 12 or len(coordinates) != 12:
-    raise SystemExit("Stage-A submission cardinality drift")
+if len(seed_jobs) != 3:
+    raise SystemExit("grouped Stage-A submission cardinality drift")
 payload = {
-    "schema_version": "duca_paper_stage_a_submission_v1",
+    "schema_version": "duca_paper_stage_a_grouped_submission_v1",
     "status": "held_complete",
     "git_commit": commit,
     "protocol_manifest_path": str(pathlib.Path(protocol).resolve()),
     "protocol_manifest_sha256": protocol_sha,
     "cells_root": str(pathlib.Path(cells_root).resolve()),
-    "cell_count": 12,
-    "cells": [
-        {**coordinate, "slurm_job_id": job_id}
-        for coordinate, job_id in zip(coordinates, cell_jobs)
+    "logical_cell_count": 12,
+    "scheduler_job_count": 4,
+    "sequential_scheduler_grouping_only": True,
+    "seed_jobs": [
+        {
+            "seed": seed,
+            "slurm_job_id": job_id,
+            "arms": list(arms),
+        }
+        for seed, job_id in zip(seeds, seed_jobs)
     ],
     "seal_job_id": seal_job,
     "release_is_transactional": True,
@@ -192,12 +176,12 @@ pathlib.Path(str(target) + ".sha256").write_text(
     f"{digest}  {target.name}\n", encoding="utf-8"
 )
 receipt = {
-    "schema_version": "duca_paper_stage_a_submission_receipt_v1",
+    "schema_version": "duca_paper_stage_a_grouped_submission_receipt_v1",
     "status": "held_complete",
     "git_commit": commit,
     "submission_manifest_path": str(target.resolve()),
     "submission_manifest_sha256": digest,
-    "cell_job_ids": cell_jobs,
+    "seed_job_ids": seed_jobs,
     "seal_job_id": seal_job,
     "released": False,
 }
@@ -206,7 +190,7 @@ pathlib.Path(str(target) + ".receipt.json").write_text(
 )
 PY
 
-printf '%s\n' "${job_ids[@]:0:12}" > "${DUCA_PAPER_RUN_ROOT}/cell_job_ids.txt"
+printf '%s\n' "${job_ids[@]:0:3}" > "${DUCA_PAPER_RUN_ROOT}/seed_job_ids.txt"
 printf '%s\n' "${seal_job}" > "${DUCA_PAPER_RUN_ROOT}/seal_job_id.txt"
 release_list="$(IFS=,; echo "${job_ids[*]}")"
 scontrol release "${release_list}"
@@ -230,4 +214,4 @@ os.replace(temporary, target)
 PY
 trap - ERR INT TERM
 
-echo "[DUCA_PAPER_STAGE_A_SUBMIT] RELEASED 12 cells; seal job ${seal_job}"
+echo "[DUCA_PAPER_STAGE_A_GROUPED_SUBMIT] RELEASED 3 seed groups; seal ${seal_job}"

@@ -30,7 +30,7 @@ Current evidence level:
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
 | Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
-| Official full-data DUCA feasibility | `user_approved / Stage_A_implemented / local_focused_tested / Slurm_gate_pending / not_yet_run` |
+| Official full-data DUCA feasibility | `user_approved / Stage_A_implemented / first_exact_commit_Slurm_gate_passed_1213710 / four_job_scheduler_grouping_implemented / fresh_gate_pending / not_yet_run` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |

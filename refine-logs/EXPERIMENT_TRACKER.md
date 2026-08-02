@@ -7,6 +7,7 @@
 | A | uniform fixed K384, 3 seeds | implemented | launcher and receipts implemented; not submitted |
 | A | mixed-K train / K384 eval, 3 seeds | implemented | launcher and receipts implemented; not submitted |
 | A | learned fixed K384, 3 seeds | implemented | launcher and receipts implemented; not submitted |
+| A | Scheduler grouping | implemented | 3 seed jobs x 4 sequential arms + dependent seal; logical 12-cell protocol unchanged |
 | B | full-200 OOF utility/risk targets | designed | blocked on completed Stage-A mixed-K checkpoint |
 | B | dynamic mean-K384, 3 seeds | designed | blocked on valid OOF targets/protocol |
 | B | exact same-realized-K replay | designed | blocked on dynamic inference ledgers |

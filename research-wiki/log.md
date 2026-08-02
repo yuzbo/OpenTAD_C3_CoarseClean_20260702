@@ -1,5 +1,26 @@
 # Research Log
 
+## 2026-08-02 — Stage-A Linux gate passed; scheduler grouping required
+
+- Published paper-matrix commit `1ec4faaa3afbc4d65bb16dade16de03e2bf4b457`
+  and installed a clean remote checkout with the registered ignored runtime data
+  symlinks. Exact annotation identity is 200 training plus 211 validation videos;
+  the class map has 20 nonempty rows.
+- Authoritative Slurm gate `1213710` completed with exit `0:0`; 37 Linux/PyTorch
+  contract tests passed. Protocol-manifest SHA-256 is
+  `0d929cb8d2698bc69ef2cc454ff35d54ffefe3c1a3b03aedb8fd0b15686b2901` and
+  gate-receipt SHA-256 is
+  `355a4382908165a72625bf51bce3f7d5d8d7eab987facf605686ae23d545242b`.
+- The exact post-gate scheduler snapshot contained 12 other user-owned jobs.
+  The original 13-job representation cannot be submitted under
+  `MaxSubmitJobs=16`; no unrelated job was canceled.
+- Implemented an execution-equivalent grouped DAG: three two-GPU seed jobs, each
+  running four independently rooted/seeded logical arms sequentially, plus one
+  dependent seal. The 12 logical cells, models, data, updates, checkpoints,
+  evaluation and per-cell receipts are unchanged. A fresh exact-commit Slurm
+  gate is required before release.
+- This is `ENGINEERING_STATUS`; no model metric was read or interpreted.
+
 ## 2026-08-02 — Paper-facing full-200/exact-211 Stage A implemented
 
 - The user authorized direct implementation and execution; another Pro round is

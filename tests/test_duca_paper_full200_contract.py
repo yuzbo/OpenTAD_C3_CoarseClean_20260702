@@ -215,6 +215,12 @@ def test_stage_a_launchers_remain_paper_facing_and_fail_closed():
     seal = (REPO_ROOT / "scripts/run_duca_paper_stage_a_seal.sh").read_text(
         encoding="utf-8"
     )
+    seed = (REPO_ROOT / "scripts/run_duca_paper_stage_a_seed.sh").read_text(
+        encoding="utf-8"
+    )
+    grouped = (
+        REPO_ROOT / "scripts/submit_duca_paper_stage_a_grouped.sh"
+    ).read_text(encoding="utf-8")
     assert "--nproc_per_node=2 tools/train.py" in cell
     assert "--nproc_per_node=1 tools/test.py" in cell
     assert "--expected-checkpoint-epoch 59" in cell
@@ -223,3 +229,13 @@ def test_stage_a_launchers_remain_paper_facing_and_fail_closed():
     assert "[[ \"${#job_ids[@]}\" == 12 ]]" in submit
     assert "complete_three_seed_matrix" in seal
     assert "metrics_withheld_from_engineering_receipt" in seal
+    assert "sequential_scheduler_grouping_only" in seed
+    assert "logical_cell_count\": 4" in seed
+    assert "[[ \"${#job_ids[@]}\" == 3 ]]" in grouped
+    assert "active_jobs + 4 <= max_jobs" in grouped
+    assert "scheduler_job_count\": 4" in grouped
+    assert "logical_cell_count\": 12" in grouped
+    assert grouped.count("--hold") == 2
+    assert grouped.rfind("trap - ERR INT TERM") > grouped.rfind(
+        "os.replace(temporary, target)"
+    )

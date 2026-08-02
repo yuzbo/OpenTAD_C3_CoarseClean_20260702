@@ -50,6 +50,13 @@ to full-stack DUCA cost.
 - exact 211 prediction keys plus executed merge/NMS/evaluator receipt;
 - transactional held submission for 12 cells and one dependent matrix seal.
 
+The primary scheduler representation is three two-GPU seed jobs. Each seed job
+executes the same four logical cells sequentially, followed by one dependent
+seal job. This four-job grouping exists only to satisfy the account's immutable
+`MaxSubmitJobs=16` while other user-owned jobs are active. It does not share
+weights, RNG state, work directories or receipts across logical cells and does
+not change the frozen 12-cell scientific matrix.
+
 No single cell, seed, intermediate checkpoint or incomplete matrix may support a
 performance statement. Until all twelve terminal receipts pass, the status is
 only `ENGINEERING_STATUS`.

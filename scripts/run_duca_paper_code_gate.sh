@@ -54,8 +54,10 @@ python -m py_compile \
 bash -n \
   scripts/run_duca_paper_code_gate.sh \
   scripts/run_duca_paper_stage_a_cell.sh \
+  scripts/run_duca_paper_stage_a_seed.sh \
   scripts/run_duca_paper_stage_a_seal.sh \
-  scripts/submit_duca_paper_stage_a.sh
+  scripts/submit_duca_paper_stage_a.sh \
+  scripts/submit_duca_paper_stage_a_grouped.sh
 python -m pytest \
   tests/test_duca_paper_full200_contract.py \
   tests/test_duca_rime_backbone_mask_contract.py \
@@ -75,12 +77,10 @@ export DUCA_PAPER_MATRIX_MANIFEST_SHA256="$(
   sha256sum "${DUCA_PAPER_MATRIX_MANIFEST}" | awk '{print $1}'
 )"
 
-export DUCA_PAPER_ARM=dense
-export DUCA_PAPER_CONFIG="${DUCA_PAPER_REPO_ROOT}/configs/adatad/thumos/duca_paper_dense_actionformer_full200.py"
-export DUCA_PAPER_CELL_ROOT="${DUCA_PAPER_CODE_GATE_ROOT}/precheck-cell"
+export DUCA_PAPER_CELLS_ROOT="${DUCA_PAPER_CODE_GATE_ROOT}/precheck-cells"
 export DUCA_PAPER_SEED=5801
-PRECHECK_ONLY=1 bash scripts/run_duca_paper_stage_a_cell.sh \
-  > "${DUCA_PAPER_CODE_GATE_ROOT}/logs/cell-precheck.out"
+PRECHECK_ONLY=1 bash scripts/run_duca_paper_stage_a_seed.sh \
+  > "${DUCA_PAPER_CODE_GATE_ROOT}/logs/seed-precheck.out"
 
 printf '%s\n' \
   "schema=duca_paper_code_gate_v1" \
