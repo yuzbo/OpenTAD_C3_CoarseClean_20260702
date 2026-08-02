@@ -190,6 +190,19 @@ def test_signed_roi_modifier_keeps_context_identifiable_outside_the_box():
     assert torch.all(modifier[:, 1] > 0.0)
 
 
+def test_signed_roi_modifier_zero_contour_uses_half_of_full_extent():
+    # The two patch centres are x={0.25,0.75}; for a decoded full width 0.5,
+    # both lie exactly on the horizontal ellipse boundary around cx=0.5.
+    geometry = torch.tensor([[[0.5, 0.5, 0.5, 1.0]]])
+    modifier = roi_modifier_from_geometry(
+        geometry,
+        grid_height=1,
+        grid_width=2,
+        temperature=0.5,
+    )
+    assert torch.allclose(modifier, torch.zeros_like(modifier), atol=1e-7)
+
+
 @pytest.mark.parametrize(
     ("budget", "message"),
     [(0, "0 < window budget"), (6, "0 < window budget")],

@@ -53,9 +53,12 @@ def _valid_payload():
             "optimizer_update_succeeded": True,
         },
         "backbone_audit": {
-            "routing_schema": "georoute_dynamic_global_routing_v1",
+            "routing_schema": "georoute_dynamic_global_routing_v2",
             "route_mode": "dynamic_scnr",
             "policy_estimator": "straight_through",
+            "roi_modifier_geometry": (
+                "signed_ellipse_with_semiaxes_half_decoded_full_extent"
+            ),
             "scout_policy_stop_gradient": True,
             "proxy_inference_enabled": False,
             "proxy_updates_scout_stem": False,
@@ -176,4 +179,3 @@ def test_dynamic_stage1_slurm_launcher_preserves_scheduler_gpu_mapping():
     assert "CUDA_VISIBLE_DEVICES=" not in text
     assert "--mem=" not in text
     assert "run_georoute_dynamic_stage1_p0" in text
-

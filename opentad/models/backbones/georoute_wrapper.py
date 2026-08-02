@@ -1778,6 +1778,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             ),
             "policy_temperature": self.policy_temperature,
             "roi_temperature": self.roi_temperature,
+            "roi_modifier_geometry": (
+                "signed_ellipse_with_semiaxes_half_decoded_full_extent"
+            ),
             "window_token_budget": self.window_token_budget,
             "window_budget_is_global": True,
             "independent_count_head": False,

@@ -22,7 +22,7 @@ import torch.nn.functional as F
 
 GEOROUTE_ROUTING_SCHEMA = "georoute_native_routing_v2"
 GEOROUTE_STRUCTURED_ROUTING_SCHEMA = "georoute_fixed_quota_structured_routing_v1"
-GEOROUTE_DYNAMIC_ROUTING_SCHEMA = "georoute_dynamic_global_routing_v1"
+GEOROUTE_DYNAMIC_ROUTING_SCHEMA = "georoute_dynamic_global_routing_v2"
 LEGACY_ROUTE_MODES = frozenset(
     {"dense", "uniform", "random", "free", "roi", "hybrid"}
 )
@@ -193,9 +193,15 @@ def roi_modifier_from_geometry(
         device=geometry.device,
         dtype=geometry.dtype,
     ).view(1, 1, -1, 2)
+    # ``decode_continuous_geometry`` defines w/h as full box extents (the
+    # centre is constrained by extent/2).  The ellipse semi-axes are therefore
+    # w/2 and h/2.  Dividing by the full extent would place the claimed zero
+    # contour at twice the decoded ROI width/height and systematically suppress
+    # the context/residual roles.
+    semi_extent = 0.5 * geometry[..., None, 2:]
     normalized = (
         centers - geometry[..., None, :2]
-    ) / geometry[..., None, 2:].clamp_min(1e-6)
+    ) / semi_extent.clamp_min(1e-6)
     return (1.0 - normalized.square().sum(dim=-1)) / (
         2.0 * float(temperature)
     )

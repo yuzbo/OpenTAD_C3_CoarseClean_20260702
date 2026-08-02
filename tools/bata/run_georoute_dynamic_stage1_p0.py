@@ -25,7 +25,7 @@ if str(ROOT) not in sys.path:
 
 
 DYNAMIC_STAGE1_P0_SCHEMA = "georoute_dynamic_stage1_cuda_p0_v1"
-DYNAMIC_ROUTING_SCHEMA = "georoute_dynamic_global_routing_v1"
+DYNAMIC_ROUTING_SCHEMA = "georoute_dynamic_global_routing_v2"
 RAGGED_EXECUTOR_SCHEMA = "videomae_native_ragged_v1"
 REQUIRED_GRADIENT_COMPONENTS = {
     "dynamic_aux_head",
@@ -127,6 +127,8 @@ def validate_dynamic_stage1_p0_report(report: Mapping[str, Any]) -> None:
         audit.get("routing_schema") != DYNAMIC_ROUTING_SCHEMA
         or audit.get("route_mode") != "dynamic_scnr"
         or audit.get("policy_estimator") != "straight_through"
+        or audit.get("roi_modifier_geometry")
+        != "signed_ellipse_with_semiaxes_half_decoded_full_extent"
         or audit.get("scout_policy_stop_gradient") is not True
         or audit.get("proxy_inference_enabled") is not False
         or audit.get("proxy_updates_scout_stem") is not False
