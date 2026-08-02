@@ -230,6 +230,139 @@ class Adapter(BaseModule):
         output[dense_mask] = selected_output.reshape(-1, channels)
         return output
 
+    def forward_native_ragged(
+        self,
+        inputs: Tensor,
+        tubelet_indices: Tensor,
+        spatial_indices: Tensor,
+        *,
+        total_tubelets: int,
+        grid_height: int,
+        grid_width: int,
+    ) -> Tensor:
+        """Apply Adapter parameters to a flat, padding-free selected union.
+
+        Every selected token retains its global tubelet and native spatial
+        lineage.  Adjacent temporal contributions are present only when the
+        same spatial index was genuinely selected; no placeholder token is
+        created for an empty tubelet.
+        """
+
+        if inputs.ndim != 3:
+            raise ValueError("ragged Adapter inputs must be [B,S,C]")
+        if tubelet_indices.shape != inputs.shape[:2]:
+            raise ValueError("ragged tubelet indices must match [B,S]")
+        if spatial_indices.shape != inputs.shape[:2]:
+            raise ValueError("ragged spatial indices must match [B,S]")
+        if tubelet_indices.dtype != torch.long or spatial_indices.dtype != torch.long:
+            raise TypeError("ragged Adapter provenance indices must be torch.long")
+        batch_size, selected_count, channels = map(int, inputs.shape)
+        spatial_tokens = int(grid_height) * int(grid_width)
+        if selected_count <= 0:
+            raise ValueError("ragged Adapter requires a positive window budget")
+        if int(total_tubelets) != int(self.temporal_size):
+            raise ValueError(
+                "ragged Adapter temporal axis differs from pretrained Adapter"
+            )
+        if spatial_tokens <= 0:
+            raise ValueError("ragged Adapter native grid must be positive")
+        if bool(
+            (
+                (tubelet_indices < 0)
+                | (tubelet_indices >= int(total_tubelets))
+                | (spatial_indices < 0)
+                | (spatial_indices >= spatial_tokens)
+            ).any().item()
+        ):
+            raise ValueError("ragged Adapter provenance falls outside the native lattice")
+        physical_indices = tubelet_indices * spatial_tokens + spatial_indices
+        if selected_count > 1 and not bool(
+            (physical_indices[:, 1:] > physical_indices[:, :-1]).all().item()
+        ):
+            raise ValueError(
+                "ragged Adapter physical indices must be strictly increasing"
+            )
+
+        hidden = self.act(self.down_proj(inputs))
+        position_lattice = torch.full(
+            (batch_size, int(total_tubelets), spatial_tokens),
+            -1,
+            device=inputs.device,
+            dtype=torch.long,
+        )
+        batch_indices = torch.arange(
+            batch_size,
+            device=inputs.device,
+            dtype=torch.long,
+        ).view(batch_size, 1).expand(batch_size, selected_count)
+        selected_positions = torch.arange(
+            selected_count,
+            device=inputs.device,
+            dtype=torch.long,
+        ).view(1, selected_count).expand(batch_size, selected_count)
+        position_lattice[
+            batch_indices,
+            tubelet_indices,
+            spatial_indices,
+        ] = selected_positions
+
+        def _neighbor(delta: int) -> Tensor:
+            neighbor_tubelet = tubelet_indices + int(delta)
+            in_bounds = (
+                (neighbor_tubelet >= 0)
+                & (neighbor_tubelet < int(total_tubelets))
+            )
+            bounded_tubelet = neighbor_tubelet.clamp(
+                min=0,
+                max=int(total_tubelets) - 1,
+            )
+            positions = position_lattice[
+                batch_indices,
+                bounded_tubelet,
+                spatial_indices,
+            ]
+            present = in_bounds & (positions >= 0)
+            gathered = hidden.gather(
+                1,
+                positions.clamp_min(0).unsqueeze(-1).expand(
+                    batch_size,
+                    selected_count,
+                    int(hidden.shape[-1]),
+                ),
+            )
+            return gathered * present.unsqueeze(-1).to(dtype=hidden.dtype)
+
+        previous = _neighbor(-1)
+        following = _neighbor(1)
+        if (
+            self.dwconv.kernel_size != (3,)
+            or self.dwconv.dilation != (1,)
+            or self.dwconv.stride != (1,)
+            or self.dwconv.padding != (1,)
+        ):
+            raise RuntimeError(
+                "coordinate-lineage Adapter requires the original "
+                "kernel_size=3,dilation=1,stride=1,padding=1"
+            )
+        if self.conv.kernel_size != (1,):
+            raise RuntimeError(
+                "coordinate-lineage Adapter requires pointwise Conv1d"
+            )
+        kernel = self.dwconv.weight[:, 0, :]
+        temporal = (
+            previous * kernel[:, 0].view(1, 1, -1)
+            + hidden * kernel[:, 1].view(1, 1, -1)
+            + following * kernel[:, 2].view(1, 1, -1)
+        )
+        if self.dwconv.bias is not None:
+            temporal = temporal + self.dwconv.bias.view(1, 1, -1)
+        temporal = F.linear(
+            temporal,
+            self.conv.weight[:, :, 0],
+            self.conv.bias,
+        )
+        return self.up_proj(hidden + temporal) * self.gamma + inputs
+
 
 class PlainAdapter(BaseModule):
     def __init__(
@@ -805,6 +938,98 @@ class Block(BaseModule):
         out[dense_mask] = selected.reshape(-1, int(selected.shape[-1]))
         return out
 
+    def _ragged_attention_mlp_forward(
+        self,
+        x: Tensor,
+        bucket_positions: List[Tensor],
+        packed_stats: Optional[Dict[str, int]],
+    ) -> Tensor:
+        if x.ndim != 3:
+            raise ValueError("ragged block inputs must be [B,S,C]")
+        if not bucket_positions:
+            raise ValueError("ragged block requires at least one non-empty clip")
+        flat = x.reshape(-1, int(x.shape[-1]))
+        out = flat.clone()
+        visited = torch.zeros(
+            int(flat.shape[0]),
+            device=x.device,
+            dtype=torch.bool,
+        )
+        for positions in bucket_positions:
+            if positions.ndim != 2 or positions.shape[1] <= 0:
+                raise ValueError("ragged bucket positions must be non-empty [R,L]")
+            if positions.dtype != torch.long:
+                raise TypeError("ragged bucket positions must be torch.long")
+            flattened_positions = positions.reshape(-1)
+            if bool(visited.gather(0, flattened_positions).any().item()):
+                raise RuntimeError("ragged attention buckets overlap")
+            visited.scatter_(0, flattened_positions, True)
+            selected = flat[positions]
+            selected = selected + self.drop_path(self.attn(self.norm1(selected)))
+            selected = selected + self.drop_path(self.mlp(self.norm2(selected)))
+            out[positions] = selected
+            if packed_stats is not None:
+                rows, tokens = map(int, positions.shape)
+                packed_stats["ragged_attention_bucket_call_count"] = int(
+                    packed_stats.get("ragged_attention_bucket_call_count", 0)
+                ) + 1
+                packed_stats["ragged_mlp_bucket_call_count"] = int(
+                    packed_stats.get("ragged_mlp_bucket_call_count", 0)
+                ) + 1
+                packed_stats["executed_attention_tokens"] = int(
+                    packed_stats.get("executed_attention_tokens", 0)
+                ) + rows * tokens
+                packed_stats["executed_attention_pairs"] = int(
+                    packed_stats.get("executed_attention_pairs", 0)
+                ) + rows * tokens * tokens
+                packed_stats["executed_mlp_tokens"] = int(
+                    packed_stats.get("executed_mlp_tokens", 0)
+                ) + rows * tokens
+        if not bool(visited.all().item()):
+            raise RuntimeError("ragged attention buckets omitted a selected token")
+        return out.reshape_as(x)
+
+    def forward_native_ragged(
+        self,
+        x: Tensor,
+        *,
+        bucket_positions: List[Tensor],
+        tubelet_indices: Tensor,
+        spatial_indices: Tensor,
+        total_tubelets: int,
+        grid_height: int,
+        grid_width: int,
+        packed_stats: Optional[Dict[str, int]] = None,
+    ) -> Tensor:
+        """Execute one block on true clip-ragged selected-token sequences."""
+
+        if self.with_cp:
+            raise ValueError(
+                "native ragged execution requires with_cp=False for exact accounting"
+            )
+        x = self._ragged_attention_mlp_forward(
+            x,
+            bucket_positions,
+            packed_stats,
+        )
+        if self.use_adapter:
+            x = self.adapter.forward_native_ragged(
+                x,
+                tubelet_indices,
+                spatial_indices,
+                total_tubelets=total_tubelets,
+                grid_height=grid_height,
+                grid_width=grid_width,
+            )
+            if packed_stats is not None:
+                packed_stats["ragged_adapter_forward_count"] = int(
+                    packed_stats.get("ragged_adapter_forward_count", 0)
+                ) + 1
+                packed_stats["executed_adapter_tokens"] = int(
+                    packed_stats.get("executed_adapter_tokens", 0)
+                ) + int(x.shape[0]) * int(x.shape[1])
+        return x
+
     def forward(
         self,
         x: Tensor,
@@ -952,6 +1177,7 @@ class VisionTransformerAdapter(BaseModule):
         # the actual packed call so P0 does not merely trust a hand-written
         # "one forward" field in a summary dictionary.
         self.native_packed_forward_invocations = 0
+        self.native_ragged_forward_invocations = 0
         self.chronotransport_checkpoint_loaded = False
         self.chronotransport_allow_legacy_checkpoint = False
 
@@ -1308,6 +1534,321 @@ class VisionTransformerAdapter(BaseModule):
             "adapter_execution": "coordinate_lineage_packed",
         }
         return selected
+
+    def _prepare_native_ragged_tokens(
+        self,
+        selected_native_tubelets: Tensor,
+        physical_indices: Tensor,
+        *,
+        total_tubelets: int,
+        source_grid_hw: Tuple[int, int],
+        use_absolute_position: bool = True,
+    ) -> Tuple[Tensor, Tensor, Tensor, List[Tensor], Dict[str, object]]:
+        """Patch-embed and bucket one padding-free global physical-token union."""
+
+        if selected_native_tubelets.ndim != 6:
+            raise ValueError(
+                "ragged native tubelets must be [B,S,3,tubelet,patch,patch]"
+            )
+        if physical_indices.ndim != 2:
+            raise ValueError("ragged physical indices must be [B,S]")
+        if tuple(selected_native_tubelets.shape[:2]) != tuple(physical_indices.shape):
+            raise ValueError("ragged native tubelets and indices must share [B,S]")
+        if physical_indices.dtype != torch.long:
+            raise TypeError("ragged physical indices must be torch.long")
+        if selected_native_tubelets.shape[2] != 3:
+            raise ValueError("ragged native input requires RGB tubelets")
+        if (
+            selected_native_tubelets.shape[3] != 2
+            or selected_native_tubelets.shape[4:]
+            != (self.patch_size, self.patch_size)
+        ):
+            raise ValueError("ragged native input must use VideoMAE 2x16x16 tubelets")
+        if self.with_cp:
+            raise ValueError(
+                "native ragged execution requires with_cp=False for exact accounting"
+            )
+        if (
+            self.tubelet_packed_runtime_route is not None
+            and self.tubelet_packed_runtime_route.enabled
+        ):
+            raise RuntimeError(
+                "native ragged execution cannot combine with tubelet_packed_runtime_route"
+            )
+        if self.chronotransport is not None and self.chronotransport.enabled:
+            raise RuntimeError(
+                "native ragged execution cannot combine with ChronoTransport"
+            )
+
+        batch_size, selected_count = map(int, physical_indices.shape)
+        if selected_count <= 0:
+            raise ValueError("native ragged execution requires a positive window budget")
+        grid_height, grid_width = map(int, source_grid_hw)
+        spatial_tokens = grid_height * grid_width
+        if spatial_tokens <= 0:
+            raise ValueError("source_grid_hw must contain positive dimensions")
+        physical_capacity = int(total_tubelets) * spatial_tokens
+        if bool(
+            ((physical_indices < 0) | (physical_indices >= physical_capacity))
+            .any()
+            .item()
+        ):
+            raise ValueError("ragged physical index falls outside the source lattice")
+        if selected_count > 1 and not bool(
+            (physical_indices[:, 1:] > physical_indices[:, :-1]).all().item()
+        ):
+            raise ValueError(
+                "ragged physical indices must be strictly increasing and unique"
+            )
+
+        base_height, base_width = self.grid_size
+        temporal_per_chunk = int(self.pos_embed.shape[1]) // (
+            int(base_height) * int(base_width)
+        )
+        if int(total_tubelets) <= 0 or int(total_tubelets) % temporal_per_chunk:
+            raise ValueError(
+                "ragged total tubelets must be divisible by one VideoMAE clip"
+            )
+        chunk_count = int(total_tubelets) // temporal_per_chunk
+        tubelet_indices = torch.div(
+            physical_indices,
+            spatial_tokens,
+            rounding_mode="floor",
+        )
+        spatial_indices = physical_indices.remainder(spatial_tokens)
+        clip_indices = torch.div(
+            tubelet_indices,
+            temporal_per_chunk,
+            rounding_mode="floor",
+        )
+        local_tubelet_indices = tubelet_indices.remainder(temporal_per_chunk)
+
+        self._freeze_layers()
+        embedded = self.patch_embed(
+            selected_native_tubelets.reshape(
+                -1,
+                3,
+                2,
+                self.patch_size,
+                self.patch_size,
+            )
+        )[0]
+        if embedded.shape[1:] != (1, self.embed_dims):
+            raise RuntimeError(
+                "native patch embedder did not produce one token per ragged tubelet"
+            )
+        embedded = embedded.squeeze(1).reshape(
+            batch_size,
+            selected_count,
+            self.embed_dims,
+        )
+        if use_absolute_position:
+            position = self._native_packed_position_embedding(
+                grid_height,
+                grid_width,
+            ).reshape(
+                1,
+                temporal_per_chunk,
+                spatial_tokens,
+                self.embed_dims,
+            )
+            position = position.expand(batch_size, -1, -1, -1)
+            batch_indices = torch.arange(
+                batch_size,
+                device=physical_indices.device,
+                dtype=torch.long,
+            ).view(batch_size, 1).expand(batch_size, selected_count)
+            selected_position = position[
+                batch_indices,
+                local_tubelet_indices,
+                spatial_indices,
+            ]
+        else:
+            selected_position = embedded.new_zeros(embedded.shape)
+        x = self.pos_drop(embedded + selected_position)
+
+        clip_counts = torch.zeros(
+            (batch_size, chunk_count),
+            device=physical_indices.device,
+            dtype=torch.long,
+        ).scatter_add_(
+            1,
+            clip_indices,
+            torch.ones_like(clip_indices),
+        )
+        if not bool((clip_counts.sum(dim=-1) == selected_count).all().item()):
+            raise RuntimeError("ragged clip ledger omitted a selected token")
+        flat_counts = clip_counts.reshape(-1)
+        clip_offsets = torch.cat(
+            (
+                torch.zeros(1, device=physical_indices.device, dtype=torch.long),
+                flat_counts.cumsum(dim=0),
+            )
+        )
+        bucket_positions: List[Tensor] = []
+        bucket_layout: List[Dict[str, int]] = []
+        positive_lengths = torch.unique(flat_counts[flat_counts > 0], sorted=True)
+        for length_tensor in positive_lengths:
+            length = int(length_tensor.item())
+            rows = torch.nonzero(flat_counts == length, as_tuple=False).flatten()
+            positions = clip_offsets.index_select(0, rows).unsqueeze(-1) + torch.arange(
+                length,
+                device=physical_indices.device,
+                dtype=torch.long,
+            ).view(1, length)
+            bucket_positions.append(positions)
+            bucket_layout.append(
+                {
+                    "tokens_per_clip": length,
+                    "clip_count": int(rows.numel()),
+                }
+            )
+        if not bucket_positions:
+            raise RuntimeError("positive window budget produced no non-empty clip")
+        covered = sum(int(value.numel()) for value in bucket_positions)
+        if covered != batch_size * selected_count:
+            raise RuntimeError("ragged clip buckets do not cover exact selected B")
+
+        attention_pairs_per_window = clip_counts.square().sum(dim=-1)
+        metadata: Dict[str, object] = {
+            "batch_size": batch_size,
+            "total_tubelets": int(total_tubelets),
+            "window_budget": selected_count,
+            "grid_height": grid_height,
+            "grid_width": grid_width,
+            "spatial_tokens": spatial_tokens,
+            "chunk_count": chunk_count,
+            "temporal_per_chunk": temporal_per_chunk,
+            "absolute_position_enabled": bool(use_absolute_position),
+            "clip_counts": clip_counts,
+            "attention_pairs_per_window": attention_pairs_per_window,
+            "bucket_layout": bucket_layout,
+        }
+        return (
+            x,
+            tubelet_indices,
+            spatial_indices,
+            bucket_positions,
+            metadata,
+        )
+
+    def forward_native_ragged(
+        self,
+        selected_native_tubelets: Tensor,
+        physical_indices: Tensor,
+        *,
+        total_tubelets: int,
+        source_grid_hw: Tuple[int, int],
+        use_absolute_position: bool = True,
+    ) -> Tensor:
+        """Execute one true clip-ragged VideoMAE pass with zero dummy tokens."""
+
+        self.native_ragged_forward_invocations += 1
+        (
+            x,
+            tubelet_indices,
+            spatial_indices,
+            bucket_positions,
+            metadata,
+        ) = self._prepare_native_ragged_tokens(
+            selected_native_tubelets,
+            physical_indices,
+            total_tubelets=total_tubelets,
+            source_grid_hw=source_grid_hw,
+            use_absolute_position=use_absolute_position,
+        )
+        batch_size = int(metadata["batch_size"])
+        window_budget = int(metadata["window_budget"])
+        selected_total = batch_size * window_budget
+        stats: Dict[str, int] = {
+            "heavy_backbone_forward_count": 1,
+            "executed_patch_tokens": selected_total,
+            "ragged_attention_bucket_call_count": 0,
+            "ragged_mlp_bucket_call_count": 0,
+            "ragged_adapter_forward_count": 0,
+            "executed_attention_tokens": 0,
+            "executed_attention_pairs": 0,
+            "executed_mlp_tokens": 0,
+            "executed_adapter_tokens": 0,
+            "dense_adapter_forward_count": 0,
+        }
+        for block in self.blocks:
+            x = block.forward_native_ragged(
+                x,
+                bucket_positions=bucket_positions,
+                tubelet_indices=tubelet_indices,
+                spatial_indices=spatial_indices,
+                total_tubelets=int(metadata["total_tubelets"]),
+                grid_height=int(metadata["grid_height"]),
+                grid_width=int(metadata["grid_width"]),
+                packed_stats=stats,
+            )
+        x = self.norm(x)
+
+        clip_counts = metadata["clip_counts"]
+        attention_pairs_per_window = metadata["attention_pairs_per_window"]
+        if not isinstance(clip_counts, torch.Tensor) or not isinstance(
+            attention_pairs_per_window,
+            torch.Tensor,
+        ):
+            raise RuntimeError("ragged execution metadata lost its tensor ledger")
+        expected_attention_pairs = int(attention_pairs_per_window.sum().item()) * len(
+            self.blocks
+        )
+        if stats["executed_patch_tokens"] != selected_total:
+            raise RuntimeError("ragged patch execution count differs from selected B")
+        if stats["executed_attention_pairs"] != expected_attention_pairs:
+            raise RuntimeError("ragged attention-pair ledger differs from execution")
+        self.latest_native_packed_summary = {
+            "schema_version": "videomae_native_ragged_v1",
+            "execution_mode": "true_clip_ragged_no_padding",
+            "heavy_backbone_forward_count": 1,
+            "batch_size": batch_size,
+            "total_tubelets": int(metadata["total_tubelets"]),
+            "chunks_per_window": int(metadata["chunk_count"]),
+            "tubelets_per_chunk": int(metadata["temporal_per_chunk"]),
+            "source_grid_hw": [
+                int(metadata["grid_height"]),
+                int(metadata["grid_width"]),
+            ],
+            "spatial_tokens_per_tubelet": int(metadata["spatial_tokens"]),
+            "window_token_budget": window_budget,
+            "requested_physical_tokens_per_window": window_budget,
+            "unique_physical_tokens_per_window": window_budget,
+            "padded_heavy_tokens_per_window": 0,
+            "executed_patch_tokens_per_window": window_budget,
+            "executed_patch_tokens_total": selected_total,
+            "absolute_position_enabled": bool(
+                metadata["absolute_position_enabled"]
+            ),
+            "clip_token_counts": clip_counts.detach().cpu().tolist(),
+            "empty_clip_count": int((clip_counts == 0).sum().item()),
+            "attention_pairs_per_window": (
+                attention_pairs_per_window.detach().cpu().tolist()
+            ),
+            "attention_pairs_all_blocks": stats["executed_attention_pairs"],
+            "ragged_bucket_layout": list(metadata["bucket_layout"]),
+            "ragged_buckets_per_block": len(bucket_positions),
+            "ragged_attention_bucket_call_count": stats[
+                "ragged_attention_bucket_call_count"
+            ],
+            "ragged_mlp_bucket_call_count": stats[
+                "ragged_mlp_bucket_call_count"
+            ],
+            "ragged_adapter_forward_count": stats[
+                "ragged_adapter_forward_count"
+            ],
+            "executed_attention_tokens_all_blocks": stats[
+                "executed_attention_tokens"
+            ],
+            "executed_mlp_tokens_all_blocks": stats["executed_mlp_tokens"],
+            "executed_adapter_tokens_all_blocks": stats[
+                "executed_adapter_tokens"
+            ],
+            "dense_adapter_forward_count": 0,
+            "adapter_execution": "coordinate_lineage_true_ragged",
+        }
+        return x
 
     def forward_native_dense_reference(
         self,

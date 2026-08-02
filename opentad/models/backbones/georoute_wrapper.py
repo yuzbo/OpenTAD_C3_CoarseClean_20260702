@@ -14,6 +14,7 @@ from torch.nn.modules.batchnorm import _BatchNorm
 
 from .backbone_wrapper import BackboneWrapper
 from .georoute_routing import (
+    DYNAMIC_ROUTE_MODES,
     POLICY_ESTIMATORS,
     ROUTE_MODES,
     SCORE_FUNCTION_TEMPORAL_REDUCTIONS,
@@ -23,20 +24,27 @@ from .georoute_routing import (
     native_cell_extent_floor,
     native_patch_centers,
     roi_logits_from_geometry,
+    roi_modifier_from_geometry,
     score_function_policy_loss,
+    select_dynamic_global_exact_budget,
     select_exact_k,
     select_fixed_quota_structured_exact_k,
 )
 from .native_crop_wrapper import deterministic_linear_2x
 
 
-GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v6"
+GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v7"
 
 
 class GeoRouteScout(nn.Module):
     """Low-cost global observer that predicts geometry and residual saliency."""
 
-    def __init__(self, channels: int = 48) -> None:
+    def __init__(
+        self,
+        channels: int = 48,
+        *,
+        dynamic_utility: bool = False,
+    ) -> None:
         super().__init__()
         if int(channels) <= 0:
             raise ValueError("scout channels must be positive")
@@ -62,22 +70,67 @@ class GeoRouteScout(nn.Module):
             nn.Conv1d(channels, 4, kernel_size=1),
         )
         self.residual_head = nn.Conv3d(channels, 1, kernel_size=1)
+        self.base_utility_head = (
+            nn.Conv3d(channels, 1, kernel_size=1)
+            if bool(dynamic_utility)
+            else None
+        )
 
-    def forward(self, scout: torch.Tensor, *, source_grid_hw: tuple[int, int]) -> tuple[torch.Tensor, torch.Tensor]:
-        if scout.ndim != 5 or scout.shape[1] != 3:
-            raise ValueError("scout must be [B,3,T,H,W]")
-        features = self.stem(scout)
-        geometry_logits = self.geometry_head(features.mean(dim=(-1, -2))).transpose(1, 2)
-        residual = self.residual_head(features).squeeze(1)
-        batch, tubelets, scout_h, scout_w = map(int, residual.shape)
+    @staticmethod
+    def _resize_native_field(
+        field: torch.Tensor,
+        *,
+        source_grid_hw: tuple[int, int],
+    ) -> torch.Tensor:
+        if field.ndim != 4:
+            raise ValueError("scout native field must be [B,T,H,W]")
+        batch, tubelets, scout_h, scout_w = map(int, field.shape)
         target_h, target_w = map(int, source_grid_hw)
-        residual = F.interpolate(
-            residual.reshape(batch * tubelets, 1, scout_h, scout_w),
+        return F.interpolate(
+            field.reshape(batch * tubelets, 1, scout_h, scout_w),
             size=(target_h, target_w),
             mode="bilinear",
             align_corners=False,
         ).reshape(batch, tubelets, target_h * target_w)
+
+    def _encode(self, scout: torch.Tensor) -> torch.Tensor:
+        if scout.ndim != 5 or scout.shape[1] != 3:
+            raise ValueError("scout must be [B,3,T,H,W]")
+        return self.stem(scout)
+
+    def forward(self, scout: torch.Tensor, *, source_grid_hw: tuple[int, int]) -> tuple[torch.Tensor, torch.Tensor]:
+        features = self._encode(scout)
+        geometry_logits = self.geometry_head(features.mean(dim=(-1, -2))).transpose(1, 2)
+        residual = self._resize_native_field(
+            self.residual_head(features).squeeze(1),
+            source_grid_hw=source_grid_hw,
+        )
         return geometry_logits, residual
+
+    def forward_dynamic(
+        self,
+        scout: torch.Tensor,
+        *,
+        source_grid_hw: tuple[int, int],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return stop-gradient policy fields and live auxiliary scout features."""
+
+        if self.base_utility_head is None:
+            raise RuntimeError("dynamic scout utility head is not configured")
+        features = self._encode(scout)
+        policy_features = features.detach()
+        geometry_logits = self.geometry_head(
+            policy_features.mean(dim=(-1, -2))
+        ).transpose(1, 2)
+        q_base = self._resize_native_field(
+            self.base_utility_head(policy_features).squeeze(1),
+            source_grid_hw=source_grid_hw,
+        )
+        residual = self._resize_native_field(
+            self.residual_head(policy_features).squeeze(1),
+            source_grid_hw=source_grid_hw,
+        )
+        return geometry_logits, q_base, residual, features
 
 
 class GeoRouteSparseTemporalAdapter(nn.Module):
@@ -147,11 +200,191 @@ class GeoRouteSparseTemporalAdapter(nn.Module):
         temporal = self.output(self.temporal(pooled.transpose(1, 2))).transpose(1, 2)
         return (pooled + temporal).transpose(1, 2)
 
+    def forward_ragged(
+        self,
+        selected_features: torch.Tensor,
+        selected_scores: torch.Tensor,
+        geometry: torch.Tensor,
+        selected_coordinates: torch.Tensor,
+        tubelet_indices: torch.Tensor,
+        *,
+        use_absolute_coordinates: bool,
+        use_roi_relative_coordinates: bool,
+        use_geometry_projection: bool,
+        pooling_mode: str,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Aggregate a true ragged union with an explicit masked-zero carrier."""
+
+        if selected_features.ndim != 3:
+            raise ValueError("ragged selected features must be [B,S,C]")
+        if selected_scores.shape != selected_features.shape[:2]:
+            raise ValueError("ragged selected scores must match [B,S]")
+        if tubelet_indices.shape != selected_features.shape[:2]:
+            raise ValueError("ragged tubelet indices must match [B,S]")
+        if tubelet_indices.dtype != torch.long:
+            raise TypeError("ragged tubelet indices must be torch.long")
+        if selected_coordinates.shape != (*selected_features.shape[:2], 2):
+            raise ValueError("ragged selected coordinates must be [B,S,2]")
+        if geometry.ndim != 3 or geometry.shape[0] != selected_features.shape[0] or geometry.shape[-1] != 4:
+            raise ValueError("ragged continuous geometry must be [B,T,4]")
+        if pooling_mode != "uniform_selected":
+            raise ValueError(
+                "dynamic ragged SCNR requires uniform_selected pooling"
+            )
+        batch_size, selected_count, channels = map(int, selected_features.shape)
+        tubelets = int(geometry.shape[1])
+        if selected_count <= 0:
+            raise ValueError("ragged aggregation requires a positive window budget")
+        if bool(
+            ((tubelet_indices < 0) | (tubelet_indices >= tubelets)).any().item()
+        ):
+            raise ValueError("ragged tubelet index falls outside geometry time")
+        if not bool(torch.isfinite(selected_coordinates).all().item()):
+            raise ValueError("ragged selected coordinates must be finite")
+
+        if use_absolute_coordinates or use_roi_relative_coordinates:
+            selected_geometry = geometry.gather(
+                1,
+                tubelet_indices.unsqueeze(-1).expand(
+                    batch_size,
+                    selected_count,
+                    4,
+                ),
+            )
+            absolute = (
+                selected_coordinates
+                if use_absolute_coordinates
+                else torch.zeros_like(selected_coordinates)
+            )
+            relative = (
+                selected_coordinates - selected_geometry[..., :2]
+            ) / selected_geometry[..., 2:].clamp_min(1e-6)
+            if not use_roi_relative_coordinates:
+                relative = torch.zeros_like(relative)
+            selected_features = selected_features + self.coordinate_projection(
+                torch.cat((absolute, relative), dim=-1)
+            )
+
+        pooled = selected_features.new_zeros(
+            batch_size,
+            tubelets,
+            channels,
+        )
+        pooled.scatter_add_(
+            1,
+            tubelet_indices.unsqueeze(-1).expand(
+                batch_size,
+                selected_count,
+                channels,
+            ),
+            selected_features,
+        )
+        counts = selected_features.new_zeros(batch_size, tubelets)
+        counts.scatter_add_(
+            1,
+            tubelet_indices,
+            torch.ones_like(tubelet_indices, dtype=selected_features.dtype),
+        )
+        heavy_valid_mask = counts > 0
+        pooled = pooled / counts.clamp_min(1.0).unsqueeze(-1)
+        if use_geometry_projection:
+            pooled = pooled + self.geometry_projection(geometry)
+        valid = heavy_valid_mask.unsqueeze(-1).to(dtype=pooled.dtype)
+        pooled = self.norm(pooled) * valid
+        temporal = self.output(
+            self.temporal(pooled.transpose(1, 2))
+        ).transpose(1, 2)
+        # Re-mask after every bias-bearing temporal path.  Empty tubelets are an
+        # exact zero carrier rather than an unmarked learned pseudo-observation.
+        output = (pooled + temporal) * valid
+        empty = (~heavy_valid_mask).unsqueeze(-1).expand_as(output)
+        if not bool(output.masked_select(empty).eq(0).all().item()):
+            raise RuntimeError("masked-zero carrier became content bearing")
+        return output.transpose(1, 2), heavy_valid_mask
+
 
 def _normalize_uint8_video(value: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
     if value.dtype != torch.uint8:
         raise TypeError("GeoRoute source/scout inputs must remain uint8 before native patch gather")
     return (value.to(torch.float32) - mean) / std
+
+
+def _temporal_class_occupancy_targets(
+    gt_segments: Sequence[torch.Tensor],
+    gt_labels: Sequence[torch.Tensor],
+    *,
+    batch_size: int,
+    num_classes: int,
+    output_length: int,
+    detector_length: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Build fit-only coarse TAD occupancy for the train-only scout head."""
+
+    if len(gt_segments) != batch_size or len(gt_labels) != batch_size:
+        raise ValueError("dynamic scout GT inputs do not match the feature batch")
+    if min(num_classes, output_length, detector_length) <= 0:
+        raise ValueError("dynamic scout occupancy geometry must be positive")
+    centers = (
+        torch.arange(output_length, device=device, dtype=dtype) + 0.5
+    ) * (float(detector_length) / float(output_length))
+    target = torch.zeros(
+        (batch_size, num_classes, output_length),
+        device=device,
+        dtype=dtype,
+    )
+    for batch_index, (segments_raw, labels_raw) in enumerate(
+        zip(gt_segments, gt_labels)
+    ):
+        segments = torch.as_tensor(
+            segments_raw,
+            device=device,
+            dtype=dtype,
+        ).reshape(-1, 2)
+        labels = torch.as_tensor(
+            labels_raw,
+            device=device,
+            dtype=torch.long,
+        ).reshape(-1)
+        if segments.shape[0] != labels.shape[0]:
+            raise ValueError("dynamic scout GT segments and labels differ in length")
+        if not bool(torch.isfinite(segments).all().item()):
+            raise ValueError("dynamic scout GT segments must be finite")
+        if bool(((labels < 0) | (labels >= num_classes)).any().item()):
+            raise ValueError("dynamic scout GT label is outside the class range")
+        for segment, label in zip(segments, labels):
+            start, end = segment.unbind()
+            if end <= start:
+                continue
+            target[batch_index, label, (centers >= start) & (centers < end)] = 1.0
+    return target
+
+
+def dynamic_proxy_weight_at_step(
+    successful_update: int,
+    *,
+    initial_weight: float,
+    anneal_start: int,
+    anneal_end: int,
+) -> float:
+    """Hold, linearly anneal, then remove the backward-only soft proxy."""
+
+    if int(successful_update) < 0:
+        raise ValueError("successful update must be non-negative")
+    if not (0.0 <= float(initial_weight)):
+        raise ValueError("dynamic proxy initial weight must be non-negative")
+    if not (0 <= int(anneal_start) < int(anneal_end)):
+        raise ValueError("dynamic proxy anneal steps must satisfy 0 <= start < end")
+    step = int(successful_update)
+    if step < int(anneal_start):
+        return float(initial_weight)
+    if step >= int(anneal_end):
+        return 0.0
+    fraction = (step - int(anneal_start)) / float(
+        int(anneal_end) - int(anneal_start)
+    )
+    return float(initial_weight) * (1.0 - fraction)
 
 
 def extract_native_tubelets(
@@ -236,6 +469,38 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.route_mode = str(getattr(custom_cfg, "georoute_route_mode", "hybrid"))
         self.policy_estimator = str(getattr(custom_cfg, "georoute_policy_estimator", "straight_through"))
         self.policy_temperature = float(getattr(custom_cfg, "georoute_policy_temperature", 0.5))
+        self.window_token_budget = int(
+            getattr(
+                custom_cfg,
+                "georoute_window_token_budget",
+                self.tokens_per_tubelet * (self.window_size // self.tubelet_size),
+            )
+        )
+        self.zero_carrier_mode = str(
+            getattr(custom_cfg, "georoute_zero_carrier_mode", "masked_zero")
+        )
+        self.dynamic_aux_num_classes = int(
+            getattr(custom_cfg, "georoute_dynamic_aux_num_classes", 20)
+        )
+        self.dynamic_aux_detector_length = int(
+            getattr(
+                custom_cfg,
+                "georoute_dynamic_aux_detector_length",
+                self.window_size,
+            )
+        )
+        self.dynamic_aux_weight = float(
+            getattr(custom_cfg, "georoute_dynamic_aux_weight", 0.25)
+        )
+        self.dynamic_proxy_initial_weight = float(
+            getattr(custom_cfg, "georoute_dynamic_proxy_initial_weight", 0.50)
+        )
+        self.dynamic_proxy_anneal_start = int(
+            getattr(custom_cfg, "georoute_dynamic_proxy_anneal_start", 1600)
+        )
+        self.dynamic_proxy_anneal_end = int(
+            getattr(custom_cfg, "georoute_dynamic_proxy_anneal_end", 3200)
+        )
         self.random_seed = int(getattr(custom_cfg, "georoute_random_seed", 3407))
         self.route_study_seed = int(
             getattr(custom_cfg, "georoute_route_study_seed", self.random_seed)
@@ -442,15 +707,69 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 raise ValueError(
                     "geometry temporal shift is reserved for its named control"
                 )
+        if self.route_mode in DYNAMIC_ROUTE_MODES:
+            if self.policy_estimator != "straight_through":
+                raise ValueError(
+                    "dynamic SCNR main route requires straight_through estimator"
+                )
+            if self.window_token_budget <= 0:
+                raise ValueError("dynamic SCNR window token budget must be positive")
+            if self.zero_carrier_mode != "masked_zero":
+                raise ValueError(
+                    "dynamic SCNR main route requires masked_zero carrier"
+                )
+            if self.dynamic_aux_num_classes <= 0:
+                raise ValueError("dynamic SCNR auxiliary class count must be positive")
+            if self.dynamic_aux_detector_length != self.window_size:
+                raise ValueError(
+                    "dynamic SCNR auxiliary detector length must match the window"
+                )
+            if self.dynamic_aux_weight <= 0.0:
+                raise ValueError("dynamic SCNR auxiliary weight must be positive")
+            dynamic_proxy_weight_at_step(
+                0,
+                initial_weight=self.dynamic_proxy_initial_weight,
+                anneal_start=self.dynamic_proxy_anneal_start,
+                anneal_end=self.dynamic_proxy_anneal_end,
+            )
+            if (
+                not self.absolute_position_enabled
+                or self.absolute_coordinates_enabled
+                or self.roi_relative_coordinates_enabled
+                or self.geometry_projection_enabled
+                or self.geometry_side_channel
+                or self.pooling_mode != "uniform_selected"
+                or self.geometry_smoothness_weight != 0.0
+                or self.area_prior_weight != 0.0
+                or self.p0_dense_reference_check
+                or self.diagnostic_telemetry_enabled
+                or self.gradient_decomposition_enabled
+            ):
+                raise ValueError(
+                    "dynamic SCNR requires support-only, zero-regularization ragged isolation"
+                )
+            if self.roi_extent_floor_mode != "native_cells":
+                raise ValueError(
+                    "dynamic SCNR requires a runtime native-cell ROI floor"
+                )
         super().__init__(cfg)
         if int(self.model.backbone.patch_size) != self.patch_size:
             raise ValueError("GeoRoute patch size must match the loaded VideoMAE")
         if bool(getattr(self.model.backbone, "with_cp", False)):
             raise ValueError("GeoRoute requires VideoMAE with_cp=False for one-forward accounting")
         self._freeze_shared_backbone_except_adapters()
-        self.scout = GeoRouteScout(channels=48)
+        self.scout = GeoRouteScout(
+            channels=48,
+            dynamic_utility=self.route_mode in DYNAMIC_ROUTE_MODES,
+        )
         self._configure_scout_trainability()
         self.sparse_adapter = GeoRouteSparseTemporalAdapter(channels=int(self.model.backbone.embed_dims))
+        self._configure_sparse_adapter_trainability()
+        self.dynamic_aux_head = (
+            nn.Conv1d(48, self.dynamic_aux_num_classes, kernel_size=1)
+            if self.route_mode in DYNAMIC_ROUTE_MODES
+            else None
+        )
         self.register_buffer("source_mean", torch.tensor([123.675, 116.28, 103.53]).view(1, 3, 1, 1, 1))
         self.register_buffer("source_std", torch.tensor([58.395, 57.12, 57.375]).view(1, 3, 1, 1, 1))
         self.register_buffer("score_function_baseline", torch.zeros(()))
@@ -458,8 +777,10 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self._successful_update_index: int | None = None
         self._pending_regularization: dict[str, torch.Tensor] | None = None
         self._pending_score_function: dict[str, torch.Tensor] | None = None
+        self._pending_dynamic_auxiliary: dict[str, Any] | None = None
         self._gradient_decomposition_payload: dict[str, Any] | None = None
         self.latest_georoute_audit: dict[str, Any] | None = None
+        self.latest_heavy_valid_mask: torch.Tensor | None = None
 
     def _freeze_shared_backbone_except_adapters(self) -> None:
         trainable_adapter_parameters = 0
@@ -473,6 +794,14 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.trainable_adapter_parameters = trainable_adapter_parameters
 
     def _configure_scout_trainability(self) -> None:
+        if self.route_mode in DYNAMIC_ROUTE_MODES:
+            # The scout stem is trained only by the train-only auxiliary head.
+            # ``GeoRouteScout.forward_dynamic`` detaches the stem features before
+            # every policy head, so detector/proxy route gradients cannot alter
+            # the observer representation through an implicit path.
+            for parameter in self.scout.parameters():
+                parameter.requires_grad = True
+            return
         needs_geometry = (
             self.route_mode in {"roi", "hybrid"}
             or self.geometry_side_channel
@@ -493,6 +822,19 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 parameter.requires_grad = False
         if not needs_residual:
             for parameter in self.scout.residual_head.parameters():
+                parameter.requires_grad = False
+
+    def _configure_sparse_adapter_trainability(self) -> None:
+        if self.route_mode not in DYNAMIC_ROUTE_MODES:
+            return
+        # Support-only isolation disables both representation side channels.
+        # Freeze them explicitly so DDP/optimizer audits do not see intentionally
+        # unused trainable parameters in the dynamic main cell.
+        for module in (
+            self.sparse_adapter.geometry_projection,
+            self.sparse_adapter.coordinate_projection,
+        ):
+            for parameter in module.parameters():
                 parameter.requires_grad = False
 
     def set_norm_layer(self) -> None:
@@ -568,6 +910,65 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         )
         gather_index = indices[..., None].expand(*indices.shape, 2)
         return centres.view(1, 1, -1, 2).expand(indices.shape[0], indices.shape[1], -1, 2).gather(2, gather_index)
+
+    @staticmethod
+    def _gather_selected_native_physical(
+        native: torch.Tensor,
+        physical_indices: torch.Tensor,
+    ) -> torch.Tensor:
+        """Gather one sorted global physical-token union without padding."""
+
+        if native.ndim != 7:
+            raise ValueError("native tubelets must be [B,T,N,3,2,P,P]")
+        if physical_indices.ndim != 2 or physical_indices.shape[0] != native.shape[0]:
+            raise ValueError("physical indices must be [B,S]")
+        if physical_indices.dtype != torch.long:
+            raise TypeError("physical indices must be torch.long")
+        batch_size, tubelets, spatial_tokens = map(int, native.shape[:3])
+        capacity = tubelets * spatial_tokens
+        if bool(
+            ((physical_indices < 0) | (physical_indices >= capacity)).any().item()
+        ):
+            raise ValueError("physical selection falls outside the native lattice")
+        if physical_indices.shape[1] > 1 and not bool(
+            (physical_indices[:, 1:] > physical_indices[:, :-1]).all().item()
+        ):
+            raise ValueError("physical selection must be strictly increasing and unique")
+        flattened = native.reshape(batch_size, capacity, *native.shape[3:])
+        gather_index = physical_indices.reshape(
+            batch_size,
+            physical_indices.shape[1],
+            *([1] * (native.ndim - 3)),
+        ).expand(
+            batch_size,
+            physical_indices.shape[1],
+            *native.shape[3:],
+        )
+        return flattened.gather(1, gather_index)
+
+    @staticmethod
+    def _selected_physical_coordinates(
+        spatial_indices: torch.Tensor,
+        *,
+        source_grid_hw: tuple[int, int],
+    ) -> torch.Tensor:
+        if spatial_indices.ndim != 2 or spatial_indices.dtype != torch.long:
+            raise ValueError("ragged spatial indices must be long [B,S]")
+        centres = native_patch_centers(
+            source_grid_hw[0],
+            source_grid_hw[1],
+            device=spatial_indices.device,
+            dtype=torch.float32,
+        )
+        item_count = int(centres.shape[0])
+        if bool(
+            ((spatial_indices < 0) | (spatial_indices >= item_count)).any().item()
+        ):
+            raise ValueError("ragged spatial index falls outside the native grid")
+        return centres.index_select(0, spatial_indices.reshape(-1)).reshape(
+            *spatial_indices.shape,
+            2,
+        )
 
     def _regularization(self, geometry: torch.Tensor) -> torch.Tensor:
         smoothness = geometry.new_zeros(())
@@ -713,6 +1114,112 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 dtype=geometry.dtype,
             )
         return geometry, residual_logits, regularization
+
+    def _compute_dynamic_route_fields(
+        self,
+        scout: torch.Tensor,
+        *,
+        source_grid_hw: tuple[int, int],
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
+        """Compute Scheme-A policy fields while isolating the scout stem."""
+
+        if self.route_mode not in DYNAMIC_ROUTE_MODES:
+            raise RuntimeError("dynamic route fields require dynamic_scnr mode")
+        with torch.autocast(device_type=scout.device.type, enabled=False):
+            normalized_scout = _normalize_uint8_video(
+                scout,
+                self.source_mean,
+                self.source_std,
+            )
+            (
+                geometry_logits,
+                q_base,
+                residual_logits,
+                scout_features,
+            ) = self.scout.forward_dynamic(
+                normalized_scout,
+                source_grid_hw=source_grid_hw,
+            )
+            geometry = decode_continuous_geometry(
+                interpolate_temporal_knots(
+                    geometry_logits,
+                    stride=self.geometry_stride_tubelets,
+                ),
+                min_extent=self._minimum_roi_extent_wh(source_grid_hw),
+                max_extent=self.max_roi_extent,
+            )
+            regularization = self._regularization(geometry)
+        tensors = (
+            geometry,
+            q_base,
+            residual_logits,
+            scout_features,
+            regularization,
+        )
+        if any(value.dtype != torch.float32 for value in tensors):
+            raise FloatingPointError("dynamic SCNR scout and policy must remain FP32")
+        if not all(bool(torch.isfinite(value).all().item()) for value in tensors):
+            raise FloatingPointError("dynamic SCNR scout or policy produced nonfinite values")
+        if regularization.numel() != 1 or float(regularization.detach().item()) != 0.0:
+            raise RuntimeError("dynamic SCNR main route forbids geometry regularization")
+        return tensors
+
+    @staticmethod
+    def _dynamic_soft_proxy_features(
+        scout_features: torch.Tensor,
+        soft_probability: torch.Tensor,
+        *,
+        source_grid_hw: tuple[int, int],
+    ) -> torch.Tensor:
+        """Pool detached scout evidence through the differentiable global route."""
+
+        if scout_features.ndim != 5:
+            raise ValueError("dynamic scout features must be [B,C,T,H,W]")
+        if soft_probability.ndim != 3:
+            raise ValueError("dynamic soft route must be [B,T,N]")
+        batch_size, channels, tubelets, scout_h, scout_w = map(
+            int,
+            scout_features.shape,
+        )
+        grid_height, grid_width = map(int, source_grid_hw)
+        if soft_probability.shape != (
+            batch_size,
+            tubelets,
+            grid_height * grid_width,
+        ):
+            raise ValueError("dynamic soft route and scout feature lattice differ")
+        # This detach is part of the method contract: the proxy teaches only
+        # policy heads and the shared auxiliary classifier, never the observer
+        # stem and never the heavy VideoMAE.
+        detached = scout_features.detach().permute(0, 2, 1, 3, 4).reshape(
+            batch_size * tubelets,
+            channels,
+            scout_h,
+            scout_w,
+        )
+        native = F.interpolate(
+            detached,
+            size=(grid_height, grid_width),
+            mode="bilinear",
+            align_corners=False,
+        ).reshape(
+            batch_size,
+            tubelets,
+            channels,
+            grid_height * grid_width,
+        )
+        probability = soft_probability.unsqueeze(2)
+        mass = probability.sum(dim=-1).clamp_min(
+            torch.finfo(soft_probability.dtype).tiny
+        )
+        pooled = (native * probability).sum(dim=-1) / mass
+        return pooled.permute(0, 2, 1).contiguous()
 
     @staticmethod
     def _route_score_statistics(
@@ -1057,6 +1564,287 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "route_rng_sha256": route_rng_sha256,
         }
 
+    def _forward_dynamic_scnr(
+        self,
+        *,
+        source: torch.Tensor,
+        scout: torch.Tensor,
+        native: torch.Tensor,
+        source_grid_hw: tuple[int, int],
+        ignored_remainder: tuple[int, int],
+        valid_patch_mask: torch.Tensor,
+        masks: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Execute the approved dynamic exact-B Stage-1 route end to end."""
+
+        if self.route_mode not in DYNAMIC_ROUTE_MODES:
+            raise RuntimeError("dynamic SCNR forward called for a legacy route")
+        if self.training:
+            if self._successful_update_index is None:
+                raise RuntimeError(
+                    "dynamic SCNR training requires the successful-update hook"
+                )
+            if (
+                self._pending_regularization is not None
+                or self._pending_score_function is not None
+                or self._pending_dynamic_auxiliary is not None
+            ):
+                raise RuntimeError(
+                    "dynamic SCNR pending training losses were not consumed exactly once"
+                )
+
+        (
+            geometry,
+            q_base,
+            delta_residual,
+            scout_features,
+            geometry_regularization,
+        ) = self._compute_dynamic_route_fields(
+            scout,
+            source_grid_hw=source_grid_hw,
+        )
+        delta_roi = roi_modifier_from_geometry(
+            geometry,
+            grid_height=source_grid_hw[0],
+            grid_width=source_grid_hw[1],
+            temperature=self.roi_temperature,
+        )
+        route = select_dynamic_global_exact_budget(
+            q_base=q_base,
+            delta_roi=delta_roi,
+            delta_residual=delta_residual,
+            window_budget=self.window_token_budget,
+            training=self.training,
+            estimator=self.policy_estimator if self.training else "none",
+            temperature=self.policy_temperature,
+            valid_mask=valid_patch_mask,
+        )
+        physical_indices = route["physical_indices"]
+        selected_native = self._gather_selected_native_physical(
+            native,
+            physical_indices,
+        )
+        selected_native = _normalize_uint8_video(
+            selected_native.reshape(
+                -1,
+                3,
+                self.tubelet_size,
+                self.patch_size,
+                self.patch_size,
+            ),
+            self.source_mean,
+            self.source_std,
+        ).reshape_as(selected_native)
+
+        ragged_invocations_before = int(
+            self.model.backbone.native_ragged_forward_invocations
+        )
+        selected_features = self.model.backbone.forward_native_ragged(
+            selected_native,
+            physical_indices,
+            total_tubelets=int(native.shape[1]),
+            source_grid_hw=source_grid_hw,
+            use_absolute_position=self.absolute_position_enabled,
+        )
+        ragged_invocations_after = int(
+            self.model.backbone.native_ragged_forward_invocations
+        )
+        ragged_invocation_delta = (
+            ragged_invocations_after - ragged_invocations_before
+        )
+        if ragged_invocation_delta != 1:
+            raise RuntimeError(
+                "dynamic SCNR did not execute exactly one ragged VideoMAE forward"
+            )
+        if selected_features.shape[:2] != physical_indices.shape:
+            raise RuntimeError("dynamic heavy output differs from exact selected union")
+        selected_features = selected_features * route["st_gate"].to(
+            selected_features.dtype
+        ).unsqueeze(-1)
+        selected_scores = torch.zeros_like(
+            route["selected_aggregation_logits"],
+            dtype=selected_features.dtype,
+        )
+        selected_coordinates = self._selected_physical_coordinates(
+            route["spatial_indices"],
+            source_grid_hw=source_grid_hw,
+        ).to(dtype=selected_features.dtype)
+        intermediate, heavy_valid_mask = self.sparse_adapter.forward_ragged(
+            selected_features,
+            selected_scores,
+            geometry,
+            selected_coordinates,
+            route["tubelet_indices"],
+            use_absolute_coordinates=self.absolute_coordinates_enabled,
+            use_roi_relative_coordinates=self.roi_relative_coordinates_enabled,
+            use_geometry_projection=self.geometry_projection_enabled,
+            pooling_mode=self.pooling_mode,
+        )
+        expected_heavy_valid = route["k_per_tubelet"] > 0
+        if not torch.equal(heavy_valid_mask, expected_heavy_valid):
+            raise RuntimeError("masked-zero carrier disagrees with dynamic K_t")
+        empty_values = intermediate.transpose(1, 2).masked_select(
+            (~heavy_valid_mask).unsqueeze(-1).expand(
+                *heavy_valid_mask.shape,
+                intermediate.shape[1],
+            )
+        )
+        if not bool(empty_values.eq(0).all().item()):
+            raise RuntimeError("empty dynamic tubelet carries nonzero heavy content")
+        self.latest_heavy_valid_mask = heavy_valid_mask.detach()
+
+        output = deterministic_linear_2x(intermediate)
+        if output.shape != (
+            source.shape[0],
+            int(self.model.backbone.embed_dims),
+            self.output_length,
+        ):
+            raise RuntimeError(
+                "dynamic SCNR violated the AdaTAD backbone feature contract"
+            )
+        if masks is not None:
+            if masks.shape != (output.shape[0], output.shape[-1]):
+                raise ValueError("dynamic SCNR masks must match the detector time axis")
+            output = output * masks.to(output.device).unsqueeze(1).detach().to(
+                output.dtype
+            )
+
+        soft_probability = route["soft_probability"]
+        if self.training:
+            if soft_probability is None or self.dynamic_aux_head is None:
+                raise RuntimeError("dynamic SCNR training lost its soft proxy path")
+            with torch.autocast(device_type=scout.device.type, enabled=False):
+                auxiliary_logits = self.dynamic_aux_head(
+                    scout_features.mean(dim=(-1, -2))
+                )
+                proxy_features = self._dynamic_soft_proxy_features(
+                    scout_features,
+                    soft_probability,
+                    source_grid_hw=source_grid_hw,
+                )
+                proxy_logits = self.dynamic_aux_head(proxy_features)
+            if auxiliary_logits.dtype != torch.float32 or proxy_logits.dtype != torch.float32:
+                raise FloatingPointError("dynamic auxiliary paths must remain FP32")
+            self._pending_regularization = {"geometry": geometry_regularization}
+            self._pending_score_function = None
+            self._pending_dynamic_auxiliary = {
+                "auxiliary_logits": auxiliary_logits,
+                "proxy_logits": proxy_logits,
+                "successful_update": int(self._successful_update_index),
+            }
+        else:
+            self._pending_regularization = None
+            self._pending_score_function = None
+            self._pending_dynamic_auxiliary = None
+
+        packed = dict(self.model.backbone.latest_native_packed_summary or {})
+        executed_per_window = int(
+            packed.get("executed_patch_tokens_per_window", -1)
+        )
+        padded_per_window = int(packed.get("padded_heavy_tokens_per_window", -1))
+        if executed_per_window != self.window_token_budget or padded_per_window != 0:
+            raise RuntimeError(
+                "dynamic ragged ledger differs from exact-B zero-padding contract"
+            )
+        k_per_tubelet = route["k_per_tubelet"].detach()
+        role_counts_per_window = route["role_counts_per_window"].detach()
+        soft_budget_sum = (
+            None
+            if soft_probability is None
+            else soft_probability.detach().reshape(source.shape[0], -1).sum(dim=-1)
+        )
+        self.latest_georoute_audit = {
+            "schema_version": GEOROUTE_BACKBONE_SCHEMA,
+            "routing_schema": route["schema_version"],
+            "route_mode": self.route_mode,
+            "policy_estimator": self.policy_estimator,
+            "estimator_claim": (
+                "biased_straight_through_plus_backward_only_global_soft_proxy"
+                if self.training
+                else "hard_exact_global_top_b_inference"
+            ),
+            "successful_update": (
+                int(self._successful_update_index) if self.training else None
+            ),
+            "scout_autocast_enabled": False,
+            "scout_compute_dtype": str(q_base.dtype),
+            "scout_policy_stop_gradient": True,
+            "auxiliary_updates_scout_stem": bool(self.training),
+            "proxy_updates_scout_stem": False,
+            "proxy_updates_heavy_backbone": False,
+            "proxy_inference_enabled": False,
+            "proxy_soft_budget_sum": (
+                None if soft_budget_sum is None else soft_budget_sum.cpu().tolist()
+            ),
+            "policy_temperature": self.policy_temperature,
+            "roi_temperature": self.roi_temperature,
+            "window_token_budget": self.window_token_budget,
+            "window_budget_is_global": True,
+            "independent_count_head": False,
+            "fixed_context_quota": False,
+            "fixed_per_tubelet_k": False,
+            "k_t_allows_zero": True,
+            "k_per_tubelet": k_per_tubelet.cpu().tolist(),
+            "k_t_min": int(k_per_tubelet.min().item()),
+            "k_t_max": int(k_per_tubelet.max().item()),
+            "k_t_zero_count": int((k_per_tubelet == 0).sum().item()),
+            "role_counts": dict(route["role_counts"]),
+            "role_counts_per_window": role_counts_per_window.cpu().tolist(),
+            "role_assignment_changes_execution": False,
+            "hard_utility": self._detached_tensor_statistics(route["hard_utility"]),
+            "soft_utility": self._detached_tensor_statistics(route["soft_utility"]),
+            "q_base": self._detached_tensor_statistics(q_base),
+            "delta_roi": self._detached_tensor_statistics(delta_roi),
+            "delta_residual": self._detached_tensor_statistics(delta_residual),
+            "physical_indices_sha256": self._tensor_sha256(physical_indices),
+            "heavy_valid_mask_sha256": self._tensor_sha256(heavy_valid_mask),
+            "heavy_valid_mask_matches_k_t": True,
+            "zero_carrier_mode": self.zero_carrier_mode,
+            "requested_physical_tokens_per_window": self.window_token_budget,
+            "unique_physical_tokens_per_window": int(physical_indices.shape[1]),
+            "padded_heavy_tokens_per_window": padded_per_window,
+            "executed_patch_tokens_per_window": executed_per_window,
+            "shared_backbone_instances": 1,
+            "heavy_backbone_forward_count": ragged_invocation_delta,
+            "native_ragged_invocation_counter_before": ragged_invocations_before,
+            "native_ragged_invocation_counter_after": ragged_invocations_after,
+            "source_input_shape": list(source.shape),
+            "source_grid_hw": list(source_grid_hw),
+            "source_padding_bottom_right": [0, 0],
+            "source_ignored_remainder_bottom_right": list(ignored_remainder),
+            "native_tubelet_shape": list(native.shape),
+            "selected_native_tubelet_shape": list(selected_native.shape),
+            "intermediate_shape": list(intermediate.shape),
+            "output_shape": list(output.shape),
+            "geometry_shape": list(geometry.shape),
+            "geometry_extent_floor_mode": self.roi_extent_floor_mode,
+            "geometry_extent_floor_cells": self.roi_extent_floor_cells,
+            "geometry_min_extent_wh": list(
+                self._minimum_roi_extent_wh(source_grid_hw)
+            ),
+            "geometry_max_extent_wh": [
+                self.max_roi_extent,
+                self.max_roi_extent,
+            ],
+            "geometry_smoothness_weight": self.geometry_smoothness_weight,
+            "area_prior_weight": self.area_prior_weight,
+            "full_frame_size_penalty_enabled": False,
+            "absolute_position_enabled": self.absolute_position_enabled,
+            "absolute_coordinates_enabled": self.absolute_coordinates_enabled,
+            "roi_relative_coordinates_enabled": self.roi_relative_coordinates_enabled,
+            "geometry_projection_enabled": self.geometry_projection_enabled,
+            "pooling_mode": self.pooling_mode,
+            "packed": packed,
+            "uses_grid_sample": False,
+            "uses_resized_local_crop": False,
+            "uses_gt_for_route": False,
+            "uses_gt_for_auxiliary_fit_only": bool(self.training),
+            "uses_teacher": False,
+            "uses_oracle": False,
+            "uses_test_evidence": False,
+        }
+        return output.to(torch.float32)
+
     def forward(self, frames, masks=None):
         source, scout = self._validate_inputs(frames)
         self.set_norm_layer()
@@ -1070,6 +1858,16 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             patch_size=self.patch_size,
             tubelet_size=self.tubelet_size,
         )
+        if self.route_mode in DYNAMIC_ROUTE_MODES:
+            return self._forward_dynamic_scnr(
+                source=source,
+                scout=scout,
+                native=native,
+                source_grid_hw=source_grid_hw,
+                ignored_remainder=ignored_remainder,
+                valid_patch_mask=valid_patch_mask,
+                masks=masks,
+            )
         learned_geometry_enabled = bool(
             self.route_mode in {"roi", "hybrid"}
             or self.geometry_side_channel
@@ -1438,7 +2236,79 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self._pending_regularization = None
         if self.latest_georoute_audit is not None:
             self.latest_georoute_audit["geometry_regularization"] = float(regularization.detach().item())
-        return {"georoute_geometry_regularization_loss": regularization}
+        if self.route_mode not in DYNAMIC_ROUTE_MODES:
+            return {"georoute_geometry_regularization_loss": regularization}
+
+        if self._pending_dynamic_auxiliary is None:
+            raise RuntimeError(
+                "dynamic SCNR auxiliary losses require one preceding training forward"
+            )
+        pending = self._pending_dynamic_auxiliary
+        self._pending_dynamic_auxiliary = None
+        auxiliary_logits = pending["auxiliary_logits"]
+        proxy_logits = pending["proxy_logits"]
+        if auxiliary_logits.shape != proxy_logits.shape:
+            raise RuntimeError("dynamic auxiliary and proxy logits must share shape")
+        target = _temporal_class_occupancy_targets(
+            gt_segments,
+            gt_labels,
+            batch_size=int(auxiliary_logits.shape[0]),
+            num_classes=self.dynamic_aux_num_classes,
+            output_length=int(auxiliary_logits.shape[-1]),
+            detector_length=self.dynamic_aux_detector_length,
+            device=auxiliary_logits.device,
+            dtype=auxiliary_logits.dtype,
+        )
+        valid = F.interpolate(
+            masks.to(auxiliary_logits.device).unsqueeze(1).to(auxiliary_logits.dtype),
+            size=auxiliary_logits.shape[-1],
+            mode="nearest",
+        )
+        denominator = valid.sum().clamp_min(1.0) * float(
+            self.dynamic_aux_num_classes
+        )
+        auxiliary_raw = (
+            F.binary_cross_entropy_with_logits(
+                auxiliary_logits,
+                target,
+                reduction="none",
+            )
+            * valid
+        ).sum() / denominator
+        proxy_raw = (
+            F.binary_cross_entropy_with_logits(
+                proxy_logits,
+                target,
+                reduction="none",
+            )
+            * valid
+        ).sum() / denominator
+        proxy_weight = dynamic_proxy_weight_at_step(
+            pending["successful_update"],
+            initial_weight=self.dynamic_proxy_initial_weight,
+            anneal_start=self.dynamic_proxy_anneal_start,
+            anneal_end=self.dynamic_proxy_anneal_end,
+        )
+        if self.latest_georoute_audit is not None:
+            self.latest_georoute_audit.update(
+                {
+                    "dynamic_auxiliary_raw": float(auxiliary_raw.detach().item()),
+                    "dynamic_auxiliary_weight": self.dynamic_aux_weight,
+                    "dynamic_proxy_raw": float(proxy_raw.detach().item()),
+                    "dynamic_proxy_weight": proxy_weight,
+                    "dynamic_proxy_active": proxy_weight > 0.0,
+                    "dynamic_proxy_anneal_start": self.dynamic_proxy_anneal_start,
+                    "dynamic_proxy_anneal_end": self.dynamic_proxy_anneal_end,
+                    "dynamic_auxiliary_gt_scope": "fit_only_not_route_input",
+                }
+            )
+        return {
+            "georoute_geometry_regularization_loss": regularization,
+            "georoute_dynamic_auxiliary_loss": (
+                self.dynamic_aux_weight * auxiliary_raw
+            ),
+            "georoute_dynamic_soft_proxy_loss": proxy_weight * proxy_raw,
+        }
 
     def consume_detector_policy_loss(
         self,

@@ -22,6 +22,7 @@ import torch.nn.functional as F
 
 GEOROUTE_ROUTING_SCHEMA = "georoute_native_routing_v2"
 GEOROUTE_STRUCTURED_ROUTING_SCHEMA = "georoute_fixed_quota_structured_routing_v1"
+GEOROUTE_DYNAMIC_ROUTING_SCHEMA = "georoute_dynamic_global_routing_v1"
 LEGACY_ROUTE_MODES = frozenset(
     {"dense", "uniform", "random", "free", "roi", "hybrid"}
 )
@@ -33,7 +34,8 @@ STRUCTURED_ROUTE_MODES = frozenset(
         "structured_hybrid_geometry_shift",
     }
 )
-ROUTE_MODES = LEGACY_ROUTE_MODES | STRUCTURED_ROUTE_MODES
+DYNAMIC_ROUTE_MODES = frozenset({"dynamic_scnr"})
+ROUTE_MODES = LEGACY_ROUTE_MODES | STRUCTURED_ROUTE_MODES | DYNAMIC_ROUTE_MODES
 POLICY_ESTIMATORS = frozenset({"none", "straight_through", "score_function"})
 SCORE_FUNCTION_TEMPORAL_REDUCTIONS = frozenset({"sum", "mean"})
 _ROUTE_PRIVATE_RNG_SCHEMA = "georoute_route_private_rng_v1"
@@ -164,6 +166,39 @@ def roi_logits_from_geometry(
     ).view(1, 1, -1, 2)
     normalized = (centers - geometry[..., None, :2]) / geometry[..., None, 2:].clamp_min(1e-6)
     return -0.5 * normalized.square().sum(dim=-1) / float(temperature)
+
+
+def roi_modifier_from_geometry(
+    geometry: torch.Tensor,
+    *,
+    grid_height: int,
+    grid_width: int,
+    temperature: float,
+) -> torch.Tensor:
+    """Return a signed ROI-membership modifier on native patch centres.
+
+    The zero contour is the decoded ellipse boundary.  Positive values denote
+    patch centres inside the ROI and negative values denote centres outside it.
+    Unlike ``exp(roi_logits)``, the signed margin leaves context (the zero
+    modifier) identifiable outside the ROI.
+    """
+
+    if geometry.ndim != 3 or geometry.shape[-1] != 4:
+        raise ValueError("geometry must be [B,T,4]")
+    if float(temperature) <= 0.0:
+        raise ValueError("ROI temperature must be positive")
+    centers = native_patch_centers(
+        grid_height,
+        grid_width,
+        device=geometry.device,
+        dtype=geometry.dtype,
+    ).view(1, 1, -1, 2)
+    normalized = (
+        centers - geometry[..., None, :2]
+    ) / geometry[..., None, 2:].clamp_min(1e-6)
+    return (1.0 - normalized.square().sum(dim=-1)) / (
+        2.0 * float(temperature)
+    )
 
 
 def interpolate_temporal_knots(values: torch.Tensor, *, stride: int) -> torch.Tensor:
@@ -492,6 +527,315 @@ def _stateless_random_scores(
     mixed = (mixed ^ (mixed >> 16)) * 2_246_822_519
     mixed = mixed ^ (mixed >> 13)
     return (mixed.remainder(2_147_483_647)).to(dtype=logits.dtype)
+
+
+class _ImplicitSigmoidBudgetProjection(torch.autograd.Function):
+    """Exact-sum sigmoid projection with its implicit threshold gradient."""
+
+    @staticmethod
+    def forward(
+        ctx,
+        scores: torch.Tensor,
+        valid_mask: torch.Tensor,
+        window_budget: int,
+        temperature: float,
+    ) -> torch.Tensor:
+        flat_scores = scores.reshape(scores.shape[0], -1)
+        flat_valid = valid_mask.reshape(valid_mask.shape[0], -1)
+        work_dtype = (
+            torch.float64
+            if scores.dtype == torch.float64
+            else torch.float32
+        )
+        work = flat_scores.to(dtype=work_dtype)
+        valid_count = flat_valid.sum(dim=-1)
+        masked_min = work.masked_fill(~flat_valid, float("inf")).amin(dim=-1)
+        masked_max = work.masked_fill(~flat_valid, float("-inf")).amax(dim=-1)
+        tau = float(temperature)
+        lower = masked_min - 32.0 * tau
+        upper = masked_max + 32.0 * tau
+        epsilon = torch.finfo(work_dtype).eps
+
+        # The threshold is monotone: increasing lambda decreases total mass.
+        # Eighty iterations are inexpensive relative to the heavy path and make
+        # the residual negligible in both float32 production and float64 KATs.
+        with torch.no_grad():
+            for _ in range(80):
+                midpoint = 0.5 * (lower + upper)
+                probability = torch.sigmoid(
+                    (work - midpoint[:, None]) / tau
+                ).clamp(min=epsilon, max=1.0 - epsilon)
+                mass = probability.masked_fill(~flat_valid, 0.0).sum(dim=-1)
+                lower = torch.where(
+                    mass > float(window_budget),
+                    midpoint,
+                    lower,
+                )
+                upper = torch.where(
+                    mass > float(window_budget),
+                    upper,
+                    midpoint,
+                )
+            threshold = 0.5 * (lower + upper)
+            probability = torch.sigmoid(
+                (work - threshold[:, None]) / tau
+            ).clamp(min=epsilon, max=1.0 - epsilon)
+            probability = probability.masked_fill(~flat_valid, 0.0)
+
+        probability = probability.to(dtype=scores.dtype).reshape_as(scores)
+        ctx.save_for_backward(probability, valid_mask)
+        ctx.temperature = tau
+        return probability
+
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):
+        probability, valid_mask = ctx.saved_tensors
+        valid = valid_mask.to(dtype=probability.dtype)
+        weight = probability * (1.0 - probability) * valid
+        flat_weight = weight.reshape(weight.shape[0], -1)
+        flat_gradient = grad_output.reshape(grad_output.shape[0], -1)
+        denominator = flat_weight.sum(dim=-1, keepdim=True).clamp_min(
+            torch.finfo(probability.dtype).tiny
+        )
+        implicit_threshold_gradient = (
+            flat_gradient * flat_weight
+        ).sum(dim=-1, keepdim=True) / denominator
+        grad_scores = (
+            flat_weight
+            * (flat_gradient - implicit_threshold_gradient)
+            / float(ctx.temperature)
+        ).reshape_as(probability)
+        return grad_scores, None, None, None
+
+
+def global_sigmoid_budget_projection(
+    scores: torch.Tensor,
+    *,
+    valid_mask: torch.Tensor,
+    window_budget: int,
+    temperature: float,
+) -> torch.Tensor:
+    """Project valid global candidate scores to strict probabilities summing B.
+
+    Invalid candidates receive exactly zero.  For every window, valid
+    probabilities are strictly between zero and one and their sum matches the
+    configured budget within the floating-point tolerance implied by the output
+    dtype.  The custom backward differentiates the implicitly solved threshold,
+    so a global shift of all candidate utilities has zero effect.
+    """
+
+    if scores.ndim != 3:
+        raise ValueError("global budget scores must be [B,T,N]")
+    if not scores.is_floating_point():
+        raise TypeError("global budget scores must be floating point")
+    if valid_mask.shape != scores.shape or valid_mask.dtype != torch.bool:
+        raise ValueError("global budget valid_mask must be bool [B,T,N]")
+    if not bool(torch.isfinite(scores).all().item()):
+        raise ValueError("global budget scores must be finite")
+    if isinstance(window_budget, bool) or int(window_budget) != window_budget:
+        raise ValueError("window token budget must be one positive integer")
+    budget = int(window_budget)
+    if budget <= 0:
+        raise ValueError("window token budget must be one positive integer")
+    if float(temperature) <= 0.0 or not math.isfinite(float(temperature)):
+        raise ValueError("global soft-budget temperature must be positive and finite")
+    valid_counts = valid_mask.reshape(valid_mask.shape[0], -1).sum(dim=-1)
+    if bool((valid_counts <= budget).any().item()):
+        raise ValueError(
+            "strict global soft-budget projection requires B smaller than valid capacity"
+        )
+
+    # AMP callers may supply FP16/BF16.  Solving in at least FP32 is required
+    # not only for mass accuracy: casting ``1 - float32_eps`` to a low-precision
+    # dtype can round back to exactly one and violate the strict-probability
+    # contract.  Autograd carries gradients through this promotion to the
+    # original score dtype.
+    projection_scores = (
+        scores.float()
+        if scores.dtype in {torch.float16, torch.bfloat16}
+        else scores
+    )
+    probability = _ImplicitSigmoidBudgetProjection.apply(
+        projection_scores,
+        valid_mask,
+        budget,
+        float(temperature),
+    )
+    valid_probability = probability.masked_select(valid_mask)
+    if not bool(((valid_probability > 0.0) & (valid_probability < 1.0)).all().item()):
+        raise FloatingPointError("global soft-budget probabilities must be strict")
+    observed = probability.reshape(probability.shape[0], -1).sum(dim=-1)
+    tolerance = max(
+        1e-5,
+        float(probability.numel() // probability.shape[0])
+        * torch.finfo(probability.dtype).eps
+        * 4.0,
+    )
+    if not bool(
+        torch.allclose(
+            observed,
+            observed.new_full(observed.shape, float(budget)),
+            rtol=0.0,
+            atol=tolerance,
+        )
+    ):
+        raise FloatingPointError(
+            "global soft-budget projection did not preserve its exact-sum contract"
+        )
+    return probability
+
+
+def select_dynamic_global_exact_budget(
+    *,
+    q_base: torch.Tensor,
+    delta_roi: torch.Tensor,
+    delta_residual: torch.Tensor,
+    window_budget: int,
+    training: bool,
+    estimator: str,
+    temperature: float,
+    valid_mask: torch.Tensor,
+) -> dict[str, Any]:
+    """Select one unique physical-token union under a global window budget.
+
+    ``K_t`` and context/ROI/residual role counts are induced by the hard union.
+    The forward route is a stable physical top-B.  During training, the
+    selected-token gate is exactly one in value and uses the approved LSE plus
+    implicit global soft-budget projection in backward.
+    """
+
+    if estimator not in {"none", "straight_through"}:
+        raise ValueError(
+            "dynamic SCNR supports none or straight_through; PL is a separate ablation"
+        )
+    if training and estimator != "straight_through":
+        raise ValueError("dynamic SCNR training requires straight_through")
+    if q_base.ndim != 3:
+        raise ValueError("dynamic SCNR utilities must be [B,T,N]")
+    if delta_roi.shape != q_base.shape or delta_residual.shape != q_base.shape:
+        raise ValueError("dynamic SCNR utility fields must share [B,T,N]")
+    if valid_mask.shape != q_base.shape or valid_mask.dtype != torch.bool:
+        raise ValueError("dynamic SCNR valid_mask must be bool [B,T,N]")
+    if not all(
+        bool(torch.isfinite(value).all().item())
+        for value in (q_base, delta_roi, delta_residual)
+    ):
+        raise ValueError("dynamic SCNR utilities must be finite")
+    if float(temperature) <= 0.0 or not math.isfinite(float(temperature)):
+        raise ValueError("dynamic SCNR temperature must be positive and finite")
+    if isinstance(window_budget, bool) or int(window_budget) != window_budget:
+        raise ValueError("dynamic SCNR window budget must be one positive integer")
+    budget = int(window_budget)
+    batch_size, tubelets, item_count = map(int, q_base.shape)
+    valid_counts = valid_mask.reshape(batch_size, -1).sum(dim=-1)
+    if budget <= 0 or bool((valid_counts <= budget).any().item()):
+        raise ValueError(
+            "dynamic SCNR requires 0 < window budget < valid physical capacity"
+        )
+
+    zero_modifier = torch.zeros_like(q_base)
+    modifiers = torch.stack(
+        (zero_modifier, delta_roi, delta_residual),
+        dim=-1,
+    )
+    hard_modifier, role_lattice = modifiers.max(dim=-1)
+    hard_utility = q_base + hard_modifier
+    soft_utility = q_base + float(temperature) * torch.logsumexp(
+        modifiers / float(temperature),
+        dim=-1,
+    )
+    flat_hard = hard_utility.masked_fill(~valid_mask, float("-inf")).reshape(
+        batch_size,
+        -1,
+    )
+    ordered_physical_indices = _stable_argsort_descending(flat_hard)[..., :budget]
+    physical_indices = torch.sort(ordered_physical_indices, dim=-1).values
+    selected_mask_flat = torch.zeros_like(flat_hard, dtype=torch.bool).scatter(
+        -1,
+        physical_indices,
+        True,
+    )
+    selected_mask = selected_mask_flat.reshape_as(valid_mask)
+    if not bool((selected_mask_flat.sum(dim=-1) == budget).all().item()):
+        raise RuntimeError("dynamic SCNR did not produce exact global B")
+    if not bool((selected_mask <= valid_mask).all().item()):
+        raise RuntimeError("dynamic SCNR selected invalid physical support")
+
+    tubelet_indices = torch.div(
+        physical_indices,
+        item_count,
+        rounding_mode="floor",
+    )
+    spatial_indices = physical_indices.remainder(item_count)
+    selected_role_ids = role_lattice.reshape(batch_size, -1).gather(
+        -1,
+        physical_indices,
+    )
+    k_per_tubelet = selected_mask.sum(dim=-1)
+    role_counts_per_window = torch.stack(
+        tuple((selected_role_ids == role_id).sum(dim=-1) for role_id in range(3)),
+        dim=-1,
+    )
+    if not bool(
+        (role_counts_per_window.sum(dim=-1) == budget).all().item()
+    ):
+        raise RuntimeError("dynamic SCNR selected token lacks one operational role")
+
+    soft_probability = None
+    selected_surrogate = torch.ones_like(hard_utility.reshape(batch_size, -1).gather(-1, physical_indices))
+    if training:
+        soft_probability = global_sigmoid_budget_projection(
+            soft_utility,
+            valid_mask=valid_mask,
+            window_budget=budget,
+            temperature=temperature,
+        )
+        selected_surrogate = soft_probability.reshape(batch_size, -1).gather(
+            -1,
+            physical_indices,
+        )
+        st_gate = torch.ones_like(selected_surrogate) + (
+            selected_surrogate - selected_surrogate.detach()
+        )
+    else:
+        st_gate = torch.ones_like(selected_surrogate)
+
+    selected_utility = hard_utility.reshape(batch_size, -1).gather(
+        -1,
+        physical_indices,
+    )
+    aggregate_role_counts = role_counts_per_window.sum(dim=0)
+    return {
+        "schema_version": GEOROUTE_DYNAMIC_ROUTING_SCHEMA,
+        "mode": "dynamic_scnr",
+        "physical_indices": physical_indices,
+        "ordered_physical_indices": ordered_physical_indices,
+        "tubelet_indices": tubelet_indices,
+        "spatial_indices": spatial_indices,
+        "selected_mask": selected_mask,
+        "selected_role_ids": selected_role_ids,
+        "role_id_values": {"context": 0, "roi": 1, "residual": 2},
+        "role_counts_per_window": role_counts_per_window,
+        "role_counts": {
+            "context": int(aggregate_role_counts[0].item()),
+            "roi": int(aggregate_role_counts[1].item()),
+            "residual": int(aggregate_role_counts[2].item()),
+        },
+        "k_per_tubelet": k_per_tubelet,
+        "hard_utility": hard_utility,
+        "soft_utility": soft_utility,
+        "soft_probability": soft_probability,
+        "selected_surrogate": selected_surrogate,
+        "selected_aggregation_logits": selected_utility,
+        "st_gate": st_gate,
+        "window_budget": budget,
+        "target_k": None,
+        "item_count": item_count,
+        "tubelet_count": tubelets,
+        "valid_physical_count_min": int(valid_counts.min().item()),
+        "valid_physical_count_max": int(valid_counts.max().item()),
+        "padded_token_count": 0,
+    }
 
 
 def select_fixed_quota_structured_exact_k(
