@@ -27,6 +27,11 @@
   opened or interpreted.
 - First state change: seed jobs `1213712/1213713/1213714` entered `RUNNING`; seal
   `1213715` remains `PENDING (Dependency)`. No metric was opened.
+- Existing heartbeat `duca-rime` was reactivated at a 15-minute interval and
+  rebound exclusively to this transaction. It may perform at most one bounded
+  recovery for a new, reproducible, protocol-invariant engineering signature;
+  scientific/protocol changes fail closed. It cannot start Stage B or inspect
+  partial metrics, and it pauses after a valid full-matrix seal or terminal stop.
 
 ## 2026-08-02 — Stage-A Linux gate passed; scheduler grouping required
 
