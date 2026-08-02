@@ -60,8 +60,18 @@ max_chars: 8000
   a separately trained matched ablation whose fixed-pilot recovery may inform
   analysis but cannot choose the dynamic main method. Uni-AdaFocus's
   classification proxy, fixed focus count, resized crop, full-frame size
-  regularizer and early-exit budget are not transplanted. Exact surrogate-loss
-  and stop-gradient boundaries remain under design review.
+  regularizer and early-exit budget are not transplanted. The user also approved
+  the exact training boundary as `designed`: the cheap scout feature `Z` is
+  trained jointly by a train-only auxiliary TAD head, while the route policy
+  consumes `stopgrad(Z)`. The detector loss is active for every successful
+  optimizer step on the exact hard top-B/ragged path and reaches route heads only
+  through selected-token ST. A backward-only global soft-budget projection has
+  `0<p<1` and `sum p=B`; it aggregates detached scout features to provide dense
+  counterfactual TAD supervision, updates the policy and auxiliary head but not
+  the scout or heavy backbone, never enters inference, and never counts as
+  executed B. Its weight is enabled early and annealed to zero by optimizer step
+  before the final hard-only phase. The main setting adds no area, coverage,
+  expected-cost or fixed-context loss; PL remains a separately trained ablation.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

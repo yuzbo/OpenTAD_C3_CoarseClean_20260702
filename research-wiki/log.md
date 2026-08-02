@@ -2327,3 +2327,19 @@ append_only: true
   dynamic estimator. This decision is `designed`, not implemented or tested.
   Exact surrogate losses, gradient stops, degeneration guards and tests remain
   under section-by-section review; no model code, Job or old artifact changed.
+
+- 2026-08-02: user approved the three-way gradient isolation and bounded proxy
+  schedule. The cheap scout representation `Z` is jointly task-trained by a
+  fit/train-only auxiliary TAD head, while the policy consumes `stopgrad(Z)`.
+  The detector loss is active throughout training on the exact hard global
+  top-B/ragged heavy path and reaches selected route scores through ST without
+  depending on that bridge for detector learning. A backward-only global
+  soft-budget projection with `0<p<1` and `sum p=B` aggregates detached scout
+  features, supplies dense counterfactual TAD supervision to the policy and
+  auxiliary head, never updates the scout/heavy backbone, never enters inference
+  or the executed-B ledger, and is annealed to zero by successful optimizer step
+  before a final hard-only phase. The main design adds no area, coverage,
+  expected-cost, fixed-context, or fixed-`K_t` loss. This is `designed`, not
+  implemented or tested; degeneration guards, exact schedule constants,
+  ablations and tests remain under review. No model code, Job, or old artifact
+  changed.

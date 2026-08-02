@@ -104,7 +104,27 @@ immutable fixed-pilot recovery remains required evidence but cannot select the
 dynamic main estimator. This design does not import resized crops, fixed focus
 counts, classification-only frame loss, the full-frame size penalty, or
 conditional exit. The role/estimator family is `designed`, not implemented or
-tested; exact surrogate-loss and stop-gradient boundaries remain to be approved.
+tested.
+
+The user approved the training and gradient boundary. Let `Z` be the cheap
+full-window scout representation. A train-only auxiliary TAD head jointly trains
+the scout from fit/train supervision; this is not a separately pretrained or
+cached coarse classifier. The policy consumes `stopgrad(Z)`. The true detector
+loss remains active throughout training on the unique global hard top-B and true
+ragged heavy path. Its ST bridge updates the route heads at hard-selected tokens,
+while the detector and heavy backbone remain learnable independently of that
+bridge; it does not provide a dense counterfactual for unselected tokens.
+
+The dense counterfactual is a backward-only global soft-budget projection over
+the same physical candidates, constrained to `0<p(t,n)<1` and
+`sum_(t,n) p(t,n)=B`. It softly aggregates detached `Z` into a training-only TAD
+proxy. The proxy loss updates the policy and auxiliary head but not the scout,
+heavy backbone, or hard execution. It is absent at inference and cannot be
+reported as selected/executed B. Its weight follows successful optimizer steps:
+it is active early, then annealed to zero before a final hard-path-only phase.
+No area, coverage, expected-cost, fixed-context, or fixed-`K_t` loss is part of
+the main Stage-1 objective. Exact schedule constants, degeneration safeguards,
+error handling, ablations, and tests remain under section-by-section review.
 
 ## Principle
 

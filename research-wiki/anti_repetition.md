@@ -86,6 +86,25 @@ updated: 2026-08-02
    inference switch, warm-start source, or automatic winner selected by the
    fixed-quota pilot. The immutable recovery may report A6/A7 evidence but
    cannot override the approved dynamic estimator family without a new design.
+0. The approved main policy consumes `stopgrad(Z)` from the cheap scout. A
+   train-only auxiliary TAD head may train the scout jointly from fit/train GT,
+   but this is not an independently pretrained/cached coarse classifier and may
+   not become actionness top-k. Detector loss remains active on the true hard
+   exact-B path for every successful optimizer step; disabling its route bridge
+   must not disable detector learning.
+0. The backward-only soft-budget projection must operate on the same unique
+   global physical candidates, satisfy `0<p<1` and `sum p=B`, and aggregate only
+   detached scout features. Its proxy loss may update the route policy and
+   training-only auxiliary head, but not the scout or heavy backbone. Soft mass
+   is neither a hard selection, an execution receipt, nor a carrier for
+   `K_t=0`, and it must be absent at inference.
+0. Advance the proxy schedule by successful optimizer steps, enable it only in
+   the early training phases, and anneal it to zero before the final hard-only
+   phase. Do not keep an undisclosed permanent proxy objective, schedule it by
+   raw forward/AMP retry count, or use its output as validation/test inference
+   evidence. The main Stage-1 objective has no area, coverage, expected-cost,
+   fixed-context, or fixed-`K_t` loss; exact hard B and measured cost remain the
+   compute contract.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new
