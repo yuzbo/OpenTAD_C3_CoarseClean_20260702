@@ -27,6 +27,10 @@ updated: 2026-08-02
    enforce a deterministic per-tubelet context floor, or repair learned budgets
    with an undisclosed uniform scaffold. Any lower bound on total `K_t` is a
    separate design choice and must not be mislabeled as fixed context evidence.
+0. Stage 1 permits zero-heavy-token tubelets. Do not silently clamp `K_t` to
+   one, manufacture a fallback selected token, or count a scout/null carrier as
+   heavy execution. The `K_t=0` main setting and a matched `K_t>=1` ablation
+   must be separately named and trained.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

@@ -40,6 +40,10 @@ Context is not a permanent deterministic anchor in the intended model. Its
 count is jointly allocated with ROI and residual evidence at every tubelet; no
 fixed context floor or post-hoc uniform repair is allowed.
 
+Zero heavy-token tubelets are allowed in Stage 1. Their carrier semantics must
+be explicit and excluded from the executed-heavy-K ledger. A separately trained
+`K_t>=1` ablation will test whether full heavy temporal coverage is necessary.
+
 ## Principle
 
 For every one of 384 native tubelets over an 11x20 patch grid, select exactly

@@ -26,6 +26,8 @@ max_chars: 8000
   frozen cost constraint.
   All three role counts are dynamic, including context: there is no fixed
   context floor and no hidden uniform scaffold.
+  Stage 1 permits `K_t=0`; a matched `K_t>=1` setting is required as an
+  explicit ablation rather than a hidden runtime repair.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

@@ -92,6 +92,9 @@ window-level B is deferred to a separately frozen successor.
 The intended allocator also makes context count fully dynamic. It does not
 retain the probe's deterministic context8 or introduce another fixed context
 floor.
+Stage 1 permits `K_t=0`, with an explicitly trained `K_t>=1` ablation. A zero-K
+tubelet must not trigger an undisclosed heavy-token fallback or be counted as
+heavy execution through a cheap carrier.
 
 The learned hard policy is the explicit sequential conditional distribution
 

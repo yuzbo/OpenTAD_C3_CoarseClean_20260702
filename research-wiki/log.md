@@ -2239,3 +2239,11 @@ append_only: true
   coverage repair is prohibited. Whether total `K_t` may equal zero at a
   tubelet remains the next explicit design question; no code or running job was
   changed.
+
+- 2026-08-02: user allowed `K_t=0` in Dynamic Stage 1 and requested a settings
+  ablation. The main design may therefore skip heavy tokens for a tubelet; a
+  separately trained matched `K_t>=1` setting will test the value of full heavy
+  temporal coverage. Zero-K execution may not silently select a fallback token,
+  and any cheap detector carrier must be separately identified from actual
+  heavy K. The exact zero-K detector representation remains the next design
+  question; no implementation or running pilot was changed.
