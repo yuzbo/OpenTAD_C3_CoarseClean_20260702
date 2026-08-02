@@ -30,7 +30,7 @@ Current evidence level:
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
 | Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
-| Official full-data DUCA feasibility | `corrigendum_approved_and_implemented_locally / old_source_2df0103e_failed_immutable / new_clean_Linux_and_real_short_window_gates_pending / no_empirical_conclusion` |
+| Official full-data DUCA feasibility | `corrigendum_approved_and_implemented_locally / old_source_2df0103e_failed_immutable / first_corrected_code_gate_attempts_failed_engineering_only / narrow_message_contract_repair_in_progress / no_empirical_conclusion` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -375,6 +375,19 @@ manifest/root → seven-job Stage A. The short-window gate directly consumes the
 content-bound code-gate receipt, and both hashes are required by the grouped
 submitter, every cell and the matrix seal; this is an enforced dependency rather
 than an operator convention.
+
+The first corrected remote source was clean commit
+`75b9ba3d2053675ef83902e03dd4ff705c235244`. Its initial code-gate submission
+`1215366` failed before creating a gate root because Slurm `--wrap` entered
+POSIX `sh` and rejected `source`; signature
+`slurm_wrap_posix_sh_source_not_found`. A one-time launcher-only retry used
+explicit `/bin/bash -lc` and reached the full suite, where job `1215367` failed
+with `90 passed / 1 failed`: the q=16 sub-quantum path correctly raised
+`ValueError`, but its message did not match the frozen focused-test wording.
+Signature: `subquantum_failclosed_exception_message_contract_mismatch`. No model
+experiment, performance metric, manifest, or passing receipt was produced. The
+repair changes only the fail-closed exception text; it does not change the
+model, loss, K rule, data, seed, checkpoint, evaluator, or scientific question.
 
 The user authorized recovery-v3 implementation and redeployment. The local
 repair is now implemented:

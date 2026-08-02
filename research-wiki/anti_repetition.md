@@ -463,3 +463,9 @@ These failures and naming mistakes must not be repeated.
 134. Do not serialize the DUCA arm behind the mixed-K control again. Use isolated
      per-seed DUCA jobs and per-seed sequential control jobs; seven scheduler jobs
      represent twelve independent logical cells without changing the matrix.
+135. Do not submit a Slurm `--wrap` bootstrap that relies on its default shell.
+     Enter `/bin/bash -lc` explicitly before using `source` or environment modules;
+     preserve failed launcher job `1215366` as immutable engineering evidence.
+136. Do not weaken the q=16 sub-quantum fail-closed rule to make a regression
+     green. If behavior is already correct and only the frozen exception-message
+     contract differs, repair the message narrowly and rerun the complete gate.

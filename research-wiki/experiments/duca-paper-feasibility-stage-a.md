@@ -8,7 +8,7 @@
 - Implementation: `corrigendum_implemented_locally`
 - Local focused verification: `15_passed / 1_Linux_loader_test_skipped_on_Windows / Torch_tests_blocked_by_local_c10_DLL`
 - Independent read-only audit: `selector_tensor_chain_GO / enforced_two_gate_dependency_chain_GO / no_P0_or_P1`
-- Authoritative Linux/Slurm verification: `old_source_passed_1213711 / corrected_source_pending`
+- Authoritative Linux/Slurm verification: `old_source_passed_1213711 / corrected_75b9ba3d_jobs_1215366_1215367_failed_engineering_only / narrow_message_repair_in_progress`
 - Experiment: `old_transaction_failed_immutable / corrected_transaction_not_yet_released`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
@@ -126,6 +126,18 @@ ordering prevents a circular prerequisite and matches the approved sequence.
 The short-window runner must consume and validate the exact code-gate receipt;
 both prerequisite hashes are then frozen into the manifest and propagated into
 training, cell, submission and matrix receipts, so neither gate can be skipped.
+
+The first clean corrected checkout used source
+`75b9ba3d2053675ef83902e03dd4ff705c235244`. Code-gate job `1215366` failed
+before creating its root because the external Slurm wrapper used POSIX `sh`
+with `source`. The explicit-Bash retry `1215367` reached the full suite and
+reported `90 passed / 1 failed`: `L=15` correctly failed closed, but the
+exception text did not satisfy the focused regex. These are engineering-only
+failures with signatures `slurm_wrap_posix_sh_source_not_found` and
+`subquantum_failclosed_exception_message_contract_mismatch`; neither produced a
+passing receipt, manifest, model run, or metric. The second repair is restricted
+to the exception wording and requires a new commit, clean checkout, full code
+gate and real short-window gate before any Stage-A release.
 
 No single cell, seed, intermediate checkpoint or incomplete matrix may support a
 performance statement. Until all twelve terminal receipts pass, the status is

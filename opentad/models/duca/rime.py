@@ -896,7 +896,8 @@ def decode_rime_exact_k(
     effective = effective - torch.remainder(effective, quantum)
     if bool(torch.any(effective <= 0).item()):
         raise ValueError(
-            "RIME valid window/requested K cannot realize one execution quantum"
+            "RIME valid window is shorter than one heavy-backbone execution "
+            "quantum after requested-K clipping"
         )
     if require_homogeneous_execution and bool(
         torch.any(effective != effective[0]).item()

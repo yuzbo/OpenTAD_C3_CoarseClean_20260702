@@ -1,5 +1,25 @@
 # Research Log
 
+## 2026-08-03 — Corrected Stage-A code-gate engineering failures and narrow repair
+
+- Transported exact clean source `75b9ba3d2053675ef83902e03dd4ff705c235244`
+  to a fresh N16R4 checkout using bundle SHA-256
+  `74ff3e99666128053af94166c66e7cf850d7c815c7ff2cd86471efc1040677e5`.
+  The old failed source/root remained untouched and no metric was opened.
+- Code-gate job `1215366` failed `127:0` before its root existed because Slurm
+  `--wrap` used POSIX `sh`, which does not implement `source`. Register
+  `slurm_wrap_posix_sh_source_not_found`; retry only with explicit
+  `/bin/bash -lc` and a new root.
+- The bounded launcher retry `1215367` entered the authoritative Linux/PyTorch
+  suite and stopped at `90 passed / 1 failed`. The sub-quantum q=16 decoder
+  already failed closed correctly, but the exception message differed from the
+  focused regression's frozen wording. Register
+  `subquantum_failclosed_exception_message_contract_mismatch`.
+- Implemented the narrow message-only repair. It changes no model, loss,
+  requested/effective K semantics, data, seed, checkpoint, evaluator, threshold,
+  or metric. Both failed jobs and their roots/logs remain immutable; no passing
+  receipt, Stage-A manifest, or experiment transaction exists yet.
+
 ## 2026-08-03 — Stage-A natural-short-window corrigendum accepted and implemented
 
 - Fully read and hash-registered `U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1` (SHA-256
