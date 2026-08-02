@@ -27,7 +27,12 @@ max_chars: 8000
   All three role counts are dynamic, including context: there is no fixed
   context floor and no hidden uniform scaffold.
   Stage 1 permits `K_t=0`; a matched `K_t>=1` setting is required as an
-  explicit ablation rather than a hidden runtime repair.
+  explicit ablation rather than a hidden runtime repair. The main zero-budget
+  representation is a masked zero carrier: zero heavy feature at that tubelet
+  plus an explicit heavy-valid mask, with no content-bearing substitute and no
+  executed-heavy-K charge. `learned-null` and `scout-projection` are separately
+  trained carrier ablations, never inference-time switches on the main
+  checkpoint.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

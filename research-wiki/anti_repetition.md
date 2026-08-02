@@ -31,6 +31,12 @@ updated: 2026-08-02
    one, manufacture a fallback selected token, or count a scout/null carrier as
    heavy execution. The `K_t=0` main setting and a matched `K_t>=1` ablation
    must be separately named and trained.
+0. The main `K_t=0` carrier is masked zero: a zero heavy feature accompanied by
+   an explicit heavy-valid mask. Do not leak content through the main carrier,
+   let a bias turn it into an unmarked pseudo-token, or charge it as executed
+   heavy K. `learned-null` and `scout-projection` are independent, separately
+   trained ablations; never enable either only at inference or mix their
+   checkpoints with masked-zero results.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

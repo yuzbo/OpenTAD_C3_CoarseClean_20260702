@@ -43,6 +43,12 @@ fixed context floor or post-hoc uniform repair is allowed.
 Zero heavy-token tubelets are allowed in Stage 1. Their carrier semantics must
 be explicit and excluded from the executed-heavy-K ledger. A separately trained
 `K_t>=1` ablation will test whether full heavy temporal coverage is necessary.
+The selected main carrier is masked zero: scatter an all-zero heavy feature for
+that tubelet and propagate an explicit heavy-valid mask so downstream temporal
+aggregation cannot mistake absence for an observed heavy token. It carries no
+scout content and consumes no heavy execution. `learned-null` and
+`scout-projection` are independent, separately trained carrier ablations rather
+than inference-time substitutions on the masked-zero checkpoint.
 
 ## Principle
 

@@ -95,6 +95,12 @@ floor.
 Stage 1 permits `K_t=0`, with an explicitly trained `K_t>=1` ablation. A zero-K
 tubelet must not trigger an undisclosed heavy-token fallback or be counted as
 heavy execution through a cheap carrier.
+The main zero-K representation is fixed as a masked zero carrier: its heavy
+feature is exactly zero and a separate heavy-valid mask marks the missing heavy
+observation through downstream aggregation. It contains no projected scout
+content and is excluded from executed-heavy-K accounting. `learned-null` and
+`scout-projection` are independent, separately trained ablations; neither may be
+activated only at inference on the masked-zero checkpoint.
 
 The learned hard policy is the explicit sequential conditional distribution
 

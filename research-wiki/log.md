@@ -2247,3 +2247,12 @@ append_only: true
   and any cheap detector carrier must be separately identified from actual
   heavy K. The exact zero-K detector representation remains the next design
   question; no implementation or running pilot was changed.
+
+- 2026-08-02: user selected `masked zero carrier` as the Dynamic Stage-1 main
+  representation for `K_t=0`: the heavy feature is zero, an explicit
+  heavy-valid mask marks the absence downstream, no content-bearing scout/null
+  substitute is inserted, and the carrier is excluded from executed-heavy-K
+  accounting. `learned-null` and `scout-projection` are retained only as
+  independent, separately trained ablations; they cannot be inference-time
+  switches or share the main checkpoint's interpretation. This decision is
+  `designed`, not implemented or tested; no running pilot was changed.
