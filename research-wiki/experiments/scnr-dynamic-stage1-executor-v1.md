@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:scnr-dynamic-stage1-executor-v1
 title: "SCNR-TAD dynamic exact-budget ragged executor v1"
 stage: tested
-status: d3_and_real_fit_policy_health_pass_d4_unblocked
+status: d3_health_and_dynamic_telemetry_pass_m2_protocol_pending
 outcome: pass_no_performance
 added: 2026-08-02
 updated: 2026-08-02
@@ -72,7 +72,7 @@ tubelet, or any mismatch between selected and executed tokens.
 | D1 | Native ragged VideoMAE + coordinate-lineage Adapter | zero-padding, empty-clip, full-token parity, exact ledger KATs | tested |
 | D2 | Wrapper integration, masked-zero aggregation, scout stop-gradient and proxy schedule | one real detector backward, successful-step schedule, no-leak audit | tested |
 | D3 | Clean N16R4 Linux/CUDA no-performance P0 | exact source, clean tree, Slurm GPU, zero metric/checkpoint | passed, Job `1215358` |
-| D4 | Matched development G1/G2 floor arms | only after D3 PASS | mechanical G1/G2 P0 complete; performance not started |
+| D4 | Matched development G1/G2 floor arms | D3 PASS, sample-level dynamic telemetry, frozen full-stack cost scope | telemetry tested; runner/cost protocol pending; performance not started |
 
 ## Executed evidence
 
@@ -118,15 +118,28 @@ tubelet, or any mismatch between selected and executed tokens.
   and
   `cb41492ea6723bbebb8beb3add8c515f2ab06f9dbfcaba482a67da48db222bbc`;
   an independent validator replay passed.
+- Commit `7e5775e89c0e02428f9af2f6e13c4637a76c7850` added the previously
+  missing sample-level dynamic evaluation telemetry.  It serializes every
+  tubelet's decoded `(cx,cy,w,h)`, independent width/height/area distributions,
+  floor/ceiling saturation, complete `K_t` values and histogram, per-tubelet
+  and aggregate role counts, `b_c`, `sum_c b_c^2`, and requested/unique/
+  padded/executed receipts.  It fails closed on multi-sample attribution,
+  physical/tubelet lineage mismatch, duplicate physical tokens, invalid ROI
+  bounds, non-ragged execution, padding, dense Adapter execution, or a ledger
+  that differs from exact `B`.  Accuracy telemetry is explicitly excluded from
+  timed cost replay.  The exact clean N16R4 Linux source passed the dynamic,
+  P0-contract and policy-health regression set `35 passed`; this was a CPU/
+  tensor regression, not a CUDA performance or real-data evaluation run.
 
 ## Current boundary
 
-The dynamic route is now `tested` at implementation, synthetic CUDA P0 and
-real Fit-prefix health levels.  D3 has passed and the two floor configurations
-are mechanically admissible, so a separately bound matched G1/G2 development
-experiment may be built.  None of the evidence above contains mAP, end-to-end
-latency/energy, checkpoint utility or a floor comparison; it is not
-`empirically_supported` or `paper_ready`.  `K_t=0` is permitted and covered by
+The dynamic route is now `tested` at implementation, synthetic CUDA P0, real
+Fit-prefix health and sample-level telemetry-unit levels.  D3 has passed and
+the two floor configurations are mechanically admissible.  M2 must still bind
+one matched development training/evaluation recipe and a separate full-stack
+cost/energy replay before it is launched.  None of the evidence above contains
+mAP, end-to-end latency/energy, checkpoint utility or a floor comparison; it is
+not `empirically_supported` or `paper_ready`.  `K_t=0` is permitted and covered by
 contract tests, but no zero-count tubelet happened to occur in the recorded P0
 or 64-update health traces; absence in those traces is neutral rather than a
 failed capability gate.

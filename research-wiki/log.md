@@ -2436,3 +2436,17 @@ append_only: true
   `cb41492ea6723bbebb8beb3add8c515f2ab06f9dbfcaba482a67da48db222bbc`;
   an independent validator replay passed. M1 is complete and M2 is mechanically
   unblocked, but no floor-performance result exists.
+
+- 2026-08-02: implemented the dynamic M2 accuracy-replay telemetry prerequisite
+  at exact commit `7e5775e89c0e02428f9af2f6e13c4637a76c7850`.  The wrapper now emits
+  sample-level ROI trajectories/distributions and floor saturation, complete
+  `K_t` and operational-role distributions, plus fail-closed exact-B/true-ragged
+  execution receipts.  Multi-sample attribution, invalid ROI bounds, lineage or
+  uniqueness errors, padding, dense Adapter fallback and cost-ledger mismatch
+  all abort.  Telemetry CPU copies are labelled accuracy-only and remain outside
+  timed replay.  Static P0/health tests passed `14/14` locally; the Windows Torch
+  tensor suite remained unavailable because `c10.dll` failed during import.
+  Exact clean N16R4 Linux source passed the combined dynamic/P0/health suite
+  `35/35`.  No GPU, dataset evaluation, checkpoint, metric, latency or energy
+  result was produced.  M2 remains unstarted pending one matched development
+  runner and a separately frozen selector-inclusive full-stack cost protocol.

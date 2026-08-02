@@ -144,6 +144,13 @@ updated: 2026-08-02
    Job `1215364` proves that the matched G2 configuration is mechanically
    executable only.  Floor selection requires complete matched M2 development
    results and cost ledgers; role counts or synthetic losses cannot choose it.
+0. Dynamic diagnostic telemetry from source `7e5775e8` is an accuracy-replay
+   mechanism receipt, not a timed-cost instrument or a performance result.  It
+   must run with local batch one on the complete matched evaluation population;
+   keep it disabled during training and the separate timed replay.  Do not
+   launch or interpret M2 until the G1/G2 runner binds identical data/order/
+   successful updates/EMA/evaluator and the full decode-to-NMS p50/p95, peak
+   memory and energy measurement scope is frozen.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

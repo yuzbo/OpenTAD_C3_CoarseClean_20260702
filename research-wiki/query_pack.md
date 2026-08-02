@@ -104,8 +104,12 @@ max_chars: 8000
   `8aa8e2a3` changes only the ROI floor to two native cells; P0 Job `1215364`
   also passed. These are mechanical/health receipts only: no mAP, measured
   floor comparison, Hybrid efficacy, complementarity, efficiency or paper claim
-  has been established. M2 matched G1/G2 development training is ready but not
-  yet run.
+  has been established. Exact clean source `7e5775e8` now emits fail-closed,
+  sample-level dynamic ROI/`K_t`/role/ragged telemetry and passed the relevant
+  N16R4 Linux suite `35 passed`; telemetry CPU copies are excluded from timed
+  cost replay. M2 is mechanically ready but not yet run: its matched training/
+  evaluation runner and selector-inclusive full-stack latency/memory/energy
+  protocol must be frozen first.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

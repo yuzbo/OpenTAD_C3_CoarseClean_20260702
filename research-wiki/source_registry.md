@@ -1360,6 +1360,14 @@ updated: 2026-08-02
   `7d9015c3a1c6f680244b67c319c4453f7510d1c38a54364bcdd2d1e9fd9dfaac`.
   Independent validator replay and exact HEAD/origin/clean-tree checks passed.
   This is no-performance floor-arm admission evidence only.
+- Dynamic SCNR sample-level route telemetry, 2026-08-02. Exact source
+  `7e5775e89c0e02428f9af2f6e13c4637a76c7850` adds fail-closed per-tubelet
+  geometry, `K_t`, role and true-ragged execution receipts for accuracy replay,
+  explicitly outside timed cost.  The clean N16R4 Linux/Torch regression command
+  passed `35/35` across `test_georoute_dynamic_stage1.py`, the P0 contract and
+  policy-health contract.  This is implementation/unit evidence only; it did
+  not allocate a GPU, load a development population, compute a metric, profile
+  energy or authorize a floor/performance claim.
 
 ## 外部附件
 
