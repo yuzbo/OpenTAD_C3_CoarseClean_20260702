@@ -80,6 +80,8 @@ def main():
     s1_binding = None
     s1_bound_cfg = None
     georoute_official_development_binding = None
+    georoute_dynamic_floor_m2_binding = None
+    georoute_dynamic_floor_m2_checkpoint_sidecar = None
     if "spatial_zoom_s1_contract" in cfg:
         if args.checkpoint == "none" or not args.s1_test_open_certificate:
             raise ValueError(
@@ -217,6 +219,44 @@ def main():
                 binding=georoute_official_development_binding,
             )
         )
+    if "georoute_dynamic_floor_m2_binding" in cfg:
+        if s1_binding is not None or georoute_official_development_binding is not None:
+            raise RuntimeError(
+                "dynamic floor M2 evaluation cannot share another formal binding"
+            )
+        if (
+            args.checkpoint == "none"
+            or args.cfg_options is not None
+            or args.id != 0
+            or args.not_eval
+            or args.max_batches is not None
+        ):
+            raise ValueError(
+                "dynamic floor M2 evaluation requires its final checkpoint and "
+                "forbids overrides, alternate ids, partial inference, and no-eval"
+            )
+        from tools.bata.georoute_dynamic_floor_m2_contract import (
+            require_clean_dynamic_floor_m2_checkout,
+            require_dynamic_floor_m2_world1_slurm,
+            validate_dynamic_floor_m2_checkpoint_sidecar,
+            validate_dynamic_floor_m2_config,
+        )
+
+        require_dynamic_floor_m2_world1_slurm()
+        arm = str(cfg.georoute_dynamic_floor_m2_binding.arm)
+        georoute_dynamic_floor_m2_binding = validate_dynamic_floor_m2_config(
+            cfg, arm=arm, phase="accuracy"
+        )
+        require_clean_dynamic_floor_m2_checkout(
+            expected_commit=georoute_dynamic_floor_m2_binding["runtime_commit"],
+            root=Path(path).resolve(),
+        )
+        georoute_dynamic_floor_m2_checkpoint_sidecar = (
+            validate_dynamic_floor_m2_checkpoint_sidecar(
+                args.checkpoint,
+                binding=georoute_dynamic_floor_m2_binding,
+            )
+        )
     assert_detector_training_allowed(cfg, entrypoint="tools/test.py")
     assert_no_raw_prediction_shortcut_for_pc_ot_mras(cfg)
 
@@ -234,6 +274,8 @@ def main():
         raise RuntimeError(
             "formal GeoRoute development evaluation world size changed"
         )
+    if georoute_dynamic_floor_m2_binding is not None and args.world_size != 1:
+        raise RuntimeError("dynamic floor M2 evaluation world size changed")
     print(
         f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})"
     )
@@ -249,7 +291,12 @@ def main():
         # opts into strict deterministic algorithms.
         deterministic_warn_only=(s1_binding is None),
     )
-    cfg = update_workdir(cfg, args.id, torch.cuda.device_count())
+    if georoute_dynamic_floor_m2_binding is None:
+        cfg = update_workdir(cfg, args.id, torch.cuda.device_count())
+    elif os.path.exists(cfg.work_dir):
+        raise FileExistsError(
+            "dynamic floor M2 accuracy replay requires a fresh bound work_dir"
+        )
     if s1_binding is not None:
         marker_path = os.path.join(cfg.work_dir, "test_open_started.json")
         if os.path.exists(marker_path):
@@ -316,6 +363,12 @@ def main():
             raise ValueError(
                 "formal GeoRoute evaluation left the frozen development Gate"
             )
+    if georoute_dynamic_floor_m2_binding is not None:
+        runtime_test_ids = {str(row[0]) for row in test_dataset.data_list}
+        if runtime_test_ids != set(
+            georoute_dynamic_floor_m2_binding["evaluation_video_ids"]
+        ):
+            raise ValueError("dynamic floor M2 evaluation left development Gate")
     test_loader = build_dataloader(
         test_dataset,
         rank=args.rank,
@@ -380,6 +433,16 @@ def main():
                 raise ValueError(
                     "formal GeoRoute checkpoint epoch differs from its sidecar"
                 )
+        if georoute_dynamic_floor_m2_binding is not None:
+            dynamic_metadata = georoute_dynamic_floor_m2_checkpoint_sidecar[
+                "experiment_metadata"
+            ]
+            if checkpoint.get("experiment_metadata") != dynamic_metadata:
+                raise ValueError(
+                    "dynamic floor M2 checkpoint payload metadata differs from sidecar"
+                )
+            if int(checkpoint.get("epoch", -1)) != int(dynamic_metadata["epoch"]):
+                raise ValueError("dynamic floor M2 checkpoint epoch mismatch")
 
         # Model EMA
         use_ema = getattr(cfg.solver, "ema", False)

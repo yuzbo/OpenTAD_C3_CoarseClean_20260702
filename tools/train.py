@@ -109,6 +109,8 @@ def main():
     gradient_decomposition_observer_cls = None
     georoute_official_development_binding = None
     georoute_official_development_sidecar_schema = None
+    georoute_dynamic_floor_m2_binding = None
+    georoute_dynamic_floor_m2_sidecar_schema = None
     if "spatial_zoom_s1_contract" in cfg:
         from tools.bata.spatial_zoom_s1_training import (
             S1_CHECKPOINT_SIDECAR_SCHEMA,
@@ -323,6 +325,52 @@ def main():
                 "formal GeoRoute development forbids overrides, resume, "
                 "nondeterminism, disabled evaluation, and nonzero id"
             )
+    if "georoute_dynamic_floor_m2_binding" in cfg:
+        from tools.bata.georoute_dynamic_floor_m2_contract import (
+            DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA,
+            build_dynamic_floor_m2_checkpoint_metadata,
+            require_clean_dynamic_floor_m2_checkout,
+            require_dynamic_floor_m2_world1_slurm,
+            validate_dynamic_floor_m2_config,
+        )
+
+        if any(
+            binding is not None
+            for binding in (
+                s1_binding,
+                s2_binding,
+                s2_runtime_gate_binding,
+                amp_diagnostic_binding,
+                gradient_decomposition_binding,
+                georoute_official_development_binding,
+            )
+        ):
+            raise RuntimeError(
+                "dynamic floor M2 training cannot share another formal binding"
+            )
+        require_dynamic_floor_m2_world1_slurm()
+        arm = str(cfg.georoute_dynamic_floor_m2_binding.arm)
+        georoute_dynamic_floor_m2_binding = validate_dynamic_floor_m2_config(
+            cfg, arm=arm, phase="train"
+        )
+        georoute_dynamic_floor_m2_sidecar_schema = (
+            DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA
+        )
+        require_clean_dynamic_floor_m2_checkout(
+            expected_commit=georoute_dynamic_floor_m2_binding["runtime_commit"],
+            root=Path(path).resolve(),
+        )
+        if (
+            args.cfg_options is not None
+            or args.resume is not None
+            or args.disable_deterministic
+            or args.not_eval
+            or args.id != 0
+        ):
+            raise ValueError(
+                "dynamic floor M2 training forbids overrides, resume, "
+                "nondeterminism, disabled evaluation, and nonzero id"
+            )
     formal_binding = (
         s1_binding
         if s1_binding is not None
@@ -335,6 +383,8 @@ def main():
         else gradient_decomposition_binding
         if gradient_decomposition_binding is not None
         else georoute_official_development_binding
+        if georoute_official_development_binding is not None
+        else georoute_dynamic_floor_m2_binding
     )
     assert_safe_entrypoint_args_for_gated_config(cfg, args, entrypoint="tools/train.py")
     assert_detector_training_allowed(cfg, entrypoint="tools/train.py")
@@ -378,6 +428,10 @@ def main():
                 ]
             )
             if georoute_official_development_binding is not None
+            else bool(
+                georoute_dynamic_floor_m2_binding["deterministic_warn_only"]
+            )
+            if georoute_dynamic_floor_m2_binding is not None
             else formal_binding is None
         ),
     )
@@ -566,6 +620,23 @@ def main():
         ):
             raise ValueError(
                 "formal GeoRoute evaluation population differs from frozen Gate"
+            )
+    if georoute_dynamic_floor_m2_binding is not None:
+        runtime_ids = {
+            "train": {str(row[0]) for row in train_dataset.data_list},
+            "val": {str(row[0]) for row in val_dataset.data_list},
+            "test": {str(row[0]) for row in test_dataset.data_list},
+        }
+        if runtime_ids["train"] != set(
+            georoute_dynamic_floor_m2_binding["training_video_ids"]
+        ):
+            raise ValueError("dynamic floor M2 train population differs from Fit")
+        expected_gate = set(
+            georoute_dynamic_floor_m2_binding["evaluation_video_ids"]
+        )
+        if runtime_ids["val"] != expected_gate or runtime_ids["test"] != expected_gate:
+            raise ValueError(
+                "dynamic floor M2 evaluation population differs from Gate"
             )
 
     # build model
@@ -867,6 +938,35 @@ def main():
                     )
                     checkpoint_sidecar_schema = (
                         georoute_official_development_sidecar_schema
+                    )
+                elif georoute_dynamic_floor_m2_binding is not None:
+                    checkpoint_metadata = (
+                        build_dynamic_floor_m2_checkpoint_metadata(
+                            cfg,
+                            seed=args.seed,
+                            epoch=epoch,
+                            successful_updates=successful_updates,
+                            train_batches_per_epoch=len(train_loader),
+                            amp_skipped_attempts=update_audit[
+                                "amp_skipped_attempts"
+                            ],
+                            max_amp_retries_observed=update_audit[
+                                "max_amp_retries_observed"
+                            ],
+                            optimizer_attempts=update_audit[
+                                "optimizer_attempts"
+                            ],
+                            consumed_batches=update_audit["consumed_batches"],
+                            replay_attempts=update_audit["replay_attempts"],
+                            scheduler_advances=update_audit[
+                                "scheduler_advances"
+                            ],
+                            ema_updates=update_audit["ema_updates"],
+                            world_size=args.world_size,
+                        )
+                    )
+                    checkpoint_sidecar_schema = (
+                        georoute_dynamic_floor_m2_sidecar_schema
                     )
                 save_checkpoint(
                     model,

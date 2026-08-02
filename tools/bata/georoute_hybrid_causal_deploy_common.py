@@ -16,6 +16,7 @@ RESOURCE_ARGS = {
     "world2": ("--gpus", "2", "--cpus-per-task", "10"),
     "stage2": ("--gpus", "2", "--cpus-per-task", "10"),
     "control": ("--gpus", "1", "--cpus-per-task", "1"),
+    "cpu_control": ("--cpus-per-task", "1"),
 }
 
 
@@ -66,6 +67,7 @@ def sbatch(
     dependency_type: str = "afterok",
     test_only: bool = False,
     hold: bool = False,
+    kill_invalid_dependency: bool = False,
 ) -> str:
     if resource not in RESOURCE_ARGS:
         raise ValueError(f"unsupported Hybrid causal resource mode {resource!r}")
@@ -83,6 +85,8 @@ def sbatch(
         command.append("--test-only")
     if hold and not test_only:
         command.append("--hold")
+    if kill_invalid_dependency:
+        command.append("--kill-on-invalid-dep=yes")
     if dependency:
         if dependency_type not in {"afterok", "afterany"}:
             raise ValueError("unsupported Hybrid causal dependency type")

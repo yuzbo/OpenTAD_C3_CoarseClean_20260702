@@ -161,6 +161,52 @@ def validate_dynamic_stage1_p0_report(report: Mapping[str, Any]) -> None:
     if _require_int(audit.get("heavy_backbone_forward_count"), "forward count missing") != 1:
         raise ValueError("dynamic P0 requires one heavy ragged forward")
 
+    telemetry_p0 = report.get("diagnostic_telemetry_p0")
+    if telemetry_p0 is not None:
+        telemetry_p0 = _require_mapping(
+            telemetry_p0,
+            "dynamic diagnostic telemetry P0 is invalid",
+        )
+        telemetry_audit = _require_mapping(
+            telemetry_p0.get("backbone_audit"),
+            "dynamic diagnostic telemetry audit is missing",
+        )
+        telemetry = _require_mapping(
+            telemetry_audit.get("diagnostic_telemetry"),
+            "dynamic diagnostic window telemetry is missing",
+        )
+        ragged = _require_mapping(
+            telemetry.get("ragged_execution"),
+            "dynamic diagnostic ragged receipt is missing",
+        )
+        if (
+            telemetry_p0.get("status") != "PASS_NO_PERFORMANCE_TELEMETRY_P0"
+            or telemetry_p0.get("output_shape") != [1, 384, 768]
+            or telemetry_audit.get("diagnostic_telemetry_enabled") is not True
+            or telemetry_audit.get("uses_gt_for_route") is not False
+            or telemetry_audit.get("uses_teacher") is not False
+            or telemetry_audit.get("uses_oracle") is not False
+            or telemetry_audit.get("uses_test_evidence") is not False
+            or telemetry.get("schema_version")
+            != "georoute_dynamic_diagnostic_window_telemetry_v1"
+            or telemetry.get("measurement_scope")
+            != "accuracy_replay_only_excluded_from_timed_cost"
+            or int(telemetry.get("tubelet_count", -1)) != 384
+            or int(telemetry.get("item_count", -1)) != 220
+            or int(telemetry.get("window_token_budget", -1)) != budget
+            or telemetry.get("source_grid_hw") != [11, 20]
+            or int(ragged.get("requested_physical_tokens", -1)) != budget
+            or int(ragged.get("unique_physical_tokens", -1)) != budget
+            or int(ragged.get("padded_heavy_tokens", -1)) != 0
+            or int(ragged.get("executed_patch_tokens", -1)) != budget
+            or telemetry.get("gt_for_route_used") is not False
+            or telemetry.get("teacher_used") is not False
+            or telemetry.get("oracle_used") is not False
+            or telemetry.get("official_test_opened") is not False
+            or telemetry.get("paper_claim_allowed") is not False
+        ):
+            raise ValueError("dynamic diagnostic telemetry CUDA P0 did not pass")
+
     k_per_tubelet = audit.get("k_per_tubelet")
     role_counts = audit.get("role_counts_per_window")
     if not isinstance(k_per_tubelet, list) or not k_per_tubelet:
@@ -440,9 +486,30 @@ def _run_cuda_p0(args: argparse.Namespace) -> dict[str, Any]:
         raise FloatingPointError("dynamic Stage-1 GradScaler update overflowed")
     torch.cuda.synchronize(device)
 
-    audit = dict(model.backbone.latest_georoute_audit or {})
-    if not audit:
+    training_audit = dict(model.backbone.latest_georoute_audit or {})
+    if not training_audit:
         raise RuntimeError("dynamic Stage-1 backbone audit is missing")
+    diagnostic_telemetry_p0 = None
+    if args.with_diagnostic_telemetry:
+        optimizer.zero_grad(set_to_none=True)
+        model.eval()
+        model.backbone.diagnostic_telemetry_enabled = True
+        with torch.no_grad(), torch.cuda.amp.autocast(
+            dtype=torch.float16,
+            enabled=True,
+        ):
+            telemetry_output = model.backbone(
+                {"source": source, "scout": scout},
+                masks=masks,
+            )
+        torch.cuda.synchronize(device)
+        telemetry_audit = dict(model.backbone.latest_georoute_audit or {})
+        diagnostic_telemetry_p0 = {
+            "status": "PASS_NO_PERFORMANCE_TELEMETRY_P0",
+            "output_shape": list(telemetry_output.shape),
+            "backbone_audit": telemetry_audit,
+        }
+        model.backbone.diagnostic_telemetry_enabled = False
     report = {
         "schema_version": DYNAMIC_STAGE1_P0_SCHEMA,
         "status": "PASS_NO_PERFORMANCE_P0",
@@ -490,7 +557,8 @@ def _run_cuda_p0(args: argparse.Namespace) -> dict[str, Any]:
             "peak_allocated_bytes": int(torch.cuda.max_memory_allocated(device)),
             "peak_reserved_bytes": int(torch.cuda.max_memory_reserved(device)),
         },
-        "backbone_audit": audit,
+        "backbone_audit": training_audit,
+        "diagnostic_telemetry_p0": diagnostic_telemetry_p0,
         "scope": {
             "synthetic_inputs_only": True,
             "dataset_loaded": False,
@@ -524,6 +592,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--pretrained", default=None)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--seed", type=int, default=3407)
+    parser.add_argument("--with-diagnostic-telemetry", action="store_true")
     return parser.parse_args(argv)
 
 
