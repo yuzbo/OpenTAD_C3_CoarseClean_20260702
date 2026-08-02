@@ -1157,8 +1157,41 @@ def _physical_row_forward_backward(
             )
         beta_rows[slot_idx] = beta
     beta_table = torch.stack(beta_rows, dim=0)
-    log_marginal = alpha_table + beta_table - log_partition
-    finite = torch.isfinite(log_marginal)
+    raw_log_marginal = alpha_table + beta_table - log_partition
+    finite = torch.isfinite(raw_log_marginal)
+    log_row_mass = _safe_masked_logsumexp(
+        raw_log_marginal,
+        finite,
+        dim=1,
+    )
+    if not bool(torch.isfinite(log_row_mass).all().item()):
+        raise RuntimeError("physical exact-K slot marginals have no finite mass")
+    # Normalization is allowed to remove only the small common offset expected
+    # from a long FP32 forward/backward chain.  A larger pre-normalization drift
+    # is evidence of a graph/recurrence defect and must not be hidden by the
+    # categorical projection below.  The envelope scales with the number of
+    # accumulated FP32 operations and remains far above the measured rounding
+    # drift on the registered T=768, K=384 stress case.
+    raw_mass_log_tolerance = max(
+        5.0e-4,
+        32.0
+        * torch.finfo(scores.dtype).eps
+        * float(max(temporal_len, k)),
+    )
+    if bool(
+        torch.any(log_row_mass.detach().abs() > raw_mass_log_tolerance).item()
+    ):
+        raise RuntimeError(
+            "physical exact-K raw slot-mass drift exceeds the FP32 normalization envelope"
+        )
+    # Each slot marginal is a categorical distribution over physical positions.
+    # In exact arithmetic log_row_mass is zero.  Long exact-K chains accumulate
+    # a slot-wise FP32 offset in alpha/beta; remove that identity-only offset in
+    # log space before exponentiation so high-dynamic-range scores do not lose
+    # probability mass through underflow.  The bounded raw-mass check above keeps
+    # structural DP failures visible; the graph, partition and Viterbi path are
+    # unchanged, and the column/ordering invariants below still fail closed.
+    log_marginal = raw_log_marginal - log_row_mass[:, None]
     slots = torch.where(
         finite,
         torch.exp(log_marginal),

@@ -9,7 +9,7 @@
 - Local focused verification: `15_passed / 1_Linux_loader_test_skipped_on_Windows / Torch_tests_blocked_by_local_c10_DLL`
 - Independent read-only audit: `selector_tensor_chain_GO / enforced_two_gate_dependency_chain_GO / no_P0_or_P1`
 - Authoritative Linux/Slurm verification: `corrected_source_00f54dfe / code_gate_1215368_passed / real_short_gate_1215369_passed`
-- Experiment: `old_transactions_failed_immutable / recovery1_transaction_released_and_scheduler_pending / metrics_sealed`
+- Experiment: `recovery1_failed_closed_on_learned_exactk_numeric_invariant / controls_and_seal_cancelled / log_domain_repair_local / rerun_pending / metrics_sealed`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
 
@@ -165,9 +165,40 @@ submission manifest SHA-256 is
 released receipt SHA-256 is
 `c49d8f3f1b017ec11ef7ad1ca3c246e2798fb7892af183544809421bb658c97c`.
 Control/DUCA jobs are `1215377/1215378` (5801), `1215379/1215380` (8123),
-and `1215381/1215382` (12011); dependent seal is `1215383`. The matrix remains
-`experiment_running` only. No metric may be opened before all twelve terminal
-receipts and the seal pass.
+and `1215381/1215382` (12011); dependent seal is `1215383`. This identity was
+released as `experiment_running` only; no metric was authorized or opened.
+
+This recovery is now terminally failed closed. Learned-DUCA jobs
+`1215378/1215380/1215382` all stopped in epoch 0 on
+`RuntimeError: physical exact-K slot marginals do not sum to one`; register
+`physical_exactk_long_chain_fp32_slot_mass_loss`. Their log SHA-256 values are
+`5371743766d85d7df461682e9b498ffbcd25c332b6021fd50a646e6f234b4b1b`,
+`7db05504b28713b0d8a19ffe840d042de7d0af2b36da7ebb1502965b46cddad2`, and
+`5d688a5b2171f6a4e24d66c428ff7db60c9016f7c47d0803501cf1d1b429a780`.
+The three isolated controls were still running but were cancelled because a new
+selector source commit makes them ineligible for the replacement matrix; seal
+`1215383` was cancelled. No partial metric was inspected.
+
+Read-only mathematical/code/failure audits and GPU scale diagnostic `1215387`
+showed that graph reachability and partition were valid, while long FP32
+forward/backward chains lost slot-wise mass after direct exponentiation. The
+same `T=768,K=384` graph failed at score scales 16/32/64. Per-slot log-domain
+normalization passed with finite gradients and roughly `2.38e-7` maximum row
+error; FP64 also passed but is rejected as the paper path because it changes
+selector cost. The diagnostic log SHA-256 is
+`c2200fc76264e1d3d42d89bf6e5b2ac1fee305751cf84adc9ba217714e57ef9b`.
+
+The implemented narrow repair performs the categorical slot normalization in
+log space before exponentiation. It first rejects pre-normalization log-mass
+drift outside a conservative FP32 accumulation envelope, preventing the
+projection from hiding graph/recurrence faults. It leaves the legal graph, log
+partition, Viterbi hard path, K, loss and architecture unchanged and retains
+fail-closed column-occupancy and ordering checks. New regressions verify small-graph
+brute-force Gibbs equivalence plus long-chain high-dynamic-range marginals and
+finite backward gradients. The formal code gate now includes the physical
+structured-selection test module. A fresh commit, Linux/PyTorch gate, real
+short-window gate, runtime path precheck, root and seven-job matrix are required;
+no artifact from either `00f54dfe` root can be reused.
 
 No single cell, seed, intermediate checkpoint or incomplete matrix may support a
 performance statement. Until all twelve terminal receipts pass, the status is

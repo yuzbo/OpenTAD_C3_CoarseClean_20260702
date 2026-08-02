@@ -569,6 +569,7 @@ def test_stage_a_launchers_remain_paper_facing_and_fail_closed():
     assert "submission_manifest.json.receipt.sha256" in grouped
     assert '"short_window_gate_pending": True' in code_gate
     assert '"stage_a_manifest_created": False' in code_gate
+    assert "tests/test_duca_structured_selection.py" in code_gate
     assert "--output \"${DUCA_PAPER_MATRIX_MANIFEST}\"" not in code_gate
     assert "DUCA_PAPER_CODE_GATE_RECEIPT_SHA256" in short_gate
     assert "validate_duca_paper_code_gate" in short_gate

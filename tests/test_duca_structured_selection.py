@@ -94,6 +94,73 @@ def test_physical_gap_cap_is_not_narrowed_to_amp_score_precision() -> None:
     assert torch.equal(joint.max_gap_seconds, cap)
 
 
+def test_physical_exact_k_slot_marginals_match_small_bruteforce_distribution() -> None:
+    scores = torch.tensor([[0.2, -0.4, 1.1, 0.7, -0.3, 0.5]])
+    seconds = torch.arange(6, dtype=torch.float64)[None, :]
+    valid = torch.ones((1, 6), dtype=torch.bool)
+    k = 3
+
+    output = physical_exact_k_select(
+        scores,
+        seconds,
+        valid,
+        k=k,
+        max_gap_seconds=torch.tensor([10.0], dtype=torch.float64),
+    )
+    paths = tuple(combinations(range(6), k))
+    weights = torch.stack([torch.exp(scores[0, list(path)].sum()) for path in paths])
+    expected = torch.zeros((k, 6), dtype=weights.dtype)
+    for slot_index in range(k):
+        for position in range(6):
+            mask = torch.tensor(
+                [path[slot_index] == position for path in paths],
+                dtype=torch.bool,
+            )
+            expected[slot_index, position] = weights[mask].sum() / weights.sum()
+
+    assert torch.allclose(output.soft_slot_assignment[0], expected, atol=1e-6, rtol=1e-6)
+    assert torch.allclose(
+        output.soft_slot_assignment.sum(dim=2),
+        torch.ones((1, k)),
+        atol=1e-6,
+        rtol=1e-6,
+    )
+
+
+def test_physical_exact_k_long_high_dynamic_range_has_finite_exact_marginals() -> None:
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    generator = torch.Generator(device=device).manual_seed(7582)
+    temporal_len, k = 768, 384
+    scores = (
+        torch.randn((1, temporal_len), generator=generator, device=device) * 16.0
+    ).requires_grad_(True)
+    seconds = (
+        torch.arange(temporal_len, device=device, dtype=torch.float64) * 4.0 / 30.0
+    )[None, :]
+    valid = torch.ones((1, temporal_len), device=device, dtype=torch.bool)
+
+    output = physical_exact_k_select(scores, seconds, valid, k=k)
+
+    active_slots = output.soft_slot_assignment[0, :k, :temporal_len]
+    assert torch.isfinite(active_slots).all()
+    assert torch.allclose(
+        active_slots.sum(dim=1),
+        torch.ones((k,), device=device),
+        atol=1e-6,
+        rtol=1e-6,
+    )
+    assert torch.all(active_slots.sum(dim=0) <= 1.0 + 5.0e-4)
+    positions = output.hard_positions[0, :k]
+    assert positions.unique().numel() == k
+    assert torch.all(positions[1:] > positions[:-1])
+
+    time_cost = torch.arange(temporal_len, device=device, dtype=scores.dtype)
+    (output.selection_st[0] * time_cost[None, :]).sum().backward()
+    assert scores.grad is not None
+    assert torch.isfinite(scores.grad).all()
+    assert scores.grad.abs().sum().item() > 0.0
+
+
 def test_structured_local_coverage_matches_bruteforce_path_distribution() -> None:
     logits = torch.tensor([[0.2, -0.4, 1.1, 0.7, -0.3]], dtype=torch.float64, requires_grad=True)
     k, max_hole, temperature = 2, 2, 0.8

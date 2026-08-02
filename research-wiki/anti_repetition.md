@@ -474,3 +474,14 @@ These failures and naming mistakes must not be repeated.
      hash-check annotations/class-map/video paths and resolve every formal config.
      Never discover this only after transactional release; signature
      `missing_runtime_thumos_relative_bindings` has consumed its one recovery.
+138. Do not validate physical exact-K forward/backward only on tiny `T=6,K=3`
+     graphs. The formal gate must include a long `T=768,K=384` high-dynamic-range
+     marginal and backward test; job family `1215378/1215380/1215382` exposed
+     FP32 slot-mass loss on the first learned-DUCA epoch.
+139. Do not fix `physical exact-K slot marginals do not sum to one` by merely
+     loosening tolerance, renaming the error or silently switching the paper path
+     to FP64. Normalize each mathematically categorical slot marginal in log
+     space only after its raw log-mass drift remains inside the registered FP32
+     accumulation envelope; then retain independent column-occupancy, ordering
+     and finite-gradient checks. Any repeat of
+     `physical_exactk_long_chain_fp32_slot_mass_loss` fails closed.

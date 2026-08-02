@@ -1,5 +1,45 @@
 # Research Log
 
+## 2026-08-03 — Stage-A learned exact-K numeric failure and narrow stabilization
+
+- Recovery root
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_00f54dfe_retry1_20260803_023358`
+  passed both prerequisite identities but all three learned-DUCA jobs failed in
+  epoch 0: `1215378`, `1215380`, and `1215382` raised `physical exact-K slot
+  marginals do not sum to one` from
+  `structured_selection.py::_physical_row_forward_backward`. Their log SHA-256
+  values are `5371743766d85d7df461682e9b498ffbcd25c332b6021fd50a646e6f234b4b1b`,
+  `7db05504b28713b0d8a19ffe840d042de7d0af2b36da7ebb1502965b46cddad2`, and
+  `5d688a5b2171f6a4e24d66c428ff7db60c9016f7c47d0803501cf1d1b429a780`.
+  Register `physical_exactk_long_chain_fp32_slot_mass_loss`.
+- The isolated controls `1215377/1215379/1215381` remained operational, proving
+  the seven-job failure isolation, but were cancelled because no result from the
+  old source can enter a new commit-bound matrix. Seal `1215383` was also
+  cancelled. No loss, checkpoint, partial metric or mAP was opened.
+- Three independent read-only audits found that graph reachability and finite
+  partition checks passed before the failure. Physical forward/backward was only
+  tested at `T=6,K=3`; its long chain accumulates in FP32 and directly
+  exponentiates `alpha+beta-logZ`. The real short-window gate covered a
+  no-gradient single-sample path and could not establish training stability.
+- Diagnostic jobs `1215384` and `1215385` exited before Python on module/profile
+  bootstrap errors. Corrected diagnostic `1215386` established the expected
+  FP32-versus-FP64 precision gap. Scale sweep `1215387` reproduced the production
+  invariant failure at `T=768,K=384` for score scales 16/32/64; per-slot
+  log-domain normalization and FP64 both passed with finite gradients. The scale
+  diagnostic log SHA-256 is
+  `c2200fc76264e1d3d42d89bf6e5b2ac1fee305751cf84adc9ba217714e57ef9b`.
+- Chose log-domain slot normalization rather than FP64 because it is the
+  mathematical categorical normalization already implied by the Gibbs marginal
+  and does not impose FP64 selector cost. The graph, log partition, Viterbi hard
+  path, budget, loss and model architecture remain unchanged; column occupancy
+  and ordered expectations still fail closed. A post-patch independent audit
+  identified that unconstrained normalization could hide a uniformly scaled DP
+  error, so the implementation now rejects pre-normalization log-mass drift
+  outside a conservative FP32 accumulation envelope before projecting. Added a small brute-force
+  equivalence test, a `T=768,K=384` high-dynamic-range backward regression, and
+  included the physical structured-selection suite in the formal code gate.
+  Current state: `implemented / local_non_torch_checked / remote_gate_pending`.
+
 ## 2026-08-03 — Corrected Stage-A code-gate engineering failures and narrow repair
 
 - Transported exact clean source `75b9ba3d2053675ef83902e03dd4ff705c235244`

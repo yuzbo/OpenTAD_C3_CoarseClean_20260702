@@ -73,6 +73,7 @@ python -m pytest \
   tests/test_duca_protected_e2e_detector_contract.py \
   tests/test_duca_protected_e2e_frame_selector.py \
   tests/test_duca_rime.py \
+  tests/test_duca_structured_selection.py \
   tests/test_train_engine_after_optimizer_step.py \
   tests/test_train_engine_max_train_iters.py \
   -q 2>&1 | tee "${DUCA_PAPER_CODE_GATE_ROOT}/logs/pytest.out"

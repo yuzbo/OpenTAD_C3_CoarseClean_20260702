@@ -30,7 +30,7 @@ Current evidence level:
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
 | Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
-| Official full-data DUCA feasibility | `corrected_source_00f54dfe / code_gate_1215368_passed / real_short_gate_1215369_passed / recovery1_7_job_transaction_released / experiment_running / metrics_sealed / no_empirical_conclusion` |
+| Official full-data DUCA feasibility | `corrected_source_00f54dfe_gates_passed / recovery1_failed_closed_on_learned_exactk_numeric_invariant / log_domain_slot_normalization_implemented_locally / rerun_pending / metrics_sealed / no_empirical_conclusion` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -411,7 +411,7 @@ restored the same symlink targets used by the earlier formal checkout only after
 their annotation/class-map hashes matched the registered assets, verified all
 four runtime configs, and preserved a clean exact-commit Git status.
 
-The only active transaction is now
+The recovery transaction was
 `/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_00f54dfe_retry1_20260803_023358`.
 Protocol manifest SHA-256 is
 `b4baa6b60954c00dc906740d801a170cc079021192cc2c7c2c81f7f5bc209366`,
@@ -420,9 +420,38 @@ submission manifest SHA-256 is
 and released-receipt SHA-256 is
 `c49d8f3f1b017ec11ef7ad1ca3c246e2798fb7892af183544809421bb658c97c`.
 Control/DUCA job pairs are `1215377/1215378` (5801), `1215379/1215380`
-(8123), and `1215381/1215382` (12011); seal is `1215383`. The six groups are
-released and scheduler-pending; seal is dependency-pending. Stage B and all
-metric access remain sealed until twelve terminal receipts and the seal pass.
+(8123), and `1215381/1215382` (12011); seal is `1215383`. All three DUCA jobs
+failed in epoch 0 at `_physical_row_forward_backward` with the exact invariant
+error `physical exact-K slot marginals do not sum to one`. Their immutable log
+SHA-256 values are `5371743766d85d7df461682e9b498ffbcd25c332b6021fd50a646e6f234b4b1b`,
+`7db05504b28713b0d8a19ffe840d042de7d0af2b36da7ebb1502965b46cddad2`,
+and `5d688a5b2171f6a4e24d66c428ff7db60c9016f7c47d0803501cf1d1b429a780`.
+Because a new selector fix requires a new commit, the three running control jobs
+and seal were cancelled by exact ID; no partial metric was opened. Register
+failure signature `physical_exactk_long_chain_fp32_slot_mass_loss`.
+
+Independent code, mathematical and failure-identity audits agree that legal
+path reachability and finite partition checks had already passed. The production
+implementation then accumulated a long exact-K forward/backward chain in FP32
+and directly exponentiated `alpha+beta-logZ`; tests covered physical selection
+only at `T=6,K=3`, and the short-window gate used a no-gradient single-sample
+path. GPU diagnostic `1215387` deterministically reproduced the same failure at
+`T=768,K=384` for score scales 16/32/64. On identical graphs and inputs,
+per-slot log-domain normalization retained finite gradients and reduced maximum
+row-mass error to about `2.38e-7`; FP64 also worked but would distort the
+paper-facing full-stack cost. Diagnostic log SHA-256 is
+`c2200fc76264e1d3d42d89bf6e5b2ac1fee305751cf84adc9ba217714e57ef9b`.
+
+The narrow repair is implemented locally: normalize each slot's log marginal
+before exponentiation, but first reject any pre-normalization log-mass drift
+outside a conservative FP32 accumulation envelope so the projection cannot hide
+a graph/recurrence defect. Retain column-occupancy and ordered-expectation
+fail-closed checks, leave the graph, partition, Viterbi path, K, loss and model
+architecture unchanged, and add both a small brute-force Gibbs equivalence test
+and a `T=768,K=384` high-dynamic-range finite-gradient regression. The formal
+code gate now includes `tests/test_duca_structured_selection.py`. This state is
+`implemented / local_non_torch_checked`, not yet authoritative Linux-tested or
+experiment-running. Stage B and all metric access remain sealed.
 
 The user authorized recovery-v3 implementation and redeployment. The local
 repair is now implemented:
