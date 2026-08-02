@@ -2379,3 +2379,16 @@ append_only: true
   and cannot launch before the genuine dynamic exact-B ragged Stage-1 executor,
   masked-zero carrier and approved proxy/ST path exist; no Job or performance
   experiment was started.
+
+- 2026-08-02: SCNR native-cell geometry M0 passed remote tensor/regression
+  validation at exact source
+  `4be718449033e95dc6d15029ec4ef889397c9066`. A fresh N16R4 snapshot was cloned
+  through the required academic proxy; full HEAD, origin branch ref and clean
+  worktree matched. The focused geometry/routing file passed `36/36`. The full
+  `tests/test_georoute*.py` set plus required C3 regressions passed
+  `194 passed, 1 skipped` in the project OpenTAD Linux/Torch environment. No GPU
+  allocation, dataset performance path, checkpoint, metric or Job was opened.
+  The axis-specific floor primitive is therefore component-level `tested`, while
+  `exp:scnr-geometry-floor-sensitivity-v1` remains `designed` and blocked on the
+  true dynamic exact-B ragged executor, masked-zero carrier and proxy/ST training
+  implementation.

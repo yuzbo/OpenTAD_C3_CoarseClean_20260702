@@ -89,8 +89,10 @@ max_chars: 8000
   coverage or smoothness penalty. A separately trained matched 2x2-cell floor is
   the frozen sensitivity ablation. The shared geometry primitive implements the
   new native-cell mode while preserving static normalized behavior for historical
-  configs; the complete dynamic Stage-1 route and empirical floor verdict remain
-  unimplemented/unverified.
+  configs. Exact clean source `4be71844` passed focused geometry/routing `36/36`
+  and complete GeoRoute plus required C3 regressions `194 passed, 1 skipped` on
+  N16R4 Linux/Torch. This is component-level `tested`; the complete dynamic
+  Stage-1 route and empirical floor verdict remain unimplemented/unverified.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

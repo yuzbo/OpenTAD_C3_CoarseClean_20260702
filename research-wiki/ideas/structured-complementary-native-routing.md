@@ -153,8 +153,11 @@ the task-native replacement: derive independent axis floors at runtime as
 the main setting, and compare it only with a separately trained matched 2x2-cell
 floor sensitivity arm. The shared geometry primitive now implements an explicit
 `native_cells` mode while its default `static_normalized` mode preserves old
-config behavior. This is component-level implementation, not a complete dynamic
-Stage-1 route, tensor-test receipt, empirical floor optimum, or paper evidence.
+config behavior. Exact source `4be718449033e95dc6d15029ec4ef889397c9066`
+passed the focused geometry/routing suite `36/36` and the complete GeoRoute plus
+required C3 regression set `194 passed, 1 skipped` in a clean N16R4 Linux/Torch
+snapshot. This is component-level `tested`, not a complete dynamic Stage-1
+route, empirical floor optimum, performance result, or paper evidence.
 
 ## Principle
 
