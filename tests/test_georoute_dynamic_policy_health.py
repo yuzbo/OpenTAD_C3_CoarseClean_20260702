@@ -281,7 +281,10 @@ def test_policy_health_report_rejects_performance_artifact_scope():
         validate_dynamic_policy_health_report(_resign(report))
 
 
-def test_policy_health_binder_builds_only_fit_train_loader(tmp_path: Path):
+def test_policy_health_binder_builds_only_fit_train_loader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
     source = (
         ROOT / "configs" / "adatad" / "thumos" / "georoute_dynamic_scnr_stage1_base.py"
     )
