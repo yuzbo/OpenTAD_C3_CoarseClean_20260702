@@ -70,6 +70,39 @@ it would suppress the intended full-window temporal adaptivity. Advancement is
 conditional on a measured cost/Pareto gate, and padding/dummy tokens cannot be
 reported as exact-B execution.
 
+## Uni-AdaFocus training reference (`discussed`)
+
+The 2026-08-02 paper-and-official-code audit corrects two potential
+misreadings. Uni-AdaFocus does not train its selector with Plackett-Luce or
+reinforcement learning. It conditions spatial and temporal policies on a cheap
+global encoder, detaches those global features at the policy boundary, trains
+continuous geometry through a deep-feature-interpolation auxiliary
+classification loss, and trains temporal weights through a differentiable
+Monte Carlo decomposition of expected frame loss. Its hard focus indices and
+local crop actions are detached in the heavy path.
+
+This suggests that an independent `q_ctx(t,n)` head is not intrinsically
+necessary. The cheap scout representation is already the full-window context
+used to condition allocation. A proposed lower-redundancy parameterization is
+
+`u(t,n) = q_base(t,n) + logsumexp(0, delta_roi(t,n), delta_res(t,n))`,
+
+followed by the already approved global physical-token top-B. The operational
+role is the argmax over `(0, delta_roi, delta_res)`, so the context count remains
+dynamic without a separately symmetric context scorer; ROI and residual
+modifiers remain directly ablatable. This is preferable only if role IDs stay
+support-only. A future role-specific representation would reopen the need for a
+distinct context head.
+
+The recommended training candidate is correspondingly Uni-inspired rather than
+a literal port: keep the exact hard selected support in the forward pass; use a
+stop-gradient coarse-feature surrogate to provide low-variance gradients for
+continuous ROI and soft allocation; keep detector supervision TAD-specific; and
+retain PL only as a matched estimator ablation until the immutable fixed-pilot
+recovery is interpreted. This proposal does not import resized crops, fixed
+focus counts, classification-only frame loss, the full-frame size penalty, or
+conditional exit. It is not yet user-approved, implemented, or tested.
+
 ## Principle
 
 For every one of 384 native tubelets over an 11x20 patch grid, select exactly

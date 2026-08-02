@@ -694,6 +694,23 @@ updated: 2026-08-02
   described as a paper-exact reproduction. These references establish design
   constraints, not performance evidence for offline TAD.
 
+- Uni-AdaFocus training-transfer re-audit, 2026-08-02. Primary paper: Yulin
+  Wang et al., *Uni-AdaFocus: Spatial-temporal Dynamic Computation for Video
+  Recognition*, IEEE TPAMI / arXiv:2412.11228,
+  <https://arxiv.org/html/2412.11228v1>. Official implementation:
+  <https://github.com/LeapLabTHU/Uni-AdaFocus>, inspected at commit
+  `8846488310fdd4a18412608006030643e794c36e`. Paper Eqs. 10--15 establish
+  auxiliary encoder supervision, random-patch diversity, stop-gradient and
+  deep-feature-interpolation supervision for continuous patch geometry; Eqs.
+  16--22 establish differentiable Monte Carlo expected-loss training for
+  weighted frame sampling, not PL/RL. The pinned code independently confirms
+  detached global feature maps at the spatial policy, detached focus weights
+  and local actions in the heavy path, five CE terms, an optional temporal KL
+  term, a crop-size norm term and component-specific learning-rate multipliers.
+  It also fixes glance/focus counts and resizes variable source patches to one
+  local tensor size. These are primary-source facts and design references, not
+  evidence for TAD, native-token exact-B utility, or this project's performance.
+
 - Geometry/token/depth-routing literature audit, 2026-07-22. A-MoD,
   "Attention Is All You Need For Mixture-of-Depths Routing,"
   `https://arxiv.org/abs/2412.20875`, routes using the preceding attention map,

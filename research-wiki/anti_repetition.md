@@ -56,6 +56,25 @@ updated: 2026-08-02
    p50/p95. Do not hide padding or dummy tokens in those ledgers. Do not impose a
    fixed per-clip quota on the final main method merely to equalize `P`; retain
    full-window allocation and require a separate measured cost/Pareto gate.
+0. Do not call Uni-AdaFocus training Plackett-Luce, REINFORCE, or straight-
+   through routing. Its journal method replaces AdaFocusV1's three-stage RL with
+   one-stage auxiliary supervision: detached global feature maps provide a
+   differentiable spatial interpolation loss, and a decomposed Monte Carlo
+   expected frame loss trains temporal weights. Hard local crop coordinates and
+   sampled focus indices are detached in the official implementation.
+0. An independent `q_ctx(t,n)` is not automatically required merely because
+   context allocation is dynamic. In a support-only union where role IDs do not
+   change heavy execution or pooling, unconstrained context and residual heads
+   are non-identifiable. Before implementation, either define a distinct causal
+   role or use one shared base utility with ROI/residual modifiers and treat
+   context as the zero-modifier outcome. This alternative is `discussed`, not
+   yet approved.
+0. Do not transplant Uni-AdaFocus's fixed glance/focus counts, resized local
+   crop, classification frame proxy, full-frame-seeking size penalty, random
+   second heavy branch, or validation-tuned early exit as the dynamic exact-B
+   TAD method. Any borrowed surrogate must retain native physical-token hard
+   execution, Stage-1 exact B, `K_t=0`, train-only supervision, and the existing
+   measured cost gate; it must be separately named and ablated.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

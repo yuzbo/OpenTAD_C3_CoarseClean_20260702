@@ -48,6 +48,16 @@ max_chars: 8000
   a measured cost/Pareto gate. The current `[B,T,K]` packed path requires
   constant K and cannot be relabeled as this execution through dummy/padded
   tokens; role-utility and estimator details remain under design review.
+  A 2026-08-02 primary-source audit of Uni-AdaFocus makes one proposed revision,
+  still only `discussed`: keep the cheap full-window scout feature as policy
+  context, but do not require an independently parameterized `q_ctx` head.
+  Instead, a shared physical-token base utility may be specialized by ROI and
+  residual modifiers, leaving context as the zero-modifier role. Uni-AdaFocus
+  itself uses detached coarse global features, deep-feature interpolation and
+  auxiliary task losses rather than Plackett-Luce/RL. Its stabilization
+  principles are relevant, but its classification proxy, fixed focus count,
+  resized crop, full-frame size regularizer and early-exit budget are not a
+  drop-in TAD/exact-B training contract. No estimator revision is approved yet.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

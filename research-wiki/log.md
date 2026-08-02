@@ -2295,3 +2295,21 @@ append_only: true
   cost/Pareto gate. Padding or dummy tokens cannot satisfy the exact-B ledger.
   This contract is `designed`, not implemented or tested; no model code, old
   pilot namespace, or running experiment was changed.
+
+- 2026-08-02: user questioned whether an independent dynamic context utility
+  `q_ctx(t,n)` is necessary and requested a Uni-AdaFocus training-method audit.
+  Primary paper and official code commit `88464883` show that Uni-AdaFocus does
+  not use PL/RL/ST for its current selector: it conditions policies on detached
+  cheap global features, trains continuous spatial geometry with a
+  deep-feature-interpolation auxiliary task loss, and trains temporal weights
+  with a differentiable Monte Carlo expected-loss decomposition; hard focus
+  indices and crop actions are detached from the heavy path. The resulting
+  project recommendation is only `discussed`: replace a separately symmetric
+  context head with one shared base physical-token utility plus ROI/residual
+  modifiers, so context is the zero-modifier role and its selected count remains
+  dynamic. Consider a Uni-inspired stop-gradient coarse-feature surrogate plus
+  exact hard-forward ST as the main training candidate, with PL retained as a
+  matched ablation rather than assumed default. Uni's fixed focus count, resized
+  crop, classification proxy, full-frame size penalty, random second heavy
+  branch, and early exit are not transplanted. No design approval, model code,
+  experiment, or old pilot artifact changed.
