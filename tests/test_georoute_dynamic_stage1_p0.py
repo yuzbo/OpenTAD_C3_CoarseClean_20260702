@@ -108,9 +108,7 @@ def _valid_payload():
 
 
 def test_dynamic_stage1_p0_report_accepts_exact_no_performance_receipt():
-    validate_dynamic_stage1_p0_report(
-        build_dynamic_stage1_p0_report(_valid_payload())
-    )
+    validate_dynamic_stage1_p0_report(build_dynamic_stage1_p0_report(_valid_payload()))
 
 
 @pytest.mark.parametrize(
@@ -141,9 +139,7 @@ def test_dynamic_stage1_p0_report_rejects_false_evidence(path, value, message):
         destination = destination[key]
     destination[path[-1]] = value
     with pytest.raises(ValueError, match=message):
-        validate_dynamic_stage1_p0_report(
-            build_dynamic_stage1_p0_report(payload)
-        )
+        validate_dynamic_stage1_p0_report(build_dynamic_stage1_p0_report(payload))
 
 
 def test_dynamic_stage1_config_is_global_budget_support_only():
@@ -170,10 +166,38 @@ def test_dynamic_stage1_config_is_global_budget_support_only():
     assert cfg.solver.static_graph is False
 
 
+def test_dynamic_floor2_arm_changes_only_the_approved_native_cell_floor():
+    main = Config.fromfile(
+        str(
+            ROOT
+            / "configs"
+            / "adatad"
+            / "thumos"
+            / "georoute_dynamic_scnr_stage1_base.py"
+        )
+    )
+    floor2 = Config.fromfile(
+        str(
+            ROOT
+            / "configs"
+            / "adatad"
+            / "thumos"
+            / "georoute_dynamic_scnr_stage1_floor2.py"
+        )
+    )
+    main_custom = dict(main.model.backbone.custom)
+    floor2_custom = dict(floor2.model.backbone.custom)
+    assert main_custom.pop("georoute_roi_extent_floor_cells") == 1
+    assert floor2_custom.pop("georoute_roi_extent_floor_cells") == 2
+    assert main_custom == floor2_custom
+    assert floor2.georoute_protocol.floor_sensitivity_arm == "native_2cell_sensitivity"
+    assert floor2.georoute_protocol.matched_except_roi_floor is True
+
+
 def test_dynamic_stage1_slurm_launcher_preserves_scheduler_gpu_mapping():
-    text = (
-        ROOT / "scripts" / "run_georoute_dynamic_stage1_p0_slurm.sh"
-    ).read_text(encoding="utf-8")
+    text = (ROOT / "scripts" / "run_georoute_dynamic_stage1_p0_slurm.sh").read_text(
+        encoding="utf-8"
+    )
     assert "#SBATCH --gres=gpu:1" in text
     assert "--device cuda:0" in text
     assert "CUDA_VISIBLE_DEVICES=" not in text
