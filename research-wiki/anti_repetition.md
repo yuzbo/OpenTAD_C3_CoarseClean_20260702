@@ -1,6 +1,6 @@
 # DUCA-RIME Anti-Repetition Memory
 
-Last updated: `2026-07-30`
+Last updated: `2026-08-02`
 
 These failures and naming mistakes must not be repeated.
 
@@ -424,3 +424,16 @@ These failures and naming mistakes must not be repeated.
 123. Do not call another subset, in-sample control, single seed, partial matrix or
      simulation a DUCA feasibility result. The first reported result must already
      be eligible for a paper table or ablation under its declared scope.
+124. Do not freeze or substitute an external ASFormer checkpoint in Stage A. The
+     current DUCA coarse frontend is jointly optimized on the 200-video training
+     set; changing that would change the method, and its runtime belongs in
+     full-stack cost.
+125. Do not call `uniform_mixed_train_k384_eval` a dynamic inference policy. Its
+     mixed K occurs only during stateless training; formal evaluation is exact
+     uniform K384.
+126. Do not release dynamic mean-K384 Stage B from placeholder, in-sample or
+     validation-derived targets. It requires hash-bound full-200 training-only
+     out-of-fold per-K utility/risk targets.
+127. Do not interpret a Slurm cell's successful exit as a result. Stage A needs
+     all twelve exact terminal receipts and the dependent matrix seal before any
+     metric is inspected, aggregated or reported.

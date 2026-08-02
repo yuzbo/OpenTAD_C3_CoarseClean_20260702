@@ -25,6 +25,7 @@ from opentad.utils.training_guard import (
 )
 from tools.bata.duca_p0_training import atomic_write_json, sha256_file
 from tools.bata import duca_cellcf_training
+from tools.bata import duca_paper_training
 from tools.bata import duca_protected_physical_training
 from tools.bata import duca_rime_training
 from tools.bata import duca_selected_axis_training
@@ -64,6 +65,10 @@ def main():
     evaluation_protocol = str(cfg.workflow.get("evaluation_protocol", ""))
     hrime_stage1_eval = evaluation_protocol == "hrime_stage1_oracle_execution_v1"
     cellcf_formal = formal_protocol == "duca_cellcf_v1"
+    paper_formal = duca_paper_training.is_formal_protocol(formal_protocol)
+    paper_source_resolved_config_sha256 = (
+        _canonical_sha256(cfg.to_dict()) if paper_formal else None
+    )
     protected_physical_formal = (
         formal_protocol == "duca_protected_physical_v1"
     )
@@ -181,6 +186,11 @@ def main():
         duca_cellcf_training.assert_safe_cfg_options(
             cfg, args.cfg_options, entrypoint="tools/test.py"
         )
+    elif paper_formal:
+        duca_paper_training.assert_safe_cfg_options(
+            args.cfg_options,
+            entrypoint="tools/test.py",
+        )
     elif protected_physical_formal:
         duca_protected_physical_training.assert_safe_cfg_options(
             args.cfg_options,
@@ -194,6 +204,8 @@ def main():
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/test.py")
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    if paper_formal:
+        duca_paper_training.validate_static_config(cfg)
     dense_reference_contract = None
     if dense_reference_eval:
         dense_reference_contract = (
@@ -215,6 +227,7 @@ def main():
     args.rank = int(os.environ["RANK"])
     if (
         cellcf_formal
+        or paper_formal
         or protected_physical_formal
         or selected_axis_formal
         or rime_formal
@@ -258,6 +271,22 @@ def main():
                 "formal protected evaluation must use seed 3407, "
                 "terminal epoch-59 EMA, and structured metrics"
             )
+    if paper_formal:
+        expected_arm = str(cfg.duca_paper_cell.arm)
+        if (
+            expected_arm != os.environ.get("DUCA_PAPER_ARM", "")
+            or paper_source_resolved_config_sha256
+            != os.environ.get("DUCA_PAPER_RESOLVED_CONFIG_SHA256")
+        ):
+            raise RuntimeError("DUCA paper evaluation identity differs from the matrix")
+        duca_paper_training.validate_evaluation_request(
+            cfg,
+            arm=expected_arm,
+            seed=args.seed,
+            expected_checkpoint_epoch=args.expected_checkpoint_epoch,
+            checkpoint_state_key=args.checkpoint_state_key,
+            metrics_json=args.metrics_json,
+        )
     if rime_baseline_eval:
         if (
             args.expected_checkpoint_epoch != 59
@@ -347,6 +376,7 @@ def main():
     checkpoint_state_key = None
     selected_axis_terminal_identity = None
     rime_terminal_identity = None
+    paper_terminal_identity = None
     stage1_checkpoint_compatibility = None
     if cfg.inference.load_from_raw_predictions:  # if load with saved predictions, no need to load checkpoint
         logger.info(f"Loading from raw predictions: {cfg.inference.fuse_list}")
@@ -409,6 +439,19 @@ def main():
                     ),
                     formal_protocol=formal_protocol,
                     r5_cell=cfg.get("r5_cell", None),
+                )
+            )
+        if paper_formal:
+            paper_terminal_identity = (
+                duca_paper_training.validate_terminal_checkpoint_binding(
+                    checkpoint_path=checkpoint_path,
+                    checkpoint=checkpoint,
+                    git_commit=os.environ["DUCA_EXPECTED_COMMIT"],
+                    arm=str(cfg.duca_paper_cell.arm),
+                    seed=args.seed,
+                    source_config_path=args.config,
+                    source_config_sha256=sha256_file(args.config),
+                    resolved_config_sha256=paper_source_resolved_config_sha256,
                 )
             )
         if rime_formal:
@@ -488,8 +531,12 @@ def main():
         )
         expected_evaluation_subset = (
             str(cfg.evaluation.subset)
-            if rime_formal or rime_baseline_eval or dense_reference_eval
-            else ("training" if r0_selected_axis_replay else "validation")
+            if paper_formal
+            else (
+                str(cfg.evaluation.subset)
+                if rime_formal or rime_baseline_eval or dense_reference_eval
+                else ("training" if r0_selected_axis_replay else "validation")
+            )
         )
         if (
             rime_formal or rime_baseline_eval or dense_reference_eval
@@ -512,6 +559,8 @@ def main():
                 )
             else:
                 evaluation_schema = "duca_rime_phase2_baseline_terminal_evaluation_v1"
+        elif paper_formal:
+            evaluation_schema = duca_paper_training.EVALUATION_SCHEMA
         elif formal_protocol == "duca_cellcf_v1":
             evaluation_schema = "duca_cellcf_terminal_evaluation_v1"
         elif formal_protocol == "duca_protected_physical_v1":
@@ -540,7 +589,11 @@ def main():
             "task": "offline_temporal_action_detection",
             "config_path": os.path.abspath(args.config),
             "config_sha256": sha256_file(args.config),
-            "resolved_config_sha256": source_resolved_config_sha256,
+            "resolved_config_sha256": (
+                paper_source_resolved_config_sha256
+                if paper_formal
+                else source_resolved_config_sha256
+            ),
             "runtime_config_sha256": runtime_config_sha256,
             "checkpoint_path": os.path.abspath(checkpoint_path),
             "checkpoint_sha256": sha256_file(checkpoint_path),
@@ -570,6 +623,33 @@ def main():
                 cfg.dataset.test.class_map
             ),
         }
+        if paper_formal:
+            exact211 = duca_paper_training.validate_official_evaluation_execution(
+                evaluation_summary=evaluation_summary,
+                annotation_path=cfg.evaluation.ground_truth_filename,
+                prediction_path=result_path,
+            )
+            payload.update(
+                {
+                    "seed": int(args.seed),
+                    "variant": str(cfg.duca_paper_cell.arm),
+                    "training_identity": paper_terminal_identity,
+                    "exact211_execution": exact211,
+                    "train_video_count": 200,
+                    "evaluation_video_count": 211,
+                    "training_consumed_validation": False,
+                    "runtime_gt_input_to_selector": False,
+                    "evaluation_heavy_k": int(
+                        cfg.duca_paper_cell.evaluation_heavy_k
+                    ),
+                    "runtime_heavy_k_contract_enforced": True,
+                    "runtime_heavy_k_enforcement": (
+                        "dense_temporal_axis"
+                        if str(cfg.duca_paper_cell.arm) == "dense"
+                        else "selector_exact_k_plus_actionformer_metadata_validation"
+                    ),
+                }
+            )
         if selected_axis_formal:
             payload.update(
                 {

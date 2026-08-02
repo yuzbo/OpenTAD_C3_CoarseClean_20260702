@@ -1,5 +1,31 @@
 # Research Log
 
+## 2026-08-02 — Paper-facing full-200/exact-211 Stage A implemented
+
+- The user authorized direct implementation and execution; another Pro round is
+  not required before Stage A because the scientific question, arms, data,
+  update count, seeds, checkpoint rule and release boundary are fully frozen.
+- Implemented four ActionFormer arms by three seeds: dense T768, exact-uniform
+  K384, mixed-K training with exact-uniform K384 evaluation, and jointly learned
+  DUCA fixed K384 positions. Dynamic K is explicitly deferred to Stage B.
+- Corrected the method identity: DUCA uses a jointly optimized train-only
+  ASFormer frontend, not a frozen external coarse checkpoint. Its scan cost is
+  included in full-stack cost.
+- Added full-200 stateless two-rank exposure validation, exact 6000-update audit,
+  terminal EMA compaction/training receipts, exact-211 prediction/merge/NMS/
+  evaluator validation, a SHA-bound 12-cell matrix manifest, transactional held
+  Slurm submission, and a dependent full-matrix seal.
+- Corrected a test-entry regression that had accidentally nested the old
+  protected `seed=3407` rule under the new paper protocol. Registered paper
+  seeds `5801/8123/12011` now have a dedicated tested request validator. Source
+  resolved-config identity is sealed before permitted runtime path overrides,
+  while the effective runtime config has a separate hash.
+- Local Python/Bash checks pass. The new focused suite reports `11 passed` and
+  one Windows-only skip for the authoritative Linux loader test; the local host
+  still cannot initialize its PyTorch DLL. Clean Linux/Slurm verification and
+  submission remain pending. No metric was inspected and no paper-admissible
+  empirical conclusion exists.
+
 ## 2026-08-02 — User stopped simulation-first work and restored model priority
 
 - The user explicitly rejected further complex candidate-free Admission

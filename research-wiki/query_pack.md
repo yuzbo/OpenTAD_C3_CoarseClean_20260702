@@ -30,7 +30,7 @@ Current evidence level:
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
 | Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
-| Official full-data DUCA feasibility | `current_priority / compact_design_pending_user_approval / not_yet_run / full_200_train_and_exact_211_eval_required` |
+| Official full-data DUCA feasibility | `user_approved / Stage_A_implemented / local_focused_tested / Slurm_gate_pending / not_yet_run` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -326,6 +326,16 @@ The second repaired Stage-0 recovery transaction is terminally failed closed:
   disabled, and official-final is sealed.
 
 This status is `ENGINEERING_STATUS`, not an empirical result.
+
+The user has now approved direct execution of the compact paper-feasibility
+route. Stage A is implemented as four ActionFormer arms by three registered
+seeds, with exact full-200 training, exact-211 evaluation, terminal epoch-59 EMA
+and transactional receipts. The jointly optimized ASFormer coarse frontend is
+part of DUCA; it is not replaced by a frozen checkpoint. Stage B dynamic budget
+training remains blocked on full-200 training-only OOF targets from completed
+Stage A. Local focused checks pass (`11 passed`, with the Linux loader-contract
+test skipped on the Windows host); the authoritative clean Linux/Slurm gate and
+experiment submission remain pending. No paper-admissible result exists yet.
 
 The user authorized recovery-v3 implementation and redeployment. The local
 repair is now implemented:
@@ -873,8 +883,8 @@ Until those artifacts exist, the correct status is `implemented/tested` or
 
 ## Immediate execution
 
-Proposed compact feasibility design, pending user approval and superseding the
-simulation-first order below while retaining it as negative-history context:
+Approved compact feasibility design, superseding the simulation-first order
+below while retaining it as negative-history context:
 
 1. Preserve old Admission v2/v2.1 paths fail-closed and historical. Do not build
    their missing distributed runner or execute candidate-free MC grids.
@@ -882,14 +892,15 @@ simulation-first order below while retaining it as negative-history context:
    AdaTAD ActionFormer recipe: all 200 training videos, two-GPU global batch two,
    60 epochs/6000 successful updates, fixed epoch-59 EMA, and exact complete
    211-video OpenTAD evaluation.
-3. Close only experiment-enabling P0s: a frozen training-only coarse-scan
-   checkpoint, exact VideoMAE/protocol/split hashes, per-rank batch one for
-   homogeneous dynamic K, and an evaluator that rejects missing or extra video
+3. Close only experiment-enabling P0s: jointly trained train-only ASFormer
+   evidence, exact VideoMAE/protocol/split hashes, per-rank batch one for
+   homogeneous execution, and an evaluator that rejects missing or extra video
    keys. These checks are part of the paper experiment, not a separate evidence
    claim.
-4. Run the primary ActionFormer/K384 panel with seeds 5801, 8123 and 12011:
-   dense AdaTAD, uniform fixed-K, uniform mixed-K, DUCA fixed-K position
-   selection, DUCA dynamic-K, and evaluation-only exact realized-cost
+4. Run Stage A on ActionFormer/K384 with seeds 5801, 8123 and 12011: dense
+   AdaTAD, uniform fixed-K, uniform mixed-K-training/exact-K384-evaluation, and
+   DUCA learned fixed-K384 positions. Only after full-200 train-only OOF targets
+   exist may Stage B add DUCA dynamic-K and evaluation-only exact realized-cost
    `U-same-K` replay.
 5. Report only the completed official matrix: official average and per-IoU mAP,
    high-IoU and short-action behavior, realized effective K, full-stack latency,
@@ -899,9 +910,9 @@ simulation-first order below while retaining it as negative-history context:
    controls. If it does not, stop H-RIME and diagnose selector/controller
    learning. If it does, use the complete result to design the smallest model
    improvement and only then extend to H-RIME, TriDet and K192.
-7. Official-final remains sealed until this protocol is reviewed and explicitly
-   approved. Recovery-v6 remains immutable failed history and is never
-   reclassified.
+7. The exact-211 paper-feasibility evaluation is now explicitly authorized under
+   this hash-bound Stage-A protocol. It does not reopen or reclassify the old
+   failed Phase-4 transaction. Recovery-v6 remains immutable failed history.
 
 Retained earlier recovery instructions:
 

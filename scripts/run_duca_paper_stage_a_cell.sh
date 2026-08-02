@@ -1,0 +1,313 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+fail() {
+  echo "[DUCA_PAPER_STAGE_A_CELL][FAIL] $*" >&2
+  exit 1
+}
+
+required() {
+  local name="$1"
+  [[ -n "${!name:-}" ]] || fail "${name} is required"
+}
+
+check_sha256() {
+  local path="$1" expected="$2" label="$3"
+  [[ -f "${path}" ]] || fail "${label} is missing: ${path}"
+  [[ "$(sha256sum "${path}" | awk '{print $1}')" == "${expected}" ]] \
+    || fail "${label} SHA-256 drift"
+}
+
+for name in \
+  DUCA_PAPER_REPO_ROOT \
+  DUCA_PAPER_EXPECTED_COMMIT \
+  DUCA_PAPER_ARM \
+  DUCA_PAPER_CONFIG \
+  DUCA_PAPER_CELL_ROOT \
+  DUCA_PAPER_SEED \
+  DUCA_PAPER_MATRIX_MANIFEST \
+  DUCA_PAPER_MATRIX_MANIFEST_SHA256 \
+  DUCA_PAPER_PRETRAIN_PATH \
+  DUCA_PAPER_PRETRAIN_SHA256 \
+  DUCA_PAPER_ANNOTATION_PATH \
+  DUCA_PAPER_ANNOTATION_SHA256 \
+  DUCA_PAPER_CLASS_MAP_PATH \
+  DUCA_PAPER_CLASS_MAP_SHA256; do
+  required "${name}"
+done
+
+[[ -n "${SLURM_JOB_ID:-}" ]] || fail "Stage-A cells must run inside Slurm"
+[[ "${DUCA_PAPER_EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
+  || fail "an exact expected Git commit is required"
+[[ -d "${DUCA_PAPER_REPO_ROOT}/.git" ]] \
+  || fail "a complete Git checkout is required"
+cd "${DUCA_PAPER_REPO_ROOT}"
+[[ "$(git rev-parse HEAD)" == "${DUCA_PAPER_EXPECTED_COMMIT}" ]] \
+  || fail "Git commit drift"
+[[ -z "$(git status --porcelain --untracked-files=normal)" ]] \
+  || fail "Git tree is dirty"
+[[ ! -e "${DUCA_PAPER_CELL_ROOT}" ]] || fail "a fresh cell root is required"
+[[ -f "${DUCA_PAPER_CONFIG}" ]] || fail "cell config is missing"
+check_sha256 \
+  "${DUCA_PAPER_MATRIX_MANIFEST}" \
+  "${DUCA_PAPER_MATRIX_MANIFEST_SHA256}" \
+  "Stage-A matrix manifest"
+check_sha256 \
+  "${DUCA_PAPER_PRETRAIN_PATH}" \
+  "${DUCA_PAPER_PRETRAIN_SHA256}" \
+  "VideoMAE initialization"
+check_sha256 \
+  "${DUCA_PAPER_ANNOTATION_PATH}" \
+  "${DUCA_PAPER_ANNOTATION_SHA256}" \
+  "THUMOS14 annotation"
+check_sha256 \
+  "${DUCA_PAPER_CLASS_MAP_PATH}" \
+  "${DUCA_PAPER_CLASS_MAP_SHA256}" \
+  "THUMOS14 class map"
+
+readarray -t config_values < <(python - \
+  "${DUCA_PAPER_MATRIX_MANIFEST}" \
+  "${DUCA_PAPER_CONFIG}" \
+  "${DUCA_PAPER_ARM}" \
+  "${DUCA_PAPER_SEED}" \
+  "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  "${DUCA_PAPER_ANNOTATION_SHA256}" \
+  "${DUCA_PAPER_CLASS_MAP_SHA256}" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+from mmengine.config import Config
+from tools.bata import duca_paper_training
+
+manifest_path, config_path, arm, seed, commit, annotation_sha, class_map_sha = sys.argv[1:]
+manifest = json.load(open(manifest_path, encoding="utf-8"))
+cfg = Config.fromfile(config_path)
+contract = duca_paper_training.validate_static_config(cfg)
+repo = pathlib.Path.cwd().resolve()
+source = pathlib.Path(config_path).resolve()
+relative = source.relative_to(repo).as_posix()
+record = manifest.get("configs", {}).get(arm, {})
+sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+resolved = duca_paper_training.canonical_sha256(cfg.to_dict())
+if (
+    manifest.get("schema_version") != duca_paper_training.MATRIX_SCHEMA
+    or manifest.get("status") != "frozen"
+    or manifest.get("git_commit") != commit
+    or {"arm": arm, "seed": int(seed)} not in manifest.get("cells", [])
+    or contract.get("variant") != arm
+    or record.get("path") != relative
+    or record.get("sha256") != sha(source)
+    or record.get("resolved_sha256") != resolved
+    or manifest.get("assets", {}).get("annotation_sha256") != annotation_sha
+    or manifest.get("assets", {}).get("class_map_sha256") != class_map_sha
+):
+    raise SystemExit("Stage-A cell differs from the frozen matrix")
+for path, expected, label in (
+    (cfg.evaluation.ground_truth_filename, annotation_sha, "annotation"),
+    (cfg.dataset.test.class_map, class_map_sha, "class map"),
+):
+    if not pathlib.Path(path).is_file() or sha(path) != expected:
+        raise SystemExit(f"runtime {label} binding drift")
+print(resolved)
+print(int(cfg.duca_paper_cell.evaluation_heavy_k))
+PY
+)
+[[ "${#config_values[@]}" == 2 ]] || fail "failed to resolve the cell config"
+
+if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then
+  echo "[DUCA_PAPER_STAGE_A_CELL] PRECHECK PASS ${DUCA_PAPER_ARM} seed${DUCA_PAPER_SEED}"
+  exit 0
+fi
+
+mkdir -p "${DUCA_PAPER_CELL_ROOT}"
+export DUCA_EXPECTED_COMMIT="${DUCA_PAPER_EXPECTED_COMMIT}"
+export DUCA_PAPER_RESOLVED_CONFIG_SHA256="${config_values[0]}"
+
+torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 \
+  --rdzv-id="${SLURM_JOB_ID}-train" --nproc_per_node=2 tools/train.py \
+  "${DUCA_PAPER_CONFIG}" \
+  --seed "${DUCA_PAPER_SEED}" \
+  --id 0 \
+  --cfg-options \
+  "work_dir=${DUCA_PAPER_CELL_ROOT}/train" \
+  "model.backbone.custom.pretrain=${DUCA_PAPER_PRETRAIN_PATH}"
+
+train_root="${DUCA_PAPER_CELL_ROOT}/train/gpu2_id0"
+audit="${train_root}/duca_paper_training_audit.json"
+full_checkpoint="${train_root}/checkpoint/epoch_59.pth"
+checkpoint="${train_root}/checkpoint/terminal_ema.pth"
+python -m tools.bata.compact_duca_rime_checkpoint \
+  --source "${full_checkpoint}" \
+  --output "${checkpoint}" \
+  --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  --remove-source
+
+training_receipt="${DUCA_PAPER_CELL_ROOT}/training_receipt.json"
+python - \
+  "${audit}" \
+  "${checkpoint}" \
+  "${DUCA_PAPER_ARM}" \
+  "${DUCA_PAPER_SEED}" \
+  "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  "${DUCA_PAPER_MATRIX_MANIFEST}" \
+  "${DUCA_PAPER_MATRIX_MANIFEST_SHA256}" \
+  "${training_receipt}" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import sys
+
+(
+    audit_path,
+    checkpoint_path,
+    arm,
+    seed,
+    commit,
+    matrix_path,
+    matrix_sha,
+    output,
+) = sys.argv[1:]
+compaction_path = checkpoint_path + ".receipt.json"
+for path in (audit_path, checkpoint_path, compaction_path, matrix_path):
+    if not os.path.isfile(path):
+        raise SystemExit(f"terminal training evidence is missing: {path}")
+sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+audit = json.load(open(audit_path, encoding="utf-8"))
+compaction = json.load(open(compaction_path, encoding="utf-8"))
+updates = audit.get("update_audit", {})
+loader = audit.get("train_loader_contract", {})
+if (
+    audit.get("status") != "complete"
+    or audit.get("git_commit") != commit
+    or audit.get("variant") != arm
+    or int(audit.get("seed", -1)) != int(seed)
+    or audit.get("training_consumes_validation") is not False
+    or int(audit.get("train_video_count", -1)) != 200
+    or int(audit.get("evaluation_video_count", -1)) != 211
+    or int(audit.get("world_size", -1)) != 2
+    or int(audit.get("global_batch_size", -1)) != 2
+    or int(loader.get("dataset", {}).get("video_count", -1)) != 200
+    or int(loader.get("per_video_exposure_count", -1)) != 60
+    or int(updates.get("successful_optimizer_updates", -1)) != 6000
+    or int(updates.get("scheduler_updates", -1)) != 6000
+    or int(updates.get("ema_updates", -1)) != 6000
+    or compaction.get("schema_version") != "duca_rime_compact_checkpoint_receipt_v1"
+    or compaction.get("status") != "passed"
+    or compaction.get("evaluation_equivalent") is not True
+    or compaction.get("training_resume_supported") is not False
+    or sha(matrix_path) != matrix_sha
+):
+    raise SystemExit("terminal training evidence violates the frozen Stage-A contract")
+payload = {
+    "schema_version": "duca_paper_full200_training_receipt_v1",
+    "status": "passed",
+    "git_commit": commit,
+    "arm": arm,
+    "seed": int(seed),
+    "train_video_count": 200,
+    "evaluation_video_count": 211,
+    "world_size": 2,
+    "global_batch_size": 2,
+    "successful_optimizer_updates": 6000,
+    "training_consumed_validation": False,
+    "training_audit_path": str(pathlib.Path(audit_path).resolve()),
+    "training_audit_sha256": sha(audit_path),
+    "checkpoint_path": str(pathlib.Path(checkpoint_path).resolve()),
+    "checkpoint_sha256": sha(checkpoint_path),
+    "checkpoint_epoch": 59,
+    "checkpoint_state_key": "state_dict_ema",
+    "checkpoint_compaction_receipt_path": str(pathlib.Path(compaction_path).resolve()),
+    "checkpoint_compaction_receipt_sha256": sha(compaction_path),
+    "matrix_manifest_path": str(pathlib.Path(matrix_path).resolve()),
+    "matrix_manifest_sha256": matrix_sha,
+    "single_seed_claim_allowed": False,
+}
+target = pathlib.Path(output)
+with target.open("x", encoding="utf-8") as handle:
+    json.dump(payload, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+PY
+training_receipt_sha="$(sha256sum "${training_receipt}" | awk '{print $1}')"
+export DUCA_PAPER_TRAINING_RECEIPT="${training_receipt}"
+export DUCA_PAPER_TRAINING_RECEIPT_SHA256="${training_receipt_sha}"
+
+terminal_evaluation="${DUCA_PAPER_CELL_ROOT}/terminal_evaluation.json"
+torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 \
+  --rdzv-id="${SLURM_JOB_ID}-eval" --nproc_per_node=1 tools/test.py \
+  "${DUCA_PAPER_CONFIG}" \
+  --checkpoint "${checkpoint}" \
+  --seed "${DUCA_PAPER_SEED}" \
+  --id 0 \
+  --expected-checkpoint-epoch 59 \
+  --checkpoint-state-key state_dict_ema \
+  --metrics-json "${terminal_evaluation}" \
+  --cfg-options \
+  "work_dir=${DUCA_PAPER_CELL_ROOT}/eval" \
+  "model.backbone.custom.pretrain=${DUCA_PAPER_PRETRAIN_PATH}"
+
+python - \
+  "${terminal_evaluation}" \
+  "${training_receipt}" \
+  "${DUCA_PAPER_ARM}" \
+  "${DUCA_PAPER_SEED}" \
+  "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  "${config_values[1]}" \
+  "${DUCA_PAPER_CELL_ROOT}/cell.receipt.json" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import sys
+
+evaluation_path, training_path, arm, seed, commit, expected_k, output = sys.argv[1:]
+sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+evaluation = json.load(open(evaluation_path, encoding="utf-8"))
+exact = evaluation.get("exact211_execution", {})
+training_identity = evaluation.get("training_identity", {})
+if (
+    evaluation.get("schema_version") != "duca_paper_full211_terminal_evaluation_v1"
+    or evaluation.get("git_commit") != commit
+    or evaluation.get("variant") != arm
+    or int(evaluation.get("seed", -1)) != int(seed)
+    or int(evaluation.get("train_video_count", -1)) != 200
+    or int(evaluation.get("evaluation_video_count", -1)) != 211
+    or evaluation.get("training_consumed_validation") is not False
+    or evaluation.get("runtime_gt_input_to_selector") is not False
+    or int(evaluation.get("evaluation_heavy_k", -1)) != int(expected_k)
+    or evaluation.get("runtime_heavy_k_contract_enforced") is not True
+    or exact.get("official_open_tad_pipeline_completed") is not True
+    or int(exact.get("evaluation_video_count", -1)) != 211
+    or training_identity.get("training_receipt_sha256") != sha(training_path)
+    or not isinstance(evaluation.get("metrics"), dict)
+):
+    raise SystemExit("terminal evaluation violates the exact-211 Stage-A contract")
+payload = {
+    "schema_version": "duca_paper_stage_a_cell_receipt_v1",
+    "status": "passed",
+    "git_commit": commit,
+    "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+    "arm": arm,
+    "seed": int(seed),
+    "training_receipt_path": str(pathlib.Path(training_path).resolve()),
+    "training_receipt_sha256": sha(training_path),
+    "terminal_evaluation_path": str(pathlib.Path(evaluation_path).resolve()),
+    "terminal_evaluation_sha256": sha(evaluation_path),
+    "exact_train_video_count": 200,
+    "exact_evaluation_video_count": 211,
+    "paper_claim_ready": False,
+    "requires_complete_three_seed_matrix": True,
+}
+target = pathlib.Path(output)
+with target.open("x", encoding="utf-8") as handle:
+    json.dump(payload, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+PY
+
+echo "[DUCA_PAPER_STAGE_A_CELL] PASS ${DUCA_PAPER_ARM} seed${DUCA_PAPER_SEED}"

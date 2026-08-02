@@ -45,6 +45,7 @@ from opentad.utils.training_guard import (
 from opentad.utils.train_schedule import should_eval_epoch
 from tools.bata import (
     duca_cellcf_training,
+    duca_paper_training,
     duca_p0_training,
     duca_protected_physical_training,
     duca_rime_training,
@@ -189,6 +190,8 @@ def _build_training_probe_bindings(cfg, args):
 def _select_duca_training(formal_protocol):
     if formal_protocol == "duca_cellcf_v1":
         return duca_cellcf_training
+    if duca_paper_training.is_formal_protocol(formal_protocol):
+        return duca_paper_training
     if formal_protocol == duca_protected_physical_training.FORMAL_PROTOCOL:
         return duca_protected_physical_training
     if duca_selected_axis_training.is_formal_protocol(formal_protocol):
@@ -235,11 +238,20 @@ def main():
     formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
     duca_training = _select_duca_training(formal_protocol)
     source_config_sha256 = _sha256(args.config)
+    # This identity is intentionally computed before the two permitted runtime
+    # bindings (work_dir and pretrain path).  The matrix manifest seals the
+    # repository-resolved scientific config; runtime_config_sha256 below seals
+    # the effective launch config separately.
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     duca_formal_contract = duca_training.formal_training_contract(cfg)
     if duca_training is duca_cellcf_training:
         duca_cellcf_training.assert_safe_cfg_options(
             cfg, args.cfg_options, entrypoint="tools/train.py"
+        )
+    elif duca_training is duca_paper_training:
+        duca_paper_training.assert_safe_cfg_options(
+            args.cfg_options,
+            entrypoint="tools/train.py",
         )
     elif duca_training is duca_protected_physical_training:
         duca_protected_physical_training.assert_safe_cfg_options(
@@ -256,6 +268,8 @@ def main():
         cfg.merge_from_dict(args.cfg_options)
     if duca_training is duca_cellcf_training:
         duca_formal_contract = duca_cellcf_training.formal_training_contract(cfg)
+    elif duca_training is duca_paper_training:
+        duca_formal_contract = duca_paper_training.formal_training_contract(cfg)
     duca_git_commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
     ).strip()
@@ -281,8 +295,13 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
-    if duca_formal_contract is not None and args.world_size != 1:
-        raise RuntimeError("formal DUCA P0 is frozen to one Slurm GPU process")
+    if duca_formal_contract is not None:
+        expected_world_size = int(duca_formal_contract.get("world_size", 1))
+        if args.world_size != expected_world_size:
+            raise RuntimeError(
+                f"formal DUCA requires world_size={expected_world_size}, "
+                f"got {args.world_size}"
+            )
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)
     torch.cuda.set_device(args.local_rank)
@@ -293,12 +312,16 @@ def main():
     duca_runtime_bindings = None
     if duca_formal_contract is not None:
         variant = (
-            os.environ.get("DUCA_PROTECTED_VARIANT", "")
-            if duca_training is duca_protected_physical_training
+            os.environ.get("DUCA_PAPER_ARM", "")
+            if duca_training is duca_paper_training
             else (
-                os.environ.get("DUCA_SELECTED_OPT_VARIANT", "")
-                if duca_training is duca_selected_axis_training
-                else os.environ.get("DUCA_P0_VARIANT", "")
+                os.environ.get("DUCA_PROTECTED_VARIANT", "")
+                if duca_training is duca_protected_physical_training
+                else (
+                    os.environ.get("DUCA_SELECTED_OPT_VARIANT", "")
+                    if duca_training is duca_selected_axis_training
+                    else os.environ.get("DUCA_P0_VARIANT", "")
+                )
             )
         )
         runtime_binding_kwargs = dict(
@@ -316,6 +339,7 @@ def main():
         )
         if duca_training in (
             duca_cellcf_training,
+            duca_paper_training,
             duca_protected_physical_training,
             duca_rime_training,
             duca_selected_axis_training,

@@ -45,3 +45,6 @@
 {"source":"protocols/duca-admission-v2-1-final-repair","relation":"implements_decision_from","target":"sources/U-PRO-V21-FINAL-REPAIR-1"}
 {"source":"protocols/duca-admission-v2-1-final-repair","relation":"gates","target":"experiments/duca-acquisition-v2-pure-plugin"}
 {"source":"protocols/duca-admission-v2-1-final-repair","relation":"blocked_by","target":"experiments/duca-admission-v2-1-full-simulation"}
+{"source":"ideas/duca-rime","relation":"tested_by","target":"experiments/duca-paper-feasibility-stage-a"}
+{"source":"experiments/duca-paper-feasibility-stage-a","relation":"supersedes_active_execution_of","target":"experiments/duca-admission-v2-1-full-simulation"}
+{"source":"experiments/duca-paper-feasibility-stage-a","relation":"gates","target":"plans/duca-paper-feasibility-stage-b"}
