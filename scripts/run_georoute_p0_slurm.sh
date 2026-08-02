@@ -31,7 +31,7 @@ SEED="${GEOROUTE_P0_SEED:-3407}"
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail 'P0 requires Slurm'
 if [[ "${GEOROUTE_INNER_STEP:-0}" != "1" && "${SLURM_GPUS_ON_NODE:-1}" != "1" ]]; then
   export GEOROUTE_INNER_STEP=1
-  exec srun --exact --ntasks=1 --gpus=1 --cpus-per-task=5 \
+  exec srun --exact --ntasks=1 --gpus=1 --cpus-per-task=5 --mem=96000M \
     bash "${ROOT}/scripts/run_georoute_p0_slurm.sh"
 fi
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != *,* ]] || \

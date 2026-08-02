@@ -2159,9 +2159,12 @@ append_only: true
   hooks, temporal geometry-misalignment control, nine frozen arms A0--A8,
   separate accuracy/telemetry and cost replays, all-terminal finalizers, and
   held all-or-none Slurm deployment. The P0 suite combines an A7 production
-  forward/backward gate with the existing two-rank FP32-DDP KAT. N16R4 resource
-  requests intentionally omit all explicit `--mem` flags because site Lua
-  assigns memory per GPU and rejects overrides. Local pure-contract tests pass;
+  forward/backward gate with the existing two-rank FP32-DDP KAT. New outer
+  `sbatch` requests intentionally omit explicit `--mem` flags because site Lua
+  assigns memory per GPU and rejects overrides; the pre-existing P0 launcher's
+  conditional one-GPU inner-step compatibility branch remains unchanged and is
+  not entered by this study's exact one-GPU outer allocation. Local
+  pure-contract tests pass;
   Windows Torch is unavailable because `c10.dll` cannot load. Remote Linux/CUDA
   verification and P0 remain pending, so the route is only `implemented`, not
   `tested`, `empirically_supported`, or `paper_ready`.
