@@ -437,3 +437,9 @@ These failures and naming mistakes must not be repeated.
 127. Do not interpret a Slurm cell's successful exit as a result. Stage A needs
      all twelve exact terminal receipts and the dependent matrix seal before any
      metric is inspected, aggregated or reported.
+128. Do not combine full-200 natural short windows with a mixed-K contract that
+     simultaneously requires every nominal K to execute exactly and forbids both
+     effective-K aliasing and padding. Before another Stage-A transaction, freeze
+     whether `(8,12,16,24)` describes requested exposure or realized heavy cost,
+     define short-window feasibility and report its realized distribution. This
+     is a scientific protocol decision, not an automatic guard deletion.

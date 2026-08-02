@@ -48,3 +48,7 @@
 {"source":"ideas/duca-rime","relation":"tested_by","target":"experiments/duca-paper-feasibility-stage-a"}
 {"source":"experiments/duca-paper-feasibility-stage-a","relation":"supersedes_active_execution_of","target":"experiments/duca-admission-v2-1-full-simulation"}
 {"source":"experiments/duca-paper-feasibility-stage-a","relation":"gates","target":"plans/duca-paper-feasibility-stage-b"}
+{"source":"experiments/duca-paper-feasibility-stage-a","relation":"failed_closed_as","target":"deployments/duca-paper-stage-a-2df0103e"}
+{"source":"deployments/duca-paper-stage-a-2df0103e","relation":"diagnosed_by","target":"sources/REMOTE-DUCA-PAPER-STAGEA-SHORT-K-1"}
+{"source":"experiments/duca-paper-feasibility-stage-a","relation":"blocked_by","target":"protocols/duca-paper-mixed-k-short-window-semantics"}
+{"source":"plans/duca-paper-feasibility-stage-b","relation":"blocked_by","target":"protocols/duca-paper-mixed-k-short-window-semantics"}

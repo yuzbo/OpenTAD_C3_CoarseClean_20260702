@@ -30,7 +30,7 @@ Current evidence level:
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
 | Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
-| Official full-data DUCA feasibility | `experiment_running / source_2df0103e / exact_commit_gate_1213711_passed / seed_jobs_1213712_1213713_1213714_running / seal_1213715_dependency_pending / no_metrics_opened` |
+| Official full-data DUCA feasibility | `failed_closed / source_2df0103e / jobs_1213712_1213713_1213714_failed_same_short_window_signature / seal_1213715_cancelled / six_partial_control_receipts_unopened / no_empirical_conclusion` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -328,18 +328,20 @@ The second repaired Stage-0 recovery transaction is terminally failed closed:
 This status is `ENGINEERING_STATUS`, not an empirical result.
 
 The user approved direct execution of the compact paper-feasibility route.
-Stage A is implemented and released as four ActionFormer arms by three
-registered seeds, with exact full-200 training, exact-211 evaluation, terminal
-epoch-59 EMA and transactional receipts. The jointly optimized ASFormer coarse
-frontend is part of DUCA; it is not replaced by a frozen checkpoint. Exact
-source commit `2df0103ec1c26ff7cff7ed15f399e78e640df211` passed authoritative Slurm
-gate `1213711` with 37 Linux/PyTorch tests. Seed jobs
-`1213712/1213713/1213714` contain the twelve logical cells and seal job
-`1213715` depends on them. After an initial scheduler wait, all three seed jobs
-are running and the seal remains dependency-pending, so this remains
-`ENGINEERING_STATUS`. Stage B dynamic budget training remains blocked on a
-complete sealed Stage A and full-200 training-only OOF targets. No metric has
-been opened and no paper-admissible result exists yet.
+Exact source commit `2df0103ec1c26ff7cff7ed15f399e78e640df211` passed Slurm gate
+`1213711`, but the production transaction is now terminally failed closed.
+Seed jobs `1213712/1213713/1213714` all failed with exit `1:0` in the mixed-K
+training arm on the identical exception `uniform_mixed_k forbids effective-K
+shrinkage on a short window`; seal `1213715` was cancelled after its dependency
+became impossible. The frozen old mixed-K contract requires exact requested-K
+execution and forbids both shrinkage and padding, while paper-facing Stage A
+requires all 200 videos and therefore natural short windows. Every available
+resolution changes actual budget semantics, data inclusion, or no-padding
+execution, so this is a scientific protocol inconsistency rather than an
+automatically repairable engineering defect. Six earlier dense/uniform cell
+receipts remain immutable but partial and unopened. DUCA learned fixed-K384 did
+not run; no complete matrix, empirical comparison, or paper-admissible result
+exists. Stage B remains blocked.
 
 The user authorized recovery-v3 implementation and redeployment. The local
 repair is now implemented:

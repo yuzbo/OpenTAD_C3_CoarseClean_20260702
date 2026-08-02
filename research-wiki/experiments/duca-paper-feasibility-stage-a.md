@@ -7,7 +7,7 @@
 - Implementation: `implemented`
 - Local focused verification: `11_passed / 1_Linux_loader_test_skipped_on_Windows`
 - Authoritative Linux/Slurm verification: `passed / job_1213711 / 37_tests`
-- Experiment: `experiment_running / three_seed_jobs_running`
+- Experiment: `failed_closed / three_seed_jobs_failed / seal_cancelled`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
 
@@ -68,13 +68,42 @@ pending. The first monitored state change placed all three seed jobs in
 `RUNNING`, while the seal remained dependency-pending. No metric has been
 opened.
 
+## Terminal failure
+
+All three grouped seed jobs failed in the third logical arm,
+`uniform_mixed_train_k384_eval`, before the DUCA learned-position arm could run:
+
+- seed 5801, job `1213712`: `FAILED 1:0`;
+- seed 8123, job `1213713`: `FAILED 1:0`;
+- seed 12011, job `1213714`: `FAILED 1:0`;
+- matrix seal `1213715`: dependency-impossible and cancelled by exact ID.
+
+The shared exception is
+`ValueError: uniform_mixed_k forbids effective-K shrinkage on a short window`.
+Register the unique failure signature as
+`paper_full200_uniform_mixed_k_short_window_exact_requested_k_infeasible`.
+The immutable failed-log SHA-256 values for seeds 5801, 8123, and 12011 are,
+respectively, `9ed49fa701b13c99960c0ef5fa88e597021120fe16bc3d810ad60c6293ff0879`,
+`dae2a78d35157b4d6efdc93c31e9f7452789ae69c263b819ac1b3fe404c6e0da`, and
+`604aa86707635f00c93de7d8af526fa9b1356e94371ca2eca3a07d66f513217a`.
+
+This is not eligible for bounded automatic repair. The frozen mixed-K design
+requires every requested K to execute exactly and rejects both short-window
+effective-K shrinkage and padding. The paper protocol simultaneously requires
+all 200 training videos, which necessarily includes short windows. Allowing
+quantum-aligned effective-K aliases would change the registered actual exposure
+and mean-heavy-K semantics; excluding short videos or padding would change the
+data or no-padding contract. A scientific protocol decision is therefore
+required before a fresh transaction. Six earlier dense/uniform cell receipts
+exist, but the matrix is incomplete and no metric from them has been opened.
+
 No single cell, seed, intermediate checkpoint or incomplete matrix may support a
 performance statement. Until all twelve terminal receipts pass, the status is
 only `ENGINEERING_STATUS`.
 
 ## Conditional Stage B
 
-Stage B remains blocked until Stage A is complete and full-200, training-only
+Stage B remains blocked until Stage A is repaired, complete and full-200, training-only
 out-of-fold per-K utility/risk targets exist. It will add three dynamic
 mean-K384 runs and the corresponding evaluation-only exact same-realized-K
 uniform replays. H-RIME, TriDet and K192 remain deferred.

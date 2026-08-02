@@ -1,5 +1,35 @@
 # Research Log
 
+## 2026-08-02 — Full-data Stage A failed closed on mixed-K short windows
+
+- Seed jobs `1213712` (5801), `1213713` (8123), and `1213714` (12011) all
+  terminated `FAILED 1:0` in the third sequential arm. The exact shared exception
+  is `ValueError: uniform_mixed_k forbids effective-K shrinkage on a short
+  window`; register failure signature
+  `paper_full200_uniform_mixed_k_short_window_exact_requested_k_infeasible`.
+- Immutable failed-log SHA-256 values are
+  `9ed49fa701b13c99960c0ef5fa88e597021120fe16bc3d810ad60c6293ff0879`,
+  `dae2a78d35157b4d6efdc93c31e9f7452789ae69c263b819ac1b3fe404c6e0da`, and
+  `604aa86707635f00c93de7d8af526fa9b1356e94371ca2eca3a07d66f513217a`.
+- Exact source remained clean at
+  `2df0103ec1c26ff7cff7ed15f399e78e640df211`; protocol and submission manifest
+  hashes remained
+  `ef8c1991fe5a638607cc1ac96e1da55802985000ce0a47c0b17160349ebc392f` and
+  `9ee9e4a7ba0f413ccf3a348bc3096487bd71f67949aeaa147ec6c31385a65f9a`.
+- Seal job `1213715` became `DependencyNeverSatisfied` and was cancelled by
+  exact ID. Six dense/uniform cell receipts exist, but they are an incomplete
+  matrix and their metrics were not opened. The learned DUCA fixed-K384 arm did
+  not run because it followed the failed mixed-K arm in each grouped job.
+- This is a scientific protocol inconsistency: the old mixed-K design requires
+  exact requested-K execution and forbids shrinkage/padding, whereas full-200
+  inclusion necessarily presents short windows. Shrinkage, exclusion, padding,
+  or a different feasible schedule each changes a frozen scientific dimension.
+  The monitor therefore made no code change and launched no retry. Stage B stays
+  blocked and no performance conclusion exists.
+- Heartbeat `duca-rime` was paused after recording this terminal state. It may be
+  resumed only after an explicit mixed-K short-window semantic corrigendum and a
+  fresh hash-bound transaction are approved.
+
 ## 2026-08-02 — Grouped full-data Stage-A transaction released
 
 - Published exact source commit `2df0103ec1c26ff7cff7ed15f399e78e640df211`
