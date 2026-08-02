@@ -742,7 +742,6 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 or self.geometry_smoothness_weight != 0.0
                 or self.area_prior_weight != 0.0
                 or self.p0_dense_reference_check
-                or self.diagnostic_telemetry_enabled
                 or self.gradient_decomposition_enabled
             ):
                 raise ValueError(
@@ -1220,6 +1219,242 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         )
         pooled = (native * probability).sum(dim=-1) / mass
         return pooled.permute(0, 2, 1).contiguous()
+
+    @classmethod
+    def _dynamic_diagnostic_route_telemetry(
+        cls,
+        *,
+        route: Mapping[str, Any],
+        geometry: torch.Tensor,
+        source_grid_hw: tuple[int, int],
+        minimum_extent_wh: tuple[float, float],
+        maximum_extent_wh: tuple[float, float],
+        packed: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Serialize result-blind dynamic geometry and execution diagnostics."""
+
+        geometry = geometry.detach().to(device="cpu", dtype=torch.float32)
+        k_t = route["k_per_tubelet"].detach().to(device="cpu", dtype=torch.long)
+        tubelet_indices = route["tubelet_indices"].detach().to(device="cpu", dtype=torch.long)
+        role_ids = route["selected_role_ids"].detach().to(device="cpu", dtype=torch.long)
+        physical_indices = route["physical_indices"].detach().to(device="cpu", dtype=torch.long)
+        if (
+            geometry.ndim != 3
+            or geometry.shape[0] != 1
+            or geometry.shape[-1] != 4
+            or k_t.shape != geometry.shape[:2]
+            or tubelet_indices.shape != role_ids.shape
+            or tubelet_indices.shape != physical_indices.shape
+            or tubelet_indices.shape[0] != 1
+        ):
+            raise ValueError("dynamic diagnostic telemetry requires one aligned sample")
+        if not bool(torch.isfinite(geometry).all().item()):
+            raise FloatingPointError("dynamic diagnostic geometry is nonfinite")
+
+        tubelet_count = int(geometry.shape[1])
+        window_budget = int(physical_indices.shape[1])
+        item_count = int(source_grid_hw[0]) * int(source_grid_hw[1])
+        if (
+            window_budget <= 0
+            or int(k_t.sum().item()) != window_budget
+            or bool((tubelet_indices < 0).any().item())
+            or bool((tubelet_indices >= tubelet_count).any().item())
+            or bool((role_ids < 0).any().item())
+            or bool((role_ids > 2).any().item())
+            or bool((physical_indices < 0).any().item())
+            or bool((physical_indices >= tubelet_count * item_count).any().item())
+        ):
+            raise ValueError("dynamic diagnostic route leaves its physical lattice")
+        if not torch.equal(
+            torch.div(physical_indices, item_count, rounding_mode="floor"),
+            tubelet_indices,
+        ):
+            raise RuntimeError("dynamic diagnostic physical indices disagree with tubelet lineage")
+        if int(torch.unique(physical_indices).numel()) != window_budget:
+            raise RuntimeError("dynamic diagnostic physical route is not one-copy exact-B")
+
+        role_names = ("context", "roi", "residual")
+        linear_role = tubelet_indices[0] * len(role_names) + role_ids[0]
+        roles_per_tubelet = torch.bincount(
+            linear_role,
+            minlength=tubelet_count * len(role_names),
+        ).reshape(tubelet_count, len(role_names))
+        if not torch.equal(roles_per_tubelet.sum(dim=-1), k_t[0]):
+            raise RuntimeError("dynamic role diagnostics do not partition K_t")
+        aggregate_roles = {
+            name: int(roles_per_tubelet[:, role_id].sum().item())
+            for role_id, name in enumerate(role_names)
+        }
+        if aggregate_roles != {
+            name: int(route["role_counts"][name]) for name in role_names
+        }:
+            raise RuntimeError("dynamic role diagnostics disagree with route receipt")
+
+        minimum = torch.tensor(minimum_extent_wh, dtype=torch.float32)
+        maximum = torch.tensor(maximum_extent_wh, dtype=torch.float32)
+        if (
+            minimum.shape != (2,)
+            or maximum.shape != (2,)
+            or not bool((minimum > 0.0).all().item())
+            or not bool((maximum <= 1.0).all().item())
+            or not bool((minimum < maximum).all().item())
+        ):
+            raise ValueError("dynamic diagnostic extent bounds are invalid")
+        centers = geometry[0, :, :2]
+        extents = geometry[0, :, 2:]
+        normalized_extents = (extents - minimum) / (maximum - minimum)
+        tolerance = 1e-5
+        if bool((normalized_extents < -tolerance).any().item()) or bool(
+            (normalized_extents > 1.0 + tolerance).any().item()
+        ):
+            raise RuntimeError("dynamic diagnostic geometry leaves decoded bounds")
+        if bool((centers < extents / 2.0 - tolerance).any().item()) or bool(
+            (centers > 1.0 - extents / 2.0 + tolerance).any().item()
+        ):
+            raise RuntimeError("dynamic diagnostic ROI leaves the normalized frame")
+        normalized_extents = normalized_extents.clamp(0.0, 1.0)
+
+        packed_contract = {
+            "schema_version": "videomae_native_ragged_v1",
+            "execution_mode": "true_clip_ragged_no_padding",
+            "batch_size": 1,
+            "total_tubelets": tubelet_count,
+            "source_grid_hw": list(map(int, source_grid_hw)),
+            "spatial_tokens_per_tubelet": item_count,
+            "window_token_budget": window_budget,
+            "requested_physical_tokens_per_window": window_budget,
+            "unique_physical_tokens_per_window": window_budget,
+            "padded_heavy_tokens_per_window": 0,
+            "executed_patch_tokens_per_window": window_budget,
+            "heavy_backbone_forward_count": 1,
+            "dense_adapter_forward_count": 0,
+            "adapter_execution": "coordinate_lineage_true_ragged",
+        }
+        if any(packed.get(key) != value for key, value in packed_contract.items()):
+            raise RuntimeError("dynamic diagnostic ragged ledger is invalid")
+        clip_rows = packed.get("clip_token_counts")
+        pair_rows = packed.get("attention_pairs_per_window")
+        if (
+            not isinstance(clip_rows, list)
+            or len(clip_rows) != 1
+            or not isinstance(pair_rows, list)
+            or len(pair_rows) != 1
+            or sum(map(int, clip_rows[0])) != window_budget
+            or sum(int(value) ** 2 for value in clip_rows[0]) != int(pair_rows[0])
+        ):
+            raise RuntimeError("dynamic diagnostic ragged cost ledger is invalid")
+
+        def _distribution(values: torch.Tensor) -> dict[str, float]:
+            values = values.flatten().to(torch.float32)
+            quantiles = torch.quantile(
+                values,
+                torch.tensor([0.05, 0.25, 0.50, 0.75, 0.95]),
+            )
+            return {
+                "min": float(values.min().item()),
+                "p05": float(quantiles[0].item()),
+                "p25": float(quantiles[1].item()),
+                "p50": float(quantiles[2].item()),
+                "p75": float(quantiles[3].item()),
+                "p95": float(quantiles[4].item()),
+                "max": float(values.max().item()),
+                "mean": float(values.mean().item()),
+            }
+
+        k_values = k_t[0]
+        k_unique, k_counts = torch.unique(k_values, sorted=True, return_counts=True)
+        widths = extents[:, 0]
+        heights = extents[:, 1]
+        saturation_fraction = 0.01
+        center_steps = centers[1:] - centers[:-1]
+        extent_steps = extents[1:] - extents[:-1]
+        return {
+            "schema_version": "georoute_dynamic_diagnostic_window_telemetry_v1",
+            "measurement_scope": "accuracy_replay_only_excluded_from_timed_cost",
+            "batch_size": 1,
+            "tubelet_count": tubelet_count,
+            "item_count": item_count,
+            "source_grid_hw": list(map(int, source_grid_hw)),
+            "window_token_budget": window_budget,
+            "selected_physical_index_sha256": cls._tensor_sha256(physical_indices),
+            "k_t": {
+                "values": [int(value) for value in k_values.tolist()],
+                "min": int(k_values.min().item()),
+                "max": int(k_values.max().item()),
+                "zero_count": int((k_values == 0).sum().item()),
+                "histogram": {
+                    str(int(key)): int(count)
+                    for key, count in zip(k_unique.tolist(), k_counts.tolist())
+                },
+            },
+            "roles": {
+                "order": list(role_names),
+                "aggregate_counts": aggregate_roles,
+                "aggregate_fractions": {
+                    name: aggregate_roles[name] / float(window_budget)
+                    for name in role_names
+                },
+                "per_tubelet_counts": [
+                    [int(value) for value in row]
+                    for row in roles_per_tubelet.tolist()
+                ],
+            },
+            "geometry": {
+                "parameter_order": ["cx", "cy", "w", "h"],
+                "values": [
+                    [float(value) for value in row] for row in geometry[0].tolist()
+                ],
+                "minimum_extent_wh": [float(value) for value in minimum.tolist()],
+                "maximum_extent_wh": [float(value) for value in maximum.tolist()],
+                "width": _distribution(widths),
+                "height": _distribution(heights),
+                "area": _distribution(widths * heights),
+                "floor_saturation_definition": "normalized_distance_from_floor_le_0.01",
+                "ceiling_saturation_definition": "normalized_distance_from_floor_ge_0.99",
+                "width_floor_saturation_rate": float(
+                    (normalized_extents[:, 0] <= saturation_fraction).float().mean().item()
+                ),
+                "height_floor_saturation_rate": float(
+                    (normalized_extents[:, 1] <= saturation_fraction).float().mean().item()
+                ),
+                "width_ceiling_saturation_rate": float(
+                    (normalized_extents[:, 0] >= 1.0 - saturation_fraction).float().mean().item()
+                ),
+                "height_ceiling_saturation_rate": float(
+                    (normalized_extents[:, 1] >= 1.0 - saturation_fraction).float().mean().item()
+                ),
+                "center_step_l2_mean": (
+                    float(torch.linalg.vector_norm(center_steps, dim=-1).mean().item())
+                    if center_steps.numel()
+                    else 0.0
+                ),
+                "extent_step_l2_mean": (
+                    float(torch.linalg.vector_norm(extent_steps, dim=-1).mean().item())
+                    if extent_steps.numel()
+                    else 0.0
+                ),
+            },
+            "ragged_execution": {
+                "clip_token_counts": [int(value) for value in clip_rows[0]],
+                "attention_pairs": int(pair_rows[0]),
+                "requested_physical_tokens": window_budget,
+                "unique_physical_tokens": window_budget,
+                "padded_heavy_tokens": 0,
+                "executed_patch_tokens": window_budget,
+                "ragged_attention_bucket_call_count": int(
+                    packed.get("ragged_attention_bucket_call_count", -1)
+                ),
+                "ragged_mlp_bucket_call_count": int(
+                    packed.get("ragged_mlp_bucket_call_count", -1)
+                ),
+            },
+            "role_assignment_changes_execution": False,
+            "gt_for_route_used": False,
+            "teacher_used": False,
+            "oracle_used": False,
+            "official_test_opened": False,
+            "paper_claim_allowed": False,
+        }
 
     @staticmethod
     def _route_score_statistics(
@@ -1753,6 +1988,19 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             if soft_probability is None
             else soft_probability.detach().reshape(source.shape[0], -1).sum(dim=-1)
         )
+        diagnostic_telemetry = None
+        if self.diagnostic_telemetry_enabled:
+            diagnostic_telemetry = self._dynamic_diagnostic_route_telemetry(
+                route=route,
+                geometry=geometry,
+                source_grid_hw=source_grid_hw,
+                minimum_extent_wh=self._minimum_roi_extent_wh(source_grid_hw),
+                maximum_extent_wh=(
+                    self.max_roi_extent,
+                    self.max_roi_extent,
+                ),
+                packed=packed,
+            )
         self.latest_georoute_audit = {
             "schema_version": GEOROUTE_BACKBONE_SCHEMA,
             "routing_schema": route["schema_version"],
@@ -1836,6 +2084,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "absolute_coordinates_enabled": self.absolute_coordinates_enabled,
             "roi_relative_coordinates_enabled": self.roi_relative_coordinates_enabled,
             "geometry_projection_enabled": self.geometry_projection_enabled,
+            "diagnostic_telemetry_enabled": self.diagnostic_telemetry_enabled,
             "pooling_mode": self.pooling_mode,
             "packed": packed,
             "uses_grid_sample": False,
@@ -1846,6 +2095,10 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "uses_oracle": False,
             "uses_test_evidence": False,
         }
+        if diagnostic_telemetry is not None:
+            self.latest_georoute_audit[
+                "diagnostic_telemetry"
+            ] = diagnostic_telemetry
         return output.to(torch.float32)
 
     def forward(self, frames, masks=None):

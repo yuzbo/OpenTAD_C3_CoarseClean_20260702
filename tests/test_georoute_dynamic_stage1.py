@@ -438,6 +438,133 @@ def test_dynamic_physical_gather_preserves_sorted_global_lineage():
         )
 
 
+def test_dynamic_diagnostic_telemetry_receipts_geometry_roles_and_ragged_cost():
+    q_base = torch.full((1, 3, 4), -10.0)
+    delta_roi = torch.full_like(q_base, -1.0)
+    delta_residual = torch.full_like(q_base, -1.0)
+    q_base[0, 0, :3] = torch.tensor([10.0, 8.0, 7.0])
+    delta_roi[0, 0, 1] = 3.0
+    delta_residual[0, 0, 2] = 5.0
+    route = select_dynamic_global_exact_budget(
+        q_base=q_base,
+        delta_roi=delta_roi,
+        delta_residual=delta_residual,
+        window_budget=3,
+        training=False,
+        estimator="none",
+        temperature=0.5,
+        valid_mask=torch.ones_like(q_base, dtype=torch.bool),
+    )
+    geometry = torch.tensor(
+        [
+            [
+                [0.50, 0.50, 0.50, 0.50],
+                [0.50, 0.50, 1.00, 1.00],
+                [0.50, 0.50, 0.75, 0.75],
+            ]
+        ]
+    )
+    packed = {
+        "schema_version": "videomae_native_ragged_v1",
+        "execution_mode": "true_clip_ragged_no_padding",
+        "batch_size": 1,
+        "total_tubelets": 3,
+        "source_grid_hw": [2, 2],
+        "spatial_tokens_per_tubelet": 4,
+        "window_token_budget": 3,
+        "clip_token_counts": [[3, 0]],
+        "attention_pairs_per_window": [9],
+        "requested_physical_tokens_per_window": 3,
+        "unique_physical_tokens_per_window": 3,
+        "padded_heavy_tokens_per_window": 0,
+        "executed_patch_tokens_per_window": 3,
+        "heavy_backbone_forward_count": 1,
+        "dense_adapter_forward_count": 0,
+        "adapter_execution": "coordinate_lineage_true_ragged",
+        "ragged_attention_bucket_call_count": 1,
+        "ragged_mlp_bucket_call_count": 1,
+    }
+
+    telemetry = GeoRouteBackboneWrapper._dynamic_diagnostic_route_telemetry(
+        route=route,
+        geometry=geometry,
+        source_grid_hw=(2, 2),
+        minimum_extent_wh=(0.5, 0.5),
+        maximum_extent_wh=(1.0, 1.0),
+        packed=packed,
+    )
+
+    assert (
+        telemetry["schema_version"]
+        == "georoute_dynamic_diagnostic_window_telemetry_v1"
+    )
+    assert telemetry["measurement_scope"] == (
+        "accuracy_replay_only_excluded_from_timed_cost"
+    )
+    assert telemetry["k_t"]["values"] == [3, 0, 0]
+    assert telemetry["k_t"]["histogram"] == {"0": 2, "3": 1}
+    assert telemetry["roles"]["aggregate_counts"] == {
+        "context": 1,
+        "roi": 1,
+        "residual": 1,
+    }
+    assert telemetry["roles"]["per_tubelet_counts"] == [
+        [1, 1, 1],
+        [0, 0, 0],
+        [0, 0, 0],
+    ]
+    assert telemetry["geometry"]["width_floor_saturation_rate"] == pytest.approx(
+        1.0 / 3.0
+    )
+    assert telemetry["geometry"]["height_ceiling_saturation_rate"] == pytest.approx(
+        1.0 / 3.0
+    )
+    assert telemetry["geometry"]["area"]["p50"] == pytest.approx(0.75**2)
+    assert telemetry["ragged_execution"]["clip_token_counts"] == [3, 0]
+    assert telemetry["ragged_execution"]["attention_pairs"] == 9
+    assert telemetry["ragged_execution"]["padded_heavy_tokens"] == 0
+    assert telemetry["official_test_opened"] is False
+
+    broken_packed = dict(packed, unique_physical_tokens_per_window=2)
+    with pytest.raises(RuntimeError, match="ragged ledger"):
+        GeoRouteBackboneWrapper._dynamic_diagnostic_route_telemetry(
+            route=route,
+            geometry=geometry,
+            source_grid_hw=(2, 2),
+            minimum_extent_wh=(0.5, 0.5),
+            maximum_extent_wh=(1.0, 1.0),
+            packed=broken_packed,
+        )
+
+
+def test_dynamic_diagnostic_telemetry_rejects_multi_sample_attribution():
+    utility = torch.zeros(2, 2, 2)
+    route = select_dynamic_global_exact_budget(
+        q_base=utility,
+        delta_roi=utility,
+        delta_residual=utility,
+        window_budget=2,
+        training=False,
+        estimator="none",
+        temperature=0.5,
+        valid_mask=torch.ones_like(utility, dtype=torch.bool),
+    )
+    with pytest.raises(ValueError, match="one aligned sample"):
+        GeoRouteBackboneWrapper._dynamic_diagnostic_route_telemetry(
+            route=route,
+            geometry=torch.tensor(
+                [
+                    [[0.5, 0.5, 0.5, 0.5]] * 2,
+                    [[0.5, 0.5, 0.5, 0.5]] * 2,
+                ]
+            ),
+            source_grid_hw=(1, 2),
+            minimum_extent_wh=(0.5, 0.5),
+            maximum_extent_wh=(1.0, 1.0),
+            packed={},
+        )
+
+
 def test_dynamic_proxy_schedule_uses_successful_optimizer_steps():
     common = dict(initial_weight=0.5, anneal_start=10, anneal_end=20)
     assert dynamic_proxy_weight_at_step(0, **common) == pytest.approx(0.5)
