@@ -1,5 +1,36 @@
 # Research Log
 
+## 2026-08-02 — V2.1 full-simulation execution protocol found incomplete
+
+- Began direct execution of the user-approved candidate-free Admission v2.1
+  stages from clean branch tip `77acd054965d4e5527c170cedf3073a3fe7cb04b`.
+- Repository audit confirmed that the 52-scenario registry, one-outer executor,
+  scenario/MC evaluators and receipt validators exist, but no full runner, task
+  manifest, shard writer, strict reducer, resumable artifact contract or
+  terminal execution receipt writer exists.
+- Identified a new P0 protocol boundary: the helper defaults every outer to
+  primary stream zero/diagnostic stream one; five shift profiles regenerate the
+  same deterministic streams without a registered common-random-number policy;
+  and no producer defines the 4,800 operational streams or the two independent
+  2M halves and their concatenated 4M reference. These choices can alter random
+  dependence or binary64 output and were not invented locally.
+- Candidate-free scalar microbenchmarks measured about 8.85 seconds for 10,000
+  multiplier replicates, 0.063 seconds for one 10,000-replicate maxT reduction,
+  and 0.559 seconds for ten delete-1000 recomputations. These are local capacity
+  diagnostics only, not statistical or model results.
+- Read-only N16R4 inquiry found `MaxArraySize=1001`, account
+  `MaxSubmitJobs=16`, a GPU-only partition and default eight CPUs per GPU. The
+  OpenTAD environment is Python 3.10.20/NumPy 1.23.5, not the frozen Python
+  3.11.7/NumPy 1.23.5 simulation runtime. A naive one-task-per-outer release is
+  therefore invalid.
+- Froze the recommended content-addressed shard/reducer design, alternative
+  rejection reasons, exact release gates, and one narrow Pro execution prompt in
+  `docs/superpowers/specs/2026-08-02-duca-admission-v2-1-full-simulation-execution-design.md`.
+- Current state is `execution_protocol_review_required / full_simulation_not_run /
+  production_admission_NO_GO`. No real-video worker, training, holdout, Phase 1+,
+  learned H-RIME or official-final action was started. No paper-admissible
+  empirical conclusion exists.
+
 ## 2026-08-01 — Final v2.1 narrow repair accepted and Stage A--D implemented
 
 - Fully read and hash-registered `U-PRO-V21-FINAL-REPAIR-1`:

@@ -395,3 +395,20 @@ These failures and naming mistakes must not be repeated.
 114. Do not interpret a Windows skip as evidence for Linux `openat`, Slurm,
      cgroup or CUDA/NVML invariants. Those controls remain outstanding until an
      exact-clean Linux/Slurm gate produces content-bound receipts.
+115. Do not infer a production stream namespace from a helper's default
+     `stream_id`. Every outer primary/diagnostic, MC operational stream and MC
+     reference half must have one globally unique task-bound ID frozen before
+     execution.
+116. Do not treat five deterministic replays of the same multiplier stream as
+     either five independent streams or an authorized common-random-number
+     optimization. The dependence and reuse policy must be explicit and tested.
+117. Do not construct a 4M MC reference by averaging or otherwise combining two
+     2M summary estimates. The registered reference is the estimator recomputed
+     on the fixed-order concatenation of both independent replicate streams.
+118. Do not replace `math.fsum`, type-1 order statistics or delete-one-batch
+     jackknife with vectorized/out-of-core/GPU numerics without a frozen
+     equivalence standard and boundary-scenario golden tests.
+119. Do not submit one Slurm task per simulation outer when the registered
+     account cannot admit that DAG. Sharding may change execution order only;
+     task identity, stream identity, exact-set reduction and no-overwrite resume
+     semantics must remain content-bound.

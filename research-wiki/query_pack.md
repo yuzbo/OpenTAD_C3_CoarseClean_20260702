@@ -1,19 +1,24 @@
 # DUCA-RIME Current Query Pack
 
-Last updated: `2026-08-01`
+Last updated: `2026-08-02`
 
 ## Current decision
 
 The user supplied and approved the final narrow repair
 `U-PRO-V21-FINAL-REPAIR-1`. It has been read in full, source-hash registered and
 implemented within its exact Stage A--D boundary. The core decision and protocol
-implementation route are accepted; no further Pro round is required before the
-candidate-free code gates. Deterministic role/incidence construction, the fixed
+implementation route are accepted. Deterministic role/incidence construction,
+the fixed
 `1/64` independent role contrast, positive two-point product multiplier with
 `kappa=1`, fixed-scale maxT, MC extension/jackknife, the 52-scenario registry,
 closed runtime receipts and safe publication are now `implemented / focused-tested`.
 The complete simulation and authoritative Linux/Slurm receipts have not been
-run, so production Admission remains `NO_GO`. The paper mainline remains an
+run. A post-implementation execution audit found that the full runner, stream-ID
+namespace, five-profile common-random-number policy, 24-by-200 operational
+producer, and two-2M-to-4M reference producer are not frozen or implemented.
+One narrow execution-protocol review is therefore required before releasing the
+full grid; this is not a new architecture/innovation round. Production Admission
+remains `NO_GO`. The paper mainline remains an
 **offline TAD pure selected-axis pre-backbone acquisition plugin**.
 Physical-time head injection is a separately named integration/diagnostic
 route and cannot support the pure-plugin claim. This is not Online TAD and is
@@ -27,7 +32,7 @@ Current evidence level:
 | Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 + U-PRO-ADMISSION-V21-1 + U-PRO-V21-FINAL-1 + U-PRO-V21-CORRIGENDUM-1 + U-PRO-V21-FINAL-REPAIR-1 / final_repair_core_accepted` |
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
-| Acquisition admission-v2.1 | `stage_A_D_protocol_implemented / focused_tested / production_NO_GO / full_52x500_and_24x200_not_run / authoritative_runtime_receipts_absent` |
+| Acquisition admission-v2.1 | `stage_A_D_core_implemented / focused_tested / execution_runner_and_stream_contract_missing / narrow_execution_review_required / production_NO_GO / full_52x500_and_24x200_not_run / authoritative_runtime_receipts_absent` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -161,6 +166,23 @@ This closes implementation blocker 2 only. Complete 52-by-500 execution,
 runtime receipts remain outstanding. Real-video production workers, scale-fit,
 calibration, holdout opening, Phase 1+, learned H-RIME, full-200 refit and
 official-final remain unauthorized. No paper-admissible empirical result exists.
+
+The next execution audit is recorded in
+`docs/superpowers/specs/2026-08-02-duca-admission-v2-1-full-simulation-execution-design.md`.
+It found a new P0 boundary between a frozen statistical registry and a runnable
+distributed experiment. `run_simulation_outer` has a caller-selected default
+stream zero, regenerates the same deterministic streams for five shift profiles,
+and has no full task/receipt runner. The MC gate has evaluators but no producer
+for the 4,800 independent operational streams or the two independent 2M halves
+and their true concatenated 4M reference. Those choices affect random dependence
+or binary64 results and must not be invented in a launcher.
+
+Read-only N16R4 capability inquiry reported `MaxArraySize=1001`, account
+`MaxSubmitJobs=16`, a GPU-only partition, and a default eight CPUs per requested
+GPU. The registered OpenTAD environment is Python 3.10.20/NumPy 1.23.5, while
+the frozen simulation runtime is Python 3.11.7/NumPy 1.23.5/Philox golden. A
+one-task-per-outer DAG and the existing environment are therefore invalid.
+These are `ENGINEERING_STATUS` facts, not model or paper performance evidence.
 
 ## Paper responsibility
 
@@ -856,23 +878,26 @@ Until those artifacts exist, the correct status is `implemented/tested` or
 Current priority, superseding the operational order below while retaining it as
 negative-history context:
 
-1. Keep the existing old-v2 and v2.1 Stage-0 paths fail-closed; do not modify
-   their authorization semantics.
-2. Run exactly one narrow Pro correction using
-   `docs/superpowers/plans/2026-07-31-duca-v2-1-corrigendum-independent-audit.md`.
-   It must close canonical ordering, the tail contrast's statistical unit,
-   crossed-multiplier scaling, a reproducible non-vacuous simulation/MC
-   contract and the runtime receipt invariants.
-3. Do not write v2.1 production protocol code, launch calibration or start
-   Phase 1 before that correction is accepted.
-4. After acceptance, implement deterministic candidate-free role/incidence,
-   pure-statistics and receipt modules first. All authorization fields remain
-   false through this slice.
-5. Run unit/property checks and the fully registered candidate-free
-   coverage/non-vacuity/power/MC-calibration grid before any real-video worker.
-6. Run the authoritative exact-clean Linux/PyTorch/Slurm runtime gate from a
-   fresh checkout. Local Windows Torch is not runtime evidence.
-7. Only after a separate production release decision, implement the real inventory/roles/windows/targets,
+1. Keep old v2 and v2.1 production paths fail-closed; do not change any
+   authorization field.
+2. Use the single narrow execution prompt in
+   `docs/superpowers/specs/2026-08-02-duca-admission-v2-1-full-simulation-execution-design.md`
+   to freeze stream IDs, five-profile common-random-number semantics, the
+   operational/reference MC producers, numerical equivalence, and resumable
+   content-addressed execution. Do not reopen model architecture or thresholds.
+3. After acceptance, implement the full runner, task manifest, immutable task
+   artifacts, strict reducers, terminal writers, focused adversarial tests, and
+   exact Python 3.11.7/NumPy 1.23.5 runtime gate.
+4. Run exact-clean Linux tests, all 500 S050 outers, and one registered nonzero
+   exact-runtime capacity benchmark. These are engineering gates, not acceptance
+   results.
+5. Only if those gates pass, release deterministic Slurm shards under the
+   account limit and complete all 52-by-500 outers, 24-by-200 operational streams,
+   and 24 true 4M references. Reduce only after exact task-set equality holds.
+6. Independently audit terminal simulation and runtime receipts, then stop for
+   a separate production authorization decision.
+7. Only after that separate production release decision, implement the real
+   inventory/roles/windows/targets,
    independent geometry, full-model executor pair, immutable raw shards,
    grouped aggregation, typed scientific protocol and v2.1 verifier.
 8. Run scale-fit, calibration and disjoint admission holdout only through a new
