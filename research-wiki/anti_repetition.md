@@ -18,6 +18,11 @@ updated: 2026-08-02
    tubelet: 384 ROI/budget decisions over 768 input frames. Do not redesign the
    heavy patch embedding for 768 independent raw-frame budgets or describe the
    tubelet-level policy as a raw-frame policy.
+0. Dynamic budgeting is staged. Stage 1 must keep an exact configurable
+   per-window total `sum_t K_t=B` and test only redistribution across tubelets
+   and evidence roles. Do not add a Lagrangian, dataset-average expected-K
+   target, or content-dependent window total until this stage passes and a new
+   protocol is frozen.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

@@ -86,6 +86,9 @@ the ROI/residual role quotas. The confirmed final objective requires dynamic
 total `K_t` and dynamic role allocation; changing only the role split under
 fixed K is not sufficient. The confirmed policy unit is the native two-frame
 VideoMAE tubelet, hence 384 dynamic ROI/budget decisions for a 768-frame input.
+The dynamic-budget route is staged: first enforce exact configurable
+`sum_t K_t=B` per window and learn only redistribution; content-dependent
+window-level B is deferred to a separately frozen successor.
 
 The learned hard policy is the explicit sequential conditional distribution
 

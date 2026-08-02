@@ -20,6 +20,10 @@ max_chars: 8000
   `K_t` at the native 384-step, two-frame VideoMAE tubelet granularity; the user
   explicitly confirmed both this temporal unit and that changing only the
   ROI/residual split under fixed K is insufficient. The role split must therefore be dynamic too.
+  Budgeting is staged: first require a configurable hard per-window budget
+  `sum_t K_t=B` while learning the 384-way redistribution; only a passing first
+  stage may introduce content-dependent window-level B under a separately
+  frozen cost constraint.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

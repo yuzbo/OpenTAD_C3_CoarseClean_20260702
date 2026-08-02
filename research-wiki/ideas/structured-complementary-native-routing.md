@@ -31,6 +31,11 @@ adaptive. The user explicitly rejected fixed total K with only a dynamic role
 split and accepted the native two-frame VideoMAE tubelet as the decision unit,
 giving 384 dynamic decisions over the 768-frame window.
 
+Budget freedom is deliberately staged. The first dynamic implementation keeps
+an exact configurable window total `sum_t K_t=B` so utility comes from learned
+redistribution rather than extra compute. Content-dependent window totals are a
+separate successor only after redistribution passes matched controls.
+
 ## Principle
 
 For every one of 384 native tubelets over an 11x20 patch grid, select exactly

@@ -2222,3 +2222,12 @@ append_only: true
   embedding. The remaining budget question is whether the sum over all 384
   `K_t` values is a hard per-window budget or may vary by window under a
   dataset-level cost constraint. No implementation or running job was changed.
+
+- 2026-08-02: user selected the recommended staged budget design. Dynamic
+  Stage 1 will enforce an exact configurable per-window total
+  `sum_{t=1}^{384} K_t=B` while learning tubelet and role redistribution. Only a
+  passing matched-budget stage may authorize a second design in which total B
+  varies by window under an explicit cost contract. Direct expected-K or
+  Lagrangian training is therefore out of scope for Stage 1. No code or running
+  pilot was changed before the remaining architecture questions and design
+  approval.
