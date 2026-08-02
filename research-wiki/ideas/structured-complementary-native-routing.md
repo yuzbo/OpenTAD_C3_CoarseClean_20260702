@@ -36,6 +36,10 @@ an exact configurable window total `sum_t K_t=B` so utility comes from learned
 redistribution rather than extra compute. Content-dependent window totals are a
 separate successor only after redistribution passes matched controls.
 
+Context is not a permanent deterministic anchor in the intended model. Its
+count is jointly allocated with ROI and residual evidence at every tubelet; no
+fixed context floor or post-hoc uniform repair is allowed.
+
 ## Principle
 
 For every one of 384 native tubelets over an 11x20 patch grid, select exactly

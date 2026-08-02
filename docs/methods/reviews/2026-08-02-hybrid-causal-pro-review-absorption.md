@@ -89,6 +89,9 @@ VideoMAE tubelet, hence 384 dynamic ROI/budget decisions for a 768-frame input.
 The dynamic-budget route is staged: first enforce exact configurable
 `sum_t K_t=B` per window and learn only redistribution; content-dependent
 window-level B is deferred to a separately frozen successor.
+The intended allocator also makes context count fully dynamic. It does not
+retain the probe's deterministic context8 or introduce another fixed context
+floor.
 
 The learned hard policy is the explicit sequential conditional distribution
 

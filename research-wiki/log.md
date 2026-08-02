@@ -2231,3 +2231,11 @@ append_only: true
   Lagrangian training is therefore out of scope for Stage 1. No code or running
   pilot was changed before the remaining architecture questions and design
   approval.
+
+- 2026-08-02: user required context allocation to be fully dynamic as well.
+  The intended Stage-1 policy therefore allocates
+  `(K_context,t,K_ROI,t,K_residual,t)` jointly under the hard window budget and
+  retains no deterministic context floor. A fixed uniform scaffold or post-hoc
+  coverage repair is prohibited. Whether total `K_t` may equal zero at a
+  tubelet remains the next explicit design question; no code or running job was
+  changed.

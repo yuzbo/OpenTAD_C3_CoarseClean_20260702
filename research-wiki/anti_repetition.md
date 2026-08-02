@@ -23,6 +23,10 @@ updated: 2026-08-02
    and evidence roles. Do not add a Lagrangian, dataset-average expected-K
    target, or content-dependent window total until this stage passes and a new
    protocol is frozen.
+0. Context allocation is fully dynamic. Do not reserve a fixed context count,
+   enforce a deterministic per-tubelet context floor, or repair learned budgets
+   with an undisclosed uniform scaffold. Any lower bound on total `K_t` is a
+   separate design choice and must not be mislabeled as fixed context evidence.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

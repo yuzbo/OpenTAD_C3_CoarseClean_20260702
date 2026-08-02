@@ -24,6 +24,8 @@ max_chars: 8000
   `sum_t K_t=B` while learning the 384-way redistribution; only a passing first
   stage may introduce content-dependent window-level B under a separately
   frozen cost constraint.
+  All three role counts are dynamic, including context: there is no fixed
+  context floor and no hidden uniform scaffold.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and
