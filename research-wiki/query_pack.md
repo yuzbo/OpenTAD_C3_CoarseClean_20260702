@@ -33,6 +33,13 @@ max_chars: 8000
   executed-heavy-K charge. `learned-null` and `scout-projection` are separately
   trained carrier ablations, never inference-time switches on the main
   checkpoint.
+  The user approved the Stage-1 allocator family: one global constrained
+  exact-`B` projection over all physical `(tubelet,patch)` candidates, with at
+  most one dynamic context/ROI/residual role per physical token. `K_t` and all
+  role counts are induced by the selected set rather than predicted as fixed
+  quotas or repaired afterward. The exact ragged VideoMAE execution design is
+  still being reviewed: the current `[B,T,K]` packed path requires constant K
+  and cannot be relabeled as global-`B` execution through dummy/padded tokens.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

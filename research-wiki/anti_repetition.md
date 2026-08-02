@@ -37,6 +37,17 @@ updated: 2026-08-02
    heavy K. `learned-null` and `scout-projection` are independent, separately
    trained ablations; never enable either only at inference or mix their
    checkpoints with masked-zero results.
+0. The approved dynamic allocator is a global exact-`B` physical-token
+   projection. Do not implement it as independent per-tubelet top-K, a separate
+   rounded count head, or top-B over role copies that can select one physical
+   patch more than once. `K_t` and role counts must emerge from one constrained
+   union with exact physical-token uniqueness.
+0. The existing native packed VideoMAE path assumes a rectangular `[B,T,K]`
+   route and equal selected-token counts across chunk batches. Do not pad empty
+   or short tubelets/chunks with dummy heavy tokens and still report
+   `sum_t K_t=B`, one exact-B compute path, or `K_t=0`. Requested, unique,
+   padded, executed patch-embedding, attention, MLP, and Adapter counts must be
+   separately receipted until a true ragged executor is validated.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

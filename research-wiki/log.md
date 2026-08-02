@@ -2271,3 +2271,15 @@ append_only: true
   bindings, no-partial and no-test guards all passed. No metrics were read. The
   old namespace remains immutable; only a new versioned, hash-bound recovery
   finalizer may validate and interpret the complete population.
+
+- 2026-08-02: user approved the recommended Dynamic Stage-1 allocator family:
+  global constrained exact-`B` projection over all 384x220 physical native
+  tokens. A physical patch may receive at most one of the dynamic
+  context/ROI/residual roles; the selected union induces integer `K_t` and role
+  counts, including `K_t=0`, without fixed quotas, a rounded count head, or
+  post-hoc coverage repair. Code inspection found that the current native
+  packed VideoMAE accepts only rectangular `[B,T,K]` indices and requires equal
+  selected counts across chunk batches. Therefore the global allocator is
+  `designed` only: its ragged execution section still requires user approval,
+  and dummy/padded heavy tokens may not be mislabeled as exact-B compute. No
+  model code or experiment was changed.

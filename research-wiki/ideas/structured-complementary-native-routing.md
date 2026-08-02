@@ -50,6 +50,15 @@ scout content and consumes no heavy execution. `learned-null` and
 `scout-projection` are independent, separately trained carrier ablations rather
 than inference-time substitutions on the masked-zero checkpoint.
 
+The user approved a global exact-window-budget allocator rather than a separate
+count-then-select hierarchy. Each physical native token has three competing
+context/ROI/residual role utilities but can enter the hard union at most once;
+one global projection selects exactly B physical tokens over the 384x220
+window. Per-tubelet `K_t` and all role counts therefore emerge from the union,
+including valid zeros. The detailed ragged VideoMAE executor remains under
+design review because the implemented packed path assumes constant per-tubelet
+K; padding that path would not be genuine exact-B heavy computation.
+
 ## Principle
 
 For every one of 384 native tubelets over an 11x20 patch grid, select exactly
