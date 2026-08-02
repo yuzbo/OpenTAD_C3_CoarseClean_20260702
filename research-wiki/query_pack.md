@@ -30,7 +30,7 @@ Current evidence level:
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
 | Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
-| Official full-data DUCA feasibility | `user_approved / Stage_A_implemented / first_exact_commit_Slurm_gate_passed_1213710 / four_job_scheduler_grouping_implemented / fresh_gate_pending / not_yet_run` |
+| Official full-data DUCA feasibility | `experiment_running / source_2df0103e / exact_commit_gate_1213711_passed / seed_jobs_1213712_1213713_1213714_running / seal_1213715_dependency_pending / no_metrics_opened` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -327,15 +327,19 @@ The second repaired Stage-0 recovery transaction is terminally failed closed:
 
 This status is `ENGINEERING_STATUS`, not an empirical result.
 
-The user has now approved direct execution of the compact paper-feasibility
-route. Stage A is implemented as four ActionFormer arms by three registered
-seeds, with exact full-200 training, exact-211 evaluation, terminal epoch-59 EMA
-and transactional receipts. The jointly optimized ASFormer coarse frontend is
-part of DUCA; it is not replaced by a frozen checkpoint. Stage B dynamic budget
-training remains blocked on full-200 training-only OOF targets from completed
-Stage A. Local focused checks pass (`11 passed`, with the Linux loader-contract
-test skipped on the Windows host); the authoritative clean Linux/Slurm gate and
-experiment submission remain pending. No paper-admissible result exists yet.
+The user approved direct execution of the compact paper-feasibility route.
+Stage A is implemented and released as four ActionFormer arms by three
+registered seeds, with exact full-200 training, exact-211 evaluation, terminal
+epoch-59 EMA and transactional receipts. The jointly optimized ASFormer coarse
+frontend is part of DUCA; it is not replaced by a frozen checkpoint. Exact
+source commit `2df0103ec1c26ff7cff7ed15f399e78e640df211` passed authoritative Slurm
+gate `1213711` with 37 Linux/PyTorch tests. Seed jobs
+`1213712/1213713/1213714` contain the twelve logical cells and seal job
+`1213715` depends on them. After an initial scheduler wait, all three seed jobs
+are running and the seal remains dependency-pending, so this remains
+`ENGINEERING_STATUS`. Stage B dynamic budget training remains blocked on a
+complete sealed Stage A and full-200 training-only OOF targets. No metric has
+been opened and no paper-admissible result exists yet.
 
 The user authorized recovery-v3 implementation and redeployment. The local
 repair is now implemented:

@@ -6,8 +6,8 @@
 - Design: `designed`
 - Implementation: `implemented`
 - Local focused verification: `11_passed / 1_Linux_loader_test_skipped_on_Windows`
-- Authoritative Linux/Slurm verification: `pending`
-- Experiment: `not_yet_submitted`
+- Authoritative Linux/Slurm verification: `passed / job_1213711 / 37_tests`
+- Experiment: `experiment_running / three_seed_jobs_running`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
 
@@ -56,6 +56,17 @@ seal job. This four-job grouping exists only to satisfy the account's immutable
 `MaxSubmitJobs=16` while other user-owned jobs are active. It does not share
 weights, RNG state, work directories or receipts across logical cells and does
 not change the frozen 12-cell scientific matrix.
+
+The exact deployed source is commit
+`2df0103ec1c26ff7cff7ed15f399e78e640df211`. Authoritative gate job `1213711`
+completed with 37 Linux/PyTorch tests. The production transaction root is
+`/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_2df0103e_20260802_120351`.
+Seed jobs `1213712`, `1213713`, and `1213714` contain the twelve independent
+logical cells; matrix seal job `1213715` depends on all three. At release, the
+seed jobs were scheduler-pending on `AssocGrpGRES` and the seal was dependency-
+pending. The first monitored state change placed all three seed jobs in
+`RUNNING`, while the seal remained dependency-pending. No metric has been
+opened.
 
 No single cell, seed, intermediate checkpoint or incomplete matrix may support a
 performance statement. Until all twelve terminal receipts pass, the status is

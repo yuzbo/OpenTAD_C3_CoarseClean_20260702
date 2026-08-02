@@ -1,5 +1,33 @@
 # Research Log
 
+## 2026-08-02 — Grouped full-data Stage-A transaction released
+
+- Published exact source commit `2df0103ec1c26ff7cff7ed15f399e78e640df211`
+  and installed clean remote checkout
+  `/data/run01/sczc063/yuzibo/OpenTAD_DUCA_PAPER_2df0103e`.
+- Authoritative exact-commit Slurm gate `1213711` completed with exit `0:0` and
+  37 Linux/PyTorch tests. Protocol-manifest SHA-256 is
+  `ef8c1991fe5a638607cc1ac96e1da55802985000ce0a47c0b17160349ebc392f`; gate-
+  receipt SHA-256 is
+  `12b83daa514094ecdc5dc967e85eda9227dd5b17c04f7d92c5571b63635f823e`.
+- Released production root
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_2df0103e_20260802_120351`.
+  Submission-manifest SHA-256 is
+  `9ee9e4a7ba0f413ccf3a348bc3096487bd71f67949aeaa147ec6c31385a65f9a`;
+  released-receipt SHA-256 is
+  `96c7268937761f1aca9ab19b7ed18e36ab001d99de84a96af9af6b8b74b92759`.
+- Seed jobs are `1213712` (5801), `1213713` (8123), and `1213714` (12011).
+  Each executes four independently rooted, independently seeded logical arms.
+  Matrix seal job `1213715` uses exact `afterok` dependencies on all three seed
+  jobs. The manifest records 12 logical cells, four scheduler jobs,
+  `grouping_only=true`, `phase_b=false`, and `single_seed_claim=false`.
+- Initial scheduler state was `PENDING (AssocGrpGRES)` for all seed jobs and
+  `PENDING (Dependency)` for the seal. This is `ENGINEERING_STATUS`; no training
+  value, partial evaluation, single-seed metric, or incomplete-matrix result was
+  opened or interpreted.
+- First state change: seed jobs `1213712/1213713/1213714` entered `RUNNING`; seal
+  `1213715` remains `PENDING (Dependency)`. No metric was opened.
+
 ## 2026-08-02 — Stage-A Linux gate passed; scheduler grouping required
 
 - Published paper-matrix commit `1ec4faaa3afbc4d65bb16dade16de03e2bf4b457`
