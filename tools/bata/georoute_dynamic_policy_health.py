@@ -230,7 +230,11 @@ def bind_dynamic_policy_health_config(
         )
     work_dir = Path(work_dir).resolve()
     write_boundary = Path("/data/run01/sczc063/yuzibo").resolve()
-    if os.name != "nt" and not _inside(work_dir, write_boundary):
+    if (
+        os.name != "nt"
+        and str(os.environ.get("SLURM_JOB_ID", "")).isdigit()
+        and not _inside(work_dir, write_boundary)
+    ):
         raise ValueError(
             "policy-health work directory leaves the remote write boundary"
         )
