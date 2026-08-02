@@ -469,3 +469,8 @@ These failures and naming mistakes must not be repeated.
 136. Do not weaken the q=16 sub-quantum fail-closed rule to make a regression
      green. If behavior is already correct and only the frozen exception-message
      contract differs, repair the message narrowly and rerun the complete gate.
+137. A transport-clean OpenTAD checkout does not contain ignored
+     `data/thumos-14` runtime links. Before releasing held Stage-A jobs, bind and
+     hash-check annotations/class-map/video paths and resolve every formal config.
+     Never discover this only after transactional release; signature
+     `missing_runtime_thumos_relative_bindings` has consumed its one recovery.

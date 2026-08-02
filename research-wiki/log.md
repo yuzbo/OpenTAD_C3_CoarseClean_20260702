@@ -19,6 +19,32 @@
   requested/effective K semantics, data, seed, checkpoint, evaluator, threshold,
   or metric. Both failed jobs and their roots/logs remain immutable; no passing
   receipt, Stage-A manifest, or experiment transaction exists yet.
+- Repair source `00f54dfecb6a536224958b1cd64d2daa5b8ca982` passed code gate
+  `1215368` (`91 passed`, receipt SHA-256
+  `5cb16630ea07f38db6dc9a14d9bcd18efa2a0c9ab8f408dd0c9fde3610c26185`)
+  and real natural-short-window gate `1215369` (receipt SHA-256
+  `2eec808e36d9eb92a8f22eee67d5a00588e4f114e6b27dbaca9a56a495b29d89`).
+  The latter enumerated full-200, found 43 natural short samples and zero
+  sub-quantum samples, and completed all four actual heavy-backbone executions
+  without padding/repetition. This remains engineering-only evidence.
+- The first formal root
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_00f54dfe_20260803_023009`
+  failed before training: jobs `1215370`–`1215375` shared `runtime annotation
+  binding drift`; seal `1215376` was cancelled. Register
+  `missing_runtime_thumos_relative_bindings`. The exact clean checkout lacked
+  ignored OpenTAD runtime data symlinks; no cell artifact or metric exists.
+- After verifying that the prior formal link targets exactly match the frozen
+  annotation/class-map hashes, restored the runtime links, verified all four
+  configs and retained clean commit status. The signature's one-time recovery
+  released root
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_00f54dfe_retry1_20260803_023358`.
+  Protocol/submission/released-receipt SHA-256 values are respectively
+  `b4baa6b60954c00dc906740d801a170cc079021192cc2c7c2c81f7f5bc209366`,
+  `8def0bce9a0447b9a3d25f6a171452ba9e15ad2f5fdf937571052d2915f3e19e`, and
+  `c49d8f3f1b017ec11ef7ad1ca3c246e2798fb7892af183544809421bb658c97c`.
+  Jobs are `1215377/1215378`, `1215379/1215380`, `1215381/1215382` for the
+  three control/DUCA seed pairs, with seal `1215383`. Metrics and Stage B remain
+  sealed.
 
 ## 2026-08-03 — Stage-A natural-short-window corrigendum accepted and implemented
 

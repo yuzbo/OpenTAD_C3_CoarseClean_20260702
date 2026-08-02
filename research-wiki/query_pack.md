@@ -30,7 +30,7 @@ Current evidence level:
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
 | Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
-| Official full-data DUCA feasibility | `corrigendum_approved_and_implemented_locally / old_source_2df0103e_failed_immutable / first_corrected_code_gate_attempts_failed_engineering_only / narrow_message_contract_repair_in_progress / no_empirical_conclusion` |
+| Official full-data DUCA feasibility | `corrected_source_00f54dfe / code_gate_1215368_passed / real_short_gate_1215369_passed / recovery1_7_job_transaction_released / experiment_running / metrics_sealed / no_empirical_conclusion` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -388,6 +388,41 @@ Signature: `subquantum_failclosed_exception_message_contract_mismatch`. No model
 experiment, performance metric, manifest, or passing receipt was produced. The
 repair changes only the fail-closed exception text; it does not change the
 model, loss, K rule, data, seed, checkpoint, evaluator, or scientific question.
+
+The narrow repair is exact source
+`00f54dfecb6a536224958b1cd64d2daa5b8ca982`. Slurm code gate `1215368`
+completed `0:0` with 91 Linux/PyTorch tests; its receipt SHA-256 is
+`5cb16630ea07f38db6dc9a14d9bcd18efa2a0c9ab8f408dd0c9fde3610c26185`.
+The dependent real-data heavy-backbone gate `1215369` completed `0:0`; receipt
+SHA-256 `2eec808e36d9eb92a8f22eee67d5a00588e4f114e6b27dbaca9a56a495b29d89`.
+It enumerated all 200 training videos, found 43 natural short samples and zero
+sub-quantum samples, then completed real selector → unique gather → VideoMAE
+execution for all four requested budgets with no padding or repetition. This is
+engineering evidence only and consumed no validation/test data or metric.
+
+The first seven-job release under this source used root
+`/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_00f54dfe_20260803_023009`.
+Jobs `1215370`–`1215375` all failed before training on the same
+`runtime annotation binding drift`; seal `1215376` was cancelled. The clean
+transport checkout lacked OpenTAD's ignored `data/thumos-14` runtime symlinks.
+Register `missing_runtime_thumos_relative_bindings`; no cell root, checkpoint,
+evaluation, or metric was produced. The one-time protocol-neutral recovery
+restored the same symlink targets used by the earlier formal checkout only after
+their annotation/class-map hashes matched the registered assets, verified all
+four runtime configs, and preserved a clean exact-commit Git status.
+
+The only active transaction is now
+`/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_00f54dfe_retry1_20260803_023358`.
+Protocol manifest SHA-256 is
+`b4baa6b60954c00dc906740d801a170cc079021192cc2c7c2c81f7f5bc209366`,
+submission manifest SHA-256 is
+`8def0bce9a0447b9a3d25f6a171452ba9e15ad2f5fdf937571052d2915f3e19e`,
+and released-receipt SHA-256 is
+`c49d8f3f1b017ec11ef7ad1ca3c246e2798fb7892af183544809421bb658c97c`.
+Control/DUCA job pairs are `1215377/1215378` (5801), `1215379/1215380`
+(8123), and `1215381/1215382` (12011); seal is `1215383`. The six groups are
+released and scheduler-pending; seal is dependency-pending. Stage B and all
+metric access remain sealed until twelve terminal receipts and the seal pass.
 
 The user authorized recovery-v3 implementation and redeployment. The local
 repair is now implemented:

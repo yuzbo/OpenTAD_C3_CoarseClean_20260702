@@ -8,8 +8,8 @@
 - Implementation: `corrigendum_implemented_locally`
 - Local focused verification: `15_passed / 1_Linux_loader_test_skipped_on_Windows / Torch_tests_blocked_by_local_c10_DLL`
 - Independent read-only audit: `selector_tensor_chain_GO / enforced_two_gate_dependency_chain_GO / no_P0_or_P1`
-- Authoritative Linux/Slurm verification: `old_source_passed_1213711 / corrected_75b9ba3d_jobs_1215366_1215367_failed_engineering_only / narrow_message_repair_in_progress`
-- Experiment: `old_transaction_failed_immutable / corrected_transaction_not_yet_released`
+- Authoritative Linux/Slurm verification: `corrected_source_00f54dfe / code_gate_1215368_passed / real_short_gate_1215369_passed`
+- Experiment: `old_transactions_failed_immutable / recovery1_transaction_released_and_scheduler_pending / metrics_sealed`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
 
@@ -138,6 +138,36 @@ failures with signatures `slurm_wrap_posix_sh_source_not_found` and
 passing receipt, manifest, model run, or metric. The second repair is restricted
 to the exception wording and requires a new commit, clean checkout, full code
 gate and real short-window gate before any Stage-A release.
+
+That repair is source `00f54dfecb6a536224958b1cd64d2daa5b8ca982`.
+Code gate `1215368` and real short-window gate `1215369` completed `0:0`; their
+receipt SHA-256 values are
+`5cb16630ea07f38db6dc9a14d9bcd18efa2a0c9ab8f408dd0c9fde3610c26185` and
+`2eec808e36d9eb92a8f22eee67d5a00588e4f114e6b27dbaca9a56a495b29d89`.
+The real gate covered all 200 training videos, selected a real natural short
+sample, proved zero `L<16` samples, and completed all four heavy-backbone paths
+without padding/repetition. It is not method-performance evidence.
+
+The first corrected release at root
+`/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_00f54dfe_20260803_023009`
+failed before training because the transport-clean checkout omitted ignored
+runtime `data/thumos-14` links. Jobs `1215370`–`1215375` share signature
+`missing_runtime_thumos_relative_bindings`; seal `1215376` was cancelled. After
+hash-verifying and restoring exactly the formal runtime bindings, all four config
+prechecks passed while Git remained clean.
+
+The unique active recovery root is
+`/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_00f54dfe_retry1_20260803_023358`.
+Protocol manifest SHA-256 is
+`b4baa6b60954c00dc906740d801a170cc079021192cc2c7c2c81f7f5bc209366`;
+submission manifest SHA-256 is
+`8def0bce9a0447b9a3d25f6a171452ba9e15ad2f5fdf937571052d2915f3e19e`;
+released receipt SHA-256 is
+`c49d8f3f1b017ec11ef7ad1ca3c246e2798fb7892af183544809421bb658c97c`.
+Control/DUCA jobs are `1215377/1215378` (5801), `1215379/1215380` (8123),
+and `1215381/1215382` (12011); dependent seal is `1215383`. The matrix remains
+`experiment_running` only. No metric may be opened before all twelve terminal
+receipts and the seal pass.
 
 No single cell, seed, intermediate checkpoint or incomplete matrix may support a
 performance statement. Until all twelve terminal receipts pass, the status is
