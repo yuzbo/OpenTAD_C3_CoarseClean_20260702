@@ -105,6 +105,22 @@ updated: 2026-08-02
    evidence. The main Stage-1 objective has no area, coverage, expected-cost,
    fixed-context, or fixed-`K_t` loss; exact hard B and measured cost remain the
    compute contract.
+0. Do not describe the proposed in-bounds ROI mapping as mathematically
+   unrelated to Uni-AdaFocus. At official commit `88464883`, Uni emits sigmoid
+   top-left/size actions, maps height and width into `96..224` pixels for a
+   224-pixel input, and maps the top-left coordinate into the residual legal
+   interval. Rewritten in centre coordinates, this is algebraically the same
+   bounded-interval family. The differences that require evidence are the
+   minimum-size rule, native-token membership versus resized source crops, and
+   the associated loss/gradient contract.
+0. Uni-AdaFocus Eq. 15 explicitly pushes deformable crops toward the full frame;
+   its official code implements this by penalizing size actions away from one.
+   Do not transplant that classification-specific anti-collapse regularizer into
+   exact-B native token routing: ROI area is not executed heavy-token count and a
+   full-frame bias can erase ROI selectivity. Conversely, do not claim that
+   `w_min=1/W_grid`, `h_min=1/H_grid` is proven optimal. It is only a discussed
+   resolution-matched floor until approved and tested against a frozen matched
+   scale-sensitivity ablation.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

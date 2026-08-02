@@ -2343,3 +2343,20 @@ append_only: true
   implemented or tested; degeneration guards, exact schedule constants,
   ablations and tests remain under review. No model code, Job, or old artifact
   changed.
+- `2026-08-02T09:52:19Z` ingest_paper: skipped existing paper wang2024_uniadafocus_spatialtemporal_dynamic.md (arxiv:2412.11228)
+
+- 2026-08-02: user requested the exact Uni-AdaFocus deformable-patch formula and
+  challenged whether the proposed SCNR-TAD geometry difference is necessary and
+  correct. Re-audit of paper arXiv:2412.11228 and official commit `88464883`
+  found that the paper's centre/height/width description is implemented with
+  sigmoid top-left/size actions: source height/width are mapped to `96..224`
+  pixels, top-left is mapped into the remaining legal interval, and the crop is
+  resized to a fixed local input. In normalized centre coordinates this is
+  algebraically the same bounded-interval family as the proposed formula. The
+  real proposed changes are a native-grid minimum (`1/W_grid,1/H_grid`), native
+  physical-token membership rather than resized crops, TAD proxy supervision,
+  and omission of Uni Eq. 15's full-frame-seeking size regularizer. The latter
+  differences are structurally motivated by exact hard B and high-IoU TAD, but
+  the grid floor is not proven optimal and remains `discussed` pending user
+  approval and a frozen scale-sensitivity ablation. No model code, experiment,
+  Job, or old artifact changed.

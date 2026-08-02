@@ -1,6 +1,6 @@
 ---
 type: wiki_index
-updated: 2026-07-23
+updated: 2026-08-02
 project: C3-DUCA efficient temporal acquisition for TAD
 ---
 
@@ -59,10 +59,12 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [ChronoTransport](ideas/chronotransport.md)
 - [PhysTime](ideas/phystime.md)
 - [Geometry-Residual-Depth Routing for offline TAD](ideas/geo-route-adatad.md)
+- [Structured Complementary Native Routing](ideas/structured-complementary-native-routing.md)
 
 ### Reviewed Literature
 
 - [FlashVID: training-free VLLM token merging](papers/fan2026-flashvid.md)
+- [Uni-AdaFocus: spatial-temporal dynamic computation](papers/wang2024_uniadafocus_spatialtemporal_dynamic.md)
 
 ### Experiments
 

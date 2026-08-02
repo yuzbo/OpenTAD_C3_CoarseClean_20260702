@@ -126,6 +126,31 @@ No area, coverage, expected-cost, fixed-context, or fixed-`K_t` loss is part of
 the main Stage-1 objective. Exact schedule constants, degeneration safeguards,
 error handling, ablations, and tests remain under section-by-section review.
 
+### Formula-level Uni-AdaFocus comparison (`discussed`)
+
+The paper states a deformable patch as centre coordinates plus height and width,
+but official commit `88464883` implements an equivalent top-left form. With four
+sigmoid actions `(l_y,l_x,s_h,s_w)`, its 224-pixel path computes
+`H_p=96+(224-96)s_h`, `W_p=96+(224-96)s_w`,
+`y_0=l_y(224-H_p)`, and `x_0=l_x(224-W_p)`, before resizing the
+selected source rectangle to a fixed local-CNN input. Hence
+`c_x=x_0+W_p/2` has exactly the bounded-interval structure
+`c_x=w/2+(1-w)l_x` after normalization. The earlier proposed equation is not a
+new geometric identity; its substantive change is replacing Uni's fixed
+`96/224` minimum by a native-grid floor `1/W_grid,1/H_grid`.
+
+Uni's spatial proxy interpolates a crop from detached global feature maps and
+optimizes auxiliary classification. The paper identifies size collapse under
+that proxy and adds Eq. 15,
+`alpha[(H-H_p)^2+(W-W_p)^2]`; the code equivalently penalizes normalized size
+actions away from one. Its hard local crop action remains detached. SCNR-TAD
+instead selects unique native physical tokens under exact B, does not resize an
+ROI into a second fixed local input, and needs high-IoU TAD rather than video
+classification supervision. Therefore the fixed 96-pixel floor and
+full-frame-seeking penalty should not be copied automatically. A one-grid-cell
+floor and no size penalty are plausible task-native replacements, but they are
+still `discussed`, not approved, implemented, tested, or empirically supported.
+
 ## Principle
 
 For every one of 384 native tubelets over an 11x20 patch grid, select exactly

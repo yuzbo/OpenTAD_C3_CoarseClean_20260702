@@ -72,6 +72,20 @@ max_chars: 8000
   executed B. Its weight is enabled early and annealed to zero by optimizer step
   before the final hard-only phase. The main setting adds no area, coverage,
   expected-cost or fixed-context loss; PL remains a separately trained ablation.
+  A formula-level re-audit is now `discussed`, not approved. Uni-AdaFocus's
+  paper describes centre/height/width geometry, while official commit `88464883`
+  actually emits four sigmoid actions and maps source sizes to `96..224` pixels
+  on a 224-pixel input, then maps normalized top-left fractions into the
+  remaining in-bounds interval. In normalized coordinates this is algebraically
+  the same bounded-interval family as the proposed
+  `w=w_min+(1-w_min)sigmoid(a_w)` and
+  `c_x=w/2+(1-w)sigmoid(a_x)`; the material differences are the minimum size,
+  native-token membership instead of resized crops, and loss semantics. Uni adds
+  Eq. 15's full-frame-seeking size regularizer (implemented as a penalty toward
+  size action one) because its feature-interpolation classification proxy shrinks
+  deformable crops. The proposed `w_min=1/W_grid`, `h_min=1/H_grid` and omission
+  of that regularizer are structurally motivated by the native token resolution
+  and exact hard B, but remain unapproved and empirically unverified.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and
