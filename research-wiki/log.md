@@ -1,5 +1,33 @@
 # Research Log
 
+## 2026-08-02 — User stopped simulation-first work and restored model priority
+
+- The user explicitly rejected further complex candidate-free Admission
+  engineering before DUCA model feasibility is established. The unexecuted
+  52-by-500 simulation, 24-by-200 MC calibration and 4M reference work are no
+  longer active prerequisites and will consume no compute without new explicit
+  authorization.
+- The simulation design is preserved as negative-history/protocol provenance;
+  production Admission remains `NO_GO`, but this historical gate no longer
+  blocks a paper-facing DUCA experiment.
+- A read-only repository audit found no `PAPER_ADMISSIBLE_RESULT`. Existing
+  20-video measurements, salvage checkpoints and candidate-free fixtures remain
+  engineering-only and will not be used to explain model performance.
+- The connected window-local DUCA path exists, but the official experiment still
+  needs a full-200 configuration, exact-211 evaluator completeness, a frozen
+  training-only coarse-scan checkpoint, exact protocol/pretrain assets and
+  homogeneous dynamic-K execution. H-RIME remains replay/oracle-only and is
+  deferred until window-local DUCA feasibility is established.
+- The recommended first paper-facing panel is ActionFormer/K384 over seeds
+  5801/8123/12011, comparing dense, uniform fixed-K, uniform mixed-K, DUCA
+  fixed-K position selection, DUCA dynamic-K and exact realized-cost
+  `U-same-K`. Every trainable arm uses all 200 training videos and the complete
+  211-video OpenTAD evaluation; paper metrics include official mAP, high-IoU,
+  short-action and measured full-stack cost.
+- No model code was changed and no experiment was submitted in this decision
+  update. The next implementation requires review of this compact feasibility
+  design.
+
 ## 2026-08-02 — V2.1 full-simulation execution protocol found incomplete
 
 - Began direct execution of the user-approved candidate-free Admission v2.1

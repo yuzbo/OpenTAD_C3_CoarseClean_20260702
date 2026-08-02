@@ -412,3 +412,15 @@ These failures and naming mistakes must not be repeated.
      account cannot admit that DAG. Sharding may change execution order only;
      task identity, stream identity, exact-set reduction and no-overwrite resume
      semantics must remain content-bound.
+120. Do not spend additional compute or implementation time on the candidate-free
+     Admission v2.1 full-simulation runner without new explicit user
+     authorization. Its unexecuted design is historical and nonblocking.
+121. Do not make statistical-gate engineering a prerequisite for the first
+     official full-data test of DUCA's model value. The current priority is
+     full-200 training, exact-211 evaluation and matched accuracy--cost controls.
+122. Do not begin learned H-RIME merely because its deterministic oracle surface
+     exists. First establish or reject window-local DUCA feasibility on the
+     complete official protocol.
+123. Do not call another subset, in-sample control, single seed, partial matrix or
+     simulation a DUCA feasibility result. The first reported result must already
+     be eligible for a paper table or ablation under its declared scope.

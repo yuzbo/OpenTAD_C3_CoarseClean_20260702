@@ -5,20 +5,17 @@ Last updated: `2026-08-02`
 ## Current decision
 
 The user supplied and approved the final narrow repair
-`U-PRO-V21-FINAL-REPAIR-1`. It has been read in full, source-hash registered and
-implemented within its exact Stage A--D boundary. The core decision and protocol
-implementation route are accepted. Deterministic role/incidence construction,
-the fixed
-`1/64` independent role contrast, positive two-point product multiplier with
-`kappa=1`, fixed-scale maxT, MC extension/jackknife, the 52-scenario registry,
-closed runtime receipts and safe publication are now `implemented / focused-tested`.
-The complete simulation and authoritative Linux/Slurm receipts have not been
-run. A post-implementation execution audit found that the full runner, stream-ID
-namespace, five-profile common-random-number policy, 24-by-200 operational
-producer, and two-2M-to-4M reference producer are not frozen or implemented.
-One narrow execution-protocol review is therefore required before releasing the
-full grid; this is not a new architecture/innovation round. Production Admission
-remains `NO_GO`. The paper mainline remains an
+`U-PRO-V21-FINAL-REPAIR-1`; its candidate-free statistical core remains
+`implemented / focused-tested`. On `2026-08-02`, the user explicitly
+reprioritized the project: do not build the missing full-simulation runner, do
+not execute the 52-by-500 or 24-by-200 MC grids, and do not treat Admission
+engineering as a prerequisite for testing DUCA's model value. The simulation
+code and its unexecuted design are preserved as non-authorizing historical
+provenance. Production Admission remains `NO_GO`, but it no longer blocks the
+paper-facing DUCA feasibility route. The current first priority is an official
+full-data experiment that can determine whether DUCA's selected-axis acquisition
+improves the accuracy--cost frontier against matched controls. The paper
+mainline remains an
 **offline TAD pure selected-axis pre-backbone acquisition plugin**.
 Physical-time head injection is a separately named integration/diagnostic
 route and cannot support the pure-plugin claim. This is not Online TAD and is
@@ -32,7 +29,8 @@ Current evidence level:
 | Pro architecture adjudication | `U-PRO-PURE-PLUGIN-1 + U-PRO-ADMISSION-V21-1 + U-PRO-V21-FINAL-1 + U-PRO-V21-CORRIGENDUM-1 + U-PRO-V21-FINAL-REPAIR-1 / final_repair_core_accepted` |
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
-| Acquisition admission-v2.1 | `stage_A_D_core_implemented / focused_tested / execution_runner_and_stream_contract_missing / narrow_execution_review_required / production_NO_GO / full_52x500_and_24x200_not_run / authoritative_runtime_receipts_absent` |
+| Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
+| Official full-data DUCA feasibility | `current_priority / compact_design_pending_user_approval / not_yet_run / full_200_train_and_exact_211_eval_required` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -43,7 +41,7 @@ Current evidence level:
 | Phase 2/3/4 | `recovery_v6_children_cancelled / phase4_never_opened` |
 | Phase-4 official comparability | `blocked / current trainer uses 100-of-200 development role / entry hard-disabled pending full-train refit` |
 | Latest four-stage transaction | `recovery_v6_failed_closed / terminal` |
-| H-RIME scientific route | `user_approved / designed` |
+| H-RIME scientific route | `user_approved / designed / deferred_until_window_local_DUCA_feasibility` |
 | Stage-0 repair implementation | `recovery_v6_exact_commit_5a599e90 / authoritative_preflight_passed` |
 | H-RIME deterministic core | `implemented / local_non_torch_tested` |
 | H-RIME Stage-1 oracle/evaluation surface | `implemented / local_non_torch_tested / remote_torch_tested` |
@@ -875,40 +873,35 @@ Until those artifacts exist, the correct status is `implemented/tested` or
 
 ## Immediate execution
 
-Current priority, superseding the operational order below while retaining it as
-negative-history context:
+Proposed compact feasibility design, pending user approval and superseding the
+simulation-first order below while retaining it as negative-history context:
 
-1. Keep old v2 and v2.1 production paths fail-closed; do not change any
-   authorization field.
-2. Use the single narrow execution prompt in
-   `docs/superpowers/specs/2026-08-02-duca-admission-v2-1-full-simulation-execution-design.md`
-   to freeze stream IDs, five-profile common-random-number semantics, the
-   operational/reference MC producers, numerical equivalence, and resumable
-   content-addressed execution. Do not reopen model architecture or thresholds.
-3. After acceptance, implement the full runner, task manifest, immutable task
-   artifacts, strict reducers, terminal writers, focused adversarial tests, and
-   exact Python 3.11.7/NumPy 1.23.5 runtime gate.
-4. Run exact-clean Linux tests, all 500 S050 outers, and one registered nonzero
-   exact-runtime capacity benchmark. These are engineering gates, not acceptance
-   results.
-5. Only if those gates pass, release deterministic Slurm shards under the
-   account limit and complete all 52-by-500 outers, 24-by-200 operational streams,
-   and 24 true 4M references. Reduce only after exact task-set equality holds.
-6. Independently audit terminal simulation and runtime receipts, then stop for
-   a separate production authorization decision.
-7. Only after that separate production release decision, implement the real
-   inventory/roles/windows/targets,
-   independent geometry, full-model executor pair, immutable raw shards,
-   grouped aggregation, typed scientific protocol and v2.1 verifier.
-8. Run scale-fit, calibration and disjoint admission holdout only through a new
-   exact-commit Slurm DAG with success and failure receipts. FP32 remains
-   diagnostic and cannot rescue AMP.
-9. Only a verified `duca_acquisition_admission_v2_1` passed receipt may release
-   `DUCA-P1-V2-PURE-PLUGIN-CLOSURE`. Admission itself remains engineering and
-   scientific-entry evidence, not a performance result.
-10. Do not begin Phase 2/3, learned H-RIME, Phase 4 or official-final until their
-   previously registered terminal prerequisites pass. Recovery-v6 remains
-   immutable failed history and is never reclassified.
+1. Preserve old Admission v2/v2.1 paths fail-closed and historical. Do not build
+   their missing distributed runner or execute candidate-free MC grids.
+2. Create one paper-facing full-data DUCA feasibility protocol from the upstream
+   AdaTAD ActionFormer recipe: all 200 training videos, two-GPU global batch two,
+   60 epochs/6000 successful updates, fixed epoch-59 EMA, and exact complete
+   211-video OpenTAD evaluation.
+3. Close only experiment-enabling P0s: a frozen training-only coarse-scan
+   checkpoint, exact VideoMAE/protocol/split hashes, per-rank batch one for
+   homogeneous dynamic K, and an evaluator that rejects missing or extra video
+   keys. These checks are part of the paper experiment, not a separate evidence
+   claim.
+4. Run the primary ActionFormer/K384 panel with seeds 5801, 8123 and 12011:
+   dense AdaTAD, uniform fixed-K, uniform mixed-K, DUCA fixed-K position
+   selection, DUCA dynamic-K, and evaluation-only exact realized-cost
+   `U-same-K` replay.
+5. Report only the completed official matrix: official average and per-IoU mAP,
+   high-IoU and short-action behavior, realized effective K, full-stack latency,
+   throughput and peak memory, with paired video-cluster bootstrap and every seed.
+6. The core feasibility question is whether DUCA improves the official
+   accuracy--cost frontier over both fixed and exact realized-cost uniform
+   controls. If it does not, stop H-RIME and diagnose selector/controller
+   learning. If it does, use the complete result to design the smallest model
+   improvement and only then extend to H-RIME, TriDet and K192.
+7. Official-final remains sealed until this protocol is reviewed and explicitly
+   approved. Recovery-v6 remains immutable failed history and is never
+   reclassified.
 
 Retained earlier recovery instructions:
 

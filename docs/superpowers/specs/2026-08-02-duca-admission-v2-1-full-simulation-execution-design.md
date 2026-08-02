@@ -2,13 +2,20 @@
 
 Date: `2026-08-02`
 
-Status: `EXECUTION_PROTOCOL_REVIEW_REQUIRED / FULL_SIMULATION_NOT_RELEASED`
+Status: `SUPERSEDED_BY_USER_PRIORITY / PRESERVED_NOT_RELEASED`
 
 Repository: `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702.git`
 
 Branch: `codex/duca-rime-20260727`
 
 Audited HEAD: `77acd054965d4e5527c170cedf3073a3fe7cb04b`
+
+Supersession notice: on `2026-08-02`, the user explicitly stopped further
+candidate-free Admission simulation engineering. Do not implement this runner,
+release the full grid, or spend compute on its MC calibration without a new
+explicit authorization. Preserve this document only as negative-history and
+protocol provenance. The current priority is paper-facing DUCA feasibility,
+model improvement, and full official-data comparison.
 
 ## 1. Decision
 
