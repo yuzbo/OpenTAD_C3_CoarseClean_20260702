@@ -107,9 +107,15 @@ max_chars: 8000
   has been established. Exact clean source `7e5775e8` now emits fail-closed,
   sample-level dynamic ROI/`K_t`/role/ragged telemetry and passed the relevant
   N16R4 Linux suite `35 passed`; telemetry CPU copies are excluded from timed
-  cost replay. M2 is mechanically ready but not yet run: its matched training/
-  evaluation runner and selector-inclusive full-stack latency/memory/energy
-  protocol must be frozen first.
+  cost replay. Exact implementation commit
+  `ec8de9f51f85fc81031d82b79e30019d57a381b4` now freezes the single-seed M2
+  runner: matched 60-epoch G1/G2 training and complete accuracy/telemetry replay,
+  followed by one same-GPU `G1 -> G2 -> G2 -> G1` counterbalanced full-stack
+  decode/H2D/model/postprocess/NMS latency, peak-memory and gross-energy replay,
+  then an all-terminal fail-closed finalizer. Local compile/Bash/whitespace and
+  focused contract checks passed (`29 passed`). M2 performance is still not
+  started: the exact clean remote Linux suite and deployment `PRECHECK_ONLY`
+  must pass before the immutable DAG is submitted.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

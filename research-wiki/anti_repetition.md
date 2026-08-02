@@ -147,10 +147,17 @@ updated: 2026-08-02
 0. Dynamic diagnostic telemetry from source `7e5775e8` is an accuracy-replay
    mechanism receipt, not a timed-cost instrument or a performance result.  It
    must run with local batch one on the complete matched evaluation population;
-   keep it disabled during training and the separate timed replay.  Do not
-   launch or interpret M2 until the G1/G2 runner binds identical data/order/
-   successful updates/EMA/evaluator and the full decode-to-NMS p50/p95, peak
-   memory and energy measurement scope is frozen.
+   keep it disabled during training and the separate timed replay.  M2 protocol
+   source `ec8de9f51f85fc81031d82b79e30019d57a381b4` freezes identical data/order/
+   successful updates/EMA/evaluator plus the full decode-to-NMS p50/p95,
+   peak-memory and gross-energy scope.  Do not submit it until that exact clean
+   source passes remote Linux tests and every deployment `PRECHECK_ONLY` gate.
+0. M2 cost evidence is valid only when both complete trained-arm receipts feed
+   one physical-GPU serial `G1 -> G2 -> G2 -> G1` replay with accuracy telemetry
+   disabled, identical full-center population hashes, one continuously sampled
+   20-ms NVML trace, and raw monotonic energy/NMS windows that the validator
+   reintegrates.  A model-only timer, self-reported energy scalar, partial pass,
+   different GPU/job, or hand-combined profile is not M2 cost evidence.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

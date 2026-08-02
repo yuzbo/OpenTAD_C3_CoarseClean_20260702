@@ -2450,3 +2450,18 @@ append_only: true
   `35/35`.  No GPU, dataset evaluation, checkpoint, metric, latency or energy
   result was produced.  M2 remains unstarted pending one matched development
   runner and a separately frozen selector-inclusive full-stack cost protocol.
+
+- 2026-08-02: implemented and locally tested the matched dynamic native-floor M2
+  protocol at exact source `ec8de9f51f85fc81031d82b79e30019d57a381b4`.
+  G1/G2 are frozen as fresh seed-3407, 60-epoch arms with identical recipe/data/
+  order, successful-update-only scheduler/EMA accounting, an atomic final
+  epoch-59 checkpoint sidecar, and complete Gate accuracy/route telemetry.  Both
+  successful arm receipts feed one physical-GPU serial
+  `G1 -> G2 -> G2 -> G1` full decode/preprocess/H2D/model/postprocess/NMS replay.
+  It disables diagnostic telemetry, records component timings and peak memory,
+  uses a separate 20-ms NVML sidecar, and requires the validator to reintegrate
+  raw power samples over retained monotonic energy windows.  The after-any
+  finalizer fails closed on any missing/tampered lineage and reports descriptive
+  single-seed deltas only. Python compile, Slurm Bash syntax, whitespace and
+  focused contracts passed locally (`29 passed`). No remote precheck, training,
+  checkpoint, prediction, metric, latency or energy result existed at this point.

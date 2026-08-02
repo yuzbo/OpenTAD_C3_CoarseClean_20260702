@@ -1368,6 +1368,15 @@ updated: 2026-08-02
   policy-health contract.  This is implementation/unit evidence only; it did
   not allocate a GPU, load a development population, compute a metric, profile
   energy or authorize a floor/performance claim.
+- Dynamic SCNR native-floor M2 protocol implementation, 2026-08-02. Exact source
+  `ec8de9f51f85fc81031d82b79e30019d57a381b4` freezes the matched seed-3407,
+  60-epoch G1/G2 training and complete Gate accuracy/telemetry replay, a single
+  physical-GPU counterbalanced `G1 -> G2 -> G2 -> G1` decode-to-NMS latency/
+  memory/gross-energy replay, raw NVML-trace reintegration, immutable artifact
+  lineage, and an all-terminal descriptive-only finalizer. Local Python/Bash/
+  whitespace checks and focused contracts passed (`29 passed`). The exact clean
+  remote regression, deployment precheck and all performance jobs were still
+  pending at registration; this source is implementation evidence only.
 
 ## 外部附件
 

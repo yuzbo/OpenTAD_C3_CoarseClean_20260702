@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:scnr-dynamic-stage1-executor-v1
 title: "SCNR-TAD dynamic exact-budget ragged executor v1"
 stage: tested
-status: d3_health_and_dynamic_telemetry_pass_m2_protocol_pending
+status: d4_m2_protocol_implemented_local_tested_remote_precheck_pending
 outcome: pass_no_performance
 added: 2026-08-02
 updated: 2026-08-02
@@ -72,7 +72,7 @@ tubelet, or any mismatch between selected and executed tokens.
 | D1 | Native ragged VideoMAE + coordinate-lineage Adapter | zero-padding, empty-clip, full-token parity, exact ledger KATs | tested |
 | D2 | Wrapper integration, masked-zero aggregation, scout stop-gradient and proxy schedule | one real detector backward, successful-step schedule, no-leak audit | tested |
 | D3 | Clean N16R4 Linux/CUDA no-performance P0 | exact source, clean tree, Slurm GPU, zero metric/checkpoint | passed, Job `1215358` |
-| D4 | Matched development G1/G2 floor arms | D3 PASS, sample-level dynamic telemetry, frozen full-stack cost scope | telemetry tested; runner/cost protocol pending; performance not started |
+| D4 | Matched development G1/G2 floor arms | D3 PASS, sample-level dynamic telemetry, frozen full-stack cost scope | protocol implemented at `ec8de9f5`; local `29 passed`; remote precheck and performance not started |
 
 ## Executed evidence
 
@@ -130,14 +130,27 @@ tubelet, or any mismatch between selected and executed tokens.
   timed cost replay.  The exact clean N16R4 Linux source passed the dynamic,
   P0-contract and policy-health regression set `35 passed`; this was a CPU/
   tensor regression, not a CUDA performance or real-data evaluation run.
+- Commit `ec8de9f51f85fc81031d82b79e30019d57a381b4` implements the immutable
+  M2 execution boundary.  G1/G2 each train from scratch for 60 epochs at seed
+  3407 with successful-update-only scheduler/EMA accounting and accept only the
+  atomic epoch-59 checkpoint plus sidecar.  Complete Gate accuracy/telemetry
+  replays are followed, only after both arms pass, by one same-GPU serial
+  `G1 -> G2 -> G2 -> G1` replay that times decode/preprocess/H2D/model/
+  postprocess/NMS, records peak memory and an independently sampled raw NVML
+  power trace, and retains monotonic energy/NMS windows for validator
+  recomputation.  The after-any finalizer emits only descriptive deltas and
+  requires M3 before any confirmatory floor claim.  Local compile/Bash/
+  whitespace checks and focused contracts passed (`29 passed`); this is
+  implementation evidence only, pending exact-source remote precheck.
 
 ## Current boundary
 
 The dynamic route is now `tested` at implementation, synthetic CUDA P0, real
 Fit-prefix health and sample-level telemetry-unit levels.  D3 has passed and
-the two floor configurations are mechanically admissible.  M2 must still bind
-one matched development training/evaluation recipe and a separate full-stack
-cost/energy replay before it is launched.  None of the evidence above contains
+the two floor configurations are mechanically admissible.  The M2 matched
+training/evaluation and separate full-stack cost/energy protocol is implemented
+and locally tested, but exact-source remote regression/precheck and the actual
+DAG are still pending.  None of the evidence above contains
 mAP, end-to-end latency/energy, checkpoint utility or a floor comparison; it is
 not `empirically_supported` or `paper_ready`.  `K_t=0` is permitted and covered by
 contract tests, but no zero-count tubelet happened to occur in the recorded P0
