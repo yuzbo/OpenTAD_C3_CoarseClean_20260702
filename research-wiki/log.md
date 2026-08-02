@@ -2214,3 +2214,11 @@ append_only: true
   total budget and dynamic evidence-role allocation while recording actual
   executed K and measured cost. Temporal decision granularity remains the next
   design clarification; no implementation or running-pilot mutation was made.
+
+- 2026-08-02: user accepted the native two-frame VideoMAE tubelet as the
+  dynamic-policy unit. The intended model therefore makes 384 continuous ROI,
+  total-`K_t`, and role-allocation decisions over each 768-frame window; it does
+  not require 768 independent raw-frame heavy-token budgets or a new patch
+  embedding. The remaining budget question is whether the sum over all 384
+  `K_t` values is a hard per-window budget or may vary by window under a
+  dataset-level cost constraint. No implementation or running job was changed.

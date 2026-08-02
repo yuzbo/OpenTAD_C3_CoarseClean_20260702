@@ -17,8 +17,9 @@ max_chars: 8000
   context8+ROI28+residual28 study is a causal mechanism probe, not the final
   architecture. The user-restated final objective is a temporally adaptive
   continuous `(cx,cy,w,h)` ROI together with dynamic total heavy-token budget
-  `K_t`; the user explicitly confirmed that changing only the ROI/residual split
-  under fixed K is insufficient. The role split must therefore be dynamic too.
+  `K_t` at the native 384-step, two-frame VideoMAE tubelet granularity; the user
+  explicitly confirmed both this temporal unit and that changing only the
+  ROI/residual split under fixed K is insufficient. The role split must therefore be dynamic too.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

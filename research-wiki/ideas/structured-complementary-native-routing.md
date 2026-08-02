@@ -28,7 +28,8 @@ ROI and residual evidence have identifiable utility. The user-restated final
 objective retains the continuous temporal ROI trajectory and makes the total
 heavy-token budget `K_t` as well as the evidence-role allocation temporally
 adaptive. The user explicitly rejected fixed total K with only a dynamic role
-split.
+split and accepted the native two-frame VideoMAE tubelet as the decision unit,
+giving 384 dynamic decisions over the 768-frame window.
 
 ## Principle
 

@@ -14,6 +14,10 @@ updated: 2026-08-02
    changing ROI/residual split under fixed K. The frozen nine-arm study is only a matched-budget
    mechanism probe; its result may select or reject components but cannot close
    the dynamic allocation objective.
+0. The confirmed dynamic decision unit is the native two-frame VideoMAE
+   tubelet: 384 ROI/budget decisions over 768 input frames. Do not redesign the
+   heavy patch embedding for 768 independent raw-frame budgets or describe the
+   tubelet-level policy as a raw-frame policy.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

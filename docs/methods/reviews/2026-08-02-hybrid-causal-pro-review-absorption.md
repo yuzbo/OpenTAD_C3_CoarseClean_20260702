@@ -84,7 +84,8 @@ requirement. The geometry head already predicts in-bounds `(cx,cy,w,h)` at all
 absent is adaptive token quantity: the current probe fixes both total K64 and
 the ROI/residual role quotas. The confirmed final objective requires dynamic
 total `K_t` and dynamic role allocation; changing only the role split under
-fixed K is not sufficient.
+fixed K is not sufficient. The confirmed policy unit is the native two-frame
+VideoMAE tubelet, hence 384 dynamic ROI/budget decisions for a 768-frame input.
 
 The learned hard policy is the explicit sequential conditional distribution
 
