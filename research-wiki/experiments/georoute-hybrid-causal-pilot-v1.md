@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:georoute-hybrid-causal-pilot-v1
 title: "GeoRoute Hybrid causal exploratory pilot v1"
-stage: implemented
-status: p0_pending_no_runtime_result
+stage: experiment_running
+status: nine_arm_screen_running_no_performance_result
 tags: ["georoute", "hybrid", "causal-ablation", "plackett-luce", "development-only"]
 added: 2026-08-02
 updated: 2026-08-02
@@ -71,11 +71,32 @@ deleted.
 
 ## Current state
 
-Structured routing, wrapper, telemetry, contract, P0, stage runner, deployers,
-all-terminal finalizers, and focused tests are implemented in the working tree.
-Pure contract tests pass locally. Windows Torch cannot load `c10.dll`; clean
-remote Linux/CUDA tests and P0 are pending. No job, checkpoint, prediction,
-metric, or runtime result exists for this study.
+Exact clean runtime `0f64218d8f404ef652934844dcd97a3f9607c580` passed
+remote Linux/CUDA pycompile, required C3 tests (`20 passed`), complete GeoRoute
+tests (`171 passed, 1 skipped`), and the real data/config binder (SHA-256
+`202d8d75b024ae6f080caba461ba05c33edd0790b99d683c9751b4f449f2e78d`).
+The earlier `a9e1f742` validation namespace is retained as failed provenance:
+one full-suite contract test caught a removed inherited inner-step memory clause;
+it produced no model or performance result and was replaced, not reused.
+
+Run root:
+`/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_hybrid_causal_pilot_v1_0f64218d_20260802_111116`.
+No-performance P0 Jobs `1213665`, `1213666`, and `1213667` all completed `0:0`.
+The sealed suite status is `PASS_MECHANICAL_ONLY`, internal SHA-256
+`6e86e8fec966dc9440140e746d3436926ce764f825f7081ad387b24dce9c8e71`,
+file SHA-256
+`142d0e64f67ddc5c4c72ff41e6cf2d346f4688e101d0116b4402c2c4905d1762`.
+It recorded exact `8/28/28` roles, distinct ROI/residual private RNG seeds,
+`global_rng_consumed=false`, finite nonzero branch-gradient L2 values
+`6.960655212402344/6.96014928817749`, and a passing world-two FP32-DDP KAT.
+
+Pilot deployment receipt SHA-256 is
+`6dc3abebdb662393dc6faa8eac4bdf052622c0ea041a2c7eec8f232365c2b3f9`.
+Jobs `1213694--1213702` bind A0--A8 respectively; after-any Job `1213703`
+finalizes only after every cell is terminal. The study is running. Submission,
+finite early detector losses, or a negative signed score-function term are not
+performance evidence; checkpoint, prediction, common-population, metric, cost,
+and final contrast validation remain pending.
 
 ## Connections
 

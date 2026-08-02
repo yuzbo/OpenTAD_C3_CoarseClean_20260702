@@ -2168,3 +2168,31 @@ append_only: true
   Windows Torch is unavailable because `c10.dll` cannot load. Remote Linux/CUDA
   verification and P0 remain pending, so the route is only `implemented`, not
   `tested`, `empirically_supported`, or `paper_ready`.
+
+- 2026-08-02: remote validation exposed and repaired one compatibility
+  regression before any model execution. Source `a9e1f742` passed `170`
+  GeoRoute tests with one skip but failed the inherited one-GPU inner-step
+  memory-clause contract; its namespace remains failed provenance. Replacement
+  source `0f64218d` restored the clause and passed pycompile, required C3
+  `20/20`, complete GeoRoute `171/171` with one skip, and the real data/config
+  binder SHA
+  `202d8d75b024ae6f080caba461ba05c33edd0790b99d683c9751b4f449f2e78d`.
+
+- 2026-08-02: the no-performance Hybrid P0 completed. Jobs
+  `1213665/1213666/1213667` all exited `0:0`; final status is
+  `PASS_MECHANICAL_ONLY`, suite internal/file SHA-256
+  `6e86e8fec966dc9440140e746d3436926ce764f825f7081ad387b24dce9c8e71` /
+  `142d0e64f67ddc5c4c72ff41e6cf2d346f4688e101d0116b4402c2c4905d1762`.
+  It verified exact context8/ROI28/residual28 roles, distinct private role RNG,
+  no global-RNG consumption, finite nonzero ROI/residual branch gradients, and
+  default world-two FP32-DDP reduction/update. It authorizes performance
+  training only and contains no checkpoint, prediction, or metric.
+
+- 2026-08-02: released the held all-or-none nine-arm single-seed screen at exact
+  runtime `0f64218d`. A0--A8 are Jobs `1213694--1213702`; all-terminal finalizer
+  is Job `1213703`; deployment receipt SHA-256 is
+  `6dc3abebdb662393dc6faa8eac4bdf052622c0ea041a2c7eec8f232365c2b3f9`.
+  Storage and submission gates passed without cancelling unrelated work. The
+  experiment stage is now `experiment_running`; no survivor, performance,
+  cost, mechanism, official-test, or paper inference is open before sealed
+  all-complete finalization.

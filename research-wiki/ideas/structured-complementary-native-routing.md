@@ -2,8 +2,8 @@
 type: idea
 node_id: idea:structured-complementary-native-routing
 title: "Structured Complementary Native Routing for offline TAD"
-stage: implemented
-status: p0_pending_no_empirical_support
+stage: experiment_running
+status: pilot_running_after_p0_pass_no_empirical_support
 tags: ["offline-tad", "native-token", "roi", "token-selection", "structured-routing", "adatad"]
 added: 2026-08-02
 updated: 2026-08-02
@@ -58,10 +58,13 @@ separately frozen, disjoint-seed confirmatory study.
 
 ## Evidence boundary
 
-The old Hybrid number is descriptive motivation only. The present route is
-`implemented`; local pure contract checks pass, but remote Torch/CUDA P0 and
-all nine performance cells are pending. It is not empirically supported,
-paper-ready, Online TAD, Geometry Zoom, or a complete system-efficiency result.
+The old Hybrid number is descriptive motivation only. Exact runtime `0f64218d`
+passed remote Linux/CUDA tests and the no-performance mechanical P0, including
+exact role counts, private role RNG, finite ROI/residual branch gradients, and a
+world-two FP32-DDP KAT. All nine single-seed cells are submitted and the study is
+therefore `experiment_running`; no performance result exists yet. The route is
+not empirically supported, paper-ready, Online TAD, Geometry Zoom, or a complete
+system-efficiency result.
 
 ## Pro review
 

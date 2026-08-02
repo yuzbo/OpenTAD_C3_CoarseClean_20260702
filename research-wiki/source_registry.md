@@ -12,8 +12,27 @@ updated: 2026-08-02
   corrections: old Hybrid is descriptive only; Fixed is a deterministic
   coverage control; geometry shift is temporal and not definitive under router
   collapse; and an estimator-claiming confirmatory study must retain matched ST.
-  The associated route/pilot are implemented but have no remote P0, job,
-  checkpoint, metric, empirical, official-test, or paper evidence yet.
+  The associated route/pilot is now running, but has no complete performance,
+  empirical, official-test, or paper evidence yet.
+
+- GeoRoute Hybrid causal pilot execution, 2026-08-02. First clean source
+  `a9e1f74231f13505d9ff61aff85329a668f04518` passed `170` GeoRoute tests with
+  one skip but failed one inherited-launcher contract test; its validation
+  namespace is failure provenance only. Replacement clean source
+  `0f64218d8f404ef652934844dcd97a3f9607c580` restored that exact compatibility
+  clause and passed required C3 `20/20`, complete GeoRoute `171/171` with one
+  skip, and the real data/config binder SHA-256
+  `202d8d75b024ae6f080caba461ba05c33edd0790b99d683c9751b4f449f2e78d`.
+  Run root
+  `/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/georoute_hybrid_causal_pilot_v1_0f64218d_20260802_111116`.
+  P0 Jobs `1213665--1213667` completed `0:0` and sealed
+  `PASS_MECHANICAL_ONLY`; suite internal/file SHA-256 are
+  `6e86e8fec966dc9440140e746d3436926ce764f825f7081ad387b24dce9c8e71` /
+  `142d0e64f67ddc5c4c72ff41e6cf2d346f4688e101d0116b4402c2c4905d1762`.
+  Deployment receipt
+  `6dc3abebdb662393dc6faa8eac4bdf052622c0ea041a2c7eec8f232365c2b3f9`
+  binds A0--A8 to Jobs `1213694--1213702` and finalizer `1213703`. These are
+  execution facts only; all-complete performance and cost evidence is pending.
 
 - GeoRoute official-comparable F0 successful replacement, 2026-07-31. Exact
   clean source `3d8c2b487fa983d6d6240b347177cc423a37748b` passed remote

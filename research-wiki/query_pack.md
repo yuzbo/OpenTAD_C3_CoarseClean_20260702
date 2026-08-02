@@ -26,9 +26,13 @@ max_chars: 8000
   20 epochs, nine all-complete arms A0 Dense, A1 Fixed64, A2 Random64, A3
   residual-PL64, A4 context8+residual56, A5 context8+ROI56, A6 Hybrid-ST,
   A7 Hybrid-PL, A8 A7 with temporal geometry trajectory shift127.
-- State is `implemented / p0_pending`, not tested or empirically supported.
-  First run remote Linux tests, then a no-performance A7 full-graph P0 plus
-  world-size-two DDP KAT. Only a sealed P0 PASS may release all nine held leaves.
+- State is `experiment_running`, not empirically supported. Exact clean runtime
+  `0f64218d` passed remote Linux/CUDA checks (`20/20` required C3 and `171/171`
+  GeoRoute, one skipped) plus real binder SHA
+  `202d8d75b024ae6f080caba461ba05c33edd0790b99d683c9751b4f449f2e78d`.
+  No-performance P0 Jobs `1213665--1213667` sealed
+  `PASS_MECHANICAL_ONLY`; the nine held leaves were then released as Jobs
+  `1213694--1213702`, with after-any finalizer `1213703`.
   Accuracy/telemetry and cost timing are separate replays; after-any closeout
   emits no contrasts unless every arm and common population validate.
 - A single-seed pass authorizes only a separately frozen disjoint-seed study.
