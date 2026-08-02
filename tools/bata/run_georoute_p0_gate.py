@@ -210,7 +210,7 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
     if not isinstance(detector, Mapping) or detector.get("training_forward") is not True or detector.get("backward_completed") is not True:
         raise ValueError("P0 requires a completed detector training forward and backward")
     detector_loss_keys = detector.get("detector_loss_keys")
-    if not isinstance(detector_loss_keys, list) or not {"cls_loss", "reg_loss"} <= set(detector_loss_keys):
+    if not isinstance(detector_loss_keys, list) or set(detector_loss_keys) != {"cls_loss", "reg_loss"}:
         raise ValueError("P0 must backpropagate the real AdaTAD classification and regression losses")
     gradient = report.get("gradient")
     if not isinstance(gradient, Mapping) or gradient.get("all_required_gradients_finite") is not True:
@@ -236,7 +236,18 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
     after = int(native_route.get("native_packed_invocation_counter_after", -1))
     if before < 0 or after - before != 1:
         raise ValueError("P0 native packed invocation counter is inconsistent with one heavy forward")
-    if report.get("route_mode") not in {"dense", "uniform", "roi", "free", "hybrid"}:
+    if report.get("route_mode") not in {
+        "dense",
+        "uniform",
+        "random",
+        "roi",
+        "free",
+        "hybrid",
+        "structured_context_residual",
+        "structured_context_roi",
+        "structured_hybrid",
+        "structured_hybrid_geometry_shift",
+    }:
         raise ValueError("P0 route mode is missing or unsupported")
     if report.get("route_mode") == "dense":
         dense_reference = report.get("dense_native_reference")
@@ -248,7 +259,7 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
             or dense_reference.get("reference_autograd_mode") != "enabled_matches_real_packed_forward"
         ):
             raise ValueError("dense P0 must include a passed native dense numerical reference")
-    if report.get("route_mode") in {"roi", "free"} and report.get("estimator", {}).get("name") == "score_function":
+    if report.get("estimator", {}).get("name") == "score_function":
         policy_evidence = report.get("score_function_detector_binding")
         if not isinstance(policy_evidence, Mapping) or not {
             "cls_loss",
@@ -349,6 +360,112 @@ def validate_p0_gate_report(report: Mapping[str, Any]) -> None:
             required.add("scout_residual")
         if set(gradient.get("required_components", [])) != required:
             raise ValueError("P0 pilot gradient contract differs from the frozen arm")
+    hybrid_causal_arm = report.get("hybrid_causal_arm")
+    if hybrid_causal_arm is not None:
+        from tools.bata.georoute_hybrid_causal_contract import (
+            HYBRID_CAUSAL_K,
+            hybrid_causal_arm_spec,
+        )
+
+        if not isinstance(hybrid_causal_arm, str):
+            raise ValueError("P0 Hybrid causal arm must be a registered string")
+        spec = hybrid_causal_arm_spec(hybrid_causal_arm)
+        route_parameters = report.get("route_parameters")
+        representation = report.get("representation")
+        expected_target = (
+            int(report["source_grid"]["patch_capacity"])
+            if spec["route_mode"] == "dense"
+            else HYBRID_CAUSAL_K
+        )
+        if (
+            report.get("route_mode") != spec["route_mode"]
+            or estimator.get("name") != spec["policy_estimator"]
+            or target != expected_target
+            or int(route_parameters.get("context_tokens", -1))
+            != int(spec["context_tokens"])
+            or int(route_parameters.get("structured_roi_tokens", -1))
+            != int(spec["roi_tokens"])
+            or int(route_parameters.get("structured_residual_tokens", -1))
+            != int(spec["residual_tokens"])
+            or int(route_parameters.get("geometry_temporal_shift_tubelets", -1))
+            != int(spec["geometry_temporal_shift_tubelets"])
+            or float(route_parameters.get("policy_temperature", -1.0)) != 0.7
+        ):
+            raise ValueError("P0 Hybrid causal route differs from its frozen arm")
+        expected_representation = {
+            "absolute_position_enabled": True,
+            "absolute_coordinates_enabled": False,
+            "roi_relative_coordinates_enabled": False,
+            "geometry_projection_enabled": False,
+            "geometry_side_channel": False,
+            "learned_geometry_enabled": spec["roi_tokens"] > 0,
+            "learned_residual_enabled": spec["residual_tokens"] > 0,
+        }
+        if {
+            key: representation.get(key) for key in expected_representation
+        } != expected_representation:
+            raise ValueError("P0 Hybrid causal representation isolation changed")
+        structured_audit = report.get("structured_route_audit")
+        if spec["route_mode"].startswith("structured_"):
+            if not isinstance(structured_audit, Mapping):
+                raise ValueError("P0 Hybrid causal structured-route audit is missing")
+            expected_roles = {
+                "context": int(spec["context_tokens"]),
+                "roi": int(spec["roi_tokens"]),
+                "residual": int(spec["residual_tokens"]),
+                "free": 0,
+                "dense": 0,
+                "uniform": 0,
+                "random": 0,
+            }
+            if (
+                structured_audit.get("routing_schema")
+                != "georoute_fixed_quota_structured_routing_v1"
+                or structured_audit.get("role_counts") != expected_roles
+            ):
+                raise ValueError("P0 Hybrid causal structured role contract changed")
+            route_rng = structured_audit.get("route_rng")
+            if estimator.get("name") == "score_function" and (
+                not isinstance(route_rng, Mapping)
+                or route_rng.get("schema_version")
+                != "georoute_route_private_rng_v1"
+                or route_rng.get("enabled") is not True
+                or route_rng.get("global_rng_consumed") is not False
+                or int(route_rng.get("study_seed", -1)) != 5227
+                or int(route_rng.get("successful_update_index", -1)) != 0
+            ):
+                raise ValueError("P0 Hybrid causal private route RNG contract failed")
+            telemetry = structured_audit.get("diagnostic_telemetry")
+            if (
+                not isinstance(telemetry, Mapping)
+                or telemetry.get("schema_version")
+                != "georoute_diagnostic_window_telemetry_v2"
+                or telemetry.get("role_counts") != expected_roles
+            ):
+                raise ValueError("P0 Hybrid causal structured telemetry is missing")
+            for key in (
+                "original_trajectory_sha256",
+                "routing_trajectory_sha256",
+            ):
+                digest = telemetry.get("geometry", {}).get(key)
+                if not isinstance(digest, str) or len(digest) != 64:
+                    raise ValueError("P0 Hybrid causal geometry trajectory hash is invalid")
+            if estimator.get("name") == "score_function":
+                for role in ("roi", "residual"):
+                    if int(expected_roles[role]) == 0:
+                        continue
+                    gradient_record = telemetry.get("branch_gradient", {}).get(role)
+                    if (
+                        not isinstance(gradient_record, Mapping)
+                        or gradient_record.get("applicable") is not True
+                        or gradient_record.get("observed") is not True
+                        or gradient_record.get("finite") is not True
+                        or not isinstance(gradient_record.get("l2_norm"), (int, float))
+                        or float(gradient_record["l2_norm"]) <= 0.0
+                    ):
+                        raise ValueError(
+                            f"P0 Hybrid causal {role} policy gradient telemetry failed"
+                        )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -367,7 +484,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument(
         "--route-mode",
-        choices=("dense", "uniform", "roi", "free", "hybrid"),
+        choices=(
+            "dense",
+            "uniform",
+            "random",
+            "roi",
+            "free",
+            "hybrid",
+            "structured_context_residual",
+            "structured_context_roi",
+            "structured_hybrid",
+            "structured_hybrid_geometry_shift",
+        ),
         default="hybrid",
     )
     parser.add_argument(
@@ -377,6 +505,13 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--tokens-per-tubelet", type=int, default=32)
     parser.add_argument("--context-tokens", type=int, default=4)
+    parser.add_argument("--structured-roi-tokens", type=int, default=0)
+    parser.add_argument("--structured-residual-tokens", type=int, default=0)
+    parser.add_argument(
+        "--geometry-temporal-shift-tubelets",
+        type=int,
+        default=0,
+    )
     parser.add_argument("--roi-fraction", type=float, default=0.5)
     parser.add_argument("--policy-temperature", type=float, default=0.7)
     parser.add_argument("--score-function-weight", type=float, default=1.0)
@@ -386,6 +521,7 @@ def _parse_args() -> argparse.Namespace:
         default=0.95,
     )
     parser.add_argument("--pilot-arm", default=None)
+    parser.add_argument("--hybrid-causal-arm", default=None)
     parser.add_argument("--geometry-side-channel", type=_optional_bool, default=None)
     parser.add_argument("--absolute-position-enabled", type=_optional_bool, default=None)
     parser.add_argument("--absolute-coordinates-enabled", type=_optional_bool, default=None)
@@ -422,12 +558,22 @@ def _configure_in_memory(config_path: Path, args):
     custom.georoute_tubelet_size = 2
     custom.georoute_tokens_per_tubelet = int(args.tokens_per_tubelet)
     custom.georoute_context_tokens = int(args.context_tokens)
+    custom.georoute_structured_context_tokens = int(args.context_tokens)
+    custom.georoute_structured_roi_tokens = int(args.structured_roi_tokens)
+    custom.georoute_structured_residual_tokens = int(
+        args.structured_residual_tokens
+    )
+    custom.georoute_geometry_temporal_shift_tubelets = int(
+        args.geometry_temporal_shift_tubelets
+    )
     custom.georoute_roi_fraction = float(args.roi_fraction)
     custom.georoute_route_mode = str(args.route_mode)
     custom.georoute_policy_estimator = str(args.policy_estimator)
     custom.georoute_policy_temperature = float(args.policy_temperature)
     custom.georoute_score_function_weight = float(args.score_function_weight)
     custom.georoute_score_function_baseline_momentum = float(args.score_function_baseline_momentum)
+    custom.georoute_score_function_temporal_reduction = "mean"
+    custom.georoute_route_study_seed = int(args.seed)
     custom.georoute_pooling_mode = "uniform_selected"
     custom.georoute_adapter_mode = "coordinate_lineage_packed"
     custom.georoute_roi_temperature = 0.25
@@ -435,6 +581,9 @@ def _configure_in_memory(config_path: Path, args):
     custom.georoute_max_roi_extent = 1.0
     custom.georoute_geometry_smoothness_weight = 0.0
     custom.georoute_area_prior_weight = 0.0
+    custom.georoute_diagnostic_telemetry_enabled = bool(
+        args.hybrid_causal_arm is not None
+    )
     for argument_name, config_name in (
         ("geometry_side_channel", "georoute_geometry_side_channel"),
         ("absolute_position_enabled", "georoute_absolute_position_enabled"),
@@ -467,10 +616,18 @@ def _configure_in_memory(config_path: Path, args):
         raise ValueError("dense P0 parity uses estimator=none")
     if args.route_mode == "dense" and args.context_tokens != 0:
         raise ValueError("dense P0 parity requires context_tokens=0")
-    if args.route_mode not in {"dense", "uniform"} and args.policy_estimator == "none":
+    if args.route_mode not in {"dense", "uniform", "random"} and args.policy_estimator == "none":
         raise ValueError("learned P0 routes require an explicit estimator")
-    if args.route_mode == "uniform" and args.policy_estimator != "none":
-        raise ValueError("uniform P0 control requires estimator=none")
+    if args.route_mode in {"uniform", "random"} and args.policy_estimator != "none":
+        raise ValueError("uniform/random P0 controls require estimator=none")
+    if args.route_mode.startswith("structured_"):
+        if (
+            int(args.context_tokens)
+            + int(args.structured_roi_tokens)
+            + int(args.structured_residual_tokens)
+            != int(args.tokens_per_tubelet)
+        ):
+            raise ValueError("structured P0 quotas must sum to exact K")
     if args.pilot_arm is not None:
         from tools.bata.georoute_estimator_pilot_contract import pilot_arm_spec
 
@@ -503,6 +660,66 @@ def _configure_in_memory(config_path: Path, args):
         for key, value in observed.items():
             if value != spec[key]:
                 raise ValueError(f"P0 pilot arm {args.pilot_arm!r} has mismatched {key}: " f"{value!r} != {spec[key]!r}")
+    if args.hybrid_causal_arm is not None:
+        from tools.bata.georoute_hybrid_causal_contract import (
+            HYBRID_CAUSAL_K,
+            HYBRID_CAUSAL_SEED,
+            hybrid_causal_arm_spec,
+        )
+
+        if args.pilot_arm is not None:
+            raise ValueError("P0 cannot bind two pilot namespaces")
+        spec = hybrid_causal_arm_spec(args.hybrid_causal_arm)
+        expected_tokens = (
+            (int(args.height) // 16) * (int(args.width) // 16)
+            if spec["route_mode"] == "dense"
+            else HYBRID_CAUSAL_K
+        )
+        observed = {
+            "route_mode": str(args.route_mode),
+            "policy_estimator": str(args.policy_estimator),
+            "tokens_per_tubelet": int(args.tokens_per_tubelet),
+            "context_tokens": int(args.context_tokens),
+            "roi_tokens": int(args.structured_roi_tokens),
+            "residual_tokens": int(args.structured_residual_tokens),
+            "geometry_temporal_shift_tubelets": int(
+                args.geometry_temporal_shift_tubelets
+            ),
+            "seed": int(args.seed),
+            "absolute_position_enabled": bool(
+                getattr(custom, "georoute_absolute_position_enabled", True)
+            ),
+            "absolute_coordinates_enabled": bool(
+                getattr(custom, "georoute_absolute_coordinates_enabled", True)
+            ),
+            "roi_relative_coordinates_enabled": bool(
+                getattr(custom, "georoute_roi_relative_coordinates_enabled", True)
+            ),
+            "geometry_projection_enabled": bool(
+                getattr(custom, "georoute_geometry_projection_enabled", True)
+            ),
+        }
+        expected = {
+            "route_mode": spec["route_mode"],
+            "policy_estimator": spec["policy_estimator"],
+            "tokens_per_tubelet": expected_tokens,
+            "context_tokens": spec["context_tokens"],
+            "roi_tokens": spec["roi_tokens"],
+            "residual_tokens": spec["residual_tokens"],
+            "geometry_temporal_shift_tubelets": spec[
+                "geometry_temporal_shift_tubelets"
+            ],
+            "seed": HYBRID_CAUSAL_SEED,
+            "absolute_position_enabled": True,
+            "absolute_coordinates_enabled": False,
+            "roi_relative_coordinates_enabled": False,
+            "geometry_projection_enabled": False,
+        }
+        if observed != expected:
+            raise ValueError(
+                f"P0 Hybrid causal arm {args.hybrid_causal_arm!r} mismatch: "
+                f"{observed!r} != {expected!r}"
+            )
     return cfg
 
 
@@ -563,7 +780,7 @@ def _detector_only_objective(losses: Mapping[str, Any]):
     if not detector_terms:
         raise RuntimeError("P0 did not expose any detector-only loss term")
     required_detector_terms = {"cls_loss", "reg_loss"}
-    if not required_detector_terms <= set(detector_terms):
+    if set(detector_terms) != required_detector_terms:
         raise RuntimeError("P0 requires the real AdaTAD classification and regression losses; observed " + ", ".join(sorted(detector_terms)))
     detector_cost = sum(detector_terms.values())
     if detector_cost.ndim != 0 or not bool(__import__("torch").isfinite(detector_cost).item()):
@@ -611,6 +828,8 @@ def _run_cuda_gate(args) -> dict[str, Any]:
 
     model = build_detector(cfg.model).to(device)
     model.train()
+    if args.route_mode.startswith("structured_"):
+        model.backbone.set_successful_update_index(0)
     torch.cuda.reset_peak_memory_stats(device)
     source = torch.randint(
         low=0,
@@ -655,6 +874,11 @@ def _run_cuda_gate(args) -> dict[str, Any]:
     }
     if args.route_mode == "hybrid":
         required_components.update(("scout_geometry", "scout_residual"))
+    elif args.route_mode.startswith("structured_"):
+        if int(args.structured_roi_tokens) > 0:
+            required_components.add("scout_geometry")
+        if int(args.structured_residual_tokens) > 0:
+            required_components.add("scout_residual")
     elif args.route_mode in {"roi", "free"}:
         required_components.add("scout_geometry" if args.route_mode == "roi" else "scout_residual")
     elif args.route_mode == "uniform" and bool(
@@ -815,8 +1039,14 @@ def _run_cuda_gate(args) -> dict[str, Any]:
         "score_function_full_graph_amp": score_function_full_graph_amp,
         "route_mode": str(audit["route_mode"]),
         "pilot_arm": args.pilot_arm,
+        "hybrid_causal_arm": args.hybrid_causal_arm,
         "route_parameters": {
             "context_tokens": int(args.context_tokens),
+            "structured_roi_tokens": int(args.structured_roi_tokens),
+            "structured_residual_tokens": int(args.structured_residual_tokens),
+            "geometry_temporal_shift_tubelets": int(
+                args.geometry_temporal_shift_tubelets
+            ),
             "roi_fraction": float(args.roi_fraction),
             "policy_temperature": float(cfg.model.backbone.custom.georoute_policy_temperature),
             "score_function_weight": float(cfg.model.backbone.custom.georoute_score_function_weight),
@@ -871,6 +1101,15 @@ def _run_cuda_gate(args) -> dict[str, Any]:
         },
         "dense_native_reference": audit.get("dense_native_reference"),
         "score_function_detector_binding": audit.get("score_function_detector_binding"),
+        "structured_route_audit": {
+            "routing_schema": audit.get("routing_schema"),
+            "role_counts": audit.get("role_counts"),
+            "route_rng": audit.get("route_rng"),
+            "branch_log_probabilities": audit.get("branch_log_probabilities"),
+            "diagnostic_telemetry": audit.get("diagnostic_telemetry"),
+        }
+        if args.hybrid_causal_arm is not None
+        else None,
         "component_trace": {
             "packed_attention_forward_count": int(packed.get("packed_attention_forward_count", 0)),
             "packed_mlp_forward_count": int(packed.get("packed_mlp_forward_count", 0)),

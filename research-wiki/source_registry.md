@@ -1,7 +1,19 @@
 ---
 type: source_registry
-updated: 2026-07-31
+updated: 2026-08-02
 ---
+
+- Hybrid-centered causal-pilot Pro review, 2026-08-02. User attachment
+  `pasted-text.txt`, 1,101 lines, SHA-256
+  `b1a39b0869d03b50de9743df388c01665496ffebbb63bcb22b2efe908b196133`.
+  Project absorption:
+  `docs/methods/reviews/2026-08-02-hybrid-causal-pro-review-absorption.md`.
+  Central verdict `RUN_HYBRID_CAUSAL_PILOT_FIRST` is accepted with four evidence
+  corrections: old Hybrid is descriptive only; Fixed is a deterministic
+  coverage control; geometry shift is temporal and not definitive under router
+  collapse; and an estimator-claiming confirmatory study must retain matched ST.
+  The associated route/pilot are implemented but have no remote P0, job,
+  checkpoint, metric, empirical, official-test, or paper evidence yet.
 
 - GeoRoute official-comparable F0 successful replacement, 2026-07-31. Exact
   clean source `3d8c2b487fa983d6d6240b347177cc423a37748b` passed remote

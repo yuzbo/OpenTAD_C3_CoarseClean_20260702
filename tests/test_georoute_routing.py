@@ -334,7 +334,6 @@ def test_score_function_detector_binding_records_detached_numeric_state():
         detector_losses={
             "cls_loss": torch.tensor(1.25, requires_grad=True),
             "reg_loss": torch.tensor(0.75, requires_grad=True),
-            "metadata": "ignored",
         },
     )
 
@@ -385,7 +384,10 @@ def test_score_function_detailed_numeric_state_is_diagnostic_opt_in():
 
     GeoRouteBackboneWrapper.consume_detector_policy_loss(
         fake,
-        detector_losses={"cls_loss": torch.tensor(1.0, requires_grad=True)},
+        detector_losses={
+            "cls_loss": torch.tensor(1.0, requires_grad=True),
+            "reg_loss": torch.tensor(0.0, requires_grad=True),
+        },
     )
 
     binding = fake.latest_georoute_audit["score_function_detector_binding"]
@@ -394,6 +396,29 @@ def test_score_function_detailed_numeric_state_is_diagnostic_opt_in():
         "detector_cost_finite",
         "policy_objective_sign",
     }
+
+
+@pytest.mark.parametrize(
+    "detector_losses",
+    [
+        {"cls_loss": torch.tensor(1.0)},
+        {
+            "cls_loss": torch.tensor(1.0),
+            "reg_loss": torch.tensor(1.0),
+            "cost": torch.tensor(2.0),
+        },
+        {"cls_loss": torch.tensor(1.0), "reg_loss": torch.tensor(float("nan"))},
+    ],
+)
+def test_detector_policy_risk_rejects_missing_unknown_or_nonfinite_terms(
+    detector_losses,
+):
+    fake = type("StrictDetectorRisk", (), {"training": True})()
+    with pytest.raises(ValueError):
+        GeoRouteBackboneWrapper.consume_detector_policy_loss(
+            fake,
+            detector_losses=detector_losses,
+        )
 
 
 def test_score_function_promotes_amp_likelihood_and_long_temporal_reduction():

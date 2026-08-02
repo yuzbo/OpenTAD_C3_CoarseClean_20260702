@@ -12,6 +12,7 @@ It contains no dataset, detector, ground-truth, teacher, or evaluation code.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 import torch
@@ -19,9 +20,22 @@ import torch.nn.functional as F
 
 
 GEOROUTE_ROUTING_SCHEMA = "georoute_native_routing_v2"
-ROUTE_MODES = frozenset({"dense", "uniform", "random", "free", "roi", "hybrid"})
+GEOROUTE_STRUCTURED_ROUTING_SCHEMA = "georoute_fixed_quota_structured_routing_v1"
+LEGACY_ROUTE_MODES = frozenset(
+    {"dense", "uniform", "random", "free", "roi", "hybrid"}
+)
+STRUCTURED_ROUTE_MODES = frozenset(
+    {
+        "structured_context_residual",
+        "structured_context_roi",
+        "structured_hybrid",
+        "structured_hybrid_geometry_shift",
+    }
+)
+ROUTE_MODES = LEGACY_ROUTE_MODES | STRUCTURED_ROUTE_MODES
 POLICY_ESTIMATORS = frozenset({"none", "straight_through", "score_function"})
 SCORE_FUNCTION_TEMPORAL_REDUCTIONS = frozenset({"sum", "mean"})
+_ROUTE_PRIVATE_RNG_SCHEMA = "georoute_route_private_rng_v1"
 
 
 def decode_continuous_geometry(
@@ -231,6 +245,103 @@ def _sample_plackett_luce_order(
     return _stable_argsort_descending(logits / float(temperature) + gumbel)[..., :count]
 
 
+def _route_private_seed(
+    *,
+    study_seed: int,
+    successful_update_index: int,
+    distributed_rank: int,
+    role_id: str,
+) -> int:
+    """Derive one immutable route-only seed without touching a global RNG."""
+
+    if int(successful_update_index) < 0:
+        raise ValueError("successful update index must be non-negative")
+    if int(distributed_rank) < 0:
+        raise ValueError("distributed rank must be non-negative")
+    if not isinstance(role_id, str) or not role_id:
+        raise ValueError("route RNG role_id must be a non-empty string")
+    payload = (
+        f"{_ROUTE_PRIVATE_RNG_SCHEMA}:{int(study_seed)}:"
+        f"{int(successful_update_index)}:{int(distributed_rank)}:{role_id}"
+    ).encode("utf-8")
+    # torch.Generator.manual_seed accepts signed-64-bit-compatible seeds.  The
+    # modulus also keeps the value portable across the CUDA/PyTorch versions
+    # frozen by the experiment contract.
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big") % (2**63 - 1)
+
+
+def _route_private_generator(
+    *,
+    device: torch.device,
+    seed: int,
+) -> torch.Generator:
+    generator = torch.Generator(device=device)
+    generator.manual_seed(int(seed))
+    return generator
+
+
+def sample_ordered_pl_with_exclusion(
+    logits: torch.Tensor,
+    *,
+    count: int,
+    temperature: float,
+    valid_mask: torch.Tensor,
+    excluded_mask: torch.Tensor,
+    generator: torch.Generator,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Sample and score an ordered PL action on an explicitly reduced support.
+
+    The returned likelihood uses exactly the same valid-minus-excluded support
+    as the hard Gumbel-top-k draw.  Constructing ``generator`` from a route-only
+    key makes the draw replayable across AMP retries without advancing either
+    the process-global CPU RNG or CUDA RNG.
+    """
+
+    if logits.ndim != 3:
+        raise ValueError("conditional Plackett-Luce logits must be [B,T,N]")
+    if valid_mask.shape != logits.shape or valid_mask.dtype != torch.bool:
+        raise ValueError("conditional Plackett-Luce valid_mask must match logits")
+    if excluded_mask.shape != logits.shape or excluded_mask.dtype != torch.bool:
+        raise ValueError("conditional Plackett-Luce excluded_mask must match logits")
+    if not isinstance(generator, torch.Generator):
+        raise TypeError("conditional Plackett-Luce requires a private Generator")
+    if int(count) < 0:
+        raise ValueError("conditional Plackett-Luce count must be non-negative")
+    if float(temperature) <= 0.0:
+        raise ValueError("conditional Plackett-Luce temperature must be positive")
+    if not bool(torch.isfinite(logits).all().item()):
+        raise ValueError("conditional Plackett-Luce logits must be finite")
+
+    available = valid_mask & ~excluded_mask
+    if bool((available.sum(dim=-1) < int(count)).any().item()):
+        raise ValueError("conditional Plackett-Luce support is smaller than its quota")
+    if int(count) == 0:
+        return (
+            torch.empty((*logits.shape[:2], 0), device=logits.device, dtype=torch.long),
+            torch.zeros(logits.shape[:2], device=logits.device, dtype=torch.float32),
+        )
+
+    uniform = torch.rand(
+        logits.shape,
+        device=logits.device,
+        dtype=logits.dtype,
+        generator=generator,
+    ).clamp_(1e-6, 1.0 - 1e-6)
+    gumbel = -torch.log(-torch.log(uniform))
+    sampled_scores = (logits / float(temperature) + gumbel).masked_fill(
+        ~available,
+        float("-inf"),
+    )
+    ordered = _stable_argsort_descending(sampled_scores)[..., : int(count)]
+    log_probability = ordered_plackett_luce_log_prob(
+        logits,
+        ordered,
+        temperature=temperature,
+        valid_mask=available,
+    )
+    return ordered, log_probability
+
+
 def ordered_plackett_luce_log_prob(
     logits: torch.Tensor,
     ordered_indices: torch.Tensor,
@@ -325,6 +436,252 @@ def _stateless_random_scores(
     return (mixed.remainder(2_147_483_647)).to(dtype=logits.dtype)
 
 
+def select_fixed_quota_structured_exact_k(
+    *,
+    roi_logits: torch.Tensor,
+    residual_logits: torch.Tensor,
+    mode: str,
+    context_tokens: int,
+    roi_tokens: int,
+    residual_tokens: int,
+    training: bool,
+    estimator: str,
+    temperature: float,
+    valid_mask: torch.Tensor,
+    study_seed: int,
+    successful_update_index: int | None,
+    distributed_rank: int,
+) -> dict[str, Any]:
+    """Select a deterministic-context/ROI/residual exact-K structured route.
+
+    The two learned roles form the explicit joint policy
+    ``p(roi | context) * p(residual | context, roi)``.  Residual logits do not
+    consume sampled ROI features; conditioning is solely the hard exclusion of
+    deterministic context and the complete sampled ROI set.  This function is
+    intentionally separate from :func:`select_exact_k`, whose legacy behavior
+    and likelihood boundary remain unchanged.
+    """
+
+    if mode not in STRUCTURED_ROUTE_MODES:
+        raise ValueError(f"unsupported structured GeoRoute mode {mode!r}")
+    if estimator not in POLICY_ESTIMATORS:
+        raise ValueError(f"unsupported policy estimator {estimator!r}")
+    if roi_logits.shape != residual_logits.shape or roi_logits.ndim != 3:
+        raise ValueError("structured ROI and residual logits must match [B,T,N]")
+    if valid_mask.shape != roi_logits.shape or valid_mask.dtype != torch.bool:
+        raise ValueError("structured valid_mask must be bool and match [B,T,N]")
+    if not bool(torch.isfinite(roi_logits).all().item()) or not bool(
+        torch.isfinite(residual_logits).all().item()
+    ):
+        raise ValueError("structured routing logits must be finite")
+    counts = {
+        "context": int(context_tokens),
+        "roi": int(roi_tokens),
+        "residual": int(residual_tokens),
+    }
+    if any(value < 0 for value in counts.values()):
+        raise ValueError("structured role quotas must be non-negative")
+    target_k = sum(counts.values())
+    if target_k <= 0:
+        raise ValueError("structured exact-K route requires a positive total quota")
+    expected_zero_role = {
+        "structured_context_residual": "roi",
+        "structured_context_roi": "residual",
+    }.get(mode)
+    if expected_zero_role is not None and counts[expected_zero_role] != 0:
+        raise ValueError(f"{mode} requires zero {expected_zero_role} quota")
+    if mode in {"structured_hybrid", "structured_hybrid_geometry_shift"} and (
+        counts["roi"] <= 0 or counts["residual"] <= 0
+    ):
+        raise ValueError("structured hybrid requires positive ROI and residual quotas")
+    learned_count = counts["roi"] + counts["residual"]
+    if learned_count <= 0:
+        raise ValueError("structured route requires at least one learned-role token")
+    if float(temperature) <= 0.0:
+        raise ValueError("structured learned routing requires positive temperature")
+    if training and estimator == "none":
+        raise ValueError("structured learned routing requires an estimator in training")
+    if training and estimator == "score_function" and successful_update_index is None:
+        raise ValueError("structured PL requires the successful-update index")
+    if int(distributed_rank) < 0:
+        raise ValueError("structured route rank must be non-negative")
+
+    batch, tubelets, item_count = map(int, roi_logits.shape)
+    valid_counts = valid_mask.sum(dim=-1)
+    if bool((valid_counts < target_k).any().item()):
+        raise ValueError("valid native support is smaller than structured exact-K")
+
+    excluded = ~valid_mask
+    role_indices: dict[str, torch.Tensor] = {}
+    parts: list[torch.Tensor] = []
+    soft_membership = torch.zeros_like(roi_logits)
+    aggregation_logits = torch.zeros_like(roi_logits)
+    branch_log_probabilities: dict[str, torch.Tensor] = {}
+    route_rng_seeds: dict[str, int] = {}
+
+    if counts["context"]:
+        context = _deterministic_uniform_valid_indices(
+            valid_mask,
+            select_count=counts["context"],
+        )
+        role_indices["context"] = context
+        parts.append(context)
+        excluded = excluded | _mask_from_indices(context, item_count)
+    else:
+        role_indices["context"] = torch.empty(
+            (batch, tubelets, 0),
+            device=roi_logits.device,
+            dtype=torch.long,
+        )
+
+    for role, logits in (("roi", roi_logits), ("residual", residual_logits)):
+        count = counts[role]
+        if count == 0:
+            indices = torch.empty(
+                (batch, tubelets, 0),
+                device=logits.device,
+                dtype=torch.long,
+            )
+            log_probability = torch.zeros(
+                (batch, tubelets),
+                device=logits.device,
+                dtype=torch.float32,
+            )
+        elif training and estimator == "score_function":
+            assert successful_update_index is not None
+            private_seed = _route_private_seed(
+                study_seed=study_seed,
+                successful_update_index=successful_update_index,
+                distributed_rank=distributed_rank,
+                role_id=role,
+            )
+            route_rng_seeds[role] = private_seed
+            indices, log_probability = sample_ordered_pl_with_exclusion(
+                logits,
+                count=count,
+                temperature=temperature,
+                valid_mask=valid_mask,
+                excluded_mask=excluded,
+                generator=_route_private_generator(
+                    device=logits.device,
+                    seed=private_seed,
+                ),
+            )
+        else:
+            indices = _topk_excluding(
+                logits,
+                count=count,
+                excluded=excluded,
+            )
+            log_probability = torch.zeros(
+                (batch, tubelets),
+                device=logits.device,
+                dtype=torch.float32,
+            )
+
+        role_indices[role] = indices
+        branch_log_probabilities[role] = log_probability
+        if count:
+            parts.append(indices)
+            available_scores = logits.masked_fill(excluded, float("-inf"))
+            soft_membership = soft_membership + _soft_topk_gate(
+                available_scores,
+                count=count,
+                temperature=temperature,
+            ).masked_fill(excluded, 0.0)
+            role_mask = _mask_from_indices(indices, item_count)
+            aggregation_logits = torch.where(role_mask, logits, aggregation_logits)
+            # The residual policy is conditional on the complete sampled ROI
+            # set, not on the ROI sampling order.  Updating exclusion only after
+            # the full role draw makes that factorization explicit.
+            excluded = excluded | role_mask
+
+    ordered = torch.cat(parts, dim=-1)
+    joint_log_probability = None
+    if training and estimator == "score_function":
+        joint_log_probability = (
+            branch_log_probabilities["roi"]
+            + branch_log_probabilities["residual"]
+        )
+
+    if ordered.shape != (batch, tubelets, target_k):
+        raise RuntimeError("structured exact-K route produced an invalid shape")
+    selected_mask = _mask_from_indices(ordered, item_count)
+    if not bool((selected_mask.sum(dim=-1) == target_k).all().item()):
+        raise RuntimeError("structured exact-K route contains duplicate indices")
+    if not bool((selected_mask <= valid_mask).all().item()):
+        raise RuntimeError("structured exact-K route selected invalid support")
+
+    indices = torch.sort(ordered, dim=-1).values
+    role_id_values = {"context": 0, "roi": 1, "residual": 2}
+    role_id_lattice = torch.full(
+        (batch, tubelets, item_count),
+        -1,
+        device=indices.device,
+        dtype=torch.long,
+    )
+    for role, role_id in role_id_values.items():
+        role_id_lattice = role_id_lattice.scatter(
+            -1,
+            role_indices[role],
+            int(role_id),
+        )
+    role_ids = role_id_lattice.gather(-1, indices)
+    if bool((role_ids < 0).any().item()):
+        raise RuntimeError("structured exact-K route lacks a role id")
+    selected_surrogate = soft_membership.gather(-1, indices)
+    selected_aggregation_logits = aggregation_logits.gather(-1, indices)
+    if training and estimator == "straight_through":
+        st_gate = torch.ones_like(selected_surrogate) + (
+            selected_surrogate - selected_surrogate.detach()
+        )
+    else:
+        st_gate = torch.ones_like(selected_surrogate)
+
+    return {
+        "schema_version": GEOROUTE_STRUCTURED_ROUTING_SCHEMA,
+        "mode": mode,
+        "indices": indices,
+        "ordered_indices": ordered,
+        "role_indices": role_indices,
+        "role_ids": role_ids,
+        "role_id_values": role_id_values,
+        "selected_mask": selected_mask,
+        "selected_surrogate": selected_surrogate,
+        "soft_membership": soft_membership,
+        "selected_aggregation_logits": selected_aggregation_logits,
+        "st_gate": st_gate,
+        "ordered_log_prob": joint_log_probability,
+        "branch_log_probabilities": branch_log_probabilities,
+        "target_k": target_k,
+        "item_count": item_count,
+        "valid_patch_count_min": int(valid_counts.min().item()),
+        "valid_patch_count_max": int(valid_counts.max().item()),
+        "role_counts": {
+            "context": counts["context"],
+            "roi": counts["roi"],
+            "residual": counts["residual"],
+            "free": 0,
+            "dense": 0,
+            "uniform": 0,
+            "random": 0,
+        },
+        "route_rng": {
+            "schema_version": _ROUTE_PRIVATE_RNG_SCHEMA,
+            "enabled": bool(training and estimator == "score_function"),
+            "study_seed": int(study_seed),
+            "successful_update_index": (
+                None
+                if successful_update_index is None
+                else int(successful_update_index)
+            ),
+            "distributed_rank": int(distributed_rank),
+            "role_seeds": route_rng_seeds,
+            "global_rng_consumed": False,
+        },
+    }
+
+
 def select_exact_k(
     *,
     roi_logits: torch.Tensor,
@@ -348,7 +705,7 @@ def select_exact_k(
     draw would make its likelihood claim false.
     """
 
-    if mode not in ROUTE_MODES:
+    if mode not in LEGACY_ROUTE_MODES:
         raise ValueError(f"unsupported GeoRoute mode {mode!r}")
     if estimator not in POLICY_ESTIMATORS:
         raise ValueError(f"unsupported policy estimator {estimator!r}")

@@ -2142,3 +2142,26 @@ append_only: true
   admission is `active=2, required=16, limit=16` and storage is
   `31,646,543,872` free versus `130,996,502,528` required; no unrelated job is
   cancelled and neither gate is relaxed.
+
+- 2026-08-02: fully absorbed the 1,101-line Hybrid-centered Pro review
+  (`b1a39b0869d03b50de9743df388c01665496ffebbb63bcb22b2efe908b196133`)
+  and accepted `RUN_HYBRID_CAUSAL_PILOT_FIRST` with explicit evidence limits.
+  The old ROI+TokenSelect Hybrid result remains descriptive motivation rather
+  than causal proof; Fixed is defined as the deterministic row-major uniform
+  K64 coverage control; geometry shift is temporal trajectory shift127; and a
+  future PL-versus-ST claim must retain matched ST across confirmatory seeds.
+  No additional Pro discussion is required before the frozen mechanical gate.
+
+- 2026-08-02: implemented the development-only Hybrid causal route and
+  fail-closed execution chain: exact K64 structured context8/ROI28/residual28
+  conditional Plackett-Luce sampling with a route-private RNG, exact
+  `cls_loss + reg_loss` policy risk, per-role telemetry and branch-gradient
+  hooks, temporal geometry-misalignment control, nine frozen arms A0--A8,
+  separate accuracy/telemetry and cost replays, all-terminal finalizers, and
+  held all-or-none Slurm deployment. The P0 suite combines an A7 production
+  forward/backward gate with the existing two-rank FP32-DDP KAT. N16R4 resource
+  requests intentionally omit all explicit `--mem` flags because site Lua
+  assigns memory per GPU and rejects overrides. Local pure-contract tests pass;
+  Windows Torch is unavailable because `c10.dll` cannot load. Remote Linux/CUDA
+  verification and P0 remain pending, so the route is only `implemented`, not
+  `tested`, `empirically_supported`, or `paper_ready`.

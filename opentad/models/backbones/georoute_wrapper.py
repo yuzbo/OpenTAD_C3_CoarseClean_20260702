@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -13,21 +14,22 @@ from torch.nn.modules.batchnorm import _BatchNorm
 
 from .backbone_wrapper import BackboneWrapper
 from .georoute_routing import (
-    GEOROUTE_ROUTING_SCHEMA,
     POLICY_ESTIMATORS,
     ROUTE_MODES,
     SCORE_FUNCTION_TEMPORAL_REDUCTIONS,
+    STRUCTURED_ROUTE_MODES,
     decode_continuous_geometry,
     interpolate_temporal_knots,
     native_patch_centers,
     roi_logits_from_geometry,
     score_function_policy_loss,
     select_exact_k,
+    select_fixed_quota_structured_exact_k,
 )
 from .native_crop_wrapper import deterministic_linear_2x
 
 
-GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v4"
+GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v5"
 
 
 class GeoRouteScout(nn.Module):
@@ -234,6 +236,25 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.policy_estimator = str(getattr(custom_cfg, "georoute_policy_estimator", "straight_through"))
         self.policy_temperature = float(getattr(custom_cfg, "georoute_policy_temperature", 0.5))
         self.random_seed = int(getattr(custom_cfg, "georoute_random_seed", 3407))
+        self.route_study_seed = int(
+            getattr(custom_cfg, "georoute_route_study_seed", self.random_seed)
+        )
+        self.structured_context_tokens = int(
+            getattr(
+                custom_cfg,
+                "georoute_structured_context_tokens",
+                self.context_tokens,
+            )
+        )
+        self.structured_roi_tokens = int(
+            getattr(custom_cfg, "georoute_structured_roi_tokens", 0)
+        )
+        self.structured_residual_tokens = int(
+            getattr(custom_cfg, "georoute_structured_residual_tokens", 0)
+        )
+        self.geometry_temporal_shift_tubelets = int(
+            getattr(custom_cfg, "georoute_geometry_temporal_shift_tubelets", 0)
+        )
         self.roi_temperature = float(getattr(custom_cfg, "georoute_roi_temperature", 0.25))
         self.geometry_stride_tubelets = int(getattr(custom_cfg, "georoute_geometry_stride_tubelets", 1))
         self.absolute_position_enabled = bool(getattr(custom_cfg, "georoute_absolute_position_enabled", True))
@@ -323,6 +344,67 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             raise ValueError("GeoRoute dense numerical reference is valid only for route_mode='dense'")
         if self.geometry_side_channel and self.route_mode not in {"uniform", "random"}:
             raise ValueError("GeoRoute geometry-side-channel control is valid only for fixed uniform/random routes")
+        if self.route_mode in STRUCTURED_ROUTE_MODES:
+            structured_total = (
+                self.structured_context_tokens
+                + self.structured_roi_tokens
+                + self.structured_residual_tokens
+            )
+            if any(
+                value < 0
+                for value in (
+                    self.structured_context_tokens,
+                    self.structured_roi_tokens,
+                    self.structured_residual_tokens,
+                )
+            ) or structured_total != self.tokens_per_tubelet:
+                raise ValueError(
+                    "structured GeoRoute quotas must be non-negative and sum to exact K"
+                )
+            if self.route_mode == "structured_context_residual" and self.structured_roi_tokens != 0:
+                raise ValueError("structured_context_residual requires zero ROI quota")
+            if self.route_mode == "structured_context_roi" and self.structured_residual_tokens != 0:
+                raise ValueError("structured_context_roi requires zero residual quota")
+            if self.route_mode in {
+                "structured_hybrid",
+                "structured_hybrid_geometry_shift",
+            } and (
+                self.structured_roi_tokens <= 0
+                or self.structured_residual_tokens <= 0
+            ):
+                raise ValueError("structured hybrid requires both learned roles")
+            if (
+                not self.absolute_position_enabled
+                or self.absolute_coordinates_enabled
+                or self.roi_relative_coordinates_enabled
+                or self.geometry_projection_enabled
+                or self.geometry_side_channel
+                or self.pooling_mode != "uniform_selected"
+                or self.geometry_smoothness_weight != 0.0
+                or self.area_prior_weight != 0.0
+            ):
+                raise ValueError(
+                    "structured causal-pilot modes require support-only representation isolation"
+                )
+            if self.policy_estimator == "score_function" and (
+                self.score_function_temporal_reduction != "mean"
+                or self.max_batch_size != 1
+            ):
+                raise ValueError(
+                    "structured PL requires temporal mean and local batch capacity one"
+                )
+            tubelets = self.window_size // self.tubelet_size
+            if self.route_mode == "structured_hybrid_geometry_shift":
+                if not (
+                    0 < self.geometry_temporal_shift_tubelets < tubelets
+                ):
+                    raise ValueError(
+                        "geometry-shift control requires a nonzero in-range tubelet shift"
+                    )
+            elif self.geometry_temporal_shift_tubelets != 0:
+                raise ValueError(
+                    "geometry temporal shift is reserved for its named control"
+                )
         super().__init__(cfg)
         if int(self.model.backbone.patch_size) != self.patch_size:
             raise ValueError("GeoRoute patch size must match the loaded VideoMAE")
@@ -354,8 +436,18 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.trainable_adapter_parameters = trainable_adapter_parameters
 
     def _configure_scout_trainability(self) -> None:
-        needs_geometry = self.route_mode in {"roi", "hybrid"} or self.geometry_side_channel
-        needs_residual = self.route_mode in {"free", "hybrid"}
+        needs_geometry = (
+            self.route_mode in {"roi", "hybrid"}
+            or self.geometry_side_channel
+            or (
+                self.route_mode in STRUCTURED_ROUTE_MODES
+                and self.structured_roi_tokens > 0
+            )
+        )
+        needs_residual = self.route_mode in {"free", "hybrid"} or (
+            self.route_mode in STRUCTURED_ROUTE_MODES
+            and self.structured_residual_tokens > 0
+        )
         needs_stem = needs_geometry or needs_residual
         for parameter in self.scout.parameters():
             parameter.requires_grad = needs_stem
@@ -402,6 +494,12 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             raise ValueError("GeoRoute scout has an unexpected spatial resolution")
         if source.shape[0] > self.max_batch_size:
             raise ValueError("GeoRoute native grid batches require batch_size <= configured max_batch_size")
+        if (
+            self.route_mode in STRUCTURED_ROUTE_MODES
+            and self.policy_estimator == "score_function"
+            and source.shape[0] != 1
+        ):
+            raise ValueError("structured PL detector risk requires local batch size exactly one")
         return source[:, 0].contiguous(), scout[:, 0].contiguous()
 
     def _gather_selected_native_tubelets(
@@ -458,6 +556,25 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         geometry[..., :2] = 0.5
         return geometry
 
+    @staticmethod
+    def _geometry_shift_control(
+        geometry: torch.Tensor,
+        *,
+        shift_tubelets: int,
+    ) -> torch.Tensor:
+        """Cyclically misalign a geometry trajectory from its video content."""
+
+        if geometry.ndim != 3 or geometry.shape[-1] != 4:
+            raise ValueError("geometry shift control requires [B,T,4]")
+        tubelets = int(geometry.shape[1])
+        if not (0 < int(shift_tubelets) < tubelets):
+            raise ValueError("geometry shift must be nonzero and smaller than T")
+        # Unit/P0 controls prove the multiset identity.  The production path does
+        # not sort or synchronize here, so the negative control adds only roll.
+        # Frozen permutation: output tubelet t consumes geometry
+        # ``(t + shift) mod T``.
+        return torch.roll(geometry, shifts=-int(shift_tubelets), dims=1)
+
     def _compute_route_fields(
         self,
         scout: torch.Tensor,
@@ -467,8 +584,18 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         batch_size = int(scout.shape[0])
         tubelets = self.window_size // self.tubelet_size
         item_count = int(source_grid_hw[0]) * int(source_grid_hw[1])
-        needs_geometry = self.route_mode in {"roi", "hybrid"} or self.geometry_side_channel
-        needs_residual = self.route_mode in {"free", "hybrid"}
+        needs_geometry = (
+            self.route_mode in {"roi", "hybrid"}
+            or self.geometry_side_channel
+            or (
+                self.route_mode in STRUCTURED_ROUTE_MODES
+                and self.structured_roi_tokens > 0
+            )
+        )
+        needs_residual = self.route_mode in {"free", "hybrid"} or (
+            self.route_mode in STRUCTURED_ROUTE_MODES
+            and self.structured_residual_tokens > 0
+        )
         needs_scout = needs_geometry or needs_residual
 
         if needs_scout:
@@ -580,6 +707,75 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             ),
         }
 
+    @staticmethod
+    def _tensor_sha256(value: torch.Tensor) -> str:
+        canonical = (
+            value.detach()
+            .to(device="cpu", dtype=torch.float32)
+            .contiguous()
+        )
+        return hashlib.sha256(canonical.numpy().tobytes()).hexdigest()
+
+    @staticmethod
+    def _observed_path_pl_entropy(
+        logits: torch.Tensor,
+        *,
+        ordered_indices: torch.Tensor,
+        available_mask: torch.Tensor,
+        temperature: float,
+    ) -> dict[str, Any]:
+        """Summarize conditional categorical entropy along an observed PL path."""
+
+        if ordered_indices.shape[-1] == 0:
+            return {
+                "applicable": False,
+                "ordered_slot_count": 0,
+                "conditional_entropy_mean": None,
+                "conditional_entropy_min": None,
+                "conditional_entropy_max": None,
+                "observed_ordered_log_probability_mean": None,
+            }
+        available = available_mask.detach().clone()
+        scaled = logits.detach().float() / float(temperature)
+        entropies: list[torch.Tensor] = []
+        observed_log_probability = torch.zeros(
+            logits.shape[:2],
+            device=logits.device,
+            dtype=torch.float32,
+        )
+        for slot in range(ordered_indices.shape[-1]):
+            choice = ordered_indices[..., slot : slot + 1]
+            if bool((~available.gather(-1, choice)).any().item()):
+                raise RuntimeError("telemetry observed an unavailable PL choice")
+            log_probability = F.log_softmax(
+                scaled.masked_fill(~available, float("-inf")),
+                dim=-1,
+            )
+            probability = log_probability.exp()
+            entropy = -torch.where(
+                available,
+                probability * log_probability,
+                torch.zeros_like(probability),
+            ).sum(dim=-1)
+            entropies.append(entropy)
+            observed_log_probability = observed_log_probability + log_probability.gather(
+                -1,
+                choice,
+            ).squeeze(-1)
+            available = available.scatter(-1, choice, False)
+        values = torch.stack(entropies, dim=-1)
+        return {
+            "applicable": True,
+            "ordered_slot_count": int(ordered_indices.shape[-1]),
+            "measurement": "mean_observed_path_conditional_categorical_entropy",
+            "conditional_entropy_mean": float(values.mean().item()),
+            "conditional_entropy_min": float(values.min().item()),
+            "conditional_entropy_max": float(values.max().item()),
+            "observed_ordered_log_probability_mean": float(
+                observed_log_probability.mean().item()
+            ),
+        }
+
     @classmethod
     def _diagnostic_route_telemetry(
         cls,
@@ -590,6 +786,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         valid_patch_mask: torch.Tensor,
         selected_coordinates: torch.Tensor,
         geometry: torch.Tensor,
+        original_geometry: torch.Tensor,
+        source_grid_hw: tuple[int, int],
+        policy_temperature: float,
     ) -> dict[str, Any]:
         selected_mask = route["selected_mask"].detach()
         selected_coordinates = selected_coordinates.detach().float()
@@ -632,12 +831,102 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         hard = selected_mask.to(dtype=surrogate.dtype)
         hard_soft_l1 = (surrogate - hard).abs().masked_select(valid_patch_mask).mean()
         indices = route["indices"].detach().to("cpu").contiguous()
+        role_indices = route.get("role_indices", {})
 
         def _mean_or_zero(value: torch.Tensor) -> float:
             return float(value.mean().item()) if value.numel() else 0.0
 
+        def _role_summary(role: str) -> dict[str, Any]:
+            ordered_role = role_indices.get(role)
+            if ordered_role is None or ordered_role.shape[-1] == 0:
+                return {
+                    "applicable": False,
+                    "tokens_per_tubelet": 0,
+                }
+            ordered_role = ordered_role.detach()
+            role_coordinates = cls._selected_native_coordinates(
+                ordered_role,
+                source_grid_hw=source_grid_hw,
+            ).detach().float()
+            role_mask = torch.zeros_like(selected_mask).scatter(
+                -1,
+                ordered_role,
+                True,
+            )
+            role_x = role_coordinates[..., 0]
+            role_y = role_coordinates[..., 1]
+            if role_mask.shape[1] > 1:
+                role_previous = role_mask[:, :-1]
+                role_following = role_mask[:, 1:]
+                role_intersection = (role_previous & role_following).sum(dim=-1).float()
+                role_union = (role_previous | role_following).sum(dim=-1).float()
+                role_jaccard = role_intersection / role_union.clamp_min(1.0)
+                role_lineage = role_intersection / float(ordered_role.shape[-1])
+            else:
+                role_intersection = geometry.new_zeros((geometry.shape[0], 0))
+                role_jaccard = geometry.new_zeros((geometry.shape[0], 0))
+                role_lineage = geometry.new_zeros((geometry.shape[0], 0))
+            return {
+                "applicable": True,
+                "tokens_per_tubelet": int(ordered_role.shape[-1]),
+                "ordered_index_sha256": cls._tensor_sha256(
+                    ordered_role.to(dtype=torch.float32)
+                ),
+                "x_span_mean": float(
+                    (role_x.amax(dim=-1) - role_x.amin(dim=-1)).mean().item()
+                ),
+                "y_span_mean": float(
+                    (role_y.amax(dim=-1) - role_y.amin(dim=-1)).mean().item()
+                ),
+                "adjacent_pair_count": int(role_intersection.numel()),
+                "adjacent_jaccard_mean": _mean_or_zero(role_jaccard),
+                "lineage_survival_mean": _mean_or_zero(role_lineage),
+            }
+
+        role_telemetry = {
+            role: _role_summary(role)
+            for role in ("context", "roi", "residual")
+        }
+        branch_entropy: dict[str, Any] = {}
+        if role_indices:
+            context_mask = torch.zeros_like(selected_mask).scatter(
+                -1,
+                role_indices["context"],
+                True,
+            )
+            roi_mask = torch.zeros_like(selected_mask).scatter(
+                -1,
+                role_indices["roi"],
+                True,
+            )
+            after_context = valid_patch_mask & ~context_mask
+            branch_entropy["roi"] = cls._observed_path_pl_entropy(
+                roi_logits,
+                ordered_indices=role_indices["roi"],
+                available_mask=after_context,
+                temperature=policy_temperature,
+            )
+            branch_entropy["residual"] = cls._observed_path_pl_entropy(
+                residual_logits,
+                ordered_indices=role_indices["residual"],
+                available_mask=after_context & ~roi_mask,
+                temperature=policy_temperature,
+            )
+        route_rng = dict(route.get("route_rng", {}))
+        route_rng_sha256 = (
+            hashlib.sha256(
+                json.dumps(
+                    route_rng,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            if route_rng
+            else None
+        )
+
         return {
-            "schema_version": "georoute_diagnostic_window_telemetry_v1",
+            "schema_version": "georoute_diagnostic_window_telemetry_v2",
             "batch_size": int(selected_mask.shape[0]),
             "tubelet_count": int(selected_mask.shape[1]),
             "item_count": int(selected_mask.shape[2]),
@@ -661,6 +950,14 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 "area_mean": float((geometry[..., 2] * geometry[..., 3]).mean().item()),
                 "center_step_l2_mean": _mean_or_zero(center_step),
                 "extent_step_l2_mean": _mean_or_zero(extent_step),
+                "original_trajectory_sha256": cls._tensor_sha256(
+                    original_geometry
+                ),
+                "routing_trajectory_sha256": cls._tensor_sha256(geometry),
+                "trajectory_changed": not torch.equal(
+                    original_geometry.detach(),
+                    geometry.detach(),
+                ),
             },
             "scores": {
                 "roi": cls._route_score_statistics(
@@ -681,6 +978,25 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 "hard_soft_l1_mean": float(hard_soft_l1.item()),
             },
             "role_counts": dict(route["role_counts"]),
+            "roles": role_telemetry,
+            "branch_entropy": branch_entropy,
+            "branch_gradient": {
+                role: {
+                    "applicable": bool(
+                        role_indices
+                        and role_indices[role].shape[-1] > 0
+                        and logits.requires_grad
+                    ),
+                    "observed": False,
+                    "measurement": "autograd_hook_before_optimizer_unscale",
+                }
+                for role, logits in (
+                    ("roi", roi_logits),
+                    ("residual", residual_logits),
+                )
+            },
+            "route_rng": route_rng,
+            "route_rng_sha256": route_rng_sha256,
         }
 
     def forward(self, frames, masks=None):
@@ -700,25 +1016,54 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             scout,
             source_grid_hw=source_grid_hw,
         )
+        routing_geometry = geometry
+        if self.route_mode == "structured_hybrid_geometry_shift":
+            routing_geometry = self._geometry_shift_control(
+                geometry,
+                shift_tubelets=self.geometry_temporal_shift_tubelets,
+            )
         roi_logits = roi_logits_from_geometry(
-            geometry,
+            routing_geometry,
             grid_height=source_grid_hw[0],
             grid_width=source_grid_hw[1],
             temperature=self.roi_temperature,
         )
-        route = select_exact_k(
-            roi_logits=roi_logits,
-            residual_logits=residual_logits,
-            mode=self.route_mode,
-            tokens_per_tubelet=self.tokens_per_tubelet,
-            context_tokens=self.context_tokens,
-            roi_fraction=self.roi_fraction,
-            training=self.training,
-            estimator=self.policy_estimator,
-            temperature=self.policy_temperature,
-            valid_mask=valid_patch_mask,
-            random_seed=self.random_seed,
-        )
+        if self.route_mode in STRUCTURED_ROUTE_MODES:
+            distributed_rank = (
+                int(torch.distributed.get_rank())
+                if torch.distributed.is_available()
+                and torch.distributed.is_initialized()
+                else 0
+            )
+            route = select_fixed_quota_structured_exact_k(
+                roi_logits=roi_logits,
+                residual_logits=residual_logits,
+                mode=self.route_mode,
+                context_tokens=self.structured_context_tokens,
+                roi_tokens=self.structured_roi_tokens,
+                residual_tokens=self.structured_residual_tokens,
+                training=self.training,
+                estimator=self.policy_estimator,
+                temperature=self.policy_temperature,
+                valid_mask=valid_patch_mask,
+                study_seed=self.route_study_seed,
+                successful_update_index=self._successful_update_index,
+                distributed_rank=distributed_rank,
+            )
+        else:
+            route = select_exact_k(
+                roi_logits=roi_logits,
+                residual_logits=residual_logits,
+                mode=self.route_mode,
+                tokens_per_tubelet=self.tokens_per_tubelet,
+                context_tokens=self.context_tokens,
+                roi_fraction=self.roi_fraction,
+                training=self.training,
+                estimator=self.policy_estimator,
+                temperature=self.policy_temperature,
+                valid_mask=valid_patch_mask,
+                random_seed=self.random_seed,
+            )
         if self.gradient_decomposition_enabled:
             if self._gradient_decomposition_payload is not None:
                 raise RuntimeError(
@@ -823,12 +1168,43 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 residual_logits=residual_logits,
                 valid_patch_mask=valid_patch_mask,
                 selected_coordinates=selected_coordinates,
-                geometry=geometry,
+                geometry=routing_geometry,
+                original_geometry=geometry,
+                source_grid_hw=source_grid_hw,
+                policy_temperature=self.policy_temperature,
             )
+            if self.training:
+                for role, logits in (
+                    ("roi", roi_logits),
+                    ("residual", residual_logits),
+                ):
+                    entry = diagnostic_telemetry["branch_gradient"][role]
+                    if not entry["applicable"]:
+                        continue
+
+                    def _capture_branch_gradient(
+                        gradient: torch.Tensor,
+                        *,
+                        destination: dict[str, Any] = entry,
+                    ) -> torch.Tensor:
+                        detached = gradient.detach().float()
+                        destination.update(
+                            {
+                                "observed": True,
+                                "shape": list(gradient.shape),
+                                "dtype": str(gradient.dtype),
+                                "finite": bool(torch.isfinite(detached).all().item()),
+                                "l2_norm": float(detached.norm().item()),
+                                "max_abs": float(detached.abs().max().item()),
+                            }
+                        )
+                        return gradient
+
+                    logits.register_hook(_capture_branch_gradient)
         intermediate = self.sparse_adapter(
             selected_features,
             selected_scores,
-            geometry,
+            routing_geometry,
             selected_coordinates,
             use_absolute_coordinates=self.absolute_coordinates_enabled,
             use_roi_relative_coordinates=self.roi_relative_coordinates_enabled,
@@ -872,7 +1248,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             unique_counts = torch.ones_like(sorted_indices[..., 0])
         self.latest_georoute_audit = {
             "schema_version": GEOROUTE_BACKBONE_SCHEMA,
-            "routing_schema": GEOROUTE_ROUTING_SCHEMA,
+            "routing_schema": route["schema_version"],
             "route_mode": self.route_mode,
             "policy_estimator": self.policy_estimator,
             "scout_autocast_enabled": False,
@@ -906,6 +1282,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "output_shape": list(output.shape),
             "geometry_shape": list(geometry.shape),
             "geometry_stride_tubelets": self.geometry_stride_tubelets,
+            "geometry_temporal_shift_tubelets": (
+                self.geometry_temporal_shift_tubelets
+            ),
             "absolute_position_enabled": self.absolute_position_enabled,
             "absolute_coordinates_enabled": self.absolute_coordinates_enabled,
             "roi_relative_coordinates_enabled": (self.roi_relative_coordinates_enabled),
@@ -914,8 +1293,21 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "pooling_mode": self.pooling_mode,
             "adapter_mode": self.adapter_mode,
             "geometry_side_channel": self.geometry_side_channel,
-            "learned_geometry_enabled": bool(self.route_mode in {"roi", "hybrid"} or self.geometry_side_channel),
-            "learned_residual_enabled": self.route_mode in {"free", "hybrid"},
+            "learned_geometry_enabled": bool(
+                self.route_mode in {"roi", "hybrid"}
+                or self.geometry_side_channel
+                or (
+                    self.route_mode in STRUCTURED_ROUTE_MODES
+                    and self.structured_roi_tokens > 0
+                )
+            ),
+            "learned_residual_enabled": bool(
+                self.route_mode in {"free", "hybrid"}
+                or (
+                    self.route_mode in STRUCTURED_ROUTE_MODES
+                    and self.structured_residual_tokens > 0
+                )
+            ),
             "free_control_is_roi_free": bool(self.route_mode != "free" or (self.route_mode == "free" and not self.geometry_side_channel)),
             "route_logits_used_for_pooling": self.pooling_mode == "route_score_ablation",
             "geometry_min": float(geometry.detach().min().item()),
@@ -926,6 +1318,14 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "selected_unique_count_max": int(unique_counts.max().item()),
             "selected_duplicate_count": duplicate_count,
             "role_counts": dict(route["role_counts"]),
+            "route_rng": dict(route.get("route_rng", {})),
+            "branch_log_probabilities": {
+                role: self._detached_tensor_statistics(value)
+                for role, value in route.get(
+                    "branch_log_probabilities",
+                    {},
+                ).items()
+            },
             "packed": packed,
             "dense_native_reference": dense_reference_audit,
             "uses_grid_sample": False,
@@ -967,14 +1367,29 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
     ) -> dict[str, torch.Tensor]:
         if not self.training:
             return {}
+        required_detector_keys = {"cls_loss", "reg_loss"}
+        observed_detector_keys = {str(name) for name in detector_losses}
+        if observed_detector_keys != required_detector_keys:
+            raise ValueError(
+                "GeoRoute policy risk accepts exactly cls_loss and reg_loss; "
+                f"observed {sorted(observed_detector_keys)}"
+            )
         tensor_losses = [
-            (str(name), value)
-            for name, value in detector_losses.items()
-            if torch.is_tensor(value)
+            (name, detector_losses[name])
+            for name in sorted(required_detector_keys)
         ]
+        if any(
+            not torch.is_tensor(value)
+            or value.ndim != 0
+            or not bool(torch.isfinite(value).item())
+            for _name, value in tensor_losses
+        ):
+            raise ValueError(
+                "GeoRoute detector policy hook requires finite scalar cls/reg losses"
+            )
         detector_cost = sum(value for _name, value in tensor_losses)
-        if detector_cost.ndim != 0:
-            raise ValueError("GeoRoute detector policy hook requires scalar detector losses")
+        if detector_cost.ndim != 0 or not bool(torch.isfinite(detector_cost).item()):
+            raise ValueError("GeoRoute detector policy risk must be one finite scalar")
         gradient_decomposition_payload = getattr(
             self,
             "_gradient_decomposition_payload",

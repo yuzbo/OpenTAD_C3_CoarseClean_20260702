@@ -50,7 +50,8 @@ def eval_one_epoch(
         georoute_telemetry_cfg.get("enabled", False)
     )
     formal_georoute_binding = cfg.get(
-        "georoute_official_development_binding", None
+        "georoute_official_development_binding",
+        cfg.get("georoute_telemetry_binding", None),
     )
     georoute_telemetry_sampler_indices = []
     if georoute_telemetry_enabled:
@@ -279,6 +280,18 @@ def eval_one_epoch(
                     "model_and_postprocess": True,
                     "evaluator_excluded": True,
                     "paper_grade_end_to_end_claim_allowed": False,
+                    "diagnostic_route_telemetry_inside_timed_forward": bool(
+                        cfg.model.backbone.custom.get(
+                            "georoute_diagnostic_telemetry_enabled",
+                            False,
+                        )
+                    ),
+                    "separate_from_accuracy_evaluation": bool(
+                        georoute_profile_cfg.get(
+                            "separate_from_accuracy_evaluation",
+                            False,
+                        )
+                    ),
                 },
                 "sample_count": len(georoute_samples),
                 "steady_sample_count": len(steady_samples),

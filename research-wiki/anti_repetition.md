@@ -1,9 +1,51 @@
 ---
 type: anti_repetition
-updated: 2026-07-30
+updated: 2026-08-02
 ---
 
 ## GeoRoute deployment anti-repetition
+
+0. The active route is now the Hybrid-centered causal pilot, not Free-first.
+   Do not submit another Free-ST selector cell or treat the old hierarchy's
+   failure to promote Hybrid as a causal refutation of Hybrid.
+0. Do not say “Hybrid has been proved effective” or “ROI and residual are
+   complementary.” The old Hybrid result is single-seed descriptive evidence
+   confounded by role split, scorer family, ST, and representation. Only the new
+   all-nine study may generate exploratory mechanism evidence.
+0. `Fixed K64` means deterministic row-major uniform lattice selection. It is a
+   non-learned coverage control, not an optimal support, learned lower bound, or
+   proof that Hybrid's complete combinatorial state space is smaller.
+0. Structured residual likelihood must condition on the complete sampled ROI
+   set and exclude invalid, context, all ROI, and preceding residual choices.
+   Never reuse a single-family likelihood or sum independent unconditioned
+   top-K terms and call it the Hybrid joint policy.
+0. Structured route randomness is private and keyed by study seed, successful
+   update, rank, and role. It must not advance global CPU/CUDA RNG. AMP retries
+   reuse the successful-update key; never key by optimizer attempt.
+0. Policy risk accepts exactly finite scalar `cls_loss` and `reg_loss` at local
+   batch one. Never iterate arbitrary loss tensors or include cost, policy,
+   geometry, coverage, or unknown auxiliary losses in the advantage.
+0. Support-only means pretrained VideoMAE absolute position ON, external
+   absolute coordinates OFF, ROI-relative coordinates OFF, geometry projection
+   and side channel OFF, uniform pooling, and zero geometry regularization in
+   every arm. Do not reintroduce Fixed+geometry or representation-on Hybrid in
+   this matrix.
+0. Geometry shift127 is a cyclic permutation over the 384-tubelet temporal
+   trajectory, `pi(t)=(t+127) mod 384`, before ROI logits. It is not an 11x20
+   spatial shift. A tie is mechanism-ambiguous, especially if geometry is
+   time-invariant; it is not a universal disproof of ROI support.
+0. Never time diagnostic route telemetry inside the admission p50 forward.
+   Accuracy/telemetry and cost profiling are separate complete replays; route
+   hashing or CPU transfer in the timed pass confounds Dense versus K64.
+0. `georoute_hybrid_causal_pilot_v1` is seed5227, 20 epochs, exactly nine arms.
+   Do not run a subset, resume a cell, reuse an old checkpoint/prediction, or
+   interpret survivors. Missing/invalid cells require empty contrasts.
+0. The single-seed screen has no automatic scientific winner and no
+   multiple-comparison-adjusted claim. It can only admit a separately frozen
+   confirmatory protocol. Official test and paper claims remain closed.
+0. If a future confirmatory result is used to claim PL-over-ST, retain matched
+   Hybrid-ST across all confirmatory seeds. Omitting ST requires deleting the
+   estimator-superiority claim even if the exploratory A7 >= A6 check passed.
 
 0. Do not treat a Pro proposal as an implementation receipt. The 2026-07-29
    CER-TAD review correctly diagnoses Free v1 and motivates complementary

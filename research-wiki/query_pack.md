@@ -1,10 +1,42 @@
 ---
 type: query_pack
-updated: 2026-07-30
+updated: 2026-08-02
 max_chars: 8000
 ---
 
 # Research Query Pack
+
+## Current decision: Hybrid-centered causal pilot (2026-08-02)
+
+- Accept the Pro review's central verdict `RUN_HYBRID_CAUSAL_PILOT_FIRST`, with
+  explicit evidence corrections. The old Hybrid result is strong descriptive
+  motivation, not proof of ROI/residual complementarity. The old Free-first
+  selector remains closed and is not rerun.
+- Current candidate: support-only Structured Complementary Native Routing
+  (SCNR-TAD; GeoRoute code namespace), exact K64 as deterministic context8 +
+  ROI28 + residual28. It is source-native token membership, not Zoom or Online
+  TAD. Pretrained VideoMAE absolute position stays on; all external coordinate,
+  ROI-relative, geometry-projection/side-channel and weighted-pooling paths are
+  off.
+- Learned hard policy: sequential conditional ordered PL,
+  `p(ROI|context) p(residual|context,complete ROI)`, detector risk exactly
+  `cls_loss+reg_loss`, temporal mean, EMA .95, local batch1, route-private RNG
+  keyed by seed/successful-update/rank/role, default FP32 DDP reduction.
+- Frozen exploratory study `georoute_hybrid_causal_pilot_v1`: seed5227,
+  20 epochs, nine all-complete arms A0 Dense, A1 Fixed64, A2 Random64, A3
+  residual-PL64, A4 context8+residual56, A5 context8+ROI56, A6 Hybrid-ST,
+  A7 Hybrid-PL, A8 A7 with temporal geometry trajectory shift127.
+- State is `implemented / p0_pending`, not tested or empirically supported.
+  First run remote Linux tests, then a no-performance A7 full-graph P0 plus
+  world-size-two DDP KAT. Only a sealed P0 PASS may release all nine held leaves.
+  Accuracy/telemetry and cost timing are separate replays; after-any closeout
+  emits no contrasts unless every arm and common population validate.
+- A single-seed pass authorizes only a separately frozen disjoint-seed study.
+  If that future study claims PL over ST, matched Hybrid-ST must remain across
+  seeds; otherwise estimator-superiority language is removed. No official test,
+  paper, accuracy-preservation, complete-efficiency, or mechanism claim is open.
+- Full review absorption:
+  `docs/methods/reviews/2026-08-02-hybrid-causal-pro-review-absorption.md`.
 
 ## Current Active Route: NativeTokenSelect-first GeoRoute-AdaTAD (2026-07-28)
 
