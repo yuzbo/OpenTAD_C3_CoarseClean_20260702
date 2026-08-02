@@ -70,7 +70,7 @@ it would suppress the intended full-window temporal adaptivity. Advancement is
 conditional on a measured cost/Pareto gate, and padding/dummy tokens cannot be
 reported as exact-B execution.
 
-## Uni-AdaFocus training reference (`discussed`)
+## Uni-AdaFocus-informed role and training design (`designed`)
 
 The 2026-08-02 paper-and-official-code audit corrects two potential
 misreadings. Uni-AdaFocus does not train its selector with Plackett-Luce or
@@ -81,27 +81,30 @@ classification loss, and trains temporal weights through a differentiable
 Monte Carlo decomposition of expected frame loss. Its hard focus indices and
 local crop actions are detached in the heavy path.
 
-This suggests that an independent `q_ctx(t,n)` head is not intrinsically
-necessary. The cheap scout representation is already the full-window context
-used to condition allocation. A proposed lower-redundancy parameterization is
+The user approved removal of the independent `q_ctx(t,n)` head. The cheap scout
+representation is already the full-window context used to condition allocation.
+The approved lower-redundancy parameterization is
 
-`u(t,n) = q_base(t,n) + logsumexp(0, delta_roi(t,n), delta_res(t,n))`,
+`u_hard(t,n) = q_base(t,n) + max(0, delta_roi(t,n), delta_res(t,n))`,
 
-followed by the already approved global physical-token top-B. The operational
-role is the argmax over `(0, delta_roi, delta_res)`, so the context count remains
-dynamic without a separately symmetric context scorer; ROI and residual
-modifiers remain directly ablatable. This is preferable only if role IDs stay
-support-only. A future role-specific representation would reopen the need for a
-distinct context head.
+followed by the already approved global physical-token top-B. Backward uses
+`u_soft=q_base+tau*logsumexp((0,delta_roi,delta_res)/tau)` as the ST relaxation.
+The operational role is the hard argmax over `(0,delta_roi,delta_res)`, so the
+context count remains dynamic without a separately symmetric context scorer;
+ROI and residual modifiers remain directly ablatable. Role IDs stay
+support-only. A future role-specific representation would require a new design
+and would reopen the need for a distinct context head.
 
-The recommended training candidate is correspondingly Uni-inspired rather than
-a literal port: keep the exact hard selected support in the forward pass; use a
-stop-gradient coarse-feature surrogate to provide low-variance gradients for
-continuous ROI and soft allocation; keep detector supervision TAD-specific; and
-retain PL only as a matched estimator ablation until the immutable fixed-pilot
-recovery is interpreted. This proposal does not import resized crops, fixed
-focus counts, classification-only frame loss, the full-frame size penalty, or
-conditional exit. It is not yet user-approved, implemented, or tested.
+The approved main estimator family is correspondingly Uni-inspired rather than
+a literal port: keep the exact hard selected support in the detector forward;
+use a stop-gradient coarse-feature surrogate to provide low-variance gradients
+for continuous ROI and soft allocation; keep detector supervision TAD-specific;
+and retain PL only as a separately trained matched estimator ablation. The
+immutable fixed-pilot recovery remains required evidence but cannot select the
+dynamic main estimator. This design does not import resized crops, fixed focus
+counts, classification-only frame loss, the full-frame size penalty, or
+conditional exit. The role/estimator family is `designed`, not implemented or
+tested; exact surrogate-loss and stop-gradient boundaries remain to be approved.
 
 ## Principle
 

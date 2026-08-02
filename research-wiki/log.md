@@ -2313,3 +2313,17 @@ append_only: true
   crop, classification proxy, full-frame size penalty, random second heavy
   branch, and early exit are not transplanted. No design approval, model code,
   experiment, or old pilot artifact changed.
+
+- 2026-08-02: user approved Scheme A. The Dynamic Stage-1 main design removes
+  the independent `q_ctx` head and uses
+  `u_hard=q_base+max(0,delta_roi,delta_res)` for the unique global physical
+  exact-B top-B; hard argmax supplies the operational context/ROI/residual role,
+  making context the fully dynamic zero-modifier outcome. Backward uses a
+  temperature-controlled log-sum-exp ST relaxation but cannot alter the hard
+  support or executed-B ledger. The main estimator family is now a Uni-inspired
+  stop-gradient coarse-feature surrogate plus exact hard-forward ST. PL is a
+  separately trained matched ablation; recovery of the immutable fixed-quota
+  A6/A7 pilot remains required for evidence but cannot automatically select the
+  dynamic estimator. This decision is `designed`, not implemented or tested.
+  Exact surrogate losses, gradient stops, degeneration guards and tests remain
+  under section-by-section review; no model code, Job or old artifact changed.

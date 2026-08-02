@@ -65,16 +65,27 @@ updated: 2026-08-02
 0. An independent `q_ctx(t,n)` is not automatically required merely because
    context allocation is dynamic. In a support-only union where role IDs do not
    change heavy execution or pooling, unconstrained context and residual heads
-   are non-identifiable. Before implementation, either define a distinct causal
-   role or use one shared base utility with ROI/residual modifiers and treat
-   context as the zero-modifier outcome. This alternative is `discussed`, not
-   yet approved.
+   are non-identifiable. The approved main design therefore has no independent
+   `q_ctx`: use one shared base utility with ROI/residual modifiers and treat
+   context as the zero-modifier outcome. Reopening a separate context head
+   requires a separately approved role-specific representation and ablation.
+0. In the approved Scheme-A hard forward, compute
+   `u_hard=q_base+max(0,delta_roi,delta_res)`, assign the operational role by the
+   same argmax, and apply the unique global physical top-B. The backward-only
+   soft score is a temperature-controlled log-sum-exp relaxation. Do not use the
+   soft mass, expected count or duplicate role copies as executed B, and do not
+   let a proxy-only route replace the exact hard detector forward.
 0. Do not transplant Uni-AdaFocus's fixed glance/focus counts, resized local
    crop, classification frame proxy, full-frame-seeking size penalty, random
    second heavy branch, or validation-tuned early exit as the dynamic exact-B
    TAD method. Any borrowed surrogate must retain native physical-token hard
    execution, Stage-1 exact B, `K_t=0`, train-only supervision, and the existing
    measured cost gate; it must be separately named and ablated.
+0. Scheme A fixes the Uni-inspired surrogate plus ST as the main dynamic
+   estimator family. PL remains a separately trained matched ablation, not an
+   inference switch, warm-start source, or automatic winner selected by the
+   fixed-quota pilot. The immutable recovery may report A6/A7 evidence but
+   cannot override the approved dynamic estimator family without a new design.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

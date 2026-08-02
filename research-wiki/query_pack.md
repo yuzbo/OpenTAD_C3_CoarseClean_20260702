@@ -48,16 +48,20 @@ max_chars: 8000
   a measured cost/Pareto gate. The current `[B,T,K]` packed path requires
   constant K and cannot be relabeled as this execution through dummy/padded
   tokens; role-utility and estimator details remain under design review.
-  A 2026-08-02 primary-source audit of Uni-AdaFocus makes one proposed revision,
-  still only `discussed`: keep the cheap full-window scout feature as policy
-  context, but do not require an independently parameterized `q_ctx` head.
-  Instead, a shared physical-token base utility may be specialized by ROI and
-  residual modifiers, leaving context as the zero-modifier role. Uni-AdaFocus
-  itself uses detached coarse global features, deep-feature interpolation and
-  auxiliary task losses rather than Plackett-Luce/RL. Its stabilization
-  principles are relevant, but its classification proxy, fixed focus count,
-  resized crop, full-frame size regularizer and early-exit budget are not a
-  drop-in TAD/exact-B training contract. No estimator revision is approved yet.
+  The user approved the Uni-AdaFocus-informed role/estimator revision as
+  `designed`. Keep the cheap full-window scout feature as policy context, remove
+  the independently parameterized `q_ctx` head, and use one shared physical-
+  token base utility with ROI/residual modifiers. Hard routing uses
+  `u_hard=q_base+max(0,delta_roi,delta_res)` and the winning modifier defines the
+  operational context/ROI/residual role; context is the zero-modifier outcome.
+  Backward uses a temperature-controlled log-sum-exp relaxation while forward
+  remains the approved unique global exact-B physical top-B. The main estimator
+  family is a Uni-inspired stop-gradient coarse-feature surrogate plus ST; PL is
+  a separately trained matched ablation whose fixed-pilot recovery may inform
+  analysis but cannot choose the dynamic main method. Uni-AdaFocus's
+  classification proxy, fixed focus count, resized crop, full-frame size
+  regularizer and early-exit budget are not transplanted. Exact surrogate-loss
+  and stop-gradient boundaries remain under design review.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and
