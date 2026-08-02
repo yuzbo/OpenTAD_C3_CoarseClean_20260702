@@ -2196,3 +2196,14 @@ append_only: true
   experiment stage is now `experiment_running`; no survivor, performance,
   cost, mechanism, official-test, or paper inference is open before sealed
   all-complete finalization.
+
+- 2026-08-02: user corrected the route scope: fixed
+  context8/ROI28/residual28 and exact K64 do not satisfy the original final
+  objective. The final target is a temporally adaptive continuous ROI window
+  together with adaptive token quantity. The running nine-arm study remains a
+  matched-budget causal probe only: it can determine whether ROI/residual roles
+  merit inclusion, but cannot promote fixed quotas as the final model. Current
+  code already predicts per-tubelet `(cx,cy,w,h)`; dynamic token allocation is
+  not implemented. One design question remains open: dynamic total `K_t` versus
+  fixed total K with only a dynamic role split. No code, protocol, or running
+  job was changed before that clarification and design approval.

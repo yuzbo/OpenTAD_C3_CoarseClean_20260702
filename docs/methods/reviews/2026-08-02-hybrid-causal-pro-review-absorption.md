@@ -55,9 +55,12 @@ geometry.
 
 ## Frozen method under test
 
-The paper-facing provisional name is Structured Complementary Native Routing
-for TAD (SCNR-TAD). `GeoRoute` remains the code-history namespace. This method
-does not resample source coordinates and must not be called Zoom or Online TAD.
+The fixed-budget probe name is Structured Complementary Native Routing for TAD
+(SCNR-TAD); `GeoRoute` remains the code-history namespace. It is not the final
+paper architecture. Its purpose is to identify useful evidence roles under a
+matched budget before designing the intended temporally adaptive continuous ROI
+and token allocation. This probe does not resample source coordinates and must
+not be called Online TAD.
 
 Input and carrier:
 
@@ -74,6 +77,12 @@ The main route has fixed roles:
 - 28 ROI tokens scored by a continuous in-bounds geometry trajectory;
 - 28 residual tokens scored by a separate scout head;
 - exact union 64, valid-only, no duplicates.
+
+These fixed counts are an experimental intervention, not the final-method
+requirement. The geometry head already predicts in-bounds `(cx,cy,w,h)` at all
+384 tubelets, so ROI location and extent are temporally adaptive. What remains
+absent is adaptive token quantity: the current probe fixes both total K64 and
+the ROI/residual role quotas.
 
 The learned hard policy is the explicit sequential conditional distribution
 

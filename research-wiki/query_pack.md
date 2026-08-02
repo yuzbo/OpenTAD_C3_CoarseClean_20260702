@@ -13,11 +13,15 @@ max_chars: 8000
   motivation, not proof of ROI/residual complementarity. The old Free-first
   selector remains closed and is not rerun.
 - Current candidate: support-only Structured Complementary Native Routing
-  (SCNR-TAD; GeoRoute code namespace), exact K64 as deterministic context8 +
-  ROI28 + residual28. It is source-native token membership, not Zoom or Online
-  TAD. Pretrained VideoMAE absolute position stays on; all external coordinate,
-  ROI-relative, geometry-projection/side-channel and weighted-pooling paths are
-  off.
+  (SCNR-TAD; GeoRoute code namespace). The running exact-K64
+  context8+ROI28+residual28 study is a causal mechanism probe, not the final
+  architecture. The user-restated final objective is a temporally adaptive
+  continuous `(cx,cy,w,h)` ROI together with adaptive token quantity; whether
+  this means dynamic total `K_t` or only a dynamic ROI/residual split is pending
+  one explicit design clarification. It is source-native token membership, not
+  Online TAD. Pretrained VideoMAE absolute position stays on; all external
+  coordinate, ROI-relative, geometry-projection/side-channel and
+  weighted-pooling paths are off in the current probe.
 - Learned hard policy: sequential conditional ordered PL,
   `p(ROI|context) p(residual|context,complete ROI)`, detector risk exactly
   `cls_loss+reg_loss`, temporal mean, EMA .95, local batch1, route-private RNG

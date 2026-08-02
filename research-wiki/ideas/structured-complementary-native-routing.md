@@ -22,6 +22,13 @@ This route directly develops ROI + TokenSelect Hybrid. It does not return to a
 Free-first selector, and it does not assume the old Hybrid result already proves
 the mechanism.
 
+The frozen `8/28/28`, exact-K64 realization is not the intended final model. It
+is a causal probe that holds compute and role counts fixed while testing whether
+ROI and residual evidence have identifiable utility. The user-restated final
+objective retains the continuous per-tubelet ROI trajectory and makes token
+quantity temporally adaptive; the exact dynamic-budget semantics remain at the
+design-clarification stage.
+
 ## Principle
 
 For every one of 384 native tubelets over an 11x20 patch grid, select exactly
@@ -54,7 +61,8 @@ The exploratory target is not a paper claim. It is to determine whether
 Hybrid-PL has a strict high-IoU increment over context+residual and context+ROI,
 beats Fixed/Random, falls when geometry is temporally misaligned, and reduces
 model+postprocess p50 relative to Dense. A complete pass may authorize only a
-separately frozen, disjoint-seed confirmatory study.
+separately frozen dynamic-allocation design and disjoint-seed study; it cannot
+promote fixed `8/28/28` as the final architecture.
 
 ## Evidence boundary
 

@@ -8,6 +8,11 @@ updated: 2026-08-02
 0. The active route is now the Hybrid-centered causal pilot, not Free-first.
    Do not submit another Free-ST selector cell or treat the old hierarchy's
    failure to promote Hybrid as a causal refutation of Hybrid.
+0. Do not call fixed context8/ROI28/residual28 or exact K64 the final method.
+   The user-restated target is temporally adaptive continuous ROI geometry and
+   adaptive token quantity. The frozen nine-arm study is only a matched-budget
+   mechanism probe; its result may select or reject components but cannot close
+   the dynamic allocation objective.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new
