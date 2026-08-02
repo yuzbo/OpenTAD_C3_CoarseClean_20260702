@@ -1,5 +1,35 @@
 # Research Log
 
+## 2026-08-03 — Exact-K repair passed dual gates; fresh Stage A released
+
+- Published exact numerical-repair source
+  `7e8935692b732f2958ba3c20787ae19c86f7b15c`. Its transport bundle SHA-256 is
+  `e95b36a53f661c7b98063aeda7dabcc45d2254d5decf353e44578ec928e01476`;
+  fresh remote checkout is
+  `/data/run01/sczc063/yuzibo/OpenTAD_DUCA_PAPER_7e893569` with verified runtime
+  annotation/video bindings and a clean exact commit.
+- Slurm code gate `1215388` completed `0:0` with 140 Linux/PyTorch tests. It now
+  includes the small brute-force Gibbs test and a `T=768,K=384` high-dynamic-
+  range finite-backward regression. Receipt SHA-256 is
+  `92b31ab9a9d33580c3b27a367a3866d5ffdf5cf2f9e34a186384ef42e6e0bbf0`.
+- Real natural-short-window gate `1215389` completed `0:0`; receipt SHA-256 is
+  `904dacf22d6d88cba8206367c6b824da002f717e7227ad1f310afa08a4a89b16`.
+  It covered all 200 training videos, found no sub-quantum window and completed
+  all four actual selector/gather/VideoMAE paths without padding or repetition.
+- Released fresh immutable root
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_7e893569_20260803_030306`.
+  Protocol/submission/released-receipt SHA-256 values are
+  `33903a7eee1089202295161368edf4e5e5b3470c88b072c9fa00f82f15fefaf3`,
+  `1f4b14569f45977d6b606febe7c42898d401258ee5f73b918b56d197d65bb105`, and
+  `cea74e4bd231e8687e583f2fa98ff5dacec3c41e2ec5352396e097e7abfb01f7`.
+  Jobs are controls/DUCA `1215390/1215391`, `1215392/1215393`,
+  `1215394/1215395`, with seal `1215396` afterok all six. Every training group
+  entered `RUNNING`; DUCA error scans remained empty beyond the old immediate
+  failure boundary.
+- No training loss, checkpoint, single-seed value, partial metric or incomplete
+  matrix was opened. This is `ENGINEERING_STATUS`; Stage B remains disabled and
+  no paper-admissible empirical conclusion exists.
+
 ## 2026-08-03 — Stage-A learned exact-K numeric failure and narrow stabilization
 
 - Recovery root

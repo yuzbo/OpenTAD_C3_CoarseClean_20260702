@@ -5,11 +5,11 @@
 - Decision: `user_approved`
 - Design: `designed`
 - Short-window corrigendum: `user_approved / U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1`
-- Implementation: `corrigendum_implemented_locally`
+- Implementation: `corrigendum_and_exactk_numeric_repair_implemented`
 - Local focused verification: `15_passed / 1_Linux_loader_test_skipped_on_Windows / Torch_tests_blocked_by_local_c10_DLL`
-- Independent read-only audit: `selector_tensor_chain_GO / enforced_two_gate_dependency_chain_GO / no_P0_or_P1`
-- Authoritative Linux/Slurm verification: `corrected_source_00f54dfe / code_gate_1215368_passed / real_short_gate_1215369_passed`
-- Experiment: `recovery1_failed_closed_on_learned_exactk_numeric_invariant / controls_and_seal_cancelled / log_domain_repair_local / rerun_pending / metrics_sealed`
+- Independent read-only audit: `selector_tensor_chain_GO / enforced_two_gate_dependency_chain_GO / exactk_patch_GO_with_raw_mass_guard_applied`
+- Authoritative Linux/Slurm verification: `exact_source_7e893569 / code_gate_1215388_passed / real_short_gate_1215389_passed`
+- Experiment: `fresh_stagea_1215390_to_1215396_running / metrics_sealed`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
 
@@ -199,6 +199,24 @@ finite backward gradients. The formal code gate now includes the physical
 structured-selection test module. A fresh commit, Linux/PyTorch gate, real
 short-window gate, runtime path precheck, root and seven-job matrix are required;
 no artifact from either `00f54dfe` root can be reused.
+
+The exact repair is source
+`7e8935692b732f2958ba3c20787ae19c86f7b15c`. Authoritative code gate
+`1215388` passed 140 Linux/PyTorch tests and emitted receipt SHA-256
+`92b31ab9a9d33580c3b27a367a3866d5ffdf5cf2f9e34a186384ef42e6e0bbf0`.
+Real short-window gate `1215389` passed with receipt SHA-256
+`904dacf22d6d88cba8206367c6b824da002f717e7227ad1f310afa08a4a89b16`.
+
+The fresh formal transaction root is
+`/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_7e893569_20260803_030306`.
+Protocol, submission and released-receipt SHA-256 values are
+`33903a7eee1089202295161368edf4e5e5b3470c88b072c9fa00f82f15fefaf3`,
+`1f4b14569f45977d6b606febe7c42898d401258ee5f73b918b56d197d65bb105`, and
+`cea74e4bd231e8687e583f2fa98ff5dacec3c41e2ec5352396e097e7abfb01f7`.
+Jobs `1215390/1215391`, `1215392/1215393`, and `1215394/1215395` are the
+control/DUCA seed pairs; seal `1215396` is exact afterok all six. All six groups
+entered `RUNNING`; no DUCA error signature was observed beyond the previous
+immediate exact-K failure boundary. This is not performance evidence.
 
 No single cell, seed, intermediate checkpoint or incomplete matrix may support a
 performance statement. Until all twelve terminal receipts pass, the status is
