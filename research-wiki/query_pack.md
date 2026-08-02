@@ -37,9 +37,17 @@ max_chars: 8000
   exact-`B` projection over all physical `(tubelet,patch)` candidates, with at
   most one dynamic context/ROI/residual role per physical token. `K_t` and all
   role counts are induced by the selected set rather than predicted as fixed
-  quotas or repaired afterward. The exact ragged VideoMAE execution design is
-  still being reviewed: the current `[B,T,K]` packed path requires constant K
-  and cannot be relabeled as global-`B` execution through dummy/padded tokens.
+  quotas or repaired afterward. The Stage-1 ragged execution/cost boundary is
+  now designed: exact `B` means exactly `B` unique physical tokens are
+  patch-embedded and heavy-executed over the full window, not that every route
+  has equal FLOPs. Full-window temporal adaptivity is retained; no fixed
+  16-frame-clip quota may be imposed as the final main method. For native clip
+  `c`, record its executed-token count `b_c` and attention-pair ledger
+  `P=sum_c b_c^2`, plus actual patch-embedding, attention, MLP and
+  coordinate-lineage Adapter calls and end-to-end p50/p95. Advancement requires
+  a measured cost/Pareto gate. The current `[B,T,K]` packed path requires
+  constant K and cannot be relabeled as this execution through dummy/padded
+  tokens; role-utility and estimator details remain under design review.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

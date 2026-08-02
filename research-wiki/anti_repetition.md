@@ -48,6 +48,14 @@ updated: 2026-08-02
    `sum_t K_t=B`, one exact-B compute path, or `K_t=0`. Requested, unique,
    padded, executed patch-embedding, attention, MLP, and Adapter counts must be
    separately receipted until a true ragged executor is validated.
+0. Exact selected/executed `B` is a token-count contract, not an equal-FLOPs or
+   equal-latency claim. Native VideoMAE attention also depends on the within-clip
+   distribution: for every 16-frame clip record `b_c` and
+   `P=sum_c b_c^2`, together with actual ragged bucket calls, executed
+   patch-embedding/attention/MLP/coordinate-lineage-Adapter counts, and measured
+   p50/p95. Do not hide padding or dummy tokens in those ledgers. Do not impose a
+   fixed per-clip quota on the final main method merely to equalize `P`; retain
+   full-window allocation and require a separate measured cost/Pareto gate.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

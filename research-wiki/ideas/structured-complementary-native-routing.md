@@ -59,6 +59,17 @@ including valid zeros. The detailed ragged VideoMAE executor remains under
 design review because the implemented packed path assumes constant per-tubelet
 K; padding that path would not be genuine exact-B heavy computation.
 
+The approved Stage-1 cost contract keeps this projection global over the whole
+window. Exact B denotes exactly B unique selected and heavy-executed physical
+tokens; it does not assert equal attention FLOPs across routes. If `b_c` is the
+executed-token count in native 16-frame VideoMAE clip `c`, the executor must
+receipt `P=sum_c b_c^2` independently from B, as well as actual ragged bucket,
+patch-embedding, attention, MLP and coordinate-lineage Adapter calls and
+end-to-end p50/p95. A fixed per-clip quota is not the final main design because
+it would suppress the intended full-window temporal adaptivity. Advancement is
+conditional on a measured cost/Pareto gate, and padding/dummy tokens cannot be
+reported as exact-B execution.
+
 ## Principle
 
 For every one of 384 native tubelets over an 11x20 patch grid, select exactly

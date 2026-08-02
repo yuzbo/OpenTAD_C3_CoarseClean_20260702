@@ -2283,3 +2283,15 @@ append_only: true
   `designed` only: its ragged execution section still requires user approval,
   and dummy/padded heavy tokens may not be mislabeled as exact-B compute. No
   model code or experiment was changed.
+
+- 2026-08-02: user approved the full-window exact-`B` execution and independent
+  cost-accounting contract. Exact B now means B unique physical tokens are
+  selected, patch-embedded, and heavy-executed; it is not an equal-FLOPs claim.
+  The main method retains full-window temporal adaptivity instead of enforcing a
+  fixed quota inside each native 16-frame clip. Every route must separately
+  receipt per-clip executed counts `b_c`, attention-pair cost
+  `P=sum_c b_c^2`, actual ragged bucket and patch-embedding/attention/MLP/
+  coordinate-lineage-Adapter calls, plus measured p50/p95, and must pass a
+  cost/Pareto gate. Padding or dummy tokens cannot satisfy the exact-B ledger.
+  This contract is `designed`, not implemented or tested; no model code, old
+  pilot namespace, or running experiment was changed.
