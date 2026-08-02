@@ -1314,6 +1314,53 @@ updated: 2026-08-02
   prediction, mAP, cost, crop-sufficiency, official-test or S3 evidence was
   generated.
 
+- Dynamic SCNR Stage-1 implementation and CUDA admission, 2026-08-02. Commits
+  `536e05b7` through `dfcbe692` implement the opt-in global exact-B/ragged path;
+  exact source `0c29a5e5` passed the relevant clean N16R4 Linux/Torch regression
+  suite (`92 passed`). Diagnostic P0 Job `1215355`, exact source `2829c59e`, is
+  preserved at
+  `/data/run01/sczc063/yuzibo/dynamic_scnr_stage1_p0_2829c59e/report.json`;
+  file/internal SHA-256 are
+  `87ff94d2b25e7229350eda7287a25f9ebd49f749291c0f7ba5b0dc693595cc63` /
+  `bd265e45777ec5bc0275790332def7363b28b40023bde137909fe13bb76a62f5`.
+  Its incorrect full-extent ellipse normalization makes it diagnostic only.
+  Corrected G1 P0 Job `1215358`, source `dfcbe692`, is at
+  `/data/run01/sczc063/yuzibo/dynamic_scnr_stage1_p0_dfcbe692/report.json`;
+  report file/internal hashes are
+  `285116b1ae02826f060d700b435253043a945e49aaecd5903aa0499cfb4abdb6` /
+  `d2adbded39668f9945422e8e06dc5515d3d5ff20595b1e7bf234905e5bd0048d`.
+  Job stdout SHA-256 is
+  `c7cc3c0bf74d253c7e6ed066cece1846aec4588d513f18bcc323dea33bcf2156`.
+- Dynamic SCNR real-data policy-health gate, 2026-08-02. Exact source
+  `7cf589f0ff583160c8e45b103e8ea4c316c10339`, Slurm Job `1215363`, report
+  `/data/run01/sczc063/yuzibo/dynamic_scnr_policy_health_7cf589f0/policy_health_report.json`.
+  Report file/internal SHA-256 are
+  `09e6b03fa747865cce0e1ed0ee54702f89723ae1b64c6b66ee5fdba7f8c3f3d8` /
+  `fc457ba928743df12d68dcf3713128577d6b8cc175fe1196e0c2b730dfe5ac94`;
+  binding SHA-256 is
+  `bb591017338016348be80f8cf8a4e5275004cb6cdfed7a0f6591468a89a65bee`,
+  and stdout SHA-256 is
+  `c314d98fbb9578472a91c1fccfd6ab86aa1d59f1b53ae29ed5fb42372af55b57`.
+  The immutable inputs are manifest
+  `8e5a8901cb24b735750d5766405996dcac022b37f5a79fdbbdaa1f5479bf141d`,
+  development annotation
+  `0985d3711ab31f404ff0be5a1ba75420796a6807d486410337078b38090bf749`,
+  class map
+  `a158b7c4c130ce74375a9b114160e2faae7a0221e605a0464a556fe082644f31`,
+  and pretrained VideoMAE
+  `4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251`.
+  This is Fit-prefix health evidence with zero performance artifacts.
+- Dynamic SCNR G2 floor P0, 2026-08-02. Exact clean source
+  `8aa8e2a3c6649eca94d3ab714d0b122e4f7a5f97`, Slurm Job `1215364`, report
+  `/data/run01/sczc063/yuzibo/dynamic_scnr_stage1_floor2_p0_8aa8e2a3/report.json`.
+  Report file/internal SHA-256 are
+  `5103e024c7543de52946ae883b79c992096027a9d013b87a41912e3852957464` /
+  `cb41492ea6723bbebb8beb3add8c515f2ab06f9dbfcaba482a67da48db222bbc`;
+  stdout SHA-256 is
+  `7d9015c3a1c6f680244b67c319c4453f7510d1c38a54364bcdd2d1e9fd9dfaac`.
+  Independent validator replay and exact HEAD/origin/clean-tree checks passed.
+  This is no-performance floor-arm admission evidence only.
+
 ## 外部附件
 
 主任务显式引用的关键附件包括：`5f9a0d62...`、`86b473c6...`、

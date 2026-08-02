@@ -2392,3 +2392,47 @@ append_only: true
   `exp:scnr-geometry-floor-sensitivity-v1` remains `designed` and blocked on the
   true dynamic exact-B ragged executor, masked-zero carrier and proxy/ST training
   implementation.
+
+- 2026-08-02: the approved dynamic ROI+TokenSelect Hybrid Stage-1 executor was
+  implemented and tested. Commits `536e05b7` through `dfcbe692` added one global
+  unique exact-`B` physical allocator, fully dynamic `K_t`, masked-zero empty
+  tubelets, flat no-padding ragged VideoMAE/coordinate-lineage Adapter execution,
+  the support-only hard ST path, a detached-scout exact-sum soft proxy and
+  requested/unique/padded/executed plus `sum_c b_c^2` ledgers. Exact source
+  `0c29a5e5` passed the relevant N16R4 Linux/Torch suite `92 passed`. First CUDA
+  P0 Job `1215355` was retained as non-promoting diagnostic evidence: decoded
+  `w,h` full extents were mistakenly used as ellipse semi-axes, producing
+  context/ROI/residual `0/24573/3`. Corrected commit `dfcbe692` uses `w/2,h/2`;
+  Job `1215358` completed `0:0`, sealed `PASS_NO_PERFORMANCE_P0`, exact
+  selected/executed `B=24576`, zero padding, `K_t=48..83`, all required
+  gradients, and role counts `4713/14292/5571`. Report file/internal SHA-256 are
+  `285116b1ae02826f060d700b435253043a945e49aaecd5903aa0499cfb4abdb6` /
+  `d2adbded39668f9945422e8e06dc5515d3d5ff20595b1e7bf234905e5bd0048d`.
+  This is `tested` mechanical evidence, not performance or complementarity.
+
+- 2026-08-02: real-data Fit-only dynamic policy-health Job `1215363` passed at
+  exact clean source `7cf589f0ff583160c8e45b103e8ea4c316c10339`. It made 64
+  successful updates in 66 attempts with two bounded AMP skip/replays, ended at
+  scale `16384`, advanced scheduler/EMA exactly 64 times, and observed nonzero
+  gradients for all nine required components on all 64 updates. Aggregate
+  context/ROI/residual counts were `297230/984020/291614`, observed `K_t` was
+  `17..218`, maximum soft-budget residual was `0.005859375`, and peak allocated
+  CUDA memory was `7705451008` bytes. Artifact/no-leak audit found no metric,
+  prediction, evaluator, checkpoint, teacher, oracle, official test or route-GT
+  input. Report file/internal SHA-256 are
+  `09e6b03fa747865cce0e1ed0ee54702f89723ae1b64c6b66ee5fdba7f8c3f3d8` /
+  `fc457ba928743df12d68dcf3713128577d6b8cc175fe1196e0c2b730dfe5ac94`.
+  This advances the route to real-Fit-prefix `tested`, not empirical support.
+
+- 2026-08-02: the matched G2 two-native-cell ROI-floor arm was added and tested
+  at exact source `8aa8e2a3c6649eca94d3ab714d0b122e4f7a5f97`. Its config differs
+  from G1 only in `georoute_roi_extent_floor_cells=2`; local and clean remote
+  focused tests passed `14/14`. Slurm CUDA P0 Job `1215364` completed `0:0` on
+  `g0017` in 42 seconds. It sealed `PASS_NO_PERFORMANCE_P0`, exact
+  selected/executed `B=24576`, zero padding, `K_t=49..85`, role counts
+  context/ROI/residual `3899/15853/4824`, all required gradients, and peak
+  allocated memory `5840570880` bytes. Report file/internal SHA-256 are
+  `5103e024c7543de52946ae883b79c992096027a9d013b87a41912e3852957464` /
+  `cb41492ea6723bbebb8beb3add8c515f2ab06f9dbfcaba482a67da48db222bbc`;
+  an independent validator replay passed. M1 is complete and M2 is mechanically
+  unblocked, but no floor-performance result exists.

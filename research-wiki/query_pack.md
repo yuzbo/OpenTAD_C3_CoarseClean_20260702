@@ -91,8 +91,21 @@ max_chars: 8000
   new native-cell mode while preserving static normalized behavior for historical
   configs. Exact clean source `4be71844` passed focused geometry/routing `36/36`
   and complete GeoRoute plus required C3 regressions `194 passed, 1 skipped` on
-  N16R4 Linux/Torch. This is component-level `tested`; the complete dynamic
-  Stage-1 route and empirical floor verdict remain unimplemented/unverified.
+  N16R4 Linux/Torch. The complete opt-in dynamic Stage-1 path is now also
+  implementation-level `tested`: global unique exact-B, fully dynamic `K_t`,
+  masked-zero, true no-padding ragged VideoMAE/Adapter, support-only ST and the
+  backward-only exact-sum proxy are executable. The initial P0 Job `1215355`
+  diagnosed a full-extent/semi-axis mismatch that collapsed ROI attribution;
+  corrected source `dfcbe692` uses `w/2,h/2` ellipse semi-axes and G1 P0 Job
+  `1215358` sealed `PASS_NO_PERFORMANCE_P0`. Fit-only health Job `1215363` at
+  exact source `7cf589f0` completed 64 successful updates with all nine required
+  gradient groups nonzero on `64/64`, two bounded AMP replays, dynamic
+  `K_t=17..218`, exact B, and zero performance artifacts. Matched G2 source
+  `8aa8e2a3` changes only the ROI floor to two native cells; P0 Job `1215364`
+  also passed. These are mechanical/health receipts only: no mAP, measured
+  floor comparison, Hybrid efficacy, complementarity, efficiency or paper claim
+  has been established. M2 matched G1/G2 development training is ready but not
+  yet run.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

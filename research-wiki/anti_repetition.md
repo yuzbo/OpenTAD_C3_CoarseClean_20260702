@@ -125,6 +125,25 @@ updated: 2026-08-02
    sensitivity intervention is a separately trained, otherwise matched 2x2-cell
    floor arm. Never select 2x2 post hoc on a main checkpoint or use either floor
    to repair a collapsed allocator at inference.
+0. Decoded SCNR `w,h` are full rectangle extents because the bounded centre uses
+   `w/2,h/2`.  A signed ellipse modifier must therefore normalize offsets by the
+   semi-axes `w/2,h/2`, not by `w,h`.  Job `1215355` used the latter mismatch and
+   collapsed operational roles to context/ROI/residual `0/24573/3`; preserve it
+   as a diagnostic and never promote its nominal P0 PASS.  Corrected source
+   `dfcbe692` receipts
+   `signed_ellipse_with_semiaxes_half_decoded_full_extent`.
+0. Nonzero context/ROI/residual counts, a broad `K_t` range, exact B, finite
+   losses and nonzero gradients in P0 or policy-health are admission evidence,
+   not ROI/residual complementarity, localization quality, cost saving or model
+   performance.  Jobs `1215358`, `1215363` and `1215364` opened no such claim.
+0. `K_t=0` is an allowed state, not a required event in every finite trace.  Do
+   not invalidate an otherwise exact dynamic run because its observed minimum
+   is positive; prove zero handling with known-answer/empty-clip tests and report
+   the observed zero count without post-hoc pressure to manufacture zeros.
+0. The paired 1-cell/2-cell CUDA P0 passes are not an empirical floor verdict.
+   Job `1215364` proves that the matched G2 configuration is mechanically
+   executable only.  Floor selection requires complete matched M2 development
+   results and cost ledgers; role counts or synthetic losses cannot choose it.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new
