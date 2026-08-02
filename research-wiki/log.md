@@ -2360,3 +2360,22 @@ append_only: true
   the grid floor is not proven optimal and remains `discussed` pending user
   approval and a frozen scale-sensitivity ablation. No model code, experiment,
   Job, or old artifact changed.
+
+- 2026-08-02: user approved the SCNR-TAD geometry contract. The main setting is
+  now the Uni-equivalent bounded `(cx,cy,w,h)` mapping with runtime, axis-specific
+  native-cell floors `w_min=1/W_grid` and `h_min=1/H_grid`; no Uni full-frame
+  size penalty and no area/coverage/smoothness loss are allowed. The sole frozen
+  scale sensitivity arm changes both axes to a 2x2-cell floor under otherwise
+  matched training. Shared GeoRoute geometry code now accepts independent
+  `(width,height)` limits, adds fail-closed `native_cells` resolution while
+  preserving `static_normalized` as the historical default, and receipts the
+  effective runtime floor plus the absence of a full-frame size penalty. Focused
+  known-answer tests cover 11x20 -> `(1/20,1/11)` and `(2/20,2/11)`, independent
+  axes, in-bounds gradients, legacy static behavior, and invalid floors. Static
+  diff and Python compilation passed. Local tensor collection remains blocked by
+  the pre-existing Windows `torch` `c10.dll` / WinError 1114 failure, so this is
+  `implemented_pending_remote_tensor_test`, not `tested` or empirically
+  supported. Experiment `exp:scnr-geometry-floor-sensitivity-v1` is `designed`
+  and cannot launch before the genuine dynamic exact-B ragged Stage-1 executor,
+  masked-zero carrier and approved proxy/ST path exist; no Job or performance
+  experiment was started.

@@ -20,6 +20,7 @@ from .georoute_routing import (
     STRUCTURED_ROUTE_MODES,
     decode_continuous_geometry,
     interpolate_temporal_knots,
+    native_cell_extent_floor,
     native_patch_centers,
     roi_logits_from_geometry,
     score_function_policy_loss,
@@ -29,7 +30,7 @@ from .georoute_routing import (
 from .native_crop_wrapper import deterministic_linear_2x
 
 
-GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v5"
+GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v6"
 
 
 class GeoRouteScout(nn.Module):
@@ -293,6 +294,26 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         # whether a gain comes from spatial *selection*, rather than merely
         # adding an extra geometry-conditioned feature pathway.
         self.geometry_side_channel = bool(getattr(custom_cfg, "georoute_geometry_side_channel", False))
+        self.roi_extent_floor_mode = str(
+            getattr(
+                custom_cfg,
+                "georoute_roi_extent_floor_mode",
+                "static_normalized",
+            )
+        )
+        raw_roi_extent_floor_cells = getattr(
+            custom_cfg,
+            "georoute_roi_extent_floor_cells",
+            1,
+        )
+        if (
+            isinstance(raw_roi_extent_floor_cells, bool)
+            or int(raw_roi_extent_floor_cells) != raw_roi_extent_floor_cells
+        ):
+            raise ValueError(
+                "georoute_roi_extent_floor_cells must be one positive integer"
+            )
+        self.roi_extent_floor_cells = int(raw_roi_extent_floor_cells)
         self.min_roi_extent = float(getattr(custom_cfg, "georoute_min_roi_extent", 0.20))
         self.max_roi_extent = float(getattr(custom_cfg, "georoute_max_roi_extent", 1.00))
         self.geometry_smoothness_weight = float(getattr(custom_cfg, "georoute_geometry_smoothness_weight", 0.0))
@@ -340,6 +361,22 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             )
         if self.geometry_stride_tubelets <= 0:
             raise ValueError("GeoRoute geometry stride must be positive")
+        if self.roi_extent_floor_mode not in {
+            "static_normalized",
+            "native_cells",
+        }:
+            raise ValueError(
+                "georoute_roi_extent_floor_mode must be static_normalized or "
+                "native_cells"
+            )
+        if self.roi_extent_floor_cells <= 0:
+            raise ValueError(
+                "georoute_roi_extent_floor_cells must be one positive integer"
+            )
+        if not (0.0 < self.min_roi_extent <= self.max_roi_extent <= 1.0):
+            raise ValueError(
+                "static GeoRoute extents must satisfy 0 < min <= max <= 1"
+            )
         if self.p0_dense_reference_check and self.route_mode != "dense":
             raise ValueError("GeoRoute dense numerical reference is valid only for route_mode='dense'")
         if self.geometry_side_channel and self.route_mode not in {"uniform", "random"}:
@@ -540,6 +577,26 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         area_loss = (area - self.area_prior).square()
         return self.geometry_smoothness_weight * smoothness + self.area_prior_weight * area_loss
 
+    def _minimum_roi_extent_wh(
+        self,
+        source_grid_hw: tuple[int, int],
+    ) -> tuple[float, float]:
+        """Resolve the configured ROI floor in normalized ``(width, height)``."""
+
+        if self.roi_extent_floor_mode == "static_normalized":
+            minimum = (self.min_roi_extent, self.min_roi_extent)
+        else:
+            minimum = native_cell_extent_floor(
+                source_grid_hw[0],
+                source_grid_hw[1],
+                cells_per_axis=self.roi_extent_floor_cells,
+            )
+        if any(value > self.max_roi_extent for value in minimum):
+            raise ValueError(
+                "runtime native-cell ROI floor exceeds georoute_max_roi_extent"
+            )
+        return minimum
+
     @staticmethod
     def _fixed_full_frame_geometry(
         *,
@@ -630,12 +687,13 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             )
 
         if needs_geometry:
+            minimum_extent_wh = self._minimum_roi_extent_wh(source_grid_hw)
             geometry = decode_continuous_geometry(
                 interpolate_temporal_knots(
                     geometry_logits,
                     stride=self.geometry_stride_tubelets,
                 ),
-                min_extent=self.min_roi_extent,
+                min_extent=minimum_extent_wh,
                 max_extent=self.max_roi_extent,
             )
             regularization = self._regularization(geometry)
@@ -1012,6 +1070,19 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             patch_size=self.patch_size,
             tubelet_size=self.tubelet_size,
         )
+        learned_geometry_enabled = bool(
+            self.route_mode in {"roi", "hybrid"}
+            or self.geometry_side_channel
+            or (
+                self.route_mode in STRUCTURED_ROUTE_MODES
+                and self.structured_roi_tokens > 0
+            )
+        )
+        geometry_min_extent_wh = (
+            self._minimum_roi_extent_wh(source_grid_hw)
+            if learned_geometry_enabled
+            else None
+        )
         geometry, residual_logits, geometry_regularization = self._compute_route_fields(
             scout,
             source_grid_hw=source_grid_hw,
@@ -1261,6 +1332,22 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             ),
             "geometry_smoothness_weight": self.geometry_smoothness_weight,
             "area_prior_weight": self.area_prior_weight,
+            "full_frame_size_penalty_enabled": False,
+            "geometry_extent_floor_mode": self.roi_extent_floor_mode,
+            "geometry_extent_floor_cells": (
+                self.roi_extent_floor_cells
+                if self.roi_extent_floor_mode == "native_cells"
+                else None
+            ),
+            "geometry_min_extent_wh": (
+                None
+                if geometry_min_extent_wh is None
+                else list(geometry_min_extent_wh)
+            ),
+            "geometry_max_extent_wh": [
+                self.max_roi_extent,
+                self.max_roi_extent,
+            ],
             "estimator_claim": "biased_straight_through"
             if self.policy_estimator == "straight_through"
             else "score_function_candidate"
@@ -1293,14 +1380,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "pooling_mode": self.pooling_mode,
             "adapter_mode": self.adapter_mode,
             "geometry_side_channel": self.geometry_side_channel,
-            "learned_geometry_enabled": bool(
-                self.route_mode in {"roi", "hybrid"}
-                or self.geometry_side_channel
-                or (
-                    self.route_mode in STRUCTURED_ROUTE_MODES
-                    and self.structured_roi_tokens > 0
-                )
-            ),
+            "learned_geometry_enabled": learned_geometry_enabled,
             "learned_residual_enabled": bool(
                 self.route_mode in {"free", "hybrid"}
                 or (

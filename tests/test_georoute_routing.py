@@ -12,6 +12,7 @@ from opentad.models.backbones.georoute_wrapper import (
 from opentad.models.backbones.georoute_routing import (
     GEOROUTE_ROUTING_SCHEMA,
     decode_continuous_geometry,
+    native_cell_extent_floor,
     native_patch_centers,
     ordered_plackett_luce_log_prob,
     interpolate_temporal_knots,
@@ -44,6 +45,68 @@ def test_continuous_geometry_is_in_bounds_and_differentiable():
     assert logits.grad is not None
     assert torch.isfinite(logits.grad).all()
     assert torch.count_nonzero(logits.grad) > 0
+
+
+def test_continuous_geometry_accepts_axis_specific_native_cell_floors():
+    logits = torch.zeros((1, 1, 4), requires_grad=True)
+    minimum_wh = native_cell_extent_floor(11, 20, cells_per_axis=1)
+
+    geometry = decode_continuous_geometry(
+        logits,
+        min_extent=minimum_wh,
+        max_extent=1.0,
+    )
+
+    assert minimum_wh == pytest.approx((1.0 / 20.0, 1.0 / 11.0))
+    assert geometry[0, 0, 0].item() == pytest.approx(0.5)
+    assert geometry[0, 0, 1].item() == pytest.approx(0.5)
+    assert geometry[0, 0, 2].item() == pytest.approx(
+        0.5 * (1.0 + 1.0 / 20.0)
+    )
+    assert geometry[0, 0, 3].item() == pytest.approx(
+        0.5 * (1.0 + 1.0 / 11.0)
+    )
+    geometry.sum().backward()
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
+    assert torch.count_nonzero(logits.grad) > 0
+
+
+def test_native_cell_floor_keeps_width_height_separate_and_fails_closed():
+    assert native_cell_extent_floor(
+        11,
+        20,
+        cells_per_axis=2,
+    ) == pytest.approx((2.0 / 20.0, 2.0 / 11.0))
+    with pytest.raises(ValueError, match="positive integer"):
+        native_cell_extent_floor(11, 20, cells_per_axis=0)
+    with pytest.raises(ValueError, match="exceed"):
+        native_cell_extent_floor(1, 20, cells_per_axis=2)
+
+
+def test_wrapper_resolves_legacy_static_and_runtime_native_cell_floors():
+    fake = type("GeometryFloor", (), {})()
+    fake.min_roi_extent = 0.2
+    fake.max_roi_extent = 1.0
+    fake.roi_extent_floor_cells = 1
+
+    fake.roi_extent_floor_mode = "static_normalized"
+    assert GeoRouteBackboneWrapper._minimum_roi_extent_wh(
+        fake,
+        (11, 20),
+    ) == pytest.approx((0.2, 0.2))
+
+    fake.roi_extent_floor_mode = "native_cells"
+    assert GeoRouteBackboneWrapper._minimum_roi_extent_wh(
+        fake,
+        (11, 20),
+    ) == pytest.approx((1.0 / 20.0, 1.0 / 11.0))
+
+    fake.roi_extent_floor_cells = 2
+    assert GeoRouteBackboneWrapper._minimum_roi_extent_wh(
+        fake,
+        (11, 20),
+    ) == pytest.approx((2.0 / 20.0, 2.0 / 11.0))
 
 
 def test_native_patch_centers_are_row_major_and_normalized():

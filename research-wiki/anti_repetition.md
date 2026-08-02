@@ -117,10 +117,14 @@ updated: 2026-08-02
    its official code implements this by penalizing size actions away from one.
    Do not transplant that classification-specific anti-collapse regularizer into
    exact-B native token routing: ROI area is not executed heavy-token count and a
-   full-frame bias can erase ROI selectivity. Conversely, do not claim that
-   `w_min=1/W_grid`, `h_min=1/H_grid` is proven optimal. It is only a discussed
-   resolution-matched floor until approved and tested against a frozen matched
-   scale-sensitivity ablation.
+   full-frame bias can erase ROI selectivity. The approved main setting derives
+   `w_min=1/W_grid`, `h_min=1/H_grid` independently at runtime and uses no
+   size/area/coverage/smoothness penalty. Do not replace the two axis-specific
+   floors by `max(1/W_grid,1/H_grid)`, which silently enlarges the rectangle.
+   Do not claim the one-cell floor is proven optimal: the only approved scale
+   sensitivity intervention is a separately trained, otherwise matched 2x2-cell
+   floor arm. Never select 2x2 post hoc on a main checkpoint or use either floor
+   to repair a collapsed allocator at inference.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

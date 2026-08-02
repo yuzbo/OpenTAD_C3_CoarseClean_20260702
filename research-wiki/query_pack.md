@@ -72,7 +72,7 @@ max_chars: 8000
   executed B. Its weight is enabled early and annealed to zero by optimizer step
   before the final hard-only phase. The main setting adds no area, coverage,
   expected-cost or fixed-context loss; PL remains a separately trained ablation.
-  A formula-level re-audit is now `discussed`, not approved. Uni-AdaFocus's
+  The formula-level re-audit is now `designed`. Uni-AdaFocus's
   paper describes centre/height/width geometry, while official commit `88464883`
   actually emits four sigmoid actions and maps source sizes to `96..224` pixels
   on a 224-pixel input, then maps normalized top-left fractions into the
@@ -84,8 +84,13 @@ max_chars: 8000
   Eq. 15's full-frame-seeking size regularizer (implemented as a penalty toward
   size action one) because its feature-interpolation classification proxy shrinks
   deformable crops. The proposed `w_min=1/W_grid`, `h_min=1/H_grid` and omission
-  of that regularizer are structurally motivated by the native token resolution
-  and exact hard B, but remain unapproved and empirically unverified.
+  of that regularizer are now approved for the main route: the floor is derived
+  independently at runtime as `(1/W_grid,1/H_grid)`, with no full-frame, area,
+  coverage or smoothness penalty. A separately trained matched 2x2-cell floor is
+  the frozen sensitivity ablation. The shared geometry primitive implements the
+  new native-cell mode while preserving static normalized behavior for historical
+  configs; the complete dynamic Stage-1 route and empirical floor verdict remain
+  unimplemented/unverified.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

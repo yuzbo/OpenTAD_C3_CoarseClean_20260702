@@ -13,6 +13,7 @@ It contains no dataset, detector, ground-truth, teacher, or evaluation code.
 from __future__ import annotations
 
 import hashlib
+import math
 from typing import Any
 
 import torch
@@ -38,11 +39,55 @@ SCORE_FUNCTION_TEMPORAL_REDUCTIONS = frozenset({"sum", "mean"})
 _ROUTE_PRIVATE_RNG_SCHEMA = "georoute_route_private_rng_v1"
 
 
+def _extent_wh(
+    value: float | tuple[float, float],
+    *,
+    name: str,
+) -> tuple[float, float]:
+    """Normalize one scalar or explicit ``(width, height)`` extent pair."""
+
+    if isinstance(value, tuple):
+        if len(value) != 2:
+            raise ValueError(f"{name} must be a scalar or a (width,height) pair")
+        width, height = map(float, value)
+    else:
+        width = height = float(value)
+    if not math.isfinite(width) or not math.isfinite(height):
+        raise ValueError(f"{name} must be finite")
+    return width, height
+
+
+def native_cell_extent_floor(
+    grid_height: int,
+    grid_width: int,
+    *,
+    cells_per_axis: int,
+) -> tuple[float, float]:
+    """Return a runtime native-cell ``(width, height)`` ROI floor.
+
+    A one-cell floor is ``(1 / W_grid, 1 / H_grid)``.  Keeping the two axes
+    separate is essential on the production 11x20 lattice: replacing them by a
+    shared maximum would silently turn the approved rectangular parameterization
+    into a larger square-footprint constraint.
+    """
+
+    if int(grid_height) <= 0 or int(grid_width) <= 0:
+        raise ValueError("native patch grid dimensions must be positive")
+    if isinstance(cells_per_axis, bool) or int(cells_per_axis) != cells_per_axis:
+        raise ValueError("native ROI floor cells must be one positive integer")
+    cells = int(cells_per_axis)
+    if cells <= 0:
+        raise ValueError("native ROI floor cells must be one positive integer")
+    if cells > int(grid_height) or cells > int(grid_width):
+        raise ValueError("native ROI floor cells exceed the runtime patch grid")
+    return cells / float(grid_width), cells / float(grid_height)
+
+
 def decode_continuous_geometry(
     logits: torch.Tensor,
     *,
-    min_extent: float,
-    max_extent: float,
+    min_extent: float | tuple[float, float],
+    max_extent: float | tuple[float, float],
 ) -> torch.Tensor:
     """Decode unconstrained logits to in-bounds ``(cx, cy, w, h)`` boxes.
 
@@ -52,12 +97,25 @@ def decode_continuous_geometry(
 
     if logits.ndim != 3 or logits.shape[-1] != 4:
         raise ValueError("geometry logits must be [B,T,4]")
-    if not (0.0 < float(min_extent) <= float(max_extent) <= 1.0):
-        raise ValueError("geometry extents must satisfy 0 < min <= max <= 1")
+    min_width, min_height = _extent_wh(min_extent, name="min_extent")
+    max_width, max_height = _extent_wh(max_extent, name="max_extent")
+    if not all(
+        0.0 < minimum <= maximum <= 1.0
+        for minimum, maximum in (
+            (min_width, max_width),
+            (min_height, max_height),
+        )
+    ):
+        raise ValueError(
+            "geometry width/height extents must independently satisfy "
+            "0 < min <= max <= 1"
+        )
     if not bool(torch.isfinite(logits).all().item()):
         raise ValueError("geometry logits must be finite")
 
-    extent = float(min_extent) + (float(max_extent) - float(min_extent)) * torch.sigmoid(logits[..., 2:])
+    minimum = logits.new_tensor((min_width, min_height))
+    maximum = logits.new_tensor((max_width, max_height))
+    extent = minimum + (maximum - minimum) * torch.sigmoid(logits[..., 2:])
     center_unit = torch.sigmoid(logits[..., :2])
     center = 0.5 * extent + (1.0 - extent) * center_unit
     geometry = torch.cat((center, extent), dim=-1)

@@ -14,6 +14,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [Continuous-RoI S2 crop sufficiency](experiments/native-crop-s2-crop-sufficiency.md)
 - [Native-Crop paper experiment roadmap](experiments/native-crop-paper-experiment-roadmap.md)
 - [GeoRoute-AdaTAD native routing](experiments/georoute-adatad.md)
+- [SCNR-TAD native-cell ROI floor sensitivity](experiments/scnr-geometry-floor-sensitivity-v1.md)
 
 这是本项目研究记忆的单一入口。它区分讨论、代码、测试、实验和论文证据，
 用于阻止路线遗忘、旧错误复发和旧提交结果冒充最新实现。
@@ -78,6 +79,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [ChronoTransport formal Stage-B 负 gate](experiments/chronotransport-formal-stage-b.md)
 - [Continuous-RoI S2 crop sufficiency](experiments/native-crop-s2-crop-sufficiency.md)
 - [Native-Crop paper experiment roadmap](experiments/native-crop-paper-experiment-roadmap.md)
+- [SCNR-TAD native-cell ROI floor sensitivity](experiments/scnr-geometry-floor-sensitivity-v1.md)
 
 ### Claims
 

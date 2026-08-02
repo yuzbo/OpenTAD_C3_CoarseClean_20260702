@@ -126,7 +126,7 @@ No area, coverage, expected-cost, fixed-context, or fixed-`K_t` loss is part of
 the main Stage-1 objective. Exact schedule constants, degeneration safeguards,
 error handling, ablations, and tests remain under section-by-section review.
 
-### Formula-level Uni-AdaFocus comparison (`discussed`)
+### Formula-level Uni-AdaFocus comparison (`designed`)
 
 The paper states a deformable patch as centre coordinates plus height and width,
 but official commit `88464883` implements an equivalent top-left form. With four
@@ -147,9 +147,14 @@ actions away from one. Its hard local crop action remains detached. SCNR-TAD
 instead selects unique native physical tokens under exact B, does not resize an
 ROI into a second fixed local input, and needs high-IoU TAD rather than video
 classification supervision. Therefore the fixed 96-pixel floor and
-full-frame-seeking penalty should not be copied automatically. A one-grid-cell
-floor and no size penalty are plausible task-native replacements, but they are
-still `discussed`, not approved, implemented, tested, or empirically supported.
+full-frame-seeking penalty should not be copied automatically. The user approved
+the task-native replacement: derive independent axis floors at runtime as
+`w_min=1/W_grid` and `h_min=1/H_grid`, retain no size/area/coverage penalty in
+the main setting, and compare it only with a separately trained matched 2x2-cell
+floor sensitivity arm. The shared geometry primitive now implements an explicit
+`native_cells` mode while its default `static_normalized` mode preserves old
+config behavior. This is component-level implementation, not a complete dynamic
+Stage-1 route, tensor-test receipt, empirical floor optimum, or paper evidence.
 
 ## Principle
 
