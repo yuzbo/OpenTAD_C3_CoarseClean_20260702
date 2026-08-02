@@ -656,6 +656,17 @@ def main():
                 raise RuntimeError(
                     "formal DUCA epoch did not execute the derived update count"
                 )
+            budget_audit = (
+                duca_training.collect_epoch_budget_audit(
+                    model=model,
+                    contract=duca_formal_contract,
+                    epoch=epoch,
+                )
+                if duca_training.is_formal_protocol(
+                    cfg.workflow.get("formal_protocol", "")
+                )
+                else None
+            )
             epoch_records.append(
                 {
                     "epoch": int(epoch),
@@ -665,6 +676,11 @@ def main():
                     "selector_schedule_step": int(duca_training.selector_schedule_step(model)),
                     "grad_scaler_scale": (
                         None if scaler is None else float(scaler.get_scale())
+                    ),
+                    **(
+                        {}
+                        if budget_audit is None
+                        else {"budget_audit": budget_audit}
                     ),
                 }
             )

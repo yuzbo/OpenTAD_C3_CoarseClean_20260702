@@ -225,7 +225,11 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self._forward_backbone_with_temporal_mask(inputs, masks)
+            x = self._forward_backbone_with_temporal_mask(
+                inputs,
+                masks,
+                record_selector_execution=not skip_frame_selector,
+            )
         else:
             x = inputs
 

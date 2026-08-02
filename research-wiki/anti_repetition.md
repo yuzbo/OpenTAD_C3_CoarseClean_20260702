@@ -443,3 +443,23 @@ These failures and naming mistakes must not be repeated.
      whether `(8,12,16,24)` describes requested exposure or realized heavy cost,
      define short-window feasibility and report its realized distribution. This
      is a scientific protocol decision, not an automatic guard deletion.
+129. The approved correction freezes `(8,12,16,24)` as the requested-K schedule,
+     not the realized heavy-cost histogram. Never relabel a capped short-window
+     execution as if the nominal request itself had changed.
+130. Do not pad, repeat frames, delete short videos, or condition the requested-K
+     schedule on valid length. Natural windows execute
+     `K_eff=min(K_req,floor(L/16)*16)` and must satisfy
+     `K_backbone=K_unique=K_eff<=K_req`; `L<16` fails closed.
+131. Do not infer physical cost from selector metadata alone. Every committed
+     training row and formal evaluation row must bind the actual wrapper and
+     inner VideoMAE input tensor geometry. Failed AMP attempts commit no row.
+132. Do not call fixed requested-K384 evaluation dynamic inference merely because
+     natural windows share a deterministic feasibility cap. It remains a fixed,
+     label-free policy control.
+133. Do not reuse any receipt, checkpoint choice, metric, or partial cell from the
+     failed `2df0103e` Stage-A transaction. A repaired run requires a fresh clean
+     commit, real natural-short-window heavy-backbone Slurm gate, new manifests,
+     new root, all twelve logical cells and a new seal.
+134. Do not serialize the DUCA arm behind the mixed-K control again. Use isolated
+     per-seed DUCA jobs and per-seed sequential control jobs; seven scheduler jobs
+     represent twelve independent logical cells without changing the matrix.

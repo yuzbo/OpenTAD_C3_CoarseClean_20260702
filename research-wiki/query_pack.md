@@ -1,6 +1,6 @@
 # DUCA-RIME Current Query Pack
 
-Last updated: `2026-08-02`
+Last updated: `2026-08-03`
 
 ## Current decision
 
@@ -30,7 +30,7 @@ Current evidence level:
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
 | Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
-| Official full-data DUCA feasibility | `failed_closed / source_2df0103e / jobs_1213712_1213713_1213714_failed_same_short_window_signature / seal_1213715_cancelled / six_partial_control_receipts_unopened / no_empirical_conclusion` |
+| Official full-data DUCA feasibility | `corrigendum_approved_and_implemented_locally / old_source_2df0103e_failed_immutable / new_clean_Linux_and_real_short_window_gates_pending / no_empirical_conclusion` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -342,6 +342,39 @@ automatically repairable engineering defect. Six earlier dense/uniform cell
 receipts remain immutable but partial and unopened. DUCA learned fixed-K384 did
 not run; no complete matrix, empirical comparison, or paper-admissible result
 exists. Stage B remains blocked.
+
+On `2026-08-03`, the user supplied final short-window adjudication
+`U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1` with verdict `IMPLEMENT`. It is accepted.
+The `(8,12,16,24)` cycle is now explicitly the requested-K exposure, with
+nominal requested mean 384. Natural windows execute the deterministic,
+label-free quantum cap `K_eff=min(K_req,floor(L/16)*16)` while preserving
+`K_req` as a separate ledger field. The physical invariant is
+`K_backbone=K_unique=K_eff<=K_req`; padding, repetition, video exclusion and
+length-conditioned requests are prohibited. Because the repository's VideoMAE
+path requires positive q=16 buckets, any `L<16` window fails closed and the real
+full-200 preflight must prove that none exists.
+
+The correction is implemented locally with retry-safe per-successful-update
+accounting and actual BackboneWrapper/inner-VideoMAE tensor evidence. A new
+Slurm prerequisite runs the real decoder, selector, physical gather and heavy
+backbone for requests 192/256/384/512 including a natural short window; its
+immutable receipt is required by the Stage-A manifest. The fresh matrix uses
+three sequential control jobs, three independent DUCA jobs and one seal, so a
+mixed-control failure cannot suppress the learned DUCA arm and the seven-job DAG
+fits `MaxSubmitJobs=16`. This state is `implemented`, not yet authoritative
+Linux-tested, experiment-running, empirically supported, or paper-ready. No old
+metric or partial receipt has been opened or reused; Stage B remains sealed.
+Local syntax/Shell/contract verification is `15 passed / 1 Linux-only skip`;
+the local Windows Torch suite is unavailable because `c10.dll` fails to load,
+so no Torch-tested status is claimed before Slurm. Independent read-only review
+accepted the selector-to-backbone accounting and the scoped real-data gate. A
+final deployment-order audit found and repaired one P0 circularity: the clean
+Linux code gate no longer attempts to build the gate-dependent matrix manifest.
+The enforced order is now clean code gate → real short-window gate → new
+manifest/root → seven-job Stage A. The short-window gate directly consumes the
+content-bound code-gate receipt, and both hashes are required by the grouped
+submitter, every cell and the matrix seal; this is an enforced dependency rather
+than an operator convention.
 
 The user authorized recovery-v3 implementation and redeployment. The local
 repair is now implemented:

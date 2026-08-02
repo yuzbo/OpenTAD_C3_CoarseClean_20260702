@@ -52,3 +52,6 @@
 {"source":"deployments/duca-paper-stage-a-2df0103e","relation":"diagnosed_by","target":"sources/REMOTE-DUCA-PAPER-STAGEA-SHORT-K-1"}
 {"source":"experiments/duca-paper-feasibility-stage-a","relation":"blocked_by","target":"protocols/duca-paper-mixed-k-short-window-semantics"}
 {"source":"plans/duca-paper-feasibility-stage-b","relation":"blocked_by","target":"protocols/duca-paper-mixed-k-short-window-semantics"}
+{"source":"sources/U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1","relation":"adjudicates","target":"protocols/duca-paper-mixed-k-short-window-semantics"}
+{"source":"protocols/duca-paper-mixed-k-short-window-semantics","relation":"repairs_future_execution_of","target":"experiments/duca-paper-feasibility-stage-a"}
+{"source":"experiments/duca-paper-feasibility-stage-a","relation":"requires_before_redeployment","target":"gates/duca-paper-real-short-window-heavy-backbone"}

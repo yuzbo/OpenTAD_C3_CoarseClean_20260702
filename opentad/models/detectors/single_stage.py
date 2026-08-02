@@ -60,7 +60,13 @@ class SingleStageDetector(BaseDetector):
         """bool: whether the detector has localization head"""
         return hasattr(self, "rpn_head") and self.rpn_head is not None
 
-    def _forward_backbone_with_temporal_mask(self, inputs, masks):
+    def _forward_backbone_with_temporal_mask(
+        self,
+        inputs,
+        masks,
+        *,
+        record_selector_execution=True,
+    ):
         """Forward a dynamic temporal bucket with its exact aligned mask."""
         if not self.with_backbone:
             return inputs
@@ -82,7 +88,21 @@ class SingleStageDetector(BaseDetector):
                 "DUCA-RIME exact-K selection requires a dynamic temporal backbone"
             )
         if dynamic_temporal_bucket:
-            return self.backbone(inputs, masks=masks)
+            features = self.backbone(inputs, masks=masks)
+            if record_selector_execution:
+                hook = getattr(
+                    getattr(self, "frame_selector", None),
+                    "record_backbone_execution",
+                    None,
+                )
+                if callable(hook):
+                    contract = getattr(
+                        self.backbone,
+                        "last_forward_input_contract",
+                        None,
+                    )
+                    hook(contract)
+            return features
         return self.backbone(inputs)
 
     def after_optimizer_step(self):

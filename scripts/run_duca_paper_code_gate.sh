@@ -50,9 +50,18 @@ python -m py_compile \
   tools/train.py \
   tools/test.py \
   tools/bata/duca_paper_training.py \
-  tools/bata/build_duca_paper_matrix_manifest.py
+  tools/bata/build_duca_paper_matrix_manifest.py \
+  tools/bata/validate_duca_paper_code_gate.py \
+  tools/bata/run_duca_paper_short_window_gate.py \
+  tools/bata/validate_duca_paper_short_window_gate.py \
+  opentad/models/backbones/backbone_wrapper.py \
+  opentad/models/detectors/actionformer.py \
+  opentad/models/detectors/single_stage.py \
+  opentad/models/selectors/duca_protected_e2e_frame_selector.py \
+  opentad/models/selectors/duca_rime_frame_selector.py
 bash -n \
   scripts/run_duca_paper_code_gate.sh \
+  scripts/run_duca_paper_short_window_gate.sh \
   scripts/run_duca_paper_stage_a_cell.sh \
   scripts/run_duca_paper_stage_a_seed.sh \
   scripts/run_duca_paper_stage_a_seal.sh \
@@ -62,34 +71,52 @@ python -m pytest \
   tests/test_duca_paper_full200_contract.py \
   tests/test_duca_rime_backbone_mask_contract.py \
   tests/test_duca_protected_e2e_detector_contract.py \
+  tests/test_duca_protected_e2e_frame_selector.py \
+  tests/test_duca_rime.py \
+  tests/test_train_engine_after_optimizer_step.py \
+  tests/test_train_engine_max_train_iters.py \
   -q 2>&1 | tee "${DUCA_PAPER_CODE_GATE_ROOT}/logs/pytest.out"
 
-export DUCA_PAPER_MATRIX_MANIFEST="${DUCA_PAPER_CODE_GATE_ROOT}/protocol_manifest.json"
-python -m tools.bata.build_duca_paper_matrix_manifest \
-  --repo-root "${DUCA_PAPER_REPO_ROOT}" \
-  --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
-  --pretrain "${DUCA_PAPER_PRETRAIN_PATH}" \
-  --annotation "${DUCA_PAPER_ANNOTATION_PATH}" \
-  --class-map "${DUCA_PAPER_CLASS_MAP_PATH}" \
-  --output "${DUCA_PAPER_MATRIX_MANIFEST}" \
-  > "${DUCA_PAPER_CODE_GATE_ROOT}/logs/manifest.out"
-export DUCA_PAPER_MATRIX_MANIFEST_SHA256="$(
-  sha256sum "${DUCA_PAPER_MATRIX_MANIFEST}" | awk '{print $1}'
-)"
+python - \
+  "${DUCA_PAPER_CODE_GATE_ROOT}/gate.receipt.json" \
+  "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  "${SLURM_JOB_ID}" \
+  "${DUCA_PAPER_CODE_GATE_ROOT}/logs/pytest.out" <<'PY'
+import hashlib
+import json
+import os
+import pathlib
+import sys
 
-export DUCA_PAPER_CELLS_ROOT="${DUCA_PAPER_CODE_GATE_ROOT}/precheck-cells"
-export DUCA_PAPER_SEED=5801
-PRECHECK_ONLY=1 bash scripts/run_duca_paper_stage_a_seed.sh \
-  > "${DUCA_PAPER_CODE_GATE_ROOT}/logs/seed-precheck.out"
-
-printf '%s\n' \
-  "schema=duca_paper_code_gate_v1" \
-  "status=passed" \
-  "commit=${DUCA_PAPER_EXPECTED_COMMIT}" \
-  "slurm_job_id=${SLURM_JOB_ID}" \
-  "protocol_manifest_sha256=${DUCA_PAPER_MATRIX_MANIFEST_SHA256}" \
-  "official_train_video_count=200" \
-  "official_evaluation_video_count=211" \
-  "stage_a_cell_count=12" \
-  > "${DUCA_PAPER_CODE_GATE_ROOT}/gate.receipt"
-echo "[DUCA_PAPER_CODE_GATE] PASS ${DUCA_PAPER_CODE_GATE_ROOT}/gate.receipt"
+output, commit, job_id, pytest_log = sys.argv[1:]
+sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+payload = {
+    "schema_version": "duca_paper_clean_linux_code_gate_v2",
+    "status": "passed",
+    "git_commit": commit,
+    "slurm_job_id": job_id,
+    "pytest_log_path": str(pathlib.Path(pytest_log).resolve()),
+    "pytest_log_sha256": sha(pytest_log),
+    "official_train_video_count": 200,
+    "official_evaluation_video_count": 211,
+    "stage_a_logical_cell_count": 12,
+    "short_window_gate_pending": True,
+    "stage_a_manifest_created": False,
+    "stage_a_released": False,
+    "stage_b_enabled": False,
+    "paper_metric_claim_allowed": False,
+}
+unsigned = json.dumps(
+    payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+).encode("ascii")
+payload["content_sha256"] = hashlib.sha256(unsigned).hexdigest()
+target = pathlib.Path(output)
+with target.open("x", encoding="utf-8") as handle:
+    json.dump(payload, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+PY
+sha256sum "${DUCA_PAPER_CODE_GATE_ROOT}/gate.receipt.json" \
+  > "${DUCA_PAPER_CODE_GATE_ROOT}/gate.receipt.sha256"
+echo "[DUCA_PAPER_CODE_GATE] PASS ${DUCA_PAPER_CODE_GATE_ROOT}/gate.receipt.json"

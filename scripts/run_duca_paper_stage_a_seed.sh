@@ -16,6 +16,7 @@ for name in \
   DUCA_PAPER_EXPECTED_COMMIT \
   DUCA_PAPER_CELLS_ROOT \
   DUCA_PAPER_SEED \
+  DUCA_PAPER_GROUP \
   DUCA_PAPER_MATRIX_MANIFEST \
   DUCA_PAPER_MATRIX_MANIFEST_SHA256 \
   DUCA_PAPER_PRETRAIN_PATH \
@@ -31,6 +32,10 @@ done
 case "${DUCA_PAPER_SEED}" in
   5801|8123|12011) ;;
   *) fail "unregistered Stage-A seed: ${DUCA_PAPER_SEED}" ;;
+esac
+case "${DUCA_PAPER_GROUP}" in
+  controls|duca) ;;
+  *) fail "unregistered Stage-A seed group: ${DUCA_PAPER_GROUP}" ;;
 esac
 
 cd "${DUCA_PAPER_REPO_ROOT}"
@@ -59,11 +64,13 @@ config_for_arm() {
   esac
 }
 
-for arm in \
-  dense \
-  uniform_fixed_k384 \
-  uniform_mixed_train_k384_eval \
-  duca_fixed_k384; do
+if [[ "${DUCA_PAPER_GROUP}" == controls ]]; then
+  arms=(dense uniform_fixed_k384 uniform_mixed_train_k384_eval)
+else
+  arms=(duca_fixed_k384)
+fi
+
+for arm in "${arms[@]}"; do
   export DUCA_PAPER_ARM="${arm}"
   export DUCA_PAPER_CONFIG="$(config_for_arm "${arm}")"
   export DUCA_PAPER_CELL_ROOT="${DUCA_PAPER_CELLS_ROOT}/${arm}/seed${DUCA_PAPER_SEED}"
@@ -75,30 +82,35 @@ for arm in \
 done
 
 if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then
-  echo "[DUCA_PAPER_STAGE_A_SEED] PRECHECK PASS seed${DUCA_PAPER_SEED}"
+  echo "[DUCA_PAPER_STAGE_A_SEED] PRECHECK PASS ${DUCA_PAPER_GROUP} seed${DUCA_PAPER_SEED}"
   exit 0
 fi
 
-receipt_root="${DUCA_PAPER_CELLS_ROOT}/_seed_receipts"
+receipt_root="${DUCA_PAPER_CELLS_ROOT}/_seed_group_receipts"
 mkdir -p "${receipt_root}"
 python - \
   "${DUCA_PAPER_CELLS_ROOT}" \
   "${DUCA_PAPER_SEED}" \
+  "${DUCA_PAPER_GROUP}" \
   "${DUCA_PAPER_EXPECTED_COMMIT}" \
-  "${receipt_root}/seed${DUCA_PAPER_SEED}.json" <<'PY'
+  "${receipt_root}/seed${DUCA_PAPER_SEED}.${DUCA_PAPER_GROUP}.json" <<'PY'
 import hashlib
 import json
 import os
 import pathlib
 import sys
 
-cells_root, seed, commit, output = sys.argv[1:]
-arms = (
-    "dense",
-    "uniform_fixed_k384",
-    "uniform_mixed_train_k384_eval",
-    "duca_fixed_k384",
-)
+cells_root, seed, group, commit, output = sys.argv[1:]
+arms = {
+    "controls": (
+        "dense",
+        "uniform_fixed_k384",
+        "uniform_mixed_train_k384_eval",
+    ),
+    "duca": ("duca_fixed_k384",),
+}.get(group)
+if arms is None:
+    raise SystemExit("unregistered Stage-A seed group")
 sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
 records = []
 for arm in arms:
@@ -107,7 +119,7 @@ for arm in arms:
         raise SystemExit(f"grouped Stage-A cell receipt is missing: {arm}/seed{seed}")
     payload = json.loads(path.read_text(encoding="utf-8"))
     if (
-        payload.get("schema_version") != "duca_paper_stage_a_cell_receipt_v1"
+        payload.get("schema_version") != "duca_paper_stage_a_cell_receipt_v2"
         or payload.get("status") != "passed"
         or payload.get("git_commit") != commit
         or payload.get("arm") != arm
@@ -122,13 +134,15 @@ for arm in arms:
         }
     )
 payload = {
-    "schema_version": "duca_paper_stage_a_seed_receipt_v1",
+    "schema_version": "duca_paper_stage_a_seed_group_receipt_v2",
     "status": "passed",
     "git_commit": commit,
     "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
     "seed": int(seed),
-    "logical_cell_count": 4,
+    "group": group,
+    "logical_cell_count": len(arms),
     "sequential_scheduler_grouping_only": True,
+    "mixed_k_failure_blocks_duca_arm": False,
     "cells": records,
 }
 target = pathlib.Path(output)
@@ -139,4 +153,4 @@ with target.open("x", encoding="utf-8") as handle:
     os.fsync(handle.fileno())
 PY
 
-echo "[DUCA_PAPER_STAGE_A_SEED] PASS seed${DUCA_PAPER_SEED}"
+echo "[DUCA_PAPER_STAGE_A_SEED] PASS ${DUCA_PAPER_GROUP} seed${DUCA_PAPER_SEED}"

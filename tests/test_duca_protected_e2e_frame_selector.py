@@ -255,6 +255,61 @@ def test_short_window_quantizes_231_to_224_for_a_16_frame_backbone():
     )
 
 
+def test_budget_row_commits_only_after_successful_optimizer_hook():
+    selector = DucaProtectedE2EFrameSelector(
+        in_channels=3,
+        arm="exact_uniform",
+        budget=4,
+        dense_window_size=6,
+        execution_quantum=1,
+    )
+    inputs, masks, metas, segments, labels, boundary_validity = _batch()
+    metas[0].update(
+        {
+            "window_start_frame": 0,
+            "duca_stateless_epoch": 2,
+            "duca_stateless_sample_index": 5,
+        }
+    )
+    selector.train()
+    selector.forward_train(
+        inputs,
+        masks,
+        metas,
+        gt_segments=segments,
+        gt_labels=labels,
+        gt_boundary_validity=boundary_validity,
+    )
+    selector.record_backbone_execution(
+        {
+            "schema_version": "duca_dynamic_backbone_input_v1",
+            "measurement_source": (
+                "actual_backbone_wrapper_and_videomae_input_tensors"
+            ),
+            "wrapper_temporal_k": 4,
+            "mask_temporal_k": 4,
+            "inner_reconstructed_k": 4,
+            "inner_temporal_chunk_k": 4,
+            "num_segs": 1,
+            "all_mask_active": True,
+            "padding_or_repetition_observed": False,
+        }
+    )
+    assert selector.drain_committed_budget_rows() == []
+    summary = selector.after_optimizer_step()
+    assert summary["committed_budget_rows"] == 1
+    rows = selector.drain_committed_budget_rows()
+    assert len(rows) == 1
+    assert rows[0]["requested_k"] == 4
+    assert rows[0]["effective_k"] == rows[0]["backbone_input_k"] == 4
+    assert rows[0]["duca_stateless_epoch"] == 2
+    assert rows[0]["duca_stateless_sample_index"] == 5
+    assert rows[0]["backbone_input_measurement_source"] == (
+        "actual_backbone_wrapper_and_videomae_input_tensors"
+    )
+    assert selector.after_optimizer_step()["committed_budget_rows"] == 0
+
+
 def test_main_detector_gradient_stops_at_selector_adapter_head():
     selector = _selector("protected_e2e")
     inputs, masks, metas, segments, labels, boundary_validity = _batch()

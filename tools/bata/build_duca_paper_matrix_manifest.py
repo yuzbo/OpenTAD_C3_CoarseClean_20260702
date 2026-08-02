@@ -26,6 +26,7 @@ CONFIGS = {
         "configs/adatad/thumos/duca_paper_duca_fixed_k384_full200.py"
     ),
 }
+IMMUTABLE_FAILED_STAGE_A_COMMIT = "2df0103ec1c26ff7cff7ed15f399e78e640df211"
 
 
 def sha256_file(path: str | Path) -> str:
@@ -93,14 +94,28 @@ def build_manifest(
     pretrain_path: str | Path,
     annotation_path: str | Path,
     class_map_path: str | Path,
+    short_window_gate_path: str | Path | None = None,
     require_clean_checkout: bool = True,
 ) -> dict[str, Any]:
     repo = Path(repo_root).expanduser().resolve()
     pretrain = Path(pretrain_path).expanduser().resolve()
     annotation = Path(annotation_path).expanduser().resolve()
     class_map = Path(class_map_path).expanduser().resolve()
+    short_window_gate = (
+        None
+        if short_window_gate_path is None
+        else Path(short_window_gate_path).expanduser().resolve()
+    )
     if require_clean_checkout:
+        if expected_commit == IMMUTABLE_FAILED_STAGE_A_COMMIT:
+            raise RuntimeError(
+                "formal Stage-A freeze cannot reuse the immutable failed source"
+            )
         _exact_checkout(repo, expected_commit)
+        if short_window_gate is None:
+            raise RuntimeError(
+                "formal Stage-A freeze requires the real short-window Slurm gate"
+            )
     for path, label in (
         (pretrain, "VideoMAE initialization"),
         (annotation, "THUMOS14 annotation"),
@@ -132,6 +147,38 @@ def build_manifest(
     ]
     if len(class_names) != 20:
         raise RuntimeError("THUMOS14 class map must contain exactly twenty classes")
+    prerequisite_gates: dict[str, Any] = {}
+    if short_window_gate is not None:
+        from tools.bata.validate_duca_paper_short_window_gate import (
+            validate_gate_artifact,
+        )
+
+        gate_binding = validate_gate_artifact(
+            short_window_gate,
+            expected_commit=expected_commit,
+        )
+        prerequisite_gates["clean_linux_pytorch_code"] = {
+            "schema_version": "duca_paper_clean_linux_code_gate_v2",
+            "status": "passed",
+            "git_commit": expected_commit,
+            "path": gate_binding["code_gate_path"],
+            "sha256": gate_binding["code_gate_sha256"],
+            "slurm_job_id": gate_binding["code_gate_slurm_job_id"],
+            "claim_scope": "engineering_clean_linux_pytorch_code_only",
+            "performance_evidence": False,
+        }
+        prerequisite_gates["real_natural_short_window_heavy_backbone"] = {
+            "schema_version": (
+                "duca_paper_real_short_window_heavy_backbone_gate_v1"
+            ),
+            "status": "passed",
+            "git_commit": expected_commit,
+            "path": str(short_window_gate),
+            "sha256": sha256_file(short_window_gate),
+            "slurm_job_id": gate_binding["slurm_job_id"],
+            "claim_scope": "engineering_short_window_execution_only",
+            "performance_evidence": False,
+        }
     payload = {
         "schema_version": duca_paper_training.MATRIX_SCHEMA,
         "status": "frozen",
@@ -152,6 +199,36 @@ def build_manifest(
         "training_consumes_validation": False,
         "single_seed_claim_allowed": False,
         "partial_matrix_claim_allowed": False,
+        "prerequisite_gates": prerequisite_gates,
+        "budget_semantics": {
+            "version": duca_paper_training.BUDGET_SEMANTICS,
+            "valid_length_definition": "contiguous_true_dense_candidate_prefix",
+            "execution_quantum": duca_paper_training.EXECUTION_QUANTUM,
+            "effective_k_formula": (
+                "min(requested_k,floor(dense_valid_len/16)*16)"
+            ),
+            "subquantum_policy": "fail_closed_below_one_quantum",
+            "padding_or_repetition_allowed": False,
+            "length_conditioned_requested_schedule": False,
+            "fixed_requested_k384_evaluation_is_dynamic": False,
+            "mixed_k": {
+                "candidate_budgets": list(
+                    duca_paper_training.MIXED_K_CANDIDATES
+                ),
+                "schedule_counts": list(duca_paper_training.MIXED_K_COUNTS),
+                "schedule_seed": duca_paper_training.MIXED_K_SEED,
+                "cycle": list(duca_paper_training.mixed_k_requested_schedule()),
+                "cycle_length": len(
+                    duca_paper_training.mixed_k_requested_schedule()
+                ),
+                "nominal_requested_mean_k": (
+                    duca_paper_training.MIXED_K_NOMINAL_REQUESTED_MEAN
+                ),
+                "schedule_sha256": (
+                    duca_paper_training.mixed_k_requested_schedule_sha256()
+                ),
+            },
+        },
         "configs": config_records,
         "assets": {
             "pretrain_path": str(pretrain),
@@ -200,6 +277,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--pretrain", required=True)
     parser.add_argument("--annotation", required=True)
     parser.add_argument("--class-map", required=True)
+    parser.add_argument("--short-window-gate", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     payload = build_manifest(
@@ -208,6 +286,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         pretrain_path=args.pretrain,
         annotation_path=args.annotation,
         class_map_path=args.class_map,
+        short_window_gate_path=args.short_window_gate,
     )
     atomic_write_json(args.output, payload)
     print(

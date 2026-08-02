@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import math
 import os
@@ -98,6 +99,7 @@ def _emit_protected_inference_ledger(
     arm: str,
     budget: int,
     metas,
+    backbone_contract: Mapping[str, Any] | None = None,
 ) -> None:
     ledger_root = os.environ.get("DUCA_RIME_INFERENCE_LEDGER_ROOT", "").strip()
     if not ledger_root:
@@ -122,6 +124,30 @@ def _emit_protected_inference_ledger(
         ledger_root,
         f"inference_ledger.rank{rank:04d}.jsonl",
     )
+    measured_backbone_k = None
+    measurement_source = "selector_output_only_legacy_helper"
+    contract_sha256 = None
+    if backbone_contract is not None:
+        measured_backbone_k = int(
+            backbone_contract.get("wrapper_temporal_k", -1)
+        )
+        measurement_source = str(
+            backbone_contract.get("measurement_source", "")
+        )
+        if (
+            measured_backbone_k <= 0
+            or measurement_source
+            != "actual_backbone_wrapper_and_videomae_input_tensors"
+        ):
+            raise ValueError("protected inference ledger backbone contract drift")
+        contract_sha256 = hashlib.sha256(
+            json.dumps(
+                dict(backbone_contract),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("ascii")
+        ).hexdigest()
     for meta in metas:
         video_id = str(meta.get("video_name") or meta.get("video_id") or "")
         window_start = int(meta.get("window_start_frame", 0))
@@ -136,6 +162,10 @@ def _emit_protected_inference_ledger(
             or len(selected) != effective_k
             or selected != sorted(set(selected))
             or any(value < 0 or value >= dense_valid_len for value in selected)
+            or (
+                measured_backbone_k is not None
+                and measured_backbone_k != effective_k
+            )
         ):
             raise ValueError("protected inference ledger has an invalid window or hard path")
         _append_jsonl_atomic(
@@ -155,7 +185,13 @@ def _emit_protected_inference_ledger(
                 "solver_unused_budget": 0,
                 "budget_scope": "window_fixed_request",
                 "unique_k": len(selected),
-                "backbone_input_k": effective_k,
+                "backbone_input_k": (
+                    effective_k
+                    if measured_backbone_k is None
+                    else measured_backbone_k
+                ),
+                "backbone_input_measurement_source": measurement_source,
+                "backbone_input_contract_sha256": contract_sha256,
                 "padded_k": effective_k,
                 "risk_fallback": False,
                 "cost_unit": "heavy_rgb_frames",
@@ -686,6 +722,12 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         self.last_forward_summary: dict[str, Any] = {}
         self._last_selected_positions: Optional[torch.Tensor] = None
         self._last_physical_metas: Optional[list[dict[str, Any]]] = None
+        # Paper-facing budget evidence is committed only after a successful
+        # optimizer step.  It deliberately stays outside state_dict/checkpoint
+        # state: completed epochs drain it into the hash-bound training audit,
+        # while AMP/non-finite replays never append a row.
+        self._committed_budget_rows: list[dict[str, Any]] = []
+        self._pending_inference_budget_rows: dict[str, Any] | None = None
         self.capture_policy_score_gradients = False
         self._last_policy_scores: Optional[torch.Tensor] = None
         self._pending_homotopy_schedule_advance = False
@@ -813,6 +855,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         }
 
     def after_optimizer_step(self) -> dict[str, Any]:
+        committed_rows = self._commit_last_budget_rows()
         if self.arm == "protected_e2e_homotopy025":
             if not self.training:
                 return {"updated": False, "reason": "selector_not_training"}
@@ -826,11 +869,189 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 "source": "successful_optimizer_step",
                 "step_before": before,
                 "step_after": int(self.schedule_step.detach().item()),
+                "committed_budget_rows": committed_rows,
             }
             if isinstance(self.last_forward_summary, dict):
                 self.last_forward_summary["schedule_step_update"] = summary
             return summary
-        return {"updated": False, "reason": "protected_duca_has_no_selector_schedule"}
+        return {
+            "updated": False,
+            "reason": "protected_duca_has_no_selector_schedule",
+            "committed_budget_rows": committed_rows,
+        }
+
+    def _commit_last_budget_rows(self) -> int:
+        """Commit the last physical execution after one successful update.
+
+        The formal Stage-A loader uses one sample per rank, but the method is
+        batch-safe and intentionally generic.  A missing last forward is a
+        no-op so unit tests may advance isolated schedule state; the formal
+        epoch collector still requires exactly 200 committed global rows.
+        """
+
+        if not self.training or self._last_physical_metas is None:
+            return 0
+        rows: list[dict[str, Any]] = []
+        for source_meta in self._last_physical_metas:
+            if not isinstance(source_meta, Mapping):
+                raise RuntimeError("DUCA committed budget metadata is malformed")
+            meta = dict(source_meta)
+            video_id = str(meta.get("video_name") or meta.get("video_id") or "")
+            epoch = int(meta.get("duca_stateless_epoch", -1))
+            sample_index = int(meta.get("duca_stateless_sample_index", -1))
+            window_start = int(meta.get("window_start_frame", 0))
+            valid_len = int(
+                meta.get(
+                    "irregular_dense_valid_len",
+                    meta.get("truetime_dense_valid_len", -1),
+                )
+            )
+            requested = int(meta.get("duca_requested_k", -1))
+            effective = int(meta.get("duca_effective_k", -1))
+            unique = int(meta.get("duca_unique_k", -1))
+            backbone = int(meta.get("duca_backbone_input_k", -1))
+            backbone_source = str(
+                meta.get("duca_backbone_input_measurement_source", "")
+            )
+            backbone_contract = meta.get("duca_backbone_input_contract")
+            padded = int(meta.get("duca_padded_k", -1))
+            selected = [
+                int(value)
+                for value in meta.get(
+                    "selected_dense_indices",
+                    meta.get("irregular_selected_positions", ()),
+                )
+            ]
+            if (
+                not video_id
+                or epoch < 0
+                or sample_index < 0
+                or window_start < 0
+                or valid_len <= 0
+                or requested <= 0
+                or effective <= 0
+                or effective > requested
+                or unique != effective
+                or backbone != effective
+                or backbone_source
+                != "actual_backbone_wrapper_and_videomae_input_tensors"
+                or not isinstance(backbone_contract, Mapping)
+                or padded != effective
+                or len(selected) != effective
+                or selected != sorted(set(selected))
+                or any(value < 0 or value >= valid_len for value in selected)
+            ):
+                raise RuntimeError(
+                    "DUCA committed budget row violates requested/effective/"
+                    "unique/backbone no-padding semantics"
+                )
+            backbone_contract_sha256 = hashlib.sha256(
+                json.dumps(
+                    dict(backbone_contract),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                ).encode("ascii")
+            ).hexdigest()
+            rows.append(
+                {
+                    "schema_version": "duca_paper_committed_budget_row_v1",
+                    "video_id": video_id,
+                    "window_start_frame": window_start,
+                    "duca_stateless_epoch": epoch,
+                    "duca_stateless_sample_index": sample_index,
+                    "dense_valid_len": valid_len,
+                    "execution_quantum": int(self.execution_quantum),
+                    "requested_k": requested,
+                    "effective_k": effective,
+                    "unique_k": unique,
+                    "backbone_input_k": backbone,
+                    "backbone_input_measurement_source": backbone_source,
+                    "backbone_input_contract_sha256": (
+                        backbone_contract_sha256
+                    ),
+                    "padded_k": padded,
+                    "selected_dense_indices": selected,
+                    "budget_semantics": (
+                        "requested_then_deterministic_feasibility_shrink_v1"
+                    ),
+                    "cost_unit": "heavy_rgb_frames",
+                }
+            )
+        self._committed_budget_rows.extend(rows)
+        self._last_physical_metas = None
+        return len(rows)
+
+    def drain_committed_budget_rows(self) -> list[dict[str, Any]]:
+        rows = copy.deepcopy(self._committed_budget_rows)
+        self._committed_budget_rows.clear()
+        return rows
+
+    def record_backbone_execution(self, contract: Mapping[str, Any] | None) -> None:
+        """Bind selector execution evidence to the actual heavy input boundary."""
+
+        if not isinstance(contract, Mapping):
+            raise RuntimeError("DUCA heavy-backbone input contract is missing")
+        backbone_k = int(contract.get("wrapper_temporal_k", -1))
+        if (
+            contract.get("schema_version") != "duca_dynamic_backbone_input_v1"
+            or contract.get("measurement_source")
+            != "actual_backbone_wrapper_and_videomae_input_tensors"
+            or backbone_k <= 0
+            or int(contract.get("mask_temporal_k", -1)) != backbone_k
+            or int(contract.get("inner_reconstructed_k", -1)) != backbone_k
+            or contract.get("all_mask_active") is not True
+            or contract.get("padding_or_repetition_observed") is not False
+            or int(contract.get("num_segs", -1)) != 1
+        ):
+            raise RuntimeError("DUCA heavy-backbone physical input contract drift")
+        if not self._last_physical_metas:
+            raise RuntimeError("DUCA backbone execution lacks pending selector metadata")
+        for meta in self._last_physical_metas:
+            effective = int(meta.get("duca_effective_k", -1))
+            unique = int(meta.get("duca_unique_k", -1))
+            padded = int(meta.get("duca_padded_k", -1))
+            if effective != backbone_k or unique != backbone_k or padded != backbone_k:
+                raise RuntimeError(
+                    "DUCA selector/gather/backbone physical budget mismatch"
+                )
+            meta["duca_backbone_input_k"] = backbone_k
+            meta["duca_backbone_input_measurement_source"] = str(
+                contract["measurement_source"]
+            )
+            meta["duca_backbone_input_contract"] = copy.deepcopy(dict(contract))
+        if isinstance(self.last_forward_summary, dict):
+            self.last_forward_summary["backbone_input_k"] = [
+                backbone_k for _ in self._last_physical_metas
+            ]
+            self.last_forward_summary["backbone_input_measurement_source"] = str(
+                contract["measurement_source"]
+            )
+        commit_inference = getattr(
+            self,
+            "_commit_pending_inference_budget_rows",
+            None,
+        )
+        if callable(commit_inference):
+            commit_inference(backbone_k, contract)
+
+    def _commit_pending_inference_budget_rows(
+        self,
+        backbone_k: int,
+        contract: Mapping[str, Any],
+    ) -> None:
+        pending = self._pending_inference_budget_rows
+        if pending is None:
+            return
+        if pending.get("kind") != "protected_fixed_request":
+            raise RuntimeError("protected inference budget ledger is malformed")
+        _emit_protected_inference_ledger(
+            arm=str(pending["arm"]),
+            budget=int(pending["budget"]),
+            metas=pending["metas"],
+            backbone_contract=contract,
+        )
+        self._pending_inference_budget_rows = None
 
     def forward_train(
         self,
@@ -1257,12 +1478,19 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             source_frames,
             valid_mask,
         )
-        if not training:
-            _emit_protected_inference_ledger(
-                arm=self.arm,
-                budget=self.budget,
-                metas=output_metas,
-            )
+        if not training and os.environ.get(
+            "DUCA_RIME_INFERENCE_LEDGER_ROOT", ""
+        ).strip():
+            if self._pending_inference_budget_rows is not None:
+                raise RuntimeError(
+                    "previous protected inference selection never reached the heavy backbone"
+                )
+            self._pending_inference_budget_rows = {
+                "kind": "protected_fixed_request",
+                "arm": self.arm,
+                "budget": self.budget,
+                "metas": copy.deepcopy(output_metas),
+            }
         selector_state.update(
             {
                 "hard_occupancy": hard.hard_occupancy,

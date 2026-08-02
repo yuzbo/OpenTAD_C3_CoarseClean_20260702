@@ -57,6 +57,10 @@ class BackboneWrapper(nn.Module):
         )
         if self.dynamic_temporal_clip_len <= 0:
             raise ValueError("dynamic_temporal_clip_len must be positive")
+        # Set on every real wrapper forward.  Paper-facing selectors consume
+        # this receipt only after the heavy backbone has accepted the tensor;
+        # selector-side planned K is not sufficient physical-cost evidence.
+        self.last_forward_input_contract = None
 
         print("freeze_backbone: {}, norm_eval: {}".format(self.freeze_backbone, self.norm_eval))
 
@@ -77,6 +81,14 @@ class BackboneWrapper(nn.Module):
 
         # snippet: 3D backbone, [bs, T, 3, clip_len, H, W]
         # frame: 3D backbone, [bs, 1, 3, T, H, W]
+
+        self.last_forward_input_contract = None
+        original_shape = tuple(int(value) for value in frames.shape)
+        original_batch = int(frames.shape[0])
+        original_num_segs = int(frames.shape[1]) if frames.ndim == 6 else 1
+        original_temporal_len = (
+            int(frames.shape[3]) if frames.ndim == 6 else int(frames.shape[2])
+        )
 
         # set all normalization layers
         self.set_norm_layer()
@@ -102,6 +114,48 @@ class BackboneWrapper(nn.Module):
         # flatten the batch dimension and num_segs dimension
         batches, num_segs = frames.shape[0:2]
         frames = frames.flatten(0, 1).contiguous()  # [bs*num_seg, ...]
+        if self.dynamic_temporal_bucket:
+            if frames.ndim != 5:
+                raise RuntimeError(
+                    "dynamic temporal backbone boundary must be [BN,C,T,H,W]"
+                )
+            inner_reconstructed_k = (
+                int(frames.shape[0])
+                * int(frames.shape[2])
+                // (original_batch * original_num_segs)
+            )
+            mask_temporal_len = (
+                int(masks.shape[1])
+                if masks is not None and masks.ndim == 2
+                else -1
+            )
+            all_mask_active = bool(
+                masks is not None
+                and masks.numel() > 0
+                and masks.to(dtype=torch.bool).all().item()
+            )
+            if (
+                original_num_segs != 1
+                or original_temporal_len != mask_temporal_len
+                or inner_reconstructed_k != original_temporal_len
+                or not all_mask_active
+            ):
+                raise RuntimeError(
+                    "dynamic heavy-backbone physical input accounting drift"
+                )
+            self.last_forward_input_contract = {
+                "schema_version": "duca_dynamic_backbone_input_v1",
+                "measurement_source": "actual_backbone_wrapper_and_videomae_input_tensors",
+                "wrapper_input_shape": list(original_shape),
+                "wrapper_temporal_k": original_temporal_len,
+                "mask_temporal_k": mask_temporal_len,
+                "all_mask_active": all_mask_active,
+                "inner_backbone_input_shape": [int(value) for value in frames.shape],
+                "inner_temporal_chunk_k": int(frames.shape[2]),
+                "inner_reconstructed_k": inner_reconstructed_k,
+                "num_segs": original_num_segs,
+                "padding_or_repetition_observed": False,
+            }
 
         # go through the video backbone
         if self.freeze_backbone:  # freeze everything even in training

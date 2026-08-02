@@ -32,7 +32,11 @@ for name in \
   DUCA_PAPER_ANNOTATION_PATH \
   DUCA_PAPER_ANNOTATION_SHA256 \
   DUCA_PAPER_CLASS_MAP_PATH \
-  DUCA_PAPER_CLASS_MAP_SHA256; do
+  DUCA_PAPER_CLASS_MAP_SHA256 \
+  DUCA_PAPER_CODE_GATE_RECEIPT \
+  DUCA_PAPER_CODE_GATE_RECEIPT_SHA256 \
+  DUCA_PAPER_SHORT_WINDOW_GATE_JSON \
+  DUCA_PAPER_SHORT_WINDOW_GATE_SHA256; do
   required "${name}"
 done
 
@@ -64,6 +68,22 @@ check_sha256 \
   "${DUCA_PAPER_CLASS_MAP_PATH}" \
   "${DUCA_PAPER_CLASS_MAP_SHA256}" \
   "THUMOS14 class map"
+check_sha256 \
+  "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
+  "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}" \
+  "real natural-short-window heavy-backbone gate"
+check_sha256 \
+  "${DUCA_PAPER_CODE_GATE_RECEIPT}" \
+  "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}" \
+  "clean Linux/PyTorch code gate"
+python -m tools.bata.validate_duca_paper_code_gate \
+  --receipt "${DUCA_PAPER_CODE_GATE_RECEIPT}" \
+  --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  --expected-sha256 "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}"
+python -m tools.bata.validate_duca_paper_short_window_gate \
+  --receipt "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
+  --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  --expected-sha256 "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}"
 
 readarray -t config_values < <(python - \
   "${DUCA_PAPER_MATRIX_MANIFEST}" \
@@ -72,7 +92,11 @@ readarray -t config_values < <(python - \
   "${DUCA_PAPER_SEED}" \
   "${DUCA_PAPER_EXPECTED_COMMIT}" \
   "${DUCA_PAPER_ANNOTATION_SHA256}" \
-  "${DUCA_PAPER_CLASS_MAP_SHA256}" <<'PY'
+  "${DUCA_PAPER_CLASS_MAP_SHA256}" \
+  "${DUCA_PAPER_CODE_GATE_RECEIPT}" \
+  "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}" \
+  "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
+  "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -81,7 +105,19 @@ import sys
 from mmengine.config import Config
 from tools.bata import duca_paper_training
 
-manifest_path, config_path, arm, seed, commit, annotation_sha, class_map_sha = sys.argv[1:]
+(
+    manifest_path,
+    config_path,
+    arm,
+    seed,
+    commit,
+    annotation_sha,
+    class_map_sha,
+    code_gate_path,
+    code_gate_sha,
+    short_gate_path,
+    short_gate_sha,
+) = sys.argv[1:]
 manifest = json.load(open(manifest_path, encoding="utf-8"))
 cfg = Config.fromfile(config_path)
 contract = duca_paper_training.validate_static_config(cfg)
@@ -89,6 +125,12 @@ repo = pathlib.Path.cwd().resolve()
 source = pathlib.Path(config_path).resolve()
 relative = source.relative_to(repo).as_posix()
 record = manifest.get("configs", {}).get(arm, {})
+code_gate = manifest.get("prerequisite_gates", {}).get(
+    "clean_linux_pytorch_code", {}
+)
+short_gate = manifest.get("prerequisite_gates", {}).get(
+    "real_natural_short_window_heavy_backbone", {}
+)
 sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
 resolved = duca_paper_training.canonical_sha256(cfg.to_dict())
 if (
@@ -102,6 +144,16 @@ if (
     or record.get("resolved_sha256") != resolved
     or manifest.get("assets", {}).get("annotation_sha256") != annotation_sha
     or manifest.get("assets", {}).get("class_map_sha256") != class_map_sha
+    or code_gate.get("git_commit") != commit
+    or code_gate.get("status") != "passed"
+    or pathlib.Path(str(code_gate.get("path", ""))).resolve()
+    != pathlib.Path(code_gate_path).resolve()
+    or code_gate.get("sha256") != code_gate_sha
+    or short_gate.get("git_commit") != commit
+    or short_gate.get("status") != "passed"
+    or pathlib.Path(str(short_gate.get("path", ""))).resolve()
+    != pathlib.Path(short_gate_path).resolve()
+    or short_gate.get("sha256") != short_gate_sha
 ):
     raise SystemExit("Stage-A cell differs from the frozen matrix")
 for path, expected, label in (
@@ -153,6 +205,10 @@ python - \
   "${DUCA_PAPER_EXPECTED_COMMIT}" \
   "${DUCA_PAPER_MATRIX_MANIFEST}" \
   "${DUCA_PAPER_MATRIX_MANIFEST_SHA256}" \
+  "${DUCA_PAPER_CODE_GATE_RECEIPT}" \
+  "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}" \
+  "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
+  "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}" \
   "${training_receipt}" <<'PY'
 import hashlib
 import json
@@ -168,10 +224,21 @@ import sys
     commit,
     matrix_path,
     matrix_sha,
+    code_gate_path,
+    code_gate_sha,
+    short_gate_path,
+    short_gate_sha,
     output,
 ) = sys.argv[1:]
 compaction_path = checkpoint_path + ".receipt.json"
-for path in (audit_path, checkpoint_path, compaction_path, matrix_path):
+for path in (
+    audit_path,
+    checkpoint_path,
+    compaction_path,
+    matrix_path,
+    code_gate_path,
+    short_gate_path,
+):
     if not os.path.isfile(path):
         raise SystemExit(f"terminal training evidence is missing: {path}")
 sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
@@ -179,6 +246,8 @@ audit = json.load(open(audit_path, encoding="utf-8"))
 compaction = json.load(open(compaction_path, encoding="utf-8"))
 updates = audit.get("update_audit", {})
 loader = audit.get("train_loader_contract", {})
+budget = audit.get("budget_ledger_summary", {})
+expected_budget_rows = 0 if arm == "dense" else 12000
 if (
     audit.get("status") != "complete"
     or audit.get("git_commit") != commit
@@ -194,15 +263,22 @@ if (
     or int(updates.get("successful_optimizer_updates", -1)) != 6000
     or int(updates.get("scheduler_updates", -1)) != 6000
     or int(updates.get("ema_updates", -1)) != 6000
+    or budget.get("schema_version") != "duca_paper_committed_budget_summary_v1"
+    or budget.get("arm") != arm
+    or int(budget.get("epochs", -1)) != 60
+    or int(budget.get("row_count", -1)) != expected_budget_rows
+    or len(str(budget.get("budget_summary_sha256", ""))) != 64
     or compaction.get("schema_version") != "duca_rime_compact_checkpoint_receipt_v1"
     or compaction.get("status") != "passed"
     or compaction.get("evaluation_equivalent") is not True
     or compaction.get("training_resume_supported") is not False
     or sha(matrix_path) != matrix_sha
+    or sha(code_gate_path) != code_gate_sha
+    or sha(short_gate_path) != short_gate_sha
 ):
     raise SystemExit("terminal training evidence violates the frozen Stage-A contract")
 payload = {
-    "schema_version": "duca_paper_full200_training_receipt_v1",
+    "schema_version": "duca_paper_full200_training_receipt_v2",
     "status": "passed",
     "git_commit": commit,
     "arm": arm,
@@ -213,6 +289,8 @@ payload = {
     "global_batch_size": 2,
     "successful_optimizer_updates": 6000,
     "training_consumed_validation": False,
+    "budget_ledger_summary": budget,
+    "budget_summary_sha256": budget["budget_summary_sha256"],
     "training_audit_path": str(pathlib.Path(audit_path).resolve()),
     "training_audit_sha256": sha(audit_path),
     "checkpoint_path": str(pathlib.Path(checkpoint_path).resolve()),
@@ -223,6 +301,10 @@ payload = {
     "checkpoint_compaction_receipt_sha256": sha(compaction_path),
     "matrix_manifest_path": str(pathlib.Path(matrix_path).resolve()),
     "matrix_manifest_sha256": matrix_sha,
+    "code_gate_path": str(pathlib.Path(code_gate_path).resolve()),
+    "code_gate_sha256": code_gate_sha,
+    "short_window_gate_path": str(pathlib.Path(short_gate_path).resolve()),
+    "short_window_gate_sha256": short_gate_sha,
     "single_seed_claim_allowed": False,
 }
 target = pathlib.Path(output)
@@ -237,6 +319,15 @@ export DUCA_PAPER_TRAINING_RECEIPT="${training_receipt}"
 export DUCA_PAPER_TRAINING_RECEIPT_SHA256="${training_receipt_sha}"
 
 terminal_evaluation="${DUCA_PAPER_CELL_ROOT}/terminal_evaluation.json"
+if [[ "${DUCA_PAPER_ARM}" == dense ]]; then
+  unset DUCA_RIME_INFERENCE_LEDGER_ROOT || true
+  unset DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256 || true
+else
+  export DUCA_RIME_INFERENCE_LEDGER_ROOT="${DUCA_PAPER_CELL_ROOT}/eval_budget_ledger"
+  export DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256="${DUCA_PAPER_MATRIX_MANIFEST_SHA256}"
+  [[ ! -e "${DUCA_RIME_INFERENCE_LEDGER_ROOT}" ]] \
+    || fail "a fresh evaluation budget ledger root is required"
+fi
 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:0 \
   --rdzv-id="${SLURM_JOB_ID}-eval" --nproc_per_node=1 tools/test.py \
   "${DUCA_PAPER_CONFIG}" \
@@ -257,6 +348,10 @@ python - \
   "${DUCA_PAPER_SEED}" \
   "${DUCA_PAPER_EXPECTED_COMMIT}" \
   "${config_values[1]}" \
+  "${DUCA_PAPER_CODE_GATE_RECEIPT}" \
+  "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}" \
+  "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
+  "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}" \
   "${DUCA_PAPER_CELL_ROOT}/cell.receipt.json" <<'PY'
 import hashlib
 import json
@@ -264,13 +359,26 @@ import os
 import pathlib
 import sys
 
-evaluation_path, training_path, arm, seed, commit, expected_k, output = sys.argv[1:]
+(
+    evaluation_path,
+    training_path,
+    arm,
+    seed,
+    commit,
+    expected_k,
+    code_gate_path,
+    code_gate_sha,
+    short_gate_path,
+    short_gate_sha,
+    output,
+) = sys.argv[1:]
 sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
 evaluation = json.load(open(evaluation_path, encoding="utf-8"))
 exact = evaluation.get("exact211_execution", {})
+budget = evaluation.get("budget_execution", {})
 training_identity = evaluation.get("training_identity", {})
 if (
-    evaluation.get("schema_version") != "duca_paper_full211_terminal_evaluation_v1"
+    evaluation.get("schema_version") != "duca_paper_full211_terminal_evaluation_v2"
     or evaluation.get("git_commit") != commit
     or evaluation.get("variant") != arm
     or int(evaluation.get("seed", -1)) != int(seed)
@@ -283,11 +391,20 @@ if (
     or exact.get("official_open_tad_pipeline_completed") is not True
     or int(exact.get("evaluation_video_count", -1)) != 211
     or training_identity.get("training_receipt_sha256") != sha(training_path)
+    or sha(code_gate_path) != code_gate_sha
+    or sha(short_gate_path) != short_gate_sha
+    or budget.get("schema_version") != "duca_paper_exact211_budget_execution_v1"
+    or budget.get("arm") != arm
+    or budget.get("requested_budget_is_dynamic") is not False
+    or (
+        arm != "dense"
+        and len(str(budget.get("window_budget_vector_sha256", ""))) != 64
+    )
     or not isinstance(evaluation.get("metrics"), dict)
 ):
     raise SystemExit("terminal evaluation violates the exact-211 Stage-A contract")
 payload = {
-    "schema_version": "duca_paper_stage_a_cell_receipt_v1",
+    "schema_version": "duca_paper_stage_a_cell_receipt_v2",
     "status": "passed",
     "git_commit": commit,
     "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
@@ -297,6 +414,12 @@ payload = {
     "training_receipt_sha256": sha(training_path),
     "terminal_evaluation_path": str(pathlib.Path(evaluation_path).resolve()),
     "terminal_evaluation_sha256": sha(evaluation_path),
+    "code_gate_path": str(pathlib.Path(code_gate_path).resolve()),
+    "code_gate_sha256": code_gate_sha,
+    "short_window_gate_path": str(pathlib.Path(short_gate_path).resolve()),
+    "short_window_gate_sha256": short_gate_sha,
+    "evaluation_budget_execution_sha256": budget["content_sha256"],
+    "window_budget_vector_sha256": budget.get("window_budget_vector_sha256"),
     "exact_train_video_count": 200,
     "exact_evaluation_video_count": 211,
     "paper_claim_ready": False,

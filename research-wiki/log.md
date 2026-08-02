@@ -1,5 +1,50 @@
 # Research Log
 
+## 2026-08-03 — Stage-A natural-short-window corrigendum accepted and implemented
+
+- Fully read and hash-registered `U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1` (SHA-256
+  `20901b2f5acd8da44f00aa0a2b86985ec59670855f211643ca4707888291058f`).
+  Its `IMPLEMENT` verdict is accepted with two repository/cluster realizations:
+  q=16 sub-quantum windows fail closed, and the twelve logical cells use a
+  seven-job scheduler DAG to respect `MaxSubmitJobs=16`.
+- The mixed schedule remains `(8,12,16,24)` over requested
+  `(192,256,384,512)` with nominal requested mean 384. Natural windows use
+  `K_eff=min(K_req,floor(L/16)*16)`; actual execution must prove
+  `K_backbone=K_unique=K_eff<=K_req`. Padding, repetition, video deletion and
+  length-conditioned requests remain prohibited.
+- Implemented separate requested/feasible/unique/backbone accounting,
+  successful-update-only and AMP-retry-safe training ledgers, actual
+  BackboneWrapper/inner-VideoMAE tensor receipts, exact-211 evaluation ledger
+  checks, and a real full-data natural-short-window heavy-backbone Slurm gate.
+  The corrected matrix manifest cannot be created without that gate receipt.
+- The fresh scheduler shape is three per-seed sequential control jobs, three
+  independent per-seed DUCA jobs and one dependent seal. The old `2df0103e`
+  transaction and its six unopened partial receipts remain immutable and cannot
+  be reused. No metric has been read; Stage B remains sealed.
+- Evidence level is currently `implemented`; final local checks, independent
+  audit, exact-clean Linux/Slurm verification and fresh deployment are pending.
+- Final local non-Torch verification passed `15` tests with one Linux-only loader
+  test skipped. The local Windows Torch runtime remains unusable because
+  `c10.dll` initialization fails, so selector/detector Torch status is deferred
+  to the authoritative Slurm gate.
+- Two independent read-only audits verified the actual selector/gather/backbone
+  K chain and the scoped real-data preflight. Their valid hardening suggestions
+  were implemented: every training/cell/matrix/submission receipt now binds the
+  short-window gate hash, the old `2df0103e` source and root are explicitly
+  rejected, and the final released submission receipt has a SHA-256 sidecar.
+- Deployment-order review found a P0 circular dependency in the old code-gate
+  launcher: it tried to create a formal manifest before the new prerequisite
+  gate existed. The launcher now performs only clean Linux/PyTorch verification
+  and records `short_window_gate_pending=true`; the enforced order is code gate,
+  real natural-short-window gate, new manifest/root, then seven-job release.
+- A final chain audit found that ordering was initially procedural rather than
+  receipt-enforced. Added a standalone clean-code-gate validator; the short-window
+  gate now consumes that exact commit/hash-bound receipt, and the manifest,
+  submission, training, cell and seal receipts bind both prerequisite hashes.
+- Post-repair independent audit returned `GO` with no P0/P1: all heredoc argument
+  mappings align, the two-gate chain is non-bypassable and acyclic, the seven-job
+  DAG is isolated, the old source/root are denied and Stage B remains sealed.
+
 ## 2026-08-02 — Full-data Stage A failed closed on mixed-K short windows
 
 - Seed jobs `1213712` (5801), `1213713` (8123), and `1213714` (12011) all

@@ -12,7 +12,7 @@
 | P-EVATOK-1 | `https://openaccess.thecvf.com/content/CVPR2026/html/Xiong_EVATok_Adaptive_Length_Video_Tokenization_for_Efficient_Visual_Autoregressive_Generation_CVPR_2026_paper.html` | official EVATok paper page | directly verified |
 | C-EVATOK-1 | `https://github.com/HKU-MMLab/EVATok` | official EVATok repository | directly verified |
 | LOCAL-SPEC-1 | `docs/superpowers/specs/2026-07-27-duca-total60-prebackbone-plugin-cvpr-design.md` | superseded foundation specification | retained |
-| LOCAL-DESIGN-2 | `docs/methods/2026-07-28-duca-rime-mixed-k-baseline-design.md` | frozen U-mixed-K design | incompatible with full-200 natural short windows; corrigendum required |
+| LOCAL-DESIGN-2 | `docs/methods/2026-07-28-duca-rime-mixed-k-baseline-design.md` | frozen U-mixed-K design | amended by the accepted full-200 natural-short-window corrigendum |
 | LOCAL-DESIGN-3 | `docs/superpowers/specs/2026-07-28-hrime-v1-budget-conserving-design.md` | corrected, user-approved H-RIME v1 specification | active |
 | REMOTE-RIME-V6-GATE-1 | `/data/run01/sczc063/yuzibo/rime_runs/duca_rime_recovery_5a599e90_20260729_003600/logs/rime-phase1-1201417.out`, SHA-256 `0b9aedc943139e024939fa16bf5cf3007c7ae387e74f04bdae823551e3baee29` | immutable Recovery-v6 protected-gate failure evidence | directly verified; insufficient to identify offending loss component |
 | LOCAL-GATE-DIAG-1 | Git commit `69136de3ed8d8f977c78cfe5258dae3d57f7e238` | fail-closed coordinate/loss diagnostic remediation | implemented; focused local suite passed; published on `codex/duca-rime-20260727` |
@@ -24,6 +24,7 @@
 | P-OWEN-ECKLES-1 | `https://arxiv.org/abs/1106.2125`; published as `https://doi.org/10.1214/12-AOAS547` | primary source for product reweighting of crossed arrays | directly verified; supports independent factor product weights and qualified mild conservatism, not the proposed `sqrt(V/(V-1))*sqrt(P/(P-1))` scalar |
 | C-OPENTAD-THUMOS-SPLIT-1 | `tools/prepare_data/thumos/README.md`; upstream `https://github.com/sming256/OpenTAD/blob/main/tools/prepare_data/thumos/README.md` | OpenTAD THUMOS evaluation-set definition | directly verified; two malformed/empty test videos excluded, complete registered evaluation set is 211 videos |
 | REMOTE-DUCA-PAPER-STAGEA-SHORT-K-1 | production logs for jobs `1213712/1213713/1213714` under `/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_2df0103e_20260802_120351/logs/`; SHA-256 `9ed49fa701b13c99960c0ef5fa88e597021120fe16bc3d810ad60c6293ff0879`, `dae2a78d35157b4d6efdc93c31e9f7452789ae69c263b819ac1b3fe404c6e0da`, `604aa86707635f00c93de7d8af526fa9b1356e94371ca2eca3a07d66f513217a` | immutable full-data Stage-A mixed-K failure evidence | directly verified; three-seed same signature; no metric opened |
+| U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1 | `C:/Users/skywalker/.codex/attachments/30209464-0948-4e0f-8818-3952057cfeac/pasted-text.txt`; SHA-256 `20901b2f5acd8da44f00aa0a2b86985ec59670855f211643ca4707888291058f`; 33,303 bytes | final Stage-A uniform mixed-K natural-short-window protocol adjudication | fully read; `IMPLEMENT` accepted with repository-derived q=16 sub-quantum fail-closed and seven-job scheduler realization |
 
 `U-PRO-CBCG-1` was read in full. Its route analysis is retained as an external
 review, not as repository truth. Its linked `sandbox:/mnt/data/...` Patch A,

@@ -4,10 +4,12 @@
 
 - Decision: `user_approved`
 - Design: `designed`
-- Implementation: `implemented`
-- Local focused verification: `11_passed / 1_Linux_loader_test_skipped_on_Windows`
-- Authoritative Linux/Slurm verification: `passed / job_1213711 / 37_tests`
-- Experiment: `failed_closed / three_seed_jobs_failed / seal_cancelled`
+- Short-window corrigendum: `user_approved / U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1`
+- Implementation: `corrigendum_implemented_locally`
+- Local focused verification: `15_passed / 1_Linux_loader_test_skipped_on_Windows / Torch_tests_blocked_by_local_c10_DLL`
+- Independent read-only audit: `selector_tensor_chain_GO / enforced_two_gate_dependency_chain_GO / no_P0_or_P1`
+- Authoritative Linux/Slurm verification: `old_source_passed_1213711 / corrected_source_pending`
+- Experiment: `old_transaction_failed_immutable / corrected_transaction_not_yet_released`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
 
@@ -25,7 +27,7 @@ Four arms use seeds `5801`, `8123`, and `12011`:
 1. dense ActionFormer at T=768;
 2. exact-uniform fixed K384;
 3. stateless mixed-K training with exposure counts `(8,12,16,24)` over
-   `(192,256,384,512)`, evaluated at exact-uniform K384;
+   requested budgets `(192,256,384,512)`, evaluated with fixed requested K384;
 4. DUCA jointly optimized ASFormer evidence with learned fixed K384 positions.
 
 Every cell trains on all 200 `training` videos with two-process DDP, global
@@ -37,6 +39,15 @@ The mixed-K arm is a detector-robustness training control. It is not a dynamic
 inference method. The DUCA ASFormer frontend is jointly trained from the 200
 training videos and is not a frozen external checkpoint; its scan cost belongs
 to full-stack DUCA cost.
+
+The approved natural-short-window rule separates `K_req`, `K_eff`, `K_unique`
+and `K_backbone`. For valid length `L`,
+`K_eff=min(K_req,floor(L/16)*16)` and physical execution must satisfy
+`K_backbone=K_unique=K_eff<=K_req`. The schedule and its nominal mean 384 refer
+to `K_req`; realized cost is measured and reported separately. No frame
+repetition, tail padding, video exclusion or length-conditioned request is
+allowed. Fixed requested-K384 evaluation with this common cap remains a fixed
+policy, not dynamic inference. A sub-quantum `L<16` window fails closed.
 
 ## Implemented evidence chain
 
@@ -50,12 +61,12 @@ to full-stack DUCA cost.
 - exact 211 prediction keys plus executed merge/NMS/evaluator receipt;
 - transactional held submission for 12 cells and one dependent matrix seal.
 
-The primary scheduler representation is three two-GPU seed jobs. Each seed job
-executes the same four logical cells sequentially, followed by one dependent
-seal job. This four-job grouping exists only to satisfy the account's immutable
-`MaxSubmitJobs=16` while other user-owned jobs are active. It does not share
-weights, RNG state, work directories or receipts across logical cells and does
-not change the frozen 12-cell scientific matrix.
+The corrected scheduler representation is seven jobs: three per-seed control
+jobs sequentially execute dense, fixed-uniform and mixed-uniform cells; three
+independent per-seed jobs execute DUCA; one dependent job seals all twelve
+logical cells. This grouping satisfies `MaxSubmitJobs=16`, does not share
+weights, RNG state, work directories or receipts, and prevents a mixed-control
+failure from suppressing the learned DUCA arm.
 
 The exact deployed source is commit
 `2df0103ec1c26ff7cff7ed15f399e78e640df211`. Authoritative gate job `1213711`
@@ -87,15 +98,34 @@ respectively, `9ed49fa701b13c99960c0ef5fa88e597021120fe16bc3d810ad60c6293ff0879`
 `dae2a78d35157b4d6efdc93c31e9f7452789ae69c263b819ac1b3fe404c6e0da`, and
 `604aa86707635f00c93de7d8af526fa9b1356e94371ca2eca3a07d66f513217a`.
 
-This is not eligible for bounded automatic repair. The frozen mixed-K design
-requires every requested K to execute exactly and rejects both short-window
+At the time of failure this was not eligible for bounded automatic repair. The
+then-frozen mixed-K design
+required every requested K to execute exactly and rejected both short-window
 effective-K shrinkage and padding. The paper protocol simultaneously requires
 all 200 training videos, which necessarily includes short windows. Allowing
 quantum-aligned effective-K aliases would change the registered actual exposure
 and mean-heavy-K semantics; excluding short videos or padding would change the
-data or no-padding contract. A scientific protocol decision is therefore
+data or no-padding contract. A scientific protocol decision was therefore
 required before a fresh transaction. Six earlier dense/uniform cell receipts
 exist, but the matrix is incomplete and no metric from them has been opened.
+
+That scientific decision is now supplied by
+`U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1`. The repository implementation removes the
+contradictory exact-requested guard, preserves all four K meanings, commits
+budget rows only after successful optimizer steps, and binds formal accounting
+to actual heavy-backbone tensors. A clean-commit Linux test gate and a separate
+real-data natural-short-window selector-to-heavy-backbone Slurm gate are required
+before a fresh hash-bound seven-job transaction can be released. No artifact of
+the old transaction may satisfy either prerequisite or any new matrix cell.
+
+The clean Linux code gate deliberately does not create a matrix manifest. It
+runs the focused Torch/contract suite and emits a code-only receipt declaring
+the real short-window gate pending. Only after that second Slurm gate passes may
+the grouped submitter create the gate-bound manifest and release cells. This
+ordering prevents a circular prerequisite and matches the approved sequence.
+The short-window runner must consume and validate the exact code-gate receipt;
+both prerequisite hashes are then frozen into the manifest and propagated into
+training, cell, submission and matrix receipts, so neither gate can be skipped.
 
 No single cell, seed, intermediate checkpoint or incomplete matrix may support a
 performance statement. Until all twelve terminal receipts pass, the status is

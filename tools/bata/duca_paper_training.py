@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -11,11 +12,20 @@ from typing import Any
 from tools.bata import duca_p0_training as legacy
 
 
-FORMAL_PROTOCOL = "duca_paper_full200_actionformer_v1"
-MATRIX_SCHEMA = "duca_paper_full200_matrix_v1"
-TRAINING_RECEIPT_SCHEMA = "duca_paper_full200_training_receipt_v1"
-EVALUATION_SCHEMA = "duca_paper_full211_terminal_evaluation_v1"
+FORMAL_PROTOCOL = "duca_paper_full200_actionformer_v2"
+MATRIX_SCHEMA = "duca_paper_full200_matrix_v2"
+TRAINING_RECEIPT_SCHEMA = "duca_paper_full200_training_receipt_v2"
+EVALUATION_SCHEMA = "duca_paper_full211_terminal_evaluation_v2"
 DUCA_TRAINING_AUDIT_FILENAME = "duca_paper_training_audit.json"
+BUDGET_SEMANTICS = "requested_then_deterministic_feasibility_shrink_v1"
+BUDGET_EPOCH_SCHEMA = "duca_paper_committed_budget_epoch_v1"
+BUDGET_SUMMARY_SCHEMA = "duca_paper_committed_budget_summary_v1"
+EVALUATION_BUDGET_SCHEMA = "duca_paper_exact211_budget_execution_v1"
+EXECUTION_QUANTUM = 16
+MIXED_K_CANDIDATES = (192, 256, 384, 512)
+MIXED_K_COUNTS = (8, 12, 16, 24)
+MIXED_K_SEED = 3407
+MIXED_K_NOMINAL_REQUESTED_MEAN = 384.0
 ARMS = (
     "dense",
     "uniform_fixed_k384",
@@ -51,6 +61,42 @@ def _canonical_sha256(value: Any) -> str:
 
 
 canonical_sha256 = legacy.canonical_sha256
+
+
+def mixed_k_requested_schedule() -> tuple[int, ...]:
+    tokens = [
+        (
+            hashlib.sha256(
+                f"{MIXED_K_SEED}|{budget}|{occurrence}".encode("utf-8")
+            ).digest(),
+            budget,
+        )
+        for budget, count in zip(MIXED_K_CANDIDATES, MIXED_K_COUNTS)
+        for occurrence in range(count)
+    ]
+    tokens.sort(key=lambda item: item[0])
+    cycle = tuple(int(budget) for _digest, budget in tokens)
+    if (
+        len(cycle) != sum(MIXED_K_COUNTS)
+        or tuple(cycle.count(value) for value in MIXED_K_CANDIDATES)
+        != MIXED_K_COUNTS
+        or sum(cycle) / len(cycle) != MIXED_K_NOMINAL_REQUESTED_MEAN
+    ):
+        raise RuntimeError("DUCA paper mixed-K requested schedule drift")
+    return cycle
+
+
+def mixed_k_requested_schedule_sha256() -> str:
+    return _canonical_sha256(
+        {
+            "candidate_budgets": MIXED_K_CANDIDATES,
+            "candidate_costs": tuple(float(value) for value in MIXED_K_CANDIDATES),
+            "schedule_counts": MIXED_K_COUNTS,
+            "schedule_seed": MIXED_K_SEED,
+            "cycle": mixed_k_requested_schedule(),
+            "target_mean_cost": MIXED_K_NOMINAL_REQUESTED_MEAN,
+        }
+    )
 
 
 def _sha256_file(path: str | Path) -> str:
@@ -107,6 +153,25 @@ def validate_static_config(cfg) -> dict[str, Any]:
     arm = str(cell.get("arm", ""))
     if arm not in ARMS:
         raise ValueError(f"DUCA paper arm is not registered: {arm}")
+    budget_contract = cfg.get("duca_paper_budget_contract", None)
+    if (
+        not isinstance(budget_contract, Mapping)
+        or str(budget_contract.get("semantics", "")) != BUDGET_SEMANTICS
+        or int(budget_contract.get("execution_quantum", -1)) != EXECUTION_QUANTUM
+        or str(budget_contract.get("valid_length_definition", ""))
+        != "contiguous_true_dense_candidate_prefix"
+        or str(budget_contract.get("subquantum_policy", ""))
+        != "fail_closed_below_one_quantum"
+        or budget_contract.get("padding_or_repetition_allowed", None) is not False
+        or budget_contract.get("length_conditioned_requested_schedule", None)
+        is not False
+        or budget_contract.get(
+            "fixed_requested_k384_evaluation_is_dynamic",
+            None,
+        )
+        is not False
+    ):
+        raise ValueError("DUCA paper requested/effective budget semantics drift")
 
     train = cfg.dataset.train
     test = cfg.dataset.test
@@ -190,11 +255,14 @@ def validate_static_config(cfg) -> dict[str, Any]:
             str(_config_value(selector, "type", "")) != "DucaRimeFrameSelector"
             or str(_config_value(selector, "rime_arm", "")) != "uniform_mixed_k"
             or tuple(int(v) for v in _config_value(selector, "candidate_budgets", ()))
-            != (192, 256, 384, 512)
+            != MIXED_K_CANDIDATES
             or tuple(int(v) for v in _config_value(selector, "mixed_k_schedule_counts", ()))
-            != (8, 12, 16, 24)
-            or int(_config_value(selector, "mixed_k_schedule_seed", -1)) != 3407
+            != MIXED_K_COUNTS
+            or int(_config_value(selector, "mixed_k_schedule_seed", -1))
+            != MIXED_K_SEED
             or int(_config_value(selector, "fixed_budget", -1)) != 384
+            or int(_config_value(selector, "execution_quantum", -1))
+            != EXECUTION_QUANTUM
             or _config_value(selector, "actionness_source_cfg", object()) is not None
             or str(_config_value(selector, "detector_coordinate_mode", ""))
             != "selected_axis_plugin"
@@ -202,7 +270,10 @@ def validate_static_config(cfg) -> dict[str, Any]:
             or int(backbone.backbone.total_frames) != 512
             or int(projection.max_seq_len) != 512
             or physical_head is not None
-            or float(cell.get("training_mean_heavy_k", -1)) != 384.0
+            or float(cell.get("nominal_requested_mean_k", -1))
+            != MIXED_K_NOMINAL_REQUESTED_MEAN
+            or str(cell.get("realized_training_mean_k", ""))
+            != "measured_from_committed_backbone_rows"
             or int(cell.get("evaluation_heavy_k", -1)) != 384
         )
         selector_schedule_enabled = True
@@ -249,6 +320,13 @@ def validate_static_config(cfg) -> dict[str, Any]:
             SUCCESSFUL_UPDATES if selector_schedule_enabled else 0
         ),
         "checkpoint_retention": 1,
+        "budget_semantics": BUDGET_SEMANTICS,
+        "execution_quantum": EXECUTION_QUANTUM,
+        "mixed_k_requested_schedule_sha256": (
+            mixed_k_requested_schedule_sha256()
+            if arm == "uniform_mixed_train_k384_eval"
+            else None
+        ),
     }
 
 
@@ -479,6 +557,76 @@ def _validate_matrix_manifest(
         or manifest.get("training_consumes_validation", None) is not False
     ):
         raise RuntimeError("DUCA paper matrix manifest contract drift")
+    budget = manifest.get("budget_semantics", {})
+    mixed = budget.get("mixed_k", {}) if isinstance(budget, Mapping) else {}
+    if (
+        budget.get("version") != BUDGET_SEMANTICS
+        or int(budget.get("execution_quantum", -1)) != EXECUTION_QUANTUM
+        or budget.get("padding_or_repetition_allowed", None) is not False
+        or budget.get("length_conditioned_requested_schedule", None) is not False
+        or budget.get("fixed_requested_k384_evaluation_is_dynamic", None)
+        is not False
+        or tuple(int(value) for value in mixed.get("candidate_budgets", ()))
+        != MIXED_K_CANDIDATES
+        or tuple(int(value) for value in mixed.get("schedule_counts", ()))
+        != MIXED_K_COUNTS
+        or int(mixed.get("schedule_seed", -1)) != MIXED_K_SEED
+        or tuple(int(value) for value in mixed.get("cycle", ()))
+        != mixed_k_requested_schedule()
+        or mixed.get("schedule_sha256") != mixed_k_requested_schedule_sha256()
+        or float(mixed.get("nominal_requested_mean_k", -1))
+        != MIXED_K_NOMINAL_REQUESTED_MEAN
+    ):
+        raise RuntimeError("DUCA paper matrix budget semantics drift")
+    prerequisite_gates = manifest.get("prerequisite_gates", {})
+    code_gate = prerequisite_gates.get("clean_linux_pytorch_code")
+    code_gate_path = (
+        Path(str(code_gate.get("path", ""))).expanduser().resolve()
+        if isinstance(code_gate, Mapping)
+        else None
+    )
+    if (
+        not isinstance(code_gate, Mapping)
+        or code_gate.get("schema_version") != "duca_paper_clean_linux_code_gate_v2"
+        or code_gate.get("status") != "passed"
+        or code_gate.get("git_commit") != git_commit
+        or code_gate.get("claim_scope")
+        != "engineering_clean_linux_pytorch_code_only"
+        or code_gate.get("performance_evidence") is not False
+        or code_gate_path is None
+        or not code_gate_path.is_file()
+        or code_gate.get("sha256") != _sha256_file(code_gate_path)
+        or str(code_gate_path)
+        != str(
+            Path(os.environ.get("DUCA_PAPER_CODE_GATE_RECEIPT", ""))
+            .expanduser()
+            .resolve()
+        )
+        or code_gate.get("sha256")
+        != os.environ.get("DUCA_PAPER_CODE_GATE_RECEIPT_SHA256")
+    ):
+        raise RuntimeError("DUCA paper clean Linux prerequisite gate drift")
+    gate = prerequisite_gates.get(
+        "real_natural_short_window_heavy_backbone"
+    )
+    gate_path = Path(str(gate.get("path", ""))).expanduser().resolve() if isinstance(gate, Mapping) else None
+    if (
+        not isinstance(gate, Mapping)
+        or gate.get("schema_version")
+        != "duca_paper_real_short_window_heavy_backbone_gate_v1"
+        or gate.get("status") != "passed"
+        or gate.get("git_commit") != git_commit
+        or gate.get("claim_scope") != "engineering_short_window_execution_only"
+        or gate.get("performance_evidence") is not False
+        or gate_path is None
+        or not gate_path.is_file()
+        or gate.get("sha256") != _sha256_file(gate_path)
+        or str(gate_path)
+        != str(Path(os.environ.get("DUCA_PAPER_SHORT_WINDOW_GATE_JSON", "")).expanduser().resolve())
+        or gate.get("sha256")
+        != os.environ.get("DUCA_PAPER_SHORT_WINDOW_GATE_SHA256")
+    ):
+        raise RuntimeError("DUCA paper short-window prerequisite gate drift")
     record = manifest.get("configs", {}).get(arm)
     repo_root = Path(__file__).resolve().parents[2]
     source = Path(source_config_path).expanduser().resolve()
@@ -598,6 +746,285 @@ def selector_schedule_step(model) -> int:
     raise RuntimeError("DUCA paper model exposes an unregistered selector")
 
 
+def _expected_effective_k(requested_k: int, dense_valid_len: int) -> int:
+    requested = int(requested_k)
+    valid_len = int(dense_valid_len)
+    available = valid_len - valid_len % EXECUTION_QUANTUM
+    effective = min(requested, available)
+    effective -= effective % EXECUTION_QUANTUM
+    if effective <= 0:
+        raise RuntimeError(
+            "DUCA paper natural window is shorter than one execution quantum"
+        )
+    return effective
+
+
+def build_epoch_budget_audit(
+    *,
+    arm: str,
+    epoch: int,
+    rows: list[Mapping[str, Any]],
+    ordered_video_ids: list[str] | tuple[str, ...],
+) -> dict[str, Any]:
+    arm = str(arm)
+    epoch = int(epoch)
+    if arm == "dense":
+        if rows:
+            raise RuntimeError("dense Stage-A arm cannot expose selector budget rows")
+        return {
+            "schema_version": BUDGET_EPOCH_SCHEMA,
+            "arm": arm,
+            "epoch": epoch,
+            "mode": "dense_temporal_axis",
+            "row_count": 0,
+            "nominal_backbone_input_k": 768,
+            "budget_semantics": "dense_t768_reference",
+            "rows": [],
+            "rows_sha256": _canonical_sha256([]),
+        }
+    if arm not in ARMS:
+        raise RuntimeError("DUCA paper budget audit received an unknown arm")
+    if len(rows) != TRAIN_VIDEO_COUNT or len(ordered_video_ids) != TRAIN_VIDEO_COUNT:
+        raise RuntimeError(
+            "DUCA paper epoch budget audit must cover exactly 200 training videos"
+        )
+    schedule = mixed_k_requested_schedule()
+    normalized = []
+    observed_indices = set()
+    for source in rows:
+        row = dict(source)
+        if row.get("schema_version") != "duca_paper_committed_budget_row_v1":
+            raise RuntimeError("DUCA paper committed budget row schema drift")
+        row_epoch = int(row.get("duca_stateless_epoch", -1))
+        sample_index = int(row.get("duca_stateless_sample_index", -1))
+        video_id = str(row.get("video_id", ""))
+        valid_len = int(row.get("dense_valid_len", -1))
+        requested = int(row.get("requested_k", -1))
+        effective = int(row.get("effective_k", -1))
+        unique = int(row.get("unique_k", -1))
+        backbone = int(row.get("backbone_input_k", -1))
+        backbone_source = str(
+            row.get("backbone_input_measurement_source", "")
+        )
+        backbone_contract_sha256 = str(
+            row.get("backbone_input_contract_sha256", "")
+        )
+        padded = int(row.get("padded_k", -1))
+        quantum = int(row.get("execution_quantum", -1))
+        selected = [int(value) for value in row.get("selected_dense_indices", ())]
+        expected_requested = (
+            int(schedule[(epoch + sample_index) % len(schedule)])
+            if arm == "uniform_mixed_train_k384_eval"
+            else 384
+        )
+        expected_effective = _expected_effective_k(expected_requested, valid_len)
+        if (
+            row_epoch != epoch
+            or sample_index < 0
+            or sample_index >= TRAIN_VIDEO_COUNT
+            or sample_index in observed_indices
+            or video_id != str(ordered_video_ids[sample_index])
+            or quantum != EXECUTION_QUANTUM
+            or row.get("budget_semantics") != BUDGET_SEMANTICS
+            or requested != expected_requested
+            or effective != expected_effective
+            or unique != expected_effective
+            or backbone != expected_effective
+            or backbone_source
+            != "actual_backbone_wrapper_and_videomae_input_tensors"
+            or re.fullmatch(r"[0-9a-f]{64}", backbone_contract_sha256) is None
+            or padded != expected_effective
+            or len(selected) != expected_effective
+            or selected != sorted(set(selected))
+            or any(value < 0 or value >= valid_len for value in selected)
+        ):
+            raise RuntimeError(
+                "DUCA paper committed budget row violates its frozen natural-window "
+                "requested/effective/backbone contract"
+            )
+        observed_indices.add(sample_index)
+        normalized.append(
+            {
+                "rank": int(row.get("rank", -1)),
+                "video_id": video_id,
+                "window_start_frame": int(row.get("window_start_frame", 0)),
+                "duca_stateless_epoch": epoch,
+                "duca_stateless_sample_index": sample_index,
+                "dense_valid_len": valid_len,
+                "execution_quantum": quantum,
+                "requested_k": requested,
+                "effective_k": effective,
+                "unique_k": unique,
+                "backbone_input_k": backbone,
+                "backbone_input_measurement_source": backbone_source,
+                "backbone_input_contract_sha256": backbone_contract_sha256,
+                "padded_k": padded,
+                "selected_dense_indices_sha256": _canonical_sha256(selected),
+            }
+        )
+    if observed_indices != set(range(TRAIN_VIDEO_COUNT)):
+        raise RuntimeError("DUCA paper epoch budget rows do not cover indices 0..199")
+    normalized.sort(key=lambda row: int(row["duca_stateless_sample_index"]))
+    requested_histogram = Counter(int(row["requested_k"]) for row in normalized)
+    effective_histogram = Counter(int(row["effective_k"]) for row in normalized)
+    return {
+        "schema_version": BUDGET_EPOCH_SCHEMA,
+        "arm": arm,
+        "epoch": epoch,
+        "mode": "selector_no_padding_backbone_execution",
+        "budget_semantics": BUDGET_SEMANTICS,
+        "execution_quantum": EXECUTION_QUANTUM,
+        "row_count": len(normalized),
+        "requested_histogram": {
+            str(key): requested_histogram[key] for key in sorted(requested_histogram)
+        },
+        "effective_histogram": {
+            str(key): effective_histogram[key] for key in sorted(effective_histogram)
+        },
+        "observed_requested_mean_k": sum(requested_histogram.elements())
+        / len(normalized),
+        "realized_backbone_mean_k": sum(
+            int(row["backbone_input_k"]) for row in normalized
+        )
+        / len(normalized),
+        "rows": normalized,
+        "rows_sha256": _canonical_sha256(normalized),
+    }
+
+
+def collect_epoch_budget_audit(
+    *,
+    model,
+    contract: Mapping[str, Any],
+    epoch: int,
+) -> dict[str, Any]:
+    import torch.distributed as dist
+
+    arm = str(contract.get("variant", ""))
+    module = getattr(model, "module", model)
+    selector = getattr(module, "frame_selector", None)
+    local_rows: list[dict[str, Any]] = []
+    if selector is not None:
+        drain = getattr(selector, "drain_committed_budget_rows", None)
+        if not callable(drain):
+            raise RuntimeError("DUCA paper selector lacks committed budget rows")
+        local_rows = [dict(row) for row in drain()]
+    if not dist.is_available() or not dist.is_initialized():
+        if int(contract.get("world_size", -1)) != 1:
+            raise RuntimeError("DUCA paper budget audit requires initialized DDP")
+        gathered = [local_rows]
+    else:
+        if dist.get_world_size() != WORLD_SIZE:
+            raise RuntimeError("DUCA paper budget audit requires two DDP ranks")
+        gathered = [None for _ in range(WORLD_SIZE)]
+        dist.all_gather_object(gathered, local_rows)
+    rows = []
+    for rank, rank_rows in enumerate(gathered):
+        if not isinstance(rank_rows, list):
+            raise RuntimeError("DUCA paper gathered budget rows are malformed")
+        for source in rank_rows:
+            row = dict(source)
+            row["rank"] = rank
+            rows.append(row)
+    loader = contract.get("train_loader_contract")
+    ordered_video_ids = (
+        loader.get("dataset", {}).get("ordered_video_ids", ())
+        if isinstance(loader, Mapping)
+        else ()
+    )
+    return build_epoch_budget_audit(
+        arm=arm,
+        epoch=epoch,
+        rows=rows,
+        ordered_video_ids=ordered_video_ids,
+    )
+
+
+def summarize_budget_epoch_records(
+    *,
+    arm: str,
+    epoch_records: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    audits = [dict(record.get("budget_audit", {})) for record in epoch_records]
+    if any(audit.get("schema_version") != BUDGET_EPOCH_SCHEMA for audit in audits):
+        raise RuntimeError("DUCA paper epoch budget evidence is incomplete")
+    if arm == "dense":
+        if any(
+            audit.get("mode") != "dense_temporal_axis"
+            or int(audit.get("nominal_backbone_input_k", -1)) != 768
+            for audit in audits
+        ):
+            raise RuntimeError("DUCA paper dense budget evidence drift")
+        payload = {
+            "schema_version": BUDGET_SUMMARY_SCHEMA,
+            "arm": arm,
+            "mode": "dense_temporal_axis",
+            "epochs": len(audits),
+            "row_count": 0,
+            "nominal_backbone_input_k": 768,
+            "budget_semantics": "dense_t768_reference",
+            "epoch_rows_sha256": [audit["rows_sha256"] for audit in audits],
+        }
+    else:
+        rows = [row for audit in audits for row in audit.get("rows", ())]
+        expected_count = len(audits) * TRAIN_VIDEO_COUNT
+        if len(rows) != expected_count:
+            raise RuntimeError("DUCA paper aggregate budget row count drift")
+        requested_histogram = Counter(int(row["requested_k"]) for row in rows)
+        effective_histogram = Counter(int(row["effective_k"]) for row in rows)
+        cross = Counter(
+            (int(row["requested_k"]), int(row["effective_k"])) for row in rows
+        )
+        shrink_count = sum(
+            1 for row in rows if int(row["effective_k"]) < int(row["requested_k"])
+        )
+        payload = {
+            "schema_version": BUDGET_SUMMARY_SCHEMA,
+            "arm": arm,
+            "mode": "selector_no_padding_backbone_execution",
+            "budget_semantics": BUDGET_SEMANTICS,
+            "execution_quantum": EXECUTION_QUANTUM,
+            "epochs": len(audits),
+            "row_count": len(rows),
+            "nominal_requested_mean_k": MIXED_K_NOMINAL_REQUESTED_MEAN,
+            "observed_requested_mean_k": sum(
+                int(row["requested_k"]) for row in rows
+            )
+            / len(rows),
+            "realized_effective_mean_k": sum(
+                int(row["effective_k"]) for row in rows
+            )
+            / len(rows),
+            "realized_backbone_mean_k": sum(
+                int(row["backbone_input_k"]) for row in rows
+            )
+            / len(rows),
+            "requested_histogram": {
+                str(key): requested_histogram[key]
+                for key in sorted(requested_histogram)
+            },
+            "effective_histogram": {
+                str(key): effective_histogram[key]
+                for key in sorted(effective_histogram)
+            },
+            "requested_effective_crosstab": {
+                f"{requested}->{effective}": cross[(requested, effective)]
+                for requested, effective in sorted(cross)
+            },
+            "feasibility_shrink_count": shrink_count,
+            "feasibility_shrink_rate": shrink_count / len(rows),
+            "mixed_k_requested_schedule_sha256": (
+                mixed_k_requested_schedule_sha256()
+                if arm == "uniform_mixed_train_k384_eval"
+                else None
+            ),
+            "epoch_rows_sha256": [audit["rows_sha256"] for audit in audits],
+            "all_rows_sha256": _canonical_sha256(rows),
+        }
+    payload["budget_summary_sha256"] = _canonical_sha256(payload)
+    return payload
+
+
 def validate_update_state(
     *,
     contract: Mapping[str, Any],
@@ -663,6 +1090,10 @@ def build_training_audit(
     )
     if len(epoch_records) != int(epoch) + 1:
         raise RuntimeError("DUCA paper epoch records are incomplete")
+    budget_ledger_summary = summarize_budget_epoch_records(
+        arm=str(contract["variant"]),
+        epoch_records=epoch_records,
+    )
     payload = {
         "schema_version": legacy.DUCA_P0_TRAINING_AUDIT_SCHEMA,
         "status": "complete" if complete else "in_progress",
@@ -684,6 +1115,7 @@ def build_training_audit(
         "scheduler_last_epoch": int(scheduler_last_epoch),
         "selector_schedule_step": int(selector_step),
         "grad_scaler_scale": None if scaler_scale is None else float(scaler_scale),
+        "budget_ledger_summary": budget_ledger_summary,
         "epoch_records": [dict(item) for item in epoch_records],
     }
     payload["audit_sha256"] = _canonical_sha256(payload)
@@ -841,6 +1273,21 @@ def validate_terminal_checkpoint_binding(
         or int(audit.get("selector_schedule_step", -1)) != expected_selector
     ):
         raise RuntimeError("DUCA paper terminal selector schedule drift")
+    budget_summary = audit.get("budget_ledger_summary")
+    if not isinstance(budget_summary, Mapping):
+        raise RuntimeError("DUCA paper terminal budget ledger summary is missing")
+    unsigned_budget = dict(budget_summary)
+    budget_summary_sha256 = unsigned_budget.pop("budget_summary_sha256", None)
+    expected_budget_rows = 0 if arm == "dense" else TRAIN_VIDEO_COUNT * EPOCHS
+    if (
+        budget_summary.get("schema_version") != BUDGET_SUMMARY_SCHEMA
+        or budget_summary.get("arm") != arm
+        or int(budget_summary.get("epochs", -1)) != EPOCHS
+        or int(budget_summary.get("row_count", -1)) != expected_budget_rows
+        or budget_summary_sha256 != _canonical_sha256(unsigned_budget)
+        or receipt.get("budget_summary_sha256") != budget_summary_sha256
+    ):
+        raise RuntimeError("DUCA paper terminal budget ledger summary drift")
     return {
         "training_receipt_path": str(receipt_path),
         "training_receipt_sha256": receipt_sha,
@@ -855,6 +1302,8 @@ def validate_terminal_checkpoint_binding(
         "world_size": WORLD_SIZE,
         "global_batch_size": GLOBAL_BATCH_SIZE,
         "training_consumed_validation": False,
+        "budget_ledger_summary": dict(budget_summary),
+        "budget_summary_sha256": str(budget_summary_sha256),
     }
 
 
@@ -909,32 +1358,190 @@ def validate_official_evaluation_execution(
     }
 
 
+def validate_evaluation_budget_execution(
+    *,
+    arm: str,
+    evaluation_summary: Mapping[str, Any],
+    ledger_root: str | Path | None,
+    protocol_sha256: str,
+) -> dict[str, Any]:
+    arm = str(arm)
+    protocol_sha = _require_sha256(protocol_sha256, "evaluation budget protocol")
+    execution = evaluation_summary.get("post_processing_execution", {})
+    window_counts = execution.get("window_counts", {})
+    if not isinstance(window_counts, Mapping) or len(window_counts) != EVALUATION_VIDEO_COUNT:
+        raise RuntimeError("DUCA paper evaluation budget lacks exact window counts")
+    if arm == "dense":
+        if ledger_root:
+            root = Path(ledger_root).expanduser().resolve()
+            if root.exists() and any(root.iterdir()):
+                raise RuntimeError("dense Stage-A evaluation cannot expose selector ledgers")
+        payload = {
+            "schema_version": EVALUATION_BUDGET_SCHEMA,
+            "arm": arm,
+            "mode": "dense_t768_reference",
+            "requested_budget_is_dynamic": False,
+            "nominal_backbone_input_k": 768,
+            "window_count": sum(int(value) for value in window_counts.values()),
+            "protocol_sha256": protocol_sha,
+            "window_budget_vector_sha256": None,
+        }
+        payload["content_sha256"] = _canonical_sha256(payload)
+        return payload
+
+    root = Path(str(ledger_root or "")).expanduser().resolve()
+    files = sorted(root.glob("inference_ledger.rank*.jsonl")) if root.is_dir() else []
+    if not files:
+        raise RuntimeError("DUCA paper selector evaluation budget ledger is missing")
+    expected_selector_arm = {
+        "uniform_fixed_k384": "exact_uniform",
+        "uniform_mixed_train_k384_eval": "uniform_mixed_k",
+        "duca_fixed_k384": "fixed_bound",
+    }.get(arm)
+    if expected_selector_arm is None:
+        raise RuntimeError("DUCA paper evaluation budget received an unknown arm")
+    rows = []
+    for path in files:
+        with path.open("r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(
+                        f"DUCA paper budget ledger JSON drift: {path}:{line_number}"
+                    ) from exc
+                if not isinstance(row, dict):
+                    raise RuntimeError("DUCA paper budget ledger row is not a mapping")
+                rows.append(row)
+    expected_row_count = sum(int(value) for value in window_counts.values())
+    if len(rows) != expected_row_count:
+        raise RuntimeError("DUCA paper evaluation budget row count drift")
+    keys = set()
+    per_video = Counter()
+    vectors = []
+    effective_histogram = Counter()
+    for row in rows:
+        video_id = str(row.get("video_id", ""))
+        window_start = int(row.get("window_start_frame", -1))
+        key = (video_id, window_start)
+        requested = int(row.get("requested_k", -1))
+        valid_len = int(row.get("dense_valid_len", -1))
+        effective = int(row.get("effective_k", -1))
+        unique = int(row.get("unique_k", -1))
+        backbone = int(row.get("backbone_input_k", -1))
+        padded = int(row.get("padded_k", -1))
+        selected = [int(value) for value in row.get("selected_dense_indices", ())]
+        expected_effective = _expected_effective_k(384, valid_len)
+        if (
+            row.get("schema_version") != "duca_rime_inference_ledger_v1"
+            or str(row.get("arm", "")) != expected_selector_arm
+            or row.get("budget_protocol_sha256") != protocol_sha
+            or row.get("backbone_input_measurement_source")
+            != "actual_backbone_wrapper_and_videomae_input_tensors"
+            or not re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(row.get("backbone_input_contract_sha256", "")),
+            )
+            or not video_id
+            or video_id not in window_counts
+            or window_start < 0
+            or key in keys
+            or requested != 384
+            or effective != expected_effective
+            or unique != expected_effective
+            or backbone != expected_effective
+            or padded != expected_effective
+            or len(selected) != expected_effective
+            or selected != sorted(set(selected))
+            or any(value < 0 or value >= valid_len for value in selected)
+        ):
+            raise RuntimeError(
+                "DUCA paper evaluation budget violates fixed-requested-K384 "
+                "natural-window no-padding execution"
+            )
+        keys.add(key)
+        per_video[video_id] += 1
+        effective_histogram[effective] += 1
+        vectors.append(
+            {
+                "video_id": video_id,
+                "window_start_frame": window_start,
+                "effective_k": effective,
+                "backbone_input_k": backbone,
+            }
+        )
+    if {
+        str(video_id): int(count) for video_id, count in per_video.items()
+    } != {str(video_id): int(count) for video_id, count in window_counts.items()}:
+        raise RuntimeError("DUCA paper evaluation budget/video window coverage drift")
+    vectors.sort(key=lambda row: (row["video_id"], row["window_start_frame"]))
+    payload = {
+        "schema_version": EVALUATION_BUDGET_SCHEMA,
+        "arm": arm,
+        "mode": "fixed_requested_k384_natural_window_feasibility",
+        "budget_semantics": BUDGET_SEMANTICS,
+        "execution_quantum": EXECUTION_QUANTUM,
+        "requested_budget_is_dynamic": False,
+        "requested_k": 384,
+        "window_count": len(vectors),
+        "evaluation_video_count": len(per_video),
+        "realized_backbone_mean_k": sum(
+            int(row["backbone_input_k"]) for row in vectors
+        )
+        / len(vectors),
+        "effective_histogram": {
+            str(key): effective_histogram[key] for key in sorted(effective_histogram)
+        },
+        "feasibility_shrink_count": sum(
+            1 for row in vectors if int(row["effective_k"]) < 384
+        ),
+        "window_budget_vector_sha256": _canonical_sha256(vectors),
+        "ledger_files": [
+            {"path": str(path), "sha256": _sha256_file(path)} for path in files
+        ],
+        "protocol_sha256": protocol_sha,
+    }
+    payload["content_sha256"] = _canonical_sha256(payload)
+    return payload
+
+
 __all__ = [
     "ARMS",
     "DUCA_P0_CHECKPOINT_METADATA_SCHEMA",
     "DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA",
     "DUCA_TRAINING_AUDIT_FILENAME",
     "EVALUATION_SCHEMA",
+    "EVALUATION_BUDGET_SCHEMA",
     "FORMAL_PROTOCOL",
     "MATRIX_SCHEMA",
     "SEEDS",
     "TRAINING_RECEIPT_SCHEMA",
+    "BUDGET_SEMANTICS",
+    "BUDGET_SUMMARY_SCHEMA",
     "after_checkpoint_saved",
     "assert_safe_cfg_options",
     "atomic_write_json",
     "bind_train_loader_contract",
     "build_checkpoint_metadata",
     "build_runtime_bindings",
+    "build_epoch_budget_audit",
     "build_training_audit",
     "canonical_sha256",
     "capture_global_rng_state",
     "derive_train_loader_contract",
+    "collect_epoch_budget_audit",
     "formal_training_contract",
     "is_formal_protocol",
     "new_update_audit",
     "restore_global_rng_state",
     "restore_training_state",
     "selector_schedule_step",
+    "summarize_budget_epoch_records",
+    "mixed_k_requested_schedule",
+    "mixed_k_requested_schedule_sha256",
+    "validate_evaluation_budget_execution",
     "validate_official_evaluation_execution",
     "validate_evaluation_request",
     "validate_static_config",

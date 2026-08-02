@@ -398,6 +398,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         self._last_decision_provenance: tuple[dict[str, Any] | None, ...] = ()
         self._last_mixed_k_schedule_indices: tuple[int, ...] = ()
         self._last_mixed_k_schedule_source: str | None = None
+        self._pending_inference_budget_rows: dict[str, Any] | None = None
         self.register_buffer(
             "_loss_weight_schedule_step",
             torch.zeros((), dtype=torch.long),
@@ -463,6 +464,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
     def after_optimizer_step(self) -> dict[str, Any]:
         if not self.training:
             return {"updated": False, "reason": "selector_not_training"}
+        committed_rows = self._commit_last_budget_rows()
         before = int(self._loss_weight_schedule_step.detach().item())
         self._loss_weight_schedule_step.add_(1)
         summary = {
@@ -470,10 +472,45 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             "source": "successful_optimizer_step",
             "step_before": before,
             "step_after": int(self._loss_weight_schedule_step.detach().item()),
+            "committed_budget_rows": committed_rows,
         }
         if isinstance(self.last_forward_summary, dict):
             self.last_forward_summary["loss_weight_schedule"] = summary
         return summary
+
+    def _commit_pending_inference_budget_rows(
+        self,
+        backbone_k: int,
+        contract: Mapping[str, Any],
+    ) -> None:
+        pending = self._pending_inference_budget_rows
+        if pending is None:
+            return
+        rows = pending.get("rows")
+        path = pending.get("path")
+        if not isinstance(rows, list) or not path:
+            raise RuntimeError("RIME pending inference budget ledger is malformed")
+        contract_sha256 = hashlib.sha256(
+            json.dumps(
+                dict(contract),
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("ascii")
+        ).hexdigest()
+        for source in rows:
+            row = dict(source)
+            if int(row.pop("selector_planned_backbone_k", -1)) != int(backbone_k):
+                raise RuntimeError(
+                    "RIME selector plan differs from actual heavy-backbone input"
+                )
+            row["backbone_input_k"] = int(backbone_k)
+            row["backbone_input_measurement_source"] = str(
+                contract["measurement_source"]
+            )
+            row["backbone_input_contract_sha256"] = contract_sha256
+            _append_jsonl_atomic(str(path), row)
+        self._pending_inference_budget_rows = None
 
     def _apply_protocol_allocation_mode(
         self,
@@ -557,11 +594,6 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                 self._last_mixed_k_schedule_indices = tuple(cycle_indices)
                 self._last_mixed_k_schedule_source = (
                     "stateless_epoch_plus_sample_index"
-                )
-            valid_counts = valid_mask.long().sum(dim=1)
-            if bool(torch.any(valid_counts < requested).item()):
-                raise ValueError(
-                    "uniform_mixed_k forbids effective-K shrinkage on a short window"
                 )
             return requested
         replay_roles = {
@@ -648,6 +680,10 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         *,
         training: bool,
     ) -> dict[str, Any]:
+        if not training and self._pending_inference_budget_rows is not None:
+            raise RuntimeError(
+                "previous RIME inference selection never reached the heavy backbone"
+            )
         self._last_replay_effective_k = tuple(None for _ in metas)
         self._last_decision_provenance = tuple(None for _ in metas)
         physical_seconds, source_frames = self._physical_axes(
@@ -906,6 +942,22 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
         if not training:
             ledger_root = os.environ.get("DUCA_RIME_INFERENCE_LEDGER_ROOT", "").strip()
             if ledger_root:
+                ledger_protocol_sha256 = (
+                    self.budget_protocol_sha256
+                    or os.environ.get("DUCA_PAPER_MATRIX_MANIFEST_SHA256", "")
+                    .strip()
+                    .lower()
+                )
+                if (
+                    len(ledger_protocol_sha256) != 64
+                    or any(
+                        value not in "0123456789abcdef"
+                        for value in ledger_protocol_sha256
+                    )
+                ):
+                    raise ValueError(
+                        "RIME inference ledger requires an exact protocol SHA-256"
+                    )
                 ledger_root = os.path.abspath(
                     os.path.expandvars(os.path.expanduser(ledger_root))
                 )
@@ -915,6 +967,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                     ledger_root,
                     f"inference_ledger.rank{rank:04d}.jsonl",
                 )
+                pending_rows = []
                 for batch_index, meta in enumerate(output_metas):
                     video_id = str(
                         meta.get("video_name") or meta.get("video_id") or ""
@@ -946,8 +999,12 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                             "requested_k": int(ledger["requested_k"][batch_index]),
                             "effective_k": int(ledger["effective_k"][batch_index]),
                             "unique_k": int(ledger["unique_k"][batch_index]),
-                            "backbone_input_k": int(
+                            "backbone_input_k": None,
+                            "selector_planned_backbone_k": int(
                                 ledger["backbone_input_k"][batch_index]
+                            ),
+                            "backbone_input_measurement_source": (
+                                "pending_actual_heavy_backbone_forward"
                             ),
                             "padded_k": int(ledger["padded_k"][batch_index]),
                             "risk_fallback": bool(
@@ -967,7 +1024,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                             "observed_max_gap_seconds": float(
                                 meta["duca_observed_max_gap_seconds"]
                             ),
-                            "budget_protocol_sha256": self.budget_protocol_sha256,
+                            "budget_protocol_sha256": ledger_protocol_sha256,
                             "allocation_mode": self.allocation_mode,
                             "mixed_k_schedule_sha256": (
                                 self.mixed_k_schedule_sha256
@@ -1032,7 +1089,11 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
                                 ),
                             }
                         )
-                    _append_jsonl_atomic(ledger_path, ledger_row)
+                    pending_rows.append(ledger_row)
+                self._pending_inference_budget_rows = {
+                    "path": ledger_path,
+                    "rows": pending_rows,
+                }
 
         state: dict[str, Any] = {
             "arm": self.rime_arm,
@@ -1127,6 +1188,7 @@ class DucaRimeFrameSelector(DucaProtectedE2EFrameSelector):
             "training": bool(training),
             "requested_k": list(ledger["requested_k"]),
             "effective_k": list(ledger["effective_k"]),
+            "unique_k": list(ledger["unique_k"]),
             "backbone_input_k": list(ledger["backbone_input_k"]),
             "padded_k": list(ledger["padded_k"]),
             "risk_fallback": list(ledger["risk_fallback"]),

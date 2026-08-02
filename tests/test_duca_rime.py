@@ -303,6 +303,61 @@ def test_tail_window_quantizes_effective_k_without_padding_or_duplicates():
     assert output.ledger.padded_k == (192,)
 
 
+@pytest.mark.parametrize(
+    ("valid_length", "expected"),
+    (
+        (16, (16, 16, 16, 16)),
+        (17, (16, 16, 16, 16)),
+        (223, (192, 208, 208, 208)),
+        (224, (192, 224, 224, 224)),
+        (225, (192, 224, 224, 224)),
+        (231, (192, 224, 224, 224)),
+        (239, (192, 224, 224, 224)),
+        (240, (192, 240, 240, 240)),
+    ),
+)
+def test_mixed_k_natural_window_requested_to_effective_boundaries(
+    valid_length,
+    expected,
+):
+    budgets = (192, 256, 384, 512)
+    scores = torch.zeros((1, valid_length))
+    seconds = torch.arange(valid_length, dtype=torch.float64)[None, :]
+    valid = torch.ones((1, valid_length), dtype=torch.bool)
+    observed = []
+    for requested in budgets:
+        output = decode_rime_exact_k(
+            scores,
+            seconds,
+            valid,
+            requested,
+            candidate_budgets=budgets,
+            force_uniform=True,
+            execution_quantum=16,
+        )
+        observed.append(int(output.effective_k.item()))
+        positions = output.hard_positions[0].tolist()
+        assert positions == sorted(set(positions))
+        assert all(0 <= value < valid_length for value in positions)
+        assert output.ledger.backbone_input_k == (int(output.effective_k.item()),)
+        assert output.ledger.padded_k == (int(output.effective_k.item()),)
+    assert tuple(observed) == expected
+
+
+def test_mixed_k_subquantum_natural_window_fails_closed():
+    valid_length = 15
+    with pytest.raises(ValueError, match="shorter than one heavy-backbone execution quantum"):
+        decode_rime_exact_k(
+            torch.zeros((1, valid_length)),
+            torch.arange(valid_length, dtype=torch.float64)[None, :],
+            torch.ones((1, valid_length), dtype=torch.bool),
+            192,
+            candidate_budgets=(192, 256, 384, 512),
+            force_uniform=True,
+            execution_quantum=16,
+        )
+
+
 def test_cost_matched_mixed_k_cycle_is_exact_and_deterministic():
     budgets = (192, 256, 384, 512)
     counts = (8, 12, 16, 24)
@@ -391,19 +446,42 @@ def test_uniform_mixed_k_selector_uses_exact_per_video_stateless_schedule():
         [{}],
         training=False,
     ).tolist() == [256]
-    with pytest.raises(ValueError, match="effective-K shrinkage"):
-        selector._fixed_requested_k(
-            scores,
-            torch.cat(
-                [
-                    torch.ones((1, 192), dtype=torch.bool),
-                    torch.zeros((1, 576), dtype=torch.bool),
-                ],
-                dim=1,
-            ),
-            [{}],
-            training=False,
-        )
+    short_valid = torch.cat(
+        [
+            torch.ones((1, 231), dtype=torch.bool),
+            torch.zeros((1, 537), dtype=torch.bool),
+        ],
+        dim=1,
+    )
+    assert selector._fixed_requested_k(
+        scores,
+        short_valid,
+        [{}],
+        training=False,
+    ).tolist() == [256]
+    selector.eval()
+    short = selector.forward_test(
+        torch.arange(768, dtype=torch.float32)[None, None].expand(1, 3, -1),
+        short_valid,
+        [
+            {
+                "video_name": "natural_short",
+                "window_start_frame": 0,
+                "frame_inds": torch.arange(768)[:, None],
+                "avg_fps": 1.0,
+            }
+        ],
+    )
+    assert short["selector_outputs"]["requested_k"].tolist() == [256]
+    assert short["selector_outputs"]["selected_count"].tolist() == [224]
+    assert short["inputs"].shape[2] == 224
+    assert (
+        short["metas"][0]["duca_effective_k"]
+        == short["metas"][0]["duca_unique_k"]
+        == short["metas"][0]["duca_backbone_input_k"]
+        == short["metas"][0]["duca_padded_k"]
+        == 224
+    )
 
     with pytest.raises(ValueError, match="stateless epoch and sample index"):
         selector._fixed_requested_k(
@@ -536,6 +614,21 @@ def test_stage1_uniform_replay_skips_policy_but_seals_short_window_budget_truth(
     assert output["masks"].shape == (1, 16)
     assert output["selector_outputs"]["requested_k"].tolist() == [32]
     assert output["selector_outputs"]["selected_count"].tolist() == [16]
+    selector.record_backbone_execution(
+        {
+            "schema_version": "duca_dynamic_backbone_input_v1",
+            "measurement_source": (
+                "actual_backbone_wrapper_and_videomae_input_tensors"
+            ),
+            "wrapper_temporal_k": 16,
+            "mask_temporal_k": 16,
+            "inner_reconstructed_k": 16,
+            "inner_temporal_chunk_k": 16,
+            "num_segs": 1,
+            "all_mask_active": True,
+            "padding_or_repetition_observed": False,
+        }
+    )
     row = json.loads(
         (ledger_root / "inference_ledger.rank0000.jsonl").read_text(
             encoding="utf-8"
@@ -548,6 +641,10 @@ def test_stage1_uniform_replay_skips_policy_but_seals_short_window_budget_truth(
     assert row["projection_unused_budget"] == 16
     assert row["solver_unused_budget"] == 0
     assert row["budget_scope"] == "video_exact_total_window_assignment"
+    assert row["backbone_input_k"] == 16
+    assert row["backbone_input_measurement_source"] == (
+        "actual_backbone_wrapper_and_videomae_input_tensors"
+    )
 
 
 def test_stage1_runtime_receipt_proves_full_window_merge_nms_evaluator_chain(

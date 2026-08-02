@@ -629,12 +629,24 @@ def main():
                 annotation_path=cfg.evaluation.ground_truth_filename,
                 prediction_path=result_path,
             )
+            budget_execution = (
+                duca_paper_training.validate_evaluation_budget_execution(
+                    arm=str(cfg.duca_paper_cell.arm),
+                    evaluation_summary=evaluation_summary,
+                    ledger_root=os.environ.get("DUCA_RIME_INFERENCE_LEDGER_ROOT"),
+                    protocol_sha256=os.environ.get(
+                        "DUCA_PAPER_MATRIX_MANIFEST_SHA256",
+                        "",
+                    ),
+                )
+            )
             payload.update(
                 {
                     "seed": int(args.seed),
                     "variant": str(cfg.duca_paper_cell.arm),
                     "training_identity": paper_terminal_identity,
                     "exact211_execution": exact211,
+                    "budget_execution": budget_execution,
                     "train_video_count": 200,
                     "evaluation_video_count": 211,
                     "training_consumed_validation": False,

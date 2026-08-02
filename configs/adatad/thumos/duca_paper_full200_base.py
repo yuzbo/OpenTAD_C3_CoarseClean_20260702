@@ -133,8 +133,18 @@ scheduler = dict(
     max_epoch=60,
 )
 
+duca_paper_budget_contract = dict(
+    semantics="requested_then_deterministic_feasibility_shrink_v1",
+    execution_quantum=16,
+    valid_length_definition="contiguous_true_dense_candidate_prefix",
+    subquantum_policy="fail_closed_below_one_quantum",
+    padding_or_repetition_allowed=False,
+    length_conditioned_requested_schedule=False,
+    fixed_requested_k384_evaluation_is_dynamic=False,
+)
+
 workflow = dict(
-    formal_protocol="duca_paper_full200_actionformer_v1",
+    formal_protocol="duca_paper_full200_actionformer_v2",
     logging_interval=50,
     checkpoint_interval=5,
     checkpoint_retention=1,
