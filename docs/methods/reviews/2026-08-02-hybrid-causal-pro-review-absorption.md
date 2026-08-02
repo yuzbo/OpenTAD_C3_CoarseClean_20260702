@@ -170,20 +170,27 @@ Implemented in the current working tree:
 - single structured-model P0 plus world-size-two DDP KAT;
 - held Slurm deployments, storage/capacity gates, and all-terminal finalizers.
 
-Current stage is `implemented`, not `tested` or `empirically_supported`.
-Pure contract tests pass locally. The local Windows Torch runtime cannot load
-`c10.dll`, so Torch/CUDA/DDP evidence must come from the clean remote Linux
-snapshot. No P0, checkpoint, metric, or performance result exists yet.
+Current stage is `experiment_running`, not `empirically_supported`. Exact clean
+runtime `0f64218d8f404ef652934844dcd97a3f9607c580` passed remote Linux/CUDA
+pycompile, required C3 tests (`20 passed`), complete GeoRoute tests
+(`171 passed, 1 skipped`), and the real data/config binder. No-performance P0
+Jobs `1213665--1213667` completed `0:0` and sealed `PASS_MECHANICAL_ONLY`,
+including exact roles, private role RNG, finite nonzero ROI/residual branch
+gradients, and the world-size-two FP32-DDP KAT. The nine performance leaves are
+Jobs `1213694--1213702`; all-terminal finalizer `1213703` remains responsible
+for fail-closed interpretation. No complete checkpoint/prediction population,
+metric contrast, empirical result, official-test result, or paper evidence
+exists yet.
 
 ## Next executable sequence
 
-1. Run clean remote Linux focused and complete GeoRoute tests.
-2. Submit only the no-performance P0 DAG.
-3. Require both structured A7 full-graph P0 and world-size-two FP32 DDP KAT to
-   seal `PASS_MECHANICAL_ONLY`.
-4. If and only if P0 passes, submit all nine held performance leaves and their
-   after-any finalizer as one immutable namespace.
-5. Interpret nothing until the finalizer validates all nine stage results,
+1. Completed: clean remote Linux focused and complete GeoRoute tests.
+2. Completed: no-performance P0 DAG.
+3. Completed: structured A7 full-graph P0 and world-size-two FP32 DDP KAT sealed
+   `PASS_MECHANICAL_ONLY`.
+4. Completed: all nine held performance leaves and their after-any finalizer
+   were released in one immutable namespace.
+5. In progress: interpret nothing until the finalizer validates all nine results,
    artifact hashes, common population, exact-K, one-forward, and no-leak rules.
 6. On a complete screen, either freeze a disjoint-seed confirmatory study or
    issue `HOLD_MECHANISM_AMBIGUOUS`; do not open official test or write a paper
