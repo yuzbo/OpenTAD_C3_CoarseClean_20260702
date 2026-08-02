@@ -82,7 +82,9 @@ These fixed counts are an experimental intervention, not the final-method
 requirement. The geometry head already predicts in-bounds `(cx,cy,w,h)` at all
 384 tubelets, so ROI location and extent are temporally adaptive. What remains
 absent is adaptive token quantity: the current probe fixes both total K64 and
-the ROI/residual role quotas.
+the ROI/residual role quotas. The confirmed final objective requires dynamic
+total `K_t` and dynamic role allocation; changing only the role split under
+fixed K is not sufficient.
 
 The learned hard policy is the explicit sequential conditional distribution
 

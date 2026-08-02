@@ -16,10 +16,11 @@ max_chars: 8000
   (SCNR-TAD; GeoRoute code namespace). The running exact-K64
   context8+ROI28+residual28 study is a causal mechanism probe, not the final
   architecture. The user-restated final objective is a temporally adaptive
-  continuous `(cx,cy,w,h)` ROI together with adaptive token quantity; whether
-  this means dynamic total `K_t` or only a dynamic ROI/residual split is pending
-  one explicit design clarification. It is source-native token membership, not
-  Online TAD. Pretrained VideoMAE absolute position stays on; all external
+  continuous `(cx,cy,w,h)` ROI together with dynamic total heavy-token budget
+  `K_t`; the user explicitly confirmed that changing only the ROI/residual split
+  under fixed K is insufficient. The role split must therefore be dynamic too.
+  It is source-native token membership, not Online TAD. Pretrained VideoMAE
+  absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and
   weighted-pooling paths are off in the current probe.
 - Learned hard policy: sequential conditional ordered PL,

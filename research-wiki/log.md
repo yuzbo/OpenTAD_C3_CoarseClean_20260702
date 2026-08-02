@@ -2207,3 +2207,10 @@ append_only: true
   not implemented. One design question remains open: dynamic total `K_t` versus
   fixed total K with only a dynamic role split. No code, protocol, or running
   job was changed before that clarification and design approval.
+
+- 2026-08-02: user resolved the dynamic-budget ambiguity: total heavy-token
+  count `K_t` must vary over time, not merely the ROI/residual proportions under
+  a fixed K64. Consequently the final design must jointly express a dynamic
+  total budget and dynamic evidence-role allocation while recording actual
+  executed K and measured cost. Temporal decision granularity remains the next
+  design clarification; no implementation or running-pilot mutation was made.

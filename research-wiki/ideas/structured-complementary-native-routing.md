@@ -25,9 +25,10 @@ the mechanism.
 The frozen `8/28/28`, exact-K64 realization is not the intended final model. It
 is a causal probe that holds compute and role counts fixed while testing whether
 ROI and residual evidence have identifiable utility. The user-restated final
-objective retains the continuous per-tubelet ROI trajectory and makes token
-quantity temporally adaptive; the exact dynamic-budget semantics remain at the
-design-clarification stage.
+objective retains the continuous temporal ROI trajectory and makes the total
+heavy-token budget `K_t` as well as the evidence-role allocation temporally
+adaptive. The user explicitly rejected fixed total K with only a dynamic role
+split.
 
 ## Principle
 
