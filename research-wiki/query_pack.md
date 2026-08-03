@@ -113,9 +113,16 @@ max_chars: 8000
   followed by one same-GPU `G1 -> G2 -> G2 -> G1` counterbalanced full-stack
   decode/H2D/model/postprocess/NMS latency, peak-memory and gross-energy replay,
   then an all-terminal fail-closed finalizer. Local compile/Bash/whitespace and
-  focused contract checks passed (`29 passed`). M2 performance is still not
-  started: the exact clean remote Linux suite and deployment `PRECHECK_ONLY`
-  must pass before the immutable DAG is submitted.
+  focused contract checks passed (`29 passed`); exact clean remote runtime
+  `9d6641a6` passed the expanded Linux/Torch suite (`76 passed`) and all four
+  deployment prechecks. Its first formal submission stopped before any Job was
+  created because N16R4 rejected the CPU-only finalizer reservation. Failed root
+  `scnr_dynamic_floor_m2_9d6641a6_s3407_20260804_0507` contains only the storage
+  preflight and is not reusable. Exact infrastructure fix
+  `bad14693daa1fe414e56bf697c617e76f96eed48` gives the finalizer one GPU/one CPU
+  solely as disclosed scheduling overhead; local focused checks pass `13/13`.
+  M2 performance remains not started pending same-source remote regression,
+  fresh precheck and a new immutable namespace.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

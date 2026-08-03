@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:scnr-dynamic-stage1-executor-v1
 title: "SCNR-TAD dynamic exact-budget ragged executor v1"
 stage: tested
-status: d4_m2_protocol_implemented_local_tested_remote_precheck_pending
+status: d4_first_deploy_pre_submission_failed_resource_fix_local_tested
 outcome: pass_no_performance
 added: 2026-08-02
 updated: 2026-08-02
@@ -72,7 +72,7 @@ tubelet, or any mismatch between selected and executed tokens.
 | D1 | Native ragged VideoMAE + coordinate-lineage Adapter | zero-padding, empty-clip, full-token parity, exact ledger KATs | tested |
 | D2 | Wrapper integration, masked-zero aggregation, scout stop-gradient and proxy schedule | one real detector backward, successful-step schedule, no-leak audit | tested |
 | D3 | Clean N16R4 Linux/CUDA no-performance P0 | exact source, clean tree, Slurm GPU, zero metric/checkpoint | passed, Job `1215358` |
-| D4 | Matched development G1/G2 floor arms | D3 PASS, sample-level dynamic telemetry, frozen full-stack cost scope | protocol implemented at `ec8de9f5`; local `29 passed`; remote precheck and performance not started |
+| D4 | Matched development G1/G2 floor arms | D3 PASS, sample-level dynamic telemetry, frozen full-stack cost scope | runtime `9d6641a6` remote `76 passed` and precheck PASS, then zero-job finalizer-resource failure; fix `bad14693` local `13 passed`; performance not started |
 
 ## Executed evidence
 
@@ -142,6 +142,18 @@ tubelet, or any mismatch between selected and executed tokens.
   requires M3 before any confirmatory floor claim.  Local compile/Bash/
   whitespace checks and focused contracts passed (`29 passed`); this is
   implementation evidence only, pending exact-source remote precheck.
+- Exact clean runtime `9d6641a6c03644693e492d04a319b90fdad20238`
+  passed the expanded remote Linux/Torch suite (`76 passed`) and all four
+  deployment prechecks.  The first formal deployment then stopped during
+  `sbatch --test-only` before any Job ID existed because N16R4 rejects CPU-only
+  jobs.  Root
+  `/data/run01/sczc063/yuzibo/scnr_dynamic_floor_m2_9d6641a6_s3407_20260804_0507`
+  contains only `control/storage_preflight.json` and is immutable failure
+  provenance.  Exact minimal fix
+  `bad14693daa1fe414e56bf697c617e76f96eed48` uses the site's accepted one-GPU/
+  one-CPU control resource for the finalizer, records the idle GPU as scheduling
+  overhead, and changes no model/training/cost semantics. Local focused tests
+  passed `13/13`; remote replacement checks and deployment remain pending.
 
 ## Current boundary
 
@@ -149,8 +161,9 @@ The dynamic route is now `tested` at implementation, synthetic CUDA P0, real
 Fit-prefix health and sample-level telemetry-unit levels.  D3 has passed and
 the two floor configurations are mechanically admissible.  The M2 matched
 training/evaluation and separate full-stack cost/energy protocol is implemented
-and locally tested, but exact-source remote regression/precheck and the actual
-DAG are still pending.  None of the evidence above contains
+and locally tested. The first deployment produced no Jobs; its sole site-resource
+defect is minimally repaired but still awaits fresh exact-source remote checks
+and a new DAG namespace.  None of the evidence above contains
 mAP, end-to-end latency/energy, checkpoint utility or a floor comparison; it is
 not `empirically_supported` or `paper_ready`.  `K_t=0` is permitted and covered by
 contract tests, but no zero-count tubelet happened to occur in the recorded P0

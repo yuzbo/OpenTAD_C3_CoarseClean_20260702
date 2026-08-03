@@ -158,6 +158,14 @@ updated: 2026-08-02
    20-ms NVML trace, and raw monotonic energy/NMS windows that the validator
    reintegrates.  A model-only timer, self-reported energy scalar, partial pass,
    different GPU/job, or hand-combined profile is not M2 cost evidence.
+0. Never reuse M2 deployment root
+   `scnr_dynamic_floor_m2_9d6641a6_s3407_20260804_0507`. N16R4 rejected its
+   CPU-only finalizer during `sbatch --test-only`; zero Jobs were created and the
+   root contains only `control/storage_preflight.json`. On this GPU-only site an
+   M2 finalizer must request one GPU/one CPU, disclose that GPU as scheduling
+   overhead, and perform no model or cost computation. Replacement source
+   `bad14693daa1fe414e56bf697c617e76f96eed48` requires a fresh exact-source
+   remote regression, precheck and namespace; the old root is not resumable.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

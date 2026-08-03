@@ -1377,6 +1377,16 @@ updated: 2026-08-02
   whitespace checks and focused contracts passed (`29 passed`). The exact clean
   remote regression, deployment precheck and all performance jobs were still
   pending at registration; this source is implementation evidence only.
+- Dynamic SCNR M2 first deployment failure and resource-only repair, 2026-08-02.
+  Clean runtime `9d6641a6c03644693e492d04a319b90fdad20238` passed remote
+  Linux/Torch `76/76` and four deployment prechecks, then N16R4 rejected the
+  CPU-only finalizer at `sbatch --test-only` before any Job was submitted. Failed
+  root `/data/run01/sczc063/yuzibo/scnr_dynamic_floor_m2_9d6641a6_s3407_20260804_0507`
+  contains only `control/storage_preflight.json`; `squeue` contained no matching
+  `dfm2` Job. Exact fix `bad14693daa1fe414e56bf697c617e76f96eed48`
+  requests the site's one-GPU/one-CPU control resource and explicitly labels the
+  unused finalizer GPU as scheduling overhead; local focused checks passed
+  `13/13`. No training, checkpoint, prediction, metric or cost evidence exists.
 
 ## 外部附件
 

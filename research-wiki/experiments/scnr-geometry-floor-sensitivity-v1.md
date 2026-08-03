@@ -3,7 +3,7 @@ type: experiment
 node_id: exp:scnr-geometry-floor-sensitivity-v1
 title: "SCNR-TAD native-cell ROI floor sensitivity v1"
 stage: tested
-status: m2_protocol_implemented_local_tested_remote_precheck_pending
+status: m2_first_deploy_pre_submission_failed_resource_fix_local_tested
 outcome: pass_no_performance
 added: 2026-08-02
 updated: 2026-08-02
@@ -66,7 +66,7 @@ evaluator/NMS 与成本测量。两臂的 `geometry_smoothness_weight`、
 | --- | --- | --- | --- |
 | M0 | 公式、独立宽高、11x20 的 1x1/2x2 known-answer tests | 精确得到 `(1/20,1/11)` 与 `(2/20,2/11)`，in-bounds 且梯度有限 | tested at exact source `4be71844`: focused `36/36`; complete GeoRoute+C3 `194 passed, 1 skipped` |
 | M1 | 真实 180x320 → 11x20 P0，验证配置、审计字段和零正则 | 不产生 metric/checkpoint；任一 hidden clamp/penalty/静态 0.20 即失败 | tested: G1 Job `1215358`; G2 Job `1215364` |
-| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | protocol implemented at `ec8de9f5`; local `29 passed`; remote precheck and performance not started |
+| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | runtime `9d6641a6` remote `76 passed` and precheck PASS, then zero-job CPU-finalizer submission failure; fix `bad14693` local `13 passed`; performance not started |
 | M3 | 仅在动态主方法通过总 gate 后进入 disjoint-seed confirmation | 不从单 seed 宣称 floor 最优 | blocked |
 
 ## 当前边界
@@ -82,8 +82,17 @@ ROI/`K_t`/角色/真 ragged 成本遥测并在 N16R4 Linux 回归中通过 `35/3
 accuracy/telemetry 回放、同一 GPU 上 `G1 -> G2 -> G2 -> G1` 的独立全栈成本回放，
 以及 after-any fail-closed finalizer。成本 validator 会从原始 NVML trace 与单调时间窗
 重新积分 energy，并绑定完整 population、配置、checkpoint 和 stage-result 谱系。
-本地编译、Bash、whitespace 与聚焦契约回归通过（`29 passed`）；远端同提交回归与
-`PRECHECK_ONLY` 尚未完成，训练/metric/latency/energy 均尚未产生。
+本地编译、Bash、whitespace 与聚焦契约回归通过（`29 passed`）。干净远端 runtime
+`9d6641a6` 进一步通过 Linux/Torch `76/76` 与两臂、成本、终结器四项 precheck；
+存储要求 `47,244,640,256` bytes、可用 `225,293,430,784` bytes，提交额度也通过。
+但正式部署在任何 Job 创建前被 N16R4 submit Lua 拒绝：CPU-only finalizer 不满足该站点
+必须申请 GPU 的规则。旧 root
+`/data/run01/sczc063/yuzibo/scnr_dynamic_floor_m2_9d6641a6_s3407_20260804_0507`
+只含 storage preflight，永久不复用。最小修复
+`bad14693daa1fe414e56bf697c617e76f96eed48` 将 finalizer 改为 1 GPU/1 CPU 调度
+（不进行模型或成本计算，并在 deployment receipt 中披露为 scheduling overhead），
+本地 `13/13` 通过。新源的远端回归、新 precheck 与新 namespace 尚待执行；训练、
+checkpoint、metric、latency、energy 仍全部未产生。
 
 P0 中三角色计数、`K_t` 范围、loss 或梯度只能证明路径非退化且可训练，不能用于
 判断 1x1/2x2 谁更好。只有完整匹配的 development 训练、相同 population/hash、

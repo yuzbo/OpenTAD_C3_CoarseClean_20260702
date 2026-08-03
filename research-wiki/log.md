@@ -2465,3 +2465,20 @@ append_only: true
   single-seed deltas only. Python compile, Slurm Bash syntax, whitespace and
   focused contracts passed locally (`29 passed`). No remote precheck, training,
   checkpoint, prediction, metric, latency or energy result existed at this point.
+
+- 2026-08-02: exact clean M2 runtime
+  `9d6641a6c03644693e492d04a319b90fdad20238` passed remote Linux/Torch
+  `76/76`, both arm prechecks, paired-cost precheck and finalizer precheck.
+  Storage preflight observed `225,293,430,784` free versus
+  `47,244,640,256` required bytes, and submit capacity allowed all four Jobs.
+  The formal deployer nevertheless stopped before any Job submission when
+  N16R4's submit Lua rejected the CPU-only finalizer `sbatch --test-only`.
+  Failed root
+  `/data/run01/sczc063/yuzibo/scnr_dynamic_floor_m2_9d6641a6_s3407_20260804_0507`
+  contains only `control/storage_preflight.json`; a matching `squeue` query was
+  empty. It will not be reused. Exact source
+  `bad14693daa1fe414e56bf697c617e76f96eed48` applies the sole site-resource
+  fix: finalizer requests 1 GPU/1 CPU, performs no model/cost work, and records
+  the GPU as scheduling overhead. Local compile/whitespace and focused contracts
+  pass `13/13`. Performance status remains not started pending fresh remote
+  checks and a new namespace.
