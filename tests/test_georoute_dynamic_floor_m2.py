@@ -662,6 +662,9 @@ def test_dynamic_floor_m2_execution_sources_freeze_dag_and_cost_scope():
     deployer = (ROOT / "tools" / "bata" / "deploy_georoute_dynamic_floor_m2.py").read_text(
         encoding="utf-8"
     )
+    deploy_common = (
+        ROOT / "tools" / "bata" / "georoute_hybrid_causal_deploy_common.py"
+    ).read_text(encoding="utf-8")
     stage = (ROOT / "tools" / "bata" / "georoute_dynamic_floor_m2_stage_runner.py").read_text(
         encoding="utf-8"
     )
@@ -678,6 +681,10 @@ def test_dynamic_floor_m2_execution_sources_freeze_dag_and_cost_scope():
     assert 'dependency_type="afterok"' in deployer
     assert 'dependency_type="afterany"' in deployer
     assert "kill_invalid_dependency=True" in deployer
+    assert deployer.count('resource="control"') == 2
+    assert 'resource="cpu_control"' not in deployer
+    assert '"cpu_control"' not in deploy_common
+    assert '"finalizer_gpu_allocation_is_scheduling_overhead": True' in deployer
     assert '"--with-diagnostic-telemetry"' in stage
     assert "CUDA_VISIBLE_DEVICES=" not in scripts
     assert 'taskset -c "${DETECTOR_CPUS}"' in scripts

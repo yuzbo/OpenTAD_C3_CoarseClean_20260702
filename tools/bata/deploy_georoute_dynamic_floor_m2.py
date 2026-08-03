@@ -198,7 +198,7 @@ def deploy(args: argparse.Namespace) -> dict[str, Any]:
             script=scripts["finalizer"],
             logs=logs,
             exports=common_exports,
-            resource="cpu_control",
+            resource="control",
             test_only=True,
         )
 
@@ -247,7 +247,7 @@ def deploy(args: argparse.Namespace) -> dict[str, Any]:
             script=scripts["finalizer"],
             logs=logs,
             exports=common_exports,
-            resource="cpu_control",
+            resource="control",
             dependency=[g1, g2, cost],
             dependency_type="afterany",
             hold=True,
@@ -282,6 +282,7 @@ def deploy(args: argparse.Namespace) -> dict[str, Any]:
             },
             "cost_kill_on_invalid_dependency": True,
             "all_jobs_held_until_immutable_receipt": True,
+            "finalizer_gpu_allocation_is_scheduling_overhead": True,
             "partial_survivor_inference_allowed": False,
             "input_receipts": {
                 "source_config": {

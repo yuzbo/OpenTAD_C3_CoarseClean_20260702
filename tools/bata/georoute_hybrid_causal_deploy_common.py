@@ -16,7 +16,6 @@ RESOURCE_ARGS = {
     "world2": ("--gpus", "2", "--cpus-per-task", "10"),
     "stage2": ("--gpus", "2", "--cpus-per-task", "10"),
     "control": ("--gpus", "1", "--cpus-per-task", "1"),
-    "cpu_control": ("--cpus-per-task", "1"),
 }
 
 
