@@ -2,9 +2,9 @@
 type: experiment
 node_id: exp:scnr-geometry-floor-sensitivity-v1
 title: "SCNR-TAD native-cell ROI floor sensitivity v1"
-stage: tested
-status: m2_first_deploy_pre_submission_failed_resource_fix_local_tested
-outcome: pass_no_performance
+stage: experiment_running
+status: m2_g1_g2_running_cost_and_finalizer_dependency_pending
+outcome: pending
 added: 2026-08-02
 updated: 2026-08-02
 ---
@@ -66,7 +66,7 @@ evaluator/NMS 与成本测量。两臂的 `geometry_smoothness_weight`、
 | --- | --- | --- | --- |
 | M0 | 公式、独立宽高、11x20 的 1x1/2x2 known-answer tests | 精确得到 `(1/20,1/11)` 与 `(2/20,2/11)`，in-bounds 且梯度有限 | tested at exact source `4be71844`: focused `36/36`; complete GeoRoute+C3 `194 passed, 1 skipped` |
 | M1 | 真实 180x320 → 11x20 P0，验证配置、审计字段和零正则 | 不产生 metric/checkpoint；任一 hidden clamp/penalty/静态 0.20 即失败 | tested: G1 Job `1215358`; G2 Job `1215364` |
-| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | runtime `9d6641a6` remote `76 passed` and precheck PASS, then zero-job CPU-finalizer submission failure; fix `bad14693` local `13 passed`; performance not started |
+| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | runtime `6ee97336`: G1/G2 Jobs `1216180/1216181` running; cost/finalizer `1216182/1216183` dependency-pending; no result yet |
 | M3 | 仅在动态主方法通过总 gate 后进入 disjoint-seed confirmation | 不从单 seed 宣称 floor 最优 | blocked |
 
 ## 当前边界
@@ -93,6 +93,20 @@ accuracy/telemetry 回放、同一 GPU 上 `G1 -> G2 -> G2 -> G1` 的独立全�
 （不进行模型或成本计算，并在 deployment receipt 中披露为 scheduling overhead），
 本地 `13/13` 通过。新源的远端回归、新 precheck 与新 namespace 尚待执行；训练、
 checkpoint、metric、latency、energy 仍全部未产生。
+
+替换 runtime `6ee97336775a09611f10423e07cafcea375e191a` 已通过相同远端
+Linux/Torch `76/76` 与全新四项 precheck，并在新 root
+`/data/run01/sczc063/yuzibo/scnr_dynamic_floor_m2_6ee97336_s3407_20260804_0525`
+原子提交和释放 G1 `1216180`、G2 `1216181`、paired-cost `1216182`、finalizer
+`1216183`。部署 self-hash 为
+`a0504e45179957f20580b901e6ef7723d63c7b0ed445d8b3c35c3b5aaa02b89a`，
+deployment 文件 SHA-256 为
+`188da9dbf8cabffc1ab59cd90822e117adcd1457729c5a08806c916516ac8284`。
+G1/G2 新 P0 均为 `PASS_NO_PERFORMANCE_P0`（文件 SHA-256
+`90d8cc10b9cb13853d90a8ff2cf4d92115ee3f99ffdcca2c12a4318cdfc08010` /
+`30517e05372d4307aa2d40301031d42fdc33b4cd5d205aaa4d14f7234eceb0c1`），
+随后两臂进入 Epoch 0；成本与终结器仍按依赖等待。当前状态仅为
+`experiment_running`，不能从 live log、同步 AMP replay 或部分产物读取 floor 结论。
 
 P0 中三角色计数、`K_t` 范围、loss 或梯度只能证明路径非退化且可训练，不能用于
 判断 1x1/2x2 谁更好。只有完整匹配的 development 训练、相同 population/hash、

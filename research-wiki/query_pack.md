@@ -121,8 +121,14 @@ max_chars: 8000
   preflight and is not reusable. Exact infrastructure fix
   `bad14693daa1fe414e56bf697c617e76f96eed48` gives the finalizer one GPU/one CPU
   solely as disclosed scheduling overhead; local focused checks pass `13/13`.
-  M2 performance remains not started pending same-source remote regression,
-  fresh precheck and a new immutable namespace.
+  Replacement runtime `6ee97336775a09611f10423e07cafcea375e191a` passed the
+  same remote `76/76` suite and all four fresh prechecks, then atomically deployed
+  G1/G2/cost/finalizer Jobs `1216180/1216181/1216182/1216183` under
+  `scnr_dynamic_floor_m2_6ee97336_s3407_20260804_0525` (deployment self-hash
+  `a0504e45179957f20580b901e6ef7723d63c7b0ed445d8b3c35c3b5aaa02b89a`).
+  Both fresh P0 receipts passed and G1/G2 are running Epoch 0; cost and finalizer
+  remain dependency-pending. This is `experiment_running`, with no checkpoint,
+  prediction, metric, latency, energy, floor verdict or empirical support yet.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

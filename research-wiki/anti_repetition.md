@@ -166,6 +166,14 @@ updated: 2026-08-02
    overhead, and perform no model or cost computation. Replacement source
    `bad14693daa1fe414e56bf697c617e76f96eed48` requires a fresh exact-source
    remote regression, precheck and namespace; the old root is not resumable.
+0. The only active M2 namespace is
+   `scnr_dynamic_floor_m2_6ee97336_s3407_20260804_0525`, exact runtime
+   `6ee97336775a09611f10423e07cafcea375e191a`, Jobs
+   `1216180/1216181/1216182/1216183`. Do not tune either arm from live logs,
+   resume or replace one arm, read partial metrics, bypass the dependency-held
+   same-GPU cost replay, fetch/switch the active remote checkout away from
+   runtime `6ee97336`, or interpret the finalizer before all registered inputs
+   validate. Matching Epoch-0 AMP replays are health telemetry, not performance.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

@@ -2,9 +2,9 @@
 type: experiment
 node_id: exp:scnr-dynamic-stage1-executor-v1
 title: "SCNR-TAD dynamic exact-budget ragged executor v1"
-stage: tested
-status: d4_first_deploy_pre_submission_failed_resource_fix_local_tested
-outcome: pass_no_performance
+stage: experiment_running
+status: d4_m2_g1_g2_running_cost_and_finalizer_dependency_pending
+outcome: pending
 added: 2026-08-02
 updated: 2026-08-02
 ---
@@ -72,7 +72,7 @@ tubelet, or any mismatch between selected and executed tokens.
 | D1 | Native ragged VideoMAE + coordinate-lineage Adapter | zero-padding, empty-clip, full-token parity, exact ledger KATs | tested |
 | D2 | Wrapper integration, masked-zero aggregation, scout stop-gradient and proxy schedule | one real detector backward, successful-step schedule, no-leak audit | tested |
 | D3 | Clean N16R4 Linux/CUDA no-performance P0 | exact source, clean tree, Slurm GPU, zero metric/checkpoint | passed, Job `1215358` |
-| D4 | Matched development G1/G2 floor arms | D3 PASS, sample-level dynamic telemetry, frozen full-stack cost scope | runtime `9d6641a6` remote `76 passed` and precheck PASS, then zero-job finalizer-resource failure; fix `bad14693` local `13 passed`; performance not started |
+| D4 | Matched development G1/G2 floor arms | D3 PASS, sample-level dynamic telemetry, frozen full-stack cost scope | runtime `6ee97336`: G1/G2 Jobs `1216180/1216181` running; cost/finalizer `1216182/1216183` dependency-pending |
 
 ## Executed evidence
 
@@ -154,6 +154,17 @@ tubelet, or any mismatch between selected and executed tokens.
   one-CPU control resource for the finalizer, records the idle GPU as scheduling
   overhead, and changes no model/training/cost semantics. Local focused tests
   passed `13/13`; remote replacement checks and deployment remain pending.
+- Replacement runtime `6ee97336775a09611f10423e07cafcea375e191a`
+  passed remote `76/76` and all four new prechecks, then atomically released the
+  immutable DAG in root
+  `/data/run01/sczc063/yuzibo/scnr_dynamic_floor_m2_6ee97336_s3407_20260804_0525`.
+  G1/G2 Jobs `1216180/1216181` both sealed fresh
+  `PASS_NO_PERFORMANCE_P0` receipts and entered Epoch 0 on `g0024`; paired cost
+  `1216182` is afterok on both arms and finalizer `1216183` is afterany on the
+  two arms plus cost. Deployment self-hash is
+  `a0504e45179957f20580b901e6ef7723d63c7b0ed445d8b3c35c3b5aaa02b89a`.
+  Matching first AMP replays at batch 13/scale 32768/retry 1 of 8 are startup
+  health only and are not interpreted as performance.
 
 ## Current boundary
 
@@ -161,10 +172,10 @@ The dynamic route is now `tested` at implementation, synthetic CUDA P0, real
 Fit-prefix health and sample-level telemetry-unit levels.  D3 has passed and
 the two floor configurations are mechanically admissible.  The M2 matched
 training/evaluation and separate full-stack cost/energy protocol is implemented
-and locally tested. The first deployment produced no Jobs; its sole site-resource
-defect is minimally repaired but still awaits fresh exact-source remote checks
-and a new DAG namespace.  None of the evidence above contains
-mAP, end-to-end latency/energy, checkpoint utility or a floor comparison; it is
+and locally tested. The resource-only replacement is now `experiment_running`
+with both arms active and cost/finalizer dependency-pending. None of the evidence
+above yet contains a complete development metric set, end-to-end latency/energy,
+checkpoint utility or a floor comparison; it is
 not `empirically_supported` or `paper_ready`.  `K_t=0` is permitted and covered by
 contract tests, but no zero-count tubelet happened to occur in the recorded P0
 or 64-update health traces; absence in those traces is neutral rather than a

@@ -2482,3 +2482,19 @@ append_only: true
   the GPU as scheduling overhead. Local compile/whitespace and focused contracts
   pass `13/13`. Performance status remains not started pending fresh remote
   checks and a new namespace.
+
+- 2026-08-02: replacement runtime
+  `6ee97336775a09611f10423e07cafcea375e191a` passed the same remote
+  Linux/Torch suite `76/76` and four fresh deployer prechecks. The immutable DAG
+  was atomically submitted and released under
+  `/data/run01/sczc063/yuzibo/scnr_dynamic_floor_m2_6ee97336_s3407_20260804_0525`:
+  G1 `1216180`, G2 `1216181`, paired cost `1216182`, finalizer `1216183`.
+  Deployment self/file SHA-256 are
+  `a0504e45179957f20580b901e6ef7723d63c7b0ed445d8b3c35c3b5aaa02b89a` /
+  `188da9dbf8cabffc1ab59cd90822e117adcd1457729c5a08806c916516ac8284`.
+  Both fresh arm P0 receipts sealed `PASS_NO_PERFORMANCE_P0` and the two arms
+  entered Epoch 0 on `g0024`; both first replayed matched batch 13 at scale
+  `32768` with retry `1/8`. Cost remains afterok on both arms and finalizer
+  remains afterany on both arms plus cost. Status is `experiment_running`; no
+  complete checkpoint, prediction, metric, latency, energy or floor verdict is
+  available or interpreted.

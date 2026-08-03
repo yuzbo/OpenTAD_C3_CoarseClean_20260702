@@ -1387,6 +1387,20 @@ updated: 2026-08-02
   requests the site's one-GPU/one-CPU control resource and explicitly labels the
   unused finalizer GPU as scheduling overhead; local focused checks passed
   `13/13`. No training, checkpoint, prediction, metric or cost evidence exists.
+- Dynamic SCNR M2 active replacement deployment, 2026-08-02. Exact clean runtime
+  `6ee97336775a09611f10423e07cafcea375e191a` passed remote `76/76` and all
+  four fresh deployment prechecks. Root
+  `/data/run01/sczc063/yuzibo/scnr_dynamic_floor_m2_6ee97336_s3407_20260804_0525`
+  binds G1/G2/cost/finalizer Jobs `1216180/1216181/1216182/1216183` and
+  deployment self/file SHA-256
+  `a0504e45179957f20580b901e6ef7723d63c7b0ed445d8b3c35c3b5aaa02b89a` /
+  `188da9dbf8cabffc1ab59cd90822e117adcd1457729c5a08806c916516ac8284`.
+  Fresh G1/G2 P0 file hashes are
+  `90d8cc10b9cb13853d90a8ff2cf4d92115ee3f99ffdcca2c12a4318cdfc08010` /
+  `30517e05372d4307aa2d40301031d42fdc33b4cd5d205aaa4d14f7234eceb0c1`;
+  both statuses are `PASS_NO_PERFORMANCE_P0`. The arms were running Epoch 0
+  while cost/finalizer remained dependency-pending. This is running-state
+  provenance only, not a metric, cost or floor result.
 
 ## 外部附件
 
