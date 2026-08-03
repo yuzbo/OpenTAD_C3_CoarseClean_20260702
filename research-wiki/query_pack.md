@@ -1,6 +1,6 @@
 # DUCA-RIME Current Query Pack
 
-Last updated: `2026-08-03`
+Last updated: `2026-08-04`
 
 ## Current decision
 
@@ -30,7 +30,7 @@ Current evidence level:
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
 | Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
-| Official full-data DUCA feasibility | `exactk_repair_source_7e893569_double_gate_passed / fresh_stagea_1215390_to_1215396_running / metrics_sealed / no_empirical_conclusion` |
+| Official full-data DUCA feasibility | `exactk_repair_source_7e893569_double_gate_passed / stagea_1215390_to_1215396_terminal_failed_closed / metrics_never_opened / no_empirical_conclusion` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -477,6 +477,29 @@ Control/DUCA pairs are `1215390/1215391`, `1215392/1215393`, and
 registered error signature. This remains `ENGINEERING_STATUS`; no loss,
 checkpoint or partial metric was opened. Stage B and all metric access remain
 sealed.
+
+Terminal update on `2026-08-04`: all six execution jobs failed and seal
+`1215396` was cancelled by exact ID after becoming dependency-impossible.
+Controls `1215390/1215392/1215394` completed their dense cell and fixed-uniform
+training, then failed fixed-uniform evaluation-budget validation. A read-only
+predicate replay found the first and only violated predicate at ledger line 722:
+`(video_test_0001431, window_start_frame=7680)` was written twice as two
+byte-identical rows (the same canonical row SHA-256
+`400d197499d056b2874aa1646cccd56cbc83378ea24e2b76e3bf47a75d2b2fb6`). Register
+`paper_exact_uniform_eval_duplicate_window_ledger_key`. Requested/effective/
+unique/backbone K were all contract-consistent for that row; this is not a
+short-window or K384 feasibility failure.
+
+Learned-DUCA jobs `1215391/1215393/1215395` failed when the raw physical exact-K
+slot mass exceeded the registered FP32 normalization envelope. This is a repeat
+of `physical_exactk_long_chain_fp32_slot_mass_loss`, not a new auto-repairable
+engineering signature. Anti-repetition rule 139 therefore requires fail-closed:
+do not widen the envelope, suppress the invariant, switch the paper path to FP64
+or launch another matrix automatically. Only three dense terminal cell receipts
+exist; fixed-uniform has training receipts but no cell receipts, mixed-K never
+started, learned DUCA has no training/cell receipt, and no matrix seal exists.
+No loss, checkpoint, partial/single-seed metric or mAP was opened. Stage A has no
+performance result and cannot be compared with AdaTAD or support Stage B.
 
 The user authorized recovery-v3 implementation and redeployment. The local
 repair is now implemented:

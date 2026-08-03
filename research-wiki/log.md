@@ -1,5 +1,43 @@
 # Research Log
 
+## 2026-08-04 — Stage A terminally failed closed; no metric was opened
+
+- Exact source `7e8935692b732f2958ba3c20787ae19c86f7b15c`, clean checkout,
+  protocol/submission/release hashes and both prerequisite gate receipts were
+  reverified unchanged. The failure is therefore inside the released execution,
+  not repository or transaction identity drift.
+- Control jobs `1215390`, `1215392`, and `1215394` ended `FAILED 1:0` after a
+  dense terminal cell and fixed-uniform training. Their immutable log SHA-256
+  values are `8d679ef897263bb0e93cb7721230d351ad1a5a235072891e5970fcb65635c623`,
+  `0a75f5003fd6b1dbafaace72d1896c23d6c4accda8acde6fe51902330916e38f`, and
+  `9f90c4ce9e47670975d3fddfcdb24049ae8334e449887e760b51a7c648fb3943`.
+  All three failed the fixed-requested-K384 evaluation ledger's unique-key
+  predicate at line 722. Rows 721/722 are byte-identical and both identify
+  `(video_test_0001431, window_start_frame=7680)`; canonical row SHA-256 is
+  `400d197499d056b2874aa1646cccd56cbc83378ea24e2b76e3bf47a75d2b2fb6`.
+  Every K/shape/protocol predicate on that row passed. Register
+  `paper_exact_uniform_eval_duplicate_window_ledger_key` and require diagnosis
+  of dataset-sample identity versus duplicate ledger emission before any repair;
+  post-hoc deduplication is not authorized.
+- Learned-DUCA jobs `1215391`, `1215393`, and `1215395` ended `FAILED 1:0` on
+  `physical exact-K raw slot-mass drift exceeds the FP32 normalization envelope`.
+  Their log SHA-256 values are
+  `12290ad8d8479bec90c3eed3292899a267152ac4d633c450b1e35af1a732907b`,
+  `b1cbe7c87be37fc9f4d41d99ce057f1dedec8eaafdf84bb8bd333a3f74ade65a`, and
+  `9a9f3123a09bcbb9691028ced5a7f6ace7eafe980db5f26adcc97d291e23ce5e`.
+  This is classified as a repeat/continuation of
+  `physical_exactk_long_chain_fp32_slot_mass_loss`; its recovery quota was
+  already consumed and rule 139 forbids threshold relaxation or automatic
+  redeployment.
+- Only the three dense cell receipts exist. Fixed-uniform has three training
+  receipts but no terminal cell receipt; mixed-K never started; learned DUCA has
+  no terminal training/cell receipt; no matrix receipt exists. Exact seal job
+  `1215396` was cancelled after `DependencyNeverSatisfied` made sealing
+  impossible. Stage B and all extensions remain disabled.
+- No training loss, checkpoint, partial/single-seed metric, incomplete matrix or
+  mAP was opened. This is terminal `ENGINEERING_STATUS`, not performance
+  evidence; no comparison with AdaTAD mAP=65 is valid.
+
 ## 2026-08-03 — Exact-K repair passed dual gates; fresh Stage A released
 
 - Published exact numerical-repair source

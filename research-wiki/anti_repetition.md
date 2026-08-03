@@ -485,3 +485,16 @@ These failures and naming mistakes must not be repeated.
      accumulation envelope; then retain independent column-occupancy, ordering
      and finite-gradient checks. Any repeat of
      `physical_exactk_long_chain_fp32_slot_mass_loss` fails closed.
+140. A production failure saying raw physical exact-K slot mass exceeds the
+     registered FP32 normalization envelope is a repeat/continuation of rule 139,
+     even if a synthetic long-chain gate passed. Do not widen the envelope,
+     suppress the guard, silently use FP64 or spend another automatic retry.
+141. Do not post-hoc deduplicate selector evaluation ledgers to satisfy the
+     unique `(video_id, window_start_frame)` contract. First determine whether
+     the dataset emitted the same physical window twice or the ledger wrote one
+     execution twice; preserve rows 721/722 from the failed Stage-A controls as
+     immutable evidence.
+142. A separately repairable control-ledger defect does not authorize a fresh
+     matrix while the learned method is stopped by a repeated numeric invariant.
+     Resolve the scientific/numerical blocker explicitly before any new Stage-A
+     deployment.

@@ -9,7 +9,7 @@
 - Local focused verification: `15_passed / 1_Linux_loader_test_skipped_on_Windows / Torch_tests_blocked_by_local_c10_DLL`
 - Independent read-only audit: `selector_tensor_chain_GO / enforced_two_gate_dependency_chain_GO / exactk_patch_GO_with_raw_mass_guard_applied`
 - Authoritative Linux/Slurm verification: `exact_source_7e893569 / code_gate_1215388_passed / real_short_gate_1215389_passed`
-- Experiment: `fresh_stagea_1215390_to_1215396_running / metrics_sealed`
+- Experiment: `stagea_1215390_to_1215396_terminal_failed_closed / metrics_never_opened`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
 
@@ -215,12 +215,32 @@ Protocol, submission and released-receipt SHA-256 values are
 `cea74e4bd231e8687e583f2fa98ff5dacec3c41e2ec5352396e097e7abfb01f7`.
 Jobs `1215390/1215391`, `1215392/1215393`, and `1215394/1215395` are the
 control/DUCA seed pairs; seal `1215396` is exact afterok all six. All six groups
-entered `RUNNING`; no DUCA error signature was observed beyond the previous
-immediate exact-K failure boundary. This is not performance evidence.
+entered `RUNNING`, but the transaction is now terminally failed closed.
+
+Control jobs `1215390/1215392/1215394` each produced a dense terminal cell and a
+fixed-uniform training receipt, then failed during fixed-uniform evaluation
+budget validation. The exact violated predicate is duplicate key identity:
+ledger rows 721 and 722 are byte-identical and both use
+`(video_test_0001431, window_start_frame=7680)`. Their canonical row SHA-256 is
+`400d197499d056b2874aa1646cccd56cbc83378ea24e2b76e3bf47a75d2b2fb6`.
+All requested/effective/unique/backbone/padded-K and selected-index predicates on
+that row pass. Register `paper_exact_uniform_eval_duplicate_window_ledger_key`;
+the cause still has to be separated into duplicate dataset sample versus
+duplicate ledger emission before a protocol-neutral repair can be designed.
+
+Learned-DUCA jobs `1215391/1215393/1215395` failed on raw physical exact-K slot
+mass outside the registered FP32 normalization envelope. This is classified as a
+repeat of `physical_exactk_long_chain_fp32_slot_mass_loss`, whose one bounded
+recovery has already been consumed. It is not eligible for automatic threshold
+relaxation, invariant suppression, FP64 substitution or redeployment. Exact seal
+`1215396` was cancelled after its dependencies became impossible. Mixed-K never
+started, no learned-DUCA training receipt exists, and only three of twelve cell
+receipts exist.
 
 No single cell, seed, intermediate checkpoint or incomplete matrix may support a
-performance statement. Until all twelve terminal receipts pass, the status is
-only `ENGINEERING_STATUS`.
+performance statement. No metric was opened from this transaction. Its status is
+terminal `ENGINEERING_STATUS`; it yields no official mAP result and no comparison
+with AdaTAD mAP=65.
 
 ## Conditional Stage B
 
