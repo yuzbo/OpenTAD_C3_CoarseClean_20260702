@@ -7,6 +7,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import os
 import sys
 import time
@@ -60,6 +61,91 @@ from tools.bata.spatial_zoom_s1_training import (  # noqa: E402
 BOUNDARY = Path("/data/run01/sczc063/yuzibo")
 WARMUP_SAMPLES = 50
 POWER_INTERVAL_MS = 20
+
+
+def _build_cost_cuda_events(
+    torch_module: Any,
+    *,
+    model: Any,
+    wrapper: Any,
+    heavy: Any,
+) -> tuple[CudaModuleEvents, dict[str, CudaMethodEvent]]:
+    module_targets = {
+        "backbone_wrapper_ms": wrapper,
+        "patch_embed_ms": getattr(heavy, "patch_embed", None),
+        "projection_ms": getattr(model, "projection", None),
+        "neck_ms": getattr(model, "neck", None),
+    }
+    method_targets = {
+        "scout_ms": (getattr(wrapper, "scout", None), "forward_dynamic"),
+        "heavy_backbone_ms": (heavy, "forward_native_ragged"),
+        "sparse_adapter_ms": (
+            getattr(wrapper, "sparse_adapter", None),
+            "forward_ragged",
+        ),
+        "head_ms": (getattr(model, "rpn_head", None), "forward_test"),
+        "model_forward_ms": (model, "forward_test"),
+        "postprocess_ms": (model, "post_processing"),
+    }
+    missing_bindings = sorted(
+        [name for name, target in module_targets.items() if target is None]
+        + [
+            name
+            for name, (target, method_name) in method_targets.items()
+            if target is None or not callable(getattr(target, method_name, None))
+        ]
+    )
+    if missing_bindings:
+        raise RuntimeError(
+            "dynamic floor M2 cost instrumentation has missing bindings: "
+            + ", ".join(missing_bindings)
+        )
+
+    module_events = CudaModuleEvents(torch_module)
+    method_events: dict[str, CudaMethodEvent] = {}
+    try:
+        for name, target in module_targets.items():
+            module_events.register(name, target)
+        for name, (target, method_name) in method_targets.items():
+            method_events[name] = CudaMethodEvent(
+                torch_module,
+                target,
+                method_name,
+            )
+    except Exception:
+        for event in reversed(tuple(method_events.values())):
+            event.close()
+        module_events.close()
+        raise
+    return module_events, method_events
+
+
+def _read_cost_cuda_timings(
+    module_events: CudaModuleEvents,
+    method_events: Mapping[str, CudaMethodEvent],
+) -> dict[str, float]:
+    return {
+        "model_forward_ms": method_events["model_forward_ms"].elapsed(),
+        "postprocess_ms": method_events["postprocess_ms"].elapsed(),
+        "backbone_wrapper_ms": module_events.elapsed("backbone_wrapper_ms"),
+        "scout_ms": method_events["scout_ms"].elapsed(),
+        "patch_embed_ms": module_events.elapsed("patch_embed_ms"),
+        "heavy_backbone_ms": method_events["heavy_backbone_ms"].elapsed(),
+        "sparse_adapter_ms": method_events["sparse_adapter_ms"].elapsed(),
+        "projection_ms": module_events.elapsed("projection_ms"),
+        "neck_ms": module_events.elapsed("neck_ms"),
+        "head_ms": method_events["head_ms"].elapsed(),
+    }
+
+
+def _invalid_cost_cuda_stages(timings: Mapping[str, float]) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            name
+            for name, value in timings.items()
+            if not math.isfinite(float(value)) or float(value) <= 0.0
+        )
+    )
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -330,20 +416,15 @@ def _profile_one_pass(
     if not use_amp:
         raise ValueError("dynamic floor M2 cost replay must preserve AMP inference")
 
-    events = CudaModuleEvents(torch)
     wrapper = getattr(model, "backbone", None)
     wrapped = getattr(wrapper, "model", None)
     heavy = getattr(wrapped, "backbone", None)
-    events.register("backbone_wrapper_ms", wrapper)
-    events.register("patch_embed_ms", getattr(heavy, "patch_embed", None))
-    events.register("sparse_adapter_ms", getattr(wrapper, "sparse_adapter", None))
-    events.register("projection_ms", getattr(model, "projection", None))
-    events.register("neck_ms", getattr(model, "neck", None))
-    scout_event = CudaMethodEvent(torch, wrapper.scout, "forward_dynamic")
-    heavy_event = CudaMethodEvent(torch, heavy, "forward_native_ragged")
-    head_event = CudaMethodEvent(torch, model.rpn_head, "forward_test")
-    forward_test_event = CudaMethodEvent(torch, model, "forward_test")
-    postprocess_event = CudaMethodEvent(torch, model, "post_processing")
+    events, method_events = _build_cost_cuda_events(
+        torch,
+        model=model,
+        wrapper=wrapper,
+        heavy=heavy,
+    )
 
     def forward_once(batch):
         with torch.no_grad(), torch.autocast(
@@ -398,11 +479,8 @@ def _profile_one_pass(
                 lambda: _move_to_device(cpu_batch, device), synchronize=synchronize
             )
             events.reset()
-            scout_event.reset()
-            heavy_event.reset()
-            head_event.reset()
-            forward_test_event.reset()
-            postprocess_event.reset()
+            for event in method_events.values():
+                event.reset()
             post_result, _ = _measure_wall_ms(
                 lambda: forward_once(gpu_batch), synchronize=synchronize
             )
@@ -418,21 +496,12 @@ def _profile_one_pass(
             continuous_ended = time.perf_counter()
             energy_ended = time.monotonic_ns() / 1_000_000_000.0
             continuous_ms = (continuous_ended - continuous_started) * 1000.0
-            component_timings = {
-                "model_forward_ms": forward_test_event.elapsed(),
-                "postprocess_ms": postprocess_event.elapsed(),
-                "backbone_wrapper_ms": events.elapsed("backbone_wrapper_ms"),
-                "scout_ms": scout_event.elapsed(),
-                "patch_embed_ms": events.elapsed("patch_embed_ms"),
-                "heavy_backbone_ms": heavy_event.elapsed(),
-                "sparse_adapter_ms": events.elapsed("sparse_adapter_ms"),
-                "projection_ms": events.elapsed("projection_ms"),
-                "neck_ms": events.elapsed("neck_ms"),
-                "head_ms": head_event.elapsed(),
-            }
-            if any(value <= 0.0 for value in component_timings.values()):
+            component_timings = _read_cost_cuda_timings(events, method_events)
+            invalid_stages = _invalid_cost_cuda_stages(component_timings)
+            if invalid_stages:
                 raise RuntimeError(
-                    "dynamic floor M2 cost instrumentation missed a CUDA stage"
+                    "dynamic floor M2 cost instrumentation missed CUDA stages: "
+                    + ", ".join(invalid_stages)
                 )
             samples.append(
                 {
@@ -474,11 +543,8 @@ def _profile_one_pass(
             sample["end_to_end_serial_ms"] += amortized_nms_ms
     finally:
         events.close()
-        scout_event.close()
-        heavy_event.close()
-        head_event.close()
-        forward_test_event.close()
-        postprocess_event.close()
+        for event in reversed(tuple(method_events.values())):
+            event.close()
 
     if final_energy_window is None:
         raise RuntimeError("dynamic floor M2 cost replay did not execute NMS")

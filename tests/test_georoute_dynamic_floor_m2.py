@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,7 +25,12 @@ from tools.bata.georoute_dynamic_floor_m2_contract import (
     validate_frozen_dynamic_floor_m2_contract,
 )
 from tools.bata.georoute_experiment_contract import canonical_sha256, sha256_file
-from tools.bata.profile_georoute_dynamic_floor_m2 import _validate_cost_audit
+from tools.bata.profile_georoute_dynamic_floor_m2 import (
+    _build_cost_cuda_events,
+    _invalid_cost_cuda_stages,
+    _read_cost_cuda_timings,
+    _validate_cost_audit,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -203,6 +209,105 @@ def test_dynamic_floor_m2_cost_audit_reads_native_ragged_attention_ledger():
 def test_dynamic_floor_m2_cost_audit_rejects_inconsistent_attention_ledger():
     with pytest.raises(RuntimeError, match="ragged ledger is invalid"):
         _validate_cost_audit(_timed_cost_audit(attention_pairs=1), floor_cells=1)
+
+
+class _FakeCudaEvent:
+    def record(self):
+        return None
+
+    def elapsed_time(self, _end):
+        return 1.0
+
+
+class _FakeCuda:
+    @staticmethod
+    def Event(*, enable_timing):
+        assert enable_timing is True
+        return _FakeCudaEvent()
+
+
+class _FakeHookHandle:
+    def remove(self):
+        return None
+
+
+class _FakeModule:
+    def __init__(self):
+        self._before = []
+        self._after = []
+
+    def register_forward_pre_hook(self, hook):
+        self._before.append(hook)
+        return _FakeHookHandle()
+
+    def register_forward_hook(self, hook):
+        self._after.append(hook)
+        return _FakeHookHandle()
+
+    def __call__(self):
+        for hook in self._before:
+            hook(self, ())
+        result = object()
+        for hook in self._after:
+            hook(self, (), result)
+        return result
+
+
+class _FakeMethodTarget:
+    def forward_dynamic(self):
+        return "scout"
+
+    def forward_native_ragged(self):
+        return "heavy"
+
+    def forward_ragged(self):
+        return "sparse"
+
+    def forward_test(self):
+        return "forward"
+
+    def post_processing(self):
+        return "post"
+
+
+def test_dynamic_floor_m2_cost_instruments_direct_sparse_ragged_method():
+    torch_module = SimpleNamespace(cuda=_FakeCuda())
+    wrapper = _FakeModule()
+    wrapper.scout = _FakeMethodTarget()
+    wrapper.sparse_adapter = _FakeMethodTarget()
+    heavy = _FakeMethodTarget()
+    heavy.patch_embed = _FakeModule()
+    model = _FakeMethodTarget()
+    model.projection = _FakeModule()
+    model.neck = _FakeModule()
+    model.rpn_head = _FakeMethodTarget()
+
+    module_events, method_events = _build_cost_cuda_events(
+        torch_module,
+        model=model,
+        wrapper=wrapper,
+        heavy=heavy,
+    )
+    try:
+        wrapper()
+        heavy.patch_embed()
+        model.projection()
+        model.neck()
+        wrapper.scout.forward_dynamic()
+        heavy.forward_native_ragged()
+        wrapper.sparse_adapter.forward_ragged()
+        model.rpn_head.forward_test()
+        model.forward_test()
+        model.post_processing()
+        timings = _read_cost_cuda_timings(module_events, method_events)
+        assert timings["sparse_adapter_ms"] == pytest.approx(1.0)
+        assert _invalid_cost_cuda_stages(timings) == ()
+        timings["sparse_adapter_ms"] = 0.0
+        assert _invalid_cost_cuda_stages(timings) == ("sparse_adapter_ms",)
+    finally:
+        module_events.close()
+        for event in reversed(tuple(method_events.values())):
+            event.close()
 
 
 def test_dynamic_floor_m2_binder_preserves_dynamic_recipe_and_fit_gate(
