@@ -15,6 +15,7 @@ from tools.bata.georoute_dynamic_floor_m2_contract import (
     DYNAMIC_FLOOR_M2_COST_SCHEMA,
     DYNAMIC_FLOOR_M2_COST_ORDER,
     DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA,
+    DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA,
     DYNAMIC_FLOOR_M2_SEED,
     DYNAMIC_FLOOR_M2_WINDOW_BUDGET,
     bind_dynamic_floor_m2_config,
@@ -268,6 +269,76 @@ def test_dynamic_floor_m2_role_neutrality_pair_separates_execution_commit(
         )
 
 
+@pytest.mark.parametrize(
+    ("pair_mode", "role_calibration_enabled"),
+    [("role_off", False), ("role_on", True)],
+)
+def test_dynamic_floor_m2_strict_role_triplet_declares_execution_override(
+    tmp_path: Path,
+    pair_mode: str,
+    role_calibration_enabled: bool,
+):
+    cfg = _bound_config(tmp_path)
+    cfg.model.backbone.custom.georoute_diagnostic_telemetry_enabled = True
+    cfg.model.backbone.custom.georoute_role_calibration_telemetry_enabled = (
+        role_calibration_enabled
+    )
+    cfg.georoute_diagnostic_telemetry = dict(enabled=True)
+    cfg.georoute_development_profile = dict(enabled=False)
+    binding = validate_dynamic_floor_m2_config(
+        cfg,
+        arm="native_1cell_main",
+        phase="accuracy",
+    )
+    cfg.georoute_phase_m_binding = dict(
+        schema_version=DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA,
+        pair_mode=pair_mode,
+        variant="native_1cell_main",
+        seed=DYNAMIC_FLOOR_M2_SEED,
+        source_experiment_commit="c" * 40,
+        runtime_commit="d" * 40,
+        source_bound_config_sha256="1" * 64,
+        source_checkpoint_sha256="2" * 64,
+        source_prediction_sha256="3" * 64,
+        source_population_sha256="4" * 64,
+        source_dataset_count=136,
+        role_calibration_telemetry_enabled=role_calibration_enabled,
+        instrumentation_only=False,
+        same_slurm_job=True,
+        same_visible_gpu=True,
+        serial_execution=True,
+        fixed_role_quota_used=False,
+        changes_route_or_execution=True,
+        strict_deterministic_algorithms=True,
+        sdp_backend="math",
+        tf32_enabled=False,
+        deterministic_override_changes_heavy_execution=True,
+        role_calibration_instrumentation_only=True,
+        role_calibration_changes_route_or_execution=False,
+        source_execution_reproduced=False,
+        strict_determinism_diagnostic_only=True,
+        official_test_opened=False,
+        gt_for_route_used=False,
+        teacher_for_route_used=False,
+        oracle_used=False,
+        raw_prediction_cache_used=False,
+    )
+
+    assert (
+        resolve_dynamic_floor_m2_accuracy_execution_commit(
+            cfg,
+            binding=binding,
+        )
+        == "d" * 40
+    )
+    cfg.georoute_phase_m_binding.sdp_backend = "memory_efficient"
+    with pytest.raises(ValueError, match="neutrality pair execution binding"):
+        resolve_dynamic_floor_m2_accuracy_execution_commit(
+            cfg,
+            binding=binding,
+        )
+
+
 def _timed_cost_audit(*, attention_pairs: int | None = None) -> dict:
     clip_counts = [DYNAMIC_FLOOR_M2_WINDOW_BUDGET // 48 for _ in range(48)]
     expected_attention_pairs = sum(value**2 for value in clip_counts)
@@ -478,14 +549,8 @@ def test_dynamic_floor_m2_binder_preserves_dynamic_recipe_and_fit_gate(
 
     left = configs[DYNAMIC_FLOOR_M2_ARM_ORDER[0]].to_dict()
     right = configs[DYNAMIC_FLOOR_M2_ARM_ORDER[1]].to_dict()
-    assert (
-        left["model"]["backbone"]["custom"]["georoute_roi_extent_floor_cells"]
-        == 1
-    )
-    assert (
-        right["model"]["backbone"]["custom"]["georoute_roi_extent_floor_cells"]
-        == 2
-    )
+    assert left["model"]["backbone"]["custom"]["georoute_roi_extent_floor_cells"] == 1
+    assert right["model"]["backbone"]["custom"]["georoute_roi_extent_floor_cells"] == 2
 
 
 def test_dynamic_floor_m2_telemetry_summarizes_full_tubelet_state(tmp_path: Path):
@@ -494,9 +559,7 @@ def test_dynamic_floor_m2_telemetry_summarizes_full_tubelet_state(tmp_path: Path
     summary = summarize_dynamic_floor_m2_telemetry(path)
     assert summary["dataset_count"] == 1
     assert summary["geometry"]["width"]["p50"] == pytest.approx(0.25)
-    assert summary["geometry"]["height_floor_saturation_rate"] == pytest.approx(
-        0.50
-    )
+    assert summary["geometry"]["height_floor_saturation_rate"] == pytest.approx(0.50)
     assert summary["k_t"]["distribution"]["min"] == 64
     assert summary["k_t"]["zero_count"] == 0
     assert summary["roles"]["counts"] == {
@@ -509,9 +572,7 @@ def test_dynamic_floor_m2_telemetry_summarizes_full_tubelet_state(tmp_path: Path
 
 def test_dynamic_floor_m2_telemetry_rejects_padding(tmp_path: Path):
     payload = copy.deepcopy(_telemetry_payload())
-    payload["records"][0]["route"]["ragged_execution"][
-        "padded_heavy_tokens"
-    ] = 1
+    payload["records"][0]["route"]["ragged_execution"]["padded_heavy_tokens"] = 1
     path = tmp_path / "telemetry.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValueError, match="true-ragged exact B"):
@@ -603,10 +664,18 @@ def _cost_profile_fixture(tmp_path: Path) -> dict:
             "arm": arm,
             "runtime_commit": "c" * 40,
             "population_sha256": accuracy_population,
-            "checkpoint_receipt": {"sha256": ("c" if arm == DYNAMIC_FLOOR_M2_ARM_ORDER[0] else "d") * 64},
+            "checkpoint_receipt": {
+                "sha256": ("c" if arm == DYNAMIC_FLOOR_M2_ARM_ORDER[0] else "d") * 64
+            },
             "config_receipts": {
-                "train": {"path": str(train_path.resolve()), "sha256": sha256_file(train_path)},
-                "accuracy": {"path": str(accuracy_path.resolve()), "sha256": sha256_file(accuracy_path)},
+                "train": {
+                    "path": str(train_path.resolve()),
+                    "sha256": sha256_file(train_path),
+                },
+                "accuracy": {
+                    "path": str(accuracy_path.resolve()),
+                    "sha256": sha256_file(accuracy_path),
+                },
             },
         }
         cost_cfg = build_dynamic_floor_m2_cost_config(stage, arm=arm)
@@ -687,7 +756,9 @@ def _cost_profile_fixture(tmp_path: Path) -> dict:
             "accuracy_population_sha256": accuracy_population,
             "sample_manifest_sha256": canonical_sha256([row["window_id"]]),
             "checkpoint_sha256": fake_stages[arm]["checkpoint_receipt"]["sha256"],
-            "bound_accuracy_config_sha256": fake_stages[arm]["config_receipts"]["accuracy"]["sha256"],
+            "bound_accuracy_config_sha256": fake_stages[arm]["config_receipts"][
+                "accuracy"
+            ]["sha256"],
             "cost_config_sha256": expected_cost_config_hashes[arm],
             "diagnostic_telemetry_inside_timed_forward": False,
         }
@@ -761,7 +832,10 @@ def _cost_profile_fixture(tmp_path: Path) -> dict:
             },
         }
     artifacts = {
-        "raw_samples": {"path": str(raw_path.resolve()), "sha256": sha256_file(raw_path)},
+        "raw_samples": {
+            "path": str(raw_path.resolve()),
+            "sha256": sha256_file(raw_path),
+        },
         "power_trace": {
             "path": str(power_path.resolve()),
             "sha256": sha256_file(power_path),
@@ -846,7 +920,9 @@ def test_dynamic_floor_m2_cost_rejects_self_hashed_forged_energy(
         lambda result, **_kwargs: result,
     )
     raw_path = Path(profile["artifact_receipts"]["raw_samples"]["path"])
-    rows = [json.loads(line) for line in raw_path.read_text(encoding="utf-8").splitlines()]
+    rows = [
+        json.loads(line) for line in raw_path.read_text(encoding="utf-8").splitlines()
+    ]
     rows[0]["gpu_energy_j"] = 999.0
     rows[0].pop("sample_sha256")
     rows[0]["sample_sha256"] = canonical_sha256(rows[0])
@@ -918,7 +994,10 @@ def test_dynamic_floor_m2_complete_finalizer_remains_descriptive(monkeypatch):
     )
     result = finalize_dynamic_floor_m2(stages, cost, expected_commit="c" * 40)
     assert result["status"] == "PASS_COMPLETE_DESCRIPTIVE_FLOOR_SENSITIVITY"
-    assert result["decision"] == "COMPLETE_DESCRIPTIVE_ONLY_M3_REQUIRED_FOR_FLOOR_SELECTION"
+    assert (
+        result["decision"]
+        == "COMPLETE_DESCRIPTIVE_ONLY_M3_REQUIRED_FOR_FLOOR_SELECTION"
+    )
     assert result["single_seed_floor_selection_allowed"] is False
     assert result["m3_confirmation_required"] is True
 
@@ -992,18 +1071,18 @@ def test_dynamic_floor_m2_recovery_finalizer_binds_runtime_and_execution(
 
 
 def test_dynamic_floor_m2_execution_sources_freeze_dag_and_cost_scope():
-    profiler = (ROOT / "tools" / "bata" / "profile_georoute_dynamic_floor_m2.py").read_text(
-        encoding="utf-8"
-    )
-    deployer = (ROOT / "tools" / "bata" / "deploy_georoute_dynamic_floor_m2.py").read_text(
-        encoding="utf-8"
-    )
+    profiler = (
+        ROOT / "tools" / "bata" / "profile_georoute_dynamic_floor_m2.py"
+    ).read_text(encoding="utf-8")
+    deployer = (
+        ROOT / "tools" / "bata" / "deploy_georoute_dynamic_floor_m2.py"
+    ).read_text(encoding="utf-8")
     deploy_common = (
         ROOT / "tools" / "bata" / "georoute_hybrid_causal_deploy_common.py"
     ).read_text(encoding="utf-8")
-    stage = (ROOT / "tools" / "bata" / "georoute_dynamic_floor_m2_stage_runner.py").read_text(
-        encoding="utf-8"
-    )
+    stage = (
+        ROOT / "tools" / "bata" / "georoute_dynamic_floor_m2_stage_runner.py"
+    ).read_text(encoding="utf-8")
     scripts = "\n".join(
         path.read_text(encoding="utf-8")
         for path in (

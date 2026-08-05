@@ -15,7 +15,7 @@ from typing import Any, Mapping
 from mmengine.config import Config
 
 from tools.bata.georoute_dynamic_floor_m2_contract import (
-    DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA,
+    DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA,
 )
 from tools.bata.georoute_experiment_contract import canonical_sha256, sha256_file
 from tools.bata.georoute_stage_runner import _run_logged, build_torchrun_prefix
@@ -34,8 +34,8 @@ from tools.bata.run_georoute_role_instrumentation_pair import (
 )
 
 
-TRIPLET_SCHEMA = "georoute_role_instrumentation_causal_triplet_v1"
-PAIR_BINDING_SCHEMA = DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA
+TRIPLET_SCHEMA = "georoute_role_instrumentation_strict_causal_triplet_v2"
+PAIR_BINDING_SCHEMA = DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA
 TRIPLET_ORDER = ("role_off_a", "role_off_b", "role_on")
 MODE_SPECIFICATIONS = (
     ("role_off_a", False, "role_off"),
@@ -80,21 +80,20 @@ def classify_triplet_comparisons(
         and comparisons["source_vs_role_on"]["raw_sha256_parity"]
     )
     if not control_parity:
-        status = "FAIL_BASELINE_REPLAY_NONDETERMINISM"
+        status = "FAIL_STRICT_BASELINE_REPLAY_NONDETERMINISM"
     elif not treatment_parity:
-        status = "FAIL_ROLE_INSTRUMENTATION_NONNEUTRAL"
+        status = "FAIL_STRICT_ROLE_INSTRUMENTATION_NONNEUTRAL"
     elif source_parity:
-        status = "PASS_TRIPLET_NEUTRALITY_AND_SOURCE_PARITY"
+        status = "PASS_STRICT_TRIPLET_NEUTRALITY_AND_SOURCE_RAW_PARITY_DIAGNOSTIC_ONLY"
     else:
-        status = "PASS_TRIPLET_NEUTRALITY_SOURCE_REPLAY_DRIFT_DIAGNOSTIC_ONLY"
+        status = "PASS_STRICT_TRIPLET_NEUTRALITY_SOURCE_REPLAY_DRIFT_DIAGNOSTIC_ONLY"
     return {
         "status": status,
         "baseline_replay_determinism_supported": control_parity,
         "paired_role_instrumentation_neutrality_supported": treatment_parity,
         "source_prediction_raw_parity": source_parity,
-        "role_calibration_analysis_allowed_under_frozen_contract": bool(
-            treatment_parity and source_parity
-        ),
+        "role_calibration_analysis_allowed_under_frozen_contract": False,
+        "role_calibration_analysis_candidate_after_contract_review": treatment_parity,
     }
 
 
@@ -121,8 +120,16 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         "same_slurm_job": True,
         "same_visible_gpu": True,
         "serial_execution": True,
-        "instrumentation_only": True,
-        "changes_route_or_execution": False,
+        "instrumentation_only": False,
+        "changes_route_or_execution": True,
+        "strict_deterministic_algorithms": True,
+        "sdp_backend": "math",
+        "tf32_enabled": False,
+        "deterministic_override_changes_heavy_execution": True,
+        "role_calibration_instrumentation_only": True,
+        "role_calibration_changes_route_or_execution": False,
+        "source_execution_reproduced": False,
+        "strict_determinism_diagnostic_only": True,
         "fixed_role_quota_used": False,
         "official_test_opened": False,
         "gt_for_route_used": False,
@@ -243,6 +250,12 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         "same_slurm_job": True,
         "same_visible_gpu": True,
         "serial_execution": True,
+        "strict_deterministic_algorithms": True,
+        "sdp_backend": "math",
+        "tf32_enabled": False,
+        "deterministic_override_changes_heavy_execution": True,
+        "source_execution_reproduced": False,
+        "strict_determinism_diagnostic_only": True,
         "triplet_order": list(TRIPLET_ORDER),
         "source_artifacts": {
             "source_run_root": str(args.source_run_root.resolve()),

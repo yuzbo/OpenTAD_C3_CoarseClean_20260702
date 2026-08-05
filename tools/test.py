@@ -82,6 +82,7 @@ def main():
     georoute_official_development_binding = None
     georoute_dynamic_floor_m2_binding = None
     georoute_dynamic_floor_m2_checkpoint_sidecar = None
+    strict_dynamic_floor_m2_determinism = False
     if "spatial_zoom_s1_contract" in cfg:
         if args.checkpoint == "none" or not args.s1_test_open_certificate:
             raise ValueError(
@@ -204,20 +205,16 @@ def main():
         )
 
         require_formal_world2_slurm()
-        georoute_official_development_binding = (
-            validate_formal_development_config(cfg, seed=args.seed)
+        georoute_official_development_binding = validate_formal_development_config(
+            cfg, seed=args.seed
         )
         require_clean_formal_checkout(
-            expected_commit=georoute_official_development_binding[
-                "runtime_commit"
-            ],
+            expected_commit=georoute_official_development_binding["runtime_commit"],
             root=Path(path).resolve(),
         )
-        georoute_official_checkpoint_sidecar = (
-            validate_formal_checkpoint_sidecar(
-                args.checkpoint,
-                binding=georoute_official_development_binding,
-            )
+        georoute_official_checkpoint_sidecar = validate_formal_checkpoint_sidecar(
+            args.checkpoint,
+            binding=georoute_official_development_binding,
         )
     if "georoute_dynamic_floor_m2_binding" in cfg:
         if s1_binding is not None or georoute_official_development_binding is not None:
@@ -236,6 +233,7 @@ def main():
                 "forbids overrides, alternate ids, partial inference, and no-eval"
             )
         from tools.bata.georoute_dynamic_floor_m2_contract import (
+            DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA,
             require_clean_dynamic_floor_m2_checkout,
             require_dynamic_floor_m2_world1_slurm,
             resolve_dynamic_floor_m2_accuracy_execution_commit,
@@ -254,6 +252,12 @@ def main():
                 binding=georoute_dynamic_floor_m2_binding,
             )
         )
+        phase_m_binding = cfg.get("georoute_phase_m_binding", {})
+        strict_dynamic_floor_m2_determinism = bool(
+            isinstance(phase_m_binding, dict)
+            and phase_m_binding.get("schema_version")
+            == DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA
+        )
         require_clean_dynamic_floor_m2_checkout(
             expected_commit=dynamic_floor_m2_execution_commit,
             root=Path(path).resolve(),
@@ -268,19 +272,17 @@ def main():
     assert_no_raw_prediction_shortcut_for_pc_ot_mras(cfg)
 
     # DDP init
+    if strict_dynamic_floor_m2_determinism:
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
     if s1_binding is not None and args.world_size != 1:
         raise RuntimeError("formal S1 test is frozen to one Slurm GPU process")
-    if (
-        georoute_official_development_binding is not None
-        and args.world_size
-        != int(georoute_official_development_binding["world_size"])
+    if georoute_official_development_binding is not None and args.world_size != int(
+        georoute_official_development_binding["world_size"]
     ):
-        raise RuntimeError(
-            "formal GeoRoute development evaluation world size changed"
-        )
+        raise RuntimeError("formal GeoRoute development evaluation world size changed")
     if georoute_dynamic_floor_m2_binding is not None and args.world_size != 1:
         raise RuntimeError("dynamic floor M2 evaluation world size changed")
     print(
@@ -293,11 +295,24 @@ def main():
     set_seed(
         args.seed,
         # The pinned AdaTAD recipe uses the repository's legacy
-        # deterministic-warn-only semantics.  GeoRoute development must keep
-        # that transition behavior; only the separately sealed S1 protocol
-        # opts into strict deterministic algorithms.
-        deterministic_warn_only=(s1_binding is None),
+        # deterministic-warn-only semantics. GeoRoute development keeps that
+        # transition behavior except for the explicitly diagnostic strict-math
+        # triplet; the separately sealed S1 protocol is also strict.
+        deterministic_warn_only=(
+            s1_binding is None and not strict_dynamic_floor_m2_determinism
+        ),
     )
+    if strict_dynamic_floor_m2_determinism:
+        torch.cuda.manual_seed_all(args.seed)
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        torch.backends.cuda.enable_math_sdp(True)
+        print(
+            "Dynamic floor M2 strict determinism diagnostic: "
+            "math SDPA only, TF32 disabled"
+        )
     if georoute_dynamic_floor_m2_binding is None:
         cfg = update_workdir(cfg, args.id, torch.cuda.device_count())
     elif os.path.exists(cfg.work_dir):
@@ -363,9 +378,7 @@ def main():
     if georoute_official_development_binding is not None:
         runtime_test_ids = {str(row[0]) for row in test_dataset.data_list}
         if runtime_test_ids != set(
-            georoute_official_development_binding[
-                "evaluation_video_ids"
-            ]
+            georoute_official_development_binding["evaluation_video_ids"]
         ):
             raise ValueError(
                 "formal GeoRoute evaluation left the frozen development Gate"
@@ -424,18 +437,14 @@ def main():
         if georoute_official_development_binding is not None:
             if (
                 checkpoint.get("experiment_metadata")
-                != georoute_official_checkpoint_sidecar[
-                    "experiment_metadata"
-                ]
+                != georoute_official_checkpoint_sidecar["experiment_metadata"]
             ):
                 raise ValueError(
                     "formal GeoRoute checkpoint payload metadata does not "
                     "match its sidecar"
                 )
             if int(checkpoint.get("epoch", -1)) != int(
-                georoute_official_checkpoint_sidecar[
-                    "experiment_metadata"
-                ]["epoch"]
+                georoute_official_checkpoint_sidecar["experiment_metadata"]["epoch"]
             ):
                 raise ValueError(
                     "formal GeoRoute checkpoint epoch differs from its sidecar"

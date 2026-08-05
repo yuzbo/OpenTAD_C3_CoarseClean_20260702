@@ -35,6 +35,9 @@ DYNAMIC_FLOOR_M2_ROLE_REPLAY_SCHEMA = "georoute_phase_m_diagnostic_replay_v1"
 DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA = (
     "georoute_role_instrumentation_neutrality_pair_v1"
 )
+DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA = (
+    "georoute_role_instrumentation_strict_triplet_binding_v1"
+)
 DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA = (
     "scnr_dynamic_floor_m2_checkpoint_sidecar_v1"
 )
@@ -95,24 +98,32 @@ def require_clean_dynamic_floor_m2_checkout(
         character not in "0123456789abcdef" for character in expected_commit
     ):
         raise ValueError("dynamic floor M2 expected commit must be a full SHA")
-    head = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip().lower()
-    origin = subprocess.run(
-        [
-            "git",
-            "rev-parse",
-            "refs/remotes/origin/codex/spatial-zoom-s1-audit-fix-20260715",
-        ],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip().lower()
+    head = (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        .stdout.strip()
+        .lower()
+    )
+    origin = (
+        subprocess.run(
+            [
+                "git",
+                "rev-parse",
+                "refs/remotes/origin/codex/spatial-zoom-s1-audit-fix-20260715",
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        .stdout.strip()
+        .lower()
+    )
     status = subprocess.run(
         ["git", "status", "--porcelain=v1", "--untracked-files=all"],
         cwd=root,
@@ -128,9 +139,7 @@ def require_clean_dynamic_floor_m2_checkout(
 
 def require_dynamic_floor_m2_world1_slurm() -> None:
     visible = [
-        item
-        for item in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
-        if item
+        item for item in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") if item
     ]
     if (
         not str(os.environ.get("SLURM_JOB_ID", "")).isdigit()
@@ -163,10 +172,9 @@ def validate_frozen_dynamic_floor_m2_contract() -> None:
     ):
         raise RuntimeError("dynamic floor M2 cost order is not counterbalanced")
     for spec in DYNAMIC_FLOOR_M2_ARMS.values():
-        if (
-            spec["roi_extent_floor_mode"] != "native_cells"
-            or int(spec["roi_extent_floor_cells"]) not in {1, 2}
-        ):
+        if spec["roi_extent_floor_mode"] != "native_cells" or int(
+            spec["roi_extent_floor_cells"]
+        ) not in {1, 2}:
             raise RuntimeError("dynamic floor M2 contains an invalid ROI floor")
 
 
@@ -191,7 +199,9 @@ def bind_dynamic_floor_m2_config(
     if int(seed) != DYNAMIC_FLOOR_M2_SEED:
         raise ValueError("dynamic floor M2 seed changed")
     runtime_commit = str(runtime_commit).lower()
-    if len(runtime_commit) != 40 or any(c not in "0123456789abcdef" for c in runtime_commit):
+    if len(runtime_commit) != 40 or any(
+        c not in "0123456789abcdef" for c in runtime_commit
+    ):
         raise ValueError("dynamic floor M2 runtime commit must be a full lowercase SHA")
     spec = dynamic_floor_m2_arm_spec(arm)
     source_config = Path(source_config_path).resolve()
@@ -221,11 +231,12 @@ def bind_dynamic_floor_m2_config(
     if (
         str(custom.georoute_route_mode) != "dynamic_scnr"
         or str(custom.georoute_policy_estimator) != "straight_through"
-        or int(custom.georoute_window_token_budget)
-        != DYNAMIC_FLOOR_M2_WINDOW_BUDGET
+        or int(custom.georoute_window_token_budget) != DYNAMIC_FLOOR_M2_WINDOW_BUDGET
         or str(custom.georoute_zero_carrier_mode) != "masked_zero"
     ):
-        raise ValueError("dynamic floor M2 source config is not the approved main route")
+        raise ValueError(
+            "dynamic floor M2 source config is not the approved main route"
+        )
     for split_name, block_list in (
         ("train", gate_ids),
         ("val", fit_ids),
@@ -365,8 +376,7 @@ def validate_dynamic_floor_m2_config(
         or binding.get("checkpoint_consumer_state_key") != "state_dict_ema"
         or custom.georoute_route_mode != "dynamic_scnr"
         or custom.georoute_policy_estimator != "straight_through"
-        or int(custom.georoute_window_token_budget)
-        != DYNAMIC_FLOOR_M2_WINDOW_BUDGET
+        or int(custom.georoute_window_token_budget) != DYNAMIC_FLOOR_M2_WINDOW_BUDGET
         or custom.georoute_roi_extent_floor_mode != "native_cells"
         or int(custom.georoute_roi_extent_floor_cells)
         != int(spec["roi_extent_floor_cells"])
@@ -457,7 +467,11 @@ def resolve_dynamic_floor_m2_accuracy_execution_commit(
         "source_population_sha256",
     )
     custom = cfg.model.backbone.custom
-    if phase_schema == DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA:
+    if phase_schema in {
+        DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA,
+        DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA,
+    }:
+        strict_triplet = phase_schema == DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA
         pair_mode = phase_m.get("pair_mode")
         expected_role_enabled = {
             "role_off": False,
@@ -469,10 +483,7 @@ def resolve_dynamic_floor_m2_accuracy_execution_commit(
             or int(phase_m.get("seed", -1)) != DYNAMIC_FLOOR_M2_SEED
             or phase_m.get("source_experiment_commit") != source_commit
             or len(runtime_commit) != 40
-            or any(
-                character not in "0123456789abcdef"
-                for character in runtime_commit
-            )
+            or any(character not in "0123456789abcdef" for character in runtime_commit)
             or any(
                 not isinstance(phase_m.get(field), str)
                 or len(phase_m[field]) != 64
@@ -487,12 +498,12 @@ def resolve_dynamic_floor_m2_accuracy_execution_commit(
             or int(phase_m["source_dataset_count"]) <= 0
             or phase_m.get("role_calibration_telemetry_enabled")
             is not expected_role_enabled
-            or phase_m.get("instrumentation_only") is not True
+            or phase_m.get("instrumentation_only") is not (not strict_triplet)
             or phase_m.get("same_slurm_job") is not True
             or phase_m.get("same_visible_gpu") is not True
             or phase_m.get("serial_execution") is not True
             or phase_m.get("fixed_role_quota_used") is not False
-            or phase_m.get("changes_route_or_execution") is not False
+            or phase_m.get("changes_route_or_execution") is not strict_triplet
             or phase_m.get("official_test_opened") is not False
             or phase_m.get("gt_for_route_used") is not False
             or phase_m.get("teacher_for_route_used") is not False
@@ -503,6 +514,21 @@ def resolve_dynamic_floor_m2_accuracy_execution_commit(
             is not expected_role_enabled
             or cfg.georoute_diagnostic_telemetry.get("enabled") is not True
             or cfg.georoute_development_profile.get("enabled") is not False
+            or (
+                strict_triplet
+                and (
+                    phase_m.get("strict_deterministic_algorithms") is not True
+                    or phase_m.get("sdp_backend") != "math"
+                    or phase_m.get("tf32_enabled") is not False
+                    or phase_m.get("deterministic_override_changes_heavy_execution")
+                    is not True
+                    or phase_m.get("role_calibration_instrumentation_only") is not True
+                    or phase_m.get("role_calibration_changes_route_or_execution")
+                    is not False
+                    or phase_m.get("source_execution_reproduced") is not False
+                    or phase_m.get("strict_determinism_diagnostic_only") is not True
+                )
+            )
         ):
             raise ValueError(
                 "dynamic floor M2 role neutrality pair execution binding is invalid"
@@ -542,9 +568,7 @@ def resolve_dynamic_floor_m2_accuracy_execution_commit(
     return runtime_commit
 
 
-def build_dynamic_floor_m2_cost_config(
-    stage: Mapping[str, Any], *, arm: str
-) -> Any:
+def build_dynamic_floor_m2_cost_config(stage: Mapping[str, Any], *, arm: str) -> Any:
     """Rebuild the exact configuration hashed and executed by every cost pass."""
 
     from mmengine.config import Config
@@ -597,13 +621,10 @@ def build_dynamic_floor_m2_checkpoint_metadata(
         or int(ema_updates) != expected_updates
         or int(amp_skipped_attempts) < 0
         or int(replay_attempts) != int(amp_skipped_attempts)
-        or int(optimizer_attempts)
-        != expected_updates + int(amp_skipped_attempts)
+        or int(optimizer_attempts) != expected_updates + int(amp_skipped_attempts)
         or not 0 <= int(max_amp_retries_observed) <= 8
     ):
-        raise ValueError(
-            "dynamic floor M2 checkpoint update accounting is incomplete"
-        )
+        raise ValueError("dynamic floor M2 checkpoint update accounting is incomplete")
     metadata: dict[str, Any] = {
         "schema_version": DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA,
         "study_id": DYNAMIC_FLOOR_M2_STUDY_ID,
@@ -668,22 +689,19 @@ def validate_dynamic_floor_m2_checkpoint_sidecar(
     expected_updates = DYNAMIC_FLOOR_M2_EPOCHS * train_batches
     skipped = int(metadata.get("amp_skipped_attempts", -1))
     if (
-        sidecar.get("schema_version")
-        != DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA
+        sidecar.get("schema_version") != DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA
         or str(Path(str(sidecar.get("checkpoint_path", ""))).resolve())
         != str(checkpoint)
         or sidecar.get("checkpoint_sha256") != sha256_file(checkpoint)
         or observed_sidecar_hash != canonical_sha256(unsigned_sidecar)
-        or metadata.get("schema_version")
-        != DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA
+        or metadata.get("schema_version") != DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA
         or metadata.get("study_id") != DYNAMIC_FLOOR_M2_STUDY_ID
         or observed_metadata_hash != canonical_sha256(unsigned_metadata)
         or int(metadata.get("seed", -1)) != DYNAMIC_FLOOR_M2_SEED
         or int(metadata.get("epoch", -1)) != DYNAMIC_FLOOR_M2_EPOCHS - 1
         or int(metadata.get("epochs", -1)) != DYNAMIC_FLOOR_M2_EPOCHS
         or int(metadata.get("world_size", -1)) != DYNAMIC_FLOOR_M2_WORLD_SIZE
-        or int(metadata.get("global_batch_size", -1))
-        != DYNAMIC_FLOOR_M2_BATCH_SIZE
+        or int(metadata.get("global_batch_size", -1)) != DYNAMIC_FLOOR_M2_BATCH_SIZE
         or train_batches <= 0
         or int(metadata.get("successful_updates", -1)) != expected_updates
         or int(metadata.get("consumed_batches", -1)) != expected_updates
@@ -694,8 +712,7 @@ def validate_dynamic_floor_m2_checkpoint_sidecar(
         or int(metadata.get("optimizer_attempts", -1)) != expected_updates + skipped
         or int(metadata.get("max_amp_retries_per_batch", -1)) != 8
         or not 0 <= int(metadata.get("max_amp_retries_observed", -1)) <= 8
-        or metadata.get("checkpoint_policy")
-        != "final_epoch_ema_only_atomic"
+        or metadata.get("checkpoint_policy") != "final_epoch_ema_only_atomic"
         or metadata.get("checkpoint_consumer_state_key") != "state_dict_ema"
         or metadata.get("official_test_opened") is not False
         or metadata.get("paper_claim_allowed") is not False
@@ -797,8 +814,7 @@ def summarize_dynamic_floor_m2_telemetry(path: str | Path) -> dict[str, Any]:
     records = payload.get("records")
     dataset_count = int(payload.get("dataset_count", -1))
     if (
-        payload.get("schema_version")
-        != "georoute_formal_development_telemetry_v1"
+        payload.get("schema_version") != "georoute_formal_development_telemetry_v1"
         or payload.get("development_only") is not True
         or payload.get("official_test_opened") is not False
         or payload.get("gt_for_route_used") is not False
@@ -835,8 +851,7 @@ def summarize_dynamic_floor_m2_telemetry(path: str | Path) -> dict[str, Any]:
             != "accuracy_replay_only_excluded_from_timed_cost"
             or int(route.get("window_token_budget", -1))
             != DYNAMIC_FLOOR_M2_WINDOW_BUDGET
-            or route.get("source_grid_hw")
-            != list(DYNAMIC_FLOOR_M2_SOURCE_GRID_HW)
+            or route.get("source_grid_hw") != list(DYNAMIC_FLOOR_M2_SOURCE_GRID_HW)
             or int(route.get("batch_size", -1)) != 1
             or int(route.get("tubelet_count", -1)) != 384
             or int(route.get("item_count", -1)) != 220
@@ -880,9 +895,7 @@ def summarize_dynamic_floor_m2_telemetry(path: str | Path) -> dict[str, Any]:
                 or not isinstance(roles, list)
                 or len(roles) != 3
                 or any(
-                    isinstance(count, bool)
-                    or not isinstance(count, int)
-                    or count < 0
+                    isinstance(count, bool) or not isinstance(count, int) or count < 0
                     for count in roles
                 )
                 or sum(roles) != k_t
@@ -941,10 +954,7 @@ def summarize_dynamic_floor_m2_telemetry(path: str | Path) -> dict[str, Any]:
             "width": _summary(widths),
             "height": _summary(heights),
             "area": _summary(areas),
-            **{
-                key: float(value) / dataset_count
-                for key, value in floor_rates.items()
-            },
+            **{key: float(value) / dataset_count for key, value in floor_rates.items()},
         },
         "k_t": {
             "distribution": _summary(k_values),
@@ -1048,8 +1058,7 @@ def validate_dynamic_floor_m2_stage_result(
     }
     if (
         result.get("schema_version") != DYNAMIC_FLOOR_M2_STAGE_RESULT_SCHEMA
-        or result.get("status")
-        != "PASS_DYNAMIC_FLOOR_M2_TRAINING_AND_ACCURACY"
+        or result.get("status") != "PASS_DYNAMIC_FLOOR_M2_TRAINING_AND_ACCURACY"
         or result.get("study_id") != DYNAMIC_FLOOR_M2_STUDY_ID
         or result.get("arm_spec") != spec
         or result.get("arm_spec_sha256") != canonical_sha256(spec)
@@ -1080,8 +1089,7 @@ def validate_dynamic_floor_m2_stage_result(
         or len(checkpoint["sha256"]) != 64
         or not isinstance(p0, Mapping)
         or p0.get("status") != "PASS_NO_PERFORMANCE_P0"
-        or p0.get("telemetry_status")
-        != "PASS_NO_PERFORMANCE_TELEMETRY_P0"
+        or p0.get("telemetry_status") != "PASS_NO_PERFORMANCE_TELEMETRY_P0"
         or not isinstance(configs, Mapping)
         or set(configs) != {"train", "accuracy"}
         or not isinstance(artifacts, Mapping)
@@ -1111,9 +1119,7 @@ def validate_dynamic_floor_m2_stage_result(
         for phase in ("train", "accuracy")
     }
     for phase, cfg in bound_configs.items():
-        observed_binding = validate_dynamic_floor_m2_config(
-            cfg, arm=arm, phase=phase
-        )
+        observed_binding = validate_dynamic_floor_m2_config(cfg, arm=arm, phase=phase)
         if dict(observed_binding) != dict(binding):
             raise ValueError(f"dynamic floor M2 {phase} config changed binding")
 
@@ -1138,9 +1144,7 @@ def validate_dynamic_floor_m2_stage_result(
         raise ValueError("dynamic floor M2 checkpoint receipt is not sidecar-bound")
 
     artifact_paths = {
-        name: _validated_file_receipt(
-            artifacts[name], label=f"dynamic floor M2 {name}"
-        )
+        name: _validated_file_receipt(artifacts[name], label=f"dynamic floor M2 {name}")
         for name in ("prediction", "telemetry", "accuracy_log")
     }
     recomputed_telemetry = summarize_dynamic_floor_m2_telemetry(
@@ -1149,9 +1153,7 @@ def validate_dynamic_floor_m2_stage_result(
     if dict(recomputed_telemetry) != dict(telemetry):
         raise ValueError("dynamic floor M2 telemetry summary is not reproducible")
     parsed_metrics = parse_official_style_map(
-        artifact_paths["accuracy_log"].read_text(
-            encoding="utf-8", errors="replace"
-        )
+        artifact_paths["accuracy_log"].read_text(encoding="utf-8", errors="replace")
     )
     parsed_metrics["high_iou_composite"] = 0.5 * (
         parsed_metrics["mAP@0.6"] + parsed_metrics["mAP@0.7"]
@@ -1188,8 +1190,7 @@ def validate_dynamic_floor_m2_stage_result(
         or p0_source.get("origin_ref_matches_expected") is not True
         or p0_source.get("tree_clean") is not True
         or not isinstance(p0_telemetry, Mapping)
-        or p0_telemetry.get("status")
-        != "PASS_NO_PERFORMANCE_TELEMETRY_P0"
+        or p0_telemetry.get("status") != "PASS_NO_PERFORMANCE_TELEMETRY_P0"
     ):
         raise ValueError("dynamic floor M2 P0 receipt is not reproducible")
     return result
@@ -1282,7 +1283,9 @@ def validate_dynamic_floor_m2_cost_profile(
         try:
             stage_path.relative_to(run_root / "development")
         except ValueError as error:
-            raise ValueError("dynamic floor M2 cost stage path left the run root") from error
+            raise ValueError(
+                "dynamic floor M2 cost stage path left the run root"
+            ) from error
         stage_payload = _load_json_object(
             stage_path, label=f"dynamic floor M2 cost stage {arm}"
         )
@@ -1315,16 +1318,14 @@ def validate_dynamic_floor_m2_cost_profile(
             int(receipt.get("pass_index", -1)) != pass_index
             or receipt.get("arm") != arm
             or int(receipt.get("sample_count", -1)) <= 0
-            or receipt.get("population_sha256")
-            != profile.get("population_sha256")
+            or receipt.get("population_sha256") != profile.get("population_sha256")
             or receipt.get("accuracy_population_sha256")
             != profile.get("accuracy_population_sha256")
             or receipt.get("checkpoint_sha256")
             != validated_stages[arm]["checkpoint_receipt"]["sha256"]
             or receipt.get("bound_accuracy_config_sha256")
             != validated_stages[arm]["config_receipts"]["accuracy"]["sha256"]
-            or receipt.get("cost_config_sha256")
-            != expected_cost_config_hashes[arm]
+            or receipt.get("cost_config_sha256") != expected_cost_config_hashes[arm]
             or receipt.get("diagnostic_telemetry_inside_timed_forward") is not False
             or observed_hash != canonical_sha256(unsigned_receipt)
         ):
@@ -1361,7 +1362,9 @@ def validate_dynamic_floor_m2_cost_profile(
                 or _finite(stage_summary.get("p50"), f"{arm}.{stage}.p50") <= 0.0
                 or _finite(stage_summary.get("p95"), f"{arm}.{stage}.p95") <= 0.0
             ):
-                raise ValueError(f"dynamic floor M2 cost stage is invalid: {arm}.{stage}")
+                raise ValueError(
+                    f"dynamic floor M2 cost stage is invalid: {arm}.{stage}"
+                )
         for key in (
             "peak_gpu_allocated_mb",
             "peak_gpu_reserved_mb",
@@ -1370,8 +1373,7 @@ def validate_dynamic_floor_m2_cost_profile(
             if _finite(resources.get(key), f"{arm}.{key}") <= 0.0:
                 raise ValueError(f"dynamic floor M2 resource is invalid: {arm}.{key}")
     population_hashes = {
-        arm_summaries[arm]["population_sha256"]
-        for arm in DYNAMIC_FLOOR_M2_ARM_ORDER
+        arm_summaries[arm]["population_sha256"] for arm in DYNAMIC_FLOOR_M2_ARM_ORDER
     }
     if len(population_hashes) != 1:
         raise ValueError("dynamic floor M2 cost arms measured different populations")
@@ -1388,7 +1390,9 @@ def validate_dynamic_floor_m2_cost_profile(
         try:
             artifact_path.relative_to(run_root / "cost")
         except ValueError as error:
-            raise ValueError("dynamic floor M2 cost artifact left the run root") from error
+            raise ValueError(
+                "dynamic floor M2 cost artifact left the run root"
+            ) from error
     raw_rows = _load_jsonl_objects(
         artifact_paths["raw_samples"], label="dynamic floor M2 raw cost samples"
     )
@@ -1410,12 +1414,8 @@ def validate_dynamic_floor_m2_cost_profile(
             or row.get("population_sha256") != profile["population_sha256"]
             or observed_hash != canonical_sha256(unsigned_row)
             or _finite(row.get("gpu_energy_j"), "sample gpu energy") <= 0.0
-            or _finite(
-                row.get("peak_gpu_allocated_mb"), "sample peak allocated"
-            )
-            <= 0.0
-            or _finite(row.get("peak_gpu_reserved_mb"), "sample peak reserved")
-            <= 0.0
+            or _finite(row.get("peak_gpu_allocated_mb"), "sample peak allocated") <= 0.0
+            or _finite(row.get("peak_gpu_reserved_mb"), "sample peak reserved") <= 0.0
         ):
             raise ValueError("dynamic floor M2 raw cost sample is invalid")
         for stage in (
@@ -1517,7 +1517,9 @@ def validate_dynamic_floor_m2_cost_profile(
                     rel_tol=1e-12,
                     abs_tol=1e-12,
                 ):
-                    raise ValueError("dynamic floor M2 latency summary is not reproducible")
+                    raise ValueError(
+                        "dynamic floor M2 latency summary is not reproducible"
+                    )
         expected_resources = {
             "peak_gpu_allocated_mb": max(
                 float(row["peak_gpu_allocated_mb"]) for row in rows
@@ -1567,17 +1569,17 @@ def validate_dynamic_floor_m2_cost_profile(
     for row in raw_rows:
         start, end = map(float, row["energy_window_monotonic_s"])
         nms_start, nms_end = map(float, row["nms_energy_window_monotonic_s"])
-        sample_energy = _integrate_power_samples(
-            power_samples, start=start, end=end
-        )
+        sample_energy = _integrate_power_samples(power_samples, start=start, end=end)
         nms_energy = _integrate_power_samples(
             power_samples, start=nms_start, end=nms_end
         )
         if sample_energy is None or nms_energy is None:
-            raise ValueError("dynamic floor M2 power trace does not cover timing windows")
-        expected_energy = sample_energy + nms_energy / pass_sample_counts[
-            int(row["pass_index"])
-        ]
+            raise ValueError(
+                "dynamic floor M2 power trace does not cover timing windows"
+            )
+        expected_energy = (
+            sample_energy + nms_energy / pass_sample_counts[int(row["pass_index"])]
+        )
         if not math.isclose(
             float(row["gpu_energy_j"]),
             expected_energy,
@@ -1651,36 +1653,24 @@ def finalize_dynamic_floor_m2(
                 for key in g1["metrics"]
             },
             "g1_minus_g2_end_to_end_ms": {
-                quantile: float(
-                    g1_cost["latency_ms"]["end_to_end_serial_ms"][quantile]
-                )
+                quantile: float(g1_cost["latency_ms"]["end_to_end_serial_ms"][quantile])
                 - float(g2_cost["latency_ms"]["end_to_end_serial_ms"][quantile])
                 for quantile in ("p50", "p95")
             },
             "g1_minus_g2_geometry": {
                 "width_floor_saturation_rate": float(
-                    g1["telemetry_summary"]["geometry"][
-                        "width_floor_saturation_rate"
-                    ]
+                    g1["telemetry_summary"]["geometry"]["width_floor_saturation_rate"]
                 )
                 - float(
-                    g2["telemetry_summary"]["geometry"][
-                        "width_floor_saturation_rate"
-                    ]
+                    g2["telemetry_summary"]["geometry"]["width_floor_saturation_rate"]
                 ),
                 "height_floor_saturation_rate": float(
-                    g1["telemetry_summary"]["geometry"][
-                        "height_floor_saturation_rate"
-                    ]
+                    g1["telemetry_summary"]["geometry"]["height_floor_saturation_rate"]
                 )
                 - float(
-                    g2["telemetry_summary"]["geometry"][
-                        "height_floor_saturation_rate"
-                    ]
+                    g2["telemetry_summary"]["geometry"]["height_floor_saturation_rate"]
                 ),
-                "area_p50": float(
-                    g1["telemetry_summary"]["geometry"]["area"]["p50"]
-                )
+                "area_p50": float(g1["telemetry_summary"]["geometry"]["area"]["p50"])
                 - float(g2["telemetry_summary"]["geometry"]["area"]["p50"]),
             },
         }
