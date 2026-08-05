@@ -110,6 +110,7 @@ def test_phase_m_replay_instrumentation_preserves_route_configuration(
     )
 
     custom = cfg.model.backbone.custom
+    assert cfg.work_dir == str(tmp_path / "replay" / "gpu1_id0")
     assert custom.georoute_route_mode == "dynamic_scnr"
     assert custom.georoute_window_token_budget == 24576
     assert custom.georoute_diagnostic_telemetry_enabled is True

@@ -129,7 +129,7 @@ def _configure_replay_instrumentation(
 ) -> None:
     """Enable result-blind replay diagnostics without altering the hard route."""
 
-    cfg.work_dir = str(replay_work)
+    cfg.work_dir = str(replay_work / "gpu1_id0")
     cfg.model.backbone.custom.georoute_diagnostic_telemetry_enabled = True
     cfg.model.backbone.custom.georoute_role_calibration_telemetry_enabled = bool(
         role_calibration_telemetry_enabled
