@@ -26,7 +26,10 @@
   deadlock, incomplete tensor/config/asset validation, missing four-gate release
   bindings and missing external-root enforcement. Validators now require an
   explicit external SHA-256 and independently verify the captured tensor
-  artifact and per-rank summaries.
+  artifact and per-rank summaries. A final clean-commit audit additionally
+  required an explicit bound for exceptions raised before a DDP collective; the
+  numeric runner now uses elastic worker supervision, NCCL asynchronous error
+  handling and a receipt-bound 600-second process-group timeout.
 - Local Bash/Python static checks pass. The paper contract suite reports
   `17 passed / 1 Windows-only skip`; the repository-mandated C3 checks report
   `23 passed`. The Windows host still cannot initialize Torch `c10.dll`, so no

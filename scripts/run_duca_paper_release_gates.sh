@@ -60,6 +60,8 @@ mkdir -p "${DUCA_PAPER_RELEASE_GATE_ROOT}"
   --expected-sha256 "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}"
 
 numeric_root="${DUCA_PAPER_RELEASE_GATE_ROOT}/numeric"
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+export NCCL_ASYNC_ERROR_HANDLING=1
 "${PYTHON}" -m torch.distributed.run \
   --rdzv-backend=c10d \
   --rdzv-endpoint=localhost:0 \

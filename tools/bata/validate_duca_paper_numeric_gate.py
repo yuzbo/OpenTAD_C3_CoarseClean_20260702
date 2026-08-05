@@ -67,6 +67,7 @@ def validate_numeric_gate_artifact(
     config = payload.get("config", {})
     assets = payload.get("assets", {})
     rank_summary_sha = payload.get("rank_summary_sha256", {})
+    slurm_cuda = payload.get("slurm_cuda_binding", {})
     numeric_fields = (
         "fp32_fp64_slot_max_abs",
         "fp32_fp64_slot_max_relative",
@@ -103,6 +104,9 @@ def validate_numeric_gate_artifact(
         or code_gate.get("git_commit") != expected_commit
         or short_gate.get("status") != "passed"
         or short_gate.get("git_commit") != expected_commit
+        or int(slurm_cuda.get("process_group_timeout_seconds", -1)) != 600
+        or slurm_cuda.get("elastic_worker_supervision") is not True
+        or slurm_cuda.get("nccl_async_error_handling") is not True
         or int(execution.get("seed", -1)) != 5801
         or int(execution.get("world_size", -1)) != 2
         or int(execution.get("global_batch_size", -1)) != 2

@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,7 @@ EXPECTED_WORLD_SIZE = 2
 EXPECTED_GLOBAL_BATCH_SIZE = 2
 EXPECTED_T = 768
 EXPECTED_K = 384
+PROCESS_GROUP_TIMEOUT_SECONDS = 600
 THRESHOLDS = {
     "fp32_fp64_slot_atol": 5.0e-5,
     "fp32_fp64_slot_rtol": 5.0e-5,
@@ -492,7 +494,12 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
     world_size = int(os.environ["WORLD_SIZE"])
     torch.cuda.set_device(local_rank)
     device = torch.device("cuda", local_rank)
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    dist.init_process_group(
+        "nccl",
+        rank=rank,
+        world_size=world_size,
+        timeout=timedelta(seconds=PROCESS_GROUP_TIMEOUT_SECONDS),
+    )
     output_root = _path(args.output_root)
     try:
         output_root.relative_to(ROOT)
@@ -797,6 +804,12 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
                     os.environ.get("CUDA_VISIBLE_DEVICES", "")
                 ),
                 "physical_gpu_index_assumed": False,
+                "process_group_timeout_seconds": PROCESS_GROUP_TIMEOUT_SECONDS,
+                "elastic_worker_supervision": True,
+                "nccl_async_error_handling": bool(
+                    os.environ.get("TORCH_NCCL_ASYNC_ERROR_HANDLING", "")
+                    or os.environ.get("NCCL_ASYNC_ERROR_HANDLING", "")
+                ),
                 "torch_version": torch.__version__,
                 "torch_cuda_version": torch.version.cuda,
                 "device_names_by_rank": [
