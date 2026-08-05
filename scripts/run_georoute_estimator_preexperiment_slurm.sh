@@ -59,6 +59,19 @@ case "${ACTION}" in
       --output "${RUN_ROOT}/control/decode_census.json"
     ;;
   phase-m)
+    PHASE_M_ROLE_ARGS=()
+    case "${GEOROUTE_PHASE_M_ROLE_CALIBRATION_TELEMETRY:-0}" in
+      0) ;;
+      1)
+        [[ -n "${GEOROUTE_PHASE_M_SOURCE_POPULATION_SHA256:-}" ]] || \
+          fail 'role calibration replay requires source population SHA-256'
+        PHASE_M_ROLE_ARGS+=(
+          --source-population-sha256 "${GEOROUTE_PHASE_M_SOURCE_POPULATION_SHA256}"
+          --role-calibration-telemetry
+        )
+        ;;
+      *) fail 'GEOROUTE_PHASE_M_ROLE_CALIBRATION_TELEMETRY must be 0 or 1' ;;
+    esac
     python -m tools.bata.run_georoute_phase_m_replay \
       --variant "${GEOROUTE_PHASE_M_VARIANT}" \
       --seed "${GEOROUTE_PHASE_M_SEED}" \
@@ -71,7 +84,8 @@ case "${ACTION}" in
       --source-prediction "${GEOROUTE_PHASE_M_SOURCE_PREDICTION}" \
       --source-prediction-sha256 "${GEOROUTE_PHASE_M_SOURCE_PREDICTION_SHA256}" \
       --source-experiment-commit "${GEOROUTE_SOURCE_EXPERIMENT_COMMIT}" \
-      --expected-commit "${GEOROUTE_EXPECTED_COMMIT}"
+      --expected-commit "${GEOROUTE_EXPECTED_COMMIT}" \
+      "${PHASE_M_ROLE_ARGS[@]}"
     ;;
   finalize)
     python -m tools.bata.finalize_georoute_estimator_preexperiment \

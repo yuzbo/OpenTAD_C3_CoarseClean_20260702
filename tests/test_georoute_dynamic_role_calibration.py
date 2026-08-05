@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import torch
+from mmengine.config import Config
 
 from opentad.models.backbones.georoute_routing import (
     select_dynamic_global_exact_budget,
@@ -13,6 +14,9 @@ from opentad.models.backbones.georoute_routing import (
 from opentad.models.backbones.georoute_wrapper import GeoRouteBackboneWrapper
 from tools.bata.analyze_georoute_dynamic_role_calibration import (
     summarize_dynamic_role_calibration_telemetry,
+)
+from tools.bata.run_georoute_phase_m_replay import (
+    _configure_replay_instrumentation,
 )
 
 
@@ -70,6 +74,53 @@ def _telemetry_payload() -> dict:
             }
         ],
     }
+
+
+@pytest.mark.parametrize("role_calibration_enabled", [False, True])
+def test_phase_m_replay_instrumentation_preserves_route_configuration(
+    tmp_path: Path,
+    role_calibration_enabled: bool,
+):
+    cfg = Config(
+        dict(
+            model=dict(
+                backbone=dict(
+                    custom=dict(
+                        georoute_route_mode="dynamic_scnr",
+                        georoute_window_token_budget=24576,
+                        georoute_diagnostic_telemetry_enabled=False,
+                    )
+                )
+            ),
+            georoute_diagnostic_telemetry=dict(enabled=False),
+            georoute_development_profile=dict(enabled=False),
+            post_processing=dict(save_dict=False),
+            inference=dict(
+                load_from_raw_predictions=False,
+                save_raw_prediction=False,
+            ),
+        )
+    )
+
+    _configure_replay_instrumentation(
+        cfg,
+        replay_work=tmp_path / "replay",
+        role_calibration_telemetry_enabled=role_calibration_enabled,
+    )
+
+    custom = cfg.model.backbone.custom
+    assert custom.georoute_route_mode == "dynamic_scnr"
+    assert custom.georoute_window_token_budget == 24576
+    assert custom.georoute_diagnostic_telemetry_enabled is True
+    assert (
+        custom.georoute_role_calibration_telemetry_enabled
+        is role_calibration_enabled
+    )
+    assert cfg.georoute_diagnostic_telemetry.enabled is True
+    assert cfg.georoute_development_profile.enabled is True
+    assert cfg.post_processing.save_dict is True
+    assert cfg.inference.load_from_raw_predictions is False
+    assert cfg.inference.save_raw_prediction is False
 
 
 def test_role_calibration_summary_detects_observed_collapse_without_quota(

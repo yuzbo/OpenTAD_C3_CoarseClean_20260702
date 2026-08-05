@@ -28,6 +28,13 @@ from tools.bata.georoute_stage_runner import (  # noqa: E402
     _run_logged,
     build_torchrun_prefix,
 )
+from tools.bata.analyze_georoute_dynamic_role_calibration import (  # noqa: E402
+    summarize_dynamic_role_calibration_telemetry,
+)
+from tools.bata.georoute_dynamic_floor_m2_contract import (  # noqa: E402
+    DYNAMIC_FLOOR_M2_SEED,
+    validate_dynamic_floor_m2_config,
+)
 
 
 PHASE_M_SCHEMA = "georoute_phase_m_diagnostic_replay_v1"
@@ -106,9 +113,31 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--source-checkpoint-sha256", required=True)
     parser.add_argument("--source-prediction", type=Path, required=True)
     parser.add_argument("--source-prediction-sha256", required=True)
+    parser.add_argument("--source-population-sha256")
     parser.add_argument("--source-experiment-commit", required=True)
     parser.add_argument("--expected-commit", required=True)
+    parser.add_argument("--role-calibration-telemetry", action="store_true")
     return parser.parse_args()
+
+
+def _configure_replay_instrumentation(
+    cfg: Config,
+    *,
+    replay_work: Path,
+    role_calibration_telemetry_enabled: bool,
+) -> None:
+    """Enable result-blind replay diagnostics without altering the hard route."""
+
+    cfg.work_dir = str(replay_work)
+    cfg.model.backbone.custom.georoute_diagnostic_telemetry_enabled = True
+    cfg.model.backbone.custom.georoute_role_calibration_telemetry_enabled = bool(
+        role_calibration_telemetry_enabled
+    )
+    cfg.georoute_diagnostic_telemetry = dict(enabled=True)
+    cfg.georoute_development_profile = dict(enabled=True)
+    cfg.post_processing.save_dict = True
+    cfg.inference.load_from_raw_predictions = False
+    cfg.inference.save_raw_prediction = False
 
 
 def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
@@ -163,17 +192,43 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         )
     if bool(cfg.inference.get("load_from_raw_predictions", False)):
         raise RuntimeError("Phase M forbids raw-prediction replay shortcuts")
+    source_population_sha256 = args.source_population_sha256
+    source_binding = None
+    if args.role_calibration_telemetry:
+        if int(args.seed) != DYNAMIC_FLOOR_M2_SEED:
+            raise RuntimeError("role calibration replay requires the frozen M2 seed")
+        validate_dynamic_floor_m2_config(
+            cfg,
+            arm=str(args.variant),
+            phase="accuracy",
+        )
+        source_binding = dict(cfg.georoute_dynamic_floor_m2_binding)
+        if (
+            source_binding.get("runtime_commit")
+            != args.source_experiment_commit.lower()
+            or bool(
+                cfg.model.backbone.custom.get(
+                    "georoute_role_calibration_telemetry_enabled",
+                    False,
+                )
+            )
+            or not isinstance(source_population_sha256, str)
+            or len(source_population_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in source_population_sha256.lower()
+            )
+        ):
+            raise RuntimeError("role calibration source binding is invalid")
 
     replay_work = cell_root / "replay"
     bound_config = cell_root / "control" / "phase_m_bound_config.py"
-    cfg.work_dir = str(replay_work)
-    cfg.model.backbone.custom.georoute_diagnostic_telemetry_enabled = True
-    cfg.georoute_diagnostic_telemetry = dict(enabled=True)
-    cfg.georoute_development_profile = dict(enabled=True)
-    cfg.post_processing.save_dict = True
-    cfg.inference.load_from_raw_predictions = False
-    cfg.inference.save_raw_prediction = False
-    cfg.georoute_phase_m_binding = dict(
+    _configure_replay_instrumentation(
+        cfg,
+        replay_work=replay_work,
+        role_calibration_telemetry_enabled=args.role_calibration_telemetry,
+    )
+    replay_binding = dict(
         schema_version=PHASE_M_SCHEMA,
         variant=str(args.variant),
         seed=int(args.seed),
@@ -186,6 +241,14 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         instrumentation_only=True,
         official_test_opened=False,
     )
+    if args.role_calibration_telemetry:
+        replay_binding.update(
+            role_calibration_telemetry_enabled=True,
+            source_population_sha256=source_population_sha256.lower(),
+            fixed_role_quota_used=False,
+            changes_route_or_execution=False,
+        )
+    cfg.georoute_phase_m_binding = replay_binding
     bound_config.parent.mkdir(parents=True, exist_ok=True)
     cfg.dump(str(bound_config))
 
@@ -243,10 +306,42 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
     dataset_count = int(telemetry.get("dataset_count", -1))
     record_count = int(telemetry.get("record_count", -2))
     population_complete = dataset_count > 0 and record_count == dataset_count
+    observed_population_sha256 = str(telemetry.get("population_sha256", ""))
     if not prediction_parity:
         raise RuntimeError("Phase M prediction SHA-256 parity failed")
     if not population_complete:
         raise RuntimeError("Phase M telemetry population is incomplete")
+    calibration_summary_path = None
+    calibration_summary = None
+    if args.role_calibration_telemetry:
+        if (
+            observed_population_sha256 != source_population_sha256.lower()
+            or dataset_count
+            != len(source_binding.get("evaluation_video_ids", ()))
+            or dict(telemetry.get("phase_m_binding", {})) != replay_binding
+        ):
+            raise RuntimeError("role calibration population SHA-256 parity failed")
+        profile = _read_json(profile_path)
+        last_audit = profile.get("last_georoute_audit")
+        if (
+            not isinstance(last_audit, Mapping)
+            or last_audit.get("role_calibration_telemetry_enabled") is not True
+        ):
+            raise RuntimeError("role calibration replay did not activate instrumentation")
+        calibration_summary = summarize_dynamic_role_calibration_telemetry(
+            telemetry_path
+        )
+        if (
+            calibration_summary.get("population_sha256")
+            != source_population_sha256.lower()
+            or calibration_summary.get("interpretation_boundary", {}).get(
+                "changes_route_or_execution"
+            )
+            is not False
+        ):
+            raise RuntimeError("role calibration summary violated its frozen boundary")
+        calibration_summary_path = cell_root / "role_calibration_summary.json"
+        _atomic_write_json(calibration_summary_path, calibration_summary)
 
     result: dict[str, Any] = {
         "schema_version": PHASE_M_SCHEMA,
@@ -281,7 +376,7 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         "telemetry_population_complete": population_complete,
         "dataset_count": dataset_count,
         "record_count": record_count,
-        "population_sha256": str(telemetry["population_sha256"]),
+        "population_sha256": observed_population_sha256,
         "rendezvous": rendezvous,
         "instrumentation_only": True,
         "development_metric_is_replay_only": True,
@@ -293,6 +388,21 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         "old_selector_completed": False,
         "paper_claim_allowed": False,
     }
+    if args.role_calibration_telemetry:
+        result.update(
+            role_calibration_telemetry_enabled=True,
+            source_population_sha256=source_population_sha256.lower(),
+            population_sha256_parity=True,
+            fixed_role_quota_used=False,
+            changes_route_or_execution=False,
+            role_calibration_summary=dict(calibration_summary),
+        )
+        result["replay_artifacts"]["role_calibration_summary_path"] = str(
+            calibration_summary_path
+        )
+        result["replay_artifacts"]["role_calibration_summary_sha256"] = (
+            sha256_file(calibration_summary_path)
+        )
     result["result_sha256"] = canonical_sha256(result)
     return result
 
@@ -355,6 +465,16 @@ def main() -> int:
             "official_test_opened": False,
             "paper_claim_allowed": False,
         }
+        if args.role_calibration_telemetry:
+            failure.update(
+                role_calibration_telemetry_enabled=True,
+                source_population_sha256=(
+                    args.source_population_sha256.lower()
+                    if isinstance(args.source_population_sha256, str)
+                    else None
+                ),
+                fixed_role_quota_used=False,
+            )
         failure["failure_sha256"] = canonical_sha256(failure)
         _atomic_write_json(cell_root / "phase_m_failure.json", failure)
         raise
