@@ -1103,6 +1103,19 @@ Current Stage-A recovery decision:
    no model, solver, loss, budget, data, seed, evaluator, threshold or metric.
    No downstream gate or Stage-A job was submitted and no metric was opened.
 
+   The repaired source `dfe787f1` subsequently passed authoritative code gate
+   `1222944` and real short-window gate `1222951`. Combined release-gate job
+   `1222954` then failed before exact-211 with signature
+   `numeric_gate_per_update_t768_k384_capture_requirement`: its implementation
+   contradicted the frozen “within at most 100 updates” contract by requiring an
+   exact `T=768,K=384` rank-local capture after every successful update. Natural
+   short rows can validly produce smaller effective K, and the two DDP ranks can
+   differ. The authorized narrow correction permits non-target search updates,
+   performs the same `MAX` trigger collective on every rank at every update, and
+   retains the terminal fail-closed owner check within 100. This is gate control
+   flow only; all scientific/model settings and thresholds remain frozen. No
+   Stage-A job or metric exists from this attempt.
+
 Approved compact feasibility design, superseding the simulation-first order
 below while retaining it as negative-history context:
 

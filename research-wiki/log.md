@@ -1,5 +1,39 @@
 # Research Log
 
+## 2026-08-06 — Numeric release gate stopped on an over-strong per-update capture check
+
+- Published and installed exact test-repair source
+  `dfe787f1e39e09c55ddb3c459367eba081cb5abf` in clean remote checkout
+  `/data/run01/sczc063/yuzibo/OpenTAD_DUCA_PAPER_dfe787f1`; complete transport
+  bundle SHA-256 is
+  `c9991fe26f87bbb43cc45edf4bcb59b9040f0a5ffca54bd4ae8de30501623527`.
+- Authoritative code gate `1222944` completed `0:0` with 147 Linux/PyTorch tests;
+  receipt SHA-256 is
+  `d341f91a32aa02930b1e40b4f84ed3eab0a1cb08c02b5a5a1d044a5b09349918`.
+  Real natural-short-window heavy-backbone gate `1222951` completed `0:0`;
+  receipt SHA-256 is
+  `8e85e81b0b995e26599025061a45d941ca5aeae68d49b15abb64604f4d76e5a5`.
+- Combined release-gate job `1222954` failed `1:0` at fresh root
+  `/data/run01/sczc063/yuzibo/rime_preflight/duca_paper_release_gates_dfe787f1_20260806_000536`.
+  Exact exception: `actual training update did not reach T768/K384 solver`.
+  Exact-211 did not run, no release-gate receipt exists and no Stage-A cell was
+  submitted.
+- Registered failure signature
+  `numeric_gate_per_update_t768_k384_capture_requirement`. The runner promised to
+  reproduce the legacy condition within at most 100 real full-model updates, but
+  immediately required every successful rank-local update to contain a natural
+  `T=768,K=384` row. Natural short rows legitimately use a smaller effective K,
+  and the two DDP ranks can observe different valid lengths on an update.
+- The bounded repair treats a non-target update as an allowed search step while
+  all ranks still execute one synchronized `MAX` trigger reduction every update.
+  The terminal owner reduction continues to fail closed unless an exact target
+  reproduces the legacy guard within 100 updates. Per-rank target-capture counts
+  are recorded for diagnosis. No solver, model, loss, budget meaning, threshold,
+  data, seed, checkpoint, evaluator or paper question changed.
+- No loss value, checkpoint, prediction, partial metric or mAP was opened. This is
+  `ENGINEERING_STATUS`; Stage B remains sealed and a fresh exact-commit four-gate
+  chain is required before Stage-A release.
+
 ## 2026-08-05 — First four-gate release attempt stopped on FP64 test-reference dtype
 
 - Transported exact source `e0a58ab2e576522ccf335a8fea44bdcef71e490b`

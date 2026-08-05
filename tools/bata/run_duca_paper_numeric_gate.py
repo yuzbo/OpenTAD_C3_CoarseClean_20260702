@@ -615,6 +615,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
     structured._physical_row_forward_backward = observed_solver
     attempted_updates = 0
     successful_updates = 0
+    target_capture_updates = 0
     local_trigger_capture = None
     local_legacy = None
     all_training_gradients_finite = True
@@ -671,23 +672,21 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
             scheduler.step()
             successful_updates += 1
             capture = observer_state.get("candidate")
-            _distributed_require(
-                capture is not None,
-                "actual training update did not reach T768/K384 solver",
-                device=device,
-            )
-            graph = _graph_to_device(capture["graph"], device)
-            local_legacy = _legacy_raw_slot_mass_drift(
-                capture["node_log_probs"].to(device=device),
-                k=int(capture["k"]),
-                graph=graph,
-                temperature=float(capture["temperature"]),
-            )
-            local_trigger = bool(local_legacy["old_guard_triggered"])
+            local_trigger = False
+            if capture is not None:
+                target_capture_updates += 1
+                graph = _graph_to_device(capture["graph"], device)
+                local_legacy = _legacy_raw_slot_mass_drift(
+                    capture["node_log_probs"].to(device=device),
+                    k=int(capture["k"]),
+                    graph=graph,
+                    temperature=float(capture["temperature"]),
+                )
+                local_trigger = bool(local_legacy["old_guard_triggered"])
+                if local_trigger:
+                    local_trigger_capture = capture
             flag = torch.tensor(int(local_trigger), device=device, dtype=torch.int64)
             dist.all_reduce(flag, op=dist.ReduceOp.MAX)
-            if local_trigger:
-                local_trigger_capture = capture
             if int(flag.item()) == 1:
                 break
     finally:
@@ -751,6 +750,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
         "owner_rank": owner_rank,
         "attempted_updates": attempted_updates,
         "successful_updates": successful_updates,
+        "target_capture_updates": target_capture_updates,
         "all_training_gradients_finite": all_training_gradients_finite,
         "trainable_gradient_tensor_count": trainable_gradient_tensor_count,
         "legacy_trigger": local_legacy if rank == owner_rank else None,
@@ -851,6 +851,9 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
                 "successful_updates_until_trigger": max(
                     int(row["successful_updates"]) for row in rank_summaries
                 ),
+                "target_capture_updates_by_rank": [
+                    int(row["target_capture_updates"]) for row in rank_summaries
+                ],
                 "old_guard_trigger_owner_rank": owner_rank,
                 "old_guard_triggered": True,
                 "actual_full_model_forward_backward_optimizer_step": True,

@@ -641,3 +641,18 @@ def test_stage_a_launchers_remain_paper_facing_and_fail_closed():
     assert grouped.rfind("trap - ERR INT TERM") > grouped.rfind(
         "os.replace(temporary, target)"
     )
+
+
+def test_numeric_gate_waits_for_target_capture_with_rank_synchronized_control_flow():
+    numeric_gate = (
+        REPO_ROOT / "tools/bata/run_duca_paper_numeric_gate.py"
+    ).read_text(encoding="utf-8")
+    assert "actual training update did not reach T768/K384 solver" not in numeric_gate
+    assert "target_capture_updates = 0" in numeric_gate
+    assert "if capture is not None:" in numeric_gate
+    assert "target_capture_updates += 1" in numeric_gate
+    sync = "dist.all_reduce(flag, op=dist.ReduceOp.MAX)"
+    assert sync in numeric_gate
+    assert numeric_gate.index("local_trigger = False") < numeric_gate.index(sync)
+    assert numeric_gate.index(sync) < numeric_gate.index("if int(flag.item()) == 1:")
+    assert "old production FP32 guard did not trigger within 100 updates" in numeric_gate

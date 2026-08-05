@@ -532,3 +532,10 @@ These failures and naming mistakes must not be repeated.
      constructor). A Linux `Double did not match Float` assertion failure after
      the brute-force distribution comparison has passed is a test-construction
      failure, not evidence against the solver or DUCA model.
+149. Do not reinterpret a numeric gate that promises target reproduction within
+     at most 100 real updates as requiring `T=768,K=384` on every rank-local
+     update. Natural short rows can legitimately use smaller effective K. A
+     bounded search must keep all DDP ranks in identical collective order on
+     every update and fail closed at the terminal owner check if no exact target
+     reproduces the registered guard. Never use a rank-local `continue` that can
+     skip a collective while another rank enters it.
