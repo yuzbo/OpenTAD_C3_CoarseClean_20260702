@@ -159,9 +159,19 @@ max_chars: 8000
   held, bound to recovery-v3 receipt self/file SHA-256
   `4cc8b7649d82cfd89530453df6be02609af5a30334f0f9f44a3efa447bf584e2` /
   `623c2f958d0a86fdba5ffd81f14c413e652c4d788b2fc089151b48bbf9ce81fe`,
-  validated with the original finalizer and released. Actual Slurm dependencies
-  are cost none and finalizer `afterany:1222869`. State remains
-  `experiment_running`; no live/partial cost or floor evidence exists.
+  validated with the original finalizer and released. Job `1222869` then failed
+  before creating `cost/`: one population-preflight call site still referenced the
+  removed `_cost_config` helper and raised `NameError`; finalizer `1222870` sealed
+  incomplete with every promotion guard false. Exact repair
+  `42923d9f7aaddb14368f82aacda5c77e1f857a24` changes that call to the shared
+  builder and adds an AST regression that rejects a loaded legacy name. It passes
+  local `16/16`, remote `51/51` and cost precheck. Replacement cost/finalizer Jobs
+  `1222889/1222890` were held, bound to recovery-v4 receipt self/file SHA-256
+  `5fe63bce1811abddadb5dda60bc67385b07693f7642c4de016616cd8756c1e1c` /
+  `5bd504a60668eeb204035d25e4853d601c67fc5097b474987e718562c7b51226`,
+  validated and released. Actual dependencies are cost none and finalizer
+  `afterany:1222889`. State remains `experiment_running`; no live/partial cost or
+  floor evidence exists.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

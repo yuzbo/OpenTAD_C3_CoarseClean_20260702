@@ -2559,3 +2559,16 @@ append_only: true
   self/file SHA-256 `4cc8b764...584e2` / `623c2f95...81fe`, validated through the
   original finalizer, and released. Actual DAG is cost none and finalizer
   `afterany:1222869`; state remains `experiment_running` and no live metric is read.
+
+- 2026-08-05: cost recovery `1222869` failed `1:0` before creating `cost/` because
+  population preflight retained a call to deleted `_cost_config`; the exact
+  traceback is `NameError` at `profile_georoute_dynamic_floor_m2.py:651`.
+  Finalizer `1222870` completed and sealed `INCOMPLETE_NO_FLOOR_INFERENCE`; no pass
+  sample, paired profile, contrast or promotion exists. Finalization self/file
+  SHA-256 are `f586083c...9b75b` / `5bca01ea...7d59`. Exact repair `42923d9f`
+  routes that call through the shared builder and adds an AST regression. Local
+  `16/16`, remote clean `51/51` and precheck pass. After arm and empty-output
+  revalidation, held Jobs `1222889/1222890` were bound to recovery-v4 receipt
+  self/file SHA-256 `5fe63bce...c1e1c` / `5bd504a6...51226`, validated and
+  released with actual DAG cost none/finalizer `afterany:1222889`. Status remains
+  `experiment_running`; no live pass is read.

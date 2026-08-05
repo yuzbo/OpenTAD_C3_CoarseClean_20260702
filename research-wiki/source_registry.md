@@ -1467,6 +1467,23 @@ updated: 2026-08-05
   validated with the original finalizer and released. Actual Slurm DAG is cost
   none and finalizer `afterany:1222869`. State is `experiment_running`; no partial
   or live metric is opened.
+- Dynamic SCNR M2 fourth cost-only recovery, 2026-08-05. Cost `1222869` failed
+  `1:0` in population preflight at
+  `profile_georoute_dynamic_floor_m2.py:651`: the shared-builder refactor left one
+  loaded `_cost_config` name, causing `NameError` before `cost/` creation.
+  Finalizer `1222870` completed `0:0` and sealed incomplete (self/file SHA-256
+  `f586083ccb807c3a0b84980162ff8943a857e5a61e4fb085f52993ac2679b75b` /
+  `5bca01ea1f0cd44273475e988af94563dc3cb484551f1c89c0172e1e86107d59`).
+  Exact clean repair `42923d9f7aaddb14368f82aacda5c77e1f857a24` uses the
+  shared builder at that call site and adds an AST regression excluding the
+  legacy symbol; local `16/16`, remote `51/51`, cost precheck, exact-head and
+  clean-tree checks pass. Model/config/training and completed arms remain
+  unchanged. Cost/finalizer `1222889/1222890` were held, bound to recovery-v4
+  receipt self/file SHA-256
+  `5fe63bce1811abddadb5dda60bc67385b07693f7642c4de016616cd8756c1e1c` /
+  `5bd504a60668eeb204035d25e4853d601c67fc5097b474987e718562c7b51226`,
+  validated and released. Actual DAG is cost none and finalizer
+  `afterany:1222889`; state is `experiment_running` with no partial inference.
 
 ## 外部附件
 

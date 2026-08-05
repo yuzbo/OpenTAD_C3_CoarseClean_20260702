@@ -66,7 +66,7 @@ evaluator/NMS 与成本测量。两臂的 `geometry_smoothness_weight`、
 | --- | --- | --- | --- |
 | M0 | 公式、独立宽高、11x20 的 1x1/2x2 known-answer tests | 精确得到 `(1/20,1/11)` 与 `(2/20,2/11)`，in-bounds 且梯度有限 | tested at exact source `4be71844`: focused `36/36`; complete GeoRoute+C3 `194 passed, 1 skipped` |
 | M1 | 真实 180x320 → 11x20 P0，验证配置、审计字段和零正则 | 不产生 metric/checkpoint；任一 hidden clamp/penalty/静态 0.20 即失败 | tested: G1 Job `1215358`; G2 Job `1215364` |
-| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | G1/G2 `1216180/1216181` complete; three failed cost attempts are archived; shared-config repair `011d2943` passed local/remote checks; replacement `1222869/1222870` is `experiment_running`, no result yet |
+| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | G1/G2 `1216180/1216181` complete; four failed cost attempts are preserved; final-call repair `42923d9f` passed local/remote checks; replacement `1222889/1222890` is `experiment_running`, no result yet |
 | M3 | 仅在动态主方法通过总 gate 后进入 disjoint-seed confirmation | 不从单 seed 宣称 floor 最优 | blocked |
 
 ## 当前边界
@@ -155,7 +155,17 @@ self/file SHA-256 为
 `4cc8b7649d82cfd89530453df6be02609af5a30334f0f9f44a3efa447bf584e2` /
 `623c2f958d0a86fdba5ffd81f14c413e652c4d788b2fc089151b48bbf9ce81fe`，
 真实 scheduler DAG 为 cost 无依赖、finalizer `afterany:1222869`。状态仍是
-`experiment_running`，尚无可解释的成本或 floor 结果。
+`experiment_running`，尚无可解释的成本或 floor 结果。Job `1222869` 随后在创建
+`cost/` 前失败：population preflight 仍调用重构时已删除的 `_cost_config`，触发
+`NameError`；Job `1222870` 正确封口为 incomplete，且不存在 pass sample 或 cost
+profile。精确修复 `42923d9f7aaddb14368f82aacda5c77e1f857a24` 将最后一个调用点
+改为共享 builder，并用 AST 回归禁止加载 legacy 名称；本地 `16/16`、远端 `51/51`
+和 precheck 通过。held cost/finalizer `1222889/1222890` 已绑定 recovery-v4 后
+释放，receipt self/file SHA-256 为
+`5fe63bce1811abddadb5dda60bc67385b07693f7642c4de016616cd8756c1e1c` /
+`5bd504a60668eeb204035d25e4853d601c67fc5097b474987e718562c7b51226`；
+真实 scheduler DAG 为 cost 无依赖、finalizer `afterany:1222889`。当前仍无可解释的
+成本或 floor 结果。
 
 P0 中三角色计数、`K_t` 范围、loss 或梯度只能证明路径非退化且可训练，不能用于
 判断 1x1/2x2 谁更好。只有完整匹配的 development 训练、相同 population/hash、

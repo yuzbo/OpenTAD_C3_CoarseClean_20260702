@@ -202,6 +202,13 @@ tubelet, or any mismatch between selected and executed tokens.
   unchanged. Held Jobs `1222869/1222870` were bound to recovery-v3 deployment
   self-hash `4cc8b764...584e2`, validated through the original finalizer, and
   released with the actual dependency `afterany:1222869` for the finalizer.
+- Cost `1222869` failed before `cost/` creation because population preflight still
+  called the deleted `_cost_config` symbol; finalizer `1222870` sealed incomplete.
+  Exact repair `42923d9f` changes the final call site to the shared builder and
+  adds an AST source regression against loaded legacy names. Local `16/16`, remote
+  `51/51`, precheck and clean-tree checks pass. Held Jobs `1222889/1222890` were
+  bound to recovery-v4 self-hash `5fe63bce...c1e1c`, validated, and released with
+  finalizer `afterany:1222889`; no arm, model, config or training changed.
 
 ## Current boundary
 
@@ -210,7 +217,7 @@ Fit-prefix health and sample-level telemetry-unit levels.  D3 has passed and
 the two floor configurations are mechanically admissible.  The M2 matched
 training/evaluation and separate full-stack cost/energy protocol is implemented
 and locally/remote tested. The cost-only replacement remains `experiment_running`:
-both arms are terminal and valid, and the third paired-cost/finalizer recovery
+both arms are terminal and valid, and the fourth paired-cost/finalizer recovery
 is submitted but has not yet sealed. None of the evidence above yet contains a valid complete
 development contrast with end-to-end latency/energy,
 checkpoint utility or a floor comparison; it is

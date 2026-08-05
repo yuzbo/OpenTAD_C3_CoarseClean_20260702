@@ -196,15 +196,21 @@ updated: 2026-08-05
    not persist the pass receipts and complete profile-level provenance. Never
    patch hashes, manually synthesize `paired_cost_profile.json`, or interpret its
    raw pass values.
-0. The admitted M2 recovery is now paired-cost Job `1222869` from exact clean
-   execution source `011d2943c698bb8a3727de9163034a7153779b64`, followed by
-   finalizer Job `1222870`. Producer, validator and focused tests use the same
-   `build_dynamic_floor_m2_cost_config(stage, arm)` builder, including
-   `sliding_window=True`; no model/config/training code changed. The truthful
-   scheduler DAG is cost with no dependency and finalizer `afterany:1222869`; the
-   self-hashed recovery-v3 receipt separately retains the frozen scientific DAG.
-   Do not call this retraining, scheduler `afterok` on the old arms, or a result.
-   Do not inspect live pass metrics; wait for all four passes and fresh fail-closed
+0. Recovery Jobs `1222869/1222870` are terminal incomplete, not cost evidence.
+   Population preflight retained one call to the removed `_cost_config` helper,
+   raising `NameError` before the `cost/` directory was created. Preserve
+   `logs/dfm2_cost_recovery3.1222869.err` and
+   `control/finalization_incomplete_job1222870.json`; there are no pass samples or
+   cost artifacts to salvage. Do not reuse execution commit `011d2943` for cost.
+0. The admitted M2 recovery is now paired-cost Job `1222889` from exact clean
+   execution source `42923d9f7aaddb14368f82aacda5c77e1f857a24`, followed by
+   finalizer Job `1222890`. Every producer, validator, fixture and population-
+   preflight call uses `build_dynamic_floor_m2_cost_config(stage, arm)`, and an AST
+   regression forbids a loaded `_cost_config` name; no model/config/training code
+   changed. The truthful scheduler DAG is cost with no dependency and finalizer
+   `afterany:1222889`; recovery-v4 separately retains the frozen scientific DAG.
+   Do not call this retraining, scheduler `afterok` on old arms, or a result. Do
+   not inspect live pass metrics; wait for all four passes and fresh fail-closed
    finalization.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
