@@ -196,6 +196,25 @@ max_chars: 8000
   successor is a result-blind modifier-scale/role-margin replay on the frozen
   checkpoints, with no fixed role quota and prediction-SHA parity. M3 is required
   eventually but held until this identifiability diagnosis is complete.
+  Role-calibration execution source `2c39ce58` passes clean N16R4 `51/51` focused
+  dynamic tests and `20/20` required regressions, but no replay has produced valid
+  role evidence. Jobs `1223595/1223596` and `1223601/1223602` failed before
+  inference on forbidden `--not_eval` and `profile=true`; Jobs `1223615/1223616`
+  and `1223625/1223626` completed inference but failed their frozen output-root and
+  schema contracts. Jobs `1223640/1223641` completed formal inference yet failed
+  source raw prediction-SHA parity, so their role telemetry is sealed.
+  The failed replay predictions retain the same 40 videos and 80,000 records, but
+  exact `(video,label,start,end)` overlap is only `76,660/80,000` for G1 and
+  `78,387/80,000` for G2; this is not serialization-only. Original M2 ran on
+  `g0024`, while the replays ran on `g0044/g0048`, leaving cross-node rerun drift
+  confounded with instrumentation.
+  The implemented next step is a same-Slurm-job, same-GPU serial role-OFF/role-ON
+  pair. Both retain source formal telemetry, exact accuracy evaluation,
+  `profile=false`, checkpoint/seed/population and B; only the role-calibration
+  extension changes. OFF/ON raw SHA equality is mandatory, and source parity is
+  still required before the frozen role diagnostic may be interpreted. Remote
+  validation/execution is pending. No new Pro discussion is needed before this
+  registered integrity experiment.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

@@ -2608,3 +2608,54 @@ append_only: true
   is blocked at the known `c10.dll` import boundary, so clean N16R4 tests and
   prediction-SHA-preserving frozen-checkpoint replay remain pending. M3 is held
   until this mechanism diagnosis is complete.
+
+- 2026-08-06: hardened the role-calibration replay first under execution source
+  `c48153885de5516abe9e854f0b8d1a8635824905`. The runner validates the frozen
+  M2 accuracy config before instrumentation, binds model runtime `6ee97336`
+  separately, requires source config/checkpoint/prediction hashes, exact population
+  SHA and 136-window count, and automatically fails on prediction/population parity
+  or analyzer boundary errors. Clean N16R4 tests passed `46/46` focused plus
+  `20/20` required C3. Two over-memory `sbatch` attempts produced no Job ID. Held
+  Jobs `1223595/1223596` were released with default memory but failed before
+  inference because generic Phase-M added `--not_eval`, correctly rejected by the
+  frozen M2 accuracy guard. They produced no prediction/calibration telemetry.
+  Recovery `469dfe636a127541740843e1fb398d2db177f9f9` removed that flag only for the
+  frozen M2 role replay and passed remote `48/48 + 20/20`, but replacement Jobs
+  `1223601/1223602` exposed a second generic default: development profiling was
+  enabled, while frozen M2 accuracy requires telemetry on and profiler off. They
+  also failed before inference with no prediction/calibration telemetry. Recovery
+  `b6c792fc66956cab0d4b0f18e756ecb675d20d93` preserves profile=false, separates
+  model commit `6ee97336` from the clean diagnostic execution commit while retaining
+  source checkpoint validation, passes real-config preflight and remote
+  `49/49 + 20/20`. Held Jobs `1223615/1223616` were validated and released under a
+  new namespace. Status is `experiment_running`; partial role telemetry remains
+  unread.
+
+- 2026-08-06: closed all later role-calibration replay attempts without a role
+  result. Jobs `1223615/1223616` completed inference but the `b6c792fc` runner used
+  the wrong output root; Jobs `1223625/1223626` completed inference but `0f97307d`
+  expected the pre-formal diagnostic schema. Neither frozen attempt is salvaged.
+  Exact source `2c39ce58791704a29745e9172565df42fba4723b` passed remote
+  `51/51 + 20/20`, and Jobs `1223640/1223641` completed formal inference, but both
+  failed exact historical prediction-SHA parity. Their role telemetry was not
+  read. Failure-receipt self-hashes are not prediction hashes.
+
+- 2026-08-06: compared only the source and replay prediction artifacts to localize
+  the integrity failure. G1/G2 replay SHA-256 values are `3fa61c...` and
+  `92c3e3...`; both retain the exact ordered 40-video set and 80,000 records.
+  Exact `(video,label,start,end)` overlap is `76,660/80,000` and
+  `78,387/80,000`, while video+label overlap is `79,925` and `79,934`. Thus the
+  mismatch is not JSON formatting alone. Original M2 ran on `g0024`; replay ran on
+  `g0044/g0048`, so source rerun drift and instrumentation remain confounded.
+
+- 2026-08-06: implemented
+  `exp:scnr-role-instrumentation-neutrality-pair-v1`. One Slurm job now executes
+  source-formal role-OFF then role-ON checkpoint inference serially on one visible
+  GPU, with exact config/checkpoint/seed/population/B/evaluation and
+  `profile=false`; only the role-calibration extension changes. The runner
+  validates formal no-leak schemas, forbids profiler artifacts, compares raw and
+  semantic predictions without metrics, hard-fails on OFF/ON raw-SHA mismatch and
+  never summarizes role statistics. Source parity remains required by the frozen
+  role-diagnostic contract. Local Python/Bash/whitespace checks pass; Windows Torch
+  tests stop at the known `c10.dll` boundary. Remote validation and execution are
+  pending; no Pro discussion or model repair precedes this pair.

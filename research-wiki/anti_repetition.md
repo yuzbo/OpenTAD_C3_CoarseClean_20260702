@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-08-05
+updated: 2026-08-06
 ---
 
 ## GeoRoute deployment anti-repetition
@@ -235,6 +235,26 @@ updated: 2026-08-05
    zero-baseline wins and top1-top2 margins out of band, preserve exact B and
    prediction hashes, then test minimal scale-identifiability interventions as
    separately trained ablations.
+0. Do not salvage role telemetry from Jobs `1223615/1223616`, `1223625/1223626`,
+   or `1223640/1223641`. The first pair closed against the wrong output root, the
+   second against the wrong schema, and the third failed exact source prediction
+   SHA parity. Earlier Jobs `1223595/1223596` and `1223601/1223602` failed before
+   inference. None supplies valid modifier-scale or role-margin evidence.
+0. The `2c39ce58` source mismatch is not a JSON-order-only difference: both
+   replays have the same 40-video key set and 80,000 records, but exact candidate
+   identity overlaps only `76,660/80,000` (G1) and `78,387/80,000` (G2). Do not
+   inspect the sealed role telemetry or blame instrumentation without a matched
+   causal control.
+0. The only next integrity run is a serial role-OFF/role-ON pair inside the same
+   Slurm job on the same visible GPU. Keep the exact evaluation path,
+   config/checkpoint/seed/population, source formal telemetry, `profile=false` and
+   exact B; change only the role-calibration extension. OFF/ON raw prediction SHA
+   equality is mandatory. Under the frozen diagnostic contract, source raw parity
+   is also required before role statistics may be interpreted.
+0. If OFF and ON match exactly but both differ from the historical source, this
+   establishes instrumentation neutrality only. It does not automatically amend
+   the frozen source-parity contract, authorize role analysis, or create Hybrid,
+   floor, accuracy, cost, M3, official-test or paper evidence.
 0. The aggregate G1 end-to-end p50/energy disadvantage is cold-order-sensitive:
    model-forward p50 differs by only `+0.438%`, and G1 pass 0 is the host/input
    outlier. Never claim that the 1-cell model intrinsically costs `+2.845%` from

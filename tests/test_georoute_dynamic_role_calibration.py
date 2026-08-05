@@ -20,6 +20,12 @@ from tools.bata.run_georoute_phase_m_replay import (
     _configure_replay_instrumentation,
     _validate_replay_telemetry_header,
 )
+from tools.bata.run_georoute_role_instrumentation_pair import (
+    _build_pair_test_arguments,
+    _configure_pair_mode,
+    _validate_formal_telemetry,
+    compare_prediction_artifacts,
+)
 
 
 def _telemetry_payload() -> dict:
@@ -68,9 +74,7 @@ def _telemetry_payload() -> dict:
                     "measurement_scope": (
                         "accuracy_replay_only_excluded_from_timed_cost"
                     ),
-                    "roles": {
-                        "aggregate_counts": calibration["selected_role_counts"]
-                    },
+                    "roles": {"aggregate_counts": calibration["selected_role_counts"]},
                     "policy_calibration": calibration,
                 },
             }
@@ -116,14 +120,10 @@ def test_phase_m_replay_instrumentation_preserves_route_configuration(
     assert custom.georoute_window_token_budget == 24576
     assert custom.georoute_diagnostic_telemetry_enabled is True
     assert (
-        custom.georoute_role_calibration_telemetry_enabled
-        is role_calibration_enabled
+        custom.georoute_role_calibration_telemetry_enabled is role_calibration_enabled
     )
     assert cfg.georoute_diagnostic_telemetry.enabled is True
-    assert (
-        cfg.georoute_development_profile.enabled
-        is (not role_calibration_enabled)
-    )
+    assert cfg.georoute_development_profile.enabled is (not role_calibration_enabled)
     assert cfg.post_processing.save_dict is True
     assert cfg.inference.load_from_raw_predictions is False
     assert cfg.inference.save_raw_prediction is False
@@ -146,11 +146,7 @@ def test_phase_m_role_replay_preserves_frozen_m2_evaluation_contract(
     )
 
     assert ("--not_eval" in arguments) is expects_no_eval
-    expected_tail = (
-        ["--id", "0"]
-        if role_calibration_enabled
-        else ["0", "--not_eval"]
-    )
+    expected_tail = ["--id", "0"] if role_calibration_enabled else ["0", "--not_eval"]
     assert arguments[-2:] == expected_tail
 
 
@@ -177,6 +173,112 @@ def test_phase_m_replay_requires_mode_matched_no_leak_telemetry_schema(
             payload,
             role_calibration_telemetry_enabled=not role_calibration_enabled,
         )
+
+
+@pytest.mark.parametrize("role_calibration_enabled", [False, True])
+def test_role_instrumentation_pair_has_identical_accuracy_path(
+    tmp_path: Path,
+    role_calibration_enabled: bool,
+):
+    cfg = Config(
+        dict(
+            model=dict(
+                backbone=dict(
+                    custom=dict(
+                        georoute_route_mode="dynamic_scnr",
+                        georoute_window_token_budget=24576,
+                        georoute_diagnostic_telemetry_enabled=True,
+                    )
+                )
+            ),
+            georoute_diagnostic_telemetry=dict(enabled=True),
+            georoute_development_profile=dict(enabled=False),
+            post_processing=dict(save_dict=True),
+            inference=dict(
+                load_from_raw_predictions=False,
+                save_raw_prediction=False,
+            ),
+        )
+    )
+    binding = {"schema_version": "pair", "pair_mode": "test"}
+    _configure_pair_mode(
+        cfg,
+        work_dir=tmp_path / "gpu1_id0",
+        role_calibration_enabled=role_calibration_enabled,
+        binding=binding,
+    )
+    arguments = _build_pair_test_arguments(
+        command_prefix=["python", "-m", "torch.distributed.run"],
+        bound_config=Path("bound.py"),
+        checkpoint=Path("epoch_59.pth"),
+        seed=3407,
+    )
+
+    assert "--not_eval" not in arguments
+    assert cfg.georoute_development_profile.enabled is False
+    assert (
+        cfg.model.backbone.custom.georoute_role_calibration_telemetry_enabled
+        is role_calibration_enabled
+    )
+    assert dict(cfg.georoute_phase_m_binding) == binding
+    assert arguments[-2:] == ["--id", "0"]
+
+
+@pytest.mark.parametrize("role_calibration_enabled", [False, True])
+def test_role_instrumentation_pair_requires_formal_complete_population(
+    role_calibration_enabled: bool,
+):
+    binding = {"schema_version": "pair", "pair_mode": "test"}
+    payload = _telemetry_payload()
+    payload["schema_version"] = "georoute_formal_development_telemetry_v1"
+    payload["phase_m_binding"] = binding
+    payload["records"][0]["route"].pop("policy_calibration", None)
+    if role_calibration_enabled:
+        payload["records"][0]["route"]["policy_calibration"] = {}
+
+    receipt = _validate_formal_telemetry(
+        payload,
+        expected_binding=binding,
+        expected_population_sha256="a" * 64,
+        expected_dataset_count=1,
+        role_calibration_enabled=role_calibration_enabled,
+    )
+
+    assert receipt["role_calibration_records_present"] is role_calibration_enabled
+    payload["sampler_padding_count"] = 1
+    with pytest.raises(RuntimeError, match="population parity"):
+        _validate_formal_telemetry(
+            payload,
+            expected_binding=binding,
+            expected_population_sha256="a" * 64,
+            expected_dataset_count=1,
+            role_calibration_enabled=role_calibration_enabled,
+        )
+
+
+def test_role_instrumentation_pair_compares_predictions_without_metrics(
+    tmp_path: Path,
+):
+    left = tmp_path / "left.json"
+    equal = tmp_path / "equal.json"
+    changed = tmp_path / "changed.json"
+    payload = {
+        "results": {"video": [{"segment": [1.0, 2.0], "label": "action", "score": 0.5}]}
+    }
+    left.write_text(json.dumps(payload), encoding="utf-8")
+    equal.write_text(json.dumps(payload), encoding="utf-8")
+    changed_payload = copy.deepcopy(payload)
+    changed_payload["results"]["video"][0]["score"] = 0.4
+    changed.write_text(json.dumps(changed_payload), encoding="utf-8")
+
+    exact = compare_prediction_artifacts(left, equal)
+    drift = compare_prediction_artifacts(left, changed)
+
+    assert exact["raw_sha256_parity"] is True
+    assert exact["exact_candidate_identity_overlap"] == 1
+    assert drift["raw_sha256_parity"] is False
+    assert drift["json_semantic_parity"] is False
+    assert drift["exact_candidate_identity_overlap"] == 1
 
 
 def test_role_calibration_summary_detects_observed_collapse_without_quota(
@@ -233,7 +335,11 @@ def test_role_calibration_summary_rejects_a_quota_claim(tmp_path: Path):
 @pytest.mark.parametrize(
     ("field", "replacement", "message"),
     [
-        ("selected_role_fractions", {"context": 0.5, "roi": 0.0, "residual": 0.5}, "disagrees"),
+        (
+            "selected_role_fractions",
+            {"context": 0.5, "roi": 0.0, "residual": 0.5},
+            "disagrees",
+        ),
         (
             "selected_over_valid_role_fraction_ratio",
             {"context": None, "roi": None, "residual": 0.5},

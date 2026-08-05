@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-08-05
+updated: 2026-08-06
 ---
 
 - Hybrid-centered causal-pilot Pro review, 2026-08-02. User attachment
@@ -1515,15 +1515,35 @@ updated: 2026-08-05
   `.aris/traces/experiment-audit/2026-08-06_run01` and `2026-08-06_run02`;
   the tracked audit is
   `research-wiki/experiments/scnr-dynamic-floor-m2-experiment-audit.{md,json}`.
-- Dynamic SCNR role-calibration diagnostic implementation, 2026-08-06. Current
+- Dynamic SCNR role-calibration diagnostic and neutrality-pair implementation,
+  2026-08-06. Current
   implementation files are `opentad/models/backbones/georoute_wrapper.py`,
   `tools/bata/analyze_georoute_dynamic_role_calibration.py`,
   `tests/test_georoute_dynamic_stage1.py`, and
   `tests/test_georoute_dynamic_role_calibration.py`. It adds opt-in accuracy-only
   modifier/margin telemetry with no fixed role quota and no route mutation.
-  Local Python compile and `git diff --check` pass; local Torch collection is
-  blocked by the documented Windows `c10.dll` failure. Exact committed source
-  and clean N16R4 Linux/Torch receipts remain pending.
+  Initial implementation commit `a5de1d1c8bf07f252861056aa900383d02a509ac`;
+  replay-contract commits are `37b57227`, `c4815388`, `469dfe63`, `b6c792fc`,
+  `0f97307d`, and `2c39ce58791704a29745e9172565df42fba4723b`.
+  Clean N16R4 validation through `2c39ce58` passed `51/51` focused dynamic tests
+  plus `20/20` required regressions. Jobs `1223595/1223596` and
+  `1223601/1223602` failed before inference; Jobs `1223615/1223616` and
+  `1223625/1223626` completed inference but failed frozen output-root/schema
+  contracts. Jobs `1223640/1223641` completed formal inference but failed source
+  raw prediction-SHA parity. Their root is
+  `/data/run01/sczc063/yuzibo/scnr_dynamic_role_calibration_diag_2c39ce58_s3407_20260806_0240_defaultmem`;
+  replay prediction SHA-256 values are
+  `3fa61cbcb1722aebfda04c3a87b9e8436fddff4af2ec7cea3ce70fd0c912496b`
+  and `92c3e3dea171e2afb12e4845069513b6ae6c3f2edcdc3bdd91731f0a7c2c5b9c`.
+  Both preserve 40 videos/80,000 records but candidate-identity overlap is only
+  `76,660` and `78,387`, so no role telemetry is interpretable.
+  The registered successor adds
+  `tools/bata/run_georoute_role_instrumentation_pair.py` and
+  `scripts/run_georoute_role_instrumentation_pair_slurm.sh`: a same-job/same-GPU
+  serial role-OFF/role-ON checkpoint pair with raw prediction equality as a hard
+  neutrality gate and no role-statistic publication. Local Python/Bash/whitespace
+  checks pass; Windows Torch collection is blocked by the documented `c10.dll`
+  failure; clean remote validation and execution are pending.
 
 ## 外部附件
 
