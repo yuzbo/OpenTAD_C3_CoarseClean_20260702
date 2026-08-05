@@ -66,7 +66,7 @@ evaluator/NMS 与成本测量。两臂的 `geometry_smoothness_weight`、
 | --- | --- | --- | --- |
 | M0 | 公式、独立宽高、11x20 的 1x1/2x2 known-answer tests | 精确得到 `(1/20,1/11)` 与 `(2/20,2/11)`，in-bounds 且梯度有限 | tested at exact source `4be71844`: focused `36/36`; complete GeoRoute+C3 `194 passed, 1 skipped` |
 | M1 | 真实 180x320 → 11x20 P0，验证配置、审计字段和零正则 | 不产生 metric/checkpoint；任一 hidden clamp/penalty/静态 0.20 即失败 | tested: G1 Job `1215358`; G2 Job `1215364` |
-| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | G1/G2 `1216180/1216181` complete; cost `1216182` failed on profiler audit-key mismatch; finalizer `1216183` sealed INCOMPLETE; recovery tested locally, no result yet |
+| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | G1/G2 `1216180/1216181` complete; three failed cost attempts are archived; shared-config repair `011d2943` passed local/remote checks; replacement `1222869/1222870` is `experiment_running`, no result yet |
 | M3 | 仅在动态主方法通过总 gate 后进入 disjoint-seed confirmation | 不从单 seed 宣称 floor 最优 | blocked |
 
 ## 当前边界
@@ -141,7 +141,21 @@ stage，本地 `16/16`、远端 `51/51` 与 cost precheck 通过，且 `opentad/
 self-hashed recovery-v2 receipt 原子释放；receipt self/file SHA-256 为
 `9370e5908718e0c6fef857c3b29ddeefbe5701bbc6a1c221f7ad7f828dac99e7` /
 `4968593b4172df4bbe7feeec9bad623ae188ffeeadedbd2b87c48a0bfa811fa3`。
-状态仍是 `experiment_running`，尚无可解释的成本或 floor 结果。
+Job `1222700` 完成四个 timed pass 后只在最终 profile validator 失败：producer 在
+构建并哈希 cost config 前强制设置了 `post_processing.sliding_window=True`，validator
+却使用未包含该变更的独立重建配置，因此
+`pass_receipt.cost_config_sha256` 不一致。Finalizer `1222701` 再次正确封口为
+incomplete。四个 raw cost 文件和 finalization 均已归档；由于 pass receipts 与完整
+profile-level provenance 只存在内存中，协议禁止手工拼装或复用这些 raw 数值。精确
+execution-only 修复 `011d2943c698bb8a3727de9163034a7153779b64` 让 producer、
+validator、fixture 共用同一 cost-config builder（含 `sliding_window=True`），本地
+`16/16`、远端 `51/51` 与 precheck 通过，模型、配置、训练和两臂工件均未变化。
+held cost/finalizer `1222869/1222870` 已绑定 recovery-v3 receipt 后释放；receipt
+self/file SHA-256 为
+`4cc8b7649d82cfd89530453df6be02609af5a30334f0f9f44a3efa447bf584e2` /
+`623c2f958d0a86fdba5ffd81f14c413e652c4d788b2fc089151b48bbf9ce81fe`，
+真实 scheduler DAG 为 cost 无依赖、finalizer `afterany:1222869`。状态仍是
+`experiment_running`，尚无可解释的成本或 floor 结果。
 
 P0 中三角色计数、`K_t` 范围、loss 或梯度只能证明路径非退化且可训练，不能用于
 判断 1x1/2x2 谁更好。只有完整匹配的 development 训练、相同 population/hash、

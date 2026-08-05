@@ -186,14 +186,26 @@ updated: 2026-08-05
    Preserve their artifacts as `cost_failed_job1222672/` and
    `control/finalization_incomplete_job1222673.json`; do not reuse execution
    commit `c67e13e8` for cost.
-0. The admitted M2 recovery is now paired-cost Job `1222700` from exact clean
-   execution source `6341927f099bd59e0be6aff9b4b1062b4f76150e`, followed by
-   finalizer Job `1222701`. It instruments the actually invoked
-   `sparse_adapter.forward_ragged` method and changes no model/config. The truthful
-   scheduler DAG is cost with no dependency and finalizer `afterany:1222700`; the
-   self-hashed receipt separately retains the frozen scientific DAG. Do not call
-   this retraining, scheduler `afterok` on the old arms, or a result. Do not inspect
-   live pass metrics; wait for all four passes and fresh fail-closed finalization.
+0. Recovery Jobs `1222700/1222701` are terminal incomplete, not cost evidence.
+   Although all four timed passes ran, the final validator reconstructed a cost
+   config without the producer's forced `post_processing.sliding_window=True`, so
+   `pass_receipt.cost_config_sha256` mismatched. Preserve
+   `cost_failed_job1222700/` and
+   `control/finalization_incomplete_job1222701.json`; their raw samples, power
+   trace and sidecar cannot be hand-assembled because the fail-closed protocol did
+   not persist the pass receipts and complete profile-level provenance. Never
+   patch hashes, manually synthesize `paired_cost_profile.json`, or interpret its
+   raw pass values.
+0. The admitted M2 recovery is now paired-cost Job `1222869` from exact clean
+   execution source `011d2943c698bb8a3727de9163034a7153779b64`, followed by
+   finalizer Job `1222870`. Producer, validator and focused tests use the same
+   `build_dynamic_floor_m2_cost_config(stage, arm)` builder, including
+   `sliding_window=True`; no model/config/training code changed. The truthful
+   scheduler DAG is cost with no dependency and finalizer `afterany:1222869`; the
+   self-hashed recovery-v3 receipt separately retains the frozen scientific DAG.
+   Do not call this retraining, scheduler `afterok` on the old arms, or a result.
+   Do not inspect live pass metrics; wait for all four passes and fresh fail-closed
+   finalization.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

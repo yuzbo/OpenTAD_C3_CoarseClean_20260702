@@ -1447,6 +1447,26 @@ updated: 2026-08-05
   `4968593b4172df4bbe7feeec9bad623ae188ffeeadedbd2b87c48a0bfa811fa3`,
   validated, and released. Actual Slurm DAG is cost none and finalizer
   `afterany:1222700`. State is `experiment_running`; no partial inference exists.
+- Dynamic SCNR M2 third cost-only recovery, 2026-08-05. Job `1222700` ran all
+  four ordered passes but failed `1:0` at final profile validation because the
+  producer forced `post_processing.sliding_window=True` before hashing while the
+  validator reconstructed a config without it. Finalizer `1222701` completed
+  `0:0` and sealed incomplete (self/file SHA-256
+  `de38cb77303bc27dd1b6793061f41d4e065593649343c3c872e05d2a8d791e72` /
+  `e28b38b4476704a4b44337dfd703eccd0d19c64958d73efcb334e6dc690de83d`).
+  Four raw files are preserved under `cost_failed_job1222700/` (manifest SHA-256
+  `c1fe0d6f7ce10b8b5ae216cc18a14e00fec1d49658c6899c617b9ea17ceacf20`)
+  but are non-salvageable under the frozen fail-closed receipt contract. Exact
+  clean repair `011d2943c698bb8a3727de9163034a7153779b64` centralizes cost-config
+  construction for producer/validator/tests and passed local `16/16`, remote
+  Linux/Torch `51/51`, cost precheck, clean-head and clean-tree checks. It changes
+  no model/config/training code. Cost/finalizer Jobs `1222869/1222870` were held,
+  bound to recovery-v3 receipt self/file SHA-256
+  `4cc8b7649d82cfd89530453df6be02609af5a30334f0f9f44a3efa447bf584e2` /
+  `623c2f958d0a86fdba5ffd81f14c413e652c4d788b2fc089151b48bbf9ce81fe`,
+  validated with the original finalizer and released. Actual Slurm DAG is cost
+  none and finalizer `afterany:1222869`. State is `experiment_running`; no partial
+  or live metric is opened.
 
 ## 外部附件
 

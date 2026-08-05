@@ -2543,3 +2543,19 @@ append_only: true
   `9370e5908718e0c6fef857c3b29ddeefbe5701bbc6a1c221f7ad7f828dac99e7` /
   `4968593b4172df4bbe7feeec9bad623ae188ffeeadedbd2b87c48a0bfa811fa3`,
   validated, and released. Status remains `experiment_running`; no live pass is read.
+
+- 2026-08-05: second cost recovery `1222700` ran the complete four-pass order but
+  failed `1:0` only at final profile validation. Producer and validator had
+  duplicate cost-config construction: only producer forced
+  `post_processing.sliding_window=True`, causing the receipted config hash to
+  mismatch. Finalizer `1222701` sealed incomplete. The four raw files, manifest
+  SHA-256 `c1fe0d6f...acf20`, and finalization self/file SHA-256
+  `de38cb77...91e72` / `e28b38b...83d` were archived; manual salvage is forbidden
+  because complete pass receipts and profile provenance were never published.
+  Exact repair `011d2943` adds one shared cost-config builder used by producer,
+  validator and fixture. Local `16/16`, clean remote `51/51` and cost precheck
+  pass with no model/config/training change. After arm state/hash revalidation,
+  held cost/finalizer Jobs `1222869/1222870` were bound to recovery-v3 receipt
+  self/file SHA-256 `4cc8b764...584e2` / `623c2f95...81fe`, validated through the
+  original finalizer, and released. Actual DAG is cost none and finalizer
+  `afterany:1222869`; state remains `experiment_running` and no live metric is read.

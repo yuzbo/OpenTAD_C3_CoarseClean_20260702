@@ -144,11 +144,24 @@ max_chars: 8000
   names invalid stages, passes local `16/16`, remote `51/51` and cost precheck,
   and changes no model/config. After revalidating unchanged arm states/hashes,
   cost Job `1222700` and finalizer `1222701` were immutably receipted and released
-  without retraining. Actual Slurm dependencies are cost none and finalizer
-  `afterany:1222700`; receipt self/file SHA-256 are
-  `9370e5908718e0c6fef857c3b29ddeefbe5701bbc6a1c221f7ad7f828dac99e7` /
-  `4968593b4172df4bbe7feeec9bad623ae188ffeeadedbd2b87c48a0bfa811fa3`.
-  State remains `experiment_running`; no live/partial cost or floor evidence exists.
+  without retraining. Cost completed all four timed passes but failed only at final
+  profile validation: the producer forced `post_processing.sliding_window=True`
+  before hashing its cost config while the validator reconstructed the config
+  without that mutation, so `pass_receipt.cost_config_sha256` mismatched.
+  Finalizer again sealed incomplete. Its four raw cost files are preserved under
+  `cost_failed_job1222700/`, but cannot be manually assembled because the required
+  in-memory pass receipts and complete profile-level provenance were never
+  published. Exact execution-only repair
+  `011d2943c698bb8a3727de9163034a7153779b64` makes producer, validator and tests
+  call one shared cost-config builder; it changes no model/config/training code and
+  passes local `16/16`, remote `51/51`, and cost precheck. After revalidating the
+  unchanged arms, replacement cost/finalizer Jobs `1222869/1222870` were submitted
+  held, bound to recovery-v3 receipt self/file SHA-256
+  `4cc8b7649d82cfd89530453df6be02609af5a30334f0f9f44a3efa447bf584e2` /
+  `623c2f958d0a86fdba5ffd81f14c413e652c4d788b2fc089151b48bbf9ce81fe`,
+  validated with the original finalizer and released. Actual Slurm dependencies
+  are cost none and finalizer `afterany:1222869`. State remains
+  `experiment_running`; no live/partial cost or floor evidence exists.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

@@ -190,6 +190,18 @@ tubelet, or any mismatch between selected and executed tokens.
   passes local `16/16`, remote `51/51` and cost precheck, and touches no
   model/config. No-retraining cost/finalizer Jobs `1222700/1222701` are now
   released under recovery-v2 deployment self-hash `9370e590...ac99e7`.
+- Cost `1222700` ran the four ordered timed passes but failed at the final profile
+  validator because producer and validator hashed non-identical reconstructed
+  configs: only the producer had forced `post_processing.sliding_window=True`.
+  Finalizer `1222701` sealed incomplete. The four raw files and incomplete
+  finalization are archived, but are not salvageable under the frozen protocol
+  because pass receipts and complete profile-level provenance were ephemeral.
+  Exact repair `011d2943` introduces one shared cost-config builder used by the
+  producer, validator and tests. Local `16/16`, remote `51/51`, cost precheck,
+  clean checkout and exact-head checks pass; model/config/training remain
+  unchanged. Held Jobs `1222869/1222870` were bound to recovery-v3 deployment
+  self-hash `4cc8b764...584e2`, validated through the original finalizer, and
+  released with the actual dependency `afterany:1222869` for the finalizer.
 
 ## Current boundary
 
@@ -198,7 +210,7 @@ Fit-prefix health and sample-level telemetry-unit levels.  D3 has passed and
 the two floor configurations are mechanically admissible.  The M2 matched
 training/evaluation and separate full-stack cost/energy protocol is implemented
 and locally/remote tested. The cost-only replacement remains `experiment_running`:
-both arms are terminal and valid, and the second paired-cost/finalizer recovery
+both arms are terminal and valid, and the third paired-cost/finalizer recovery
 is submitted but has not yet sealed. None of the evidence above yet contains a valid complete
 development contrast with end-to-end latency/energy,
 checkpoint utility or a floor comparison; it is
