@@ -5,9 +5,9 @@
 - Decision: `user_approved`
 - Design: `designed`
 - Short-window corrigendum: `user_approved / U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1`
-- Implementation: `corrigendum_and_exactk_numeric_repair_implemented`
-- Local focused verification: `15_passed / 1_Linux_loader_test_skipped_on_Windows / Torch_tests_blocked_by_local_c10_DLL`
-- Independent read-only audit: `selector_tensor_chain_GO / enforced_two_gate_dependency_chain_GO / exactk_patch_GO_with_raw_mass_guard_applied`
+- Implementation: `minimal_solver_repair_implemented_uncommitted`
+- Local focused verification: `py_compile_passed / direct_CPU_numeric_oracles_passed / pytest_modules_skipped_on_Windows`
+- Independent read-only audit: `minimal_repair_GO / FP64_dtype_caveat_resolved`
 - Authoritative Linux/Slurm verification: `exact_source_7e893569 / code_gate_1215388_passed / real_short_gate_1215389_passed`
 - Experiment: `stagea_1215390_to_1215396_terminal_failed_closed / metrics_never_opened`
 - Empirical support: `not_yet_empirically_supported`
@@ -241,6 +241,50 @@ No single cell, seed, intermediate checkpoint or incomplete matrix may support a
 performance statement. No metric was opened from this transaction. Its status is
 terminal `ENGINEERING_STATUS`; it yields no official mAP result and no comparison
 with AdaTAD mAP=65.
+
+## Minimal solver repair decision and implementation
+
+`U-PRO-STAGEA-MINIMAL-SOLVER-REPAIR-1` adjudicated the terminal state as
+`GO_MINIMAL_SOLVER_REPAIR`. Repository-level cross-checks accepted both root
+causes:
+
+- the control duplicate is deterministic dataset enumeration. For
+  `N=2688,W=768,S=384`, the old loop emitted terminal start `1920` regularly and
+  then back-shifted the next overflow to `1920` again;
+- learned-DUCA narrows an internally FP32 coverage log distribution back to the
+  AMP scorer dtype and then accumulates an unnormalized long FP32
+  forward/backward chain. The raw mass guard depends on message gauge and is not
+  a valid structural invariant.
+
+The implemented minimal repair enumerates unique canonical sliding starts at
+the dataset source; it does not post-hoc deduplicate ledgers or change the
+physical window key. AMP/FP32 coverage distributions now remain FP32, while an
+explicit FP64 input remains FP64 for oracle diagnostics. Physical exact-K
+forward/backward subtracts one global exact-K gauge, normalizes every slot
+message, carries the corresponding alpha/beta additive scales, restores
+`logZ + K*gauge`, and verifies independently reconstructed forward/backward
+partitions. Marginals retain row, column, ordering, finite-gradient and hard-path
+checks. This changes no graph, hard decoder, architecture, loss, budget,
+hyperparameter, data split, seed, checkpoint or evaluator.
+
+The external proposal for a generic persistent pre-backbone execution journal
+is not part of this repair: the dataset root cause is closed, current per-rank
+ledgers already commit only after successful backbone execution, and the
+finalizer still rejects duplicate `(video_id,window_start_frame)` identities.
+Likewise, proposed numeric thresholds were not treated as established facts.
+The accepted tests are structural: exact terminal enumeration, small-graph
+brute-force marginals/logZ/gradients, additive-gauge invariance, FP32 versus FP64
+long-chain oracle, AMP dtype preservation, and the production-shaped
+`T=768,K=384` finite backward stress.
+
+Local compilation and direct CPU numerical checks pass, including the full
+`T=768,K=384` stress; the normal pytest modules remain skipped on Windows by the
+repository's c10.dll guard. Status is `implemented / local_direct_tested /
+authoritative_Linux_gate_pending`, not `tested` on the production environment.
+No Stage-A redeployment is authorized until a clean commit, the full Linux code
+gate, the real short-window heavy-backbone gate, exact-211 identity dry-run and
+fresh hash-bound transaction prerequisites all pass. Old roots, receipts and
+partial cells remain immutable and ineligible.
 
 ## Conditional Stage B
 

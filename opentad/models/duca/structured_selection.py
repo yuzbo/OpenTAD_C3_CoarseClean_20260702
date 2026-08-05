@@ -978,6 +978,25 @@ def _safe_masked_logsumexp(
     )
 
 
+def _normalize_log_message(
+    message: torch.Tensor,
+    *,
+    failure_context: str,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return an equivalent finite log-message and its additive scale."""
+
+    finite = torch.isfinite(message)
+    scale = _safe_masked_logsumexp(message, finite, dim=0)
+    if not bool(torch.isfinite(scale).item()):
+        raise RuntimeError(f"physical exact-K {failure_context} has no reachable state")
+    normalized = torch.where(
+        finite,
+        message - scale,
+        message.new_full(message.shape, float("-inf")),
+    )
+    return normalized, scale
+
+
 def _physical_row_viterbi(
     node_log_probs: torch.Tensor,
     *,
@@ -1104,17 +1123,31 @@ def _physical_row_forward_backward(
         )
     if graph.source_valid.numel() != temporal_len:
         raise ValueError("physical exact-K graph length does not match node scores")
-    scores = node_log_probs.float() / float(temperature)
+    # Production AMP/FP32 inputs are accumulated in FP32.  An explicit FP64
+    # input is retained as a diagnostic oracle without changing production
+    # execution semantics.
+    work_dtype = (
+        torch.float64 if node_log_probs.dtype == torch.float64 else torch.float32
+    )
+    scores = node_log_probs.to(dtype=work_dtype) / float(temperature)
+    # Every legal path contains exactly k nodes, so subtracting one global
+    # scalar is a pure gauge transformation.  Restore k*gauge to logZ below.
+    gauge = scores.detach().mean()
+    scores = scores - gauge
     alpha_rows = []
-    alpha = torch.where(
+    alpha_raw = torch.where(
         graph.source_valid,
         scores,
         scores.new_full(scores.shape, float("-inf")),
     )
+    alpha, alpha_scale = _normalize_log_message(
+        alpha_raw,
+        failure_context="forward source message",
+    )
     alpha_rows.append(alpha)
-    for _slot_idx in range(1, k):
+    for slot_idx in range(1, k):
         if graph.predecessor_index.shape[1] == 0:
-            alpha = scores.new_full(scores.shape, float("-inf"))
+            alpha_raw = scores.new_full(scores.shape, float("-inf"))
         else:
             candidates = alpha[graph.predecessor_index]
             predecessor_mass = _safe_masked_logsumexp(
@@ -1122,42 +1155,77 @@ def _physical_row_forward_backward(
                 graph.predecessor_valid,
                 dim=1,
             )
-            alpha = scores + predecessor_mass
+            alpha_raw = scores + predecessor_mass
+        alpha, local_scale = _normalize_log_message(
+            alpha_raw,
+            failure_context=f"forward slot {slot_idx}",
+        )
+        alpha_scale = alpha_scale + local_scale
         alpha_rows.append(alpha)
     alpha_table = torch.stack(alpha_rows, dim=0)
-    log_partition = _safe_masked_logsumexp(
+    centered_log_partition = alpha_scale + _safe_masked_logsumexp(
         alpha_table[-1],
         graph.sink_valid,
         dim=0,
     )
-    if not bool(torch.isfinite(log_partition).item()):
+    if not bool(torch.isfinite(centered_log_partition).item()):
         raise RuntimeError(
             "physical exact-K forward-backward could not reach a legal source-to-sink path"
         )
 
     beta_rows = [scores.new_empty((temporal_len,)) for _ in range(k)]
-    beta = torch.where(
+    beta_raw = torch.where(
         graph.sink_valid,
         scores.new_zeros(scores.shape),
         scores.new_full(scores.shape, float("-inf")),
     )
+    beta, beta_scale = _normalize_log_message(
+        beta_raw,
+        failure_context="backward sink message",
+    )
     beta_rows[k - 1] = beta
     for slot_idx in range(k - 2, -1, -1):
         if graph.successor_index.shape[1] == 0:
-            beta = scores.new_full(scores.shape, float("-inf"))
+            beta_raw = scores.new_full(scores.shape, float("-inf"))
         else:
             candidates = (
                 scores[graph.successor_index]
                 + beta[graph.successor_index]
             )
-            beta = _safe_masked_logsumexp(
+            beta_raw = _safe_masked_logsumexp(
                 candidates,
                 graph.successor_valid,
                 dim=1,
             )
+        beta, local_scale = _normalize_log_message(
+            beta_raw,
+            failure_context=f"backward slot {slot_idx}",
+        )
+        beta_scale = beta_scale + local_scale
         beta_rows[slot_idx] = beta
     beta_table = torch.stack(beta_rows, dim=0)
-    raw_log_marginal = alpha_table + beta_table - log_partition
+
+    backward_log_partition = beta_scale + _safe_masked_logsumexp(
+        scores + beta_table[0],
+        graph.source_valid,
+        dim=0,
+    )
+    partition_residual = (centered_log_partition - backward_log_partition).abs()
+    partition_tolerance = max(
+        1.0e-10 if scores.dtype == torch.float64 else 1.0e-5,
+        64.0
+        * torch.finfo(scores.dtype).eps
+        * float(max(temporal_len, k)),
+    )
+    if bool((partition_residual.detach() > partition_tolerance).item()):
+        raise RuntimeError(
+            "physical exact-K forward/backward partition identities disagree"
+        )
+
+    # Alpha and beta scales are slot-wise scalars, hence they cancel when each
+    # slot marginal is normalized.  This is gauge-invariant; unlike the former
+    # raw-mass envelope, it cannot reject an equivalent message representation.
+    raw_log_marginal = alpha_table + beta_table
     finite = torch.isfinite(raw_log_marginal)
     log_row_mass = _safe_masked_logsumexp(
         raw_log_marginal,
@@ -1166,37 +1234,16 @@ def _physical_row_forward_backward(
     )
     if not bool(torch.isfinite(log_row_mass).all().item()):
         raise RuntimeError("physical exact-K slot marginals have no finite mass")
-    # Normalization is allowed to remove only the small common offset expected
-    # from a long FP32 forward/backward chain.  A larger pre-normalization drift
-    # is evidence of a graph/recurrence defect and must not be hidden by the
-    # categorical projection below.  The envelope scales with the number of
-    # accumulated FP32 operations and remains far above the measured rounding
-    # drift on the registered T=768, K=384 stress case.
-    raw_mass_log_tolerance = max(
-        5.0e-4,
-        32.0
-        * torch.finfo(scores.dtype).eps
-        * float(max(temporal_len, k)),
-    )
-    if bool(
-        torch.any(log_row_mass.detach().abs() > raw_mass_log_tolerance).item()
-    ):
-        raise RuntimeError(
-            "physical exact-K raw slot-mass drift exceeds the FP32 normalization envelope"
-        )
-    # Each slot marginal is a categorical distribution over physical positions.
-    # In exact arithmetic log_row_mass is zero.  Long exact-K chains accumulate
-    # a slot-wise FP32 offset in alpha/beta; remove that identity-only offset in
-    # log space before exponentiation so high-dynamic-range scores do not lose
-    # probability mass through underflow.  The bounded raw-mass check above keeps
-    # structural DP failures visible; the graph, partition and Viterbi path are
-    # unchanged, and the column/ordering invariants below still fail closed.
     log_marginal = raw_log_marginal - log_row_mass[:, None]
     slots = torch.where(
         finite,
         torch.exp(log_marginal),
         log_marginal.new_zeros(()),
     )
+    # The log projection is exact up to FP roundoff; close the categorical
+    # identity once more in probability space so long sparse rows do not retain
+    # an O(K*eps) summation residue.
+    slots = slots / slots.sum(dim=1, keepdim=True)
     row_mass = slots.sum(dim=1)
     if not torch.allclose(
         row_mass,
@@ -1218,6 +1265,7 @@ def _physical_row_forward_backward(
     ).sum(dim=1)
     if k > 1 and not bool(torch.all(expectations[1:] > expectations[:-1]).item()):
         raise RuntimeError("physical exact-K slot expectations are not strictly ordered")
+    log_partition = centered_log_partition + float(k) * gauge
     return occupancy, slots, log_partition
 
 

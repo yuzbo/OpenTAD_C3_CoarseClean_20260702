@@ -105,17 +105,23 @@ class SlidingWindowDataset:
         video_snippet_centers = np.arange(0, num_frames, self.snippet_stride)
         snippet_num = len(video_snippet_centers)
 
+        if snippet_num == 0:
+            raise ValueError(f"video {video_name} has no valid snippet centers")
+        if self.window_size <= 0 or self.window_stride <= 0:
+            raise ValueError("sliding-window size and stride must be positive")
+
+        # Enumerate every physical window identity exactly once.  The previous
+        # overflow/back-shift loop duplicated the terminal window whenever a
+        # regular start already landed on ``snippet_num - window_size``.
+        terminal_start = max(0, snippet_num - self.window_size)
+        window_starts = list(range(0, terminal_start + 1, self.window_stride))
+        if window_starts[-1] != terminal_start:
+            window_starts.append(terminal_start)
+
         data_list = []
-        last_window = False  # whether it is the last window
 
-        for idx in range(max(1, snippet_num // self.window_stride)):  # at least one window
-            window_start = idx * self.window_stride
-            window_end = window_start + self.window_size
-
-            if window_end > snippet_num:  # this is the last window
-                window_end = snippet_num
-                window_start = max(0, window_end - self.window_size)
-                last_window = True
+        for window_start in window_starts:
+            window_end = min(window_start + self.window_size, snippet_num)
 
             window_snippet_centers = video_snippet_centers[window_start:window_end]
             window_start_frame = window_snippet_centers[0]
@@ -184,9 +190,6 @@ class SlidingWindowDataset:
                         window_snippet_centers,
                     ]
                 )
-
-            if last_window:  # the last window
-                break
 
         return data_list
 

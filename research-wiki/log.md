@@ -1,5 +1,38 @@
 # Research Log
 
+## 2026-08-05 — Minimal Stage-A solver repair accepted and implemented locally
+
+- Fully read and SHA-bound `U-PRO-STAGEA-MINIMAL-SOLVER-REPAIR-1` (SHA-256
+  `58e761262430c5ecead0f923fca93dd1a9576742e644d8c63428c517cab834b8`).
+  Accepted its `GO_MINIMAL_SOLVER_REPAIR`, deterministic duplicate-window root
+  cause, AMP precision-boundary diagnosis and scaled log-semiring direction.
+- Did not adopt the report verbatim. A generic pre-backbone execution journal is
+  unnecessary for the proven dataset-source duplicate and would expand crash/API
+  semantics. Proposed numeric thresholds are not treated as calibrated facts;
+  the solver pseudocode was independently rederived so both forward and backward
+  message scales and restored log partition remain exact.
+- Implemented unique canonical sliding starts while preserving the physical
+  `(video,start)` key and snippet-center annotation endpoints. The formal
+  `N=2688,W=768,S=384` case now emits terminal start 1920 exactly once.
+- Kept AMP/FP32 coverage probabilities and log probabilities at FP32; explicit
+  FP64 diagnostic input stays FP64. Replaced the gauge-dependent raw slot-mass
+  envelope with global exact-K gauge centering, per-slot normalized alpha/beta
+  messages, carried scales, restored logZ and an independent backward/source
+  partition identity. Existing row, column, ordering, finite-gradient and hard
+  Viterbi contracts remain fail closed.
+- Added focused regressions for exact terminal enumeration, short/exact/overflow
+  windows, small-graph brute-force marginals/logZ/gradients, additive-gauge
+  invariance, FP32-versus-FP64 long-chain agreement, AMP dtype preservation and
+  the production-shaped `T=768,K=384` high-dynamic-range backward path.
+- `py_compile`, `git diff --check`, direct CPU numerical oracles and the full
+  `T=768,K=384` stress pass. Normal pytest collection is skipped on Windows by
+  the repository c10.dll guard. A fresh independent read-only diff audit returned
+  GO; its FP64 dtype caveat was corrected.
+- Current status is `implemented / local_direct_tested /
+  authoritative_Linux_gate_pending`. No Stage-A job was submitted, no old root or
+  receipt was reused, and no metric/mAP was opened. Stage B and all extensions
+  remain blocked.
+
 ## 2026-08-04 — Stage A terminally failed closed; no metric was opened
 
 - Exact source `7e8935692b732f2958ba3c20787ae19c86f7b15c`, clean checkout,

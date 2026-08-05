@@ -55,3 +55,7 @@
 {"source":"sources/U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1","relation":"adjudicates","target":"protocols/duca-paper-mixed-k-short-window-semantics"}
 {"source":"protocols/duca-paper-mixed-k-short-window-semantics","relation":"repairs_future_execution_of","target":"experiments/duca-paper-feasibility-stage-a"}
 {"source":"experiments/duca-paper-feasibility-stage-a","relation":"requires_before_redeployment","target":"gates/duca-paper-real-short-window-heavy-backbone"}
+{"source":"sources/U-PRO-STAGEA-MINIMAL-SOLVER-REPAIR-1","relation":"adjudicates","target":"experiments/duca-paper-feasibility-stage-a"}
+{"source":"experiments/duca-paper-feasibility-stage-a","relation":"repaired_by","target":"models/duca-physical-exactk-scaled-log-semiring"}
+{"source":"experiments/duca-paper-feasibility-stage-a","relation":"repaired_by","target":"datasets/canonical-unique-sliding-windows"}
+{"source":"models/duca-physical-exactk-scaled-log-semiring","relation":"requires_before_redeployment","target":"gates/duca-paper-linux-numeric-and-exact211"}

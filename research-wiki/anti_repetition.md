@@ -498,3 +498,22 @@ These failures and naming mistakes must not be repeated.
      matrix while the learned method is stopped by a repeated numeric invariant.
      Resolve the scientific/numerical blocker explicitly before any new Stage-A
      deployment.
+143. Rule 139's raw-mass-envelope prescription is retained as failed historical
+     reasoning but is superseded for future code by explicit adjudication
+     `U-PRO-STAGEA-MINIMAL-SOLVER-REPAIR-1`: raw alpha/beta mass is gauge
+     dependent and is not a structural invariant. Do not widen it or replace it
+     with another empirical raw-message threshold. Use carried per-slot scales,
+     dual log-partition reconstruction, brute-force/FP64 oracles and the existing
+     row/column/order/gradient/hard-path predicates.
+144. Do not repair the Stage-A duplicate ledger by changing its primary key,
+     adding an ordinal or dropping a duplicate after execution. Generate unique
+     canonical starts in `SlidingWindowDataset` while preserving snippet-center
+     endpoint semantics, and retain the finalizer's duplicate rejection.
+145. Do not introduce a generalized persistent execution journal merely because
+     the failed controls contained duplicate rows. The observed duplicate is
+     fully explained by the dataset enumerator; journal/API expansion needs a
+     separate demonstrated failure and authorization.
+146. A local direct numerical check or Windows-skipped pytest module is not an
+     authoritative Stage-A gate. Do not redeploy until the new clean commit passes
+     Linux/PyTorch, real short-window heavy-backbone and exact-211 identity gates
+     and is bound into an entirely fresh transaction.

@@ -1047,6 +1047,31 @@ Until those artifacts exist, the correct status is `implemented/tested` or
 
 ## Immediate execution
 
+Current Stage-A recovery decision:
+
+1. `U-PRO-STAGEA-MINIMAL-SOLVER-REPAIR-1` is accepted as
+   `GO_MINIMAL_SOLVER_REPAIR`, with two bounded corrections. Do not copy its
+   solver pseudocode without carrying both alpha and beta scales, and do not add
+   the proposed generic execution journal after the duplicate was proven to
+   originate in dataset window enumeration.
+2. Canonical sliding-window starts must be unique and retain the existing
+   snippet-center endpoint/annotation slicing semantics. Ledger finalization
+   continues to fail closed on duplicate physical identities; no post-hoc
+   deduplication is allowed.
+3. AMP coverage log probabilities cross into the physical exact-K solver at
+   FP32. The solver uses a per-slot normalized log-semiring with explicit scale
+   recovery and a global additive exact-K gauge; an explicit FP64 path is oracle
+   evidence only, never the paper execution path.
+4. Replace the gauge-dependent raw slot-mass envelope with structural
+   identities: forward/backward logZ agreement, brute-force small graphs,
+   additive-shift invariance, FP32/FP64 oracle agreement, row/column/order
+   predicates, finite gradients and unchanged hard path.
+5. Before any new Stage-A release, require a clean implementation commit,
+   authoritative Linux/PyTorch gate, real natural-short-window heavy-backbone
+   gate, exact-211 metadata identity dry-run and fresh commit/hash-bound
+   manifests/root. No old receipt, checkpoint choice, partial cell or metric can
+   enter the replacement matrix.
+
 Approved compact feasibility design, superseding the simulation-first order
 below while retaining it as negative-history context:
 

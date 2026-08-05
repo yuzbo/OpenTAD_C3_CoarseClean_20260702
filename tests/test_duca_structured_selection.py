@@ -95,7 +95,11 @@ def test_physical_gap_cap_is_not_narrowed_to_amp_score_precision() -> None:
 
 
 def test_physical_exact_k_slot_marginals_match_small_bruteforce_distribution() -> None:
-    scores = torch.tensor([[0.2, -0.4, 1.1, 0.7, -0.3, 0.5]])
+    scores = torch.tensor(
+        [[0.2, -0.4, 1.1, 0.7, -0.3, 0.5]],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
     seconds = torch.arange(6, dtype=torch.float64)[None, :]
     valid = torch.ones((1, 6), dtype=torch.bool)
     k = 3
@@ -108,7 +112,8 @@ def test_physical_exact_k_slot_marginals_match_small_bruteforce_distribution() -
         max_gap_seconds=torch.tensor([10.0], dtype=torch.float64),
     )
     paths = tuple(combinations(range(6), k))
-    weights = torch.stack([torch.exp(scores[0, list(path)].sum()) for path in paths])
+    path_scores = torch.stack([scores[0, list(path)].sum() for path in paths])
+    weights = path_scores.exp()
     expected = torch.zeros((k, 6), dtype=weights.dtype)
     for slot_index in range(k):
         for position in range(6):
@@ -124,6 +129,104 @@ def test_physical_exact_k_slot_marginals_match_small_bruteforce_distribution() -
         torch.ones((1, k)),
         atol=1e-6,
         rtol=1e-6,
+    )
+    expected_log_partition = torch.logsumexp(path_scores, dim=0)
+    assert torch.allclose(
+        output.log_partition[0],
+        expected_log_partition,
+        atol=1e-10,
+        rtol=1e-10,
+    )
+    output.log_partition.sum().backward(retain_graph=True)
+    actual_gradient = scores.grad.detach().clone()
+    scores.grad.zero_()
+    expected_log_partition.backward()
+    assert torch.allclose(actual_gradient, scores.grad, atol=1e-10, rtol=1e-10)
+
+
+@pytest.mark.parametrize("shift", [-128.0, -16.0, 16.0, 128.0])
+def test_physical_exact_k_is_gauge_invariant_and_restores_log_partition_shift(
+    shift: float,
+) -> None:
+    scores = torch.tensor([[0.2, -0.4, 1.1, 0.7, -0.3, 0.5]], dtype=torch.float32)
+    seconds = torch.arange(6, dtype=torch.float64)[None, :]
+    valid = torch.ones((1, 6), dtype=torch.bool)
+    k, temperature = 3, 0.7
+
+    base = physical_exact_k_select(
+        scores,
+        seconds,
+        valid,
+        k=k,
+        max_gap_seconds=torch.tensor([10.0], dtype=torch.float64),
+        temperature=temperature,
+    )
+    shifted = physical_exact_k_select(
+        scores + shift,
+        seconds,
+        valid,
+        k=k,
+        max_gap_seconds=torch.tensor([10.0], dtype=torch.float64),
+        temperature=temperature,
+    )
+
+    assert torch.allclose(
+        base.soft_slot_assignment,
+        shifted.soft_slot_assignment,
+        atol=5e-5,
+        rtol=5e-5,
+    )
+    assert torch.equal(base.hard_positions, shifted.hard_positions)
+    assert (shifted.log_partition - base.log_partition).item() == pytest.approx(
+        k * shift / temperature,
+        abs=2e-4,
+    )
+
+
+def test_physical_exact_k_fp32_long_chain_matches_fp64_oracle() -> None:
+    generator = torch.Generator().manual_seed(17031)
+    temporal_len, k = 128, 64
+    oracle_scores = (
+        torch.randn(
+        (1, temporal_len),
+        generator=generator,
+        dtype=torch.float64,
+        )
+        * 16.0
+    ).requires_grad_(True)
+    production_scores = oracle_scores.detach().float().requires_grad_(True)
+    seconds = (torch.arange(temporal_len, dtype=torch.float64) * 4.0 / 30.0)[None, :]
+    valid = torch.ones((1, temporal_len), dtype=torch.bool)
+
+    oracle = physical_exact_k_select(oracle_scores, seconds, valid, k=k)
+    production = physical_exact_k_select(production_scores, seconds, valid, k=k)
+
+    assert torch.allclose(
+        production.soft_slot_assignment.double(),
+        oracle.soft_slot_assignment,
+        atol=3e-4,
+        rtol=3e-4,
+    )
+    assert torch.allclose(
+        production.log_partition.double(),
+        oracle.log_partition,
+        atol=3e-3,
+        rtol=3e-5,
+    )
+    assert torch.equal(production.hard_positions, oracle.hard_positions)
+    cost64 = torch.linspace(-1.0, 1.0, temporal_len, dtype=torch.float64)
+    cost32 = cost64.float()
+    (oracle.soft_slot_assignment * cost64[None, None, :]).sum().backward()
+    (production.soft_slot_assignment * cost32[None, None, :]).sum().backward()
+    assert oracle_scores.grad is not None
+    assert production_scores.grad is not None
+    assert torch.isfinite(oracle_scores.grad).all()
+    assert torch.isfinite(production_scores.grad).all()
+    assert torch.allclose(
+        production_scores.grad.double(),
+        oracle_scores.grad,
+        atol=2e-5,
+        rtol=2e-3,
     )
 
 

@@ -21,6 +21,7 @@ from opentad.models.duca.transition_only import (
     build_transition_descriptors,
     calibrated_actionness_probability,
     continuous_policy_logits,
+    coverage_floor_distribution,
     local_boundary_coverage_loss,
     local_boundary_mass_coverage_loss,
     transition_utility_paths,
@@ -110,6 +111,39 @@ def test_actionness_probability_supports_frozen_temperature_bias_calibration() -
     assert bool(((probability >= 0.0) & (probability <= 1.0)).all())
     probability.sum().backward()
     assert _grad_sum(logits) > 0.0
+
+
+def test_coverage_floor_keeps_amp_inputs_on_an_fp32_solver_boundary() -> None:
+    scores = torch.tensor(
+        [[-7.0, -0.5, 0.25, 3.0]],
+        dtype=torch.float16,
+        requires_grad=True,
+    )
+    valid = torch.tensor([[True, True, True, False]])
+
+    probabilities, log_probabilities = coverage_floor_distribution(
+        scores,
+        valid,
+        floor_weight=0.1,
+        score_temperature=0.7,
+    )
+
+    assert probabilities.dtype == torch.float32
+    assert log_probabilities.dtype == torch.float32
+    assert torch.isfinite(log_probabilities[valid]).all()
+    assert torch.isneginf(log_probabilities[~valid]).all()
+    log_probabilities[valid].sum().backward()
+    assert scores.grad is not None
+    assert torch.isfinite(scores.grad).all()
+
+    oracle_probabilities, oracle_log_probabilities = coverage_floor_distribution(
+        scores.detach().double(),
+        valid,
+        floor_weight=0.1,
+        score_temperature=0.7,
+    )
+    assert oracle_probabilities.dtype == torch.float64
+    assert oracle_log_probabilities.dtype == torch.float64
 
 
 def test_transition_entropy_uses_the_frozen_actionness_calibration() -> None:

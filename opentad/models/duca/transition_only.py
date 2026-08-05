@@ -431,7 +431,8 @@ def coverage_floor_distribution(
     if not math.isfinite(score_temperature) or score_temperature <= 0.0:
         raise ValueError("score_temperature must be finite and positive")
 
-    work = scores.float()
+    work_dtype = torch.float64 if scores.dtype == torch.float64 else torch.float32
+    work = scores.to(dtype=work_dtype)
     learned = F.softmax(
         (work / score_temperature).masked_fill(~valid, float("-inf")),
         dim=1,
@@ -454,7 +455,10 @@ def coverage_floor_distribution(
         probabilities.clamp_min(torch.finfo(probabilities.dtype).tiny).log(),
         probabilities.new_full((), float("-inf")),
     )
-    return probabilities.to(dtype=scores.dtype), log_probabilities.to(dtype=scores.dtype)
+    # These values feed a long exact-K log-semiring.  Narrowing them back to an
+    # AMP scorer dtype destroys small probability differences before the solver
+    # can promote them again, so the distribution boundary is deliberately FP32.
+    return probabilities, log_probabilities
 
 
 def transition_utility_paths(
