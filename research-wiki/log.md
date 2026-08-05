@@ -2751,3 +2751,17 @@ append_only: true
   clean N16R4 regression, exact commit, precheck and Slurm execution are pending.
   Stage is `implemented`, with no checkpoint, prediction, metric or performance
   conclusion.
+
+- 2026-08-06: exact runtime
+  `16137484c5ccad422e017e67a81c1a07d1ed2fbb` passed clean N16R4 Linux/Torch
+  regression `93/93`. The deployment precheck passed both stage launchers, the
+  finalizer, submit-capacity (`3 + 3 <= 16`) and storage (`203.7 GB` observed
+  free versus `47.2 GB` required). Atomic deployment SHA
+  `71b10681118c57a845deb33a3f0f98d269ae05ac4b6b9e0e0114182ee1998b59`
+  created fresh root
+  `scnr_residual_centering_matched_training_16137484_s3407_20260806_061352`,
+  released control/center Jobs `1223819/1223820`, and bound after-any finalizer
+  `1223821` to exactly those predecessors. Both no-performance P0 reports passed
+  (`0f24c871...` / `edd5617a...`) and both fresh trainings entered epoch 0 on
+  `g0059`. The experiment is now `experiment_running`; no checkpoint, duplicate
+  accuracy, contrast, cost or empirical claim exists yet.

@@ -300,6 +300,13 @@ updated: 2026-08-06
    malformed, nonterminal or duplicate-divergent arm forces empty contrasts and
    `INCOMPLETE_NO_PERFORMANCE_INFERENCE`; no resume or replacement inside that
    namespace is permitted.
+0. The only active matched-centering namespace is
+   `scnr_residual_centering_matched_training_16137484_s3407_20260806_061352`,
+   exact runtime `16137484c5cc`, stage Jobs `1223819/1223820` and after-any
+   finalizer `1223821`, deployment SHA `71b10681...`. Both P0 gates passed and
+   both trainings entered epoch 0. Do not submit a duplicate namespace, replace
+   one leaf, treat a later documentation commit as runtime, or read live/partial
+   metrics as evidence.
 0. The aggregate G1 end-to-end p50/energy disadvantage is cold-order-sensitive:
    model-forward p50 differs by only `+0.438%`, and G1 pass 0 is the host/input
    outlier. Never claim that the 1-cell model intrinsically costs `+2.845%` from

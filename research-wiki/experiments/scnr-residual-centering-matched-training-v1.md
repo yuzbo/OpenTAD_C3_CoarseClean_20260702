@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:scnr-residual-centering-matched-training-v1
 title: "SCNR residual-centering matched development training v1"
-stage: implemented
-status: implemented_pending_exact_commit_remote_precheck
+stage: experiment_running
+status: both_p0_passed_both_fresh_trainings_running
 outcome: pending
 added: 2026-08-06
 updated: 2026-08-06
@@ -44,7 +44,22 @@ Local Python compilation and Bash syntax checks pass. Pure contract, inherited
 M2, and required C3 regressions pass `57/57`; the new matched-training suite is
 `10/10`. Torch-backed collection is deferred to the clean N16R4 Linux snapshot
 because the local Windows installation stops at the known `torch/c10.dll`
-loader boundary. No Slurm Job, checkpoint, prediction, or metric exists yet.
+loader boundary.
+
+## Running evidence
+
+Exact runtime `16137484c5ccad422e017e67a81c1a07d1ed2fbb` passed clean N16R4
+Linux/Torch regression `93/93`. The atomic deployment root is
+`/data/run01/sczc063/yuzibo/scnr_residual_centering_matched_training_16137484_s3407_20260806_061352`;
+deployment SHA-256 is
+`71b10681118c57a845deb33a3f0f98d269ae05ac4b6b9e0e0114182ee1998b59`.
+Fresh training Jobs are `1223819` (`none_control`) and `1223820`
+(`residual_window_center`); after-any finalizer `1223821` depends on exactly
+those two Jobs. Both no-performance P0 gates passed, with report SHA-256 values
+`0f24c8710436bdb0090079b8a6b68e1e93d166519e0ac21145e3194c5685db56`
+and `edd5617a167b198eb5a7ab924df86cbabb5004dfc04b79685c213c4c66eecc6d`,
+respectively. Both fresh trainings entered epoch 0 on `g0059`. No final
+checkpoint, duplicate accuracy result, contrast, or metric is yet valid.
 
 ## Integrity and decision
 

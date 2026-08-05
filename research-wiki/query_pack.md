@@ -228,8 +228,13 @@ max_chars: 8000
   hashes the normalized complete training recipe across cells, atomically binds
   both held stage Jobs plus the `afterany` finalizer, and fails closed on any
   malformed or incomplete artifact. Local pure-contract/inherited-M2/required-C3
-  regression is `57/57`; exact clean N16R4 Torch/CUDA regression, precheck and
-  Slurm deployment remain pending, so no metric or empirical support exists.
+  regression is `57/57`. Exact runtime `16137484c5cc` passed clean N16R4
+  Torch/CUDA regression `93/93`; deployment SHA `71b10681...` atomically bound
+  fresh control/center Jobs `1223819/1223820` plus after-any finalizer `1223821`
+  under `scnr_residual_centering_matched_training_16137484_s3407_20260806_061352`.
+  Both no-performance P0 receipts passed and both fresh trainings entered epoch
+  0. State is `experiment_running`; no final checkpoint, duplicate accuracy,
+  contrast, metric or empirical support exists yet.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

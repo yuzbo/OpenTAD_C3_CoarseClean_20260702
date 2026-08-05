@@ -1595,7 +1595,19 @@ updated: 2026-08-06
   `tests/test_georoute_residual_centering_training.py`. Local compilation and
   Bash syntax pass; pure contract, inherited M2 and required C3 regression pass
   `57/57`. Exact runtime commit, remote Torch/CUDA regression, Slurm Jobs and
-  performance artifacts do not yet exist.
+  performance artifacts did not yet exist at implementation freeze.
+- SCNR residual-centering matched development training v1 active runtime,
+  2026-08-06. Exact source
+  `16137484c5ccad422e017e67a81c1a07d1ed2fbb`; clean N16R4 related regression
+  `93/93`; root
+  `/data/run01/sczc063/yuzibo/scnr_residual_centering_matched_training_16137484_s3407_20260806_061352`;
+  control/center/finalizer Jobs `1223819/1223820/1223821`; deployment SHA-256
+  `71b10681118c57a845deb33a3f0f98d269ae05ac4b6b9e0e0114182ee1998b59`.
+  P0 report SHA-256 values are
+  `0f24c8710436bdb0090079b8a6b68e1e93d166519e0ac21145e3194c5685db56`
+  and `edd5617a167b198eb5a7ab924df86cbabb5004dfc04b79685c213c4c66eecc6d`.
+  This source establishes deployment/P0/training-start status only; no metric or
+  performance artifact is yet registered.
 
 ## 外部附件
 
