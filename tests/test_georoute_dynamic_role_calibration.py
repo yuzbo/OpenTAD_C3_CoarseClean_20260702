@@ -26,6 +26,10 @@ from tools.bata.run_georoute_role_instrumentation_pair import (
     _validate_formal_telemetry,
     compare_prediction_artifacts,
 )
+from tools.bata.run_georoute_role_instrumentation_triplet import (
+    MODE_SPECIFICATIONS,
+    classify_triplet_comparisons,
+)
 
 
 def _telemetry_payload() -> dict:
@@ -279,6 +283,94 @@ def test_role_instrumentation_pair_compares_predictions_without_metrics(
     assert drift["raw_sha256_parity"] is False
     assert drift["json_semantic_parity"] is False
     assert drift["exact_candidate_identity_overlap"] == 1
+
+
+def _triplet_comparisons(
+    *,
+    control_parity: bool,
+    treatment_parity: bool,
+    source_parity: bool,
+) -> dict:
+    def comparison(parity: bool) -> dict:
+        return {"raw_sha256_parity": parity}
+
+    return {
+        "source_vs_role_off_a": comparison(source_parity),
+        "source_vs_role_off_b": comparison(source_parity),
+        "source_vs_role_on": comparison(source_parity),
+        "role_off_a_vs_role_off_b": comparison(control_parity),
+        "role_off_a_vs_role_on": comparison(treatment_parity),
+        "role_off_b_vs_role_on": comparison(treatment_parity),
+    }
+
+
+@pytest.mark.parametrize(
+    (
+        "control_parity",
+        "treatment_parity",
+        "source_parity",
+        "expected_status",
+        "analysis_allowed",
+    ),
+    [
+        (
+            False,
+            False,
+            False,
+            "FAIL_BASELINE_REPLAY_NONDETERMINISM",
+            False,
+        ),
+        (
+            True,
+            False,
+            False,
+            "FAIL_ROLE_INSTRUMENTATION_NONNEUTRAL",
+            False,
+        ),
+        (
+            True,
+            True,
+            False,
+            "PASS_TRIPLET_NEUTRALITY_SOURCE_REPLAY_DRIFT_DIAGNOSTIC_ONLY",
+            False,
+        ),
+        (
+            True,
+            True,
+            True,
+            "PASS_TRIPLET_NEUTRALITY_AND_SOURCE_PARITY",
+            True,
+        ),
+    ],
+)
+def test_role_instrumentation_triplet_has_fail_closed_causal_verdict(
+    control_parity: bool,
+    treatment_parity: bool,
+    source_parity: bool,
+    expected_status: str,
+    analysis_allowed: bool,
+):
+    verdict = classify_triplet_comparisons(
+        _triplet_comparisons(
+            control_parity=control_parity,
+            treatment_parity=treatment_parity,
+            source_parity=source_parity,
+        )
+    )
+
+    assert verdict["status"] == expected_status
+    assert (
+        verdict["role_calibration_analysis_allowed_under_frozen_contract"]
+        is analysis_allowed
+    )
+
+
+def test_role_instrumentation_triplet_repeats_true_off_before_treatment():
+    assert MODE_SPECIFICATIONS == (
+        ("role_off_a", False, "role_off"),
+        ("role_off_b", False, "role_off"),
+        ("role_on", True, "role_on"),
+    )
 
 
 def test_role_calibration_summary_detects_observed_collapse_without_quota(
