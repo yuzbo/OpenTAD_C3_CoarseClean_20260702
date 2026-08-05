@@ -16,6 +16,7 @@ from tools.bata.georoute_dynamic_floor_m2_contract import (
     DYNAMIC_FLOOR_M2_SEED,
     DYNAMIC_FLOOR_M2_WINDOW_BUDGET,
     bind_dynamic_floor_m2_config,
+    build_dynamic_floor_m2_cost_config,
     build_dynamic_floor_m2_checkpoint_metadata,
     finalize_dynamic_floor_m2,
     summarize_dynamic_floor_m2_telemetry,
@@ -486,16 +487,6 @@ def _cost_profile_fixture(tmp_path: Path) -> dict:
         accuracy_path = arm_inputs / "accuracy.py"
         train_cfg.dump(str(train_path))
         accuracy_cfg.dump(str(accuracy_path))
-        cost_cfg = copy.deepcopy(accuracy_cfg)
-        cost_cfg.model.backbone.custom.georoute_diagnostic_telemetry_enabled = False
-        cost_cfg.georoute_diagnostic_telemetry = dict(enabled=False)
-        cost_cfg.georoute_development_profile = dict(enabled=False)
-        cost_cfg.solver.test.batch_size = 1
-        cost_cfg.solver.test.num_workers = 0
-        cost_cfg.inference.load_from_raw_predictions = False
-        cost_cfg.inference.save_raw_prediction = False
-        cost_cfg.post_processing.save_dict = False
-        expected_cost_config_hashes[arm] = canonical_sha256(cost_cfg.to_dict())
         stage = {
             "arm": arm,
             "runtime_commit": "c" * 40,
@@ -506,6 +497,9 @@ def _cost_profile_fixture(tmp_path: Path) -> dict:
                 "accuracy": {"path": str(accuracy_path.resolve()), "sha256": sha256_file(accuracy_path)},
             },
         }
+        cost_cfg = build_dynamic_floor_m2_cost_config(stage, arm=arm)
+        assert cost_cfg.post_processing.sliding_window is True
+        expected_cost_config_hashes[arm] = canonical_sha256(cost_cfg.to_dict())
         stage["stage_result_sha256"] = canonical_sha256(stage)
         stage_path = (
             run_root

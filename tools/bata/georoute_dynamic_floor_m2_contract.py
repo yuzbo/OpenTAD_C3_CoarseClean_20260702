@@ -431,6 +431,28 @@ def validate_dynamic_floor_m2_config(
     return binding
 
 
+def build_dynamic_floor_m2_cost_config(
+    stage: Mapping[str, Any], *, arm: str
+) -> Any:
+    """Rebuild the exact configuration hashed and executed by every cost pass."""
+
+    from mmengine.config import Config
+
+    accuracy_path = Path(stage["config_receipts"]["accuracy"]["path"])
+    cfg = Config.fromfile(str(accuracy_path))
+    cfg.model.backbone.custom.georoute_diagnostic_telemetry_enabled = False
+    cfg.georoute_diagnostic_telemetry = dict(enabled=False)
+    cfg.georoute_development_profile = dict(enabled=False)
+    cfg.solver.test.batch_size = 1
+    cfg.solver.test.num_workers = 0
+    cfg.inference.load_from_raw_predictions = False
+    cfg.inference.save_raw_prediction = False
+    cfg.post_processing.save_dict = False
+    cfg.post_processing.sliding_window = True
+    validate_dynamic_floor_m2_config(cfg, arm=arm, phase="cost")
+    return cfg
+
+
 def build_dynamic_floor_m2_checkpoint_metadata(
     cfg: Any,
     *,
@@ -1160,20 +1182,9 @@ def validate_dynamic_floor_m2_cost_profile(
         ):
             raise ValueError("dynamic floor M2 cost stage receipt changed")
 
-    from mmengine.config import Config
-
     expected_cost_config_hashes = {}
     for arm, stage in validated_stages.items():
-        cost_cfg = Config.fromfile(stage["config_receipts"]["accuracy"]["path"])
-        cost_cfg.model.backbone.custom.georoute_diagnostic_telemetry_enabled = False
-        cost_cfg.georoute_diagnostic_telemetry = dict(enabled=False)
-        cost_cfg.georoute_development_profile = dict(enabled=False)
-        cost_cfg.solver.test.batch_size = 1
-        cost_cfg.solver.test.num_workers = 0
-        cost_cfg.inference.load_from_raw_predictions = False
-        cost_cfg.inference.save_raw_prediction = False
-        cost_cfg.post_processing.save_dict = False
-        validate_dynamic_floor_m2_config(cost_cfg, arm=arm, phase="cost")
+        cost_cfg = build_dynamic_floor_m2_cost_config(stage, arm=arm)
         expected_cost_config_hashes[arm] = canonical_sha256(cost_cfg.to_dict())
     pass_sample_counts = []
     for pass_index, (receipt, arm) in enumerate(

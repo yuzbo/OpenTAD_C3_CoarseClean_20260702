@@ -27,6 +27,7 @@ from tools.bata.georoute_dynamic_floor_m2_contract import (  # noqa: E402
     DYNAMIC_FLOOR_M2_SEED,
     DYNAMIC_FLOOR_M2_STUDY_ID,
     DYNAMIC_FLOOR_M2_WINDOW_BUDGET,
+    build_dynamic_floor_m2_cost_config,
     require_clean_dynamic_floor_m2_checkout,
     validate_dynamic_floor_m2_checkpoint_sidecar,
     validate_dynamic_floor_m2_config,
@@ -317,23 +318,6 @@ def _validate_cost_audit(audit: Any, *, floor_cells: int) -> dict[str, Any]:
     }
 
 
-def _cost_config(stage: Mapping[str, Any], *, arm: str):
-    from mmengine.config import Config
-
-    accuracy_path = Path(stage["config_receipts"]["accuracy"]["path"])
-    cfg = Config.fromfile(str(accuracy_path))
-    cfg.model.backbone.custom.georoute_diagnostic_telemetry_enabled = False
-    cfg.georoute_diagnostic_telemetry = dict(enabled=False)
-    cfg.georoute_development_profile = dict(enabled=False)
-    cfg.solver.test.batch_size = 1
-    cfg.solver.test.num_workers = 0
-    cfg.inference.load_from_raw_predictions = False
-    cfg.inference.save_raw_prediction = False
-    cfg.post_processing.save_dict = False
-    validate_dynamic_floor_m2_config(cfg, arm=arm, phase="cost")
-    return cfg
-
-
 def _profile_one_pass(
     *,
     torch: Any,
@@ -353,7 +337,7 @@ def _profile_one_pass(
     from opentad.models import build_detector
     from opentad.utils import set_seed
 
-    cfg = _cost_config(stage, arm=arm)
+    cfg = build_dynamic_floor_m2_cost_config(stage, arm=arm)
     binding = dict(cfg.georoute_dynamic_floor_m2_binding)
     dataset = build_dataset(copy.deepcopy(cfg.dataset.test))
     runtime_ids = {str(row[0]) for row in dataset.data_list}
@@ -409,7 +393,6 @@ def _profile_one_pass(
     del checkpoint
     model = model.to(device).eval()
     ddp_model = DistributedDataParallel(model, device_ids=[0], output_device=0)
-    cfg.post_processing.sliding_window = True
     external_cls = dataset.class_map
     synchronize = lambda: torch.cuda.synchronize(device)
     use_amp = bool(cfg.solver.amp)
