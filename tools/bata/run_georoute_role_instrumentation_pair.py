@@ -17,6 +17,7 @@ from typing import Any, Mapping
 from mmengine.config import Config
 
 from tools.bata.georoute_dynamic_floor_m2_contract import (
+    DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA,
     DYNAMIC_FLOOR_M2_SEED,
     validate_dynamic_floor_m2_config,
 )
@@ -31,7 +32,7 @@ from tools.bata.run_georoute_phase_m_replay import (
 )
 
 
-PAIR_SCHEMA = "georoute_role_instrumentation_neutrality_pair_v1"
+PAIR_SCHEMA = DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA
 FORMAL_TELEMETRY_SCHEMA = "georoute_formal_development_telemetry_v1"
 PAIR_ORDER = ("role_off", "role_on")
 
@@ -305,6 +306,7 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         "same_slurm_job": True,
         "same_visible_gpu": True,
         "serial_execution": True,
+        "instrumentation_only": True,
         "changes_route_or_execution": False,
         "fixed_role_quota_used": False,
         "official_test_opened": False,

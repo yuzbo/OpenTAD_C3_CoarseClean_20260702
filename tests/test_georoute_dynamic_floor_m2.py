@@ -14,6 +14,7 @@ from tools.bata.georoute_dynamic_floor_m2_contract import (
     DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA,
     DYNAMIC_FLOOR_M2_COST_SCHEMA,
     DYNAMIC_FLOOR_M2_COST_ORDER,
+    DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA,
     DYNAMIC_FLOOR_M2_SEED,
     DYNAMIC_FLOOR_M2_WINDOW_BUDGET,
     bind_dynamic_floor_m2_config,
@@ -199,6 +200,68 @@ def test_dynamic_floor_m2_role_replay_separates_model_and_execution_commits(
     )
     cfg.georoute_phase_m_binding.changes_route_or_execution = True
     with pytest.raises(ValueError, match="execution binding"):
+        resolve_dynamic_floor_m2_accuracy_execution_commit(
+            cfg,
+            binding=binding,
+        )
+
+
+@pytest.mark.parametrize(
+    ("pair_mode", "role_calibration_enabled"),
+    [("role_off", False), ("role_on", True)],
+)
+def test_dynamic_floor_m2_role_neutrality_pair_separates_execution_commit(
+    tmp_path: Path,
+    pair_mode: str,
+    role_calibration_enabled: bool,
+):
+    cfg = _bound_config(tmp_path)
+    cfg.model.backbone.custom.georoute_diagnostic_telemetry_enabled = True
+    cfg.model.backbone.custom.georoute_role_calibration_telemetry_enabled = (
+        role_calibration_enabled
+    )
+    cfg.georoute_diagnostic_telemetry = dict(enabled=True)
+    cfg.georoute_development_profile = dict(enabled=False)
+    binding = validate_dynamic_floor_m2_config(
+        cfg,
+        arm="native_1cell_main",
+        phase="accuracy",
+    )
+    cfg.georoute_phase_m_binding = dict(
+        schema_version=DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA,
+        pair_mode=pair_mode,
+        variant="native_1cell_main",
+        seed=DYNAMIC_FLOOR_M2_SEED,
+        source_experiment_commit="c" * 40,
+        runtime_commit="d" * 40,
+        source_bound_config_sha256="1" * 64,
+        source_checkpoint_sha256="2" * 64,
+        source_prediction_sha256="3" * 64,
+        source_population_sha256="4" * 64,
+        source_dataset_count=136,
+        role_calibration_telemetry_enabled=role_calibration_enabled,
+        instrumentation_only=True,
+        same_slurm_job=True,
+        same_visible_gpu=True,
+        serial_execution=True,
+        fixed_role_quota_used=False,
+        changes_route_or_execution=False,
+        official_test_opened=False,
+        gt_for_route_used=False,
+        teacher_for_route_used=False,
+        oracle_used=False,
+        raw_prediction_cache_used=False,
+    )
+
+    assert (
+        resolve_dynamic_floor_m2_accuracy_execution_commit(
+            cfg,
+            binding=binding,
+        )
+        == "d" * 40
+    )
+    cfg.georoute_phase_m_binding.same_visible_gpu = False
+    with pytest.raises(ValueError, match="neutrality pair execution binding"):
         resolve_dynamic_floor_m2_accuracy_execution_commit(
             cfg,
             binding=binding,
