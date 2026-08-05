@@ -1412,6 +1412,22 @@ updated: 2026-08-05
   `FAIL_INCOMPLETE_NO_FLOOR_INFERENCE`, `paired_cost_present=false`, empty
   contrasts, and all official-test/selection/paper guards false. This is
   incomplete execution provenance, not a metric, cost or floor result.
+- Dynamic SCNR M2 cost-only recovery deployment, 2026-08-05. Exact execution
+  repair `c67e13e84e47d17fb48ab416c35fa0786c16f2f3` passed remote focused
+  `50/50` and cost precheck from independent clean checkout
+  `/data/run01/sczc063/yuzibo/dynamic_scnr_m2_costrepair_c67e13e8`; frozen model
+  runtime remains clean `6ee97336775a09611f10423e07cafcea375e191a`. Failed cost
+  and incomplete finalization were preserved under `cost_failed_job1216182/` and
+  `control/finalization_incomplete_job1216183.json`. After exact revalidation of
+  both completed arms and their stage hashes, cost-only Job `1222672` and fresh
+  finalizer Job `1222673` were held, receipted, validated, and released without
+  arm retraining. Actual scheduler dependencies are none for cost and
+  `afterany:1222672` for finalizer; the receipt explicitly distinguishes this from
+  the frozen scientific DAG because old completed arm Jobs were rejected as
+  live-controller dependency targets. Recovery deployment self/file SHA-256 are
+  `12cbbb3f609adaa57ca9b29bf930bd124cd35c5f33aaa966fc6a9529c3d1de89` /
+  `f67703bf4dc5d066f64a1bafa36d49be133a7b6701507ef8ef31d651a7d2fba7`.
+  This is `experiment_running`; no partial cost or floor inference is registered.
 
 ## 外部附件
 

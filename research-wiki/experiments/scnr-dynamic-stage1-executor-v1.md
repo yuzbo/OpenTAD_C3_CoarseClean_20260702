@@ -174,6 +174,14 @@ tubelet, or any mismatch between selected and executed tokens.
   false. The recovery is execution-only: it validates clip counts against the
   per-window pair ledger, separates model/runtime from repair-execution commit,
   preserves both trained arms, and passed local focused tests `15/15`.
+- Exact clean recovery execution `c67e13e8` passed remote focused `50/50` and the
+  paired-cost precheck. After the original stage states and hashes were
+  revalidated, held Jobs `1222672` (full cost-only replay) and `1222673` (fresh
+  finalizer) were bound by recovery deployment self-hash `12cbbb3f...d1de89` and
+  released. No arm was retrained or resumed. Because the completed arm Jobs had
+  aged out as accepted controller dependency targets, the actual scheduler DAG is
+  cost with no dependency and finalizer `afterany:1222672`; this is explicitly
+  distinguished from the frozen logical DAG in the receipt.
 
 ## Current boundary
 
@@ -181,9 +189,9 @@ The dynamic route is now `tested` at implementation, synthetic CUDA P0, real
 Fit-prefix health and sample-level telemetry-unit levels.  D3 has passed and
 the two floor configurations are mechanically admissible.  The M2 matched
 training/evaluation and separate full-stack cost/energy protocol is implemented
-and locally tested. The resource-only replacement remains `experiment_running`:
-both arms are terminal and valid, but the required paired-cost/finalizer recovery
-has not yet sealed. None of the evidence above yet contains a valid complete
+and locally/remote tested. The cost-only replacement remains `experiment_running`:
+both arms are terminal and valid, and the required paired-cost/finalizer recovery
+is submitted but has not yet sealed. None of the evidence above yet contains a valid complete
 development contrast with end-to-end latency/energy,
 checkpoint utility or a floor comparison; it is
 not `empirically_supported` or `paper_ready`.  `K_t=0` is permitted and covered by

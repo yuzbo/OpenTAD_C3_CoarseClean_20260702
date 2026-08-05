@@ -2512,3 +2512,19 @@ append_only: true
   data, ROI floors, budget and evaluation are unchanged. Python compile and the
   focused M2 suite pass locally (`15/15`). Full counterbalanced cost plus a new
   fail-closed finalizer remain required before any G1/G2 comparison.
+
+- 2026-08-05: deployed the no-retraining dynamic-floor M2 cost recovery. Clean
+  execution commit `c67e13e8` passed remote focused `50/50` and cost precheck;
+  original runtime `6ee97336`, G1/G2 terminal states, and both stage-result hashes
+  were revalidated unchanged. A first submission request using `afterok` on the
+  old completed Jobs created no Job because they had aged out as accepted
+  live-controller dependency targets. Recovery cost Job `1222672` and finalizer
+  Job `1222673` were then submitted held, bound to a self-hashed recovery receipt,
+  validated through the original fail-closed deployment validator, and released.
+  The truthful Slurm DAG is cost with no dependency and finalizer
+  `afterany:1222672`; the receipt separately preserves the frozen scientific DAG.
+  Recovery deployment self/file SHA-256 are
+  `12cbbb3f609adaa57ca9b29bf930bd124cd35c5f33aaa966fc6a9529c3d1de89` /
+  `f67703bf4dc5d066f64a1bafa36d49be133a7b6701507ef8ef31d651a7d2fba7`.
+  Failed artifacts remain archived. Status stays `experiment_running`; no live or
+  partial pass metric is interpreted.

@@ -180,6 +180,18 @@ updated: 2026-08-05
    execution-repair commit that records model runtime `6ee97336`, and then runs a
    fresh fail-closed finalizer. The original clean runtime checkout must remain
    untouched.
+0. The admitted M2 recovery is now paired-cost Job `1222672` from exact clean
+   execution source `c67e13e84e47d17fb48ab416c35fa0786c16f2f3`, followed by
+   finalizer Job `1222673`. The old completed Jobs are no longer accepted as live
+   Slurm dependency targets, so the truthful submitted scheduler DAG is cost with
+   no dependency and finalizer `afterany:1222672`; the self-hashed recovery receipt
+   separately retains the frozen scientific dependency contract. Do not describe
+   this as a new training run or as scheduler `afterok` on `1216180/1216181`.
+   Failed cost artifacts and incomplete finalization are preserved as
+   `cost_failed_job1216182/` and
+   `control/finalization_incomplete_job1216183.json`. Do not inspect or report
+   live pass metrics; wait for all four counterbalanced passes and the fresh
+   fail-closed finalization.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

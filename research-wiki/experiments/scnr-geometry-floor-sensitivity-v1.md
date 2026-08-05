@@ -121,6 +121,18 @@ tests `15/15`。恢复必须保留原失败工件，复用两臂而不重训，�
 `G1 -> G2 -> G2 -> G1` 与新 finalizer。当前仍是 `experiment_running`，不得读取
 两臂局部指标或形成 floor 结论。
 
+恢复执行 commit `c67e13e84e47d17fb48ab416c35fa0786c16f2f3` 已在独立 clean
+checkout 通过远端 focused `50/50` 与 cost precheck；它没有修改 `opentad/` 或
+`configs/`。重新核验 `1216180/1216181` 的 `COMPLETED 0:0` 与上述 stage-result
+哈希后，完整 cost-only Job `1222672` 和 fresh finalizer Job `1222673` 已先 hold、
+写入并验证不可变 recovery receipt、再释放。由于旧完成作业已不能作为 live-controller
+依赖目标，真实 scheduler DAG 为 cost 无依赖、finalizer `afterany:1222672`；回执中的
+顶层依赖仅保留 fail-closed finalizer 所需的冻结科学 DAG，并在 recovery 字段明确披露
+这一差异。回执 self/file SHA-256 为
+`12cbbb3f609adaa57ca9b29bf930bd124cd35c5f33aaa966fc6a9529c3d1de89` /
+`f67703bf4dc5d066f64a1bafa36d49be133a7b6701507ef8ef31d651a7d2fba7`。
+状态仍是 `experiment_running`，尚无可解释的成本或 floor 结果。
+
 P0 中三角色计数、`K_t` 范围、loss 或梯度只能证明路径非退化且可训练，不能用于
 判断 1x1/2x2 谁更好。只有完整匹配的 development 训练、相同 population/hash、
 决策指标与实测成本全部封存后，才允许给出 floor 敏感性结论；仍不得把旧固定

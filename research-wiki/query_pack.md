@@ -135,9 +135,18 @@ max_chars: 8000
   the current per-window ragged ledger, records the unchanged model/runtime
   commit separately from its clean execution-repair commit, preserves both
   completed arms, and must rerun the entire counterbalanced paired-cost pass plus
-  finalizer before any metric is interpreted. Local focused checks pass `15/15`.
-  This remains `experiment_running`; no valid latency, energy, floor verdict or
-  empirical support exists yet.
+  finalizer before any metric is interpreted. Local focused checks pass `15/15`;
+  the independent clean recovery checkout
+  `c67e13e84e47d17fb48ab416c35fa0786c16f2f3` passes the exact remote focused
+  suite `50/50` and cost precheck. After revalidating the two old Slurm terminal
+  states and stage hashes, cost-only recovery Job `1222672` and fresh finalizer
+  Job `1222673` were atomically receipted and released without retraining either
+  arm. The actual Slurm DAG has no dependency on the aged-out completed arm Jobs;
+  the finalizer is `afterany:1222672`. Recovery deployment self/file SHA-256 are
+  `12cbbb3f609adaa57ca9b29bf930bd124cd35c5f33aaa966fc6a9529c3d1de89` /
+  `f67703bf4dc5d066f64a1bafa36d49be133a7b6701507ef8ef31d651a7d2fba7`.
+  This remains `experiment_running`; no live/partial latency, energy, floor
+  verdict or empirical support exists yet.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and
