@@ -1,5 +1,30 @@
 # Research Log
 
+## 2026-08-05 — First four-gate release attempt stopped on FP64 test-reference dtype
+
+- Transported exact source `e0a58ab2e576522ccf335a8fea44bdcef71e490b`
+  to clean checkout
+  `/data/run01/sczc063/yuzibo/OpenTAD_DUCA_PAPER_e0a58ab2` using complete Git
+  bundle SHA-256
+  `6e0baad404221d32d80f41b12190d0cb4b9a090ace4fae7906f9c4214c3b2636`.
+  The registered runtime annotation/video links and all three asset hashes were
+  reverified while Git remained clean; the old `7e893569` root was untouched.
+- Submitted authoritative code gate `1222939` at fresh root
+  `/data/run01/sczc063/yuzibo/rime_preflight/duca_paper_code_gate_e0a58ab2_20260805_235718`.
+  It failed `1:0` after `146 passed / 1 failed`; no gate receipt exists and no
+  short-window, numeric, exact-211 or Stage-A job was submitted.
+- Exact failure signature:
+  `linux_fp64_oracle_expected_ones_dtype_mismatch`. The small brute-force FP64
+  distribution comparison passed, then the normalization assertion constructed
+  a default-FP32 `torch.ones` reference and PyTorch raised `Double did not match
+  Float`. This is deterministic test construction, not solver/model behavior.
+- Applied the bounded test-only correction: construct the normalization identity
+  with `torch.ones_like` on the actual slot-mass tensor. No model, solver, loss,
+  budget, threshold, data, seed, checkpoint, evaluator or paper question changed.
+  The failed root/log remain immutable; a new commit and entirely fresh code-gate
+  root are required. No loss, checkpoint, prediction, partial metric or mAP was
+  opened.
+
 ## 2026-08-05 — N16R4 access identity corrected and made persistent
 
 - Root cause of the false remote-block conclusion: the network endpoint,

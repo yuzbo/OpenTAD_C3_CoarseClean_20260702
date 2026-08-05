@@ -126,7 +126,7 @@ def test_physical_exact_k_slot_marginals_match_small_bruteforce_distribution() -
     assert torch.allclose(output.soft_slot_assignment[0], expected, atol=1e-6, rtol=1e-6)
     assert torch.allclose(
         output.soft_slot_assignment.sum(dim=2),
-        torch.ones((1, k)),
+        torch.ones_like(output.soft_slot_assignment.sum(dim=2)),
         atol=1e-6,
         rtol=1e-6,
     )

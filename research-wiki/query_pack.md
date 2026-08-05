@@ -1090,6 +1090,19 @@ Current Stage-A recovery decision:
    no new gate or Stage-A job is claimed until an exact commit-bound submission
    actually returns its scheduler identity and receipt.
 
+   The first authoritative release attempt on exact source `e0a58ab2` submitted
+   code-gate job `1222939` at root
+   `/data/run01/sczc063/yuzibo/rime_preflight/duca_paper_code_gate_e0a58ab2_20260805_235718`.
+   It failed after `146 passed / 1 failed`: the new small-graph FP64 oracle test
+   compared a `Double` slot-mass tensor with a default-`Float` `torch.ones`
+   reference, and the installed PyTorch rejects cross-dtype `allclose`. Register
+   `linux_fp64_oracle_expected_ones_dtype_mismatch`. The selector output had
+   already matched the FP64 brute-force distribution; this is a deterministic
+   Linux-only test-construction defect, not a model/numeric/scientific failure.
+   The bounded repair uses `ones_like` on the actual slot-mass tensor and changes
+   no model, solver, loss, budget, data, seed, evaluator, threshold or metric.
+   No downstream gate or Stage-A job was submitted and no metric was opened.
+
 Approved compact feasibility design, superseding the simulation-first order
 below while retaining it as negative-history context:
 

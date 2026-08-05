@@ -526,3 +526,9 @@ These failures and naming mistakes must not be repeated.
      is a local configuration error, not evidence that N16R4 is unreachable.
      On Windows, also compare the config ACL with the existing private-key ACL;
      `Bad owner or permissions` is an ACL failure before any network attempt.
+148. Do not construct dtype-implicit expected tensors in the FP64 structured-
+     selection oracle tests. Expected normalization identities must use the
+     actual output's dtype and device (`ones_like` or an explicit matching
+     constructor). A Linux `Double did not match Float` assertion failure after
+     the brute-force distribution comparison has passed is a test-construction
+     failure, not evidence against the solver or DUCA model.
