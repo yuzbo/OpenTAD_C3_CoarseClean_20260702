@@ -21,9 +21,30 @@ for name in \
   DUCA_PAPER_CODE_GATE_RECEIPT \
   DUCA_PAPER_CODE_GATE_RECEIPT_SHA256 \
   DUCA_PAPER_SHORT_WINDOW_GATE_JSON \
-  DUCA_PAPER_SHORT_WINDOW_GATE_SHA256; do
+  DUCA_PAPER_SHORT_WINDOW_GATE_SHA256 \
+  DUCA_PAPER_NUMERIC_GATE_JSON \
+  DUCA_PAPER_NUMERIC_GATE_SHA256 \
+  DUCA_PAPER_EXACT211_UID_GATE_JSON \
+  DUCA_PAPER_EXACT211_UID_GATE_SHA256; do
   required "${name}"
 done
+
+BASE="${BASE:-/data/run01/sczc063/yuzibo}"
+source "${DUCA_PAPER_REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
+DUCA_PAPER_CELLS_ROOT="$(
+  duca_cellcf_require_external_path \
+    "DUCA_PAPER_CELLS_ROOT" \
+    "${DUCA_PAPER_REPO_ROOT}" \
+    "${BASE}" \
+    "${DUCA_PAPER_CELLS_ROOT}"
+)" || fail "Stage-A cells root violates the formal path contract"
+DUCA_PAPER_MATRIX_ROOT="$(
+  duca_cellcf_require_external_path \
+    "DUCA_PAPER_MATRIX_ROOT" \
+    "${DUCA_PAPER_REPO_ROOT}" \
+    "${BASE}" \
+    "${DUCA_PAPER_MATRIX_ROOT}"
+)" || fail "Stage-A matrix root violates the formal path contract"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "Stage-A sealing must run inside Slurm"
 cd "${DUCA_PAPER_REPO_ROOT}"
@@ -38,6 +59,10 @@ cd "${DUCA_PAPER_REPO_ROOT}"
   "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}" ]] || fail "short-window gate SHA-256 drift"
 [[ "$(sha256sum "${DUCA_PAPER_CODE_GATE_RECEIPT}" | awk '{print $1}')" == \
   "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}" ]] || fail "code-gate SHA-256 drift"
+[[ "$(sha256sum "${DUCA_PAPER_NUMERIC_GATE_JSON}" | awk '{print $1}')" == \
+  "${DUCA_PAPER_NUMERIC_GATE_SHA256}" ]] || fail "numeric-gate SHA-256 drift"
+[[ "$(sha256sum "${DUCA_PAPER_EXACT211_UID_GATE_JSON}" | awk '{print $1}')" == \
+  "${DUCA_PAPER_EXACT211_UID_GATE_SHA256}" ]] || fail "exact-211 UID gate SHA-256 drift"
 python -m tools.bata.validate_duca_paper_code_gate \
   --receipt "${DUCA_PAPER_CODE_GATE_RECEIPT}" \
   --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
@@ -46,6 +71,14 @@ python -m tools.bata.validate_duca_paper_short_window_gate \
   --receipt "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
   --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
   --expected-sha256 "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}"
+python -m tools.bata.validate_duca_paper_numeric_gate \
+  --receipt "${DUCA_PAPER_NUMERIC_GATE_JSON}" \
+  --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  --expected-sha256 "${DUCA_PAPER_NUMERIC_GATE_SHA256}"
+python -m tools.bata.validate_duca_paper_exact211_uid_gate \
+  --receipt "${DUCA_PAPER_EXACT211_UID_GATE_JSON}" \
+  --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  --expected-sha256 "${DUCA_PAPER_EXACT211_UID_GATE_SHA256}"
 
 mkdir -p "${DUCA_PAPER_MATRIX_ROOT}"
 python - \
@@ -57,6 +90,10 @@ python - \
   "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}" \
   "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
   "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}" \
+  "${DUCA_PAPER_NUMERIC_GATE_JSON}" \
+  "${DUCA_PAPER_NUMERIC_GATE_SHA256}" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_JSON}" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_SHA256}" \
   "${DUCA_PAPER_MATRIX_ROOT}/matrix_receipt.json" <<'PY'
 import hashlib
 import json
@@ -73,6 +110,10 @@ import sys
     code_gate_sha,
     short_gate_path,
     short_gate_sha,
+    numeric_gate_path,
+    numeric_gate_sha,
+    exact211_gate_path,
+    exact211_gate_sha,
     output,
 ) = sys.argv[1:]
 manifest = json.load(open(manifest_path, encoding="utf-8"))
@@ -82,6 +123,12 @@ code_gate = manifest.get("prerequisite_gates", {}).get(
 )
 short_gate = manifest.get("prerequisite_gates", {}).get(
     "real_natural_short_window_heavy_backbone", {}
+)
+numeric_gate = manifest.get("prerequisite_gates", {}).get(
+    "production_like_learned_exactk_numeric", {}
+)
+exact211_gate = manifest.get("prerequisite_gates", {}).get(
+    "exact211_physical_uid_metadata", {}
 )
 if (
     manifest.get("schema_version") != "duca_paper_full200_matrix_v2"
@@ -102,6 +149,18 @@ if (
     != pathlib.Path(short_gate_path).resolve()
     or short_gate.get("sha256") != short_gate_sha
     or sha(short_gate_path) != short_gate_sha
+    or numeric_gate.get("status") != "passed"
+    or numeric_gate.get("git_commit") != commit
+    or pathlib.Path(str(numeric_gate.get("path", ""))).resolve()
+    != pathlib.Path(numeric_gate_path).resolve()
+    or numeric_gate.get("sha256") != numeric_gate_sha
+    or sha(numeric_gate_path) != numeric_gate_sha
+    or exact211_gate.get("status") != "passed"
+    or exact211_gate.get("git_commit") != commit
+    or pathlib.Path(str(exact211_gate.get("path", ""))).resolve()
+    != pathlib.Path(exact211_gate_path).resolve()
+    or exact211_gate.get("sha256") != exact211_gate_sha
+    or sha(exact211_gate_path) != exact211_gate_sha
 ):
     raise SystemExit("Stage-A manifest is not the frozen paper matrix")
 
@@ -139,6 +198,12 @@ for arm, seed in sorted(expected):
         or pathlib.Path(str(receipt.get("short_window_gate_path", ""))).resolve()
         != pathlib.Path(short_gate_path).resolve()
         or receipt.get("short_window_gate_sha256") != short_gate_sha
+        or pathlib.Path(str(receipt.get("numeric_gate_path", ""))).resolve()
+        != pathlib.Path(numeric_gate_path).resolve()
+        or receipt.get("numeric_gate_sha256") != numeric_gate_sha
+        or pathlib.Path(str(receipt.get("exact211_uid_gate_path", ""))).resolve()
+        != pathlib.Path(exact211_gate_path).resolve()
+        or receipt.get("exact211_uid_gate_sha256") != exact211_gate_sha
     ):
         raise SystemExit(f"Stage-A cell receipt drift: {arm}/seed{seed}")
     evaluation = json.loads(evaluation_path.read_text(encoding="utf-8"))
@@ -200,6 +265,10 @@ payload = {
     "code_gate_sha256": code_gate_sha,
     "short_window_gate_path": str(pathlib.Path(short_gate_path).resolve()),
     "short_window_gate_sha256": short_gate_sha,
+    "numeric_gate_path": str(pathlib.Path(numeric_gate_path).resolve()),
+    "numeric_gate_sha256": numeric_gate_sha,
+    "exact211_uid_gate_path": str(pathlib.Path(exact211_gate_path).resolve()),
+    "exact211_uid_gate_sha256": exact211_gate_sha,
     "cell_count": 12,
     "complete_three_seed_matrix": True,
     "exact_full200_training_per_cell": True,

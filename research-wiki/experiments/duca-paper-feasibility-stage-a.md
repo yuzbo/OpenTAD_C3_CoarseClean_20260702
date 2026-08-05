@@ -5,8 +5,8 @@
 - Decision: `user_approved`
 - Design: `designed`
 - Short-window corrigendum: `user_approved / U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1`
-- Implementation: `minimal_solver_repair_commit_cb077a77`
-- Local focused verification: `py_compile_passed / direct_CPU_numeric_oracles_passed / pytest_modules_skipped_on_Windows`
+- Implementation: `minimal_solver_repair_commit_cb077a77 / four_gate_release_chain_implemented_local`
+- Local focused verification: `py_compile_and_bash_passed / direct_CPU_numeric_oracles_passed / release_contract_17_passed_1_skipped / mandatory_C3_23_passed`
 - Independent read-only audit: `minimal_repair_GO / FP64_dtype_caveat_resolved`
 - Authoritative Linux/Slurm verification: `exact_source_7e893569 / code_gate_1215388_passed / real_short_gate_1215389_passed`
 - Experiment: `stagea_1215390_to_1215396_terminal_failed_closed / metrics_never_opened`
@@ -287,6 +287,19 @@ No Stage-A redeployment is authorized until a clean commit, the full Linux code
 gate, the real short-window heavy-backbone gate, exact-211 identity dry-run and
 fresh hash-bound transaction prerequisites all pass. Old roots, receipts and
 partial cells remain immutable and ineligible.
+
+The release prerequisite is now strengthened to four exact-commit/hash-bound
+gates: clean Linux/PyTorch code, real natural-short-window heavy execution,
+production-like learned `T=768,K=384` DDP/AMP numerical stability, and exact-211
+metadata/physical-window identity. The numeric gate uses a real full-model
+forward/backward/optimizer path, reproduces the superseded raw-message failure
+within a bounded 100-update window, and evaluates the repaired solver against
+the frozen FP64/flow/gradient/hard-path predicates. The exact-211 gate enumerates
+official validation metadata only and checks every `(video,start)` and physical
+UID exactly once; it performs no decode, model call, prediction or metric access.
+All four receipts are now required by the manifest, cell, submission and seal
+paths. This is `implemented / local_contract_tested / authoritative_Slurm_pending`;
+it is not an mAP result and does not authorize Stage B.
 
 ## Conditional Stage B
 

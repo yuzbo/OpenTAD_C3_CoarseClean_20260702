@@ -24,9 +24,23 @@ for name in \
   DUCA_PAPER_CODE_GATE_RECEIPT \
   DUCA_PAPER_CODE_GATE_RECEIPT_SHA256 \
   DUCA_PAPER_SHORT_WINDOW_GATE_JSON \
-  DUCA_PAPER_SHORT_WINDOW_GATE_SHA256; do
+  DUCA_PAPER_SHORT_WINDOW_GATE_SHA256 \
+  DUCA_PAPER_NUMERIC_GATE_JSON \
+  DUCA_PAPER_NUMERIC_GATE_SHA256 \
+  DUCA_PAPER_EXACT211_UID_GATE_JSON \
+  DUCA_PAPER_EXACT211_UID_GATE_SHA256; do
   required "${name}"
 done
+
+BASE="${BASE:-/data/run01/sczc063/yuzibo}"
+source "${DUCA_PAPER_REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
+DUCA_PAPER_RUN_ROOT="$(
+  duca_cellcf_require_external_path \
+    "DUCA_PAPER_RUN_ROOT" \
+    "${DUCA_PAPER_REPO_ROOT}" \
+    "${BASE}" \
+    "${DUCA_PAPER_RUN_ROOT}"
+)" || fail "Stage-A root violates the formal path contract"
 
 command -v sbatch >/dev/null || fail "sbatch is unavailable"
 command -v scontrol >/dev/null || fail "scontrol is unavailable"
@@ -57,7 +71,9 @@ for binding in \
   "${DUCA_PAPER_ANNOTATION_PATH}|${DUCA_PAPER_ANNOTATION_SHA256}|THUMOS14 annotation" \
   "${DUCA_PAPER_CLASS_MAP_PATH}|${DUCA_PAPER_CLASS_MAP_SHA256}|THUMOS14 class map" \
   "${DUCA_PAPER_CODE_GATE_RECEIPT}|${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}|clean Linux/PyTorch code gate" \
-  "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}|${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}|real short-window Slurm gate"; do
+  "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}|${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}|real short-window Slurm gate" \
+  "${DUCA_PAPER_NUMERIC_GATE_JSON}|${DUCA_PAPER_NUMERIC_GATE_SHA256}|production-like learned numeric gate" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_JSON}|${DUCA_PAPER_EXACT211_UID_GATE_SHA256}|exact-211 physical UID gate"; do
   IFS='|' read -r path expected label <<<"${binding}"
   [[ -f "${path}" ]] || fail "${label} is missing: ${path}"
   [[ "$(sha256sum "${path}" | cut -d ' ' -f 1)" == "${expected}" ]] \
@@ -71,6 +87,14 @@ python -m tools.bata.validate_duca_paper_short_window_gate \
   --receipt "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
   --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
   --expected-sha256 "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}"
+python -m tools.bata.validate_duca_paper_numeric_gate \
+  --receipt "${DUCA_PAPER_NUMERIC_GATE_JSON}" \
+  --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  --expected-sha256 "${DUCA_PAPER_NUMERIC_GATE_SHA256}"
+python -m tools.bata.validate_duca_paper_exact211_uid_gate \
+  --receipt "${DUCA_PAPER_EXACT211_UID_GATE_JSON}" \
+  --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  --expected-sha256 "${DUCA_PAPER_EXACT211_UID_GATE_SHA256}"
 
 mkdir -p "${DUCA_PAPER_RUN_ROOT}/logs"
 export DUCA_PAPER_CELLS_ROOT="${DUCA_PAPER_RUN_ROOT}/cells"
@@ -83,6 +107,8 @@ python -m tools.bata.build_duca_paper_matrix_manifest \
   --annotation "${DUCA_PAPER_ANNOTATION_PATH}" \
   --class-map "${DUCA_PAPER_CLASS_MAP_PATH}" \
   --short-window-gate "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
+  --numeric-gate "${DUCA_PAPER_NUMERIC_GATE_JSON}" \
+  --exact211-uid-gate "${DUCA_PAPER_EXACT211_UID_GATE_JSON}" \
   --output "${DUCA_PAPER_MATRIX_MANIFEST}"
 export DUCA_PAPER_MATRIX_MANIFEST_SHA256="$(
   sha256sum "${DUCA_PAPER_MATRIX_MANIFEST}" | cut -d ' ' -f 1
@@ -94,6 +120,8 @@ export DUCA_PAPER_ANNOTATION_PATH DUCA_PAPER_ANNOTATION_SHA256
 export DUCA_PAPER_CLASS_MAP_PATH DUCA_PAPER_CLASS_MAP_SHA256
 export DUCA_PAPER_CODE_GATE_RECEIPT DUCA_PAPER_CODE_GATE_RECEIPT_SHA256
 export DUCA_PAPER_SHORT_WINDOW_GATE_JSON DUCA_PAPER_SHORT_WINDOW_GATE_SHA256
+export DUCA_PAPER_NUMERIC_GATE_JSON DUCA_PAPER_NUMERIC_GATE_SHA256
+export DUCA_PAPER_EXACT211_UID_GATE_JSON DUCA_PAPER_EXACT211_UID_GATE_SHA256
 export DUCA_PAPER_CELLS_ROOT DUCA_PAPER_MATRIX_ROOT
 export DUCA_PAPER_MATRIX_MANIFEST DUCA_PAPER_MATRIX_MANIFEST_SHA256
 
@@ -152,6 +180,10 @@ python - \
   "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}" \
   "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
   "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}" \
+  "${DUCA_PAPER_NUMERIC_GATE_JSON}" \
+  "${DUCA_PAPER_NUMERIC_GATE_SHA256}" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_JSON}" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_SHA256}" \
   "${DUCA_PAPER_CELLS_ROOT}" \
   "${seal_job}" \
   "${job_ids[@]:0:6}" <<'PY'
@@ -170,6 +202,10 @@ import sys
     code_gate_sha,
     short_gate,
     short_gate_sha,
+    numeric_gate,
+    numeric_gate_sha,
+    exact211_gate,
+    exact211_gate_sha,
     cells_root,
     seal_job,
     *group_jobs,
@@ -191,6 +227,10 @@ payload = {
     "code_gate_sha256": code_gate_sha,
     "short_window_gate_path": str(pathlib.Path(short_gate).resolve()),
     "short_window_gate_sha256": short_gate_sha,
+    "numeric_gate_path": str(pathlib.Path(numeric_gate).resolve()),
+    "numeric_gate_sha256": numeric_gate_sha,
+    "exact211_uid_gate_path": str(pathlib.Path(exact211_gate).resolve()),
+    "exact211_uid_gate_sha256": exact211_gate_sha,
     "cells_root": str(pathlib.Path(cells_root).resolve()),
     "logical_cell_count": 12,
     "scheduler_job_count": 7,
@@ -236,6 +276,10 @@ receipt = {
     "code_gate_sha256": code_gate_sha,
     "short_window_gate_path": str(pathlib.Path(short_gate).resolve()),
     "short_window_gate_sha256": short_gate_sha,
+    "numeric_gate_path": str(pathlib.Path(numeric_gate).resolve()),
+    "numeric_gate_sha256": numeric_gate_sha,
+    "exact211_uid_gate_path": str(pathlib.Path(exact211_gate).resolve()),
+    "exact211_uid_gate_sha256": exact211_gate_sha,
     "submission_manifest_path": str(target.resolve()),
     "submission_manifest_sha256": digest,
     "seed_group_job_ids": group_jobs,

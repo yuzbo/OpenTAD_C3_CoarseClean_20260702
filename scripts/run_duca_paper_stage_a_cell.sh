@@ -36,9 +36,23 @@ for name in \
   DUCA_PAPER_CODE_GATE_RECEIPT \
   DUCA_PAPER_CODE_GATE_RECEIPT_SHA256 \
   DUCA_PAPER_SHORT_WINDOW_GATE_JSON \
-  DUCA_PAPER_SHORT_WINDOW_GATE_SHA256; do
+  DUCA_PAPER_SHORT_WINDOW_GATE_SHA256 \
+  DUCA_PAPER_NUMERIC_GATE_JSON \
+  DUCA_PAPER_NUMERIC_GATE_SHA256 \
+  DUCA_PAPER_EXACT211_UID_GATE_JSON \
+  DUCA_PAPER_EXACT211_UID_GATE_SHA256; do
   required "${name}"
 done
+
+BASE="${BASE:-/data/run01/sczc063/yuzibo}"
+source "${DUCA_PAPER_REPO_ROOT}/scripts/duca_cellcf_path_contract.sh"
+DUCA_PAPER_CELL_ROOT="$(
+  duca_cellcf_require_external_path \
+    "DUCA_PAPER_CELL_ROOT" \
+    "${DUCA_PAPER_REPO_ROOT}" \
+    "${BASE}" \
+    "${DUCA_PAPER_CELL_ROOT}"
+)" || fail "Stage-A cell root violates the formal path contract"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail "Stage-A cells must run inside Slurm"
 [[ "${DUCA_PAPER_EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] \
@@ -76,6 +90,14 @@ check_sha256 \
   "${DUCA_PAPER_CODE_GATE_RECEIPT}" \
   "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}" \
   "clean Linux/PyTorch code gate"
+check_sha256 \
+  "${DUCA_PAPER_NUMERIC_GATE_JSON}" \
+  "${DUCA_PAPER_NUMERIC_GATE_SHA256}" \
+  "production-like learned numeric gate"
+check_sha256 \
+  "${DUCA_PAPER_EXACT211_UID_GATE_JSON}" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_SHA256}" \
+  "exact-211 physical UID gate"
 python -m tools.bata.validate_duca_paper_code_gate \
   --receipt "${DUCA_PAPER_CODE_GATE_RECEIPT}" \
   --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
@@ -84,6 +106,14 @@ python -m tools.bata.validate_duca_paper_short_window_gate \
   --receipt "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
   --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
   --expected-sha256 "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}"
+python -m tools.bata.validate_duca_paper_numeric_gate \
+  --receipt "${DUCA_PAPER_NUMERIC_GATE_JSON}" \
+  --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  --expected-sha256 "${DUCA_PAPER_NUMERIC_GATE_SHA256}"
+python -m tools.bata.validate_duca_paper_exact211_uid_gate \
+  --receipt "${DUCA_PAPER_EXACT211_UID_GATE_JSON}" \
+  --expected-commit "${DUCA_PAPER_EXPECTED_COMMIT}" \
+  --expected-sha256 "${DUCA_PAPER_EXACT211_UID_GATE_SHA256}"
 
 readarray -t config_values < <(python - \
   "${DUCA_PAPER_MATRIX_MANIFEST}" \
@@ -96,7 +126,11 @@ readarray -t config_values < <(python - \
   "${DUCA_PAPER_CODE_GATE_RECEIPT}" \
   "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}" \
   "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
-  "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}" <<'PY'
+  "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}" \
+  "${DUCA_PAPER_NUMERIC_GATE_JSON}" \
+  "${DUCA_PAPER_NUMERIC_GATE_SHA256}" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_JSON}" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_SHA256}" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -117,6 +151,10 @@ from tools.bata import duca_paper_training
     code_gate_sha,
     short_gate_path,
     short_gate_sha,
+    numeric_gate_path,
+    numeric_gate_sha,
+    exact211_gate_path,
+    exact211_gate_sha,
 ) = sys.argv[1:]
 manifest = json.load(open(manifest_path, encoding="utf-8"))
 cfg = Config.fromfile(config_path)
@@ -130,6 +168,12 @@ code_gate = manifest.get("prerequisite_gates", {}).get(
 )
 short_gate = manifest.get("prerequisite_gates", {}).get(
     "real_natural_short_window_heavy_backbone", {}
+)
+numeric_gate = manifest.get("prerequisite_gates", {}).get(
+    "production_like_learned_exactk_numeric", {}
+)
+exact211_gate = manifest.get("prerequisite_gates", {}).get(
+    "exact211_physical_uid_metadata", {}
 )
 sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
 resolved = duca_paper_training.canonical_sha256(cfg.to_dict())
@@ -154,6 +198,16 @@ if (
     or pathlib.Path(str(short_gate.get("path", ""))).resolve()
     != pathlib.Path(short_gate_path).resolve()
     or short_gate.get("sha256") != short_gate_sha
+    or numeric_gate.get("git_commit") != commit
+    or numeric_gate.get("status") != "passed"
+    or pathlib.Path(str(numeric_gate.get("path", ""))).resolve()
+    != pathlib.Path(numeric_gate_path).resolve()
+    or numeric_gate.get("sha256") != numeric_gate_sha
+    or exact211_gate.get("git_commit") != commit
+    or exact211_gate.get("status") != "passed"
+    or pathlib.Path(str(exact211_gate.get("path", ""))).resolve()
+    != pathlib.Path(exact211_gate_path).resolve()
+    or exact211_gate.get("sha256") != exact211_gate_sha
 ):
     raise SystemExit("Stage-A cell differs from the frozen matrix")
 for path, expected, label in (
@@ -209,6 +263,10 @@ python - \
   "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}" \
   "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
   "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}" \
+  "${DUCA_PAPER_NUMERIC_GATE_JSON}" \
+  "${DUCA_PAPER_NUMERIC_GATE_SHA256}" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_JSON}" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_SHA256}" \
   "${training_receipt}" <<'PY'
 import hashlib
 import json
@@ -228,6 +286,10 @@ import sys
     code_gate_sha,
     short_gate_path,
     short_gate_sha,
+    numeric_gate_path,
+    numeric_gate_sha,
+    exact211_gate_path,
+    exact211_gate_sha,
     output,
 ) = sys.argv[1:]
 compaction_path = checkpoint_path + ".receipt.json"
@@ -238,6 +300,8 @@ for path in (
     matrix_path,
     code_gate_path,
     short_gate_path,
+    numeric_gate_path,
+    exact211_gate_path,
 ):
     if not os.path.isfile(path):
         raise SystemExit(f"terminal training evidence is missing: {path}")
@@ -275,6 +339,8 @@ if (
     or sha(matrix_path) != matrix_sha
     or sha(code_gate_path) != code_gate_sha
     or sha(short_gate_path) != short_gate_sha
+    or sha(numeric_gate_path) != numeric_gate_sha
+    or sha(exact211_gate_path) != exact211_gate_sha
 ):
     raise SystemExit("terminal training evidence violates the frozen Stage-A contract")
 payload = {
@@ -305,6 +371,10 @@ payload = {
     "code_gate_sha256": code_gate_sha,
     "short_window_gate_path": str(pathlib.Path(short_gate_path).resolve()),
     "short_window_gate_sha256": short_gate_sha,
+    "numeric_gate_path": str(pathlib.Path(numeric_gate_path).resolve()),
+    "numeric_gate_sha256": numeric_gate_sha,
+    "exact211_uid_gate_path": str(pathlib.Path(exact211_gate_path).resolve()),
+    "exact211_uid_gate_sha256": exact211_gate_sha,
     "single_seed_claim_allowed": False,
 }
 target = pathlib.Path(output)
@@ -352,6 +422,10 @@ python - \
   "${DUCA_PAPER_CODE_GATE_RECEIPT_SHA256}" \
   "${DUCA_PAPER_SHORT_WINDOW_GATE_JSON}" \
   "${DUCA_PAPER_SHORT_WINDOW_GATE_SHA256}" \
+  "${DUCA_PAPER_NUMERIC_GATE_JSON}" \
+  "${DUCA_PAPER_NUMERIC_GATE_SHA256}" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_JSON}" \
+  "${DUCA_PAPER_EXACT211_UID_GATE_SHA256}" \
   "${DUCA_PAPER_CELL_ROOT}/cell.receipt.json" <<'PY'
 import hashlib
 import json
@@ -370,6 +444,10 @@ import sys
     code_gate_sha,
     short_gate_path,
     short_gate_sha,
+    numeric_gate_path,
+    numeric_gate_sha,
+    exact211_gate_path,
+    exact211_gate_sha,
     output,
 ) = sys.argv[1:]
 sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
@@ -393,6 +471,8 @@ if (
     or training_identity.get("training_receipt_sha256") != sha(training_path)
     or sha(code_gate_path) != code_gate_sha
     or sha(short_gate_path) != short_gate_sha
+    or sha(numeric_gate_path) != numeric_gate_sha
+    or sha(exact211_gate_path) != exact211_gate_sha
     or budget.get("schema_version") != "duca_paper_exact211_budget_execution_v1"
     or budget.get("arm") != arm
     or budget.get("requested_budget_is_dynamic") is not False
@@ -418,6 +498,10 @@ payload = {
     "code_gate_sha256": code_gate_sha,
     "short_window_gate_path": str(pathlib.Path(short_gate_path).resolve()),
     "short_window_gate_sha256": short_gate_sha,
+    "numeric_gate_path": str(pathlib.Path(numeric_gate_path).resolve()),
+    "numeric_gate_sha256": numeric_gate_sha,
+    "exact211_uid_gate_path": str(pathlib.Path(exact211_gate_path).resolve()),
+    "exact211_uid_gate_sha256": exact211_gate_sha,
     "evaluation_budget_execution_sha256": budget["content_sha256"],
     "window_budget_vector_sha256": budget.get("window_budget_vector_sha256"),
     "exact_train_video_count": 200,

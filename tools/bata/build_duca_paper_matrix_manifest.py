@@ -95,6 +95,8 @@ def build_manifest(
     annotation_path: str | Path,
     class_map_path: str | Path,
     short_window_gate_path: str | Path | None = None,
+    numeric_gate_path: str | Path | None = None,
+    exact211_uid_gate_path: str | Path | None = None,
     require_clean_checkout: bool = True,
 ) -> dict[str, Any]:
     repo = Path(repo_root).expanduser().resolve()
@@ -106,15 +108,29 @@ def build_manifest(
         if short_window_gate_path is None
         else Path(short_window_gate_path).expanduser().resolve()
     )
+    numeric_gate = (
+        None
+        if numeric_gate_path is None
+        else Path(numeric_gate_path).expanduser().resolve()
+    )
+    exact211_uid_gate = (
+        None
+        if exact211_uid_gate_path is None
+        else Path(exact211_uid_gate_path).expanduser().resolve()
+    )
     if require_clean_checkout:
         if expected_commit == IMMUTABLE_FAILED_STAGE_A_COMMIT:
             raise RuntimeError(
                 "formal Stage-A freeze cannot reuse the immutable failed source"
             )
         _exact_checkout(repo, expected_commit)
-        if short_window_gate is None:
+        if (
+            short_window_gate is None
+            or numeric_gate is None
+            or exact211_uid_gate is None
+        ):
             raise RuntimeError(
-                "formal Stage-A freeze requires the real short-window Slurm gate"
+                "formal Stage-A freeze requires short-window, numeric, and exact-211 UID gates"
             )
     for path, label in (
         (pretrain, "VideoMAE initialization"),
@@ -179,6 +195,30 @@ def build_manifest(
             "claim_scope": "engineering_short_window_execution_only",
             "performance_evidence": False,
         }
+    if numeric_gate is not None:
+        from tools.bata.validate_duca_paper_numeric_gate import (
+            validate_numeric_gate_artifact,
+        )
+
+        prerequisite_gates["production_like_learned_exactk_numeric"] = (
+            validate_numeric_gate_artifact(
+                numeric_gate,
+                expected_commit=expected_commit,
+                expected_sha256=sha256_file(numeric_gate),
+            )
+        )
+    if exact211_uid_gate is not None:
+        from tools.bata.validate_duca_paper_exact211_uid_gate import (
+            validate_exact211_uid_gate_artifact,
+        )
+
+        prerequisite_gates["exact211_physical_uid_metadata"] = (
+            validate_exact211_uid_gate_artifact(
+                exact211_uid_gate,
+                expected_commit=expected_commit,
+                expected_sha256=sha256_file(exact211_uid_gate),
+            )
+        )
     payload = {
         "schema_version": duca_paper_training.MATRIX_SCHEMA,
         "status": "frozen",
@@ -278,6 +318,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--annotation", required=True)
     parser.add_argument("--class-map", required=True)
     parser.add_argument("--short-window-gate", required=True)
+    parser.add_argument("--numeric-gate", required=True)
+    parser.add_argument("--exact211-uid-gate", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     payload = build_manifest(
@@ -287,6 +329,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         annotation_path=args.annotation,
         class_map_path=args.class_map,
         short_window_gate_path=args.short_window_gate,
+        numeric_gate_path=args.numeric_gate,
+        exact211_uid_gate_path=args.exact211_uid_gate,
     )
     atomic_write_json(args.output, payload)
     print(

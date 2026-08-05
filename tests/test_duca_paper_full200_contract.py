@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 
+import numpy as np
 import pytest
 from mmengine.config import Config
 
@@ -12,6 +13,12 @@ from tools.bata import duca_paper_training
 from tools.bata import validate_duca_paper_code_gate as code_gate_validator
 from tools.bata import validate_duca_paper_short_window_gate as short_window_gate
 from tools.bata.build_duca_paper_matrix_manifest import build_manifest
+from tools.bata.run_duca_paper_exact211_uid_gate import (
+    GateFailure as Exact211GateFailure,
+)
+from tools.bata.run_duca_paper_exact211_uid_gate import (
+    enumerate_exact211_physical_identities,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -320,6 +327,45 @@ def test_exact211_execution_rejects_missing_video(tmp_path):
         )
 
 
+class ThumosSlidingDataset:
+    def __init__(self):
+        self.subset_name = "validation"
+        video_ids = [f"validation_{index:03d}" for index in range(210)]
+        video_ids.append("video_test_0001431")
+        self.data_list = [
+            [video_id, {}, {}, np.asarray([0, 8, 16], dtype=np.int64)]
+            for video_id in video_ids[:-1]
+        ]
+        self.data_list.extend(
+            [
+                [video_ids[-1], {}, {}, np.asarray([0, 8, 16], dtype=np.int64)],
+                [
+                    video_ids[-1],
+                    {},
+                    {},
+                    np.asarray([7680, 7688, 7696], dtype=np.int64),
+                ],
+            ]
+        )
+
+
+def test_exact211_uid_gate_enumerates_every_physical_window_once():
+    dataset = ThumosSlidingDataset()
+    identity = enumerate_exact211_physical_identities(dataset)
+    assert identity["video_count"] == 211
+    assert identity["window_count"] == 212
+    assert identity["physical_window_uid_count"] == 212
+    assert identity["duplicate_video_start_count"] == 0
+    assert identity["historical_regression_key"]["count"] == 1
+
+
+def test_exact211_uid_gate_rejects_duplicate_video_start():
+    dataset = ThumosSlidingDataset()
+    dataset.data_list.append(dataset.data_list[-1])
+    with pytest.raises(Exact211GateFailure, match="duplicate .*window identity"):
+        enumerate_exact211_physical_identities(dataset)
+
+
 def test_matrix_manifest_freezes_twelve_full_dataset_cells(tmp_path):
     pretrain = tmp_path / "pretrain.pth"
     pretrain.write_bytes(b"fixture-videomae")
@@ -541,6 +587,9 @@ def test_stage_a_launchers_remain_paper_facing_and_fail_closed():
     grouped = (
         REPO_ROOT / "scripts/submit_duca_paper_stage_a_grouped.sh"
     ).read_text(encoding="utf-8")
+    release_gates = (
+        REPO_ROOT / "scripts/run_duca_paper_release_gates.sh"
+    ).read_text(encoding="utf-8")
     assert "--nproc_per_node=2 tools/train.py" in cell
     assert "--nproc_per_node=1 tools/test.py" in cell
     assert "--expected-checkpoint-epoch 59" in cell
@@ -548,12 +597,16 @@ def test_stage_a_launchers_remain_paper_facing_and_fail_closed():
     assert "DUCA_PAPER_SHORT_WINDOW_GATE_SHA256" in cell
     assert "short_window_gate_sha256" in cell
     assert "validate_duca_paper_code_gate" in cell
+    assert "validate_duca_paper_numeric_gate" in cell
+    assert "validate_duca_paper_exact211_uid_gate" in cell
     assert "--gres=gpu:2" in submit
     assert "[[ \"${#job_ids[@]}\" == 12 ]]" in submit
     assert "complete_three_seed_matrix" in seal
     assert "metrics_withheld_from_engineering_receipt" in seal
     assert "short_window_gate_sha256" in seal
     assert "validate_duca_paper_code_gate" in seal
+    assert "numeric_gate_sha256" in seal
+    assert "exact211_uid_gate_sha256" in seal
     assert "sequential_scheduler_grouping_only" in seed
     assert "DUCA_PAPER_GROUP" in seed
     assert "mixed_k_failure_blocks_duca_arm" in seed
@@ -565,14 +618,22 @@ def test_stage_a_launchers_remain_paper_facing_and_fail_closed():
     assert "validate_duca_paper_short_window_gate" in grouped
     assert "validate_duca_paper_code_gate" in grouped
     assert "--short-window-gate" in grouped
+    assert "--numeric-gate" in grouped
+    assert "--exact211-uid-gate" in grouped
     assert "immutable failed Stage-A source cannot be redeployed" in grouped
     assert "submission_manifest.json.receipt.sha256" in grouped
     assert '"short_window_gate_pending": True' in code_gate
     assert '"stage_a_manifest_created": False' in code_gate
     assert "tests/test_duca_structured_selection.py" in code_gate
+    assert "run_duca_paper_numeric_gate.py" in code_gate
+    assert "run_duca_paper_exact211_uid_gate.py" in code_gate
     assert "--output \"${DUCA_PAPER_MATRIX_MANIFEST}\"" not in code_gate
     assert "DUCA_PAPER_CODE_GATE_RECEIPT_SHA256" in short_gate
     assert "validate_duca_paper_code_gate" in short_gate
+    assert "torch.distributed.run" in release_gates
+    assert "validate_duca_paper_numeric_gate" in release_gates
+    assert "validate_duca_paper_exact211_uid_gate" in release_gates
+    assert "paper_method_performance_evidence\": False" in release_gates
     assert grouped.rfind("trap - ERR INT TERM") > grouped.rfind(
         "os.replace(temporary, target)"
     )

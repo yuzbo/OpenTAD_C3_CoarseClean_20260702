@@ -54,6 +54,10 @@ python -m py_compile \
   tools/bata/validate_duca_paper_code_gate.py \
   tools/bata/run_duca_paper_short_window_gate.py \
   tools/bata/validate_duca_paper_short_window_gate.py \
+  tools/bata/run_duca_paper_numeric_gate.py \
+  tools/bata/validate_duca_paper_numeric_gate.py \
+  tools/bata/run_duca_paper_exact211_uid_gate.py \
+  tools/bata/validate_duca_paper_exact211_uid_gate.py \
   opentad/models/backbones/backbone_wrapper.py \
   opentad/models/detectors/actionformer.py \
   opentad/models/detectors/single_stage.py \
@@ -62,6 +66,7 @@ python -m py_compile \
 bash -n \
   scripts/run_duca_paper_code_gate.sh \
   scripts/run_duca_paper_short_window_gate.sh \
+  scripts/run_duca_paper_release_gates.sh \
   scripts/run_duca_paper_stage_a_cell.sh \
   scripts/run_duca_paper_stage_a_seed.sh \
   scripts/run_duca_paper_stage_a_seal.sh \

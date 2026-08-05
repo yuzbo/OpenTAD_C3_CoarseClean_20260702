@@ -1,5 +1,39 @@
 # Research Log
 
+## 2026-08-05 — Stage-A four-gate release chain implemented locally
+
+- Continued the accepted `GO_MINIMAL_SOLVER_REPAIR` route without another Pro
+  round. The scientific matrix remains unchanged: four ActionFormer arms, three
+  fixed seeds, all 200 training videos, exact 211 validation videos, 60 epochs,
+  6000 successful updates and terminal epoch-59 EMA.
+- Added a production-like learned numeric gate. It runs the formal DUCA config
+  through two-rank DDP, global batch two and AMP, captures an actual
+  `T=768,K=384` physical exact-K solver input, requires the superseded raw
+  unnormalized guard to reproduce within at most 100 successful updates, and
+  applies the frozen FP32/FP64 slot, gradient, dual-logZ, edge-flow, row-mass and
+  Viterbi checks to the repaired solver. It creates no checkpoint, prediction or
+  metric and cannot support a paper-performance claim.
+- Added an exact-211 metadata/physical-UID gate. It builds the formal sliding
+  index without decoding video, running a model, generating predictions or
+  accessing metrics; it requires the complete official 211-ID set, unique
+  `(video_id,window_start_frame)` keys, unique source-frame-sequence UIDs and the
+  historical `video_test_0001431/7680` key exactly once.
+- Bound code, natural-short, numeric and exact-211 receipts by exact commit,
+  path and SHA-256 through the matrix manifest, both Stage-A submitters, every
+  training/cell receipt and the final twelve-cell seal. Roots must remain under
+  the registered remote base and outside the Git worktree.
+- Two independent read-only audits found and closed a DDP rank-local failure
+  deadlock, incomplete tensor/config/asset validation, missing four-gate release
+  bindings and missing external-root enforcement. Validators now require an
+  explicit external SHA-256 and independently verify the captured tensor
+  artifact and per-rank summaries.
+- Local Bash/Python static checks pass. The paper contract suite reports
+  `17 passed / 1 Windows-only skip`; the repository-mandated C3 checks report
+  `23 passed`. The Windows host still cannot initialize Torch `c10.dll`, so no
+  local GPU/model execution is claimed. Authoritative Linux code/short/numeric/
+  exact-211 receipts and a fresh Stage-A transaction do not yet exist. No loss,
+  checkpoint, partial metric or mAP was opened; Stage B remains sealed.
+
 ## 2026-08-05 — Minimal Stage-A solver repair accepted and implemented locally
 
 - Fully read and SHA-bound `U-PRO-STAGEA-MINIMAL-SOLVER-REPAIR-1` (SHA-256

@@ -1068,9 +1068,17 @@ Current Stage-A recovery decision:
    predicates, finite gradients and unchanged hard path.
 5. Before any new Stage-A release, require a clean implementation commit,
    authoritative Linux/PyTorch gate, real natural-short-window heavy-backbone
-   gate, exact-211 metadata identity dry-run and fresh commit/hash-bound
-   manifests/root. No old receipt, checkpoint choice, partial cell or metric can
-   enter the replacement matrix.
+   gate, a production-like learned `T=768,K=384` DDP/AMP numeric gate, an
+   exact-211 metadata/physical-UID dry-run and fresh commit/hash-bound
+   manifests/root. All four prerequisite receipts must propagate through the
+   submission, training, cell and matrix-seal chain. No old receipt, checkpoint
+   choice, partial cell or metric can enter the replacement matrix.
+6. The four-gate release chain is implemented and locally contract-tested. The
+   numeric gate must reproduce the superseded raw-message failure within at most
+   100 real full-model updates, then pass frozen FP32/FP64, dual-logZ, edge-flow,
+   gradient and hard-path checks on the captured production tensor. This is
+   engineering stability evidence only. Linux/Slurm receipts and a fresh Stage-A
+   transaction remain absent, so no model-performance conclusion exists.
 
 Approved compact feasibility design, superseding the simulation-first order
 below while retaining it as negative-history context:
