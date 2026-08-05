@@ -15,6 +15,9 @@ from opentad.models.backbones.georoute_wrapper import GeoRouteBackboneWrapper
 from tools.bata.analyze_georoute_dynamic_role_calibration import (
     summarize_dynamic_role_calibration_telemetry,
 )
+from tools.bata.analyze_georoute_categorical_role_invariance import (
+    summarize_categorical_role_invariance_payloads,
+)
 from tools.bata.run_georoute_phase_m_replay import (
     _build_replay_test_arguments,
     _configure_replay_instrumentation,
@@ -371,6 +374,73 @@ def test_role_instrumentation_triplet_repeats_true_off_before_treatment():
         ("role_off_b", False, "role_off"),
         ("role_on", True, "role_on"),
     )
+
+
+def _categorical_invariance_payloads() -> dict:
+    legacy_on = _telemetry_payload()
+    legacy_on["schema_version"] = "georoute_formal_development_telemetry_v1"
+    legacy_on["records"][0]["route"]["geometry"] = {"values": [1.0]}
+    strict_on = copy.deepcopy(legacy_on)
+    strict_on["records"][0]["route"]["geometry"] = {"values": [2.0]}
+    strict_on["records"][0]["route"]["policy_calibration"]["fields"] = {
+        "strict_backend_continuous_fields": True
+    }
+    payloads = {
+        "legacy_role_on": legacy_on,
+        "strict_role_on": strict_on,
+    }
+    for prefix in ("legacy", "strict"):
+        for suffix in ("role_off_a", "role_off_b"):
+            payload = copy.deepcopy(payloads[f"{prefix}_role_on"])
+            payload["records"][0]["route"].pop("policy_calibration")
+            payloads[f"{prefix}_{suffix}"] = payload
+    return payloads
+
+
+def test_categorical_role_invariance_excludes_backend_sensitive_fields():
+    summary = summarize_categorical_role_invariance_payloads(
+        _categorical_invariance_payloads()
+    )
+
+    assert summary["roles"]["selected"]["counts"] == {
+        "context": 0,
+        "roi": 0,
+        "residual": 2,
+    }
+    assert summary["categorical_invariance"]["geometry_payload_parity"] is False
+    assert summary["categorical_invariance"]["continuous_policy_fields_parity"] is False
+    assert (
+        summary["interpretation_boundary"]["categorical_role_analysis_allowed"] is True
+    )
+    assert (
+        summary["interpretation_boundary"][
+            "continuous_score_calibration_analysis_allowed"
+        ]
+        is False
+    )
+
+
+def test_categorical_role_invariance_rejects_a_role_change():
+    payloads = _categorical_invariance_payloads()
+    strict = payloads["strict_role_on"]["records"][0]["route"]
+    strict["roles"]["aggregate_counts"] = {
+        "context": 1,
+        "roi": 0,
+        "residual": 1,
+    }
+    strict["policy_calibration"]["selected_role_counts"] = {
+        "context": 1,
+        "roi": 0,
+        "residual": 1,
+    }
+    strict["policy_calibration"]["selected_role_fractions"] = {
+        "context": 0.5,
+        "roi": 0.0,
+        "residual": 0.5,
+    }
+
+    with pytest.raises(ValueError, match="categorical route payload changed"):
+        summarize_categorical_role_invariance_payloads(payloads)
 
 
 def test_role_calibration_summary_detects_observed_collapse_without_quota(
