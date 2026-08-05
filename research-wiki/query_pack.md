@@ -1116,6 +1116,20 @@ Current Stage-A recovery decision:
    flow only; all scientific/model settings and thresholds remain frozen. No
    Stage-A job or metric exists from this attempt.
 
+   Exact repair source `751ce695` passed code gate `1223013` (148 tests) and
+   natural-short gate `1223116`, but release-gate `1223142` failed on both ranks
+   before `scaler.step` with non-finite unscaled gradients. Register
+   `numeric_gate_pre_step_gradient_finiteness_bypasses_formal_amp_replay`. The
+   formal config and production engine already freeze up to eight AMP retries per
+   batch with RNG/model-buffer/custom-state restoration and successful-update-only
+   optimizer/scheduler/selector accounting. The numeric gate had bypassed that
+   semantics by rejecting overflow before GradScaler could skip and reduce its
+   scale. The authorized correction mirrors the production bounded replay,
+   synchronizes step success across ranks, requires finite gradients on the
+   successful attempt, and still fails after eight retries. No model, loss,
+   budget, threshold, data, seed, checkpoint or evaluator change is permitted.
+   Fresh four-gate verification remains mandatory; no result exists yet.
+
 Approved compact feasibility design, superseding the simulation-first order
 below while retaining it as negative-history context:
 

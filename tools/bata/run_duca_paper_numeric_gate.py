@@ -32,7 +32,15 @@ from opentad.cores import (
     build_scheduler,
     prepare_optimizer_parameter_freezing,
 )
-from opentad.cores.train_engine import _call_after_optimizer_step
+from opentad.cores.train_engine import (
+    _call_after_optimizer_step,
+    _capture_custom_replay_state,
+    _capture_model_buffers,
+    _capture_rng_state,
+    _restore_custom_replay_state,
+    _restore_model_buffers,
+    _restore_rng_state,
+)
 from opentad.datasets import build_dataloader, build_dataset
 from opentad.models import build_detector
 from opentad.models.duca import structured_selection as structured
@@ -590,6 +598,8 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
     optimizer = build_optimizer(copy.deepcopy(cfg.optimizer), model, logger)
     scheduler, _ = build_scheduler(copy.deepcopy(cfg.scheduler), optimizer, len(loader))
     scaler = GradScaler()
+    max_amp_retries = int(cfg.workflow.max_amp_retries_per_batch)
+    _require(max_amp_retries == 8, "formal AMP replay limit drift")
 
     original_solver = structured._physical_row_forward_backward
     observer_state: dict[str, Any] = {"candidate": None}
@@ -615,6 +625,10 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
     structured._physical_row_forward_backward = observed_solver
     attempted_updates = 0
     successful_updates = 0
+    optimizer_attempts = 0
+    amp_skipped_attempts = 0
+    replay_state_restorations = 0
+    max_amp_retries_observed = 0
     target_capture_updates = 0
     local_trigger_capture = None
     local_legacy = None
@@ -626,48 +640,81 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
             if update_index >= MAX_ATTEMPTED_UPDATES:
                 break
             attempted_updates += 1
-            observer_state["candidate"] = None
             batch = _move_batch(cpu_batch, device)
-            optimizer.zero_grad(set_to_none=True)
-            with torch.cuda.amp.autocast(dtype=torch.float16, enabled=True):
-                losses = model(**batch, return_loss=True)
-            _distributed_require(
-                isinstance(losses, Mapping)
-                and "cost" in losses
-                and bool(torch.isfinite(losses["cost"]).all().item()),
-                "production call returned a non-finite training objective",
-                device=device,
-            )
-            scaler.scale(losses["cost"]).backward()
-            scaler.unscale_(optimizer)
-            gradient_tensors = [
-                parameter.grad
-                for parameter in model.parameters()
-                if parameter.requires_grad and parameter.grad is not None
-            ]
-            trainable_gradient_tensor_count = max(
-                trainable_gradient_tensor_count, len(gradient_tensors)
-            )
-            finite = bool(gradient_tensors) and all(
-                bool(torch.isfinite(gradient).all().item()) for gradient in gradient_tensors
-            )
-            all_training_gradients_finite = all_training_gradients_finite and finite
-            _distributed_require(
-                finite,
-                "actual learned full-model backward produced non-finite gradients",
-                device=device,
-            )
-            clip = float(cfg.solver.clip_grad_norm)
-            if clip > 0.0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
-            scale_before = float(scaler.get_scale())
-            scaler.step(optimizer)
-            scaler.update()
-            _distributed_require(
-                float(scaler.get_scale()) >= scale_before,
-                "numeric gate encountered an AMP-skipped optimizer update",
-                device=device,
-            )
+            retry_count = 0
+            rng_state = _capture_rng_state()
+            model_buffer_state = _capture_model_buffers(model)
+            custom_replay_state = _capture_custom_replay_state(model)
+            while True:
+                if retry_count > 0:
+                    _restore_rng_state(rng_state)
+                observer_state["candidate"] = None
+                optimizer.zero_grad(set_to_none=True)
+                with torch.cuda.amp.autocast(dtype=torch.float16, enabled=True):
+                    losses = model(**batch, return_loss=True)
+                _distributed_require(
+                    isinstance(losses, Mapping)
+                    and "cost" in losses
+                    and bool(torch.isfinite(losses["cost"]).all().item()),
+                    "production call returned a non-finite training objective",
+                    device=device,
+                )
+                scaler.scale(losses["cost"]).backward()
+                scaler.unscale_(optimizer)
+                gradient_tensors = [
+                    parameter.grad
+                    for parameter in model.parameters()
+                    if parameter.requires_grad and parameter.grad is not None
+                ]
+                trainable_gradient_tensor_count = max(
+                    trainable_gradient_tensor_count, len(gradient_tensors)
+                )
+                finite = bool(gradient_tensors) and all(
+                    bool(torch.isfinite(gradient).all().item())
+                    for gradient in gradient_tensors
+                )
+                clip = float(cfg.solver.clip_grad_norm)
+                if clip > 0.0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+                scale_before = float(scaler.get_scale())
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer_attempts += 1
+                local_step_ran = float(scaler.get_scale()) >= scale_before
+                step_min = torch.tensor(
+                    int(local_step_ran), device=device, dtype=torch.int64
+                )
+                step_max = step_min.clone()
+                dist.all_reduce(step_min, op=dist.ReduceOp.MIN)
+                dist.all_reduce(step_max, op=dist.ReduceOp.MAX)
+                _require(
+                    int(step_min.item()) == int(step_max.item()),
+                    "AMP optimizer-step outcome diverged across DDP ranks",
+                )
+                optimizer_step_ran = int(step_min.item()) == 1
+                if optimizer_step_ran:
+                    _distributed_require(
+                        finite,
+                        "successful AMP update retained non-finite gradients",
+                        device=device,
+                    )
+                    all_training_gradients_finite = (
+                        all_training_gradients_finite and finite
+                    )
+                    break
+                amp_skipped_attempts += 1
+                _restore_model_buffers(model, model_buffer_state)
+                _restore_custom_replay_state(model, custom_replay_state)
+                replay_state_restorations += 1
+                retry_count += 1
+                max_amp_retries_observed = max(
+                    max_amp_retries_observed, retry_count
+                )
+                _require(
+                    retry_count <= max_amp_retries,
+                    "formal AMP replay could not produce a successful optimizer "
+                    f"update after {max_amp_retries} retries",
+                )
             _call_after_optimizer_step(model)
             scheduler.step()
             successful_updates += 1
@@ -750,6 +797,10 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
         "owner_rank": owner_rank,
         "attempted_updates": attempted_updates,
         "successful_updates": successful_updates,
+        "optimizer_attempts": optimizer_attempts,
+        "amp_skipped_attempts": amp_skipped_attempts,
+        "replay_state_restorations": replay_state_restorations,
+        "max_amp_retries_observed": max_amp_retries_observed,
         "target_capture_updates": target_capture_updates,
         "all_training_gradients_finite": all_training_gradients_finite,
         "trainable_gradient_tensor_count": trainable_gradient_tensor_count,
@@ -851,6 +902,21 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
                 "successful_updates_until_trigger": max(
                     int(row["successful_updates"]) for row in rank_summaries
                 ),
+                "maximum_amp_retries_per_batch": max_amp_retries,
+                "optimizer_attempts_by_rank": [
+                    int(row["optimizer_attempts"]) for row in rank_summaries
+                ],
+                "amp_skipped_attempts_by_rank": [
+                    int(row["amp_skipped_attempts"]) for row in rank_summaries
+                ],
+                "max_amp_retries_observed_by_rank": [
+                    int(row["max_amp_retries_observed"])
+                    for row in rank_summaries
+                ],
+                "replay_state_restorations_by_rank": [
+                    int(row["replay_state_restorations"])
+                    for row in rank_summaries
+                ],
                 "target_capture_updates_by_rank": [
                     int(row["target_capture_updates"]) for row in rank_summaries
                 ],

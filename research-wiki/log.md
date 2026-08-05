@@ -1,5 +1,39 @@
 # Research Log
 
+## 2026-08-06 — Numeric gate exposed a second gate-versus-production AMP mismatch
+
+- Exact source `751ce695f6bb4681dc26f8669ea7c4f01acb875b` passed clean
+  Linux/PyTorch code gate `1223013` with 148 tests; receipt SHA-256 is
+  `5e707aaf5e93c552fed45d8a1da8ccb8cc690fc9047d0ae55a3afbd8978a1f0d`.
+  It also passed real natural-short-window gate `1223116`; receipt SHA-256 is
+  `697a8df66603e0da22529898cbcd9aa2400662ee44cdaa36f8e547c7574b3626`.
+  The latter used all 200 training videos, found 43 natural short rows and zero
+  subquantum rows, and used neither validation/test nor synthetic input.
+- Release-gate job `1223142` failed `1:0` at root
+  `/data/run01/sczc063/yuzibo/rime_preflight/duca_paper_release_gates_751ce695_20260806_002924`.
+  Both ranks raised `actual learned full-model backward produced non-finite
+  gradients`; immutable log SHA-256 is
+  `3a1bc78e7ed3442480b79a9b4873e8c41319eed060cd19f597e61ccd9624cda8`.
+  No numeric, exact-211 or aggregate receipt exists and no Stage-A job was
+  submitted.
+- Registered signature
+  `numeric_gate_pre_step_gradient_finiteness_bypasses_formal_amp_replay`. The
+  formal Stage-A config freezes eight AMP retries per batch, and the production
+  train engine lets `GradScaler.step/update` classify an overflow, restores RNG,
+  model buffers and custom selector replay state, and advances optimizer,
+  scheduler and selector only on a successful step. The gate instead failed on
+  unscaled gradients before GradScaler could skip and lower its scale.
+- The bounded correction mirrors the existing production replay contract inside
+  the numeric gate. Every DDP rank synchronizes the step outcome; skipped attempts
+  restore the same state and do not count as successful updates or captures.
+  Successful attempts still require all finite gradients, and exhausting the
+  unchanged eight-retry limit fails closed. The initial GradScaler, model, solver,
+  objective, data, budget, thresholds and paper question remain unchanged.
+- This diagnosis is `ENGINEERING_STATUS`, not evidence that model gradients are
+  acceptable. That conclusion requires a fresh exact-commit two-rank gate to
+  complete a real successful update and all frozen solver oracles. No metric was
+  opened; Stage B remains sealed.
+
 ## 2026-08-06 — Numeric release gate stopped on an over-strong per-update capture check
 
 - Published and installed exact test-repair source

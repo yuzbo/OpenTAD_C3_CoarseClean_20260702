@@ -656,3 +656,26 @@ def test_numeric_gate_waits_for_target_capture_with_rank_synchronized_control_fl
     assert numeric_gate.index("local_trigger = False") < numeric_gate.index(sync)
     assert numeric_gate.index(sync) < numeric_gate.index("if int(flag.item()) == 1:")
     assert "old production FP32 guard did not trigger within 100 updates" in numeric_gate
+
+
+def test_numeric_gate_uses_formal_amp_replay_before_judging_successful_gradients():
+    numeric_gate = (
+        REPO_ROOT / "tools/bata/run_duca_paper_numeric_gate.py"
+    ).read_text(encoding="utf-8")
+    assert "max_amp_retries == 8" in numeric_gate
+    assert "_capture_rng_state()" in numeric_gate
+    assert "_capture_model_buffers(model)" in numeric_gate
+    assert "_capture_custom_replay_state(model)" in numeric_gate
+    assert "_restore_rng_state(rng_state)" in numeric_gate
+    assert "_restore_model_buffers(model, model_buffer_state)" in numeric_gate
+    assert "_restore_custom_replay_state(model, custom_replay_state)" in numeric_gate
+    assert "dist.all_reduce(step_min, op=dist.ReduceOp.MIN)" in numeric_gate
+    assert "dist.all_reduce(step_max, op=dist.ReduceOp.MAX)" in numeric_gate
+    assert numeric_gate.index("scaler.step(optimizer)") < numeric_gate.index(
+        "if optimizer_step_ran:"
+    )
+    assert numeric_gate.index("if optimizer_step_ran:") < numeric_gate.index(
+        "successful AMP update retained non-finite gradients"
+    )
+    assert "actual learned full-model backward produced non-finite gradients" not in numeric_gate
+    assert "formal AMP replay could not produce a successful optimizer" in numeric_gate

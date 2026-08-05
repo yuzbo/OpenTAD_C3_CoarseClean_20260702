@@ -539,3 +539,11 @@ These failures and naming mistakes must not be repeated.
      every update and fail closed at the terminal owner check if no exact target
      reproduces the registered guard. Never use a rank-local `continue` that can
      skip a collective while another rank enters it.
+150. Do not reject an initial AMP-scaled gradient overflow before
+     `GradScaler.step/update` when the formal paper config and production engine
+     explicitly define bounded AMP replay. The numeric gate must use the same
+     eight-retry ceiling and restore RNG, model buffers and custom replay state;
+     only a globally consistent successful step may advance schedules or count a
+     target capture. Successful-step gradients remain finite-required, and replay
+     exhaustion remains a hard failure. Never lower the initial scaler, increase
+     the retry ceiling or suppress the final finite-gradient predicate.
