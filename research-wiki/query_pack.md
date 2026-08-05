@@ -1079,10 +1079,16 @@ Current Stage-A recovery decision:
    gradient and hard-path checks on the captured production tensor. This is
    engineering stability evidence only. Linux/Slurm receipts and a fresh Stage-A
    transaction remain absent, so no model-performance conclusion exists. The
-   implementation through `3a0563fb` is pushed and independently audited `GO`;
-   remote submission is currently blocked because this desktop session has no
-   resolvable registered N16R4 SSH/Slurm endpoint, not because of an unresolved
-   model or protocol decision.
+   implementation through `3a0563fb` is pushed and independently audited `GO`.
+   The apparent remote block was corrected on `2026-08-05`: `N16R4` is not a
+   public DNS host but a local alias for gateway
+   `ssh.cn-zhongwei-1.paracloud.com`, using ParaCloud login identity
+   `sczc063@BSCC-N16R4`; the Slurm cluster reached after login is `n16r4`.
+   A local SSH config now records this mapping, and a read-only probe returned
+   host `ln01`, user `sczc063`, `/usr/bin/sbatch`, `/usr/bin/squeue`, and
+   `ClusterName=n16r4`. Remote release is therefore no longer connection-blocked;
+   no new gate or Stage-A job is claimed until an exact commit-bound submission
+   actually returns its scheduler identity and receipt.
 
 Approved compact feasibility design, superseding the simulation-first order
 below while retaining it as negative-history context:

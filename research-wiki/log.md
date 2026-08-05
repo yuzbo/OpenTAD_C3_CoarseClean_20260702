@@ -1,5 +1,28 @@
 # Research Log
 
+## 2026-08-05 — N16R4 access identity corrected and made persistent
+
+- Root cause of the false remote-block conclusion: the network endpoint,
+  ParaCloud login label and Slurm cluster name were collapsed into the bare
+  command `ssh N16R4`, before inspecting the repository's existing registered
+  recovery script. With no prior `~/.ssh/config`, OpenSSH treated `N16R4` as a
+  DNS hostname and failed before authentication.
+- Recovered the exact registered access tuple from immutable local evidence:
+  gateway `ssh.cn-zhongwei-1.paracloud.com`, port `22`, login
+  `sczc063@BSCC-N16R4`, key `C:/Users/skywalker/.ssh/id_rsa`, and the required
+  RSA compatibility options. No private-key contents or credentials were read.
+- Added local SSH aliases `N16R4` and `BSCC-N16R4`. A fresh `ssh N16R4`
+  read-only probe succeeded and verified remote host `ln01`, effective user
+  `sczc063`, `/usr/bin/sbatch`, `/usr/bin/squeue`, and Slurm
+  `ClusterName=n16r4`. The first alias read exposed inherited
+  `CodexSandboxUsers` ACLs; these were removed and the config ACL was matched to
+  the existing private-key owner/SYSTEM/Administrators scope before the passing
+  probe. This was another local pre-network failure, not remote unavailability.
+- Froze the diagnostic order in `RTK.md` and anti-repetition memory: expand the
+  alias first, verify the read-only remote identity second, and only then perform
+  Slurm operations. Remote Stage-A release is no longer connection-blocked, but
+  no gate/job/result is claimed by this access repair itself.
+
 ## 2026-08-05 — Stage-A four-gate release chain implemented locally
 
 - Continued the accepted `GO_MINIMAL_SOLVER_REPAIR` route without another Pro

@@ -45,6 +45,30 @@
 
 ## N16R4 环境
 
+### SSH 身份与入口
+
+N16R4 的三个标识不可混用：
+
+- 公网 SSH 网关：`ssh.cn-zhongwei-1.paracloud.com`；
+- ParaCloud 登录身份：`sczc063@BSCC-N16R4`；
+- 登录后的 Slurm `ClusterName`：`n16r4`。
+
+本机 `C:/Users/skywalker/.ssh/config` 登记 `N16R4` 与 `BSCC-N16R4`
+别名后，标准入口为 `ssh N16R4`。若别名缺失，等价的显式只读探针为：
+
+```text
+ssh -p 22 -l sczc063@BSCC-N16R4 ssh.cn-zhongwei-1.paracloud.com \
+  "hostname; whoami; command -v sbatch; scontrol show config"
+```
+
+不得把 `N16R4`/`n16r4` 直接当作可由公网 DNS 解析的服务器名，也不得把
+`BSCC-N16R4` 误写成 Slurm 集群名。连接诊断顺序固定为：先用 `ssh -G
+N16R4` 核验本地展开，再做只读身份探针；只有远端返回预期用户、`sbatch`
+路径和 `ClusterName=n16r4` 后，才允许执行后续 Slurm 操作。
+Windows OpenSSH 还要求该配置文件使用收紧的 ACL；权限不得宽于现有
+`id_rsa` 的 `Administrators/SYSTEM/skywalker` 范围。若出现 `Bad owner or
+permissions`，先修复本机 ACL，再判断网络或远端状态。
+
 远端写入边界：
 
 ```bash

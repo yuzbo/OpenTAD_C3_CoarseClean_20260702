@@ -517,3 +517,12 @@ These failures and naming mistakes must not be repeated.
      authoritative Stage-A gate. Do not redeploy until the new clean commit passes
      Linux/PyTorch, real short-window heavy-backbone and exact-211 identity gates
      and is bound into an entirely fresh transaction.
+147. Do not conflate the N16R4 network endpoint, ParaCloud login label and Slurm
+     cluster identity. The SSH gateway is `ssh.cn-zhongwei-1.paracloud.com`, the
+     login identity is `sczc063@BSCC-N16R4`, and the post-login Slurm cluster is
+     `n16r4`. Before declaring remote access unavailable, inspect the registered
+     SSH mapping and require a read-only probe that verifies remote host, user,
+     `sbatch`/`squeue`, and `ClusterName`; a failed `ssh N16R4` with no local alias
+     is a local configuration error, not evidence that N16R4 is unreachable.
+     On Windows, also compare the config ACL with the existing private-key ACL;
+     `Bad owner or permissions` is an ACL failure before any network attempt.
