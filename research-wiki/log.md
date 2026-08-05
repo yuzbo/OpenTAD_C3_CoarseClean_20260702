@@ -34,7 +34,11 @@
   remain blocked.
 - The exact implementation and test commit is
   `cb077a77d48d9776028fa4d88fcf5b3ca1d9e357`; it is not yet a production gate
-  receipt or experiment source authorization.
+  receipt or experiment source authorization. It has been pushed to GitHub
+  branch `codex/duca-rime-20260727`; the mandatory C3 plus Stage-A contract
+  suites passed locally as `38 passed / 1 skipped`, while the three Torch-heavy
+  modules remain explicitly Windows-skipped and therefore require Linux gate
+  execution.
 
 ## 2026-08-04 — Stage A terminally failed closed; no metric was opened
 
