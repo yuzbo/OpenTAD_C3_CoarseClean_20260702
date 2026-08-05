@@ -5,7 +5,7 @@
 - Decision: `user_approved`
 - Design: `designed`
 - Short-window corrigendum: `user_approved / U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1`
-- Implementation: `minimal_solver_repair_implemented_uncommitted`
+- Implementation: `minimal_solver_repair_commit_cb077a77`
 - Local focused verification: `py_compile_passed / direct_CPU_numeric_oracles_passed / pytest_modules_skipped_on_Windows`
 - Independent read-only audit: `minimal_repair_GO / FP64_dtype_caveat_resolved`
 - Authoritative Linux/Slurm verification: `exact_source_7e893569 / code_gate_1215388_passed / real_short_gate_1215389_passed`
@@ -281,6 +281,8 @@ Local compilation and direct CPU numerical checks pass, including the full
 `T=768,K=384` stress; the normal pytest modules remain skipped on Windows by the
 repository's c10.dll guard. Status is `implemented / local_direct_tested /
 authoritative_Linux_gate_pending`, not `tested` on the production environment.
+The exact implementation commit is
+`cb077a77d48d9776028fa4d88fcf5b3ca1d9e357`.
 No Stage-A redeployment is authorized until a clean commit, the full Linux code
 gate, the real short-window heavy-backbone gate, exact-211 identity dry-run and
 fresh hash-bound transaction prerequisites all pass. Old roots, receipts and

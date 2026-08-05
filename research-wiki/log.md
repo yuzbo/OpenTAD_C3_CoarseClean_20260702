@@ -32,6 +32,9 @@
   authoritative_Linux_gate_pending`. No Stage-A job was submitted, no old root or
   receipt was reused, and no metric/mAP was opened. Stage B and all extensions
   remain blocked.
+- The exact implementation and test commit is
+  `cb077a77d48d9776028fa4d88fcf5b3ca1d9e357`; it is not yet a production gate
+  receipt or experiment source authorization.
 
 ## 2026-08-04 — Stage A terminally failed closed; no metric was opened
 
