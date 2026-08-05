@@ -65,8 +65,11 @@ case "${ACTION}" in
       1)
         [[ -n "${GEOROUTE_PHASE_M_SOURCE_POPULATION_SHA256:-}" ]] || \
           fail 'role calibration replay requires source population SHA-256'
+        [[ "${GEOROUTE_PHASE_M_SOURCE_DATASET_COUNT:-}" =~ ^[1-9][0-9]*$ ]] || \
+          fail 'role calibration replay requires a positive source dataset count'
         PHASE_M_ROLE_ARGS+=(
           --source-population-sha256 "${GEOROUTE_PHASE_M_SOURCE_POPULATION_SHA256}"
+          --source-dataset-count "${GEOROUTE_PHASE_M_SOURCE_DATASET_COUNT}"
           --role-calibration-telemetry
         )
         ;;

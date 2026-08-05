@@ -114,6 +114,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--source-prediction", type=Path, required=True)
     parser.add_argument("--source-prediction-sha256", required=True)
     parser.add_argument("--source-population-sha256")
+    parser.add_argument("--source-dataset-count", type=int)
     parser.add_argument("--source-experiment-commit", required=True)
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--role-calibration-telemetry", action="store_true")
@@ -218,6 +219,9 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
                 character not in "0123456789abcdef"
                 for character in source_population_sha256.lower()
             )
+            or not isinstance(args.source_dataset_count, int)
+            or isinstance(args.source_dataset_count, bool)
+            or args.source_dataset_count <= 0
         ):
             raise RuntimeError("role calibration source binding is invalid")
 
@@ -245,6 +249,7 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         replay_binding.update(
             role_calibration_telemetry_enabled=True,
             source_population_sha256=source_population_sha256.lower(),
+            source_dataset_count=int(args.source_dataset_count),
             fixed_role_quota_used=False,
             changes_route_or_execution=False,
         )
@@ -316,8 +321,7 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
     if args.role_calibration_telemetry:
         if (
             observed_population_sha256 != source_population_sha256.lower()
-            or dataset_count
-            != len(source_binding.get("evaluation_video_ids", ()))
+            or dataset_count != int(args.source_dataset_count)
             or dict(telemetry.get("phase_m_binding", {})) != replay_binding
         ):
             raise RuntimeError("role calibration population SHA-256 parity failed")
@@ -392,6 +396,7 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         result.update(
             role_calibration_telemetry_enabled=True,
             source_population_sha256=source_population_sha256.lower(),
+            source_dataset_count=int(args.source_dataset_count),
             population_sha256_parity=True,
             fixed_role_quota_used=False,
             changes_route_or_execution=False,
@@ -473,6 +478,7 @@ def main() -> int:
                     if isinstance(args.source_population_sha256, str)
                     else None
                 ),
+                source_dataset_count=args.source_dataset_count,
                 fixed_role_quota_used=False,
             )
         failure["failure_sha256"] = canonical_sha256(failure)
