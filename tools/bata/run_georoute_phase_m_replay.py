@@ -135,7 +135,9 @@ def _configure_replay_instrumentation(
         role_calibration_telemetry_enabled
     )
     cfg.georoute_diagnostic_telemetry = dict(enabled=True)
-    cfg.georoute_development_profile = dict(enabled=True)
+    cfg.georoute_development_profile = dict(
+        enabled=not role_calibration_telemetry_enabled
+    )
     cfg.post_processing.save_dict = True
     cfg.inference.load_from_raw_predictions = False
     cfg.inference.save_raw_prediction = False
@@ -219,6 +221,13 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         )
     if bool(cfg.inference.get("load_from_raw_predictions", False)):
         raise RuntimeError("Phase M forbids raw-prediction replay shortcuts")
+    if (
+        "georoute_dynamic_floor_m2_binding" in cfg
+        and not args.role_calibration_telemetry
+    ):
+        raise RuntimeError(
+            "frozen M2 Phase M is supported only as a role-calibration replay"
+        )
     source_population_sha256 = args.source_population_sha256
     source_binding = None
     if args.role_calibration_telemetry:
@@ -314,7 +323,10 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         effective_work / "georoute_diagnostic_telemetry.json"
     )
     profile_path = effective_work / "georoute_development_profile.json"
-    for artifact in (prediction, telemetry_path, profile_path):
+    required_artifacts = [prediction, telemetry_path]
+    if not args.role_calibration_telemetry:
+        required_artifacts.append(profile_path)
+    for artifact in required_artifacts:
         if not artifact.is_file():
             raise FileNotFoundError(artifact)
     prediction_sha256 = sha256_file(prediction)
@@ -348,13 +360,6 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
             or dict(telemetry.get("phase_m_binding", {})) != replay_binding
         ):
             raise RuntimeError("role calibration population SHA-256 parity failed")
-        profile = _read_json(profile_path)
-        last_audit = profile.get("last_georoute_audit")
-        if (
-            not isinstance(last_audit, Mapping)
-            or last_audit.get("role_calibration_telemetry_enabled") is not True
-        ):
-            raise RuntimeError("role calibration replay did not activate instrumentation")
         calibration_summary = summarize_dynamic_role_calibration_telemetry(
             telemetry_path
         )
@@ -394,8 +399,6 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
             "prediction_sha256": prediction_sha256,
             "telemetry_path": str(telemetry_path),
             "telemetry_sha256": sha256_file(telemetry_path),
-            "profile_path": str(profile_path),
-            "profile_sha256": sha256_file(profile_path),
             "test_log_path": str(test_log),
             "test_log_sha256": sha256_file(test_log),
         },
@@ -431,6 +434,9 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         result["replay_artifacts"]["role_calibration_summary_sha256"] = (
             sha256_file(calibration_summary_path)
         )
+    else:
+        result["replay_artifacts"]["profile_path"] = str(profile_path)
+        result["replay_artifacts"]["profile_sha256"] = sha256_file(profile_path)
     result["result_sha256"] = canonical_sha256(result)
     return result
 

@@ -118,7 +118,10 @@ def test_phase_m_replay_instrumentation_preserves_route_configuration(
         is role_calibration_enabled
     )
     assert cfg.georoute_diagnostic_telemetry.enabled is True
-    assert cfg.georoute_development_profile.enabled is True
+    assert (
+        cfg.georoute_development_profile.enabled
+        is (not role_calibration_enabled)
+    )
     assert cfg.post_processing.save_dict is True
     assert cfg.inference.load_from_raw_predictions is False
     assert cfg.inference.save_raw_prediction is False

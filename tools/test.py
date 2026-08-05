@@ -238,6 +238,7 @@ def main():
         from tools.bata.georoute_dynamic_floor_m2_contract import (
             require_clean_dynamic_floor_m2_checkout,
             require_dynamic_floor_m2_world1_slurm,
+            resolve_dynamic_floor_m2_accuracy_execution_commit,
             validate_dynamic_floor_m2_checkpoint_sidecar,
             validate_dynamic_floor_m2_config,
         )
@@ -247,8 +248,14 @@ def main():
         georoute_dynamic_floor_m2_binding = validate_dynamic_floor_m2_config(
             cfg, arm=arm, phase="accuracy"
         )
+        dynamic_floor_m2_execution_commit = (
+            resolve_dynamic_floor_m2_accuracy_execution_commit(
+                cfg,
+                binding=georoute_dynamic_floor_m2_binding,
+            )
+        )
         require_clean_dynamic_floor_m2_checkout(
-            expected_commit=georoute_dynamic_floor_m2_binding["runtime_commit"],
+            expected_commit=dynamic_floor_m2_execution_commit,
             root=Path(path).resolve(),
         )
         georoute_dynamic_floor_m2_checkpoint_sidecar = (

@@ -31,6 +31,7 @@ DYNAMIC_FLOOR_M2_STAGE_RESULT_SCHEMA = "scnr_dynamic_floor_m2_stage_result_v1"
 DYNAMIC_FLOOR_M2_COST_SCHEMA = "scnr_dynamic_floor_m2_full_stack_cost_v1"
 DYNAMIC_FLOOR_M2_FINALIZATION_SCHEMA = "scnr_dynamic_floor_m2_finalization_v1"
 DYNAMIC_FLOOR_M2_DEPLOYMENT_SCHEMA = "scnr_dynamic_floor_m2_deployment_v1"
+DYNAMIC_FLOOR_M2_ROLE_REPLAY_SCHEMA = "georoute_phase_m_diagnostic_replay_v1"
 DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA = (
     "scnr_dynamic_floor_m2_checkpoint_sidecar_v1"
 )
@@ -429,6 +430,61 @@ def validate_dynamic_floor_m2_config(
     ):
         raise ValueError(f"dynamic floor M2 {phase} must disable diagnostic telemetry")
     return binding
+
+
+def resolve_dynamic_floor_m2_accuracy_execution_commit(
+    cfg: Any,
+    *,
+    binding: Mapping[str, Any],
+) -> str:
+    """Separate a frozen M2 model binding from diagnostic-only execution code."""
+
+    binding = dict(binding)
+    source_commit = str(binding.get("runtime_commit", "")).lower()
+    phase_m = cfg.get("georoute_phase_m_binding")
+    if not isinstance(phase_m, Mapping) or not phase_m:
+        return source_commit
+    phase_m = dict(phase_m)
+    if phase_m.get("role_calibration_telemetry_enabled") is not True:
+        return source_commit
+    runtime_commit = str(phase_m.get("runtime_commit", "")).lower()
+    sha_fields = (
+        "source_bound_config_sha256",
+        "source_checkpoint_sha256",
+        "source_prediction_sha256",
+        "source_population_sha256",
+    )
+    custom = cfg.model.backbone.custom
+    if (
+        phase_m.get("schema_version") != DYNAMIC_FLOOR_M2_ROLE_REPLAY_SCHEMA
+        or phase_m.get("variant") != binding.get("arm")
+        or int(phase_m.get("seed", -1)) != DYNAMIC_FLOOR_M2_SEED
+        or phase_m.get("source_experiment_commit") != source_commit
+        or len(runtime_commit) != 40
+        or any(character not in "0123456789abcdef" for character in runtime_commit)
+        or any(
+            not isinstance(phase_m.get(field), str)
+            or len(phase_m[field]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in phase_m[field].lower()
+            )
+            for field in sha_fields
+        )
+        or not isinstance(phase_m.get("source_dataset_count"), int)
+        or isinstance(phase_m.get("source_dataset_count"), bool)
+        or int(phase_m["source_dataset_count"]) <= 0
+        or phase_m.get("instrumentation_only") is not True
+        or phase_m.get("fixed_role_quota_used") is not False
+        or phase_m.get("changes_route_or_execution") is not False
+        or phase_m.get("official_test_opened") is not False
+        or custom.georoute_diagnostic_telemetry_enabled is not True
+        or custom.georoute_role_calibration_telemetry_enabled is not True
+        or cfg.georoute_diagnostic_telemetry.get("enabled") is not True
+        or cfg.georoute_development_profile.get("enabled") is not False
+    ):
+        raise ValueError("dynamic floor M2 role replay execution binding is invalid")
+    return runtime_commit
 
 
 def build_dynamic_floor_m2_cost_config(

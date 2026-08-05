@@ -20,6 +20,7 @@ from tools.bata.georoute_dynamic_floor_m2_contract import (
     build_dynamic_floor_m2_cost_config,
     build_dynamic_floor_m2_checkpoint_metadata,
     finalize_dynamic_floor_m2,
+    resolve_dynamic_floor_m2_accuracy_execution_commit,
     summarize_dynamic_floor_m2_telemetry,
     validate_dynamic_floor_m2_checkpoint_sidecar,
     validate_dynamic_floor_m2_config,
@@ -156,6 +157,52 @@ def test_dynamic_floor_m2_freezes_only_floor_and_counterbalances_cost():
         DYNAMIC_FLOOR_M2_ARM_ORDER[1],
         DYNAMIC_FLOOR_M2_ARM_ORDER[0],
     )
+
+
+def test_dynamic_floor_m2_role_replay_separates_model_and_execution_commits(
+    tmp_path: Path,
+):
+    cfg = _bound_config(tmp_path)
+    cfg.model.backbone.custom.georoute_diagnostic_telemetry_enabled = True
+    cfg.model.backbone.custom.georoute_role_calibration_telemetry_enabled = True
+    cfg.georoute_diagnostic_telemetry = dict(enabled=True)
+    cfg.georoute_development_profile = dict(enabled=False)
+    binding = validate_dynamic_floor_m2_config(
+        cfg,
+        arm="native_1cell_main",
+        phase="accuracy",
+    )
+    cfg.georoute_phase_m_binding = dict(
+        schema_version="georoute_phase_m_diagnostic_replay_v1",
+        variant="native_1cell_main",
+        seed=DYNAMIC_FLOOR_M2_SEED,
+        source_experiment_commit="c" * 40,
+        runtime_commit="d" * 40,
+        source_bound_config_sha256="1" * 64,
+        source_checkpoint_sha256="2" * 64,
+        source_prediction_sha256="3" * 64,
+        source_population_sha256="4" * 64,
+        source_dataset_count=136,
+        role_calibration_telemetry_enabled=True,
+        instrumentation_only=True,
+        fixed_role_quota_used=False,
+        changes_route_or_execution=False,
+        official_test_opened=False,
+    )
+
+    assert (
+        resolve_dynamic_floor_m2_accuracy_execution_commit(
+            cfg,
+            binding=binding,
+        )
+        == "d" * 40
+    )
+    cfg.georoute_phase_m_binding.changes_route_or_execution = True
+    with pytest.raises(ValueError, match="execution binding"):
+        resolve_dynamic_floor_m2_accuracy_execution_commit(
+            cfg,
+            binding=binding,
+        )
 
 
 def _timed_cost_audit(*, attention_pairs: int | None = None) -> dict:
