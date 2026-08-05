@@ -1,6 +1,6 @@
 ---
 type: source_registry
-updated: 2026-08-02
+updated: 2026-08-05
 ---
 
 - Hybrid-centered causal-pilot Pro review, 2026-08-02. User attachment
@@ -1398,9 +1398,20 @@ updated: 2026-08-02
   Fresh G1/G2 P0 file hashes are
   `90d8cc10b9cb13853d90a8ff2cf4d92115ee3f99ffdcca2c12a4318cdfc08010` /
   `30517e05372d4307aa2d40301031d42fdc33b4cd5d205aaa4d14f7234eceb0c1`;
-  both statuses are `PASS_NO_PERFORMANCE_P0`. The arms were running Epoch 0
-  while cost/finalizer remained dependency-pending. This is running-state
-  provenance only, not a metric, cost or floor result.
+  both statuses are `PASS_NO_PERFORMANCE_P0`. G1/G2 later completed `0:0`; their
+  stage-result file SHA-256 values are
+  `bc78df2304560b399e6d29fcf04027d888ae377feb6cbac16df25e97abfb0572` /
+  `eb0b677c1b47b4b66d30b9a9cbfa0aabc1e31e90fc8cbea4813f76768dcfeb8a`.
+  Paired-cost `1216182` failed `1:0` in
+  `logs/dfm2_cost.1216182.err` at
+  `profile_georoute_dynamic_floor_m2.py::_validate_cost_audit` with
+  `KeyError: 'attention_pairs'`; the native executor had emitted the current
+  `attention_pairs_per_window` ledger. Sidecar attempt status was PASS with 8612
+  samples, but no `paired_cost_profile.json` exists. Finalizer `1216183`
+  completed `0:0`; `control/finalization.json` sealed
+  `FAIL_INCOMPLETE_NO_FLOOR_INFERENCE`, `paired_cost_present=false`, empty
+  contrasts, and all official-test/selection/paper guards false. This is
+  incomplete execution provenance, not a metric, cost or floor result.
 
 ## 外部附件
 

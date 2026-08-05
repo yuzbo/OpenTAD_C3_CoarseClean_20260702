@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:scnr-dynamic-stage1-executor-v1
 title: "SCNR-TAD dynamic exact-budget ragged executor v1"
 stage: experiment_running
-status: d4_m2_g1_g2_running_cost_and_finalizer_dependency_pending
+status: d4_m2_arms_complete_cost_schema_failure_recovery_tested_local
 outcome: pending
 added: 2026-08-02
-updated: 2026-08-02
+updated: 2026-08-05
 ---
 
 # SCNR-TAD dynamic exact-budget ragged executor v1
@@ -72,7 +72,7 @@ tubelet, or any mismatch between selected and executed tokens.
 | D1 | Native ragged VideoMAE + coordinate-lineage Adapter | zero-padding, empty-clip, full-token parity, exact ledger KATs | tested |
 | D2 | Wrapper integration, masked-zero aggregation, scout stop-gradient and proxy schedule | one real detector backward, successful-step schedule, no-leak audit | tested |
 | D3 | Clean N16R4 Linux/CUDA no-performance P0 | exact source, clean tree, Slurm GPU, zero metric/checkpoint | passed, Job `1215358` |
-| D4 | Matched development G1/G2 floor arms | D3 PASS, sample-level dynamic telemetry, frozen full-stack cost scope | runtime `6ee97336`: G1/G2 Jobs `1216180/1216181` running; cost/finalizer `1216182/1216183` dependency-pending |
+| D4 | Matched development G1/G2 floor arms | D3 PASS, sample-level dynamic telemetry, frozen full-stack cost scope | G1/G2 complete; paired-cost audit-key failure; incomplete finalizer; recovery tested locally |
 
 ## Executed evidence
 
@@ -165,6 +165,15 @@ tubelet, or any mismatch between selected and executed tokens.
   `a0504e45179957f20580b901e6ef7723d63c7b0ed445d8b3c35c3b5aaa02b89a`.
   Matching first AMP replays at batch 13/scale 32768/retry 1 of 8 are startup
   health only and are not interpreted as performance.
+- G1/G2 Jobs `1216180/1216181` later completed `0:0` with valid stage-result
+  artifacts (file SHA-256 `bc78df23...0572` / `eb0b677c...feb8a`). Paired-cost
+  Job `1216182` failed `1:0` because `_validate_cost_audit` requested the absent
+  `packed.attention_pairs` field instead of the actual native-ragged
+  `attention_pairs_per_window` list. Finalizer `1216183` completed and sealed
+  `INCOMPLETE_NO_FLOOR_INFERENCE`, empty contrasts and all promotion guards
+  false. The recovery is execution-only: it validates clip counts against the
+  per-window pair ledger, separates model/runtime from repair-execution commit,
+  preserves both trained arms, and passed local focused tests `15/15`.
 
 ## Current boundary
 
@@ -172,9 +181,10 @@ The dynamic route is now `tested` at implementation, synthetic CUDA P0, real
 Fit-prefix health and sample-level telemetry-unit levels.  D3 has passed and
 the two floor configurations are mechanically admissible.  The M2 matched
 training/evaluation and separate full-stack cost/energy protocol is implemented
-and locally tested. The resource-only replacement is now `experiment_running`
-with both arms active and cost/finalizer dependency-pending. None of the evidence
-above yet contains a complete development metric set, end-to-end latency/energy,
+and locally tested. The resource-only replacement remains `experiment_running`:
+both arms are terminal and valid, but the required paired-cost/finalizer recovery
+has not yet sealed. None of the evidence above yet contains a valid complete
+development contrast with end-to-end latency/energy,
 checkpoint utility or a floor comparison; it is
 not `empirically_supported` or `paper_ready`.  `K_t=0` is permitted and covered by
 contract tests, but no zero-count tubelet happened to occur in the recorded P0

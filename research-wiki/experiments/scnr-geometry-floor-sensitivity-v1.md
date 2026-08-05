@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:scnr-geometry-floor-sensitivity-v1
 title: "SCNR-TAD native-cell ROI floor sensitivity v1"
 stage: experiment_running
-status: m2_g1_g2_running_cost_and_finalizer_dependency_pending
+status: m2_arms_complete_cost_schema_failure_recovery_tested_local
 outcome: pending
 added: 2026-08-02
-updated: 2026-08-02
+updated: 2026-08-05
 ---
 
 # SCNR-TAD native-cell ROI floor sensitivity v1
@@ -66,7 +66,7 @@ evaluator/NMS 与成本测量。两臂的 `geometry_smoothness_weight`、
 | --- | --- | --- | --- |
 | M0 | 公式、独立宽高、11x20 的 1x1/2x2 known-answer tests | 精确得到 `(1/20,1/11)` 与 `(2/20,2/11)`，in-bounds 且梯度有限 | tested at exact source `4be71844`: focused `36/36`; complete GeoRoute+C3 `194 passed, 1 skipped` |
 | M1 | 真实 180x320 → 11x20 P0，验证配置、审计字段和零正则 | 不产生 metric/checkpoint；任一 hidden clamp/penalty/静态 0.20 即失败 | tested: G1 Job `1215358`; G2 Job `1215364` |
-| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | runtime `6ee97336`: G1/G2 Jobs `1216180/1216181` running; cost/finalizer `1216182/1216183` dependency-pending; no result yet |
+| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | G1/G2 `1216180/1216181` complete; cost `1216182` failed on profiler audit-key mismatch; finalizer `1216183` sealed INCOMPLETE; recovery tested locally, no result yet |
 | M3 | 仅在动态主方法通过总 gate 后进入 disjoint-seed confirmation | 不从单 seed 宣称 floor 最优 | blocked |
 
 ## 当前边界
@@ -105,8 +105,21 @@ deployment 文件 SHA-256 为
 G1/G2 新 P0 均为 `PASS_NO_PERFORMANCE_P0`（文件 SHA-256
 `90d8cc10b9cb13853d90a8ff2cf4d92115ee3f99ffdcca2c12a4318cdfc08010` /
 `30517e05372d4307aa2d40301031d42fdc33b4cd5d205aaa4d14f7234eceb0c1`），
-随后两臂进入 Epoch 0；成本与终结器仍按依赖等待。当前状态仅为
-`experiment_running`，不能从 live log、同步 AMP replay 或部分产物读取 floor 结论。
+随后两臂完成全部 60 epochs、accuracy 与 telemetry 回放并以 `0:0` 终止；stage-result
+文件 SHA-256 分别为
+`bc78df2304560b399e6d29fcf04027d888ae377feb6cbac16df25e97abfb0572` /
+`eb0b677c1b47b4b66d30b9a9cbfa0aabc1e31e90fc8cbea4813f76768dcfeb8a`。
+paired-cost Job `1216182` 在首个 timed-forward 审计处失败：当前 native-ragged
+executor 输出 `packed.attention_pairs_per_window`，profiler 却读取不存在的
+`packed.attention_pairs`。这发生在成本工件完整发布前，不是模型、训练、mAP 或成本
+结果。Finalizer `1216183` 完成 `0:0` 并正确封口为
+`FAIL_INCOMPLETE_NO_FLOOR_INFERENCE / INCOMPLETE_NO_FLOOR_INFERENCE`，
+`paired_cost_present=false`、`official_test_opened=false`、
+`paper_claim_allowed=false`。最小恢复实现改为校验当前 per-window ragged ledger，并将
+冻结模型 runtime `6ee97336` 与 clean execution-repair commit 分开记录；本地 focused
+tests `15/15`。恢复必须保留原失败工件，复用两臂而不重训，完整重跑
+`G1 -> G2 -> G2 -> G1` 与新 finalizer。当前仍是 `experiment_running`，不得读取
+两臂局部指标或形成 floor 结论。
 
 P0 中三角色计数、`K_t` 范围、loss 或梯度只能证明路径非退化且可训练，不能用于
 判断 1x1/2x2 谁更好。只有完整匹配的 development 训练、相同 population/hash、

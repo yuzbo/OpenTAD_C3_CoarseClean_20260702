@@ -16,6 +16,7 @@ BASE="${GEOROUTE_BASE:-/data/run01/sczc063/yuzibo}"
 ROOT="${GEOROUTE_SOURCE_ROOT:?set GEOROUTE_SOURCE_ROOT}"
 RUN_ROOT="${GEOROUTE_DYNAMIC_FLOOR_M2_RUN_ROOT:?set GEOROUTE_DYNAMIC_FLOOR_M2_RUN_ROOT}"
 EXPECTED_COMMIT="${GEOROUTE_EXPECTED_COMMIT:?set GEOROUTE_EXPECTED_COMMIT}"
+EXPECTED_EXECUTION_COMMIT="${GEOROUTE_EXECUTION_COMMIT:-${EXPECTED_COMMIT}}"
 POWER_SCRATCH_ROOT="${GEOROUTE_DYNAMIC_FLOOR_M2_POWER_SCRATCH_ROOT:-/tmp/scnr_dynamic_floor_m2_power}"
 PRECHECK_ONLY="${PRECHECK_ONLY:-0}"
 G1_RESULT="${RUN_ROOT}/development/g1_native_1cell_main/seed3407/stage_result.json"
@@ -78,6 +79,7 @@ PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 \
     --stage-result-g1 "${G1_RESULT}" \
     --stage-result-g2 "${G2_RESULT}" \
     --expected-commit "${EXPECTED_COMMIT}" \
+    --expected-execution-commit "${EXPECTED_EXECUTION_COMMIT}" \
     --allocated-cpus "${ALLOCATED_CPUS}" \
     --detector-cpus "${DETECTOR_CPUS}" \
     --sidecar-cpu "${SIDECAR_CPU}" \

@@ -2498,3 +2498,17 @@ append_only: true
   remains afterany on both arms plus cost. Status is `experiment_running`; no
   complete checkpoint, prediction, metric, latency, energy or floor verdict is
   available or interpreted.
+
+- 2026-08-05: dynamic-floor M2 reached an incomplete terminal state. G1/G2 Jobs
+  `1216180/1216181` completed `0:0` and published hash-valid stage results, while
+  paired-cost `1216182` failed `1:0` because its timed audit read nonexistent
+  `packed.attention_pairs` instead of the native ragged executor's
+  `packed.attention_pairs_per_window`. Finalizer `1216183` completed and sealed
+  `INCOMPLETE_NO_FLOOR_INFERENCE`, missing paired cost, empty contrasts and all
+  promotion guards false. No arm metric or partial cost was interpreted. The
+  minimal execution-only recovery now validates clip counts and the current
+  per-window attention-pair ledger and separately records frozen model runtime
+  `6ee97336` versus its clean recovery-execution commit; model, checkpoints,
+  data, ROI floors, budget and evaluation are unchanged. Python compile and the
+  focused M2 suite pass locally (`15/15`). Full counterbalanced cost plus a new
+  fail-closed finalizer remain required before any G1/G2 comparison.

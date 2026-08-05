@@ -24,6 +24,7 @@ from tools.bata.georoute_dynamic_floor_m2_contract import (
     validate_frozen_dynamic_floor_m2_contract,
 )
 from tools.bata.georoute_experiment_contract import canonical_sha256, sha256_file
+from tools.bata.profile_georoute_dynamic_floor_m2 import _validate_cost_audit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -146,6 +147,62 @@ def test_dynamic_floor_m2_freezes_only_floor_and_counterbalances_cost():
         DYNAMIC_FLOOR_M2_ARM_ORDER[1],
         DYNAMIC_FLOOR_M2_ARM_ORDER[0],
     )
+
+
+def _timed_cost_audit(*, attention_pairs: int | None = None) -> dict:
+    clip_counts = [DYNAMIC_FLOOR_M2_WINDOW_BUDGET // 48 for _ in range(48)]
+    expected_attention_pairs = sum(value**2 for value in clip_counts)
+    return {
+        "route_mode": "dynamic_scnr",
+        "policy_estimator": "straight_through",
+        "window_token_budget": DYNAMIC_FLOOR_M2_WINDOW_BUDGET,
+        "window_budget_is_global": True,
+        "fixed_context_quota": False,
+        "fixed_per_tubelet_k": False,
+        "k_t_allows_zero": True,
+        "zero_carrier_mode": "masked_zero",
+        "requested_physical_tokens_per_window": DYNAMIC_FLOOR_M2_WINDOW_BUDGET,
+        "unique_physical_tokens_per_window": DYNAMIC_FLOOR_M2_WINDOW_BUDGET,
+        "executed_patch_tokens_per_window": DYNAMIC_FLOOR_M2_WINDOW_BUDGET,
+        "padded_heavy_tokens_per_window": 0,
+        "heavy_backbone_forward_count": 1,
+        "geometry_extent_floor_mode": "native_cells",
+        "geometry_extent_floor_cells": 1,
+        "diagnostic_telemetry_enabled": False,
+        "uses_gt_for_route": False,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_test_evidence": False,
+        "k_per_tubelet": [[64 for _ in range(384)]],
+        "physical_indices_sha256": "a" * 64,
+        "k_t_min": 64,
+        "k_t_max": 64,
+        "k_t_zero_count": 0,
+        "role_counts": {
+            "context": DYNAMIC_FLOOR_M2_WINDOW_BUDGET,
+            "roi": 0,
+            "residual": 0,
+        },
+        "packed": {
+            "schema_version": "videomae_native_ragged_v1",
+            "execution_mode": "true_clip_ragged_no_padding",
+            "batch_size": 1,
+            "clip_token_counts": [clip_counts],
+            "attention_pairs_per_window": [
+                expected_attention_pairs if attention_pairs is None else attention_pairs
+            ],
+        },
+    }
+
+
+def test_dynamic_floor_m2_cost_audit_reads_native_ragged_attention_ledger():
+    validated = _validate_cost_audit(_timed_cost_audit(), floor_cells=1)
+    assert validated["attention_pairs"] == 48 * 512**2
+
+
+def test_dynamic_floor_m2_cost_audit_rejects_inconsistent_attention_ledger():
+    with pytest.raises(RuntimeError, match="ragged ledger is invalid"):
+        _validate_cost_audit(_timed_cost_audit(attention_pairs=1), floor_cells=1)
 
 
 def test_dynamic_floor_m2_binder_preserves_dynamic_recipe_and_fit_gate(
@@ -678,6 +735,8 @@ def test_dynamic_floor_m2_execution_sources_freeze_dag_and_cost_scope():
     )
     assert "for pass_index, arm in enumerate(DYNAMIC_FLOOR_M2_COST_ORDER)" in profiler
     assert '"diagnostic_telemetry_inside_timed_forward": False' in profiler
+    assert '"execution_commit": expected_execution_commit' in profiler
+    assert "--expected-execution-commit" in scripts
     assert 'dependency_type="afterok"' in deployer
     assert 'dependency_type="afterany"' in deployer
     assert "kill_invalid_dependency=True" in deployer

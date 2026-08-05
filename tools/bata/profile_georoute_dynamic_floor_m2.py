@@ -190,13 +190,42 @@ def _validate_cost_audit(audit: Any, *, floor_cells: int) -> dict[str, Any]:
         or sum(map(int, k_rows[0])) != DYNAMIC_FLOOR_M2_WINDOW_BUDGET
     ):
         raise RuntimeError("dynamic floor M2 timed forward lost exact K_t attribution")
+    packed = audit.get("packed")
+    if not isinstance(packed, Mapping):
+        raise RuntimeError("dynamic floor M2 timed forward emitted no ragged ledger")
+    clip_rows = packed.get("clip_token_counts")
+    pair_rows = packed.get("attention_pairs_per_window")
+    if (
+        packed.get("schema_version") != "videomae_native_ragged_v1"
+        or packed.get("execution_mode") != "true_clip_ragged_no_padding"
+        or int(packed.get("batch_size", -1)) != 1
+        or not isinstance(clip_rows, list)
+        or len(clip_rows) != 1
+        or not isinstance(clip_rows[0], list)
+        or not isinstance(pair_rows, list)
+        or len(pair_rows) != 1
+    ):
+        raise RuntimeError("dynamic floor M2 timed forward ragged ledger is invalid")
+    try:
+        clip_counts = [int(value) for value in clip_rows[0]]
+        attention_pairs = int(pair_rows[0])
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(
+            "dynamic floor M2 timed forward ragged ledger is invalid"
+        ) from error
+    if (
+        any(value < 0 for value in clip_counts)
+        or sum(clip_counts) != DYNAMIC_FLOOR_M2_WINDOW_BUDGET
+        or sum(value**2 for value in clip_counts) != attention_pairs
+    ):
+        raise RuntimeError("dynamic floor M2 timed forward ragged ledger is invalid")
     return {
         "physical_indices_sha256": str(audit["physical_indices_sha256"]),
         "k_t_min": int(audit["k_t_min"]),
         "k_t_max": int(audit["k_t_max"]),
         "k_t_zero_count": int(audit["k_t_zero_count"]),
         "role_counts": dict(audit["role_counts"]),
-        "attention_pairs": int(audit["packed"]["attention_pairs"]),
+        "attention_pairs": attention_pairs,
         "exact_window_budget": DYNAMIC_FLOOR_M2_WINDOW_BUDGET,
         "padded_heavy_tokens": 0,
     }
@@ -496,8 +525,9 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     from opentad.datasets import build_dataset
 
     expected_commit = str(args.expected_commit).lower()
+    expected_execution_commit = str(args.expected_execution_commit).lower()
     require_clean_dynamic_floor_m2_checkout(
-        expected_commit=expected_commit, root=ROOT
+        expected_commit=expected_execution_commit, root=ROOT
     )
     run_root = args.run_root.resolve()
     if not _inside(run_root, BOUNDARY.resolve()):
@@ -706,6 +736,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "study_id": DYNAMIC_FLOOR_M2_STUDY_ID,
         "seed": DYNAMIC_FLOOR_M2_SEED,
         "runtime_commit": expected_commit,
+        "execution_commit": expected_execution_commit,
         "run_root": str(run_root),
         "profile_order": list(DYNAMIC_FLOOR_M2_COST_ORDER),
         "warmup_samples_per_pass": WARMUP_SAMPLES,
@@ -786,6 +817,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--stage-result-g1", type=Path, required=True)
     parser.add_argument("--stage-result-g2", type=Path, required=True)
     parser.add_argument("--expected-commit", required=True)
+    parser.add_argument("--expected-execution-commit", required=True)
     parser.add_argument("--allocated-cpus", required=True)
     parser.add_argument("--detector-cpus", required=True)
     parser.add_argument("--sidecar-cpu", required=True, type=int)

@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-08-02
+updated: 2026-08-05
 ---
 
 ## GeoRoute deployment anti-repetition
@@ -166,14 +166,20 @@ updated: 2026-08-02
    overhead, and perform no model or cost computation. Replacement source
    `bad14693daa1fe414e56bf697c617e76f96eed48` requires a fresh exact-source
    remote regression, precheck and namespace; the old root is not resumable.
-0. The only active M2 namespace is
+0. The active M2 namespace is
    `scnr_dynamic_floor_m2_6ee97336_s3407_20260804_0525`, exact runtime
    `6ee97336775a09611f10423e07cafcea375e191a`, Jobs
-   `1216180/1216181/1216182/1216183`. Do not tune either arm from live logs,
-   resume or replace one arm, read partial metrics, bypass the dependency-held
-   same-GPU cost replay, fetch/switch the active remote checkout away from
-   runtime `6ee97336`, or interpret the finalizer before all registered inputs
-   validate. Matching Epoch-0 AMP replays are health telemetry, not performance.
+   `1216180/1216181/1216182/1216183`. G1/G2 completed successfully; paired-cost
+   failed only because the profiler requested nonexistent
+   `packed.attention_pairs`, and finalizer sealed
+   `INCOMPLETE_NO_FLOOR_INFERENCE`. Do not retrain, resume, replace, or tune either
+   arm; do not hand-read their metrics or treat the incomplete finalizer as a
+   floor result. Preserve the failed cost/finalization attempt. The only
+   admissible recovery reuses the hash-valid G1/G2 stage artifacts, runs the full
+   same-GPU `G1 -> G2 -> G2 -> G1` replay from a separately clean, non-model
+   execution-repair commit that records model runtime `6ee97336`, and then runs a
+   fresh fail-closed finalizer. The original clean runtime checkout must remain
+   untouched.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

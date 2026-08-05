@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-08-02
+updated: 2026-08-05
 max_chars: 8000
 ---
 
@@ -126,9 +126,18 @@ max_chars: 8000
   G1/G2/cost/finalizer Jobs `1216180/1216181/1216182/1216183` under
   `scnr_dynamic_floor_m2_6ee97336_s3407_20260804_0525` (deployment self-hash
   `a0504e45179957f20580b901e6ef7723d63c7b0ed445d8b3c35c3b5aaa02b89a`).
-  Both fresh P0 receipts passed and G1/G2 are running Epoch 0; cost and finalizer
-  remain dependency-pending. This is `experiment_running`, with no checkpoint,
-  prediction, metric, latency, energy, floor verdict or empirical support yet.
+  Both 60-epoch arms completed `0:0` and sealed valid stage results, but paired
+  cost Job `1216182` failed on the first timed audit because the profiler read the
+  nonexistent legacy key `packed.attention_pairs` instead of the executor's
+  receipted `packed.attention_pairs_per_window`. Finalizer `1216183` correctly
+  sealed `INCOMPLETE_NO_FLOOR_INFERENCE`, with no contrasts, floor selection,
+  official-test opening, or paper claim. A minimal recovery reads and validates
+  the current per-window ragged ledger, records the unchanged model/runtime
+  commit separately from its clean execution-repair commit, preserves both
+  completed arms, and must rerun the entire counterbalanced paired-cost pass plus
+  finalizer before any metric is interpreted. Local focused checks pass `15/15`.
+  This remains `experiment_running`; no valid latency, energy, floor verdict or
+  empirical support exists yet.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and
