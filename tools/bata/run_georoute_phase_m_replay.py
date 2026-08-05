@@ -169,6 +169,28 @@ def _build_replay_test_arguments(
     return arguments
 
 
+def _validate_replay_telemetry_header(
+    telemetry: Mapping[str, Any],
+    *,
+    role_calibration_telemetry_enabled: bool,
+) -> None:
+    expected_schema = (
+        "georoute_formal_development_telemetry_v1"
+        if role_calibration_telemetry_enabled
+        else "georoute_diagnostic_telemetry_v1"
+    )
+    if (
+        telemetry.get("schema_version") != expected_schema
+        or telemetry.get("development_only") is not True
+        or telemetry.get("official_test_opened") is not False
+        or telemetry.get("gt_for_route_used") is not False
+        or telemetry.get("teacher_for_route_used") is not False
+        or telemetry.get("oracle_used") is not False
+        or telemetry.get("raw_prediction_cache_used") is not False
+    ):
+        raise RuntimeError("Phase M telemetry violated its no-leak schema")
+
+
 def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
     slurm_job_id = os.environ.get("SLURM_JOB_ID")
     if not slurm_job_id:
@@ -334,15 +356,10 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
         prediction_sha256 == args.source_prediction_sha256.lower()
     )
     telemetry = _read_json(telemetry_path)
-    if (
-        telemetry.get("schema_version")
-        != "georoute_diagnostic_telemetry_v1"
-        or telemetry.get("official_test_opened") is not False
-        or telemetry.get("gt_for_route_used") is not False
-        or telemetry.get("teacher_for_route_used") is not False
-        or telemetry.get("raw_prediction_cache_used") is not False
-    ):
-        raise RuntimeError("Phase M telemetry violated its no-leak schema")
+    _validate_replay_telemetry_header(
+        telemetry,
+        role_calibration_telemetry_enabled=args.role_calibration_telemetry,
+    )
     dataset_count = int(telemetry.get("dataset_count", -1))
     record_count = int(telemetry.get("record_count", -2))
     population_complete = dataset_count > 0 and record_count == dataset_count

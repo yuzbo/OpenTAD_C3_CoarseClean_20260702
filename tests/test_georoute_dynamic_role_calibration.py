@@ -18,6 +18,7 @@ from tools.bata.analyze_georoute_dynamic_role_calibration import (
 from tools.bata.run_georoute_phase_m_replay import (
     _build_replay_test_arguments,
     _configure_replay_instrumentation,
+    _validate_replay_telemetry_header,
 )
 
 
@@ -151,6 +152,31 @@ def test_phase_m_role_replay_preserves_frozen_m2_evaluation_contract(
         else ["0", "--not_eval"]
     )
     assert arguments[-2:] == expected_tail
+
+
+@pytest.mark.parametrize(
+    ("schema", "role_calibration_enabled"),
+    [
+        ("georoute_diagnostic_telemetry_v1", False),
+        ("georoute_formal_development_telemetry_v1", True),
+    ],
+)
+def test_phase_m_replay_requires_mode_matched_no_leak_telemetry_schema(
+    schema: str,
+    role_calibration_enabled: bool,
+):
+    payload = _telemetry_payload()
+    payload["schema_version"] = schema
+
+    _validate_replay_telemetry_header(
+        payload,
+        role_calibration_telemetry_enabled=role_calibration_enabled,
+    )
+    with pytest.raises(RuntimeError, match="no-leak schema"):
+        _validate_replay_telemetry_header(
+            payload,
+            role_calibration_telemetry_enabled=not role_calibration_enabled,
+        )
 
 
 def test_role_calibration_summary_detects_observed_collapse_without_quota(
