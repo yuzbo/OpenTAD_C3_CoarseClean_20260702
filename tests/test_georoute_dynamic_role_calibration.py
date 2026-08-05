@@ -16,6 +16,7 @@ from tools.bata.analyze_georoute_dynamic_role_calibration import (
     summarize_dynamic_role_calibration_telemetry,
 )
 from tools.bata.run_georoute_phase_m_replay import (
+    _build_replay_test_arguments,
     _configure_replay_instrumentation,
 )
 
@@ -121,6 +122,31 @@ def test_phase_m_replay_instrumentation_preserves_route_configuration(
     assert cfg.post_processing.save_dict is True
     assert cfg.inference.load_from_raw_predictions is False
     assert cfg.inference.save_raw_prediction is False
+
+
+@pytest.mark.parametrize(
+    ("role_calibration_enabled", "expects_no_eval"),
+    [(False, True), (True, False)],
+)
+def test_phase_m_role_replay_preserves_frozen_m2_evaluation_contract(
+    role_calibration_enabled: bool,
+    expects_no_eval: bool,
+):
+    arguments = _build_replay_test_arguments(
+        command_prefix=["python", "-m", "torch.distributed.run"],
+        bound_config=Path("bound.py"),
+        checkpoint=Path("epoch_59.pth"),
+        seed=3407,
+        role_calibration_telemetry_enabled=role_calibration_enabled,
+    )
+
+    assert ("--not_eval" in arguments) is expects_no_eval
+    expected_tail = (
+        ["--id", "0"]
+        if role_calibration_enabled
+        else ["0", "--not_eval"]
+    )
+    assert arguments[-2:] == expected_tail
 
 
 def test_role_calibration_summary_detects_observed_collapse_without_quota(

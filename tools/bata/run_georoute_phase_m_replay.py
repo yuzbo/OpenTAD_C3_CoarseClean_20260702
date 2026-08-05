@@ -141,6 +141,32 @@ def _configure_replay_instrumentation(
     cfg.inference.save_raw_prediction = False
 
 
+def _build_replay_test_arguments(
+    *,
+    command_prefix: list[str],
+    bound_config: Path,
+    checkpoint: Path,
+    seed: int,
+    role_calibration_telemetry_enabled: bool,
+) -> list[str]:
+    """Preserve the source evaluation contract for frozen M2 replays."""
+
+    arguments = [
+        *command_prefix,
+        "tools/test.py",
+        str(bound_config),
+        "--checkpoint",
+        str(checkpoint),
+        "--seed",
+        str(seed),
+        "--id",
+        "0",
+    ]
+    if not role_calibration_telemetry_enabled:
+        arguments.append("--not_eval")
+    return arguments
+
+
 def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
     slurm_job_id = os.environ.get("SLURM_JOB_ID")
     if not slurm_job_id:
@@ -269,18 +295,15 @@ def _execute(args: argparse.Namespace, cell_root: Path) -> dict[str, Any]:
     )
     test_log = cell_root / "test.out"
     _run_logged(
-        [
-            *command_prefix,
-            "tools/test.py",
-            str(bound_config),
-            "--checkpoint",
-            str(checkpoint),
-            "--seed",
-            str(args.seed),
-            "--id",
-            "0",
-            "--not_eval",
-        ],
+        _build_replay_test_arguments(
+            command_prefix=command_prefix,
+            bound_config=bound_config,
+            checkpoint=checkpoint,
+            seed=int(args.seed),
+            role_calibration_telemetry_enabled=(
+                args.role_calibration_telemetry
+            ),
+        ),
         log_path=test_log,
         env=inherited,
     )
