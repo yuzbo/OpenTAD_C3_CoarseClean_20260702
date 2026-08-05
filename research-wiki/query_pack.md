@@ -200,14 +200,36 @@ max_chars: 8000
   Authorized all-valid counts are G1 `0/2,671/11,486,609` and G2
   `0/984/11,488,296`; residual dominates `136/136` windows before global top-B.
   Thus branch-offset identifiability, not top-B squeezing diverse roles, is the
-  first repair target. The implemented successor subtracts only the all-valid
-  full-window mean of `delta_residual`, leaves Scheme A/exact B/dynamic K/ragged/
-  masked-zero/ROI/context unchanged, and adds a strict deterministic frozen-
-  checkpoint role-reachability runner. Local compilation, shell/whitespace,
-  pure-contract, and standalone classification checks pass; clean Linux/Torch
-  regression and the frozen G1/G2 probes remain pending. No Pro discussion is
-  needed for this single-variable probe; no training is authorized unless both
-  arms pass the preregistered structural gate, and M3 remains held.
+  first repair target. Exact source `091f9f9b` subtracts only the all-valid
+  full-window mean of `delta_residual` and leaves Scheme A/exact B/dynamic K/
+  ragged/masked-zero/ROI/context unchanged. Clean N16R4 regression passed
+  `90/90` GeoRoute plus `20/20` required C3 tests. Frozen-checkpoint Jobs
+  `1223783/1223784` then passed strict duplicate prediction/route parity and the
+  preregistered structural gate in both arms. Selected context/ROI/residual
+  counts are G1 `168,733/421,121/2,752,482` and G2
+  `186,976/429,896/2,725,464`; maximum post-centering residual-mean error is
+  `3.04e-7`. This proves structural role reachability only and authorizes
+  freezing a matched development `none` versus centering training protocol. It
+  does not prove accuracy, operational complementarity, cost or floor effects;
+  M3 and official test remain held. No Pro discussion is needed for the matched
+  single-variable protocol.
+  That protocol is now frozen and implemented as
+  `exp:scnr-residual-centering-matched-training-v1` at stage `implemented`.
+  It uses two fresh G1 `native_1cell_main` cells, `none_control` and
+  `residual_window_center`, with the same pretrained initialization, seed 3407,
+  data/order, exact B, fully dynamic K/roles, ragged/masked-zero execution,
+  60 epochs and exactly 9,600 successful updates. Old M2 checkpoints are not
+  reused. Each final EMA receives same-GPU strict math-SDPA duplicate Gate
+  replay; any lineage/prediction/route/population/invariant failure leaves empty
+  contrasts. The single-seed accuracy screen requires centered mAP@0.6 and
+  mAP@0.7 both strictly higher and Avg-mAP non-lower. PASS authorizes only a new
+  ABBA+BAAB paired full-stack cost design; disjoint seeds, M3, official test and
+  every paper/efficiency/complementarity claim remain held. The implementation
+  hashes the normalized complete training recipe across cells, atomically binds
+  both held stage Jobs plus the `afterany` finalizer, and fails closed on any
+  malformed or incomplete artifact. Local pure-contract/inherited-M2/required-C3
+  regression is `57/57`; exact clean N16R4 Torch/CUDA regression, precheck and
+  Slurm deployment remain pending, so no metric or empirical support exists.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

@@ -223,6 +223,7 @@ def main():
             )
         from tools.bata.georoute_dynamic_floor_m2_contract import (
             DYNAMIC_FLOOR_M2_RESIDUAL_CENTERING_PROBE_SCHEMA,
+            DYNAMIC_FLOOR_M2_RESIDUAL_CENTERING_TRAINING_ACCURACY_SCHEMA,
             DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA,
             require_clean_dynamic_floor_m2_checkout,
             require_dynamic_floor_m2_world1_slurm,
@@ -255,6 +256,26 @@ def main():
         georoute_dynamic_floor_m2_binding = validate_dynamic_floor_m2_config(
             cfg, arm=arm, phase="accuracy"
         )
+        if "georoute_residual_centering_training_binding" in cfg:
+            from tools.bata.georoute_residual_centering_training_contract import (
+                validate_residual_centering_training_config,
+            )
+
+            variant = str(cfg.georoute_residual_centering_training_binding.variant)
+            residual_centering_binding = (
+                validate_residual_centering_training_config(
+                    cfg,
+                    variant=variant,
+                    phase="accuracy",
+                )
+            )
+            if (
+                residual_centering_binding["base_binding_sha256"]
+                != georoute_dynamic_floor_m2_binding["binding_sha256"]
+            ):
+                raise RuntimeError(
+                    "residual-centering accuracy lost its inherited G1 binding"
+                )
         dynamic_floor_m2_execution_commit = (
             resolve_dynamic_floor_m2_accuracy_execution_commit(
                 cfg,
@@ -267,6 +288,7 @@ def main():
             in {
                 DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA,
                 DYNAMIC_FLOOR_M2_RESIDUAL_CENTERING_PROBE_SCHEMA,
+                DYNAMIC_FLOOR_M2_RESIDUAL_CENTERING_TRAINING_ACCURACY_SCHEMA,
             }
         )
         require_clean_dynamic_floor_m2_checkout(

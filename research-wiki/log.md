@@ -2704,3 +2704,50 @@ append_only: true
   loader boundary. Clean Linux/Torch regression and frozen G1/G2 Slurm probes
   are pending; no training, performance, floor, M3, official-test, or paper
   claim is open.
+
+- 2026-08-06: exact source `091f9f9b57e68a4706a91d8b3b9176ddc88d0c6c`
+  passed clean N16R4 GeoRoute/probe `90/90` and required C3 `20/20` regression.
+  Frozen M2 Jobs `1223783/1223784` then completed `0:0`; every generated artifact
+  hash and result self-hash validates. Within each arm, strict math-SDPA
+  `centered_a/centered_b` predictions are byte-identical across 80,000 records
+  and route payload hashes match. G1 selected context/ROI/residual counts are
+  `168,733/421,121/2,752,482`; G2 counts are
+  `186,976/429,896/2,725,464`. Both all-valid role sets also restore context and
+  ROI reachability, and the maximum absolute centered residual mean is
+  `3.04e-7`. Thus the registered structural gate passes in both arms. This
+  supports residual branch-offset non-identifiability as a direct cause of the
+  earlier categorical collapse and authorizes only a new matched development
+  `none` versus centering training design. No mAP was evaluated, no training was
+  performed, and Hybrid efficacy, cost, floor, M3, official-test and paper
+  claims remain closed.
+
+- 2026-08-06: froze
+  `exp:scnr-residual-centering-matched-training-v1` without another Pro review.
+  The two fresh seed-3407 cells both use the G1 `native_1cell_main` recipe and
+  differ only in `georoute_branch_calibration_mode=none` versus
+  `residual_window_center`. Both must train 60 epochs/9,600 successful updates
+  from the same pretrained initialization and pass same-GPU strict math-SDPA
+  duplicate Gate replay. No old M2 checkpoint, G2 floor reinterpretation, role
+  target, resume, or second repair is allowed. After complete integrity, the
+  preregistered screen requires positive mAP@0.6 and mAP@0.7 deltas plus
+  nonnegative Avg-mAP delta. PASS opens only a separately frozen ABBA+BAAB
+  full-stack cost study; multi-seed, M3, official test, efficiency,
+  complementarity and paper claims remain closed. Status is `designed`, with no
+  new training Job or metric yet.
+
+- 2026-08-06: implemented the frozen matched residual-centering training DAG.
+  A common constructor materializes both fresh G1 seed-3407 cells and binds a
+  normalized complete-training-recipe hash, preventing optimizer, loss,
+  augmentation, scheduler, detector/head, data or execution drift while allowing
+  only receipt/path identity and the registered branch-calibration mode to vary.
+  Per-arm execution performs fresh P0, 60 epochs/9,600 successful updates,
+  final-EMA-only publication and serial strict `accuracy_a/accuracy_b` replay.
+  The atomic deployer submits both stages held, persists a held `afterany`
+  finalizer with their exact Job IDs, validates the deployment receipt and only
+  then releases the DAG. Malformed/incomplete artifacts fail closed with empty
+  contrasts. Python compilation, Bash syntax and local pure-contract/inherited-M2/
+  required-C3 regression pass `57/57` (`10/10` new study tests). Local
+  Torch-backed collection remains blocked at the known Windows `c10.dll` loader;
+  clean N16R4 regression, exact commit, precheck and Slurm execution are pending.
+  Stage is `implemented`, with no checkpoint, prediction, metric or performance
+  conclusion.

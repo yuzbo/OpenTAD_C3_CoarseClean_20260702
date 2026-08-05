@@ -1565,6 +1565,37 @@ updated: 2026-08-06
   and experiment node
   `research-wiki/experiments/scnr-residual-window-centering-probe-v1.md` freeze one
   residual-offset-only intervention and a no-training structural mechanism gate.
+- SCNR residual-window centering frozen-checkpoint probe v1 result, 2026-08-06.
+  Exact source `091f9f9b57e68a4706a91d8b3b9176ddc88d0c6c`; Jobs
+  `1223783/1223784`; root
+  `/data/run01/sczc063/yuzibo/scnr_residual_window_centering_probe_091f9f9b_s3407_20260805_211124`.
+  G1 result internal/file SHA-256
+  `4688a95063f1320527cf6de7e4638c1379ec946d3d45a4aa1a288607564edac2` /
+  `f95a04a967d4dfe93f9f5a0a6881b8b22e27b0c1e4eaa2c0316e6d633646c9db`;
+  G2
+  `1dc87ffdda1dab5095f83a18e27e24f3713ab22cde585e53079a4b141d51312f` /
+  `7d54430e6ff044d7ac65e1bda0bdc0496b253e15c2eeb8882cc493ba53ab8920`.
+  The source is structural/no-metric evidence only.
+- SCNR residual-centering matched development training v1 design, 2026-08-06.
+  Frozen project specification
+  `docs/superpowers/specs/2026-08-06-scnr-residual-centering-matched-training-v1-design.md`,
+  experiment node
+  `research-wiki/experiments/scnr-residual-centering-matched-training-v1.md`, and
+  claim-driven execution artifacts
+  `refine-logs/EXPERIMENT_PLAN_20260806_053037.md` and
+  `refine-logs/EXPERIMENT_TRACKER_20260806_053037.md`. These preregister fresh
+  G1 none/centering cells and a fail-closed single-seed accuracy screen.
+- SCNR residual-centering matched development training v1 implementation,
+  2026-08-06. Project-authored sources are
+  `tools/bata/georoute_residual_centering_training_contract.py`,
+  `tools/bata/run_georoute_residual_centering_training.py`,
+  `tools/bata/deploy_georoute_residual_centering_training.py`,
+  `tools/bata/finalize_georoute_residual_centering_training.py`, the two
+  `scripts/run_georoute_residual_centering_training_*_slurm.sh` launchers, and
+  `tests/test_georoute_residual_centering_training.py`. Local compilation and
+  Bash syntax pass; pure contract, inherited M2 and required C3 regression pass
+  `57/57`. Exact runtime commit, remote Torch/CUDA regression, Slurm Jobs and
+  performance artifacts do not yet exist.
 
 ## 外部附件
 

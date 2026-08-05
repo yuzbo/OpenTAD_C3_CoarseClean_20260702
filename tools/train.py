@@ -353,6 +353,26 @@ def main():
         georoute_dynamic_floor_m2_binding = validate_dynamic_floor_m2_config(
             cfg, arm=arm, phase="train"
         )
+        if "georoute_residual_centering_training_binding" in cfg:
+            from tools.bata.georoute_residual_centering_training_contract import (
+                validate_residual_centering_training_config,
+            )
+
+            variant = str(cfg.georoute_residual_centering_training_binding.variant)
+            residual_centering_binding = (
+                validate_residual_centering_training_config(
+                    cfg,
+                    variant=variant,
+                    phase="train",
+                )
+            )
+            if (
+                residual_centering_binding["base_binding_sha256"]
+                != georoute_dynamic_floor_m2_binding["binding_sha256"]
+            ):
+                raise RuntimeError(
+                    "residual-centering training lost its inherited G1 binding"
+                )
         georoute_dynamic_floor_m2_sidecar_schema = (
             DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA
         )
@@ -637,6 +657,12 @@ def main():
         if runtime_ids["val"] != expected_gate or runtime_ids["test"] != expected_gate:
             raise ValueError(
                 "dynamic floor M2 evaluation population differs from Gate"
+            )
+        if "georoute_residual_centering_training_binding" in cfg and len(
+            train_loader
+        ) != 160:
+            raise RuntimeError(
+                "residual-centering matched training requires exactly 160 batches per epoch"
             )
 
     # build model

@@ -270,6 +270,36 @@ updated: 2026-08-06
    ROI/context are not reachable among valid candidates or no non-residual token
    is selected, stop before training. A pass authorizes only a new matched
    development-training protocol, not M3, official test, efficiency or a claim.
+0. Do not repeat the residual-window-centering frozen-checkpoint probe. Exact
+   source `091f9f9b` and Jobs `1223783/1223784` passed duplicate strict replay,
+   exact-B/ragged/no-leak and structural context/ROI reachability in both frozen
+   M2 arms. This is terminal structural evidence, not an mAP result.
+0. The only authorized next performance question is fresh G1-anchor
+   `none_control` versus fresh G1-anchor `residual_window_center`. Do not relabel
+   centering as G2, select a floor, reuse an old M2 checkpoint as a control,
+   resume either cell, add a role-fraction target, or combine a second repair.
+0. Matched centering training requires both complete 60-epoch/9,600-update cells
+   and same-GPU strict math-SDPA duplicate Gate replay. Any config, population,
+   checkpoint, raw-prediction, route-payload, exact-B, ragged, role, or no-leak
+   failure yields empty contrasts; partial results are not interpretable.
+0. The seed-3407 centering screen passes only if centered mAP@0.6 and mAP@0.7
+   are each strictly greater than control and centered Avg-mAP is not lower.
+   A pass authorizes only a separately frozen ABBA+BAAB paired full-stack cost
+   study. It does not directly authorize seeds 3408/3409, M3, official test,
+   complementarity, efficiency, Hybrid efficacy or a paper claim.
+0. Do not define matchedness by a hand-picked field list. The centering study
+   must derive both cells from one complete G1 config and match a normalized
+   complete-recipe hash covering optimizer, losses, augmentation, scheduler,
+   detector/head, data and execution settings. Only path/receipt identity and
+   the registered calibration mode may differ.
+0. Do not submit the two training leaves independently or bolt on a finalizer
+   afterward. The atomic deployer must first submit both stages held, submit one
+   held `afterany` finalizer over their exact Job IDs, persist and revalidate the
+   immutable deployment receipt, and only then release all three Jobs.
+0. Do not inspect or contrast one surviving centering cell. Any absent, failed,
+   malformed, nonterminal or duplicate-divergent arm forces empty contrasts and
+   `INCOMPLETE_NO_PERFORMANCE_INFERENCE`; no resume or replacement inside that
+   namespace is permitted.
 0. The aggregate G1 end-to-end p50/energy disadvantage is cold-order-sensitive:
    model-forward p50 differs by only `+0.438%`, and G1 pass 0 is the host/input
    outlier. Never claim that the 1-cell model intrinsically costs `+2.845%` from
