@@ -1078,7 +1078,11 @@ Current Stage-A recovery decision:
    100 real full-model updates, then pass frozen FP32/FP64, dual-logZ, edge-flow,
    gradient and hard-path checks on the captured production tensor. This is
    engineering stability evidence only. Linux/Slurm receipts and a fresh Stage-A
-   transaction remain absent, so no model-performance conclusion exists.
+   transaction remain absent, so no model-performance conclusion exists. The
+   implementation through `3a0563fb` is pushed and independently audited `GO`;
+   remote submission is currently blocked because this desktop session has no
+   resolvable registered N16R4 SSH/Slurm endpoint, not because of an unresolved
+   model or protocol decision.
 
 Approved compact feasibility design, superseding the simulation-first order
 below while retaining it as negative-history context:

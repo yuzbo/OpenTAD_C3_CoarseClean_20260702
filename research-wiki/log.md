@@ -38,6 +38,13 @@
   local GPU/model execution is claimed. Authoritative Linux code/short/numeric/
   exact-211 receipts and a fresh Stage-A transaction do not yet exist. No loss,
   checkpoint, partial metric or mAP was opened; Stage B remains sealed.
+- The implementation and bounded-failure commits through `3a0563fb` were pushed
+  to `origin/codex/duca-rime-20260727`, and a fresh independent read-only audit
+  returned `GO` with no P0/P1 for the release-gate scope. Remote release is not
+  claimed: this desktop session exposes no SSH/Slurm connector and
+  `ssh -o BatchMode=yes N16R4` fails with an unresolved hostname. No job ID,
+  remote receipt or transaction root was fabricated; execution remains blocked
+  only on restoring the registered N16R4 endpoint.
 
 ## 2026-08-05 — Minimal Stage-A solver repair accepted and implemented locally
 
