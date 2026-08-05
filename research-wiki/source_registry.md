@@ -1544,6 +1544,27 @@ updated: 2026-08-06
   neutrality gate and no role-statistic publication. Local Python/Bash/whitespace
   checks pass; Windows Torch collection is blocked by the documented `c10.dll`
   failure; clean remote validation and execution are pending.
+- SCNR role-instrumentation integrity closure, 2026-08-06. Same-GPU pair runtime
+  `37ca2b95` used Jobs `1223686/1223687`; legacy triplet runtime `916e96c0` used
+  Jobs `1223707/1223708`; strict math-SDPA runtime `33c8c928` used Jobs
+  `1223727/1223728`. Strict G1/G2 common OFF-A/OFF-B/ON prediction SHA-256 values
+  are `578860552cf02544253f88776bcc25b33d0ee3ecf7ab24a2de1079d9fa8e331e`
+  and `f0ce98cec8abafa243bde39e0cdaeb8e73b0043f16af51355d1b7414e1d4d834`.
+  Strict run root is
+  `/data/run01/sczc063/yuzibo/scnr_role_strict_triplet_33c8c928_s3407_20260806_040400`.
+- SCNR categorical role-invariance bridge, 2026-08-06. Exact source
+  `ede8af53d47c723a30902063f2f2bcdf260d340c`; output root
+  `/data/run01/sczc063/yuzibo/scnr_role_strict_triplet_33c8c928_s3407_20260806_040400/categorical_role_invariance_ede8af53_r2`.
+  G1/G2 report file SHA-256 values are
+  `d1a3f62e2d53fd609e9312296f3369bd8e88e47fb6d051481625b61ae39e16be`
+  and `083d6b98ded204e6df1d485a72685fec937d650fd5b603e4d75acafe741866bf`.
+  The bridge explicitly authorizes categorical roles only; continuous scores,
+  geometry, prediction and performance consumers are false.
+- SCNR residual-window centering probe v1 design, 2026-08-06. Tracked design
+  `docs/superpowers/specs/2026-08-06-scnr-residual-window-centering-probe-v1-design.md`
+  and experiment node
+  `research-wiki/experiments/scnr-residual-window-centering-probe-v1.md` freeze one
+  residual-offset-only intervention and a no-training structural mechanism gate.
 
 ## 外部附件
 

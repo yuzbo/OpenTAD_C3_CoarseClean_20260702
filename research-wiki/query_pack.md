@@ -188,33 +188,23 @@ max_chars: 8000
   model-forward p50 differs by only `+0.438%`, while aggregate end-to-end p50 is
   `+2.845%` and is dominated by a cold first G1 host/input pass. This is complete
   descriptive M2 evidence, not a floor selection.
-  The decisive mechanism finding is role collapse: G1 selected
-  context/ROI/residual `0/7/3,342,329`; G2 selected
-  `0/0/3,342,336`. Both floor saturation rates are zero, so the large accuracy
-  contrast cannot be causally assigned to the 1-cell versus 2-cell lower bound,
-  and M2 does not establish operational Hybrid complementarity. The immediate
-  successor is a result-blind modifier-scale/role-margin replay on the frozen
-  checkpoints, with no fixed role quota and prediction-SHA parity. M3 is required
-  eventually but held until this identifiability diagnosis is complete.
-  Role-calibration execution source `2c39ce58` passes clean N16R4 `51/51` focused
-  dynamic tests and `20/20` required regressions, but no replay has produced valid
-  role evidence. Jobs `1223595/1223596` and `1223601/1223602` failed before
-  inference on forbidden `--not_eval` and `profile=true`; Jobs `1223615/1223616`
-  and `1223625/1223626` completed inference but failed their frozen output-root and
-  schema contracts. Jobs `1223640/1223641` completed formal inference yet failed
-  source raw prediction-SHA parity, so their role telemetry is sealed.
-  The failed replay predictions retain the same 40 videos and 80,000 records, but
-  exact `(video,label,start,end)` overlap is only `76,660/80,000` for G1 and
-  `78,387/80,000` for G2; this is not serialization-only. Original M2 ran on
-  `g0024`, while the replays ran on `g0044/g0048`, leaving cross-node rerun drift
-  confounded with instrumentation.
-  The implemented next step is a same-Slurm-job, same-GPU serial role-OFF/role-ON
-  pair. Both retain source formal telemetry, exact accuracy evaluation,
-  `profile=false`, checkpoint/seed/population and B; only the role-calibration
-  extension changes. OFF/ON raw SHA equality is mandatory, and source parity is
-  still required before the frozen role diagnostic may be interpreted. Remote
-  validation/execution is pending. No new Pro discussion is needed before this
-  registered integrity experiment.
+  The decisive M2 mechanism finding is selected-role collapse: G1
+  context/ROI/residual `0/7/3,342,329`; G2 `0/0/3,342,336`. Both floor-saturation
+  rates are zero, so neither operational Hybrid complementarity nor floor
+  causality is established. Replay integrity is now resolved: same-GPU OFF/ON
+  proves observer neutrality; legacy OFF-A/OFF-B/ON exposes baseline CUDA replay
+  drift after routing; strict math-SDPA makes OFF-A=OFF-B=ON byte-identical for
+  both arms. Strict backend differs from historical source, so continuous scores,
+  margins, geometry, predictions and performance remain closed. A field-minimized
+  categorical bridge validates exact hard-role equality for all 136 windows.
+  Authorized all-valid counts are G1 `0/2,671/11,486,609` and G2
+  `0/984/11,488,296`; residual dominates `136/136` windows before global top-B.
+  Thus branch-offset identifiability, not top-B squeezing diverse roles, is the
+  first repair target. The preregistered successor subtracts only the all-valid
+  full-window mean of `delta_residual`, leaves Scheme A/exact B/dynamic K/ragged/
+  masked-zero/ROI/context unchanged, and runs a strict deterministic frozen-
+  checkpoint role-reachability probe before any training. No Pro discussion is
+  needed for this single-variable probe; M3 remains held.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

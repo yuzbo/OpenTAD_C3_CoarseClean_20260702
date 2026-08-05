@@ -2,9 +2,9 @@
 type: experiment
 node_id: exp:scnr-role-instrumentation-neutrality-pair-v1
 title: "SCNR role-instrumentation same-GPU neutrality pair v1"
-stage: implemented
-status: same_gpu_serial_pair_pending_remote_validation
-outcome: pending
+stage: tested
+status: neutrality_supported_source_replay_nondeterminism_localized
+outcome: strict_triplet_exact_categorical_bridge_open
 added: 2026-08-06
 updated: 2026-08-06
 ---
@@ -61,6 +61,18 @@ paper evidence.
 - `scripts/run_georoute_role_instrumentation_pair_slurm.sh`
 - focused tests in `tests/test_georoute_dynamic_role_calibration.py`
 
-Local `py_compile`, Bash syntax and whitespace checks pass. Windows Torch test
-collection remains blocked by the known `c10.dll` load error. Clean N16R4 tests,
-preflight and Slurm execution are pending.
+Clean N16R4 validation passed. Same-GPU R3 Jobs `1223686/1223687` proved OFF/ON
+role instrumentation causal neutrality at the route surface, while both replay
+predictions drifted from the historical source. Legacy OFF-A/OFF-B/ON Jobs
+`1223707/1223708` showed OFF-A versus OFF-B drift as well, despite exact route
+hash equality over `136/136` windows. The first downstream warning points to
+memory-efficient CUDA SDPA in `vit_adapter.py` after routing.
+
+Strict math-SDPA Jobs `1223727/1223728` emitted no nondeterminism warning and
+made OFF-A, OFF-B and ON prediction files byte-identical: G1 SHA-256
+`578860552cf02544253f88776bcc25b33d0ee3ecf7ab24a2de1079d9fa8e331e`, G2
+`f0ce98cec8abafa243bde39e0cdaeb8e73b0043f16af51355d1b7414e1d4d834`.
+Because strict math SDPA is not historical source parity, this closes observer
+neutrality but does not reopen continuous telemetry. Commit `ede8af53` adds a
+field-minimized categorical bridge and validates hard roles only. Remote focused
+dynamic tests pass `45/45`; required C3 regressions pass `20/20`.

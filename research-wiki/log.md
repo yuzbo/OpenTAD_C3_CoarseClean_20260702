@@ -2659,3 +2659,34 @@ append_only: true
   role-diagnostic contract. Local Python/Bash/whitespace checks pass; Windows Torch
   tests stop at the known `c10.dll` boundary. Remote validation and execution are
   pending; no Pro discussion or model repair precedes this pair.
+
+- 2026-08-06: closed the role-observer integrity chain. Same-GPU serial pair Jobs
+  `1223686/1223687` showed OFF/ON neutrality but historical-source drift. Legacy
+  OFF-A/OFF-B/ON Jobs `1223707/1223708` then showed baseline OFF/OFF prediction
+  drift while all 136 route hashes remained equal. The first downstream warning
+  localized ordinary replay nondeterminism to memory-efficient CUDA SDPA after
+  routing. Strict math-SDPA Jobs `1223727/1223728` emitted zero such warnings and
+  produced byte-identical OFF-A/OFF-B/ON predictions in each arm (G1
+  `57886055...331e`, G2 `f0ce98ce...d834`). This proves observer neutrality but
+  does not restore historical continuous-score or performance comparability.
+
+- 2026-08-06: exact source `ede8af53d47c723a30902063f2f2bcdf260d340c`
+  implemented a field-minimized categorical invariance bridge. It validated
+  exact legacy/strict hard-role equality for `136/136` windows while keeping
+  continuous modifiers, margins, geometry, predictions and performance closed.
+  Authorized all-valid context/ROI/residual counts are
+  `0/2,671/11,486,609` for G1 and `0/984/11,488,296` for G2; residual dominates
+  every window before global top-B. Selected counts remain `0/7/3,342,329` and
+  `0/0/3,342,336`. Thus branch-offset calibration is the first identifiable
+  repair target; no Hybrid, floor, accuracy, cost, M3 or paper claim opens.
+
+- 2026-08-06: preregistered
+  `exp:scnr-residual-window-centering-probe-v1` at stage `designed`. The only
+  intervention subtracts the differentiable all-valid 384-tubelet-window mean
+  from `delta_residual` immediately before unchanged Scheme-A role argmax/top-B.
+  `q_base`, ROI, exact-zero context, exact B, fully dynamic K including zero,
+  ragged execution and masked-zero carrier remain unchanged; default mode is
+  `none`. A strict deterministic frozen-G1/G2 checkpoint mechanism probe must
+  restore structural context/ROI reachability and select at least one
+  non-residual token before matched training is even designed. No further Pro
+  discussion is needed for this one-variable probe.

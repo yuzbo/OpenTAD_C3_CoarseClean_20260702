@@ -245,16 +245,31 @@ updated: 2026-08-06
    identity overlaps only `76,660/80,000` (G1) and `78,387/80,000` (G2). Do not
    inspect the sealed role telemetry or blame instrumentation without a matched
    causal control.
-0. The only next integrity run is a serial role-OFF/role-ON pair inside the same
-   Slurm job on the same visible GPU. Keep the exact evaluation path,
-   config/checkpoint/seed/population, source formal telemetry, `profile=false` and
-   exact B; change only the role-calibration extension. OFF/ON raw prediction SHA
-   equality is mandatory. Under the frozen diagnostic contract, source raw parity
-   is also required before role statistics may be interpreted.
-0. If OFF and ON match exactly but both differ from the historical source, this
-   establishes instrumentation neutrality only. It does not automatically amend
-   the frozen source-parity contract, authorize role analysis, or create Hybrid,
-   floor, accuracy, cost, M3, official-test or paper evidence.
+0. Do not repeat the same-GPU neutrality or strict triplet integrity runs. Pair
+   Jobs `1223686/1223687` establish OFF/ON neutrality. Legacy triplet Jobs
+   `1223707/1223708` show OFF-A/OFF-B prediction drift despite exact route hashes;
+   strict math-SDPA Jobs `1223727/1223728` make OFF-A=OFF-B=ON exactly. The cause
+   is downstream memory-efficient CUDA SDPA replay nondeterminism, not role-route
+   mutation. Strict backend output is not historical prediction parity.
+0. Only the `ede8af53` field-minimized categorical bridge may cross that backend
+   boundary. It authorizes hard role categories, for which all 136 legacy/strict
+   windows match exactly. Never use it to recover continuous modifiers, margins,
+   geometry, predictions, mAP, cost, floor causality, or complementarity.
+0. Authorized categorical evidence shows pre-top-B residual dominance:
+   all-valid G1 `0/2,671/11,486,609`, G2 `0/984/11,488,296`; selected counts retain
+   the M2 collapse. Do not blame global top-B for squeezing an already diverse
+   role partition.
+0. The first model-repair candidate may change only the additive residual offset
+   by subtracting its differentiable all-valid full-window mean. Do not combine
+   the first probe with per-tubelet centering, RMS/temperature/bounding,
+   ROI-conditioned complement, fixed quotas, target fractions, reassignment,
+   `q_ctx`, a new loss, or a budget change.
+0. A frozen-checkpoint centering probe is mechanism evidence only. It must use
+   strict deterministic replay and preserve exact B, fully dynamic K including
+   zero, true ragged execution, masked-zero carrier and no-leak routing. If both
+   ROI/context are not reachable among valid candidates or no non-residual token
+   is selected, stop before training. A pass authorizes only a new matched
+   development-training protocol, not M3, official test, efficiency or a claim.
 0. The aggregate G1 end-to-end p50/energy disadvantage is cold-order-sensitive:
    model-forward p50 differs by only `+0.438%`, and G1 pass 0 is the host/input
    outlier. Never claim that the 1-cell model intrinsically costs `+2.845%` from

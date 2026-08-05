@@ -2,9 +2,9 @@
 type: experiment
 node_id: exp:scnr-dynamic-role-calibration-diagnostic-v1
 title: "SCNR dynamic role-calibration diagnostic v1"
-stage: implemented
-status: prediction_parity_failed_pair_neutrality_implemented_pending_remote
-outcome: no_valid_role_calibration_result
+stage: tested
+status: categorical_role_collapse_supported_continuous_fields_closed
+outcome: residual_dominates_before_global_top_b
 added: 2026-08-06
 updated: 2026-08-06
 ---
@@ -116,14 +116,36 @@ same ordered 40-video key set and 80,000 prediction records. Exact
 The original M2 jobs ran on `g0024`, whereas these replays ran on `g0044/g0048`,
 so cross-node rerun drift and instrumentation effect remain confounded.
 
-## Registered successor
+## Integrity closure and authorized categorical result
 
-The only authorized successor is
-`exp:scnr-role-instrumentation-neutrality-pair-v1`. It executes source-formal
-telemetry with role calibration OFF, then ON, serially in one Slurm job on one
-visible GPU. Evaluation path, config, checkpoint, seed, 136-window population,
-exact `B`, formal telemetry and `profile=false` are common; only the
-role-calibration extension and its provenance/output path differ. OFF/ON raw
-prediction SHA equality is a hard gate. Source parity remains required before the
-original frozen role diagnostic can be interpreted. Local Python/Bash/whitespace
-checks pass; remote tests and execution are pending.
+The same-GPU pair at source `37ca2b95` proved OFF/ON instrumentation neutrality,
+but both arms drifted from the historical M2 prediction. A legacy-backend
+OFF-A/OFF-B/ON triplet at `916e96c0` then proved baseline replay
+nondeterminism even with identical route telemetry. The first emitted warning
+localized it to memory-efficient CUDA scaled-dot-product attention downstream of
+the selected support. Under strict math SDPA, triplet source `33c8c928` produced
+byte-identical OFF-A/OFF-B/ON predictions in both G1 and G2 with zero
+nondeterminism warnings. This proves observer neutrality but changes the
+historical backend, so continuous modifiers, margins, geometry and predictions
+remain outside the original frozen contract.
+
+The independently validated categorical bridge at `ede8af53` compares only
+hard role categories and verifies exact legacy-versus-strict equality for every
+one of the 136 windows. It authorizes the following categorical result:
+
+- G1 all-valid context/ROI/residual is
+  `0/2,671/11,486,609`; selected is `0/7/3,342,329`.
+- G2 all-valid context/ROI/residual is
+  `0/984/11,488,296`; selected is `0/0/3,342,336`.
+- residual is the dominant all-valid role in `136/136` windows in both arms.
+
+Therefore collapse occurs at modifier argmax before global top-B; top-B is not
+eliminating an already diverse three-role allocation. The evidence supports
+narrowing the first repair to branch-offset calibration. It does not expose
+continuous scale/margin size or authorize mAP, cost, floor causality,
+complementarity, M3, official test, or paper claims.
+
+The registered successor is
+`exp:scnr-residual-window-centering-probe-v1`: an offset-only, no-training frozen-
+checkpoint mechanism probe. It introduces no quota or `q_ctx`, and must pass its
+structural role-reachability and integrity gates before matched retraining.
