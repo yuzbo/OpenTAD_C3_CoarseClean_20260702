@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import json
 from pathlib import Path
@@ -833,6 +834,11 @@ def test_dynamic_floor_m2_execution_sources_freeze_dag_and_cost_scope():
         )
     )
     assert "for pass_index, arm in enumerate(DYNAMIC_FLOOR_M2_COST_ORDER)" in profiler
+    profiler_names = {
+        node.id for node in ast.walk(ast.parse(profiler)) if isinstance(node, ast.Name)
+    }
+    assert "_cost_config" not in profiler_names
+    assert "build_dynamic_floor_m2_cost_config" in profiler_names
     assert '"diagnostic_telemetry_inside_timed_forward": False' in profiler
     assert '"execution_commit": expected_execution_commit' in profiler
     assert "--expected-execution-commit" in scripts

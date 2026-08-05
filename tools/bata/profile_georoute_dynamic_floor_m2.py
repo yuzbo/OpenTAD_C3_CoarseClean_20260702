@@ -648,7 +648,9 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     cost_population_hashes = set()
     for arm, stage in stages.items():
         preflight_dataset = build_dataset(
-            copy.deepcopy(_cost_config(stage, arm=arm).dataset.test)
+            copy.deepcopy(
+                build_dynamic_floor_m2_cost_config(stage, arm=arm).dataset.test
+            )
         )
         _, cost_population, telemetry_population = _population_descriptor(
             preflight_dataset
