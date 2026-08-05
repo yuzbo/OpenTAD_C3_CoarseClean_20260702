@@ -1427,7 +1427,26 @@ updated: 2026-08-05
   live-controller dependency targets. Recovery deployment self/file SHA-256 are
   `12cbbb3f609adaa57ca9b29bf930bd124cd35c5f33aaa966fc6a9529c3d1de89` /
   `f67703bf4dc5d066f64a1bafa36d49be133a7b6701507ef8ef31d651a7d2fba7`.
-  This is `experiment_running`; no partial cost or floor inference is registered.
+  Job `1222672` later failed `1:0` at the first timed sample with generic missing
+  CUDA-stage error; source tracing proved direct `sparse_adapter.forward_ragged`
+  bypassed the registered module-forward hook. Finalizer `1222673` completed and
+  sealed `INCOMPLETE_NO_FLOOR_INFERENCE` (self-hash
+  `1ad47395f2e713d8c56f9a29df33a281dcfd29cfc1cb30be7ace63243de96275`),
+  with no paired profile or contrasts. Cost/finalization archives are
+  `cost_failed_job1222672/` (manifest SHA-256
+  `be5d15d07ee5ff4f028351d38c5987c1762c96020895b7970049efe96e1cda9a`)
+  and `control/finalization_incomplete_job1222673.json` (file SHA-256
+  `6cf809889d4dffd4db2b2c3e9c55a4b5e37dfe682944719a1cdc88ea3d294358`).
+- Dynamic SCNR M2 second cost-only recovery, 2026-08-05. Exact clean execution
+  `6341927f099bd59e0be6aff9b4b1062b4f76150e` instruments the directly invoked
+  ragged adapter method, adds stage-specific fail-closed diagnostics, passes local
+  `16/16`, remote Linux/Torch `51/51`, and cost precheck; no `opentad/` or
+  `configs/` file changed. After revalidating the frozen arms, Jobs
+  `1222700/1222701` were held, bound to recovery-v2 receipt self/file SHA-256
+  `9370e5908718e0c6fef857c3b29ddeefbe5701bbc6a1c221f7ad7f828dac99e7` /
+  `4968593b4172df4bbe7feeec9bad623ae188ffeeadedbd2b87c48a0bfa811fa3`,
+  validated, and released. Actual Slurm DAG is cost none and finalizer
+  `afterany:1222700`. State is `experiment_running`; no partial inference exists.
 
 ## 外部附件
 

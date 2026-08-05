@@ -182,6 +182,14 @@ tubelet, or any mismatch between selected and executed tokens.
   aged out as accepted controller dependency targets, the actual scheduler DAG is
   cost with no dependency and finalizer `afterany:1222672`; this is explicitly
   distinguished from the frozen logical DAG in the receipt.
+- Cost `1222672` then failed at its first timed sample because
+  `sparse_adapter.forward_ragged` is called directly and bypassed the registered
+  module-forward hook, leaving `sparse_adapter_ms=0`. Finalizer `1222673` sealed
+  incomplete with all guards false; both artifacts are preserved. Exact clean
+  repair `6341927f` wraps the actually invoked method, reports invalid stage names,
+  passes local `16/16`, remote `51/51` and cost precheck, and touches no
+  model/config. No-retraining cost/finalizer Jobs `1222700/1222701` are now
+  released under recovery-v2 deployment self-hash `9370e590...ac99e7`.
 
 ## Current boundary
 
@@ -190,7 +198,7 @@ Fit-prefix health and sample-level telemetry-unit levels.  D3 has passed and
 the two floor configurations are mechanically admissible.  The M2 matched
 training/evaluation and separate full-stack cost/energy protocol is implemented
 and locally/remote tested. The cost-only replacement remains `experiment_running`:
-both arms are terminal and valid, and the required paired-cost/finalizer recovery
+both arms are terminal and valid, and the second paired-cost/finalizer recovery
 is submitted but has not yet sealed. None of the evidence above yet contains a valid complete
 development contrast with end-to-end latency/energy,
 checkpoint utility or a floor comparison; it is

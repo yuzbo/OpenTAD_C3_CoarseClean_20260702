@@ -135,18 +135,20 @@ max_chars: 8000
   the current per-window ragged ledger, records the unchanged model/runtime
   commit separately from its clean execution-repair commit, preserves both
   completed arms, and must rerun the entire counterbalanced paired-cost pass plus
-  finalizer before any metric is interpreted. Local focused checks pass `15/15`;
-  the independent clean recovery checkout
-  `c67e13e84e47d17fb48ab416c35fa0786c16f2f3` passes the exact remote focused
-  suite `50/50` and cost precheck. After revalidating the two old Slurm terminal
-  states and stage hashes, cost-only recovery Job `1222672` and fresh finalizer
-  Job `1222673` were atomically receipted and released without retraining either
-  arm. The actual Slurm DAG has no dependency on the aged-out completed arm Jobs;
-  the finalizer is `afterany:1222672`. Recovery deployment self/file SHA-256 are
-  `12cbbb3f609adaa57ca9b29bf930bd124cd35c5f33aaa966fc6a9529c3d1de89` /
-  `f67703bf4dc5d066f64a1bafa36d49be133a7b6701507ef8ef31d651a7d2fba7`.
-  This remains `experiment_running`; no live/partial latency, energy, floor
-  verdict or empirical support exists yet.
+  finalizer before any metric is interpreted. First recovery execution `c67e13e8`
+  passed remote `50/50`, but cost Job `1222672` failed because dynamic SCNR calls
+  `sparse_adapter.forward_ragged` directly and therefore bypassed the profiler's
+  module-forward hook; finalizer `1222673` again sealed incomplete with every
+  promotion guard false. Exact execution-only repair
+  `6341927f099bd59e0be6aff9b4b1062b4f76150e` instruments the real ragged method,
+  names invalid stages, passes local `16/16`, remote `51/51` and cost precheck,
+  and changes no model/config. After revalidating unchanged arm states/hashes,
+  cost Job `1222700` and finalizer `1222701` were immutably receipted and released
+  without retraining. Actual Slurm dependencies are cost none and finalizer
+  `afterany:1222700`; receipt self/file SHA-256 are
+  `9370e5908718e0c6fef857c3b29ddeefbe5701bbc6a1c221f7ad7f828dac99e7` /
+  `4968593b4172df4bbe7feeec9bad623ae188ffeeadedbd2b87c48a0bfa811fa3`.
+  State remains `experiment_running`; no live/partial cost or floor evidence exists.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

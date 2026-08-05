@@ -2528,3 +2528,18 @@ append_only: true
   `f67703bf4dc5d066f64a1bafa36d49be133a7b6701507ef8ef31d651a7d2fba7`.
   Failed artifacts remain archived. Status stays `experiment_running`; no live or
   partial pass metric is interpreted.
+
+- 2026-08-05: first cost recovery `1222672` failed `1:0` at its first timed sample
+  because `sparse_adapter.forward_ragged` is invoked directly and bypassed the
+  profiler's module-forward hook. Finalizer `1222673` completed and again sealed
+  `INCOMPLETE_NO_FLOOR_INFERENCE`; no paired profile, contrast or promotion was
+  produced or interpreted. Its cost and finalization were preserved under
+  `cost_failed_job1222672/` and
+  `control/finalization_incomplete_job1222673.json`. Exact execution-only repair
+  `6341927f` instruments the actual ragged method and names invalid stages; local
+  `16/16`, remote `51/51` and cost precheck pass, while model/config remain
+  unchanged. After arm state/hash revalidation, held cost/finalizer Jobs
+  `1222700/1222701` were bound to recovery-v2 receipt self/file SHA-256
+  `9370e5908718e0c6fef857c3b29ddeefbe5701bbc6a1c221f7ad7f828dac99e7` /
+  `4968593b4172df4bbe7feeec9bad623ae188ffeeadedbd2b87c48a0bfa811fa3`,
+  validated, and released. Status remains `experiment_running`; no live pass is read.

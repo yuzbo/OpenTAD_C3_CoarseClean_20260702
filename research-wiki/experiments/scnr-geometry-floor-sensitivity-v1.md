@@ -131,6 +131,16 @@ checkout 通过远端 focused `50/50` 与 cost precheck；它没有修改 `opent
 这一差异。回执 self/file SHA-256 为
 `12cbbb3f609adaa57ca9b29bf930bd124cd35c5f33aaa966fc6a9529c3d1de89` /
 `f67703bf4dc5d066f64a1bafa36d49be133a7b6701507ef8ef31d651a7d2fba7`。
+Job `1222672` 在首个 timed sample 因 `sparse_adapter_ms=0` 失败：动态路径直接调用
+`sparse_adapter.forward_ragged`，而旧 profiler 的 module hook 只在
+`nn.Module.__call__` 时触发。Job `1222673` 正确封口为 incomplete；两者工件已归档，
+未读取任何中间数值。最小 execution-only 修复
+`6341927f099bd59e0be6aff9b4b1062b4f76150e` 改为包裹真实 ragged 方法并列出无效
+stage，本地 `16/16`、远端 `51/51` 与 cost precheck 通过，且 `opentad/`、
+`configs/` 不变。重新核验两臂后，cost `1222700` 与 finalizer `1222701` 已通过
+self-hashed recovery-v2 receipt 原子释放；receipt self/file SHA-256 为
+`9370e5908718e0c6fef857c3b29ddeefbe5701bbc6a1c221f7ad7f828dac99e7` /
+`4968593b4172df4bbe7feeec9bad623ae188ffeeadedbd2b87c48a0bfa811fa3`。
 状态仍是 `experiment_running`，尚无可解释的成本或 floor 结果。
 
 P0 中三角色计数、`K_t` 范围、loss 或梯度只能证明路径非退化且可训练，不能用于

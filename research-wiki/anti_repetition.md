@@ -180,18 +180,20 @@ updated: 2026-08-05
    execution-repair commit that records model runtime `6ee97336`, and then runs a
    fresh fail-closed finalizer. The original clean runtime checkout must remain
    untouched.
-0. The admitted M2 recovery is now paired-cost Job `1222672` from exact clean
-   execution source `c67e13e84e47d17fb48ab416c35fa0786c16f2f3`, followed by
-   finalizer Job `1222673`. The old completed Jobs are no longer accepted as live
-   Slurm dependency targets, so the truthful submitted scheduler DAG is cost with
-   no dependency and finalizer `afterany:1222672`; the self-hashed recovery receipt
-   separately retains the frozen scientific dependency contract. Do not describe
-   this as a new training run or as scheduler `afterok` on `1216180/1216181`.
-   Failed cost artifacts and incomplete finalization are preserved as
-   `cost_failed_job1216182/` and
-   `control/finalization_incomplete_job1216183.json`. Do not inspect or report
-   live pass metrics; wait for all four counterbalanced passes and the fresh
-   fail-closed finalization.
+0. Recovery Jobs `1222672/1222673` are terminal incomplete, not evidence: the
+   profiler attached an `nn.Module` forward hook to the sparse adapter while the
+   real route directly called `forward_ragged`, so `sparse_adapter_ms` was zero.
+   Preserve their artifacts as `cost_failed_job1222672/` and
+   `control/finalization_incomplete_job1222673.json`; do not reuse execution
+   commit `c67e13e8` for cost.
+0. The admitted M2 recovery is now paired-cost Job `1222700` from exact clean
+   execution source `6341927f099bd59e0be6aff9b4b1062b4f76150e`, followed by
+   finalizer Job `1222701`. It instruments the actually invoked
+   `sparse_adapter.forward_ragged` method and changes no model/config. The truthful
+   scheduler DAG is cost with no dependency and finalizer `afterany:1222700`; the
+   self-hashed receipt separately retains the frozen scientific DAG. Do not call
+   this retraining, scheduler `afterok` on the old arms, or a result. Do not inspect
+   live pass metrics; wait for all four passes and fresh fail-closed finalization.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new
