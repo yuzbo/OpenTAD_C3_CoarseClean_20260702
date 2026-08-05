@@ -534,6 +534,13 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         )
         self.geometry_projection_enabled = bool(getattr(custom_cfg, "georoute_geometry_projection_enabled", True))
         self.diagnostic_telemetry_enabled = bool(getattr(custom_cfg, "georoute_diagnostic_telemetry_enabled", False))
+        self.role_calibration_telemetry_enabled = bool(
+            getattr(
+                custom_cfg,
+                "georoute_role_calibration_telemetry_enabled",
+                False,
+            )
+        )
         self.amp_diagnostic_enabled = bool(
             getattr(custom_cfg, "georoute_amp_diagnostic_enabled", False)
         )
@@ -751,6 +758,13 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 raise ValueError(
                     "dynamic SCNR requires a runtime native-cell ROI floor"
                 )
+        if self.role_calibration_telemetry_enabled and (
+            self.route_mode not in DYNAMIC_ROUTE_MODES
+            or not self.diagnostic_telemetry_enabled
+        ):
+            raise ValueError(
+                "role calibration telemetry requires dynamic SCNR diagnostic replay"
+            )
         super().__init__(cfg)
         if int(self.model.backbone.patch_size) != self.patch_size:
             raise ValueError("GeoRoute patch size must match the loaded VideoMAE")
@@ -1220,6 +1234,196 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         pooled = (native * probability).sum(dim=-1) / mass
         return pooled.permute(0, 2, 1).contiguous()
 
+    @staticmethod
+    def _dynamic_calibration_distribution(values: torch.Tensor) -> dict[str, Any]:
+        """Return a compact, mergeable diagnostic distribution."""
+
+        values = values.detach().flatten().to(device="cpu", dtype=torch.float32)
+        if values.numel() <= 0 or not bool(torch.isfinite(values).all().item()):
+            raise ValueError("dynamic role calibration values must be finite and non-empty")
+        quantiles = torch.quantile(
+            values,
+            torch.tensor([0.05, 0.25, 0.50, 0.75, 0.95]),
+        )
+        return {
+            "count": int(values.numel()),
+            "min": float(values.min().item()),
+            "p05": float(quantiles[0].item()),
+            "p25": float(quantiles[1].item()),
+            "p50": float(quantiles[2].item()),
+            "p75": float(quantiles[3].item()),
+            "p95": float(quantiles[4].item()),
+            "max": float(values.max().item()),
+            "mean": float(values.mean().item()),
+            "std_population": float(values.std(unbiased=False).item()),
+            "negative_count": int((values < 0.0).sum().item()),
+            "zero_count": int((values == 0.0).sum().item()),
+            "positive_count": int((values > 0.0).sum().item()),
+        }
+
+    @classmethod
+    def _dynamic_policy_calibration_telemetry(
+        cls,
+        *,
+        route: Mapping[str, Any],
+        q_base: torch.Tensor,
+        delta_roi: torch.Tensor,
+        delta_residual: torch.Tensor,
+        valid_patch_mask: torch.Tensor,
+    ) -> dict[str, Any]:
+        """Diagnose role identifiability without imposing role quotas."""
+
+        if (
+            q_base.ndim != 3
+            or q_base.shape[0] != 1
+            or delta_roi.shape != q_base.shape
+            or delta_residual.shape != q_base.shape
+            or valid_patch_mask.shape != q_base.shape
+            or valid_patch_mask.dtype != torch.bool
+        ):
+            raise ValueError(
+                "dynamic role calibration requires aligned one-sample policy fields"
+            )
+        fields = (q_base, delta_roi, delta_residual)
+        if not all(bool(torch.isfinite(value).all().item()) for value in fields):
+            raise FloatingPointError("dynamic role calibration observed nonfinite policy fields")
+
+        valid = valid_patch_mask.detach().to(device="cpu", dtype=torch.bool)
+        selected = route["selected_mask"].detach().to(device="cpu", dtype=torch.bool)
+        if (
+            selected.shape != valid.shape
+            or not bool((selected <= valid).all().item())
+            or int(selected.sum().item()) != int(route["window_budget"])
+        ):
+            raise RuntimeError("dynamic role calibration received an invalid hard route")
+        unselected = valid & ~selected
+        if not bool(valid.any().item()) or not bool(selected.any().item()) or not bool(
+            unselected.any().item()
+        ):
+            raise RuntimeError("dynamic role calibration requires selected and unselected support")
+
+        q_base_cpu, delta_roi_cpu, delta_residual_cpu = (
+            value.detach().to(device="cpu", dtype=torch.float32) for value in fields
+        )
+        modifiers = torch.stack(
+            (torch.zeros_like(q_base_cpu), delta_roi_cpu, delta_residual_cpu),
+            dim=-1,
+        )
+        winner_values, winner_roles = modifiers.max(dim=-1)
+        winner_margin = torch.topk(modifiers, k=2, dim=-1).values
+        winner_margin = winner_margin[..., 0] - winner_margin[..., 1]
+        role_names = ("context", "roi", "residual")
+
+        def _role_counts(mask: torch.Tensor) -> dict[str, int]:
+            counts = torch.bincount(
+                winner_roles.masked_select(mask),
+                minlength=len(role_names),
+            )
+            return {
+                name: int(counts[index].item())
+                for index, name in enumerate(role_names)
+            }
+
+        valid_role_counts = _role_counts(valid)
+        selected_role_counts = _role_counts(selected)
+        unselected_role_counts = _role_counts(unselected)
+        expected_selected = {
+            name: int(route["role_counts"][name]) for name in role_names
+        }
+        if selected_role_counts != expected_selected:
+            raise RuntimeError(
+                "dynamic role calibration disagrees with selected role receipt"
+            )
+        valid_count = int(valid.sum().item())
+        selected_count = int(selected.sum().item())
+        valid_role_fractions = {
+            name: count / float(valid_count)
+            for name, count in valid_role_counts.items()
+        }
+        selected_role_fractions = {
+            name: count / float(selected_count)
+            for name, count in selected_role_counts.items()
+        }
+        unselected_count = int(unselected.sum().item())
+        unselected_role_fractions = {
+            name: count / float(unselected_count)
+            for name, count in unselected_role_counts.items()
+        }
+        dominant_role = max(
+            role_names,
+            key=lambda name: (selected_role_counts[name], -role_names.index(name)),
+        )
+
+        def _scoped_distribution(value: torch.Tensor) -> dict[str, Any]:
+            return {
+                "valid": cls._dynamic_calibration_distribution(
+                    value.masked_select(valid)
+                ),
+                "selected": cls._dynamic_calibration_distribution(
+                    value.masked_select(selected)
+                ),
+                "unselected": cls._dynamic_calibration_distribution(
+                    value.masked_select(unselected)
+                ),
+            }
+
+        return {
+            "schema_version": "scnr_dynamic_role_calibration_window_v1",
+            "measurement_scope": "accuracy_replay_only_excluded_from_timed_cost",
+            "diagnostic_only": True,
+            "changes_route_or_execution": False,
+            "role_target_fractions_used": False,
+            "fixed_role_quota_used": False,
+            "q_base_shared_across_roles": True,
+            "context_modifier_definition": "exact_zero_baseline_no_learned_q_ctx",
+            "valid_candidate_count": valid_count,
+            "selected_candidate_count": selected_count,
+            "unselected_candidate_count": unselected_count,
+            "role_order": list(role_names),
+            "valid_role_counts": valid_role_counts,
+            "valid_role_fractions": valid_role_fractions,
+            "selected_role_counts": selected_role_counts,
+            "selected_role_fractions": selected_role_fractions,
+            "unselected_role_counts": unselected_role_counts,
+            "unselected_role_fractions": unselected_role_fractions,
+            "selected_missing_roles": [
+                name for name in role_names if selected_role_counts[name] == 0
+            ],
+            "selected_dominant_role": dominant_role,
+            "selected_dominant_role_fraction": selected_role_fractions[
+                dominant_role
+            ],
+            "selected_over_valid_role_fraction_ratio": {
+                name: (
+                    selected_role_fractions[name] / valid_role_fractions[name]
+                    if valid_role_fractions[name] > 0.0
+                    else None
+                )
+                for name in role_names
+            },
+            "fields": {
+                "q_base": _scoped_distribution(q_base_cpu),
+                "delta_roi": _scoped_distribution(delta_roi_cpu),
+                "delta_residual": _scoped_distribution(delta_residual_cpu),
+                "residual_minus_roi": _scoped_distribution(
+                    delta_residual_cpu - delta_roi_cpu
+                ),
+                "roi_minus_context": _scoped_distribution(delta_roi_cpu),
+                "residual_minus_context": _scoped_distribution(
+                    delta_residual_cpu
+                ),
+                "winning_modifier": _scoped_distribution(winner_values),
+                "winner_top1_minus_top2_margin": _scoped_distribution(
+                    winner_margin
+                ),
+            },
+            "gt_for_route_used": False,
+            "teacher_used": False,
+            "oracle_used": False,
+            "official_test_opened": False,
+            "paper_claim_allowed": False,
+        }
+
     @classmethod
     def _dynamic_diagnostic_route_telemetry(
         cls,
@@ -1230,6 +1434,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         minimum_extent_wh: tuple[float, float],
         maximum_extent_wh: tuple[float, float],
         packed: Mapping[str, Any],
+        policy_calibration: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Serialize result-blind dynamic geometry and execution diagnostics."""
 
@@ -1368,7 +1573,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         saturation_fraction = 0.01
         center_steps = centers[1:] - centers[:-1]
         extent_steps = extents[1:] - extents[:-1]
-        return {
+        payload = {
             "schema_version": "georoute_dynamic_diagnostic_window_telemetry_v1",
             "measurement_scope": "accuracy_replay_only_excluded_from_timed_cost",
             "batch_size": 1,
@@ -1455,6 +1660,16 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "official_test_opened": False,
             "paper_claim_allowed": False,
         }
+        if policy_calibration is not None:
+            if (
+                policy_calibration.get("schema_version")
+                != "scnr_dynamic_role_calibration_window_v1"
+                or policy_calibration.get("diagnostic_only") is not True
+                or policy_calibration.get("changes_route_or_execution") is not False
+            ):
+                raise ValueError("dynamic role calibration telemetry is invalid")
+            payload["policy_calibration"] = dict(policy_calibration)
+        return payload
 
     @staticmethod
     def _route_score_statistics(
@@ -1990,6 +2205,15 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         )
         diagnostic_telemetry = None
         if self.diagnostic_telemetry_enabled:
+            policy_calibration = None
+            if self.role_calibration_telemetry_enabled:
+                policy_calibration = self._dynamic_policy_calibration_telemetry(
+                    route=route,
+                    q_base=q_base,
+                    delta_roi=delta_roi,
+                    delta_residual=delta_residual,
+                    valid_patch_mask=valid_patch_mask,
+                )
             diagnostic_telemetry = self._dynamic_diagnostic_route_telemetry(
                 route=route,
                 geometry=geometry,
@@ -2000,6 +2224,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                     self.max_roi_extent,
                 ),
                 packed=packed,
+                policy_calibration=policy_calibration,
             )
         self.latest_georoute_audit = {
             "schema_version": GEOROUTE_BACKBONE_SCHEMA,
@@ -2099,6 +2324,10 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             self.latest_georoute_audit[
                 "diagnostic_telemetry"
             ] = diagnostic_telemetry
+        if self.role_calibration_telemetry_enabled:
+            self.latest_georoute_audit[
+                "role_calibration_telemetry_enabled"
+            ] = True
         return output.to(torch.float32)
 
     def forward(self, frames, masks=None):

@@ -3,10 +3,10 @@ type: idea
 node_id: idea:structured-complementary-native-routing
 title: "Structured Complementary Native Routing for offline TAD"
 stage: tested
-status: pilot_terminal_finalizer_input_failure_no_empirical_support
+status: dynamic_m2_terminal_role_collapse_diagnosis_implemented
 tags: ["offline-tad", "native-token", "roi", "token-selection", "structured-routing", "adatad"]
 added: 2026-08-02
-updated: 2026-08-02
+updated: 2026-08-06
 ---
 
 # Structured Complementary Native Routing for Offline TAD
@@ -159,15 +159,20 @@ required C3 regression set `194 passed, 1 skipped` in a clean N16R4 Linux/Torch
 snapshot. This is component-level `tested`, not a complete dynamic Stage-1
 route, empirical floor optimum, performance result, or paper evidence.
 
-## Principle
+## Current dynamic principle
 
-For every one of 384 native tubelets over an 11x20 patch grid, select exactly
-64 valid patches as 8 deterministic context + 28 ROI + 28 residual. ROI and
-residual are sampled without replacement by an explicit conditional
-Plackett-Luce factorization. The detector-derived risk is exactly Focal
-classification plus DIoU regression; a scalar action-independent EMA baseline
-reduces variance. Route sampling uses a private RNG keyed by study seed,
-successful update, rank, and role.
+Over the full `384 x 11 x 20` native lattice, select exactly one configurable
+window total `B` by global physical-token top-B. `K_t` and context/ROI/residual
+counts are induced by this union and may be zero; no `8/28/28`, per-tubelet K,
+context floor, or role target fraction belongs to the dynamic main method. The
+fixed-quota PL construction remains only the historical causal probe.
+
+The current Scheme-A parameterization is
+`u=q_base+max(0,delta_roi,delta_residual)`. M2 has now shown that this formula is
+not sufficient by itself to make the roles identifiable: an unconstrained
+residual head can dominate the geometry-derived signed ROI modifier and exact
+zero context baseline. The next causal question is modifier calibration, not
+whether fixed quotas should be restored.
 
 All detector-visible geometry/coordinate side channels are disabled. The
 pretrained VideoMAE absolute position remains on. Geometry changes membership
@@ -175,8 +180,8 @@ only, and a temporal trajectory-shift control tests content alignment.
 
 ## Distinctive design
 
-- fixed role quotas make the causal component comparisons identifiable;
-- context supplies a deterministic coverage floor without a coverage loss;
+- dynamic roles and `K_t` are observed rather than prescribed;
+- context is the exact zero-modifier outcome, not a deterministic coverage floor;
 - ROI supplies contiguous geometry-conditioned evidence;
 - residual supplies non-ROI complementary evidence;
 - complete conditional exclusion gives a valid joint hard-policy likelihood;
@@ -208,6 +213,16 @@ sealed result has empty contrasts, so the route is not empirically supported,
 paper-ready, Online TAD, Geometry Zoom, or a complete system-efficiency result.
 A separately versioned immutable-input recovery finalizer is required before
 reading performance.
+
+Dynamic M2 later completed independently at runtime `6ee97336`, Jobs
+`1216180/1216181/1222889/1223310`. It supports true dynamic `K_t` including
+zeros, exact-B ragged execution and a large single-seed descriptive G1-over-G2
+accuracy contrast. It does not support the intended Hybrid mechanism: selected
+roles collapsed to residual and neither geometry floor was active. Accordingly,
+the route remains a live research candidate but is not empirically supported as
+ROI/residual complementarity. A result-blind calibration replay must measure
+`delta_roi`, `delta_residual`, zero-baseline wins and role margins on all valid
+versus selected candidates before any model repair or M3 floor confirmation.
 
 ## Pro review
 

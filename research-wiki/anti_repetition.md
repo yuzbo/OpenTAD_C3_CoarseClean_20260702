@@ -210,14 +210,36 @@ updated: 2026-08-05
    `control/finalization_incomplete_job1222890.json`; this failure invalidates only
    that finalization, not the current profile. Do not interpret profile values
    before a fresh valid finalizer.
-0. The admitted M2 recovery is now finalizer-only Job `1223310` from exact clean
+0. The final M2 recovery was finalizer-only Job `1223310` from exact clean
    execution source `75e2adc86877f002e10626ee4011104b60b0ce49`. Its receipt binds
    model runtime `6ee97336`, cost execution `42923d9f`, and finalizer execution
    `75e2adc8` as distinct identities; the existing cost profile is validated
    against its own execution commit. No arm retraining/resume or cost replay is
-   allowed. Do not collapse these three commits, run the finalizer from the old
-   runtime checkout, or call dry-run validation a result. Wait for the new atomic
-   finalization before reading descriptive values.
+   allowed. It completed and sealed descriptive-only PASS. Do not collapse these
+   three commits, run another finalizer/cost replay, or treat the terminal PASS as
+   a single-seed floor selection, official-test opening, or paper result.
+0. M2 does not validate an operational three-role Hybrid. G1 selected
+   context/ROI/residual `0/7/3,342,329`, while G2 selected
+   `0/0/3,342,336`. Never describe those runs as ROI/residual complementarity or
+   use the large G1 accuracy lead to hide role collapse. `K_t=0` is operational,
+   but the role mechanism is effectively residual-only.
+0. Neither M2 floor was active in the accuracy replay: both width and height
+   floor-saturation rates are zero and all observed extents exceed the bound.
+   Therefore `+5.78 pp` Avg-mAP and `+6.22 pp` high-IoU for G1 over G2 are
+   single-seed descriptive training contrasts, not causal proof that the 1-cell
+   lower bound is better. Do not launch floor-selection M3 before modifier-scale
+   and role-margin diagnosis restores an identifiable dynamic Hybrid.
+0. Do not repair M2 role collapse with fixed context/ROI/residual counts, target
+   role fractions, post-hoc token reassignment, or a new independent `q_ctx`
+   head. First measure all-valid versus selected `delta_roi`, `delta_residual`,
+   zero-baseline wins and top1-top2 margins out of band, preserve exact B and
+   prediction hashes, then test minimal scale-identifiability interventions as
+   separately trained ablations.
+0. The aggregate G1 end-to-end p50/energy disadvantage is cold-order-sensitive:
+   model-forward p50 differs by only `+0.438%`, and G1 pass 0 is the host/input
+   outlier. Never claim that the 1-cell model intrinsically costs `+2.845%` from
+   this ABBA aggregate. A later cost confirmation must mirror ABBA with BAAB (or
+   otherwise randomize first-arm cold state) and keep the same physical GPU.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

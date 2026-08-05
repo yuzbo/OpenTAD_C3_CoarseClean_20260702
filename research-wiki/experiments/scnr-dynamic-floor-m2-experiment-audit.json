@@ -1,0 +1,44 @@
+{
+  "audit_type": "Type-A_same-family",
+  "cross_family_overlay_available": false,
+  "date": "2026-08-06",
+  "decision": "PASS_COMPLETE_DESCRIPTIVE_ONLY",
+  "experiment": "scnr_dynamic_floor_m2_v1",
+  "gates": {
+    "A_population_no_leak": "PASS",
+    "B_training_checkpoint_lineage": "PASS",
+    "C_exact_dynamic_execution": "PASS",
+    "D_accuracy_telemetry": "PASS",
+    "E_full_stack_cost": "PASS",
+    "F_atomic_finalization_claim_ceiling": "PASS"
+  },
+  "jobs": {
+    "cost": "1222889",
+    "finalizer": "1223310",
+    "g1": "1216180",
+    "g2": "1216181"
+  },
+  "lineage": {
+    "cost_execution_commit": "42923d9f7aaddb14368f82aacda5c77e1f857a24",
+    "finalizer_execution_commit": "75e2adc86877f002e10626ee4011104b60b0ce49",
+    "model_runtime_commit": "6ee97336775a09611f10423e07cafcea375e191a"
+  },
+  "mechanism_verdict": {
+    "floor_causality_supported": false,
+    "fully_dynamic_k_t_operational": true,
+    "hybrid_complementarity_supported": false,
+    "role_collapse_observed": true
+  },
+  "promotion_guards": {
+    "m3_confirmation_required": true,
+    "official_test_opened": false,
+    "paper_claim_allowed": false,
+    "single_seed_floor_selection_allowed": false
+  },
+  "terminal_artifacts": {
+    "cost_profile_file_sha256": "2a556d2a4ddc5822b66a6c3efe1bcddd27a7d7add8e0d7af50e3aec320802983",
+    "cost_profile_sha256": "df5529b09cf4e5fba748f11e22df4ee3f1fc68a327eee1ee4b1885d7b29ec443",
+    "finalization_file_sha256": "17ad8532d1358a10f221b657b42ac783f0e67b5317f81317507bfbf90aa564aa",
+    "finalization_sha256": "716faa0e354c2d3281cb4be5b033b3540ff03602a0aaa43e4d885ea24dbc1f7f"
+  }
+}

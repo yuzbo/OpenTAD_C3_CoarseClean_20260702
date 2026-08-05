@@ -2,11 +2,11 @@
 type: experiment
 node_id: exp:scnr-dynamic-stage1-executor-v1
 title: "SCNR-TAD dynamic exact-budget ragged executor v1"
-stage: experiment_running
-status: d4_m2_arms_complete_cost_schema_failure_recovery_tested_local
-outcome: pending
+stage: tested
+status: d4_m2_complete_dynamic_k_operational_role_collapse_observed
+outcome: executor_valid_hybrid_mechanism_not_yet_supported
 added: 2026-08-02
-updated: 2026-08-05
+updated: 2026-08-06
 ---
 
 # SCNR-TAD dynamic exact-budget ragged executor v1
@@ -72,7 +72,7 @@ tubelet, or any mismatch between selected and executed tokens.
 | D1 | Native ragged VideoMAE + coordinate-lineage Adapter | zero-padding, empty-clip, full-token parity, exact ledger KATs | tested |
 | D2 | Wrapper integration, masked-zero aggregation, scout stop-gradient and proxy schedule | one real detector backward, successful-step schedule, no-leak audit | tested |
 | D3 | Clean N16R4 Linux/CUDA no-performance P0 | exact source, clean tree, Slurm GPU, zero metric/checkpoint | passed, Job `1215358` |
-| D4 | Matched development G1/G2 floor arms | D3 PASS, sample-level dynamic telemetry, frozen full-stack cost scope | G1/G2 complete; paired-cost audit-key failure; incomplete finalizer; recovery tested locally |
+| D4 | Matched development G1/G2 floor arms | D3 PASS, sample-level dynamic telemetry, frozen full-stack cost scope | tested complete; dynamic K operational; role collapse diagnosed |
 
 ## Executed evidence
 
@@ -217,19 +217,24 @@ tubelet, or any mismatch between selected and executed tokens.
   precheck and a no-number dry run pass. Finalizer-only Job `1223310` is released
   under deployment self-hash `8fe36543...8b9f0c`, reusing the exact profile and
   changing no model/config/training/cost artifact.
+- Finalizer `1223310` completed `0:0` and atomically sealed descriptive-only PASS.
+  Across the complete accuracy population, `K_t=0` occurred in both arms, so the
+  masked-zero/dynamic-budget capability is empirically exercised. The role argmax
+  nevertheless collapsed almost completely to residual: G1 `0/7/3,342,329`, G2
+  `0/0/3,342,336` for context/ROI/residual. Existing telemetry records only final
+  role counts and global last-window tensor ranges, not all-candidate versus
+  selected modifier distributions or top1-top2 role margins. A diagnostic-only,
+  no-quota telemetry extension is therefore `implemented` locally; it changes no
+  route/execution and remains pending clean Linux/Torch verification and frozen-
+  checkpoint replay.
 
 ## Current boundary
 
-The dynamic route is now `tested` at implementation, synthetic CUDA P0, real
-Fit-prefix health and sample-level telemetry-unit levels.  D3 has passed and
-the two floor configurations are mechanically admissible.  The M2 matched
-training/evaluation and separate full-stack cost/energy protocol is implemented
-and locally/remote tested. The cost-only replacement remains `experiment_running`:
-both arms and paired cost are terminal and valid, and the finalizer-only recovery
-is submitted but has not yet sealed. None of the evidence above yet contains a valid complete
-development contrast with end-to-end latency/energy,
-checkpoint utility or a floor comparison; it is
-not `empirically_supported` or `paper_ready`.  `K_t=0` is permitted and covered by
-contract tests, but no zero-count tubelet happened to occur in the recorded P0
-or 64-update health traces; absence in those traces is neutral rather than a
-failed capability gate.
+The executor and M2 protocol are now `tested` through terminal matched training,
+accuracy telemetry, true full-stack cost and atomic finalization. Dynamic global
+budgeting, exact B, true ragged zero padding and masked-zero `K_t=0` execution are
+supported on the development run. The intended three-role Hybrid mechanism is
+not supported: hard roles collapsed to residual, while role IDs do not change
+execution. The next model-facing gate is modifier-scale and role-margin
+identifiability, not immediate floor M3. No fixed role quota, post-hoc repair,
+official test or paper claim is authorized.

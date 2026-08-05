@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-08-05
+updated: 2026-08-06
 max_chars: 8000
 ---
 
@@ -177,12 +177,25 @@ max_chars: 8000
   `75e2adc86877f002e10626ee4011104b60b0ce49` binds model runtime, cost execution
   and finalizer execution separately. Remote `52/52`, finalizer precheck and a
   no-number existing-profile/descriptive-finalization dry run pass. Finalizer-only
-  Job `1223310` reuses the immutable profile without cost replay or retraining and
-  is bound to deployment self/file SHA-256
+  Job `1223310` reused the immutable profile without cost replay or retraining and
+  was bound to deployment self/file SHA-256
   `8fe36543b2e0b4f74f9c5fbdb77100e204f46e81c3e72385c5c62de2e08b9f0c` /
   `1eeff523c3a676701e4a688aff0a3eb3ee95718653fb6eb15c5ae1c82e87f1ee`.
-  State remains `experiment_running`; no cost or floor value is interpreted until
-  that fresh finalization succeeds.
+  It completed `0:0` and sealed
+  `PASS_COMPLETE_DESCRIPTIVE_FLOOR_SENSITIVITY /
+  COMPLETE_DESCRIPTIVE_ONLY_M3_REQUIRED_FOR_FLOOR_SELECTION` with no errors.
+  Seed-3407 G1 minus G2 is `+5.78 pp` Avg-mAP and `+6.22 pp` high-IoU composite;
+  model-forward p50 differs by only `+0.438%`, while aggregate end-to-end p50 is
+  `+2.845%` and is dominated by a cold first G1 host/input pass. This is complete
+  descriptive M2 evidence, not a floor selection.
+  The decisive mechanism finding is role collapse: G1 selected
+  context/ROI/residual `0/7/3,342,329`; G2 selected
+  `0/0/3,342,336`. Both floor saturation rates are zero, so the large accuracy
+  contrast cannot be causally assigned to the 1-cell versus 2-cell lower bound,
+  and M2 does not establish operational Hybrid complementarity. The immediate
+  successor is a result-blind modifier-scale/role-margin replay on the frozen
+  checkpoints, with no fixed role quota and prediction-SHA parity. M3 is required
+  eventually but held until this identifiability diagnosis is complete.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

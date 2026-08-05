@@ -2584,3 +2584,27 @@ append_only: true
   bound to deployment self/file SHA-256 `8fe36543...8b9f0c` /
   `1eeff523...7f1ee`, validated and released without retraining or cost replay.
   Status remains `experiment_running`; no descriptive value is yet interpreted.
+
+- 2026-08-06: finalizer-only Job `1223310` completed `0:0` and sealed
+  `PASS_COMPLETE_DESCRIPTIVE_FLOOR_SENSITIVITY /
+  COMPLETE_DESCRIPTIVE_ONLY_M3_REQUIRED_FOR_FLOOR_SELECTION` with `errors={}`.
+  G1 minus G2 is `+5.78 pp` Avg-mAP and `+6.22 pp` high-IoU composite; model
+  forward p50 is only `+0.438%`, while the aggregate end-to-end `+2.845%` is
+  cold-order-sensitive. Both width/height floor saturation rates are zero.
+  Dynamic `K_t=0` occurs in both arms, but selected context/ROI/residual counts
+  collapse to `0/7/3,342,329` for G1 and `0/0/3,342,336` for G2. Therefore M2 is
+  terminal `tested` descriptive evidence, not floor causality or operational
+  Hybrid complementarity. Official test, paper claim and single-seed floor
+  selection remain false. Same-family Type-A terminal audit passed A--F; no
+  cross-family overlay was available.
+
+- 2026-08-06: froze the next step as
+  `exp:scnr-dynamic-role-calibration-diagnostic-v1` and implemented its local
+  diagnostic surface. It measures all-valid/selected/unselected `q_base`, signed
+  ROI modifier, residual modifier, pairwise differences, role wins and top1-top2
+  margins only during out-of-band accuracy replay. It uses no target fractions,
+  fixed quota, new `q_ctx`, GT, teacher, route mutation or timed-cost
+  instrumentation. Python compile and whitespace pass; Windows Torch collection
+  is blocked at the known `c10.dll` import boundary, so clean N16R4 tests and
+  prediction-SHA-preserving frozen-checkpoint replay remain pending. M3 is held
+  until this mechanism diagnosis is complete.

@@ -1501,6 +1501,29 @@ updated: 2026-08-05
   `1eeff523c3a676701e4a688aff0a3eb3ee95718653fb6eb15c5ae1c82e87f1ee`,
   validated and released. Existing cost and arm artifacts are reused unchanged;
   state remains `experiment_running` with no interpreted contrast.
+- Dynamic SCNR M2 terminal finalization and Type-A audit, 2026-08-06. Finalizer
+  `1223310` completed `0:0` and sealed
+  `PASS_COMPLETE_DESCRIPTIVE_FLOOR_SENSITIVITY /
+  COMPLETE_DESCRIPTIVE_ONLY_M3_REQUIRED_FOR_FLOOR_SELECTION`; finalization
+  internal/file SHA-256 are
+  `716faa0e354c2d3281cb4be5b033b3540ff03602a0aaa43e4d885ea24dbc1f7f` /
+  `17ad8532d1358a10f221b657b42ac783f0e67b5317f81317507bfbf90aa564aa`.
+  Cost profile internal/file SHA-256 are
+  `df5529b09cf4e5fba748f11e22df4ee3f1fc68a327eee1ee4b1885d7b29ec443` /
+  `2a556d2a4ddc5822b66a6c3efe1bcddd27a7d7add8e0d7af50e3aec320802983`.
+  Type-A same-family trace directories are
+  `.aris/traces/experiment-audit/2026-08-06_run01` and `2026-08-06_run02`;
+  the tracked audit is
+  `research-wiki/experiments/scnr-dynamic-floor-m2-experiment-audit.{md,json}`.
+- Dynamic SCNR role-calibration diagnostic implementation, 2026-08-06. Current
+  implementation files are `opentad/models/backbones/georoute_wrapper.py`,
+  `tools/bata/analyze_georoute_dynamic_role_calibration.py`,
+  `tests/test_georoute_dynamic_stage1.py`, and
+  `tests/test_georoute_dynamic_role_calibration.py`. It adds opt-in accuracy-only
+  modifier/margin telemetry with no fixed role quota and no route mutation.
+  Local Python compile and `git diff --check` pass; local Torch collection is
+  blocked by the documented Windows `c10.dll` failure. Exact committed source
+  and clean N16R4 Linux/Torch receipts remain pending.
 
 ## 外部附件
 

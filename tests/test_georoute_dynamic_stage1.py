@@ -484,6 +484,13 @@ def test_dynamic_diagnostic_telemetry_receipts_geometry_roles_and_ragged_cost():
         "ragged_attention_bucket_call_count": 1,
         "ragged_mlp_bucket_call_count": 1,
     }
+    calibration = GeoRouteBackboneWrapper._dynamic_policy_calibration_telemetry(
+        route=route,
+        q_base=q_base,
+        delta_roi=delta_roi,
+        delta_residual=delta_residual,
+        valid_patch_mask=torch.ones_like(q_base, dtype=torch.bool),
+    )
 
     telemetry = GeoRouteBackboneWrapper._dynamic_diagnostic_route_telemetry(
         route=route,
@@ -492,6 +499,17 @@ def test_dynamic_diagnostic_telemetry_receipts_geometry_roles_and_ragged_cost():
         minimum_extent_wh=(0.5, 0.5),
         maximum_extent_wh=(1.0, 1.0),
         packed=packed,
+        policy_calibration=calibration,
+    )
+    telemetry_without_calibration = (
+        GeoRouteBackboneWrapper._dynamic_diagnostic_route_telemetry(
+            route=route,
+            geometry=geometry,
+            source_grid_hw=(2, 2),
+            minimum_extent_wh=(0.5, 0.5),
+            maximum_extent_wh=(1.0, 1.0),
+            packed=packed,
+        )
     )
 
     assert (
@@ -523,6 +541,21 @@ def test_dynamic_diagnostic_telemetry_receipts_geometry_roles_and_ragged_cost():
     assert telemetry["ragged_execution"]["clip_token_counts"] == [3, 0]
     assert telemetry["ragged_execution"]["attention_pairs"] == 9
     assert telemetry["ragged_execution"]["padded_heavy_tokens"] == 0
+    assert telemetry["policy_calibration"]["valid_role_counts"] == {
+        "context": 10,
+        "roi": 1,
+        "residual": 1,
+    }
+    assert telemetry["policy_calibration"]["selected_role_counts"] == {
+        "context": 1,
+        "roi": 1,
+        "residual": 1,
+    }
+    assert telemetry["policy_calibration"]["fields"][
+        "winner_top1_minus_top2_margin"
+    ]["selected"]["p50"] == pytest.approx(3.0)
+    assert telemetry["policy_calibration"]["role_target_fractions_used"] is False
+    assert "policy_calibration" not in telemetry_without_calibration
     assert telemetry["official_test_opened"] is False
 
     broken_packed = dict(packed, unique_physical_tokens_per_window=2)
@@ -535,6 +568,52 @@ def test_dynamic_diagnostic_telemetry_receipts_geometry_roles_and_ragged_cost():
             maximum_extent_wh=(1.0, 1.0),
             packed=broken_packed,
         )
+
+
+def test_dynamic_role_calibration_records_collapse_without_enforcing_quotas():
+    q_base = torch.tensor([[[4.0, 3.0], [2.0, 1.0]]])
+    delta_roi = torch.full_like(q_base, -1.0)
+    delta_residual = torch.full_like(q_base, 2.0)
+    valid = torch.ones_like(q_base, dtype=torch.bool)
+    route = select_dynamic_global_exact_budget(
+        q_base=q_base,
+        delta_roi=delta_roi,
+        delta_residual=delta_residual,
+        window_budget=2,
+        training=False,
+        estimator="none",
+        temperature=0.5,
+        valid_mask=valid,
+    )
+
+    calibration = GeoRouteBackboneWrapper._dynamic_policy_calibration_telemetry(
+        route=route,
+        q_base=q_base,
+        delta_roi=delta_roi,
+        delta_residual=delta_residual,
+        valid_patch_mask=valid,
+    )
+
+    assert calibration["valid_role_counts"] == {
+        "context": 0,
+        "roi": 0,
+        "residual": 4,
+    }
+    assert calibration["selected_role_counts"] == {
+        "context": 0,
+        "roi": 0,
+        "residual": 2,
+    }
+    assert calibration["unselected_role_counts"] == {
+        "context": 0,
+        "roi": 0,
+        "residual": 2,
+    }
+    assert calibration["selected_missing_roles"] == ["context", "roi"]
+    assert calibration["selected_dominant_role"] == "residual"
+    assert calibration["selected_dominant_role_fraction"] == pytest.approx(1.0)
+    assert calibration["fixed_role_quota_used"] is False
+    assert calibration["changes_route_or_execution"] is False
 
 
 def test_dynamic_diagnostic_telemetry_rejects_multi_sample_attribution():

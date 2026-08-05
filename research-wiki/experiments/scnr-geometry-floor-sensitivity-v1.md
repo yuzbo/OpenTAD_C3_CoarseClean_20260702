@@ -2,11 +2,11 @@
 type: experiment
 node_id: exp:scnr-geometry-floor-sensitivity-v1
 title: "SCNR-TAD native-cell ROI floor sensitivity v1"
-stage: experiment_running
-status: m2_arms_complete_cost_schema_failure_recovery_tested_local
-outcome: pending
+stage: tested
+status: m2_complete_descriptive_role_collapse_floor_causality_unresolved
+outcome: g1_descriptively_higher_but_no_floor_selection
 added: 2026-08-02
-updated: 2026-08-05
+updated: 2026-08-06
 ---
 
 # SCNR-TAD native-cell ROI floor sensitivity v1
@@ -66,8 +66,8 @@ evaluator/NMS 与成本测量。两臂的 `geometry_smoothness_weight`、
 | --- | --- | --- | --- |
 | M0 | 公式、独立宽高、11x20 的 1x1/2x2 known-answer tests | 精确得到 `(1/20,1/11)` 与 `(2/20,2/11)`，in-bounds 且梯度有限 | tested at exact source `4be71844`: focused `36/36`; complete GeoRoute+C3 `194 passed, 1 skipped` |
 | M1 | 真实 180x320 → 11x20 P0，验证配置、审计字段和零正则 | 不产生 metric/checkpoint；任一 hidden clamp/penalty/静态 0.20 即失败 | tested: G1 Job `1215358`; G2 Job `1215364` |
-| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | G1/G2 and cost `1216180/1216181/1222889` complete; profile validates under `42923d9f`; old-source finalizer `1222890` incomplete; finalizer-only `1223310` is `experiment_running`, no result yet |
-| M3 | 仅在动态主方法通过总 gate 后进入 disjoint-seed confirmation | 不从单 seed 宣称 floor 最优 | blocked |
+| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | `tested`: `1216180/1216181/1222889/1223310` complete; descriptive-only PASS |
+| M3 | 仅在动态主方法通过总 gate 后进入 disjoint-seed confirmation | 不从单 seed 宣称 floor 最优；先恢复可识别三角色机制 | designed but held pending role-calibration diagnosis |
 
 ## 当前边界
 
@@ -118,8 +118,9 @@ executor 输出 `packed.attention_pairs_per_window`，profiler 却读取不存�
 `paper_claim_allowed=false`。最小恢复实现改为校验当前 per-window ragged ledger，并将
 冻结模型 runtime `6ee97336` 与 clean execution-repair commit 分开记录；本地 focused
 tests `15/15`。恢复必须保留原失败工件，复用两臂而不重训，完整重跑
-`G1 -> G2 -> G2 -> G1` 与新 finalizer。当前仍是 `experiment_running`，不得读取
-两臂局部指标或形成 floor 结论。
+`G1 -> G2 -> G2 -> G1` 与新 finalizer。**以下 `experiment_running` 仅记录
+2026-08-04 当时的恢复状态，并非本文当前终局状态**：当时仍是
+`experiment_running`，不得读取两臂局部指标或形成 floor 结论。
 
 恢复执行 commit `c67e13e84e47d17fb48ab416c35fa0786c16f2f3` 已在独立 clean
 checkout 通过远端 focused `50/50` 与 cost precheck；它没有修改 `opentad/` 或
@@ -154,8 +155,9 @@ held cost/finalizer `1222869/1222870` 已绑定 recovery-v3 receipt 后释放；
 self/file SHA-256 为
 `4cc8b7649d82cfd89530453df6be02609af5a30334f0f9f44a3efa447bf584e2` /
 `623c2f958d0a86fdba5ffd81f14c413e652c4d788b2fc089151b48bbf9ce81fe`，
-真实 scheduler DAG 为 cost 无依赖、finalizer `afterany:1222869`。状态仍是
-`experiment_running`，尚无可解释的成本或 floor 结果。Job `1222869` 随后在创建
+真实 scheduler DAG 为 cost 无依赖、finalizer `afterany:1222869`。这里的状态同样是
+**历史执行时点**：当时仍是 `experiment_running`，尚无可解释的成本或 floor 结果。
+Job `1222869` 随后在创建
 `cost/` 前失败：population preflight 仍调用重构时已删除的 `_cost_config`，触发
 `NameError`；Job `1222870` 正确封口为 incomplete，且不存在 pass sample 或 cost
 profile。精确修复 `42923d9f7aaddb14368f82aacda5c77e1f857a24` 将最后一个调用点
@@ -164,8 +166,9 @@ profile。精确修复 `42923d9f7aaddb14368f82aacda5c77e1f857a24` 将最后一�
 释放，receipt self/file SHA-256 为
 `5fe63bce1811abddadb5dda60bc67385b07693f7642c4de016616cd8756c1e1c` /
 `5bd504a60668eeb204035d25e4853d601c67fc5097b474987e718562c7b51226`；
-真实 scheduler DAG 为 cost 无依赖、finalizer `afterany:1222889`。当前仍无可解释的
-成本或 floor 结果。Cost `1222889` 随后完成 `0:0`，生成的 profile 在 cost
+真实 scheduler DAG 为 cost 无依赖、finalizer `afterany:1222889`。此处“仍无可解释
+结果”仅描述 **finalizer-only 修复之前的历史状态**。Cost `1222889` 随后完成 `0:0`，
+生成的 profile 在 cost
 execution `42923d9f` 下完整通过；但 finalizer `1222890` 从 frozen runtime
 `6ee97336` 运行，旧 validator 重建的 cost config 不含 `sliding_window=True`，因此
 错误拒绝新 pass receipt 并封口 incomplete。该 finalization 已归档，成本 profile 与
@@ -174,7 +177,41 @@ raw 工件保持原样。精确修复 `75e2adc86877f002e10626ee4011104b60b0ce49`
 与无数值 dry run 通过。finalizer-only `1223310` 已绑定 receipt self/file SHA-256
 `8fe36543b2e0b4f74f9c5fbdb77100e204f46e81c3e72385c5c62de2e08b9f0c` /
 `1eeff523c3a676701e4a688aff0a3eb3ee95718653fb6eb15c5ae1c82e87f1ee`
-后释放；不重训、不重跑成本。当前仍待 fresh finalization，尚不读取任何描述值。
+后释放；不重训、不重跑成本。Job `1223310` 随后完成 `0:0`，终局 receipt 为
+`PASS_COMPLETE_DESCRIPTIVE_FLOOR_SENSITIVITY /
+COMPLETE_DESCRIPTIVE_ONLY_M3_REQUIRED_FOR_FLOOR_SELECTION`，`errors={}`；
+finalization internal/file SHA-256 为
+`716faa0e354c2d3281cb4be5b033b3540ff03602a0aaa43e4d885ea24dbc1f7f` /
+`17ad8532d1358a10f221b657b42ac783f0e67b5317f81317507bfbf90aa564aa`。
+
+## M2 终局描述结果与机制裁决
+
+| 指标 | G1 1-cell | G2 2-cell | G1-G2 |
+| --- | ---: | ---: | ---: |
+| Avg-mAP | 10.95 | 5.17 | +5.78 pp |
+| mAP@0.6 | 9.41 | 2.79 | +6.62 pp |
+| mAP@0.7 | 7.25 | 1.43 | +5.82 pp |
+| high-IoU composite | 8.33 | 2.11 | +6.22 pp |
+| model-forward p50 | 699.738 ms | 696.687 ms | +0.438% |
+| end-to-end p50 | 3453.349 ms | 3357.831 ms | +2.845% |
+
+描述上 G1 显著高于 G2，但这不是 floor 因果证据。两臂 width/height floor
+saturation 均为 `0`，实际最小宽高都高于配置下限；同时 G1 的
+context/ROI/residual 选中计数为 `0/7/3,342,329`，G2 为
+`0/0/3,342,336`。所以该对比实际上主要比较了两次独立训练的 residual-only
+selector，而没有操作性验证 ROI+TokenSelect Hybrid。完全动态 `K_t` 则得到支持：
+G1/G2 均有 mean `64`，且 `K_t=0` 占比为 `1.4668%/1.1853%`。
+
+成本方面，两臂全局 B 相同、attention-pair 接近，模型 forward 基本等价。
+Aggregate 端到端差异主要来自 G1 第一个冷启动 pass 的 host/input outlier；G1 pass 3
+相对 G2 pass 2 的端到端 p50 只高 `18.315 ms`。后续确认必须使用 ABBA/BAAB
+镜像顺序，不能把当前 aggregate `+2.845%` 当作 floor 的固有代价。
+
+当前 M2 状态是 `tested`，单 seed 的数值观察是受限的
+`empirically_supported_descriptive`；floor 选择、Hybrid 互补性、官方测试和论文
+主张仍为 false。M3 最终仍需要 disjoint seeds，但其前置条件改为：先用冻结
+checkpoint 做无 GT、prediction-SHA-preserving 的 modifier/role-margin 诊断，并在不
+施加固定角色配额的情况下恢复角色可识别性。
 
 P0 中三角色计数、`K_t` 范围、loss 或梯度只能证明路径非退化且可训练，不能用于
 判断 1x1/2x2 谁更好。只有完整匹配的 development 训练、相同 population/hash、

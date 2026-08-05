@@ -36,6 +36,7 @@ model = dict(
             georoute_geometry_projection_enabled=False,
             georoute_geometry_side_channel=False,
             georoute_diagnostic_telemetry_enabled=False,
+            georoute_role_calibration_telemetry_enabled=False,
             georoute_amp_diagnostic_enabled=False,
             georoute_gradient_decomposition_enabled=False,
             georoute_p0_dense_reference_check=False,
