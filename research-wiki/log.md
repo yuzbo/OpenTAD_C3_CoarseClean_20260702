@@ -1,5 +1,40 @@
 # Research Log
 
+## 2026-08-06 — Repaired numeric gate completed its bounded search but legacy trigger was absent
+
+- Exact AMP-replay source `4b766457b5abd8247f7e054d64bf6eb725183493`
+  passed clean Linux/PyTorch code gate `1223270` with 149 tests; receipt SHA-256
+  is `b73c73f1048bb0d39342f37309da7d43b7258355615d8d621e1db6d2b842ee0a`.
+  Real natural-short gate `1223282` also passed; receipt SHA-256 is
+  `4a481eb1b7f7a94039470ddf08060a8d9de6570b39011cd68574d1326f3f5fd7`.
+- Two-rank release-gate job `1223308` ran for 5m19s and failed `1:0` at
+  `/data/run01/sczc063/yuzibo/rime_preflight/duca_paper_release_gates_4b766457_20260806_004306`.
+  Exact terminal exception on both ranks is `old production FP32 guard did not
+  trigger within 100 updates`; immutable log SHA-256 is
+  `7b36ccc2c8866d7e5e5a526361a97d85cffa3286a9d104f1c518a7ff74d408ab`.
+  The execution therefore crossed the earlier immediate-capture and pre-step AMP
+  overflow failure surfaces and reached the terminal bounded-search predicate.
+- No numeric receipt was written, so the failed process did not persist per-rank
+  target-capture counts, maximum legacy drift or AMP-replay counts. It is known
+  only that no rank produced a target whose deprecated raw-message statistic
+  exceeded its legacy envelope before the terminal check. Exact-211 did not run,
+  no aggregate receipt exists and no Stage-A job was submitted.
+- This is no longer authorized for automatic engineering repair. The required
+  trigger is the superseded raw alpha/beta row-mass guard already adjudicated as
+  gauge-dependent and non-structural, while the repaired solver's accepted
+  invariants are dual-logZ, brute-force/FP64 agreement, row/column/order,
+  edge-flow, finite gradients and unchanged hard path. Whether historical-bug
+  reproduction remains a valid release prerequisite is a scientific gate-design
+  decision.
+- Current state is
+  `gate_failed_closed / legacy_trigger_absent /
+  scientific_gate_adjudication_required`. Do not delete the requirement, extend
+  the search, change its envelope or retry automatically. A bounded Pro review is
+  now warranted to choose between retaining the negative-control requirement,
+  replacing it with actual-production-tensor oracle coverage, or requiring a
+  separate immutable historical-replay fixture. No performance metric was opened
+  and Stage B remains sealed.
+
 ## 2026-08-06 — Numeric gate exposed a second gate-versus-production AMP mismatch
 
 - Exact source `751ce695f6bb4681dc26f8669ea7c4f01acb875b` passed clean

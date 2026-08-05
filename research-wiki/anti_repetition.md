@@ -547,3 +547,11 @@ These failures and naming mistakes must not be repeated.
      target capture. Successful-step gradients remain finite-required, and replay
      exhaustion remains a hard failure. Never lower the initial scaler, increase
      the retry ceiling or suppress the final finite-gradient predicate.
+151. Failure to reproduce the deprecated raw alpha/beta row-mass guard within a
+     bounded real-update search is not permission to delete the guard, extend the
+     search, lower its legacy envelope or call the current solver unstable. The
+     statistic was already adjudicated as gauge-dependent and non-structural;
+     requiring historical-bug reproduction is therefore a scientific gate-premise
+     decision. Preserve the failed run and obtain bounded adjudication between
+     production-tensor structural-oracle coverage and a separate immutable
+     historical negative-control fixture before another release attempt.

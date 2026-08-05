@@ -1130,6 +1130,20 @@ Current Stage-A recovery decision:
    budget, threshold, data, seed, checkpoint or evaluator change is permitted.
    Fresh four-gate verification remains mandatory; no result exists yet.
 
+   Exact AMP-replay source `4b766457` passed code gate `1223270` (149 tests) and
+   natural-short gate `1223282`. Its two-rank release gate `1223308` then crossed
+   both earlier gate-control-flow failures and reached the terminal bounded-search
+   predicate, but failed because `old production FP32 guard did not trigger within
+   100 updates`. No numeric receipt was written, so capture/replay counts and the
+   largest non-triggering legacy statistic are not persisted. Exact-211 and
+   Stage-A were not started. This failure cannot be auto-repaired: mandatory
+   reproduction of the superseded gauge-dependent raw-message guard is now a
+   scientific gate-premise question. Do not remove it, change the envelope or
+   extend/retry the search without adjudication. The next action is one bounded
+   Pro review of whether actual T768/K384 production-tensor coverage plus the
+   current structural oracles is sufficient, or whether an immutable historical
+   failure fixture must remain as a separate negative control.
+
 Approved compact feasibility design, superseding the simulation-first order
 below while retaining it as negative-history context:
 
