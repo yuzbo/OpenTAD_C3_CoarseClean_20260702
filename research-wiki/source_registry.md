@@ -1484,6 +1484,23 @@ updated: 2026-08-05
   `5bd504a60668eeb204035d25e4853d601c67fc5097b474987e718562c7b51226`,
   validated and released. Actual DAG is cost none and finalizer
   `afterany:1222889`; state is `experiment_running` with no partial inference.
+- Dynamic SCNR M2 finalizer-only recovery, 2026-08-06. Cost `1222889` completed
+  `0:0`; `cost/paired_cost_profile.json` has self/file SHA-256
+  `df5529b09cf4e5fba748f11e22df4ee3f1fc68a327eee1ee4b1885d7b29ec443` /
+  `2a556d2a4ddc5822b66a6c3efe1bcddd27a7d7add8e0d7af50e3aec320802983`
+  and validates under cost execution `42923d9f`. Finalizer `1222890` ran the frozen
+  `6ee97336` validator, whose pre-repair expected config hashes omitted
+  `sliding_window=True`, and sealed incomplete (self/file SHA-256
+  `ecc7ec1bdd272d913e4e3f60acd8a46a2a9e8719393c79f8af1439db13263b00` /
+  `3773cb28c8d0a5efc9c312d0ade4307efd088bccc8b55d18a261b05e841ef97d`).
+  Exact finalizer repair `75e2adc86877f002e10626ee4011104b60b0ce49` separates
+  runtime, cost-execution and finalizer-execution lineage; remote `52/52`, static
+  precheck and no-number dry-run finalization pass. Finalizer-only Job `1223310`
+  was held, bound to deployment self/file SHA-256
+  `8fe36543b2e0b4f74f9c5fbdb77100e204f46e81c3e72385c5c62de2e08b9f0c` /
+  `1eeff523c3a676701e4a688aff0a3eb3ee95718653fb6eb15c5ae1c82e87f1ee`,
+  validated and released. Existing cost and arm artifacts are reused unchanged;
+  state remains `experiment_running` with no interpreted contrast.
 
 ## 外部附件
 

@@ -2572,3 +2572,15 @@ append_only: true
   self/file SHA-256 `5fe63bce...c1e1c` / `5bd504a6...51226`, validated and
   released with actual DAG cost none/finalizer `afterany:1222889`. Status remains
   `experiment_running`; no live pass is read.
+
+- 2026-08-06: cost `1222889` completed `0:0` and its profile validates under cost
+  execution `42923d9f`, but finalizer `1222890` sealed incomplete because it ran
+  frozen runtime source `6ee97336`; that old validator reconstructed pre-repair
+  cost hashes without `sliding_window=True`. The incomplete finalization was
+  archived with self/file SHA-256 `ecc7ec1b...63b00` / `3773cb28...ef97d`; valid
+  cost/raw artifacts were not moved or rewritten. Repair `75e2adc8` binds model
+  runtime, cost execution and finalizer execution separately and passes remote
+  `52/52`, precheck and a no-number dry run. Finalizer-only Job `1223310` was held,
+  bound to deployment self/file SHA-256 `8fe36543...8b9f0c` /
+  `1eeff523...7f1ee`, validated and released without retraining or cost replay.
+  Status remains `experiment_running`; no descriptive value is yet interpreted.

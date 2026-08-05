@@ -202,16 +202,22 @@ updated: 2026-08-05
    `logs/dfm2_cost_recovery3.1222869.err` and
    `control/finalization_incomplete_job1222870.json`; there are no pass samples or
    cost artifacts to salvage. Do not reuse execution commit `011d2943` for cost.
-0. The admitted M2 recovery is now paired-cost Job `1222889` from exact clean
-   execution source `42923d9f7aaddb14368f82aacda5c77e1f857a24`, followed by
-   finalizer Job `1222890`. Every producer, validator, fixture and population-
-   preflight call uses `build_dynamic_floor_m2_cost_config(stage, arm)`, and an AST
-   regression forbids a loaded `_cost_config` name; no model/config/training code
-   changed. The truthful scheduler DAG is cost with no dependency and finalizer
-   `afterany:1222889`; recovery-v4 separately retains the frozen scientific DAG.
-   Do not call this retraining, scheduler `afterok` on old arms, or a result. Do
-   not inspect live pass metrics; wait for all four passes and fresh fail-closed
-   finalization.
+0. Cost Job `1222889` is terminal `COMPLETED 0:0` and its immutable profile passes
+   the validator from cost execution `42923d9f`; do not rerun or replace this cost
+   pass. Finalizer `1222890` is terminal incomplete because it ran the frozen model
+   runtime's old validator, whose reconstructed cost configs omitted
+   `sliding_window=True`. Preserve
+   `control/finalization_incomplete_job1222890.json`; this failure invalidates only
+   that finalization, not the current profile. Do not interpret profile values
+   before a fresh valid finalizer.
+0. The admitted M2 recovery is now finalizer-only Job `1223310` from exact clean
+   execution source `75e2adc86877f002e10626ee4011104b60b0ce49`. Its receipt binds
+   model runtime `6ee97336`, cost execution `42923d9f`, and finalizer execution
+   `75e2adc8` as distinct identities; the existing cost profile is validated
+   against its own execution commit. No arm retraining/resume or cost replay is
+   allowed. Do not collapse these three commits, run the finalizer from the old
+   runtime checkout, or call dry-run validation a result. Wait for the new atomic
+   finalization before reading descriptive values.
 0. Do not say “Hybrid has been proved effective” or “ROI and residual are
    complementary.” The old Hybrid result is single-seed descriptive evidence
    confounded by role split, scorer family, ST, and representation. Only the new

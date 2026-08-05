@@ -169,9 +169,20 @@ max_chars: 8000
   `1222889/1222890` were held, bound to recovery-v4 receipt self/file SHA-256
   `5fe63bce1811abddadb5dda60bc67385b07693f7642c4de016616cd8756c1e1c` /
   `5bd504a60668eeb204035d25e4853d601c67fc5097b474987e718562c7b51226`,
-  validated and released. Actual dependencies are cost none and finalizer
-  `afterany:1222889`. State remains `experiment_running`; no live/partial cost or
-  floor evidence exists.
+  validated and released. Cost `1222889` completed `0:0` and published a profile
+  that passes the `42923d9f` validator, but finalizer `1222890` ran from frozen
+  runtime source `6ee97336`; that old validator reconstructed pre-repair configs
+  without `sliding_window=True`, rejected the otherwise valid pass receipts, and
+  sealed incomplete. Exact finalizer repair
+  `75e2adc86877f002e10626ee4011104b60b0ce49` binds model runtime, cost execution
+  and finalizer execution separately. Remote `52/52`, finalizer precheck and a
+  no-number existing-profile/descriptive-finalization dry run pass. Finalizer-only
+  Job `1223310` reuses the immutable profile without cost replay or retraining and
+  is bound to deployment self/file SHA-256
+  `8fe36543b2e0b4f74f9c5fbdb77100e204f46e81c3e72385c5c62de2e08b9f0c` /
+  `1eeff523c3a676701e4a688aff0a3eb3ee95718653fb6eb15c5ae1c82e87f1ee`.
+  State remains `experiment_running`; no cost or floor value is interpreted until
+  that fresh finalization succeeds.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

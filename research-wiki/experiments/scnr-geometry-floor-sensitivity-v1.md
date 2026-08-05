@@ -66,7 +66,7 @@ evaluator/NMS 与成本测量。两臂的 `geometry_smoothness_weight`、
 | --- | --- | --- | --- |
 | M0 | 公式、独立宽高、11x20 的 1x1/2x2 known-answer tests | 精确得到 `(1/20,1/11)` 与 `(2/20,2/11)`，in-bounds 且梯度有限 | tested at exact source `4be71844`: focused `36/36`; complete GeoRoute+C3 `194 passed, 1 skipped` |
 | M1 | 真实 180x320 → 11x20 P0，验证配置、审计字段和零正则 | 不产生 metric/checkpoint；任一 hidden clamp/penalty/静态 0.20 即失败 | tested: G1 Job `1215358`; G2 Job `1215364` |
-| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | G1/G2 `1216180/1216181` complete; four failed cost attempts are preserved; final-call repair `42923d9f` passed local/remote checks; replacement `1222889/1222890` is `experiment_running`, no result yet |
+| M2 | 匹配 G1/G2 development 训练、完整 accuracy/telemetry 回放、独立全栈成本回放 | 两臂全完成、population/hash/cost ledger 一致后才读结果 | G1/G2 and cost `1216180/1216181/1222889` complete; profile validates under `42923d9f`; old-source finalizer `1222890` incomplete; finalizer-only `1223310` is `experiment_running`, no result yet |
 | M3 | 仅在动态主方法通过总 gate 后进入 disjoint-seed confirmation | 不从单 seed 宣称 floor 最优 | blocked |
 
 ## 当前边界
@@ -165,7 +165,16 @@ profile。精确修复 `42923d9f7aaddb14368f82aacda5c77e1f857a24` 将最后一�
 `5fe63bce1811abddadb5dda60bc67385b07693f7642c4de016616cd8756c1e1c` /
 `5bd504a60668eeb204035d25e4853d601c67fc5097b474987e718562c7b51226`；
 真实 scheduler DAG 为 cost 无依赖、finalizer `afterany:1222889`。当前仍无可解释的
-成本或 floor 结果。
+成本或 floor 结果。Cost `1222889` 随后完成 `0:0`，生成的 profile 在 cost
+execution `42923d9f` 下完整通过；但 finalizer `1222890` 从 frozen runtime
+`6ee97336` 运行，旧 validator 重建的 cost config 不含 `sliding_window=True`，因此
+错误拒绝新 pass receipt 并封口 incomplete。该 finalization 已归档，成本 profile 与
+raw 工件保持原样。精确修复 `75e2adc86877f002e10626ee4011104b60b0ce49`
+分别绑定 model runtime、cost execution、finalizer execution；远端 `52/52`、precheck
+与无数值 dry run 通过。finalizer-only `1223310` 已绑定 receipt self/file SHA-256
+`8fe36543b2e0b4f74f9c5fbdb77100e204f46e81c3e72385c5c62de2e08b9f0c` /
+`1eeff523c3a676701e4a688aff0a3eb3ee95718653fb6eb15c5ae1c82e87f1ee`
+后释放；不重训、不重跑成本。当前仍待 fresh finalization，尚不读取任何描述值。
 
 P0 中三角色计数、`K_t` 范围、loss 或梯度只能证明路径非退化且可训练，不能用于
 判断 1x1/2x2 谁更好。只有完整匹配的 development 训练、相同 population/hash、

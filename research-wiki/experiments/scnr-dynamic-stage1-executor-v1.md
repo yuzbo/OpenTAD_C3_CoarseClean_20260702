@@ -209,6 +209,14 @@ tubelet, or any mismatch between selected and executed tokens.
   `51/51`, precheck and clean-tree checks pass. Held Jobs `1222889/1222890` were
   bound to recovery-v4 self-hash `5fe63bce...c1e1c`, validated, and released with
   finalizer `afterany:1222889`; no arm, model, config or training changed.
+- Cost `1222889` completed `0:0`; its profile validates under cost execution
+  `42923d9f`. Finalizer `1222890` nevertheless sealed incomplete because it was
+  launched from frozen runtime `6ee97336`, whose pre-repair validator reconstructed
+  different cost-config hashes. Repair `75e2adc8` gives finalization separate model
+  runtime, cost-execution and finalizer-execution bindings. Remote `52/52`, static
+  precheck and a no-number dry run pass. Finalizer-only Job `1223310` is released
+  under deployment self-hash `8fe36543...8b9f0c`, reusing the exact profile and
+  changing no model/config/training/cost artifact.
 
 ## Current boundary
 
@@ -217,7 +225,7 @@ Fit-prefix health and sample-level telemetry-unit levels.  D3 has passed and
 the two floor configurations are mechanically admissible.  The M2 matched
 training/evaluation and separate full-stack cost/energy protocol is implemented
 and locally/remote tested. The cost-only replacement remains `experiment_running`:
-both arms are terminal and valid, and the fourth paired-cost/finalizer recovery
+both arms and paired cost are terminal and valid, and the finalizer-only recovery
 is submitted but has not yet sealed. None of the evidence above yet contains a valid complete
 development contrast with end-to-end latency/energy,
 checkpoint utility or a floor comparison; it is
