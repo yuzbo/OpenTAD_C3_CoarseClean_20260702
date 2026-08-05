@@ -33,6 +33,7 @@ from tools.bata.profile_georoute_dynamic_floor_m2 import (
     _read_cost_cuda_timings,
     _validate_cost_audit,
 )
+from tools.bata.finalize_georoute_dynamic_floor_m2 import _validate_deployment
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -810,6 +811,74 @@ def test_dynamic_floor_m2_complete_finalizer_remains_descriptive(monkeypatch):
     assert result["decision"] == "COMPLETE_DESCRIPTIVE_ONLY_M3_REQUIRED_FOR_FLOOR_SELECTION"
     assert result["single_seed_floor_selection_allowed"] is False
     assert result["m3_confirmation_required"] is True
+
+
+def test_dynamic_floor_m2_recovery_finalizer_binds_runtime_and_execution(
+    monkeypatch,
+):
+    runtime_commit = "a" * 40
+    execution_commit = "b" * 40
+    cost_execution_commit = "c" * 40
+    deployment = {
+        "schema_version": "scnr_dynamic_floor_m2_deployment_v1",
+        "status": "DEPLOYED_DYNAMIC_FLOOR_M2_DAG",
+        "runtime_commit": runtime_commit,
+        "jobs": {
+            "g1": "1",
+            "g2": "2",
+            "paired_cost": "3",
+            "finalizer": "4",
+        },
+        "dependencies": {
+            "paired_cost": {"type": "afterok", "predecessors": ["1", "2"]},
+            "finalizer": {
+                "type": "afterany",
+                "predecessors": ["1", "2", "3"],
+            },
+        },
+        "official_test_opened": False,
+        "paper_claim_allowed": False,
+        "recovery": {
+            "model_runtime_commit": runtime_commit,
+            "execution_commit": execution_commit,
+            "cost_execution_commit": cost_execution_commit,
+            "model_or_config_code_changed": False,
+            "retrained_or_resumed_arms": False,
+        },
+    }
+    deployment["deployment_sha256"] = canonical_sha256(deployment)
+    monkeypatch.setenv("SLURM_JOB_ID", "4")
+    validated = _validate_deployment(
+        deployment,
+        expected_commit=runtime_commit,
+        expected_execution_commit=execution_commit,
+        expected_cost_execution_commit=cost_execution_commit,
+    )
+    assert validated["deployment_sha256"] == deployment["deployment_sha256"]
+    with pytest.raises(ValueError, match="deployment receipt is invalid"):
+        _validate_deployment(
+            deployment,
+            expected_commit=runtime_commit,
+            expected_execution_commit="d" * 40,
+            expected_cost_execution_commit=cost_execution_commit,
+        )
+    with pytest.raises(ValueError, match="deployment receipt is invalid"):
+        _validate_deployment(
+            deployment,
+            expected_commit=runtime_commit,
+            expected_execution_commit=execution_commit,
+            expected_cost_execution_commit="d" * 40,
+        )
+
+    original = copy.deepcopy(deployment)
+    original.pop("recovery")
+    original.pop("deployment_sha256")
+    original["deployment_sha256"] = canonical_sha256(original)
+    validated_original = _validate_deployment(
+        original,
+        expected_commit=runtime_commit,
+    )
+    assert validated_original["deployment_sha256"] == original["deployment_sha256"]
 
 
 def test_dynamic_floor_m2_execution_sources_freeze_dag_and_cost_scope():

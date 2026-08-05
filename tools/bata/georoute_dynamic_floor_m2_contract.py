@@ -1088,10 +1088,16 @@ def validate_dynamic_floor_m2_cost_profile(
     profile: Mapping[str, Any],
     *,
     expected_commit: str | None = None,
+    expected_execution_commit: str | None = None,
 ) -> dict[str, Any]:
     profile = dict(profile)
     if expected_commit is not None and profile.get("runtime_commit") != expected_commit:
         raise ValueError("dynamic floor M2 cost commit mismatch")
+    if (
+        expected_execution_commit is not None
+        and profile.get("execution_commit") != expected_execution_commit
+    ):
+        raise ValueError("dynamic floor M2 cost execution commit mismatch")
     scope = profile.get("scope")
     arm_summaries = profile.get("arm_summaries")
     pass_receipts = profile.get("pass_receipts")
@@ -1493,7 +1499,11 @@ def finalize_dynamic_floor_m2(
     cost_profile: Mapping[str, Any] | None,
     *,
     expected_commit: str,
+    expected_cost_execution_commit: str | None = None,
 ) -> dict[str, Any]:
+    expected_cost_execution_commit = str(
+        expected_cost_execution_commit or expected_commit
+    )
     validated: dict[str, dict[str, Any]] = {}
     errors: dict[str, str] = {}
     for arm in DYNAMIC_FLOOR_M2_ARM_ORDER:
@@ -1512,6 +1522,7 @@ def finalize_dynamic_floor_m2(
         validated_cost = validate_dynamic_floor_m2_cost_profile(
             cost_profile,
             expected_commit=expected_commit,
+            expected_execution_commit=expected_cost_execution_commit,
         )
     except (TypeError, ValueError) as error:
         errors["paired_cost"] = str(error)
@@ -1576,6 +1587,7 @@ def finalize_dynamic_floor_m2(
             else "INCOMPLETE_NO_FLOOR_INFERENCE"
         ),
         "runtime_commit": expected_commit,
+        "cost_execution_commit": expected_cost_execution_commit,
         "validated_arms": sorted(validated),
         "errors": errors,
         "descriptive_contrasts": contrasts if complete else {},

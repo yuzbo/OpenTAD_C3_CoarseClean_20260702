@@ -49,17 +49,46 @@ def _read_optional_object(path: Path) -> dict[str, Any] | None:
 
 
 def _validate_deployment(
-    deployment: Mapping[str, Any], *, expected_commit: str
+    deployment: Mapping[str, Any],
+    *,
+    expected_commit: str,
+    expected_execution_commit: str | None = None,
+    expected_cost_execution_commit: str | None = None,
 ) -> dict[str, Any]:
+    expected_commit = str(expected_commit).lower()
+    expected_execution_commit = str(
+        expected_execution_commit or expected_commit
+    ).lower()
+    expected_cost_execution_commit = str(
+        expected_cost_execution_commit or expected_execution_commit
+    ).lower()
     deployment = dict(deployment)
     unsigned = dict(deployment)
     observed_hash = unsigned.pop("deployment_sha256", None)
     jobs = deployment.get("jobs")
     dependencies = deployment.get("dependencies")
+    recovery = deployment.get("recovery")
+    execution_binding_valid = expected_execution_commit == expected_commit or (
+        isinstance(recovery, Mapping)
+        and recovery.get("model_runtime_commit") == expected_commit
+        and recovery.get("execution_commit") == expected_execution_commit
+        and recovery.get("model_or_config_code_changed") is False
+        and recovery.get("retrained_or_resumed_arms") is False
+    )
+    cost_execution_binding_valid = (
+        expected_cost_execution_commit == expected_execution_commit
+        or (
+            isinstance(recovery, Mapping)
+            and recovery.get("cost_execution_commit")
+            == expected_cost_execution_commit
+        )
+    )
     if (
         deployment.get("schema_version") != DYNAMIC_FLOOR_M2_DEPLOYMENT_SCHEMA
         or deployment.get("status") != "DEPLOYED_DYNAMIC_FLOOR_M2_DAG"
         or deployment.get("runtime_commit") != expected_commit
+        or not execution_binding_valid
+        or not cost_execution_binding_valid
         or observed_hash != canonical_sha256(unsigned)
         or not isinstance(jobs, Mapping)
         or set(jobs) != {"g1", "g2", "paired_cost", "finalizer"}
@@ -117,8 +146,14 @@ def _slurm_state(job_id: str) -> dict[str, Any]:
 
 def finalize(args: argparse.Namespace) -> dict[str, Any]:
     expected_commit = str(args.expected_commit).lower()
+    expected_execution_commit = str(
+        args.expected_execution_commit or expected_commit
+    ).lower()
+    expected_cost_execution_commit = str(
+        args.expected_cost_execution_commit or expected_execution_commit
+    ).lower()
     require_clean_dynamic_floor_m2_checkout(
-        expected_commit=expected_commit, root=ROOT
+        expected_commit=expected_execution_commit, root=ROOT
     )
     run_root = args.run_root.resolve()
     if not _inside(run_root, BOUNDARY.resolve()):
@@ -128,7 +163,10 @@ def finalize(args: argparse.Namespace) -> dict[str, Any]:
     if deployment is None:
         raise FileNotFoundError(deployment_path)
     deployment = _validate_deployment(
-        deployment, expected_commit=expected_commit
+        deployment,
+        expected_commit=expected_commit,
+        expected_execution_commit=expected_execution_commit,
+        expected_cost_execution_commit=expected_cost_execution_commit,
     )
 
     stage_results: dict[str, dict[str, Any]] = {}
@@ -154,12 +192,15 @@ def finalize(args: argparse.Namespace) -> dict[str, Any]:
         stage_results,
         cost_profile,
         expected_commit=expected_commit,
+        expected_cost_execution_commit=expected_cost_execution_commit,
     )
     result.pop("finalization_sha256", None)
     jobs = deployment["jobs"]
     result.update(
         deployment_path=str(deployment_path),
         deployment_sha256=deployment["deployment_sha256"],
+        execution_commit=expected_execution_commit,
+        cost_execution_commit=expected_cost_execution_commit,
         stage_artifacts=stage_artifacts,
         paired_cost_path=str(cost_path),
         paired_cost_present=cost_profile is not None,
@@ -182,6 +223,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--deployment", type=Path, required=True)
     parser.add_argument("--expected-commit", required=True)
+    parser.add_argument("--expected-execution-commit")
+    parser.add_argument("--expected-cost-execution-commit")
     return parser.parse_args()
 
 
