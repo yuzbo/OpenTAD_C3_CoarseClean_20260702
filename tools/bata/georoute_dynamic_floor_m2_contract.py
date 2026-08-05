@@ -38,6 +38,9 @@ DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA = (
 DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA = (
     "georoute_role_instrumentation_strict_triplet_binding_v1"
 )
+DYNAMIC_FLOOR_M2_RESIDUAL_CENTERING_PROBE_SCHEMA = (
+    "scnr_residual_window_centering_probe_binding_v1"
+)
 DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA = (
     "scnr_dynamic_floor_m2_checkpoint_sidecar_v1"
 )
@@ -467,6 +470,60 @@ def resolve_dynamic_floor_m2_accuracy_execution_commit(
         "source_population_sha256",
     )
     custom = cfg.model.backbone.custom
+    if phase_schema == DYNAMIC_FLOOR_M2_RESIDUAL_CENTERING_PROBE_SCHEMA:
+        probe_mode = phase_m.get("probe_mode")
+        if (
+            probe_mode not in {"centered_a", "centered_b"}
+            or phase_m.get("variant") != binding.get("arm")
+            or int(phase_m.get("seed", -1)) != DYNAMIC_FLOOR_M2_SEED
+            or phase_m.get("source_experiment_commit") != source_commit
+            or len(runtime_commit) != 40
+            or any(character not in "0123456789abcdef" for character in runtime_commit)
+            or any(
+                not isinstance(phase_m.get(field), str)
+                or len(phase_m[field]) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in phase_m[field].lower()
+                )
+                for field in sha_fields
+            )
+            or not isinstance(phase_m.get("source_dataset_count"), int)
+            or isinstance(phase_m.get("source_dataset_count"), bool)
+            or int(phase_m["source_dataset_count"]) <= 0
+            or phase_m.get("branch_calibration_mode")
+            != "residual_window_center"
+            or phase_m.get("branch_calibration_scope")
+            != "complete_window_all_valid_candidates"
+            or phase_m.get("role_calibration_telemetry_enabled") is not True
+            or phase_m.get("mechanism_probe_only") is not True
+            or phase_m.get("training_performed") is not False
+            or phase_m.get("same_slurm_job") is not True
+            or phase_m.get("same_visible_gpu") is not True
+            or phase_m.get("serial_execution") is not True
+            or phase_m.get("strict_deterministic_algorithms") is not True
+            or phase_m.get("sdp_backend") != "math"
+            or phase_m.get("tf32_enabled") is not False
+            or phase_m.get("fixed_role_quota_used") is not False
+            or phase_m.get("q_ctx_used") is not False
+            or phase_m.get("changes_route_or_execution") is not True
+            or phase_m.get("metric_evaluation_enabled") is not False
+            or phase_m.get("official_test_opened") is not False
+            or phase_m.get("gt_for_route_used") is not False
+            or phase_m.get("teacher_for_route_used") is not False
+            or phase_m.get("oracle_used") is not False
+            or phase_m.get("raw_prediction_cache_used") is not False
+            or custom.georoute_branch_calibration_mode
+            != "residual_window_center"
+            or custom.georoute_diagnostic_telemetry_enabled is not True
+            or custom.georoute_role_calibration_telemetry_enabled is not True
+            or cfg.georoute_diagnostic_telemetry.get("enabled") is not True
+            or cfg.georoute_development_profile.get("enabled") is not False
+        ):
+            raise ValueError(
+                "dynamic floor M2 residual-centering probe execution binding is invalid"
+            )
+        return runtime_commit
     if phase_schema in {
         DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA,
         DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA,

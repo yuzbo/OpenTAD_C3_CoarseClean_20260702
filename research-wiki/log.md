@@ -2690,3 +2690,17 @@ append_only: true
   restore structural context/ROI reachability and select at least one
   non-residual token before matched training is even designed. No further Pro
   discussion is needed for this one-variable probe.
+
+- 2026-08-06: implemented the preregistered residual-window-centering probe.
+  The opt-in model intervention subtracts only the differentiable all-valid
+  full-window mean from `delta_residual` before unchanged Scheme-A role
+  arbitration and exact-B selection; default behavior remains `none`. A new
+  M2-bound no-metric runner performs serial strict math-SDPA duplicate replays,
+  validates exact-B/ragged/no-leak and calibration receipts, and requires both
+  raw-prediction and route-payload determinism before classifying structural
+  context/ROI reachability. Local compilation, Bash syntax, whitespace,
+  pure-contract tests, and standalone result-classification checks pass. The
+  Torch-backed local suite remains blocked at the known Windows `c10.dll`
+  loader boundary. Clean Linux/Torch regression and frozen G1/G2 Slurm probes
+  are pending; no training, performance, floor, M3, official-test, or paper
+  claim is open.

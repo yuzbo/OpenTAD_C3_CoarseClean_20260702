@@ -200,11 +200,14 @@ max_chars: 8000
   Authorized all-valid counts are G1 `0/2,671/11,486,609` and G2
   `0/984/11,488,296`; residual dominates `136/136` windows before global top-B.
   Thus branch-offset identifiability, not top-B squeezing diverse roles, is the
-  first repair target. The preregistered successor subtracts only the all-valid
+  first repair target. The implemented successor subtracts only the all-valid
   full-window mean of `delta_residual`, leaves Scheme A/exact B/dynamic K/ragged/
-  masked-zero/ROI/context unchanged, and runs a strict deterministic frozen-
-  checkpoint role-reachability probe before any training. No Pro discussion is
-  needed for this single-variable probe; M3 remains held.
+  masked-zero/ROI/context unchanged, and adds a strict deterministic frozen-
+  checkpoint role-reachability runner. Local compilation, shell/whitespace,
+  pure-contract, and standalone classification checks pass; clean Linux/Torch
+  regression and the frozen G1/G2 probes remain pending. No Pro discussion is
+  needed for this single-variable probe; no training is authorized unless both
+  arms pass the preregistered structural gate, and M3 remains held.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

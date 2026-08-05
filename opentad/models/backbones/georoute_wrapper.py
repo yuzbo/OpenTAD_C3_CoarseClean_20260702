@@ -14,11 +14,13 @@ from torch.nn.modules.batchnorm import _BatchNorm
 
 from .backbone_wrapper import BackboneWrapper
 from .georoute_routing import (
+    DYNAMIC_BRANCH_CALIBRATION_MODES,
     DYNAMIC_ROUTE_MODES,
     POLICY_ESTIMATORS,
     ROUTE_MODES,
     SCORE_FUNCTION_TEMPORAL_REDUCTIONS,
     STRUCTURED_ROUTE_MODES,
+    calibrate_dynamic_residual_modifier,
     decode_continuous_geometry,
     interpolate_temporal_knots,
     native_cell_extent_floor,
@@ -479,6 +481,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.zero_carrier_mode = str(
             getattr(custom_cfg, "georoute_zero_carrier_mode", "masked_zero")
         )
+        self.branch_calibration_mode = str(
+            getattr(custom_cfg, "georoute_branch_calibration_mode", "none")
+        )
         self.dynamic_aux_num_classes = int(
             getattr(custom_cfg, "georoute_dynamic_aux_num_classes", 20)
         )
@@ -610,6 +615,18 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             raise ValueError(f"unsupported GeoRoute route mode {self.route_mode!r}")
         if self.policy_estimator not in POLICY_ESTIMATORS:
             raise ValueError(f"unsupported GeoRoute estimator {self.policy_estimator!r}")
+        if self.branch_calibration_mode not in DYNAMIC_BRANCH_CALIBRATION_MODES:
+            raise ValueError(
+                "georoute_branch_calibration_mode must be none or "
+                "residual_window_center"
+            )
+        if (
+            self.route_mode not in DYNAMIC_ROUTE_MODES
+            and self.branch_calibration_mode != "none"
+        ):
+            raise ValueError(
+                "dynamic branch calibration is valid only for dynamic SCNR"
+            )
         if self.pooling_mode not in {"uniform_selected", "route_score_ablation"}:
             raise ValueError("georoute_pooling_mode must be uniform_selected or route_score_ablation")
         if self.adapter_mode != "coordinate_lineage_packed":
@@ -1435,6 +1452,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         maximum_extent_wh: tuple[float, float],
         packed: Mapping[str, Any],
         policy_calibration: Mapping[str, Any] | None = None,
+        branch_calibration: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Serialize result-blind dynamic geometry and execution diagnostics."""
 
@@ -1669,6 +1687,28 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             ):
                 raise ValueError("dynamic role calibration telemetry is invalid")
             payload["policy_calibration"] = dict(policy_calibration)
+        if branch_calibration is not None:
+            expected_mode = branch_calibration.get("mode")
+            if (
+                branch_calibration.get("schema_version")
+                != "scnr_dynamic_branch_calibration_window_v1"
+                or expected_mode not in DYNAMIC_BRANCH_CALIBRATION_MODES
+                or branch_calibration.get("target") != "delta_residual"
+                or not isinstance(
+                    branch_calibration.get("valid_candidate_count"), int
+                )
+                or isinstance(branch_calibration.get("valid_candidate_count"), bool)
+                or not 0
+                < int(branch_calibration["valid_candidate_count"])
+                <= tubelet_count * item_count
+                or branch_calibration.get("changes_q_base") is not False
+                or branch_calibration.get("changes_delta_roi") is not False
+                or branch_calibration.get("changes_context_zero_modifier") is not False
+                or branch_calibration.get("changes_budget_or_role_quota") is not False
+                or branch_calibration.get("mean_detached") is not False
+            ):
+                raise ValueError("dynamic branch calibration telemetry is invalid")
+            payload["branch_calibration"] = dict(branch_calibration)
         return payload
 
     @staticmethod
@@ -2059,6 +2099,14 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             grid_width=source_grid_hw[1],
             temperature=self.roi_temperature,
         )
+        delta_residual_raw = delta_residual
+        delta_residual, residual_valid_mean_before = (
+            calibrate_dynamic_residual_modifier(
+                delta_residual_raw,
+                valid_mask=valid_patch_mask,
+                mode=self.branch_calibration_mode,
+            )
+        )
         route = select_dynamic_global_exact_budget(
             q_base=q_base,
             delta_roi=delta_roi,
@@ -2205,6 +2253,38 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         )
         diagnostic_telemetry = None
         if self.diagnostic_telemetry_enabled:
+            residual_valid_count = valid_patch_mask.reshape(
+                valid_patch_mask.shape[0], -1
+            ).sum(dim=-1)
+            residual_valid_mean_after = (
+                delta_residual.masked_fill(~valid_patch_mask, 0.0)
+                .reshape(delta_residual.shape[0], -1)
+                .sum(dim=-1)
+                / residual_valid_count.to(dtype=delta_residual.dtype)
+            )
+            branch_calibration = {
+                "schema_version": "scnr_dynamic_branch_calibration_window_v1",
+                "mode": self.branch_calibration_mode,
+                "target": "delta_residual",
+                "scope": (
+                    "complete_window_all_valid_candidates"
+                    if self.branch_calibration_mode
+                    == "residual_window_center"
+                    else "disabled"
+                ),
+                "valid_candidate_count": int(residual_valid_count[0].item()),
+                "residual_valid_mean_before": float(
+                    residual_valid_mean_before[0].detach().item()
+                ),
+                "residual_valid_mean_after": float(
+                    residual_valid_mean_after[0].detach().item()
+                ),
+                "changes_q_base": False,
+                "changes_delta_roi": False,
+                "changes_context_zero_modifier": False,
+                "changes_budget_or_role_quota": False,
+                "mean_detached": False,
+            }
             policy_calibration = None
             if self.role_calibration_telemetry_enabled:
                 policy_calibration = self._dynamic_policy_calibration_telemetry(
@@ -2225,6 +2305,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 ),
                 packed=packed,
                 policy_calibration=policy_calibration,
+                branch_calibration=branch_calibration,
             )
         self.latest_georoute_audit = {
             "schema_version": GEOROUTE_BACKBONE_SCHEMA,
@@ -2254,6 +2335,29 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "roi_modifier_geometry": (
                 "signed_ellipse_with_semiaxes_half_decoded_full_extent"
             ),
+            "branch_calibration": {
+                "mode": self.branch_calibration_mode,
+                "scope": (
+                    "complete_window_all_valid_candidates"
+                    if self.branch_calibration_mode
+                    == "residual_window_center"
+                    else "disabled"
+                ),
+                "changes_q_base": False,
+                "changes_delta_roi": False,
+                "changes_context_zero_modifier": False,
+                "changes_budget_or_role_quota": False,
+                "mean_detached": False,
+                "residual_valid_mean_before": (
+                    residual_valid_mean_before.detach().cpu().tolist()
+                ),
+                "raw_delta_residual": self._detached_tensor_statistics(
+                    delta_residual_raw
+                ),
+                "effective_delta_residual": self._detached_tensor_statistics(
+                    delta_residual
+                ),
+            },
             "window_token_budget": self.window_token_budget,
             "window_budget_is_global": True,
             "independent_count_head": False,

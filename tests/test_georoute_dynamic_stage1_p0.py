@@ -154,6 +154,7 @@ def test_dynamic_stage1_config_is_global_budget_support_only():
     )
     custom = cfg.model.backbone.custom
     assert custom.georoute_route_mode == "dynamic_scnr"
+    assert custom.georoute_branch_calibration_mode == "none"
     assert custom.georoute_window_token_budget == 384 * 64
     assert custom.georoute_zero_carrier_mode == "masked_zero"
     assert custom.georoute_roi_extent_floor_mode == "native_cells"

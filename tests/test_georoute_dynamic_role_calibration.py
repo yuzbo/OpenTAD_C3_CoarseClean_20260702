@@ -33,6 +33,12 @@ from tools.bata.run_georoute_role_instrumentation_triplet import (
     MODE_SPECIFICATIONS,
     classify_triplet_comparisons,
 )
+from tools.bata.run_georoute_residual_centering_probe import (
+    _build_probe_test_arguments,
+    _configure_probe_mode,
+    classify_residual_centering_role_gate,
+    summarize_residual_centering_branch_payload,
+)
 
 
 def _telemetry_payload() -> dict:
@@ -229,6 +235,123 @@ def test_role_instrumentation_pair_has_identical_accuracy_path(
     )
     assert dict(cfg.georoute_phase_m_binding) == binding
     assert arguments[-2:] == ["--id", "0"]
+
+
+def test_residual_centering_probe_is_opt_in_and_forces_no_eval(tmp_path: Path):
+    cfg = Config(
+        dict(
+            model=dict(
+                backbone=dict(
+                    custom=dict(
+                        georoute_route_mode="dynamic_scnr",
+                        georoute_branch_calibration_mode="none",
+                        georoute_diagnostic_telemetry_enabled=True,
+                    )
+                )
+            ),
+            georoute_diagnostic_telemetry=dict(enabled=True),
+            georoute_development_profile=dict(enabled=False),
+            post_processing=dict(save_dict=True),
+            inference=dict(
+                load_from_raw_predictions=False,
+                save_raw_prediction=False,
+            ),
+        )
+    )
+    binding = {"schema_version": "probe", "probe_mode": "centered_a"}
+
+    _configure_probe_mode(
+        cfg,
+        work_dir=tmp_path / "gpu1_id0",
+        binding=binding,
+    )
+    arguments = _build_probe_test_arguments(
+        command_prefix=["python", "-m", "torch.distributed.run"],
+        bound_config=Path("bound.py"),
+        checkpoint=Path("epoch_59.pth"),
+        seed=3407,
+    )
+
+    custom = cfg.model.backbone.custom
+    assert custom.georoute_branch_calibration_mode == "residual_window_center"
+    assert custom.georoute_role_calibration_telemetry_enabled is True
+    assert cfg.georoute_development_profile.enabled is False
+    assert dict(cfg.georoute_phase_m_binding) == binding
+    assert arguments[-3:] == ["--id", "0", "--not_eval"]
+    assert arguments.count("--not_eval") == 1
+
+
+def _residual_centering_payload() -> dict:
+    payload = _telemetry_payload()
+    route = payload["records"][0]["route"]
+    route.update(tubelet_count=2, item_count=2)
+    route["branch_calibration"] = {
+        "schema_version": "scnr_dynamic_branch_calibration_window_v1",
+        "mode": "residual_window_center",
+        "target": "delta_residual",
+        "scope": "complete_window_all_valid_candidates",
+        "valid_candidate_count": 4,
+        "residual_valid_mean_before": 2.0,
+        "residual_valid_mean_after": 1e-7,
+        "changes_q_base": False,
+        "changes_delta_roi": False,
+        "changes_context_zero_modifier": False,
+        "changes_budget_or_role_quota": False,
+        "mean_detached": False,
+    }
+    return payload
+
+
+def test_residual_centering_probe_validates_transform_receipt():
+    payload = _residual_centering_payload()
+    summary = summarize_residual_centering_branch_payload(payload)
+
+    assert summary["transform_receipts_valid"] is True
+    assert summary["residual_valid_mean_after_max_abs"] == pytest.approx(1e-7)
+    payload["records"][0]["route"]["branch_calibration"][
+        "residual_valid_mean_after"
+    ] = 1e-2
+    with pytest.raises(ValueError, match="branch receipt is invalid"):
+        summarize_residual_centering_branch_payload(payload)
+
+
+@pytest.mark.parametrize(
+    ("valid_counts", "selected_counts", "passed"),
+    [
+        (
+            {"context": 1, "roi": 2, "residual": 7},
+            {"context": 0, "roi": 1, "residual": 4},
+            True,
+        ),
+        (
+            {"context": 0, "roi": 2, "residual": 8},
+            {"context": 0, "roi": 1, "residual": 4},
+            False,
+        ),
+        (
+            {"context": 1, "roi": 2, "residual": 7},
+            {"context": 0, "roi": 0, "residual": 5},
+            False,
+        ),
+    ],
+)
+def test_residual_centering_probe_applies_fail_closed_structural_gate(
+    valid_counts: dict,
+    selected_counts: dict,
+    passed: bool,
+):
+    summary = {
+        "roles": {
+            "valid": {"counts": valid_counts},
+            "selected": {"counts": selected_counts},
+        }
+    }
+
+    gate = classify_residual_centering_role_gate(summary)
+
+    assert gate["passed"] is passed
+    assert gate["performance_claim_allowed"] is False
+    assert (gate["status"].startswith("PASS_")) is passed
 
 
 @pytest.mark.parametrize("role_calibration_enabled", [False, True])

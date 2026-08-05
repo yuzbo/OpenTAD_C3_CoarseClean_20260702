@@ -221,18 +221,8 @@ def main():
             raise RuntimeError(
                 "dynamic floor M2 evaluation cannot share another formal binding"
             )
-        if (
-            args.checkpoint == "none"
-            or args.cfg_options is not None
-            or args.id != 0
-            or args.not_eval
-            or args.max_batches is not None
-        ):
-            raise ValueError(
-                "dynamic floor M2 evaluation requires its final checkpoint and "
-                "forbids overrides, alternate ids, partial inference, and no-eval"
-            )
         from tools.bata.georoute_dynamic_floor_m2_contract import (
+            DYNAMIC_FLOOR_M2_RESIDUAL_CENTERING_PROBE_SCHEMA,
             DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA,
             require_clean_dynamic_floor_m2_checkout,
             require_dynamic_floor_m2_world1_slurm,
@@ -240,6 +230,25 @@ def main():
             validate_dynamic_floor_m2_checkpoint_sidecar,
             validate_dynamic_floor_m2_config,
         )
+
+        phase_m_binding = cfg.get("georoute_phase_m_binding", {})
+        residual_centering_probe = bool(
+            isinstance(phase_m_binding, dict)
+            and phase_m_binding.get("schema_version")
+            == DYNAMIC_FLOOR_M2_RESIDUAL_CENTERING_PROBE_SCHEMA
+        )
+        if (
+            args.checkpoint == "none"
+            or args.cfg_options is not None
+            or args.id != 0
+            or bool(args.not_eval) is not residual_centering_probe
+            or args.max_batches is not None
+        ):
+            raise ValueError(
+                "dynamic floor M2 evaluation requires its final checkpoint and "
+                "forbids overrides, alternate ids, and partial inference; only the "
+                "bound residual-centering mechanism probe requires no-eval"
+            )
 
         require_dynamic_floor_m2_world1_slurm()
         arm = str(cfg.georoute_dynamic_floor_m2_binding.arm)
@@ -252,11 +261,13 @@ def main():
                 binding=georoute_dynamic_floor_m2_binding,
             )
         )
-        phase_m_binding = cfg.get("georoute_phase_m_binding", {})
         strict_dynamic_floor_m2_determinism = bool(
             isinstance(phase_m_binding, dict)
             and phase_m_binding.get("schema_version")
-            == DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA
+            in {
+                DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA,
+                DYNAMIC_FLOOR_M2_RESIDUAL_CENTERING_PROBE_SCHEMA,
+            }
         )
         require_clean_dynamic_floor_m2_checkout(
             expected_commit=dynamic_floor_m2_execution_commit,

@@ -38,6 +38,9 @@ DYNAMIC_ROUTE_MODES = frozenset({"dynamic_scnr"})
 ROUTE_MODES = LEGACY_ROUTE_MODES | STRUCTURED_ROUTE_MODES | DYNAMIC_ROUTE_MODES
 POLICY_ESTIMATORS = frozenset({"none", "straight_through", "score_function"})
 SCORE_FUNCTION_TEMPORAL_REDUCTIONS = frozenset({"sum", "mean"})
+DYNAMIC_BRANCH_CALIBRATION_MODES = frozenset(
+    {"none", "residual_window_center"}
+)
 _ROUTE_PRIVATE_RNG_SCHEMA = "georoute_route_private_rng_v1"
 
 
@@ -689,6 +692,47 @@ def global_sigmoid_budget_projection(
             "global soft-budget projection did not preserve its exact-sum contract"
         )
     return probability
+
+
+def calibrate_dynamic_residual_modifier(
+    delta_residual: torch.Tensor,
+    *,
+    valid_mask: torch.Tensor,
+    mode: str,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Apply one opt-in, offset-only calibration to the residual modifier.
+
+    ``residual_window_center`` subtracts one differentiable mean over every
+    valid candidate in each complete window.  It deliberately does not center
+    per tubelet, change scale, detach the mean, or touch invalid candidates.
+    The returned mean is the pre-calibration valid mean for audit purposes.
+    """
+
+    if mode not in DYNAMIC_BRANCH_CALIBRATION_MODES:
+        raise ValueError(f"unsupported dynamic branch calibration mode {mode!r}")
+    if delta_residual.ndim != 3 or not delta_residual.is_floating_point():
+        raise ValueError("dynamic residual modifier must be floating [B,T,N]")
+    if valid_mask.shape != delta_residual.shape or valid_mask.dtype != torch.bool:
+        raise ValueError("dynamic residual valid_mask must be bool [B,T,N]")
+    if not bool(torch.isfinite(delta_residual).all().item()):
+        raise ValueError("dynamic residual modifier must be finite")
+
+    batch_size = int(delta_residual.shape[0])
+    valid_counts = valid_mask.reshape(batch_size, -1).sum(dim=-1)
+    if bool((valid_counts <= 0).any().item()):
+        raise ValueError("dynamic residual calibration requires valid candidates")
+    valid_values = delta_residual.masked_fill(~valid_mask, 0.0)
+    valid_mean = valid_values.reshape(batch_size, -1).sum(dim=-1) / valid_counts.to(
+        dtype=delta_residual.dtype
+    )
+    if mode == "none":
+        return delta_residual, valid_mean
+
+    centered = delta_residual - valid_mean.reshape(batch_size, 1, 1)
+    calibrated = torch.where(valid_mask, centered, delta_residual)
+    if not bool(torch.isfinite(calibrated).all().item()):
+        raise FloatingPointError("centered dynamic residual modifier is nonfinite")
+    return calibrated, valid_mean
 
 
 def select_dynamic_global_exact_budget(

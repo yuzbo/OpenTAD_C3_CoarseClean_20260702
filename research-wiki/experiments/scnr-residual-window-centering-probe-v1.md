@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:scnr-residual-window-centering-probe-v1
 title: "SCNR residual-window centering frozen-checkpoint probe v1"
-stage: designed
-status: preregistered_pending_implementation
+stage: implemented
+status: implemented_pending_remote_linux_and_frozen_checkpoint_probe
 outcome: pending
 added: 2026-08-06
 updated: 2026-08-06
@@ -43,3 +43,18 @@ cost, floor, M3, official-test, operational-Hybrid, or paper claims.
 Full design:
 `docs/superpowers/specs/2026-08-06-scnr-residual-window-centering-probe-v1-design.md`.
 
+## Implementation status
+
+The opt-in `residual_window_center` mode is implemented immediately after the
+ROI modifier and before the unchanged Scheme-A role argmax/global selector. It
+uses the differentiable valid-candidate mean, preserves invalid candidates,
+and leaves the default mode at `none`. The wrapper publishes calibration
+telemetry, while the new M2-bound runner executes two strict math-SDPA
+`--not_eval` replays per arm, verifies raw-prediction and route-payload
+determinism, and classifies only the preregistered structural gate. It emits no
+metric evaluation and cannot authorize training by itself.
+
+Local Python compilation, shell syntax, whitespace, pure-contract tests, and
+standalone result-classification checks pass. The complete Torch-backed suite
+cannot load the local Windows `c10.dll`; clean Linux/Torch regression and the
+frozen G1/G2 Slurm probes remain pending.

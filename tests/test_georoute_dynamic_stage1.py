@@ -4,7 +4,9 @@ import pytest
 import torch
 
 from opentad.models.backbones.georoute_routing import (
+    DYNAMIC_BRANCH_CALIBRATION_MODES,
     GEOROUTE_DYNAMIC_ROUTING_SCHEMA,
+    calibrate_dynamic_residual_modifier,
     global_sigmoid_budget_projection,
     roi_modifier_from_geometry,
     select_dynamic_global_exact_budget,
@@ -74,6 +76,111 @@ def test_dynamic_route_selects_one_physical_copy_when_role_modifiers_compete():
     assert torch.equal(route["physical_indices"], torch.tensor([[4]]))
     assert torch.equal(route["selected_role_ids"], torch.tensor([[1]]))
     assert int(route["selected_mask"].sum()) == 1
+
+
+def test_dynamic_residual_window_center_is_offset_only_and_differentiable():
+    residual = torch.tensor(
+        [
+            [[1.0, 3.0], [5.0, 100.0]],
+            [[-4.0, 0.0], [4.0, 8.0]],
+        ],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+    valid = torch.tensor(
+        [
+            [[True, True], [True, False]],
+            [[True, True], [True, True]],
+        ]
+    )
+
+    calibrated, mean = calibrate_dynamic_residual_modifier(
+        residual,
+        valid_mask=valid,
+        mode="residual_window_center",
+    )
+
+    assert DYNAMIC_BRANCH_CALIBRATION_MODES == {
+        "none",
+        "residual_window_center",
+    }
+    assert torch.allclose(mean, torch.tensor([3.0, 2.0], dtype=torch.float64))
+    assert torch.equal(calibrated.masked_select(~valid), residual.masked_select(~valid))
+    centered_sum = calibrated.masked_fill(~valid, 0.0).sum(dim=(1, 2))
+    assert torch.allclose(centered_sum, torch.zeros_like(centered_sum), atol=1e-12)
+
+    weights = torch.arange(
+        calibrated.numel(), dtype=calibrated.dtype
+    ).reshape_as(calibrated)
+    (calibrated.masked_fill(~valid, 0.0) * weights).sum().backward()
+    assert residual.grad is not None
+    assert torch.isfinite(residual.grad).all()
+    assert torch.count_nonzero(residual.grad.masked_select(valid)) > 0
+    assert torch.equal(
+        residual.grad.masked_select(~valid),
+        torch.zeros_like(residual.grad.masked_select(~valid)),
+    )
+    assert torch.allclose(
+        residual.grad.masked_fill(~valid, 0.0).sum(dim=(1, 2)),
+        torch.zeros(2, dtype=torch.float64),
+        atol=1e-12,
+    )
+
+
+def test_dynamic_residual_calibration_none_is_exact_identity():
+    residual = torch.randn(2, 3, 4)
+    calibrated, mean = calibrate_dynamic_residual_modifier(
+        residual,
+        valid_mask=torch.ones_like(residual, dtype=torch.bool),
+        mode="none",
+    )
+    assert calibrated is residual
+    assert torch.allclose(mean, residual.mean(dim=(1, 2)))
+
+
+def test_residual_window_center_restores_roles_without_changing_exact_budget():
+    q_base = torch.tensor([[[6.0, 5.0, 4.0, 3.0, 2.0, 1.0]]])
+    delta_roi = torch.tensor([[[-1.0, -1.0, -1.0, -1.0, 1.0, -1.0]]])
+    raw_residual = torch.tensor([[[4.0, 4.0, 2.0, 2.0, 0.0, 0.0]]])
+    valid = torch.ones_like(q_base, dtype=torch.bool)
+    centered, _mean = calibrate_dynamic_residual_modifier(
+        raw_residual,
+        valid_mask=valid,
+        mode="residual_window_center",
+    )
+
+    route = select_dynamic_global_exact_budget(
+        q_base=q_base,
+        delta_roi=delta_roi,
+        delta_residual=centered,
+        window_budget=5,
+        training=False,
+        estimator="none",
+        temperature=0.5,
+        valid_mask=valid,
+    )
+
+    assert route["role_counts"] == {"context": 2, "roi": 1, "residual": 2}
+    assert int(route["selected_mask"].sum()) == 5
+    assert route["padded_token_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("mode", "message"),
+    [
+        ("unknown", "unsupported dynamic branch calibration"),
+        ("residual_window_center", "valid candidates"),
+    ],
+)
+def test_dynamic_residual_calibration_fails_closed(mode, message):
+    residual = torch.zeros(1, 2, 3)
+    valid = torch.zeros_like(residual, dtype=torch.bool)
+    with pytest.raises(ValueError, match=message):
+        calibrate_dynamic_residual_modifier(
+            residual,
+            valid_mask=valid,
+            mode=mode,
+        )
 
 
 def test_global_soft_budget_is_strict_exact_sum_shift_invariant_and_dense_gradient():

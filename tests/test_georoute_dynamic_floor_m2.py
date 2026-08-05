@@ -14,6 +14,7 @@ from tools.bata.georoute_dynamic_floor_m2_contract import (
     DYNAMIC_FLOOR_M2_CHECKPOINT_SIDECAR_SCHEMA,
     DYNAMIC_FLOOR_M2_COST_SCHEMA,
     DYNAMIC_FLOOR_M2_COST_ORDER,
+    DYNAMIC_FLOOR_M2_RESIDUAL_CENTERING_PROBE_SCHEMA,
     DYNAMIC_FLOOR_M2_ROLE_NEUTRALITY_PAIR_SCHEMA,
     DYNAMIC_FLOOR_M2_ROLE_STRICT_TRIPLET_SCHEMA,
     DYNAMIC_FLOOR_M2_SEED,
@@ -37,6 +38,12 @@ from tools.bata.profile_georoute_dynamic_floor_m2 import (
     _validate_cost_audit,
 )
 from tools.bata.finalize_georoute_dynamic_floor_m2 import _validate_deployment
+from tools.bata.run_georoute_residual_centering_probe import (
+    _build_probe_test_arguments,
+    _route_payload_sha256,
+    classify_residual_centering_role_gate,
+    summarize_residual_centering_branch_payload,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -337,6 +344,171 @@ def test_dynamic_floor_m2_strict_role_triplet_declares_execution_override(
             cfg,
             binding=binding,
         )
+
+
+@pytest.mark.parametrize("probe_mode", ["centered_a", "centered_b"])
+def test_dynamic_floor_m2_residual_centering_probe_is_no_metric_route_intervention(
+    tmp_path: Path,
+    probe_mode: str,
+):
+    cfg = _bound_config(tmp_path)
+    custom = cfg.model.backbone.custom
+    custom.georoute_branch_calibration_mode = "residual_window_center"
+    custom.georoute_diagnostic_telemetry_enabled = True
+    custom.georoute_role_calibration_telemetry_enabled = True
+    cfg.georoute_diagnostic_telemetry = dict(enabled=True)
+    cfg.georoute_development_profile = dict(enabled=False)
+    binding = validate_dynamic_floor_m2_config(
+        cfg,
+        arm="native_1cell_main",
+        phase="accuracy",
+    )
+    cfg.georoute_phase_m_binding = dict(
+        schema_version=DYNAMIC_FLOOR_M2_RESIDUAL_CENTERING_PROBE_SCHEMA,
+        probe_mode=probe_mode,
+        variant="native_1cell_main",
+        seed=DYNAMIC_FLOOR_M2_SEED,
+        source_experiment_commit="c" * 40,
+        runtime_commit="d" * 40,
+        source_bound_config_sha256="1" * 64,
+        source_checkpoint_sha256="2" * 64,
+        source_prediction_sha256="3" * 64,
+        source_population_sha256="4" * 64,
+        source_dataset_count=136,
+        branch_calibration_mode="residual_window_center",
+        branch_calibration_scope="complete_window_all_valid_candidates",
+        role_calibration_telemetry_enabled=True,
+        mechanism_probe_only=True,
+        training_performed=False,
+        same_slurm_job=True,
+        same_visible_gpu=True,
+        serial_execution=True,
+        strict_deterministic_algorithms=True,
+        sdp_backend="math",
+        tf32_enabled=False,
+        fixed_role_quota_used=False,
+        q_ctx_used=False,
+        changes_route_or_execution=True,
+        metric_evaluation_enabled=False,
+        official_test_opened=False,
+        gt_for_route_used=False,
+        teacher_for_route_used=False,
+        oracle_used=False,
+        raw_prediction_cache_used=False,
+    )
+
+    assert (
+        resolve_dynamic_floor_m2_accuracy_execution_commit(cfg, binding=binding)
+        == "d" * 40
+    )
+    cfg.georoute_phase_m_binding.metric_evaluation_enabled = True
+    with pytest.raises(ValueError, match="residual-centering probe execution binding"):
+        resolve_dynamic_floor_m2_accuracy_execution_commit(cfg, binding=binding)
+
+
+def test_residual_centering_probe_test_arguments_force_no_metric_evaluation():
+    arguments = _build_probe_test_arguments(
+        command_prefix=["python"],
+        bound_config=Path("bound.py"),
+        checkpoint=Path("checkpoint.pth"),
+        seed=DYNAMIC_FLOOR_M2_SEED,
+    )
+    assert arguments == [
+        "python",
+        "tools/test.py",
+        "bound.py",
+        "--checkpoint",
+        "checkpoint.pth",
+        "--seed",
+        str(DYNAMIC_FLOOR_M2_SEED),
+        "--id",
+        "0",
+        "--not_eval",
+    ]
+
+
+def _residual_centering_branch_telemetry(*, mean_after: float = 0.0) -> dict:
+    return {
+        "records": [
+            {
+                "dataset_index": 0,
+                "video_id": "gate-a",
+                "route": {
+                    "tubelet_count": 2,
+                    "item_count": 3,
+                    "selected_physical_index_sha256": "a" * 64,
+                    "branch_calibration": {
+                        "schema_version": "scnr_dynamic_branch_calibration_window_v1",
+                        "mode": "residual_window_center",
+                        "target": "delta_residual",
+                        "scope": "complete_window_all_valid_candidates",
+                        "changes_q_base": False,
+                        "changes_delta_roi": False,
+                        "changes_context_zero_modifier": False,
+                        "changes_budget_or_role_quota": False,
+                        "mean_detached": False,
+                        "valid_candidate_count": 6,
+                        "residual_valid_mean_before": 2.5,
+                        "residual_valid_mean_after": mean_after,
+                    },
+                },
+            }
+        ]
+    }
+
+
+def test_residual_centering_probe_validates_transform_and_route_hash():
+    telemetry = _residual_centering_branch_telemetry(mean_after=1e-7)
+    summary = summarize_residual_centering_branch_payload(telemetry)
+    assert summary["transform_receipts_valid"] is True
+    assert summary["metric_consumed"] is False
+    assert summary["valid_candidate_count_min"] == 6
+    first_hash = _route_payload_sha256(telemetry)
+    changed = copy.deepcopy(telemetry)
+    changed["records"][0]["route"]["selected_physical_index_sha256"] = "b" * 64
+    assert _route_payload_sha256(changed) != first_hash
+
+    invalid = _residual_centering_branch_telemetry(mean_after=1e-3)
+    with pytest.raises(ValueError, match="branch receipt is invalid"):
+        summarize_residual_centering_branch_payload(invalid)
+
+
+def test_residual_centering_probe_gate_passes_or_holds_without_training():
+    passing = classify_residual_centering_role_gate(
+        {
+            "roles": {
+                "valid": {
+                    "counts": {"context": 2, "roi": 3, "residual": 7}
+                },
+                "selected": {
+                    "counts": {"context": 0, "roi": 1, "residual": 5}
+                },
+            }
+        }
+    )
+    assert passing["passed"] is True
+    assert passing["performance_claim_allowed"] is False
+
+    held = classify_residual_centering_role_gate(
+        {
+            "roles": {
+                "valid": {
+                    "counts": {"context": 0, "roi": 0, "residual": 12}
+                },
+                "selected": {
+                    "counts": {"context": 0, "roi": 0, "residual": 6}
+                },
+            }
+        }
+    )
+    assert held["passed"] is False
+    assert held["status"].endswith("NO_TRAINING")
+    assert held["conditions"] == {
+        "valid_context_reachable": False,
+        "valid_roi_reachable": False,
+        "selected_non_residual_reachable": False,
+        "residual_not_all_valid_candidates": False,
+    }
 
 
 def _timed_cost_audit(*, attention_pairs: int | None = None) -> dict:
