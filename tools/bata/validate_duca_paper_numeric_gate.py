@@ -105,6 +105,7 @@ def validate_numeric_gate_artifact(
         or short_gate.get("status") != "passed"
         or short_gate.get("git_commit") != expected_commit
         or int(slurm_cuda.get("process_group_timeout_seconds", -1)) != 600
+        or int(slurm_cuda.get("outer_process_watchdog_seconds", -1)) != 14_400
         or slurm_cuda.get("elastic_worker_supervision") is not True
         or slurm_cuda.get("nccl_async_error_handling") is not True
         or int(execution.get("seed", -1)) != 5801

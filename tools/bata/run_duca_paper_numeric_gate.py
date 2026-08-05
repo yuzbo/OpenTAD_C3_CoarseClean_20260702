@@ -51,6 +51,7 @@ EXPECTED_GLOBAL_BATCH_SIZE = 2
 EXPECTED_T = 768
 EXPECTED_K = 384
 PROCESS_GROUP_TIMEOUT_SECONDS = 600
+PROCESS_WATCHDOG_TIMEOUT_SECONDS = 14_400
 THRESHOLDS = {
     "fp32_fp64_slot_atol": 5.0e-5,
     "fp32_fp64_slot_rtol": 5.0e-5,
@@ -489,6 +490,11 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
         int(os.environ.get("WORLD_SIZE", "0")) == EXPECTED_WORLD_SIZE,
         "numeric gate requires torchrun world size two",
     )
+    _require(
+        int(os.environ.get("DUCA_PAPER_NUMERIC_GATE_WALL_TIMEOUT_SECONDS", "-1"))
+        == PROCESS_WATCHDOG_TIMEOUT_SECONDS,
+        "numeric gate requires the frozen outer process watchdog",
+    )
     rank = int(os.environ["RANK"])
     local_rank = int(os.environ["LOCAL_RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
@@ -805,6 +811,7 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
                 ),
                 "physical_gpu_index_assumed": False,
                 "process_group_timeout_seconds": PROCESS_GROUP_TIMEOUT_SECONDS,
+                "outer_process_watchdog_seconds": PROCESS_WATCHDOG_TIMEOUT_SECONDS,
                 "elastic_worker_supervision": True,
                 "nccl_async_error_handling": bool(
                     os.environ.get("TORCH_NCCL_ASYNC_ERROR_HANDLING", "")

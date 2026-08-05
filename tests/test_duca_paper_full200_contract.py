@@ -631,6 +631,8 @@ def test_stage_a_launchers_remain_paper_facing_and_fail_closed():
     assert "DUCA_PAPER_CODE_GATE_RECEIPT_SHA256" in short_gate
     assert "validate_duca_paper_code_gate" in short_gate
     assert "torch.distributed.run" in release_gates
+    assert "DUCA_PAPER_NUMERIC_GATE_WALL_TIMEOUT_SECONDS=14400" in release_gates
+    assert "timeout --signal=TERM --kill-after=60s" in release_gates
     assert "TORCH_NCCL_ASYNC_ERROR_HANDLING=1" in release_gates
     assert "NCCL_ASYNC_ERROR_HANDLING=1" in release_gates
     assert "validate_duca_paper_numeric_gate" in release_gates
