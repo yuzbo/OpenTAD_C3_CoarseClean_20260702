@@ -1608,6 +1608,34 @@ updated: 2026-08-06
   and `edd5617a167b198eb5a7ab924df86cbabb5004dfc04b79685c213c4c66eecc6d`.
   This source establishes deployment/P0/training-start status only; no metric or
   performance artifact is yet registered.
+- SCNR residual-centering matched development training v1 terminal result,
+  2026-08-06, audited 2026-08-09. Exact runtime
+  `16137484c5ccad422e017e67a81c1a07d1ed2fbb`; root
+  `/data/run01/sczc063/yuzibo/scnr_residual_centering_matched_training_16137484_s3407_20260806_061352`;
+  Jobs `1223819/1223820/1223821`, all `COMPLETED 0:0`. Common protocol SHA-256
+  `34defbdbc30e7fff10bbb05d7e6665dd29b8128f8f03cd389250bca9e3e7493c`;
+  control/center stage SHA-256
+  `fbc23cf83af3a65a652c7c646471a9a50015a061af8d3adfeb0cfa5f0b792dfd` /
+  `de893ebed139513ebd56dbfb5088935afed50344bdba13ebf64593e691d4836b`;
+  finalization SHA-256
+  `2a9351a3c21c850f28aab4bd162f7b69f3ca40921a97304431a8a760d6ebbe8a`.
+  Duplicate-validated control versus centered Avg/mAP@.6/mAP@.7 is
+  `10.52/8.90/6.98` versus `12.57/11.04/8.14`. This source supports only the
+  preregistered single-seed development accuracy screen and paired-cost
+  authorization. Audit/claim routing are in `EXPERIMENT_AUDIT.{md,json}`,
+  `findings.md`, and `.aris/traces/{experiment-audit,result-to-claim}/2026-08-09_run01/`.
+- SCNR residual-centering paired full-stack cost v1 design and implementation,
+  2026-08-09. Frozen design
+  `docs/superpowers/specs/2026-08-09-scnr-residual-centering-paired-cost-v1-design.md`,
+  experiment node
+  `research-wiki/experiments/scnr-residual-centering-paired-cost-v1.md`, and
+  project-authored cost contract/profiler/deployer/finalizer, one Slurm
+  launcher, and focused test suite. The protocol binds the two terminal
+  checkpoints without retraining, runs eight serial ABBA+BAAB passes on one
+  GPU with one 20-ms NVML sidecar, and freezes a 1.05 upper-CI cost
+  non-inferiority gate. Local focused tests pass `8/8`, and the combined
+  inherited regression matrix passes `65/65`; no remote cost result is
+  registered yet.
 
 ## 外部附件
 

@@ -2765,3 +2765,36 @@ append_only: true
   (`0f24c871...` / `edd5617a...`) and both fresh trainings entered epoch 0 on
   `g0059`. The experiment is now `experiment_running`; no checkpoint, duplicate
   accuracy, contrast, cost or empirical claim exists yet.
+
+- 2026-08-09: reconciled the terminal residual-centering matched-training
+  artifacts before any next experiment. Jobs `1223819/1223820/1223821` all
+  completed `0:0`; each fresh cell completed 60 epochs/9,600 successful updates,
+  published one epoch-59 EMA checkpoint, and passed byte-identical strict
+  duplicate Gate prediction plus route/population/metric replay. Common
+  complete-protocol SHA-256 is `34defbdbc30e7fff10bbb05d7e6665dd29b8128f8f03cd389250bca9e3e7493c`.
+  Control versus centered Avg/mAP@.6/mAP@.7 is `10.52/8.90/6.98` versus
+  `12.57/11.04/8.14`; deltas `+2.05/+2.14/+1.16 pp` pass every preregistered
+  sign. Centering restores selected context/ROI/residual to
+  `210,925/1,613,683/1,517,728` while control remains residual-only. Independent
+  integrity review passes provenance, score handling, exactness, and executed
+  path, with single-seed/development-only scope warnings. Finalization
+  `2a9351a3...` authorizes paired cost only; no seed, efficiency, official-test,
+  complementarity or paper claim opens. The matched-training node advances from
+  `experiment_running` to `tested`.
+
+- 2026-08-09: froze and implemented
+  `exp:scnr-residual-centering-paired-cost-v1` without another Pro discussion.
+  It consumes the two audited seed-3407 checkpoints without training and uses
+  exactly one held Slurm Job/GPU, one continuous 20-ms NVML sidecar, 50 warmups
+  per pass, and serial order `none,center,center,none,center,none,none,center`.
+  Full scope is decode/preprocess/H2D/scout/route/patch/backbone/ragged adapter/
+  head/postprocess/video NMS plus memory, energy, K_t and attention pairs.
+  Four paired-pass ratios feed a 10,000-replicate video-cluster/pass-pair
+  bootstrap. Seeds 3408/3409 open only when end-to-end-p50 and energy/sample
+  center/control 95% upper bounds are both `<=1.05`; independent repeated Jobs
+  remain mandatory for a paper efficiency claim. New contracts recursively bind
+  the terminal training finalization/stages/checkpoints and separate model
+  runtime from cost execution while rejecting any sensitive model/config diff.
+  Local focused tests pass `8/8`; the combined cost, matched-training, inherited
+  M2, and required C3 regression matrix passes `65/65`. Remote Linux validation
+  and Slurm deployment remain pending.

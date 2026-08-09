@@ -1,0 +1,54 @@
+{
+  "schema_version": "scnr_residual_centering_experiment_audit_v1",
+  "audit_date": "2026-08-09",
+  "experiment_date": "2026-08-06",
+  "study_id": "scnr_residual_centering_matched_training_v1",
+  "integrity_status": "PASS_WITH_SCOPE_WARNINGS",
+  "model_runtime_commit": "16137484c5ccad422e017e67a81c1a07d1ed2fbb",
+  "run_root": "/data/run01/sczc063/yuzibo/scnr_residual_centering_matched_training_16137484_s3407_20260806_061352",
+  "jobs": {
+    "none_control": "1223819",
+    "residual_window_center": "1223820",
+    "finalizer": "1223821"
+  },
+  "job_terminal_status": "COMPLETED_0_0",
+  "shared_protocol_sha256": "34defbdbc30e7fff10bbb05d7e6665dd29b8128f8f03cd389250bca9e3e7493c",
+  "accuracy_population_sha256": "35aaa9192b4dfd4bd03599450fbbceed6c7d60e98d8df7f582bd39df26f40aa8",
+  "finalization_sha256": "2a9351a3c21c850f28aab4bd162f7b69f3ca40921a97304431a8a760d6ebbe8a",
+  "dimensions": {
+    "ground_truth_and_provenance": "PASS",
+    "score_handling": "PASS",
+    "result_exactness": "PASS",
+    "critical_path_reachability": "PASS",
+    "scope": "WARN_SINGLE_SEED_DEVELOPMENT_ONLY",
+    "evaluation": "WARN_NO_OFFICIAL_TEST_OR_REPLICATION"
+  },
+  "metrics": {
+    "none_control": {
+      "average_mAP": 10.52,
+      "mAP@0.6": 8.90,
+      "mAP@0.7": 6.98,
+      "high_iou_composite": 7.94
+    },
+    "residual_window_center": {
+      "average_mAP": 12.57,
+      "mAP@0.6": 11.04,
+      "mAP@0.7": 8.14,
+      "high_iou_composite": 9.59
+    },
+    "center_minus_none_pp": {
+      "average_mAP": 2.05,
+      "mAP@0.6": 2.14,
+      "mAP@0.7": 1.16,
+      "high_iou_composite": 1.65
+    }
+  },
+  "accuracy_screen_passed": true,
+  "paired_cost_authorized": true,
+  "seeds_3408_3409_opened": false,
+  "official_test_opened": false,
+  "paper_claim_allowed": false,
+  "required_next": "RUN_FROZEN_SAME_GPU_ABBA_BAAB_FULL_STACK_COST",
+  "review_type": "independent_history_free_same_family_read_only_audit",
+  "cross_model_acquittal": false
+}

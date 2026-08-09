@@ -1,6 +1,6 @@
 ---
 type: wiki_index
-updated: 2026-08-02
+updated: 2026-08-09
 project: C3-DUCA efficient temporal acquisition for TAD
 ---
 
@@ -19,6 +19,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [SCNR-TAD dynamic role-calibration diagnostic](experiments/scnr-dynamic-role-calibration-diagnostic-v1.md)
 - [SCNR-TAD residual-window centering probe](experiments/scnr-residual-window-centering-probe-v1.md)
 - [SCNR-TAD residual-centering matched training](experiments/scnr-residual-centering-matched-training-v1.md)
+- [SCNR-TAD residual-centering paired full-stack cost](experiments/scnr-residual-centering-paired-cost-v1.md)
 - [SCNR-TAD M2 terminal experiment audit](experiments/scnr-dynamic-floor-m2-experiment-audit.md)
 
 这是本项目研究记忆的单一入口。它区分讨论、代码、测试、实验和论文证据，

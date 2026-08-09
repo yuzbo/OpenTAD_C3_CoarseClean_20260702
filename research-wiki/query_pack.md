@@ -213,8 +213,8 @@ max_chars: 8000
   does not prove accuracy, operational complementarity, cost or floor effects;
   M3 and official test remain held. No Pro discussion is needed for the matched
   single-variable protocol.
-  That protocol is now frozen and implemented as
-  `exp:scnr-residual-centering-matched-training-v1` at stage `implemented`.
+  That protocol is now terminal as
+  `exp:scnr-residual-centering-matched-training-v1` at stage `tested`.
   It uses two fresh G1 `native_1cell_main` cells, `none_control` and
   `residual_window_center`, with the same pretrained initialization, seed 3407,
   data/order, exact B, fully dynamic K/roles, ragged/masked-zero execution,
@@ -228,13 +228,25 @@ max_chars: 8000
   hashes the normalized complete training recipe across cells, atomically binds
   both held stage Jobs plus the `afterany` finalizer, and fails closed on any
   malformed or incomplete artifact. Local pure-contract/inherited-M2/required-C3
-  regression is `57/57`. Exact runtime `16137484c5cc` passed clean N16R4
+  regression was `57/57`. Exact runtime `16137484c5cc` passed clean N16R4
   Torch/CUDA regression `93/93`; deployment SHA `71b10681...` atomically bound
   fresh control/center Jobs `1223819/1223820` plus after-any finalizer `1223821`
   under `scnr_residual_centering_matched_training_16137484_s3407_20260806_061352`.
-  Both no-performance P0 receipts passed and both fresh trainings entered epoch
-  0. State is `experiment_running`; no final checkpoint, duplicate accuracy,
-  contrast, metric or empirical support exists yet.
+  All three Jobs completed `0:0`. Both cells completed 60 epochs/9,600 updates,
+  published one epoch-59 EMA, and passed byte-identical strict duplicate Gate
+  replay across 40 videos/80,000 candidates. Control Avg/mAP@.6/mAP@.7 is
+  `10.52/8.90/6.98`; centered is `12.57/11.04/8.14`, for centered-minus-control
+  `+2.05/+2.14/+1.16 pp`. Centered selected context/ROI/residual is
+  `210,925/1,613,683/1,517,728`; control remains `0/0/3,342,336`.
+  Finalization `2a9351a3...` passes the registered signs and authorizes only
+  `exp:scnr-residual-centering-paired-cost-v1`. Cost v1 is frozen as one Slurm
+  Job/GPU with one continuous 20-ms NVML sidecar and eight serial
+  `A B B A B A A B` passes. Primary center/control end-to-end-p50 and
+  energy/sample ratios use a 10,000-replicate video-cluster/pass-pair bootstrap;
+  both 95% upper bounds must be `<=1.05` to open seeds 3408/3409. No cost exists
+  yet; official test, general Hybrid/complementarity, efficiency and paper
+  claims remain closed. No further Pro discussion is needed before this frozen
+  cost study.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and

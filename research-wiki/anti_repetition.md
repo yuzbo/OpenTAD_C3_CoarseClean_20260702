@@ -988,6 +988,24 @@ updated: 2026-08-06
 40. Exact-nine training completion proves only training/exposure integrity.
     It is not development mAP, reference adequacy, crop sufficiency, cost
     viability, official-test evidence, or authorization for S3.
+41. Do not infer equal runtime or energy from equal exact window budget. SCNR
+    centering preserves `B=24576` but changes the induced `K_t` distribution and
+    therefore can change ragged attention pairs and full-stack cost.
+42. Do not reuse an ABBA-only cost profile as the residual-centering decision.
+    The prior M2 cost run exposed a cold first-arm host/input outlier. The frozen
+    successor requires both ABBA and BAAB in one Slurm Job/GPU, retains all eight
+    passes, and uses one continuous power sidecar.
+43. Do not open seeds 3408/3409 from the seed-3407 accuracy pass alone. The
+    sealed finalizer authorizes only paired cost; both primary cost-ratio 95%
+    upper bounds must be at most 1.05 under the preregistered analysis.
+44. Do not profile control and centered checkpoints in separate Jobs or GPUs
+    and call the result paired. Hardware UUID, software identity, population,
+    pass order, source checkpoints, and power trace must be recursively bound to
+    one allocation.
+45. Do not reinterpret the centered Gate observation `K_t min=5` as a new
+    minimum-K rule. The method still allows `K_t=0`; the observed centered
+    distribution is an empirical consequence, and the approved `K_t>=1`
+    alternative remains a separate ablation.
 
 ## 任务与叙事
 
