@@ -1,5 +1,57 @@
 # Research Log
 
+## 2026-08-09 — Split-negative-control source was committed and authoritative gates were released
+
+- The adjudicated repair was committed and pushed as exact experiment source
+  `06103e347343ec87969c84d3706c87081d23149d` (tree
+  `2e60e48f2c4f3a3df21a2e56ac5113209c1ff93a`) on
+  `codex/duca-rime-20260727`. The transport bundle SHA-256 is
+  `1d8d29d104aeb1fa51d766e6511951e9997585ce110fd6d2231f571145c826f3`;
+  the clean N16R4 checkout is
+  `/data/run01/sczc063/yuzibo/OpenTAD_DUCA_PAPER_06103e34`.
+- The first gate wrapper `1233459` failed before repository code because it
+  enabled `set -u` before `/etc/profile`; the exact signature is
+  `slurm_wrapper_nounset_before_profile_XDG_DATA_DIRS`. Dependents
+  `1233460/1233461` were cancelled and their roots were not reused. This is a
+  launcher bootstrap failure, not a model, solver, numeric-gate or scientific
+  failure.
+- Retry wrappers source `/etc/profile` before strict shell mode and have exact
+  SHA-256 values `6425e6373e0094e1521fbbd607cc0610554440a0ed0e3ab2aa4a0a220df4f380`
+  (code), `e074bc024f7dec9ee769744777c78503f5da71b3fa5074168ae33deee7dd3484`
+  (natural short) and
+  `eb3622eec959e3650973fb0a211f10a12c39df5c6697ffbae61d02ec83a4da5f`
+  (release). The new DAG is `1233465 -> 1233466 -> 1233467` with fresh
+  `retry1_20260809_232354` roots.
+- Code gate `1233465` completed `0:0` with 152 Linux/PyTorch tests. Its
+  `duca_paper_clean_linux_code_gate_v3` receipt SHA-256 is
+  `2b2bfd5c1b847c581695836f8edc36a0ab3583038de33a4ab0525fd8d58db2fa`;
+  the bound historical-regression receipt SHA-256 is
+  `f1ea7680c95153005a40efd003b93e314b8a0abdff64916e0e5ee4b225f3d706`.
+  Natural-short gate `1233466` then completed `0:0`; receipt SHA-256 is
+  `3b20f93008c835bd1d45de81729d4cdb17b786155d42485460b6f7d2bbc1cea7`.
+  Two-rank release gate `1233467` completed `0:0`; numeric, exact-211 and
+  aggregate receipt SHA-256 values are respectively
+  `80293fc0bdc088c64fc677213864d449d67c7f992b44763c022b43b845a2d8b2`,
+  `167e9f630c498cc7dde68c638f462f898399ee73e63cd7b1f36f2e30526d92b3`
+  and `1247ae33f8537de0a2eba69fb4f2b25d266573ab0de6c65e8e9b91212e6017ba`.
+  All validators passed against the exact experiment commit and child hashes.
+- Formal Stage-A was released only after those gates passed. The fresh root is
+  `/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_06103e34_20260809_233131`;
+  submission-wrapper SHA-256 is
+  `da60ab00f9e4be02522a938bb0b2772d5eefc4ccec3da1859272d9733deefb27`.
+  Protocol, submission-manifest and released-receipt SHA-256 values are
+  `67fe5bbdc22e4d98f4b4c8fbea8fc56627406d1232e34363c4f2934067f34a90`,
+  `16ed0c869924a86be9861f68a4247a889fb81852d4bb9976f67da85a82bcec40`
+  and `5dfacff6b72c9b84d6abd4c9d5f6b75e1cb8e0cca08c092675dece97a9cd15f0`.
+  Jobs `1233471` through `1233476` are the six isolated seed/group schedulers;
+  `1233477` is the afterok matrix seal. The manifest binds 12 logical cells,
+  full 200 training, exact 211 evaluation, three registered seeds, 60 epochs,
+  6000 successful updates, terminal epoch-59 EMA, `phase_b_submitted=false`
+  and `single_seed_claim_allowed=false`.
+- Evidence scope remains `ENGINEERING_STATUS`: the jobs are initially queued,
+  no validation/test metric has been opened, and no partial/single-seed or
+  performance comparison is authorized before all 12 receipts and the seal.
+
 ## 2026-08-09 — Historical negative control was split from production numeric admission
 
 - Fully read external adjudication `U-PRO-STAGEA-SPLIT-LEGACY-NC-1`, source
@@ -18,10 +70,8 @@
   ran. The corrected canonical-interpreter precheck `1233456` completed `0:0`
   and established old-fixed-fixture failure plus current-solver structural pass.
 - Local syntax, shell and contract checks pass; `tests/test_duca_paper_full200_contract.py`
-  reports `21 passed, 1 skipped`. The change is not yet a clean commit and has
-  not passed the full authoritative code, natural-short, two-rank numeric or
-  exact-211 release chain. State is `implemented / focused-tested /
-  pending_clean_commit_and_authoritative_gates`.
+  reports `21 passed, 1 skipped`. This historical point preceded the clean
+  commit and authoritative gate release; see the newer entry above.
 - No model, loss, budget, threshold, seed, data split, checkpoint rule or
   evaluator changed. No Stage-A job was released, no mAP was opened and no
   method-performance claim is allowed.

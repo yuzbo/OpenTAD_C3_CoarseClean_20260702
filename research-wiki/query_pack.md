@@ -30,7 +30,7 @@ Current evidence level:
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
 | Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
-| Official full-data DUCA feasibility | `stagea_1215390_to_1215396_terminal_failed_closed / numeric_gate_1223308_legacy_premise_failed / split_negative_control_route_accepted_and_implemented_pending_clean_commit / metrics_never_opened / no_empirical_conclusion` |
+| Official full-data DUCA feasibility | `stagea_1215390_to_1215396_terminal_failed_closed / split_negative_control_source_06103e34 / release_gates_1233465_1233466_1233467_all_passed / formal_stagea_1233471_to_1233477_released_and_queued / metrics_never_opened / no_empirical_conclusion` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -65,12 +65,22 @@ additive-shift structural oracles. This changes no DUCA model, loss, budget,
 threshold, seed, split, checkpoint or evaluator.
 
 The fixed `T96/K48` historical fixture passed focused Linux/PyTorch Slurm job
-`1233456` with exit `0:0`. Precheck jobs `1233451/1233452` failed before Python
-because the non-interactive Slurm shell lacked `module/source`; they are
-launcher failures. Code/validator/release/failure-receipt changes are locally
-implemented and focused non-Torch contract tests pass, but remain
-`implemented / focused-tested / pending_clean_commit_and_authoritative_gates`.
-No Stage-A cell has been released and no metric has been opened.
+`1233456` with exit `0:0`. The complete repair is now committed and pushed as
+exact experiment source `06103e347343ec87969c84d3706c87081d23149d`; its clean
+N16R4 checkout is `/data/run01/sczc063/yuzibo/OpenTAD_DUCA_PAPER_06103e34`.
+The first wrapper `1233459` failed before repository code because strict
+`nounset` preceded `/etc/profile`; dependents `1233460/1233461` were cancelled.
+Fresh retry DAG `1233465 -> 1233466 -> 1233467` uses new roots and all three
+jobs completed `0:0`. Code, natural-short, numeric, exact-211 and aggregate
+release receipts are exact-commit/hash validated. Formal Stage-A root
+`/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_06103e34_20260809_233131`
+has therefore been released: seed/group jobs `1233471` to `1233476` plus
+afterok seal `1233477`. Protocol manifest SHA-256 is
+`67fe5bbdc22e4d98f4b4c8fbea8fc56627406d1232e34363c4f2934067f34a90`;
+it binds exactly 12 cells, full 200 training, exact 211 evaluation, three
+registered seeds, 60 epochs/6000 successful updates and terminal epoch-59 EMA.
+The jobs are initially queued. No metric has been opened and no partial or
+single-seed claim is allowed.
 
 The first acquisition-v2 preflight used exact source commit
 `70cf49de82a9d0ed889ed94af9604edd61070e55`, clean remote checkout

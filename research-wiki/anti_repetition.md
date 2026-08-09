@@ -574,3 +574,10 @@ These failures and naming mistakes must not be repeated.
      shell. Use an explicit Bash login/bootstrap contract or the frozen canonical
      interpreter path. Jobs `1233451/1233452` failed before Python for this exact
      reason; job `1233456` passed when the canonical interpreter was invoked.
+157. Do not enable `set -u` before sourcing N16R4 `/etc/profile`; profile scripts
+     may legitimately probe an unset `XDG_DATA_DIRS`. Source the profile first,
+     then enable strict mode, load modules and activate the frozen environment.
+     For non-interactive diagnostics use
+     `/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python` explicitly: the
+     gateway's unactivated `python` may resolve to an incompatible legacy runtime.
+     Job `1233459` is the immutable launcher-failure witness.
