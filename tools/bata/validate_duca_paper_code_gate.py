@@ -8,8 +8,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from tools.bata.validate_duca_paper_legacy_numeric_regression import (
+    validate_legacy_numeric_regression_artifact,
+)
 
-SCHEMA = "duca_paper_clean_linux_code_gate_v2"
+SCHEMA = "duca_paper_clean_linux_code_gate_v3"
 
 
 class CodeGateArtifactFailure(ValueError):
@@ -66,6 +69,7 @@ def validate_code_gate_artifact(
     _require(content_sha == _canonical_sha256(unsigned), "clean Linux code-gate self-hash drift")
     _require(payload.get("schema_version") == SCHEMA, "clean Linux code-gate schema drift")
     _require(payload.get("status") == "passed", "clean Linux code gate did not pass")
+    _require(payload.get("fail_closed") is True, "clean Linux code gate is not fail-closed")
     _require(payload.get("git_commit") == expected_commit, "clean Linux code gate is stale")
     _require(
         re.fullmatch(r"[0-9a-f]{40}", str(expected_commit)) is not None,
@@ -83,6 +87,18 @@ def validate_code_gate_artifact(
     _require(payload.get("stage_a_released") is False, "code gate prematurely released Stage A")
     _require(payload.get("stage_b_enabled") is False, "code gate opened Stage B")
     _require(payload.get("paper_metric_claim_allowed") is False, "code gate overclaims metric evidence")
+    legacy = payload.get("legacy_numeric_regression", {})
+    _require(isinstance(legacy, Mapping), "code gate lacks legacy numeric regression")
+    validated_legacy = validate_legacy_numeric_regression_artifact(
+        legacy.get("path", ""),
+        expected_commit=expected_commit,
+        expected_sha256=legacy.get("sha256", ""),
+    )
+    _require(validated_legacy["status"] == "passed", "legacy regression did not pass")
+    _require(
+        validated_legacy["performance_evidence"] is False,
+        "legacy regression overclaims performance evidence",
+    )
     _require(re.fullmatch(r"[0-9a-f]{64}", str(content_sha)) is not None, "invalid code-gate content hash")
     return {
         "path": str(artifact),
@@ -91,6 +107,7 @@ def validate_code_gate_artifact(
         "slurm_job_id": str(payload["slurm_job_id"]),
         "status": "passed",
         "claim_scope": "engineering_clean_linux_pytorch_code_only",
+        "legacy_numeric_regression": validated_legacy,
     }
 
 

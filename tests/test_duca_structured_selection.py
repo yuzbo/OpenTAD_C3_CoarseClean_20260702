@@ -19,6 +19,7 @@ from opentad.models.duca.structured_selection import (
     physical_exact_uniform_gap_cap,
     structured_local_coverage_probability,
 )
+from tools.bata.run_duca_paper_legacy_numeric_regression import run_regression
 
 
 def _max_hole(indices: tuple[int, ...], temporal_len: int) -> int:
@@ -262,6 +263,19 @@ def test_physical_exact_k_long_high_dynamic_range_has_finite_exact_marginals() -
     assert scores.grad is not None
     assert torch.isfinite(scores.grad).all()
     assert scores.grad.abs().sum().item() > 0.0
+
+
+def test_legacy_raw_guard_is_a_fixed_negative_control_not_production_admission() -> None:
+    result = run_regression()
+
+    assert result["historical_negative_control"]["old_guard_triggered"] is True
+    assert result["current_solver"]["same_tensor_passed"] is True
+    assert result["current_solver"]["additive_shift_slots_allclose"] is True
+    assert result["current_solver"]["additive_shift_gradients_allclose"] is True
+    assert (
+        result["current_solver"]["additive_shift_hard_path_exact_identical"]
+        is True
+    )
 
 
 def test_structured_local_coverage_matches_bruteforce_path_distribution() -> None:

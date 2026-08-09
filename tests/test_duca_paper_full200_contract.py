@@ -11,6 +11,10 @@ from mmengine.config import Config
 
 from tools.bata import duca_paper_training
 from tools.bata import validate_duca_paper_code_gate as code_gate_validator
+from tools.bata import (
+    validate_duca_paper_legacy_numeric_regression as legacy_regression_validator,
+)
+from tools.bata import validate_duca_paper_release_gates as release_gate_validator
 from tools.bata import validate_duca_paper_short_window_gate as short_window_gate
 from tools.bata.build_duca_paper_matrix_manifest import build_manifest
 from tools.bata.run_duca_paper_exact211_uid_gate import (
@@ -161,9 +165,58 @@ def _sha256(path: Path) -> str:
 def _write_code_gate_fixture(path: Path, *, commit: str) -> None:
     pytest_log = path.with_name("pytest.out")
     pytest_log.write_text("15 passed\n", encoding="utf-8")
+    legacy_path = path.with_name("legacy_numeric_regression.receipt.json")
+    legacy_payload = {
+        "schema_version": legacy_regression_validator.SCHEMA,
+        "status": "passed",
+        "fail_closed": True,
+        "git_commit": commit,
+        "slurm_job_id": "12344",
+        "fixture": {
+            "t": 96,
+            "k": 48,
+            "temperature": 1.0,
+            "historical_shift": 2000.0,
+            "current_shift_oracle": 37.0,
+            "max_gap_seconds": 3.0,
+        },
+        "historical_negative_control": {
+            "legacy_status": "finite",
+            "old_raw_log_row_mass_max_abs": 0.1,
+            "old_fp32_normalization_envelope": 0.001,
+            "old_guard_triggered": True,
+        },
+        "current_solver": {
+            "same_tensor_passed": True,
+            "slot_row_mass_max_abs": 0.0,
+            "column_occupancy_max": 1.0,
+            "ordered_slot_expectation_min_gap": 1.0,
+            "additive_shift_slots_allclose": True,
+            "additive_shift_gradients_allclose": True,
+            "additive_shift_hard_path_exact_identical": True,
+            "fp64_logz_shift_residual": 0.0,
+            "thresholds": dict(legacy_regression_validator.THRESHOLDS),
+        },
+        "role": "deterministic_code_regression_negative_control",
+        "production_admission_effect": "none",
+        "validation_or_test_data_used": False,
+        "checkpoint_created": False,
+        "prediction_generated": False,
+        "metric_accessed": False,
+        "paper_metric_claim_allowed": False,
+        "paper_method_performance_evidence": False,
+        "claim_scope": "engineering_historical_solver_regression_only",
+    }
+    legacy_payload["content_sha256"] = (
+        legacy_regression_validator._canonical_sha256(legacy_payload)
+    )
+    legacy_path.write_text(
+        json.dumps(legacy_payload, sort_keys=True) + "\n", encoding="utf-8"
+    )
     payload = {
         "schema_version": code_gate_validator.SCHEMA,
         "status": "passed",
+        "fail_closed": True,
         "git_commit": commit,
         "slurm_job_id": "12344",
         "pytest_log_path": str(pytest_log.resolve()),
@@ -176,6 +229,10 @@ def _write_code_gate_fixture(path: Path, *, commit: str) -> None:
         "stage_a_released": False,
         "stage_b_enabled": False,
         "paper_metric_claim_allowed": False,
+        "legacy_numeric_regression": {
+            "path": str(legacy_path.resolve()),
+            "sha256": _sha256(legacy_path),
+        },
     }
     payload["content_sha256"] = code_gate_validator._canonical_sha256(payload)
     path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
@@ -290,6 +347,47 @@ def _write_short_window_gate_fixture(
     }
     payload["content_sha256"] = short_window_gate._canonical_sha256(payload)
     path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def test_code_gate_rejects_tampered_legacy_negative_control(tmp_path):
+    commit = "a" * 40
+    receipt = tmp_path / "code-gate.json"
+    _write_code_gate_fixture(receipt, commit=commit)
+    legacy = tmp_path / "legacy_numeric_regression.receipt.json"
+    legacy.write_text(legacy.read_text(encoding="utf-8") + " ", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="legacy regression SHA-256 drift"):
+        code_gate_validator.validate_code_gate_artifact(
+            receipt,
+            expected_commit=commit,
+            expected_sha256=_sha256(receipt),
+        )
+
+
+def test_release_gate_validator_rejects_unhashed_aggregate(tmp_path):
+    commit = "a" * 40
+    receipt = tmp_path / "release-gates.json"
+    payload = {
+        "schema_version": release_gate_validator.SCHEMA,
+        "status": "passed",
+        "fail_closed": True,
+        "git_commit": commit,
+        "slurm_job_id": "12345",
+        "paper_metric_claim_allowed": False,
+        "paper_method_performance_evidence": False,
+        "stage_a_release_prerequisites_satisfied": True,
+        "stage_b_enabled": False,
+        "official_final_consumed": False,
+        "content_sha256": "0" * 64,
+    }
+    receipt.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="aggregate contract drift"):
+        release_gate_validator.validate_release_gates_artifact(
+            receipt,
+            expected_commit=commit,
+            expected_sha256=_sha256(receipt),
+        )
 
 
 def test_exact211_execution_rejects_missing_video(tmp_path):
@@ -626,6 +724,9 @@ def test_stage_a_launchers_remain_paper_facing_and_fail_closed():
     assert '"stage_a_manifest_created": False' in code_gate
     assert "tests/test_duca_structured_selection.py" in code_gate
     assert "run_duca_paper_numeric_gate.py" in code_gate
+    assert "run_duca_paper_legacy_numeric_regression" in code_gate
+    assert "legacy_numeric_regression.receipt.json" in code_gate
+    assert "gate.failure.receipt.json" in code_gate
     assert "run_duca_paper_exact211_uid_gate.py" in code_gate
     assert "--output \"${DUCA_PAPER_MATRIX_MANIFEST}\"" not in code_gate
     assert "DUCA_PAPER_CODE_GATE_RECEIPT_SHA256" in short_gate
@@ -637,6 +738,9 @@ def test_stage_a_launchers_remain_paper_facing_and_fail_closed():
     assert "NCCL_ASYNC_ERROR_HANDLING=1" in release_gates
     assert "validate_duca_paper_numeric_gate" in release_gates
     assert "validate_duca_paper_exact211_uid_gate" in release_gates
+    assert "validate_duca_paper_release_gates" in release_gates
+    assert "release_gates.failure.receipt.json" in release_gates
+    assert "numeric_gate.failure.receipt.json" in release_gates
     assert "paper_method_performance_evidence\": False" in release_gates
     assert grouped.rfind("trap - ERR INT TERM") > grouped.rfind(
         "os.replace(temporary, target)"
@@ -653,9 +757,16 @@ def test_numeric_gate_waits_for_target_capture_with_rank_synchronized_control_fl
     assert "target_capture_updates += 1" in numeric_gate
     sync = "dist.all_reduce(flag, op=dist.ReduceOp.MAX)"
     assert sync in numeric_gate
-    assert numeric_gate.index("local_trigger = False") < numeric_gate.index(sync)
+    assert numeric_gate.index("int(capture is not None)") < numeric_gate.index(sync)
     assert numeric_gate.index(sync) < numeric_gate.index("if int(flag.item()) == 1:")
-    assert "old production FP32 guard did not trigger within 100 updates" in numeric_gate
+    assert "dist.all_reduce(owner, op=dist.ReduceOp.MIN)" in numeric_gate
+    assert "first eligible successful-update index diverged" in numeric_gate
+    assert "NO_TARGET_CAPTURE" in numeric_gate
+    assert "old production FP32 guard did not trigger within 100 updates" not in numeric_gate
+    assert '"role": "diagnostic_only"' in numeric_gate
+    assert '"admission_effect": "none"' in numeric_gate
+    assert "TARGET_CAPTURED_LEGACY_ABSENT" in numeric_gate
+    assert "TARGET_CAPTURED_LEGACY_PRESENT" in numeric_gate
 
 
 def test_numeric_gate_uses_formal_amp_replay_before_judging_successful_gradients():

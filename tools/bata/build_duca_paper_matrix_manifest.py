@@ -174,8 +174,9 @@ def build_manifest(
             expected_commit=expected_commit,
         )
         prerequisite_gates["clean_linux_pytorch_code"] = {
-            "schema_version": "duca_paper_clean_linux_code_gate_v2",
+            "schema_version": "duca_paper_clean_linux_code_gate_v3",
             "status": "passed",
+            "fail_closed": True,
             "git_commit": expected_commit,
             "path": gate_binding["code_gate_path"],
             "sha256": gate_binding["code_gate_sha256"],

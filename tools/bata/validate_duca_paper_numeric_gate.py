@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA = "duca_paper_physical_exactk_numeric_gate_v1"
+SCHEMA = "duca_paper_physical_exactk_numeric_gate_v2"
 THRESHOLDS = {
     "fp32_fp64_slot_atol": 5.0e-5,
     "fp32_fp64_slot_rtol": 5.0e-5,
@@ -20,6 +20,9 @@ THRESHOLDS = {
     "edge_flow_per_slot_l1_max_abs": 1.0e-4,
     "fp32_fp64_gradient_atol": 2.0e-5,
     "fp32_fp64_gradient_rtol": 2.0e-3,
+    "column_occupancy_max": 1.0 + 5.0e-4,
+    "ordered_slot_expectation_min_gap_gt": 0.0,
+    "additive_shift": 37.0,
 }
 
 
@@ -59,7 +62,7 @@ def validate_numeric_gate_artifact(
     content_sha = unsigned.pop("content_sha256", None)
     execution = payload.get("bounded_execution", {})
     capture = payload.get("capture", {})
-    legacy = payload.get("legacy_failure_reproduction", {})
+    legacy = payload.get("legacy_production_diagnostic", {})
     diagnostic = payload.get("candidate_fp32_oracle_diagnostic", {})
     tensor_path = Path(str(payload.get("tensor_artifact_path", ""))).expanduser().resolve()
     short_gate = payload.get("prerequisite_real_short_window_gate", {})
@@ -78,20 +81,35 @@ def validate_numeric_gate_artifact(
         "fp32_fp64_gradient_max_abs",
         "fp32_fp64_gradient_max_relative",
         "occupancy_sum",
+        "column_occupancy_max",
+        "ordered_slot_expectation_min_gap",
+        "additive_shift_fp64_logz_residual",
     )
     numeric_values_finite = all(
         math.isfinite(float(diagnostic.get(key, math.nan))) for key in numeric_fields
     )
-    capture_values_finite = all(
-        math.isfinite(float(capture.get(key, math.nan)))
-        for key in ("score_min", "score_max", "score_mean", "score_std")
-    )
-    legacy_values_finite = all(
-        math.isfinite(float(legacy.get(key, math.nan)))
-        for key in (
-            "old_raw_log_row_mass_max_abs",
-            "old_fp32_normalization_envelope",
+    legacy_max_abs = legacy.get("old_raw_log_row_mass_max_abs")
+    legacy_diagnostic_valid = (
+        legacy.get("role") == "diagnostic_only"
+        and legacy.get("admission_effect") == "none"
+        and isinstance(legacy.get("old_guard_triggered"), bool)
+        and math.isfinite(
+            float(legacy.get("old_fp32_normalization_envelope", math.nan))
         )
+        and (
+            (
+                legacy.get("legacy_status") == "finite"
+                and legacy_max_abs is not None
+                and math.isfinite(float(legacy_max_abs))
+            )
+            or (
+                legacy.get("legacy_status") == "nonfinite"
+                and legacy_max_abs is None
+            )
+        )
+    )
+    capture_update_index = int(
+        execution.get("first_eligible_successful_update_index", -1)
     )
     if (
         payload.get("schema_version") != SCHEMA
@@ -112,28 +130,44 @@ def validate_numeric_gate_artifact(
         or int(execution.get("world_size", -1)) != 2
         or int(execution.get("global_batch_size", -1)) != 2
         or int(execution.get("maximum_attempted_updates", -1)) != 100
-        or not 1 <= int(execution.get("attempted_updates_until_trigger", -1)) <= 100
-        or int(execution.get("successful_updates_until_trigger", -2))
-        != int(execution.get("attempted_updates_until_trigger", -1))
-        or execution.get("old_guard_triggered") is not True
+        or not 1 <= int(execution.get("attempted_updates_until_capture", -1)) <= 100
+        or int(execution.get("successful_updates_until_capture", -2))
+        != int(execution.get("attempted_updates_until_capture", -1))
+        or execution.get("first_eligible_successful_capture") is not True
+        or not 0 <= capture_update_index < 100
+        or int(execution.get("capture_owner_rank", -1)) not in (0, 1)
         or execution.get("actual_full_model_forward_backward_optimizer_step") is not True
         or execution.get("all_training_gradients_finite") is not True
         or int(capture.get("t", -1)) != 768
         or int(capture.get("k", -1)) != 384
         or str(capture.get("score_dtype", "")) != "torch.float32"
         or capture.get("cuda_autocast_enabled") is not True
-        or legacy.get("old_guard_triggered") is not True
-        or float(legacy.get("old_raw_log_row_mass_max_abs", -1.0))
-        <= float(legacy.get("old_fp32_normalization_envelope", math.inf))
+        or int(capture.get("successful_update_index", -1))
+        != int(execution.get("first_eligible_successful_update_index", -2))
+        or capture.get("selection_policy")
+        != "first_eligible_successful_update_min_rank_first_solver_call"
+        or payload.get("capture_state")
+        not in (
+            "TARGET_CAPTURED_LEGACY_ABSENT",
+            "TARGET_CAPTURED_LEGACY_PRESENT",
+        )
+        or (
+            payload.get("capture_state") == "TARGET_CAPTURED_LEGACY_PRESENT"
+        )
+        != bool(legacy.get("old_guard_triggered"))
+        or not legacy_diagnostic_valid
         or diagnostic.get("passed") is not True
         or diagnostic.get("thresholds") != THRESHOLDS
         or diagnostic.get("all_gradients_finite") is not True
         or diagnostic.get("fp32_fp64_slots_allclose") is not True
         or diagnostic.get("fp32_fp64_gradients_allclose") is not True
         or diagnostic.get("hard_path_exact_identical") is not True
+        or diagnostic.get("column_occupancy_within_bound") is not True
+        or diagnostic.get("ordered_slot_expectations_strict") is not True
+        or diagnostic.get("additive_shift_slots_allclose") is not True
+        or diagnostic.get("additive_shift_gradients_allclose") is not True
+        or diagnostic.get("additive_shift_hard_path_exact_identical") is not True
         or not numeric_values_finite
-        or not capture_values_finite
-        or not legacy_values_finite
         or int(capture.get("valid_len", -1)) != 768
         or int(diagnostic.get("effective_k", -1)) != 384
         or abs(float(diagnostic.get("occupancy_sum", math.nan)) - 384.0)
@@ -146,6 +180,12 @@ def validate_numeric_gate_artifact(
         > THRESHOLDS["edge_flow_linf_max_abs"]
         or float(diagnostic.get("edge_flow_per_slot_l1_max_abs", math.inf))
         > THRESHOLDS["edge_flow_per_slot_l1_max_abs"]
+        or float(diagnostic.get("column_occupancy_max", math.inf))
+        > THRESHOLDS["column_occupancy_max"]
+        or float(diagnostic.get("ordered_slot_expectation_min_gap", -math.inf))
+        <= THRESHOLDS["ordered_slot_expectation_min_gap_gt"]
+        or float(diagnostic.get("additive_shift_fp64_logz_residual", math.inf))
+        > THRESHOLDS["dual_logz_max_abs"]
         or not tensor_path.is_file()
         or tensor_path.parent != source.parent
         or re.fullmatch(r"captured_solver_input\.rank[0-9]{4}\.pt", tensor_path.name)
@@ -169,6 +209,7 @@ def validate_numeric_gate_artifact(
         or payload.get("official_final_consumed") is not False
     ):
         raise RuntimeError("production-like learned numeric gate contract drift")
+    rank_summaries = []
     for index in range(2):
         rank_path = source.parent / f"rank{index:04d}.summary.json"
         if (
@@ -176,6 +217,40 @@ def validate_numeric_gate_artifact(
             or _sha256(rank_path) != rank_summary_sha[str(index)]
         ):
             raise RuntimeError("numeric gate rank-summary binding drift")
+        rank_summaries.append(json.loads(rank_path.read_text(encoding="utf-8")))
+    attempted = [int(row.get("attempted_updates", -1)) for row in rank_summaries]
+    successful = [int(row.get("successful_updates", -1)) for row in rank_summaries]
+    capture_counts = [int(row.get("target_capture_updates", -1)) for row in rank_summaries]
+    capture_indices = [
+        int(row.get("capture_successful_update_index", -1))
+        for row in rank_summaries
+    ]
+    owner_candidates = [index for index, count in enumerate(capture_counts) if count == 1]
+    if (
+        len(set(attempted)) != 1
+        or len(set(successful)) != 1
+        or attempted[0] != int(execution["attempted_updates_until_capture"])
+        or successful[0] != int(execution["successful_updates_until_capture"])
+        or any(count not in (0, 1) for count in capture_counts)
+        or not owner_candidates
+        or min(owner_candidates) != int(execution["capture_owner_rank"])
+        or len(set(capture_indices)) != 1
+        or capture_indices[0]
+        != int(execution["first_eligible_successful_update_index"])
+        or capture_indices[0] != successful[0] - 1
+        or any(
+            int(row.get("optimizer_attempts", -1))
+            != int(row.get("successful_updates", -2))
+            + int(row.get("amp_skipped_attempts", -3))
+            for row in rank_summaries
+        )
+        or any(
+            int(row.get("replay_state_restorations", -1))
+            != int(row.get("amp_skipped_attempts", -2))
+            for row in rank_summaries
+        )
+    ):
+        raise RuntimeError("numeric gate synchronized capture contract drift")
     for key in ("pretrain", "annotation", "class_map"):
         binding = assets.get(key, {})
         asset_path = Path(str(binding.get("path", ""))).expanduser().resolve()

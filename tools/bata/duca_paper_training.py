@@ -587,8 +587,9 @@ def _validate_matrix_manifest(
     )
     if (
         not isinstance(code_gate, Mapping)
-        or code_gate.get("schema_version") != "duca_paper_clean_linux_code_gate_v2"
+        or code_gate.get("schema_version") != "duca_paper_clean_linux_code_gate_v3"
         or code_gate.get("status") != "passed"
+        or code_gate.get("fail_closed") is not True
         or code_gate.get("git_commit") != git_commit
         or code_gate.get("claim_scope")
         != "engineering_clean_linux_pytorch_code_only"

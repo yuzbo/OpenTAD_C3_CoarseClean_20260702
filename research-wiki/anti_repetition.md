@@ -1,6 +1,6 @@
 # DUCA-RIME Anti-Repetition Memory
 
-Last updated: `2026-08-02`
+Last updated: `2026-08-09`
 
 These failures and naming mistakes must not be repeated.
 
@@ -555,3 +555,22 @@ These failures and naming mistakes must not be repeated.
      decision. Preserve the failed run and obtain bounded adjudication between
      production-tensor structural-oracle coverage and a separate immutable
      historical negative-control fixture before another release attempt.
+152. Do not require a repaired production trajectory to reproduce the retired
+     raw alpha/beta guard. Freeze that behavior as a deterministic code-regression
+     negative control. A production legacy value is diagnostic only and must not
+     affect capture, owner, seed, horizon, PASS/FAIL or release.
+153. The production numeric gate must select the first eligible successful-update
+     `T=768,K=384` tensor with identical DDP collective order and minimum-rank
+     ownership. Do not select a later tensor because its legacy statistic is more
+     extreme.
+154. Do not leave a failed numeric/release process without terminal engineering
+     evidence. Python owns ordinary classified failure receipts; the shell owns
+     timeout/rank-death consolidation. Neither receipt may contain metrics or
+     authorize Stage A/Stage B.
+155. Do not trust a passed aggregate release JSON merely because the launcher
+     wrote it. It must be self-hashed and revalidate every code, natural-short,
+     numeric and exact-211 child path/hash/commit.
+156. Do not assume `module` or `source` exists inside a non-interactive Slurm
+     shell. Use an explicit Bash login/bootstrap contract or the frozen canonical
+     interpreter path. Jobs `1233451/1233452` failed before Python for this exact
+     reason; job `1233456` passed when the canonical interpreter was invoked.

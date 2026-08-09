@@ -46,11 +46,15 @@ from opentad.models import build_detector
 from opentad.models.duca import structured_selection as structured
 from opentad.utils import set_seed
 from tools.bata import duca_paper_training
+from tools.bata.run_duca_paper_legacy_numeric_regression import (
+    _legacy_raw_slot_mass_drift,
+)
 from tools.bata.validate_duca_paper_code_gate import validate_code_gate_artifact
 from tools.bata.validate_duca_paper_short_window_gate import validate_gate_artifact
 
 
-SCHEMA = "duca_paper_physical_exactk_numeric_gate_v1"
+SCHEMA = "duca_paper_physical_exactk_numeric_gate_v2"
+FAILURE_SCHEMA = "duca_paper_physical_exactk_numeric_gate_failure_v1"
 CONFIG_DEFAULT = "configs/adatad/thumos/duca_paper_duca_fixed_k384_full200.py"
 GATE_SEED = 5801
 MAX_ATTEMPTED_UPDATES = 100
@@ -69,6 +73,9 @@ THRESHOLDS = {
     "edge_flow_per_slot_l1_max_abs": 1.0e-4,
     "fp32_fp64_gradient_atol": 2.0e-5,
     "fp32_fp64_gradient_rtol": 2.0e-3,
+    "column_occupancy_max": 1.0 + 5.0e-4,
+    "ordered_slot_expectation_min_gap_gt": 0.0,
+    "additive_shift": 37.0,
 }
 
 
@@ -180,63 +187,6 @@ def _graph_to_device(payload: Mapping[str, Any], device: torch.device):
         max_gap_seconds=payload["max_gap_seconds"].to(device=device),
         edge_count=int(payload["edge_count"]),
     )
-
-
-def _legacy_raw_slot_mass_drift(
-    node_log_probs: torch.Tensor,
-    *,
-    k: int,
-    graph: structured.PhysicalExactKGraph,
-    temperature: float,
-) -> dict[str, float | bool]:
-    scores = node_log_probs.float() / float(temperature)
-    temporal_len = int(scores.numel())
-    alpha_rows = [
-        torch.where(
-            graph.source_valid,
-            scores,
-            scores.new_full(scores.shape, float("-inf")),
-        )
-    ]
-    for _slot in range(1, int(k)):
-        previous = alpha_rows[-1]
-        candidates = previous[graph.predecessor_index]
-        mass = structured._safe_masked_logsumexp(
-            candidates, graph.predecessor_valid, dim=1
-        )
-        alpha_rows.append(scores + mass)
-    alpha = torch.stack(alpha_rows, dim=0)
-    logz = structured._safe_masked_logsumexp(
-        alpha[-1], graph.sink_valid, dim=0
-    )
-    beta_rows = [scores.new_empty(scores.shape) for _ in range(int(k))]
-    beta_rows[-1] = torch.where(
-        graph.sink_valid,
-        scores.new_zeros(scores.shape),
-        scores.new_full(scores.shape, float("-inf")),
-    )
-    for slot in range(int(k) - 2, -1, -1):
-        following = beta_rows[slot + 1]
-        candidates = scores[graph.successor_index] + following[
-            graph.successor_index
-        ]
-        beta_rows[slot] = structured._safe_masked_logsumexp(
-            candidates, graph.successor_valid, dim=1
-        )
-    beta = torch.stack(beta_rows, dim=0)
-    raw = alpha + beta - logz
-    finite = torch.isfinite(raw)
-    log_row_mass = structured._safe_masked_logsumexp(raw, finite, dim=1)
-    max_abs = float(log_row_mass.abs().max().item())
-    envelope = max(
-        5.0e-4,
-        32.0 * torch.finfo(torch.float32).eps * float(max(temporal_len, int(k))),
-    )
-    return {
-        "old_raw_log_row_mass_max_abs": max_abs,
-        "old_fp32_normalization_envelope": float(envelope),
-        "old_guard_triggered": bool(max_abs > envelope),
-    }
 
 
 def _normalized_tables(
@@ -395,6 +345,27 @@ def _run_oracle_diagnostics(
     weights64 = weights32.double()
     objective64 = (slots64 * weights64).sum() + 0.01 * logz64
     grad64 = torch.autograd.grad(objective64, x64)[0]
+    additive_shift = float(THRESHOLDS["additive_shift"])
+    shifted32 = (node.detach() + additive_shift).requires_grad_(True)
+    occupancy_shift32, slots_shift32, logz_shift32 = (
+        structured._physical_row_forward_backward(
+            shifted32,
+            k=k,
+            graph=graph,
+            temperature=temperature,
+        )
+    )
+    objective_shift32 = (slots_shift32 * weights32).sum() + 0.01 * logz_shift32
+    grad_shift32 = torch.autograd.grad(objective_shift32, shifted32)[0]
+    shifted64 = (node.detach().double() + additive_shift).requires_grad_(True)
+    _, slots_shift64, logz_shift64 = structured._physical_row_forward_backward(
+        shifted64,
+        k=k,
+        graph=graph,
+        temperature=temperature,
+    )
+    objective_shift64 = (slots_shift64 * weights64).sum() + 0.01 * logz_shift64
+    grad_shift64 = torch.autograd.grad(objective_shift64, shifted64)[0]
     slot_delta = slots32.double() - slots64
     grad_delta = grad32.double() - grad64
     tables32 = _normalized_tables(
@@ -407,11 +378,52 @@ def _run_oracle_diagnostics(
     hard64 = structured._physical_row_viterbi(
         node.detach().double(), k=k, graph=graph
     )[1]
+    hard_shift32 = structured._physical_row_viterbi(
+        node.detach() + additive_shift, k=k, graph=graph
+    )[1]
     row_mass_error = float(
         (slots32.sum(dim=1) - 1.0).abs().max().item()
     )
+    column_occupancy_max = float(occupancy32.max().item())
+    slot_expectations = (
+        slots32
+        * torch.arange(
+            int(slots32.shape[1]),
+            device=device,
+            dtype=slots32.dtype,
+        )[None, :]
+    ).sum(dim=1)
+    ordered_min_gap = float(
+        (slot_expectations[1:] - slot_expectations[:-1]).min().item()
+    )
     partition_residual = float(
         (tables32["forward_logz"] - tables32["backward_logz"]).abs().item()
+    )
+    expected_logz_shift = float(k) * additive_shift / temperature
+    fp64_logz_shift_residual = abs(
+        float((logz_shift64 - logz64).item()) - expected_logz_shift
+    )
+    shift_slots_allclose = bool(
+        torch.allclose(
+            slots_shift32,
+            slots32,
+            atol=THRESHOLDS["fp32_fp64_slot_atol"],
+            rtol=THRESHOLDS["fp32_fp64_slot_rtol"],
+        )
+    )
+    shift_gradients_allclose = bool(
+        torch.allclose(
+            grad_shift32,
+            grad32,
+            atol=THRESHOLDS["fp32_fp64_gradient_atol"],
+            rtol=THRESHOLDS["fp32_fp64_gradient_rtol"],
+        )
+        and torch.allclose(
+            grad_shift64,
+            grad64,
+            atol=THRESHOLDS["fp32_fp64_gradient_atol"],
+            rtol=THRESHOLDS["fp32_fp64_gradient_rtol"],
+        )
     )
     result = {
         "fp32_fp64_slot_max_abs": float(slot_delta.abs().max().item()),
@@ -443,6 +455,20 @@ def _run_oracle_diagnostics(
             )
         ),
         "hard_path_exact_identical": bool(torch.equal(hard32, hard64)),
+        "column_occupancy_max": column_occupancy_max,
+        "column_occupancy_within_bound": bool(
+            column_occupancy_max <= THRESHOLDS["column_occupancy_max"]
+        ),
+        "ordered_slot_expectation_min_gap": ordered_min_gap,
+        "ordered_slot_expectations_strict": bool(
+            ordered_min_gap > THRESHOLDS["ordered_slot_expectation_min_gap_gt"]
+        ),
+        "additive_shift_slots_allclose": shift_slots_allclose,
+        "additive_shift_gradients_allclose": shift_gradients_allclose,
+        "additive_shift_hard_path_exact_identical": bool(
+            torch.equal(hard32, hard_shift32)
+        ),
+        "additive_shift_fp64_logz_residual": fp64_logz_shift_residual,
         "hard_path_sha256": _canonical_sha256(
             [int(value) for value in hard32.detach().cpu().tolist()]
         ),
@@ -460,6 +486,12 @@ def _run_oracle_diagnostics(
         and result["fp32_fp64_gradients_allclose"]
         and result["hard_path_exact_identical"]
         and abs(result["occupancy_sum"] - float(k)) <= 2.0e-4 * float(k)
+        and result["column_occupancy_within_bound"]
+        and result["ordered_slot_expectations_strict"]
+        and result["additive_shift_slots_allclose"]
+        and result["additive_shift_gradients_allclose"]
+        and result["additive_shift_hard_path_exact_identical"]
+        and fp64_logz_shift_residual <= THRESHOLDS["dual_logz_max_abs"]
     )
     return result
 
@@ -487,6 +519,80 @@ def _write_new_json(path: Path, payload: Mapping[str, Any]) -> None:
         handle.write("\n")
         handle.flush()
         os.fsync(handle.fileno())
+
+
+def _failure_class(error: BaseException) -> str:
+    message = str(error)
+    if "NO_TARGET_CAPTURE" in message:
+        return "NO_TARGET_CAPTURE"
+    if "AMP replay could not produce" in message:
+        return "AMP_REPLAY_EXHAUSTED"
+    if "optimizer-step outcome diverged" in message:
+        return "DDP_STEP_OUTCOME_DIVERGENCE"
+    if (
+        "thresholds failed" in message
+        or "structural oracle" in message
+        or "normalized solver" in message
+    ):
+        return "CURRENT_STRUCTURAL_ORACLE_FAILED"
+    if "watchdog" in message.lower() or "collective" in message.lower():
+        return "WATCHDOG_OR_COLLECTIVE_FAILURE"
+    return "INTERNAL_ERROR"
+
+
+def _write_failure_receipt_best_effort(
+    args: argparse.Namespace,
+    error: BaseException,
+) -> None:
+    try:
+        output_root = _path(args.output_root)
+        try:
+            output_root.relative_to(ROOT)
+        except ValueError:
+            pass
+        else:
+            return
+        output_root.mkdir(parents=True, exist_ok=True)
+        rank = int(os.environ.get("RANK", "0"))
+        try:
+            observed_commit = _git("rev-parse", "HEAD")
+        except Exception:
+            observed_commit = None
+        payload = {
+            "schema_version": FAILURE_SCHEMA,
+            "status": "failed",
+            "fail_closed": True,
+            "failure_class": _failure_class(error),
+            "failure_type": type(error).__name__,
+            "failure_message": str(error)[:2000],
+            "expected_commit": str(args.expected_commit),
+            "observed_commit": observed_commit,
+            "slurm_job_id": str(os.environ.get("SLURM_JOB_ID", "")),
+            "rank": rank,
+            "validation_or_test_data_used": False,
+            "checkpoint_created": False,
+            "prediction_generated": False,
+            "loss_values_recorded": False,
+            "metric_accessed": False,
+            "paper_metric_claim_allowed": False,
+            "paper_method_performance_evidence": False,
+            "stage_a_release_prerequisite_satisfied": False,
+            "stage_b_enabled": False,
+            "official_final_consumed": False,
+            "claim_scope": "engineering_numeric_gate_failure_only",
+        }
+        payload["content_sha256"] = _canonical_sha256(payload)
+        rank_path = output_root / f"failure.rank{rank:04d}.receipt.json"
+        if not rank_path.exists():
+            _write_new_json(rank_path, payload)
+        if rank == 0:
+            terminal = output_root / "numeric_gate.failure.receipt.json"
+            if not terminal.exists():
+                _write_new_json(terminal, payload)
+    except Exception:
+        # Failure evidence is best-effort here; the outer Slurm launcher owns
+        # timeout/rank-death consolidation and must still terminate non-zero.
+        return
 
 
 def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
@@ -630,8 +736,10 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
     replay_state_restorations = 0
     max_amp_retries_observed = 0
     target_capture_updates = 0
-    local_trigger_capture = None
+    local_target_capture = None
     local_legacy = None
+    capture_owner_rank = world_size
+    capture_successful_update_index = None
     all_training_gradients_finite = True
     trainable_gradient_tensor_count = 0
     try:
@@ -719,34 +827,55 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
             scheduler.step()
             successful_updates += 1
             capture = observer_state.get("candidate")
-            local_trigger = False
             if capture is not None:
                 target_capture_updates += 1
-                graph = _graph_to_device(capture["graph"], device)
-                local_legacy = _legacy_raw_slot_mass_drift(
-                    capture["node_log_probs"].to(device=device),
-                    k=int(capture["k"]),
-                    graph=graph,
-                    temperature=float(capture["temperature"]),
-                )
-                local_trigger = bool(local_legacy["old_guard_triggered"])
-                if local_trigger:
-                    local_trigger_capture = capture
-            flag = torch.tensor(int(local_trigger), device=device, dtype=torch.int64)
+            flag = torch.tensor(
+                int(capture is not None), device=device, dtype=torch.int64
+            )
             dist.all_reduce(flag, op=dist.ReduceOp.MAX)
             if int(flag.item()) == 1:
+                owner = torch.tensor(
+                    rank if capture is not None else world_size,
+                    device=device,
+                    dtype=torch.int64,
+                )
+                dist.all_reduce(owner, op=dist.ReduceOp.MIN)
+                capture_owner_rank = int(owner.item())
+                update_min = torch.tensor(
+                    successful_updates, device=device, dtype=torch.int64
+                )
+                update_max = update_min.clone()
+                dist.all_reduce(update_min, op=dist.ReduceOp.MIN)
+                dist.all_reduce(update_max, op=dist.ReduceOp.MAX)
+                _require(
+                    int(update_min.item()) == int(update_max.item()),
+                    "first eligible successful-update index diverged across DDP ranks",
+                )
+                capture_successful_update_index = int(update_min.item()) - 1
+                if rank == capture_owner_rank:
+                    _require(capture is not None, "capture owner lacks its tensor")
+                    local_target_capture = capture
+                    graph = _graph_to_device(capture["graph"], device)
+                    local_legacy = _legacy_raw_slot_mass_drift(
+                        capture["node_log_probs"].to(device=device),
+                        k=int(capture["k"]),
+                        graph=graph,
+                        temperature=float(capture["temperature"]),
+                    )
                 break
     finally:
         structured._physical_row_forward_backward = original_solver
 
-    owner = torch.tensor(
-        rank if local_trigger_capture is not None else world_size,
-        device=device,
-        dtype=torch.int64,
+    owner_rank = int(capture_owner_rank)
+    _require(
+        owner_rank < world_size,
+        "NO_TARGET_CAPTURE: no eligible successful-update T768/K384 solver call "
+        "was captured within 100 successful updates",
     )
-    dist.all_reduce(owner, op=dist.ReduceOp.MIN)
-    owner_rank = int(owner.item())
-    _require(owner_rank < world_size, "old production FP32 guard did not trigger within 100 updates")
+    _require(
+        capture_successful_update_index is not None,
+        "NO_TARGET_CAPTURE: capture index is missing",
+    )
     _distributed_require(
         1 <= attempted_updates <= MAX_ATTEMPTED_UPDATES
         and successful_updates == attempted_updates,
@@ -761,8 +890,8 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
     tensor_artifact = None
     tensor_artifact_sha = None
     if rank == owner_rank:
-        _require(local_trigger_capture is not None, "trigger owner lacks its captured tensor")
-        diagnostic = _run_oracle_diagnostics(local_trigger_capture, device=device)
+        _require(local_target_capture is not None, "capture owner lacks its captured tensor")
+        diagnostic = _run_oracle_diagnostics(local_target_capture, device=device)
     diagnostic_pass = torch.tensor(
         int(rank != owner_rank or bool(diagnostic["passed"])),
         device=device,
@@ -778,10 +907,10 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
         torch.save(
             {
                 "schema_version": "duca_paper_numeric_gate_tensor_v1",
-                "node_log_probs": local_trigger_capture["node_log_probs"],
-                "k": int(local_trigger_capture["k"]),
-                "temperature": float(local_trigger_capture["temperature"]),
-                "graph": local_trigger_capture["graph"],
+                "node_log_probs": local_target_capture["node_log_probs"],
+                "k": int(local_target_capture["k"]),
+                "temperature": float(local_target_capture["temperature"]),
+                "graph": local_target_capture["graph"],
                 "contains_gt": False,
                 "contains_predictions": False,
                 "contains_metrics": False,
@@ -802,29 +931,30 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
         "replay_state_restorations": replay_state_restorations,
         "max_amp_retries_observed": max_amp_retries_observed,
         "target_capture_updates": target_capture_updates,
+        "capture_successful_update_index": capture_successful_update_index,
         "all_training_gradients_finite": all_training_gradients_finite,
         "trainable_gradient_tensor_count": trainable_gradient_tensor_count,
-        "legacy_trigger": local_legacy if rank == owner_rank else None,
+        "legacy_diagnostic": (
+            {
+                "role": "diagnostic_only",
+                "admission_effect": "none",
+                **local_legacy,
+            }
+            if rank == owner_rank
+            else None
+        ),
         "capture": (
             {
                 "t": EXPECTED_T,
                 "k": EXPECTED_K,
                 "valid_len": EXPECTED_T,
-                "score_dtype": local_trigger_capture["input_dtype"],
-                "cuda_autocast_enabled": local_trigger_capture[
+                "score_dtype": local_target_capture["input_dtype"],
+                "cuda_autocast_enabled": local_target_capture[
                     "cuda_autocast_enabled"
                 ],
-                "score_min": float(
-                    local_trigger_capture["node_log_probs"].min().item()
-                ),
-                "score_max": float(
-                    local_trigger_capture["node_log_probs"].max().item()
-                ),
-                "score_mean": float(
-                    local_trigger_capture["node_log_probs"].mean().item()
-                ),
-                "score_std": float(
-                    local_trigger_capture["node_log_probs"].std().item()
+                "successful_update_index": capture_successful_update_index,
+                "selection_policy": (
+                    "first_eligible_successful_update_min_rank_first_solver_call"
                 ),
             }
             if rank == owner_rank
@@ -896,10 +1026,10 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
                 "world_size": world_size,
                 "global_batch_size": EXPECTED_GLOBAL_BATCH_SIZE,
                 "maximum_attempted_updates": MAX_ATTEMPTED_UPDATES,
-                "attempted_updates_until_trigger": max(
+                "attempted_updates_until_capture": max(
                     int(row["attempted_updates"]) for row in rank_summaries
                 ),
-                "successful_updates_until_trigger": max(
+                "successful_updates_until_capture": max(
                     int(row["successful_updates"]) for row in rank_summaries
                 ),
                 "maximum_amp_retries_per_batch": max_amp_retries,
@@ -920,8 +1050,11 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
                 "target_capture_updates_by_rank": [
                     int(row["target_capture_updates"]) for row in rank_summaries
                 ],
-                "old_guard_trigger_owner_rank": owner_rank,
-                "old_guard_triggered": True,
+                "capture_owner_rank": owner_rank,
+                "first_eligible_successful_update_index": (
+                    capture_successful_update_index
+                ),
+                "first_eligible_successful_capture": True,
                 "actual_full_model_forward_backward_optimizer_step": True,
                 "all_training_gradients_finite": all(
                     bool(row["all_training_gradients_finite"])
@@ -929,7 +1062,12 @@ def run_gate(args: argparse.Namespace) -> dict[str, Any] | None:
                 ),
             },
             "capture": owner_summary["capture"],
-            "legacy_failure_reproduction": owner_summary["legacy_trigger"],
+            "legacy_production_diagnostic": owner_summary["legacy_diagnostic"],
+            "capture_state": (
+                "TARGET_CAPTURED_LEGACY_PRESENT"
+                if owner_summary["legacy_diagnostic"]["old_guard_triggered"]
+                else "TARGET_CAPTURED_LEGACY_ABSENT"
+            ),
             "candidate_fp32_oracle_diagnostic": owner_summary["diagnostic"],
             "tensor_artifact_path": owner_summary["tensor_artifact_path"],
             "tensor_artifact_sha256": owner_summary["tensor_artifact_sha256"],
@@ -978,7 +1116,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", default=CONFIG_DEFAULT)
     parser.add_argument("--output-root", required=True)
     args = parser.parse_args(argv)
-    result = run_gate(args)
+    try:
+        result = run_gate(args)
+    except BaseException as error:
+        _write_failure_receipt_best_effort(args, error)
+        if dist.is_available() and dist.is_initialized():
+            try:
+                dist.destroy_process_group()
+            except Exception:
+                pass
+        raise
     if result is not None:
         print(json.dumps({"path": result["path"], "sha256": result["sha256"]}, sort_keys=True))
     return 0

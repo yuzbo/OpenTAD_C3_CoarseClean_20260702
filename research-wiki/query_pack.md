@@ -1,6 +1,6 @@
 # DUCA-RIME Current Query Pack
 
-Last updated: `2026-08-04`
+Last updated: `2026-08-09`
 
 ## Current decision
 
@@ -30,7 +30,7 @@ Current evidence level:
 | Pure selected-axis coordinate refactor | `implemented / authoritative_Slurm_code_gate_passed_1204067` |
 | Acquisition admission-v2 | `formal_path_disabled / historical_read_only_or_engineering_fixture_only` |
 | Acquisition admission-v2.1 | `historical_nonblocking / core_implemented / full_simulation_cancelled_by_user_priority / production_NO_GO` |
-| Official full-data DUCA feasibility | `exactk_repair_source_7e893569_double_gate_passed / stagea_1215390_to_1215396_terminal_failed_closed / metrics_never_opened / no_empirical_conclusion` |
+| Official full-data DUCA feasibility | `stagea_1215390_to_1215396_terminal_failed_closed / numeric_gate_1223308_legacy_premise_failed / split_negative_control_route_accepted_and_implemented_pending_clean_commit / metrics_never_opened / no_empirical_conclusion` |
 | V2.1 data feasibility | `failed_on_immutable_training_metadata / 100_pool_70_full_only_30_short_only_0_both` |
 | Phase-1 v2 closure | `not_authorized / requires_verified_admission_v2_1` |
 | Four-stage implementation | `implemented` |
@@ -51,6 +51,26 @@ Current evidence level:
 | Paper evidence contract | `user_frozen` |
 | DUCA-RIME empirical superiority | `not_yet_empirically_supported` |
 | Paper-ready method | `not_yet_paper_ready` |
+
+On `2026-08-09`, external adjudication
+`U-PRO-STAGEA-SPLIT-LEGACY-NC-1` was read in full and its central verdict
+`GO_SPLIT_HISTORICAL_NEGATIVE_CONTROL` was accepted. The retired raw FP32
+alpha/beta row-mass statistic is gauge-dependent and may no longer be required
+to trigger on a repaired production trajectory. It is now a deterministic fixed
+code-regression negative control; the same legacy computation on a production
+capture is `diagnostic_only` with `admission_effect=none`. Production admission
+is based on the first eligible successful-update `T=768,K=384` tensor and the
+current FP32/FP64, row/column/order, dual-logZ, edge-flow, gradient, hard-path and
+additive-shift structural oracles. This changes no DUCA model, loss, budget,
+threshold, seed, split, checkpoint or evaluator.
+
+The fixed `T96/K48` historical fixture passed focused Linux/PyTorch Slurm job
+`1233456` with exit `0:0`. Precheck jobs `1233451/1233452` failed before Python
+because the non-interactive Slurm shell lacked `module/source`; they are
+launcher failures. Code/validator/release/failure-receipt changes are locally
+implemented and focused non-Torch contract tests pass, but remain
+`implemented / focused-tested / pending_clean_commit_and_authoritative_gates`.
+No Stage-A cell has been released and no metric has been opened.
 
 The first acquisition-v2 preflight used exact source commit
 `70cf49de82a9d0ed889ed94af9604edd61070e55`, clean remote checkout

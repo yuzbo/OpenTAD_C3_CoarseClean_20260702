@@ -1,5 +1,31 @@
 # Research Log
 
+## 2026-08-09 — Historical negative control was split from production numeric admission
+
+- Fully read external adjudication `U-PRO-STAGEA-SPLIT-LEGACY-NC-1`, source
+  SHA-256 `4f900ba49d0d7884a0a2beecbaf809542bb80e19bb42fee65c8bd003cfd2e082`.
+  Its `GO_SPLIT_HISTORICAL_NEGATIVE_CONTROL` verdict is accepted: the old raw
+  FP32 row-mass statistic is gauge-dependent and cannot require historical-bug
+  reproduction on a repaired real trajectory.
+- Implemented a deterministic `T96/K48` code-regression negative control and a
+  production gate that stops at the first eligible successful-update
+  `T768/K384` capture. Legacy production output is explicitly
+  `diagnostic_only/admission_effect=none`; synchronized owner/update identity,
+  current row/column/order/dual-logZ/edge/gradient/hard-path/shift oracles and
+  no-metric failure receipts are explicit.
+- Focused Slurm prechecks `1233451` and `1233452` failed before Python because
+  `--wrap`/non-interactive Bash lacked `module/source`. No numerical assertion
+  ran. The corrected canonical-interpreter precheck `1233456` completed `0:0`
+  and established old-fixed-fixture failure plus current-solver structural pass.
+- Local syntax, shell and contract checks pass; `tests/test_duca_paper_full200_contract.py`
+  reports `21 passed, 1 skipped`. The change is not yet a clean commit and has
+  not passed the full authoritative code, natural-short, two-rank numeric or
+  exact-211 release chain. State is `implemented / focused-tested /
+  pending_clean_commit_and_authoritative_gates`.
+- No model, loss, budget, threshold, seed, data split, checkpoint rule or
+  evaluator changed. No Stage-A job was released, no mAP was opened and no
+  method-performance claim is allowed.
+
 ## 2026-08-06 — Repaired numeric gate completed its bounded search but legacy trigger was absent
 
 - Exact AMP-replay source `4b766457b5abd8247f7e054d64bf6eb725183493`
