@@ -2,8 +2,8 @@
 type: experiment
 node_id: exp:scnr-residual-centering-paired-cost-v1
 title: "SCNR residual-centering same-GPU paired full-stack cost v1"
-stage: implemented
-status: local_contract_tests_pass_remote_precheck_pending
+stage: experiment_running
+status: job_1233097_scheduler_pending
 outcome: pending
 added: 2026-08-09
 updated: 2026-08-09
@@ -66,9 +66,26 @@ separately but is not a paper claim.
 - `tests/test_georoute_residual_centering_cost.py`: order, config/no-retrain,
   bootstrap gate, deployment, finalizer, and launcher coverage.
 
-Local compile and focused study tests pass `8/8`. The combined study,
-matched-training, inherited M2, and required C3 regression matrix passes
-`65/65`. Remote Linux/Torch checks remain pending before deployment.
+Local compile and focused study tests pass `8/8`. Exact execution
+`2eca86cfaf8804408a24567bb98bf4bd2046417b` passes the combined remote study,
+matched-training, inherited M2, and required C3 regression matrix `65/65`, plus
+the frozen static precheck.
+
+## Running execution
+
+One held Job was receipt-bound and released:
+
+- run root:
+  `/data/run01/sczc063/yuzibo/scnr_residual_centering_paired_cost_2eca86cf_from16137484_s3407_20260809_112558`;
+- cost Job: `1233097`;
+- deployment SHA-256:
+  `3e12809cfe799838d77c339b9b75af0b79e9c925723d6f9c5e50efd0507b72ab`;
+- source model runtime: `16137484c5ccad422e017e67a81c1a07d1ed2fbb`;
+- execution commit: `2eca86cfaf8804408a24567bb98bf4bd2046417b`.
+
+The Job is currently `PENDING (Priority)`. No pass, latency, energy, memory,
+route, finalization, seed authorization, or cost claim exists until the single
+Job reaches terminal state and every raw artifact revalidates.
 
 ## Claim boundary
 

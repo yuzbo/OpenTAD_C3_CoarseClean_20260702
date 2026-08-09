@@ -1633,9 +1633,13 @@ updated: 2026-08-06
   launcher, and focused test suite. The protocol binds the two terminal
   checkpoints without retraining, runs eight serial ABBA+BAAB passes on one
   GPU with one 20-ms NVML sidecar, and freezes a 1.05 upper-CI cost
-  non-inferiority gate. Local focused tests pass `8/8`, and the combined
-  inherited regression matrix passes `65/65`; no remote cost result is
-  registered yet.
+  non-inferiority gate. Local focused tests pass `8/8`; exact execution
+  `2eca86cfaf8804408a24567bb98bf4bd2046417b` passes the remote combined matrix
+  `65/65` and static precheck. Immutable deployment SHA-256
+  `3e12809cfe799838d77c339b9b75af0b79e9c925723d6f9c5e50efd0507b72ab`
+  binds cost Job `1233097` and run root
+  `/data/run01/sczc063/yuzibo/scnr_residual_centering_paired_cost_2eca86cf_from16137484_s3407_20260809_112558`.
+  The Job is scheduler-pending; no remote cost result is registered yet.
 
 ## 外部附件
 

@@ -2798,3 +2798,15 @@ append_only: true
   Local focused tests pass `8/8`; the combined cost, matched-training, inherited
   M2, and required C3 regression matrix passes `65/65`. Remote Linux validation
   and Slurm deployment remain pending.
+
+- 2026-08-09: exact paired-cost execution
+  `2eca86cfaf8804408a24567bb98bf4bd2046417b` passed clean N16R4 compile/Bash
+  checks and the combined Linux/Torch regression `65/65`, then passed the frozen
+  no-training cost precheck against both terminal seed-3407 source receipts.
+  Atomic deployment
+  `3e12809cfe799838d77c339b9b75af0b79e9c925723d6f9c5e50efd0507b72ab`
+  bound and released the sole paired-cost Job `1233097` under
+  `/data/run01/sczc063/yuzibo/scnr_residual_centering_paired_cost_2eca86cf_from16137484_s3407_20260809_112558`.
+  The scheduler reports `PENDING (Priority)`, so the experiment advances to
+  `experiment_running` but no cost, Pareto, seed authorization, or paper claim
+  exists yet.

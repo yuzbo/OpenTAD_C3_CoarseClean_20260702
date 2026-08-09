@@ -243,10 +243,13 @@ max_chars: 8000
   Job/GPU with one continuous 20-ms NVML sidecar and eight serial
   `A B B A B A A B` passes. Primary center/control end-to-end-p50 and
   energy/sample ratios use a 10,000-replicate video-cluster/pass-pair bootstrap;
-  both 95% upper bounds must be `<=1.05` to open seeds 3408/3409. No cost exists
-  yet; official test, general Hybrid/complementarity, efficiency and paper
-  claims remain closed. No further Pro discussion is needed before this frozen
-  cost study.
+  both 95% upper bounds must be `<=1.05` to open seeds 3408/3409. Exact
+  execution `2eca86cf` passed remote `65/65` and the frozen precheck; deployment
+  `3e12809c...` released one cost Job `1233097` under
+  `scnr_residual_centering_paired_cost_2eca86cf_from16137484_s3407_20260809_112558`.
+  It is currently scheduler-pending, so no cost result exists. Official test,
+  general Hybrid/complementarity, efficiency and paper claims remain closed.
+  No further Pro discussion is needed before this frozen cost study completes.
   It is source-native token membership, not Online TAD. Pretrained VideoMAE
   absolute position stays on; all external
   coordinate, ROI-relative, geometry-projection/side-channel and
