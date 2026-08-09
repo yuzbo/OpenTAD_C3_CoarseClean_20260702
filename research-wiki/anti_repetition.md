@@ -581,3 +581,10 @@ These failures and naming mistakes must not be repeated.
      `/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python` explicitly: the
      gateway's unactivated `python` may resolve to an incompatible legacy runtime.
      Job `1233459` is the immutable launcher-failure witness.
+158. The `06103e34` transaction repeated
+     `missing_runtime_thumos_relative_bindings`: all six jobs `1233471`--`1233476`
+     failed before cell creation and emitted the same immutable log hash. Do not
+     silently restore links or launch another root. This signature already spent
+     its one bounded recovery under `00f54dfe`; explicit reauthorization must
+     first approve a source-level pre-release binding contract that prevents held
+     jobs from being released when any resolved formal config path is absent.

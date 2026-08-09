@@ -51,6 +51,17 @@
 - Evidence scope remains `ENGINEERING_STATUS`: the jobs are initially queued,
   no validation/test metric has been opened, and no partial/single-seed or
   performance comparison is authorized before all 12 receipts and the seal.
+- Terminal update: all six released seed/group jobs `1233471`--`1233476`
+  failed `1:0` before any cell root or training artifact was created; seal
+  `1233477` was cancelled. Every log is byte-identical with SHA-256
+  `4d4e83310b96792e8cffc0e3667fd9b29f3c93280390239ac446b5d4da0976aa`
+  and reports `runtime annotation binding drift`. The exact checkout lacks both
+  `data` and `data/thumos-14`, so this is the already-registered signature
+  `missing_runtime_thumos_relative_bindings`, whose one automatic recovery was
+  consumed by the `00f54dfe` transaction. This recurrence is therefore
+  fail-closed: no automatic binding repair or new transaction is authorized.
+  The protocol/manifests and six logs remain immutable; no checkpoint,
+  prediction, evaluation, metric or cell receipt exists.
 
 ## 2026-08-09 — Historical negative control was split from production numeric admission
 

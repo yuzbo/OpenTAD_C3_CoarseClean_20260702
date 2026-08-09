@@ -5,13 +5,39 @@
 - Decision: `user_approved`
 - Design: `designed`
 - Short-window corrigendum: `user_approved / U-PRO-STAGEA-SHORT-K-CORRIGENDUM-1`
-- Implementation: `minimal_solver_repair_commit_cb077a77 / four_gate_release_chain_implemented_local`
+- Implementation: `split_negative_control_source_06103e34 / four_gate_release_chain_passed`
 - Local focused verification: `py_compile_and_bash_passed / direct_CPU_numeric_oracles_passed / release_contract_17_passed_1_skipped / mandatory_C3_23_passed`
 - Independent read-only audit: `minimal_repair_GO / FP64_dtype_caveat_resolved`
 - Authoritative Linux/Slurm verification: `exact_source_7e893569 / code_gate_1215388_passed / real_short_gate_1215389_passed`
-- Experiment: `stagea_1215390_to_1215396_terminal_failed_closed / metrics_never_opened`
+- Experiment: `stagea_1233471_to_1233476_repeated_runtime_binding_failed_closed / seal_1233477_cancelled / metrics_never_opened`
 - Empirical support: `not_yet_empirically_supported`
 - Paper status: `not_yet_paper_ready`
+
+## Latest split-negative-control transaction
+
+Exact experiment source `06103e347343ec87969c84d3706c87081d23149d`
+passed code gate `1233465` (152 tests), real natural-short gate `1233466`, and
+two-rank numeric plus exact-211 release gate `1233467`, all with exit `0:0`.
+Their terminal engineering receipts were hash-validated before release.
+
+The frozen Stage-A root is
+`/data/run01/sczc063/yuzibo/rime_runs/duca_paper_stage_a_06103e34_20260809_233131`.
+Protocol/submission/released-receipt SHA-256 values are respectively
+`67fe5bbdc22e4d98f4b4c8fbea8fc56627406d1232e34363c4f2934067f34a90`,
+`16ed0c869924a86be9861f68a4247a889fb81852d4bb9976f67da85a82bcec40`
+and `5dfacff6b72c9b84d6abd4c9d5f6b75e1cb8e0cca08c092675dece97a9cd15f0`.
+
+Jobs `1233471`--`1233476` all failed `1:0` before creating any cell root.
+Every log is byte-identical with SHA-256
+`4d4e83310b96792e8cffc0e3667fd9b29f3c93280390239ac446b5d4da0976aa`
+and terminates with `runtime annotation binding drift`; seal `1233477` was
+cancelled. The exact checkout contains neither `data` nor `data/thumos-14`, so
+the signature is the previously registered
+`missing_runtime_thumos_relative_bindings`. Its bounded automatic recovery was
+already consumed under the `00f54dfe` transaction. This recurrence is terminal
+fail-closed pending explicit reauthorization of a source-level pre-release
+binding fix. No checkpoint, prediction, evaluation, cell receipt or metric was
+created.
 
 ## Question
 
