@@ -15,10 +15,12 @@ from tools.bata.zoomtoken_scnr_steady_cost_contract_v001 import (
     exclusive_write_json,
     leaf_sequence,
     read_json_object,
+    sha256_file,
     validate_afterany_dependency,
     validate_execution_binding_receipt,
     validate_jobgraph,
     validate_leaf_rows,
+    validate_pass_receipts,
     validate_paired_configs,
     validate_population_manifest,
     validate_preregistration,
@@ -176,21 +178,31 @@ def test_scheduler_confirmation_is_exact_completed_zero_zero():
             validate_scheduler_job(bad, expected_job_id="123", label="Job 9")
 
 
-def test_execution_and_runtime_identity_mutations_fail_closed():
-    expected_binding = {
+def _synthetic_execution_binding():
+    return {
         "schema_version": "zoomtoken_scnr_steady_cost_execution_binding_v001",
         "study_id": STUDY_ID,
         "arm": "A",
         "variant": "none_control",
         "calibration_mode": "none",
-        "tracked_config_path": "control.py",
+        "tracked_config": {
+            "path": "control.py",
+            "file_sha256": "1" * 64,
+            "canonical_config_sha256": "2" * 64,
+            "calibration_mode": "none",
+        },
         "legacy_calibration_mode": "none",
+        "legacy_cost_config_sha256": "3" * 64,
         "checkpoint_receipt": {"path": "/run/control.pth", "sha256": "a" * 64},
         "bound_accuracy_config_receipt": {
             "path": "/run/control.py",
             "sha256": "b" * 64,
         },
     }
+
+
+def test_execution_and_runtime_identity_mutations_fail_closed(tmp_path):
+    expected_binding = _synthetic_execution_binding()
     assert (
         validate_execution_binding_receipt(expected_binding, expected=expected_binding)
         == expected_binding
@@ -200,11 +212,18 @@ def test_execution_and_runtime_identity_mutations_fail_closed():
     with pytest.raises(ValueError):
         validate_execution_binding_receipt(mutated_binding, expected=expected_binding)
 
+    container_path = tmp_path / "runtime.sif"
+    dependency_lock_path = tmp_path / "dependency-lock.txt"
+    container_path.write_bytes(b"frozen container image")
+    dependency_lock_path.write_text("numpy==1.23.5\n", encoding="utf-8")
     pre_run = {
         "runtime": {
             "python_version": "3.10.0",
             "numpy_version": "1.23.5",
             "gpu_constraint_or_sku": "A100",
+            "container_digest": f"sha256:{sha256_file(container_path)}",
+            "dependency_lock_path": str(dependency_lock_path.resolve()),
+            "dependency_lock_sha256": sha256_file(dependency_lock_path),
         }
     }
     hardware = {"gpu_name": "NVIDIA A100-SXM4-80GB"}
@@ -214,6 +233,7 @@ def test_execution_and_runtime_identity_mutations_fail_closed():
         hardware=hardware,
         software=software,
         slurm_job_constraints="A100",
+        active_container_path=container_path,
     )
     validate_runtime_identity_receipt(
         runtime, pre_run=pre_run, hardware=hardware, software=software
@@ -223,6 +243,64 @@ def test_execution_and_runtime_identity_mutations_fail_closed():
     with pytest.raises(ValueError):
         validate_runtime_identity_receipt(
             mutated_runtime, pre_run=pre_run, hardware=hardware, software=software
+        )
+    for field in ("container_digest", "dependency_lock_sha256"):
+        mutated_runtime = copy.deepcopy(runtime)
+        mutated_runtime[field] = "sha256:" + "0" * 64 if field == "container_digest" else "0" * 64
+        with pytest.raises(ValueError):
+            validate_runtime_identity_receipt(
+                mutated_runtime,
+                pre_run=pre_run,
+                hardware=hardware,
+                software=software,
+            )
+
+
+def test_recomputed_pass_hash_cannot_hide_cost_config_mutation(monkeypatch):
+    expected_binding = _synthetic_execution_binding()
+    monkeypatch.setattr(
+        "tools.bata.zoomtoken_scnr_steady_cost_contract_v001.build_execution_binding",
+        lambda _root, *, arm, stage: expected_binding,
+    )
+    rows = _leaf_rows()[:136]
+    receipt = {
+        "pass_index": 0,
+        "variant": "none_control",
+        "branch_calibration_mode": "none",
+        "sample_count": 136,
+        "accuracy_population_sha256": "c" * 64,
+        "checkpoint_sha256": "a" * 64,
+        "bound_accuracy_config_sha256": "b" * 64,
+        "cost_config_sha256": expected_binding["legacy_cost_config_sha256"],
+        "sample_manifest_sha256": canonical_sha256(
+            [row["window_id"] for row in rows]
+        ),
+        "diagnostic_telemetry_inside_timed_forward": False,
+        "training_or_resume_executed": False,
+        "execution_binding_before": expected_binding,
+        "execution_binding_after": expected_binding,
+    }
+    receipt["pass_sha256"] = canonical_sha256(receipt)
+    validate_pass_receipts(
+        ROOT,
+        [receipt],
+        sequence=("none_control",),
+        source={"stages": {"none_control": {}}},
+        expected_accuracy_population_sha256="c" * 64,
+        measured_rows=rows,
+    )
+    mutated = copy.deepcopy(receipt)
+    mutated["cost_config_sha256"] = "f" * 64
+    mutated.pop("pass_sha256")
+    mutated["pass_sha256"] = canonical_sha256(mutated)
+    with pytest.raises(ValueError):
+        validate_pass_receipts(
+            ROOT,
+            [mutated],
+            sequence=("none_control",),
+            source={"stages": {"none_control": {}}},
+            expected_accuracy_population_sha256="c" * 64,
+            measured_rows=rows,
         )
 
 

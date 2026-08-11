@@ -271,8 +271,9 @@ def build_execution_binding(
         "arm": arm,
         "variant": variant,
         "calibration_mode": calibration,
-        "tracked_config_path": tracked["path"],
+        "tracked_config": tracked,
         "legacy_calibration_mode": legacy_binding["branch_calibration_mode"],
+        "legacy_cost_config_sha256": canonical_sha256(cfg.to_dict()),
         "checkpoint_receipt": copy.deepcopy(dict(checkpoint)),
         "bound_accuracy_config_receipt": copy.deepcopy(dict(accuracy)),
     }
@@ -330,6 +331,8 @@ def validate_pass_receipts(
             != expected["checkpoint_receipt"].get("sha256")
             or receipt.get("bound_accuracy_config_sha256")
             != expected["bound_accuracy_config_receipt"].get("sha256")
+            or receipt.get("cost_config_sha256")
+            != expected["legacy_cost_config_sha256"]
             or len(rows) != PHYSICAL_WINDOWS
             or receipt.get("sample_manifest_sha256")
             != canonical_sha256([row["window_id"] for row in rows])
@@ -353,6 +356,7 @@ def build_runtime_identity(
     hardware: Mapping[str, Any],
     software: Mapping[str, Any],
     slurm_job_constraints: str,
+    active_container_path: str | Path,
 ) -> dict[str, Any]:
     """Compare observed leaf runtime identities with the frozen PRE_RUN runtime."""
 
@@ -364,12 +368,20 @@ def build_runtime_identity(
     constraint = str(slurm_job_constraints).strip()
     expected_gpu = str(runtime.get("gpu_constraint_or_sku", "")).strip()
     constraint_tokens = tuple(token.strip() for token in constraint.split(",") if token.strip())
+    container_path = Path(active_container_path).resolve()
+    dependency_lock_path = Path(str(runtime.get("dependency_lock_path", ""))).resolve()
+    if not container_path.is_file() or not dependency_lock_path.is_file():
+        raise ValueError("steady-cost active container or dependency lock is missing")
+    container_digest = f"sha256:{sha256_file(container_path)}"
+    dependency_lock_sha256 = sha256_file(dependency_lock_path)
     if (
         software.get("python") != runtime.get("python_version")
         or packages.get("numpy") != runtime.get("numpy_version")
         or not gpu_name
         or not expected_gpu
         or (gpu_name != expected_gpu and expected_gpu not in constraint_tokens)
+        or container_digest != runtime.get("container_digest")
+        or dependency_lock_sha256 != runtime.get("dependency_lock_sha256")
     ):
         raise ValueError("steady-cost observed runtime differs from PRE_RUN")
     return {
@@ -380,6 +392,10 @@ def build_runtime_identity(
         "gpu_name": gpu_name,
         "slurm_job_constraints": constraint,
         "gpu_constraint_or_sku": expected_gpu,
+        "active_container_path": str(container_path),
+        "container_digest": container_digest,
+        "dependency_lock_path": str(dependency_lock_path),
+        "dependency_lock_sha256": dependency_lock_sha256,
     }
 
 
@@ -396,6 +412,7 @@ def validate_runtime_identity_receipt(
         hardware=hardware,
         software=software,
         slurm_job_constraints=str(observed.get("slurm_job_constraints", "")),
+        active_container_path=str(observed.get("active_container_path", "")),
     )
     if observed != expected:
         raise ValueError("steady-cost runtime identity receipt changed")
@@ -671,6 +688,7 @@ def validate_pre_run(payload: Mapping[str, Any], *, phase: str) -> dict[str, Any
         or not re.fullmatch(
             r"[0-9a-f]{64}", str(runtime.get("dependency_lock_sha256", ""))
         )
+        or not _is_within_remote_boundary(runtime.get("dependency_lock_path", ""))
         or not isinstance(runtime.get("python_version"), str)
         or not runtime.get("python_version")
         or not isinstance(runtime.get("numpy_version"), str)

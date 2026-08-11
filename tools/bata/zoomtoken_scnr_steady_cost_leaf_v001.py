@@ -287,6 +287,11 @@ def execute_sequence(
         hardware=hardware,
         software=software,
         slurm_job_constraints=os.environ.get("SLURM_JOB_CONSTRAINTS", ""),
+        active_container_path=(
+            os.environ.get("APPTAINER_CONTAINER")
+            or os.environ.get("SINGULARITY_CONTAINER")
+            or ""
+        ),
     )
     try:
         physical_hashes = set()
