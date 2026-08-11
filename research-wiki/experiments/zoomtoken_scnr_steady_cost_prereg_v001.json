@@ -1,0 +1,30 @@
+{
+  "admission_requires_job9_completed_0_0": true,
+  "automatic_retry_allowed": false,
+  "base_sha": "2d26662ec4d124dd906a7a3676f29645684fdf96",
+  "bootstrap_replicates": 10000,
+  "bootstrap_seed": 20260811,
+  "decision_nonce": "ZT-PRO-REMOTE-20260811-9C7FA321D4E8",
+  "finalizer_dependency": "afterany",
+  "held_out_test_allowed": false,
+  "job9_authoritative": false,
+  "leaf_orders": {
+    "L01": "ABBA",
+    "L02": "ABBA",
+    "L03": "ABBA",
+    "L04": "ABBA",
+    "L05": "BAAB",
+    "L06": "BAAB",
+    "L07": "BAAB",
+    "L08": "BAAB"
+  },
+  "measured_windows_per_pass": 136,
+  "metric_evaluation_allowed": false,
+  "noninferiority_ratio": 1.05,
+  "physical_windows": 136,
+  "prereg_sha256": "a820a0a5d46c01b6d40b49b3f6c01f4acbfaa013271d20a28d4cce663050b103",
+  "schema_version": "zoomtoken_scnr_steady_cost_prereg_v001",
+  "status": "DESIGNED_NOT_EXECUTED",
+  "study_id": "ZT_SCNR_STEADY_COST_V001",
+  "warmup_windows_before_each_pass": 136
+}
