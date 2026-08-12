@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import math
 import os
+import struct
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -11,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..builder import SELECTORS, build_selector
+from ...utils.temporal_positions import canonical_endpoint_uniform_positions
 
 
 def _require_finite(tensor: torch.Tensor, name: str, *, error_type: type[Exception] = FloatingPointError) -> torch.Tensor:
@@ -19,6 +22,547 @@ def _require_finite(tensor: torch.Tensor, name: str, *, error_type: type[Excepti
     if not torch.isfinite(tensor).all():
         raise error_type(f"{name} must be finite")
     return tensor
+
+
+DUCA_PROJECTION_Q_V001 = 1 << 20
+DUCA_PROJECTION_SIGNED_128_MAX_V001 = (1 << 127) - 1
+
+
+class DUCAProjectionError(ValueError, RuntimeError):
+    """Fail-closed error for the frozen DUCA v001 integer projector."""
+
+    def __init__(self, message: str, *, code: str | None = None):
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass(frozen=True)
+class DUCAProjectionCertificate:
+    positions: tuple[int, ...]
+    e2: int
+    e_infinity: int
+    e1: int
+    u1: int
+
+
+def _duca_binary64_to_fixed_half_up_v001(
+    value: float,
+    q: int = DUCA_PROJECTION_Q_V001,
+) -> int:
+    """Convert the exact nonnegative binary64 value to fixed point, half up."""
+
+    if type(value) is not float:
+        raise DUCAProjectionError("DUCA projection target must be a serialized binary64 value")
+    if type(q) is not int or q <= 0:
+        raise DUCAProjectionError("DUCA projection fixed-point scale must be a positive integer")
+    bits = struct.unpack(">Q", struct.pack(">d", value))[0]
+    sign = bits >> 63
+    exponent_bits = (bits >> 52) & 0x7FF
+    fraction_bits = bits & ((1 << 52) - 1)
+    if sign or exponent_bits == 0x7FF:
+        raise DUCAProjectionError("DUCA projection target must be finite and nonnegative")
+    if exponent_bits == 0 and fraction_bits == 0:
+        return 0
+    if exponent_bits == 0:
+        significand = fraction_bits
+        binary_exponent = 1 - 1023 - 52
+    else:
+        significand = (1 << 52) | fraction_bits
+        binary_exponent = exponent_bits - 1023 - 52
+
+    numerator = significand * q
+    if binary_exponent >= 0:
+        return numerator << binary_exponent
+    denominator = 1 << (-binary_exponent)
+    quotient, remainder = divmod(numerator, denominator)
+    if 2 * remainder >= denominator:
+        quotient += 1
+    return quotient
+
+
+def _duca_projection_int_sequence_v001(
+    values: Sequence[int],
+    *,
+    name: str,
+    length: int,
+    length_error_code: str,
+) -> tuple[int, ...]:
+    if isinstance(values, (str, bytes)):
+        raise DUCAProjectionError(
+            f"{name} must be an integer sequence",
+            code=length_error_code,
+        )
+    try:
+        result = tuple(values)
+    except TypeError as exc:
+        raise DUCAProjectionError(
+            f"{name} must be an integer sequence",
+            code=length_error_code,
+        ) from exc
+    if len(result) != length:
+        raise DUCAProjectionError(
+            f"{name} must contain exactly {length} integers",
+            code=length_error_code,
+        )
+    if any(
+        type(value) is not int
+        or value < 0
+        or value > DUCA_PROJECTION_SIGNED_128_MAX_V001
+        for value in result
+    ):
+        raise DUCAProjectionError(
+            f"{name} contains a value outside the admitted signed-128 integer range",
+            code="INTEGER_RANGE_OR_OVERFLOW",
+        )
+    return result
+
+
+def _duca_projection_candidates_v001(
+    rank: int,
+    predecessor: int,
+    valid_len: int,
+    effective_k: int,
+    uniform_position: int,
+) -> range:
+    lower = max(
+        0,
+        predecessor + 1,
+        uniform_position - 16,
+        valid_len - 1 - 4 * (effective_k - 1 - rank),
+    )
+    upper = min(
+        valid_len - 1,
+        predecessor + 4,
+        uniform_position + 16,
+        valid_len - 1 - (effective_k - 1 - rank),
+    )
+    return range(lower, upper + 1) if lower <= upper else range(0)
+
+
+def _duca_projection_objective_v001(
+    positions: Sequence[int],
+    canonical_uniform_u: Sequence[int],
+    fixed_point_targets_a: Sequence[int],
+    q: int = DUCA_PROJECTION_Q_V001,
+) -> tuple[int, int, int, int, tuple[int, ...]]:
+    positions_tuple = tuple(positions)
+    uniform_tuple = tuple(canonical_uniform_u)
+    targets_tuple = tuple(fixed_point_targets_a)
+    if not (len(positions_tuple) == len(uniform_tuple) == len(targets_tuple)):
+        raise DUCAProjectionError("DUCA projection objective inputs must have identical lengths")
+    errors = tuple(q * positions_tuple[rank] - targets_tuple[rank] for rank in range(1, len(positions_tuple) - 1))
+    absolute_errors = tuple(abs(error) for error in errors)
+    return (
+        sum(error * error for error in errors),
+        max(absolute_errors, default=0),
+        sum(absolute_errors),
+        sum(abs(positions_tuple[rank] - uniform_tuple[rank]) for rank in range(1, len(positions_tuple) - 1)),
+        positions_tuple[1:-1],
+    )
+
+
+def _duca_compare_keys_v001(left: tuple[Any, ...], right: tuple[Any, ...]) -> int:
+    if left == right:
+        return 0
+    left_less = left < right
+    right_less = right < left
+    if left_less == right_less:
+        raise DUCAProjectionError("DUCA projection comparison inconsistency")
+    return -1 if left_less else 1
+
+
+def _duca_projection_certificate_v001(
+    positions: Sequence[int],
+    valid_len: int,
+    effective_k: int,
+    canonical_uniform_u: Sequence[int],
+    fixed_point_targets_a: Sequence[int],
+) -> DUCAProjectionCertificate:
+    del valid_len, effective_k
+    objective = _duca_projection_objective_v001(
+        positions,
+        canonical_uniform_u,
+        fixed_point_targets_a,
+    )
+    return DUCAProjectionCertificate(
+        positions=tuple(positions),
+        e2=objective[0],
+        e_infinity=objective[1],
+        e1=objective[2],
+        u1=objective[3],
+    )
+
+
+def _validate_duca_projection_certificate_v001(
+    certificate: DUCAProjectionCertificate,
+    valid_len: int,
+    effective_k: int,
+    canonical_uniform_u: Sequence[int],
+    fixed_point_targets_a: Sequence[int],
+) -> None:
+    if not isinstance(certificate, DUCAProjectionCertificate):
+        raise DUCAProjectionError("DUCA projection certificate has the wrong type")
+    positions = certificate.positions
+    if (
+        len(positions) != effective_k
+        or any(type(position) is not int for position in positions)
+        or positions[0] != 0
+        or positions[-1] != valid_len - 1
+        or any(position < 0 or position >= valid_len for position in positions)
+        or any(positions[rank + 1] - positions[rank] not in (1, 2, 3, 4) for rank in range(effective_k - 1))
+        or any(abs(positions[rank] - canonical_uniform_u[rank]) > 16 for rank in range(effective_k))
+    ):
+        raise DUCAProjectionError("DUCA projection certificate violates the frozen feasible set")
+    recomputed = _duca_projection_objective_v001(
+        positions,
+        canonical_uniform_u,
+        fixed_point_targets_a,
+    )
+    if (
+        certificate.e2,
+        certificate.e_infinity,
+        certificate.e1,
+        certificate.u1,
+        certificate.positions[1:-1],
+    ) != recomputed:
+        raise DUCAProjectionError("DUCA projection objective certificate could not be recomputed exactly")
+
+
+def project_duca_fixed_targets_v001(
+    valid_len: int,
+    effective_k: int,
+    canonical_uniform_u: Sequence[int],
+    fixed_point_targets_a: Sequence[int],
+) -> DUCAProjectionCertificate:
+    """Return the unique exact lexicographic projection for serialized integer inputs."""
+
+    if (
+        type(valid_len) is not int
+        or valid_len < 0
+        or valid_len > DUCA_PROJECTION_SIGNED_128_MAX_V001
+    ):
+        raise DUCAProjectionError(
+            "DUCA projection valid length is outside the admitted signed-128 integer range",
+            code="INTEGER_RANGE_OR_OVERFLOW",
+        )
+    if valid_len < 16:
+        raise DUCAProjectionError(
+            "DUCA v001 requires a valid prefix of at least 16 frames",
+            code="INVALID_T_LT_16",
+        )
+    expected_k = min(384, 16 * (valid_len // 16))
+    if (
+        type(effective_k) is not int
+        or effective_k < 0
+        or effective_k > DUCA_PROJECTION_SIGNED_128_MAX_V001
+    ):
+        raise DUCAProjectionError(
+            "DUCA projection effective K is outside the admitted signed-128 integer range",
+            code="INTEGER_RANGE_OR_OVERFLOW",
+        )
+    if effective_k != expected_k:
+        raise DUCAProjectionError(
+            "DUCA projection effective K does not match the frozen budget rule",
+            code="K_EFF_MISMATCH",
+        )
+    uniform = _duca_projection_int_sequence_v001(
+        canonical_uniform_u,
+        name="canonical_uniform_u",
+        length=effective_k,
+        length_error_code="U_LENGTH_MISMATCH",
+    )
+    targets = _duca_projection_int_sequence_v001(
+        fixed_point_targets_a,
+        name="fixed_point_targets_a",
+        length=effective_k,
+        length_error_code="A_LENGTH_MISMATCH",
+    )
+    expected_uniform = canonical_endpoint_uniform_positions(valid_len, effective_k)
+    if uniform != expected_uniform:
+        raise DUCAProjectionError(
+            "DUCA projection uniform reference is not canonical",
+            code="U_CANONICAL_MISMATCH",
+        )
+    if (
+        uniform[0] != 0
+        or uniform[-1] != valid_len - 1
+        or any(uniform[rank + 1] - uniform[rank] not in (1, 2, 3, 4) for rank in range(effective_k - 1))
+    ):
+        raise DUCAProjectionError(
+            "DUCA projection has no feasible state: canonical uniform witness failed",
+            code="INFEASIBLE",
+        )
+    maximum_target = DUCA_PROJECTION_Q_V001 * (valid_len - 1)
+    if targets[0] != 0 or targets[-1] != maximum_target:
+        raise DUCAProjectionError(
+            "DUCA fixed-point target endpoints are outside their declared domain",
+            code="A_ENDPOINT_MISMATCH",
+        )
+    if any(targets[rank] > targets[rank + 1] for rank in range(effective_k - 1)):
+        raise DUCAProjectionError(
+            "DUCA fixed-point targets are outside their declared domain: not nondecreasing",
+            code="A_ORDER_MISMATCH",
+        )
+
+    layers: list[dict[int, tuple[int, ...]]] = [{0: ()}]
+    for rank in range(1, effective_k):
+        predecessor_map: dict[int, list[int]] = {}
+        for predecessor in sorted(layers[-1]):
+            for position in _duca_projection_candidates_v001(
+                rank,
+                predecessor,
+                valid_len,
+                effective_k,
+                uniform[rank],
+            ):
+                predecessor_map.setdefault(position, []).append(predecessor)
+        if not predecessor_map:
+            raise DUCAProjectionError("DUCA projection has no feasible state")
+        layers.append(
+            {
+                position: tuple(sorted(predecessor_map[position]))
+                for position in sorted(predecessor_map)
+            }
+        )
+    if tuple(layers[-1]) != (valid_len - 1,):
+        raise DUCAProjectionError("DUCA projection did not reach the fixed endpoint")
+
+    def node_error(rank: int, position: int) -> int:
+        if rank == 0 or rank == effective_k - 1:
+            return 0
+        return DUCA_PROJECTION_Q_V001 * position - targets[rank]
+
+    forward: list[dict[int, int]] = [{0: 0}]
+    for rank in range(1, effective_k):
+        current: dict[int, int] = {}
+        for position in sorted(layers[rank]):
+            error = node_error(rank, position)
+            cost = error * error
+            best: int | None = None
+            for predecessor in layers[rank][position]:
+                previous = forward[rank - 1].get(predecessor)
+                if previous is None:
+                    continue
+                candidate = previous + cost
+                if best is None or candidate < best:
+                    best = candidate
+            if best is not None:
+                current[position] = best
+        if not current:
+            raise DUCAProjectionError("DUCA projection has no exact E2 state")
+        forward.append(current)
+    endpoint = valid_len - 1
+    if endpoint not in forward[-1]:
+        raise DUCAProjectionError("DUCA projection returned no exact minimizer")
+    minimum_e2 = forward[-1][endpoint]
+
+    suffix: list[dict[int, int]] = [{} for _ in range(effective_k)]
+    suffix[-1][endpoint] = 0
+    for rank in range(effective_k - 2, -1, -1):
+        current_suffix: dict[int, int] = {}
+        for position in sorted(layers[rank]):
+            best: int | None = None
+            for successor in sorted(layers[rank + 1]):
+                if position not in layers[rank + 1][successor]:
+                    continue
+                remaining = suffix[rank + 1].get(successor)
+                if remaining is None:
+                    continue
+                error = node_error(rank + 1, successor)
+                candidate = error * error + remaining
+                if best is None or candidate < best:
+                    best = candidate
+            if best is not None:
+                current_suffix[position] = best
+        suffix[rank] = current_suffix
+    if suffix[0].get(0) != minimum_e2:
+        raise DUCAProjectionError("DUCA projection forward/backward E2 comparison inconsistency")
+
+    prefix_maxima: list[dict[int, int]] = [{0: 0}]
+    for rank in range(1, effective_k):
+        current_maxima: dict[int, int] = {}
+        for position in sorted(layers[rank]):
+            local_magnitude = abs(node_error(rank, position))
+            local_cost = local_magnitude * local_magnitude
+            remaining = suffix[rank].get(position)
+            if remaining is None:
+                continue
+            best: int | None = None
+            for predecessor in layers[rank][position]:
+                previous_maximum = prefix_maxima[rank - 1].get(predecessor)
+                previous_e2 = forward[rank - 1].get(predecessor)
+                if previous_maximum is None or previous_e2 is None:
+                    continue
+                if previous_e2 + local_cost + remaining != minimum_e2:
+                    continue
+                candidate = max(previous_maximum, local_magnitude)
+                if best is None or candidate < best:
+                    best = candidate
+            if best is not None:
+                current_maxima[position] = best
+        prefix_maxima.append(current_maxima)
+    minimum_e_infinity = prefix_maxima[-1].get(endpoint)
+    if minimum_e_infinity is None:
+        raise DUCAProjectionError("DUCA projection returned no exact E-infinity minimizer")
+
+    # State: (E2 prefix, E1 prefix, U1 prefix, internal position prefix).
+    lex_states: list[dict[int, tuple[int, int, int, tuple[int, ...]]]] = [
+        {0: (0, 0, 0, ())}
+    ]
+    for rank in range(1, effective_k):
+        current_lex: dict[int, tuple[int, int, int, tuple[int, ...]]] = {}
+        for position in sorted(layers[rank]):
+            error = node_error(rank, position)
+            magnitude = abs(error)
+            remaining = suffix[rank].get(position)
+            if remaining is None:
+                continue
+            if magnitude > minimum_e_infinity:
+                continue
+            e2_cost = error * error
+            e1_cost = magnitude
+            u1_cost = abs(position - uniform[rank]) if rank < effective_k - 1 else 0
+            best: tuple[int, int, int, tuple[int, ...]] | None = None
+            for predecessor in layers[rank][position]:
+                previous = lex_states[rank - 1].get(predecessor)
+                previous_e2 = forward[rank - 1].get(predecessor)
+                if previous is None or previous_e2 is None:
+                    continue
+                if previous_e2 + e2_cost + remaining != minimum_e2:
+                    continue
+                path = previous[3] + ((position,) if rank < effective_k - 1 else ())
+                candidate = (
+                    previous[0] + e2_cost,
+                    previous[1] + e1_cost,
+                    previous[2] + u1_cost,
+                    path,
+                )
+                if best is None or _duca_compare_keys_v001(candidate, best) < 0:
+                    best = candidate
+            if best is not None:
+                current_lex[position] = best
+        if not current_lex:
+            raise DUCAProjectionError("DUCA projection has no exact lexicographic state")
+        lex_states.append(current_lex)
+    final_state = lex_states[-1].get(endpoint)
+    if final_state is None or final_state[0] != minimum_e2:
+        raise DUCAProjectionError("DUCA projection returned no exact lexicographic minimizer")
+    positions = (0,) + final_state[3] + (endpoint,)
+    certificate = _duca_projection_certificate_v001(
+        positions,
+        valid_len,
+        effective_k,
+        uniform,
+        targets,
+    )
+    _validate_duca_projection_certificate_v001(
+        certificate,
+        valid_len,
+        effective_k,
+        uniform,
+        targets,
+    )
+    expected_key = (
+        minimum_e2,
+        minimum_e_infinity,
+        final_state[1],
+        final_state[2],
+        final_state[3],
+    )
+    actual_key = _duca_projection_objective_v001(positions, uniform, targets)
+    if _duca_compare_keys_v001(actual_key, expected_key) != 0:
+        raise DUCAProjectionError("DUCA projection exact objective certificate mismatch")
+    return certificate
+
+
+def decode_duca_density_positions_v001(
+    density_logits_valid: torch.Tensor,
+    requested_k: int = 384,
+) -> torch.Tensor:
+    """Decode a valid-prefix density field into constrained hard frame positions."""
+
+    if not torch.is_tensor(density_logits_valid) or density_logits_valid.ndim != 1:
+        raise DUCAProjectionError("density_logits_valid must be a one-dimensional tensor")
+    if torch.is_complex(density_logits_valid):
+        raise DUCAProjectionError("density_logits_valid must be real-valued")
+    _require_finite(density_logits_valid, "density_logits_valid", error_type=DUCAProjectionError)
+    if type(requested_k) is not int or requested_k != 384:
+        raise DUCAProjectionError("DUCA v001 requires requested_k=384")
+
+    valid_len = int(density_logits_valid.numel())
+    if valid_len < 16:
+        raise DUCAProjectionError("DUCA v001 requires a valid prefix of at least 16 frames")
+    effective_k = min(int(requested_k), 16 * (valid_len // 16))
+    uniform = canonical_endpoint_uniform_positions(valid_len, effective_k)
+    uniform_tensor = torch.as_tensor(uniform, dtype=torch.long, device=density_logits_valid.device)
+
+    if torch.equal(density_logits_valid, density_logits_valid[:1].expand_as(density_logits_valid)):
+        return uniform_tensor
+
+    try:
+        density = F.softplus(density_logits_valid.to(dtype=torch.float64)) + 1.0e-6
+        _require_finite(density, "DUCA density", error_type=DUCAProjectionError)
+        interval_mass = 0.5 * (density[:-1] + density[1:])
+        _require_finite(interval_mass, "DUCA interval mass", error_type=DUCAProjectionError)
+        if bool((interval_mass <= 0).any().item()):
+            raise DUCAProjectionError("DUCA interval mass must be positive")
+        cumulative_mass = torch.cat([interval_mass.new_zeros((1,)), interval_mass.cumsum(dim=0)])
+        _require_finite(cumulative_mass, "DUCA cumulative mass", error_type=DUCAProjectionError)
+        total_mass = cumulative_mass[-1]
+        if not bool((total_mass > 0).item()):
+            raise DUCAProjectionError("DUCA density integral must be positive")
+        targets = torch.empty(
+            (effective_k,),
+            dtype=torch.float64,
+            device=density_logits_valid.device,
+        )
+        targets[0] = 0.0
+        targets[-1] = float(valid_len - 1)
+        internal_ranks = torch.arange(
+            1,
+            effective_k - 1,
+            dtype=torch.float64,
+            device=density_logits_valid.device,
+        )
+        internal_quantile_mass = (internal_ranks * total_mass) / float(effective_k - 1)
+        _require_finite(
+            internal_quantile_mass,
+            "DUCA internal quantile mass",
+            error_type=DUCAProjectionError,
+        )
+        left = torch.searchsorted(cumulative_mass, internal_quantile_mass, right=True) - 1
+        if bool(((left < 0) | (left >= valid_len - 1)).any().item()):
+            raise DUCAProjectionError("DUCA internal quantile mass has no declared inverse-CDF interval")
+        fraction = (internal_quantile_mass - cumulative_mass[left]) / interval_mass[left]
+        targets[1:-1] = left.to(dtype=torch.float64) + fraction
+        _require_finite(targets, "DUCA inverse-CDF targets", error_type=DUCAProjectionError)
+        if bool((targets[1:] <= targets[:-1]).any().item()):
+            raise DUCAProjectionError("DUCA inverse-CDF targets must be strictly increasing")
+        target_values = tuple(float(value) for value in targets.detach().cpu().tolist())
+        fixed_targets = tuple(
+            _duca_binary64_to_fixed_half_up_v001(value)
+            for value in target_values
+        )
+        fixed_targets = (
+            0,
+            *fixed_targets[1:-1],
+            DUCA_PROJECTION_Q_V001 * (valid_len - 1),
+        )
+        certificate = project_duca_fixed_targets_v001(
+            valid_len,
+            effective_k,
+            uniform,
+            fixed_targets,
+        )
+    except DUCAProjectionError:
+        raise
+    except Exception as exc:
+        raise DUCAProjectionError("DUCA nonconstant projection failed closed") from exc
+    return torch.as_tensor(
+        certificate.positions,
+        dtype=torch.long,
+        device=density_logits_valid.device,
+    )
 
 
 def _as_bool_prefix_mask(masks: torch.Tensor, *, expected_shape: tuple[int, int]) -> torch.Tensor:
@@ -1018,6 +1562,8 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         max_gap_guard_count: int = 0,
         max_gap: int | None = None,
         selection_strategy: str = "slot_transport",
+        duca_density_requested_k: int = 384,
+        duca_density_memory_dim: int | None = None,
         frame_score_st_temperature: float = 1.0,
         frame_score_st_local_width: float = 8.0,
         frame_score_st_local_bias_weight: float = 1.0,
@@ -1085,7 +1631,8 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         reader_cfg = dict(reader)
         reader_cfg.setdefault("type", "PCOTMRASReader")
         reader_cfg.setdefault("in_dim", int(descriptor_dim))
-        reader_cfg.setdefault("num_slots", int(target_len))
+        if str(reader_cfg.get("type")) != "DUCADensityOnlyBrowserMemoryReader":
+            reader_cfg.setdefault("num_slots", int(target_len))
         if int(reader_cfg["in_dim"]) != int(descriptor_dim):
             raise ValueError("reader in_dim must match selector descriptor_dim")
         if str(reader_cfg.get("type")) == "PCOTMRASRSeriesHybridFrameScout":
@@ -1139,11 +1686,12 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             "frame_score_global_rank_st",
             "interval_boundary_packet",
             "coarse_actionness_uncertainty",
+            "duca_density_quantile",
         ):
             raise ValueError(
                 "selection_strategy must be 'slot_transport', 'frame_score_topk', "
                 "'frame_score_global_rank_st', 'interval_boundary_packet', "
-                "or 'coarse_actionness_uncertainty'"
+                "'coarse_actionness_uncertainty', or 'duca_density_quantile'"
             )
         if float(frame_score_st_temperature) <= 0.0:
             raise ValueError("frame_score_st_temperature must be positive")
@@ -1203,6 +1751,26 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         self.max_dense_gap = int(max_dense_gap)
         self.max_gap_guard_count = min(int(max_gap_guard_count), self.target_len)
         self.selection_strategy = str(selection_strategy)
+        self.duca_density_requested_k = int(duca_density_requested_k)
+        self.duca_density_memory_dim = None if duca_density_memory_dim is None else int(duca_density_memory_dim)
+        self.duca_density_projection = None
+        if self.selection_strategy == "duca_density_quantile":
+            if self.selection_unit != 1:
+                raise ValueError("duca_density_quantile requires selection_unit=1")
+            if self.target_len != 384 or self.duca_density_requested_k != 384:
+                raise ValueError("duca_density_quantile requires target_len=requested_k=384")
+            if self.duca_density_memory_dim is None or self.duca_density_memory_dim <= 0:
+                raise ValueError("duca_density_quantile requires a positive duca_density_memory_dim")
+            if str(reader_cfg.get("type")) != "DUCADensityOnlyBrowserMemoryReader":
+                raise ValueError("duca_density_quantile requires DUCADensityOnlyBrowserMemoryReader")
+            if int(reader_cfg.get("hidden_dim", 96)) != self.duca_density_memory_dim:
+                raise ValueError("duca_density_memory_dim must match the density-only reader hidden_dim")
+            if self.straight_through_detector_loss:
+                raise ValueError("duca_density_quantile forbids the detector-gradient surrogate")
+            self.duca_density_projection = nn.Sequential(
+                nn.LayerNorm(self.duca_density_memory_dim),
+                nn.Linear(self.duca_density_memory_dim, 1),
+            )
         self.frame_score_st_temperature = float(frame_score_st_temperature)
         self.frame_score_st_local_width = float(frame_score_st_local_width)
         self.frame_score_st_local_bias_weight = float(frame_score_st_local_bias_weight)
@@ -1272,6 +1840,27 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             valid=valid,
         )
         reader_outputs = self.reader(candidate_descriptors, candidate_valid, time_coords=candidate_time_coords)
+        if self.selection_strategy == "duca_density_quantile":
+            expected_dense_indices = torch.arange(
+                dense_len,
+                dtype=torch.long,
+                device=candidate_dense_indices.device,
+            )[None, :].expand(batch, -1)
+            if not torch.equal(candidate_valid, valid) or not torch.equal(candidate_dense_indices, expected_dense_indices):
+                raise ValueError("duca_density_quantile requires an identity physical candidate grid")
+            browser_memory = reader_outputs.get("browser_memory")
+            if not torch.is_tensor(browser_memory) or browser_memory.ndim != 3:
+                raise ValueError("duca_density_quantile requires reader browser_memory [B,T,H]")
+            if tuple(browser_memory.shape[:2]) != tuple(candidate_valid.shape):
+                raise ValueError("DUCA browser_memory must match the identity candidate grid")
+            if browser_memory.device != candidate_valid.device:
+                raise ValueError("DUCA browser_memory must share the identity candidate-grid device")
+            if int(browser_memory.shape[-1]) != int(self.duca_density_memory_dim):
+                raise ValueError("DUCA browser_memory width must match duca_density_memory_dim")
+            density_logits = self.duca_density_projection(browser_memory).squeeze(-1)
+            density_logits = density_logits.masked_fill(~candidate_valid, 0.0)
+            _require_finite(density_logits, "duca_density_logits", error_type=ValueError)
+            reader_outputs["duca_density_logits"] = density_logits
         for name in (
             "slot_logits",
             "acquisition_matrix",
@@ -1290,6 +1879,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             "redundancy_logits",
             "role_logits",
             "frame_selection_logits",
+            "duca_density_logits",
         ):
             tensor = reader_outputs.get(name)
             if torch.is_tensor(tensor):
@@ -1507,6 +2097,90 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             candidate_time_coords,
         )
 
+    def _duca_density_transport_plan(
+        self,
+        *,
+        reader_outputs: Mapping[str, torch.Tensor],
+        valid: torch.Tensor,
+        candidate_valid: torch.Tensor,
+        candidate_dense_indices: torch.Tensor,
+    ) -> dict[str, Any]:
+        density_logits = reader_outputs.get("duca_density_logits")
+        if not torch.is_tensor(density_logits) or tuple(density_logits.shape) != tuple(candidate_valid.shape):
+            raise ValueError("duca_density_logits must be [B,T] and match the identity candidate grid")
+        _require_finite(density_logits, "duca_density_logits", error_type=ValueError)
+        if not torch.equal(candidate_valid.to(device=valid.device).bool(), valid.bool()):
+            raise ValueError("DUCA candidate validity must equal the dense valid prefix")
+        expected_indices = torch.arange(
+            valid.shape[1],
+            dtype=torch.long,
+            device=candidate_dense_indices.device,
+        )[None, :].expand_as(candidate_dense_indices)
+        if not torch.equal(candidate_dense_indices, expected_indices):
+            raise ValueError("DUCA hard decoding requires identity physical candidate indices")
+
+        batch = int(valid.shape[0])
+        fixed_indices = torch.empty(
+            (batch, self.target_len, 1),
+            dtype=torch.long,
+            device=density_logits.device,
+        )
+        fixed_weights = torch.ones(
+            (batch, self.target_len, 1),
+            dtype=torch.float32,
+            device=density_logits.device,
+        )
+        fixed_positions = torch.empty(
+            (batch, self.target_len),
+            dtype=torch.float32,
+            device=density_logits.device,
+        )
+        selected_output_valid_lengths = torch.empty(
+            (batch,),
+            dtype=torch.long,
+            device=density_logits.device,
+        )
+        selected_roles: list[list[str]] = []
+        raw_slot_dense_indices: list[list[int]] = []
+        raw_slot_duplicate_rates: list[float] = []
+        raw_slot_unique_counts: list[int] = []
+
+        for batch_idx in range(batch):
+            valid_len = int(candidate_valid[batch_idx].long().sum().item())
+            decoded = decode_duca_density_positions_v001(
+                density_logits[batch_idx, :valid_len],
+                requested_k=self.duca_density_requested_k,
+            )
+            effective_k = int(decoded.numel())
+            selected_output_valid_lengths[batch_idx] = effective_k
+            padded = torch.empty((self.target_len,), dtype=torch.long, device=density_logits.device)
+            padded[:effective_k] = decoded
+            padded[effective_k:] = decoded[-1]
+            fixed_indices[batch_idx, :, 0] = padded
+            fixed_positions[batch_idx] = padded.to(dtype=torch.float32)
+            selected_roles.append(
+                ["duca_density_quantile"] * effective_k + ["pad_repeat"] * (self.target_len - effective_k)
+            )
+            decoded_list = [int(value) for value in decoded.detach().cpu().tolist()]
+            raw_slot_dense_indices.append(decoded_list)
+            raw_slot_duplicate_rates.append(0.0)
+            raw_slot_unique_counts.append(effective_k)
+
+        _require_finite(fixed_weights, "DUCA hard gather weights", error_type=ValueError)
+        _require_finite(fixed_positions, "DUCA hard selected positions", error_type=ValueError)
+        return {
+            "indices": fixed_indices,
+            "weights": fixed_weights,
+            "selected_positions": fixed_positions,
+            "selected_output_valid_lengths": selected_output_valid_lengths,
+            "selected_roles": selected_roles,
+            "raw_slot_dense_indices": raw_slot_dense_indices,
+            "raw_slot_duplicate_rates": raw_slot_duplicate_rates,
+            "raw_slot_unique_counts": raw_slot_unique_counts,
+            "reader_fill_counts": [0] * batch,
+            "st_active_row_counts": [0] * batch,
+        }
+
     def _sparse_transport_plan(
         self,
         reader_outputs: Mapping[str, torch.Tensor],
@@ -1516,6 +2190,13 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         candidate_dense_indices: torch.Tensor,
         training: bool,
     ) -> dict[str, torch.Tensor]:
+        if getattr(self, "selection_strategy", "slot_transport") == "duca_density_quantile":
+            return self._duca_density_transport_plan(
+                reader_outputs=reader_outputs,
+                valid=valid,
+                candidate_valid=candidate_valid,
+                candidate_dense_indices=candidate_dense_indices,
+            )
         if getattr(self, "selection_strategy", "slot_transport") in (
             "frame_score_topk",
             "frame_score_global_rank_st",
@@ -3160,34 +3841,9 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         count = min(int(count), int(valid_positions.numel()))
         if count <= 0:
             return valid_positions.new_empty((0,))
-        if count == 1:
-            return valid_positions[:1]
-        anchor_offsets = torch.linspace(
-            0,
-            int(valid_positions.numel()) - 1,
-            steps=count,
-            device=valid_positions.device,
-            dtype=torch.float32,
-        ).round().to(dtype=torch.long)
-        anchors = valid_positions[anchor_offsets]
-        if anchors.unique().numel() == anchors.numel():
-            return anchors
-        repaired = []
-        used = set()
-        for pos_tensor in anchors:
-            pos = int(pos_tensor.item())
-            if pos not in used:
-                repaired.append(pos_tensor)
-                used.add(pos)
-        for pos_tensor in valid_positions:
-            pos = int(pos_tensor.item())
-            if pos in used:
-                continue
-            repaired.append(pos_tensor)
-            used.add(pos)
-            if len(repaired) == count:
-                break
-        return torch.stack(repaired, dim=0)
+        anchor_offsets = canonical_endpoint_uniform_positions(int(valid_positions.numel()), count)
+        offsets = torch.as_tensor(anchor_offsets, dtype=torch.long, device=valid_positions.device)
+        return valid_positions[offsets]
 
     @staticmethod
     def _max_gap_guard_positions(
@@ -3203,16 +3859,9 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         if count == 1:
             return valid_positions[:1]
         if int(valid_positions[-1].item()) - int(valid_positions[0].item()) <= max_gap * max(1, count - 1):
-            anchor_offsets = torch.linspace(
-                0,
-                int(valid_positions.numel()) - 1,
-                steps=count,
-                device=valid_positions.device,
-                dtype=torch.float32,
-            ).round().to(dtype=torch.long)
-            anchors = valid_positions[anchor_offsets]
-            if anchors.unique().numel() == anchors.numel():
-                return anchors
+            anchor_offsets = canonical_endpoint_uniform_positions(int(valid_positions.numel()), count)
+            offsets = torch.as_tensor(anchor_offsets, dtype=torch.long, device=valid_positions.device)
+            return valid_positions[offsets]
         repaired = []
         last_pos: int | None = None
         for pos_tensor in valid_positions:
@@ -3355,6 +4004,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                 "frame_score_global_rank_st": "frame_selection_logits",
                 "interval_boundary_packet": "interval_boundary_packet",
                 "coarse_actionness_uncertainty": "classification_probability_uncertainty_change",
+                "duca_density_quantile": "duca_density_logits",
             }
             meta["pc_ot_mras_prebackbone_hard_selection_source"] = hard_source_by_strategy.get(
                 selection_strategy,
@@ -4213,6 +4863,10 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
 
 
 __all__ = [
+    "DUCAProjectionCertificate",
+    "DUCAProjectionError",
+    "decode_duca_density_positions_v001",
+    "project_duca_fixed_targets_v001",
     "PCOTMRASPreBackboneFrameSelector",
     "PCOTMRASTinyTransformerFrameScout",
     "PCOTMRASCNNFrameScout",
