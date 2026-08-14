@@ -33,6 +33,19 @@ from tools.bata.georoute_official_development_stage_runner import (
     summarize_formal_telemetry,
     validate_p1_q_routing_audit,
 )
+from tools.bata.finalize_georoute_official_development import (
+    P1_GT_BINS,
+    P1_UNMATCHED_PREDICTION_BINS,
+    _match_p1_video,
+)
+from tools.bata.georoute_experiment_contract import canonical_sha256
+from tools.bata.zoomtoken_scnr_steady_cost_contract_v001 import (
+    P1_COST_LEAF_SPECS,
+    P1_COST_RATIO_LIMIT,
+    P1_DENSE_PHYSICAL_TOKENS,
+    analyze_p1_cost_leaves,
+    p1_cost_leaf_sequence,
+)
 
 def _load_surface(relative_path: str) -> dict:
     return runpy.run_path(str(ROOT / relative_path))
@@ -297,6 +310,92 @@ def _summarize_fixture(payload: dict, *, arm: str) -> dict:
         return summarize_formal_telemetry(path, arm=arm)
 
 
+def _p1_cost_route(arm: str) -> dict:
+    selected = P1_DENSE_PHYSICAL_TOKENS if arm in {"DO", "DN"} else 24_576
+    route = {
+        "arm": arm,
+        "route_mode": {
+            "DO": "dense",
+            "DN": "dense",
+            "U": "uniform",
+            "R": "random",
+            "Q": "dynamic_scnr",
+        }[arm],
+        "target_k": None if arm in {"DO", "DN", "Q"} else 64,
+        "dynamic_k_t": arm == "Q",
+        "selected_physical_tokens": selected,
+        "executed_physical_tokens": selected,
+        "duplicate_selected_physical_tokens": 0,
+        "padded_heavy_tokens": 0,
+        "uses_gt_for_route": False,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_test_evidence": False,
+    }
+    if arm == "Q":
+        clip_counts = [512] * 48
+        route.update(
+            {
+                "k_t_min": 0,
+                "k_t_max": 128,
+                "k_t_zero_count": 1,
+                "clip_token_counts": clip_counts,
+                "attention_pairs": sum(value**2 for value in clip_counts),
+                "physical_indices_sha256": "e" * 64,
+            }
+        )
+    return route
+
+
+def _p1_cost_rows(leaf_id: str) -> list[dict]:
+    rows = []
+    for pass_index, arm in enumerate(p1_cost_leaf_sequence(leaf_id)):
+        ratio = 0.85 if arm == "Q" else 1.0
+        for ordinal in range(136):
+            video_id = f"video_validation_{ordinal % 40:07d}"
+            selected = P1_DENSE_PHYSICAL_TOKENS if arm in {"DO", "DN"} else 24_576
+            row = {
+                "schema_version": "zoomtoken_p1_cost_sample_v001",
+                "leaf_id": leaf_id,
+                "pass_index": pass_index,
+                "arm": arm,
+                "sample_ordinal": ordinal,
+                "loader_ordinal": ordinal,
+                "measurement_phase": "measured",
+                "warmup": False,
+                "video_id": video_id,
+                "physical_window_id": f"{video_id}:{ordinal}",
+                "window_id": f"{video_id}:{ordinal}#{ordinal}",
+                "exact_window_budget": 24_576,
+                "selected_physical_tokens": selected,
+                "executed_physical_tokens": selected,
+                "duplicate_selected_physical_tokens": 0,
+                "padded_heavy_tokens": 0,
+                "input_pipeline_serial_ms": 10.0 * ratio,
+                "h2d_ms": 2.0 * ratio,
+                "decode_to_window_output_wall_ms": 90.0 * ratio,
+                "model_forward_ms": 60.0 * ratio,
+                "postprocess_ms": 10.0 * ratio,
+                "final_video_nms_ms": 10.0 * ratio,
+                "end_to_end_serial_ms": 100.0 * ratio,
+                "peak_gpu_allocated_mb": 1000.0,
+                "peak_gpu_reserved_mb": 1200.0,
+                "gross_gpu_energy_j_per_sample": 10.0 * ratio,
+                "energy_window_monotonic_s": [
+                    float(pass_index * 1000 + ordinal + 1),
+                    float(pass_index * 1000 + ordinal + 2),
+                ],
+                "nms_energy_window_monotonic_s": [
+                    float(pass_index * 1000 + 500),
+                    float(pass_index * 1000 + 501),
+                ],
+                "route_audit": _p1_cost_route(arm),
+            }
+            row["sample_sha256"] = canonical_sha256(row)
+            rows.append(row)
+    return rows
+
+
 class ZoomTokenP1StaticContractTest(unittest.TestCase):
     def test_first_screen_enum_and_conditional_controls_are_frozen(self):
         self.assertEqual(
@@ -512,6 +611,139 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         self.assertEqual(summary["target_k"], 64)
         self.assertEqual(summary["role_counts"], {"uniform": 64})
         self.assertNotIn("torch", sys.modules)
+
+    def test_p1_deployer_and_launcher_freeze_one_held_fifteen_job_entry(self):
+        deployer = (
+            ROOT / "tools" / "bata" / "deploy_georoute_official_development.py"
+        ).read_text(encoding="utf-8")
+        launcher = (
+            ROOT / "scripts" / "run_georoute_official_development_stage_slurm.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn('parser.add_argument("--mode", choices=("formal", "p1")', deployer)
+        self.assertIn("additional_jobs=15", deployer)
+        self.assertIn('"runtime_preflight": runtime_preflight_job', deployer)
+        self.assertIn('"cost": cost_jobs', deployer)
+        self.assertIn("finalizer_afterany_all_fourteen_predecessors", deployer)
+        self.assertIn("release_all_fifteen_atomically", deployer)
+        self.assertIn("_release_jobs(submitted)", deployer)
+        self.assertLess(
+            launcher.index("georoute_p1_runtime_attestor"),
+            launcher.index("import numpy"),
+        )
+        self.assertIn("apptainer exec --nv", launcher)
+        self.assertIn("--phase preflight", launcher)
+        self.assertIn("--phase leaf", launcher)
+        self.assertIn("--task cost", launcher)
+
+    def test_p1_cost_contract_is_eight_leaves_and_dn_gate_is_literal(self):
+        self.assertNotIn("torch", sys.modules)
+        self.assertEqual(
+            tuple(P1_COST_LEAF_SPECS),
+            (
+                "DO_ABBA",
+                "DO_BAAB",
+                "DN_ABBA",
+                "DN_BAAB",
+                "U_ABBA",
+                "U_BAAB",
+                "R_ABBA",
+                "R_BAAB",
+            ),
+        )
+        self.assertEqual(p1_cost_leaf_sequence("DN_ABBA"), ("DN", "Q", "Q", "DN"))
+        self.assertEqual(p1_cost_leaf_sequence("R_BAAB"), ("Q", "R", "R", "Q"))
+        leaves = {leaf_id: _p1_cost_rows(leaf_id) for leaf_id in P1_COST_LEAF_SPECS}
+        analysis = analyze_p1_cost_leaves(leaves, bootstrap_replicates=25)
+        self.assertEqual(P1_COST_RATIO_LIMIT, 0.85)
+        self.assertEqual(analysis["dense_denominator"], "DN")
+        self.assertTrue(analysis["q_over_dn_cost_gate_passed"])
+        self.assertTrue(analysis["comparisons"]["DO"]["report_only"])
+        self.assertFalse(analysis["comparisons"]["DN"]["report_only"])
+        for metric in analysis["comparisons"]["DN"]["metrics"].values():
+            self.assertAlmostEqual(metric["one_sided_95_upper_bound"], 0.85)
+            self.assertTrue(metric["upper_bound_le_0_85"])
+            self.assertEqual(metric["tolerance"], 0.0)
+        for leaf_id in ("DN_ABBA", "DN_BAAB"):
+            for row in leaves[leaf_id]:
+                if row["arm"] == "Q":
+                    row["end_to_end_serial_ms"] = 86.0
+                    row["gross_gpu_energy_j_per_sample"] = 8.6
+                    row.pop("sample_sha256")
+                    row["sample_sha256"] = canonical_sha256(row)
+        failed = analyze_p1_cost_leaves(leaves, bootstrap_replicates=10)
+        self.assertFalse(failed["q_over_dn_cost_gate_passed"])
+        self.assertNotIn("torch", sys.modules)
+
+    def test_report_only_matching_freezes_short_boundary_and_bin_precedence(self):
+        ground_truth = [
+            {"id": "g-hit", "label": "A", "start": 0.0, "end": 5.0},
+            {"id": "g-start", "label": "A", "start": 10.0, "end": 20.0},
+            {"id": "g-class", "label": "B", "start": 30.0, "end": 35.0},
+        ]
+        predictions = [
+            {
+                "id": "p-hit",
+                "label": "A",
+                "start": 0.0,
+                "end": 5.0,
+                "score": 0.9,
+            },
+            {
+                "id": "p-start",
+                "label": "A",
+                "start": 4.0,
+                "end": 20.0,
+                "score": 0.8,
+            },
+            {
+                "id": "p-duplicate",
+                "label": "A",
+                "start": 0.0,
+                "end": 5.0,
+                "score": 0.1,
+            },
+            {
+                "id": "p-class",
+                "label": "C",
+                "start": 30.0,
+                "end": 35.0,
+                "score": 0.7,
+            },
+            {
+                "id": "p-other",
+                "label": "D",
+                "start": 50.0,
+                "end": 51.0,
+                "score": 0.6,
+            },
+        ]
+        report = _match_p1_video(ground_truth, predictions)
+        self.assertEqual(tuple(report["gt_bins"]), P1_GT_BINS)
+        self.assertEqual(
+            tuple(report["unmatched_prediction_bins"]),
+            P1_UNMATCHED_PREDICTION_BINS,
+        )
+        self.assertEqual(report["gt_bins"]["HIT_070"], 1)
+        self.assertEqual(report["gt_bins"]["START_LIMITED"], 1)
+        self.assertEqual(report["gt_bins"]["CLASS_CONFUSION"], 1)
+        self.assertEqual(report["unmatched_prediction_bins"]["DUPLICATE_FP"], 1)
+        self.assertEqual(report["unmatched_prediction_bins"]["CLASS_CONFUSION_FP"], 1)
+        self.assertEqual(report["unmatched_prediction_bins"]["OTHER_FP"], 1)
+        self.assertEqual(report["short_gt_count"], 2)
+        self.assertEqual(report["short_hit_070_count"], 1)
+
+    def test_p1_finalizer_names_only_the_frozen_terminal_decisions(self):
+        source = (
+            ROOT / "tools" / "bata" / "finalize_georoute_official_development.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"NO_SURVIVOR_INVALID_P1"', source)
+        self.assertIn('"STOP_Q_CORE_P1"', source)
+        self.assertIn('"Q_CORE_P1_SURVIVES"', source)
+        self.assertIn('"dense_denominator": "DN"', source)
+        self.assertIn('"do_mandatory_report_only": True', source)
+        self.assertIn('"short_actions_affect_gate": False', source)
+        self.assertIn('"boundary_diagnostics_affect_gate": False', source)
+        self.assertIn('"high_iou_decomposition_affects_gate": False', source)
 
 
 if __name__ == "__main__":

@@ -84,6 +84,35 @@ PAIR_INDICES_BY_ORDER = {
 }  # Each pair is normalized to (control pass index, centered pass index).
 FINALIZER_DEPENDENCY = "afterany"
 
+# P1 is a separate, result-blind use of the proven steady-cost mechanics.  The
+# historical A/B study above remains immutable and cannot be relabelled as P1.
+P1_COST_SCHEMA_VERSION = "zoomtoken_p1_steady_cost_v001"
+P1_STUDY_ID = "ZOOMTOKEN_P1_DNURQ_V001"
+P1_ARM_ORDER = ("DO", "DN", "U", "R", "Q")
+P1_COST_COMPARATORS = ("DO", "DN", "U", "R")
+P1_COST_LEAF_SPECS = {
+    f"{comparator}_{order}": {
+        "comparator": comparator,
+        "order": order,
+    }
+    for comparator in P1_COST_COMPARATORS
+    for order in ("ABBA", "BAAB")
+}
+P1_DENSE_PHYSICAL_TOKENS = 384 * 220
+P1_COST_RATIO_LIMIT = 0.85
+P1_COST_BOOTSTRAP_SEED = BOOTSTRAP_SEED
+P1_COST_BOOTSTRAP_REPLICATES = BOOTSTRAP_REPLICATES
+P1_COST_METRICS = {
+    "selector_inclusive_decode_to_nms_p50": (
+        "end_to_end_serial_ms",
+        "p50",
+    ),
+    "mean_gross_nvml_joules_per_window": (
+        "gross_gpu_energy_j_per_sample",
+        "mean",
+    ),
+}
+
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _REMOTE_BOUNDARY = PurePosixPath("/data/run01/sczc063/yuzibo")
 
@@ -1126,6 +1155,462 @@ def analyze_complete_leaves(
     return analysis
 
 
+def p1_cost_leaf_spec(leaf_id: str) -> dict[str, str]:
+    try:
+        return dict(P1_COST_LEAF_SPECS[str(leaf_id)])
+    except KeyError as error:
+        raise ValueError("P1 cost leaf ID is outside the frozen eight leaves") from error
+
+
+def p1_cost_leaf_sequence(leaf_id: str) -> tuple[str, ...]:
+    spec = p1_cost_leaf_spec(leaf_id)
+    comparator = spec["comparator"]
+    return tuple(comparator if symbol == "A" else "Q" for symbol in spec["order"])
+
+
+def p1_cost_leaf_relative_path(leaf_id: str) -> Path:
+    spec = p1_cost_leaf_spec(leaf_id)
+    return Path("cost") / spec["comparator"] / spec["order"]
+
+
+def _p1_expected_physical_tokens(arm: str) -> int:
+    if arm in {"DO", "DN"}:
+        return P1_DENSE_PHYSICAL_TOKENS
+    if arm in {"U", "R", "Q"}:
+        return WINDOW_BUDGET
+    raise ValueError("unknown P1 cost arm")
+
+
+def validate_p1_cost_rows(
+    rows: Sequence[Mapping[str, Any]], *, leaf_id: str
+) -> list[dict[str, Any]]:
+    """Validate one P1 ABBA/BAAB leaf without weakening the legacy A/B study."""
+
+    sequence = p1_cost_leaf_sequence(leaf_id)
+    grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for raw in rows:
+        row = copy.deepcopy(dict(raw))
+        observed_hash = row.pop("sample_sha256", None)
+        if observed_hash != canonical_sha256(row):
+            raise ValueError("P1 cost sample self hash is invalid")
+        row["sample_sha256"] = observed_hash
+        if row.get("measurement_phase") != "measured" or row.get("warmup") is not False:
+            raise ValueError("P1 cost statistics contain warmup observations")
+        grouped[int(row.get("pass_index", -1))].append(row)
+    if set(grouped) != set(range(4)):
+        raise ValueError("P1 cost leaf does not contain four measured passes")
+
+    manifests: list[list[tuple[str, str]]] = []
+    normalized: list[dict[str, Any]] = []
+    for pass_index, arm in enumerate(sequence):
+        pass_rows = sorted(
+            grouped[pass_index], key=lambda row: int(row.get("sample_ordinal", -1))
+        )
+        if len(pass_rows) != PHYSICAL_WINDOWS:
+            raise ValueError("P1 cost pass is not the complete 136-window population")
+        manifest: list[tuple[str, str]] = []
+        expected_tokens = _p1_expected_physical_tokens(arm)
+        for ordinal, row in enumerate(pass_rows):
+            audit = row.get("route_audit")
+            if (
+                row.get("schema_version") != "zoomtoken_p1_cost_sample_v001"
+                or row.get("leaf_id") != leaf_id
+                or row.get("arm") != arm
+                or int(row.get("pass_index", -1)) != pass_index
+                or int(row.get("sample_ordinal", -1)) != ordinal
+                or int(row.get("loader_ordinal", -1)) != ordinal
+                or int(row.get("exact_window_budget", -1)) != WINDOW_BUDGET
+                or int(row.get("selected_physical_tokens", -1)) != expected_tokens
+                or int(row.get("executed_physical_tokens", -1)) != expected_tokens
+                or int(row.get("duplicate_selected_physical_tokens", -1)) != 0
+                or int(row.get("padded_heavy_tokens", -1)) != 0
+                or not isinstance(row.get("physical_window_id"), str)
+                or not row["physical_window_id"]
+                or not isinstance(row.get("video_id"), str)
+                or not row["video_id"]
+                or not isinstance(audit, Mapping)
+                or any(
+                    not isinstance(row.get(field), list)
+                    or len(row[field]) != 2
+                    or any(not math.isfinite(float(value)) for value in row[field])
+                    or float(row[field][1]) <= float(row[field][0])
+                    for field in (
+                        "energy_window_monotonic_s",
+                        "nms_energy_window_monotonic_s",
+                    )
+                )
+                or audit.get("arm") != arm
+                or audit.get("uses_gt_for_route") is not False
+                or audit.get("uses_teacher") is not False
+                or audit.get("uses_oracle") is not False
+                or audit.get("uses_test_evidence") is not False
+                or int(audit.get("selected_physical_tokens", -1)) != expected_tokens
+                or int(audit.get("executed_physical_tokens", -1)) != expected_tokens
+                or int(audit.get("duplicate_selected_physical_tokens", -1)) != 0
+                or int(audit.get("padded_heavy_tokens", -1)) != 0
+                or any(
+                    not math.isfinite(float(row.get(field, float("nan"))))
+                    or float(row[field]) <= 0.0
+                    for field in (
+                        "input_pipeline_serial_ms",
+                        "h2d_ms",
+                        "decode_to_window_output_wall_ms",
+                        "model_forward_ms",
+                        "postprocess_ms",
+                        "final_video_nms_ms",
+                        "end_to_end_serial_ms",
+                        "peak_gpu_allocated_mb",
+                        "peak_gpu_reserved_mb",
+                        "gross_gpu_energy_j_per_sample",
+                    )
+                )
+            ):
+                raise ValueError("P1 cost row violates execution or full-stack scope")
+            if arm == "Q":
+                clip_counts = audit.get("clip_token_counts")
+                if (
+                    audit.get("route_mode") != "dynamic_scnr"
+                    or audit.get("target_k") is not None
+                    or audit.get("dynamic_k_t") is not True
+                    or int(audit.get("k_t_min", -1)) < 0
+                    or int(audit.get("k_t_max", -1)) < int(audit.get("k_t_min", -1))
+                    or int(audit.get("k_t_zero_count", -1)) < 0
+                    or not isinstance(clip_counts, list)
+                    or any(type(value) is not int or value < 0 for value in clip_counts)
+                    or sum(clip_counts) != WINDOW_BUDGET
+                    or int(audit.get("attention_pairs", -1))
+                    != sum(value**2 for value in clip_counts)
+                    or not re.fullmatch(
+                        r"[0-9a-f]{64}", str(audit.get("physical_indices_sha256", ""))
+                    )
+                ):
+                    raise ValueError("P1 Q cost row lost dynamic exact-B ragged routing")
+            elif arm in {"U", "R"}:
+                if (
+                    audit.get("route_mode") != ("uniform" if arm == "U" else "random")
+                    or int(audit.get("target_k", -1)) != 64
+                    or audit.get("dynamic_k_t") is not False
+                ):
+                    raise ValueError("P1 matched sparse control changed during cost replay")
+            elif (
+                audit.get("route_mode") != "dense"
+                or audit.get("target_k") is not None
+                or audit.get("dynamic_k_t") is not False
+            ):
+                raise ValueError("P1 dense cost comparator changed execution")
+            manifest.append((str(row["video_id"]), str(row["physical_window_id"])))
+            normalized.append(row)
+        if len(set(manifest)) != PHYSICAL_WINDOWS:
+            raise ValueError("P1 cost pass contains duplicate physical windows")
+        manifests.append(manifest)
+    if any(manifest != manifests[0] for manifest in manifests[1:]):
+        raise ValueError("P1 cost pass population/order changed within a leaf")
+    if len({video_id for video_id, _ in manifests[0]}) != VIDEO_CLUSTERS:
+        raise ValueError("P1 cost leaf does not cover the frozen 40 video clusters")
+    return normalized
+
+
+def validate_p1_cost_warmup_rows(
+    rows: Sequence[Mapping[str, Any]], *, leaf_id: str
+) -> list[dict[str, Any]]:
+    sequence = p1_cost_leaf_sequence(leaf_id)
+    allowed_fields = {
+        "schema_version",
+        "leaf_id",
+        "pass_index",
+        "arm",
+        "measurement_phase",
+        "warmup",
+        "warmup_ordinal",
+        "loader_ordinal",
+        "video_id",
+        "physical_window_id",
+        "window_id",
+    }
+    grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for raw in rows:
+        row = copy.deepcopy(dict(raw))
+        if set(row) != allowed_fields:
+            raise ValueError("P1 cost warmup ledger contains non-identity evidence")
+        grouped[int(row.get("pass_index", -1))].append(row)
+    if set(grouped) != set(range(4)):
+        raise ValueError("P1 cost warmup ledger does not cover four passes")
+    manifests: list[list[tuple[str, str]]] = []
+    normalized: list[dict[str, Any]] = []
+    for pass_index, arm in enumerate(sequence):
+        pass_rows = sorted(
+            grouped[pass_index], key=lambda row: int(row.get("warmup_ordinal", -1))
+        )
+        if len(pass_rows) != WARMUP_WINDOWS_PER_PASS:
+            raise ValueError("P1 cost warmup did not traverse all 136 windows")
+        manifest: list[tuple[str, str]] = []
+        for ordinal, row in enumerate(pass_rows):
+            if (
+                row.get("schema_version")
+                != "zoomtoken_p1_cost_warmup_identity_v001"
+                or row.get("leaf_id") != leaf_id
+                or int(row.get("pass_index", -1)) != pass_index
+                or row.get("arm") != arm
+                or row.get("measurement_phase") != "warmup"
+                or row.get("warmup") is not True
+                or int(row.get("warmup_ordinal", -1)) != ordinal
+                or int(row.get("loader_ordinal", -1)) != ordinal
+                or not isinstance(row.get("video_id"), str)
+                or not row["video_id"]
+                or not isinstance(row.get("physical_window_id"), str)
+                or not row["physical_window_id"]
+                or not isinstance(row.get("window_id"), str)
+                or not row["window_id"]
+            ):
+                raise ValueError("P1 cost warmup identity/order changed")
+            manifest.append((str(row["video_id"]), str(row["physical_window_id"])))
+            normalized.append(row)
+        if len(set(manifest)) != PHYSICAL_WINDOWS:
+            raise ValueError("P1 cost warmup contains duplicate physical windows")
+        manifests.append(manifest)
+    if any(manifest != manifests[0] for manifest in manifests[1:]):
+        raise ValueError("P1 cost warmup population/order changed between passes")
+    if len({video_id for video_id, _ in manifests[0]}) != VIDEO_CLUSTERS:
+        raise ValueError("P1 cost warmup lacks the frozen 40 video clusters")
+    return normalized
+
+
+def validate_p1_cost_leaf_receipt(
+    receipt: Mapping[str, Any],
+    *,
+    expected_leaf_id: str,
+    expected_job_id: str | None = None,
+) -> dict[str, Any]:
+    checked = copy.deepcopy(dict(receipt))
+    require_self_hash(checked, field="receipt_sha256", label="P1 cost leaf")
+    spec = p1_cost_leaf_spec(expected_leaf_id)
+    artifacts = checked.get("artifacts")
+    pass_receipts = checked.get("pass_receipts")
+    if (
+        checked.get("schema_version") != "zoomtoken_p1_cost_leaf_v001"
+        or checked.get("study_id") != P1_STUDY_ID
+        or checked.get("status") != "COMPLETE_P1_COST_LEAF"
+        or checked.get("leaf_id") != expected_leaf_id
+        or checked.get("comparator") != spec["comparator"]
+        or checked.get("order") != spec["order"]
+        or tuple(checked.get("sequence", ())) != p1_cost_leaf_sequence(expected_leaf_id)
+        or not _SHA_RE.fullmatch(str(checked.get("runtime_commit", "")))
+        or int(checked.get("seed", -1)) != TRAINING_SEED
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(checked.get("population_sha256", ""))
+        )
+        or int(checked.get("warmup_windows_before_each_pass", -1))
+        != WARMUP_WINDOWS_PER_PASS
+        or int(checked.get("measured_windows_per_pass", -1))
+        != MEASURED_WINDOWS_PER_PASS
+        or int(checked.get("measured_pass_count", -1)) != 4
+        or int(checked.get("measured_rows", -1)) != 4 * PHYSICAL_WINDOWS
+        or checked.get("training_or_resume_executed") is not False
+        or checked.get("metric_evaluation_executed") is not False
+        or checked.get("held_out_test_opened") is not False
+        or checked.get("authoritative_decision") is not False
+        or not isinstance(artifacts, Mapping)
+        or set(artifacts)
+        != {"measured_samples", "warmup_identities", "power_trace", "sidecar_report"}
+        or not isinstance(pass_receipts, list)
+        or len(pass_receipts) != 4
+        or not isinstance(checked.get("runtime_attestation"), Mapping)
+    ):
+        raise ValueError("P1 cost leaf receipt is invalid")
+    job_id = str(checked.get("slurm_job_id", ""))
+    if not job_id.isdigit() or (
+        expected_job_id is not None and job_id != str(expected_job_id)
+    ):
+        raise ValueError("P1 cost leaf Slurm identity changed")
+    for name in ("measured_samples", "warmup_identities", "power_trace", "sidecar_report"):
+        artifact = artifacts.get(name)
+        if (
+            not isinstance(artifact, Mapping)
+            or not isinstance(artifact.get("path"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", str(artifact.get("sha256", "")))
+        ):
+            raise ValueError(f"P1 cost leaf lacks the {name} artifact receipt")
+    for pass_index, (pass_receipt, arm) in enumerate(
+        zip(pass_receipts, p1_cost_leaf_sequence(expected_leaf_id))
+    ):
+        if not isinstance(pass_receipt, Mapping):
+            raise ValueError("P1 cost pass receipt is malformed")
+        unsigned = dict(pass_receipt)
+        observed_hash = unsigned.pop("pass_sha256", None)
+        if (
+            observed_hash != canonical_sha256(unsigned)
+            or int(pass_receipt.get("pass_index", -1)) != pass_index
+            or pass_receipt.get("arm") != arm
+            or int(pass_receipt.get("sample_count", -1)) != PHYSICAL_WINDOWS
+            or pass_receipt.get("population_sha256")
+            != checked.get("population_sha256")
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(pass_receipt.get("checkpoint_sha256", ""))
+            )
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(pass_receipt.get("config_sha256", ""))
+            )
+            or not re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(pass_receipt.get("sample_manifest_sha256", "")),
+            )
+            or pass_receipt.get("diagnostic_telemetry_inside_timed_forward")
+            is not False
+            or pass_receipt.get("training_or_resume_executed") is not False
+        ):
+            raise ValueError("P1 cost pass receipt changed")
+    return checked
+
+
+def _p1_ratio(
+    denominator_rows: Sequence[Mapping[str, Any]],
+    numerator_rows: Sequence[Mapping[str, Any]],
+    *,
+    field: str,
+    reducer: str,
+) -> float:
+    return _metric([float(row[field]) for row in numerator_rows], reducer) / _metric(
+        [float(row[field]) for row in denominator_rows], reducer
+    )
+
+
+def analyze_p1_cost_leaves(
+    leaves: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    bootstrap_replicates: int = P1_COST_BOOTSTRAP_REPLICATES,
+) -> dict[str, Any]:
+    """Paired 40-video bootstrap; only Q/DN controls the P1 cost gate."""
+
+    if set(leaves) != set(P1_COST_LEAF_SPECS) or int(bootstrap_replicates) <= 0:
+        raise ValueError("P1 cost analysis requires all eight frozen leaves")
+    normalized = {
+        leaf_id: validate_p1_cost_rows(rows, leaf_id=leaf_id)
+        for leaf_id, rows in leaves.items()
+    }
+    canonical_manifest: list[tuple[str, str]] | None = None
+    pass_rows: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    for leaf_id in P1_COST_LEAF_SPECS:
+        for pass_index in range(4):
+            rows = [
+                row
+                for row in normalized[leaf_id]
+                if int(row["pass_index"]) == pass_index
+            ]
+            manifest = [
+                (str(row["video_id"]), str(row["physical_window_id"])) for row in rows
+            ]
+            canonical_manifest = manifest if canonical_manifest is None else canonical_manifest
+            if manifest != canonical_manifest:
+                raise ValueError("P1 cost leaves changed the canonical population/order")
+            pass_rows[(leaf_id, pass_index)] = rows
+    if canonical_manifest is None:
+        raise ValueError("P1 cost population is missing")
+    videos = tuple(sorted({video_id for video_id, _ in canonical_manifest}))
+    if len(videos) != VIDEO_CLUSTERS:
+        raise ValueError("P1 cost bootstrap requires 40 video clusters")
+
+    by_video: dict[tuple[str, int], dict[str, list[dict[str, Any]]]] = {}
+    for key, rows in pass_rows.items():
+        groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            groups[str(row["video_id"])].append(row)
+        if tuple(sorted(groups)) != videos:
+            raise ValueError("P1 cost pass changed video clusters")
+        by_video[key] = groups
+
+    comparisons: dict[str, Any] = {}
+    for comparator in P1_COST_COMPARATORS:
+        rng = np.random.Generator(np.random.PCG64(P1_COST_BOOTSTRAP_SEED))
+        pair_units: list[tuple[str, int, int]] = []
+        pair_units_by_order: dict[str, list[tuple[str, int, int]]] = {}
+        point_denominator: list[dict[str, Any]] = []
+        point_q: list[dict[str, Any]] = []
+        for order in ("ABBA", "BAAB"):
+            leaf_id = f"{comparator}_{order}"
+            order_units: list[tuple[str, int, int]] = []
+            for denominator_index, q_index in PAIR_INDICES_BY_ORDER[order]:
+                unit = (leaf_id, denominator_index, q_index)
+                order_units.append(unit)
+                pair_units.append(unit)
+                point_denominator.extend(pass_rows[(leaf_id, denominator_index)])
+                point_q.extend(pass_rows[(leaf_id, q_index)])
+            pair_units_by_order[order] = order_units
+        draws = {
+            name: np.empty(int(bootstrap_replicates), dtype=np.float64)
+            for name in P1_COST_METRICS
+        }
+        for replicate in range(int(bootstrap_replicates)):
+            sampled_denominator: list[dict[str, Any]] = []
+            sampled_q: list[dict[str, Any]] = []
+            for order in ("ABBA", "BAAB"):
+                order_units = pair_units_by_order[order]
+                pair_draw = rng.integers(
+                    0, len(order_units), size=len(order_units)
+                )
+                for unit_index in pair_draw:
+                    leaf_id, denominator_index, q_index = order_units[int(unit_index)]
+                    video_draw = rng.integers(
+                        0, len(videos), size=VIDEO_CLUSTERS
+                    )
+                    for video_index in video_draw:
+                        video_id = videos[int(video_index)]
+                        sampled_denominator.extend(
+                            by_video[(leaf_id, denominator_index)][video_id]
+                        )
+                        sampled_q.extend(by_video[(leaf_id, q_index)][video_id])
+            for name, (field, reducer) in P1_COST_METRICS.items():
+                draws[name][replicate] = _p1_ratio(
+                    sampled_denominator,
+                    sampled_q,
+                    field=field,
+                    reducer=reducer,
+                )
+        metrics: dict[str, Any] = {}
+        for name, (field, reducer) in P1_COST_METRICS.items():
+            ratio = _p1_ratio(
+                point_denominator, point_q, field=field, reducer=reducer
+            )
+            upper = float(np.quantile(draws[name], 0.95, method="linear"))
+            metrics[name] = {
+                "field": field,
+                "reducer": reducer,
+                "q_over_comparator_ratio": ratio,
+                "one_sided_95_upper_bound": upper,
+                "upper_bound_le_0_85": upper <= P1_COST_RATIO_LIMIT,
+                "literal_limit": P1_COST_RATIO_LIMIT,
+                "tolerance": 0.0,
+            }
+        controlling = comparator == "DN"
+        passed = all(metric["upper_bound_le_0_85"] for metric in metrics.values())
+        comparisons[comparator] = {
+            "comparator": comparator,
+            "controlling": controlling,
+            "report_only": not controlling,
+            "paired_pass_units": len(pair_units),
+            "metrics": metrics,
+            "cost_gate_passed": passed if controlling else None,
+        }
+    return {
+        "schema_version": "zoomtoken_p1_cost_analysis_v001",
+        "study_id": P1_STUDY_ID,
+        "leaf_specs": copy.deepcopy(P1_COST_LEAF_SPECS),
+        "video_cluster_count": len(videos),
+        "bootstrap_replicates": int(bootstrap_replicates),
+        "bootstrap_seed": P1_COST_BOOTSTRAP_SEED,
+        "bootstrap_rng": "numpy.random.Generator(PCG64)",
+        "bootstrap_quantile": "one_sided_95_numpy.quantile(method=linear)",
+        "bootstrap_hierarchy": (
+            "ABBA_and_BAAB_strata_then_two_mirrored_pairs_per_leaf_"
+            "then_40_paired_video_clusters"
+        ),
+        "ratio_limit": P1_COST_RATIO_LIMIT,
+        "dense_denominator": "DN",
+        "comparisons": comparisons,
+        "q_over_dn_cost_gate_passed": comparisons["DN"]["cost_gate_passed"],
+        "do_is_mandatory_report_only": True,
+    }
+
+
 def validate_scheduler_job(
     row: Mapping[str, Any], *, expected_job_id: str, label: str
 ) -> None:
@@ -1173,6 +1658,14 @@ def validate_frozen_contract() -> None:
         or BOOTSTRAP_SEED != 20_260_811
         or NONINFERIORITY_RATIO != 1.05
         or FINALIZER_DEPENDENCY != "afterany"
+        or tuple(P1_COST_LEAF_SPECS)
+        != tuple(
+            f"{comparator}_{order}"
+            for comparator in P1_COST_COMPARATORS
+            for order in ("ABBA", "BAAB")
+        )
+        or P1_COST_RATIO_LIMIT != 0.85
+        or P1_DENSE_PHYSICAL_TOKENS != 84_480
     ):
         raise RuntimeError("ZoomToken steady-cost frozen constants changed")
 

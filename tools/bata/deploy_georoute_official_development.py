@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Submit the atomic 5-arm x 3-seed GeoRoute development matrix."""
+"""Submit the legacy formal matrix or the atomic ZoomToken P1 first screen."""
 
 from __future__ import annotations
 
@@ -31,12 +31,21 @@ from tools.bata.georoute_official_comparable_contract import (  # noqa: E402
     FORMAL_DEVELOPMENT_ARM_ORDER,
     FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA,
     FORMAL_DEVELOPMENT_SEEDS,
+    P1_DEVELOPMENT_SEED,
+    P1_FIRST_SCREEN_ARM_ORDER,
+    P1_DO_CONFIG_RELATIVE_PATH,
+    p1_arm_spec,
+    p1_source_config_relative_path,
     _validate_preflight_parent,
     formal_arm_spec,
     read_json,
     validate_protocol_manifest,
 )
 from tools.bata.georoute_storage import storage_capacity_receipt  # noqa: E402
+from tools.bata.zoomtoken_scnr_steady_cost_contract_v001 import (  # noqa: E402
+    P1_COST_LEAF_SPECS,
+    P1_STUDY_ID,
+)
 
 
 BOUNDARY = Path("/data/run01/sczc063/yuzibo")
@@ -68,6 +77,7 @@ def _sbatch(
     exports: Mapping[str, str],
     stage: bool,
     dependency: Sequence[str] | None = None,
+    dependency_type: str = "afterany",
     test_only: bool = False,
     hold: bool = False,
 ) -> str:
@@ -86,10 +96,12 @@ def _sbatch(
     if hold and not test_only:
         command.append("--hold")
     if dependency:
+        if dependency_type not in {"afterany", "afterok"}:
+            raise ValueError("unsupported Slurm dependency type")
         command.extend(
             [
                 "--dependency",
-                "afterany:" + ":".join(map(str, dependency)),
+                dependency_type + ":" + ":".join(map(str, dependency)),
             ]
         )
     if stage:
@@ -144,6 +156,7 @@ def _sbatch(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mode", choices=("formal", "p1"), default="formal")
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--preflight-root", type=Path, required=True)
     parser.add_argument("--source-config", type=Path, required=True)
@@ -158,7 +171,352 @@ def _parse_args() -> argparse.Namespace:
         "--expected-preflight-finalization-file-sha256",
         required=True,
     )
+    parser.add_argument("--p1-runtime-container-image", type=Path)
+    parser.add_argument("--p1-runtime-dependency-lock", type=Path)
     return parser.parse_args()
+
+
+def _p1_source_config(arm: str, *, official_source: Path) -> Path:
+    if arm == "DO":
+        expected = Path(P1_DO_CONFIG_RELATIVE_PATH)
+        if tuple(official_source.parts[-len(expected.parts) :]) != tuple(expected.parts):
+            raise ValueError("P1 DO must retain the tracked official recipe")
+        return official_source
+    return (ROOT / p1_source_config_relative_path(arm)).resolve()
+
+
+def _deploy_p1(
+    *,
+    args: argparse.Namespace,
+    run_root: Path,
+    expected_commit: str,
+    expected_origin_ref: str,
+    preflight_path: Path,
+    preflight_file_hash: str,
+    preflight: Mapping[str, Any],
+    protocol: Mapping[str, Any],
+    inputs: Mapping[str, Path],
+) -> dict[str, Any]:
+    """Submit one held, immutable 15-job P1 graph through the existing entry."""
+
+    if args.p1_runtime_container_image is None or args.p1_runtime_dependency_lock is None:
+        raise ValueError("P1 mode requires the immutable container image and dependency lock")
+    container_image = args.p1_runtime_container_image.resolve()
+    dependency_lock = args.p1_runtime_dependency_lock.resolve()
+    if not container_image.is_file() or not dependency_lock.is_file():
+        raise FileNotFoundError("P1 runtime image or dependency lock is missing")
+    source_configs = {
+        arm: _p1_source_config(
+            arm,
+            official_source=inputs["GEOROUTE_SOURCE_CONFIG"],
+        )
+        for arm in P1_FIRST_SCREEN_ARM_ORDER
+    }
+    for arm, path in source_configs.items():
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        if arm != "DO":
+            p1_arm_spec(arm)
+
+    capacity = _require_submit_capacity(additional_jobs=15)
+    storage = storage_capacity_receipt(run_root, cell_count=13)
+    stage_script = (
+        ROOT / "scripts" / "run_georoute_official_development_stage_slurm.sh"
+    )
+    control_script = (
+        ROOT / "scripts" / "run_georoute_official_development_control_slurm.sh"
+    )
+    for script in (stage_script, control_script):
+        if not script.is_file():
+            raise FileNotFoundError(script)
+
+    runtime_preflight_path = run_root / "control" / "runtime_preflight.json"
+    common_values = {
+        "GEOROUTE_SOURCE_ROOT": str(ROOT),
+        "GEOROUTE_OFFICIAL_DEVELOPMENT_RUN_ROOT": str(run_root),
+        "GEOROUTE_EXPECTED_COMMIT": expected_commit,
+        "GEOROUTE_OFFICIAL_DEVELOPMENT_MODE": "p1",
+        "GEOROUTE_P1_RUNTIME_CONTAINER_IMAGE": str(container_image),
+        "GEOROUTE_P1_RUNTIME_DEPENDENCY_LOCK": str(dependency_lock),
+        "GEOROUTE_P1_RUNTIME_PREFLIGHT": str(runtime_preflight_path),
+        **{name: str(path) for name, path in inputs.items()},
+    }
+    base_exports = {
+        key: _clean_export(value, name=key) for key, value in common_values.items()
+    }
+
+    def task_exports(task: str, *, attestation_name: str) -> dict[str, str]:
+        return {
+            **base_exports,
+            "GEOROUTE_OFFICIAL_DEVELOPMENT_TASK": task,
+            "GEOROUTE_P1_RUNTIME_ATTESTATION": str(
+                run_root / "control" / "runtime_attestations" / attestation_name
+            ),
+        }
+
+    preflight_exports = task_exports(
+        "preflight", attestation_name="preflight_unused.json"
+    )
+    stage_exports: dict[str, dict[str, str]] = {}
+    for arm in P1_FIRST_SCREEN_ARM_ORDER:
+        stage_exports[arm] = {
+            **task_exports("accuracy", attestation_name=f"accuracy_{arm}.json"),
+            "GEOROUTE_OFFICIAL_DEVELOPMENT_ARM": arm,
+            "GEOROUTE_OFFICIAL_DEVELOPMENT_SEED": str(P1_DEVELOPMENT_SEED),
+            "GEOROUTE_SOURCE_CONFIG": str(source_configs[arm]),
+        }
+    cost_exports: dict[str, dict[str, str]] = {}
+    for leaf_id, spec in P1_COST_LEAF_SPECS.items():
+        cost_exports[leaf_id] = {
+            **task_exports("cost", attestation_name=f"cost_{leaf_id}.json"),
+            "GEOROUTE_P1_COST_LEAF_ID": leaf_id,
+            "GEOROUTE_P1_COST_COMPARATOR": spec["comparator"],
+            "GEOROUTE_P1_COST_ORDER": spec["order"],
+            "GEOROUTE_OFFICIAL_DEVELOPMENT_SEED": str(P1_DEVELOPMENT_SEED),
+        }
+
+    # Test every exact batch shape before any namespace is created.
+    _sbatch(
+        name="ztp1_preflight",
+        script=stage_script,
+        logs=run_root / "slurm",
+        exports=preflight_exports,
+        stage=True,
+        test_only=True,
+    )
+    for arm in P1_FIRST_SCREEN_ARM_ORDER:
+        _sbatch(
+            name=f"ztp1_{arm.lower()}_{P1_DEVELOPMENT_SEED}",
+            script=stage_script,
+            logs=run_root / "slurm",
+            exports=stage_exports[arm],
+            stage=True,
+            test_only=True,
+        )
+    for leaf_id in P1_COST_LEAF_SPECS:
+        _sbatch(
+            name=f"ztp1_cost_{leaf_id.lower()}",
+            script=stage_script,
+            logs=run_root / "slurm",
+            exports=cost_exports[leaf_id],
+            stage=True,
+            test_only=True,
+        )
+    _sbatch(
+        name="ztp1_finalize",
+        script=control_script,
+        logs=run_root / "slurm",
+        exports=base_exports,
+        stage=False,
+        test_only=True,
+    )
+
+    run_root.mkdir(parents=True, exist_ok=False)
+    for directory in ("development", "cost", "control", "slurm"):
+        (run_root / directory).mkdir()
+    protocol_path = run_root / "control" / "protocol_manifest.json"
+    _atomic_write_json(protocol_path, protocol)
+    _atomic_write_json(
+        run_root / "control" / "submit_capacity_preflight.json", capacity
+    )
+    _atomic_write_json(
+        run_root / "control" / "deployment_storage_preflight.json", storage
+    )
+
+    submitted: list[str] = []
+    try:
+        runtime_preflight_job = _sbatch(
+            name="ztp1_preflight",
+            script=stage_script,
+            logs=run_root / "slurm",
+            exports=preflight_exports,
+            stage=True,
+            hold=True,
+        )
+        submitted.append(runtime_preflight_job)
+        stage_jobs: dict[str, dict[str, str]] = {}
+        for arm in P1_FIRST_SCREEN_ARM_ORDER:
+            job_id = _sbatch(
+                name=f"ztp1_{arm.lower()}_{P1_DEVELOPMENT_SEED}",
+                script=stage_script,
+                logs=run_root / "slurm",
+                exports=stage_exports[arm],
+                stage=True,
+                dependency=(runtime_preflight_job,),
+                dependency_type="afterany",
+                hold=True,
+            )
+            stage_jobs[arm] = {str(P1_DEVELOPMENT_SEED): job_id}
+            submitted.append(job_id)
+        cost_jobs: dict[str, str] = {}
+        for leaf_id, spec in P1_COST_LEAF_SPECS.items():
+            parents = tuple(
+                dict.fromkeys(
+                    (
+                        runtime_preflight_job,
+                        stage_jobs["Q"][str(P1_DEVELOPMENT_SEED)],
+                        stage_jobs[spec["comparator"]][str(P1_DEVELOPMENT_SEED)],
+                    )
+                )
+            )
+            job_id = _sbatch(
+                name=f"ztp1_cost_{leaf_id.lower()}",
+                script=stage_script,
+                logs=run_root / "slurm",
+                exports=cost_exports[leaf_id],
+                stage=True,
+                dependency=parents,
+                dependency_type="afterany",
+                hold=True,
+            )
+            cost_jobs[leaf_id] = job_id
+            submitted.append(job_id)
+        predecessor_ids = [
+            runtime_preflight_job,
+            *(
+                stage_jobs[arm][str(P1_DEVELOPMENT_SEED)]
+                for arm in P1_FIRST_SCREEN_ARM_ORDER
+            ),
+            *(cost_jobs[leaf_id] for leaf_id in P1_COST_LEAF_SPECS),
+        ]
+        finalizer_job = _sbatch(
+            name="ztp1_finalize",
+            script=control_script,
+            logs=run_root / "slurm",
+            exports=base_exports,
+            stage=False,
+            dependency=predecessor_ids,
+            dependency_type="afterany",
+            hold=True,
+        )
+        submitted.append(finalizer_job)
+
+        deployment: dict[str, Any] = {
+            "schema_version": FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA,
+            "study_id": P1_STUDY_ID,
+            "mode": "p1",
+            "status": "SUBMITTED_ZOOMTOKEN_P1_DNURQ_MATRIX",
+            "runtime_commit": expected_commit,
+            "origin_ref": expected_origin_ref,
+            "origin_ref_parity_verified": True,
+            "run_root": str(run_root),
+            "arms": list(P1_FIRST_SCREEN_ARM_ORDER),
+            "seed": P1_DEVELOPMENT_SEED,
+            "seeds": [P1_DEVELOPMENT_SEED],
+            "arm_specs": {
+                "DO": {
+                    **formal_arm_spec("dense_native"),
+                    "causal_role": "official_recipe_reproduction_report_only",
+                },
+                **{
+                    arm: p1_arm_spec(arm)
+                    for arm in P1_FIRST_SCREEN_ARM_ORDER
+                    if arm != "DO"
+                },
+            },
+            "source_configs": {
+                arm: {"path": str(path), "sha256": sha256_file(path)}
+                for arm, path in source_configs.items()
+            },
+            "accuracy_cells": 5,
+            "cost_leaves": 8,
+            "jobs": {
+                "runtime_preflight": runtime_preflight_job,
+                "stage": stage_jobs,
+                "cost": cost_jobs,
+                "finalizer": finalizer_job,
+            },
+            "runtime_attestation": {
+                "preflight_path": str(runtime_preflight_path),
+                "leaf_paths": {
+                    arm: stage_exports[arm]["GEOROUTE_P1_RUNTIME_ATTESTATION"]
+                    for arm in P1_FIRST_SCREEN_ARM_ORDER
+                },
+                "cost_leaf_paths": {
+                    leaf_id: cost_exports[leaf_id]["GEOROUTE_P1_RUNTIME_ATTESTATION"]
+                    for leaf_id in P1_COST_LEAF_SPECS
+                },
+                "container_image": str(container_image),
+                "container_image_sha256": sha256_file(container_image),
+                "dependency_lock": str(dependency_lock),
+                "dependency_lock_sha256": sha256_file(dependency_lock),
+                "expected_visible_gpu_count": 2,
+                "before_numpy_model_cuda_data_checkpoint": True,
+            },
+            "cost_protocol": {
+                "leaf_specs": P1_COST_LEAF_SPECS,
+                "physical_windows": 136,
+                "video_clusters": 40,
+                "warmup_windows_before_each_pass": 136,
+                "power_interval_ms": 20,
+                "bootstrap_replicates": 10_000,
+                "dn_only_controlling_denominator": True,
+                "q_over_dn_upper_bound_limit": 0.85,
+                "do_mandatory_report_only": True,
+            },
+            "preflight_finalization_path": str(preflight_path.resolve()),
+            "preflight_finalization_file_sha256": preflight_file_hash,
+            "preflight_finalization_sha256": preflight["finalization_sha256"],
+            "protocol_manifest_path": str(protocol_path.resolve()),
+            "protocol_manifest_file_sha256": sha256_file(protocol_path),
+            "protocol_sha256": protocol["protocol_sha256"],
+            "input_receipts": {
+                name: {
+                    "path": str(path),
+                    "sha256": sha256_file(path) if path.is_file() else None,
+                }
+                for name, path in inputs.items()
+            },
+            "submit_capacity_preflight": capacity,
+            "storage_preflight": storage,
+            "dependency_policy": {
+                "all_fifteen_jobs_held_until_receipts_immutable": True,
+                "accuracy_afterany_runtime_preflight": True,
+                "cost_afterany_runtime_preflight_and_source_stages": True,
+                "finalizer_afterany_all_fourteen_predecessors": True,
+                "release_all_fifteen_atomically": True,
+                "resume_allowed": False,
+                "retry_allowed": False,
+                "requeue_allowed": False,
+            },
+            "development_gate_only": True,
+            "official_test_opened": False,
+            "paper_claim_allowed": False,
+        }
+        deployment["deployment_sha256"] = canonical_sha256(deployment)
+        deployment_path = run_root / "control" / "deployment.json"
+        _atomic_write_json(deployment_path, deployment)
+        submission: dict[str, Any] = {
+            "schema_version": FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA,
+            "study_id": P1_STUDY_ID,
+            "mode": "p1",
+            "status": "SUBMITTED_P1_FINALIZER_AFTERANY",
+            "runtime_commit": expected_commit,
+            "deployment_file_sha256": sha256_file(deployment_path),
+            "finalizer_job_id": finalizer_job,
+            "dependency_type": "afterany",
+            "predecessor_job_ids": predecessor_ids,
+        }
+        submission["receipt_sha256"] = canonical_sha256(submission)
+        submission_path = run_root / "control" / "finalizer_submission.json"
+        _atomic_write_json(submission_path, submission)
+        _release_jobs(submitted)
+        release: dict[str, Any] = {
+            "schema_version": FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA,
+            "study_id": P1_STUDY_ID,
+            "mode": "p1",
+            "status": "RELEASED_ATOMIC_P1_FIFTEEN_JOB_DAG",
+            "runtime_commit": expected_commit,
+            "released_job_ids": submitted,
+            "deployment_file_sha256": sha256_file(deployment_path),
+            "finalizer_submission_file_sha256": sha256_file(submission_path),
+        }
+        release["receipt_sha256"] = canonical_sha256(release)
+        _atomic_write_json(run_root / "control" / "stage_release.json", release)
+    except BaseException:
+        _cancel_jobs(submitted)
+        raise
+    return {**deployment, "finalizer_job_id": finalizer_job}
 
 
 def main() -> int:
@@ -272,6 +630,21 @@ def main() -> int:
         != protocol_inputs["pretrained_checkpoint_sha256"]
     ):
         raise ValueError("formal deployment input hash changed")
+
+    if args.mode == "p1":
+        deployment = _deploy_p1(
+            args=args,
+            run_root=run_root,
+            expected_commit=expected_commit,
+            expected_origin_ref=expected_origin_ref,
+            preflight_path=preflight_path,
+            preflight_file_hash=preflight_file_hash,
+            preflight=preflight,
+            protocol=protocol,
+            inputs=inputs,
+        )
+        print(json.dumps(deployment, indent=2, sort_keys=True))
+        return 0
 
     capacity = _require_submit_capacity(additional_jobs=16)
     storage = storage_capacity_receipt(run_root, cell_count=15)

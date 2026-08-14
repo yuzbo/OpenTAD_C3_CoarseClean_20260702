@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one frozen, two-rank GeoRoute development cell.
+"""Run one frozen GeoRoute accuracy cell or ZoomToken P1 cost leaf.
 
 The runner evaluates only the Fit/Gate split carved from THUMOS ``training``.
 Its metrics and component profiler are admissible for method selection only;
@@ -9,12 +9,14 @@ they are never an official-validation/test or paper-table result.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import math
 import os
 import subprocess
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -44,16 +46,21 @@ from tools.bata.georoute_official_comparable_contract import (  # noqa: E402
     FORMAL_TOKEN_BUDGET,
     FORMAL_WORLD_SIZE,
     P1_DEVELOPMENT_SEED,
+    P1_FIRST_SCREEN_ARM_ORDER,
     P1_MATCHED_RUNNER_ARM_ORDER,
     P1_WINDOW_TOKEN_BUDGET,
     bind_formal_development_config,
     development_arm_spec,
     development_seed_allowed,
+    formal_arm_spec,
     formal_cell_relative_path,
     read_json,
     validate_formal_checkpoint_sidecar,
     validate_formal_development_binding,
     validate_protocol_manifest,
+)
+from tools.bata.georoute_p1_runtime_attestor import (  # noqa: E402
+    validate_runtime_attestation,
 )
 from tools.bata.georoute_stage_runner import (  # noqa: E402
     _atomic_write_json,
@@ -64,6 +71,20 @@ from tools.bata.georoute_stage_runner import (  # noqa: E402
     parse_official_style_map,
 )
 from tools.bata.georoute_storage import storage_capacity_receipt  # noqa: E402
+from tools.bata.zoomtoken_scnr_steady_cost_contract_v001 import (  # noqa: E402
+    PHYSICAL_WINDOWS,
+    POWER_INTERVAL_MS,
+    P1_COST_LEAF_SPECS,
+    P1_DENSE_PHYSICAL_TOKENS,
+    P1_STUDY_ID,
+    WARMUP_WINDOWS_PER_PASS,
+    add_self_hash,
+    p1_cost_leaf_relative_path,
+    p1_cost_leaf_sequence,
+    p1_cost_leaf_spec,
+    validate_p1_cost_rows,
+    validate_p1_cost_warmup_rows,
+)
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -369,6 +390,134 @@ def _summarize_p1_q_routes(
     return summary
 
 
+def _p1_execution_arm(arm: str) -> str:
+    return "dense_native" if arm == "DO" else arm
+
+
+def _first_screen_arm_spec(arm: str) -> dict[str, Any]:
+    if arm == "DO":
+        return {
+            **formal_arm_spec("dense_native"),
+            "causal_role": "official_recipe_reproduction_report_only",
+        }
+    return development_arm_spec(arm)
+
+
+def _p1_cell_relative_path(*, arm: str, seed: int) -> Path:
+    if arm not in P1_FIRST_SCREEN_ARM_ORDER or int(seed) != P1_DEVELOPMENT_SEED:
+        raise ValueError("P1 accuracy cell is outside the frozen first screen")
+    return Path("development") / arm / f"seed{int(seed)}"
+
+
+def _read_p1_runtime_attestation(
+    deployment: Mapping[str, Any],
+    *,
+    arm: str | None = None,
+    leaf_id: str | None = None,
+) -> dict[str, Any]:
+    runtime = deployment.get("runtime_attestation")
+    if not isinstance(runtime, Mapping) or (arm is None) == (leaf_id is None):
+        raise ValueError("P1 deployment lacks an unambiguous runtime attestation")
+    preflight_path = Path(str(runtime.get("preflight_path", ""))).resolve()
+    path_map_name = "leaf_paths" if arm is not None else "cost_leaf_paths"
+    path_key = str(arm if arm is not None else leaf_id)
+    path_map = runtime.get(path_map_name)
+    if not isinstance(path_map, Mapping):
+        raise ValueError("P1 deployment lacks leaf attestation paths")
+    leaf_path = Path(str(path_map.get(path_key, ""))).resolve()
+    if not preflight_path.is_file() or not leaf_path.is_file():
+        raise FileNotFoundError("P1 runtime preflight/leaf attestation is missing")
+    preflight = read_json(preflight_path)
+    leaf = read_json(leaf_path)
+    validate_runtime_attestation(preflight)
+    validate_runtime_attestation(leaf, reference=preflight)
+    if (
+        int(runtime.get("expected_visible_gpu_count", -1)) != FORMAL_WORLD_SIZE
+        or leaf["runtime_class"].get("visible_gpu_count") != FORMAL_WORLD_SIZE
+        or leaf["runtime_class"].get("container_digest")
+        != "sha256:" + str(runtime.get("container_image_sha256", ""))
+        or leaf["runtime_class"].get("dependency_lock_sha256")
+        != runtime.get("dependency_lock_sha256")
+        or runtime.get("before_numpy_model_cuda_data_checkpoint") is not True
+    ):
+        raise ValueError("P1 runtime attestation changed allocation or ordering")
+    return {
+        "preflight_path": str(preflight_path),
+        "preflight_file_sha256": sha256_file(preflight_path),
+        "leaf_path": str(leaf_path),
+        "leaf_file_sha256": sha256_file(leaf_path),
+        "runtime_class_fingerprint": leaf["runtime_class_fingerprint"],
+        "runtime_class": dict(leaf["runtime_class"]),
+    }
+
+
+def validate_p1_deployment_shape(deployment: Mapping[str, Any]) -> dict[str, Any]:
+    checked = dict(deployment)
+    jobs = checked.get("jobs")
+    stage_jobs = jobs.get("stage") if isinstance(jobs, Mapping) else None
+    cost_jobs = jobs.get("cost") if isinstance(jobs, Mapping) else None
+    runtime = checked.get("runtime_attestation")
+    cost = checked.get("cost_protocol")
+    policy = checked.get("dependency_policy")
+    if (
+        checked.get("schema_version") != FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA
+        or checked.get("study_id") != P1_STUDY_ID
+        or checked.get("mode") != "p1"
+        or checked.get("status") != "SUBMITTED_ZOOMTOKEN_P1_DNURQ_MATRIX"
+        or tuple(checked.get("arms", ())) != P1_FIRST_SCREEN_ARM_ORDER
+        or tuple(checked.get("seeds", ())) != (P1_DEVELOPMENT_SEED,)
+        or int(checked.get("seed", -1)) != P1_DEVELOPMENT_SEED
+        or int(checked.get("accuracy_cells", -1)) != 5
+        or int(checked.get("cost_leaves", -1)) != 8
+        or not isinstance(stage_jobs, Mapping)
+        or tuple(stage_jobs) != P1_FIRST_SCREEN_ARM_ORDER
+        or any(
+            not isinstance(stage_jobs[arm], Mapping)
+            or set(stage_jobs[arm]) != {str(P1_DEVELOPMENT_SEED)}
+            or not str(stage_jobs[arm][str(P1_DEVELOPMENT_SEED)]).isdigit()
+            for arm in P1_FIRST_SCREEN_ARM_ORDER
+        )
+        or not isinstance(cost_jobs, Mapping)
+        or tuple(cost_jobs) != tuple(P1_COST_LEAF_SPECS)
+        or any(not str(cost_jobs[leaf_id]).isdigit() for leaf_id in P1_COST_LEAF_SPECS)
+        or not str(jobs.get("runtime_preflight", "")).isdigit()
+        or not str(jobs.get("finalizer", "")).isdigit()
+        or not isinstance(runtime, Mapping)
+        or int(runtime.get("expected_visible_gpu_count", -1)) != FORMAL_WORLD_SIZE
+        or runtime.get("before_numpy_model_cuda_data_checkpoint") is not True
+        or not isinstance(cost, Mapping)
+        or cost.get("leaf_specs") != P1_COST_LEAF_SPECS
+        or int(cost.get("physical_windows", -1)) != PHYSICAL_WINDOWS
+        or int(cost.get("video_clusters", -1)) != 40
+        or int(cost.get("warmup_windows_before_each_pass", -1))
+        != WARMUP_WINDOWS_PER_PASS
+        or int(cost.get("power_interval_ms", -1)) != POWER_INTERVAL_MS
+        or int(cost.get("bootstrap_replicates", -1)) != 10_000
+        or float(cost.get("q_over_dn_upper_bound_limit", -1.0)) != 0.85
+        or cost.get("dn_only_controlling_denominator") is not True
+        or cost.get("do_mandatory_report_only") is not True
+        or not isinstance(policy, Mapping)
+        or any(
+            policy.get(field) is not True
+            for field in (
+                "all_fifteen_jobs_held_until_receipts_immutable",
+                "accuracy_afterany_runtime_preflight",
+                "cost_afterany_runtime_preflight_and_source_stages",
+                "finalizer_afterany_all_fourteen_predecessors",
+                "release_all_fifteen_atomically",
+            )
+        )
+        or policy.get("resume_allowed") is not False
+        or policy.get("retry_allowed") is not False
+        or policy.get("requeue_allowed") is not False
+        or checked.get("official_test_opened") is not False
+        or checked.get("paper_claim_allowed") is not False
+        or not _self_hash_matches(checked, field="deployment_sha256")
+    ):
+        raise ValueError("P1 deployment shape changed")
+    return checked
+
+
 def _validate_deployment(
     *,
     run_root: Path,
@@ -376,31 +525,48 @@ def _validate_deployment(
     arm: str,
     seed: int,
     slurm_job_id: str,
+    task: str = "accuracy",
+    leaf_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    p1_cell = arm in P1_MATCHED_RUNNER_ARM_ORDER
+    p1_cell = arm in P1_FIRST_SCREEN_ARM_ORDER or task == "cost"
     expected_arm_order = (
-        P1_MATCHED_RUNNER_ARM_ORDER if p1_cell else FORMAL_DEVELOPMENT_ARM_ORDER
+        P1_FIRST_SCREEN_ARM_ORDER if p1_cell else FORMAL_DEVELOPMENT_ARM_ORDER
     )
     expected_seeds = (
         (P1_DEVELOPMENT_SEED,) if p1_cell else FORMAL_DEVELOPMENT_SEEDS
     )
     deployment_path = run_root / "control" / "deployment.json"
     deployment = read_json(deployment_path)
+    if p1_cell:
+        validate_p1_deployment_shape(deployment)
     jobs = deployment.get("jobs")
     stage_jobs = jobs.get("stage") if isinstance(jobs, Mapping) else None
     arm_jobs = stage_jobs.get(arm) if isinstance(stage_jobs, Mapping) else None
+    cost_jobs = jobs.get("cost") if isinstance(jobs, Mapping) else None
+    expected_status = (
+        "SUBMITTED_ZOOMTOKEN_P1_DNURQ_MATRIX"
+        if p1_cell
+        else "SUBMITTED_OFFICIAL_COMPARABLE_DEVELOPMENT_MATRIX"
+    )
+    expected_job_matches = (
+        isinstance(cost_jobs, Mapping)
+        and leaf_id in P1_COST_LEAF_SPECS
+        and str(cost_jobs.get(str(leaf_id), "")) == slurm_job_id
+        if task == "cost"
+        else isinstance(arm_jobs, Mapping)
+        and str(arm_jobs.get(str(seed), "")) == slurm_job_id
+    )
     if (
         deployment.get("schema_version")
         != FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA
         or deployment.get("status")
-        != "SUBMITTED_OFFICIAL_COMPARABLE_DEVELOPMENT_MATRIX"
+        != expected_status
         or deployment.get("runtime_commit") != expected_commit
         or Path(str(deployment.get("run_root", ""))).resolve() != run_root
         or tuple(deployment.get("arms", ())) != expected_arm_order
         or tuple(deployment.get("seeds", ())) != expected_seeds
         or not _self_hash_matches(deployment, field="deployment_sha256")
-        or not isinstance(arm_jobs, Mapping)
-        or str(arm_jobs.get(str(seed), "")) != slurm_job_id
+        or not expected_job_matches
         or deployment.get("official_test_opened") is not False
         or deployment.get("paper_claim_allowed") is not False
     ):
@@ -440,7 +606,7 @@ def _validate_deployment(
 
 
 def summarize_formal_telemetry(path: Path, *, arm: str) -> dict[str, Any]:
-    arm_spec = development_arm_spec(arm)
+    arm_spec = _first_screen_arm_spec(arm) if arm == "DO" else development_arm_spec(arm)
     payload = _read_json(path)
     records = payload.get("records")
     dataset_count = int(payload.get("dataset_count", -1))
@@ -611,18 +777,25 @@ def validate_formal_stage_result(
     metrics = result.get("metrics")
     profile = result.get("profile")
     telemetry = result.get("telemetry_summary")
+    expected_spec = _first_screen_arm_spec(arm) if arm == "DO" else development_arm_spec(arm)
+    seed_allowed = (
+        int(seed) == P1_DEVELOPMENT_SEED
+        if arm in P1_FIRST_SCREEN_ARM_ORDER
+        else development_seed_allowed(arm=arm, seed=seed)
+    )
     if (
         result.get("schema_version") != FORMAL_DEVELOPMENT_RESULT_SCHEMA
         or result.get("status")
         != "PASS_OFFICIAL_COMPARABLE_DEVELOPMENT_ONLY"
         or arm
-        not in (*FORMAL_DEVELOPMENT_ARM_ORDER, *P1_MATCHED_RUNNER_ARM_ORDER)
-        or not development_seed_allowed(arm=arm, seed=seed)
+        not in (*FORMAL_DEVELOPMENT_ARM_ORDER, *P1_FIRST_SCREEN_ARM_ORDER)
+        or not seed_allowed
         or int(result.get("epochs", -1)) != FORMAL_EPOCHS
-        or result.get("arm_spec") != development_arm_spec(arm)
+        or result.get("arm_spec") != expected_spec
         or not isinstance(binding, Mapping)
         or validate_formal_development_binding(binding, seed=seed)
         != dict(binding)
+        or binding.get("arm") != _p1_execution_arm(arm)
         or result.get("binding_sha256") != binding.get("binding_sha256")
         or not isinstance(metrics, Mapping)
         or set(metrics)
@@ -673,24 +846,45 @@ def validate_formal_stage_result(
         != "true_clip_ragged_no_padding"
     ):
         raise ValueError("Q stage result lost its dynamic global-ragged summary")
+    runtime_attestation = result.get("runtime_attestation")
+    if arm in P1_FIRST_SCREEN_ARM_ORDER:
+        if (
+            not isinstance(runtime_attestation, Mapping)
+            or not _is_sha256(runtime_attestation.get("preflight_file_sha256"))
+            or not _is_sha256(runtime_attestation.get("leaf_file_sha256"))
+            or not _is_sha256(runtime_attestation.get("runtime_class_fingerprint"))
+            or not isinstance(runtime_attestation.get("runtime_class"), Mapping)
+            or int(
+                runtime_attestation["runtime_class"].get("visible_gpu_count", -1)
+            )
+            != FORMAL_WORLD_SIZE
+        ):
+            raise ValueError("P1 stage result lacks its exact runtime class receipt")
+    elif runtime_attestation is not None:
+        raise ValueError("legacy formal result contains a P1 runtime receipt")
     return result
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--task", choices=("accuracy", "cost"), default="accuracy")
     parser.add_argument(
         "--arm",
-        choices=(*FORMAL_DEVELOPMENT_ARM_ORDER, *P1_MATCHED_RUNNER_ARM_ORDER),
-        required=True,
+        choices=(
+            *FORMAL_DEVELOPMENT_ARM_ORDER,
+            "DO",
+            *P1_MATCHED_RUNNER_ARM_ORDER,
+        ),
     )
+    parser.add_argument("--leaf-id", choices=tuple(P1_COST_LEAF_SPECS))
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--run-root", type=Path, required=True)
-    parser.add_argument("--source-config", type=Path, required=True)
-    parser.add_argument("--manifest", type=Path, required=True)
-    parser.add_argument("--development-annotation", type=Path, required=True)
-    parser.add_argument("--class-map", type=Path, required=True)
-    parser.add_argument("--development-video-root", type=Path, required=True)
-    parser.add_argument("--pretrained", type=Path, required=True)
+    parser.add_argument("--source-config", type=Path)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--development-annotation", type=Path)
+    parser.add_argument("--class-map", type=Path)
+    parser.add_argument("--development-video-root", type=Path)
+    parser.add_argument("--pretrained", type=Path)
     parser.add_argument("--expected-commit", required=True)
     return parser.parse_args()
 
@@ -700,6 +894,18 @@ def _execute(
     *,
     cell_root: Path,
 ) -> dict[str, Any]:
+    if args.arm is None or any(
+        getattr(args, name) is None
+        for name in (
+            "source_config",
+            "manifest",
+            "development_annotation",
+            "class_map",
+            "development_video_root",
+            "pretrained",
+        )
+    ):
+        raise ValueError("accuracy task requires its arm and all frozen inputs")
     expected_commit = str(args.expected_commit).lower()
     if _current_commit() != expected_commit:
         raise RuntimeError("formal development source commit changed")
@@ -732,7 +938,23 @@ def _execute(
         arm=args.arm,
         seed=args.seed,
         slurm_job_id=slurm_job_id,
+        task="accuracy",
     )
+    runtime_attestation = None
+    if args.arm in P1_FIRST_SCREEN_ARM_ORDER:
+        source_receipt = deployment.get("source_configs", {}).get(args.arm)
+        source_path = args.source_config.resolve()
+        if (
+            not isinstance(source_receipt, Mapping)
+            or source_path != Path(str(source_receipt.get("path", ""))).resolve()
+            or not source_path.is_file()
+            or sha256_file(source_path) != source_receipt.get("sha256")
+        ):
+            raise ValueError("P1 source-config identity differs from deployment")
+        runtime_attestation = _read_p1_runtime_attestation(
+            deployment,
+            arm=args.arm,
+        )
     storage_receipt = storage_capacity_receipt(run_root, cell_count=1)
     cell_root.mkdir(parents=True, exist_ok=False)
     storage_receipt_path = cell_root / "storage_preflight.json"
@@ -748,7 +970,7 @@ def _execute(
     bound_config.parent.mkdir(parents=True, exist_ok=True)
     cfg = bind_formal_development_config(
         source_config_path=args.source_config,
-        arm=args.arm,
+        arm=_p1_execution_arm(args.arm),
         seed=args.seed,
         work_dir=cell_root,
         manifest_path=args.manifest,
@@ -851,7 +1073,7 @@ def _execute(
     profile = _pilot_profile(profile_path)
     raw_profile = _read_json(profile_path)
     routing_audit = raw_profile.get("last_georoute_audit")
-    spec = development_arm_spec(args.arm)
+    spec = _first_screen_arm_spec(args.arm)
     if args.arm == "Q":
         if not isinstance(routing_audit, Mapping):
             raise ValueError("Q development route audit is missing")
@@ -936,6 +1158,8 @@ def _execute(
         "paper_grade_result_record_emitted": False,
         "paper_claim_allowed": False,
     }
+    if runtime_attestation is not None:
+        result["runtime_attestation"] = runtime_attestation
     result["stage_result_sha256"] = canonical_sha256(result)
     return validate_formal_stage_result(
         result,
@@ -945,15 +1169,625 @@ def _execute(
     )
 
 
+def _p1_cost_route_summary(arm: str, audit: Mapping[str, Any]) -> dict[str, Any]:
+    spec = _first_screen_arm_spec(arm)
+    route_mode = str(spec["route_mode"])
+    expected_tokens = (
+        P1_DENSE_PHYSICAL_TOKENS if arm in {"DO", "DN"} else P1_WINDOW_TOKEN_BUDGET
+    )
+    common = {
+        "arm": arm,
+        "route_mode": route_mode,
+        "target_k": spec["tokens_per_tubelet"],
+        "dynamic_k_t": bool(spec.get("dynamic_k_t", False)),
+        "selected_physical_tokens": expected_tokens,
+        "executed_physical_tokens": expected_tokens,
+        "duplicate_selected_physical_tokens": 0,
+        "padded_heavy_tokens": 0,
+        "uses_gt_for_route": False,
+        "uses_teacher": False,
+        "uses_oracle": False,
+        "uses_test_evidence": False,
+    }
+    if arm == "Q":
+        packed = audit.get("packed")
+        if (
+            audit.get("routing_schema") != "georoute_dynamic_global_routing_v2"
+            or audit.get("route_mode") != "dynamic_scnr"
+            or audit.get("policy_estimator") != "straight_through"
+            or audit.get("target_k") is not None
+            or int(audit.get("window_token_budget", -1)) != P1_WINDOW_TOKEN_BUDGET
+            or audit.get("window_budget_is_global") is not True
+            or audit.get("fixed_per_tubelet_k") is not False
+            or audit.get("k_t_allows_zero") is not True
+            or audit.get("zero_carrier_mode") != "masked_zero"
+            or audit.get("heavy_valid_mask_matches_k_t") is not True
+            or int(audit.get("requested_physical_tokens_per_window", -1))
+            != P1_WINDOW_TOKEN_BUDGET
+            or int(audit.get("unique_physical_tokens_per_window", -1))
+            != P1_WINDOW_TOKEN_BUDGET
+            or int(audit.get("padded_heavy_tokens_per_window", -1)) != 0
+            or int(audit.get("executed_patch_tokens_per_window", -1))
+            != P1_WINDOW_TOKEN_BUDGET
+            or int(audit.get("heavy_backbone_forward_count", -1)) != 1
+            or audit.get("uses_gt_for_route") is not False
+            or audit.get("uses_teacher") is not False
+            or audit.get("uses_oracle") is not False
+            or audit.get("uses_test_evidence") is not False
+            or not isinstance(packed, Mapping)
+            or packed.get("execution_mode") != "true_clip_ragged_no_padding"
+            or packed.get("adapter_execution")
+            != "coordinate_lineage_true_ragged"
+            or int(packed.get("padded_heavy_tokens_per_window", -1)) != 0
+        ):
+            raise ValueError("P1 Q cost replay changed dynamic exact-B execution")
+        if len(packed["clip_token_counts"]) != 1:
+            raise ValueError("P1 Q cost replay requires batch-one ragged telemetry")
+        clip_counts = [int(value) for value in packed["clip_token_counts"][0]]
+        common.update(
+            {
+                "k_t_min": int(audit.get("k_t_min", -1)),
+                "k_t_max": int(audit.get("k_t_max", -1)),
+                "k_t_zero_count": int(audit.get("k_t_zero_count", -1)),
+                "clip_token_counts": clip_counts,
+                "attention_pairs": sum(value**2 for value in clip_counts),
+                "physical_indices_sha256": audit["physical_indices_sha256"],
+            }
+        )
+    else:
+        expected_k = (
+            FORMAL_NATIVE_TOKEN_COUNT
+            if spec["tokens_per_tubelet"] is None
+            else int(spec["tokens_per_tubelet"])
+        )
+        if (
+            audit.get("route_mode") != route_mode
+            or audit.get("policy_estimator") != spec["policy_estimator"]
+            or int(audit.get("target_k", -1)) != expected_k
+            or int(audit.get("selected_unique_count_min", -1)) != expected_k
+            or int(audit.get("selected_unique_count_max", -1)) != expected_k
+            or int(audit.get("selected_duplicate_count", -1)) != 0
+            or int(audit.get("heavy_backbone_forward_count", -1)) != 1
+            or audit.get("uses_gt_for_route") is not False
+            or audit.get("uses_teacher") is not False
+            or audit.get("uses_oracle") is not False
+            or audit.get("uses_test_evidence") is not False
+        ):
+            raise ValueError("P1 cost control route audit changed")
+    return common
+
+
+def _profile_p1_cost_pass(
+    *,
+    torch: Any,
+    device: Any,
+    arm: str,
+    pass_index: int,
+    leaf_id: str,
+    stage: Mapping[str, Any],
+    expected_population_sha256: str | None,
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    dict[str, Any],
+    str,
+]:
+    from mmengine.config import Config
+    from torch.nn.parallel import DistributedDataParallel
+
+    from opentad.cores.test_engine import gather_ddp_results
+    from opentad.datasets import build_dataloader, build_dataset
+    from opentad.models import build_detector
+    from opentad.utils import set_seed
+    from tools.bata.profile_georoute_dynamic_floor_m2 import (
+        _build_cost_cuda_events,
+        _invalid_cost_cuda_stages,
+        _population_descriptor,
+        _read_cost_cuda_timings,
+    )
+    from tools.bata.profile_spatial_zoom_s1 import (
+        _measure_wall_ms,
+        _move_to_device,
+        _sample_identity,
+        _strip_ddp_prefix,
+    )
+
+    config_path = Path(str(stage.get("config_path", ""))).resolve()
+    if not config_path.is_file() or sha256_file(config_path) != stage.get("config_sha256"):
+        raise ValueError("P1 cost source config changed after accuracy execution")
+    cfg = Config.fromfile(str(config_path))
+    binding = dict(stage["binding"])
+    checkpoint_receipt = stage["checkpoint_receipt"]
+    checkpoint_path = Path(str(checkpoint_receipt["path"])).resolve()
+    validate_formal_checkpoint_sidecar(checkpoint_path, binding=binding)
+    dataset = build_dataset(copy.deepcopy(cfg.dataset.test))
+    descriptors, population_sha256, accuracy_population_sha256 = (
+        _population_descriptor(dataset)
+    )
+    if (
+        len(descriptors) != PHYSICAL_WINDOWS
+        or len({str(row["video_id"]) for row in descriptors}) != 40
+        or accuracy_population_sha256
+        != stage["telemetry_summary"]["population_sha256"]
+        or (
+            expected_population_sha256 is not None
+            and population_sha256 != expected_population_sha256
+        )
+    ):
+        raise ValueError("P1 cost pass changed the frozen 136-window/40-video population")
+    loader = build_dataloader(
+        dataset,
+        rank=0,
+        world_size=1,
+        shuffle=False,
+        drop_last=False,
+        batch_size=1,
+        num_workers=0,
+    )
+    if len(loader) != PHYSICAL_WINDOWS:
+        raise ValueError("P1 cost loader changed the complete population")
+
+    model_cfg = copy.deepcopy(cfg.model)
+    model_cfg.backbone.custom.pretrain = None
+    model_cfg.backbone.custom.georoute_diagnostic_telemetry_enabled = False
+    model_cfg.backbone.custom.georoute_role_calibration_telemetry_enabled = False
+    model = build_detector(model_cfg)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    if int(checkpoint.get("epoch", -1)) != FORMAL_EPOCHS - 1 or "state_dict_ema" not in checkpoint:
+        raise ValueError("P1 cost checkpoint is not the frozen final EMA")
+    model.load_state_dict(_strip_ddp_prefix(checkpoint["state_dict_ema"]), strict=True)
+    del checkpoint
+    model = model.to(device).eval()
+    ddp_model = DistributedDataParallel(model, device_ids=[0], output_device=0)
+    external_cls = dataset.class_map
+    synchronize = lambda: torch.cuda.synchronize(device)
+    if not bool(cfg.solver.amp):
+        raise ValueError("P1 cost replay must preserve AMP inference")
+    wrapper = getattr(model, "backbone", None)
+    wrapped = getattr(wrapper, "model", None)
+    heavy = getattr(wrapped, "backbone", None)
+    events, method_events = _build_cost_cuda_events(
+        torch, model=model, wrapper=wrapper, heavy=heavy
+    )
+
+    def forward_once(batch: Mapping[str, Any]) -> Any:
+        with torch.no_grad(), torch.autocast(
+            device_type="cuda", dtype=torch.float16, enabled=True
+        ):
+            return ddp_model(
+                **batch,
+                return_loss=False,
+                infer_cfg=cfg.inference,
+                post_cfg=cfg.post_processing,
+                ext_cls=external_cls,
+            )
+
+    iterator = iter(loader)
+
+    def next_batch() -> Any:
+        nonlocal iterator
+        try:
+            return next(iterator)
+        except StopIteration:
+            iterator = iter(loader)
+            return next(iterator)
+
+    set_seed(P1_DEVELOPMENT_SEED, deterministic_warn_only=True)
+    warmup_rows: list[dict[str, Any]] = []
+    for ordinal in range(WARMUP_WINDOWS_PER_PASS):
+        cpu_batch = next_batch()
+        warmup_rows.append(
+            {
+                "schema_version": "zoomtoken_p1_cost_warmup_identity_v001",
+                "leaf_id": leaf_id,
+                "pass_index": pass_index,
+                "arm": arm,
+                "measurement_phase": "warmup",
+                "warmup": True,
+                "warmup_ordinal": ordinal,
+                **_sample_identity(cpu_batch, ordinal),
+            }
+        )
+        forward_once(_move_to_device(cpu_batch, device))
+    synchronize()
+    iterator = iter(loader)
+
+    samples: list[dict[str, Any]] = []
+    energy_windows: list[tuple[float, float]] = []
+    video_rows: dict[str, list[dict[str, Any]]] = {}
+    final_energy_window: tuple[float, float] | None = None
+    try:
+        for ordinal, descriptor in enumerate(descriptors):
+            synchronize()
+            continuous_started = time.perf_counter()
+            energy_started = time.monotonic_ns() / 1_000_000_000.0
+            cpu_batch, input_ms = _measure_wall_ms(next_batch, synchronize=synchronize)
+            identity = _sample_identity(cpu_batch, ordinal)
+            expected_physical = (
+                f"{descriptor['video_id']}:{int(descriptor['window_center_first'])}"
+            )
+            if identity["physical_window_id"] != expected_physical:
+                raise ValueError("P1 cost loader order changed")
+            torch.cuda.reset_peak_memory_stats(device)
+            gpu_batch, h2d_ms = _measure_wall_ms(
+                lambda: _move_to_device(cpu_batch, device), synchronize=synchronize
+            )
+            events.reset()
+            for event in method_events.values():
+                event.reset()
+            post_result, _ = _measure_wall_ms(
+                lambda: forward_once(gpu_batch), synchronize=synchronize
+            )
+            if not isinstance(post_result, Mapping):
+                raise ValueError("P1 cost detector returned no result mapping")
+            for video_id, rows in post_result.items():
+                video_rows.setdefault(str(video_id), []).extend(rows)
+            raw_audit = getattr(wrapper, "latest_georoute_audit", None)
+            if not isinstance(raw_audit, Mapping):
+                raise ValueError("P1 cost replay lacks its selector-boundary route audit")
+            route_audit = _p1_cost_route_summary(arm, raw_audit)
+            synchronize()
+            continuous_ended = time.perf_counter()
+            energy_ended = time.monotonic_ns() / 1_000_000_000.0
+            component_timings = _read_cost_cuda_timings(events, method_events)
+            invalid = _invalid_cost_cuda_stages(component_timings)
+            if invalid:
+                raise RuntimeError(
+                    "P1 cost instrumentation missed CUDA stages: " + ", ".join(invalid)
+                )
+            expected_tokens = (
+                P1_DENSE_PHYSICAL_TOKENS
+                if arm in {"DO", "DN"}
+                else P1_WINDOW_TOKEN_BUDGET
+            )
+            samples.append(
+                {
+                    "schema_version": "zoomtoken_p1_cost_sample_v001",
+                    "leaf_id": leaf_id,
+                    "pass_index": pass_index,
+                    "arm": arm,
+                    "sample_ordinal": ordinal,
+                    "measurement_phase": "measured",
+                    "warmup": False,
+                    "population_sha256": population_sha256,
+                    "exact_window_budget": P1_WINDOW_TOKEN_BUDGET,
+                    "selected_physical_tokens": expected_tokens,
+                    "executed_physical_tokens": expected_tokens,
+                    "duplicate_selected_physical_tokens": 0,
+                    "padded_heavy_tokens": 0,
+                    "input_pipeline_serial_ms": input_ms,
+                    "h2d_ms": h2d_ms,
+                    **component_timings,
+                    "decode_to_window_output_wall_ms": (
+                        continuous_ended - continuous_started
+                    )
+                    * 1000.0,
+                    "final_video_nms_ms": 0.0,
+                    "end_to_end_serial_ms": (
+                        continuous_ended - continuous_started
+                    )
+                    * 1000.0,
+                    "peak_gpu_allocated_mb": (
+                        torch.cuda.max_memory_allocated(device) / (1024**2)
+                    ),
+                    "peak_gpu_reserved_mb": (
+                        torch.cuda.max_memory_reserved(device) / (1024**2)
+                    ),
+                    "gross_gpu_energy_j_per_sample": None,
+                    "route_audit": route_audit,
+                    **identity,
+                }
+            )
+            energy_windows.append((energy_started, energy_ended))
+            del cpu_batch, gpu_batch, post_result
+        synchronize()
+        final_started = time.monotonic_ns() / 1_000_000_000.0
+        finalized = gather_ddp_results(1, video_rows, cfg.post_processing)
+        synchronize()
+        final_ended = time.monotonic_ns() / 1_000_000_000.0
+        final_energy_window = (final_started, final_ended)
+        if not isinstance(finalized, Mapping):
+            raise ValueError("P1 cost final video NMS returned no mapping")
+        amortized_nms_ms = (final_ended - final_started) * 1000.0 / len(samples)
+        for sample in samples:
+            sample["final_video_nms_ms"] = amortized_nms_ms
+            sample["end_to_end_serial_ms"] += amortized_nms_ms
+    finally:
+        events.close()
+        for event in reversed(tuple(method_events.values())):
+            event.close()
+    if final_energy_window is None:
+        raise RuntimeError("P1 cost replay did not execute final video NMS")
+    for sample, energy_window in zip(samples, energy_windows):
+        sample["energy_window_monotonic_s"] = list(energy_window)
+        sample["nms_energy_window_monotonic_s"] = list(final_energy_window)
+    pass_receipt = {
+        "pass_index": pass_index,
+        "arm": arm,
+        "sample_count": len(samples),
+        "population_sha256": population_sha256,
+        "checkpoint_sha256": checkpoint_receipt["sha256"],
+        "config_sha256": stage["config_sha256"],
+        "sample_manifest_sha256": canonical_sha256(
+            [sample["window_id"] for sample in samples]
+        ),
+        "diagnostic_telemetry_inside_timed_forward": False,
+        "training_or_resume_executed": False,
+    }
+    pass_receipt["pass_sha256"] = canonical_sha256(pass_receipt)
+    del ddp_model, model, loader, dataset
+    torch.cuda.empty_cache()
+    return samples, warmup_rows, pass_receipt, population_sha256
+
+
+def _execute_p1_cost(args: argparse.Namespace, *, leaf_root: Path) -> dict[str, Any]:
+    if args.leaf_id is None or args.arm is not None or int(args.seed) != P1_DEVELOPMENT_SEED:
+        raise ValueError("P1 cost task requires one frozen leaf and seed 3407")
+    expected_commit = str(args.expected_commit).lower()
+    if _current_commit() != expected_commit:
+        raise RuntimeError("P1 cost source commit changed")
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    if status:
+        raise RuntimeError("P1 cost requires a clean source snapshot")
+    slurm_job_id = os.environ.get("SLURM_JOB_ID", "")
+    visible = [
+        value
+        for value in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
+        if value
+    ]
+    if not slurm_job_id.isdigit() or len(visible) != FORMAL_WORLD_SIZE:
+        raise RuntimeError("P1 cost requires the frozen two-GPU Slurm runtime class")
+    run_root = args.run_root.resolve()
+    if not _inside(run_root, Path("/data/run01/sczc063/yuzibo").resolve()):
+        raise ValueError("P1 cost run root leaves write boundary")
+    deployment, _protocol, _preflight = _validate_deployment(
+        run_root=run_root,
+        expected_commit=expected_commit,
+        arm="",
+        seed=args.seed,
+        slurm_job_id=slurm_job_id,
+        task="cost",
+        leaf_id=args.leaf_id,
+    )
+    runtime_attestation = _read_p1_runtime_attestation(
+        deployment,
+        leaf_id=args.leaf_id,
+    )
+    if leaf_root.exists():
+        raise FileExistsError("P1 cost leaf exists; refusing overwrite or resume")
+    spec = p1_cost_leaf_spec(args.leaf_id)
+    sequence = p1_cost_leaf_sequence(args.leaf_id)
+    stage_results: dict[str, dict[str, Any]] = {}
+    for arm in set(sequence):
+        stage_path = run_root / _p1_cell_relative_path(
+            arm=arm, seed=P1_DEVELOPMENT_SEED
+        ) / "stage_result.json"
+        if not stage_path.is_file():
+            raise FileNotFoundError(f"P1 cost source stage is missing: {arm}")
+        stage_results[arm] = validate_formal_stage_result(
+            read_json(stage_path),
+            expected_arm=arm,
+            expected_seed=P1_DEVELOPMENT_SEED,
+            expected_commit=expected_commit,
+        )
+    # Everything above is stdlib/runtime-attestation work.  Framework, CUDA,
+    # checkpoint and data access begin only after exact preflight/leaf equality.
+    import torch
+    import torch.distributed as dist
+
+    from tools.bata.profile_georoute_dynamic_floor_m2 import _write_jsonl
+    from tools.bata.profile_spatial_zoom_s1 import integrate_energy
+    from tools.bata.spatial_zoom_s1_power import NvmlSidecarPowerSampler
+
+    if (
+        int(os.environ.get("WORLD_SIZE", -1)) != 1
+        or int(os.environ.get("RANK", -1)) != 0
+        or int(os.environ.get("LOCAL_RANK", -1)) != 0
+        or not torch.cuda.is_available()
+        or dist.is_initialized()
+    ):
+        raise RuntimeError("P1 cost requires fresh torchrun world1 on cuda:0")
+    dist.init_process_group("nccl", rank=0, world_size=1)
+    torch.cuda.set_device(0)
+    device = torch.device("cuda:0")
+    if not hasattr(os, "sched_getaffinity") or not hasattr(os, "sched_setaffinity"):
+        raise RuntimeError("P1 NVML sidecar requires Linux CPU affinity")
+    available_cpus = tuple(sorted(os.sched_getaffinity(0)))
+    if len(available_cpus) < 5:
+        raise RuntimeError("P1 cost requires four detector CPUs plus one sidecar CPU")
+    allocated_cpus = available_cpus[:5]
+    detector_cpus = allocated_cpus[:4]
+    sidecar_cpu = allocated_cpus[4]
+    os.sched_setaffinity(0, set(detector_cpus))
+    selector = visible[0]
+    uuid_query = subprocess.run(
+        [
+            "nvidia-smi",
+            "--query-gpu=uuid",
+            "--format=csv,noheader,nounits",
+            "-i",
+            selector,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    expected_uuid = uuid_query.stdout.strip()
+    if uuid_query.returncode != 0 or not expected_uuid.startswith("GPU-"):
+        raise RuntimeError("P1 cost could not bind NVML to logical cuda:0")
+    leaf_root.mkdir(parents=True, exist_ok=False)
+    sampler = NvmlSidecarPowerSampler(
+        expected_uuid=expected_uuid,
+        interval_ms=POWER_INTERVAL_MS,
+        scratch_dir=Path("/tmp")
+        / f"job{slurm_job_id}_zoomtoken_p1_{args.leaf_id.lower()}",
+        attempt_prefix=leaf_root / "power_sidecar",
+        sidecar_cpu_id=sidecar_cpu,
+        detector_cpu_ids=detector_cpus,
+        allocated_cpu_ids=allocated_cpus,
+    )
+    all_rows: list[dict[str, Any]] = []
+    warmup_rows: list[dict[str, Any]] = []
+    pass_receipts: list[dict[str, Any]] = []
+    population_sha256: str | None = None
+    sampler.start()
+    time.sleep(sampler.interval_s * 1.5)
+    try:
+        for pass_index, arm in enumerate(sequence):
+            rows, warmups, pass_receipt, population_sha256 = _profile_p1_cost_pass(
+                torch=torch,
+                device=device,
+                arm=arm,
+                pass_index=pass_index,
+                leaf_id=args.leaf_id,
+                stage=stage_results[arm],
+                expected_population_sha256=population_sha256,
+            )
+            all_rows.extend(rows)
+            warmup_rows.extend(warmups)
+            pass_receipts.append(pass_receipt)
+    finally:
+        time.sleep(sampler.interval_s * 1.5)
+        sampler.stop()
+    pass_counts = {
+        index: sum(int(row["pass_index"]) == index for row in all_rows)
+        for index in range(4)
+    }
+    for row in all_rows:
+        start, end = map(float, row["energy_window_monotonic_s"])
+        nms_start, nms_end = map(float, row["nms_energy_window_monotonic_s"])
+        sample_energy = integrate_energy(sampler.samples, start=start, end=end)
+        nms_energy = integrate_energy(sampler.samples, start=nms_start, end=nms_end)
+        if sample_energy is None or nms_energy is None:
+            raise RuntimeError("P1 cost power trace has incomplete coverage")
+        row["gross_gpu_energy_j_per_sample"] = sample_energy + nms_energy / pass_counts[
+            int(row["pass_index"])
+        ]
+        row["sample_sha256"] = canonical_sha256(row)
+    validate_p1_cost_rows(all_rows, leaf_id=args.leaf_id)
+    validate_p1_cost_warmup_rows(warmup_rows, leaf_id=args.leaf_id)
+    measured_path = leaf_root / "measured_samples.jsonl"
+    warmup_path = leaf_root / "warmup_identities.jsonl"
+    power_path = leaf_root / "power_trace.jsonl"
+    _write_jsonl(measured_path, all_rows)
+    _write_jsonl(warmup_path, warmup_rows)
+    power_origin = sampler.samples[0][0]
+    _write_jsonl(
+        power_path,
+        [
+            {
+                "sequence": index,
+                "monotonic_s": timestamp,
+                "timestamp_ms": (timestamp - power_origin) * 1000.0,
+                "power_w": power,
+            }
+            for index, (timestamp, power) in enumerate(sampler.samples)
+        ],
+    )
+    receipt = add_self_hash(
+        {
+            "schema_version": "zoomtoken_p1_cost_leaf_v001",
+            "study_id": P1_STUDY_ID,
+            "status": "COMPLETE_P1_COST_LEAF",
+            "runtime_commit": expected_commit,
+            "leaf_id": args.leaf_id,
+            "comparator": spec["comparator"],
+            "order": spec["order"],
+            "sequence": list(sequence),
+            "seed": P1_DEVELOPMENT_SEED,
+            "slurm_job_id": slurm_job_id,
+            "runtime_attestation": runtime_attestation,
+            "warmup_windows_before_each_pass": WARMUP_WINDOWS_PER_PASS,
+            "measured_windows_per_pass": PHYSICAL_WINDOWS,
+            "measured_pass_count": 4,
+            "measured_rows": len(all_rows),
+            "population_sha256": population_sha256,
+            "pass_receipts": pass_receipts,
+            "artifacts": {
+                "measured_samples": {
+                    "path": str(measured_path.resolve()),
+                    "sha256": sha256_file(measured_path),
+                },
+                "warmup_identities": {
+                    "path": str(warmup_path.resolve()),
+                    "sha256": sha256_file(warmup_path),
+                },
+                "power_trace": {
+                    "path": str(power_path.resolve()),
+                    "sha256": sha256_file(power_path),
+                },
+                "sidecar_report": {
+                    "path": str(sampler.attempt_report_path.resolve()),
+                    "sha256": sha256_file(sampler.attempt_report_path),
+                },
+            },
+            "training_or_resume_executed": False,
+            "metric_evaluation_executed": False,
+            "held_out_test_opened": False,
+            "authoritative_decision": False,
+        },
+        field="receipt_sha256",
+    )
+    if dist.is_initialized():
+        dist.destroy_process_group()
+    return receipt
+
+
 def main() -> int:
     args = _parse_args()
-    development_arm_spec(args.arm)
-    if not development_seed_allowed(arm=args.arm, seed=args.seed):
-        raise ValueError("formal seed is outside the frozen set")
     run_root = args.run_root.resolve()
-    cell_root = run_root / formal_cell_relative_path(
-        arm=args.arm,
-        seed=args.seed,
+    if args.task == "cost":
+        if args.leaf_id is None or args.arm is not None:
+            raise ValueError("cost task requires --leaf-id and forbids --arm")
+        leaf_root = run_root / p1_cost_leaf_relative_path(args.leaf_id)
+        try:
+            receipt = _execute_p1_cost(args, leaf_root=leaf_root)
+        except Exception as error:
+            if leaf_root.is_dir():
+                trace = traceback.format_exc()
+                failure: dict[str, Any] = {
+                    "schema_version": "zoomtoken_p1_cost_failure_v001",
+                    "study_id": P1_STUDY_ID,
+                    "status": "FAIL_P1_COST_LEAF",
+                    "leaf_id": args.leaf_id,
+                    "seed": int(args.seed),
+                    "expected_runtime_commit": str(args.expected_commit).lower(),
+                    "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+                    "exception_type": type(error).__name__,
+                    "exception_message": str(error)[:2000],
+                    "traceback_sha256": hashlib.sha256(
+                        trace.encode("utf-8", errors="replace")
+                    ).hexdigest(),
+                    "performance_inference_allowed": False,
+                    "paper_claim_allowed": False,
+                }
+                failure["failure_sha256"] = canonical_sha256(failure)
+                _atomic_write_json(leaf_root / "cost_failure.json", failure)
+            raise
+        _atomic_write_json(leaf_root / "receipt.json", receipt)
+        print(json.dumps(receipt, sort_keys=True))
+        return 0
+
+    if args.arm is None or args.leaf_id is not None:
+        raise ValueError("accuracy task requires --arm and forbids --leaf-id")
+    _first_screen_arm_spec(args.arm)
+    seed_allowed = (
+        int(args.seed) == P1_DEVELOPMENT_SEED
+        if args.arm in P1_FIRST_SCREEN_ARM_ORDER
+        else development_seed_allowed(arm=args.arm, seed=args.seed)
+    )
+    if not seed_allowed:
+        raise ValueError("formal seed is outside the frozen set")
+    cell_root = run_root / (
+        _p1_cell_relative_path(arm=args.arm, seed=args.seed)
+        if args.arm in P1_FIRST_SCREEN_ARM_ORDER
+        else formal_cell_relative_path(arm=args.arm, seed=args.seed)
     )
     if cell_root.exists():
         raise FileExistsError(
