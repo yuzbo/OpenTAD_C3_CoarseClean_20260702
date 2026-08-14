@@ -114,6 +114,91 @@ FORMAL_SOURCE_GRID_HW = (11, 20)
 FORMAL_NATIVE_TOKEN_COUNT = 220
 FORMAL_SCOUT_SIZE = 96
 
+P1_DEVELOPMENT_SEED = 3407
+P1_WINDOW_TOKEN_BUDGET = 24_576
+P1_DO_CONFIG_RELATIVE_PATH = OFFICIAL_CONFIG_RELATIVE_PATH
+P1_DN_CONFIG_RELATIVE_PATH = (
+    "configs/adatad/thumos/georoute_p1_dn_seed3407_v001.py"
+)
+P1_Q_CONFIG_RELATIVE_PATH = (
+    "configs/adatad/thumos/georoute_p1_q_seed3407_v001.py"
+)
+P1_FIRST_SCREEN_ARM_ORDER = ("DO", "DN", "U", "R", "Q")
+P1_MATCHED_RUNNER_ARM_ORDER = ("DN", "U", "R", "Q")
+P1_CONDITIONAL_MODIFIER_MAP: dict[str, dict[str, Any]] = {
+    "Q": {
+        "roi_modifier_enabled": False,
+        "residual_modifier_enabled": False,
+        "branch_calibration": "none",
+    },
+    "G": {
+        "roi_modifier_enabled": True,
+        "residual_modifier_enabled": False,
+        "branch_calibration": "none",
+    },
+    "N": {
+        "roi_modifier_enabled": False,
+        "residual_modifier_enabled": True,
+        "branch_calibration": "residual_window_center",
+    },
+    "F": {
+        "roi_modifier_enabled": True,
+        "residual_modifier_enabled": True,
+        "branch_calibration": "residual_window_center",
+    },
+}
+
+P1_DEVELOPMENT_ARMS: dict[str, dict[str, Any]] = {
+    "DN": {
+        "route_mode": "dense",
+        "policy_estimator": "none",
+        "tokens_per_tubelet": None,
+        "fixed_per_tubelet_k": False,
+        "dynamic_k_t": False,
+        "source_surface": "DN",
+        "representation_enabled": False,
+        "geometry_side_channel": False,
+        **P1_CONDITIONAL_MODIFIER_MAP["Q"],
+        "causal_role": "matched_native_source_dense_control",
+    },
+    "U": {
+        "route_mode": "uniform",
+        "policy_estimator": "none",
+        "tokens_per_tubelet": FORMAL_TOKEN_BUDGET,
+        "fixed_per_tubelet_k": True,
+        "dynamic_k_t": False,
+        "source_surface": "Q",
+        "representation_enabled": False,
+        "geometry_side_channel": False,
+        **P1_CONDITIONAL_MODIFIER_MAP["Q"],
+        "causal_role": "deterministic_uniform_same_budget_control",
+    },
+    "R": {
+        "route_mode": "random",
+        "policy_estimator": "none",
+        "tokens_per_tubelet": FORMAL_TOKEN_BUDGET,
+        "fixed_per_tubelet_k": True,
+        "dynamic_k_t": False,
+        "source_surface": "Q",
+        "representation_enabled": False,
+        "geometry_side_channel": False,
+        **P1_CONDITIONAL_MODIFIER_MAP["Q"],
+        "causal_role": "seeded_stateless_same_budget_control",
+    },
+    "Q": {
+        "route_mode": "dynamic_scnr",
+        "policy_estimator": "straight_through",
+        "tokens_per_tubelet": None,
+        "fixed_per_tubelet_k": False,
+        "dynamic_k_t": True,
+        "source_surface": "Q",
+        "representation_enabled": False,
+        "geometry_side_channel": False,
+        **P1_CONDITIONAL_MODIFIER_MAP["Q"],
+        "causal_role": "content_only_q_core_headline",
+    },
+}
+
 FORMAL_DEVELOPMENT_ARMS: dict[str, dict[str, Any]] = {
     "dense_native": {
         "route_mode": "dense",
@@ -187,9 +272,87 @@ def formal_arm_spec(arm: str) -> dict[str, Any]:
         raise ValueError(f"unknown formal GeoRoute arm {arm!r}") from error
 
 
+def p1_arm_spec(arm: str) -> dict[str, Any]:
+    try:
+        return copy.deepcopy(P1_DEVELOPMENT_ARMS[arm])
+    except KeyError as error:
+        raise ValueError(f"unknown P1 GeoRoute arm {arm!r}") from error
+
+
+def development_arm_spec(arm: str) -> dict[str, Any]:
+    if arm in P1_DEVELOPMENT_ARMS:
+        return p1_arm_spec(arm)
+    return formal_arm_spec(arm)
+
+
+def development_seed_allowed(*, arm: str, seed: int) -> bool:
+    if arm in P1_DEVELOPMENT_ARMS:
+        return int(seed) == P1_DEVELOPMENT_SEED
+    return int(seed) in FORMAL_DEVELOPMENT_SEEDS
+
+
+def p1_source_config_relative_path(arm: str) -> str:
+    surface = p1_arm_spec(arm)["source_surface"]
+    if surface == "DN":
+        return P1_DN_CONFIG_RELATIVE_PATH
+    if surface == "Q":
+        return P1_Q_CONFIG_RELATIVE_PATH
+    raise ValueError("P1 arm names an unknown tracked config surface")
+
+
+def validate_p1_source_config(cfg: Any, *, arm: str, seed: int) -> dict[str, Any]:
+    spec = p1_arm_spec(arm)
+    binding = cfg.get("zoomtoken_p1_config")
+    if not isinstance(binding, Mapping):
+        raise ValueError("P1 source config lacks zoomtoken_p1_config")
+    binding = dict(binding)
+    if (
+        binding.get("schema_version") != "zoomtoken_p1_dnurq_config_v001"
+        or binding.get("arm_surface") != spec["source_surface"]
+        or int(binding.get("seed", -1)) != int(seed)
+        or int(seed) != P1_DEVELOPMENT_SEED
+        or binding.get("runner_binding_required") is not True
+        or binding.get("matched_native_source") is not True
+        or binding.get("official_test_open_allowed") is not False
+        or binding.get("gt_for_route_allowed") is not False
+        or binding.get("teacher_for_route_allowed") is not False
+        or binding.get("oracle_for_route_allowed") is not False
+        or binding.get("raw_prediction_cache_allowed") is not False
+        or binding.get("performance_claim_allowed") is not False
+    ):
+        raise ValueError("P1 source config violates the frozen first-screen surface")
+    if spec["source_surface"] == "DN" and (
+        binding.get("routing_enabled") is not False
+        or binding.get("full_native_spatial_compute") is not True
+        or int(binding.get("matched_sparse_window_budget", -1))
+        != P1_WINDOW_TOKEN_BUDGET
+        or binding.get("executed_token_contract")
+        != "full_native_spatial_support"
+        or binding.get("window_token_budget_applies_to_execution") is not False
+    ):
+        raise ValueError("P1 DN surface is not matched native-source dense")
+    if spec["source_surface"] == "Q" and (
+        binding.get("routing_enabled") is not True
+        or int(binding.get("exact_window_budget", -1))
+        != P1_WINDOW_TOKEN_BUDGET
+        or binding.get("q_dynamic_k_t") is not True
+        or binding.get("window_budget_is_global") is not True
+        or binding.get("unique_physical_selection") is not True
+        or binding.get("k_t_zero_allowed") is not True
+        or binding.get("fixed_per_tubelet_quota") is not False
+        or binding.get("zero_carrier")
+        != "masked_zero_with_explicit_heavy_valid_mask"
+        or binding.get("ragged_execution")
+        != "true_clip_buckets_without_padding_or_dummy_tokens"
+        or binding.get("conditional_controls_open") is not False
+    ):
+        raise ValueError("P1 Q surface violates the global exact-B route")
+    return binding
+
+
 def formal_cell_relative_path(*, arm: str, seed: int) -> Path:
-    formal_arm_spec(arm)
-    if int(seed) not in FORMAL_DEVELOPMENT_SEEDS:
+    development_arm_spec(arm)
+    if not development_seed_allowed(arm=arm, seed=seed):
         raise ValueError("formal development seed is outside the frozen set")
     return Path("development") / arm / f"seed{int(seed)}"
 
@@ -256,9 +419,9 @@ def bind_formal_development_config(
     runtime_commit = _full_hex(
         runtime_commit, length=40, name="runtime_commit"
     )
-    if int(seed) not in FORMAL_DEVELOPMENT_SEEDS:
+    if not development_seed_allowed(arm=arm, seed=seed):
         raise ValueError("formal development seed is outside the frozen set")
-    spec = formal_arm_spec(arm)
+    spec = development_arm_spec(arm)
     source_config_path = Path(source_config_path).resolve()
     manifest_path = Path(manifest_path).resolve()
     annotation_path = Path(development_annotation_path).resolve()
@@ -293,6 +456,18 @@ def bind_formal_development_config(
     )
 
     cfg = Config.fromfile(str(source_config_path))
+    p1_source_binding = None
+    if arm in P1_DEVELOPMENT_ARMS:
+        expected_relative = Path(p1_source_config_relative_path(arm))
+        if tuple(source_config_path.parts[-len(expected_relative.parts) :]) != tuple(
+            expected_relative.parts
+        ):
+            raise ValueError("P1 arm is bound to the wrong tracked config surface")
+        p1_source_binding = validate_p1_source_config(
+            cfg,
+            arm=arm,
+            seed=seed,
+        )
     for split_name, block_list in (
         ("train", manifest["splits"]["gate"]),
         ("val", manifest["splits"]["fit"]),
@@ -339,6 +514,21 @@ def bind_formal_development_config(
     custom.georoute_pooling_mode = "uniform_selected"
     custom.georoute_adapter_mode = "coordinate_lineage_packed"
     custom.georoute_diagnostic_telemetry_enabled = True
+    if arm in P1_DEVELOPMENT_ARMS:
+        custom.georoute_window_token_budget = P1_WINDOW_TOKEN_BUDGET
+        custom.georoute_zero_carrier_mode = "masked_zero"
+        custom.georoute_branch_calibration_mode = spec["branch_calibration"]
+        custom.georoute_dynamic_roi_modifier_enabled = bool(
+            spec["roi_modifier_enabled"]
+        )
+        custom.georoute_dynamic_residual_modifier_enabled = bool(
+            spec["residual_modifier_enabled"]
+        )
+        custom.georoute_absolute_position_enabled = True
+        custom.georoute_absolute_coordinates_enabled = False
+        custom.georoute_roi_relative_coordinates_enabled = False
+        custom.georoute_geometry_projection_enabled = False
+        custom.georoute_geometry_side_channel = False
 
     for split_name in ("train", "val", "test"):
         cfg.solver[split_name].batch_size = FORMAL_CONFIG_BATCH_SIZE
@@ -439,6 +629,34 @@ def bind_formal_development_config(
         "paper_grade_result_record_emitted": False,
         "paper_claim_allowed": False,
     }
+    if arm in P1_DEVELOPMENT_ARMS:
+        binding["p1_first_screen"] = {
+            "arm_order": list(P1_FIRST_SCREEN_ARM_ORDER),
+            "matched_runner_arm_order": list(P1_MATCHED_RUNNER_ARM_ORDER),
+            "do_config_relative_path": P1_DO_CONFIG_RELATIVE_PATH,
+            "source_config_relative_path": p1_source_config_relative_path(arm),
+            "source_surface": spec["source_surface"],
+            "source_surface_binding": p1_source_binding,
+            "matched_sparse_window_token_budget": P1_WINDOW_TOKEN_BUDGET,
+            "arm_executed_token_contract": (
+                "full_native_spatial_support"
+                if arm == "DN"
+                else "exact_24576_sparse_physical_tokens"
+            ),
+            "window_budget_is_global": arm != "DN",
+            "dynamic_k_t": bool(spec["dynamic_k_t"]),
+            "fixed_per_tubelet_k": bool(spec["fixed_per_tubelet_k"]),
+            "zero_carrier": "masked_zero_with_explicit_heavy_valid_mask",
+            "ragged_q_execution": (
+                "true_clip_buckets_without_padding_or_dummy_tokens"
+            ),
+            "conditional_modifier_map": copy.deepcopy(
+                P1_CONDITIONAL_MODIFIER_MAP
+            ),
+            "conditional_controls_open": False,
+            "runtime_attestation_required_before_model_import": True,
+            "performance_inference_allowed": False,
+        }
     binding["binding_sha256"] = canonical_sha256(binding)
     cfg.georoute_official_development_binding = binding
     cfg.georoute_runtime_binding = binding
@@ -451,17 +669,21 @@ def validate_formal_development_binding(
     seed: int | None = None,
 ) -> dict[str, Any]:
     binding = dict(binding)
+    arm = str(binding.get("arm", ""))
+    try:
+        expected_arm_spec = development_arm_spec(arm)
+    except ValueError as error:
+        raise ValueError("formal development binding names an unknown arm") from error
+    binding_seed = int(binding.get("seed", -1))
     if (
         not _self_hash_matches(binding, field="binding_sha256")
         or binding.get("schema_version") != FORMAL_DEVELOPMENT_BINDING_SCHEMA
         or binding.get("status")
         != "BOUND_OFFICIAL_COMPARABLE_DEVELOPMENT_ONLY"
-        or binding.get("arm") not in FORMAL_DEVELOPMENT_ARMS
-        or binding.get("arm_spec")
-        != FORMAL_DEVELOPMENT_ARMS[binding.get("arm")]
+        or binding.get("arm_spec") != expected_arm_spec
         or binding.get("arm_spec_sha256")
         != canonical_sha256(binding["arm_spec"])
-        or int(binding.get("seed", -1)) not in FORMAL_DEVELOPMENT_SEEDS
+        or not development_seed_allowed(arm=arm, seed=binding_seed)
         or int(binding.get("epochs", -1)) != FORMAL_EPOCHS
         or int(binding.get("world_size", -1)) != FORMAL_WORLD_SIZE
         or int(binding.get("config_batch_size", -1))
@@ -487,6 +709,43 @@ def validate_formal_development_binding(
         or binding.get("paper_claim_allowed") is not False
     ):
         raise ValueError("formal development binding is invalid")
+    if arm in P1_DEVELOPMENT_ARMS:
+        p1 = binding.get("p1_first_screen")
+        if not isinstance(p1, Mapping) or (
+            tuple(p1.get("arm_order", ())) != P1_FIRST_SCREEN_ARM_ORDER
+            or tuple(p1.get("matched_runner_arm_order", ()))
+            != P1_MATCHED_RUNNER_ARM_ORDER
+            or p1.get("do_config_relative_path")
+            != P1_DO_CONFIG_RELATIVE_PATH
+            or p1.get("source_config_relative_path")
+            != p1_source_config_relative_path(arm)
+            or p1.get("source_surface") != expected_arm_spec["source_surface"]
+            or int(p1.get("matched_sparse_window_token_budget", -1))
+            != P1_WINDOW_TOKEN_BUDGET
+            or p1.get("arm_executed_token_contract")
+            != (
+                "full_native_spatial_support"
+                if arm == "DN"
+                else "exact_24576_sparse_physical_tokens"
+            )
+            or p1.get("window_budget_is_global") is not bool(arm != "DN")
+            or p1.get("dynamic_k_t") is not bool(expected_arm_spec["dynamic_k_t"])
+            or p1.get("fixed_per_tubelet_k")
+            is not bool(expected_arm_spec["fixed_per_tubelet_k"])
+            or p1.get("zero_carrier")
+            != "masked_zero_with_explicit_heavy_valid_mask"
+            or p1.get("ragged_q_execution")
+            != "true_clip_buckets_without_padding_or_dummy_tokens"
+            or p1.get("conditional_modifier_map")
+            != P1_CONDITIONAL_MODIFIER_MAP
+            or p1.get("conditional_controls_open") is not False
+            or p1.get("runtime_attestation_required_before_model_import")
+            is not True
+            or p1.get("performance_inference_allowed") is not False
+        ):
+            raise ValueError("P1 development binding changed")
+    elif "p1_first_screen" in binding:
+        raise ValueError("legacy formal binding contains a P1 arm payload")
     if seed is not None and int(seed) != int(binding["seed"]):
         raise ValueError("formal development CLI seed differs from binding")
     _full_hex(
@@ -522,6 +781,7 @@ def validate_formal_development_config(
         cfg.georoute_official_development_binding,
         seed=seed,
     )
+    arm = str(binding["arm"])
     arm_spec = binding["arm_spec"]
     custom = cfg.model.backbone.custom
     if (
@@ -566,6 +826,23 @@ def validate_formal_development_config(
             "formal development config violates the frozen official-semantics "
             "matched protocol"
         )
+    if arm in P1_DEVELOPMENT_ARMS and (
+        int(custom.get("georoute_window_token_budget", -1))
+        != P1_WINDOW_TOKEN_BUDGET
+        or custom.get("georoute_zero_carrier_mode") != "masked_zero"
+        or custom.get("georoute_branch_calibration_mode")
+        != arm_spec["branch_calibration"]
+        or custom.get("georoute_dynamic_roi_modifier_enabled")
+        is not bool(arm_spec["roi_modifier_enabled"])
+        or custom.get("georoute_dynamic_residual_modifier_enabled")
+        is not bool(arm_spec["residual_modifier_enabled"])
+        or custom.get("georoute_absolute_position_enabled") is not True
+        or custom.get("georoute_absolute_coordinates_enabled") is not False
+        or custom.get("georoute_roi_relative_coordinates_enabled") is not False
+        or custom.get("georoute_geometry_projection_enabled") is not False
+        or custom.get("georoute_geometry_side_channel") is not False
+    ):
+        raise ValueError("P1 config binding changed the accepted first-screen route")
     for split_name in ("train", "val", "test"):
         if cfg.dataset[split_name].get("subset_name") != "training":
             raise ValueError(
@@ -932,6 +1209,31 @@ def build_protocol_manifest(
             "checkpoint_selection": "final_epoch_ema_only",
             "official_test_opened": False,
         },
+        "p1_first_screen": {
+            "arm_order": list(P1_FIRST_SCREEN_ARM_ORDER),
+            "matched_runner_arm_order": list(P1_MATCHED_RUNNER_ARM_ORDER),
+            "matched_runner_arms": copy.deepcopy(P1_DEVELOPMENT_ARMS),
+            "seed": P1_DEVELOPMENT_SEED,
+            "do_config_relative_path": P1_DO_CONFIG_RELATIVE_PATH,
+            "dn_config_relative_path": P1_DN_CONFIG_RELATIVE_PATH,
+            "q_config_relative_path": P1_Q_CONFIG_RELATIVE_PATH,
+            "global_window_token_budget": P1_WINDOW_TOKEN_BUDGET,
+            "q_window_budget_is_global": True,
+            "q_k_t_is_induced": True,
+            "q_k_t_zero_allowed": True,
+            "q_zero_carrier": "masked_zero_with_explicit_heavy_valid_mask",
+            "q_ragged_execution": (
+                "true_clip_buckets_without_padding_or_dummy_tokens"
+            ),
+            "conditional_modifier_map": copy.deepcopy(
+                P1_CONDITIONAL_MODIFIER_MAP
+            ),
+            "conditional_controls_open": False,
+            "runtime_attestation_required_before_model_import": True,
+            "performance_inference_allowed": False,
+            "official_test_opened": False,
+            "paper_claim_allowed": False,
+        },
         "selection_rule": {
             "primary": "mean(mAP@0.6,mAP@0.7)",
             "native_selector_must_beat": ["fixed_lattice", "random"],
@@ -1028,6 +1330,35 @@ def validate_protocol_manifest(payload: Mapping[str, Any]) -> dict[str, Any]:
         or matrix.get("official_test_opened") is not False
     ):
         raise ValueError("formal development matrix changed")
+    p1 = _mapping(payload.get("p1_first_screen"), name="P1 first screen")
+    if (
+        tuple(p1.get("arm_order", ())) != P1_FIRST_SCREEN_ARM_ORDER
+        or tuple(p1.get("matched_runner_arm_order", ()))
+        != P1_MATCHED_RUNNER_ARM_ORDER
+        or p1.get("matched_runner_arms") != P1_DEVELOPMENT_ARMS
+        or int(p1.get("seed", -1)) != P1_DEVELOPMENT_SEED
+        or p1.get("do_config_relative_path") != P1_DO_CONFIG_RELATIVE_PATH
+        or p1.get("dn_config_relative_path") != P1_DN_CONFIG_RELATIVE_PATH
+        or p1.get("q_config_relative_path") != P1_Q_CONFIG_RELATIVE_PATH
+        or int(p1.get("global_window_token_budget", -1))
+        != P1_WINDOW_TOKEN_BUDGET
+        or p1.get("q_window_budget_is_global") is not True
+        or p1.get("q_k_t_is_induced") is not True
+        or p1.get("q_k_t_zero_allowed") is not True
+        or p1.get("q_zero_carrier")
+        != "masked_zero_with_explicit_heavy_valid_mask"
+        or p1.get("q_ragged_execution")
+        != "true_clip_buckets_without_padding_or_dummy_tokens"
+        or p1.get("conditional_modifier_map")
+        != P1_CONDITIONAL_MODIFIER_MAP
+        or p1.get("conditional_controls_open") is not False
+        or p1.get("runtime_attestation_required_before_model_import")
+        is not True
+        or p1.get("performance_inference_allowed") is not False
+        or p1.get("official_test_opened") is not False
+        or p1.get("paper_claim_allowed") is not False
+    ):
+        raise ValueError("P1 first-screen contract changed")
     return payload
 
 

@@ -21,6 +21,11 @@ model = dict(
             georoute_window_token_budget=matched_window_budget,
             georoute_zero_carrier_mode="masked_zero",
             georoute_branch_calibration_mode="none",
+            # Historical full-modifier behavior is the switch-absent default.
+            # Q turns both modifiers off; the conditional post-Q controls are
+            # G=True/False, N=False/True, and F=True/True.
+            georoute_dynamic_roi_modifier_enabled=True,
+            georoute_dynamic_residual_modifier_enabled=True,
             georoute_dynamic_aux_num_classes=20,
             georoute_dynamic_aux_detector_length=window_size,
             georoute_dynamic_aux_weight=0.25,
@@ -69,6 +74,21 @@ georoute_protocol = dict(
     fixed_context_quota=False,
     dynamic_roles=True,
     branch_calibration="none_historical_default",
+    conditional_modifier_map=dict(
+        Q=dict(roi=False, residual=False, branch_calibration="none"),
+        G=dict(roi=True, residual=False, branch_calibration="none"),
+        N=dict(
+            roi=False,
+            residual=True,
+            branch_calibration="residual_window_center",
+        ),
+        F=dict(
+            roi=True,
+            residual=True,
+            branch_calibration="residual_window_center",
+        ),
+    ),
+    conditional_controls_open=False,
     k_t_zero_allowed=True,
     zero_carrier="masked_zero_with_explicit_heavy_valid_mask",
     ragged_execution="true_clip_buckets_without_padding_or_dummy_tokens",

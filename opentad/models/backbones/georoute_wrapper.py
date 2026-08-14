@@ -484,6 +484,16 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.branch_calibration_mode = str(
             getattr(custom_cfg, "georoute_branch_calibration_mode", "none")
         )
+        self.dynamic_roi_modifier_enabled = bool(
+            getattr(custom_cfg, "georoute_dynamic_roi_modifier_enabled", True)
+        )
+        self.dynamic_residual_modifier_enabled = bool(
+            getattr(
+                custom_cfg,
+                "georoute_dynamic_residual_modifier_enabled",
+                True,
+            )
+        )
         self.dynamic_aux_num_classes = int(
             getattr(custom_cfg, "georoute_dynamic_aux_num_classes", 20)
         )
@@ -2099,7 +2109,11 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             grid_width=source_grid_hw[1],
             temperature=self.roi_temperature,
         )
+        if not self.dynamic_roi_modifier_enabled:
+            delta_roi = torch.zeros_like(delta_roi)
         delta_residual_raw = delta_residual
+        if not self.dynamic_residual_modifier_enabled:
+            delta_residual_raw = torch.zeros_like(delta_residual_raw)
         delta_residual, residual_valid_mean_before = (
             calibrate_dynamic_residual_modifier(
                 delta_residual_raw,
@@ -2358,6 +2372,10 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                     delta_residual
                 ),
             },
+            "dynamic_roi_modifier_enabled": self.dynamic_roi_modifier_enabled,
+            "dynamic_residual_modifier_enabled": (
+                self.dynamic_residual_modifier_enabled
+            ),
             "window_token_budget": self.window_token_budget,
             "window_budget_is_global": True,
             "independent_count_head": False,

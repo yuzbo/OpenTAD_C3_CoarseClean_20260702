@@ -43,8 +43,11 @@ from tools.bata.georoute_official_comparable_contract import (  # noqa: E402
     FORMAL_SOURCE_GRID_HW,
     FORMAL_TOKEN_BUDGET,
     FORMAL_WORLD_SIZE,
+    P1_DEVELOPMENT_SEED,
+    P1_MATCHED_RUNNER_ARM_ORDER,
     bind_formal_development_config,
-    formal_arm_spec,
+    development_arm_spec,
+    development_seed_allowed,
     formal_cell_relative_path,
     read_json,
     validate_formal_checkpoint_sidecar,
@@ -103,6 +106,13 @@ def _validate_deployment(
     seed: int,
     slurm_job_id: str,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    p1_cell = arm in P1_MATCHED_RUNNER_ARM_ORDER
+    expected_arm_order = (
+        P1_MATCHED_RUNNER_ARM_ORDER if p1_cell else FORMAL_DEVELOPMENT_ARM_ORDER
+    )
+    expected_seeds = (
+        (P1_DEVELOPMENT_SEED,) if p1_cell else FORMAL_DEVELOPMENT_SEEDS
+    )
     deployment_path = run_root / "control" / "deployment.json"
     deployment = read_json(deployment_path)
     jobs = deployment.get("jobs")
@@ -115,8 +125,8 @@ def _validate_deployment(
         != "SUBMITTED_OFFICIAL_COMPARABLE_DEVELOPMENT_MATRIX"
         or deployment.get("runtime_commit") != expected_commit
         or Path(str(deployment.get("run_root", ""))).resolve() != run_root
-        or tuple(deployment.get("arms", ())) != FORMAL_DEVELOPMENT_ARM_ORDER
-        or tuple(deployment.get("seeds", ())) != FORMAL_DEVELOPMENT_SEEDS
+        or tuple(deployment.get("arms", ())) != expected_arm_order
+        or tuple(deployment.get("seeds", ())) != expected_seeds
         or not _self_hash_matches(deployment, field="deployment_sha256")
         or not isinstance(arm_jobs, Mapping)
         or str(arm_jobs.get(str(seed), "")) != slurm_job_id
@@ -159,7 +169,7 @@ def _validate_deployment(
 
 
 def summarize_formal_telemetry(path: Path, *, arm: str) -> dict[str, Any]:
-    arm_spec = formal_arm_spec(arm)
+    arm_spec = development_arm_spec(arm)
     expected_k = (
         FORMAL_NATIVE_TOKEN_COUNT
         if arm_spec["tokens_per_tubelet"] is None
@@ -324,10 +334,11 @@ def validate_formal_stage_result(
         result.get("schema_version") != FORMAL_DEVELOPMENT_RESULT_SCHEMA
         or result.get("status")
         != "PASS_OFFICIAL_COMPARABLE_DEVELOPMENT_ONLY"
-        or arm not in FORMAL_DEVELOPMENT_ARM_ORDER
-        or seed not in FORMAL_DEVELOPMENT_SEEDS
+        or arm
+        not in (*FORMAL_DEVELOPMENT_ARM_ORDER, *P1_MATCHED_RUNNER_ARM_ORDER)
+        or not development_seed_allowed(arm=arm, seed=seed)
         or int(result.get("epochs", -1)) != FORMAL_EPOCHS
-        or result.get("arm_spec") != formal_arm_spec(arm)
+        or result.get("arm_spec") != development_arm_spec(arm)
         or not isinstance(binding, Mapping)
         or validate_formal_development_binding(binding, seed=seed)
         != dict(binding)
@@ -371,7 +382,11 @@ def validate_formal_stage_result(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--arm", required=True)
+    parser.add_argument(
+        "--arm",
+        choices=(*FORMAL_DEVELOPMENT_ARM_ORDER, *P1_MATCHED_RUNNER_ARM_ORDER),
+        required=True,
+    )
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--source-config", type=Path, required=True)
@@ -540,7 +555,7 @@ def _execute(
     profile = _pilot_profile(profile_path)
     raw_profile = _read_json(profile_path)
     routing_audit = raw_profile.get("last_georoute_audit")
-    spec = formal_arm_spec(args.arm)
+    spec = development_arm_spec(args.arm)
     expected_k = (
         FORMAL_NATIVE_TOKEN_COUNT
         if spec["tokens_per_tubelet"] is None
@@ -631,8 +646,8 @@ def _execute(
 
 def main() -> int:
     args = _parse_args()
-    formal_arm_spec(args.arm)
-    if int(args.seed) not in FORMAL_DEVELOPMENT_SEEDS:
+    development_arm_spec(args.arm)
+    if not development_seed_allowed(arm=args.arm, seed=args.seed):
         raise ValueError("formal seed is outside the frozen set")
     run_root = args.run_root.resolve()
     cell_root = run_root / formal_cell_relative_path(
