@@ -4,10 +4,12 @@ import copy
 import hashlib
 import json
 import runpy
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +41,7 @@ from tools.bata.finalize_georoute_official_development import (
     _match_p1_video,
 )
 from tools.bata.georoute_experiment_contract import canonical_sha256
+from tools.bata import deploy_georoute_official_development as p1_deployer
 from tools.bata.zoomtoken_scnr_steady_cost_contract_v001 import (
     P1_COST_LEAF_SPECS,
     P1_COST_RATIO_LIMIT,
@@ -396,6 +399,85 @@ def _p1_cost_rows(leaf_id: str) -> list[dict]:
     return rows
 
 
+def _p1_release_receipt_fixture(directory: Path) -> dict:
+    job_ids = tuple(str(910_000 + index) for index in range(15))
+    seed_key = str(P1_DEVELOPMENT_SEED)
+    runtime_preflight_job = job_ids[0]
+    stage_jobs = {
+        arm: {seed_key: job_ids[1 + index]}
+        for index, arm in enumerate(P1_FIRST_SCREEN_ARM_ORDER)
+    }
+    cost_jobs = {
+        leaf_id: job_ids[6 + index]
+        for index, leaf_id in enumerate(P1_COST_LEAF_SPECS)
+    }
+    predecessor_ids = [
+        runtime_preflight_job,
+        *(stage_jobs[arm][seed_key] for arm in P1_FIRST_SCREEN_ARM_ORDER),
+        *(cost_jobs[leaf_id] for leaf_id in P1_COST_LEAF_SPECS),
+    ]
+    deployment = {
+        "schema_version": p1_deployer.FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA,
+        "study_id": p1_deployer.P1_STUDY_ID,
+        "mode": "p1",
+        "status": "SUBMITTED_ZOOMTOKEN_P1_DNURQ_MATRIX",
+        "runtime_commit": "4" * 40,
+        "arms": list(P1_FIRST_SCREEN_ARM_ORDER),
+        "seed": P1_DEVELOPMENT_SEED,
+        "seeds": [P1_DEVELOPMENT_SEED],
+        "accuracy_cells": 5,
+        "cost_leaves": 8,
+        "jobs": {
+            "runtime_preflight": runtime_preflight_job,
+            "stage": stage_jobs,
+            "cost": cost_jobs,
+            "finalizer": job_ids[-1],
+        },
+        "dependency_policy": {
+            "all_fifteen_jobs_held_until_receipts_immutable": True,
+            "accuracy_afterany_runtime_preflight": True,
+            "cost_afterany_runtime_preflight_and_source_stages": True,
+            "finalizer_afterany_all_fourteen_predecessors": True,
+            "release_all_fifteen_atomically": True,
+            "resume_allowed": False,
+            "retry_allowed": False,
+            "requeue_allowed": False,
+        },
+        "official_test_opened": False,
+        "paper_claim_allowed": False,
+    }
+    deployment["deployment_sha256"] = canonical_sha256(deployment)
+    deployment_path = directory / "deployment.json"
+    deployment_path.write_text(
+        json.dumps(deployment, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    submission = {
+        "schema_version": p1_deployer.FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA,
+        "study_id": p1_deployer.P1_STUDY_ID,
+        "mode": "p1",
+        "status": "SUBMITTED_P1_FINALIZER_AFTERANY",
+        "runtime_commit": deployment["runtime_commit"],
+        "deployment_file_sha256": p1_deployer.sha256_file(deployment_path),
+        "finalizer_job_id": job_ids[-1],
+        "dependency_type": "afterany",
+        "predecessor_job_ids": predecessor_ids,
+    }
+    submission["receipt_sha256"] = canonical_sha256(submission)
+    submission_path = directory / "finalizer_submission.json"
+    submission_path.write_text(
+        json.dumps(submission, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "job_ids": job_ids,
+        "deployment": deployment,
+        "deployment_path": deployment_path,
+        "submission": submission,
+        "submission_path": submission_path,
+    }
+
+
 class ZoomTokenP1StaticContractTest(unittest.TestCase):
     def test_first_screen_enum_and_conditional_controls_are_frozen(self):
         self.assertEqual(
@@ -625,7 +707,8 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         self.assertIn('"cost": cost_jobs', deployer)
         self.assertIn("finalizer_afterany_all_fourteen_predecessors", deployer)
         self.assertIn("release_all_fifteen_atomically", deployer)
-        self.assertIn("_release_jobs(submitted)", deployer)
+        self.assertIn("_release_p1_jobs_from_receipts(", deployer)
+        self.assertIn("_cancel_p1_jobs_and_verify(", deployer)
         self.assertLess(
             launcher.index("georoute_p1_runtime_attestor"),
             launcher.index("import numpy"),
@@ -634,6 +717,134 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         self.assertIn("--phase preflight", launcher)
         self.assertIn("--phase leaf", launcher)
         self.assertIn("--task cost", launcher)
+
+    def test_p1_receipt_mutation_cancels_before_release(self):
+        self.assertNotIn("torch", sys.modules)
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = _p1_release_receipt_fixture(Path(directory))
+            submission = copy.deepcopy(fixture["submission"])
+            submission["predecessor_job_ids"][0] = "999999"
+            submission.pop("receipt_sha256")
+            submission["receipt_sha256"] = canonical_sha256(submission)
+            fixture["submission_path"].write_text(
+                json.dumps(submission, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(p1_deployer, "_release_p1_jobs_checked") as release,
+                mock.patch.object(
+                    p1_deployer, "_cancel_p1_jobs_and_verify"
+                ) as cancel,
+            ):
+                with self.assertRaisesRegex(ValueError, "before release"):
+                    p1_deployer._release_p1_jobs_from_receipts(
+                        fixture["deployment_path"],
+                        fixture["submission_path"],
+                        expected_commit=fixture["deployment"]["runtime_commit"],
+                        expected_submitted=fixture["job_ids"],
+                        expected_deployment_sha256=fixture["deployment"][
+                            "deployment_sha256"
+                        ],
+                        expected_submission_sha256=fixture["submission"][
+                            "receipt_sha256"
+                        ],
+                    )
+            release.assert_not_called()
+            cancel.assert_called_once_with(fixture["job_ids"])
+        self.assertNotIn("torch", sys.modules)
+
+    def test_p1_release_failure_cancels_the_complete_population(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = _p1_release_receipt_fixture(Path(directory))
+            with (
+                mock.patch.object(
+                    p1_deployer,
+                    "_release_p1_jobs_checked",
+                    side_effect=RuntimeError("partial release"),
+                ) as release,
+                mock.patch.object(
+                    p1_deployer, "_cancel_p1_jobs_and_verify"
+                ) as cancel,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "partial release"):
+                    p1_deployer._release_p1_jobs_from_receipts(
+                        fixture["deployment_path"],
+                        fixture["submission_path"],
+                        expected_commit=fixture["deployment"]["runtime_commit"],
+                        expected_submitted=fixture["job_ids"],
+                        expected_deployment_sha256=fixture["deployment"][
+                            "deployment_sha256"
+                        ],
+                        expected_submission_sha256=fixture["submission"][
+                            "receipt_sha256"
+                        ],
+                    )
+            release.assert_called_once_with(fixture["job_ids"])
+            cancel.assert_called_once_with(fixture["job_ids"])
+        self.assertNotIn("torch", sys.modules)
+
+    def test_p1_cancellation_command_failure_is_fail_closed(self):
+        job_ids = ("910000", "910001")
+        responses = [
+            subprocess.CompletedProcess(
+                ["scancel", *job_ids],
+                returncode=1,
+                stdout="",
+                stderr="permission denied",
+            ),
+            subprocess.CompletedProcess(
+                ["squeue"],
+                returncode=0,
+                stdout="",
+                stderr="",
+            ),
+        ]
+        with mock.patch.object(
+            p1_deployer.subprocess,
+            "run",
+            side_effect=responses,
+        ) as run_control:
+            with self.assertRaisesRegex(RuntimeError, "scancel failed"):
+                p1_deployer._cancel_p1_jobs_and_verify(
+                    job_ids,
+                    max_polls=1,
+                    poll_interval_seconds=0.0,
+                )
+        self.assertEqual(run_control.call_count, 2)
+        self.assertNotIn("torch", sys.modules)
+
+    def test_p1_bounded_cancellation_rejects_surviving_jobs(self):
+        job_ids = ("910000", "910001")
+        responses = [
+            subprocess.CompletedProcess(
+                ["scancel", *job_ids],
+                returncode=0,
+                stdout="",
+                stderr="",
+            ),
+            *[
+                subprocess.CompletedProcess(
+                    ["squeue"],
+                    returncode=0,
+                    stdout="910000\n",
+                    stderr="",
+                )
+                for _ in range(2)
+            ],
+        ]
+        with mock.patch.object(
+            p1_deployer.subprocess,
+            "run",
+            side_effect=responses,
+        ) as run_control:
+            with self.assertRaisesRegex(RuntimeError, "surviving job IDs: 910000"):
+                p1_deployer._cancel_p1_jobs_and_verify(
+                    job_ids,
+                    max_polls=2,
+                    poll_interval_seconds=0.0,
+                )
+        self.assertEqual(run_control.call_count, 3)
+        self.assertNotIn("torch", sys.modules)
 
     def test_p1_cost_contract_is_eight_leaves_and_dn_gate_is_literal(self):
         self.assertNotIn("torch", sys.modules)

@@ -7,6 +7,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -49,6 +50,8 @@ from tools.bata.zoomtoken_scnr_steady_cost_contract_v001 import (  # noqa: E402
 
 
 BOUNDARY = Path("/data/run01/sczc063/yuzibo")
+P1_CANCEL_MAX_POLLS = 10
+P1_CANCEL_POLL_INTERVAL_SECONDS = 1.0
 
 
 def _inside(path: Path, boundary: Path) -> bool:
@@ -183,6 +186,243 @@ def _p1_source_config(arm: str, *, official_source: Path) -> Path:
             raise ValueError("P1 DO must retain the tracked official recipe")
         return official_source
     return (ROOT / p1_source_config_relative_path(arm)).resolve()
+
+
+def _p1_job_ids(job_ids: Sequence[str]) -> tuple[str, ...]:
+    normalized = tuple(map(str, job_ids))
+    if any(not job_id.isdigit() for job_id in normalized):
+        raise ValueError("P1 control requires numeric Slurm job IDs")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("P1 control requires unique Slurm job IDs")
+    return normalized
+
+
+def _p1_receipt_self_hash(
+    payload: Mapping[str, Any],
+    *,
+    field: str,
+) -> str:
+    unsigned = dict(payload)
+    observed = unsigned.pop(field, None)
+    if not isinstance(observed, str) or observed != canonical_sha256(unsigned):
+        raise ValueError(f"P1 {field} is invalid")
+    return observed
+
+
+def _validate_p1_pre_release_receipts(
+    deployment_path: Path,
+    submission_path: Path,
+    *,
+    expected_commit: str,
+    expected_submitted: Sequence[str],
+    expected_deployment_sha256: str,
+    expected_submission_sha256: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Reread the already-defined P1 receipts before releasing held jobs."""
+
+    if not deployment_path.is_file() or not submission_path.is_file():
+        raise FileNotFoundError("P1 deployment receipts are missing before release")
+    deployment = read_json(deployment_path)
+    deployment_sha256 = _p1_receipt_self_hash(
+        deployment,
+        field="deployment_sha256",
+    )
+    if deployment_sha256 != expected_deployment_sha256:
+        raise ValueError("P1 deployment receipt changed before release")
+
+    jobs = deployment.get("jobs")
+    stage_jobs = jobs.get("stage") if isinstance(jobs, Mapping) else None
+    cost_jobs = jobs.get("cost") if isinstance(jobs, Mapping) else None
+    seed_key = str(P1_DEVELOPMENT_SEED)
+    if (
+        deployment.get("schema_version") != FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA
+        or deployment.get("study_id") != P1_STUDY_ID
+        or deployment.get("mode") != "p1"
+        or deployment.get("status") != "SUBMITTED_ZOOMTOKEN_P1_DNURQ_MATRIX"
+        or deployment.get("runtime_commit") != expected_commit
+        or deployment.get("arms") != list(P1_FIRST_SCREEN_ARM_ORDER)
+        or deployment.get("seed") != P1_DEVELOPMENT_SEED
+        or deployment.get("seeds") != [P1_DEVELOPMENT_SEED]
+        or deployment.get("accuracy_cells") != 5
+        or deployment.get("cost_leaves") != 8
+        or not isinstance(jobs, Mapping)
+        or not isinstance(stage_jobs, Mapping)
+        or set(stage_jobs) != set(P1_FIRST_SCREEN_ARM_ORDER)
+        or not isinstance(cost_jobs, Mapping)
+        or set(cost_jobs) != set(P1_COST_LEAF_SPECS)
+        or deployment.get("dependency_policy")
+        != {
+            "all_fifteen_jobs_held_until_receipts_immutable": True,
+            "accuracy_afterany_runtime_preflight": True,
+            "cost_afterany_runtime_preflight_and_source_stages": True,
+            "finalizer_afterany_all_fourteen_predecessors": True,
+            "release_all_fifteen_atomically": True,
+            "resume_allowed": False,
+            "retry_allowed": False,
+            "requeue_allowed": False,
+        }
+        or deployment.get("official_test_opened") is not False
+        or deployment.get("paper_claim_allowed") is not False
+    ):
+        raise ValueError("P1 deployment receipt contract is invalid before release")
+
+    runtime_preflight_job = str(jobs.get("runtime_preflight", ""))
+    finalizer_job = str(jobs.get("finalizer", ""))
+    ordered_stage_jobs: list[str] = []
+    for arm in P1_FIRST_SCREEN_ARM_ORDER:
+        arm_jobs = stage_jobs[arm]
+        if not isinstance(arm_jobs, Mapping) or set(arm_jobs) != {seed_key}:
+            raise ValueError(f"P1 deployment stage receipt is invalid for {arm}")
+        ordered_stage_jobs.append(str(arm_jobs[seed_key]))
+    ordered_cost_jobs = [str(cost_jobs[leaf_id]) for leaf_id in P1_COST_LEAF_SPECS]
+    predecessor_ids = _p1_job_ids(
+        [runtime_preflight_job, *ordered_stage_jobs, *ordered_cost_jobs]
+    )
+    submitted_ids = _p1_job_ids([*predecessor_ids, finalizer_job])
+    if len(predecessor_ids) != 14 or len(submitted_ids) != 15:
+        raise ValueError("P1 deployment receipt does not bind the 15-job DAG")
+    if submitted_ids != _p1_job_ids(expected_submitted):
+        raise ValueError("P1 deployment receipt job population changed before release")
+
+    submission = read_json(submission_path)
+    submission_sha256 = _p1_receipt_self_hash(
+        submission,
+        field="receipt_sha256",
+    )
+    if (
+        submission_sha256 != expected_submission_sha256
+        or submission.get("schema_version")
+        != FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA
+        or submission.get("study_id") != P1_STUDY_ID
+        or submission.get("mode") != "p1"
+        or submission.get("status") != "SUBMITTED_P1_FINALIZER_AFTERANY"
+        or submission.get("runtime_commit") != expected_commit
+        or submission.get("deployment_file_sha256") != sha256_file(deployment_path)
+        or str(submission.get("finalizer_job_id", "")) != finalizer_job
+        or submission.get("dependency_type") != "afterany"
+        or tuple(map(str, submission.get("predecessor_job_ids", ())))
+        != predecessor_ids
+    ):
+        raise ValueError("P1 finalizer-submission receipt is invalid before release")
+    return deployment, submission
+
+
+def _release_p1_jobs_checked(job_ids: Sequence[str]) -> None:
+    normalized = _p1_job_ids(job_ids)
+    completed = subprocess.run(
+        ["scontrol", "release", *normalized],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "failed to release held P1 jobs: "
+            + (completed.stderr.strip() or completed.stdout.strip())
+        )
+
+
+def _active_p1_job_ids(job_ids: Sequence[str]) -> tuple[str, ...]:
+    normalized = _p1_job_ids(job_ids)
+    completed = subprocess.run(
+        [
+            "squeue",
+            "--noheader",
+            "--jobs",
+            ",".join(normalized),
+            "--format=%A",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "failed to verify P1 cancellation: "
+            + (completed.stderr.strip() or completed.stdout.strip())
+        )
+    active = {line.strip() for line in completed.stdout.splitlines() if line.strip()}
+    return tuple(job_id for job_id in normalized if job_id in active)
+
+
+def _cancel_p1_jobs_and_verify(
+    job_ids: Sequence[str],
+    *,
+    max_polls: int = P1_CANCEL_MAX_POLLS,
+    poll_interval_seconds: float = P1_CANCEL_POLL_INTERVAL_SECONDS,
+) -> None:
+    normalized = _p1_job_ids(job_ids)
+    if not normalized:
+        return
+    if max_polls <= 0 or poll_interval_seconds < 0:
+        raise ValueError("P1 cancellation verification bound is invalid")
+    completed = subprocess.run(
+        ["scancel", *normalized],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    cancel_error = None
+    if completed.returncode != 0:
+        cancel_error = completed.stderr.strip() or completed.stdout.strip()
+
+    survivors: tuple[str, ...] = normalized
+    verification_error = None
+    try:
+        for poll_index in range(max_polls):
+            survivors = _active_p1_job_ids(normalized)
+            if not survivors:
+                break
+            if poll_index + 1 < max_polls and poll_interval_seconds:
+                time.sleep(poll_interval_seconds)
+    except BaseException as error:
+        verification_error = str(error)
+
+    failures = []
+    if cancel_error is not None:
+        failures.append(f"scancel failed: {cancel_error}")
+    if verification_error is not None:
+        failures.append(f"terminal verification failed: {verification_error}")
+    elif survivors:
+        failures.append("surviving job IDs: " + ",".join(survivors))
+    if failures:
+        raise RuntimeError("P1 no-survivor cleanup failed; " + "; ".join(failures))
+
+
+def _release_p1_jobs_from_receipts(
+    deployment_path: Path,
+    submission_path: Path,
+    *,
+    expected_commit: str,
+    expected_submitted: Sequence[str],
+    expected_deployment_sha256: str,
+    expected_submission_sha256: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate, release, or leave no surviving job from the P1 population."""
+
+    try:
+        receipts = _validate_p1_pre_release_receipts(
+            deployment_path,
+            submission_path,
+            expected_commit=expected_commit,
+            expected_submitted=expected_submitted,
+            expected_deployment_sha256=expected_deployment_sha256,
+            expected_submission_sha256=expected_submission_sha256,
+        )
+        _release_p1_jobs_checked(expected_submitted)
+    except BaseException as release_error:
+        try:
+            _cancel_p1_jobs_and_verify(expected_submitted)
+        except BaseException as cleanup_error:
+            raise RuntimeError(
+                "P1 release boundary failed and no-survivor cleanup failed: "
+                f"{cleanup_error}"
+            ) from release_error
+        raise
+    return receipts
 
 
 def _deploy_p1(
@@ -324,6 +564,8 @@ def _deploy_p1(
     )
 
     submitted: list[str] = []
+    release_boundary_entered = False
+    release_succeeded = False
     try:
         runtime_preflight_job = _sbatch(
             name="ztp1_preflight",
@@ -500,7 +742,16 @@ def _deploy_p1(
         submission["receipt_sha256"] = canonical_sha256(submission)
         submission_path = run_root / "control" / "finalizer_submission.json"
         _atomic_write_json(submission_path, submission)
-        _release_jobs(submitted)
+        release_boundary_entered = True
+        _release_p1_jobs_from_receipts(
+            deployment_path,
+            submission_path,
+            expected_commit=expected_commit,
+            expected_submitted=submitted,
+            expected_deployment_sha256=deployment["deployment_sha256"],
+            expected_submission_sha256=submission["receipt_sha256"],
+        )
+        release_succeeded = True
         release: dict[str, Any] = {
             "schema_version": FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA,
             "study_id": P1_STUDY_ID,
@@ -513,8 +764,15 @@ def _deploy_p1(
         }
         release["receipt_sha256"] = canonical_sha256(release)
         _atomic_write_json(run_root / "control" / "stage_release.json", release)
-    except BaseException:
-        _cancel_jobs(submitted)
+    except BaseException as deployment_error:
+        if not release_boundary_entered or release_succeeded:
+            try:
+                _cancel_p1_jobs_and_verify(submitted)
+            except BaseException as cleanup_error:
+                raise RuntimeError(
+                    "P1 deployment failed and no-survivor cleanup failed: "
+                    f"{cleanup_error}"
+                ) from deployment_error
         raise
     return {**deployment, "finalizer_job_id": finalizer_job}
 
