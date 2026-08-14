@@ -533,6 +533,7 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         dn = _load_surface(dn_relative)
         q = _load_surface(q_relative)
         self.assertEqual(dn["zoomtoken_p1_config"]["arm_surface"], "DN")
+
         self.assertFalse(dn["zoomtoken_p1_config"]["routing_enabled"])
         self.assertTrue(dn["zoomtoken_p1_config"]["full_native_spatial_compute"])
         self.assertEqual(
@@ -571,6 +572,26 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
             / "georoute_official_development_stage_runner.py"
         ).read_text(encoding="utf-8")
         self.assertIn("*P1_MATCHED_RUNNER_ARM_ORDER", runner)
+
+    def test_p1_deployment_binds_the_official_do_config_hash(self):
+        protocol = {
+            "current_source_bridge": {
+                "official_config_sha256": "official",
+                "georoute_source_config_sha256": "georoute",
+            }
+        }
+        self.assertEqual(
+            p1_deployer._deployment_source_config_sha256(
+                mode="p1", protocol=protocol
+            ),
+            "official",
+        )
+        self.assertEqual(
+            p1_deployer._deployment_source_config_sha256(
+                mode="formal", protocol=protocol
+            ),
+            "georoute",
+        )
 
     def test_wrapper_switches_stop_at_the_production_selector_boundary(self):
         source = (

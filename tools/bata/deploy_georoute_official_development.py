@@ -188,6 +188,13 @@ def _p1_source_config(arm: str, *, official_source: Path) -> Path:
     return (ROOT / p1_source_config_relative_path(arm)).resolve()
 
 
+def _deployment_source_config_sha256(*, mode: str, protocol: Mapping) -> str:
+    bridge = protocol["current_source_bridge"]
+    if mode == "p1":
+        return str(bridge["official_config_sha256"])
+    return str(bridge["georoute_source_config_sha256"])
+
+
 def _p1_job_ids(job_ids: Sequence[str]) -> tuple[str, ...]:
     normalized = tuple(map(str, job_ids))
     if any(not job_id.isdigit() for job_id in normalized):
@@ -875,9 +882,7 @@ def main() -> int:
             raise ValueError(f"{name} differs from the frozen protocol")
     if (
         sha256_file(inputs["GEOROUTE_SOURCE_CONFIG"])
-        != protocol["current_source_bridge"][
-            "georoute_source_config_sha256"
-        ]
+        != _deployment_source_config_sha256(mode=args.mode, protocol=protocol)
         or sha256_file(inputs["GEOROUTE_MANIFEST"])
         != protocol_inputs["manifest_file_sha256"]
         or sha256_file(inputs["GEOROUTE_DEVELOPMENT_ANNOTATION"])
