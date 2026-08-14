@@ -282,6 +282,8 @@ def _gpu_runtime_class(row: Mapping[str, Any]) -> dict[str, Any]:
     if not re.fullmatch(r"[0-9]+\.[0-9]+", compute_capability):
         raise ValueError("GPU compute capability is malformed")
     mig_mode = str(row.get("mig.mode.current", "")).strip()
+    if mig_mode == "[N/A]":
+        mig_mode = "N/A"
     if mig_mode not in {"Enabled", "Disabled", "N/A"}:
         raise ValueError("GPU MIG mode is not explicit")
     return {

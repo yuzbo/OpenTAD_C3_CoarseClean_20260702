@@ -656,10 +656,24 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
 
     def test_runtime_attestor_requires_exact_preflight_leaf_class(self):
         self.assertNotIn("torch", sys.modules)
-        preflight = build_runtime_attestation(_observations(), phase="preflight")
+        observations = _observations()
+        for row in observations["gpu_rows"]:
+            row["mig.mode.current"] = "[N/A]"
+        preflight = build_runtime_attestation(observations, phase="preflight")
         leaf = build_runtime_attestation(_observations(), phase="leaf")
         validate_runtime_attestation(preflight)
-        validate_runtime_attestation(leaf, reference=preflight)
+        with self.assertRaisesRegex(ValueError, "differs from preflight"):
+            validate_runtime_attestation(leaf, reference=preflight)
+        self.assertEqual(leaf["runtime_class"]["gpu"]["mig_mode"], "Disabled")
+        matching_leaf_observations = _observations()
+        for row in matching_leaf_observations["gpu_rows"]:
+            row["mig.mode.current"] = "[N/A]"
+        matching_leaf = build_runtime_attestation(
+            matching_leaf_observations,
+            phase="leaf",
+        )
+        validate_runtime_attestation(matching_leaf, reference=preflight)
+        self.assertEqual(preflight["runtime_class"]["gpu"]["mig_mode"], "N/A")
         self.assertNotIn("uuid", preflight["runtime_class"]["gpu"])
         self.assertNotIn("pci_bus_id", preflight["runtime_class"]["gpu"])
         self.assertFalse(preflight["node_name_recorded"])
