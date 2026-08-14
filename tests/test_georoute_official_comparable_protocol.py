@@ -31,6 +31,7 @@ from tools.bata.georoute_official_comparable_contract import (
     build_protocol_manifest,
     sha256_file,
     validate_formal_checkpoint_sidecar,
+    validate_formal_development_config,
     validate_protocol_manifest,
     validate_world2_kat_receipt,
 )
@@ -328,6 +329,8 @@ def test_p1_do_binder_initializes_protocol_for_exact_official_config(tmp_path: P
     )
     assert cfg.georoute_protocol.official_test_open_allowed is False
     assert cfg.workflow.require_successful_update_hook is False
+    validated = validate_formal_development_config(cfg, seed=3407)
+    assert validated["arm"] == "dense_native"
 
 
 def test_slurm_world2_gate_uses_two_logical_gpus_without_physical_indices():

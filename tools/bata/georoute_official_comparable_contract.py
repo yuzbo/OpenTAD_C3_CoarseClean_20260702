@@ -795,7 +795,8 @@ def validate_formal_development_config(
         or cfg.workflow.get("checkpoint_policy") != "final_only"
         or int(cfg.workflow.get("max_amp_retries_per_batch", -1)) != 0
         or cfg.workflow.get("fail_on_skipped_update") is not False
-        or cfg.workflow.get("require_successful_update_hook") is not True
+        or cfg.workflow.get("require_successful_update_hook")
+        is not (arm != "dense_native")
         or cfg.workflow.get("schedule_and_ema_on_success_only") is not False
         or cfg.workflow.get("fail_on_nonfinite_loss") is not True
         or cfg.solver.get("amp") is not True
