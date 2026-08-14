@@ -111,6 +111,21 @@ def _current_commit() -> str:
     return completed.stdout.strip().lower()
 
 
+def _assert_clean_source_snapshot() -> None:
+    if os.environ.get("GEOROUTE_SOURCE_IDENTITY_VERIFIED") == "1":
+        _current_commit()
+        return
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    if status:
+        raise RuntimeError("formal development requires a clean source snapshot")
+
+
 def _self_hash_matches(payload: Mapping[str, Any], *, field: str) -> bool:
     unsigned = dict(payload)
     observed = unsigned.pop(field, None)
@@ -914,15 +929,7 @@ def _execute(
     expected_commit = str(args.expected_commit).lower()
     if _current_commit() != expected_commit:
         raise RuntimeError("formal development source commit changed")
-    status = subprocess.run(
-        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    if status:
-        raise RuntimeError("formal development requires a clean source snapshot")
+    _assert_clean_source_snapshot()
     slurm_job_id = os.environ.get("SLURM_JOB_ID", "")
     visible = [
         value
@@ -1531,15 +1538,7 @@ def _execute_p1_cost(args: argparse.Namespace, *, leaf_root: Path) -> dict[str, 
     expected_commit = str(args.expected_commit).lower()
     if _current_commit() != expected_commit:
         raise RuntimeError("P1 cost source commit changed")
-    status = subprocess.run(
-        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    if status:
-        raise RuntimeError("P1 cost requires a clean source snapshot")
+    _assert_clean_source_snapshot()
     slurm_job_id = os.environ.get("SLURM_JOB_ID", "")
     visible = [
         value

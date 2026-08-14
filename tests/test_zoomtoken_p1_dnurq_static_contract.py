@@ -711,6 +711,7 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
             mock.patch.object(p1_stage_runner.subprocess, "run") as run,
         ):
             self.assertEqual(p1_stage_runner._current_commit(), expected)
+            p1_stage_runner._assert_clean_source_snapshot()
         run.assert_not_called()
 
     def test_q_postrun_accepts_global_dynamic_budget_without_target_k(self):
