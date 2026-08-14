@@ -23,9 +23,11 @@ from tools.bata.georoute_official_comparable_contract import (
     FORMAL_PER_RANK_BATCH_SIZE,
     FORMAL_WORLD_SIZE,
     OFFICIAL_CONFIG_SHA256,
+    OFFICIAL_COMPARABLE_PREFLIGHT_SCHEMA,
     OFFICIAL_DDP_WORLD2_KAT_PASS,
     OFFICIAL_DDP_WORLD2_KAT_SCHEMA,
     OFFICIAL_UPSTREAM_RELEASE_COMMIT,
+    bind_formal_development_config,
     build_protocol_manifest,
     sha256_file,
     validate_formal_checkpoint_sidecar,
@@ -245,6 +247,87 @@ def test_preflight_classifier_requires_both_real_batch_arms_and_world2_kat():
     held = _classify(stage_results=stages, kat_passed=False)
     assert held["passed"] is False
     assert held["decision"] == "OFFICIAL_COMPARABLE_PREFLIGHT_HOLD"
+
+
+def test_preflight_classifier_treats_missing_final_scale_as_hold():
+    stages = {arm: _formal_stage_result() for arm in AMP_DIAGNOSTIC_ARMS}
+    stages[AMP_DIAGNOSTIC_ARMS[0]]["diagnostic_receipt"]["summary"][
+        "final_scale"
+    ] = None
+    held = _classify(stage_results=stages, kat_passed=True)
+    assert held["passed"] is False
+    assert held["decision"] == "OFFICIAL_COMPARABLE_PREFLIGHT_HOLD"
+    missing_scale = held["final_scales"][AMP_DIAGNOSTIC_ARMS[0]]
+    assert missing_scale != missing_scale
+
+
+def test_p1_do_binder_initializes_protocol_for_exact_official_config(tmp_path: Path):
+    runtime_commit = "c" * 40
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({"splits": {"fit": ["v1"], "gate": ["v2"]}}),
+        encoding="utf-8",
+    )
+    annotation = tmp_path / "development.json"
+    annotation.write_text(
+        json.dumps(
+            {
+                "database": {
+                    "v1": {"subset": "training", "annotations": []},
+                    "v2": {"subset": "training", "annotations": []},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    class_map = tmp_path / "class_map.txt"
+    class_map.write_text("0 action\n", encoding="utf-8")
+    pretrained = tmp_path / "pretrained.pth"
+    pretrained.write_bytes(b"pretrained")
+    videos = tmp_path / "training_videos"
+    videos.mkdir()
+    preflight = {
+        "schema_version": OFFICIAL_COMPARABLE_PREFLIGHT_SCHEMA,
+        "status": "PASS_OFFICIAL_COMPARABLE_PREFLIGHT_ONLY",
+        "decision": "FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED",
+        "runtime_commit": runtime_commit,
+        "formal_development_matrix_authorized": True,
+        "official_protocol_freeze_authorized": False,
+        "performance_metrics": {},
+        "performance_inference_allowed": False,
+        "official_test_opened": False,
+        "paper_claim_allowed": False,
+    }
+    preflight["finalization_sha256"] = canonical_sha256(preflight)
+    preflight_path = tmp_path / "preflight.json"
+    preflight_path.write_text(json.dumps(preflight), encoding="utf-8")
+    official = (
+        ROOT
+        / "configs"
+        / "adatad"
+        / "thumos"
+        / "e2e_thumos_videomae_s_768x1_160_adapter.py"
+    )
+
+    cfg = bind_formal_development_config(
+        source_config_path=official,
+        arm="dense_native",
+        seed=3407,
+        work_dir=tmp_path / "do",
+        manifest_path=manifest,
+        development_annotation_path=annotation,
+        class_map_path=class_map,
+        development_video_root=videos,
+        pretrained_checkpoint_path=pretrained,
+        runtime_commit=runtime_commit,
+        preflight_finalization_path=preflight_path,
+        expected_preflight_file_sha256=sha256_file(preflight_path),
+    )
+    assert cfg.georoute_protocol.status == (
+        "official_comparable_three_seed_development_only"
+    )
+    assert cfg.georoute_protocol.official_test_open_allowed is False
+    assert cfg.workflow.require_successful_update_hook is False
 
 
 def test_slurm_world2_gate_uses_two_logical_gpus_without_physical_indices():

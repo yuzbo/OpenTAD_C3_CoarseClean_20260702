@@ -546,7 +546,7 @@ def bind_formal_development_config(
     cfg.workflow.checkpoint_policy = "final_only"
     cfg.workflow.max_amp_retries_per_batch = 0
     cfg.workflow.fail_on_skipped_update = False
-    cfg.workflow.require_successful_update_hook = True
+    cfg.workflow.require_successful_update_hook = arm != "dense_native"
     cfg.workflow.schedule_and_ema_on_success_only = False
     cfg.workflow.capture_amp_rng_state = False
     cfg.workflow.fail_on_nonfinite_loss = True
@@ -555,6 +555,8 @@ def bind_formal_development_config(
     cfg.inference.save_raw_prediction = False
     cfg.georoute_development_profile = dict(enabled=True)
     cfg.georoute_diagnostic_telemetry = dict(enabled=True)
+    if "georoute_protocol" not in cfg:
+        cfg.georoute_protocol = dict()
     cfg.georoute_protocol.status = (
         "official_comparable_three_seed_development_only"
     )

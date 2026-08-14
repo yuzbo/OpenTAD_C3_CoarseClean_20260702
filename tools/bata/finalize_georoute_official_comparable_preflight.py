@@ -164,10 +164,13 @@ def _classify(
         arm: int(summary.get("failed_attempt_count", -1))
         for arm, summary in summaries.items()
     }
-    final_scales = {
-        arm: float(summary.get("final_scale", math.nan))
-        for arm, summary in summaries.items()
-    }
+    final_scales = {}
+    for arm, summary in summaries.items():
+        value = summary.get("final_scale")
+        try:
+            final_scales[arm] = float(value)
+        except (TypeError, ValueError):
+            final_scales[arm] = math.nan
     finite_scales = bool(
         len(final_scales) == len(AMP_DIAGNOSTIC_ARMS)
         and all(
