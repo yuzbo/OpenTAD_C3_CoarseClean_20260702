@@ -120,6 +120,23 @@ def _write_accuracy_storage_preflight(
     return receipt_path
 
 
+def _accuracy_log_paths(
+    *,
+    run_root: Path,
+    cell_root: Path,
+    arm: str,
+    seed: int,
+) -> tuple[Path, Path]:
+    """Keep launcher logs outside the work directory until training creates it."""
+    if cell_root.exists():
+        raise FileExistsError("formal accuracy work_dir must be fresh before training")
+    log_root = run_root / "control" / "stage_logs" / f"{arm}_seed{seed}"
+    log_root.mkdir(parents=True, exist_ok=False)
+    if cell_root.exists():
+        raise RuntimeError("stage log setup created the bound training work_dir")
+    return log_root / "train.out", log_root / "test.out"
+
+
 def _current_commit() -> str:
     if os.environ.get("GEOROUTE_SOURCE_IDENTITY_VERIFIED") == "1":
         expected = os.environ.get("GEOROUTE_EXPECTED_COMMIT", "").strip().lower()
@@ -1029,8 +1046,12 @@ def _execute(
     inherited = dict(os.environ)
     inherited["PYTHONNOUSERSITE"] = "1"
     inherited["PYTHONDONTWRITEBYTECODE"] = "1"
-    train_log = cell_root / "train.out"
-    test_log = cell_root / "test.out"
+    train_log, test_log = _accuracy_log_paths(
+        run_root=run_root,
+        cell_root=cell_root,
+        arm=args.arm,
+        seed=args.seed,
+    )
     train_prefix, train_rendezvous = build_torchrun_prefix(
         phase="train",
         slurm_job_id=slurm_job_id,

@@ -758,6 +758,18 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
                 json.loads(receipt_path.read_text(encoding="utf-8")),
                 {"status": "PASS_STORAGE_PREFLIGHT"},
             )
+            train_log, test_log = p1_stage_runner._accuracy_log_paths(
+                run_root=run_root,
+                cell_root=cell_root,
+                arm="DO",
+                seed=3407,
+            )
+            self.assertFalse(cell_root.exists())
+            self.assertEqual(
+                train_log,
+                run_root / "control" / "stage_logs" / "DO_seed3407" / "train.out",
+            )
+            self.assertEqual(test_log, train_log.with_name("test.out"))
 
     def test_formal_ddp_work_dir_is_created_once_then_synchronized(self):
         source = (ROOT / "tools" / "train.py").read_text(encoding="utf-8")
