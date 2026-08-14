@@ -23,3 +23,11 @@ def test_future_launcher_is_fail_closed_and_non_executing():
     assert "THUMOS14_TRAIN_DATA_PATH" not in text
     assert "tools/train.py" in text
     assert "PRE_RUN-only" in text
+
+
+def test_dynamic_b_metadata_does_not_claim_unexecuted_f2():
+    source = (ROOT / "opentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py").read_text(encoding="utf-8")
+    assert '"f2": {"enabled": False' in source
+    helper = (ROOT / "opentad/models/selectors/duca_dynamic_physical.py").read_text(encoding="utf-8")
+    assert 'selected = candidates[: int(k)]' not in helper
+    assert 'local_radius == 0' not in helper

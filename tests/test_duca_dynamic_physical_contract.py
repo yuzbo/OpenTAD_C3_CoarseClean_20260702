@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import pytest
 
 _SPEC = importlib.util.spec_from_file_location("duca_dynamic_physical", Path(__file__).parents[1] / "opentad/models/selectors/duca_dynamic_physical.py")
 _MOD = importlib.util.module_from_spec(_SPEC)
@@ -31,3 +32,13 @@ def test_timestamp_metadata_stage():
     m = attach_physical_timestamps({}, [0, 2], fps=2.0)
     assert m["duca_physical_timestamps"] == [0.0, 1.0]
     assert m["duca_timestamp_stage"].startswith("before_")
+
+
+def test_zero_radius_is_bounded_and_fails_closed():
+    with pytest.raises(ValueError, match="locality contract impossible"):
+        bounded_monotone_local_exact_k([0.0, 1.0, 0.0], 2, local_radius=0)
+
+
+def test_impossible_locality_does_not_fallback_to_prefix():
+    with pytest.raises(ValueError, match="locality contract impossible"):
+        bounded_monotone_local_exact_k([0.0, 1.0, 0.0], 2, local_radius=0, valid_mask=[1, 1, 1])

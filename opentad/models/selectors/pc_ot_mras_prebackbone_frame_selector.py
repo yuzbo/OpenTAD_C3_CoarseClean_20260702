@@ -2559,7 +2559,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                 pad = chosen[-1] if chosen else valid_idx[0]
                 for j in range(k, self.target_len):
                     pos = int(candidate_dense_indices[b, pad].item()); indices[b, j, 0] = pos; positions[b, j] = float(pos); transport[b, j, pos] = 1.0
-            metadata.append({"enabled": True, "mechanism": "dynamic_B", "outer_k": int(k), "f1": "endpoint_inclusive_integer_half_up_uniform", "f2": "nonce_derived_canonical_row_fisher_yates", "uses_gt": False, "uses_teacher": False, "uses_raw_prediction_cache": False})
+            metadata.append({"enabled": True, "mechanism": "dynamic_B", "outer_k": int(k), "f1": "endpoint_inclusive_integer_half_up_uniform", "f2": {"enabled": False, "status": "not_in_execution_path"}, "uses_gt": False, "uses_teacher": False, "uses_raw_prediction_cache": False})
         return {"indices": indices, "weights": weights, "transport_weights": transport, "selected_positions": positions, "selected_output_valid_lengths": lengths, "selected_roles": [["dynamic_B"] * int(lengths[b].item()) + ["pad_repeat"] * (self.target_len-int(lengths[b].item())) for b in range(batch)], "raw_slot_dense_indices": [], "raw_slot_duplicate_rates": [], "raw_slot_unique_counts": [], "reader_fill_counts": [0]*batch, "st_active_row_counts": [0]*batch, "dynamic_budget_meta": metadata}
 
     def _coarse_actionness_scores(

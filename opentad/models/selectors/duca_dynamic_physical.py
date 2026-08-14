@@ -54,16 +54,21 @@ def bounded_monotone_local_exact_k(
     candidates = [i for i, ok in enumerate(valid) if ok]
     if len(candidates) < int(k):
         raise ValueError("valid_mask contains fewer than k positions")
+    radius = int(local_radius)
     anchors = f1_uniform_positions(len(candidates), int(k))
     selected = sorted({candidates[i] for i in anchors})
+    # Radius zero is a real locality constraint, not an escape hatch.  More
+    # than one unique exact-K position cannot satisfy it.
+    if radius == 0 and len(selected) > 1:
+        raise ValueError("locality contract impossible for local_radius=0 and k>1")
     for idx in sorted(candidates, key=lambda i: (-values[i], i)):
         if len(selected) >= int(k):
             break
-        if all(abs(idx - j) <= int(local_radius) or local_radius == 0 for j in selected):
+        if all(abs(idx - j) <= radius for j in selected):
             selected.append(idx)
             selected.sort()
     if len(selected) < int(k):
-        selected = candidates[: int(k)]
+        raise ValueError("locality contract impossible for requested exact-K selection")
     return selected[: int(k)]
 
 
