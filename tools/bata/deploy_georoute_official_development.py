@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+P1_STAGE_MEMORY_MIB = 96_000
+
 from tools.bata.deploy_georoute_amp_diagnostic import (  # noqa: E402
     _cancel_jobs,
     _clean_export,
@@ -115,7 +117,7 @@ def _sbatch(
                 "--cpus-per-task",
                 "10",
                 "--mem",
-                "192000M",
+                f"{P1_STAGE_MEMORY_MIB}M",
             ]
         )
     else:

@@ -592,6 +592,7 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
             ),
             "georoute",
         )
+        self.assertEqual(p1_deployer.P1_STAGE_MEMORY_MIB, 96_000)
 
     def test_wrapper_switches_stop_at_the_production_selector_boundary(self):
         source = (
