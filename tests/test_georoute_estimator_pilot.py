@@ -669,6 +669,26 @@ def test_bound_configs_materialize_all_representation_switches(tmp_path):
         assert cfg.scheduler.max_epoch == PILOT_EPOCHS
         assert cfg.georoute_estimator_pilot_binding.paper_claim_allowed is False
 
+    official_source = (
+        ROOT
+        / "configs"
+        / "adatad"
+        / "thumos"
+        / "e2e_thumos_videomae_s_768x1_160_adapter.py"
+    )
+    official_cfg = bind_pilot_config(
+        source_config_path=official_source,
+        arm=PILOT_ARM_ORDER[0],
+        seed=PILOT_SEED,
+        work_dir=tmp_path / "official",
+        manifest_path=manifest,
+        development_annotation_path=annotation,
+        class_map_path=class_map,
+        development_video_root=videos,
+        pretrained_checkpoint_path=pretrained,
+    )
+    assert official_cfg.georoute_protocol.status == "exploratory_single_seed_pilot"
+
 
 @pytest.mark.parametrize("arm", PILOT_ARM_ORDER)
 def test_p0_validator_accepts_each_exact_pilot_arm_and_rejects_leakage(arm):

@@ -385,6 +385,8 @@ def bind_pilot_config(
     cfg.inference.save_raw_prediction = False
     cfg.georoute_development_profile = dict(enabled=True)
     cfg.georoute_diagnostic_telemetry = dict(enabled=True)
+    if "georoute_protocol" not in cfg:
+        cfg.georoute_protocol = dict()
     cfg.georoute_protocol.status = "exploratory_single_seed_pilot"
 
     binding: dict[str, Any] = {
