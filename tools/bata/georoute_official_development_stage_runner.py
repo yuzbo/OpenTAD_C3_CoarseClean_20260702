@@ -95,6 +95,31 @@ def _inside(path: Path, root: Path) -> bool:
     return path != root
 
 
+def _write_accuracy_storage_preflight(
+    *,
+    run_root: Path,
+    cell_root: Path,
+    arm: str,
+    seed: int,
+) -> Path:
+    """Persist capacity evidence without pre-creating the bound work directory."""
+    if cell_root.exists():
+        raise FileExistsError("formal accuracy work_dir must be fresh before training")
+    receipt_path = (
+        run_root / "control" / "storage_preflights" / f"{arm}_seed{seed}.json"
+    )
+    if receipt_path.exists():
+        raise FileExistsError("formal accuracy storage preflight already exists")
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(
+        receipt_path,
+        storage_capacity_receipt(run_root, cell_count=1),
+    )
+    if cell_root.exists():
+        raise RuntimeError("storage preflight created the bound training work_dir")
+    return receipt_path
+
+
 def _current_commit() -> str:
     if os.environ.get("GEOROUTE_SOURCE_IDENTITY_VERIFIED") == "1":
         expected = os.environ.get("GEOROUTE_EXPECTED_COMMIT", "").strip().lower()
@@ -967,10 +992,12 @@ def _execute(
             deployment,
             arm=args.arm,
         )
-    storage_receipt = storage_capacity_receipt(run_root, cell_count=1)
-    cell_root.mkdir(parents=True, exist_ok=False)
-    storage_receipt_path = cell_root / "storage_preflight.json"
-    _atomic_write_json(storage_receipt_path, storage_receipt)
+    storage_receipt_path = _write_accuracy_storage_preflight(
+        run_root=run_root,
+        cell_root=cell_root,
+        arm=args.arm,
+        seed=args.seed,
+    )
     bound_config = (
         run_root
         / "control"
@@ -1800,29 +1827,37 @@ def main() -> int:
     try:
         result = _execute(args, cell_root=cell_root)
     except Exception as error:
-        if cell_root.is_dir():
-            trace = traceback.format_exc()
-            failure: dict[str, Any] = {
-                "schema_version": FORMAL_DEVELOPMENT_RESULT_SCHEMA,
-                "status": "FAIL_OFFICIAL_COMPARABLE_DEVELOPMENT_CELL",
-                "arm": args.arm,
-                "seed": int(args.seed),
-                "expected_runtime_commit": str(args.expected_commit).lower(),
-                "observed_runtime_commit": (
-                    _current_commit() if (ROOT / ".git").exists() else None
-                ),
-                "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
-                "exception_type": type(error).__name__,
-                "exception_message": str(error)[:2000],
-                "traceback_sha256": hashlib.sha256(
-                    trace.encode("utf-8", errors="replace")
-                ).hexdigest(),
-                "performance_inference_allowed": False,
-                "official_test_opened": False,
-                "paper_claim_allowed": False,
-            }
-            failure["failure_sha256"] = canonical_sha256(failure)
-            _atomic_write_json(cell_root / "stage_failure.json", failure)
+        trace = traceback.format_exc()
+        failure: dict[str, Any] = {
+            "schema_version": FORMAL_DEVELOPMENT_RESULT_SCHEMA,
+            "status": "FAIL_OFFICIAL_COMPARABLE_DEVELOPMENT_CELL",
+            "arm": args.arm,
+            "seed": int(args.seed),
+            "expected_runtime_commit": str(args.expected_commit).lower(),
+            "observed_runtime_commit": (
+                _current_commit() if (ROOT / ".git").exists() else None
+            ),
+            "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+            "exception_type": type(error).__name__,
+            "exception_message": str(error)[:2000],
+            "traceback_sha256": hashlib.sha256(
+                trace.encode("utf-8", errors="replace")
+            ).hexdigest(),
+            "performance_inference_allowed": False,
+            "official_test_opened": False,
+            "paper_claim_allowed": False,
+        }
+        failure["failure_sha256"] = canonical_sha256(failure)
+        failure_path = (
+            cell_root / "stage_failure.json"
+            if cell_root.is_dir()
+            else run_root
+            / "control"
+            / "stage_failures"
+            / f"{args.arm}_seed{args.seed}.json"
+        )
+        failure_path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_json(failure_path, failure)
         raise
     _atomic_write_json(cell_root / "stage_result.json", result)
     print(json.dumps(result, sort_keys=True))

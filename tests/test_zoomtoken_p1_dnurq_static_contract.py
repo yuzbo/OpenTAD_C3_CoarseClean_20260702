@@ -733,6 +733,32 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
             require_clean_formal_checkout(expected_commit=expected, root=ROOT)
         run.assert_not_called()
 
+    def test_accuracy_storage_preflight_keeps_bound_work_dir_fresh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_root = Path(tmp) / "run"
+            run_root.mkdir()
+            cell_root = run_root / "p1_accuracy" / "DO_seed3407"
+            with mock.patch.object(
+                p1_stage_runner,
+                "storage_capacity_receipt",
+                return_value={"status": "PASS_STORAGE_PREFLIGHT"},
+            ):
+                receipt_path = p1_stage_runner._write_accuracy_storage_preflight(
+                    run_root=run_root,
+                    cell_root=cell_root,
+                    arm="DO",
+                    seed=3407,
+                )
+            self.assertFalse(cell_root.exists())
+            self.assertEqual(
+                receipt_path,
+                run_root / "control" / "storage_preflights" / "DO_seed3407.json",
+            )
+            self.assertEqual(
+                json.loads(receipt_path.read_text(encoding="utf-8")),
+                {"status": "PASS_STORAGE_PREFLIGHT"},
+            )
+
     def test_q_postrun_accepts_global_dynamic_budget_without_target_k(self):
         self.assertNotIn("torch", sys.modules)
         validate_p1_q_routing_audit(_q_routing_audit())
