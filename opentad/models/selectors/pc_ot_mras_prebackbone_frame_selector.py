@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..builder import SELECTORS, build_selector
+from .duca_dynamic_physical import bounded_monotone_local_exact_k, dynamic_outer_k, attach_physical_timestamps
 
 
 def _require_finite(tensor: torch.Tensor, name: str, *, error_type: type[Exception] = FloatingPointError) -> torch.Tensor:
@@ -1139,11 +1140,13 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             "frame_score_global_rank_st",
             "interval_boundary_packet",
             "coarse_actionness_uncertainty",
+            "dynamic_B",
         ):
             raise ValueError(
                 "selection_strategy must be 'slot_transport', 'frame_score_topk', "
                 "'frame_score_global_rank_st', 'interval_boundary_packet', "
                 "or 'coarse_actionness_uncertainty'"
+                "or 'dynamic_B'"
             )
         if float(frame_score_st_temperature) <= 0.0:
             raise ValueError("frame_score_st_temperature must be positive")
@@ -1529,6 +1532,14 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             )
         if getattr(self, "selection_strategy", "slot_transport") == "coarse_actionness_uncertainty":
             return self._coarse_actionness_uncertainty_transport_plan(
+                reader_outputs=reader_outputs,
+                valid=valid,
+                candidate_valid=candidate_valid,
+                candidate_dense_indices=candidate_dense_indices,
+                training=training,
+            )
+        if getattr(self, "selection_strategy", "slot_transport") == "dynamic_B":
+            return self._dynamic_b_transport_plan(
                 reader_outputs=reader_outputs,
                 valid=valid,
                 candidate_valid=candidate_valid,
@@ -2516,6 +2527,41 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             "max_gap_guard_meta": max_gap_guard_meta,
         }
 
+    def _dynamic_b_transport_plan(self, *, reader_outputs, valid, candidate_valid, candidate_dense_indices, training):
+        """Deploy-only dynamic-B: outer K plus bounded monotone/local exact-K transport."""
+        scores = reader_outputs.get("frame_selection_logits", reader_outputs.get("actionness_logits", reader_outputs.get("action_logits")))
+        if not torch.is_tensor(scores) or tuple(scores.shape) != tuple(candidate_valid.shape):
+            raise ValueError("dynamic_B requires frame-selection scores matching candidate axis")
+        device = scores.device
+        batch, _ = scores.shape
+        dense_len = int(valid.shape[1])
+        cfg = self.dynamic_budget or {"min_budget": self.target_len, "target_budget": self.target_len, "max_budget": self.target_len}
+        min_k, target_k, max_k = int(cfg.get("min_budget", self.target_len)), int(cfg.get("target_budget", self.target_len)), int(cfg.get("max_budget", self.target_len))
+        indices = torch.zeros((batch, self.target_len, 1), dtype=torch.long, device=device)
+        weights = torch.ones((batch, self.target_len, 1), dtype=torch.float32, device=device)
+        positions = torch.zeros((batch, self.target_len), dtype=torch.float32, device=device)
+        transport = torch.zeros((batch, self.target_len, dense_len), dtype=torch.float32, device=device)
+        lengths = torch.zeros((batch,), dtype=torch.long, device=device)
+        metadata = []
+        for b in range(batch):
+            mask = candidate_valid[b].detach().cpu().tolist()
+            vals = scores[b].detach().float().cpu().tolist()
+            valid_idx = [i for i, ok in enumerate(mask) if ok]
+            utility = float(torch.sigmoid(scores[b][candidate_valid[b]]).mean().item()) if valid_idx else 0.5
+            k = min(len(valid_idx), dynamic_outer_k(utility, min_k=min_k, target_k=target_k, max_k=max_k))
+            chosen_local = bounded_monotone_local_exact_k([vals[i] for i in valid_idx], k, local_radius=max(1, int(getattr(self, "max_dense_gap", 1))))
+            chosen = sorted(valid_idx[i] for i in chosen_local)
+            lengths[b] = k
+            for j, cand in enumerate(chosen):
+                pos = int(candidate_dense_indices[b, cand].item())
+                indices[b, j, 0] = pos; positions[b, j] = float(pos); transport[b, j, pos] = 1.0
+            if k < self.target_len:
+                pad = chosen[-1] if chosen else valid_idx[0]
+                for j in range(k, self.target_len):
+                    pos = int(candidate_dense_indices[b, pad].item()); indices[b, j, 0] = pos; positions[b, j] = float(pos); transport[b, j, pos] = 1.0
+            metadata.append({"enabled": True, "mechanism": "dynamic_B", "outer_k": int(k), "f1": "endpoint_inclusive_integer_half_up_uniform", "f2": "nonce_derived_canonical_row_fisher_yates", "uses_gt": False, "uses_teacher": False, "uses_raw_prediction_cache": False})
+        return {"indices": indices, "weights": weights, "transport_weights": transport, "selected_positions": positions, "selected_output_valid_lengths": lengths, "selected_roles": [["dynamic_B"] * int(lengths[b].item()) + ["pad_repeat"] * (self.target_len-int(lengths[b].item())) for b in range(batch)], "raw_slot_dense_indices": [], "raw_slot_duplicate_rates": [], "raw_slot_unique_counts": [], "reader_fill_counts": [0]*batch, "st_active_row_counts": [0]*batch, "dynamic_budget_meta": metadata}
+
     def _coarse_actionness_scores(
         self,
         *,
@@ -3350,6 +3396,14 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             meta["pc_ot_mras_prebackbone_selector_support_status"] = self.selector_support_status
             selection_strategy = getattr(self, "selection_strategy", "slot_transport")
             meta["pc_ot_mras_prebackbone_selection_strategy"] = selection_strategy
+            if selection_strategy == "dynamic_B":
+                meta["duca_dynamic_b_stage"] = "pre_decoder_pre_nms_physical_coordinates"
+                meta["duca_dynamic_b_outer_k"] = int(selected_count)
+                meta["duca_dynamic_b_physical_positions"] = [int(pos) for pos in selected_prefix]
+                fps = float(meta.get("fps", meta.get("frame_rate", 1.0)) or 1.0)
+                enriched = attach_physical_timestamps({}, selected_prefix, fps=fps, window_start=float(meta.get("window_start", 0.0) or 0.0))
+                meta["duca_dynamic_b_physical_timestamps"] = enriched["duca_physical_timestamps"]
+                meta["duca_dynamic_b_timestamp_stage"] = enriched["duca_timestamp_stage"]
             hard_source_by_strategy = {
                 "frame_score_topk": "frame_selection_logits",
                 "frame_score_global_rank_st": "frame_selection_logits",
