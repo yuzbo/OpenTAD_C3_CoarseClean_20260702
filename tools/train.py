@@ -477,13 +477,15 @@ def main():
         raise ValueError(
             "formal registered work_dir is manifest-bound; --id must remain zero"
         )
-    elif os.path.exists(cfg.work_dir):
+    elif args.rank == 0 and os.path.exists(cfg.work_dir):
         raise FileExistsError(
             "formal registered training requires a fresh bound work_dir"
         )
     if args.rank == 0:
         create_folder(cfg.work_dir)
         save_config(args.config, cfg.work_dir)
+    if formal_binding is not None:
+        dist.barrier()
 
     # setup logger
     logger = setup_logger("Train", save_dir=cfg.work_dir, distributed_rank=args.rank)

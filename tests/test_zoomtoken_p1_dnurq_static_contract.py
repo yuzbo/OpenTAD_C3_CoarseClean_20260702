@@ -759,6 +759,17 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
                 {"status": "PASS_STORAGE_PREFLIGHT"},
             )
 
+    def test_formal_ddp_work_dir_is_created_once_then_synchronized(self):
+        source = (ROOT / "tools" / "train.py").read_text(encoding="utf-8")
+        rank_zero_guard = "elif args.rank == 0 and os.path.exists(cfg.work_dir):"
+        create = "if args.rank == 0:\n        create_folder(cfg.work_dir)"
+        synchronize = "if formal_binding is not None:\n        dist.barrier()"
+        self.assertIn(rank_zero_guard, source)
+        self.assertIn(create, source)
+        self.assertIn(synchronize, source)
+        self.assertLess(source.index(rank_zero_guard), source.index(create))
+        self.assertLess(source.index(create), source.index(synchronize))
+
     def test_q_postrun_accepts_global_dynamic_budget_without_target_k(self):
         self.assertNotIn("torch", sys.modules)
         validate_p1_q_routing_audit(_q_routing_audit())
