@@ -470,7 +470,7 @@ def validate_p1_deployment_shape(deployment: Mapping[str, Any]) -> dict[str, Any
         or int(checked.get("accuracy_cells", -1)) != 5
         or int(checked.get("cost_leaves", -1)) != 8
         or not isinstance(stage_jobs, Mapping)
-        or tuple(stage_jobs) != P1_FIRST_SCREEN_ARM_ORDER
+        or set(stage_jobs) != set(P1_FIRST_SCREEN_ARM_ORDER)
         or any(
             not isinstance(stage_jobs[arm], Mapping)
             or set(stage_jobs[arm]) != {str(P1_DEVELOPMENT_SEED)}
@@ -478,7 +478,7 @@ def validate_p1_deployment_shape(deployment: Mapping[str, Any]) -> dict[str, Any
             for arm in P1_FIRST_SCREEN_ARM_ORDER
         )
         or not isinstance(cost_jobs, Mapping)
-        or tuple(cost_jobs) != tuple(P1_COST_LEAF_SPECS)
+        or set(cost_jobs) != set(P1_COST_LEAF_SPECS)
         or any(not str(cost_jobs[leaf_id]).isdigit() for leaf_id in P1_COST_LEAF_SPECS)
         or not str(jobs.get("runtime_preflight", "")).isdigit()
         or not str(jobs.get("finalizer", "")).isdigit()

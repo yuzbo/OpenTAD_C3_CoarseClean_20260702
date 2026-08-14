@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source /etc/profile
 set -euo pipefail
 
 fail() {
@@ -17,7 +18,7 @@ TASK="${GEOROUTE_OFFICIAL_DEVELOPMENT_TASK:-accuracy}"
 IFS=',' read -r -a visible_gpus <<< "${CUDA_VISIBLE_DEVICES:-}"
 if [[ "${GEOROUTE_INNER_STEP:-0}" != "1" && "${#visible_gpus[@]}" -ne 2 ]]; then
   export GEOROUTE_INNER_STEP=1
-  exec srun --exact --ntasks=1 --gpus=2 --cpus-per-task=10 --mem=192000M \
+  exec srun --exact --ntasks=1 --gpus=2 --cpus-per-task=10 \
     bash "${ROOT}/scripts/run_georoute_official_development_stage_slurm.sh"
 fi
 IFS=',' read -r -a visible_gpus <<< "${CUDA_VISIBLE_DEVICES:-}"
@@ -38,6 +39,9 @@ if [[ "${MODE}" == "p1" ]]; then
   LOCK="${GEOROUTE_P1_RUNTIME_DEPENDENCY_LOCK:?set GEOROUTE_P1_RUNTIME_DEPENDENCY_LOCK}"
   ACTIVE_CONTAINER="${APPTAINER_CONTAINER:-${SINGULARITY_CONTAINER:-}}"
   if [[ -z "${ACTIVE_CONTAINER}" ]]; then
+    if command -v module >/dev/null 2>&1; then
+      module load apptainer/1.2.4
+    fi
     command -v apptainer >/dev/null 2>&1 || fail 'P1 requires Apptainer runtime entry'
     exec apptainer exec --nv --bind "${BASE}:${BASE}" "${IMAGE}" \
       bash "${ROOT}/scripts/run_georoute_official_development_stage_slurm.sh"

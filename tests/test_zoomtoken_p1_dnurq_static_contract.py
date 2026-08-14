@@ -614,6 +614,13 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         self.assertIn("--cpus-per-task", command)
         self.assertNotIn("--mem", command)
 
+        launcher = (
+            ROOT / "scripts" / "run_georoute_official_development_stage_slurm.sh"
+        ).read_text(encoding="utf-8")
+        self.assertLess(launcher.index("source /etc/profile"), launcher.index("set -euo pipefail"))
+        self.assertIn("module load apptainer/1.2.4", launcher)
+        self.assertNotIn("--mem=", launcher)
+
     def test_wrapper_switches_stop_at_the_production_selector_boundary(self):
         source = (
             ROOT / "opentad" / "models" / "backbones" / "georoute_wrapper.py"
