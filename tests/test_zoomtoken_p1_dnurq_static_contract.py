@@ -592,7 +592,27 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
             ),
             "georoute",
         )
-        self.assertEqual(p1_deployer.P1_STAGE_MEMORY_MIB, 96_000)
+
+    def test_p1_stage_uses_the_n16r4_site_default_memory_request(self):
+        completed = mock.Mock(returncode=0, stdout="123\n", stderr="")
+        with mock.patch.object(
+            p1_deployer.subprocess, "run", return_value=completed
+        ) as run:
+            self.assertEqual(
+                p1_deployer._sbatch(
+                    name="probe",
+                    script=Path("stage.sh"),
+                    logs=Path("logs"),
+                    exports={},
+                    stage=True,
+                    test_only=True,
+                ),
+                "TEST_ONLY_PASS",
+            )
+        command = run.call_args.args[0]
+        self.assertIn("--gpus", command)
+        self.assertIn("--cpus-per-task", command)
+        self.assertNotIn("--mem", command)
 
     def test_wrapper_switches_stop_at_the_production_selector_boundary(self):
         source = (
