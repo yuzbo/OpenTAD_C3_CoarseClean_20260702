@@ -396,7 +396,6 @@ def normalize_runtime_class(observations: Mapping[str, Any]) -> dict[str, Any]:
         "cuda_library_versions": {
             str(key): str(value) for key, value in sorted(libraries.items())
         },
-        "kernel_release": str(observations.get("kernel_release", "")).strip(),
     }
     if any(
         not value
@@ -411,7 +410,6 @@ def normalize_runtime_class(observations: Mapping[str, Any]) -> dict[str, Any]:
             runtime_class["framework"]["version"],
             runtime_class["framework"]["build_cuda"],
             runtime_class["framework"]["git_version"],
-            runtime_class["kernel_release"],
         )
     ):
         raise ValueError("normalized runtime class contains an empty identity")

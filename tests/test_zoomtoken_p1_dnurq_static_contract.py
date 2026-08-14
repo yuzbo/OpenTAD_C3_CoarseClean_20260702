@@ -42,6 +42,7 @@ from tools.bata.finalize_georoute_official_development import (
 )
 from tools.bata.georoute_experiment_contract import canonical_sha256
 from tools.bata import deploy_georoute_official_development as p1_deployer
+from tools.bata import georoute_official_development_stage_runner as p1_stage_runner
 from tools.bata.zoomtoken_scnr_steady_cost_contract_v001 import (
     P1_COST_LEAF_SPECS,
     P1_COST_RATIO_LIMIT,
@@ -668,11 +669,17 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         matching_leaf_observations = _observations()
         for row in matching_leaf_observations["gpu_rows"]:
             row["mig.mode.current"] = "[N/A]"
+        matching_leaf_observations["kernel_release"] = "5.15.0-other-site-patch"
         matching_leaf = build_runtime_attestation(
             matching_leaf_observations,
             phase="leaf",
         )
         validate_runtime_attestation(matching_leaf, reference=preflight)
+        self.assertEqual(
+            matching_leaf["raw_observations"]["kernel_release"],
+            "5.15.0-other-site-patch",
+        )
+        self.assertNotIn("kernel_release", matching_leaf["runtime_class"])
         self.assertEqual(preflight["runtime_class"]["gpu"]["mig_mode"], "N/A")
         self.assertNotIn("uuid", preflight["runtime_class"]["gpu"])
         self.assertNotIn("pci_bus_id", preflight["runtime_class"]["gpu"])
@@ -689,6 +696,22 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         mutated["runtime_class_fingerprint"] = "0" * 64
         with self.assertRaisesRegex(ValueError, "attestation is invalid"):
             validate_runtime_attestation(mutated, reference=preflight)
+
+    def test_stage_runner_consumes_outer_source_identity_without_inner_git(self):
+        expected = "a" * 40
+        with (
+            mock.patch.dict(
+                p1_stage_runner.os.environ,
+                {
+                    "GEOROUTE_SOURCE_IDENTITY_VERIFIED": "1",
+                    "GEOROUTE_EXPECTED_COMMIT": expected,
+                },
+                clear=False,
+            ),
+            mock.patch.object(p1_stage_runner.subprocess, "run") as run,
+        ):
+            self.assertEqual(p1_stage_runner._current_commit(), expected)
+        run.assert_not_called()
 
     def test_q_postrun_accepts_global_dynamic_budget_without_target_k(self):
         self.assertNotIn("torch", sys.modules)

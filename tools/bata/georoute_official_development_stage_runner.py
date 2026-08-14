@@ -96,6 +96,11 @@ def _inside(path: Path, root: Path) -> bool:
 
 
 def _current_commit() -> str:
+    if os.environ.get("GEOROUTE_SOURCE_IDENTITY_VERIFIED") == "1":
+        expected = os.environ.get("GEOROUTE_EXPECTED_COMMIT", "").strip().lower()
+        if len(expected) != 40 or any(character not in "0123456789abcdef" for character in expected):
+            raise RuntimeError("outer source identity receipt lacks a full commit")
+        return expected
     completed = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=ROOT,
