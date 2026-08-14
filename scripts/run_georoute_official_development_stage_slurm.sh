@@ -24,11 +24,17 @@ fi
 IFS=',' read -r -a visible_gpus <<< "${CUDA_VISIBLE_DEVICES:-}"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${#visible_gpus[@]}" -eq 2 ]] || \
   fail 'formal development requires two Slurm-visible GPUs'
-[[ -e "${ROOT}/.git" ]] || fail 'source root is not a git checkout'
-[[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || \
-  fail 'source commit mismatch'
-[[ -z "$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all)" ]] || \
-  fail 'source snapshot is not clean'
+ACTIVE_CONTAINER="${APPTAINER_CONTAINER:-${SINGULARITY_CONTAINER:-}}"
+if [[ "${MODE}" == "p1" && -n "${ACTIVE_CONTAINER}" ]]; then
+  [[ "${GEOROUTE_SOURCE_IDENTITY_VERIFIED:-0}" == "1" ]] || \
+    fail 'container entry lacks outer source identity verification'
+else
+  [[ -e "${ROOT}/.git" ]] || fail 'source root is not a git checkout'
+  [[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || \
+    fail 'source commit mismatch'
+  [[ -z "$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all)" ]] || \
+    fail 'source snapshot is not clean'
+fi
 case "${RUN_ROOT}" in
   /data/run01/sczc063/yuzibo/*) ;;
   *) fail 'run root leaves remote write boundary' ;;
@@ -37,13 +43,14 @@ esac
 if [[ "${MODE}" == "p1" ]]; then
   IMAGE="${GEOROUTE_P1_RUNTIME_CONTAINER_IMAGE:?set GEOROUTE_P1_RUNTIME_CONTAINER_IMAGE}"
   LOCK="${GEOROUTE_P1_RUNTIME_DEPENDENCY_LOCK:?set GEOROUTE_P1_RUNTIME_DEPENDENCY_LOCK}"
-  ACTIVE_CONTAINER="${APPTAINER_CONTAINER:-${SINGULARITY_CONTAINER:-}}"
   if [[ -z "${ACTIVE_CONTAINER}" ]]; then
     if command -v module >/dev/null 2>&1; then
       module load apptainer/1.2.4
     fi
     command -v apptainer >/dev/null 2>&1 || fail 'P1 requires Apptainer runtime entry'
-    exec apptainer exec --nv --bind "${BASE}:${BASE}" "${IMAGE}" \
+    exec apptainer exec --nv \
+      --env GEOROUTE_SOURCE_IDENTITY_VERIFIED=1 \
+      --bind "${BASE}:${BASE}" "${IMAGE}" \
       bash "${ROOT}/scripts/run_georoute_official_development_stage_slurm.sh"
   fi
   [[ "$(readlink -f "${ACTIVE_CONTAINER}")" == "$(readlink -f "${IMAGE}")" ]] || \

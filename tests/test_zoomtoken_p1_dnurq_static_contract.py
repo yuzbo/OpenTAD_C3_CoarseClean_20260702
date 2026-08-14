@@ -619,6 +619,14 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertLess(launcher.index("source /etc/profile"), launcher.index("set -euo pipefail"))
         self.assertIn("module load apptainer/1.2.4", launcher)
+        self.assertIn(
+            "--env GEOROUTE_SOURCE_IDENTITY_VERIFIED=1",
+            launcher,
+        )
+        self.assertIn(
+            "container entry lacks outer source identity verification",
+            launcher,
+        )
         self.assertNotIn("--mem=", launcher)
 
     def test_wrapper_switches_stop_at_the_production_selector_boundary(self):
