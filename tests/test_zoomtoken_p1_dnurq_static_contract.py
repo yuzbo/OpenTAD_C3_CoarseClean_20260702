@@ -25,6 +25,7 @@ from tools.bata.georoute_official_comparable_contract import (
     P1_WINDOW_TOKEN_BUDGET,
     p1_arm_spec,
     p1_source_config_relative_path,
+    require_clean_formal_checkout,
 )
 from tools.bata.georoute_p1_runtime_attestor import (
     _NVIDIA_QUERY_FIELDS,
@@ -712,6 +713,24 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         ):
             self.assertEqual(p1_stage_runner._current_commit(), expected)
             p1_stage_runner._assert_clean_source_snapshot()
+        run.assert_not_called()
+
+    def test_train_and_test_consume_outer_source_identity_without_inner_git(self):
+        expected = "b" * 40
+        with (
+            mock.patch.dict(
+                p1_stage_runner.os.environ,
+                {
+                    "GEOROUTE_SOURCE_IDENTITY_VERIFIED": "1",
+                    "GEOROUTE_EXPECTED_COMMIT": expected,
+                },
+                clear=False,
+            ),
+            mock.patch(
+                "tools.bata.georoute_official_comparable_contract.subprocess.run"
+            ) as run,
+        ):
+            require_clean_formal_checkout(expected_commit=expected, root=ROOT)
         run.assert_not_called()
 
     def test_q_postrun_accepts_global_dynamic_budget_without_target_k(self):

@@ -890,6 +890,17 @@ def require_clean_formal_checkout(
     expected_commit = _full_hex(
         expected_commit, length=40, name="expected_commit"
     )
+    if os.environ.get("GEOROUTE_SOURCE_IDENTITY_VERIFIED") == "1":
+        outer_commit = _full_hex(
+            os.environ.get("GEOROUTE_EXPECTED_COMMIT", ""),
+            length=40,
+            name="GEOROUTE_EXPECTED_COMMIT",
+        )
+        if outer_commit != expected_commit:
+            raise RuntimeError(
+                "formal GeoRoute development outer source identity changed"
+            )
+        return
     head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=root,
