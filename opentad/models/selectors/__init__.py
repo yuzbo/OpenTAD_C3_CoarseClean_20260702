@@ -6,6 +6,13 @@ from .pc_ot_mras_prebackbone_frame_selector import (
     PCOTMRASPreBackboneFrameSelector,
 )
 from .pc_ot_mras_reader import PCOTMRASReader, ProcessConditionedOrderedTransportMRASReader
+from .duca_dynamic_physical import (
+    attach_physical_timestamps,
+    bounded_monotone_local_exact_k,
+    dynamic_outer_k,
+    f1_uniform_positions,
+    f2_nonce_shuffle,
+)
 
 __all__ = [
     "LowCostAcquisitionBrowser",
@@ -16,4 +23,9 @@ __all__ = [
     "ValueToBudgetPCOTMRASController",
     "PCOTMRASReader",
     "ProcessConditionedOrderedTransportMRASReader",
+    "dynamic_outer_k",
+    "f1_uniform_positions",
+    "f2_nonce_shuffle",
+    "bounded_monotone_local_exact_k",
+    "attach_physical_timestamps",
 ]
