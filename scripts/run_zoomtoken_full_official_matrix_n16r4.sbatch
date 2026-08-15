@@ -18,25 +18,27 @@ export ZOOMTOKEN_FULL_RUN_ROOT="${ZOOMTOKEN_FULL_RUN_ROOT:?set ZOOMTOKEN_FULL_RU
 IMAGE="${ZOOMTOKEN_CONTAINER_IMAGE:-${BASE}/containers/zoomtoken_p1_ubi9_20260815.sif}"
 
 if [[ -z "${APPTAINER_CONTAINER:-${SINGULARITY_CONTAINER:-}}" ]]; then
+  [[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || {
+    echo "source commit mismatch" >&2
+    exit 2
+  }
+  [[ -z "$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all)" ]] || {
+    echo "source checkout is not clean" >&2
+    exit 2
+  }
+  export ZOOMTOKEN_SOURCE_VERIFIED=1
   module load apptainer/1.2.4
   exec apptainer exec --nv --bind "${BASE}:${BASE}" "${IMAGE}" \
     bash "${ROOT}/scripts/run_zoomtoken_full_official_matrix_n16r4.sbatch"
 fi
 
-module load cuda/11.8
-module load miniforge3/24.11
+[[ "${ZOOMTOKEN_SOURCE_VERIFIED:-0}" == "1" ]] || {
+  echo "source checkout was not verified before entering the container" >&2
+  exit 2
+}
 source "${BASE}/conda_envs/opentad/bin/activate"
 export PYTHONNOUSERSITE=1
 export PYTHONDONTWRITEBYTECODE=1
-
-[[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || {
-  echo "source commit mismatch" >&2
-  exit 2
-}
-[[ -z "$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all)" ]] || {
-  echo "source checkout is not clean" >&2
-  exit 2
-}
 
 arms=(DO DN U R Q)
 configs=(
