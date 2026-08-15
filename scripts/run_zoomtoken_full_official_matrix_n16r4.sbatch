@@ -51,6 +51,7 @@ configs=(
 arm="${arms[${SLURM_ARRAY_TASK_ID}]}"
 config="${ROOT}/configs/adatad/thumos/${configs[${SLURM_ARRAY_TASK_ID}]}"
 work_dir="${ZOOMTOKEN_FULL_RUN_ROOT}/${arm}"
+master_port="$((20000 + (SLURM_ARRAY_JOB_ID % 20000) + SLURM_ARRAY_TASK_ID))"
 [[ ! -e "${work_dir}" ]] || {
   echo "refusing to overwrite ${work_dir}" >&2
   exit 2
@@ -58,7 +59,7 @@ work_dir="${ZOOMTOKEN_FULL_RUN_ROOT}/${arm}"
 mkdir -p "${ZOOMTOKEN_FULL_RUN_ROOT}/logs"
 cd "${ROOT}"
 
-torchrun --standalone --nnodes=1 --nproc_per_node=2 \
+torchrun --nnodes=1 --nproc_per_node=2 --master_addr=127.0.0.1 --master_port="${master_port}" \
   tools/train.py "${config}" --seed 3407 --id 0 \
   2>&1 | tee "${ZOOMTOKEN_FULL_RUN_ROOT}/logs/${arm}_train.log"
 
@@ -67,6 +68,6 @@ checkpoint="${work_dir}/checkpoint/epoch_59.pth"
   echo "missing final checkpoint ${checkpoint}" >&2
   exit 2
 }
-torchrun --standalone --nnodes=1 --nproc_per_node=2 \
+torchrun --nnodes=1 --nproc_per_node=2 --master_addr=127.0.0.1 --master_port="${master_port}" \
   tools/test.py "${config}" --checkpoint "${checkpoint}" --seed 3407 --id 0 \
   2>&1 | tee "${ZOOMTOKEN_FULL_RUN_ROOT}/logs/${arm}_test.log"
