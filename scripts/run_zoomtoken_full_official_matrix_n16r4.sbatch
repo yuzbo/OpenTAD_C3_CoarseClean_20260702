@@ -16,6 +16,7 @@ ROOT="${ZOOMTOKEN_SOURCE_ROOT:?set ZOOMTOKEN_SOURCE_ROOT}"
 EXPECTED_COMMIT="${ZOOMTOKEN_EXPECTED_COMMIT:?set ZOOMTOKEN_EXPECTED_COMMIT}"
 export ZOOMTOKEN_FULL_RUN_ROOT="${ZOOMTOKEN_FULL_RUN_ROOT:?set ZOOMTOKEN_FULL_RUN_ROOT}"
 IMAGE="${ZOOMTOKEN_CONTAINER_IMAGE:-${BASE}/containers/zoomtoken_p1_ubi9_20260815.sif}"
+seed="${ZOOMTOKEN_SEED:-3407}"
 
 if [[ -z "${APPTAINER_CONTAINER:-${SINGULARITY_CONTAINER:-}}" ]]; then
   [[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || {
@@ -52,6 +53,10 @@ arm="${arms[${SLURM_ARRAY_TASK_ID}]}"
 config="${ROOT}/configs/adatad/thumos/${configs[${SLURM_ARRAY_TASK_ID}]}"
 work_dir="${ZOOMTOKEN_FULL_RUN_ROOT}/${arm}"
 master_port="$((20000 + (SLURM_ARRAY_JOB_ID % 20000) + SLURM_ARRAY_TASK_ID))"
+cfg_options=()
+if [[ "${arm}" != "DO" ]]; then
+  cfg_options=(--cfg-options "model.backbone.custom.georoute_random_seed=${seed}")
+fi
 [[ ! -e "${work_dir}" ]] || {
   echo "refusing to overwrite ${work_dir}" >&2
   exit 2
@@ -60,7 +65,7 @@ mkdir -p "${ZOOMTOKEN_FULL_RUN_ROOT}/logs"
 cd "${ROOT}"
 
 torchrun --nnodes=1 --nproc_per_node=2 --master_addr=127.0.0.1 --master_port="${master_port}" \
-  tools/train.py "${config}" --seed 3407 --id 0 \
+  tools/train.py "${config}" --seed "${seed}" --id 0 "${cfg_options[@]}" \
   2>&1 | tee "${ZOOMTOKEN_FULL_RUN_ROOT}/logs/${arm}_train.log"
 
 checkpoint="${work_dir}/checkpoint/epoch_59.pth"
@@ -69,5 +74,5 @@ checkpoint="${work_dir}/checkpoint/epoch_59.pth"
   exit 2
 }
 torchrun --nnodes=1 --nproc_per_node=2 --master_addr=127.0.0.1 --master_port="${master_port}" \
-  tools/test.py "${config}" --checkpoint "${checkpoint}" --seed 3407 --id 0 \
+  tools/test.py "${config}" --checkpoint "${checkpoint}" --seed "${seed}" --id 0 "${cfg_options[@]}" \
   2>&1 | tee "${ZOOMTOKEN_FULL_RUN_ROOT}/logs/${arm}_test.log"
