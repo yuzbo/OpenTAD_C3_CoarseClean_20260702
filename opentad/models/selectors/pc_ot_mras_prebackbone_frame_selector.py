@@ -1040,6 +1040,9 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         coarse_uncertainty_weight: float = 0.75,
         coarse_change_weight: float = 0.75,
         dynamic_budget: Mapping[str, Any] | None = None,
+        variable_length_output: bool = False,
+        physical_dense_reconstruction: bool = False,
+        variable_compute_multiple: int = 16,
         meta_source: str = "pc_ot_mras_prebackbone_e2e_frame_selector",
     ) -> None:
         super().__init__()
@@ -1140,6 +1143,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             "frame_score_global_rank_st",
             "interval_boundary_packet",
             "coarse_actionness_uncertainty",
+            "uniform_exact_k",
             "dynamic_B",
         ):
             raise ValueError(
@@ -1227,6 +1231,19 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         self.coarse_uncertainty_weight = float(coarse_uncertainty_weight)
         self.coarse_change_weight = float(coarse_change_weight)
         self.dynamic_budget = self._normalize_dynamic_budget_config(dynamic_budget)
+        self.variable_length_output = bool(variable_length_output)
+        self.physical_dense_reconstruction = bool(physical_dense_reconstruction or variable_length_output)
+        self.variable_compute_multiple = int(variable_compute_multiple)
+        if self.variable_compute_multiple <= 0:
+            raise ValueError("variable_compute_multiple must be positive")
+        if self.variable_length_output:
+            if self.selection_strategy != "dynamic_B":
+                raise ValueError("variable_length_output currently requires selection_strategy='dynamic_B'")
+            if not self.dynamic_budget:
+                raise ValueError("variable_length_output requires an enabled dynamic_budget")
+            for key in ("min_budget", "target_budget", "max_budget"):
+                if int(self.dynamic_budget[key]) % self.variable_compute_multiple != 0:
+                    raise ValueError(f"dynamic_budget.{key} must be divisible by variable_compute_multiple")
         self.meta_source = str(meta_source)
         self._metadata_dump_count = 0
 
@@ -1304,14 +1321,19 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             candidate_dense_indices=candidate_dense_indices,
             training=training,
         )
+        if self.physical_dense_reconstruction and batch != 1:
+            raise ValueError("physical-time dense reconstruction currently requires batch_size=1")
         selected_inputs = self._apply_sparse_transport(
             inputs,
             plan["indices"],
             plan["weights"],
             transport_weights=plan.get("transport_weights") if training else None,
         )
-        output_axis = torch.arange(self.target_len, device=masks.device)[None, :]
-        selected_masks = output_axis < plan["selected_output_valid_lengths"][:, None].to(device=masks.device)
+        if self.physical_dense_reconstruction:
+            selected_masks = valid
+        else:
+            output_axis = torch.arange(plan["indices"].shape[1], device=masks.device)[None, :]
+            selected_masks = output_axis < plan["selected_output_valid_lengths"][:, None].to(device=masks.device)
         metas = self._write_selected_axis_meta(
             metas=metas,
             selected_positions=plan["selected_positions"],
@@ -1529,6 +1551,12 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                 candidate_valid=candidate_valid,
                 candidate_dense_indices=candidate_dense_indices,
                 training=training,
+            )
+        if getattr(self, "selection_strategy", "slot_transport") == "uniform_exact_k":
+            return self._uniform_exact_k_transport_plan(
+                valid=valid,
+                candidate_valid=candidate_valid,
+                candidate_dense_indices=candidate_dense_indices,
             )
         if getattr(self, "selection_strategy", "slot_transport") == "coarse_actionness_uncertainty":
             return self._coarse_actionness_uncertainty_transport_plan(
@@ -2528,10 +2556,135 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         }
 
     def _dynamic_b_transport_plan(self, *, reader_outputs, valid, candidate_valid, candidate_dense_indices, training):
-        """Deploy-only dynamic-B: outer K plus bounded monotone/local exact-K transport."""
+        """Dynamic outer K with arbitrary learned frame acquisition in physical time."""
         scores = reader_outputs.get("frame_selection_logits", reader_outputs.get("actionness_logits", reader_outputs.get("action_logits")))
         if not torch.is_tensor(scores) or tuple(scores.shape) != tuple(candidate_valid.shape):
             raise ValueError("dynamic_B requires frame-selection scores matching candidate axis")
+        if not self.variable_length_output:
+            return self._legacy_dynamic_b_transport_plan(
+                reader_outputs=reader_outputs,
+                valid=valid,
+                candidate_valid=candidate_valid,
+                candidate_dense_indices=candidate_dense_indices,
+                training=training,
+            )
+        device = scores.device
+        batch, _ = scores.shape
+        if batch != 1:
+            raise ValueError("dynamic_B variable compute requires batch_size=1")
+        dense_len = int(valid.shape[1])
+        budget_plan = self._dynamic_budget_plan(
+            reader_outputs=reader_outputs,
+            frame_scores=scores,
+            candidate_valid=candidate_valid,
+        )
+        if budget_plan is None:
+            raise ValueError("dynamic_B variable compute requires an enabled dynamic budget")
+        k = int(budget_plan["budgets"][0].item())
+        k = min(k, int(candidate_valid[0].sum().item()))
+        if k <= 0 or k % self.variable_compute_multiple != 0:
+            raise ValueError("resolved dynamic_B budget must be positive and clip-aligned")
+
+        masked_scores = scores[0].float().masked_fill(~candidate_valid[0], torch.finfo(torch.float32).min)
+        ranked = torch.argsort(masked_scores, descending=True, stable=True)
+        ranked = ranked[candidate_valid[0].gather(0, ranked)][:k]
+        dense_positions = candidate_dense_indices[0].gather(0, ranked)
+        order = torch.argsort(dense_positions, stable=True)
+        chosen_candidates = ranked.gather(0, order)
+        dense_positions = dense_positions.gather(0, order)
+        if int(torch.unique(dense_positions).numel()) != k:
+            raise ValueError("dynamic_B requires unique selected physical frames")
+
+        indices = dense_positions.view(1, k, 1).long()
+        weights = torch.ones((1, k, 1), dtype=torch.float32, device=device)
+        positions = dense_positions.view(1, k).float()
+        transport = torch.zeros((1, k, dense_len), dtype=torch.float32, device=device)
+        rank_by_candidate = {int(candidate.item()): rank for rank, candidate in enumerate(ranked)}
+        for out_idx, candidate in enumerate(chosen_candidates):
+            candidate_idx = int(candidate.item())
+            pos = int(dense_positions[out_idx].item())
+            hard = torch.zeros((dense_len,), dtype=torch.float32, device=device)
+            hard[pos] = 1.0
+            if self.straight_through_detector_loss and training:
+                soft_candidate = self._rank_transport_candidate_distribution(
+                    scores=scores[0],
+                    candidate_valid=candidate_valid[0],
+                    candidate_dense_indices=candidate_dense_indices[0],
+                    candidate_idx=candidate_idx,
+                    hard_rank_position=rank_by_candidate[candidate_idx],
+                    topk_budget=k,
+                    global_rank_cache=None,
+                    name="dynamic_B",
+                )
+                soft_dense = self._scatter_candidate_distribution_to_dense(
+                    candidate_distribution=soft_candidate,
+                    candidate_dense_indices=candidate_dense_indices[0],
+                    dense_len=dense_len,
+                    device=device,
+                )
+                scale = float(self.frame_score_st_gradient_scale)
+                transport[0, out_idx] = hard + scale * (soft_dense - soft_dense.detach())
+            else:
+                transport[0, out_idx] = hard
+
+        metadata = [dict(budget_plan["metadata"][0])]
+        metadata[0].update(
+            mechanism="dynamic_B_arbitrary_frame_acquisition",
+            outer_k=k,
+            variable_backbone_compute=True,
+            physical_time_preserved=True,
+        )
+        return {
+            "indices": indices,
+            "weights": weights,
+            "transport_weights": transport,
+            "selected_positions": positions,
+            "selected_output_valid_lengths": torch.tensor([k], dtype=torch.long, device=device),
+            "selected_roles": [["dynamic_B"] * k],
+            "raw_slot_dense_indices": [dense_positions.detach().cpu().tolist()],
+            "raw_slot_duplicate_rates": [0.0],
+            "raw_slot_unique_counts": [k],
+            "reader_fill_counts": [0],
+            "st_active_row_counts": [k if training and self.straight_through_detector_loss else 0],
+            "dynamic_budget_meta": metadata,
+        }
+
+    def _uniform_exact_k_transport_plan(self, *, valid, candidate_valid, candidate_dense_indices):
+        batch = int(valid.shape[0])
+        if batch != 1:
+            raise ValueError("uniform exact-K physical reconstruction currently requires batch_size=1")
+        device = candidate_dense_indices.device
+        valid_candidates = candidate_dense_indices[0][candidate_valid[0]]
+        k = min(self.target_len, int(valid_candidates.numel()))
+        if k <= 0:
+            raise ValueError("uniform exact-K requires at least one valid candidate")
+        if k == 1:
+            offsets = torch.zeros((1,), dtype=torch.long, device=device)
+        else:
+            offsets = torch.linspace(0, int(valid_candidates.numel()) - 1, steps=k, device=device).round().long()
+        positions = valid_candidates.gather(0, offsets).long()
+        if int(torch.unique(positions).numel()) != k:
+            raise ValueError("uniform exact-K must select unique physical frames")
+        transport = torch.zeros((1, k, int(valid.shape[1])), dtype=torch.float32, device=device)
+        transport[0, torch.arange(k, device=device), positions] = 1.0
+        return {
+            "indices": positions.view(1, k, 1),
+            "weights": torch.ones((1, k, 1), dtype=torch.float32, device=device),
+            "transport_weights": transport,
+            "selected_positions": positions.view(1, k).float(),
+            "selected_output_valid_lengths": torch.tensor([k], dtype=torch.long, device=device),
+            "selected_roles": [["uniform_exact_k"] * k],
+            "raw_slot_dense_indices": [positions.detach().cpu().tolist()],
+            "raw_slot_duplicate_rates": [0.0],
+            "raw_slot_unique_counts": [k],
+            "reader_fill_counts": [0],
+            "st_active_row_counts": [0],
+        }
+
+    def _legacy_dynamic_b_transport_plan(self, *, reader_outputs, valid, candidate_valid, candidate_dense_indices, training):
+        """Fixed-shape compatibility path for earlier static protocol fixtures."""
+        del training
+        scores = reader_outputs.get("frame_selection_logits", reader_outputs.get("actionness_logits", reader_outputs.get("action_logits")))
         device = scores.device
         batch, _ = scores.shape
         dense_len = int(valid.shape[1])
@@ -3305,21 +3458,22 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         batch, _dense_len, flat_dim = flat.shape
         _require_finite(flat, "sparse transport dense inputs")
         _require_finite(weights, "sparse transport gather weights")
-        if indices.ndim != 3 or indices.shape[:2] != (batch, self.target_len):
-            raise ValueError("sparse transport indices must be [B,target_len,K]")
+        if indices.ndim != 3 or int(indices.shape[0]) != batch:
+            raise ValueError("sparse transport indices must be [B,output_len,K]")
+        output_len = int(indices.shape[1])
         if tuple(weights.shape) != tuple(indices.shape):
             raise ValueError("sparse transport weights must match indices")
         if bool((indices < 0).any().item()) or bool((indices >= int(_dense_len)).any().item()):
             raise ValueError("sparse transport indices out of dense input range")
-        out = torch.zeros((batch, self.target_len, flat_dim), dtype=flat.dtype, device=flat.device)
+        out = torch.zeros((batch, output_len, flat_dim), dtype=flat.dtype, device=flat.device)
         for item_idx in range(indices.shape[-1]):
-            gather_index = indices[:, :, item_idx].unsqueeze(-1).expand(batch, self.target_len, flat_dim)
+            gather_index = indices[:, :, item_idx].unsqueeze(-1).expand(batch, output_len, flat_dim)
             gathered = flat.gather(dim=1, index=gather_index)
             out = out + gathered * weights[:, :, item_idx].unsqueeze(-1)
         if transport_weights is not None:
             transport_weights = transport_weights.to(dtype=flat.dtype)
-            if tuple(transport_weights.shape) != (batch, self.target_len, int(_dense_len)):
-                raise ValueError("transport_weights must be [B,target_len,dense_len]")
+            if tuple(transport_weights.shape) != (batch, output_len, int(_dense_len)):
+                raise ValueError("transport_weights must be [B,output_len,dense_len]")
             _require_finite(transport_weights, "sparse transport straight-through weights")
             if self.st_surrogate_mode == "full_flat":
                 surrogate = torch.bmm(transport_weights, flat.detach())
@@ -3404,6 +3558,12 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                 enriched = attach_physical_timestamps({}, selected_prefix, fps=fps, window_start=float(meta.get("window_start", 0.0) or 0.0))
                 meta["duca_dynamic_b_physical_timestamps"] = enriched["duca_physical_timestamps"]
                 meta["duca_dynamic_b_timestamp_stage"] = enriched["duca_timestamp_stage"]
+                meta["duca_dynamic_b_variable_compute"] = bool(self.variable_length_output)
+                meta["duca_dynamic_b_dense_reconstruction_len"] = int(self.dense_window_size)
+            if self.physical_dense_reconstruction:
+                meta["duca_sparse_variable_compute"] = True
+                meta["duca_sparse_physical_positions"] = [int(pos) for pos in selected_prefix]
+                meta["duca_sparse_dense_reconstruction_len"] = int(self.dense_window_size)
             hard_source_by_strategy = {
                 "frame_score_topk": "frame_selection_logits",
                 "frame_score_global_rank_st": "frame_selection_logits",

@@ -49,6 +49,11 @@ class BackboneWrapper(nn.Module):
         # 5. freeze_backbone: whether to freeze the backbone, default is False
         self.freeze_backbone = getattr(custom_cfg, "freeze_backbone", False)
 
+        dynamic_cfg = getattr(custom_cfg, "dynamic_sparse_temporal", None)
+        self.dynamic_sparse_temporal = dict(dynamic_cfg) if dynamic_cfg is not None else None
+        if self.dynamic_sparse_temporal is not None and not bool(self.dynamic_sparse_temporal.get("enabled", False)):
+            self.dynamic_sparse_temporal = None
+
         print("freeze_backbone: {}, norm_eval: {}".format(self.freeze_backbone, self.norm_eval))
 
         # 6. whether to use temporal activation checkpointing
@@ -63,7 +68,7 @@ class BackboneWrapper(nn.Module):
             self.temporal_checkpointing_chunk_num = custom_cfg.temporal_checkpointing_chunk_num
             self.temporal_checkpointing_chunk_dim = custom_cfg.temporal_checkpointing_chunk_dim
 
-    def forward(self, frames, masks=None):
+    def forward(self, frames, masks=None, metas=None):
         # two types: snippet or frame
 
         # snippet: 3D backbone, [bs, T, 3, clip_len, H, W]
@@ -78,6 +83,9 @@ class BackboneWrapper(nn.Module):
             data_samples=None,
             training=False,  # for blending, which is not used in openTAD
         )
+
+        if self.dynamic_sparse_temporal is not None and self._dynamic_sparse_requested(metas):
+            return self._forward_dynamic_sparse_temporal(frames, masks=masks, metas=metas)
 
         # pre_processing_pipeline:
         if self.pre_processing_pipeline is not None:
@@ -122,6 +130,115 @@ class BackboneWrapper(nn.Module):
         # make sure detector has the float32 input
         features = features.to(torch.float32)
         return features
+
+    @staticmethod
+    def _dynamic_sparse_requested(metas):
+        return bool(
+            isinstance(metas, (list, tuple))
+            and metas
+            and all(bool(meta.get("duca_sparse_variable_compute", False)) for meta in metas)
+        )
+
+    def _run_backbone(self, frames):
+        if self.freeze_backbone:
+            with torch.no_grad():
+                if self.use_temporal_checkpointing:
+                    return self.temporal_checkpointing(
+                        frames,
+                        self.temporal_checkpointing_chunk_num,
+                        self.temporal_checkpointing_chunk_dim,
+                    )
+                return self.model.backbone(frames)
+        if self.use_temporal_checkpointing:
+            return self.temporal_checkpointing(
+                frames,
+                self.temporal_checkpointing_chunk_num,
+                self.temporal_checkpointing_chunk_dim,
+            )
+        return self.model.backbone(frames)
+
+    def _forward_dynamic_sparse_temporal(self, frames, *, masks, metas):
+        cfg = self.dynamic_sparse_temporal
+        clip_len = int(cfg.get("clip_len", 16))
+        tubelet_size = int(cfg.get("tubelet_size", 2))
+        output_len = int(cfg.get("output_len", 768))
+        if frames.ndim != 6:
+            raise ValueError("dynamic sparse temporal backbone expects [B,N,C,K,H,W]")
+        batch, num_views, channels, selected_len, height, width = frames.shape
+        if batch != 1:
+            raise ValueError("dynamic sparse temporal backbone currently requires batch_size=1")
+        if selected_len <= 0 or selected_len % clip_len != 0:
+            raise ValueError("selected frame count must be positive and divisible by clip_len")
+        if clip_len % tubelet_size != 0:
+            raise ValueError("clip_len must be divisible by tubelet_size")
+        if masks is None or tuple(masks.shape) != (batch, output_len):
+            raise ValueError("dynamic sparse temporal backbone requires the original dense mask")
+
+        chunks = selected_len // clip_len
+        packed = frames.reshape(batch, num_views, channels, chunks, clip_len, height, width)
+        packed = packed.permute(0, 3, 1, 2, 4, 5, 6).reshape(
+            batch * chunks * num_views,
+            channels,
+            clip_len,
+            height,
+            width,
+        )
+        features = self._run_backbone(packed)
+        if isinstance(features, (tuple, list)):
+            features = torch.cat(
+                [self._pool_dynamic_sparse_feature(item, batch, chunks, num_views) for item in features],
+                dim=1,
+            )
+        else:
+            features = self._pool_dynamic_sparse_feature(features, batch, chunks, num_views)
+
+        positions = torch.as_tensor(
+            metas[0].get("duca_sparse_physical_positions", []),
+            device=features.device,
+            dtype=features.dtype,
+        )
+        if positions.numel() != selected_len:
+            raise ValueError("selected physical-position metadata must match selected frame count")
+        if bool((positions[1:] <= positions[:-1]).any().item()):
+            raise ValueError("selected physical positions must be strictly increasing")
+        token_positions = positions.reshape(-1, tubelet_size).mean(dim=1)
+        if int(token_positions.numel()) != int(features.shape[-1]):
+            raise ValueError("backbone temporal features do not match selected tubelet positions")
+        features = self._interpolate_irregular_time(features, token_positions, output_len)
+        features = features * masks.unsqueeze(1).detach().float()
+        metas[0]["duca_dynamic_b_backbone_input_frames"] = int(selected_len)
+        metas[0]["duca_dynamic_b_backbone_dense_equivalent_frames"] = int(output_len)
+        metas[0]["duca_dynamic_b_true_compute_reduction"] = bool(selected_len < output_len)
+        metas[0]["duca_dynamic_b_feature_reconstruction"] = "linear_physical_time_to_dense_axis"
+        return features.to(torch.float32)
+
+    @staticmethod
+    def _pool_dynamic_sparse_feature(features, batch, chunks, num_views):
+        if features.ndim != 5:
+            raise ValueError("dynamic sparse VideoMAE features must be [B,C,T,H,W]")
+        channels, tubelets, feat_h, feat_w = features.shape[1:]
+        features = features.reshape(batch, chunks, num_views, channels, tubelets, feat_h, feat_w)
+        features = features.mean(dim=(2, 5, 6))
+        return features.permute(0, 2, 1, 3).reshape(batch, channels, chunks * tubelets)
+
+    @staticmethod
+    def _interpolate_irregular_time(features, positions, output_len):
+        if features.ndim != 3 or positions.ndim != 1:
+            raise ValueError("irregular interpolation expects [B,C,T] features and [T] positions")
+        if int(features.shape[-1]) != int(positions.numel()):
+            raise ValueError("feature and position lengths must match")
+        target = torch.arange(output_len, device=features.device, dtype=features.dtype)
+        right = torch.searchsorted(positions.contiguous(), target.contiguous())
+        right = right.clamp(max=int(positions.numel()) - 1)
+        left = (right - 1).clamp(min=0)
+        left_pos = positions[left]
+        right_pos = positions[right]
+        denom = (right_pos - left_pos).clamp_min(torch.finfo(features.dtype).eps)
+        weight = torch.where(right == left, torch.zeros_like(target), (target - left_pos) / denom)
+        weight = weight.clamp(0.0, 1.0).view(1, 1, -1)
+        left_feat = features.index_select(-1, left)
+        right_feat = features.index_select(-1, right)
+        return left_feat + (right_feat - left_feat) * weight
 
     def tensor_to_list(self, tensor):
         return [t for t in tensor]

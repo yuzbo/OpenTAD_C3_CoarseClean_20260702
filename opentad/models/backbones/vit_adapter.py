@@ -26,6 +26,7 @@ class Adapter(BaseModule):
         kernel_size: int = 3,
         dilation: int = 1,
         temporal_size: int = 384,
+        allow_variable_temporal_size: bool = False,
     ) -> None:
         super().__init__()
 
@@ -33,6 +34,7 @@ class Adapter(BaseModule):
 
         # temporal depth-wise convolution
         self.temporal_size = temporal_size
+        self.allow_variable_temporal_size = bool(allow_variable_temporal_size)
         self.dwconv = nn.Conv1d(
             hidden_dims,
             hidden_dims,
@@ -65,7 +67,12 @@ class Adapter(BaseModule):
 
         # temporal depth-wise convolution
         B, N, C = x.shape  # 48, 8*10*10, 384
-        attn = x.reshape(-1, self.temporal_size, h, w, x.shape[-1])  # [b,t,h,w,c]  [1,384,10,10,384]
+        temporal_size = self.temporal_size
+        tokens_per_time = int(h) * int(w)
+        total_temporal = int(x.shape[0]) * int(x.shape[1]) // tokens_per_time
+        if self.allow_variable_temporal_size and total_temporal % temporal_size != 0:
+            temporal_size = total_temporal
+        attn = x.reshape(-1, temporal_size, h, w, x.shape[-1])  # [b,t,h,w,c]
         attn = attn.permute(0, 2, 3, 4, 1).flatten(0, 2)  # [b*h*w,c,t] [1*10*10,384,384]
         attn = self.dwconv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
         attn = self.conv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
@@ -584,6 +591,7 @@ class Block(BaseModule):
         use_adapter: bool = False,
         adapter_mlp_ratio: float = 0.25,
         temporal_size: int = 384,
+        allow_variable_temporal_size: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(init_cfg=init_cfg)
@@ -621,6 +629,7 @@ class Block(BaseModule):
                 kernel_size=3,
                 dilation=1,
                 temporal_size=temporal_size,
+                allow_variable_temporal_size=allow_variable_temporal_size,
                 mlp_ratio=adapter_mlp_ratio,
             )
 
@@ -755,6 +764,7 @@ class VisionTransformerAdapter(BaseModule):
         with_cp: bool = False,
         adapter_mlp_ratio: float = 0.25,
         total_frames: int = 768,
+        allow_variable_total_frames: bool = False,
         adapter_index: list = [3, 5, 7, 11],
         tubelet_token_redundancy_aux: Optional[Dict] = None,
         tubelet_packed_runtime_route: Optional[Dict] = None,
@@ -857,6 +867,7 @@ class VisionTransformerAdapter(BaseModule):
                     use_adapter=i in adapter_index,
                     adapter_mlp_ratio=adapter_mlp_ratio,
                     temporal_size=total_frames // tubelet_size,
+                    allow_variable_temporal_size=allow_variable_total_frames,
                 )
                 for i in range(depth)
             ]

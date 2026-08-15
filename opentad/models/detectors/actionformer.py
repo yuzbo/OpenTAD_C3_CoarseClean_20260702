@@ -143,7 +143,7 @@ class ActionFormer(SingleStageDetector):
                 inputs = inputs.detach()
 
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self._forward_backbone_with_optional_dynamic_time(inputs, masks, metas)
         else:
             x = inputs
 
@@ -226,7 +226,7 @@ class ActionFormer(SingleStageDetector):
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
 
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self._forward_backbone_with_optional_dynamic_time(inputs, masks, metas)
         else:
             x = inputs
 
@@ -382,6 +382,16 @@ class ActionFormer(SingleStageDetector):
                 f"feature/mask temporal length mismatch {stage}: "
                 f"features={features.shape[-1]}, masks={masks.shape[-1]}"
             )
+
+    def _forward_backbone_with_optional_dynamic_time(self, inputs, masks, metas):
+        dynamic = bool(
+            isinstance(metas, (list, tuple))
+            and metas
+            and all(bool(meta.get("duca_sparse_variable_compute", False)) for meta in metas)
+        )
+        if dynamic:
+            return self.backbone(inputs, masks=masks, metas=metas)
+        return self.backbone(inputs)
 
     def _inject_pc_ot_mras_reader_outputs(self, feat_list, mask_list, metas):
         if self.pc_ot_mras_reader is None and self.pc_ot_mras_reader_eval_override is None:
