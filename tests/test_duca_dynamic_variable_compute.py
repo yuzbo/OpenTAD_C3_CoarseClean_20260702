@@ -64,6 +64,35 @@ def test_dynamic_selector_emits_real_variable_length_without_padding():
     assert len(positions) == selected_len
 
 
+def test_dynamic_budget_stays_clip_aligned_after_short_window_clamp():
+    selector = _selector(
+        strategy="dynamic_B",
+        target_len=64,
+        variable=True,
+        dynamic_budget=dict(
+            enabled=True,
+            min_budget=16,
+            target_budget=32,
+            max_budget=64,
+            average_budget=32,
+            budget_step=16,
+            actionness_weight=1.0,
+            boundary_weight=0.0,
+            uncertainty_weight=0.0,
+            redundancy_weight=0.0,
+        ),
+    )
+    candidate_valid = torch.ones(1, 63, dtype=torch.bool)
+    reader_outputs = {"frame_selection_logits": torch.full((1, 63), 20.0)}
+    plan = selector._dynamic_budget_plan(
+        reader_outputs=reader_outputs,
+        frame_scores=reader_outputs["frame_selection_logits"],
+        candidate_valid=candidate_valid,
+    )
+    assert int(plan["budgets"][0]) == 48
+    assert plan["metadata"][0]["valid_len"] == 63
+
+
 def test_uniform_control_is_exact_k_and_uses_same_dense_reconstruction_contract():
     selector = _selector(strategy="uniform_exact_k", target_len=32)
     inputs = torch.randn(1, 1, 3, 64, 8, 8)

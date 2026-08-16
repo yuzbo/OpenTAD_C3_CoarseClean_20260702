@@ -3282,7 +3282,15 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         budgets = torch.round(budget_float / float(step)).to(dtype=torch.long) * step
         budgets = budgets.clamp(min=min_budget, max=max_budget)
         valid_counts = candidate_valid.long().sum(dim=1)
-        budgets = torch.minimum(budgets.to(device=valid_counts.device), valid_counts)
+        # VideoMAE consumes complete temporal clips.  The requested budget is
+        # already quantized to ``budget_step``, but a short/truncated window can
+        # reduce it through the valid-count clamp.  Clamp against the largest
+        # complete clip budget so the value remains executable instead of
+        # becoming an arbitrary non-aligned frame count.
+        aligned_valid_counts = torch.div(valid_counts, step, rounding_mode="floor") * step
+        if bool((aligned_valid_counts <= 0).any().item()):
+            raise ValueError("dynamic_budget requires at least one complete clip")
+        budgets = torch.minimum(budgets.to(device=valid_counts.device), aligned_valid_counts)
 
         metadata: list[dict[str, Any]] = []
         for batch_idx, budget in enumerate(budgets.detach().cpu().tolist()):
