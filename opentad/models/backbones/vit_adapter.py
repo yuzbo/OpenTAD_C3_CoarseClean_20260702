@@ -283,10 +283,18 @@ class RouteTEdgeRouter(BaseModule):
         generator71 = torch.Generator(device="cpu")
         generator70.manual_seed(self._stream_seed(run_seed, 70))
         generator71.manual_seed(self._stream_seed(run_seed, 71))
+
+        def _xavier_uniform(weight: Tensor, generator: torch.Generator) -> None:
+            fan_in, fan_out = nn.init._calculate_fan_in_and_fan_out(weight)
+            bound = math.sqrt(6.0 / float(fan_in + fan_out))
+            values = torch.empty(weight.shape, dtype=torch.float32, device="cpu")
+            values.uniform_(-bound, bound, generator=generator)
+            weight.copy_(values)
+
         with torch.no_grad():
-            nn.init.xavier_uniform_(self.linear1.weight, gain=1.0, generator=generator70)
-            nn.init.xavier_uniform_(self.linear2.weight, gain=1.0, generator=generator71)
-            nn.init.xavier_uniform_(self.linear3.weight, gain=1.0, generator=generator71)
+            _xavier_uniform(self.linear1.weight, generator70)
+            _xavier_uniform(self.linear2.weight, generator71)
+            _xavier_uniform(self.linear3.weight, generator71)
             self.linear1.bias.fill_(0.0)
             self.linear2.bias.fill_(0.0)
             self.linear3.bias.fill_(0.0)
