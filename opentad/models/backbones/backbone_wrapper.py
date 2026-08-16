@@ -123,6 +123,12 @@ class BackboneWrapper(nn.Module):
         features = features.to(torch.float32)
         return features
 
+    def route_t_auxiliary_loss(self, gt_segments):
+        route = getattr(getattr(self.model, "backbone", None), "measure_preserving_coarsen_route", None)
+        if route is None or not bool(getattr(route, "enabled", False)):
+            return {}
+        return route.auxiliary_loss(gt_segments)
+
     def tensor_to_list(self, tensor):
         return [t for t in tensor]
 

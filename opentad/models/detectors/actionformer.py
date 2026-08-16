@@ -144,6 +144,8 @@ class ActionFormer(SingleStageDetector):
 
         if self.with_backbone:
             x = self.backbone(inputs)
+            if hasattr(self.backbone, "route_t_auxiliary_loss"):
+                losses.update(self.backbone.route_t_auxiliary_loss(gt_segments))
         else:
             x = inputs
 

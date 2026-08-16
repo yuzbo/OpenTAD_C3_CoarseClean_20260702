@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from typing import Dict, List, Optional, Tuple, Union
 
+import hashlib
 import math
 import torch
 import torch.nn.functional as F
@@ -250,6 +251,279 @@ class TubeletTokenRedundancyAux(BaseModule):
             return x
         self.last_summary = self.summarize(x, h, w)
         return x
+
+
+class RouteTEdgeRouter(BaseModule):
+    """The frozen 1538->64->32->1 edge-risk router used by Route T."""
+
+    def __init__(self, embed_dims: int, run_seed: int) -> None:
+        super().__init__()
+        self.linear1 = nn.Linear(int(embed_dims) * 4 + 2, 64)
+        self.linear2 = nn.Linear(64, 32)
+        self.linear3 = nn.Linear(32, 1)
+        self.act = nn.GELU()
+        self._initialize(int(run_seed))
+
+    @staticmethod
+    def _stream_seed(run_seed: int, stream_id: int) -> int:
+        if isinstance(run_seed, bool) or not 0 <= int(run_seed) <= 0xFFFF_FFFF_FFFF_FFFF:
+            raise ValueError("run_seed must be an unsigned 64-bit integer")
+        if isinstance(stream_id, bool) or int(stream_id) not in (70, 71):
+            raise ValueError("stream_id must be 70 or 71")
+        preimage = (
+            b"ROUTE_T_REAL_VIDEO_ROUTER_XAVIER_SEED_v001\x00"
+            + int(run_seed).to_bytes(8, byteorder="big", signed=False)
+            + bytes((int(stream_id),))
+        )
+        value = int.from_bytes(hashlib.sha256(preimage).digest()[:8], byteorder="big", signed=False)
+        return value & 0x7FFF_FFFF_FFFF_FFFF
+
+    def _initialize(self, run_seed: int) -> None:
+        generator70 = torch.Generator(device="cpu")
+        generator71 = torch.Generator(device="cpu")
+        generator70.manual_seed(self._stream_seed(run_seed, 70))
+        generator71.manual_seed(self._stream_seed(run_seed, 71))
+        with torch.no_grad():
+            nn.init.xavier_uniform_(self.linear1.weight, gain=1.0, generator=generator70)
+            nn.init.xavier_uniform_(self.linear2.weight, gain=1.0, generator=generator71)
+            nn.init.xavier_uniform_(self.linear3.weight, gain=1.0, generator=generator71)
+            self.linear1.bias.fill_(0.0)
+            self.linear2.bias.fill_(0.0)
+            self.linear3.bias.fill_(0.0)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.linear3(self.act(self.linear2(self.act(self.linear1(x)))))
+
+
+class MeasurePreservingCoarsenRoute(BaseModule):
+    """Support-complete 8->6 temporal coarsening for the VideoMAE core."""
+
+    valid_arms = (
+        "risk",
+        "generic",
+        "shuffled_risk",
+        "similarity",
+        "random",
+        "uniform",
+        "bypass",
+    )
+    learned_arms = ("risk", "generic", "shuffled_risk", "bypass")
+
+    def __init__(
+        self,
+        enabled: bool = False,
+        arm: str = "risk",
+        embed_dims: int = 384,
+        run_seed: int = 3407,
+        temperature: float = 1.0,
+        expected_tubelets: int = 8,
+        **kwargs,
+    ) -> None:
+        super().__init__()
+        del kwargs
+        if str(arm) not in self.valid_arms:
+            raise ValueError(f"unsupported Route T arm: {arm}")
+        if int(expected_tubelets) != 8:
+            raise ValueError("Route T requires exactly eight native tubelets")
+        if float(temperature) <= 0.0:
+            raise ValueError("Route T temperature must be positive")
+        self.enabled = bool(enabled)
+        self.arm = str(arm)
+        self.embed_dims = int(embed_dims)
+        self.run_seed = int(run_seed)
+        self.temperature = float(temperature)
+        self.expected_tubelets = 8
+        self.router = (
+            RouteTEdgeRouter(embed_dims=self.embed_dims, run_seed=self.run_seed)
+            if self.arm in self.learned_arms
+            else None
+        )
+
+        pairs = [(left, right) for left in range(7) for right in range(left + 2, 7)]
+        if len(pairs) != 15:
+            raise RuntimeError("Route T legal-pair construction must produce 15 partitions")
+        compact, bypass, lift = [], [], []
+        for pair in pairs:
+            groups = self._groups_for_pair(pair)
+            compact_matrix = torch.zeros((6, 8), dtype=torch.float32)
+            bypass_matrix = torch.zeros((6, 8), dtype=torch.float32)
+            lift_matrix = torch.zeros((8, 6), dtype=torch.float32)
+            for group_idx, group in enumerate(groups):
+                weight = 1.0 / float(len(group))
+                for tubelet_idx in group:
+                    compact_matrix[group_idx, tubelet_idx] = weight
+                    lift_matrix[tubelet_idx, group_idx] = 1.0
+                bypass_matrix[group_idx, group[0]] = 1.0
+            compact.append(compact_matrix)
+            bypass.append(bypass_matrix)
+            lift.append(lift_matrix)
+        self.legal_pairs = tuple(pairs)
+        self.register_buffer("compact_matrices", torch.stack(compact, dim=0), persistent=False)
+        self.register_buffer("bypass_matrices", torch.stack(bypass, dim=0), persistent=False)
+        self.register_buffer("lift_matrices", torch.stack(lift, dim=0), persistent=False)
+        coords = torch.tensor([[edge / 8.0, (edge + 2) / 8.0] for edge in range(7)], dtype=torch.float32)
+        self.register_buffer("edge_physical_coordinates", coords, persistent=False)
+        self.register_buffer("forward_step", torch.zeros((), dtype=torch.long), persistent=True)
+        self.last_edge_logits = None
+        self.last_pair_indices = None
+        self.last_summary = None
+
+    @staticmethod
+    def _groups_for_pair(pair: Tuple[int, int]) -> Tuple[Tuple[int, ...], ...]:
+        edges = set(int(value) for value in pair)
+        groups = []
+        tubelet = 0
+        while tubelet < 8:
+            if tubelet in edges:
+                groups.append((tubelet, tubelet + 1))
+                tubelet += 2
+            else:
+                groups.append((tubelet,))
+                tubelet += 1
+        if len(groups) != 6:
+            raise ValueError(f"invalid non-conflicting edge pair: {pair}")
+        return tuple(groups)
+
+    @staticmethod
+    def _shape_contract(x: Tensor, h: int, w: int) -> Tuple[int, int]:
+        if x.ndim != 3:
+            raise ValueError("Route T expects token tensor [B,N,C]")
+        spatial_tokens = int(h) * int(w)
+        if spatial_tokens <= 0 or int(x.shape[1]) != 8 * spatial_tokens:
+            raise ValueError("Route T requires exactly eight h*w tubelet groups")
+        return 8, spatial_tokens
+
+    def _edge_descriptors(self, patch_tokens: Tensor, h: int, w: int) -> Tuple[Tensor, Tensor]:
+        _, spatial_tokens = self._shape_contract(patch_tokens, h, w)
+        grouped = patch_tokens.reshape(int(patch_tokens.shape[0]), 8, spatial_tokens, int(patch_tokens.shape[2]))
+        means = grouped.mean(dim=2)
+        left = means[:, :-1]
+        right = means[:, 1:]
+        coords = self.edge_physical_coordinates.to(dtype=means.dtype)[None].expand(int(means.shape[0]), -1, -1)
+        descriptor = torch.cat((left, right, (left - right).abs(), left * right, coords), dim=-1)
+        return descriptor, means
+
+    def _pair_scores_and_weights(self, patch_tokens: Tensor, h: int, w: int) -> Tuple[Tensor, Tensor, Tensor]:
+        descriptor, means = self._edge_descriptors(patch_tokens, h, w)
+        batch = int(descriptor.shape[0])
+        edge_logits = None
+        if self.arm in self.learned_arms:
+            edge_logits = self.router(descriptor).squeeze(-1)
+            edge_scores = edge_logits
+        elif self.arm == "similarity":
+            edge_scores = 1.0 - F.cosine_similarity(means[:, :-1], means[:, 1:], dim=-1, eps=1.0e-6)
+        else:
+            edge_scores = descriptor.new_zeros((batch, 7))
+
+        if self.arm == "random":
+            step = int(self.forward_step.item())
+            pair_indices = (
+                torch.arange(batch, device=patch_tokens.device, dtype=torch.long)
+                + step * 131
+                + (self.run_seed % 15)
+            ) % 15
+            weights = F.one_hot(pair_indices, num_classes=15).to(dtype=patch_tokens.dtype)
+        elif self.arm == "uniform":
+            uniform_index = self.legal_pairs.index((1, 5))
+            pair_indices = torch.full((batch,), uniform_index, device=patch_tokens.device, dtype=torch.long)
+            weights = F.one_hot(pair_indices, num_classes=15).to(dtype=patch_tokens.dtype)
+        else:
+            pair_scores = torch.stack(
+                [edge_scores[:, left] + edge_scores[:, right] for left, right in self.legal_pairs],
+                dim=1,
+            )
+            pair_indices = pair_scores.argmin(dim=1)
+            hard = F.one_hot(pair_indices, num_classes=15).to(dtype=patch_tokens.dtype)
+            if self.arm in self.learned_arms:
+                soft = torch.softmax(-pair_scores / self.temperature, dim=1)
+                weights = hard + soft - soft.detach()
+            else:
+                weights = hard
+        return weights, pair_indices, edge_logits
+
+    def _compact(self, dense: Tensor, weights: Tensor, h: int, w: int) -> Tensor:
+        _, spatial_tokens = self._shape_contract(dense, h, w)
+        grouped = dense.reshape(int(dense.shape[0]), 8, spatial_tokens, int(dense.shape[2]))
+        matrices = self.bypass_matrices if self.arm == "bypass" else self.compact_matrices
+        matrix = torch.einsum("bp,pij->bij", weights.to(dtype=matrices.dtype), matrices)
+        matrix = matrix.to(dtype=dense.dtype)
+        compact = torch.einsum("bij,bjsc->bisc", matrix, grouped)
+        return compact.reshape(int(dense.shape[0]), 6 * spatial_tokens, int(dense.shape[2]))
+
+    def _lift(self, compact: Tensor, pair_indices: Tensor, h: int, w: int) -> Tensor:
+        spatial_tokens = int(h) * int(w)
+        grouped = compact.reshape(int(compact.shape[0]), 6, spatial_tokens, int(compact.shape[2]))
+        matrix = self.lift_matrices.index_select(0, pair_indices).to(dtype=compact.dtype)
+        dense = torch.einsum("bij,bjsc->bisc", matrix, grouped)
+        return dense.reshape(int(compact.shape[0]), 8 * spatial_tokens, int(compact.shape[2]))
+
+    def forward(self, x: Tensor, patch_tokens: Tensor, blocks, h: int, w: int, *, training: bool) -> Tensor:
+        if not self.enabled:
+            self.last_edge_logits = None
+            self.last_pair_indices = None
+            self.last_summary = None
+            return x
+        if len(blocks) == 0 or any(not bool(getattr(block, "use_adapter", False)) for block in blocks):
+            raise ValueError("Route T full path requires a temporal adapter in every transformer block")
+        weights, pair_indices, edge_logits = self._pair_scores_and_weights(patch_tokens, h, w)
+        compact = self._compact(x, weights, h, w)
+        for block_idx, block in enumerate(blocks):
+            compact = block(compact, h, w, apply_adapter=False)
+            dense = self._lift(compact, pair_indices, h, w)
+            dense = block.adapter(dense, h, w)
+            if block_idx + 1 < len(blocks):
+                compact = self._compact(dense, weights, h, w)
+        if training:
+            self.forward_step.add_(1)
+        self.last_edge_logits = edge_logits
+        self.last_pair_indices = pair_indices
+        self.last_summary = {
+            "schema_version": "route_t_measure_preserving_coarsen_v1",
+            "arm": self.arm,
+            "dense_tokens": int(x.shape[1]),
+            "compact_tokens": int(compact.shape[1]),
+            "legal_partition_count": 15,
+            "selected_pair_indices": pair_indices.detach(),
+            "support_complete": self.arm != "bypass",
+            "core_blocks": len(blocks),
+            "dense_adapter_calls": len(blocks),
+        }
+        return dense
+
+    def auxiliary_loss(self, gt_segments) -> Dict[str, Tensor]:
+        if self.arm not in ("risk", "shuffled_risk", "bypass"):
+            return {}
+        logits = self.last_edge_logits
+        if logits is None:
+            raise RuntimeError("Route T auxiliary loss requires a preceding backbone forward")
+        if not isinstance(gt_segments, (list, tuple)) or len(gt_segments) == 0:
+            raise ValueError("Route T auxiliary loss requires per-video gt_segments")
+        if int(logits.shape[0]) % len(gt_segments) != 0:
+            raise ValueError("Route T chunk count must be divisible by video batch size")
+        chunks = int(logits.shape[0]) // len(gt_segments)
+        edge_offsets = torch.arange(1, 8, device=logits.device, dtype=logits.dtype) * 2.0
+        targets = []
+        total_positions = float(chunks * 16)
+        for segments in gt_segments:
+            positions = (
+                torch.arange(chunks, device=logits.device, dtype=logits.dtype)[:, None] * 16.0
+                + edge_offsets[None]
+            )
+            boundaries = torch.as_tensor(segments, device=logits.device, dtype=logits.dtype).reshape(-1)
+            boundaries = boundaries[(boundaries > 0.0) & (boundaries < total_positions)]
+            if int(boundaries.numel()) == 0:
+                target = logits.new_zeros((chunks, 7))
+            else:
+                target = (1.0 - (boundaries[:, None, None] - positions[None]).abs() / 2.0).clamp_min(0.0)
+                target = target.amax(dim=0)
+            if self.arm == "shuffled_risk":
+                if chunks <= 1:
+                    raise ValueError("shuffled-risk requires at least two chunks per video")
+                target = target.roll(shifts=1, dims=0)
+            targets.append(target)
+        target = torch.cat(targets, dim=0)
+        loss = F.binary_cross_entropy_with_logits(logits, target, reduction="mean") * 0.25
+        return {"route_t_boundary_risk_loss": loss}
 
 
 class PackedTubeletRuntimeRoute(BaseModule):
@@ -658,6 +932,7 @@ class Block(BaseModule):
         w,
         packed_dense_mask: Optional[Tensor] = None,
         packed_stats: Optional[Dict[str, int]] = None,
+        apply_adapter: bool = True,
     ) -> Tensor:
         """Defines the computation performed at every call.
 
@@ -675,7 +950,7 @@ class Block(BaseModule):
             else:
                 x = self._packed_attention_mlp_forward(x, packed_dense_mask, packed_stats)
 
-            if self.use_adapter:
+            if self.use_adapter and bool(apply_adapter):
                 x = self.adapter(x, h, w)
             return x
 
@@ -758,6 +1033,7 @@ class VisionTransformerAdapter(BaseModule):
         adapter_index: list = [3, 5, 7, 11],
         tubelet_token_redundancy_aux: Optional[Dict] = None,
         tubelet_packed_runtime_route: Optional[Dict] = None,
+        measure_preserving_coarsen_route: Optional[Dict] = None,
         chronotransport: Optional[Dict] = None,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
@@ -775,6 +1051,7 @@ class VisionTransformerAdapter(BaseModule):
         self.patch_size = patch_size
         self.latest_tubelet_token_redundancy_summary = None
         self.latest_tubelet_packed_runtime_summary = None
+        self.latest_measure_preserving_coarsen_summary = None
         self.latest_chronotransport_summary = None
         self.chronotransport_checkpoint_loaded = False
         self.chronotransport_allow_legacy_checkpoint = False
@@ -804,6 +1081,11 @@ class VisionTransformerAdapter(BaseModule):
         self.tubelet_packed_runtime_route = None
         if tubelet_packed_runtime_route is not None:
             self.tubelet_packed_runtime_route = PackedTubeletRuntimeRoute(**dict(tubelet_packed_runtime_route))
+        self.measure_preserving_coarsen_route = None
+        if measure_preserving_coarsen_route is not None:
+            route_cfg = dict(measure_preserving_coarsen_route)
+            route_cfg.setdefault("embed_dims", int(embed_dims))
+            self.measure_preserving_coarsen_route = MeasurePreservingCoarsenRoute(**route_cfg)
 
         self.chronotransport = None
         if chronotransport is not None:
@@ -835,6 +1117,14 @@ class VisionTransformerAdapter(BaseModule):
         if packed_enabled and chronotransport_enabled:
             raise ValueError(
                 "tubelet_packed_runtime_route and ChronoTransport are mutually exclusive"
+            )
+        route_t_enabled = bool(
+            self.measure_preserving_coarsen_route is not None
+            and self.measure_preserving_coarsen_route.enabled
+        )
+        if route_t_enabled and (packed_enabled or chronotransport_enabled):
+            raise ValueError(
+                "measure_preserving_coarsen_route is mutually exclusive with packed route and ChronoTransport"
             )
 
         # stochastic depth decay rule
@@ -920,6 +1210,7 @@ class VisionTransformerAdapter(BaseModule):
         h //= self.patch_size
         w //= self.patch_size
         x = self.patch_embed(x)[0]
+        patch_tokens = x
         if self.tubelet_token_redundancy_aux is not None:
             x = self.tubelet_token_redundancy_aux(x, h, w)
             self.latest_tubelet_token_redundancy_summary = self.tubelet_token_redundancy_aux.last_summary
@@ -943,11 +1234,27 @@ class VisionTransformerAdapter(BaseModule):
         chronotransport_enabled = bool(
             self.chronotransport is not None and self.chronotransport.enabled
         )
+        route_t_enabled = bool(
+            self.measure_preserving_coarsen_route is not None
+            and self.measure_preserving_coarsen_route.enabled
+        )
         if packed_enabled and chronotransport_enabled:
             raise RuntimeError(
                 "tubelet_packed_runtime_route and ChronoTransport are mutually exclusive"
             )
-        if chronotransport_enabled:
+        if route_t_enabled:
+            x = self.measure_preserving_coarsen_route(
+                x,
+                patch_tokens,
+                self.blocks,
+                h,
+                w,
+                training=self.training,
+            )
+            self.latest_measure_preserving_coarsen_summary = self.measure_preserving_coarsen_route.last_summary
+            self.latest_tubelet_packed_runtime_summary = None
+            self.latest_chronotransport_summary = None
+        elif chronotransport_enabled:
             x = self.chronotransport(x, self.blocks, h, w)
             summary = dict(self.chronotransport.latest_summary or {})
             summary["checkpoint_loaded"] = self.chronotransport_checkpoint_loaded
@@ -961,6 +1268,7 @@ class VisionTransformerAdapter(BaseModule):
         else:
             self.latest_tubelet_packed_runtime_summary = None
             self.latest_chronotransport_summary = None
+            self.latest_measure_preserving_coarsen_summary = None
             for blk in self.blocks:
                 x = blk(x, h, w)
 
