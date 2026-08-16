@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
 #SBATCH --gres=gpu:1
-#SBATCH --mem=32000
+#SBATCH --mem=32000M
 #SBATCH --time=72:00:00
 #SBATCH --array=0-14%8
 #SBATCH --output=/data/run01/sczc063/yuzibo/logs/duca_full_%A_%a.out
