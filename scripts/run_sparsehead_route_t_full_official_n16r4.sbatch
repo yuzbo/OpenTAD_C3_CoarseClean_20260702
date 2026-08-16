@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=6
 #SBATCH --gres=gpu:1
-#SBATCH --mem=96G
+#SBATCH --mem=50G
 #SBATCH --time=72:00:00
 #SBATCH --output=%x-%A_%a.out
 #SBATCH --error=%x-%A_%a.err
@@ -46,3 +46,12 @@ config="configs/adatad/thumos/route_t_full_official.py"
 "$python_bin" -m torch.distributed.run --standalone --nproc_per_node=1 \
   tools/train.py "$config" --seed "$SPARSEHEAD_ROUTE_T_SEED"
 
+checkpoint="${SPARSEHEAD_RUN_ROOT}/${arm}_seed${SPARSEHEAD_ROUTE_T_SEED}/gpu1_id0/checkpoint/epoch_59.pth"
+if [[ ! -s "$checkpoint" ]]; then
+  echo "missing final checkpoint: $checkpoint" >&2
+  exit 5
+fi
+
+"$python_bin" -m torch.distributed.run --standalone --nproc_per_node=1 \
+  tools/test.py "$config" --checkpoint "$checkpoint" \
+  --seed "$SPARSEHEAD_ROUTE_T_SEED" --id 0
