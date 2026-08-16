@@ -2383,9 +2383,17 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             configured_budget = (
                 int(dynamic_budgets[batch_idx].item()) if torch.is_tensor(dynamic_budgets) else self.target_len
             )
-            output_valid_len = min(int(valid_candidate_indices.numel()), configured_budget, self.target_len)
+            ranked_valid_len = min(int(valid_candidate_indices.numel()), configured_budget, self.target_len)
+            fixed_physical_exact_k = (
+                dynamic_budgets is None
+                and plan_name == "frame_score_global_rank_st"
+                and self.physical_dense_reconstruction
+            )
+            if fixed_physical_exact_k and self.target_len > dense_len:
+                raise ValueError("fixed physical exact-K budget cannot exceed the dense source axis")
+            output_valid_len = self.target_len if fixed_physical_exact_k else ranked_valid_len
             selected_output_valid_lengths[batch_idx] = output_valid_len
-            if output_valid_len <= 0:
+            if ranked_valid_len <= 0:
                 raise ValueError(f"{plan_name} found no valid candidates for a sample")
 
             ranked_candidate_indices = torch.argsort(masked_scores[batch_idx], descending=True, stable=True)
@@ -2394,12 +2402,12 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             ]
             rank_position_by_candidate = {
                 int(candidate.item()): rank
-                for rank, candidate in enumerate(ranked_candidate_indices[:output_valid_len])
+                for rank, candidate in enumerate(ranked_candidate_indices[:ranked_valid_len])
             }
             raw_topk_positions = [
                 int(pos)
                 for pos in candidate_dense_indices[batch_idx]
-                .gather(0, ranked_candidate_indices[:output_valid_len])
+                .gather(0, ranked_candidate_indices[:ranked_valid_len])
                 .detach()
                 .cpu()
                 .tolist()
@@ -2451,6 +2459,30 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                     if len(rows) >= output_valid_len:
                         break
 
+            if fixed_physical_exact_k and len(rows) < output_valid_len:
+                uniform_fill = torch.linspace(
+                    0,
+                    dense_len - 1,
+                    steps=output_valid_len,
+                    device=device,
+                ).round().long()
+                for pos_tensor in uniform_fill:
+                    pos = int(pos_tensor.item())
+                    if pos in used:
+                        continue
+                    used.add(pos)
+                    rows.append((pos, None, "dense_padding_fill"))
+                    if len(rows) >= output_valid_len:
+                        break
+                if len(rows) < output_valid_len:
+                    for pos in range(dense_len):
+                        if pos in used:
+                            continue
+                        used.add(pos)
+                        rows.append((pos, None, "dense_padding_fill"))
+                        if len(rows) >= output_valid_len:
+                            break
+
             if len(rows) != output_valid_len:
                 raise ValueError(
                     "failed to resolve frame_score_topk dynamic budget plan: "
@@ -2480,7 +2512,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                 global_rank_cache = self._global_rank_topk_cache(
                     scores=frame_scores[batch_idx],
                     candidate_valid=candidate_valid[batch_idx],
-                    topk_budget=output_valid_len,
+                    topk_budget=ranked_valid_len,
                     name=plan_name,
                 )
             for out_idx in range(self.target_len):
@@ -2510,7 +2542,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                         candidate_dense_indices=candidate_dense_indices[batch_idx],
                         candidate_idx=int(candidate_idx),
                         hard_rank_position=rank_position_by_candidate.get(int(candidate_idx)),
-                        topk_budget=output_valid_len,
+                        topk_budget=ranked_valid_len,
                         global_rank_cache=global_rank_cache,
                         name=plan_name,
                     )
@@ -2654,15 +2686,22 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         if batch != 1:
             raise ValueError("uniform exact-K physical reconstruction currently requires batch_size=1")
         device = candidate_dense_indices.device
-        valid_candidates = candidate_dense_indices[0][candidate_valid[0]]
-        k = min(self.target_len, int(valid_candidates.numel()))
-        if k <= 0:
+        dense_len = int(valid.shape[1])
+        if not bool(candidate_valid[0].any().item()):
             raise ValueError("uniform exact-K requires at least one valid candidate")
+        if self.target_len > dense_len:
+            raise ValueError("uniform exact-K budget cannot exceed the dense source axis")
+        expected_dense_axis = torch.arange(dense_len, device=device, dtype=candidate_dense_indices.dtype)
+        if tuple(candidate_dense_indices.shape) != (1, dense_len) or not torch.equal(
+            candidate_dense_indices[0], expected_dense_axis
+        ):
+            raise ValueError("uniform exact-K physical reconstruction requires one candidate per dense source frame")
+        k = self.target_len
         if k == 1:
             offsets = torch.zeros((1,), dtype=torch.long, device=device)
         else:
-            offsets = torch.linspace(0, int(valid_candidates.numel()) - 1, steps=k, device=device).round().long()
-        positions = valid_candidates.gather(0, offsets).long()
+            offsets = torch.linspace(0, dense_len - 1, steps=k, device=device).round().long()
+        positions = expected_dense_axis.gather(0, offsets).long()
         if int(torch.unique(positions).numel()) != k:
             raise ValueError("uniform exact-K must select unique physical frames")
         transport = torch.zeros((1, k, int(valid.shape[1])), dtype=torch.float32, device=device)

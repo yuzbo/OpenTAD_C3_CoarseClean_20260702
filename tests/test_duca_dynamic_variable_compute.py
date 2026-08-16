@@ -24,6 +24,9 @@ def _selector(*, strategy, target_len, dynamic_budget=None, variable=False):
         variable_length_output=variable,
         variable_compute_multiple=16,
         dynamic_budget=dynamic_budget,
+        frame_score_st_surrogate=(
+            "global_rank_topk" if strategy == "frame_score_global_rank_st" else "local_softmax"
+        ),
         reader=dict(
             type="PCOTMRASBoundaryDifficultyTemporalFrameScout",
             in_dim=3 * 32 * 32,
@@ -103,6 +106,22 @@ def test_uniform_control_is_exact_k_and_uses_same_dense_reconstruction_contract(
     assert len(positions) == len(set(positions)) == 32
     assert positions[0] == 0 and positions[-1] == 63
     assert out["masks"].shape == (1, 64)
+
+
+def test_fixed_controls_keep_exact_k_on_short_official_windows():
+    inputs = torch.randn(1, 1, 3, 64, 8, 8)
+    masks = torch.zeros(1, 64, dtype=torch.bool)
+    masks[:, :31] = True
+
+    for strategy in ("uniform_exact_k", "frame_score_global_rank_st"):
+        selector = _selector(strategy=strategy, target_len=32)
+        out = selector.forward_test(inputs, masks, metas=[{}])
+        positions = out["metas"][0]["duca_sparse_physical_positions"]
+        assert out["inputs"].shape[3] == 32
+        assert len(positions) == len(set(positions)) == 32
+        assert positions == sorted(positions)
+        assert out["metas"][0]["irregular_dense_valid_len"] == 31
+        assert out["masks"].shape == (1, 64)
 
 
 def test_irregular_physical_time_interpolation_preserves_anchor_values():
