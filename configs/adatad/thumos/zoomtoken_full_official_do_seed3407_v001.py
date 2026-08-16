@@ -14,6 +14,7 @@ dataset = dict(
     val=dict(ann_file=_annotation, class_map=_class_map, data_path=_video_root, block_list=None),
     test=dict(ann_file=_annotation, class_map=_class_map, data_path=_video_root, block_list=None),
 )
+evaluation = dict(subset="validation", ground_truth_filename=_annotation)
 model = dict(
     backbone=dict(
         custom=dict(

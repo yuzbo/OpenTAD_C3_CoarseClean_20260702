@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=zt_full_official
+#SBATCH --job-name=zt-complete
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=6
 #SBATCH --time=72:00:00
-#SBATCH --array=0-4
+#SBATCH --array=0-14%8
+#SBATCH --output=/data/run01/sczc063/yuzibo/logs/zoomtoken_complete_%A_%a.out
+#SBATCH --error=/data/run01/sczc063/yuzibo/logs/zoomtoken_complete_%A_%a.err
 
 source /etc/profile
 set -euo pipefail
@@ -14,9 +16,8 @@ set -euo pipefail
 BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 ROOT="${ZOOMTOKEN_SOURCE_ROOT:?set ZOOMTOKEN_SOURCE_ROOT}"
 EXPECTED_COMMIT="${ZOOMTOKEN_EXPECTED_COMMIT:?set ZOOMTOKEN_EXPECTED_COMMIT}"
-export ZOOMTOKEN_FULL_RUN_ROOT="${ZOOMTOKEN_FULL_RUN_ROOT:?set ZOOMTOKEN_FULL_RUN_ROOT}"
+RUN_ROOT="${ZOOMTOKEN_COMPLETION_RUN_ROOT:?set ZOOMTOKEN_COMPLETION_RUN_ROOT}"
 IMAGE="${ZOOMTOKEN_CONTAINER_IMAGE:-${BASE}/containers/zoomtoken_p1_ubi9_20260815.sif}"
-seed="${ZOOMTOKEN_SEED:-3407}"
 
 if [[ -z "${APPTAINER_CONTAINER:-${SINGULARITY_CONTAINER:-}}" ]]; then
   [[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || {
@@ -30,7 +31,7 @@ if [[ -z "${APPTAINER_CONTAINER:-${SINGULARITY_CONTAINER:-}}" ]]; then
   export ZOOMTOKEN_SOURCE_VERIFIED=1
   module load apptainer/1.2.4
   exec apptainer exec --nv --bind "${BASE}:${BASE}" "${IMAGE}" \
-    bash "${ROOT}/scripts/run_zoomtoken_full_official_matrix_n16r4.sbatch"
+    bash "${ROOT}/scripts/run_zoomtoken_full_official_completion_n16r4.sbatch"
 fi
 
 [[ "${ZOOMTOKEN_SOURCE_VERIFIED:-0}" == "1" ]] || {
@@ -49,30 +50,50 @@ configs=(
   zoomtoken_full_official_r_seed3407_v001.py
   zoomtoken_full_official_q_seed3407_v001.py
 )
-arm="${arms[${SLURM_ARRAY_TASK_ID}]}"
-config="${ROOT}/configs/adatad/thumos/${configs[${SLURM_ARRAY_TASK_ID}]}"
+seeds=(3407 3408 3409)
+source_roots=(
+  "${BASE}/zoomtoken_full_official_b88a11ba_seed3407_20260815_070546"
+  "${BASE}/zoomtoken_full_official_8b4f4ce9_seed3408_20260815_071707"
+  "${BASE}/zoomtoken_full_official_8b4f4ce9_seed3409_20260815_071707"
+)
+
+arm_index=$((SLURM_ARRAY_TASK_ID % 5))
+seed_index=$((SLURM_ARRAY_TASK_ID / 5))
+arm="${arms[${arm_index}]}"
+config="${ROOT}/configs/adatad/thumos/${configs[${arm_index}]}"
+seed="${seeds[${seed_index}]}"
+source_root="${source_roots[${seed_index}]}"
+export ZOOMTOKEN_FULL_RUN_ROOT="${RUN_ROOT}/seed_${seed}"
 work_dir="${ZOOMTOKEN_FULL_RUN_ROOT}/${arm}"
-master_port="$((20000 + (SLURM_ARRAY_JOB_ID % 20000) + SLURM_ARRAY_TASK_ID))"
+source_checkpoint="${source_root}/${arm}/gpu2_id0/checkpoint/epoch_59.pth"
+master_port="$((22000 + (SLURM_ARRAY_JOB_ID % 20000) + SLURM_ARRAY_TASK_ID))"
 cfg_options=()
 if [[ "${arm}" != "DO" ]]; then
   cfg_options=(--cfg-options "model.backbone.custom.georoute_random_seed=${seed}")
 fi
+
 [[ ! -e "${work_dir}" ]] || {
   echo "refusing to overwrite ${work_dir}" >&2
   exit 2
 }
-mkdir -p "${ZOOMTOKEN_FULL_RUN_ROOT}/logs"
+mkdir -p "${ZOOMTOKEN_FULL_RUN_ROOT}/logs" "${BASE}/logs"
 cd "${ROOT}"
 
-torchrun --nnodes=1 --nproc_per_node=2 --master_addr=127.0.0.1 --master_port="${master_port}" \
-  tools/train.py "${config}" --seed "${seed}" --id 0 "${cfg_options[@]}" \
-  2>&1 | tee "${ZOOMTOKEN_FULL_RUN_ROOT}/logs/${arm}_train.log"
+if [[ -s "${source_checkpoint}" ]]; then
+  checkpoint="${source_checkpoint}"
+  echo "MODE=EVALUATE_COMPLETED_FULL_TRAIN CHECKPOINT=${checkpoint}"
+else
+  echo "MODE=FULL_TRAIN_AND_EVALUATE"
+  torchrun --nnodes=1 --nproc_per_node=2 --master_addr=127.0.0.1 --master_port="${master_port}" \
+    tools/train.py "${config}" --seed "${seed}" --id 0 "${cfg_options[@]}" \
+    2>&1 | tee "${ZOOMTOKEN_FULL_RUN_ROOT}/logs/${arm}_train.log"
+  checkpoint="${work_dir}/gpu2_id0/checkpoint/epoch_59.pth"
+  [[ -s "${checkpoint}" ]] || {
+    echo "missing final checkpoint ${checkpoint}" >&2
+    exit 2
+  }
+fi
 
-checkpoint="${work_dir}/gpu2_id0/checkpoint/epoch_59.pth"
-[[ -f "${checkpoint}" ]] || {
-  echo "missing final checkpoint ${checkpoint}" >&2
-  exit 2
-}
 torchrun --nnodes=1 --nproc_per_node=2 --master_addr=127.0.0.1 --master_port="${master_port}" \
   tools/test.py "${config}" --checkpoint "${checkpoint}" --seed "${seed}" --id 0 "${cfg_options[@]}" \
   2>&1 | tee "${ZOOMTOKEN_FULL_RUN_ROOT}/logs/${arm}_test.log"
