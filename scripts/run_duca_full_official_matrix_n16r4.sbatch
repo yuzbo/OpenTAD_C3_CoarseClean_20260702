@@ -66,7 +66,7 @@ test -d "$TRAIN_DATA"
 test -d "$VALIDATION_DATA"
 test -f "$PRETRAINED"
 test ! -e "$cell_root"
-mkdir -p "$(dirname "$cell_root")" "$ROOT/logs"
+mkdir -p "$(dirname "$cell_root")" "$RUN_ROOT/logs" "$ROOT/logs"
 
 export DUCA_ARM=$arm
 export DUCA_SEED=$seed
