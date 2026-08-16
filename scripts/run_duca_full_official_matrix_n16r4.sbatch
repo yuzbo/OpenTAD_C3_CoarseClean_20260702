@@ -73,8 +73,9 @@ if [[ -e "$cell_root" ]]; then
     exit 2
   }
   resume_checkpoint=$(
-    find "$cell_root/gpu1_id0/checkpoint" -maxdepth 1 -type f \
-      -name 'epoch_*.pth' -size +0c -print 2>/dev/null | sort -V | tail -1
+    for candidate in "$cell_root"/gpu1_id0/checkpoint/epoch_*.pth; do
+      [[ -s "$candidate" ]] && printf '%s\n' "$candidate"
+    done | sort -V | tail -1
   )
   [[ -n "$resume_checkpoint" ]] || {
     echo "no non-empty checkpoint is available for resume: $cell_root" >&2
