@@ -5,7 +5,6 @@
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=6
-#SBATCH --mem=64G
 #SBATCH --time=06:00:00
 #SBATCH --output=/data/run01/sczc063/yuzibo/logs/zoomtoken_q_diag_%j.out
 #SBATCH --error=/data/run01/sczc063/yuzibo/logs/zoomtoken_q_diag_%j.err
@@ -48,4 +47,3 @@ telemetry="${DIAGNOSTIC_ROOT}/gpu1_id0/georoute_diagnostic_telemetry.json"
 [[ -s "${telemetry}" ]]
 python tools/bata/summarize_zoomtoken_q_telemetry.py "${telemetry}" \
   --output "${DIAGNOSTIC_ROOT}/gpu1_id0/zoomtoken_q_telemetry_summary.json"
-

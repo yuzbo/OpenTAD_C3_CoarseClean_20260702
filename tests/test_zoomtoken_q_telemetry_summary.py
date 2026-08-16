@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from tools.bata.summarize_zoomtoken_q_telemetry import summarize
 
 
@@ -27,3 +29,12 @@ def test_summary_reports_dynamic_budget_and_geometry():
         "residual": 0.25,
     }
 
+
+def test_replay_uses_platform_default_single_gpu_memory():
+    launcher = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "run_zoomtoken_q_seed3408_telemetry_replay_n16r4.sbatch"
+    ).read_text(encoding="utf-8")
+    assert "#SBATCH --gres=gpu:1" in launcher
+    assert "#SBATCH --mem=" not in launcher
