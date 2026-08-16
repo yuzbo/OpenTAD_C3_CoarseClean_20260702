@@ -64,8 +64,25 @@ test -f "$CLASS_MAP"
 test -d "$TRAIN_DATA"
 test -d "$VALIDATION_DATA"
 test -f "$PRETRAINED"
-test ! -e "$cell_root"
 mkdir -p "$(dirname "$cell_root")" "$RUN_ROOT/logs" "$ROOT/logs"
+
+resume_args=()
+if [[ -e "$cell_root" ]]; then
+  [[ "${DUCA_RESUME_EXISTING:-0}" == "1" ]] || {
+    echo "cell root already exists; set DUCA_RESUME_EXISTING=1 only after an interrupted run" >&2
+    exit 2
+  }
+  resume_checkpoint=$(
+    find "$cell_root/gpu1_id0/checkpoint" -maxdepth 1 -type f \
+      -name 'epoch_*.pth' -size +0c -print 2>/dev/null | sort -V | tail -1
+  )
+  [[ -n "$resume_checkpoint" ]] || {
+    echo "no non-empty checkpoint is available for resume: $cell_root" >&2
+    exit 2
+  }
+  resume_args=(--resume "$resume_checkpoint")
+  echo "resuming $arm seed $seed from $resume_checkpoint"
+fi
 
 export DUCA_ARM=$arm
 export DUCA_SEED=$seed
@@ -93,10 +110,10 @@ cfg_options=(--cfg-options \
 
 torchrun --nnodes=1 --nproc_per_node=1 --master_addr=127.0.0.1 --master_port="$MASTER_PORT" \
   tools/train.py configs/adatad/thumos/duca_full_official_dynamic_matrix_v001.py \
-  --seed "$seed" --id 0 "${cfg_options[@]}" \
+  "${resume_args[@]}" --seed "$seed" --id 0 "${cfg_options[@]}" \
   2>&1 | tee "$RUN_ROOT/logs/${arm}_seed${seed}_train.log"
 
-checkpoint="$cell_root/checkpoint/epoch_59.pth"
+checkpoint="$cell_root/gpu1_id0/checkpoint/epoch_59.pth"
 test -f "$checkpoint"
 torchrun --nnodes=1 --nproc_per_node=1 --master_addr=127.0.0.1 --master_port="$MASTER_PORT" \
   tools/test.py configs/adatad/thumos/duca_full_official_dynamic_matrix_v001.py \
