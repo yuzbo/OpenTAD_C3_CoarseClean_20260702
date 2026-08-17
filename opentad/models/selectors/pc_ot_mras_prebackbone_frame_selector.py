@@ -898,6 +898,7 @@ class PCOTMRASCoarseActionnessFrameScout(nn.Module):
         )
         self.norm = nn.LayerNorm(int(hidden_dim))
         self.action_head = nn.Linear(int(hidden_dim), 1)
+        self.boundary_head = nn.Linear(int(hidden_dim), 1)
 
     @staticmethod
     def _binary_uncertainty_scores(action_prob: torch.Tensor, valid: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -925,6 +926,7 @@ class PCOTMRASCoarseActionnessFrameScout(nn.Module):
         _require_finite(encoded, "coarse actionness encoded tokens")
 
         action_logits = _masked_frame_logits(self.action_head(encoded).squeeze(-1), valid, "action_logits")
+        boundary_logits = _masked_frame_logits(self.boundary_head(encoded).squeeze(-1), valid, "boundary_logits")
         action_prob = torch.sigmoid(action_logits).masked_fill(~valid, 0.0)
         entropy_score, uncertainty_score, change_score = self._binary_uncertainty_scores(action_prob, valid)
         entropy_score = entropy_score.masked_fill(~valid, 0.0)
@@ -952,6 +954,8 @@ class PCOTMRASCoarseActionnessFrameScout(nn.Module):
         return {
             "action_logits": action_logits,
             "actionness_logits": action_logits,
+            "boundary_logits": boundary_logits,
+            "boundary_prob": torch.sigmoid(boundary_logits).masked_fill(~valid, 0.0),
             "value_logits": action_logits,
             "action_prob": action_prob,
             "p_action": action_prob,
@@ -1039,6 +1043,11 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         coarse_uncertainty_weight: float = 0.75,
         coarse_change_weight: float = 0.75,
         dynamic_budget: Mapping[str, Any] | None = None,
+        boundary_radius: int = 2,
+        dynamic_k_min: int | None = None,
+        dynamic_k_max: int | None = None,
+        dynamic_k_threshold: float = 0.5,
+        dynamic_k_step: int = 32,
         meta_source: str = "pc_ot_mras_prebackbone_e2e_frame_selector",
     ) -> None:
         super().__init__()
@@ -1139,11 +1148,12 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             "frame_score_global_rank_st",
             "interval_boundary_packet",
             "coarse_actionness_uncertainty",
+            "semantic_indirect",
         ):
             raise ValueError(
                 "selection_strategy must be 'slot_transport', 'frame_score_topk', "
                 "'frame_score_global_rank_st', 'interval_boundary_packet', "
-                "or 'coarse_actionness_uncertainty'"
+                "or 'coarse_actionness_uncertainty' or 'semantic_indirect'"
             )
         if float(frame_score_st_temperature) <= 0.0:
             raise ValueError("frame_score_st_temperature must be positive")
@@ -1224,6 +1234,17 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         self.coarse_uncertainty_weight = float(coarse_uncertainty_weight)
         self.coarse_change_weight = float(coarse_change_weight)
         self.dynamic_budget = self._normalize_dynamic_budget_config(dynamic_budget)
+        if int(boundary_radius) < 0 or float(dynamic_k_threshold) < 0.0 or float(dynamic_k_threshold) > 1.0:
+            raise ValueError("boundary_radius must be non-negative and dynamic_k_threshold must be in [0,1]")
+        if int(dynamic_k_step) <= 0:
+            raise ValueError("dynamic_k_step must be positive")
+        self.boundary_radius = int(boundary_radius)
+        self.dynamic_k_min = int(dynamic_k_min if dynamic_k_min is not None else max(1, target_len // 2))
+        self.dynamic_k_max = int(dynamic_k_max if dynamic_k_max is not None else target_len)
+        if not 0 < self.dynamic_k_min <= self.dynamic_k_max <= self.target_len:
+            raise ValueError("dynamic K range must satisfy 0 < min <= max <= target_len")
+        self.dynamic_k_threshold = float(dynamic_k_threshold)
+        self.dynamic_k_step = int(dynamic_k_step)
         self.meta_source = str(meta_source)
         self._metadata_dump_count = 0
 
@@ -1250,6 +1271,25 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             "gt_labels": new_gt_labels,
             "losses": losses,
         }
+
+    def semantic_targets(self, gt_segments, candidate_dense_indices, valid_mask):
+        """Build training-only action/boundary targets from GT intervals."""
+        if gt_segments is None:
+            raise ValueError("gt_segments are required for semantic target construction")
+        idx = candidate_dense_indices.float()
+        valid = valid_mask.bool()
+        action = torch.zeros_like(idx)
+        boundary = torch.zeros_like(idx)
+        for batch_idx, segments in enumerate(gt_segments):
+            if segments is None:
+                continue
+            seg = torch.as_tensor(segments, device=idx.device, dtype=idx.dtype).reshape(-1, 2)
+            for start, end in seg:
+                inside = (idx[batch_idx] >= start) & (idx[batch_idx] <= end)
+                near = ((idx[batch_idx] - start).abs() <= self.boundary_radius) | ((idx[batch_idx] - end).abs() <= self.boundary_radius)
+                action[batch_idx].masked_fill_(inside & valid[batch_idx], 1.0)
+                boundary[batch_idx].masked_fill_(near & valid[batch_idx], 1.0)
+        return action, boundary
 
     def forward_test(self, inputs, masks, metas=None):
         outputs = self._select(inputs=inputs, masks=masks, metas=metas, training=False)
@@ -1507,6 +1547,38 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             candidate_time_coords,
         )
 
+    @staticmethod
+    def deterministic_semantic_allocate(actionness, boundary, valid, budget):
+        actionness = actionness.float(); boundary = boundary.float(); valid = valid.bool()
+        out = []
+        for b in range(actionness.shape[0]):
+            cand = [i for i in range(actionness.shape[1]) if bool(valid[b, i])]
+            chosen = []
+            for order in (sorted(cand, key=lambda i: (-float(boundary[b, i]), i)), sorted(cand, key=lambda i: (-float(actionness[b, i]), i)), cand):
+                for i in order:
+                    if i not in chosen and len(chosen) < int(budget): chosen.append(i)
+            out.append(sorted(chosen))
+        return out
+
+    def _semantic_indirect_transport_plan(self, reader_outputs, candidate_valid, candidate_dense_indices):
+        action = reader_outputs.get("action_prob")
+        boundary = reader_outputs.get("boundary_prob")
+        if action is None or boundary is None:
+            raise ValueError("semantic_indirect requires actionness and boundary heads")
+        picked = self.deterministic_semantic_allocate(action, boundary, candidate_valid, self.target_len)
+        batch = action.shape[0]; indices = torch.zeros((batch, self.target_len), dtype=torch.long, device=action.device)
+        positions = torch.zeros((batch, self.target_len), dtype=torch.float32, device=action.device)
+        lengths = torch.zeros((batch,), dtype=torch.long, device=action.device)
+        for b, row in enumerate(picked):
+            lengths[b] = len(row)
+            if row:
+                indices[b, :len(row)] = torch.tensor(row, device=action.device)
+                positions[b, :len(row)] = candidate_dense_indices[b, row].float()
+        weights = F.one_hot(indices, num_classes=action.shape[1]).float()
+        return {"indices": indices, "weights": weights, "transport_weights": weights,
+                "selected_positions": positions, "selected_output_valid_lengths": lengths,
+                "selected_roles": [["boundary_or_action"] * len(row) for row in picked]}
+
     def _sparse_transport_plan(
         self,
         reader_outputs: Mapping[str, torch.Tensor],
@@ -1535,6 +1607,8 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                 candidate_dense_indices=candidate_dense_indices,
                 training=training,
             )
+        if getattr(self, "selection_strategy", "slot_transport") == "semantic_indirect":
+            return self._semantic_indirect_transport_plan(reader_outputs, candidate_valid, candidate_dense_indices)
         if getattr(self, "selection_strategy", "slot_transport") == "interval_boundary_packet":
             return self._interval_boundary_packet_transport_plan(
                 reader_outputs=reader_outputs,
