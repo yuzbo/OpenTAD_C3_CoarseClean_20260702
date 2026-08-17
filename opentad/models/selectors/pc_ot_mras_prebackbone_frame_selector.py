@@ -1291,6 +1291,17 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                 boundary[batch_idx].masked_fill_(near & valid[batch_idx], 1.0)
         return action, boundary
 
+    def _semantic_budget_from_predictions(self, actionness, boundary, valid):
+        """Resolve deploy-visible scores to a clamped per-sample K."""
+        valid = valid.bool(); n = valid.long().sum(dim=1)
+        signal = torch.maximum(actionness.float(), boundary.float()).masked_fill(~valid, 0.0)
+        active = (signal >= float(self.dynamic_k_threshold)).long().sum(dim=1)
+        requested = self.dynamic_k_min + ((active - self.dynamic_k_min + self.dynamic_k_step - 1) // self.dynamic_k_step).clamp_min(0) * self.dynamic_k_step
+        requested = torch.where(active <= self.dynamic_k_min, torch.full_like(requested, self.dynamic_k_min), requested)
+        requested = requested.clamp(self.dynamic_k_min, self.dynamic_k_max)
+        effective = torch.minimum(requested, n)
+        return {"requested_k": requested, "effective_k": effective, "executed_k": effective}
+
     def forward_test(self, inputs, masks, metas=None):
         outputs = self._select(inputs=inputs, masks=masks, metas=metas, training=False)
         return {
@@ -1548,24 +1559,31 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         )
 
     @staticmethod
-    def deterministic_semantic_allocate(actionness, boundary, valid, budget):
+    def deterministic_semantic_allocate(actionness, boundary, valid, budget, return_roles=False):
         actionness = actionness.float(); boundary = boundary.float(); valid = valid.bool()
-        out = []
+        out = []; all_roles = []
+        budgets = [int(budget)] * actionness.shape[0] if not torch.is_tensor(budget) else [int(x) for x in budget.detach().cpu().tolist()]
         for b in range(actionness.shape[0]):
             cand = [i for i in range(actionness.shape[1]) if bool(valid[b, i])]
-            chosen = []
-            for order in (sorted(cand, key=lambda i: (-float(boundary[b, i]), i)), sorted(cand, key=lambda i: (-float(actionness[b, i]), i)), cand):
+            chosen = []; roles = []
+            orders = (("boundary", sorted(cand, key=lambda i: (-float(boundary[b, i]), i))),
+                      ("action_support", sorted(cand, key=lambda i: (-float(actionness[b, i]), i))),
+                      ("residual_coverage", cand))
+            for role, order in orders:
                 for i in order:
-                    if i not in chosen and len(chosen) < int(budget): chosen.append(i)
+                    if i not in chosen and len(chosen) < budgets[b]: chosen.append(i); roles.append(role)
             out.append(sorted(chosen))
-        return out
+            if return_roles:
+                role_by_idx = dict(zip(chosen, roles)); all_roles.append([role_by_idx[i] for i in sorted(chosen)])
+        return (out, all_roles) if return_roles else out
 
     def _semantic_indirect_transport_plan(self, reader_outputs, candidate_valid, candidate_dense_indices):
         action = reader_outputs.get("action_prob")
         boundary = reader_outputs.get("boundary_prob")
         if action is None or boundary is None:
             raise ValueError("semantic_indirect requires actionness and boundary heads")
-        picked = self.deterministic_semantic_allocate(action, boundary, candidate_valid, self.target_len)
+        dynamic = self._semantic_budget_from_predictions(action, boundary, candidate_valid)
+        picked, roles = self.deterministic_semantic_allocate(action, boundary, candidate_valid, dynamic["effective_k"], return_roles=True)
         batch = action.shape[0]; indices = torch.zeros((batch, self.target_len), dtype=torch.long, device=action.device)
         positions = torch.zeros((batch, self.target_len), dtype=torch.float32, device=action.device)
         lengths = torch.zeros((batch,), dtype=torch.long, device=action.device)
@@ -1577,7 +1595,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         weights = F.one_hot(indices, num_classes=action.shape[1]).float()
         return {"indices": indices, "weights": weights, "transport_weights": weights,
                 "selected_positions": positions, "selected_output_valid_lengths": lengths,
-                "selected_roles": [["boundary_or_action"] * len(row) for row in picked]}
+                "selected_roles": roles, "dynamic_budget_meta": dynamic}
 
     def _sparse_transport_plan(
         self,
@@ -4088,6 +4106,16 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         boundary_target = boundary_target.float()
         _require_finite(action_target, "selector action auxiliary target")
         _require_finite(boundary_target, "selector boundary auxiliary target")
+        if getattr(self, "selection_strategy", "slot_transport") == "semantic_indirect":
+            action_logits = reader_outputs.get("action_logits")
+            boundary_logits = reader_outputs.get("boundary_logits")
+            if action_logits is not None and boundary_logits is not None and bool(valid.any().item()):
+                losses["semantic_actionness_loss"] = F.binary_cross_entropy_with_logits(
+                    action_logits.float()[valid], action_target[valid]
+                )
+                losses["semantic_boundary_loss"] = F.binary_cross_entropy_with_logits(
+                    boundary_logits.float()[valid], boundary_target[valid]
+                )
         slot_prob = None
         column_mass = None
         if (
