@@ -1069,6 +1069,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         dynamic_k_max: int | None = None,
         dynamic_k_threshold: float = 0.5,
         dynamic_k_step: int = 32,
+        boundary_enabled: bool = True,
         meta_source: str = "pc_ot_mras_prebackbone_e2e_frame_selector",
     ) -> None:
         super().__init__()
@@ -1260,6 +1261,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         if int(dynamic_k_step) <= 0:
             raise ValueError("dynamic_k_step must be positive")
         self.boundary_radius = int(boundary_radius)
+        self.boundary_enabled = bool(boundary_enabled)
         self.dynamic_k_min = int(dynamic_k_min if dynamic_k_min is not None else max(1, target_len // 2))
         self.dynamic_k_max = int(dynamic_k_max if dynamic_k_max is not None else target_len)
         if not 0 < self.dynamic_k_min <= self.dynamic_k_max <= self.target_len:
@@ -1315,7 +1317,10 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
     def _semantic_budget_from_predictions(self, actionness, boundary, valid):
         """Resolve deploy-visible scores to a clamped per-sample K."""
         valid = valid.bool(); n = valid.long().sum(dim=1)
-        signal = torch.maximum(actionness.float(), boundary.float()).masked_fill(~valid, 0.0)
+        signal = actionness.float()
+        if self.boundary_enabled:
+            signal = torch.maximum(signal, boundary.float())
+        signal = signal.masked_fill(~valid, 0.0)
         active = (signal >= float(self.dynamic_k_threshold)).long().sum(dim=1)
         requested = self.dynamic_k_min + ((active - self.dynamic_k_min + self.dynamic_k_step - 1) // self.dynamic_k_step).clamp_min(0) * self.dynamic_k_step
         requested = torch.where(active <= self.dynamic_k_min, torch.full_like(requested, self.dynamic_k_min), requested)
