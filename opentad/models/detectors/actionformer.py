@@ -143,7 +143,7 @@ class ActionFormer(SingleStageDetector):
                 inputs = inputs.detach()
 
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x, masks = self._forward_backbone_dynamic_k(inputs, masks, metas)
         else:
             x = inputs
 
@@ -226,7 +226,7 @@ class ActionFormer(SingleStageDetector):
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
 
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x, masks = self._forward_backbone_dynamic_k(inputs, masks, metas)
         else:
             x = inputs
 
@@ -382,6 +382,46 @@ class ActionFormer(SingleStageDetector):
                 f"feature/mask temporal length mismatch {stage}: "
                 f"features={features.shape[-1]}, masks={masks.shape[-1]}"
             )
+
+    def _forward_backbone_dynamic_k(self, inputs, masks, metas):
+        """Run heavy backbone on stable outer-K buckets, then restore batch order.
+
+        Selector padding remains only a transport representation: each bucket is
+        sliced to its actual valid K before entering the heavy backbone.
+        """
+        if masks is None or masks.ndim != 2:
+            return self.backbone(inputs), masks
+        lengths = masks.bool().long().sum(dim=1)
+        if bool((lengths <= 0).any().item()):
+            raise ValueError("dynamic heavy backbone requires positive per-sample K")
+        outputs = [None] * int(inputs.shape[0])
+        for bucket_k in sorted(set(int(k) for k in lengths.detach().cpu().tolist())):
+            rows = (lengths == bucket_k).nonzero(as_tuple=True)[0]
+            bucket_inputs = inputs.index_select(0, rows)
+            # Selector inputs are [B,N,C,T,H,W] or [B,C,T,H,W].
+            time_dim = 3 if bucket_inputs.ndim == 6 else 2
+            bucket_inputs = bucket_inputs.narrow(time_dim, 0, bucket_k)
+            bucket_masks = masks.index_select(0, rows)[:, :bucket_k]
+            bucket_features = self.backbone(bucket_inputs, bucket_masks)
+            if isinstance(bucket_features, (tuple, list)):
+                raise TypeError("dynamic K recovery requires a tensor-valued backbone output")
+            for local_idx, batch_idx in enumerate(rows.detach().cpu().tolist()):
+                outputs[batch_idx] = bucket_features[local_idx]
+            for batch_idx in rows.detach().cpu().tolist():
+                if metas is not None:
+                    budget = metas[batch_idx].get("pc_ot_mras_prebackbone_dynamic_budget")
+                    if isinstance(budget, dict):
+                        budget["executed_k"] = int(bucket_k)
+                        budget["executed_k_source"] = "heavy_backbone_input_temporal_length"
+        max_t = max(int(item.shape[-1]) for item in outputs)
+        x = torch.stack([
+            torch.nn.functional.pad(item, (0, max_t - int(item.shape[-1])))
+            for item in outputs
+        ], dim=0)
+        out_masks = torch.zeros((len(outputs), max_t), dtype=torch.bool, device=x.device)
+        for idx, item in enumerate(outputs):
+            out_masks[idx, : int(item.shape[-1])] = True
+        return x, out_masks
 
     def _inject_pc_ot_mras_reader_outputs(self, feat_list, mask_list, metas):
         if self.pc_ot_mras_reader is None and self.pc_ot_mras_reader_eval_override is None:
