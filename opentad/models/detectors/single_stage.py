@@ -108,6 +108,10 @@ class SingleStageDetector(BaseDetector):
         for i in range(len(metas)):  # processing each video
             segments = rpn_proposals[i].detach().cpu()  # [N,2]
             scores = rpn_scores[i].detach().cpu()  # [N,class]
+            # Dynamic/irregular selectors operate on a selected axis. Resolve
+            # that axis once, before score filtering and NMS, so both ranking
+            # and suppression use physical coordinates.
+            segments = convert_to_seconds(segments, metas[i])
 
             if num_classes == 1:
                 scores = scores.squeeze(-1)
@@ -140,9 +144,6 @@ class SingleStageDetector(BaseDetector):
                 segments, scores, labels = batched_nms(segments, scores, labels, **post_cfg.nms)
 
             video_id = metas[i]["video_name"]
-
-            # convert segments to seconds
-            segments = convert_to_seconds(segments, metas[i])
 
             # merge with external classifier
             if isinstance(ext_cls, list):  # own classification results

@@ -13,6 +13,27 @@ import torch.nn.functional as F
 from ..builder import SELECTORS, build_selector
 
 
+def pack_variable_temporal_batch(tensor: torch.Tensor, lengths: torch.Tensor) -> list[torch.Tensor]:
+    """Pack prefix-valid temporal rows without padding them back to target_len.
+
+    This is the boundary contract used by a variable-K heavy backbone.  A list
+    is intentional: stacking these rows would silently re-introduce padded
+    temporal work and invalidate the cost receipt.
+    """
+    if tensor.ndim < 2 or lengths.ndim != 1 or tensor.shape[0] != lengths.numel():
+        raise ValueError("tensor must be [B,T,...] and lengths must be [B]")
+    if bool((lengths <= 0).any().item()) or bool((lengths > tensor.shape[1]).any().item()):
+        raise ValueError("lengths must be positive and within temporal dimension")
+    return [tensor[i, : int(lengths[i].item())].contiguous() for i in range(tensor.shape[0])]
+
+
+def temporal_work_units(lengths: torch.Tensor, *, channels: int = 1) -> int:
+    """Return the actual temporal work units represented by variable-K rows."""
+    if lengths.ndim != 1 or bool((lengths <= 0).any().item()):
+        raise ValueError("lengths must be a positive [B] tensor")
+    return int(lengths.long().sum().item()) * int(channels)
+
+
 def _require_finite(tensor: torch.Tensor, name: str, *, error_type: type[Exception] = FloatingPointError) -> torch.Tensor:
     if not torch.is_tensor(tensor):
         raise TypeError(f"{name} must be a tensor")
@@ -1300,7 +1321,28 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         requested = torch.where(active <= self.dynamic_k_min, torch.full_like(requested, self.dynamic_k_min), requested)
         requested = requested.clamp(self.dynamic_k_min, self.dynamic_k_max)
         effective = torch.minimum(requested, n)
-        return {"requested_k": requested, "effective_k": effective, "executed_k": effective}
+        # Keep tensors for the selector's budget arithmetic, but make the receipt
+        # immutable and explicitly per-video before metadata is written.
+        receipts = []
+        for i in range(int(requested.shape[0])):
+            receipts.append({
+                "enabled": True,
+                "protocol": "semantic_threshold",
+                "requested_k": int(requested[i].detach().cpu().item()),
+                "effective_k": int(effective[i].detach().cpu().item()),
+                "executed_k": int(effective[i].detach().cpu().item()),
+                "active_count": int(active[i].detach().cpu().item()),
+                "valid_len": int(n[i].detach().cpu().item()),
+                "threshold": float(self.dynamic_k_threshold),
+                "min_k": int(self.dynamic_k_min),
+                "max_k": int(self.dynamic_k_max),
+                "step_k": int(self.dynamic_k_step),
+                "uses_gt": False,
+                "uses_teacher": False,
+                "uses_raw_prediction_cache": False,
+            })
+        return {"requested_k": requested, "effective_k": effective, "executed_k": effective,
+                "budgets": effective, "metadata": receipts}
 
     def forward_test(self, inputs, masks, metas=None):
         outputs = self._select(inputs=inputs, masks=masks, metas=metas, training=False)
@@ -1595,7 +1637,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         weights = F.one_hot(indices, num_classes=action.shape[1]).float()
         return {"indices": indices, "weights": weights, "transport_weights": weights,
                 "selected_positions": positions, "selected_output_valid_lengths": lengths,
-                "selected_roles": roles, "dynamic_budget_meta": dynamic}
+                "selected_roles": roles, "dynamic_budget_meta": dynamic["metadata"]}
 
     def _sparse_transport_plan(
         self,
