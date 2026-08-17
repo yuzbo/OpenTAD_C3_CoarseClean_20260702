@@ -1,7 +1,35 @@
 import hashlib
 import json
 import os
+import random
 import torch
+
+
+CHECKPOINT_SCHEMA = "opentad.train.runtime.v1"
+
+
+def capture_rng_state():
+    state = {"python": random.getstate(), "torch": torch.get_rng_state()}
+    try:
+        import numpy as np
+        state["numpy"] = np.random.get_state()
+    except ImportError:
+        state["numpy"] = None
+    if torch.cuda.is_available():
+        state["cuda"] = torch.cuda.get_rng_state_all()
+    else:
+        state["cuda"] = None
+    return state
+
+
+def restore_rng_state(state):
+    random.setstate(state["python"])
+    torch.set_rng_state(state["torch"])
+    if state.get("numpy") is not None:
+        import numpy as np
+        np.random.set_state(state["numpy"])
+    if state.get("cuda") is not None and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(state["cuda"])
 
 
 def _canonical_sha256(value):
@@ -28,6 +56,11 @@ def save_checkpoint(
     work_dir=None,
     experiment_metadata=None,
     experiment_sidecar_schema=None,
+    scaler=None,
+    update=0,
+    data_loader_state=None,
+    milestone=False,
+    retention=3,
 ):
     save_dir = os.path.join(work_dir, "checkpoint")
 
@@ -36,7 +69,15 @@ def save_checkpoint(
         "state_dict": model.state_dict(),
         "optimizer": optimizer.state_dict(),
         "scheduler": scheduler.state_dict(),
+        "runtime_schema": CHECKPOINT_SCHEMA,
+        "update": int(update),
+        "rng_state": capture_rng_state(),
     }
+
+    if scaler is not None:
+        save_states["scaler"] = scaler.state_dict()
+    if data_loader_state is not None:
+        save_states["data_loader"] = data_loader_state
 
     if model_ema != None:
         save_states.update({"state_dict_ema": model_ema.module.state_dict()})
@@ -87,6 +128,13 @@ def save_checkpoint(
                     os.remove(path)
     else:
         torch.save(save_states, checkpoint_path)
+    if retention and not milestone:
+        checkpoints = sorted(
+            (name for name in os.listdir(save_dir) if name.startswith("epoch_") and name.endswith(".pth")),
+            key=lambda name: int(name[6:-4]),
+        )
+        for stale in checkpoints[:-int(retention)]:
+            os.remove(os.path.join(save_dir, stale))
 
 
 def save_best_checkpoint(model, model_ema, epoch, work_dir=None):

@@ -11,6 +11,33 @@ ARM_NAMES = (
     "direct_selector_ablation",
 )
 
+RUNTIME_BINDING_SCHEMA = "duca.runtime.binding.v1"
+
+
+def runtime_binding(cfg, model, optimizer, scheduler, *, seed):
+    """Return identities from constructed runtime objects, not arm metadata."""
+    model_obj = model.module if hasattr(model, "module") else model
+    return {
+        "schema": RUNTIME_BINDING_SCHEMA,
+        "detector": f"{model_obj.__class__.__module__}.{model_obj.__class__.__qualname__}",
+        "loss": repr(getattr(cfg.model, "loss", None)),
+        "nms": repr(getattr(cfg, "nms", getattr(cfg, "post_processing", None))),
+        "evaluator": repr(getattr(cfg, "evaluation", getattr(cfg, "evaluator", None))),
+        "update": f"{optimizer.__class__.__module__}.{optimizer.__class__.__qualname__}|{scheduler.__class__.__module__}.{scheduler.__class__.__qualname__}",
+        "seed": int(seed),
+    }
+
+
+def validate_shared_runtime_bindings(bindings):
+    if not bindings:
+        raise ValueError("runtime binding list is empty")
+    keys = ("detector", "loss", "nms", "evaluator", "update", "seed")
+    reference = {key: bindings[0][key] for key in keys}
+    for index, binding in enumerate(bindings[1:], start=1):
+        if any(binding[key] != reference[key] for key in keys):
+            raise ValueError(f"arm {index} changed shared runtime binding")
+    return reference
+
 def validate_manifests(manifests):
     ids = {}
     for split in ("FIT", "CAL", "HOLD"):

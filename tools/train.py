@@ -31,7 +31,7 @@ from opentad.utils import (
     setup_logger,
     ModelEma,
     save_checkpoint,
-    save_best_checkpoint,
+    restore_rng_state,
 )
 from opentad.utils.training_guard import (
     assert_detector_training_allowed,
@@ -237,22 +237,33 @@ def main():
     scheduler, max_epoch = build_scheduler(
         copy.deepcopy(cfg.scheduler), optimizer, len(train_loader)
     )
+    from tools.bata.duca_semantic_cycle2_contract import runtime_binding
+    runtime_identity = runtime_binding(
+        cfg, model, optimizer, scheduler, seed=args.seed
+    )
+    logger.info("DUCA runtime binding: %s", runtime_identity)
 
     # override the max_epoch
     max_epoch = cfg.workflow.get("end_epoch", max_epoch)
 
-    # resume: reset epoch, optimizer, scheduler, and EMA
+    successful_updates = 0
+    # resume: reset epoch, optimizer, scheduler, scaler, EMA, RNG, and update lifecycle
     if args.resume != None:
         logger.info("Resume training from: {}".format(args.resume))
         device = f"cuda:{args.local_rank}"
-        checkpoint = torch.load(args.resume, map_location=device)
+        checkpoint = torch.load(args.resume, map_location=device, weights_only=False)
         resume_epoch = checkpoint["epoch"]
         logger.info("Resume epoch is {}".format(resume_epoch))
         model.load_state_dict(checkpoint["state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         scheduler.load_state_dict(checkpoint["scheduler"])
+        if scaler is not None and checkpoint.get("scaler") is not None:
+            scaler.load_state_dict(checkpoint["scaler"])
         if model_ema != None:
             model_ema.module.load_state_dict(checkpoint["state_dict_ema"])
+        if checkpoint.get("rng_state") is not None:
+            restore_rng_state(checkpoint["rng_state"])
+        successful_updates = int(checkpoint.get("update", 0))
 
         del checkpoint  #  save memory if the model is very large such as ViT-g
         torch.cuda.empty_cache()
@@ -264,7 +275,6 @@ def main():
     val_loss_best = 1e6
     val_start_epoch = cfg.workflow.get("val_start_epoch", 0)
     disable_checkpoint = cfg.workflow.get("disable_checkpoint", False)
-    successful_updates = 0
     update_audit = {
         "optimizer_attempts": 0,
         "amp_skipped_attempts": 0,
@@ -293,9 +303,10 @@ def main():
         )
 
         # save checkpoint
+        checkpoint_interval = min(int(cfg.workflow.checkpoint_interval), 5)
         if not disable_checkpoint and (
             (epoch == max_epoch - 1)
-            or ((epoch + 1) % cfg.workflow.checkpoint_interval == 0)
+            or ((epoch + 1) % checkpoint_interval == 0)
         ):
             if args.rank == 0:
                 checkpoint_metadata = None
@@ -319,6 +330,11 @@ def main():
                     scheduler,
                     epoch,
                     work_dir=cfg.work_dir,
+                    scaler=scaler,
+                    update=successful_updates,
+                    data_loader_state=getattr(train_loader, "generator", None).get_state() if getattr(train_loader, "generator", None) is not None else None,
+                    milestone=(epoch == max_epoch - 1),
+                    retention=3,
                     experiment_metadata=checkpoint_metadata,
                     experiment_sidecar_schema=s1_checkpoint_sidecar_schema,
                 )
@@ -338,14 +354,9 @@ def main():
                     use_amp=use_amp,
                 )
 
-                # save the best checkpoint
+                # Validation is diagnostic only; lifecycle checkpoints are never selected by best loss.
                 if val_loss < val_loss_best:
-                    logger.info(f"New best epoch {epoch}")
                     val_loss_best = val_loss
-                    if not disable_checkpoint and args.rank == 0:
-                        save_best_checkpoint(
-                            model, model_ema, epoch, work_dir=cfg.work_dir
-                        )
 
         # eval for one epoch
         if epoch >= val_start_epoch:

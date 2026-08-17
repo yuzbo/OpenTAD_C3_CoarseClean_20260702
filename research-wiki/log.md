@@ -24,3 +24,10 @@ append_only: true
   distinct action-only versus boundary-first acquisition, dynamic executed-K accounting,
   and train parser PRE_RUN contract. Status is implemented/static-tested only; no data,
   GPU, training, metrics, or performance claim.
+## 2026-08-18 DUCA cycle2 runtime checkpoint focused plan
+
+- Bind the six-arm construction path to one runtime identity and expose that binding from the built detector/loss/evaluator/update/seed objects.
+- Extend the existing `tools/train.py` checkpoint path with complete state capture/restore, five-epoch cadence, lifecycle retention, and no-best selection.
+- Verify only with static/no-data fixtures and focused tests; no dataset, GPU, Slurm, or remote execution.
+
+Implementation status: commit `dcd68989`; `py_compile` passed. The no-data torch fixture was attempted but blocked by Windows `WinError 1114` loading `torch\lib\c10.dll`, so runtime restore is not claimed here.
