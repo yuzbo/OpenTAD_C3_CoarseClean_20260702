@@ -116,6 +116,19 @@ FORMAL_SCOUT_SIZE = 96
 
 P1_DEVELOPMENT_SEED = 3407
 P1_WINDOW_TOKEN_BUDGET = 24_576
+P1_RECOVERY_INTERVAL_EPOCHS = 5
+P1_RECOVERY_KEEP_LATEST = 3
+P1_SHARED_OFFICIAL_BASELINE_RECEIPT_SCHEMA = (
+    "adatad_shared_official_baseline_final_receipt_v001"
+)
+P1_SHARED_OFFICIAL_BASELINE_COMPLETE_STATUSES = (
+    "COMPLETE_RELEASED_CHECKPOINT_EVALUATION",
+    "COMPLETE_UNTOUCHED_OFFICIAL_REPRODUCTION",
+)
+P1_SEALED_RUN_ROOTS = (
+    "/data/run01/sczc063/yuzibo/"
+    "zoomtoken_p1_dnurq_5491c580_seed3407_20260815_0650",
+)
 P1_DO_CONFIG_RELATIVE_PATH = OFFICIAL_CONFIG_RELATIVE_PATH
 P1_DN_CONFIG_RELATIVE_PATH = (
     "configs/adatad/thumos/georoute_p1_dn_seed3407_v001.py"
@@ -298,6 +311,82 @@ def p1_source_config_relative_path(arm: str) -> str:
     if surface == "Q":
         return P1_Q_CONFIG_RELATIVE_PATH
     raise ValueError("P1 arm names an unknown tracked config surface")
+
+
+def validate_p1_shared_official_baseline_receipt(
+    path: str | Path,
+) -> dict[str, Any]:
+    """Validate the sole read-only official AdaTAD receipt consumed by P1."""
+
+    receipt_path = Path(path).resolve()
+    if not receipt_path.is_file() or receipt_path.is_symlink():
+        raise FileNotFoundError(
+            "PRE_RUN_NOT_READY: the shared official AdaTAD final receipt is missing"
+        )
+    receipt = read_json(receipt_path)
+    unsigned = dict(receipt)
+    observed_hash = unsigned.pop("receipt_sha256", None)
+    official_config = receipt.get("official_config")
+    checkpoint = receipt.get("checkpoint")
+    raw_result = receipt.get("raw_result")
+    population = receipt.get("canonical_population")
+    evaluator_nms = receipt.get("evaluator_nms")
+    metrics = receipt.get("metrics")
+    if (
+        receipt.get("schema_version")
+        != P1_SHARED_OFFICIAL_BASELINE_RECEIPT_SCHEMA
+        or receipt.get("status")
+        not in P1_SHARED_OFFICIAL_BASELINE_COMPLETE_STATUSES
+        or receipt.get("owner_project") != "ZoomToken"
+        or receipt.get("consumer_policy") != "READ_ONLY_FINAL_RECEIPT"
+        or receipt.get("official_release_commit")
+        != OFFICIAL_UPSTREAM_RELEASE_COMMIT
+        or int(receipt.get("seed", -1)) != FORMAL_REFERENCE_SEED
+        or receipt.get("official_test_opened") is not False
+        or receipt.get("matched_source_dense_used") is not False
+        or observed_hash != canonical_sha256(unsigned)
+        or not isinstance(official_config, Mapping)
+        or not isinstance(checkpoint, Mapping)
+        or not isinstance(raw_result, Mapping)
+        or not isinstance(population, Mapping)
+        or not isinstance(evaluator_nms, Mapping)
+        or not isinstance(metrics, Mapping)
+    ):
+        raise ValueError("PRE_RUN_NOT_READY: shared official AdaTAD receipt is invalid")
+    config_path = Path(str(official_config.get("path", ""))).resolve()
+    checkpoint_path = Path(str(checkpoint.get("path", ""))).resolve()
+    raw_result_path = Path(str(raw_result.get("path", ""))).resolve()
+    if (
+        not config_path.is_file()
+        or config_path.is_symlink()
+        or official_config.get("sha256") != OFFICIAL_CONFIG_SHA256
+        or sha256_file(config_path) != OFFICIAL_CONFIG_SHA256
+        or not checkpoint_path.is_file()
+        or checkpoint_path.is_symlink()
+        or checkpoint.get("sha256") != sha256_file(checkpoint_path)
+        or checkpoint.get("state_dict_key") not in {"state_dict", "state_dict_ema"}
+        or not raw_result_path.is_file()
+        or raw_result_path.is_symlink()
+        or raw_result.get("sha256") != sha256_file(raw_result_path)
+        or population
+        != {"total_videos": 411, "training_videos": 200, "validation_videos": 211}
+        or evaluator_nms
+        != {
+            "sigma": 0.7,
+            "max_seg_num": 2000,
+            "multiclass": True,
+            "voting_thresh": 0.7,
+        }
+        or set(metrics) != set(OFFICIAL_PUBLISHED_METRICS)
+        or any(
+            not isinstance(value, (int, float)) or not math.isfinite(float(value))
+            for value in metrics.values()
+        )
+    ):
+        raise ValueError(
+            "PRE_RUN_NOT_READY: shared official AdaTAD inputs are incomplete or changed"
+        )
+    return receipt
 
 
 def validate_p1_source_config(cfg: Any, *, arm: str, seed: int) -> dict[str, Any]:
@@ -543,7 +632,14 @@ def bind_formal_development_config(
     cfg.workflow.val_start_epoch = FORMAL_EPOCHS
     cfg.workflow.val_loss_interval = -1
     cfg.workflow.val_eval_interval = -1
-    cfg.workflow.checkpoint_policy = "final_only"
+    if arm in P1_DEVELOPMENT_ARMS:
+        cfg.workflow.checkpoint_policy = "recovery_interval"
+        cfg.workflow.checkpoint_interval = P1_RECOVERY_INTERVAL_EPOCHS
+        cfg.workflow.recovery_keep_latest = P1_RECOVERY_KEEP_LATEST
+        cfg.workflow.recovery_milestone_epochs = []
+        cfg.workflow.model_selection_checkpoint = "final_epoch_ema_only"
+    else:
+        cfg.workflow.checkpoint_policy = "final_only"
     cfg.workflow.max_amp_retries_per_batch = 0
     cfg.workflow.fail_on_skipped_update = False
     cfg.workflow.require_successful_update_hook = arm != "dense_native"
@@ -616,7 +712,11 @@ def bind_formal_development_config(
         "max_amp_retries_per_batch": 0,
         "fail_on_skipped_update": False,
         "schedule_and_ema_on_success_only": False,
-        "checkpoint_policy": "final_epoch_ema_only_atomic",
+        "checkpoint_policy": (
+            "five_epoch_full_state_recovery_latest3_plus_registered_milestones_and_final"
+            if arm in P1_DEVELOPMENT_ARMS
+            else "final_epoch_ema_only_atomic"
+        ),
         "preflight_parent": {
             "path": str(Path(preflight_finalization_path).resolve()),
             "file_sha256": expected_preflight_file_sha256,
@@ -632,6 +732,30 @@ def bind_formal_development_config(
         "paper_claim_allowed": False,
     }
     if arm in P1_DEVELOPMENT_ARMS:
+        binding["recovery_policy"] = {
+            "interval_epochs": P1_RECOVERY_INTERVAL_EPOCHS,
+            "keep_latest_recovery_checkpoints": P1_RECOVERY_KEEP_LATEST,
+            "registered_milestone_epochs": [],
+            "final_epoch": FORMAL_EPOCHS - 1,
+            "model_selection": "final_epoch_ema_only",
+            "full_state_fields": [
+                "model",
+                "model_ema",
+                "optimizer",
+                "scheduler",
+                "grad_scaler",
+                "epoch",
+                "successful_updates",
+                "update_audit",
+                "sampler_epoch",
+                "python_rng",
+                "numpy_rng",
+                "torch_cpu_rng",
+                "torch_cuda_rng_by_rank",
+            ],
+            "untouched_official_cadence_applies": False,
+            "sealed_run_roots": list(P1_SEALED_RUN_ROOTS),
+        }
         binding["p1_first_screen"] = {
             "arm_order": list(P1_FIRST_SCREEN_ARM_ORDER),
             "matched_runner_arm_order": list(P1_MATCHED_RUNNER_ARM_ORDER),
@@ -703,7 +827,11 @@ def validate_formal_development_binding(
         or binding.get("fail_on_skipped_update") is not False
         or binding.get("schedule_and_ema_on_success_only") is not False
         or binding.get("checkpoint_policy")
-        != "final_epoch_ema_only_atomic"
+        != (
+            "five_epoch_full_state_recovery_latest3_plus_registered_milestones_and_final"
+            if arm in P1_DEVELOPMENT_ARMS
+            else "final_epoch_ema_only_atomic"
+        )
         or binding.get("development_selection_allowed") is not True
         or binding.get("official_test_opened") is not False
         or binding.get("official_protocol_freeze_authorized") is not False
@@ -713,7 +841,36 @@ def validate_formal_development_binding(
         raise ValueError("formal development binding is invalid")
     if arm in P1_DEVELOPMENT_ARMS:
         p1 = binding.get("p1_first_screen")
-        if not isinstance(p1, Mapping) or (
+        recovery = binding.get("recovery_policy")
+        if (
+            not isinstance(recovery, Mapping)
+            or recovery
+            != {
+                "interval_epochs": P1_RECOVERY_INTERVAL_EPOCHS,
+                "keep_latest_recovery_checkpoints": P1_RECOVERY_KEEP_LATEST,
+                "registered_milestone_epochs": [],
+                "final_epoch": FORMAL_EPOCHS - 1,
+                "model_selection": "final_epoch_ema_only",
+                "full_state_fields": [
+                    "model",
+                    "model_ema",
+                    "optimizer",
+                    "scheduler",
+                    "grad_scaler",
+                    "epoch",
+                    "successful_updates",
+                    "update_audit",
+                    "sampler_epoch",
+                    "python_rng",
+                    "numpy_rng",
+                    "torch_cpu_rng",
+                    "torch_cuda_rng_by_rank",
+                ],
+                "untouched_official_cadence_applies": False,
+                "sealed_run_roots": list(P1_SEALED_RUN_ROOTS),
+            }
+            or not isinstance(p1, Mapping)
+            or (
             tuple(p1.get("arm_order", ())) != P1_FIRST_SCREEN_ARM_ORDER
             or tuple(p1.get("matched_runner_arm_order", ()))
             != P1_MATCHED_RUNNER_ARM_ORDER
@@ -744,9 +901,10 @@ def validate_formal_development_binding(
             or p1.get("runtime_attestation_required_before_model_import")
             is not True
             or p1.get("performance_inference_allowed") is not False
+            )
         ):
             raise ValueError("P1 development binding changed")
-    elif "p1_first_screen" in binding:
+    elif "p1_first_screen" in binding or "recovery_policy" in binding:
         raise ValueError("legacy formal binding contains a P1 arm payload")
     if seed is not None and int(seed) != int(binding["seed"]):
         raise ValueError("formal development CLI seed differs from binding")
@@ -792,7 +950,8 @@ def validate_formal_development_config(
         or int(cfg.workflow.get("val_start_epoch", -1)) != FORMAL_EPOCHS
         or int(cfg.workflow.get("val_loss_interval", 0)) != -1
         or int(cfg.workflow.get("val_eval_interval", 0)) != -1
-        or cfg.workflow.get("checkpoint_policy") != "final_only"
+        or cfg.workflow.get("checkpoint_policy")
+        != ("recovery_interval" if arm in P1_DEVELOPMENT_ARMS else "final_only")
         or int(cfg.workflow.get("max_amp_retries_per_batch", -1)) != 0
         or cfg.workflow.get("fail_on_skipped_update") is not False
         or cfg.workflow.get("require_successful_update_hook")
@@ -830,7 +989,14 @@ def validate_formal_development_config(
             "matched protocol"
         )
     if arm in P1_DEVELOPMENT_ARMS and (
-        int(custom.get("georoute_window_token_budget", -1))
+        int(cfg.workflow.get("checkpoint_interval", -1))
+        != P1_RECOVERY_INTERVAL_EPOCHS
+        or int(cfg.workflow.get("recovery_keep_latest", -1))
+        != P1_RECOVERY_KEEP_LATEST
+        or list(cfg.workflow.get("recovery_milestone_epochs", ())) != []
+        or cfg.workflow.get("model_selection_checkpoint")
+        != "final_epoch_ema_only"
+        or int(custom.get("georoute_window_token_budget", -1))
         != P1_WINDOW_TOKEN_BUDGET
         or custom.get("georoute_zero_carrier_mode") != "masked_zero"
         or custom.get("georoute_branch_calibration_mode")
@@ -921,6 +1087,26 @@ def require_clean_formal_checkout(
         )
 
 
+def formal_checkpoint_role(cfg: Any, *, epoch: int) -> str | None:
+    """Return the preregistered checkpoint role for one formal epoch."""
+
+    binding = validate_formal_development_config(
+        cfg,
+        seed=int(cfg.georoute_official_development_binding["seed"]),
+    )
+    epoch = int(epoch)
+    if epoch == FORMAL_EPOCHS - 1:
+        return "final"
+    if binding["arm"] not in P1_DEVELOPMENT_ARMS:
+        return None
+    milestones = set(binding["recovery_policy"]["registered_milestone_epochs"])
+    if epoch in milestones:
+        return "milestone"
+    if (epoch + 1) % P1_RECOVERY_INTERVAL_EPOCHS == 0:
+        return "recovery"
+    return None
+
+
 def build_formal_checkpoint_metadata(
     cfg: Any,
     *,
@@ -933,8 +1119,9 @@ def build_formal_checkpoint_metadata(
     world_size: int,
 ) -> dict[str, Any]:
     binding = validate_formal_development_config(cfg, seed=seed)
-    if int(epoch) != FORMAL_EPOCHS - 1:
-        raise ValueError("formal checkpoint must be the final epoch")
+    checkpoint_role = formal_checkpoint_role(cfg, epoch=epoch)
+    if checkpoint_role is None:
+        raise ValueError("formal checkpoint epoch is outside the frozen policy")
     if int(world_size) != FORMAL_WORLD_SIZE:
         raise ValueError("formal checkpoint world size changed")
     metadata: dict[str, Any] = {
@@ -950,7 +1137,10 @@ def build_formal_checkpoint_metadata(
         "max_amp_retries_observed": int(max_amp_retries_observed),
         "world_size": int(world_size),
         "global_batch_size": FORMAL_GLOBAL_BATCH_SIZE,
-        "checkpoint_policy": "final_epoch_ema_only_atomic",
+        "checkpoint_role": checkpoint_role,
+        "checkpoint_policy": binding["checkpoint_policy"],
+        "model_selection_eligible": checkpoint_role == "final",
+        "full_state_recovery_required": binding["arm"] in P1_DEVELOPMENT_ARMS,
         "official_test_opened": False,
         "paper_claim_allowed": False,
     }
@@ -962,6 +1152,7 @@ def validate_formal_checkpoint_sidecar(
     checkpoint_path: str | Path,
     *,
     binding: Mapping[str, Any] | None = None,
+    require_final: bool = True,
 ) -> dict[str, Any]:
     """Verify the atomic final-checkpoint commit marker and frozen binding."""
 
@@ -985,6 +1176,32 @@ def validate_formal_checkpoint_sidecar(
     metadata = dict(metadata)
     unsigned_metadata = dict(metadata)
     observed_metadata_hash = unsigned_metadata.pop("metadata_sha256", None)
+    metadata_arm = str(metadata.get("arm", ""))
+    p1_checkpoint = metadata_arm in P1_DEVELOPMENT_ARMS
+    checkpoint_role = metadata.get("checkpoint_role")
+    if checkpoint_role is None and not p1_checkpoint:
+        checkpoint_role = "final"
+    expected_policy = (
+        "five_epoch_full_state_recovery_latest3_plus_registered_milestones_and_final"
+        if p1_checkpoint
+        else "final_epoch_ema_only_atomic"
+    )
+    epoch = int(metadata.get("epoch", -1))
+    role_valid = (
+        checkpoint_role == "final" and epoch == FORMAL_EPOCHS - 1
+    ) or (
+        p1_checkpoint
+        and checkpoint_role == "recovery"
+        and epoch < FORMAL_EPOCHS - 1
+        and (epoch + 1) % P1_RECOVERY_INTERVAL_EPOCHS == 0
+    ) or (
+        p1_checkpoint and checkpoint_role == "milestone" and epoch < FORMAL_EPOCHS - 1
+    )
+    expected_name = {
+        "final": f"epoch_{epoch}.pth",
+        "recovery": f"recovery_epoch_{epoch}.pth",
+        "milestone": f"milestone_epoch_{epoch}.pth",
+    }.get(str(checkpoint_role))
     if (
         sidecar.get("schema_version")
         != FORMAL_DEVELOPMENT_CHECKPOINT_SIDECAR_SCHEMA
@@ -995,12 +1212,23 @@ def validate_formal_checkpoint_sidecar(
         or metadata.get("schema_version")
         != FORMAL_DEVELOPMENT_CHECKPOINT_SIDECAR_SCHEMA
         or observed_metadata_hash != canonical_sha256(unsigned_metadata)
-        or int(metadata.get("epoch", -1)) != FORMAL_EPOCHS - 1
+        or not role_valid
+        or checkpoint.name != expected_name
+        or (require_final and checkpoint_role != "final")
         or int(metadata.get("world_size", -1)) != FORMAL_WORLD_SIZE
         or int(metadata.get("global_batch_size", -1))
         != FORMAL_GLOBAL_BATCH_SIZE
-        or metadata.get("checkpoint_policy")
-        != "final_epoch_ema_only_atomic"
+        or metadata.get("checkpoint_policy") != expected_policy
+        or metadata.get(
+            "model_selection_eligible",
+            checkpoint_role == "final" if not p1_checkpoint else None,
+        )
+        is not (checkpoint_role == "final")
+        or metadata.get(
+            "full_state_recovery_required",
+            False if not p1_checkpoint else None,
+        )
+        is not p1_checkpoint
         or int(metadata.get("max_amp_retries_observed", -1)) != 0
         or metadata.get("official_test_opened") is not False
         or metadata.get("paper_claim_allowed") is not False
@@ -1009,7 +1237,7 @@ def validate_formal_checkpoint_sidecar(
     train_batches = int(metadata.get("train_batches_per_epoch", -1))
     successful_updates = int(metadata.get("successful_updates", -1))
     skipped_attempts = int(metadata.get("amp_skipped_attempts", -1))
-    expected_consumed_batches = FORMAL_EPOCHS * train_batches
+    expected_consumed_batches = (epoch + 1) * train_batches
     if (
         train_batches <= 0
         or successful_updates < 0
@@ -1022,6 +1250,8 @@ def validate_formal_checkpoint_sidecar(
         )
     if binding is not None:
         validated_binding = validate_formal_development_binding(binding)
+        recovery_policy = validated_binding.get("recovery_policy", {})
+        milestone_epochs = set(recovery_policy.get("registered_milestone_epochs", ()))
         if (
             metadata.get("runtime_commit")
             != validated_binding["runtime_commit"]
@@ -1030,6 +1260,14 @@ def validate_formal_checkpoint_sidecar(
             or metadata.get("arm") != validated_binding["arm"]
             or int(metadata.get("seed", -1))
             != int(validated_binding["seed"])
+            or (
+                checkpoint_role == "milestone"
+                and epoch not in milestone_epochs
+            )
+            or (
+                checkpoint_role == "recovery"
+                and epoch in milestone_epochs
+            )
         ):
             raise ValueError(
                 "formal checkpoint sidecar is bound to another cell"

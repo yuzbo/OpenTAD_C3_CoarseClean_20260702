@@ -35,11 +35,15 @@ from tools.bata.georoute_official_comparable_contract import (  # noqa: E402
     P1_DEVELOPMENT_SEED,
     P1_FIRST_SCREEN_ARM_ORDER,
     P1_DO_CONFIG_RELATIVE_PATH,
+    P1_MATCHED_RUNNER_ARM_ORDER,
+    P1_RECOVERY_INTERVAL_EPOCHS,
+    P1_RECOVERY_KEEP_LATEST,
     p1_arm_spec,
     p1_source_config_relative_path,
     _validate_preflight_parent,
     formal_arm_spec,
     read_json,
+    validate_p1_shared_official_baseline_receipt,
     validate_protocol_manifest,
 )
 from tools.bata.georoute_storage import storage_capacity_receipt  # noqa: E402
@@ -174,6 +178,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--p1-runtime-container-image", type=Path)
     parser.add_argument("--p1-runtime-dependency-lock", type=Path)
+    parser.add_argument("--p1-shared-official-baseline-receipt", type=Path)
     return parser.parse_args()
 
 
@@ -238,6 +243,7 @@ def _validate_p1_pre_release_receipts(
     jobs = deployment.get("jobs")
     stage_jobs = jobs.get("stage") if isinstance(jobs, Mapping) else None
     cost_jobs = jobs.get("cost") if isinstance(jobs, Mapping) else None
+    shared = deployment.get("shared_official_baseline")
     seed_key = str(P1_DEVELOPMENT_SEED)
     if (
         deployment.get("schema_version") != FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA
@@ -249,19 +255,37 @@ def _validate_p1_pre_release_receipts(
         or deployment.get("seed") != P1_DEVELOPMENT_SEED
         or deployment.get("seeds") != [P1_DEVELOPMENT_SEED]
         or deployment.get("accuracy_cells") != 5
+        or deployment.get("scheduled_accuracy_cells") != 4
+        or deployment.get("external_report_only_cells") != 1
         or deployment.get("cost_leaves") != 8
         or not isinstance(jobs, Mapping)
         or not isinstance(stage_jobs, Mapping)
-        or set(stage_jobs) != set(P1_FIRST_SCREEN_ARM_ORDER)
+        or set(stage_jobs) != set(P1_MATCHED_RUNNER_ARM_ORDER)
         or not isinstance(cost_jobs, Mapping)
         or set(cost_jobs) != set(P1_COST_LEAF_SPECS)
+        or not isinstance(shared, Mapping)
+        or shared.get("consumer_policy") != "READ_ONLY_FINAL_RECEIPT"
+        or shared.get("do_role") != "mandatory_report_only_external_dependency"
+        or shared.get("training_or_evaluation_scheduled_by_p1") is not False
+        or deployment.get("recovery_policy")
+        != {
+            "applies_to": list(P1_MATCHED_RUNNER_ARM_ORDER),
+            "untouched_official_do_excluded": True,
+            "interval_epochs": P1_RECOVERY_INTERVAL_EPOCHS,
+            "keep_latest_recovery_checkpoints": P1_RECOVERY_KEEP_LATEST,
+            "registered_milestones_preserved": True,
+            "final_checkpoint_preserved": True,
+            "model_selection": "final_epoch_ema_only",
+            "resume_entry_supported_for_unsealed_bound_cells": True,
+            "sealed_5491_resume_forbidden": True,
+        }
         or deployment.get("dependency_policy")
         != {
-            "all_fifteen_jobs_held_until_receipts_immutable": True,
+            "all_fourteen_jobs_held_until_receipts_immutable": True,
             "accuracy_afterany_runtime_preflight": True,
             "cost_afterany_runtime_preflight_and_source_stages": True,
-            "finalizer_afterany_all_fourteen_predecessors": True,
-            "release_all_fifteen_atomically": True,
+            "finalizer_afterany_all_thirteen_predecessors": True,
+            "release_all_fourteen_atomically": True,
             "resume_allowed": False,
             "retry_allowed": False,
             "requeue_allowed": False,
@@ -270,11 +294,21 @@ def _validate_p1_pre_release_receipts(
         or deployment.get("paper_claim_allowed") is not False
     ):
         raise ValueError("P1 deployment receipt contract is invalid before release")
+    shared_path = Path(str(shared["receipt_path"])).resolve()
+    shared_receipt = validate_p1_shared_official_baseline_receipt(shared_path)
+    if (
+        sha256_file(shared_path) != shared.get("receipt_file_sha256")
+        or shared_receipt.get("receipt_sha256") != shared.get("receipt_sha256")
+        or shared_receipt.get("status") != shared.get("status")
+        or dict(shared_receipt.get("checkpoint", {})) != shared.get("checkpoint")
+        or dict(shared_receipt.get("metrics", {})) != shared.get("metrics")
+    ):
+        raise ValueError("P1 shared official AdaTAD receipt changed before release")
 
     runtime_preflight_job = str(jobs.get("runtime_preflight", ""))
     finalizer_job = str(jobs.get("finalizer", ""))
     ordered_stage_jobs: list[str] = []
-    for arm in P1_FIRST_SCREEN_ARM_ORDER:
+    for arm in P1_MATCHED_RUNNER_ARM_ORDER:
         arm_jobs = stage_jobs[arm]
         if not isinstance(arm_jobs, Mapping) or set(arm_jobs) != {seed_key}:
             raise ValueError(f"P1 deployment stage receipt is invalid for {arm}")
@@ -284,8 +318,8 @@ def _validate_p1_pre_release_receipts(
         [runtime_preflight_job, *ordered_stage_jobs, *ordered_cost_jobs]
     )
     submitted_ids = _p1_job_ids([*predecessor_ids, finalizer_job])
-    if len(predecessor_ids) != 14 or len(submitted_ids) != 15:
-        raise ValueError("P1 deployment receipt does not bind the 15-job DAG")
+    if len(predecessor_ids) != 13 or len(submitted_ids) != 14:
+        raise ValueError("P1 deployment receipt does not bind the 14-job DAG")
     if submitted_ids != _p1_job_ids(expected_submitted):
         raise ValueError("P1 deployment receipt job population changed before release")
 
@@ -442,14 +476,20 @@ def _deploy_p1(
     protocol: Mapping[str, Any],
     inputs: Mapping[str, Path],
 ) -> dict[str, Any]:
-    """Submit one held, immutable 15-job P1 graph through the existing entry."""
+    """Submit one held P1 graph with DO supplied by the shared read-only receipt."""
 
     if args.p1_runtime_container_image is None or args.p1_runtime_dependency_lock is None:
         raise ValueError("P1 mode requires the immutable container image and dependency lock")
+    if args.p1_shared_official_baseline_receipt is None:
+        raise ValueError(
+            "PRE_RUN_NOT_READY: P1 requires the shared official AdaTAD final receipt"
+        )
     container_image = args.p1_runtime_container_image.resolve()
     dependency_lock = args.p1_runtime_dependency_lock.resolve()
     if not container_image.is_file() or not dependency_lock.is_file():
         raise FileNotFoundError("P1 runtime image or dependency lock is missing")
+    shared_receipt_path = args.p1_shared_official_baseline_receipt.resolve()
+    shared_receipt = validate_p1_shared_official_baseline_receipt(shared_receipt_path)
     source_configs = {
         arm: _p1_source_config(
             arm,
@@ -463,8 +503,8 @@ def _deploy_p1(
         if arm != "DO":
             p1_arm_spec(arm)
 
-    capacity = _require_submit_capacity(additional_jobs=15)
-    storage = storage_capacity_receipt(run_root, cell_count=13)
+    capacity = _require_submit_capacity(additional_jobs=14)
+    storage = storage_capacity_receipt(run_root, cell_count=12)
     stage_script = (
         ROOT / "scripts" / "run_georoute_official_development_stage_slurm.sh"
     )
@@ -503,7 +543,7 @@ def _deploy_p1(
         "preflight", attestation_name="preflight_unused.json"
     )
     stage_exports: dict[str, dict[str, str]] = {}
-    for arm in P1_FIRST_SCREEN_ARM_ORDER:
+    for arm in P1_MATCHED_RUNNER_ARM_ORDER:
         stage_exports[arm] = {
             **task_exports("accuracy", attestation_name=f"accuracy_{arm}.json"),
             "GEOROUTE_OFFICIAL_DEVELOPMENT_ARM": arm,
@@ -529,7 +569,7 @@ def _deploy_p1(
         stage=True,
         test_only=True,
     )
-    for arm in P1_FIRST_SCREEN_ARM_ORDER:
+    for arm in P1_MATCHED_RUNNER_ARM_ORDER:
         _sbatch(
             name=f"ztp1_{arm.lower()}_{P1_DEVELOPMENT_SEED}",
             script=stage_script,
@@ -582,7 +622,7 @@ def _deploy_p1(
         )
         submitted.append(runtime_preflight_job)
         stage_jobs: dict[str, dict[str, str]] = {}
-        for arm in P1_FIRST_SCREEN_ARM_ORDER:
+        for arm in P1_MATCHED_RUNNER_ARM_ORDER:
             job_id = _sbatch(
                 name=f"ztp1_{arm.lower()}_{P1_DEVELOPMENT_SEED}",
                 script=stage_script,
@@ -602,7 +642,15 @@ def _deploy_p1(
                     (
                         runtime_preflight_job,
                         stage_jobs["Q"][str(P1_DEVELOPMENT_SEED)],
-                        stage_jobs[spec["comparator"]][str(P1_DEVELOPMENT_SEED)],
+                        *(
+                            ()
+                            if spec["comparator"] == "DO"
+                            else (
+                                stage_jobs[spec["comparator"]][
+                                    str(P1_DEVELOPMENT_SEED)
+                                ],
+                            )
+                        ),
                     )
                 )
             )
@@ -622,7 +670,7 @@ def _deploy_p1(
             runtime_preflight_job,
             *(
                 stage_jobs[arm][str(P1_DEVELOPMENT_SEED)]
-                for arm in P1_FIRST_SCREEN_ARM_ORDER
+                for arm in P1_MATCHED_RUNNER_ARM_ORDER
             ),
             *(cost_jobs[leaf_id] for leaf_id in P1_COST_LEAF_SPECS),
         ]
@@ -666,6 +714,8 @@ def _deploy_p1(
                 for arm, path in source_configs.items()
             },
             "accuracy_cells": 5,
+            "scheduled_accuracy_cells": 4,
+            "external_report_only_cells": 1,
             "cost_leaves": 8,
             "jobs": {
                 "runtime_preflight": runtime_preflight_job,
@@ -673,11 +723,22 @@ def _deploy_p1(
                 "cost": cost_jobs,
                 "finalizer": finalizer_job,
             },
+            "shared_official_baseline": {
+                "receipt_path": str(shared_receipt_path),
+                "receipt_file_sha256": sha256_file(shared_receipt_path),
+                "receipt_sha256": shared_receipt["receipt_sha256"],
+                "status": shared_receipt["status"],
+                "consumer_policy": "READ_ONLY_FINAL_RECEIPT",
+                "do_role": "mandatory_report_only_external_dependency",
+                "checkpoint": dict(shared_receipt["checkpoint"]),
+                "metrics": dict(shared_receipt["metrics"]),
+                "training_or_evaluation_scheduled_by_p1": False,
+            },
             "runtime_attestation": {
                 "preflight_path": str(runtime_preflight_path),
                 "leaf_paths": {
                     arm: stage_exports[arm]["GEOROUTE_P1_RUNTIME_ATTESTATION"]
-                    for arm in P1_FIRST_SCREEN_ARM_ORDER
+                    for arm in P1_MATCHED_RUNNER_ARM_ORDER
                 },
                 "cost_leaf_paths": {
                     leaf_id: cost_exports[leaf_id]["GEOROUTE_P1_RUNTIME_ATTESTATION"]
@@ -717,14 +778,25 @@ def _deploy_p1(
             "submit_capacity_preflight": capacity,
             "storage_preflight": storage,
             "dependency_policy": {
-                "all_fifteen_jobs_held_until_receipts_immutable": True,
+                "all_fourteen_jobs_held_until_receipts_immutable": True,
                 "accuracy_afterany_runtime_preflight": True,
                 "cost_afterany_runtime_preflight_and_source_stages": True,
-                "finalizer_afterany_all_fourteen_predecessors": True,
-                "release_all_fifteen_atomically": True,
+                "finalizer_afterany_all_thirteen_predecessors": True,
+                "release_all_fourteen_atomically": True,
                 "resume_allowed": False,
                 "retry_allowed": False,
                 "requeue_allowed": False,
+            },
+            "recovery_policy": {
+                "applies_to": list(P1_MATCHED_RUNNER_ARM_ORDER),
+                "untouched_official_do_excluded": True,
+                "interval_epochs": P1_RECOVERY_INTERVAL_EPOCHS,
+                "keep_latest_recovery_checkpoints": P1_RECOVERY_KEEP_LATEST,
+                "registered_milestones_preserved": True,
+                "final_checkpoint_preserved": True,
+                "model_selection": "final_epoch_ema_only",
+                "resume_entry_supported_for_unsealed_bound_cells": True,
+                "sealed_5491_resume_forbidden": True,
             },
             "development_gate_only": True,
             "official_test_opened": False,
@@ -761,7 +833,7 @@ def _deploy_p1(
             "schema_version": FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA,
             "study_id": P1_STUDY_ID,
             "mode": "p1",
-            "status": "RELEASED_ATOMIC_P1_FIFTEEN_JOB_DAG",
+            "status": "RELEASED_ATOMIC_P1_FOURTEEN_JOB_DAG",
             "runtime_commit": expected_commit,
             "released_job_ids": submitted,
             "deployment_file_sha256": sha256_file(deployment_path),

@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import time
@@ -48,6 +49,8 @@ from tools.bata.georoute_official_comparable_contract import (  # noqa: E402
     P1_DEVELOPMENT_SEED,
     P1_FIRST_SCREEN_ARM_ORDER,
     P1_MATCHED_RUNNER_ARM_ORDER,
+    P1_RECOVERY_INTERVAL_EPOCHS,
+    P1_RECOVERY_KEEP_LATEST,
     P1_WINDOW_TOKEN_BUDGET,
     bind_formal_development_config,
     development_arm_spec,
@@ -55,6 +58,7 @@ from tools.bata.georoute_official_comparable_contract import (  # noqa: E402
     formal_arm_spec,
     formal_cell_relative_path,
     read_json,
+    validate_p1_shared_official_baseline_receipt,
     validate_formal_checkpoint_sidecar,
     validate_formal_development_binding,
     validate_protocol_manifest,
@@ -137,6 +141,92 @@ def _accuracy_log_paths(
     return log_root / "train.out", log_root / "test.out"
 
 
+def validate_formal_checkpoint_population(
+    checkpoint: Path,
+    *,
+    binding: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Validate final selection plus the bounded P1 recovery population."""
+
+    final_sidecar = validate_formal_checkpoint_sidecar(
+        checkpoint,
+        binding=binding,
+    )
+    checkpoint_dir = checkpoint.parent
+    payloads = sorted(checkpoint_dir.glob("*.pth"))
+    sidecars = sorted(checkpoint_dir.glob("*.metadata.json"))
+    temporaries = sorted(checkpoint_dir.glob("*.tmp*"))
+    if temporaries:
+        raise RuntimeError("formal checkpoint publication left temporary artifacts")
+    if binding.get("arm") not in P1_MATCHED_RUNNER_ARM_ORDER:
+        if payloads != [checkpoint] or sidecars != [Path(str(checkpoint) + ".metadata.json")]:
+            raise RuntimeError("formal final-only policy requires one checkpoint-sidecar pair")
+        return []
+
+    recovery_policy = binding.get("recovery_policy")
+    if not isinstance(recovery_policy, Mapping):
+        raise ValueError("P1 binding lacks its recovery policy")
+    recovery_pattern = re.compile(r"recovery_epoch_(\d+)\.pth")
+    milestone_pattern = re.compile(r"milestone_epoch_(\d+)\.pth")
+    recovery_epochs = []
+    milestone_epochs = []
+    recovery_receipts = []
+    expected_payloads = {checkpoint}
+    expected_sidecars = {Path(str(checkpoint) + ".metadata.json")}
+    for path in payloads:
+        if path == checkpoint:
+            continue
+        recovery_match = recovery_pattern.fullmatch(path.name)
+        milestone_match = milestone_pattern.fullmatch(path.name)
+        if recovery_match is not None:
+            recovery_epochs.append(int(recovery_match.group(1)))
+        elif milestone_match is not None:
+            milestone_epochs.append(int(milestone_match.group(1)))
+        else:
+            raise ValueError("P1 checkpoint population contains an unknown payload")
+        sidecar = validate_formal_checkpoint_sidecar(
+            path,
+            binding=binding,
+            require_final=False,
+        )
+        expected_payloads.add(path)
+        expected_sidecars.add(Path(str(path) + ".metadata.json"))
+        recovery_receipts.append(
+            {
+                "path": str(path.resolve()),
+                "sha256": sha256_file(path),
+                "sidecar_sha256": sidecar["sidecar_sha256"],
+                "checkpoint_role": sidecar["experiment_metadata"]["checkpoint_role"],
+                "epoch": int(sidecar["experiment_metadata"]["epoch"]),
+            }
+        )
+    registered_milestones = set(
+        map(int, recovery_policy["registered_milestone_epochs"])
+    )
+    all_recovery_epochs = [
+        epoch
+        for epoch in range(
+            int(recovery_policy["interval_epochs"]) - 1,
+            int(recovery_policy["final_epoch"]),
+            int(recovery_policy["interval_epochs"]),
+        )
+        if epoch not in registered_milestones
+    ]
+    expected_recovery_epochs = all_recovery_epochs[
+        -int(recovery_policy["keep_latest_recovery_checkpoints"]) :
+    ]
+    if (
+        sorted(recovery_epochs) != expected_recovery_epochs
+        or sorted(milestone_epochs)
+        != sorted(registered_milestones)
+        or set(payloads) != expected_payloads
+        or set(sidecars) != expected_sidecars
+        or final_sidecar["experiment_metadata"]["checkpoint_role"] != "final"
+    ):
+        raise ValueError("P1 recovery checkpoint retention changed")
+    return sorted(recovery_receipts, key=lambda row: (row["epoch"], row["path"]))
+
+
 def _current_commit() -> str:
     if os.environ.get("GEOROUTE_SOURCE_IDENTITY_VERIFIED") == "1":
         expected = os.environ.get("GEOROUTE_EXPECTED_COMMIT", "").strip().lower()
@@ -180,6 +270,40 @@ def _is_sha256(value: Any) -> bool:
         and len(value) == 64
         and all(character in "0123456789abcdef" for character in value)
     )
+
+
+def canonical_p1_physical_population(
+    descriptors: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], str]:
+    """Canonicalize physical windows independently of DDP placement fields."""
+
+    by_dataset_index: dict[int, dict[str, Any]] = {}
+    for source in descriptors:
+        physical = {
+            "dataset_index": int(source.get("dataset_index", -1)),
+            "video_id": str(source.get("video_id", "")),
+            "window_center_count": int(source.get("window_center_count", -1)),
+            "window_center_first": float(source.get("window_center_first", math.nan)),
+            "window_center_last": float(source.get("window_center_last", math.nan)),
+        }
+        if (
+            physical["dataset_index"] < 0
+            or not physical["video_id"]
+            or physical["window_center_count"] <= 0
+            or not math.isfinite(physical["window_center_first"])
+            or not math.isfinite(physical["window_center_last"])
+        ):
+            raise ValueError("P1 physical population descriptor is invalid")
+        existing = by_dataset_index.get(physical["dataset_index"])
+        if existing is not None and existing != physical:
+            raise ValueError("P1 DDP padding changed a physical window identity")
+        by_dataset_index[physical["dataset_index"]] = physical
+    ordered = [by_dataset_index[index] for index in sorted(by_dataset_index)]
+    if not ordered or [row["dataset_index"] for row in ordered] != list(
+        range(len(ordered))
+    ):
+        raise ValueError("P1 physical population is incomplete")
+    return ordered, canonical_sha256(ordered)
 
 
 def _q_expect(payload: Any, expected: Mapping[str, Any], message: str) -> None:
@@ -327,6 +451,7 @@ def _summarize_p1_q_routes(
     padding_count: int,
     population_sha256: str,
     population_descriptor_sha256: str,
+    physical_population_sha256: str,
     telemetry_file_sha256: str,
 ) -> dict[str, Any]:
     all_k: list[int] = []
@@ -427,6 +552,9 @@ def _summarize_p1_q_routes(
         "sampler_padding_count": padding_count,
         "population_sha256": population_sha256,
         "population_descriptor_sha256": population_descriptor_sha256,
+        "physical_population_sha256": physical_population_sha256,
+        "population_identity_scope": "physical_windows_excluding_ddp_placement",
+        "execution_layout_population_sha256": population_sha256,
         "target_k": None,
         "window_token_budget": P1_WINDOW_TOKEN_BUDGET,
         "window_budget_is_global": True,
@@ -521,6 +649,7 @@ def validate_p1_deployment_shape(deployment: Mapping[str, Any]) -> dict[str, Any
     runtime = checked.get("runtime_attestation")
     cost = checked.get("cost_protocol")
     policy = checked.get("dependency_policy")
+    shared = checked.get("shared_official_baseline")
     if (
         checked.get("schema_version") != FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA
         or checked.get("study_id") != P1_STUDY_ID
@@ -530,14 +659,16 @@ def validate_p1_deployment_shape(deployment: Mapping[str, Any]) -> dict[str, Any
         or tuple(checked.get("seeds", ())) != (P1_DEVELOPMENT_SEED,)
         or int(checked.get("seed", -1)) != P1_DEVELOPMENT_SEED
         or int(checked.get("accuracy_cells", -1)) != 5
+        or int(checked.get("scheduled_accuracy_cells", -1)) != 4
+        or int(checked.get("external_report_only_cells", -1)) != 1
         or int(checked.get("cost_leaves", -1)) != 8
         or not isinstance(stage_jobs, Mapping)
-        or set(stage_jobs) != set(P1_FIRST_SCREEN_ARM_ORDER)
+        or set(stage_jobs) != set(P1_MATCHED_RUNNER_ARM_ORDER)
         or any(
             not isinstance(stage_jobs[arm], Mapping)
             or set(stage_jobs[arm]) != {str(P1_DEVELOPMENT_SEED)}
             or not str(stage_jobs[arm][str(P1_DEVELOPMENT_SEED)]).isdigit()
-            for arm in P1_FIRST_SCREEN_ARM_ORDER
+            for arm in P1_MATCHED_RUNNER_ARM_ORDER
         )
         or not isinstance(cost_jobs, Mapping)
         or set(cost_jobs) != set(P1_COST_LEAF_SPECS)
@@ -558,15 +689,31 @@ def validate_p1_deployment_shape(deployment: Mapping[str, Any]) -> dict[str, Any
         or float(cost.get("q_over_dn_upper_bound_limit", -1.0)) != 0.85
         or cost.get("dn_only_controlling_denominator") is not True
         or cost.get("do_mandatory_report_only") is not True
+        or not isinstance(shared, Mapping)
+        or shared.get("consumer_policy") != "READ_ONLY_FINAL_RECEIPT"
+        or shared.get("do_role") != "mandatory_report_only_external_dependency"
+        or shared.get("training_or_evaluation_scheduled_by_p1") is not False
+        or checked.get("recovery_policy")
+        != {
+            "applies_to": list(P1_MATCHED_RUNNER_ARM_ORDER),
+            "untouched_official_do_excluded": True,
+            "interval_epochs": P1_RECOVERY_INTERVAL_EPOCHS,
+            "keep_latest_recovery_checkpoints": P1_RECOVERY_KEEP_LATEST,
+            "registered_milestones_preserved": True,
+            "final_checkpoint_preserved": True,
+            "model_selection": "final_epoch_ema_only",
+            "resume_entry_supported_for_unsealed_bound_cells": True,
+            "sealed_5491_resume_forbidden": True,
+        }
         or not isinstance(policy, Mapping)
         or any(
             policy.get(field) is not True
             for field in (
-                "all_fifteen_jobs_held_until_receipts_immutable",
+                "all_fourteen_jobs_held_until_receipts_immutable",
                 "accuracy_afterany_runtime_preflight",
                 "cost_afterany_runtime_preflight_and_source_stages",
-                "finalizer_afterany_all_fourteen_predecessors",
-                "release_all_fifteen_atomically",
+                "finalizer_afterany_all_thirteen_predecessors",
+                "release_all_fourteen_atomically",
             )
         )
         or policy.get("resume_allowed") is not False
@@ -577,6 +724,15 @@ def validate_p1_deployment_shape(deployment: Mapping[str, Any]) -> dict[str, Any
         or not _self_hash_matches(checked, field="deployment_sha256")
     ):
         raise ValueError("P1 deployment shape changed")
+    shared_path = Path(str(shared.get("receipt_path", ""))).resolve()
+    shared_receipt = validate_p1_shared_official_baseline_receipt(shared_path)
+    if (
+        sha256_file(shared_path) != shared.get("receipt_file_sha256")
+        or shared_receipt.get("receipt_sha256") != shared.get("receipt_sha256")
+        or dict(shared_receipt.get("checkpoint", {})) != shared.get("checkpoint")
+        or dict(shared_receipt.get("metrics", {})) != shared.get("metrics")
+    ):
+        raise ValueError("P1 shared official AdaTAD receipt changed")
     return checked
 
 
@@ -590,7 +746,7 @@ def _validate_deployment(
     task: str = "accuracy",
     leaf_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    p1_cell = arm in P1_FIRST_SCREEN_ARM_ORDER or task == "cost"
+    p1_cell = arm in P1_MATCHED_RUNNER_ARM_ORDER or task == "cost"
     expected_arm_order = (
         P1_FIRST_SCREEN_ARM_ORDER if p1_cell else FORMAL_DEVELOPMENT_ARM_ORDER
     )
@@ -757,6 +913,17 @@ def summarize_formal_telemetry(path: Path, *, arm: str) -> dict[str, Any]:
     if payload.get("population_sha256") != population_sha256:
         raise ValueError("formal telemetry population hash changed")
     population_descriptor_sha256 = canonical_sha256({"records": descriptors})
+    physical_descriptors, physical_population_sha256 = (
+        canonical_p1_physical_population(descriptors)
+    )
+    if (
+        len(physical_descriptors) != dataset_count
+        or (
+            dataset_count == PHYSICAL_WINDOWS
+            and len({row["video_id"] for row in physical_descriptors}) != 40
+        )
+    ):
+        raise ValueError("formal telemetry physical population is invalid")
     if arm == "Q":
         return _summarize_p1_q_routes(
             routes,
@@ -765,6 +932,7 @@ def summarize_formal_telemetry(path: Path, *, arm: str) -> dict[str, Any]:
             padding_count=padding_count,
             population_sha256=population_sha256,
             population_descriptor_sha256=population_descriptor_sha256,
+            physical_population_sha256=physical_population_sha256,
             telemetry_file_sha256=sha256_file(path),
         )
 
@@ -791,6 +959,9 @@ def summarize_formal_telemetry(path: Path, *, arm: str) -> dict[str, Any]:
         "sampler_padding_count": padding_count,
         "population_sha256": population_sha256,
         "population_descriptor_sha256": population_descriptor_sha256,
+        "physical_population_sha256": physical_population_sha256,
+        "population_identity_scope": "physical_windows_excluding_ddp_placement",
+        "execution_layout_population_sha256": population_sha256,
         "target_k": expected_k,
         "role_counts": json.loads(next(iter(role_counts))),
         "unique_selected_route_hash_count": len(selected_hashes),
@@ -909,9 +1080,30 @@ def validate_formal_stage_result(
     ):
         raise ValueError("Q stage result lost its dynamic global-ragged summary")
     runtime_attestation = result.get("runtime_attestation")
-    if arm in P1_FIRST_SCREEN_ARM_ORDER:
+    if arm in P1_MATCHED_RUNNER_ARM_ORDER:
+        recovery_receipts = result.get("recovery_checkpoint_receipts")
+        recovery_policy = binding["recovery_policy"]
+        milestone_epochs = set(
+            map(int, recovery_policy["registered_milestone_epochs"])
+        )
+        ordinary_epochs = [
+            epoch
+            for epoch in range(
+                int(recovery_policy["interval_epochs"]) - 1,
+                int(recovery_policy["final_epoch"]),
+                int(recovery_policy["interval_epochs"]),
+            )
+            if epoch not in milestone_epochs
+        ][-int(recovery_policy["keep_latest_recovery_checkpoints"]) :]
+        expected_roles_and_epochs = {
+            *(('recovery', epoch) for epoch in ordinary_epochs),
+            *(('milestone', epoch) for epoch in milestone_epochs),
+        }
         if (
-            not isinstance(runtime_attestation, Mapping)
+            not _is_sha256(telemetry.get("physical_population_sha256"))
+            or telemetry.get("population_identity_scope")
+            != "physical_windows_excluding_ddp_placement"
+            or not isinstance(runtime_attestation, Mapping)
             or not _is_sha256(runtime_attestation.get("preflight_file_sha256"))
             or not _is_sha256(runtime_attestation.get("leaf_file_sha256"))
             or not _is_sha256(runtime_attestation.get("runtime_class_fingerprint"))
@@ -920,6 +1112,20 @@ def validate_formal_stage_result(
                 runtime_attestation["runtime_class"].get("visible_gpu_count", -1)
             )
             != FORMAL_WORLD_SIZE
+            or not isinstance(recovery_receipts, list)
+            or len(recovery_receipts) != len(expected_roles_and_epochs)
+            or {
+                (receipt.get("checkpoint_role"), int(receipt.get("epoch", -1)))
+                for receipt in recovery_receipts
+                if isinstance(receipt, Mapping)
+            }
+            != expected_roles_and_epochs
+            or any(
+                not isinstance(receipt, Mapping)
+                or not _is_sha256(receipt.get("sha256"))
+                or not _is_sha256(receipt.get("sidecar_sha256"))
+                for receipt in recovery_receipts
+            )
         ):
             raise ValueError("P1 stage result lacks its exact runtime class receipt")
     elif runtime_attestation is not None:
@@ -934,7 +1140,6 @@ def _parse_args() -> argparse.Namespace:
         "--arm",
         choices=(
             *FORMAL_DEVELOPMENT_ARM_ORDER,
-            "DO",
             *P1_MATCHED_RUNNER_ARM_ORDER,
         ),
     )
@@ -995,7 +1200,7 @@ def _execute(
         task="accuracy",
     )
     runtime_attestation = None
-    if args.arm in P1_FIRST_SCREEN_ARM_ORDER:
+    if args.arm in P1_MATCHED_RUNNER_ARM_ORDER:
         source_receipt = deployment.get("source_configs", {}).get(args.arm)
         source_path = args.source_config.resolve()
         if (
@@ -1077,21 +1282,10 @@ def _execute(
         cell_root / "checkpoint" / f"epoch_{FORMAL_EPOCHS - 1}.pth"
     )
     sidecar_path = Path(str(checkpoint) + ".metadata.json")
-    validate_formal_checkpoint_sidecar(
+    recovery_checkpoints = validate_formal_checkpoint_population(
         checkpoint,
         binding=cfg.georoute_official_development_binding,
     )
-    payloads = sorted(checkpoint.parent.glob("*.pth"))
-    sidecars = sorted(checkpoint.parent.glob("*.metadata.json"))
-    temporaries = sorted(checkpoint.parent.glob("*.tmp*"))
-    if (
-        payloads != [checkpoint]
-        or sidecars != [sidecar_path]
-        or temporaries
-    ):
-        raise RuntimeError(
-            "formal final-only policy requires one checkpoint-sidecar pair"
-        )
     test_prefix, test_rendezvous = build_torchrun_prefix(
         phase="test",
         slurm_job_id=slurm_job_id,
@@ -1196,8 +1390,11 @@ def _execute(
             "sidecar_path": str(sidecar_path.resolve()),
             "sidecar_file_sha256": sha256_file(sidecar_path),
             "sidecar_sha256": sidecar["sidecar_sha256"],
-            "policy": "final_epoch_ema_only_atomic",
+            "policy": cfg.georoute_official_development_binding[
+                "checkpoint_policy"
+            ],
         },
+        "recovery_checkpoint_receipts": recovery_checkpoints,
         "storage_receipt": read_json(storage_receipt_path),
         "prediction_path": str(prediction.resolve()),
         "prediction_sha256": sha256_file(prediction),
@@ -1352,23 +1549,69 @@ def _profile_p1_cost_pass(
         _strip_ddp_prefix,
     )
 
+    external_shared_do = stage.get("external_shared_do") is True
     config_path = Path(str(stage.get("config_path", ""))).resolve()
     if not config_path.is_file() or sha256_file(config_path) != stage.get("config_sha256"):
         raise ValueError("P1 cost source config changed after accuracy execution")
-    cfg = Config.fromfile(str(config_path))
-    binding = dict(stage["binding"])
+    if external_shared_do:
+        if arm != "DO":
+            raise ValueError("only DO may consume the shared official receipt")
+        deployment = stage.get("deployment")
+        if not isinstance(deployment, Mapping):
+            raise ValueError("P1 DO cost source lacks its deployment binding")
+        inputs = deployment.get("input_receipts")
+        if not isinstance(inputs, Mapping):
+            raise ValueError("P1 DO cost source lacks the frozen development inputs")
+        cfg = bind_formal_development_config(
+            source_config_path=config_path,
+            arm="dense_native",
+            seed=P1_DEVELOPMENT_SEED,
+            work_dir=Path(str(deployment["run_root"]))
+            / "control"
+            / "shared_do_report_only",
+            manifest_path=inputs["GEOROUTE_MANIFEST"]["path"],
+            development_annotation_path=inputs[
+                "GEOROUTE_DEVELOPMENT_ANNOTATION"
+            ]["path"],
+            class_map_path=inputs["GEOROUTE_CLASS_MAP"]["path"],
+            development_video_root=inputs["GEOROUTE_DEVELOPMENT_VIDEO_ROOT"]["path"],
+            pretrained_checkpoint_path=inputs["GEOROUTE_PRETRAINED"]["path"],
+            runtime_commit=str(deployment["runtime_commit"]),
+            preflight_finalization_path=deployment["preflight_finalization_path"],
+            expected_preflight_file_sha256=deployment[
+                "preflight_finalization_file_sha256"
+            ],
+        )
+        binding = dict(cfg.georoute_official_development_binding)
+    else:
+        cfg = Config.fromfile(str(config_path))
+        binding = dict(stage["binding"])
     checkpoint_receipt = stage["checkpoint_receipt"]
     checkpoint_path = Path(str(checkpoint_receipt["path"])).resolve()
-    validate_formal_checkpoint_sidecar(checkpoint_path, binding=binding)
+    if external_shared_do:
+        if (
+            not checkpoint_path.is_file()
+            or checkpoint_path.is_symlink()
+            or sha256_file(checkpoint_path) != checkpoint_receipt.get("sha256")
+        ):
+            raise ValueError("shared official DO checkpoint changed")
+    else:
+        validate_formal_checkpoint_sidecar(checkpoint_path, binding=binding)
     dataset = build_dataset(copy.deepcopy(cfg.dataset.test))
-    descriptors, population_sha256, accuracy_population_sha256 = (
+    descriptors, _layout_population_sha256, _accuracy_layout_sha256 = (
         _population_descriptor(dataset)
     )
+    physical_descriptors, population_sha256 = canonical_p1_physical_population(
+        descriptors
+    )
     if (
-        len(descriptors) != PHYSICAL_WINDOWS
-        or len({str(row["video_id"]) for row in descriptors}) != 40
-        or accuracy_population_sha256
-        != stage["telemetry_summary"]["population_sha256"]
+        len(physical_descriptors) != PHYSICAL_WINDOWS
+        or len({str(row["video_id"]) for row in physical_descriptors}) != 40
+        or (
+            not external_shared_do
+            and population_sha256
+            != stage["telemetry_summary"]["physical_population_sha256"]
+        )
         or (
             expected_population_sha256 is not None
             and population_sha256 != expected_population_sha256
@@ -1393,9 +1636,21 @@ def _profile_p1_cost_pass(
     model_cfg.backbone.custom.georoute_role_calibration_telemetry_enabled = False
     model = build_detector(model_cfg)
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    if int(checkpoint.get("epoch", -1)) != FORMAL_EPOCHS - 1 or "state_dict_ema" not in checkpoint:
-        raise ValueError("P1 cost checkpoint is not the frozen final EMA")
-    model.load_state_dict(_strip_ddp_prefix(checkpoint["state_dict_ema"]), strict=True)
+    state_dict_key = (
+        str(checkpoint_receipt.get("state_dict_key", ""))
+        if external_shared_do
+        else "state_dict_ema"
+    )
+    if (
+        state_dict_key not in {"state_dict", "state_dict_ema"}
+        or state_dict_key not in checkpoint
+        or (
+            not external_shared_do
+            and int(checkpoint.get("epoch", -1)) != FORMAL_EPOCHS - 1
+        )
+    ):
+        raise ValueError("P1 cost checkpoint is not the frozen selected state")
+    model.load_state_dict(_strip_ddp_prefix(checkpoint[state_dict_key]), strict=True)
     del checkpoint
     model = model.to(device).eval()
     ddp_model = DistributedDataParallel(model, device_ids=[0], output_device=0)
@@ -1568,6 +1823,7 @@ def _profile_p1_cost_pass(
         "population_sha256": population_sha256,
         "checkpoint_sha256": checkpoint_receipt["sha256"],
         "config_sha256": stage["config_sha256"],
+        "shared_official_do_report_only": external_shared_do,
         "sample_manifest_sha256": canonical_sha256(
             [sample["window_id"] for sample in samples]
         ),
@@ -1617,6 +1873,16 @@ def _execute_p1_cost(args: argparse.Namespace, *, leaf_root: Path) -> dict[str, 
     sequence = p1_cost_leaf_sequence(args.leaf_id)
     stage_results: dict[str, dict[str, Any]] = {}
     for arm in set(sequence):
+        if arm == "DO":
+            shared = deployment["shared_official_baseline"]
+            stage_results[arm] = {
+                "external_shared_do": True,
+                "deployment": deployment,
+                "config_path": deployment["source_configs"]["DO"]["path"],
+                "config_sha256": deployment["source_configs"]["DO"]["sha256"],
+                "checkpoint_receipt": dict(shared["checkpoint"]),
+            }
+            continue
         stage_path = run_root / _p1_cell_relative_path(
             arm=arm, seed=P1_DEVELOPMENT_SEED
         ) / "stage_result.json"

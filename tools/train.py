@@ -1,5 +1,6 @@
 import copy
 import os
+import random
 import sys
 from pathlib import Path
 
@@ -9,6 +10,7 @@ if path not in sys.path:
     sys.path.insert(0, path)
 
 import argparse
+import numpy as np
 import torch
 import torch.distributed as dist
 from torch.distributed.algorithms.ddp_comm_hooks import default as comm_hooks
@@ -48,6 +50,13 @@ def should_save_training_checkpoint(*, epoch, max_epoch, workflow):
     policy = str(workflow.get("checkpoint_policy", "interval"))
     if policy == "final_only":
         return int(epoch) == int(max_epoch) - 1
+    if policy == "recovery_interval":
+        milestones = {int(value) for value in workflow.get("recovery_milestone_epochs", ())}
+        return (
+            int(epoch) == int(max_epoch) - 1
+            or int(epoch) in milestones
+            or (int(epoch) + 1) % int(workflow.checkpoint_interval) == 0
+        )
     if policy != "interval":
         raise ValueError(f"unsupported checkpoint policy {policy!r}")
     return (int(epoch) == int(max_epoch) - 1) or (
@@ -282,9 +291,12 @@ def main():
     if "georoute_official_development_binding" in cfg:
         from tools.bata.georoute_official_comparable_contract import (
             FORMAL_DEVELOPMENT_CHECKPOINT_SIDECAR_SCHEMA,
+            P1_DEVELOPMENT_ARMS,
             build_formal_checkpoint_metadata,
+            formal_checkpoint_role,
             require_clean_formal_checkout,
             require_formal_world2_slurm,
+            validate_formal_checkpoint_sidecar,
             validate_formal_development_config,
         )
 
@@ -314,15 +326,19 @@ def main():
             ],
             root=Path(path).resolve(),
         )
+        p1_recovery_allowed = (
+            georoute_official_development_binding["arm"] in P1_DEVELOPMENT_ARMS
+            and "recovery_policy" in georoute_official_development_binding
+        )
         if (
             args.cfg_options is not None
-            or args.resume is not None
+            or (args.resume is not None and not p1_recovery_allowed)
             or args.disable_deterministic
             or args.not_eval
             or args.id != 0
         ):
             raise ValueError(
-                "formal GeoRoute development forbids overrides, resume, "
+                "formal GeoRoute development forbids overrides, unauthorized resume, "
                 "nondeterminism, disabled evaluation, and nonzero id"
             )
     if "georoute_dynamic_floor_m2_binding" in cfg:
@@ -766,10 +782,47 @@ def main():
     # override the max_epoch
     max_epoch = cfg.workflow.get("end_epoch", max_epoch)
 
-    # resume: reset epoch, optimizer, scheduler, and EMA
+    successful_updates = 0
+    update_audit = {
+        "optimizer_attempts": 0,
+        "amp_skipped_attempts": 0,
+        "max_amp_retries_observed": 0,
+        "consumed_batches": 0,
+        "replay_attempts": 0,
+        "scheduler_advances": 0,
+        "ema_updates": 0,
+    }
+
+    # Resume restores the complete state for future registered P1 cells.
     if args.resume != None:
         logger.info("Resume training from: {}".format(args.resume))
         device = f"cuda:{args.local_rank}"
+        if georoute_official_development_binding is not None:
+            recovery = georoute_official_development_binding.get("recovery_policy")
+            resume_path = Path(args.resume).resolve()
+            work_dir = Path(cfg.work_dir).resolve()
+            checkpoint_root = (work_dir / "checkpoint").resolve()
+            sealed_roots = (
+                [Path(value).resolve() for value in recovery.get("sealed_run_roots", ())]
+                if isinstance(recovery, dict)
+                else []
+            )
+            if (
+                not isinstance(recovery, dict)
+                or any(
+                    work_dir == sealed or sealed in work_dir.parents
+                    for sealed in sealed_roots
+                )
+                or resume_path.parent != checkpoint_root
+            ):
+                raise ValueError(
+                    "formal P1 resume must remain in one unsealed bound cell"
+                )
+            validate_formal_checkpoint_sidecar(
+                resume_path,
+                binding=georoute_official_development_binding,
+                require_final=False,
+            )
         checkpoint = torch.load(args.resume, map_location=device)
         resume_epoch = checkpoint["epoch"]
         logger.info("Resume epoch is {}".format(resume_epoch))
@@ -778,6 +831,59 @@ def main():
         scheduler.load_state_dict(checkpoint["scheduler"])
         if model_ema != None:
             model_ema.module.load_state_dict(checkpoint["state_dict_ema"])
+        if georoute_official_development_binding is not None:
+            state = checkpoint.get("training_state")
+            rank_states = state.get("rank_states") if isinstance(state, dict) else None
+            if (
+                not isinstance(state, dict)
+                or state.get("schema_version")
+                != "zoomtoken_p1_full_training_state_v001"
+                or int(state.get("epoch", -1)) != int(resume_epoch)
+                or int(state.get("sampler_epoch", -1)) != int(resume_epoch)
+                or int(state.get("world_size", -1)) != args.world_size
+                or not isinstance(rank_states, list)
+                or len(rank_states) != args.world_size
+            ):
+                raise ValueError("formal P1 recovery checkpoint lacks full training state")
+            rank_state = rank_states[args.rank]
+            required_rank_fields = {
+                "rank",
+                "successful_updates",
+                "update_audit",
+                "grad_scaler",
+                "python_rng",
+                "numpy_rng",
+                "torch_cpu_rng",
+                "torch_cuda_rng",
+            }
+            if (
+                not isinstance(rank_state, dict)
+                or set(rank_state) != required_rank_fields
+                or int(rank_state["rank"]) != args.rank
+                or scaler is None
+                or model_ema is None
+                or "state_dict_ema" not in checkpoint
+                or checkpoint.get("scaler") is None
+                or rank_state["grad_scaler"] is None
+            ):
+                raise ValueError("formal P1 recovery rank state is incomplete")
+            scaler.load_state_dict(rank_state["grad_scaler"])
+            successful_updates = int(rank_state["successful_updates"])
+            update_audit = dict(rank_state["update_audit"])
+            if set(update_audit) != {
+                "optimizer_attempts",
+                "amp_skipped_attempts",
+                "max_amp_retries_observed",
+                "consumed_batches",
+                "replay_attempts",
+                "scheduler_advances",
+                "ema_updates",
+            }:
+                raise ValueError("formal P1 recovery audit state is incomplete")
+            random.setstate(rank_state["python_rng"])
+            np.random.set_state(rank_state["numpy_rng"])
+            torch.set_rng_state(rank_state["torch_cpu_rng"])
+            torch.cuda.set_rng_state(rank_state["torch_cuda_rng"], device=args.local_rank)
 
         del checkpoint  #  save memory if the model is very large such as ViT-g
         torch.cuda.empty_cache()
@@ -789,16 +895,6 @@ def main():
     val_loss_best = 1e6
     val_start_epoch = cfg.workflow.get("val_start_epoch", 0)
     disable_checkpoint = cfg.workflow.get("disable_checkpoint", False)
-    successful_updates = 0
-    update_audit = {
-        "optimizer_attempts": 0,
-        "amp_skipped_attempts": 0,
-        "max_amp_retries_observed": 0,
-        "consumed_batches": 0,
-        "replay_attempts": 0,
-        "scheduler_advances": 0,
-        "ema_updates": 0,
-    }
     protocol_amp_retry_limit = (
         int(amp_diagnostic_binding["max_amp_retries_per_batch"])
         if amp_diagnostic_binding is not None
@@ -899,6 +995,41 @@ def main():
         elif s2_runtime_gate_binding is not None:
             should_save_checkpoint = epoch == 0
         if not disable_checkpoint and should_save_checkpoint:
+            checkpoint_role = None
+            training_state = None
+            recovery_keep_latest = None
+            if georoute_official_development_binding is not None:
+                checkpoint_role = formal_checkpoint_role(cfg, epoch=epoch)
+                recovery = georoute_official_development_binding.get(
+                    "recovery_policy"
+                )
+                if recovery is not None:
+                    if scaler is None or model_ema is None:
+                        raise ValueError(
+                            "formal P1 recovery requires EMA and AMP scaler state"
+                        )
+                    local_rank_state = {
+                        "rank": args.rank,
+                        "successful_updates": successful_updates,
+                        "update_audit": dict(update_audit),
+                        "grad_scaler": scaler.state_dict() if scaler is not None else None,
+                        "python_rng": random.getstate(),
+                        "numpy_rng": np.random.get_state(),
+                        "torch_cpu_rng": torch.get_rng_state(),
+                        "torch_cuda_rng": torch.cuda.get_rng_state(args.local_rank),
+                    }
+                    rank_states = [None for _ in range(args.world_size)]
+                    dist.all_gather_object(rank_states, local_rank_state)
+                    training_state = {
+                        "schema_version": "zoomtoken_p1_full_training_state_v001",
+                        "epoch": epoch,
+                        "sampler_epoch": epoch,
+                        "world_size": args.world_size,
+                        "rank_states": rank_states,
+                    }
+                    recovery_keep_latest = int(
+                        recovery["keep_latest_recovery_checkpoints"]
+                    )
             if args.rank == 0:
                 checkpoint_metadata = None
                 checkpoint_sidecar_schema = None
@@ -1005,6 +1136,10 @@ def main():
                     work_dir=cfg.work_dir,
                     experiment_metadata=checkpoint_metadata,
                     experiment_sidecar_schema=checkpoint_sidecar_schema,
+                    scaler=scaler if training_state is not None else None,
+                    training_state=training_state,
+                    checkpoint_role=checkpoint_role,
+                    recovery_keep_latest=recovery_keep_latest,
                 )
 
         # val for one epoch

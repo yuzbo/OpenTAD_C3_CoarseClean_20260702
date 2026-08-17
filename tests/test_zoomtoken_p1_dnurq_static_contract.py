@@ -18,14 +18,28 @@ if str(ROOT) not in sys.path:
 
 from tools.bata.georoute_official_comparable_contract import (
     FORMAL_DEVELOPMENT_ARM_ORDER,
+    FORMAL_DEVELOPMENT_CHECKPOINT_SIDECAR_SCHEMA,
+    FORMAL_GLOBAL_BATCH_SIZE,
+    FORMAL_REFERENCE_SEED,
+    FORMAL_WORLD_SIZE,
+    OFFICIAL_CONFIG_RELATIVE_PATH,
+    OFFICIAL_CONFIG_SHA256,
+    OFFICIAL_PUBLISHED_METRICS,
+    OFFICIAL_UPSTREAM_RELEASE_COMMIT,
     P1_CONDITIONAL_MODIFIER_MAP,
     P1_DEVELOPMENT_SEED,
     P1_FIRST_SCREEN_ARM_ORDER,
     P1_MATCHED_RUNNER_ARM_ORDER,
+    P1_RECOVERY_INTERVAL_EPOCHS,
+    P1_RECOVERY_KEEP_LATEST,
+    P1_SHARED_OFFICIAL_BASELINE_RECEIPT_SCHEMA,
     P1_WINDOW_TOKEN_BUDGET,
     p1_arm_spec,
     p1_source_config_relative_path,
     require_clean_formal_checkout,
+    sha256_file,
+    validate_formal_checkpoint_sidecar,
+    validate_p1_shared_official_baseline_receipt,
 )
 from tools.bata.georoute_p1_runtime_attestor import (
     _NVIDIA_QUERY_FIELDS,
@@ -33,6 +47,7 @@ from tools.bata.georoute_p1_runtime_attestor import (
     validate_runtime_attestation,
 )
 from tools.bata.georoute_official_development_stage_runner import (
+    canonical_p1_physical_population,
     summarize_formal_telemetry,
     validate_p1_q_routing_audit,
 )
@@ -402,22 +417,30 @@ def _p1_cost_rows(leaf_id: str) -> list[dict]:
 
 
 def _p1_release_receipt_fixture(directory: Path) -> dict:
-    job_ids = tuple(str(910_000 + index) for index in range(15))
+    job_ids = tuple(str(910_000 + index) for index in range(14))
     seed_key = str(P1_DEVELOPMENT_SEED)
     runtime_preflight_job = job_ids[0]
     stage_jobs = {
         arm: {seed_key: job_ids[1 + index]}
-        for index, arm in enumerate(P1_FIRST_SCREEN_ARM_ORDER)
+        for index, arm in enumerate(P1_MATCHED_RUNNER_ARM_ORDER)
     }
     cost_jobs = {
-        leaf_id: job_ids[6 + index]
+        leaf_id: job_ids[5 + index]
         for index, leaf_id in enumerate(P1_COST_LEAF_SPECS)
     }
     predecessor_ids = [
         runtime_preflight_job,
-        *(stage_jobs[arm][seed_key] for arm in P1_FIRST_SCREEN_ARM_ORDER),
+        *(stage_jobs[arm][seed_key] for arm in P1_MATCHED_RUNNER_ARM_ORDER),
         *(cost_jobs[leaf_id] for leaf_id in P1_COST_LEAF_SPECS),
     ]
+    shared_path = directory / "shared_official_receipt.json"
+    shared_path.write_text("{}\n", encoding="utf-8")
+    shared_validation = {
+        "receipt_sha256": "5" * 64,
+        "status": "COMPLETE_RELEASED_CHECKPOINT_EVALUATION",
+        "checkpoint": {},
+        "metrics": {},
+    }
     deployment = {
         "schema_version": p1_deployer.FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA,
         "study_id": p1_deployer.P1_STUDY_ID,
@@ -428,6 +451,8 @@ def _p1_release_receipt_fixture(directory: Path) -> dict:
         "seed": P1_DEVELOPMENT_SEED,
         "seeds": [P1_DEVELOPMENT_SEED],
         "accuracy_cells": 5,
+        "scheduled_accuracy_cells": 4,
+        "external_report_only_cells": 1,
         "cost_leaves": 8,
         "jobs": {
             "runtime_preflight": runtime_preflight_job,
@@ -435,15 +460,37 @@ def _p1_release_receipt_fixture(directory: Path) -> dict:
             "cost": cost_jobs,
             "finalizer": job_ids[-1],
         },
+        "shared_official_baseline": {
+            "receipt_path": str(shared_path.resolve()),
+            "receipt_file_sha256": p1_deployer.sha256_file(shared_path),
+            "receipt_sha256": shared_validation["receipt_sha256"],
+            "status": shared_validation["status"],
+            "consumer_policy": "READ_ONLY_FINAL_RECEIPT",
+            "do_role": "mandatory_report_only_external_dependency",
+            "checkpoint": {},
+            "metrics": {},
+            "training_or_evaluation_scheduled_by_p1": False,
+        },
         "dependency_policy": {
-            "all_fifteen_jobs_held_until_receipts_immutable": True,
+            "all_fourteen_jobs_held_until_receipts_immutable": True,
             "accuracy_afterany_runtime_preflight": True,
             "cost_afterany_runtime_preflight_and_source_stages": True,
-            "finalizer_afterany_all_fourteen_predecessors": True,
-            "release_all_fifteen_atomically": True,
+            "finalizer_afterany_all_thirteen_predecessors": True,
+            "release_all_fourteen_atomically": True,
             "resume_allowed": False,
             "retry_allowed": False,
             "requeue_allowed": False,
+        },
+        "recovery_policy": {
+            "applies_to": list(P1_MATCHED_RUNNER_ARM_ORDER),
+            "untouched_official_do_excluded": True,
+            "interval_epochs": P1_RECOVERY_INTERVAL_EPOCHS,
+            "keep_latest_recovery_checkpoints": P1_RECOVERY_KEEP_LATEST,
+            "registered_milestones_preserved": True,
+            "final_checkpoint_preserved": True,
+            "model_selection": "final_epoch_ema_only",
+            "resume_entry_supported_for_unsealed_bound_cells": True,
+            "sealed_5491_resume_forbidden": True,
         },
         "official_test_opened": False,
         "paper_claim_allowed": False,
@@ -477,6 +524,7 @@ def _p1_release_receipt_fixture(directory: Path) -> dict:
         "deployment_path": deployment_path,
         "submission": submission,
         "submission_path": submission_path,
+        "shared_validation": shared_validation,
     }
 
 
@@ -594,6 +642,205 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
             ),
             "georoute",
         )
+
+    def test_shared_official_do_receipt_is_read_only_and_complete(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            checkpoint = directory / "official.pth"
+            raw_result = directory / "official_result.json"
+            checkpoint.write_bytes(b"official-checkpoint")
+            raw_result.write_text("{}\n", encoding="utf-8")
+            config = ROOT / OFFICIAL_CONFIG_RELATIVE_PATH
+            self.assertEqual(p1_deployer.sha256_file(config), OFFICIAL_CONFIG_SHA256)
+            receipt = {
+                "schema_version": P1_SHARED_OFFICIAL_BASELINE_RECEIPT_SCHEMA,
+                "status": "COMPLETE_RELEASED_CHECKPOINT_EVALUATION",
+                "owner_project": "ZoomToken",
+                "consumer_policy": "READ_ONLY_FINAL_RECEIPT",
+                "official_release_commit": OFFICIAL_UPSTREAM_RELEASE_COMMIT,
+                "official_config": {
+                    "path": str(config.resolve()),
+                    "sha256": OFFICIAL_CONFIG_SHA256,
+                },
+                "checkpoint": {
+                    "path": str(checkpoint.resolve()),
+                    "sha256": p1_deployer.sha256_file(checkpoint),
+                    "state_dict_key": "state_dict_ema",
+                },
+                "raw_result": {
+                    "path": str(raw_result.resolve()),
+                    "sha256": p1_deployer.sha256_file(raw_result),
+                },
+                "canonical_population": {
+                    "total_videos": 411,
+                    "training_videos": 200,
+                    "validation_videos": 211,
+                },
+                "evaluator_nms": {
+                    "sigma": 0.7,
+                    "max_seg_num": 2000,
+                    "multiclass": True,
+                    "voting_thresh": 0.7,
+                },
+                "metrics": dict(OFFICIAL_PUBLISHED_METRICS),
+                "seed": FORMAL_REFERENCE_SEED,
+                "official_test_opened": False,
+                "matched_source_dense_used": False,
+            }
+            receipt["receipt_sha256"] = canonical_sha256(receipt)
+            path = directory / "receipt.json"
+            path.write_text(json.dumps(receipt), encoding="utf-8")
+            self.assertEqual(
+                validate_p1_shared_official_baseline_receipt(path), receipt
+            )
+            contaminated = copy.deepcopy(receipt)
+            contaminated["matched_source_dense_used"] = True
+            contaminated.pop("receipt_sha256")
+            contaminated["receipt_sha256"] = canonical_sha256(contaminated)
+            path.write_text(json.dumps(contaminated), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "PRE_RUN_NOT_READY"):
+                validate_p1_shared_official_baseline_receipt(path)
+
+    def test_physical_population_identity_excludes_ddp_placement(self):
+        first = _formal_telemetry_payload(_q_route_telemetry())
+        second = copy.deepcopy(first)
+        record = second["records"][0]
+        record["rank"] = 1
+        record["local_batch_index"] = 17
+        descriptor = {
+            key: record[key]
+            for key in (
+                "dataset_index",
+                "rank",
+                "local_batch_index",
+                "video_id",
+                "window_center_count",
+                "window_center_first",
+                "window_center_last",
+            )
+        }
+        record["window_descriptor_sha256"] = hashlib.sha256(
+            json.dumps(descriptor, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        second["population_sha256"] = hashlib.sha256(
+            json.dumps(
+                [{**descriptor, "window_descriptor_sha256": record["window_descriptor_sha256"]}],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        first_summary = _summarize_fixture(first, arm="Q")
+        second_summary = _summarize_fixture(second, arm="Q")
+        self.assertNotEqual(
+            first_summary["execution_layout_population_sha256"],
+            second_summary["execution_layout_population_sha256"],
+        )
+        self.assertEqual(
+            first_summary["physical_population_sha256"],
+            second_summary["physical_population_sha256"],
+        )
+        rows, physical_sha256 = canonical_p1_physical_population(second["records"])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(physical_sha256, second_summary["physical_population_sha256"])
+
+    def test_future_p1_recovery_is_five_epoch_full_state_and_bounded(self):
+        self.assertEqual(P1_RECOVERY_INTERVAL_EPOCHS, 5)
+        self.assertEqual(P1_RECOVERY_KEEP_LATEST, 3)
+        train = (ROOT / "tools" / "train.py").read_text(encoding="utf-8")
+        checkpoint = (ROOT / "opentad" / "utils" / "checkpoint.py").read_text(
+            encoding="utf-8"
+        )
+        contract = (
+            ROOT / "tools" / "bata" / "georoute_official_comparable_contract.py"
+        ).read_text(encoding="utf-8")
+        stage = (
+            ROOT / "tools" / "bata" / "georoute_official_development_stage_runner.py"
+        ).read_text(encoding="utf-8")
+        for token in (
+            'checkpoint_policy = "recovery_interval"',
+            "P1_RECOVERY_INTERVAL_EPOCHS = 5",
+            "P1_RECOVERY_KEEP_LATEST = 3",
+            '"model_selection": "final_epoch_ema_only"',
+            "P1_SEALED_RUN_ROOTS",
+        ):
+            self.assertIn(token, contract)
+        for token in (
+            "dist.all_gather_object(rank_states, local_rank_state)",
+            '"grad_scaler"',
+            '"successful_updates"',
+            '"update_audit"',
+            '"sampler_epoch"',
+            "random.setstate",
+            "np.random.set_state",
+            "torch.set_rng_state",
+            "torch.cuda.set_rng_state",
+            "sealed in work_dir.parents",
+        ):
+            self.assertIn(token, train)
+        self.assertIn("_prune_recovery_checkpoints", checkpoint)
+        self.assertIn('f"recovery_epoch_{epoch}.pth"', checkpoint)
+        self.assertIn("validate_formal_checkpoint_population", stage)
+        self.assertNotIn("torch", sys.modules)
+
+    def test_recovery_sidecar_accepts_only_a_registered_role_and_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "recovery_epoch_4.pth"
+            checkpoint.write_bytes(b"full-state-recovery")
+            metadata = {
+                "schema_version": FORMAL_DEVELOPMENT_CHECKPOINT_SIDECAR_SCHEMA,
+                "arm": "Q",
+                "epoch": 4,
+                "world_size": FORMAL_WORLD_SIZE,
+                "global_batch_size": FORMAL_GLOBAL_BATCH_SIZE,
+                "checkpoint_role": "recovery",
+                "checkpoint_policy": (
+                    "five_epoch_full_state_recovery_latest3_plus_"
+                    "registered_milestones_and_final"
+                ),
+                "model_selection_eligible": False,
+                "full_state_recovery_required": True,
+                "max_amp_retries_observed": 0,
+                "train_batches_per_epoch": 2,
+                "successful_updates": 10,
+                "amp_skipped_attempts": 0,
+                "official_test_opened": False,
+                "paper_claim_allowed": False,
+            }
+            metadata["metadata_sha256"] = canonical_sha256(metadata)
+            sidecar = {
+                "schema_version": FORMAL_DEVELOPMENT_CHECKPOINT_SIDECAR_SCHEMA,
+                "checkpoint_path": str(checkpoint.resolve()),
+                "checkpoint_sha256": sha256_file(checkpoint),
+                "experiment_metadata": metadata,
+            }
+            sidecar["sidecar_sha256"] = canonical_sha256(sidecar)
+            sidecar_path = Path(str(checkpoint) + ".metadata.json")
+            sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+            self.assertEqual(
+                validate_formal_checkpoint_sidecar(
+                    checkpoint,
+                    require_final=False,
+                ),
+                sidecar,
+            )
+            renamed = checkpoint.with_name("recovery_epoch_9.pth")
+            checkpoint.rename(renamed)
+            renamed_sidecar = Path(str(renamed) + ".metadata.json")
+            sidecar_path.rename(renamed_sidecar)
+            sidecar["checkpoint_path"] = str(renamed.resolve())
+            sidecar.pop("sidecar_sha256")
+            sidecar["sidecar_sha256"] = canonical_sha256(sidecar)
+            renamed_sidecar.write_text(json.dumps(sidecar), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "invalid"):
+                validate_formal_checkpoint_sidecar(renamed, require_final=False)
+
+    def test_finalizer_accepts_only_the_control_bound_config_location(self):
+        finalizer = (
+            ROOT / "tools" / "bata" / "finalize_georoute_official_development.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('/ "control"\n        / "bound_configs"', finalizer)
+        self.assertIn('f"{result[\'arm\']}_seed{int(result[\'seed\'])}.py"', finalizer)
+        self.assertNotIn('(\"config_path\", \"config_sha256\")', finalizer)
 
     def test_p1_stage_uses_the_n16r4_site_default_memory_request(self):
         completed = mock.Mock(returncode=0, stdout="123\n", stderr="")
@@ -857,7 +1104,7 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         self.assertEqual(summary["role_counts"], {"uniform": 64})
         self.assertNotIn("torch", sys.modules)
 
-    def test_p1_deployer_and_launcher_freeze_one_held_fifteen_job_entry(self):
+    def test_p1_deployer_uses_shared_do_and_one_held_fourteen_job_entry(self):
         deployer = (
             ROOT / "tools" / "bata" / "deploy_georoute_official_development.py"
         ).read_text(encoding="utf-8")
@@ -865,11 +1112,13 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
             ROOT / "scripts" / "run_georoute_official_development_stage_slurm.sh"
         ).read_text(encoding="utf-8")
         self.assertIn('parser.add_argument("--mode", choices=("formal", "p1")', deployer)
-        self.assertIn("additional_jobs=15", deployer)
+        self.assertIn("additional_jobs=14", deployer)
         self.assertIn('"runtime_preflight": runtime_preflight_job', deployer)
         self.assertIn('"cost": cost_jobs', deployer)
-        self.assertIn("finalizer_afterany_all_fourteen_predecessors", deployer)
-        self.assertIn("release_all_fifteen_atomically", deployer)
+        self.assertIn("finalizer_afterany_all_thirteen_predecessors", deployer)
+        self.assertIn("release_all_fourteen_atomically", deployer)
+        self.assertIn("mandatory_report_only_external_dependency", deployer)
+        self.assertIn("P1_MATCHED_RUNNER_ARM_ORDER", deployer)
         self.assertIn("_release_p1_jobs_from_receipts(", deployer)
         self.assertIn("_cancel_p1_jobs_and_verify(", deployer)
         self.assertLess(
@@ -894,6 +1143,11 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
                 encoding="utf-8",
             )
             with (
+                mock.patch.object(
+                    p1_deployer,
+                    "validate_p1_shared_official_baseline_receipt",
+                    return_value=fixture["shared_validation"],
+                ),
                 mock.patch.object(p1_deployer, "_release_p1_jobs_checked") as release,
                 mock.patch.object(
                     p1_deployer, "_cancel_p1_jobs_and_verify"
@@ -920,6 +1174,11 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             fixture = _p1_release_receipt_fixture(Path(directory))
             with (
+                mock.patch.object(
+                    p1_deployer,
+                    "validate_p1_shared_official_baseline_receipt",
+                    return_value=fixture["shared_validation"],
+                ),
                 mock.patch.object(
                     p1_deployer,
                     "_release_p1_jobs_checked",

@@ -36,14 +36,16 @@ from tools.bata.georoute_official_comparable_contract import (  # noqa: E402
     FORMAL_DEVELOPMENT_SEEDS,
     P1_DEVELOPMENT_SEED,
     P1_FIRST_SCREEN_ARM_ORDER,
+    P1_MATCHED_RUNNER_ARM_ORDER,
     formal_cell_relative_path,
     read_json,
-    validate_formal_checkpoint_sidecar,
+    validate_p1_shared_official_baseline_receipt,
     validate_protocol_manifest,
 )
 from tools.bata.georoute_official_development_stage_runner import (  # noqa: E402
     _p1_cell_relative_path,
     summarize_formal_telemetry,
+    validate_formal_checkpoint_population,
     validate_formal_stage_result,
     validate_p1_deployment_shape,
 )
@@ -113,9 +115,9 @@ def _validate_artifacts(
     result: Mapping[str, Any],
     *,
     cell_root: Path,
+    run_root: Path,
 ) -> None:
     for path_field, hash_field in (
-        ("config_path", "config_sha256"),
         ("prediction_path", "prediction_sha256"),
         ("test_log_path", "test_log_sha256"),
     ):
@@ -126,6 +128,19 @@ def _validate_artifacts(
             or sha256_file(path) != result.get(hash_field)
         ):
             raise ValueError(f"formal artifact changed: {path_field}")
+    config_path = Path(str(result.get("config_path", ""))).resolve()
+    expected_config_path = (
+        run_root
+        / "control"
+        / "bound_configs"
+        / f"{result['arm']}_seed{int(result['seed'])}.py"
+    ).resolve()
+    if (
+        config_path != expected_config_path
+        or not config_path.is_file()
+        or sha256_file(config_path) != result.get("config_sha256")
+    ):
+        raise ValueError("formal artifact changed: config_path")
     profile_path = Path(str(result.get("profile_path", ""))).resolve()
     telemetry_path = Path(str(result.get("telemetry_path", ""))).resolve()
     if (
@@ -147,10 +162,11 @@ def _validate_artifacts(
     checkpoint_path = Path(str(checkpoint.get("path", ""))).resolve()
     sidecar_path = Path(str(checkpoint.get("sidecar_path", ""))).resolve()
     binding = result["binding"]
-    sidecar = validate_formal_checkpoint_sidecar(
+    recovery_receipts = validate_formal_checkpoint_population(
         checkpoint_path,
         binding=binding,
     )
+    sidecar = read_json(sidecar_path)
     if (
         not _inside(checkpoint_path, cell_root)
         or sidecar_path != Path(str(checkpoint_path) + ".metadata.json")
@@ -161,11 +177,7 @@ def _validate_artifacts(
         != sha256_file(sidecar_path)
         or checkpoint.get("sidecar_sha256")
         != sidecar["sidecar_sha256"]
-        or sorted(checkpoint_path.parent.glob("*.pth"))
-        != [checkpoint_path]
-        or sorted(checkpoint_path.parent.glob("*.metadata.json"))
-        != [sidecar_path]
-        or sorted(checkpoint_path.parent.glob("*.tmp*"))
+        or result.get("recovery_checkpoint_receipts") != recovery_receipts
     ):
         raise ValueError("formal checkpoint artifact receipt changed")
 
@@ -774,7 +786,7 @@ def finalize_results(
                     expected_seed=seed,
                     expected_commit=expected_commit,
                 )
-                _validate_artifacts(result, cell_root=cell_root)
+                _validate_artifacts(result, cell_root=cell_root, run_root=run_root)
                 expected_job = str(stage_jobs[arm][str(seed)])
                 train_job = str(
                     result["rendezvous"]["train"]["slurm_job_id"]
@@ -1008,7 +1020,7 @@ def finalize_p1_results(
         preflight_job,
         *(
             str(stage_jobs[arm][str(P1_DEVELOPMENT_SEED)])
-            for arm in P1_FIRST_SCREEN_ARM_ORDER
+            for arm in P1_MATCHED_RUNNER_ARM_ORDER
         ),
         *(str(cost_jobs[leaf_id]) for leaf_id in P1_COST_LEAF_SPECS),
     ]
@@ -1030,7 +1042,35 @@ def finalize_p1_results(
     checkpoint_paths: set[str] = set()
     stage_slurm_ids: set[str] = set()
     runtime_fingerprints: set[str] = set()
-    for arm in P1_FIRST_SCREEN_ARM_ORDER:
+    shared = deployment.get("shared_official_baseline")
+    try:
+        if not isinstance(shared, Mapping):
+            raise ValueError("P1 deployment lacks the shared official DO receipt")
+        shared_path = Path(str(shared["receipt_path"])).resolve()
+        shared_receipt = validate_p1_shared_official_baseline_receipt(shared_path)
+        if (
+            sha256_file(shared_path) != shared.get("receipt_file_sha256")
+            or shared_receipt.get("receipt_sha256") != shared.get("receipt_sha256")
+        ):
+            raise ValueError("shared official DO receipt changed")
+        checkpoint_paths.add(str(shared_receipt["checkpoint"]["path"]))
+        valid["DO"] = {
+            "external_shared_official_baseline": True,
+            "metrics": dict(shared_receipt["metrics"]),
+            "shared_receipt_path": str(shared_path),
+            "shared_receipt_file_sha256": sha256_file(shared_path),
+            "shared_receipt_sha256": shared_receipt["receipt_sha256"],
+            "checkpoint_receipt": dict(shared_receipt["checkpoint"]),
+            "report_only": True,
+        }
+    except Exception as error:
+        failures["accuracy/DO"] = {
+            "status": "INVALID_OR_MISSING_SHARED_OFFICIAL_BASELINE",
+            "exception_type": type(error).__name__,
+            "exception_message": str(error),
+        }
+
+    for arm in P1_MATCHED_RUNNER_ARM_ORDER:
         cell_root = run_root / _p1_cell_relative_path(
             arm=arm, seed=P1_DEVELOPMENT_SEED
         )
@@ -1057,7 +1097,7 @@ def finalize_p1_results(
                 expected_seed=P1_DEVELOPMENT_SEED,
                 expected_commit=expected_commit,
             )
-            _validate_artifacts(result, cell_root=cell_root)
+            _validate_artifacts(result, cell_root=cell_root, run_root=run_root)
             expected_job = str(stage_jobs[arm][str(P1_DEVELOPMENT_SEED)])
             if (
                 str(result["rendezvous"]["train"]["slurm_job_id"]) != expected_job
@@ -1072,7 +1112,9 @@ def finalize_p1_results(
                 path = Path(str(runtime[path_field])).resolve()
                 if not path.is_file() or sha256_file(path) != runtime[hash_field]:
                     raise ValueError("P1 accuracy runtime attestation changed")
-            population_hashes.add(result["telemetry_summary"]["population_sha256"])
+            population_hashes.add(
+                result["telemetry_summary"]["physical_population_sha256"]
+            )
             checkpoint_paths.add(result["checkpoint_receipt"]["path"])
             stage_slurm_ids.add(expected_job)
             runtime_fingerprints.add(runtime["runtime_class_fingerprint"])
@@ -1161,8 +1203,9 @@ def finalize_p1_results(
         and set(cost_rows) == set(P1_COST_LEAF_SPECS)
         and len(population_hashes) == 1
         and len(cost_population_hashes) == 1
+        and population_hashes == cost_population_hashes
         and len(checkpoint_paths) == 5
-        and len(stage_slurm_ids) == 5
+        and len(stage_slurm_ids) == 4
         and len(runtime_fingerprints) == 1
     )
     if not complete_shape:
@@ -1219,7 +1262,7 @@ def finalize_p1_results(
             not video_id for video_id in expected_video_ids
         ):
             raise ValueError("P1 telemetry does not bind the frozen 40 videos")
-        for arm in P1_FIRST_SCREEN_ARM_ORDER:
+        for arm in P1_MATCHED_RUNNER_ARM_ORDER:
             prediction = read_json(valid[arm]["prediction_path"])
             arm_diagnostics = evaluate_p1_report_only_diagnostics(
                 annotation,
@@ -1227,11 +1270,23 @@ def finalize_p1_results(
                 expected_video_ids=expected_video_ids,
             )
             diagnostics[arm] = arm_diagnostics
+        diagnostics["DO"] = {
+            "source": "shared_official_baseline_final_receipt",
+            "report_only": True,
+            "matched_40_video_diagnostics_available": False,
+            "reason": "shared official receipt uses its frozen official population",
+            "shared_receipt_sha256": valid["DO"]["shared_receipt_sha256"],
+        }
         diagnostic_differences = {
             comparator: paired_p1_diagnostic_bootstrap(
                 diagnostics["Q"], diagnostics[comparator]
             )
-            for comparator in ("DO", "DN", "U", "R")
+            for comparator in ("DN", "U", "R")
+        }
+        diagnostic_differences["DO"] = {
+            "report_only": True,
+            "available": False,
+            "reason": "no cross-population diagnostic contrast",
         }
         cost_analysis = analyze_p1_cost_leaves(cost_rows)
     except Exception as error:
@@ -1293,7 +1348,15 @@ def finalize_p1_results(
             "result_file_sha256": valid[arm]["result_file_sha256"],
             "slurm_job_id": valid[arm]["rendezvous"]["train"]["slurm_job_id"],
         }
-        for arm in P1_FIRST_SCREEN_ARM_ORDER
+        for arm in P1_MATCHED_RUNNER_ARM_ORDER
+    }
+    compact["DO"] = {
+        "metrics": dict(valid["DO"]["metrics"]),
+        "report_only": True,
+        "shared_receipt_path": valid["DO"]["shared_receipt_path"],
+        "shared_receipt_file_sha256": valid["DO"]["shared_receipt_file_sha256"],
+        "shared_receipt_sha256": valid["DO"]["shared_receipt_sha256"],
+        "scheduled_by_p1": False,
     }
     finalization = {
         "schema_version": "zoomtoken_p1_finalization_v001",
@@ -1380,7 +1443,7 @@ def _run_main(args: argparse.Namespace) -> int:
             str(jobs["runtime_preflight"]),
             *(
                 str(stage_jobs[arm][str(P1_DEVELOPMENT_SEED)])
-                for arm in P1_FIRST_SCREEN_ARM_ORDER
+                for arm in P1_MATCHED_RUNNER_ARM_ORDER
             ),
             *(
                 str(jobs["cost"][leaf_id])

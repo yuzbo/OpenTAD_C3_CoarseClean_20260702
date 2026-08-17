@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import tempfile
 import torch
 
@@ -53,6 +54,27 @@ def _atomic_torch_save(value, destination):
             os.remove(temporary)
 
 
+def _prune_recovery_checkpoints(save_dir, keep_latest):
+    """Retain only the newest bounded ordinary recovery checkpoints."""
+
+    keep_latest = int(keep_latest)
+    if keep_latest < 1:
+        raise ValueError("recovery checkpoint retention must be positive")
+    candidates = []
+    pattern = re.compile(r"^recovery_epoch_(\d+)\.pth$")
+    for name in os.listdir(save_dir):
+        match = pattern.fullmatch(name)
+        if match is not None:
+            candidates.append((int(match.group(1)), os.path.join(save_dir, name)))
+    for _epoch, checkpoint_path in sorted(candidates)[:-keep_latest]:
+        sidecar_path = checkpoint_path + ".metadata.json"
+        if os.path.exists(sidecar_path):
+            os.remove(sidecar_path)
+        if os.path.exists(checkpoint_path):
+            os.remove(checkpoint_path)
+    _fsync_directory(save_dir)
+
+
 def save_checkpoint(
     model,
     model_ema,
@@ -62,6 +84,10 @@ def save_checkpoint(
     work_dir=None,
     experiment_metadata=None,
     experiment_sidecar_schema=None,
+    scaler=None,
+    training_state=None,
+    checkpoint_role=None,
+    recovery_keep_latest=None,
 ):
     save_dir = os.path.join(work_dir, "checkpoint")
 
@@ -74,13 +100,27 @@ def save_checkpoint(
 
     if model_ema != None:
         save_states.update({"state_dict_ema": model_ema.module.state_dict()})
+    if scaler is not None:
+        save_states.update({"scaler": scaler.state_dict()})
+    if training_state is not None:
+        if not isinstance(training_state, dict):
+            raise ValueError("training_state must be a mapping")
+        save_states.update({"training_state": dict(training_state)})
     if experiment_metadata is not None:
         save_states.update({"experiment_metadata": dict(experiment_metadata)})
 
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
 
-    checkpoint_path = os.path.join(save_dir, f"epoch_{epoch}.pth")
+    if checkpoint_role is None or checkpoint_role == "final":
+        checkpoint_name = f"epoch_{epoch}.pth"
+    elif checkpoint_role == "recovery":
+        checkpoint_name = f"recovery_epoch_{epoch}.pth"
+    elif checkpoint_role == "milestone":
+        checkpoint_name = f"milestone_epoch_{epoch}.pth"
+    else:
+        raise ValueError(f"unsupported checkpoint role {checkpoint_role!r}")
+    checkpoint_path = os.path.join(save_dir, checkpoint_name)
     if experiment_metadata is not None:
         if (
             not isinstance(experiment_sidecar_schema, str)
@@ -134,6 +174,9 @@ def save_checkpoint(
                     os.remove(path)
     else:
         _atomic_torch_save(save_states, checkpoint_path)
+    if recovery_keep_latest is not None:
+        _prune_recovery_checkpoints(save_dir, recovery_keep_latest)
+    return checkpoint_path
 
 
 def save_best_checkpoint(model, model_ema, epoch, work_dir=None):
