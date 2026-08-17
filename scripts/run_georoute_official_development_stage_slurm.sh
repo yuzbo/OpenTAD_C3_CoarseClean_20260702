@@ -99,6 +99,25 @@ if [[ "${MODE}" == "p1" && "${TASK}" == "cost" ]]; then
     --seed "${GEOROUTE_OFFICIAL_DEVELOPMENT_SEED}" \
     --run-root "${RUN_ROOT}" \
     --expected-commit "${EXPECTED_COMMIT}"
+elif [[ "${MODE}" == "p1" && "${TASK}" == "resume" ]]; then
+  ARM="${GEOROUTE_OFFICIAL_DEVELOPMENT_ARM:?set GEOROUTE_OFFICIAL_DEVELOPMENT_ARM}"
+  SEED="${GEOROUTE_OFFICIAL_DEVELOPMENT_SEED:?set GEOROUTE_OFFICIAL_DEVELOPMENT_SEED}"
+  RESUME_CHECKPOINT="${GEOROUTE_P1_RESUME_CHECKPOINT:?set GEOROUTE_P1_RESUME_CHECKPOINT}"
+  RESUME_AUTHORIZATION="${GEOROUTE_P1_RESUME_AUTHORIZATION:?set GEOROUTE_P1_RESUME_AUTHORIZATION}"
+  python -m tools.bata.georoute_official_development_stage_runner \
+    --task resume \
+    --arm "${ARM}" \
+    --seed "${SEED}" \
+    --run-root "${RUN_ROOT}" \
+    --source-config "${GEOROUTE_SOURCE_CONFIG}" \
+    --manifest "${GEOROUTE_MANIFEST}" \
+    --development-annotation "${GEOROUTE_DEVELOPMENT_ANNOTATION}" \
+    --class-map "${GEOROUTE_CLASS_MAP}" \
+    --development-video-root "${GEOROUTE_DEVELOPMENT_VIDEO_ROOT}" \
+    --pretrained "${GEOROUTE_PRETRAINED}" \
+    --resume "${RESUME_CHECKPOINT}" \
+    --resume-authorization "${RESUME_AUTHORIZATION}" \
+    --expected-commit "${EXPECTED_COMMIT}"
 else
   ARM="${GEOROUTE_OFFICIAL_DEVELOPMENT_ARM:?set GEOROUTE_OFFICIAL_DEVELOPMENT_ARM}"
   SEED="${GEOROUTE_OFFICIAL_DEVELOPMENT_SEED:?set GEOROUTE_OFFICIAL_DEVELOPMENT_SEED}"

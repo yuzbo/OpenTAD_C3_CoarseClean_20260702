@@ -39,6 +39,7 @@ from tools.bata.georoute_official_comparable_contract import (  # noqa: E402
     P1_MATCHED_RUNNER_ARM_ORDER,
     formal_cell_relative_path,
     read_json,
+    validate_p1_resume_authorization,
     validate_p1_shared_official_baseline_receipt,
     validate_protocol_manifest,
 )
@@ -57,6 +58,7 @@ from tools.bata.zoomtoken_scnr_steady_cost_contract_v001 import (  # noqa: E402
     P1_STUDY_ID,
     VIDEO_CLUSTERS,
     analyze_p1_cost_leaves,
+    p1_frozen_population_binding,
     p1_cost_leaf_relative_path,
     read_jsonl_objects,
     validate_p1_cost_leaf_receipt,
@@ -117,17 +119,35 @@ def _validate_artifacts(
     cell_root: Path,
     run_root: Path,
 ) -> None:
-    for path_field, hash_field in (
-        ("prediction_path", "prediction_sha256"),
-        ("test_log_path", "test_log_sha256"),
+    prediction_path = Path(str(result.get("prediction_path", ""))).resolve()
+    if (
+        not prediction_path.is_file()
+        or not _inside(prediction_path, cell_root)
+        or sha256_file(prediction_path) != result.get("prediction_sha256")
     ):
-        path = Path(str(result.get(path_field, ""))).resolve()
-        if (
-            not path.is_file()
-            or not _inside(path, cell_root)
-            or sha256_file(path) != result.get(hash_field)
-        ):
-            raise ValueError(f"formal artifact changed: {path_field}")
+        raise ValueError("formal artifact changed: prediction_path")
+    resume_receipt = result.get("resume_authorization")
+    log_root = (
+        run_root
+        / "control"
+        / "resume_logs"
+        / (
+            f"{result['arm']}_seed{int(result['seed'])}_job"
+            f"{resume_receipt.get('resume_slurm_job_id', '')}"
+        )
+        if isinstance(resume_receipt, Mapping)
+        else run_root
+        / "control"
+        / "stage_logs"
+        / f"{result['arm']}_seed{int(result['seed'])}"
+    )
+    test_log_path = Path(str(result.get("test_log_path", ""))).resolve()
+    if (
+        test_log_path != (log_root / "test.out").resolve()
+        or not test_log_path.is_file()
+        or sha256_file(test_log_path) != result.get("test_log_sha256")
+    ):
+        raise ValueError("formal artifact changed: test_log_path")
     config_path = Path(str(result.get("config_path", ""))).resolve()
     expected_config_path = (
         run_root
@@ -1016,16 +1036,12 @@ def finalize_p1_results(
     preflight_job = str(jobs.get("runtime_preflight", "")) if isinstance(jobs, Mapping) else ""
     if not isinstance(stage_jobs, Mapping) or not isinstance(cost_jobs, Mapping):
         raise ValueError("P1 deployment lacks stage/cost jobs")
-    expected_jobs = [
+    failures: dict[str, Any] = {}
+    required_nonstage_jobs = [
         preflight_job,
-        *(
-            str(stage_jobs[arm][str(P1_DEVELOPMENT_SEED)])
-            for arm in P1_MATCHED_RUNNER_ARM_ORDER
-        ),
         *(str(cost_jobs[leaf_id]) for leaf_id in P1_COST_LEAF_SPECS),
     ]
-    failures: dict[str, Any] = {}
-    for job_id in expected_jobs:
+    for job_id in required_nonstage_jobs:
         row = scheduler_states.get(job_id)
         if (
             not isinstance(row, Mapping)
@@ -1056,7 +1072,16 @@ def finalize_p1_results(
         checkpoint_paths.add(str(shared_receipt["checkpoint"]["path"]))
         valid["DO"] = {
             "external_shared_official_baseline": True,
-            "metrics": dict(shared_receipt["metrics"]),
+            "metrics": (
+                dict(shared_receipt["metrics"])
+                if shared_receipt["is_released_official_anchor"] is True
+                else None
+            ),
+            "status": shared_receipt["status"],
+            "result_kind": shared_receipt["result_kind"],
+            "is_released_official_anchor": shared_receipt[
+                "is_released_official_anchor"
+            ],
             "shared_receipt_path": str(shared_path),
             "shared_receipt_file_sha256": sha256_file(shared_path),
             "shared_receipt_sha256": shared_receipt["receipt_sha256"],
@@ -1099,9 +1124,59 @@ def finalize_p1_results(
             )
             _validate_artifacts(result, cell_root=cell_root, run_root=run_root)
             expected_job = str(stage_jobs[arm][str(P1_DEVELOPMENT_SEED)])
+            effective_job = expected_job
+            resume_receipt = result.get("resume_authorization")
+            if resume_receipt is not None:
+                if not isinstance(resume_receipt, Mapping):
+                    raise ValueError("P1 resume receipt is malformed")
+                authorization_path = Path(str(resume_receipt.get("path", ""))).resolve()
+                if (
+                    not authorization_path.is_file()
+                    or sha256_file(authorization_path)
+                    != resume_receipt.get("file_sha256")
+                ):
+                    raise ValueError("P1 resume authorization artifact changed")
+                authorization = validate_p1_resume_authorization(
+                    authorization_path,
+                    binding=result["binding"],
+                    expected_runtime_commit=expected_commit,
+                    expected_arm=arm,
+                    expected_seed=P1_DEVELOPMENT_SEED,
+                    expected_run_root=run_root,
+                    expected_cell_root=cell_root,
+                    expected_config_path=result["config_path"],
+                    expected_slurm_job_id=result["rendezvous"]["train"][
+                        "slurm_job_id"
+                    ],
+                    allow_completed_result=True,
+                )
+                if (
+                    resume_receipt.get("authorization_sha256")
+                    != authorization["authorization_sha256"]
+                    or resume_receipt.get("original_stage_job_id") != expected_job
+                    or resume_receipt.get("resume_slurm_job_id")
+                    != authorization["resume_slurm_job_id"]
+                ):
+                    raise ValueError("P1 stage result changed its resume authorization")
+                effective_job = authorization["resume_slurm_job_id"]
+                original_state = scheduler_states.get(expected_job)
+                if (
+                    not isinstance(original_state, Mapping)
+                    or original_state.get("state")
+                    in {"PENDING", "RUNNING", "REQUEUED", "COMPLETING"}
+                    or (
+                        original_state.get("state") == "COMPLETED"
+                        and original_state.get("exit_code") == "0:0"
+                    )
+                ):
+                    raise ValueError("P1 resume did not replace an interrupted stage")
+            effective_state = scheduler_states.get(effective_job)
             if (
-                str(result["rendezvous"]["train"]["slurm_job_id"]) != expected_job
-                or str(result["rendezvous"]["test"]["slurm_job_id"]) != expected_job
+                str(result["rendezvous"]["train"]["slurm_job_id"]) != effective_job
+                or str(result["rendezvous"]["test"]["slurm_job_id"]) != effective_job
+                or not isinstance(effective_state, Mapping)
+                or effective_state.get("state") != "COMPLETED"
+                or effective_state.get("exit_code") != "0:0"
             ):
                 raise ValueError("P1 accuracy Slurm identity differs from deployment")
             runtime = result["runtime_attestation"]
@@ -1112,11 +1187,32 @@ def finalize_p1_results(
                 path = Path(str(runtime[path_field])).resolve()
                 if not path.is_file() or sha256_file(path) != runtime[hash_field]:
                     raise ValueError("P1 accuracy runtime attestation changed")
+            frozen = p1_frozen_population_binding()
+            expected_frozen_receipt = {
+                name: frozen[name]
+                for name in (
+                    "manifest_path",
+                    "manifest_file_sha256",
+                    "manifest_sha256",
+                    "source_population_sha256",
+                    "physical_window_ids_sha256",
+                    "runtime_population_sha256",
+                )
+            }
+            if (
+                result["telemetry_summary"].get("frozen_population")
+                != expected_frozen_receipt
+                or result["telemetry_summary"].get(
+                    "frozen_population_identity_sha256"
+                )
+                != frozen["runtime_population_sha256"]
+            ):
+                raise ValueError("P1 accuracy differs from the frozen physical manifest")
             population_hashes.add(
                 result["telemetry_summary"]["physical_population_sha256"]
             )
             checkpoint_paths.add(result["checkpoint_receipt"]["path"])
-            stage_slurm_ids.add(expected_job)
+            stage_slurm_ids.add(effective_job)
             runtime_fingerprints.add(runtime["runtime_class_fingerprint"])
             valid[arm] = {
                 **result,
@@ -1218,7 +1314,7 @@ def finalize_p1_results(
             "completed_accuracy_cells": len(valid),
             "expected_accuracy_cells": 5,
             "completed_cost_leaves": len(cost_rows),
-            "expected_cost_leaves": 8,
+            "expected_cost_leaves": 6,
             "failures": failures,
             "partial_arm_conclusion_allowed": False,
             "accuracy_gate": {},
@@ -1298,8 +1394,8 @@ def finalize_p1_results(
             "runtime_commit": expected_commit,
             "completed_accuracy_cells": 5,
             "expected_accuracy_cells": 5,
-            "completed_cost_leaves": 8,
-            "expected_cost_leaves": 8,
+            "completed_cost_leaves": 6,
+            "expected_cost_leaves": 6,
             "failures": {
                 "final_analysis": {
                     "status": "MALFORMED_OR_CONTAMINATED_ANALYSIS",
@@ -1351,7 +1447,16 @@ def finalize_p1_results(
         for arm in P1_MATCHED_RUNNER_ARM_ORDER
     }
     compact["DO"] = {
-        "metrics": dict(valid["DO"]["metrics"]),
+        "metrics": (
+            dict(valid["DO"]["metrics"])
+            if isinstance(valid["DO"]["metrics"], Mapping)
+            else None
+        ),
+        "status": valid["DO"]["status"],
+        "result_kind": valid["DO"]["result_kind"],
+        "is_released_official_anchor": valid["DO"][
+            "is_released_official_anchor"
+        ],
         "report_only": True,
         "shared_receipt_path": valid["DO"]["shared_receipt_path"],
         "shared_receipt_file_sha256": valid["DO"]["shared_receipt_file_sha256"],
@@ -1366,8 +1471,8 @@ def finalize_p1_results(
         "runtime_commit": expected_commit,
         "completed_accuracy_cells": 5,
         "expected_accuracy_cells": 5,
-        "completed_cost_leaves": 8,
-        "expected_cost_leaves": 8,
+        "completed_cost_leaves": 6,
+        "expected_cost_leaves": 6,
         "failures": {},
         "arm_results": compact,
         "cost_leaf_receipts": cost_receipts,
@@ -1493,12 +1598,30 @@ def _run_main(args: argparse.Namespace) -> int:
         != deployment.get("protocol_sha256")
     ):
         raise RuntimeError("formal protocol manifest changed")
+    scheduler_job_ids = list(predecessor_ids)
+    if p1_mode:
+        for arm in P1_MATCHED_RUNNER_ARM_ORDER:
+            result_path = (
+                run_root
+                / _p1_cell_relative_path(arm=arm, seed=P1_DEVELOPMENT_SEED)
+                / "stage_result.json"
+            )
+            if not result_path.is_file():
+                continue
+            resume_receipt = read_json(result_path).get("resume_authorization")
+            resume_job = (
+                str(resume_receipt.get("resume_slurm_job_id", ""))
+                if isinstance(resume_receipt, Mapping)
+                else ""
+            )
+            if resume_job.isdigit() and resume_job not in scheduler_job_ids:
+                scheduler_job_ids.append(resume_job)
     finalization = (
         finalize_p1_results(
             run_root=run_root,
             expected_commit=expected_commit,
             deployment=deployment,
-            scheduler_states=_scheduler_states(predecessor_ids),
+            scheduler_states=_scheduler_states(scheduler_job_ids),
         )
         if p1_mode
         else finalize_results(

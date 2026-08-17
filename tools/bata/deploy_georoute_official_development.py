@@ -38,11 +38,16 @@ from tools.bata.georoute_official_comparable_contract import (  # noqa: E402
     P1_MATCHED_RUNNER_ARM_ORDER,
     P1_RECOVERY_INTERVAL_EPOCHS,
     P1_RECOVERY_KEEP_LATEST,
+    P1_RESUME_AUTHORIZATION_SCHEMA,
+    P1_SEALED_RUN_ROOTS,
     p1_arm_spec,
     p1_source_config_relative_path,
     _validate_preflight_parent,
     formal_arm_spec,
     read_json,
+    validate_formal_development_config,
+    validate_formal_checkpoint_sidecar,
+    validate_p1_resume_authorization,
     validate_p1_shared_official_baseline_receipt,
     validate_protocol_manifest,
 )
@@ -50,6 +55,7 @@ from tools.bata.georoute_storage import storage_capacity_receipt  # noqa: E402
 from tools.bata.zoomtoken_scnr_steady_cost_contract_v001 import (  # noqa: E402
     P1_COST_LEAF_SPECS,
     P1_STUDY_ID,
+    p1_frozen_population_binding,
 )
 
 
@@ -179,6 +185,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--p1-runtime-container-image", type=Path)
     parser.add_argument("--p1-runtime-dependency-lock", type=Path)
     parser.add_argument("--p1-shared-official-baseline-receipt", type=Path)
+    parser.add_argument("--p1-resume-arm", choices=P1_MATCHED_RUNNER_ARM_ORDER)
+    parser.add_argument("--p1-resume-checkpoint", type=Path)
     return parser.parse_args()
 
 
@@ -257,7 +265,7 @@ def _validate_p1_pre_release_receipts(
         or deployment.get("accuracy_cells") != 5
         or deployment.get("scheduled_accuracy_cells") != 4
         or deployment.get("external_report_only_cells") != 1
-        or deployment.get("cost_leaves") != 8
+        or deployment.get("cost_leaves") != 6
         or not isinstance(jobs, Mapping)
         or not isinstance(stage_jobs, Mapping)
         or set(stage_jobs) != set(P1_MATCHED_RUNNER_ARM_ORDER)
@@ -281,12 +289,13 @@ def _validate_p1_pre_release_receipts(
         }
         or deployment.get("dependency_policy")
         != {
-            "all_fourteen_jobs_held_until_receipts_immutable": True,
+            "all_twelve_jobs_held_until_receipts_immutable": True,
             "accuracy_afterany_runtime_preflight": True,
             "cost_afterany_runtime_preflight_and_source_stages": True,
-            "finalizer_afterany_all_thirteen_predecessors": True,
-            "release_all_fourteen_atomically": True,
-            "resume_allowed": False,
+            "finalizer_afterany_all_eleven_predecessors": True,
+            "release_all_twelve_atomically": True,
+            "automatic_resume_allowed": False,
+            "authorized_unsealed_same_cell_resume_allowed": True,
             "retry_allowed": False,
             "requeue_allowed": False,
         }
@@ -300,8 +309,16 @@ def _validate_p1_pre_release_receipts(
         sha256_file(shared_path) != shared.get("receipt_file_sha256")
         or shared_receipt.get("receipt_sha256") != shared.get("receipt_sha256")
         or shared_receipt.get("status") != shared.get("status")
+        or shared_receipt.get("result_kind") != shared.get("result_kind")
+        or shared_receipt.get("is_released_official_anchor")
+        is not shared.get("is_released_official_anchor")
         or dict(shared_receipt.get("checkpoint", {})) != shared.get("checkpoint")
-        or dict(shared_receipt.get("metrics", {})) != shared.get("metrics")
+        or (
+            dict(shared_receipt.get("metrics", {}))
+            if shared_receipt.get("is_released_official_anchor") is True
+            else None
+        )
+        != shared.get("metrics")
     ):
         raise ValueError("P1 shared official AdaTAD receipt changed before release")
 
@@ -318,8 +335,8 @@ def _validate_p1_pre_release_receipts(
         [runtime_preflight_job, *ordered_stage_jobs, *ordered_cost_jobs]
     )
     submitted_ids = _p1_job_ids([*predecessor_ids, finalizer_job])
-    if len(predecessor_ids) != 13 or len(submitted_ids) != 14:
-        raise ValueError("P1 deployment receipt does not bind the 14-job DAG")
+    if len(predecessor_ids) != 11 or len(submitted_ids) != 12:
+        raise ValueError("P1 deployment receipt does not bind the 12-job DAG")
     if submitted_ids != _p1_job_ids(expected_submitted):
         raise ValueError("P1 deployment receipt job population changed before release")
 
@@ -503,8 +520,8 @@ def _deploy_p1(
         if arm != "DO":
             p1_arm_spec(arm)
 
-    capacity = _require_submit_capacity(additional_jobs=14)
-    storage = storage_capacity_receipt(run_root, cell_count=12)
+    capacity = _require_submit_capacity(additional_jobs=12)
+    storage = storage_capacity_receipt(run_root, cell_count=10)
     stage_script = (
         ROOT / "scripts" / "run_georoute_official_development_stage_slurm.sh"
     )
@@ -642,15 +659,9 @@ def _deploy_p1(
                     (
                         runtime_preflight_job,
                         stage_jobs["Q"][str(P1_DEVELOPMENT_SEED)],
-                        *(
-                            ()
-                            if spec["comparator"] == "DO"
-                            else (
-                                stage_jobs[spec["comparator"]][
-                                    str(P1_DEVELOPMENT_SEED)
-                                ],
-                            )
-                        ),
+                        stage_jobs[spec["comparator"]][
+                            str(P1_DEVELOPMENT_SEED)
+                        ],
                     )
                 )
             )
@@ -716,7 +727,7 @@ def _deploy_p1(
             "accuracy_cells": 5,
             "scheduled_accuracy_cells": 4,
             "external_report_only_cells": 1,
-            "cost_leaves": 8,
+            "cost_leaves": 6,
             "jobs": {
                 "runtime_preflight": runtime_preflight_job,
                 "stage": stage_jobs,
@@ -728,10 +739,18 @@ def _deploy_p1(
                 "receipt_file_sha256": sha256_file(shared_receipt_path),
                 "receipt_sha256": shared_receipt["receipt_sha256"],
                 "status": shared_receipt["status"],
+                "result_kind": shared_receipt["result_kind"],
+                "is_released_official_anchor": shared_receipt[
+                    "is_released_official_anchor"
+                ],
                 "consumer_policy": "READ_ONLY_FINAL_RECEIPT",
                 "do_role": "mandatory_report_only_external_dependency",
                 "checkpoint": dict(shared_receipt["checkpoint"]),
-                "metrics": dict(shared_receipt["metrics"]),
+                "metrics": (
+                    dict(shared_receipt["metrics"])
+                    if shared_receipt["is_released_official_anchor"] is True
+                    else None
+                ),
                 "training_or_evaluation_scheduled_by_p1": False,
             },
             "runtime_attestation": {
@@ -761,6 +780,18 @@ def _deploy_p1(
                 "dn_only_controlling_denominator": True,
                 "q_over_dn_upper_bound_limit": 0.85,
                 "do_mandatory_report_only": True,
+                "do_executable_cost_leaf": False,
+                "frozen_population": {
+                    key: p1_frozen_population_binding()[key]
+                    for key in (
+                        "manifest_path",
+                        "manifest_file_sha256",
+                        "manifest_sha256",
+                        "source_population_sha256",
+                        "physical_window_ids_sha256",
+                        "runtime_population_sha256",
+                    )
+                },
             },
             "preflight_finalization_path": str(preflight_path.resolve()),
             "preflight_finalization_file_sha256": preflight_file_hash,
@@ -778,12 +809,13 @@ def _deploy_p1(
             "submit_capacity_preflight": capacity,
             "storage_preflight": storage,
             "dependency_policy": {
-                "all_fourteen_jobs_held_until_receipts_immutable": True,
+                "all_twelve_jobs_held_until_receipts_immutable": True,
                 "accuracy_afterany_runtime_preflight": True,
                 "cost_afterany_runtime_preflight_and_source_stages": True,
-                "finalizer_afterany_all_thirteen_predecessors": True,
-                "release_all_fourteen_atomically": True,
-                "resume_allowed": False,
+                "finalizer_afterany_all_eleven_predecessors": True,
+                "release_all_twelve_atomically": True,
+                "automatic_resume_allowed": False,
+                "authorized_unsealed_same_cell_resume_allowed": True,
                 "retry_allowed": False,
                 "requeue_allowed": False,
             },
@@ -833,7 +865,7 @@ def _deploy_p1(
             "schema_version": FORMAL_DEVELOPMENT_DEPLOYMENT_SCHEMA,
             "study_id": P1_STUDY_ID,
             "mode": "p1",
-            "status": "RELEASED_ATOMIC_P1_FOURTEEN_JOB_DAG",
+            "status": "RELEASED_ATOMIC_P1_TWELVE_JOB_DAG",
             "runtime_commit": expected_commit,
             "released_job_ids": submitted,
             "deployment_file_sha256": sha256_file(deployment_path),
@@ -854,8 +886,209 @@ def _deploy_p1(
     return {**deployment, "finalizer_job_id": finalizer_job}
 
 
+def _require_failed_terminal_stage_job(job_id: str) -> dict[str, str]:
+    completed = subprocess.run(
+        [
+            "sacct",
+            "-X",
+            "-n",
+            "-P",
+            "-j",
+            str(job_id),
+            "--format=JobIDRaw,State,ExitCode",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(completed.stderr.strip() or "P1 stage state query failed")
+    rows = [line.split("|") for line in completed.stdout.splitlines() if line.strip()]
+    matches = [row for row in rows if len(row) >= 3 and row[0] == str(job_id)]
+    if len(matches) != 1:
+        raise ValueError("P1 resume requires one terminal original stage job")
+    state = matches[0][1]
+    exit_code = matches[0][2]
+    if state in {"PENDING", "RUNNING", "REQUEUED", "COMPLETING"} or (
+        state == "COMPLETED" and exit_code == "0:0"
+    ):
+        raise ValueError("P1 resume requires an interrupted non-successful stage")
+    return {"state": state, "exit_code": exit_code}
+
+
+def _deploy_p1_resume(
+    *, args: argparse.Namespace, run_root: Path, expected_commit: str
+) -> dict[str, Any]:
+    """Dispatch one held, validated, unsealed same-cell P1 recovery."""
+
+    if args.mode != "p1" or args.p1_resume_arm is None or args.p1_resume_checkpoint is None:
+        raise ValueError("P1 resume requires --mode p1, arm, and checkpoint")
+    if any(
+        run_root == Path(value).resolve() or Path(value).resolve() in run_root.parents
+        for value in P1_SEALED_RUN_ROOTS
+    ):
+        raise ValueError("sealed 5491 P1 roots are nonresumable")
+    deployment_path = run_root / "control" / "deployment.json"
+    deployment = read_json(deployment_path)
+    unsigned_deployment = dict(deployment)
+    deployment_sha256 = unsigned_deployment.pop("deployment_sha256", None)
+    arm = str(args.p1_resume_arm)
+    seed = P1_DEVELOPMENT_SEED
+    stage_jobs = deployment.get("jobs", {}).get("stage", {})
+    original_job = str(stage_jobs.get(arm, {}).get(str(seed), ""))
+    if (
+        deployment.get("mode") != "p1"
+        or deployment.get("runtime_commit") != expected_commit
+        or Path(str(deployment.get("run_root", ""))).resolve() != run_root
+        or deployment_sha256 != canonical_sha256(unsigned_deployment)
+        or not original_job.isdigit()
+        or (run_root / "control" / "finalization.json").exists()
+    ):
+        raise ValueError("P1 resume deployment is invalid or sealed")
+    original_scheduler = _require_failed_terminal_stage_job(original_job)
+    cell_root = run_root / "development" / arm / f"seed{seed}"
+    bound_config = run_root / "control" / "bound_configs" / f"{arm}_seed{seed}.py"
+    checkpoint = args.p1_resume_checkpoint.resolve()
+    from mmengine.config import Config
+
+    if not bound_config.is_file() or bound_config.is_symlink():
+        raise FileNotFoundError("P1 resume bound config is missing")
+    cfg = Config.fromfile(str(bound_config))
+    binding = validate_formal_development_config(cfg, seed=seed)
+    sidecar = validate_formal_checkpoint_sidecar(
+        checkpoint,
+        binding=binding,
+        require_final=False,
+    )
+    metadata = sidecar["experiment_metadata"]
+    if (
+        binding["arm"] != arm
+        or Path(binding["work_dir"]).resolve() != cell_root.resolve()
+        or checkpoint.parent != (cell_root / "checkpoint").resolve()
+        or metadata["checkpoint_role"] not in {"recovery", "milestone"}
+        or (cell_root / "stage_result.json").exists()
+        or (cell_root / "stage_failure.json").exists()
+    ):
+        raise ValueError("P1 resume checkpoint is not an unsealed same-cell recovery")
+
+    authorization_path = (
+        run_root / "control" / "resume_dispatches" / f"{arm}_seed{seed}.json"
+    )
+    runtime_attestation_path = (
+        run_root
+        / "control"
+        / "runtime_attestations"
+        / f"resume_{arm}_seed{seed}.json"
+    )
+    if authorization_path.exists() or runtime_attestation_path.exists():
+        raise FileExistsError("P1 resume dispatch already exists for this cell")
+    runtime = deployment["runtime_attestation"]
+    inputs = deployment["input_receipts"]
+    exports = {
+        **{name: str(receipt["path"]) for name, receipt in inputs.items()},
+        "GEOROUTE_SOURCE_ROOT": str(ROOT),
+        "GEOROUTE_OFFICIAL_DEVELOPMENT_RUN_ROOT": str(run_root),
+        "GEOROUTE_EXPECTED_COMMIT": expected_commit,
+        "GEOROUTE_OFFICIAL_DEVELOPMENT_MODE": "p1",
+        "GEOROUTE_OFFICIAL_DEVELOPMENT_TASK": "resume",
+        "GEOROUTE_OFFICIAL_DEVELOPMENT_ARM": arm,
+        "GEOROUTE_OFFICIAL_DEVELOPMENT_SEED": str(seed),
+        "GEOROUTE_SOURCE_CONFIG": str(deployment["source_configs"][arm]["path"]),
+        "GEOROUTE_P1_RUNTIME_CONTAINER_IMAGE": str(runtime["container_image"]),
+        "GEOROUTE_P1_RUNTIME_DEPENDENCY_LOCK": str(runtime["dependency_lock"]),
+        "GEOROUTE_P1_RUNTIME_PREFLIGHT": str(runtime["preflight_path"]),
+        "GEOROUTE_P1_RUNTIME_ATTESTATION": str(runtime_attestation_path),
+        "GEOROUTE_P1_RESUME_CHECKPOINT": str(checkpoint),
+        "GEOROUTE_P1_RESUME_AUTHORIZATION": str(authorization_path),
+    }
+    exports = {key: _clean_export(value, name=key) for key, value in exports.items()}
+    script = ROOT / "scripts" / "run_georoute_official_development_stage_slurm.sh"
+    capacity = _require_submit_capacity(additional_jobs=1)
+    _sbatch(
+        name=f"ztp1_resume_{arm.lower()}_{seed}",
+        script=script,
+        logs=run_root / "slurm",
+        exports=exports,
+        stage=True,
+        test_only=True,
+    )
+    resume_job = _sbatch(
+        name=f"ztp1_resume_{arm.lower()}_{seed}",
+        script=script,
+        logs=run_root / "slurm",
+        exports=exports,
+        stage=True,
+        hold=True,
+    )
+    try:
+        authorization: dict[str, Any] = {
+            "schema_version": P1_RESUME_AUTHORIZATION_SCHEMA,
+            "study_id": P1_STUDY_ID,
+            "status": "AUTHORIZED_UNSEALED_SAME_CELL_P1_RESUME",
+            "dispatch_kind": "same_cell_recovery_resume",
+            "runtime_commit": expected_commit,
+            "deployment_path": str(deployment_path.resolve()),
+            "deployment_file_sha256": sha256_file(deployment_path),
+            "deployment_sha256": deployment_sha256,
+            "run_root": str(run_root),
+            "cell_root": str(cell_root.resolve()),
+            "work_dir": str(cell_root.resolve()),
+            "arm": arm,
+            "seed": seed,
+            "original_stage_job_id": original_job,
+            "original_stage_scheduler": original_scheduler,
+            "resume_slurm_job_id": resume_job,
+            "runtime_attestation_path": str(runtime_attestation_path.resolve()),
+            "bound_config_path": str(bound_config.resolve()),
+            "bound_config_file_sha256": sha256_file(bound_config),
+            "binding_sha256": binding["binding_sha256"],
+            "checkpoint_path": str(checkpoint),
+            "checkpoint_file_sha256": sha256_file(checkpoint),
+            "checkpoint_sidecar_path": str(Path(str(checkpoint) + ".metadata.json")),
+            "checkpoint_sidecar_file_sha256": sha256_file(
+                Path(str(checkpoint) + ".metadata.json")
+            ),
+            "checkpoint_sidecar_sha256": sidecar["sidecar_sha256"],
+            "checkpoint_role": metadata["checkpoint_role"],
+            "checkpoint_epoch": int(metadata["epoch"]),
+            "full_state_restoration_required": True,
+            "resume_allowed": True,
+            "retry_allowed": False,
+            "requeue_allowed": False,
+            "sealed_run_roots": list(P1_SEALED_RUN_ROOTS),
+            "submit_capacity_preflight": capacity,
+            "official_test_opened": False,
+            "paper_claim_allowed": False,
+        }
+        authorization["authorization_sha256"] = canonical_sha256(authorization)
+        _atomic_write_json(authorization_path, authorization)
+        validate_p1_resume_authorization(
+            authorization_path,
+            binding=binding,
+            expected_runtime_commit=expected_commit,
+            expected_arm=arm,
+            expected_seed=seed,
+            expected_run_root=run_root,
+            expected_cell_root=cell_root,
+            expected_config_path=bound_config,
+            expected_checkpoint_path=checkpoint,
+            expected_slurm_job_id=resume_job,
+        )
+        _release_p1_jobs_checked((resume_job,))
+    except BaseException:
+        _cancel_p1_jobs_and_verify((resume_job,))
+        raise
+    return authorization
+
+
 def main() -> int:
     args = _parse_args()
+    resume_requested = (
+        args.p1_resume_arm is not None or args.p1_resume_checkpoint is not None
+    )
+    if (args.p1_resume_arm is None) != (args.p1_resume_checkpoint is None):
+        raise ValueError("P1 resume arm and checkpoint must be supplied together")
     run_root = args.run_root.resolve()
     preflight_root = args.preflight_root.resolve()
     boundary = BOUNDARY.resolve()
@@ -863,8 +1096,10 @@ def main() -> int:
         preflight_root, boundary
     ):
         raise ValueError("formal deployment root leaves remote boundary")
-    if run_root.exists():
+    if not resume_requested and run_root.exists():
         raise FileExistsError("formal namespace exists; refusing resume")
+    if resume_requested and not run_root.is_dir():
+        raise FileNotFoundError("P1 resume requires an existing deployment root")
     expected_commit = _full_hex(
         args.expected_commit,
         length=40,
@@ -893,6 +1128,15 @@ def main() -> int:
         != expected_commit
     ):
         raise RuntimeError("formal deployment origin ref changed")
+
+    if resume_requested:
+        authorization = _deploy_p1_resume(
+            args=args,
+            run_root=run_root,
+            expected_commit=expected_commit,
+        )
+        print(json.dumps(authorization, indent=2, sort_keys=True))
+        return 0
 
     preflight_path = preflight_root / "control" / "finalization.json"
     preflight = _validate_preflight_parent(

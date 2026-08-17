@@ -89,7 +89,7 @@ FINALIZER_DEPENDENCY = "afterany"
 P1_COST_SCHEMA_VERSION = "zoomtoken_p1_steady_cost_v001"
 P1_STUDY_ID = "ZOOMTOKEN_P1_DNURQ_V001"
 P1_ARM_ORDER = ("DO", "DN", "U", "R", "Q")
-P1_COST_COMPARATORS = ("DO", "DN", "U", "R")
+P1_COST_COMPARATORS = ("DN", "U", "R")
 P1_COST_LEAF_SPECS = {
     f"{comparator}_{order}": {
         "comparator": comparator,
@@ -577,6 +577,31 @@ def population_signature(payload: Mapping[str, Any]) -> dict[str, Any]:
         "physical_window_ids_sha256": canonical_sha256(
             [row["physical_window_id"] for row in manifest["windows"]]
         ),
+    }
+
+
+def p1_frozen_population_binding(root: str | Path = ROOT) -> dict[str, Any]:
+    """Return the tracked ordered physical identity consumed by every P1 leaf."""
+
+    path = (Path(root) / POPULATION_MANIFEST).resolve()
+    manifest = validate_population_manifest(
+        read_json_object(path, label="P1 frozen population manifest")
+    )
+    ordered_physical_windows = [
+        {
+            "dataset_index": int(row["ordinal"]),
+            "video_id": str(row["video_id"]),
+            "window_center_first": float(row["window_center_first"]),
+            "window_center_last": float(row["window_center_last"]),
+        }
+        for row in manifest["windows"]
+    ]
+    return {
+        "manifest_path": str(path),
+        "manifest_file_sha256": sha256_file(path),
+        **population_signature(manifest),
+        "runtime_population_sha256": canonical_sha256(ordered_physical_windows),
+        "ordered_physical_windows": ordered_physical_windows,
     }
 
 
@@ -1159,7 +1184,7 @@ def p1_cost_leaf_spec(leaf_id: str) -> dict[str, str]:
     try:
         return dict(P1_COST_LEAF_SPECS[str(leaf_id)])
     except KeyError as error:
-        raise ValueError("P1 cost leaf ID is outside the frozen eight leaves") from error
+        raise ValueError("P1 cost leaf ID is outside the frozen six leaves") from error
 
 
 def p1_cost_leaf_sequence(leaf_id: str) -> tuple[str, ...]:
@@ -1174,7 +1199,7 @@ def p1_cost_leaf_relative_path(leaf_id: str) -> Path:
 
 
 def _p1_expected_physical_tokens(arm: str) -> int:
-    if arm in {"DO", "DN"}:
+    if arm == "DN":
         return P1_DENSE_PHYSICAL_TOKENS
     if arm in {"U", "R", "Q"}:
         return WINDOW_BUDGET
@@ -1200,6 +1225,11 @@ def validate_p1_cost_rows(
     if set(grouped) != set(range(4)):
         raise ValueError("P1 cost leaf does not contain four measured passes")
 
+    frozen = p1_frozen_population_binding()
+    expected_manifest = [
+        (str(row["video_id"]), f"{row['video_id']}:{int(row['window_center_first'])}")
+        for row in frozen["ordered_physical_windows"]
+    ]
     manifests: list[list[tuple[str, str]]] = []
     normalized: list[dict[str, Any]] = []
     for pass_index, arm in enumerate(sequence):
@@ -1302,6 +1332,8 @@ def validate_p1_cost_rows(
             normalized.append(row)
         if len(set(manifest)) != PHYSICAL_WINDOWS:
             raise ValueError("P1 cost pass contains duplicate physical windows")
+        if manifest != expected_manifest:
+            raise ValueError("P1 cost pass differs from the frozen ordered manifest")
         manifests.append(manifest)
     if any(manifest != manifests[0] for manifest in manifests[1:]):
         raise ValueError("P1 cost pass population/order changed within a leaf")
@@ -1335,6 +1367,11 @@ def validate_p1_cost_warmup_rows(
         grouped[int(row.get("pass_index", -1))].append(row)
     if set(grouped) != set(range(4)):
         raise ValueError("P1 cost warmup ledger does not cover four passes")
+    frozen = p1_frozen_population_binding()
+    expected_manifest = [
+        (str(row["video_id"]), f"{row['video_id']}:{int(row['window_center_first'])}")
+        for row in frozen["ordered_physical_windows"]
+    ]
     manifests: list[list[tuple[str, str]]] = []
     normalized: list[dict[str, Any]] = []
     for pass_index, arm in enumerate(sequence):
@@ -1367,6 +1404,8 @@ def validate_p1_cost_warmup_rows(
             normalized.append(row)
         if len(set(manifest)) != PHYSICAL_WINDOWS:
             raise ValueError("P1 cost warmup contains duplicate physical windows")
+        if manifest != expected_manifest:
+            raise ValueError("P1 cost warmup differs from the frozen ordered manifest")
         manifests.append(manifest)
     if any(manifest != manifests[0] for manifest in manifests[1:]):
         raise ValueError("P1 cost warmup population/order changed between passes")
@@ -1384,6 +1423,18 @@ def validate_p1_cost_leaf_receipt(
     checked = copy.deepcopy(dict(receipt))
     require_self_hash(checked, field="receipt_sha256", label="P1 cost leaf")
     spec = p1_cost_leaf_spec(expected_leaf_id)
+    frozen = p1_frozen_population_binding()
+    expected_frozen_receipt = {
+        key: frozen[key]
+        for key in (
+            "manifest_path",
+            "manifest_file_sha256",
+            "manifest_sha256",
+            "source_population_sha256",
+            "physical_window_ids_sha256",
+            "runtime_population_sha256",
+        )
+    }
     artifacts = checked.get("artifacts")
     pass_receipts = checked.get("pass_receipts")
     if (
@@ -1399,6 +1450,7 @@ def validate_p1_cost_leaf_receipt(
         or not re.fullmatch(
             r"[0-9a-f]{64}", str(checked.get("population_sha256", ""))
         )
+        or checked.get("frozen_population") != expected_frozen_receipt
         or int(checked.get("warmup_windows_before_each_pass", -1))
         != WARMUP_WINDOWS_PER_PASS
         or int(checked.get("measured_windows_per_pass", -1))
@@ -1482,7 +1534,7 @@ def analyze_p1_cost_leaves(
     """Paired 40-video bootstrap; only Q/DN controls the P1 cost gate."""
 
     if set(leaves) != set(P1_COST_LEAF_SPECS) or int(bootstrap_replicates) <= 0:
-        raise ValueError("P1 cost analysis requires all eight frozen leaves")
+        raise ValueError("P1 cost analysis requires all six frozen leaves")
     normalized = {
         leaf_id: validate_p1_cost_rows(rows, leaf_id=leaf_id)
         for leaf_id, rows in leaves.items()
@@ -1608,6 +1660,7 @@ def analyze_p1_cost_leaves(
         "comparisons": comparisons,
         "q_over_dn_cost_gate_passed": comparisons["DN"]["cost_gate_passed"],
         "do_is_mandatory_report_only": True,
+        "do_has_executable_cost_leaf": False,
     }
 
 
@@ -1666,6 +1719,7 @@ def validate_frozen_contract() -> None:
         )
         or P1_COST_RATIO_LIMIT != 0.85
         or P1_DENSE_PHYSICAL_TOKENS != 84_480
+        or P1_COST_COMPARATORS != ("DN", "U", "R")
     ):
         raise RuntimeError("ZoomToken steady-cost frozen constants changed")
 

@@ -125,6 +125,13 @@ P1_SHARED_OFFICIAL_BASELINE_COMPLETE_STATUSES = (
     "COMPLETE_RELEASED_CHECKPOINT_EVALUATION",
     "COMPLETE_UNTOUCHED_OFFICIAL_REPRODUCTION",
 )
+P1_SHARED_OFFICIAL_BASELINE_RESULT_KINDS = {
+    "COMPLETE_RELEASED_CHECKPOINT_EVALUATION": "released_checkpoint_evaluation",
+    "COMPLETE_UNTOUCHED_OFFICIAL_REPRODUCTION": (
+        "untouched_official_reproduction"
+    ),
+}
+P1_RESUME_AUTHORIZATION_SCHEMA = "zoomtoken_p1_same_cell_resume_authorization_v001"
 P1_SEALED_RUN_ROOTS = (
     "/data/run01/sczc063/yuzibo/"
     "zoomtoken_p1_dnurq_5491c580_seed3407_20260815_0650",
@@ -332,11 +339,15 @@ def validate_p1_shared_official_baseline_receipt(
     population = receipt.get("canonical_population")
     evaluator_nms = receipt.get("evaluator_nms")
     metrics = receipt.get("metrics")
+    status = str(receipt.get("status", ""))
+    result_kind = P1_SHARED_OFFICIAL_BASELINE_RESULT_KINDS.get(status)
+    released_anchor = status == "COMPLETE_RELEASED_CHECKPOINT_EVALUATION"
     if (
         receipt.get("schema_version")
         != P1_SHARED_OFFICIAL_BASELINE_RECEIPT_SCHEMA
-        or receipt.get("status")
-        not in P1_SHARED_OFFICIAL_BASELINE_COMPLETE_STATUSES
+        or status not in P1_SHARED_OFFICIAL_BASELINE_COMPLETE_STATUSES
+        or receipt.get("result_kind") != result_kind
+        or receipt.get("is_released_official_anchor") is not released_anchor
         or receipt.get("owner_project") != "ZoomToken"
         or receipt.get("consumer_policy") != "READ_ONLY_FINAL_RECEIPT"
         or receipt.get("official_release_commit")
@@ -386,7 +397,186 @@ def validate_p1_shared_official_baseline_receipt(
         raise ValueError(
             "PRE_RUN_NOT_READY: shared official AdaTAD inputs are incomplete or changed"
         )
+    if released_anchor:
+        release_identity = receipt.get("release_identity")
+        expected_release_identity = {
+            "model_drive_id": OFFICIAL_RELEASED_MODEL_DRIVE_ID,
+            "log_drive_id": OFFICIAL_RELEASED_LOG_DRIVE_ID,
+            "official_release_commit": OFFICIAL_UPSTREAM_RELEASE_COMMIT,
+            "official_config_sha256": OFFICIAL_CONFIG_SHA256,
+            "checkpoint_sha256": checkpoint["sha256"],
+            "raw_result_sha256": raw_result["sha256"],
+        }
+        if (
+            release_identity != expected_release_identity
+            or any(
+                abs(float(metrics[key]) - float(published))
+                > RELEASED_CHECKPOINT_EVAL_TOLERANCE_PP
+                for key, published in OFFICIAL_PUBLISHED_METRICS.items()
+            )
+        ):
+            raise ValueError(
+                "PRE_RUN_NOT_READY: released official AdaTAD anchor identity or metrics changed"
+            )
+    elif receipt.get("release_identity") is not None:
+        raise ValueError(
+            "PRE_RUN_NOT_READY: untouched official reproduction cannot claim a released anchor"
+        )
     return receipt
+
+
+def validate_p1_resume_authorization(
+    path: str | Path,
+    *,
+    binding: Mapping[str, Any],
+    expected_runtime_commit: str | None = None,
+    expected_arm: str | None = None,
+    expected_seed: int | None = None,
+    expected_run_root: str | Path | None = None,
+    expected_cell_root: str | Path | None = None,
+    expected_config_path: str | Path | None = None,
+    expected_checkpoint_path: str | Path | None = None,
+    expected_slurm_job_id: str | None = None,
+    allow_completed_result: bool = False,
+) -> dict[str, Any]:
+    """Validate the sole exception to fresh-work-dir P1 execution."""
+
+    authorization_path = Path(path).resolve()
+    if not authorization_path.is_file() or authorization_path.is_symlink():
+        raise FileNotFoundError("P1 resume authorization is missing")
+    authorization = read_json(authorization_path)
+    unsigned = dict(authorization)
+    observed_hash = unsigned.pop("authorization_sha256", None)
+    checked_binding = validate_formal_development_binding(binding)
+    arm = str(authorization.get("arm", ""))
+    seed = int(authorization.get("seed", -1))
+    runtime_commit = str(authorization.get("runtime_commit", ""))
+    run_root = Path(str(authorization.get("run_root", ""))).resolve()
+    cell_root = Path(str(authorization.get("cell_root", ""))).resolve()
+    work_dir = Path(str(authorization.get("work_dir", ""))).resolve()
+    config_path = Path(str(authorization.get("bound_config_path", ""))).resolve()
+    checkpoint_path = Path(str(authorization.get("checkpoint_path", ""))).resolve()
+    sidecar_path = Path(str(authorization.get("checkpoint_sidecar_path", ""))).resolve()
+    deployment_path = Path(str(authorization.get("deployment_path", ""))).resolve()
+    runtime_attestation_path = Path(
+        str(authorization.get("runtime_attestation_path", ""))
+    ).resolve()
+    sealed_roots = tuple(Path(value).resolve() for value in P1_SEALED_RUN_ROOTS)
+    deployment = read_json(deployment_path) if deployment_path.is_file() else {}
+    deployment_unsigned = dict(deployment)
+    deployment_hash = deployment_unsigned.pop("deployment_sha256", None)
+    sidecar = validate_formal_checkpoint_sidecar(
+        checkpoint_path,
+        binding=checked_binding,
+        require_final=False,
+    )
+    metadata = sidecar["experiment_metadata"]
+    original_job = str(authorization.get("original_stage_job_id", ""))
+    resume_job = str(authorization.get("resume_slurm_job_id", ""))
+    deployment_jobs = deployment.get("jobs")
+    deployment_stage = (
+        deployment_jobs.get("stage") if isinstance(deployment_jobs, Mapping) else None
+    )
+    deployment_arm_jobs = (
+        deployment_stage.get(arm) if isinstance(deployment_stage, Mapping) else None
+    )
+    if (
+        authorization.get("schema_version") != P1_RESUME_AUTHORIZATION_SCHEMA
+        or authorization.get("study_id") != "ZOOMTOKEN_P1_DNURQ_V001"
+        or authorization.get("status") != "AUTHORIZED_UNSEALED_SAME_CELL_P1_RESUME"
+        or authorization.get("dispatch_kind") != "same_cell_recovery_resume"
+        or observed_hash != canonical_sha256(unsigned)
+        or arm not in P1_MATCHED_RUNNER_ARM_ORDER
+        or seed != P1_DEVELOPMENT_SEED
+        or runtime_commit != checked_binding["runtime_commit"]
+        or arm != checked_binding["arm"]
+        or seed != int(checked_binding["seed"])
+        or work_dir != cell_root
+        or str(work_dir) != checked_binding["work_dir"]
+        or not cell_root.is_dir()
+        or any(cell_root == sealed or sealed in cell_root.parents for sealed in sealed_roots)
+        or run_root not in cell_root.parents
+        or deployment_path != (run_root / "control" / "deployment.json").resolve()
+        or deployment.get("mode") != "p1"
+        or deployment.get("runtime_commit") != runtime_commit
+        or Path(str(deployment.get("run_root", ""))).resolve() != run_root
+        or deployment_hash != canonical_sha256(deployment_unsigned)
+        or authorization.get("deployment_file_sha256") != sha256_file(deployment_path)
+        or authorization.get("deployment_sha256") != deployment_hash
+        or not isinstance(deployment_arm_jobs, Mapping)
+        or original_job != str(deployment_arm_jobs.get(str(seed), ""))
+        or not original_job.isdigit()
+        or not resume_job.isdigit()
+        or original_job == resume_job
+        or config_path
+        != (run_root / "control" / "bound_configs" / f"{arm}_seed{seed}.py").resolve()
+        or not config_path.is_file()
+        or config_path.is_symlink()
+        or authorization.get("bound_config_file_sha256") != sha256_file(config_path)
+        or authorization.get("binding_sha256") != checked_binding["binding_sha256"]
+        or runtime_attestation_path
+        != (
+            run_root
+            / "control"
+            / "runtime_attestations"
+            / f"resume_{arm}_seed{seed}.json"
+        ).resolve()
+        or checkpoint_path.parent != (cell_root / "checkpoint").resolve()
+        or authorization.get("checkpoint_file_sha256") != sha256_file(checkpoint_path)
+        or sidecar_path != Path(str(checkpoint_path) + ".metadata.json").resolve()
+        or authorization.get("checkpoint_sidecar_file_sha256") != sha256_file(sidecar_path)
+        or authorization.get("checkpoint_sidecar_sha256") != sidecar["sidecar_sha256"]
+        or authorization.get("checkpoint_role")
+        not in {"recovery", "milestone"}
+        or authorization.get("checkpoint_role") != metadata["checkpoint_role"]
+        or int(authorization.get("checkpoint_epoch", -1)) != int(metadata["epoch"])
+        or authorization.get("full_state_restoration_required") is not True
+        or authorization.get("resume_allowed") is not True
+        or authorization.get("retry_allowed") is not False
+        or authorization.get("requeue_allowed") is not False
+        or authorization.get("sealed_run_roots") != list(P1_SEALED_RUN_ROOTS)
+        or authorization.get("official_test_opened") is not False
+        or authorization.get("paper_claim_allowed") is not False
+        or (run_root / "control" / "finalization.json").exists()
+        or (
+            not allow_completed_result
+            and (cell_root / "stage_result.json").exists()
+        )
+        or (cell_root / "stage_failure.json").exists()
+    ):
+        raise ValueError("P1 resume authorization is invalid or the cell is sealed")
+    expected_values = (
+        (expected_runtime_commit, runtime_commit, "runtime"),
+        (expected_arm, arm, "arm"),
+        (expected_seed, seed, "seed"),
+        (
+            Path(expected_run_root).resolve() if expected_run_root is not None else None,
+            run_root,
+            "run root",
+        ),
+        (
+            Path(expected_cell_root).resolve() if expected_cell_root is not None else None,
+            cell_root,
+            "cell root",
+        ),
+        (
+            Path(expected_config_path).resolve() if expected_config_path is not None else None,
+            config_path,
+            "config",
+        ),
+        (
+            Path(expected_checkpoint_path).resolve()
+            if expected_checkpoint_path is not None
+            else None,
+            checkpoint_path,
+            "checkpoint",
+        ),
+        (str(expected_slurm_job_id) if expected_slurm_job_id is not None else None, resume_job, "Slurm job"),
+    )
+    for expected, observed, label in expected_values:
+        if expected is not None and expected != observed:
+            raise ValueError(f"P1 resume authorization belongs to another {label}")
+    return authorization
 
 
 def validate_p1_source_config(cfg: Any, *, arm: str, seed: int) -> dict[str, Any]:

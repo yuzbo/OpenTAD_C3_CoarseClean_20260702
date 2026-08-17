@@ -298,6 +298,7 @@ def main():
             require_formal_world2_slurm,
             validate_formal_checkpoint_sidecar,
             validate_formal_development_config,
+            validate_p1_resume_authorization,
         )
 
         if any(
@@ -487,17 +488,43 @@ def main():
             "GeoRoute gradient decomposition did not preserve deterministic "
             "warn-only execution"
         )
+    verified_p1_resume = None
     if formal_binding is None:
         cfg = update_workdir(cfg, args.id, args.world_size)
     elif args.id != 0:
         raise ValueError(
             "formal registered work_dir is manifest-bound; --id must remain zero"
         )
+    elif args.resume is not None:
+        authorization_path = os.environ.get(
+            "GEOROUTE_P1_RESUME_AUTHORIZATION", ""
+        ).strip()
+        if (
+            georoute_official_development_binding is None
+            or not os.path.exists(cfg.work_dir)
+            or not authorization_path
+        ):
+            raise FileExistsError(
+                "formal registered training requires a fresh bound work_dir"
+            )
+        verified_p1_resume = validate_p1_resume_authorization(
+            authorization_path,
+            binding=georoute_official_development_binding,
+            expected_runtime_commit=georoute_official_development_binding[
+                "runtime_commit"
+            ],
+            expected_arm=georoute_official_development_binding["arm"],
+            expected_seed=args.seed,
+            expected_cell_root=cfg.work_dir,
+            expected_config_path=args.config,
+            expected_checkpoint_path=args.resume,
+            expected_slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+        )
     elif args.rank == 0 and os.path.exists(cfg.work_dir):
         raise FileExistsError(
             "formal registered training requires a fresh bound work_dir"
         )
-    if args.rank == 0:
+    if args.rank == 0 and verified_p1_resume is None:
         create_folder(cfg.work_dir)
         save_config(args.config, cfg.work_dir)
     if formal_binding is not None:

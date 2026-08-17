@@ -25,6 +25,8 @@ from tools.bata.georoute_official_comparable_contract import (
     OFFICIAL_CONFIG_RELATIVE_PATH,
     OFFICIAL_CONFIG_SHA256,
     OFFICIAL_PUBLISHED_METRICS,
+    OFFICIAL_RELEASED_LOG_DRIVE_ID,
+    OFFICIAL_RELEASED_MODEL_DRIVE_ID,
     OFFICIAL_UPSTREAM_RELEASE_COMMIT,
     P1_CONDITIONAL_MODIFIER_MAP,
     P1_DEVELOPMENT_SEED,
@@ -64,6 +66,7 @@ from tools.bata.zoomtoken_scnr_steady_cost_contract_v001 import (
     P1_COST_RATIO_LIMIT,
     P1_DENSE_PHYSICAL_TOKENS,
     analyze_p1_cost_leaves,
+    p1_frozen_population_binding,
     p1_cost_leaf_sequence,
 )
 
@@ -331,17 +334,16 @@ def _summarize_fixture(payload: dict, *, arm: str) -> dict:
 
 
 def _p1_cost_route(arm: str) -> dict:
-    selected = P1_DENSE_PHYSICAL_TOKENS if arm in {"DO", "DN"} else 24_576
+    selected = P1_DENSE_PHYSICAL_TOKENS if arm == "DN" else 24_576
     route = {
         "arm": arm,
         "route_mode": {
-            "DO": "dense",
             "DN": "dense",
             "U": "uniform",
             "R": "random",
             "Q": "dynamic_scnr",
         }[arm],
-        "target_k": None if arm in {"DO", "DN", "Q"} else 64,
+        "target_k": None if arm in {"DN", "Q"} else 64,
         "dynamic_k_t": arm == "Q",
         "selected_physical_tokens": selected,
         "executed_physical_tokens": selected,
@@ -369,11 +371,13 @@ def _p1_cost_route(arm: str) -> dict:
 
 def _p1_cost_rows(leaf_id: str) -> list[dict]:
     rows = []
+    frozen = p1_frozen_population_binding()
     for pass_index, arm in enumerate(p1_cost_leaf_sequence(leaf_id)):
         ratio = 0.85 if arm == "Q" else 1.0
-        for ordinal in range(136):
-            video_id = f"video_validation_{ordinal % 40:07d}"
-            selected = P1_DENSE_PHYSICAL_TOKENS if arm in {"DO", "DN"} else 24_576
+        for ordinal, physical in enumerate(frozen["ordered_physical_windows"]):
+            video_id = physical["video_id"]
+            physical_window_id = f"{video_id}:{int(physical['window_center_first'])}"
+            selected = P1_DENSE_PHYSICAL_TOKENS if arm == "DN" else 24_576
             row = {
                 "schema_version": "zoomtoken_p1_cost_sample_v001",
                 "leaf_id": leaf_id,
@@ -384,8 +388,8 @@ def _p1_cost_rows(leaf_id: str) -> list[dict]:
                 "measurement_phase": "measured",
                 "warmup": False,
                 "video_id": video_id,
-                "physical_window_id": f"{video_id}:{ordinal}",
-                "window_id": f"{video_id}:{ordinal}#{ordinal}",
+                "physical_window_id": physical_window_id,
+                "window_id": f"{physical_window_id}#{ordinal}",
                 "exact_window_budget": 24_576,
                 "selected_physical_tokens": selected,
                 "executed_physical_tokens": selected,
@@ -417,7 +421,7 @@ def _p1_cost_rows(leaf_id: str) -> list[dict]:
 
 
 def _p1_release_receipt_fixture(directory: Path) -> dict:
-    job_ids = tuple(str(910_000 + index) for index in range(14))
+    job_ids = tuple(str(910_000 + index) for index in range(12))
     seed_key = str(P1_DEVELOPMENT_SEED)
     runtime_preflight_job = job_ids[0]
     stage_jobs = {
@@ -438,6 +442,8 @@ def _p1_release_receipt_fixture(directory: Path) -> dict:
     shared_validation = {
         "receipt_sha256": "5" * 64,
         "status": "COMPLETE_RELEASED_CHECKPOINT_EVALUATION",
+        "result_kind": "released_checkpoint_evaluation",
+        "is_released_official_anchor": True,
         "checkpoint": {},
         "metrics": {},
     }
@@ -453,7 +459,7 @@ def _p1_release_receipt_fixture(directory: Path) -> dict:
         "accuracy_cells": 5,
         "scheduled_accuracy_cells": 4,
         "external_report_only_cells": 1,
-        "cost_leaves": 8,
+        "cost_leaves": 6,
         "jobs": {
             "runtime_preflight": runtime_preflight_job,
             "stage": stage_jobs,
@@ -465,6 +471,10 @@ def _p1_release_receipt_fixture(directory: Path) -> dict:
             "receipt_file_sha256": p1_deployer.sha256_file(shared_path),
             "receipt_sha256": shared_validation["receipt_sha256"],
             "status": shared_validation["status"],
+            "result_kind": shared_validation["result_kind"],
+            "is_released_official_anchor": shared_validation[
+                "is_released_official_anchor"
+            ],
             "consumer_policy": "READ_ONLY_FINAL_RECEIPT",
             "do_role": "mandatory_report_only_external_dependency",
             "checkpoint": {},
@@ -472,12 +482,13 @@ def _p1_release_receipt_fixture(directory: Path) -> dict:
             "training_or_evaluation_scheduled_by_p1": False,
         },
         "dependency_policy": {
-            "all_fourteen_jobs_held_until_receipts_immutable": True,
+            "all_twelve_jobs_held_until_receipts_immutable": True,
             "accuracy_afterany_runtime_preflight": True,
             "cost_afterany_runtime_preflight_and_source_stages": True,
-            "finalizer_afterany_all_thirteen_predecessors": True,
-            "release_all_fourteen_atomically": True,
-            "resume_allowed": False,
+            "finalizer_afterany_all_eleven_predecessors": True,
+            "release_all_twelve_atomically": True,
+            "automatic_resume_allowed": False,
+            "authorized_unsealed_same_cell_resume_allowed": True,
             "retry_allowed": False,
             "requeue_allowed": False,
         },
@@ -655,6 +666,8 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
             receipt = {
                 "schema_version": P1_SHARED_OFFICIAL_BASELINE_RECEIPT_SCHEMA,
                 "status": "COMPLETE_RELEASED_CHECKPOINT_EVALUATION",
+                "result_kind": "released_checkpoint_evaluation",
+                "is_released_official_anchor": True,
                 "owner_project": "ZoomToken",
                 "consumer_policy": "READ_ONLY_FINAL_RECEIPT",
                 "official_release_commit": OFFICIAL_UPSTREAM_RELEASE_COMMIT,
@@ -687,6 +700,14 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
                 "official_test_opened": False,
                 "matched_source_dense_used": False,
             }
+            receipt["release_identity"] = {
+                "model_drive_id": OFFICIAL_RELEASED_MODEL_DRIVE_ID,
+                "log_drive_id": OFFICIAL_RELEASED_LOG_DRIVE_ID,
+                "official_release_commit": OFFICIAL_UPSTREAM_RELEASE_COMMIT,
+                "official_config_sha256": OFFICIAL_CONFIG_SHA256,
+                "checkpoint_sha256": receipt["checkpoint"]["sha256"],
+                "raw_result_sha256": receipt["raw_result"]["sha256"],
+            }
             receipt["receipt_sha256"] = canonical_sha256(receipt)
             path = directory / "receipt.json"
             path.write_text(json.dumps(receipt), encoding="utf-8")
@@ -700,6 +721,37 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
             path.write_text(json.dumps(contaminated), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "PRE_RUN_NOT_READY"):
                 validate_p1_shared_official_baseline_receipt(path)
+
+            substituted = copy.deepcopy(receipt)
+            substituted["metrics"] = {
+                key: 66.0 + index / 100.0
+                for index, key in enumerate(OFFICIAL_PUBLISHED_METRICS)
+            }
+            substituted.pop("receipt_sha256")
+            substituted["receipt_sha256"] = canonical_sha256(substituted)
+            path.write_text(json.dumps(substituted), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "released official"):
+                validate_p1_shared_official_baseline_receipt(path)
+
+            reproduction = copy.deepcopy(substituted)
+            reproduction["status"] = "COMPLETE_UNTOUCHED_OFFICIAL_REPRODUCTION"
+            reproduction["result_kind"] = "untouched_official_reproduction"
+            reproduction["is_released_official_anchor"] = False
+            reproduction["release_identity"] = None
+            reproduction.pop("receipt_sha256")
+            reproduction["receipt_sha256"] = canonical_sha256(reproduction)
+            path.write_text(json.dumps(reproduction), encoding="utf-8")
+            self.assertEqual(
+                validate_p1_shared_official_baseline_receipt(path), reproduction
+            )
+            self.assertFalse(reproduction["is_released_official_anchor"])
+            finalizer = (
+                ROOT / "tools" / "bata" / "finalize_georoute_official_development.py"
+            ).read_text(encoding="utf-8")
+            self.assertIn(
+                'if shared_receipt["is_released_official_anchor"] is True',
+                finalizer,
+            )
 
     def test_physical_population_identity_excludes_ddp_placement(self):
         first = _formal_telemetry_payload(_q_route_telemetry())
@@ -756,6 +808,12 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         stage = (
             ROOT / "tools" / "bata" / "georoute_official_development_stage_runner.py"
         ).read_text(encoding="utf-8")
+        deployer = (
+            ROOT / "tools" / "bata" / "deploy_georoute_official_development.py"
+        ).read_text(encoding="utf-8")
+        finalizer = (
+            ROOT / "tools" / "bata" / "finalize_georoute_official_development.py"
+        ).read_text(encoding="utf-8")
         for token in (
             'checkpoint_policy = "recovery_interval"',
             "P1_RECOVERY_INTERVAL_EPOCHS = 5",
@@ -775,11 +833,25 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
             "torch.set_rng_state",
             "torch.cuda.set_rng_state",
             "sealed in work_dir.parents",
+            "GEOROUTE_P1_RESUME_AUTHORIZATION",
+            "validate_p1_resume_authorization(",
         ):
             self.assertIn(token, train)
         self.assertIn("_prune_recovery_checkpoints", checkpoint)
         self.assertIn('f"recovery_epoch_{epoch}.pth"', checkpoint)
         self.assertIn("validate_formal_checkpoint_population", stage)
+        self.assertIn('choices=("accuracy", "cost", "resume")', stage)
+        self.assertIn('train_command.extend(["--resume"', stage)
+        for token in (
+            "_deploy_p1_resume(",
+            '"original_stage_job_id"',
+            '"bound_config_file_sha256"',
+            '"checkpoint_sidecar_sha256"',
+            '"full_state_restoration_required": True',
+            "_release_p1_jobs_checked((resume_job,))",
+        ):
+            self.assertIn(token, deployer)
+        self.assertIn("allow_completed_result=True", finalizer)
         self.assertNotIn("torch", sys.modules)
 
     def test_recovery_sidecar_accepts_only_a_registered_role_and_name(self):
@@ -1020,12 +1092,18 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
 
     def test_formal_ddp_work_dir_is_created_once_then_synchronized(self):
         source = (ROOT / "tools" / "train.py").read_text(encoding="utf-8")
+        resume_guard = "elif args.resume is not None:"
         rank_zero_guard = "elif args.rank == 0 and os.path.exists(cfg.work_dir):"
-        create = "if args.rank == 0:\n        create_folder(cfg.work_dir)"
+        authorization = "verified_p1_resume = validate_p1_resume_authorization("
+        create = "if args.rank == 0 and verified_p1_resume is None:"
         synchronize = "if formal_binding is not None:\n        dist.barrier()"
+        self.assertIn(resume_guard, source)
         self.assertIn(rank_zero_guard, source)
+        self.assertIn(authorization, source)
         self.assertIn(create, source)
         self.assertIn(synchronize, source)
+        self.assertLess(source.index(resume_guard), source.index(authorization))
+        self.assertLess(source.index(authorization), source.index(rank_zero_guard))
         self.assertLess(source.index(rank_zero_guard), source.index(create))
         self.assertLess(source.index(create), source.index(synchronize))
 
@@ -1104,7 +1182,7 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         self.assertEqual(summary["role_counts"], {"uniform": 64})
         self.assertNotIn("torch", sys.modules)
 
-    def test_p1_deployer_uses_shared_do_and_one_held_fourteen_job_entry(self):
+    def test_p1_deployer_uses_shared_do_and_one_held_twelve_job_entry(self):
         deployer = (
             ROOT / "tools" / "bata" / "deploy_georoute_official_development.py"
         ).read_text(encoding="utf-8")
@@ -1112,11 +1190,11 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
             ROOT / "scripts" / "run_georoute_official_development_stage_slurm.sh"
         ).read_text(encoding="utf-8")
         self.assertIn('parser.add_argument("--mode", choices=("formal", "p1")', deployer)
-        self.assertIn("additional_jobs=14", deployer)
+        self.assertIn("additional_jobs=12", deployer)
         self.assertIn('"runtime_preflight": runtime_preflight_job', deployer)
         self.assertIn('"cost": cost_jobs', deployer)
-        self.assertIn("finalizer_afterany_all_thirteen_predecessors", deployer)
-        self.assertIn("release_all_fourteen_atomically", deployer)
+        self.assertIn("finalizer_afterany_all_eleven_predecessors", deployer)
+        self.assertIn("release_all_twelve_atomically", deployer)
         self.assertIn("mandatory_report_only_external_dependency", deployer)
         self.assertIn("P1_MATCHED_RUNNER_ARM_ORDER", deployer)
         self.assertIn("_release_p1_jobs_from_receipts(", deployer)
@@ -1129,6 +1207,8 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         self.assertIn("--phase preflight", launcher)
         self.assertIn("--phase leaf", launcher)
         self.assertIn("--task cost", launcher)
+        self.assertIn("--task resume", launcher)
+        self.assertIn("--resume-authorization", launcher)
 
     def test_p1_receipt_mutation_cancels_before_release(self):
         self.assertNotIn("torch", sys.modules)
@@ -1268,13 +1348,11 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         self.assertEqual(run_control.call_count, 3)
         self.assertNotIn("torch", sys.modules)
 
-    def test_p1_cost_contract_is_eight_leaves_and_dn_gate_is_literal(self):
+    def test_p1_cost_contract_is_six_leaves_and_dn_gate_is_literal(self):
         self.assertNotIn("torch", sys.modules)
         self.assertEqual(
             tuple(P1_COST_LEAF_SPECS),
             (
-                "DO_ABBA",
-                "DO_BAAB",
                 "DN_ABBA",
                 "DN_BAAB",
                 "U_ABBA",
@@ -1290,12 +1368,23 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         self.assertEqual(P1_COST_RATIO_LIMIT, 0.85)
         self.assertEqual(analysis["dense_denominator"], "DN")
         self.assertTrue(analysis["q_over_dn_cost_gate_passed"])
-        self.assertTrue(analysis["comparisons"]["DO"]["report_only"])
+        self.assertNotIn("DO", analysis["comparisons"])
+        self.assertTrue(analysis["do_is_mandatory_report_only"])
+        self.assertFalse(analysis["do_has_executable_cost_leaf"])
         self.assertFalse(analysis["comparisons"]["DN"]["report_only"])
         for metric in analysis["comparisons"]["DN"]["metrics"].values():
             self.assertAlmostEqual(metric["one_sided_95_upper_bound"], 0.85)
             self.assertTrue(metric["upper_bound_le_0_85"])
             self.assertEqual(metric["tolerance"], 0.0)
+        changed_population = copy.deepcopy(leaves)
+        changed = changed_population["DN_ABBA"][0]
+        changed["video_id"] = "video_validation_9999999"
+        changed["physical_window_id"] = "video_validation_9999999:0"
+        changed["window_id"] = "video_validation_9999999:0#0"
+        changed.pop("sample_sha256")
+        changed["sample_sha256"] = canonical_sha256(changed)
+        with self.assertRaisesRegex(ValueError, "frozen ordered manifest"):
+            analyze_p1_cost_leaves(changed_population, bootstrap_replicates=10)
         for leaf_id in ("DN_ABBA", "DN_BAAB"):
             for row in leaves[leaf_id]:
                 if row["arm"] == "Q":

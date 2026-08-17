@@ -58,9 +58,11 @@ from tools.bata.georoute_official_comparable_contract import (  # noqa: E402
     formal_arm_spec,
     formal_cell_relative_path,
     read_json,
+    validate_p1_resume_authorization,
     validate_p1_shared_official_baseline_receipt,
     validate_formal_checkpoint_sidecar,
     validate_formal_development_binding,
+    validate_formal_development_config,
     validate_protocol_manifest,
 )
 from tools.bata.georoute_p1_runtime_attestor import (  # noqa: E402
@@ -83,6 +85,7 @@ from tools.bata.zoomtoken_scnr_steady_cost_contract_v001 import (  # noqa: E402
     P1_STUDY_ID,
     WARMUP_WINDOWS_PER_PASS,
     add_self_hash,
+    p1_frozen_population_binding,
     p1_cost_leaf_relative_path,
     p1_cost_leaf_sequence,
     p1_cost_leaf_spec,
@@ -138,6 +141,21 @@ def _accuracy_log_paths(
     log_root.mkdir(parents=True, exist_ok=False)
     if cell_root.exists():
         raise RuntimeError("stage log setup created the bound training work_dir")
+    return log_root / "train.out", log_root / "test.out"
+
+
+def _resume_log_paths(
+    *, run_root: Path, arm: str, seed: int, slurm_job_id: str
+) -> tuple[Path, Path]:
+    """Keep one immutable resume attempt outside the existing bound work_dir."""
+
+    log_root = (
+        run_root
+        / "control"
+        / "resume_logs"
+        / f"{arm}_seed{seed}_job{slurm_job_id}"
+    )
+    log_root.mkdir(parents=True, exist_ok=False)
     return log_root / "train.out", log_root / "test.out"
 
 
@@ -453,6 +471,7 @@ def _summarize_p1_q_routes(
     population_descriptor_sha256: str,
     physical_population_sha256: str,
     telemetry_file_sha256: str,
+    frozen_population: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     all_k: list[int] = []
     role_totals = {name: 0 for name in ("context", "roi", "residual")}
@@ -576,6 +595,11 @@ def _summarize_p1_q_routes(
         "development_only": True,
         "paper_grade_cost_allowed": False,
     }
+    if frozen_population is not None:
+        summary["frozen_population"] = dict(frozen_population)
+        summary["frozen_population_identity_sha256"] = frozen_population[
+            "runtime_population_sha256"
+        ]
     summary["summary_sha256"] = canonical_sha256(summary)
     return summary
 
@@ -604,17 +628,21 @@ def _read_p1_runtime_attestation(
     *,
     arm: str | None = None,
     leaf_id: str | None = None,
+    attestation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     runtime = deployment.get("runtime_attestation")
     if not isinstance(runtime, Mapping) or (arm is None) == (leaf_id is None):
         raise ValueError("P1 deployment lacks an unambiguous runtime attestation")
     preflight_path = Path(str(runtime.get("preflight_path", ""))).resolve()
-    path_map_name = "leaf_paths" if arm is not None else "cost_leaf_paths"
-    path_key = str(arm if arm is not None else leaf_id)
-    path_map = runtime.get(path_map_name)
-    if not isinstance(path_map, Mapping):
-        raise ValueError("P1 deployment lacks leaf attestation paths")
-    leaf_path = Path(str(path_map.get(path_key, ""))).resolve()
+    if attestation_path is None:
+        path_map_name = "leaf_paths" if arm is not None else "cost_leaf_paths"
+        path_key = str(arm if arm is not None else leaf_id)
+        path_map = runtime.get(path_map_name)
+        if not isinstance(path_map, Mapping):
+            raise ValueError("P1 deployment lacks leaf attestation paths")
+        leaf_path = Path(str(path_map.get(path_key, ""))).resolve()
+    else:
+        leaf_path = Path(attestation_path).resolve()
     if not preflight_path.is_file() or not leaf_path.is_file():
         raise FileNotFoundError("P1 runtime preflight/leaf attestation is missing")
     preflight = read_json(preflight_path)
@@ -661,7 +689,7 @@ def validate_p1_deployment_shape(deployment: Mapping[str, Any]) -> dict[str, Any
         or int(checked.get("accuracy_cells", -1)) != 5
         or int(checked.get("scheduled_accuracy_cells", -1)) != 4
         or int(checked.get("external_report_only_cells", -1)) != 1
-        or int(checked.get("cost_leaves", -1)) != 8
+        or int(checked.get("cost_leaves", -1)) != 6
         or not isinstance(stage_jobs, Mapping)
         or set(stage_jobs) != set(P1_MATCHED_RUNNER_ARM_ORDER)
         or any(
@@ -689,6 +717,19 @@ def validate_p1_deployment_shape(deployment: Mapping[str, Any]) -> dict[str, Any
         or float(cost.get("q_over_dn_upper_bound_limit", -1.0)) != 0.85
         or cost.get("dn_only_controlling_denominator") is not True
         or cost.get("do_mandatory_report_only") is not True
+        or cost.get("do_executable_cost_leaf") is not False
+        or cost.get("frozen_population")
+        != {
+            key: p1_frozen_population_binding()[key]
+            for key in (
+                "manifest_path",
+                "manifest_file_sha256",
+                "manifest_sha256",
+                "source_population_sha256",
+                "physical_window_ids_sha256",
+                "runtime_population_sha256",
+            )
+        }
         or not isinstance(shared, Mapping)
         or shared.get("consumer_policy") != "READ_ONLY_FINAL_RECEIPT"
         or shared.get("do_role") != "mandatory_report_only_external_dependency"
@@ -709,14 +750,15 @@ def validate_p1_deployment_shape(deployment: Mapping[str, Any]) -> dict[str, Any
         or any(
             policy.get(field) is not True
             for field in (
-                "all_fourteen_jobs_held_until_receipts_immutable",
+                "all_twelve_jobs_held_until_receipts_immutable",
                 "accuracy_afterany_runtime_preflight",
                 "cost_afterany_runtime_preflight_and_source_stages",
-                "finalizer_afterany_all_thirteen_predecessors",
-                "release_all_fourteen_atomically",
+                "finalizer_afterany_all_eleven_predecessors",
+                "release_all_twelve_atomically",
             )
         )
-        or policy.get("resume_allowed") is not False
+        or policy.get("automatic_resume_allowed") is not False
+        or policy.get("authorized_unsealed_same_cell_resume_allowed") is not True
         or policy.get("retry_allowed") is not False
         or policy.get("requeue_allowed") is not False
         or checked.get("official_test_opened") is not False
@@ -729,8 +771,17 @@ def validate_p1_deployment_shape(deployment: Mapping[str, Any]) -> dict[str, Any
     if (
         sha256_file(shared_path) != shared.get("receipt_file_sha256")
         or shared_receipt.get("receipt_sha256") != shared.get("receipt_sha256")
+        or shared_receipt.get("status") != shared.get("status")
+        or shared_receipt.get("result_kind") != shared.get("result_kind")
+        or shared_receipt.get("is_released_official_anchor")
+        is not shared.get("is_released_official_anchor")
         or dict(shared_receipt.get("checkpoint", {})) != shared.get("checkpoint")
-        or dict(shared_receipt.get("metrics", {})) != shared.get("metrics")
+        or (
+            dict(shared_receipt.get("metrics", {}))
+            if shared_receipt.get("is_released_official_anchor") is True
+            else None
+        )
+        != shared.get("metrics")
     ):
         raise ValueError("P1 shared official AdaTAD receipt changed")
     return checked
@@ -745,8 +796,9 @@ def _validate_deployment(
     slurm_job_id: str,
     task: str = "accuracy",
     leaf_id: str | None = None,
+    resume_authorization: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    p1_cell = arm in P1_MATCHED_RUNNER_ARM_ORDER or task == "cost"
+    p1_cell = arm in P1_MATCHED_RUNNER_ARM_ORDER or task in {"cost", "resume"}
     expected_arm_order = (
         P1_FIRST_SCREEN_ARM_ORDER if p1_cell else FORMAL_DEVELOPMENT_ARM_ORDER
     )
@@ -771,6 +823,11 @@ def _validate_deployment(
         and leaf_id in P1_COST_LEAF_SPECS
         and str(cost_jobs.get(str(leaf_id), "")) == slurm_job_id
         if task == "cost"
+        else isinstance(resume_authorization, Mapping)
+        and str(resume_authorization.get("resume_slurm_job_id", "")) == slurm_job_id
+        and str(resume_authorization.get("original_stage_job_id", ""))
+        == str(arm_jobs.get(str(seed), ""))
+        if task == "resume"
         else isinstance(arm_jobs, Mapping)
         and str(arm_jobs.get(str(seed), "")) == slurm_job_id
     )
@@ -916,11 +973,46 @@ def summarize_formal_telemetry(path: Path, *, arm: str) -> dict[str, Any]:
     physical_descriptors, physical_population_sha256 = (
         canonical_p1_physical_population(descriptors)
     )
+    p1_frozen_population = (
+        arm in P1_MATCHED_RUNNER_ARM_ORDER and dataset_count == PHYSICAL_WINDOWS
+    )
+    frozen = p1_frozen_population_binding() if p1_frozen_population else None
+    frozen_receipt = (
+        {
+            key: frozen[key]
+            for key in (
+                "manifest_path",
+                "manifest_file_sha256",
+                "manifest_sha256",
+                "source_population_sha256",
+                "physical_window_ids_sha256",
+                "runtime_population_sha256",
+            )
+        }
+        if frozen is not None
+        else None
+    )
     if (
         len(physical_descriptors) != dataset_count
         or (
             dataset_count == PHYSICAL_WINDOWS
             and len({row["video_id"] for row in physical_descriptors}) != 40
+        )
+        or (
+            frozen is not None
+            and [
+                {
+                    key: row[key]
+                    for key in (
+                        "dataset_index",
+                        "video_id",
+                        "window_center_first",
+                        "window_center_last",
+                    )
+                }
+                for row in physical_descriptors
+            ]
+            != frozen["ordered_physical_windows"]
         )
     ):
         raise ValueError("formal telemetry physical population is invalid")
@@ -934,6 +1026,9 @@ def summarize_formal_telemetry(path: Path, *, arm: str) -> dict[str, Any]:
             population_descriptor_sha256=population_descriptor_sha256,
             physical_population_sha256=physical_population_sha256,
             telemetry_file_sha256=sha256_file(path),
+            frozen_population=(
+                frozen_receipt
+            ),
         )
 
     expected_k = (
@@ -990,6 +1085,11 @@ def summarize_formal_telemetry(path: Path, *, arm: str) -> dict[str, Any]:
         "development_only": True,
         "paper_grade_cost_allowed": False,
     }
+    if frozen_receipt is not None:
+        summary["frozen_population"] = frozen_receipt
+        summary["frozen_population_identity_sha256"] = frozen[
+            "runtime_population_sha256"
+        ]
     summary["summary_sha256"] = canonical_sha256(summary)
     return summary
 
@@ -1082,6 +1182,18 @@ def validate_formal_stage_result(
     runtime_attestation = result.get("runtime_attestation")
     if arm in P1_MATCHED_RUNNER_ARM_ORDER:
         recovery_receipts = result.get("recovery_checkpoint_receipts")
+        frozen = p1_frozen_population_binding()
+        expected_frozen_receipt = {
+            key: frozen[key]
+            for key in (
+                "manifest_path",
+                "manifest_file_sha256",
+                "manifest_sha256",
+                "source_population_sha256",
+                "physical_window_ids_sha256",
+                "runtime_population_sha256",
+            )
+        }
         recovery_policy = binding["recovery_policy"]
         milestone_epochs = set(
             map(int, recovery_policy["registered_milestone_epochs"])
@@ -1101,6 +1213,9 @@ def validate_formal_stage_result(
         }
         if (
             not _is_sha256(telemetry.get("physical_population_sha256"))
+            or telemetry.get("frozen_population") != expected_frozen_receipt
+            or telemetry.get("frozen_population_identity_sha256")
+            != frozen["runtime_population_sha256"]
             or telemetry.get("population_identity_scope")
             != "physical_windows_excluding_ddp_placement"
             or not isinstance(runtime_attestation, Mapping)
@@ -1135,7 +1250,9 @@ def validate_formal_stage_result(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", choices=("accuracy", "cost"), default="accuracy")
+    parser.add_argument(
+        "--task", choices=("accuracy", "cost", "resume"), default="accuracy"
+    )
     parser.add_argument(
         "--arm",
         choices=(
@@ -1152,6 +1269,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--class-map", type=Path)
     parser.add_argument("--development-video-root", type=Path)
     parser.add_argument("--pretrained", type=Path)
+    parser.add_argument("--resume", type=Path)
+    parser.add_argument("--resume-authorization", type=Path)
     parser.add_argument("--expected-commit", required=True)
     return parser.parse_args()
 
@@ -1161,6 +1280,7 @@ def _execute(
     *,
     cell_root: Path,
 ) -> dict[str, Any]:
+    resume_mode = args.task == "resume"
     if args.arm is None or any(
         getattr(args, name) is None
         for name in (
@@ -1173,6 +1293,15 @@ def _execute(
         )
     ):
         raise ValueError("accuracy task requires its arm and all frozen inputs")
+    if resume_mode:
+        if (
+            args.arm not in P1_MATCHED_RUNNER_ARM_ORDER
+            or args.resume is None
+            or args.resume_authorization is None
+        ):
+            raise ValueError("resume task requires one bound P1 arm and authorization")
+    elif args.resume is not None or args.resume_authorization is not None:
+        raise ValueError("initial accuracy task forbids resume inputs")
     expected_commit = str(args.expected_commit).lower()
     if _current_commit() != expected_commit:
         raise RuntimeError("formal development source commit changed")
@@ -1191,13 +1320,41 @@ def _execute(
     boundary = Path("/data/run01/sczc063/yuzibo").resolve()
     if not _inside(run_root, boundary):
         raise ValueError("formal development run root leaves write boundary")
+    bound_config = (
+        run_root
+        / "control"
+        / "bound_configs"
+        / f"{args.arm}_seed{args.seed}.py"
+    )
+    resume_authorization = None
+    cfg = None
+    if resume_mode:
+        from mmengine.config import Config
+
+        if not bound_config.is_file() or bound_config.is_symlink():
+            raise FileNotFoundError("P1 resume bound config is missing")
+        cfg = Config.fromfile(str(bound_config))
+        binding = validate_formal_development_config(cfg, seed=args.seed)
+        resume_authorization = validate_p1_resume_authorization(
+            args.resume_authorization,
+            binding=binding,
+            expected_runtime_commit=expected_commit,
+            expected_arm=args.arm,
+            expected_seed=args.seed,
+            expected_run_root=run_root,
+            expected_cell_root=cell_root,
+            expected_config_path=bound_config,
+            expected_checkpoint_path=args.resume,
+            expected_slurm_job_id=slurm_job_id,
+        )
     deployment, _protocol, _preflight = _validate_deployment(
         run_root=run_root,
         expected_commit=expected_commit,
         arm=args.arm,
         seed=args.seed,
         slurm_job_id=slurm_job_id,
-        task="accuracy",
+        task=args.task,
+        resume_authorization=resume_authorization,
     )
     runtime_attestation = None
     if args.arm in P1_MATCHED_RUNNER_ARM_ORDER:
@@ -1213,50 +1370,72 @@ def _execute(
         runtime_attestation = _read_p1_runtime_attestation(
             deployment,
             arm=args.arm,
+            attestation_path=(
+                resume_authorization["runtime_attestation_path"]
+                if resume_authorization is not None
+                else None
+            ),
         )
-    storage_receipt_path = _write_accuracy_storage_preflight(
-        run_root=run_root,
-        cell_root=cell_root,
-        arm=args.arm,
-        seed=args.seed,
-    )
-    bound_config = (
+    storage_receipt_path = (
         run_root
         / "control"
-        / "bound_configs"
-        / f"{args.arm}_seed{args.seed}.py"
+        / "storage_preflights"
+        / f"{args.arm}_seed{args.seed}.json"
     )
-    if bound_config.exists():
-        raise FileExistsError("formal bound config already exists")
-    bound_config.parent.mkdir(parents=True, exist_ok=True)
-    cfg = bind_formal_development_config(
-        source_config_path=args.source_config,
-        arm=_p1_execution_arm(args.arm),
-        seed=args.seed,
-        work_dir=cell_root,
-        manifest_path=args.manifest,
-        development_annotation_path=args.development_annotation,
-        class_map_path=args.class_map,
-        development_video_root=args.development_video_root,
-        pretrained_checkpoint_path=args.pretrained,
-        runtime_commit=expected_commit,
-        preflight_finalization_path=deployment[
-            "preflight_finalization_path"
-        ],
-        expected_preflight_file_sha256=deployment[
-            "preflight_finalization_file_sha256"
-        ],
-    )
-    cfg.dump(str(bound_config))
+    if resume_mode:
+        if not storage_receipt_path.is_file():
+            raise FileNotFoundError("P1 resume lacks the original storage preflight")
+    else:
+        storage_receipt_path = _write_accuracy_storage_preflight(
+            run_root=run_root,
+            cell_root=cell_root,
+            arm=args.arm,
+            seed=args.seed,
+        )
+        if bound_config.exists():
+            raise FileExistsError("formal bound config already exists")
+        bound_config.parent.mkdir(parents=True, exist_ok=True)
+        cfg = bind_formal_development_config(
+            source_config_path=args.source_config,
+            arm=_p1_execution_arm(args.arm),
+            seed=args.seed,
+            work_dir=cell_root,
+            manifest_path=args.manifest,
+            development_annotation_path=args.development_annotation,
+            class_map_path=args.class_map,
+            development_video_root=args.development_video_root,
+            pretrained_checkpoint_path=args.pretrained,
+            runtime_commit=expected_commit,
+            preflight_finalization_path=deployment[
+                "preflight_finalization_path"
+            ],
+            expected_preflight_file_sha256=deployment[
+                "preflight_finalization_file_sha256"
+            ],
+        )
+        cfg.dump(str(bound_config))
+    if cfg is None:
+        raise RuntimeError("formal bound config was not materialized")
     inherited = dict(os.environ)
     inherited["PYTHONNOUSERSITE"] = "1"
     inherited["PYTHONDONTWRITEBYTECODE"] = "1"
-    train_log, test_log = _accuracy_log_paths(
-        run_root=run_root,
-        cell_root=cell_root,
-        arm=args.arm,
-        seed=args.seed,
-    )
+    if resume_mode:
+        inherited["GEOROUTE_P1_RESUME_AUTHORIZATION"] = str(
+            args.resume_authorization.resolve()
+        )
+        train_log, test_log = _resume_log_paths(
+            run_root=run_root,
+            arm=args.arm,
+            seed=args.seed,
+            slurm_job_id=slurm_job_id,
+        )
+    else:
+        train_log, test_log = _accuracy_log_paths(
+            run_root=run_root,
+            cell_root=cell_root,
+            arm=args.arm,
+            seed=args.seed,
+        )
     train_prefix, train_rendezvous = build_torchrun_prefix(
         phase="train",
         slurm_job_id=slurm_job_id,
@@ -1265,8 +1444,7 @@ def _execute(
         seed=args.seed,
         nproc_per_node=FORMAL_WORLD_SIZE,
     )
-    _run_logged(
-        [
+    train_command = [
             *train_prefix,
             "tools/train.py",
             str(bound_config),
@@ -1274,7 +1452,11 @@ def _execute(
             str(args.seed),
             "--id",
             "0",
-        ],
+        ]
+    if resume_mode:
+        train_command.extend(["--resume", str(args.resume.resolve())])
+    _run_logged(
+        train_command,
         log_path=train_log,
         env=inherited,
     )
@@ -1417,6 +1599,14 @@ def _execute(
     }
     if runtime_attestation is not None:
         result["runtime_attestation"] = runtime_attestation
+    if resume_authorization is not None:
+        result["resume_authorization"] = {
+            "path": str(args.resume_authorization.resolve()),
+            "file_sha256": sha256_file(args.resume_authorization),
+            "authorization_sha256": resume_authorization["authorization_sha256"],
+            "original_stage_job_id": resume_authorization["original_stage_job_id"],
+            "resume_slurm_job_id": resume_authorization["resume_slurm_job_id"],
+        }
     result["stage_result_sha256"] = canonical_sha256(result)
     return validate_formal_stage_result(
         result,
@@ -1430,7 +1620,7 @@ def _p1_cost_route_summary(arm: str, audit: Mapping[str, Any]) -> dict[str, Any]
     spec = _first_screen_arm_spec(arm)
     route_mode = str(spec["route_mode"])
     expected_tokens = (
-        P1_DENSE_PHYSICAL_TOKENS if arm in {"DO", "DN"} else P1_WINDOW_TOKEN_BUDGET
+        P1_DENSE_PHYSICAL_TOKENS if arm == "DN" else P1_WINDOW_TOKEN_BUDGET
     )
     common = {
         "arm": arm,
@@ -1549,54 +1739,14 @@ def _profile_p1_cost_pass(
         _strip_ddp_prefix,
     )
 
-    external_shared_do = stage.get("external_shared_do") is True
     config_path = Path(str(stage.get("config_path", ""))).resolve()
     if not config_path.is_file() or sha256_file(config_path) != stage.get("config_sha256"):
         raise ValueError("P1 cost source config changed after accuracy execution")
-    if external_shared_do:
-        if arm != "DO":
-            raise ValueError("only DO may consume the shared official receipt")
-        deployment = stage.get("deployment")
-        if not isinstance(deployment, Mapping):
-            raise ValueError("P1 DO cost source lacks its deployment binding")
-        inputs = deployment.get("input_receipts")
-        if not isinstance(inputs, Mapping):
-            raise ValueError("P1 DO cost source lacks the frozen development inputs")
-        cfg = bind_formal_development_config(
-            source_config_path=config_path,
-            arm="dense_native",
-            seed=P1_DEVELOPMENT_SEED,
-            work_dir=Path(str(deployment["run_root"]))
-            / "control"
-            / "shared_do_report_only",
-            manifest_path=inputs["GEOROUTE_MANIFEST"]["path"],
-            development_annotation_path=inputs[
-                "GEOROUTE_DEVELOPMENT_ANNOTATION"
-            ]["path"],
-            class_map_path=inputs["GEOROUTE_CLASS_MAP"]["path"],
-            development_video_root=inputs["GEOROUTE_DEVELOPMENT_VIDEO_ROOT"]["path"],
-            pretrained_checkpoint_path=inputs["GEOROUTE_PRETRAINED"]["path"],
-            runtime_commit=str(deployment["runtime_commit"]),
-            preflight_finalization_path=deployment["preflight_finalization_path"],
-            expected_preflight_file_sha256=deployment[
-                "preflight_finalization_file_sha256"
-            ],
-        )
-        binding = dict(cfg.georoute_official_development_binding)
-    else:
-        cfg = Config.fromfile(str(config_path))
-        binding = dict(stage["binding"])
+    cfg = Config.fromfile(str(config_path))
+    binding = dict(stage["binding"])
     checkpoint_receipt = stage["checkpoint_receipt"]
     checkpoint_path = Path(str(checkpoint_receipt["path"])).resolve()
-    if external_shared_do:
-        if (
-            not checkpoint_path.is_file()
-            or checkpoint_path.is_symlink()
-            or sha256_file(checkpoint_path) != checkpoint_receipt.get("sha256")
-        ):
-            raise ValueError("shared official DO checkpoint changed")
-    else:
-        validate_formal_checkpoint_sidecar(checkpoint_path, binding=binding)
+    validate_formal_checkpoint_sidecar(checkpoint_path, binding=binding)
     dataset = build_dataset(copy.deepcopy(cfg.dataset.test))
     descriptors, _layout_population_sha256, _accuracy_layout_sha256 = (
         _population_descriptor(dataset)
@@ -1604,14 +1754,25 @@ def _profile_p1_cost_pass(
     physical_descriptors, population_sha256 = canonical_p1_physical_population(
         descriptors
     )
+    frozen = p1_frozen_population_binding()
     if (
         len(physical_descriptors) != PHYSICAL_WINDOWS
         or len({str(row["video_id"]) for row in physical_descriptors}) != 40
-        or (
-            not external_shared_do
-            and population_sha256
-            != stage["telemetry_summary"]["physical_population_sha256"]
-        )
+        or [
+            {
+                key: row[key]
+                for key in (
+                    "dataset_index",
+                    "video_id",
+                    "window_center_first",
+                    "window_center_last",
+                )
+            }
+            for row in physical_descriptors
+        ]
+        != frozen["ordered_physical_windows"]
+        or population_sha256
+        != stage["telemetry_summary"]["physical_population_sha256"]
         or (
             expected_population_sha256 is not None
             and population_sha256 != expected_population_sha256
@@ -1636,18 +1797,11 @@ def _profile_p1_cost_pass(
     model_cfg.backbone.custom.georoute_role_calibration_telemetry_enabled = False
     model = build_detector(model_cfg)
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    state_dict_key = (
-        str(checkpoint_receipt.get("state_dict_key", ""))
-        if external_shared_do
-        else "state_dict_ema"
-    )
+    state_dict_key = "state_dict_ema"
     if (
         state_dict_key not in {"state_dict", "state_dict_ema"}
         or state_dict_key not in checkpoint
-        or (
-            not external_shared_do
-            and int(checkpoint.get("epoch", -1)) != FORMAL_EPOCHS - 1
-        )
+        or int(checkpoint.get("epoch", -1)) != FORMAL_EPOCHS - 1
     ):
         raise ValueError("P1 cost checkpoint is not the frozen selected state")
     model.load_state_dict(_strip_ddp_prefix(checkpoint[state_dict_key]), strict=True)
@@ -1752,7 +1906,7 @@ def _profile_p1_cost_pass(
                 )
             expected_tokens = (
                 P1_DENSE_PHYSICAL_TOKENS
-                if arm in {"DO", "DN"}
+                if arm == "DN"
                 else P1_WINDOW_TOKEN_BUDGET
             )
             samples.append(
@@ -1823,7 +1977,6 @@ def _profile_p1_cost_pass(
         "population_sha256": population_sha256,
         "checkpoint_sha256": checkpoint_receipt["sha256"],
         "config_sha256": stage["config_sha256"],
-        "shared_official_do_report_only": external_shared_do,
         "sample_manifest_sha256": canonical_sha256(
             [sample["window_id"] for sample in samples]
         ),
@@ -1873,16 +2026,6 @@ def _execute_p1_cost(args: argparse.Namespace, *, leaf_root: Path) -> dict[str, 
     sequence = p1_cost_leaf_sequence(args.leaf_id)
     stage_results: dict[str, dict[str, Any]] = {}
     for arm in set(sequence):
-        if arm == "DO":
-            shared = deployment["shared_official_baseline"]
-            stage_results[arm] = {
-                "external_shared_do": True,
-                "deployment": deployment,
-                "config_path": deployment["source_configs"]["DO"]["path"],
-                "config_sha256": deployment["source_configs"]["DO"]["sha256"],
-                "checkpoint_receipt": dict(shared["checkpoint"]),
-            }
-            continue
         stage_path = run_root / _p1_cell_relative_path(
             arm=arm, seed=P1_DEVELOPMENT_SEED
         ) / "stage_result.json"
@@ -1990,6 +2133,18 @@ def _execute_p1_cost(args: argparse.Namespace, *, leaf_root: Path) -> dict[str, 
         row["sample_sha256"] = canonical_sha256(row)
     validate_p1_cost_rows(all_rows, leaf_id=args.leaf_id)
     validate_p1_cost_warmup_rows(warmup_rows, leaf_id=args.leaf_id)
+    frozen = p1_frozen_population_binding()
+    frozen_receipt = {
+        key: frozen[key]
+        for key in (
+            "manifest_path",
+            "manifest_file_sha256",
+            "manifest_sha256",
+            "source_population_sha256",
+            "physical_window_ids_sha256",
+            "runtime_population_sha256",
+        )
+    }
     measured_path = leaf_root / "measured_samples.jsonl"
     warmup_path = leaf_root / "warmup_identities.jsonl"
     power_path = leaf_root / "power_trace.jsonl"
@@ -2026,6 +2181,7 @@ def _execute_p1_cost(args: argparse.Namespace, *, leaf_root: Path) -> dict[str, 
             "measured_pass_count": 4,
             "measured_rows": len(all_rows),
             "population_sha256": population_sha256,
+            "frozen_population": frozen_receipt,
             "pass_receipts": pass_receipts,
             "artifacts": {
                 "measured_samples": {
@@ -2061,7 +2217,12 @@ def main() -> int:
     args = _parse_args()
     run_root = args.run_root.resolve()
     if args.task == "cost":
-        if args.leaf_id is None or args.arm is not None:
+        if (
+            args.leaf_id is None
+            or args.arm is not None
+            or args.resume is not None
+            or args.resume_authorization is not None
+        ):
             raise ValueError("cost task requires --leaf-id and forbids --arm")
         leaf_root = run_root / p1_cost_leaf_relative_path(args.leaf_id)
         try:
@@ -2107,10 +2268,12 @@ def main() -> int:
         if args.arm in P1_FIRST_SCREEN_ARM_ORDER
         else formal_cell_relative_path(arm=args.arm, seed=args.seed)
     )
-    if cell_root.exists():
+    if args.task == "accuracy" and cell_root.exists():
         raise FileExistsError(
             "formal development cell exists; refusing overwrite or resume"
         )
+    if args.task == "resume" and not cell_root.is_dir():
+        raise FileNotFoundError("P1 resume requires its existing bound cell")
     try:
         result = _execute(args, cell_root=cell_root)
     except Exception as error:
@@ -2136,6 +2299,12 @@ def main() -> int:
         }
         failure["failure_sha256"] = canonical_sha256(failure)
         failure_path = (
+            run_root
+            / "control"
+            / "resume_failures"
+            / f"{args.arm}_seed{args.seed}_job{os.environ.get('SLURM_JOB_ID', '')}.json"
+            if args.task == "resume"
+            else
             cell_root / "stage_failure.json"
             if cell_root.is_dir()
             else run_root
