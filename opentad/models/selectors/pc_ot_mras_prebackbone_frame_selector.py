@@ -1048,6 +1048,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         dynamic_k_max: int | None = None,
         dynamic_k_threshold: float = 0.5,
         dynamic_k_step: int = 32,
+        semantic_acquisition: str = "actionness_boundary",
         meta_source: str = "pc_ot_mras_prebackbone_e2e_frame_selector",
     ) -> None:
         super().__init__()
@@ -1245,6 +1246,9 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             raise ValueError("dynamic K range must satisfy 0 < min <= max <= target_len")
         self.dynamic_k_threshold = float(dynamic_k_threshold)
         self.dynamic_k_step = int(dynamic_k_step)
+        if str(semantic_acquisition) not in ("actionness_only", "actionness_boundary"):
+            raise ValueError("semantic_acquisition must be actionness_only or actionness_boundary")
+        self.semantic_acquisition = str(semantic_acquisition)
         self.meta_source = str(meta_source)
         self._metadata_dump_count = 0
 
@@ -1583,7 +1587,17 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         if action is None or boundary is None:
             raise ValueError("semantic_indirect requires actionness and boundary heads")
         dynamic = self._semantic_budget_from_predictions(action, boundary, candidate_valid)
-        picked, roles = self.deterministic_semantic_allocate(action, boundary, candidate_valid, dynamic["effective_k"], return_roles=True)
+        if self.semantic_acquisition == "actionness_only":
+            score = action.masked_fill(~candidate_valid, 0.0)
+            budgets = dynamic["effective_k"]
+            picked = []
+            roles = []
+            for row_scores, row_valid, budget in zip(score, candidate_valid, budgets):
+                cand = [i for i in range(score.shape[1]) if bool(row_valid[i])]
+                chosen = sorted(cand, key=lambda i: (-float(row_scores[i]), i))[: int(budget)]
+                picked.append(sorted(chosen)); roles.append(["action_support"] * len(chosen))
+        else:
+            picked, roles = self.deterministic_semantic_allocate(action, boundary, candidate_valid, dynamic["effective_k"], return_roles=True)
         batch = action.shape[0]; indices = torch.zeros((batch, self.target_len), dtype=torch.long, device=action.device)
         positions = torch.zeros((batch, self.target_len), dtype=torch.float32, device=action.device)
         lengths = torch.zeros((batch,), dtype=torch.long, device=action.device)
@@ -1593,6 +1607,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                 indices[b, :len(row)] = torch.tensor(row, device=action.device)
                 positions[b, :len(row)] = candidate_dense_indices[b, row].float()
         weights = F.one_hot(indices, num_classes=action.shape[1]).float()
+        dynamic["executed_k"] = lengths.clone()
         return {"indices": indices, "weights": weights, "transport_weights": weights,
                 "selected_positions": positions, "selected_output_valid_lengths": lengths,
                 "selected_roles": roles, "dynamic_budget_meta": dynamic}

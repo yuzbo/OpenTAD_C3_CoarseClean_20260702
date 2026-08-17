@@ -91,3 +91,10 @@ ResearchClaw 审查指出总成本、hard/soft utility 与 selected-axis geometr
 主科学问题保持“任务感知时序去冗余并保护高 tIoU”。当前先完成 DUCA fixed-384 的
 决定性证据；MUST、physical-grid、X3D 主方法和更多 loss 暂停。ChronoTransport 与
 PhysTime 是并行新假设，必须独立记账，不能用来改写 DUCA 结果。
+
+## 13. 2026-08-17 semantic dynamic cycle2
+
+Implemented candidate contract: the fixed actionness-only arm ranks by action
+probability, while the boundary arm reserves boundary-ranked frames first; the
+dynamic arm records the realized selected length as `executed_k`. This remains
+`implemented/static-tested`, not empirically supported or paper-ready.

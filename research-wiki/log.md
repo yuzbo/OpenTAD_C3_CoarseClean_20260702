@@ -20,3 +20,7 @@ append_only: true
   ChronoTransport r1 规格、实现表面、原 Pro 记录、两轮独立复核与本地源码审计，明确排除
   数据、checkpoint、GPU 日志和新行为结果。审查仍止于 `REVISE_SPEC_BEFORE_PLAN`，不得借
   GitHub 同步越过到实现、profiling、Gate 1、新 seed 或 Stage C。
+- 2026-08-17：DUCA semantic dynamic cycle2 implemented: valid boundary/action scout,
+  distinct action-only versus boundary-first acquisition, dynamic executed-K accounting,
+  and train parser PRE_RUN contract. Status is implemented/static-tested only; no data,
+  GPU, training, metrics, or performance claim.
