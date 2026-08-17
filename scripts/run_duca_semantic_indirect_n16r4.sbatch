@@ -2,7 +2,9 @@
 set -euo pipefail
 if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
   python tools/bata/validate_duca_semantic_indirect_n16r4.py
-  python -c 'import sys; import tools.train as t; sys.argv=["tools/train.py","configs/adatad/thumos/duca_semantic_indirect_six_arm_n16r4.py","--seed","42"]; print(t.parse_args())'
+  for arm in dense_placeholder native_uniform_fixed_k actionness_only_fixed_k_control actionness_boundary_fixed_k actionness_boundary_dynamic_k_headline direct_selector_ablation; do
+    python tools/train.py configs/adatad/thumos/duca_semantic_indirect_six_arm_n16r4.py --duca-arm "$arm" --dry-run
+  done
   exit 0
 fi
 future_pilot_argv=(python tools/bata/validate_duca_semantic_indirect_n16r4.py --config configs/adatad/thumos/duca_semantic_indirect_six_arm_n16r4.py --arm actionness_boundary_dynamic_k_headline --pilot)

@@ -60,6 +60,8 @@ def parse_args():
     parser.add_argument(
         "--cfg-options", nargs="+", action=DictAction, help="override settings"
     )
+    parser.add_argument("--duca-arm", choices=("dense_placeholder", "native_uniform_fixed_k", "actionness_only_fixed_k_control", "actionness_boundary_fixed_k", "actionness_boundary_dynamic_k_headline", "direct_selector_ablation"))
+    parser.add_argument("--dry-run", action="store_true", help="construct config/model entry without distributed execution")
     args = parser.parse_args()
     return args
 
@@ -69,6 +71,15 @@ def main():
 
     # load config
     cfg = Config.fromfile(args.config)
+    if args.duca_arm or args.dry_run:
+        from tools.bata.duca_semantic_cycle2_contract import build_arm, validate_manifests, validate_deploy_entry
+        validate_manifests(dict(cfg.manifests))
+        arm = args.duca_arm or "dense_placeholder"
+        entry = build_arm(cfg, arm)
+        validate_deploy_entry(dict(cfg.arms[arm]["data_entry"]))
+        print({"status": "constructed", "arm": arm, "placeholder": entry["placeholder"], "selector": entry["policy"] if not entry["placeholder"] else None})
+        if args.dry_run:
+            return
     assert_safe_cfg_options_for_gated_config(
         cfg, args.cfg_options, entrypoint="tools/train.py"
     )
