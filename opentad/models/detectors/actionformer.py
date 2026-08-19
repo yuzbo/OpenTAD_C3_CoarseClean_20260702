@@ -268,7 +268,7 @@ class ActionFormer(SingleStageDetector):
         # see https://github.com/karpathy/minGPT/blob/master/mingpt/model.py#L134
         decay = set()
         no_decay = set()
-        whitelist_weight_modules = (nn.Linear, nn.Conv1d)
+        whitelist_weight_modules = (nn.Linear, nn.Conv1d, nn.Conv2d)
         blacklist_weight_modules = (nn.LayerNorm, nn.GroupNorm)
 
         # loop over all modules / params
@@ -302,6 +302,12 @@ class ActionFormer(SingleStageDetector):
                     no_decay.add(fpn)
                 elif pn.endswith("slot_queries"):
                     # pre-backbone selector reader slot queries are learned embeddings
+                    no_decay.add(fpn)
+                elif pn.endswith("in_proj_weight"):
+                    # MultiheadAttention in_proj weight behaves like a linear weight
+                    decay.add(fpn)
+                elif pn.startswith("frame_selector."):
+                    # fallback for selector-specific parameters (e.g. query bank q0)
                     no_decay.add(fpn)
 
         # validate that we considered every parameter
