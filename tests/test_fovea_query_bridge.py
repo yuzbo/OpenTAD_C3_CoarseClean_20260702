@@ -149,15 +149,16 @@ def test_foveated_sampler_training_transport_sum():
 
 def test_gt_geometry_mask_values():
     valid = torch.ones(1, 16, dtype=torch.bool)
-    gt = [torch.tensor([[4.0, 9.0]])]
+    gt = [torch.tensor([[4.0, 12.0]])]
     mask = build_gt_geometry_mask(gt_segments=gt, valid=valid, boundary_radius=1)
     assert int(mask[0, 0].item()) == 0
     assert int(mask[0, 4].item()) == 2
-    assert int(mask[0, 5].item()) == 1
-    assert int(mask[0, 7].item()) == 1
-    assert int(mask[0, 8].item()) == 2
-    assert int(mask[0, 9].item()) == 2
-    assert int(mask[0, 12].item()) == 0
+    assert int(mask[0, 5].item()) == 2
+    assert int(mask[0, 6].item()) == 1
+    assert int(mask[0, 10].item()) == 1
+    assert int(mask[0, 11].item()) == 2
+    assert int(mask[0, 12].item()) == 2
+    assert int(mask[0, 13].item()) == 0
 
 
 def test_build_fovea_losses_keys_and_finite():
