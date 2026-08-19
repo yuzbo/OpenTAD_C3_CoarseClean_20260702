@@ -20,3 +20,16 @@ append_only: true
   ChronoTransport r1 规格、实现表面、原 Pro 记录、两轮独立复核与本地源码审计，明确排除
   数据、checkpoint、GPU 日志和新行为结果。审查仍止于 `REVISE_SPEC_BEFORE_PLAN`，不得借
   GitHub 同步越过到实现、profiling、Gate 1、新 seed 或 Stage C。
+- 2026-08-19：DUCA-UVT 规格已获用户批准并完成首版实现，分支
+  `codex/duca-uvt-utility-value-20260819@9459c515`；新增单头 signed V(t) 残差、
+  GT geometry target、value-head self-EMA、四 token Query Cross-Attention portal（门控关闭）、
+  boundary-foveated exact-K decoder + greedy MMR；`V_off` 分数级与解码器级 legacy 等价测试通过。
+- 2026-08-19：本地聚焦测试 5/5 通过；远程干净运行时
+  `/data/run01/sczc063/yuzibo/runtime/duca-uvt-9459c515/source` 已部署，
+  远程 CPU 容器测试 5/5 通过，既有 `test_duca_dynamic_variable_compute.py` 8/8 通过；
+  `bash -n`、`git diff --check`、三种 value_mode 配置解析均通过。
+- 2026-08-19：发展种子数组（off/geo/geo_ema, seed=3407）准备提交；`sbatch --test-only`
+  当前被 AssocMaxSubmitJobLimit 阻止，原因是不修改的现役矩阵 `1244133`（15 task）仍在占满
+  `MaxSubmitJobs=16` 配额；待其任一 task 完成后重试。现役 `1244133` 未做任何修改。
+- 2026-08-19：DUCA-UVT 四层有限差分 portal gate 与 CUDA one-step gate 尚未独立产证；
+  portal 保持关闭，首轮三臂仅作为诊断性发展种子，不形成 mAP/efficiency/paper claim。
