@@ -33,3 +33,8 @@ append_only: true
   `MaxSubmitJobs=16` 配额；待其任一 task 完成后重试。现役 `1244133` 未做任何修改。
 - 2026-08-19：DUCA-UVT 四层有限差分 portal gate 与 CUDA one-step gate 尚未独立产证；
   portal 保持关闭，首轮三臂仅作为诊断性发展种子，不形成 mAP/efficiency/paper claim。
+- 2026-08-19：为不触碰现役 `1244133`，已注册远程 tmux 轮询器
+  `duca_uvt_submit_44adb` 与锁文件；当用户待处理作业数为 0 且总作业数 ≤13 时自动
+  `sbatch --parsable` 提交 DUCA-UVT 发展种子数组（commit `44adb917`），并写
+  `duca_uvt_official_44adb917.submit_manifest.json`。提交前会再次校验远端 source
+  干净且 HEAD 匹配。
