@@ -302,6 +302,12 @@ class ActionFormer(SingleStageDetector):
                 elif pn.endswith("slot_queries"):
                     # pre-backbone selector reader slot queries are learned embeddings
                     no_decay.add(fpn)
+                elif pn.endswith("in_proj_weight") and isinstance(m, nn.MultiheadAttention):
+                    # raw MultiheadAttention projection weights follow the deformable-DETR path
+                    decay.add(fpn)
+                elif pn.endswith("queries"):
+                    # DUCA-UVT class-agnostic query tokens are learned embeddings
+                    no_decay.add(fpn)
 
         # validate that we considered every parameter
         param_dict = {pn: p for pn, p in self.named_parameters() if not pn.startswith("backbone") and p.requires_grad}
