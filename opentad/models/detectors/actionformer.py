@@ -306,8 +306,8 @@ class ActionFormer(SingleStageDetector):
                 elif pn.endswith("in_proj_weight"):
                     # MultiheadAttention in_proj weight behaves like a linear weight
                     decay.add(fpn)
-                elif pn.startswith("frame_selector."):
-                    # fallback for selector-specific parameters (e.g. query bank q0)
+                elif pn.endswith("q0"):
+                    # FoveaSampler/Query-Bridge learned query tokens
                     no_decay.add(fpn)
 
         # validate that we considered every parameter
