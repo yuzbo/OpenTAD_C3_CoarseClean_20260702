@@ -87,7 +87,7 @@ def _transport_inputs(
     else:
         raise ValueError("selected transport expects [B,C,T,H,W] or [B,N,C,T,H,W]")
     b, c, t, h, w = video.shape
-    flat = video.permute(0, 2, 1, 3, 4).reshape(b, t, -1)
+    flat = video.float().permute(0, 2, 1, 3, 4).reshape(b, t, -1)
     hard = flat.gather(1, indices.unsqueeze(-1).expand(-1, -1, flat.shape[-1]))
     soft = torch.einsum("bkt,btf->bkf", transport, flat)
     gathered = hard + (soft - soft.detach())
