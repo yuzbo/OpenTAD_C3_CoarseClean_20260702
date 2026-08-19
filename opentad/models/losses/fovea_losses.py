@@ -83,7 +83,7 @@ def build_fovea_losses(
     }
     if weights:
         cfg.update({str(k): float(v) for k, v in weights.items()})
-    zero = frame_score.sum() * 0.0
+    zero = frame_score.new_zeros(())
     # Dense geometry mask: interior 1, endpoint neighborhood 2, background 0.
     gt_mask = build_gt_geometry_mask(gt_segments=gt_segments, valid=valid, boundary_radius=boundary_radius)
     agg_contribution = contribution.mean(dim=1).masked_fill(~valid.bool(), 0.0)

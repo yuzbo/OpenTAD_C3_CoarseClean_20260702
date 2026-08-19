@@ -169,9 +169,9 @@ class FoveatedSampler(nn.Module):
             return sorted(selected[:budget])
         pool_size = min(valid_len, max(budget * 4, budget + 512))
         top_pool = torch.topk(score[:valid_len], min(valid_len, pool_size)).indices.tolist()
-        pool = sorted(set(top_pool) | set(selected))
-        if len(pool) < budget:
-            pool = sorted(set(range(valid_len)))
+        pool = sorted(set(top_pool) - set(selected))
+        if len(pool) < budget - len(selected):
+            pool = sorted(set(range(valid_len)) - set(selected))
         pool_tensor = torch.as_tensor(pool, device=score.device, dtype=torch.long)
         pool_scores = score[pool_tensor]
 

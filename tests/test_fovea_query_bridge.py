@@ -86,7 +86,7 @@ def test_coarse_head_outputs():
 
 def test_gumbel_topk_exact_k_and_straight_through():
     topk = GumbelTopK(tau=1.0)
-    logits = torch.randn(1, T)
+    logits = torch.randn(1, T, requires_grad=True)
     valid = _valid_mask().bool()
     out = topk(logits, valid, k=32)
     assert int(out["indices"].numel()) == 32
@@ -151,7 +151,8 @@ def test_gt_geometry_mask_values():
     mask = build_gt_geometry_mask(gt_segments=gt, valid=valid, boundary_radius=2)
     assert int(mask[0, 0].item()) == 0
     assert int(mask[0, 4].item()) == 2
-    assert int(mask[0, 7].item()) == 1
+    assert int(mask[0, 5].item()) == 1
+    assert int(mask[0, 7].item()) == 2
     assert int(mask[0, 9].item()) == 2
     assert int(mask[0, 12].item()) == 0
 

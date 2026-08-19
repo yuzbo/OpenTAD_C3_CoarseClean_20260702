@@ -244,7 +244,7 @@ class FoveaQueryBridgeFrameSelector(nn.Module):
             contribution_score = bridge.contribution.max(dim=1).values
             heads["frame_score"] = contribution_score.masked_fill(~valid, -torch.inf)
             heads["uncertainty"] = torch.sigmoid(contribution_score)
-        coarse = self.coarse_head(z, bridge.contribution, valid)
+        coarse = self.coarse_head(z, bridge.contribution, valid, query_memory=bridge.query_memory)
         return {
             "valid": valid,
             "scout_z": z,
@@ -418,7 +418,7 @@ class FoveaQueryBridgeFrameSelector(nn.Module):
         self._cycle_context = None
         frame_score = context["frame_score"]
         valid = context["valid"]
-        zero = frame_score.sum() * 0.0
+        zero = frame_score.new_zeros(())
         weight = self.cycle_weight_now(self._step, training=True)
         if self._pending_cycle is None or weight <= 0.0:
             self._pending_cycle = None

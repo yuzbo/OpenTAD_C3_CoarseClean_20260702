@@ -122,6 +122,7 @@ class CoarseProposalHead(nn.Module):
         z: torch.Tensor,
         contribution: torch.Tensor,
         valid: torch.Tensor,
+        query_memory: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """Predict coarse per-position actionness / center offset / width.
 
@@ -130,7 +131,13 @@ class CoarseProposalHead(nn.Module):
         """
         if z.ndim != 3 or contribution.ndim != 3:
             raise ValueError("CoarseProposalHead expects z [B,T,D] and contribution [B,M,T]")
-        query_context = torch.einsum("bmt,bmd->btd", contribution, z)
+        if query_memory is None:
+            q = torch.einsum("bmt,btd->bmd", contribution, z)
+            query_context = torch.einsum("bmt,bmd->btd", contribution, q)
+        else:
+            if query_memory.ndim != 3 or query_memory.shape[0] != z.shape[0] or query_memory.shape[1] != contribution.shape[1]:
+                raise ValueError("CoarseProposalHead query_memory must be [B,M,D]")
+            query_context = torch.einsum("bmt,bmd->btd", contribution, query_memory)
         # pool over query tokens, keep valid positions only
         valid_bool = valid.bool()
         query_pool = query_context.masked_fill(~valid_bool.unsqueeze(-1), 0.0)
