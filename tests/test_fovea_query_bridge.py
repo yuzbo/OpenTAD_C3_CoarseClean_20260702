@@ -152,10 +152,11 @@ def test_gt_geometry_mask_values():
     gt = [torch.tensor([[4.0, 9.0]])]
     mask = build_gt_geometry_mask(gt_segments=gt, valid=valid, boundary_radius=1)
     assert int(mask[0, 0].item()) == 0
-    assert int(mask[0, 3].item()) == 2
+    assert int(mask[0, 4].item()) == 2
     assert int(mask[0, 5].item()) == 1
     assert int(mask[0, 7].item()) == 1
     assert int(mask[0, 8].item()) == 2
+    assert int(mask[0, 9].item()) == 2
     assert int(mask[0, 12].item()) == 0
 
 
