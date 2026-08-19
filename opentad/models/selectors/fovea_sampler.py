@@ -40,6 +40,7 @@ class GumbelTopK(nn.Module):
         soft_sample = soft_sample * float(k) / soft_sample.sum(dim=-1, keepdim=True).clamp_min(1.0e-6)
         soft_sample = soft_sample.masked_fill(~valid.bool(), 0.0)
         hard_indices = torch.topk(masked + gumbel, k, dim=-1).indices
+        hard_indices, _ = torch.sort(hard_indices, dim=-1)
         onehot = torch.zeros_like(masked).scatter(1, hard_indices, 1.0)
         return {
             "indices": hard_indices.detach(),
