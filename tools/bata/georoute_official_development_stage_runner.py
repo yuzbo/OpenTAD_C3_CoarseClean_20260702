@@ -1919,7 +1919,10 @@ def _profile_p1_cost_pass(
                     "measurement_phase": "measured",
                     "warmup": False,
                     "population_sha256": population_sha256,
-                    "exact_window_budget": P1_WINDOW_TOKEN_BUDGET,
+                    "exact_window_budget": (
+                        None if arm == "DN" else P1_WINDOW_TOKEN_BUDGET
+                    ),
+                    "matched_sparse_reference_budget": P1_WINDOW_TOKEN_BUDGET,
                     "selected_physical_tokens": expected_tokens,
                     "executed_physical_tokens": expected_tokens,
                     "duplicate_selected_physical_tokens": 0,

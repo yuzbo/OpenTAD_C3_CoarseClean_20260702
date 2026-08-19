@@ -1249,7 +1249,8 @@ def validate_p1_cost_rows(
                 or int(row.get("pass_index", -1)) != pass_index
                 or int(row.get("sample_ordinal", -1)) != ordinal
                 or int(row.get("loader_ordinal", -1)) != ordinal
-                or int(row.get("exact_window_budget", -1)) != WINDOW_BUDGET
+                or int(row.get("matched_sparse_reference_budget", -1))
+                != WINDOW_BUDGET
                 or int(row.get("selected_physical_tokens", -1)) != expected_tokens
                 or int(row.get("executed_physical_tokens", -1)) != expected_tokens
                 or int(row.get("duplicate_selected_physical_tokens", -1)) != 0
@@ -1299,7 +1300,8 @@ def validate_p1_cost_rows(
             if arm == "Q":
                 clip_counts = audit.get("clip_token_counts")
                 if (
-                    audit.get("route_mode") != "dynamic_scnr"
+                    int(row.get("exact_window_budget", -1)) != WINDOW_BUDGET
+                    or audit.get("route_mode") != "dynamic_scnr"
                     or audit.get("target_k") is not None
                     or audit.get("dynamic_k_t") is not True
                     or int(audit.get("k_t_min", -1)) < 0
@@ -1317,13 +1319,15 @@ def validate_p1_cost_rows(
                     raise ValueError("P1 Q cost row lost dynamic exact-B ragged routing")
             elif arm in {"U", "R"}:
                 if (
-                    audit.get("route_mode") != ("uniform" if arm == "U" else "random")
+                    int(row.get("exact_window_budget", -1)) != WINDOW_BUDGET
+                    or audit.get("route_mode") != ("uniform" if arm == "U" else "random")
                     or int(audit.get("target_k", -1)) != 64
                     or audit.get("dynamic_k_t") is not False
                 ):
                     raise ValueError("P1 matched sparse control changed during cost replay")
             elif (
-                audit.get("route_mode") != "dense"
+                row.get("exact_window_budget") is not None
+                or audit.get("route_mode") != "dense"
                 or audit.get("target_k") is not None
                 or audit.get("dynamic_k_t") is not False
             ):

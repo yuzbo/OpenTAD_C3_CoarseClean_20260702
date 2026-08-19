@@ -390,7 +390,8 @@ def _p1_cost_rows(leaf_id: str) -> list[dict]:
                 "video_id": video_id,
                 "physical_window_id": physical_window_id,
                 "window_id": f"{physical_window_id}#{ordinal}",
-                "exact_window_budget": 24_576,
+                "exact_window_budget": None if arm == "DN" else 24_576,
+                "matched_sparse_reference_budget": 24_576,
                 "selected_physical_tokens": selected,
                 "executed_physical_tokens": selected,
                 "duplicate_selected_physical_tokens": 0,
@@ -1364,6 +1365,23 @@ class ZoomTokenP1StaticContractTest(unittest.TestCase):
         self.assertEqual(p1_cost_leaf_sequence("DN_ABBA"), ("DN", "Q", "Q", "DN"))
         self.assertEqual(p1_cost_leaf_sequence("R_BAAB"), ("Q", "R", "R", "Q"))
         leaves = {leaf_id: _p1_cost_rows(leaf_id) for leaf_id in P1_COST_LEAF_SPECS}
+        for leaf_id, rows in leaves.items():
+            for row in rows:
+                self.assertEqual(row["matched_sparse_reference_budget"], 24_576)
+                if row["arm"] == "DN":
+                    self.assertIsNone(row["exact_window_budget"])
+                    self.assertEqual(row["selected_physical_tokens"], 84_480)
+                else:
+                    self.assertEqual(row["exact_window_budget"], 24_576)
+                    self.assertEqual(row["selected_physical_tokens"], 24_576)
+        bad_dn_budget = copy.deepcopy(leaves)
+        bad_dn_budget["DN_ABBA"][0]["exact_window_budget"] = 24_576
+        bad_dn_budget["DN_ABBA"][0].pop("sample_sha256")
+        bad_dn_budget["DN_ABBA"][0]["sample_sha256"] = canonical_sha256(
+            bad_dn_budget["DN_ABBA"][0]
+        )
+        with self.assertRaisesRegex(ValueError, "dense cost comparator changed execution"):
+            analyze_p1_cost_leaves(bad_dn_budget, bootstrap_replicates=10)
         analysis = analyze_p1_cost_leaves(leaves, bootstrap_replicates=25)
         self.assertEqual(P1_COST_RATIO_LIMIT, 0.85)
         self.assertEqual(analysis["dense_denominator"], "DN")
