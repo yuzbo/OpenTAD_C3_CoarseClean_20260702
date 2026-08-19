@@ -53,9 +53,15 @@ def _lowres_observations(inputs: torch.Tensor, target_len: int = 32) -> torch.Te
     if inputs.ndim != 5:
         raise ValueError("descriptor input must be [B,3,T,H,W]")
     b, c, t, h, w = inputs.shape
-    flat = inputs.permute(0, 2, 1, 3, 4).reshape(b * t, c, h, w)
+    flat = inputs.float()
+    if float(flat.detach().abs().amax().item()) > 2.0:
+        flat = flat / 255.0
+    flat = flat.permute(0, 2, 1, 3, 4).reshape(b * t, c, h, w)
     flat = F.interpolate(flat, size=(target_len, target_len), mode="bilinear", align_corners=False)
     flat = flat.reshape(b, t, c, target_len, target_len).permute(0, 2, 1, 3, 4)
+    mean = flat.mean(dim=(3, 4), keepdim=True)
+    std = flat.std(dim=(3, 4), keepdim=True, unbiased=False).clamp_min(1.0e-4)
+    flat = (flat - mean) / std
     return flat.contiguous()
 
 
