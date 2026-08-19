@@ -124,7 +124,8 @@ def test_foveated_sampler_inference_deterministic_exact_k():
     assert all(i < 60 for i in idx)
     assert int(r1["metadata"]["budget"]) == 32
     assert r1["metadata"]["mode"] == "inference_greedy_mmr"
-    assert bool(torch.all(r1["transport"].sum(dim=-1) == 32))
+    assert tuple(r1["transport"].shape) == (1, 32, T)
+    assert bool(torch.all(r1["transport"].sum(dim=-1) == 1))
     assert bool((r1["probs"][:, 60:] == 0).all().item())
 
 
@@ -141,7 +142,8 @@ def test_foveated_sampler_training_transport_sum():
     valid = _valid_mask().bool()
     r = sampler(score, valid, training=True)
     assert int(r["indices"].numel()) == 32
-    assert float(r["transport"].sum(dim=-1).item()) == pytest.approx(32.0, abs=1.0e-4)
+    assert tuple(r["transport"].shape) == (1, 32, T)
+    assert bool(torch.allclose(r["transport"].sum(dim=-1), torch.ones(1, 32), atol=1.0e-4))
     assert bool((r["probs"][:, 60:] == 0).all().item())
 
 

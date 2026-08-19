@@ -229,6 +229,7 @@ class FoveatedSampler(nn.Module):
             raise ValueError("resolved foveated budget must be positive")
 
         centers, protected = self._boundary_protected(frame_score[0], valid_len, budget)
+        batch, length = frame_score.shape
         if training:
             boosted = frame_score.clone()
             if protected:
@@ -236,16 +237,21 @@ class FoveatedSampler(nn.Module):
                 boosted[0, protected_tensor] = frame_score[0, protected_tensor] + 10.0
             gumbel_out = self.gumbel(boosted, valid, budget)
             indices = gumbel_out["indices"]
-            onehot = gumbel_out["onehot"]
             soft_sample = gumbel_out["soft_sample"]
-            transport = onehot + (soft_sample - soft_sample.detach())
+            hard_transport = torch.zeros(
+                batch, budget, length, device=frame_score.device, dtype=frame_score.dtype
+            ).scatter(2, indices.unsqueeze(-1), 1.0)
+            soft_res = soft_sample.unsqueeze(1).expand(batch, budget, length)
+            transport = hard_transport + (soft_res - soft_res.detach())
             probs = soft_sample
         else:
             positions = self._greedy_mmr(frame_score[0], valid_len, budget, protected)
             indices = torch.as_tensor([positions], device=frame_score.device, dtype=torch.long)
-            onehot = torch.zeros_like(frame_score).scatter(1, indices, 1.0)
-            transport = onehot
-            probs = onehot
+            hard_transport = torch.zeros(
+                batch, budget, length, device=frame_score.device, dtype=frame_score.dtype
+            ).scatter(2, indices.unsqueeze(-1), 1.0)
+            transport = hard_transport
+            probs = hard_transport.sum(dim=1)
 
         positions = indices + int(global_start_offset)
         metadata: Dict[str, Any] = {
