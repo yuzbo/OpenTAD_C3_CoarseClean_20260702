@@ -128,6 +128,10 @@ audit: dict
 
 ### 5.2 DucaValueHeadGroup
 
+The `value_evidence` input is the scout temporal representation immediately
+before the action/boundary/uncertainty/redundancy heads. The reader exposes
+it under a single `value_evidence` key.
+
 File: `opentad/models/selectors/duca_value_head_group.py`
 
 Responsibilities:
@@ -273,11 +277,12 @@ Targets:
 V_ema(t) = detached EMA-value-head output
 ```
 
-Loss:
+First-implementation loss:
 
 ```text
-L_ema_rank = bounded differentiable rank loss over valid positions
-L_ema_scale = smooth_l1 on standardized V
+L_ema_rank = pairwise margin rank loss over valid positions,
+             target order from detached EMA value
+L_ema_scale = smooth_l1 on standardized V, prevents collapse
 L_ema = L_ema_rank + lambda_scale * L_ema_scale
 ```
 
@@ -307,7 +312,24 @@ value_evidence = pooled query_context
 V(t) = value_head(value_evidence)
 ```
 
-### 9.3 Gating rule
+### 9.3 Detector feedback path
+
+Detector feedback reaches `V(t)` only through the existing differentiable
+rank-transport surrogate applied to `selection_score`. The hard top-k indices
+are computed from a detached copy of `selection_score`; the soft distribution
+used for backward is computed from the differentiable copy. Therefore the
+gradient path is:
+
+```text
+detector loss
+  -> soft rank-transport distribution
+  -> selection_score
+  -> V(t) and query tokens
+```
+
+No gradient flows through hard indices.
+
+### 9.4 Gating rule
 
 Detector feedback through the portal is allowed only when:
 
@@ -323,7 +345,7 @@ When the gate is absent or negative:
 
 Hard frame indices remain detached in all modes.
 
-### 9.4 Audit
+### 9.5 Audit
 
 Each forward writes:
 
@@ -344,7 +366,9 @@ current `dynamic_B` path.
 ```text
 global_budget = K - boundary_quota
 global picks   = top global-budget by fused score
-boundary picks = top-M boundary neighborhoods [b-r, b+r]
+boundary centers = top-M local maxima of the existing deployable
+                   boundary_logits, never GT in inference
+boundary picks = neighborhood union of [b-r, b+r]
 final set      = sorted(unique(global picks + boundary picks))
 ```
 
@@ -382,7 +406,7 @@ the same single V(t) head.
 |---|---|---|---|
 | `V_off` | off | off | off |
 | `V_geo` | on | off | off |
-| `V_ema` | off | on | off |
+| `V_ema` | off | on, with scale anti-collapse | off |
 | `V_geo_ema` | on | on | off |
 | `V_geo_ema_portal` | on | on | gated |
 
