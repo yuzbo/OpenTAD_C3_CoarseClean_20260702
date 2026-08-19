@@ -3,10 +3,10 @@ type: experiment
 node_id: exp:duca-fovea-qb-development
 title: "DUCA FoveaSampler/Query-Bridge development gate + 7-arm matrix"
 idea: idea:duca-foveasampler-query-bridge
-verdict: precheck
+verdict: running
 confidence: high
-commit: "a32a374"
-jobs: "gate 1244839 pending; full-train matrix not submitted yet"
+commit: "4ae50671"
+jobs: "gate 1244850 passed; matrix 1244851 (arms 0-4 running, arms 5-6 pending slot release)"
 updated: 2026-08-19
 ---
 
@@ -20,7 +20,7 @@ updated: 2026-08-19
 ## Interpretation
 
 实现与 focused tests 只能支持 `tested`，不能支持 `empirically_supported`。
-GPU one-step gate 通过后才会提交 7-arm 单 seed 开发矩阵。
+GPU one-step gate `1244850` 已通过；7-arm 单 seed 开发矩阵第一波 `1244851` 正在完整训练，剩余两臂等待 MaxSubmit 槽位。
 
 ## Limitations
 

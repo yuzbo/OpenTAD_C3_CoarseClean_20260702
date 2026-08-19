@@ -26,3 +26,6 @@ append_only: true
 - 2026-08-19：远端 CPU focused tests `tests/test_fovea_query_bridge.py` 11/11 通过；完整模型在远端 CPU 可构建（pretrained 路径由 launcher 注入）。CPU 端到端 forward 的临时探针被中断且无 durable 记录，因此不计为通过。
 - 2026-08-19：GPU one-step gate `1244839` 已提交（pending，30min）；正式 Fovea-QB 开发矩阵尚未提交，不能声称 Fovea-QB 实验已在完整训练。
 - 2026-08-19：旧矩阵 `1244133`（7529fba6 wv1）仍在完整训练：`_0`..`_7` 已 COMPLETED（exit 0:0），`_8`..`_14` RUNNING；远程 N16R4 GPU 分配未受影响。
+
+- 2026-08-19：GPU one-step gate 经过 6D dense 输入、Byte 插值、Gumbel 索引排序等修复后通过：`1244850` COMPLETED exit 0，单步 Loss=1.1862，selector 五类 loss 与 cls/reg 均有限。
+- 2026-08-19：Fovea-QB 开发矩阵第一波 `1244851`（arms 0-4：baseline_fused / query_only / query_gt_mask / query_cycle / query_fovea，seed 3407）已提交并 RUNNING，run root `duca_fovea_qb_4ae50671_dev_20260820T014200Z`；受 MaxSubmit=16 限制，query_fovea_dpp 与 full 两臂待旧矩阵释放槽位后提交。
