@@ -37,6 +37,17 @@ from .query_bridge import QueryBridgeWithDecoder
 from .pc_ot_mras_prebackbone_frame_selector import _as_bool_prefix_mask
 
 
+def _dense_video_tensor(inputs: torch.Tensor) -> torch.Tensor:
+    """Normalize ``[B,C,T,H,W]`` or ``[B,N,C,T,H,W]`` dense inputs to ``[B,C,T,H,W]``."""
+    if inputs.ndim == 6:
+        if inputs.shape[1] != 1:
+            raise ValueError("Fovea selector supports num_clips=1, got [B,N,C,T,H,W] with N!=1")
+        return inputs[:, 0].contiguous()
+    if inputs.ndim == 5:
+        return inputs
+    raise ValueError(f"dense inputs must be [B,C,T,H,W] or [B,N,C,T,H,W], got {tuple(inputs.shape)}")
+
+
 def _lowres_observations(inputs: torch.Tensor, target_len: int = 32) -> torch.Tensor:
     """Build ``[B,3,T,32,32]`` scout observations from dense ``[B,3,T,H,W]``."""
     if inputs.ndim != 5:
@@ -61,14 +72,22 @@ def _transport_inputs(
     and used for the explicit hard pass, so the returned tensor is numerically
     identical to a pure hard gather.
     """
-    if inputs.ndim != 5:
-        raise ValueError("selected transport expects [B,C,T,H,W]")
-    b, c, t, h, w = inputs.shape
-    flat = inputs.permute(0, 2, 1, 3, 4).reshape(b, t, -1)
+    if inputs.ndim == 6:
+        if inputs.shape[1] != 1:
+            raise ValueError("selected transport supports num_clips=1 for [B,N,C,T,H,W]")
+        video = inputs[:, 0].contiguous()
+    elif inputs.ndim == 5:
+        video = inputs
+    else:
+        raise ValueError("selected transport expects [B,C,T,H,W] or [B,N,C,T,H,W]")
+    b, c, t, h, w = video.shape
+    flat = video.permute(0, 2, 1, 3, 4).reshape(b, t, -1)
     hard = flat.gather(1, indices.unsqueeze(-1).expand(-1, -1, flat.shape[-1]))
     soft = torch.einsum("bkt,btf->bkf", transport, flat)
     gathered = hard + (soft - soft.detach())
     gathered = gathered.reshape(b, selected_len, c, h, w).permute(0, 2, 1, 3, 4).contiguous()
+    if inputs.ndim == 6:
+        gathered = gathered.unsqueeze(1)
     return gathered, [indices]
 
 
@@ -229,14 +248,13 @@ class FoveaQueryBridgeFrameSelector(nn.Module):
     # frontend and selection
     # ------------------------------------------------------------------
     def _run_frontend(self, inputs: torch.Tensor, masks: torch.Tensor) -> Dict[str, Any]:
-        if inputs.ndim != 5:
-            raise ValueError("FoveaQueryBridgeFrameSelector expects dense [B,C,T,H,W] inputs")
+        dense = _dense_video_tensor(inputs)
         if masks.ndim != 2:
             raise ValueError("selector masks must be [B,T]")
-        if masks.shape[0] != inputs.shape[0] or masks.shape[1] != inputs.shape[2]:
+        if masks.shape[0] != dense.shape[0] or masks.shape[1] != dense.shape[2]:
             raise ValueError("inputs and masks have inconsistent temporal lengths")
         valid = _as_bool_prefix_mask(masks, expected_shape=(int(masks.shape[0]), int(masks.shape[1])))
-        lowres = _lowres_observations(inputs, target_len=self.scout_target_len)
+        lowres = _lowres_observations(dense, target_len=self.scout_target_len)
         z = self.scout(lowres, valid)
         bridge = self.query_bridge(z, valid)
         heads = self.heads(z, bridge.contribution, bridge.query_memory, valid)
