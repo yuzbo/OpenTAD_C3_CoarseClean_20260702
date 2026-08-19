@@ -1,3 +1,5 @@
+from .fovea_query_bridge_selector import FoveaQueryBridgeFrameSelector
+from .fovea_sampler import FoveatedSampler, GumbelTopK
 from .lowcost_acquisition_browser import LowCostAcquisitionBrowser
 from .pc_ot_mras_dynamic_budget_controller import PCOTMRASDynamicBudgetController, ValueToBudgetPCOTMRASController
 from .pc_ot_mras_prebackbone_frame_selector import (
@@ -15,6 +17,9 @@ from .duca_dynamic_physical import (
 )
 
 __all__ = [
+    "FoveaQueryBridgeFrameSelector",
+    "FoveatedSampler",
+    "GumbelTopK",
     "LowCostAcquisitionBrowser",
     "PCOTMRASDynamicBudgetController",
     "PCOTMRASBoundaryDifficultyTemporalFrameScout",

@@ -194,6 +194,7 @@ class ActionFormer(SingleStageDetector):
             **kwargs,
         )
         losses.update(loc_losses)
+        self._finalize_fovea_query_bridge_cycle_feedback(x, masks, metas, losses)
         self._merge_pc_ot_mras_extra_losses(
             losses,
             reader_extra_losses,
@@ -329,6 +330,26 @@ class ActionFormer(SingleStageDetector):
                 param.requires_grad = False
         if self.with_backbone and hasattr(self.backbone, "freeze_backbone"):
             self.backbone.freeze_backbone = True
+
+    def _finalize_fovea_query_bridge_cycle_feedback(self, feat_list, mask_list, metas, losses):
+        """Attach the detached post-heavy cycle target for FoveaSampler/Query-Bridge.
+
+        The selector computes its own losses before the detector head, so the
+        cycle term is a deferred placeholder.  When the selector asks for
+        feedback we rerun the head in test mode under ``no_grad`` (proposal /
+        score extraction is detached by construction) and replace the
+        placeholder loss.  Nothing here runs at inference.
+        """
+        selector = self.frame_selector
+        if selector is None or not self.training:
+            return
+        requested = getattr(selector, "cycle_feedback_requested", None)
+        if requested is None or not bool(requested()):
+            return
+        with torch.no_grad():
+            proposals, scores = self._call_rpn_head_forward_test(feat_list, mask_list, metas=metas)
+        selector.set_cycle_feedback(proposals, scores)
+        losses["selector_fovea_cycle_loss"] = selector.finalize_cycle_loss()
 
     def _call_rpn_head_forward_train(self, feat_list, mask_list, metas, gt_segments, gt_labels, **kwargs):
         call_kwargs = dict(kwargs)
