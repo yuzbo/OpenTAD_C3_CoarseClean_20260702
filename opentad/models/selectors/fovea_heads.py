@@ -62,9 +62,11 @@ class FoveaHeads(nn.Module):
             ``boundary_edge``, ``uncertainty``, ``uncertainty_context``,
             ``query_context`` and the fused ``frame_score``.
         """
-        if valid.ndim != 2 or z.shape[:2] != valid.shape or contribution.shape[:2] != z.shape[:2]:
-            raise ValueError("FoveaHeads expects [B,T] valid and [B,M,T] contribution")
-        if query_memory.ndim != 3 or query_memory.shape[0] != z.shape[0]:
+        if valid.ndim != 2 or tuple(z.shape[:2]) != tuple(valid.shape):
+            raise ValueError("FoveaHeads expects [B,T] valid")
+        if contribution.ndim != 3 or contribution.shape[0] != z.shape[0] or contribution.shape[-1] != z.shape[1]:
+            raise ValueError("FoveaHeads expects [B,M,T] contribution")
+        if query_memory.ndim != 3 or query_memory.shape[0] != z.shape[0] or query_memory.shape[1] != contribution.shape[1]:
             raise ValueError("FoveaHeads query_memory must be [B,M,D]")
 
         saliency = self.saliency_head(z).squeeze(-1)  # [B,T]
