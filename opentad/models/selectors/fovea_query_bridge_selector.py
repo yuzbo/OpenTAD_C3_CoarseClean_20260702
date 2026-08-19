@@ -66,7 +66,7 @@ def _transport_inputs(
     b, c, t, h, w = inputs.shape
     flat = inputs.permute(0, 2, 1, 3, 4).reshape(b, t, -1)
     hard = flat.gather(1, indices.unsqueeze(-1).expand(-1, -1, flat.shape[-1]))
-    soft = torch.einsum("btk,btf->bkf", transport, flat)
+    soft = torch.einsum("bkt,btf->bkf", transport, flat)
     gathered = hard + (soft - soft.detach())
     gathered = gathered.reshape(b, selected_len, c, h, w).permute(0, 2, 1, 3, 4).contiguous()
     return gathered, [indices]

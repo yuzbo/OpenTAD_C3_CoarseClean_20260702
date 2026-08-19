@@ -148,12 +148,12 @@ def test_foveated_sampler_training_transport_sum():
 def test_gt_geometry_mask_values():
     valid = torch.ones(1, 16, dtype=torch.bool)
     gt = [torch.tensor([[4.0, 9.0]])]
-    mask = build_gt_geometry_mask(gt_segments=gt, valid=valid, boundary_radius=2)
+    mask = build_gt_geometry_mask(gt_segments=gt, valid=valid, boundary_radius=1)
     assert int(mask[0, 0].item()) == 0
-    assert int(mask[0, 4].item()) == 2
+    assert int(mask[0, 3].item()) == 2
     assert int(mask[0, 5].item()) == 1
-    assert int(mask[0, 7].item()) == 2
-    assert int(mask[0, 9].item()) == 2
+    assert int(mask[0, 7].item()) == 1
+    assert int(mask[0, 8].item()) == 2
     assert int(mask[0, 12].item()) == 0
 
 
@@ -225,10 +225,10 @@ def test_selector_forward_test_no_inference_leakage():
 
 def test_transport_inputs_forward_equals_hard_gather():
     inputs = _observations(batch=1, length=T, size=16)
-    transport = torch.zeros(1, T, 16)
+    transport = torch.zeros(1, 16, T)
     idx = [0, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29]
     for k, j in enumerate(idx):
-        transport[0, j, k] = 1.0
+        transport[0, k, j] = 1.0
     indices = torch.as_tensor([idx])
     out, _ = _transport_inputs(inputs, transport, indices, 16)
     flat = inputs.permute(0, 2, 1, 3, 4).reshape(1, T, -1)
