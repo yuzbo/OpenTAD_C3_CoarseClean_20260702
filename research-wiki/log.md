@@ -38,3 +38,8 @@ append_only: true
   `sbatch --parsable` 提交 DUCA-UVT 发展种子数组（commit `44adb917`），并写
   `duca_uvt_official_44adb917.submit_manifest.json`。提交前会再次校验远端 source
   干净且 HEAD 匹配。
+- 2026-08-19：远端自动提交的 DUCA-UVT 首阵 `1244775` 三任务在 optimizer 构建阶段全部
+  FAILED（34s）；原因 ActionFormer `get_optim_groups` 未覆盖新增
+  `frame_selector.value_head.queries` 与 `cross_attention.in_proj_weight`。已按
+  deformable-DETR 先例补充分组规则（queries no-decay，in_proj_weight decay），
+  commit 见分支；现役 `1244133` 仍未修改。
