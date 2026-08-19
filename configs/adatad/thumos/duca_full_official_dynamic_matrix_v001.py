@@ -30,8 +30,13 @@ if arm != "official_dense":
     no_risk = arm == "dynamic_k_no_risk"
     target_len = 512 if is_dynamic else 384
     selection_strategy = "uniform_exact_k" if arm == "uniform_k384" else ("dynamic_B" if is_dynamic else "frame_score_global_rank_st")
-    reader_boundary_weight = 0.0 if no_risk else 0.60
-    reader_uncertainty_weight = 0.0 if no_risk else 0.25
+    # Frame-score fusion preset (fixed-K learned ranking and dynamic outer-K evidence).
+    # Boundary-first contract: actionness is auxiliary, boundary dominates,
+    # uncertainty is a small difficulty prior, redundancy is a light penalty.
+    reader_action_weight = 0.70 if no_risk else 0.20
+    reader_boundary_weight = 0.0 if no_risk else 0.65
+    reader_uncertainty_weight = 0.0 if no_risk else 0.15
+    reader_redundancy_weight = 0.15 if no_risk else 0.10
     dynamic_budget = None
     if is_dynamic:
         dynamic_budget = dict(
@@ -43,10 +48,14 @@ if arm != "official_dense":
             average_budget=384,
             budget_step=16,
             score_midpoint=0.5,
+            # The already-fused frame_selection_logits is the single dynamic-K
+            # evidence. Re-fusing action/boundary/uncertainty/redundancy here
+            # double-counts boundary evidence and biases neutral evidence
+            # below score_midpoint, so all secondary weights are zero.
             actionness_weight=1.0,
-            boundary_weight=0.0 if no_risk else 0.35,
-            uncertainty_weight=0.0 if no_risk else 0.20,
-            redundancy_weight=0.35,
+            boundary_weight=0.0,
+            uncertainty_weight=0.0,
+            redundancy_weight=0.0,
         )
 
     model = dict(
@@ -82,8 +91,10 @@ if arm != "official_dense":
                 temporal_kernel_size=5,
                 dilations=(1, 2, 4, 8),
                 dropout=0.10,
+                action_bias_weight=reader_action_weight,
                 boundary_bias_weight=reader_boundary_weight,
                 uncertainty_bias_weight=reader_uncertainty_weight,
+                redundancy_bias_weight=reader_redundancy_weight,
             ),
         ),
         backbone=dict(
