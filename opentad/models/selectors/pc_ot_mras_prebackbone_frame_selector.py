@@ -11,7 +11,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..builder import SELECTORS, build_selector
+from ..losses.duca_value_learning_losses import build_value_learning_losses
 from .duca_dynamic_physical import bounded_monotone_local_exact_k, dynamic_outer_k, attach_physical_timestamps
+from .duca_utility_geometry_targets import build_geometry_value_target
+from .duca_value_ema import DucaValueEMA
+from .duca_value_head_group import DucaValueHeadGroup
 
 
 def _require_finite(tensor: torch.Tensor, name: str, *, error_type: type[Exception] = FloatingPointError) -> torch.Tensor:
@@ -620,6 +624,7 @@ class PCOTMRASBoundaryDifficultyTemporalFrameScout(nn.Module):
         return {
             "slot_logits": slot_logits,
             "acquisition_matrix": acquisition_matrix,
+            "value_evidence": encoded,
             "action_logits": action_logits,
             "actionness_logits": action_logits,
             "value_logits": action_logits,
@@ -1043,6 +1048,27 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         variable_length_output: bool = False,
         physical_dense_reconstruction: bool = False,
         variable_compute_multiple: int = 16,
+        value_mode: str = "off",
+        value_hidden_dim: int | None = None,
+        value_alpha: float = 0.0,
+        value_alpha_max: float = 0.25,
+        value_ema_enabled: bool = False,
+        value_ema_decay: float = 0.999,
+        value_geometry_weight: float = 0.0,
+        value_ema_loss_weight: float = 0.0,
+        value_portal_enabled: bool = False,
+        value_portal_gate_passed: bool = False,
+        value_portal_feedback_weight: float = 0.0,
+        value_boundary_radius: int = 2,
+        value_short_action_duration_sec: float = 2.0,
+        value_short_action_weight: float = 0.5,
+        boundary_quota: int = 0,
+        boundary_center_top_m: int = 0,
+        boundary_radius_decode: int = 2,
+        boundary_pair_max_gap: int = 8,
+        boundary_pair_protection: bool = True,
+        mmr_similarity_type: str = "cosine",
+        mmr_lambda: float = 0.0,
         meta_source: str = "pc_ot_mras_prebackbone_e2e_frame_selector",
     ) -> None:
         super().__init__()
@@ -1100,6 +1126,76 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             if int(descriptor_dim) != 3 * 32 * 32:
                 raise ValueError("PCOTMRASRSeriesHybridFrameScout requires descriptor_dim=3072 for RGB 32x32 pixels")
         self.reader = build_selector(reader_cfg)
+
+        allowed_value_modes = ("off", "geo", "ema", "geo_ema", "geo_ema_portal")
+        if str(value_mode) not in allowed_value_modes:
+            raise ValueError(f"value_mode must be one of {allowed_value_modes}")
+        self.value_mode = str(value_mode)
+        self.value_alpha = 0.0 if self.value_mode == "off" else float(value_alpha)
+        self.value_alpha_max = float(value_alpha_max)
+        if self.value_alpha < 0.0 or self.value_alpha_max < 0.0:
+            raise ValueError("value_alpha and value_alpha_max must be non-negative")
+        if self.value_alpha > self.value_alpha_max:
+            raise ValueError("value_alpha must not exceed value_alpha_max")
+        if self.value_mode in ("ema", "geo_ema", "geo_ema_portal") and not bool(value_ema_enabled):
+            raise ValueError(f"value_mode={self.value_mode} requires value_ema_enabled=True")
+        if self.value_mode == "geo_ema_portal":
+            if not bool(value_portal_enabled):
+                raise ValueError("geo_ema_portal requires value_portal_enabled=True")
+            if not bool(value_portal_gate_passed):
+                raise ValueError(
+                    "geo_ema_portal is fail-closed: the complete four-layer DUCA-UVT portal gate must pass first"
+                )
+        if self.value_mode != "geo_ema_portal" and bool(value_portal_enabled):
+            raise ValueError("value_portal_enabled is only valid in geo_ema_portal mode")
+        value_hidden = int(value_hidden_dim if value_hidden_dim is not None else reader_cfg.get("hidden_dim", 96))
+        if value_hidden <= 0:
+            raise ValueError("value_hidden_dim must be positive")
+        self.value_hidden_dim = value_hidden
+        self.value_ema_enabled = bool(value_ema_enabled and self.value_mode in ("ema", "geo_ema", "geo_ema_portal"))
+        self.value_ema_decay = float(value_ema_decay)
+        if not 0.0 < self.value_ema_decay < 1.0:
+            raise ValueError("value_ema_decay must lie in (0, 1)")
+        self.value_geometry_weight = float(value_geometry_weight)
+        self.value_ema_loss_weight = float(value_ema_loss_weight)
+        if self.value_geometry_weight < 0.0 or self.value_ema_loss_weight < 0.0:
+            raise ValueError("value loss weights must be non-negative")
+        self.value_portal_enabled = bool(value_portal_enabled and self.value_mode == "geo_ema_portal")
+        self.value_portal_gate_passed = bool(value_portal_gate_passed and self.value_portal_enabled)
+        self.value_portal_feedback_weight = (
+            float(value_portal_feedback_weight) if self.value_portal_enabled else 0.0
+        )
+        if self.value_portal_feedback_weight < 0.0:
+            raise ValueError("value_portal_feedback_weight must be non-negative")
+        self.value_boundary_radius = int(value_boundary_radius)
+        self.value_short_action_duration_sec = float(value_short_action_duration_sec)
+        self.value_short_action_weight = float(value_short_action_weight)
+        if self.value_boundary_radius < 0:
+            raise ValueError("value_boundary_radius must be non-negative")
+        if self.value_short_action_duration_sec <= 0.0 or self.value_short_action_weight < 0.0:
+            raise ValueError("value_short_action_duration_sec/weight must be valid")
+        self.value_head = DucaValueHeadGroup(hidden_dim=self.value_hidden_dim)
+        self.value_ema = (
+            DucaValueEMA(self.value_head, decay=self.value_ema_decay) if self.value_ema_enabled else None
+        )
+        self.boundary_quota = int(boundary_quota)
+        self.boundary_center_top_m = int(boundary_center_top_m)
+        self.boundary_radius_decode = int(boundary_radius_decode)
+        self.boundary_pair_max_gap = int(boundary_pair_max_gap)
+        self.boundary_pair_protection = bool(boundary_pair_protection)
+        self.mmr_similarity_type = str(mmr_similarity_type)
+        self.mmr_lambda = float(mmr_lambda)
+        if self.boundary_quota < 0 or self.boundary_center_top_m < 0:
+            raise ValueError("boundary_quota and boundary_center_top_m must be non-negative")
+        if self.boundary_quota > int(target_len) or self.boundary_center_top_m > int(target_len):
+            raise ValueError("boundary_quota and boundary_center_top_m must not exceed target_len")
+        if self.boundary_radius_decode < 0 or self.boundary_pair_max_gap < 0:
+            raise ValueError("boundary_radius_decode and boundary_pair_max_gap must be non-negative")
+        if self.mmr_similarity_type not in ("cosine", "position", "none"):
+            raise ValueError("mmr_similarity_type must be 'cosine', 'position', or 'none'")
+        if self.mmr_lambda < 0.0:
+            raise ValueError("mmr_lambda must be non-negative")
+
         self.target_len = int(target_len)
         self.dense_window_size = int(dense_window_size)
         self.descriptor_dim = int(descriptor_dim)
@@ -1296,6 +1392,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             "slot_logits",
             "acquisition_matrix",
             "allocation",
+            "value_evidence",
             "action_logits",
             "value_logits",
             "boundary_logits",
@@ -1314,6 +1411,13 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             tensor = reader_outputs.get(name)
             if torch.is_tensor(tensor):
                 _require_finite(tensor, f"reader output {name}")
+        reader_outputs = self._forward_value_portal(reader_outputs, candidate_valid, training=training)
+        value_output = reader_outputs.get("duca_value_output")
+        if value_output is not None:
+            _require_finite(value_output.value, "duca_value_output")
+        ema_target = reader_outputs.get("duca_value_ema_target")
+        if torch.is_tensor(ema_target):
+            _require_finite(ema_target, "duca_value_ema_target")
         plan = self._sparse_transport_plan(
             reader_outputs,
             valid,
@@ -1366,6 +1470,66 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             "selected_positions": plan["selected_positions"],
             "selected_output_valid_lengths": plan["selected_output_valid_lengths"],
         }
+
+    def _forward_value_portal(self, reader_outputs: dict[str, Any], valid: torch.Tensor, *, training: bool) -> dict[str, Any]:
+        """Run the single learnable V(t) head and optional detached self-EMA target."""
+        reader_outputs = dict(reader_outputs)
+        reader_outputs["duca_value_output"] = None
+        reader_outputs["duca_value_ema_target"] = None
+        reader_outputs["duca_value_portal_audit"] = {
+            "portal_feedback_enabled": bool(self.value_portal_enabled),
+            "portal_gate_passed": bool(self.value_portal_gate_passed),
+            "portal_feedback_weight": float(self.value_portal_feedback_weight),
+            "hard_indices_detached": True,
+        }
+        if self.value_mode == "off":
+            return reader_outputs
+
+        evidence = reader_outputs.get("value_evidence")
+        if not torch.is_tensor(evidence) or evidence.ndim != 3:
+            raise ValueError(f"value_mode={self.value_mode} requires reader value_evidence [B,T,D]")
+        if tuple(valid.shape) != tuple(evidence.shape[:2]):
+            raise ValueError("value portal valid mask must match value_evidence time axis")
+        if evidence.shape[-1] != self.value_hidden_dim:
+            raise ValueError(
+                f"reader value_evidence dim {evidence.shape[-1]} != value_hidden_dim {self.value_hidden_dim}"
+            )
+        value_output = self.value_head(evidence, valid)
+        value_output.provenance.update(
+            {
+                "value_mode": self.value_mode,
+                "uses_self_ema_teacher": bool(training and self.value_ema_enabled),
+                "uses_gt_geometry_target": bool(training and self.value_geometry_weight > 0.0),
+                "uses_detector_feedback_at_inference": False,
+                "portal_feedback_enabled": bool(self.value_portal_enabled),
+                "portal_gate_passed": bool(self.value_portal_gate_passed),
+                "portal_feedback_weight": float(self.value_portal_feedback_weight),
+                "hard_indices_detached": True,
+            }
+        )
+        reader_outputs["duca_value_output"] = value_output
+
+        if training and self.value_ema_enabled and self.value_ema is not None:
+            reader_outputs["duca_value_ema_target"] = self.value_ema.detach_targets(evidence, valid)
+            self.value_ema.update(self.value_head)
+        return reader_outputs
+
+    def _combined_selection_score(
+        self,
+        reader_outputs: Mapping[str, Any],
+        frame_scores: torch.Tensor,
+        candidate_valid: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return ``fused_score + alpha * V(t)`` with a hard detached index boundary."""
+        combined = frame_scores
+        value_output = reader_outputs.get("duca_value_output")
+        if value_output is not None:
+            value = value_output.value
+            if not torch.is_tensor(value) or tuple(value.shape) != tuple(candidate_valid.shape):
+                raise ValueError("duca_value_output.value must match candidate_valid shape")
+            _require_finite(value, "duca_value_output.value", error_type=ValueError)
+            combined = frame_scores.float() + float(self.value_alpha) * value.float()
+        return combined
 
     @staticmethod
     def _input_batch_and_time(inputs: torch.Tensor) -> tuple[int, int]:
@@ -2351,6 +2515,13 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         if bool((candidate_valid.long().sum(dim=1) <= 0).any().item()):
             raise ValueError(f"each sample must contain at least one valid {plan_name} candidate")
 
+        base_frame_scores = frame_scores
+        frame_scores = self._combined_selection_score(
+            reader_outputs=reader_outputs,
+            frame_scores=base_frame_scores,
+            candidate_valid=candidate_valid,
+        )
+
         batch, candidate_len = frame_scores.shape
         dense_len = int(valid.shape[1])
         topk = 1
@@ -2372,7 +2543,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         _require_finite(masked_scores, f"{plan_name} masked scores")
         dynamic_budget_plan = self._dynamic_budget_plan(
             reader_outputs=reader_outputs,
-            frame_scores=frame_scores,
+            frame_scores=base_frame_scores,
             candidate_valid=candidate_valid,
         )
         dynamic_budgets = dynamic_budget_plan["budgets"] if dynamic_budget_plan is not None else None
@@ -2587,6 +2758,232 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             "max_gap_guard_meta": max_gap_guard_meta,
         }
 
+    def _local_maxima_positions(
+        self,
+        *,
+        boundary_logits: torch.Tensor,
+        valid: torch.Tensor,
+        dense_indices: torch.Tensor,
+        radius: int,
+    ) -> list[int]:
+        """Candidate indices of deployable boundary local maxima, sorted by score."""
+        if boundary_logits.ndim != 1 or tuple(boundary_logits.shape) != tuple(valid.shape):
+            raise ValueError("_local_maxima_positions expects one-dimensional boundary_logits and valid")
+        valid_idx = torch.nonzero(valid, as_tuple=False).flatten().tolist()
+        if not valid_idx:
+            return []
+        score_list = boundary_logits.detach().float().cpu().tolist()
+        dense_list = dense_indices.detach().long().cpu().tolist()
+        dense_max = max(dense_list) if dense_list else 0
+        maxima: list[int] = []
+        for candidate_idx in valid_idx:
+            score = score_list[candidate_idx]
+            pos = dense_list[candidate_idx]
+            lo = max(0, pos - int(radius))
+            hi = min(pos + int(radius), dense_max)
+            neighbor_is_max = True
+            for other in valid_idx:
+                if other == candidate_idx:
+                    continue
+                other_pos = dense_list[other]
+                if lo <= other_pos <= hi and score_list[other] > score:
+                    neighbor_is_max = False
+                    break
+                if lo <= other_pos <= hi and score_list[other] == score and other < candidate_idx:
+                    neighbor_is_max = False
+                    break
+            if neighbor_is_max:
+                maxima.append(candidate_idx)
+        maxima.sort(key=lambda c: (-score_list[c], dense_list[c]))
+        return maxima
+
+    def _boundary_foveated_positions(
+        self,
+        *,
+        scores: torch.Tensor,
+        boundary_logits: torch.Tensor,
+        valid: torch.Tensor,
+        k: int,
+        dense_indices: torch.Tensor | None = None,
+        features: torch.Tensor | None = None,
+    ) -> list[int]:
+        """Deterministic exact-K boundary-foveated decoder in dense physical positions."""
+        if scores.ndim == 2:
+            if scores.shape[0] != 1:
+                raise ValueError("boundary-foveated decoder currently supports batch_size=1")
+            scores = scores[0]
+        if boundary_logits.ndim == 2:
+            if boundary_logits.shape[0] != 1:
+                raise ValueError("boundary-foveated boundary logits currently support batch_size=1")
+            boundary_logits = boundary_logits[0]
+        if valid.ndim == 2:
+            if valid.shape[0] != 1:
+                raise ValueError("boundary-foveated valid mask currently supports batch_size=1")
+            valid = valid[0]
+        if tuple(scores.shape) != tuple(valid.shape) or tuple(boundary_logits.shape) != tuple(valid.shape):
+            raise ValueError("scores/boundary_logits/valid must share the candidate axis")
+        candidate_len = int(valid.shape[0])
+        if dense_indices is None:
+            dense_indices = torch.arange(candidate_len, device=scores.device, dtype=torch.long)
+        if tuple(dense_indices.shape) != (candidate_len,):
+            raise ValueError("dense_indices must be one-dimensional and match the candidate axis")
+        if int(k) <= 0:
+            raise ValueError("boundary-foveated decoder requires positive K")
+
+        valid = valid.to(device=scores.device).bool()
+        dense_indices = dense_indices.to(device=scores.device)
+        valid_candidates = torch.nonzero(valid, as_tuple=False).flatten()
+        valid_count = int(valid_candidates.numel())
+        if valid_count <= 0:
+            raise ValueError("boundary-foveated decoder requires at least one valid candidate")
+        if int(k) > valid_count:
+            raise ValueError("boundary-foveated decoder K must not exceed the valid candidate count")
+        boundary_quota = min(int(self.boundary_quota), int(k))
+        if boundary_quota > 0 and self.boundary_center_top_m <= 0:
+            boundary_quota = 0
+        global_budget = int(k) - boundary_quota
+
+        min_score = torch.finfo(torch.float32).min
+        masked = scores.float().masked_fill(~valid, min_score)
+        ranked = torch.argsort(masked, descending=True, stable=True)
+        ranked = ranked[valid.gather(0, ranked)]
+
+        chosen: set[int] = set()
+        for candidate_tensor in ranked[:global_budget]:
+            chosen.add(int(candidate_tensor.item()))
+        if len(chosen) < global_budget:
+            raise ValueError("failed to build the global fused-score quota")
+
+        boundary_centers = self._local_maxima_positions(
+            boundary_logits=boundary_logits,
+            valid=valid,
+            dense_indices=dense_indices,
+            radius=max(1, int(self.boundary_radius_decode)),
+        )[: int(self.boundary_center_top_m)]
+
+        protected_neighborhoods: list[list[int]] = []
+        for center_idx in boundary_centers:
+            center_pos = int(dense_indices[center_idx].item())
+            lo = max(0, center_pos - int(self.boundary_radius_decode))
+            hi = min(center_pos + int(self.boundary_radius_decode), int(dense_indices.max().item()))
+            neighborhood = [
+                int(candidate.item())
+                for candidate in valid_candidates
+                if lo <= int(dense_indices[candidate].item()) <= hi
+            ]
+            if neighborhood:
+                protected_neighborhoods.append(neighborhood)
+
+        if self.boundary_pair_protection and len(protected_neighborhoods) >= 2:
+            for left in range(len(protected_neighborhoods)):
+                for right in range(left + 1, len(protected_neighborhoods)):
+                    left_center_pos = int(dense_indices[boundary_centers[left]].item())
+                    right_center_pos = int(dense_indices[boundary_centers[right]].item())
+                    if abs(left_center_pos - right_center_pos) <= int(self.boundary_pair_max_gap):
+                        if any(int(candidate) in chosen for candidate in protected_neighborhoods[left]):
+                            chosen.update(protected_neighborhoods[right])
+                        if any(int(candidate) in chosen for candidate in protected_neighborhoods[right]):
+                            chosen.update(protected_neighborhoods[left])
+
+        for neighborhood in protected_neighborhoods:
+            chosen.update(neighborhood)
+
+        if len(chosen) < k:
+            for candidate_tensor in ranked:
+                candidate_idx = int(candidate_tensor.item())
+                if candidate_idx in chosen:
+                    continue
+                chosen.add(candidate_idx)
+                if len(chosen) >= k:
+                    break
+
+        if len(chosen) > k:
+            chosen = self._greedy_mmr_select(
+                candidates=sorted(chosen),
+                scores=scores,
+                valid=valid,
+                dense_indices=dense_indices,
+                features=features,
+                k=k,
+            )
+
+        if len(chosen) != k:
+            raise ValueError(f"boundary-foveated decoder failed to resolve exact K: got {len(chosen)}, want {k}")
+        dense_positions = [int(dense_indices[candidate].item()) for candidate in chosen]
+        if len(set(dense_positions)) != k:
+            raise ValueError("boundary-foveated decoder requires unique selected physical frames")
+        return sorted(dense_positions)
+
+    def _greedy_mmr_select(
+        self,
+        *,
+        candidates: Sequence[int],
+        scores: torch.Tensor,
+        valid: torch.Tensor,
+        dense_indices: torch.Tensor,
+        features: torch.Tensor | None,
+        k: int,
+    ) -> set[int]:
+        """Greedy MMR with detached scout-feature similarity and physical-position tie break."""
+        if scores.ndim != 1 or tuple(scores.shape) != tuple(valid.shape):
+            raise ValueError("_greedy_mmr_select expects one-dimensional scores and valid")
+        candidate_set = set(int(candidate) for candidate in candidates)
+        for candidate in candidate_set:
+            if not bool(valid[candidate].item()):
+                raise ValueError("_greedy_mmr_select received an invalid candidate")
+        if len(candidate_set) < int(k):
+            raise ValueError("_greedy_mmr_select requires at least K candidates")
+        if int(k) <= 0:
+            raise ValueError("_greedy_mmr_select requires positive K")
+
+        score_list = scores.detach().float().cpu().tolist()
+        dense_list = dense_indices.detach().long().cpu().tolist()
+        feature_tensor = None
+        if features is not None:
+            if features.ndim != 2 or features.shape[0] != int(scores.shape[0]):
+                raise ValueError("MMR features must be [T,D] and match the candidate axis")
+            feature_tensor = F.normalize(features.detach().float(), dim=-1, eps=1.0e-6)
+        similarity_type = str(self.mmr_similarity_type)
+        if features is not None and similarity_type == "cosine":
+            feature_cpu = feature_tensor.cpu()
+            cosine = feature_cpu @ feature_cpu.transpose(0, 1)
+        elif similarity_type == "position":
+            cosine = None
+        else:
+            cosine = None
+
+        selected: set[int] = set()
+        selected_positions: list[int] = []
+        lambda_mmr = float(self.mmr_lambda)
+        while len(selected) < int(k):
+            best_candidate: int | None = None
+            best_score = -math.inf
+            best_pos = math.inf
+            for candidate in sorted(candidate_set - selected):
+                base = float(score_list[candidate])
+                redundancy = 0.0
+                if selected and lambda_mmr > 0.0:
+                    if cosine is not None:
+                        redundancy = max(float(cosine[candidate, other].item()) for other in selected)
+                    else:
+                        pos = dense_list[candidate]
+                        bandwidth = max(1, int(self.boundary_radius_decode) * 2 + 1)
+                        redundancy = max(
+                            0.0,
+                            1.0 - min(abs(pos - selected_pos) / float(bandwidth), 1.0),
+                        )
+                marginal = base - lambda_mmr * redundancy
+                pos = dense_list[candidate]
+                if marginal > best_score or (math.isclose(marginal, best_score, rel_tol=0.0, abs_tol=1.0e-9) and pos < best_pos):
+                    best_score = marginal
+                    best_pos = pos
+                    best_candidate = candidate
+            if best_candidate is None:
+                raise ValueError("_greedy_mmr_select failed to resolve a next candidate")
+            selected.add(best_candidate)
+            selected_positions.append(dense_list[best_candidate])
+        return selected
+
     def _dynamic_b_transport_plan(self, *, reader_outputs, valid, candidate_valid, candidate_dense_indices, training):
         """Dynamic outer K with arbitrary learned frame acquisition in physical time."""
         scores = reader_outputs.get("frame_selection_logits", reader_outputs.get("actionness_logits", reader_outputs.get("action_logits")))
@@ -2604,10 +3001,20 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         batch, _ = scores.shape
         if batch != 1:
             raise ValueError("dynamic_B variable compute requires batch_size=1")
+        scores = scores.float()
+        candidate_valid = candidate_valid.to(device=device).bool()
+        candidate_dense_indices = candidate_dense_indices.to(device=device)
+        valid = valid.to(device=device).bool()
         dense_len = int(valid.shape[1])
+        base_frame_scores = scores
+        scores = self._combined_selection_score(
+            reader_outputs=reader_outputs,
+            frame_scores=base_frame_scores,
+            candidate_valid=candidate_valid,
+        )
         budget_plan = self._dynamic_budget_plan(
             reader_outputs=reader_outputs,
-            frame_scores=scores,
+            frame_scores=base_frame_scores,
             candidate_valid=candidate_valid,
         )
         if budget_plan is None:
@@ -2616,24 +3023,51 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         k = min(k, int(candidate_valid[0].sum().item()))
         if k <= 0 or k % self.variable_compute_multiple != 0:
             raise ValueError("resolved dynamic_B budget must be positive and clip-aligned")
+        if self.boundary_quota > k:
+            raise ValueError("boundary_quota must not exceed resolved dynamic_B budget K")
+
+        boundary_logits, _ = self._dense_head_or_zeros(
+            reader_outputs=reader_outputs,
+            candidate_valid=candidate_valid,
+            names=("boundary_logits", "risk_logits"),
+            device=device,
+        )
+        value_evidence = reader_outputs.get("value_evidence")
+        features = value_evidence[0] if torch.is_tensor(value_evidence) and value_evidence.ndim == 3 else None
+        selected_dense_positions = self._boundary_foveated_positions(
+            scores=scores,
+            boundary_logits=boundary_logits,
+            valid=candidate_valid[0],
+            k=k,
+            dense_indices=candidate_dense_indices[0],
+            features=features,
+        )
+        dense_positions = torch.tensor(selected_dense_positions, dtype=torch.long, device=device)
+
+        valid_candidates = torch.nonzero(candidate_valid[0], as_tuple=False).flatten()
+        dense_to_candidate: dict[int, int] = {}
+        for candidate_idx_tensor in valid_candidates:
+            candidate_idx = int(candidate_idx_tensor.item())
+            dense_pos = int(candidate_dense_indices[0, candidate_idx].item())
+            if dense_pos in dense_to_candidate:
+                raise ValueError("dynamic_B requires unique dense positions for valid candidates")
+            dense_to_candidate[dense_pos] = candidate_idx
+        chosen_candidates = torch.tensor(
+            [dense_to_candidate[int(pos)] for pos in selected_dense_positions],
+            dtype=torch.long,
+            device=device,
+        )
 
         masked_scores = scores[0].float().masked_fill(~candidate_valid[0], torch.finfo(torch.float32).min)
         ranked = torch.argsort(masked_scores, descending=True, stable=True)
-        ranked = ranked[candidate_valid[0].gather(0, ranked)][:k]
-        dense_positions = candidate_dense_indices[0].gather(0, ranked)
-        order = torch.argsort(dense_positions, stable=True)
-        chosen_candidates = ranked.gather(0, order)
-        dense_positions = dense_positions.gather(0, order)
-        if int(torch.unique(dense_positions).numel()) != k:
-            raise ValueError("dynamic_B requires unique selected physical frames")
+        ranked = ranked[candidate_valid[0].gather(0, ranked)]
+        rank_by_candidate = {int(candidate.item()): rank for rank, candidate in enumerate(ranked)}
 
         indices = dense_positions.view(1, k, 1).long()
         weights = torch.ones((1, k, 1), dtype=torch.float32, device=device)
         positions = dense_positions.view(1, k).float()
         transport = torch.zeros((1, k, dense_len), dtype=torch.float32, device=device)
-        rank_by_candidate = {int(candidate.item()): rank for rank, candidate in enumerate(ranked)}
-        for out_idx, candidate in enumerate(chosen_candidates):
-            candidate_idx = int(candidate.item())
+        for out_idx, candidate_idx in enumerate(chosen_candidates.detach().cpu().tolist()):
             pos = int(dense_positions[out_idx].item())
             hard = torch.zeros((dense_len,), dtype=torch.float32, device=device)
             hard[pos] = 1.0
@@ -2643,7 +3077,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                     candidate_valid=candidate_valid[0],
                     candidate_dense_indices=candidate_dense_indices[0],
                     candidate_idx=candidate_idx,
-                    hard_rank_position=rank_by_candidate[candidate_idx],
+                    hard_rank_position=rank_by_candidate.get(candidate_idx, 0),
                     topk_budget=k,
                     global_rank_cache=None,
                     name="dynamic_B",
@@ -2659,12 +3093,26 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             else:
                 transport[0, out_idx] = hard
 
+        decoder_enabled = (
+            self.boundary_quota > 0 or self.boundary_center_top_m > 0 or self.mmr_lambda > 0.0
+        )
         metadata = [dict(budget_plan["metadata"][0])]
         metadata[0].update(
-            mechanism="dynamic_B_arbitrary_frame_acquisition",
+            mechanism="dynamic_B_boundary_foveated_exact_k",
             outer_k=k,
             variable_backbone_compute=True,
             physical_time_preserved=True,
+            value_mode=self.value_mode,
+            value_alpha=self.value_alpha,
+            boundary_foveated_decoder_enabled=decoder_enabled,
+            boundary_quota=min(int(self.boundary_quota), k),
+            boundary_center_top_m=int(self.boundary_center_top_m),
+            boundary_radius_decode=int(self.boundary_radius_decode),
+            boundary_pair_max_gap=int(self.boundary_pair_max_gap),
+            boundary_pair_protection=bool(self.boundary_pair_protection),
+            mmr_similarity_type=str(self.mmr_similarity_type),
+            mmr_lambda=float(self.mmr_lambda),
+            hard_indices_detached=True,
         )
         return {
             "indices": indices,
@@ -3255,7 +3703,15 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         cfg = getattr(self, "dynamic_budget", None)
         if not cfg:
             return None
+        known_value_payload_keys = {
+            "value_evidence",
+            "duca_value_output",
+            "duca_value_ema_target",
+            "duca_value_portal_audit",
+        }
         for key in reader_outputs.keys():
+            if str(key) in known_value_payload_keys:
+                continue
             key_text = str(key).lower()
             if any(token in key_text for token in ("gt", "teacher", "cache", "raw_prediction", "oracle", "target")):
                 raise ValueError(f"dynamic_budget received forbidden deploy-time payload: {key}")
@@ -3285,22 +3741,37 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             fallback=None,
         )
         valid_len_score = candidate_valid.float().mean(dim=1)
-        utility = (
-            float(cfg["actionness_weight"]) * action_score
-            + float(cfg["boundary_weight"]) * boundary_score
-            + float(cfg["uncertainty_weight"]) * uncertainty_score
-            - float(cfg["redundancy_weight"]) * redundancy_score
-            + float(cfg["valid_len_weight"]) * valid_len_score
-        )
-        normalizer = (
-            abs(float(cfg["actionness_weight"]))
-            + abs(float(cfg["boundary_weight"]))
-            + abs(float(cfg["uncertainty_weight"]))
-            + abs(float(cfg["redundancy_weight"]))
-            + abs(float(cfg["valid_len_weight"]))
-        )
-        if normalizer <= 0.0:
-            raise ValueError("dynamic_budget requires at least one non-zero utility weight")
+        budget_value_source = None
+        value_output = reader_outputs.get("duca_value_output")
+        if value_output is not None and self.value_mode != "off":
+            value = value_output.value
+            if not torch.is_tensor(value) or tuple(value.shape) != tuple(candidate_valid.shape):
+                raise ValueError("duca_value_output.value must match candidate_valid for dynamic budget")
+            _require_finite(value, "duca_value_output.value for dynamic budget", error_type=ValueError)
+            value_valid_count = candidate_valid.to(dtype=torch.float32).sum(dim=1).clamp_min(1.0)
+            value_evidence_score = (
+                torch.sigmoid(value.float()).masked_fill(~candidate_valid, 0.0).sum(dim=1) / value_valid_count
+            ).clamp(0.0, 1.0)
+            utility = value_evidence_score
+            normalizer = 1.0
+            budget_value_source = "mean_valid_sigmoid_V"
+        else:
+            utility = (
+                float(cfg["actionness_weight"]) * action_score
+                + float(cfg["boundary_weight"]) * boundary_score
+                + float(cfg["uncertainty_weight"]) * uncertainty_score
+                - float(cfg["redundancy_weight"]) * redundancy_score
+                + float(cfg["valid_len_weight"]) * valid_len_score
+            )
+            normalizer = (
+                abs(float(cfg["actionness_weight"]))
+                + abs(float(cfg["boundary_weight"]))
+                + abs(float(cfg["uncertainty_weight"]))
+                + abs(float(cfg["redundancy_weight"]))
+                + abs(float(cfg["valid_len_weight"]))
+            )
+            if normalizer <= 0.0:
+                raise ValueError("dynamic_budget requires at least one non-zero utility weight")
         utility_score = (utility / normalizer).clamp(0.0, 1.0)
 
         min_budget = int(cfg["min_budget"])
@@ -3344,6 +3815,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
                     "average_budget": int(cfg["average_budget"]),
                     "budget_step": step,
                     "utility_score": float(utility_score[batch_idx].detach().cpu().item()),
+                    "budget_value_source": budget_value_source,
                     "actionness_score": float(action_score[batch_idx].detach().cpu().item()),
                     "boundary_score": float(boundary_score[batch_idx].detach().cpu().item()),
                     "uncertainty_score": float(uncertainty_score[batch_idx].detach().cpu().item()),
@@ -4236,6 +4708,8 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         uncertainty_logits = reader_outputs.get("uncertainty_logits")
         redundancy_logits = reader_outputs.get("redundancy_logits")
         role_logits = reader_outputs.get("role_logits")
+        value_output = reader_outputs.get("duca_value_output")
+        ema_value_target = reader_outputs.get("duca_value_ema_target")
         aux_tensors = (
             matrix,
             actionness_logits,
@@ -4246,7 +4720,7 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             redundancy_logits,
             role_logits,
         )
-        if all(not torch.is_tensor(tensor) for tensor in aux_tensors):
+        if all(not torch.is_tensor(tensor) for tensor in aux_tensors) and value_output is None:
             return losses
 
         dtype = None
@@ -4254,11 +4728,16 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
         for tensor in aux_tensors:
             if torch.is_tensor(tensor):
                 _require_finite(tensor, "selector auxiliary tensor")
+        if value_output is not None:
+            _require_finite(value_output.value, "selector value head output")
         for tensor in aux_tensors:
             if torch.is_tensor(tensor):
                 dtype = tensor.dtype
                 device = tensor.device
                 break
+        if dtype is None and value_output is not None:
+            dtype = value_output.value.dtype
+            device = value_output.value.device
         if dtype is None:
             return losses
         action_target, boundary_target = self._dense_gt_targets(
@@ -4422,6 +4901,37 @@ class PCOTMRASPreBackboneFrameSelector(nn.Module):
             loss = F.cross_entropy(role_logits.float()[valid], role_target[valid]) * self.aux_role_entropy_loss_weight
             _require_finite(loss, "selector role auxiliary loss")
             losses["selector_role_aux_loss"] = loss
+
+        if value_output is not None:
+            if self.value_geometry_weight > 0.0:
+                geometry_target = build_geometry_value_target(
+                    gt_segments=gt_segments,
+                    gt_labels=None,
+                    valid_mask=valid,
+                    boundary_radius=self.value_boundary_radius,
+                    short_action_duration_sec=self.value_short_action_duration_sec,
+                    short_action_weight=self.value_short_action_weight,
+                )
+            else:
+                geometry_target = None
+            if self.value_ema_loss_weight > 0.0 and not torch.is_tensor(ema_value_target):
+                raise ValueError("value_ema_loss_weight requires a detached EMA target")
+            bundle = build_value_learning_losses(
+                value=value_output.value,
+                valid=valid,
+                geometry_target=geometry_target,
+                ema_target=ema_value_target,
+                geometry_weight=self.value_geometry_weight,
+                ema_weight=self.value_ema_loss_weight,
+                portal_enabled=bool(self.value_portal_enabled and self.value_portal_gate_passed),
+            )
+            for name, tensor in (
+                ("selector_value_geometry_loss", bundle.geometry_value_loss),
+                ("selector_value_ema_distill_loss", bundle.self_ema_value_distill_loss),
+                ("selector_value_portal_loss", bundle.gated_portal_value_loss),
+            ):
+                _require_finite(tensor, name)
+                losses[name] = tensor
         return losses
 
     @staticmethod
