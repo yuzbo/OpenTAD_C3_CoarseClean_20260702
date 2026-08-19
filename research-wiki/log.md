@@ -43,3 +43,9 @@ append_only: true
   `frame_selector.value_head.queries` 与 `cross_attention.in_proj_weight`。已按
   deformable-DETR 先例补充分组规则（queries no-decay，in_proj_weight decay），
   commit 见分支；现役 `1244133` 仍未修改。
+- 2026-08-19：修复后以 `df544c78` 重新提交 DUCA-UVT 发展种子 `1244840`
+  （off/geo/geo_ema, seed=3407），run root
+  `/data/run01/sczc063/yuzibo/duca_uvt_official_df544c78_wv2_20260819T171000Z`。
+  三任务 RUNNING；Epoch 0 loss 行有限，geo/geo_ema geometry loss ≈0.15。
+  `geo_ema` 首轮 EMA distill loss 为 0 属 EMA 与 online 同初始化，符合预期。
+  新增 experiment 节点 `research-wiki/experiments/duca-uvt-value-portal.md`。
