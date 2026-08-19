@@ -1,11 +1,11 @@
 ---
 type: design_spec
 title: "DUCA-UVT: utility-value portal for dynamic pre-backbone acquisition"
-status: revised_designed
+status: user_approved_full_implementation
 branch: codex/duca-uvt-utility-value-20260819
 base_commit: 7529fba607f8ddfef74d8309efa466d73a956a60
 date: 2026-08-19
-scope: code_and_focused_gate_only
+scope: full_implementation_and_remote_development_deploy
 ---
 
 # DUCA-UVT: Utility-Value Portal Design (Revised)
@@ -23,12 +23,7 @@ separately provable mechanisms:
 The hard frame selection remains deterministic. No dense detector teacher is
 introduced, and no teacher/cache/GT enters inference.
 
-This document is an implementation and focused-verification spec only.
-
-- It does not authorize a full Slurm training matrix.
-- It does not produce or claim mAP.
-- It does not claim efficiency, plugin generality, or paper readiness.
-- It is one DUCA component milestone, not the complete paper design.
+This revision is authorized by the user for complete implementation and a remote development-seed deployment. It still does not produce or claim mAP, efficiency, plugin generality, or paper readiness. Any terminal result remains diagnostic until prior gates close.
 
 ## 2. Relation to paper claims and prior gates
 
@@ -617,7 +612,7 @@ These metrics are diagnostic, not claims.
 
 ## 16. Out of scope
 
-- full Slurm training matrix;
+- formal multi-seed Slurm matrix;
 - dense detector teacher utility;
 - language/text encoder and TVG evidence;
 - STD spatial actor/object evidence;
