@@ -290,6 +290,7 @@ class FoveaQueryBridgeFrameSelector(nn.Module):
             "positions": positions,
             "transport": transport,
             "probs": probs,
+            "contribution": contribution,
             "selected_inputs": selected_inputs,
             "selected_len": selected_len,
         }
