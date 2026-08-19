@@ -49,6 +49,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [CVCR / BCFT / CoDeTAD](ideas/cvcr-bcft-codetad.md)
 - [ChronoTransport](ideas/chronotransport.md)
 - [PhysTime](ideas/phystime.md)
+- [DUCA-FoveaSampler / Query-Bridge](ideas/duca-foveasampler-query-bridge.md)
 
 ### Experiments
 
@@ -60,6 +61,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [a5e1774 full-stack cost](experiments/duca-a5e-cost.md)
 - [parallel routes](experiments/parallel-routes.md)
 - [ChronoTransport formal Stage-B 负 gate](experiments/chronotransport-formal-stage-b.md)
+- [FoveaSampler/Query-Bridge development gate](experiments/duca-fovea-qb-development.md)
 
 ### Claims
 

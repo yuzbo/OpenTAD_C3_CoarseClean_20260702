@@ -20,3 +20,9 @@ append_only: true
   ChronoTransport r1 规格、实现表面、原 Pro 记录、两轮独立复核与本地源码审计，明确排除
   数据、checkpoint、GPU 日志和新行为结果。审查仍止于 `REVISE_SPEC_BEFORE_PLAN`，不得借
   GitHub 同步越过到实现、profiling、Gate 1、新 seed 或 Stage C。
+
+- 2026-08-19：批准 DUCA-FoveaSampler / Query-Bridge 最终实现契约（`docs/superpowers/specs/2026-08-19-duca-foveasampler-query-bridge-design.md`，commit `9affb525`）；保留手工三分支，不再删除或合并。
+- 2026-08-19：在 `codex/duca-fovea-query-bridge-20260819` 实现 FoveaScout、QueryBank/LightQueryDecoder、FoveaHeads（saliency/boundary/uncertainty 三分支）、FoveatedSampler（Gumbel-TopK 训练 / 贪心 MMR 推理、exact-K）、fovea losses、FoveaQueryBridgeFrameSelector、ActionFormer 后置 cycle hook；提交 `0975aac3`..`a32a374`。
+- 2026-08-19：远端 CPU focused tests `tests/test_fovea_query_bridge.py` 11/11 通过；完整模型在远端 CPU 可构建（pretrained 路径由 launcher 注入）。CPU 端到端 forward 的临时探针被中断且无 durable 记录，因此不计为通过。
+- 2026-08-19：GPU one-step gate `1244839` 已提交（pending，30min）；正式 Fovea-QB 开发矩阵尚未提交，不能声称 Fovea-QB 实验已在完整训练。
+- 2026-08-19：旧矩阵 `1244133`（7529fba6 wv1）仍在完整训练：`_0`..`_7` 已 COMPLETED（exit 0:0），`_8`..`_14` RUNNING；远程 N16R4 GPU 分配未受影响。
