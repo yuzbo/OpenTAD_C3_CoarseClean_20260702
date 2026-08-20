@@ -239,3 +239,69 @@ def test_original_official_adatad_configs_are_not_recovery_opted_in():
     ).read_text()
     assert "zoomtoken_recovery" not in official
     assert "recovery_latest3_plus_final" not in official
+
+
+def test_shared_official_reproduction_packet_uses_the_untouched_supported_cli():
+    packet = (
+        ROOT / "scripts/run_adatad_shared_official_reproduction_n16r4.sh"
+    ).read_text()
+    assert packet.startswith("#!/usr/bin/env bash\n")
+    assert 'if [ -z "${BASH_VERSION:-}" ]; then' in packet
+    assert "invoke this packet with bash, never sh" in packet
+    assert 'EXPECTED_COMMIT="01c58b9f2370e914150cf94d392208a4e211c053"' in packet
+    assert "official_adatad_reproduction_01c58b9" in packet
+    assert "e2e_thumos_videomae_s_768x1_160_adapter.py" in packet
+    assert "tools/train.py \"${CONFIG}\" --seed 42 --id 0" in packet
+    assert '"work_dir=${RUN_ROOT}"' in packet
+    assert "--work-dir" not in packet
+    assert '[[ "${SLURM_CPUS_PER_TASK:-}" == "8" ]]' in packet
+    assert "--nproc_per_node=1" in packet
+    assert "--gpus" not in packet and "CUDA_VISIBLE_DEVICES=" not in packet
+    for identity in (
+        "thumos14/raw_data/video",
+        "thumos14/annotations/thumos_14_anno.json",
+        "thumos14/annotations/category_idx.txt",
+        "vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+    ):
+        assert identity in packet
+
+
+def test_roi60_packet_binds_only_dn_g_to_official_validation_and_recovery():
+    packet = (ROOT / "scripts/run_zoomtoken_roi60_dn_g_n16r4.sh").read_text()
+    assert packet.startswith("#!/usr/bin/env bash\n")
+    assert 'if [ -z "${BASH_VERSION:-}" ]; then' in packet
+    assert 'LINEAGE_BASE="bae6462754a3f1bc52da572c3c97444abd96e092"' in packet
+    assert "ZOOMTOKEN_ROI60_EXPECTED_COMMIT:?set ZOOMTOKEN_ROI60_EXPECTED_COMMIT" in packet
+    assert 'merge-base --is-ancestor "${LINEAGE_BASE}" "${EXPECTED_COMMIT}"' in packet
+    assert 'case "${ARM}" in\n  DN)' in packet
+    assert "georoute_p1_dn_seed3407_v001.py" in packet
+    assert "georoute_p1_g_seed3407_v001.py" in packet
+    assert "tools/train.py \"${CONFIG}\" --seed 3407 --id 0 --work-dir" in packet
+    assert "--nproc_per_node=1" in packet
+    assert '"dataset.train.subset_name=training"' in packet
+    assert packet.count('"dataset.val.subset_name=validation"') == 1
+    assert packet.count('"dataset.test.subset_name=validation"') == 1
+    assert '"evaluation.subset=validation"' in packet
+    assert '"evaluation.tiou_thresholds=[0.3,0.4,0.5,0.6,0.7]"' in packet
+    for binding in (
+        '"post_processing.nms.use_soft_nms=True"',
+        '"post_processing.nms.sigma=0.7"',
+        '"post_processing.nms.max_seg_num=2000"',
+        '"post_processing.nms.multiclass=True"',
+        '"post_processing.nms.voting_thresh=0.7"',
+        '"workflow.end_epoch=60"',
+        '"workflow.checkpoint_interval=5"',
+        '"workflow.checkpoint_policy=recovery_latest3_plus_final"',
+        '"workflow.val_eval_interval=60"',
+        '"workflow.val_start_epoch=59"',
+        'resume_args=(--resume "${RESUME}")',
+    ):
+        assert binding in packet
+    assert "recovery_epoch_<N>.pth" in packet
+    assert '"zoomtoken_p1_config.gt_for_route_allowed=False"' in packet
+    assert '"zoomtoken_p1_config.teacher_for_route_allowed=False"' in packet
+    assert '"zoomtoken_p1_config.oracle_for_route_allowed=False"' in packet
+    assert "georoute_p1_q_" not in packet
+    assert "georoute_p1_f_" not in packet
+    assert "georoute_p1_n_" not in packet
+    assert "torch" not in sys.modules
