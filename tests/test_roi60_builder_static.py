@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,6 +73,7 @@ def test_checkpoint_policy_keeps_recovery_state_and_latest_three():
         "torch_cuda_rng_state",
         "sampler_epoch",
         "completed_epoch",
+        "next_successful_update_index",
     ):
         assert field in train
     assert 'ZOOMTOKEN_RECOVERY_ARMS = {"DN", "G"}' in train
@@ -90,6 +92,38 @@ def test_checkpoint_policy_keeps_recovery_state_and_latest_three():
     assert configs.count("keep_latest=3") == 2
     assert configs.count("save_final=True") == 2
     assert configs.count('checkpoint_policy="recovery_latest3_plus_final"') == 2
+
+
+def test_g_auxiliary_losses_follow_the_successful_update_order():
+    engine = (ROOT / "opentad/cores/train_engine.py").read_text()
+    setter = "georoute_backbone.set_successful_update_index(successful_update_index)"
+    forward = "losses = model(**data_dict, return_loss=True)"
+    consumer = "auxiliary_losses = georoute_backbone.consume_training_auxiliary_losses("
+    add_to_cost = 'losses["cost"] = losses["cost"] + auxiliary_cost'
+    backward = 'scaler.scale(losses["cost"]).backward()'
+    assert engine.index(setter) < engine.index(forward)
+    assert engine.index(forward) < engine.index(consumer)
+    assert engine.index(consumer) < engine.index(add_to_cost)
+    assert engine.index(add_to_cost) < engine.index(backward)
+    assert engine.count("consume_training_auxiliary_losses(") == 1
+    assert "colliding_loss_keys = set(losses).intersection(auxiliary_losses)" in engine
+    assert "losses.update(auxiliary_losses)" in engine
+    assert "scale_before = scaler.get_scale()" in engine
+    assert "optimizer_update_succeeded = scaler.get_scale() >= scale_before" in engine
+    assert "if georoute_backbone is not None and optimizer_update_succeeded:" in engine
+    assert "successful_update_index += 1" in engine
+    assert "return successful_update_index" in engine
+
+
+def test_g_update_index_is_checkpointed_and_restored_without_importing_torch():
+    train = (ROOT / "tools/train.py").read_text()
+    assert 'recovery_contract["arm_surface"] == "G"' in train
+    assert '"next_successful_update_index": next_successful_update_index' in train
+    assert "next_successful_update_index = _restore_zoomtoken_training_state(" in train
+    assert "next_successful_update_index = train_one_epoch(" in train
+    assert "successful_update_index=next_successful_update_index" in train
+    assert "next_successful_update_index," in train
+    assert "torch" not in sys.modules
 
 
 def test_original_official_adatad_configs_are_not_recovery_opted_in():

@@ -15,6 +15,7 @@ def train_one_epoch(
     clip_grad_l2norm=-1,
     logging_interval=200,
     scaler=None,
+    successful_update_index=None,
 ):
     """Training the model for one epoch"""
 
@@ -22,6 +23,16 @@ def train_one_epoch(
     losses_tracker = {}
     num_iters = len(train_loader)
     use_amp = False if scaler is None else True
+    if successful_update_index is not None:
+        if not isinstance(successful_update_index, int) or successful_update_index < 0:
+            raise ValueError("successful update index must be a non-negative integer")
+        georoute_backbone = model.module.backbone
+        if not hasattr(georoute_backbone, "set_successful_update_index") or not hasattr(
+            georoute_backbone, "consume_training_auxiliary_losses"
+        ):
+            raise ValueError("successful update indexing requires a GeoRoute backbone")
+    else:
+        georoute_backbone = None
 
     model.train()
     for iter_idx, data_dict in enumerate(train_loader):
@@ -35,8 +46,25 @@ def train_one_epoch(
         curr_det_lr = scheduler.get_last_lr()[-1]
 
         # forward pass
+        if georoute_backbone is not None:
+            georoute_backbone.set_successful_update_index(successful_update_index)
         with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
             losses = model(**data_dict, return_loss=True)
+        if georoute_backbone is not None:
+            auxiliary_losses = georoute_backbone.consume_training_auxiliary_losses(
+                masks=data_dict["masks"],
+                gt_segments=data_dict["gt_segments"],
+                gt_labels=data_dict["gt_labels"],
+            )
+            colliding_loss_keys = set(losses).intersection(auxiliary_losses)
+            if colliding_loss_keys:
+                raise ValueError(
+                    "GeoRoute auxiliary loss keys collide with detector losses: "
+                    f"{sorted(colliding_loss_keys)}"
+                )
+            auxiliary_cost = sum(auxiliary_losses.values())
+            losses.update(auxiliary_losses)
+            losses["cost"] = losses["cost"] + auxiliary_cost
 
         # compute the gradients
         if use_amp:
@@ -52,10 +80,15 @@ def train_one_epoch(
 
         # update parameters
         if use_amp:
+            scale_before = scaler.get_scale()
             scaler.step(optimizer)
             scaler.update()
+            optimizer_update_succeeded = scaler.get_scale() >= scale_before
         else:
             optimizer.step()
+            optimizer_update_succeeded = True
+        if georoute_backbone is not None and optimizer_update_succeeded:
+            successful_update_index += 1
 
         # update scheduler
         scheduler.step()
@@ -82,6 +115,7 @@ def train_one_epoch(
                 block4 = "lr_backbone={:.1e}".format(curr_backbone_lr) + "  " + block4
             block5 = "mem={:.0f}MB".format(torch.cuda.max_memory_allocated() / 1024.0 / 1024.0)
             logger.info("  ".join([block1, block2, "  ".join(block3), block4, block5]))
+    return successful_update_index
 
 
 def val_one_epoch(

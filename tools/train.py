@@ -104,8 +104,21 @@ def _validate_zoomtoken_resume_path(resume_path, cfg, recovery_contract):
 
 
 def _capture_zoomtoken_training_state(
-    args, cfg, train_loader, epoch, recovery_contract
+    args,
+    cfg,
+    train_loader,
+    epoch,
+    recovery_contract,
+    next_successful_update_index,
 ):
+    if recovery_contract["arm_surface"] == "G":
+        if (
+            not isinstance(next_successful_update_index, int)
+            or next_successful_update_index < 0
+        ):
+            raise ValueError("ZoomToken G recovery requires a non-negative update index")
+    elif next_successful_update_index is not None:
+        raise ValueError("ZoomToken DN recovery must not carry a GeoRoute update index")
     local_rng_state = {
         "rank": args.rank,
         "python_rng_state": random.getstate(),
@@ -133,6 +146,7 @@ def _capture_zoomtoken_training_state(
         "sampler_epoch": int(getattr(train_loader.sampler, "epoch", epoch)),
         "batches_per_epoch": len(train_loader),
         "completed_batches": (epoch + 1) * len(train_loader),
+        "next_successful_update_index": next_successful_update_index,
         "rng_state_by_rank": rng_state_by_rank,
     }
 
@@ -166,6 +180,17 @@ def _restore_zoomtoken_training_state(
             )
     if training_state.get("sampler_epoch") != checkpoint["epoch"]:
         raise ValueError("ZoomToken recovery sampler epoch is inconsistent")
+    next_successful_update_index = training_state.get(
+        "next_successful_update_index", None
+    )
+    if recovery_contract["arm_surface"] == "G":
+        if (
+            not isinstance(next_successful_update_index, int)
+            or next_successful_update_index < 0
+        ):
+            raise ValueError("ZoomToken G recovery lacks a valid update index")
+    elif next_successful_update_index is not None:
+        raise ValueError("ZoomToken DN recovery must not carry a GeoRoute update index")
 
     rng_state_by_rank = training_state.get("rng_state_by_rank", None)
     if not isinstance(rng_state_by_rank, list) or len(rng_state_by_rank) != args.world_size:
@@ -200,6 +225,7 @@ def _restore_zoomtoken_training_state(
         ),
         device=args.local_rank,
     )
+    return next_successful_update_index
 
 
 def _save_zoomtoken_checkpoint(
@@ -213,10 +239,16 @@ def _save_zoomtoken_checkpoint(
     cfg,
     train_loader,
     recovery_contract,
+    next_successful_update_index,
     is_final,
 ):
     training_state = _capture_zoomtoken_training_state(
-        args, cfg, train_loader, epoch, recovery_contract
+        args,
+        cfg,
+        train_loader,
+        epoch,
+        recovery_contract,
+        next_successful_update_index,
     )
     if args.rank == 0:
         checkpoint_role = "final" if is_final else "recovery"
@@ -282,6 +314,12 @@ def main():
             f"ZoomToken {recovery_contract['arm_surface']} requires seed "
             f"{recovery_contract['seed']}, got {args.seed}"
         )
+    next_successful_update_index = (
+        0
+        if recovery_contract is not None
+        and recovery_contract["arm_surface"] == "G"
+        else None
+    )
     if args.resume is not None and recovery_contract is not None:
         args.resume = _validate_zoomtoken_resume_path(
             args.resume, cfg, recovery_contract
@@ -389,7 +427,7 @@ def main():
                 if "scaler" not in checkpoint:
                     raise ValueError("ZoomToken recovery checkpoint lacks scaler state")
                 scaler.load_state_dict(checkpoint["scaler"])
-            _restore_zoomtoken_training_state(
+            next_successful_update_index = _restore_zoomtoken_training_state(
                 checkpoint, args, cfg, train_loader, recovery_contract
             )
 
@@ -406,7 +444,7 @@ def main():
         train_loader.sampler.set_epoch(epoch)
 
         # train for one epoch
-        train_one_epoch(
+        next_successful_update_index = train_one_epoch(
             train_loader,
             model,
             optimizer,
@@ -417,6 +455,7 @@ def main():
             clip_grad_l2norm=cfg.solver.clip_grad_norm,
             logging_interval=cfg.workflow.logging_interval,
             scaler=scaler,
+            successful_update_index=next_successful_update_index,
         )
 
         # save checkpoint
@@ -437,6 +476,7 @@ def main():
                     cfg,
                     train_loader,
                     recovery_contract,
+                    next_successful_update_index,
                     is_final=is_final,
                 )
         elif (epoch == max_epoch - 1) or (
