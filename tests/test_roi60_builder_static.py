@@ -16,6 +16,41 @@ def test_dn_g_configs_preserve_the_frozen_route_contract():
     assert "official_test_open_allowed=False" in dn + g
 
 
+def test_georoute_source_views_restores_only_the_frozen_dn_g_input_contract():
+    config = (
+        ROOT / "configs/adatad/thumos/georoute_adatad_development_base.py"
+    ).read_text()
+    package = (ROOT / "opentad/datasets/transforms/__init__.py").read_text()
+    transform = (ROOT / "opentad/datasets/transforms/georoute.py").read_text()
+    tree = ast.parse(transform)
+
+    assert config.count('dict(type="GeoRouteSourceViews"') == 3
+    assert "from .georoute import GeoRouteSourceViews" in package
+    assert '"GeoRouteSourceViews"' in package
+    assert any(
+        isinstance(node, ast.ClassDef) and node.name == "GeoRouteSourceViews"
+        for node in tree.body
+    )
+    assert "@PIPELINES.register_module()" in transform
+    assert 'GEOROUTE_INPUT_SCHEMA = "georoute_native_source_scout_v1"' in transform
+    assert "source_frames.append(np.ascontiguousarray(image))" in transform
+    assert 'Image.Resampling.BILINEAR' in transform
+    assert 'results[self.output_key] = {"source": source_tensor, "scout": scout_tensor}' in transform
+    assert '"source_resized_before_native_patch_gather": False' in transform
+    assert '"uses_gt": False' in transform
+    assert '"uses_teacher": False' in transform
+    assert '"uses_oracle": False' in transform
+    assert '"uses_test_evidence": False' in transform
+    for retired in (
+        "NativeCropSourceViews",
+        "ContinuousRoiSourceViews",
+        "FullFrameLetterboxView",
+    ):
+        assert retired not in transform
+        assert retired not in package
+    assert "torch" not in sys.modules
+
+
 def test_g_is_true_roi_only_global_dynamic_ragged():
     g = (ROOT / "configs/adatad/thumos/georoute_p1_g_seed3407_v001.py").read_text()
     assert "matched_window_budget = tubelets * 64" in g
