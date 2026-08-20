@@ -93,6 +93,7 @@ def save_checkpoint(
 
     save_states = {
         "epoch": epoch,
+        "checkpoint_role": checkpoint_role or "final",
         "state_dict": model.state_dict(),
         "optimizer": optimizer.state_dict(),
         "scheduler": scheduler.state_dict(),

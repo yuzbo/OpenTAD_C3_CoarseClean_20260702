@@ -1,12 +1,12 @@
-"""Matched native-source dense surface for the seed-3407 P1 screen.
+"""True ROI-only G surface for the seed-3407 ROI60 P1 screen.
 
-The official dense reproduction remains the upstream ``DO`` config.  ``DN``
-uses the same GeoRoute source preprocessing and detector context as Q, but
-disables routing and executes the complete native spatial support.  The formal
-development runner must still bind the Fit/Gate population and matched recipe.
+G keeps the approved global unique exact-B route and enables only the ROI
+membership modifier.  Residual utility, residual calibration, and every
+detector-visible geometry side channel remain disabled.  ``K_t`` is induced by
+the selected physical-token union, may be zero, and executes without padding.
 """
 
-_base_ = ["./georoute_adatad_development_base.py"]
+_base_ = ["./georoute_dynamic_scnr_stage1_base.py"]
 
 window_size = 768
 tubelets = window_size // 2
@@ -15,12 +15,12 @@ matched_window_budget = tubelets * 64
 model = dict(
     backbone=dict(
         custom=dict(
-            georoute_route_mode="dense",
-            georoute_policy_estimator="none",
+            georoute_route_mode="dynamic_scnr",
+            georoute_policy_estimator="straight_through",
             georoute_window_token_budget=matched_window_budget,
             georoute_zero_carrier_mode="masked_zero",
             georoute_branch_calibration_mode="none",
-            georoute_dynamic_roi_modifier_enabled=False,
+            georoute_dynamic_roi_modifier_enabled=True,
             georoute_dynamic_residual_modifier_enabled=False,
             georoute_absolute_position_enabled=True,
             georoute_absolute_coordinates_enabled=False,
@@ -51,18 +51,25 @@ zoomtoken_recovery = dict(
 
 zoomtoken_p1_config = dict(
     schema_version="zoomtoken_p1_dnurq_config_v001",
-    arm_surface="DN",
+    arm_surface="G",
     seed=3407,
     runner_binding_required=True,
-    route_mode="dense",
+    route_mode="dynamic_scnr",
     matched_native_source=True,
-    routing_enabled=False,
-    full_native_spatial_compute=True,
+    routing_enabled=True,
     official_dense_anchor=False,
-    matched_sparse_window_budget=matched_window_budget,
-    executed_token_contract="full_native_spatial_support",
-    window_token_budget_applies_to_execution=False,
-    q_dynamic_k_t=False,
+    exact_window_budget=matched_window_budget,
+    window_budget_is_global=True,
+    unique_physical_selection=True,
+    g_dynamic_k_t=True,
+    k_t_zero_allowed=True,
+    fixed_per_tubelet_quota=False,
+    fixed_role_quota=False,
+    zero_carrier="masked_zero_with_explicit_heavy_valid_mask",
+    ragged_execution="true_clip_buckets_without_padding_or_dummy_tokens",
+    roi_modifier_enabled=True,
+    residual_modifier_enabled=False,
+    branch_calibration="none",
     split="Fit/train_to_Gate/development",
     official_test_open_allowed=False,
     gt_for_route_allowed=False,
@@ -72,4 +79,4 @@ zoomtoken_p1_config = dict(
     performance_claim_allowed=False,
 )
 
-work_dir = "exps/thumos/adatad/zoomtoken_p1_dn_seed3407_unbound"
+work_dir = "exps/thumos/adatad/zoomtoken_p1_g_seed3407_unbound"
