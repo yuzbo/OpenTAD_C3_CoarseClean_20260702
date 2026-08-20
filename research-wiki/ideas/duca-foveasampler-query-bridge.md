@@ -25,10 +25,10 @@ global top-k + boundary neighborhood quota + greedy MMR 的 exact-K 选择。
 
 ## 已有证据
 
-- 代码：`0975aac3`..`a32a374`，模块位于 `opentad/models/selectors/fovea_*`、`query_bridge.py` 与 `opentad/models/losses/fovea_losses.py`。
+- 代码：`0975aac3`..`4ae50671`，模块位于 `opentad/models/selectors/fovea_*`、`query_bridge.py` 与 `opentad/models/losses/fovea_losses.py`。
 - 测试：远端 CPU `tests/test_fovea_query_bridge.py` 11/11 通过。
 - 完整模型在远端 CPU 可构建；GPU one-step gate `1244839` pending。
-- 尚无 full-train mAP，不能称 empirically_supported。
+- 5/7 arm 单 seed full-train 完成；尚无 matched 基线与剩余两臂，不能称 empirically_supported。
 
 ## 当前选择或否定理由
 

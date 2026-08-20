@@ -29,3 +29,6 @@ append_only: true
 
 - 2026-08-19：GPU one-step gate 经过 6D dense 输入、Byte 插值、Gumbel 索引排序等修复后通过：`1244850` COMPLETED exit 0，单步 Loss=1.1862，selector 五类 loss 与 cls/reg 均有限。
 - 2026-08-19：Fovea-QB 开发矩阵第一波 `1244851`（arms 0-4：baseline_fused / query_only / query_gt_mask / query_cycle / query_fovea，seed 3407）已提交并 RUNNING，run root `duca_fovea_qb_4ae50671_dev_20260820T014200Z`；受 MaxSubmit=16 限制，query_fovea_dpp 与 full 两臂待旧矩阵释放槽位后提交。
+
+- 2026-08-20：Fovea-QB 第一波 `1244851` 全部 5/5 完成（train 60 epoch + epoch_59 test，exit 0:0，单 cell 约 9.9–10.7h）。THUMOS14 val（seed 3407）：query_cycle 54.67 > query_gt_mask 49.16 > query_only 45.26 > query_fovea 43.77 > baseline_fused 42.94；query_cycle 高 IoU 也最好（0.6: 46.33 / 0.7: 31.63）。旧矩阵 `1244133` 15/15 完成。
+- 2026-08-20：Fovea-QB 尚无同提交 exact-uniform/random/dense 对照，且 `full` / `query_fovea_dpp` 未跑，不能据此宣布 Fovea-QB 路线优于或劣于 DUCA 旧路线；仅记录为 development-matrix 原始结果。
