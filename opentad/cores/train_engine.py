@@ -84,21 +84,6 @@ def train_one_epoch(
                 georoute_backbone.set_successful_update_index(successful_update_index)
             with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
                 losses = model(**data_dict, return_loss=True)
-            if georoute_backbone is not None:
-                auxiliary_losses = georoute_backbone.consume_training_auxiliary_losses(
-                    masks=data_dict["masks"],
-                    gt_segments=data_dict["gt_segments"],
-                    gt_labels=data_dict["gt_labels"],
-                )
-                colliding_loss_keys = set(losses).intersection(auxiliary_losses)
-                if colliding_loss_keys:
-                    raise ValueError(
-                        "GeoRoute auxiliary loss keys collide with detector losses: "
-                        f"{sorted(colliding_loss_keys)}"
-                    )
-                auxiliary_cost = sum(auxiliary_losses.values())
-                losses.update(auxiliary_losses)
-                losses["cost"] = losses["cost"] + auxiliary_cost
 
             # compute the gradients
             if use_amp:

@@ -133,18 +133,23 @@ def test_checkpoint_policy_keeps_recovery_state_and_latest_three():
 
 def test_g_auxiliary_losses_follow_the_successful_update_order():
     engine = (ROOT / "opentad/cores/train_engine.py").read_text()
+    detector = (
+        ROOT / "opentad/models/detectors/single_stage.py"
+    ).read_text()
     setter = "georoute_backbone.set_successful_update_index(successful_update_index)"
     forward = "losses = model(**data_dict, return_loss=True)"
-    consumer = "auxiliary_losses = georoute_backbone.consume_training_auxiliary_losses("
+    rpn_forward = "rpn_losses = self.rpn_head.forward_train("
+    base_cost = 'losses["cost"] = sum('
+    consumer = "auxiliary_losses = auxiliary_consumer("
     add_to_cost = 'losses["cost"] = losses["cost"] + auxiliary_cost'
+    detector_return = "return losses"
     backward = 'scaler.scale(losses["cost"]).backward()'
-    assert engine.index(setter) < engine.index(forward)
-    assert engine.index(forward) < engine.index(consumer)
-    assert engine.index(consumer) < engine.index(add_to_cost)
-    assert engine.index(add_to_cost) < engine.index(backward)
-    assert engine.count("consume_training_auxiliary_losses(") == 1
-    assert "colliding_loss_keys = set(losses).intersection(auxiliary_losses)" in engine
-    assert "losses.update(auxiliary_losses)" in engine
+    assert engine.index(setter) < engine.index(forward) < engine.index(backward)
+    assert "consume_training_auxiliary_losses(" not in engine
+    assert detector.index(rpn_forward) < detector.index(base_cost) < detector.index(consumer)
+    assert detector.index(consumer) < detector.index(add_to_cost) < detector.index(detector_return)
+    assert "colliding_loss_keys = set(losses).intersection(auxiliary_losses)" in detector
+    assert "losses.update(auxiliary_losses)" in detector
     assert "optimizer_update_succeeded = _amp_optimizer_step_was_run(" in engine
     assert "if successful_update_index is not None and optimizer_update_succeeded:" in engine
     assert "successful_update_index += 1" in engine
@@ -153,19 +158,27 @@ def test_g_auxiliary_losses_follow_the_successful_update_order():
 
 def test_dn_and_g_auxiliary_consumption_is_capability_bound():
     engine = (ROOT / "opentad/cores/train_engine.py").read_text()
+    detector = (
+        ROOT / "opentad/models/detectors/single_stage.py"
+    ).read_text()
     capability_binding = (
         'getattr(candidate_backbone, "consume_training_auxiliary_losses", None)'
     )
     index_gate = "if successful_update_index is not None:"
     setter = "georoute_backbone.set_successful_update_index(successful_update_index)"
     forward = "losses = model(**data_dict, return_loss=True)"
-    consumer = "auxiliary_losses = georoute_backbone.consume_training_auxiliary_losses("
     assert capability_binding in engine
     assert engine.index(index_gate) < engine.index(setter)
     assert engine.index(setter) < engine.index(forward)
-    assert engine.index(forward) < engine.index(consumer)
-    assert "if georoute_backbone is not None:" in engine
-    assert engine.count("consume_training_auxiliary_losses(") == 1
+    assert "if georoute_backbone is None:" in engine
+    assert "consume_training_auxiliary_losses(" not in engine
+    assert (
+        'getattr(self.backbone, "consume_training_auxiliary_losses", None)'
+        in detector
+    )
+    assert "if self.training and self.with_backbone" in detector
+    assert "if callable(auxiliary_consumer):" in detector
+    assert detector.count("consume_training_auxiliary_losses") == 1
 
 
 def test_dn_g_retry_skips_no_success_state_and_fails_after_eight_retries():
@@ -438,3 +451,95 @@ def test_roi60_packet_binds_only_dn_g_to_official_validation_and_recovery():
     assert "georoute_p1_f_" not in packet
     assert "georoute_p1_n_" not in packet
     assert "torch" not in sys.modules
+
+
+def test_g_dynamic_auxiliary_graph_is_owned_by_ddp_forward():
+    """Opt-in CPU/Gloo check for the exact shared-head DDP failure shape."""
+    if os.environ.get("ZOOMTOKEN_DDP_RUNTIME_CHECK") != "1":
+        return
+
+    import tempfile
+
+    import torch
+    import torch.distributed as dist
+    from torch import nn
+    from torch.nn.parallel import DistributedDataParallel
+
+    from opentad.models.detectors.single_stage import SingleStageDetector
+
+    class ToyGeoRouteBackbone(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.dynamic_aux_head = nn.Linear(4, 3, bias=False)
+            self.hard_output = None
+            self.pending = None
+
+        def forward(self, inputs, masks):
+            del masks
+            hard_output = inputs.clone()
+            self.hard_output = hard_output.detach().clone()
+            auxiliary_logits = self.dynamic_aux_head(inputs)
+            proxy_logits = self.dynamic_aux_head(inputs * 0.5)
+            self.pending = (auxiliary_logits, proxy_logits)
+            return hard_output
+
+        def consume_training_auxiliary_losses(self, masks, gt_segments, gt_labels):
+            del masks, gt_segments, gt_labels
+            auxiliary_logits, proxy_logits = self.pending
+            self.pending = None
+            return {
+                "georoute_geometry_regularization_loss": auxiliary_logits.sum() * 0.0,
+                "georoute_dynamic_auxiliary_loss": auxiliary_logits.square().mean(),
+                "georoute_dynamic_soft_proxy_loss": proxy_logits.square().mean(),
+            }
+
+    class ToyHead(nn.Module):
+        def forward_train(self, x, masks, **kwargs):
+            del masks, kwargs
+            return {
+                "cls_loss": x.square().mean(),
+                "reg_loss": x.mean().square(),
+            }
+
+    detector = SingleStageDetector()
+    detector.backbone = ToyGeoRouteBackbone()
+    detector.rpn_head = ToyHead()
+    detector.train()
+    inputs = torch.tensor(
+        [[1.0, -2.0, 0.5, 3.0], [-1.5, 0.25, 2.0, -0.75]],
+        dtype=torch.float32,
+    )
+    masks = torch.ones_like(inputs, dtype=torch.bool)
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        rendezvous = (Path(temporary_directory) / "ddp_init").resolve().as_uri()
+        dist.init_process_group(
+            "gloo", init_method=rendezvous, rank=0, world_size=1
+        )
+        try:
+            model = DistributedDataParallel(detector, find_unused_parameters=True)
+            losses = model(
+                inputs=inputs,
+                masks=masks,
+                metas=[{}, {}],
+                gt_segments=[torch.empty((0, 2)), torch.empty((0, 2))],
+                gt_labels=[
+                    torch.empty((0,), dtype=torch.long),
+                    torch.empty((0,), dtype=torch.long),
+                ],
+                return_loss=True,
+            )
+            assert torch.equal(model.module.backbone.hard_output, inputs)
+            losses["cost"].backward()
+            gradient = model.module.backbone.dynamic_aux_head.weight.grad
+            assert gradient is not None
+            assert torch.isfinite(gradient).all()
+            assert torch.count_nonzero(gradient).item() > 0
+            assert model.module.backbone.pending is None
+            assert {
+                "georoute_geometry_regularization_loss",
+                "georoute_dynamic_auxiliary_loss",
+                "georoute_dynamic_soft_proxy_loss",
+            }.issubset(losses)
+        finally:
+            dist.destroy_process_group()
