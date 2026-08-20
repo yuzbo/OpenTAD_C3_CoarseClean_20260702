@@ -15,8 +15,6 @@ from mmengine.model.weight_init import constant_init, trunc_normal_init
 from mmaction.utils import ConfigType, OptConfigType
 from mmaction.models.backbones.vit_mae import get_sinusoid_encoding
 
-from ..chronotransport import ChronoTransportRuntime
-
 
 class Adapter(BaseModule):
     def __init__(
@@ -1209,6 +1207,8 @@ class VisionTransformerAdapter(BaseModule):
 
         self.chronotransport = None
         if chronotransport is not None:
+            from ..chronotransport import ChronoTransportRuntime
+
             chronotransport_cfg = dict(chronotransport)
             self.chronotransport_allow_legacy_checkpoint = bool(
                 chronotransport_cfg.pop("allow_legacy_checkpoint", False)

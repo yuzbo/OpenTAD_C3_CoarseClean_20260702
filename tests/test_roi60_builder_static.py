@@ -1,3 +1,4 @@
+import ast
 import os
 from pathlib import Path
 import sys
@@ -189,14 +190,20 @@ def test_dn_g_retry_skips_no_success_state_and_fails_after_eight_retries():
     assert "max_amp_retries_per_batch" not in official
 
 
-def test_backbone_exports_drop_only_the_absent_continuous_roi_wrapper():
+def test_backbone_exports_keep_only_the_supported_georoute_wrapper():
     package = (ROOT / "opentad/models/backbones/__init__.py").read_text()
     continuous_roi = ROOT / "opentad/models/backbones/continuous_roi_wrapper.py"
+    native_crop = ROOT / "opentad/models/backbones/native_crop_wrapper.py"
+    vit_ladder = ROOT / "opentad/models/backbones/vit_ladder.py"
     georoute = ROOT / "opentad/models/backbones/georoute_wrapper.py"
 
     assert not continuous_roi.exists()
     assert "continuous_roi_wrapper" not in package
     assert "ContinuousRoiBackboneWrapper" not in package
+    assert native_crop.is_file()
+    assert "NativeCropBackboneWrapper" not in package
+    assert not vit_ladder.exists()
+    assert "VisionTransformerLadder" not in package
     assert georoute.is_file()
     assert "from .georoute_wrapper import GeoRouteBackboneWrapper" in package
     assert '"GeoRouteBackboneWrapper"' in package
@@ -207,6 +214,74 @@ def test_backbone_exports_drop_only_the_absent_continuous_roi_wrapper():
         assert GeoRouteBackboneWrapper.__module__ == (
             "opentad.models.backbones.georoute_wrapper"
         )
+
+
+def test_dn_g_builder_dispatches_only_the_supported_georoute_wrapper():
+    builder = (ROOT / "opentad/models/builder.py").read_text()
+    assert "from .backbones import BackboneWrapper, GeoRouteBackboneWrapper" in builder
+    assert 'wrapper_type == "georoute_native_packed_v1"' in builder
+    assert "return GeoRouteBackboneWrapper(cfg)" in builder
+    assert "unsupported backbone custom.wrapper_type" in builder
+    assert "NativeCropBackboneWrapper" not in builder
+    assert "ContinuousRoiBackboneWrapper" not in builder
+
+
+def test_dn_g_import_time_local_module_closure_is_complete_without_torch():
+    models_root = ROOT / "opentad/models"
+    pending = [models_root / "__init__.py"]
+    visited = set()
+    missing = []
+
+    while pending:
+        path = pending.pop()
+        if path in visited:
+            continue
+        visited.add(path)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        relative = path.relative_to(ROOT).with_suffix("")
+        package = list(relative.parts[:-1])
+
+        for node in tree.body:
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            if node.level:
+                parent_hops = node.level - 1
+                module_parts = package[
+                    : len(package) - parent_hops if parent_hops else len(package)
+                ]
+                if node.module:
+                    module_parts += node.module.split(".")
+            elif node.module and (
+                node.module == "opentad.models"
+                or node.module.startswith("opentad.models.")
+            ):
+                module_parts = node.module.split(".")
+            else:
+                continue
+
+            candidate = ROOT.joinpath(*module_parts)
+            module_file = candidate.with_suffix(".py")
+            package_file = candidate / "__init__.py"
+            if module_file.is_file():
+                pending.append(module_file)
+            elif package_file.is_file():
+                pending.append(package_file)
+            else:
+                missing.append(f"{path.relative_to(ROOT)}:{node.lineno}:{node.module}")
+
+    helper_tree = ast.parse(
+        (models_root / "backbones/native_crop_wrapper.py").read_text()
+    )
+    helper_source = (models_root / "backbones/native_crop_wrapper.py").read_text()
+    assert any(
+        isinstance(node, ast.FunctionDef) and node.name == "deterministic_linear_2x"
+        for node in helper_tree.body
+    )
+    assert "0.75 * left + 0.25 * right" in helper_source
+    assert "0.25 * left + 0.75 * right" in helper_source
+    assert "torch.cat((value[..., :1], between, value[..., -1:]), dim=-1)" in helper_source
+    assert missing == []
+    assert "torch" not in sys.modules
 
 
 def test_amp_update_detection_runtime_contract():
