@@ -49,3 +49,8 @@ append_only: true
   三任务 RUNNING；Epoch 0 loss 行有限，geo/geo_ema geometry loss ≈0.15。
   `geo_ema` 首轮 EMA distill loss 为 0 属 EMA 与 online 同初始化，符合预期。
   新增 experiment 节点 `research-wiki/experiments/duca-uvt-value-portal.md`。
+- 2026-08-20：DUCA-UVT 发展种子 `1244840` 三臂完整训练完成（60 epoch + test，exit 0）。
+  test Avg-mAP：off 57.35 / geo 55.93 / geo_ema 55.92；@0.6：49.31/46.50/46.99；
+  @0.7：33.84/30.02/30.49。结论为负：当前 V(t) 配置未超过 legacy off，且
+  selection-score 与 dynamic-K evidence 两个改动未解耦；不升级为 supported claim。
+  节点 `research-wiki/experiments/duca-uvt-value-portal.md` 已置 `tested`。
