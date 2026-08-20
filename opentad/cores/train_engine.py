@@ -16,6 +16,7 @@ def train_one_epoch(
     logging_interval=200,
     scaler=None,
     successful_update_index=None,
+    max_amp_retries_per_batch=None,
 ):
     """Training the model for one epoch"""
 
@@ -23,7 +24,18 @@ def train_one_epoch(
     losses_tracker = {}
     num_iters = len(train_loader)
     use_amp = False if scaler is None else True
+    retry_skipped_updates = max_amp_retries_per_batch is not None
+    if retry_skipped_updates:
+        if (
+            not isinstance(max_amp_retries_per_batch, int)
+            or max_amp_retries_per_batch <= 0
+        ):
+            raise ValueError("maximum AMP retries per batch must be a positive integer")
+    else:
+        max_amp_retries_per_batch = 0
     if successful_update_index is not None:
+        if not retry_skipped_updates:
+            raise ValueError("successful update indexing requires AMP retry semantics")
         if not isinstance(successful_update_index, int) or successful_update_index < 0:
             raise ValueError("successful update index must be a non-negative integer")
         georoute_backbone = model.module.backbone
@@ -36,8 +48,6 @@ def train_one_epoch(
 
     model.train()
     for iter_idx, data_dict in enumerate(train_loader):
-        optimizer.zero_grad()
-
         # current learning rate
         curr_backbone_lr = None
         if hasattr(model.module, "backbone"):  # if backbone exists
@@ -45,48 +55,61 @@ def train_one_epoch(
                 curr_backbone_lr = scheduler.get_last_lr()[0]
         curr_det_lr = scheduler.get_last_lr()[-1]
 
-        # forward pass
-        if georoute_backbone is not None:
-            georoute_backbone.set_successful_update_index(successful_update_index)
-        with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
-            losses = model(**data_dict, return_loss=True)
-        if georoute_backbone is not None:
-            auxiliary_losses = georoute_backbone.consume_training_auxiliary_losses(
-                masks=data_dict["masks"],
-                gt_segments=data_dict["gt_segments"],
-                gt_labels=data_dict["gt_labels"],
-            )
-            colliding_loss_keys = set(losses).intersection(auxiliary_losses)
-            if colliding_loss_keys:
-                raise ValueError(
-                    "GeoRoute auxiliary loss keys collide with detector losses: "
-                    f"{sorted(colliding_loss_keys)}"
+        max_attempts = 1 + max_amp_retries_per_batch
+        optimizer_update_succeeded = False
+        for attempt_idx in range(max_attempts):
+            optimizer.zero_grad()
+
+            # forward pass
+            if georoute_backbone is not None:
+                georoute_backbone.set_successful_update_index(successful_update_index)
+            with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
+                losses = model(**data_dict, return_loss=True)
+            if georoute_backbone is not None:
+                auxiliary_losses = georoute_backbone.consume_training_auxiliary_losses(
+                    masks=data_dict["masks"],
+                    gt_segments=data_dict["gt_segments"],
+                    gt_labels=data_dict["gt_labels"],
                 )
-            auxiliary_cost = sum(auxiliary_losses.values())
-            losses.update(auxiliary_losses)
-            losses["cost"] = losses["cost"] + auxiliary_cost
+                colliding_loss_keys = set(losses).intersection(auxiliary_losses)
+                if colliding_loss_keys:
+                    raise ValueError(
+                        "GeoRoute auxiliary loss keys collide with detector losses: "
+                        f"{sorted(colliding_loss_keys)}"
+                    )
+                auxiliary_cost = sum(auxiliary_losses.values())
+                losses.update(auxiliary_losses)
+                losses["cost"] = losses["cost"] + auxiliary_cost
 
-        # compute the gradients
-        if use_amp:
-            scaler.scale(losses["cost"]).backward()
-        else:
-            losses["cost"].backward()
-
-        # gradient clipping (to stabilize training if necessary)
-        if clip_grad_l2norm > 0.0:
+            # compute the gradients
             if use_amp:
-                scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_l2norm)
+                scaler.scale(losses["cost"]).backward()
+            else:
+                losses["cost"].backward()
 
-        # update parameters
-        if use_amp:
-            scale_before = scaler.get_scale()
-            scaler.step(optimizer)
-            scaler.update()
-            optimizer_update_succeeded = scaler.get_scale() >= scale_before
-        else:
-            optimizer.step()
-            optimizer_update_succeeded = True
+            # gradient clipping (to stabilize training if necessary)
+            if clip_grad_l2norm > 0.0:
+                if use_amp:
+                    scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_l2norm)
+
+            # update parameters
+            if use_amp:
+                scale_before = scaler.get_scale()
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer_update_succeeded = scaler.get_scale() >= scale_before
+            else:
+                optimizer.step()
+                optimizer_update_succeeded = True
+            if optimizer_update_succeeded or not retry_skipped_updates:
+                break
+        if retry_skipped_updates and not optimizer_update_succeeded:
+            raise RuntimeError(
+                "AMP optimizer update failed after "
+                f"{max_amp_retries_per_batch} retries for epoch {curr_epoch}, "
+                f"batch {iter_idx}"
+            )
         if georoute_backbone is not None and optimizer_update_succeeded:
             successful_update_index += 1
 

@@ -71,6 +71,18 @@ def _zoomtoken_recovery_contract(cfg):
         raise ValueError("ZoomToken DN/G recovery must run every five epochs")
     if cfg.workflow.get("checkpoint_policy", None) != "recovery_latest3_plus_final":
         raise ValueError("ZoomToken DN/G checkpoint policy is not recovery/latest3/final")
+    successful_update_workflow = {
+        "require_successful_update_hook": True,
+        "schedule_and_ema_on_success_only": True,
+        "max_amp_retries_per_batch": 8,
+        "fail_on_skipped_update": True,
+    }
+    for key, expected_value in successful_update_workflow.items():
+        if cfg.workflow.get(key, None) != expected_value:
+            raise ValueError(
+                f"invalid ZoomToken successful-update workflow field {key!r}: "
+                f"expected {expected_value!r}, got {cfg.workflow.get(key, None)!r}"
+            )
     if not cfg.solver.get("amp", False) or not cfg.solver.get("ema", False):
         raise ValueError("ZoomToken full-state recovery requires the frozen AMP/EMA recipe")
     work_dir_parts = os.path.normpath(cfg.work_dir).replace("\\", "/").split("/")
@@ -83,6 +95,9 @@ def _zoomtoken_recovery_contract(cfg):
         )
     contract["arm_surface"] = arm_surface
     contract["seed"] = int(p1_config["seed"])
+    contract["max_amp_retries_per_batch"] = successful_update_workflow[
+        "max_amp_retries_per_batch"
+    ]
     return contract
 
 
@@ -456,6 +471,11 @@ def main():
             logging_interval=cfg.workflow.logging_interval,
             scaler=scaler,
             successful_update_index=next_successful_update_index,
+            max_amp_retries_per_batch=(
+                recovery_contract["max_amp_retries_per_batch"]
+                if recovery_contract is not None
+                else None
+            ),
         )
 
         # save checkpoint

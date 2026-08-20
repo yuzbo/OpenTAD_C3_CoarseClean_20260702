@@ -115,6 +115,56 @@ def test_g_auxiliary_losses_follow_the_successful_update_order():
     assert "return successful_update_index" in engine
 
 
+def test_dn_g_retry_skips_no_success_state_and_fails_after_eight_retries():
+    engine = (ROOT / "opentad/cores/train_engine.py").read_text()
+    train = (ROOT / "tools/train.py").read_text()
+    development_base = (
+        ROOT / "configs/adatad/thumos/georoute_adatad_development_base.py"
+    ).read_text()
+    dynamic_base = (
+        ROOT / "configs/adatad/thumos/georoute_dynamic_scnr_stage1_base.py"
+    ).read_text()
+    dn = (ROOT / "configs/adatad/thumos/georoute_p1_dn_seed3407_v001.py").read_text()
+    g = (ROOT / "configs/adatad/thumos/georoute_p1_g_seed3407_v001.py").read_text()
+    official = (
+        ROOT / "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py"
+    ).read_text()
+
+    assert "max_amp_retries_per_batch=None" in engine
+    assert "retry_skipped_updates = max_amp_retries_per_batch is not None" in engine
+    assert "max_attempts = 1 + max_amp_retries_per_batch" in engine
+    assert "for attempt_idx in range(max_attempts):" in engine
+    assert engine.index("optimizer.zero_grad()") < engine.index(
+        "georoute_backbone.set_successful_update_index("
+    )
+    assert engine.index("scaler.step(optimizer)") < engine.index("scaler.update()")
+    assert engine.index("scaler.update()") < engine.index(
+        "optimizer_update_succeeded = scaler.get_scale() >= scale_before"
+    )
+    retry_exit = "if optimizer_update_succeeded or not retry_skipped_updates:"
+    terminal = "if retry_skipped_updates and not optimizer_update_succeeded:"
+    assert engine.index(retry_exit) < engine.index(terminal)
+    assert engine.index(terminal) < engine.index("successful_update_index += 1")
+    assert engine.index(terminal) < engine.index("scheduler.step()")
+    assert engine.index(terminal) < engine.index("model_ema.update(model)")
+    assert "AMP optimizer update failed after " in engine
+    assert '"max_amp_retries_per_batch": 8' in train
+    assert '"schedule_and_ema_on_success_only": True' in train
+    assert '"fail_on_skipped_update": True' in train
+    assert 'recovery_contract["max_amp_retries_per_batch"]' in train
+    for field in (
+        "require_successful_update_hook=True",
+        "schedule_and_ema_on_success_only=True",
+        "max_amp_retries_per_batch=8",
+        "fail_on_skipped_update=True",
+    ):
+        assert field in development_base
+    assert '_base_ = ["./georoute_adatad_development_base.py"]' in dn
+    assert '_base_ = ["./georoute_adatad_development_base.py"]' in dynamic_base
+    assert '_base_ = ["./georoute_dynamic_scnr_stage1_base.py"]' in g
+    assert "max_amp_retries_per_batch" not in official
+
+
 def test_g_update_index_is_checkpointed_and_restored_without_importing_torch():
     train = (ROOT / "tools/train.py").read_text()
     assert 'recovery_contract["arm_surface"] == "G"' in train
