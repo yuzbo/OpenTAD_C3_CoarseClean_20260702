@@ -255,7 +255,10 @@ def test_shared_official_reproduction_packet_uses_the_untouched_supported_cli():
     assert '"work_dir=${RUN_ROOT}"' in packet
     assert "--work-dir" not in packet
     assert '[[ "${SLURM_CPUS_PER_TASK:-}" == "8" ]]' in packet
-    assert "--nproc_per_node=1" in packet
+    assert '"${#visible_gpus[@]}" -eq 2' in packet
+    assert "exactly two Slurm-visible GPUs" in packet
+    assert "--nproc_per_node=2" in packet
+    assert "--nproc_per_node=1" not in packet
     assert "--gpus" not in packet and "CUDA_VISIBLE_DEVICES=" not in packet
     for identity in (
         "thumos14/raw_data/video",

@@ -23,8 +23,8 @@ CONDA_ACTIVATE="${BASE}/conda_envs/opentad/bin/activate"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail 'the official reproduction requires a Slurm allocation'
 IFS=',' read -r -a visible_gpus <<< "${CUDA_VISIBLE_DEVICES:-}"
-[[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${#visible_gpus[@]}" -eq 1 ]] || \
-  fail 'the official reproduction requires exactly one Slurm-visible GPU'
+[[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${#visible_gpus[@]}" -eq 2 ]] || \
+  fail 'the official reproduction requires exactly two Slurm-visible GPUs'
 [[ "${SLURM_CPUS_PER_TASK:-}" == "8" ]] || \
   fail 'the official reproduction requires --cpus-per-task=8'
 
@@ -62,7 +62,7 @@ export PYTHONNOUSERSITE=1
 export PYTHONDONTWRITEBYTECODE=1
 
 cd "${ROOT}"
-exec torchrun --nnodes=1 --nproc_per_node=1 \
+exec torchrun --nnodes=1 --nproc_per_node=2 \
   --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:0 \
   --rdzv_id="adatad-official-${SLURM_JOB_ID}-seed42" \
   tools/train.py "${CONFIG}" --seed 42 --id 0 \
