@@ -47,7 +47,6 @@ class SingleStageDetector(BaseDetector):
 
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
-        input_masks = masks
         if self.with_backbone:
             x = self.backbone(inputs, masks)
         else:
@@ -71,29 +70,6 @@ class SingleStageDetector(BaseDetector):
 
         # only key has loss will be record
         losses["cost"] = sum(_value for _key, _value in losses.items())
-
-        # Keep optional backbone-owned training losses inside the detector
-        # forward so DDP observes their complete autograd graph.
-        auxiliary_consumer = (
-            getattr(self.backbone, "consume_training_auxiliary_losses", None)
-            if self.training and self.with_backbone
-            else None
-        )
-        if callable(auxiliary_consumer):
-            auxiliary_losses = auxiliary_consumer(
-                masks=input_masks,
-                gt_segments=gt_segments,
-                gt_labels=gt_labels,
-            )
-            colliding_loss_keys = set(losses).intersection(auxiliary_losses)
-            if colliding_loss_keys:
-                raise ValueError(
-                    "GeoRoute auxiliary loss keys collide with detector losses: "
-                    f"{sorted(colliding_loss_keys)}"
-                )
-            auxiliary_cost = sum(auxiliary_losses.values())
-            losses.update(auxiliary_losses)
-            losses["cost"] = losses["cost"] + auxiliary_cost
         return losses
 
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):

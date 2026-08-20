@@ -134,23 +134,29 @@ def test_checkpoint_policy_keeps_recovery_state_and_latest_three():
 def test_g_auxiliary_losses_follow_the_successful_update_order():
     engine = (ROOT / "opentad/cores/train_engine.py").read_text()
     detector = (
+        ROOT / "opentad/models/detectors/actionformer.py"
+    ).read_text()
+    base_detector = (
         ROOT / "opentad/models/detectors/single_stage.py"
     ).read_text()
     setter = "georoute_backbone.set_successful_update_index(successful_update_index)"
     forward = "losses = model(**data_dict, return_loss=True)"
-    rpn_forward = "rpn_losses = self.rpn_head.forward_train("
+    rpn_forward = "loc_losses = self.rpn_head.forward_train("
     base_cost = 'losses["cost"] = sum('
     consumer = "auxiliary_losses = auxiliary_consumer("
     preserve_input_masks = "input_masks = masks"
+    pad_masks = "x, masks = self.pad_data("
     consume_input_masks = "masks=input_masks,"
     add_to_cost = 'losses["cost"] = losses["cost"] + auxiliary_cost'
     detector_return = "return losses"
     backward = 'scaler.scale(losses["cost"]).backward()'
     assert engine.index(setter) < engine.index(forward) < engine.index(backward)
     assert "consume_training_auxiliary_losses(" not in engine
+    assert "consume_training_auxiliary_losses" not in base_detector
     assert detector.index(rpn_forward) < detector.index(base_cost) < detector.index(consumer)
     assert detector.index(consumer) < detector.index(add_to_cost) < detector.index(detector_return)
-    assert detector.index(preserve_input_masks) < detector.index("x, masks = self.projection(")
+    assert detector.index(preserve_input_masks) < detector.index(pad_masks)
+    assert detector.index(pad_masks) < detector.index("x, masks = self.projection(")
     assert consume_input_masks in detector
     assert "colliding_loss_keys = set(losses).intersection(auxiliary_losses)" in detector
     assert "losses.update(auxiliary_losses)" in detector
@@ -163,6 +169,9 @@ def test_g_auxiliary_losses_follow_the_successful_update_order():
 def test_dn_and_g_auxiliary_consumption_is_capability_bound():
     engine = (ROOT / "opentad/cores/train_engine.py").read_text()
     detector = (
+        ROOT / "opentad/models/detectors/actionformer.py"
+    ).read_text()
+    base_detector = (
         ROOT / "opentad/models/detectors/single_stage.py"
     ).read_text()
     capability_binding = (
@@ -183,6 +192,7 @@ def test_dn_and_g_auxiliary_consumption_is_capability_bound():
     assert "if self.training and self.with_backbone" in detector
     assert "if callable(auxiliary_consumer):" in detector
     assert detector.count("consume_training_auxiliary_losses") == 1
+    assert "consume_training_auxiliary_losses" not in base_detector
 
 
 def test_dn_g_retry_skips_no_success_state_and_fails_after_eight_retries():
@@ -469,7 +479,7 @@ def test_g_dynamic_auxiliary_graph_is_owned_by_ddp_forward():
     from torch import nn
     from torch.nn.parallel import DistributedDataParallel
 
-    from opentad.models.detectors.single_stage import SingleStageDetector
+    from opentad.models.detectors.actionformer import ActionFormer
 
     class ToyGeoRouteBackbone(nn.Module):
         def __init__(self):
@@ -478,9 +488,11 @@ def test_g_dynamic_auxiliary_graph_is_owned_by_ddp_forward():
             self.hard_output = None
             self.pending = None
             self.consumer_masks = None
+            self.consume_count = 0
 
-        def forward(self, inputs, masks):
-            del masks
+        def forward(self, inputs):
+            if self.pending is not None:
+                raise RuntimeError("pending auxiliary losses were not consumed")
             hard_output = inputs.clone()
             self.hard_output = hard_output.detach().clone()
             auxiliary_logits = self.dynamic_aux_head(inputs)
@@ -493,6 +505,7 @@ def test_g_dynamic_auxiliary_graph_is_owned_by_ddp_forward():
             self.consumer_masks = masks
             auxiliary_logits, proxy_logits = self.pending
             self.pending = None
+            self.consume_count += 1
             return {
                 "georoute_geometry_regularization_loss": auxiliary_logits.sum() * 0.0,
                 "georoute_dynamic_auxiliary_loss": auxiliary_logits.square().mean(),
@@ -516,10 +529,13 @@ def test_g_dynamic_auxiliary_graph_is_owned_by_ddp_forward():
                 "reg_loss": x.mean().square(),
             }
 
-    detector = SingleStageDetector()
+    detector = ActionFormer.__new__(ActionFormer)
+    nn.Module.__init__(detector)
     detector.backbone = ToyGeoRouteBackbone()
     detector.projection = ToyProjection()
     detector.rpn_head = ToyHead()
+    detector.max_seq_len = 4
+    detector.max_div_factor = 1
     detector.train()
     inputs = torch.tensor(
         [[1.0, -2.0, 0.5, 3.0], [-1.5, 0.25, 2.0, -0.75]],
@@ -534,32 +550,35 @@ def test_g_dynamic_auxiliary_graph_is_owned_by_ddp_forward():
         )
         try:
             model = DistributedDataParallel(detector, find_unused_parameters=True)
-            losses = model(
-                inputs=inputs,
-                masks=masks,
-                metas=[{}, {}],
-                gt_segments=[torch.empty((0, 2)), torch.empty((0, 2))],
-                gt_labels=[
-                    torch.empty((0,), dtype=torch.long),
-                    torch.empty((0,), dtype=torch.long),
-                ],
-                return_loss=True,
-            )
-            assert torch.equal(model.module.backbone.hard_output, inputs)
-            assert isinstance(model.module.rpn_head.received_masks, tuple)
-            assert len(model.module.rpn_head.received_masks) == 2
-            assert model.module.backbone.consumer_masks is masks
-            assert torch.equal(model.module.backbone.consumer_masks, masks)
-            losses["cost"].backward()
-            gradient = model.module.backbone.dynamic_aux_head.weight.grad
-            assert gradient is not None
-            assert torch.isfinite(gradient).all()
-            assert torch.count_nonzero(gradient).item() > 0
-            assert model.module.backbone.pending is None
-            assert {
-                "georoute_geometry_regularization_loss",
-                "georoute_dynamic_auxiliary_loss",
-                "georoute_dynamic_soft_proxy_loss",
-            }.issubset(losses)
+            for expected_consume_count in (1, 2):
+                model.zero_grad(set_to_none=True)
+                losses = model(
+                    inputs=inputs,
+                    masks=masks,
+                    metas=[{}, {}],
+                    gt_segments=[torch.empty((0, 2)), torch.empty((0, 2))],
+                    gt_labels=[
+                        torch.empty((0,), dtype=torch.long),
+                        torch.empty((0,), dtype=torch.long),
+                    ],
+                    return_loss=True,
+                )
+                assert torch.equal(model.module.backbone.hard_output, inputs)
+                assert isinstance(model.module.rpn_head.received_masks, tuple)
+                assert len(model.module.rpn_head.received_masks) == 2
+                assert model.module.backbone.consumer_masks is masks
+                assert torch.equal(model.module.backbone.consumer_masks, masks)
+                assert model.module.backbone.pending is None
+                assert model.module.backbone.consume_count == expected_consume_count
+                losses["cost"].backward()
+                gradient = model.module.backbone.dynamic_aux_head.weight.grad
+                assert gradient is not None
+                assert torch.isfinite(gradient).all()
+                assert torch.count_nonzero(gradient).item() > 0
+                assert {
+                    "georoute_geometry_regularization_loss",
+                    "georoute_dynamic_auxiliary_loss",
+                    "georoute_dynamic_soft_proxy_loss",
+                }.issubset(losses)
         finally:
             dist.destroy_process_group()
