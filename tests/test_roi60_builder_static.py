@@ -189,6 +189,26 @@ def test_dn_g_retry_skips_no_success_state_and_fails_after_eight_retries():
     assert "max_amp_retries_per_batch" not in official
 
 
+def test_backbone_exports_drop_only_the_absent_continuous_roi_wrapper():
+    package = (ROOT / "opentad/models/backbones/__init__.py").read_text()
+    continuous_roi = ROOT / "opentad/models/backbones/continuous_roi_wrapper.py"
+    georoute = ROOT / "opentad/models/backbones/georoute_wrapper.py"
+
+    assert not continuous_roi.exists()
+    assert "continuous_roi_wrapper" not in package
+    assert "ContinuousRoiBackboneWrapper" not in package
+    assert georoute.is_file()
+    assert "from .georoute_wrapper import GeoRouteBackboneWrapper" in package
+    assert '"GeoRouteBackboneWrapper"' in package
+
+    if os.environ.get("ZOOMTOKEN_AMP_RUNTIME_CHECK") == "1":
+        from opentad.models.backbones import GeoRouteBackboneWrapper
+
+        assert GeoRouteBackboneWrapper.__module__ == (
+            "opentad.models.backbones.georoute_wrapper"
+        )
+
+
 def test_amp_update_detection_runtime_contract():
     if os.environ.get("ZOOMTOKEN_AMP_RUNTIME_CHECK") != "1":
         return
