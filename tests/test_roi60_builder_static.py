@@ -141,6 +141,8 @@ def test_g_auxiliary_losses_follow_the_successful_update_order():
     rpn_forward = "rpn_losses = self.rpn_head.forward_train("
     base_cost = 'losses["cost"] = sum('
     consumer = "auxiliary_losses = auxiliary_consumer("
+    preserve_input_masks = "input_masks = masks"
+    consume_input_masks = "masks=input_masks,"
     add_to_cost = 'losses["cost"] = losses["cost"] + auxiliary_cost'
     detector_return = "return losses"
     backward = 'scaler.scale(losses["cost"]).backward()'
@@ -148,6 +150,8 @@ def test_g_auxiliary_losses_follow_the_successful_update_order():
     assert "consume_training_auxiliary_losses(" not in engine
     assert detector.index(rpn_forward) < detector.index(base_cost) < detector.index(consumer)
     assert detector.index(consumer) < detector.index(add_to_cost) < detector.index(detector_return)
+    assert detector.index(preserve_input_masks) < detector.index("x, masks = self.projection(")
+    assert consume_input_masks in detector
     assert "colliding_loss_keys = set(losses).intersection(auxiliary_losses)" in detector
     assert "losses.update(auxiliary_losses)" in detector
     assert "optimizer_update_succeeded = _amp_optimizer_step_was_run(" in engine
@@ -473,6 +477,7 @@ def test_g_dynamic_auxiliary_graph_is_owned_by_ddp_forward():
             self.dynamic_aux_head = nn.Linear(4, 3, bias=False)
             self.hard_output = None
             self.pending = None
+            self.consumer_masks = None
 
         def forward(self, inputs, masks):
             del masks
@@ -484,7 +489,8 @@ def test_g_dynamic_auxiliary_graph_is_owned_by_ddp_forward():
             return hard_output
 
         def consume_training_auxiliary_losses(self, masks, gt_segments, gt_labels):
-            del masks, gt_segments, gt_labels
+            del gt_segments, gt_labels
+            self.consumer_masks = masks
             auxiliary_logits, proxy_logits = self.pending
             self.pending = None
             return {
@@ -493,9 +499,18 @@ def test_g_dynamic_auxiliary_graph_is_owned_by_ddp_forward():
                 "georoute_dynamic_soft_proxy_loss": proxy_logits.square().mean(),
             }
 
+    class ToyProjection(nn.Module):
+        def forward(self, x, masks):
+            return x, (masks, masks[:, ::2])
+
     class ToyHead(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.received_masks = None
+
         def forward_train(self, x, masks, **kwargs):
-            del masks, kwargs
+            del kwargs
+            self.received_masks = masks
             return {
                 "cls_loss": x.square().mean(),
                 "reg_loss": x.mean().square(),
@@ -503,6 +518,7 @@ def test_g_dynamic_auxiliary_graph_is_owned_by_ddp_forward():
 
     detector = SingleStageDetector()
     detector.backbone = ToyGeoRouteBackbone()
+    detector.projection = ToyProjection()
     detector.rpn_head = ToyHead()
     detector.train()
     inputs = torch.tensor(
@@ -530,6 +546,10 @@ def test_g_dynamic_auxiliary_graph_is_owned_by_ddp_forward():
                 return_loss=True,
             )
             assert torch.equal(model.module.backbone.hard_output, inputs)
+            assert isinstance(model.module.rpn_head.received_masks, tuple)
+            assert len(model.module.rpn_head.received_masks) == 2
+            assert model.module.backbone.consumer_masks is masks
+            assert torch.equal(model.module.backbone.consumer_masks, masks)
             losses["cost"].backward()
             gradient = model.module.backbone.dynamic_aux_head.weight.grad
             assert gradient is not None

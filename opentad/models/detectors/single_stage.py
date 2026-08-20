@@ -47,6 +47,7 @@ class SingleStageDetector(BaseDetector):
 
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
+        input_masks = masks
         if self.with_backbone:
             x = self.backbone(inputs, masks)
         else:
@@ -80,7 +81,7 @@ class SingleStageDetector(BaseDetector):
         )
         if callable(auxiliary_consumer):
             auxiliary_losses = auxiliary_consumer(
-                masks=masks,
+                masks=input_masks,
                 gt_segments=gt_segments,
                 gt_labels=gt_labels,
             )
