@@ -4,6 +4,21 @@ import tqdm
 from opentad.utils.misc import AverageMeter, reduce_loss
 
 
+def _amp_optimizer_step_was_run(scaler, optimizer):
+    optimizer_step_was_run = False
+
+    def mark_optimizer_step(_optimizer, _args, _kwargs):
+        nonlocal optimizer_step_was_run
+        optimizer_step_was_run = True
+
+    step_post_hook = optimizer.register_step_post_hook(mark_optimizer_step)
+    try:
+        scaler.step(optimizer)
+    finally:
+        step_post_hook.remove()
+    return optimizer_step_was_run
+
+
 def train_one_epoch(
     train_loader,
     model,
@@ -33,18 +48,22 @@ def train_one_epoch(
             raise ValueError("maximum AMP retries per batch must be a positive integer")
     else:
         max_amp_retries_per_batch = 0
+    candidate_backbone = model.module.backbone if retry_skipped_updates else None
+    if candidate_backbone is not None and callable(
+        getattr(candidate_backbone, "set_successful_update_index", None)
+    ) and callable(
+        getattr(candidate_backbone, "consume_training_auxiliary_losses", None)
+    ):
+        georoute_backbone = candidate_backbone
+    else:
+        georoute_backbone = None
     if successful_update_index is not None:
         if not retry_skipped_updates:
             raise ValueError("successful update indexing requires AMP retry semantics")
         if not isinstance(successful_update_index, int) or successful_update_index < 0:
             raise ValueError("successful update index must be a non-negative integer")
-        georoute_backbone = model.module.backbone
-        if not hasattr(georoute_backbone, "set_successful_update_index") or not hasattr(
-            georoute_backbone, "consume_training_auxiliary_losses"
-        ):
+        if georoute_backbone is None:
             raise ValueError("successful update indexing requires a GeoRoute backbone")
-    else:
-        georoute_backbone = None
 
     model.train()
     for iter_idx, data_dict in enumerate(train_loader):
@@ -61,7 +80,7 @@ def train_one_epoch(
             optimizer.zero_grad()
 
             # forward pass
-            if georoute_backbone is not None:
+            if successful_update_index is not None:
                 georoute_backbone.set_successful_update_index(successful_update_index)
             with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
                 losses = model(**data_dict, return_loss=True)
@@ -95,10 +114,14 @@ def train_one_epoch(
 
             # update parameters
             if use_amp:
-                scale_before = scaler.get_scale()
-                scaler.step(optimizer)
+                if retry_skipped_updates:
+                    optimizer_update_succeeded = _amp_optimizer_step_was_run(
+                        scaler, optimizer
+                    )
+                else:
+                    scaler.step(optimizer)
+                    optimizer_update_succeeded = True
                 scaler.update()
-                optimizer_update_succeeded = scaler.get_scale() >= scale_before
             else:
                 optimizer.step()
                 optimizer_update_succeeded = True
@@ -110,7 +133,7 @@ def train_one_epoch(
                 f"{max_amp_retries_per_batch} retries for epoch {curr_epoch}, "
                 f"batch {iter_idx}"
             )
-        if georoute_backbone is not None and optimizer_update_succeeded:
+        if successful_update_index is not None and optimizer_update_succeeded:
             successful_update_index += 1
 
         # update scheduler

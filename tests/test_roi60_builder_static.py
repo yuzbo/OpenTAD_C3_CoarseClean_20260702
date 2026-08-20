@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import sys
 
@@ -108,11 +109,27 @@ def test_g_auxiliary_losses_follow_the_successful_update_order():
     assert engine.count("consume_training_auxiliary_losses(") == 1
     assert "colliding_loss_keys = set(losses).intersection(auxiliary_losses)" in engine
     assert "losses.update(auxiliary_losses)" in engine
-    assert "scale_before = scaler.get_scale()" in engine
-    assert "optimizer_update_succeeded = scaler.get_scale() >= scale_before" in engine
-    assert "if georoute_backbone is not None and optimizer_update_succeeded:" in engine
+    assert "optimizer_update_succeeded = _amp_optimizer_step_was_run(" in engine
+    assert "if successful_update_index is not None and optimizer_update_succeeded:" in engine
     assert "successful_update_index += 1" in engine
     assert "return successful_update_index" in engine
+
+
+def test_dn_and_g_auxiliary_consumption_is_capability_bound():
+    engine = (ROOT / "opentad/cores/train_engine.py").read_text()
+    capability_binding = (
+        'getattr(candidate_backbone, "consume_training_auxiliary_losses", None)'
+    )
+    index_gate = "if successful_update_index is not None:"
+    setter = "georoute_backbone.set_successful_update_index(successful_update_index)"
+    forward = "losses = model(**data_dict, return_loss=True)"
+    consumer = "auxiliary_losses = georoute_backbone.consume_training_auxiliary_losses("
+    assert capability_binding in engine
+    assert engine.index(index_gate) < engine.index(setter)
+    assert engine.index(setter) < engine.index(forward)
+    assert engine.index(forward) < engine.index(consumer)
+    assert "if georoute_backbone is not None:" in engine
+    assert engine.count("consume_training_auxiliary_losses(") == 1
 
 
 def test_dn_g_retry_skips_no_success_state_and_fails_after_eight_retries():
@@ -138,8 +155,15 @@ def test_dn_g_retry_skips_no_success_state_and_fails_after_eight_retries():
         "georoute_backbone.set_successful_update_index("
     )
     assert engine.index("scaler.step(optimizer)") < engine.index("scaler.update()")
-    assert engine.index("scaler.update()") < engine.index(
-        "optimizer_update_succeeded = scaler.get_scale() >= scale_before"
+    assert "scale_before = scaler.get_scale()" not in engine
+    assert "scaler.get_scale() >= scale_before" not in engine
+    assert "optimizer.register_step_post_hook(mark_optimizer_step)" in engine
+    assert "step_post_hook.remove()" in engine
+    assert engine.index("optimizer.register_step_post_hook(mark_optimizer_step)") < engine.index(
+        "scaler.step(optimizer)"
+    )
+    assert engine.index("scaler.step(optimizer)") < engine.index(
+        "step_post_hook.remove()"
     )
     retry_exit = "if optimizer_update_succeeded or not retry_skipped_updates:"
     terminal = "if retry_skipped_updates and not optimizer_update_succeeded:"
@@ -163,6 +187,39 @@ def test_dn_g_retry_skips_no_success_state_and_fails_after_eight_retries():
     assert '_base_ = ["./georoute_adatad_development_base.py"]' in dynamic_base
     assert '_base_ = ["./georoute_dynamic_scnr_stage1_base.py"]' in g
     assert "max_amp_retries_per_batch" not in official
+
+
+def test_amp_update_detection_runtime_contract():
+    if os.environ.get("ZOOMTOKEN_AMP_RUNTIME_CHECK") != "1":
+        return
+
+    import torch
+
+    from opentad.cores.train_engine import _amp_optimizer_step_was_run
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("ZoomToken AMP runtime check requires allocated CUDA")
+
+    parameter = torch.nn.Parameter(torch.tensor([1.0], device="cuda:0"))
+    optimizer = torch.optim.SGD([parameter], lr=0.25)
+    scaler = torch.cuda.amp.GradScaler()
+
+    optimizer.zero_grad()
+    finite_before = parameter.detach().clone()
+    scaler.scale(parameter.square().sum()).backward()
+    finite_step_ran = _amp_optimizer_step_was_run(scaler, optimizer)
+    scaler.update()
+    assert finite_step_ran
+    assert not torch.equal(parameter.detach(), finite_before)
+
+    optimizer.zero_grad()
+    scaler.scale(parameter.square().sum()).backward()
+    parameter.grad.fill_(float("inf"))
+    skipped_before = parameter.detach().clone()
+    skipped_step_ran = _amp_optimizer_step_was_run(scaler, optimizer)
+    scaler.update()
+    assert not skipped_step_ran
+    assert torch.equal(parameter.detach(), skipped_before)
 
 
 def test_g_update_index_is_checkpointed_and_restored_without_importing_torch():
