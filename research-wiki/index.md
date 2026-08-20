@@ -50,6 +50,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [ChronoTransport](ideas/chronotransport.md)
 - [PhysTime](ideas/phystime.md)
 - [DUCA-FoveaSampler / Query-Bridge](ideas/duca-foveasampler-query-bridge.md)
+- [DUCA-SQB-Block-DK-v1](ideas/duca-sqb-block-dk-v1.md)
 
 ### Experiments
 

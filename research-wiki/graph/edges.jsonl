@@ -49,3 +49,5 @@
 {"from":"idea:physical-grid","to":"claim:C10","type":"invalidates","evidence":"Presence of optional detector extensions prevents unmodified-official wording.","updated":"2026-07-11"}
 {"from":"idea:duca-foveasampler-query-bridge","to":"idea:duca-offline-full-window","type":"extends","evidence":"FoveaSampler/Query-Bridge is a new DUCA pre-backbone selector arm on top of the offline full-window DUCA contract.","updated":"2026-08-19"}
 {"from":"idea:duca-foveasampler-query-bridge","to":"exp:duca-fovea-qb-development","type":"tested_in","evidence":"Focused unit tests 11/11 pass; full-train matrix not yet submitted.","updated":"2026-08-19"}
+{"from":"idea:duca-sqb-block-dk-v1","to":"idea:duca-foveasampler-query-bridge","type":"replaces_as_main_route","evidence":"Independent pro review REVISE: clean semantic block route replaces direct Fovea selection as main line; Fovea kept as diagnostic/components.","updated":"2026-08-20"}
+{"from":"idea:duca-sqb-block-dk-v1","to":"idea:duca-offline-full-window","type":"extends","evidence":"Keeps offline full-window DUCA contract with deterministic physical-block acquisition.","updated":"2026-08-20"}

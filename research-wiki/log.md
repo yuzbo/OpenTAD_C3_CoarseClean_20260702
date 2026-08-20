@@ -32,3 +32,5 @@ append_only: true
 
 - 2026-08-20：Fovea-QB 第一波 `1244851` 全部 5/5 完成（train 60 epoch + epoch_59 test，exit 0:0，单 cell 约 9.9–10.7h）。THUMOS14 val（seed 3407）：query_cycle 54.67 > query_gt_mask 49.16 > query_only 45.26 > query_fovea 43.77 > baseline_fused 42.94；query_cycle 高 IoU 也最好（0.6: 46.33 / 0.7: 31.63）。旧矩阵 `1244133` 15/15 完成。
 - 2026-08-20：Fovea-QB 尚无同提交 exact-uniform/random/dense 对照，且 `full` / `query_fovea_dpp` 未跑，不能据此宣布 Fovea-QB 路线优于或劣于 DUCA 旧路线；仅记录为 development-matrix 原始结果。
+
+- 2026-08-20：接收独立 Pro 科学审查，唯一建议 REVISE：终止当前 UVT/Fovea 直接选择实现为主路线，新建 `DUCA-SQB-Block-DK-v1`（语义 Query-Bridge + 连续 16-frame 物理块 + 确定性 fixed-K 归因 + 通过后 dynamic-K）。我方初步结论：认可核心方向；UVT 已由实际负结果封存，Fovea 仅保留诊断与可复用组件，不再作为主方法；最终是否启动新 clean cycle 待用户裁决。
