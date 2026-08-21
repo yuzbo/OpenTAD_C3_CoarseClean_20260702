@@ -354,10 +354,22 @@ def test_homotopy_alpha_schedule_endpoints_and_inference_override() -> None:
 def test_homotopy_gradient_ownership() -> None:
     selector = _selector()
     selector.train()
-    warmup = _forward_train(selector)
+    inputs, masks, metas, segments, labels, boundary_validity = _batch()
+    inputs.requires_grad_()
+    warmup = selector.forward_train(
+        inputs,
+        masks,
+        metas,
+        gt_segments=segments,
+        gt_labels=labels,
+        gt_boundary_validity=boundary_validity,
+    )
     source = selector.raw_actionness_source
 
+    assert warmup["inputs"].requires_grad is True
+    assert warmup["selector_outputs"]["detector_gradient_bridge"] is False
     warmup["inputs"].square().mean().backward(retain_graph=True)
+    assert inputs.grad is not None and float(inputs.grad.abs().sum()) > 0.0
     assert _grad_mass(selector.transition_scorer.parameters()) == 0.0
     assert _grad_mass([source.trunk]) == 0.0
     assert _grad_mass([source.action_head]) == 0.0
@@ -372,7 +384,7 @@ def test_homotopy_gradient_ownership() -> None:
     selector.schedule_step.fill_(19)
     transition = _forward_train(selector)
     assert transition["selector_outputs"]["policy_homotopy"]["alpha"] == pytest.approx(0.5)
-    assert transition["selector_outputs"]["detector_bridge_gradient_scale"] == 0.25
+    assert transition["selector_outputs"]["detector_bridge_gradient_scale"] == pytest.approx(0.125)
     transition["inputs"].square().mean().backward()
     assert _grad_mass(selector.transition_scorer.parameters()) > 0.0
     assert _grad_mass([source.trunk]) == 0.0
