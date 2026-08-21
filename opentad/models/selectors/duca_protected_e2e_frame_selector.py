@@ -42,6 +42,8 @@ _ARMS = {
     "protected_e2e_homotopy025",
     "protected_e2e_uni_companion",
     "protected_e2e_rho001",
+    "TRUETIME_K384",
+    "RANKPACK_J192",
 }
 _PROTECTED_CONTRACT = "duca_protected_e2e_physical_v1"
 _DETECTOR_BRIDGE_SCALES = {
@@ -1317,6 +1319,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     "duca_contract": _PROTECTED_CONTRACT,
                     "duca_arm": self.arm,
                     "irregular_selected_positions": dense_positions,
+                    "irregular_selected_valid_mask": [True] * effective_k,
                     "selected_dense_indices": dense_positions,
                     "selected_valid_len": effective_k,
                     "irregular_selected_count": effective_k,
@@ -1336,6 +1339,9 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                     "duca_selected_seconds": [
                         float(value) for value in selected_seconds.cpu().tolist()
                     ],
+                    "irregular_delta_t": [
+                        float(value) for value in (selected_seconds[1:] - selected_seconds[:-1]).cpu().tolist()
+                    ] if effective_k > 1 else [],
                     "duca_max_gap_seconds_cap": float(cap.item()),
                     "duca_observed_max_gap_seconds": float(observed_max_gap.item()),
                     "duca_candidate_coordinate_unit": "dense_candidate_ordinal",

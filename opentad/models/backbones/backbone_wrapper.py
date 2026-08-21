@@ -63,7 +63,7 @@ class BackboneWrapper(nn.Module):
             self.temporal_checkpointing_chunk_num = custom_cfg.temporal_checkpointing_chunk_num
             self.temporal_checkpointing_chunk_dim = custom_cfg.temporal_checkpointing_chunk_dim
 
-    def forward(self, frames, masks=None):
+    def forward(self, frames, masks=None, metas=None):
         # two types: snippet or frame
 
         # snippet: 3D backbone, [bs, T, 3, clip_len, H, W]
@@ -97,7 +97,7 @@ class BackboneWrapper(nn.Module):
                         self.temporal_checkpointing_chunk_dim,
                     )
                 else:
-                    features = self.model.backbone(frames)
+                    features = self._forward_backbone(frames, metas, batches, num_segs)
 
         else:  # let the model.train() or model.eval() decide whether to freeze
             if self.use_temporal_checkpointing:
@@ -107,7 +107,7 @@ class BackboneWrapper(nn.Module):
                     self.temporal_checkpointing_chunk_dim,
                 )
             else:
-                features = self.model.backbone(frames)
+                    features = self._forward_backbone(frames, metas, batches, num_segs)
 
         # unflatten and pool the features
         if isinstance(features, (tuple, list)):
@@ -125,6 +125,22 @@ class BackboneWrapper(nn.Module):
 
     def tensor_to_list(self, tensor):
         return [t for t in tensor]
+
+    def _forward_backbone(self, frames, metas, batches, num_segs):
+        if metas is not None and getattr(self.model.backbone, "physical_time", False):
+            rows = []
+            for meta in metas:
+                pos = meta.get("irregular_selected_positions")
+                if pos is None:
+                    rows.append(torch.arange(16, device=frames.device))
+                else:
+                    rows.append(torch.as_tensor(pos, device=frames.device))
+            positions = torch.stack(rows).reshape(batches * num_segs, -1)
+            try:
+                return self.model.backbone(frames, source_positions=positions, valid_mask=None)
+            except TypeError:
+                return self.model.backbone(frames)
+        return self.model.backbone(frames)
 
     def unflatten_and_pool_features(self, features, batches, num_segs):
         # unflatten the batch dimension and num_segs dimension

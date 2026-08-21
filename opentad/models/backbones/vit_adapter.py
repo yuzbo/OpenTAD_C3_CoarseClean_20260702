@@ -16,6 +16,43 @@ from mmaction.utils import ConfigType, OptConfigType
 from mmaction.models.backbones.vit_mae import get_sinusoid_encoding
 
 
+class PhysicalTubeletPatchEmbed(nn.Module):
+    """Spatial-first tubelet embedding for irregular physical frame pairs.
+
+    The two temporal slices of a pretrained Conv3D kernel are applied
+    independently; only then are the pair tokens mixed with a delta gate.
+    """
+    def __init__(self, conv3d: nn.Conv3d, nominal_gap: float = 1.0):
+        super().__init__()
+        if conv3d.kernel_size[0] != 2 or conv3d.stride[0] != 2:
+            raise ValueError("TRUETIME physical patch embed requires temporal kernel/stride 2")
+        self.nominal_gap = float(nominal_gap)
+        self.spatial = nn.Conv2d(conv3d.in_channels, conv3d.out_channels,
+                                 conv3d.kernel_size[1:], conv3d.stride[1:],
+                                 conv3d.padding[1:], bias=True)
+        with torch.no_grad():
+            self.spatial.weight.copy_(conv3d.weight[:, :, 0] + conv3d.weight[:, :, 1])
+            if conv3d.bias is not None:
+                self.spatial.bias.copy_(conv3d.bias)
+        self.gate = nn.Sequential(nn.Linear(1, 8), nn.GELU(), nn.Linear(8, 1))
+        nn.init.zeros_(self.gate[-1].weight); nn.init.zeros_(self.gate[-1].bias)
+
+    def forward(self, x, source_positions, valid_mask=None):
+        if x.ndim != 5 or x.shape[2] != 16:
+            raise ValueError("physical patch embed expects [B,C,16,H,W]")
+        pos = torch.as_tensor(source_positions, device=x.device, dtype=x.dtype)
+        if pos.shape != (x.shape[0], 16):
+            raise ValueError("source_positions must be [B,16]")
+        frames = x.permute(0, 2, 1, 3, 4).reshape(-1, x.shape[1], x.shape[3], x.shape[4])
+        spatial = self.spatial(frames).reshape(x.shape[0], 16, self.spatial.out_channels, -1).transpose(2, 3)
+        gap = ((pos[:, 1::2] - pos[:, ::2]) / self.nominal_gap).clamp_min(0)
+        gate = 2.0 * torch.sigmoid(self.gate(torch.log1p(gap).unsqueeze(-1))).squeeze(-1)
+        tokens = 0.5 * (spatial[:, ::2] + gate.unsqueeze(-1).unsqueeze(-1) * spatial[:, 1::2])
+        midpoint = 0.5 * (pos[:, ::2] + pos[:, 1::2])
+        support = torch.stack((pos[:, ::2], pos[:, 1::2]), dim=-1)
+        return tokens.flatten(1, 2), midpoint, support
+
+
 class Adapter(BaseModule):
     def __init__(
         self,
