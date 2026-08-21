@@ -267,8 +267,10 @@ def test_backbone_exports_keep_only_the_supported_georoute_wrapper():
     assert not vit_ladder.exists()
     assert "VisionTransformerLadder" not in package
     assert georoute.is_file()
-    assert "from .georoute_wrapper import GeoRouteBackboneWrapper" in package
+    assert "GeoRouteBackboneWrapper," in package
     assert '"GeoRouteBackboneWrapper"' in package
+    assert "GeoRoutePostBackboneAggregationWrapper," in package
+    assert '"GeoRoutePostBackboneAggregationWrapper"' in package
 
     if os.environ.get("ZOOMTOKEN_AMP_RUNTIME_CHECK") == "1":
         from opentad.models.backbones import GeoRouteBackboneWrapper
@@ -280,12 +282,192 @@ def test_backbone_exports_keep_only_the_supported_georoute_wrapper():
 
 def test_dn_g_builder_dispatches_only_the_supported_georoute_wrapper():
     builder = (ROOT / "opentad/models/builder.py").read_text()
-    assert "from .backbones import BackboneWrapper, GeoRouteBackboneWrapper" in builder
+    assert "GeoRouteBackboneWrapper," in builder
+    assert "GeoRoutePostBackboneAggregationWrapper," in builder
     assert 'wrapper_type == "georoute_native_packed_v1"' in builder
     assert "return GeoRouteBackboneWrapper(cfg)" in builder
+    assert 'wrapper_type == "georoute_postbackbone_sparse_aggregation_v1"' in builder
+    assert "return GeoRoutePostBackboneAggregationWrapper(cfg)" in builder
     assert "unsupported backbone custom.wrapper_type" in builder
     assert "NativeCropBackboneWrapper" not in builder
     assert "ContinuousRoiBackboneWrapper" not in builder
+
+
+def test_official_bc_wrapper_keeps_the_heavy_forward_dense_and_selects_afterward():
+    source = (ROOT / "opentad/models/backbones/georoute_wrapper.py").read_text()
+    tree = ast.parse(source)
+    wrapper_node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "GeoRoutePostBackboneAggregationWrapper"
+    )
+    wrapper = ast.get_source_segment(source, wrapper_node)
+    assert wrapper is not None
+    assert any(
+        isinstance(base, ast.Name) and base.id == "BackboneWrapper"
+        for base in wrapper_node.bases
+    )
+    assert 'WRAPPER_TYPE = "georoute_postbackbone_sparse_aggregation_v1"' in wrapper
+    assert "return super().forward(frames, masks)" in wrapper
+    assert "def unflatten_and_pool_features(self, features, batches, num_segs):" in wrapper
+    assert wrapper.index("return super().forward(frames, masks)") < wrapper.index(
+        "def unflatten_and_pool_features"
+    )
+    assert "dense_features = features.reshape(" in wrapper
+    assert "selected_features = dense_features.gather(" in wrapper
+    assert "self.sparse_adapter = GeoRouteSparseTemporalAdapter" in wrapper
+    assert wrapper.index("self.sparse_adapter = GeoRouteSparseTemporalAdapter") < wrapper.index(
+        "self.scout = GeoRouteScout"
+    )
+    assert 'mode="roi"' in wrapper
+    assert "self.roi_tokens != 64" in wrapper
+    assert "self.scout._encode(scout_input)" in wrapper
+    assert "self.scout.geometry_head(" in wrapper
+    assert "self.scout.residual_head(" not in wrapper
+    assert "use_absolute_coordinates=False" in wrapper
+    assert "use_roi_relative_coordinates=False" in wrapper
+    assert "use_geometry_projection=False" in wrapper
+    for packed_surface in (
+        "forward_native_packed",
+        "forward_native_ragged",
+        "extract_native_tubelets",
+        "deterministic_linear_2x",
+        "consume_training_auxiliary_losses",
+        "dynamic_scnr",
+    ):
+        assert packed_surface not in wrapper
+    assert "efficiency claim" in wrapper
+    assert "torch" not in sys.modules
+
+
+def test_official_bc_configs_differ_only_in_postbackbone_support():
+    config_root = ROOT / "configs/adatad/thumos"
+    common = (
+        config_root / "georoute_official_postbackbone_bc_common_seed42_v001.py"
+    ).read_text()
+    arm_b = (
+        config_root / "georoute_official_b_alltoken_postbackbone_seed42_v001.py"
+    ).read_text()
+    arm_c = (
+        config_root / "georoute_official_c_roi_postbackbone_seed42_v001.py"
+    ).read_text()
+
+    assert '_base_ = ["./e2e_thumos_videomae_s_768x1_160_adapter.py"]' in common
+    assignment_names = {
+        target.id
+        for node in ast.parse(common).body
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    assert assignment_names == {
+        "_base_",
+        "model",
+        "optimizer",
+        "official_bc_contract",
+    }
+    assert "dataset =" not in common
+    assert "solver =" not in common
+    assert "scheduler =" not in common
+    assert "workflow =" not in common
+    assert "post_processing =" not in common
+    assert 'heavy_backbone_execution="untouched_official_dense_videomae_forward"' in common
+    assert 'selection_application="post_backbone_pre_aggregation"' in common
+    assert 'sparse_adapter="GeoRouteSparseTemporalAdapter_uniform_selected"' in common
+    assert "residual_enabled=False" in common
+    assert "auxiliary_or_proxy_loss_enabled=False" in common
+    assert "adapter_side_channel_enabled=False" in common
+    assert "efficiency_claim_allowed=False" in common
+    assert common.index('dict(name="sparse_adapter"') < common.index(
+        'dict(name="adapter"'
+    )
+    assert common.count("lr=2e-4, weight_decay=0.05") == 4
+
+    normalized_b = (
+        arm_b.replace('official_bc_arm = "B"', 'official_bc_arm = "ARM"')
+        .replace('georoute_postbackbone_selection="all"', 'georoute_postbackbone_selection="SUPPORT"')
+        .replace(
+            'work_dir = "exps/thumos/adatad/georoute_official_b_alltoken_postbackbone_seed42_v001"',
+            'work_dir = "WORK_DIR"',
+        )
+    )
+    normalized_c = (
+        arm_c.replace('official_bc_arm = "C"', 'official_bc_arm = "ARM"')
+        .replace('georoute_postbackbone_selection="roi"', 'georoute_postbackbone_selection="SUPPORT"')
+        .replace(
+            'work_dir = "exps/thumos/adatad/georoute_official_c_roi_postbackbone_seed42_v001"',
+            'work_dir = "WORK_DIR"',
+        )
+    )
+    assert normalized_b == normalized_c
+    assert 'georoute_postbackbone_selection="all"' in arm_b
+    assert 'georoute_postbackbone_selection="roi"' in arm_c
+    assert "torch" not in sys.modules
+
+
+def test_official_bc_inherits_the_complete_official_training_and_evaluation_recipe():
+    official = (
+        ROOT / "configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py"
+    ).read_text()
+    for binding in (
+        'dict(type="mmaction.RandomResizedCrop")',
+        'dict(type="mmaction.Flip", flip_ratio=0.5)',
+        'dict(type="mmaction.ImgAug", transforms="default")',
+        'dict(type="mmaction.ColorJitter")',
+        "with_cp=True",
+        "batch_size=2",
+        "amp=True",
+        "fp16_compress=True",
+        "static_graph=True",
+        "ema=True",
+        'type="AdamW"',
+        "lr=1e-4",
+        "weight_decay=0.05",
+        'type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=100',
+        "use_soft_nms=True",
+        "sigma=0.7",
+        "max_seg_num=2000",
+        "multiclass=True",
+        "voting_thresh=0.7",
+        "checkpoint_interval=2",
+        "val_eval_interval=2",
+        "val_start_epoch=40",
+        "end_epoch=60",
+    ):
+        assert binding in official
+    train = (ROOT / "tools/train.py").read_text()
+    assert "is_final = epoch == max_epoch - 1" in train
+    assert "save_checkpoint(" in train
+    assert "model_ema=model_ema" in train
+    assert "torch" not in sys.modules
+
+
+def test_official_bc_launcher_submits_only_b_and_c_on_the_frozen_a_identity():
+    packet = (
+        ROOT / "scripts/run_zoomtoken_official_postbackbone_bc_n16r4.sh"
+    ).read_text()
+    assert packet.startswith("#!/usr/bin/env bash\n")
+    assert 'LINEAGE_BASE="01c58b9f2370e914150cf94d392208a4e211c053"' in packet
+    assert 'case "${ARM}" in\n  B)' in packet
+    assert "georoute_official_b_alltoken_postbackbone_seed42_v001.py" in packet
+    assert "georoute_official_c_roi_postbackbone_seed42_v001.py" in packet
+    assert "permits only B or C; A is completed job 1245842" in packet
+    assert "e2e_thumos_videomae_s_768x1_160_adapter.py" not in packet
+    assert "--nproc_per_node=2" in packet
+    assert "tools/train.py \"${CONFIG}\" --seed 42 --id 0" in packet
+    assert '"${#visible_gpus[@]}" -eq 2' in packet
+    assert "batch_size=" not in packet
+    assert "--resume" not in packet
+    assert "PRE_RUN" not in packet
+    for identity in (
+        "thumos14/raw_data/video",
+        "thumos14/annotations/thumos_14_anno.json",
+        "thumos14/annotations/category_idx.txt",
+        "vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+    ):
+        assert identity in packet
+    assert "torch" not in sys.modules
 
 
 def test_dn_g_import_time_local_module_closure_is_complete_without_torch():

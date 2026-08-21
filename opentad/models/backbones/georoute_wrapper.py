@@ -311,6 +311,314 @@ def _normalize_uint8_video(value: torch.Tensor, mean: torch.Tensor, std: torch.T
     return (value.to(torch.float32) - mean) / std
 
 
+class GeoRoutePostBackboneAggregationWrapper(BackboneWrapper):
+    """Official dense VideoMAE forward with a matched post-backbone adapter.
+
+    Arm B aggregates all 100 dense spatial tokens per tubelet.  Arm C applies
+    the existing ROI-only exact-K selector to that same completed dense feature
+    lattice before the identical sparse adapter.  Neither arm changes the heavy
+    VideoMAE execution surface, so this path is accuracy/causal evidence only
+    and cannot support an efficiency claim.
+    """
+
+    WRAPPER_TYPE = "georoute_postbackbone_sparse_aggregation_v1"
+
+    def __init__(self, cfg) -> None:
+        custom_cfg = cfg.custom
+        self.selection_mode = str(
+            getattr(custom_cfg, "georoute_postbackbone_selection", "all")
+        )
+        self.window_size = int(
+            getattr(custom_cfg, "georoute_postbackbone_window_size", 768)
+        )
+        self.chunk_num = int(
+            getattr(custom_cfg, "georoute_postbackbone_chunk_num", 48)
+        )
+        self.tubelet_size = int(
+            getattr(custom_cfg, "georoute_postbackbone_tubelet_size", 2)
+        )
+        self.source_grid_hw = tuple(
+            int(value)
+            for value in getattr(
+                custom_cfg,
+                "georoute_postbackbone_source_grid_hw",
+                (10, 10),
+            )
+        )
+        self.roi_tokens = int(
+            getattr(custom_cfg, "georoute_postbackbone_roi_tokens", 64)
+        )
+        self.scout_size = int(
+            getattr(custom_cfg, "georoute_postbackbone_scout_size", 96)
+        )
+        self.roi_temperature = float(
+            getattr(custom_cfg, "georoute_postbackbone_roi_temperature", 0.25)
+        )
+        self.policy_temperature = float(
+            getattr(custom_cfg, "georoute_postbackbone_policy_temperature", 0.5)
+        )
+        self.min_roi_extent_cells = int(
+            getattr(
+                custom_cfg,
+                "georoute_postbackbone_min_roi_extent_cells",
+                1,
+            )
+        )
+        self.max_roi_extent = float(
+            getattr(custom_cfg, "georoute_postbackbone_max_roi_extent", 1.0)
+        )
+        self.pooling_mode = str(
+            getattr(
+                custom_cfg,
+                "georoute_postbackbone_pooling_mode",
+                "uniform_selected",
+            )
+        )
+        side_channels = {
+            "absolute_coordinates": bool(
+                getattr(
+                    custom_cfg,
+                    "georoute_postbackbone_absolute_coordinates_enabled",
+                    False,
+                )
+            ),
+            "roi_relative_coordinates": bool(
+                getattr(
+                    custom_cfg,
+                    "georoute_postbackbone_roi_relative_coordinates_enabled",
+                    False,
+                )
+            ),
+            "geometry_projection": bool(
+                getattr(
+                    custom_cfg,
+                    "georoute_postbackbone_geometry_projection_enabled",
+                    False,
+                )
+            ),
+        }
+        if self.selection_mode not in {"all", "roi"}:
+            raise ValueError("post-backbone selection must be 'all' or 'roi'")
+        if self.window_size != 768 or self.chunk_num != 48 or self.tubelet_size != 2:
+            raise ValueError(
+                "official post-backbone B/C requires the frozen 768/48/tubelet-2 lattice"
+            )
+        if self.source_grid_hw != (10, 10):
+            raise ValueError("official post-backbone B/C requires the 10x10 feature grid")
+        if self.selection_mode == "roi" and self.roi_tokens != 64:
+            raise ValueError("official post-backbone C requires exact ROI K=64")
+        if self.scout_size != 96:
+            raise ValueError("official post-backbone C requires the existing 96x96 scout")
+        if self.pooling_mode != "uniform_selected":
+            raise ValueError("official post-backbone B/C requires uniform sparse aggregation")
+        if any(side_channels.values()):
+            raise ValueError("official post-backbone B/C forbids adapter side channels")
+        if not (0.0 < self.roi_temperature and 0.0 < self.policy_temperature):
+            raise ValueError("official post-backbone ROI temperatures must be positive")
+        if self.min_roi_extent_cells != 1 or self.max_roi_extent != 1.0:
+            raise ValueError("official post-backbone C requires the frozen native-cell extent bounds")
+
+        super().__init__(cfg)
+        channels = int(self.model.backbone.embed_dims)
+        # Construct this module before C's conditional selector so B and C use
+        # the same seeded sparse-adapter initialization.
+        self.sparse_adapter = GeoRouteSparseTemporalAdapter(channels=channels)
+        for module in (
+            self.sparse_adapter.geometry_projection,
+            self.sparse_adapter.coordinate_projection,
+        ):
+            for parameter in module.parameters():
+                parameter.requires_grad = False
+
+        if self.selection_mode == "roi":
+            self.scout = GeoRouteScout(channels=48, dynamic_utility=False)
+            for parameter in self.scout.residual_head.parameters():
+                parameter.requires_grad = False
+            self.register_buffer(
+                "source_mean",
+                torch.tensor([123.675, 116.28, 103.53]).view(1, 3, 1, 1, 1),
+            )
+            self.register_buffer(
+                "source_std",
+                torch.tensor([58.395, 57.12, 57.375]).view(1, 3, 1, 1, 1),
+            )
+        self._pending_postbackbone_route: dict[str, torch.Tensor] | None = None
+
+    def _compute_roi_route(self, frames: torch.Tensor) -> dict[str, torch.Tensor]:
+        if (
+            not isinstance(frames, torch.Tensor)
+            or frames.ndim != 6
+            or tuple(frames.shape[1:3]) != (1, 3)
+            or frames.dtype != torch.uint8
+        ):
+            raise ValueError(
+                "official post-backbone C requires augmented uint8 [B,1,3,T,H,W] input"
+            )
+        source = frames[:, 0]
+        if int(source.shape[2]) != self.window_size or tuple(source.shape[-2:]) != (
+            160,
+            160,
+        ):
+            raise ValueError(
+                "official post-backbone C requires the augmented 768x160x160 input"
+            )
+        batch_size, _channels, frame_count, height, width = map(int, source.shape)
+        with torch.autocast(device_type=source.device.type, enabled=False):
+            normalized = _normalize_uint8_video(
+                source,
+                self.source_mean,
+                self.source_std,
+            )
+            scout_input = F.interpolate(
+                normalized.permute(0, 2, 1, 3, 4).reshape(
+                    batch_size * frame_count,
+                    3,
+                    height,
+                    width,
+                ),
+                size=(self.scout_size, self.scout_size),
+                mode="bilinear",
+                align_corners=False,
+            ).reshape(
+                batch_size,
+                frame_count,
+                3,
+                self.scout_size,
+                self.scout_size,
+            ).permute(0, 2, 1, 3, 4).contiguous()
+            scout_features = self.scout._encode(scout_input)
+            geometry_logits = self.scout.geometry_head(
+                scout_features.mean(dim=(-1, -2))
+            ).transpose(1, 2)
+            geometry = decode_continuous_geometry(
+                interpolate_temporal_knots(geometry_logits, stride=1),
+                min_extent=native_cell_extent_floor(
+                    self.source_grid_hw[0],
+                    self.source_grid_hw[1],
+                    cells_per_axis=self.min_roi_extent_cells,
+                ),
+                max_extent=self.max_roi_extent,
+            )
+            roi_logits = roi_logits_from_geometry(
+                geometry,
+                grid_height=self.source_grid_hw[0],
+                grid_width=self.source_grid_hw[1],
+                temperature=self.roi_temperature,
+            )
+            valid_mask = torch.ones_like(roi_logits, dtype=torch.bool)
+            route = select_exact_k(
+                roi_logits=roi_logits,
+                residual_logits=torch.zeros_like(roi_logits),
+                mode="roi",
+                tokens_per_tubelet=self.roi_tokens,
+                context_tokens=0,
+                roi_fraction=1.0,
+                training=self.training,
+                estimator="straight_through" if self.training else "none",
+                temperature=self.policy_temperature,
+                valid_mask=valid_mask,
+            )
+        return {
+            "geometry": geometry,
+            "indices": route["indices"],
+            "st_gate": route["st_gate"],
+        }
+
+    def forward(self, frames, masks=None):
+        if self._pending_postbackbone_route is not None:
+            raise RuntimeError("post-backbone ROI route was not consumed exactly once")
+        if self.selection_mode == "roi":
+            self._pending_postbackbone_route = self._compute_roi_route(frames)
+        try:
+            # The complete official preprocessing and dense VideoMAE forward are
+            # delegated unchanged.  Selection is consumed only by the overridden
+            # post-backbone aggregation hook below.
+            return super().forward(frames, masks)
+        finally:
+            self._pending_postbackbone_route = None
+
+    def unflatten_and_pool_features(self, features, batches, num_segs):
+        if features.ndim != 5:
+            raise ValueError("official VideoMAE feature map must be [B,C,T,H,W]")
+        if int(num_segs) != 1 or int(batches) % self.chunk_num:
+            raise ValueError("official post-backbone B/C requires one segment and 48 chunks")
+        if int(features.shape[0]) != int(batches) * int(num_segs):
+            raise ValueError("official heavy feature batch does not match its chunk lineage")
+        channels = int(self.model.backbone.embed_dims)
+        local_tubelets = int(features.shape[2])
+        if (
+            int(features.shape[1]) != channels
+            or local_tubelets != 8
+            or tuple(features.shape[-2:]) != self.source_grid_hw
+        ):
+            raise ValueError(
+                "official post-backbone B/C requires dense [*,384,8,10,10] features"
+            )
+        window_batch = int(batches) // self.chunk_num
+        tubelets = self.chunk_num * local_tubelets
+        dense_features = features.reshape(
+            window_batch,
+            self.chunk_num,
+            channels,
+            local_tubelets,
+            self.source_grid_hw[0],
+            self.source_grid_hw[1],
+        ).permute(0, 1, 3, 4, 5, 2).reshape(
+            window_batch,
+            tubelets,
+            self.source_grid_hw[0] * self.source_grid_hw[1],
+            channels,
+        )
+
+        if self.selection_mode == "all":
+            selected_features = dense_features
+            geometry = dense_features.new_ones((window_batch, tubelets, 4))
+            geometry[..., :2] = 0.5
+        else:
+            route = self._pending_postbackbone_route
+            if route is None or route["indices"].shape != (
+                window_batch,
+                tubelets,
+                self.roi_tokens,
+            ):
+                raise RuntimeError("post-backbone ROI route does not match dense heavy output")
+            indices = route["indices"]
+            selected_features = dense_features.gather(
+                2,
+                indices.unsqueeze(-1).expand(
+                    window_batch,
+                    tubelets,
+                    self.roi_tokens,
+                    channels,
+                ),
+            )
+            selected_features = selected_features * route["st_gate"].to(
+                dtype=selected_features.dtype
+            ).unsqueeze(-1)
+            geometry = route["geometry"].to(dtype=selected_features.dtype)
+
+        selected_scores = selected_features.new_zeros(selected_features.shape[:3])
+        selected_coordinates = selected_features.new_zeros(
+            (*selected_features.shape[:3], 2)
+        )
+        aggregated = self.sparse_adapter(
+            selected_features,
+            selected_scores,
+            geometry,
+            selected_coordinates,
+            use_absolute_coordinates=False,
+            use_roi_relative_coordinates=False,
+            use_geometry_projection=False,
+            pooling_mode="uniform_selected",
+        )
+        return F.interpolate(
+            aggregated,
+            size=self.window_size,
+            mode="linear",
+            align_corners=False,
+        )
+
+
 def _temporal_class_occupancy_targets(
     gt_segments: Sequence[torch.Tensor],
     gt_labels: Sequence[torch.Tensor],

@@ -1,5 +1,9 @@
 from mmengine.registry import Registry
-from .backbones import BackboneWrapper, GeoRouteBackboneWrapper
+from .backbones import (
+    BackboneWrapper,
+    GeoRouteBackboneWrapper,
+    GeoRoutePostBackboneAggregationWrapper,
+)
 
 MODELS = Registry("models")
 
@@ -30,6 +34,8 @@ def build_backbone(cfg):
     )
     if wrapper_type == "georoute_native_packed_v1":
         return GeoRouteBackboneWrapper(cfg)
+    if wrapper_type == "georoute_postbackbone_sparse_aggregation_v1":
+        return GeoRoutePostBackboneAggregationWrapper(cfg)
     if wrapper_type is not None:
         raise ValueError(f"unsupported backbone custom.wrapper_type={wrapper_type!r}")
     return BackboneWrapper(cfg)
