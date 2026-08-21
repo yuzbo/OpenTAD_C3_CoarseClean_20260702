@@ -125,8 +125,9 @@ def freeze(
         "intermediate_checkpoint_selection": False,
         "configs": {
             "arms": {
-                SELECTOR_ARM: {
+                route_arm: {
                     "path": relative_config,
+                    "selector_arm": SELECTOR_ARM,
                     "route_arm": route_arm,
                     "source_sha256": source_sha,
                     "resolved_sha256": resolved_sha,

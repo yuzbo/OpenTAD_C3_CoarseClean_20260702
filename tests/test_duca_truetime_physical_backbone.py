@@ -11,6 +11,7 @@ from opentad.models.backbones.physical_time import (
     physical_gap_scaled_depthwise_conv1d,
 )
 from opentad.models.backbones.vit_adapter import Adapter
+from tools.bata.duca_protected_physical_training import config_binding_key
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -223,3 +224,10 @@ def test_true_time_optimizer_trains_only_adapters_and_physical_time_module() -> 
     assert cfg.optimizer.backbone.exclude == ["backbone"]
     assert cfg.optimizer.backbone.custom[0].lr == pytest.approx(2e-4)
     assert cfg.optimizer.backbone.custom[1].lr == pytest.approx(2e-4)
+
+
+def test_paired_protocol_config_binding_is_route_specific() -> None:
+    selector = "protected_e2e_homotopy025"
+    assert config_binding_key(variant=selector, route_arm="RANKPACK_K384") == "RANKPACK_K384"
+    assert config_binding_key(variant=selector, route_arm="TRUETIME_K384") == "TRUETIME_K384"
+    assert config_binding_key(variant=selector, route_arm=None) == selector

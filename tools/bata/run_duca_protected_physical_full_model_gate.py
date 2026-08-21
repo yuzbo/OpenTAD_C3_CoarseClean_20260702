@@ -38,6 +38,7 @@ from opentad.datasets import build_dataloader, build_dataset
 from opentad.models import build_detector
 from opentad.models.duca.structured_selection import exact_uniform_positions
 from opentad.utils import ModelEma
+from tools.bata.duca_protected_physical_training import config_binding_key
 
 
 SCHEMA = "duca_protected_physical_full_model_gate_v1"
@@ -1664,14 +1665,23 @@ def run_gate(
     cfg_path = (ROOT / config_path).resolve()
     cfg = Config.fromfile(str(cfg_path))
     arm = _validate_config(cfg)
-    protocol_arm = protocol.get("configs", {}).get("arms", {}).get(arm)
+    route_arm = str(cfg.get("arm", "")).strip()
+    binding_key = config_binding_key(variant=arm, route_arm=route_arm)
+    if route_arm:
+        _require(
+            protocol.get("route_arm") == route_arm,
+            "route arm differs from P0",
+        )
+    protocol_arm = protocol.get("configs", {}).get("arms", {}).get(
+        binding_key
+    )
     _require(
         isinstance(protocol_arm, Mapping),
-        f"P0 manifest has no config evidence for {arm}",
+        f"P0 manifest has no config evidence for {binding_key}",
     )
     _require(
         protocol_arm.get("source_sha256") == _sha256(cfg_path),
-        f"{arm} config source differs from P0",
+        f"{binding_key} config source differs from P0",
     )
     pretrain = Path(adatad_pretrain).expanduser().resolve()
     _require(pretrain.is_file(), "VideoMAE-S pretrain is missing")
@@ -1951,6 +1961,8 @@ def run_gate(
             "path": str(cfg_path),
             "sha256": _sha256(cfg_path),
             "arm": arm,
+            "route_arm": route_arm or None,
+            "binding_key": binding_key,
             "contract": CONTRACT,
         },
         "adatad_pretrain": {

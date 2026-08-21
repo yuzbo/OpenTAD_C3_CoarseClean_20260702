@@ -269,6 +269,14 @@ def _load_bound_json(
     return payload
 
 
+def config_binding_key(*, variant: str, route_arm: str | None) -> str:
+    selector_key = str(variant).strip()
+    if not selector_key:
+        raise ValueError("protected physical selector variant is empty")
+    route_key = "" if route_arm is None else str(route_arm).strip()
+    return route_key or selector_key
+
+
 def build_runtime_bindings(
     *,
     git_commit: str,
@@ -340,14 +348,25 @@ def build_runtime_bindings(
         "DUCA_PROTECTED_PROTOCOL_MANIFEST_SHA256"
     ):
         raise RuntimeError("authorization is bound to another P0 manifest")
+    route_arm = str(os.environ.get("DUCA_TRUETIME_ROUTE_ARM", "")).strip()
+    binding_key = config_binding_key(variant=variant, route_arm=route_arm)
+    if route_arm:
+        if protocol.get("route_arm") != route_arm:
+            raise RuntimeError("runtime route arm differs from P0")
+        if authorization.get("route_arm") != route_arm:
+            raise RuntimeError("runtime route arm differs from authorization")
     authorization_config_hashes = authorization.get("config_hashes")
     if not isinstance(authorization_config_hashes, Mapping):
         raise RuntimeError("authorization lacks config-hash bindings")
-    if authorization_config_hashes.get(variant) != source_config_sha256:
+    if authorization_config_hashes.get(binding_key) != source_config_sha256:
         raise RuntimeError("runtime source config differs from authorization")
-    protocol_arm = protocol.get("configs", {}).get("arms", {}).get(variant)
+    protocol_arm = protocol.get("configs", {}).get("arms", {}).get(
+        binding_key
+    )
     if not isinstance(protocol_arm, Mapping):
-        raise RuntimeError(f"P0 manifest has no config evidence for {variant}")
+        raise RuntimeError(
+            f"P0 manifest has no config evidence for {binding_key}"
+        )
     if protocol_arm.get("source_sha256") != source_config_sha256:
         raise RuntimeError("runtime source config differs from P0")
     if protocol_arm.get("resolved_sha256") != resolved_config_sha256:
@@ -374,6 +393,7 @@ def build_runtime_bindings(
     bindings = {
         "git_commit": str(git_commit),
         "variant": str(variant),
+        "route_arm": route_arm or None,
         "seed": int(seed),
         "slurm_job_id": None if slurm_job_id is None else str(slurm_job_id),
         "source_config_path": str(Path(source_config_path).resolve()),
@@ -591,6 +611,7 @@ __all__ = [
     "build_runtime_bindings",
     "build_training_audit",
     "capture_global_rng_state",
+    "config_binding_key",
     "derive_train_loader_contract",
     "formal_training_contract",
     "new_update_audit",

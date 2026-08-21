@@ -18,9 +18,6 @@ from tools.bata.duca_protected_physical_training import canonical_sha256, sha256
 SCHEMA = "duca_protected_physical_authorization_v1"
 GATE_SCHEMA = "duca_protected_physical_full_model_gate_v1"
 PROTOCOL_SCHEMA = "duca_protected_physical_protocol_manifest_v1"
-SELECTOR_ARM = "protected_e2e_homotopy025"
-
-
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise RuntimeError(f"TrueTime PRE_RUN authorization failed: {message}")
@@ -57,7 +54,9 @@ def authorize(*, expected_commit: str, protocol_json: str, gate_json: str, outpu
     _require(gate.get("runtime", {}).get("git_commit") == expected_commit, "gate commit drift")
     protocol_sha = sha256_file(protocol_path)
     _require(gate.get("protocol_manifest", {}).get("sha256") == protocol_sha, "gate/P0 mismatch")
-    arm_record = protocol["configs"]["arms"][SELECTOR_ARM]
+    route_arm = str(protocol["route_arm"])
+    arm_record = protocol["configs"]["arms"][route_arm]
+    _require(gate.get("config", {}).get("route_arm") == route_arm, "gate route-arm drift")
     _require(gate.get("config", {}).get("sha256") == arm_record["source_sha256"], "gate config drift")
 
     output = Path(output_json).expanduser().resolve()
@@ -69,7 +68,7 @@ def authorize(*, expected_commit: str, protocol_json: str, gate_json: str, outpu
         "route": protocol["route"],
         "route_arm": protocol["route_arm"],
         "protocol_manifest_sha256": protocol_sha,
-        "config_hashes": {SELECTOR_ARM: arm_record["source_sha256"]},
+        "config_hashes": {route_arm: arm_record["source_sha256"]},
         "authorized_scope": {
             "official60_four_arm_training": True,
             "official60_homotopy_training": True,

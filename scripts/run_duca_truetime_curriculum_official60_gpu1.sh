@@ -45,12 +45,12 @@ from pathlib import Path
 p=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
 a=json.loads(Path(sys.argv[2]).read_text(encoding='utf-8'))
 c=Path(sys.argv[3]).resolve(); route=sys.argv[4]
-record=p['configs']['arms']['protected_e2e_homotopy025']
+record=p['configs']['arms'][route]
 source=hashlib.sha256(c.read_bytes()).hexdigest()
 assert p['ok'] is True and p['route_arm'] == route
 assert record['route_arm'] == route and record['source_sha256'] == source
 assert a['ok'] is True and a['route_arm'] == route
-assert a['config_hashes']['protected_e2e_homotopy025'] == source
+assert a['config_hashes'][route] == source
 print(record['resolved_sha256'])
 print(source)
 PY
