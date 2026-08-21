@@ -516,6 +516,39 @@ def test_official_prebackbone_bc_materializes_native_support_before_one_heavy_ca
     assert "torch" not in sys.modules
 
 
+def test_official_prebackbone_fixed_support_publishes_one_zero_consumer_contract():
+    source = (ROOT / "opentad/models/backbones/georoute_wrapper.py").read_text()
+    tree = ast.parse(source)
+    wrapper_node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "GeoRouteBackboneWrapper"
+    )
+    methods = {
+        node.name: ast.get_source_segment(source, node)
+        for node in wrapper_node.body
+        if isinstance(node, ast.FunctionDef)
+    }
+    fixed = methods["_forward_official_fixed_support"]
+    consumer = methods["consume_training_auxiliary_losses"]
+    assert fixed is not None and consumer is not None
+    guard = "self._pending_regularization is not None"
+    publish = 'self._pending_regularization = {"geometry": output.new_zeros(())}'
+    clear = "self._pending_regularization = None"
+    consume = 'regularization = self._pending_regularization.pop("geometry")'
+    assert fixed.index(guard) < fixed.index("extract_native_tubelets(")
+    assert fixed.index("output = deterministic_linear_2x(") < fixed.index(publish)
+    assert fixed.index(publish) < fixed.index("return output.to(torch.float32)")
+    assert fixed.count(publish) == 1
+    assert clear in fixed
+    assert '"geometry_regularization_enabled": False' in fixed
+    assert consume in consumer
+    assert consumer.index(consume) < consumer.index(
+        'return {"georoute_geometry_regularization_loss": regularization}'
+    )
+    assert "torch" not in sys.modules
+
+
 def test_official_prebackbone_ragged_path_preserves_official_checkpointing():
     source = (ROOT / "opentad/models/backbones/vit_adapter.py").read_text()
     tree = ast.parse(source)

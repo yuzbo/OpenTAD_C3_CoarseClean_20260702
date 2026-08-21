@@ -2934,6 +2934,15 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         """Run the matched official B/C path with selection before VideoMAE."""
 
         del masks
+        if self.training and (
+            self._pending_regularization is not None
+            or self._pending_score_function is not None
+            or self._pending_dynamic_auxiliary is not None
+        ):
+            raise RuntimeError(
+                "official pre-backbone pending training losses were not "
+                "consumed exactly once"
+            )
         source = self._validate_official_fixed_support_input(frames)
         self.set_norm_layer()
         (
@@ -3062,7 +3071,19 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "uses_teacher": False,
             "uses_oracle": False,
             "uses_raw_prediction": False,
+            "geometry_regularization_enabled": False,
         }
+        if self.training:
+            # ActionFormer capability-dispatches the shared GeoRoute consumer on
+            # every training forward.  This arm has no scientific regularizer,
+            # but it must still publish one defined, exactly-once zero contract.
+            self._pending_regularization = {"geometry": output.new_zeros(())}
+            self._pending_score_function = None
+            self._pending_dynamic_auxiliary = None
+        else:
+            self._pending_regularization = None
+            self._pending_score_function = None
+            self._pending_dynamic_auxiliary = None
         return output.to(torch.float32)
 
     def forward(self, frames, masks=None):
