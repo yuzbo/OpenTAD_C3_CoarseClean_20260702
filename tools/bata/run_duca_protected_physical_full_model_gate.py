@@ -1015,7 +1015,7 @@ def _uniform_physical_legacy_parity(
             model,
             selected_inputs=materialized["inputs"],
             selected_masks=materialized["masks"],
-            metas=batch["metas"],
+            metas=materialized["metas"],
             gt_segments=legacy_segments,
             gt_labels=batch["gt_labels"],
             mutable_state=mutable_state,
@@ -1914,23 +1914,33 @@ def run_gate(
         int(head_debug.get("physical_grid_actionformer_selected_count", -1)) == 384,
         "physical head did not consume exact K=384",
     )
-    full_uniform_parity = _uniform_physical_legacy_parity(
-        model,
-        batch=batch,
-        mutable_state=mutable_state,
-    )
-    padded_uniform_parity = _uniform_physical_legacy_parity(
-        model,
-        batch=short_padded_batch,
-        mutable_state=mutable_state,
-    )
-    uniform_parity = {
-        "full_window": full_uniform_parity,
-        "short_padded_window": padded_uniform_parity,
-        "target_assignment_parity": True,
-        "decode_parity": True,
-        "target_and_decode_parity": True,
-    }
+    if protocol.get("route") == "DUCA_TRUE_TIME_INDIRECT_CURRICULUM":
+        uniform_parity = {
+            "applicable": False,
+            "reason": (
+                "paired RankPack/TrueTime arms share the dense-physical detector head; "
+                "the selected-axis legacy head is not an experimental arm"
+            ),
+        }
+    else:
+        full_uniform_parity = _uniform_physical_legacy_parity(
+            model,
+            batch=batch,
+            mutable_state=mutable_state,
+        )
+        padded_uniform_parity = _uniform_physical_legacy_parity(
+            model,
+            batch=short_padded_batch,
+            mutable_state=mutable_state,
+        )
+        uniform_parity = {
+            "applicable": True,
+            "full_window": full_uniform_parity,
+            "short_padded_window": padded_uniform_parity,
+            "target_assignment_parity": True,
+            "decode_parity": True,
+            "target_and_decode_parity": True,
+        }
     padded_audit = _padded_window_audit(
         model,
         ddp,
