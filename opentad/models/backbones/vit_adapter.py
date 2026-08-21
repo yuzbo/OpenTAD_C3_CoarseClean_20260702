@@ -15,6 +15,11 @@ from mmengine.model.weight_init import constant_init, trunc_normal_init
 from mmaction.utils import ConfigType, OptConfigType
 from mmaction.models.backbones.vit_mae import get_sinusoid_encoding
 
+from .physical_time import (
+    PhysicalTimeTubeletEmbedding,
+    physical_gap_scaled_depthwise_conv1d,
+)
+
 
 class Adapter(BaseModule):
     def __init__(
@@ -54,7 +59,15 @@ class Adapter(BaseModule):
         trunc_normal_init(self.down_proj, std=0.02, bias=0)
         constant_init(self.up_proj, 0)  # the last projection layer is initialized to 0
 
-    def forward(self, x: Tensor, h: int, w: int) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        h: int,
+        w: int,
+        temporal_positions: Optional[Tensor] = None,
+        temporal_valid_mask: Optional[Tensor] = None,
+        nominal_temporal_gap: float = 1.0,
+    ) -> Tensor:
         inputs = x
 
         # down and up projection
@@ -65,7 +78,27 @@ class Adapter(BaseModule):
         B, N, C = x.shape  # 48, 8*10*10, 384
         attn = x.reshape(-1, self.temporal_size, h, w, x.shape[-1])  # [b,t,h,w,c]  [1,384,10,10,384]
         attn = attn.permute(0, 2, 3, 4, 1).flatten(0, 2)  # [b*h*w,c,t] [1*10*10,384,384]
-        attn = self.dwconv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
+        if temporal_positions is None:
+            attn = self.dwconv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
+        else:
+            temporal_positions = temporal_positions.reshape(-1, self.temporal_size)
+            if temporal_valid_mask is None:
+                temporal_valid_mask = torch.ones_like(temporal_positions, dtype=torch.bool)
+            else:
+                temporal_valid_mask = temporal_valid_mask.reshape(-1, self.temporal_size).bool()
+            expanded_positions = temporal_positions[:, None, None, :].expand(-1, h, w, -1).reshape(
+                -1, self.temporal_size
+            )
+            expanded_valid = temporal_valid_mask[:, None, None, :].expand(-1, h, w, -1).reshape(
+                -1, self.temporal_size
+            )
+            attn = physical_gap_scaled_depthwise_conv1d(
+                attn,
+                self.dwconv,
+                expanded_positions,
+                expanded_valid,
+                nominal_gap=float(nominal_temporal_gap),
+            )
         attn = self.conv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
         attn = attn.unflatten(0, (-1, h, w)).permute(0, 4, 1, 2, 3)  # [b,t,h,w,c] [1,384,10,10,384]
         attn = attn.reshape(B, N, C)
@@ -504,7 +537,7 @@ class Attention(BaseModule):
         self.q_bias = nn.Parameter(torch.zeros(self.embed_dims))
         self.v_bias = nn.Parameter(torch.zeros(self.embed_dims))
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, token_valid_mask: Optional[Tensor] = None) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -532,11 +565,23 @@ class Attention(BaseModule):
         # x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
 
         # fast attention
-        x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p)
+        attention_bias = None
+        if token_valid_mask is not None:
+            if tuple(token_valid_mask.shape) != (B, N):
+                raise ValueError("token_valid_mask must match attention [B,N]")
+            token_valid_mask = token_valid_mask.to(device=x.device, dtype=torch.bool)
+            attention_bias = x.new_zeros((B, 1, 1, N))
+            attention_bias = attention_bias.masked_fill(
+                ~token_valid_mask[:, None, None, :],
+                torch.finfo(x.dtype).min,
+            )
+        x = F.scaled_dot_product_attention(q, k, v, attn_mask=attention_bias, dropout_p=self.attn_drop.p)
         x = x.transpose(1, 2).reshape(B, N, -1)
 
         x = self.proj(x)
         x = self.proj_drop(x)
+        if token_valid_mask is not None:
+            x = x * token_valid_mask[:, :, None].to(dtype=x.dtype)
         return x
 
 
@@ -656,6 +701,10 @@ class Block(BaseModule):
         w,
         packed_dense_mask: Optional[Tensor] = None,
         packed_stats: Optional[Dict[str, int]] = None,
+        token_valid_mask: Optional[Tensor] = None,
+        temporal_positions: Optional[Tensor] = None,
+        temporal_valid_mask: Optional[Tensor] = None,
+        nominal_temporal_gap: float = 1.0,
     ) -> Tensor:
         """Defines the computation performed at every call.
 
@@ -668,13 +717,22 @@ class Block(BaseModule):
         def _inner_forward(x):
             """Forward wrapper for utilizing checkpoint."""
             if packed_dense_mask is None:
-                x = x + self.drop_path(self.attn(self.norm1(x)))
+                x = x + self.drop_path(self.attn(self.norm1(x), token_valid_mask=token_valid_mask))
                 x = x + self.drop_path(self.mlp(self.norm2(x)))
             else:
                 x = self._packed_attention_mlp_forward(x, packed_dense_mask, packed_stats)
 
             if self.use_adapter:
-                x = self.adapter(x, h, w)
+                x = self.adapter(
+                    x,
+                    h,
+                    w,
+                    temporal_positions=temporal_positions,
+                    temporal_valid_mask=temporal_valid_mask,
+                    nominal_temporal_gap=nominal_temporal_gap,
+                )
+            if token_valid_mask is not None:
+                x = x * token_valid_mask[:, :, None].to(dtype=x.dtype)
             return x
 
         if self.with_cp and x.requires_grad:
@@ -756,6 +814,10 @@ class VisionTransformerAdapter(BaseModule):
         adapter_index: list = [3, 5, 7, 11],
         tubelet_token_redundancy_aux: Optional[Dict] = None,
         tubelet_packed_runtime_route: Optional[Dict] = None,
+        physical_time: bool = False,
+        physical_time_nominal_pair_gap: float = 2.0,
+        physical_time_nominal_tubelet_gap: float = 4.0,
+        physical_time_extent: Optional[float] = None,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -772,6 +834,9 @@ class VisionTransformerAdapter(BaseModule):
         self.patch_size = patch_size
         self.latest_tubelet_token_redundancy_summary = None
         self.latest_tubelet_packed_runtime_summary = None
+        self.latest_physical_time_summary = None
+        self.physical_time = bool(physical_time)
+        self.physical_time_nominal_tubelet_gap = float(physical_time_nominal_tubelet_gap)
 
         self.patch_embed = PatchEmbed(
             in_channels=in_channels,
@@ -782,6 +847,13 @@ class VisionTransformerAdapter(BaseModule):
             padding=(0, 0, 0),
             dilation=(1, 1, 1),
         )
+        self.physical_time_embedding = None
+        if self.physical_time:
+            self.physical_time_embedding = PhysicalTimeTubeletEmbedding(
+                embed_dims=embed_dims,
+                nominal_pair_gap=float(physical_time_nominal_pair_gap),
+                physical_extent=float(total_frames if physical_time_extent is None else physical_time_extent),
+            )
 
         grid_size = img_size // patch_size
         num_patches = grid_size**2 * (num_frames // tubelet_size)
@@ -839,7 +911,12 @@ class VisionTransformerAdapter(BaseModule):
         ratio = num_adapter_param / num_vit_param * 100
         print("ViT's param: {}, Adapter's params: {}, ratio: {:2.1f}%".format(num_vit_param, num_adapter_param, ratio))
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        source_positions: Optional[Tensor] = None,
+        valid_mask: Optional[Tensor] = None,
+    ) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -853,7 +930,34 @@ class VisionTransformerAdapter(BaseModule):
         b, _, _, h, w = x.shape
         h //= self.patch_size
         w //= self.patch_size
-        x = self.patch_embed(x)[0]
+        temporal_positions = None
+        temporal_valid_mask = None
+        token_valid_mask = None
+        if self.physical_time:
+            if self.physical_time_embedding is None:
+                raise RuntimeError("physical_time=True requires a physical time embedding")
+            if source_positions is None:
+                raise ValueError("physical-time VideoMAE requires source_positions before patch embedding")
+            x, temporal_positions, support, temporal_valid_mask = self.physical_time_embedding(
+                x,
+                source_positions,
+                valid_mask,
+                self.patch_embed.projection,
+            )
+            token_valid_mask = temporal_valid_mask[:, :, None].expand(-1, -1, h * w).reshape(
+                int(x.shape[0]), -1
+            )
+            self.latest_physical_time_summary = {
+                "enabled": True,
+                "positions_consumed_before_temporal_mixing": True,
+                "source_positions_shape": tuple(source_positions.shape),
+                "tubelet_positions_shape": tuple(temporal_positions.shape),
+                "tubelet_support_shape": tuple(support.shape),
+                "valid_tubelets": temporal_valid_mask.sum(dim=1).detach().cpu().tolist(),
+            }
+        else:
+            x = self.patch_embed(x)[0]
+            self.latest_physical_time_summary = None
         if self.tubelet_token_redundancy_aux is not None:
             x = self.tubelet_token_redundancy_aux(x, h, w)
             self.latest_tubelet_token_redundancy_summary = self.tubelet_token_redundancy_aux.last_summary
@@ -869,6 +973,8 @@ class VisionTransformerAdapter(BaseModule):
 
         x = x + pos_embed
         x = self.pos_drop(x)
+        if token_valid_mask is not None:
+            x = x * token_valid_mask[:, :, None].to(dtype=x.dtype)
 
         if self.tubelet_packed_runtime_route is not None and self.tubelet_packed_runtime_route.enabled:
             x = self.tubelet_packed_runtime_route(x, self.blocks, h, w, training=self.training)
@@ -876,7 +982,15 @@ class VisionTransformerAdapter(BaseModule):
         else:
             self.latest_tubelet_packed_runtime_summary = None
             for blk in self.blocks:
-                x = blk(x, h, w)
+                x = blk(
+                    x,
+                    h,
+                    w,
+                    token_valid_mask=token_valid_mask,
+                    temporal_positions=temporal_positions,
+                    temporal_valid_mask=temporal_valid_mask,
+                    nominal_temporal_gap=self.physical_time_nominal_tubelet_gap,
+                )
 
         x = self.norm(x)
 

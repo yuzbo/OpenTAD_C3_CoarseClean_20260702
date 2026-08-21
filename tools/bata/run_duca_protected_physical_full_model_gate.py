@@ -161,9 +161,22 @@ def _validate_config(cfg: Config) -> str:
             "homotopy gate requires exactly 6000 successful-update steps",
         )
         homotopy_contract = cfg.duca_variant_contract
+        truetime_curriculum = str(
+            cfg.get("experiment_scope", {}).get("route", "")
+        ) == "DUCA_TRUE_TIME_INDIRECT_CURRICULUM"
+        expected_warmup_fraction = 1.0 / 3.0 if truetime_curriculum else 0.05
+        expected_transition_fraction = 1.0 / 3.0 if truetime_curriculum else 0.30
         _require(
-            float(homotopy_contract.policy_alpha_warmup_fraction) == 0.05
-            and float(homotopy_contract.policy_alpha_transition_fraction) == 0.30
+            abs(
+                float(homotopy_contract.policy_alpha_warmup_fraction)
+                - expected_warmup_fraction
+            )
+            < 1e-12
+            and abs(
+                float(homotopy_contract.policy_alpha_transition_fraction)
+                - expected_transition_fraction
+            )
+            < 1e-12
             and str(homotopy_contract.policy_alpha_transition_shape) == "cosine"
             and str(homotopy_contract.policy_alpha_zero_contract)
             == "hard_forward_exact_uniform"
@@ -171,6 +184,12 @@ def _validate_config(cfg: Config) -> str:
             and bool(homotopy_contract.schedule_step_checkpointed),
             "homotopy config schedule contract drift",
         )
+        if truetime_curriculum:
+            _require(
+                int(cfg.model.frame_selector.homotopy_warmup_steps) == 2000
+                and int(cfg.model.frame_selector.homotopy_transition_steps) == 2000,
+                "TrueTime curriculum must use 2000/2000/2000 successful updates",
+            )
     else:
         _require(
             configured_homotopy_steps == 0,

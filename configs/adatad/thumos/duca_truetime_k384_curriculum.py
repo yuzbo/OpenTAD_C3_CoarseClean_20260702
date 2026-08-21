@@ -16,15 +16,24 @@ experiment_scope = dict(
 )
 
 model = dict(
-    physical_grid_actionformer=dict(
-        enabled=True,
-        required=True,
-        strict=True,
-        coordinate_space="true_time_dense_index",
-        selected_position_key="irregular_selected_positions",
-        dense_valid_len_key="irregular_dense_valid_len",
-        delta_t_key="irregular_delta_t",
-    )
+    backbone=dict(
+        backbone=dict(
+            physical_time=True,
+            physical_time_nominal_pair_gap=2.0,
+            physical_time_nominal_tubelet_gap=4.0,
+            physical_time_extent=768.0,
+        ),
+    ),
+)
+optimizer = dict(
+    backbone=dict(
+        lr=0,
+        weight_decay=0,
+        custom=[
+            dict(name="adapter", lr=2e-4, weight_decay=0.05),
+            dict(name="physical_time_embedding", lr=2e-4, weight_decay=0.05),
+        ],
+        exclude=["backbone"],
+    ),
 )
 work_dir = "exps/thumos/adatad/duca_truetime_k384_curriculum"
-

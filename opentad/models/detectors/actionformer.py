@@ -219,7 +219,7 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self.backbone(inputs, masks=masks, metas=metas)
         else:
             x = inputs
 
@@ -509,7 +509,7 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self.backbone(inputs, masks=masks, metas=metas)
         else:
             x = inputs
 

@@ -15,10 +15,19 @@ python - <<'PY'
 from mmengine.config import Config
 import os
 c=Config.fromfile(os.environ.get("CONFIG_FOR_CHECK", "configs/adatad/thumos/duca_truetime_k384_curriculum.py"))
-assert c.window_size == c.requested_k == c.effective_k == c.executed_k == 384
+assert c.window_size == 384
+assert c.experiment_scope.requested_k == c.experiment_scope.effective_k == 384
+assert c.experiment_scope.executed_k == 384
 assert tuple(c.duca_curriculum.phase_boundaries) == (20,40,60)
-assert c.workflow.end_epoch == 60 and c.workflow.max_train_iters == 6000
+assert tuple(c.duca_curriculum.phase_successful_update_boundaries) == (2000,4000,6000)
+assert c.model.frame_selector.homotopy_warmup_steps == 2000
+assert c.model.frame_selector.homotopy_transition_steps == 2000
+assert c.model.frame_selector.homotopy_total_steps == 6000
+assert c.workflow.end_epoch == 60 and c.workflow.max_train_iters is None
 assert c.workflow.checkpoint_interval == 5
+assert c.workflow.primary_checkpoint_state_key == "state_dict_ema"
+assert c.dataset.train.type == "DucaStatelessThumosPaddingDataset"
+assert c.experiment_scope.repeats_dense_uniform_random is False
 PY
 if [[ "$PRECHECK_ONLY" == 1 ]]; then
   echo "DUCA_TRUE_TIME_INDIRECT_CURRICULUM_PRECHECK_PASS arm=$ARM config=$CONFIG"

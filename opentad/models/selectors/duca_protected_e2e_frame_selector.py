@@ -376,6 +376,8 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         detector_bridge_gradient_scale: Optional[float] = None,
         uniform_companion_fraction: Optional[float] = None,
         homotopy_total_steps: int = 0,
+        homotopy_warmup_steps: Optional[int] = None,
+        homotopy_transition_steps: Optional[int] = None,
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         strict_physical_metadata: bool = True,
         forbid_raw_prediction_cache: bool = True,
@@ -404,8 +406,16 @@ class DucaProtectedE2EFrameSelector(nn.Module):
         self.action_head_lr = float(action_head_lr)
         self.selector_lr = float(selector_lr)
         self.homotopy_total_steps = int(homotopy_total_steps)
-        self.homotopy_warmup_steps = round(self.homotopy_total_steps * 0.05)
-        self.homotopy_transition_steps = round(self.homotopy_total_steps * 0.30)
+        self.homotopy_warmup_steps = (
+            round(self.homotopy_total_steps * 0.05)
+            if homotopy_warmup_steps is None
+            else int(homotopy_warmup_steps)
+        )
+        self.homotopy_transition_steps = (
+            round(self.homotopy_total_steps * 0.30)
+            if homotopy_transition_steps is None
+            else int(homotopy_transition_steps)
+        )
         if self.arm not in _ARMS:
             raise ValueError(f"arm must be one of {sorted(_ARMS)}")
         expected_bridge_scale = _DETECTOR_BRIDGE_SCALES.get(self.arm)
@@ -971,7 +981,13 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             hard.hard_positions,
             hard.hard_slot_mask,
         )
-        detector_bridge = training and self.detector_bridge_gradient_scale > 0.0
+        bridge_alpha = (
+            float(homotopy_state["alpha"])
+            if homotopy_state["enabled"]
+            else 1.0
+        )
+        effective_detector_bridge_scale = self.detector_bridge_gradient_scale * bridge_alpha
+        detector_bridge = training and effective_detector_bridge_scale > 0.0
         detector_bridge_mask = (
             ~uniform_companion_mask
             if detector_bridge
@@ -997,7 +1013,7 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             )
             hard_detector_input = hard_base
             selected_inputs = hard_base + (
-                self.detector_bridge_gradient_scale
+                effective_detector_bridge_scale
                 * (soft_selected - soft_selected.detach())
             )
             if not torch.equal(
@@ -1027,7 +1043,8 @@ class DucaProtectedE2EFrameSelector(nn.Module):
                 "edge_count": hard.edge_count,
                 "detector_gradient_bridge": detector_bridge,
                 "detector_gradient_bridge_mask": detector_bridge_mask,
-                "detector_bridge_gradient_scale": (self.detector_bridge_gradient_scale),
+                "detector_bridge_gradient_scale": effective_detector_bridge_scale,
+                "detector_bridge_base_gradient_scale": self.detector_bridge_gradient_scale,
                 "uniform_companion_mask": uniform_companion_mask,
                 "uniform_companion_fraction": self.uniform_companion_fraction,
                 "detector_input": selected_inputs,
@@ -1052,7 +1069,8 @@ class DucaProtectedE2EFrameSelector(nn.Module):
             ],
             "max_gap_seconds": [float(value) for value in caps.detach().cpu().tolist()],
             "detector_gradient_bridge": detector_bridge,
-            "detector_bridge_gradient_scale": self.detector_bridge_gradient_scale,
+            "detector_bridge_gradient_scale": effective_detector_bridge_scale,
+            "detector_bridge_base_gradient_scale": self.detector_bridge_gradient_scale,
             "uniform_companion_count": int(
                 uniform_companion_mask.detach().sum().cpu().item()
             ),
