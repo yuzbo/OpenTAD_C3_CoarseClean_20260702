@@ -777,6 +777,17 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.context_tokens = int(getattr(custom_cfg, "georoute_context_tokens", 4))
         self.roi_fraction = float(getattr(custom_cfg, "georoute_roi_fraction", 0.50))
         self.route_mode = str(getattr(custom_cfg, "georoute_route_mode", "hybrid"))
+        raw_official_support = getattr(
+            custom_cfg,
+            "georoute_official_support",
+            None,
+        )
+        self.official_support = (
+            None if raw_official_support is None else str(raw_official_support)
+        )
+        self.official_roi_tokens = int(
+            getattr(custom_cfg, "georoute_official_roi_tokens", 64)
+        )
         self.policy_estimator = str(getattr(custom_cfg, "georoute_policy_estimator", "straight_through"))
         self.policy_temperature = float(getattr(custom_cfg, "georoute_policy_temperature", 0.5))
         self.window_token_budget = int(
@@ -929,6 +940,10 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.p0_dense_reference_check = bool(getattr(custom_cfg, "georoute_p0_dense_reference_check", False))
         self.output_length = int(getattr(custom_cfg, "georoute_output_length", self.window_size))
         self.max_batch_size = int(getattr(custom_cfg, "georoute_max_batch_size", 1))
+        if self.official_support not in {None, "all_native", "roi_k64"}:
+            raise ValueError(
+                "georoute_official_support must be all_native or roi_k64"
+            )
         if self.route_mode not in ROUTE_MODES:
             raise ValueError(f"unsupported GeoRoute route mode {self.route_mode!r}")
         if self.policy_estimator not in POLICY_ESTIMATORS:
@@ -1100,10 +1115,44 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             raise ValueError(
                 "role calibration telemetry requires dynamic SCNR diagnostic replay"
             )
+        if self.official_support is not None:
+            if (
+                self.window_size != 768
+                or self.patch_size != 16
+                or self.tubelet_size != 2
+                or self.scout_size != 96
+                or self.output_length != 768
+                or self.max_batch_size != 1
+            ):
+                raise ValueError(
+                    "official pre-backbone B/C requires 768 frames, native "
+                    "2x16x16 tubelets, a 96x96 scout and local batch one"
+                )
+            if (
+                self.route_mode != "roi"
+                or self.official_roi_tokens != 64
+                or self.policy_estimator != "straight_through"
+                or not self.absolute_position_enabled
+                or self.absolute_coordinates_enabled
+                or self.roi_relative_coordinates_enabled
+                or self.geometry_projection_enabled
+                or self.geometry_side_channel
+                or self.pooling_mode != "uniform_selected"
+                or self.geometry_smoothness_weight != 0.0
+                or self.area_prior_weight != 0.0
+                or self.p0_dense_reference_check
+            ):
+                raise ValueError(
+                    "official pre-backbone B/C requires fixed ROI-only "
+                    "support with no residual, side channel or proxy path"
+                )
         super().__init__(cfg)
         if int(self.model.backbone.patch_size) != self.patch_size:
             raise ValueError("GeoRoute patch size must match the loaded VideoMAE")
-        if bool(getattr(self.model.backbone, "with_cp", False)):
+        if (
+            bool(getattr(self.model.backbone, "with_cp", False))
+            and self.official_support is None
+        ):
             raise ValueError("GeoRoute requires VideoMAE with_cp=False for one-forward accounting")
         self._freeze_shared_backbone_except_adapters()
         self.scout = GeoRouteScout(
@@ -1173,7 +1222,10 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 parameter.requires_grad = False
 
     def _configure_sparse_adapter_trainability(self) -> None:
-        if self.route_mode not in DYNAMIC_ROUTE_MODES:
+        if (
+            self.route_mode not in DYNAMIC_ROUTE_MODES
+            and self.official_support is None
+        ):
             return
         # Support-only isolation disables both representation side channels.
         # Freeze them explicitly so DDP/optimizer audits do not see intentionally
@@ -1228,6 +1280,120 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         ):
             raise ValueError("structured PL detector risk requires local batch size exactly one")
         return source[:, 0].contiguous(), scout[:, 0].contiguous()
+
+    def _validate_official_fixed_support_input(
+        self,
+        frames: torch.Tensor,
+    ) -> torch.Tensor:
+        if (
+            not isinstance(frames, torch.Tensor)
+            or frames.ndim != 6
+            or tuple(frames.shape[1:3]) != (1, 3)
+            or frames.dtype != torch.uint8
+        ):
+            raise ValueError(
+                "official pre-backbone B/C requires augmented uint8 "
+                "[B,1,3,T,H,W] input"
+            )
+        source = frames[:, 0]
+        if (
+            int(source.shape[0]) > self.max_batch_size
+            or int(source.shape[2]) != self.window_size
+            or tuple(source.shape[-2:]) != (160, 160)
+        ):
+            raise ValueError(
+                "official pre-backbone B/C requires local batch one and the "
+                "augmented 768x160x160 input"
+            )
+        return source.contiguous()
+
+    def _official_fixed_support_route(
+        self,
+        source: torch.Tensor,
+        *,
+        source_grid_hw: tuple[int, int],
+        valid_patch_mask: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        if self.official_support is None:
+            raise RuntimeError("official fixed-support route is not configured")
+        if source_grid_hw != (10, 10):
+            raise ValueError("official pre-backbone B/C requires a 10x10 native grid")
+        batch_size, _channels, frame_count, height, width = map(int, source.shape)
+        with torch.autocast(device_type=source.device.type, enabled=False):
+            normalized = _normalize_uint8_video(
+                source,
+                self.source_mean,
+                self.source_std,
+            )
+            scout_input = F.interpolate(
+                normalized.permute(0, 2, 1, 3, 4).reshape(
+                    batch_size * frame_count,
+                    3,
+                    height,
+                    width,
+                ),
+                size=(self.scout_size, self.scout_size),
+                mode="bilinear",
+                align_corners=False,
+            ).reshape(
+                batch_size,
+                frame_count,
+                3,
+                self.scout_size,
+                self.scout_size,
+            ).permute(0, 2, 1, 3, 4).contiguous()
+            scout_features = self.scout._encode(scout_input)
+            geometry_logits = self.scout.geometry_head(
+                scout_features.mean(dim=(-1, -2))
+            ).transpose(1, 2)
+            geometry = decode_continuous_geometry(
+                interpolate_temporal_knots(
+                    geometry_logits,
+                    stride=self.geometry_stride_tubelets,
+                ),
+                min_extent=self._minimum_roi_extent_wh(source_grid_hw),
+                max_extent=self.max_roi_extent,
+            )
+            roi_logits = roi_logits_from_geometry(
+                geometry,
+                grid_height=source_grid_hw[0],
+                grid_width=source_grid_hw[1],
+                temperature=self.roi_temperature,
+            )
+            selected_per_tubelet = (
+                int(roi_logits.shape[-1])
+                if self.official_support == "all_native"
+                else self.official_roi_tokens
+            )
+            route = select_exact_k(
+                roi_logits=roi_logits,
+                residual_logits=torch.zeros_like(roi_logits),
+                mode="roi",
+                tokens_per_tubelet=selected_per_tubelet,
+                context_tokens=0,
+                roi_fraction=1.0,
+                training=self.training,
+                estimator="straight_through" if self.training else "none",
+                temperature=self.policy_temperature,
+                valid_mask=valid_patch_mask,
+            )
+        spatial_indices, sort_order = route["indices"].sort(dim=-1)
+        st_gate = route["st_gate"].gather(-1, sort_order)
+        if self.official_support == "all_native":
+            expected = torch.arange(
+                int(roi_logits.shape[-1]),
+                device=spatial_indices.device,
+                dtype=torch.long,
+            ).view(1, 1, -1).expand_as(spatial_indices)
+            if not torch.equal(spatial_indices, expected):
+                raise RuntimeError("official arm B did not preserve all native support")
+        elif int(spatial_indices.shape[-1]) != self.official_roi_tokens:
+            raise RuntimeError("official arm C did not preserve fixed ROI K=64")
+        return {
+            "geometry": geometry,
+            "spatial_indices": spatial_indices,
+            "st_gate": st_gate,
+        }
 
     def _gather_selected_native_tubelets(
         self,
@@ -2760,7 +2926,148 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             ] = True
         return output.to(torch.float32)
 
+    def _forward_official_fixed_support(
+        self,
+        frames: torch.Tensor,
+        masks: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Run the matched official B/C path with selection before VideoMAE."""
+
+        del masks
+        source = self._validate_official_fixed_support_input(frames)
+        self.set_norm_layer()
+        (
+            native,
+            source_grid_hw,
+            ignored_remainder,
+            valid_patch_mask,
+        ) = extract_native_tubelets(
+            source,
+            patch_size=self.patch_size,
+            tubelet_size=self.tubelet_size,
+        )
+        route = self._official_fixed_support_route(
+            source,
+            source_grid_hw=source_grid_hw,
+            valid_patch_mask=valid_patch_mask,
+        )
+        batch_size, tubelets, spatial_tokens = map(int, native.shape[:3])
+        spatial_indices = route["spatial_indices"]
+        selected_per_tubelet = int(spatial_indices.shape[-1])
+        tubelet_offsets = (
+            torch.arange(
+                tubelets,
+                device=spatial_indices.device,
+                dtype=torch.long,
+            )
+            * spatial_tokens
+        ).view(1, tubelets, 1)
+        physical_indices = (
+            spatial_indices + tubelet_offsets
+        ).reshape(batch_size, tubelets * selected_per_tubelet)
+
+        # Materialize the selected native 2x16x16 tubelets before entering any
+        # VideoMAE block.  Both arms use this exact gather and ragged heavy path;
+        # only their physical support (100 versus ROI K=64) differs.
+        selected_native = self._gather_selected_native_physical(
+            native,
+            physical_indices,
+        )
+        selected_native = _normalize_uint8_video(
+            selected_native.reshape(
+                -1,
+                3,
+                self.tubelet_size,
+                self.patch_size,
+                self.patch_size,
+            ),
+            self.source_mean,
+            self.source_std,
+        ).reshape_as(selected_native)
+        ragged_invocations_before = int(
+            self.model.backbone.native_ragged_forward_invocations
+        )
+        selected_features = self.model.backbone.forward_native_ragged(
+            selected_native,
+            physical_indices,
+            total_tubelets=tubelets,
+            source_grid_hw=source_grid_hw,
+            use_absolute_position=self.absolute_position_enabled,
+        )
+        ragged_invocation_delta = int(
+            self.model.backbone.native_ragged_forward_invocations
+        ) - ragged_invocations_before
+        if ragged_invocation_delta != 1:
+            raise RuntimeError(
+                "official pre-backbone B/C did not execute exactly one ragged "
+                "VideoMAE forward"
+            )
+        if tuple(selected_features.shape[:2]) != tuple(physical_indices.shape):
+            raise RuntimeError(
+                "official pre-backbone heavy output differs from selected support"
+            )
+        selected_features = selected_features * route["st_gate"].reshape(
+            batch_size,
+            tubelets * selected_per_tubelet,
+        ).to(dtype=selected_features.dtype).unsqueeze(-1)
+        tubelet_indices = torch.div(
+            physical_indices,
+            spatial_tokens,
+            rounding_mode="floor",
+        )
+        selected_spatial_indices = physical_indices.remainder(spatial_tokens)
+        selected_coordinates = self._selected_physical_coordinates(
+            selected_spatial_indices,
+            source_grid_hw=source_grid_hw,
+        ).to(dtype=selected_features.dtype)
+        intermediate, heavy_valid_mask = self.sparse_adapter.forward_ragged(
+            selected_features,
+            torch.zeros_like(physical_indices, dtype=selected_features.dtype),
+            route["geometry"],
+            selected_coordinates,
+            tubelet_indices,
+            use_absolute_coordinates=False,
+            use_roi_relative_coordinates=False,
+            use_geometry_projection=False,
+            pooling_mode="uniform_selected",
+        )
+        if not bool(heavy_valid_mask.all().item()):
+            raise RuntimeError(
+                "fixed per-tubelet support unexpectedly produced an empty tubelet"
+            )
+        self.latest_heavy_valid_mask = heavy_valid_mask.detach()
+        output = deterministic_linear_2x(intermediate)
+        expected_output_shape = (
+            batch_size,
+            int(self.model.backbone.embed_dims),
+            self.output_length,
+        )
+        if tuple(output.shape) != expected_output_shape:
+            raise RuntimeError(
+                "official pre-backbone B/C violated the AdaTAD feature contract"
+            )
+        self.latest_georoute_audit = {
+            "schema_version": "georoute_official_prebackbone_bc_v1",
+            "official_support": self.official_support,
+            "selection_application": "pre_heavy_videomae",
+            "native_materialization_before_heavy": True,
+            "selected_tokens_per_tubelet": selected_per_tubelet,
+            "physical_tokens_per_window": int(physical_indices.shape[1]),
+            "heavy_backbone_forward_count": ragged_invocation_delta,
+            "heavy_execution": "true_clip_ragged_no_padding",
+            "ignored_source_remainder_hw": list(ignored_remainder),
+            "residual_enabled": False,
+            "adapter_side_channel_enabled": False,
+            "uses_gt_for_route": False,
+            "uses_teacher": False,
+            "uses_oracle": False,
+            "uses_raw_prediction": False,
+        }
+        return output.to(torch.float32)
+
     def forward(self, frames, masks=None):
+        if self.official_support is not None:
+            return self._forward_official_fixed_support(frames, masks)
         source, scout = self._validate_inputs(frames)
         self.set_norm_layer()
         (

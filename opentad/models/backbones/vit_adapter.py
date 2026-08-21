@@ -1001,32 +1001,44 @@ class Block(BaseModule):
     ) -> Tensor:
         """Execute one block on true clip-ragged selected-token sequences."""
 
-        if self.with_cp:
-            raise ValueError(
-                "native ragged execution requires with_cp=False for exact accounting"
+        checkpoint_active = bool(self.with_cp and x.requires_grad)
+
+        def _inner_forward(value: Tensor) -> Tensor:
+            # Reentrant checkpoint executes its first pass without autograd and
+            # replays the block with autograd during backward.  Record the
+            # physical ledger only on the first pass so recomputation cannot be
+            # mistaken for a second heavy execution.
+            active_stats = (
+                None
+                if checkpoint_active and torch.is_grad_enabled()
+                else packed_stats
             )
-        x = self._ragged_attention_mlp_forward(
-            x,
-            bucket_positions,
-            packed_stats,
-        )
-        if self.use_adapter:
-            x = self.adapter.forward_native_ragged(
-                x,
-                tubelet_indices,
-                spatial_indices,
-                total_tubelets=total_tubelets,
-                grid_height=grid_height,
-                grid_width=grid_width,
+            value = self._ragged_attention_mlp_forward(
+                value,
+                bucket_positions,
+                active_stats,
             )
-            if packed_stats is not None:
-                packed_stats["ragged_adapter_forward_count"] = int(
-                    packed_stats.get("ragged_adapter_forward_count", 0)
-                ) + 1
-                packed_stats["executed_adapter_tokens"] = int(
-                    packed_stats.get("executed_adapter_tokens", 0)
-                ) + int(x.shape[0]) * int(x.shape[1])
-        return x
+            if self.use_adapter:
+                value = self.adapter.forward_native_ragged(
+                    value,
+                    tubelet_indices,
+                    spatial_indices,
+                    total_tubelets=total_tubelets,
+                    grid_height=grid_height,
+                    grid_width=grid_width,
+                )
+                if active_stats is not None:
+                    active_stats["ragged_adapter_forward_count"] = int(
+                        active_stats.get("ragged_adapter_forward_count", 0)
+                    ) + 1
+                    active_stats["executed_adapter_tokens"] = int(
+                        active_stats.get("executed_adapter_tokens", 0)
+                    ) + int(value.shape[0]) * int(value.shape[1])
+            return value
+
+        if checkpoint_active:
+            return cp.checkpoint(_inner_forward, x, use_reentrant=True)
+        return _inner_forward(x)
 
     def forward(
         self,
@@ -1564,10 +1576,6 @@ class VisionTransformerAdapter(BaseModule):
             != (self.patch_size, self.patch_size)
         ):
             raise ValueError("ragged native input must use VideoMAE 2x16x16 tubelets")
-        if self.with_cp:
-            raise ValueError(
-                "native ragged execution requires with_cp=False for exact accounting"
-            )
         if (
             self.tubelet_packed_runtime_route is not None
             and self.tubelet_packed_runtime_route.enabled

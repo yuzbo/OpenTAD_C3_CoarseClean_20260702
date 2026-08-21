@@ -470,6 +470,171 @@ def test_official_bc_launcher_submits_only_b_and_c_on_the_frozen_a_identity():
     assert "torch" not in sys.modules
 
 
+def test_official_prebackbone_bc_materializes_native_support_before_one_heavy_call():
+    source = (ROOT / "opentad/models/backbones/georoute_wrapper.py").read_text()
+    tree = ast.parse(source)
+    wrapper_node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "GeoRouteBackboneWrapper"
+    )
+    method_node = next(
+        node
+        for node in wrapper_node.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_forward_official_fixed_support"
+    )
+    method = ast.get_source_segment(source, method_node)
+    wrapper = ast.get_source_segment(source, wrapper_node)
+    assert method is not None and wrapper is not None
+    ordered = (
+        "extract_native_tubelets(",
+        "self._official_fixed_support_route(",
+        "self._gather_selected_native_physical(",
+        "self.model.backbone.forward_native_ragged(",
+        "self.sparse_adapter.forward_ragged(",
+        "deterministic_linear_2x(",
+    )
+    positions = [method.index(binding) for binding in ordered]
+    assert positions == sorted(positions)
+    assert method.count("self.model.backbone.forward_native_ragged(") == 1
+    assert "forward_native_packed" not in method
+    assert "super().forward" not in method
+    assert "select_dynamic_global_exact_budget" not in method
+    assert '"native_materialization_before_heavy": True' in method
+    assert '"residual_enabled": False' in method
+    assert '"uses_gt_for_route": False' in method
+    assert '"uses_teacher": False' in method
+    assert '"uses_oracle": False' in method
+    assert '"uses_raw_prediction": False' in method
+    assert 'self.official_support == "all_native"' in wrapper
+    assert "self.official_roi_tokens" in wrapper
+    assert "residual_logits=torch.zeros_like(roi_logits)" in wrapper
+    assert "use_absolute_coordinates=False" in method
+    assert "use_roi_relative_coordinates=False" in method
+    assert "use_geometry_projection=False" in method
+    assert "torch" not in sys.modules
+
+
+def test_official_prebackbone_ragged_path_preserves_official_checkpointing():
+    source = (ROOT / "opentad/models/backbones/vit_adapter.py").read_text()
+    tree = ast.parse(source)
+    block_node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "Block"
+    )
+    method_node = next(
+        node
+        for node in block_node.body
+        if isinstance(node, ast.FunctionDef) and node.name == "forward_native_ragged"
+    )
+    method = ast.get_source_segment(source, method_node)
+    assert method is not None
+    assert "checkpoint_active = bool(self.with_cp and x.requires_grad)" in method
+    assert "checkpoint_active and torch.is_grad_enabled()" in method
+    assert "cp.checkpoint(_inner_forward, x, use_reentrant=True)" in method
+    assert "native ragged execution requires with_cp=False" not in source
+    assert method.index("self._ragged_attention_mlp_forward(") < method.index(
+        "self.adapter.forward_native_ragged("
+    )
+    assert "torch" not in sys.modules
+
+
+def test_official_prebackbone_configs_differ_only_in_physical_support():
+    config_root = ROOT / "configs/adatad/thumos"
+    common = (
+        config_root / "georoute_official_prebackbone_bc_common_seed42_v001.py"
+    ).read_text()
+    arm_b = (
+        config_root / "georoute_official_b_alltoken_prebackbone_seed42_v001.py"
+    ).read_text()
+    arm_c = (
+        config_root / "georoute_official_c_roi_k64_prebackbone_seed42_v001.py"
+    ).read_text()
+
+    assert '_base_ = ["./e2e_thumos_videomae_s_768x1_160_adapter.py"]' in common
+    assert 'wrapper_type="georoute_native_packed_v1"' in common
+    assert "georoute_official_roi_tokens=64" in common
+    assert 'georoute_route_mode="roi"' in common
+    assert "georoute_dynamic_roi_modifier_enabled=False" in common
+    assert "georoute_dynamic_residual_modifier_enabled=False" in common
+    assert "georoute_absolute_coordinates_enabled=False" in common
+    assert "georoute_roi_relative_coordinates_enabled=False" in common
+    assert "georoute_geometry_projection_enabled=False" in common
+    assert "georoute_geometry_side_channel=False" in common
+    assert "train=dict(batch_size=1)" in common
+    assert "val=dict(batch_size=1)" in common
+    assert "test=dict(batch_size=1)" in common
+    assert "local_batch_size=1" in common and "global_batch_size=2" in common
+    assert "arm_b_tokens_per_tubelet=100" in common
+    assert "arm_c_tokens_per_tubelet=64" in common
+    assert 'native_materialization="before_any_videomae_heavy_block"' in common
+    assert "support_is_only_scientific_difference=True" in common
+    assert "dynamic_k_t_enabled=False" in common
+    assert "auxiliary_or_proxy_loss_enabled=False" in common
+    assert "gt_for_route_allowed=False" in common
+    assert "teacher_for_route_allowed=False" in common
+    assert "oracle_for_route_allowed=False" in common
+    assert "raw_prediction_cache_allowed=False" in common
+    assert "dataset =" not in common
+    assert "scheduler =" not in common
+    assert "workflow =" not in common
+    assert "post_processing =" not in common
+    assert common.index('dict(name="sparse_adapter"') < common.index(
+        'dict(name="adapter"'
+    )
+
+    normalized_b = (
+        arm_b.replace('official_bc_arm = "B"', 'official_bc_arm = "ARM"')
+        .replace(
+            'georoute_official_support="all_native"',
+            'georoute_official_support="SUPPORT"',
+        )
+        .replace(
+            'work_dir = "exps/thumos/adatad/georoute_official_b_alltoken_prebackbone_seed42_v001"',
+            'work_dir = "WORK_DIR"',
+        )
+    )
+    normalized_c = (
+        arm_c.replace('official_bc_arm = "C"', 'official_bc_arm = "ARM"')
+        .replace(
+            'georoute_official_support="roi_k64"',
+            'georoute_official_support="SUPPORT"',
+        )
+        .replace(
+            'work_dir = "exps/thumos/adatad/georoute_official_c_roi_k64_prebackbone_seed42_v001"',
+            'work_dir = "WORK_DIR"',
+        )
+    )
+    assert normalized_b == normalized_c
+    assert "torch" not in sys.modules
+
+
+def test_official_prebackbone_launcher_freezes_identity_without_recipe_overrides():
+    packet = (
+        ROOT / "scripts/run_zoomtoken_official_prebackbone_bc_n16r4.sh"
+    ).read_text()
+    assert packet.startswith("#!/usr/bin/env bash\n")
+    assert 'LINEAGE_BASE="01c58b9f2370e914150cf94d392208a4e211c053"' in packet
+    assert 'case "${ARM}" in\n  B)' in packet
+    assert "georoute_official_b_alltoken_prebackbone_seed42_v001.py" in packet
+    assert "georoute_official_c_roi_k64_prebackbone_seed42_v001.py" in packet
+    assert "permits only B or C; A is completed job 1245842" in packet
+    assert "--nproc_per_node=2" in packet
+    assert "tools/train.py \"${CONFIG}\" --seed 42 --id 0" in packet
+    assert '"${#visible_gpus[@]}" -eq 2' in packet
+    assert "batch_size=" not in packet
+    assert "optimizer." not in packet
+    assert "scheduler." not in packet
+    assert "solver." not in packet
+    assert "post_processing." not in packet
+    assert "workflow." not in packet
+    assert "--resume" not in packet
+    assert "PRE_RUN" not in packet
+    assert "torch" not in sys.modules
+
+
 def test_dn_g_import_time_local_module_closure_is_complete_without_torch():
     models_root = ROOT / "opentad/models"
     pending = [models_root / "__init__.py"]
