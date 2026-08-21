@@ -172,6 +172,28 @@ def test_wrapper_maps_two_k384_rows_to_48_ordered_sixteen_frame_clips() -> None:
     assert metas[1]["duca_heavy_call_boundary"] == "VisionTransformerAdapter.pre_patch_embed"
 
 
+def test_wrapper_replicates_last_physical_position_for_inactive_k384_tail() -> None:
+    wrapper = BackboneWrapper.__new__(BackboneWrapper)
+    torch.nn.Module.__init__(wrapper)
+    wrapper.model = SimpleNamespace(backbone=SimpleNamespace(physical_time=True))
+    frames = torch.zeros(24, 3, 16, 2, 2)
+    masks = torch.zeros(1, 384, dtype=torch.bool)
+    masks[0, :200] = True
+    metas = [{"irregular_selected_positions": torch.arange(200)}]
+
+    physical = wrapper._physical_backbone_inputs(frames, masks=masks, metas=metas)
+
+    positions = physical["source_positions"].reshape(1, 384)[0]
+    valid = physical["valid_mask"].reshape(1, 384)[0]
+    torch.testing.assert_close(positions[:200], torch.arange(200).float())
+    torch.testing.assert_close(positions[200:], torch.full((184,), 199.0))
+    assert bool(valid[:200].all())
+    assert not bool(valid[200:].any())
+    assert metas[0]["duca_heavy_requested_k"] == 384
+    assert metas[0]["duca_heavy_effective_k"] == 200
+    assert metas[0]["duca_heavy_executed_k"] == 384
+
+
 def test_wrapper_rejects_nonprefix_selected_mask() -> None:
     wrapper = BackboneWrapper.__new__(BackboneWrapper)
     torch.nn.Module.__init__(wrapper)

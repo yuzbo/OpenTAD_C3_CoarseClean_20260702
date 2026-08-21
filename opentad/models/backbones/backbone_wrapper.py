@@ -162,8 +162,6 @@ class BackboneWrapper(nn.Module):
             if positions is None:
                 raise ValueError("physical-time backbone requires irregular_selected_positions")
             positions = torch.as_tensor(positions, device=frames.device, dtype=torch.float32).reshape(-1)
-            if int(positions.numel()) != int(masks.shape[1]):
-                raise ValueError("selected positions must exactly match the selected mask length")
             active = masks[idx].to(device=frames.device, dtype=torch.bool)
             active_count = int(active.sum().item())
             if active_count <= 0:
@@ -173,13 +171,24 @@ class BackboneWrapper(nn.Module):
             ) < active_count
             if not torch.equal(active, expected_prefix):
                 raise ValueError("physical-time selected masks must be valid-prefix masks")
-            valid_positions = positions[:active_count]
+            if int(positions.numel()) != active_count:
+                raise ValueError(
+                    "selected positions must exactly match the number of valid selected observations"
+                )
+            valid_positions = positions
             if valid_positions.numel() > 1 and not bool(
                 torch.all(valid_positions[1:] > valid_positions[:-1]).item()
             ):
                 raise ValueError("physical-time source positions must be strictly increasing before padding")
-            position_rows.append(positions)
-            requested.append(int(positions.numel()))
+            padded_positions = torch.cat(
+                (
+                    valid_positions,
+                    valid_positions[-1:].expand(int(active.numel()) - active_count),
+                ),
+                dim=0,
+            )
+            position_rows.append(padded_positions)
+            requested.append(int(active.numel()))
             effective.append(active_count)
 
         positions = torch.stack(position_rows, dim=0)
