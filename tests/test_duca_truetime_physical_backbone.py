@@ -11,6 +11,10 @@ from opentad.models.backbones.physical_time import (
     physical_gap_scaled_depthwise_conv1d,
 )
 from opentad.models.backbones.vit_adapter import Adapter
+from opentad.models.duca.structured_selection import (
+    physical_exact_k_select,
+    physical_exact_uniform_gap_cap,
+)
 from tools.bata.duca_protected_physical_training import config_binding_key
 
 
@@ -100,6 +104,31 @@ def test_physical_depthwise_conv_attenuates_cross_gap_neighbor() -> None:
     gap_out = physical_gap_scaled_depthwise_conv1d(x, conv, large_gap, valid, nominal_gap=4.0)
     assert gap_out[0, 0, 0] < nominal_out[0, 0, 0]
     assert gap_out[0, 0, 1] < nominal_out[0, 0, 1]
+
+
+def test_k384_physical_marginals_remain_normalized_on_irregular_axis() -> None:
+    generator = torch.Generator().manual_seed(3407)
+    scores = torch.randn((1, 768), generator=generator, dtype=torch.float32) * 3.0
+    gaps = torch.where(
+        torch.arange(768) % 7 == 0,
+        torch.tensor(0.08, dtype=torch.float64),
+        torch.tensor(0.04, dtype=torch.float64),
+    )
+    physical_seconds = gaps.cumsum(dim=0)[None]
+    valid = torch.ones((1, 768), dtype=torch.bool)
+    caps = physical_exact_uniform_gap_cap(physical_seconds, valid, k=384)
+    output = physical_exact_k_select(
+        scores,
+        physical_seconds,
+        valid,
+        k=384,
+        max_gap_seconds=caps,
+    )
+    row_mass = output.soft_slot_assignment[0].sum(dim=1)
+    torch.testing.assert_close(row_mass, torch.ones_like(row_mass), atol=2e-4, rtol=2e-4)
+    positions = output.hard_positions[0]
+    assert int((positions >= 0).sum()) == 384
+    assert bool(torch.all(positions[1:] > positions[:-1]))
 
 
 def test_adapter_merges_clip_batches_in_the_same_order_as_physical_positions() -> None:

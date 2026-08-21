@@ -1047,7 +1047,11 @@ def _uniform_physical_legacy_parity(
         enabled=True,
         cache_enabled=False,
     ):
-        features = model.backbone(materialized["inputs"])
+        features = model.backbone(
+            materialized["inputs"],
+            masks=materialized["masks"],
+            metas=materialized["metas"],
+        )
         features, feature_masks = model.pad_data(
             features,
             materialized["masks"],

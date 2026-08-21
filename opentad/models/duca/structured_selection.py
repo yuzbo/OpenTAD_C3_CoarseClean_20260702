@@ -1059,7 +1059,12 @@ def _physical_row_forward_backward(
         )
     if graph.source_valid.numel() != temporal_len:
         raise ValueError("physical exact-K graph length does not match node scores")
-    scores = node_log_probs.float() / float(temperature)
+    # K=384 over a 768-node physical graph accumulates hundreds of
+    # log-sum-exp recurrences.  Keeping that control-plane dynamic program in
+    # float32 can move otherwise valid per-slot marginals outside the frozen
+    # normalization tolerance.  The hard Viterbi path is unchanged; only the
+    # differentiable Gibbs marginal calculation uses float64 internally.
+    scores = node_log_probs.to(dtype=torch.float64) / float(temperature)
     alpha_rows = []
     alpha = torch.where(
         graph.source_valid,
@@ -1140,7 +1145,11 @@ def _physical_row_forward_backward(
     ).sum(dim=1)
     if k > 1 and not bool(torch.all(expectations[1:] > expectations[:-1]).item()):
         raise RuntimeError("physical exact-K slot expectations are not strictly ordered")
-    return occupancy, slots, log_partition
+    return (
+        occupancy.to(dtype=node_log_probs.dtype),
+        slots.to(dtype=node_log_probs.dtype),
+        log_partition,
+    )
 
 
 def _prepare_physical_exact_k_batch(
