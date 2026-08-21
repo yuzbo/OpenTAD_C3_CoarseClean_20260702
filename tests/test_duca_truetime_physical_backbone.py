@@ -155,7 +155,7 @@ def test_wrapper_rejects_nonprefix_selected_mask() -> None:
 
 
 @pytest.mark.parametrize(
-    (filename, arm, physical_time),
+    "filename,arm,physical_time",
     [
         ("duca_rankpack_k384_curriculum.py", "RANKPACK_K384", False),
         ("duca_truetime_k384_curriculum.py", "TRUETIME_K384", True),

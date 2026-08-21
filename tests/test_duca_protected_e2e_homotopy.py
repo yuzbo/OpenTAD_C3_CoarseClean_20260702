@@ -88,6 +88,10 @@ def _load_duca_modules():
     sys.modules[acquisition.__name__] = acquisition
 
     duca_root = ROOT / "opentad" / "models" / "duca"
+    _load_module(
+        f"{package_root}.models.duca._fixed_budget_autograd",
+        duca_root / "_fixed_budget_autograd.py",
+    )
     structured = _load_module(
         f"{package_root}.models.duca.structured_selection",
         duca_root / "structured_selection.py",
