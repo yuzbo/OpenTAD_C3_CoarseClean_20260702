@@ -581,7 +581,7 @@ class Attention(BaseModule):
         x = self.proj(x)
         x = self.proj_drop(x)
         if token_valid_mask is not None:
-            x = x * token_valid_mask[:, :, None].to(dtype=x.dtype)
+            x = x.masked_fill(~token_valid_mask[:, :, None], 0)
         return x
 
 
@@ -732,7 +732,7 @@ class Block(BaseModule):
                     nominal_temporal_gap=nominal_temporal_gap,
                 )
             if token_valid_mask is not None:
-                x = x * token_valid_mask[:, :, None].to(dtype=x.dtype)
+                x = x.masked_fill(~token_valid_mask[:, :, None], 0)
             return x
 
         if self.with_cp and x.requires_grad:
@@ -974,7 +974,7 @@ class VisionTransformerAdapter(BaseModule):
         x = x + pos_embed
         x = self.pos_drop(x)
         if token_valid_mask is not None:
-            x = x * token_valid_mask[:, :, None].to(dtype=x.dtype)
+            x = x.masked_fill(~token_valid_mask[:, :, None], 0)
 
         if self.tubelet_packed_runtime_route is not None and self.tubelet_packed_runtime_route.enabled:
             x = self.tubelet_packed_runtime_route(x, self.blocks, h, w, training=self.training)

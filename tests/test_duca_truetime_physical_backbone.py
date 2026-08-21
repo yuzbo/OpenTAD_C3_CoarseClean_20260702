@@ -10,7 +10,7 @@ from opentad.models.backbones.physical_time import (
     PhysicalTimeTubeletEmbedding,
     physical_gap_scaled_depthwise_conv1d,
 )
-from opentad.models.backbones.vit_adapter import Adapter
+from opentad.models.backbones.vit_adapter import Adapter, Attention
 from opentad.models.duca.structured_selection import (
     physical_exact_k_select,
     physical_exact_uniform_gap_cap,
@@ -149,6 +149,21 @@ def test_adapter_merges_clip_batches_in_the_same_order_as_physical_positions() -
         nominal_temporal_gap=1.0,
     )
     torch.testing.assert_close(physical, legacy, rtol=1e-6, atol=1e-6)
+
+
+def test_attention_clears_nonfinite_outputs_for_an_all_invalid_clip(monkeypatch) -> None:
+    attention = Attention(embed_dims=8, num_heads=2)
+    x = torch.zeros(1, 4, 8)
+    invalid = torch.zeros(1, 4, dtype=torch.bool)
+
+    def nonfinite_attention(q, _k, _v, **_kwargs):
+        return torch.full_like(q, float("nan"))
+
+    monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", nonfinite_attention)
+    output = attention(x, token_valid_mask=invalid)
+
+    assert bool(torch.isfinite(output).all())
+    torch.testing.assert_close(output, torch.zeros_like(output))
 
 
 def test_wrapper_maps_two_k384_rows_to_48_ordered_sixteen_frame_clips() -> None:
