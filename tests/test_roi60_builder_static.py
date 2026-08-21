@@ -596,9 +596,9 @@ def test_official_prebackbone_configs_differ_only_in_physical_support():
     assert "georoute_roi_relative_coordinates_enabled=False" in common
     assert "georoute_geometry_projection_enabled=False" in common
     assert "georoute_geometry_side_channel=False" in common
-    assert "train=dict(batch_size=1)" in common
-    assert "val=dict(batch_size=1)" in common
-    assert "test=dict(batch_size=1)" in common
+    assert "train=dict(batch_size=2)" in common
+    assert "val=dict(batch_size=2)" in common
+    assert "test=dict(batch_size=2)" in common
     assert "local_batch_size=1" in common and "global_batch_size=2" in common
     assert "arm_b_tokens_per_tubelet=100" in common
     assert "arm_c_tokens_per_tubelet=64" in common
@@ -641,6 +641,30 @@ def test_official_prebackbone_configs_differ_only_in_physical_support():
         )
     )
     assert normalized_b == normalized_c
+    assert "torch" not in sys.modules
+
+
+def test_official_prebackbone_job_global_batch_divides_to_local_one():
+    config_path = (
+        ROOT
+        / "configs/adatad/thumos/georoute_official_prebackbone_bc_common_seed42_v001.py"
+    )
+    scope = {"__builtins__": {"dict": dict}}
+    exec(compile(config_path.read_text(), str(config_path), "exec"), scope)
+    solver = scope["solver"]
+    contract = scope["official_bc_contract"]
+    world_size = contract["rank_count"]
+    global_batch = solver["train"]["batch_size"]
+    assert global_batch == contract["global_batch_size"] == 2
+    assert global_batch % world_size == 0
+    assert global_batch // world_size == contract["local_batch_size"] == 1
+    assert solver["val"]["batch_size"] == global_batch
+    assert solver["test"]["batch_size"] == global_batch
+    launcher = (
+        ROOT / "scripts/run_zoomtoken_official_prebackbone_bc_n16r4.sh"
+    ).read_text()
+    assert "batch_size=" not in launcher
+    assert "solver." not in launcher
     assert "torch" not in sys.modules
 
 

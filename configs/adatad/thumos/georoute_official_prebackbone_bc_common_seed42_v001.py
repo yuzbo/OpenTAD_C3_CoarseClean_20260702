@@ -47,11 +47,11 @@ model = dict(
     )
 )
 
-# torchrun launches two ranks.  One sample per rank is the frozen global batch 2.
+# OpenTAD interprets this as the job-global batch, then divides by two ranks.
 solver = dict(
-    train=dict(batch_size=1),
-    val=dict(batch_size=1),
-    test=dict(batch_size=1),
+    train=dict(batch_size=2),
+    val=dict(batch_size=2),
+    test=dict(batch_size=2),
 )
 
 optimizer = dict(
