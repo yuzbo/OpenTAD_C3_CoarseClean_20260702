@@ -63,7 +63,8 @@ class BackboneWrapper(nn.Module):
             self.temporal_checkpointing_chunk_num = custom_cfg.temporal_checkpointing_chunk_num
             self.temporal_checkpointing_chunk_dim = custom_cfg.temporal_checkpointing_chunk_dim
 
-    def forward(self, frames, masks=None):
+    def forward(self, frames, masks=None, irregular_selected_positions=None,
+                irregular_dense_valid_len=None):
         # two types: snippet or frame
 
         # snippet: 3D backbone, [bs, T, 3, clip_len, H, W]
@@ -85,6 +86,12 @@ class BackboneWrapper(nn.Module):
 
         # flatten the batch dimension and num_segs dimension
         batches, num_segs = frames.shape[0:2]
+        actual_positions = canonical_positions = None
+        if irregular_selected_positions is not None:
+            from opentad.models.utils.temporal_grid import global_rank_clip_coordinates
+            coords = global_rank_clip_coordinates(irregular_selected_positions, irregular_dense_valid_len, k=irregular_selected_positions.shape[1], clip_len=16, tubelet_size=2)
+            actual_positions = coords["actual"].flatten(0, 1)
+            canonical_positions = coords["canonical"].flatten(0, 1)
         frames = frames.flatten(0, 1).contiguous()  # [bs*num_seg, ...]
 
         # go through the video backbone
@@ -95,9 +102,10 @@ class BackboneWrapper(nn.Module):
                         frames,
                         self.temporal_checkpointing_chunk_num,
                         self.temporal_checkpointing_chunk_dim,
+                        actual_positions, canonical_positions,
                     )
                 else:
-                    features = self.model.backbone(frames)
+                    features = self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions)
 
         else:  # let the model.train() or model.eval() decide whether to freeze
             if self.use_temporal_checkpointing:
@@ -105,9 +113,10 @@ class BackboneWrapper(nn.Module):
                     frames,
                     self.temporal_checkpointing_chunk_num,
                     self.temporal_checkpointing_chunk_dim,
+                    actual_positions, canonical_positions,
                 )
             else:
-                features = self.model.backbone(frames)
+                features = self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions)
 
         # unflatten and pool the features
         if isinstance(features, (tuple, list)):
@@ -144,7 +153,7 @@ class BackboneWrapper(nn.Module):
                     for param in m.parameters():
                         param.requires_grad = False
 
-    def temporal_checkpointing(self, frames, chunk_num, chunk_dim):
+    def temporal_checkpointing(self, frames, chunk_num, chunk_dim, actual_positions=None, canonical_positions=None):
         """Temporal Checkpointing for Video Backbone.
 
         Temporal checkpointing will 1) split the video frames along the temporal dimension and sequentially forward each chunk with
@@ -157,15 +166,20 @@ class BackboneWrapper(nn.Module):
             chunk_dim (int): input shape is [B*N,3,T,H,W], so either dim=0 or 2 is fine
         """
 
-        def _inner_forward(frames):
-            return self.model.backbone(frames)
+        def _inner_forward(frames, actual_positions=None, canonical_positions=None):
+            return self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions)
 
         video_feat = []
-        for mini_frames in torch.chunk(frames, chunk_num, dim=chunk_dim):  # B*N is chunked
+        for chunk_index, mini_frames in enumerate(torch.chunk(frames, chunk_num, dim=chunk_dim)):  # B*N is chunked
+            mini_actual = mini_canonical = None
+            if actual_positions is not None and chunk_dim == 0:
+                start = sum(x.shape[0] for x in torch.chunk(frames, chunk_num, dim=chunk_dim)[:chunk_index])
+                mini_actual = actual_positions[start:start + mini_frames.shape[0]]
+                mini_canonical = canonical_positions[start:start + mini_frames.shape[0]]
             # we can use torch.cp.checkpoint to implement an efficient temporal checkpointing mechanism
             mini_feat = cp.checkpoint(
                 _inner_forward,
-                mini_frames,
+                mini_frames, mini_actual, mini_canonical,
                 use_reentrant=False,
             )
             video_feat.append(mini_feat)

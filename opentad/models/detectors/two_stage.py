@@ -96,7 +96,8 @@ class TwoStageDetector(BaseDetector):
             selector_loss_keys = set(losses)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            positions, valid_len = self._backbone_position_metadata(metas, inputs.device)
+            x = self.backbone(inputs, masks, positions, valid_len)
         else:
             x = inputs
 
@@ -155,7 +156,8 @@ class TwoStageDetector(BaseDetector):
             self._require_selector_remap_metadata(metas)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            positions, valid_len = self._backbone_position_metadata(metas, inputs.device)
+            x = self.backbone(inputs, masks, positions, valid_len)
         else:
             x = inputs
 
@@ -284,6 +286,19 @@ class TwoStageDetector(BaseDetector):
             if key in protected_keys:
                 raise ValueError(f"{source_name} loss key collision with frame_selector: {key}")
             losses[key] = value
+
+    @staticmethod
+    def _backbone_position_metadata(metas, device):
+        if metas is None:
+            return None, None
+        holders = [metas] if isinstance(metas, Mapping) else metas
+        if not isinstance(holders, (list, tuple)):
+            return None, None
+        if not holders or not all(isinstance(m, Mapping) and "irregular_selected_positions" in m and "irregular_dense_valid_len" in m for m in holders):
+            return None, None
+        positions = torch.stack([torch.as_tensor(m["irregular_selected_positions"], device=device) for m in holders])
+        lengths = torch.as_tensor([m["irregular_dense_valid_len"] for m in holders], device=device)
+        return positions, lengths
 
     @staticmethod
     def _require_selector_remap_metadata(metas):
