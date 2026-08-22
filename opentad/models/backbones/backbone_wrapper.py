@@ -85,6 +85,12 @@ class BackboneWrapper(nn.Module):
 
         # flatten the batch dimension and num_segs dimension
         batches, num_segs = frames.shape[0:2]
+        if physical_positions is not None:
+            if physical_positions.ndim == 2 and physical_positions.shape[0] == batches:
+                physical_positions = physical_positions.unsqueeze(1).expand(-1, num_segs, -1)
+            elif physical_positions.ndim != 3 or physical_positions.shape[:2] != (batches, num_segs):
+                raise ValueError("physical_positions must be [B,T] or [B,num_segs,T] before flattening")
+            physical_positions = physical_positions.reshape(batches * num_segs, -1).contiguous()
         frames = frames.flatten(0, 1).contiguous()  # [bs*num_seg, ...]
 
         # go through the video backbone
@@ -95,16 +101,18 @@ class BackboneWrapper(nn.Module):
                         frames,
                         self.temporal_checkpointing_chunk_num,
                         self.temporal_checkpointing_chunk_dim,
+                        physical_positions,
                     )
                 else:
                     features = self.model.backbone(frames, physical_positions=physical_positions)
 
         else:  # let the model.train() or model.eval() decide whether to freeze
             if self.use_temporal_checkpointing:
-                features = self.temporal_checkpointing(
+                    features = self.temporal_checkpointing(
                     frames,
                     self.temporal_checkpointing_chunk_num,
                     self.temporal_checkpointing_chunk_dim,
+                    physical_positions,
                 )
             else:
                     features = self.model.backbone(frames, physical_positions=physical_positions)
@@ -144,7 +152,7 @@ class BackboneWrapper(nn.Module):
                     for param in m.parameters():
                         param.requires_grad = False
 
-    def temporal_checkpointing(self, frames, chunk_num, chunk_dim):
+    def temporal_checkpointing(self, frames, chunk_num, chunk_dim, physical_positions=None):
         """Temporal Checkpointing for Video Backbone.
 
         Temporal checkpointing will 1) split the video frames along the temporal dimension and sequentially forward each chunk with
@@ -157,15 +165,19 @@ class BackboneWrapper(nn.Module):
             chunk_dim (int): input shape is [B*N,3,T,H,W], so either dim=0 or 2 is fine
         """
 
-        def _inner_forward(frames):
-            return self.model.backbone(frames)
+        def _inner_forward(frames, positions):
+            return self.model.backbone(frames, physical_positions=positions)
 
         video_feat = []
-        for mini_frames in torch.chunk(frames, chunk_num, dim=chunk_dim):  # B*N is chunked
+        frame_chunks = torch.chunk(frames, chunk_num, dim=chunk_dim)
+        pos_chunks = torch.chunk(physical_positions, chunk_num, dim=chunk_dim) if physical_positions is not None else [None] * len(frame_chunks)
+        if physical_positions is not None and len(pos_chunks) != len(frame_chunks):
+            raise ValueError("physical_positions chunking must match frame chunks")
+        for mini_frames, mini_positions in zip(frame_chunks, pos_chunks):  # B*N is chunked
             # we can use torch.cp.checkpoint to implement an efficient temporal checkpointing mechanism
             mini_feat = cp.checkpoint(
                 _inner_forward,
-                mini_frames,
+                mini_frames, mini_positions,
                 use_reentrant=False,
             )
             video_feat.append(mini_feat)

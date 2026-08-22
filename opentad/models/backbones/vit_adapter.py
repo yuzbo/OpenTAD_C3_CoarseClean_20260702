@@ -883,11 +883,20 @@ class VisionTransformerAdapter(BaseModule):
         if self.singleclock.get("enabled", False) and physical_positions is not None:
             canonical = torch.linspace(0, 1, x.shape[1] // (h * w), device=x.device, dtype=x.dtype)
             canonical = canonical.expand(x.shape[0], -1)
+            if physical_positions.ndim != 2 or physical_positions.shape[0] != x.shape[0]:
+                raise ValueError("physical_positions must align with flattened backbone batch")
+            tubelet = int(getattr(self.patch_embed, "kernel_size", (2,))[0])
+            if physical_positions.shape[1] == x.shape[1] // (h * w) * tubelet:
+                physical_positions = physical_positions.reshape(x.shape[0], -1, tubelet).mean(dim=-1)
+            if physical_positions.shape[1] != canonical.shape[1]:
+                raise ValueError("physical_positions length must match VideoMAE tubelet count")
             relative_bias = build_canonical_time_residual_bias(
-                physical_positions, canonical, h * w, self.blocks[0].attn.num_heads,
+                physical_positions, canonical, h * w, 1,
                 eps=float(self.singleclock.get("eps", 1e-6)), dtype=x.dtype)
 
         if self.tubelet_packed_runtime_route is not None and self.tubelet_packed_runtime_route.enabled:
+            if relative_bias is not None:
+                raise ValueError("SingleClock + packed tubelet runtime is unsupported; refusing to drop shared bias")
             x = self.tubelet_packed_runtime_route(x, self.blocks, h, w, training=self.training)
             self.latest_tubelet_packed_runtime_summary = self.tubelet_packed_runtime_route.last_summary
         else:
