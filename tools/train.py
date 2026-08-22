@@ -540,6 +540,9 @@ def main():
                 contract=duca_formal_contract,
                 bindings=duca_runtime_bindings,
             )
+            duca_training.validate_checkpoint_successful_optimizer_updates(
+                checkpoint, update_audit
+            )
             duca_training.validate_update_state(
                 contract=duca_formal_contract,
                 epoch=resume_epoch,

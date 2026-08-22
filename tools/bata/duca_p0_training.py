@@ -481,6 +481,26 @@ def restore_training_state(
     return (restored, [dict(x) for x in records])
 
 
+def validate_checkpoint_successful_optimizer_updates(
+    checkpoint: Mapping[str, Any], update_audit: Mapping[str, Any]
+) -> None:
+    if "successful_optimizer_updates" not in checkpoint:
+        raise RuntimeError(
+            "formal DUCA resume checkpoint lacks top-level successful_optimizer_updates"
+        )
+    checkpoint_updates = checkpoint["successful_optimizer_updates"]
+    if isinstance(checkpoint_updates, bool) or not isinstance(checkpoint_updates, int):
+        raise RuntimeError(
+            "formal DUCA resume checkpoint successful_optimizer_updates must be an integer"
+        )
+    restored_updates = int(update_audit.get("successful_optimizer_updates", -1))
+    if checkpoint_updates != restored_updates:
+        raise RuntimeError(
+            "formal DUCA resume checkpoint successful_optimizer_updates mismatch: "
+            f"top-level={checkpoint_updates}, restored_audit={restored_updates}"
+        )
+
+
 __all__ = [
     "DUCA_P0_CHECKPOINT_METADATA_SCHEMA",
     "DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA",
@@ -494,6 +514,7 @@ __all__ = [
     "formal_training_contract",
     "new_update_audit",
     "restore_training_state",
+    "validate_checkpoint_successful_optimizer_updates",
     "restore_global_rng_state",
     "selector_schedule_step",
     "sha256_file",

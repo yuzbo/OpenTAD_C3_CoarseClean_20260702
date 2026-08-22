@@ -1,10 +1,15 @@
 import random
 
 import numpy as np
+import pytest
 import torch
 
 from opentad.utils.checkpoint import save_checkpoint
-from tools.bata.duca_p0_training import capture_global_rng_state, restore_global_rng_state
+from tools.bata.duca_p0_training import (
+    capture_global_rng_state,
+    restore_global_rng_state,
+    validate_checkpoint_successful_optimizer_updates,
+)
 
 
 def test_checkpoint_round_trip_preserves_optimizer_update_count_and_rng(tmp_path):
@@ -36,3 +41,15 @@ def test_checkpoint_round_trip_preserves_optimizer_update_count_and_rng(tmp_path
     assert torch.equal(actual[2], expected[2])
     assert restored_scheduler.last_epoch == scheduler.last_epoch
 
+
+def test_checkpoint_update_count_contract_match_missing_and_mismatch():
+    audit = {"successful_optimizer_updates": 7}
+    validate_checkpoint_successful_optimizer_updates(
+        {"successful_optimizer_updates": 7}, audit
+    )
+    with pytest.raises(RuntimeError, match="lacks top-level"):
+        validate_checkpoint_successful_optimizer_updates({}, audit)
+    with pytest.raises(RuntimeError, match="mismatch"):
+        validate_checkpoint_successful_optimizer_updates(
+            {"successful_optimizer_updates": 8}, audit
+        )
