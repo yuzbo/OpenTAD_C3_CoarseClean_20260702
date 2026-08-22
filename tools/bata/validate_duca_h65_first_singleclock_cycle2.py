@@ -17,7 +17,8 @@ def exact_uniform_positions_once(dense_len=768, k=384):
     return torch.linspace(0, dense_len - 1, k, dtype=torch.long)
 
 def global_rank_clip_slices(batch, clips=24, clip_len=16, tubelet=2):
-    return exact_uniform_positions_once(clips*clip_len*tubelet, clips*clip_len).reshape(batch, clips, -1).reshape(batch*clips, -1)
+    pos = exact_uniform_positions_once(clips*clip_len*tubelet, clips*clip_len).repeat(batch, 1)
+    return pos.reshape(batch, clips, -1).reshape(batch*clips, -1)
 
 def attention_mask(batch, clips=24, spatial=14):
     return torch.zeros((batch*clips, 1, 8*spatial, 8*spatial), dtype=torch.bool)
