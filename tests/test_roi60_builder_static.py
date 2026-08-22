@@ -113,7 +113,7 @@ def test_checkpoint_policy_keeps_recovery_state_and_latest_three():
         "next_successful_update_index",
     ):
         assert field in train
-    assert 'ZOOMTOKEN_RECOVERY_ARMS = {"DN", "G"}' in train
+    assert 'ZOOMTOKEN_RECOVERY_ARMS = {"DN", "G", "R1"}' in train
     assert "same cell" in train
     assert "sealed ZoomToken cells are not resumable" in train
     assert "work_dir must be explicitly bound by --work-dir" in train
@@ -677,7 +677,8 @@ def test_official_prebackbone_launcher_freezes_identity_without_recipe_overrides
     assert 'case "${ARM}" in\n  B)' in packet
     assert "georoute_official_b_alltoken_prebackbone_seed42_v001.py" in packet
     assert "georoute_official_c_roi_k64_prebackbone_seed42_v001.py" in packet
-    assert "permits only B or C; A is completed job 1245842" in packet
+    assert "georoute_official_r1_strict_rect8x8_prebackbone_seed42_v001.py" in packet
+    assert "permits only B, C or R1; A is completed job 1245842" in packet
     assert "--nproc_per_node=2" in packet
     assert "tools/train.py \"${CONFIG}\" --seed 42 --id 0" in packet
     assert '"${#visible_gpus[@]}" -eq 2' in packet
@@ -687,7 +688,8 @@ def test_official_prebackbone_launcher_freezes_identity_without_recipe_overrides
     assert "solver." not in packet
     assert "post_processing." not in packet
     assert "workflow." not in packet
-    assert "--resume" not in packet
+    assert 'resume_args=(--resume "${RESUME}")' in packet
+    assert "same-cell checkpoint/recovery_epoch_<N>.pth" in packet
     assert "PRE_RUN" not in packet
     assert "torch" not in sys.modules
 

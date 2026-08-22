@@ -15,7 +15,8 @@ LINEAGE_BASE="01c58b9f2370e914150cf94d392208a4e211c053"
 EXPECTED_COMMIT="${ZOOMTOKEN_PREBACKBONE_BC_EXPECTED_COMMIT:?set ZOOMTOKEN_PREBACKBONE_BC_EXPECTED_COMMIT to the reviewed clean commit}"
 ROOT="${ZOOMTOKEN_PREBACKBONE_BC_SOURCE_ROOT:?set ZOOMTOKEN_PREBACKBONE_BC_SOURCE_ROOT to the reviewed clean checkout}"
 RUN_ROOT="${ZOOMTOKEN_PREBACKBONE_BC_RUN_ROOT:?set ZOOMTOKEN_PREBACKBONE_BC_RUN_ROOT to the immutable paired result root}"
-ARM="${ZOOMTOKEN_PREBACKBONE_BC_ARM:?set ZOOMTOKEN_PREBACKBONE_BC_ARM to B or C}"
+ARM="${ZOOMTOKEN_PREBACKBONE_BC_ARM:?set ZOOMTOKEN_PREBACKBONE_BC_ARM to B, C or R1}"
+RESUME="${ZOOMTOKEN_PREBACKBONE_BC_RESUME:-}"
 ANNOTATION="${BASE}/thumos14/annotations/thumos_14_anno.json"
 CLASS_MAP="${BASE}/thumos14/annotations/category_idx.txt"
 VIDEO_ROOT="${BASE}/thumos14/raw_data/video"
@@ -31,7 +32,11 @@ case "${ARM}" in
     CONFIG_NAME="georoute_official_c_roi_k64_prebackbone_seed42_v001.py"
     ARM_DIR="c_roi_k64_prebackbone_sparse_adapter"
     ;;
-  *) fail 'official pre-backbone matrix permits only B or C; A is completed job 1245842' ;;
+  R1)
+    CONFIG_NAME="georoute_official_r1_strict_rect8x8_prebackbone_seed42_v001.py"
+    ARM_DIR="r1_strict_rect8x8_prebackbone_sparse_adapter"
+    ;;
+  *) fail 'official pre-backbone matrix permits only B, C or R1; A is completed job 1245842' ;;
 esac
 CONFIG="${ROOT}/configs/adatad/thumos/${CONFIG_NAME}"
 CELL_ROOT="${RUN_ROOT}/cells/${ARM_DIR}/seed42"
@@ -61,8 +66,22 @@ case "${RUN_ROOT}" in
 esac
 [[ "${RUN_ROOT}/" != "${ROOT}/"* ]] || \
   fail 'official pre-backbone result root must be outside the source checkout'
-[[ ! -e "${CELL_ROOT}" ]] || \
-  fail 'official pre-backbone B/C cell already exists; A/B/C duplicates are forbidden'
+resume_args=()
+if [[ -n "${RESUME}" ]]; then
+  [[ "${ARM}" == "R1" ]] || fail 'same-cell recovery is enabled only for R1'
+  [[ -d "${CELL_ROOT}" ]] || fail 'R1 recovery requires its existing same cell'
+  [[ ! -e "${CELL_ROOT}/.zoomtoken_cell_sealed" ]] || \
+    fail 'sealed R1 cells are not resumable'
+  case "${RESUME}" in
+    "${CELL_ROOT}"/checkpoint/recovery_epoch_*.pth) ;;
+    *) fail 'R1 recovery requires same-cell checkpoint/recovery_epoch_<N>.pth' ;;
+  esac
+  [[ -f "${RESUME}" ]] || fail "R1 recovery checkpoint does not exist: ${RESUME}"
+  resume_args=(--resume "${RESUME}")
+else
+  [[ ! -e "${CELL_ROOT}" ]] || \
+    fail 'official pre-backbone cell already exists; duplicate cells are forbidden'
+fi
 
 if ! command -v module >/dev/null 2>&1 && [[ -r /etc/profile ]]; then
   # shellcheck disable=SC1091
@@ -81,7 +100,7 @@ cd "${ROOT}"
 exec torchrun --nnodes=1 --nproc_per_node=2 \
   --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:0 \
   --rdzv_id="zoomtoken-prebackbone-bc-${SLURM_JOB_ID}-${ARM_DIR}-seed42" \
-  tools/train.py "${CONFIG}" --seed 42 --id 0 \
+  tools/train.py "${CONFIG}" --seed 42 --id 0 "${resume_args[@]}" \
   --cfg-options \
   "work_dir=${CELL_ROOT}" \
   "dataset.train.ann_file=${ANNOTATION}" \

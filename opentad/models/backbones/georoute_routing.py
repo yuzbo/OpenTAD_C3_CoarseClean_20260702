@@ -23,6 +23,9 @@ import torch.nn.functional as F
 GEOROUTE_ROUTING_SCHEMA = "georoute_native_routing_v2"
 GEOROUTE_STRUCTURED_ROUTING_SCHEMA = "georoute_fixed_quota_structured_routing_v1"
 GEOROUTE_DYNAMIC_ROUTING_SCHEMA = "georoute_dynamic_global_routing_v2"
+GEOROUTE_STRICT_RECTANGLE_ROUTING_SCHEMA = (
+    "georoute_strict_rectangle_8x8_routing_v1"
+)
 LEGACY_ROUTE_MODES = frozenset(
     {"dense", "uniform", "random", "free", "roi", "hybrid"}
 )
@@ -169,6 +172,148 @@ def roi_logits_from_geometry(
     ).view(1, 1, -1, 2)
     normalized = (centers - geometry[..., None, :2]) / geometry[..., None, 2:].clamp_min(1e-6)
     return -0.5 * normalized.square().sum(dim=-1) / float(temperature)
+
+
+def select_strict_rectangle_8x8(
+    geometry_logits: torch.Tensor,
+    *,
+    training: bool,
+    temperature: float,
+    valid_mask: torch.Tensor,
+) -> dict[str, Any]:
+    """Select one complete 8x8 block from the nine legal 10x10 supports.
+
+    This is a categorical block decision, never a token top-k decision.  The
+    hard forward route gathers exactly the 64 row-major native identities in the
+    winning block.  During training only, the returned selected-token gate uses
+    the categorical softmax as a straight-through backward surrogate.
+    """
+
+    grid_height = 10
+    grid_width = 10
+    block_height = 8
+    block_width = 8
+    candidate_axis = 3
+    candidate_count = candidate_axis * candidate_axis
+    target_k = block_height * block_width
+    if geometry_logits.ndim != 3 or geometry_logits.shape[-1] != 4:
+        raise ValueError("strict rectangle geometry logits must be [B,T,4]")
+    if not geometry_logits.is_floating_point():
+        raise TypeError("strict rectangle geometry logits must be floating point")
+    expected_mask_shape = (*geometry_logits.shape[:2], grid_height * grid_width)
+    if valid_mask.shape != expected_mask_shape or valid_mask.dtype != torch.bool:
+        raise ValueError("strict rectangle valid_mask must be bool [B,T,100]")
+    if not bool(torch.isfinite(geometry_logits).all().item()):
+        raise ValueError("strict rectangle geometry logits must be finite")
+    if float(temperature) != 0.5:
+        raise ValueError("strict rectangle categorical temperature is frozen at 0.5")
+
+    device = geometry_logits.device
+    dtype = geometry_logits.dtype
+    top_rows = torch.arange(candidate_axis, device=device, dtype=torch.long).repeat_interleave(
+        candidate_axis
+    )
+    top_cols = torch.arange(candidate_axis, device=device, dtype=torch.long).repeat(
+        candidate_axis
+    )
+    candidate_top_left = torch.stack((top_rows, top_cols), dim=-1)
+    block_centers = torch.stack(
+        (
+            (top_cols.to(dtype=dtype) + block_width / 2.0) / float(grid_width),
+            (top_rows.to(dtype=dtype) + block_height / 2.0) / float(grid_height),
+        ),
+        dim=-1,
+    )
+
+    center = 0.4 + 0.2 * torch.sigmoid(geometry_logits[..., :2])
+    extent = torch.full_like(center, 0.8)
+    geometry = torch.cat((center, extent), dim=-1)
+    block_logits = -(
+        (center[..., None, :] - block_centers.view(1, 1, candidate_count, 2))
+        .square()
+        .sum(dim=-1)
+    ) / (0.1**2)
+    # torch.argmax returns the first maximum.  Candidate construction above is
+    # stable row-major, so exact score ties choose the smallest (row, col).
+    hard_block_index = torch.argmax(block_logits, dim=-1)
+    hard_categorical = F.one_hot(
+        hard_block_index,
+        num_classes=candidate_count,
+    ).to(dtype=dtype)
+    probability = F.softmax(block_logits / float(temperature), dim=-1)
+    categorical_st = (
+        hard_categorical + (probability - probability.detach())
+        if training
+        else hard_categorical
+    )
+
+    row_offsets = torch.arange(block_height, device=device, dtype=torch.long).view(
+        1,
+        block_height,
+        1,
+    )
+    col_offsets = torch.arange(block_width, device=device, dtype=torch.long).view(
+        1,
+        1,
+        block_width,
+    )
+    legal_indices = (
+        (top_rows.view(-1, 1, 1) + row_offsets) * grid_width
+        + top_cols.view(-1, 1, 1)
+        + col_offsets
+    ).reshape(candidate_count, target_k)
+    legal_masks = torch.zeros(
+        (candidate_count, grid_height * grid_width),
+        device=device,
+        dtype=torch.bool,
+    ).scatter(1, legal_indices, True)
+    if not bool((legal_masks.sum(dim=-1) == target_k).all().item()):
+        raise RuntimeError("strict rectangle candidates are not complete K64 blocks")
+
+    indices = legal_indices.index_select(0, hard_block_index.reshape(-1)).reshape(
+        *hard_block_index.shape,
+        target_k,
+    )
+    selected_mask = torch.zeros_like(valid_mask).scatter(-1, indices, True)
+    if not bool((selected_mask.sum(dim=-1) == target_k).all().item()):
+        raise RuntimeError("strict rectangle hard route is not exact K64")
+    if not bool((selected_mask <= valid_mask).all().item()):
+        raise RuntimeError("strict rectangle selected outside complete native support")
+    st_membership = torch.matmul(
+        categorical_st,
+        legal_masks.to(dtype=dtype),
+    )
+    st_gate = st_membership.gather(-1, indices)
+    if not bool(st_gate.detach().eq(1).all().item()):
+        raise RuntimeError("strict rectangle hard forward membership is not exact one")
+    selected_top_left = candidate_top_left.index_select(
+        0,
+        hard_block_index.reshape(-1),
+    ).reshape(*hard_block_index.shape, 2)
+
+    return {
+        "schema_version": GEOROUTE_STRICT_RECTANGLE_ROUTING_SCHEMA,
+        "mode": "strict_rect8x8",
+        "geometry": geometry,
+        "indices": indices,
+        "selected_mask": selected_mask,
+        "st_gate": st_gate,
+        "st_membership": st_membership,
+        "categorical_probability": probability,
+        "categorical_st": categorical_st,
+        "hard_categorical": hard_categorical,
+        "block_logits": block_logits,
+        "hard_block_index": hard_block_index,
+        "candidate_top_left_row_col": candidate_top_left,
+        "block_top_left_row_col": selected_top_left,
+        "legal_block_indices": legal_indices,
+        "target_k": target_k,
+        "item_count": grid_height * grid_width,
+        "candidate_count": candidate_count,
+        "block_size_hw": (block_height, block_width),
+        "hole_count": 0,
+        "padded_token_count": 0,
+    }
 
 
 def roi_modifier_from_geometry(

@@ -32,7 +32,7 @@ from opentad.utils import (
 
 
 ZOOMTOKEN_RECOVERY_SCHEMA = "zoomtoken_same_cell_recovery_v001"
-ZOOMTOKEN_RECOVERY_ARMS = {"DN", "G"}
+ZOOMTOKEN_RECOVERY_ARMS = {"DN", "G", "R1"}
 
 
 def _zoomtoken_recovery_contract(cfg):
@@ -46,7 +46,7 @@ def _zoomtoken_recovery_contract(cfg):
     arm_surface = p1_config.get("arm_surface", None)
     if arm_surface not in ZOOMTOKEN_RECOVERY_ARMS:
         raise ValueError(
-            "ZoomToken recovery is restricted to the frozen DN/G surfaces"
+            "ZoomToken recovery is restricted to the frozen DN/G/R1 surfaces"
         )
 
     contract = dict(recovery)
@@ -68,9 +68,9 @@ def _zoomtoken_recovery_contract(cfg):
                 f"expected {expected_value!r}, got {contract.get(key)!r}"
             )
     if cfg.workflow.get("checkpoint_interval", None) != 5:
-        raise ValueError("ZoomToken DN/G recovery must run every five epochs")
+        raise ValueError("ZoomToken recovery must run every five epochs")
     if cfg.workflow.get("checkpoint_policy", None) != "recovery_latest3_plus_final":
-        raise ValueError("ZoomToken DN/G checkpoint policy is not recovery/latest3/final")
+        raise ValueError("ZoomToken checkpoint policy is not recovery/latest3/final")
     successful_update_workflow = {
         "require_successful_update_hook": True,
         "schedule_and_ema_on_success_only": True,
@@ -90,7 +90,7 @@ def _zoomtoken_recovery_contract(cfg):
         part.endswith("_unbound") for part in work_dir_parts
     ):
         raise ValueError(
-            "ZoomToken DN/G work_dir must be explicitly bound by --work-dir "
+            "ZoomToken work_dir must be explicitly bound by --work-dir "
             "or the stage runner"
         )
     contract["arm_surface"] = arm_surface
@@ -133,7 +133,7 @@ def _capture_zoomtoken_training_state(
         ):
             raise ValueError("ZoomToken G recovery requires a non-negative update index")
     elif next_successful_update_index is not None:
-        raise ValueError("ZoomToken DN recovery must not carry a GeoRoute update index")
+        raise ValueError("non-G ZoomToken recovery must not carry an update index")
     local_rng_state = {
         "rank": args.rank,
         "python_rng_state": random.getstate(),
@@ -205,7 +205,7 @@ def _restore_zoomtoken_training_state(
         ):
             raise ValueError("ZoomToken G recovery lacks a valid update index")
     elif next_successful_update_index is not None:
-        raise ValueError("ZoomToken DN recovery must not carry a GeoRoute update index")
+        raise ValueError("non-G ZoomToken recovery must not carry an update index")
 
     rng_state_by_rank = training_state.get("rng_state_by_rank", None)
     if not isinstance(rng_state_by_rank, list) or len(rng_state_by_rank) != args.world_size:
