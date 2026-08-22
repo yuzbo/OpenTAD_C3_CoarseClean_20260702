@@ -856,7 +856,9 @@ class VisionTransformerAdapter(BaseModule):
         ratio = num_adapter_param / num_vit_param * 100
         print("ViT's param: {}, Adapter's params: {}, ratio: {:2.1f}%".format(num_vit_param, num_adapter_param, ratio))
 
-    def forward(self, x: Tensor, relative_physical_time: Optional[Tensor] = None) -> Tensor:
+    def forward(self, x: Tensor, relative_physical_time: Optional[Tensor] = None,
+                actual_positions: Optional[Tensor] = None,
+                canonical_positions: Optional[Tensor] = None) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
