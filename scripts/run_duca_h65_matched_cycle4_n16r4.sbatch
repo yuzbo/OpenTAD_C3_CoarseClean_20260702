@@ -49,6 +49,31 @@ precheck() {
 }
 if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then precheck; exit 0; fi
 
+# Bounded repository-owned smoke run.  This is deliberately an explicit
+# opt-in path; official STAGE1/STAGE2 commands below retain their semantics.
+if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then
+  [[ "$MODE" == STAGE1 || "$MODE" == STAGE2_OFF || "$MODE" == STAGE2_ON ]] || fail "PRE_RUN_ONLY requires a formal stage MODE"
+  if [[ "$MODE" == STAGE1 ]]; then
+    CFG="$STAGE1_CONFIG"
+    PRE_RUN_WORK_DIR="${DUCA_PRE_RUN_WORK_DIR:-exps/thumos/adatad/duca_h65_cycle4_pre_run_stage1}"
+  elif [[ "$MODE" == STAGE2_OFF ]]; then
+    CFG="$STAGE2_OFF_CONFIG"
+    PRE_RUN_WORK_DIR="${DUCA_PRE_RUN_WORK_DIR:-exps/thumos/adatad/duca_h65_cycle4_pre_run_stage2_off}"
+  else
+    CFG="$STAGE2_ON_CONFIG"
+    PRE_RUN_WORK_DIR="${DUCA_PRE_RUN_WORK_DIR:-exps/thumos/adatad/duca_h65_cycle4_pre_run_stage2_on}"
+  fi
+  exec "$PYTHON" tools/train.py "$CFG" --seed 3407 \
+    --cfg-options work_dir="$PRE_RUN_WORK_DIR" \
+    data.train.ann_file="$ANNOTATION_PATH" data.val.ann_file="$ANNOTATION_PATH" \
+    data.test.ann_file="$ANNOTATION_PATH" data.train.category_file="$CATEGORY_PATH" \
+    data.val.category_file="$CATEGORY_PATH" data.test.category_file="$CATEGORY_PATH" \
+    model.backbone.custom.pretrain="$ADATAD_PRETRAIN" \
+    workflow.end_epoch=1 workflow.max_train_iters=1 \
+    workflow.val_eval_interval=-1 workflow.val_loss_interval=-1 \
+    workflow.val_start_epoch=9999 workflow.checkpoint_interval=1
+fi
+
 if [[ "$MODE" == STAGE1 ]]; then
   exec "$PYTHON" tools/train.py "$STAGE1_CONFIG" --seed 3407 \
     --cfg-options work_dir="${DUCA_STAGE1_WORK_DIR:-exps/thumos/adatad/duca_h65_cycle4_stage1_uniform384}" \

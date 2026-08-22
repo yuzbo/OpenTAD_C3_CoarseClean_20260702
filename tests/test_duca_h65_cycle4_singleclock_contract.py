@@ -72,3 +72,15 @@ def test_cycle4_launcher_canonical_modes_and_stage1_no_checkpoint_gate():
     assert "PRECHECK_TARGET" in text and "STAGE1|STAGE2_OFF|STAGE2_ON" in text
     assert 'if [[ "$PRECHECK_TARGET" != STAGE1 ]]' in text
     assert "model.backbone.custom.pretrain" in text
+
+def test_cycle4_launcher_bounded_pre_run_is_explicit_and_does_not_change_formal_modes():
+    from pathlib import Path
+    text = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch").read_text()
+    assert 'if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then' in text
+    assert "workflow.end_epoch=1" in text and "workflow.max_train_iters=1" in text
+    assert "workflow.val_eval_interval=-1" in text and "workflow.val_loss_interval=-1" in text
+    assert "workflow.val_start_epoch=9999" in text and "workflow.checkpoint_interval=1" in text
+    assert "total_epochs=1" not in text and "max_updates=1" not in text
+    assert 'if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then' in text
+    formal = text[text.index('if [[ "$MODE" == STAGE1 ]]; then'):]
+    assert "workflow.end_epoch=1" not in formal
