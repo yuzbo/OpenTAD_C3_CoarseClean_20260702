@@ -84,3 +84,14 @@ def test_cycle4_launcher_bounded_pre_run_is_explicit_and_does_not_change_formal_
     assert 'if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then' in text
     formal = text[text.index('if [[ "$MODE" == STAGE1 ]]; then'):]
     assert "workflow.end_epoch=1" not in formal
+
+def test_stage2_pre_run_validates_and_exports_fixture_before_train():
+    from pathlib import Path
+    text = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch").read_text()
+    pre = text[text.index('if [[ "${PRE_RUN_ONLY:-0}" == 1;'):text.index('if [[ "$MODE" == STAGE1 ]]; then')]
+    assert 'PRECHECK_TARGET="$MODE" precheck' in pre
+    assert 'export DUCA_STAGE1_CHECKPOINT="$STAGE1_CHECKPOINT"' in pre
+    assert 'export DUCA_STAGE1_CHECKPOINT_SHA256="${STAGE1_SHA,,}"' in pre
+    assert 'export DUCA_STAGE1_CHECKPOINT_EPOCH=29' in pre
+    assert pre.index('PRECHECK_TARGET="$MODE" precheck') < pre.index('exec "$PYTHON" tools/train.py')
+    assert '[[ -n "$STAGE1_CHECKPOINT" && -n "$STAGE1_SHA" ]] || fail' in text

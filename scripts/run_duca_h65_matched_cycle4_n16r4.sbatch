@@ -63,6 +63,13 @@ if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then
     CFG="$STAGE2_ON_CONFIG"
     PRE_RUN_WORK_DIR="${DUCA_PRE_RUN_WORK_DIR:-exps/thumos/adatad/duca_h65_cycle4_pre_run_stage2_on}"
   fi
+  if [[ "$MODE" != STAGE1 ]]; then
+    PRECHECK_TARGET="$MODE" precheck
+    STAGE1_CHECKPOINT="$(realpath "$STAGE1_CHECKPOINT")"
+    export DUCA_STAGE1_CHECKPOINT="$STAGE1_CHECKPOINT"
+    export DUCA_STAGE1_CHECKPOINT_SHA256="${STAGE1_SHA,,}"
+    export DUCA_STAGE1_CHECKPOINT_EPOCH=29
+  fi
   exec "$PYTHON" tools/train.py "$CFG" --seed 3407 \
     --cfg-options work_dir="$PRE_RUN_WORK_DIR" \
     data.train.ann_file="$ANNOTATION_PATH" data.val.ann_file="$ANNOTATION_PATH" \
