@@ -23,8 +23,10 @@ class TwoStageDetector(BaseDetector):
         rpn_head=None,
         roi_head=None,
         frame_selector=None,
+        single_clock_admission=False,
     ):
         super(TwoStageDetector, self).__init__()
+        self.single_clock_admission = bool(single_clock_admission)
 
         if frame_selector is not None:
             self.frame_selector = build_selector(frame_selector)
@@ -90,10 +92,14 @@ class TwoStageDetector(BaseDetector):
             inputs = selector_outputs["inputs"]
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
+            if self.single_clock_admission:
+                self._validate_single_clock_metadata(metas, inputs, batch_size=inputs.shape[0])
             gt_segments = selector_outputs["gt_segments"]
             gt_labels = selector_outputs["gt_labels"]
             self._merge_selector_losses(losses, selector_outputs.get("losses", {}))
             selector_loss_keys = set(losses)
+        elif self.single_clock_admission:
+            self._validate_single_clock_metadata(metas, inputs, batch_size=inputs.shape[0])
 
         if self.with_backbone:
             positions, valid_len = self._backbone_position_metadata(metas, inputs.device)
@@ -153,7 +159,11 @@ class TwoStageDetector(BaseDetector):
             inputs = selector_outputs["inputs"]
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
+            if self.single_clock_admission:
+                self._validate_single_clock_metadata(metas, inputs, batch_size=inputs.shape[0])
             self._require_selector_remap_metadata(metas)
+        elif self.single_clock_admission:
+            self._validate_single_clock_metadata(metas, inputs, batch_size=inputs.shape[0])
 
         if self.with_backbone:
             positions, valid_len = self._backbone_position_metadata(metas, inputs.device)
@@ -299,6 +309,29 @@ class TwoStageDetector(BaseDetector):
         positions = torch.stack([torch.as_tensor(m["irregular_selected_positions"], device=device) for m in holders])
         lengths = torch.as_tensor([m["irregular_dense_valid_len"] for m in holders], device=device)
         return positions, lengths
+
+    @staticmethod
+    def _validate_single_clock_metadata(metas, inputs, *, batch_size):
+        """Validate the explicit global-coordinate admission contract."""
+        if not isinstance(metas, (list, tuple)) or len(metas) != batch_size:
+            raise ValueError("single-clock admission requires one metadata mapping per batch item")
+        for idx, meta in enumerate(metas):
+            if not isinstance(meta, Mapping):
+                raise ValueError(f"single-clock admission metas[{idx}] must be a mapping")
+            if "irregular_selected_positions" not in meta or "irregular_dense_valid_len" not in meta:
+                raise ValueError("single-clock admission requires irregular_selected_positions and irregular_dense_valid_len")
+            positions = torch.as_tensor(meta["irregular_selected_positions"], device=inputs.device)
+            if positions.ndim != 1 or positions.numel() != 384:
+                raise ValueError("single-clock admission requires exactly K=384 positions")
+            if not torch.is_floating_point(positions) and positions.dtype not in (torch.int8, torch.int16, torch.int32, torch.int64):
+                raise ValueError("single-clock positions must be numeric")
+            if not bool(torch.isfinite(positions).all().item()) or not bool((positions[1:] > positions[:-1]).all().item()):
+                raise ValueError("single-clock positions must be finite and strictly increasing")
+            valid_len = torch.as_tensor(meta["irregular_dense_valid_len"], device=inputs.device)
+            if valid_len.numel() != 1 or not bool(torch.isfinite(valid_len).all().item()):
+                raise ValueError("single-clock dense valid length must be finite scalar")
+            if not bool(((positions >= 0) & (positions < valid_len)).all().item()):
+                raise ValueError("single-clock positions must lie within dense valid length")
 
     @staticmethod
     def _require_selector_remap_metadata(metas):
