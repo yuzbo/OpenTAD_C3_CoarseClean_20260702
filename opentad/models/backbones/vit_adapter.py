@@ -504,7 +504,7 @@ class Attention(BaseModule):
         self.q_bias = nn.Parameter(torch.zeros(self.embed_dims))
         self.v_bias = nn.Parameter(torch.zeros(self.embed_dims))
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, relative_physical_time: Optional[Tensor] = None) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -532,7 +532,12 @@ class Attention(BaseModule):
         # x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
 
         # fast attention
-        x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p)
+        attn_mask = None
+        if relative_physical_time is not None:
+            if relative_physical_time.ndim != 4 or relative_physical_time.shape[-2:] != (N, N):
+                raise ValueError("relative_physical_time must be [B,1,N,N]")
+            attn_mask = relative_physical_time.to(device=q.device, dtype=q.dtype)
+        x = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.attn_drop.p)
         x = x.transpose(1, 2).reshape(B, N, -1)
 
         x = self.proj(x)
@@ -582,12 +587,14 @@ class Block(BaseModule):
         use_adapter: bool = False,
         adapter_mlp_ratio: float = 0.25,
         temporal_size: int = 384,
+        use_relative_physical_time: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(init_cfg=init_cfg)
 
         self.with_cp = with_cp
         self.use_adapter = use_adapter
+        self.relative_physical_time_scale = nn.Parameter(torch.zeros(())) if use_relative_physical_time else None
 
         self.norm1 = build_norm_layer(norm_cfg, embed_dims)[1]
         self.attn = Attention(
@@ -656,6 +663,7 @@ class Block(BaseModule):
         w,
         packed_dense_mask: Optional[Tensor] = None,
         packed_stats: Optional[Dict[str, int]] = None,
+        relative_physical_time: Optional[Tensor] = None,
     ) -> Tensor:
         """Defines the computation performed at every call.
 
@@ -668,7 +676,10 @@ class Block(BaseModule):
         def _inner_forward(x):
             """Forward wrapper for utilizing checkpoint."""
             if packed_dense_mask is None:
-                x = x + self.drop_path(self.attn(self.norm1(x)))
+                rel = None
+                if relative_physical_time is not None and self.relative_physical_time_scale is not None:
+                    rel = self.relative_physical_time_scale * relative_physical_time
+                x = x + self.drop_path(self.attn(self.norm1(x), relative_physical_time=rel))
                 x = x + self.drop_path(self.mlp(self.norm2(x)))
             else:
                 x = self._packed_attention_mlp_forward(x, packed_dense_mask, packed_stats)
@@ -819,6 +830,7 @@ class VisionTransformerAdapter(BaseModule):
                     use_adapter=i in adapter_index,
                     adapter_mlp_ratio=adapter_mlp_ratio,
                     temporal_size=total_frames // tubelet_size,
+                    use_relative_physical_time=(i == 0),
                 )
                 for i in range(depth)
             ]
@@ -839,7 +851,7 @@ class VisionTransformerAdapter(BaseModule):
         ratio = num_adapter_param / num_vit_param * 100
         print("ViT's param: {}, Adapter's params: {}, ratio: {:2.1f}%".format(num_vit_param, num_adapter_param, ratio))
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, relative_physical_time: Optional[Tensor] = None) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -871,12 +883,15 @@ class VisionTransformerAdapter(BaseModule):
         x = self.pos_drop(x)
 
         if self.tubelet_packed_runtime_route is not None and self.tubelet_packed_runtime_route.enabled:
+            if relative_physical_time is not None:
+                raise ValueError("packed VideoMAE route does not support relative_physical_time; fail closed")
             x = self.tubelet_packed_runtime_route(x, self.blocks, h, w, training=self.training)
             self.latest_tubelet_packed_runtime_summary = self.tubelet_packed_runtime_route.last_summary
         else:
             self.latest_tubelet_packed_runtime_summary = None
-            for blk in self.blocks:
-                x = blk(x, h, w)
+            for block_index, blk in enumerate(self.blocks):
+                rel = relative_physical_time if block_index == 0 else None
+                x = blk(x, h, w, relative_physical_time=rel)
 
         x = self.norm(x)
 
