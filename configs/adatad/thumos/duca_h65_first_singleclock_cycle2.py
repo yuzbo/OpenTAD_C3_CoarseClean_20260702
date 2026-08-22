@@ -8,6 +8,22 @@ single_clock_unit1 = dict(
     relative_residual_h=lambda r: r,
     canonical_selection="exact_uniform_positions_once_over_dense_window",
 )
+model = dict(
+    backbone=dict(
+        backbone=dict(
+            total_frames=768,
+            num_frames=16,
+            tubelet_size=2,
+            relative_physical_time_residual=True,
+            tubelet_packed_runtime_route=dict(enabled=False),
+        ),
+        custom=dict(
+            global_rank_selection=True,
+            canonical_selection="exact_uniform_positions_once_over_dense_window",
+        ),
+    ),
+)
+packed_route_policy = dict(enabled=False, fail_closed=True)
 seed = 3407
 total_epochs = 60
 max_updates = 6000

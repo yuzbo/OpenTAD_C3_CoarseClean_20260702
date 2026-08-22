@@ -504,7 +504,9 @@ class Attention(BaseModule):
         self.q_bias = nn.Parameter(torch.zeros(self.embed_dims))
         self.v_bias = nn.Parameter(torch.zeros(self.embed_dims))
 
-    def forward(self, x: Tensor, relative_physical_time: Optional[Tensor] = None) -> Tensor:
+    def forward(self, x: Tensor, relative_physical_time: Optional[Tensor] = None,
+                actual_positions: Optional[Tensor] = None,
+                canonical_positions: Optional[Tensor] = None) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -829,7 +831,10 @@ class VisionTransformerAdapter(BaseModule):
                     init_cfg=init_cfg,
                     use_adapter=i in adapter_index,
                     adapter_mlp_ratio=adapter_mlp_ratio,
-                    temporal_size=total_frames // tubelet_size,
+                    # The backbone is fed packed 16-frame clips.  Attention and
+                    # adapters therefore see 8 tubelets per clip, not the
+                    # 384-tubelet full window.
+                    temporal_size=num_frames // tubelet_size,
                     use_relative_physical_time=(i == 0),
                 )
                 for i in range(depth)
@@ -866,6 +871,13 @@ class VisionTransformerAdapter(BaseModule):
         h //= self.patch_size
         w //= self.patch_size
         x = self.patch_embed(x)[0]
+        if actual_positions is not None or canonical_positions is not None:
+            if actual_positions is None or canonical_positions is None:
+                raise ValueError("actual_positions and canonical_positions must be provided together")
+            from opentad.models.utils.temporal_grid import clip_relative_physical_time_mask
+            relative_physical_time = clip_relative_physical_time_mask(
+                actual_positions, canonical_positions, spatial_tokens=h * w
+            )
         if self.tubelet_token_redundancy_aux is not None:
             x = self.tubelet_token_redundancy_aux(x, h, w)
             self.latest_tubelet_token_redundancy_summary = self.tubelet_token_redundancy_aux.last_summary
@@ -917,7 +929,10 @@ class VisionTransformerAdapter(BaseModule):
         # freeze blocks except the adapter's parameters
         for block in self.blocks:
             for m, n in block.named_children():
-                if "adapter" not in m and m != "drop_path":
+                if "adapter" not in m and m not in ("drop_path", "relative_physical_time_scale"):
                     n.eval()
                     for param in n.parameters():
                         param.requires_grad = False
+            # Unit1's scalar is the sole non-adapter trainable parameter.
+            if block.relative_physical_time_scale is not None:
+                block.relative_physical_time_scale.requires_grad = True
