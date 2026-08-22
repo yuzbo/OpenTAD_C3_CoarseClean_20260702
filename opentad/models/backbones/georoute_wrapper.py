@@ -20,6 +20,7 @@ from .georoute_routing import (
     ROUTE_MODES,
     SCORE_FUNCTION_TEMPORAL_REDUCTIONS,
     STRUCTURED_ROUTE_MODES,
+    build_refresh_mask,
     calibrate_dynamic_residual_modifier,
     decode_continuous_geometry,
     interpolate_temporal_knots,
@@ -808,6 +809,27 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.official_support = (
             None if raw_official_support is None else str(raw_official_support)
         )
+        self.refresh_carry_mode = str(
+            getattr(custom_cfg, "zoomtoken_refresh_carry_mode", "full64")
+        )
+        self.refresh_query_tokens = int(
+            getattr(custom_cfg, "zoomtoken_query_tokens", 64)
+        )
+        self.refresh_kv_tokens = int(
+            getattr(custom_cfg, "zoomtoken_kv_tokens", 64)
+        )
+        self.refresh_mlp_tokens = int(
+            getattr(custom_cfg, "zoomtoken_mlp_tokens", 64)
+        )
+        self.temporal_carry_enabled = bool(
+            getattr(custom_cfg, "zoomtoken_temporal_carry", False)
+        )
+        self.temporal_carry_detached = bool(
+            getattr(custom_cfg, "zoomtoken_carry_detach", False)
+        )
+        self.temporal_carry_per_block = bool(
+            getattr(custom_cfg, "zoomtoken_carry_mix_per_block", False)
+        )
         self.requires_route_window_ordinals = self.official_support in {
             "strict_rect8x8_shuf48",
             "strict_rect7x7_core49_shuf15",
@@ -986,6 +1008,32 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             raise ValueError(
                 "unsupported frozen official pre-backbone support"
             )
+        refresh_contracts = {
+            "full64": (64, 64, 64, False),
+            "drop32": (32, 32, 32, False),
+            "mod32_kv": (32, 64, 32, False),
+            "rc32_kv": (32, 64, 32, True),
+        }
+        if self.refresh_carry_mode not in refresh_contracts:
+            raise ValueError("unsupported ZoomToken refresh-carry mode")
+        expected_query, expected_kv, expected_mlp, expected_carry = (
+            refresh_contracts[self.refresh_carry_mode]
+        )
+        if (
+            self.refresh_query_tokens,
+            self.refresh_kv_tokens,
+            self.refresh_mlp_tokens,
+        ) != (expected_query, expected_kv, expected_mlp):
+            raise ValueError("ZoomToken refresh token contract does not match its arm")
+        if self.temporal_carry_enabled != expected_carry:
+            raise ValueError("only RC32-KV may enable temporal carry")
+        if expected_carry:
+            if not self.temporal_carry_detached or not self.temporal_carry_per_block:
+                raise ValueError("RC32-KV requires detached per-block temporal carry")
+        elif self.temporal_carry_detached or self.temporal_carry_per_block:
+            raise ValueError("non-RC arms cannot configure temporal carry")
+        if self.refresh_carry_mode != "full64" and self.official_support != "strict_rect8x8":
+            raise ValueError("refresh-carry arms require the frozen strict R1 K64 support")
         if self.route_mode not in ROUTE_MODES:
             raise ValueError(f"unsupported GeoRoute route mode {self.route_mode!r}")
         if self.policy_estimator not in POLICY_ESTIMATORS:
@@ -1228,6 +1276,12 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         ):
             raise ValueError("GeoRoute requires VideoMAE with_cp=False for one-forward accounting")
         self._freeze_shared_backbone_except_adapters()
+        if self.refresh_carry_mode == "rc32_kv":
+            self.zoomtoken_refresh_carry_alpha = nn.Parameter(
+                torch.zeros(len(self.model.backbone.blocks), dtype=torch.float32)
+            )
+        else:
+            self.register_parameter("zoomtoken_refresh_carry_alpha", None)
         self.scout = GeoRouteScout(
             channels=48,
             dynamic_utility=(
@@ -1784,6 +1838,63 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             *native.shape[3:],
         )
         return native.gather(2, gather_index)
+
+    def _build_strict_rectangle_refresh_mask(
+        self,
+        native: torch.Tensor,
+        spatial_indices: torch.Tensor,
+    ) -> torch.Tensor:
+        """Build the causal exact-K32 refresh mask inside strict R1 K64 support."""
+
+        if native.ndim != 7 or spatial_indices.ndim != 3:
+            raise ValueError("refresh routing requires native [B,T,N,...] and support [B,T,K]")
+        batch_size, tubelets, spatial_tokens = map(int, native.shape[:3])
+        if tuple(spatial_indices.shape[:2]) != (batch_size, tubelets) or int(
+            spatial_indices.shape[-1]
+        ) != 64:
+            raise ValueError("refresh routing requires strict K64 support per tubelet")
+
+        support_native = self._gather_selected_native_tubelets(native, spatial_indices)
+        motion = torch.zeros(
+            (batch_size, tubelets, 64),
+            device=native.device,
+            dtype=torch.float32,
+        )
+        cache_valid = torch.zeros_like(motion, dtype=torch.bool)
+        if tubelets > 1:
+            previous_indices = spatial_indices[:, :-1]
+            current_indices = spatial_indices[:, 1:]
+            previous_same_spatial = self._gather_selected_native_tubelets(
+                native[:, :-1],
+                current_indices,
+            )
+            motion[:, 1:] = (
+                support_native[:, 1:].to(torch.float32)
+                - previous_same_spatial.to(torch.float32)
+            ).abs().mean(dim=(-1, -2, -3, -4))
+            cache_valid[:, 1:] = (
+                current_indices.unsqueeze(-1) == previous_indices.unsqueeze(-2)
+            ).any(dim=-1)
+
+        age_lattice = torch.zeros(
+            (batch_size, spatial_tokens),
+            device=native.device,
+            dtype=torch.long,
+        )
+        masks = []
+        for tubelet_index in range(tubelets):
+            support_index = spatial_indices[:, tubelet_index]
+            support_age = age_lattice.gather(1, support_index)
+            selected = build_refresh_mask(
+                motion[:, tubelet_index : tubelet_index + 1],
+                cache_valid[:, tubelet_index : tubelet_index + 1],
+                support_age.unsqueeze(1),
+            )[:, 0]
+            masks.append(selected)
+            age_lattice = (age_lattice + 1).clamp_max(2)
+            refreshed_index = support_index[selected].reshape(batch_size, 32)
+            age_lattice.scatter_(1, refreshed_index, 0)
+        return torch.stack(masks, dim=1)
 
     @staticmethod
     def _selected_native_coordinates(
@@ -3340,11 +3451,35 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             window_ordinals=window_ordinals,
         )
         batch_size, tubelets, spatial_tokens = map(int, native.shape[:3])
+        refresh_support_mask = None
+        backbone_refresh_mask = None
+        selected_gate = route["st_gate"]
         if self.official_support in OFFICIAL_R3_SUPPORTS:
             physical_indices = route["physical_indices"]
             selected_per_tubelet = None
         else:
             spatial_indices = route["spatial_indices"]
+            if self.refresh_carry_mode != "full64":
+                refresh_support_mask = self._build_strict_rectangle_refresh_mask(
+                    native,
+                    spatial_indices,
+                )
+                if self.refresh_carry_mode == "drop32":
+                    spatial_indices = spatial_indices[refresh_support_mask].reshape(
+                        batch_size,
+                        tubelets,
+                        32,
+                    )
+                    selected_gate = selected_gate[refresh_support_mask].reshape(
+                        batch_size,
+                        tubelets,
+                        32,
+                    )
+                else:
+                    backbone_refresh_mask = refresh_support_mask.reshape(
+                        batch_size,
+                        tubelets * 64,
+                    )
             selected_per_tubelet = int(spatial_indices.shape[-1])
             tubelet_offsets = (
                 torch.arange(
@@ -3385,6 +3520,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             total_tubelets=tubelets,
             source_grid_hw=source_grid_hw,
             use_absolute_position=self.absolute_position_enabled,
+            refresh_mask=backbone_refresh_mask,
+            refresh_mode=self.refresh_carry_mode,
+            refresh_alpha=self.zoomtoken_refresh_carry_alpha,
         )
         ragged_invocation_delta = int(
             self.model.backbone.native_ragged_forward_invocations
@@ -3398,7 +3536,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             raise RuntimeError(
                 "official pre-backbone heavy output differs from selected support"
             )
-        selected_features = selected_features * route["st_gate"].reshape(
+        selected_features = selected_features * selected_gate.reshape(
             batch_size,
             -1,
         ).to(dtype=selected_features.dtype).unsqueeze(-1)
@@ -3445,7 +3583,10 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         packed = dict(self.model.backbone.latest_native_packed_summary or {})
         strict_rectangle_audit = None
         if self.official_support == "strict_rect8x8":
-            expected_physical_tokens = tubelets * 64
+            executed_tokens_per_tubelet = (
+                32 if self.refresh_carry_mode == "drop32" else 64
+            )
+            expected_physical_tokens = tubelets * executed_tokens_per_tubelet
             packed_contract = {
                 "schema_version": "videomae_native_ragged_v1",
                 "execution_mode": "true_clip_ragged_no_padding",
@@ -3456,7 +3597,15 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 "executed_patch_tokens_per_window": expected_physical_tokens,
                 "heavy_backbone_forward_count": 1,
                 "dense_adapter_forward_count": 0,
+                "refresh_execution_mode": self.refresh_carry_mode,
             }
+            if self.refresh_carry_mode in {"mod32_kv", "rc32_kv"}:
+                packed_contract.update(
+                    {
+                        "refresh_query_tokens_per_window": tubelets * 32,
+                        "kv_context_tokens_per_window": tubelets * 64,
+                    }
+                )
             if any(packed.get(key) != value for key, value in packed_contract.items()):
                 raise RuntimeError(
                     "strict rectangle R1 ragged ledger violates exact-K64 zero-padding"
@@ -3476,6 +3625,16 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 "fixed_width_height": [0.8, 0.8],
                 "hole_count": int(route["hole_count"]),
                 "tokens_per_tubelet": 64,
+                "executed_patch_tokens_per_tubelet": executed_tokens_per_tubelet,
+                "refresh_query_tokens_per_tubelet": (
+                    32 if self.refresh_carry_mode != "full64" else 64
+                ),
+                "kv_context_tokens_per_tubelet": (
+                    64
+                    if self.refresh_carry_mode in {"mod32_kv", "rc32_kv"}
+                    else executed_tokens_per_tubelet
+                ),
+                "refresh_carry_mode": self.refresh_carry_mode,
                 "requested_physical_tokens_per_window": expected_physical_tokens,
                 "unique_physical_tokens_per_window": expected_physical_tokens,
                 "executed_patch_tokens_per_window": expected_physical_tokens,
@@ -3574,6 +3733,15 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "selection_application": "pre_heavy_videomae",
             "native_materialization_before_heavy": True,
             "selected_tokens_per_tubelet": selected_per_tubelet,
+            "refresh_carry_mode": self.refresh_carry_mode,
+            "refresh_query_tokens_per_tubelet": (
+                32 if self.refresh_carry_mode != "full64" else selected_per_tubelet
+            ),
+            "refresh_support_tokens_per_tubelet": (
+                64 if self.refresh_carry_mode != "full64" else selected_per_tubelet
+            ),
+            "temporal_carry_enabled": self.temporal_carry_enabled,
+            "temporal_carry_detached": self.temporal_carry_detached,
             "physical_tokens_per_window": int(physical_indices.shape[1]),
             "heavy_backbone_forward_count": ragged_invocation_delta,
             "heavy_execution": "true_clip_ragged_no_padding",

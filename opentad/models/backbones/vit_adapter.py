@@ -835,30 +835,20 @@ class Attention(BaseModule):
         """
         if query.ndim != 3 or context.ndim != 3 or query.shape[0] != context.shape[0]:
             raise ValueError("query/context must be [B,N,C] with matching batch")
-        def project(value):
-            if hasattr(self, "q_bias"):
-                zero = torch.zeros_like(self.v_bias, requires_grad=False)
-                bias = torch.cat((self.q_bias, zero, self.v_bias))
-                return F.linear(value, self.qkv.weight, bias)
-            return self.qkv(value)
-        q = project(query).reshape(query.shape[0], query.shape[1], 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)[0]
-        kv = project(context).reshape(context.shape[0], context.shape[1], 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
-        out = F.scaled_dot_product_attention(q, kv[1], kv[2], dropout_p=self.attn_drop.p)
+        if query.shape[-1] != self.embed_dims or context.shape[-1] != self.embed_dims:
+            raise ValueError("query/context channel dimension must match attention")
+        channels = int(self.embed_dims)
+        q_bias = self.q_bias if hasattr(self, "q_bias") else None
+        v_bias = self.v_bias if hasattr(self, "v_bias") else None
+        q = F.linear(query, self.qkv.weight[:channels], q_bias)
+        k = F.linear(context, self.qkv.weight[channels : 2 * channels], None)
+        v = F.linear(context, self.qkv.weight[2 * channels :], v_bias)
+        q = q.reshape(query.shape[0], query.shape[1], self.num_heads, -1).transpose(1, 2)
+        k = k.reshape(context.shape[0], context.shape[1], self.num_heads, -1).transpose(1, 2)
+        v = v.reshape(context.shape[0], context.shape[1], self.num_heads, -1).transpose(1, 2)
+        out = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p)
         out = out.transpose(1, 2).reshape(query.shape[0], query.shape[1], self.embed_dims)
         return self.proj_drop(self.proj(out))
-
-
-class RefreshCarryAttention(nn.Module):
-    """Compatibility shim; RC uses :class:`Attention`'s shared projections."""
-
-    def __init__(self, embed_dims: int, *, query_dims: int, kv_dims: int, num_heads: int = 8):
-        super().__init__()
-        if query_dims != embed_dims or kv_dims != embed_dims:
-            raise ValueError("refresh dimensions are token counts, not channel dimensions")
-        self.attn = Attention(embed_dims, num_heads=num_heads)
-
-    def forward(self, current: Tensor, context: Tensor | None = None) -> Tensor:
-        return self.attn(current) if context is None else self.attn.forward_query_context(current, context)
 
 
 class Block(BaseModule):
@@ -970,21 +960,134 @@ class Block(BaseModule):
         out[dense_mask] = selected.reshape(-1, int(selected.shape[-1]))
         return out
 
-    def forward_refresh_kv(self, x: Tensor, query_mask: Tensor, *, context: Tensor | None = None) -> Tensor:
-        """Run one RC/MOD block with Q on selected tokens and KV on support.
+    @staticmethod
+    def _previous_spatial_block_input(
+        x: Tensor,
+        tubelet_indices: Tensor,
+        spatial_indices: Tensor,
+        *,
+        total_tubelets: int,
+        spatial_tokens: int,
+    ) -> Tensor:
+        """Return detached previous-tubelet inputs at the same spatial index."""
+        if tubelet_indices.shape != x.shape[:2] or spatial_indices.shape != x.shape[:2]:
+            raise ValueError("refresh lineage must match ragged token shape")
+        batch_size, selected_count, channels = map(int, x.shape)
+        lattice = x.new_zeros(
+            (batch_size, int(total_tubelets), int(spatial_tokens), channels)
+        )
+        valid = torch.zeros(
+            (batch_size, int(total_tubelets), int(spatial_tokens)),
+            device=x.device,
+            dtype=torch.bool,
+        )
+        batch = torch.arange(batch_size, device=x.device).view(-1, 1).expand(
+            batch_size, selected_count
+        )
+        lattice[batch, tubelet_indices, spatial_indices] = x
+        valid[batch, tubelet_indices, spatial_indices] = True
+        previous_tubelet = (tubelet_indices - 1).clamp_min(0)
+        gathered = lattice[
+            batch,
+            previous_tubelet,
+            spatial_indices,
+        ].detach()
+        hit = (tubelet_indices > 0) & valid[
+            batch,
+            previous_tubelet,
+            spatial_indices,
+        ]
+        return torch.where(hit.unsqueeze(-1), gathered, x)
 
-        The caller owns ragged physical packing; this helper guarantees the
-        same Q mask is used for attention and MLP and scatters only Q tokens.
-        """
-        if query_mask.shape != x.shape[:2] or query_mask.dtype != torch.bool:
-            raise ValueError("query_mask must be bool [B,N]")
-        q = x[query_mask].reshape(x.shape[0], -1, x.shape[-1])
-        kv = x if context is None else context
-        q = q + self.drop_path(self.attn.forward_query_context(self.norm1(q), self.norm1(kv)))
-        q = q + self.drop_path(self.mlp(self.norm2(q)))
-        out = x.clone()
-        out[query_mask] = q.reshape(-1, x.shape[-1])
-        return out
+    def _ragged_refresh_attention_mlp_forward(
+        self,
+        x: Tensor,
+        bucket_positions: List[Tensor],
+        refresh_mask: Tensor,
+        tubelet_indices: Tensor,
+        spatial_indices: Tensor,
+        *,
+        total_tubelets: int,
+        spatial_tokens: int,
+        refresh_mode: str,
+        refresh_alpha: Optional[Tensor],
+        packed_stats: Optional[Dict[str, int]],
+    ) -> Tensor:
+        if refresh_mode not in {"mod32_kv", "rc32_kv"}:
+            raise ValueError("unsupported refresh-KV mode")
+        if refresh_mask.shape != x.shape[:2] or refresh_mask.dtype != torch.bool:
+            raise ValueError("refresh_mask must be bool and match ragged tokens")
+        per_batch_refresh = refresh_mask.sum(dim=1)
+        if not torch.equal(
+            per_batch_refresh,
+            per_batch_refresh[:1].expand_as(per_batch_refresh),
+        ):
+            raise ValueError("refresh path requires equal K32 count across batch")
+
+        context = x
+        if refresh_mode == "rc32_kv":
+            if refresh_alpha is None or refresh_alpha.numel() != 1:
+                raise ValueError("RC32 requires one scalar for every block")
+            carry = self._previous_spatial_block_input(
+                x,
+                tubelet_indices,
+                spatial_indices,
+                total_tubelets=total_tubelets,
+                spatial_tokens=spatial_tokens,
+            )
+            mixed = carry + torch.sigmoid(refresh_alpha) * (x - carry)
+            context = torch.where(refresh_mask.unsqueeze(-1), x, mixed)
+
+        flat_context = context.reshape(-1, int(x.shape[-1]))
+        flat_mask = refresh_mask.reshape(-1)
+        out = flat_context.clone()
+        visited = torch.zeros(
+            int(flat_context.shape[0]),
+            device=x.device,
+            dtype=torch.bool,
+        )
+        for positions in bucket_positions:
+            flattened_positions = positions.reshape(-1)
+            if bool(visited.gather(0, flattened_positions).any().item()):
+                raise RuntimeError("ragged refresh attention buckets overlap")
+            visited.scatter_(0, flattened_positions, True)
+            selected_context = flat_context[positions]
+            selected_mask = flat_mask[positions]
+            per_row_queries = selected_mask.sum(dim=1)
+            if int(per_row_queries.min().item()) <= 0 or not torch.equal(
+                per_row_queries,
+                per_row_queries[:1].expand_as(per_row_queries),
+            ):
+                raise RuntimeError("ragged refresh buckets require equal nonzero queries")
+            rows, kv_tokens = map(int, positions.shape)
+            query_tokens = int(per_row_queries[0].item())
+            query = selected_context[selected_mask].reshape(
+                rows,
+                query_tokens,
+                int(x.shape[-1]),
+            )
+            query = query + self.drop_path(
+                self.attn.forward_query_context(
+                    self.norm1(query),
+                    self.norm1(selected_context),
+                )
+            )
+            query = query + self.drop_path(self.mlp(self.norm2(query)))
+            selected_out = selected_context.clone()
+            selected_out[selected_mask] = query.reshape(-1, int(x.shape[-1]))
+            out[positions] = selected_out
+            if packed_stats is not None:
+                packed_stats["ragged_attention_bucket_call_count"] += 1
+                packed_stats["ragged_mlp_bucket_call_count"] += 1
+                packed_stats["executed_attention_tokens"] += rows * query_tokens
+                packed_stats["executed_kv_tokens"] += rows * kv_tokens
+                packed_stats["executed_attention_pairs"] += (
+                    rows * query_tokens * kv_tokens
+                )
+                packed_stats["executed_mlp_tokens"] += rows * query_tokens
+        if not bool(visited.all().item()):
+            raise RuntimeError("ragged refresh buckets omitted a support token")
+        return out.reshape_as(x)
 
     def _ragged_attention_mlp_forward(
         self,
@@ -1048,12 +1151,18 @@ class Block(BaseModule):
         grid_height: int,
         grid_width: int,
         packed_stats: Optional[Dict[str, int]] = None,
+        refresh_mask: Optional[Tensor] = None,
+        refresh_mode: str = "full64",
+        refresh_alpha: Optional[Tensor] = None,
     ) -> Tensor:
         """Execute one block on true clip-ragged selected-token sequences."""
 
         checkpoint_active = bool(self.with_cp and x.requires_grad)
 
-        def _inner_forward(value: Tensor) -> Tensor:
+        def _inner_forward(
+            value: Tensor,
+            alpha_value: Optional[Tensor] = None,
+        ) -> Tensor:
             # Reentrant checkpoint executes its first pass without autograd and
             # replays the block with autograd during backward.  Record the
             # physical ledger only on the first pass so recomputation cannot be
@@ -1063,11 +1172,25 @@ class Block(BaseModule):
                 if checkpoint_active and torch.is_grad_enabled()
                 else packed_stats
             )
-            value = self._ragged_attention_mlp_forward(
-                value,
-                bucket_positions,
-                active_stats,
-            )
+            if refresh_mask is None:
+                value = self._ragged_attention_mlp_forward(
+                    value,
+                    bucket_positions,
+                    active_stats,
+                )
+            else:
+                value = self._ragged_refresh_attention_mlp_forward(
+                    value,
+                    bucket_positions,
+                    refresh_mask,
+                    tubelet_indices,
+                    spatial_indices,
+                    total_tubelets=total_tubelets,
+                    spatial_tokens=int(grid_height) * int(grid_width),
+                    refresh_mode=refresh_mode,
+                    refresh_alpha=alpha_value,
+                    packed_stats=active_stats,
+                )
             if self.use_adapter:
                 value = self.adapter.forward_native_ragged(
                     value,
@@ -1087,8 +1210,15 @@ class Block(BaseModule):
             return value
 
         if checkpoint_active:
-            return cp.checkpoint(_inner_forward, x, use_reentrant=True)
-        return _inner_forward(x)
+            if refresh_alpha is None:
+                return cp.checkpoint(_inner_forward, x, use_reentrant=True)
+            return cp.checkpoint(
+                _inner_forward,
+                x,
+                refresh_alpha,
+                use_reentrant=True,
+            )
+        return _inner_forward(x, refresh_alpha)
 
     def forward(
         self,
@@ -1778,6 +1908,7 @@ class VisionTransformerAdapter(BaseModule):
             "chunk_count": chunk_count,
             "temporal_per_chunk": temporal_per_chunk,
             "absolute_position_enabled": bool(use_absolute_position),
+            "clip_indices": clip_indices,
             "clip_counts": clip_counts,
             "attention_pairs_per_window": attention_pairs_per_window,
             "bucket_layout": bucket_layout,
@@ -1798,6 +1929,9 @@ class VisionTransformerAdapter(BaseModule):
         total_tubelets: int,
         source_grid_hw: Tuple[int, int],
         use_absolute_position: bool = True,
+        refresh_mask: Optional[Tensor] = None,
+        refresh_mode: str = "full64",
+        refresh_alpha: Optional[Tensor] = None,
     ) -> Tensor:
         """Execute one true clip-ragged VideoMAE pass with zero dummy tokens."""
 
@@ -1818,6 +1952,40 @@ class VisionTransformerAdapter(BaseModule):
         batch_size = int(metadata["batch_size"])
         window_budget = int(metadata["window_budget"])
         selected_total = batch_size * window_budget
+        if refresh_mode not in {"full64", "drop32", "mod32_kv", "rc32_kv"}:
+            raise ValueError("unsupported ZoomToken refresh execution mode")
+        if refresh_mode in {"full64", "drop32"}:
+            if refresh_mask is not None or refresh_alpha is not None:
+                raise ValueError("FULL64/DROP32 must use the ordinary ragged path")
+        else:
+            if (
+                refresh_mask is None
+                or refresh_mask.dtype != torch.bool
+                or refresh_mask.shape != x.shape[:2]
+            ):
+                raise ValueError("MOD32/RC32 require one bool refresh mask over K64")
+            support_counts = torch.zeros(
+                (batch_size, int(metadata["total_tubelets"])),
+                device=x.device,
+                dtype=torch.long,
+            ).scatter_add_(1, tubelet_indices, torch.ones_like(tubelet_indices))
+            refresh_counts = torch.zeros_like(support_counts).scatter_add_(
+                1,
+                tubelet_indices,
+                refresh_mask.to(torch.long),
+            )
+            if not bool((support_counts == 64).all().item()):
+                raise ValueError("MOD32/RC32 require exact K64 support per tubelet")
+            if not bool((refresh_counts == 32).all().item()):
+                raise ValueError("MOD32/RC32 require exact K32 refresh per tubelet")
+            if refresh_mode == "mod32_kv" and refresh_alpha is not None:
+                raise ValueError("MOD32-KV has no temporal carry parameter")
+            if refresh_mode == "rc32_kv" and (
+                refresh_alpha is None
+                or refresh_alpha.ndim != 1
+                or int(refresh_alpha.numel()) != len(self.blocks)
+            ):
+                raise ValueError("RC32-KV requires one scalar carry mix per block")
         stats: Dict[str, int] = {
             "heavy_backbone_forward_count": 1,
             "executed_patch_tokens": selected_total,
@@ -1825,12 +1993,13 @@ class VisionTransformerAdapter(BaseModule):
             "ragged_mlp_bucket_call_count": 0,
             "ragged_adapter_forward_count": 0,
             "executed_attention_tokens": 0,
+            "executed_kv_tokens": 0,
             "executed_attention_pairs": 0,
             "executed_mlp_tokens": 0,
             "executed_adapter_tokens": 0,
             "dense_adapter_forward_count": 0,
         }
-        for block in self.blocks:
+        for block_index, block in enumerate(self.blocks):
             x = block.forward_native_ragged(
                 x,
                 bucket_positions=bucket_positions,
@@ -1840,26 +2009,51 @@ class VisionTransformerAdapter(BaseModule):
                 grid_height=int(metadata["grid_height"]),
                 grid_width=int(metadata["grid_width"]),
                 packed_stats=stats,
+                refresh_mask=refresh_mask,
+                refresh_mode=refresh_mode,
+                refresh_alpha=(
+                    refresh_alpha[block_index]
+                    if refresh_mode == "rc32_kv"
+                    else None
+                ),
             )
         x = self.norm(x)
 
         clip_counts = metadata["clip_counts"]
         attention_pairs_per_window = metadata["attention_pairs_per_window"]
+        clip_indices = metadata["clip_indices"]
         if not isinstance(clip_counts, torch.Tensor) or not isinstance(
             attention_pairs_per_window,
             torch.Tensor,
-        ):
+        ) or not isinstance(clip_indices, torch.Tensor):
             raise RuntimeError("ragged execution metadata lost its tensor ledger")
-        expected_attention_pairs = int(attention_pairs_per_window.sum().item()) * len(
-            self.blocks
-        )
+        if refresh_mask is None:
+            expected_attention_pairs = int(
+                attention_pairs_per_window.sum().item()
+            ) * len(self.blocks)
+            expected_kv_tokens = selected_total * len(self.blocks)
+            refresh_tokens_per_window = window_budget
+        else:
+            refresh_clip_counts = torch.zeros_like(clip_counts).scatter_add_(
+                1,
+                clip_indices,
+                refresh_mask.to(torch.long),
+            )
+            expected_attention_pairs = int(
+                (clip_counts * refresh_clip_counts).sum().item()
+            ) * len(self.blocks)
+            expected_kv_tokens = selected_total * len(self.blocks)
+            refresh_tokens_per_window = int(refresh_mask.sum(dim=1)[0].item())
         if stats["executed_patch_tokens"] != selected_total:
             raise RuntimeError("ragged patch execution count differs from selected B")
         if stats["executed_attention_pairs"] != expected_attention_pairs:
             raise RuntimeError("ragged attention-pair ledger differs from execution")
+        if stats["executed_kv_tokens"] not in {0, expected_kv_tokens}:
+            raise RuntimeError("ragged KV-token ledger differs from execution")
         self.latest_native_packed_summary = {
             "schema_version": "videomae_native_ragged_v1",
             "execution_mode": "true_clip_ragged_no_padding",
+            "refresh_execution_mode": refresh_mode,
             "heavy_backbone_forward_count": 1,
             "batch_size": batch_size,
             "total_tubelets": int(metadata["total_tubelets"]),
@@ -1876,6 +2070,8 @@ class VisionTransformerAdapter(BaseModule):
             "padded_heavy_tokens_per_window": 0,
             "executed_patch_tokens_per_window": window_budget,
             "executed_patch_tokens_total": selected_total,
+            "refresh_query_tokens_per_window": refresh_tokens_per_window,
+            "kv_context_tokens_per_window": window_budget,
             "absolute_position_enabled": bool(
                 metadata["absolute_position_enabled"]
             ),
@@ -1899,6 +2095,7 @@ class VisionTransformerAdapter(BaseModule):
             "executed_attention_tokens_all_blocks": stats[
                 "executed_attention_tokens"
             ],
+            "executed_kv_tokens_all_blocks": stats["executed_kv_tokens"],
             "executed_mlp_tokens_all_blocks": stats["executed_mlp_tokens"],
             "executed_adapter_tokens_all_blocks": stats[
                 "executed_adapter_tokens"

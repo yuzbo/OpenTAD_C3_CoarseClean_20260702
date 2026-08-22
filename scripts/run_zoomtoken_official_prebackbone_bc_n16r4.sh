@@ -39,6 +39,21 @@ case "${ARM}" in
     ARM_DIR="r1_strict_rect8x8_prebackbone_sparse_adapter"
     RECOVERY_ENABLED=1
     ;;
+  R1-DROP32)
+    CONFIG_NAME="georoute_official_r1_drop32_prebackbone_seed42_v001.py"
+    ARM_DIR="r1_drop32_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
+  R1-MOD32-KV)
+    CONFIG_NAME="georoute_official_r1_mod32_kv_prebackbone_seed42_v001.py"
+    ARM_DIR="r1_mod32_kv_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
+  R1-RC32-KV)
+    CONFIG_NAME="georoute_official_r1_rc32_kv_prebackbone_seed42_v001.py"
+    ARM_DIR="r1_rc32_kv_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
   R2)
     CONFIG_NAME="georoute_official_r2_strict_rect8x8_q48_prebackbone_seed42_v001.py"
     ARM_DIR="r2_strict_rect8x8_q48_prebackbone_sparse_adapter"
@@ -79,7 +94,7 @@ case "${ARM}" in
     ARM_DIR="q64_global_prebackbone_sparse_adapter"
     RECOVERY_ENABLED=1
     ;;
-  *) fail 'unknown frozen arm; legacy matrix permits only B, C or R1; A is completed job 1245842' ;;
+  *) fail 'unknown frozen ZoomToken official pre-backbone arm' ;;
 esac
 CONFIG="${ROOT}/configs/adatad/thumos/${CONFIG_NAME}"
 CELL_ROOT="${RUN_ROOT}/cells/${ARM_DIR}/seed42"

@@ -2,7 +2,15 @@ _base_ = ["./georoute_official_prebackbone_bc_common_seed42_v001.py"]
 
 official_bc_arm = "R1"
 model = dict(
-    backbone=dict(custom=dict(georoute_official_support="strict_rect8x8"))
+    backbone=dict(
+        custom=dict(
+            georoute_official_support="strict_rect8x8",
+            zoomtoken_refresh_carry_mode="full64",
+            zoomtoken_query_tokens=64,
+            zoomtoken_kv_tokens=64,
+            zoomtoken_mlp_tokens=64,
+        )
+    )
 )
 
 strict_rectangle_topology = dict(

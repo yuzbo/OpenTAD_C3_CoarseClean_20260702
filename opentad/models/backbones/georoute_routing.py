@@ -76,32 +76,48 @@ def build_refresh_mask(
         raise TypeError("cache_valid must be bool")
     if int(target_k) != 32:
         raise ValueError("R1 refresh carry freezes target K32")
-    score = motion.to(torch.float32).masked_fill(~cache_valid, float("inf"))
-    score = score + (age >= int(force_age)).to(score.dtype) * 1e6
-    tie = torch.arange(64, device=motion.device, dtype=score.dtype).view(1, 1, 64)
-    order = torch.argsort(score - tie * 1e-6, dim=-1, descending=True, stable=True)
+    if not bool(torch.isfinite(motion).all().item()):
+        raise ValueError("refresh motion must be finite")
+    if bool((age < 0).any().item()):
+        raise ValueError("refresh age must be non-negative")
+
+    # Build the frozen lexicographic order with stable sorts instead of a
+    # floating-point score sum.  Least-significant keys are sorted first.
+    # The final priority is: overdue, top-8 motion, invalid cache, age,
+    # motion, then the lower row-major physical index.
+    shape = motion.shape
+    order = torch.arange(64, device=motion.device, dtype=torch.long).view(
+        1, 1, 64
+    ).expand(shape)
+
+    def _stable_descending(current: torch.Tensor, key: torch.Tensor) -> torch.Tensor:
+        values = key.gather(-1, current)
+        permutation = torch.argsort(
+            values,
+            dim=-1,
+            descending=True,
+            stable=True,
+        )
+        return current.gather(-1, permutation)
+
+    # ``order`` starts in ascending index order, which implements the final
+    # ``-spatial_index`` tie break without adding an epsilon to motion.
+    order = _stable_descending(order, motion.to(torch.float32))
+    motion_rank = torch.empty_like(order)
+    rank_values = torch.arange(64, device=motion.device, dtype=torch.long).view(
+        1, 1, 64
+    ).expand(shape)
+    motion_rank.scatter_(-1, order, rank_values)
+    top8_motion = motion_rank < 8
+    order = _stable_descending(order, age.to(torch.float32))
+    order = _stable_descending(order, (~cache_valid).to(torch.float32))
+    order = _stable_descending(order, top8_motion.to(torch.float32))
+    order = _stable_descending(
+        order,
+        (age >= int(force_age)).to(torch.float32),
+    )
     selected = order[..., :32]
     return torch.zeros_like(cache_valid).scatter(-1, selected, True)
-
-
-def detached_spatial_carry(
-    current: torch.Tensor,
-    previous: torch.Tensor | None,
-    current_indices: torch.Tensor,
-    previous_indices: torch.Tensor | None,
-) -> torch.Tensor:
-    """Gather same-spatial-index previous-tubelet block input, detached."""
-    if previous is None or previous_indices is None:
-        return current
-    if current.shape != previous.shape or current_indices.shape != previous_indices.shape:
-        raise ValueError("carry tensors and indices must have matching shapes")
-    if current_indices.dtype != torch.long:
-        raise TypeError("carry indices must be long")
-    positions = torch.searchsorted(previous_indices.contiguous(), current_indices.contiguous())
-    bounded = positions.clamp(max=previous.shape[-2] - 1)
-    hit = (positions < previous.shape[-2]) & (previous_indices.gather(-1, bounded) == current_indices)
-    gathered = previous.gather(2, bounded.unsqueeze(-1).expand_as(current)).detach()
-    return torch.where(hit.unsqueeze(-1), gathered, current)
 
 
 def _extent_wh(
