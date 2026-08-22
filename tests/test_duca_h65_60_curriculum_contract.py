@@ -105,6 +105,7 @@ def test_launcher_has_no_model_route_or_second_optimizer_restart() -> None:
     assert "DUCA_STAGE1_CHECKPOINT_EPOCH=19" in text
     assert "CUDA_VISIBLE_DEVICES" not in text
     assert 'export LOCAL_RANK=0 RANK=0 WORLD_SIZE=1' in text
+    assert 'export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"' in text
     assert 'source /etc/profile' in text
     assert text.count('exec "$PYTHON" tools/train.py') == 1
 
