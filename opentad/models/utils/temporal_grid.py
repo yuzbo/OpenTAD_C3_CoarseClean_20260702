@@ -20,7 +20,12 @@ def global_rank_clip_coordinates(irregular_selected_positions, dense_valid_len, 
     lengths = lengths.to(device=positions.device, dtype=torch.long).flatten()
     if lengths.numel() != positions.shape[0]:
         raise ValueError("dense_valid_len must be [B]")
-    canonical = torch.stack([exact_uniform_positions(int(n.item()), int(k), device=positions.device) for n in lengths])
+    unique_lengths = torch.unique(lengths, sorted=True)
+    canonical_by_length = {
+        int(n.item()): exact_uniform_positions(int(n.item()), int(k), device=positions.device)
+        for n in unique_lengths
+    }
+    canonical = torch.stack([canonical_by_length[int(n.item())] for n in lengths])
     if (positions[:, 1:] <= positions[:, :-1]).any():
         raise ValueError("selected positions must be strictly increasing")
     if (positions < 0).any() or (positions >= lengths[:, None]).any():
@@ -47,6 +52,21 @@ def relative_physical_time_residual(actual, canonical):
         return None
     # caller may flatten clips; preserve batch and token axes
     return delta.unsqueeze(-1) - delta.unsqueeze(-2)
+
+
+def clip_relative_physical_time_mask(actual, canonical, *, spatial_tokens):
+    """Expand 8 tubelet coordinates to the temporal-major ViT token layout."""
+    if actual.shape != canonical.shape or actual.ndim != 2:
+        raise ValueError("actual and canonical must both be [Bclips, tubelets]")
+    if int(spatial_tokens) <= 0:
+        raise ValueError("spatial_tokens must be positive")
+    delta = actual - canonical
+    if torch.equal(delta, torch.zeros_like(delta)):
+        return None
+    pair = delta[:, :, None] - delta[:, None, :]
+    # PatchEmbed/VideoMAE flatten order is [tubelet, spatial patch].
+    expanded = pair.repeat_interleave(int(spatial_tokens), dim=1).repeat_interleave(int(spatial_tokens), dim=2)
+    return expanded.unsqueeze(1)
 
 
 def _masked_mean(value, mask, dim=-1, keepdim=False, eps=1e-6):
