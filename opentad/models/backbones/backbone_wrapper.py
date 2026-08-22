@@ -86,11 +86,9 @@ class BackboneWrapper(nn.Module):
         # flatten the batch dimension and num_segs dimension
         batches, num_segs = frames.shape[0:2]
         if physical_positions is not None:
-            if physical_positions.ndim == 2 and physical_positions.shape[0] == batches:
-                physical_positions = physical_positions.unsqueeze(1).expand(-1, num_segs, -1)
-            elif physical_positions.ndim != 3 or physical_positions.shape[:2] != (batches, num_segs):
-                raise ValueError("physical_positions must be [B,T] or [B,num_segs,T] before flattening")
-            physical_positions = physical_positions.reshape(batches * num_segs, -1).contiguous()
+            physical_positions = self.normalize_physical_positions(
+                physical_positions, batches, num_segs, int(frames.shape[3])
+            )
         frames = frames.flatten(0, 1).contiguous()  # [bs*num_seg, ...]
 
         # go through the video backbone
@@ -134,6 +132,19 @@ class BackboneWrapper(nn.Module):
     def tensor_to_list(self, tensor):
         return [t for t in tensor]
 
+    @staticmethod
+    def normalize_physical_positions(physical_positions, batches, num_segs, clip_len):
+        """Normalize flat or explicitly segmented positions before flattening."""
+        if physical_positions.ndim == 2 and physical_positions.shape[0] == batches:
+            if int(physical_positions.shape[1]) != int(num_segs) * int(clip_len):
+                raise ValueError("flat physical_positions must be [B,num_segs*clip_len] before flattening")
+            segmented = physical_positions.reshape(batches, num_segs, clip_len)
+        elif physical_positions.ndim == 3 and physical_positions.shape == (batches, num_segs, clip_len):
+            segmented = physical_positions
+        else:
+            raise ValueError("physical_positions must be [B,num_segs,clip_len] or flat [B,num_segs*clip_len]")
+        return segmented.reshape(batches * num_segs, clip_len).contiguous()
+
     def unflatten_and_pool_features(self, features, batches, num_segs):
         # unflatten the batch dimension and num_segs dimension
         features = features.unflatten(dim=0, sizes=(batches, num_segs))  # [bs, num_seg, ...]
@@ -168,9 +179,20 @@ class BackboneWrapper(nn.Module):
         def _inner_forward(frames, positions):
             return self.model.backbone(frames, physical_positions=positions)
 
+        if chunk_dim not in (0, 2):
+            raise ValueError("temporal checkpointing chunk_dim must be 0 or 2")
         video_feat = []
         frame_chunks = torch.chunk(frames, chunk_num, dim=chunk_dim)
-        pos_chunks = torch.chunk(physical_positions, chunk_num, dim=chunk_dim) if physical_positions is not None else [None] * len(frame_chunks)
+        if physical_positions is None:
+            pos_chunks = [None] * len(frame_chunks)
+        else:
+            # frames are [B*N, C, T, H, W], while positions are [B*N, T].
+            # A temporal frame split (dim=2) therefore maps to positions dim=1;
+            # a batch split (dim=0) maps to positions dim=0.
+            pos_dim = 0 if chunk_dim == 0 else 1 if chunk_dim == 2 else None
+            if pos_dim is None:
+                raise ValueError("temporal checkpointing chunk_dim must be 0 or 2")
+            pos_chunks = torch.chunk(physical_positions, chunk_num, dim=pos_dim)
         if physical_positions is not None and len(pos_chunks) != len(frame_chunks):
             raise ValueError("physical_positions chunking must match frame chunks")
         for mini_frames, mini_positions in zip(frame_chunks, pos_chunks):  # B*N is chunked
