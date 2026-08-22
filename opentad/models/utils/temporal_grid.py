@@ -38,8 +38,11 @@ def global_rank_clip_coordinates(irregular_selected_positions, dense_valid_len, 
     if int(tubelet_size) > 1:
         if int(clip_len) % int(tubelet_size):
             raise ValueError("clip_len must be divisible by tubelet_size")
-        actual = actual.reshape(actual.shape[0], clips, -1, int(tubelet_size)).mean(-1)
-        canon = canon.reshape(canon.shape[0], clips, -1, int(tubelet_size)).mean(-1)
+        # Coordinates may remain long physical dense indices in metadata.  Cast
+        # only the attention tubelet centers so integer/half-integer means work;
+        # preserve the raw selected positions in the returned metadata.
+        actual = actual.to(dtype=torch.float32).reshape(actual.shape[0], clips, -1, int(tubelet_size)).mean(-1)
+        canon = canon.to(dtype=torch.float32).reshape(canon.shape[0], clips, -1, int(tubelet_size)).mean(-1)
     return {"actual": actual, "canonical": canon, "irregular_selected_positions": positions, "irregular_dense_valid_len": lengths}
 
 

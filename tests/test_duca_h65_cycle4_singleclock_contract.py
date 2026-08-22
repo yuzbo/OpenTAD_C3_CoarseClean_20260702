@@ -29,9 +29,21 @@ def test_off_contract_keeps_legacy_default():
     assert detector.single_clock_admission is False
 
 def test_global_helper_unique_lengths_and_short_window_fail():
-    p = torch.stack([exact_uniform_positions(768, 384), exact_uniform_positions(800, 384)])
+    p = torch.arange(384, dtype=torch.long).repeat(2, 1)
     out = global_rank_clip_coordinates(p, torch.tensor([768, 800]))
     assert out["actual"].shape == (2, 24, 8)
+    assert p.dtype == torch.long
+    assert out["actual"].dtype == torch.float32
+    assert out["canonical"].dtype == torch.float32
+    assert out["actual"][0, 0, 0].item() == 0.5
+    assert out["actual"][1, 0, 0].item() == 0.5
+    assert torch.equal(out["irregular_selected_positions"], p)
+    uniform_positions = torch.stack([exact_uniform_positions(768, 384), exact_uniform_positions(800, 384)])
+    uniform = global_rank_clip_coordinates(uniform_positions, torch.tensor([768, 800]))
+    assert torch.equal(uniform["actual"], uniform["canonical"])
+    assert clip_relative_physical_time_mask(
+        uniform["actual"][:, 0, :], uniform["canonical"][:, 0, :], spatial_tokens=24
+    ) is None
     with pytest.raises(ValueError):
         global_rank_clip_coordinates(exact_uniform_positions(383, 384).view(1, -1), torch.tensor([383]))
 
