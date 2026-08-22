@@ -827,6 +827,29 @@ class Attention(BaseModule):
         return x
 
 
+class RefreshCarryAttention(nn.Module):
+    """Minimal physical Q32/KV64 attention used by the frozen refresh arms."""
+
+    def __init__(self, embed_dims: int, *, query_dims: int, kv_dims: int, num_heads: int = 8):
+        super().__init__()
+        if query_dims % num_heads or kv_dims % num_heads:
+            raise ValueError("refresh attention dimensions must divide num_heads")
+        self.query_dims, self.kv_dims, self.num_heads = int(query_dims), int(kv_dims), int(num_heads)
+        self.q = nn.Linear(embed_dims, query_dims)
+        self.k = nn.Linear(embed_dims, kv_dims)
+        self.v = nn.Linear(embed_dims, kv_dims)
+        self.proj = nn.Linear(kv_dims, embed_dims)
+
+    def forward(self, current: Tensor, context: Tensor | None = None) -> Tensor:
+        context = current if context is None else context
+        q = self.q(current).reshape(current.shape[0], current.shape[1], self.num_heads, -1).transpose(1, 2)
+        k = self.k(context).reshape(context.shape[0], context.shape[1], self.num_heads, -1).transpose(1, 2)
+        v = self.v(context).reshape(context.shape[0], context.shape[1], self.num_heads, -1).transpose(1, 2)
+        # Physical Q/KV projections are real, with no telemetry-only shortcut.
+        out = F.scaled_dot_product_attention(q, k, v).transpose(1, 2).reshape(current.shape[0], current.shape[1], self.kv_dims)
+        return self.proj(out)
+
+
 class Block(BaseModule):
     """The basic block in the Vision Transformer.
 

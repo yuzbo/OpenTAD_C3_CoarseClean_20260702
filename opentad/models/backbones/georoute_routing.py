@@ -45,12 +45,62 @@ STRUCTURED_ROUTE_MODES = frozenset(
 )
 DYNAMIC_ROUTE_MODES = frozenset({"dynamic_scnr"})
 ROUTE_MODES = LEGACY_ROUTE_MODES | STRUCTURED_ROUTE_MODES | DYNAMIC_ROUTE_MODES
+REFRESH_CARRY_SCHEMA = "zoomtoken_r1_refresh_carry_k32_v1"
 POLICY_ESTIMATORS = frozenset({"none", "straight_through", "score_function"})
 SCORE_FUNCTION_TEMPORAL_REDUCTIONS = frozenset({"sum", "mean"})
 DYNAMIC_BRANCH_CALIBRATION_MODES = frozenset(
     {"none", "residual_window_center"}
 )
 _ROUTE_PRIVATE_RNG_SCHEMA = "georoute_route_private_rng_v1"
+
+
+def build_refresh_mask(
+    motion: torch.Tensor,
+    cache_valid: torch.Tensor,
+    age: torch.Tensor,
+    *,
+    target_k: int = 32,
+    force_age: int = 2,
+) -> torch.Tensor:
+    """Causal deterministic K32 refresh mask on a K64 support.
+
+    Scores use only current/previous RGB evidence supplied by the caller,
+    cache validity, age, and row-major index tie breaking.  The returned mask
+    is exactly K32 per tubelet and never inspects future tubelets.
+    """
+    if motion.ndim != 3 or motion.shape[-1] != 64:
+        raise ValueError("motion must be [B,T,64]")
+    if cache_valid.shape != motion.shape or age.shape != motion.shape:
+        raise ValueError("cache_valid and age must match motion")
+    if cache_valid.dtype != torch.bool:
+        raise TypeError("cache_valid must be bool")
+    if int(target_k) != 32:
+        raise ValueError("R1 refresh carry freezes target K32")
+    score = motion.to(torch.float32).masked_fill(~cache_valid, float("inf"))
+    score = score + (age >= int(force_age)).to(score.dtype) * 1e6
+    tie = torch.arange(64, device=motion.device, dtype=score.dtype).view(1, 1, 64)
+    order = torch.argsort(score - tie * 1e-6, dim=-1, descending=True, stable=True)
+    selected = order[..., :32]
+    return torch.zeros_like(cache_valid).scatter(-1, selected, True)
+
+
+def detached_spatial_carry(
+    current: torch.Tensor,
+    previous: torch.Tensor | None,
+    current_indices: torch.Tensor,
+    previous_indices: torch.Tensor | None,
+) -> torch.Tensor:
+    """Gather same-spatial-index previous-tubelet block input, detached."""
+    if previous is None or previous_indices is None:
+        return torch.zeros_like(current)
+    if current.shape != previous.shape or current_indices.shape != previous_indices.shape:
+        raise ValueError("carry tensors and indices must have matching shapes")
+    if current_indices.dtype != torch.long:
+        raise TypeError("carry indices must be long")
+    positions = torch.searchsorted(previous_indices.contiguous(), current_indices.contiguous())
+    bounded = positions.clamp(max=current.shape[-2] - 1)
+    hit = (positions < current.shape[-2]) & (previous_indices.gather(-1, bounded) == current_indices)
+    return previous.gather(2, bounded.unsqueeze(-1).expand_as(current)).detach() * hit.unsqueeze(-1)
 
 
 def _extent_wh(
