@@ -63,7 +63,7 @@ class BackboneWrapper(nn.Module):
             self.temporal_checkpointing_chunk_num = custom_cfg.temporal_checkpointing_chunk_num
             self.temporal_checkpointing_chunk_dim = custom_cfg.temporal_checkpointing_chunk_dim
 
-    def forward(self, frames, masks=None):
+    def forward(self, frames, masks=None, physical_positions=None):
         # two types: snippet or frame
 
         # snippet: 3D backbone, [bs, T, 3, clip_len, H, W]
@@ -97,7 +97,7 @@ class BackboneWrapper(nn.Module):
                         self.temporal_checkpointing_chunk_dim,
                     )
                 else:
-                    features = self.model.backbone(frames)
+                    features = self.model.backbone(frames, physical_positions=physical_positions)
 
         else:  # let the model.train() or model.eval() decide whether to freeze
             if self.use_temporal_checkpointing:
@@ -107,7 +107,7 @@ class BackboneWrapper(nn.Module):
                     self.temporal_checkpointing_chunk_dim,
                 )
             else:
-                features = self.model.backbone(frames)
+                    features = self.model.backbone(frames, physical_positions=physical_positions)
 
         # unflatten and pool the features
         if isinstance(features, (tuple, list)):

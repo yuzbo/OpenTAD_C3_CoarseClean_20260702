@@ -96,7 +96,7 @@ class TwoStageDetector(BaseDetector):
             selector_loss_keys = set(losses)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            x = self.backbone(inputs, masks, self._physical_positions(metas))
         else:
             x = inputs
 
@@ -155,7 +155,7 @@ class TwoStageDetector(BaseDetector):
             self._require_selector_remap_metadata(metas)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            x = self.backbone(inputs, masks, self._physical_positions(metas))
         else:
             x = inputs
 
@@ -284,6 +284,15 @@ class TwoStageDetector(BaseDetector):
             if key in protected_keys:
                 raise ValueError(f"{source_name} loss key collision with frame_selector: {key}")
             losses[key] = value
+
+    @staticmethod
+    def _physical_positions(metas):
+        if not metas or not isinstance(metas[0], Mapping):
+            return None
+        values = [meta.get("irregular_selected_positions") for meta in metas]
+        if any(v is None for v in values):
+            return None
+        return torch.as_tensor(values, dtype=torch.float32)
 
     @staticmethod
     def _require_selector_remap_metadata(metas):

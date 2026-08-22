@@ -14,6 +14,7 @@ from mmengine.model import BaseModule, ModuleList
 from mmengine.model.weight_init import constant_init, trunc_normal_init
 from mmaction.utils import ConfigType, OptConfigType
 from mmaction.models.backbones.vit_mae import get_sinusoid_encoding
+from .physical_time import build_canonical_time_residual_bias
 
 
 class Adapter(BaseModule):
@@ -504,7 +505,7 @@ class Attention(BaseModule):
         self.q_bias = nn.Parameter(torch.zeros(self.embed_dims))
         self.v_bias = nn.Parameter(torch.zeros(self.embed_dims))
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, relative_time_bias: Optional[Tensor] = None) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -532,7 +533,10 @@ class Attention(BaseModule):
         # x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
 
         # fast attention
-        x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p)
+        if relative_time_bias is None:
+            x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p)
+        else:
+            x = F.scaled_dot_product_attention(q, k, v, attn_mask=relative_time_bias, dropout_p=self.attn_drop.p)
         x = x.transpose(1, 2).reshape(B, N, -1)
 
         x = self.proj(x)
@@ -656,6 +660,7 @@ class Block(BaseModule):
         w,
         packed_dense_mask: Optional[Tensor] = None,
         packed_stats: Optional[Dict[str, int]] = None,
+        relative_time_bias: Optional[Tensor] = None,
     ) -> Tensor:
         """Defines the computation performed at every call.
 
@@ -668,7 +673,7 @@ class Block(BaseModule):
         def _inner_forward(x):
             """Forward wrapper for utilizing checkpoint."""
             if packed_dense_mask is None:
-                x = x + self.drop_path(self.attn(self.norm1(x)))
+                x = x + self.drop_path(self.attn(self.norm1(x), relative_time_bias))
                 x = x + self.drop_path(self.mlp(self.norm2(x)))
             else:
                 x = self._packed_attention_mlp_forward(x, packed_dense_mask, packed_stats)
@@ -756,6 +761,7 @@ class VisionTransformerAdapter(BaseModule):
         adapter_index: list = [3, 5, 7, 11],
         tubelet_token_redundancy_aux: Optional[Dict] = None,
         tubelet_packed_runtime_route: Optional[Dict] = None,
+        singleclock: Optional[Dict] = None,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -767,6 +773,7 @@ class VisionTransformerAdapter(BaseModule):
         super().__init__(init_cfg=init_cfg)
 
         self.with_cp = with_cp
+        self.singleclock = dict(singleclock or {})
 
         self.embed_dims = embed_dims
         self.patch_size = patch_size
@@ -823,6 +830,8 @@ class VisionTransformerAdapter(BaseModule):
                 for i in range(depth)
             ]
         )
+        if self.singleclock.get("enabled", False):
+            self.blocks[0].first_attention = True
 
         if use_mean_pooling:
             self.norm = nn.Identity()
@@ -839,7 +848,7 @@ class VisionTransformerAdapter(BaseModule):
         ratio = num_adapter_param / num_vit_param * 100
         print("ViT's param: {}, Adapter's params: {}, ratio: {:2.1f}%".format(num_vit_param, num_adapter_param, ratio))
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, physical_positions: Optional[Tensor] = None) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -870,13 +879,21 @@ class VisionTransformerAdapter(BaseModule):
         x = x + pos_embed
         x = self.pos_drop(x)
 
+        relative_bias = None
+        if self.singleclock.get("enabled", False) and physical_positions is not None:
+            canonical = torch.linspace(0, 1, x.shape[1] // (h * w), device=x.device, dtype=x.dtype)
+            canonical = canonical.expand(x.shape[0], -1)
+            relative_bias = build_canonical_time_residual_bias(
+                physical_positions, canonical, h * w, self.blocks[0].attn.num_heads,
+                eps=float(self.singleclock.get("eps", 1e-6)), dtype=x.dtype)
+
         if self.tubelet_packed_runtime_route is not None and self.tubelet_packed_runtime_route.enabled:
             x = self.tubelet_packed_runtime_route(x, self.blocks, h, w, training=self.training)
             self.latest_tubelet_packed_runtime_summary = self.tubelet_packed_runtime_route.last_summary
         else:
             self.latest_tubelet_packed_runtime_summary = None
-            for blk in self.blocks:
-                x = blk(x, h, w)
+            for idx, blk in enumerate(self.blocks):
+                x = blk(x, h, w, relative_time_bias=relative_bias if idx == 0 else None)
 
         x = self.norm(x)
 
