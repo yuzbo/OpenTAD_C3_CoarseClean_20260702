@@ -715,6 +715,11 @@ def main():
                         if duca_formal_contract is None
                         else duca_training.capture_global_rng_state()
                     ),
+                    successful_optimizer_updates=(
+                        None
+                        if update_audit is None
+                        else update_audit["successful_optimizer_updates"]
+                    ),
                     experiment_metadata=checkpoint_metadata,
                     experiment_sidecar_schema=(
                         None

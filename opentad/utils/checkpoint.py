@@ -29,6 +29,7 @@ def save_checkpoint(
     work_dir=None,
     scaler=None,
     rng_state=None,
+    successful_optimizer_updates=None,
     experiment_metadata=None,
     experiment_sidecar_schema=None,
 ):
@@ -45,6 +46,8 @@ def save_checkpoint(
         save_states["grad_scaler"] = scaler.state_dict()
     if rng_state is not None:
         save_states["rng_state"] = dict(rng_state)
+    if successful_optimizer_updates is not None:
+        save_states["successful_optimizer_updates"] = int(successful_optimizer_updates)
     if experiment_metadata is not None:
         save_states["experiment_metadata"] = dict(experiment_metadata)
 
