@@ -79,9 +79,11 @@ def test_cycle5_launcher_binds_source_root_and_single_process_before_any_train()
     assert 'DUCA_REPO_ROOT:-${SLURM_SUBMIT_DIR:-' in text
     assert '[[ -f "$ROOT/tools/train.py" ]]' in text
     assert 'export DUCA_REPO_ROOT="$ROOT"' in text
+    root_check = text.index('[[ -f "$ROOT/tools/train.py" ]]')
     bind = text.index('export DUCA_REPO_ROOT="$ROOT"')
-    first_train = text.index('tools/train.py')
-    assert bind < first_train
+    cd_root = text.index('cd "$ROOT"')
+    first_train = text.index('exec "$PYTHON" tools/train.py')
+    assert root_check < bind < cd_root < first_train
     assert 'export LOCAL_RANK=0 RANK=0 WORLD_SIZE=1 MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"' in text
     assert 'MASTER_PORT="${MASTER_PORT:-29500}"' in text
     assert 'export MASTER_PORT' in text
