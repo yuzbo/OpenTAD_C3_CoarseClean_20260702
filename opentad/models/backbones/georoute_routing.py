@@ -92,15 +92,16 @@ def detached_spatial_carry(
 ) -> torch.Tensor:
     """Gather same-spatial-index previous-tubelet block input, detached."""
     if previous is None or previous_indices is None:
-        return torch.zeros_like(current)
+        return current
     if current.shape != previous.shape or current_indices.shape != previous_indices.shape:
         raise ValueError("carry tensors and indices must have matching shapes")
     if current_indices.dtype != torch.long:
         raise TypeError("carry indices must be long")
     positions = torch.searchsorted(previous_indices.contiguous(), current_indices.contiguous())
-    bounded = positions.clamp(max=current.shape[-2] - 1)
-    hit = (positions < current.shape[-2]) & (previous_indices.gather(-1, bounded) == current_indices)
-    return previous.gather(2, bounded.unsqueeze(-1).expand_as(current)).detach() * hit.unsqueeze(-1)
+    bounded = positions.clamp(max=previous.shape[-2] - 1)
+    hit = (positions < previous.shape[-2]) & (previous_indices.gather(-1, bounded) == current_indices)
+    gathered = previous.gather(2, bounded.unsqueeze(-1).expand_as(current)).detach()
+    return torch.where(hit.unsqueeze(-1), gathered, current)
 
 
 def _extent_wh(

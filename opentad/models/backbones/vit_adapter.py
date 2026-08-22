@@ -826,28 +826,39 @@ class Attention(BaseModule):
         x = self.proj_drop(x)
         return x
 
+    def forward_query_context(self, query: Tensor, context: Tensor) -> Tensor:
+        """Attention with a shorter query and K/V context using base qkv weights.
+
+        This is deliberately parameter-free: it slices the existing qkv
+        projection and retains the original q/v biases and output projection.
+        With equal lengths it is numerically identical to ``forward``.
+        """
+        if query.ndim != 3 or context.ndim != 3 or query.shape[0] != context.shape[0]:
+            raise ValueError("query/context must be [B,N,C] with matching batch")
+        def project(value):
+            if hasattr(self, "q_bias"):
+                zero = torch.zeros_like(self.v_bias, requires_grad=False)
+                bias = torch.cat((self.q_bias, zero, self.v_bias))
+                return F.linear(value, self.qkv.weight, bias)
+            return self.qkv(value)
+        q = project(query).reshape(query.shape[0], query.shape[1], 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)[0]
+        kv = project(context).reshape(context.shape[0], context.shape[1], 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
+        out = F.scaled_dot_product_attention(q, kv[1], kv[2], dropout_p=self.attn_drop.p)
+        out = out.transpose(1, 2).reshape(query.shape[0], query.shape[1], self.embed_dims)
+        return self.proj_drop(self.proj(out))
+
 
 class RefreshCarryAttention(nn.Module):
-    """Minimal physical Q32/KV64 attention used by the frozen refresh arms."""
+    """Compatibility shim; RC uses :class:`Attention`'s shared projections."""
 
     def __init__(self, embed_dims: int, *, query_dims: int, kv_dims: int, num_heads: int = 8):
         super().__init__()
-        if query_dims % num_heads or kv_dims % num_heads:
-            raise ValueError("refresh attention dimensions must divide num_heads")
-        self.query_dims, self.kv_dims, self.num_heads = int(query_dims), int(kv_dims), int(num_heads)
-        self.q = nn.Linear(embed_dims, query_dims)
-        self.k = nn.Linear(embed_dims, kv_dims)
-        self.v = nn.Linear(embed_dims, kv_dims)
-        self.proj = nn.Linear(kv_dims, embed_dims)
+        if query_dims != embed_dims or kv_dims != embed_dims:
+            raise ValueError("refresh dimensions are token counts, not channel dimensions")
+        self.attn = Attention(embed_dims, num_heads=num_heads)
 
     def forward(self, current: Tensor, context: Tensor | None = None) -> Tensor:
-        context = current if context is None else context
-        q = self.q(current).reshape(current.shape[0], current.shape[1], self.num_heads, -1).transpose(1, 2)
-        k = self.k(context).reshape(context.shape[0], context.shape[1], self.num_heads, -1).transpose(1, 2)
-        v = self.v(context).reshape(context.shape[0], context.shape[1], self.num_heads, -1).transpose(1, 2)
-        # Physical Q/KV projections are real, with no telemetry-only shortcut.
-        out = F.scaled_dot_product_attention(q, k, v).transpose(1, 2).reshape(current.shape[0], current.shape[1], self.kv_dims)
-        return self.proj(out)
+        return self.attn(current) if context is None else self.attn.forward_query_context(current, context)
 
 
 class Block(BaseModule):
@@ -957,6 +968,22 @@ class Block(BaseModule):
             packed_stats["packed_mlp_forward_count"] = int(packed_stats.get("packed_mlp_forward_count", 0)) + 1
         out = x.clone()
         out[dense_mask] = selected.reshape(-1, int(selected.shape[-1]))
+        return out
+
+    def forward_refresh_kv(self, x: Tensor, query_mask: Tensor, *, context: Tensor | None = None) -> Tensor:
+        """Run one RC/MOD block with Q on selected tokens and KV on support.
+
+        The caller owns ragged physical packing; this helper guarantees the
+        same Q mask is used for attention and MLP and scatters only Q tokens.
+        """
+        if query_mask.shape != x.shape[:2] or query_mask.dtype != torch.bool:
+            raise ValueError("query_mask must be bool [B,N]")
+        q = x[query_mask].reshape(x.shape[0], -1, x.shape[-1])
+        kv = x if context is None else context
+        q = q + self.drop_path(self.attn.forward_query_context(self.norm1(q), self.norm1(kv)))
+        q = q + self.drop_path(self.mlp(self.norm2(q)))
+        out = x.clone()
+        out[query_mask] = q.reshape(-1, x.shape[-1])
         return out
 
     def _ragged_attention_mlp_forward(
