@@ -73,6 +73,30 @@ def test_cycle4_launcher_canonical_modes_and_stage1_no_checkpoint_gate():
     assert 'if [[ "$PRECHECK_TARGET" != STAGE1 ]]' in text
     assert "model.backbone.custom.pretrain" in text
 
+def test_cycle5_launcher_binds_source_root_and_single_process_before_any_train():
+    from pathlib import Path
+    text = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch").read_text()
+    assert 'DUCA_REPO_ROOT:-${SLURM_SUBMIT_DIR:-' in text
+    assert '[[ -f "$ROOT/tools/train.py" ]]' in text
+    assert 'export DUCA_REPO_ROOT="$ROOT"' in text
+    bind = text.index('export DUCA_REPO_ROOT="$ROOT"')
+    first_train = text.index('tools/train.py')
+    assert bind < first_train
+    assert 'export LOCAL_RANK=0 RANK=0 WORLD_SIZE=1 MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"' in text
+    assert 'MASTER_PORT="${MASTER_PORT:-29500}"' in text
+    assert 'export MASTER_PORT' in text
+    assert 'CUDA_VISIBLE_DEVICES' not in text
+
+def test_cycle5_environment_binding_precedes_pre_run_and_all_formal_modes():
+    from pathlib import Path
+    text = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch").read_text()
+    bind = text.index('export DUCA_REPO_ROOT="$ROOT"')
+    assert bind < text.index('if [[ "${PRE_RUN_ONLY:-0}" == 1;')
+    formal = text[text.index('if [[ "$MODE" == STAGE1 ]]; then'):]
+    assert formal.count('exec "$PYTHON" tools/train.py') == 2
+    for mode in ("STAGE1", "STAGE2_OFF", "STAGE2_ON"):
+        assert mode in text
+
 def test_cycle4_launcher_bounded_pre_run_is_explicit_and_does_not_change_formal_modes():
     from pathlib import Path
     text = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch").read_text()

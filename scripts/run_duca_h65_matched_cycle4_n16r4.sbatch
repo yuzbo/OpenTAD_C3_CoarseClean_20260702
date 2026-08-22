@@ -11,8 +11,15 @@
 set -euo pipefail
 
 fail() { echo "[DUCA_H65_CYCLE4][FAIL] $*" >&2; exit 1; }
-ROOT="${DUCA_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+ROOT="${DUCA_REPO_ROOT:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}}"
+ROOT="$(cd "$ROOT" && pwd -P)"
+[[ -f "$ROOT/tools/train.py" ]] || fail "exact source root missing tools/train.py: $ROOT"
+export DUCA_REPO_ROOT="$ROOT"
 cd "$ROOT"
+export LOCAL_RANK=0 RANK=0 WORLD_SIZE=1 MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
+MASTER_PORT="${MASTER_PORT:-29500}"
+[[ "$MASTER_PORT" =~ ^[0-9]+$ && "$MASTER_PORT" -ge 1024 && "$MASTER_PORT" -le 65535 ]] || fail "MASTER_PORT must be 1024-65535"
+export MASTER_PORT
 MODE="${MODE:-PRECHECK}"
 if [[ "$MODE" == PRECHECK ]]; then MODE=STAGE1; fi
 case "$MODE" in STAGE1|STAGE2_OFF|STAGE2_ON) ;; *) fail "MODE must be STAGE1, STAGE2_OFF, or STAGE2_ON" ;; esac
