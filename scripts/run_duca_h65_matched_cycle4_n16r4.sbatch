@@ -12,7 +12,7 @@ set -euo pipefail
 
 fail() { echo "[DUCA_H65_CYCLE4][FAIL] $*" >&2; exit 1; }
 ROOT="${DUCA_REPO_ROOT:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}}"
-ROOT="$(cd "$ROOT" && pwd -P)"
+ROOT="$(cd -- "$ROOT" && pwd -P)"
 [[ -f "$ROOT/tools/train.py" ]] || fail "exact source root missing tools/train.py: $ROOT"
 export DUCA_REPO_ROOT="$ROOT"
 cd "$ROOT"
@@ -60,7 +60,7 @@ if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then precheck; exit 0; fi
 # opt-in path; official STAGE1/STAGE2 commands below retain their semantics.
 if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then
   [[ "$MODE" == STAGE1 || "$MODE" == STAGE2_OFF || "$MODE" == STAGE2_ON ]] || fail "PRE_RUN_ONLY requires a formal stage MODE"
-  if [[ "$MODE" == STAGE1 ]]; then
+  if [[ "$MODE" == "STAGE1" ]]; then
     CFG="$STAGE1_CONFIG"
     PRE_RUN_WORK_DIR="${DUCA_PRE_RUN_WORK_DIR:-exps/thumos/adatad/duca_h65_cycle4_pre_run_stage1}"
   elif [[ "$MODE" == STAGE2_OFF ]]; then
