@@ -20,8 +20,14 @@ def test_checkpoint_round_trip_preserves_optimizer_update_count_and_rng(tmp_path
     loss.backward()
     optimizer.step()
     scheduler.step()
-    expected = (random.random(), float(np.random.rand()), torch.rand(3))
     snapshot = capture_global_rng_state()
+    expected = (random.random(), float(np.random.rand()), torch.rand(3))
+    # Advance all three generators so the restore assertion checks the next
+    # draws from the captured state rather than comparing to already-consumed
+    # values.
+    random.random()
+    np.random.rand()
+    torch.rand(3)
     path = save_checkpoint(
         model, None, optimizer, scheduler, 4, work_dir=str(tmp_path),
         rng_state=snapshot, successful_optimizer_updates=7,
