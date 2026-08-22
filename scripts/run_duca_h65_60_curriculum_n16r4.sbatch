@@ -70,7 +70,9 @@ fi
 
 if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then
   WORK_DIR="${DUCA_PRE_RUN_WORK_DIR:-${WORK_DIR}_pre_run}"
-  EXTRA=(workflow.end_epoch=1 workflow.max_train_iters=1 workflow.val_eval_interval=-1 workflow.val_loss_interval=-1 workflow.val_start_epoch=9999 workflow.checkpoint_interval=1)
+  PRE_RUN_MAX_ITERS="${DUCA_PRE_RUN_MAX_ITERS:-2}"
+  [[ "$PRE_RUN_MAX_ITERS" =~ ^[0-9]+$ && "$PRE_RUN_MAX_ITERS" -ge 2 ]] || fail "DUCA_PRE_RUN_MAX_ITERS must be at least 2"
+  EXTRA=(workflow.end_epoch=1 workflow.max_train_iters="$PRE_RUN_MAX_ITERS" workflow.val_eval_interval=-1 workflow.val_loss_interval=-1 workflow.val_start_epoch=9999 workflow.checkpoint_interval=1)
 else
   EXTRA=()
 fi
