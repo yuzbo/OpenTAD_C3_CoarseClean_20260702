@@ -61,6 +61,10 @@ class TokenSelectionVisualizationContractTest(unittest.TestCase):
         self.assertIn("for arm in ARMS", self.source)
         self.assertIn("routing_gt_used", self.source)
 
+    def test_window_ordinals_match_the_production_shuffle_boundary(self):
+        self.assertIn("backbone.requires_route_window_ordinals", self.source)
+        self.assertIn("else None", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

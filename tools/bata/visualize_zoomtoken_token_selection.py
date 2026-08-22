@@ -232,7 +232,9 @@ def _capture_arm(
         source,
         source_grid_hw=source_grid_hw,
         valid_patch_mask=valid_patch_mask,
-        window_ordinals=window_ordinals,
+        window_ordinals=(
+            window_ordinals if backbone.requires_route_window_ordinals else None
+        ),
     )
     tubelet_count, spatial_tokens = map(int, native.shape[1:3])
     mask, k_per_tubelet, physical_indices = _route_mask(
