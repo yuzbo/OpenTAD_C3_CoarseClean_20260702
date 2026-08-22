@@ -194,8 +194,10 @@ def test_r1_recovery_and_launcher_are_same_cell_and_do_not_override_recipe():
     assert '"state_dict": model.state_dict()' in checkpoint
     assert '"state_dict_ema": model_ema.module.state_dict()' in checkpoint
     assert '"training_state": dict(training_state)' in checkpoint
-    assert '"checkpoint_role": "final_ema"' in checkpoint
-    assert '"checkpoint_role": "final_raw"' in checkpoint
+    assert 'save_states["primary_model_state"] = "state_dict_ema"' in checkpoint
+    assert 'save_states["secondary_model_state"] = "state_dict"' in checkpoint
+    assert "final_ema.pth" not in checkpoint
+    assert "final_raw.pth" not in checkpoint
     assert '"zoomtoken_p1_config.source_commit=${EXPECTED_COMMIT}"' in launcher
     assert "georoute_official_r1_strict_rect8x8_prebackbone_seed42_v001.py" in launcher
     assert "same-cell checkpoint/recovery_epoch_<N>.pth" in launcher
@@ -209,6 +211,49 @@ def test_r1_recovery_and_launcher_are_same_cell_and_do_not_override_recipe():
         "workflow.",
     ):
         assert forbidden not in launcher
+    assert "torch" not in sys.modules
+
+
+def test_r1_capture_restore_ast_covers_full_rng_and_lineage_without_torch():
+    train_path = ROOT / "tools/train.py"
+    capture = _function_source(train_path, "_capture_zoomtoken_training_state")
+    restore = _function_source(train_path, "_restore_zoomtoken_training_state")
+    main = _function_source(train_path, "main")
+
+    for binding in (
+        "random.getstate()",
+        "np.random.get_state()",
+        "torch.get_rng_state()",
+        "torch.cuda.get_rng_state(args.local_rank)",
+        "dist.all_gather_object(rng_state_by_rank, local_rng_state)",
+        '"arm_surface"',
+        '"seed"',
+        '"source_commit"',
+        '"config_path"',
+        '"work_dir"',
+        '"sampler_epoch"',
+        '"next_successful_update_index"',
+    ):
+        assert binding in capture
+    for binding in (
+        "train_loader.sampler.set_epoch(training_state[\"next_epoch\"])",
+        "random.setstate(",
+        "np.random.set_state(",
+        "torch.set_rng_state(",
+        "torch.cuda.set_rng_state(",
+        "rng_state_by_rank[args.rank]",
+    ):
+        assert binding in restore
+    load_order = (
+        'model.load_state_dict(checkpoint["state_dict"])',
+        'optimizer.load_state_dict(checkpoint["optimizer"])',
+        'scheduler.load_state_dict(checkpoint["scheduler"])',
+        'model_ema.module.load_state_dict(checkpoint["state_dict_ema"])',
+        'scaler.load_state_dict(checkpoint["scaler"])',
+        "_restore_zoomtoken_training_state(",
+    )
+    positions = [main.index(binding) for binding in load_order]
+    assert positions == sorted(positions)
     assert "torch" not in sys.modules
 
 
@@ -392,12 +437,19 @@ def test_r1_target_wrapper_runs_prepatch_gather_then_one_ragged(monkeypatch):
     assert wrapper.latest_georoute_audit["strict_rectangle"]["dummy_tokens_used"] is False
 
 
-def test_r1_target_checkpoint_roundtrip_full_state_and_lineage(tmp_path):
+def test_r1_target_checkpoint_roundtrip_full_state_and_lineage(tmp_path, monkeypatch):
     if os.environ.get("ZOOMTOKEN_R1_RECOVERY_RUNTIME_CHECK") != "1":
         return
 
+    import copy
+    import random
+    from types import SimpleNamespace
+
+    import numpy as np
+    import pytest
     import torch
 
+    import tools.train as train_module
     from opentad.utils.checkpoint import save_checkpoint
 
     class Ema:
@@ -414,6 +466,125 @@ def test_r1_target_checkpoint_roundtrip_full_state_and_lineage(tmp_path):
         def load_state_dict(self, state):
             self.value = state["value"]
 
+    class Sampler:
+        def __init__(self, epoch):
+            self.epoch = epoch
+
+        def set_epoch(self, epoch):
+            self.epoch = int(epoch)
+
+    class Loader:
+        def __init__(self, epoch, length=7):
+            self.sampler = Sampler(epoch)
+            self.length = length
+
+        def __len__(self):
+            return self.length
+
+    def rng_state(seed, rank):
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        return {
+            "rank": rank,
+            "python_rng_state": random.getstate(),
+            "numpy_rng_state": np.random.get_state(),
+            "torch_cpu_rng_state": bytes(torch.get_rng_state().cpu().tolist()),
+            "torch_cuda_rng_state": bytes((seed + offset) % 256 for offset in range(16)),
+        }
+
+    def install_rng(state):
+        random.setstate(state["python_rng_state"])
+        np.random.set_state(state["numpy_rng_state"])
+        torch.set_rng_state(
+            torch.tensor(list(state["torch_cpu_rng_state"]), dtype=torch.uint8)
+        )
+
+    def assert_numpy_rng_equal(actual, expected):
+        assert actual[0] == expected[0]
+        assert np.array_equal(actual[1], expected[1])
+        assert actual[2:] == expected[2:]
+
+    def assert_nested_equal(actual, expected):
+        if torch.is_tensor(expected):
+            assert torch.equal(actual, expected)
+        elif isinstance(expected, np.ndarray):
+            assert np.array_equal(actual, expected)
+        elif isinstance(expected, dict):
+            assert actual.keys() == expected.keys()
+            for key in expected:
+                assert_nested_equal(actual[key], expected[key])
+        elif isinstance(expected, (list, tuple)):
+            assert len(actual) == len(expected)
+            for actual_item, expected_item in zip(actual, expected):
+                assert_nested_equal(actual_item, expected_item)
+        else:
+            assert actual == expected
+
+    rank0_rng = rng_state(101, 0)
+    rank1_rng = rng_state(202, 1)
+    install_rng(rank0_rng)
+    cuda_set_calls = []
+    monkeypatch.setattr(
+        train_module.torch.cuda,
+        "get_rng_state",
+        lambda device: torch.tensor(
+            list(rank0_rng["torch_cuda_rng_state"]), dtype=torch.uint8
+        ),
+    )
+    monkeypatch.setattr(
+        train_module.torch.cuda,
+        "set_rng_state",
+        lambda state, device: cuda_set_calls.append(
+            (device, bytes(state.cpu().tolist()))
+        ),
+    )
+
+    def fake_all_gather_object(output, local_state):
+        assert local_state["rank"] == 0
+        output[0] = copy.deepcopy(local_state)
+        output[1] = copy.deepcopy(rank1_rng)
+
+    monkeypatch.setattr(
+        train_module.dist, "all_gather_object", fake_all_gather_object
+    )
+
+    work_dir = tmp_path / "r1_cell"
+    work_dir.mkdir()
+    args = SimpleNamespace(
+        rank=0,
+        local_rank=0,
+        world_size=2,
+        seed=42,
+        config=str(CONFIG_PATH.resolve()),
+    )
+    cfg = SimpleNamespace(work_dir=str(work_dir.resolve()))
+    contract = {"arm_surface": "R1", "source_commit": "7" * 40}
+    loader = Loader(epoch=4)
+    recovery_lineage = train_module._capture_zoomtoken_training_state(
+        args,
+        cfg,
+        loader,
+        epoch=4,
+        recovery_contract=contract,
+        next_successful_update_index=321,
+    )
+    assert recovery_lineage["completed_epoch"] == 4
+    assert recovery_lineage["next_epoch"] == 5
+    assert recovery_lineage["sampler_epoch"] == 4
+    assert recovery_lineage["batches_per_epoch"] == 7
+    assert recovery_lineage["completed_batches"] == 35
+    assert recovery_lineage["next_successful_update_index"] == 321
+    assert recovery_lineage["arm_surface"] == "R1"
+    assert recovery_lineage["seed"] == 42
+    assert recovery_lineage["source_commit"] == "7" * 40
+    assert recovery_lineage["config_path"] == str(CONFIG_PATH.resolve())
+    assert recovery_lineage["work_dir"] == str(work_dir.resolve())
+    assert [state["rank"] for state in recovery_lineage["rng_state_by_rank"]] == [
+        0,
+        1,
+    ]
+
     model = torch.nn.Linear(2, 2)
     ema_model = torch.nn.Linear(2, 2)
     with torch.no_grad():
@@ -422,41 +593,28 @@ def test_r1_target_checkpoint_roundtrip_full_state_and_lineage(tmp_path):
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
     scaler = StateHolder(11)
-    lineage = {
-        "schema_version": "zoomtoken_same_cell_recovery_v001",
-        "arm_surface": "R1",
-        "seed": 42,
-        "source_commit": "7" * 40,
-        "config_path": "/canonical/r1.py",
-        "work_dir": str(tmp_path.resolve()),
-        "completed_epoch": 59,
-        "next_epoch": 60,
-        "next_successful_update_index": 1234,
-    }
-    recovery_lineage = dict(
-        lineage,
-        completed_epoch=4,
-        next_epoch=5,
-        next_successful_update_index=321,
-    )
+    optimizer.zero_grad()
+    model(torch.ones((1, 2))).sum().backward()
+    optimizer.step()
+    scheduler.step()
     save_checkpoint(
         model,
         Ema(ema_model),
         optimizer,
         scheduler,
         4,
-        work_dir=str(tmp_path),
+        work_dir=str(work_dir),
         scaler=scaler,
         training_state=recovery_lineage,
         checkpoint_role="recovery",
         recovery_keep_latest=3,
     )
     recovery = torch.load(
-        tmp_path / "checkpoint/recovery_epoch_4.pth",
+        work_dir / "checkpoint/recovery_epoch_4.pth",
         map_location="cpu",
     )
     assert recovery["checkpoint_role"] == "recovery"
-    assert recovery["training_state"] == recovery_lineage
+    assert_nested_equal(recovery["training_state"], recovery_lineage)
     assert {
         "state_dict",
         "state_dict_ema",
@@ -465,21 +623,111 @@ def test_r1_target_checkpoint_roundtrip_full_state_and_lineage(tmp_path):
         "scaler",
     }.issubset(recovery)
 
-    save_checkpoint(
+    restored_model = torch.nn.Linear(2, 2)
+    restored_ema = torch.nn.Linear(2, 2)
+    restored_optimizer = torch.optim.SGD(
+        restored_model.parameters(), lr=0.1, momentum=0.9
+    )
+    restored_scheduler = torch.optim.lr_scheduler.StepLR(
+        restored_optimizer, step_size=1
+    )
+    restored_scaler = StateHolder(0)
+    restored_model.load_state_dict(recovery["state_dict"])
+    restored_ema.load_state_dict(recovery["state_dict_ema"])
+    restored_optimizer.load_state_dict(recovery["optimizer"])
+    restored_scheduler.load_state_dict(recovery["scheduler"])
+    restored_scaler.load_state_dict(recovery["scaler"])
+    assert_nested_equal(restored_model.state_dict(), model.state_dict())
+    assert_nested_equal(restored_ema.state_dict(), ema_model.state_dict())
+    assert_nested_equal(restored_optimizer.state_dict(), optimizer.state_dict())
+    assert_nested_equal(restored_scheduler.state_dict(), scheduler.state_dict())
+    assert restored_scaler.value == 11
+
+    random.seed(999)
+    np.random.seed(999)
+    torch.manual_seed(999)
+    restored_update_index = train_module._restore_zoomtoken_training_state(
+        recovery, args, cfg, loader, contract
+    )
+    assert restored_update_index == 321
+    assert loader.sampler.epoch == 5
+    assert random.getstate() == rank0_rng["python_rng_state"]
+    assert_numpy_rng_equal(np.random.get_state(), rank0_rng["numpy_rng_state"])
+    assert bytes(torch.get_rng_state().cpu().tolist()) == rank0_rng[
+        "torch_cpu_rng_state"
+    ]
+    assert cuda_set_calls[-1] == (0, rank0_rng["torch_cuda_rng_state"])
+
+    rank1_args = SimpleNamespace(**dict(vars(args), rank=1, local_rank=1))
+    rank1_loader = Loader(epoch=4)
+    train_module._restore_zoomtoken_training_state(
+        recovery, rank1_args, cfg, rank1_loader, contract
+    )
+    assert rank1_loader.sampler.epoch == 5
+    assert random.getstate() == rank1_rng["python_rng_state"]
+    assert_numpy_rng_equal(np.random.get_state(), rank1_rng["numpy_rng_state"])
+    assert bytes(torch.get_rng_state().cpu().tolist()) == rank1_rng[
+        "torch_cpu_rng_state"
+    ]
+    assert cuda_set_calls[-1] == (1, rank1_rng["torch_cuda_rng_state"])
+
+    def expect_lineage_rejection(*, args_override=None, cfg_override=None, contract_override=None):
+        with pytest.raises(ValueError, match="recovery state mismatch"):
+            train_module._restore_zoomtoken_training_state(
+                recovery,
+                args_override or args,
+                cfg_override or cfg,
+                Loader(epoch=4),
+                contract_override or contract,
+            )
+
+    expect_lineage_rejection(
+        cfg_override=SimpleNamespace(work_dir=str((tmp_path / "other_cell").resolve()))
+    )
+    expect_lineage_rejection(
+        args_override=SimpleNamespace(
+            **dict(vars(args), config=str((tmp_path / "other_config.py").resolve()))
+        )
+    )
+    expect_lineage_rejection(
+        contract_override={"arm_surface": "R1", "source_commit": "8" * 40}
+    )
+    expect_lineage_rejection(
+        contract_override={"arm_surface": "G", "source_commit": "7" * 40}
+    )
+    expect_lineage_rejection(
+        args_override=SimpleNamespace(**dict(vars(args), seed=43))
+    )
+
+    install_rng(rank0_rng)
+    final_loader = Loader(epoch=59)
+    final_lineage = train_module._capture_zoomtoken_training_state(
+        args,
+        cfg,
+        final_loader,
+        epoch=59,
+        recovery_contract=contract,
+        next_successful_update_index=1234,
+    )
+    checkpoint_dir = work_dir / "checkpoint"
+    stale_temp = checkpoint_dir / "epoch_59.pth.tmp.interrupted"
+    stale_temp.write_bytes(b"interrupted")
+    final_path = save_checkpoint(
         model,
         Ema(ema_model),
         optimizer,
         scheduler,
         59,
-        work_dir=str(tmp_path),
+        work_dir=str(work_dir),
         scaler=scaler,
-        training_state=lineage,
+        training_state=final_lineage,
         checkpoint_role="final",
     )
-    checkpoint_dir = tmp_path / "checkpoint"
+    assert Path(final_path) == checkpoint_dir / "epoch_59.pth"
+    assert stale_temp.exists()
+    assert not (checkpoint_dir / "final_ema.pth").exists()
+    assert not (checkpoint_dir / "final_raw.pth").exists()
     full = torch.load(checkpoint_dir / "epoch_59.pth", map_location="cpu")
-    ema = torch.load(checkpoint_dir / "final_ema.pth", map_location="cpu")
-    raw = torch.load(checkpoint_dir / "final_raw.pth", map_location="cpu")
     assert {
         "state_dict",
         "state_dict_ema",
@@ -489,40 +737,25 @@ def test_r1_target_checkpoint_roundtrip_full_state_and_lineage(tmp_path):
         "training_state",
     }.issubset(full)
     assert full["checkpoint_role"] == "final"
-    assert ema["checkpoint_role"] == "final_ema"
-    assert raw["checkpoint_role"] == "final_raw"
-    assert full["training_state"] == ema["training_state"] == raw["training_state"] == lineage
-    assert torch.equal(ema["state_dict_ema"]["weight"], full["state_dict_ema"]["weight"])
-    assert torch.equal(raw["state_dict"]["weight"], full["state_dict"]["weight"])
+    assert full["primary_model_state"] == "state_dict_ema"
+    assert full["secondary_model_state"] == "state_dict"
+    assert_nested_equal(full["training_state"], final_lineage)
+    assert full["training_state"]["next_successful_update_index"] == 1234
+    assert_nested_equal(full["state_dict"], model.state_dict())
+    assert_nested_equal(full["state_dict_ema"], ema_model.state_dict())
 
-    restored_model = torch.nn.Linear(2, 2)
-    restored_ema = torch.nn.Linear(2, 2)
-    restored_optimizer = torch.optim.SGD(restored_model.parameters(), lr=0.1, momentum=0.9)
-    restored_scheduler = torch.optim.lr_scheduler.StepLR(restored_optimizer, step_size=1)
-    restored_scaler = StateHolder(0)
-    restored_model.load_state_dict(full["state_dict"])
-    restored_ema.load_state_dict(full["state_dict_ema"])
-    restored_optimizer.load_state_dict(full["optimizer"])
-    restored_scheduler.load_state_dict(full["scheduler"])
-    restored_scaler.load_state_dict(full["scaler"])
-    assert restored_scaler.value == 11
-    assert torch.equal(restored_ema.weight, ema_model.weight)
-
-    try:
+    with pytest.raises(FileExistsError):
         save_checkpoint(
             model,
             Ema(ema_model),
             optimizer,
             scheduler,
             59,
-            work_dir=str(tmp_path),
+            work_dir=str(work_dir),
             scaler=scaler,
-            training_state=lineage,
+            training_state=final_lineage,
             checkpoint_role="final",
         )
-    except FileExistsError:
-        pass
-    else:
-        raise AssertionError("R1 final artifacts must be immutable")
-    after = torch.load(checkpoint_dir / "final_ema.pth", map_location="cpu")
-    assert torch.equal(after["state_dict_ema"]["weight"], ema["state_dict_ema"]["weight"])
+    after = torch.load(checkpoint_dir / "epoch_59.pth", map_location="cpu")
+    assert_nested_equal(after["state_dict"], full["state_dict"])
+    assert_nested_equal(after["state_dict_ema"], full["state_dict_ema"])
