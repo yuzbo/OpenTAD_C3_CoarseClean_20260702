@@ -42,6 +42,7 @@ zoomtoken_p1_config = dict(
     schema_version="zoomtoken_strict_rectangle_r1_config_v001",
     arm_surface="R1",
     seed=42,
+    source_commit=None,
     runner_binding_required=True,
     support="strict_rect8x8",
     support_topology="one_complete_hole_free_8x8_block",

@@ -21,14 +21,6 @@ COMMON_PATH = (
 LAUNCHER_PATH = ROOT / "scripts/run_zoomtoken_official_prebackbone_bc_n16r4.sh"
 
 
-def _block_indices(top_row, top_col):
-    return [
-        row * 10 + col
-        for row in range(top_row, top_row + 8)
-        for col in range(top_col, top_col + 8)
-    ]
-
-
 def _function_source(path, name):
     source = path.read_text()
     node = next(
@@ -39,23 +31,47 @@ def _function_source(path, name):
     return ast.get_source_segment(source, node)
 
 
+def _strict_rectangle_block_functions():
+    namespace = {}
+    for name in (
+        "_validate_strict_rectangle_8x8_blocks",
+        "strict_rectangle_8x8_blocks",
+    ):
+        source = _function_source(ROUTING_PATH, name)
+        exec(compile(source, str(ROUTING_PATH), "exec"), namespace)
+    return (
+        namespace["_validate_strict_rectangle_8x8_blocks"],
+        namespace["strict_rectangle_8x8_blocks"],
+    )
+
+
+def _assert_value_error(callback):
+    try:
+        callback()
+    except ValueError:
+        return
+    raise AssertionError("expected fail-closed ValueError")
+
+
 def test_r1_has_exactly_nine_complete_hole_free_row_major_blocks():
-    blocks = [_block_indices(row, col) for row in (0, 1, 2) for col in (0, 1, 2)]
+    validate, build = _strict_rectangle_block_functions()
+    blocks = build()
     assert len(blocks) == 9
     assert all(len(block) == len(set(block)) == 64 for block in blocks)
-    assert blocks[0][:8] == list(range(8))
-    assert blocks[4][:8] == list(range(11, 19))
-    assert blocks[-1][-8:] == list(range(92, 100))
-    for block, (top_row, top_col) in zip(
-        blocks,
-        ((row, col) for row in (0, 1, 2) for col in (0, 1, 2)),
-    ):
-        expected = {
-            row * 10 + col
-            for row in range(top_row, top_row + 8)
-            for col in range(top_col, top_col + 8)
-        }
-        assert set(block) == expected
+    assert blocks[0][:8] == tuple(range(8))
+    assert blocks[4][:8] == tuple(range(11, 19))
+    assert blocks[-1][-8:] == tuple(range(92, 100))
+    assert validate(blocks) == blocks
+
+    _assert_value_error(lambda: build(grid_height=9))
+    _assert_value_error(lambda: validate(blocks[:-1]))
+    duplicate_token = list(blocks[0])
+    duplicate_token[-1] = duplicate_token[0]
+    _assert_value_error(
+        lambda: validate((tuple(duplicate_token),) + tuple(blocks[1:]))
+    )
+    _assert_value_error(lambda: validate(tuple(blocks[:-1]) + (blocks[0],)))
+    assert "torch" not in sys.modules
 
 
 def test_r1_routing_source_is_categorical_not_token_topk():
@@ -67,6 +83,7 @@ def test_r1_routing_source_is_categorical_not_token_topk():
     assert "F.softmax(block_logits / float(temperature), dim=-1)" in primitive
     assert "hard_categorical + (probability - probability.detach())" in primitive
     assert "torch.matmul(" in primitive
+    assert "strict_rectangle_8x8_blocks()" in primitive
     assert "topk" not in primitive.lower()
     assert "q_base" not in primitive
     assert "residual" not in primitive
@@ -172,10 +189,14 @@ def test_r1_recovery_and_launcher_are_same_cell_and_do_not_override_recipe():
     assert 'checkpoint_interval=5' in config
     assert 'checkpoint_policy="recovery_latest3_plus_final"' in config
     assert "keep_latest=3" in config and "full_state=True" in config
+    assert "source_commit=None" in config
     assert 'ZOOMTOKEN_RECOVERY_ARMS = {"DN", "G", "R1"}' in train
     assert '"state_dict": model.state_dict()' in checkpoint
     assert '"state_dict_ema": model_ema.module.state_dict()' in checkpoint
     assert '"training_state": dict(training_state)' in checkpoint
+    assert '"checkpoint_role": "final_ema"' in checkpoint
+    assert '"checkpoint_role": "final_raw"' in checkpoint
+    assert '"zoomtoken_p1_config.source_commit=${EXPECTED_COMMIT}"' in launcher
     assert "georoute_official_r1_strict_rect8x8_prebackbone_seed42_v001.py" in launcher
     assert "same-cell checkpoint/recovery_epoch_<N>.pth" in launcher
     assert 'resume_args=(--resume "${RESUME}")' in launcher
@@ -215,7 +236,7 @@ def test_r1_runtime_geometry_tie_st_and_order_contract():
     assert route["indices"].shape == (1, 2, 64)
     assert torch.equal(
         route["indices"][0, 0],
-        torch.tensor(_block_indices(1, 1), dtype=torch.long),
+        torch.tensor(_strict_rectangle_block_functions()[1]()[4], dtype=torch.long),
     )
     assert route["block_top_left_row_col"].tolist() == [[[1, 1], [1, 1]]]
     assert torch.equal(route["st_gate"].detach(), torch.ones_like(route["st_gate"]))
@@ -234,5 +255,274 @@ def test_r1_runtime_geometry_tie_st_and_order_contract():
     assert tie["block_top_left_row_col"].tolist() == [[[1, 0]]]
     assert torch.equal(
         tie["indices"][0, 0],
-        torch.tensor(_block_indices(1, 0), dtype=torch.long),
+        torch.tensor(_strict_rectangle_block_functions()[1]()[3], dtype=torch.long),
     )
+
+
+def test_r1_target_wrapper_runs_prepatch_gather_then_one_ragged(monkeypatch):
+    if os.environ.get("ZOOMTOKEN_R1_WRAPPER_RUNTIME_CHECK") != "1":
+        return
+
+    from types import SimpleNamespace
+
+    import torch
+    from torch import nn
+
+    import opentad.models.backbones.georoute_wrapper as wrapper_module
+    from opentad.models.backbones.georoute_wrapper import GeoRouteBackboneWrapper
+
+    _validate, build = _strict_rectangle_block_functions()
+    spatial = torch.tensor(build()[4], dtype=torch.long).view(1, 1, 64).expand(1, 2, 64)
+    physical = torch.cat((spatial[:, 0], spatial[:, 1] + 100), dim=1)
+
+    native = torch.arange(200, dtype=torch.uint8).reshape(
+        1, 2, 100, 1, 1, 1, 1
+    ).expand(1, 2, 100, 3, 2, 1, 1).clone()
+
+    def fake_extract(source, *, patch_size, tubelet_size):
+        assert patch_size == 1 and tubelet_size == 2
+        return native, (10, 10), (0, 0), torch.ones((1, 2, 100), dtype=torch.bool)
+
+    monkeypatch.setattr(wrapper_module, "extract_native_tubelets", fake_extract)
+    monkeypatch.setattr(
+        wrapper_module,
+        "_normalize_uint8_video",
+        lambda value, mean, std: value,
+    )
+
+    class FakeBackbone:
+        embed_dims = 3
+
+        def __init__(self):
+            self.native_ragged_forward_invocations = 0
+            self.latest_native_packed_summary = None
+
+        def forward_native_ragged(
+            self,
+            selected_native,
+            physical_indices,
+            *,
+            total_tubelets,
+            source_grid_hw,
+            use_absolute_position,
+        ):
+            assert total_tubelets == 2 and source_grid_hw == (10, 10)
+            assert use_absolute_position
+            assert torch.equal(physical_indices, physical)
+            observed = selected_native[:, :, 0, 0, 0, 0].to(torch.long)
+            assert torch.equal(observed, physical_indices)
+            self.native_ragged_forward_invocations += 1
+            selected_count = int(physical_indices.shape[1])
+            self.latest_native_packed_summary = {
+                "schema_version": "videomae_native_ragged_v1",
+                "execution_mode": "true_clip_ragged_no_padding",
+                "window_token_budget": selected_count,
+                "requested_physical_tokens_per_window": selected_count,
+                "unique_physical_tokens_per_window": selected_count,
+                "padded_heavy_tokens_per_window": 0,
+                "executed_patch_tokens_per_window": selected_count,
+                "heavy_backbone_forward_count": 1,
+                "dense_adapter_forward_count": 0,
+            }
+            return physical_indices.to(torch.float32).unsqueeze(-1).expand(-1, -1, 3)
+
+    class FakeSparseAdapter:
+        def forward_ragged(
+            self,
+            selected_features,
+            selected_scores,
+            geometry,
+            selected_coordinates,
+            tubelet_indices,
+            **kwargs,
+        ):
+            assert selected_features.shape == (1, 128, 3)
+            assert torch.count_nonzero(selected_scores) == 0
+            assert selected_coordinates.shape == (1, 128, 2)
+            assert kwargs == {
+                "use_absolute_coordinates": False,
+                "use_roi_relative_coordinates": False,
+                "use_geometry_projection": False,
+                "pooling_mode": "uniform_selected",
+            }
+            pooled = selected_features.reshape(1, 2, 64, 3).mean(dim=2)
+            return pooled.transpose(1, 2), torch.ones((1, 2), dtype=torch.bool)
+
+    wrapper = GeoRouteBackboneWrapper.__new__(GeoRouteBackboneWrapper)
+    nn.Module.__init__(wrapper)
+    backbone = FakeBackbone()
+    wrapper.model = SimpleNamespace(backbone=backbone)
+    wrapper.sparse_adapter = FakeSparseAdapter()
+    wrapper.patch_size = 1
+    wrapper.tubelet_size = 2
+    wrapper.output_length = 4
+    wrapper.absolute_position_enabled = True
+    wrapper.official_support = "strict_rect8x8"
+    wrapper.source_mean = torch.zeros(1)
+    wrapper.source_std = torch.ones(1)
+    wrapper._pending_regularization = None
+    wrapper._pending_score_function = None
+    wrapper._pending_dynamic_auxiliary = None
+    wrapper.latest_georoute_audit = None
+    wrapper.latest_heavy_valid_mask = None
+    wrapper.set_norm_layer = lambda: None
+    wrapper._validate_official_fixed_support_input = lambda frames: frames[:, 0]
+    wrapper._official_fixed_support_route = lambda source, **kwargs: {
+        "geometry": torch.tensor([[[0.5, 0.5, 0.8, 0.8]]]).expand(1, 2, 4),
+        "spatial_indices": spatial,
+        "st_gate": torch.ones((1, 2, 64)),
+        "routing_schema": "georoute_strict_rectangle_8x8_routing_v1",
+        "candidate_top_left_row_col": torch.tensor(
+            [[row, col] for row in (0, 1, 2) for col in (0, 1, 2)]
+        ),
+        "block_top_left_row_col": torch.tensor([[[1, 1], [1, 1]]]),
+        "block_size_hw": (8, 8),
+        "candidate_count": 9,
+        "hole_count": 0,
+    }
+    wrapper.eval()
+    output = GeoRouteBackboneWrapper._forward_official_fixed_support(
+        wrapper,
+        torch.zeros((1, 1, 3, 4, 1, 1), dtype=torch.uint8),
+        None,
+    )
+    assert output.shape == (1, 3, 4)
+    assert backbone.native_ragged_forward_invocations == 1
+    assert wrapper.latest_georoute_audit["packed"]["padded_heavy_tokens_per_window"] == 0
+    assert wrapper.latest_georoute_audit["strict_rectangle"]["dummy_tokens_used"] is False
+
+
+def test_r1_target_checkpoint_roundtrip_full_state_and_lineage(tmp_path):
+    if os.environ.get("ZOOMTOKEN_R1_RECOVERY_RUNTIME_CHECK") != "1":
+        return
+
+    import torch
+
+    from opentad.utils.checkpoint import save_checkpoint
+
+    class Ema:
+        def __init__(self, module):
+            self.module = module
+
+    class StateHolder:
+        def __init__(self, value):
+            self.value = value
+
+        def state_dict(self):
+            return {"value": self.value}
+
+        def load_state_dict(self, state):
+            self.value = state["value"]
+
+    model = torch.nn.Linear(2, 2)
+    ema_model = torch.nn.Linear(2, 2)
+    with torch.no_grad():
+        ema_model.weight.fill_(7.0)
+        ema_model.bias.fill_(3.0)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
+    scaler = StateHolder(11)
+    lineage = {
+        "schema_version": "zoomtoken_same_cell_recovery_v001",
+        "arm_surface": "R1",
+        "seed": 42,
+        "source_commit": "7" * 40,
+        "config_path": "/canonical/r1.py",
+        "work_dir": str(tmp_path.resolve()),
+        "completed_epoch": 59,
+        "next_epoch": 60,
+        "next_successful_update_index": 1234,
+    }
+    recovery_lineage = dict(
+        lineage,
+        completed_epoch=4,
+        next_epoch=5,
+        next_successful_update_index=321,
+    )
+    save_checkpoint(
+        model,
+        Ema(ema_model),
+        optimizer,
+        scheduler,
+        4,
+        work_dir=str(tmp_path),
+        scaler=scaler,
+        training_state=recovery_lineage,
+        checkpoint_role="recovery",
+        recovery_keep_latest=3,
+    )
+    recovery = torch.load(
+        tmp_path / "checkpoint/recovery_epoch_4.pth",
+        map_location="cpu",
+    )
+    assert recovery["checkpoint_role"] == "recovery"
+    assert recovery["training_state"] == recovery_lineage
+    assert {
+        "state_dict",
+        "state_dict_ema",
+        "optimizer",
+        "scheduler",
+        "scaler",
+    }.issubset(recovery)
+
+    save_checkpoint(
+        model,
+        Ema(ema_model),
+        optimizer,
+        scheduler,
+        59,
+        work_dir=str(tmp_path),
+        scaler=scaler,
+        training_state=lineage,
+        checkpoint_role="final",
+    )
+    checkpoint_dir = tmp_path / "checkpoint"
+    full = torch.load(checkpoint_dir / "epoch_59.pth", map_location="cpu")
+    ema = torch.load(checkpoint_dir / "final_ema.pth", map_location="cpu")
+    raw = torch.load(checkpoint_dir / "final_raw.pth", map_location="cpu")
+    assert {
+        "state_dict",
+        "state_dict_ema",
+        "optimizer",
+        "scheduler",
+        "scaler",
+        "training_state",
+    }.issubset(full)
+    assert full["checkpoint_role"] == "final"
+    assert ema["checkpoint_role"] == "final_ema"
+    assert raw["checkpoint_role"] == "final_raw"
+    assert full["training_state"] == ema["training_state"] == raw["training_state"] == lineage
+    assert torch.equal(ema["state_dict_ema"]["weight"], full["state_dict_ema"]["weight"])
+    assert torch.equal(raw["state_dict"]["weight"], full["state_dict"]["weight"])
+
+    restored_model = torch.nn.Linear(2, 2)
+    restored_ema = torch.nn.Linear(2, 2)
+    restored_optimizer = torch.optim.SGD(restored_model.parameters(), lr=0.1, momentum=0.9)
+    restored_scheduler = torch.optim.lr_scheduler.StepLR(restored_optimizer, step_size=1)
+    restored_scaler = StateHolder(0)
+    restored_model.load_state_dict(full["state_dict"])
+    restored_ema.load_state_dict(full["state_dict_ema"])
+    restored_optimizer.load_state_dict(full["optimizer"])
+    restored_scheduler.load_state_dict(full["scheduler"])
+    restored_scaler.load_state_dict(full["scaler"])
+    assert restored_scaler.value == 11
+    assert torch.equal(restored_ema.weight, ema_model.weight)
+
+    try:
+        save_checkpoint(
+            model,
+            Ema(ema_model),
+            optimizer,
+            scheduler,
+            59,
+            work_dir=str(tmp_path),
+            scaler=scaler,
+            training_state=lineage,
+            checkpoint_role="final",
+        )
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("R1 final artifacts must be immutable")
+    after = torch.load(checkpoint_dir / "final_ema.pth", map_location="cpu")
+    assert torch.equal(after["state_dict_ema"]["weight"], ema["state_dict_ema"]["weight"])

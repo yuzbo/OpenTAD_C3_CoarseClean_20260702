@@ -122,6 +122,25 @@ def save_checkpoint(
     else:
         raise ValueError(f"unsupported checkpoint role {checkpoint_role!r}")
     checkpoint_path = os.path.join(save_dir, checkpoint_name)
+    r1_final = bool(
+        checkpoint_role == "final"
+        and isinstance(training_state, dict)
+        and training_state.get("arm_surface") == "R1"
+    )
+    final_ema_path = os.path.join(save_dir, "final_ema.pth")
+    final_raw_path = os.path.join(save_dir, "final_raw.pth")
+    if r1_final:
+        if model_ema is None or "state_dict_ema" not in save_states:
+            raise ValueError("ZoomToken R1 final requires the frozen EMA state")
+        existing = [
+            path
+            for path in (checkpoint_path, final_ema_path, final_raw_path)
+            if os.path.exists(path)
+        ]
+        if existing:
+            raise FileExistsError(
+                f"refusing to overwrite immutable R1 final artifacts: {existing}"
+            )
     if experiment_metadata is not None:
         if (
             not isinstance(experiment_sidecar_schema, str)
@@ -175,6 +194,26 @@ def save_checkpoint(
                     os.remove(path)
     else:
         _atomic_torch_save(save_states, checkpoint_path)
+    if r1_final:
+        lineage = dict(training_state)
+        _atomic_torch_save(
+            {
+                "epoch": epoch,
+                "checkpoint_role": "final_ema",
+                "state_dict_ema": save_states["state_dict_ema"],
+                "training_state": lineage,
+            },
+            final_ema_path,
+        )
+        _atomic_torch_save(
+            {
+                "epoch": epoch,
+                "checkpoint_role": "final_raw",
+                "state_dict": save_states["state_dict"],
+                "training_state": lineage,
+            },
+            final_raw_path,
+        )
     if recovery_keep_latest is not None:
         _prune_recovery_checkpoints(save_dir, recovery_keep_latest)
     return checkpoint_path

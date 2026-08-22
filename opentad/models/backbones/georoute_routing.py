@@ -174,6 +174,79 @@ def roi_logits_from_geometry(
     return -0.5 * normalized.square().sum(dim=-1) / float(temperature)
 
 
+def _validate_strict_rectangle_8x8_blocks(
+    blocks,
+    *,
+    grid_height=10,
+    grid_width=10,
+):
+    """Fail closed on the frozen nine complete row-major 8x8 supports."""
+
+    if (grid_height, grid_width) != (10, 10):
+        raise ValueError("strict rectangle blocks require the frozen 10x10 grid")
+    expected_top_left = tuple(
+        (top_row, top_col)
+        for top_row in (0, 1, 2)
+        for top_col in (0, 1, 2)
+    )
+    if not isinstance(blocks, (tuple, list)) or len(blocks) != len(
+        expected_top_left
+    ):
+        raise ValueError("strict rectangle routing requires exactly nine blocks")
+
+    normalized = []
+    observed_blocks = set()
+    for block, (top_row, top_col) in zip(blocks, expected_top_left):
+        if not isinstance(block, (tuple, list)) or len(block) != 64:
+            raise ValueError("strict rectangle candidates must each contain K64")
+        if any(
+            isinstance(index, bool)
+            or not isinstance(index, int)
+            or index < 0
+            or index >= grid_height * grid_width
+            for index in block
+        ):
+            raise ValueError("strict rectangle candidate leaves the 10x10 grid")
+        candidate = tuple(block)
+        if len(set(candidate)) != 64:
+            raise ValueError("strict rectangle candidate contains duplicate tokens")
+        if candidate in observed_blocks:
+            raise ValueError("strict rectangle candidates contain a duplicate block")
+        expected = tuple(
+            row * grid_width + col
+            for row in range(top_row, top_row + 8)
+            for col in range(top_col, top_col + 8)
+        )
+        if candidate != expected:
+            raise ValueError(
+                "strict rectangle candidate is not one complete row-major 8x8 block"
+            )
+        observed_blocks.add(candidate)
+        normalized.append(candidate)
+    return tuple(normalized)
+
+
+def strict_rectangle_8x8_blocks(*, grid_height=10, grid_width=10):
+    """Construct the only nine legal K64 supports used by the R1 route."""
+
+    if (grid_height, grid_width) != (10, 10):
+        raise ValueError("strict rectangle blocks require the frozen 10x10 grid")
+    blocks = tuple(
+        tuple(
+            row * grid_width + col
+            for row in range(top_row, top_row + 8)
+            for col in range(top_col, top_col + 8)
+        )
+        for top_row in (0, 1, 2)
+        for top_col in (0, 1, 2)
+    )
+    return _validate_strict_rectangle_8x8_blocks(
+        blocks,
+        grid_height=grid_height,
+        grid_width=grid_width,
+    )
+
+
 def select_strict_rectangle_8x8(
     geometry_logits: torch.Tensor,
     *,
@@ -210,11 +283,21 @@ def select_strict_rectangle_8x8(
 
     device = geometry_logits.device
     dtype = geometry_logits.dtype
-    top_rows = torch.arange(candidate_axis, device=device, dtype=torch.long).repeat_interleave(
-        candidate_axis
+    canonical_blocks = strict_rectangle_8x8_blocks()
+    legal_indices = torch.tensor(
+        canonical_blocks,
+        device=device,
+        dtype=torch.long,
     )
-    top_cols = torch.arange(candidate_axis, device=device, dtype=torch.long).repeat(
-        candidate_axis
+    top_rows = torch.tensor(
+        tuple(block[0] // grid_width for block in canonical_blocks),
+        device=device,
+        dtype=torch.long,
+    )
+    top_cols = torch.tensor(
+        tuple(block[0] % grid_width for block in canonical_blocks),
+        device=device,
+        dtype=torch.long,
     )
     candidate_top_left = torch.stack((top_rows, top_cols), dim=-1)
     block_centers = torch.stack(
@@ -247,21 +330,6 @@ def select_strict_rectangle_8x8(
         else hard_categorical
     )
 
-    row_offsets = torch.arange(block_height, device=device, dtype=torch.long).view(
-        1,
-        block_height,
-        1,
-    )
-    col_offsets = torch.arange(block_width, device=device, dtype=torch.long).view(
-        1,
-        1,
-        block_width,
-    )
-    legal_indices = (
-        (top_rows.view(-1, 1, 1) + row_offsets) * grid_width
-        + top_cols.view(-1, 1, 1)
-        + col_offsets
-    ).reshape(candidate_count, target_k)
     legal_masks = torch.zeros(
         (candidate_count, grid_height * grid_width),
         device=device,

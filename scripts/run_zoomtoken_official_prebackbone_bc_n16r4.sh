@@ -103,6 +103,7 @@ exec torchrun --nnodes=1 --nproc_per_node=2 \
   tools/train.py "${CONFIG}" --seed 42 --id 0 "${resume_args[@]}" \
   --cfg-options \
   "work_dir=${CELL_ROOT}" \
+  "zoomtoken_p1_config.source_commit=${EXPECTED_COMMIT}" \
   "dataset.train.ann_file=${ANNOTATION}" \
   "dataset.train.class_map=${CLASS_MAP}" \
   "dataset.train.data_path=${VIDEO_ROOT}" \

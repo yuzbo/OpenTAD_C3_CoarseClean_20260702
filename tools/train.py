@@ -85,6 +85,12 @@ def _zoomtoken_recovery_contract(cfg):
             )
     if not cfg.solver.get("amp", False) or not cfg.solver.get("ema", False):
         raise ValueError("ZoomToken full-state recovery requires the frozen AMP/EMA recipe")
+    source_commit = p1_config.get("source_commit", None)
+    if arm_surface == "R1" and (
+        not isinstance(source_commit, str)
+        or re.fullmatch(r"[0-9a-f]{40}", source_commit) is None
+    ):
+        raise ValueError("ZoomToken R1 recovery requires a canonical source commit")
     work_dir_parts = os.path.normpath(cfg.work_dir).replace("\\", "/").split("/")
     if p1_config.get("runner_binding_required", False) and any(
         part.endswith("_unbound") for part in work_dir_parts
@@ -95,6 +101,7 @@ def _zoomtoken_recovery_contract(cfg):
         )
     contract["arm_surface"] = arm_surface
     contract["seed"] = int(p1_config["seed"])
+    contract["source_commit"] = source_commit
     contract["max_amp_retries_per_batch"] = successful_update_workflow[
         "max_amp_retries_per_batch"
     ]
@@ -126,14 +133,16 @@ def _capture_zoomtoken_training_state(
     recovery_contract,
     next_successful_update_index,
 ):
-    if recovery_contract["arm_surface"] == "G":
+    if recovery_contract["arm_surface"] in {"G", "R1"}:
         if (
             not isinstance(next_successful_update_index, int)
             or next_successful_update_index < 0
         ):
-            raise ValueError("ZoomToken G recovery requires a non-negative update index")
+            raise ValueError(
+                "ZoomToken G/R1 recovery requires a non-negative update index"
+            )
     elif next_successful_update_index is not None:
-        raise ValueError("non-G ZoomToken recovery must not carry an update index")
+        raise ValueError("ZoomToken DN recovery must not carry an update index")
     local_rng_state = {
         "rank": args.rank,
         "python_rng_state": random.getstate(),
@@ -153,6 +162,7 @@ def _capture_zoomtoken_training_state(
         "schema_version": ZOOMTOKEN_RECOVERY_SCHEMA,
         "arm_surface": recovery_contract["arm_surface"],
         "seed": args.seed,
+        "source_commit": recovery_contract.get("source_commit", None),
         "config_path": os.path.realpath(args.config),
         "work_dir": os.path.realpath(cfg.work_dir),
         "world_size": args.world_size,
@@ -179,6 +189,7 @@ def _restore_zoomtoken_training_state(
         "schema_version": ZOOMTOKEN_RECOVERY_SCHEMA,
         "arm_surface": recovery_contract["arm_surface"],
         "seed": args.seed,
+        "source_commit": recovery_contract.get("source_commit", None),
         "config_path": os.path.realpath(args.config),
         "work_dir": os.path.realpath(cfg.work_dir),
         "world_size": args.world_size,
@@ -198,14 +209,14 @@ def _restore_zoomtoken_training_state(
     next_successful_update_index = training_state.get(
         "next_successful_update_index", None
     )
-    if recovery_contract["arm_surface"] == "G":
+    if recovery_contract["arm_surface"] in {"G", "R1"}:
         if (
             not isinstance(next_successful_update_index, int)
             or next_successful_update_index < 0
         ):
-            raise ValueError("ZoomToken G recovery lacks a valid update index")
+            raise ValueError("ZoomToken G/R1 recovery lacks a valid update index")
     elif next_successful_update_index is not None:
-        raise ValueError("non-G ZoomToken recovery must not carry an update index")
+        raise ValueError("ZoomToken DN recovery must not carry an update index")
 
     rng_state_by_rank = training_state.get("rng_state_by_rank", None)
     if not isinstance(rng_state_by_rank, list) or len(rng_state_by_rank) != args.world_size:
@@ -332,7 +343,7 @@ def main():
     next_successful_update_index = (
         0
         if recovery_contract is not None
-        and recovery_contract["arm_surface"] == "G"
+        and recovery_contract["arm_surface"] in {"G", "R1"}
         else None
     )
     if args.resume is not None and recovery_contract is not None:

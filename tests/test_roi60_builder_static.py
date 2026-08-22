@@ -785,14 +785,22 @@ def test_amp_update_detection_runtime_contract():
     assert torch.equal(parameter.detach(), skipped_before)
 
 
-def test_g_update_index_is_checkpointed_and_restored_without_importing_torch():
+def test_g_and_r1_update_index_and_lineage_are_checkpointed_without_torch():
     train = (ROOT / "tools/train.py").read_text()
-    assert 'recovery_contract["arm_surface"] == "G"' in train
+    launcher = (
+        ROOT / "scripts/run_zoomtoken_official_prebackbone_bc_n16r4.sh"
+    ).read_text()
+    assert train.count('recovery_contract["arm_surface"] in {"G", "R1"}') == 3
     assert '"next_successful_update_index": next_successful_update_index' in train
+    assert train.count(
+        '"source_commit": recovery_contract.get("source_commit", None)'
+    ) == 2
+    assert "ZoomToken R1 recovery requires a canonical source commit" in train
     assert "next_successful_update_index = _restore_zoomtoken_training_state(" in train
     assert "next_successful_update_index = train_one_epoch(" in train
     assert "successful_update_index=next_successful_update_index" in train
     assert "next_successful_update_index," in train
+    assert '"zoomtoken_p1_config.source_commit=${EXPECTED_COMMIT}"' in launcher
     assert "torch" not in sys.modules
 
 
