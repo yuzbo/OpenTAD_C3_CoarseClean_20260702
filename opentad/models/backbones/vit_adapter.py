@@ -14,7 +14,7 @@ from mmengine.model import BaseModule, ModuleList
 from mmengine.model.weight_init import constant_init, trunc_normal_init
 from mmaction.utils import ConfigType, OptConfigType
 from mmaction.models.backbones.vit_mae import get_sinusoid_encoding
-from .physical_time import build_canonical_time_residual_bias
+from .physical_time import build_canonical_time_residual_bias, exact_uniform_positions
 
 
 class Adapter(BaseModule):
@@ -832,6 +832,7 @@ class VisionTransformerAdapter(BaseModule):
         )
         if self.singleclock.get("enabled", False):
             self.blocks[0].first_attention = True
+            self.singleclock_scale = nn.Parameter(torch.zeros((), dtype=torch.float32))
 
         if use_mean_pooling:
             self.norm = nn.Identity()
@@ -881,18 +882,27 @@ class VisionTransformerAdapter(BaseModule):
 
         relative_bias = None
         if self.singleclock.get("enabled", False) and physical_positions is not None:
-            canonical = torch.linspace(0, 1, x.shape[1] // (h * w), device=x.device, dtype=x.dtype)
-            canonical = canonical.expand(x.shape[0], -1)
             if physical_positions.ndim != 2 or physical_positions.shape[0] != x.shape[0]:
                 raise ValueError("physical_positions must align with flattened backbone batch")
             tubelet = int(getattr(self.patch_embed, "kernel_size", (2,))[0])
             if physical_positions.shape[1] == x.shape[1] // (h * w) * tubelet:
                 physical_positions = physical_positions.reshape(x.shape[0], -1, tubelet).mean(dim=-1)
-            if physical_positions.shape[1] != canonical.shape[1]:
+            expected_tubelets = x.shape[1] // (h * w)
+            if physical_positions.shape[1] != expected_tubelets:
                 raise ValueError("physical_positions length must match VideoMAE tubelet count")
-            relative_bias = build_canonical_time_residual_bias(
-                physical_positions, canonical, h * w, 1,
-                eps=float(self.singleclock.get("eps", 1e-6)), dtype=x.dtype)
+            valid_len = self.singleclock.get("dense_valid_length")
+            if valid_len is None:
+                raise ValueError("SingleClock requires dense_valid_length in raw dense-index units")
+            canonical = exact_uniform_positions(int(valid_len), int(physical_positions.shape[1] * tubelet), device=x.device)
+            canonical = canonical.reshape(1, -1, tubelet).mean(dim=-1).to(dtype=x.dtype).expand(x.shape[0], -1)
+            physical_positions = physical_positions.to(dtype=x.dtype)
+            if torch.equal(physical_positions, canonical):
+                relative_bias = None
+            else:
+                relative_bias = build_canonical_time_residual_bias(
+                    physical_positions, canonical, h * w, 1,
+                    eps=float(self.singleclock.get("eps", 1e-6)), dtype=x.dtype)
+                relative_bias = self.singleclock_scale.to(dtype=x.dtype) * relative_bias
 
         if self.tubelet_packed_runtime_route is not None and self.tubelet_packed_runtime_route.enabled:
             if relative_bias is not None:
@@ -932,3 +942,5 @@ class VisionTransformerAdapter(BaseModule):
                     n.eval()
                     for param in n.parameters():
                         param.requires_grad = False
+        if self.singleclock.get("enabled", False):
+            self.singleclock_scale.requires_grad = True

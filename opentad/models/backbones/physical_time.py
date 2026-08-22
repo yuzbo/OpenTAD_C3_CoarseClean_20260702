@@ -1,6 +1,16 @@
 """SingleClock relative physical-time attention bias."""
 import torch
 
+
+def exact_uniform_positions(valid_len: int, selected_count: int, device=None):
+    valid_len, selected_count = int(valid_len), int(selected_count)
+    if valid_len <= 0 or selected_count <= 0 or selected_count > valid_len:
+        raise ValueError("valid_len and selected_count must satisfy 0 < selected_count <= valid_len")
+    if selected_count == 1:
+        return torch.zeros(1, dtype=torch.long, device=device)
+    # Python round is the H65 round-half-to-even rule.
+    return torch.tensor([round(i * (valid_len - 1) / (selected_count - 1)) for i in range(selected_count)], dtype=torch.long, device=device)
+
 def build_canonical_time_residual_bias(physical_time, canonical_time, spatial_tokens,
                                        num_heads=1, eps=1e-6, dtype=None):
     if int(num_heads) != 1:
