@@ -28,15 +28,37 @@ from .georoute_routing import (
     roi_logits_from_geometry,
     roi_modifier_from_geometry,
     score_function_policy_loss,
+    select_continuous_strict_rectangle,
     select_dynamic_global_exact_budget,
     select_exact_k,
     select_fixed_quota_structured_exact_k,
+    select_qbase_global_exact_k,
+    select_rectangle_constrained_qbase_8x8,
+    select_rectangle_core_outside_qbase_7x7,
     select_strict_rectangle_8x8,
 )
 from .native_crop_wrapper import deterministic_linear_2x
 
 
 GEOROUTE_BACKBONE_SCHEMA = "georoute_native_packed_backbone_v7"
+
+OFFICIAL_QBASE_SUPPORTS = frozenset(
+    {
+        "strict_rect8x8_q48",
+        "strict_rect8x8_shuf48",
+        "q48_global",
+        "strict_rect7x7_core49_q15",
+        "strict_rect7x7_core49_shuf15",
+        "q64_global",
+    }
+)
+OFFICIAL_R3_SUPPORTS = frozenset(
+    {
+        "continuous_rect_dynamic",
+        "continuous_rect_dynamic_area_shift97",
+    }
+)
+OFFICIAL_MULTIBRANCH_SUPPORTS = OFFICIAL_QBASE_SUPPORTS | OFFICIAL_R3_SUPPORTS
 
 
 class GeoRouteScout(nn.Module):
@@ -786,11 +808,25 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.official_support = (
             None if raw_official_support is None else str(raw_official_support)
         )
+        self.requires_route_window_ordinals = self.official_support in {
+            "strict_rect8x8_shuf48",
+            "strict_rect7x7_core49_shuf15",
+        }
         self.official_roi_tokens = int(
             getattr(custom_cfg, "georoute_official_roi_tokens", 64)
         )
         self.policy_estimator = str(getattr(custom_cfg, "georoute_policy_estimator", "straight_through"))
         self.policy_temperature = float(getattr(custom_cfg, "georoute_policy_temperature", 0.5))
+        self.r3_soft_membership_temperature = float(
+            getattr(
+                custom_cfg,
+                "georoute_r3_soft_membership_temperature",
+                0.025,
+            )
+        )
+        self.r3_area_shift_tubelets = int(
+            getattr(custom_cfg, "georoute_r3_area_shift_tubelets", 0)
+        )
         self.window_token_budget = int(
             getattr(
                 custom_cfg,
@@ -946,10 +982,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "all_native",
             "roi_k64",
             "strict_rect8x8",
-        }:
+        } | OFFICIAL_MULTIBRANCH_SUPPORTS:
             raise ValueError(
-                "georoute_official_support must be all_native, roi_k64 or "
-                "strict_rect8x8"
+                "unsupported frozen official pre-backbone support"
             )
         if self.route_mode not in ROUTE_MODES:
             raise ValueError(f"unsupported GeoRoute route mode {self.route_mode!r}")
@@ -1161,6 +1196,29 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                     "strict rectangle R1 requires temperature 0.5 and "
                     "per-tubelet geometry"
                 )
+            if self.official_support in OFFICIAL_QBASE_SUPPORTS and (
+                self.policy_temperature != 0.5
+                or self.geometry_stride_tubelets != 1
+            ):
+                raise ValueError(
+                    "R2/R4/Q controls require temperature 0.5 and per-tubelet routing"
+                )
+            if self.official_support in OFFICIAL_R3_SUPPORTS:
+                expected_shift = (
+                    97
+                    if self.official_support
+                    == "continuous_rect_dynamic_area_shift97"
+                    else 0
+                )
+                if (
+                    self.geometry_stride_tubelets != 1
+                    or self.r3_soft_membership_temperature != 0.025
+                    or self.r3_area_shift_tubelets != expected_shift
+                ):
+                    raise ValueError(
+                        "R3 requires per-tubelet geometry, temperature 0.025 and "
+                        "only its named AREA-SHIFT97 control"
+                    )
         super().__init__(cfg)
         if int(self.model.backbone.patch_size) != self.patch_size:
             raise ValueError("GeoRoute patch size must match the loaded VideoMAE")
@@ -1172,8 +1230,18 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self._freeze_shared_backbone_except_adapters()
         self.scout = GeoRouteScout(
             channels=48,
-            dynamic_utility=self.route_mode in DYNAMIC_ROUTE_MODES,
+            dynamic_utility=(
+                self.route_mode in DYNAMIC_ROUTE_MODES
+                or self.official_support in OFFICIAL_QBASE_SUPPORTS
+            ),
         )
+        if self.official_support in OFFICIAL_R3_SUPPORTS:
+            final_geometry = self.scout.geometry_head[-1]
+            nn.init.zeros_(final_geometry.weight)
+            nn.init.zeros_(final_geometry.bias)
+            initial_extent_logit = torch.logit(torch.tensor((0.8 - 0.02) / 0.98))
+            with torch.no_grad():
+                final_geometry.bias[2:].fill_(float(initial_extent_logit.item()))
         self._configure_scout_trainability()
         self.sparse_adapter = GeoRouteSparseTemporalAdapter(channels=int(self.model.backbone.embed_dims))
         self._configure_sparse_adapter_trainability()
@@ -1190,9 +1258,23 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self._pending_regularization: dict[str, torch.Tensor] | None = None
         self._pending_score_function: dict[str, torch.Tensor] | None = None
         self._pending_dynamic_auxiliary: dict[str, Any] | None = None
+        self._pending_r3_epoch_g: torch.Tensor | None = None
+        self._pending_r3_update_index: int | None = None
         self._gradient_decomposition_payload: dict[str, Any] | None = None
         self.latest_georoute_audit: dict[str, Any] | None = None
         self.latest_heavy_valid_mask: torch.Tensor | None = None
+        if self.official_support in OFFICIAL_R3_SUPPORTS:
+            self.register_buffer("r3_dual_lambda", torch.zeros(()))
+            self.register_buffer("r3_epoch_g_sum", torch.zeros(()))
+            self.register_buffer(
+                "r3_epoch_successful_updates", torch.zeros((), dtype=torch.long)
+            )
+            self.register_buffer(
+                "r3_last_completed_update", torch.full((), -1, dtype=torch.long)
+            )
+            self.register_buffer(
+                "r3_last_completed_epoch", torch.full((), -1, dtype=torch.long)
+            )
 
     def _freeze_shared_backbone_except_adapters(self) -> None:
         trainable_adapter_parameters = 0
@@ -1213,6 +1295,23 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             # the observer representation through an implicit path.
             for parameter in self.scout.parameters():
                 parameter.requires_grad = True
+            return
+        if self.official_support in OFFICIAL_MULTIBRANCH_SUPPORTS:
+            needs_qbase = self.official_support in OFFICIAL_QBASE_SUPPORTS
+            needs_geometry = self.official_support not in {
+                "q48_global",
+                "q64_global",
+            }
+            for parameter in self.scout.parameters():
+                parameter.requires_grad = True
+            if not needs_geometry:
+                for parameter in self.scout.geometry_head.parameters():
+                    parameter.requires_grad = False
+            for parameter in self.scout.residual_head.parameters():
+                parameter.requires_grad = False
+            if self.scout.base_utility_head is not None and not needs_qbase:
+                for parameter in self.scout.base_utility_head.parameters():
+                    parameter.requires_grad = False
             return
         needs_geometry = (
             self.route_mode in {"roi", "hybrid"}
@@ -1265,6 +1364,104 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         if int(index) < 0:
             raise ValueError("successful update index must be non-negative")
         self._successful_update_index = int(index)
+
+    def commit_successful_update(self, index: int) -> None:
+        """Commit R3 budget statistics only after a real optimizer update."""
+
+        if self.official_support not in OFFICIAL_R3_SUPPORTS:
+            return
+        if (
+            self._pending_r3_epoch_g is None
+            or self._pending_r3_update_index != int(index)
+        ):
+            raise RuntimeError("R3 successful update lacks its matching budget item")
+        if int(self.r3_last_completed_update.item()) >= int(index):
+            raise RuntimeError("R3 successful update identity is not monotonic")
+        self.r3_epoch_g_sum.add_(self._pending_r3_epoch_g)
+        self.r3_epoch_successful_updates.add_(1)
+        self.r3_last_completed_update.fill_(int(index))
+        self._pending_r3_epoch_g = None
+        self._pending_r3_update_index = None
+
+    def finish_training_epoch(
+        self,
+        epoch: int,
+        next_successful_update_index: int,
+    ) -> None:
+        """Update the frozen R3 dual once from successful-update epoch mean."""
+
+        if self.official_support not in OFFICIAL_R3_SUPPORTS:
+            return
+        count = int(self.r3_epoch_successful_updates.item())
+        if count <= 0:
+            raise RuntimeError("R3 cannot finish an epoch without successful updates")
+        if int(self.r3_last_completed_update.item()) + 1 != int(
+            next_successful_update_index
+        ):
+            raise RuntimeError("R3 epoch completion disagrees with update identity")
+        epoch_g = self.r3_epoch_g_sum / float(count)
+        self.r3_dual_lambda.copy_((self.r3_dual_lambda + epoch_g).clamp(-4.0, 4.0))
+        self.r3_epoch_g_sum.zero_()
+        self.r3_epoch_successful_updates.zero_()
+        self.r3_last_completed_epoch.fill_(int(epoch))
+
+    def export_r3_recovery_state(self) -> dict[str, Any] | None:
+        if self.official_support not in OFFICIAL_R3_SUPPORTS:
+            return None
+        if self._pending_r3_epoch_g is not None:
+            raise RuntimeError("R3 recovery capture requires an epoch boundary")
+        return {
+            "schema_version": "zoomtoken_r3_dual_state_v001",
+            "dual_lambda": float(self.r3_dual_lambda.item()),
+            "epoch_g_sum": float(self.r3_epoch_g_sum.item()),
+            "epoch_successful_updates": int(
+                self.r3_epoch_successful_updates.item()
+            ),
+            "last_completed_update": int(self.r3_last_completed_update.item()),
+            "last_completed_epoch": int(self.r3_last_completed_epoch.item()),
+        }
+
+    def restore_r3_recovery_state(self, state: Mapping[str, Any] | None) -> None:
+        if self.official_support not in OFFICIAL_R3_SUPPORTS:
+            if state is not None:
+                raise ValueError("non-R3 arm cannot restore R3 dual state")
+            return
+        expected_keys = {
+            "schema_version",
+            "dual_lambda",
+            "epoch_g_sum",
+            "epoch_successful_updates",
+            "last_completed_update",
+            "last_completed_epoch",
+        }
+        if not isinstance(state, Mapping) or set(state) != expected_keys:
+            raise ValueError("R3 recovery lacks the complete frozen dual state")
+        if state["schema_version"] != "zoomtoken_r3_dual_state_v001":
+            raise ValueError("R3 recovery dual-state schema mismatch")
+        values = (state["dual_lambda"], state["epoch_g_sum"])
+        if any(not isinstance(value, (int, float)) for value in values):
+            raise ValueError("R3 recovery dual scalars are invalid")
+        count = state["epoch_successful_updates"]
+        update = state["last_completed_update"]
+        epoch = state["last_completed_epoch"]
+        if (
+            not isinstance(count, int)
+            or count < 0
+            or not isinstance(update, int)
+            or update < -1
+            or not isinstance(epoch, int)
+            or epoch < -1
+        ):
+            raise ValueError("R3 recovery update/epoch identity is invalid")
+        if not (-4.0 <= float(state["dual_lambda"]) <= 4.0):
+            raise ValueError("R3 recovery lambda leaves the frozen clip range")
+        self.r3_dual_lambda.fill_(float(state["dual_lambda"]))
+        self.r3_epoch_g_sum.fill_(float(state["epoch_g_sum"]))
+        self.r3_epoch_successful_updates.fill_(count)
+        self.r3_last_completed_update.fill_(update)
+        self.r3_last_completed_epoch.fill_(epoch)
+        self._pending_r3_epoch_g = None
+        self._pending_r3_update_index = None
 
     def _validate_inputs(self, frames: Mapping[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
         if not isinstance(frames, Mapping) or set(frames) != {
@@ -1328,6 +1525,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         *,
         source_grid_hw: tuple[int, int],
         valid_patch_mask: torch.Tensor,
+        window_ordinals: torch.Tensor | None = None,
     ) -> dict[str, Any]:
         if self.official_support is None:
             raise RuntimeError("official fixed-support route is not configured")
@@ -1365,12 +1563,81 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 geometry_logits,
                 stride=self.geometry_stride_tubelets,
             )
+            q_base = None
+            if self.official_support in OFFICIAL_QBASE_SUPPORTS:
+                if self.scout.base_utility_head is None:
+                    raise RuntimeError("official q_base support lacks its utility head")
+                q_base = self.scout._resize_native_field(
+                    self.scout.base_utility_head(scout_features).squeeze(1),
+                    source_grid_hw=source_grid_hw,
+                )
             if self.official_support == "strict_rect8x8":
                 route = select_strict_rectangle_8x8(
                     geometry_logits,
                     training=self.training,
                     temperature=self.policy_temperature,
                     valid_mask=valid_patch_mask,
+                )
+                geometry = route["geometry"]
+            elif self.official_support in {
+                "strict_rect8x8_q48",
+                "strict_rect8x8_shuf48",
+            }:
+                route = select_rectangle_constrained_qbase_8x8(
+                    geometry_logits,
+                    q_base,
+                    training=self.training,
+                    temperature=self.policy_temperature,
+                    valid_mask=valid_patch_mask,
+                    shuffle_seed=(
+                        self.random_seed
+                        if self.official_support == "strict_rect8x8_shuf48"
+                        else None
+                    ),
+                    window_ordinals=window_ordinals,
+                )
+                geometry = route["geometry"]
+            elif self.official_support in {
+                "strict_rect7x7_core49_q15",
+                "strict_rect7x7_core49_shuf15",
+            }:
+                route = select_rectangle_core_outside_qbase_7x7(
+                    geometry_logits,
+                    q_base,
+                    training=self.training,
+                    temperature=self.policy_temperature,
+                    valid_mask=valid_patch_mask,
+                    shuffle_seed=(
+                        self.random_seed
+                        if self.official_support
+                        == "strict_rect7x7_core49_shuf15"
+                        else None
+                    ),
+                    window_ordinals=window_ordinals,
+                )
+                geometry = route["geometry"]
+            elif self.official_support in {"q48_global", "q64_global"}:
+                target_k = 48 if self.official_support == "q48_global" else 64
+                route = select_qbase_global_exact_k(
+                    q_base,
+                    target_k=target_k,
+                    training=self.training,
+                    temperature=self.policy_temperature,
+                    valid_mask=valid_patch_mask,
+                    mode=self.official_support,
+                )
+                geometry = torch.tensor(
+                    [0.5, 0.5, 1.0, 1.0],
+                    device=q_base.device,
+                    dtype=q_base.dtype,
+                ).view(1, 1, 4).expand(*q_base.shape[:2], 4)
+            elif self.official_support in OFFICIAL_R3_SUPPORTS:
+                route = select_continuous_strict_rectangle(
+                    geometry_logits,
+                    training=self.training,
+                    valid_mask=valid_patch_mask,
+                    soft_temperature=self.r3_soft_membership_temperature,
+                    area_shift_tubelets=self.r3_area_shift_tubelets,
                 )
                 geometry = route["geometry"]
             else:
@@ -1402,6 +1669,11 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                     temperature=self.policy_temperature,
                     valid_mask=valid_patch_mask,
                 )
+        if self.official_support in OFFICIAL_R3_SUPPORTS:
+            return {
+                **route,
+                "geometry": geometry,
+            }
         spatial_indices, sort_order = route["indices"].sort(dim=-1)
         st_gate = route["st_gate"].gather(-1, sort_order)
         if self.official_support == "all_native":
@@ -1422,6 +1694,16 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             and int(spatial_indices.shape[-1]) != 64
         ):
             raise RuntimeError("strict rectangle R1 did not preserve exact K64")
+        expected_new_k = {
+            "strict_rect8x8_q48": 48,
+            "strict_rect8x8_shuf48": 48,
+            "q48_global": 48,
+            "strict_rect7x7_core49_q15": 64,
+            "strict_rect7x7_core49_shuf15": 64,
+            "q64_global": 64,
+        }.get(self.official_support)
+        if expected_new_k is not None and int(spatial_indices.shape[-1]) != expected_new_k:
+            raise RuntimeError("official R2/R4/Q support violates its exact token count")
         receipt: dict[str, Any] = {
             "geometry": geometry,
             "spatial_indices": spatial_indices,
@@ -1440,7 +1722,55 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                     "hole_count": route["hole_count"],
                 }
             )
+        elif self.official_support in OFFICIAL_QBASE_SUPPORTS:
+            receipt.update(
+                {
+                    "routing_schema": route["schema_version"],
+                    "route_mode": route["mode"],
+                    "target_k": route["target_k"],
+                    "candidate_count": route["candidate_count"],
+                    "padded_token_count": route["padded_token_count"],
+                }
+            )
+            for key in (
+                "candidate_top_left_row_col",
+                "block_top_left_row_col",
+                "block_size_hw",
+                "hole_count",
+                "core_count",
+                "outside_candidate_count",
+                "outside_count",
+                "shuffle_enabled",
+            ):
+                if key in route:
+                    receipt[key] = route[key]
         return receipt
+
+    def _r3_augmented_lagrangian_loss(
+        self,
+        route: Mapping[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        local_soft = route["soft_count_sum"].to(torch.float32)
+        local_denominator = route["valid_tubelet_count"].to(
+            device=local_soft.device,
+            dtype=torch.float32,
+        ) * 64.0
+        totals = torch.stack((local_soft.detach(), local_denominator.detach()))
+        world_size = 1
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            torch.distributed.all_reduce(totals)
+            world_size = torch.distributed.get_world_size()
+        global_denominator = totals[1].clamp_min(1.0)
+        global_g = totals[0] / global_denominator - 1.0
+        live_g = global_g + (
+            float(world_size)
+            * (local_soft - local_soft.detach())
+            / global_denominator
+        )
+        loss = self.r3_dual_lambda.detach() * live_g + 0.5 * live_g.square()
+        if not bool(torch.isfinite(loss).item()):
+            raise FloatingPointError("R3 augmented-Lagrangian budget is non-finite")
+        return loss, global_g
 
     def _gather_selected_native_tubelets(
         self,
@@ -2977,8 +3307,9 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self,
         frames: torch.Tensor,
         masks: torch.Tensor | None,
+        window_ordinals: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Run the matched official B/C/R1 path with selection before VideoMAE."""
+        """Run the matched official route with selection before VideoMAE."""
 
         del masks
         if self.training and (
@@ -3006,21 +3337,26 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             source,
             source_grid_hw=source_grid_hw,
             valid_patch_mask=valid_patch_mask,
+            window_ordinals=window_ordinals,
         )
         batch_size, tubelets, spatial_tokens = map(int, native.shape[:3])
-        spatial_indices = route["spatial_indices"]
-        selected_per_tubelet = int(spatial_indices.shape[-1])
-        tubelet_offsets = (
-            torch.arange(
-                tubelets,
-                device=spatial_indices.device,
-                dtype=torch.long,
-            )
-            * spatial_tokens
-        ).view(1, tubelets, 1)
-        physical_indices = (
-            spatial_indices + tubelet_offsets
-        ).reshape(batch_size, tubelets * selected_per_tubelet)
+        if self.official_support in OFFICIAL_R3_SUPPORTS:
+            physical_indices = route["physical_indices"]
+            selected_per_tubelet = None
+        else:
+            spatial_indices = route["spatial_indices"]
+            selected_per_tubelet = int(spatial_indices.shape[-1])
+            tubelet_offsets = (
+                torch.arange(
+                    tubelets,
+                    device=spatial_indices.device,
+                    dtype=torch.long,
+                )
+                * spatial_tokens
+            ).view(1, tubelets, 1)
+            physical_indices = (
+                spatial_indices + tubelet_offsets
+            ).reshape(batch_size, tubelets * selected_per_tubelet)
 
         # Materialize the selected native 2x16x16 tubelets before entering any
         # VideoMAE block.  Every arm uses this exact gather and ragged heavy path;
@@ -3064,7 +3400,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             )
         selected_features = selected_features * route["st_gate"].reshape(
             batch_size,
-            tubelets * selected_per_tubelet,
+            -1,
         ).to(dtype=selected_features.dtype).unsqueeze(-1)
         tubelet_indices = torch.div(
             physical_indices,
@@ -3087,7 +3423,11 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             use_geometry_projection=False,
             pooling_mode="uniform_selected",
         )
-        if not bool(heavy_valid_mask.all().item()):
+        if self.official_support in OFFICIAL_R3_SUPPORTS:
+            expected_heavy_valid = route["k_per_tubelet"] > 0
+            if not torch.equal(heavy_valid_mask, expected_heavy_valid):
+                raise RuntimeError("R3 masked-zero carrier disagrees with natural K_t")
+        elif not bool(heavy_valid_mask.all().item()):
             raise RuntimeError(
                 "fixed per-tubelet support unexpectedly produced an empty tubelet"
             )
@@ -3145,11 +3485,90 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 "categorical_temperature": 0.5,
                 "raw_native_gather_before_patch_embedding": True,
             }
+        multibranch_audit = None
+        r3_budget_loss = None
+        r3_global_g = None
+        if self.official_support in OFFICIAL_MULTIBRANCH_SUPPORTS:
+            expected_physical_tokens = int(physical_indices.shape[1])
+            packed_contract = {
+                "schema_version": "videomae_native_ragged_v1",
+                "execution_mode": "true_clip_ragged_no_padding",
+                "window_token_budget": expected_physical_tokens,
+                "requested_physical_tokens_per_window": expected_physical_tokens,
+                "unique_physical_tokens_per_window": expected_physical_tokens,
+                "padded_heavy_tokens_per_window": 0,
+                "executed_patch_tokens_per_window": expected_physical_tokens,
+                "heavy_backbone_forward_count": 1,
+                "dense_adapter_forward_count": 0,
+            }
+            if any(packed.get(key) != value for key, value in packed_contract.items()):
+                raise RuntimeError("R2/R3/R4 ragged ledger violates zero-padding")
+            multibranch_audit = {
+                "routing_schema": route["schema_version"]
+                if "schema_version" in route
+                else route["routing_schema"],
+                "route_mode": route.get("mode", route.get("route_mode")),
+                "raw_native_gather_before_patch_embedding": True,
+                "one_forward_native_ragged": True,
+                "padded_heavy_tokens_per_window": 0,
+                "dummy_tokens_used": False,
+                "physical_tokens_per_window": expected_physical_tokens,
+                "hard_forward_membership_exact_one": bool(
+                    route["st_gate"].detach().eq(1).all().item()
+                ),
+            }
+            if self.official_support in OFFICIAL_QBASE_SUPPORTS:
+                multibranch_audit.update(
+                    {
+                        "target_k": int(route["target_k"]),
+                        "candidate_count": int(route["candidate_count"]),
+                        "shuffle_enabled": bool(route.get("shuffle_enabled", False)),
+                        "q_base_roi_modifier_enabled": False,
+                        "q_base_residual_modifier_enabled": False,
+                        "q_base_geometry_side_channel_enabled": False,
+                    }
+                )
+                if "core_count" in route:
+                    multibranch_audit.update(
+                        {
+                            "support_topology": "complete_7x7_core49_plus_outside15",
+                            "core_count": int(route["core_count"]),
+                            "outside_count": int(route["outside_count"]),
+                        }
+                    )
+                elif self.official_support.startswith("strict_rect8x8"):
+                    multibranch_audit["support_topology"] = (
+                        "complete_8x8_candidate_top48"
+                    )
+                else:
+                    multibranch_audit["support_topology"] = "global_q_base"
+            else:
+                r3_budget_loss, r3_global_g = self._r3_augmented_lagrangian_loss(
+                    route
+                )
+                k_per_tubelet = route["k_per_tubelet"]
+                multibranch_audit.update(
+                    {
+                        "support_topology": "continuous_strict_hard_rectangle_all_members",
+                        "k_t_min": int(k_per_tubelet.min().item()),
+                        "k_t_max": int(k_per_tubelet.max().item()),
+                        "k_t_sum": int(k_per_tubelet.sum().item()),
+                        "masked_zero_tubelets": int((k_per_tubelet == 0).sum().item()),
+                        "area_shift_tubelets": int(route["area_shift_tubelets"]),
+                        "budget_g": float(r3_global_g.item()),
+                        "dual_lambda": float(self.r3_dual_lambda.item()),
+                        "extra_anti_collapse_loss_enabled": False,
+                    }
+                )
         self.latest_georoute_audit = {
             "schema_version": (
                 "georoute_official_prebackbone_r1_v1"
                 if self.official_support == "strict_rect8x8"
-                else "georoute_official_prebackbone_bc_v1"
+                else (
+                    "georoute_official_prebackbone_r234_v1"
+                    if self.official_support in OFFICIAL_MULTIBRANCH_SUPPORTS
+                    else "georoute_official_prebackbone_bc_v1"
+                )
             ),
             "official_support": self.official_support,
             "selection_application": "pre_heavy_videomae",
@@ -3170,11 +3589,25 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         }
         if strict_rectangle_audit is not None:
             self.latest_georoute_audit["strict_rectangle"] = strict_rectangle_audit
+        if multibranch_audit is not None:
+            self.latest_georoute_audit["route_ledger"] = multibranch_audit
         if self.training:
             # ActionFormer capability-dispatches the shared GeoRoute consumer on
             # every training forward.  This arm has no scientific regularizer,
             # but it must still publish one defined, exactly-once zero contract.
             self._pending_regularization = {"geometry": output.new_zeros(())}
+            if self.official_support in OFFICIAL_R3_SUPPORTS:
+                if self._successful_update_index is None:
+                    raise RuntimeError("R3 requires the successful-update hook")
+                if (
+                    self._pending_r3_epoch_g is not None
+                    and self._pending_r3_update_index
+                    != int(self._successful_update_index)
+                ):
+                    raise RuntimeError("R3 budget item crossed update identities")
+                self._pending_regularization["r3_budget"] = r3_budget_loss
+                self._pending_r3_epoch_g = r3_global_g.detach()
+                self._pending_r3_update_index = int(self._successful_update_index)
             self._pending_score_function = None
             self._pending_dynamic_auxiliary = None
         else:
@@ -3182,6 +3615,41 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             self._pending_score_function = None
             self._pending_dynamic_auxiliary = None
         return output.to(torch.float32)
+
+    def forward_with_window_ordinals(
+        self,
+        frames: torch.Tensor,
+        metas: Sequence[Mapping[str, Any]],
+    ) -> torch.Tensor:
+        if not self.requires_route_window_ordinals:
+            raise RuntimeError("window ordinals are reserved for shuffle controls")
+        if not isinstance(metas, Sequence) or len(metas) != int(frames.shape[0]):
+            raise ValueError("route metadata must contain one item per local sample")
+        forbidden = {
+            "gt_segments",
+            "gt_labels",
+            "prediction",
+            "teacher",
+            "oracle",
+            "raw_prediction",
+        }
+        ordinals = []
+        for meta in metas:
+            if not isinstance(meta, Mapping) or forbidden.intersection(meta):
+                raise ValueError("route metadata exposes forbidden result information")
+            ordinal = meta.get("window_ordinal", None)
+            if isinstance(ordinal, bool) or not isinstance(ordinal, int) or ordinal < 0:
+                raise ValueError("shuffle control requires a non-negative window ordinal")
+            ordinals.append(ordinal)
+        return self._forward_official_fixed_support(
+            frames,
+            None,
+            window_ordinals=torch.tensor(
+                ordinals,
+                device=frames.device,
+                dtype=torch.long,
+            ),
+        )
 
     def forward(self, frames, masks=None):
         if self.official_support is not None:
@@ -3573,11 +4041,19 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         if not self.training or self._pending_regularization is None:
             raise RuntimeError("GeoRoute regularization requires one preceding training forward")
         regularization = self._pending_regularization.pop("geometry")
+        r3_budget = self._pending_regularization.pop("r3_budget", None)
+        if self._pending_regularization:
+            raise RuntimeError("GeoRoute published an unknown auxiliary loss")
         self._pending_regularization = None
         if self.latest_georoute_audit is not None:
             self.latest_georoute_audit["geometry_regularization"] = float(regularization.detach().item())
         if self.route_mode not in DYNAMIC_ROUTE_MODES:
-            return {"georoute_geometry_regularization_loss": regularization}
+            if r3_budget is None:
+                return {"georoute_geometry_regularization_loss": regularization}
+            return {
+                "georoute_geometry_regularization_loss": regularization,
+                "georoute_r3_augmented_lagrangian_loss": r3_budget,
+            }
 
         if self._pending_dynamic_auxiliary is None:
             raise RuntimeError(

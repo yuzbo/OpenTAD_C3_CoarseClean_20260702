@@ -56,11 +56,21 @@ class ActionFormer(SingleStageDetector):
         pad_masks[:, :feat_len] = masks
         return inputs, pad_masks
 
+    def _forward_backbone(self, inputs, metas):
+        route_forward = getattr(self.backbone, "forward_with_window_ordinals", None)
+        if bool(
+            getattr(self.backbone, "requires_route_window_ordinals", False)
+        ):
+            if not callable(route_forward):
+                raise RuntimeError("shuffle route lacks its metadata-only forward")
+            return route_forward(inputs, metas)
+        return self.backbone(inputs)
+
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
         input_masks = masks
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self._forward_backbone(inputs, metas)
         else:
             x = inputs
 
@@ -111,7 +121,7 @@ class ActionFormer(SingleStageDetector):
 
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self._forward_backbone(inputs, metas)
         else:
             x = inputs
 

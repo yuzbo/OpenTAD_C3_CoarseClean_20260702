@@ -119,6 +119,11 @@ def train_one_epoch(
                 f"batch {iter_idx}"
             )
         if successful_update_index is not None and optimizer_update_succeeded:
+            commit_successful_update = getattr(
+                georoute_backbone, "commit_successful_update", None
+            )
+            if callable(commit_successful_update):
+                commit_successful_update(successful_update_index)
             successful_update_index += 1
 
         # update scheduler
@@ -146,6 +151,12 @@ def train_one_epoch(
                 block4 = "lr_backbone={:.1e}".format(curr_backbone_lr) + "  " + block4
             block5 = "mem={:.0f}MB".format(torch.cuda.max_memory_allocated() / 1024.0 / 1024.0)
             logger.info("  ".join([block1, block2, "  ".join(block3), block4, block5]))
+    if successful_update_index is not None:
+        finish_training_epoch = getattr(
+            georoute_backbone, "finish_training_epoch", None
+        )
+        if callable(finish_training_epoch):
+            finish_training_epoch(curr_epoch, successful_update_index)
     return successful_update_index
 
 

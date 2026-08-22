@@ -15,7 +15,7 @@ LINEAGE_BASE="01c58b9f2370e914150cf94d392208a4e211c053"
 EXPECTED_COMMIT="${ZOOMTOKEN_PREBACKBONE_BC_EXPECTED_COMMIT:?set ZOOMTOKEN_PREBACKBONE_BC_EXPECTED_COMMIT to the reviewed clean commit}"
 ROOT="${ZOOMTOKEN_PREBACKBONE_BC_SOURCE_ROOT:?set ZOOMTOKEN_PREBACKBONE_BC_SOURCE_ROOT to the reviewed clean checkout}"
 RUN_ROOT="${ZOOMTOKEN_PREBACKBONE_BC_RUN_ROOT:?set ZOOMTOKEN_PREBACKBONE_BC_RUN_ROOT to the immutable paired result root}"
-ARM="${ZOOMTOKEN_PREBACKBONE_BC_ARM:?set ZOOMTOKEN_PREBACKBONE_BC_ARM to B, C or R1}"
+ARM="${ZOOMTOKEN_PREBACKBONE_BC_ARM:?set ZOOMTOKEN_PREBACKBONE_BC_ARM to one frozen official arm}"
 RESUME="${ZOOMTOKEN_PREBACKBONE_BC_RESUME:-}"
 ANNOTATION="${BASE}/thumos14/annotations/thumos_14_anno.json"
 CLASS_MAP="${BASE}/thumos14/annotations/category_idx.txt"
@@ -27,16 +27,59 @@ case "${ARM}" in
   B)
     CONFIG_NAME="georoute_official_b_alltoken_prebackbone_seed42_v001.py"
     ARM_DIR="b_alltoken_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=0
     ;;
   C)
     CONFIG_NAME="georoute_official_c_roi_k64_prebackbone_seed42_v001.py"
     ARM_DIR="c_roi_k64_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=0
     ;;
   R1)
     CONFIG_NAME="georoute_official_r1_strict_rect8x8_prebackbone_seed42_v001.py"
     ARM_DIR="r1_strict_rect8x8_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
     ;;
-  *) fail 'official pre-backbone matrix permits only B, C or R1; A is completed job 1245842' ;;
+  R2)
+    CONFIG_NAME="georoute_official_r2_strict_rect8x8_q48_prebackbone_seed42_v001.py"
+    ARM_DIR="r2_strict_rect8x8_q48_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
+  R2-SHUF48)
+    CONFIG_NAME="georoute_official_r2_shuf48_prebackbone_seed42_v001.py"
+    ARM_DIR="r2_shuf48_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
+  Q48-GLOBAL)
+    CONFIG_NAME="georoute_official_q48_global_prebackbone_seed42_v001.py"
+    ARM_DIR="q48_global_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
+  R3)
+    CONFIG_NAME="georoute_official_r3_continuous_rect_prebackbone_seed42_v001.py"
+    ARM_DIR="r3_continuous_rect_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
+  R3-AREA-SHIFT)
+    CONFIG_NAME="georoute_official_r3_area_shift97_prebackbone_seed42_v001.py"
+    ARM_DIR="r3_area_shift97_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
+  R4)
+    CONFIG_NAME="georoute_official_r4_core49_q15_prebackbone_seed42_v001.py"
+    ARM_DIR="r4_core49_q15_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
+  R4-SHUF15)
+    CONFIG_NAME="georoute_official_r4_shuf15_prebackbone_seed42_v001.py"
+    ARM_DIR="r4_shuf15_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
+  Q64-GLOBAL)
+    CONFIG_NAME="georoute_official_q64_global_prebackbone_seed42_v001.py"
+    ARM_DIR="q64_global_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
+  *) fail 'unknown frozen arm; legacy matrix permits only B, C or R1; A is completed job 1245842' ;;
 esac
 CONFIG="${ROOT}/configs/adatad/thumos/${CONFIG_NAME}"
 CELL_ROOT="${RUN_ROOT}/cells/${ARM_DIR}/seed42"
@@ -68,15 +111,15 @@ esac
   fail 'official pre-backbone result root must be outside the source checkout'
 resume_args=()
 if [[ -n "${RESUME}" ]]; then
-  [[ "${ARM}" == "R1" ]] || fail 'same-cell recovery is enabled only for R1'
-  [[ -d "${CELL_ROOT}" ]] || fail 'R1 recovery requires its existing same cell'
+  [[ "${RECOVERY_ENABLED}" == "1" ]] || fail 'same-cell recovery is disabled for B/C'
+  [[ -d "${CELL_ROOT}" ]] || fail 'route recovery requires its existing same cell'
   [[ ! -e "${CELL_ROOT}/.zoomtoken_cell_sealed" ]] || \
-    fail 'sealed R1 cells are not resumable'
+    fail 'sealed route cells are not resumable'
   case "${RESUME}" in
     "${CELL_ROOT}"/checkpoint/recovery_epoch_*.pth) ;;
-    *) fail 'R1 recovery requires same-cell checkpoint/recovery_epoch_<N>.pth' ;;
+    *) fail 'route recovery requires same-cell checkpoint/recovery_epoch_<N>.pth' ;;
   esac
-  [[ -f "${RESUME}" ]] || fail "R1 recovery checkpoint does not exist: ${RESUME}"
+  [[ -f "${RESUME}" ]] || fail "route recovery checkpoint does not exist: ${RESUME}"
   resume_args=(--resume "${RESUME}")
 else
   [[ ! -e "${CELL_ROOT}" ]] || \

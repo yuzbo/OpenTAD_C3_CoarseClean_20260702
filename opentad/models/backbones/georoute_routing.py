@@ -26,6 +26,12 @@ GEOROUTE_DYNAMIC_ROUTING_SCHEMA = "georoute_dynamic_global_routing_v2"
 GEOROUTE_STRICT_RECTANGLE_ROUTING_SCHEMA = (
     "georoute_strict_rectangle_8x8_routing_v1"
 )
+GEOROUTE_RECTANGLE_QBASE_ROUTING_SCHEMA = (
+    "georoute_strict_rectangle_qbase_routing_v1"
+)
+GEOROUTE_DYNAMIC_RECTANGLE_ROUTING_SCHEMA = (
+    "georoute_continuous_strict_rectangle_routing_v1"
+)
 LEGACY_ROUTE_MODES = frozenset(
     {"dense", "uniform", "random", "free", "roi", "hybrid"}
 )
@@ -380,6 +386,492 @@ def select_strict_rectangle_8x8(
         "candidate_count": candidate_count,
         "block_size_hw": (block_height, block_width),
         "hole_count": 0,
+        "padded_token_count": 0,
+    }
+
+
+def _validate_strict_rectangle_7x7_blocks(
+    blocks,
+    *,
+    grid_height=10,
+    grid_width=10,
+):
+    """Fail closed on the frozen sixteen complete row-major 7x7 cores."""
+
+    if (grid_height, grid_width) != (10, 10):
+        raise ValueError("strict 7x7 cores require the frozen 10x10 grid")
+    expected_top_left = tuple(
+        (top_row, top_col)
+        for top_row in (0, 1, 2, 3)
+        for top_col in (0, 1, 2, 3)
+    )
+    if not isinstance(blocks, (tuple, list)) or len(blocks) != 16:
+        raise ValueError("strict 7x7 routing requires exactly sixteen cores")
+    normalized = []
+    observed = set()
+    for block, (top_row, top_col) in zip(blocks, expected_top_left):
+        if not isinstance(block, (tuple, list)) or len(block) != 49:
+            raise ValueError("strict 7x7 candidates must each contain K49")
+        candidate = tuple(block)
+        if any(
+            isinstance(index, bool)
+            or not isinstance(index, int)
+            or index < 0
+            or index >= 100
+            for index in candidate
+        ):
+            raise ValueError("strict 7x7 candidate leaves the 10x10 grid")
+        if len(set(candidate)) != 49:
+            raise ValueError("strict 7x7 candidate contains duplicate tokens")
+        if candidate in observed:
+            raise ValueError("strict 7x7 candidates contain a duplicate core")
+        expected = tuple(
+            row * grid_width + col
+            for row in range(top_row, top_row + 7)
+            for col in range(top_col, top_col + 7)
+        )
+        if candidate != expected:
+            raise ValueError(
+                "strict 7x7 candidate is not one complete row-major core"
+            )
+        observed.add(candidate)
+        normalized.append(candidate)
+    return tuple(normalized)
+
+
+def strict_rectangle_7x7_blocks(*, grid_height=10, grid_width=10):
+    """Construct the only sixteen legal immutable K49 cores for R4."""
+
+    if (grid_height, grid_width) != (10, 10):
+        raise ValueError("strict 7x7 cores require the frozen 10x10 grid")
+    blocks = tuple(
+        tuple(
+            row * grid_width + col
+            for row in range(top_row, top_row + 7)
+            for col in range(top_col, top_col + 7)
+        )
+        for top_row in (0, 1, 2, 3)
+        for top_col in (0, 1, 2, 3)
+    )
+    return _validate_strict_rectangle_7x7_blocks(
+        blocks,
+        grid_height=grid_height,
+        grid_width=grid_width,
+    )
+
+
+def _stateless_candidate_permutation(
+    candidate_count: int,
+    *,
+    seed: int,
+    window_ordinals: torch.Tensor,
+    tubelet_count: int,
+    device: torch.device,
+) -> torch.Tensor:
+    """Return result-blind per-window/tubelet candidate permutations.
+
+    The key uses only the frozen control seed, dataset window ordinal and native
+    tubelet index.  It is independent of process order, global RNG and content.
+    """
+
+    if int(candidate_count) <= 0 or int(tubelet_count) <= 0:
+        raise ValueError("stateless shuffle dimensions must be positive")
+    if window_ordinals.ndim != 1 or window_ordinals.dtype != torch.long:
+        raise ValueError("window ordinals must be long [B]")
+    if bool((window_ordinals < 0).any().item()):
+        raise ValueError("window ordinals must be non-negative")
+    batch_size = int(window_ordinals.shape[0])
+    candidate = torch.arange(
+        int(candidate_count), device=device, dtype=torch.int64
+    ).view(1, 1, -1)
+    tubelet = torch.arange(
+        int(tubelet_count), device=device, dtype=torch.int64
+    ).view(1, -1, 1)
+    window = window_ordinals.to(device=device, dtype=torch.int64).view(-1, 1, 1)
+    key = (
+        candidate * 6364136223846793005
+        + tubelet * 1442695040888963407
+        + window * 2862933555777941757
+        + int(seed) * 3037000493
+    )
+    key = key ^ (key >> 21)
+    key = key ^ (key << 13)
+    key = key ^ (key >> 7)
+    order = torch.argsort(key, dim=-1, stable=True)
+    if order.shape != (batch_size, int(tubelet_count), int(candidate_count)):
+        raise RuntimeError("stateless shuffle produced an invalid shape")
+    return order
+
+
+def _select_qbase_candidates(
+    q_base: torch.Tensor,
+    candidate_indices: torch.Tensor,
+    *,
+    select_count: int,
+    training: bool,
+    temperature: float,
+    shuffle_seed: int | None,
+    window_ordinals: torch.Tensor | None,
+) -> dict[str, torch.Tensor]:
+    """Stable hard Top-K plus backward-only ST on one explicit candidate set."""
+
+    if q_base.ndim != 3 or candidate_indices.ndim != 3:
+        raise ValueError("q_base and candidate indices must be [B,T,*]")
+    if q_base.shape[:2] != candidate_indices.shape[:2]:
+        raise ValueError("q_base and candidate axes must match")
+    if candidate_indices.dtype != torch.long:
+        raise TypeError("q_base candidate indices must be torch.long")
+    if not bool(torch.isfinite(q_base).all().item()):
+        raise ValueError("q_base must be finite")
+    candidate_count = int(candidate_indices.shape[-1])
+    if not (0 < int(select_count) < candidate_count):
+        raise ValueError("q_base selected count must be inside candidate count")
+    if float(temperature) != 0.5:
+        raise ValueError("q_base ST temperature is frozen at 0.5")
+    if bool(
+        ((candidate_indices < 0) | (candidate_indices >= q_base.shape[-1])).any().item()
+    ):
+        raise ValueError("q_base candidate leaves the native lattice")
+    sorted_candidates = torch.sort(candidate_indices, dim=-1).values
+    if candidate_count > 1 and bool(
+        (sorted_candidates[..., 1:] <= sorted_candidates[..., :-1]).any().item()
+    ):
+        raise ValueError("q_base candidates must be unique")
+
+    candidate_scores = q_base.gather(-1, candidate_indices)
+    permutation = None
+    if shuffle_seed is not None:
+        if window_ordinals is None:
+            raise ValueError("stateless shuffle requires window ordinals")
+        permutation = _stateless_candidate_permutation(
+            candidate_count,
+            seed=int(shuffle_seed),
+            window_ordinals=window_ordinals,
+            tubelet_count=int(q_base.shape[1]),
+            device=q_base.device,
+        )
+    elif window_ordinals is not None:
+        raise ValueError("window ordinals are reserved for named shuffle controls")
+
+    ordered_slots = (
+        permutation[..., : int(select_count)]
+        if permutation is not None
+        else _stable_argsort_descending(candidate_scores)[..., : int(select_count)]
+    )
+    selected = candidate_indices.gather(-1, ordered_slots)
+    selected_scores = candidate_scores.gather(-1, ordered_slots)
+    soft_membership = _soft_topk_gate(
+        candidate_scores,
+        count=int(select_count),
+        temperature=float(temperature),
+    )
+    selected_surrogate = soft_membership.gather(-1, ordered_slots)
+    st_gate = (
+        torch.ones_like(selected_surrogate)
+        + (selected_surrogate - selected_surrogate.detach())
+        if training
+        else torch.ones_like(selected_surrogate)
+    )
+    selected, sort_order = selected.sort(dim=-1)
+    st_gate = st_gate.gather(-1, sort_order)
+    selected_scores = selected_scores.gather(-1, sort_order)
+    if not bool(st_gate.detach().eq(1).all().item()):
+        raise RuntimeError("q_base hard forward gate is not exact one")
+    return {
+        "indices": selected,
+        "st_gate": st_gate,
+        "selected_scores": selected_scores,
+        "permutation": permutation,
+    }
+
+
+def select_qbase_global_exact_k(
+    q_base: torch.Tensor,
+    *,
+    target_k: int,
+    training: bool,
+    temperature: float,
+    valid_mask: torch.Tensor,
+    mode: str,
+) -> dict[str, Any]:
+    """Select the frozen Q48/Q64 global q_base controls."""
+
+    if mode not in {"q48_global", "q64_global"}:
+        raise ValueError("unsupported global q_base control")
+    if valid_mask.shape != q_base.shape or valid_mask.dtype != torch.bool:
+        raise ValueError("global q_base valid mask must match [B,T,N]")
+    expected_k = 48 if mode == "q48_global" else 64
+    if int(target_k) != expected_k:
+        raise ValueError(f"{mode} requires exact K{expected_k}")
+    item_count = int(q_base.shape[-1])
+    if not bool(valid_mask.all().item()):
+        raise ValueError("global q_base controls require complete 10x10 support")
+    candidates = torch.arange(
+        item_count, device=q_base.device, dtype=torch.long
+    ).view(1, 1, item_count).expand_as(q_base)
+    selected = _select_qbase_candidates(
+        q_base,
+        candidates,
+        select_count=expected_k,
+        training=training,
+        temperature=temperature,
+        shuffle_seed=None,
+        window_ordinals=None,
+    )
+    return {
+        "schema_version": GEOROUTE_RECTANGLE_QBASE_ROUTING_SCHEMA,
+        "mode": mode,
+        "indices": selected["indices"],
+        "st_gate": selected["st_gate"],
+        "selected_scores": selected["selected_scores"],
+        "target_k": expected_k,
+        "candidate_count": item_count,
+        "padded_token_count": 0,
+    }
+
+
+def select_rectangle_constrained_qbase_8x8(
+    geometry_logits: torch.Tensor,
+    q_base: torch.Tensor,
+    *,
+    training: bool,
+    temperature: float,
+    valid_mask: torch.Tensor,
+    shuffle_seed: int | None = None,
+    window_ordinals: torch.Tensor | None = None,
+) -> dict[str, Any]:
+    """R2: choose Top48 only inside the complete hard R1 8x8 candidate."""
+
+    block = select_strict_rectangle_8x8(
+        geometry_logits,
+        training=training,
+        temperature=temperature,
+        valid_mask=valid_mask,
+    )
+    if q_base.shape != valid_mask.shape:
+        raise ValueError("R2 q_base must match the complete native lattice")
+    selected = _select_qbase_candidates(
+        q_base,
+        block["indices"],
+        select_count=48,
+        training=training,
+        temperature=temperature,
+        shuffle_seed=shuffle_seed,
+        window_ordinals=window_ordinals,
+    )
+    block_gate = block["st_membership"].gather(-1, selected["indices"])
+    st_gate = selected["st_gate"] * block_gate
+    if not bool(st_gate.detach().eq(1).all().item()):
+        raise RuntimeError("R2 hard forward gate is not exact one")
+    return {
+        "schema_version": GEOROUTE_RECTANGLE_QBASE_ROUTING_SCHEMA,
+        "mode": "r2_shuf48" if shuffle_seed is not None else "r2",
+        "geometry": block["geometry"],
+        "indices": selected["indices"],
+        "st_gate": st_gate,
+        "selected_scores": selected["selected_scores"],
+        "candidate_count": 64,
+        "target_k": 48,
+        "block_top_left_row_col": block["block_top_left_row_col"],
+        "candidate_top_left_row_col": block["candidate_top_left_row_col"],
+        "block_size_hw": (8, 8),
+        "hole_count": 0,
+        "shuffle_enabled": shuffle_seed is not None,
+        "padded_token_count": 0,
+    }
+
+
+def select_rectangle_core_outside_qbase_7x7(
+    geometry_logits: torch.Tensor,
+    q_base: torch.Tensor,
+    *,
+    training: bool,
+    temperature: float,
+    valid_mask: torch.Tensor,
+    shuffle_seed: int | None = None,
+    window_ordinals: torch.Tensor | None = None,
+) -> dict[str, Any]:
+    """R4: immutable complete 7x7 core plus exactly 15 q_base outside tokens."""
+
+    if geometry_logits.ndim != 3 or geometry_logits.shape[-1] != 4:
+        raise ValueError("R4 geometry logits must be [B,T,4]")
+    if q_base.shape != valid_mask.shape or valid_mask.dtype != torch.bool:
+        raise ValueError("R4 q_base/valid mask must match [B,T,100]")
+    if q_base.shape[-1] != 100 or not bool(valid_mask.all().item()):
+        raise ValueError("R4 requires complete frozen 10x10 support")
+    if float(temperature) != 0.5:
+        raise ValueError("R4 categorical temperature is frozen at 0.5")
+    canonical_blocks = strict_rectangle_7x7_blocks()
+    legal_indices = torch.tensor(
+        canonical_blocks, device=q_base.device, dtype=torch.long
+    )
+    top_rows = torch.tensor(
+        tuple(block[0] // 10 for block in canonical_blocks),
+        device=q_base.device,
+        dtype=torch.long,
+    )
+    top_cols = torch.tensor(
+        tuple(block[0] % 10 for block in canonical_blocks),
+        device=q_base.device,
+        dtype=torch.long,
+    )
+    candidate_top_left = torch.stack((top_rows, top_cols), dim=-1)
+    centers = torch.stack(
+        ((top_cols.to(q_base.dtype) + 3.5) / 10.0, (top_rows.to(q_base.dtype) + 3.5) / 10.0),
+        dim=-1,
+    )
+    center = 0.35 + 0.30 * torch.sigmoid(geometry_logits[..., :2])
+    geometry = torch.cat((center, torch.full_like(center, 0.7)), dim=-1)
+    block_logits = -(
+        (center[..., None, :] - centers.view(1, 1, 16, 2)).square().sum(dim=-1)
+    ) / (0.1**2)
+    hard_index = torch.argmax(block_logits, dim=-1)
+    hard = F.one_hot(hard_index, num_classes=16).to(q_base.dtype)
+    probability = F.softmax(block_logits / float(temperature), dim=-1)
+    categorical_st = hard + (probability - probability.detach()) if training else hard
+    legal_masks = torch.zeros((16, 100), device=q_base.device, dtype=torch.bool).scatter(
+        1, legal_indices, True
+    )
+    core_indices = legal_indices.index_select(0, hard_index.reshape(-1)).reshape(
+        *hard_index.shape, 49
+    )
+    core_mask = torch.zeros_like(valid_mask).scatter(-1, core_indices, True)
+    core_st_membership = torch.matmul(categorical_st, legal_masks.to(q_base.dtype))
+    row_major = torch.arange(100, device=q_base.device, dtype=torch.long).view(1, 1, 100)
+    outside_candidates = torch.sort(
+        row_major.expand_as(valid_mask).masked_fill(core_mask, 100), dim=-1
+    ).values[..., :51]
+    outside = _select_qbase_candidates(
+        q_base,
+        outside_candidates,
+        select_count=15,
+        training=training,
+        temperature=temperature,
+        shuffle_seed=shuffle_seed,
+        window_ordinals=window_ordinals,
+    )
+    if bool(core_mask.gather(-1, outside["indices"]).any().item()):
+        raise RuntimeError("R4 outside selection intersects its immutable core")
+    combined = torch.cat((core_indices, outside["indices"]), dim=-1)
+    combined, sort_order = combined.sort(dim=-1)
+    core_gate = core_st_membership.gather(-1, core_indices)
+    combined_gate = torch.cat((core_gate, outside["st_gate"]), dim=-1).gather(
+        -1, sort_order
+    )
+    if int(combined.shape[-1]) != 64 or bool(
+        (combined[..., 1:] <= combined[..., :-1]).any().item()
+    ):
+        raise RuntimeError("R4 route is not one unique 49+15 K64 support")
+    if not bool(combined_gate.detach().eq(1).all().item()):
+        raise RuntimeError("R4 hard forward gate is not exact one")
+    selected_top_left = candidate_top_left.index_select(
+        0, hard_index.reshape(-1)
+    ).reshape(*hard_index.shape, 2)
+    return {
+        "schema_version": GEOROUTE_RECTANGLE_QBASE_ROUTING_SCHEMA,
+        "mode": "r4_shuf15" if shuffle_seed is not None else "r4",
+        "geometry": geometry,
+        "indices": combined,
+        "st_gate": combined_gate,
+        "core_indices": torch.sort(core_indices, dim=-1).values,
+        "outside_indices": outside["indices"],
+        "candidate_top_left_row_col": candidate_top_left,
+        "block_top_left_row_col": selected_top_left,
+        "block_size_hw": (7, 7),
+        "candidate_count": 16,
+        "core_count": 49,
+        "outside_candidate_count": 51,
+        "outside_count": 15,
+        "target_k": 64,
+        "hole_count": 0,
+        "shuffle_enabled": shuffle_seed is not None,
+        "padded_token_count": 0,
+    }
+
+
+def select_continuous_strict_rectangle(
+    geometry_logits: torch.Tensor,
+    *,
+    training: bool,
+    valid_mask: torch.Tensor,
+    soft_temperature: float,
+    area_shift_tubelets: int = 0,
+) -> dict[str, Any]:
+    """R3 hard rectangle membership with naturally dynamic per-tubelet K."""
+
+    if geometry_logits.ndim != 3 or geometry_logits.shape[-1] != 4:
+        raise ValueError("R3 geometry logits must be [B,T,4]")
+    if valid_mask.shape != (*geometry_logits.shape[:2], 100):
+        raise ValueError("R3 valid mask must match [B,T,100]")
+    if valid_mask.dtype != torch.bool or not bool(valid_mask.all().item()):
+        raise ValueError("R3 requires complete frozen 10x10 support")
+    if int(geometry_logits.shape[0]) != 1:
+        raise ValueError("R3 frozen local-batch contract requires batch size one")
+    if float(soft_temperature) != 0.025:
+        raise ValueError("R3 soft-membership temperature is frozen at 0.025")
+    tubelets = int(geometry_logits.shape[1])
+    if int(area_shift_tubelets) not in {0, 97}:
+        raise ValueError("R3 permits only no shift or the AREA-SHIFT97 control")
+    if int(area_shift_tubelets) and tubelets != 384:
+        raise ValueError("R3 AREA-SHIFT97 requires the frozen 384-tubelet window")
+
+    geometry = decode_continuous_geometry(
+        geometry_logits,
+        min_extent=0.02,
+        max_extent=1.0,
+    )
+    routing_geometry = geometry
+    if int(area_shift_tubelets):
+        routing_geometry = torch.cat(
+            (
+                geometry[..., :2],
+                torch.roll(
+                    geometry[..., 2:], shifts=int(area_shift_tubelets), dims=1
+                ),
+            ),
+            dim=-1,
+        )
+    centers = native_patch_centers(
+        10,
+        10,
+        device=geometry.device,
+        dtype=geometry.dtype,
+    ).view(1, 1, 100, 2)
+    margin = 0.5 * routing_geometry[..., None, 2:] - (
+        centers - routing_geometry[..., None, :2]
+    ).abs()
+    hard_membership = (margin[..., 0] >= 0) & (margin[..., 1] >= 0) & valid_mask
+    soft_membership = (
+        torch.sigmoid(margin[..., 0] / float(soft_temperature))
+        * torch.sigmoid(margin[..., 1] / float(soft_temperature))
+        * valid_mask.to(dtype=geometry.dtype)
+    )
+    k_per_tubelet = hard_membership.sum(dim=-1)
+    flat_hard = hard_membership.reshape(1, -1)
+    physical_indices = torch.nonzero(flat_hard[0], as_tuple=False).flatten().view(1, -1)
+    if int(physical_indices.shape[1]) <= 0:
+        raise RuntimeError("R3 hard rectangle selected zero tokens for the full window")
+    selected_soft = soft_membership.reshape(1, -1).gather(-1, physical_indices)
+    st_gate = (
+        torch.ones_like(selected_soft) + (selected_soft - selected_soft.detach())
+        if training
+        else torch.ones_like(selected_soft)
+    )
+    if not bool(st_gate.detach().eq(1).all().item()):
+        raise RuntimeError("R3 hard forward gate is not exact one")
+    return {
+        "schema_version": GEOROUTE_DYNAMIC_RECTANGLE_ROUTING_SCHEMA,
+        "mode": "r3_area_shift" if int(area_shift_tubelets) else "r3",
+        "geometry": geometry,
+        "routing_geometry": routing_geometry,
+        "hard_membership": hard_membership,
+        "soft_membership": soft_membership,
+        "physical_indices": physical_indices,
+        "st_gate": st_gate,
+        "k_per_tubelet": k_per_tubelet,
+        "soft_count_sum": soft_membership.sum(),
+        "valid_tubelet_count": valid_mask.any(dim=-1).sum(),
+        "area_shift_tubelets": int(area_shift_tubelets),
         "padded_token_count": 0,
     }
 

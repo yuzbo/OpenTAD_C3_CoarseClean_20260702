@@ -35,6 +35,7 @@ class Collect:
         keys=[],
         meta_keys=[
             "video_name",
+            "window_ordinal",
             "data_path",
             "fps",
             "duration",

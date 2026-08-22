@@ -33,6 +33,21 @@ from opentad.utils import (
 
 ZOOMTOKEN_RECOVERY_SCHEMA = "zoomtoken_same_cell_recovery_v001"
 ZOOMTOKEN_RECOVERY_ARMS = {"DN", "G", "R1"}
+ZOOMTOKEN_RECOVERY_ARMS.update(
+    {
+        "R2",
+        "R2-SHUF48",
+        "Q48-GLOBAL",
+        "R3",
+        "R3-AREA-SHIFT",
+        "R4",
+        "R4-SHUF15",
+        "Q64-GLOBAL",
+    }
+)
+ZOOMTOKEN_UPDATE_INDEX_ARMS = ZOOMTOKEN_RECOVERY_ARMS - {"DN"}
+ZOOMTOKEN_R3_ARMS = {"R3", "R3-AREA-SHIFT"}
+ZOOMTOKEN_CANONICAL_SOURCE_ARMS = ZOOMTOKEN_RECOVERY_ARMS - {"DN", "G"}
 
 
 def _zoomtoken_recovery_contract(cfg):
@@ -46,7 +61,7 @@ def _zoomtoken_recovery_contract(cfg):
     arm_surface = p1_config.get("arm_surface", None)
     if arm_surface not in ZOOMTOKEN_RECOVERY_ARMS:
         raise ValueError(
-            "ZoomToken recovery is restricted to the frozen DN/G/R1 surfaces"
+            "ZoomToken recovery is restricted to the frozen route surfaces"
         )
 
     contract = dict(recovery)
@@ -86,11 +101,11 @@ def _zoomtoken_recovery_contract(cfg):
     if not cfg.solver.get("amp", False) or not cfg.solver.get("ema", False):
         raise ValueError("ZoomToken full-state recovery requires the frozen AMP/EMA recipe")
     source_commit = p1_config.get("source_commit", None)
-    if arm_surface == "R1" and (
+    if arm_surface in ZOOMTOKEN_CANONICAL_SOURCE_ARMS and (
         not isinstance(source_commit, str)
         or re.fullmatch(r"[0-9a-f]{40}", source_commit) is None
     ):
-        raise ValueError("ZoomToken R1 recovery requires a canonical source commit")
+        raise ValueError("ZoomToken route recovery requires a canonical source commit")
     work_dir_parts = os.path.normpath(cfg.work_dir).replace("\\", "/").split("/")
     if p1_config.get("runner_binding_required", False) and any(
         part.endswith("_unbound") for part in work_dir_parts
@@ -132,14 +147,15 @@ def _capture_zoomtoken_training_state(
     epoch,
     recovery_contract,
     next_successful_update_index,
+    model=None,
 ):
-    if recovery_contract["arm_surface"] in {"G", "R1"}:
+    if recovery_contract["arm_surface"] in ZOOMTOKEN_UPDATE_INDEX_ARMS:
         if (
             not isinstance(next_successful_update_index, int)
             or next_successful_update_index < 0
         ):
             raise ValueError(
-                "ZoomToken G/R1 recovery requires a non-negative update index"
+                "ZoomToken route recovery requires a non-negative update index"
             )
     elif next_successful_update_index is not None:
         raise ValueError("ZoomToken DN recovery must not carry an update index")
@@ -158,7 +174,7 @@ def _capture_zoomtoken_training_state(
         if rank_state is None or rank_state.get("rank") != rank:
             raise RuntimeError("failed to collect complete per-rank recovery RNG state")
 
-    return {
+    training_state = {
         "schema_version": ZOOMTOKEN_RECOVERY_SCHEMA,
         "arm_surface": recovery_contract["arm_surface"],
         "seed": args.seed,
@@ -174,10 +190,27 @@ def _capture_zoomtoken_training_state(
         "next_successful_update_index": next_successful_update_index,
         "rng_state_by_rank": rng_state_by_rank,
     }
+    if recovery_contract["arm_surface"] in ZOOMTOKEN_R3_ARMS:
+        candidate_model = getattr(model, "module", model)
+        backbone = getattr(candidate_model, "backbone", None)
+        exporter = getattr(backbone, "export_r3_recovery_state", None)
+        if not callable(exporter):
+            raise ValueError("R3 recovery requires its backbone dual-state exporter")
+        r3_dual_state = exporter()
+        if not isinstance(r3_dual_state, dict):
+            raise ValueError("R3 recovery exporter returned no dual state")
+        if (
+            r3_dual_state.get("last_completed_update")
+            != next_successful_update_index - 1
+            or r3_dual_state.get("last_completed_epoch") != epoch
+        ):
+            raise ValueError("R3 dual state disagrees with epoch/update identity")
+        training_state["r3_dual_state"] = r3_dual_state
+    return training_state
 
 
 def _restore_zoomtoken_training_state(
-    checkpoint, args, cfg, train_loader, recovery_contract
+    checkpoint, args, cfg, train_loader, recovery_contract, model=None
 ):
     if checkpoint.get("checkpoint_role") != "recovery":
         raise ValueError("ZoomToken resume accepts only a recovery checkpoint")
@@ -209,12 +242,12 @@ def _restore_zoomtoken_training_state(
     next_successful_update_index = training_state.get(
         "next_successful_update_index", None
     )
-    if recovery_contract["arm_surface"] in {"G", "R1"}:
+    if recovery_contract["arm_surface"] in ZOOMTOKEN_UPDATE_INDEX_ARMS:
         if (
             not isinstance(next_successful_update_index, int)
             or next_successful_update_index < 0
         ):
-            raise ValueError("ZoomToken G/R1 recovery lacks a valid update index")
+            raise ValueError("ZoomToken route recovery lacks a valid update index")
     elif next_successful_update_index is not None:
         raise ValueError("ZoomToken DN recovery must not carry an update index")
 
@@ -251,6 +284,24 @@ def _restore_zoomtoken_training_state(
         ),
         device=args.local_rank,
     )
+    if recovery_contract["arm_surface"] in ZOOMTOKEN_R3_ARMS:
+        r3_dual_state = training_state.get("r3_dual_state", None)
+        if not isinstance(r3_dual_state, dict):
+            raise ValueError("R3 recovery lacks its dual state")
+        if (
+            r3_dual_state.get("last_completed_update")
+            != next_successful_update_index - 1
+            or r3_dual_state.get("last_completed_epoch") != checkpoint["epoch"]
+        ):
+            raise ValueError("R3 recovery dual identity is inconsistent")
+        candidate_model = getattr(model, "module", model)
+        backbone = getattr(candidate_model, "backbone", None)
+        restorer = getattr(backbone, "restore_r3_recovery_state", None)
+        if not callable(restorer):
+            raise ValueError("R3 recovery requires its backbone dual-state restorer")
+        restorer(r3_dual_state)
+    elif "r3_dual_state" in training_state:
+        raise ValueError("non-R3 recovery cannot carry R3 dual state")
     return next_successful_update_index
 
 
@@ -275,6 +326,7 @@ def _save_zoomtoken_checkpoint(
         epoch,
         recovery_contract,
         next_successful_update_index,
+        model=model,
     )
     if args.rank == 0:
         checkpoint_role = "final" if is_final else "recovery"
@@ -343,7 +395,7 @@ def main():
     next_successful_update_index = (
         0
         if recovery_contract is not None
-        and recovery_contract["arm_surface"] in {"G", "R1"}
+        and recovery_contract["arm_surface"] in ZOOMTOKEN_UPDATE_INDEX_ARMS
         else None
     )
     if args.resume is not None and recovery_contract is not None:
@@ -454,7 +506,7 @@ def main():
                     raise ValueError("ZoomToken recovery checkpoint lacks scaler state")
                 scaler.load_state_dict(checkpoint["scaler"])
             next_successful_update_index = _restore_zoomtoken_training_state(
-                checkpoint, args, cfg, train_loader, recovery_contract
+                checkpoint, args, cfg, train_loader, recovery_contract, model=model
             )
 
         del checkpoint  # save memory if the model is very large such as ViT-g

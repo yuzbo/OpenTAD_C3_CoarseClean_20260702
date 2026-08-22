@@ -39,6 +39,7 @@ class ThumosSlidingDataset(SlidingWindowDataset):
         results = self.pipeline(
             dict(
                 video_name=video_name,
+                window_ordinal=int(index),
                 data_path=self.data_path,
                 window_size=self.window_size,
                 # trunc window setting
@@ -92,6 +93,7 @@ class ThumosPaddingDataset(PaddingDataset):
         results = self.pipeline(
             dict(
                 video_name=video_name,
+                window_ordinal=int(index),
                 data_path=self.data_path,
                 sample_stride=self.sample_stride,
                 snippet_stride=self.snippet_stride,
