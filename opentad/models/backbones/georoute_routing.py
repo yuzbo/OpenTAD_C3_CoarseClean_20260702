@@ -539,6 +539,7 @@ def _select_qbase_candidates(
         raise ValueError("q_base candidates must be unique")
 
     candidate_scores = q_base.gather(-1, candidate_indices)
+    selection_scores = candidate_scores
     permutation = None
     if shuffle_seed is not None:
         if window_ordinals is None:
@@ -550,18 +551,19 @@ def _select_qbase_candidates(
             tubelet_count=int(q_base.shape[1]),
             device=q_base.device,
         )
+        # The shuffle control reassigns the same q_base score multiset to
+        # canonical physical candidate slots before both hard and soft routing.
+        selection_scores = candidate_scores.gather(-1, permutation)
     elif window_ordinals is not None:
         raise ValueError("window ordinals are reserved for named shuffle controls")
 
-    ordered_slots = (
-        permutation[..., : int(select_count)]
-        if permutation is not None
-        else _stable_argsort_descending(candidate_scores)[..., : int(select_count)]
-    )
+    ordered_slots = _stable_argsort_descending(selection_scores)[
+        ..., : int(select_count)
+    ]
     selected = candidate_indices.gather(-1, ordered_slots)
-    selected_scores = candidate_scores.gather(-1, ordered_slots)
+    selected_scores = selection_scores.gather(-1, ordered_slots)
     soft_membership = _soft_topk_gate(
-        candidate_scores,
+        selection_scores,
         count=int(select_count),
         temperature=float(temperature),
     )

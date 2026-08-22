@@ -127,6 +127,7 @@ def test_r234_source_contract_is_prepatch_one_ragged_zero_padding_and_no_leak():
 
 def test_shuffle_metadata_is_dataset_stable_and_result_blind():
     routing = _function_source(ROUTING_PATH, "_stateless_candidate_permutation")
+    selector = _function_source(ROUTING_PATH, "_select_qbase_candidates")
     metadata = _class_method_source(
         WRAPPER_PATH, "GeoRouteBackboneWrapper", "forward_with_window_ordinals"
     )
@@ -135,6 +136,12 @@ def test_shuffle_metadata_is_dataset_stable_and_result_blind():
     assert "window * 2862933555777941757" in routing
     assert "tubelet * 1442695040888963407" in routing
     assert "torch.rand" not in routing and "counter" not in routing
+    permute_scores = "selection_scores = candidate_scores.gather(-1, permutation)"
+    hard_topk = "_stable_argsort_descending(selection_scores)"
+    soft_topk = "_soft_topk_gate(\n        selection_scores,"
+    assert selector.index(permute_scores) < selector.index(hard_topk)
+    assert selector.index(permute_scores) < selector.index(soft_topk)
+    assert "permutation[..., : int(select_count)]" not in selector
     assert thumos.count("window_ordinal=int(index)") == 2
     assert '"window_ordinal"' in formatting
     for forbidden in (
@@ -221,6 +228,8 @@ def test_r234_runtime_geometry_tie_st_shuffle_and_dynamic_k():
         return
     import torch
     from opentad.models.backbones.georoute_routing import (
+        _soft_topk_gate,
+        _stateless_candidate_permutation,
         select_continuous_strict_rectangle,
         select_rectangle_constrained_qbase_8x8,
         select_rectangle_core_outside_qbase_7x7,
@@ -237,15 +246,89 @@ def test_r234_runtime_geometry_tie_st_shuffle_and_dynamic_k():
     r2["st_gate"].sum().backward(retain_graph=True)
     assert geometry.grad is not None and q_base.grad is not None
 
+    window_ordinal = torch.tensor([17], dtype=torch.long)
     shuffled_a = select_rectangle_constrained_qbase_8x8(
         geometry.detach(), q_base.detach(), training=False, temperature=0.5,
-        valid_mask=valid, shuffle_seed=42, window_ordinals=torch.tensor([17]),
+        valid_mask=valid, shuffle_seed=42, window_ordinals=window_ordinal,
     )
+    candidate_indices = torch.tensor(
+        tuple(
+            row * 10 + col
+            for row in range(1, 9)
+            for col in range(1, 9)
+        ),
+        dtype=torch.long,
+    ).view(1, 1, 64).expand(1, 2, 64)
+    permutation = _stateless_candidate_permutation(
+        64, seed=42, window_ordinals=window_ordinal,
+        tubelet_count=2, device=q_base.device,
+    )
+    candidate_scores = q_base.detach().gather(-1, candidate_indices)
+    permuted_scores = candidate_scores.gather(-1, permutation)
+    expected_slots = torch.argsort(
+        permuted_scores, dim=-1, descending=True, stable=True
+    )[..., :48]
+    expected_indices = candidate_indices.gather(-1, expected_slots).sort(dim=-1).values
+    assert torch.equal(shuffled_a["indices"], expected_indices)
+    assert torch.equal(
+        permuted_scores.sort(dim=-1).values,
+        candidate_scores.sort(dim=-1).values,
+    )
+
     shuffled_b = select_rectangle_constrained_qbase_8x8(
         geometry.detach(), -q_base.detach(), training=False, temperature=0.5,
-        valid_mask=valid, shuffle_seed=42, window_ordinals=torch.tensor([17]),
+        valid_mask=valid, shuffle_seed=42, window_ordinals=window_ordinal,
     )
-    assert torch.equal(shuffled_a["indices"], shuffled_b["indices"])
+    reversed_scores = (-q_base.detach()).gather(-1, candidate_indices)
+    reversed_permuted = reversed_scores.gather(-1, permutation)
+    reversed_slots = torch.argsort(
+        reversed_permuted, dim=-1, descending=True, stable=True
+    )[..., :48]
+    reversed_expected = candidate_indices.gather(
+        -1, reversed_slots
+    ).sort(dim=-1).values
+    assert torch.equal(shuffled_b["indices"], reversed_expected)
+    assert not torch.equal(shuffled_a["indices"], shuffled_b["indices"])
+
+    # The ST gradient must follow the same score-to-position permutation as
+    # the hard known-answer Top-K, rather than the unpermuted q_base surface.
+    shuffled_q_base = q_base.detach().clone().requires_grad_()
+    shuffled_train = select_rectangle_constrained_qbase_8x8(
+        geometry.detach(), shuffled_q_base, training=True, temperature=0.5,
+        valid_mask=valid, shuffle_seed=42, window_ordinals=window_ordinal,
+    )
+    shuffled_train["st_gate"].sum().backward()
+    reference_scores = candidate_scores.clone().requires_grad_()
+    reference_permuted = reference_scores.gather(-1, permutation)
+    reference_slots = torch.argsort(
+        reference_permuted, dim=-1, descending=True, stable=True
+    )[..., :48]
+    reference_soft = _soft_topk_gate(
+        reference_permuted, count=48, temperature=0.5
+    )
+    reference_soft.gather(-1, reference_slots).sum().backward()
+    expected_qbase_gradient = torch.zeros_like(shuffled_q_base).scatter_add(
+        -1, candidate_indices, reference_scores.grad
+    )
+    assert torch.allclose(shuffled_q_base.grad, expected_qbase_gradient)
+
+    # The key is independent of process/rank order and mutable RNG state.
+    torch.manual_seed(999)
+    restart_a = _stateless_candidate_permutation(
+        64, seed=42, window_ordinals=window_ordinal,
+        tubelet_count=2, device=q_base.device,
+    )
+    torch.manual_seed(1)
+    restart_b = _stateless_candidate_permutation(
+        64, seed=42, window_ordinals=window_ordinal,
+        tubelet_count=2, device=q_base.device,
+    )
+    ddp_reordered = _stateless_candidate_permutation(
+        64, seed=42, window_ordinals=torch.tensor([99, 17]),
+        tubelet_count=2, device=q_base.device,
+    )
+    assert torch.equal(restart_a, restart_b)
+    assert torch.equal(restart_a[0], ddp_reordered[1])
 
     r4 = select_rectangle_core_outside_qbase_7x7(
         geometry.detach(), q_base.detach(), training=True, temperature=0.5, valid_mask=valid
@@ -253,6 +336,31 @@ def test_r234_runtime_geometry_tie_st_shuffle_and_dynamic_k():
     assert r4["block_top_left_row_col"].tolist() == [[[1, 1], [1, 1]]]
     assert r4["core_indices"].shape[-1] == 49 and r4["outside_indices"].shape[-1] == 15
     assert r4["indices"].shape[-1] == 64
+
+    r4_shuffled = select_rectangle_core_outside_qbase_7x7(
+        geometry.detach(), q_base.detach(), training=False, temperature=0.5,
+        valid_mask=valid, shuffle_seed=42, window_ordinals=window_ordinal,
+    )
+    all_indices = torch.arange(100, dtype=torch.long).view(1, 1, 100).expand(1, 2, 100)
+    core_mask = torch.zeros_like(valid).scatter(-1, r4_shuffled["core_indices"], True)
+    outside_candidates = all_indices.masked_fill(core_mask, 100).sort(dim=-1).values[..., :51]
+    outside_permutation = _stateless_candidate_permutation(
+        51, seed=42, window_ordinals=window_ordinal,
+        tubelet_count=2, device=q_base.device,
+    )
+    outside_scores = q_base.detach().gather(-1, outside_candidates)
+    outside_permuted = outside_scores.gather(-1, outside_permutation)
+    outside_slots = torch.argsort(
+        outside_permuted, dim=-1, descending=True, stable=True
+    )[..., :15]
+    expected_outside = outside_candidates.gather(
+        -1, outside_slots
+    ).sort(dim=-1).values
+    assert torch.equal(r4_shuffled["outside_indices"], expected_outside)
+    assert torch.equal(
+        outside_permuted.sort(dim=-1).values,
+        outside_scores.sort(dim=-1).values,
+    )
 
     extent_logit = math.log(((0.8 - 0.02) / 0.98) / (1.0 - (0.8 - 0.02) / 0.98))
     dynamic_logits = torch.zeros((1, 2, 4), dtype=torch.float64)
