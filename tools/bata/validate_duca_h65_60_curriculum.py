@@ -64,6 +64,16 @@ def _validate_checkpoint(checkpoint: Path, expected_sha256: str) -> None:
         raise SystemExit("Stage-1 checkpoint must be terminal epoch 19")
     if not isinstance(state.get("state_dict_ema"), dict):
         raise SystemExit("Stage-1 checkpoint lacks state_dict_ema")
+    # tools/train.py copies the exact source config into gpu1_id0 before the
+    # first optimizer update. Bind the handoff to that copy so an unrelated
+    # epoch-19 checkpoint cannot enter the schedule-only comparison.
+    copied_config = checkpoint.parent.parent / CONFIGS["STAGE1_20"].name
+    if not copied_config.is_file():
+        raise SystemExit("Stage-1 run lacks its copied H65-60 config")
+    expected_config_sha = hashlib.sha256(CONFIGS["STAGE1_20"].read_bytes()).hexdigest()
+    observed_config_sha = hashlib.sha256(copied_config.read_bytes()).hexdigest()
+    if observed_config_sha != expected_config_sha:
+        raise SystemExit("Stage-1 checkpoint provenance config mismatch")
 
 
 def _validate_contract(target: str, cfg: Config, historical: Config) -> None:
@@ -135,4 +145,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

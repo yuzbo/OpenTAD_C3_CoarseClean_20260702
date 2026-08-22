@@ -89,6 +89,13 @@ def test_stage2_handoff_is_epoch19_ema_and_resets_only_course_clock(monkeypatch)
     assert cfg.duca_sampling_rate_contract.optimizer_scheduler_amp_state_reset is True
 
 
+def test_validator_binds_stage1_checkpoint_to_the_exact_copied_config() -> None:
+    text = (ROOT / "tools/bata/validate_duca_h65_60_curriculum.py").read_text()
+    assert 'checkpoint.parent.parent / CONFIGS["STAGE1_20"].name' in text
+    assert "Stage-1 run lacks its copied H65-60 config" in text
+    assert "Stage-1 checkpoint provenance config mismatch" in text
+
+
 def test_launcher_has_no_model_route_or_second_optimizer_restart() -> None:
     text = (ROOT / "scripts/run_duca_h65_60_curriculum_n16r4.sbatch").read_text()
     assert "STAGE1_20|STAGE2_40" in text
@@ -111,4 +118,3 @@ def test_implementation_does_not_touch_model_sources() -> None:
     assert "single_clock" not in stage1 + stage2
     assert "physical_time" not in stage1 + stage2
     assert "dynamic_outer_k" not in stage1 + stage2
-
