@@ -3,6 +3,52 @@ from collections.abc import Mapping
 import torch
 
 
+def global_rank_clip_coordinates(irregular_selected_positions, dense_valid_len, *, k=384, clip_len=16, tubelet_size=2):
+    """Derive global-rank canonical/actual coordinates, then pack into clips.
+
+    Selection is intentionally not performed here: callers provide the one global
+    strictly increasing rank sequence. Canonical anchors are generated once per
+    sample over the full dense window.
+    """
+    from opentad.models.duca.structured_selection import exact_uniform_positions
+    positions = irregular_selected_positions
+    if not torch.is_tensor(positions) or positions.ndim != 2:
+        raise ValueError("irregular_selected_positions must be [B,K]")
+    if positions.shape[1] != int(k):
+        raise ValueError("global selected positions must have exactly K entries")
+    lengths = dense_valid_len if torch.is_tensor(dense_valid_len) else torch.as_tensor(dense_valid_len, device=positions.device)
+    lengths = lengths.to(device=positions.device, dtype=torch.long).flatten()
+    if lengths.numel() != positions.shape[0]:
+        raise ValueError("dense_valid_len must be [B]")
+    canonical = torch.stack([exact_uniform_positions(int(n.item()), int(k), device=positions.device) for n in lengths])
+    if (positions[:, 1:] <= positions[:, :-1]).any():
+        raise ValueError("selected positions must be strictly increasing")
+    if (positions < 0).any() or (positions >= lengths[:, None]).any():
+        raise ValueError("selected positions out of dense window")
+    if int(k) % int(clip_len) != 0:
+        raise ValueError("K must be divisible by clip_len")
+    clips = int(k) // int(clip_len)
+    actual = positions.reshape(positions.shape[0], clips, int(clip_len))
+    canon = canonical.reshape(canonical.shape[0], clips, int(clip_len))
+    if int(tubelet_size) > 1:
+        if int(clip_len) % int(tubelet_size):
+            raise ValueError("clip_len must be divisible by tubelet_size")
+        actual = actual.reshape(actual.shape[0], clips, -1, int(tubelet_size)).mean(-1)
+        canon = canon.reshape(canon.shape[0], clips, -1, int(tubelet_size)).mean(-1)
+    return {"actual": actual, "canonical": canon, "irregular_selected_positions": positions, "irregular_dense_valid_len": lengths}
+
+
+def relative_physical_time_residual(actual, canonical):
+    """Return shared pairwise residual, or None for exact-uniform identity path."""
+    if actual.shape != canonical.shape:
+        raise ValueError("actual and canonical coordinates must have identical shape")
+    delta = actual - canonical
+    if torch.equal(delta, torch.zeros_like(delta)):
+        return None
+    # caller may flatten clips; preserve batch and token axes
+    return delta.unsqueeze(-1) - delta.unsqueeze(-2)
+
+
 def _masked_mean(value, mask, dim=-1, keepdim=False, eps=1e-6):
     weight = mask.to(value.dtype)
     numer = (value * weight).sum(dim=dim, keepdim=keepdim)
