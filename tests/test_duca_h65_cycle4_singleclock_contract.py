@@ -380,3 +380,74 @@ def test_terminal_checkpoint_audit_accepts_complete_h65_off_recovery_state(tmp_p
     assert payload["checkpoint_epoch"] == 59
     assert payload["successful_optimizer_updates"] == 6000
     assert payload["data_loader_next_epoch"] == 60
+    assert payload["recovery_state_complete"] is True
+    assert payload["recovery_protocol_deviation"] == []
+
+
+def test_terminal_checkpoint_audit_records_legacy_h65_off_recovery_deviation(tmp_path):
+    stage1 = tmp_path / "stage1.pth"
+    torch.save({"epoch": 29, "state_dict_ema": {}}, stage1)
+    import hashlib
+
+    stage1_sha = hashlib.sha256(stage1.read_bytes()).hexdigest()
+    terminal = tmp_path / "terminal.pth"
+    torch.save(
+        {
+            "epoch": 59,
+            "state_dict": {},
+            "state_dict_ema": {},
+            "optimizer": {"state": {}, "param_groups": []},
+            "scheduler": {"last_epoch": 6000},
+            "grad_scaler": {},
+            "successful_optimizer_updates": 6000,
+        },
+        terminal,
+    )
+    payload = audit_terminal_checkpoint(
+        checkpoint_path=terminal,
+        config_path="configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py",
+        stage1_path=stage1,
+        stage1_sha256=stage1_sha,
+        family="h65_off",
+    )
+    assert payload["checkpoint_epoch"] == 59
+    assert payload["recovery_state_complete"] is False
+    assert payload["rng_state_complete"] is False
+    assert payload["data_loader_state_complete"] is False
+    assert payload["data_loader_next_epoch"] is None
+    assert payload["recovery_protocol_deviation"] == [
+        "rng_state",
+        "data_loader_state",
+    ]
+
+
+def test_terminal_checkpoint_audit_rejects_clock_on_without_recovery_state(tmp_path):
+    stage1 = tmp_path / "stage1.pth"
+    torch.save({"epoch": 29, "state_dict_ema": {}}, stage1)
+    import hashlib
+
+    stage1_sha = hashlib.sha256(stage1.read_bytes()).hexdigest()
+    terminal = tmp_path / "terminal.pth"
+    clock_state = {
+        "model.backbone.relative_physical_time_scale": torch.tensor(0.1)
+    }
+    torch.save(
+        {
+            "epoch": 59,
+            "state_dict": clock_state,
+            "state_dict_ema": clock_state,
+            "optimizer": {"state": {}, "param_groups": []},
+            "scheduler": {"last_epoch": 6000},
+            "grad_scaler": {},
+            "successful_optimizer_updates": 6000,
+        },
+        terminal,
+    )
+    with pytest.raises(ValueError, match="missing rng_state"):
+        audit_terminal_checkpoint(
+            checkpoint_path=terminal,
+            config_path="configs/adatad/thumos/duca_h65_first_singleclock_cycle4.py",
+            stage1_path=stage1,
+            stage1_sha256=stage1_sha,
+            family="clock_on",
+        )

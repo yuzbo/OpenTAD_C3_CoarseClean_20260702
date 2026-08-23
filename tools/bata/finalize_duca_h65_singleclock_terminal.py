@@ -361,6 +361,12 @@ def finalize(
     final_off_avg = _metric(final_bootstrap["point_estimates"]["h65_off_final"], "average_mAP")
     ema_off_avg = _metric(ema_bootstrap["point_estimates"]["h65_off_ema"], "average_mAP")
     baseline_mature = (ema_off_avg - float(stage1_average_map)) * 100.0 >= 0.50
+    clock_recovery_contract_pass = bool(
+        clock_audit.get("recovery_state_complete")
+    )
+    h65_off_recovery_contract_pass = bool(
+        off_audit.get("recovery_state_complete")
+    )
 
     direction_consistent = all(
         final_sc[metric]["point"] * ema_sc[metric]["point"] >= 0.0
@@ -385,6 +391,7 @@ def finalize(
         or not all(identity.values())
         or not all(twin_execution_contract.values())
         or not _audit_ok(clock_audit, off_audit)
+        or not clock_recovery_contract_pass
         or not cost_pass
         or any(
             sc["average_mAP"]["point_pp"] <= 0.0
@@ -397,7 +404,11 @@ def finalize(
     if hard_fail:
         decision = "PIVOT_TO_ACQUISITION_OR_TRAINING_MATURITY"
     elif main_pass and strata_pass and direction_consistent:
-        decision = "CONTINUE_TO_REPLICATION"
+        decision = (
+            "CONTINUE_TO_REPLICATION"
+            if h65_off_recovery_contract_pass
+            else "REVISE_WITHOUT_MORE_TIME_MODULES"
+        )
     else:
         decision = "REVISE_WITHOUT_MORE_TIME_MODULES"
 
@@ -408,6 +419,11 @@ def finalize(
         "twin_execution_contract_pass": all(twin_execution_contract.values()),
         "family_execution_contract_pass": all(execution_contract.values()),
         "checkpoint_audit_gate_pass": _audit_ok(clock_audit, off_audit),
+        "clock_recovery_contract_pass": clock_recovery_contract_pass,
+        "h65_off_recovery_contract_pass": h65_off_recovery_contract_pass,
+        "h65_off_recovery_protocol_deviation": list(
+            off_audit.get("recovery_protocol_deviation", ())
+        ),
         "old_pair_representation_gate_pass": old_pair_no_explicit_harm,
         "old_pair_partial_representation_evidence": old_pair_partial_representation_evidence,
         "h65_off_training_maturity_gate_pass": baseline_mature,
@@ -423,6 +439,11 @@ def finalize(
         "h65_off_final_average_map": final_off_avg,
         "h65_off_ema_average_map": ema_off_avg,
         "claim_boundary": "single_seed_representation_gate_only",
+        "paper_claim_admissible": bool(
+            decision == "CONTINUE_TO_REPLICATION"
+            and clock_recovery_contract_pass
+            and h65_off_recovery_contract_pass
+        ),
         "bridge_authorized": False,
         "dynamic_k_authorized": False,
     }

@@ -162,6 +162,8 @@ def _finalizer_fixture(tmp_path):
         "successful_optimizer_updates": 6000, "scheduler_last_epoch": 6000,
         "stage1_checkpoint_sha256": stage1_sha, "stage1_checkpoint_epoch": 29,
         "single_clock_values": {"state_dict": {"clock": 0.1}, "state_dict_ema": {"clock": 0.1}},
+        "recovery_state_complete": True,
+        "recovery_protocol_deviation": [],
     }
     off = dict(
         clock,
@@ -213,6 +215,9 @@ def test_finalizer_accepts_frozen_positive_gate(tmp_path):
     assert result["identity_gate_pass"] is True
     assert result["twin_execution_contract_pass"] is True
     assert result["family_execution_contract_pass"] is True
+    assert result["clock_recovery_contract_pass"] is True
+    assert result["h65_off_recovery_contract_pass"] is True
+    assert result["paper_claim_admissible"] is True
     assert result["bridge_authorized"] is False
 
 
@@ -223,3 +228,35 @@ def test_finalizer_rejects_metrics_changed_after_receipt(tmp_path):
         stream.write("\n")
     with pytest.raises(ValueError, match="metrics hash mismatch"):
         finalize(**kwargs)
+
+
+def test_finalizer_keeps_positive_mechanism_diagnostic_but_blocks_replication_for_legacy_off_recovery_gap(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    kwargs["off_audit"]["recovery_state_complete"] = False
+    kwargs["off_audit"]["recovery_protocol_deviation"] = [
+        "rng_state",
+        "data_loader_state",
+    ]
+    result = finalize(**kwargs)
+    assert result["decision"] == "REVISE_WITHOUT_MORE_TIME_MODULES"
+    assert result["checkpoint_audit_gate_pass"] is True
+    assert result["h65_off_recovery_contract_pass"] is False
+    assert result["h65_off_recovery_protocol_deviation"] == [
+        "rng_state",
+        "data_loader_state",
+    ]
+    assert result["paper_claim_admissible"] is False
+
+
+def test_finalizer_hard_fails_when_clock_recovery_state_is_incomplete(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    kwargs["clock_audit"]["recovery_state_complete"] = False
+    kwargs["clock_audit"]["recovery_protocol_deviation"] = [
+        "rng_state",
+        "data_loader_state",
+    ]
+    result = finalize(**kwargs)
+    assert result["decision"] == "PIVOT_TO_ACQUISITION_OR_TRAINING_MATURITY"
+    assert result["checkpoint_audit_gate_pass"] is True
+    assert result["clock_recovery_contract_pass"] is False
+    assert result["paper_claim_admissible"] is False

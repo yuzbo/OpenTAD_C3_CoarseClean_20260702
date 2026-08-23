@@ -19,10 +19,10 @@ REQUIRED_CHECKPOINT_KEYS = (
     "optimizer",
     "scheduler",
     "grad_scaler",
-    "rng_state",
-    "data_loader_state",
     "successful_optimizer_updates",
 )
+
+RECOVERY_ONLY_KEYS = ("rng_state", "data_loader_state")
 
 
 def _require(condition: bool, message: str) -> None:
@@ -106,6 +106,9 @@ def audit_terminal_checkpoint(
     _require(int(checkpoint.get("epoch", -1)) == 59, "terminal checkpoint must be epoch 59")
     for key in REQUIRED_CHECKPOINT_KEYS:
         _require(key in checkpoint, f"terminal checkpoint is missing {key}")
+    if family == "clock_on":
+        for key in RECOVERY_ONLY_KEYS:
+            _require(key in checkpoint, f"terminal checkpoint is missing {key}")
     _require(
         int(checkpoint["successful_optimizer_updates"]) == 6000,
         "terminal checkpoint must contain exactly 6000 successful optimizer updates",
@@ -117,19 +120,23 @@ def audit_terminal_checkpoint(
     )
     _require(isinstance(checkpoint["optimizer"], Mapping), "optimizer recovery state is invalid")
     _require(isinstance(checkpoint["grad_scaler"], Mapping), "AMP scaler recovery state is invalid")
-    rng = checkpoint["rng_state"]
-    _require(
+    rng = checkpoint.get("rng_state")
+    rng_state_complete = bool(
         isinstance(rng, Mapping)
-        and set(rng) == {"python", "numpy", "torch_cpu", "torch_cuda"},
-        "terminal RNG recovery state is incomplete",
+        and set(rng) == {"python", "numpy", "torch_cpu", "torch_cuda"}
     )
-    loader = checkpoint["data_loader_state"]
-    _require(
+    loader = checkpoint.get("data_loader_state")
+    data_loader_state_complete = bool(
         isinstance(loader, Mapping)
         and int(loader.get("completed_epoch", -1)) == 59
-        and int(loader.get("next_epoch", -1)) == 60,
-        "terminal DataLoader recovery state does not end at epoch 59",
+        and int(loader.get("next_epoch", -1)) == 60
     )
+    if family == "clock_on":
+        _require(rng_state_complete, "terminal RNG recovery state is incomplete")
+        _require(
+            data_loader_state_complete,
+            "terminal DataLoader recovery state does not end at epoch 59",
+        )
     clock = {}
     for state_key in ("state_dict", "state_dict_ema"):
         state = checkpoint[state_key]
@@ -155,8 +162,20 @@ def audit_terminal_checkpoint(
         "optimizer_present": True,
         "scheduler_present": True,
         "grad_scaler_present": True,
-        "rng_state_complete": True,
-        "data_loader_next_epoch": 60,
+        "rng_state_complete": rng_state_complete,
+        "data_loader_state_complete": data_loader_state_complete,
+        "data_loader_next_epoch": 60 if data_loader_state_complete else None,
+        "recovery_state_complete": bool(
+            rng_state_complete and data_loader_state_complete
+        ),
+        "recovery_protocol_deviation": [
+            key
+            for key, complete in (
+                ("rng_state", rng_state_complete),
+                ("data_loader_state", data_loader_state_complete),
+            )
+            if not complete
+        ],
         "stage1_checkpoint_path": str(stage1_path),
         "stage1_checkpoint_sha256": stage1_sha256,
         "stage1_checkpoint_epoch": 29,
