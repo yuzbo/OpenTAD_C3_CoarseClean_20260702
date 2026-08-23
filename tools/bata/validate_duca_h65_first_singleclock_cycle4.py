@@ -57,6 +57,7 @@ def _single_clock_gradient_probe(model, optimizer):
         device=device,
         dtype=torch.float32,
     )
+    selected_rgb_before = frames.detach().clone()
     masks = torch.ones((1, 384), device=device, dtype=torch.bool)
     uniform = exact_uniform_positions(768, 384, device=device)
 
@@ -118,6 +119,8 @@ def _single_clock_gradient_probe(model, optimizer):
             metadata(irregular),
         )
     torch.testing.assert_close(gate_zero_output, theta_zero_output, rtol=0.0, atol=0.0)
+    if not torch.equal(frames, selected_rgb_before):
+        raise SystemExit("SingleClock metadata path must not mutate selected RGB inputs")
     print(
         "SINGLE_CLOCK_GRADIENT_PROBE "
         + json.dumps(
