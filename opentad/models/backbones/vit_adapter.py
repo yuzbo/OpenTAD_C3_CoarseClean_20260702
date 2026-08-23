@@ -1952,7 +1952,13 @@ class VisionTransformerAdapter(BaseModule):
         batch_size = int(metadata["batch_size"])
         window_budget = int(metadata["window_budget"])
         selected_total = batch_size * window_budget
-        if refresh_mode not in {"full64", "drop32", "mod32_kv", "rc32_kv"}:
+        if refresh_mode not in {
+            "full64",
+            "drop32",
+            "mod32_kv",
+            "rc32_kv",
+            "dsr6_kv",
+        }:
             raise ValueError("unsupported ZoomToken refresh execution mode")
         if refresh_mode in {"full64", "drop32"}:
             if refresh_mask is not None or refresh_alpha is not None:
@@ -1963,7 +1969,9 @@ class VisionTransformerAdapter(BaseModule):
                 or refresh_mask.dtype != torch.bool
                 or refresh_mask.shape != x.shape[:2]
             ):
-                raise ValueError("MOD32/RC32 require one bool refresh mask over K64")
+                raise ValueError(
+                    "MOD32/RC32/DSR6 require one bool refresh mask over K64"
+                )
             support_counts = torch.zeros(
                 (batch_size, int(metadata["total_tubelets"])),
                 device=x.device,
@@ -1975,11 +1983,17 @@ class VisionTransformerAdapter(BaseModule):
                 refresh_mask.to(torch.long),
             )
             if not bool((support_counts == 64).all().item()):
-                raise ValueError("MOD32/RC32 require exact K64 support per tubelet")
+                raise ValueError(
+                    "MOD32/RC32/DSR6 require exact K64 support per tubelet"
+                )
             if not bool((refresh_counts == 32).all().item()):
-                raise ValueError("MOD32/RC32 require exact K32 refresh per tubelet")
+                raise ValueError(
+                    "MOD32/RC32/DSR6 require exact K32 refresh per tubelet"
+                )
             if refresh_mode == "mod32_kv" and refresh_alpha is not None:
                 raise ValueError("MOD32-KV has no temporal carry parameter")
+            if refresh_mode == "dsr6_kv" and refresh_alpha is not None:
+                raise ValueError("DSR6-KV has no temporal carry parameter")
             if refresh_mode == "rc32_kv" and (
                 refresh_alpha is None
                 or refresh_alpha.ndim != 1
@@ -1999,7 +2013,22 @@ class VisionTransformerAdapter(BaseModule):
             "executed_adapter_tokens": 0,
             "dense_adapter_forward_count": 0,
         }
+        if refresh_mode == "dsr6_kv" and len(self.blocks) != 12:
+            raise ValueError("DSR6-KV requires the frozen 12-block VideoMAE-S")
         for block_index, block in enumerate(self.blocks):
+            block_refresh_mask = refresh_mask
+            block_refresh_mode = refresh_mode
+            block_refresh_alpha = (
+                refresh_alpha[block_index]
+                if refresh_mode == "rc32_kv"
+                else None
+            )
+            if refresh_mode == "dsr6_kv":
+                if block_index < 6:
+                    block_refresh_mask = None
+                    block_refresh_mode = "full64"
+                else:
+                    block_refresh_mode = "mod32_kv"
             x = block.forward_native_ragged(
                 x,
                 bucket_positions=bucket_positions,
@@ -2009,13 +2038,9 @@ class VisionTransformerAdapter(BaseModule):
                 grid_height=int(metadata["grid_height"]),
                 grid_width=int(metadata["grid_width"]),
                 packed_stats=stats,
-                refresh_mask=refresh_mask,
-                refresh_mode=refresh_mode,
-                refresh_alpha=(
-                    refresh_alpha[block_index]
-                    if refresh_mode == "rc32_kv"
-                    else None
-                ),
+                refresh_mask=block_refresh_mask,
+                refresh_mode=block_refresh_mode,
+                refresh_alpha=block_refresh_alpha,
             )
         x = self.norm(x)
 
@@ -2027,10 +2052,9 @@ class VisionTransformerAdapter(BaseModule):
             torch.Tensor,
         ) or not isinstance(clip_indices, torch.Tensor):
             raise RuntimeError("ragged execution metadata lost its tensor ledger")
+        full_attention_pairs = int(attention_pairs_per_window.sum().item())
         if refresh_mask is None:
-            expected_attention_pairs = int(
-                attention_pairs_per_window.sum().item()
-            ) * len(self.blocks)
+            expected_attention_pairs = full_attention_pairs * len(self.blocks)
             expected_kv_tokens = selected_total * len(self.blocks)
             refresh_tokens_per_window = window_budget
         else:
@@ -2039,21 +2063,46 @@ class VisionTransformerAdapter(BaseModule):
                 clip_indices,
                 refresh_mask.to(torch.long),
             )
-            expected_attention_pairs = int(
+            refresh_attention_pairs = int(
                 (clip_counts * refresh_clip_counts).sum().item()
-            ) * len(self.blocks)
-            expected_kv_tokens = selected_total * len(self.blocks)
+            )
+            if refresh_mode == "dsr6_kv":
+                expected_attention_pairs = (
+                    full_attention_pairs * 6 + refresh_attention_pairs * 6
+                )
+                expected_kv_tokens = selected_total * 6
+            else:
+                expected_attention_pairs = (
+                    refresh_attention_pairs * len(self.blocks)
+                )
+                expected_kv_tokens = selected_total * len(self.blocks)
             refresh_tokens_per_window = int(refresh_mask.sum(dim=1)[0].item())
         if stats["executed_patch_tokens"] != selected_total:
             raise RuntimeError("ragged patch execution count differs from selected B")
         if stats["executed_attention_pairs"] != expected_attention_pairs:
             raise RuntimeError("ragged attention-pair ledger differs from execution")
-        if stats["executed_kv_tokens"] not in {0, expected_kv_tokens}:
+        if refresh_mask is None:
+            kv_ledger_valid = stats["executed_kv_tokens"] in {
+                0,
+                expected_kv_tokens,
+            }
+        else:
+            kv_ledger_valid = stats["executed_kv_tokens"] == expected_kv_tokens
+        if not kv_ledger_valid:
             raise RuntimeError("ragged KV-token ledger differs from execution")
+        depth_schedule_summary = (
+            {
+                "full_update_block_count": 6,
+                "refresh_update_block_count": 6,
+            }
+            if refresh_mode == "dsr6_kv"
+            else {}
+        )
         self.latest_native_packed_summary = {
             "schema_version": "videomae_native_ragged_v1",
             "execution_mode": "true_clip_ragged_no_padding",
             "refresh_execution_mode": refresh_mode,
+            **depth_schedule_summary,
             "heavy_backbone_forward_count": 1,
             "batch_size": batch_size,
             "total_tubelets": int(metadata["total_tubelets"]),

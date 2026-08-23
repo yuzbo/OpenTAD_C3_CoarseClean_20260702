@@ -26,6 +26,7 @@ _vit = importlib.import_module("opentad.models.backbones.vit_adapter")
 build_refresh_mask = _routing.build_refresh_mask
 Attention = _vit.Attention
 Block = _vit.Block
+VisionTransformerAdapter = _vit.VisionTransformerAdapter
 
 
 def test_refresh_mask_exact_k32_and_age_priority():
@@ -107,7 +108,7 @@ def _empty_packed_stats():
 def test_mod32_block_updates_only_k32_queries_against_k64_context():
     torch.manual_seed(9)
     block = Block(embed_dims=8, num_heads=2, use_adapter=False).eval()
-    inputs = torch.randn(1, 128, 8)
+    inputs = torch.randn(1, 128, 8, requires_grad=True)
     tubelets = torch.arange(2).repeat_interleave(64).view(1, -1)
     spatial = torch.arange(64).repeat(2).view(1, -1)
     refresh = torch.zeros(1, 128, dtype=torch.bool)
@@ -132,6 +133,8 @@ def test_mod32_block_updates_only_k32_queries_against_k64_context():
     assert stats["executed_kv_tokens"] == 128
     assert stats["executed_attention_pairs"] == 64 * 128
     assert stats["executed_mlp_tokens"] == 64
+    gradient = torch.autograd.grad(output[refresh].sum(), inputs)[0]
+    assert gradient[~refresh].abs().sum().item() > 0
 
 
 def test_rc32_nonrefresh_tokens_use_detached_previous_block_input_mix():
@@ -166,19 +169,69 @@ def test_rc32_nonrefresh_tokens_use_detached_previous_block_input_mix():
     )
 
 
-def test_four_arm_configs_bind_token_counts_and_rc_optimizer_group():
+def test_dsr6_runs_full_k64_then_fixed_k32_queries_with_full_k64_context():
+    torch.manual_seed(13)
+    backbone = VisionTransformerAdapter(
+        img_size=160,
+        patch_size=16,
+        embed_dims=8,
+        depth=12,
+        num_heads=2,
+        mlp_ratio=2.0,
+        num_frames=2,
+        tubelet_size=2,
+        total_frames=4,
+        adapter_index=[11],
+        use_mean_pooling=False,
+    ).eval()
+    selected_native = torch.randn(1, 128, 3, 2, 16, 16)
+    physical_indices = torch.cat(
+        (torch.arange(64), torch.arange(100, 164))
+    ).view(1, -1)
+    refresh = torch.zeros(1, 128, dtype=torch.bool)
+    refresh[:, :32] = True
+    refresh[:, 64:96] = True
+
+    output = backbone.forward_native_ragged(
+        selected_native,
+        physical_indices,
+        total_tubelets=2,
+        source_grid_hw=(10, 10),
+        use_absolute_position=False,
+        refresh_mask=refresh,
+        refresh_mode="dsr6_kv",
+    )
+    summary = backbone.latest_native_packed_summary
+    assert output.shape == (1, 128, 8)
+    assert summary["refresh_execution_mode"] == "dsr6_kv"
+    assert summary["full_update_block_count"] == 6
+    assert summary["refresh_update_block_count"] == 6
+    assert summary["refresh_query_tokens_per_window"] == 64
+    assert summary["kv_context_tokens_per_window"] == 128
+    assert summary["executed_attention_tokens_all_blocks"] == 1152
+    assert summary["executed_kv_tokens_all_blocks"] == 768
+    assert summary["executed_mlp_tokens_all_blocks"] == 1152
+    assert summary["executed_adapter_tokens_all_blocks"] == 128
+    assert summary["ragged_adapter_forward_count"] == 1
+    assert summary["attention_pairs_all_blocks"] == 73728
+    assert summary["padded_heavy_tokens_per_window"] == 0
+
+
+def test_five_arm_configs_bind_token_counts_and_rc_optimizer_group():
     config_dir = ROOT / "configs" / "adatad" / "thumos"
     names = {
         "full64": "georoute_official_r1_strict_rect8x8_prebackbone_seed42_v001.py",
         "drop32": "georoute_official_r1_drop32_prebackbone_seed42_v001.py",
         "mod32_kv": "georoute_official_r1_mod32_kv_prebackbone_seed42_v001.py",
         "rc32_kv": "georoute_official_r1_rc32_kv_prebackbone_seed42_v001.py",
+        "dsr6_kv": "georoute_official_r1_dsr6_kv_prebackbone_seed42_v001.py",
     }
     expected = {
         "full64": (64, 64, 64),
         "drop32": (32, 32, 32),
         "mod32_kv": (32, 64, 32),
         "rc32_kv": (32, 64, 32),
+        "dsr6_kv": (32, 64, 32),
     }
     configs = {
         arm: Config.fromfile(config_dir / filename)
@@ -215,6 +268,20 @@ def test_four_arm_configs_bind_token_counts_and_rc_optimizer_group():
     for arm in ("drop32", "mod32_kv", "rc32_kv"):
         assert configs[arm].official_bc_contract.support_is_only_scientific_difference is False
         assert configs[arm].official_bc_contract.temporal_refresh_arm == arm
+    dsr = configs["dsr6_kv"]
+    assert tuple(dsr.zoomtoken_p1_config.full_update_blocks) == tuple(range(6))
+    assert tuple(dsr.zoomtoken_p1_config.refresh_update_blocks) == tuple(range(6, 12))
+    assert dsr.official_bc_contract.hidden_state_carry is False
+    assert dsr.official_bc_contract.shallow_transport is False
+    assert dsr.official_bc_contract.new_trainable_module is False
+    assert dsr.official_bc_contract.declared_block_flops_proxy_ratio == pytest.approx(
+        (6.0 + 6.0 * 0.5811) / 12.0
+    )
+    assert dsr.official_bc_contract.selector_inclusive_cost_measured is False
+    assert all(
+        item["name"] != "zoomtoken_refresh_carry_alpha"
+        for item in dsr.optimizer.backbone.custom
+    )
 
 
 def test_existing_official_runner_selects_all_refresh_arms():
@@ -225,6 +292,7 @@ def test_existing_official_runner_selects_all_refresh_arms():
         "R1-DROP32": "georoute_official_r1_drop32_prebackbone_seed42_v001.py",
         "R1-MOD32-KV": "georoute_official_r1_mod32_kv_prebackbone_seed42_v001.py",
         "R1-RC32-KV": "georoute_official_r1_rc32_kv_prebackbone_seed42_v001.py",
+        "R1-DSR6-KV": "georoute_official_r1_dsr6_kv_prebackbone_seed42_v001.py",
     }
     for arm, filename in expected.items():
         assert f"{arm})" in source
@@ -237,6 +305,7 @@ def test_refresh_configs_pass_actual_training_recovery_contract(tmp_path):
         "R1-DROP32": "georoute_official_r1_drop32_prebackbone_seed42_v001.py",
         "R1-MOD32-KV": "georoute_official_r1_mod32_kv_prebackbone_seed42_v001.py",
         "R1-RC32-KV": "georoute_official_r1_rc32_kv_prebackbone_seed42_v001.py",
+        "R1-DSR6-KV": "georoute_official_r1_dsr6_kv_prebackbone_seed42_v001.py",
     }
     for arm_surface, filename in expected.items():
         config = Config.fromfile(config_dir / filename)

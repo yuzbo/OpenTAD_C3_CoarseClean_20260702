@@ -1013,6 +1013,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "drop32": (32, 32, 32, False),
             "mod32_kv": (32, 64, 32, False),
             "rc32_kv": (32, 64, 32, True),
+            "dsr6_kv": (32, 64, 32, False),
         }
         if self.refresh_carry_mode not in refresh_contracts:
             raise ValueError("unsupported ZoomToken refresh-carry mode")
@@ -3599,11 +3600,22 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 "dense_adapter_forward_count": 0,
                 "refresh_execution_mode": self.refresh_carry_mode,
             }
-            if self.refresh_carry_mode in {"mod32_kv", "rc32_kv"}:
+            if self.refresh_carry_mode in {
+                "mod32_kv",
+                "rc32_kv",
+                "dsr6_kv",
+            }:
                 packed_contract.update(
                     {
                         "refresh_query_tokens_per_window": tubelets * 32,
                         "kv_context_tokens_per_window": tubelets * 64,
+                    }
+                )
+            if self.refresh_carry_mode == "dsr6_kv":
+                packed_contract.update(
+                    {
+                        "full_update_block_count": 6,
+                        "refresh_update_block_count": 6,
                     }
                 )
             if any(packed.get(key) != value for key, value in packed_contract.items()):
@@ -3631,7 +3643,8 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 ),
                 "kv_context_tokens_per_tubelet": (
                     64
-                    if self.refresh_carry_mode in {"mod32_kv", "rc32_kv"}
+                    if self.refresh_carry_mode
+                    in {"mod32_kv", "rc32_kv", "dsr6_kv"}
                     else executed_tokens_per_tubelet
                 ),
                 "refresh_carry_mode": self.refresh_carry_mode,
@@ -3644,6 +3657,13 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 "categorical_temperature": 0.5,
                 "raw_native_gather_before_patch_embedding": True,
             }
+            if self.refresh_carry_mode == "dsr6_kv":
+                strict_rectangle_audit.update(
+                    {
+                        "full_update_block_count": 6,
+                        "refresh_update_block_count": 6,
+                    }
+                )
         multibranch_audit = None
         r3_budget_loss = None
         r3_global_g = None

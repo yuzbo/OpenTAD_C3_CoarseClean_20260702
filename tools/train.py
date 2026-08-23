@@ -46,6 +46,7 @@ ZOOMTOKEN_RECOVERY_ARMS.update(
         "R1-DROP32",
         "R1-MOD32-KV",
         "R1-RC32-KV",
+        "R1-DSR6-KV",
     }
 )
 ZOOMTOKEN_UPDATE_INDEX_ARMS = ZOOMTOKEN_RECOVERY_ARMS - {"DN"}
