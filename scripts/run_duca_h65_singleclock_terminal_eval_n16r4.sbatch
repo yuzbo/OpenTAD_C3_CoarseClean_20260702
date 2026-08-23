@@ -58,16 +58,22 @@ OUTPUT_ROOT="${DUCA_EVAL_OUTPUT_ROOT:?DUCA_EVAL_OUTPUT_ROOT is required}"
 [[ ! -e "$OUTPUT_ROOT" ]] || fail "terminal evaluation output root already exists: $OUTPUT_ROOT"
 mkdir -p "$OUTPUT_ROOT"
 CLOCK_CONFIG="configs/adatad/thumos/duca_h65_first_singleclock_cycle4.py"
+CLOCK_GATE_ZERO_CONFIG="configs/adatad/thumos/duca_h65_first_singleclock_cycle4_gate_zero.py"
+CLOCK_TRAINING_IDENTITY_CONFIG="configs/adatad/thumos/duca_h65_first_singleclock_cycle4_training_identity.py"
 H65_OFF_CONFIG="configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py"
+BOOTSTRAP_NONCE="${DUCA_BOOTSTRAP_NONCE:-DUCA-H65-60-TRUETIME-BRIDGE-DIRECT-v001-20260823}"
+BOOTSTRAP_WORKERS="${DUCA_BOOTSTRAP_WORKERS:-8}"
 
 "$PYTHON" -m py_compile \
   opentad/models/detectors/actionformer.py \
   tools/test.py \
   tools/bata/audit_duca_h65_terminal_checkpoint.py \
-  tools/bata/bootstrap_duca_h65_official_map.py
+  tools/bata/bootstrap_duca_h65_official_map.py \
+  tools/bata/analyze_duca_h65_singleclock_strata.py
 "$PYTHON" -m pytest \
   tests/test_duca_h65_cycle4_singleclock_contract.py \
-  tests/test_duca_h65_bootstrap_contract.py -q
+  tests/test_duca_h65_bootstrap_contract.py \
+  tests/test_duca_h65_singleclock_strata.py -q
 
 "$PYTHON" tools/bata/audit_duca_h65_terminal_checkpoint.py \
   --checkpoint "$CLOCK_CHECKPOINT" --config "$CLOCK_CONFIG" \
@@ -79,7 +85,7 @@ H65_OFF_CONFIG="configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint
   --family h65_off --output "$OUTPUT_ROOT/h65_off_checkpoint_audit.json"
 
 run_eval() {
-  local family="$1" config="$2" checkpoint="$3" state_key="$4" gate_zero="$5" identity="$6"
+  local family="$1" config="$2" checkpoint="$3" state_key="$4" identity="$5"
   local family_root="$OUTPUT_ROOT/$family"
   mkdir -p "$family_root"
   local identity_args=()
@@ -94,10 +100,11 @@ run_eval() {
     --metrics-json "$family_root/terminal_evaluation.json" \
     "${identity_args[@]}" --id 0 --seed 3407 --cfg-options \
     "work_dir=$family_root/work" \
-    "data.test.ann_file=$ANNOTATION_PATH" \
-    "data.test.category_file=$CATEGORY_PATH" \
+    "dataset.test.ann_file=$ANNOTATION_PATH" \
+    "dataset.test.class_map=$CATEGORY_PATH" \
+    "dataset.test.data_path=$VIDEO_ROOT" \
+    "evaluation.ground_truth_filename=$ANNOTATION_PATH" \
     "model.backbone.custom.pretrain=$ADATAD_PRETRAIN" \
-    "model.single_clock_gate_zero=$gate_zero" \
     "post_processing.save_dict=True" \
     "inference.load_from_raw_predictions=False" \
     2>&1 | tee "$family_root/eval.out"
@@ -106,18 +113,82 @@ run_eval() {
 # Both trained-state and EMA-state attribution pairs use the exact same
 # checkpoint. Gate-zero keeps the SingleClock code path and only zeroes its
 # effective residual scale.
-run_eval final_on "$CLOCK_CONFIG" "$CLOCK_CHECKPOINT" state_dict False 1
-run_eval final_gate_zero "$CLOCK_CONFIG" "$CLOCK_CHECKPOINT" state_dict True 1
-run_eval ema_on "$CLOCK_CONFIG" "$CLOCK_CHECKPOINT" state_dict_ema False 1
-run_eval ema_gate_zero "$CLOCK_CONFIG" "$CLOCK_CHECKPOINT" state_dict_ema True 1
+run_eval final_on "$CLOCK_CONFIG" "$CLOCK_CHECKPOINT" state_dict 1
+run_eval final_gate_zero "$CLOCK_GATE_ZERO_CONFIG" "$CLOCK_CHECKPOINT" state_dict 1
+run_eval ema_on "$CLOCK_CONFIG" "$CLOCK_CHECKPOINT" state_dict_ema 1
+run_eval ema_gate_zero "$CLOCK_GATE_ZERO_CONFIG" "$CLOCK_CHECKPOINT" state_dict_ema 1
 
 # Re-infer the existing H65 OFF checkpoint under this exact evaluation commit.
 # It is never retrained here.
-run_eval h65_off_final "$H65_OFF_CONFIG" "$H65_OFF_CHECKPOINT" state_dict False 0
-run_eval h65_off_ema "$H65_OFF_CONFIG" "$H65_OFF_CHECKPOINT" state_dict_ema False 0
+run_eval h65_off_final "$H65_OFF_CONFIG" "$H65_OFF_CHECKPOINT" state_dict 0
+run_eval h65_off_ema "$H65_OFF_CONFIG" "$H65_OFF_CHECKPOINT" state_dict_ema 0
+
+# Freeze distortion and short-action cutpoints from the training population only.
+mkdir -p "$OUTPUT_ROOT/training_identity"
+"$PYTHON" -m torch.distributed.run --nproc_per_node=1 \
+  --rdzv_backend=c10d --rdzv_endpoint=localhost:0 \
+  --rdzv_id="duca-singleclock-${SLURM_JOB_ID}-training-identity" \
+  tools/test.py "$CLOCK_TRAINING_IDENTITY_CONFIG" \
+  --checkpoint "$CLOCK_CHECKPOINT" --checkpoint-state-key state_dict_ema \
+  --expected-checkpoint-epoch 59 --not_eval \
+  --single-clock-identity-json "$OUTPUT_ROOT/training_identity/selected_input_identity.json" \
+  --id 0 --seed 3407 --cfg-options \
+  "work_dir=$OUTPUT_ROOT/training_identity/work" \
+  "dataset.test.ann_file=$ANNOTATION_PATH" \
+  "dataset.test.class_map=$CATEGORY_PATH" \
+  "dataset.test.data_path=$VIDEO_ROOT" \
+  "model.backbone.custom.pretrain=$ADATAD_PRETRAIN" \
+  "post_processing.save_dict=False" \
+  "inference.load_from_raw_predictions=False" \
+  2>&1 | tee "$OUTPUT_ROOT/training_identity/eval.out"
+
+"$PYTHON" tools/bata/analyze_duca_h65_singleclock_strata.py freeze \
+  --training-identity "$OUTPUT_ROOT/training_identity/selected_input_identity.json" \
+  --annotation "$ANNOTATION_PATH" \
+  --output "$OUTPUT_ROOT/training_strata_freeze.json"
+
+prediction_path() {
+  "$PYTHON" - "$1" <<'PY'
+import json, sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+path = payload.get("prediction_path")
+if not path:
+    raise SystemExit("structured evaluation lacks prediction_path")
+print(path)
+PY
+}
+FINAL_ON_PRED="$(prediction_path "$OUTPUT_ROOT/final_on/terminal_evaluation.json")"
+FINAL_ZERO_PRED="$(prediction_path "$OUTPUT_ROOT/final_gate_zero/terminal_evaluation.json")"
+EMA_ON_PRED="$(prediction_path "$OUTPUT_ROOT/ema_on/terminal_evaluation.json")"
+EMA_ZERO_PRED="$(prediction_path "$OUTPUT_ROOT/ema_gate_zero/terminal_evaluation.json")"
+OFF_FINAL_PRED="$(prediction_path "$OUTPUT_ROOT/h65_off_final/terminal_evaluation.json")"
+OFF_EMA_PRED="$(prediction_path "$OUTPUT_ROOT/h65_off_ema/terminal_evaluation.json")"
+
+"$PYTHON" tools/bata/bootstrap_duca_h65_official_map.py \
+  --prediction "final_gate_zero=$FINAL_ZERO_PRED" \
+  --prediction "final_on=$FINAL_ON_PRED" \
+  --prediction "h65_off_final=$OFF_FINAL_PRED" \
+  --baseline final_gate_zero --annotation "$ANNOTATION_PATH" \
+  --nonce "$BOOTSTRAP_NONCE" --namespace SINGLECLOCK_FINAL_PAIRED_VIDEO_BOOTSTRAP_V1 \
+  --workers "$BOOTSTRAP_WORKERS" --output "$OUTPUT_ROOT/final_bootstrap.json"
+"$PYTHON" tools/bata/bootstrap_duca_h65_official_map.py \
+  --prediction "ema_gate_zero=$EMA_ZERO_PRED" \
+  --prediction "ema_on=$EMA_ON_PRED" \
+  --prediction "h65_off_ema=$OFF_EMA_PRED" \
+  --baseline ema_gate_zero --annotation "$ANNOTATION_PATH" \
+  --nonce "$BOOTSTRAP_NONCE" --namespace SINGLECLOCK_EMA_PAIRED_VIDEO_BOOTSTRAP_V1 \
+  --workers "$BOOTSTRAP_WORKERS" --output "$OUTPUT_ROOT/ema_bootstrap.json"
+
+"$PYTHON" tools/bata/analyze_duca_h65_singleclock_strata.py evaluate \
+  --frozen "$OUTPUT_ROOT/training_strata_freeze.json" \
+  --validation-identity "$OUTPUT_ROOT/ema_on/selected_input_identity.json" \
+  --annotation "$ANNOTATION_PATH" --on-prediction "$EMA_ON_PRED" \
+  --gate-zero-prediction "$EMA_ZERO_PRED" --nonce "$BOOTSTRAP_NONCE" \
+  --workers "$BOOTSTRAP_WORKERS" --output "$OUTPUT_ROOT/strata_evidence.json"
 
 "$PYTHON" - "$OUTPUT_ROOT/terminal_eval_receipt.json" "$EXPECTED_COMMIT" \
-  "$CLOCK_CHECKPOINT" "$H65_OFF_CHECKPOINT" "$STAGE1_CHECKPOINT" <<'PY'
+  "$CLOCK_CHECKPOINT" "$H65_OFF_CHECKPOINT" "$STAGE1_CHECKPOINT" \
+  "$CLOCK_CONFIG" "$CLOCK_GATE_ZERO_CONFIG" "$H65_OFF_CONFIG" <<'PY'
 import hashlib
 import json
 import os
@@ -126,22 +197,39 @@ from pathlib import Path
 
 from tools.bata.duca_p0_training import atomic_write_json
 
-output, commit, clock, off, stage1 = sys.argv[1:]
+output, commit, clock, off, stage1, clock_config, gate_zero_config, h65_off_config = sys.argv[1:]
 root = Path(output).resolve().parent
 families = ["final_on", "final_gate_zero", "ema_on", "ema_gate_zero", "h65_off_final", "h65_off_ema"]
+family_configs = {
+    "final_on": (clock_config, False),
+    "final_gate_zero": (gate_zero_config, True),
+    "ema_on": (clock_config, False),
+    "ema_gate_zero": (gate_zero_config, True),
+    "h65_off_final": (h65_off_config, None),
+    "h65_off_ema": (h65_off_config, None),
+}
 rows = {}
 for family in families:
     metrics = root / family / "terminal_evaluation.json"
     if not metrics.is_file():
         raise RuntimeError(f"missing terminal evaluation for {family}")
+    config, gate_zero = family_configs[family]
+    config = Path(config).resolve()
+    if not config.is_file():
+        raise RuntimeError(f"missing evaluation config for {family}: {config}")
     rows[family] = {
         "metrics_path": str(metrics),
         "metrics_sha256": hashlib.sha256(metrics.read_bytes()).hexdigest(),
+        "config_path": str(config),
+        "config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
+        "single_clock_gate_zero": gate_zero,
     }
     identity = root / family / "selected_input_identity.json"
     if identity.is_file():
         rows[family]["selected_input_identity_path"] = str(identity)
         rows[family]["selected_input_identity_sha256"] = hashlib.sha256(identity.read_bytes()).hexdigest()
+    if family in {"final_on", "final_gate_zero", "ema_on", "ema_gate_zero"} and not identity.is_file():
+        raise RuntimeError(f"missing selected-input identity for frozen twin family {family}")
 atomic_write_json(
     output,
     {
@@ -155,6 +243,10 @@ atomic_write_json(
         "stage1_checkpoint": str(Path(stage1).resolve()),
         "stage1_checkpoint_sha256": hashlib.sha256(Path(stage1).read_bytes()).hexdigest(),
         "families": rows,
+        "final_bootstrap_path": str(root / "final_bootstrap.json"),
+        "ema_bootstrap_path": str(root / "ema_bootstrap.json"),
+        "training_strata_freeze_path": str(root / "training_strata_freeze.json"),
+        "strata_evidence_path": str(root / "strata_evidence.json"),
     },
 )
 PY

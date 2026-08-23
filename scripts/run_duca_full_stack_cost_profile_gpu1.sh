@@ -16,6 +16,7 @@ PROFILE_CHECKPOINT="${PROFILE_CHECKPOINT:-}"
 PROFILE_METHOD="${PROFILE_METHOD:-duca-fixed384}"
 PROFILE_SAMPLES="${PROFILE_SAMPLES:-30}"
 PROFILE_WARMUP_SAMPLES="${PROFILE_WARMUP_SAMPLES:-5}"
+PROFILE_COMPLETE_OFFICIAL_WORKLOAD="${PROFILE_COMPLETE_OFFICIAL_WORKLOAD:-0}"
 PROFILE_BATCH_SIZE="${PROFILE_BATCH_SIZE:-1}"
 PROFILE_SAMPLE_POWER="${PROFILE_SAMPLE_POWER:-1}"
 PROFILE_POWER_INTERVAL_MS="${PROFILE_POWER_INTERVAL_MS:-20}"
@@ -32,6 +33,9 @@ BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 OUTPUT_PREFIX="${OUTPUT_PREFIX:-${BASE}/projects/c3_lowres_action_probe/duca_cost_profiles/${PROFILE_METHOD}_$(date +%Y%m%d_%H%M%S_%z)}"
 ADATAD_PRETRAIN_FILENAME="${ADATAD_PRETRAIN_FILENAME:-vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${BASE}/pretrained/${ADATAD_PRETRAIN_FILENAME}}"
+VIDEO_ROOT="${VIDEO_ROOT:-${BASE}/thumos14/raw_data/video}"
+ANNOTATION_PATH="${ANNOTATION_PATH:-${BASE}/thumos14/annotations/thumos_14_anno.json}"
+CATEGORY_PATH="${CATEGORY_PATH:-${BASE}/thumos14/annotations/category_idx.txt}"
 PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 
 export HOME="${HOME:-${BASE}/tmp/home}"
@@ -43,6 +47,9 @@ mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "$(dirname "${OUTPUT
 
 [[ -f "${CONFIG}" ]] || fail "config missing: ${CONFIG}"
 [[ -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "AdaTAD pretrain missing: ${ADATAD_PRETRAIN_PATH}"
+[[ -d "${VIDEO_ROOT}" ]] || fail "video root missing: ${VIDEO_ROOT}"
+[[ -f "${ANNOTATION_PATH}" ]] || fail "annotation missing: ${ANNOTATION_PATH}"
+[[ -f "${CATEGORY_PATH}" ]] || fail "category map missing: ${CATEGORY_PATH}"
 [[ -x "${PYTHON}" ]] || fail "Python missing: ${PYTHON}"
 
 if [[ -n "${SLURM_STEP_GPUS:-}${SLURM_JOB_GPUS:-}" ]]; then
@@ -81,6 +88,9 @@ ARGS=(
   --method-name "${PROFILE_METHOD}"
   --config-commit "${PROFILE_TRAINED_COMMIT:-$(git rev-parse HEAD)}"
   --backbone-pretrain "${ADATAD_PRETRAIN_PATH}"
+  --video-root "${VIDEO_ROOT}"
+  --annotation "${ANNOTATION_PATH}"
+  --class-map "${CATEGORY_PATH}"
   --device cuda:0
   --samples "${PROFILE_SAMPLES}"
   --warmup-samples "${PROFILE_WARMUP_SAMPLES}"
@@ -88,6 +98,9 @@ ARGS=(
   --loader-workers 0
   --amp
 )
+if [[ "${PROFILE_COMPLETE_OFFICIAL_WORKLOAD}" == "1" ]]; then
+  ARGS+=(--complete-official-workload)
+fi
 
 if [[ "${ALLOW_RANDOM_INIT}" == "1" ]]; then
   ARGS+=(--allow-random-init)

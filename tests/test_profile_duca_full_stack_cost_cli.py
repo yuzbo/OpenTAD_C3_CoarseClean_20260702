@@ -176,6 +176,45 @@ def test_cli_requires_a_checkpoint_unless_random_init_is_explicit() -> None:
     assert args.power_gpu_id is None
 
 
+def test_singleclock_cost_profile_requires_the_frozen_complete_workload_design() -> None:
+    parser = build_arg_parser()
+    trained = "1" * 40
+    evidence = "2" * 40
+    common = [
+        "config.py",
+        "--checkpoint",
+        "epoch_59.pth",
+        "--output-prefix",
+        "out/profile",
+        "--method-name",
+        "h65-singleclock-on",
+        "--config-commit",
+        trained,
+        "--trained-commit",
+        trained,
+        "--evidence-commit",
+        evidence,
+        "--use-ema",
+        "--profile-session-id",
+        "session",
+        "--profile-pair-id",
+        "pair-1",
+        "--profile-repeat-index",
+        "1",
+        "--profile-order-position",
+        "1",
+    ]
+
+    incomplete = parser.parse_args(common)
+    with pytest.raises(ValueError, match="complete workload after 50 warmups"):
+        incomplete.validate()
+
+    complete = parser.parse_args(
+        common + ["--complete-official-workload", "--warmup-samples", "50"]
+    )
+    complete.validate()
+
+
 def test_r5_dynamic_method_is_exact_and_requires_terminal_ema() -> None:
     parser = build_arg_parser()
     method = "temporalmaxer_learned_k256_s5801"

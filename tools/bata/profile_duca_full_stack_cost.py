@@ -40,6 +40,7 @@ from tools.bata.duca_trained_checkpoint_binding import (
 
 CELLCF_COST_METHODS = frozenset({"cellcf-fixed384", "bare-uniform384"})
 DENSE_COST_METHODS = frozenset({"dense-adatad"})
+SINGLECLOCK_COST_METHODS = frozenset({"h65-singleclock-on", "h65-singleclock-gate_zero"})
 CELLCF_POST_RUN_SCHEMA = "duca_cellcf_post_run_evidence_v1"
 CELLCF_COST_BINDING_SCHEMA = "duca_cellcf_cost_binding_v1"
 R5_COST_BINDING_SCHEMA = "duca_r5_terminal_cost_binding_v1"
@@ -184,6 +185,21 @@ class ProfileArgs(argparse.Namespace):
                 raise ValueError(
                     "formal cost profiles require --profile-order-position 1 or 2"
                 )
+        if self.method_name in SINGLECLOCK_COST_METHODS:
+            if self.allow_random_init or not self.use_ema or not self.checkpoint:
+                raise ValueError("formal SingleClock cost profiles require epoch-59 EMA weights")
+            if not self.complete_official_workload or self.warmup_samples != 50:
+                raise ValueError("formal SingleClock cost profiles require a complete workload after 50 warmups")
+            if re.fullmatch(r"[0-9a-f]{40}", str(self.trained_commit or "")) is None:
+                raise ValueError("formal SingleClock cost profiles require --trained-commit")
+            if re.fullmatch(r"[0-9a-f]{40}", str(self.evidence_commit or "")) is None:
+                raise ValueError("formal SingleClock cost profiles require --evidence-commit")
+            if str(self.config_commit or "") != str(self.trained_commit):
+                raise ValueError("SingleClock --config-commit must identify the trained commit")
+            if not str(self.profile_session_id or "").strip() or not str(self.profile_pair_id or "").strip():
+                raise ValueError("formal SingleClock cost profiles require session and pair IDs")
+            if self.profile_repeat_index not in (1, 2, 3) or self.profile_order_position not in (1, 2):
+                raise ValueError("formal SingleClock cost repeat/order is outside the frozen 3x2 design")
 
 
 class ProfileArgumentParser(argparse.ArgumentParser):
@@ -196,6 +212,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("config", help="OpenTAD config")
     parser.add_argument("--checkpoint", default="", help="trained detector checkpoint")
     parser.add_argument("--backbone-pretrain", default="", help="override the config backbone initialization path")
+    parser.add_argument("--video-root", default="", help="override the test video root")
+    parser.add_argument("--annotation", default="", help="override test/evaluator annotation")
+    parser.add_argument("--class-map", default="", help="override the test category map")
     parser.add_argument("--output-prefix", required=True, help="output path without extension")
     parser.add_argument("--method-name", default="duca-fixed384")
     parser.add_argument("--config-commit", default="")
@@ -211,6 +230,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--samples", type=int, default=30)
+    parser.add_argument(
+        "--complete-official-workload",
+        action="store_true",
+        help="measure exactly one complete deterministic test-loader traversal after warmup",
+    )
     parser.add_argument("--warmup-samples", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--loader-workers", type=int, default=0)
@@ -259,6 +283,11 @@ def resolve_profile_commit_identities(
             )
         if trained_commit == evidence_commit:
             raise ValueError("trained and evidence commits must be distinct")
+    elif args.method_name in SINGLECLOCK_COST_METHODS:
+        if evidence_commit != actual_commit:
+            raise ValueError("SingleClock --evidence-commit must equal profiler HEAD")
+        if str(args.config_commit or "") != trained_commit:
+            raise ValueError("SingleClock --config-commit must identify the trained commit")
     return trained_commit, evidence_commit
 
 
@@ -1475,6 +1504,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     cfg = Config.fromfile(str(config_path))
     profile_config_sha256 = _sha256_file(config_path)
     profile_resolved_config_sha256 = _payload_fingerprint(cfg)
+    if args.method_name in SINGLECLOCK_COST_METHODS:
+        expected_gate_zero = args.method_name.endswith("gate_zero")
+        if cfg.model.get("single_clock_admission", False) is not True:
+            raise ValueError("formal SingleClock cost config does not admit SingleClock")
+        if bool(cfg.model.get("single_clock_gate_zero", False)) != expected_gate_zero:
+            raise ValueError("SingleClock cost method/config gate mode mismatch")
     if r5_cell is not None:
         configured_cell = _stable_payload(cfg.get("r5_cell", None))
         _validate_r5_cell_payload(
@@ -1513,6 +1548,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError("CellCF profile resolved config differs from post-run evidence")
     if args.backbone_pretrain:
         cfg.model.backbone.custom.pretrain = str(Path(args.backbone_pretrain).expanduser().resolve())
+    resource_overrides = (args.video_root, args.annotation, args.class_map)
+    if any(resource_overrides) and not all(resource_overrides):
+        raise ValueError("--video-root, --annotation and --class-map must be supplied together")
+    if all(resource_overrides):
+        cfg.dataset.test.data_path = str(Path(args.video_root).expanduser().resolve())
+        cfg.dataset.test.ann_file = str(Path(args.annotation).expanduser().resolve())
+        cfg.dataset.test.class_map = str(Path(args.class_map).expanduser().resolve())
+        cfg.evaluation.ground_truth_filename = str(Path(args.annotation).expanduser().resolve())
     device = torch.device(args.device)
     if device.type == "cuda":
         torch.cuda.set_device(device)
@@ -1529,6 +1572,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         drop_last=False,
         **loader_cfg,
     )
+    full_workload_batch_count = int(len(loader))
+    if full_workload_batch_count <= 0:
+        raise ValueError("official test loader is empty")
+    if args.complete_official_workload:
+        args.samples = full_workload_batch_count
     cfg.post_processing.sliding_window = isinstance(dataset, SlidingWindowDataset)
 
     model = build_detector(cfg.model).to(device).eval()
@@ -1572,6 +1620,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise ValueError(
                     "loaded checkpoint metadata differs from the R5 terminal binding"
                 )
+        if args.method_name in SINGLECLOCK_COST_METHODS:
+            if checkpoint_meta.get("checkpoint_epoch") != 59 or checkpoint_meta.get("checkpoint_state_key") != "state_dict_ema":
+                raise ValueError("formal SingleClock cost profile requires epoch-59 state_dict_ema")
 
     modules, zero_stages = discover_profile_modules(model)
     external_cls = getattr(dataset, "class_map", None)
@@ -1681,6 +1732,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     source_dataset = _stable_payload(cfg.dataset.test)
     if isinstance(source_dataset, dict):
         source_dataset.pop("pipeline", None)
+    normalized_cfg = _stable_payload(cfg)
+    if args.method_name in SINGLECLOCK_COST_METHODS:
+        normalized_cfg["model"]["single_clock_gate_zero"] = False
     metadata = {
         "method": args.method_name,
         "protocol": OFFLINE_FULL_WINDOW_PROTOCOL,
@@ -1699,6 +1753,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "profile_config_sha256": profile_config_sha256,
         "profile_resolved_config_sha256": profile_resolved_config_sha256,
         "config_fingerprint": _payload_fingerprint(cfg),
+        "gate_zero_normalized_config_fingerprint": _payload_fingerprint(normalized_cfg),
+        "single_clock_gate_zero": bool(cfg.model.get("single_clock_gate_zero", False)),
         "dataset_fingerprint": _payload_fingerprint(cfg.dataset.test),
         "source_dataset_fingerprint": _payload_fingerprint(source_dataset),
         "inference_fingerprint": _payload_fingerprint(
@@ -1711,6 +1767,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "batch_size": int(args.batch_size),
         "loader_workers": int(args.loader_workers),
         "warmup_samples": int(args.warmup_samples),
+        "complete_official_workload": bool(args.complete_official_workload),
+        "full_workload_batch_count": full_workload_batch_count,
         "amp": use_amp,
         "uses_ema": bool(args.use_ema),
         "random_init": bool(args.allow_random_init),
