@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #SBATCH --partition=gpu
-#SBATCH --account=gpugpu
+#SBATCH --account=sczc063
 #SBATCH --qos=normal
 #SBATCH --job-name=duca-old-bs
 #SBATCH --nodes=1
