@@ -17,18 +17,12 @@ def _load_module(name: str, path: Path):
     return module
 
 
-_routing = _load_module(
-    "zoomtoken_georoute_routing_focus",
-    ROOT / "opentad" / "models" / "backbones" / "georoute_routing.py",
-)
-_vit = _load_module(
-    "zoomtoken_vit_adapter_focus",
-    ROOT / "opentad" / "models" / "backbones" / "vit_adapter.py",
-)
 _train = _load_module(
     "zoomtoken_train_entry_focus",
     ROOT / "tools" / "train.py",
 )
+_routing = importlib.import_module("opentad.models.backbones.georoute_routing")
+_vit = importlib.import_module("opentad.models.backbones.vit_adapter")
 build_refresh_mask = _routing.build_refresh_mask
 Attention = _vit.Attention
 Block = _vit.Block
