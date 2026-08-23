@@ -63,10 +63,20 @@ H65_OFF_CONFIG="configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint
 "$PYTHON" -m py_compile \
   opentad/models/detectors/actionformer.py \
   tools/test.py \
+  tools/bata/audit_duca_h65_terminal_checkpoint.py \
   tools/bata/bootstrap_duca_h65_official_map.py
 "$PYTHON" -m pytest \
   tests/test_duca_h65_cycle4_singleclock_contract.py \
   tests/test_duca_h65_bootstrap_contract.py -q
+
+"$PYTHON" tools/bata/audit_duca_h65_terminal_checkpoint.py \
+  --checkpoint "$CLOCK_CHECKPOINT" --config "$CLOCK_CONFIG" \
+  --stage1 "$STAGE1_CHECKPOINT" --stage1-sha256 "$STAGE1_SHA256" \
+  --family clock_on --output "$OUTPUT_ROOT/clock_checkpoint_audit.json"
+"$PYTHON" tools/bata/audit_duca_h65_terminal_checkpoint.py \
+  --checkpoint "$H65_OFF_CHECKPOINT" --config "$H65_OFF_CONFIG" \
+  --stage1 "$STAGE1_CHECKPOINT" --stage1-sha256 "$STAGE1_SHA256" \
+  --family h65_off --output "$OUTPUT_ROOT/h65_off_checkpoint_audit.json"
 
 run_eval() {
   local family="$1" config="$2" checkpoint="$3" state_key="$4" gate_zero="$5" identity="$6"

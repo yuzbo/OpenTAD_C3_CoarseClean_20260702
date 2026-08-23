@@ -19,6 +19,7 @@ from tools.train import (
     _restore_resumable_optimizer_update_count,
     _validate_epoch_boundary_data_loader_state,
 )
+from tools.bata.audit_duca_h65_terminal_checkpoint import audit_terminal_checkpoint
 
 
 CONFIG = Path("configs/adatad/thumos/duca_h65_first_singleclock_cycle4.py")
@@ -300,6 +301,7 @@ def test_terminal_eval_launcher_freezes_on_gate_zero_and_h65_off_reinference():
     assert "DUCA_CLOCK_CHECKPOINT_SHA256" in text
     assert "DUCA_H65_OFF_CHECKPOINT_SHA256" in text
     assert "DUCA_EVAL_COMMIT" in text
+    assert "audit_duca_h65_terminal_checkpoint.py" in text
     assert "final_on" in text and "final_gate_zero" in text
     assert "ema_on" in text and "ema_gate_zero" in text
     assert "h65_off_final" in text and "h65_off_ema" in text
@@ -345,3 +347,36 @@ def test_resume_restores_cumulative_successful_optimizer_updates():
         _restore_resumable_optimizer_update_count(
             {"successful_optimizer_updates": True}, audit
         )
+
+
+def test_terminal_checkpoint_audit_accepts_complete_h65_off_recovery_state(tmp_path):
+    stage1 = tmp_path / "stage1.pth"
+    torch.save({"epoch": 29, "state_dict_ema": {}}, stage1)
+    import hashlib
+
+    stage1_sha = hashlib.sha256(stage1.read_bytes()).hexdigest()
+    terminal = tmp_path / "terminal.pth"
+    torch.save(
+        {
+            "epoch": 59,
+            "state_dict": {},
+            "state_dict_ema": {},
+            "optimizer": {"state": {}, "param_groups": []},
+            "scheduler": {"last_epoch": 6000},
+            "grad_scaler": {},
+            "rng_state": {"python": (), "numpy": (), "torch_cpu": torch.zeros(1), "torch_cuda": []},
+            "data_loader_state": {"completed_epoch": 59, "next_epoch": 60},
+            "successful_optimizer_updates": 6000,
+        },
+        terminal,
+    )
+    payload = audit_terminal_checkpoint(
+        checkpoint_path=terminal,
+        config_path="configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py",
+        stage1_path=stage1,
+        stage1_sha256=stage1_sha,
+        family="h65_off",
+    )
+    assert payload["checkpoint_epoch"] == 59
+    assert payload["successful_optimizer_updates"] == 6000
+    assert payload["data_loader_next_epoch"] == 60
