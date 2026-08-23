@@ -1,0 +1,38 @@
+# DUCA H65 First-Mixing SingleClock
+
+## 状态
+
+`experiment_running`。尚无正式 mAP、效率或论文结论。
+
+## 科学问题
+
+历史 H65 以低成本语义模型进行逐帧、非均匀的间接选帧，并将选中的 384 帧送入 VideoMAE-S 与 ActionFormer。该输入仍按选中次序组成 tubelet，第一层时序混合并不知道帧在原视频中的真实间距。本实验只检验一个问题：在不改变 H65 选帧集合、训练课程、检测器和评估器的条件下，向 VideoMAE 第 0 个注意力块加入有界的真实物理时间间隔，是否能改善稀疏输入的时序表示。
+
+## 冻结方法
+
+- H65 的语义间接非均匀逐帧选择保持不变，固定 `K=384`。
+- 选中 RGB、24 个 16 帧 clip、VideoMAE-S、Adapter、ActionFormer、损失、Soft-NMS、THUMOS14 split 与官方评估器保持不变。
+- 仅 VideoMAE 第 0 个自注意力块接收相对于规范均匀位置的成对物理时间残差。
+- 残差尺度为共享标量 `tanh(theta)`；`theta` 以 FP32 的 0 初始化，学习率 `2e-4`，权重衰减 0。
+- exact-uniform 输入严格退化为原路径；gate-zero 使用同一计算路径并把有效尺度置零。
+- 反事实 teacher 保持 Clock OFF，不让新时间信号污染监督目标。
+
+## 实现与验证
+
+- 部署代码 revision：`08a817e91867839abf3a81e24f8469512b26a6ea`。
+- 分支：`codex/duca-h65-firstmix-singleclock-20260824`。
+- 独立 Critic：实现与可恢复训练合同均通过。
+- GPU PRE_RUN：Jobs `1252471`、`1252480` 完成；非均匀时间产生有限非零梯度，uniform/gate-zero 恒等，输入 RGB 未改变。
+- 恢复审计：epoch 0 检查点保存 model、EMA、optimizer、scheduler、AMP scaler、全局 RNG、DataLoader epoch-boundary contract 与 2 个成功更新；恢复后的 epoch 1 检查点累计为 4 个成功更新。
+
+## 正式实验
+
+- Slurm Job：`1252482`，N16R4，1 GPU / 8 CPU，seed `3407`。
+- 输出：`/data/run01/sczc063/yuzibo/duca_h65_firstmix_singleclock_stage2_on_08a817e9_20260824`。
+- Stage-1 初始化：历史 H65 uniform-384 epoch-29 EMA，SHA256 `bcbc877c204a1ce7778f559be0b218295223367983450274671b17356e5be4e3`。
+- 训练：完整 THUMOS14，60 epoch / 6000 次成功更新；每 5 epoch 保存可恢复 checkpoint；主结果预先固定为 epoch-59 final 与 final-EMA。
+- 归因：不重训 OFF、dense、uniform 或 random。训练终态后，同一 ON checkpoint 运行 gate-zero twin，并只读引用同起点既有 OFF 对照。
+
+## 证据边界
+
+Job `1252482` 当前只证明正式训练已经越过预检并进入 epoch 0。训练完成前不得声称 SingleClock 改善或损害 H65，也不得把 PRE_RUN 的静态/两步结果解释为效能证据。
