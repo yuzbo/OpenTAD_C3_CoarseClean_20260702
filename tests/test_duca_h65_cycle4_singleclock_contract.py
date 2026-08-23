@@ -23,6 +23,9 @@ from tools.bata.audit_duca_h65_terminal_checkpoint import audit_terminal_checkpo
 
 
 CONFIG = Path("configs/adatad/thumos/duca_h65_first_singleclock_cycle4.py")
+GATE_ZERO_CONFIG = Path(
+    "configs/adatad/thumos/duca_h65_first_singleclock_cycle4_gate_zero.py"
+)
 LAUNCHER = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch")
 TERMINAL_EVAL_LAUNCHER = Path("scripts/run_duca_h65_singleclock_terminal_eval_n16r4.sbatch")
 
@@ -306,7 +309,9 @@ def test_terminal_eval_launcher_freezes_on_gate_zero_and_h65_off_reinference():
     assert "ema_on" in text and "ema_gate_zero" in text
     assert "h65_off_final" in text and "h65_off_ema" in text
     assert "--single-clock-identity-json" in text
-    assert "model.single_clock_gate_zero=$gate_zero" in text
+    assert 'run_eval final_gate_zero "$CLOCK_GATE_ZERO_CONFIG"' in text
+    assert 'run_eval ema_gate_zero "$CLOCK_GATE_ZERO_CONFIG"' in text
+    assert Config.fromfile(str(GATE_ZERO_CONFIG)).model.single_clock_gate_zero is True
     assert "state_dict_ema" in text
 
 
