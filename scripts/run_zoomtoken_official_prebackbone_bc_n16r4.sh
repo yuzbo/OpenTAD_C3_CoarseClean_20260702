@@ -148,7 +148,9 @@ fi
 
 if ! command -v module >/dev/null 2>&1 && [[ -r /etc/profile ]]; then
   # shellcheck disable=SC1091
+  set +u
   source /etc/profile
+  set -u
 fi
 command -v module >/dev/null 2>&1 || \
   fail 'the N16R4 environment-modules command is unavailable'

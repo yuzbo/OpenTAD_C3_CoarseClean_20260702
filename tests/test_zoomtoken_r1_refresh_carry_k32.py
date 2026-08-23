@@ -1,5 +1,7 @@
 import importlib.util
+import os
 from pathlib import Path
+import subprocess
 
 import pytest
 import torch
@@ -297,6 +299,38 @@ def test_existing_official_runner_selects_all_refresh_arms():
     for arm, filename in expected.items():
         assert f"{arm})" in source
         assert f'CONFIG_NAME="{filename}"' in source
+
+
+def test_launcher_sources_site_profile_without_nounset_then_restores_it():
+    launcher = (
+        ROOT / "scripts" / "run_zoomtoken_official_prebackbone_bc_n16r4.sh"
+    ).read_text(encoding="utf-8")
+    boundary = "  set +u\n  source /etc/profile\n  set -u\n"
+    assert launcher.count(boundary) == 1
+    if os.name == "nt":
+        pytest.skip("the N16R4 /etc/profile runtime contract is Linux-only")
+
+    probe = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+set -eo pipefail
+unset LC_BYOBU XDG_DATA_DIRS ZOOMTOKEN_NOUNSET_PROBE
+set -u
+set +u
+source /etc/profile
+set -u
+if ( : "${ZOOMTOKEN_NOUNSET_PROBE}" ) 2>/dev/null; then
+  exit 91
+fi
+""",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert probe.returncode == 0, probe.stderr
 
 
 def test_refresh_configs_pass_actual_training_recovery_contract(tmp_path):
