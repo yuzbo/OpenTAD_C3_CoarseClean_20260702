@@ -396,11 +396,14 @@ def test_terminal_checkpoint_audit_records_legacy_h65_off_recovery_deviation(tmp
 
     stage1_sha = hashlib.sha256(stage1.read_bytes()).hexdigest()
     terminal = tmp_path / "terminal.pth"
+    registered_zero_clock = {
+        "model.backbone.blocks.0.relative_physical_time_scale": torch.tensor(0.0)
+    }
     torch.save(
         {
             "epoch": 59,
-            "state_dict": {},
-            "state_dict_ema": {},
+            "state_dict": registered_zero_clock,
+            "state_dict_ema": registered_zero_clock,
             "optimizer": {"state": {}, "param_groups": []},
             "scheduler": {"last_epoch": 6000},
             "grad_scaler": {},
@@ -420,6 +423,7 @@ def test_terminal_checkpoint_audit_records_legacy_h65_off_recovery_deviation(tmp
     assert payload["rng_state_complete"] is False
     assert payload["data_loader_state_complete"] is False
     assert payload["data_loader_next_epoch"] is None
+    assert payload["h65_off_scalar_identity"] == "registered_zero"
     assert payload["recovery_protocol_deviation"] == [
         "rng_state",
         "data_loader_state",

@@ -146,7 +146,10 @@ def audit_terminal_checkpoint(
             _require(len(values) == 1, f"{state_key} must contain exactly one SingleClock scalar")
             _require(next(iter(values.values())) != 0.0, f"{state_key} SingleClock scalar was not updated")
         else:
-            _require(not values, f"{state_key} H65 OFF unexpectedly contains a SingleClock scalar")
+            _require(
+                len(values) <= 1 and all(value == 0.0 for value in values.values()),
+                f"{state_key} H65 OFF contains an active SingleClock scalar",
+            )
         clock[state_key] = values
 
     payload = {
@@ -182,6 +185,13 @@ def audit_terminal_checkpoint(
         "config_path": str(config_path),
         "config_sha256": _sha256(config_path),
         "single_clock_values": clock,
+        "h65_off_scalar_identity": (
+            "registered_zero"
+            if family == "h65_off" and any(clock.values())
+            else "absent"
+            if family == "h65_off"
+            else None
+        ),
     }
     del checkpoint
     return payload

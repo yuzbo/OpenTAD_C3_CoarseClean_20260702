@@ -180,7 +180,12 @@ def _audit_ok(clock: Mapping[str, Any], off: Mapping[str, Any]) -> bool:
             and len(clock_values[key]) == 1
             and np.isfinite(float(next(iter(clock_values[key].values()))))
             and float(next(iter(clock_values[key].values()))) != 0.0
-            and not off_values[key]
+            and isinstance(off_values[key], Mapping)
+            and len(off_values[key]) <= 1
+            and all(
+                np.isfinite(float(value)) and float(value) == 0.0
+                for value in off_values[key].values()
+            )
             for key in ("state_dict", "state_dict_ema")
         )
     )

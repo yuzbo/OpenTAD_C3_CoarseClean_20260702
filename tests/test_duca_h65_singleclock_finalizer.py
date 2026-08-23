@@ -168,7 +168,10 @@ def _finalizer_fixture(tmp_path):
     off = dict(
         clock,
         family="h65_off",
-        single_clock_values={"state_dict": {}, "state_dict_ema": {}},
+        single_clock_values={
+            "state_dict": {"registered_clock": 0.0},
+            "state_dict_ema": {"registered_clock": 0.0},
+        },
     )
     metrics = ("average_mAP", "mAP@0.6", "mAP@0.7")
     final_points = {
