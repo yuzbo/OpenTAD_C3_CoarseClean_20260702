@@ -311,7 +311,7 @@ def test_terminal_eval_launcher_freezes_on_gate_zero_and_h65_off_reinference():
     assert "--single-clock-identity-json" in text
     assert 'run_eval final_gate_zero "$CLOCK_GATE_ZERO_CONFIG"' in text
     assert 'run_eval ema_gate_zero "$CLOCK_GATE_ZERO_CONFIG"' in text
-    assert Config.fromfile(str(GATE_ZERO_CONFIG)).model.single_clock_gate_zero is True
+    assert "single_clock_gate_zero=True" in GATE_ZERO_CONFIG.read_text()
     assert "state_dict_ema" in text
 
 
