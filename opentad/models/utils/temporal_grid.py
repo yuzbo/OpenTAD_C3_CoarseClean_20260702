@@ -3,7 +3,15 @@ from collections.abc import Mapping
 import torch
 
 
-def global_rank_clip_coordinates(irregular_selected_positions, dense_valid_len, *, k=384, clip_len=16, tubelet_size=2):
+def global_rank_clip_coordinates(
+    irregular_selected_positions,
+    dense_valid_len,
+    *,
+    selected_valid_mask=None,
+    k=384,
+    clip_len=16,
+    tubelet_size=2,
+):
     """Derive global-rank canonical/actual coordinates, then pack into clips.
 
     Selection is intentionally not performed here: callers provide the one global
@@ -20,21 +28,39 @@ def global_rank_clip_coordinates(irregular_selected_positions, dense_valid_len, 
     lengths = lengths.to(device=positions.device, dtype=torch.long).flatten()
     if lengths.numel() != positions.shape[0]:
         raise ValueError("dense_valid_len must be [B]")
-    unique_lengths = torch.unique(lengths, sorted=True)
-    canonical_by_length = {
-        int(n.item()): exact_uniform_positions(int(n.item()), int(k), device=positions.device)
-        for n in unique_lengths
-    }
-    canonical = torch.stack([canonical_by_length[int(n.item())] for n in lengths])
-    if (positions[:, 1:] <= positions[:, :-1]).any():
-        raise ValueError("selected positions must be strictly increasing")
-    if (positions < 0).any() or (positions >= lengths[:, None]).any():
-        raise ValueError("selected positions out of dense window")
+    if selected_valid_mask is None:
+        slot_mask = positions >= 0
+    else:
+        if not torch.is_tensor(selected_valid_mask) or selected_valid_mask.shape != positions.shape:
+            raise ValueError("selected_valid_mask must match irregular_selected_positions [B,K]")
+        slot_mask = selected_valid_mask.to(device=positions.device, dtype=torch.bool)
+        if not torch.equal(slot_mask, positions >= 0):
+            raise ValueError("selected_valid_mask must exactly identify non-negative selected positions")
+    valid_counts = slot_mask.long().sum(dim=1)
+    if (valid_counts <= 0).any():
+        raise ValueError("each sample must contain at least one valid selected position")
+    canonical = torch.zeros_like(positions)
+    sanitized = torch.zeros_like(positions)
+    for batch_idx in range(positions.shape[0]):
+        count = int(valid_counts[batch_idx].item())
+        if not bool(slot_mask[batch_idx, :count].all()) or bool(slot_mask[batch_idx, count:].any()):
+            raise ValueError("selected_valid_mask must be a contiguous valid prefix")
+        valid_positions = positions[batch_idx, :count]
+        length = int(lengths[batch_idx].item())
+        if length <= 0 or count > length:
+            raise ValueError("valid selected count must be in [1, dense_valid_len]")
+        if count > 1 and bool((valid_positions[1:] <= valid_positions[:-1]).any()):
+            raise ValueError("valid selected positions must be strictly increasing")
+        if bool((valid_positions < 0).any()) or bool((valid_positions >= length).any()):
+            raise ValueError("valid selected positions out of dense window")
+        sanitized[batch_idx, :count] = valid_positions
+        canonical[batch_idx, :count] = exact_uniform_positions(length, count, device=positions.device)
     if int(k) % int(clip_len) != 0:
         raise ValueError("K must be divisible by clip_len")
     clips = int(k) // int(clip_len)
-    actual = positions.reshape(positions.shape[0], clips, int(clip_len))
+    actual = sanitized.reshape(positions.shape[0], clips, int(clip_len))
     canon = canonical.reshape(canonical.shape[0], clips, int(clip_len))
+    frame_valid = slot_mask.reshape(slot_mask.shape[0], clips, int(clip_len))
     if int(tubelet_size) > 1:
         if int(clip_len) % int(tubelet_size):
             raise ValueError("clip_len must be divisible by tubelet_size")
@@ -43,33 +69,90 @@ def global_rank_clip_coordinates(irregular_selected_positions, dense_valid_len, 
         # preserve the raw selected positions in the returned metadata.
         actual = actual.to(dtype=torch.float32).reshape(actual.shape[0], clips, -1, int(tubelet_size)).mean(-1)
         canon = canon.to(dtype=torch.float32).reshape(canon.shape[0], clips, -1, int(tubelet_size)).mean(-1)
-    return {"actual": actual, "canonical": canon, "irregular_selected_positions": positions, "irregular_dense_valid_len": lengths}
+        tubelet_valid = frame_valid.reshape(frame_valid.shape[0], clips, -1, int(tubelet_size)).all(-1)
+    else:
+        tubelet_valid = frame_valid
+    actual = actual * tubelet_valid.to(dtype=actual.dtype)
+    canon = canon * tubelet_valid.to(dtype=canon.dtype)
+    return {
+        "actual": actual,
+        "canonical": canon,
+        "tubelet_valid_mask": tubelet_valid,
+        "irregular_selected_positions": positions,
+        "irregular_dense_valid_len": lengths,
+        "selected_valid_mask": slot_mask,
+    }
 
 
-def relative_physical_time_residual(actual, canonical):
+def relative_physical_time_residual(actual, canonical, *, dense_valid_len=None, valid_mask=None):
     """Return shared pairwise residual, or None for exact-uniform identity path."""
     if actual.shape != canonical.shape:
         raise ValueError("actual and canonical coordinates must have identical shape")
-    delta = actual - canonical
+    delta = actual.to(dtype=torch.float32) - canonical.to(dtype=torch.float32)
+    if dense_valid_len is not None:
+        lengths = torch.as_tensor(dense_valid_len, device=delta.device, dtype=delta.dtype).flatten()
+        if lengths.numel() != delta.shape[0]:
+            raise ValueError("dense_valid_len must align with residual batch")
+        delta = delta / (lengths - 1.0).clamp_min(1.0)[:, None]
+    mask = None
+    if valid_mask is not None:
+        if not torch.is_tensor(valid_mask) or valid_mask.shape != actual.shape:
+            raise ValueError("valid_mask must match actual coordinates")
+        mask = valid_mask.to(device=delta.device, dtype=torch.bool)
+        delta = delta * mask.to(dtype=delta.dtype)
     if torch.equal(delta, torch.zeros_like(delta)):
         return None
     # caller may flatten clips; preserve batch and token axes
-    return delta.unsqueeze(-1) - delta.unsqueeze(-2)
+    pair = ((delta.unsqueeze(-1) - delta.unsqueeze(-2)) / 2.0).clamp(-1.0, 1.0)
+    if mask is not None:
+        pair = pair * (mask.unsqueeze(-1) & mask.unsqueeze(-2)).to(dtype=pair.dtype)
+    return pair
 
 
-def clip_relative_physical_time_mask(actual, canonical, *, spatial_tokens):
+def clip_relative_physical_time_mask(
+    actual,
+    canonical,
+    *,
+    dense_valid_len,
+    tubelet_valid_mask,
+    spatial_tokens,
+):
     """Expand 8 tubelet coordinates to the temporal-major ViT token layout."""
     if actual.shape != canonical.shape or actual.ndim != 2:
         raise ValueError("actual and canonical must both be [Bclips, tubelets]")
     if int(spatial_tokens) <= 0:
         raise ValueError("spatial_tokens must be positive")
-    delta = actual - canonical
-    if torch.equal(delta, torch.zeros_like(delta)):
+    pair = relative_physical_time_residual(
+        actual,
+        canonical,
+        dense_valid_len=dense_valid_len,
+        valid_mask=tubelet_valid_mask,
+    )
+    if pair is None:
         return None
-    pair = delta[:, :, None] - delta[:, None, :]
     # PatchEmbed/VideoMAE flatten order is [tubelet, spatial patch].
     expanded = pair.repeat_interleave(int(spatial_tokens), dim=1).repeat_interleave(int(spatial_tokens), dim=2)
     return expanded.unsqueeze(1)
+
+
+def single_clock_distortion_summary(actual, canonical, *, dense_valid_len, tubelet_valid_mask):
+    """Return detached diagnostics without changing the SingleClock computation."""
+    delta = actual.to(dtype=torch.float32) - canonical.to(dtype=torch.float32)
+    lengths = torch.as_tensor(dense_valid_len, device=delta.device, dtype=delta.dtype).flatten()
+    if lengths.numel() != delta.shape[0]:
+        raise ValueError("dense_valid_len must align with distortion batch")
+    mask = tubelet_valid_mask.to(device=delta.device, dtype=torch.bool)
+    normalized = delta / (lengths - 1.0).clamp_min(1.0)[:, None]
+    active = normalized[mask]
+    return {
+        "valid_tubelets": int(mask.long().sum().detach().cpu().item()),
+        "max_abs_normalized_displacement": (
+            float(active.abs().max().detach().cpu().item()) if active.numel() else 0.0
+        ),
+        "mean_abs_normalized_displacement": (
+            float(active.abs().mean().detach().cpu().item()) if active.numel() else 0.0
+        ),
+    }
 
 
 def _masked_mean(value, mask, dim=-1, keepdim=False, eps=1e-6):

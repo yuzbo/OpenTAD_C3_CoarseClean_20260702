@@ -666,6 +666,7 @@ class Block(BaseModule):
         packed_dense_mask: Optional[Tensor] = None,
         packed_stats: Optional[Dict[str, int]] = None,
         relative_physical_time: Optional[Tensor] = None,
+        relative_physical_time_gate_zero: bool = False,
     ) -> Tensor:
         """Defines the computation performed at every call.
 
@@ -680,7 +681,10 @@ class Block(BaseModule):
             if packed_dense_mask is None:
                 rel = None
                 if relative_physical_time is not None and self.relative_physical_time_scale is not None:
-                    rel = self.relative_physical_time_scale * relative_physical_time
+                    scale = torch.tanh(self.relative_physical_time_scale.float())
+                    if relative_physical_time_gate_zero:
+                        scale = scale * 0.0
+                    rel = scale * relative_physical_time
                 x = x + self.drop_path(self.attn(self.norm1(x), relative_physical_time=rel))
                 x = x + self.drop_path(self.mlp(self.norm2(x)))
             else:
@@ -769,6 +773,7 @@ class VisionTransformerAdapter(BaseModule):
         adapter_index: list = [3, 5, 7, 11],
         tubelet_token_redundancy_aux: Optional[Dict] = None,
         tubelet_packed_runtime_route: Optional[Dict] = None,
+        relative_physical_time_residual: bool = False,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -785,6 +790,8 @@ class VisionTransformerAdapter(BaseModule):
         self.patch_size = patch_size
         self.latest_tubelet_token_redundancy_summary = None
         self.latest_tubelet_packed_runtime_summary = None
+        self.relative_physical_time_residual = bool(relative_physical_time_residual)
+        self.latest_single_clock_summary = None
 
         self.patch_embed = PatchEmbed(
             in_channels=in_channels,
@@ -835,7 +842,7 @@ class VisionTransformerAdapter(BaseModule):
                     # adapters therefore see 8 tubelets per clip, not the
                     # 384-tubelet full window.
                     temporal_size=num_frames // tubelet_size,
-                    use_relative_physical_time=(i == 0),
+                    use_relative_physical_time=(self.relative_physical_time_residual and i == 0),
                 )
                 for i in range(depth)
             ]
@@ -856,9 +863,16 @@ class VisionTransformerAdapter(BaseModule):
         ratio = num_adapter_param / num_vit_param * 100
         print("ViT's param: {}, Adapter's params: {}, ratio: {:2.1f}%".format(num_vit_param, num_adapter_param, ratio))
 
-    def forward(self, x: Tensor, relative_physical_time: Optional[Tensor] = None,
-                actual_positions: Optional[Tensor] = None,
-                canonical_positions: Optional[Tensor] = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        relative_physical_time: Optional[Tensor] = None,
+        actual_positions: Optional[Tensor] = None,
+        canonical_positions: Optional[Tensor] = None,
+        dense_valid_len: Optional[Tensor] = None,
+        tubelet_valid_mask: Optional[Tensor] = None,
+        relative_physical_time_gate_zero: bool = False,
+    ) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -874,12 +888,50 @@ class VisionTransformerAdapter(BaseModule):
         w //= self.patch_size
         x = self.patch_embed(x)[0]
         if actual_positions is not None or canonical_positions is not None:
+            if not self.relative_physical_time_residual:
+                raise ValueError("physical coordinates require relative_physical_time_residual=True")
             if actual_positions is None or canonical_positions is None:
                 raise ValueError("actual_positions and canonical_positions must be provided together")
-            from opentad.models.utils.temporal_grid import clip_relative_physical_time_mask
-            relative_physical_time = clip_relative_physical_time_mask(
-                actual_positions, canonical_positions, spatial_tokens=h * w
+            if dense_valid_len is None or tubelet_valid_mask is None:
+                raise ValueError("SingleClock requires dense_valid_len and tubelet_valid_mask")
+            from opentad.models.utils.temporal_grid import (
+                clip_relative_physical_time_mask,
+                single_clock_distortion_summary,
             )
+            relative_physical_time = clip_relative_physical_time_mask(
+                actual_positions,
+                canonical_positions,
+                dense_valid_len=dense_valid_len,
+                tubelet_valid_mask=tubelet_valid_mask,
+                spatial_tokens=h * w,
+            )
+            self.latest_single_clock_summary = single_clock_distortion_summary(
+                actual_positions,
+                canonical_positions,
+                dense_valid_len=dense_valid_len,
+                tubelet_valid_mask=tubelet_valid_mask,
+            )
+            self.latest_single_clock_summary.update(
+                {
+                    "enabled": True,
+                    "gate_zero": bool(relative_physical_time_gate_zero),
+                    "exact_uniform_identity": relative_physical_time is None,
+                    "active_block": 0,
+                    "effective_scale": float(
+                        (
+                            torch.tanh(self.blocks[0].relative_physical_time_scale.detach().float())
+                            * (0.0 if relative_physical_time_gate_zero else 1.0)
+                        ).cpu().item()
+                    ),
+                }
+            )
+        else:
+            if any(value is not None for value in (dense_valid_len, tubelet_valid_mask)):
+                raise ValueError("SingleClock metadata cannot be supplied without physical coordinates")
+            self.latest_single_clock_summary = {
+                "enabled": bool(self.relative_physical_time_residual),
+                "admitted": False,
+            }
         if self.tubelet_token_redundancy_aux is not None:
             x = self.tubelet_token_redundancy_aux(x, h, w)
             self.latest_tubelet_token_redundancy_summary = self.tubelet_token_redundancy_aux.last_summary
@@ -905,7 +957,15 @@ class VisionTransformerAdapter(BaseModule):
             self.latest_tubelet_packed_runtime_summary = None
             for block_index, blk in enumerate(self.blocks):
                 rel = relative_physical_time if block_index == 0 else None
-                x = blk(x, h, w, relative_physical_time=rel)
+                x = blk(
+                    x,
+                    h,
+                    w,
+                    relative_physical_time=rel,
+                    relative_physical_time_gate_zero=(
+                        bool(relative_physical_time_gate_zero) and block_index == 0
+                    ),
+                )
 
         x = self.norm(x)
 

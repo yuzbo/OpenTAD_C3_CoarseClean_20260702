@@ -41,6 +41,8 @@ class ActionFormer(SingleStageDetector):
         pc_ot_mras_reader_eval_override=None,
         selector_train_only=False,
         selector_train_only_skip_detector=False,
+        single_clock_admission=False,
+        single_clock_gate_zero=False,
     ):
         super().__init__(
             backbone=backbone,
@@ -75,6 +77,10 @@ class ActionFormer(SingleStageDetector):
         self.selector_train_only_skip_detector = bool(
             selector_train_only_skip_detector
         )
+        self.single_clock_admission = bool(single_clock_admission)
+        self.single_clock_gate_zero = bool(single_clock_gate_zero)
+        if self.single_clock_admission and backbone is None:
+            raise ValueError("single_clock_admission=True requires the VideoMAE backbone")
         if self.selector_train_only_skip_detector and not self.selector_train_only:
             raise ValueError(
                 "selector_train_only_skip_detector=True requires selector_train_only=True"
@@ -109,6 +115,68 @@ class ActionFormer(SingleStageDetector):
             if max_div_factor < stride:
                 max_div_factor = stride
         self.max_div_factor = max_div_factor
+
+    @staticmethod
+    def _selected_temporal_length(inputs):
+        if inputs.ndim == 6:
+            return int(inputs.shape[3])
+        if inputs.ndim in (3, 5):
+            return int(inputs.shape[2])
+        raise ValueError("SingleClock requires selected inputs shaped [B,1,3,K,H,W], [B,3,K,H,W], or [B,C,K]")
+
+    def _single_clock_metadata(self, inputs, masks, metas):
+        if inputs.ndim != 6 or int(inputs.shape[1]) != 1 or int(inputs.shape[2]) != 3:
+            raise ValueError("H65 First-Mixing SingleClock requires X_sel [B,1,3,K,H,W]")
+        batch = int(inputs.shape[0])
+        slots = self._selected_temporal_length(inputs)
+        if slots != 384:
+            raise ValueError(f"H65 First-Mixing SingleClock freezes K=384, got {slots}")
+        if not torch.is_tensor(masks) or masks.shape != (batch, slots):
+            raise ValueError("SingleClock selected mask must be [B,384]")
+        selected_mask = masks.to(device=inputs.device, dtype=torch.bool)
+        if metas is None or len(metas) != batch:
+            raise ValueError("SingleClock requires one selector metadata mapping per sample")
+
+        positions = torch.full((batch, slots), -1, device=inputs.device, dtype=torch.long)
+        dense_lengths = torch.empty((batch,), device=inputs.device, dtype=torch.long)
+        for batch_idx, meta in enumerate(metas):
+            if not isinstance(meta, Mapping):
+                raise ValueError(f"SingleClock metas[{batch_idx}] must be a mapping")
+            count = int(selected_mask[batch_idx].long().sum().item())
+            if count <= 0:
+                raise ValueError("SingleClock requires at least one valid selected frame")
+            if not bool(selected_mask[batch_idx, :count].all()) or bool(selected_mask[batch_idx, count:].any()):
+                raise ValueError("SingleClock selected mask must be a contiguous valid prefix")
+            row = meta.get("irregular_selected_positions")
+            if row is None:
+                row = meta.get("duca_acquisition_positions")
+            if row is None:
+                raise ValueError("SingleClock metadata is missing original selected positions")
+            row = torch.as_tensor(row, device=inputs.device, dtype=torch.long).flatten()
+            if row.numel() != count:
+                raise ValueError(
+                    f"SingleClock positions/mask mismatch for sample {batch_idx}: {row.numel()} != {count}"
+                )
+            meta_count = int(meta.get("irregular_selected_valid_len", count))
+            if meta_count != count:
+                raise ValueError("SingleClock metadata selected_valid_len does not match detector mask")
+            dense_len = int(meta.get("irregular_dense_valid_len", meta.get("truetime_dense_valid_len", 0)))
+            if dense_len <= 0:
+                raise ValueError("SingleClock requires a positive dense valid length")
+            positions[batch_idx, :count] = row
+            dense_lengths[batch_idx] = dense_len
+        return {
+            "irregular_selected_positions": positions.detach(),
+            "irregular_dense_valid_len": dense_lengths,
+            "irregular_selected_mask": selected_mask,
+            "single_clock_gate_zero": self.single_clock_gate_zero,
+        }
+
+    def _forward_backbone_with_single_clock(self, inputs, masks, metas, *, force_off=False):
+        if not self.single_clock_admission or force_off:
+            return self.backbone(inputs)
+        clock_kwargs = self._single_clock_metadata(inputs, masks, metas)
+        return self.backbone(inputs, **clock_kwargs)
 
     def pad_data(self, inputs, masks):
         feat_len = inputs.shape[-1]
@@ -145,6 +213,7 @@ class ActionFormer(SingleStageDetector):
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         skip_frame_selector = bool(kwargs.pop("_duca_skip_frame_selector", False))
         counterfactual_eval = bool(kwargs.pop("_duca_counterfactual_eval", False))
+        force_single_clock_off = bool(kwargs.pop("_duca_single_clock_force_off", False))
         gt_boundary_validity = kwargs.pop("gt_boundary_validity", None)
         losses = dict()
         selector_loss_keys = set()
@@ -219,7 +288,12 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self._forward_backbone_with_single_clock(
+                inputs,
+                masks,
+                metas,
+                force_off=force_single_clock_off,
+            )
         else:
             x = inputs
 
@@ -420,7 +494,10 @@ class ActionFormer(SingleStageDetector):
             )
             candidate_losses = self.forward_train(
                 selected_inputs, selected_masks, remapped_metas, remapped_segments, remapped_labels,
-                _duca_skip_frame_selector=True, _duca_counterfactual_eval=True, **kwargs
+                _duca_skip_frame_selector=True,
+                _duca_counterfactual_eval=True,
+                _duca_single_clock_force_off=True,
+                **kwargs,
             )
             return self._duca_detector_objective(candidate_losses)
 
@@ -488,6 +565,7 @@ class ActionFormer(SingleStageDetector):
         )
 
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
+        force_single_clock_off = bool(kwargs.pop("_duca_single_clock_force_off", False))
         self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
         detector_rng_state = self._capture_protected_detector_rng(inputs)
         if self.frame_selector is not None:
@@ -509,7 +587,12 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self._forward_backbone_with_single_clock(
+                inputs,
+                masks,
+                metas,
+                force_off=force_single_clock_off,
+            )
         else:
             x = inputs
 

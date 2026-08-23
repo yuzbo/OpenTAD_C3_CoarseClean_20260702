@@ -3,17 +3,28 @@ _base_ = ["./duca_sampling_rate_curriculum_stage2_joint384.py"]
 single_clock_unit1 = dict(
     k=384, clip_len=16, tubelet_size=2, global_rank_selection=True,
     relative_physical_time_residual=True, relative_residual_init=0.0,
-    relative_residual_h=lambda r: r,
+    relative_residual_formula="clip(((a-u)_i-(a-u)_j)/(2*(L-1)), -1, 1)",
+    relative_residual_scale="tanh(theta_block0_shared_all_heads)",
     canonical_selection="exact_uniform_positions_once_over_dense_window",
 )
 model = dict(
     single_clock_admission=True,
+    single_clock_gate_zero=False,
     backbone=dict(
         backbone=dict(total_frames=768, num_frames=16, tubelet_size=2,
                       relative_physical_time_residual=True,
                       tubelet_packed_runtime_route=dict(enabled=False)),
         custom=dict(global_rank_selection=True,
                     canonical_selection="exact_uniform_positions_once_over_dense_window"),
+    ),
+)
+optimizer = dict(
+    backbone=dict(
+        custom=[
+            dict(name="adapter", lr=2e-4, weight_decay=0.05),
+            dict(name="relative_physical_time_scale", lr=2e-4, weight_decay=0.0),
+        ],
+        exclude=["backbone"],
     ),
 )
 packed_route_policy = dict(enabled=False, fail_closed=True)

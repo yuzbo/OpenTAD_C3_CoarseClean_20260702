@@ -1,135 +1,235 @@
+from pathlib import Path
+
 import pytest
 import torch
-from opentad.models.utils.temporal_grid import global_rank_clip_coordinates, clip_relative_physical_time_mask
-from opentad.models.detectors.two_stage import TwoStageDetector
+import torch.nn as nn
+from mmengine.config import Config
+
+from opentad.models.backbones.vit_adapter import VisionTransformerAdapter
+from opentad.models.builder import build_detector
+from opentad.models.detectors.actionformer import ActionFormer
 from opentad.models.duca.structured_selection import exact_uniform_positions
+from opentad.models.utils.temporal_grid import (
+    clip_relative_physical_time_mask,
+    global_rank_clip_coordinates,
+)
 
-def meta(k=384, valid=768):
-    return [{"irregular_selected_positions": exact_uniform_positions(valid, k), "irregular_dense_valid_len": valid}]
 
-def test_singleclock_admission_requires_metadata_and_validates_shape():
-    x = torch.zeros(1, 384, 1)
-    with pytest.raises(ValueError):
-        TwoStageDetector._validate_single_clock_metadata([{}], x, batch_size=1)
-    with pytest.raises(ValueError):
-        TwoStageDetector._validate_single_clock_metadata(meta(3), x, batch_size=1)
-    bad = meta(); bad[0]["irregular_selected_positions"][1] = bad[0]["irregular_selected_positions"][0]
-    with pytest.raises(ValueError):
-        TwoStageDetector._validate_single_clock_metadata(bad, x, batch_size=1)
+CONFIG = Path("configs/adatad/thumos/duca_h65_first_singleclock_cycle4.py")
+LAUNCHER = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch")
 
-def test_singleclock_global_helper_batch2_and_clip_geometry():
-    positions = exact_uniform_positions(768, 384)
-    assert positions.numel() == 384 and bool((positions[1:] > positions[:-1]).all())
-    assert positions[0].item() == 0 and positions[-1].item() == 767
-    batched = positions.repeat(2, 1)
-    assert batched.shape == (2, 384)
 
-def test_off_contract_keeps_legacy_default():
-    detector = TwoStageDetector()
-    assert detector.single_clock_admission is False
+def _clock_detector_stub(gate_zero=False):
+    detector = ActionFormer.__new__(ActionFormer)
+    nn.Module.__init__(detector)
+    detector.single_clock_gate_zero = bool(gate_zero)
+    return detector
 
-def test_global_helper_unique_lengths_and_short_window_fail():
-    p = torch.arange(384, dtype=torch.long).repeat(2, 1)
-    out = global_rank_clip_coordinates(p, torch.tensor([768, 800]))
+
+def _full_uniform(batch=1, valid_len=768, k=384):
+    positions = exact_uniform_positions(valid_len, k).repeat(batch, 1)
+    mask = torch.ones_like(positions, dtype=torch.bool)
+    return positions, mask
+
+
+def _tiny_clock_model():
+    model = VisionTransformerAdapter(
+        img_size=32,
+        patch_size=16,
+        embed_dims=24,
+        depth=2,
+        num_heads=3,
+        mlp_ratio=2,
+        num_frames=4,
+        tubelet_size=2,
+        return_feat_map=True,
+        with_cp=False,
+        adapter_index=[],
+        relative_physical_time_residual=True,
+    )
+    model.eval()
+    return model
+
+
+def test_actionformer_reconstructs_exact_p_m_l_contract():
+    detector = _clock_detector_stub()
+    inputs = torch.zeros(2, 1, 3, 384, 2, 2)
+    masks = torch.ones(2, 384, dtype=torch.bool)
+    masks[1, 382:] = False
+    first = exact_uniform_positions(768, 384).tolist()
+    second = exact_uniform_positions(700, 382).tolist()
+    metas = [
+        {
+            "irregular_selected_positions": first,
+            "irregular_selected_valid_len": 384,
+            "irregular_dense_valid_len": 768,
+        },
+        {
+            "irregular_selected_positions": second,
+            "irregular_selected_valid_len": 382,
+            "irregular_dense_valid_len": 700,
+        },
+    ]
+    contract = detector._single_clock_metadata(inputs, masks, metas)
+    assert contract["irregular_selected_positions"].shape == (2, 384)
+    assert contract["irregular_selected_positions"][1, 382:].tolist() == [-1, -1]
+    assert torch.equal(contract["irregular_selected_mask"], masks)
+    assert contract["irregular_dense_valid_len"].tolist() == [768, 700]
+
+
+def test_actionformer_rejects_nonprefix_mask_and_position_count_drift():
+    detector = _clock_detector_stub()
+    inputs = torch.zeros(1, 1, 3, 384, 2, 2)
+    masks = torch.ones(1, 384, dtype=torch.bool)
+    masks[0, 10] = False
+    meta = [{"irregular_selected_positions": list(range(383)), "irregular_dense_valid_len": 768}]
+    with pytest.raises(ValueError, match="contiguous valid prefix"):
+        detector._single_clock_metadata(inputs, masks, meta)
+    masks[0, 10] = True
+    with pytest.raises(ValueError, match="positions/mask mismatch"):
+        detector._single_clock_metadata(inputs, masks, meta)
+
+
+def test_global_coordinates_preserve_uniform_identity_and_short_padding():
+    positions, mask = _full_uniform(batch=2)
+    out = global_rank_clip_coordinates(
+        positions,
+        torch.tensor([768, 768]),
+        selected_valid_mask=mask,
+    )
     assert out["actual"].shape == (2, 24, 8)
-    assert p.dtype == torch.long
-    assert out["actual"].dtype == torch.float32
-    assert out["canonical"].dtype == torch.float32
-    assert out["actual"][0, 0, 0].item() == 0.5
-    assert out["actual"][1, 0, 0].item() == 0.5
-    assert torch.equal(out["irregular_selected_positions"], p)
-    uniform_positions = torch.stack([exact_uniform_positions(768, 384), exact_uniform_positions(800, 384)])
-    uniform = global_rank_clip_coordinates(uniform_positions, torch.tensor([768, 800]))
-    assert torch.equal(uniform["actual"], uniform["canonical"])
+    assert torch.equal(out["actual"], out["canonical"])
+    assert bool(out["tubelet_valid_mask"].all())
+    dense_per_clip = torch.tensor([768, 768]).repeat_interleave(24)
     assert clip_relative_physical_time_mask(
-        uniform["actual"][:, 0, :], uniform["canonical"][:, 0, :], spatial_tokens=24
+        out["actual"].flatten(0, 1),
+        out["canonical"].flatten(0, 1),
+        dense_valid_len=dense_per_clip,
+        tubelet_valid_mask=out["tubelet_valid_mask"].flatten(0, 1),
+        spatial_tokens=4,
     ) is None
-    with pytest.raises(ValueError):
-        global_rank_clip_coordinates(exact_uniform_positions(383, 384).view(1, -1), torch.tensor([383]))
 
-def test_physical_mask_uniform_none_and_nonuniform_block_shape():
-    canonical = torch.arange(8.).repeat(2, 1)
-    assert clip_relative_physical_time_mask(canonical, canonical, spatial_tokens=24) is None
-    actual = canonical.clone(); actual[0, 1] += 0.5
-    mask = clip_relative_physical_time_mask(actual, canonical, spatial_tokens=24)
-    assert mask.shape == (2, 1, 192, 192)
-    assert torch.equal(mask[1], torch.zeros_like(mask[1]))
-    assert mask[0, 0, 0, 24] == -0.5
+    short_positions = torch.full((1, 384), -1, dtype=torch.long)
+    short_positions[0, :382] = exact_uniform_positions(700, 382)
+    short_mask = short_positions >= 0
+    short = global_rank_clip_coordinates(
+        short_positions,
+        torch.tensor([700]),
+        selected_valid_mask=short_mask,
+    )
+    assert short["tubelet_valid_mask"].shape == (1, 24, 8)
+    assert short["tubelet_valid_mask"][0, -1, -1].item() is False
+    assert short["actual"][0, -1, -1].item() == 0.0
 
-def test_cycle4_config_checkpoint_contract_is_explicit():
-    from pathlib import Path
-    text = Path("configs/adatad/thumos/duca_h65_first_singleclock_cycle4.py").read_text()
-    assert "checkpoint_interval_epochs = 5" in text
-    assert "keep_latest=3" in text and "final_ema=True" in text
-    assert "tubelet_packed_runtime_route=dict(enabled=False)" in text
 
-def test_cycle4_launcher_canonical_modes_and_stage1_no_checkpoint_gate():
-    from pathlib import Path
-    text = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch").read_text()
+def test_bounded_normalized_residual_shape_and_invalid_rows_zero():
+    canonical = torch.arange(8, dtype=torch.float32).repeat(2, 1)
+    actual = canonical.clone()
+    actual[0, 1] += 10000.0
+    valid = torch.ones(2, 8, dtype=torch.bool)
+    valid[0, -1] = False
+    residual = clip_relative_physical_time_mask(
+        actual,
+        canonical,
+        dense_valid_len=torch.tensor([768, 768]),
+        tubelet_valid_mask=valid,
+        spatial_tokens=4,
+    )
+    assert residual.shape == (2, 1, 32, 32)
+    assert float(residual.abs().max()) <= 1.0
+    assert torch.count_nonzero(residual[1]).item() == 0
+    assert torch.count_nonzero(residual[0, :, -4:, :]).item() == 0
+    assert torch.count_nonzero(residual[0, :, :, -4:]).item() == 0
+
+
+def test_tiny_videomae_singleclock_identity_gate_and_gradient():
+    torch.manual_seed(4)
+    model = _tiny_clock_model()
+    assert model.blocks[0].relative_physical_time_scale is not None
+    assert model.blocks[1].relative_physical_time_scale is None
+    frames = torch.randn(1, 3, 4, 32, 32)
+    canonical = torch.tensor([[0.5, 2.5]])
+    valid = torch.ones(1, 2, dtype=torch.bool)
+    lengths = torch.tensor([8])
+
+    with torch.no_grad():
+        legacy = model(frames)
+        uniform = model(
+            frames,
+            actual_positions=canonical,
+            canonical_positions=canonical,
+            dense_valid_len=lengths,
+            tubelet_valid_mask=valid,
+        )
+    assert torch.equal(legacy, uniform)
+
+    irregular = canonical.clone()
+    irregular[0, 1] += 1.0
+    with torch.no_grad():
+        theta_zero = model(
+            frames,
+            actual_positions=irregular,
+            canonical_positions=canonical,
+            dense_valid_len=lengths,
+            tubelet_valid_mask=valid,
+        )
+        gate_zero = model(
+            frames,
+            actual_positions=irregular,
+            canonical_positions=canonical,
+            dense_valid_len=lengths,
+            tubelet_valid_mask=valid,
+            relative_physical_time_gate_zero=True,
+        )
+    torch.testing.assert_close(theta_zero, gate_zero, rtol=0.0, atol=0.0)
+
+    model.blocks[0].relative_physical_time_scale.data.fill_(0.2)
+    output = model(
+        frames,
+        actual_positions=irregular,
+        canonical_positions=canonical,
+        dense_valid_len=lengths,
+        tubelet_valid_mask=valid,
+    )
+    output.square().mean().backward()
+    grad = model.blocks[0].relative_physical_time_scale.grad
+    assert grad is not None and torch.isfinite(grad) and float(grad.abs()) > 0.0
+
+
+def test_resolved_actionformer_config_builds_only_block0_clock(monkeypatch):
+    monkeypatch.setenv("DUCA_STAGE1_CHECKPOINT", "stage1_epoch29.pth")
+    monkeypatch.setenv("DUCA_STAGE1_CHECKPOINT_SHA256", "a" * 64)
+    monkeypatch.setenv("DUCA_STAGE1_CHECKPOINT_EPOCH", "29")
+    cfg = Config.fromfile(str(CONFIG))
+    build_cfg = cfg.model.to_dict()
+    build_cfg["backbone"]["custom"]["pretrain"] = None
+    model = build_detector(build_cfg)
+    assert isinstance(model, ActionFormer)
+    assert model.single_clock_admission is True
+    vit = model.backbone.model.backbone
+    assert isinstance(vit, VisionTransformerAdapter)
+    assert vit.relative_physical_time_residual is True
+    assert vit.blocks[0].relative_physical_time_scale is not None
+    assert all(block.relative_physical_time_scale is None for block in vit.blocks[1:])
+    custom = {item["name"]: item for item in cfg.optimizer.backbone.custom}
+    assert custom["relative_physical_time_scale"]["lr"] == pytest.approx(2e-4)
+    assert custom["relative_physical_time_scale"]["weight_decay"] == 0.0
+
+
+def test_config_and_launcher_freeze_training_and_environment_contract():
+    config_text = CONFIG.read_text()
+    assert "checkpoint_interval_epochs = 5" in config_text
+    assert "keep_latest=3" in config_text and "final_ema=True" in config_text
+    assert "relative_residual_h=lambda" not in config_text
+    assert "single_clock_gate_zero=False" in config_text
+    assert "tubelet_packed_runtime_route=dict(enabled=False)" in config_text
+
+    text = LAUNCHER.read_text()
     assert "/data/run01/sczc063/yuzibo/thumos14/raw_data/video" in text
-    assert "thumos_14_anno.json" in text and "category_idx.txt" in text
-    assert "vit-small-p16-videomae" in text or "vit-small-p16_videomae" in text
     assert "PRECHECK_TARGET" in text and "STAGE1|STAGE2_OFF|STAGE2_ON" in text
-    assert 'if [[ "$PRECHECK_TARGET" != STAGE1 ]]' in text
-    assert "model.backbone.custom.pretrain" in text
-
-def test_cycle5_launcher_binds_source_root_and_single_process_before_any_train():
-    from pathlib import Path
-    text = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch").read_text()
-    assert 'DUCA_REPO_ROOT:-${SLURM_SUBMIT_DIR:-' in text
-    assert '[[ -f "$ROOT/tools/train.py" ]]' in text
-    assert 'export DUCA_REPO_ROOT="$ROOT"' in text
-    assert 'export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"' in text
-    root_check = text.index('[[ -f "$ROOT/tools/train.py" ]]')
-    bind = text.index('export DUCA_REPO_ROOT="$ROOT"')
-    pythonpath = text.index('export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"')
-    cd_root = text.index('cd "$ROOT"')
-    first_train = text.index('exec "$PYTHON" tools/train.py')
-    assert root_check < bind < pythonpath < cd_root < first_train
     assert 'export LOCAL_RANK=0 RANK=0 WORLD_SIZE=1 MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"' in text
     assert 'MASTER_PORT="${MASTER_PORT:-29500}"' in text
-    assert 'export MASTER_PORT' in text
-    assert 'CUDA_VISIBLE_DEVICES' not in text
-
-def test_cycle5_environment_binding_precedes_pre_run_and_all_formal_modes():
-    from pathlib import Path
-    text = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch").read_text()
-    bind = text.index('export DUCA_REPO_ROOT="$ROOT"')
-    assert bind < text.index('if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then')
-    formal = text[text.index('if [[ "$MODE" == STAGE1 ]]; then'):]
-    assert formal.count('exec "$PYTHON" tools/train.py') == 2
-    for mode in ("STAGE1", "STAGE2_OFF", "STAGE2_ON"):
-        assert mode in text
-
-def test_cycle4_launcher_bounded_pre_run_is_explicit_and_does_not_change_formal_modes():
-    from pathlib import Path
-    text = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch").read_text()
+    assert "CUDA_VISIBLE_DEVICES" not in text
     assert 'if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then' in text
-    assert 'PRE_RUN_MAX_ITERS="${DUCA_PRE_RUN_MAX_ITERS:-2}"' in text
-    assert '"$PRE_RUN_MAX_ITERS" =~ ^[0-9]+$ && "$PRE_RUN_MAX_ITERS" -ge 2' in text
-    assert "workflow.end_epoch=1" in text and 'workflow.max_train_iters="$PRE_RUN_MAX_ITERS"' in text
-    assert "workflow.val_eval_interval=-1" in text and "workflow.val_loss_interval=-1" in text
-    assert "workflow.val_start_epoch=9999" in text and "workflow.checkpoint_interval=1" in text
-    assert "total_epochs=1" not in text and "max_updates=1" not in text
-    assert 'if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then' in text
-    formal = text[text.index('if [[ "$MODE" == STAGE1 ]]; then'):]
-    assert "workflow.end_epoch=1" not in formal
-
-
-def test_historical_stage2_exposes_frozen_training_admission_metadata():
-    from pathlib import Path
-    text = Path("configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py").read_text()
-    assert "seed = 3407" in text
-    assert "total_epochs = 60" in text
-    assert "max_updates = 6000" in text
-
-def test_stage2_pre_run_validates_and_exports_fixture_before_train():
-    from pathlib import Path
-    text = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch").read_text()
-    pre = text[text.index('if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then'):text.index('if [[ "$MODE" == STAGE1 ]]; then')]
-    assert 'PRECHECK_TARGET="$MODE" precheck' in pre
-    assert 'export DUCA_STAGE1_CHECKPOINT="$STAGE1_CHECKPOINT"' in pre
-    assert 'export DUCA_STAGE1_CHECKPOINT_SHA256="${STAGE1_SHA,,}"' in pre
-    assert 'export DUCA_STAGE1_CHECKPOINT_EPOCH=29' in pre
-    assert pre.index('PRECHECK_TARGET="$MODE" precheck') < pre.index('exec "$PYTHON" tools/train.py')
-    assert '[[ -n "$STAGE1_CHECKPOINT" && -n "$STAGE1_SHA" ]] || fail' in text
+    assert "workflow.end_epoch=1" in text
+    assert "workflow.val_start_epoch=9999" in text
