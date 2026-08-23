@@ -324,6 +324,7 @@ set -u
 if ( : "${ZOOMTOKEN_NOUNSET_PROBE}" ) 2>/dev/null; then
   exit 91
 fi
+exit 0
 """,
         ],
         check=False,
