@@ -16,6 +16,7 @@ from opentad.models.utils.temporal_grid import (
 )
 from tools.train import (
     _capture_epoch_boundary_data_loader_state,
+    _restore_resumable_optimizer_update_count,
     _validate_epoch_boundary_data_loader_state,
 )
 
@@ -268,3 +269,15 @@ def test_epoch_boundary_data_loader_state_round_trip():
     snapshot["sampler_seed"] = 1
     with pytest.raises(RuntimeError, match="DataLoader contract"):
         _validate_epoch_boundary_data_loader_state(snapshot, loader, 4)
+
+
+def test_resume_restores_cumulative_successful_optimizer_updates():
+    audit = {"successful_optimizer_updates": 0}
+    _restore_resumable_optimizer_update_count(
+        {"successful_optimizer_updates": 2}, audit
+    )
+    assert audit["successful_optimizer_updates"] == 2
+    with pytest.raises(RuntimeError, match="optimizer update count"):
+        _restore_resumable_optimizer_update_count(
+            {"successful_optimizer_updates": True}, audit
+        )

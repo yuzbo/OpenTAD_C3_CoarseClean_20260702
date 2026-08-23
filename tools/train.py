@@ -128,6 +128,17 @@ def _validate_epoch_boundary_data_loader_state(snapshot, train_loader, resume_ep
         )
 
 
+def _restore_resumable_optimizer_update_count(checkpoint, update_audit):
+    value = checkpoint.get("successful_optimizer_updates")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise RuntimeError(
+            "resume checkpoint lacks a valid successful optimizer update count"
+        )
+    if update_audit is None:
+        raise RuntimeError("resumable training requires the optimizer update audit")
+    update_audit["successful_optimizer_updates"] = int(value)
+
+
 def _write_intermediate_evaluation(work_dir, epoch, evaluation, *, select_best=False):
     """Seal one official validation result without changing optimization."""
 
@@ -629,6 +640,8 @@ def main():
             _validate_epoch_boundary_data_loader_state(
                 checkpoint.get("data_loader_state"), train_loader, resume_epoch
             )
+            if duca_formal_contract is None:
+                _restore_resumable_optimizer_update_count(checkpoint, update_audit)
 
         del checkpoint  #  save memory if the model is very large such as ViT-g
         torch.cuda.empty_cache()
