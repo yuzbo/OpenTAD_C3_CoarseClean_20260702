@@ -14,6 +14,10 @@ from opentad.models.utils.temporal_grid import (
     clip_relative_physical_time_mask,
     global_rank_clip_coordinates,
 )
+from tools.train import (
+    _capture_epoch_boundary_data_loader_state,
+    _validate_epoch_boundary_data_loader_state,
+)
 
 
 CONFIG = Path("configs/adatad/thumos/duca_h65_first_singleclock_cycle4.py")
@@ -224,6 +228,7 @@ def test_config_and_launcher_freeze_training_and_environment_contract():
     assert "relative_residual_h=lambda" not in config_text
     assert "single_clock_gate_zero=False" in config_text
     assert "tubelet_packed_runtime_route=dict(enabled=False)" in config_text
+    assert "require_resumable_training_state=True" in config_text
 
     text = LAUNCHER.read_text()
     assert "/data/run01/sczc063/yuzibo/thumos14/raw_data/video" in text
@@ -232,5 +237,34 @@ def test_config_and_launcher_freeze_training_and_environment_contract():
     assert 'MASTER_PORT="${MASTER_PORT:-29500}"' in text
     assert "CUDA_VISIBLE_DEVICES" not in text
     assert 'if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then' in text
-    assert "workflow.end_epoch=1" in text
+    assert 'PRE_RUN_END_EPOCH="${DUCA_PRE_RUN_END_EPOCH:-1}"' in text
+    assert 'PRE_RUN_RESUME="${DUCA_PRE_RUN_RESUME:-}"' in text
+    assert 'workflow.end_epoch="$PRE_RUN_END_EPOCH"' in text
     assert "workflow.val_start_epoch=9999" in text
+
+
+def test_epoch_boundary_data_loader_state_round_trip():
+    class Dataset:
+        def __len__(self):
+            return 200
+
+    class Sampler:
+        num_replicas = 1
+        rank = 0
+        seed = 3407
+        drop_last = True
+        epoch = 4
+
+    class Loader:
+        dataset = Dataset()
+        sampler = Sampler()
+        batch_size = 2
+
+    loader = Loader()
+    snapshot = _capture_epoch_boundary_data_loader_state(loader, 4)
+    assert snapshot["next_epoch"] == 5
+    assert snapshot["resume_semantics"] == "derive_sampler_from_seed_and_next_epoch"
+    _validate_epoch_boundary_data_loader_state(snapshot, loader, 4)
+    snapshot["sampler_seed"] = 1
+    with pytest.raises(RuntimeError, match="DataLoader contract"):
+        _validate_epoch_boundary_data_loader_state(snapshot, loader, 4)

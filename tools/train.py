@@ -68,6 +68,66 @@ def _canonical_sha256(value):
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _capture_epoch_boundary_data_loader_state(train_loader, completed_epoch):
+    """Seal the stateless DistributedSampler inputs at an epoch boundary."""
+
+    sampler = train_loader.sampler
+    required = ("num_replicas", "rank", "seed", "drop_last", "epoch")
+    missing = [name for name in required if not hasattr(sampler, name)]
+    if missing:
+        raise RuntimeError(
+            f"resumable training sampler lacks deterministic fields: {missing}"
+        )
+    if int(sampler.epoch) != int(completed_epoch):
+        raise RuntimeError("sampler epoch drifted before checkpoint capture")
+    return {
+        "schema_version": "opentad_epoch_boundary_loader_v1",
+        "completed_epoch": int(completed_epoch),
+        "next_epoch": int(completed_epoch) + 1,
+        "sampler_type": type(sampler).__name__,
+        "sampler_seed": int(sampler.seed),
+        "sampler_epoch": int(sampler.epoch),
+        "num_replicas": int(sampler.num_replicas),
+        "rank": int(sampler.rank),
+        "drop_last": bool(sampler.drop_last),
+        "dataset_size": int(len(train_loader.dataset)),
+        "batch_size": int(train_loader.batch_size),
+        "resume_semantics": "derive_sampler_from_seed_and_next_epoch",
+    }
+
+
+def _validate_epoch_boundary_data_loader_state(snapshot, train_loader, resume_epoch):
+    if not isinstance(snapshot, dict):
+        raise RuntimeError("resume checkpoint lacks epoch-boundary DataLoader state")
+    expected_keys = {
+        "schema_version": "opentad_epoch_boundary_loader_v1",
+        "completed_epoch": int(resume_epoch),
+        "next_epoch": int(resume_epoch) + 1,
+        "sampler_type": type(train_loader.sampler).__name__,
+        "sampler_seed": int(train_loader.sampler.seed),
+        "num_replicas": int(train_loader.sampler.num_replicas),
+        "rank": int(train_loader.sampler.rank),
+        "drop_last": bool(train_loader.sampler.drop_last),
+        "dataset_size": int(len(train_loader.dataset)),
+        "batch_size": int(train_loader.batch_size),
+        "resume_semantics": "derive_sampler_from_seed_and_next_epoch",
+    }
+    mismatches = {
+        key: (snapshot.get(key), expected)
+        for key, expected in expected_keys.items()
+        if snapshot.get(key) != expected
+    }
+    if int(snapshot.get("sampler_epoch", -1)) != int(resume_epoch):
+        mismatches["sampler_epoch"] = (
+            snapshot.get("sampler_epoch"),
+            int(resume_epoch),
+        )
+    if mismatches:
+        raise RuntimeError(
+            f"resume DataLoader contract does not match current run: {mismatches}"
+        )
+
+
 def _write_intermediate_evaluation(work_dir, epoch, evaluation, *, select_best=False):
     """Seal one official validation result without changing optimization."""
 
@@ -515,6 +575,10 @@ def main():
     )
     update_audit = duca_training.new_update_audit() if collect_update_audit else None
     epoch_records = []
+    require_resumable_training_state = bool(
+        duca_formal_contract is not None
+        or cfg.workflow.get("require_resumable_training_state", False)
+    )
 
     # resume: reset epoch, optimizer, scheduler, EMA, scaler, and formal audit
     if args.resume != None:
@@ -556,6 +620,15 @@ def main():
             if not isinstance(rng_state, dict):
                 raise RuntimeError("formal DUCA resume checkpoint lacks global RNG state")
             duca_training.restore_global_rng_state(rng_state)
+        elif require_resumable_training_state:
+            rng_state = checkpoint.get("rng_state")
+            if not isinstance(rng_state, dict):
+                raise RuntimeError("resume checkpoint lacks global RNG state")
+            duca_training.restore_global_rng_state(rng_state)
+        if require_resumable_training_state:
+            _validate_epoch_boundary_data_loader_state(
+                checkpoint.get("data_loader_state"), train_loader, resume_epoch
+            )
 
         del checkpoint  #  save memory if the model is very large such as ViT-g
         torch.cuda.empty_cache()
@@ -715,8 +788,13 @@ def main():
                     scaler=scaler,
                     rng_state=(
                         None
-                        if duca_formal_contract is None
+                        if not require_resumable_training_state
                         else duca_training.capture_global_rng_state()
+                    ),
+                    data_loader_state=(
+                        None
+                        if not require_resumable_training_state
+                        else _capture_epoch_boundary_data_loader_state(train_loader, epoch)
                     ),
                     successful_optimizer_updates=(
                         None

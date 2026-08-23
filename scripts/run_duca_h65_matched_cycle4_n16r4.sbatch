@@ -63,6 +63,14 @@ if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then
   [[ "$MODE" == STAGE1 || "$MODE" == STAGE2_OFF || "$MODE" == STAGE2_ON ]] || fail "PRE_RUN_ONLY requires a formal stage MODE"
   PRE_RUN_MAX_ITERS="${DUCA_PRE_RUN_MAX_ITERS:-2}"
   [[ "$PRE_RUN_MAX_ITERS" =~ ^[0-9]+$ && "$PRE_RUN_MAX_ITERS" -ge 2 ]] || fail "DUCA_PRE_RUN_MAX_ITERS must be at least 2"
+  PRE_RUN_END_EPOCH="${DUCA_PRE_RUN_END_EPOCH:-1}"
+  [[ "$PRE_RUN_END_EPOCH" =~ ^[0-9]+$ && "$PRE_RUN_END_EPOCH" -ge 1 ]] || fail "DUCA_PRE_RUN_END_EPOCH must be at least 1"
+  PRE_RUN_RESUME="${DUCA_PRE_RUN_RESUME:-}"
+  resume_args=()
+  if [[ -n "$PRE_RUN_RESUME" ]]; then
+    [[ -r "$PRE_RUN_RESUME" ]] || fail "DUCA_PRE_RUN_RESUME is not readable: $PRE_RUN_RESUME"
+    resume_args=(--resume "$(realpath "$PRE_RUN_RESUME")")
+  fi
   if [[ "$MODE" == "STAGE1" ]]; then
     CFG="$STAGE1_CONFIG"
     PRE_RUN_WORK_DIR="${DUCA_PRE_RUN_WORK_DIR:-exps/thumos/adatad/duca_h65_cycle4_pre_run_stage1}"
@@ -80,13 +88,13 @@ if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then
     export DUCA_STAGE1_CHECKPOINT_SHA256="${STAGE1_SHA,,}"
     export DUCA_STAGE1_CHECKPOINT_EPOCH=29
   fi
-  exec "$PYTHON" tools/train.py "$CFG" --seed 3407 \
+  exec "$PYTHON" tools/train.py "$CFG" --seed 3407 "${resume_args[@]}" \
     --cfg-options work_dir="$PRE_RUN_WORK_DIR" \
     data.train.ann_file="$ANNOTATION_PATH" data.val.ann_file="$ANNOTATION_PATH" \
     data.test.ann_file="$ANNOTATION_PATH" data.train.category_file="$CATEGORY_PATH" \
     data.val.category_file="$CATEGORY_PATH" data.test.category_file="$CATEGORY_PATH" \
     model.backbone.custom.pretrain="$ADATAD_PRETRAIN" \
-    workflow.end_epoch=1 workflow.max_train_iters="$PRE_RUN_MAX_ITERS" \
+    workflow.end_epoch="$PRE_RUN_END_EPOCH" workflow.max_train_iters="$PRE_RUN_MAX_ITERS" \
     workflow.val_eval_interval=-1 workflow.val_loss_interval=-1 \
     workflow.val_start_epoch=9999 workflow.checkpoint_interval=1
 fi

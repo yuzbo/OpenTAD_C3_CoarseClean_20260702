@@ -33,5 +33,6 @@ total_epochs = 60
 max_updates = 6000
 checkpoint_interval_epochs = 5
 checkpoint_policy = dict(resumable=True, keep_latest=3, milestones=True, final=True, final_ema=True)
+workflow = dict(require_resumable_training_state=True, checkpoint_interval=5)
 paper_claim_allowed = False
 work_dir = "exps/thumos/adatad/duca_h65_first_singleclock_cycle4"
