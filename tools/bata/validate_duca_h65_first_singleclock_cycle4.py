@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 from mmengine.config import Config
 
+import opentad.datasets  # noqa: F401 - registers OpenTAD data transforms.
 from opentad.cores.optimizer import build_optimizer, prepare_optimizer_parameter_freezing
 from opentad.models.builder import build_detector
 from opentad.models.detectors.actionformer import ActionFormer

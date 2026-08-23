@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from mmengine.config import Config
 
+import opentad.datasets  # noqa: F401 - registers OpenTAD data transforms.
 from opentad.models.backbones.vit_adapter import VisionTransformerAdapter
 from opentad.models.builder import build_detector
 from opentad.models.detectors.actionformer import ActionFormer
