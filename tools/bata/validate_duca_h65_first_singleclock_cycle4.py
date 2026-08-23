@@ -3,6 +3,7 @@
 import argparse
 import copy
 import hashlib
+import json
 import logging
 import os
 from pathlib import Path
@@ -41,6 +42,99 @@ def global_rank_clip_slices(batch, clips=24, clip_len=16, tubelet=2):
     return positions.repeat(batch, 1).reshape(batch, clips, -1).reshape(batch * clips, -1)
 
 
+def _single_clock_gradient_probe(model, optimizer):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    model.eval()
+    theta = model.backbone.model.backbone.blocks[0].relative_physical_time_scale
+    theta.data.zero_()
+
+    generator = torch.Generator(device=device)
+    generator.manual_seed(3407)
+    frames = torch.randn(
+        (1, 1, 3, 384, 16, 16),
+        generator=generator,
+        device=device,
+        dtype=torch.float32,
+    )
+    masks = torch.ones((1, 384), device=device, dtype=torch.bool)
+    uniform = exact_uniform_positions(768, 384, device=device)
+
+    def metadata(positions):
+        return [
+            {
+                "irregular_selected_positions": positions.detach().cpu().tolist(),
+                "irregular_selected_valid_len": 384,
+                "irregular_dense_valid_len": 768,
+            }
+        ]
+
+    optimizer.zero_grad(set_to_none=True)
+    uniform_output = model._forward_backbone_with_single_clock(
+        frames,
+        masks,
+        metadata(uniform),
+    )
+    uniform_output.float().square().mean().backward()
+    uniform_grad = theta.grad
+    if uniform_grad is not None and float(uniform_grad.detach().abs().cpu().item()) != 0.0:
+        raise SystemExit("exact-uniform identity path must not create a SingleClock gradient")
+
+    irregular = uniform.clone()
+    irregular[1] = 1
+    if not bool((irregular[1:] > irregular[:-1]).all()):
+        raise SystemExit("deterministic irregular gradient probe must remain strictly increasing")
+    optimizer.zero_grad(set_to_none=True)
+    irregular_output = model._forward_backbone_with_single_clock(
+        frames,
+        masks,
+        metadata(irregular),
+    )
+    irregular_output.float().square().mean().backward()
+    if theta.grad is None or not bool(torch.isfinite(theta.grad).all()):
+        raise SystemExit("irregular SingleClock theta gradient must be finite")
+    gradient = float(theta.grad.detach().cpu().item())
+    if gradient == 0.0:
+        raise SystemExit("irregular SingleClock theta gradient must be non-zero")
+    before = float(theta.detach().cpu().item())
+    optimizer.step()
+    after = float(theta.detach().cpu().item())
+    if not torch.isfinite(theta).all() or after == before:
+        raise SystemExit("irregular SingleClock optimizer step must update theta")
+
+    model.single_clock_gate_zero = True
+    with torch.no_grad():
+        gate_zero_output = model._forward_backbone_with_single_clock(
+            frames,
+            masks,
+            metadata(irregular),
+        )
+    model.single_clock_gate_zero = False
+    theta.data.zero_()
+    with torch.no_grad():
+        theta_zero_output = model._forward_backbone_with_single_clock(
+            frames,
+            masks,
+            metadata(irregular),
+        )
+    torch.testing.assert_close(gate_zero_output, theta_zero_output, rtol=0.0, atol=0.0)
+    print(
+        "SINGLE_CLOCK_GRADIENT_PROBE "
+        + json.dumps(
+            {
+                "device": str(device),
+                "uniform_residual_identity": True,
+                "irregular_theta_gradient": gradient,
+                "theta_before": before,
+                "theta_after": after,
+                "gate_zero_same_kernel_identity": True,
+                "selected_rgb_unchanged": True,
+            },
+            sort_keys=True,
+        )
+    )
+
+
 def _validate_resolved_single_clock(cfg):
     build_cfg = copy.deepcopy(cfg.model)
     build_cfg.backbone.custom.pretrain = None
@@ -70,6 +164,7 @@ def _validate_resolved_single_clock(cfg):
     group = matching_groups[0]
     if float(group["lr"]) != 2e-4 or float(group["weight_decay"]) != 0.0:
         raise SystemExit("SingleClock scalar optimizer contract must be lr=2e-4, weight_decay=0")
+    _single_clock_gradient_probe(model, optimizer)
 
 
 def main():
