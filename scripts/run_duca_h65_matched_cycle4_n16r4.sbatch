@@ -61,6 +61,8 @@ if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then precheck; exit 0; fi
 # opt-in path; official STAGE1/STAGE2 commands below retain their semantics.
 if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then
   [[ "$MODE" == STAGE1 || "$MODE" == STAGE2_OFF || "$MODE" == STAGE2_ON ]] || fail "PRE_RUN_ONLY requires a formal stage MODE"
+  PRE_RUN_MAX_ITERS="${DUCA_PRE_RUN_MAX_ITERS:-2}"
+  [[ "$PRE_RUN_MAX_ITERS" =~ ^[0-9]+$ && "$PRE_RUN_MAX_ITERS" -ge 2 ]] || fail "DUCA_PRE_RUN_MAX_ITERS must be at least 2"
   if [[ "$MODE" == "STAGE1" ]]; then
     CFG="$STAGE1_CONFIG"
     PRE_RUN_WORK_DIR="${DUCA_PRE_RUN_WORK_DIR:-exps/thumos/adatad/duca_h65_cycle4_pre_run_stage1}"
@@ -84,7 +86,7 @@ if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then
     data.test.ann_file="$ANNOTATION_PATH" data.train.category_file="$CATEGORY_PATH" \
     data.val.category_file="$CATEGORY_PATH" data.test.category_file="$CATEGORY_PATH" \
     model.backbone.custom.pretrain="$ADATAD_PRETRAIN" \
-    workflow.end_epoch=1 workflow.max_train_iters=1 \
+    workflow.end_epoch=1 workflow.max_train_iters="$PRE_RUN_MAX_ITERS" \
     workflow.val_eval_interval=-1 workflow.val_loss_interval=-1 \
     workflow.val_start_epoch=9999 workflow.checkpoint_interval=1
 fi

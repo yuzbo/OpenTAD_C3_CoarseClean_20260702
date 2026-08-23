@@ -105,7 +105,9 @@ def test_cycle4_launcher_bounded_pre_run_is_explicit_and_does_not_change_formal_
     from pathlib import Path
     text = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch").read_text()
     assert 'if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then' in text
-    assert "workflow.end_epoch=1" in text and "workflow.max_train_iters=1" in text
+    assert 'PRE_RUN_MAX_ITERS="${DUCA_PRE_RUN_MAX_ITERS:-2}"' in text
+    assert '"$PRE_RUN_MAX_ITERS" =~ ^[0-9]+$ && "$PRE_RUN_MAX_ITERS" -ge 2' in text
+    assert "workflow.end_epoch=1" in text and 'workflow.max_train_iters="$PRE_RUN_MAX_ITERS"' in text
     assert "workflow.val_eval_interval=-1" in text and "workflow.val_loss_interval=-1" in text
     assert "workflow.val_start_epoch=9999" in text and "workflow.checkpoint_interval=1" in text
     assert "total_epochs=1" not in text and "max_updates=1" not in text
