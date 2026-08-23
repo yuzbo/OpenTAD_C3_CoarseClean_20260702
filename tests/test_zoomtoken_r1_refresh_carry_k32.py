@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
 import torch
 from mmengine import Config
 
@@ -23,6 +24,10 @@ _routing = _load_module(
 _vit = _load_module(
     "zoomtoken_vit_adapter_focus",
     ROOT / "opentad" / "models" / "backbones" / "vit_adapter.py",
+)
+_train = _load_module(
+    "zoomtoken_train_entry_focus",
+    ROOT / "tools" / "train.py",
 )
 build_refresh_mask = _routing.build_refresh_mask
 Attention = _vit.Attention
@@ -230,3 +235,45 @@ def test_existing_official_runner_selects_all_refresh_arms():
     for arm, filename in expected.items():
         assert f"{arm})" in source
         assert f'CONFIG_NAME="{filename}"' in source
+
+
+def test_refresh_configs_pass_actual_training_recovery_contract(tmp_path):
+    config_dir = ROOT / "configs" / "adatad" / "thumos"
+    expected = {
+        "R1-DROP32": "georoute_official_r1_drop32_prebackbone_seed42_v001.py",
+        "R1-MOD32-KV": "georoute_official_r1_mod32_kv_prebackbone_seed42_v001.py",
+        "R1-RC32-KV": "georoute_official_r1_rc32_kv_prebackbone_seed42_v001.py",
+    }
+    for arm_surface, filename in expected.items():
+        config = Config.fromfile(config_dir / filename)
+        config.work_dir = str(tmp_path / arm_surface)
+        config.zoomtoken_p1_config.source_commit = (
+            "836f2ce4beafa8cbab513604dfa74be01a977a3c"
+        )
+        contract = _train._zoomtoken_recovery_contract(config)
+        assert contract["arm_surface"] == arm_surface
+        assert contract["seed"] == 42
+        assert contract["interval_epochs"] == 5
+        assert contract["keep_latest"] == 3
+        assert arm_surface in _train.ZOOMTOKEN_UPDATE_INDEX_ARMS
+        assert arm_surface in _train.ZOOMTOKEN_CANONICAL_SOURCE_ARMS
+
+
+def test_training_recovery_contract_still_rejects_unknown_route(tmp_path):
+    config = Config.fromfile(
+        ROOT
+        / "configs"
+        / "adatad"
+        / "thumos"
+        / "georoute_official_r1_drop32_prebackbone_seed42_v001.py"
+    )
+    config.work_dir = str(tmp_path / "unknown")
+    config.zoomtoken_p1_config.arm_surface = "R1-UNKNOWN"
+    config.zoomtoken_p1_config.source_commit = (
+        "836f2ce4beafa8cbab513604dfa74be01a977a3c"
+    )
+    with pytest.raises(
+        ValueError,
+        match="ZoomToken recovery is restricted to the frozen route surfaces",
+    ):
+        _train._zoomtoken_recovery_contract(config)
