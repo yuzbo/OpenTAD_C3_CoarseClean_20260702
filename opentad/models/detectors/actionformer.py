@@ -1,4 +1,6 @@
+import hashlib
 import inspect
+import json
 import random
 from contextlib import nullcontext
 
@@ -79,6 +81,8 @@ class ActionFormer(SingleStageDetector):
         )
         self.single_clock_admission = bool(single_clock_admission)
         self.single_clock_gate_zero = bool(single_clock_gate_zero)
+        self._single_clock_identity_audit_enabled = False
+        self._single_clock_identity_records = {}
         if self.single_clock_admission and backbone is None:
             raise ValueError("single_clock_admission=True requires the VideoMAE backbone")
         if self.selector_train_only_skip_detector and not self.selector_train_only:
@@ -177,6 +181,91 @@ class ActionFormer(SingleStageDetector):
             return self.backbone(inputs)
         clock_kwargs = self._single_clock_metadata(inputs, masks, metas)
         return self.backbone(inputs, **clock_kwargs)
+
+    @staticmethod
+    def _single_clock_tensor_sha256(value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value)
+        tensor = value.detach().contiguous()
+        digest = hashlib.sha256()
+        digest.update(str(tensor.dtype).encode("ascii"))
+        digest.update(json.dumps(list(tensor.shape), separators=(",", ":")).encode("ascii"))
+        digest.update(tensor.view(torch.uint8).cpu().numpy().tobytes())
+        return digest.hexdigest()
+
+    @staticmethod
+    def _single_clock_sample_id(meta):
+        if not isinstance(meta, Mapping):
+            raise ValueError("SingleClock identity audit requires mapping metadata")
+        video_name = meta.get("video_name") or meta.get("video_id")
+        if not isinstance(video_name, str) or not video_name:
+            raise ValueError("SingleClock identity audit requires video_name")
+        window_start = meta.get("window_start_frame", 0)
+        if torch.is_tensor(window_start):
+            if window_start.numel() != 1:
+                raise ValueError("SingleClock window_start_frame must be scalar")
+            window_start = window_start.item()
+        if isinstance(window_start, float) and window_start.is_integer():
+            window_start = int(window_start)
+        return f"{video_name}|window_start_frame={window_start}", video_name, window_start
+
+    def enable_single_clock_identity_audit(self):
+        if not self.single_clock_admission:
+            raise RuntimeError("SingleClock identity audit requires an admitted SingleClock model")
+        self._single_clock_identity_audit_enabled = True
+        self._single_clock_identity_records = {}
+
+    def _record_single_clock_identity(self, inputs, masks, metas):
+        if not self._single_clock_identity_audit_enabled:
+            return
+        contract = self._single_clock_metadata(inputs, masks, metas)
+        positions = contract["irregular_selected_positions"]
+        selected_mask = contract["irregular_selected_mask"]
+        dense_lengths = contract["irregular_dense_valid_len"]
+        for batch_idx, meta in enumerate(metas):
+            sample_id, video_name, window_start = self._single_clock_sample_id(meta)
+            if sample_id in self._single_clock_identity_records:
+                raise RuntimeError(f"duplicate SingleClock identity sample: {sample_id}")
+            count = int(selected_mask[batch_idx].long().sum().item())
+            selected_rgb = inputs[batch_idx : batch_idx + 1, :, :, :count]
+            selected_positions = positions[batch_idx, :count]
+            mask_row = selected_mask[batch_idx]
+            record = {
+                "sample_id": sample_id,
+                "video_name": video_name,
+                "window_start_frame": window_start,
+                "selected_valid_len": count,
+                "dense_valid_len": int(dense_lengths[batch_idx].item()),
+                "selected_positions": [
+                    int(value) for value in selected_positions.detach().cpu().tolist()
+                ],
+                "selected_rgb_sha256": self._single_clock_tensor_sha256(selected_rgb),
+                "selected_positions_sha256": self._single_clock_tensor_sha256(selected_positions),
+                "selected_mask_sha256": self._single_clock_tensor_sha256(mask_row),
+            }
+            record["record_sha256"] = hashlib.sha256(
+                json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+            ).hexdigest()
+            self._single_clock_identity_records[sample_id] = record
+
+    def single_clock_identity_payload(self):
+        if not self._single_clock_identity_audit_enabled:
+            raise RuntimeError("SingleClock identity audit was not enabled")
+        records = [
+            self._single_clock_identity_records[key]
+            for key in sorted(self._single_clock_identity_records)
+        ]
+        if not records:
+            raise RuntimeError("SingleClock identity audit collected no samples")
+        aggregate = hashlib.sha256(
+            json.dumps(records, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        ).hexdigest()
+        return {
+            "schema_version": "duca_h65_single_clock_selected_input_identity_v1",
+            "sample_count": len(records),
+            "aggregate_sha256": aggregate,
+            "records": records,
+        }
 
     def pad_data(self, inputs, masks):
         feat_len = inputs.shape[-1]
@@ -584,6 +673,8 @@ class ActionFormer(SingleStageDetector):
             )
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
             self._require_selector_remap_metadata(metas)
+
+        self._record_single_clock_identity(inputs, masks, metas)
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:

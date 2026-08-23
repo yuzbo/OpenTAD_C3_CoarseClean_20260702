@@ -23,6 +23,7 @@ from tools.train import (
 
 CONFIG = Path("configs/adatad/thumos/duca_h65_first_singleclock_cycle4.py")
 LAUNCHER = Path("scripts/run_duca_h65_matched_cycle4_n16r4.sbatch")
+TERMINAL_EVAL_LAUNCHER = Path("scripts/run_duca_h65_singleclock_terminal_eval_n16r4.sbatch")
 
 
 def _clock_detector_stub(gate_zero=False):
@@ -94,6 +95,56 @@ def test_actionformer_rejects_nonprefix_mask_and_position_count_drift():
     masks[0, 10] = True
     with pytest.raises(ValueError, match="positions/mask mismatch"):
         detector._single_clock_metadata(inputs, masks, meta)
+
+
+def test_singleclock_identity_audit_seals_selected_rgb_positions_and_mask():
+    def collect(inputs, gate_zero):
+        detector = _clock_detector_stub(gate_zero=gate_zero)
+        detector.single_clock_admission = True
+        detector.enable_single_clock_identity_audit()
+        masks = torch.ones(1, 384, dtype=torch.bool)
+        metas = [
+            {
+                "video_name": "video_validation_0000001",
+                "window_start_frame": 0,
+                "irregular_selected_positions": exact_uniform_positions(768, 384).tolist(),
+                "irregular_selected_valid_len": 384,
+                "irregular_dense_valid_len": 768,
+            }
+        ]
+        detector._record_single_clock_identity(inputs, masks, metas)
+        return detector, detector.single_clock_identity_payload()
+
+    inputs = torch.arange(384 * 3 * 2 * 2, dtype=torch.float32).reshape(1, 1, 3, 384, 2, 2)
+    detector_on, on = collect(inputs, gate_zero=False)
+    _, gate_zero = collect(inputs.clone(), gate_zero=True)
+    assert on["aggregate_sha256"] == gate_zero["aggregate_sha256"]
+    assert on["sample_count"] == 1
+
+    changed = inputs.clone()
+    changed[..., 7, 0, 0] += 1
+    _, changed_payload = collect(changed, gate_zero=False)
+    assert changed_payload["aggregate_sha256"] != on["aggregate_sha256"]
+
+    masks = torch.ones(1, 384, dtype=torch.bool)
+    metas = [
+        {
+            "video_name": "video_validation_0000001",
+            "window_start_frame": 0,
+            "irregular_selected_positions": exact_uniform_positions(768, 384).tolist(),
+            "irregular_selected_valid_len": 384,
+            "irregular_dense_valid_len": 768,
+        }
+    ]
+    with pytest.raises(RuntimeError, match="duplicate SingleClock identity sample"):
+        detector_on._record_single_clock_identity(inputs, masks, metas)
+
+
+def test_tools_test_exposes_singleclock_identity_evidence_switch():
+    text = Path("tools/test.py").read_text()
+    assert 'parser.add_argument("--single-clock-identity-json"' in text
+    assert "enable_single_clock_identity_audit" in text
+    assert '"single_clock_identity_sha256"' in text
 
 
 def test_global_coordinates_preserve_uniform_identity_and_short_padding():
@@ -242,6 +293,19 @@ def test_config_and_launcher_freeze_training_and_environment_contract():
     assert 'PRE_RUN_RESUME="${DUCA_PRE_RUN_RESUME:-}"' in text
     assert 'workflow.end_epoch="$PRE_RUN_END_EPOCH"' in text
     assert "workflow.val_start_epoch=9999" in text
+
+
+def test_terminal_eval_launcher_freezes_on_gate_zero_and_h65_off_reinference():
+    text = TERMINAL_EVAL_LAUNCHER.read_text()
+    assert "DUCA_CLOCK_CHECKPOINT_SHA256" in text
+    assert "DUCA_H65_OFF_CHECKPOINT_SHA256" in text
+    assert "DUCA_EVAL_COMMIT" in text
+    assert "final_on" in text and "final_gate_zero" in text
+    assert "ema_on" in text and "ema_gate_zero" in text
+    assert "h65_off_final" in text and "h65_off_ema" in text
+    assert "--single-clock-identity-json" in text
+    assert "model.single_clock_gate_zero=$gate_zero" in text
+    assert "state_dict_ema" in text
 
 
 def test_epoch_boundary_data_loader_state_round_trip():

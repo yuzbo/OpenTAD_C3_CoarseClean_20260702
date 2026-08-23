@@ -44,6 +44,7 @@ def parse_args():
     parser.add_argument("--not_eval", action="store_true", help="whether to not to eval, only do inference")
     parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
     parser.add_argument("--metrics-json", default=None)
+    parser.add_argument("--single-clock-identity-json", default=None)
     parser.add_argument("--expected-checkpoint-epoch", type=int, default=None)
     parser.add_argument(
         "--checkpoint-state-key",
@@ -253,6 +254,11 @@ def main():
         if checkpoint_state_key == "state_dict_ema":
             logger.info("Using Model EMA...")
 
+    if args.single_clock_identity_json:
+        if args.world_size != 1:
+            raise RuntimeError("SingleClock identity evidence requires one evaluation process")
+        model.module.enable_single_clock_identity_audit()
+
     # AMP: automatic mixed precision
     use_amp = getattr(cfg.solver, "amp", False)
     if use_amp:
@@ -271,6 +277,29 @@ def main():
         world_size=args.world_size,
         not_eval=args.not_eval,
     )
+    single_clock_identity_path = None
+    if args.rank == 0 and args.single_clock_identity_json:
+        if checkpoint_path is None or checkpoint_state_key is None:
+            raise RuntimeError("SingleClock identity evidence requires a checkpoint")
+        identity_payload = model.module.single_clock_identity_payload()
+        identity_payload.update(
+            {
+                "git_commit": subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"], cwd=path, text=True
+                ).strip(),
+                "config_path": os.path.abspath(args.config),
+                "config_sha256": sha256_file(args.config),
+                "resolved_config_sha256": source_resolved_config_sha256,
+                "runtime_config_sha256": runtime_config_sha256,
+                "checkpoint_path": os.path.abspath(checkpoint_path),
+                "checkpoint_sha256": sha256_file(checkpoint_path),
+                "checkpoint_epoch": checkpoint_epoch,
+                "checkpoint_state_key": checkpoint_state_key,
+                "single_clock_gate_zero": bool(model.module.single_clock_gate_zero),
+            }
+        )
+        single_clock_identity_path = os.path.abspath(args.single_clock_identity_json)
+        atomic_write_json(single_clock_identity_path, identity_payload)
     if args.rank == 0 and args.metrics_json:
         if checkpoint_path is None or checkpoint_state_key is None:
             raise RuntimeError("structured metric evidence requires a checkpoint")
@@ -345,6 +374,13 @@ def main():
                 cfg.dataset.test.class_map
             ),
         }
+        if single_clock_identity_path is not None:
+            payload.update(
+                {
+                    "single_clock_identity_path": single_clock_identity_path,
+                    "single_clock_identity_sha256": sha256_file(single_clock_identity_path),
+                }
+            )
         if selected_axis_formal:
             payload.update(
                 {

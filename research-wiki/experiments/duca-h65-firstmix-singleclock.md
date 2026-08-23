@@ -34,6 +34,14 @@
 - 首个周期恢复点 `epoch_4.pth` 已在 Job `1252482` 运行中生成：`epoch=4`、累计 `500` 次成功更新，并同时保存 model、EMA、optimizer、scheduler、AMP scaler、Python/NumPy/Torch CPU/Torch CUDA 随机状态，以及指向 epoch 5 的 DataLoader/DistributedSampler 状态。该恢复点验证了正式训练的五轮保存合同，但不构成效能证据。
 - 归因：不重训 OFF、dense、uniform 或 random。训练终态后，同一 ON checkpoint 运行 gate-zero twin，并只读引用同起点既有 OFF 对照。
 
+## 终态证据实现
+
+- 新增默认关闭的 selected-input identity 审计：逐窗口封存选中 RGB、原始物理位置与有效掩码的 SHA256，并保留原始位置序列；只在终态评估显式启用，不改变训练或普通推理数值路径。
+- 终态启动器固定执行同一个 epoch-59 checkpoint 的 final/final-EMA `CLOCK_ON` 与 `CLOCK_GATE_ZERO` 四次官方评估，并在同一评估代码 revision 上仅重推理既有 H65 OFF final/final-EMA，不重训任何基线。
+- 配对统计实现固定为 10,000 次整视频 cluster bootstrap；每次以相同视频 multiplicity 重算官方 pooled AP，使用 `SHA256(nonce + "\n" + namespace)` 前 8 字节大端无符号种子、NumPy PCG64，以及排序后 1-based ranks 250/9750。
+- 这些是尚待 N16R4 目标环境复核和终态执行的证据工具，不是实验结果。Windows 本机 PyTorch 在导入 `c10.dll` 时失败，因此本轮只完成语法和 shell 静态检查；正式接纳必须以 N16R4 测试为准。
+- 最新 Pro 终稿在 Job 已启动后补充了“旧 RankPack/TrueTime bootstrap 与 H65 OFF baseline maturity 必须先通过”的时序条件。当前不取消已授权且正常运行的训练，但其未来指标只能在这些前置门事后完整通过时接纳；否则整次运行保持条件性不可采纳，不能用于论文结论。
+
 ## 证据边界
 
-Job `1252482` 当前只证明正式训练已经越过预检、完成前五个 epoch，并形成合格恢复点。训练完成前不得声称 SingleClock 改善或损害 H65，也不得把 PRE_RUN、早期 loss 或恢复检查解释为效能证据。
+Job `1252482` 当前只证明正式训练已经越过预检、完成前五个 epoch，并形成合格恢复点。旧证据 bootstrap、H65 OFF baseline eligibility、终态双读出、短动作/畸变分层与完整成本仍未闭合。训练完成前不得声称 SingleClock 改善或损害 H65，也不得把 PRE_RUN、早期 loss、恢复检查或证据工具实现解释为效能证据。
