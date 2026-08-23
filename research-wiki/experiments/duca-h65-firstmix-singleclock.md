@@ -31,8 +31,9 @@
 - 输出：`/data/run01/sczc063/yuzibo/duca_h65_firstmix_singleclock_stage2_on_08a817e9_20260824`。
 - Stage-1 初始化：历史 H65 uniform-384 epoch-29 EMA，SHA256 `bcbc877c204a1ce7778f559be0b218295223367983450274671b17356e5be4e3`。
 - 训练：完整 THUMOS14，60 epoch / 6000 次成功更新；每 5 epoch 保存可恢复 checkpoint；主结果预先固定为 epoch-59 final 与 final-EMA。
+- 首个周期恢复点 `epoch_4.pth` 已在 Job `1252482` 运行中生成：`epoch=4`、累计 `500` 次成功更新，并同时保存 model、EMA、optimizer、scheduler、AMP scaler、Python/NumPy/Torch CPU/Torch CUDA 随机状态，以及指向 epoch 5 的 DataLoader/DistributedSampler 状态。该恢复点验证了正式训练的五轮保存合同，但不构成效能证据。
 - 归因：不重训 OFF、dense、uniform 或 random。训练终态后，同一 ON checkpoint 运行 gate-zero twin，并只读引用同起点既有 OFF 对照。
 
 ## 证据边界
 
-Job `1252482` 当前只证明正式训练已经越过预检并进入 epoch 0。训练完成前不得声称 SingleClock 改善或损害 H65，也不得把 PRE_RUN 的静态/两步结果解释为效能证据。
+Job `1252482` 当前只证明正式训练已经越过预检、完成前五个 epoch，并形成合格恢复点。训练完成前不得声称 SingleClock 改善或损害 H65，也不得把 PRE_RUN、早期 loss 或恢复检查解释为效能证据。
