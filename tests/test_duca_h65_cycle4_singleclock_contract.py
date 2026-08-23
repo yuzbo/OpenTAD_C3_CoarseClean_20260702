@@ -201,8 +201,8 @@ def test_resolved_actionformer_config_builds_only_block0_clock(monkeypatch):
     monkeypatch.setenv("DUCA_STAGE1_CHECKPOINT_SHA256", "a" * 64)
     monkeypatch.setenv("DUCA_STAGE1_CHECKPOINT_EPOCH", "29")
     cfg = Config.fromfile(str(CONFIG))
-    build_cfg = cfg.model.to_dict()
-    build_cfg["backbone"]["custom"]["pretrain"] = None
+    build_cfg = cfg.model
+    build_cfg.backbone.custom.pretrain = None
     model = build_detector(build_cfg)
     assert isinstance(model, ActionFormer)
     assert model.single_clock_admission is True
