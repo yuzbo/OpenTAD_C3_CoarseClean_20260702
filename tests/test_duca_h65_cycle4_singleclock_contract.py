@@ -79,11 +79,13 @@ def test_cycle5_launcher_binds_source_root_and_single_process_before_any_train()
     assert 'DUCA_REPO_ROOT:-${SLURM_SUBMIT_DIR:-' in text
     assert '[[ -f "$ROOT/tools/train.py" ]]' in text
     assert 'export DUCA_REPO_ROOT="$ROOT"' in text
+    assert 'export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"' in text
     root_check = text.index('[[ -f "$ROOT/tools/train.py" ]]')
     bind = text.index('export DUCA_REPO_ROOT="$ROOT"')
+    pythonpath = text.index('export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"')
     cd_root = text.index('cd "$ROOT"')
     first_train = text.index('exec "$PYTHON" tools/train.py')
-    assert root_check < bind < cd_root < first_train
+    assert root_check < bind < pythonpath < cd_root < first_train
     assert 'export LOCAL_RANK=0 RANK=0 WORLD_SIZE=1 MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"' in text
     assert 'MASTER_PORT="${MASTER_PORT:-29500}"' in text
     assert 'export MASTER_PORT' in text
@@ -110,6 +112,14 @@ def test_cycle4_launcher_bounded_pre_run_is_explicit_and_does_not_change_formal_
     assert 'if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then' in text
     formal = text[text.index('if [[ "$MODE" == STAGE1 ]]; then'):]
     assert "workflow.end_epoch=1" not in formal
+
+
+def test_historical_stage2_exposes_frozen_training_admission_metadata():
+    from pathlib import Path
+    text = Path("configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py").read_text()
+    assert "seed = 3407" in text
+    assert "total_epochs = 60" in text
+    assert "max_updates = 6000" in text
 
 def test_stage2_pre_run_validates_and_exports_fixture_before_train():
     from pathlib import Path

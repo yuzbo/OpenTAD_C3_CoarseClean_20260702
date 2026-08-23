@@ -15,6 +15,7 @@ ROOT="${DUCA_REPO_ROOT:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")
 ROOT="$(cd -- "$ROOT" && pwd -P)"
 [[ -f "$ROOT/tools/train.py" ]] || fail "exact source root missing tools/train.py: $ROOT"
 export DUCA_REPO_ROOT="$ROOT"
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 cd "$ROOT"
 export LOCAL_RANK=0 RANK=0 WORLD_SIZE=1 MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
 MASTER_PORT="${MASTER_PORT:-29500}"

@@ -20,6 +20,14 @@ duca_stage1_checkpoint_epoch = int(_required("DUCA_STAGE1_CHECKPOINT_EPOCH"))
 # transition supervision to zero.
 duca_stage2_half_steps = 3000
 
+# Explicit admission metadata.  These values already come from the inherited
+# official-60 training recipe; spelling them out lets the fail-closed Stage-2
+# validator verify the frozen seed and successful-update budget before loading
+# the Stage-1 handoff.
+seed = 3407
+total_epochs = 60
+max_updates = 6000
+
 duca_sampling_rate_contract = dict(
     route="DUCA_RATE_CURRICULUM_STAGE2_JOINT384",
     task="offline_temporal_action_detection",
