@@ -87,3 +87,17 @@ def test_class_confusion_and_unmatched_prediction_precedence():
 def test_invalid_ground_truth_fails_closed(annotation):
     with pytest.raises(ValueError):
         MODULE.evaluate_frozen_diagnostics(_gt([annotation]), _pred([]))
+
+
+def test_final_evaluation_entry_is_configurable_and_final_only():
+    test_source = (ROOT / "tools" / "test.py").read_text(encoding="utf-8")
+    launcher = (
+        ROOT / "scripts" / "run_zoomtoken_rc32_final_eval_n16r4.sh"
+    ).read_text(encoding="utf-8")
+    assert '"--cfg-options"' in test_source
+    assert "cfg.merge_from_dict(args.cfg_options)" in test_source
+    assert 'model.module.load_state_dict(checkpoint["state_dict_ema"])' in test_source
+    assert 'CHECKPOINT="${WORK_DIR}/checkpoint/epoch_59.pth"' in launcher
+    assert "recovery_epoch_" not in launcher
+    assert '"post_processing.save_dict=True"' in launcher
+    assert '"dataset.test.subset_name=validation"' in launcher

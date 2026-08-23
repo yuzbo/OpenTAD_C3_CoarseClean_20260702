@@ -10,7 +10,7 @@ import argparse
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
-from mmengine.config import Config
+from mmengine.config import Config, DictAction
 from opentad.models import build_detector
 from opentad.datasets import build_dataset, build_dataloader
 from opentad.cores import eval_one_epoch
@@ -24,6 +24,12 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="random seed")
     parser.add_argument("--id", type=int, default=0, help="repeat experiment id")
     parser.add_argument("--not_eval", action="store_true", help="whether to not to eval, only do inference")
+    parser.add_argument(
+        "--cfg-options",
+        nargs="+",
+        action=DictAction,
+        help="override config settings as key=value pairs",
+    )
     args = parser.parse_args()
     return args
 
@@ -33,6 +39,8 @@ def main():
 
     # load config
     cfg = Config.fromfile(args.config)
+    if args.cfg_options is not None:
+        cfg.merge_from_dict(args.cfg_options)
 
     # DDP init
     args.local_rank = int(os.environ["LOCAL_RANK"])
@@ -87,7 +95,9 @@ def main():
     # Model EMA
     use_ema = getattr(cfg.solver, "ema", False)
     if use_ema:
-        model.load_state_dict(checkpoint["state_dict_ema"])
+        # EMA is saved from model_ema.module and therefore has no DDP
+        # ``module.`` prefix.  Load it into the wrapped detector itself.
+        model.module.load_state_dict(checkpoint["state_dict_ema"])
         logger.info("Using Model EMA...")
     else:
         model.load_state_dict(checkpoint["state_dict"])
