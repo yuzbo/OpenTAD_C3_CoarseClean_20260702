@@ -10,7 +10,7 @@ BASE="/data/run01/sczc063/yuzibo"
 ROOT="${ZOOMTOKEN_RC32_EVAL_SOURCE_ROOT:?set the reviewed clean source root}"
 RUN_ROOT="${ZOOMTOKEN_RC32_EVAL_RUN_ROOT:?set the completed RC32 matrix root}"
 EXPECTED_COMMIT="${ZOOMTOKEN_RC32_EVAL_EXPECTED_COMMIT:?set the evaluator source commit}"
-ARM="${ZOOMTOKEN_RC32_EVAL_ARM:?set DROP32, MOD32-KV, or RC32-KV}"
+ARM="${ZOOMTOKEN_RC32_EVAL_ARM:?set FULL64, DROP32, MOD32-KV, or RC32-KV}"
 ANNOTATION="${BASE}/thumos14/annotations/thumos_14_anno.json"
 CLASS_MAP="${BASE}/thumos14/annotations/category_idx.txt"
 VIDEO_ROOT="${BASE}/thumos14/raw_data/video"
@@ -18,6 +18,10 @@ PRETRAINED="${BASE}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-4
 CONDA_ACTIVATE="${BASE}/conda_envs/opentad/bin/activate"
 
 case "${ARM}" in
+  FULL64)
+    CONFIG_NAME="georoute_official_r1_strict_rect8x8_prebackbone_seed42_v001.py"
+    ARM_DIR="r1_strict_rect8x8_prebackbone_sparse_adapter"
+    ;;
   DROP32)
     CONFIG_NAME="georoute_official_r1_drop32_prebackbone_seed42_v001.py"
     ARM_DIR="r1_drop32_prebackbone_sparse_adapter"
@@ -30,7 +34,7 @@ case "${ARM}" in
     CONFIG_NAME="georoute_official_r1_rc32_kv_prebackbone_seed42_v001.py"
     ARM_DIR="r1_rc32_kv_prebackbone_sparse_adapter"
     ;;
-  *) fail 'unknown RC32 final-evaluation arm' ;;
+  *) fail 'unknown ZoomToken final-evaluation arm' ;;
 esac
 
 CONFIG="${ROOT}/configs/adatad/thumos/${CONFIG_NAME}"

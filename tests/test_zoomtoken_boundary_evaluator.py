@@ -99,5 +99,7 @@ def test_final_evaluation_entry_is_configurable_and_final_only():
     assert 'model.module.load_state_dict(checkpoint["state_dict_ema"])' in test_source
     assert 'CHECKPOINT="${WORK_DIR}/checkpoint/epoch_59.pth"' in launcher
     assert "recovery_epoch_" not in launcher
+    assert 'CONFIG_NAME="georoute_official_r1_strict_rect8x8_prebackbone_seed42_v001.py"' in launcher
+    assert 'ARM_DIR="r1_strict_rect8x8_prebackbone_sparse_adapter"' in launcher
     assert '"post_processing.save_dict=True"' in launcher
     assert '"dataset.test.subset_name=validation"' in launcher
