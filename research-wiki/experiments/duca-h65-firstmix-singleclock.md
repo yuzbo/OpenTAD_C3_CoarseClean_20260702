@@ -42,7 +42,7 @@
 - 分层分析只用 training population 冻结短动作阈值与时间畸变量分位点；validation 只按冻结阈值报告短动作差值和高/低畸变交互，不使用 validation 标签调整阈值。
 - 完整成本比较固定为同一 epoch-59 EMA checkpoint 的 `CLOCK_ON/CLOCK_GATE_ZERO` 三次同节点顺序配对，顺序为 ON-ZERO、ZERO-ON、ON-ZERO；每次先完成 50 个预热样本，再覆盖完整官方 validation workload。主统计为三次完整运行中位延迟比、三次逐窗口 p90 的中位比和全窗口峰值显存比。
 - 终态回执不仅校验同一 checkpoint、final/EMA state key 和选中 RGB/位置/掩码一致，还封存并重算 ON 与 gate-zero 的配置路径、配置哈希和门状态，防止把 ON 输出误标为 gate-zero twin。
-- 本地 shell 语法、Python 编译与 29 项纯合同测试通过；这些仍是尚待 N16R4 目标环境复核和终态执行的证据工具，不是实验结果。涉及真实模型加载、GPU 评估和完整 workload 的接纳必须以 N16R4 为准。
+- 本地 shell 语法、Python 编译与 30 项纯合同测试通过；这些仍是尚待 N16R4 目标环境复核和终态执行的证据工具，不是实验结果。涉及真实模型加载、GPU 评估和完整 workload 的接纳必须以 N16R4 为准。
 - 最新 Pro 终稿在 Job 已启动后补充了“旧 RankPack/TrueTime bootstrap 与 H65 OFF baseline maturity 必须先通过”的时序条件。当前不取消已授权且正常运行的训练，但其未来指标只能在这些前置门事后完整通过时接纳；否则整次运行保持条件性不可采纳，不能用于论文结论。
 
 ## 证据边界

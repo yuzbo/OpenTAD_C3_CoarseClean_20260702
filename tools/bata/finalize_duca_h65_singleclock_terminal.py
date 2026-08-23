@@ -99,12 +99,55 @@ def _identity_equal(on: Mapping[str, Any], zero: Mapping[str, Any]) -> bool:
 def _config_hash_ok(row: Mapping[str, Any], expected_suffix: str) -> bool:
     config_path = Path(str(row.get("config_path", "")))
     expected_hash = str(row.get("config_sha256", ""))
-    if not config_path.is_file() or len(expected_hash) != 64:
+    if not _file_hash_matches(config_path, expected_hash):
         return False
     if config_path.as_posix().endswith(expected_suffix) is False:
         return False
-    actual_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()
-    return actual_hash == expected_hash
+    return True
+
+
+def _file_hash_matches(path: str | Path, expected_hash: str) -> bool:
+    artifact = Path(path)
+    expected = str(expected_hash)
+    return bool(
+        artifact.is_file()
+        and len(expected) == 64
+        and hashlib.sha256(artifact.read_bytes()).hexdigest() == expected
+    )
+
+
+def _same_path(lhs: str | Path, rhs: str | Path) -> bool:
+    return Path(lhs).resolve() == Path(rhs).resolve()
+
+
+def _family_execution_contract_ok(
+    row: Mapping[str, Any],
+    metrics: Mapping[str, Any],
+    *,
+    expected_config_suffix: str,
+    expected_gate_zero: bool | None,
+    expected_checkpoint_path: str | Path,
+    expected_checkpoint_sha256: str,
+    expected_state_key: str,
+    require_identity: bool,
+) -> bool:
+    if row.get("single_clock_gate_zero") is not expected_gate_zero:
+        return False
+    if not _config_hash_ok(row, expected_config_suffix):
+        return False
+    if not _same_path(metrics.get("checkpoint_path", ""), expected_checkpoint_path):
+        return False
+    if metrics.get("checkpoint_sha256") != expected_checkpoint_sha256:
+        return False
+    if metrics.get("checkpoint_epoch") != 59:
+        return False
+    if metrics.get("checkpoint_state_key") != expected_state_key:
+        return False
+    identity_path = row.get("selected_input_identity_path")
+    identity_hash = row.get("selected_input_identity_sha256")
+    if require_identity:
+        return _file_hash_matches(identity_path or "", identity_hash or "")
+    return identity_path is None and identity_hash is None
 
 
 def _twin_execution_contract_ok(
@@ -162,7 +205,18 @@ def finalize(
     strata: Mapping[str, Any],
     cost: Mapping[str, Any],
     stage1_average_map: float,
+    expected_eval_commit: str,
 ) -> dict[str, Any]:
+    _require(
+        receipt.get("schema_version")
+        == "duca_h65_singleclock_terminal_eval_receipt_v1",
+        "terminal receipt schema mismatch",
+    )
+    _require(
+        receipt.get("git_commit") == expected_eval_commit
+        and len(str(expected_eval_commit)) == 40,
+        "terminal evaluation commit mismatch",
+    )
     families = receipt.get("families")
     required = {
         "final_on",
@@ -174,6 +228,66 @@ def finalize(
     }
     _require(isinstance(families, Mapping) and set(families) == required, "terminal receipt families differ from the frozen six readouts")
 
+    clock_checkpoint = receipt.get("clock_checkpoint", "")
+    clock_checkpoint_sha256 = receipt.get("clock_checkpoint_sha256", "")
+    off_checkpoint = receipt.get("h65_off_checkpoint", "")
+    off_checkpoint_sha256 = receipt.get("h65_off_checkpoint_sha256", "")
+    stage1_checkpoint = receipt.get("stage1_checkpoint", "")
+    stage1_checkpoint_sha256 = receipt.get("stage1_checkpoint_sha256", "")
+    _require(
+        _file_hash_matches(clock_checkpoint, clock_checkpoint_sha256),
+        "SingleClock checkpoint binding failed",
+    )
+    _require(
+        _file_hash_matches(off_checkpoint, off_checkpoint_sha256),
+        "H65 OFF checkpoint binding failed",
+    )
+    _require(
+        _file_hash_matches(stage1_checkpoint, stage1_checkpoint_sha256),
+        "Stage-1 checkpoint binding failed",
+    )
+
+    clock_suffix = "configs/adatad/thumos/duca_h65_first_singleclock_cycle4.py"
+    zero_suffix = (
+        "configs/adatad/thumos/"
+        "duca_h65_first_singleclock_cycle4_gate_zero.py"
+    )
+    off_suffix = (
+        "configs/adatad/thumos/"
+        "duca_sampling_rate_curriculum_stage2_joint384.py"
+    )
+    family_specs = {
+        "final_on": (clock_suffix, False, clock_checkpoint, clock_checkpoint_sha256, "state_dict", True),
+        "final_gate_zero": (zero_suffix, True, clock_checkpoint, clock_checkpoint_sha256, "state_dict", True),
+        "ema_on": (clock_suffix, False, clock_checkpoint, clock_checkpoint_sha256, "state_dict_ema", True),
+        "ema_gate_zero": (zero_suffix, True, clock_checkpoint, clock_checkpoint_sha256, "state_dict_ema", True),
+        "h65_off_final": (off_suffix, None, off_checkpoint, off_checkpoint_sha256, "state_dict", False),
+        "h65_off_ema": (off_suffix, None, off_checkpoint, off_checkpoint_sha256, "state_dict_ema", False),
+    }
+    loaded_metrics = {}
+    execution_contract = {}
+    for family, spec in family_specs.items():
+        row = families[family]
+        _require(isinstance(row, Mapping), f"terminal family row is invalid: {family}")
+        metrics_path = row.get("metrics_path", "")
+        _require(
+            _file_hash_matches(metrics_path, row.get("metrics_sha256", "")),
+            f"terminal metrics hash mismatch: {family}",
+        )
+        metrics = _load(metrics_path)
+        loaded_metrics[family] = metrics
+        execution_contract[family] = _family_execution_contract_ok(
+            row,
+            metrics,
+            expected_config_suffix=spec[0],
+            expected_gate_zero=spec[1],
+            expected_checkpoint_path=spec[2],
+            expected_checkpoint_sha256=spec[3],
+            expected_state_key=spec[4],
+            require_identity=spec[5],
+        )
+    _require(all(execution_contract.values()), "terminal family execution binding failed")
+
     identity = {}
     twin_execution_contract = {}
     for prefix in ("final", "ema"):
@@ -182,8 +296,8 @@ def finalize(
         twin_execution_contract[prefix] = _twin_execution_contract_ok(
             on_row, zero_row
         )
-        on_metrics = _load(on_row["metrics_path"])
-        zero_metrics = _load(zero_row["metrics_path"])
+        on_metrics = loaded_metrics[f"{prefix}_on"]
+        zero_metrics = loaded_metrics[f"{prefix}_gate_zero"]
         for key in ("checkpoint_path", "checkpoint_sha256", "checkpoint_epoch", "checkpoint_state_key"):
             _require(on_metrics.get(key) == zero_metrics.get(key), f"{prefix} twin differs on {key}")
         on = _load(on_row["selected_input_identity_path"])
@@ -292,6 +406,7 @@ def finalize(
         "decision": decision,
         "identity_gate_pass": all(identity.values()),
         "twin_execution_contract_pass": all(twin_execution_contract.values()),
+        "family_execution_contract_pass": all(execution_contract.values()),
         "checkpoint_audit_gate_pass": _audit_ok(clock_audit, off_audit),
         "old_pair_representation_gate_pass": old_pair_no_explicit_harm,
         "old_pair_partial_representation_evidence": old_pair_partial_representation_evidence,
@@ -324,6 +439,7 @@ def parse_args():
     parser.add_argument("--strata", required=True)
     parser.add_argument("--cost", required=True)
     parser.add_argument("--stage1-average-map", type=float, default=0.594231)
+    parser.add_argument("--expected-eval-commit", required=True)
     parser.add_argument("--output", required=True)
     return parser.parse_args()
 
@@ -340,6 +456,7 @@ def main():
         strata=_load(args.strata),
         cost=_load(args.cost),
         stage1_average_map=args.stage1_average_map,
+        expected_eval_commit=args.expected_eval_commit,
     )
     atomic_write_json(args.output, payload)
 
