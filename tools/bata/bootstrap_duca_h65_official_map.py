@@ -47,6 +47,20 @@ def exact_interval(values: list[float] | np.ndarray, *, lower_rank: int, upper_r
     return float(ordered[lower_rank - 1]), float(ordered[upper_rank - 1])
 
 
+def resolve_sample_range(
+    samples: int, sample_start: int = 0, sample_stop: int | None = None
+) -> tuple[int, int]:
+    """Resolve one deterministic half-open shard of the frozen draw matrix."""
+    samples = int(samples)
+    sample_start = int(sample_start)
+    sample_stop = samples if sample_stop is None else int(sample_stop)
+    if not 0 <= sample_start < sample_stop <= samples:
+        raise ValueError(
+            "bootstrap sample shard must satisfy 0 <= start < stop <= samples"
+        )
+    return sample_start, sample_stop
+
+
 def _evaluate_draw(
     draw: tuple[str, ...],
     *,
@@ -205,6 +219,8 @@ def bootstrap_h65_official_map(
     upper_rank: int = 9750,
     workers: int = 1,
     chunksize: int = 1,
+    sample_start: int = 0,
+    sample_stop: int | None = None,
 ) -> dict[str, Any]:
     families = tuple(str(key) for key in prediction_paths)
     if baseline_family not in families or len(families) < 2:
@@ -220,6 +236,10 @@ def bootstrap_h65_official_map(
     chunksize = int(chunksize)
     if chunksize < 1:
         raise ValueError("bootstrap chunksize must be positive")
+    sample_start, sample_stop = resolve_sample_range(
+        samples, sample_start=sample_start, sample_stop=sample_stop
+    )
+    shard_samples = sample_stop - sample_start
 
     cfg = normalize_evaluation_config(evaluation_config, expected_subset="validation")
     evaluator_thread = int(cfg["thread"])
@@ -240,7 +260,10 @@ def bootstrap_h65_official_map(
     seed, seed_sha256 = seed_from_nonce(nonce, namespace)
     generator = np.random.Generator(np.random.PCG64(seed))
     indices = generator.integers(0, len(expected), size=(samples, len(expected)), dtype=np.int32)
-    draws = [tuple(expected[int(index)] for index in row) for row in indices]
+    draws = [
+        tuple(expected[int(index)] for index in row)
+        for row in indices[sample_start:sample_stop]
+    ]
     sampled = {
         family: {metric: [] for metric in _METRIC_KEYS}
         for family in families
@@ -254,7 +277,7 @@ def bootstrap_h65_official_map(
             "evaluation_config": cfg,
         }
         iterator = (_evaluate_draw_in_memory(draw, **kwargs) for draw in draws)
-        _collect(iterator, sampled, families, samples)
+        _collect(iterator, sampled, families, shard_samples)
     else:
         with ProcessPoolExecutor(
             max_workers=workers,
@@ -266,7 +289,52 @@ def bootstrap_h65_official_map(
                 draws,
                 chunksize=chunksize,
             )
-            _collect(iterator, sampled, families, samples)
+            _collect(iterator, sampled, families, shard_samples)
+
+    common = {
+        "paired_video_cluster_bootstrap": True,
+        "rng": "numpy.random.PCG64",
+        "nonce": nonce,
+        "namespace": namespace,
+        "seed_uint64": seed,
+        "seed_sha256": seed_sha256,
+        "samples": samples,
+        "interval_rank_convention": "one_based_order_statistics",
+        "lower_rank": int(lower_rank),
+        "upper_rank": int(upper_rank),
+        "baseline_family": baseline_family,
+        "family_order": list(families),
+        "video_ids": list(expected),
+        "prediction_paths": {
+            key: str(Path(value).resolve()) for key, value in prediction_paths.items()
+        },
+        "prediction_sha256": {
+            key: sha256_file(value) for key, value in prediction_paths.items()
+        },
+        "evaluation_config": cfg,
+        "evaluation_config_sha256": canonical_sha256(cfg),
+        "evaluator": official_evaluator_identity(),
+    }
+    execution = {
+        "workers": workers,
+        "evaluator_thread_metadata": evaluator_thread,
+        "evaluator_thread_used_by_ap_core": False,
+        "chunksize": chunksize,
+        "result_order": "executor_map_input_order",
+        "engine": "official_compute_average_precision_detection_in_memory_v1",
+        "elided_operations": ["per_draw_json_roundtrip", "mAP_constructor"],
+    }
+    if (sample_start, sample_stop) != (0, samples):
+        return {
+            "schema_version": "duca_h65_official_pcg64_video_bootstrap_shard_v1",
+            "official_evaluator_reexecuted_per_resample": True,
+            **common,
+            "sample_start": sample_start,
+            "sample_stop": sample_stop,
+            "shard_samples": shard_samples,
+            "sampled_metrics": sampled,
+            "execution": execution,
+        }
 
     comparisons: dict[str, Any] = {}
     for family in families:
@@ -291,33 +359,8 @@ def bootstrap_h65_official_map(
     return {
         "schema_version": "duca_h65_official_pcg64_video_bootstrap_v1",
         "official_evaluator_reexecuted_per_resample": True,
-        "paired_video_cluster_bootstrap": True,
-        "rng": "numpy.random.PCG64",
-        "nonce": nonce,
-        "namespace": namespace,
-        "seed_uint64": seed,
-        "seed_sha256": seed_sha256,
-        "samples": samples,
-        "interval_rank_convention": "one_based_order_statistics",
-        "lower_rank": int(lower_rank),
-        "upper_rank": int(upper_rank),
-        "baseline_family": baseline_family,
-        "family_order": list(families),
-        "video_ids": list(expected),
-        "prediction_paths": {key: str(Path(value).resolve()) for key, value in prediction_paths.items()},
-        "prediction_sha256": {key: sha256_file(value) for key, value in prediction_paths.items()},
-        "evaluation_config": cfg,
-        "evaluation_config_sha256": canonical_sha256(cfg),
-        "execution": {
-            "workers": workers,
-            "evaluator_thread_metadata": evaluator_thread,
-            "evaluator_thread_used_by_ap_core": False,
-            "chunksize": chunksize,
-            "result_order": "executor_map_input_order",
-            "engine": "official_compute_average_precision_detection_in_memory_v1",
-            "elided_operations": ["per_draw_json_roundtrip", "mAP_constructor"],
-        },
-        "evaluator": official_evaluator_identity(),
+        **common,
+        "execution": execution,
         "point_estimates": point_estimates,
         "sampled_metrics": sampled,
         "comparisons": comparisons,
@@ -352,6 +395,8 @@ def parse_args(argv: list[str] | None = None):
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--evaluator-thread", type=int, default=16)
     parser.add_argument("--chunksize", type=int, default=1)
+    parser.add_argument("--sample-start", type=int, default=0)
+    parser.add_argument("--sample-stop", type=int)
     parser.add_argument("--output", required=True)
     return parser.parse_args(argv)
 
@@ -378,6 +423,8 @@ def main():
         namespace=args.namespace,
         workers=args.workers,
         chunksize=args.chunksize,
+        sample_start=args.sample_start,
+        sample_stop=args.sample_stop,
     )
     atomic_write_json(args.output, payload)
 
