@@ -205,6 +205,8 @@ class ActionFormer(SingleStageDetector):
             if window_start.numel() != 1:
                 raise ValueError("SingleClock window_start_frame must be scalar")
             window_start = window_start.item()
+        if isinstance(window_start, np.generic):
+            window_start = window_start.item()
         if isinstance(window_start, float) and window_start.is_integer():
             window_start = int(window_start)
         return f"{video_name}|window_start_frame={window_start}", video_name, window_start

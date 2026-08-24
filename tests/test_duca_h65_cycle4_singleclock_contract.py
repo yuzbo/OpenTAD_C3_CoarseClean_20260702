@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 import torch.nn as nn
@@ -142,6 +143,29 @@ def test_singleclock_identity_audit_seals_selected_rgb_positions_and_mask():
     ]
     with pytest.raises(RuntimeError, match="duplicate SingleClock identity sample"):
         detector_on._record_single_clock_identity(inputs, masks, metas)
+
+
+def test_singleclock_identity_audit_normalizes_numpy_window_start():
+    detector = _clock_detector_stub(gate_zero=False)
+    detector.single_clock_admission = True
+    detector.enable_single_clock_identity_audit()
+    inputs = torch.zeros(1, 1, 3, 384, 2, 2)
+    masks = torch.ones(1, 384, dtype=torch.bool)
+    metas = [
+        {
+            "video_name": "video_validation_0000001",
+            "window_start_frame": np.int64(768),
+            "irregular_selected_positions": exact_uniform_positions(768, 384).tolist(),
+            "irregular_selected_valid_len": 384,
+            "irregular_dense_valid_len": 768,
+        }
+    ]
+
+    detector._record_single_clock_identity(inputs, masks, metas)
+    payload = detector.single_clock_identity_payload()
+
+    assert payload["records"][0]["window_start_frame"] == 768
+    assert payload["records"][0]["sample_id"].endswith("window_start_frame=768")
 
 
 def test_tools_test_exposes_singleclock_identity_evidence_switch():
