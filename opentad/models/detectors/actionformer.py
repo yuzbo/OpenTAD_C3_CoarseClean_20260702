@@ -240,6 +240,7 @@ class ActionFormer(SingleStageDetector):
             sample_id, video_name, window_start = self._single_clock_sample_id(meta)
             count = int(selected_mask[batch_idx].long().sum().item())
             selected_rgb = inputs[batch_idx : batch_idx + 1, :, :, :count]
+            videomae_input = inputs[batch_idx : batch_idx + 1]
             selected_positions = positions[batch_idx, :count]
             mask_row = selected_mask[batch_idx]
             record = {
@@ -252,6 +253,7 @@ class ActionFormer(SingleStageDetector):
                     int(value) for value in selected_positions.detach().cpu().tolist()
                 ],
                 "selected_rgb_sha256": self._single_clock_tensor_sha256(selected_rgb),
+                "videomae_input_sha256": self._single_clock_tensor_sha256(videomae_input),
                 "selected_positions_sha256": self._single_clock_tensor_sha256(selected_positions),
                 "selected_mask_sha256": self._single_clock_tensor_sha256(mask_row),
             }
@@ -262,7 +264,7 @@ class ActionFormer(SingleStageDetector):
             previous = self._single_clock_identity_records.get(sample_id)
             if previous is not None:
                 identity_keys = ("video_name", "window_start_frame", "selected_valid_len", "dense_valid_len",
-                                 "selected_positions", "selected_rgb_sha256", "selected_positions_sha256", "selected_mask_sha256")
+                                 "selected_positions", "selected_rgb_sha256", "videomae_input_sha256", "selected_positions_sha256", "selected_mask_sha256")
                 if any(previous[key] != record[key] for key in identity_keys):
                     raise RuntimeError(f"conflicting duplicate SingleClock identity sample: {sample_id}")
                 self._single_clock_identity_duplicate_counts[sample_id] = self._single_clock_identity_duplicate_counts.get(sample_id, 0) + 1
@@ -286,7 +288,7 @@ class ActionFormer(SingleStageDetector):
             for key in sorted(self._single_clock_identity_duplicate_counts)
         ]
         return {
-            "schema_version": "duca_h65_single_clock_selected_input_identity_v1",
+            "schema_version": "duca_h65_single_clock_selected_input_identity_v2",
             "sample_count": len(records),
             "total_input_exposure_count": self._single_clock_identity_exposure_count,
             "unique_physical_window_count": len(records),

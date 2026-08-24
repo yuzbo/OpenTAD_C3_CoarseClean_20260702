@@ -124,7 +124,9 @@ def test_singleclock_identity_audit_seals_selected_rgb_positions_and_mask():
     detector_on, on = collect(inputs, gate_zero=False)
     _, gate_zero = collect(inputs.clone(), gate_zero=True)
     assert on["aggregate_sha256"] == gate_zero["aggregate_sha256"]
+    assert on["schema_version"] == "duca_h65_single_clock_selected_input_identity_v2"
     assert on["sample_count"] == 1
+    assert on["records"][0]["videomae_input_sha256"] == gate_zero["records"][0]["videomae_input_sha256"]
 
     changed = inputs.clone()
     changed[..., 7, 0, 0] += 1

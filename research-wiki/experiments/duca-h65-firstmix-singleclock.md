@@ -36,15 +36,16 @@
 
 ## 终态证据实现
 
-- 新增默认关闭的 selected-input identity 审计：逐窗口封存选中 RGB、原始物理位置与有效掩码的 SHA256，并保留原始位置序列；只在终态评估显式启用，不改变训练或普通推理数值路径。
+- 新增默认关闭的 selected-input identity 审计：逐窗口封存选中 RGB、完整 VideoMAE 输入张量、原始物理位置与有效掩码的 SHA256，并保留原始位置序列；只在终态评估显式启用，不改变训练或普通推理数值路径。
 - 终态启动器固定执行同一个 epoch-59 checkpoint 的 final/final-EMA `CLOCK_ON` 与 `CLOCK_GATE_ZERO` 四次官方评估，并在同一评估代码 revision 上仅重推理既有 H65 OFF final/final-EMA，不重训任何基线。
 - 配对统计实现固定为 10,000 次整视频 cluster bootstrap；每次以相同视频 multiplicity 重算官方 pooled AP，使用 `SHA256(nonce + "\n" + namespace)` 前 8 字节大端无符号种子、NumPy PCG64，以及排序后 1-based ranks 250/9750。
-- 分层分析只用 training population 冻结短动作阈值与时间畸变量分位点；validation 只按冻结阈值报告短动作差值和高/低畸变交互，不使用 validation 标签调整阈值。
-- 完整成本比较固定为同一 epoch-59 EMA checkpoint 的 `CLOCK_ON/CLOCK_GATE_ZERO` 三次同节点顺序配对，顺序为 ON-ZERO、ZERO-ON、ON-ZERO；每次先完成 50 个预热样本，再覆盖完整官方 validation workload。主统计为三次完整运行中位延迟比、三次逐窗口 p90 的中位比和全窗口峰值显存比。
+- 最新冻结门只以 `EMA CLOCK_ON - H65 OFF EMA` 的 Avg-mAP、mAP@0.6、mAP@0.7 三项 point delta 判定非劣，三项均须包含等号地不低于 `-0.20 pp`；配对 bootstrap 置信区间、ON-vs-gate-zero、旧 RankPack/TrueTime、训练恢复完整性和 Stage-1 成熟度均只作诊断。
+- 边界风险分析使用 H65 OFF training population 的完整 tubelet 物理中心 gap-CV 与原始 GT boundary-density 冻结 q75；validation 采用官方重复 GT 去除、物理秒坐标、score-ranked IoU≥0.5 一对一匹配、漏检惩罚、先逐 GT 后逐视频等权汇总，并分别检查 high-gap-CV 与 high-boundary-density 的 `EMA ON - H65 OFF` error delta 是否 `<=0`。当前既有运行未预先封存 H65 OFF 窗口秒级 ledger，缺失时只能报告 `NOT_EVALUABLE_PREEXISTING_ARTIFACT_GAP`，不得伪称边界机制通过。
+- 完整成本比较仍可固定为同一 epoch-59 EMA checkpoint 的 `CLOCK_ON/CLOCK_GATE_ZERO` 三次同节点顺序配对，但最新 Unit-1 合同将成本明确降为报告项，不得改变 Unit-1 PASS/KILL。
 - 终态回执不仅校验同一 checkpoint、final/EMA state key 和选中 RGB/位置/掩码一致，还封存并重算 ON 与 gate-zero 的配置路径、配置哈希和门状态，防止把 ON 输出误标为 gate-zero twin。
-- 本地 shell 语法、Python 编译与 30 项纯合同测试通过；这些仍是尚待 N16R4 目标环境复核和终态执行的证据工具，不是实验结果。涉及真实模型加载、GPU 评估和完整 workload 的接纳必须以 N16R4 为准。
-- 最新 Pro 终稿在 Job 已启动后补充了“旧 RankPack/TrueTime bootstrap 与 H65 OFF baseline maturity 必须先通过”的时序条件。当前不取消已授权且正常运行的训练，但其未来指标只能在这些前置门事后完整通过时接纳；否则整次运行保持条件性不可采纳，不能用于论文结论。
+- 本地 Python 编译与 33 项无数据 focused tests 通过；独立 Critic 对修正后的终结器、物理时间边界分析和身份审计返回 `UNIT1_GATE_IMPLEMENTATION_PASS`。本地含 PyTorch 的合同测试因 Windows `c10.dll` 初始化失败无法收集，必须在 N16R4 目标环境复核；该环境故障不是性能证据。
+- 最新 Pro 终稿删除了旧正增益、旧配对证据、cost 与 coadaptation 的硬门。合法科学判决只有 `PASS_UNIT1_SINGLECLOCK_GATE` 与 `KILL_SINGLECLOCK_REPRESENTATION`；H65 replay 或 same-checkpoint 身份失败必须输出 `INVALID` 且无科学判决。
 
 ## 证据边界
 
-Job `1252482` 当前只证明正式训练已经越过预检、完成前五个 epoch，并形成合格恢复点。旧证据 bootstrap、H65 OFF baseline eligibility、终态双读出、短动作/畸变分层与完整成本仍未闭合。训练完成前不得声称 SingleClock 改善或损害 H65，也不得把 PRE_RUN、早期 loss、恢复检查或证据工具实现解释为效能证据。
+Job `1252482` 的训练完成不等于 Unit-1 结论。六族终态评估与整视频 bootstrap 仍在运行；H65 replay 五边界身份和 canonical-uniform bit identity 尚未形成正式收据。现阶段不得声称 SingleClock 改善或损害 H65，也不得把 PRE_RUN、训练完成、恢复检查或证据工具实现解释为效能证据。

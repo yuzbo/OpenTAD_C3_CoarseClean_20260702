@@ -32,6 +32,7 @@ def _identity(path):
     path.write_text(
         json.dumps(
             {
+                "schema_version": "duca_h65_single_clock_selected_input_identity_v2",
                 "sample_count": 1,
                 "total_input_exposure_count": 1,
                 "unique_physical_window_count": 1,
@@ -46,6 +47,7 @@ def _identity(path):
                         "dense_valid_len": 768,
                         "selected_positions": list(range(384)),
                         "selected_rgb_sha256": "r",
+                        "videomae_input_sha256": "v",
                         "selected_positions_sha256": "p",
                         "selected_mask_sha256": "m",
                     }
@@ -61,6 +63,7 @@ def _sha256(path):
 
 
 def _metrics(path, checkpoint, state_key):
+    binding_hash = "b" * 64
     path.write_text(
         json.dumps(
             {
@@ -68,6 +71,10 @@ def _metrics(path, checkpoint, state_key):
                 "checkpoint_sha256": _sha256(checkpoint),
                 "checkpoint_epoch": 59,
                 "checkpoint_state_key": state_key,
+                "evaluation_annotation_sha256": binding_hash,
+                "evaluation_class_map_sha256": binding_hash,
+                "evaluation_config_sha256": binding_hash,
+                "evaluator": {"source_sha256": binding_hash},
             }
         ),
         encoding="utf-8",
@@ -185,13 +192,64 @@ def _finalizer_fixture(tmp_path):
         "h65_off_final": dict.fromkeys(metrics, 0.65),
     }
     ema_points = {
-        "ema_on": dict.fromkeys(metrics, 0.67),
-        "ema_gate_zero": dict.fromkeys(metrics, 0.66),
+        "ema_on": dict.fromkeys(metrics, 0.658),
+        "ema_gate_zero": dict.fromkeys(metrics, 0.68),
         "h65_off_ema": dict.fromkeys(metrics, 0.66),
     }
     old_points = {
         "truetime": dict.fromkeys(metrics, 0.62),
         "rankpack": dict.fromkeys(metrics, 0.61),
+    }
+    replay_hash = "a" * 64
+    binding_hash = "b" * 64
+    h65_replay_identity = {
+        "schema_version": "duca_h65_replay_five_boundary_identity_v1",
+        "checkpoint_sha256": _sha256(off_checkpoint),
+        "five_boundaries": {
+            key: {
+                "reference_sha256": replay_hash,
+                "replay_sha256": replay_hash,
+                "bit_identical": True,
+            }
+            for key in (
+                "selected_integer_indices",
+                "gathered_rgb_tensor",
+                "videomae_input_tensor",
+                "detector_raw_selected_q",
+                "canonical_official_evaluator_json",
+            )
+        },
+        "bindings": {
+            key: (
+                _sha256(off_config)
+                if key == "config_sha256"
+                else binding_hash
+            )
+            for key in (
+                "config_sha256",
+                "annotation_sha256",
+                "class_map_sha256",
+                "evaluator_sha256",
+                "evaluation_config_sha256",
+            )
+        },
+    }
+    nominal_uniform_identity = {
+        "schema_version": "duca_h65_singleclock_nominal_uniform_bit_identity_v1",
+        "checkpoint_sha256": _sha256(clock_checkpoint),
+        "canonical_uniform_positions_exact": True,
+        "relative_clock_residual_bit_zero": True,
+        "relative_bias_bit_zero": True,
+        "first_temporal_mixing": {
+            "singleclock_sha256": replay_hash,
+            "gate_zero_sha256": replay_hash,
+            "bit_identical": True,
+        },
+        "backbone_output": {
+            "singleclock_sha256": replay_hash,
+            "gate_zero_sha256": replay_hash,
+            "bit_identical": True,
+        },
     }
     return {
         "receipt": receipt,
@@ -199,6 +257,8 @@ def _finalizer_fixture(tmp_path):
         "off_audit": off,
         "final_bootstrap": _bootstrap(tuple(final_points), final_points),
         "ema_bootstrap": _bootstrap(tuple(ema_points), ema_points),
+        "h65_replay_identity": h65_replay_identity,
+        "nominal_uniform_identity": nominal_uniform_identity,
         "old_pair_bootstrap": _bootstrap(tuple(old_points), old_points),
         "strata": {
             "schema_version": "duca_h65_singleclock_strata_v1",
@@ -217,16 +277,19 @@ def _finalizer_fixture(tmp_path):
     }
 
 
-def test_finalizer_accepts_frozen_positive_gate(tmp_path):
+def test_finalizer_accepts_inclusive_minus_point_two_pp_gate(tmp_path):
     result = finalize(**_finalizer_fixture(tmp_path))
-    assert result["decision"] == "CONTINUE_TO_REPLICATION"
-    assert result["identity_gate_pass"] is True
-    assert result["twin_execution_contract_pass"] is True
-    assert result["family_execution_contract_pass"] is True
-    assert result["clock_recovery_contract_pass"] is True
-    assert result["h65_off_recovery_contract_pass"] is True
-    assert result["paper_claim_admissible"] is True
-    assert result["bridge_authorized"] is False
+    assert result["decision_token"] == "PASS_UNIT1_SINGLECLOCK_GATE"
+    assert result["evidence_status"] == "VALID"
+    assert all(
+        result["primary_metrics"][metric]["point_gate_pass"]
+        for metric in ("average_mAP", "mAP@0.6", "mAP@0.7")
+    )
+    assert result["primary_metrics"]["average_mAP"]["point_delta_pp_decimal"] == "-0.200"
+    assert result["boundary_gate"]["status"] == "NOT_EVALUABLE_PREEXISTING_ARTIFACT_GAP"
+    assert result["boundary_gate"]["used_for_decision"] is False
+    assert result["paper_claim_admissible"] is False
+    assert result["unit2_query_builder_eligible"] is False
 
 
 def test_finalizer_rejects_metrics_changed_after_receipt(tmp_path):
@@ -234,11 +297,13 @@ def test_finalizer_rejects_metrics_changed_after_receipt(tmp_path):
     metrics_path = kwargs["receipt"]["families"]["ema_gate_zero"]["metrics_path"]
     with open(metrics_path, "a", encoding="utf-8") as stream:
         stream.write("\n")
-    with pytest.raises(ValueError, match="metrics hash mismatch"):
-        finalize(**kwargs)
+    result = finalize(**kwargs)
+    assert result["evidence_status"] == "INVALID"
+    assert result["decision_token"] is None
+    assert result["first_failure"] == "INVALID_CHECKPOINT_CONFIG_EVALUATOR_BINDING"
 
 
-def test_finalizer_keeps_positive_mechanism_diagnostic_but_blocks_replication_for_legacy_off_recovery_gap(tmp_path):
+def test_recovery_state_and_old_diagnostics_do_not_change_unit1_decision(tmp_path):
     kwargs = _finalizer_fixture(tmp_path)
     kwargs["off_audit"]["recovery_state_complete"] = False
     kwargs["off_audit"]["recovery_protocol_deviation"] = [
@@ -246,17 +311,16 @@ def test_finalizer_keeps_positive_mechanism_diagnostic_but_blocks_replication_fo
         "data_loader_state",
     ]
     result = finalize(**kwargs)
-    assert result["decision"] == "REVISE_WITHOUT_MORE_TIME_MODULES"
-    assert result["checkpoint_audit_gate_pass"] is True
-    assert result["h65_off_recovery_contract_pass"] is False
-    assert result["h65_off_recovery_protocol_deviation"] == [
+    assert result["decision_token"] == "PASS_UNIT1_SINGLECLOCK_GATE"
+    assert result["diagnostics"]["h65_off_recovery_contract_pass"] is False
+    assert result["diagnostics"]["h65_off_recovery_protocol_deviation"] == [
         "rng_state",
         "data_loader_state",
     ]
     assert result["paper_claim_admissible"] is False
 
 
-def test_finalizer_hard_fails_when_clock_recovery_state_is_incomplete(tmp_path):
+def test_clock_recovery_gap_is_diagnostic_only(tmp_path):
     kwargs = _finalizer_fixture(tmp_path)
     kwargs["clock_audit"]["recovery_state_complete"] = False
     kwargs["clock_audit"]["recovery_protocol_deviation"] = [
@@ -264,14 +328,113 @@ def test_finalizer_hard_fails_when_clock_recovery_state_is_incomplete(tmp_path):
         "data_loader_state",
     ]
     result = finalize(**kwargs)
-    assert result["decision"] == "PIVOT_TO_ACQUISITION_OR_TRAINING_MATURITY"
-    assert result["checkpoint_audit_gate_pass"] is True
-    assert result["clock_recovery_contract_pass"] is False
+    assert result["decision_token"] == "PASS_UNIT1_SINGLECLOCK_GATE"
+    assert result["diagnostics"]["clock_recovery_contract_pass"] is False
     assert result["paper_claim_admissible"] is False
+
+
+def _set_ema_on_metric(kwargs, metric, value, *, sampled_value=None):
+    kwargs["ema_bootstrap"]["point_estimates"]["ema_on"][metric] = value
+    kwargs["ema_bootstrap"]["sampled_metrics"]["ema_on"][metric] = [
+        value if sampled_value is None else sampled_value
+    ] * 10000
+
+
+@pytest.mark.parametrize("metric", ["average_mAP", "mAP@0.6", "mAP@0.7"])
+def test_any_primary_metric_below_minus_point_two_pp_kills(tmp_path, metric):
+    kwargs = _finalizer_fixture(tmp_path)
+    _set_ema_on_metric(kwargs, metric, "0.657999")
+    result = finalize(**kwargs)
+    assert result["decision_token"] == "KILL_SINGLECLOCK_REPRESENTATION"
+    assert result["first_failure"] == f"PRIMARY_NONINFERIORITY_FAILURE:{metric}"
+
+
+def test_bootstrap_ci_is_report_only(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    for metric in ("average_mAP", "mAP@0.6", "mAP@0.7"):
+        _set_ema_on_metric(kwargs, metric, "0.659", sampled_value="0.650")
+    result = finalize(**kwargs)
+    assert result["decision_token"] == "PASS_UNIT1_SINGLECLOCK_GATE"
+    assert result["primary_metrics"]["average_mAP"]["ci_lower_pp_report_only"] < -0.20
+
+
+def test_same_checkpoint_gate_zero_loss_does_not_enter_primary_gate(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    for metric in ("average_mAP", "mAP@0.6", "mAP@0.7"):
+        kwargs["ema_bootstrap"]["point_estimates"]["ema_gate_zero"][metric] = 0.70
+        kwargs["ema_bootstrap"]["sampled_metrics"]["ema_gate_zero"][metric] = [0.70] * 10000
+    result = finalize(**kwargs)
+    assert result["decision_token"] == "PASS_UNIT1_SINGLECLOCK_GATE"
+
+
+def test_h65_replay_identity_failure_is_invalid_not_scientific_kill(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    kwargs["h65_replay_identity"]["five_boundaries"]["gathered_rgb_tensor"]["bit_identical"] = False
+    result = finalize(**kwargs)
+    assert result["evidence_status"] == "INVALID"
+    assert result["decision_token"] is None
+    assert result["first_failure"] == "INVALID_H65_REPLAY_IDENTITY"
+
+
+def test_nominal_uniform_bit_identity_failure_is_scientific_kill(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    kwargs["nominal_uniform_identity"]["backbone_output"]["bit_identical"] = False
+    result = finalize(**kwargs)
+    assert result["evidence_status"] == "VALID"
+    assert result["decision_token"] == "KILL_SINGLECLOCK_REPRESENTATION"
+    assert result["first_failure"] == "NOMINAL_UNIFORM_BIT_IDENTITY_FAILURE"
+
+
+def test_cost_is_report_only(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    kwargs["cost"].update(
+        median_latency_ratio_on_over_gate_zero=1.5,
+        p90_latency_ratio_on_over_gate_zero=1.8,
+        peak_memory_ratio_on_over_gate_zero=1.3,
+    )
+    result = finalize(**kwargs)
+    assert result["decision_token"] == "PASS_UNIT1_SINGLECLOCK_GATE"
+    assert result["cost"]["decision_role"] == "report_only"
+
+
+def test_evaluable_boundary_positive_delta_kills(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    kwargs["boundary"] = {
+        "schema_version": "duca_h65_singleclock_boundary_gate_v1",
+        "status": "EVALUABLE",
+        "comparison": "ema_on_minus_h65_off_ema",
+        "high_gapcv_delta_point": 1e-12,
+        "high_boundary_density_delta_point": -0.01,
+        "bootstrap_samples": 10000,
+        "bootstrap_cluster": "whole_video",
+        "ci_role": "report_only",
+    }
+    result = finalize(**kwargs)
+    assert result["decision_token"] == "KILL_SINGLECLOCK_REPRESENTATION"
+    assert result["first_failure"] == "BOUNDARY_RISK_FAILURE"
+
+
+def test_evaluable_boundary_zero_is_inclusive_pass(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    kwargs["boundary"] = {
+        "schema_version": "duca_h65_singleclock_boundary_gate_v1",
+        "status": "EVALUABLE",
+        "comparison": "ema_on_minus_h65_off_ema",
+        "high_gapcv_delta_point": 0.0,
+        "high_boundary_density_delta_point": -0.01,
+        "bootstrap_samples": 10000,
+        "bootstrap_cluster": "whole_video",
+        "ci_role": "report_only",
+    }
+    result = finalize(**kwargs)
+    assert result["decision_token"] == "PASS_UNIT1_SINGLECLOCK_GATE"
+    assert result["boundary_gate"]["used_for_decision"] is True
+
+
 def test_identity_accounting_mismatch_rejected():
     from tools.bata.finalize_duca_h65_singleclock_terminal import _identity_equal
 
-    base = {"sample_count": 1, "records": [_record()], "total_input_exposure_count": 2,
+    base = {"schema_version": "duca_h65_single_clock_selected_input_identity_v2", "sample_count": 1, "records": [_record()], "total_input_exposure_count": 2,
             "unique_physical_window_count": 1, "duplicate_exposure_count": 1,
             "duplicate_samples": [{"sample_id": "v|window_start_frame=0", "duplicate_exposure_count": 1}]}
     changed = dict(base)
@@ -283,6 +446,7 @@ def test_identity_accounting_requires_explicit_fields_and_consistency():
     from tools.bata.finalize_duca_h65_singleclock_terminal import _identity_equal
 
     valid = {
+        "schema_version": "duca_h65_single_clock_selected_input_identity_v2",
         "sample_count": 2,
         "total_input_exposure_count": 3,
         "unique_physical_window_count": 2,
@@ -306,6 +470,7 @@ def _record(sample_id="v|window_start_frame=0", video_name="v", start=0, positio
         "sample_id": sample_id, "video_name": video_name, "window_start_frame": start,
         "selected_valid_len": len(positions), "dense_valid_len": 4,
         "selected_positions": positions, "selected_rgb_sha256": "r",
+        "videomae_input_sha256": "v",
         "selected_positions_sha256": "p", "selected_mask_sha256": "m",
     }
 
@@ -316,9 +481,10 @@ def _record(sample_id="v|window_start_frame=0", video_name="v", start=0, positio
     lambda p: p["records"].reverse(),
     lambda p: p["records"][0].update(sample_id="wrong"),
     lambda p: p["records"][0].update(selected_positions=[0, 0]),
+    lambda p: p["records"][0].update(videomae_input_sha256=""),
 ])
 def test_identity_records_validator_rejects_malformed_payload(mutate):
-    payload = {"sample_count": 2, "total_input_exposure_count": 2,
+    payload = {"schema_version": "duca_h65_single_clock_selected_input_identity_v2", "sample_count": 2, "total_input_exposure_count": 2,
                "unique_physical_window_count": 2, "duplicate_exposure_count": 0,
                "duplicate_samples": [],
                "records": [_record(), _record("v|window_start_frame=1", start=1)]}
@@ -327,20 +493,32 @@ def test_identity_records_validator_rejects_malformed_payload(mutate):
 
 
 def test_identity_records_accept_valid_duplicate_payload():
-    payload = {"sample_count": 1, "total_input_exposure_count": 2,
+    payload = {"schema_version": "duca_h65_single_clock_selected_input_identity_v2", "sample_count": 1, "total_input_exposure_count": 2,
                "unique_physical_window_count": 1, "duplicate_exposure_count": 1,
                "duplicate_samples": [{"sample_id": "v|window_start_frame=0", "duplicate_exposure_count": 1}],
                "records": [_record()]}
     assert _identity_equal(payload, dict(payload))
+
+
+def test_identity_records_reject_different_videomae_input_tensor_hash():
+    payload = {"schema_version": "duca_h65_single_clock_selected_input_identity_v2",
+               "sample_count": 1, "total_input_exposure_count": 1,
+               "unique_physical_window_count": 1, "duplicate_exposure_count": 0,
+               "duplicate_samples": [], "records": [_record()]}
+    changed = json.loads(json.dumps(payload))
+    changed["records"][0]["videomae_input_sha256"] = "different"
+    assert not _identity_equal(payload, changed)
+
+
 def test_identity_records_validator_rejects_position_at_dense_boundary():
-    payload = {"sample_count": 1, "total_input_exposure_count": 1,
+    payload = {"schema_version": "duca_h65_single_clock_selected_input_identity_v2", "sample_count": 1, "total_input_exposure_count": 1,
                "unique_physical_window_count": 1, "duplicate_exposure_count": 0,
                "duplicate_samples": [], "records": [_record(positions=[0, 4])]}
     assert not _identity_equal(payload, payload)
 
 
 def test_identity_records_validator_accepts_last_dense_position():
-    payload = {"sample_count": 1, "total_input_exposure_count": 1,
+    payload = {"schema_version": "duca_h65_single_clock_selected_input_identity_v2", "sample_count": 1, "total_input_exposure_count": 1,
                "unique_physical_window_count": 1, "duplicate_exposure_count": 0,
                "duplicate_samples": [], "records": [_record(positions=[0, 3])]}
     assert _identity_equal(payload, payload)
