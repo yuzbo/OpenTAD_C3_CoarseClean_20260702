@@ -92,7 +92,9 @@ A-MoD 只稀疏化论文定义的 VideoMAE `MHSA+MLP`。现有 AdaTAD temporal a
 - QKV 权重和 q/v bias；
 - attention output projection；
 - MLP；
-- positional embedding 与最终 normalization。
+- 最终 normalization。
+
+位置编码不是 checkpoint 参数：沿用当前 VideoMAE 实现按 token 网格生成并注册的固定正弦位置编码 buffer，并校验其长度与 `8 x 10 x 10` token 布局一致。
 
 A-MoD 不创建任何新 Parameter。官方 AdaTAD adapter、projection 和 ActionFormer head 继续按原配置初始化和训练。
 
@@ -102,7 +104,9 @@ A-MoD 不创建任何新 Parameter。官方 AdaTAD adapter、projection 和 Acti
 
 当前 PyTorch SDPA 只返回 attention output，不返回论文所需的 column mean。不得用第二次完整 attention 重算分数，因为这会把节省的 QK 计算重新加回来。
 
-第一版采用单次、分块的精确 attention：在 query 维分块计算 softmax、输出和 column sum，同一次 QK/softmax 同时产生正常输出与 `r[i]`，避免保存完整 `[B,H,N,N]` attention map。该路径必须以数值测试证明：
+官方 AdaTAD 配置使用 `attention dropout=0`。第一版把这一点设为显式合同：A-MoD arm 遇到非零 attention dropout 直接拒绝启动，不在首版引入不同的 dropout/路由统计随机语义。
+
+第一版采用单次、分块的精确 attention：在 query 维分块计算 softmax、输出和 column sum，同一次 QK/softmax 同时产生正常输出与 `r[i]`，避免保存完整 `[B,H,N,N]` attention map。column mean 取 softmax 后的 attention probability；由于 dropout 固定为零，它同时也是实际 attention 输出使用的 probability。该路径必须以数值测试证明：
 
 - 与未分块显式 attention 输出一致；
 - column mean 与论文方程一致；
@@ -134,13 +138,17 @@ A-MoD 不创建任何新 Parameter。官方 AdaTAD adapter、projection 和 Acti
 - 无 ROI/K64/RC32/DSR6 语义进入该 arm；
 - 同一 seed/config 下 top-K 可重复；
 - resume 恢复 model、adapter/head、optimizer、scheduler、scaler、epoch/update 与 RNG。
+- attention dropout 精确为零；非零配置 fail closed。
 
 ### 8.2 最小正式比较
 
 - Dense 对照：只读复用 untouched official AdaTAD job `1245842`，终态 `68.73 Avg-mAP / 61.58 mAP@0.6 / 47.24 mAP@0.7`，不重复训练。
+- 在正式 A-MoD 训练前，使用 job `1245842` 的 final-EMA checkpoint 对新代码的 `capacity=1.0` 路径做一次同配置、同 evaluator 的只读 validation。其输出必须与原 dense 评测在数值容差内一致；这只验证代码路径等价，不产生新的训练基线。
 - 新实验：A-MoD-50，seed 42，60 epochs，final EMA。
 - 先报告 Avg-mAP、mAP@0.3:0.7、尤其 mAP@0.6/0.7；再报告 selector-inclusive decode-to-NMS p50/p95、峰值显存、gross energy 与真实执行账本。
 - 在终态 accuracy 尚未形成前，不启动 12.5% capacity、ROI+A-MoD、多 seed 或成本扩展。
+
+成本人口与计时边界必须和 dense control 完全相同，并计入：视频解码、预处理、H2D、patch embedding、Dense block 的 attention-stat 计算、top-K/稳定排序、gather、A-MoD Attention+MLP、carrier clone/scatter、完整网格 AdaTAD adapter、projection、detector、后处理和 NMS。连续 gross energy 与峰值显存覆盖同一完整区间；不得从账本中扣除路由或数据搬运开销。
 
 ## 9. 方案比较与最终选择
 
