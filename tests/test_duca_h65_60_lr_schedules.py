@@ -7,6 +7,8 @@ import torch
 from mmengine.config import Config
 
 from opentad.cores.scheduler import RelativeSuccessfulUpdateLR, build_scheduler
+from opentad.utils.checkpoint import save_checkpoint
+from tools.train import _restore_resumable_update_audit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -166,6 +168,8 @@ def test_resolved_configs_match_except_frozen_attribution_fields(monkeypatch):
         assert cfg.workflow.end_epoch == 30
         assert cfg.workflow.expected_train_batches_per_epoch == 100
         assert cfg.workflow.expected_successful_optimizer_updates == 3000
+        assert cfg.workflow.formal_successful_update_contract is False
+        assert cfg.workflow.require_resumable_training_state is True
         assert cfg.workflow.primary_checkpoint_epoch == 29
         assert cfg.workflow.primary_checkpoint_state_key == "state_dict_ema"
         assert cfg.workflow.checkpoint_criterion == "terminal_epoch_29_state_dict_ema"
@@ -190,3 +194,83 @@ def test_resolved_configs_match_except_frozen_attribution_fields(monkeypatch):
         config.pop("work_dir")
         config.pop("filename", None)
     assert am_dict == long_dict
+
+
+def test_launcher_has_distinct_fresh_and_resume_pre_run_modes():
+    launcher = (
+        ROOT / "scripts" / "run_duca_h65_60_lr_schedule_n16r4.sbatch"
+    ).read_text(encoding="utf-8")
+    assert "PRE_RUN_ONLY and PRE_RUN_RESUME_ONLY are mutually exclusive" in launcher
+    assert '"workflow.end_epoch=1"' in launcher
+    assert '"workflow.end_epoch=2"' in launcher
+    assert 'DUCA_RESUME_CHECKPOINT:-' in launcher
+
+
+def test_checkpoint_roundtrip_preserves_cumulative_update_audit(tmp_path):
+    model = torch.nn.Linear(2, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=1.0e-4)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
+    update_audit = {
+        "attempted_batches": 500,
+        "optimizer_attempts": 503,
+        "successful_optimizer_updates": 500,
+        "amp_skipped_attempts": 3,
+        "replayed_batches": 3,
+        "replay_exhaustions": 0,
+        "scheduler_updates": 500,
+        "ema_updates": 500,
+        "duca_schedule_updates": 500,
+        "forced_amp_overflow_attempts": 0,
+        "max_amp_retries_observed": 1,
+        "nonfinite_loss_attempts": 0,
+        "nonfinite_loss_replays": 0,
+        "nonfinite_loss_replay_exhaustions": 0,
+        "max_nonfinite_loss_retries_observed": 0,
+        "replay_state_restorations": 3,
+    }
+    checkpoint_path = save_checkpoint(
+        model,
+        None,
+        optimizer,
+        scheduler,
+        4,
+        work_dir=str(tmp_path),
+        update_audit_state=update_audit,
+        successful_optimizer_updates=500,
+    )
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    template = {
+        key: 0
+        for key in (
+            "attempted_batches",
+            "optimizer_attempts",
+            "successful_optimizer_updates",
+            "amp_skipped_attempts",
+            "replayed_batches",
+            "replay_exhaustions",
+            "scheduler_updates",
+            "ema_updates",
+            "duca_schedule_updates",
+            "forced_amp_overflow_attempts",
+            "max_amp_retries_observed",
+        )
+    }
+    restored = _restore_resumable_update_audit(checkpoint, template)
+    assert restored == update_audit
+    restored["attempted_batches"] += 1
+    assert checkpoint["update_audit_state"]["attempted_batches"] == 500
+
+
+def test_resume_rejects_update_audit_count_disagreement():
+    checkpoint = {
+        "successful_optimizer_updates": 500,
+        "update_audit_state": {
+            "attempted_batches": 500,
+            "successful_optimizer_updates": 499,
+        },
+    }
+    with pytest.raises(RuntimeError, match="disagrees"):
+        _restore_resumable_update_audit(
+            checkpoint,
+            {"attempted_batches": 0, "successful_optimizer_updates": 0},
+        )

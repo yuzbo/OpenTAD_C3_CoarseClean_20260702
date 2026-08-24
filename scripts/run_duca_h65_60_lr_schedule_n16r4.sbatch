@@ -91,6 +91,9 @@ TRAIN_ARGS=(
   "model.backbone.custom.pretrain=$ADATAD_PRETRAIN"
 )
 
+if [[ "${PRE_RUN_ONLY:-0}" == 1 && "${PRE_RUN_RESUME_ONLY:-0}" == 1 ]]; then
+  fail "PRE_RUN_ONLY and PRE_RUN_RESUME_ONLY are mutually exclusive"
+fi
 if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then
   precheck
   [[ ! -e "$WORK_DIR" ]] || fail "PRE_RUN output root already exists: $WORK_DIR"
@@ -102,14 +105,25 @@ if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then
     "workflow.val_start_epoch=9999"
     "workflow.checkpoint_interval=1"
   )
+elif [[ "${PRE_RUN_RESUME_ONLY:-0}" == 1 ]]; then
+  precheck
+  [[ -n "${DUCA_RESUME_CHECKPOINT:-}" ]] || fail "PRE_RUN resume checkpoint is required"
+  [[ ! -e "$WORK_DIR" ]] || fail "PRE_RUN resume output root already exists: $WORK_DIR"
+  TRAIN_ARGS+=(
+    "workflow.end_epoch=2"
+    "workflow.max_train_iters=${DUCA_PRE_RUN_MAX_ITERS:-2}"
+    "workflow.val_eval_interval=-1"
+    "workflow.val_loss_interval=-1"
+    "workflow.val_start_epoch=9999"
+    "workflow.checkpoint_interval=1"
+  )
 fi
 
 if [[ -n "${DUCA_RESUME_CHECKPOINT:-}" ]]; then
   [[ -r "$DUCA_RESUME_CHECKPOINT" ]] || fail "resume checkpoint is unreadable"
   TRAIN_ARGS+=(--resume "$DUCA_RESUME_CHECKPOINT")
-elif [[ "${PRE_RUN_ONLY:-0}" != 1 ]]; then
+elif [[ "${PRE_RUN_ONLY:-0}" != 1 && "${PRE_RUN_RESUME_ONLY:-0}" != 1 ]]; then
   [[ ! -e "$WORK_DIR" ]] || fail "formal output root already exists: $WORK_DIR"
 fi
 
 exec "$PYTHON" tools/train.py "${TRAIN_ARGS[@]}"
-
