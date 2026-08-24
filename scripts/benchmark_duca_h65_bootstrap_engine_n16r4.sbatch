@@ -20,6 +20,7 @@ set -euo pipefail
 
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 cd "$DUCA_REPO_ROOT"
+export PYTHONPATH="$DUCA_REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 python tools/bata/benchmark_duca_h65_bootstrap_engine.py \
   --annotation "$DUCA_ANNOTATION_PATH" \
