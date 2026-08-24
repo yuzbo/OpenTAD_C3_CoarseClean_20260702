@@ -9,6 +9,7 @@ if path not in sys.path:
     sys.path.insert(0, path)
 
 import argparse
+import json
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -47,12 +48,204 @@ ZOOMTOKEN_RECOVERY_ARMS.update(
         "R1-MOD32-KV",
         "R1-RC32-KV",
         "R1-DSR6-KV",
+        "R1-APM32-CTX64",
+        "R1-CUR32-CTX64",
         "AMOD50",
     }
 )
 ZOOMTOKEN_UPDATE_INDEX_ARMS = ZOOMTOKEN_RECOVERY_ARMS - {"DN"}
 ZOOMTOKEN_R3_ARMS = {"R3", "R3-AREA-SHIFT"}
 ZOOMTOKEN_CANONICAL_SOURCE_ARMS = ZOOMTOKEN_RECOVERY_ARMS - {"DN", "G"}
+ZOOMTOKEN_TEMPORAL_PREFLIGHT_ARMS = {
+    "R1-APM32-CTX64": "apm32_ctx64",
+    "R1-CUR32-CTX64": "cur32_ctx64",
+}
+
+
+class _SingleBatchLoader:
+    """Expose exactly one production-loader batch without changing its sampler."""
+
+    def __init__(self, loader):
+        self.loader = loader
+        self.sampler = loader.sampler
+
+    def __len__(self):
+        return 1
+
+    def __iter__(self):
+        for batch in self.loader:
+            yield batch
+            return
+        raise RuntimeError("ZoomToken mechanical preflight received an empty train loader")
+
+
+def _assert_nested_state_equal(actual, expected, path="state"):
+    if isinstance(expected, torch.Tensor):
+        if not isinstance(actual, torch.Tensor) or not torch.equal(
+            actual.detach().cpu(), expected.detach().cpu()
+        ):
+            raise RuntimeError(f"ZoomToken recovery failed to restore {path}")
+        return
+    if isinstance(expected, np.ndarray):
+        if not isinstance(actual, np.ndarray) or not np.array_equal(actual, expected):
+            raise RuntimeError(f"ZoomToken recovery failed to restore {path}")
+        return
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict) or set(actual) != set(expected):
+            raise RuntimeError(f"ZoomToken recovery key set changed at {path}")
+        for key in expected:
+            _assert_nested_state_equal(actual[key], expected[key], f"{path}.{key}")
+        return
+    if isinstance(expected, (list, tuple)):
+        if not isinstance(actual, type(expected)) or len(actual) != len(expected):
+            raise RuntimeError(f"ZoomToken recovery sequence changed at {path}")
+        for index, (actual_value, expected_value) in enumerate(zip(actual, expected)):
+            _assert_nested_state_equal(
+                actual_value,
+                expected_value,
+                f"{path}[{index}]",
+            )
+        return
+    if actual != expected:
+        raise RuntimeError(f"ZoomToken recovery value changed at {path}")
+
+
+def _zoomtoken_temporal_preflight_summary(model, recovery_contract):
+    expected_mode = ZOOMTOKEN_TEMPORAL_PREFLIGHT_ARMS.get(
+        recovery_contract["arm_surface"]
+    )
+    if expected_mode is None:
+        raise ValueError("mechanical temporal preflight accepts only APM32/CUR32")
+    candidate_model = getattr(model, "module", model)
+    route_backbone = getattr(candidate_model, "backbone", None)
+    vit_backbone = getattr(getattr(route_backbone, "model", None), "backbone", None)
+    summary = getattr(vit_backbone, "latest_native_packed_summary", None)
+    if not isinstance(summary, dict):
+        raise RuntimeError("temporal preflight produced no native-ragged execution ledger")
+    expected = {
+        "refresh_execution_mode": expected_mode,
+        "heavy_backbone_forward_count": 1,
+        "padded_heavy_tokens_per_window": 0,
+    }
+    for key, expected_value in expected.items():
+        if summary.get(key) != expected_value:
+            raise RuntimeError(
+                f"temporal preflight ledger mismatch for {key!r}: "
+                f"expected {expected_value!r}, got {summary.get(key)!r}"
+            )
+    requested = int(summary.get("requested_physical_tokens_per_window", -1))
+    unique = int(summary.get("unique_physical_tokens_per_window", -1))
+    executed = int(summary.get("executed_patch_tokens_per_window", -1))
+    if requested <= 0 or (requested, unique, executed) != (
+        requested,
+        requested,
+        requested,
+    ):
+        raise RuntimeError("temporal preflight lost exact K64 physical support")
+    refresh_by_batch = summary.get("refresh_query_tokens_per_window_by_batch")
+    if (
+        not isinstance(refresh_by_batch, list)
+        or len(refresh_by_batch) != int(summary.get("batch_size", -1))
+        or any(
+            not isinstance(value, int)
+            or value < requested // 2
+            or value > requested
+            for value in refresh_by_batch
+        )
+    ):
+        raise RuntimeError("temporal preflight refresh ledger is outside K32/K64")
+    alignment = summary.get("temporal_alignment")
+    if not isinstance(alignment, dict):
+        raise RuntimeError("temporal preflight produced no alignment ledger")
+    alignment_expected = {
+        "carrier_mode": expected_mode,
+        "memory_lifetime_tubelets": 1,
+        "clip_reset_tubelets": 8,
+        "similarity_threshold": 0.8,
+        "search_radius": 2,
+        "new_trainable_parameters": 0,
+        "previous_memory_detached": True,
+        "current_position_restored": True,
+        "future_tubelet_access": False,
+    }
+    for key, expected_value in alignment_expected.items():
+        if alignment.get(key) != expected_value:
+            raise RuntimeError(f"temporal alignment ledger mismatch for {key!r}")
+    total_tubelets = int(alignment.get("total_tubelets", -1))
+    refreshed = int(alignment.get("refreshed_tokens", -1))
+    retained = int(alignment.get("retained_tokens", -1))
+    fallback = int(alignment.get("fallback_tubelets", -1))
+    normal = int(alignment.get("normal_tubelets", -1))
+    if total_tubelets <= 0 or fallback + normal != total_tubelets:
+        raise RuntimeError("temporal alignment fallback ledger does not reconcile")
+    if refreshed + retained != total_tubelets * 64:
+        raise RuntimeError("temporal refresh/retain ledger does not reconcile")
+    return {
+        "mode": expected_mode,
+        "requested_tokens_per_window": requested,
+        "refresh_tokens_per_window_by_batch": list(refresh_by_batch),
+        "fallback_tubelets": fallback,
+        "normal_tubelets": normal,
+    }
+
+
+def _assert_no_temporal_memory_in_checkpoint(checkpoint):
+    forbidden = (
+        "apm_memory",
+        "previous_tubelet_memory",
+        "temporal_memory_cache",
+    )
+    for state_name in ("state_dict", "state_dict_ema"):
+        state = checkpoint.get(state_name)
+        if not isinstance(state, dict):
+            raise RuntimeError(f"temporal preflight checkpoint lacks {state_name}")
+        bad = [key for key in state if any(fragment in key for fragment in forbidden)]
+        if bad:
+            raise RuntimeError(
+                f"temporal preflight serialized live memory in {state_name}: {bad[:3]}"
+            )
+    training_state = checkpoint.get("training_state")
+    if not isinstance(training_state, dict):
+        raise RuntimeError("temporal preflight checkpoint lacks training_state")
+    bad = [key for key in training_state if any(fragment in key for fragment in forbidden)]
+    if bad:
+        raise RuntimeError(f"temporal preflight serialized live memory metadata: {bad}")
+
+
+def _load_zoomtoken_checkpoint_state(
+    checkpoint,
+    model,
+    model_ema,
+    optimizer,
+    scheduler,
+    scaler,
+    args,
+    cfg,
+    train_loader,
+    recovery_contract,
+):
+    model.load_state_dict(checkpoint["state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer"])
+    scheduler.load_state_dict(checkpoint["scheduler"])
+    if model_ema is not None:
+        if "state_dict_ema" not in checkpoint:
+            raise ValueError("resume checkpoint lacks the required EMA state")
+        model_ema.module.load_state_dict(checkpoint["state_dict_ema"])
+    next_successful_update_index = None
+    if recovery_contract is not None:
+        if scaler is not None:
+            if "scaler" not in checkpoint:
+                raise ValueError("ZoomToken recovery checkpoint lacks scaler state")
+            scaler.load_state_dict(checkpoint["scaler"])
+        next_successful_update_index = _restore_zoomtoken_training_state(
+            checkpoint,
+            args,
+            cfg,
+            train_loader,
+            recovery_contract,
+            model=model,
+        )
+    return next_successful_update_index
 
 
 def _zoomtoken_recovery_contract(cfg):
@@ -351,6 +544,213 @@ def _save_zoomtoken_checkpoint(
     dist.barrier()
 
 
+def _draw_zoomtoken_rng_probe(args):
+    return {
+        "python": random.random(),
+        "numpy": float(np.random.random()),
+        "torch_cpu": torch.rand(4),
+        "torch_cuda": torch.rand(4, device=f"cuda:{args.local_rank}").cpu(),
+    }
+
+
+def _run_zoomtoken_temporal_preflight(
+    args,
+    cfg,
+    train_loader,
+    model,
+    model_ema,
+    optimizer,
+    scheduler,
+    scaler,
+    recovery_contract,
+    logger,
+    next_successful_update_index,
+):
+    if recovery_contract is None or recovery_contract["arm_surface"] not in (
+        ZOOMTOKEN_TEMPORAL_PREFLIGHT_ARMS
+    ):
+        raise ValueError("temporal mechanical preflight requires APM32/CUR32 recovery")
+    if args.resume is not None:
+        raise ValueError("temporal mechanical preflight always starts from the frozen pretrain")
+    if model_ema is None or scaler is None:
+        raise ValueError("temporal mechanical preflight requires the frozen EMA/AMP recipe")
+
+    single_batch_loader = _SingleBatchLoader(train_loader)
+    single_batch_loader.sampler.set_epoch(0)
+    finite_loss_observations = []
+
+    def _observe_finite_loss(_module, _inputs, output):
+        if not isinstance(output, dict) or "cost" not in output:
+            raise RuntimeError("temporal preflight detector returned no training cost")
+        cost = output["cost"]
+        if not isinstance(cost, torch.Tensor) or not bool(torch.isfinite(cost).all().item()):
+            raise RuntimeError("temporal preflight detector loss is non-finite")
+        finite_loss_observations.append(True)
+
+    hook = model.module.register_forward_hook(_observe_finite_loss)
+    try:
+        next_successful_update_index = train_one_epoch(
+            single_batch_loader,
+            model,
+            optimizer,
+            scheduler,
+            0,
+            logger,
+            model_ema=model_ema,
+            clip_grad_l2norm=cfg.solver.clip_grad_norm,
+            logging_interval=1,
+            scaler=scaler,
+            successful_update_index=next_successful_update_index,
+            max_amp_retries_per_batch=recovery_contract[
+                "max_amp_retries_per_batch"
+            ],
+        )
+    finally:
+        hook.remove()
+    if not finite_loss_observations:
+        raise RuntimeError("temporal preflight executed no detector forward")
+    execution_receipt = _zoomtoken_temporal_preflight_summary(
+        model,
+        recovery_contract,
+    )
+
+    _save_zoomtoken_checkpoint(
+        model,
+        model_ema,
+        optimizer,
+        scheduler,
+        scaler,
+        0,
+        args,
+        cfg,
+        single_batch_loader,
+        recovery_contract,
+        next_successful_update_index,
+        is_final=False,
+    )
+    checkpoint_path = os.path.join(
+        cfg.work_dir,
+        "checkpoint",
+        "recovery_epoch_0.pth",
+    )
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location=f"cuda:{args.local_rank}",
+    )
+    required_fields = {
+        "state_dict",
+        "state_dict_ema",
+        "optimizer",
+        "scheduler",
+        "scaler",
+        "training_state",
+    }
+    if not required_fields.issubset(checkpoint):
+        missing = sorted(required_fields - set(checkpoint))
+        raise RuntimeError(f"temporal preflight recovery lacks full state: {missing}")
+    _assert_no_temporal_memory_in_checkpoint(checkpoint)
+
+    with torch.no_grad():
+        next(model.parameters()).add_(1.0)
+        next(model_ema.module.parameters()).add_(1.0)
+    optimizer.param_groups[0]["lr"] = -1.0
+    if hasattr(scheduler, "last_epoch"):
+        scheduler.last_epoch += 7
+    scaler_state = scaler.state_dict()
+    if "scale" in scaler_state:
+        scaler_state["scale"] = float(scaler_state["scale"]) * 2.0
+        scaler.load_state_dict(scaler_state)
+
+    restored_update_index = _load_zoomtoken_checkpoint_state(
+        checkpoint,
+        model,
+        model_ema,
+        optimizer,
+        scheduler,
+        scaler,
+        args,
+        cfg,
+        single_batch_loader,
+        recovery_contract,
+    )
+    if restored_update_index != next_successful_update_index:
+        raise RuntimeError("temporal preflight restored the wrong update index")
+    _assert_nested_state_equal(
+        model.state_dict(),
+        checkpoint["state_dict"],
+        "model",
+    )
+    _assert_nested_state_equal(
+        model_ema.module.state_dict(),
+        checkpoint["state_dict_ema"],
+        "ema",
+    )
+    _assert_nested_state_equal(
+        optimizer.state_dict(),
+        checkpoint["optimizer"],
+        "optimizer",
+    )
+    _assert_nested_state_equal(
+        scheduler.state_dict(),
+        checkpoint["scheduler"],
+        "scheduler",
+    )
+    _assert_nested_state_equal(
+        scaler.state_dict(),
+        checkpoint["scaler"],
+        "scaler",
+    )
+
+    first_rng_probe = _draw_zoomtoken_rng_probe(args)
+    second_update_index = _restore_zoomtoken_training_state(
+        checkpoint,
+        args,
+        cfg,
+        single_batch_loader,
+        recovery_contract,
+        model=model,
+    )
+    second_rng_probe = _draw_zoomtoken_rng_probe(args)
+    if second_update_index != restored_update_index:
+        raise RuntimeError("temporal preflight recovery update identity is unstable")
+    _assert_nested_state_equal(second_rng_probe, first_rng_probe, "rng_continuation")
+
+    receipt = {
+        "schema_version": "zoomtoken_apm32_ctx64_mechanical_preflight_v001",
+        "status": "PASS_MECHANICAL_ONLY",
+        "arm_surface": recovery_contract["arm_surface"],
+        "source_commit": recovery_contract["source_commit"],
+        "config_path": os.path.realpath(args.config),
+        "work_dir": os.path.realpath(cfg.work_dir),
+        "seed": args.seed,
+        "world_size": args.world_size,
+        "single_batch_forward_backward": True,
+        "finite_loss": True,
+        "metric_evaluation_performed": False,
+        "execution_ledger": execution_receipt,
+        "recovery_checkpoint": os.path.realpath(checkpoint_path),
+        "full_state_restored": True,
+        "rng_continuation_restored": True,
+        "temporal_memory_serialized": False,
+        "accuracy_claim_allowed": False,
+        "efficiency_claim_allowed": False,
+    }
+    if args.rank == 0:
+        control_dir = os.path.join(cfg.work_dir, "control")
+        os.makedirs(control_dir, exist_ok=True)
+        receipt_path = os.path.join(control_dir, "temporal_preflight.json")
+        temporary_path = receipt_path + ".tmp"
+        with open(temporary_path, "x", encoding="utf-8") as handle:
+            json.dump(receipt, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, receipt_path)
+        logger.info("Temporal mechanical preflight PASS: %s", receipt_path)
+    dist.barrier()
+    return receipt
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a Temporal Action Detector")
     parser.add_argument("config", metavar="FILE", type=str, help="path to config file")
@@ -363,6 +763,11 @@ def parse_args():
         help="explicit bounded work directory for a training cell",
     )
     parser.add_argument("--resume", type=str, default=None, help="resume from a checkpoint")
+    parser.add_argument(
+        "--zoomtoken-temporal-preflight-only",
+        action="store_true",
+        help="run one result-blind APM/CUR train batch plus full-state recovery fixture",
+    )
     parser.add_argument("--not_eval", action="store_true", help="whether not to eval, only do inference")
     parser.add_argument("--disable_deterministic", action="store_true", help="disable deterministic for faster speed")
     parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
@@ -397,6 +802,15 @@ def main():
             f"ZoomToken {recovery_contract['arm_surface']} requires seed "
             f"{recovery_contract['seed']}, got {args.seed}"
         )
+    if args.zoomtoken_temporal_preflight_only:
+        if recovery_contract is None or recovery_contract["arm_surface"] not in (
+            ZOOMTOKEN_TEMPORAL_PREFLIGHT_ARMS
+        ):
+            raise ValueError(
+                "temporal mechanical preflight accepts only frozen APM32/CUR32"
+            )
+        if args.resume is not None:
+            raise ValueError("temporal mechanical preflight forbids resume input")
     next_successful_update_index = (
         0
         if recovery_contract is not None
@@ -427,25 +841,29 @@ def main():
         **cfg.solver.train,
     )
 
-    val_dataset = build_dataset(cfg.dataset.val, default_args=dict(logger=logger))
-    val_loader = build_dataloader(
-        val_dataset,
-        rank=args.rank,
-        world_size=args.world_size,
-        shuffle=False,
-        drop_last=False,
-        **cfg.solver.val,
-    )
+    if args.zoomtoken_temporal_preflight_only:
+        val_loader = None
+        test_loader = None
+    else:
+        val_dataset = build_dataset(cfg.dataset.val, default_args=dict(logger=logger))
+        val_loader = build_dataloader(
+            val_dataset,
+            rank=args.rank,
+            world_size=args.world_size,
+            shuffle=False,
+            drop_last=False,
+            **cfg.solver.val,
+        )
 
-    test_dataset = build_dataset(cfg.dataset.test, default_args=dict(logger=logger))
-    test_loader = build_dataloader(
-        test_dataset,
-        rank=args.rank,
-        world_size=args.world_size,
-        shuffle=False,
-        drop_last=False,
-        **cfg.solver.test,
-    )
+        test_dataset = build_dataset(cfg.dataset.test, default_args=dict(logger=logger))
+        test_loader = build_dataloader(
+            test_dataset,
+            rank=args.rank,
+            world_size=args.world_size,
+            shuffle=False,
+            drop_last=False,
+            **cfg.solver.test,
+        )
 
     # build model
     model = build_detector(cfg.model)
@@ -498,26 +916,42 @@ def main():
         checkpoint = torch.load(args.resume, map_location=device)
         resume_epoch = checkpoint["epoch"]
         logger.info("Resume epoch is {}".format(resume_epoch))
-        model.load_state_dict(checkpoint["state_dict"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
-        scheduler.load_state_dict(checkpoint["scheduler"])
-        if model_ema is not None:
-            if "state_dict_ema" not in checkpoint:
-                raise ValueError("resume checkpoint lacks the required EMA state")
-            model_ema.module.load_state_dict(checkpoint["state_dict_ema"])
+        restored_update_index = _load_zoomtoken_checkpoint_state(
+            checkpoint,
+            model,
+            model_ema,
+            optimizer,
+            scheduler,
+            scaler,
+            args,
+            cfg,
+            train_loader,
+            recovery_contract,
+        )
         if recovery_contract is not None:
-            if scaler is not None:
-                if "scaler" not in checkpoint:
-                    raise ValueError("ZoomToken recovery checkpoint lacks scaler state")
-                scaler.load_state_dict(checkpoint["scaler"])
-            next_successful_update_index = _restore_zoomtoken_training_state(
-                checkpoint, args, cfg, train_loader, recovery_contract, model=model
-            )
+            next_successful_update_index = restored_update_index
 
         del checkpoint  # save memory if the model is very large such as ViT-g
         torch.cuda.empty_cache()
     else:
         resume_epoch = -1
+
+    if args.zoomtoken_temporal_preflight_only:
+        _run_zoomtoken_temporal_preflight(
+            args,
+            cfg,
+            train_loader,
+            model,
+            model_ema,
+            optimizer,
+            scheduler,
+            scaler,
+            recovery_contract,
+            logger,
+            next_successful_update_index,
+        )
+        logger.info("Temporal mechanical preflight over; no validation/evaluation run.\n")
+        return
 
     # train the detector
     logger.info("Training Starts...\n")

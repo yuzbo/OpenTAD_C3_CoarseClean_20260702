@@ -17,6 +17,7 @@ ROOT="${ZOOMTOKEN_PREBACKBONE_BC_SOURCE_ROOT:?set ZOOMTOKEN_PREBACKBONE_BC_SOURC
 RUN_ROOT="${ZOOMTOKEN_PREBACKBONE_BC_RUN_ROOT:?set ZOOMTOKEN_PREBACKBONE_BC_RUN_ROOT to the immutable paired result root}"
 ARM="${ZOOMTOKEN_PREBACKBONE_BC_ARM:?set ZOOMTOKEN_PREBACKBONE_BC_ARM to one frozen official arm}"
 RESUME="${ZOOMTOKEN_PREBACKBONE_BC_RESUME:-}"
+TEMPORAL_PREFLIGHT_ONLY="${ZOOMTOKEN_TEMPORAL_PREFLIGHT_ONLY:-0}"
 ANNOTATION="${BASE}/thumos14/annotations/thumos_14_anno.json"
 CLASS_MAP="${BASE}/thumos14/annotations/category_idx.txt"
 VIDEO_ROOT="${BASE}/thumos14/raw_data/video"
@@ -119,6 +120,14 @@ esac
 CONFIG="${ROOT}/configs/adatad/thumos/${CONFIG_NAME}"
 CELL_ROOT="${RUN_ROOT}/cells/${ARM_DIR}/seed42"
 
+[[ "${TEMPORAL_PREFLIGHT_ONLY}" == "0" || "${TEMPORAL_PREFLIGHT_ONLY}" == "1" ]] || \
+  fail 'ZOOMTOKEN_TEMPORAL_PREFLIGHT_ONLY must be 0 or 1'
+if [[ "${TEMPORAL_PREFLIGHT_ONLY}" == "1" ]]; then
+  [[ "${ARM}" == "R1-APM32-CTX64" || "${ARM}" == "R1-CUR32-CTX64" ]] || \
+    fail 'temporal mechanical preflight accepts only APM32/CUR32'
+  [[ -z "${RESUME}" ]] || fail 'temporal mechanical preflight forbids resume input'
+fi
+
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail 'official pre-backbone B/C requires a Slurm allocation'
 IFS=',' read -r -a visible_gpus <<< "${CUDA_VISIBLE_DEVICES:-}"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${#visible_gpus[@]}" -eq 2 ]] || \
@@ -145,6 +154,7 @@ esac
 [[ "${RUN_ROOT}/" != "${ROOT}/"* ]] || \
   fail 'official pre-backbone result root must be outside the source checkout'
 resume_args=()
+preflight_args=()
 if [[ -n "${RESUME}" ]]; then
   [[ "${RECOVERY_ENABLED}" == "1" ]] || fail 'same-cell recovery is disabled for B/C'
   [[ -d "${CELL_ROOT}" ]] || fail 'route recovery requires its existing same cell'
@@ -159,6 +169,9 @@ if [[ -n "${RESUME}" ]]; then
 else
   [[ ! -e "${CELL_ROOT}" ]] || \
     fail 'official pre-backbone cell already exists; duplicate cells are forbidden'
+fi
+if [[ "${TEMPORAL_PREFLIGHT_ONLY}" == "1" ]]; then
+  preflight_args=(--zoomtoken-temporal-preflight-only)
 fi
 
 if ! command -v module >/dev/null 2>&1 && [[ -r /etc/profile ]]; then
@@ -180,7 +193,8 @@ cd "${ROOT}"
 exec torchrun --nnodes=1 --nproc_per_node=2 \
   --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:0 \
   --rdzv_id="zoomtoken-prebackbone-bc-${SLURM_JOB_ID}-${ARM_DIR}-seed42" \
-  tools/train.py "${CONFIG}" --seed 42 --id 0 "${resume_args[@]}" \
+  tools/train.py "${CONFIG}" --seed 42 --id 0 \
+  "${resume_args[@]}" "${preflight_args[@]}" \
   --cfg-options \
   "work_dir=${CELL_ROOT}" \
   "zoomtoken_p1_config.source_commit=${EXPECTED_COMMIT}" \

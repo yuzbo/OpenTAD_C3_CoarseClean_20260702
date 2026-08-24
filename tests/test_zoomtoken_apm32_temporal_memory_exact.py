@@ -1,3 +1,4 @@
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,17 @@ from opentad.models.backbones.vit_adapter import Block, VisionTransformerAdapter
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_train_module():
+    spec = importlib.util.spec_from_file_location(
+        "zoomtoken_apm32_train_entry",
+        ROOT / "tools" / "train.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 def _strict_indices(top: int = 0, left: int = 0) -> torch.Tensor:
@@ -326,6 +338,116 @@ def test_configs_and_launcher_bind_only_the_two_frozen_temporal_arms():
     assert launcher.count("R1-CUR32-CTX64)") == 1
     assert "georoute_official_r1_apm32_ctx64_prebackbone_seed42_v001.py" in launcher
     assert "georoute_official_r1_cur32_ctx64_prebackbone_seed42_v001.py" in launcher
+
+
+def test_apm_and_cur_enter_the_existing_full_state_recovery_contract():
+    train_entry = _load_train_module()
+    config_dir = ROOT / "configs" / "adatad" / "thumos"
+    for filename, arm in (
+        (
+            "georoute_official_r1_apm32_ctx64_prebackbone_seed42_v001.py",
+            "R1-APM32-CTX64",
+        ),
+        (
+            "georoute_official_r1_cur32_ctx64_prebackbone_seed42_v001.py",
+            "R1-CUR32-CTX64",
+        ),
+    ):
+        config = Config.fromfile(config_dir / filename)
+        config.zoomtoken_p1_config.source_commit = "d" * 40
+        config.work_dir = f"/tmp/zoomtoken-preflight/{arm}/gpu2_id0"
+        contract = train_entry._zoomtoken_recovery_contract(config)
+        assert contract["arm_surface"] == arm
+        assert contract["interval_epochs"] == 5
+        assert contract["keep_latest"] == 3
+        assert contract["full_state"] is True
+
+
+def test_single_batch_loader_never_consumes_a_second_batch():
+    train_entry = _load_train_module()
+
+    class _Loader:
+        sampler = object()
+
+        def __iter__(self):
+            yield "first"
+            raise AssertionError("second batch must not be consumed")
+
+    loader = train_entry._SingleBatchLoader(_Loader())
+    assert len(loader) == 1
+    assert list(loader) == ["first"]
+
+
+@pytest.mark.parametrize(
+    "arm,mode",
+    [
+        ("R1-APM32-CTX64", "apm32_ctx64"),
+        ("R1-CUR32-CTX64", "cur32_ctx64"),
+    ],
+)
+def test_temporal_preflight_ledger_reconciles_without_metric_values(arm, mode):
+    train_entry = _load_train_module()
+    summary = {
+        "refresh_execution_mode": mode,
+        "heavy_backbone_forward_count": 1,
+        "padded_heavy_tokens_per_window": 0,
+        "requested_physical_tokens_per_window": 512,
+        "unique_physical_tokens_per_window": 512,
+        "executed_patch_tokens_per_window": 512,
+        "batch_size": 1,
+        "refresh_query_tokens_per_window_by_batch": [288],
+        "temporal_alignment": {
+            "carrier_mode": mode,
+            "memory_lifetime_tubelets": 1,
+            "clip_reset_tubelets": 8,
+            "similarity_threshold": 0.8,
+            "search_radius": 2,
+            "new_trainable_parameters": 0,
+            "previous_memory_detached": True,
+            "current_position_restored": True,
+            "future_tubelet_access": False,
+            "total_tubelets": 8,
+            "refreshed_tokens": 288,
+            "retained_tokens": 224,
+            "fallback_tubelets": 1,
+            "normal_tubelets": 7,
+        },
+    }
+    vit = type("Vit", (), {"latest_native_packed_summary": summary})()
+    route = type("Route", (), {"model": type("Core", (), {"backbone": vit})()})()
+    detector = type("Detector", (), {"backbone": route})()
+    ddp = type("DDP", (), {"module": detector})()
+    receipt = train_entry._zoomtoken_temporal_preflight_summary(
+        ddp,
+        {"arm_surface": arm},
+    )
+    assert receipt["mode"] == mode
+    assert "accuracy" not in receipt
+    assert "loss" not in receipt
+
+
+def test_recovery_fixture_rejects_any_serialized_live_temporal_memory():
+    train_entry = _load_train_module()
+    valid = {
+        "state_dict": {"module.weight": torch.ones(1)},
+        "state_dict_ema": {"module.weight": torch.ones(1)},
+        "training_state": {"next_epoch": 1},
+    }
+    train_entry._assert_no_temporal_memory_in_checkpoint(valid)
+    invalid = dict(valid)
+    invalid["state_dict"] = {"module.apm_memory": torch.ones(1)}
+    with pytest.raises(RuntimeError, match="serialized live memory"):
+        train_entry._assert_no_temporal_memory_in_checkpoint(invalid)
+
+
+def test_launcher_exposes_only_result_blind_temporal_preflight_mode():
+    launcher = (
+        ROOT / "scripts" / "run_zoomtoken_official_prebackbone_bc_n16r4.sh"
+    ).read_text(encoding="utf-8")
+    assert 'TEMPORAL_PREFLIGHT_ONLY="${ZOOMTOKEN_TEMPORAL_PREFLIGHT_ONLY:-0}"' in launcher
+    assert "--zoomtoken-temporal-preflight-only" in launcher
+    assert "temporal mechanical preflight accepts only APM32/CUR32" in launcher
+    assert "temporal mechanical preflight forbids resume input" in launcher
 
 
 def test_temporal_route_does_not_modify_or_combine_amod_dsr6_chronotransport():
