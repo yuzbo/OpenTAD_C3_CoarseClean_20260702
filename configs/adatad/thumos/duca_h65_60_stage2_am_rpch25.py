@@ -70,6 +70,7 @@ model = dict(
 )
 
 scheduler = dict(
+    _delete_=True,
     type="RelativeSuccessfulUpdateLR",
     mode="am_rpch25",
     max_epoch=30,

@@ -175,6 +175,18 @@ def test_resolved_configs_match_except_frozen_attribution_fields(monkeypatch):
         assert cfg.workflow.checkpoint_criterion == "terminal_epoch_29_state_dict_ema"
         assert cfg.workflow.model_initialization.expected_checkpoint_epoch == 29
         assert cfg.scheduler.type == "RelativeSuccessfulUpdateLR"
+        assert set(cfg.scheduler) == {
+            "type",
+            "mode",
+            "max_epoch",
+            "total_updates",
+            "warmup_updates",
+            "plateau_updates",
+            "decay_updates",
+            "hold_updates",
+            "terminal_factor",
+            "horizon_updates",
+        }
         assert cfg.scheduler.max_epoch == 30
         assert cfg.scheduler.total_updates == 3000
         schedule = cfg.model.frame_selector.loss_weight_schedule
