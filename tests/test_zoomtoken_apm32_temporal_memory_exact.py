@@ -195,6 +195,37 @@ def test_mixed_k32_k64_clip_query_counts_execute_without_padding():
     assert stats["executed_attention_pairs"] == 512 * int(refresh.sum().item())
 
 
+def test_different_fallback_totals_across_batch_execute_in_separate_query_buckets():
+    torch.manual_seed(13)
+    block = Block(embed_dims=8, num_heads=2, use_adapter=False).eval()
+    value = torch.randn(2, 128, 8)
+    positions = [torch.arange(256).view(2, 128)]
+    tubelets = torch.arange(2).repeat_interleave(64).view(1, -1).expand(2, -1)
+    spatial = _strict_indices().repeat(2).view(1, -1).expand(2, -1)
+    refresh = torch.zeros(2, 128, dtype=torch.bool)
+    refresh[0].reshape(2, 64)[:, :32] = True
+    refresh[1].reshape(2, 64)[:, :32] = True
+    refresh[1].reshape(2, 64)[0] = True
+    stats = _empty_stats()
+    output = block.forward_native_ragged(
+        value,
+        bucket_positions=positions,
+        tubelet_indices=tubelets,
+        spatial_indices=spatial,
+        total_tubelets=2,
+        grid_height=10,
+        grid_width=10,
+        packed_stats=stats,
+        refresh_mask=refresh,
+        refresh_mode="mod32_kv",
+    )
+    assert output.shape == value.shape
+    assert refresh.sum(dim=1).tolist() == [64, 96]
+    assert stats["executed_attention_tokens"] == 160
+    assert stats["executed_kv_tokens"] == 256
+    assert stats["executed_attention_pairs"] == 128 * 160
+
+
 class _FixedPatchEmbed(nn.Module):
     def __init__(self, values: torch.Tensor):
         super().__init__()

@@ -1129,13 +1129,6 @@ class Block(BaseModule):
             raise ValueError("unsupported refresh-KV mode")
         if refresh_mask.shape != x.shape[:2] or refresh_mask.dtype != torch.bool:
             raise ValueError("refresh_mask must be bool and match ragged tokens")
-        per_batch_refresh = refresh_mask.sum(dim=1)
-        if not torch.equal(
-            per_batch_refresh,
-            per_batch_refresh[:1].expand_as(per_batch_refresh),
-        ):
-            raise ValueError("refresh path requires equal K32 count across batch")
-
         context = x
         if refresh_mode == "rc32_kv":
             if refresh_alpha is None or refresh_alpha.numel() != 1:
@@ -2379,7 +2372,8 @@ class VisionTransformerAdapter(BaseModule):
                     refresh_attention_pairs * len(self.blocks)
                 )
                 expected_kv_tokens = selected_total * len(self.blocks)
-            refresh_tokens_per_window = int(refresh_mask.sum(dim=1)[0].item())
+            refresh_tokens_by_batch = refresh_mask.sum(dim=1)
+            refresh_tokens_per_window = int(refresh_tokens_by_batch[0].item())
         if stats["executed_patch_tokens"] != selected_total:
             raise RuntimeError("ragged patch execution count differs from selected B")
         if stats["executed_attention_pairs"] != expected_attention_pairs:
@@ -2423,6 +2417,11 @@ class VisionTransformerAdapter(BaseModule):
             "executed_patch_tokens_per_window": window_budget,
             "executed_patch_tokens_total": selected_total,
             "refresh_query_tokens_per_window": refresh_tokens_per_window,
+            "refresh_query_tokens_per_window_by_batch": (
+                refresh_mask.sum(dim=1).detach().cpu().tolist()
+                if refresh_mask is not None
+                else [window_budget] * batch_size
+            ),
             "kv_context_tokens_per_window": window_budget,
             "absolute_position_enabled": bool(
                 metadata["absolute_position_enabled"]
