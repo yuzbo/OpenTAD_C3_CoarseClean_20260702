@@ -73,7 +73,44 @@ def _paired_delta(
 
 
 def _identity_equal(on: Mapping[str, Any], zero: Mapping[str, Any]) -> bool:
-    if on.get("sample_count") != zero.get("sample_count"):
+    def valid_accounting(payload: Mapping[str, Any]) -> bool:
+        required = ("sample_count", "total_input_exposure_count", "unique_physical_window_count", "duplicate_exposure_count", "duplicate_samples")
+        if any(key not in payload for key in required):
+            return False
+        integers = tuple(payload[key] for key in required[:4])
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in integers):
+            return False
+        unique = payload["unique_physical_window_count"]
+        if payload["sample_count"] != unique:
+            return False
+        duplicates = payload["duplicate_exposure_count"]
+        if payload["total_input_exposure_count"] != unique + duplicates:
+            return False
+        rows = payload["duplicate_samples"]
+        if not isinstance(rows, list):
+            return False
+        normalized = []
+        for row in rows:
+            if not isinstance(row, Mapping) or set(row) != {"sample_id", "duplicate_exposure_count"}:
+                return False
+            sample_id = row["sample_id"]
+            count = row["duplicate_exposure_count"]
+            if not isinstance(sample_id, str) or not sample_id:
+                return False
+            if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+                return False
+            normalized.append((sample_id, count))
+        if len({sample_id for sample_id, _ in normalized}) != len(normalized):
+            return False
+        if normalized != sorted(normalized):
+            return False
+        if sum(count for _, count in normalized) != duplicates:
+            return False
+        return duplicates != 0 or not normalized
+
+    if not valid_accounting(on) or not valid_accounting(zero):
+        return False
+    if on["sample_count"] != zero["sample_count"]:
         return False
     accounting_keys = (
         "total_input_exposure_count",
@@ -81,7 +118,7 @@ def _identity_equal(on: Mapping[str, Any], zero: Mapping[str, Any]) -> bool:
         "duplicate_exposure_count",
         "duplicate_samples",
     )
-    if any(on.get(key) != zero.get(key) for key in accounting_keys):
+    if any(on[key] != zero[key] for key in accounting_keys):
         return False
     on_records = on.get("records")
     zero_records = zero.get("records")

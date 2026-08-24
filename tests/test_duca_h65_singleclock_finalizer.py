@@ -32,6 +32,10 @@ def _identity(path):
         json.dumps(
             {
                 "sample_count": 1,
+                "total_input_exposure_count": 1,
+                "unique_physical_window_count": 1,
+                "duplicate_exposure_count": 0,
+                "duplicate_samples": [],
                 "records": [
                     {
                         "sample_id": "v|window_start_frame=0",
@@ -272,3 +276,24 @@ def test_identity_accounting_mismatch_rejected():
     changed = dict(base)
     changed["duplicate_exposure_count"] = 0
     assert not _identity_equal(base, changed)
+
+
+def test_identity_accounting_requires_explicit_fields_and_consistency():
+    from tools.bata.finalize_duca_h65_singleclock_terminal import _identity_equal
+
+    valid = {
+        "sample_count": 2,
+        "total_input_exposure_count": 3,
+        "unique_physical_window_count": 2,
+        "duplicate_exposure_count": 1,
+        "duplicate_samples": [{"sample_id": "v|window_start_frame=0", "duplicate_exposure_count": 1}],
+        "records": [],
+    }
+    assert _identity_equal(valid, dict(valid))
+    missing = dict(valid)
+    del missing["duplicate_samples"]
+    assert not _identity_equal(valid, missing)
+    malformed = dict(valid, total_input_exposure_count=2)
+    assert not _identity_equal(valid, malformed)
+    malformed = dict(valid, duplicate_samples=[{"sample_id": "", "duplicate_exposure_count": 1}])
+    assert not _identity_equal(valid, malformed)
