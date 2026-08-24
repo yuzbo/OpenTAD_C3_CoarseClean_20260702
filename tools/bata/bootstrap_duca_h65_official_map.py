@@ -118,6 +118,7 @@ def bootstrap_h65_official_map(
     lower_rank: int = 250,
     upper_rank: int = 9750,
     workers: int = 1,
+    chunksize: int = 1,
 ) -> dict[str, Any]:
     families = tuple(str(key) for key in prediction_paths)
     if baseline_family not in families or len(families) < 2:
@@ -130,8 +131,18 @@ def bootstrap_h65_official_map(
     workers = int(workers)
     if workers < 1 or workers > 64:
         raise ValueError("bootstrap workers must lie in [1,64]")
+    chunksize = int(chunksize)
+    if chunksize < 1:
+        raise ValueError("bootstrap chunksize must be positive")
 
     cfg = normalize_evaluation_config(evaluation_config, expected_subset="validation")
+    evaluator_thread = int(cfg["thread"])
+    if evaluator_thread < 1:
+        raise ValueError("official evaluator thread count must be positive")
+    if workers > 1 and evaluator_thread != 1:
+        raise ValueError(
+            "parallel bootstrap workers require evaluator thread=1 to avoid nested process oversubscription"
+        )
     expected = evaluation_video_ids(cfg, expected_subset="validation")
     annotation = json.loads(Path(cfg["ground_truth_filename"]).read_text(encoding="utf-8"))
     database = annotation.get("database")
@@ -173,7 +184,7 @@ def bootstrap_h65_official_map(
             iterator = executor.map(
                 _evaluate_draw_in_worker,
                 draws,
-                chunksize=max(1, samples // (workers * 8)),
+                chunksize=chunksize,
             )
             _collect(iterator, sampled, families, samples)
 
@@ -217,6 +228,12 @@ def bootstrap_h65_official_map(
         "prediction_sha256": {key: sha256_file(value) for key, value in prediction_paths.items()},
         "evaluation_config": cfg,
         "evaluation_config_sha256": canonical_sha256(cfg),
+        "execution": {
+            "workers": workers,
+            "evaluator_thread": evaluator_thread,
+            "chunksize": chunksize,
+            "result_order": "executor_map_input_order",
+        },
         "evaluator": official_evaluator_identity(),
         "point_estimates": point_estimates,
         "sampled_metrics": sampled,
@@ -242,7 +259,7 @@ def _parse_prediction(value: str) -> tuple[str, str]:
     return family, path
 
 
-def parse_args():
+def parse_args(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description="Exact H65 paired official-mAP bootstrap")
     parser.add_argument("--prediction", action="append", type=_parse_prediction, required=True)
     parser.add_argument("--baseline", required=True)
@@ -250,8 +267,10 @@ def parse_args():
     parser.add_argument("--nonce", required=True)
     parser.add_argument("--namespace", required=True)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument("--evaluator-thread", type=int, default=1)
+    parser.add_argument("--chunksize", type=int, default=1)
     parser.add_argument("--output", required=True)
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def main():
@@ -266,7 +285,7 @@ def main():
         "tiou_thresholds": EXPECTED_TIOU_THRESHOLDS,
         "top_k": None,
         "blocked_videos": None,
-        "thread": 16,
+        "thread": args.evaluator_thread,
     }
     payload = bootstrap_h65_official_map(
         prediction_paths,
@@ -275,6 +294,7 @@ def main():
         nonce=args.nonce,
         namespace=args.namespace,
         workers=args.workers,
+        chunksize=args.chunksize,
     )
     atomic_write_json(args.output, payload)
 

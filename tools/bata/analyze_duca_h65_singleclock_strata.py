@@ -193,6 +193,8 @@ def evaluate_strata(
     gate_zero_prediction_path: str | Path,
     nonce: str,
     workers: int,
+    evaluator_thread: int = 1,
+    chunksize: int = 1,
 ) -> dict[str, Any]:
     frozen = _load(frozen_path)
     identity = _load(validation_identity_path)
@@ -221,7 +223,7 @@ def evaluate_strata(
             "tiou_thresholds": EXPECTED_TIOU_THRESHOLDS,
             "top_k": None,
             "blocked_videos": None,
-            "thread": 16,
+            "thread": int(evaluator_thread),
         }
 
     with tempfile.TemporaryDirectory(prefix="duca-h65-singleclock-strata-") as directory:
@@ -246,14 +248,17 @@ def evaluate_strata(
         short = bootstrap_h65_official_map(
             predictions["all"], cfg(short_annotation), baseline_family="gate_zero",
             nonce=nonce, namespace="SHORT_ACTION_Q25_V1", workers=workers,
+            chunksize=chunksize,
         )
         low_result = bootstrap_h65_official_map(
             predictions["low"], cfg(low_annotation), baseline_family="gate_zero",
             nonce=nonce, namespace="DISTORTION_LOW_Q1_V1", workers=workers,
+            chunksize=chunksize,
         )
         high_result = bootstrap_h65_official_map(
             predictions["high"], cfg(high_annotation), baseline_family="gate_zero",
             nonce=nonce, namespace="DISTORTION_HIGH_Q4_V1", workers=workers,
+            chunksize=chunksize,
         )
 
     short_row = _delta_row(short, "on", "average_mAP")
@@ -283,6 +288,11 @@ def evaluate_strata(
         "official_evaluator_reexecuted_per_resample": True,
         "samples": 10000,
         "nonce": nonce,
+        "bootstrap_execution": {
+            "workers": int(workers),
+            "evaluator_thread": int(evaluator_thread),
+            "chunksize": int(chunksize),
+        },
     }
 
 
@@ -301,6 +311,8 @@ def parse_args():
     evaluate.add_argument("--gate-zero-prediction", required=True)
     evaluate.add_argument("--nonce", required=True)
     evaluate.add_argument("--workers", type=int, default=1)
+    evaluate.add_argument("--evaluator-thread", type=int, default=1)
+    evaluate.add_argument("--chunksize", type=int, default=1)
     evaluate.add_argument("--output", required=True)
     return parser.parse_args()
 
@@ -321,6 +333,8 @@ def main():
             gate_zero_prediction_path=args.gate_zero_prediction,
             nonce=args.nonce,
             workers=args.workers,
+            evaluator_thread=args.evaluator_thread,
+            chunksize=args.chunksize,
         )
     atomic_write_json(args.output, payload)
 

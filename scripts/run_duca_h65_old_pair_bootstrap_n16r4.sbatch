@@ -102,6 +102,8 @@ PY
   --nonce "DUCA-H65-60-TRUETIME-BRIDGE-DIRECT-v001-20260823" \
   --namespace "PAIRED_VIDEO_BOOTSTRAP_V1" \
   --workers "${DUCA_BOOTSTRAP_WORKERS:-8}" \
+  --evaluator-thread 1 \
+  --chunksize 1 \
   --output "$OUTPUT_ROOT/paired_bootstrap.json" \
   2>&1 | tee "$OUTPUT_ROOT/bootstrap.out"
 
