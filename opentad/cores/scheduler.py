@@ -24,10 +24,123 @@ def build_scheduler(cfg, optimizer, dataloader_len):
         cfg.pop("max_epoch")
         cfg["milestones"] = [dataloader_len * step for step in cfg["milestones"]]
         scheduler = LinearWarmupMultiStepLR(optimizer, warmup_epoch=0, **cfg)
+    elif scheduler_type == "RelativeSuccessfulUpdateLR":
+        # Unlike the legacy schedulers above, this schedule is already defined
+        # in successful optimizer updates.  Do not rescale it by dataloader
+        # length: train_engine advances the scheduler only after an optimizer
+        # step actually ran.
+        cfg.pop("max_epoch")
+        scheduler = RelativeSuccessfulUpdateLR(optimizer, **cfg)
     else:
         raise f"Optimizer {scheduler_type} is not supported so far."
 
     return scheduler, max_epoch
+
+
+class RelativeSuccessfulUpdateLR(_LRScheduler):
+    """Closed-form relative LR schedules on successful optimizer updates.
+
+    ``last_epoch`` follows PyTorch's scheduler convention.  The LR installed
+    before the next optimizer update is therefore evaluated at
+    ``update_index = last_epoch + 1``.  Every parameter group receives the same
+    multiplier, preserving the ratios between the frozen base learning rates.
+    """
+
+    _SUPPORTED_MODES = {"am_rpch25", "longcosine_h6000"}
+
+    def __init__(
+        self,
+        optimizer,
+        mode,
+        total_updates=3000,
+        warmup_updates=500,
+        plateau_updates=1000,
+        decay_updates=1000,
+        hold_updates=500,
+        terminal_factor=0.25,
+        horizon_updates=6000,
+        last_epoch=-1,
+    ):
+        if mode not in self._SUPPORTED_MODES:
+            raise ValueError(
+                f"mode must be one of {sorted(self._SUPPORTED_MODES)}, got {mode!r}"
+            )
+        integer_fields = {
+            "total_updates": total_updates,
+            "warmup_updates": warmup_updates,
+            "plateau_updates": plateau_updates,
+            "decay_updates": decay_updates,
+            "hold_updates": hold_updates,
+            "horizon_updates": horizon_updates,
+        }
+        for name, value in integer_fields.items():
+            if not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer, got {value!r}")
+        if warmup_updates < 2:
+            raise ValueError("warmup_updates must be at least 2 for a zero-to-one ramp")
+        if not 0.0 < float(terminal_factor) <= 1.0:
+            raise ValueError("terminal_factor must be in (0, 1]")
+        if mode == "am_rpch25":
+            scheduled_updates = (
+                warmup_updates + plateau_updates + decay_updates + hold_updates
+            )
+            if scheduled_updates != total_updates:
+                raise ValueError(
+                    "AM-RPCH segments must sum to total_updates: "
+                    f"{scheduled_updates} != {total_updates}"
+                )
+        elif horizon_updates <= warmup_updates:
+            raise ValueError("horizon_updates must exceed warmup_updates")
+        if total_updates > horizon_updates and mode == "longcosine_h6000":
+            raise ValueError("total_updates cannot exceed the LongCosine horizon")
+
+        self.mode = mode
+        self.total_updates = total_updates
+        self.warmup_updates = warmup_updates
+        self.plateau_updates = plateau_updates
+        self.decay_updates = decay_updates
+        self.hold_updates = hold_updates
+        self.terminal_factor = float(terminal_factor)
+        self.horizon_updates = horizon_updates
+        super().__init__(optimizer, last_epoch)
+
+    def factor_for_update(self, update_index):
+        """Return the relative multiplier for the next 1-based update."""
+        n = min(max(int(update_index), 1), self.total_updates)
+        if n <= self.warmup_updates:
+            return float(n - 1) / float(self.warmup_updates - 1)
+
+        if self.mode == "longcosine_h6000":
+            progress = float(n - self.warmup_updates) / float(
+                self.horizon_updates - self.warmup_updates
+            )
+            return 0.5 * (1.0 + math.cos(math.pi * progress))
+
+        plateau_end = self.warmup_updates + self.plateau_updates
+        if n <= plateau_end:
+            return 1.0
+        decay_end = plateau_end + self.decay_updates
+        if n <= decay_end:
+            progress = float(n - plateau_end) / float(self.decay_updates)
+            amplitude = 0.5 * (1.0 - self.terminal_factor)
+            return self.terminal_factor + amplitude * (
+                1.0 + math.cos(math.pi * progress)
+            )
+        return self.terminal_factor
+
+    def get_lr(self):
+        if not self._get_lr_called_within_step:
+            warnings.warn(
+                "To get the last learning rate computed by the scheduler, "
+                "please use `get_last_lr()`.",
+                UserWarning,
+            )
+        factor = self.factor_for_update(self.last_epoch + 1)
+        return [base_lr * factor for base_lr in self.base_lrs]
+
+    def _get_closed_form_lr(self):
+        factor = self.factor_for_update(self.last_epoch + 1)
+        return [base_lr * factor for base_lr in self.base_lrs]
 
 
 class LinearWarmupCosineAnnealingLR(_LRScheduler):
