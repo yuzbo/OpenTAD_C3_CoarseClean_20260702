@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import MethodType
 
 import pytest
 import torch
@@ -114,6 +115,101 @@ def test_backbone_amod_schedule_has_no_new_parameters_or_temporal_state():
     assert summary["selected_tokens_per_amod_block"] == 2
     assert summary["adapter_execution"] == "dense_full_token_grid"
     assert summary["temporal_state_reuse"] is False
+
+
+def test_each_amod_block_consumes_its_immediately_preceding_dense_score():
+    torch.manual_seed(15)
+    model = _tiny_backbone(amod=_amod_config()).eval()
+    observed = []
+
+    for dense_index, sparse_index in zip(
+        model.amod_config["dense_block_indices"],
+        model.amod_config["amod_block_indices"],
+    ):
+        dense_block = model.blocks[dense_index]
+        sparse_block = model.blocks[sparse_index]
+        dense_forward = dense_block.forward_dense_with_amod_score
+        sparse_forward = sparse_block.forward_amod
+        marker = float(dense_index + 1)
+
+        def dense_with_marker(
+            self,
+            x,
+            h,
+            w,
+            *,
+            query_chunk_size,
+            original=dense_forward,
+            value=marker,
+        ):
+            output, _ = original(x, h, w, query_chunk_size=query_chunk_size)
+            return output, x.new_full(x.shape[:2], value)
+
+        def sparse_with_assertion(
+            self,
+            x,
+            h,
+            w,
+            *,
+            scores,
+            capacity,
+            original=sparse_forward,
+            value=marker,
+            index=sparse_index,
+        ):
+            assert torch.equal(scores, scores.new_full(scores.shape, value))
+            observed.append((index, value))
+            return original(x, h, w, scores=scores, capacity=capacity)
+
+        dense_block.forward_dense_with_amod_score = MethodType(
+            dense_with_marker,
+            dense_block,
+        )
+        sparse_block.forward_amod = MethodType(sparse_with_assertion, sparse_block)
+
+    with torch.no_grad():
+        model(torch.randn(1, 3, 2, 32, 32))
+    assert observed == [
+        (1, 1.0),
+        (3, 3.0),
+        (5, 5.0),
+        (7, 7.0),
+        (9, 9.0),
+        (11, 11.0),
+    ]
+
+
+def test_every_amod_adapter_receives_the_full_800_token_grid():
+    torch.manual_seed(16)
+    model = VisionTransformerAdapter(
+        img_size=160,
+        patch_size=16,
+        embed_dims=8,
+        depth=12,
+        num_heads=2,
+        mlp_ratio=2.0,
+        num_frames=16,
+        tubelet_size=2,
+        total_frames=16,
+        adapter_index=list(range(12)),
+        use_mean_pooling=False,
+        amod=_amod_config(),
+    ).eval()
+    adapter_inputs = []
+    handles = [
+        block.adapter.register_forward_pre_hook(
+            lambda _module, args: adapter_inputs.append(tuple(args[0].shape))
+        )
+        for block in model.blocks
+    ]
+    try:
+        with torch.no_grad():
+            output = model(torch.randn(1, 3, 16, 160, 160))
+    finally:
+        for handle in handles:
+            handle.remove()
+    assert output.shape == (1, 8)
+    assert adapter_inputs == [(1, 800, 8)] * 12
 
 
 def test_backbone_amod_checkpoint_path_backpropagates_through_dense_adapters():
