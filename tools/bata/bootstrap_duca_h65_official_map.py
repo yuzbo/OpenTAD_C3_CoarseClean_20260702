@@ -5,7 +5,6 @@ from concurrent.futures import ProcessPoolExecutor
 import hashlib
 import json
 from pathlib import Path
-import tempfile
 from typing import Any, Mapping
 
 import numpy as np
@@ -25,7 +24,6 @@ from tools.bata.duca_p0_training import atomic_write_json
 
 
 _WORKER_STATE: dict[str, Any] | None = None
-_WORKER_DIRECTORY: tempfile.TemporaryDirectory[str] | None = None
 _METRIC_KEYS = ("average_mAP", "mAP@0.3", "mAP@0.4", "mAP@0.5", "mAP@0.6", "mAP@0.7")
 
 
@@ -84,27 +82,115 @@ def _evaluate_draw(
     return tuple(rows)
 
 
+def _evaluate_draw_in_memory(
+    draw: tuple[str, ...],
+    *,
+    families: tuple[str, ...],
+    database: Mapping[str, Any],
+    predictions: Mapping[str, Mapping[str, list[dict[str, Any]]]],
+    evaluation_config: Mapping[str, Any],
+) -> tuple[tuple[float, ...], ...]:
+    """Re-execute the official AP core without per-draw JSON or subprocess setup.
+
+    The table construction below mirrors ``mAP._import_ground_truth`` and
+    ``mAP._import_prediction`` exactly.  Synthetic video ids retain cluster
+    multiplicity when the same source video is drawn more than once.
+    """
+    import pandas as pd
+
+    from opentad.evaluations.builder import remove_duplicate_annotations
+    from opentad.evaluations.mAP import compute_average_precision_detection
+
+    activity_index: dict[str, int] = {}
+    gt_video: list[str] = []
+    gt_start: list[float] = []
+    gt_end: list[float] = []
+    gt_label: list[int] = []
+    synthetic_ids: list[str] = []
+    for draw_index, video_id in enumerate(draw):
+        synthetic_id = f"bootstrap_{draw_index:05d}_{video_id}"
+        synthetic_ids.append(synthetic_id)
+        annotations = remove_duplicate_annotations(database[video_id]["annotations"])
+        for annotation in annotations:
+            label = annotation["label"]
+            if label not in activity_index:
+                activity_index[label] = len(activity_index)
+            gt_video.append(synthetic_id)
+            gt_start.append(float(annotation["segment"][0]))
+            gt_end.append(float(annotation["segment"][1]))
+            gt_label.append(activity_index[label])
+    if not activity_index:
+        raise ValueError("formal DUCA bootstrap draw contains no evaluation classes")
+    ground_truth = pd.DataFrame(
+        {
+            "video-id": gt_video,
+            "t-start": gt_start,
+            "t-end": gt_end,
+            "label": gt_label,
+        }
+    )
+    thresholds = np.asarray(evaluation_config["tiou_thresholds"], dtype=np.float64)
+    rows = []
+    for family in families:
+        pred_video: list[str] = []
+        pred_start: list[float] = []
+        pred_end: list[float] = []
+        pred_label: list[int] = []
+        pred_score: list[float] = []
+        for synthetic_id, video_id in zip(synthetic_ids, draw):
+            for prediction in predictions[family].get(video_id, []):
+                pred_video.append(synthetic_id)
+                pred_start.append(float(prediction["segment"][0]))
+                pred_end.append(float(prediction["segment"][1]))
+                pred_label.append(
+                    activity_index.get(prediction["label"], len(activity_index))
+                )
+                pred_score.append(prediction["score"])
+        prediction = pd.DataFrame(
+            {
+                "video-id": pred_video,
+                "t-start": pred_start,
+                "t-end": pred_end,
+                "label": pred_label,
+                "score": pred_score,
+            }
+        )
+        ap = np.zeros((len(thresholds), len(activity_index)), dtype=np.float64)
+        for cidx in activity_index.values():
+            gt_idx = ground_truth["label"] == cidx
+            pred_idx = prediction["label"] == cidx
+            ap[:, cidx] = compute_average_precision_detection(
+                ground_truth.loc[gt_idx].reset_index(drop=True),
+                prediction.loc[pred_idx].reset_index(drop=True),
+                tiou_thresholds=thresholds,
+            )
+        maps = ap.mean(axis=1)
+        metrics = {"average_mAP": float(maps.mean())}
+        for threshold, value in zip(thresholds, maps):
+            metrics[f"mAP@{float(threshold)}"] = float(value)
+        rows.append(tuple(float(metrics[key]) for key in _METRIC_KEYS))
+    return tuple(rows)
+
+
 def _initialize_worker(
     families: tuple[str, ...],
     database: Mapping[str, Any],
     predictions: Mapping[str, Mapping[str, list[dict[str, Any]]]],
     evaluation_config: Mapping[str, Any],
 ) -> None:
-    global _WORKER_DIRECTORY, _WORKER_STATE
-    _WORKER_DIRECTORY = tempfile.TemporaryDirectory(prefix="duca-h65-bootstrap-worker-")
+    global _WORKER_STATE
     _WORKER_STATE = {
         "families": families,
         "database": database,
         "predictions": predictions,
         "evaluation_config": evaluation_config,
-        "ground_truth_path": Path(_WORKER_DIRECTORY.name) / "ground_truth.json",
     }
 
 
 def _evaluate_draw_in_worker(draw: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
     if _WORKER_STATE is None:
         raise RuntimeError("H65 bootstrap worker was not initialized")
-    return _evaluate_draw(draw, **_WORKER_STATE)
+    return _evaluate_draw_in_memory(draw, **_WORKER_STATE)
 
 
 def bootstrap_h65_official_map(
@@ -139,10 +225,6 @@ def bootstrap_h65_official_map(
     evaluator_thread = int(cfg["thread"])
     if evaluator_thread < 1:
         raise ValueError("official evaluator thread count must be positive")
-    if workers > 1 and evaluator_thread != 1:
-        raise ValueError(
-            "parallel bootstrap workers require evaluator thread=1 to avoid nested process oversubscription"
-        )
     expected = evaluation_video_ids(cfg, expected_subset="validation")
     annotation = json.loads(Path(cfg["ground_truth_filename"]).read_text(encoding="utf-8"))
     database = annotation.get("database")
@@ -165,16 +247,14 @@ def bootstrap_h65_official_map(
     }
 
     if workers == 1:
-        with tempfile.TemporaryDirectory(prefix="duca-h65-bootstrap-") as directory:
-            kwargs = {
-                "families": families,
-                "database": database,
-                "predictions": predictions,
-                "evaluation_config": cfg,
-                "ground_truth_path": Path(directory) / "ground_truth.json",
-            }
-            iterator = (_evaluate_draw(draw, **kwargs) for draw in draws)
-            _collect(iterator, sampled, families, samples)
+        kwargs = {
+            "families": families,
+            "database": database,
+            "predictions": predictions,
+            "evaluation_config": cfg,
+        }
+        iterator = (_evaluate_draw_in_memory(draw, **kwargs) for draw in draws)
+        _collect(iterator, sampled, families, samples)
     else:
         with ProcessPoolExecutor(
             max_workers=workers,
@@ -230,9 +310,12 @@ def bootstrap_h65_official_map(
         "evaluation_config_sha256": canonical_sha256(cfg),
         "execution": {
             "workers": workers,
-            "evaluator_thread": evaluator_thread,
+            "evaluator_thread_metadata": evaluator_thread,
+            "evaluator_thread_used_by_ap_core": False,
             "chunksize": chunksize,
             "result_order": "executor_map_input_order",
+            "engine": "official_compute_average_precision_detection_in_memory_v1",
+            "elided_operations": ["per_draw_json_roundtrip", "mAP_constructor"],
         },
         "evaluator": official_evaluator_identity(),
         "point_estimates": point_estimates,
@@ -267,7 +350,7 @@ def parse_args(argv: list[str] | None = None):
     parser.add_argument("--nonce", required=True)
     parser.add_argument("--namespace", required=True)
     parser.add_argument("--workers", type=int, default=1)
-    parser.add_argument("--evaluator-thread", type=int, default=1)
+    parser.add_argument("--evaluator-thread", type=int, default=16)
     parser.add_argument("--chunksize", type=int, default=1)
     parser.add_argument("--output", required=True)
     return parser.parse_args(argv)

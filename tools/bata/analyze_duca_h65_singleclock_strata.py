@@ -193,7 +193,7 @@ def evaluate_strata(
     gate_zero_prediction_path: str | Path,
     nonce: str,
     workers: int,
-    evaluator_thread: int = 1,
+    evaluator_thread: int = 16,
     chunksize: int = 1,
 ) -> dict[str, Any]:
     frozen = _load(frozen_path)
@@ -311,7 +311,7 @@ def parse_args():
     evaluate.add_argument("--gate-zero-prediction", required=True)
     evaluate.add_argument("--nonce", required=True)
     evaluate.add_argument("--workers", type=int, default=1)
-    evaluate.add_argument("--evaluator-thread", type=int, default=1)
+    evaluate.add_argument("--evaluator-thread", type=int, default=16)
     evaluate.add_argument("--chunksize", type=int, default=1)
     evaluate.add_argument("--output", required=True)
     return parser.parse_args()

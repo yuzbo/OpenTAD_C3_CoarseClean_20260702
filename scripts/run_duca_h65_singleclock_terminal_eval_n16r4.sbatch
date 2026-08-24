@@ -170,7 +170,7 @@ OFF_EMA_PRED="$(prediction_path "$OUTPUT_ROOT/h65_off_ema/terminal_evaluation.js
   --prediction "h65_off_final=$OFF_FINAL_PRED" \
   --baseline final_gate_zero --annotation "$ANNOTATION_PATH" \
   --nonce "$BOOTSTRAP_NONCE" --namespace SINGLECLOCK_FINAL_PAIRED_VIDEO_BOOTSTRAP_V1 \
-  --workers "$BOOTSTRAP_WORKERS" --evaluator-thread 1 --chunksize 1 \
+  --workers "$BOOTSTRAP_WORKERS" --evaluator-thread 16 --chunksize 1 \
   --output "$OUTPUT_ROOT/final_bootstrap.json"
 "$PYTHON" tools/bata/bootstrap_duca_h65_official_map.py \
   --prediction "ema_gate_zero=$EMA_ZERO_PRED" \
@@ -178,7 +178,7 @@ OFF_EMA_PRED="$(prediction_path "$OUTPUT_ROOT/h65_off_ema/terminal_evaluation.js
   --prediction "h65_off_ema=$OFF_EMA_PRED" \
   --baseline ema_gate_zero --annotation "$ANNOTATION_PATH" \
   --nonce "$BOOTSTRAP_NONCE" --namespace SINGLECLOCK_EMA_PAIRED_VIDEO_BOOTSTRAP_V1 \
-  --workers "$BOOTSTRAP_WORKERS" --evaluator-thread 1 --chunksize 1 \
+  --workers "$BOOTSTRAP_WORKERS" --evaluator-thread 16 --chunksize 1 \
   --output "$OUTPUT_ROOT/ema_bootstrap.json"
 
 "$PYTHON" tools/bata/analyze_duca_h65_singleclock_strata.py evaluate \
@@ -186,7 +186,7 @@ OFF_EMA_PRED="$(prediction_path "$OUTPUT_ROOT/h65_off_ema/terminal_evaluation.js
   --validation-identity "$OUTPUT_ROOT/ema_on/selected_input_identity.json" \
   --annotation "$ANNOTATION_PATH" --on-prediction "$EMA_ON_PRED" \
   --gate-zero-prediction "$EMA_ZERO_PRED" --nonce "$BOOTSTRAP_NONCE" \
-  --workers "$BOOTSTRAP_WORKERS" --evaluator-thread 1 --chunksize 1 \
+  --workers "$BOOTSTRAP_WORKERS" --evaluator-thread 16 --chunksize 1 \
   --output "$OUTPUT_ROOT/strata_evidence.json"
 
 "$PYTHON" - "$OUTPUT_ROOT/terminal_eval_receipt.json" "$EXPECTED_COMMIT" \

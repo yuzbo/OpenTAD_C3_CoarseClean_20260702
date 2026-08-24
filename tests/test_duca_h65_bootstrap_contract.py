@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import numpy as np
@@ -6,6 +5,7 @@ import pytest
 
 from tools.bata.bootstrap_duca_h65_official_map import (
     _evaluate_draw,
+    _evaluate_draw_in_memory,
     bootstrap_h65_official_map,
     exact_interval,
     parse_args,
@@ -51,18 +51,18 @@ def test_old_pair_launcher_freezes_exact_predictions_and_statistical_nonce():
     assert "DUCA-H65-60-TRUETIME-BRIDGE-DIRECT-v001-20260823" in text
     assert "PAIRED_VIDEO_BOOTSTRAP_V1" in text
     assert "--workers" in text
-    assert "--evaluator-thread 1" in text
+    assert "--evaluator-thread 16" in text
     assert "--chunksize 1" in text
     assert "input_identity.json" in text
 
 
-def test_singleclock_launchers_disable_nested_evaluator_parallelism():
+def test_singleclock_launchers_freeze_official_evaluator_metadata():
     text = Path(TERMINAL_LAUNCHER).read_text()
-    assert text.count("--evaluator-thread 1") == 3
+    assert text.count("--evaluator-thread 16") == 3
     assert text.count("--chunksize 1") == 3
 
 
-def test_cli_defaults_to_single_thread_evaluator_and_unit_chunks():
+def test_cli_preserves_official_evaluator_metadata_and_unit_chunks():
     args = parse_args(
         [
             "--prediction", "baseline=/tmp/baseline.json",
@@ -75,7 +75,7 @@ def test_cli_defaults_to_single_thread_evaluator_and_unit_chunks():
         ]
     )
     assert args.workers == 1
-    assert args.evaluator_thread == 1
+    assert args.evaluator_thread == 16
     assert args.chunksize == 1
 
 
@@ -126,46 +126,65 @@ def test_official_map_metrics_are_identical_for_one_or_sixteen_evaluator_process
     assert rows[0] == rows[1]
 
 
-def test_parallel_bootstrap_rejects_nested_evaluator_processes(tmp_path):
-    annotation = tmp_path / "annotation.json"
-    prediction_a = tmp_path / "a.json"
-    prediction_b = tmp_path / "b.json"
-    annotation.write_text(
-        json.dumps(
-            {
-                "database": {
-                    "video": {
-                        "subset": "validation",
-                        "duration": 10.0,
-                        "annotations": [{"segment": [1.0, 2.0], "label": "Action"}],
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    payload = {
-        "results": {
-            "video": [{"segment": [1.0, 2.0], "label": "Action", "score": 1.0}]
-        }
+def test_in_memory_official_ap_is_exactly_equal_to_legacy_json_path(tmp_path):
+    database = {
+        "video_a": {
+            "subset": "validation",
+            "duration": 10.0,
+            "annotations": [
+                {"segment": [1.0, 3.0], "label": "Action"},
+                {"segment": [1.0, 3.0], "label": "Action"},
+            ],
+        },
+        "video_b": {
+            "subset": "validation",
+            "duration": 10.0,
+            "annotations": [{"segment": [4.0, 6.0], "label": "Other"}],
+        },
     }
-    prediction_a.write_text(json.dumps(payload), encoding="utf-8")
-    prediction_b.write_text(json.dumps(payload), encoding="utf-8")
-    evaluation_config = {
+    predictions = {
+        "baseline": {
+            "video_a": [
+                {"segment": [1.0, 3.0], "label": "Action", "score": 0.8},
+                {"segment": [0.0, 1.0], "label": "Action", "score": 0.8},
+            ],
+            "video_b": [{"segment": [4.0, 6.0], "label": "Other", "score": 0.9}],
+        },
+        "candidate": {
+            "video_a": [{"segment": [1.0, 3.0], "label": "Action", "score": 0.8}],
+            "video_b": [
+                {"segment": [4.0, 6.0], "label": "Other", "score": 0.9},
+                {"segment": [2.0, 3.0], "label": "Unknown", "score": 0.7},
+            ],
+        },
+    }
+    config = {
         "type": "mAP",
-        "ground_truth_filename": str(annotation),
+        "ground_truth_filename": "unused",
         "subset": "validation",
         "tiou_thresholds": [0.3, 0.4, 0.5, 0.6, 0.7],
         "top_k": None,
         "blocked_videos": None,
         "thread": 16,
     }
-    with pytest.raises(ValueError, match="nested process oversubscription"):
-        bootstrap_h65_official_map(
-            {"baseline": prediction_a, "candidate": prediction_b},
-            evaluation_config,
-            baseline_family="baseline",
-            nonce="nonce",
-            namespace="namespace",
-            workers=8,
+    draws = (
+        ("video_b", "video_a", "video_a"),
+        ("video_a", "video_b", "video_b"),
+    )
+    for draw_index, draw in enumerate(draws):
+        legacy = _evaluate_draw(
+            draw,
+            families=("baseline", "candidate"),
+            database=database,
+            predictions=predictions,
+            evaluation_config=config,
+            ground_truth_path=tmp_path / f"legacy_ground_truth_{draw_index}.json",
         )
+        in_memory = _evaluate_draw_in_memory(
+            draw,
+            families=("baseline", "candidate"),
+            database=database,
+            predictions=predictions,
+            evaluation_config=config,
+        )
+        assert in_memory == legacy
