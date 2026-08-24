@@ -82,12 +82,16 @@ TRAIN_ARGS=(
   "$CONFIG" --seed 3407
   --cfg-options
   "work_dir=$WORK_DIR"
-  "data.train.ann_file=$ANNOTATION_PATH"
-  "data.val.ann_file=$ANNOTATION_PATH"
-  "data.test.ann_file=$ANNOTATION_PATH"
-  "data.train.category_file=$CATEGORY_PATH"
-  "data.val.category_file=$CATEGORY_PATH"
-  "data.test.category_file=$CATEGORY_PATH"
+  "dataset.train.data_path=$VIDEO_ROOT"
+  "dataset.val.data_path=$VIDEO_ROOT"
+  "dataset.test.data_path=$VIDEO_ROOT"
+  "dataset.train.ann_file=$ANNOTATION_PATH"
+  "dataset.val.ann_file=$ANNOTATION_PATH"
+  "dataset.test.ann_file=$ANNOTATION_PATH"
+  "dataset.train.class_map=$CATEGORY_PATH"
+  "dataset.val.class_map=$CATEGORY_PATH"
+  "dataset.test.class_map=$CATEGORY_PATH"
+  "evaluation.ground_truth_filename=$ANNOTATION_PATH"
   "model.backbone.custom.pretrain=$ADATAD_PRETRAIN"
 )
 

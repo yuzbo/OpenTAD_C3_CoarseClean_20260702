@@ -216,6 +216,13 @@ def test_launcher_has_distinct_fresh_and_resume_pre_run_modes():
     assert '"workflow.end_epoch=1"' in launcher
     assert '"workflow.end_epoch=2"' in launcher
     assert 'DUCA_RESUME_CHECKPOINT:-' in launcher
+    assert '"dataset.train.data_path=$VIDEO_ROOT"' in launcher
+    assert '"dataset.val.data_path=$VIDEO_ROOT"' in launcher
+    assert '"dataset.test.data_path=$VIDEO_ROOT"' in launcher
+    assert '"dataset.train.ann_file=$ANNOTATION_PATH"' in launcher
+    assert '"dataset.test.class_map=$CATEGORY_PATH"' in launcher
+    assert '"evaluation.ground_truth_filename=$ANNOTATION_PATH"' in launcher
+    assert '"data.train.ann_file=' not in launcher
 
 
 def test_checkpoint_roundtrip_preserves_cumulative_update_audit(tmp_path):
