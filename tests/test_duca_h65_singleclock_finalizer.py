@@ -3,14 +3,27 @@ import hashlib
 
 import pytest
 
+import tools.bata.finalize_duca_h65_singleclock_terminal as finalizer_module
 from tools.bata.finalize_duca_h65_singleclock_terminal import (
     _identity_equal,
     _twin_execution_contract_ok,
     finalize,
 )
+from tools.bata.duca_p0_evaluation import (
+    canonical_sha256,
+    official_evaluator_identity,
+)
 
 
-def _bootstrap(names, points):
+def _bootstrap(
+    names,
+    points,
+    *,
+    metrics_by_family=None,
+    baseline_family=None,
+    namespace=None,
+    nonce="test-singleclock-bootstrap",
+):
     sampled = {}
     point_estimates = {}
     for name in names:
@@ -19,13 +32,46 @@ def _bootstrap(names, points):
         for metric, value in points[name].items():
             sampled[name][metric] = [value] * 10000
             point_estimates[name][metric] = value
-    return {
+    payload = {
         "samples": 10000,
         "lower_rank": 250,
         "upper_rank": 9750,
         "sampled_metrics": sampled,
         "point_estimates": point_estimates,
     }
+    if metrics_by_family is not None:
+        evaluations = {
+            family: json.loads(path.read_text(encoding="utf-8"))
+            for family, path in metrics_by_family.items()
+        }
+        first = evaluations[names[0]]
+        payload.update(
+            {
+                "schema_version": "duca_h65_official_pcg64_video_bootstrap_v1",
+                "official_evaluator_reexecuted_per_resample": True,
+                "paired_video_cluster_bootstrap": True,
+                "rng": "numpy.random.PCG64",
+                "nonce": nonce,
+                "namespace": namespace,
+                "interval_rank_convention": "one_based_order_statistics",
+                "baseline_family": baseline_family,
+                "family_order": list(names),
+                "prediction_paths": {
+                    family: evaluations[family]["prediction_path"]
+                    for family in names
+                },
+                "prediction_sha256": {
+                    family: evaluations[family]["prediction_sha256"]
+                    for family in names
+                },
+                "evaluation_config": first["evaluation_config"],
+                "evaluation_config_sha256": first[
+                    "evaluation_config_sha256"
+                ],
+                "evaluator": first["evaluator"],
+            }
+        )
+    return payload
 
 
 def _identity(path):
@@ -62,23 +108,63 @@ def _sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _metrics(path, checkpoint, state_key):
-    binding_hash = "b" * 64
-    path.write_text(
+def _metrics(path, checkpoint, state_key, values):
+    annotation = path.parent / "annotation.json"
+    class_map = path.parent / "class_map.txt"
+    prediction = path.with_name(f"{path.stem}_predictions.json")
+    annotation.write_text(
         json.dumps(
             {
-                "checkpoint_path": str(checkpoint.resolve()),
-                "checkpoint_sha256": _sha256(checkpoint),
-                "checkpoint_epoch": 59,
-                "checkpoint_state_key": state_key,
-                "evaluation_annotation_sha256": binding_hash,
-                "evaluation_class_map_sha256": binding_hash,
-                "evaluation_config_sha256": binding_hash,
-                "evaluator": {"source_sha256": binding_hash},
+                "database": {
+                    "v": {"subset": "validation", "annotations": []}
+                }
             }
         ),
         encoding="utf-8",
     )
+    class_map.write_text("0 action\n", encoding="utf-8")
+    prediction.write_text(
+        json.dumps(
+            {
+                "results": {
+                    "v": [
+                        {"segment": [0.0, 1.0], "label": "action", "score": 1.0}
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    evaluation_config = {
+        "type": "mAP",
+        "ground_truth_filename": str(annotation.resolve()),
+        "subset": "validation",
+        "tiou_thresholds": [0.3, 0.4, 0.5, 0.6, 0.7],
+        "top_k": None,
+        "blocked_videos": None,
+        "thread": 16,
+    }
+    payload = {
+        "schema_version": "duca_protected_physical_terminal_evaluation_v1",
+        "checkpoint_path": str(checkpoint.resolve()),
+        "checkpoint_sha256": _sha256(checkpoint),
+        "checkpoint_epoch": 59,
+        "checkpoint_state_key": state_key,
+        "prediction_path": str(prediction.resolve()),
+        "prediction_sha256": _sha256(prediction),
+        "metrics": values,
+        "result_count": 1,
+        "video_count": 1,
+        "evaluation_annotation_path": str(annotation.resolve()),
+        "evaluation_annotation_sha256": _sha256(annotation),
+        "evaluation_class_map_path": str(class_map.resolve()),
+        "evaluation_class_map_sha256": _sha256(class_map),
+        "evaluation_config": evaluation_config,
+        "evaluation_config_sha256": canonical_sha256(evaluation_config),
+        "evaluator": official_evaluator_identity(),
+    }
+    payload["evaluation_sha256"] = canonical_sha256(payload)
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def _configs(tmp_path):
@@ -137,18 +223,33 @@ def _finalizer_fixture(tmp_path):
     ema_zero = tmp_path / "ema_zero.json"
     for path in (final_on, final_zero, ema_on, ema_zero):
         _identity(path)
+    metrics = ("average_mAP", "mAP@0.6", "mAP@0.7")
+    final_points = {
+        "final_on": dict.fromkeys(metrics, 0.66),
+        "final_gate_zero": dict.fromkeys(metrics, 0.65),
+        "h65_off_final": dict.fromkeys(metrics, 0.65),
+    }
+    ema_points = {
+        "ema_on": dict.fromkeys(metrics, 0.658),
+        "ema_gate_zero": dict.fromkeys(metrics, 0.68),
+        "h65_off_ema": dict.fromkeys(metrics, 0.66),
+    }
+    old_points = {
+        "truetime": dict.fromkeys(metrics, 0.62),
+        "rankpack": dict.fromkeys(metrics, 0.61),
+    }
     final_on_metrics = tmp_path / "final_on_metrics.json"
     final_zero_metrics = tmp_path / "final_zero_metrics.json"
     ema_on_metrics = tmp_path / "ema_on_metrics.json"
     ema_zero_metrics = tmp_path / "ema_zero_metrics.json"
     off_final_metrics = tmp_path / "off_final_metrics.json"
     off_ema_metrics = tmp_path / "off_ema_metrics.json"
-    _metrics(final_on_metrics, clock_checkpoint, "state_dict")
-    _metrics(final_zero_metrics, clock_checkpoint, "state_dict")
-    _metrics(ema_on_metrics, clock_checkpoint, "state_dict_ema")
-    _metrics(ema_zero_metrics, clock_checkpoint, "state_dict_ema")
-    _metrics(off_final_metrics, off_checkpoint, "state_dict")
-    _metrics(off_ema_metrics, off_checkpoint, "state_dict_ema")
+    _metrics(final_on_metrics, clock_checkpoint, "state_dict", final_points["final_on"])
+    _metrics(final_zero_metrics, clock_checkpoint, "state_dict", final_points["final_gate_zero"])
+    _metrics(ema_on_metrics, clock_checkpoint, "state_dict_ema", ema_points["ema_on"])
+    _metrics(ema_zero_metrics, clock_checkpoint, "state_dict_ema", ema_points["ema_gate_zero"])
+    _metrics(off_final_metrics, off_checkpoint, "state_dict", final_points["h65_off_final"])
+    _metrics(off_ema_metrics, off_checkpoint, "state_dict_ema", ema_points["h65_off_ema"])
     eval_commit = "e" * 40
     receipt = {
         "schema_version": "duca_h65_singleclock_terminal_eval_receipt_v1",
@@ -185,23 +286,8 @@ def _finalizer_fixture(tmp_path):
             "state_dict_ema": {"registered_clock": 0.0},
         },
     )
-    metrics = ("average_mAP", "mAP@0.6", "mAP@0.7")
-    final_points = {
-        "final_on": dict.fromkeys(metrics, 0.66),
-        "final_gate_zero": dict.fromkeys(metrics, 0.65),
-        "h65_off_final": dict.fromkeys(metrics, 0.65),
-    }
-    ema_points = {
-        "ema_on": dict.fromkeys(metrics, 0.658),
-        "ema_gate_zero": dict.fromkeys(metrics, 0.68),
-        "h65_off_ema": dict.fromkeys(metrics, 0.66),
-    }
-    old_points = {
-        "truetime": dict.fromkeys(metrics, 0.62),
-        "rankpack": dict.fromkeys(metrics, 0.61),
-    }
     replay_hash = "a" * 64
-    binding_hash = "b" * 64
+    off_evaluation = json.loads(off_ema_metrics.read_text(encoding="utf-8"))
     h65_replay_identity = {
         "schema_version": "duca_h65_replay_five_boundary_identity_v1",
         "checkpoint_sha256": _sha256(off_checkpoint),
@@ -220,18 +306,11 @@ def _finalizer_fixture(tmp_path):
             )
         },
         "bindings": {
-            key: (
-                _sha256(off_config)
-                if key == "config_sha256"
-                else binding_hash
-            )
-            for key in (
-                "config_sha256",
-                "annotation_sha256",
-                "class_map_sha256",
-                "evaluator_sha256",
-                "evaluation_config_sha256",
-            )
+            "config_sha256": _sha256(off_config),
+            "annotation_sha256": off_evaluation["evaluation_annotation_sha256"],
+            "class_map_sha256": off_evaluation["evaluation_class_map_sha256"],
+            "evaluator_sha256": off_evaluation["evaluator"]["source_sha256"],
+            "evaluation_config_sha256": off_evaluation["evaluation_config_sha256"],
         },
     }
     nominal_uniform_identity = {
@@ -255,8 +334,28 @@ def _finalizer_fixture(tmp_path):
         "receipt": receipt,
         "clock_audit": clock,
         "off_audit": off,
-        "final_bootstrap": _bootstrap(tuple(final_points), final_points),
-        "ema_bootstrap": _bootstrap(tuple(ema_points), ema_points),
+        "final_bootstrap": _bootstrap(
+            tuple(final_points),
+            final_points,
+            metrics_by_family={
+                "final_on": final_on_metrics,
+                "final_gate_zero": final_zero_metrics,
+                "h65_off_final": off_final_metrics,
+            },
+            baseline_family="final_gate_zero",
+            namespace="SINGLECLOCK_FINAL_PAIRED_VIDEO_BOOTSTRAP_V1",
+        ),
+        "ema_bootstrap": _bootstrap(
+            tuple(ema_points),
+            ema_points,
+            metrics_by_family={
+                "ema_on": ema_on_metrics,
+                "ema_gate_zero": ema_zero_metrics,
+                "h65_off_ema": off_ema_metrics,
+            },
+            baseline_family="ema_gate_zero",
+            namespace="SINGLECLOCK_EMA_PAIRED_VIDEO_BOOTSTRAP_V1",
+        ),
         "h65_replay_identity": h65_replay_identity,
         "nominal_uniform_identity": nominal_uniform_identity,
         "old_pair_bootstrap": _bootstrap(tuple(old_points), old_points),
@@ -303,6 +402,38 @@ def test_finalizer_rejects_metrics_changed_after_receipt(tmp_path):
     assert result["first_failure"] == "INVALID_CHECKPOINT_CONFIG_EVALUATOR_BINDING"
 
 
+def test_finalizer_rejects_self_consistent_but_nonofficial_evaluator(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    row = kwargs["receipt"]["families"]["ema_on"]
+    path = row["metrics_path"]
+    payload = json.loads(open(path, encoding="utf-8").read())
+    payload["evaluator"] = {
+        "module": "opentad.evaluations.mAP",
+        "class_name": "mAP",
+        "source_path": payload["evaluator"]["source_path"],
+        "source_sha256": "f" * 64,
+    }
+    payload.pop("evaluation_sha256")
+    payload["evaluation_sha256"] = canonical_sha256(payload)
+    with open(path, "w", encoding="utf-8") as stream:
+        json.dump(payload, stream)
+    with open(path, "rb") as stream:
+        row["metrics_sha256"] = hashlib.sha256(stream.read()).hexdigest()
+    result = finalize(**kwargs)
+    assert result["evidence_status"] == "INVALID"
+    assert result["decision_token"] is None
+    assert result["first_failure"] == "INVALID_CHECKPOINT_CONFIG_EVALUATOR_BINDING"
+
+
+def test_finalizer_rejects_bootstrap_not_bound_to_terminal_prediction(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    kwargs["ema_bootstrap"]["prediction_sha256"]["ema_on"] = "f" * 64
+    result = finalize(**kwargs)
+    assert result["evidence_status"] == "INVALID"
+    assert result["decision_token"] is None
+    assert result["first_failure"] == "INVALID_BOOTSTRAP_EVIDENCE_BINDING"
+
+
 def test_recovery_state_and_old_diagnostics_do_not_change_unit1_decision(tmp_path):
     kwargs = _finalizer_fixture(tmp_path)
     kwargs["off_audit"]["recovery_state_complete"] = False
@@ -333,7 +464,21 @@ def test_clock_recovery_gap_is_diagnostic_only(tmp_path):
     assert result["paper_claim_admissible"] is False
 
 
+def _rewrite_terminal_metric(kwargs, family, metric, value):
+    row = kwargs["receipt"]["families"][family]
+    path = row["metrics_path"]
+    payload = json.loads(open(path, encoding="utf-8").read())
+    payload["metrics"][metric] = value
+    payload.pop("evaluation_sha256", None)
+    payload["evaluation_sha256"] = canonical_sha256(payload)
+    with open(path, "w", encoding="utf-8") as stream:
+        json.dump(payload, stream)
+    with open(path, "rb") as stream:
+        row["metrics_sha256"] = hashlib.sha256(stream.read()).hexdigest()
+
+
 def _set_ema_on_metric(kwargs, metric, value, *, sampled_value=None):
+    _rewrite_terminal_metric(kwargs, "ema_on", metric, value)
     kwargs["ema_bootstrap"]["point_estimates"]["ema_on"][metric] = value
     kwargs["ema_bootstrap"]["sampled_metrics"]["ema_on"][metric] = [
         value if sampled_value is None else sampled_value
@@ -361,6 +506,7 @@ def test_bootstrap_ci_is_report_only(tmp_path):
 def test_same_checkpoint_gate_zero_loss_does_not_enter_primary_gate(tmp_path):
     kwargs = _finalizer_fixture(tmp_path)
     for metric in ("average_mAP", "mAP@0.6", "mAP@0.7"):
+        _rewrite_terminal_metric(kwargs, "ema_gate_zero", metric, 0.70)
         kwargs["ema_bootstrap"]["point_estimates"]["ema_gate_zero"][metric] = 0.70
         kwargs["ema_bootstrap"]["sampled_metrics"]["ema_gate_zero"][metric] = [0.70] * 10000
     result = finalize(**kwargs)
@@ -397,7 +543,12 @@ def test_cost_is_report_only(tmp_path):
     assert result["cost"]["decision_role"] == "report_only"
 
 
-def test_evaluable_boundary_positive_delta_kills(tmp_path):
+def test_evaluable_boundary_positive_delta_kills(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        finalizer_module,
+        "_evaluable_boundary_binding_ok",
+        lambda *args, **kwargs: True,
+    )
     kwargs = _finalizer_fixture(tmp_path)
     kwargs["boundary"] = {
         "schema_version": "duca_h65_singleclock_boundary_gate_v1",
@@ -414,7 +565,12 @@ def test_evaluable_boundary_positive_delta_kills(tmp_path):
     assert result["first_failure"] == "BOUNDARY_RISK_FAILURE"
 
 
-def test_evaluable_boundary_zero_is_inclusive_pass(tmp_path):
+def test_evaluable_boundary_zero_is_inclusive_pass(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        finalizer_module,
+        "_evaluable_boundary_binding_ok",
+        lambda *args, **kwargs: True,
+    )
     kwargs = _finalizer_fixture(tmp_path)
     kwargs["boundary"] = {
         "schema_version": "duca_h65_singleclock_boundary_gate_v1",
@@ -429,6 +585,24 @@ def test_evaluable_boundary_zero_is_inclusive_pass(tmp_path):
     result = finalize(**kwargs)
     assert result["decision_token"] == "PASS_UNIT1_SINGLECLOCK_GATE"
     assert result["boundary_gate"]["used_for_decision"] is True
+
+
+def test_evaluable_boundary_without_provenance_is_invalid(tmp_path):
+    kwargs = _finalizer_fixture(tmp_path)
+    kwargs["boundary"] = {
+        "schema_version": "duca_h65_singleclock_boundary_gate_v1",
+        "status": "EVALUABLE",
+        "comparison": "ema_on_minus_h65_off_ema",
+        "high_gapcv_delta_point": -0.01,
+        "high_boundary_density_delta_point": -0.01,
+        "bootstrap_samples": 10000,
+        "bootstrap_cluster": "whole_video",
+        "ci_role": "report_only",
+    }
+    result = finalize(**kwargs)
+    assert result["evidence_status"] == "INVALID"
+    assert result["decision_token"] is None
+    assert result["first_failure"] == "INVALID_BOUNDARY_EVIDENCE_BINDING"
 
 
 def test_identity_accounting_mismatch_rejected():

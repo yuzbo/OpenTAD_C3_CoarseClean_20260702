@@ -10,6 +10,11 @@ from typing import Any, Mapping
 import numpy as np
 
 from tools.bata.duca_p0_training import atomic_write_json
+from tools.bata.duca_p0_evaluation import (
+    canonical_sha256,
+    normalize_evaluation_config,
+    official_evaluator_identity,
+)
 
 
 METRICS = ("average_mAP", "mAP@0.6", "mAP@0.7")
@@ -213,6 +218,149 @@ def _file_hash_matches(path: str | Path, expected_hash: str) -> bool:
         and len(expected) == 64
         and hashlib.sha256(artifact.read_bytes()).hexdigest() == expected
     )
+
+
+def _terminal_evaluation_binding_ok(metrics: Mapping[str, Any]) -> bool:
+    """Revalidate the official evaluator inputs instead of trusting a sidecar."""
+
+    try:
+        if metrics.get("evaluator") != official_evaluator_identity():
+            return False
+        payload_hash = metrics.get("evaluation_sha256")
+        if not _sha256_text(payload_hash):
+            return False
+        unhashed = dict(metrics)
+        unhashed.pop("evaluation_sha256", None)
+        if canonical_sha256(unhashed) != payload_hash:
+            return False
+
+        prediction_path = Path(str(metrics.get("prediction_path", ""))).resolve()
+        annotation_path = Path(
+            str(metrics.get("evaluation_annotation_path", ""))
+        ).resolve()
+        class_map_path = Path(
+            str(metrics.get("evaluation_class_map_path", ""))
+        ).resolve()
+        if not _file_hash_matches(
+            prediction_path, str(metrics.get("prediction_sha256", ""))
+        ):
+            return False
+        if not _file_hash_matches(
+            annotation_path,
+            str(metrics.get("evaluation_annotation_sha256", "")),
+        ):
+            return False
+        if not _file_hash_matches(
+            class_map_path,
+            str(metrics.get("evaluation_class_map_sha256", "")),
+        ):
+            return False
+
+        evaluation_config = normalize_evaluation_config(
+            metrics.get("evaluation_config"), expected_subset="validation"
+        )
+        if canonical_sha256(evaluation_config) != metrics.get(
+            "evaluation_config_sha256"
+        ):
+            return False
+        if Path(evaluation_config["ground_truth_filename"]).resolve() != annotation_path:
+            return False
+        if int(metrics.get("result_count", 0)) <= 0 or int(
+            metrics.get("video_count", 0)
+        ) <= 0:
+            return False
+    except (KeyError, TypeError, ValueError, OSError):
+        return False
+    return True
+
+
+def _bootstrap_binding_ok(
+    artifact: Mapping[str, Any],
+    *,
+    families: tuple[str, ...],
+    baseline_family: str,
+    namespace: str,
+    loaded_metrics: Mapping[str, Mapping[str, Any]],
+) -> bool:
+    """Bind bootstrap point estimates and draws to the frozen predictions."""
+
+    try:
+        if artifact.get("schema_version") != "duca_h65_official_pcg64_video_bootstrap_v1":
+            return False
+        if artifact.get("official_evaluator_reexecuted_per_resample") is not True:
+            return False
+        if artifact.get("paired_video_cluster_bootstrap") is not True:
+            return False
+        if artifact.get("rng") != "numpy.random.PCG64":
+            return False
+        if artifact.get("namespace") != namespace:
+            return False
+        if artifact.get("baseline_family") != baseline_family:
+            return False
+        if artifact.get("samples") != 10000:
+            return False
+        if artifact.get("interval_rank_convention") != "one_based_order_statistics":
+            return False
+        if (artifact.get("lower_rank"), artifact.get("upper_rank")) != (250, 9750):
+            return False
+        if artifact.get("evaluator") != official_evaluator_identity():
+            return False
+        family_order = artifact.get("family_order")
+        if not isinstance(family_order, list) or set(family_order) != set(families):
+            return False
+        if len(family_order) != len(families):
+            return False
+
+        prediction_paths = artifact.get("prediction_paths")
+        prediction_hashes = artifact.get("prediction_sha256")
+        points = artifact.get("point_estimates")
+        sampled = artifact.get("sampled_metrics")
+        if not all(
+            isinstance(value, Mapping)
+            for value in (prediction_paths, prediction_hashes, points, sampled)
+        ):
+            return False
+        if any(set(value) != set(families) for value in (prediction_paths, prediction_hashes, points, sampled)):
+            return False
+
+        expected_config_hash = None
+        for family in families:
+            metrics = loaded_metrics[family]
+            prediction_path = metrics.get("prediction_path", "")
+            prediction_hash = metrics.get("prediction_sha256", "")
+            if not _same_path(prediction_paths[family], prediction_path):
+                return False
+            if prediction_hashes[family] != prediction_hash:
+                return False
+            if not _file_hash_matches(prediction_path, prediction_hash):
+                return False
+            for metric in METRICS:
+                if _metric_decimal(points[family], metric) != _metric_decimal(
+                    metrics.get("metrics") or {}, metric
+                ):
+                    return False
+                draws = sampled[family].get(metric)
+                if not isinstance(draws, list) or len(draws) != 10000:
+                    return False
+            config_hash = metrics.get("evaluation_config_sha256")
+            expected_config_hash = (
+                config_hash if expected_config_hash is None else expected_config_hash
+            )
+            if config_hash != expected_config_hash:
+                return False
+
+        evaluation_config = normalize_evaluation_config(
+            artifact.get("evaluation_config"), expected_subset="validation"
+        )
+        if canonical_sha256(evaluation_config) != artifact.get(
+            "evaluation_config_sha256"
+        ):
+            return False
+        if artifact.get("evaluation_config_sha256") != expected_config_hash:
+            return False
+    except (KeyError, TypeError, ValueError, OSError):
+        return False
+    return True
 
 
 def _same_path(lhs: str | Path, rhs: str | Path) -> bool:
@@ -437,6 +585,106 @@ def _boundary_gate(
     }
 
 
+def _evaluable_boundary_binding_ok(
+    boundary: Mapping[str, Any],
+    *,
+    validation_identity_path: str | Path,
+    validation_identity_sha256: str,
+    on_metrics: Mapping[str, Any],
+    off_metrics: Mapping[str, Any],
+) -> bool:
+    """Recompute an evaluable boundary gate from its frozen source artifacts."""
+
+    try:
+        from tools.bata.analyze_duca_h65_singleclock_strata import (
+            evaluate_boundary_risk_strata,
+            freeze_boundary_risk_strata,
+        )
+
+        if not _same_path(
+            boundary.get("validation_identity_path", ""), validation_identity_path
+        ):
+            return False
+        if boundary.get("validation_identity_sha256") != validation_identity_sha256:
+            return False
+        if not _file_hash_matches(
+            validation_identity_path, validation_identity_sha256
+        ):
+            return False
+
+        on_prediction_path = on_metrics.get("prediction_path", "")
+        off_prediction_path = off_metrics.get("prediction_path", "")
+        annotation_path = on_metrics.get("evaluation_annotation_path", "")
+        if not _same_path(boundary.get("on_prediction_path", ""), on_prediction_path):
+            return False
+        if not _same_path(boundary.get("off_prediction_path", ""), off_prediction_path):
+            return False
+        if not _same_path(boundary.get("annotation_path", ""), annotation_path):
+            return False
+        if boundary.get("on_prediction_sha256") != on_metrics.get(
+            "prediction_sha256"
+        ):
+            return False
+        if boundary.get("off_prediction_sha256") != off_metrics.get(
+            "prediction_sha256"
+        ):
+            return False
+        if boundary.get("annotation_sha256") != on_metrics.get(
+            "evaluation_annotation_sha256"
+        ):
+            return False
+        if boundary.get("annotation_sha256") != off_metrics.get(
+            "evaluation_annotation_sha256"
+        ):
+            return False
+
+        frozen_path = boundary.get("training_freeze_path", "")
+        frozen_hash = boundary.get("training_freeze_sha256", "")
+        ledger_path = boundary.get("validation_window_ledger_path", "")
+        ledger_hash = boundary.get("validation_window_ledger_sha256", "")
+        for path, digest in (
+            (frozen_path, frozen_hash),
+            (ledger_path, ledger_hash),
+            (on_prediction_path, boundary.get("on_prediction_sha256", "")),
+            (off_prediction_path, boundary.get("off_prediction_sha256", "")),
+            (annotation_path, boundary.get("annotation_sha256", "")),
+        ):
+            if not _file_hash_matches(path, str(digest)):
+                return False
+
+        frozen = _load(frozen_path)
+        if frozen.get("schema_version") != "duca_h65_singleclock_boundary_risk_freeze_v1":
+            return False
+        if frozen.get("source_subset") != "training":
+            return False
+        if frozen.get("validation_or_test_used") is not False:
+            return False
+        recomputed_freeze = freeze_boundary_risk_strata(
+            training_identity_path=frozen.get("training_identity_path", ""),
+            training_window_ledger_path=frozen.get(
+                "training_window_ledger_path", ""
+            ),
+            annotation_path=frozen.get("annotation_path", ""),
+        )
+        if canonical_sha256(recomputed_freeze) != canonical_sha256(frozen):
+            return False
+
+        recomputed = evaluate_boundary_risk_strata(
+            frozen_path=frozen_path,
+            validation_identity_path=validation_identity_path,
+            validation_window_ledger_path=ledger_path,
+            annotation_path=annotation_path,
+            on_prediction_path=on_prediction_path,
+            off_prediction_path=off_prediction_path,
+            nonce=str(boundary.get("nonce", "")),
+        )
+        if recomputed.get("status") != "EVALUABLE":
+            return False
+        return canonical_sha256(recomputed) == canonical_sha256(boundary)
+    except (KeyError, TypeError, ValueError, OSError):
+        return False
+
+
 def finalize(
     *,
     receipt: Mapping[str, Any],
@@ -538,20 +786,43 @@ def finalize(
             )
         metrics = _load(metrics_path)
         loaded_metrics[family] = metrics
-        execution_contract[family] = _family_execution_contract_ok(
-            row,
-            metrics,
-            expected_config_suffix=spec[0],
-            expected_gate_zero=spec[1],
-            expected_checkpoint_path=spec[2],
-            expected_checkpoint_sha256=spec[3],
-            expected_state_key=spec[4],
-            require_identity=spec[5],
+        execution_contract[family] = bool(
+            _family_execution_contract_ok(
+                row,
+                metrics,
+                expected_config_suffix=spec[0],
+                expected_gate_zero=spec[1],
+                expected_checkpoint_path=spec[2],
+                expected_checkpoint_sha256=spec[3],
+                expected_state_key=spec[4],
+                require_identity=spec[5],
+            )
+            and _terminal_evaluation_binding_ok(metrics)
         )
     if not all(execution_contract.values()):
         return _invalid_result(
             first_failure="INVALID_CHECKPOINT_CONFIG_EVALUATOR_BINDING",
             diagnostics={"family_execution_contract": execution_contract},
+        )
+    common_evaluation_fields = (
+        "evaluation_annotation_sha256",
+        "evaluation_class_map_sha256",
+        "evaluation_config_sha256",
+        "evaluator",
+    )
+    if any(
+        len(
+            {
+                canonical_sha256(loaded_metrics[family].get(field))
+                for family in required
+            }
+        )
+        != 1
+        for field in common_evaluation_fields
+    ):
+        return _invalid_result(
+            first_failure="INVALID_CHECKPOINT_CONFIG_EVALUATOR_BINDING",
+            diagnostics={"common_official_evaluation_binding": False},
         )
 
     selected_input_identity: dict[str, bool] = {}
@@ -626,6 +897,36 @@ def finalize(
         expected_checkpoint_sha256=str(clock_checkpoint_sha256),
     )
 
+    bootstrap_contract = {
+        "final": _bootstrap_binding_ok(
+            final_bootstrap,
+            families=("final_gate_zero", "final_on", "h65_off_final"),
+            baseline_family="final_gate_zero",
+            namespace="SINGLECLOCK_FINAL_PAIRED_VIDEO_BOOTSTRAP_V1",
+            loaded_metrics=loaded_metrics,
+        ),
+        "ema": _bootstrap_binding_ok(
+            ema_bootstrap,
+            families=("ema_gate_zero", "ema_on", "h65_off_ema"),
+            baseline_family="ema_gate_zero",
+            namespace="SINGLECLOCK_EMA_PAIRED_VIDEO_BOOTSTRAP_V1",
+            loaded_metrics=loaded_metrics,
+        ),
+    }
+    same_bootstrap_nonce = bool(
+        isinstance(final_bootstrap.get("nonce"), str)
+        and final_bootstrap.get("nonce")
+        and final_bootstrap.get("nonce") == ema_bootstrap.get("nonce")
+    )
+    if not all(bootstrap_contract.values()) or not same_bootstrap_nonce:
+        return _invalid_result(
+            first_failure="INVALID_BOOTSTRAP_EVIDENCE_BINDING",
+            diagnostics={
+                "bootstrap_contract": bootstrap_contract,
+                "same_nonempty_bootstrap_nonce": same_bootstrap_nonce,
+            },
+        )
+
     family_names = {
         "final": (final_bootstrap, "final_on", "final_gate_zero", "h65_off_final"),
         "ema": (ema_bootstrap, "ema_on", "ema_gate_zero", "h65_off_ema"),
@@ -675,6 +976,24 @@ def finalize(
             "ci_upper_pp_report_only": ema_external[metric]["ci_upper_pp"],
         }
 
+    if (
+        boundary is not None
+        and boundary.get("status") == "EVALUABLE"
+        and not _evaluable_boundary_binding_ok(
+            boundary,
+            validation_identity_path=families["ema_on"].get(
+                "selected_input_identity_path", ""
+            ),
+            validation_identity_sha256=str(
+                families["ema_on"].get("selected_input_identity_sha256", "")
+            ),
+            on_metrics=loaded_metrics["ema_on"],
+            off_metrics=loaded_metrics["h65_off_ema"],
+        )
+    ):
+        return _invalid_result(
+            first_failure="INVALID_BOUNDARY_EVIDENCE_BINDING",
+        )
     boundary_gate = _boundary_gate(
         boundary,
         missing_artifacts=boundary_missing_artifacts,
