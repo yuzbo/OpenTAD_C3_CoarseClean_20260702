@@ -313,7 +313,7 @@ def test_apm_and_cur_share_mask_but_only_apm_substitutes_detached_memory():
     assert apm_meta["temporal_alignment_ledger"]["new_trainable_parameters"] == 0
 
 
-def test_configs_and_launcher_bind_only_the_two_frozen_temporal_arms():
+def test_configs_and_launcher_bind_the_frozen_temporal_arms():
     config_dir = ROOT / "configs" / "adatad" / "thumos"
     expected = {
         "apm32_ctx64": "georoute_official_r1_apm32_ctx64_prebackbone_seed42_v001.py",
@@ -331,13 +331,29 @@ def test_configs_and_launcher_bind_only_the_two_frozen_temporal_arms():
         assert custom.georoute_official_support == "strict_rect8x8"
         assert config.zoomtoken_p1_config.new_trainable_parameters == 0
         assert config.workflow.checkpoint_interval == 5
+    full64 = Config.fromfile(
+        config_dir
+        / "georoute_official_r1_apm_c32_full64_prebackbone_seed42_v001.py"
+    )
+    assert full64.model.backbone.custom.zoomtoken_refresh_carry_mode == (
+        "apm_c32_full64"
+    )
+    assert (
+        full64.model.backbone.custom.zoomtoken_query_tokens,
+        full64.model.backbone.custom.zoomtoken_kv_tokens,
+        full64.model.backbone.custom.zoomtoken_mlp_tokens,
+    ) == (64, 64, 64)
+    assert full64.zoomtoken_p1_config.memory_carrier_tokens == 32
+    assert full64.zoomtoken_p1_config.new_trainable_parameters == 0
     launcher = (
         ROOT / "scripts" / "run_zoomtoken_official_prebackbone_bc_n16r4.sh"
     ).read_text(encoding="utf-8")
     assert launcher.count("R1-APM32-CTX64)") == 1
     assert launcher.count("R1-CUR32-CTX64)") == 1
+    assert launcher.count("R1-APM-C32-FULL64)") == 1
     assert "georoute_official_r1_apm32_ctx64_prebackbone_seed42_v001.py" in launcher
     assert "georoute_official_r1_cur32_ctx64_prebackbone_seed42_v001.py" in launcher
+    assert "georoute_official_r1_apm_c32_full64_prebackbone_seed42_v001.py" in launcher
 
 
 def test_apm_and_cur_enter_the_existing_full_state_recovery_contract():
@@ -351,6 +367,10 @@ def test_apm_and_cur_enter_the_existing_full_state_recovery_contract():
         (
             "georoute_official_r1_cur32_ctx64_prebackbone_seed42_v001.py",
             "R1-CUR32-CTX64",
+        ),
+        (
+            "georoute_official_r1_apm_c32_full64_prebackbone_seed42_v001.py",
+            "R1-APM-C32-FULL64",
         ),
     ):
         config = Config.fromfile(config_dir / filename)
@@ -383,6 +403,7 @@ def test_single_batch_loader_never_consumes_a_second_batch():
     [
         ("R1-APM32-CTX64", "apm32_ctx64"),
         ("R1-CUR32-CTX64", "cur32_ctx64"),
+        ("R1-APM-C32-FULL64", "apm_c32_full64"),
     ],
 )
 def test_temporal_preflight_ledger_reconciles_without_metric_values(arm, mode):
@@ -395,7 +416,9 @@ def test_temporal_preflight_ledger_reconciles_without_metric_values(arm, mode):
         "unique_physical_tokens_per_window": 512,
         "executed_patch_tokens_per_window": 512,
         "batch_size": 1,
-        "refresh_query_tokens_per_window_by_batch": [288],
+        "refresh_query_tokens_per_window_by_batch": (
+            [512] if mode == "apm_c32_full64" else [288]
+        ),
         "temporal_alignment": {
             "carrier_mode": mode,
             "memory_lifetime_tubelets": 1,
@@ -446,14 +469,52 @@ def test_launcher_exposes_only_result_blind_temporal_preflight_mode():
     ).read_text(encoding="utf-8")
     assert 'TEMPORAL_PREFLIGHT_ONLY="${ZOOMTOKEN_TEMPORAL_PREFLIGHT_ONLY:-0}"' in launcher
     assert "--zoomtoken-temporal-preflight-only" in launcher
-    assert "temporal mechanical preflight accepts only APM32/CUR32" in launcher
+    assert "temporal mechanical preflight accepts only frozen APM arms" in launcher
     assert "temporal mechanical preflight forbids resume input" in launcher
+
+
+def test_apm_c32_full64_executes_all_tokens_without_block_sparse_mask():
+    torch.manual_seed(23)
+    base = torch.randn(64, 64)
+    values = torch.stack(
+        [base + 0.01 * tubelet * torch.randn_like(base) for tubelet in range(8)]
+    ).reshape(512, 64)
+    model = _tiny_temporal_backbone(values)
+    physical = torch.cat(
+        [_strict_indices() + 100 * tubelet for tubelet in range(8)]
+    ).view(1, -1)
+    native = torch.zeros(1, 512, 3, 2, 16, 16)
+    output = model.forward_native_ragged(
+        native,
+        physical,
+        total_tubelets=8,
+        source_grid_hw=(10, 10),
+        use_absolute_position=False,
+        refresh_mode="apm_c32_full64",
+    )
+    summary = model.latest_native_packed_summary
+    assert output.shape == (1, 512, 64)
+    assert summary["refresh_query_tokens_per_window"] == 512
+    assert summary["executed_attention_tokens_all_blocks"] == 512
+    assert summary["executed_mlp_tokens_all_blocks"] == 512
+    assert summary["temporal_alignment"]["carrier_mode"] == "apm_c32_full64"
+    assert summary["memory_carrier_tokens_per_window_by_batch"] == [224]
+
+
+def test_apm_c32_full64_parameter_inventory_matches_r1():
+    values = torch.randn(512, 64)
+    r1 = _tiny_temporal_backbone(values.clone())
+    apm = _tiny_temporal_backbone(values.clone())
+    assert tuple(r1.state_dict()) == tuple(apm.state_dict())
+    assert [name for name, _ in r1.named_parameters()] == [
+        name for name, _ in apm.named_parameters()
+    ]
 
 
 def test_temporal_route_does_not_modify_or_combine_amod_dsr6_chronotransport():
     vit_source = (
         ROOT / "opentad" / "models" / "backbones" / "vit_adapter.py"
     ).read_text(encoding="utf-8")
-    assert 'raise RuntimeError("APM32/CUR32 cannot combine with strict A-MoD")' in vit_source
+    assert 'raise RuntimeError("APM32/CUR32/FULL64 cannot combine with strict A-MoD")' in vit_source
     assert 'refresh_mode == "dsr6_kv"' in vit_source
     assert "native ragged execution cannot combine with ChronoTransport" in vit_source

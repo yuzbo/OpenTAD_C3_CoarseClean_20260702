@@ -50,6 +50,7 @@ ZOOMTOKEN_RECOVERY_ARMS.update(
         "R1-DSR6-KV",
         "R1-APM32-CTX64",
         "R1-CUR32-CTX64",
+        "R1-APM-C32-FULL64",
         "AMOD50",
     }
 )
@@ -59,6 +60,7 @@ ZOOMTOKEN_CANONICAL_SOURCE_ARMS = ZOOMTOKEN_RECOVERY_ARMS - {"DN", "G"}
 ZOOMTOKEN_TEMPORAL_PREFLIGHT_ARMS = {
     "R1-APM32-CTX64": "apm32_ctx64",
     "R1-CUR32-CTX64": "cur32_ctx64",
+    "R1-APM-C32-FULL64": "apm_c32_full64",
 }
 
 
@@ -115,7 +117,7 @@ def _zoomtoken_temporal_preflight_summary(model, recovery_contract):
         recovery_contract["arm_surface"]
     )
     if expected_mode is None:
-        raise ValueError("mechanical temporal preflight accepts only APM32/CUR32")
+        raise ValueError("mechanical temporal preflight accepts only frozen APM arms")
     candidate_model = getattr(model, "module", model)
     route_backbone = getattr(candidate_model, "backbone", None)
     vit_backbone = getattr(getattr(route_backbone, "model", None), "backbone", None)
@@ -569,7 +571,7 @@ def _run_zoomtoken_temporal_preflight(
     if recovery_contract is None or recovery_contract["arm_surface"] not in (
         ZOOMTOKEN_TEMPORAL_PREFLIGHT_ARMS
     ):
-        raise ValueError("temporal mechanical preflight requires APM32/CUR32 recovery")
+        raise ValueError("temporal mechanical preflight requires frozen APM recovery")
     if args.resume is not None:
         raise ValueError("temporal mechanical preflight always starts from the frozen pretrain")
     if model_ema is None or scaler is None:
@@ -807,7 +809,7 @@ def main():
             ZOOMTOKEN_TEMPORAL_PREFLIGHT_ARMS
         ):
             raise ValueError(
-                "temporal mechanical preflight accepts only frozen APM32/CUR32"
+                "temporal mechanical preflight accepts only frozen APM arms"
             )
         if args.resume is not None:
             raise ValueError("temporal mechanical preflight forbids resume input")

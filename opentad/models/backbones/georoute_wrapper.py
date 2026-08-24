@@ -1016,6 +1016,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             "dsr6_kv": (32, 64, 32, False),
             "apm32_ctx64": (32, 64, 32, False),
             "cur32_ctx64": (32, 64, 32, False),
+            "apm_c32_full64": (64, 64, 64, False),
         }
         if self.refresh_carry_mode not in refresh_contracts:
             raise ValueError("unsupported ZoomToken refresh-carry mode")
@@ -3613,9 +3614,12 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 "dsr6_kv",
                 "apm32_ctx64",
                 "cur32_ctx64",
+                "apm_c32_full64",
             }:
                 packed_contract["kv_context_tokens_per_window"] = tubelets * 64
-                if self.refresh_carry_mode not in {
+                if self.refresh_carry_mode == "apm_c32_full64":
+                    packed_contract["refresh_query_tokens_per_window"] = tubelets * 64
+                elif self.refresh_carry_mode not in {
                     "apm32_ctx64",
                     "cur32_ctx64",
                 }:
@@ -3651,7 +3655,12 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                     "K32_normal_K64_fallback"
                     if self.refresh_carry_mode
                     in {"apm32_ctx64", "cur32_ctx64"}
-                    else (32 if self.refresh_carry_mode != "full64" else 64)
+                    else (
+                        64
+                        if self.refresh_carry_mode
+                        in {"full64", "apm_c32_full64"}
+                        else 32
+                    )
                 ),
                 "kv_context_tokens_per_tubelet": (
                     64
@@ -3662,6 +3671,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                         "dsr6_kv",
                         "apm32_ctx64",
                         "cur32_ctx64",
+                        "apm_c32_full64",
                     }
                     else executed_tokens_per_tubelet
                 ),
@@ -3685,6 +3695,7 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             if self.refresh_carry_mode in {
                 "apm32_ctx64",
                 "cur32_ctx64",
+                "apm_c32_full64",
             }:
                 temporal_alignment = packed.get("temporal_alignment")
                 if not isinstance(temporal_alignment, Mapping):
@@ -3734,6 +3745,27 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 strict_rectangle_audit[
                     "refresh_query_tokens_per_window"
                 ] = int(packed["refresh_query_tokens_per_window"])
+                if self.refresh_carry_mode == "apm_c32_full64":
+                    carrier_by_batch = packed.get(
+                        "memory_carrier_tokens_per_window_by_batch"
+                    )
+                    if not isinstance(carrier_by_batch, list) or len(
+                        carrier_by_batch
+                    ) != batch_size:
+                        raise RuntimeError(
+                            "APM-C32/FULL64 omitted its memory-carrier ledger"
+                        )
+                    strict_rectangle_audit.update(
+                        {
+                            "memory_carrier_tokens_per_window_by_batch": list(
+                                carrier_by_batch
+                            ),
+                            "deep_update_tokens_per_tubelet": 64,
+                            "kv_tokens_per_tubelet": 64,
+                            "adapter_tokens_per_tubelet": 64,
+                            "fallback_deep_update_tokens_per_tubelet": 64,
+                        }
+                    )
         multibranch_audit = None
         r3_budget_loss = None
         r3_global_g = None
@@ -3829,9 +3861,10 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
                 if self.refresh_carry_mode
                 in {"apm32_ctx64", "cur32_ctx64"}
                 else (
-                    32
-                    if self.refresh_carry_mode != "full64"
-                    else selected_per_tubelet
+                    selected_per_tubelet
+                    if self.refresh_carry_mode
+                    in {"full64", "apm_c32_full64"}
+                    else 32
                 )
             ),
             "refresh_support_tokens_per_tubelet": (

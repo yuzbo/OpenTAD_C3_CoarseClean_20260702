@@ -70,6 +70,11 @@ case "${ARM}" in
     ARM_DIR="r1_cur32_ctx64_prebackbone_sparse_adapter"
     RECOVERY_ENABLED=1
     ;;
+  R1-APM-C32-FULL64)
+    CONFIG_NAME="georoute_official_r1_apm_c32_full64_prebackbone_seed42_v001.py"
+    ARM_DIR="r1_apm_c32_full64_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
   AMOD50)
     CONFIG_NAME="georoute_official_amod50_prebackbone_seed42_v001.py"
     ARM_DIR="amod50_full800_prebackbone_adapter"
@@ -123,8 +128,8 @@ CELL_ROOT="${RUN_ROOT}/cells/${ARM_DIR}/seed42"
 [[ "${TEMPORAL_PREFLIGHT_ONLY}" == "0" || "${TEMPORAL_PREFLIGHT_ONLY}" == "1" ]] || \
   fail 'ZOOMTOKEN_TEMPORAL_PREFLIGHT_ONLY must be 0 or 1'
 if [[ "${TEMPORAL_PREFLIGHT_ONLY}" == "1" ]]; then
-  [[ "${ARM}" == "R1-APM32-CTX64" || "${ARM}" == "R1-CUR32-CTX64" ]] || \
-    fail 'temporal mechanical preflight accepts only APM32/CUR32'
+  [[ "${ARM}" == "R1-APM32-CTX64" || "${ARM}" == "R1-CUR32-CTX64" || "${ARM}" == "R1-APM-C32-FULL64" ]] || \
+    fail 'temporal mechanical preflight accepts only frozen APM arms'
   [[ -z "${RESUME}" ]] || fail 'temporal mechanical preflight forbids resume input'
 fi
 

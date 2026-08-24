@@ -1927,11 +1927,16 @@ class VisionTransformerAdapter(BaseModule):
             raise RuntimeError(
                 "native ragged execution cannot combine with ChronoTransport"
             )
+        temporal_alignment_modes = {
+            "apm32_ctx64",
+            "cur32_ctx64",
+            "apm_c32_full64",
+        }
         if (
-            refresh_mode in {"apm32_ctx64", "cur32_ctx64"}
+            refresh_mode in temporal_alignment_modes
             and self.amod_config is not None
         ):
-            raise RuntimeError("APM32/CUR32 cannot combine with strict A-MoD")
+            raise RuntimeError("APM32/CUR32/FULL64 cannot combine with strict A-MoD")
 
         batch_size, selected_count = map(int, physical_indices.shape)
         if selected_count <= 0:
@@ -1997,10 +2002,10 @@ class VisionTransformerAdapter(BaseModule):
         )
         temporal_plan = None
         carrier = embedded
-        if refresh_mode in {"apm32_ctx64", "cur32_ctx64"}:
+        if refresh_mode in temporal_alignment_modes:
             if selected_count != int(total_tubelets) * 64:
                 raise ValueError(
-                    "APM32/CUR32 require exact K64 support for every tubelet"
+                    "APM temporal modes require exact K64 support for every tubelet"
                 )
             expected_tubelets = torch.arange(
                 int(total_tubelets),
@@ -2009,7 +2014,7 @@ class VisionTransformerAdapter(BaseModule):
             ).repeat_interleave(64).view(1, -1).expand(batch_size, -1)
             if not torch.equal(tubelet_indices, expected_tubelets):
                 raise ValueError(
-                    "APM32/CUR32 require exactly 64 ordered tokens per tubelet"
+                    "APM temporal modes require exactly 64 ordered tokens per tubelet"
                 )
             temporal_plan = build_apm32_temporal_plan(
                 embedded.reshape(
@@ -2022,7 +2027,7 @@ class VisionTransformerAdapter(BaseModule):
                 grid_height=grid_height,
                 grid_width=grid_width,
             )
-            if refresh_mode == "apm32_ctx64":
+            if refresh_mode in {"apm32_ctx64", "apm_c32_full64"}:
                 plan_previous = temporal_plan["matched_previous_slot"]
                 plan_retained = temporal_plan["retained_mask"]
                 plan_alpha = temporal_plan["alpha"]
@@ -2166,6 +2171,10 @@ class VisionTransformerAdapter(BaseModule):
                 batch_size,
                 selected_count,
             )
+            metadata["temporal_carrier_mask"] = retained_tensor.reshape(
+                batch_size,
+                selected_count,
+            )
             metadata["temporal_alignment_ledger"] = {
                 "schema_version": temporal_plan["schema_version"],
                 "carrier_mode": refresh_mode,
@@ -2228,15 +2237,23 @@ class VisionTransformerAdapter(BaseModule):
         batch_size = int(metadata["batch_size"])
         window_budget = int(metadata["window_budget"])
         selected_total = batch_size * window_budget
-        temporal_modes = {"apm32_ctx64", "cur32_ctx64"}
+        temporal_modes = {"apm32_ctx64", "cur32_ctx64", "apm_c32_full64"}
+        temporal_sparse_modes = {"apm32_ctx64", "cur32_ctx64"}
+        temporal_carrier_mask = None
         if refresh_mode in temporal_modes:
             if refresh_mask is not None or refresh_alpha is not None:
                 raise ValueError(
-                    "APM32/CUR32 derive their frozen refresh mask internally"
+                    "APM temporal modes derive their frozen alignment mask internally"
                 )
-            refresh_mask = metadata.get("temporal_refresh_mask")
-            if not isinstance(refresh_mask, torch.Tensor):
-                raise RuntimeError("APM32/CUR32 temporal refresh plan is missing")
+            temporal_refresh_mask = metadata.get("temporal_refresh_mask")
+            temporal_carrier_mask = metadata.get("temporal_carrier_mask")
+            if not isinstance(temporal_refresh_mask, torch.Tensor) or not isinstance(
+                temporal_carrier_mask,
+                torch.Tensor,
+            ):
+                raise RuntimeError("APM temporal alignment plan is missing")
+            if refresh_mode in temporal_sparse_modes:
+                refresh_mask = temporal_refresh_mask
         if refresh_mode not in {
             "full64",
             "drop32",
@@ -2245,11 +2262,29 @@ class VisionTransformerAdapter(BaseModule):
             "dsr6_kv",
             "apm32_ctx64",
             "cur32_ctx64",
+            "apm_c32_full64",
         }:
             raise ValueError("unsupported ZoomToken refresh execution mode")
-        if refresh_mode in {"full64", "drop32"}:
+        if refresh_mode in {"full64", "drop32", "apm_c32_full64"}:
             if refresh_mask is not None or refresh_alpha is not None:
-                raise ValueError("FULL64/DROP32 must use the ordinary ragged path")
+                raise ValueError("FULL64 execution must use the ordinary ragged path")
+            if refresh_mode == "apm_c32_full64":
+                support_counts = torch.zeros(
+                    (batch_size, int(metadata["total_tubelets"])),
+                    device=x.device,
+                    dtype=torch.long,
+                ).scatter_add_(1, tubelet_indices, torch.ones_like(tubelet_indices))
+                carrier_counts = torch.zeros_like(support_counts).scatter_add_(
+                    1,
+                    tubelet_indices,
+                    temporal_carrier_mask.to(torch.long),
+                )
+                if not bool((support_counts == 64).all().item()):
+                    raise ValueError("APM-C32/FULL64 requires exact K64 support")
+                if not bool(((carrier_counts == 0) | (carrier_counts == 32)).all().item()):
+                    raise ValueError(
+                        "APM-C32/FULL64 requires C32 memory or current-only fallback"
+                    )
         else:
             if (
                 refresh_mask is None
@@ -2323,7 +2358,7 @@ class VisionTransformerAdapter(BaseModule):
                     block_refresh_mode = "full64"
                 else:
                     block_refresh_mode = "mod32_kv"
-            elif refresh_mode in temporal_modes:
+            elif refresh_mode in temporal_sparse_modes:
                 block_refresh_mode = "mod32_kv"
             x = block.forward_native_ragged(
                 x,
@@ -2461,6 +2496,10 @@ class VisionTransformerAdapter(BaseModule):
             self.latest_native_packed_summary["temporal_alignment"] = dict(
                 temporal_alignment_ledger
             )
+            if isinstance(temporal_carrier_mask, torch.Tensor):
+                self.latest_native_packed_summary[
+                    "memory_carrier_tokens_per_window_by_batch"
+                ] = temporal_carrier_mask.sum(dim=1).detach().cpu().tolist()
         return x
 
     def forward_native_dense_reference(
