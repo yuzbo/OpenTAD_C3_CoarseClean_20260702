@@ -59,6 +59,16 @@ case "${ARM}" in
     ARM_DIR="r1_dsr6_kv_prebackbone_sparse_adapter"
     RECOVERY_ENABLED=1
     ;;
+  R1-APM32-CTX64)
+    CONFIG_NAME="georoute_official_r1_apm32_ctx64_prebackbone_seed42_v001.py"
+    ARM_DIR="r1_apm32_ctx64_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
+  R1-CUR32-CTX64)
+    CONFIG_NAME="georoute_official_r1_cur32_ctx64_prebackbone_seed42_v001.py"
+    ARM_DIR="r1_cur32_ctx64_prebackbone_sparse_adapter"
+    RECOVERY_ENABLED=1
+    ;;
   AMOD50)
     CONFIG_NAME="georoute_official_amod50_prebackbone_seed42_v001.py"
     ARM_DIR="amod50_full800_prebackbone_adapter"

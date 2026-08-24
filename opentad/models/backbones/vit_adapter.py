@@ -15,6 +15,8 @@ from mmengine.model.weight_init import constant_init, trunc_normal_init
 from mmaction.utils import ConfigType, OptConfigType
 from mmaction.models.backbones.vit_mae import get_sinusoid_encoding
 
+from .georoute_routing import build_apm32_temporal_plan
+
 
 class Adapter(BaseModule):
     def __init__(
@@ -1163,38 +1165,49 @@ class Block(BaseModule):
             visited.scatter_(0, flattened_positions, True)
             selected_context = flat_context[positions]
             selected_mask = flat_mask[positions]
-            per_row_queries = selected_mask.sum(dim=1)
-            if int(per_row_queries.min().item()) <= 0 or not torch.equal(
-                per_row_queries,
-                per_row_queries[:1].expand_as(per_row_queries),
-            ):
-                raise RuntimeError("ragged refresh buckets require equal nonzero queries")
-            rows, kv_tokens = map(int, positions.shape)
-            query_tokens = int(per_row_queries[0].item())
-            query = selected_context[selected_mask].reshape(
-                rows,
-                query_tokens,
-                int(x.shape[-1]),
-            )
-            query = query + self.drop_path(
-                self.attn.forward_query_context(
-                    self.norm1(query),
-                    self.norm1(selected_context),
-                )
-            )
-            query = query + self.drop_path(self.mlp(self.norm2(query)))
             selected_out = selected_context.clone()
-            selected_out[selected_mask] = query.reshape(-1, int(x.shape[-1]))
-            out[positions] = selected_out
-            if packed_stats is not None:
-                packed_stats["ragged_attention_bucket_call_count"] += 1
-                packed_stats["ragged_mlp_bucket_call_count"] += 1
-                packed_stats["executed_attention_tokens"] += rows * query_tokens
-                packed_stats["executed_kv_tokens"] += rows * kv_tokens
-                packed_stats["executed_attention_pairs"] += (
-                    rows * query_tokens * kv_tokens
+            per_row_queries = selected_mask.sum(dim=1)
+            if int(per_row_queries.min().item()) <= 0:
+                raise RuntimeError("ragged refresh buckets require nonzero queries")
+            rows, kv_tokens = map(int, positions.shape)
+            for query_count in torch.unique(per_row_queries, sorted=True):
+                query_tokens = int(query_count.item())
+                row_indices = torch.nonzero(
+                    per_row_queries == query_count,
+                    as_tuple=False,
+                ).flatten()
+                row_context = selected_context.index_select(0, row_indices)
+                row_mask = selected_mask.index_select(0, row_indices)
+                query = row_context[row_mask].reshape(
+                    int(row_indices.numel()),
+                    query_tokens,
+                    int(x.shape[-1]),
                 )
-                packed_stats["executed_mlp_tokens"] += rows * query_tokens
+                query = query + self.drop_path(
+                    self.attn.forward_query_context(
+                        self.norm1(query),
+                        self.norm1(row_context),
+                    )
+                )
+                query = query + self.drop_path(self.mlp(self.norm2(query)))
+                row_out = row_context.clone()
+                row_out[row_mask] = query.reshape(-1, int(x.shape[-1]))
+                selected_out.index_copy_(0, row_indices, row_out)
+                if packed_stats is not None:
+                    subgroup_rows = int(row_indices.numel())
+                    packed_stats["ragged_attention_bucket_call_count"] += 1
+                    packed_stats["ragged_mlp_bucket_call_count"] += 1
+                    packed_stats["executed_attention_tokens"] += (
+                        subgroup_rows * query_tokens
+                    )
+                    packed_stats["executed_kv_tokens"] += subgroup_rows * kv_tokens
+                    packed_stats["executed_attention_pairs"] += (
+                        subgroup_rows * query_tokens * kv_tokens
+                    )
+                    packed_stats["executed_mlp_tokens"] += (
+                        subgroup_rows * query_tokens
+                    )
+            out[positions] = selected_out
         if not bool(visited.all().item()):
             raise RuntimeError("ragged refresh buckets omitted a support token")
         return out.reshape_as(x)
@@ -1888,6 +1901,7 @@ class VisionTransformerAdapter(BaseModule):
         total_tubelets: int,
         source_grid_hw: Tuple[int, int],
         use_absolute_position: bool = True,
+        refresh_mode: str = "full64",
     ) -> Tuple[Tensor, Tensor, Tensor, List[Tensor], Dict[str, object]]:
         """Patch-embed and bucket one padding-free global physical-token union."""
 
@@ -1920,6 +1934,11 @@ class VisionTransformerAdapter(BaseModule):
             raise RuntimeError(
                 "native ragged execution cannot combine with ChronoTransport"
             )
+        if (
+            refresh_mode in {"apm32_ctx64", "cur32_ctx64"}
+            and self.amod_config is not None
+        ):
+            raise RuntimeError("APM32/CUR32 cannot combine with strict A-MoD")
 
         batch_size, selected_count = map(int, physical_indices.shape)
         if selected_count <= 0:
@@ -1983,6 +2002,73 @@ class VisionTransformerAdapter(BaseModule):
             selected_count,
             self.embed_dims,
         )
+        temporal_plan = None
+        carrier = embedded
+        if refresh_mode in {"apm32_ctx64", "cur32_ctx64"}:
+            if selected_count != int(total_tubelets) * 64:
+                raise ValueError(
+                    "APM32/CUR32 require exact K64 support for every tubelet"
+                )
+            expected_tubelets = torch.arange(
+                int(total_tubelets),
+                device=tubelet_indices.device,
+                dtype=torch.long,
+            ).repeat_interleave(64).view(1, -1).expand(batch_size, -1)
+            if not torch.equal(tubelet_indices, expected_tubelets):
+                raise ValueError(
+                    "APM32/CUR32 require exactly 64 ordered tokens per tubelet"
+                )
+            temporal_plan = build_apm32_temporal_plan(
+                embedded.reshape(
+                    batch_size,
+                    int(total_tubelets),
+                    64,
+                    self.embed_dims,
+                ),
+                spatial_indices.reshape(batch_size, int(total_tubelets), 64),
+                grid_height=grid_height,
+                grid_width=grid_width,
+            )
+            if refresh_mode == "apm32_ctx64":
+                plan_previous = temporal_plan["matched_previous_slot"]
+                plan_retained = temporal_plan["retained_mask"]
+                plan_alpha = temporal_plan["alpha"]
+                if not all(
+                    isinstance(value, torch.Tensor)
+                    for value in (plan_previous, plan_retained, plan_alpha)
+                ):
+                    raise RuntimeError("APM32 plan lost its tensor carrier fields")
+                embedded_lattice = embedded.reshape(
+                    batch_size,
+                    int(total_tubelets),
+                    64,
+                    self.embed_dims,
+                )
+                previous_lattice = embedded_lattice[:, :-1]
+                current_lattice = embedded_lattice[:, 1:]
+                previous = previous_lattice.gather(
+                    2,
+                    plan_previous[:, 1:].clamp_min(0).unsqueeze(-1).expand(
+                        -1,
+                        -1,
+                        -1,
+                        self.embed_dims,
+                    ),
+                ).detach()
+                mixed = previous + plan_alpha[:, 1:].to(embedded.dtype).unsqueeze(
+                    -1
+                ) * (
+                    current_lattice - previous
+                )
+                carrier_tail = torch.where(
+                    plan_retained[:, 1:].unsqueeze(-1),
+                    mixed,
+                    current_lattice,
+                )
+                carrier = torch.cat(
+                    (embedded_lattice[:, :1], carrier_tail),
+                    dim=1,
+                ).reshape_as(embedded)
         if use_absolute_position:
             position = self._native_packed_position_embedding(
                 grid_height,
@@ -2006,7 +2092,7 @@ class VisionTransformerAdapter(BaseModule):
             ]
         else:
             selected_position = embedded.new_zeros(embedded.shape)
-        x = self.pos_drop(embedded + selected_position)
+        x = self.pos_drop(carrier + selected_position)
 
         clip_counts = torch.zeros(
             (batch_size, chunk_count),
@@ -2066,6 +2152,49 @@ class VisionTransformerAdapter(BaseModule):
             "attention_pairs_per_window": attention_pairs_per_window,
             "bucket_layout": bucket_layout,
         }
+        if temporal_plan is not None:
+            refresh_tensor = temporal_plan["refresh_mask"]
+            fallback_tensor = temporal_plan["fallback_mask"]
+            forced_first_tensor = temporal_plan["forced_first_mask"]
+            matched_tensor = temporal_plan["matched_mask"]
+            retained_tensor = temporal_plan["retained_mask"]
+            if not all(
+                isinstance(value, torch.Tensor)
+                for value in (
+                    refresh_tensor,
+                    fallback_tensor,
+                    forced_first_tensor,
+                    matched_tensor,
+                    retained_tensor,
+                )
+            ):
+                raise RuntimeError("APM32 plan lost its tensor ledger")
+            metadata["temporal_refresh_mask"] = refresh_tensor.reshape(
+                batch_size,
+                selected_count,
+            )
+            metadata["temporal_alignment_ledger"] = {
+                "schema_version": temporal_plan["schema_version"],
+                "carrier_mode": refresh_mode,
+                "memory_tensor": "pre_position_patch_embedding",
+                "memory_lifetime_tubelets": 1,
+                "clip_reset_tubelets": int(temporal_plan["clip_tubelets"]),
+                "similarity_threshold": float(
+                    temporal_plan["similarity_threshold"]
+                ),
+                "search_radius": int(temporal_plan["search_radius"]),
+                "matched_tokens": int(matched_tensor.sum().item()),
+                "retained_tokens": int(retained_tensor.sum().item()),
+                "refreshed_tokens": int(refresh_tensor.sum().item()),
+                "fallback_tubelets": int(fallback_tensor.sum().item()),
+                "forced_first_tubelets": int(forced_first_tensor.sum().item()),
+                "normal_tubelets": int((~fallback_tensor).sum().item()),
+                "total_tubelets": int(fallback_tensor.numel()),
+                "new_trainable_parameters": 0,
+                "previous_memory_detached": True,
+                "current_position_restored": True,
+                "future_tubelet_access": False,
+            }
         return (
             x,
             tubelet_indices,
@@ -2101,16 +2230,28 @@ class VisionTransformerAdapter(BaseModule):
             total_tubelets=total_tubelets,
             source_grid_hw=source_grid_hw,
             use_absolute_position=use_absolute_position,
+            refresh_mode=refresh_mode,
         )
         batch_size = int(metadata["batch_size"])
         window_budget = int(metadata["window_budget"])
         selected_total = batch_size * window_budget
+        temporal_modes = {"apm32_ctx64", "cur32_ctx64"}
+        if refresh_mode in temporal_modes:
+            if refresh_mask is not None or refresh_alpha is not None:
+                raise ValueError(
+                    "APM32/CUR32 derive their frozen refresh mask internally"
+                )
+            refresh_mask = metadata.get("temporal_refresh_mask")
+            if not isinstance(refresh_mask, torch.Tensor):
+                raise RuntimeError("APM32/CUR32 temporal refresh plan is missing")
         if refresh_mode not in {
             "full64",
             "drop32",
             "mod32_kv",
             "rc32_kv",
             "dsr6_kv",
+            "apm32_ctx64",
+            "cur32_ctx64",
         }:
             raise ValueError("unsupported ZoomToken refresh execution mode")
         if refresh_mode in {"full64", "drop32"}:
@@ -2123,7 +2264,7 @@ class VisionTransformerAdapter(BaseModule):
                 or refresh_mask.shape != x.shape[:2]
             ):
                 raise ValueError(
-                    "MOD32/RC32/DSR6 require one bool refresh mask over K64"
+                    "refresh-KV arms require one bool refresh mask over K64"
                 )
             support_counts = torch.zeros(
                 (batch_size, int(metadata["total_tubelets"])),
@@ -2137,9 +2278,16 @@ class VisionTransformerAdapter(BaseModule):
             )
             if not bool((support_counts == 64).all().item()):
                 raise ValueError(
-                    "MOD32/RC32/DSR6 require exact K64 support per tubelet"
+                    "refresh-KV arms require exact K64 support per tubelet"
                 )
-            if not bool((refresh_counts == 32).all().item()):
+            if refresh_mode in temporal_modes:
+                if not bool(
+                    ((refresh_counts == 32) | (refresh_counts == 64)).all().item()
+                ):
+                    raise ValueError(
+                        "APM32/CUR32 require K32 refresh or K64 fallback per tubelet"
+                    )
+            elif not bool((refresh_counts == 32).all().item()):
                 raise ValueError(
                     "MOD32/RC32/DSR6 require exact K32 refresh per tubelet"
                 )
@@ -2182,6 +2330,8 @@ class VisionTransformerAdapter(BaseModule):
                     block_refresh_mode = "full64"
                 else:
                     block_refresh_mode = "mod32_kv"
+            elif refresh_mode in temporal_modes:
+                block_refresh_mode = "mod32_kv"
             x = block.forward_native_ragged(
                 x,
                 bucket_positions=bucket_positions,
@@ -2305,6 +2455,13 @@ class VisionTransformerAdapter(BaseModule):
             "dense_adapter_forward_count": 0,
             "adapter_execution": "coordinate_lineage_true_ragged",
         }
+        temporal_alignment_ledger = metadata.get("temporal_alignment_ledger")
+        if temporal_alignment_ledger is not None:
+            if not isinstance(temporal_alignment_ledger, dict):
+                raise RuntimeError("APM32/CUR32 temporal ledger is malformed")
+            self.latest_native_packed_summary["temporal_alignment"] = dict(
+                temporal_alignment_ledger
+            )
         return x
 
     def forward_native_dense_reference(

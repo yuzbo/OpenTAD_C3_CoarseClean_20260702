@@ -46,6 +46,7 @@ STRUCTURED_ROUTE_MODES = frozenset(
 DYNAMIC_ROUTE_MODES = frozenset({"dynamic_scnr"})
 ROUTE_MODES = LEGACY_ROUTE_MODES | STRUCTURED_ROUTE_MODES | DYNAMIC_ROUTE_MODES
 REFRESH_CARRY_SCHEMA = "zoomtoken_r1_refresh_carry_k32_v1"
+APM32_TEMPORAL_ALIGNMENT_SCHEMA = "zoomtoken_apm32_ctx64_alignment_v1"
 POLICY_ESTIMATORS = frozenset({"none", "straight_through", "score_function"})
 SCORE_FUNCTION_TEMPORAL_REDUCTIONS = frozenset({"sum", "mean"})
 DYNAMIC_BRANCH_CALIBRATION_MODES = frozenset(
@@ -118,6 +119,201 @@ def build_refresh_mask(
     )
     selected = order[..., :32]
     return torch.zeros_like(cache_valid).scatter(-1, selected, True)
+
+
+def build_apm32_temporal_plan(
+    embeddings: torch.Tensor,
+    spatial_indices: torch.Tensor,
+    *,
+    grid_height: int,
+    grid_width: int,
+    clip_tubelets: int = 8,
+    target_refresh: int = 32,
+    radius: int = 2,
+    similarity_threshold: float = 0.80,
+) -> dict[str, torch.Tensor | int | float | str]:
+    """Build the frozen causal APM32 correspondence and refresh plan.
+
+    ``embeddings`` are current pre-position patch embeddings on the complete
+    strict-R1 K64 support.  The function only compares tubelet ``t`` with
+    ``t-1`` inside the same eight-tubelet VideoMAE clip.  Correspondence and
+    all routing outputs are detached; the caller alone constructs the live
+    current-side carrier used by the backbone.
+    """
+
+    if embeddings.ndim != 4 or embeddings.shape[2] != 64:
+        raise ValueError("APM32 embeddings must be [B,T,64,C]")
+    if spatial_indices.shape != embeddings.shape[:3]:
+        raise ValueError("APM32 spatial indices must match [B,T,64]")
+    if spatial_indices.dtype != torch.long:
+        raise TypeError("APM32 spatial indices must be torch.long")
+    if int(grid_height) <= 0 or int(grid_width) <= 0:
+        raise ValueError("APM32 source grid dimensions must be positive")
+    if (int(grid_height), int(grid_width)) != (10, 10):
+        raise ValueError("APM32 is frozen to the native 10x10 R1 grid")
+    if int(clip_tubelets) != 8:
+        raise ValueError("APM32 is frozen to eight tubelets per VideoMAE clip")
+    if int(target_refresh) != 32:
+        raise ValueError("APM32 is frozen to K32 deep refresh")
+    if int(radius) != 2:
+        raise ValueError("APM32 is frozen to a radius-two local search")
+    if float(similarity_threshold) != 0.80:
+        raise ValueError("APM32 is frozen to similarity threshold 0.80")
+    if embeddings.shape[-1] <= 0:
+        raise ValueError("APM32 embeddings require a positive channel count")
+    if not bool(torch.isfinite(embeddings).all().item()):
+        raise FloatingPointError("APM32 pre-position embeddings must be finite")
+    spatial_capacity = int(grid_height) * int(grid_width)
+    if bool(
+        ((spatial_indices < 0) | (spatial_indices >= spatial_capacity))
+        .any()
+        .item()
+    ):
+        raise ValueError("APM32 spatial index lies outside the native grid")
+    ordered = torch.sort(spatial_indices, dim=-1).values
+    if bool((ordered[..., 1:] == ordered[..., :-1]).any().item()):
+        raise ValueError("APM32 K64 support must contain unique spatial indices")
+    if not torch.equal(ordered, spatial_indices):
+        raise ValueError("APM32 K64 support must be row-major sorted")
+
+    batch_size, total_tubelets, support_tokens, channels = map(
+        int, embeddings.shape
+    )
+    refresh_mask = torch.ones(
+        (batch_size, total_tubelets, support_tokens),
+        device=embeddings.device,
+        dtype=torch.bool,
+    )
+    retained_mask = torch.zeros_like(refresh_mask)
+    matched_mask = torch.zeros_like(refresh_mask)
+    matched_previous_slot = torch.full(
+        refresh_mask.shape,
+        -1,
+        device=embeddings.device,
+        dtype=torch.long,
+    )
+    matched_similarity = torch.full(
+        refresh_mask.shape,
+        float("-inf"),
+        device=embeddings.device,
+        dtype=torch.float32,
+    )
+    alpha = torch.ones(
+        refresh_mask.shape,
+        device=embeddings.device,
+        dtype=torch.float32,
+    )
+    fallback_mask = torch.zeros(
+        (batch_size, total_tubelets),
+        device=embeddings.device,
+        dtype=torch.bool,
+    )
+    forced_first_mask = torch.zeros_like(fallback_mask)
+
+    with torch.no_grad():
+        detached = embeddings.detach().to(torch.float32)
+        centered = detached - detached.mean(dim=-1, keepdim=True)
+        variance = centered.square().mean(dim=-1, keepdim=True)
+        normalized = centered * torch.rsqrt(variance + 1.0e-6)
+        if not bool(torch.isfinite(normalized).all().item()):
+            raise FloatingPointError("APM32 normalized embeddings are non-finite")
+
+        slots = torch.arange(
+            support_tokens,
+            device=embeddings.device,
+            dtype=torch.long,
+        )
+        for tubelet in range(total_tubelets):
+            if tubelet % int(clip_tubelets) == 0:
+                forced_first_mask[:, tubelet] = True
+                fallback_mask[:, tubelet] = True
+                continue
+            current_indices = spatial_indices[:, tubelet]
+            previous_indices = spatial_indices[:, tubelet - 1]
+            current_row = torch.div(
+                current_indices,
+                int(grid_width),
+                rounding_mode="floor",
+            )
+            current_col = current_indices.remainder(int(grid_width))
+            previous_row = torch.div(
+                previous_indices,
+                int(grid_width),
+                rounding_mode="floor",
+            )
+            previous_col = previous_indices.remainder(int(grid_width))
+            eligible = (
+                torch.maximum(
+                    (current_row.unsqueeze(-1) - previous_row.unsqueeze(-2)).abs(),
+                    (current_col.unsqueeze(-1) - previous_col.unsqueeze(-2)).abs(),
+                )
+                <= int(radius)
+            )
+            similarity = torch.matmul(
+                normalized[:, tubelet],
+                normalized[:, tubelet - 1].transpose(-1, -2),
+            ) / float(channels)
+            if not bool(torch.isfinite(similarity).all().item()):
+                raise FloatingPointError("APM32 local similarities are non-finite")
+            local_similarity = similarity.masked_fill(~eligible, float("-inf"))
+            best_similarity, best_previous = local_similarity.max(dim=-1)
+            best_current = local_similarity.max(dim=-2).indices
+            mutual = best_current.gather(1, best_previous) == slots.view(1, -1)
+            valid = mutual & (best_similarity >= float(similarity_threshold))
+            matched_mask[:, tubelet] = valid
+            matched_previous_slot[:, tubelet] = torch.where(
+                valid,
+                best_previous,
+                torch.full_like(best_previous, -1),
+            )
+            matched_similarity[:, tubelet] = torch.where(
+                valid,
+                best_similarity,
+                torch.full_like(best_similarity, float("-inf")),
+            )
+
+            for batch in range(batch_size):
+                valid_count = int(valid[batch].sum().item())
+                if valid_count < int(target_refresh):
+                    fallback_mask[batch, tubelet] = True
+                    continue
+                # Current support is already row-major sorted, so a stable
+                # descending sort implements the lower-current-index tie break.
+                order = torch.argsort(
+                    matched_similarity[batch, tubelet],
+                    descending=True,
+                    stable=True,
+                )
+                retained = order[: support_tokens - int(target_refresh)]
+                retained_mask[batch, tubelet, retained] = True
+                refresh_mask[batch, tubelet, retained] = False
+                selected_similarity = matched_similarity[batch, tubelet, retained]
+                alpha[batch, tubelet, retained] = (
+                    (1.0 - selected_similarity)
+                    / (1.0 - float(similarity_threshold))
+                ).clamp_(0.0, 1.0)
+
+    if bool((retained_mask & ~matched_mask).any().item()):
+        raise RuntimeError("APM32 retained an unmatched token")
+    refresh_counts = refresh_mask.sum(dim=-1)
+    if not bool(((refresh_counts == 32) | (refresh_counts == 64)).all().item()):
+        raise RuntimeError("APM32 refresh count must be K32 or K64 fallback")
+    return {
+        "schema_version": APM32_TEMPORAL_ALIGNMENT_SCHEMA,
+        "refresh_mask": refresh_mask,
+        "retained_mask": retained_mask,
+        "matched_mask": matched_mask,
+        "matched_previous_slot": matched_previous_slot,
+        "matched_similarity": matched_similarity,
+        "alpha": alpha,
+        "fallback_mask": fallback_mask,
+        "forced_first_mask": forced_first_mask,
+        "similarity_threshold": float(similarity_threshold),
+        "search_radius": int(radius),
+        "clip_tubelets": int(clip_tubelets),
+        "normal_refresh_tokens": int(target_refresh),
+        "fallback_refresh_tokens": support_tokens,
+    }
 
 
 def _extent_wh(
