@@ -791,6 +791,18 @@ class Attention(BaseModule):
         self.q_bias = nn.Parameter(torch.zeros(self.embed_dims))
         self.v_bias = nn.Parameter(torch.zeros(self.embed_dims))
 
+    def _project_qkv(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+        """Project a full token sequence with the pretrained QKV weights."""
+        B, N, _ = x.shape
+        if hasattr(self, "q_bias"):
+            k_bias = torch.zeros_like(self.v_bias, requires_grad=False)
+            qkv_bias = torch.cat((self.q_bias, k_bias, self.v_bias))
+            qkv = F.linear(input=x, weight=self.qkv.weight, bias=qkv_bias)
+        else:
+            qkv = self.qkv(x)
+        qkv = qkv.reshape(B, N, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
+        return qkv[0], qkv[1], qkv[2]
+
     def forward(self, x: Tensor) -> Tensor:
         """Defines the computation performed at every call.
 
@@ -799,17 +811,8 @@ class Attention(BaseModule):
         Returns:
             Tensor: The output of the attention block, same size as inputs.
         """
-        B, N, C = x.shape
-
-        if hasattr(self, "q_bias"):
-            k_bias = torch.zeros_like(self.v_bias, requires_grad=False)
-            qkv_bias = torch.cat((self.q_bias, k_bias, self.v_bias))
-            qkv = F.linear(input=x, weight=self.qkv.weight, bias=qkv_bias)
-        else:
-            qkv = self.qkv(x)
-
-        qkv = qkv.reshape(B, N, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]
+        B, N, _ = x.shape
+        q, k, v = self._project_qkv(x)
 
         # standard self-attention
         # q = q * self.scale
@@ -825,6 +828,44 @@ class Attention(BaseModule):
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
+
+    def forward_with_column_mean(
+        self,
+        x: Tensor,
+        *,
+        query_chunk_size: int,
+    ) -> Tuple[Tensor, Tensor]:
+        """Return attention output and A-MoD's incoming-attention score."""
+        if x.ndim != 3:
+            raise ValueError("A-MoD attention expects [B,N,C]")
+        if int(query_chunk_size) <= 0:
+            raise ValueError("A-MoD query_chunk_size must be positive")
+        if float(self.attn_drop.p) != 0.0:
+            raise ValueError("A-MoD requires zero attention dropout")
+
+        batch_size, token_count, _ = x.shape
+        q, k, v = self._project_qkv(x)
+        key_transpose = k.transpose(-2, -1)
+        column_sum = torch.zeros(
+            batch_size,
+            self.num_heads,
+            token_count,
+            device=x.device,
+            dtype=torch.float32,
+        )
+        output_chunks = []
+        for start in range(0, token_count, int(query_chunk_size)):
+            stop = min(start + int(query_chunk_size), token_count)
+            logits = (q[:, :, start:stop] * self.scale) @ key_transpose
+            probabilities = logits.softmax(dim=-1)
+            output_chunks.append(probabilities @ v)
+            column_sum.add_(probabilities.float().sum(dim=-2))
+
+        output = torch.cat(output_chunks, dim=-2)
+        output = output.transpose(1, 2).reshape(batch_size, token_count, self.embed_dims)
+        output = self.proj_drop(self.proj(output))
+        column_mean = column_sum.mean(dim=1).div(float(token_count))
+        return output, column_mean
 
     def forward_query_context(self, query: Tensor, context: Tensor) -> Tensor:
         """Attention with a shorter query and K/V context using base qkv weights.
@@ -943,6 +984,75 @@ class Block(BaseModule):
         if not torch.equal(per_batch_counts, per_batch_counts[:1].expand_as(per_batch_counts)):
             raise ValueError("packed block path requires equal selected-token count across batch")
         return x[dense_mask].reshape(int(x.shape[0]), int(per_batch_counts[0].item()), int(x.shape[2]))
+
+    @staticmethod
+    def _stable_amod_topk_indices(scores: Tensor, selected_count: int) -> Tensor:
+        if scores.ndim != 2:
+            raise ValueError("A-MoD scores must be [B,N]")
+        token_count = int(scores.shape[1])
+        if int(selected_count) <= 0 or int(selected_count) > token_count:
+            raise ValueError("A-MoD selected_count must be within [1,N]")
+        ranked = torch.argsort(scores, dim=-1, descending=True, stable=True)
+        return ranked[:, : int(selected_count)].sort(dim=-1).values
+
+    def forward_dense_with_amod_score(
+        self,
+        x: Tensor,
+        h: int,
+        w: int,
+        *,
+        query_chunk_size: int,
+    ) -> Tuple[Tensor, Tensor]:
+        """Run one dense block and expose its attention-received score."""
+
+        def _inner_forward(value: Tensor) -> Tuple[Tensor, Tensor]:
+            attention_output, score = self.attn.forward_with_column_mean(
+                self.norm1(value),
+                query_chunk_size=int(query_chunk_size),
+            )
+            value = value + self.drop_path(attention_output)
+            value = value + self.drop_path(self.mlp(self.norm2(value)))
+            if self.use_adapter:
+                value = self.adapter(value, h, w)
+            return value, score.detach()
+
+        if self.with_cp and x.requires_grad:
+            return cp.checkpoint(_inner_forward, x, use_reentrant=False)
+        return _inner_forward(x)
+
+    def forward_amod(
+        self,
+        x: Tensor,
+        h: int,
+        w: int,
+        *,
+        scores: Tensor,
+        capacity: float,
+    ) -> Tuple[Tensor, Tensor]:
+        """Run Attention+MLP only on exact top-K tokens, then dense Adapter."""
+        if scores.shape != x.shape[:2]:
+            raise ValueError("A-MoD scores must match the full token carrier")
+        if not 0.0 < float(capacity) <= 1.0:
+            raise ValueError("A-MoD capacity must be within (0,1]")
+        selected_count = max(1, int(round(int(x.shape[1]) * float(capacity))))
+        selected_indices = self._stable_amod_topk_indices(
+            scores.detach(), selected_count
+        )
+        gather_index = selected_indices.unsqueeze(-1).expand(-1, -1, int(x.shape[-1]))
+        selected = torch.gather(x, dim=1, index=gather_index)
+
+        def _selected_forward(value: Tensor) -> Tensor:
+            value = value + self.drop_path(self.attn(self.norm1(value)))
+            return value + self.drop_path(self.mlp(self.norm2(value)))
+
+        if self.with_cp and selected.requires_grad:
+            selected = cp.checkpoint(_selected_forward, selected, use_reentrant=False)
+        else:
+            selected = _selected_forward(selected)
+        output = x.clone().scatter(1, gather_index, selected)
+        if self.use_adapter:
+            output = self.adapter(output, h, w)
+        return output, selected_indices.detach()
 
     def _packed_attention_mlp_forward(
         self,
@@ -1345,6 +1455,7 @@ class VisionTransformerAdapter(BaseModule):
         tubelet_token_redundancy_aux: Optional[Dict] = None,
         tubelet_packed_runtime_route: Optional[Dict] = None,
         chronotransport: Optional[Dict] = None,
+        amod: Optional[Dict] = None,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -1363,6 +1474,7 @@ class VisionTransformerAdapter(BaseModule):
         self.latest_tubelet_packed_runtime_summary = None
         self.latest_chronotransport_summary = None
         self.latest_native_packed_summary = None
+        self.latest_amod_summary = None
         # Runtime evidence only.  GeoRoute records a before/after delta around
         # the actual packed call so P0 does not merely trust a hand-written
         # "one forward" field in a summary dictionary.
@@ -1430,6 +1542,47 @@ class VisionTransformerAdapter(BaseModule):
             raise ValueError(
                 "tubelet_packed_runtime_route and ChronoTransport are mutually exclusive"
             )
+
+        self.amod_config = None
+        if amod is not None and bool(dict(amod).get("enabled", True)):
+            amod_cfg = dict(amod)
+            expected_dense = (0, 2, 4, 6, 8, 10)
+            expected_sparse = (1, 3, 5, 7, 9, 11)
+            if int(depth) != 12:
+                raise ValueError("paper-exact VideoMAE A-MoD requires 12 blocks")
+            if float(attn_drop_rate) != 0.0:
+                raise ValueError("paper-exact VideoMAE A-MoD requires zero attention dropout")
+            if tubelet_token_redundancy_aux is not None or packed_enabled or chronotransport_enabled:
+                raise ValueError(
+                    "A-MoD is mutually exclusive with ROI/packed/ChronoTransport routes"
+                )
+            capacity = float(amod_cfg.get("capacity", 0.5))
+            if not 0.0 < capacity <= 1.0:
+                raise ValueError("A-MoD capacity must be within (0,1]")
+            dense_blocks = tuple(amod_cfg.get("dense_block_indices", expected_dense))
+            sparse_blocks = tuple(amod_cfg.get("amod_block_indices", expected_sparse))
+            if dense_blocks != expected_dense or sparse_blocks != expected_sparse:
+                raise ValueError("A-MoD must alternate dense-even and sparse-odd blocks")
+            query_chunk_size = int(amod_cfg.get("query_chunk_size", 128))
+            if query_chunk_size <= 0:
+                raise ValueError("A-MoD query_chunk_size must be positive")
+            if amod_cfg.get("routing_score", "preceding_dense_attention_column_mean") != (
+                "preceding_dense_attention_column_mean"
+            ):
+                raise ValueError("A-MoD routing score must come from the preceding dense block")
+            if amod_cfg.get("unselected_update", "identity_bypass") != "identity_bypass":
+                raise ValueError("A-MoD unselected tokens must identity-bypass Attention+MLP")
+            self.amod_config = {
+                "schema_version": amod_cfg.get(
+                    "schema_version", "zoomtoken_videomae_amod_paper_exact_v001"
+                ),
+                "capacity": capacity,
+                "dense_block_indices": dense_blocks,
+                "amod_block_indices": sparse_blocks,
+                "query_chunk_size": query_chunk_size,
+                "routing_score": "preceding_dense_attention_column_mean",
+                "unselected_update": "identity_bypass",
+            }
 
         # stochastic depth decay rule
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
@@ -2223,11 +2376,55 @@ class VisionTransformerAdapter(BaseModule):
         chronotransport_enabled = bool(
             self.chronotransport is not None and self.chronotransport.enabled
         )
-        if packed_enabled and chronotransport_enabled:
+        amod_enabled = self.amod_config is not None
+        if sum((packed_enabled, chronotransport_enabled, amod_enabled)) > 1:
             raise RuntimeError(
-                "tubelet_packed_runtime_route and ChronoTransport are mutually exclusive"
+                "A-MoD, tubelet_packed_runtime_route, and ChronoTransport are mutually exclusive"
             )
-        if chronotransport_enabled:
+        if amod_enabled:
+            previous_dense_score = None
+            selected_count = None
+            dense_blocks = self.amod_config["dense_block_indices"]
+            sparse_blocks = self.amod_config["amod_block_indices"]
+            for block_index, block in enumerate(self.blocks):
+                if block_index in dense_blocks:
+                    x, previous_dense_score = block.forward_dense_with_amod_score(
+                        x,
+                        h,
+                        w,
+                        query_chunk_size=self.amod_config["query_chunk_size"],
+                    )
+                elif block_index in sparse_blocks:
+                    if previous_dense_score is None:
+                        raise RuntimeError("A-MoD block has no preceding dense attention score")
+                    x, selected_indices = block.forward_amod(
+                        x,
+                        h,
+                        w,
+                        scores=previous_dense_score,
+                        capacity=self.amod_config["capacity"],
+                    )
+                    selected_count = int(selected_indices.shape[1])
+                    previous_dense_score = None
+                else:
+                    raise RuntimeError("A-MoD schedule omitted a VideoMAE block")
+            self.latest_amod_summary = {
+                "schema_version": self.amod_config["schema_version"],
+                "token_count": int(x.shape[1]),
+                "capacity": self.amod_config["capacity"],
+                "selected_tokens_per_amod_block": selected_count,
+                "dense_block_indices": list(dense_blocks),
+                "amod_block_indices": list(sparse_blocks),
+                "routing_score": self.amod_config["routing_score"],
+                "unselected_update": self.amod_config["unselected_update"],
+                "adapter_execution": "dense_full_token_grid",
+                "temporal_state_reuse": False,
+                "metric_claim_allowed": False,
+                "cost_claim_allowed": False,
+            }
+            self.latest_tubelet_packed_runtime_summary = None
+            self.latest_chronotransport_summary = None
+        elif chronotransport_enabled:
             x = self.chronotransport(x, self.blocks, h, w)
             summary = dict(self.chronotransport.latest_summary or {})
             summary["checkpoint_loaded"] = self.chronotransport_checkpoint_loaded
@@ -2239,6 +2436,7 @@ class VisionTransformerAdapter(BaseModule):
             self.latest_tubelet_packed_runtime_summary = self.tubelet_packed_runtime_route.last_summary
             self.latest_chronotransport_summary = None
         else:
+            self.latest_amod_summary = None
             self.latest_tubelet_packed_runtime_summary = None
             self.latest_chronotransport_summary = None
             for blk in self.blocks:
