@@ -83,6 +83,8 @@ class ActionFormer(SingleStageDetector):
         self.single_clock_gate_zero = bool(single_clock_gate_zero)
         self._single_clock_identity_audit_enabled = False
         self._single_clock_identity_records = {}
+        self._single_clock_identity_exposure_count = 0
+        self._single_clock_identity_duplicate_counts = {}
         if self.single_clock_admission and backbone is None:
             raise ValueError("single_clock_admission=True requires the VideoMAE backbone")
         if self.selector_train_only_skip_detector and not self.selector_train_only:
@@ -216,6 +218,8 @@ class ActionFormer(SingleStageDetector):
             raise RuntimeError("SingleClock identity audit requires an admitted SingleClock model")
         self._single_clock_identity_audit_enabled = True
         self._single_clock_identity_records = {}
+        self._single_clock_identity_exposure_count = 0
+        self._single_clock_identity_duplicate_counts = {}
 
     def _record_single_clock_identity(self, inputs, masks, metas):
         if not self._single_clock_identity_audit_enabled:
@@ -226,8 +230,6 @@ class ActionFormer(SingleStageDetector):
         dense_lengths = contract["irregular_dense_valid_len"]
         for batch_idx, meta in enumerate(metas):
             sample_id, video_name, window_start = self._single_clock_sample_id(meta)
-            if sample_id in self._single_clock_identity_records:
-                raise RuntimeError(f"duplicate SingleClock identity sample: {sample_id}")
             count = int(selected_mask[batch_idx].long().sum().item())
             selected_rgb = inputs[batch_idx : batch_idx + 1, :, :, :count]
             selected_positions = positions[batch_idx, :count]
@@ -248,7 +250,16 @@ class ActionFormer(SingleStageDetector):
             record["record_sha256"] = hashlib.sha256(
                 json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
             ).hexdigest()
-            self._single_clock_identity_records[sample_id] = record
+            self._single_clock_identity_exposure_count += 1
+            previous = self._single_clock_identity_records.get(sample_id)
+            if previous is not None:
+                identity_keys = ("video_name", "window_start_frame", "selected_valid_len", "dense_valid_len",
+                                 "selected_positions", "selected_rgb_sha256", "selected_positions_sha256", "selected_mask_sha256")
+                if any(previous[key] != record[key] for key in identity_keys):
+                    raise RuntimeError(f"conflicting duplicate SingleClock identity sample: {sample_id}")
+                self._single_clock_identity_duplicate_counts[sample_id] = self._single_clock_identity_duplicate_counts.get(sample_id, 0) + 1
+            else:
+                self._single_clock_identity_records[sample_id] = record
 
     def single_clock_identity_payload(self):
         if not self._single_clock_identity_audit_enabled:
@@ -262,9 +273,17 @@ class ActionFormer(SingleStageDetector):
         aggregate = hashlib.sha256(
             json.dumps(records, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
         ).hexdigest()
+        duplicate_samples = [
+            {"sample_id": key, "duplicate_exposure_count": self._single_clock_identity_duplicate_counts[key]}
+            for key in sorted(self._single_clock_identity_duplicate_counts)
+        ]
         return {
             "schema_version": "duca_h65_single_clock_selected_input_identity_v1",
             "sample_count": len(records),
+            "total_input_exposure_count": self._single_clock_identity_exposure_count,
+            "unique_physical_window_count": len(records),
+            "duplicate_exposure_count": self._single_clock_identity_exposure_count - len(records),
+            "duplicate_samples": duplicate_samples,
             "aggregate_sha256": aggregate,
             "records": records,
         }

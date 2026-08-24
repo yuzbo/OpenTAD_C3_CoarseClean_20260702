@@ -75,6 +75,14 @@ def _paired_delta(
 def _identity_equal(on: Mapping[str, Any], zero: Mapping[str, Any]) -> bool:
     if on.get("sample_count") != zero.get("sample_count"):
         return False
+    accounting_keys = (
+        "total_input_exposure_count",
+        "unique_physical_window_count",
+        "duplicate_exposure_count",
+        "duplicate_samples",
+    )
+    if any(on.get(key) != zero.get(key) for key in accounting_keys):
+        return False
     on_records = on.get("records")
     zero_records = zero.get("records")
     if not isinstance(on_records, list) or not isinstance(zero_records, list):

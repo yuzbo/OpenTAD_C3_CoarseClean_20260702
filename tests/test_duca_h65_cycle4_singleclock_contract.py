@@ -141,8 +141,17 @@ def test_singleclock_identity_audit_seals_selected_rgb_positions_and_mask():
             "irregular_dense_valid_len": 768,
         }
     ]
-    with pytest.raises(RuntimeError, match="duplicate SingleClock identity sample"):
-        detector_on._record_single_clock_identity(inputs, masks, metas)
+    detector_on._record_single_clock_identity(inputs, masks, metas)
+    duplicate_payload = detector_on.single_clock_identity_payload()
+    assert duplicate_payload["total_input_exposure_count"] == 2
+    assert duplicate_payload["unique_physical_window_count"] == 1
+    assert duplicate_payload["duplicate_exposure_count"] == 1
+    assert duplicate_payload["duplicate_samples"] == [{"sample_id": "video_validation_0000001|window_start_frame=0", "duplicate_exposure_count": 1}]
+
+    conflicting = inputs.clone()
+    conflicting[..., 7, 0, 0] += 1
+    with pytest.raises(RuntimeError, match="conflicting duplicate SingleClock identity sample"):
+        detector_on._record_single_clock_identity(conflicting, masks, metas)
 
 
 def test_singleclock_identity_audit_normalizes_numpy_window_start():

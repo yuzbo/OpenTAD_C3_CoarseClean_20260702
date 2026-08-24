@@ -263,3 +263,12 @@ def test_finalizer_hard_fails_when_clock_recovery_state_is_incomplete(tmp_path):
     assert result["checkpoint_audit_gate_pass"] is True
     assert result["clock_recovery_contract_pass"] is False
     assert result["paper_claim_admissible"] is False
+def test_identity_accounting_mismatch_rejected():
+    from tools.bata.finalize_duca_h65_singleclock_terminal import _identity_equal
+
+    base = {"sample_count": 1, "records": [], "total_input_exposure_count": 2,
+            "unique_physical_window_count": 1, "duplicate_exposure_count": 1,
+            "duplicate_samples": [{"sample_id": "v|window_start_frame=0", "duplicate_exposure_count": 1}]}
+    changed = dict(base)
+    changed["duplicate_exposure_count"] = 0
+    assert not _identity_equal(base, changed)
