@@ -6,9 +6,53 @@ import torch
 from mmengine import Config
 
 from opentad.models.backbones.vit_adapter import Attention, Block, VisionTransformerAdapter
+from tools.test import _load_ddp_compatible_state_dict
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class _StateDictTarget:
+    def __init__(self):
+        self.loaded = None
+
+    def load_state_dict(self, state_dict):
+        self.loaded = state_dict
+        return "loaded"
+
+
+class _WrappedStateDictTarget(_StateDictTarget):
+    def __init__(self):
+        super().__init__()
+        self.module = _StateDictTarget()
+
+
+def test_checkpoint_loader_accepts_uniform_official_and_project_ema_keys():
+    official = _WrappedStateDictTarget()
+    official_state = {"module.backbone.weight": torch.tensor(1.0)}
+    assert _load_ddp_compatible_state_dict(official, official_state) == "loaded"
+    assert official.loaded is official_state
+    assert official.module.loaded is None
+
+    project = _WrappedStateDictTarget()
+    project_state = {"backbone.weight": torch.tensor(2.0)}
+    assert _load_ddp_compatible_state_dict(project, project_state) == "loaded"
+    assert project.loaded is None
+    assert project.module.loaded is project_state
+
+
+def test_checkpoint_loader_rejects_mixed_or_empty_key_namespaces():
+    model = _WrappedStateDictTarget()
+    with pytest.raises(RuntimeError, match="mixes DDP-prefixed"):
+        _load_ddp_compatible_state_dict(
+            model,
+            {
+                "module.backbone.weight": torch.tensor(1.0),
+                "backbone.bias": torch.tensor(2.0),
+            },
+        )
+    with pytest.raises(RuntimeError, match="empty"):
+        _load_ddp_compatible_state_dict(model, {})
 
 
 def test_attention_column_mean_matches_full_attention_and_chunked_output():

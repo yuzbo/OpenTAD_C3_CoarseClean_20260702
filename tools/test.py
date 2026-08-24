@@ -34,6 +34,19 @@ def parse_args():
     return args
 
 
+def _load_ddp_compatible_state_dict(model, state_dict):
+    """Load a uniformly prefixed or unprefixed state dict into a DDP model."""
+    keys = list(state_dict)
+    if not keys:
+        raise RuntimeError("checkpoint state dict is empty")
+    prefixed = [key.startswith("module.") for key in keys]
+    if all(prefixed):
+        return model.load_state_dict(state_dict)
+    if not any(prefixed):
+        return model.module.load_state_dict(state_dict)
+    raise RuntimeError("checkpoint state dict mixes DDP-prefixed and unprefixed keys")
+
+
 def main():
     args = parse_args()
 
@@ -95,9 +108,9 @@ def main():
     # Model EMA
     use_ema = getattr(cfg.solver, "ema", False)
     if use_ema:
-        # EMA is saved from model_ema.module and therefore has no DDP
-        # ``module.`` prefix.  Load it into the wrapped detector itself.
-        model.module.load_state_dict(checkpoint["state_dict_ema"])
+        # Official and project checkpoints differ only in whether EMA keys keep
+        # the DDP ``module.`` prefix.  Select the matching load target exactly.
+        _load_ddp_compatible_state_dict(model, checkpoint["state_dict_ema"])
         logger.info("Using Model EMA...")
     else:
         model.load_state_dict(checkpoint["state_dict"])

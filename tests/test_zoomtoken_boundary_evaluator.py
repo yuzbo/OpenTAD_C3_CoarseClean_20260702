@@ -96,7 +96,7 @@ def test_final_evaluation_entry_is_configurable_and_final_only():
     ).read_text(encoding="utf-8")
     assert '"--cfg-options"' in test_source
     assert "cfg.merge_from_dict(args.cfg_options)" in test_source
-    assert 'model.module.load_state_dict(checkpoint["state_dict_ema"])' in test_source
+    assert '_load_ddp_compatible_state_dict(model, checkpoint["state_dict_ema"])' in test_source
     assert 'CHECKPOINT="${WORK_DIR}/checkpoint/epoch_59.pth"' in launcher
     assert "recovery_epoch_" not in launcher
     assert 'CONFIG_NAME="georoute_official_r1_strict_rect8x8_prebackbone_seed42_v001.py"' in launcher
