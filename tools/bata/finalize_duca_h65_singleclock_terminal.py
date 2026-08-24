@@ -95,7 +95,7 @@ def _identity_equal(on: Mapping[str, Any], zero: Mapping[str, Any]) -> bool:
             if row["window_start_frame"] < 0 or row["selected_valid_len"] <= 0 or row["dense_valid_len"] <= 0 or row["selected_valid_len"] > row["dense_valid_len"]:
                 return False
             positions = row["selected_positions"]
-            if not isinstance(positions, list) or len(positions) != row["selected_valid_len"] or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in positions) or positions != sorted(set(positions)):
+            if not isinstance(positions, list) or len(positions) != row["selected_valid_len"] or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 or value >= row["dense_valid_len"] for value in positions) or positions != sorted(set(positions)):
                 return False
             if row["sample_id"] != f"{row['video_name']}|window_start_frame={row['window_start_frame']}":
                 return False

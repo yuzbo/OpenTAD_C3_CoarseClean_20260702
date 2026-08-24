@@ -332,3 +332,15 @@ def test_identity_records_accept_valid_duplicate_payload():
                "duplicate_samples": [{"sample_id": "v|window_start_frame=0", "duplicate_exposure_count": 1}],
                "records": [_record()]}
     assert _identity_equal(payload, dict(payload))
+def test_identity_records_validator_rejects_position_at_dense_boundary():
+    payload = {"sample_count": 1, "total_input_exposure_count": 1,
+               "unique_physical_window_count": 1, "duplicate_exposure_count": 0,
+               "duplicate_samples": [], "records": [_record(positions=[0, 4])]}
+    assert not _identity_equal(payload, payload)
+
+
+def test_identity_records_validator_accepts_last_dense_position():
+    payload = {"sample_count": 1, "total_input_exposure_count": 1,
+               "unique_physical_window_count": 1, "duplicate_exposure_count": 0,
+               "duplicate_samples": [], "records": [_record(positions=[0, 3])]}
+    assert _identity_equal(payload, payload)

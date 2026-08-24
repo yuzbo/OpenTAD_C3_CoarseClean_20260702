@@ -169,6 +169,14 @@ class ActionFormer(SingleStageDetector):
             dense_len = int(meta.get("irregular_dense_valid_len", meta.get("truetime_dense_valid_len", 0)))
             if dense_len <= 0:
                 raise ValueError("SingleClock requires a positive dense valid length")
+            if bool((row < 0).any().item()) or bool((row >= dense_len).any().item()):
+                raise ValueError(
+                    f"SingleClock physical positions must be in [0, {dense_len}) for sample {batch_idx}"
+                )
+            if row.numel() > 1 and not bool((row[1:] > row[:-1]).all().item()):
+                raise ValueError(
+                    f"SingleClock physical positions must be strictly increasing for sample {batch_idx}"
+                )
             positions[batch_idx, :count] = row
             dense_lengths[batch_idx] = dense_len
         return {

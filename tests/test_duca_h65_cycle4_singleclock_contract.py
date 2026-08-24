@@ -493,3 +493,21 @@ def test_terminal_checkpoint_audit_rejects_clock_on_without_recovery_state(tmp_p
             stage1_sha256=stage1_sha,
             family="clock_on",
         )
+@pytest.mark.parametrize("positions", [[-1] + list(range(1, 384)), list(range(383)) + [382], list(range(383)) + [768]])
+def test_singleclock_metadata_rejects_invalid_physical_positions(positions):
+    detector = _clock_detector_stub()
+    inputs = torch.zeros(1, 1, 3, 384, 2, 2)
+    masks = torch.ones(1, 384, dtype=torch.bool)
+    meta = [{"irregular_selected_positions": positions, "irregular_dense_valid_len": 768}]
+    with pytest.raises(ValueError, match="physical positions"):
+        detector._single_clock_metadata(inputs, masks, meta)
+
+
+def test_singleclock_metadata_accepts_last_dense_index():
+    detector = _clock_detector_stub()
+    inputs = torch.zeros(1, 1, 3, 384, 2, 2)
+    masks = torch.ones(1, 384, dtype=torch.bool)
+    positions = list(range(383)) + [767]
+    meta = [{"irregular_selected_positions": positions, "irregular_dense_valid_len": 768}]
+    contract = detector._single_clock_metadata(inputs, masks, meta)
+    assert contract["irregular_selected_positions"][0, -1].item() == 767
