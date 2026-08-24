@@ -73,6 +73,35 @@ def _paired_delta(
 
 
 def _identity_equal(on: Mapping[str, Any], zero: Mapping[str, Any]) -> bool:
+    def valid_records(payload: Mapping[str, Any]) -> bool:
+        records = payload.get("records")
+        sample_count = payload.get("sample_count")
+        if not isinstance(records, list) or isinstance(sample_count, bool) or not isinstance(sample_count, int):
+            return False
+        if len(records) != sample_count or sample_count <= 0:
+            return False
+        required = ("sample_id", "video_name", "window_start_frame", "selected_valid_len", "dense_valid_len", "selected_positions", "selected_rgb_sha256", "selected_positions_sha256", "selected_mask_sha256")
+        ids = []
+        for row in records:
+            if not isinstance(row, Mapping) or any(key not in row for key in required):
+                return False
+            if not isinstance(row["sample_id"], str) or not row["sample_id"] or not isinstance(row["video_name"], str) or not row["video_name"]:
+                return False
+            if any(not isinstance(row[key], str) or not row[key] for key in ("selected_rgb_sha256", "selected_positions_sha256", "selected_mask_sha256")):
+                return False
+            fields = ("window_start_frame", "selected_valid_len", "dense_valid_len")
+            if any(isinstance(row[key], bool) or not isinstance(row[key], int) for key in fields):
+                return False
+            if row["window_start_frame"] < 0 or row["selected_valid_len"] <= 0 or row["dense_valid_len"] <= 0 or row["selected_valid_len"] > row["dense_valid_len"]:
+                return False
+            positions = row["selected_positions"]
+            if not isinstance(positions, list) or len(positions) != row["selected_valid_len"] or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in positions) or positions != sorted(set(positions)):
+                return False
+            if row["sample_id"] != f"{row['video_name']}|window_start_frame={row['window_start_frame']}":
+                return False
+            ids.append(row["sample_id"])
+        return len(set(ids)) == len(ids) and ids == sorted(ids)
+
     def valid_accounting(payload: Mapping[str, Any]) -> bool:
         required = ("sample_count", "total_input_exposure_count", "unique_physical_window_count", "duplicate_exposure_count", "duplicate_samples")
         if any(key not in payload for key in required):
@@ -85,6 +114,8 @@ def _identity_equal(on: Mapping[str, Any], zero: Mapping[str, Any]) -> bool:
             return False
         duplicates = payload["duplicate_exposure_count"]
         if payload["total_input_exposure_count"] != unique + duplicates:
+            return False
+        if not valid_records(payload):
             return False
         rows = payload["duplicate_samples"]
         if not isinstance(rows, list):
@@ -106,6 +137,8 @@ def _identity_equal(on: Mapping[str, Any], zero: Mapping[str, Any]) -> bool:
             return False
         if sum(count for _, count in normalized) != duplicates:
             return False
+        if any(sample_id not in {row["sample_id"] for row in payload["records"]} for sample_id, _ in normalized):
+            return False
         return duplicates != 0 or not normalized
 
     if not valid_accounting(on) or not valid_accounting(zero):
@@ -120,10 +153,8 @@ def _identity_equal(on: Mapping[str, Any], zero: Mapping[str, Any]) -> bool:
     )
     if any(on[key] != zero[key] for key in accounting_keys):
         return False
-    on_records = on.get("records")
-    zero_records = zero.get("records")
-    if not isinstance(on_records, list) or not isinstance(zero_records, list):
-        return False
+    on_records = on["records"]
+    zero_records = zero["records"]
     keys = (
         "sample_id",
         "video_name",

@@ -4,6 +4,7 @@ import hashlib
 import pytest
 
 from tools.bata.finalize_duca_h65_singleclock_terminal import (
+    _identity_equal,
     _twin_execution_contract_ok,
     finalize,
 )
@@ -270,7 +271,7 @@ def test_finalizer_hard_fails_when_clock_recovery_state_is_incomplete(tmp_path):
 def test_identity_accounting_mismatch_rejected():
     from tools.bata.finalize_duca_h65_singleclock_terminal import _identity_equal
 
-    base = {"sample_count": 1, "records": [], "total_input_exposure_count": 2,
+    base = {"sample_count": 1, "records": [_record()], "total_input_exposure_count": 2,
             "unique_physical_window_count": 1, "duplicate_exposure_count": 1,
             "duplicate_samples": [{"sample_id": "v|window_start_frame=0", "duplicate_exposure_count": 1}]}
     changed = dict(base)
@@ -287,7 +288,7 @@ def test_identity_accounting_requires_explicit_fields_and_consistency():
         "unique_physical_window_count": 2,
         "duplicate_exposure_count": 1,
         "duplicate_samples": [{"sample_id": "v|window_start_frame=0", "duplicate_exposure_count": 1}],
-        "records": [],
+        "records": [_record(), _record("v|window_start_frame=1", start=1)],
     }
     assert _identity_equal(valid, dict(valid))
     missing = dict(valid)
@@ -297,3 +298,37 @@ def test_identity_accounting_requires_explicit_fields_and_consistency():
     assert not _identity_equal(valid, malformed)
     malformed = dict(valid, duplicate_samples=[{"sample_id": "", "duplicate_exposure_count": 1}])
     assert not _identity_equal(valid, malformed)
+
+
+def _record(sample_id="v|window_start_frame=0", video_name="v", start=0, positions=None):
+    positions = list(range(2)) if positions is None else positions
+    return {
+        "sample_id": sample_id, "video_name": video_name, "window_start_frame": start,
+        "selected_valid_len": len(positions), "dense_valid_len": 4,
+        "selected_positions": positions, "selected_rgb_sha256": "r",
+        "selected_positions_sha256": "p", "selected_mask_sha256": "m",
+    }
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda p: p.update(records=[]),
+    lambda p: p["records"].append(_record("v|window_start_frame=2", start=2)),
+    lambda p: p["records"].reverse(),
+    lambda p: p["records"][0].update(sample_id="wrong"),
+    lambda p: p["records"][0].update(selected_positions=[0, 0]),
+])
+def test_identity_records_validator_rejects_malformed_payload(mutate):
+    payload = {"sample_count": 2, "total_input_exposure_count": 2,
+               "unique_physical_window_count": 2, "duplicate_exposure_count": 0,
+               "duplicate_samples": [],
+               "records": [_record(), _record("v|window_start_frame=1", start=1)]}
+    mutate(payload)
+    assert not _identity_equal(payload, payload)
+
+
+def test_identity_records_accept_valid_duplicate_payload():
+    payload = {"sample_count": 1, "total_input_exposure_count": 2,
+               "unique_physical_window_count": 1, "duplicate_exposure_count": 1,
+               "duplicate_samples": [{"sample_id": "v|window_start_frame=0", "duplicate_exposure_count": 1}],
+               "records": [_record()]}
+    assert _identity_equal(payload, dict(payload))
