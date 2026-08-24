@@ -106,7 +106,7 @@ def test_backbone_amod_schedule_has_no_new_parameters_or_temporal_state():
         name for name, _ in dense.named_parameters()
     ]
     output = amod(torch.randn(1, 3, 2, 32, 32))
-    assert output.shape == (1, 4, 8)
+    assert output.shape == (1, 8)
     summary = amod.latest_amod_summary
     assert summary["dense_block_indices"] == [0, 2, 4, 6, 8, 10]
     assert summary["amod_block_indices"] == [1, 3, 5, 7, 9, 11]
