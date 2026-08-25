@@ -873,6 +873,8 @@ class VisionTransformerAdapter(BaseModule):
         canonical_positions: Optional[Tensor] = None,
         dense_valid_len: Optional[Tensor] = None,
         tubelet_valid_mask: Optional[Tensor] = None,
+        pjst_pair_scale: Optional[Tensor] = None,
+        pjst_pair_valid: Optional[Tensor] = None,
         relative_physical_time_gate_zero: bool = False,
     ) -> Tensor:
         """Defines the computation performed at every call.

@@ -23,6 +23,7 @@ def build_pjst_pair_metadata(selected_positions, dense_valid_len, selected_valid
         raise TypeError("selected positions must be int64")
     pair_mask = mask[:, 0::2] & mask[:, 1::2]
     actual_delta = selected_positions[:, 1::2] - selected_positions[:, 0::2]
+    from opentad.models.duca.structured_selection import exact_uniform_positions
     canonical = torch.zeros_like(selected_positions)
     for b in range(selected_positions.shape[0]):
         n = int(mask[b].sum().item())
@@ -33,7 +34,7 @@ def build_pjst_pair_metadata(selected_positions, dense_valid_len, selected_valid
         if n > int(lengths[b].item()) or (n and bool((selected_positions[b, :n] >= lengths[b]).any())):
             raise ValueError("selected positions out of range")
         if n:
-            canonical[b, :n] = torch.div(torch.arange(n, device=selected_positions.device, dtype=torch.int64) * (lengths[b] - 1), n - 1, rounding_mode="floor") if n > 1 else 0
+            canonical[b, :n] = exact_uniform_positions(int(lengths[b].item()), n, device=selected_positions.device)
     canonical_delta = canonical[:, 1::2] - canonical[:, 0::2]
     valid = pair_mask & (actual_delta > 0) & (canonical_delta > 0)
     scale = torch.ones_like(actual_delta, dtype=torch.float32)

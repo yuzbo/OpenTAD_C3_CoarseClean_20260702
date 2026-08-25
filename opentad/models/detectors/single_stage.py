@@ -88,7 +88,7 @@ class SingleStageDetector(BaseDetector):
             selector_loss_keys = set(losses)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            x = self.backbone(inputs, masks, metas=metas)
         else:
             x = inputs
 
@@ -132,7 +132,7 @@ class SingleStageDetector(BaseDetector):
             self._require_selector_remap_metadata(metas)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            x = self.backbone(inputs, masks, metas=metas)
         else:
             x = inputs
 

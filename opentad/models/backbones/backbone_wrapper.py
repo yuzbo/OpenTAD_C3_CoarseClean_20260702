@@ -53,6 +53,7 @@ class BackboneWrapper(nn.Module):
 
         # 6. whether to use temporal activation checkpointing
         self.use_temporal_checkpointing = getattr(custom_cfg, "temporal_checkpointing", False)
+        self.pjst_enabled = getattr(custom_cfg, "pjst_enabled", False)
         if self.use_temporal_checkpointing:
             assert hasattr(
                 custom_cfg, "temporal_checkpointing_chunk_num"
@@ -70,6 +71,7 @@ class BackboneWrapper(nn.Module):
         irregular_selected_positions=None,
         irregular_dense_valid_len=None,
         irregular_selected_mask=None,
+        metas=None,
         single_clock_gate_zero=False,
     ):
         # two types: snippet or frame
@@ -96,7 +98,21 @@ class BackboneWrapper(nn.Module):
         actual_positions = canonical_positions = None
         dense_valid_len_per_clip = tubelet_valid_mask = None
         pjst_pair_scale = pjst_pair_valid = None
-        if irregular_selected_positions is not None:
+        if self.pjst_enabled and irregular_selected_positions is None and metas is not None:
+            rows = []
+            lengths = []
+            for meta in metas:
+                payload = meta.get("irregular_selected_positions")
+                if payload is None and "pc_ot_mras_bridge" in meta:
+                    payload = meta["pc_ot_mras_bridge"].get("selected_positions")
+                if payload is None:
+                    raise ValueError("PJST metadata requires irregular_selected_positions")
+                rows.append(torch.as_tensor(payload, device=frames.device, dtype=torch.int64))
+                lengths.append(meta.get("irregular_dense_valid_len", meta.get("irregular_selected_valid_len")))
+            irregular_selected_positions = torch.stack(rows, dim=0)
+            irregular_dense_valid_len = torch.as_tensor(lengths, device=frames.device, dtype=torch.int64)
+            irregular_selected_mask = irregular_selected_positions >= 0
+        if self.pjst_enabled and irregular_selected_positions is not None:
             from opentad.models.utils.temporal_grid import global_rank_clip_coordinates, build_pjst_pair_metadata
             coords = global_rank_clip_coordinates(
                 irregular_selected_positions,
@@ -129,6 +145,7 @@ class BackboneWrapper(nn.Module):
                         self.temporal_checkpointing_chunk_dim,
                         actual_positions, canonical_positions,
                         dense_valid_len_per_clip, tubelet_valid_mask,
+                        pjst_pair_scale, pjst_pair_valid,
                         single_clock_gate_zero,
                     )
                 else:
@@ -151,6 +168,7 @@ class BackboneWrapper(nn.Module):
                     self.temporal_checkpointing_chunk_dim,
                     actual_positions, canonical_positions,
                     dense_valid_len_per_clip, tubelet_valid_mask,
+                    pjst_pair_scale, pjst_pair_valid,
                     single_clock_gate_zero,
                 )
             else:

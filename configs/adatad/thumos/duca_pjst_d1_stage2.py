@@ -7,3 +7,4 @@ single_clock_admission = False
 pjst_selector_fixed = True
 paper_claim_allowed = False
 
+model = dict(backbone=dict(custom=dict(pjst_enabled=True)))
