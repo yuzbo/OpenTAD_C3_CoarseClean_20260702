@@ -193,7 +193,9 @@ def apply_pjst_derivative_only(x, pair_scale, pair_valid, exact_uniform_identity
     # bytes of every non-written pair).  ``write`` selects only irregular+valid
     # pairs, so uniform rows and invalid/partial pairs never leave y's clone.
     y_view = y.reshape(n_clips, 3, 8, 2, *x.shape[-2:])
-    write5 = write[:, None, :, None, None, None]
+    # Broadcast the boolean pair mask to the 5D [Bclips,3,8,H,W] shape of each
+    # minus/plus tensor (channel and spatial dims are shared per pair).
+    write5 = write[:, None, :, None, None]
     new_minus = torch.where(write5, y_minus, y_view[:, :, :, 0])
     new_plus = torch.where(write5, y_plus, y_view[:, :, :, 1])
     return torch.stack((new_minus, new_plus), dim=3).reshape_as(y)

@@ -6,6 +6,7 @@ skips; every other failure is a real defect.
 """
 
 import hashlib
+import inspect
 import os
 import shutil
 import subprocess
@@ -291,6 +292,7 @@ def test_backbone_wrapper_on_extracts_metas():
 
 def test_single_stage_metas_reach_backbone():
     det = SingleStageDetector.__new__(SingleStageDetector)
+    nn.Module.__init__(det)
     det.backbone = _RecordingBackbone()
     frames = torch.randn(1, 3, 4, 4)
     masks = torch.ones(1, 4)
@@ -302,6 +304,7 @@ def test_single_stage_metas_reach_backbone():
 def test_single_stage_forward_train_passes_metas():
     # Build a minimal detector whose backbone accepts metas and records it.
     det = SingleStageDetector.__new__(SingleStageDetector)
+    nn.Module.__init__(det)
     det.backbone = _RecordingBackbone()
     det.frame_selector = None
     det.projection = None
@@ -360,9 +363,9 @@ def test_chunk_dim_0_metadata_slicing(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_remap_occurs_exactly_once_before_filtering():
-    src = (ROOT / "opentad/models/detectors/single_stage.py").read_text(encoding="utf-8")
-    # post_processing block
-    pp = src.split("def post_processing", 1)[1]
+    # Inspect only the post_processing method source, not later helper definitions
+    # (which would also match the remap name and break the exactly-once count).
+    pp = inspect.getsource(SingleStageDetector.post_processing)
     remap_line = pp.index("_remap_selector_segments_for_post_processing(")
     threshold_line = pp.index("keep_idxs1 = pred_prob > pre_nms_thresh")
     nms_line = pp.index("batched_nms(")
