@@ -48,6 +48,7 @@ class BackboneWrapper(nn.Module):
 
         # 5. freeze_backbone: whether to freeze the backbone, default is False
         self.freeze_backbone = getattr(custom_cfg, "freeze_backbone", False)
+        self.pjst_derivative_only = bool(getattr(custom_cfg, "pjst_derivative_only", False))
 
         print("freeze_backbone: {}, norm_eval: {}".format(self.freeze_backbone, self.norm_eval))
 
@@ -71,6 +72,7 @@ class BackboneWrapper(nn.Module):
         irregular_dense_valid_len=None,
         irregular_selected_mask=None,
         single_clock_gate_zero=False,
+        metas=None,
     ):
         # two types: snippet or frame
 
@@ -95,6 +97,15 @@ class BackboneWrapper(nn.Module):
         batches, num_segs = frames.shape[0:2]
         actual_positions = canonical_positions = None
         dense_valid_len_per_clip = tubelet_valid_mask = None
+        pjst_pair_scale = pjst_pair_valid = pjst_exact_uniform = None
+        if self.pjst_derivative_only:
+            if metas is None or irregular_selected_positions is None:
+                raise ValueError("PJST-D1 requires metas and selected positions")
+            from opentad.models.utils.temporal_grid import pjst_pair_metadata
+            metadata = pjst_pair_metadata(irregular_selected_positions, irregular_dense_valid_len, irregular_selected_mask)
+            pjst_pair_scale = metadata["pair_scale"]
+            pjst_pair_valid = metadata["pair_valid"]
+            pjst_exact_uniform = metadata["exact_uniform_identity"]
         if irregular_selected_positions is not None:
             from opentad.models.utils.temporal_grid import global_rank_clip_coordinates
             coords = global_rank_clip_coordinates(
@@ -126,6 +137,7 @@ class BackboneWrapper(nn.Module):
                         actual_positions, canonical_positions,
                         dense_valid_len_per_clip, tubelet_valid_mask,
                         single_clock_gate_zero,
+                        pjst_pair_scale, pjst_pair_valid, pjst_exact_uniform,
                     )
                 else:
                     features = self.model.backbone(
@@ -135,6 +147,8 @@ class BackboneWrapper(nn.Module):
                         dense_valid_len=dense_valid_len_per_clip,
                         tubelet_valid_mask=tubelet_valid_mask,
                         relative_physical_time_gate_zero=single_clock_gate_zero,
+                        pjst_pair_scale=pjst_pair_scale, pjst_pair_valid=pjst_pair_valid,
+                        pjst_exact_uniform_identity=pjst_exact_uniform,
                     )
 
         else:  # let the model.train() or model.eval() decide whether to freeze
@@ -146,6 +160,7 @@ class BackboneWrapper(nn.Module):
                     actual_positions, canonical_positions,
                     dense_valid_len_per_clip, tubelet_valid_mask,
                     single_clock_gate_zero,
+                    pjst_pair_scale, pjst_pair_valid, pjst_exact_uniform,
                 )
             else:
                 features = self.model.backbone(
@@ -154,7 +169,9 @@ class BackboneWrapper(nn.Module):
                     canonical_positions=canonical_positions,
                     dense_valid_len=dense_valid_len_per_clip,
                     tubelet_valid_mask=tubelet_valid_mask,
-                    relative_physical_time_gate_zero=single_clock_gate_zero,
+                        relative_physical_time_gate_zero=single_clock_gate_zero,
+                        pjst_pair_scale=pjst_pair_scale, pjst_pair_valid=pjst_pair_valid,
+                        pjst_exact_uniform_identity=pjst_exact_uniform,
                 )
 
         # unflatten and pool the features
@@ -202,6 +219,7 @@ class BackboneWrapper(nn.Module):
         dense_valid_len=None,
         tubelet_valid_mask=None,
         single_clock_gate_zero=False,
+        pjst_pair_scale=None, pjst_pair_valid=None, pjst_exact_uniform=None,
     ):
         """Temporal Checkpointing for Video Backbone.
 
@@ -226,9 +244,11 @@ class BackboneWrapper(nn.Module):
                 frames,
                 actual_positions=actual_positions,
                 canonical_positions=canonical_positions,
-                dense_valid_len=dense_valid_len,
-                tubelet_valid_mask=tubelet_valid_mask,
-                relative_physical_time_gate_zero=single_clock_gate_zero,
+            dense_valid_len=dense_valid_len,
+            tubelet_valid_mask=tubelet_valid_mask,
+            relative_physical_time_gate_zero=single_clock_gate_zero,
+            pjst_pair_scale=pjst_pair_scale, pjst_pair_valid=pjst_pair_valid,
+            pjst_exact_uniform_identity=pjst_exact_uniform,
             )
 
         video_feat = []
@@ -240,10 +260,16 @@ class BackboneWrapper(nn.Module):
                 mini_canonical = canonical_positions[start:start + mini_frames.shape[0]]
                 mini_lengths = dense_valid_len[start:start + mini_frames.shape[0]]
                 mini_valid = tubelet_valid_mask[start:start + mini_frames.shape[0]]
+                mini_scale = pjst_pair_scale[start:start + mini_frames.shape[0]] if pjst_pair_scale is not None else None
+                mini_pair_valid = pjst_pair_valid[start:start + mini_frames.shape[0]] if pjst_pair_valid is not None else None
+                mini_uniform = pjst_exact_uniform[start:start + mini_frames.shape[0]] if pjst_exact_uniform is not None else None
+            else:
+                mini_scale = mini_pair_valid = mini_uniform = None
             # we can use torch.cp.checkpoint to implement an efficient temporal checkpointing mechanism
             mini_feat = cp.checkpoint(
                 _inner_forward,
                 mini_frames, mini_actual, mini_canonical, mini_lengths, mini_valid,
+                mini_scale, mini_pair_valid, mini_uniform,
                 use_reentrant=False,
             )
             video_feat.append(mini_feat)

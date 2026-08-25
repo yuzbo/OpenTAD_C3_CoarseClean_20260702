@@ -166,6 +166,7 @@ class SingleStageDetector(BaseDetector):
             meta = metas[i]
             segments = rpn_proposals[i].detach().cpu()  # [N,2]
             scores = rpn_scores[i].detach().cpu()  # [N,class]
+            segments, meta = self._remap_selector_segments_for_post_processing(segments, meta)
 
             if num_classes == 1:
                 scores = scores.squeeze(-1)
@@ -192,8 +193,6 @@ class SingleStageDetector(BaseDetector):
                 segments = segments[pt_idxs]
                 scores = pred_prob
                 labels = cls_idxs
-
-            segments, meta = self._remap_selector_segments_for_post_processing(segments, meta)
 
             # if not sliding window, do nms
             if post_cfg.sliding_window == False and post_cfg.nms is not None:

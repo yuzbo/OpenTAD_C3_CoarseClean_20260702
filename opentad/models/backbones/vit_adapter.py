@@ -871,6 +871,9 @@ class VisionTransformerAdapter(BaseModule):
         canonical_positions: Optional[Tensor] = None,
         dense_valid_len: Optional[Tensor] = None,
         tubelet_valid_mask: Optional[Tensor] = None,
+        pjst_pair_scale: Optional[Tensor] = None,
+        pjst_pair_valid: Optional[Tensor] = None,
+        pjst_exact_uniform_identity: Optional[Tensor] = None,
         relative_physical_time_gate_zero: bool = False,
     ) -> Tensor:
         """Defines the computation performed at every call.
@@ -886,6 +889,9 @@ class VisionTransformerAdapter(BaseModule):
         b, _, _, h, w = x.shape
         h //= self.patch_size
         w //= self.patch_size
+        if pjst_pair_scale is not None:
+            from opentad.models.utils.temporal_grid import apply_pjst_derivative_only
+            x = apply_pjst_derivative_only(x, pjst_pair_scale, pjst_pair_valid, pjst_exact_uniform_identity)
         x = self.patch_embed(x)[0]
         if actual_positions is not None or canonical_positions is not None:
             if not self.relative_physical_time_residual:
