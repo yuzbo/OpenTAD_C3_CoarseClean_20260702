@@ -53,6 +53,7 @@ class BackboneWrapper(nn.Module):
 
         # 6. whether to use temporal activation checkpointing
         self.use_temporal_checkpointing = getattr(custom_cfg, "temporal_checkpointing", False)
+        self.pjst_derivative_only = bool(getattr(custom_cfg, "pjst_derivative_only", False))
         if self.use_temporal_checkpointing:
             assert hasattr(
                 custom_cfg, "temporal_checkpointing_chunk_num"
@@ -137,7 +138,7 @@ class BackboneWrapper(nn.Module):
                         canonical_positions=canonical_positions,
                         dense_valid_len=dense_valid_len_per_clip,
                         tubelet_valid_mask=tubelet_valid_mask,
-                        pjst_pair_scale=pair_scale, pjst_pair_valid=pair_valid,
+                        **({"pjst_pair_scale": pair_scale, "pjst_pair_valid": pair_valid} if self.pjst_derivative_only else {}),
                         relative_physical_time_gate_zero=single_clock_gate_zero,
                     )
 
@@ -159,7 +160,7 @@ class BackboneWrapper(nn.Module):
                     canonical_positions=canonical_positions,
                     dense_valid_len=dense_valid_len_per_clip,
                     tubelet_valid_mask=tubelet_valid_mask,
-                    pjst_pair_scale=pair_scale, pjst_pair_valid=pair_valid,
+                    **({"pjst_pair_scale": pair_scale, "pjst_pair_valid": pair_valid} if self.pjst_derivative_only else {}),
                     relative_physical_time_gate_zero=single_clock_gate_zero,
                 )
 
@@ -238,8 +239,8 @@ class BackboneWrapper(nn.Module):
                 canonical_positions=canonical_positions,
                 dense_valid_len=dense_valid_len,
                 tubelet_valid_mask=tubelet_valid_mask,
-                pjst_pair_scale=pjst_pair_scale,
-                pjst_pair_valid=pjst_pair_valid,
+                **({"pjst_pair_scale": pjst_pair_scale, "pjst_pair_valid": pjst_pair_valid}
+                   if self.pjst_derivative_only else {}),
                 relative_physical_time_gate_zero=single_clock_gate_zero,
             )
 
