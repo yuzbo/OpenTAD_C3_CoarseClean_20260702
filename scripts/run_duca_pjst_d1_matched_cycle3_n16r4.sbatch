@@ -49,9 +49,12 @@ STAGE1_SHA="${DUCA_STAGE1_CHECKPOINT_SHA256:-${DUCA_STAGE1_CHECKPOINT_SHA:-}}"
 STAGE1_EPOCH="${DUCA_STAGE1_CHECKPOINT_EPOCH:-29}"
 
 precheck() {
-  [[ "$STAGE1_EPOCH" == 29 ]] || fail "Stage1 epoch must be 29"
-  [[ -n "$STAGE1_CHECKPOINT" && -n "$STAGE1_SHA" ]] || fail "DUCA_STAGE1_CHECKPOINT and SHA are required"
-  [[ "${#STAGE1_SHA}" == 64 ]] || fail "Stage1 SHA must be 64 hex chars"
+  [[ "$STAGE1_EPOCH" == 29 ]] || fail "Stage1 epoch must be exactly 29"
+  [[ -n "$STAGE1_CHECKPOINT" ]] || fail "DUCA_STAGE1_CHECKPOINT is required"
+  [[ -f "$STAGE1_CHECKPOINT" ]] || fail "Stage1 checkpoint is not a readable regular file: $STAGE1_CHECKPOINT"
+  [[ -r "$STAGE1_CHECKPOINT" ]] || fail "Stage1 checkpoint is not readable: $STAGE1_CHECKPOINT"
+  [[ -n "$STAGE1_SHA" ]] || fail "DUCA_STAGE1_CHECKPOINT_SHA256 is required"
+  [[ "$STAGE1_SHA" =~ ^[0-9a-fA-F]{64}$ ]] || fail "Stage1 SHA must be exactly 64 hex chars ([0-9a-fA-F]{64})"
   "$PYTHON" tools/bata/validate_duca_pjst_d1_derivative_only.py \
     --stage1 "$STAGE1_CHECKPOINT" --sha256 "$STAGE1_SHA" --epoch 29
   "$PYTHON" -m pytest tests/test_duca_pjst_d1_derivative_only.py -q

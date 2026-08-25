@@ -5,6 +5,7 @@ Windows the known Torch ``c10.dll`` load failure is the only reason this module
 skips; every other failure is a real defect.
 """
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -377,15 +378,99 @@ def test_single_patch_embed_call():
     assert fwd.index("apply_pjst_derivative_only") < fwd.index("self.patch_embed(x)[0]")
 
 
-def test_config_sole_distinction_and_freeze_via_validator():
-    proc = subprocess.run(
-        [sys.executable, str(ROOT / "tools/bata/validate_duca_pjst_d1_derivative_only.py")],
+def _write_fixture_checkpoint(dir_path, content=b"duca-stage1-epoch29-fixture\n"):
+    p = Path(dir_path) / "duca_stage1_epoch29.ckpt"
+    p.write_bytes(content)
+    return p, hashlib.sha256(content).hexdigest()
+
+
+def _run_validator(*extra_args):
+    return subprocess.run(
+        [sys.executable, str(ROOT / "tools/bata/validate_duca_pjst_d1_derivative_only.py"), *extra_args],
         capture_output=True,
         text=True,
         env=dict(os.environ),
     )
+
+
+def test_config_sole_distinction_and_freeze_via_validator(tmp_path):
+    ckpt, digest = _write_fixture_checkpoint(tmp_path)
+    proc = _run_validator("--stage1", str(ckpt), "--sha256", digest, "--epoch", "29")
     assert proc.returncode == 0, proc.stderr
     assert "PASS PJST-D1 matched configs" in proc.stdout
+
+
+def test_validator_requires_explicit_checkpoint_and_sha():
+    proc = _run_validator()
+    assert proc.returncode != 0
+
+
+def test_validator_missing_checkpoint_file_fails(tmp_path):
+    missing = tmp_path / "does_not_exist.ckpt"
+    proc = _run_validator("--stage1", str(missing), "--sha256", "0" * 64)
+    assert proc.returncode != 0
+
+
+def test_validator_non_regular_checkpoint_fails(tmp_path):
+    # A directory is not a regular file and must not pass admission.
+    proc = _run_validator("--stage1", str(tmp_path), "--sha256", "0" * 64)
+    assert proc.returncode != 0
+
+
+def test_validator_malformed_digest_fails(tmp_path):
+    ckpt, _ = _write_fixture_checkpoint(tmp_path)
+    proc = _run_validator("--stage1", str(ckpt), "--sha256", "not-a-sha")
+    assert proc.returncode != 0
+
+
+def test_validator_wrong_digest_fails(tmp_path):
+    ckpt, _ = _write_fixture_checkpoint(tmp_path)
+    proc = _run_validator("--stage1", str(ckpt), "--sha256", "a" * 64)
+    assert proc.returncode != 0
+    assert "mismatch" in (proc.stderr + proc.stdout)
+
+
+def test_validator_wrong_epoch_fails(tmp_path):
+    ckpt, digest = _write_fixture_checkpoint(tmp_path)
+    proc = _run_validator("--stage1", str(ckpt), "--sha256", digest, "--epoch", "30")
+    assert proc.returncode != 0
+
+
+def test_validator_correct_fixture_passes(tmp_path):
+    ckpt, digest = _write_fixture_checkpoint(tmp_path)
+    proc = _run_validator("--stage1", str(ckpt), "--sha256", digest, "--epoch", "29")
+    assert proc.returncode == 0, proc.stderr
+    assert "PASS PJST-D1 matched configs" in proc.stdout
+
+
+def test_validator_unreadable_checkpoint_fails(tmp_path):
+    if sys.platform == "win32":
+        pytest.skip("POSIX file permissions not applicable on Windows")
+    ckpt, digest = _write_fixture_checkpoint(tmp_path)
+    os.chmod(ckpt, 0)
+    try:
+        if os.access(ckpt, os.R_OK):
+            pytest.skip("running as root; unreadable file check not applicable")
+        proc = _run_validator("--stage1", str(ckpt), "--sha256", digest)
+        assert proc.returncode != 0
+    finally:
+        os.chmod(ckpt, 0o644)
+
+
+def test_launcher_precheck_fail_closed():
+    src = (ROOT / "scripts/run_duca_pjst_d1_matched_cycle3_n16r4.sbatch").read_text(encoding="utf-8")
+    validator_call = "tools/bata/validate_duca_pjst_d1_derivative_only.py"
+    call_idx = src.index(validator_call)
+    precheck = src[:call_idx]
+    # Fail-closed guards must precede the validator invocation.
+    assert '[[ "$STAGE1_EPOCH" == 29 ]]' in precheck
+    assert '[[ -f "$STAGE1_CHECKPOINT" ]]' in precheck
+    assert '[[ -r "$STAGE1_CHECKPOINT" ]]' in precheck
+    assert '=~ ^[0-9a-fA-F]{64}$' in precheck
+    # Launcher passes explicit path/digest/epoch to the validator.
+    assert '--stage1 "$STAGE1_CHECKPOINT"' in src
+    assert '--sha256 "$STAGE1_SHA"' in src
+    assert '--epoch 29' in src
 
 
 def test_launcher_syntax():
