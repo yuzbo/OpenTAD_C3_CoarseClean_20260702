@@ -3,60 +3,200 @@ from collections.abc import Mapping
 import torch
 
 
-def pjst_pair_metadata(selected_positions, dense_valid_len, prefix_mask):
-    """Build PJST-D1 global K384 pair metadata without float time arithmetic."""
+def pjst_selector_positions_from_metas(metas, *, k=384, device):
+    """Extract per-sample selector positions, dense valid length, and prefix mask.
+
+    Reuses only the real per-sample selector metadata already written by the
+    DUCA pre-backbone selector (``irregular_selected_positions`` plus
+    ``irregular_dense_valid_len``), with the documented
+    ``pc_ot_mras_bridge.selected_positions`` fallback.  No second selection
+    path is invented; missing or inconsistent data fails closed.
+    """
+    if metas is None:
+        raise ValueError("PJST-D1 requires per-sample selector metadata")
+    holders = [metas] if isinstance(metas, Mapping) else metas
+    if not isinstance(holders, (list, tuple)) or len(holders) == 0:
+        raise ValueError("PJST-D1 requires a non-empty list/tuple of metadata mappings")
+    batch = len(holders)
+    k = int(k)
+    positions = torch.full((batch, k), -1, device=device, dtype=torch.int64)
+    dense_valid_len = torch.zeros((batch,), device=device, dtype=torch.int64)
+    prefix_mask = torch.zeros((batch, k), device=device, dtype=torch.bool)
+    for idx, meta in enumerate(holders):
+        if not isinstance(meta, Mapping):
+            raise ValueError(f"PJST-D1 metas[{idx}] must be a mapping")
+        row = meta.get("irregular_selected_positions")
+        if row is None:
+            bridge = meta.get("pc_ot_mras_bridge")
+            if isinstance(bridge, Mapping):
+                row = bridge.get("selected_positions")
+        if row is None:
+            raise ValueError(f"PJST-D1 metas[{idx}] missing irregular_selected_positions")
+        row = torch.as_tensor(row, device=device, dtype=torch.int64).flatten()
+        count = int(meta.get("irregular_selected_count", row.numel()))
+        if row.numel() != count:
+            raise ValueError(
+                f"PJST-D1 metas[{idx}] selected_count {count} != positions length {row.numel()}"
+            )
+        if count <= 0 or count > k:
+            raise ValueError(f"PJST-D1 requires 1 <= selected count <= {k} for sample {idx}, got {count}")
+        selected_valid_len = meta.get("irregular_selected_valid_len")
+        if selected_valid_len is not None and int(selected_valid_len) != count:
+            raise ValueError(
+                f"PJST-D1 metas[{idx}] irregular_selected_valid_len {selected_valid_len} != {count}"
+            )
+        dense = meta.get("irregular_dense_valid_len", meta.get("truetime_dense_valid_len", None))
+        if dense is None:
+            raise ValueError(f"PJST-D1 metas[{idx}] missing irregular_dense_valid_len")
+        dense = int(torch.as_tensor(dense, device=device).reshape(-1)[0].item())
+        if dense <= 0:
+            raise ValueError(f"PJST-D1 dense valid length must be positive for sample {idx}")
+        p = row[:count]
+        if bool((p < 0).any()) or bool((p >= dense).any()):
+            raise ValueError(f"PJST-D1 positions must be in [0, {dense}) for sample {idx}")
+        if count > 1 and not bool((p[1:] > p[:-1]).all()):
+            raise ValueError(f"PJST-D1 positions must be strictly increasing for sample {idx}")
+        positions[idx, :count] = p
+        dense_valid_len[idx] = dense
+        prefix_mask[idx, :count] = True
+    return positions, dense_valid_len, prefix_mask
+
+
+def pjst_pair_metadata(selected_positions, dense_valid_len, prefix_mask, *, clip_len=16, tubelet_size=2):
+    """Build PJST-D1 global K384 pair metadata (global ``[B, clips, tubelets]``).
+
+    Returns scientific metadata in the global ``[B, clips, tubelets]`` layout
+    (24 clips x 8 tubelets per sample) plus a per-sample ``exact_uniform_identity``
+    bypass flag.  Callers pack these batch-major to ``[B*clips, tubelets]`` for
+    the flattened VideoMAE clip layout.  No float time arithmetic is performed
+    on the uniform path; float division happens only for valid irregular pairs.
+    """
     if not torch.is_tensor(selected_positions) or selected_positions.ndim != 2:
         raise ValueError("selected_positions must be [B,K]")
     if selected_positions.dtype != torch.int64:
         raise ValueError("selected_positions must be int64")
-    if selected_positions.shape[1] != 384:
-        raise ValueError("PJST-D1 requires K=384")
+    k = int(selected_positions.shape[1])
+    if k % int(clip_len) != 0:
+        raise ValueError("K must be divisible by clip_len")
+    if int(clip_len) % int(tubelet_size) != 0:
+        raise ValueError("clip_len must be divisible by tubelet_size")
     if prefix_mask.shape != selected_positions.shape or prefix_mask.dtype != torch.bool:
-        raise ValueError("prefix_mask must be bool [B,384]")
+        raise ValueError("prefix_mask must be bool [B,K]")
     lengths = torch.as_tensor(dense_valid_len, device=selected_positions.device, dtype=torch.int64).flatten()
     if lengths.numel() != selected_positions.shape[0]:
         raise ValueError("dense_valid_len must be [B]")
-    valid_counts = prefix_mask.sum(1)
-    canonical = torch.zeros_like(selected_positions)
+    clips = k // int(clip_len)
+    tubelets = int(clip_len) // int(tubelet_size)
     from opentad.models.duca.structured_selection import exact_uniform_positions
+
+    canonical = torch.full_like(selected_positions, -1)
+    exact_uniform = torch.zeros(selected_positions.shape[0], device=selected_positions.device, dtype=torch.bool)
     for b in range(selected_positions.shape[0]):
-        n = int(valid_counts[b].item())
-        if n <= 0 or not torch.equal(prefix_mask[b], torch.arange(384, device=prefix_mask.device) < n):
+        n = int(prefix_mask[b].long().sum().item())
+        if n <= 0 or not torch.equal(prefix_mask[b], torch.arange(k, device=prefix_mask.device) < n):
             raise ValueError("prefix_mask must be a non-empty contiguous prefix")
         p = selected_positions[b, :n]
-        if lengths[b] <= 0 or (p < 0).any() or (p >= lengths[b]).any() or (p[1:] <= p[:-1]).any():
+        if int(lengths[b]) <= 0 or (p < 0).any() or (p >= lengths[b]).any() or (p[1:] <= p[:-1]).any():
             raise ValueError("selected positions must be in-range and strictly increasing")
         canonical[b, :n] = exact_uniform_positions(int(lengths[b]), n, device=selected_positions.device)
-    exact_uniform = torch.stack([torch.equal(selected_positions[b, :int(valid_counts[b])], canonical[b, :int(valid_counts[b])]) for b in range(selected_positions.shape[0])]).to(selected_positions.device)
-    p0 = selected_positions[:, 0::2].reshape(-1, 8)
-    p1 = selected_positions[:, 1::2].reshape(-1, 8)
-    u0 = canonical[:, 0::2].reshape(-1, 8)
-    u1 = canonical[:, 1::2].reshape(-1, 8)
-    pair_valid = (prefix_mask[:, 0::2] & prefix_mask[:, 1::2]).reshape(-1, 8)
+        exact_uniform[b] = torch.equal(selected_positions[b, :n], canonical[b, :n])
+
+    p_view = selected_positions.reshape(-1, clips, int(clip_len))
+    u_view = canonical.reshape(-1, clips, int(clip_len))
+    m_view = prefix_mask.reshape(-1, clips, int(clip_len))
+    p0 = p_view[:, :, 0::tubelet_size]
+    p1 = p_view[:, :, 1::tubelet_size]
+    u0 = u_view[:, :, 0::tubelet_size]
+    u1 = u_view[:, :, 1::tubelet_size]
+    m0 = m_view[:, :, 0::tubelet_size]
+    m1 = m_view[:, :, 1::tubelet_size]
     actual_delta = p1 - p0
     canonical_delta = u1 - u0
+    pair_valid = m0 & m1
     if ((actual_delta[pair_valid] <= 0) | (canonical_delta[pair_valid] <= 0)).any():
         raise ValueError("valid pair deltas must be positive")
-    scale = torch.ones_like(actual_delta, dtype=torch.float32)
-    irregular = ~exact_uniform.repeat_interleave(24)
-    valid_irregular = pair_valid & irregular[:, None]
-    scale[valid_irregular] = canonical_delta[valid_irregular].float() / actual_delta[valid_irregular].float()
-    return {"pair_scale": scale, "pair_valid": pair_valid, "exact_uniform_identity": exact_uniform.repeat_interleave(24), "actual_delta": actual_delta, "canonical_delta": canonical_delta}
+    pair_scale = torch.ones_like(actual_delta, dtype=torch.float32)
+    valid_irregular = pair_valid & (~exact_uniform)[:, None, None]
+    pair_scale[valid_irregular] = canonical_delta[valid_irregular].float() / actual_delta[valid_irregular].float()
+    support_width = torch.zeros_like(selected_positions, dtype=torch.float64)
+    for b in range(selected_positions.shape[0]):
+        n = int(prefix_mask[b].long().sum().item())
+        p = selected_positions[b, :n].to(dtype=torch.float64)
+        t_b = float(lengths[b].item())
+        e = torch.empty(n + 1, device=selected_positions.device, dtype=torch.float64)
+        e[0] = -0.5
+        e[1:n] = (p[:-1] + p[1:]) / 2.0
+        e[n] = t_b - 0.5
+        support_width[b, :n] = (e[1:] - e[:-1]).clamp_min(0.0)
+    return {
+        "actual_delta": actual_delta,
+        "canonical_delta": canonical_delta,
+        "pair_valid": pair_valid,
+        "pair_scale": pair_scale,
+        "exact_uniform_identity": exact_uniform,
+        "support_width": support_width.detach(),
+    }
+
+
+def pack_pjst_pair_metadata(metadata, *, clips=24):
+    """Pack global ``[B, clips, tubelets]`` PJST metadata to ``[B*clips, tubelets]``.
+
+    The packed layout is batch-major and matches the flattened VideoMAE clip
+    order (sample 0's clips 0..23 first, then sample 1's, and so on).
+    """
+    pair_scale = metadata["pair_scale"]
+    pair_valid = metadata["pair_valid"]
+    exact_uniform = metadata["exact_uniform_identity"]
+    if pair_scale.ndim != 3 or pair_scale.shape[1] != int(clips):
+        raise ValueError("pair_scale must be [B, clips, tubelets]")
+    if pair_valid.shape != pair_scale.shape:
+        raise ValueError("pair_valid must match pair_scale shape")
+    if exact_uniform.ndim != 1 or exact_uniform.numel() != pair_scale.shape[0]:
+        raise ValueError("exact_uniform_identity must be [B]")
+    return {
+        "pair_scale": pair_scale.reshape(-1, pair_scale.shape[2]).contiguous(),
+        "pair_valid": pair_valid.reshape(-1, pair_valid.shape[2]).contiguous(),
+        "exact_uniform_identity": exact_uniform.repeat_interleave(int(clips)).contiguous(),
+    }
 
 
 def apply_pjst_derivative_only(x, pair_scale, pair_valid, exact_uniform_identity):
-    """Apply derivative-only PJST-D1 to packed [Bclips,3,16,H,W] input."""
-    if x.ndim != 5 or x.shape[2] != 16 or pair_scale.shape != (x.shape[0], 8):
-        raise ValueError("expected packed clips and [Bclips,8] metadata")
+    """Apply derivative-only PJST-D1 to packed ``[Bclips,3,16,H,W]`` input.
+
+    Starts from ``Y = X.clone()`` and writes only ``(not exact_uniform) AND
+    pair_valid`` pairs in float32 (``m``, ``v = s*(x+ - x-)/2``), casting the two
+    written frames back to the original dtype.  Uniform rows and invalid/partial
+    pairs keep their original bytes and never pass through any float cast.
+    """
+    if x.ndim != 5 or x.shape[2] != 16:
+        raise ValueError("expected packed [Bclips,3,16,H,W] input")
+    n_clips = int(x.shape[0])
+    if pair_scale.shape != (n_clips, 8):
+        raise ValueError("pair_scale must be [Bclips,8]")
+    if pair_valid.shape != (n_clips, 8):
+        raise ValueError("pair_valid must be [Bclips,8]")
+    if exact_uniform_identity.numel() != n_clips:
+        raise ValueError("exact_uniform_identity must be [Bclips]")
     y = x.clone()
-    rows = (~exact_uniform_identity)[:, None] & pair_valid
-    if rows.any():
-        z = x.float().reshape(x.shape[0], 3, 8, 2, *x.shape[-2:])
-        m = (z[:, :, :, 0] + z[:, :, :, 1]) / 2
-        v = pair_scale.float()[:, None, :, None, None] * (z[:, :, :, 1] - z[:, :, :, 0]) / 2
-        out = torch.stack((m - v, m + v), dim=3)
-        y[rows.any(1)] = out[rows.any(1)].reshape(-1, 3, 16, *x.shape[-2:]).to(x.dtype)
-    return y
+    write = (~exact_uniform_identity)[:, None] & pair_valid
+    if not bool(write.any()):
+        return y
+    z = x.float().reshape(n_clips, 3, 8, 2, *x.shape[-2:])
+    x_minus = z[:, :, :, 0]
+    x_plus = z[:, :, :, 1]
+    scale = pair_scale.float()[:, None, :, None, None]
+    m = (x_minus + x_plus) * 0.5
+    v = scale * (x_plus - x_minus) * 0.5
+    y_minus = (m - v).to(x.dtype)
+    y_plus = (m + v).to(x.dtype)
+    # Build the output with torch.where (differentiable, and keeps the original
+    # bytes of every non-written pair).  ``write`` selects only irregular+valid
+    # pairs, so uniform rows and invalid/partial pairs never leave y's clone.
+    y_view = y.reshape(n_clips, 3, 8, 2, *x.shape[-2:])
+    write5 = write[:, None, :, None, None, None]
+    new_minus = torch.where(write5, y_minus, y_view[:, :, :, 0])
+    new_plus = torch.where(write5, y_plus, y_view[:, :, :, 1])
+    return torch.stack((new_minus, new_plus), dim=3).reshape_as(y)
 
 
 def global_rank_clip_coordinates(

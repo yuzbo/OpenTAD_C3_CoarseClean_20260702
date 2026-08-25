@@ -82,6 +82,9 @@ class BackboneWrapper(nn.Module):
         # set all normalization layers
         self.set_norm_layer()
 
+        # PJST-D1 freezes K=384 (the selected input before clip rearrangement).
+        pjst_k = int(frames.shape[3])
+
         # data preprocessing: normalize mean and std
         frames, _ = self.model.data_preprocessor.preprocess(
             self.tensor_to_list(frames),  # need list input
@@ -99,14 +102,24 @@ class BackboneWrapper(nn.Module):
         dense_valid_len_per_clip = tubelet_valid_mask = None
         pjst_pair_scale = pjst_pair_valid = pjst_exact_uniform = None
         if self.pjst_derivative_only:
-            if metas is None or irregular_selected_positions is None:
-                raise ValueError("PJST-D1 requires metas and selected positions")
-            from opentad.models.utils.temporal_grid import pjst_pair_metadata
-            metadata = pjst_pair_metadata(irregular_selected_positions, irregular_dense_valid_len, irregular_selected_mask)
-            pjst_pair_scale = metadata["pair_scale"]
-            pjst_pair_valid = metadata["pair_valid"]
-            pjst_exact_uniform = metadata["exact_uniform_identity"]
-        if irregular_selected_positions is not None:
+            # ON extracts every sample's real selector positions from metas; the
+            # explicit single-clock position arguments are a different route.
+            if irregular_selected_positions is not None:
+                raise ValueError("PJST-D1 extracts positions from metas; do not pass irregular_selected_positions")
+            from opentad.models.utils.temporal_grid import (
+                pack_pjst_pair_metadata,
+                pjst_pair_metadata,
+                pjst_selector_positions_from_metas,
+            )
+            sel_positions, sel_dense_len, sel_mask = pjst_selector_positions_from_metas(
+                metas, k=pjst_k, device=frames.device
+            )
+            pair_meta = pjst_pair_metadata(sel_positions, sel_dense_len, sel_mask)
+            packed = pack_pjst_pair_metadata(pair_meta, clips=(pjst_k // 16))
+            pjst_pair_scale = packed["pair_scale"]
+            pjst_pair_valid = packed["pair_valid"]
+            pjst_exact_uniform = packed["exact_uniform_identity"]
+        elif irregular_selected_positions is not None:
             from opentad.models.utils.temporal_grid import global_rank_clip_coordinates
             coords = global_rank_clip_coordinates(
                 irregular_selected_positions,
@@ -140,15 +153,16 @@ class BackboneWrapper(nn.Module):
                         pjst_pair_scale, pjst_pair_valid, pjst_exact_uniform,
                     )
                 else:
-                    features = self.model.backbone(
+                    features = self._backbone_forward(
                         frames,
-                        actual_positions=actual_positions,
-                        canonical_positions=canonical_positions,
-                        dense_valid_len=dense_valid_len_per_clip,
-                        tubelet_valid_mask=tubelet_valid_mask,
-                        relative_physical_time_gate_zero=single_clock_gate_zero,
-                        pjst_pair_scale=pjst_pair_scale, pjst_pair_valid=pjst_pair_valid,
-                        pjst_exact_uniform_identity=pjst_exact_uniform,
+                        actual_positions,
+                        canonical_positions,
+                        dense_valid_len_per_clip,
+                        tubelet_valid_mask,
+                        single_clock_gate_zero,
+                        pjst_pair_scale,
+                        pjst_pair_valid,
+                        pjst_exact_uniform,
                     )
 
         else:  # let the model.train() or model.eval() decide whether to freeze
@@ -163,15 +177,16 @@ class BackboneWrapper(nn.Module):
                     pjst_pair_scale, pjst_pair_valid, pjst_exact_uniform,
                 )
             else:
-                features = self.model.backbone(
+                features = self._backbone_forward(
                     frames,
-                    actual_positions=actual_positions,
-                    canonical_positions=canonical_positions,
-                    dense_valid_len=dense_valid_len_per_clip,
-                    tubelet_valid_mask=tubelet_valid_mask,
-                        relative_physical_time_gate_zero=single_clock_gate_zero,
-                        pjst_pair_scale=pjst_pair_scale, pjst_pair_valid=pjst_pair_valid,
-                        pjst_exact_uniform_identity=pjst_exact_uniform,
+                    actual_positions,
+                    canonical_positions,
+                    dense_valid_len_per_clip,
+                    tubelet_valid_mask,
+                    single_clock_gate_zero,
+                    pjst_pair_scale,
+                    pjst_pair_valid,
+                    pjst_exact_uniform,
                 )
 
         # unflatten and pool the features
@@ -187,6 +202,32 @@ class BackboneWrapper(nn.Module):
         # make sure detector has the float32 input
         features = features.to(torch.float32)
         return features
+
+    def _backbone_forward(
+        self,
+        frames,
+        actual_positions,
+        canonical_positions,
+        dense_valid_len_per_clip,
+        tubelet_valid_mask,
+        single_clock_gate_zero,
+        pjst_pair_scale,
+        pjst_pair_valid,
+        pjst_exact_uniform,
+    ):
+        """Call the VideoMAE backbone, passing PJST kwargs only when ON."""
+        kwargs = dict(
+            actual_positions=actual_positions,
+            canonical_positions=canonical_positions,
+            dense_valid_len=dense_valid_len_per_clip,
+            tubelet_valid_mask=tubelet_valid_mask,
+            relative_physical_time_gate_zero=single_clock_gate_zero,
+        )
+        if self.pjst_derivative_only:
+            kwargs["pjst_pair_scale"] = pjst_pair_scale
+            kwargs["pjst_pair_valid"] = pjst_pair_valid
+            kwargs["pjst_exact_uniform_identity"] = pjst_exact_uniform
+        return self.model.backbone(frames, **kwargs)
 
     def tensor_to_list(self, tensor):
         return [t for t in tensor]
@@ -233,38 +274,49 @@ class BackboneWrapper(nn.Module):
             chunk_dim (int): input shape is [B*N,3,T,H,W], so either dim=0 or 2 is fine
         """
 
+        if self.pjst_derivative_only and chunk_dim != 0:
+            raise ValueError("PJST-D1 temporal checkpointing requires chunk_dim=0")
+
         def _inner_forward(
             frames,
             actual_positions=None,
             canonical_positions=None,
             dense_valid_len=None,
             tubelet_valid_mask=None,
+            pjst_pair_scale=None,
+            pjst_pair_valid=None,
+            pjst_exact_uniform=None,
         ):
-            return self.model.backbone(
-                frames,
+            kwargs = dict(
                 actual_positions=actual_positions,
                 canonical_positions=canonical_positions,
-            dense_valid_len=dense_valid_len,
-            tubelet_valid_mask=tubelet_valid_mask,
-            relative_physical_time_gate_zero=single_clock_gate_zero,
-            pjst_pair_scale=pjst_pair_scale, pjst_pair_valid=pjst_pair_valid,
-            pjst_exact_uniform_identity=pjst_exact_uniform,
+                dense_valid_len=dense_valid_len,
+                tubelet_valid_mask=tubelet_valid_mask,
+                relative_physical_time_gate_zero=single_clock_gate_zero,
             )
+            if self.pjst_derivative_only:
+                kwargs["pjst_pair_scale"] = pjst_pair_scale
+                kwargs["pjst_pair_valid"] = pjst_pair_valid
+                kwargs["pjst_exact_uniform_identity"] = pjst_exact_uniform
+            return self.model.backbone(frames, **kwargs)
 
+        chunks = list(torch.chunk(frames, chunk_num, dim=chunk_dim))
         video_feat = []
-        for chunk_index, mini_frames in enumerate(torch.chunk(frames, chunk_num, dim=chunk_dim)):  # B*N is chunked
+        for chunk_index, mini_frames in enumerate(chunks):
             mini_actual = mini_canonical = mini_lengths = mini_valid = None
-            if actual_positions is not None and chunk_dim == 0:
-                start = sum(x.shape[0] for x in torch.chunk(frames, chunk_num, dim=chunk_dim)[:chunk_index])
-                mini_actual = actual_positions[start:start + mini_frames.shape[0]]
-                mini_canonical = canonical_positions[start:start + mini_frames.shape[0]]
-                mini_lengths = dense_valid_len[start:start + mini_frames.shape[0]]
-                mini_valid = tubelet_valid_mask[start:start + mini_frames.shape[0]]
-                mini_scale = pjst_pair_scale[start:start + mini_frames.shape[0]] if pjst_pair_scale is not None else None
-                mini_pair_valid = pjst_pair_valid[start:start + mini_frames.shape[0]] if pjst_pair_valid is not None else None
-                mini_uniform = pjst_exact_uniform[start:start + mini_frames.shape[0]] if pjst_exact_uniform is not None else None
-            else:
-                mini_scale = mini_pair_valid = mini_uniform = None
+            mini_scale = mini_pair_valid = mini_uniform = None
+            if chunk_dim == 0:
+                start = sum(x.shape[0] for x in chunks[:chunk_index])
+                end = start + mini_frames.shape[0]
+                if actual_positions is not None:
+                    mini_actual = actual_positions[start:end]
+                    mini_canonical = canonical_positions[start:end]
+                    mini_lengths = dense_valid_len[start:end]
+                    mini_valid = tubelet_valid_mask[start:end]
+                if pjst_pair_scale is not None:
+                    mini_scale = pjst_pair_scale[start:end]
+                    mini_pair_valid = pjst_pair_valid[start:end]
+                    mini_uniform = pjst_exact_uniform[start:end]
             # we can use torch.cp.checkpoint to implement an efficient temporal checkpointing mechanism
             mini_feat = cp.checkpoint(
                 _inner_forward,

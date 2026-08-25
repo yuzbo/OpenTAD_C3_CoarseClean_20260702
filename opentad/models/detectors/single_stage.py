@@ -88,7 +88,7 @@ class SingleStageDetector(BaseDetector):
             selector_loss_keys = set(losses)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            x = self._call_backbone(inputs, masks, metas)
         else:
             x = inputs
 
@@ -132,7 +132,7 @@ class SingleStageDetector(BaseDetector):
             self._require_selector_remap_metadata(metas)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            x = self._call_backbone(inputs, masks, metas)
         else:
             x = inputs
 
@@ -339,3 +339,18 @@ class SingleStageDetector(BaseDetector):
             if param.name == "metas":
                 return True
         return False
+
+    def _call_backbone(self, inputs, masks, metas):
+        """Signature-aware backbone call.
+
+        Passes the selector-updated ``metas`` to a backbone whose forward accepts
+        it (e.g. ``BackboneWrapper``), while preserving compatibility with any
+        other backbone callable that does not declare a ``metas`` parameter.
+        """
+        if self._callable_accepts_metas(self.backbone.forward):
+            if masks is None:
+                return self.backbone(inputs, metas=metas)
+            return self.backbone(inputs, masks, metas=metas)
+        if masks is None:
+            return self.backbone(inputs)
+        return self.backbone(inputs, masks)

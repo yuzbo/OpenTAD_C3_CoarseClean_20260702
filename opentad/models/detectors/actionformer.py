@@ -188,7 +188,9 @@ class ActionFormer(SingleStageDetector):
 
     def _forward_backbone_with_single_clock(self, inputs, masks, metas, *, force_off=False):
         if not self.single_clock_admission or force_off:
-            return self.backbone(inputs)
+            # Signature-aware call: forwards metas (for PJST-D1 metadata
+            # reachability) without changing the existing no-``masks`` OFF path.
+            return self._call_backbone(inputs, None, metas)
         clock_kwargs = self._single_clock_metadata(inputs, masks, metas)
         return self.backbone(inputs, **clock_kwargs)
 
