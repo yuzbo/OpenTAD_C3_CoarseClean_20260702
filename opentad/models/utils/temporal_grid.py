@@ -3,6 +3,44 @@ from collections.abc import Mapping
 import torch
 
 
+def build_pjst_pair_metadata(selected_positions, dense_valid_len, selected_valid_mask=None, *, k=384):
+    """Build detached PJST-D1 pair scales from the global selected rank grid.
+
+    Pairing is global: `(16c+2r, 16c+2r+1)` is never regenerated per clip.
+    Invalid/partial pairs are audit-only and have scale one.
+    """
+    if not torch.is_tensor(selected_positions) or selected_positions.ndim != 2:
+        raise ValueError("selected_positions must be [B,K]")
+    if selected_positions.shape[1] != int(k) or int(k) % 2:
+        raise ValueError("selected_positions must have even K entries")
+    mask = selected_positions >= 0 if selected_valid_mask is None else selected_valid_mask.bool()
+    if mask.shape != selected_positions.shape:
+        raise ValueError("selected_valid_mask shape mismatch")
+    lengths = torch.as_tensor(dense_valid_len, device=selected_positions.device, dtype=torch.int64).flatten()
+    if lengths.numel() != selected_positions.shape[0]:
+        raise ValueError("dense_valid_len shape mismatch")
+    if selected_positions.dtype != torch.int64:
+        raise TypeError("selected positions must be int64")
+    pair_mask = mask[:, 0::2] & mask[:, 1::2]
+    actual_delta = selected_positions[:, 1::2] - selected_positions[:, 0::2]
+    canonical = torch.zeros_like(selected_positions)
+    for b in range(selected_positions.shape[0]):
+        n = int(mask[b].sum().item())
+        if n and (not bool(mask[b, :n].all()) or bool(mask[b, n:].any())):
+            raise ValueError("selected mask must be a contiguous prefix")
+        if n > 1 and bool((selected_positions[b, 1:n] <= selected_positions[b, :n-1]).any()):
+            raise ValueError("selected positions must be strictly increasing")
+        if n > int(lengths[b].item()) or (n and bool((selected_positions[b, :n] >= lengths[b]).any())):
+            raise ValueError("selected positions out of range")
+        if n:
+            canonical[b, :n] = torch.div(torch.arange(n, device=selected_positions.device, dtype=torch.int64) * (lengths[b] - 1), n - 1, rounding_mode="floor") if n > 1 else 0
+    canonical_delta = canonical[:, 1::2] - canonical[:, 0::2]
+    valid = pair_mask & (actual_delta > 0) & (canonical_delta > 0)
+    scale = torch.ones_like(actual_delta, dtype=torch.float32)
+    scale[valid] = canonical_delta[valid].float() / actual_delta[valid].float()
+    return {"pair_scale": scale.detach(), "pair_valid": pair_mask.detach(), "exact_uniform_identity": bool(torch.equal(actual_delta, canonical_delta))}
+
+
 def global_rank_clip_coordinates(
     irregular_selected_positions,
     dense_valid_len,

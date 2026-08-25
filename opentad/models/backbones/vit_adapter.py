@@ -667,6 +667,8 @@ class Block(BaseModule):
         packed_stats: Optional[Dict[str, int]] = None,
         relative_physical_time: Optional[Tensor] = None,
         relative_physical_time_gate_zero: bool = False,
+        pjst_pair_scale: Optional[Tensor] = None,
+        pjst_pair_valid: Optional[Tensor] = None,
     ) -> Tensor:
         """Defines the computation performed at every call.
 
@@ -886,6 +888,25 @@ class VisionTransformerAdapter(BaseModule):
         b, _, _, h, w = x.shape
         h //= self.patch_size
         w //= self.patch_size
+        if pjst_pair_scale is not None or pjst_pair_valid is not None:
+            if pjst_pair_scale is None or pjst_pair_valid is None:
+                raise ValueError("PJST pair scale and validity must be supplied together")
+            if x.shape[2] != 16 or pjst_pair_scale.shape != (x.shape[0], 8):
+                raise ValueError("PJST expects [B,3,16,H,W] and eight pair scales")
+            valid = pjst_pair_valid.to(device=x.device, dtype=torch.bool)
+            if valid.shape != pjst_pair_scale.shape:
+                raise ValueError("PJST pair validity shape mismatch")
+            # Mixed batches preserve uniform rows byte-for-byte; irregular rows
+            # use the frozen two-frame convolution's mean/odd decomposition.
+            if bool((valid & (pjst_pair_scale != 1)).any().item()):
+                y = x.clone()
+                pairs = x.reshape(x.shape[0], x.shape[1], 8, 2, x.shape[3], x.shape[4])
+                m = (pairs[:, :, :, 0] + pairs[:, :, :, 1]) / 2
+                v = pjst_pair_scale.to(dtype=x.dtype)[:, None, :, None, None] * (pairs[:, :, :, 1] - pairs[:, :, :, 0]) / 2
+                transformed = torch.stack((m - v, m + v), dim=3).reshape_as(x)
+                row_mask = (valid & (pjst_pair_scale != 1)).any(dim=1)
+                y[row_mask] = transformed[row_mask]
+                x = y
         x = self.patch_embed(x)[0]
         if actual_positions is not None or canonical_positions is not None:
             if not self.relative_physical_time_residual:

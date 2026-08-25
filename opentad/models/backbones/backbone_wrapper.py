@@ -95,8 +95,9 @@ class BackboneWrapper(nn.Module):
         batches, num_segs = frames.shape[0:2]
         actual_positions = canonical_positions = None
         dense_valid_len_per_clip = tubelet_valid_mask = None
+        pjst_pair_scale = pjst_pair_valid = None
         if irregular_selected_positions is not None:
-            from opentad.models.utils.temporal_grid import global_rank_clip_coordinates
+            from opentad.models.utils.temporal_grid import global_rank_clip_coordinates, build_pjst_pair_metadata
             coords = global_rank_clip_coordinates(
                 irregular_selected_positions,
                 irregular_dense_valid_len,
@@ -113,6 +114,9 @@ class BackboneWrapper(nn.Module):
                 .expand(-1, coords["actual"].shape[1])
                 .flatten(0, 1)
             )
+            pjst = build_pjst_pair_metadata(irregular_selected_positions.to(torch.int64), irregular_dense_valid_len, irregular_selected_mask, k=irregular_selected_positions.shape[1])
+            pjst_pair_scale = pjst["pair_scale"].repeat_interleave(coords["actual"].shape[1], dim=0)
+            pjst_pair_valid = pjst["pair_valid"].repeat_interleave(coords["actual"].shape[1], dim=0)
         frames = frames.flatten(0, 1).contiguous()  # [bs*num_seg, ...]
 
         # go through the video backbone
@@ -134,6 +138,8 @@ class BackboneWrapper(nn.Module):
                         canonical_positions=canonical_positions,
                         dense_valid_len=dense_valid_len_per_clip,
                         tubelet_valid_mask=tubelet_valid_mask,
+                        pjst_pair_scale=pjst_pair_scale,
+                        pjst_pair_valid=pjst_pair_valid,
                         relative_physical_time_gate_zero=single_clock_gate_zero,
                     )
 
@@ -154,6 +160,8 @@ class BackboneWrapper(nn.Module):
                     canonical_positions=canonical_positions,
                     dense_valid_len=dense_valid_len_per_clip,
                     tubelet_valid_mask=tubelet_valid_mask,
+                    pjst_pair_scale=pjst_pair_scale,
+                    pjst_pair_valid=pjst_pair_valid,
                     relative_physical_time_gate_zero=single_clock_gate_zero,
                 )
 
@@ -201,6 +209,8 @@ class BackboneWrapper(nn.Module):
         canonical_positions=None,
         dense_valid_len=None,
         tubelet_valid_mask=None,
+        pjst_pair_scale=None,
+        pjst_pair_valid=None,
         single_clock_gate_zero=False,
     ):
         """Temporal Checkpointing for Video Backbone.
@@ -228,6 +238,8 @@ class BackboneWrapper(nn.Module):
                 canonical_positions=canonical_positions,
                 dense_valid_len=dense_valid_len,
                 tubelet_valid_mask=tubelet_valid_mask,
+                pjst_pair_scale=pjst_pair_scale,
+                pjst_pair_valid=pjst_pair_valid,
                 relative_physical_time_gate_zero=single_clock_gate_zero,
             )
 
