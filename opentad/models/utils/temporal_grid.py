@@ -3,6 +3,37 @@ from collections.abc import Mapping
 import torch
 
 
+def pjst_pair_metadata(actual_pair_coords, canonical_pair_coords, pair_valid=None):
+    """Build detached derivative-only PJST metadata for packed tubelets.
+
+    Coordinates are ``[B,24,8]`` pair starts/deltas; output is packed ``[B*24,8]``.
+    """
+    if actual_pair_coords.shape != canonical_pair_coords.shape or actual_pair_coords.ndim != 3:
+        raise ValueError("PJST coordinates must both have shape [B,24,8]")
+    if actual_pair_coords.shape[-2:] != (24, 8):
+        raise ValueError("PJST coordinates must have shape [B,24,8]")
+    if pair_valid is None:
+        pair_valid = torch.ones_like(actual_pair_coords, dtype=torch.bool)
+    if pair_valid.shape != actual_pair_coords.shape:
+        raise ValueError("pair_valid must match PJST coordinates")
+    valid = pair_valid.to(device=actual_pair_coords.device, dtype=torch.bool)
+    act = actual_pair_coords.to(dtype=torch.long)
+    can = canonical_pair_coords.to(device=act.device, dtype=torch.long)
+    act_delta = act
+    can_delta = can
+    if (valid & ((act_delta <= 0) | (can_delta <= 0))).any():
+        raise ValueError("valid PJST deltas must be positive")
+    exact = bool(torch.equal(act_delta[valid], can_delta[valid]))
+    scale = torch.ones_like(act_delta, dtype=torch.float32)
+    if not exact and valid.any():
+        scale[valid] = can_delta[valid].float() / act_delta[valid].float()
+    return {"actual_delta": act_delta.detach(), "canonical_delta": can_delta.detach(),
+            "pair_valid": valid.detach(), "pair_scale": scale.detach(),
+            "exact_uniform_identity": exact,
+            "packed_pair_scale": scale.reshape(-1, 8).detach(),
+            "packed_pair_valid": valid.reshape(-1, 8).detach()}
+
+
 def global_rank_clip_coordinates(
     irregular_selected_positions,
     dense_valid_len,
@@ -74,6 +105,12 @@ def global_rank_clip_coordinates(
         tubelet_valid = frame_valid
     actual = actual * tubelet_valid.to(dtype=actual.dtype)
     canon = canon * tubelet_valid.to(dtype=canon.dtype)
+    actual_pair = sanitized[:, : clips * clip_len].reshape(positions.shape[0], clips, clip_len // 2, 2)
+    canon_pair = canonical[:, : clips * clip_len].reshape(positions.shape[0], clips, clip_len // 2, 2)
+    pair_meta = pjst_pair_metadata(
+        actual_pair[..., 1] - actual_pair[..., 0], canon_pair[..., 1] - canon_pair[..., 0],
+        frame_valid.reshape(frame_valid.shape[0], clips, clip_len // 2, 2).all(-1),
+    )
     return {
         "actual": actual,
         "canonical": canon,
@@ -81,6 +118,7 @@ def global_rank_clip_coordinates(
         "irregular_selected_positions": positions,
         "irregular_dense_valid_len": lengths,
         "selected_valid_mask": slot_mask,
+        **pair_meta,
     }
 
 

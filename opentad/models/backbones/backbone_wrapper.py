@@ -94,7 +94,7 @@ class BackboneWrapper(nn.Module):
         # flatten the batch dimension and num_segs dimension
         batches, num_segs = frames.shape[0:2]
         actual_positions = canonical_positions = None
-        dense_valid_len_per_clip = tubelet_valid_mask = None
+        dense_valid_len_per_clip = tubelet_valid_mask = pair_scale = pair_valid = None
         if irregular_selected_positions is not None:
             from opentad.models.utils.temporal_grid import global_rank_clip_coordinates
             coords = global_rank_clip_coordinates(
@@ -108,6 +108,8 @@ class BackboneWrapper(nn.Module):
             actual_positions = coords["actual"].flatten(0, 1)
             canonical_positions = coords["canonical"].flatten(0, 1)
             tubelet_valid_mask = coords["tubelet_valid_mask"].flatten(0, 1)
+            pair_scale = coords["packed_pair_scale"]
+            pair_valid = coords["packed_pair_valid"]
             dense_valid_len_per_clip = (
                 coords["irregular_dense_valid_len"][:, None]
                 .expand(-1, coords["actual"].shape[1])
@@ -125,6 +127,7 @@ class BackboneWrapper(nn.Module):
                         self.temporal_checkpointing_chunk_dim,
                         actual_positions, canonical_positions,
                         dense_valid_len_per_clip, tubelet_valid_mask,
+                        pair_scale, pair_valid,
                         single_clock_gate_zero,
                     )
                 else:
@@ -134,6 +137,7 @@ class BackboneWrapper(nn.Module):
                         canonical_positions=canonical_positions,
                         dense_valid_len=dense_valid_len_per_clip,
                         tubelet_valid_mask=tubelet_valid_mask,
+                        pjst_pair_scale=pair_scale, pjst_pair_valid=pair_valid,
                         relative_physical_time_gate_zero=single_clock_gate_zero,
                     )
 
@@ -145,6 +149,7 @@ class BackboneWrapper(nn.Module):
                     self.temporal_checkpointing_chunk_dim,
                     actual_positions, canonical_positions,
                     dense_valid_len_per_clip, tubelet_valid_mask,
+                    pair_scale, pair_valid,
                     single_clock_gate_zero,
                 )
             else:
@@ -154,6 +159,7 @@ class BackboneWrapper(nn.Module):
                     canonical_positions=canonical_positions,
                     dense_valid_len=dense_valid_len_per_clip,
                     tubelet_valid_mask=tubelet_valid_mask,
+                    pjst_pair_scale=pair_scale, pjst_pair_valid=pair_valid,
                     relative_physical_time_gate_zero=single_clock_gate_zero,
                 )
 
@@ -201,6 +207,8 @@ class BackboneWrapper(nn.Module):
         canonical_positions=None,
         dense_valid_len=None,
         tubelet_valid_mask=None,
+        pjst_pair_scale=None,
+        pjst_pair_valid=None,
         single_clock_gate_zero=False,
     ):
         """Temporal Checkpointing for Video Backbone.
@@ -221,6 +229,8 @@ class BackboneWrapper(nn.Module):
             canonical_positions=None,
             dense_valid_len=None,
             tubelet_valid_mask=None,
+            pjst_pair_scale=None,
+            pjst_pair_valid=None,
         ):
             return self.model.backbone(
                 frames,
@@ -228,22 +238,29 @@ class BackboneWrapper(nn.Module):
                 canonical_positions=canonical_positions,
                 dense_valid_len=dense_valid_len,
                 tubelet_valid_mask=tubelet_valid_mask,
+                pjst_pair_scale=pjst_pair_scale,
+                pjst_pair_valid=pjst_pair_valid,
                 relative_physical_time_gate_zero=single_clock_gate_zero,
             )
 
         video_feat = []
         for chunk_index, mini_frames in enumerate(torch.chunk(frames, chunk_num, dim=chunk_dim)):  # B*N is chunked
             mini_actual = mini_canonical = mini_lengths = mini_valid = None
+            mini_scale = mini_pair_valid = None
+            if pjst_pair_scale is not None and chunk_dim == 2:
+                raise ValueError("PJST metadata cannot be aligned with temporal (dim=2) checkpoint chunks")
             if actual_positions is not None and chunk_dim == 0:
                 start = sum(x.shape[0] for x in torch.chunk(frames, chunk_num, dim=chunk_dim)[:chunk_index])
                 mini_actual = actual_positions[start:start + mini_frames.shape[0]]
                 mini_canonical = canonical_positions[start:start + mini_frames.shape[0]]
                 mini_lengths = dense_valid_len[start:start + mini_frames.shape[0]]
                 mini_valid = tubelet_valid_mask[start:start + mini_frames.shape[0]]
+                mini_scale = pjst_pair_scale[start:start + mini_frames.shape[0]]
+                mini_pair_valid = pjst_pair_valid[start:start + mini_frames.shape[0]]
             # we can use torch.cp.checkpoint to implement an efficient temporal checkpointing mechanism
             mini_feat = cp.checkpoint(
                 _inner_forward,
-                mini_frames, mini_actual, mini_canonical, mini_lengths, mini_valid,
+                mini_frames, mini_actual, mini_canonical, mini_lengths, mini_valid, mini_scale, mini_pair_valid,
                 use_reentrant=False,
             )
             video_feat.append(mini_feat)

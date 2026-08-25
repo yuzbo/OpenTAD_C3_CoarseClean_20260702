@@ -667,6 +667,8 @@ class Block(BaseModule):
         packed_stats: Optional[Dict[str, int]] = None,
         relative_physical_time: Optional[Tensor] = None,
         relative_physical_time_gate_zero: bool = False,
+        pjst_pair_scale: Optional[Tensor] = None,
+        pjst_pair_valid: Optional[Tensor] = None,
     ) -> Tensor:
         """Defines the computation performed at every call.
 
@@ -886,6 +888,20 @@ class VisionTransformerAdapter(BaseModule):
         b, _, _, h, w = x.shape
         h //= self.patch_size
         w //= self.patch_size
+        if pjst_pair_scale is not None:
+            if pjst_pair_scale.shape != (x.shape[0], 8):
+                raise ValueError("PJST pair scale must be [Bclips,8]")
+            if pjst_pair_valid is None:
+                pjst_pair_valid = torch.ones_like(pjst_pair_scale, dtype=torch.bool)
+            y = x.clone()
+            if not bool(torch.allclose(pjst_pair_scale, torch.ones_like(pjst_pair_scale))):
+                pairs = x.reshape(x.shape[0], x.shape[1], 8, 2, x.shape[3], x.shape[4])
+                m = (pairs[:, :, :, 0] + pairs[:, :, :, 1]).float() * 0.5
+                v = (pairs[:, :, :, 1] - pairs[:, :, :, 0]).float() * pjst_pair_scale[:, None, :, None, None] * 0.5
+                out = torch.stack((m - v, m + v), dim=3).to(dtype=x.dtype)
+                valid = pjst_pair_valid[:, None, :, None, None]
+                y = torch.where(valid, out, pairs).reshape_as(x)
+            x = y
         x = self.patch_embed(x)[0]
         if actual_positions is not None or canonical_positions is not None:
             if not self.relative_physical_time_residual:
