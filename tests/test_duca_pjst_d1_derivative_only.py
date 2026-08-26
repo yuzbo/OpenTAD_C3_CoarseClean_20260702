@@ -152,12 +152,15 @@ def test_explicit_formula():
 
 def test_constant_pair_invariance():
     x = torch.randn(1, 3, 16, 4, 4)
-    x[:, :, 1] = x[:, :, 0]  # constant pair 0
+    x[:, :, 1] = x[:, :, 0]  # constant pair 0 (frames 0 and 1)
     pair_scale = torch.full((1, 8), 5.0)  # arbitrary gap
     pair_valid = torch.ones((1, 8), dtype=torch.bool)
     exact_uniform = torch.zeros((1,), dtype=torch.bool)
     y = tg.apply_pjst_derivative_only(x, pair_scale, pair_valid, exact_uniform)
-    assert torch.equal(y, x)  # v = 0 -> no change at any gap
+    # v = 0 for the constant pair -> frames 0..1 unchanged at any gap.
+    assert torch.equal(y[:, :, :2], x[:, :, :2])
+    # non-constant pairs still receive the derivative transport.
+    assert not torch.equal(y[:, :, 2:], x[:, :, 2:])
 
 
 def test_gap_scaling_halves_derivative():
@@ -218,8 +221,8 @@ class _RecordingBackbone(nn.Module):
         super().__init__()
         self.calls = []
 
-    def forward(self, x, **kwargs):
-        self.calls.append(kwargs)
+    def forward(self, x, masks=None, metas=None, **kwargs):
+        self.calls.append({"masks": masks, "metas": metas, **kwargs})
         return x
 
 
