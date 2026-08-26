@@ -42,6 +42,16 @@ CATEGORY_PATH="${CATEGORY_PATH:-$BASE/thumos14/annotations/category_idx.txt}"
 ADATAD_PRETRAIN="${ADATAD_PRETRAIN:-$BASE/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 for path in "$VIDEO_ROOT" "$ANNOTATION_PATH" "$CATEGORY_PATH" "$ADATAD_PRETRAIN"; do [[ -r "$path" ]] || fail "canonical read-only path missing: $path"; done
 
+# Bind the verified canonical paths through the config's real dataset interface
+# (THUMOS14_* env vars consumed by
+# configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py before
+# it builds cfg.dataset.*).  tools/train.py reads cfg.dataset.*; the legacy
+# data.* cfg-options below never reached it, so they are removed.
+export THUMOS14_ANNOTATION_PATH="$ANNOTATION_PATH"
+export THUMOS14_CLASS_MAP="$CATEGORY_PATH"
+export THUMOS14_TRAIN_DATA_PATH="$VIDEO_ROOT"
+export THUMOS14_TEST_DATA_PATH="$VIDEO_ROOT"
+
 STAGE2_OFF_CONFIG="configs/adatad/thumos/duca_pjst_d1_stage2_off.py"
 STAGE2_ON_CONFIG="configs/adatad/thumos/duca_pjst_d1_stage2_on.py"
 STAGE1_CHECKPOINT="${DUCA_STAGE1_CHECKPOINT:-}"
@@ -69,7 +79,4 @@ export DUCA_STAGE1_CHECKPOINT_EPOCH=29
 if [[ "$MODE" == STAGE2_OFF ]]; then CFG="$STAGE2_OFF_CONFIG"; else CFG="$STAGE2_ON_CONFIG"; fi
 exec "$PYTHON" tools/train.py "$CFG" --seed 3407 \
   --cfg-options work_dir="${DUCA_STAGE2_WORK_DIR:-exps/thumos/adatad/duca_pjst_d1_${MODE,,}}" \
-  data.train.ann_file="$ANNOTATION_PATH" data.val.ann_file="$ANNOTATION_PATH" \
-  data.test.ann_file="$ANNOTATION_PATH" data.train.category_file="$CATEGORY_PATH" \
-  data.val.category_file="$CATEGORY_PATH" data.test.category_file="$CATEGORY_PATH" \
   model.backbone.custom.pretrain="$ADATAD_PRETRAIN"

@@ -486,3 +486,29 @@ def test_launcher_syntax():
     launcher = ROOT / "scripts/run_duca_pjst_d1_matched_cycle3_n16r4.sbatch"
     proc = subprocess.run([bash, "-n", str(launcher)], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
+
+
+def test_launcher_binds_dataset_env_and_drops_stale_data_overrides():
+    src = (ROOT / "scripts/run_duca_pjst_d1_matched_cycle3_n16r4.sbatch").read_text(encoding="utf-8")
+    exec_call = 'exec "$PYTHON" tools/train.py'
+    exec_idx = src.index(exec_call)
+    before_train = src[:exec_idx]
+    # The four exact dataset variables are exported through the config's real
+    # THUMOS14_* interface before tools/train.py loads cfg.dataset.*.
+    assert 'export THUMOS14_ANNOTATION_PATH="$ANNOTATION_PATH"' in before_train
+    assert 'export THUMOS14_CLASS_MAP="$CATEGORY_PATH"' in before_train
+    assert 'export THUMOS14_TRAIN_DATA_PATH="$VIDEO_ROOT"' in before_train
+    assert 'export THUMOS14_TEST_DATA_PATH="$VIDEO_ROOT"' in before_train
+    # No stale data.train/data.val/data.test cfg-options remain anywhere; these
+    # silently built an unused cfg.data tree that never reached cfg.dataset.*.
+    for stale in (
+        "data.train.ann_file",
+        "data.val.ann_file",
+        "data.test.ann_file",
+        "data.train.category_file",
+        "data.val.category_file",
+        "data.test.category_file",
+    ):
+        assert stale not in src
+    # The real custom pretrain binding is retained (not moved to data_preprocessor).
+    assert 'model.backbone.custom.pretrain="$ADATAD_PRETRAIN"' in src
