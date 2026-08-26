@@ -167,6 +167,20 @@ def main():
     if not off_root or not on_root or off_root == on_root:
         raise SystemExit("OFF/ON output roots must be distinct and non-empty")
 
+    # 7. Stage-1 state identity: both arms admit no SingleClock but register the
+    # zero architecture-identity scalar required by the frozen epoch-29 state
+    # dict (backbone.model.backbone.blocks.0.relative_physical_time_scale).
+    for name, cfg in (("OFF", off), ("ON", on)):
+        model = cfg.get("model", {})
+        if model.get("single_clock_admission") is not False:
+            raise SystemExit(f"{name} arm must set single_clock_admission=False")
+        bb = model.get("backbone", {}).get("backbone", {})
+        if bb.get("relative_physical_time_residual") is not True:
+            raise SystemExit(
+                f"{name} arm must set relative_physical_time_residual=True "
+                "(registers the zero block-0 identity scalar)"
+            )
+
     print(
         "PASS PJST-D1 matched configs: "
         "sole_distinction=[work_dir, pjst_derivative_only] "
