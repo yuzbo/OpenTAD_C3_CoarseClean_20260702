@@ -47,6 +47,19 @@ max_chars: 8000
   complete pass, then take the median of the four pass estimates per arm before
   forming R1/K100 ratios. The raw rows contain the required fields, so this correction
   requires no replay and must be disclosed separately from the pooled summary.
+- **Known terminal-evidence coverage deviations.** The current profiler persists one
+  canonical prediction file per arm and checks repeated-pass prediction equality in
+  memory; per-pass evaluator vectors live in `profile.pass_receipts`, rather than in
+  eight separate prediction/vector files. `cost_samples.jsonl` preserves the arm,
+  pass, ordered dataset-item identity and cost rows needed to reconstruct population
+  identity and pass-level estimates, but no separate population receipt is emitted.
+  Missing or invalid power samples abort integration, yet the artifacts expose no
+  quantitative coverage/gap summary and measure no temperature; observed order drift
+  must not be called thermal drift. Final video-level NMS time and energy are amortized
+  across window rows. Do not synthesize absent files or metadata after the run. At
+  terminal state, disclose produced, reconstructible and unmeasured evidence separately
+  and ask the fresh Pro review to judge whether it is claim-valid, diagnostic-only, or
+  requires a new bounded measurement.
 
 ## Full-representation temporal reuse adjudication (2026-08-26)
 

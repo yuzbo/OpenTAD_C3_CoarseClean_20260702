@@ -8,6 +8,7 @@
 - **不能主张：** 36% 原生 token 减少尚未转化为已测得的延迟、显存或能耗收益；也没有多种子、跨检测器或跨数据集证据。
 - **当前实验：** 旧回放 job `1257281` 的 raw/舍入绑定缺陷已由最小候选 `e9323448f6cd78b99bb3de53fd9ffb55f3676d65` 修正，并通过 focused tests、独立 Critic 和结果盲 Evaluator。唯一替代回放 job `1258299` 正在同一冻结协议下运行；目前没有可解释的新性能或成本结果。
 - **下一项决定性任务：** 等待 job `1258299` 终态并只在八个 pass、`profile.json`、`terminal_receipt.json`、预测和功耗轨迹完整后判断 BPNS-R1 的效率主张继续、缩小还是停止。终态主估计必须从 `cost_samples.jsonl` 按 pass 分组：每个 pass 先计算完整 decode→Soft-NMS p50 与总能耗，再对每臂四个 pass 取中位数；profiler 顶层跨窗口 pooled comparison 只作描述性结果。禁止读取 live/partial 数字或重复提交。
+- **已知终态证据覆盖偏差：** 当前 profiler 每个 arm 只持久化一份 canonical prediction，并在内存中核对重复 pass 的 prediction 相等；每个 pass 的 evaluator 向量嵌入 `profile.pass_receipts`，而不是另存八份 prediction/evaluator 文件。`cost_samples.jsonl` 足以按 `(arm, pass_index, dataset_item_id)` 重建完整 population 与 pass-level 主估计，但没有单独的 population receipt。功耗采样缺失或非法会使运行失败，因此成功终态可间接证明测量窗口完成了积分；不过产物不包含定量 coverage/gap 统计，也未测量温度，故只能报告观察到的功耗/延迟顺序漂移，不能称为热漂移。视频级 final NMS 时间与能耗被摊入窗口行，必须明确披露。不得事后伪造缺失的逐 pass 文件或元数据；终态后把直接证据、可重算证据和未测信息原样交给 fresh Pro，由其独立判断该轮证据能否支持论文主张、仅作诊断，或需要新的有界测量。
 
 以下按日期和实验族保留完整证据与负结果；运行标识用于定位原始材料，不替代上述科学判断。
 

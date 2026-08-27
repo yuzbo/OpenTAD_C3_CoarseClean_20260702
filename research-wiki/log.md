@@ -4623,3 +4623,15 @@ append_only: true
   final-NMS 的 `gpu_energy_j`，因此终态可在不修改作业、不重放且不读取局部结果的前提下，
   严格重算每 pass p50、每 pass 总能耗及其四-pass 中位数。后续必须同时披露该冻结主估计与
   profiler pooled 描述性汇总，不能直接用后者应用 5% 论文门槛。
+
+- 2026-08-28：在不读取 job `1258299` 的 live/partial 数值、不查询或干预 Slurm 的前提下，完成
+  profiler 终态证据覆盖的结果盲代码/协议审计。直接产出为每臂一份 canonical prediction、
+  `profile.pass_receipts` 内的逐 pass evaluator 向量、逐窗口 `cost_samples.jsonl`、功耗轨迹与终态
+  profile/receipt；重复 pass prediction 只在内存中检查相等。原始行保存 `arm`、`pass_index`、
+  有序 dataset-item 身份及成本字段，足以重建 population、逐 pass p50/总能耗和四-pass 中位数，
+  因而这些属于可重算证据，不需要也不授权重放。当前未直接产出八份独立 prediction/evaluator
+  文件、单独 population receipt、定量功耗 coverage/gap 统计、pass/window 时间区间或温度；不得
+  事后合成这些材料，也不得把观察到的功耗顺序漂移称为热漂移。功耗样本缺失或非法会使积分失败，
+  所以成功终态只能间接证明测量窗口完成积分。final video-level NMS 的时间与能耗被摊销到窗口行，
+  终态报告必须披露。该审计没有形成性能结论、没有改变科学路线，也不授权取消、重启或追加实验；
+  终态后应把直接、可重算和未测证据连同全部异常交给 fresh Pro，独立裁决其论文证据充分性。

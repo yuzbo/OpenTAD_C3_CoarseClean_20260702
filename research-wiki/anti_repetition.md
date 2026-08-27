@@ -39,6 +39,18 @@ updated: 2026-08-28
    grouped by `(arm, pass_index)`; retain the pooled profiler summary only as a
    separately labelled descriptive statistic. This uses existing raw evidence and
    does not authorize a rerun or code change while job `1258299` is active.
+   Do not fabricate eight per-pass prediction files, eight standalone evaluator-vector
+   files, a separate population receipt, quantitative power-coverage metadata, or
+   temperature measurements after terminal state. The current code produces one
+   canonical prediction per arm, verifies repeated predictions in memory, embeds
+   per-pass evaluator vectors in `profile.pass_receipts`, and retains ordered raw rows
+   sufficient to reconstruct the pass population and frozen estimator. Treat these as
+   direct versus reconstructible evidence, not as identical artifacts. Do not relabel
+   observed latency or power order drift as thermal drift because temperature is not
+   measured. Disclose that final video-level NMS cost is amortized across window rows.
+   A fresh Pro review, not Codex post-hoc completion, must decide whether the terminal
+   package is sufficient for a paper claim, diagnostic only, or needs a new bounded
+   measurement.
 
 0. The exact `FULL_REPRESENTATION_TEMPORAL_REUSE-v001` route is terminal
    `STOP_BEFORE_IMPLEMENTATION` at revision `bffff43d...`. Do not implement a
