@@ -5,6 +5,18 @@ append_only: true
 
 # Research Wiki Log
 
+- 2026-08-24：DSR6-KV 最小实现完成于 clean/pushed
+  `3260cd39154069138c6b1757326372cc3b73754e`（父 `4e940b…`，分支
+  `codex/zoomtoken-dsr6-kv-v001`）。前 6 层复用 FULL64，后 6 层复用固定 K32 的 MOD32-KV，
+  保留全部非 detach K64 K/V 与全 K64 Adapter；无新参数、cache、transport 或 loss。静态、
+  编译、Shell 与小型无数据 Torch 前后向通过；完整 pytest 受本机 DLL/OpenMMLab 环境阻断。
+  独立 Critic `AUDIT_PASS`。
+- 2026-08-24：结果盲 PRE_RUN `READY`。正确 N16R4 端点只读确认 canonical 411 MP4、0
+  断链，注释/类别映射/VideoMAE-S/OpenTAD 环境存在，GitHub ref 精确指向 `3260cd39…`，
+  拟定根 `/data/run01/sczc063/yuzibo/projects/zoomtoken_dsr6_3260cd39_seed42_20260824`
+  不存在，`/data` 可用约 1.65 TB。尚未创建远端 source/root、未提交 Slurm、未读取结果；
+  下一步仅请求唯一 seed42/双卡/60-epoch DSR6-KV 训练授权。
+
 - 2026-07-11：初始化 C3/DUCA research-wiki。
 - 2026-07-11：逐轮读取主任务 191 轮，归档 158 条用户侧原始消息。
 - 2026-07-11：登记实现代理、论文代理和早期目标任务的近期记录。
@@ -2810,3 +2822,1796 @@ append_only: true
   The scheduler reports `PENDING (Priority)`, so the experiment advances to
   `experiment_running` but no cost, Pareto, seed authorization, or paper claim
   exists yet.
+
+- 2026-08-12: accepted first-author decision
+  `PRO_RUNTIME_FAIRNESS_AND_CAUSAL_STUDY_DECISION-v001` preserves the SCNR-Core
+  route and its seed-3407 cost falsifier but revises the fair-runtime gate.
+  Generic N16R4 allocation is only a carrier: a machine-generated GPU/software
+  attestor must run after allocation and immutable-container launch yet before
+  model, CUDA, data, checkpoint, warmup, metric, or cost work. All preflight and
+  formal passes must match one runtime class; missing, late, requeued, fallback,
+  or mismatched identities force no-survivor termination. This is a design
+  decision, not an experiment. If the runtime and existing cost gate pass, the
+  only next claim-bearing matrix is F/N/Q/D: full continuous-ROI SCNR-Core,
+  no-ROI, free native-token, and dense controls. Residual calibration remains an
+  anti-collapse diagnostic rather than the paper headline.
+
+- 2026-08-14: ARIS CPR material pass (session `zoomtoken-aris-cpr-20260814-v001`),
+  a first-author **proposal**, not an accepted decision. Paper endpoint restated
+  per human constraint: reducing redundant spatial recomputation in end-to-end
+  offline TAD while preserving boundary-sensitive/high-IoU detection; continuous
+  ROI and F/N/Q/D are mechanism/ablation tools, not the headline. Three
+  non-equivalent routes: (1) TAD-aware dynamic spatial compute routing
+  (per-tubelet saliency + dynamic `K_t` + ragged heavy on selected tokens; ROI =
+  optional prior, residual = anti-collapse calibration) — RECOMMENDED; (2)
+  original SCNR exact-B full modifier family — REJECTED (mechanism bundling, M2
+  role collapse `0/0/3,342,336`, overengineering); (3) aggressive spatiotemporal
+  joint window budget — REJECTED (causal+systems risk, staged out by frozen
+  exact-B rule). Clean routing candidate `cd6463df…` is static wiring evidence
+  only; `b157433d…` is a closed detector-fixture negative. Replay/full training
+  remain blocked pending a fresh Pro decision plus PRE_RUN/runtime/data/resource
+  gates.
+
+- 2026-08-14: P1 `{DN,U,R,Q}` transport recovery (session
+  `zoomtoken-aris-p1-dnurq-20260814-v001`). Fresh exact-Project ChatGPT Pro has
+  returned `PRO_DYNAMIC_SPATIAL_ROUTING_DECISION-v001 = REVISE`, **accepting the
+  Q-core route**: paper endpoint is reducing redundant VideoMAE spatial heavy
+  recomputation in end-to-end offline TAD while preserving boundary/high-IoU
+  localization; continuous ROI and calibrated residual are demoted to later
+  causal controls (G/N/F), not the headline. First real-video P1 screen frozen
+  as `{DN, U, R, Q}` @ seed 3407 with `DO` (official dense) as anchor; `B=24576`
+  (384 tubelet × 64) with dynamic token identity/position; seeds 3408/3409 only
+  on admission; matched official THUMOS14/AdaTAD detector/loss/NMS/split/9,600
+  updates/AMP/EMA; high-IoU and boundary estimands; selector-inclusive
+  decode-to-NMS p50/p95 + memory/energy census; Pro success/failure/stop rules
+  (Q beats uniform+random AND cost ≤0.85× dense; F/D Pareto metric lower bound
+  ≥−0.50 pp and cost upper ≤0.85; three-seed F/N/Q thresholds). Durable packet
+  written to `docs/aris/ARIS_P1_DNURQ_PACKET-2026-08-14.md`. Prior seed-3407
+  residual-centering, cold paired cost, F/N/Q/D static wiring `AUDIT_PASS`, and
+  `cd6463df…` are diagnostic or static only; no actual P1/real-video/GPU result
+  exists. Replay/full training remain blocked on runtime-identity attestation +
+  seed-3407 steady-cost admission + `PRE_RUN_READY`.
+
+- 2026-08-14: result-blind P1 PRE_RUN intake returned `PRE_RUN_NOT_READY`.
+  The Q-core route and its real-video first screen are unchanged; clean static
+  candidate `a6b81095…` only establishes configuration/validator wiring, not
+  runtime, accuracy, energy, or paper evidence. A six-existing-file,
+  one-entry-point realization plan can add the five-arm deployment, allocation-
+  time runtime attestation, selector-inclusive raw-video cost census, and
+  no-survivor finalizer without a new platform. It made no edits because four
+  evaluator semantics are not scientifically frozen: short-action partition,
+  start/end boundary definition, high-IoU decomposition, and Q's dense cost
+  comparator. These require one narrow scientific clarification; no P1 launch,
+  replay, training, metric, or cost conclusion is opened.
+
+- 2026-08-14: exact-Project Pro decision
+  `PRO_G5_FOUR_DEFINITION_DECISION-v001 = CONTINUE` closed only the four P1 G5
+  evaluator ambiguities. It fixes official source-video GT short actions as
+  `0 < d <= 5.0` seconds (report-only); class-consistent score-ordered
+  one-to-one inclusive-0.50 boundary matching with duration-normalized errors
+  and separately counted unmatched instances (report-only); seven exhaustive
+  GT high-IoU bins plus three unmatched-prediction bins (report-only); and DN
+  as the sole Q p50/gross-energy denominator, with both one-sided 95% upper
+  bounds `<=0.85`. The mandatory DO anchor is report-only. The full seed-3407
+  `DO/DN/U/R/Q` matrix validly fails as `STOP_Q_CORE_P1`; any malformed or
+  incomplete matrix is `NO_SURVIVOR_INVALID_P1`. The next bounded work is the
+  already proposed six-file G1/G2/G5 realization, then independent Critic and
+  result-blind Evaluator. No data, GPU, P1 result, performance, or cost evidence
+  was produced by this decision.
+
+- 2026-08-14: N16R4 read-only resource inventory confirmed official annotation
+  and class-map availability, 200 development validation MP4s, a
+  136-window/40-cluster manifest, a VideoMAE-S pretrain identity, an immutable
+  UBI9.6 SIF and conda/pip lock. The first carrier witness failed before a CUDA
+  kernel because of nounset/profile ordering; an independently reviewed
+  agent-follows-doc witness `1238193` then completed in 32 seconds on RTX4090
+  with Torch 2.0.1/NumPy 1.23.5 and a finite seeded CUDA matmul. This is runtime
+  carrier evidence only—not P1, model efficacy, cost, fairness, or paper
+  evidence. P1 remains closed pending a two-GPU preflight/leaf equality receipt,
+  clean GitHub-resolvable `020bade…` origin reference and frozen preflight
+  parent, official input-protocol binding, and a single-use empty run root with
+  capacity/storage evidence.
+
+- 2026-08-15: the clean focused P1 candidate
+  `020bade11a448f07a8b9e2aef1dd05c6f5fae121` was recovered at
+  `/data/run01/sczc063/yuzibo/runtime/zoomtoken_p1_020bade/source`, with
+  `https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702.git` origin and
+  `refs/remotes/origin/codex/zoomtoken-p1-dnurq-v001` at the same SHA; the tree
+  is clean. The verified repair parent exists remotely (file identity
+  `f8ef174c...bd77e3`). One current-commit official-comparable F0 protocol gate
+  was already submitted under
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_020bade_20260815_0330`: PL/ST/
+  world2/finalizer `1238199/1238200/1238201/1238202` began `PENDING`. It is the
+  sole gate to monitor, never to resubmit. The RTX4090 carrier witness
+  `1238193` (Torch 2.0.1, NumPy 1.23.5, CUDA visible) plus SIF
+  `45c313...6e82` and lock `306927...8437` remain carrier facts. F0/env facts
+  are neither efficacy, accuracy, cost nor paper evidence. Only terminal F0
+  PASS with matched source/commit/protocol/runtime identities can mark P1
+  deployable; every other terminal outcome keeps it closed.
+
+- 2026-08-15: the first `020bade…` F0 is terminal but not a scientific event:
+  world2 `1238201` completed `0:0`, while PL/ST `1238199/1238200` failed `1:0`
+  before model load because the official DO config had no `georoute_protocol`.
+  Finalizer `1238202` wrote `OFFICIAL_COMPARABLE_PREFLIGHT_HOLD`, `metrics={}`
+  and `official_test=false`. This is a deterministic configuration-binding
+  interface defect, not efficacy, accuracy, latency, energy, or cost evidence.
+  Minimal clean successor `0351832f7e4203312b9ed9d6323a47ef4be33b2f` (parent
+  `020bade…`) changes only the pilot contract and its focused test: it creates
+  `georoute_protocol={}` only if absent before writing the existing status and
+  never overwrites a present mapping. Independent default-agent audit passed and
+  immutable-SIF/lock focused pytest passed `26` tests. Clean remote source is
+  `/data/run01/sczc063/yuzibo/runtime/zoomtoken_p1_0351832f/source`, with the
+  exact GitHub origin and `refs/remotes/origin/codex/zoomtoken-p1-f0-binding-v001`
+  at the same clean SHA. The sole corrected no-performance F0 is already
+  running under
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_0351832f_20260815_0340`:
+  PL/ST/world2/finalizer `1238210/1238211/1238212/1238213` initially
+  `RUNNING/RUNNING/RUNNING/PENDING`; its submission receipt is
+  `runtime/zoomtoken_p1_0351832f/preflight_submit_20260815_0340.json`. Only its
+  terminal PASS with matched source/ref/protocol/input/runtime identities can
+  make P1 deployable; it must not be resubmitted and cannot provide a paper
+  result.
+
+- 2026-08-15: read-only terminal monitoring of the sole corrected F0 found no
+  admissible PASS: PL/ST/world2/finalizer `1238210/1238211/1238212/1238213`
+  are `FAILED 1:0/FAILED 1:0/COMPLETED 0:0/FAILED 1:0`. The finalizer entered
+  the immutable N16R4 environment but crashed in
+  `finalize_georoute_official_comparable_preflight.py` while converting
+  `summary["final_scale"] = None` with `float(...)`. No valid finalizer receipt,
+  metric, official-test access, accuracy, latency, energy, cost or P1 admission
+  exists. This is a second deterministic finalizer/receipt-representation
+  implementation blocker, not a scientific failure. Automatic resubmission is
+  prohibited; P1 remains closed as `F0_FINALIZER_FINAL_SCALE_NONE_TYPEERROR`
+  pending a separately authorized bounded correction.
+
+- 2026-08-15: terminal intake refined the second F0 root's exact failure
+  chain. Its PL/ST cells `1238210/1238211` reached model construction and real
+  training-data loading but failed before the first update because the native
+  official AdaTAD backbone has no `set_successful_update_index`; world2
+  `1238212` passed. The invocation had mistakenly treated the immutable official
+  anchor as `GEOROUTE_SOURCE_CONFIG`, instead of using
+  `configs/adatad/thumos/georoute_adatad_development_base.py` as selector source
+  and the official config only as `GEOROUTE_OFFICIAL_REFERENCE_CONFIG`. The
+  finalizer `1238213` then repeated the failure-receipt `final_scale=None`
+  `float(...)` crash and wrote no finalization. There are no metrics,
+  checkpoints, test access, efficacy or cost results.
+
+- 2026-08-15: clean correction `a62e5fe5a0d2601a2b9bb3213ec027e56158e6ff`
+  on `codex/zoomtoken-p1-f0-binding-v001` received independent audit PASS. It
+  makes the successful-update hook optional only for dense-native `DO` (sparse
+  arms retain it); initializes a missing `georoute_protocol` container without
+  overwriting a present field; and maps absent/invalid/infinite failure
+  `final_scale` to fail-closed HOLD. Relevant local/remote focused tests passed
+  (`26 + 2`); one unmodified historical string assertion mismatch is unrelated.
+  The sole new no-performance F0 is
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_a62e5fe5_20260815_0355`, with
+  PL/ST/world2/finalizer `1238221/1238222/1238223/1238224`. Only a matching
+  terminal PASS can progress P1; no duplicate F0 or P1 submission is allowed.
+
+- 2026-08-15: `a62e5fe5…` F0 is terminal PASS only for
+  `FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`: PL/ST/world2/finalizer
+  `1238221/1238222/1238223/1238224` all completed `0:0`, while performance,
+  paper and official-test permissions remained false. The initial P1 attempt
+  failed closed before `sbatch`: its deployer incorrectly required the official
+  DO config to match the formal Georoute bridge hash, so zero P1 jobs existed.
+  This is an infrastructure binding negative, not model evidence. Clean pushed
+  `f45fb8db9130c35d6f3b191e1292fa2a4a6c205c` fixes only that comparison:
+  P1 uses `official_config_sha256`; formal continues to use
+  `georoute_source_config_sha256`. Focused static checks passed `16`. The sole
+  final no-performance F0 is
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_f45fb8db_20260815_0405`, with
+  PL/ST/world2/finalizer `1238229/1238230/1238231/1238232`. A matching PASS may
+  release exactly one real THUMOS14 P1 `DO/DN/U/R/Q` matrix; no duplicate F0 or
+  P1 submission is permitted.
+
+- 2026-08-15: the `f45fb8db…` F0 advanced only the no-performance protocol
+  gate. The first real P1 deployment then failed closed at `sbatch --test-only`:
+  N16R4 supplies 55 GB per GPU (110 GB across the frozen two-GPU allocation),
+  but the implementation requested `192000 MiB`; no P1 run namespace or Slurm
+  job was created. This is a deterministic resource-shape binding failure, not
+  scientific, accuracy, latency, energy, cost, or paper evidence. Clean pushed
+  `c875ea62ea4f480a9039335a7c171c630d703a9e` changes only that request to the
+  frozen two-GPU `96000 MiB` shape and passed 16 focused static checks. The sole
+  current no-performance F0 is
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_c875ea62_20260815_0415`, with
+  PL/ST/world2/finalizer `1238287/1238288/1238289/1238290`. It is the only
+  F0 population to monitor; no duplicate F0/P1 submission is permitted.
+
+- 2026-08-15: the sole `c875ea62…` F0 is terminal PASS. PL/ST/world2/finalizer
+  `1238287/1238288/1238289/1238290` all completed `0:0`; finalization records
+  `PASS_OFFICIAL_COMPARABLE_PREFLIGHT_ONLY` and
+  `FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`, with empty performance metrics and
+  every performance, paper and official-test permission false. The bound remote
+  source is clean: `HEAD` and
+  `refs/remotes/origin/codex/zoomtoken-p1-f0-binding-v001` both resolve to
+  `c875ea62ea4f480a9039335a7c171c630d703a9e` at the frozen GitHub origin. Its
+  two-rank KAT records RTX4090 ranks with Torch 2.0.1/CUDA 11.8. This is
+  deployment/protocol evidence only: it makes exactly one atomic seed-3407 P1
+  `DO/DN/U/R/Q` matrix deployable, but is not a result, metric, cost, energy or
+  paper claim. P1 must still fail close on its own input and per-leaf runtime
+  attestations before model/data/checkpoint access.
+
+- 2026-08-15: final executable `519afd85ec18484c8cdd91c68ca3db52e404ad35`
+  (branch `codex/zoomtoken-p1-f0-binding-v001`) fixed only P1's official-DO
+  hash binding and uses the N16R4 site-default memory after the site rejected
+  explicit `--mem`; 17 focused static checks passed. Its F0 root
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_519afd85_20260815_0425` is
+  terminal `FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED` with PL/ST/world2/finalizer
+  `1238347/1238348/1238349/1238350` all `COMPLETED 0:0`; official test,
+  performance and paper permissions remain false. The single real-video P1
+  root `/data/run01/sczc063/yuzibo/zoomtoken_p1_dnurq_519afd85_seed3407_20260815_0430`
+  was atomically released as `RELEASED_ATOMIC_P1_FIFTEEN_JOB_DAG`: runtime
+  `1238367`, `DO/DN/U/R/Q` stages `1238368/1238369/1238370/1238371/1238372`,
+  eight cost leaves `1238373–1238380`, and finalizer `1238381`. At intake the
+  runtime preflight was Priority and all dependents pending. This is an
+  experiment-running status only: no model, accuracy, latency, energy, cost,
+  checkpoint, prediction or paper conclusion exists. Earlier F0 source-role,
+  pre-submit hash, and resource-shape failures remain infrastructure negatives;
+  no duplicate, requeue, retry or partial-arm interpretation is permitted.
+
+- 2026-08-15: the one real-video P1 namespace
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_dnurq_519afd85_seed3407_20260815_0430`
+  is terminal `INVALID_P1_MATRIX / NO_SURVIVOR_INVALID_P1`. Runtime `1238367`,
+  stages `1238368–1238372`, cost leaves `1238373–1238380`, and finalizer
+  `1238381` all exited within 1–2 seconds. No runtime-preflight, video, model,
+  checkpoint, metric, cost, performance or paper evidence was created. The
+  exact launch defects are: checking for `apptainer` before loading its module;
+  retaining forbidden inner `srun --mem=192000M`; and finalizer validation of
+  JSON insertion order (`tuple(mapping)`) after sorted-key serialization rather
+  than the exact key set. This is an immutable launch implementation negative,
+  not a Q-core falsification; this namespace cannot be retried, requeued,
+  resumed, supplemented or read as a partial result.
+
+- 2026-08-15: a distinct correction epoch is clean/pushed at
+  `57ffdf32a26629d73ef161dffa90b85199441425`. It sources `/etc/profile` before
+  nounset, loads apptainer only immediately before host container entry, inherits
+  site-default inner-step memory, and validates stage/cost maps by exact key set.
+  Focused checks (`17`) and `bash -n` pass; this is implementation evidence only.
+  The sole active no-performance F0 is
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_57ffdf32_20260815_0440`, with
+  PL/ST/world2/finalizer `1238436/1238437/1238438/1238439`. Only a fully matching
+  terminal PASS may authorize one new P1 epoch; no old P1 artifact or identifier
+  is reusable, and no duplicate F0/P1 submission is permitted.
+
+- 2026-08-15: the exact-commit F0 for
+  `57ffdf32a26629d73ef161dffa90b85199441425` is terminal PASS at
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_57ffdf32_20260815_0440`:
+  PL/ST/world2/finalizer `1238436/1238437/1238438/1238439` all completed `0:0`
+  and finalization is `FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`. It contains no
+  model result, test, performance, cost, or paper evidence. It released one
+  distinct corrected P1 root
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_dnurq_57ffdf32_seed3407_20260815_0445`:
+  runtime `1238455`; `DO/DN/U/R/Q` `1238456–1238460`; cost leaves
+  `1238461–1238468`; and finalizer `1238469`. The scientific contract is
+  unchanged, but this is a fresh implementation epoch. At intake the runtime
+  job was pending by Priority, so no preflight, model, checkpoint, metric,
+  latency, energy, cost, official-test, or paper conclusion exists. Monitor only
+  this exact population; the invalid `519afd85…` epoch remains sealed and is
+  never retried or reused.
+
+- 2026-08-15: the distinct P1 namespace
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_dnurq_57ffdf32_seed3407_20260815_0445`
+  is terminal `INVALID_P1_MATRIX / NO_SURVIVOR_INVALID_P1`. Runtime `1238455`,
+  stages `1238456–1238460`, cost leaves `1238461–1238468`, and finalizer
+  `1238469` all failed before video, model, runtime-attestation, checkpoint,
+  metric, or cost evidence. The SIF lacks `git`, while the stage script repeated
+  `git rev-parse` after container entry. This is a deterministic
+  source-identity handoff infrastructure negative, not a Q-core falsification
+  or real-video result; the namespace is sealed and cannot be retried, requeued,
+  resumed, supplemented, or partially interpreted.
+
+- 2026-08-15: clean pushed `99cb99a2694812cc0f58694001c24bb22a9bf578` makes
+  only the source-identity handoff correction that avoids depending on
+  inner-container `git`; bash syntax and the focused static suite (`17`) pass,
+  and the remote source is clean. Its sole no-performance F0 is
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_99cb99a2_20260815_0500`, with
+  PL/ST/world2/finalizer `1238474/1238475/1238476/1238477`. It awaits central
+  classification. No duplicate P1 epoch is submitted, and this F0 has no
+  efficacy, test, metric, cost, energy, or paper-evidence meaning.
+
+- 2026-08-15: exact-commit F0 for clean pushed
+  `99cb99a2694812cc0f58694001c24bb22a9bf578` is terminal at
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_99cb99a2_20260815_0500`: PL/ST/
+  world2/finalizer `1238474/1238475/1238476/1238477` all completed `0:0`, and
+  finalization is `FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED` with official test
+  closed. It is no-performance protocol admission only. The sole distinct
+  real-video P1 root
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_dnurq_99cb99a2_seed3407_20260815_0505`
+  was atomically released with runtime `1238494`; `DO/DN/U/R/Q`
+  `1238495–1238499`; cost leaves `1238500–1238507`; and finalizer `1238508`.
+  No metric, runtime-attestation, video/model/checkpoint, latency, energy, cost,
+  official-test, or paper result exists. Central alone monitors this epoch; no
+  duplicate submission, cancellation, requeue, retry, or partial-arm inference
+  is permitted.
+
+- 2026-08-15: the P1 epoch
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_dnurq_99cb99a2_seed3407_20260815_0505`
+  is terminal pre-data `INVALID_P1_MATRIX / NO_SURVIVOR_INVALID_P1`. Runtime
+  `1238494`, stages `1238495–1238499`, cost leaves `1238500–1238507`, and
+  finalizer `1238508` stopped before data, model, checkpoint, metric, or cost
+  work because N16R4 RTX4090 `nvidia-smi` emits the literal MIG field `[N/A]`,
+  while the runtime attestor accepted only `N/A`. This is a deterministic
+  attestor-normalization infrastructure negative, not Q-core falsification or
+  real-video evidence; the namespace is sealed and never retried or reused.
+
+- 2026-08-15: independent single-GPU probe `1238509` reproduced `[N/A]`.
+  Clean pushed `2683906203c46ef9201b263787bfe614b636d0b4` normalizes only
+  `[N/A] -> N/A`; its focused suite (`17`) passes. Independent two-GPU P1
+  runtime preflight `1238510` passes the exact RTX4090/SIF/Torch 2.0.1/CUDA 11.8/
+  dependency class without data or model access. The sole new no-performance F0
+  is `zoomtoken_p1_f0_26839062_20260815_0520`, jobs
+  `1238515/1238516/1238517/1238518`, currently running. No duplicate full P1 is
+  authorized before matching F0 PASS; none of these receipts is efficacy, test,
+  metric, cost, energy, or paper evidence.
+
+- 2026-08-15: exact-commit F0 for clean frozen
+  `75c8f6e8c2f433c85ed8b8d488f3c867e5652d6b` passed at
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_75c8f6e8_20260815_0545`:
+  PL/ST/world2/finalizer `1238554/1238555/1238556/1238557` all completed `0:0`.
+  Finalization is `PASS_OFFICIAL_COMPARABLE_PREFLIGHT_ONLY /
+  FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`; the world-two FP32 DDP KAT passed and
+  official test remains closed. Its finalization file identity is
+  `a2a146694f863ca32773294cc583b168e79d9cda44c10c6119875f5b63c9b9a8`.
+  This is protocol admission only, not performance evidence.
+
+- 2026-08-15: the sole real-video P1 root
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_dnurq_75c8f6e8_seed3407_20260815_0520`
+  was atomically submitted under `ZOOMTOKEN_P1_DNURQ_V001`, seed 3407, with
+  `DO/DN/U/R/Q`. Runtime preflight is `1238573`; accuracy cells are
+  `1238574–1238578`; cost leaves `1238579–1238586`; and finalizer `1238587`.
+  The real THUMOS14 validation inputs, official AdaTAD config, VideoMAE
+  checkpoint, source commit/ref, SIF, dependency lock and prior F0 finalization
+  are bound. Q retains global exact `B=24576`, dynamic `K_t`, ragged no-padding
+  execution; Q/DN cost uses the frozen 136-window/40-cluster/10k-bootstrap
+  one-sided upper-bound `<=0.85` gate, while DO is mandatory report-only.
+  Official test remains closed. This is `experiment_running` only: no metric,
+  checkpoint, latency, energy, cost, test, or paper result exists. Only a
+  complete matching finalizer can determine the next step; no duplicate,
+  cancellation, requeue, retry, or partial-arm inference is permitted.
+
+- 2026-08-15: P1 root
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_dnurq_75c8f6e8_seed3407_20260815_0520`
+  is terminal `NO_SURVIVOR_INVALID_P1` before video or model access. Runtime
+  preflight passed, but all accuracy/cost leaves failed before data, model or
+  checkpoint creation because the minimal SIF intentionally contains no `git`
+  while the container stage runner repeated `git status`. Jobs `1238573–1238587`
+  are terminal, with completed cells `0` and cost leaves `0`. This is a
+  deterministic container source-identity infrastructure negative, not Q-core
+  evidence; the namespace is sealed and is never retried, resumed or reused.
+
+- 2026-08-15: clean pushed `fb36fdd6e6a042ce6ed50bde92c3a0db28bdb023` makes
+  only the deterministic source-identity handoff closure: inside P1 containers
+  it consumes the already validated outer source-identity receipt, while host
+  and non-P1 execution retain `git status`. The focused static suite passes
+  (`18`) and the remote source is clean/exact. The sole new no-performance F0
+  root is `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_fb36fdd6_20260815_0528`,
+  jobs `1238592/1238593/1238594/1238595`, currently running. No duplicate or
+  resumed P1 is authorized before matching F0 PASS, and no efficacy, test,
+  metric, cost, energy, or paper evidence exists.
+
+- 2026-08-15: exact-commit F0 for `fb36fdd6e6a042ce6ed50bde92c3a0db28bdb023`
+  is terminal PASS: PL/ST/world2/finalizer `1238592/1238593/1238594/1238595`
+  all completed `0:0` and finalization is `FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`.
+  It is a no-performance protocol gate with no official-test opening.
+  The sole distinct real-video P1 root
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_dnurq_fb36fdd6_seed3407_20260815_0535`
+  is atomically submitted: runtime `1238611`; `DO/DN/U/R/Q` `1238612–1238616`;
+  cost leaves `1238617–1238624`; finalizer `1238625`. It preserves the frozen
+  THUMOS14/AdaTAD/VideoMAE, seed-3407, exact-`B=24576`, dynamic-`K_t`,
+  ragged/no-padding, 136-window/40-cluster/10k-bootstrap and DN-only `<=0.85`
+  contract; official test is closed. This is an experiment-running status only,
+  not metric, checkpoint, latency, energy, cost or paper evidence. Monitor only
+  this terminal path; no duplicate, cancellation, requeue, retry or partial-arm
+  inference is permitted.
+
+- 2026-08-15: a read-only Slurm terminal check of the sole `fb36fdd6…` P1
+  population records runtime preflight `1238611` `COMPLETED 0:0`; accuracy
+  cells `1238612–1238616`, all cost leaves `1238617–1238624`, and finalizer
+  `1238625` are `FAILED 1:0`. A subsequent exact read-only finalization-receipt
+  read failed at SSH banner exchange, so the terminal causal receipt is not
+  available. This is a `PRE_RUN_NOT_READY` infrastructure blocker, not Q-core,
+  accuracy, latency, energy, cost, checkpoint, official-test, or paper evidence.
+  The root is terminal and is neither retried nor interpreted from partial arms.
+
+- 2026-08-15: clean pushed `84475fab32e95d9b4e33982f70ce17ce2132bb1e` closes
+  the deterministic outer-source-identity handoff. Its exact-commit F0 root
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_84475fab_20260815_0540` passed:
+  `1238630/1238631/1238632/1238633` completed `0:0`, finalization is
+  `FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`, performance inference is false, and
+  the receipt identity is `41a812efeeb19b305985a8d8870fa4bba0400727b569b7d266cdad5d9ce3b17a`.
+  This is protocol admission only.
+
+- 2026-08-15: the sole new development P1 root
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_dnurq_84475fab_seed3407_20260815_0548`
+  was atomically released: runtime `1238649`; `DO/DN/U/R/Q` `1238650–1238654`;
+  cost leaves `1238655–1238662`; finalizer `1238663`. A read-only status check
+  records runtime `COMPLETED 0:0`, stage jobs pending priority, and cost/finalizer
+  pending dependency. It preserves THUMOS14 development, official AdaTAD/VideoMAE,
+  seed 3407, exact `B=24576`, dynamic `K_t`, ragged/no-padding, 136/40/10k and
+  DN-only `<=0.85`; official test is closed. It is `experiment_running` only:
+  no metric, checkpoint, latency, energy, cost, efficacy or paper result exists.
+  Monitor only this exact population, never infer partial arms, and leave unrelated
+  Job `1237479` untouched.
+
+- 2026-08-15: the `84475fab…` P1 finalization receipt is terminal
+  `INVALID_P1_MATRIX / NO_SURVIVOR_INVALID_P1`. Runtime preflight `1238649`
+  completed `0:0`; all five stage jobs `1238650–1238654`, all eight cost leaves
+  `1238655–1238662`, and finalizer `1238663` ended `FAILED 1:0`. Finalization
+  records `0/5` completed accuracy cells, `0/8` completed cost leaves,
+  `q_survives_p1=false`, no partial-arm conclusion, five stage-failure receipts
+  and eight missing cost leaves. It does not establish a Q-core or performance
+  failure. This root is sealed: no retry, resume, requeue, cancellation, or
+  partial inference; unrelated Job `1237479` remains untouched.
+
+- 2026-08-15: the common five-arm pre-model/video cause is now classified from
+  the terminal stage-failure receipts: the P1 runner pre-created `cell_root`
+  for a storage receipt and bound the same existing path as formal training's
+  required-fresh `work_dir`, causing `FileExistsError`. All cost leaves therefore
+  lacked source stages. This is deterministic infrastructure, not Q-core,
+  accuracy, latency, energy, cost, checkpoint, test or paper evidence.
+
+- 2026-08-15: clean pushed `f7a516b9cf37d187deb09ec5e5362ab3947fb286` makes
+  only this claim-preserving closure: storage preflight moves below `control/`
+  without creating the formal work directory, while the durable pre-train
+  failure path remains. Focused static checks (`20`) pass and the remote checkout
+  is clean/exact. Its sole exact-commit F0 root
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_f7a516b9_20260815_0600`, jobs
+  `1238668/1238669/1238670/1238671`, is active. It is a no-performance recovery
+  gate; no P1 or efficacy/cost inference is authorized before terminal matching
+  PASS. Unrelated Job `1237479` remains untouched.
+
+- 2026-08-15: exact-commit F0 `f7a516b9…` is terminal PASS. Jobs
+  `1238668/1238669/1238670/1238671` all completed `0:0`; finalization is
+  `PASS_OFFICIAL_COMPARABLE_PREFLIGHT_ONLY /
+  FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`, with both official-comparable leaves
+  and world-two FP32 DDP KAT passing. The receipt binds the exact runtime commit,
+  frozen protocol manifest and origin-ref parity; official test, prediction,
+  checkpoint, performance and paper permissions remain false. This makes the
+  frozen P1 deployable only. No P1 is submitted here, no efficacy/cost result
+  exists, and unrelated Job `1237479` remains untouched.
+
+- 2026-08-15: the subsequent `f7a516b9…` P1 is terminal before model/video
+  access. Removing the initial storage pre-create was insufficient because
+  `_run_logged` created `cell_root/train.out`, again making formal work_dir
+  non-fresh; earlier `729b328b…` also exposed required DDP rank-order
+  synchronization. This is deterministic launcher/work-directory infrastructure,
+  not Q-core, accuracy, cost, efficacy or paper evidence.
+
+- 2026-08-15: clean pushed `5491c580490648d5bcebc9fedb318f663df6158c` makes
+  only the narrow closure: storage and launcher logs are under `control/`, the
+  formal work_dir remains absent until rank 0 creates it, then ranks synchronize.
+  Scientific settings, data, metrics, arms and protocol are unchanged; focused
+  checks (`21`) pass. Exact-commit F0
+  `/data/run01/sczc063/yuzibo/zoomtoken_p1_f0_5491c580_20260815_0640`, jobs
+  `1238744/1238745/1238746/1238747`, is active. It is no-performance protocol
+  recovery only; no P1 or efficacy/cost inference is authorized before a
+  terminal matching PASS.
+
+- 2026-08-15: exact-commit F0 `5491c580…` is terminal PASS. Jobs
+  `1238744/1238745/1238746/1238747` all completed `0:0`; finalization is
+  `PASS_OFFICIAL_COMPARABLE_PREFLIGHT_ONLY /
+  FORMAL_DEVELOPMENT_MATRIX_AUTHORIZED`, with both official-comparable leaves
+  and world-two FP32 DDP KAT passing. Exact runtime commit, frozen input/protocol
+  identities and origin-ref parity match; official test, prediction, checkpoint,
+  performance and paper permissions remain false. This makes the frozen P1
+  deployable only. No P1 is submitted here and no efficacy/cost result exists.
+
+- 2026-08-15: the sole claim-bearing real-video development P1 is atomically
+  running at `/data/run01/sczc063/yuzibo/zoomtoken_p1_dnurq_5491c580_seed3407_20260815_0650`:
+  runtime `1238763`; `DO/DN/U/R/Q` `1238764–1238768`; cost leaves
+  `1238769–1238776`; finalizer `1238777`. Runtime preflight passed. Checkpoint
+  loading and epoch 0 are durable execution facts; DN/U/R/Q each report `25/79`
+  successful updates and DO has started without a comparable cadence receipt yet.
+  Frozen THUMOS14 development, official AdaTAD/VideoMAE, seed 3407, exact
+  `B=24576`, dynamic `K_t`, ragged/no-padding, 136/40/10k and DN-only `<=0.85`
+  remain unchanged; official test is closed. This is experiment-running only,
+  not metric, latency, energy, cost, efficacy or paper evidence. Only the full
+  finalizer may decide the next action; unrelated Job `1237479` remains untouched.
+
+- 2026-08-15: durable scheduler intake for the same sole P1 records DN/U/R
+  stages `1238765/1238766/1238767` as `COMPLETED 0:0`; DO `1238764` and
+  Q `1238768` remain running, with the eight cost leaves and finalizer still
+  dependency-pending. This is execution bookkeeping only: no stage output,
+  partial-arm measurement, latency, energy, cost, efficacy or paper inference
+  is admitted before the complete matching finalizer. Job `1237479` remains
+  untouched.
+
+- 2026-08-15: the sole `5491c580…` P1 population is terminal in its one
+  authorized read-only status check. Runtime `1238763` and DN/U/R/Q
+  `1238765/1238766/1238767/1238768` are `COMPLETED 0:0`; DO `1238764`,
+  all eight cost leaves `1238769–1238776`, and finalizer `1238777` are
+  `FAILED 1:0`. The monitor was authorized for status only and did not read a
+  finalization receipt, so it does not infer the failure cause. The matching
+  matrix is `PRE_RUN_NOT_READY`; no partial arm, metric, latency, energy, cost,
+  efficacy or paper conclusion is admissible. This root is not submitted,
+  canceled, retried, resumed, supplemented, or otherwise altered; Job
+  `1237479` remains untouched.
+
+- 2026-08-15: the authoritative `control/finalization.json` now supersedes the
+  earlier status-only limitation for
+  `zoomtoken_p1_dnurq_5491c580_seed3407_20260815_0650`. It seals the matrix as
+  `INVALID_P1_MATRIX / NO_SURVIVOR_INVALID_P1`: completed accuracy cells `0/5`,
+  completed cost leaves `0/8`, and `official_test_opened`, `paper_claim_allowed`,
+  and `partial_arm_conclusion_allowed` are all false. DN/U/R/Q completed `0:0`
+  but their stage results were rejected as `formal artifact changed: config_path`.
+  DO reached an epoch-59 checkpoint and then failed in official dense test because
+  no GeoRoute window telemetry was emitted. Cost leaves fail or are missing because
+  the pass changed the frozen 136-window/40-video population. This is a terminal
+  implementation/protocol-admission defect—not Q-core efficacy/cost evidence and
+  not a scientific STOP. The root is sealed: do not inspect or promote metrics,
+  retry, requeue, resume, supplement, or infer from individual arms; official test
+  remains closed and Job `1237479` remains untouched. A future distinct epoch needs
+  explicit new authority plus deterministic correction review.
+
+- 2026-08-15: under the user's explicit experiment-first instruction, a distinct
+  full-official epoch started from clean commit `b88a11ba…`, without reusing the
+  sealed `5491c580…` finalizer or its 136-window/40-video population. Slurm array
+  `1238928_[0-4]` runs five complete THUMOS14 training/evaluation arms: official
+  AdaTAD dense reference, matched-source dense control, uniform selection, seeded
+  random selection, and Q content-driven dynamic spatial routing. All arms use the
+  full official training subset for 60 epochs and the official evaluation subset;
+  all five reached epoch 0 with finite losses. Run root:
+  `/data/run01/sczc063/yuzibo/zoomtoken_full_official_b88a11ba_seed3407_20260815_070546`.
+  This is active training evidence only; no final accuracy, latency, energy, cost,
+  or paper conclusion exists yet.
+
+- 2026-08-15: the same complete five-arm experiment was submitted for independent
+  seeds 3408 and 3409 as Slurm arrays `1238939_[0-4]` and `1238940_[0-4]` from
+  clean commit `8b4f4ce9…`. Together with running seed 3407 array `1238928_[0-4]`,
+  this is a 3-seed × 5-arm full-training matrix. The two new arrays are queued;
+  no result or cross-seed inference exists yet.
+
+- 2026-08-16: deterministic completion fixes were isolated in clean source `a6ff4921…`: the official dense arm now binds the absolute THUMOS14 annotation path, and completed checkpoints are resolved under the actual `gpu2_id0/checkpoint` directory. Completion array `1239607` reuses existing 60-epoch checkpoints only for official evaluation and trains only missing arm/seed cells. Matched-source full-compute seeds 3407 and 3408 completed official validation: Avg-mAP 66.42% and 67.14%; mAP@0.7 45.19% and 45.84%. These are admitted baseline measurements, not evidence that Q succeeds or fails. DO/U/R/Q missing cells and remaining evaluations continue under the same full official matrix; no final accuracy/cost/energy or paper claim is made before all five arms and three seeds finish.
+
+- 2026-08-16: seed-3408 uniform and random sparse controls completed official validation. Uniform: Avg-mAP 60.05%, mAP@0.7 40.17%; random: Avg-mAP 61.53%, mAP@0.7 41.80%; the matched dense result is 67.14%/45.84%. This is evidence that naive equal-budget sparsification loses accuracy, not yet evidence for Q, because the task-aware route has not returned. Q and the other missing arm/seed cells continue under the same full official matrix.
+
+- 2026-08-16: seed-3408 Q completed official validation from its full 60-epoch checkpoint: Avg-mAP 57.84%, mAP@0.7 36.93%. It is below matched dense by 9.30 Avg-mAP points and below uniform/random by 2.21/3.69 points. This is the first admissible method-level negative result for Q-core: content-only dynamic routing did not recover the lost spatial evidence for this seed. Remaining seeds continue; no cross-seed or cost claim is made yet.
+
+- 2026-08-16 14:20: matched dense seed 3409 completed official validation: Avg-mAP 65.99%, with tIoU 0.3/0.4/0.5/0.6/0.7 = 81.04/76.65/68.82/58.41/45.02%. Together with matched dense seeds 3407/3408 (66.42/67.14 Avg-mAP), the full-compute reference is stable across three seeds. Seed-3409 U/R/Q and the remaining seed-3407 arms continue. Existing seed-3408 Q output has diagnostic telemetry disabled, so the current artifacts establish the negative score but do not identify raw selected-token positions or dynamic-K failure modes; a frozen-checkpoint replay with telemetry is the next diagnostic after a GPU slot opens.
+
+- 2026-08-16: clean diagnostic commit `1080dc13…` implements that replay without retraining. It enables complete official-validation Q telemetry at local batch one and summarizes per-tubelet K distribution, zero-budget fraction, within-window K variation, geometry saturation and route-role fractions. Focused test: 1 passed; remote clean source `/data/run01/sczc063/yuzibo/runtime/zoomtoken_q_diag_1080dc13/source` matches the pushed commit. The replay waits for a submit slot and is not yet a result.
+
+- 2026-08-16 14:50: uniform seed3409 completed official validation: Avg-mAP 60.55%, tIoU 0.3/0.4/0.5/0.6/0.7 = 75.62/70.75/63.04/53.00/40.32%. This closely matches uniform seed3408 60.05/40.17 and strengthens the sparse-control anchor. The first telemetry replay submission was rejected before job creation because its explicit 64GB request exceeded the one-GPU platform shape. Clean `27181b0f…` removed the explicit memory request, focused tests 2 passed, N16R4 resource test passed, and checkpoint-only official-validation replay `1239655` was submitted. It is queued, so no route telemetry result exists yet.
+- 2026-08-16 15:16: seed3409 random and Q completed official validation. Random: Avg-mAP 61.41%, tIoU 0.3/0.4/0.5/0.6/0.7 = 75.97/71.40/63.43/54.30/41.95%. Q: Avg-mAP 53.81%, tIoU = 68.87/63.67/57.03/46.06/33.40%. Matched dense/uniform for the same seed are 65.99/60.55 Avg-mAP. Q is therefore below all same-source controls for a second independent seed. This is a repeated formal negative for content-only routing; the frozen-checkpoint telemetry job remains the evidence-bearing next step for root-cause analysis, while seed3407 and the official public configuration continue.
+
+- 2026-08-17: completed a read-only full Wiki memory and data-resource audit
+  (`WIKI_MEMORY_AUDIT-2026-08-17.md`). The decisive provenance correction is
+  that published AdaTAD `Avg=69.03, mAP@0.7=48.27` is an upstream anchor, while
+  dense `66.42/67.14/65.99` and all current Q/U/R outputs are matched-source
+  THUMOS14 validation outputs, not an exact untouched AdaTAD reproduction.
+  Canonical remote raw video is complete (411 MP4: train 200, validation 211,
+  UID mismatch 0), annotations/class map and VideoMAE-S pretrain are present;
+  the released AdaTAD checkpoint is not verified in known paths and its access/
+  license receipt is absent. The next action is released-checkpoint evaluation
+  in clean `01c58b9` official code, not another routing experiment. Future full
+  runs save resumable `.pth` every five epochs unless untouched official code is
+  more frequent (AdaTAD's official recipe remains every two epochs), retain at
+  least three recovery points, and preserve final/final-EMA selection without
+  intermediate cherry-picking. This audit ran no model, data, GPU, Slurm, metric
+  or cost job.
+
+- 2026-08-17: central read-only resource correction confirms that canonical
+  THUMOS14 raw input is the shared root
+  `/data/run01/sczc063/yuzibo/thumos14/raw_data/video`, with 411 valid MP4
+  **symlinks** (200 training / 211 validation, zero broken, target volume about
+  33G). Project configs/manifests must bind it directly without duplication and
+  must not undercount it via `find -type f`. Feature identities are now explicit:
+  OpenTAD I3D and InternVideo2 roots are absent; native MATR validation/test
+  pickles are present (~3.33G/~3.69G) but its checkpoint is incomplete; SigLIP2
+  has 823/~477M assets. These formats are non-interchangeable and none is a
+  substitute for VideoMAE raw E2E AdaTAD. This is resource provenance only—no
+  download, symlink, config change, remote job, metric or efficacy claim occurred.
+
+- 2026-08-17: full remote video resource map was recorded read-only. THUMOS14
+  remains the only ZoomToken input: canonical 411 valid symlinks map exactly to
+  200 training and 211 validation annotations; two extra physical-store files
+  (`video_test_0000270.mp4`, `video_test_0001292.mp4`) are noncanonical. Other
+  inventory is deliberately not conflated with this route: MultiSports is still
+  mostly archived, TOC-Bench and Charades are separate dataset trees, ActivityNet
+  is unassembled, FineAction/HACS/EPIC-Kitchens/Ego4D videos are absent, and
+  EventMATR provides only native feature pickles. No archive was extracted, no
+  config/manifest was bound, and no experiment was authorized.
+
+- 2026-08-17: read-only inspection of the historical seed-3407 full-matrix
+  root records concrete source identities: DO snapshot inherits the official
+  AdaTAD `e2e_thumos_videomae_s_768x1_160_adapter.py`; DN inherits
+  `georoute_adatad_development_base.py`; Q inherits
+  `georoute_dynamic_scnr_stage1_base.py`; U/R inherit Q, all against canonical
+  shared THUMOS14 and VideoMAE-S pretrain. DN/Q/U/R contain
+  `checkpoint_interval=60`. This is a historical matched-source configuration
+  fact, not a result or exact official reproduction. The newly frozen policy
+  requires Builder to set 5-epoch resumable checkpoints (latest three plus
+  milestone/final; model/optimizer/scheduler/scaler/count/RNG restoration) for
+  future non-untouched-official full runs; untouched official AdaTAD retains 2.
+  No configuration was changed in this audit.
+
+- 2026-08-17: user required the original AdaTAD baseline to become a **single
+  shared execution**, with ZoomToken as sole owner. Prepared
+  `docs/aris/ADATAD_SHARED_OFFICIAL_BASELINE_PACKET-2026-08-17.md`: one clean
+  released-checkpoint evaluation first, then at most one clean untouched
+  official training only if the released artifact is genuinely unavailable.
+  Its final receipt must bind release/config/canonical 411/checkpoint-or-
+  pretrain/seed/evaluator-NMS/EMA-final/runtime/result root; all other TAD
+  projects consume it read-only. This does not relabel 66.xx matched-source
+  dense or stop ZoomToken's non-execution Q-entry, conditional ROI/residual,
+  recovery-checkpoint, review and PRE_RUN preparation. No job, download,
+  experiment, metric, cost or claim was created by this governance update.
+
+- 2026-08-17: the requested independent DSH review was submitted with the fixed
+  anchored-standard / deepseek-official / deepseek-v4-pro / max / 256000 profile
+  and a fresh empty session, but terminated before its first assistant response
+  with `402 Insufficient Balance`. It is recorded as `NEEDS_ATTENTION`, not DSH
+  PASS, code approval, a scientific verdict or a new experiment. Existing
+  evidence boundaries remain: static wiring is not whole-implementation proof;
+  66.xx stays matched-source; historical P1 runner/protocol failures remain
+  infrastructure/protocol negatives. No automatic resubmission is permitted.
+
+- 2026-08-17: accepted the current Track-B minimal-change plan only after
+  rebinding Builder from obsolete clean `020bade…` to clean project-current
+  `5491c580…`, which contains that lineage and the sealed P1 fixes. The bounded
+  implementation corrects only formal-matrix admission: control-bound config
+  identity, external shared-receipt DO handling, canonical physical
+  136-window/40-video population identity, and five-epoch full-state recovery
+  for future DN/U/R/Q. Q exact-B/dynamic-K_t/ragged/no-leak behavior and
+  conditional G/N/F remain unchanged; the sealed 5491 root is not resumed or
+  reused. This is implementation preparation, not a result or remote launch.
+
+- 2026-08-17: a fresh DSH external reviewer session completed under the exact
+  anchored-standard / deepseek-official / deepseek-v4-pro / max / 256000
+  identity. `docs/aris/DSH_FORMAL_REVIEW_RECEIPT-2026-08-17.md` stores the
+  first header, the sole `/^We need\b/` fingerprint and `turn/end=completed`;
+  the visible Chinese report is separate. It preserves the Q-core endpoint and
+  labels 5491 as protocol-admission failure, not efficacy. Its advisory
+  implementation findings are: make any DO report-only cost path independent
+  of GeoRoute telemetry, make 5-epoch recovery actually resumable only for
+  unsealed bound cells, and bind a shared official receipt to the real
+  69.03/48.27 anchor and provenance. These are inputs for the existing
+  Builder→Critic→Evaluator chain, not a code approval, PRE_RUN, experiment,
+  metric, cost or paper claim.
+
+- 2026-08-17: the final fresh frozen-snapshot external review of clean
+  `b798e9f…` was accepted after the two earlier fingerprint-miss sessions were
+  quarantined. It preserved the Q-core mechanism and reported deterministic
+  admission/recovery concerns: DO report-only cost must not require GeoRoute
+  telemetry or a mismatched dense grid; the shared official receipt must bind
+  the published anchor and result identity; and the advertised five-epoch
+  recovery path must be actually reachable only for unsealed bound cells. These
+  are advisory implementation inputs, not a Critic replacement, a route change,
+  performance evidence, or experiment authority. The candidate remains held
+  because the independent Critic returned no substantive audit after its bounded
+  process recovery.
+
+- 2026-08-18: a newly isolated read-only Critic completed the frozen
+  `b798e9f…` audit on a clean worktree. It independently preserved the Q-core
+  exact-budget, Q/DN cost-denominator, conditional G/N/F, fairness and
+  no-leakage boundaries, but returned `IMPLEMENTATION_CORRECTION`: five-epoch
+  recovery state is written yet no formal unsealed-cell resume dispatch can
+  reach it, and runtime population agreement is not tied to the frozen ordered
+  136-window/40-video manifest. The accepted external review additionally
+  showed that report-only DO must not run a GeoRoute 220-token cost leaf and
+  that shared official provenance must prevent matched-source `66.xx` from
+  entering the official slot. These are admission-code defects, not Q efficacy,
+  cost, official-baseline or paper evidence. A bounded Builder MCL is now the
+  sole next step; no sealed root is resumed and no PRE_RUN/remote job starts.
+
+- 2026-08-20: completed a read-only ROI-history audit after the user requested
+  an official-comparable 60-epoch ROI experiment. The audit distinguishes the
+  20-epoch ROI-only diagnostic (13.18 Avg-mAP, 8.95 mAP@0.7), a separate
+  20-epoch ROI run that failed at decoding before formal evaluation, and the
+  continuous-ROI 60-epoch training-only matrix from a valid official comparison.
+  A remote search of the shared BATA run namespace found no omitted ZoomToken
+  ROI terminal receipt. The shared official AdaTAD released-checkpoint receipt
+  remains absent; 66.xx remains matched-source rather than official. Prepared
+  `docs/aris/ROI_OFFICIAL_COMPARABLE_60EPOCH_MATERIAL-2026-08-20.md` for one
+  narrow scientific decision on a fair ROI-first 60-epoch contract. No code,
+  remote job, data access, metric, cost, or performance claim was created.
+
+- 2026-08-20: ingested the bounded Track-B Builder successor
+  `7f0d0eb018ca2e6c9d1774e71c214648a18ea88b` (parent `b798e9f…`). It changes
+  eight existing admission paths only: report-only DO/shared official receipt,
+  ordered 136-window/40-video manifest binding, and reachable five-epoch
+  unsealed same-cell full-state resume. `py_compile`, shell syntax, and 44
+  focused static tests passed in a clean worktree. An independent, read-only
+  Critic recheck has been requested; no ROI arm, data, Torch, GPU, Slurm,
+  remote job, cost measurement, result or paper claim was created.
+
+- 2026-08-20: user clarified that the immediate objective is an effective ROI
+  model rather than an over-designed first matrix. Narrowed the prepared ROI
+  material to a real 60-epoch, seed-3407 ROI-only `G` versus same-source dense
+  `DN` first stage, with shared official `DO` receipt only as report-only
+  reference. First stage retains identical data/evaluator/recipe, fixed final
+  selection and 5-epoch recovery checkpoints, and reports mAP plus same-runtime
+  end-to-end latency/peak memory. Multi-arm, multi-seed and energy-bootstrap
+  work is deferred until a credible first ROI signal; this simplification does
+  not recast development evidence as an official or paper result.
+
+- 2026-08-20: direct user-authorized Pro review was successfully submitted
+  through iXBrowser profile 61 after earlier pre-submission transport failures
+  were terminated without producing content. Oracle job `j-vqxlwg` created fresh
+  Project conversation `6a870bf0-7768-83ea-8a03-4563579904f5` with
+  `promptSubmitted=true`. The substantive review names only the pinned GitHub
+  repository `yuzbo/OpenTAD_C3_CoarseClean_20260702`, branch
+  `codex/zoomtoken-p1-fix-dn-cost-budget-label`, SHA `2e99ce0…`; no source code
+  files or archives were uploaded. It will decide the minimal 60-epoch ROI G
+  versus DN development experiment. No implementation, data, GPU, Slurm,
+  metric, cost, training or claim was started by this consultation.
+
+- 2026-08-20: 核验了用户提供的 ROI60 外部建议。采纳其将首轮收敛为同源
+  `G`（ROI modifier-only）对 `DN`（dense）、seed 3407、60 epoch 的方向；不采纳其将 `7f0d0eb...`
+  当作最新 GitHub 代码、无条件复用旧 DN、或在 final/EMA 间按 validation 择高的做法。指定 GitHub
+  分支的 `2e99ce0...` 是 `7f0d0eb...` 后继，并已更正 DN 的稀疏 exact-B 标签。首轮 ROI 只能视为
+  同源开发比较；共享 official AdaTAD receipt 前不得标为官方可比。报告中“latency 或 mAP@0.6 单独即
+  升级”的逻辑已被拒绝；单种子需主要准确率与同机端到端时延共同支持才可以开展下一阶段。详见
+  `docs/aris/ROI60_USER_SUPPLIED_PRO_REPORT_AUDIT-2026-08-20.md`。未启动代码、数据、GPU 或训练。
+
+- 2026-08-20: 共享官方 AdaTAD released checkpoint 在已核验位置仍无可绑定副本，近似命名权重
+  不能替代发布 artifact。因而按唯一 fallback，在 clean release `01c58b9...`、未经修改的官方
+  THUMOS14 config、seed 42、canonical 411-video root、原始 validation evaluator/NMS 与 VideoMAE-S
+  pretrain 上提交一次 60-epoch official reproduction。该作业仅处于运行状态；尚无 validation 指标，
+  不得写成 `69.03/48.27` 已复现，也不提供 ROI、Q、成本或论文结论。启动绑定见
+  `docs/aris/ADATAD_SHARED_OFFICIAL_REPRODUCTION_START_RECEIPT-2026-08-20.md`。
+
+- 2026-08-21: ROI60 的 official-base 实现完成到 clean revision
+  `321f1f767e730aad743ee1d4579803156ca0413f`。fresh external review 在前一候选中发现
+  `GeoRouteSourceViews` 只有配置引用而未定义/注册；Builder 仅恢复了历史已审的 native-source +
+  96×96 scout 变换，独立 Critic 确认语义与 lineage 一致且模型、预算、split、evaluator、NMS、
+  recovery 未变。16 项静态测试通过；此前 N16R4 AMP/GeoRoute build smoke 通过。
+- 2026-08-21: 用户已授权的真实 THUMOS14 ROI60 配对训练正式启动。远端源码 clean 且精确为
+  `321f1f76…`；结果根
+  `/data/run01/sczc063/yuzibo/bata_runs/zoomtoken_roi60_dn_g_seed3407_321f1f76_20260821`。
+  DN job `1245897` 与 ROI-only G job `1245898` 原子提交后同时在 N16R4 运行；两臂 seed 3407、
+  60 epoch、同一预训练/数据/评测/单卡资源，G 保持 exact `B=24576`、动态 `K_t`、ragged/
+  no-padding、ROI on、residual off。每 5 epoch 保存 recovery，统一 final/final-EMA 规则。
+  独立 direct-Decord smoke `1245895/1245896` 在 Python 进入数据前因集群进程
+  `random_device` 异常失败，而正式 torchrun 已越过其短时故障点；它们不是模型或性能证据。
+  共享 untouched AdaTAD job `1245842` 同时正常训练，当前也尚无终态指标。
+
+- 2026-08-21: 上一条启动记录已被真实执行证据校正。首对 jobs `1245897/1245898` 均在 41 秒内因
+  优化器参数组别名终止；G-only `1245908/1245909/1245910` 继续暴露并定位了 DDP 辅助损失图和
+  实际 `ActionFormer.forward_train` 覆盖路径的问题。它们均未产生可解释的 validation 或成本结果。
+  同源全计算 DN 的有效 60-epoch 运行是 job `1245907`，clean revision `d2b5de05…`，结果根
+  `/data/run01/sczc063/yuzibo/bata_runs/zoomtoken_roi60_dn_g_seed3407_d2b5de05_20260821`；它已进入
+  epoch 7，并发布 `recovery_epoch_4.pth`。最终 ROI-only G 的有效运行是 job `1245924`，clean
+  revision `59960255…`，结果根
+  `/data/run01/sczc063/yuzibo/bata_runs/zoomtoken_roi60_g_seed3407_59960255_20260821`；它已完成至少
+  50 个有限损失的真实优化更新。共享 official AdaTAD `1245842` 已进入 epoch 29，并保持官方
+  两轮 checkpoint 节奏。三个作业均仍在运行；这些事实只证明完整训练实质启动，不提供 ROI、
+  `69.03`、效率或论文结果。
+
+- 2026-08-21 03:44（北京时间）: ROI-only G job `1245924` 完成 epoch 4、进入 epoch 5，并在
+  `/data/run01/sczc063/yuzibo/bata_runs/zoomtoken_roi60_g_seed3407_59960255_20260821/cells/g/seed3407/gpu1_id0/checkpoint/recovery_epoch_4.pth`
+  写出首个约 628 MB 的 5-epoch 可恢复检查点。DN `1245907` 已进入 epoch 13，恢复点推进至
+  epoch 4/9；共享官方 AdaTAD `1245842` 已进入 epoch 36，官方节奏检查点推进至 `epoch_35.pth`。
+  三项作业均为 RUNNING，G 日志未见 Traceback、显存溢出或非有限数值硬故障。该记录只证明
+  训练连续性与恢复机制，不是 ROI 性能、成本或 `69.03/48.27` 官方锚点复现证据。
+
+- 2026-08-21 03:54（北京时间）: DN job `1245907` 进入 epoch 15，并新增第三个 5-epoch 周期
+  恢复点 `recovery_epoch_14.pth`（约 628 MB）；共享官方 AdaTAD `1245842` 进入 epoch 38并新增
+  `epoch_37.pth`；ROI-only G `1245924` 进入 epoch 6。三项作业仍为 RUNNING，检查范围内未见
+  Traceback、显存溢出或非有限数值硬故障。该里程碑是训练连续性证据，不是 validation、ROI
+  增益、端到端成本或官方锚点复现结果。
+
+- 2026-08-21: 三项唯一 60-epoch 训练全部终态。共享 official AdaTAD `1245842`、matched-source
+  DN `1245907`、ROI-only G `1245924` 均为 `COMPLETED 0:0`，运行时间分别为 `05:47:13`、
+  `04:24:56`、`05:46:15`；三者均完成 epoch 59 的最后训练迭代，日志未见 Traceback、OOM 或
+  非有限数值硬故障。DN/G 各保留 epoch 44/49/54 三个恢复点。指定结果根未发现
+  `stage_result.json`、`finalization.json` 或 final-EMA validation 收据，因此本次只形成训练完成与
+  可恢复性证据，没有 ROI、DN、`69.03/48.27` 或成本结果。不得重训或重复提交；下一动作是对
+  既有终态 checkpoint 执行预注册选择和官方 evaluator 评测。
+
+- 2026-08-21: 补充检查原始终态训练日志，纠正上一条“没有性能结果”的判断。官方 evaluator 已在
+  日志末尾打印 validation：official AdaTAD reproduction 的 Avg-mAP/mAP@0.6/mAP@0.7 为
+  `68.73/61.58/47.24`，DN 为 `64.73/56.14/43.26`，ROI-only G 为
+  `61.49/53.42/39.99`。G 相对 DN 为 `-3.24/-2.72/-3.27` 个百分点，且 tIoU 0.3–0.7
+  全部更低，构成当前 ROI-only 配置的准确率负结果。官方运行在最后 20 轮按 2 轮间隔完成 10 次
+  validation；DN/G 由启动脚本设置为第 60 轮后单次 validation，所以没有中途性能曲线。三项均
+  未产生完整端到端成本证据，不得据 token 预算声称效率收益。
+
+- 2026-08-21: 为补齐 DN/G 的中途学习曲线，在不续训、不改变 final/final-EMA 选择、不打开 test
+  split 的前提下，启动 epoch 44/49/54 recovery checkpoint 的 validation-only 评测。DN jobs 为
+  `1246228/1246229/1246230`，G jobs 为 `1246231/1246232/1246233`，均绑定各自原始训练 revision、
+  canonical THUMOS14 validation 与同一 evaluator/NMS。此前 `1246216/1246218/1246220/1246222/
+  1246224/1246226` 因 Slurm `--wrap` 默认 `/bin/sh` 不支持 `source` 在 0 秒退出，未加载模型或数据，
+  仅作为启动诊断保留。
+
+- 2026-08-21: 六项中途 validation 全部 `COMPLETED 0:0` 并加载对应 EMA。epoch 44/49/54 的
+  DN Avg-mAP/mAP@0.7 为 `65.50/44.01`、`65.06/43.44`、`64.84/43.36`；G 为
+  `62.42/41.41`、`62.00/40.50`、`61.80/40.48`。G−DN Avg-mAP 稳定为
+  `-3.08/-3.05/-3.04`，终态为 `-3.24`。这表明 ROI-only G 的准确率缺口贯穿训练后段，不能归因
+  于最后几轮偶然退化；同一 G 配置不再延长训练或重复提交。
+
+- 2026-08-21: 用户授权把本地 `E:\Released_FineDiving_Dataset` 完整上传至 N16R4
+  `/data/run01/sczc063/yuzibo/datasets/FineDiving`，并继续准备必要 TAS 测评数据。FineDiving
+  本地源已核定为 1,337,505 文件 / 101,123,416,820 字节；3,000 样本标注、2,251/749
+  train/test、四套各 312,256 帧、135 个 MP4 和 15 个 ZIP 的结构/解码/CRC 检查均通过。
+  远端上传仍为 `transfer_running`，最终必须通过全量相对路径+文件大小清单比对，当前不得称完整。
+  FineGym 官方 annotations/categories/splits 已在远端完成 JSON 与官方计数校验；视频因官方表单
+  授权边界未获取。标准 TAS 的 GTEA/50Salads/Breakfast 官方 MS-TCN/UVAST Zenodo feature/GT/
+  split 包已在远端开始可续传下载，仍为 `download_running`；仅在字节数、ZIP CRC、解压和
+  `COMPLETE` receipt 全部通过后才可用于测评。
+
+- 2026-08-21: FineDiving 远端续传复核确认 `Untrimmed_Videos` 已达到本地精确基线
+  135 文件 / 64,534,519,969 字节，`Lowresolution02_Trimmed_Video_Frames` 已达到
+  312,256 文件 / 706,600,997 字节；未裁剪帧与原分辨率 trimmed 帧仍在传输/展开，
+  `lowres01/005` 改为每 100 个样本目录写入一个可恢复断点后继续，整体仍保持
+  `transfer_running`。官方 GTEA/50Salads/Breakfast Zenodo 下载进程和 16 路断点文件均存活，
+  仍保持 `download_running`，不提前登记为可用。
+
+- 2026-08-21: 用户澄清 TAS 数据要求为 GTEA、50Salads、Breakfast 的原始视频与原始标注，
+  不是 MS-TCN/UVAST 预提取 feature 包。后者下载已停止但保留可恢复断点，不删除现有文件。
+  新目标统一放在 `/data/run01/sczc063/yuzibo/datasets/TAS/raw`，且所有外部请求均显式使用
+  N16R4 登录节点学术代理。Breakfast coarse/fine segmentation 已下载并通过完整 tar/gzip
+  检查，3,930,212,562 字节原视频包仍在 Range 续传和终态校验；GTEA 官方 28 视频/71 类
+  标注与 50Salads 官方 50 个 RGB AVI 因代理对 Dropbox/Dundee 旧主机返回 HTTP 503，保持
+  低频 `download_retrying`。当前仅 Breakfast 标注可称完整，三套原视频均不得提前称可用。
+
+- 2026-08-21 23:45（北京时间）：为严格分离 sparse adapter 与 ROI 的准确率影响，在 clean
+  revision `1a18565bbee5fdb08969b754881d0b06f3429870` 上完成后主干三臂归因实现并通过独立
+  Critic：A 复用已完成的未修改官方 AdaTAD job `1245842`；B 保持完整官方 dense VideoMAE
+  前向，仅把空间平均聚合替换为全部 token 的 sparse adapter；C 与 B 共享同一主干、adapter、
+  seed 和优化配方，仅在主干输出后加入 ROI `K=64` 支持选择。该设计不剪枝重骨干，因此只用于
+  准确率/因果归因，不能作为计算节省证据。结果盲 PRE_RUN 验证 remote ref/HEAD clean、canonical
+  411 视频与注释/类别/VideoMAE-S 权重、双卡 local batch 1/global batch 2、seed 42、官方增强、
+  优化器/调度器、AMP/EMA/evaluator/NMS、全新结果根、存储和无重复作业后，提交并同时释放
+  B job `1247290` 与 C job `1247291`；二者当前均为 `PENDING (Priority)`。A 未重复提交，当前无
+  新性能结果。
+
+- 2026-08-22：用户提供 FineGym 原始视频的完整 UTBox 共享链接及 2025-08-23 Google Drive
+  备用源，并重申仅限学术使用、不得分发。远端已解析 UTBox `finegym_raw_videos` 全部 16 页：
+  共 315 个视频 / 646,175,639,828 字节，文件名集合与 Drive 备份完全一致。由于远端 DNS 对
+  `utexas.app.box.com` 的解析不可达，下载器通过学术代理连接 Box 官方边缘 IP、保留正确 Host
+  获取逐文件签名链接；当前 16 个可续传 worker 正在运行，Box 解析错误和重试均为 0。状态为
+  `download_running`；仅当 315 个文件逐一匹配 UTBox 官方 `itemSize` 并自动写入
+  `DOWNLOAD_COMPLETE`、`DOWNLOAD_RECEIPT.txt` 和 `VALIDATION_REPORT.txt` 后才可称完整。
+
+- 2026-08-22：用户要求把 Ego4D-NLQ 下载到远端。官方资料核实 2026 NLQ 挑战仍使用 Ego4D
+  v2，精确范围为 `annotations + clips` 并用 `--benchmarks nlq` 过滤。远端已隔离安装官方
+  Ego4D CLI v1.7.3，并在
+  `/data/run01/sczc063/yuzibo/datasets/Ego4D-NLQ/download_ego4d_nlq.sh` 准备可续传启动器及
+  NLQ annotation-to-clip UID 终态校验。预检以 exit 20 正确停止：本地和远端均不存在
+  `~/.aws/credentials`。当前为 `download_blocked_by_credentials`，尚未下载任何 Ego4D
+  payload；需用户完成官方许可并把仍有效的临时 AWS profile 安全配置到远端后才能启动。
+
+- 2026-08-22 01:56（北京时间）：严格三臂归因矩阵的 B/C 两项训练已由调度等待转为真实运行。
+  B（全部 token + sparse adapter，Slurm `1247290`）已完成 epoch 36、进入 epoch 37，最新恢复点为
+  `epoch_35.pth`；C（ROI `K=64` + 同一 sparse adapter，Slurm `1247291`）已完成 epoch 33、进入
+  epoch 34，最新恢复点为 `epoch_33.pth`。两项作业均从 2026-08-21 23:46 开始、各占两张 GPU，
+  状态为 `RUNNING`；精确检索未发现 Traceback、CUDA OOM 或非有限损失。训练损失有限，但它不是
+  detection validation 性能；必须等待预注册的 final/final-EMA 官方 validation 后，才比较 A→B
+  的 adapter 影响和 B→C 的 ROI 增量影响。
+
+- 2026-08-22 02:41（北京时间）：严格三臂归因矩阵形成首个同阶段过程性 validation。未修改官方
+  A 在相同节点的 Avg-mAP/mAP@0.7 为 `67.88/46.19`；全部 token + sparse adapter 的 B 为
+  `67.06/45.72`；ROI `K=64` + 同一 adapter 的 C 为 `67.86/46.14`。因此 A→B 为
+  `-0.82/-0.47` 个百分点，B→C 为 `+0.80/+0.42` 个百分点；C 的 Avg-mAP 与 A 相差 `-0.02`。
+  B/C jobs `1247290/1247291` 仍为 `RUNNING`，已推进到日志 epoch 43 附近并持续按两轮节奏保存
+  checkpoint，未见 Traceback、OOM 或非有限损失。该观察只用于训练分布诊断，不改变预注册的
+  final/final-EMA 模型选择，也不是最终性能或计算效率结论。
+
+- 2026-08-22：完成旧 DN/G 与当前 A/B/C 的配置、包装器、选择器、adapter、损失图和训练协议
+  回验。旧 DN 为 GeoRoute 同源全计算路径，终态 `64.73/43.26`；旧 G 在 VideoMAE 前执行
+  全局 `B=24576`、动态 `K_t` 的原生 token 删除，终态 `61.49/39.99`。当前 B/C 均先完整执行
+  稠密 VideoMAE，B 聚合全部 100 个空间 token，C 再固定选择 64 个 ROI token；首次同阶段
+  验证为 `67.06/45.72` 与 `67.86/46.14`，B 后续中间验证为 `67.45/46.43`。因此旧 G 与
+  当前 C 不具备实现同一性；当前结果只能支持后主干 ROI 聚合的精度归因，不能支持 VideoMAE
+  重计算减少或真实成本下降。证据等级保持：A 为终态开发集性能，B/C 为中间运行性能。
+
+- 2026-08-22：用户确认最终 ZoomToken 必须在 VideoMAE 重主干之前执行 ROI 原生 token 选择，
+  重主干只能处理被选中的 token。当前后主干 B/C 归因矩阵继续仅作为诊断证据，不得表述为
+  最终 ROI 方法或算力削减结果；旧 G 是主干前实现的负证据，但不等于否定所有主干前 ROI 设计。
+
+- 2026-08-22：完成主干前固定 ROI 严格因果候选 `70dcbe1089866f6ee3821176eb41d2dc10ee8d14`。
+  A 只读复用官方 job `1245842`；B 保留每 tubelet 全部 100 个原生 token；C 在 VideoMAE heavy
+  前固定选择 ROI `K=64`；B/C 共用同一 true-ragged heavy path、sparse adapter、seed 42、双卡
+  global/local batch `2/1` 和官方 60 轮配方。独立 Critic 修复并复核了 fixed-support regularization
+  生命周期；目标环境又发现并修复 OpenTAD job-global batch 语义。双卡无指标 PRECHECK `1248828`
+  `COMPLETED 0:0`，验证 B/C heavy token 为 `38,400/24,576`、单次 heavy、零 padding、输出形状相同。
+
+- 2026-08-22：首次正式提交 `1248831/1248832` 在首批前因 common config 将 job-global batch 写成
+  `1` 而失败，0 checkpoint、0 metric，不构成性能证据。修正 revision `70dcbe10…` 通过同一 Critic
+  focused recheck 后，以新根提交 B job `1248835` 与 C job `1248834`；两项均已完成 canonical
+  200-training/211-validation dataloader 构建、打印 epoch 0 started，并进入真实文件读取/首批处理。
+  当前无 validation 或最终性能，下一证据为首个有效优化步、两轮一次的过程验证和 60 轮终态。
+
+- 2026-08-22：主干前严格三臂的 B/C 正式训练终态完成。B job `1248835` 与 C job `1248834`
+  均为 `COMPLETED 0:0`，各完成 60 轮、30 个两轮间隔 checkpoint 及 epoch-59 官方 validation；
+  日志未见 Traceback、OOM 或非有限数值。A/B/C 的 Avg-mAP/mAP@0.6/mAP@0.7 分别为
+  `68.73/61.58/47.24`、`68.51/61.19/46.27`、`68.22/61.01/45.35`。A→B 为
+  `-0.22/-0.39/-0.97`，B→C 为 `-0.29/-0.18/-0.92`；这将旧 69→64→60 的大幅下降
+  重新定位为不同 source/训练图/动态预算路径的混合效应，而不是 sparse adapter 或 fixed-ROI
+  单独造成的必然损失。当前只具备单 seed 准确率证据，尚无端到端成本，不作效率或论文 claim。
+
+- 2026-08-22：完成 `69 / 64 / 60` 四路径代码审计并记录于
+  `docs/aris/ZOOMTOKEN_69_64_60_CODE_PATH_AUDIT-2026-08-22.md`。旧 DN/G 使用原生分辨率
+  GeoRoute source、seed 3407、单卡 batch 1、不同 warmup/优化参数与 native-packed 路径；旧 G
+  另含全窗动态 exact-B、可为零 `K_t` 和 auxiliary/proxy 损失，因此历史下降不是 adapter 与
+  fixed-ROI 的纯两步效应。当前 `70dcbe10…` C 已逐层确认在原生 tubelet gather 后、VideoMAE
+  patch embedding/blocks 前固定选择 ROI 64/100；不存在先运行稠密 VideoMAE 的隐藏分支。
+  该审计不启动新训练或成本作业，下一证据仍是冻结 A/B/C checkpoint 的同硬件完整成本测量。
+
+- 2026-08-22：用户确认新的主干前 ROI 实现必须以严格矩形 membership 为硬支持，而不能继续
+  使用 ROI 分数全图 Top-K 并将其称为矩形。设计形成四条可区分机制臂：固定 8×8 严格矩形；
+  矩形内 Token Select；连续宽高产生自然动态 `K_t` 的严格矩形；6×8 矩形核心加 16 个框外
+  关键 free token。框外补充有独立上限，不能替换矩形核心或退回旧全局混排。完整规格位于
+  `docs/superpowers/specs/2026-08-22-zoomtoken-strict-rectangle-roi-routing-design.md`；当前状态仅为
+  `designed`，尚未实现、测试、训练或形成性能/成本证据。
+
+- 2026-08-22：全新 exact-Project Pro 会话正常完成并返回 `REVISE`。它确认 `70dcbe10…` 的 C 是
+  VideoMAE 前的原生 token 删除，但当前椭圆/高斯 Top-64 不是严格矩形。裁决把首个实验收窄为
+  R1：`10×10` 网格九选一 `8×8` 完整矩形、固定 K64、单次 ragged 重主干；只比较现有 C 与
+  R1 的 seed-42、60-epoch 高 tIoU 结果，通过后才测端到端成本。R2 框内选择、R3 动态矩形、
+  R4 矩形加框外 token 均后置，不得与 R1 同时实现。此次讨论是设计裁决，不是代码、训练、
+  性能或成本证据；原文保存在
+  `docs/aris/ZOOMTOKEN_STRICT_RECTANGLE_ROI_PRO_RESULT-v002-2026-08-22.md`。
+
+- 2026-08-22：严格矩形 R1 已从 `designed` 推进到 `experiment_running`。Builder 在 clean base
+  `70dcbe10…` 上完成 R1，最终 clean/pushed revision 为 `9e25c6d38de8c993948025629181470b858682b4`；
+  独立 Critic 最终 PASS。R1 在 `10×10` 原生网格上九选一完整 `8×8` 矩形，固定 K64，
+  patch embedding 前 gather，单次 true-ragged heavy forward，零 padding，复用与 C 相同的
+  sparse adapter、训练配方和官方 evaluator。目标环境 9 项无数据 Torch 检查通过。
+  Evaluator 复核 411 个有效视频软链接、200/211 划分、20 类、预训练权重、历史 C endpoint 与空结果根后，
+  启动唯一 R1 seed-42、60-epoch job `1249099`。作业已在 2×RTX4090 上进入 epoch 0；当前无
+  R1 validation、成本或论文结论。下一证据是 5-epoch recovery 与预注册 validation/final-EMA。
+
+- 2026-08-22：按用户批准的多分支计划完成 R2/R3/R4 及可区分对照的实现、独立审查、
+  目标环境 PRE_RUN 与正式提交。clean/pushed revision 为
+  `b1d9fa7b10209b23c4405b4be3965ee66f3c05f5`，parent 为 `aaf74a04…`；独立 Critic
+  对 production selector、主干前边界、hard/soft support 一致性、公平性与无泄漏返回 PASS。
+  目标环境的无数据检查为 `8 passed`，并核验 canonical THUMOS14 411 个有效视频软链接、
+  200/211 划分、VideoMAE-S 权重、seed 42、双卡 global/local batch 2/1、官方 60 轮训练/
+  evaluator/NMS、每 5 轮可恢复 checkpoint 与八个空结果根。
+- 2026-08-22：八个单元已经 held-submit 后一次性释放。R2/R2-SHUF48/Q48-GLOBAL/R3/
+  R3-AREA-SHIFT/R4 为 jobs `1249125–1249130`，均完成双 rank 初始化、200/211 dataloader
+  构建并进入 epoch 0；R4-SHUF15/Q64-GLOBAL 为 `1249131/1249132`，已被 Slurm 接收，
+  仅因账户 GPU 并发额度 `AssocGrpGRES` 等待自动启动。R2 是 8×8 eligibility 内 Top-48；
+  R3 执行连续严格矩形的全部成员并允许自然动态 `K_t`；R4 是 7×7 无孔洞 core49 加
+  框外 q_base Top15。两个 SHUF 对照在排序前对 q_base 与物理位置作稳定置换，软硬支持使用
+  同一置换表面；Q48/Q64 是相同预算的全局内容选择。R1 `1249099` 未被修改并继续运行。
+  这些都只是执行证据；当前没有新增 validation、成本、效率或论文结论。
+
+- 2026-08-22 17:21 CST：只读监控确认 R1 job `1249099` 仍在 `g0024` 正常运行并进入
+  epoch 21，已保存 `recovery_epoch_9/14/19.pth`，每 5 epoch 的 full-state 恢复合同开始形成
+  真实运行证据。R2/R2-SHUF48/Q48-GLOBAL/R3/R3-AREA-SHIFT/R4 六项已进入 epoch 2；
+  R4-SHUF15/Q64-GLOBAL 仍因 `AssocGrpGRES` 等待资源。所有已运行日志均未见 Traceback、
+  OOM 或非有限数值，且尚无正式 validation；因此本次不产生准确率、成本或论文结论。
+
+- 2026-08-22 17:29 CST：严格矩形矩阵的首个恢复点出现。R2-SHUF48 job `1249126`
+  已发布 `recovery_epoch_4.pth`；R2/R2-SHUF48/Q48-GLOBAL/R3/R3-AREA-SHIFT/R4 六项
+  均进入 epoch 4，R4-SHUF15/Q64-GLOBAL 仍因 `AssocGrpGRES` 等待。R1 继续进入 epoch 24，
+  已有 epoch 9/14/19 恢复点。当前没有正式 validation、终态或硬故障；恢复点只证明恢复合同
+  在真实训练中生效，不用于 checkpoint 选择或性能推断。
+- 2026-08-22 17:38 CST：R1 job `1249099` 已进入 epoch 26，新生成 epoch 24 恢复点，按保留规则
+  当前可见 epoch 14/19/24。R2/R2-SHUF48/Q48-GLOBAL/R3/R3-AREA-SHIFT/R4 六项均进入
+  epoch 7，且全部生成首个 `recovery_epoch_4.pth`；R4-SHUF15/Q64-GLOBAL 仍因
+  `AssocGrpGRES` 等待。未见正式 validation、终态或硬故障；本条仍只属于运行与恢复证据。
+- 2026-08-22 17:48 CST：R2/R2-SHUF48/Q48-GLOBAL/R3/R3-AREA-SHIFT/R4 六项均进入
+  epoch 10，并全部生成 `recovery_epoch_9.pth`，当前各自具备 epoch 4/9 两个恢复点；
+  R4-SHUF15/Q64-GLOBAL 继续因 `AssocGrpGRES` 等待。R1 同期进入 epoch 29，保留
+  epoch 14/19/24。当前没有正式 validation、终态或硬故障；新增信息只属于运行与恢复证据。
+- 2026-08-22 21:18 CST：严格矩形路线产生首批正式中间验证。R1 已进入 epoch 57，最新
+  Avg-mAP/mAP@0.6/mAP@0.7 为 `68.63/60.84/46.60`；相对 C 为
+  `+0.41/-0.17/+1.25`，当前趋势满足 R1 预注册准确率门，但只能由 60 轮 final-EMA 最终裁决。
+  R2/R2-SHUF48/Q48-GLOBAL/R3/R3-AREA-SHIFT/R4 的最新中间结果依次为
+  `65.87/58.13/44.94`、`65.54/57.84/43.85`、`65.66/57.72/44.98`、
+  `66.84/59.40/44.46`、`66.56/58.48/44.61`、`67.45/59.73/45.82`。
+  R2 对乱序对照的 mAP@0.7 暂领先 `1.09`，但与全局 Top-48 几乎持平；R3 的 mAP@0.6
+  优于面积轨迹错位 `0.92`，mAP@0.7 则低 `0.15`。六项均保留 epoch 39/44/49 恢复点；
+  R4-SHUF15/Q64-GLOBAL 仍等待 GPU。没有硬故障，且不据中间结果选择 checkpoint。
+- 2026-08-22 21:40 CST：R1 已进入 epoch 59 并发布 `epoch_59.pth`，但作业仍在运行，尚无
+  final/final-EMA 终态。其最新中间 Avg-mAP/mAP@0.6/mAP@0.7 更新为
+  `68.75/60.95/46.55`，相对 C 为 `+0.53/-0.06/+1.20`，继续满足预注册准确率符号。
+  R2/R2-SHUF48/Q48-GLOBAL/R3/R3-AREA-SHIFT/R4 最新中间结果依次为
+  `66.19/58.80/45.30`、`65.83/58.19/44.18`、`65.70/58.17/44.65`、
+  `67.24/59.79/45.14`、`66.94/59.08/45.20`、`67.53/59.65/45.65`。
+  R2 相对乱序与全局 Top-48 均出现正向差值；R3 相对面积轨迹错位仍未在 mAP@0.7 建立优势。
+  两个 R4/Q64 对照继续等待 GPU；当前无硬故障，所有数字仍仅为过程证据，不用于 checkpoint 选择。
+
+- 2026-08-22 21:50 CST：R1 job `1249099` 已完成 60 轮并以 `COMPLETED 0:0` 退出。epoch 59
+  后的正式 EMA validation 为 tIoU 0.3/0.4/0.5/0.6/0.7 mAP
+  `84.37/79.93/73.34/61.14/46.57`，Avg-mAP `69.07`；相对 C 为
+  `+0.85/+0.13/+1.22`（Avg-mAP/mAP@0.6/mAP@0.7），三项预注册准确率条件全部通过。
+  这是完整 8×8 矩形支持的 seed-42 准确率正证据，尚无配对端到端成本与多 seed 结论。
+- 2026-08-22 21:50 CST：R4-SHUF15 job `1249131` 已从资源等待转为运行并进入 epoch 0，
+  Q64-GLOBAL `1249132` 继续等待。R3/R3-AREA-SHIFT/R4 最新中间三指标分别为
+  `67.40/59.55/45.62`、`67.03/59.57/44.94`、`67.88/60.05/46.35`；R3 相对错位
+  对照为 `+0.37/-0.02/+0.68`。未见硬故障；本轮没有提交、取消、恢复或新增作业。
+
+- 2026-08-22 22:00 CST：R2/R2-SHUF48/Q48-GLOBAL 已进入 epoch 54–55并发布
+  `recovery_epoch_54.pth`。最新中间 Avg-mAP/mAP@0.6/mAP@0.7 分别为
+  `66.28/58.76/44.75`、`65.90/58.24/43.80`、`65.77/58.51/44.74`；R2 相对乱序
+  对照为 `+0.38/+0.52/+0.95`，相对全局 Top-48 为 `+0.51/+0.25/+0.01`。因此框内
+  内容排序信号仍为正，但矩形 eligibility 在高 tIoU 上尚未与全局选择拉开。R4-SHUF15 进入
+  epoch 3，Q64-GLOBAL 继续等待；未见硬故障，也未执行任何作业变更。
+
+- 2026-08-22 22:10 CST：R3、R3-AREA-SHIFT 与 R4 出现新的官方中间 validation，
+  Avg-mAP/mAP@0.6/mAP@0.7 分别为 `67.64/59.89/45.95`、`67.27/59.67/45.14`、
+  `68.01/60.45/46.23`。R3 相对时间错位面积轨迹为 `+0.36/+0.22/+0.81`，当前三个
+  指标均为正，但仍须由 60 轮终态裁决。R3 与 R4 已发布 `recovery_epoch_54.pth`；
+  R4-SHUF15 已进入 epoch 6 并发布首个 `recovery_epoch_4.pth`。Q64-GLOBAL 继续因
+  `AssocGrpGRES` 等待。未见 Traceback、显存溢出或非有限数值，也未执行作业变更。
+
+- 2026-08-22 22:21 CST：R2/R2-SHUF48/Q48-GLOBAL 新一轮官方中间 validation 的
+  Avg-mAP/mAP@0.6/mAP@0.7 为 `66.44/59.08/44.93`、`66.03/58.37/44.53`、
+  `65.64/58.48/44.41`。R2 相对乱序对照为 `+0.41/+0.71/+0.40`，相对全局 Top-48
+  为 `+0.80/+0.60/+0.52`；当前节点重新同时出现框内排序和矩形 eligibility 的正向信号，
+  但仍不替代 60 轮终态。R3-AREA-SHIFT 已补齐 `recovery_epoch_54.pth`，至此六个先行
+  单元均具备 epoch 54 恢复点；R4-SHUF15 已进入 epoch 8，Q64-GLOBAL 继续等待。未见硬故障。
+
+- 2026-08-22 22:31 CST：R3、R3-AREA-SHIFT 与 R4 的新一轮官方中间 validation 更新为
+  `67.89/60.17/46.31`、`67.42/59.95/45.00`、`68.03/60.41/46.11`
+  （Avg-mAP/mAP@0.6/mAP@0.7）。R3 相对时间错位面积轨迹为 `+0.46/+0.22/+1.31`，
+  延续当前节点的正向对齐信号，但仍须等待 60 轮 final/final-EMA。R4-SHUF15 已进入 epoch 11
+  并发布 `recovery_epoch_9.pth`；Q64-GLOBAL 仍为 `PENDING (AssocGrpGRES)`。未见 Traceback、
+  显存溢出或非有限数值；没有提交、取消、重排、恢复或新增任何作业。
+
+- 2026-08-22 22:42 CST：R2-SHUF48 与 Q48-GLOBAL 的新一轮官方中间 validation 为
+  `66.03/58.26/44.39` 与 `65.88/58.75/44.73`（Avg-mAP/mAP@0.6/mAP@0.7），两项均已进入
+  epoch 59；R2-SHUF48 已写出 `epoch_59.pth`。R2 的最新可见值仍为
+  `66.44/59.08/44.93`，因此其相对两项对照的异步差值 `+0.41/+0.82/+0.54` 与
+  `+0.56/+0.33/+0.20` 只作过程记录，不作同阶段机制裁决。R4-SHUF15 已进入 epoch 14并保有
+  epoch 4/9 恢复点，Q64-GLOBAL 仍为 `PENDING (AssocGrpGRES)`。未见 Traceback、显存溢出或
+  非有限数值；没有终态 final/final-EMA，也没有提交、取消、重排、恢复或新增作业。
+
+- 2026-08-22 22:53 CST：Q64-GLOBAL job `1249132` 已从 `AssocGrpGRES` 转为 `RUNNING`，
+  完成双 rank 初始化并进入 epoch 1；没有人为重排或重复提交。R2、R2-SHUF48、Q48-GLOBAL、
+  R3 与 R4 已写出 `epoch_59.pth`，R3-AREA-SHIFT 已进入 epoch 58；这些只是训练端点证据，
+  尚非 final/final-EMA。最新中间结果为 R2/R2-SHUF48/Q48-GLOBAL
+  `66.44/58.81/45.10`、`66.03/58.26/44.39`、`65.88/58.75/44.73`，以及
+  R3/R3-AREA-SHIFT/R4 `67.83/60.00/46.56`、`67.27/59.76/44.60`、
+  `68.02/60.52/46.20`。R4-SHUF15 已进入 epoch 17并发布 `recovery_epoch_14.pth`。
+  未见 Traceback、显存溢出或非有限数值；不据中间结果选模。
+
+- 2026-08-22 23:04 CST：只读调度核验确认 R2/R2-SHUF48/Q48-GLOBAL/R4 jobs
+  `1249125/1249126/1249127/1249130` 已 `COMPLETED 0:0`；R3/R3-AREA-SHIFT 进入
+  epoch 59，R4-SHUF15 进入 epoch 20，Q64-GLOBAL 进入 epoch 4。R4 日志在
+  `Training Over` 前最后一次官方 validation 为 Avg-mAP/mAP@0.6/mAP@0.7
+  `68.02/60.32/46.26`。本次单次状态检查没有取得三个先完成单元的终态日志路径，也未取得
+  四个完成单元的结构化 final-EMA 收据，故不把既有中间值或 R4 日志末值提前标为 final-EMA。
+  可见日志未见 Traceback、显存溢出或非有限数值；没有提交、取消、重排、恢复或新增作业。
+
+- 2026-08-22 23:13 CST：同一只读核验取得六个完成单元在 `Training Over` 前的终态官方
+  validation。R2/R2-SHUF48/Q48-GLOBAL 的 Avg-mAP/mAP@0.6/mAP@0.7 为
+  `66.56/59.06/45.17`、`66.17/58.53/44.47`、`65.78/58.62/44.74`；R2 相对两项
+  对照分别为 `+0.39/+0.53/+0.70` 与 `+0.78/+0.44/+0.43`。R3/R3-AREA-SHIFT
+  为 `67.88/60.32/46.41` 与 `67.50/60.26/45.09`，时间对齐增量为
+  `+0.38/+0.06/+1.32`。R4 为 `68.02/60.32/46.26`，但 R4-SHUF15 与
+  Q64-GLOBAL 尚未终态，故不提前解释框外 free-token。R3 job `1249128` 与
+  R3-AREA-SHIFT job `1249129` 已 `COMPLETED 0:0`；R4-SHUF15 运行至 epoch 23并保有
+  epoch 9/14/19 恢复点，Q64-GLOBAL 运行至 epoch 6并发布首个
+  `recovery_epoch_4.pth`。未见硬故障；没有作业变更、成本测量或新增实验。
+
+- 2026-08-22 23:24 CST：只读核验确认 R4-SHUF15 job `1249131` 继续正常运行至
+  epoch 25，并新发布 `recovery_epoch_24.pth`；按最近三份保留规则，当前恢复点为 epoch
+  14/19/24。Q64-GLOBAL job `1249132` 运行至 epoch 9，仍保有首个 epoch-4 恢复点。
+  两项均无新的正式 validation，日志未见 Traceback、显存溢出或非有限数值。本条仅是
+  运行/恢复证据，不改变 R4 机制归因冻结，也没有作业变更、成本测量或新增实验。
+
+- 2026-08-22 23:35 CST：Q64-GLOBAL job `1249132` 已进入 epoch 12并新发布
+  `recovery_epoch_9.pth`，当前具备 epoch 4/9 两个可恢复点；R4-SHUF15 job `1249131`
+  已进入 epoch 28，继续保有 epoch 14/19/24 三个最近恢复点。两项仍为 `RUNNING`，均无
+  新的正式 validation，日志未见 Traceback、显存溢出或非有限数值。本条只确认训练连续性，
+  不用于选择 checkpoint、裁决框外 free-token、启动成本或增加实验。
+
+- 2026-08-22 23:45 CST：R4-SHUF15 job `1249131` 已进入 epoch 31并新发布
+  `recovery_epoch_29.pth`，当前最近三个恢复点为 epoch 19/24/29；Q64-GLOBAL job
+  `1249132` 已进入 epoch 15并新发布 `recovery_epoch_14.pth`，当前最近三个恢复点为
+  epoch 4/9/14。两项仍为 `RUNNING`，均无新的正式 validation，日志未见 Traceback、
+  显存溢出或非有限数值。本条只确认训练连续性，不用于选择 checkpoint、裁决框外 free-token、
+  启动成本或增加实验。
+
+- 2026-08-23 00:06 CST：只读调度与恢复点核验确认 R4-SHUF15 job `1249131` 和
+  Q64-GLOBAL job `1249132` 仍为 `RUNNING`。R4-SHUF15 新发布
+  `recovery_epoch_34.pth`，最近三个恢复点更新为 epoch 24/29/34；Q64-GLOBAL 新发布
+  `recovery_epoch_19.pth`，最近三个恢复点更新为 epoch 9/14/19。本轮未取得新的正式
+  validation、终态或硬错误回执，也未提交、取消、重排、恢复或新增作业。新增恢复点仅证明
+  训练连续性，不用于选择 checkpoint、裁决框外 free-token、启动成本或增加实验。
+
+- 2026-08-23 00:16 CST：R4-SHUF15 job `1249131` 仍为 `RUNNING`，已进入 epoch 40并
+  新发布 `recovery_epoch_39.pth`，最近三个恢复点更新为 epoch 29/34/39。Q64-GLOBAL job
+  `1249132` 仍为 `RUNNING`，已进入 epoch 23，最近三个恢复点保持 epoch 9/14/19。
+  两项原始 stdout/stderr 未见 Traceback、显存溢出或非有限数值，也没有新的正式 validation
+  或终态。本轮未提交、取消、重排、恢复或新增作业；恢复点不用于模型选择或机制裁决。
+
+- 2026-08-23 00:26 CST：Q64-GLOBAL job `1249132` 仍为 `RUNNING`，新发布
+  `recovery_epoch_24.pth`，最近三个恢复点更新为 epoch 14/19/24；R4-SHUF15 job
+  `1249131` 同样保持 `RUNNING`，最近三个恢复点仍为 epoch 29/34/39。本轮未取得新的正式
+  validation 或终态；新增恢复点只证明 Q64 全局对照持续完成训练更新，不用于选择 checkpoint、
+  提前解释 R4 的框外 free-token，或启动成本与补充实验。
+
+- 2026-08-23 00:46 CST：R4-SHUF15 job `1249131` 仍为 `RUNNING`，已进入 epoch 43；
+  00:32:13 的官方中间 validation 给出 Avg-mAP `65.87`。本次单次只读快照未捕获该轮
+  mAP@0.6/mAP@0.7，因此不计算与 R4 终态的完整三指标差值，也不提前解释框外 free-token。
+  Q64-GLOBAL job `1249132` 已进入 epoch 31并发布 `recovery_epoch_29.pth`，最近三个恢复点
+  更新为 epoch 19/24/29，尚无正式 validation。两项日志未见 Traceback、显存溢出或非有限数值；
+  没有作业变更、成本测量或新增实验。
+
+- 2026-08-23 00:56 CST：R4-SHUF15 job `1249131` 已进入 epoch 44，最新官方中间
+  validation 为 Avg-mAP/mAP@0.6/mAP@0.7 `66.27/59.02/44.59`；相对 R4 终态
+  `68.02/60.32/46.26` 暂低 `1.75/1.30/1.67` 个百分点。由于训练阶段不同且 SHUF15
+  尚未完成 60 轮，该差值不用于机制裁决或 checkpoint 选择。Q64-GLOBAL job `1249132`
+  已进入 epoch 34，最近三个恢复点仍为 epoch 19/24/29，尚无正式 validation。两项日志未见
+  Traceback、显存溢出或非有限数值；没有作业变更、成本测量或新增实验。
+
+- 2026-08-23 01:06 CST：R4-SHUF15 job `1249131` 与 Q64-GLOBAL job `1249132`
+  仍为 `RUNNING`，分别新增 `recovery_epoch_44.pth` 与 `recovery_epoch_34.pth`；最近三个恢复点
+  更新为 epoch 34/39/44 与 24/29/34。R4-SHUF15 最新中间 validation 仍为
+  Avg-mAP/mAP@0.6/mAP@0.7 `66.27/59.02/44.59`，Q64-GLOBAL 尚无正式 validation。
+  两项日志未见 Traceback、显存溢出或非有限数值；本次只读核验未提交、取消、重排、恢复或新增作业。
+  新恢复点仅是训练连续性证据，不用于 checkpoint 选择或 R4 机制裁决。
+
+- 2026-08-23 01:38 CST：本地 `E:\\Released_FineDiving_Dataset` 到远端
+  `/data/run01/sczc063/yuzibo/datasets/FineDiving` 的授权上传完成。补传覆盖
+  `Lowresolution01_Trimmed_Video_Frames` 与完整
+  `Lowresolution005_Trimmed_Video_Frames`；目录级核验分别达到
+  `312,256 / 354,562,258` 与 `312,256 / 249,019,138`（文件/字节）。最终对本地和远端
+  全量生成排序后的“相对路径 + 文件大小”清单，双方均为 1,337,505 文件 / 101,123,416,820
+  字节，逐条 `cmp` 完全一致。远端完成凭据写于数据集外部
+  `/data/run01/sczc063/yuzibo/datasets/.transfer_state/FineDiving/COMPLETE`；状态由
+  `transfer_running` 更新为 `transfer_complete_verified`。
+
+- 2026-08-23 01:43 CST：完成同一样本的 ZoomToken token-selection 主图。clean 可视化代码
+  `0b12c68e8559048a0bab617af2f420d2a2080f3d` 的 Slurm job `1250245` 在 `00:01:29`
+  内 `COMPLETED 0:0`；固定样本为 THUMOS14 validation `video_test_0001339` 的首个滑窗，展示
+  tubelet `32/96/160/224/288/352`。每行使用该方法自己的 checkpoint，并直接调用 production
+  selector 后在 VideoMAE heavy forward 前停止；原色网格为选中 native token，灰色网格为未选中
+  token，完整物理索引保存在 JSON。九个终态方法使用各自 `epoch_59.pth`；尚未终态的
+  R4-SHUF15/Q64-GLOBAL 使用 `recovery_epoch_44.pth/recovery_epoch_39.pth`，在图中明确标为
+  仅作定性观察。R3 与 R3-AREA-SHIFT 的全窗口 `K_t` 均跨 `56–70`，图中六列恰好均为 56。
+  该产物验证了矩形/乱序/全局支持的空间形态，不提供准确率或成本结论，也不把不同 checkpoint
+  的差异升级为反事实因果证据。终态回执为
+  `docs/aris/ZOOMTOKEN_TOKEN_SELECTION_VISUALIZATION_RECEIPT-2026-08-23.md`。
+
+- 2026-08-23 02:00 CST：在不改模型、不触碰训练作业的前提下，将 on-policy token-selection 可视化扩展到三个结果盲选的 THUMOS14 validation 样本：短动作板球 `video_test_0001194`、长持续举重 `video_test_0000058` 和多类田径 `video_test_0000367`。clean source `0b12c68e` 的只读路由 job `1250422` 在 `00:02:16` 内 `COMPLETED 0:0`，每个样本均生成 PNG/PDF/完整 physical-index JSON。九个终态方法继续使用各自 epoch-59 checkpoint；R4-SHUF15/Q64-GLOBAL 固定使用 epoch-49/39 recovery，仅作定性观察。完整 384-tubelet 支持统计显示 R1 在三个窗口内均为 1 种 mask/0 次转移，R3 系列仅 1–4 种 mask，而 R2、GLOBAL、R4 内容排序路线变化更频繁。该结果只说明若干几何路线在这些样本上的实际时间动态有限，不升级为准确率、成本或因果证据；终态回执追加在 `docs/aris/ZOOMTOKEN_TOKEN_SELECTION_VISUALIZATION_RECEIPT-2026-08-23.md`。
+
+- 2026-08-23 02:12 CST：对既有严格矩形矩阵进行一次只读核验。R4-SHUF15 job
+  `1249131` 与 Q64-GLOBAL job `1249132` 均仍为 `RUNNING`；前者新增
+  `recovery_epoch_49.pth`（627,957,176 bytes），最近三个恢复点为 epoch 39/44/49；后者
+  新增 `recovery_epoch_44.pth`（627,896,364 bytes），最近三个恢复点为 epoch 34/39/44。
+  本次未取得新的正式 validation、终态或硬错误回执，也没有提交、取消、重排、恢复、重启或
+  创建作业。新增 checkpoint 仅是训练连续性证据，不用于模型选择、R4 机制裁决或成本结论。
+
+- 2026-08-23 03:07 CST：ZoomToken Project 的 fresh `gpt-5.5-pro` 对话
+  `6a89ec16-90fc-83ea-a048-311b929ab876` 在两个附件与 GitHub 精确提交 `0b12c68e…` 上完成
+  正式裁决。附件以 browser upload 发送，未内联或打包。裁决为 `REVISE` 后继续 `RC32-KV`：
+  保留 R1 K64 严格矩形支持，只让同一 K32 mask 在全部 12 blocks 执行 query/output attention
+  与 MLP；另外 K32 保留 K/V，并在 RC 臂使用前一 tubelet 同位置、窗口内、detached carry 与
+  每 block 一个标量混合。最小四臂为 FULL64/DROP32/MOD32-KV/RC32-KV；不先实现 K24/K18、
+  learned gate 或 ChronoTransport 重构。该记录属于 `designed`，下一步是 Builder 最小实现、
+  独立 Critic 与结果盲 PRE_RUN，不构成性能或成本结果，也不改变既有 R4-SHUF15/Q64 作业。
+
+- 2026-08-23 03:55 CST：完成 `RC32-KV` 冻结设计的最小实现、独立审查、结果盲 PRE_RUN 与
+  真实训练提交。clean revision 为 `836f2ce4beafa8cbab513604dfa74be01a977a3c`，已推送至
+  GitHub 分支 `codex/zoomtoken-rc32-kv-v001`；变更仅覆盖三项新 config、R1 base config、
+  GeoRoute routing/wrapper、VideoMAE adapter、既有 N16R4 launcher 和 focused test。目标 N16R4
+  环境的 8 项 Torch 测试通过；独立 Critic 在对照 Pro 原文后确认 K64 lineage、K32 refresh、
+  同位置窗口内 carry 及无泄漏边界均符合设计并给出 PASS；同一 Evaluator 归一化为
+  `PRE_RUN_READY/PASS`。FULL64 只读复用已完成 R1 job `1249099`，不重复训练。DROP32、
+  MOD32-KV、RC32-KV 以 seed 42、双卡、60 轮、官方 THUMOS14 配方分别提交为 jobs
+  `1250604/1250605/1250606`，共同根目录为
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_r1_refresh_rc32_836f2ce4_seed42_20260823T0355`；
+  首次状态为 RUNNING/RUNNING/RUNNING。当前只有实现与启动证据，尚无新增 validation、成本或
+  论文结论；不提交 K24/K18、多 seed、重复 R1 或额外成本作业。
+
+- 2026-08-23 04:03 CST：只读 Slurm/日志核验发现 RC32-KV 首个部署三项均已在训练前终止：
+  DROP32 `1250604` 与 MOD32-KV `1250605` 各运行 34 秒，RC32-KV `1250606` 运行 30 秒，
+  均为 `FAILED 1:0`。三个 traceback 的根因一致：`tools/train.py::_zoomtoken_recovery_contract`
+  仍把 recovery 限定为旧冻结 route surface，未接受新 config schema，并在模型、视频、checkpoint
+  和首个训练 batch 前抛出 `ValueError: ZoomToken recovery is restricted to the frozen route
+  surfaces`。共同 namespace 无 recovery、validation、成本或模型结果；这是确定性的训练入口/准入
+  实现缺陷，不是 DROP32、MOD32-KV、RC32-KV 或 carry 的科学结果。未提交、取消、恢复、重排或
+  创建任何作业；既有 Q64-GLOBAL `1249132` 继续 RUNNING，未见新恢复点或正式 validation。
+
+- 2026-08-23 04:14 CST：单次只读核验确认 Q64-GLOBAL job `1249132` 继续 `RUNNING`，累计运行
+  `05:25:05`；新增 `recovery_epoch_49.pth`（627,896,364 bytes）与
+  `recovery_epoch_54.pth`（627,896,428 bytes），最近三个恢复点为 epoch 44/49/54。未发现新的
+  正式 validation、终态文件、Traceback、显存溢出或非有限数值。RC32-KV jobs
+  `1250604/1250605/1250606` 的训练前失败终态不变。本轮没有提交、取消、恢复、重排或创建作业；
+  新恢复点只属于运行连续性证据，不构成性能或成本结论，也不用于 checkpoint 选择。
+
+- 2026-08-23 05:03 CST：单次只读 Slurm 终态核验确认 Q64-GLOBAL job `1249132` 已于
+  04:56:25 以 `COMPLETED 0:0` 结束，累计运行 `06:06:57`；最近三个完整恢复点仍为
+  epoch 44/49/54。本次检查未捕获正式 validation 行，也未发现结构化 finalization/result 文件，
+  因此这里只把证据升级为“60 轮训练完成”，不从退出码或 checkpoint 推断准确率、框外
+  free-token 机制或成本。RC32-KV jobs `1250604/1250605/1250606` 的既有训练前失败终态不变；
+  本轮没有提交、取消、恢复、重排、重启或创建作业。
+
+- 2026-08-23 05:34 CST：对同一既有 Q64-GLOBAL job `1249132` 的一次只读日志摄取取得
+  `Training Over` 前最后一组冻结 EMA 官方 validation：tIoU 0.3/0.4/0.5/0.6/0.7 分别为
+  `82.91/78.61/71.64/60.66/45.39`，Avg-mAP 为 `67.84`。作业终态仍为
+  `COMPLETED 0:0`，没有结构化 finalization/result 文件。相对 R4 终态
+  `68.02/60.32/46.26`（Avg-mAP/mAP@0.6/mAP@0.7），R4−Q64-GLOBAL 为
+  `+0.18/-0.34/+0.87` 个百分点：这是单种子准确率证据，提示连续矩形 core 对高 tIoU
+  可能有益，但不能替代 R4-SHUF15 冻结终态、多种子或完整成本。RC32-KV 三项训练入口失败
+  终态不变；本轮没有提交、取消、恢复、重排、重启或创建作业。
+
+- 2026-08-23：完成 RC32-KV 首次部署所暴露 recovery route-schema 缺口的最小修复。clean
+  candidate `813012620dca991ff90121d0d9faf688f303d1ef` 已推送至
+  `codex/zoomtoken-rc32-kv-v001`；相对原实现 `836f2ce4…` 只修改 `tools/train.py` 与
+  `tests/test_zoomtoken_r1_refresh_carry_k32.py`。训练入口现在允许既定的 `R1-DROP32`、
+  `R1-MOD32-KV`、`R1-RC32-KV` 使用原有完整 recovery contract，并继续拒绝未知 route；
+  5-epoch/latest-three、model/EMA/optimizer/scheduler/scaler、update index、sampler 与 RNG
+  恢复语义均未改变。目标 N16R4 clean source
+  `/data/run01/sczc063/yuzibo/runtime/zoomtoken_rc32_81301262/source` 的实际三配置入口测试为
+  `10 passed`，py_compile、diff 和 clean-source 检查通过；独立只读审查无条件 PASS。Windows
+  本地 pytest 因 PyTorch `c10.dll` 初始化失败无法收集，但不是测试断言失败，目标 Linux 环境已
+  覆盖该入口。没有提交 Slurm 作业、访问训练数据或运行模型；旧 jobs
+  `1250604/1250605/1250606` 仍为不可恢复的训练前无效 epoch，因此本条只把修复升级为
+  `implemented_and_target_tested`，不产生准确率、成本或论文结论。
+
+- 2026-08-23 21:00 CST：clean revision
+  `813012620dca991ff90121d0d9faf688f303d1ef` 完成结果盲 PRE_RUN 并提交新的独立
+  RC32-KV seed-42 完整训练 epoch。PRE_RUN 复核了精确 HEAD/ref/clean、三份真实 config 的
+  recovery 入口（目标环境 `10 passed`）、411 个规范 THUMOS14 视频软链接且 0 断链、annotation、
+  class map、VideoMAE-S pretrain、1.7 TB 可用空间、空结果根与官方 evaluator/Soft-NMS/EMA/
+  checkpoint 合同；三个 `sbatch --test-only` 均通过。FULL64 继续只读复用 R1 job `1249099`。
+  DROP32/MOD32-KV/RC32-KV 分别提交为 jobs `1252179/1252180/1252181`，共同结果根为
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_r1_refresh_rc32_81301262_seed42_20260823T2100`；
+  首次状态均为 `PENDING (Priority)`，每项申请 1 node、2 GPU、8 CPU、8 hours，不显式覆盖站点
+  memory，也不传 resume。当前只有 PRE_RUN/调度接收证据，没有新增准确率、成本或论文结论；
+  不提交 K24/K18、多 seed、重复 FULL64 或成本作业。
+
+- 2026-08-23 21:01 CST：只读 Slurm/日志核验确认三个修复后单元均已运行：DROP32
+  `1252179` 位于 `g0063`，MOD32-KV `1252180` 与 RC32-KV `1252181` 位于 `g0066`
+  的独立 Slurm 分配。三项日志均越过旧 recovery-contract 失败点，出现
+  `Training Starts...` 与 `[Train]: Epoch 0 started`；未发现 Traceback、OOM 或非有限数值。
+  这只是进入真实训练的运行证据，尚无 recovery、正式 validation、准确率或成本结果。
+
+- 2026-08-24 01:29 CST：只读核验显示 DROP32/MOD32-KV/RC32-KV jobs
+  `1252179/1252180/1252181` 均为 `RUNNING`，elapsed 约 `04:30:12`，已进入第 51 轮；
+  三臂均保留 recovery epochs `39/44/49`。第 49 轮后的官方 validation
+  Avg-mAP/mAP@0.6/mAP@0.7 分别为 `65.48/57.13/43.50`、
+  `65.50/57.65/43.90`、`64.20/56.21/42.18`。未见 Traceback、OOM 或非有限训练故障，
+  也尚无 final/final-EMA 或 selector-inclusive cost。RC32-KV 当前相对 MOD32-KV 为
+  `-1.30/-1.44/-1.72` 个百分点，仅登记为负向过程信号；不据此提前选模或改变冻结路线。
+
+- 2026-08-24 01:40 CST：三项修复后训练均继续为 `RUNNING` 并进入 epoch 53，未见
+  Traceback、OOM 或非有限数值。第 51 轮后的官方中间 Avg-mAP/mAP@0.6/mAP@0.7 更新为
+  DROP32 `65.79/57.89/43.63`、MOD32-KV `65.89/58.64/43.99`、RC32-KV
+  `64.35/56.62/42.11`；RC32-KV 相对 MOD32-KV 仍为负向过程信号，不用于选模或提前停止。
+  为防止平均 mAP 掩盖边界损失，在 clean RC32 worktree 新增只读 source-video 边界评估器，按
+  冻结的 score-ordered greedy one-to-one、短动作、归一化起止误差和 high-IoU bins 计算，7 项
+  focused 测试通过；它不进入训练路径，尚未消费终态 prediction。另生成可复现的中间
+  计算量—准确率图：按 VideoMAE block 的 Q/K/V/output、attention、MLP 矩阵乘，DROP32、
+  MOD32-KV、RC32-KV 约为 FULL64 的 `49.32%/58.11%/58.11%`。该横轴明确排除解码、H2D、
+  scout、patch embedding、adapter、检测头、后处理与 NMS，当前没有 exact-checkpoint 端到端
+  latency/energy，故不作效率结论。
+
+- 2026-08-24 01:48 CST：为终态边界摄取完成 clean descendant
+  `cb38b555fd0b564711a5941fb86aed703f3ad1f4` 并推送分支
+  `codex/zoomtoken-rc32-boundary-eval-v001`。新增 final-evaluation launcher 只使用各 arm 的
+  `checkpoint/epoch_59.pth`，绑定 canonical THUMOS14 validation 并保存
+  `result_detection.json`；不接受 recovery checkpoint。独立只读审查发现并修复 `tools/test.py`
+  原先将无 `module.` 前缀的 EMA state 直接加载到 DDP wrapper 的确定性错误，现改为加载
+  `model.module`；非 EMA 路径不变。py_compile、bash syntax、diff check 与 8 项 focused tests
+  全部通过。该 descendant 不改变正在运行的 `81301262…` 训练或 checkpoint，也未提交新的
+  Slurm 作业；三项训练仍为 `RUNNING`。
+
+- 2026-08-24 01:53 CST：三项训练均进入 epoch 54，未见 Traceback、OOM 或非有限数值。
+  第 53 轮后的官方中间 Avg-mAP/mAP@0.6/mAP@0.7 为 DROP32
+  `65.81/57.66/43.96`、MOD32-KV `66.23/59.19/44.46`、RC32-KV
+  `64.59/56.93/42.85`。MOD32-KV 相对 DROP32 为 `+0.42/+1.53/+0.50`；RC32-KV
+  相对 MOD32-KV 为 `-1.64/-2.26/-1.61`。已把可复现计算量—准确率图更新到该节点；
+  仍不据中间 checkpoint 选模，继续等待 epoch-59 EMA 与终态 prediction。
+
+- 2026-08-24 01:58 CST：独立只读核验定位已完成 FULL64/R1 的 final checkpoint 为
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_official_prebackbone_r1_9e25c6d3_seed42_20260822T080108Z/cells/r1_strict_rect8x8_prebackbone_sparse_adapter/seed42/gpu2_id0/checkpoint/epoch_59.pth`，
+  且确认尚无 `result_detection.json`。终态诊断 descendant 更新为 clean
+  `4e940b780da5a3cd0ea28ca420c5d1cb879818b5`，只为 final-evaluation launcher 增加 FULL64
+  映射和回归断言。`bash -n`、8 项 focused tests、diff check 通过并已推送；未提交任何作业。
+
+- 2026-08-24 02:55 CST：RC32 修复版完整矩阵终态。jobs
+  `1252179/1252180/1252181` 均 `COMPLETED 0:0`，每个 cell 的
+  `checkpoint/epoch_59.pth` 存在，日志出现 `Training Over...` 且没有 Traceback、OOM 或非有限数值。
+  final-EMA Avg-mAP/mAP@0.6/mAP@0.7 为 DROP32 `66.11/57.83/44.88`、MOD32-KV
+  `66.50/59.24/45.21`、RC32-KV `64.73/57.34/42.91`，只读 FULL64 为
+  `69.07/61.14/46.57`。RC32-KV 对 A/B/C 的准确率门全部失败；MOD32-KV 相对 FULL64 也
+  超过允许损失。按 Pro 预注册分支停止当前 temporal carry 与 KV-preserving K32 depth-allocation
+  路线，不启动成本、边界补充、多 seed、K24/K18、learned gate 或蒸馏。最终可复现
+  计算量—准确率图已生成；其 `49.32%/58.11%/58.11%` 仅为重块 matmul FLOPs 代理，
+  不是端到端延迟或能耗。
+
+- 2026-08-24 03:30 CST：fresh ZoomToken Project Pro 以完成的 seed-42 终态为唯一新证据，裁决
+  `REVISE`，选择唯一候选 `DSR6-KV`。机制冻结为：严格 8×8/K64 支持不变；VideoMAE
+  blocks 0–5 完整 K64 更新，blocks 6–11 对同一个每-tubelet K32 mask 执行
+  query/output/MLP，全部 K64 保持不 detach 的 K/V context 并继续经过既有 Adapter。禁止 hidden
+  carry、浅层 transport、新参数/损失、逐层动态预算、第二切分点、K24/K18 和新 seed。机械重块
+  代理约 `79.055%`，不等于端到端速度。唯一新实验为 seed42、双卡、60 epoch 的 DSR6-KV；
+  final-EMA 必须同时达到 Avg-mAP `68.57`、mAP@0.6 `60.64`、mAP@0.7 `46.07`，任一失败即
+  `STOP_DEPTH_ROUTE` 且不测成本。当前状态为 `designed`，尚未实现或运行；next owner 为 Builder，
+  必须先返回最小修改计划和 clean candidate，再经独立 Critic 与结果盲 Evaluator/PRE_RUN。
+
+- 2026-08-24 04:20 CST：`CENTRAL-RUN-ZOOMTOKEN-DSR6-KV-SEED42-v001` 单次调度在
+  `sbatch` 前 fail closed。只读门通过 exact GitHub SHA/ref、canonical THUMOS14 `411/0`、
+  annotation/class map/VideoMAE-S/OpenTAD 环境文件、两个新根无碰撞、同名 job 不存在与
+  `/data` 可用 `1651527008 KiB`。通过学术代理建立 immutable clean source
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_dsr6_src_3260cd39`，HEAD 和
+  `refs/remotes/origin/codex/zoomtoken-dsr6-kv-v001` 均为
+  `3260cd39154069138c6b1757326372cc3b73754e`。目标环境 focused precheck 随后因非登录 shell
+  未 source `/etc/profile`、`module` 不可见而退出；没有执行 `sbatch --test-only` 或正式
+  `sbatch`。复核确认结果根不存在、Slurm/sacct 无同名 job，`actual_attempt_count=0`。这是
+  预提交环境初始化顺序问题，不是模型、训练、性能或成本证据；下一步须由新的单次调度按文档
+  顺序初始化环境后重跑同一 precheck，科学合同不变。
+
+- 2026-08-24 04:24 CST：机械重调度
+  `CENTRAL-RUN-ZOOMTOKEN-DSR6-KV-SEED42-v002` 仍在 `sbatch` 前 fail closed。唯一允许的
+  `source /etc/profile` 在调用方 `set -u` 下进入 `/etc/profile.d/apps-bin-path.sh` 时因未定义
+  `XDG_DATA_DIRS` 退出，focused target-environment test 尚未执行。停止后再次确认 immutable
+  source HEAD/ref exact 且 clean、requested result root absent、squeue/sacct exact job absent；
+  `actual_attempt_count=0`。没有训练、GPU、checkpoint、validation、性能或成本证据。下一恢复需
+  新授权仅允许在 source profile 期间局部 `set +u`，完成后恢复 `set -u` 再运行完全相同的检查。
+
+- 2026-08-24 04:23:04 CST：最终机械调度
+  `CENTRAL-RUN-ZOOMTOKEN-DSR6-KV-SEED42-v003` 通过。唯一 shell 修正为 source
+  `/etc/profile` 期间 `set +u`、完成后恢复 `set -u`。N16R4 focused suite
+  `11 passed in 41.46s`，launcher syntax 与 `sbatch --test-only` PASS；source HEAD/ref/clean 仍为
+  `3260cd39154069138c6b1757326372cc3b73754e`。唯一正式训练 job `1252521` 已提交，初始
+  `PENDING`，1 node/2 GPU/8 CPU/8 h，result root
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_dsr6_3260cd39_seed42_20260824`。该单元固定
+  R1-DSR6-KV、seed42、60 epochs、global/local batch 2/1、canonical THUMOS14
+  training→validation、5-epoch full-state recovery/latest3+final 与 epoch59 EMA。当前仅为启动证据；
+  尚无准确率或成本结果，不允许重复、补臂、额外 seed 或成本。
+
+- 2026-08-24 04:25 CST：job `1252521` 终态 `FAILED 1:0`，elapsed `00:00:02`。
+  stdout 为空；stderr 为 `/etc/profile.d/Z97-byobu.sh: line 24: LC_BYOBU: unbound variable`；
+  `cells/r1_dsr6_kv_prebackbone_sparse_adapter/seed42` 不存在。launcher 在新 Slurm shell 中仍以
+  `set -u` source `/etc/profile`，所以提交端 precheck 的局部 nounset 修正没有进入 job。该事件发生
+  在 cell、数据、模型、checkpoint 与 validation 前，是 infrastructure failure，不是 DSR6 结果。
+  job 封存且不得 resume/requeue/retry；distinct epoch 需先修 launcher 的局部 profile 初始化、
+  加 focused regression、独立审查并重做结果盲 PRE_RUN。模型、config 和准确率门保持不变。
+
+- 2026-08-24 04:31 CST：launcher-only clean/pushed candidate
+  `4eb40fe3eb67ea3511a16d26e38d6bdca3ca5c93` 形成，父提交 exact `3260cd39…`，只改
+  `scripts/run_zoomtoken_official_prebackbone_bc_n16r4.sh` 与
+  `tests/test_zoomtoken_r1_refresh_carry_k32.py`。N16R4 focused suite `12 passed in 39.91s`，
+  HEAD/ref/clean 通过。fresh 独立 Critic 确认 launcher 边界、fail-closed 与 no-science-drift 正确，
+  但因 shell regression 没有显式 `exit 0` 返回 `NEEDS_ATTENTION`。目标 Linux pytest/probe 实际
+  PASS 不被主代理用来覆盖独立门；Evaluator/PRE_RUN 与新实验均未启动。
+
+- 2026-08-24 04:40 CST：中央授权的 focused test-only correction 已形成 clean/pushed
+  `c6327a891809aa30370b3b2d9bedab0dcfe0d326`（父 `4eb40fe3…`）。相对父提交只在 embedded
+  shell regression 末尾增加显式 `exit 0`，没有再改 launcher、模型、config、数据、seed、资源、
+  恢复、EMA 或阈值。N16R4 exact checkout 的同一 focused suite 为 `12 passed in 40.20s`；fresh
+  独立 Critic 返回 `AUDIT_PASS`。fresh 结果盲 Evaluator 又提交了唯一 no-data/no-model 双卡
+  job-shell witness `1252525`，终态 `COMPLETED 0:0`，证明真实 Slurm shell 中 exact profile
+  boundary 成功且 nounset 已恢复。canonical THUMOS14 `411/0`、依赖、clean ref 通过；拟定 root
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_dsr6_c6327a89_seed42_20260824` 和 job
+  `zt-dsr6-kv-s42-c6327a89` 均不存在。状态为 `PRE_RUN_READY`；没有正式 c632 训练或性能结果，
+  旧 job `1252521`/root 继续封存。下一动作仅是请求一个新的 exact 单 cell 授权。
+
+- 2026-08-24 04:46:31 CST：第一次 formal dispatch 因 PRE_RUN witness `1252525` 已占用原拟定
+  exact job name，在 `sbatch` 前停止，actual attempt count 为 0、root 仍不存在。中央随后仅把
+  正式名称替换为 `zt-dsr6-train-s42-c6327a89`，未改任何科学或运行字段。复核 clean source
+  HEAD/ref exact `c6327a891809aa30370b3b2d9bedab0dcfe0d326`、新 job name/root 不存在后，唯一
+  DSR6-KV 正式 job `1252527` 成功提交，初始 `PENDING`。result root 为
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_dsr6_c6327a89_seed42_20260824`。该 cell 固定
+  canonical THUMOS14 training→validation、seed42、双卡 global/local batch 2/1、60 epochs、每 5
+  epoch full-state recovery/latest3+final 与 epoch59 EMA；当前没有性能或成本结论，只进行事件驱动
+  只读监控。
+
+- 2026-08-24 04:48 CST：唯一 DSR6-KV job `1252527` 已在 `g0041` 转为 `RUNNING`，start time
+  `04:46:36`。stderr 仅见模块加载、torchrun OMP 提示；stdout 已完成模型参数登记并明确出现
+  `Training Starts` 与 `Epoch 0 started`。尚无 5-epoch recovery、validation 或终态指标，也未见
+  Traceback/OOM/非有限 loss。该更新是运行证据，不是性能或效率证据；矩阵、final-EMA 选择与
+  STOP_DEPTH_ROUTE 门保持不变。
+
+- 2026-08-24 05:07 CST：唯一 DSR6-KV job `1252527` 仍在 `g0041` 正常 `RUNNING`，elapsed
+  `00:21:05`。日志依次进入 epoch `0–5`；在 `05:06:03` 发布首个完整恢复点
+  `cells/r1_dsr6_kv_prebackbone_sparse_adapter/seed42/gpu2_id0/checkpoint/recovery_epoch_4.pth`
+  （`627,950,731` bytes），随后开始 epoch 5。未见 Traceback、OOM 或非有限 loss。该事件只证明
+  每 5 epoch 的恢复合同已首次实际执行，并不提供中间准确率、最终性能或成本证据；不据此选模，
+  继续等待新的恢复点、硬故障或 epoch59 EMA 终态。
+
+- 2026-08-24 05:25 CST：job `1252527` 仍为 `RUNNING`，elapsed `00:39:15`，已依次进入
+  epoch `0–10`。第二个恢复点 `recovery_epoch_9.pth` 于 `05:24:53` 发布，大小
+  `627,950,731` bytes；首个 `recovery_epoch_4.pth` 仍存在且大小相同。未见 Traceback、OOM 或
+  非有限 loss。两份文件证明每 5 epoch 的恢复节奏持续执行，但仍不提供准确率、成本或
+  checkpoint 选择证据；继续保持 final epoch59 EMA 主结果与单作业边界。
+
+- 2026-08-24 05:45 CST：job `1252527` 在 `g0041` 继续 `RUNNING`，elapsed `00:59:07`，已进入
+  epoch 15。第三个恢复点 `recovery_epoch_14.pth` 于 `05:43:47` 发布（`627,952,846` bytes）；
+  `recovery_epoch_4.pth` 与 `recovery_epoch_9.pth` 仍存在，形成冻结保留上限下的三份有效恢复点。
+  日志仍无 Traceback、OOM 或非有限 loss。该记录证明恢复节奏和当前三份保留状态，不提供任何
+  中间性能或效率证据；下一次恢复发布应同时验证最旧恢复点按 latest-3 规则被替换。
+
+- 2026-08-24 06:03 CST：job `1252527` 仍为 `RUNNING`，elapsed `01:17:13`，已进入 epoch 20。
+  `recovery_epoch_19.pth` 于 `06:02:39` 发布（`627,952,846` bytes）；checkpoint 目录当前严格只保留
+  epochs `9/14/19`，epoch 4 已按 latest-3 规则移除。未见 Traceback、OOM 或非有限 loss。至此
+  “每 5 epoch 发布、只保留最近三份”的恢复合同已在真实训练中完整验证；仍不读取中间性能，
+  继续等待后续异常或 epoch59 EMA 终态。
+
+- 2026-08-24 06:22 CST：job `1252527` 继续 `RUNNING`，elapsed `01:35:35`，已进入 epoch 25。
+  `recovery_epoch_24.pth` 于 `06:21:40` 发布（`627,952,846` bytes），最近三份恢复点随之轮换为
+  epochs `14/19/24`，epoch 9 已移除；未见 Traceback、OOM 或非有限 loss。该事件只确认既定恢复
+  机制持续执行，不形成中间性能、效率或选模证据；继续等待硬故障或 epoch59 EMA 终态。
+
+- 2026-08-24 06:41 CST：job `1252527` 仍为 `RUNNING`，elapsed `01:54:42`，已进入 epoch 30。
+  `recovery_epoch_29.pth` 于 `06:40:47` 发布（`627,952,846` bytes），最近三份恢复点轮换为
+  epochs `19/24/29`，epoch 14 已移除；未见 Traceback、OOM 或非有限 loss。该事件继续只证明恢复
+  合同执行正常，不读取中间性能，也不改变 epoch59 EMA 的唯一判定规则。
+
+- 2026-08-24 07:00 CST：job `1252527` 继续 `RUNNING`，elapsed `02:13:14`，已进入 epoch 35。
+  `recovery_epoch_34.pth` 于 `06:59:34` 发布（`627,952,846` bytes），最近三份恢复点轮换为
+  epochs `24/29/34`，epoch 19 已移除；未见 Traceback、OOM 或非有限 loss。该常规恢复事件不提供
+  中间性能或效率证据，继续等待硬故障或 epoch59 EMA 终态。
+
+- 2026-08-24 07:19 CST：job `1252527` 仍为 `RUNNING`，elapsed `02:32:34`，已进入 epoch 40。
+  `recovery_epoch_39.pth` 于 `07:18:21` 发布（`627,952,846` bytes），最近三份恢复点轮换为
+  epochs `29/34/39`，epoch 24 已移除；未见 Traceback、OOM 或非有限 loss。该常规恢复事件仅证明
+  运行与可恢复性，尚无准确率、效率或终态证据。
+
+- 2026-08-24 08:06 CST：job `1252527` 仍为 `RUNNING`，elapsed `03:19:16`，已进入 epoch 45。
+  `recovery_epoch_44.pth` 于 `08:05:15` 发布（`627,952,846` bytes），最近三份恢复点轮换为
+  epochs `34/39/44`，epoch 29 已移除；未见 Traceback、OOM 或非有限 loss。该常规恢复事件仅证明
+  五轮恢复和 latest-3 保留合同继续真实执行，不提供准确率、效率或终态证据。
+
+- 2026-08-24：严格 VideoMAE A-MoD 参照完成于 clean/pushed revision
+  `a41714e9f9271906a2eb4505e3fedc590c838055`（branch `codex/zoomtoken-amod-v001`）。实现交替使用
+  dense blocks `0/2/4/6/8/10` 与 A-MoD blocks `1/3/5/7/9/11`；后者按前一 dense block 的
+  attention-probability column mean 稳定选择 top-400/800，仅更新选中 token 的 Attention+MLP，
+  未选 token identity bypass，既有 Adapter 对全部 800 token 保持 dense。N16R4 无数据 focused
+  测试 `8 passed`，独立 Critic `AUDIT_PASS`。该记录是实现/审查证据，不是准确率、延迟或能耗结果。
+
+- 同日确认：上述 A-MoD 参照没有帧间 cache/carry，不能代替用户要求的帧时序特征保存和映射。
+  跨帧方向继续保持 active；已准备新的 Project Pro 科学讨论，以冻结存储状态、跨帧/tubelet 对齐、
+  当前帧变化评分、刷新和失效/场景切换、梯度及无未来帧泄漏边界。决定返回前不提交新的 A-MoD
+  或 temporal-memory 正式训练，不干扰唯一运行中的 DSR6 job `1252527`。
+
+- Pro 材料身份回验发现未执行的 v008 请求仍绑定设计提交 `412ab1db…`，因此在任何浏览器 mutation
+  发生前将其替代为 v009。新 prepared Sources 为 `CURRENT_RESEARCH_STATE-v013.md`
+  (`pfile-20260824T011407Z-72f874b72d`) 与 `MODEL_EXPERIMENT_HISTORY-v008.md`
+  (`pfile-20260824T011407Z-2a86b70c1e`)，二者都绑定 implemented/tested/reviewed revision
+  `a41714e9…`。新 exact Sources 请求为 `PROJECT_SOURCE_SYNC_REQUEST-v009.md`，fresh Pro 请求为
+  `PRO_AMOD_TEMPORAL_MEMORY_ROUTE_ADJUDICATION_REQUEST-v002.md`，queue
+  `msg-20260824T011426Z-339f9da9233e`，状态 queued/pending exact lease；尚未上传 Source，也尚未
+  提交 Pro turn。
+
+- 同轮完成时序实现入口的只读代码定位。原生 tubelet 提取与 sparse Adapter 已维护
+  `(tubelet_index, spatial_index)` lineage；THUMOS sample 已提供 `video_name`、`window_start_frame`；
+  ChronoTransport 已有可机械复用的 per-stream cache、detach policy、age、首 chunk 强制
+  RECOMPUTE、non-finite fallback 和 current-state delta/cosine signals。当前缺失的是可靠的 token
+  correspondence、遮挡/进出画面/scene-cut invalidation 和跨 window identity。实现不得按 DDP batch
+  下标持久绑定 cache，也不得把 same spatial index 当成 same physical content；epoch-boundary resume
+  应清空 live memory 并 warm-start，除非 Pro 明确冻结另一恢复语义。该定位不改变模型、不提交作业，
+  但使 Pro 返回后可直接在明确代码接点实施。
+
+- 2026-08-24 09:14 CST：只读核验 DSR6-KV job `1252527` 仍在 `g0041` `RUNNING`，elapsed
+  `04:31:33`，日志已进入 epoch 51。`recovery_epoch_49.pth` 于 `08:52:13` 发布，最近三份恢复点
+  为 epochs `39/44/49`；未见 Traceback、OOM 或非有限 loss。日志中的过程性 validation 不作为
+  final-EMA 证据、不用于挑选 checkpoint，也不改变准确率门或成本关闭状态。
+
+- 同日形成严格 A-MoD test-only clean successor
+  `31e4b1e61a23c4f1b319249684c8f05da6734235`，相对 `a41714e9…` 只修改
+  `tests/test_zoomtoken_amod_paper_exact.py`。新增测试分别用逐块唯一 marker 证明每个 A-MoD block
+  消费紧邻前一 Dense block 的 routing score，并在官方 16-frame/160×160 几何上 hook 全部 12 个
+  Adapter，证明每次输入均为 `[1,800,8]`。远端标准 OpenTAD 环境 CPU-only 运行结果为
+  `10 passed in 35.05s`；未申请 GPU/Slurm、未读取数据或结果。该后继不改变模型或科学合同。
+
+- 2026-08-24：fresh Project Pro 完成时序记忆路线裁决，结论为 `REVISE / APM32-CTX64`。冻结方法
+  使用严格 R1 K64 支持、前一 tubelet detached pre-position patch memory、半径 2 mutual-nearest
+  对齐与 `0.80` 阈值；有效匹配不足 32 时 K64 fallback，否则 K32 refresh/K64 context。
+  `CUR32-CTX64` 共享 mask/fallback、仅使用当前 embedding，作为记忆替换的 matched control。
+  该裁决是 preexecution design，不是准确率、延迟或能耗证据。
+
+- 同日完成七文件初始候选 `435ab8dd6a102a96f26b2e37e2655e711277dcfd`。fresh 独立 Critic
+  发现一个真实可达的批处理缺陷：各样本 fallback 数不同时，执行器仍错误要求批内刷新总数相等。
+  两文件聚焦后继 `d985dfb8b0cba4f70c28770643145ee44cb451d2` 改为按实际 Query 数分桶，
+  并新增同批 `64/96` 刷新数 known-answer。N16R4 标准 OpenTAD 环境在 exact clean SHA 上
+  `13 passed in 34.74s`；fresh Critic 复核为 `AUDIT_PASS`。未使用数据、GPU、Slurm 或运行结果。
+
+- fresh 结果盲 Evaluator 随后返回 `PRE_RUN_NOT_READY`。代码/配置/launcher 合同已通过，尚缺
+  两项正式准入收据：Fit/train 单批有限 loss 前向/反向及精确执行账本；完整 model/optimizer/
+  scheduler/scaler/EMA/RNG save-resume fixture，并证明 temporal memory 不被 checkpoint 保存。
+  在两项证据形成前不提交 APM/CUR 60-epoch cell；DSR6 job `1252527` 独立且未被读取或干预。
+
+- 随后完成结果盲执行 successor `e92df6a4737a10955722c6aedc2f079e0d285a18`，父提交为
+  `d985dfb8…`，分支 `codex/zoomtoken-apm32-ctx64-v001`。该后继不改 APM/CUR 模型、配置或科学
+  门，只补齐 production one-batch preflight 与 APM/CUR 的既有五轮完整恢复入口；保存—加载检查
+  覆盖 model、EMA、optimizer、scheduler、scaler、训练计数、sampler 与 RNG，并拒绝 temporal
+  memory 进入 checkpoint。preflight 不构建 validation/test loader，不输出指标。
+
+- exact clean SHA 在 N16R4 标准 OpenTAD 环境执行 CPU-only focused suite，结果为
+  `19 passed, 1 warning in 50.83s`；fresh 独立 Critic 返回 `AUDIT_PASS`。fresh 结果盲 Evaluator
+  的终态仍为 `PRE_RUN_NOT_READY`，唯一剩余缺口是 APM/CUR 各一次实际双卡 Slurm 单批机械见证。
+  资源请求已固化为 `ZOOMTOKEN_APM32_CTX64_PREFLIGHT_RUN_REQUEST-2026-08-24.md`；本轮没有
+  GPU/Slurm 权限，因此未提交见证或正式训练，亦未触碰 DSR6 job `1252527`。
+
+- 2026-08-24 10:50 CST 对唯一 DSR6-KV job `1252527` 做一次只读监控。scheduler 仍为
+  `RUNNING`（`g0041`，elapsed `06:04:01`）；新发布 `recovery_epoch_54.pth`
+  (`627,952,846` bytes)，latest-three 为 `44/49/54`，并已发布预注册
+  `checkpoint/epoch_59.pth` (`627,933,747` bytes)。精确根未变，未见 Traceback、OOM 或
+  non-finite loss。final validation 尚未终态，因此这些是训练/恢复执行证据，不是准确率、成本或
+  checkpoint 选择证据；未读取或提升任何 live metric。
+
+- 2026-08-24 11:03 CST：唯一正式 DSR6-KV job `1252527` 已终态 `COMPLETED 0:0`；运行区间
+  `04:46:36–10:53:53`、elapsed `06:07:17`、节点 `g0041`。`epoch_59.pth` 和最近恢复点
+  `44/49/54` 存在，硬故障扫描未见 Traceback/OOM/non-finite。精确结果根未发现独立
+  result/finalization/metric JSON，本次有界终态快照没有取得可审计 final-EMA 三指标，因此
+  准确率门保持 `UNADJUDICATED`，既不宣称 PASS 也不推定 STOP；成本与追加实验继续关闭。
+  下一步仅为另行授权的不可变终态日志/EMA 只读结果摄取；不重训、不恢复、不补臂。
+
+- 2026-08-24：按用户的实验进展/性能报告请求，对 job `1252527` 的精确不可变终态 stdout
+  做只读摄取。训练在 epoch 59 后进入最终 validation；`eval_one_epoch` 在配置 `ema=True` 时先
+  加载 `model_ema`，故终态 Avg-mAP/mAP@0.6/mAP@0.7 `67.38/59.34/46.01` 是预注册 final-EMA
+  结果。相对门 `68.57/60.64/46.07` 分别低 `1.19/1.30/0.06` 点，裁决
+  `STOP_DEPTH_ROUTE`。未启动成本、额外 seed、K24/K18 或结构补救；理论重块 FLOPs
+  `79.055%` 继续只作算量代理，不解释为实际延迟或能耗。
+
+- 2026-08-25：完整矩阵 Pro 科学复核返回 `REVISE`，选择性能优先的
+  `R1-APM-C32/FULL64`。旧 APM32 同时改变帧间载体和 K32 深层更新，因果解释不单一；新实验
+  保留既有 one-tubelet detached memory、半径 2 双向一致匹配、阈值 0.80、clip reset 与 K64
+  fallback，只让 32 个可靠匹配位置使用前一表征与当前残差形成的输入载体，全部 K64 随后在
+  12 个 VideoMAE block 和 Adapter 中完整更新。该路线不新增参数、loss 或 cache，不声称节省
+  计算，也不恢复已经停止的深度稀疏分支。
+
+- clean/pushed candidate `bffff43dad28ca1042602ad3a01ba2990b953c13`（父提交
+  `e92df6a4…`，分支 `codex/zoomtoken-r1-apm-c32-full64-v001`）已在 N16R4 标准 OpenTAD 环境
+  通过 py_compile、bash syntax 与 focused pytest（`22 passed in 72.88s`）；fresh 独立 Critic
+  为 `AUDIT_PASS`，fresh 结果盲 Evaluator 为 `PRE_RUN_READY`。本机 pytest 因 Windows Torch
+  DLL `WinError 1114` 未收集，未被计为通过。
+
+- 唯一正式 job `1254008`（`zt-apm-c32-full64-s42-bffff43d`）已提交，结果根为
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_apm_full64_bffff43d_seed42_20260825`。首次启动核验时
+  scheduler 为 `RUNNING`，节点 `g0003`；CUDA 11.8、Miniforge/OpenTAD 环境和双进程 DDP 入口
+  已正常建立，未见启动 Traceback。该项只说明正式执行开始；尚无 final-EMA 准确率或效率证据，
+  不读取或提升 live metric。
+
+- 2026-08-25 00:45 CST：对 exact job/root 的一次只读训练循环核验确认，job `1254008` 仍在
+  `g0003` 运行，日志于 `00:39:55` 写出 `Training Starts...`；硬故障扫描未见 Traceback、OOM、
+  non-finite loss，尚无首个五轮恢复点。该事件仅证明训练循环已进入，不形成准确率或效率结论。
+
+- 同轮对 exact candidate 的时序载体执行目标环境无数据 known-answer check，排除载体退化为当前
+  表征恒等映射。224 个载体位置的 `alpha` min/mean/max 为
+  `0.00061572/0.02699333/0.08087695`，载体相对当前表征最大绝对差为 `0.60094869`。只对
+  tubelet 1 反传时，tubelet 0 memory 梯度为 `0`、当前 tubelet 梯度非零、其他 tubelet 梯度为
+  `0`。这证明 frozen previous + live current residual 及 stop-gradient 语义真实生效；不使用真实
+  数据，也不形成模型性能或效率证据。
+
+- 同轮完成严格 VideoMAE A-MoD 深度实现复核。`31e4b1e6…` 中 12 层固定为偶数 Dense、奇数
+  A-MoD；每个 A-MoD block 只消费紧邻前一 Dense block 的 attention column mean，稳定选择
+  top-400，在所选子序列执行完整 MHSA+MLP，未选 token 对这两个预训练子块保持 identity bypass；
+  AdaTAD Adapter 按冻结设计继续在完整 800-token 网格执行，且没有新增参数、路由 loss 或时序
+  cache。模型允许 `capacity=1.0` 不是正式配置漂移，而是设计要求的 dense checkpoint parity
+  验证入口；正式配置仍固定 `capacity=0.5`。现有 N16R4 `10 passed` 与独立 Critic 只证明实现，
+  A-MoD 正式训练仍缺 capacity-1 official final-EMA parity 与实际双卡生产路径的结果盲见证。
+
+- 2026-08-25 00:56 CST：完成 A-MoD 结果盲资源核验。官方 job `1245842` 的 final checkpoint
+  `/data/run01/sczc063/yuzibo/projects/official_adatad_reproduction_run_01c58b9_seed42_commandfix_20260821/gpu2_id0/checkpoint/epoch_59.pth`
+  存在；remote source `/data/run01/sczc063/yuzibo/projects/zoomtoken_amod_src_31e4b1e6`
+  的 HEAD/ref 均为 `31e4b1e61a23c4f1b319249684c8f05da6734235` 且 dirty=0；独立结果根和
+  job 名提交前不存在。`sbatch --test-only` 通过后提交唯一 capacity-1 final-EMA parity job
+  `1254014`（`zt-amod-c1-parity-31e4b1e6`），初始为 `PENDING`。该 job 只验证新 A-MoD
+  执行路径在 capacity=1 时与官方 Dense 等价，不训练参数、不代表 A-MoD-50 性能，也不干预
+  正在运行的时序载体 job `1254008`。
+
+- parity job `1254014` 在 `00:00:00` 终态 `FAILED 2:0`，stderr 为
+  `/var/spool/slurmd/job1254014/slurm_script: 4: set: Illegal option -o pipefail`。Slurm `--wrap`
+  默认由 `/bin/sh` 解释，尚未进入 profile、Python、checkpoint、数据或模型。该 root 保持不存在；
+  不形成实现或性能证据。随后只把 wrapper 改为显式 `/bin/bash -c`，其余 source/checkpoint/
+  config/data/evaluator/root 全部不变；再次通过 `sbatch --test-only` 后提交机械后继 job `1254016`
+ （`zt-amod-c1-parity-31e4b1e6-b1`），初始 `PENDING`。不再复用或恢复 `1254014`。
+
+- 2026-08-25 01:05 CST：A-MoD capacity-1 parity job `1254016` 终态 `FAILED 1:0`，运行
+  `00:01:18`。它在模型构建和官方 checkpoint 读取后、validation 推理前退出：官方 epoch-59
+  `state_dict` 与 `state_dict_ema` 各有 499 个键，全部统一保留 DDP `module.` 前缀；旧
+  `tools/test.py` 却把 EMA 一律加载到无前缀的内部模型。这是确定性评估入口缺陷，不是 A-MoD
+  准确率、训练或效率结果。clean/pushed 修正 `2d945e64bdccd09ae2e2916524562e3f388c5a2a`
+  仅按统一前缀选择 DDP 外壳或内部模型，并拒绝混合/空命名空间；目标 N16R4 focused suite
+  `20 passed`，fresh 独立 Critic `AUDIT_PASS`。本机 pytest 因 Windows Torch `c10.dll`
+  初始化失败未能收集，未记作测试通过。
+
+- 2026-08-25 01:17 CST：结果盲 Evaluator 在 exact clean remote source
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_amod_eval_prefix_src_2d945e64` 复核 HEAD/ref、
+  官方 epoch-59 EMA、canonical THUMOS14 validation、配置与 capacity=1 override 后，完成唯一
+  `sbatch --test-only` 并提交 distinct parity job `1254038`（`zt-amod-c1-parity-2d945e64`），
+  初始 `PENDING/Priority`。结果根为
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_amod50_capacity1_parity_2d945e64_20260825`。
+  该 job 只决定 A-MoD 实现是否与官方 Dense 数值等价；A-MoD-50 仍未训练，APM job `1254008`
+  未被中断或重提。
+
+- parity job `1254038` 在 `00:00:01` 终态 `FAILED 127:0`；Slurm 脚本再次由 `/bin/sh`
+  解释，`source/module/torchrun` 均不可用，同时结果盲命令误绑定了不存在的旧
+  `/data/run01/sczc063/yuzibo/raw_data/video`。它未进入 profile、Python、checkpoint、数据或模型，
+  结果根仍不存在。只将作业壳改为显式 `#!/bin/bash`，并绑定已核验的 canonical
+  `/data/run01/sczc063/yuzibo/thumos14/raw_data/video`（411 MP4、0 断链）；其余 frozen tuple
+  不变。一次 `sbatch --test-only` 通过后提交 distinct job `1254040`
+  （`zt-amod-c1-parity-2d945e64-b1`）。该 job 已加载官方 epoch-59 checkpoint、选择 EMA 并进入
+  `Testing Starts`，尚无终态向量或 parity 结论。
+
+- 2026-08-25 01:34 CST：Ego4D 官方访问获批后，将 AWS profile 仅安装到远端数据盘的私有
+  凭据目录（目录 mode 700、文件 mode 600），未写入仓库、下载日志或 wiki。通过学术加速节点读取
+  官方 v2 manifests 并逐对象核验 `ContentLength` 后，确认 clips manifest 不含 `NLQ` 标签，旧
+  `--benchmarks nlq` 方案会选择 0 个视频；因此改为下载三份 `nlq_*.json`，再以其中 2,019 个唯一
+  `clip_uid` 精确连接官方 clips manifest。冻结下载计划为 22,408 条语言查询、2,025 个文件、
+  158,680,155,599 bytes，其中 clips 为 158,597,610,649 bytes；预检无缺失 S3 对象。启动前数据盘
+  可用 1,668,814,585,856 bytes，完整下载后预计仍有 1,510,134,430,257 bytes，容量门禁通过。
+  三份 NLQ annotations 与 66,687,246-byte primary metadata 已完成；官方 `ego4d-cli 1.7.3` 的
+  `--skip-s3-checks --yes` 路径暴露 `expected_gb` 未初始化缺陷，隔离安装副本仅修正该分支后，
+  可续传 clips 下载已在 PID `418299` 下进入传输。当前状态仅为 `download_running`，完成标记必须
+  等 2,019 个 annotation-referenced clips 全部存在且非零、CLI 成功退出并写出最终验证/receipt。
+
+- 2026-08-25 03:06 CST：A-MoD capacity=1 Dense 等价性 job `1254040`
+  （`zt-amod-c1-parity-2d945e64-b1`）终态 `COMPLETED 0:0`，运行 `00:14:58`。使用共享官方
+  epoch-59 EMA 与 canonical THUMOS14 validation 得到 mAP@0.3/0.4/0.5/0.6/0.7
+  `83.46/79.45/71.96/61.59/47.20`，Avg-mAP `68.73`；官方记录为
+  `83.46/79.44/71.94/61.58/47.24`，Avg-mAP 同为 `68.73`。最大绝对差 `0.04` 个百分点，
+  判定 capacity=1 实现数值等价性通过但非逐位一致。该结果只证明 checkpoint/EMA、A-MoD
+  gather/scatter 与官方 Dense 路径对齐，不是 A-MoD-50 方法性能或效率证据；A-MoD-50 仍未训练。
+  帧间载体正式 job `1254008` 独立保持 `RUNNING`，两条路线尚未组合。
+
+- 2026-08-25 02:45 CST：对 `R1-APM-C32/FULL64` exact job/root 的一次只读核验确认，job
+  `1254008` 仍在 `g0003` 正常运行，累计运行 `02:07:47`，训练已进入 epoch 35。结果根的正式
+  checkpoint 目录现保留 `recovery_epoch_24.pth`、`recovery_epoch_29.pth` 和
+  `recovery_epoch_34.pth`，每份 `627,952,846` bytes，符合“每 5 epoch 保存、最近 3 份”恢复
+  合同。日志扫描未见 Traceback、OOM 或 non-finite 硬故障。本条只记录执行与可恢复性证据；
+  不读取或提升中间验证指标，终态 epoch-59 EMA 准确率和效率结论仍不存在。
+
+- 2026-08-25 03:04 CST：对同一 `R1-APM-C32/FULL64` exact job/root 的只读核验确认，job
+  `1254008` 仍在 `g0003` 正常运行，累计运行 `02:28:11`，训练已进入 epoch 40。新增
+  `recovery_epoch_39.pth` 后，当前按“最近三份”策略保留 `recovery_epoch_29/34/39.pth`，
+  每份 `627,952,846` bytes；epoch 24 恢复点已按预注册策略正常轮换。日志扫描未见
+  Traceback、OOM 或 non-finite 硬故障。本条仍只记录执行与可恢复性证据，不读取或提升
+  中间验证指标；终态 epoch-59 EMA 准确率和效率结论仍不存在。
+
+- 2026-08-25（远端记录 03:49 CST）：对同一 `R1-APM-C32/FULL64` exact job/root 的一次只读
+  核验显示 job `1254008` 仍在 `g0003` 运行，并新生成 `recovery_epoch_44.pth`
+  （`627,952,846` bytes）；当前按“最近三份”策略保留 `recovery_epoch_34/39/44.pth`，epoch 29
+  已正常轮换。日志扫描未见 Traceback、OOM 或 non-finite 硬故障。本条仅记录执行与可恢复性
+  证据，不读取或提升中间验证指标；终态 epoch-59 EMA 准确率和效率结论仍不存在。
+
+- 2026-08-25 04:34 CST：对同一 `R1-APM-C32/FULL64` exact job/root 的一次只读核验显示 job
+  `1254008` 仍在 `g0003` 运行，并新生成 `recovery_epoch_49.pth`（`627,952,846` bytes）；当前按
+  “最近三份”策略保留 `recovery_epoch_39/44/49.pth`，epoch 34 已正常轮换。日志扫描未见
+  Traceback、OOM 或 non-finite 硬故障。本条仅记录执行与可恢复性证据，不读取或提升中间验证
+  指标；终态 epoch-59 EMA 准确率和效率结论仍不存在。
+
+- 2026-08-25 05:33 CST：对同一 `R1-APM-C32/FULL64` exact job/root 的一次只读核验显示 job
+  `1254008` 仍在 `g0003` 运行，并新生成 `recovery_epoch_54.pth`（`627,952,846` bytes）；当前按
+  “最近三份”策略保留 `recovery_epoch_44/49/54.pth`，epoch 39 已正常轮换。日志扫描未见
+  Traceback、OOM 或 non-finite 硬故障。本条仅记录执行与可恢复性证据，不读取或提升中间验证
+  指标；终态 epoch-59 EMA 准确率和效率结论仍不存在。
+
+- 2026-08-25 06:18 CST：同一正式 job `1254008` 的预注册 `epoch_59.pth` 已落盘
+  （`627,933,747` bytes），最近恢复点仍为 epoch 44/49/54；scheduler 仍为 `RUNNING`，本次
+  核验未见 Traceback、OOM 或 non-finite 硬故障。这只证明 60 轮训练产物已经生成，不代表
+  validation 或作业终态；在终态前不读取或提升 final EMA 指标，准确率和效率结论仍不存在。
+
+- 2026-08-25 06:32 CST：`R1-APM-C32/FULL64` job `1254008` 在 `g0003` 终态
+  `COMPLETED 0:0`，总运行 `05:54:00`。不可变日志已出现 `Training Over`，未见 Traceback、
+  OOM 或 non-finite 硬故障；`epoch_59.pth` 与 recovery epoch 44/49/54 均存在。预注册 epoch-59
+  final EMA 的 mAP@0.3/0.4/0.5/0.6/0.7 为 `83.74/78.93/72.41/60.43/45.60`，Avg-mAP
+  `68.22`。相对 all-of 门 `68.73/61.58/47.24`，Avg-mAP/mAP@0.6/mAP@0.7 分别低
+  `0.51/1.15/1.64` 个百分点，三项均失败，裁决为 `STOP_APM_MEMORY`：不启动成本、额外 seed
+  或结构补救。这是当前 detached one-tubelet APM 载体在 FULL64 计算下的有效负结果，不是对所有
+  时序去冗余路线的普遍否定；本实验没有计算节省，也没有 selector-inclusive 效率证据。
+
+- 2026-08-25：项目状态复核发现严格矩形 R4-SHUF15 的终态此前未被摄取。只读 Slurm 与不可变
+  日志核验确认 job `1249131` 已于 `2026-08-23 03:40:57 CST` 在 `g0022` 终态
+  `COMPLETED 0:0`，运行 `05:50:51`；`epoch_59.pth` 和 recovery epoch 44/49/54 均存在，
+  未见 Traceback、OOM 或 non-finite hard failure。`Training Over` 前的 final EMA 为
+  mAP@0.3/0.4/0.5/0.6/0.7 `81.66/78.04/69.90/60.17/46.20`，Avg-mAP `67.19`。
+  相对 R4 `68.02/60.32/46.26`，R4−R4-SHUF15 为 `+0.83/+0.15/+0.06`；其中 mAP@0.7
+  未达到预注册的 `+0.30` 框外内容排序门，因此不能声称框外 learned ranking 有效，也不启动该
+  机制的成本或多 seed。Q64-GLOBAL 终态为 `67.84/60.66/45.39`，R4−Q64 的
+  `+0.18/-0.34/+0.87` 是交叉结果，不能替代失败的 R4-SHUF15 因果门。
+
+- 2026-08-25 03:31 CST：Ego4D-NLQ v2 下载完成并通过冻结验证。自动续传共进入 5 次传输
+  attempt，最终官方 CLI `exit=0`；远端目标包含 2,019/2,019 个 annotation-referenced clips，
+  合计 158,597,610,649 bytes，与逐对象 S3 `ContentLength` 计划精确一致，且
+  `missing_clips=0`、`zero_byte_clips=0`。三份 NLQ annotation 共覆盖 22,408 条 language queries；
+  active 临时 `.mp4.*` 文件为 0。目标根已生成 `DOWNLOAD_COMPLETE`、
+  `VALIDATION_REPORT.txt` 与 `DOWNLOAD_RECEIPT.txt`，下载进程和自动续传监督器均按预期退出；
+  状态由 `download_running` 更新为 `download_complete_verified`。完成后数据盘仍可用
+  1,507,860,164,608 bytes。该记录不包含 AWS 凭证内容。
+
+- 2026-08-25：按用户明确的准确率—计算联合目标重新解释已完成的深度稀疏矩阵。原近无损门
+  失败记录保持不变，但不再把它等同于效率候选全面终止。相对 FULL64，DSR6-KV/MOD32-KV/
+  DROP32 的 VideoMAE 重块算量代理分别减少 `20.94%/41.89%/50.68%`，Avg-mAP 分别下降
+  `1.69/2.57/2.96`，mAP@0.7 分别下降 `0.56/1.36/1.69`；三者保留为保守、中等、激进
+  Pareto 候选。RC32-KV 因与 MOD32-KV 同代理成本而三项准确率更低，APM-C32/FULL64 因无
+  重块节省却降低准确率，二者继续停止。当前没有运行新作业；下一项最小证据是复用既有 final
+  checkpoints 做同硬件 FULL64/DSR6/MOD32/DROP32 完整端到端延迟、显存与能耗对比。代理 FLOPs
+  在实测前不得写成真实速度、显存或能耗收益。
+
+- 2026-08-25：在 exact ZoomToken Project 中完成一次 fresh Pro token 迁移/变换与 VideoMAE
+  实现讨论。会话 `6a8d25c5-30ac-83e9-9f57-008f0167782c`、浏览器可核验 `Pro`，单轮终态
+  `completed`，原始中文报告保存为
+  `.cvpr-pro-lab/reviews/PRO_TOKEN_REUSE_PRIOR_ART_AND_VIDEOMAE_DESIGN_RESPONSE-v001.md`。
+  Pro 返回 `PIVOT` 并设计 `R1-ACR16-Δ1-FKV`，但独立一手来源核验发现其遗漏最近邻 Eventful
+  Transformers（ICCV 2023），该工作已经实现变化 token 检测、reference/buffer、选择性重算和
+  稀疏/增量注意力。因此项目不全盘接受新颖性结论，也不直接交给 Builder；状态记录为
+  `DISCUSSED / NEEDS_PRIOR_ART_CORRECTION`。核验回执位于
+  `.cvpr-pro-lab/reviews/PRO_TOKEN_REUSE_PRIOR_ART_AND_VIDEOMAE_DESIGN_AUDIT-v001.md`。本轮无代码、
+  GPU、Slurm、训练、准确率或效率变更。
+
+- 2026-08-25：按用户要求清理 exact ZoomToken ChatGPT Project 的长期 Sources。远端 Source
+  从 40 份降为 3 份，只保留 `PROJECT_CHARTER-v001.md`、
+  `CURRENT_RESEARCH_STATE-v016.md` 与 `MODEL_EXPERIMENT_HISTORY-v011.md`；37 份旧版本、
+  旧路线页和讨论专用 Pro/审查材料已从远端删除，本地 research-wiki、ledger 与正式证据保留。
+  后续 Pro 请求、旧响应、审查和代码上下文只作为对应会话附件，不再长期占用 Project Sources。
+- 2026-08-25：使用上述三份长期 Sources，并以附件方式提交正式请求、上一轮 Pro 回答和独立核验，
+  在 exact ZoomToken Project 创建全新单轮 Pro 会话
+  `6a8d706a-4170-83ea-b6bf-b6759d44020e`。终态为 `completed / STOP`：Eventful Transformers
+  已覆盖 reference/buffer、变化 token 选择和稀疏/增量更新；ACR16 的剩余低秩差分与条件深度
+  跳过不构成新的时序复用原理。独立算量复核确认主块理论节省上限 `9.446%`、已知骨干算术上限
+  约 `8.80%`，不足以为完整链路同时达到 `>=5%` 延迟与能耗改善留出可信余量。因此 ACR16/
+  Eventful-transfer 在实现前停止：0 个新训练单元，无 Builder、PRE_RUN、GPU 或 Slurm 行为，也无
+  新准确率/效率证据。裁决不外推到全部时序冗余方向。
+
+- 2026-08-25：按用户授权，在 exact ZoomToken Project 以一个未压缩文本附件包发起全新单轮 Pro
+  会话 `6a8da9f2-3b60-83e9-87b5-6686919cf0e6`，固定 temporal revision `bffff43…`、
+  A-MoD revision `a41714e…` 和三份长期 Sources。初始本地捕获超时后只 reattach 同一 session，
+  无重提、无 follow-up；终态 `completed / STOP_BEFORE_IMPLEMENTATION`。Pro 比较 IC-DRU、
+  OW-ECR、PCD-DRU，给出理想已知骨干节省上界约 `50.12%/7.66%/60.16%`，但认定前两种动态
+  机制需要缺少准确率先验的约 25% refresh、可被已有变化路由/cache/ResidualViT/MoD 组件分解，
+  窗口缓存则缺少全链路余量并增加约 `54 MiB/样本` 状态。因此三个精确定义候选均在实现前关闭，
+  0 个 Builder/PRE_RUN/训练单元；没有新准确率、延迟、能耗或显存证据。该裁决不等于动态
+  20%–30% refresh 或所有时序复用已经被实验否定。
+
+- 2026-08-26：完整摄取用户提供的 `ZoomToken_开放式调研与科学裁决报告_R-PADT-v0.md` 与
+  对话粘贴文本，并对来源身份、固定 revision 代码、理论成本、相关工作和科学机制做独立核验。
+  项目内原 Pro 终态回执仍为 `TERMINAL_INCOMPLETE_NO_SCIENTIFIC_DECISION`，nonce/附件陈述存在
+  矛盾，故外部报告不能直接成为同会话 Pro 许可。代码确认 T=384、K64、D=384、12 blocks，
+  同时确认 dense Adapter、位置/时间身份和 anchor-copy 是报告未闭合的关键边界；R1 按 tubelet
+  独立选择九个合法 8×8 框之一，故全 K64 锚点一一映射也不是既有事实。先导工作补入 STA/PVC，
+  粘贴引用有多处错配。最终裁决为
+  `PARTIAL_ACCEPT_REVISE_BEFORE_G4 / discussed`：吸收 clip-local 状态、identity gate、显式
+  provenance、同预算反事实和完整链路成本原则，但不接受“完整前帧表征复用”表述，不冻结原始
+  `L_p=2/R=4/m=16/Q=4`，没有代码、Builder、PRE_RUN、训练、准确率或效率状态变化。详细审计：
+  `research-wiki/sources/2026-08-26-r-padt-v0-user-report-intake-audit.md`。
+
+- 2026-08-26：用户完成 iXBrowser profile 61 登录后，只读核验 exact ZoomToken Project 与三份
+  长期 Sources，并以附件方式创建唯一全新 Pro 会话
+  `6a8e894d-bc84-83ea-8151-fb81a893a103`。Oracle `0.17.1` 解析网页 picker 为 `Pro`，会话
+  `completed / EXITED_0`，无 follow-up、无 Source 变更。顶层裁决为 `STOP`：在固定
+  `bffff43d...` 结构中，16 帧 clip 不是 Adapter 后完整状态单位，block-11-only cache 无法闭合
+  changed-token 的逐层上下文，逐层 cache 又与 Eventful/STC 的事件化选择性重算高度重叠并可能
+  损失 48-clip attention batching。独立代码核验支持主要状态依赖结论，但把完整并行损失标为需
+  实测的系统推断；文献点验确认 Eventful 与 CVPR 2026 STC-Cacher 是真实近邻。项目接受对该
+  精确 full-representation route 的 `STOP_BEFORE_IMPLEMENTATION`，不外推为全部时序复用无效。
+  本轮无代码、配置、PRE_RUN、GPU/Slurm、训练或新准确率/效率结果。
+
+- 2026-08-26：按用户要求在 exact ZoomToken Project 以附件方式发起新的前进路线 Pro 裁决，会话
+  `6a8ec964-8984-83e9-afe5-7b363919f8d0`。初始捕获超时后只 reattach 同一 conversation，
+  无重提、无 follow-up；终态 `completed / PIVOT`。Pro 从历史 hidden/KV/完整表征复用转向
+  `ZoomToken-BPNS-R1`：当前观测、严格连续 `8x8/K64` 原生支持、全部 K64 完整执行 12 层与
+  Adapter。现有 K100 与 R1 final-EMA 为 `68.51/61.19/46.27` 和
+  `69.07/61.14/46.57`，故下一项证据冻结为零新增训练，优先同硬件重放 K100 job `1248835`
+  与 R1 job `1249099`，测完整延迟、显存、能耗和边界质量；DSR6/MOD32/DROP32 为辅助点。
+  项目接受科学 PIVOT，但把执行简化为精确 job/config/path/EMA 绑定和最小数值 parity，不新增
+  checksum/协议框架。本轮未修改模型、未运行 GPU/Slurm/训练，也没有新增性能或成本结果。
+
+- 2026-08-27：`ZoomToken-BPNS-R1` 同硬件 final-EMA 成本回放完成最小实现、独立审查、结果盲
+  PRE_RUN 并进入正式执行。最终 clean/pushed candidate 为
+  `b7357817d81127ab2d713b5471d008ea893efd35`（分支
+  `codex/zoomtoken-bpns-r1-cost-v001`），只新增 profiler、N16R4 launcher 和 focused test 三个路径，
+  不修改模型、训练配置、数据或 checkpoint。目标环境检查纠正了两个确定性实现问题：旧的 40-video/
+  136-window 开发 population 不是本次官方 validation loader；功耗 sidecar 若在 CPU affinity 收窄后
+  启动会错误继承 detector CPU 集合。最终合同使用 211 个 validation 视频、792 个有序 loader 项，
+  并用 ordinal 身份保留其中一个官方重复内容项。Python/Shell 检查通过，focused pytest `6 passed`，
+  fresh independent Critic 为 `AUDIT_PASS`。结果盲 Slurm job-shell 见证 job `1257250` 已
+  `COMPLETED 0:0`，fresh Evaluator 为 `PRE_RUN_READY`。唯一正式 replay job `1257281`
+  （`zt-bpns-formal-b7357817`）已在 `g0003` 进入 `RUNNING`，使用一张 Slurm GPU、5 CPU，
+  以 ABBA+BAAB 顺序各重放 K100/R1 四次完整 validation。结果根为
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_r1_cost_b7357817_seed42_20260827`。
+  当前仅形成实现、准入和运行证据；尚无新的终态准确率、延迟、显存、能耗或边界质量结论。
+
+- 2026-08-27：正式 BPNS-R1 成本回放 job `1257281` 在 `g0003` 运行 `00:38:04` 后终态
+  `FAILED 1:0`。首个 K100 完整 validation pass 得到 `mAP@0.7=46.246663`；profiler 的
+  fail-closed 数值一致性门将其与预填历史值 `46.27` 比较并抛出 `RuntimeError`。该作业没有进入
+  后续 R1/ABBA+BAAB 完整回放，结果根未发布 `profile.json` 或 `terminal_receipt.json`。
+  因此这是确定性的回放准入/原始数值绑定失败，不是模型性能、延迟、显存、能耗或边界质量结果；
+  任何局部产物均不解释。job 与结果根保持失败证据，未经新的独立检查和明确运行授权不得重提。
+
+- 2026-08-28：按新的 Pro 唯一任务，从 `b7357817d81127ab2d713b5471d008ea893efd35` 建立
+  最小 clean/pushed 候选 `e9323448f6cd78b99bb3de53fd9ffb55f3676d65`（分支
+  `codex/zoomtoken-bpns-r1-parity-v002`）。候选只修改 BPNS cost profiler 的 accuracy-parity
+  合同及 focused tests：六项 raw evaluator fraction 转未舍入百分点，与冻结 reported-2dp
+  reference 在 inclusive `0.05 pp` 内比较，HALF_UP 两位展示不参与准入。Python/Shell/diff
+  检查通过，focused pytest `13 passed`；fresh independent Critic 为 `PASS`，fresh result-blind
+  Evaluator 在确认 411/0、211/792、两份 epoch-59 EMA、新 root/name 和 `sbatch --test-only`
+  后给出 `PRE_RUN_READY`。唯一正式 job `1258299`（`zt-bpns-r1-pv2-e9323448`）于
+  `2026-08-28 00:20:24 +08:00` 在 `g0048` 进入 `RUNNING`，使用 1 张 Slurm-visible GPU、
+  5 CPU、8 小时上限，结果根为
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_r1_cost_parity_e9323448_seed42_20260828`。
+  当前只形成实现、准入和运行证据；终态前不读取或解释任何局部准确率、延迟、显存、能耗、
+  短动作或边界数值，也不重复提交。

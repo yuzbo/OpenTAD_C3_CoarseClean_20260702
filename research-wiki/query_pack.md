@@ -1,10 +1,335 @@
 ---
 type: query_pack
-updated: 2026-08-06
+updated: 2026-08-28
 max_chars: 8000
 ---
 
 # Research Query Pack
+
+除下方首节外，本文其余部分均是按日期保存的历史证据；历史标题中的 “current” 或“当前”只描述当时状态，不覆盖首节的现时判断。
+
+## Current paper question: BPNS-R1 (updated 2026-08-28)
+
+- **Question.** Can current-frame contiguous native support remove substantial spatial
+  VideoMAE work in offline TAD while preserving high-tIoU localization and reducing
+  measured end-to-end cost?
+- **Mechanism.** `ZoomToken-BPNS-R1` selects one strict contiguous `8x8/K64` native
+  support before VideoMAE. Every retained token executes all 12 VideoMAE-S blocks and
+  the existing Adapter. There is no hidden/KV cache, stable/changed gate, temporal
+  carry, layer bypass or new loss.
+- **Current evidence.** Same-source seed-42 final EMA is
+  `68.51/61.19/46.27` for K100 and `69.07/61.14/46.57` for R1
+  (Avg-mAP/mAP@0.6/mAP@0.7). R1 therefore removes 36% of native spatial inputs while
+  matching or improving these three metrics in this one run. This supports an
+  accuracy-feasibility claim, not a multi-seed or efficiency claim.
+- **Strongest alternative explanation.** Native-token reduction may not lower full
+  decode-to-NMS latency, energy or peak memory because decoding, transfers, Adapter,
+  detector, postprocessing and sparse-execution overhead remain. The observed
+  accuracy difference may also be seed-specific.
+- **Unresolved experiment.** The first same-hardware K100/R1 cost replay, job
+  `1257281`, remains an incomplete admission failure: its raw `mAP@0.7=46.246663`
+  was compared with rounded history `46.27`. Minimal clean candidate
+  `e9323448f6cd78b99bb3de53fd9ffb55f3676d65` now compares all six unrounded
+  percentage-point values to the frozen reported-2dp vectors at inclusive `0.05 pp`
+  tolerance and separates HALF_UP display rounding. Focused tests, independent Critic
+  and result-blind PRE_RUN passed. The sole replacement replay is job `1258299`, now
+  running under the unchanged eight-pass same-GPU protocol. No live or partial value
+  is evidence.
+- **Next decision-changing task.** Wait for job `1258299` to become terminal, then
+  validate the complete profile, terminal receipt, predictions, evaluator vectors,
+  power trace, memory, latency, short-action and boundary artifacts before applying
+  the frozen accuracy and efficiency gates. Do not retrain, resume, duplicate the job,
+  or advance DSR6-KV/MOD32-KV/DROP32 while this primary comparison is active.
+
+## Full-representation temporal reuse adjudication (2026-08-26)
+
+- A fresh exact-Project Pro review at revision `bffff43dad28ca1042602ad3a01ba2990b953c13`
+  returned `STOP` for the narrowly defined route that reuses the preceding temporal
+  unit's complete VideoMAE representation while recomputing only changed tokens.
+- The decisive structural fact is that a 16-frame clip is an attention bucket but not
+  an independent full-backbone state: every VideoMAE block is followed by an AdaTAD
+  Adapter operating on the global 384-tubelet lineage. A block-11-only cache cannot
+  supply changed tokens with valid per-layer context; a per-layer cache becomes an
+  approximate event-driven network whose fixed pre-backbone mask is not closed under
+  attention and Adapter propagation.
+- Eventful Transformers and CVPR 2026 STC-Cacher already cover the broad gate/cache/
+  stable-token reuse/dynamic-token recompute operation family. This is a material
+  novelty warning, not empirical proof that all temporal reuse is impossible.
+- Independent code audit supports the state-dependency argument. It qualifies the
+  systems claim: the Transformer attention buckets admit 48-clip batching, while the
+  Adapter already couples clips, so the exact latency loss from sequential cache
+  execution remains a measurement question rather than a proven number.
+- Project disposition: `STOP_BEFORE_IMPLEMENTATION` for this exact full-representation
+  route; zero new config, Builder patch, PRE_RUN or 60-epoch cell. No new accuracy or
+  efficiency evidence was produced. Reopening requires a genuinely different state
+  dependency contract, an operation-level comparison against Eventful/STC, and a
+  credible full-stack execution lower bound.
+
+## R-PADT-v0 user-report intake (2026-08-26)
+
+- The user supplied a complete external `R-PADT-v0` report and a pasted rendering.
+  They are scientifically coherent, but the project receipt for the referenced Pro
+  conversation remains `TERMINAL_INCOMPLETE_NO_SCIENTIFIC_DECISION`; nonce and
+  attachment claims also conflict. Treat the report as a user-provided candidate,
+  not an accepted same-session Pro verdict or execution authority.
+- R-PADT is actually prefix-conditioned suffix token compression: two dense
+  VideoMAE blocks, periodic K64 anchors, non-anchor delta top-16 plus four summaries,
+  a shorter dense suffix, then anchor-copy restoration. It is not direct reuse of
+  the preceding frame's complete representation, exact KV cache or dense-equivalent
+  temporal reuse.
+- Fixed-revision audit confirms T=384, K64 on a 10x10 native grid, D=384 and 12
+  blocks, but all 12 blocks also carry an Adapter and the standard Adapter expects a
+  full temporal lattice. R1 independently chooses one of nine 8x8 blocks per
+  tubelet, so consecutive K64 sets are not guaranteed to have the report's required
+  one-to-one anchor mapping. Direct anchor-copy also has stale temporal-identity
+  risk, and Q=4 summaries confound selection, transport and aggregation.
+- Prior-art audit adds STA and PVC as omitted close neighbors. Eventful/ToMe are
+  correctly recognized in principle, but the pasted references are materially
+  misassigned and `VideoZip` is unverified. Novelty can only be narrow TAD/ROI-grid/
+  suffix-compression/restoration integration.
+- Project verdict is `PARTIAL_ACCEPT_REVISE_BEFORE_G4`. Status remains `discussed`:
+  no Builder, PRE_RUN, experiment or paper claim. See
+  `sources/2026-08-26-r-padt-v0-user-report-intake-audit.md`.
+
+## Dynamic selective recompute / light-update adjudication (2026-08-25)
+
+- A fresh, attachment-based exact-Project Pro review compared three complete
+  candidates: clip-internal dynamic recompute plus rank-32 current update
+  (`IC-DRU`), exact overlap-window dependency-cone caching (`OW-ECR`), and a
+  current-proxy nested-depth route (`PCD-DRU`). The top-level verdict was
+  `STOP_BEFORE_IMPLEMENTATION` for these exact candidates.
+- Under an optimistic 25% refresh assumption, known-backbone arithmetic ceilings
+  were about `50.12%` saving for IC-DRU and `60.16%` for PCD-DRU. These are not
+  measured speedups: first-tubelet/full-refresh fallbacks, bucket fragmentation,
+  dense Adapter, decode/H2D/detector/NMS and peak-memory behavior remain.
+- OW-ECR has only about `7.66%` known-backbone saving in the most favorable exact
+  dependency-cone bound, while twelve cached overlap layers add roughly
+  `54 MiB/sample`; it lacks credible full-stack headroom.
+- Pro judged IC-DRU/PCD-DRU reducible to known change routing, video feature cache,
+  stable-token residual and MoD/A-MoD depth-allocation components. Therefore no
+  Builder, PRE_RUN or 60-epoch cell is opened, and no seed/K/rank/threshold or
+  teacher/distillation rescue is allowed for these three designs.
+- This is pre-execution design evidence, not an empirical failure of dynamic
+  20–30% refresh or all temporal reuse. Any future route needs a distinct error-
+  control/execution principle, legal bidirectional VideoMAE semantics and a
+  conservative full-stack saving margin before implementation.
+
+## Post-APM ACR16/Eventful adjudication (2026-08-25)
+
+- After the closest-prior-art correction and conservative arithmetic bound, a
+  fresh exact-Project Pro review returned `STOP` for `R1-ACR16-Delta1-FKV`.
+  Eventful Transformers (ICCV 2023) already covers token references/buffers,
+  temporal change selection, gather/scatter identity restoration, and sparse or
+  incremental Transformer updates.
+- ACR16 does not reuse old hidden states, Q/K/V, attention products or MLP
+  outputs. It recomputes current full-K64 K/V, lets stable tokens bypass selected
+  middle-depth residual branches, and applies one low-rank input-delta residual.
+  Its remaining distinction is therefore an application combination of
+  Eventful-style evidence and MoD-style conditional depth skipping, not a new
+  temporal-reuse principle.
+- Verified arithmetic gives a `9.446%` maximum saving over the 12 VideoMAE main
+  blocks. After current full K/V, dense Adapter, patch embedding, matching and
+  other known backbone arithmetic, the upper bound is about `8.80%`; it lacks a
+  credible margin for selector-inclusive decode-to-Soft-NMS p50 latency and gross
+  energy to both improve by at least `5%`.
+- Status is terminal `STOP_BEFORE_IMPLEMENTATION`: zero new training cells, no
+  Builder, no PRE_RUN and no accuracy/efficiency claim. This stops only the
+  ACR16/Eventful-transfer G4 route, not all temporal-redundancy research. A future
+  route must introduce a distinct mechanism and show a conservative full-stack
+  saving margin before implementation; do not tune or rescue ACR16.
+
+## Strict A-MoD reference and temporal-memory continuation (2026-08-24)
+
+- Strict VideoMAE A-MoD reference is implemented and clean/pushed at
+  `a41714e9f9271906a2eb4505e3fedc590c838055` on
+  `codex/zoomtoken-amod-v001`. Exactly five existing paths changed: backbone,
+  official-derived config, N16R4 launcher, training entry and focused test.
+- Blocks `0/2/4/6/8/10` are dense. Blocks `1/3/5/7/9/11` use the immediately
+  preceding dense block's attention-probability column mean, stable top-400 of
+  800 tokens, selected Attention+MLP update and identity bypass for unselected
+  tokens. The existing Adapter remains dense on all 800 tokens. There are no
+  router parameters, extra loss, hidden-state cache or cross-frame carry.
+- N16R4 no-data verification is `8 passed`; independent Critic verdict is
+  `AUDIT_PASS`. This is implementation/review evidence only: no A-MoD formal
+  training, accuracy, latency or energy result exists yet.
+- Test-only clean/pushed successor `31e4b1e61a23c4f1b319249684c8f05da6734235`
+  closes both nonblocking Critic coverage notes. It directly proves every sparse
+  block receives its immediately preceding dense block's score and every Adapter
+  receives `[1,800,C]` in the official token geometry. N16R4 CPU-only suite is now
+  `10 passed`; no model/config/launcher/scientific behavior changed.
+- Cross-frame feature storage and mapping remains an active primary direction
+  and is not stopped by the strict A-MoD reference. The fresh Project Pro review
+  selected `APM32-CTX64`: strict R1 K64 support, one-tubelet detached pre-position
+  patch memory, deterministic Chebyshev-radius-2 mutual-nearest alignment at
+  similarity `>=0.80`, K32 refresh/K64 K/V context, and exact K64 fallback when
+  fewer than 32 matches are valid. `CUR32-CTX64` uses the identical mask and
+  fallback but retains the current embedding, isolating memory substitution.
+- The clean/pushed executable successor is
+  `e92df6a4737a10955722c6aedc2f079e0d285a18` on
+  `codex/zoomtoken-apm32-ctx64-v001`. It preserves the frozen model and adds only
+  a result-blind one-production-batch preflight plus full model/EMA/optimizer/
+  scheduler/scaler/counter/sampler/RNG recovery verification; temporal memory is
+  forbidden from serialization. N16R4 CPU-only result-free tests are `19 passed`,
+  and a fresh independent Critic returned `AUDIT_PASS`. Result-blind PRE_RUN is
+  `NOT_READY` only because APM and CUR have not yet executed their actual two-GPU
+  single-batch witnesses. No formal APM/CUR job or performance/cost result exists.
+- The terminal DSR6 job `1252527` is independent. It must not be rerun, resumed
+  into this route, or reinterpreted as temporal-memory evidence. It completed
+  `0:0`; the immutable terminal log gives epoch-59 EMA
+  Avg-mAP/mAP@0.6/mAP@0.7 `67.38/59.34/46.01`, so all three frozen near-lossless
+  thresholds fail. The scientific interpretation was revised on 2026-08-25:
+  at `79.055%` VideoMAE-block proxy cost it remains a conservative Pareto
+  candidate for matched end-to-end cost measurement, not an accuracy-preserving
+  result or demonstrated speedup.
+- Read-only implementation mapping is complete. Native lineage already exists as
+  `(tubelet_index, spatial_index)` in the packed/ragged Adapter path; THUMOS samples
+  already carry `video_name` and `window_start_frame`. ChronoTransport provides a
+  reusable per-stream cache container, detach policy, state age, first-chunk dense
+  repair, non-finite fallback and current-state delta/cosine signals. These are
+  primitives only: they do not provide correspondence, occlusion/scene-cut
+  invalidation or cross-window identity. A valid implementation must never key a
+  persistent cache by batch position alone; it must reset on video change,
+  unexpected window order or failed alignment. Live activations/cache tensors are
+  not checkpoint artifacts; epoch-boundary resume should clear memory and force a
+  warm-start recomputation unless Pro explicitly freezes a different protocol.
+
+## DSR6-KV implementation and PRE_RUN state (2026-08-24)
+
+- Fresh Project Pro selected exactly one revised depth route: strict R1 K64 support,
+  FULL64 updates in blocks 0–5, and one fixed per-tubelet K32 query/output/MLP set in
+  blocks 6–11 with all K64 retained as non-detached K/V context. Existing Adapter
+  computation remains on all K64. No hidden carry/cache, shallow transport, new module,
+  loss, second split, K24/K18 or extra seed is allowed.
+- The scientific implementation is rooted at `3260cd39154069138c6b1757326372cc3b73754e`.
+  Its launcher-only final clean successor is
+  `c6327a891809aa30370b3b2d9bedab0dcfe0d326` on
+  `codex/zoomtoken-dsr6-launcher-profile-v001`. Relative to `3260cd39…`, only the
+  N16R4 launcher profile boundary and its focused regression changed; the final
+  `c6327a89…` step itself adds only explicit probe success termination. The exact
+  N16R4 suite is `12 passed`; fresh independent Critic verdict is `AUDIT_PASS`.
+- Result-blind PRE_RUN is renewed as `READY`. A real 2-GPU Slurm job-shell witness
+  `1252525` completed `0:0` and proved the exact `/etc/profile` boundary succeeds
+  with `LC_BYOBU`/`XDG_DATA_DIRS` unset and restores nounset before later launcher
+  work. It accessed no training data/model/result. Canonical 411 MP4/0 broken links,
+  annotation, class map, VideoMAE-S pretrain, OpenTAD environment, exact clean ref,
+  capacity, and the absence of proposed root
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_dsr6_c6327a89_seed42_20260824`
+  and job `zt-dsr6-kv-s42-c6327a89` were reconfirmed. Old job `1252521` and its root
+  remain sealed pre-data infrastructure failure and must not be resumed/requeued.
+  PRE_RUN witness `1252525` had consumed the initially proposed job name, so the first
+  formal dispatch stopped before `sbatch` with attempt count zero. Central then froze the
+  distinct formal name `zt-dsr6-train-s42-c6327a89`; exactly one formal job `1252527`
+  was submitted at `2026-08-24T04:46:31+08:00` under the same root and unchanged tuple.
+  It started on `g0041` at `04:46:36` and completed `0:0` at `10:53:53` after
+  `06:07:17`. The epoch-59 checkpoint and retained recoveries 44/49/54 exist, with
+  no Traceback, OOM or non-finite loss. Although no standalone metric JSON was
+  produced, the terminal stdout is auditable and its final evaluation runs after
+  epoch 59 through the EMA-loading evaluator path. Final-EMA is
+  `67.38/59.34/46.01`, below the frozen `68.57/60.64/46.07` all-of gate by
+  `1.19/1.30/0.06` points. The decision is `STOP_DEPTH_ROUTE`: no cost, extra
+  seed or structural rescue. The `79.055%` block-FLOPs proxy is not measured
+  latency or energy.
+
+## Terminal RC32-KV seed-42 decision (2026-08-24)
+
+- Clean revision `813012620dca991ff90121d0d9faf688f303d1ef` completed the full
+  DROP32/MOD32-KV/RC32-KV 60-epoch matrix as jobs `1252179/1252180/1252181` under
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_r1_refresh_rc32_81301262_seed42_20260823T2100`.
+  All three are `COMPLETED 0:0`; each has `checkpoint/epoch_59.pth`, and logs are
+  clear of Traceback, OOM and non-finite errors. FULL64 remains read-only job
+  `1249099`; no baseline was duplicated.
+- Final-EMA Avg-mAP/mAP@0.6/mAP@0.7 are FULL64 `69.07/61.14/46.57`, DROP32
+  `66.11/57.83/44.88`, MOD32-KV `66.50/59.24/45.21`, and RC32-KV
+  `64.73/57.34/42.91`. RC32-KV fails every frozen D−A/D−B/D−C accuracy gate;
+  MOD32-KV also exceeds the original near-lossless allowance against FULL64.
+  RC32 temporal carry is stopped because it is strictly dominated by MOD32-KV
+  at identical proxy cost. MOD32-KV and DROP32 remain candidate Pareto points.
+- The final compute–accuracy figure uses only the declared VideoMAE-block matmul
+  proxy: DROP32/MOD32-KV/RC32-KV are `49.32%/58.11%/58.11%` of FULL64. Under the
+  user-confirmed accuracy–efficiency objective, DROP32, MOD32-KV and DSR6-KV
+  represent aggressive, medium and conservative proxy-compute operating points.
+  No new training or rescue is justified; the next discriminating evidence is a
+  matched FULL64/DSR6/MOD32/DROP32 end-to-end latency, memory and energy replay.
+  The proxy alone is not a real speed or energy result.
+- The offline boundary/final-prediction tooling remains implemented in clean
+  descendant `4e940b780da5a3cd0ea28ca420c5d1cb879818b5`, but the terminal decision does
+  not depend on additional GPU evaluation: the primary accuracy gate already
+  fails by large margins. Preserve R1/FULL64 K64 as the last accuracy-supported
+  spatial route; do not revive RC32-KV without a new scientific decision.
+
+## Current strict-rectangle R1 experiment (2026-08-22)
+
+- The current paper question is pre-backbone spatial recomputation reduction in
+  end-to-end TAD. Existing seed-42 A/B/C validation is `68.73/47.24`,
+  `68.51/46.27`, `68.22/45.35` (Avg-mAP/mAP@0.7). C really gathers 64/100
+  native tubelets before VideoMAE, but its support is ellipse/Gaussian Top-64,
+  not a complete rectangle.
+- Accepted R1 changes only support topology: one of nine complete `8x8` blocks
+  on the `10x10` native grid, K64, one true-ragged heavy forward, no padding,
+  same sparse adapter and official recipe. Clean revision is
+  `9e25c6d38de8c993948025629181470b858682b4`; independent Critic and target
+  runtime PRE_RUN passed.
+- R1 seed-42 60-epoch job is `1249099`, run root
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_official_prebackbone_r1_9e25c6d3_seed42_20260822T080108Z`.
+  It completed `0:0` after 60 epochs. The terminal EMA validation is
+  `69.07/61.14/46.57` (Avg-mAP/mAP@0.6/mAP@0.7), which is
+  `+0.85/+0.13/+1.22` points relative to C and passes all three preregistered R1
+  accuracy conditions. This establishes seed-42 accuracy support for complete
+  rectangular support, not yet an efficiency or multi-seed claim. All eight jobs
+  `1249125–1249132` are terminal `COMPLETED 0:0`. R2/R2-SHUF48/Q48-GLOBAL final
+  Avg-mAP/mAP@0.6/mAP@0.7 are `66.56/59.06/45.17`, `66.17/58.53/44.47`, and
+  `65.78/58.62/44.74`; R3/R3-AREA-SHIFT are `67.88/60.32/46.41` and
+  `67.50/60.26/45.09`; R4/R4-SHUF15/Q64-GLOBAL are respectively
+  `68.02/60.32/46.26`, `67.19/60.17/46.20`, and `67.84/60.66/45.39`.
+  Thus R4−R4-SHUF15 is `+0.83/+0.15/+0.06`: the preregistered high-tIoU
+  ordering margin of `+0.30` is not met, so frame-outside content ordering is
+  not established. R4−Q64-GLOBAL is `+0.18/-0.34/+0.87`, a crossed result.
+  No strict-rectangle cost or multi-seed result exists.
+
+## Terminal ROI60 result (2026-08-21)
+
+- The final ROI-only G implementation is clean revision
+  `59960255a708c0341baa8104a1d4e120f87435e3`. It inherits the reviewed
+  `GeoRouteSourceViews` restoration and adds only deterministic optimizer/DDP
+  execution corrections needed for the existing ActionFormer production path.
+  The independent Critic passed that exact path; model science is unchanged.
+- The admitted real THUMOS14 seed-3407 60-epoch runs are terminal: matched-source
+  full-compute DN `1245907` gives Avg-mAP/mAP@0.7 `64.73/43.26`; ROI-only G
+  `1245924`, residual off, gives `61.49/39.99`. G is lower than DN by `3.24/3.27`
+  points and is a method-level negative result for this configuration.
+- Shared untouched AdaTAD reproduction `1245842` gives `68.73/47.24`, close to
+  but below the published `69.03/48.27` anchor. It is separate from DN.
+- Official AdaTAD evaluated every two epochs over the final 20 epochs. DN/G were
+  deliberately final-only (`val_eval_interval=60`, `val_start_epoch=59`), so no
+  intermediate curve was emitted during training. Validation-only evaluation of
+  epoch 44/49/54 EMA recovery checkpoints gives DN Avg-mAP
+  `65.50/65.06/64.84` and G `62.42/62.00/61.80`; the stable
+  `-3.08/-3.05/-3.04` gap shows the final negative result is not a last-epoch
+  fluctuation. No run contains a complete end-to-end cost result; do not infer
+  efficiency from token budget.
+- Earlier `1245897/1245898` and G-only `1245908/1245909/1245910` ended before an
+  admissible result because of optimizer-group aliasing or DDP auxiliary-loss
+  graph ownership. Preserve them as implementation diagnostics; do not use them
+  as model evidence or resume them.
+
+## Baseline-first correction (2026-08-17)
+
+- Current ZoomToken work must not call matched-source dense seeds
+  `3407/3408/3409 = 66.42/67.14/65.99 Avg-mAP` an exact official AdaTAD
+  reproduction. The published upstream AdaTAD anchor is Avg-mAP `69.03` and
+  mAP@0.7 `48.27`; the released-checkpoint evaluation has not been performed.
+- First read [WIKI_MEMORY_AUDIT-2026-08-17.md](WIKI_MEMORY_AUDIT-2026-08-17.md).
+  It supersedes this file's old “current” pointer only; all historical
+  anti-repetition constraints below remain preserved.
+
+## Shared official AdaTAD baseline rule (2026-08-17)
+
+- ZoomToken alone may execute one exact released-checkpoint evaluation, then—only if genuinely
+  necessary—one clean untouched official reproduction. Every related TAD project consumes the
+  final durable receipt read-only; do not duplicate it or label 66.xx matched-source dense as it.
+- This shared-number gate does not stop accepted local method preparation: keep Q-matrix entry,
+  conditional ROI/residual controls, recovery checkpoints, review and PRE_RUN work moving while
+  treating the dense official value as `UNBOUND_SHARED_INPUT`.
 
 ## Current decision: Hybrid-centered causal pilot (2026-08-02)
 

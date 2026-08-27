@@ -1,9 +1,176 @@
 ---
 type: anti_repetition
-updated: 2026-08-06
+updated: 2026-08-28
 ---
 
 ## GeoRoute deployment anti-repetition
+
+本节首条给出当前 BPNS-R1 边界；其余内容按日期保留为失败路线与运行教训，其中“当前”“active”等字样只描述当时状态。
+
+0. The current paper route is `ZoomToken-BPNS-R1`, not temporal reuse:
+   current-only strict contiguous `8x8/K64` native support, full 12-layer VideoMAE-S
+   and the existing Adapter, with no hidden/KV/cache/carry or depth bypass. Do not
+   relabel it as preceding-frame reuse, resurrect stopped cache routes inside it, or
+   start A-MoD-50/new seeds/K24/K18 as a prerequisite. Do not retrain K100 job
+   `1248835`, R1 job `1249099`, DSR6 job `1252527`, MOD32 job `1252180` or DROP32
+   job `1252179`. The next primary comparison is a same-hardware final-EMA K100-R1
+   replay with full decode-to-NMS latency, memory, gross energy and boundary quality;
+   theoretical token/block FLOPs are not speed evidence. DSR6/MOD32/DROP32 are
+   secondary points and must not delay K100-R1. Formal replay job `1257281` is not
+   cost evidence: it completed only the first K100 validation pass, then stopped when
+   raw `mAP@0.7=46.246663` was compared with rounded history `46.27`. R1 and the
+   remaining counterbalanced passes did not run. Do not interpret partial timing,
+   memory or energy, and do not call this a model failure. The only admissible repair
+   is to bind the raw accuracy and explicit rounding/tolerance rule, independently
+   review it, and obtain new run authorization. Keep identity checks minimal: exact
+   job/config/path/EMA and numerical parity are sufficient; do not add a new
+   hash/provenance framework merely because a review listed one.
+   That repair is now clean/pushed at `e9323448f6cd78b99bb3de53fd9ffb55f3676d65`;
+   focused tests, independent Critic and result-blind PRE_RUN passed. Exactly one fresh
+   formal replacement exists: job `1258299`, name `zt-bpns-r1-pv2-e9323448`, result
+   root `/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_r1_cost_parity_e9323448_seed42_20260828`.
+   It is running under the unchanged eight-pass protocol. Do not submit a duplicate,
+   resume job `1257281`, read live/partial metrics, or infer cost before complete
+   `profile.json`, `terminal_receipt.json`, predictions and power evidence exist.
+
+0. The exact `FULL_REPRESENTATION_TEMPORAL_REUSE-v001` route is terminal
+   `STOP_BEFORE_IMPLEMENTATION` at revision `bffff43d...`. Do not implement a
+   block-11-only old-hidden copy, a fixed-mask per-layer KV/attention/MLP cache, or a
+   whole-clip final-output memoizer and call it exact preceding-frame reuse. A 16-frame
+   clip is only an attention bucket; the 12 Adapters operate on the global 384-tubelet
+   lineage, so exact cache state is not clip-local. Eventful Transformers and
+   STC-Cacher also occupy the broad gate/cache/selective-recompute contract. Do not
+   create a config, PRE_RUN or 60-epoch cell for this stopped nonce, and do not rescue
+   it with mapping MLPs, summary tokens, K24/K18, extra seeds or threshold sweeps.
+   This is a design-level stop, not empirical evidence against all temporal reuse.
+
+0. The user-provided `R-PADT-v0` report is not an accepted same-session Pro
+   adjudication. The captured session receipt remains
+   `TERMINAL_INCOMPLETE_NO_SCIENTIFIC_DECISION`; do not cite its external
+   `CONTINUE` as Builder/PRE_RUN/experiment authority. Do not relabel R-PADT as
+   direct preceding-frame full-representation reuse or exact KV cache: it runs a
+   dense prefix, compresses only the suffix and copies anchor suffix outputs during
+   restoration. Do not implement the exact `L_p=2/R=4/m=16/Q=4` tuple before a
+   corrected human-frozen specification closes temporal identity, dense Adapter
+   cost and the omitted STA/PVC prior art. Do not infer speed, energy or memory from
+   `N'/N` or analytical FLOPs. Intake audit:
+   `sources/2026-08-26-r-padt-v0-user-report-intake-audit.md`.
+
+0. `IC-DRU`, `OW-ECR`, and `PCD-DRU` are terminal
+   `STOP_BEFORE_IMPLEMENTATION` as currently defined. Their optimistic known-
+   backbone saving bounds are about `50.12%`, `7.66%`, and `60.16%`, but the two
+   dynamic routes require an unsupported ~25% average deep-refresh regime and
+   reduce to known change-routing/cache/light-residual/MoD components; the exact
+   overlap route lacks full-stack margin and adds about `54 MiB/sample` of
+   twelve-layer state. Do not implement, train, tune K/rank/threshold, add gates,
+   or rescue them with teacher/distillation. Do not claim that dynamic 20–30%
+   refresh or all temporal reuse has been empirically disproved: no such model was
+   trained. A future route must introduce a distinct error-control or execution
+   principle and show conservative full-stack headroom before Builder work.
+
+0. `R1-ACR16-Delta1-FKV` is terminal `STOP_BEFORE_IMPLEMENTATION`. The corrected
+   Pro review found that Eventful Transformers (ICCV 2023) already covers token
+   references/buffers, temporal change selection, identity scatter and sparse or
+   incremental Transformer updates. ACR16's remaining low-rank delta plus
+   conditional depth skip is an application combination, not a new reuse
+   principle. Its verified main-block saving ceiling is `9.446%` and its known
+   backbone arithmetic ceiling is about `8.80%`, leaving insufficient credible
+   margin for both full-stack p50 latency and gross energy to improve by `>=5%`.
+   Do not implement, train, tune, add ID/Delta/SHUF cells, or transfer Eventful
+   directly as a rescue. Do not claim first temporal token cache or dynamic-region
+   recomputation. This stop is local to ACR16/Eventful-transfer and must not be
+   generalized to all temporal-redundancy research.
+
+0. The strict-rectangle R2/R3/R4 matrix jobs `1249125–1249132` are all terminal
+   `COMPLETED 0:0`; do not treat the old R4-SHUF15 intermediate
+   `66.27/59.02/44.59` as its final result. Final R4-SHUF15 is
+   `67.19/60.17/46.20`, versus R4 `68.02/60.32/46.26`, so
+   R4−R4-SHUF15 is `+0.83/+0.15/+0.06`. It fails the preregistered
+   `mAP@0.7 >= +0.30` ordering gate. Do not claim that learned frame-outside
+   token ranking is effective, launch seeds/cost from that mechanism, or rerun
+   the matrix. Q64-GLOBAL is terminal `67.84/60.66/45.39`; the crossed
+   R4−Q64 result does not rescue the failed R4-SHUF15 gate.
+
+0. The strict A-MoD reference is clean/pushed at
+   `a41714e9f9271906a2eb4505e3fedc590c838055` and has N16R4 `8 passed` plus
+   independent Critic `AUDIT_PASS`. Do not call it temporal reuse: it alternates
+   dense and selected-token VideoMAE blocks within one forward pass and stores no
+   state across frames or tubelets. Do not stop the temporal-memory objective
+   because this reference exists, and do not retrofit temporal memory into it.
+   The temporal route is now frozen as `APM32-CTX64` with one-tubelet detached
+   pre-position patch memory, radius-2 mutual-nearest alignment at `>=0.80`, K32
+   refresh/K64 context and exact K64 fallback; `CUR32-CTX64` is its matched
+   current-embedding control. Do not substitute old same-index RC32 carry,
+   hidden/KV cache, shallow transport, new loss or trainable router. The exact
+   one-batch/full-state preflight implementation is clean at `e92df6a4…`; do not
+   substitute CPU static tests for the still-missing APM and CUR two-GPU witnesses,
+   and do not submit either 60-epoch arm until those witnesses close result-blind
+   PRE_RUN and explicit run authority. Do not rerun, resume or relabel terminal
+   DSR6 job `1252527`.
+   For any later temporal arm, do not bind state to DDP batch index or assume that
+   the same spatial index means the same physical content. Use explicit video/window
+   identity and frozen alignment confidence; reset on video change, discontinuity,
+   scene invalidation or missing state. Do not serialize live activation graphs or
+   raw per-batch cache into the five-epoch recovery checkpoint.
+
+0. `DSR6-KV` has one current executable candidate,
+   `c6327a891809aa30370b3b2d9bedab0dcfe0d326`, on branch
+   `codex/zoomtoken-dsr6-launcher-profile-v001`; the scientific implementation ancestor is
+   `3260cd39154069138c6b1757326372cc3b73754e`. Fresh independent Critic is
+   `AUDIT_PASS`, and result-blind PRE_RUN is `READY` after the no-data/no-model 2-GPU
+   Slurm job-shell witness `1252525` completed `0:0`. The first seed-42 attempt job
+   `1252521` and root
+   `/data/run01/sczc063/yuzibo/projects/zoomtoken_dsr6_3260cd39_seed42_20260824`
+   are sealed pre-data infrastructure failure: never resume, requeue, reuse in place or infer
+   results from them. The proposed distinct root
+   `/data/run01/sczc063/yuzibo/projects/zoomtoken_dsr6_c6327a89_seed42_20260824` and
+   witness `1252525` used the earlier proposed job name and is never reused. The sole
+   formal job is `1252527`, exact name `zt-dsr6-train-s42-c6327a89`, at the distinct root.
+   It completed `0:0` after `06:07:17`, with epoch-59 checkpoint and retained
+   recoveries `44/49/54`. Its immutable terminal stdout records the EMA evaluation
+   `67.38/59.34/46.01`, below the frozen `68.57/60.64/46.07` thresholds on all
+   three metrics. This is `STOP_DEPTH_ROUTE` for the original near-lossless claim,
+   not an infrastructure failure. The 2026-08-25 user-directed joint
+   accuracy–compute review retains DSR6 as a conservative Pareto candidate at
+   `79.055%` block proxy. Do not submit another training cell, resume/requeue either
+   job, reuse the witness, add a second split/seed, revive RC32 carry, or launch
+   K24/K18. A future cost replay may only reuse the immutable final checkpoints
+   for matched FULL64/DSR6/MOD32/DROP32 measurement; do not use the proxy as speed.
+
+0. The corrected RC32-KV epoch at clean revision
+   `813012620dca991ff90121d0d9faf688f303d1ef`, root
+   `/data/run01/sczc063/yuzibo/projects/zoomtoken_r1_refresh_rc32_81301262_seed42_20260823T2100`,
+   jobs DROP32/MOD32-KV/RC32-KV `1252179/1252180/1252181`, is terminal
+   `COMPLETED 0:0`. Final-EMA Avg-mAP/mAP@0.7 are `66.11/44.88`, `66.50/45.21`,
+   and `64.73/42.91`, versus read-only FULL64 `69.07/46.57`. RC32-KV fails the
+   D−A/D−B/D−C gates and MOD32-KV also fails the original near-lossless gate.
+   RC32-KV remains stopped because MOD32-KV is strictly more accurate at the same
+   proxy cost. Do not submit a duplicate, add K24/K18 or another seed, resume the
+   sealed `836f2ce4` cells, or revive carry. MOD32-KV and DROP32 may be included
+   with DSR6/FULL64 in a read-only final-checkpoint cost replay; FULL64 job
+   `1249099` and all three training cells must not be retrained.
+
+0. The terminal ROI60 runs are exactly DN job `1245907` at clean revision
+   `d2b5de05…` and ROI-only G job `1245924` at clean revision `59960255…`, seed
+   3407, 60 epochs. Their final Avg-mAP/mAP@0.7 are `64.73/43.26` and
+   `61.49/39.99`; G is a negative result against DN. Do not submit a duplicate,
+   reuse an old DN checkpoint, add residual without a new causal rationale, or
+   infer efficiency without full-stack cost evidence. Earlier jobs
+   `1245897/1245898/1245908/1245909/1245910` are terminal implementation
+   diagnostics and must not be resumed. The shared official job `1245842`
+   is a separate untouched AdaTAD reproduction with terminal `68.73/47.24` and
+   is not the DN cell.
+
+0. Baseline-first correction: never label the matched-source dense outputs
+   `66.42/67.14/65.99` (or any Q/U/R outputs compared against them) as an exact
+   AdaTAD official reproduction. First verify the released AdaTAD checkpoint
+   on the clean release config/evaluator against the published `69.03/48.27`
+   anchor; do not explain the gap as seed or routing beforehand. See
+   `WIKI_MEMORY_AUDIT-2026-08-17.md`.
+   ZoomToken is the sole shared-baseline executor: other related TAD projects
+   must consume its final receipt read-only and must not launch a duplicate
+   checkpoint evaluation or clean official training. The shared number remains
+   unbound while Q implementation/review/PRE_RUN preparation continues.
 
 0. The active route is now the Hybrid-centered causal pilot, not Free-first.
    Do not submit another Free-ST selector cell or treat the old hierarchy's

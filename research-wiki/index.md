@@ -1,12 +1,18 @@
 ---
 type: wiki_index
-updated: 2026-08-09
-project: C3-DUCA efficient temporal acquisition for TAD
+updated: 2026-08-28
+project: ZoomToken task-aware redundant-compute reduction for offline TAD
 ---
 
-# C3 / DUCA Research Wiki
+# ZoomToken Research Wiki
 
-## Spatial Zoom / Native-Crop 当前节点
+> **当前入口（2026-08-28）**：先读 [query pack](query_pack.md) 与
+> [anti-repetition](anti_repetition.md)。当前论文问题由 BPNS-R1 检验：只依赖当前观测，
+> 在 VideoMAE 前使用连续 `8×8/K64` 原生支持，并让全部 K64 完整通过 12 层主干和既有
+> Adapter。seed-42 准确率可行性已经观察到，真实端到端效率仍未知；唯一成本替代回放
+> job `1258299` 正在运行，任何 live/partial 数值都不是证据。
+
+## 当前与历史研究节点
 
 - [Spatial Zoom / Native-Crop offline TAD](ideas/spatial-zoom-offline-tad.md)
 - [Spatial Zoom R0 infrastructure](experiments/spatial-zoom-s1-infrastructure.md)
@@ -42,8 +48,10 @@ project: C3-DUCA efficient temporal acquisition for TAD
 > 粗粒度动作/状态表征提供候选证据，以状态转换、动作边界和下游检测效用决定
 > 计算分配，在真实总成本下降的同时保护高 tIoU 定位性能。
 
-当前 DUCA 是这一目标的主要可执行候选之一，但尚未取得主论文方法资格。
-`70aa069` 被冻结为待裁决完整 baseline；`a5e1774` 增加成本与官方后端审计。
+当前主问题是 BPNS-R1 能否把 36% 原生空间输入削减转化为真实的完整链路成本下降，同时保护
+高 tIoU、短动作和边界质量。K100/R1 的单 seed final-EMA 只支持准确率可行性；完整成本、多种子、
+跨 detector/dataset 和最终论文主张均未闭合。DUCA、C3、GeoRoute/SCNR 与多条时序复用路线
+保留为历史基线、归因工具或负证据，不代表当前默认答案。
 
 ## 节点索引
 
@@ -67,6 +75,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 - [PhysTime](ideas/phystime.md)
 - [Geometry-Residual-Depth Routing for offline TAD](ideas/geo-route-adatad.md)
 - [Structured Complementary Native Routing](ideas/structured-complementary-native-routing.md)
+- [BPNS-R1 strict rectangular native support](ideas/strict-rectangle-roi-routing.md)
 
 ### Reviewed Literature
 

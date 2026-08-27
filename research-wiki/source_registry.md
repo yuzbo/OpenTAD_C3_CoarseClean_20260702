@@ -1,7 +1,61 @@
 ---
 type: source_registry
-updated: 2026-08-06
+updated: 2026-08-28
 ---
+
+- BPNS-R1 same-hardware cost replay v002, 2026-08-28. Clean/pushed revision
+  `e9323448f6cd78b99bb3de53fd9ffb55f3676d65` on branch
+  `codex/zoomtoken-bpns-r1-parity-v002` changes only the accuracy-parity contract and
+  focused tests; model, forward, training config, data, checkpoints, population,
+  K100/R1 eight-pass order, warmup, evaluator/NMS and cost scope are unchanged.
+  Focused tests: `13 passed`; independent Critic: `PASS`; result-blind Evaluator:
+  `PRE_RUN_READY`. The sole replacement is Slurm job `1258299`, JobName
+  `zt-bpns-r1-pv2-e9323448`, result root
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_r1_cost_parity_e9323448_seed42_20260828`.
+  As of `2026-08-28T00:31:51+08:00`, scheduler state is `RUNNING` on `g0048`, while
+  `profile.json` and `terminal_receipt.json` are absent. This is implementation,
+  admission and running-state evidence only; no live/partial value is scientific or
+  cost evidence. Durable start receipt:
+  `docs/aris/ZOOMTOKEN_BPNS_R1_SAME_HARDWARE_COST_REPLAY_V002_START_RECEIPT-2026-08-28.md`.
+
+- BPNS-R1 first same-hardware cost replay failure, 2026-08-27. Job `1257281`
+  completed only the first K100 validation pass before raw `mAP@0.7=46.246663` was
+  compared directly with rounded history `46.27`; R1 and the remaining passes did
+  not run, and no complete `profile.json` or `terminal_receipt.json` exists. This is
+  an invalid replay/admission result, not model performance or efficiency evidence.
+
+- R-PADT-v0 user-provided report intake, 2026-08-26. Full external report
+  `E:/下载/ZoomToken_开放式调研与科学裁决报告_R-PADT-v0.md` and pasted rendering
+  `C:/Users/skywalker/.codex/attachments/c7fc56b9-8e69-4459-a729-95494dce258f/pasted-text.txt`.
+  Both describe the same R-PADT candidate, but they are not authoritatively bound
+  to the incomplete captured Pro session; nonce and attachment statements conflict.
+  Independent project absorption/audit:
+  `research-wiki/sources/2026-08-26-r-padt-v0-user-report-intake-audit.md`.
+  Evidence boundary: external designed candidate; project status `discussed /
+  PARTIAL_ACCEPT_REVISE_BEFORE_G4`; no code, experiment, result or paper evidence.
+
+- ACR16/Eventful novelty-and-implementation Pro adjudication, 2026-08-25.
+  Exact ZoomToken Project fresh conversation
+  `6a8d706a-4170-83ea-b6bf-b6759d44020e`, browser-verified `Pro`, terminal
+  `completed / STOP`. The request, prior Pro response and independent audit were
+  uploaded as one per-conversation text attachment bundle; they were not added to
+  persistent Project Sources. Raw visible response:
+  `.cvpr-pro-lab/reviews/PRO_EVENTFUL_ACR16_NOVELTY_AND_IMPLEMENTATION_ADJUDICATION_RESPONSE-v001.md`;
+  terminal audit:
+  `.cvpr-pro-lab/reviews/PRO_EVENTFUL_ACR16_NOVELTY_AND_IMPLEMENTATION_ADJUDICATION_AUDIT-v001.md`.
+  Scientific boundary: stops only ACR16/Eventful-transfer before implementation;
+  creates no accuracy, efficiency, code or experiment evidence.
+
+- ZoomToken ChatGPT Project Source retention cleanup, 2026-08-25. User-authorized
+  cleanup reduced the remote Source inventory from 40 files to exactly three
+  durable aggregate memories: `PROJECT_CHARTER-v001.md`,
+  `CURRENT_RESEARCH_STATE-v016.md`, and `MODEL_EXPERIMENT_HISTORY-v011.md`.
+  All superseded state/history versions and discussion-specific Pro, audit,
+  route, plan, result and draft files were removed from the remote Project only;
+  local research records and ledgers were preserved. Future Pro requests,
+  prior-response excerpts, audits and code-context documents are per-conversation
+  attachments, not Project Sources. Durable receipt:
+  `.cvpr-pro-lab/reviews/ZOOMTOKEN_PROJECT_SOURCE_RETENTION_CLEANUP_RECEIPT-2026-08-25.md`.
 
 - Hybrid-centered causal-pilot Pro review, 2026-08-02. User attachment
   `pasted-text.txt`, 1,101 lines, SHA-256
@@ -1641,6 +1695,60 @@ updated: 2026-08-06
   `/data/run01/sczc063/yuzibo/scnr_residual_centering_paired_cost_2eca86cf_from16137484_s3407_20260809_112558`.
   The Job is scheduler-pending; no remote cost result is registered yet.
 
+## 2026-08-17 ZoomToken official-baseline and resource audit
+
+- Read-only official source references: local clean OpenTAD main reference
+  `E:/DeskTop/TAD/OpenTAD_OFFICIAL_BASELINE_AUDIT_20260817` at
+  `346d09d19e2091372cec48172dbe40f7b28bdee6`, and clean AdaTAD release
+  `E:/DeskTop/TAD/OpenTAD_OFFICIAL_ADATAD_01c58b9` at
+  `01c58b9f2370e914150cf94d392208a4e211c053`. The release README's
+  VideoMAE-S THUMOS14 table states Avg-mAP `69.03` and mAP@0.7 `48.27`; its
+  config is `configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py`
+  and released checkpoint ID is `1HGUBroK90KBAkFqQreAVtHCIclJh7DmM`.
+  This establishes a published anchor, not a locally reproduced result.
+- Read-only N16R4 resource inventory, 2026-08-17: canonical
+  `/data/run01/sczc063/yuzibo/thumos14/raw_data/video` contains 411 MP4 files
+  (training 200, validation 211; annotation UID mismatch 0); annotation JSON
+  is 1,312,424 bytes, category map has 20 entries, and VideoMAE-S pretrain is
+  90,605,819 bytes. The released AdaTAD checkpoint was not found in the known
+  project checkpoint roots and no license/access receipt is registered. This
+  is inventory evidence only; it does not authorize data transfer, training,
+  checkpoint evaluation, or claims. Full accounting is
+  `research-wiki/WIKI_MEMORY_AUDIT-2026-08-17.md`.
+- Central read-only resource correction, 2026-08-17: the same canonical raw
+  root is 411 valid MP4 **symlinks**, zero broken, with target volume about 33G;
+  it must not be duplicated or counted by `find -type f` alone. I3D and
+  InternVideo2 expected OpenTAD feature roots are absent; native MATR V3
+  validation/test pickle assets are present (~3.33G/~3.69G) but are not
+  interchangeable with I3D/InternVideo2 `.npy` configs and MATR checkpoint is
+  incomplete. SigLIP2 stride-8 assets (823/~477M) are likewise a separate
+  identity. This corrects resource accounting only and authorizes no download,
+  config binding, experiment, metric or claim.
+- Central full remote video resource map, 2026-08-17: THUMOS14 physical store
+  has 413 videos, while only the canonical 411 valid symlinks are annotation
+  mapped; `video_test_0000270.mp4` and `video_test_0001292.mp4` are excluded.
+  MultiSports is archive-only except 18 selected MP4, TOC-Bench and Charades are
+  separately extracted trees, ActivityNet is unassembled, and FineAction/HACS/
+  EPIC-Kitchens/Ego4D video data is absent. This is a read-only availability map,
+  not authorization to select, extract, copy, bind, train, or evaluate any of
+  those datasets.
+- Read-only historical full-matrix source snapshot inspection, 2026-08-17:
+  `/data/run01/sczc063/yuzibo/zoomtoken_full_official_b88a11ba_seed3407_20260815_070546`
+  contains explicit DO/DN/U/R/Q config snapshots. DO inherits official AdaTAD;
+  DN/Q inherit GeoRoute development/dynamic SCNR bases and U/R inherit Q; all
+  bind canonical THUMOS14 annotation/video and VideoMAE pretrain. DN/Q contain
+  `checkpoint_interval=60`, which is historical provenance only and does not
+  meet the subsequently frozen 5-epoch recovery policy for future non-untouched
+  full runs. No result, checkpoint selection, or route claim follows from this
+  inspection.
+- User shared-baseline directive, 2026-08-17: ZoomToken is the sole executor
+  of one exact AdaTAD official baseline; dependent TAD projects may only
+  consume the eventual durable receipt read-only. It binds the local official
+  references, shared canonical THUMOS14 inventory and released-checkpoint-first
+  policy recorded in `docs/aris/ADATAD_SHARED_OFFICIAL_BASELINE_PACKET-2026-08-17.md`.
+  This is governance/provenance only, not a released checkpoint, result or
+  authorization to run.
+
 ## 外部附件
 
 主任务显式引用的关键附件包括：`5f9a0d62...`、`86b473c6...`、
@@ -1648,3 +1756,89 @@ updated: 2026-08-06
 `a885a659...`、`391f061f...`、`c2008dfb...`、`c8a36eba...`、
 `1fc36774...`、`d8b9f9fc...`。其中最后一份 ResearchClaw 审查已原样归档，
 SHA256 为 `E4344DAED297F02E23CE355A4B0BBA1845F2C05393820CE04843374AAB6A59AC`。
+
+## Fine-grained / TAS dataset sources (2026-08-21)
+
+- FineDiving user-authorized local release: `E:\Released_FineDiving_Dataset`.
+  The source inventory is 1,337,505 files / 101,123,416,820 bytes. Its fine and
+  coarse annotation key sets both contain the same 3,000 samples; the official
+  train/test pickles contain 2,251/749 disjoint samples whose union is complete.
+  All four trimmed-frame variants contain 3,000 sample directories and 312,256
+  JPEG frames, with every per-sample frame count matching the fine annotation.
+  All 135 MP4s match the detection JSON video names and passed first/last-frame
+  decoding; all 15 ZIP archives passed full CRC validation. This is local data
+  integrity evidence, not a TAS benchmark or model result. The official dataset
+  project is `https://github.com/xujinglin/FineDiving`; new access requires its
+  release agreement, while this transfer uses the user's already released copy.
+  The authorized remote copy at
+  `/data/run01/sczc063/yuzibo/datasets/FineDiving` completed on 2026-08-23.
+  A full sorted manifest comparison over relative path plus file size matched the
+  local source exactly: 1,337,505 files / 101,123,416,820 bytes. The completion
+  receipt is stored outside the dataset at
+  `/data/run01/sczc063/yuzibo/datasets/.transfer_state/FineDiving/COMPLETE`.
+- FineGym official annotation source: `https://sdolivia.github.io/FineGym/`,
+  licensed CC BY-NC 4.0 for annotations. The remote annotation-only copy at
+  `/data/run01/sczc063/yuzibo/datasets/FineGym/annotations` contains the v1.0
+  and v1.1 temporal JSONs, question tree, category tables and Gym99/Gym288
+  train/validation splits. JSON parsing and the official category/split counts
+  passed on 2026-08-21. The user subsequently supplied the provider's updated
+  original-video sources: UTBox
+  `https://utexas.app.box.com/s/oq2ce7i1mdgoihdwy9o7moolxzxsib42`
+  and the 2025-08-23 Google Drive fallback
+  `https://drive.google.com/drive/folders/1V2voj5jS4zUZdx1Pdx-UTzm3moTFy5yn`.
+  They are restricted to academic use and must not be redistributed. The UTBox
+  folder manifest has 315 video files / 646,175,639,828 bytes; its filename set
+  exactly matches the Drive `finegym_raw_videos` folder. Remote target:
+  `/data/run01/sczc063/yuzibo/datasets/FineGym/videos_raw/finegym_raw_videos`.
+  UTBox download is `download_running` through the N16R4 academic proxy with 16
+  resumable workers. It remains unusable until all 315 paths match their exact
+  UTBox `itemSize` values and `DOWNLOAD_COMPLETE` plus the receipt are written.
+- Standard TAS feature/label bundle: official MS-TCN/UVAST Zenodo record
+  `https://zenodo.org/records/3625992`, file `data.zip` (30,210,005,282 bytes).
+  The official repositories identify it as the approximately 30 GB feature,
+  ground-truth and split bundle for GTEA, 50Salads and Breakfast. The remote
+  partial target is `/data/run01/sczc063/yuzibo/datasets/TAS/UVAST_official`.
+  Its download was paused on 2026-08-21 after the user clarified that raw videos,
+  not pre-extracted features, are required. The resumable partial archive is
+  retained but is neither complete nor an acceptable substitute for raw data.
+- Breakfast raw source: official Serre Lab page
+  `https://serre.lab.brown.edu/breakfast-actions-dataset.html`, licensed CC BY
+  4.0. The official 3,930,212,562-byte `BreakfastII_15fps_qvga_sync.tar.gz`
+  contains the 15 fps QVGA source videos; the official coarse/fine segmentation
+  archives accompany it. Remote target:
+  `/data/run01/sczc063/yuzibo/datasets/TAS/raw/Breakfast`. Both segmentation
+  archives passed full tar/gzip listing on 2026-08-21. The video archive remains
+  `download_running` and cannot be marked usable until the exact byte count and
+  full tar/gzip validation pass.
+- GTEA raw source: official Georgia Tech page `https://cbs.ic.gatech.edu/fpv/`.
+  It publishes 28 rectified 15 fps MP4 videos and the cleaned 71-class action
+  labels. Remote target: `/data/run01/sczc063/yuzibo/datasets/TAS/raw/GTEA`.
+  The academic proxy currently returns HTTP 503 for the official Dropbox host,
+  so both archives remain `download_retrying`; no feature mirror is accepted as
+  a raw-video substitute.
+- 50Salads raw source: University of Dundee DOI `10.15132/10000120` and official
+  page `https://cvip.computing.dundee.ac.uk/datasets/foodpreparation/50salads/`,
+  licensed CC BY-NC-SA 4.0. TAS needs its 50 original RGB AVI videos plus temporal
+  annotations; depth and accelerometer streams are not required for the current
+  RGB evaluation. Remote target:
+  `/data/run01/sczc063/yuzibo/datasets/TAS/raw/50Salads`. The official data host
+  currently returns HTTP 503 through the academic proxy, so a resumable official-
+  source monitor remains `download_retrying`; raw RGB data are not yet acquired.
+- Ego4D NLQ official source: `https://ego4d-data.org/docs/start-here/` and the
+  official downloader `https://github.com/facebookresearch/Ego4d`. The 2026 NLQ
+  challenge continues to use Ego4D v2. The current v2 clips manifest does not
+  expose `NLQ` as a benchmark tag, so `--benchmarks nlq` selects zero videos;
+  the canonical minimal subset is instead the three `nlq_*.json` annotations
+  joined by their referenced `clip_uid` values to the official clips manifest.
+  Remote target: `/data/run01/sczc063/yuzibo/datasets/Ego4D-NLQ`. The resulting
+  plan contains 2,019 clips and 22,408 language queries: 2,025 files totaling
+  158,680,155,599 bytes including the three annotations, primary metadata and
+  two manifests. Official CLI v1.7.3 plus a resumable UID-file launcher and
+  annotation-to-clip coverage validation are installed. State is
+  `download_complete_verified` as of 2026-08-25 03:31 CST: all 2,019 referenced
+  clips are present, their aggregate 158,597,610,649 bytes exactly matches the
+  S3 `ContentLength` plan, and validation reports zero missing or zero-byte
+  clips. `DOWNLOAD_COMPLETE`, `VALIDATION_REPORT.txt` and
+  `DOWNLOAD_RECEIPT.txt` are present in the remote target. Approved credentials
+  are held only in a mode-600 private file outside the repository and must never
+  be committed or recorded in the wiki.
