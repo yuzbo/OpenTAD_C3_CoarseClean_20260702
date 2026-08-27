@@ -33,7 +33,6 @@ OUTPUT_SCHEMA_VERSION = "pc_ot_mras_frontend_value_transport_ledger_v0"
 SUMMARY_SCHEMA_VERSION = "pc_ot_mras_frontend_value_transport_ledger_summary_v0"
 READY = "PC_OT_MRAS_FRONTEND_LEDGER_READY"
 NO_GO = "PC_OT_MRAS_FRONTEND_LEDGER_NO_GO"
-POLICY_SOURCE = "pc_ot_mras_frontend_hard_positions"
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
     "uses_teacher",
@@ -178,7 +177,6 @@ def hard_row_to_value_transport_row(
         "route": "PC-OT-MRAS",
         "route_variant": str(route_variant),
         "policy": "pc_ot_mras_hard_export_fixed_budget",
-        "policy_source": POLICY_SOURCE,
         "source_schema_version": INPUT_SCHEMA_VERSION,
         "source_budget": int(row.get("budget", len(positions))),
         "source_batch_index": int(row.get("batch_index", 0)),

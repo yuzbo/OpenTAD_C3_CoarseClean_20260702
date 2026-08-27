@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 from pathlib import Path
 from typing import Any
 
@@ -14,23 +13,10 @@ CONFIG_DEFAULT = "configs/adatad/thumos/c3_paction_learned_ledger_adatad_full_tr
 READY = "C3_PACTION_LEARNED_LEDGER_FULL_TRAIN_GATE_PASS"
 FIXED_STRATEGY = "learned_paction_gap_loss_value"
 DYNAMIC_STRATEGY = "learned_paction_gap_loss_dynamic_budget"
-GAS_VT_SOURCE = "learned_paction_gas_vt_policy_checkpoint"
-PACTION_CHECKPOINT_SOURCE = "learned_paction_gap_loss_policy_checkpoint"
-LATTICE_ROUTE_VARIANT = "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT"
-LATTICE_RADIUS_ROUTE_VARIANT = "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS"
 VARIANT_SPECS = {
-    "learned_fixed_384": dict(target_len=384, require_selected_count=384, strategy=FIXED_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER", use_expanded_positions=False),
-    "learned_fixed_768": dict(target_len=768, require_selected_count=768, strategy=FIXED_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER", use_expanded_positions=False),
-    "learned_dynamic": dict(target_len=768, require_selected_count=None, strategy=DYNAMIC_STRATEGY, source=PACTION_CHECKPOINT_SOURCE, route_variant="C3_PACTION_LEARNED_STRICT_LEDGER", use_expanded_positions=False),
-    "paction_lattice_radius_score_only_move25": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_radius_score_only_move25", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_RADIUS_ROUTE_VARIANT, use_expanded_positions=True),
-    "paction_lattice_radius_score_only_move50": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_radius_score_only_move50", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_RADIUS_ROUTE_VARIANT, use_expanded_positions=True),
-    "paction_lattice_replace_score_only_move25": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move25", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT, use_expanded_positions=False),
-    "paction_lattice_replace_score_only_move50": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move50", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT, use_expanded_positions=False),
-    "paction_lattice_replace_score_only_move75": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_move75", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT, use_expanded_positions=False),
-    "paction_lattice_replace_score_only_no_protect": dict(target_len=384, require_selected_count=384, strategy="paction_lattice_replace_score_only_no_protect", source=PACTION_CHECKPOINT_SOURCE, route_variant=LATTICE_ROUTE_VARIANT, use_expanded_positions=False),
-    "gas_vt_fixed_384": dict(target_len=384, require_selected_count=384, strategy="gas_vt_fixed_384", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER", use_expanded_positions=False),
-    "gas_vt_fixed_768": dict(target_len=768, require_selected_count=768, strategy="gas_vt_fixed_768", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER", use_expanded_positions=False),
-    "gas_vt_dynamic": dict(target_len=768, require_selected_count=None, strategy="gas_vt_dynamic", source=GAS_VT_SOURCE, route_variant="C3_GAS_VT_STRICT_LEDGER", use_expanded_positions=False),
+    "learned_fixed_384": dict(target_len=384, require_selected_count=384, strategy=FIXED_STRATEGY),
+    "learned_fixed_768": dict(target_len=768, require_selected_count=768, strategy=FIXED_STRATEGY),
+    "learned_dynamic": dict(target_len=768, require_selected_count=None, strategy=DYNAMIC_STRATEGY),
 }
 FORBIDDEN_TRUE_FLAGS = (
     "uses_gt",
@@ -71,15 +57,9 @@ def _find_collect(pipeline: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _variant_spec(cfg: Config) -> dict[str, Any]:
-    variant = str(cfg.gas_vt_ledger_variant if "gas_vt_ledger_variant" in cfg else cfg.paction_ledger_variant)
+    variant = str(cfg.paction_ledger_variant)
     _require(variant in VARIANT_SPECS, f"unknown paction_ledger_variant={variant}")
     return dict(VARIANT_SPECS[variant])
-
-
-def _gate_cfg(cfg: Config) -> Any:
-    if "c3_gas_vt_ledger_full_train_gate" in cfg:
-        return cfg.c3_gas_vt_ledger_full_train_gate
-    return cfg.c3_paction_learned_ledger_full_train_gate
 
 
 def _validate_loader(name: str, dataset_cfg: Any, expected_ledger_path: str, cfg: Config) -> None:
@@ -97,15 +77,11 @@ def _validate_loader(name: str, dataset_cfg: Any, expected_ledger_path: str, cfg
     _require(_as_bool(loader.get("bata_value_transport_require_deployable")), f"{name}: deployable ledger not required")
     _require(not _as_bool(loader.get("bata_value_transport_allow_missing_fallback")), f"{name}: missing fallback must be off")
     _require(_as_bool(loader.get("remap_gt_to_selected_axis")), f"{name}: selected-axis GT remap must be on")
-    _require(
-        _as_bool(loader.get("bata_value_transport_use_expanded_positions", False)) is bool(spec["use_expanded_positions"]),
-        f"{name}: expanded-position consumption mismatch",
-    )
     _require(loader.get("bata_value_transport_ledger_path") == expected_ledger_path, f"{name}: wrong ledger path")
     _require(loader.get("bata_value_transport_source") == cfg.c3_value_transport_source, f"{name}: wrong ledger source")
     _require(
-        loader.get("bata_value_transport_source") == spec["source"],
-        f"{name}: loader source must identify the expected policy checkpoint",
+        loader.get("bata_value_transport_source") == "learned_paction_gap_loss_policy_checkpoint",
+        f"{name}: loader source must identify the learned policy checkpoint",
     )
 
 
@@ -141,19 +117,6 @@ def _validate_dataset(cfg: Config) -> None:
 def _validate_model_and_train(cfg: Config) -> None:
     spec = _variant_spec(cfg)
     target_len = int(spec["target_len"])
-    expected_eval_interval = int(os.environ.get("C3_PACTION_ADATAD_EXPECT_VAL_EVAL_INTERVAL", os.environ.get("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL", "10")))
-    expected_eval_anchor = int(
-        os.environ.get(
-            "C3_PACTION_ADATAD_EXPECT_VAL_EVAL_INTERVAL_ANCHOR_EPOCH",
-            os.environ.get("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL_ANCHOR_EPOCH", str(expected_eval_interval)),
-        )
-    )
-    expected_val_start = int(
-        os.environ.get(
-            "C3_PACTION_ADATAD_EXPECT_VAL_START_EPOCH",
-            os.environ.get("C3_PACTION_ADATAD_VAL_START_EPOCH", str(max(0, expected_eval_interval - 1))),
-        )
-    )
     _require(int(cfg.window_size) == target_len, "selected window_size mismatch")
     _require(int(cfg.dense_window_size) == 768, "dense_window_size must be 768")
     _require(int(cfg.model.backbone.backbone.total_frames) == target_len, "backbone total_frames mismatch")
@@ -170,27 +133,17 @@ def _validate_model_and_train(cfg: Config) -> None:
     )
     _require(int(cfg.workflow.end_epoch) == 60, "formal full train must run 60 epochs")
     _require(cfg.workflow.get("max_train_iters", None) is None, "full train must not cap train iterations")
-    _require(
-        int(cfg.workflow.val_eval_interval) == expected_eval_interval,
-        f"validation interval must be {expected_eval_interval}",
-    )
+    _require(int(cfg.workflow.val_eval_interval) == 10, "validation interval must be 10")
     _require("val_eval_epochs" not in cfg.workflow, "validation must use interval scheduling, not explicit epochs")
-    _require(
-        int(cfg.workflow.get("val_eval_interval_anchor_epoch", 0)) == expected_eval_anchor,
-        f"validation anchor must be epoch {expected_eval_anchor}",
-    )
-    _require(
-        int(cfg.workflow.val_start_epoch) == expected_val_start,
-        f"validation must start from zero-based epoch {expected_val_start}",
-    )
-    _require(_as_bool(cfg.solver.get("ema", False)), "EMA should stay on to match the reviewed AdaTAD protocol")
+    _require(int(cfg.workflow.get("val_eval_interval_anchor_epoch", 0)) == 10, "validation anchor must be epoch 10")
+    _require(int(cfg.workflow.val_start_epoch) == 9, "validation must start from zero-based epoch 9")
+    _require(not _as_bool(cfg.solver.get("ema", True)), "EMA should be off for this diagnostic comparison")
 
 
 def _validate_gate(cfg: Config, *, allow_launch_unlocked: bool = False) -> None:
-    spec = _variant_spec(cfg)
-    gate = _gate_cfg(cfg)
+    gate = cfg.c3_paction_learned_ledger_full_train_gate
     _require(gate.route == "C3_MAINLINE_OPTIMIZATION", "wrong route")
-    _require(gate.route_variant == spec["route_variant"], "wrong route variant")
+    _require(gate.route_variant == "C3_PACTION_LEARNED_STRICT_LEDGER", "wrong route variant")
     _require(_as_bool(gate.full_train_candidate), "not marked as full train candidate")
     _require(_as_bool(gate.requires_launch_gate), "launch gate must be required")
     if allow_launch_unlocked:
@@ -229,14 +182,7 @@ def _validate_paction_provenance(path: Path, line_no: int, diagnostics: dict[str
         f"{path}:{line_no}: missing p_action provenance model marker",
     )
     _require(provenance.get("no_gt_generation") is True, f"{path}:{line_no}: p_action provenance must not use GT generation")
-    for key in (
-        "uses_teacher",
-        "uses_oracle",
-        "uses_cache",
-        "uses_prediction_cache",
-        "uses_raw_prediction",
-        "prediction_uses_gt",
-    ):
+    for key in ("uses_teacher", "uses_oracle", "uses_cache", "uses_raw_prediction"):
         _require(provenance.get(key) is False, f"{path}:{line_no}: p_action provenance must set {key}=false")
 
 
@@ -267,7 +213,7 @@ def _validate_ledger_file(path: str | Path, *, cfg: Config, require_exists: bool
             _require(int(diagnostics.get("uniform_visible_fill_count", 0) or 0) == 0, f"{path}:{line_no}: uniform fill used")
             _require(str(diagnostics.get("source_strategy")) == str(spec["strategy"]), f"{path}:{line_no}: wrong source strategy")
             _require(
-                row.get("policy_source", diagnostics.get("policy_source")) == spec["source"],
+                row.get("policy_source", diagnostics.get("policy_source")) == "learned_paction_gap_loss_policy_checkpoint",
                 f"{path}:{line_no}: missing learned checkpoint policy_source",
             )
             checkpoint_sha256 = row.get("policy_checkpoint_sha256", diagnostics.get("policy_checkpoint_sha256"))
@@ -291,30 +237,7 @@ def _validate_ledger_file(path: str | Path, *, cfg: Config, require_exists: bool
             required = spec["require_selected_count"]
             if required is not None:
                 expected = _expected_short_count(int(required), valid_len=valid_len, dense_len=dense_len)
-                if spec.get("use_expanded_positions"):
-                    _require(row.get("selected_positions_are_centers") is True, f"{path}:{line_no}: radius selected_positions must be centers")
-                    expanded = [int(item) for item in row.get("expanded_selected_positions", [])]
-                    _require(bool(expanded), f"{path}:{line_no}: missing expanded_selected_positions")
-                    _require(expanded == sorted(set(expanded)), f"{path}:{line_no}: expanded positions must be sorted unique")
-                    _require(
-                        len(expanded) == int(row.get("expanded_selected_count")),
-                        f"{path}:{line_no}: expanded_selected_count mismatch",
-                    )
-                    _require(len(expanded) <= target_len, f"{path}:{line_no}: expanded_selected_count exceeds target_len")
-                    _require(all(0 <= item < valid_len for item in expanded), f"{path}:{line_no}: expanded position outside valid_len")
-                    _require(len(expanded) == expected, f"{path}:{line_no}: expected {expected} expanded positions")
-                    _require(diagnostics.get("budgeted_expanded_selection") is True, f"{path}:{line_no}: budgeted expanded selection missing")
-                    _require(int(diagnostics.get("center_count", -1)) == len(positions), f"{path}:{line_no}: center_count mismatch")
-                    _require(
-                        int(diagnostics.get("budgeted_expanded_count", -1)) == len(expanded),
-                        f"{path}:{line_no}: budgeted_expanded_count mismatch",
-                    )
-                    _require(
-                        int(diagnostics.get("expanded_budget", expected)) == expected,
-                        f"{path}:{line_no}: expanded_budget mismatch",
-                    )
-                else:
-                    _require(len(positions) == expected, f"{path}:{line_no}: expected {expected} selected positions")
+                _require(len(positions) == expected, f"{path}:{line_no}: expected {expected} selected positions")
     _require(rows > 0, f"ledger file has no rows: {path}")
 
 
@@ -322,7 +245,6 @@ def validate_config(config_path: str = CONFIG_DEFAULT, *, require_ledger_files: 
     cfg = Config.fromfile(str(config_path))
     spec = _variant_spec(cfg)
     _require(cfg.experiment_scope.selection_strategy == spec["strategy"], "experiment scope selection strategy mismatch")
-    _require(cfg.c3_value_transport_source == spec["source"], "value transport source mismatch")
     _validate_gate(cfg, allow_launch_unlocked=allow_launch_unlocked)
     _validate_dataset(cfg)
     _validate_model_and_train(cfg)

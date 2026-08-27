@@ -93,7 +93,7 @@ def _validate_model_and_train(cfg):
     _require("val_eval_epochs" not in cfg.workflow, "validation must use interval scheduling, not explicit epochs")
     _require(int(cfg.workflow.get("val_eval_interval_anchor_epoch", 0)) == 10, "validation anchor must be epoch 10")
     _require(int(cfg.workflow.val_start_epoch) == 9, "validation must start from zero-based epoch 9")
-    _require(_as_bool(cfg.solver.get("ema", False)), "EMA should stay on to match the reviewed AdaTAD protocol")
+    _require(not _as_bool(cfg.solver.get("ema", True)), "EMA should be off for this diagnostic comparison")
 
 
 def _validate_gate(cfg, *, allow_launch_unlocked=False):

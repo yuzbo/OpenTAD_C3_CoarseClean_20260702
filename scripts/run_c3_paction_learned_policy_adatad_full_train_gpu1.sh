@@ -16,10 +16,7 @@ BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 RUN_TAG="${RUN_TAG:-c3_paction_learned_adatad_full_train_gpu1_$(date +%Y%m%d_%H%M%S_%z)}"
 RUN_ID="${RUN_ID:-0}"
 SEED="${SEED:-0}"
-MASTER_PORT_BASE="${MASTER_PORT_BASE:-}"
-MASTER_PORT_LOW="${MASTER_PORT_LOW:-30000}"
-MASTER_PORT_HIGH="${MASTER_PORT_HIGH:-60999}"
-MASTER_PORT_MAX_ATTEMPTS="${MASTER_PORT_MAX_ATTEMPTS:-256}"
+MASTER_PORT_BASE="${MASTER_PORT_BASE:-30310}"
 ADATAD_PRETRAIN_FILENAME="${ADATAD_PRETRAIN_FILENAME:-vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${C3_PACTION_ADATAD_PRETRAIN_PATH:-${BASE}/pretrained/${ADATAD_PRETRAIN_FILENAME}}}"
 
@@ -73,12 +70,6 @@ PACTION_POLICY_NUM_LAYERS="${PACTION_POLICY_NUM_LAYERS:-3}"
 PACTION_POLICY_DROPOUT="${PACTION_POLICY_DROPOUT:-0.10}"
 PACTION_POLICY_GAP_MAX="${PACTION_POLICY_GAP_MAX:-3}"
 PACTION_POLICY_BUDGET_CE_WEIGHT="${PACTION_POLICY_BUDGET_CE_WEIGHT:-0.25}"
-PACTION_VALUE_TRANSPORT_LOSS_WEIGHT="${PACTION_VALUE_TRANSPORT_LOSS_WEIGHT:-}"
-PACTION_BOUNDARY_MISS_LOSS_WEIGHT="${PACTION_BOUNDARY_MISS_LOSS_WEIGHT:-}"
-PACTION_LARGE_GAP_LOSS_WEIGHT="${PACTION_LARGE_GAP_LOSS_WEIGHT:-}"
-PACTION_TEMPORAL_HOLE_LOSS_WEIGHT="${PACTION_TEMPORAL_HOLE_LOSS_WEIGHT:-}"
-PACTION_BUDGET_LOSS_WEIGHT="${PACTION_BUDGET_LOSS_WEIGHT:-}"
-PACTION_REDUNDANCY_LOSS_WEIGHT="${PACTION_REDUNDANCY_LOSS_WEIGHT:-}"
 PACTION_DYNAMIC_BUDGET_BUCKETS="${PACTION_DYNAMIC_BUDGET_BUCKETS:-128 192 256 320 384 512 768}"
 PACTION_ADATAD_VARIANTS="${PACTION_ADATAD_VARIANTS:-learned_fixed_384 learned_fixed_768 learned_dynamic}"
 REQUIRE_DYNAMIC_NONCONSTANT="${REQUIRE_DYNAMIC_NONCONSTANT:-1}"
@@ -129,49 +120,6 @@ module load cuda/11.8 >/dev/null 2>&1 || true
 module load miniforge3/24.11 >/dev/null 2>&1 || true
 PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 [[ -x "${PYTHON}" ]] || fail "python not executable: ${PYTHON}"
-
-pick_master_port() {
-  local variant="$1"
-  if [[ -n "${MASTER_PORT_BASE}" ]]; then
-    local explicit_port="${MASTER_PORT_BASE}"
-    MASTER_PORT_BASE="$((MASTER_PORT_BASE + 1))"
-    echo "${explicit_port}"
-    return 0
-  fi
-  "${PYTHON}" - "${RUN_TAG}" "${variant}" "${MASTER_PORT_LOW}" "${MASTER_PORT_HIGH}" "${MASTER_PORT_MAX_ATTEMPTS}" <<'PY'
-import hashlib
-import os
-import socket
-import sys
-
-run_tag, variant = sys.argv[1], sys.argv[2]
-low, high, max_attempts = int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
-if not (1024 <= low <= high <= 65535):
-    raise SystemExit(f"invalid MASTER_PORT range: {low}-{high}")
-span = high - low + 1
-seed = "|".join(
-    [
-        run_tag,
-        variant,
-        os.environ.get("SLURM_JOB_ID", ""),
-        os.environ.get("SLURM_STEP_ID", ""),
-        str(os.getpid()),
-    ]
-)
-start = int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:8], 16) % span
-for offset in range(min(max_attempts, span)):
-    port = low + ((start + offset) % span)
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as handle:
-        try:
-            handle.bind(("0.0.0.0", port))
-        except OSError:
-            continue
-    print(port)
-    break
-else:
-    raise SystemExit(f"no free MASTER_PORT found in {low}-{high} after {max_attempts} attempts")
-PY
-}
 
 mkdir -p "${POLICY_DIR}" "${LEDGER_ROOT}" "${VALIDATION_DIR}" "${RUN_DIR_ROOT}" "${WORK_DIR_ROOT}"
 
@@ -301,32 +249,24 @@ bash -n "${BASH_SOURCE[0]}"
   "${LEDGER_VALIDATOR}" \
   "${CONFIG_VALIDATOR}"
 
-policy_train_args=(
-  --train-jsonl "${C3_PACTION_TRAIN_SOURCE_JSONL}"
-  --out-dir "${POLICY_DIR}"
-  --checkpoint-path "${PACTION_POLICY_CHECKPOINT}"
-  --summary-json "${POLICY_DIR}/train.summary.json"
-  --epochs "${PACTION_POLICY_EPOCHS}"
-  --batch-size "${PACTION_POLICY_BATCH_SIZE}"
-  --lr "${PACTION_POLICY_LR}"
-  --weight-decay "${PACTION_POLICY_WEIGHT_DECAY}"
-  --hidden-dim "${PACTION_POLICY_HIDDEN_DIM}"
-  --num-layers "${PACTION_POLICY_NUM_LAYERS}"
-  --dropout "${PACTION_POLICY_DROPOUT}"
-  --gap-loss-max-gap "${PACTION_POLICY_GAP_MAX}"
-  --budget-ce-loss-weight "${PACTION_POLICY_BUDGET_CE_WEIGHT}"
-  --dynamic-budget-buckets ${PACTION_DYNAMIC_BUDGET_BUCKETS}
-  --expected-split training
-  --device cuda
+"${PYTHON}" "${POLICY_TRAINER}" \
+  --train-jsonl "${C3_PACTION_TRAIN_SOURCE_JSONL}" \
+  --out-dir "${POLICY_DIR}" \
+  --checkpoint-path "${PACTION_POLICY_CHECKPOINT}" \
+  --summary-json "${POLICY_DIR}/train.summary.json" \
+  --epochs "${PACTION_POLICY_EPOCHS}" \
+  --batch-size "${PACTION_POLICY_BATCH_SIZE}" \
+  --lr "${PACTION_POLICY_LR}" \
+  --weight-decay "${PACTION_POLICY_WEIGHT_DECAY}" \
+  --hidden-dim "${PACTION_POLICY_HIDDEN_DIM}" \
+  --num-layers "${PACTION_POLICY_NUM_LAYERS}" \
+  --dropout "${PACTION_POLICY_DROPOUT}" \
+  --gap-loss-max-gap "${PACTION_POLICY_GAP_MAX}" \
+  --budget-ce-loss-weight "${PACTION_POLICY_BUDGET_CE_WEIGHT}" \
+  --dynamic-budget-buckets ${PACTION_DYNAMIC_BUDGET_BUCKETS} \
+  --expected-split training \
+  --device cuda \
   --seed "${SEED}"
-)
-[[ -n "${PACTION_VALUE_TRANSPORT_LOSS_WEIGHT}" ]] && policy_train_args+=(--value-transport-loss-weight "${PACTION_VALUE_TRANSPORT_LOSS_WEIGHT}")
-[[ -n "${PACTION_BOUNDARY_MISS_LOSS_WEIGHT}" ]] && policy_train_args+=(--boundary-miss-loss-weight "${PACTION_BOUNDARY_MISS_LOSS_WEIGHT}")
-[[ -n "${PACTION_LARGE_GAP_LOSS_WEIGHT}" ]] && policy_train_args+=(--large-gap-loss-weight "${PACTION_LARGE_GAP_LOSS_WEIGHT}")
-[[ -n "${PACTION_TEMPORAL_HOLE_LOSS_WEIGHT}" ]] && policy_train_args+=(--temporal-hole-loss-weight "${PACTION_TEMPORAL_HOLE_LOSS_WEIGHT}")
-[[ -n "${PACTION_BUDGET_LOSS_WEIGHT}" ]] && policy_train_args+=(--budget-loss-weight "${PACTION_BUDGET_LOSS_WEIGHT}")
-[[ -n "${PACTION_REDUNDANCY_LOSS_WEIGHT}" ]] && policy_train_args+=(--redundancy-loss-weight "${PACTION_REDUNDANCY_LOSS_WEIGHT}")
-"${PYTHON}" "${POLICY_TRAINER}" "${policy_train_args[@]}"
 
 require_file "${PACTION_POLICY_CHECKPOINT}"
 PACTION_POLICY_CHECKPOINT_SHA256="$("${PYTHON}" - "${PACTION_POLICY_CHECKPOINT}" <<'PY'
@@ -503,12 +443,16 @@ run_adatad_variant() {
   local run_dir="${RUN_DIR_ROOT}/${variant}"
   local work_dir="${WORK_DIR_ROOT}/${variant}"
   mkdir -p "${run_dir}" "${work_dir}"
-  local master_port
-  master_port="$(pick_master_port "${variant}")"
-  echo "[C3_PACTION_LEARNED_ADATAD] train variant=${variant} target_len=${target_len} master_port=${master_port} work_dir=${work_dir}"
+  local variant_index=0
+  case "${variant}" in
+    learned_fixed_384) variant_index=0 ;;
+    learned_fixed_768) variant_index=1 ;;
+    learned_dynamic) variant_index=2 ;;
+  esac
+  echo "[C3_PACTION_LEARNED_ADATAD] train variant=${variant} target_len=${target_len} work_dir=${work_dir}"
   "${PYTHON}" -m torch.distributed.run \
     --nproc_per_node=1 \
-    --master_port="${master_port}" \
+    --master_port="$((MASTER_PORT_BASE + variant_index))" \
     tools/train.py \
     "${EXEC_CONFIG}" \
     --id "${RUN_ID}" \

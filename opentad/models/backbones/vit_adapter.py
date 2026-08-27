@@ -15,6 +15,8 @@ from mmengine.model.weight_init import constant_init, trunc_normal_init
 from mmaction.utils import ConfigType, OptConfigType
 from mmaction.models.backbones.vit_mae import get_sinusoid_encoding
 
+from ..chronotransport import ChronoTransportRuntime
+
 
 class Adapter(BaseModule):
     def __init__(
@@ -54,25 +56,59 @@ class Adapter(BaseModule):
         trunc_normal_init(self.down_proj, std=0.02, bias=0)
         constant_init(self.up_proj, 0)  # the last projection layer is initialized to 0
 
-    def forward(self, x: Tensor, h: int, w: int) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        h: int,
+        w: int,
+        temporal_token_mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        if temporal_token_mask is not None:
+            if temporal_token_mask.shape != x.shape[:2]:
+                raise ValueError("adapter temporal token mask must match [B,N]")
+            temporal_token_mask = temporal_token_mask.to(device=x.device, dtype=torch.bool)
+            token_scale = temporal_token_mask.unsqueeze(-1).to(dtype=x.dtype)
+            x = x * token_scale
+        else:
+            token_scale = None
         inputs = x
 
         # down and up projection
         x = self.down_proj(x)
         x = self.act(x)
+        if token_scale is not None:
+            x = x * token_scale
 
         # temporal depth-wise convolution
         B, N, C = x.shape  # 48, 8*10*10, 384
         attn = x.reshape(-1, self.temporal_size, h, w, x.shape[-1])  # [b,t,h,w,c]  [1,384,10,10,384]
         attn = attn.permute(0, 2, 3, 4, 1).flatten(0, 2)  # [b*h*w,c,t] [1*10*10,384,384]
+        if temporal_token_mask is not None:
+            temporal_scale = temporal_token_mask.reshape(-1, self.temporal_size, h, w)
+            temporal_scale = temporal_scale.permute(0, 2, 3, 1).flatten(0, 2).unsqueeze(1)
+            temporal_scale = temporal_scale.to(dtype=attn.dtype)
+            attn = attn * temporal_scale
+        else:
+            temporal_scale = None
         attn = self.dwconv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
+        if temporal_scale is not None:
+            attn = attn * temporal_scale
         attn = self.conv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
+        if temporal_scale is not None:
+            attn = attn * temporal_scale
         attn = attn.unflatten(0, (-1, h, w)).permute(0, 4, 1, 2, 3)  # [b,t,h,w,c] [1,384,10,10,384]
         attn = attn.reshape(B, N, C)
         x = x + attn
+        if token_scale is not None:
+            x = x * token_scale
 
         x = self.up_proj(x)
-        return x * self.gamma + inputs
+        if token_scale is not None:
+            x = x * token_scale
+        output = x * self.gamma + inputs
+        if token_scale is not None:
+            output = output * token_scale
+        return output
 
 
 class PlainAdapter(BaseModule):
@@ -504,9 +540,7 @@ class Attention(BaseModule):
         self.q_bias = nn.Parameter(torch.zeros(self.embed_dims))
         self.v_bias = nn.Parameter(torch.zeros(self.embed_dims))
 
-    def forward(self, x: Tensor, relative_physical_time: Optional[Tensor] = None,
-                actual_positions: Optional[Tensor] = None,
-                canonical_positions: Optional[Tensor] = None) -> Tensor:
+    def forward(self, x: Tensor, token_mask: Optional[Tensor] = None) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -515,6 +549,11 @@ class Attention(BaseModule):
             Tensor: The output of the attention block, same size as inputs.
         """
         B, N, C = x.shape
+        if token_mask is not None:
+            if token_mask.shape != (B, N):
+                raise ValueError("attention token mask must match [B,N]")
+            token_mask = token_mask.to(device=x.device, dtype=torch.bool)
+            x = x * token_mask.unsqueeze(-1).to(dtype=x.dtype)
 
         if hasattr(self, "q_bias"):
             k_bias = torch.zeros_like(self.v_bias, requires_grad=False)
@@ -534,16 +573,26 @@ class Attention(BaseModule):
         # x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
 
         # fast attention
-        attn_mask = None
-        if relative_physical_time is not None:
-            if relative_physical_time.ndim != 4 or relative_physical_time.shape[-2:] != (N, N):
-                raise ValueError("relative_physical_time must be [B,1,N,N]")
-            attn_mask = relative_physical_time.to(device=q.device, dtype=q.dtype)
-        x = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.attn_drop.p)
+        if token_mask is None:
+            x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p)
+        else:
+            active = token_mask.any(dim=1)
+            x = torch.zeros_like(q)
+            if bool(active.any().item()):
+                allowed_keys = token_mask[active, None, None, :]
+                x[active] = F.scaled_dot_product_attention(
+                    q[active],
+                    k[active],
+                    v[active],
+                    attn_mask=allowed_keys,
+                    dropout_p=self.attn_drop.p,
+                )
         x = x.transpose(1, 2).reshape(B, N, -1)
 
         x = self.proj(x)
         x = self.proj_drop(x)
+        if token_mask is not None:
+            x = x * token_mask.unsqueeze(-1).to(dtype=x.dtype)
         return x
 
 
@@ -589,14 +638,12 @@ class Block(BaseModule):
         use_adapter: bool = False,
         adapter_mlp_ratio: float = 0.25,
         temporal_size: int = 384,
-        use_relative_physical_time: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(init_cfg=init_cfg)
 
         self.with_cp = with_cp
         self.use_adapter = use_adapter
-        self.relative_physical_time_scale = nn.Parameter(torch.zeros(())) if use_relative_physical_time else None
 
         self.norm1 = build_norm_layer(norm_cfg, embed_dims)[1]
         self.attn = Attention(
@@ -665,8 +712,7 @@ class Block(BaseModule):
         w,
         packed_dense_mask: Optional[Tensor] = None,
         packed_stats: Optional[Dict[str, int]] = None,
-        relative_physical_time: Optional[Tensor] = None,
-        relative_physical_time_gate_zero: bool = False,
+        temporal_token_mask: Optional[Tensor] = None,
     ) -> Tensor:
         """Defines the computation performed at every call.
 
@@ -678,24 +724,33 @@ class Block(BaseModule):
 
         def _inner_forward(x):
             """Forward wrapper for utilizing checkpoint."""
+            if temporal_token_mask is not None:
+                if packed_dense_mask is not None:
+                    raise ValueError("strict temporal padding mask is incompatible with packed routing")
+                token_scale = temporal_token_mask.unsqueeze(-1).to(device=x.device, dtype=x.dtype)
+                x = x * token_scale
+            else:
+                token_scale = None
             if packed_dense_mask is None:
-                rel = None
-                if relative_physical_time is not None and self.relative_physical_time_scale is not None:
-                    scale = torch.tanh(self.relative_physical_time_scale.float())
-                    if relative_physical_time_gate_zero:
-                        scale = scale * 0.0
-                    rel = scale * relative_physical_time
-                x = x + self.drop_path(self.attn(self.norm1(x), relative_physical_time=rel))
+                x = x + self.drop_path(
+                    self.attn(self.norm1(x), token_mask=temporal_token_mask)
+                )
+                if token_scale is not None:
+                    x = x * token_scale
                 x = x + self.drop_path(self.mlp(self.norm2(x)))
+                if token_scale is not None:
+                    x = x * token_scale
             else:
                 x = self._packed_attention_mlp_forward(x, packed_dense_mask, packed_stats)
 
             if self.use_adapter:
-                x = self.adapter(x, h, w)
+                x = self.adapter(x, h, w, temporal_token_mask=temporal_token_mask)
+            if token_scale is not None:
+                x = x * token_scale
             return x
 
         if self.with_cp and x.requires_grad:
-            x = cp.checkpoint(_inner_forward, x, use_reentrant=True)
+            x = cp.checkpoint(_inner_forward, x)
         else:
             x = _inner_forward(x)
         return x
@@ -773,7 +828,7 @@ class VisionTransformerAdapter(BaseModule):
         adapter_index: list = [3, 5, 7, 11],
         tubelet_token_redundancy_aux: Optional[Dict] = None,
         tubelet_packed_runtime_route: Optional[Dict] = None,
-        relative_physical_time_residual: bool = False,
+        chronotransport: Optional[Dict] = None,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -788,10 +843,13 @@ class VisionTransformerAdapter(BaseModule):
 
         self.embed_dims = embed_dims
         self.patch_size = patch_size
+        self.tubelet_size = int(tubelet_size)
         self.latest_tubelet_token_redundancy_summary = None
         self.latest_tubelet_packed_runtime_summary = None
-        self.relative_physical_time_residual = bool(relative_physical_time_residual)
-        self.latest_single_clock_summary = None
+        self.latest_temporal_padding_mask_summary = None
+        self.latest_chronotransport_summary = None
+        self.chronotransport_checkpoint_loaded = False
+        self.chronotransport_allow_legacy_checkpoint = False
 
         self.patch_embed = PatchEmbed(
             in_channels=in_channels,
@@ -819,6 +877,38 @@ class VisionTransformerAdapter(BaseModule):
         if tubelet_packed_runtime_route is not None:
             self.tubelet_packed_runtime_route = PackedTubeletRuntimeRoute(**dict(tubelet_packed_runtime_route))
 
+        self.chronotransport = None
+        if chronotransport is not None:
+            chronotransport_cfg = dict(chronotransport)
+            self.chronotransport_allow_legacy_checkpoint = bool(
+                chronotransport_cfg.pop("allow_legacy_checkpoint", False)
+            )
+            if int(total_frames) % int(num_frames) != 0:
+                raise ValueError("ChronoTransport requires total_frames divisible by num_frames")
+            expected = {
+                "embed_dims": int(embed_dims),
+                "depth": int(depth),
+                "chunks_per_window": int(total_frames) // int(num_frames),
+            }
+            for key, value in expected.items():
+                configured = chronotransport_cfg.pop(key, value)
+                if int(configured) != int(value):
+                    raise ValueError(f"ChronoTransport {key} must equal backbone value {value}")
+            self.chronotransport = ChronoTransportRuntime(**expected, **chronotransport_cfg)
+            self.register_load_state_dict_post_hook(self._chronotransport_load_state_dict_post_hook)
+
+        packed_enabled = bool(
+            self.tubelet_packed_runtime_route is not None
+            and self.tubelet_packed_runtime_route.enabled
+        )
+        chronotransport_enabled = bool(
+            self.chronotransport is not None and self.chronotransport.enabled
+        )
+        if packed_enabled and chronotransport_enabled:
+            raise ValueError(
+                "tubelet_packed_runtime_route and ChronoTransport are mutually exclusive"
+            )
+
         # stochastic depth decay rule
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
 
@@ -838,11 +928,7 @@ class VisionTransformerAdapter(BaseModule):
                     init_cfg=init_cfg,
                     use_adapter=i in adapter_index,
                     adapter_mlp_ratio=adapter_mlp_ratio,
-                    # The backbone is fed packed 16-frame clips.  Attention and
-                    # adapters therefore see 8 tubelets per clip, not the
-                    # 384-tubelet full window.
-                    temporal_size=num_frames // tubelet_size,
-                    use_relative_physical_time=(self.relative_physical_time_residual and i == 0),
+                    temporal_size=total_frames // tubelet_size,
                 )
                 for i in range(depth)
             ]
@@ -857,25 +943,41 @@ class VisionTransformerAdapter(BaseModule):
 
         self.return_feat_map = return_feat_map
 
-        # count the number of parameters in the backbone
-        num_vit_param = sum(p.numel() for name, p in self.named_parameters() if "adapter" not in name)
-        num_adapter_param = sum(p.numel() for name, p in self.named_parameters() if "adapter" in name)
-        ratio = num_adapter_param / num_vit_param * 100
-        print("ViT's param: {}, Adapter's params: {}, ratio: {:2.1f}%".format(num_vit_param, num_adapter_param, ratio))
+        num_vit_param = sum(
+            p.numel()
+            for name, p in self.named_parameters()
+            if "adapter" not in name and not name.startswith("chronotransport.")
+        )
+        num_adapter_param = sum(
+            p.numel()
+            for name, p in self.named_parameters()
+            if "adapter" in name and not name.startswith("chronotransport.")
+        )
+        num_chronotransport_param = sum(
+            p.numel() for name, p in self.named_parameters() if name.startswith("chronotransport.")
+        )
+        ratio = num_adapter_param / max(1, num_vit_param) * 100
+        print(
+            "ViT's param: {}, Adapter's params: {}, ChronoTransport params: {}, adapter ratio: {:2.1f}%".format(
+                num_vit_param, num_adapter_param, num_chronotransport_param, ratio
+            )
+        )
 
-    def forward(
-        self,
-        x: Tensor,
-        relative_physical_time: Optional[Tensor] = None,
-        actual_positions: Optional[Tensor] = None,
-        canonical_positions: Optional[Tensor] = None,
-        dense_valid_len: Optional[Tensor] = None,
-        tubelet_valid_mask: Optional[Tensor] = None,
-        pjst_pair_scale: Optional[Tensor] = None,
-        pjst_pair_valid: Optional[Tensor] = None,
-        pjst_exact_uniform_identity: Optional[Tensor] = None,
-        relative_physical_time_gate_zero: bool = False,
-    ) -> Tensor:
+    def _chronotransport_load_state_dict_post_hook(self, module, incompatible_keys) -> None:
+        del module
+        if self.chronotransport is None:
+            return
+        missing = [
+            key for key in list(incompatible_keys.missing_keys) if "chronotransport." in key
+        ]
+        loaded = not missing
+        self.chronotransport_checkpoint_loaded = loaded
+        self.chronotransport.set_checkpoint_loaded(loaded)
+        if missing and self.chronotransport_allow_legacy_checkpoint:
+            for key in missing:
+                incompatible_keys.missing_keys.remove(key)
+
+    def forward(self, x: Tensor, temporal_mask: Optional[Tensor] = None) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
@@ -886,58 +988,26 @@ class VisionTransformerAdapter(BaseModule):
         """
         self._freeze_layers()
 
-        b, _, _, h, w = x.shape
+        b, _, temporal_length, h, w = x.shape
+        requested_temporal_mask = temporal_mask
+        if temporal_mask is not None:
+            if temporal_mask.shape != (b, temporal_length):
+                raise ValueError("VideoMAE temporal mask must match [B,T]")
+            temporal_mask = temporal_mask.to(device=x.device, dtype=torch.bool)
+            x = x * temporal_mask[:, None, :, None, None].to(dtype=x.dtype)
         h //= self.patch_size
         w //= self.patch_size
-        if pjst_pair_scale is not None:
-            from opentad.models.utils.temporal_grid import apply_pjst_derivative_only
-            x = apply_pjst_derivative_only(x, pjst_pair_scale, pjst_pair_valid, pjst_exact_uniform_identity)
         x = self.patch_embed(x)[0]
-        if actual_positions is not None or canonical_positions is not None:
-            if not self.relative_physical_time_residual:
-                raise ValueError("physical coordinates require relative_physical_time_residual=True")
-            if actual_positions is None or canonical_positions is None:
-                raise ValueError("actual_positions and canonical_positions must be provided together")
-            if dense_valid_len is None or tubelet_valid_mask is None:
-                raise ValueError("SingleClock requires dense_valid_len and tubelet_valid_mask")
-            from opentad.models.utils.temporal_grid import (
-                clip_relative_physical_time_mask,
-                single_clock_distortion_summary,
-            )
-            relative_physical_time = clip_relative_physical_time_mask(
-                actual_positions,
-                canonical_positions,
-                dense_valid_len=dense_valid_len,
-                tubelet_valid_mask=tubelet_valid_mask,
-                spatial_tokens=h * w,
-            )
-            self.latest_single_clock_summary = single_clock_distortion_summary(
-                actual_positions,
-                canonical_positions,
-                dense_valid_len=dense_valid_len,
-                tubelet_valid_mask=tubelet_valid_mask,
-            )
-            self.latest_single_clock_summary.update(
-                {
-                    "enabled": True,
-                    "gate_zero": bool(relative_physical_time_gate_zero),
-                    "exact_uniform_identity": relative_physical_time is None,
-                    "active_block": 0,
-                    "effective_scale": float(
-                        (
-                            torch.tanh(self.blocks[0].relative_physical_time_scale.detach().float())
-                            * (0.0 if relative_physical_time_gate_zero else 1.0)
-                        ).cpu().item()
-                    ),
-                }
-            )
-        else:
-            if any(value is not None for value in (dense_valid_len, tubelet_valid_mask)):
-                raise ValueError("SingleClock metadata cannot be supplied without physical coordinates")
-            self.latest_single_clock_summary = {
-                "enabled": bool(self.relative_physical_time_residual),
-                "admitted": False,
-            }
+        token_mask = None
+        if temporal_mask is not None:
+            if temporal_length % self.tubelet_size:
+                raise ValueError("VideoMAE temporal length must be divisible by tubelet_size")
+            tubelet_mask = temporal_mask.reshape(b, -1, self.tubelet_size).any(dim=-1)
+            token_mask = tubelet_mask[:, :, None].expand(-1, -1, h * w).reshape(b, -1)
+            if token_mask.shape != x.shape[:2]:
+                raise ValueError("VideoMAE patch token mask does not match patch embedding output")
+            if bool(token_mask.all().item()):
+                token_mask = None
         if self.tubelet_token_redundancy_aux is not None:
             x = self.tubelet_token_redundancy_aux(x, h, w)
             self.latest_tubelet_token_redundancy_summary = self.tubelet_token_redundancy_aux.last_summary
@@ -953,27 +1023,66 @@ class VisionTransformerAdapter(BaseModule):
 
         x = x + pos_embed
         x = self.pos_drop(x)
+        if token_mask is not None:
+            x = x * token_mask.unsqueeze(-1).to(dtype=x.dtype)
 
-        if self.tubelet_packed_runtime_route is not None and self.tubelet_packed_runtime_route.enabled:
-            if relative_physical_time is not None:
-                raise ValueError("packed VideoMAE route does not support relative_physical_time; fail closed")
+        packed_enabled = bool(
+            self.tubelet_packed_runtime_route is not None
+            and self.tubelet_packed_runtime_route.enabled
+        )
+        chronotransport_enabled = bool(
+            self.chronotransport is not None and self.chronotransport.enabled
+        )
+        if packed_enabled and chronotransport_enabled:
+            raise RuntimeError(
+                "tubelet_packed_runtime_route and ChronoTransport are mutually exclusive"
+            )
+        if token_mask is not None and chronotransport_enabled:
+            raise ValueError("strict temporal padding mask is incompatible with ChronoTransport routing")
+        if chronotransport_enabled:
+            x = self.chronotransport(x, self.blocks, h, w)
+            summary = dict(self.chronotransport.latest_summary or {})
+            summary["checkpoint_loaded"] = self.chronotransport_checkpoint_loaded
+            summary["legacy_checkpoint_allowed"] = self.chronotransport_allow_legacy_checkpoint
+            self.latest_chronotransport_summary = summary
+            self.latest_tubelet_packed_runtime_summary = None
+        elif packed_enabled:
+            if token_mask is not None:
+                raise ValueError("strict temporal padding mask is incompatible with packed runtime routing")
             x = self.tubelet_packed_runtime_route(x, self.blocks, h, w, training=self.training)
             self.latest_tubelet_packed_runtime_summary = self.tubelet_packed_runtime_route.last_summary
+            self.latest_chronotransport_summary = None
         else:
             self.latest_tubelet_packed_runtime_summary = None
-            for block_index, blk in enumerate(self.blocks):
-                rel = relative_physical_time if block_index == 0 else None
-                x = blk(
-                    x,
-                    h,
-                    w,
-                    relative_physical_time=rel,
-                    relative_physical_time_gate_zero=(
-                        bool(relative_physical_time_gate_zero) and block_index == 0
-                    ),
-                )
+            self.latest_chronotransport_summary = None
+            for blk in self.blocks:
+                x = blk(x, h, w, temporal_token_mask=token_mask)
 
         x = self.norm(x)
+        if token_mask is not None:
+            x = x * token_mask.unsqueeze(-1).to(dtype=x.dtype)
+
+        if requested_temporal_mask is None:
+            self.latest_temporal_padding_mask_summary = {
+                "enabled": False,
+                "strict_isolation_verified": False,
+            }
+        else:
+            requested_temporal_mask = requested_temporal_mask.to(device=x.device, dtype=torch.bool)
+            tubelet_mask = requested_temporal_mask.reshape(
+                b, -1, self.tubelet_size
+            ).any(dim=-1)
+            self.latest_temporal_padding_mask_summary = {
+                "enabled": True,
+                "strict_isolation_verified": True,
+                "raw_valid_counts": [
+                    int(row.sum().item()) for row in requested_temporal_mask
+                ],
+                "tubelet_valid_counts": [int(row.sum().item()) for row in tubelet_mask],
+                "all_valid_fast_path": bool(requested_temporal_mask.all().item()),
+                "attention_key_value_masked": True,
+                "adapter_convolution_masked": True,
+            }
 
         if self.return_feat_map:
             x = x.reshape(b, -1, h, w, self.embed_dims)
@@ -997,10 +1106,7 @@ class VisionTransformerAdapter(BaseModule):
         # freeze blocks except the adapter's parameters
         for block in self.blocks:
             for m, n in block.named_children():
-                if "adapter" not in m and m not in ("drop_path", "relative_physical_time_scale"):
+                if "adapter" not in m and m != "drop_path":
                     n.eval()
                     for param in n.parameters():
                         param.requires_grad = False
-            # Unit1's scalar is the sole non-adapter trainable parameter.
-            if block.relative_physical_time_scale is not None:
-                block.relative_physical_time_scale.requires_grad = True

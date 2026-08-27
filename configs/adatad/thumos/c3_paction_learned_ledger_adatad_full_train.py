@@ -28,74 +28,6 @@ VARIANT_SPECS = {
         source="learned_paction_gap_loss_policy_checkpoint",
         config_hash="c3_paction_learned_gap_loss_dynamic_budget_no_uniform_v1",
     ),
-    "paction_lattice_radius_score_only_move25": dict(
-        target_len=384,
-        require_selected_count=384,
-        strategy="paction_lattice_radius_score_only_move25",
-        ledger_name="paction_lattice_radius_score_only_move25",
-        source="learned_paction_gap_loss_policy_checkpoint",
-        config_hash="c3_paction_lattice_radius_score_only_move25_v1",
-        selector_decoder="score_only_lattice_replacement_with_adaptive_radius_v1",
-        geometry_constraint="score_only_local_lattice_replacement_move25_adaptive_radius_0_16",
-        route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS",
-        use_expanded_positions=True,
-    ),
-    "paction_lattice_radius_score_only_move50": dict(
-        target_len=384,
-        require_selected_count=384,
-        strategy="paction_lattice_radius_score_only_move50",
-        ledger_name="paction_lattice_radius_score_only_move50",
-        source="learned_paction_gap_loss_policy_checkpoint",
-        config_hash="c3_paction_lattice_radius_score_only_move50_v1",
-        selector_decoder="score_only_lattice_replacement_with_adaptive_radius_v1",
-        geometry_constraint="score_only_local_lattice_replacement_move50_adaptive_radius_0_16",
-        route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS",
-        use_expanded_positions=True,
-    ),
-    "paction_lattice_replace_score_only_move25": dict(
-        target_len=384,
-        require_selected_count=384,
-        strategy="paction_lattice_replace_score_only_move25",
-        ledger_name="paction_lattice_replace_score_only_move25",
-        source="learned_paction_gap_loss_policy_checkpoint",
-        config_hash="c3_paction_lattice_replace_score_only_move25_v1",
-        selector_decoder="score_only_lattice_replacement_v1",
-        geometry_constraint="score_only_local_lattice_replacement_move25",
-        route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
-    ),
-    "paction_lattice_replace_score_only_move50": dict(
-        target_len=384,
-        require_selected_count=384,
-        strategy="paction_lattice_replace_score_only_move50",
-        ledger_name="paction_lattice_replace_score_only_move50",
-        source="learned_paction_gap_loss_policy_checkpoint",
-        config_hash="c3_paction_lattice_replace_score_only_move50_v1",
-        selector_decoder="score_only_lattice_replacement_v1",
-        geometry_constraint="score_only_local_lattice_replacement_move50",
-        route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
-    ),
-    "paction_lattice_replace_score_only_move75": dict(
-        target_len=384,
-        require_selected_count=384,
-        strategy="paction_lattice_replace_score_only_move75",
-        ledger_name="paction_lattice_replace_score_only_move75",
-        source="learned_paction_gap_loss_policy_checkpoint",
-        config_hash="c3_paction_lattice_replace_score_only_move75_v1",
-        selector_decoder="score_only_lattice_replacement_v1",
-        geometry_constraint="score_only_local_lattice_replacement_move75",
-        route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
-    ),
-    "paction_lattice_replace_score_only_no_protect": dict(
-        target_len=384,
-        require_selected_count=384,
-        strategy="paction_lattice_replace_score_only_no_protect",
-        ledger_name="paction_lattice_replace_score_only_no_protect",
-        source="learned_paction_gap_loss_policy_checkpoint",
-        config_hash="c3_paction_lattice_replace_score_only_no_protect_v1",
-        selector_decoder="score_only_lattice_replacement_v1",
-        geometry_constraint="score_only_local_lattice_replacement_no_protect",
-        route_variant="C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
-    ),
 }
 
 
@@ -126,15 +58,6 @@ c3_paction_adatad_pretrain_path = os.environ.get(
     "C3_PACTION_ADATAD_PRETRAIN_PATH",
     os.path.join(yuzibo_root, "pretrained", adatad_pretrain_filename),
 )
-paction_adatad_checkpoint_interval = int(os.environ.get("C3_PACTION_ADATAD_CHECKPOINT_INTERVAL", "10"))
-paction_adatad_disable_checkpoint = os.environ.get("C3_PACTION_ADATAD_DISABLE_CHECKPOINT", "0") == "1"
-paction_adatad_val_eval_interval = int(os.environ.get("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL", "10"))
-paction_adatad_val_eval_anchor_epoch = int(
-    os.environ.get("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL_ANCHOR_EPOCH", str(paction_adatad_val_eval_interval))
-)
-paction_adatad_val_start_epoch = int(
-    os.environ.get("C3_PACTION_ADATAD_VAL_START_EPOCH", str(max(0, paction_adatad_val_eval_interval - 1)))
-)
 
 _ledger_name = _variant["ledger_name"]
 train_ledger_path = os.environ.get(
@@ -161,12 +84,10 @@ paction_require_selected_count = _variant["require_selected_count"]
 
 experiment_scope = dict(
     route="C3_MAINLINE_OPTIMIZATION",
-    route_variant=_variant.get("route_variant", "C3_PACTION_LEARNED_STRICT_LEDGER"),
+    route_variant="C3_PACTION_LEARNED_STRICT_LEDGER",
     stage="paction_learned_ledger_original_adatad_full_train",
     selector_source="learned_paction_gap_loss_policy_checkpoint",
-    selector_decoder=_variant.get("selector_decoder", "learned_paction_gap_loss_value_decoder"),
     selection_strategy=paction_ledger_strategy,
-    selection_geometry_constraint=_variant.get("geometry_constraint", "learned_score_topk_or_dynamic_budget_no_manual_slots"),
     paction_ledger_variant=paction_ledger_variant,
     detector_stack="original_adatad_actionformer_adapter",
     changes_input_sampling=True,
@@ -186,7 +107,7 @@ experiment_scope = dict(
 
 c3_paction_learned_ledger_full_train_gate = dict(
     route="C3_MAINLINE_OPTIMIZATION",
-    route_variant=_variant.get("route_variant", "C3_PACTION_LEARNED_STRICT_LEDGER"),
+    route_variant="C3_PACTION_LEARNED_STRICT_LEDGER",
     stage="paction_learned_ledger_original_adatad_full_train",
     default_off=True,
     explicit_config_opt_in=True,
@@ -262,7 +183,6 @@ def c3_paction_loadframes(ledger_path):
         bata_value_transport_allow_short_valid_ratio_count=True,
         bata_value_transport_source=c3_value_transport_source,
         bata_value_transport_config_hash=c3_value_transport_config_hash,
-        bata_value_transport_use_expanded_positions=bool(_variant.get("use_expanded_positions", False)),
     )
 
 
@@ -363,13 +283,13 @@ model = dict(
 
 solver = dict(
     train=dict(batch_size=2, num_workers=2),
-    val=dict(batch_size=2, num_workers=2),
-    test=dict(batch_size=2, num_workers=2),
+    val=dict(batch_size=1, num_workers=1),
+    test=dict(batch_size=1, num_workers=1),
     clip_grad_norm=1,
     amp=True,
     fp16_compress=True,
     static_graph=True,
-    ema=True,
+    ema=False,
 )
 
 optimizer = dict(
@@ -384,7 +304,7 @@ optimizer = dict(
         exclude=["backbone"],
     ),
 )
-scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=100)
+scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=60)
 
 evaluation = dict(
     type="mAP",
@@ -397,14 +317,13 @@ inference = dict(load_from_raw_predictions=False, save_raw_prediction=False)
 
 workflow = dict(
     logging_interval=50,
-    checkpoint_interval=paction_adatad_checkpoint_interval,
+    checkpoint_interval=2,
     val_loss_interval=-1,
-    val_eval_interval=paction_adatad_val_eval_interval,
-    val_eval_interval_anchor_epoch=paction_adatad_val_eval_anchor_epoch,
-    val_start_epoch=paction_adatad_val_start_epoch,
+    val_eval_interval=10,
+    val_eval_interval_anchor_epoch=10,
+    val_start_epoch=9,
     end_epoch=60,
     max_train_iters=None,
-    disable_checkpoint=paction_adatad_disable_checkpoint,
 )
 
 work_dir = f"exps/thumos/adatad/c3_paction_learned_ledger_original_adatad_full_train/{paction_ledger_variant}"

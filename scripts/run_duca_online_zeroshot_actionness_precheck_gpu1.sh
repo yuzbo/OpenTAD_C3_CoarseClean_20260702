@@ -27,10 +27,10 @@ mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" logs
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 if [[ "${CUDA_VISIBLE_DEVICES}" != "1" ]]; then
-  if [[ -z "${SLURM_STEP_GPUS:-}${SLURM_JOB_GPUS:-}" ]]; then
+  if [[ -z "${SLURM_STEP_GPUS:-}" ]]; then
     fail "DUCA online zero-shot precheck/fulltrain must use physical GPU1; got CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
   fi
-  echo "[DUCA_ONLINE_ZEROSHOT_PRECHECK] accepting Slurm GPU mapping: CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} SLURM_STEP_GPUS=${SLURM_STEP_GPUS:-none} SLURM_JOB_GPUS=${SLURM_JOB_GPUS:-none}"
+  echo "[DUCA_ONLINE_ZEROSHOT_PRECHECK] accepting Slurm step GPU mapping: CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES} SLURM_STEP_GPUS=${SLURM_STEP_GPUS}"
 fi
 
 require_file() {
@@ -49,7 +49,7 @@ PYTHON="${PYTHON:-/data/run01/sczc063/yuzibo/conda_envs/opentad/bin/python}"
 echo "[DUCA_ONLINE_ZEROSHOT_PRECHECK] repo=${REPO_ROOT}"
 echo "[DUCA_ONLINE_ZEROSHOT_PRECHECK] head=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 echo "[DUCA_ONLINE_ZEROSHOT_PRECHECK] gpu=${CUDA_VISIBLE_DEVICES}"
-echo "[DUCA_ONLINE_ZEROSHOT_PRECHECK] slurm_job=${SLURM_JOB_ID:-none} slurm_step=${SLURM_STEP_ID:-none} slurm_step_gpus=${SLURM_STEP_GPUS:-none} slurm_job_gpus=${SLURM_JOB_GPUS:-none}"
+echo "[DUCA_ONLINE_ZEROSHOT_PRECHECK] slurm_job=${SLURM_JOB_ID:-none} slurm_step=${SLURM_STEP_ID:-none} slurm_step_gpus=${SLURM_STEP_GPUS:-none}"
 echo "[DUCA_ONLINE_ZEROSHOT_PRECHECK] precheck_only=${PRECHECK_ONLY} fulltrain_candidate=${FULLTRAIN_CANDIDATE}"
 
 bash -n "${BASH_SOURCE[0]}"

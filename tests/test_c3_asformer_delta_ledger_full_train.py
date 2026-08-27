@@ -11,7 +11,6 @@ EXEC_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_official_asformer_del
 VALIDATOR = ROOT / "tools" / "bata" / "validate_c3_asformer_delta_ledger_full_train.py"
 LAUNCHER = ROOT / "scripts" / "run_c3_asformer_delta_ledger_adatad_full_train_gpu1.sh"
 PACTION_LAUNCHER = ROOT / "scripts" / "run_c3_paction_learned_policy_adatad_full_train_gpu1.sh"
-PACTION_LATTICE_LAUNCHER = ROOT / "scripts" / "run_c3_paction_lattice_replacement_adatad_full_train_gpu1.sh"
 PACTION_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_paction_learned_ledger_adatad_full_train.py"
 PACTION_EXEC_CONFIG = ROOT / "configs" / "adatad" / "thumos" / "c3_paction_learned_ledger_adatad_full_train_exec.py"
 PACTION_VALIDATOR = ROOT / "tools" / "bata" / "validate_c3_paction_learned_adatad_full_train.py"
@@ -80,7 +79,6 @@ def test_asformer_delta_ledger_full_train_config_is_original_adatad_selected_axi
 
     assert "gt_segments" not in _collect(cfg.dataset.test).get("keys", [])
     assert "gt_labels" not in _collect(cfg.dataset.test).get("keys", [])
-    assert cfg.solver.ema is True
     assert "val_eval_epochs" not in cfg.workflow
     assert int(cfg.workflow.val_eval_interval) == 10
     assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 10
@@ -204,12 +202,6 @@ def test_paction_learned_policy_adatad_launcher_builds_policy_ledgers_and_runs_a
 
     assert "train_paction_acquisition_policy.py" in text
     assert "--expected-split training" in text
-    assert "PACTION_BOUNDARY_MISS_LOSS_WEIGHT" in text
-    assert "PACTION_LARGE_GAP_LOSS_WEIGHT" in text
-    assert "PACTION_TEMPORAL_HOLE_LOSS_WEIGHT" in text
-    assert "--boundary-miss-loss-weight" in text
-    assert "--large-gap-loss-weight" in text
-    assert "--temporal-hole-loss-weight" in text
     assert "materialize_split_source_jsonl" in text
     assert "C3_PACTION_TRAIN_SOURCE_JSONL_ORIGINAL" in text
     assert "row['split'] = split_value" in text
@@ -236,105 +228,13 @@ def test_paction_learned_policy_adatad_launcher_builds_policy_ledgers_and_runs_a
     assert "ALLOW_C3_PACTION_LEARNED_ADATAD_FULLTRAIN" in text
 
 
-def test_paction_lattice_replacement_adatad_launcher_reuses_checkpoint_and_same_adatad_gate():
-    text = PACTION_LATTICE_LAUNCHER.read_text(encoding="utf-8")
-
-    assert 'PRECHECK_ONLY="${PRECHECK_ONLY:-1}"' in text
-    assert 'ALLOW_C3_PACTION_LATTICE_ADATAD_FULLTRAIN="${ALLOW_C3_PACTION_LATTICE_ADATAD_FULLTRAIN:-0}"' in text
-    assert 'export CUDA_VISIBLE_DEVICES="0"' in text
-    assert 'export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"' in text
-    assert 'SLURM_STEP_GPUS' in text
-    assert 'must see one Slurm-bound GPU as logical 0/1' in text
-    assert 'must use physical GPU1 outside Slurm remapping' in text
-    assert "CUDA is unavailable for PACTION_LATTICE_DEVICE=cuda" in text
-    assert 'PACTION_POLICY_CHECKPOINT must point to a trained learned p_action policy checkpoint' in text
-    assert "run_paction_lattice_replacement_ledger_pipeline.py" in text
-    assert "validate_paction_lattice_replacement_ledger.py" in text
-    assert "validate_c3_paction_learned_adatad_full_train.py" in text
-    assert "paction_lattice_radius_score_only_move25" in text
-    assert "paction_lattice_replace_score_only_move50 paction_lattice_replace_score_only_move75" not in text
-    assert "--variants ${PACTION_LATTICE_ADATAD_VARIANTS}" in text
-    assert "--fixed-budget \"${PACTION_LATTICE_FIXED_BUDGET}\"" in text
-    assert "--deploy-selection-ledger" in text
-    assert "samples.paction_lattice_replacement.jsonl" in text
-    assert "value_transport_ledger_${variant}.jsonl" in text
-    assert 'C3_PACTION_LEDGER_SOURCE="learned_paction_gap_loss_policy_checkpoint"' in text
-    assert 'C3_PACTION_LEDGER_CONFIG_HASH="${PACTION_POLICY_CHECKPOINT_SHA256}"' in text
-    assert 'MASTER_PORT_BASE="${MASTER_PORT_BASE:-}"' in text
-    assert "pick_master_port()" in text
-    assert '--master_port="${master_port}"' in text
-    assert "master_port=${master_port}" in text
-    assert 'MASTER_PORT_BASE="${MASTER_PORT_BASE:-30410}"' not in text
-    assert "c3_paction_learned_ledger_adatad_full_train_exec.py" in text
-    assert 'PACTION_LATTICE_DISABLE_CHECKPOINT="${PACTION_LATTICE_DISABLE_CHECKPOINT:-0}"' in text
-    assert 'PACTION_LATTICE_CHECKPOINT_INTERVAL="${PACTION_LATTICE_CHECKPOINT_INTERVAL:-2}"' in text
-    assert 'PACTION_LATTICE_VAL_EVAL_INTERVAL="${PACTION_LATTICE_VAL_EVAL_INTERVAL:-5}"' in text
-    assert 'PACTION_LATTICE_MIN_FREE_MB="${PACTION_LATTICE_MIN_FREE_MB:-2048}"' in text
-    assert "insufficient free space for full train" in text
-    assert '"workflow.disable_checkpoint=${C3_PACTION_ADATAD_DISABLE_CHECKPOINT}"' in text
-    assert '"workflow.checkpoint_interval=${C3_PACTION_ADATAD_CHECKPOINT_INTERVAL}"' in text
-    assert '"workflow.val_eval_interval=${C3_PACTION_ADATAD_VAL_EVAL_INTERVAL}"' in text
-    assert '"workflow.val_eval_interval_anchor_epoch=${C3_PACTION_ADATAD_VAL_EVAL_INTERVAL_ANCHOR_EPOCH}"' in text
-    assert '"workflow.val_start_epoch=${C3_PACTION_ADATAD_VAL_START_EPOCH}"' in text
-    assert "formal full train must run inside a Slurm allocation/step" in text
-    assert "tools/train.py" in text
-    assert "tools/test.py" not in text
-
-
 def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dynamic(monkeypatch):
-    monkeypatch.delenv("C3_PACTION_ADATAD_DISABLE_CHECKPOINT", raising=False)
-    monkeypatch.delenv("C3_PACTION_ADATAD_CHECKPOINT_INTERVAL", raising=False)
-    monkeypatch.delenv("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL", raising=False)
-    monkeypatch.delenv("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL_ANCHOR_EPOCH", raising=False)
-    monkeypatch.delenv("C3_PACTION_ADATAD_VAL_START_EPOCH", raising=False)
     expected = {
-        "learned_fixed_384": (384, 384, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER", False),
-        "learned_fixed_768": (768, 768, "learned_paction_gap_loss_value", "C3_PACTION_LEARNED_STRICT_LEDGER", False),
-        "learned_dynamic": (768, None, "learned_paction_gap_loss_dynamic_budget", "C3_PACTION_LEARNED_STRICT_LEDGER", False),
-        "paction_lattice_radius_score_only_move25": (
-            384,
-            384,
-            "paction_lattice_radius_score_only_move25",
-            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS",
-            True,
-        ),
-        "paction_lattice_radius_score_only_move50": (
-            384,
-            384,
-            "paction_lattice_radius_score_only_move50",
-            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT_ADAPTIVE_RADIUS",
-            True,
-        ),
-        "paction_lattice_replace_score_only_move25": (
-            384,
-            384,
-            "paction_lattice_replace_score_only_move25",
-            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
-            False,
-        ),
-        "paction_lattice_replace_score_only_move50": (
-            384,
-            384,
-            "paction_lattice_replace_score_only_move50",
-            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
-            False,
-        ),
-        "paction_lattice_replace_score_only_move75": (
-            384,
-            384,
-            "paction_lattice_replace_score_only_move75",
-            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
-            False,
-        ),
-        "paction_lattice_replace_score_only_no_protect": (
-            384,
-            384,
-            "paction_lattice_replace_score_only_no_protect",
-            "C3_PACTION_SCORE_ONLY_LATTICE_REPLACEMENT",
-            False,
-        ),
+        "learned_fixed_384": (384, 384, "learned_paction_gap_loss_value"),
+        "learned_fixed_768": (768, 768, "learned_paction_gap_loss_value"),
+        "learned_dynamic": (768, None, "learned_paction_gap_loss_dynamic_budget"),
     }
-    for variant, (target_len, required_count, strategy, route_variant, use_expanded_positions) in expected.items():
+    for variant, (target_len, required_count, strategy) in expected.items():
         monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", variant)
         monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", f"/tmp/{variant}.train.jsonl")
         monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", f"/tmp/{variant}.val.jsonl")
@@ -343,8 +243,6 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
         cfg = Config.fromfile(str(PACTION_CONFIG))
 
         assert cfg.experiment_scope.stage == "paction_learned_ledger_original_adatad_full_train"
-        assert cfg.experiment_scope.route_variant == route_variant
-        assert cfg.c3_paction_learned_ledger_full_train_gate.route_variant == route_variant
         assert cfg.experiment_scope.selection_strategy == strategy
         assert cfg.paction_ledger_variant == variant
         assert int(cfg.window_size) == target_len
@@ -352,13 +250,10 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
         assert int(cfg.model.backbone.backbone.total_frames) == target_len
         assert int(cfg.model.projection.max_seq_len) == target_len
         assert cfg.evaluation.ground_truth_filename == cfg.annotation_path
-        assert cfg.solver.ema is True
         assert "val_eval_epochs" not in cfg.workflow
         assert int(cfg.workflow.val_eval_interval) == 10
         assert int(cfg.workflow.val_eval_interval_anchor_epoch) == 10
         assert int(cfg.workflow.val_start_epoch) == 9
-        assert int(cfg.workflow.checkpoint_interval) == 10
-        assert cfg.workflow.disable_checkpoint is False
         assert "frame_selector" not in repr(cfg.model)
         for split in ("train", "val", "test"):
             loader = _loadframes(cfg.dataset[split])
@@ -368,34 +263,7 @@ def test_paction_learned_policy_adatad_config_supports_fixed384_fixed768_and_dyn
             assert loader.bata_value_transport_require_deployable is True
             assert loader.bata_value_transport_allow_missing_fallback is False
             assert loader.bata_value_transport_allow_short_valid_ratio_count is True
-            assert bool(loader.get("bata_value_transport_use_expanded_positions", False)) is use_expanded_positions
             assert loader.remap_gt_to_selected_axis is True
-
-
-def test_paction_lattice_radius_move25_config_allows_fast_eval_and_checkpoint_schedule(monkeypatch):
-    monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", "paction_lattice_radius_score_only_move25")
-    monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", "/tmp/radius_move25.train.jsonl")
-    monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", "/tmp/radius_move25.val.jsonl")
-    monkeypatch.setenv("C3_PACTION_TEST_LEDGER_PATH", "/tmp/radius_move25.test.jsonl")
-    monkeypatch.setenv("C3_PACTION_ADATAD_DISABLE_CHECKPOINT", "0")
-    monkeypatch.setenv("C3_PACTION_ADATAD_CHECKPOINT_INTERVAL", "2")
-    monkeypatch.setenv("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL", "5")
-    monkeypatch.setenv("C3_PACTION_ADATAD_VAL_EVAL_INTERVAL_ANCHOR_EPOCH", "5")
-    monkeypatch.setenv("C3_PACTION_ADATAD_VAL_START_EPOCH", "4")
-
-    cfg = Config.fromfile(str(PACTION_CONFIG))
-    validator = _load_paction_validator()
-    validated = validator.validate_config(str(PACTION_CONFIG), require_ledger_files=False)
-
-    assert cfg.paction_ledger_variant == "paction_lattice_radius_score_only_move25"
-    assert int(validated.workflow.checkpoint_interval) == 2
-    assert int(validated.workflow.val_eval_interval) == 5
-    assert int(validated.workflow.val_eval_interval_anchor_epoch) == 5
-    assert int(validated.workflow.val_start_epoch) == 4
-    assert validated.workflow.disable_checkpoint is False
-    for split in ("train", "val", "test"):
-        loader = _loadframes(validated.dataset[split])
-        assert loader.bata_value_transport_use_expanded_positions is True
 
 
 def test_paction_learned_policy_adatad_config_uses_reviewed_absolute_pretrain(monkeypatch):
@@ -488,84 +356,7 @@ def test_paction_learned_policy_adatad_full_train_gate_requires_paction_provenan
         "uses_teacher": False,
         "uses_oracle": False,
         "uses_cache": False,
-        "uses_prediction_cache": False,
         "uses_raw_prediction": False,
-        "prediction_uses_gt": False,
     }
     ledger.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
     validator._validate_ledger_file(ledger, cfg=cfg, require_exists=True)
-
-
-def test_paction_radius_full_train_gate_uses_expanded_budget_not_center_count(tmp_path, monkeypatch):
-    checkpoint_sha = "b" * 64
-    ledger = tmp_path / "value_transport_ledger_paction_lattice_radius_score_only_move25.jsonl"
-    provenance = {
-        "p_action_source": "lowres_action_probe",
-        "probe_model": "mobilenetv3_64px",
-        "no_gt_generation": True,
-        "uses_teacher": False,
-        "uses_oracle": False,
-        "uses_cache": False,
-        "uses_prediction_cache": False,
-        "uses_raw_prediction": False,
-        "prediction_uses_gt": False,
-    }
-    row = {
-        "schema_version": "pc_ot_mras_frontend_value_transport_ledger_v0",
-        "sample_id": "video_test_0001|0",
-        "selected_positions_unit": "local_dense_index",
-        "selected_positions": list(range(0, 384, 2)),
-        "target_len": 384,
-        "selected_count": 192,
-        "valid_len": 768,
-        "dense_len": 768,
-        "selected_positions_are_centers": True,
-        "expanded_selected_positions": list(range(384)),
-        "expanded_selected_count": 384,
-        "deploy_selection_ledger": True,
-        "diagnostic_only": False,
-        "policy_source": "learned_paction_gap_loss_policy_checkpoint",
-        "policy_checkpoint_path": str(tmp_path / "policy.pth"),
-        "policy_checkpoint_sha256": checkpoint_sha,
-        "uses_gt": False,
-        "uses_teacher": False,
-        "uses_oracle": False,
-        "uses_cache": False,
-        "uses_prediction_cache": False,
-        "uses_raw_prediction": False,
-        "uses_checkpoint": False,
-        "prediction_uses_gt": False,
-        "training_only": False,
-        "diagnostics": {
-            "uniform_visible_fill_count": 0,
-            "source_strategy": "paction_lattice_radius_score_only_move25",
-            "policy_source": "learned_paction_gap_loss_policy_checkpoint",
-            "policy_checkpoint_sha256": checkpoint_sha,
-            "p_action_provenance": provenance,
-            "expanded_budget": 384,
-            "center_count": 192,
-            "budgeted_expanded_count": 384,
-            "budgeted_expanded_selection": True,
-        },
-    }
-    ledger.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
-    monkeypatch.setenv("C3_PACTION_LEDGER_VARIANT", "paction_lattice_radius_score_only_move25")
-    monkeypatch.setenv("C3_PACTION_TRAIN_LEDGER_PATH", str(ledger))
-    monkeypatch.setenv("C3_PACTION_VAL_LEDGER_PATH", str(ledger))
-    monkeypatch.setenv("C3_PACTION_TEST_LEDGER_PATH", str(ledger))
-    monkeypatch.setenv("C3_PACTION_LEDGER_CONFIG_HASH", checkpoint_sha)
-    validator = _load_paction_validator()
-    cfg = validator.validate_config(str(PACTION_CONFIG), require_ledger_files=False)
-
-    validator._validate_ledger_file(ledger, cfg=cfg, require_exists=True)
-
-    row["expanded_selected_positions"] = list(range(385))
-    row["expanded_selected_count"] = 385
-    row["diagnostics"]["budgeted_expanded_count"] = 385
-    ledger.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
-    try:
-        validator._validate_ledger_file(ledger, cfg=cfg, require_exists=True)
-    except AssertionError as exc:
-        assert "expanded" in str(exc)
-    else:
-        raise AssertionError("radius full-train ledger gate must reject expanded positions over target_len")

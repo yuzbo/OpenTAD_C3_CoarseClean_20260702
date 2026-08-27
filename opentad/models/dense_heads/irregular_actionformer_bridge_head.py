@@ -1,0 +1,1044 @@
+import math
+
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
+
+from ..builder import HEADS, build_loss, build_prior_generator
+from ..bricks import ConvModule, Scale
+
+
+@HEADS.register_module()
+class IrregularActionFormerBridgeHead(nn.Module):
+    def __init__(
+        self,
+        num_classes,
+        in_channels,
+        feat_channels,
+        num_convs=3,
+        prior_generator=None,
+        loss=None,
+        loss_normalizer=100,
+        loss_normalizer_momentum=0.9,
+        center_sample="radius",
+        center_sample_radius=1.5,
+        label_smoothing=0,
+        cls_prior_prob=0.01,
+        loss_weight=1.0,
+        tower_kernel_size=3,
+        predictor_kernel_size=3,
+        assignment_mode="hard",
+        regression_mode="symmetric_linear",
+        soft_assign_topk=9,
+        soft_assign_temperature=1.0,
+        soft_center_cost_weight=1.0,
+        soft_scale_cost_weight=0.5,
+        soft_loss_normalizer_mode="pos_mass",
+        soft_reg_weight_mode="soft",
+        soft_cls_target_mode="soft",
+        reg_denom_floor=0.5,
+        center_radius_scale="point_radius",
+        reg_denom_mode="left_right_mean",
+        allow_legacy_full_cell_span=False,
+        allow_center_fallback_inside_gt=False,
+        hard_min_points_per_gt=1,
+        hard_min_points_per_level=0,
+        hard_max_points_per_gt=0,
+        filter_similar_gt=True,
+        cls_loss_weight=1.0,
+        reg_loss_weight=None,
+        detach_cls_input_from_backbone=False,
+        detach_reg_input_from_backbone=False,
+        cls_loss_weight_schedule=None,
+        route_contract=None,
+        debug_cfg=None,
+    ):
+        super().__init__()
+        self.num_classes = num_classes
+        self.in_channels = in_channels
+        self.feat_channels = feat_channels
+        self.num_convs = num_convs
+        self.cls_prior_prob = cls_prior_prob
+        self.label_smoothing = label_smoothing
+        self.loss_weight = loss_weight
+        self.center_sample = center_sample
+        self.center_sample_radius = center_sample_radius
+        self.tower_kernel_size = tower_kernel_size
+        self.predictor_kernel_size = predictor_kernel_size
+        self.assignment_mode = assignment_mode
+        self.regression_mode = regression_mode
+        self.soft_assign_topk = soft_assign_topk
+        self.soft_assign_temperature = soft_assign_temperature
+        self.soft_center_cost_weight = soft_center_cost_weight
+        self.soft_scale_cost_weight = soft_scale_cost_weight
+        self.soft_loss_normalizer_mode = soft_loss_normalizer_mode
+        self.soft_reg_weight_mode = soft_reg_weight_mode
+        self.soft_cls_target_mode = soft_cls_target_mode
+        self.reg_denom_floor = reg_denom_floor
+        self.center_radius_scale = center_radius_scale
+        self.reg_denom_mode = reg_denom_mode
+        self.allow_legacy_full_cell_span = bool(allow_legacy_full_cell_span)
+        self.allow_center_fallback_inside_gt = bool(allow_center_fallback_inside_gt)
+        self.hard_min_points_per_gt = int(hard_min_points_per_gt)
+        self.hard_min_points_per_level = int(hard_min_points_per_level)
+        self.hard_max_points_per_gt = int(hard_max_points_per_gt)
+        self._last_missing_center_gt_count = 0
+        self._last_center_fallback_gt_count = 0
+        self._last_gt_coverage_fallback_count = 0
+        self._last_gt_balance_fallback_count = 0
+        self._last_gt_target_points = None
+        self._last_gt_assigned_counts = None
+        self.filter_similar_gt = filter_similar_gt
+        self.cls_loss_weight = cls_loss_weight
+        self.reg_loss_weight = reg_loss_weight
+        self.detach_cls_input_from_backbone = detach_cls_input_from_backbone
+        self.detach_reg_input_from_backbone = detach_reg_input_from_backbone
+        self.cls_loss_weight_schedule = None if cls_loss_weight_schedule is None else dict(cls_loss_weight_schedule)
+        self.route_contract = {} if route_contract is None else dict(route_contract)
+        self.current_train_epoch = 0
+        self.loss_normalizer_momentum = loss_normalizer_momentum
+        self.register_buffer("loss_normalizer", torch.tensor(float(loss_normalizer)))
+
+        if self.assignment_mode not in {"hard", "soft", "oracle_point"}:
+            raise ValueError(f"Unsupported assignment_mode: {self.assignment_mode}")
+        if self.regression_mode not in {"symmetric_linear", "asymmetric_log1p"}:
+            raise ValueError(f"Unsupported regression_mode: {self.regression_mode}")
+        if self.soft_loss_normalizer_mode not in {"pos_mass", "pos_count"}:
+            raise ValueError(f"Unsupported soft_loss_normalizer_mode: {self.soft_loss_normalizer_mode}")
+        if self.soft_reg_weight_mode not in {"soft", "binary"}:
+            raise ValueError(f"Unsupported soft_reg_weight_mode: {self.soft_reg_weight_mode}")
+        if self.soft_cls_target_mode not in {"soft", "binary"}:
+            raise ValueError(f"Unsupported soft_cls_target_mode: {self.soft_cls_target_mode}")
+        scale_base_modes = {
+            "full_cell_span",
+            "half_cell_span",
+            "min_side",
+            "left_right_mean",
+            "point_range",
+            "point_radius",
+        }
+        if self.center_radius_scale not in scale_base_modes:
+            raise ValueError(f"Unsupported center_radius_scale: {self.center_radius_scale}")
+        if self.reg_denom_mode not in scale_base_modes:
+            raise ValueError(f"Unsupported reg_denom_mode: {self.reg_denom_mode}")
+        uses_legacy_full_cell_span = (
+            self.center_radius_scale == "full_cell_span" or self.reg_denom_mode == "full_cell_span"
+        )
+        if uses_legacy_full_cell_span and not self.allow_legacy_full_cell_span:
+            raise ValueError(
+                "Legacy full-cell-span bridge scales require allow_legacy_full_cell_span=True. "
+                "Use center_radius_scale='point_radius' and reg_denom_mode='left_right_mean' "
+                "for the official-compatible bridge scale contract."
+            )
+        if self.tower_kernel_size <= 0 or self.tower_kernel_size % 2 == 0:
+            raise ValueError(f"tower_kernel_size must be a positive odd integer, got {self.tower_kernel_size}")
+        if self.predictor_kernel_size <= 0 or self.predictor_kernel_size % 2 == 0:
+            raise ValueError(f"predictor_kernel_size must be a positive odd integer, got {self.predictor_kernel_size}")
+        if self.hard_min_points_per_gt < 1:
+            raise ValueError(f"hard_min_points_per_gt must be >= 1, got {self.hard_min_points_per_gt}")
+        if self.hard_min_points_per_level < 0:
+            raise ValueError(f"hard_min_points_per_level must be >= 0, got {self.hard_min_points_per_level}")
+        if self.hard_max_points_per_gt < 0:
+            raise ValueError(f"hard_max_points_per_gt must be >= 0, got {self.hard_max_points_per_gt}")
+
+        debug_cfg = {} if debug_cfg is None else dict(debug_cfg)
+        self.debug_enabled = bool(debug_cfg.get("enable", False))
+        self._latest_debug_state = {}
+
+        self.prior_generator = build_prior_generator(prior_generator)
+        self._init_layers()
+
+        self.cls_loss = build_loss(loss.cls_loss)
+        self.reg_loss = build_loss(loss.reg_loss)
+
+    def _init_layers(self):
+        self.cls_convs = nn.ModuleList()
+        self.reg_convs = nn.ModuleList()
+        tower_padding = self.tower_kernel_size // 2
+        for idx in range(self.num_convs):
+            in_channels = self.in_channels if idx == 0 else self.feat_channels
+            self.cls_convs.append(
+                ConvModule(
+                    in_channels,
+                    self.feat_channels,
+                    kernel_size=self.tower_kernel_size,
+                    stride=1,
+                    padding=tower_padding,
+                    norm_cfg=dict(type="LN"),
+                    act_cfg=dict(type="relu"),
+                )
+            )
+            self.reg_convs.append(
+                ConvModule(
+                    in_channels,
+                    self.feat_channels,
+                    kernel_size=self.tower_kernel_size,
+                    stride=1,
+                    padding=tower_padding,
+                    norm_cfg=dict(type="LN"),
+                    act_cfg=dict(type="relu"),
+                )
+            )
+
+        padding = self.predictor_kernel_size // 2
+        self.cls_head = nn.Conv1d(
+            self.feat_channels,
+            self.num_classes,
+            kernel_size=self.predictor_kernel_size,
+            padding=padding,
+        )
+        self.reg_head = nn.Conv1d(
+            self.feat_channels,
+            2,
+            kernel_size=self.predictor_kernel_size,
+            padding=padding,
+        )
+        self.scale = nn.ModuleList([Scale() for _ in range(len(self.prior_generator.strides))])
+
+        if self.cls_prior_prob > 0:
+            bias_value = -(math.log((1 - self.cls_prior_prob) / self.cls_prior_prob))
+            nn.init.constant_(self.cls_head.bias, bias_value)
+
+    def _forward_single_level(self, feat, mask, level_idx):
+        cls_feat = feat.detach() if self.detach_cls_input_from_backbone else feat
+        reg_feat = feat.detach() if self.detach_reg_input_from_backbone else feat
+        branch_mask = mask
+        for cls_conv, reg_conv in zip(self.cls_convs, self.reg_convs):
+            cls_feat, _ = cls_conv(cls_feat, branch_mask)
+            reg_feat, _ = reg_conv(reg_feat, branch_mask)
+
+        cls_pred = self.cls_head(cls_feat)
+        reg_pred = F.relu(self.scale[level_idx](self.reg_head(reg_feat)))
+        return cls_pred, reg_pred
+
+    def _generate_points(self, feat_list, temporal_grid_list=None):
+        if temporal_grid_list is not None:
+            try:
+                return self.prior_generator(feat_list, temporal_grid_list)
+            except TypeError:
+                return self.prior_generator(feat_list)
+
+        try:
+            return self.prior_generator(feat_list)
+        except TypeError as exc:
+            raise ValueError(
+                "prior_generator requires temporal_grid_list, but forward received temporal_grid_list=None."
+            ) from exc
+
+    def forward_train(self, feat_list, mask_list, temporal_grid_list=None, gt_segments=None, gt_labels=None, **kwargs):
+        cls_pred = []
+        reg_pred = []
+        for level_idx, (feat, mask) in enumerate(zip(feat_list, mask_list)):
+            cls_out, reg_out = self._forward_single_level(feat, mask, level_idx)
+            cls_pred.append(cls_out)
+            reg_pred.append(reg_out)
+
+        points = self._generate_points(feat_list, temporal_grid_list)
+        return self.losses(cls_pred, reg_pred, mask_list, points, gt_segments, gt_labels)
+
+    def forward_test(self, feat_list, mask_list, temporal_grid_list=None, **kwargs):
+        cls_pred = []
+        reg_pred = []
+        for level_idx, (feat, mask) in enumerate(zip(feat_list, mask_list)):
+            cls_out, reg_out = self._forward_single_level(feat, mask, level_idx)
+            cls_pred.append(cls_out)
+            reg_pred.append(reg_out)
+
+        points = self._generate_points(feat_list, temporal_grid_list)
+        return self.get_valid_proposals_scores(points, reg_pred, cls_pred, mask_list)
+
+    def _concat_points(self, points):
+        if len(points) == 0:
+            raise ValueError("points must not be empty")
+        dim = 1 if points[0].dim() == 3 else 0
+        return torch.cat(points, dim=dim)
+
+    def _points_per_sample(self, points, batch_size):
+        point_tensor = self._concat_points(points)
+        if point_tensor.dim() == 2:
+            return [point_tensor] * batch_size
+        if point_tensor.dim() == 3:
+            if point_tensor.shape[0] != batch_size:
+                raise ValueError(
+                    f"Batch size mismatch between points ({point_tensor.shape[0]}) and targets ({batch_size})."
+                )
+            return list(point_tensor)
+        raise ValueError(f"Unsupported point tensor shape: {tuple(point_tensor.shape)}")
+
+    def _point_fields(self, point_tensor):
+        center = point_tensor[..., 0]
+        reg_min = point_tensor[..., 1]
+        reg_max = point_tensor[..., 2]
+        if point_tensor.shape[-1] >= 5:
+            left_scale = point_tensor[..., 3].clamp_min(self.reg_denom_floor)
+            right_scale = point_tensor[..., 4].clamp_min(self.reg_denom_floor)
+            point_scale = (0.5 * (left_scale + right_scale)).clamp_min(self.reg_denom_floor)
+        else:
+            point_scale = point_tensor[..., 3].clamp_min(self.reg_denom_floor)
+            left_scale = point_scale
+            right_scale = point_scale
+        return center, reg_min, reg_max, left_scale, right_scale, point_scale
+
+    def _point_fields_extended(self, point_tensor):
+        center, reg_min, reg_max, left_scale, right_scale, point_scale = self._point_fields(point_tensor)
+        if point_tensor.shape[-1] >= 7:
+            range_scale = point_tensor[..., 5].clamp_min(self.reg_denom_floor)
+            radius_scale = point_tensor[..., 6].clamp_min(self.reg_denom_floor)
+        else:
+            range_scale = point_scale
+            radius_scale = point_scale
+        return center, reg_min, reg_max, left_scale, right_scale, point_scale, range_scale, radius_scale
+
+    def _scale_base(self, left_scale, right_scale, point_scale, mode, range_scale=None, radius_scale=None):
+        if mode == "full_cell_span":
+            legacy_cell_span = (left_scale + right_scale).clamp_min(self.reg_denom_floor)
+            return legacy_cell_span
+        if mode == "half_cell_span":
+            return (0.5 * (left_scale + right_scale)).clamp_min(self.reg_denom_floor)
+        if mode == "min_side":
+            return torch.minimum(left_scale, right_scale).clamp_min(self.reg_denom_floor)
+        if mode == "left_right_mean":
+            return (0.5 * (left_scale + right_scale)).clamp_min(self.reg_denom_floor)
+        if mode == "point_range":
+            if range_scale is None:
+                range_scale = point_scale
+            return range_scale.clamp_min(self.reg_denom_floor)
+        if mode == "point_radius":
+            if radius_scale is None:
+                radius_scale = point_scale
+            return radius_scale.clamp_min(self.reg_denom_floor)
+        raise ValueError(f"Unsupported scale mode: {mode}")
+
+    def _level_offsets(self, points):
+        offsets = []
+        start = 0
+        for level in points:
+            level_len = int(level.shape[1] if level.dim() == 3 else level.shape[0])
+            offsets.append((start, start + level_len))
+            start += level_len
+        return offsets
+
+    def _encode_regression_targets(self, left, right, left_scale, right_scale, point_scale, range_scale=None, radius_scale=None):
+        if self.regression_mode == "symmetric_linear":
+            denom = self._scale_base(
+                left_scale,
+                right_scale,
+                point_scale,
+                self.reg_denom_mode,
+                range_scale=range_scale,
+                radius_scale=radius_scale,
+            )
+            return torch.stack(
+                [
+                    (left / denom).clamp_min(0.0),
+                    (right / denom).clamp_min(0.0),
+                ],
+                dim=-1,
+            )
+
+        return torch.stack(
+            [
+                torch.log1p((left / left_scale).clamp_min(0.0)),
+                torch.log1p((right / right_scale).clamp_min(0.0)),
+            ],
+            dim=-1,
+        )
+
+    def get_refined_proposals(self, points, reg_pred):
+        point_tensor = self._concat_points(points)
+        reg_tensor = torch.cat(reg_pred, dim=-1).permute(0, 2, 1)
+        center, _, _, left_scale, right_scale, point_scale, range_scale, radius_scale = self._point_fields_extended(
+            point_tensor
+        )
+
+        if self.regression_mode == "symmetric_linear":
+            denom = self._scale_base(
+                left_scale,
+                right_scale,
+                point_scale,
+                self.reg_denom_mode,
+                range_scale=range_scale,
+                radius_scale=radius_scale,
+            )
+            left = reg_tensor[:, :, 0] * denom
+            right = reg_tensor[:, :, 1] * denom
+        else:
+            left = torch.expm1(reg_tensor[:, :, 0].clamp_min(0.0)) * left_scale
+            right = torch.expm1(reg_tensor[:, :, 1].clamp_min(0.0)) * right_scale
+
+        start = center - left
+        end = center + right
+        return torch.stack((start, end), dim=-1)
+
+    def get_valid_proposals_scores(self, points, reg_pred, cls_pred, mask_list):
+        proposals = self.get_refined_proposals(points, reg_pred)
+        scores = torch.cat(cls_pred, dim=-1).permute(0, 2, 1).sigmoid()
+        masks = torch.cat(mask_list, dim=1)
+
+        new_proposals = []
+        new_scores = []
+        for proposal, score, mask in zip(proposals, scores, masks):
+            new_proposals.append(proposal[mask])
+            new_scores.append(score[mask])
+        return new_proposals, new_scores
+
+    def collect_debug_state(self):
+        return dict(self._latest_debug_state)
+
+    def set_train_epoch(self, curr_epoch):
+        self.current_train_epoch = int(curr_epoch)
+
+    def _resolve_cls_loss_weight(self):
+        if self.cls_loss_weight_schedule is None:
+            return float(self.cls_loss_weight)
+
+        warmup_epochs = int(self.cls_loss_weight_schedule.get("warmup_epochs", 0))
+        warmup_value = float(self.cls_loss_weight_schedule.get("warmup_value", 0.0))
+        after_warmup_value = float(self.cls_loss_weight_schedule.get("after_warmup_value", self.cls_loss_weight))
+        if self.current_train_epoch < warmup_epochs:
+            return warmup_value
+        return after_warmup_value
+
+    def losses(self, cls_pred, reg_pred, mask_list, points, gt_segments, gt_labels):
+        gt_cls, gt_reg, reg_weight, target_debug = self.prepare_targets(points, gt_segments, gt_labels)
+
+        gt_cls = torch.stack(gt_cls)
+        gt_reg = torch.stack(gt_reg)
+        reg_weight = torch.stack(reg_weight)
+        valid_mask = torch.cat(mask_list, dim=1)
+
+        if self.assignment_mode == "soft":
+            pos_weight = gt_cls.max(dim=-1).values * valid_mask.to(gt_cls.dtype)
+            pos_mass = float(pos_weight.sum().item())
+            pos_count = int(torch.logical_and(gt_cls.max(dim=-1).values > 0, valid_mask).sum().item())
+            if self.soft_loss_normalizer_mode == "pos_count":
+                normalizer_base = float(max(pos_count, 1))
+            else:
+                normalizer_base = max(pos_mass, 1.0)
+        else:
+            pos_binary = torch.logical_and(gt_cls.sum(dim=-1) > 0, valid_mask)
+            pos_mass = float(pos_binary.sum().item())
+            pos_count = int(pos_binary.sum().item())
+            normalizer_base = float(max(pos_mass, 1.0))
+
+        if self.training:
+            self.loss_normalizer = self.loss_normalizer_momentum * self.loss_normalizer + (
+                1 - self.loss_normalizer_momentum
+            ) * normalizer_base
+            loss_normalizer = self.loss_normalizer
+        else:
+            loss_normalizer = normalizer_base
+
+        cls_pred_flat = [tensor.permute(0, 2, 1) for tensor in cls_pred]
+        cls_pred_flat = torch.cat(cls_pred_flat, dim=1)[valid_mask]
+        gt_target = gt_cls[valid_mask]
+        if self.assignment_mode == "soft" and self.soft_cls_target_mode == "binary":
+            gt_target = (gt_target > 0).to(gt_target.dtype)
+        gt_target = gt_target * (1 - self.label_smoothing)
+        gt_target = gt_target + self.label_smoothing / (self.num_classes + 1)
+
+        cls_loss = self.cls_loss(cls_pred_flat, gt_target, reduction="sum")
+        cls_loss /= loss_normalizer
+        effective_cls_loss_weight = self._resolve_cls_loss_weight()
+        cls_loss = cls_loss * effective_cls_loss_weight
+
+        split_size = [reg.shape[-1] for reg in reg_pred]
+        gt_reg_split = gt_reg.permute(0, 2, 1).split(split_size, dim=-1)
+        pred_segments = self.get_refined_proposals(points, reg_pred)
+        gt_segments = self.get_refined_proposals(points, gt_reg_split)
+
+        reg_mask = torch.logical_and(reg_weight > 0, valid_mask)
+        effective_reg_weight_sum = 0.0
+        if reg_mask.any():
+            if self.assignment_mode == "soft":
+                reg_loss_raw = self.reg_loss(pred_segments[reg_mask], gt_segments[reg_mask], reduction="none").reshape(-1)
+                reg_weight_flat = reg_weight[reg_mask]
+                if self.soft_reg_weight_mode == "binary":
+                    reg_weight_flat = torch.ones_like(reg_weight_flat)
+                effective_reg_weight_sum = float(reg_weight_flat.sum().item())
+                reg_loss = (reg_loss_raw * reg_weight_flat).sum()
+            else:
+                effective_reg_weight_sum = float(reg_mask.sum().item())
+                reg_loss = self.reg_loss(pred_segments[reg_mask], gt_segments[reg_mask], reduction="sum")
+            reg_loss /= loss_normalizer
+        else:
+            reg_loss = pred_segments.sum() * 0
+
+        if self.reg_loss_weight is not None:
+            reg_loss_weight = self.reg_loss_weight
+        elif self.loss_weight > 0:
+            reg_loss_weight = self.loss_weight
+        else:
+            reg_loss_weight = cls_loss.detach() / max(reg_loss.item(), 0.01)
+
+        if self.debug_enabled:
+            debug_state = dict(target_debug)
+            debug_state["bridge_assignment_mode"] = self.assignment_mode
+            debug_state["bridge_regression_mode"] = self.regression_mode
+            debug_state["bridge_soft_loss_normalizer_mode"] = self.soft_loss_normalizer_mode
+            debug_state["bridge_soft_reg_weight_mode"] = self.soft_reg_weight_mode
+            debug_state["bridge_soft_cls_target_mode"] = self.soft_cls_target_mode
+            debug_state["bridge_detach_cls_input_from_backbone"] = bool(self.detach_cls_input_from_backbone)
+            debug_state["bridge_detach_reg_input_from_backbone"] = bool(self.detach_reg_input_from_backbone)
+            debug_state["bridge_train_epoch"] = int(self.current_train_epoch)
+            debug_state["bridge_pos_mass_total"] = pos_mass
+            debug_state["bridge_positive_count_total"] = pos_count
+            debug_state["bridge_valid_points_total"] = int(valid_mask.sum().item())
+            debug_state["bridge_reg_points_total"] = int(reg_mask.sum().item())
+            debug_state["bridge_cls_loss_weight"] = float(self.cls_loss_weight)
+            debug_state["bridge_cls_loss_weight_effective"] = float(effective_cls_loss_weight)
+            debug_state["bridge_reg_loss_weight"] = (
+                float(reg_loss_weight) if not torch.is_tensor(reg_loss_weight) else float(reg_loss_weight.item())
+            )
+            debug_state["bridge_cls_target_mass_total"] = float(gt_cls.max(dim=-1).values[valid_mask].sum().item())
+            debug_state["bridge_reg_weight_sum_total"] = float(reg_weight[valid_mask].sum().item())
+            debug_state["bridge_reg_effective_weight_sum_total"] = effective_reg_weight_sum
+            debug_state["bridge_loss_normalizer_base"] = normalizer_base
+            debug_state["bridge_loss_normalizer"] = float(
+                loss_normalizer.item() if torch.is_tensor(loss_normalizer) else loss_normalizer
+            )
+            self._latest_debug_state = debug_state
+
+        return {"cls_loss": cls_loss, "reg_loss": reg_loss * reg_loss_weight}
+
+    def _build_candidate_mask(self, point, gt_segs, reg_targets):
+        center_t, _, _, left_scale, right_scale, point_scale, range_scale, radius_scale = self._point_fields_extended(
+            point
+        )
+        center_t = center_t[:, None]
+        inside_gt_seg = reg_targets.min(dim=-1).values > 0
+        if self.center_sample != "radius":
+            return inside_gt_seg
+
+        center_pts = 0.5 * (gt_segs[:, :, 0] + gt_segs[:, :, 1])
+        radius_base = self._scale_base(
+            left_scale,
+            right_scale,
+            point_scale,
+            self.center_radius_scale,
+            range_scale=range_scale,
+            radius_scale=radius_scale,
+        )[:, None]
+        radius = self.center_sample_radius * radius_base
+        t_mins = center_pts - radius
+        t_maxs = center_pts + radius
+        cb_left = center_t - torch.maximum(t_mins, gt_segs[:, :, 0])
+        cb_right = torch.minimum(t_maxs, gt_segs[:, :, 1]) - center_t
+        center_seg = torch.stack((cb_left, cb_right), dim=-1)
+        candidate_mask = center_seg.min(dim=-1).values > 0
+
+        missing_gt = ~candidate_mask.any(dim=0)
+        self._last_missing_center_gt_count = int(missing_gt.sum().item())
+        self._last_center_fallback_gt_count = 0
+        if missing_gt.any() and self.allow_center_fallback_inside_gt:
+            candidate_mask[:, missing_gt] = inside_gt_seg[:, missing_gt]
+            self._last_center_fallback_gt_count = int(missing_gt.sum().item())
+        return candidate_mask
+
+    def _build_assignment_weights(self, point, gt_segment, candidate_mask):
+        total_cost = self._build_assignment_cost(point, gt_segment, candidate_mask)
+        num_pts, num_gts = total_cost.shape
+        topk = min(self.soft_assign_topk, num_pts)
+        trans_cost = total_cost.transpose(0, 1)
+        topk_cost, topk_idx = torch.topk(trans_cost, k=topk, dim=1, largest=False)
+        valid_topk = torch.isfinite(topk_cost)
+
+        weights = total_cost.new_zeros(num_pts, num_gts)
+        if valid_topk.any():
+            quality = torch.exp(-topk_cost / max(self.soft_assign_temperature, 1e-6))
+            quality = torch.where(valid_topk, quality, quality.new_zeros(1))
+            quality = quality / quality.max(dim=1, keepdim=True).values.clamp_min(1e-6)
+            gt_index = torch.arange(num_gts, device=point.device)[:, None].expand_as(topk_idx)
+            weights[topk_idx[valid_topk], gt_index[valid_topk]] = quality[valid_topk]
+        return weights, total_cost
+
+    def _build_assignment_cost(self, point, gt_segment, candidate_mask):
+        center_t, _, _, left_scale, right_scale, point_scale, range_scale, radius_scale = self._point_fields_extended(
+            point
+        )
+        center_t = center_t[:, None]
+        assign_scale = self._scale_base(
+            left_scale,
+            right_scale,
+            point_scale,
+            self.reg_denom_mode,
+            range_scale=range_scale,
+            radius_scale=radius_scale,
+        )[:, None]
+        gt_center = 0.5 * (gt_segment[:, 0] + gt_segment[:, 1])[None, :]
+        gt_len = (gt_segment[:, 1] - gt_segment[:, 0])[None, :].clamp_min(self.reg_denom_floor)
+
+        center_cost = (center_t - gt_center).abs() / (0.5 * gt_len + 0.5 * assign_scale).clamp_min(
+            self.reg_denom_floor
+        )
+        scale_cost = torch.abs(torch.log((gt_len / assign_scale).clamp_min(1e-6)))
+        total_cost = self.soft_center_cost_weight * center_cost + self.soft_scale_cost_weight * scale_cost
+        total_cost = total_cost.masked_fill(~candidate_mask, float("inf"))
+        return total_cost
+
+    def _hard_target_points_per_gt(self, candidate_mask, level_offsets=None):
+        num_gts = int(candidate_mask.shape[1])
+        target = torch.full(
+            (num_gts,),
+            self.hard_min_points_per_gt,
+            device=candidate_mask.device,
+            dtype=torch.long,
+        )
+        if self.hard_min_points_per_level > 0 and level_offsets is not None:
+            level_counts = torch.zeros((num_gts,), device=candidate_mask.device, dtype=torch.long)
+            for start_idx, end_idx in level_offsets:
+                level_counts += candidate_mask[start_idx:end_idx].any(dim=0).to(torch.long)
+            level_target = level_counts * self.hard_min_points_per_level
+            target = torch.maximum(target, level_target)
+        if self.hard_max_points_per_gt > 0:
+            target = torch.minimum(target, torch.full_like(target, self.hard_max_points_per_gt))
+        candidate_counts = candidate_mask.sum(dim=0).to(torch.long)
+        target = torch.minimum(target, candidate_counts)
+        return torch.where(candidate_counts > 0, target.clamp_min(1), target)
+
+    def _assigned_counts(self, assigned, num_gts):
+        assigned_nonneg = assigned[assigned >= 0]
+        if assigned_nonneg.numel() == 0:
+            return torch.zeros((num_gts,), device=assigned.device, dtype=torch.long)
+        return torch.bincount(assigned_nonneg, minlength=num_gts).to(torch.long)
+
+    def _apply_hard_gt_coverage_fallback(self, point, gt_segment, candidate_mask, lens, assigned, level_offsets=None):
+        self._last_gt_coverage_fallback_count = 0
+        self._last_gt_balance_fallback_count = 0
+        self._last_gt_target_points = None
+        self._last_gt_assigned_counts = None
+        if not self.allow_center_fallback_inside_gt:
+            return assigned
+        num_pts, num_gts = candidate_mask.shape
+        if num_pts == 0 or num_gts == 0:
+            return assigned
+
+        assigned = assigned.clone()
+        finite_lens = torch.isfinite(lens)
+        assignment_cost = self._build_assignment_cost(point, gt_segment, candidate_mask)
+        target_points = self._hard_target_points_per_gt(candidate_mask, level_offsets)
+        self._last_gt_target_points = target_points.detach().clone()
+
+        max_steps = max(int(target_points.sum().item()) + num_gts, num_gts)
+        for _ in range(max_steps):
+            counts = self._assigned_counts(assigned, num_gts)
+            need = target_points - counts
+            needy_gt = torch.nonzero(need > 0, as_tuple=False).flatten()
+            if needy_gt.numel() == 0:
+                break
+
+            changed = False
+            order = needy_gt[torch.argsort(need[needy_gt], descending=True)]
+            for gt_idx in order.tolist():
+                counts = self._assigned_counts(assigned, num_gts)
+                if counts[gt_idx] >= target_points[gt_idx]:
+                    continue
+                candidates = torch.logical_and(candidate_mask[:, gt_idx], finite_lens[:, gt_idx])
+                if not candidates.any():
+                    continue
+
+                assigned_clamped = assigned.clamp_min(0)
+                donor_counts = counts[assigned_clamped]
+                donor_target = target_points[assigned_clamped]
+                donor_can_spare = torch.logical_and(assigned >= 0, donor_counts > donor_target)
+                preferred = torch.logical_and(
+                    candidates,
+                    torch.logical_and(assigned != gt_idx, torch.logical_or(assigned < 0, donor_can_spare)),
+                )
+                if not preferred.any() and counts[gt_idx] == 0:
+                    donor_keeps_coverage = torch.logical_and(assigned >= 0, donor_counts > 1)
+                    preferred = torch.logical_and(
+                        candidates,
+                        torch.logical_and(
+                            assigned != gt_idx,
+                            torch.logical_or(assigned < 0, donor_keeps_coverage),
+                        ),
+                    )
+                if not preferred.any():
+                    continue
+
+                point_cost = assignment_cost[:, gt_idx]
+                masked_cost = torch.where(preferred, point_cost, point_cost.new_full(point_cost.shape, float("inf")))
+                best_idx = int(masked_cost.argmin().item())
+                if not torch.isfinite(masked_cost[best_idx]):
+                    continue
+                if counts[gt_idx] == 0:
+                    self._last_gt_coverage_fallback_count += 1
+                else:
+                    self._last_gt_balance_fallback_count += 1
+                assigned[best_idx] = int(gt_idx)
+                changed = True
+
+            if not changed:
+                break
+        self._last_gt_assigned_counts = self._assigned_counts(assigned, num_gts).detach().clone()
+        return assigned
+
+    @torch.no_grad()
+    def _prepare_targets_hard(self, points, gt_segments, gt_labels):
+        point_list = self._points_per_sample(points, len(gt_segments))
+        level_offsets = self._level_offsets(points)
+        gt_cls = []
+        gt_reg = []
+        reg_weight_list = []
+        debug_state = {}
+
+        for point, gt_segment, gt_label in zip(point_list, gt_segments, gt_labels):
+            # point: [N_pts, 4or5]
+            num_pts = point.shape[0]
+            (
+                center_t,
+                reg_min,
+                reg_max,
+                left_scale,
+                right_scale,
+                point_scale,
+                range_scale,
+                radius_scale,
+            ) = self._point_fields_extended(point)
+            num_gts = gt_segment.shape[0]
+            if num_gts == 0:
+                gt_cls.append(gt_segment.new_zeros((num_pts, self.num_classes)))
+                gt_reg.append(gt_segment.new_zeros((num_pts, 2)))
+                reg_weight_list.append(gt_segment.new_zeros((num_pts,)))
+                continue
+
+            lens = (gt_segment[:, 1] - gt_segment[:, 0])[None, :].repeat(num_pts, 1)
+            gt_segs = gt_segment[None].expand(num_pts, num_gts, 2)
+            left = center_t[:, None] - gt_segs[:, :, 0]
+            right = gt_segs[:, :, 1] - center_t[:, None]
+            reg_targets = torch.stack((left, right), dim=-1)
+
+            inside_gt_seg_mask = reg_targets.min(dim=-1).values > 0
+            candidate_mask = self._build_candidate_mask(point, gt_segs, reg_targets)
+            max_regress_distance = reg_targets.max(dim=-1).values
+            inside_regress_range = torch.logical_and(
+                max_regress_distance >= reg_min[:, None],
+                max_regress_distance <= reg_max[:, None],
+            )
+            candidate_mask = torch.logical_and(candidate_mask, inside_regress_range)
+            missing_after_range = ~candidate_mask.any(dim=0)
+            fallback_applied = int(getattr(self, "_last_center_fallback_gt_count", 0)) > 0
+            if missing_after_range.any() and self.allow_center_fallback_inside_gt:
+                candidate_mask[:, missing_after_range] = inside_gt_seg_mask[:, missing_after_range]
+                fallback_applied = fallback_applied or bool(inside_gt_seg_mask[:, missing_after_range].any().item())
+
+            lens.masked_fill_(candidate_mask == 0, float("inf"))
+            min_len, min_len_inds = lens.min(dim=1)
+            assigned_gt = torch.where(torch.isfinite(min_len), min_len_inds, torch.full_like(min_len_inds, -1))
+            assigned_gt = self._apply_hard_gt_coverage_fallback(
+                point,
+                gt_segment,
+                candidate_mask,
+                lens,
+                assigned_gt,
+                level_offsets=level_offsets,
+            )
+            point_idx = torch.arange(num_pts, device=point.device)
+            safe_assigned_gt = torch.where(assigned_gt >= 0, assigned_gt, min_len_inds)
+            min_len_inds = safe_assigned_gt
+            min_len = torch.where(
+                assigned_gt >= 0,
+                lens[point_idx, safe_assigned_gt],
+                min_len.new_full(min_len.shape, float("inf")),
+            )
+
+            if self.filter_similar_gt:
+                min_len_mask = torch.logical_and((lens <= (min_len[:, None] + 1e-3)), (lens < float("inf")))
+            else:
+                min_len_mask = lens < float("inf")
+            min_len_mask = min_len_mask.to(reg_targets.dtype)
+
+            gt_label_one_hot = F.one_hot(gt_label.long(), self.num_classes).to(reg_targets.dtype)
+            cls_targets = min_len_mask @ gt_label_one_hot
+            cls_targets.clamp_(min=0.0, max=1.0)
+
+            reg_encoded = self._encode_regression_targets(
+                left,
+                right,
+                left_scale[:, None],
+                right_scale[:, None],
+                point_scale[:, None],
+                range_scale[:, None],
+                radius_scale[:, None],
+            )
+            reg_target = reg_encoded[torch.arange(num_pts, device=point.device), min_len_inds]
+            reg_weight = (min_len < float("inf")).to(reg_targets.dtype)
+            reg_target = torch.where(reg_weight[:, None] > 0, reg_target, reg_target.new_zeros(reg_target.shape))
+
+            gt_cls.append(cls_targets)
+            gt_reg.append(reg_target)
+            reg_weight_list.append(reg_weight)
+
+            if self.debug_enabled:
+                positive_mask = cls_targets.sum(dim=-1) > 0
+                debug_state.setdefault("bridge_hard_assignment_uses_build_candidate_mask", []).append(True)
+                debug_state.setdefault("bridge_hard_missing_center_fallback_applied", []).append(fallback_applied)
+                debug_state.setdefault("bridge_hard_gt_coverage_fallback_applied", []).append(
+                    int(getattr(self, "_last_gt_coverage_fallback_count", 0)) > 0
+                )
+                debug_state.setdefault("bridge_hard_gt_coverage_fallback_count", []).append(
+                    int(getattr(self, "_last_gt_coverage_fallback_count", 0))
+                )
+                debug_state.setdefault("bridge_hard_gt_balance_fallback_count", []).append(
+                    int(getattr(self, "_last_gt_balance_fallback_count", 0))
+                )
+                debug_state.setdefault("bridge_hard_min_points_per_gt", []).append(int(self.hard_min_points_per_gt))
+                debug_state.setdefault("bridge_hard_min_points_per_level", []).append(
+                    int(self.hard_min_points_per_level)
+                )
+                debug_state.setdefault("bridge_hard_max_points_per_gt", []).append(int(self.hard_max_points_per_gt))
+                debug_state.setdefault("bridge_center_fallback_inside_gt_enabled", []).append(
+                    bool(self.allow_center_fallback_inside_gt)
+                )
+                debug_state.setdefault("bridge_zero_candidate_gt_per_sample", []).append(
+                    int((~candidate_mask.any(dim=0)).sum().item())
+                )
+                debug_state.setdefault("bridge_zero_assigned_gt_per_sample", []).append(
+                    int(
+                        sum(
+                            1
+                            for gt_idx in range(num_gts)
+                            if not bool((assigned_gt == gt_idx).any().item())
+                        )
+                    )
+                )
+                debug_state.setdefault("bridge_num_gt_per_sample", []).append(int(num_gts))
+                debug_state.setdefault("bridge_positive_points_per_sample", []).append(int(positive_mask.sum().item()))
+                debug_state.setdefault("bridge_reg_weight_sum_per_sample", []).append(float(reg_weight.sum().item()))
+                target_points = getattr(self, "_last_gt_target_points", None)
+                assigned_counts = getattr(self, "_last_gt_assigned_counts", None)
+                if target_points is not None and target_points.numel() > 0:
+                    debug_state.setdefault("bridge_hard_target_points_min_per_sample", []).append(
+                        int(target_points.min().item())
+                    )
+                    debug_state.setdefault("bridge_hard_target_points_max_per_sample", []).append(
+                        int(target_points.max().item())
+                    )
+                    debug_state.setdefault("bridge_hard_target_points_mean_per_sample", []).append(
+                        float(target_points.float().mean().item())
+                    )
+                if assigned_counts is not None and assigned_counts.numel() > 0:
+                    under_target = (assigned_counts < target_points).sum() if target_points is not None else None
+                    debug_state.setdefault("bridge_hard_assigned_points_min_per_gt", []).append(
+                        int(assigned_counts.min().item())
+                    )
+                    debug_state.setdefault("bridge_hard_assigned_points_max_per_gt", []).append(
+                        int(assigned_counts.max().item())
+                    )
+                    debug_state.setdefault("bridge_hard_assigned_points_mean_per_gt", []).append(
+                        float(assigned_counts.float().mean().item())
+                    )
+                    if under_target is not None:
+                        debug_state.setdefault("bridge_hard_under_target_gt_per_sample", []).append(
+                            int(under_target.item())
+                        )
+                for level_idx, (start_idx, end_idx) in enumerate(level_offsets):
+                    level_pos = positive_mask[start_idx:end_idx]
+                    debug_state.setdefault(f"bridge_level{level_idx}_positive_points_per_sample", []).append(
+                        int(level_pos.sum().item())
+                    )
+                    debug_state.setdefault(f"bridge_level{level_idx}_reg_weight_sum_per_sample", []).append(
+                        float(reg_weight[start_idx:end_idx].sum().item())
+                    )
+
+        return gt_cls, gt_reg, reg_weight_list, debug_state
+
+    @torch.no_grad()
+    def _prepare_targets_soft(self, points, gt_segments, gt_labels):
+        point_list = self._points_per_sample(points, len(gt_segments))
+        level_offsets = self._level_offsets(points)
+        gt_cls = []
+        gt_reg = []
+        reg_weight_list = []
+        debug_state = {}
+
+        for point, gt_segment, gt_label in zip(point_list, gt_segments, gt_labels):
+            num_pts = point.shape[0]
+            num_gts = gt_segment.shape[0]
+            if num_gts == 0:
+                gt_cls.append(gt_segment.new_zeros((num_pts, self.num_classes)))
+                gt_reg.append(gt_segment.new_zeros((num_pts, 2)))
+                reg_weight_list.append(gt_segment.new_zeros((num_pts,)))
+                continue
+
+            center_t, _, _, left_scale, right_scale, point_scale, range_scale, radius_scale = (
+                self._point_fields_extended(point)
+            )
+            gt_segs = gt_segment[None].expand(num_pts, num_gts, 2)
+            left = center_t[:, None] - gt_segs[:, :, 0]
+            right = gt_segs[:, :, 1] - center_t[:, None]
+            reg_targets = torch.stack((left, right), dim=-1)
+
+            candidate_mask = self._build_candidate_mask(point, gt_segs, reg_targets)
+            assign_weights, total_cost = self._build_assignment_weights(point, gt_segment, candidate_mask)
+
+            one_hot = F.one_hot(gt_label.long(), self.num_classes).to(assign_weights.dtype)
+            weighted_labels = assign_weights[:, :, None] * one_hot[None, :, :]
+            cls_targets = weighted_labels.max(dim=1).values
+            cls_targets.clamp_(min=0.0, max=1.0)
+
+            reg_encoded = self._encode_regression_targets(
+                left,
+                right,
+                left_scale[:, None],
+                right_scale[:, None],
+                point_scale[:, None],
+                range_scale[:, None],
+                radius_scale[:, None],
+            )
+            reg_weight, best_gt_idx = assign_weights.max(dim=1)
+            reg_target = reg_encoded[torch.arange(num_pts, device=point.device), best_gt_idx]
+            reg_target = torch.where(reg_weight[:, None] > 0, reg_target, reg_target.new_zeros(reg_target.shape))
+
+            gt_cls.append(cls_targets)
+            gt_reg.append(reg_target)
+            reg_weight_list.append(reg_weight)
+
+            if self.debug_enabled:
+                positive_mask = cls_targets.max(dim=-1).values > 0
+                multi_gt_mask = (assign_weights > 0).sum(dim=1) > 1
+                debug_state.setdefault("bridge_soft_assignment_uses_build_candidate_mask", []).append(True)
+                debug_state.setdefault("bridge_soft_missing_center_fallback_enabled", []).append(
+                    bool(self.allow_center_fallback_inside_gt)
+                )
+                debug_state.setdefault("bridge_num_gt_per_sample", []).append(int(num_gts))
+                debug_state.setdefault("bridge_candidate_points_per_sample", []).append(int(candidate_mask.any(dim=1).sum().item()))
+                debug_state.setdefault("bridge_positive_points_per_sample", []).append(int(positive_mask.sum().item()))
+                debug_state.setdefault("bridge_multi_gt_points_per_sample", []).append(int(multi_gt_mask.sum().item()))
+                debug_state.setdefault("bridge_reg_weight_sum_per_sample", []).append(float(reg_weight.sum().item()))
+                debug_state.setdefault("bridge_candidate_gt_covered_per_sample", []).append(
+                    int(candidate_mask.any(dim=0).sum().item())
+                )
+                debug_state.setdefault("bridge_zero_candidate_gt_per_sample", []).append(
+                    int((~candidate_mask.any(dim=0)).sum().item())
+                )
+                if positive_mask.any():
+                    debug_state.setdefault("bridge_reg_target_absmax_per_sample", []).append(
+                        float(reg_target[positive_mask].abs().max().item())
+                    )
+                else:
+                    debug_state.setdefault("bridge_reg_target_absmax_per_sample", []).append(0.0)
+                if torch.isfinite(total_cost).any():
+                    finite_cost = total_cost[torch.isfinite(total_cost)]
+                    debug_state.setdefault("bridge_cost_min_per_sample", []).append(float(finite_cost.min().item()))
+                    debug_state.setdefault("bridge_cost_max_per_sample", []).append(float(finite_cost.max().item()))
+                for level_idx, (start_idx, end_idx) in enumerate(level_offsets):
+                    level_candidate = candidate_mask[start_idx:end_idx].any(dim=1)
+                    level_positive = positive_mask[start_idx:end_idx]
+                    debug_state.setdefault(f"bridge_level{level_idx}_candidate_points_per_sample", []).append(
+                        int(level_candidate.sum().item())
+                    )
+                    debug_state.setdefault(f"bridge_level{level_idx}_positive_points_per_sample", []).append(
+                        int(level_positive.sum().item())
+                    )
+                    debug_state.setdefault(f"bridge_level{level_idx}_reg_weight_sum_per_sample", []).append(
+                        float(reg_weight[start_idx:end_idx].sum().item())
+                    )
+
+        return gt_cls, gt_reg, reg_weight_list, debug_state
+
+    @torch.no_grad()
+    def _prepare_targets_oracle_point(self, points, gt_segments, gt_labels):
+        point_list = self._points_per_sample(points, len(gt_segments))
+        level_offsets = self._level_offsets(points)
+        gt_cls = []
+        gt_reg = []
+        reg_weight_list = []
+        debug_state = {}
+
+        for point, gt_segment, gt_label in zip(point_list, gt_segments, gt_labels):
+            num_pts = point.shape[0]
+            num_gts = gt_segment.shape[0]
+            if num_gts == 0:
+                gt_cls.append(gt_segment.new_zeros((num_pts, self.num_classes)))
+                gt_reg.append(gt_segment.new_zeros((num_pts, 2)))
+                reg_weight_list.append(gt_segment.new_zeros((num_pts,)))
+                continue
+
+            center_t, _, _, left_scale, right_scale, point_scale, range_scale, radius_scale = (
+                self._point_fields_extended(point)
+            )
+            gt_segs = gt_segment[None].expand(num_pts, num_gts, 2)
+            gt_center = 0.5 * (gt_segment[:, 0] + gt_segment[:, 1])
+
+            left = center_t[:, None] - gt_segs[:, :, 0]
+            right = gt_segs[:, :, 1] - center_t[:, None]
+            inside_gt = torch.logical_and(left >= 0, right >= 0)
+            center_cost = (center_t[:, None] - gt_center[None, :]).abs()
+
+            oracle_cost = center_cost.masked_fill(~inside_gt, float("inf"))
+            missing_inside = ~torch.isfinite(oracle_cost).any(dim=0)
+            if missing_inside.any():
+                oracle_cost[:, missing_inside] = center_cost[:, missing_inside]
+
+            oracle_idx = oracle_cost.argmin(dim=0)
+            oracle_mask = torch.zeros((num_pts, num_gts), device=point.device, dtype=torch.bool)
+            oracle_mask[oracle_idx, torch.arange(num_gts, device=point.device)] = True
+
+            gt_label_one_hot = F.one_hot(gt_label.long(), self.num_classes).to(center_t.dtype)
+            cls_targets = oracle_mask.to(center_t.dtype) @ gt_label_one_hot
+            cls_targets.clamp_(min=0.0, max=1.0)
+
+            reg_encoded = self._encode_regression_targets(
+                left,
+                right,
+                left_scale[:, None],
+                right_scale[:, None],
+                point_scale[:, None],
+                range_scale[:, None],
+                radius_scale[:, None],
+            )
+            masked_oracle_cost = oracle_cost.masked_fill(~oracle_mask, float("inf"))
+            min_cost, best_gt_idx = masked_oracle_cost.min(dim=1)
+            reg_weight = torch.isfinite(min_cost).to(center_t.dtype)
+            reg_target = reg_encoded[torch.arange(num_pts, device=point.device), best_gt_idx]
+            reg_target = torch.where(reg_weight[:, None] > 0, reg_target, reg_target.new_zeros(reg_target.shape))
+
+            gt_cls.append(cls_targets)
+            gt_reg.append(reg_target)
+            reg_weight_list.append(reg_weight)
+
+            if self.debug_enabled:
+                positive_mask = cls_targets.sum(dim=-1) > 0
+                debug_state.setdefault("bridge_num_gt_per_sample", []).append(int(num_gts))
+                debug_state.setdefault("bridge_candidate_gt_covered_per_sample", []).append(int(num_gts))
+                debug_state.setdefault("bridge_candidate_points_per_sample", []).append(int(positive_mask.sum().item()))
+                debug_state.setdefault("bridge_positive_points_per_sample", []).append(int(positive_mask.sum().item()))
+                debug_state.setdefault("bridge_reg_weight_sum_per_sample", []).append(float(reg_weight.sum().item()))
+                debug_state.setdefault("bridge_oracle_inside_gt_covered_per_sample", []).append(
+                    int(inside_gt.any(dim=0).sum().item())
+                )
+                debug_state.setdefault("bridge_oracle_center_cost_min_per_sample", []).append(
+                    float(center_cost.min().item())
+                )
+                debug_state.setdefault("bridge_oracle_center_cost_max_per_sample", []).append(
+                    float(center_cost.max().item())
+                )
+                if positive_mask.any():
+                    debug_state.setdefault("bridge_reg_target_absmax_per_sample", []).append(
+                        float(reg_target[positive_mask].abs().max().item())
+                    )
+                else:
+                    debug_state.setdefault("bridge_reg_target_absmax_per_sample", []).append(0.0)
+                for level_idx, (start_idx, end_idx) in enumerate(level_offsets):
+                    level_positive = positive_mask[start_idx:end_idx]
+                    debug_state.setdefault(f"bridge_level{level_idx}_candidate_points_per_sample", []).append(
+                        int(level_positive.sum().item())
+                    )
+                    debug_state.setdefault(f"bridge_level{level_idx}_positive_points_per_sample", []).append(
+                        int(level_positive.sum().item())
+                    )
+                    debug_state.setdefault(f"bridge_level{level_idx}_reg_weight_sum_per_sample", []).append(
+                        float(reg_weight[start_idx:end_idx].sum().item())
+                    )
+
+        return gt_cls, gt_reg, reg_weight_list, debug_state
+
+    @torch.no_grad()
+    def prepare_targets(self, points, gt_segments, gt_labels):
+        if self.assignment_mode == "hard":
+            return self._prepare_targets_hard(points, gt_segments, gt_labels)
+        if self.assignment_mode == "oracle_point":
+            return self._prepare_targets_oracle_point(points, gt_segments, gt_labels)
+        return self._prepare_targets_soft(points, gt_segments, gt_labels)

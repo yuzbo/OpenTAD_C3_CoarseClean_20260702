@@ -1,10 +1,4 @@
-import hashlib
 import inspect
-import json
-import random
-from contextlib import nullcontext
-
-import numpy as np
 import torch
 import torch.nn as nn
 from collections.abc import Mapping
@@ -12,7 +6,7 @@ from collections.abc import Mapping
 from ..builder import DETECTORS, build_selector, build_token_compressor
 from .single_stage import SingleStageDetector
 from ..bricks import Scale, AffineDropPath
-from ..duca.true_time_residual import TrueTimeFeatureResidual
+from ..utils.native_temporal_geometry import align_native_tubelet_geometry
 
 
 _PC_OT_MRAS_READER_OUTPUTS_META_KEY = "pc_ot_mras_reader_outputs"
@@ -34,7 +28,6 @@ class ActionFormer(SingleStageDetector):
         backbone=None,
         frame_selector=None,
         token_compressor=None,
-        true_time_residual=None,
         pc_ot_mras_reader=None,
         pc_ot_mras_reader_feature_level=0,
         pc_ot_mras_reader_aux_loss=None,
@@ -42,9 +35,7 @@ class ActionFormer(SingleStageDetector):
         pc_ot_mras_reader_value_loss=None,
         pc_ot_mras_reader_eval_override=None,
         selector_train_only=False,
-        selector_train_only_skip_detector=False,
-        single_clock_admission=False,
-        single_clock_gate_zero=False,
+        native_temporal_geometry=None,
     ):
         super().__init__(
             backbone=backbone,
@@ -54,11 +45,6 @@ class ActionFormer(SingleStageDetector):
         )
         self.frame_selector = build_selector(frame_selector) if frame_selector is not None else None
         self.token_compressor = build_token_compressor(token_compressor) if token_compressor is not None else None
-        self.true_time_residual = (
-            TrueTimeFeatureResidual(**dict(true_time_residual))
-            if true_time_residual is not None
-            else None
-        )
         self.pc_ot_mras_reader = build_selector(pc_ot_mras_reader) if pc_ot_mras_reader is not None else None
         self.pc_ot_mras_reader_feature_level = int(pc_ot_mras_reader_feature_level)
         self.pc_ot_mras_reader_aux_loss = self._normalize_pc_ot_mras_reader_aux_loss(pc_ot_mras_reader_aux_loss)
@@ -76,21 +62,8 @@ class ActionFormer(SingleStageDetector):
         if self.pc_ot_mras_reader_value_loss is not None and self.pc_ot_mras_reader is None:
             raise ValueError("pc_ot_mras_reader_value_loss requires pc_ot_mras_reader")
         self.selector_train_only = bool(selector_train_only)
-        self.selector_train_only_skip_detector = bool(
-            selector_train_only_skip_detector
-        )
-        self.single_clock_admission = bool(single_clock_admission)
-        self.single_clock_gate_zero = bool(single_clock_gate_zero)
-        self._single_clock_identity_audit_enabled = False
-        self._single_clock_identity_records = {}
-        self._single_clock_identity_exposure_count = 0
-        self._single_clock_identity_duplicate_counts = {}
-        if self.single_clock_admission and backbone is None:
-            raise ValueError("single_clock_admission=True requires the VideoMAE backbone")
-        if self.selector_train_only_skip_detector and not self.selector_train_only:
-            raise ValueError(
-                "selector_train_only_skip_detector=True requires selector_train_only=True"
-            )
+        self.native_temporal_geometry = self._normalize_native_temporal_geometry(native_temporal_geometry)
+        self._last_native_temporal_geometry_audit = None
         if self.selector_train_only:
             if self.frame_selector is None:
                 raise ValueError("selector_train_only=True requires frame_selector")
@@ -122,182 +95,6 @@ class ActionFormer(SingleStageDetector):
                 max_div_factor = stride
         self.max_div_factor = max_div_factor
 
-    @staticmethod
-    def _selected_temporal_length(inputs):
-        if inputs.ndim == 6:
-            return int(inputs.shape[3])
-        if inputs.ndim in (3, 5):
-            return int(inputs.shape[2])
-        raise ValueError("SingleClock requires selected inputs shaped [B,1,3,K,H,W], [B,3,K,H,W], or [B,C,K]")
-
-    def _single_clock_metadata(self, inputs, masks, metas):
-        if inputs.ndim != 6 or int(inputs.shape[1]) != 1 or int(inputs.shape[2]) != 3:
-            raise ValueError("H65 First-Mixing SingleClock requires X_sel [B,1,3,K,H,W]")
-        batch = int(inputs.shape[0])
-        slots = self._selected_temporal_length(inputs)
-        if slots != 384:
-            raise ValueError(f"H65 First-Mixing SingleClock freezes K=384, got {slots}")
-        if not torch.is_tensor(masks) or masks.shape != (batch, slots):
-            raise ValueError("SingleClock selected mask must be [B,384]")
-        selected_mask = masks.to(device=inputs.device, dtype=torch.bool)
-        if metas is None or len(metas) != batch:
-            raise ValueError("SingleClock requires one selector metadata mapping per sample")
-
-        positions = torch.full((batch, slots), -1, device=inputs.device, dtype=torch.long)
-        dense_lengths = torch.empty((batch,), device=inputs.device, dtype=torch.long)
-        for batch_idx, meta in enumerate(metas):
-            if not isinstance(meta, Mapping):
-                raise ValueError(f"SingleClock metas[{batch_idx}] must be a mapping")
-            count = int(selected_mask[batch_idx].long().sum().item())
-            if count <= 0:
-                raise ValueError("SingleClock requires at least one valid selected frame")
-            if not bool(selected_mask[batch_idx, :count].all()) or bool(selected_mask[batch_idx, count:].any()):
-                raise ValueError("SingleClock selected mask must be a contiguous valid prefix")
-            row = meta.get("irregular_selected_positions")
-            if row is None:
-                row = meta.get("duca_acquisition_positions")
-            if row is None:
-                raise ValueError("SingleClock metadata is missing original selected positions")
-            row = torch.as_tensor(row, device=inputs.device, dtype=torch.long).flatten()
-            if row.numel() != count:
-                raise ValueError(
-                    f"SingleClock positions/mask mismatch for sample {batch_idx}: {row.numel()} != {count}"
-                )
-            meta_count = int(meta.get("irregular_selected_valid_len", count))
-            if meta_count != count:
-                raise ValueError("SingleClock metadata selected_valid_len does not match detector mask")
-            dense_len = int(meta.get("irregular_dense_valid_len", meta.get("truetime_dense_valid_len", 0)))
-            if dense_len <= 0:
-                raise ValueError("SingleClock requires a positive dense valid length")
-            if bool((row < 0).any().item()) or bool((row >= dense_len).any().item()):
-                raise ValueError(
-                    f"SingleClock physical positions must be in [0, {dense_len}) for sample {batch_idx}"
-                )
-            if row.numel() > 1 and not bool((row[1:] > row[:-1]).all().item()):
-                raise ValueError(
-                    f"SingleClock physical positions must be strictly increasing for sample {batch_idx}"
-                )
-            positions[batch_idx, :count] = row
-            dense_lengths[batch_idx] = dense_len
-        return {
-            "irregular_selected_positions": positions.detach(),
-            "irregular_dense_valid_len": dense_lengths,
-            "irregular_selected_mask": selected_mask,
-            "single_clock_gate_zero": self.single_clock_gate_zero,
-        }
-
-    def _forward_backbone_with_single_clock(self, inputs, masks, metas, *, force_off=False):
-        if not self.single_clock_admission or force_off:
-            # Signature-aware call: forwards metas (for PJST-D1 metadata
-            # reachability) without changing the existing no-``masks`` OFF path.
-            return self._call_backbone(inputs, None, metas)
-        clock_kwargs = self._single_clock_metadata(inputs, masks, metas)
-        return self.backbone(inputs, **clock_kwargs)
-
-    @staticmethod
-    def _single_clock_tensor_sha256(value):
-        if not torch.is_tensor(value):
-            value = torch.as_tensor(value)
-        tensor = value.detach().contiguous()
-        digest = hashlib.sha256()
-        digest.update(str(tensor.dtype).encode("ascii"))
-        digest.update(json.dumps(list(tensor.shape), separators=(",", ":")).encode("ascii"))
-        digest.update(tensor.view(torch.uint8).cpu().numpy().tobytes())
-        return digest.hexdigest()
-
-    @staticmethod
-    def _single_clock_sample_id(meta):
-        if not isinstance(meta, Mapping):
-            raise ValueError("SingleClock identity audit requires mapping metadata")
-        video_name = meta.get("video_name") or meta.get("video_id")
-        if not isinstance(video_name, str) or not video_name:
-            raise ValueError("SingleClock identity audit requires video_name")
-        window_start = meta.get("window_start_frame", 0)
-        if torch.is_tensor(window_start):
-            if window_start.numel() != 1:
-                raise ValueError("SingleClock window_start_frame must be scalar")
-            window_start = window_start.item()
-        if isinstance(window_start, np.generic):
-            window_start = window_start.item()
-        if isinstance(window_start, float) and window_start.is_integer():
-            window_start = int(window_start)
-        return f"{video_name}|window_start_frame={window_start}", video_name, window_start
-
-    def enable_single_clock_identity_audit(self):
-        if not self.single_clock_admission:
-            raise RuntimeError("SingleClock identity audit requires an admitted SingleClock model")
-        self._single_clock_identity_audit_enabled = True
-        self._single_clock_identity_records = {}
-        self._single_clock_identity_exposure_count = 0
-        self._single_clock_identity_duplicate_counts = {}
-
-    def _record_single_clock_identity(self, inputs, masks, metas):
-        if not self._single_clock_identity_audit_enabled:
-            return
-        contract = self._single_clock_metadata(inputs, masks, metas)
-        positions = contract["irregular_selected_positions"]
-        selected_mask = contract["irregular_selected_mask"]
-        dense_lengths = contract["irregular_dense_valid_len"]
-        for batch_idx, meta in enumerate(metas):
-            sample_id, video_name, window_start = self._single_clock_sample_id(meta)
-            count = int(selected_mask[batch_idx].long().sum().item())
-            selected_rgb = inputs[batch_idx : batch_idx + 1, :, :, :count]
-            selected_positions = positions[batch_idx, :count]
-            mask_row = selected_mask[batch_idx]
-            record = {
-                "sample_id": sample_id,
-                "video_name": video_name,
-                "window_start_frame": window_start,
-                "selected_valid_len": count,
-                "dense_valid_len": int(dense_lengths[batch_idx].item()),
-                "selected_positions": [
-                    int(value) for value in selected_positions.detach().cpu().tolist()
-                ],
-                "selected_rgb_sha256": self._single_clock_tensor_sha256(selected_rgb),
-                "selected_positions_sha256": self._single_clock_tensor_sha256(selected_positions),
-                "selected_mask_sha256": self._single_clock_tensor_sha256(mask_row),
-            }
-            record["record_sha256"] = hashlib.sha256(
-                json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-            ).hexdigest()
-            self._single_clock_identity_exposure_count += 1
-            previous = self._single_clock_identity_records.get(sample_id)
-            if previous is not None:
-                identity_keys = ("video_name", "window_start_frame", "selected_valid_len", "dense_valid_len",
-                                 "selected_positions", "selected_rgb_sha256", "selected_positions_sha256", "selected_mask_sha256")
-                if any(previous[key] != record[key] for key in identity_keys):
-                    raise RuntimeError(f"conflicting duplicate SingleClock identity sample: {sample_id}")
-                self._single_clock_identity_duplicate_counts[sample_id] = self._single_clock_identity_duplicate_counts.get(sample_id, 0) + 1
-            else:
-                self._single_clock_identity_records[sample_id] = record
-
-    def single_clock_identity_payload(self):
-        if not self._single_clock_identity_audit_enabled:
-            raise RuntimeError("SingleClock identity audit was not enabled")
-        records = [
-            self._single_clock_identity_records[key]
-            for key in sorted(self._single_clock_identity_records)
-        ]
-        if not records:
-            raise RuntimeError("SingleClock identity audit collected no samples")
-        aggregate = hashlib.sha256(
-            json.dumps(records, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-        ).hexdigest()
-        duplicate_samples = [
-            {"sample_id": key, "duplicate_exposure_count": self._single_clock_identity_duplicate_counts[key]}
-            for key in sorted(self._single_clock_identity_duplicate_counts)
-        ]
-        return {
-            "schema_version": "duca_h65_single_clock_selected_input_identity_v1",
-            "sample_count": len(records),
-            "total_input_exposure_count": self._single_clock_identity_exposure_count,
-            "unique_physical_window_count": len(records),
-            "duplicate_exposure_count": self._single_clock_identity_exposure_count - len(records),
-            "duplicate_samples": duplicate_samples,
-            "aggregate_sha256": aggregate,
-            "records": records,
-        }
-
     def pad_data(self, inputs, masks):
         feat_len = inputs.shape[-1]
         if feat_len == self.max_seq_len:
@@ -316,6 +113,101 @@ class ActionFormer(SingleStageDetector):
         pad_masks[:, :feat_len] = masks
         return inputs, pad_masks
 
+    @staticmethod
+    def _normalize_native_temporal_geometry(config):
+        if config is None:
+            return None
+        if not isinstance(config, Mapping):
+            raise ValueError("native_temporal_geometry must be a mapping")
+        config = dict(config)
+        enabled = bool(config.pop("enabled", True))
+        if not enabled:
+            return None
+        allowed = {
+            "tubelet_size",
+            "expected_raw_count",
+            "expected_token_count",
+            "expected_transformer_depth",
+            "expected_adapter_indices",
+            "expected_adapter_kernel_size",
+            "expected_adapter_dilation",
+        }
+        unknown = sorted(set(config) - allowed)
+        if unknown:
+            raise ValueError(f"unknown native_temporal_geometry keys: {unknown}")
+        tubelet_size = int(config.get("tubelet_size", 2))
+        if tubelet_size <= 0:
+            raise ValueError("native_temporal_geometry.tubelet_size must be positive")
+        normalized = {"tubelet_size": tubelet_size}
+        for key in (
+            "expected_raw_count",
+            "expected_token_count",
+            "expected_transformer_depth",
+            "expected_adapter_kernel_size",
+            "expected_adapter_dilation",
+        ):
+            value = config.get(key)
+            if value is not None:
+                value = int(value)
+                if value <= 0:
+                    raise ValueError(f"native_temporal_geometry.{key} must be positive")
+            normalized[key] = value
+        adapter_indices = config.get("expected_adapter_indices")
+        if adapter_indices is not None:
+            adapter_indices = tuple(int(value) for value in adapter_indices)
+            if not adapter_indices or len(set(adapter_indices)) != len(adapter_indices):
+                raise ValueError(
+                    "native_temporal_geometry.expected_adapter_indices must be unique and non-empty"
+                )
+        normalized["expected_adapter_indices"] = adapter_indices
+        return normalized
+
+    def _align_native_temporal_geometry(self, features, masks, metas):
+        if self.native_temporal_geometry is None:
+            self._last_native_temporal_geometry_audit = None
+            return features, masks, metas
+        features, masks, metas, audit = align_native_tubelet_geometry(
+            features,
+            masks,
+            metas,
+            **self.native_temporal_geometry,
+        )
+        padding_audit = getattr(self.backbone, "latest_temporal_padding_mask_summary", None)
+        if not isinstance(padding_audit, dict) or padding_audit.get(
+            "strict_isolation_verified"
+        ) is not True:
+            raise RuntimeError(
+                "native temporal geometry requires strict padding isolation inside the video backbone"
+            )
+        audit["backbone_temporal_padding_isolation"] = dict(padding_audit)
+        audit["valid_tokens_depend_on_padding_after_isolation"] = False
+        self._last_native_temporal_geometry_audit = audit
+        return features, masks, metas
+
+    def _update_native_temporal_query_audit(self, feat_list, mask_list):
+        if self._last_native_temporal_geometry_audit is None:
+            return
+        level_lengths = [int(feature.shape[-1]) for feature in feat_list]
+        valid_per_level = [
+            [int(sample_mask.sum().item()) for sample_mask in level_mask]
+            for level_mask in mask_list
+        ]
+        self._last_native_temporal_geometry_audit.update(
+            query_level_lengths=level_lengths,
+            query_tensor_count=sum(level_lengths),
+            query_count=sum(level_lengths),
+            valid_query_counts_per_level=valid_per_level,
+            effective_query_counts_per_sample=[
+                int(sum(level_counts)) for level_counts in zip(*valid_per_level)
+            ],
+            representation_lift="none_native_j_grid",
+        )
+
+    def collect_native_temporal_geometry_audit(self):
+        if self._last_native_temporal_geometry_audit is None:
+            return {}
+        return dict(self._last_native_temporal_geometry_audit)
+
     def train(self, mode=True):
         super().train(mode)
         if self.selector_train_only:
@@ -331,91 +223,33 @@ class ActionFormer(SingleStageDetector):
         return self
 
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
-        skip_frame_selector = bool(kwargs.pop("_duca_skip_frame_selector", False))
-        counterfactual_eval = bool(kwargs.pop("_duca_counterfactual_eval", False))
-        force_single_clock_off = bool(kwargs.pop("_duca_single_clock_force_off", False))
-        gt_boundary_validity = kwargs.pop("gt_boundary_validity", None)
         losses = dict()
-        selector_loss_keys = set()
-        raw_selector_context = None
-        detector_rng_state = self._capture_protected_detector_rng(inputs)
-        if self.frame_selector is not None and not skip_frame_selector:
-            raw_selector_context = (inputs, masks, metas, gt_segments, gt_labels)
+        if self.frame_selector is not None:
             selector_outputs = self.frame_selector.forward_train(
                 inputs=inputs,
                 masks=masks,
                 metas=metas,
                 gt_segments=gt_segments,
                 gt_labels=gt_labels,
-                gt_boundary_validity=gt_boundary_validity,
             )
             inputs = selector_outputs["inputs"]
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
             gt_segments = selector_outputs["gt_segments"]
             gt_labels = selector_outputs["gt_labels"]
-            self._validate_protected_selector_contract(
-                inputs,
-                masks,
-                metas,
-                gt_segments=gt_segments,
-                gt_labels=gt_labels,
-                original_gt_segments=raw_selector_context[3],
-                original_gt_labels=raw_selector_context[4],
-            )
-            selector_losses = selector_outputs.get("losses", {})
-            self._validate_selector_losses(selector_losses)
-            for key, value in selector_losses.items():
-                if key in losses:
-                    raise ValueError(f"frame_selector loss key collision: {key}")
-                losses[key] = value
-            selector_loss_keys = set(losses)
+            losses.update(selector_outputs.get("losses", {}))
             if self.selector_train_only:
                 inputs = inputs.detach()
 
-        request = (
-            selector_outputs.get("counterfactual_request")
-            if self.frame_selector is not None and not skip_frame_selector
-            else None
-        )
-        if (
-            self.frame_selector is not None
-            and not skip_frame_selector
-            and self.frame_selector.require_counterfactual_utility_teacher
-            and request is None
-        ):
-            raise RuntimeError("required integrated counterfactual teacher request is missing")
-        if self.selector_train_only_skip_detector:
-            if request is not None:
-                raise RuntimeError(
-                    "selector-only detector skipping is incompatible with a counterfactual detector teacher"
-                )
-            if isinstance(self.frame_selector.last_forward_summary, dict):
-                self.frame_selector.last_forward_summary[
-                    "frontend_only_detector_skipped"
-                ] = True
-            return self._selector_only_losses(losses, selector_loss_keys)
-        counterfactual_loss = None
-        if request is not None:
-            if raw_selector_context is None:
-                raise RuntimeError("counterfactual teacher requires the pre-selector training context")
-            # Evaluate and restore every train-only hard alternative before the
-            # main detector graph is built. Restoring mutable training buffers
-            # after that graph exists would invalidate autograd version checks.
-            counterfactual_loss = self._duca_counterfactual_teacher_loss(
-                raw_selector_context, selector_outputs["selector_outputs"], request, **kwargs
-            )
-
-        self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self._forward_backbone_with_single_clock(
-                inputs,
-                masks,
-                metas,
-                force_off=force_single_clock_off,
-            )
+            if self.native_temporal_geometry is None:
+                x = self.backbone(inputs)
+            else:
+                x = self.backbone(inputs, masks)
         else:
             x = inputs
+
+        x, masks, metas = self._align_native_temporal_geometry(x, masks, metas)
 
         self._assert_feature_mask_temporal_match(x, masks, "before token_compressor")
         if self.token_compressor is not None:
@@ -439,16 +273,13 @@ class ActionFormer(SingleStageDetector):
                     f"got {x.shape[-1]} and {self.max_seq_len}"
                 )
 
-        if self.true_time_residual is not None:
-            self._assert_feature_mask_temporal_match(x, masks, "before true_time_residual")
-            x = self.true_time_residual(x, masks, metas)
-            self._assert_feature_mask_temporal_match(x, masks, "after true_time_residual")
-
         # pad the features and unsqueeze the mask for actionformer
         x, masks = self.pad_data(x, masks)
 
         if self.with_projection:
             x, masks = self.projection(x, masks)
+
+        self._update_native_temporal_query_audit(x, masks)
 
         metas = self._inject_pc_ot_mras_reader_outputs(x, masks, metas)
         reader_extra_losses = {}
@@ -468,226 +299,27 @@ class ActionFormer(SingleStageDetector):
             gt_labels=gt_labels,
             **kwargs,
         )
-        self._merge_detector_losses(
-            losses,
-            loc_losses,
-            source_name="rpn_head",
-            protected_keys=selector_loss_keys,
-        )
-        if (
-            self.frame_selector is not None
-            and not skip_frame_selector
-            and not counterfactual_eval
-            and hasattr(self.frame_selector, "detector_contribution_distillation_losses")
-        ):
-            contribution_losses = self.frame_selector.detector_contribution_distillation_losses(
-                selector_outputs=selector_outputs["selector_outputs"],
-                detector_losses=loc_losses,
-                selected_inputs=selector_outputs["selector_outputs"].get(
-                    "detector_contribution_teacher_inputs",
-                    inputs,
-                ),
-            )
-            for key, value in contribution_losses.items():
-                if key in losses:
-                    raise ValueError(f"detector contribution loss key collision: {key}")
-                losses[key] = value
+        losses.update(loc_losses)
         self._merge_pc_ot_mras_extra_losses(
             losses,
             reader_extra_losses,
             source_name="pc_ot_mras_reader_losses",
         )
 
-        if counterfactual_loss is not None:
-            if "counterfactual_utility_distillation_loss" in losses:
-                raise ValueError("counterfactual distillation loss key collision")
-            losses["counterfactual_utility_distillation_loss"] = counterfactual_loss
-
-        if counterfactual_eval:
-            return losses
-
         # only key has loss will be record
         if self.selector_train_only:
-            losses = self._selector_only_losses(losses, selector_loss_keys)
+            selector_cost_terms = [
+                value for key, value in losses.items() if key.startswith("selector_") and key.endswith("_loss")
+            ]
+            if not selector_cost_terms:
+                raise RuntimeError("selector_train_only=True requires at least one selector loss")
+            losses["cost"] = sum(selector_cost_terms)
         else:
             losses["cost"] = sum(_value for _key, _value in losses.items())
         return losses
 
-    @staticmethod
-    def _selector_only_losses(losses, selector_loss_keys):
-        selector_loss_keys = tuple(sorted(str(key) for key in selector_loss_keys))
-        if not selector_loss_keys:
-            raise RuntimeError("selector_train_only=True requires at least one selector loss")
-        selector_losses = {key: losses[key] for key in selector_loss_keys}
-        selector_losses["cost"] = sum(selector_losses.values())
-        return selector_losses
-
-    @staticmethod
-    def _duca_gather_raw(inputs, positions):
-        if inputs.ndim not in (3, 5, 6):
-            raise ValueError("DUCA counterfactual gather requires [B,C,T], [B,C,T,H,W], or [B,N,C,T,H,W]")
-        time_dim = 2 if inputs.ndim in (3, 5) else 3
-        view = [positions.shape[0]] + [1] * (inputs.ndim - 1)
-        view[time_dim] = positions.shape[1]
-        expand = list(inputs.shape)
-        expand[time_dim] = positions.shape[1]
-        slot_mask = positions >= 0
-        index = positions.clamp_min(0).view(view).expand(expand)
-        gathered = torch.gather(inputs, time_dim, index)
-        mask_view = [positions.shape[0]] + [1] * (inputs.ndim - 1)
-        mask_view[time_dim] = positions.shape[1]
-        return gathered * slot_mask.view(mask_view).to(dtype=gathered.dtype)
-
-    @staticmethod
-    def _duca_detector_objective(losses):
-        terms = [
-            value for key, value in losses.items()
-            if key != "cost" and key.endswith("loss") and ("cls" in key or "reg" in key)
-        ]
-        if not terms:
-            raise RuntimeError("official ActionFormer counterfactual pass produced no cls/reg loss")
-        objective = sum(terms)
-        if objective.ndim != 0 or not torch.isfinite(objective):
-            raise RuntimeError("counterfactual cls+reg objective must be a finite scalar")
-        return objective
-
-    @staticmethod
-    def _duca_counterfactual_teacher_autocast(inputs):
-        if inputs.is_cuda and torch.is_autocast_enabled():
-            # The teacher is the first consumer of the detector parameters in
-            # this forward. Caching its no-grad FP16 casts would make the main
-            # detector reuse detached weights under the outer autocast context.
-            return torch.autocast(
-                device_type="cuda",
-                dtype=torch.get_autocast_gpu_dtype(),
-                enabled=True,
-                cache_enabled=False,
-            )
-        return nullcontext()
-
-    def _duca_counterfactual_teacher_loss(self, raw_context, selector_state, request, **kwargs):
-        raw_inputs, raw_masks, raw_metas, raw_segments, raw_labels = raw_context
-        selections = request["candidate_selections"]
-        candidate_valid = request["candidate_valid"]
-        baseline_positions = selector_state["grid"].selected_positions
-        detector_grid_positions = request.get("detector_grid_positions", baseline_positions)
-        if detector_grid_positions.shape != baseline_positions.shape:
-            raise RuntimeError("counterfactual detector grid must align with acquisition positions")
-        utilities = selector_state["center_scores"].new_zeros(
-            candidate_valid.shape,
-            dtype=torch.float32,
-        )
-        baseline_detector_loss = selector_state["center_scores"].new_full(
-            (candidate_valid.shape[0],),
-            float("nan"),
-            dtype=torch.float32,
-        )
-        candidate_detector_loss = selector_state["center_scores"].new_full(
-            candidate_valid.shape,
-            float("nan"),
-            dtype=torch.float32,
-        )
-
-        if raw_metas is None or raw_segments is None or raw_labels is None:
-            raise RuntimeError("counterfactual teacher requires train-only metas, segments and labels")
-
-        def evaluate_one(batch_index, positions, detector_positions):
-            positions = positions.reshape(1, -1).to(device=raw_inputs.device)
-            detector_positions = detector_positions.reshape(1, -1).to(device=raw_inputs.device)
-            selected_inputs = self._duca_gather_raw(raw_inputs[batch_index : batch_index + 1], positions)
-            selected_masks = positions >= 0
-            meta = dict(raw_metas[batch_index])
-            active = selected_masks[0]
-            detector_pos_list = [
-                int(x)
-                for x in detector_positions[0, active].detach().cpu().tolist()
-            ]
-            meta["selected_axis_to_true_time_dense_index"] = detector_pos_list
-            meta["duca_acquisition_positions"] = [
-                int(x) for x in positions[0, active].detach().cpu().tolist()
-            ]
-            meta["duca_detector_grid_positions"] = detector_pos_list
-            meta["truetime_dense_len"] = int(raw_masks.shape[-1])
-            meta["truetime_dense_valid_len"] = int(raw_masks[batch_index].sum().item())
-            remapped_segments, remapped_labels, remapped_metas = self.frame_selector._remap_train_targets_to_selected_axis(
-                [raw_segments[batch_index]], [raw_labels[batch_index]], [meta]
-            )
-            candidate_losses = self.forward_train(
-                selected_inputs, selected_masks, remapped_metas, remapped_segments, remapped_labels,
-                _duca_skip_frame_selector=True,
-                _duca_counterfactual_eval=True,
-                _duca_single_clock_force_off=True,
-                **kwargs,
-            )
-            return self._duca_detector_objective(candidate_losses)
-
-        modules = tuple(self.modules())
-        module_training = {module: module.training for module in modules}
-        buffer_state = {
-            name: value.detach().clone()
-            for name, value in self.named_buffers()
-            if not name.startswith("frame_selector.")
-        }
-        cpu_rng = torch.random.get_rng_state()
-        cuda_rng = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-        python_rng = random.getstate()
-        numpy_rng = np.random.get_state()
-        normalizer = self.rpn_head.loss_normalizer.detach().clone()
-
-        def restore_teacher_state():
-            current_buffers = dict(self.named_buffers())
-            for name, value in buffer_state.items():
-                current_buffers[name].copy_(value)
-            torch.random.set_rng_state(cpu_rng)
-            if cuda_rng is not None:
-                torch.cuda.set_rng_state_all(cuda_rng)
-            random.setstate(python_rng)
-            np.random.set_state(numpy_rng)
-
-        try:
-            if not self.training or not self.rpn_head.training:
-                raise RuntimeError("counterfactual teacher must use the official training objective")
-            self.rpn_head.duca_set_frozen_loss_normalizer(normalizer)
-            with torch.no_grad(), self._duca_counterfactual_teacher_autocast(raw_inputs):
-                for b in range(baseline_positions.shape[0]):
-                    if not bool(candidate_valid[b].any().item()):
-                        continue
-                    restore_teacher_state()
-                    baseline_loss = evaluate_one(b, baseline_positions[b], detector_grid_positions[b])
-                    baseline_detector_loss[b] = baseline_loss
-                    for m in range(selections.shape[1]):
-                        if candidate_valid[b, m]:
-                            restore_teacher_state()
-                            candidate_loss = evaluate_one(
-                                b,
-                                selections[b, m],
-                                detector_grid_positions[b],
-                            )
-                            candidate_detector_loss[b, m] = candidate_loss
-                            utilities[b, m] = baseline_loss - candidate_loss
-        finally:
-            self.rpn_head.duca_set_frozen_loss_normalizer(None)
-            restore_teacher_state()
-            for module, training in module_training.items():
-                module.training = training
-        if not torch.isfinite(utilities[candidate_valid]).all():
-            raise RuntimeError("counterfactual utility teacher produced non-finite gain")
-        active_batches = candidate_valid.any(dim=1)
-        if not torch.isfinite(baseline_detector_loss[active_batches]).all():
-            raise RuntimeError("counterfactual utility teacher produced non-finite baseline loss")
-        if not torch.isfinite(candidate_detector_loss[candidate_valid]).all():
-            raise RuntimeError("counterfactual utility teacher produced non-finite candidate loss")
-        return self.frame_selector.counterfactual_distillation_loss(
-            selector_state, request["candidate_positions"], request["replaced_slots"],
-            utilities.detach(), candidate_valid,
-            baseline_detector_loss=baseline_detector_loss.detach(),
-            candidate_detector_loss=candidate_detector_loss.detach(),
-        )
-
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
-        force_single_clock_off = bool(kwargs.pop("_duca_single_clock_force_off", False))
         self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
-        detector_rng_state = self._capture_protected_detector_rng(inputs)
         if self.frame_selector is not None:
             selector_outputs = self.frame_selector.forward_test(
                 inputs=inputs,
@@ -697,26 +329,17 @@ class ActionFormer(SingleStageDetector):
             inputs = selector_outputs["inputs"]
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
-            self._validate_protected_selector_contract(
-                inputs,
-                masks,
-                metas,
-            )
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
-            self._require_selector_remap_metadata(metas)
 
-        self._record_single_clock_identity(inputs, masks, metas)
-
-        self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self._forward_backbone_with_single_clock(
-                inputs,
-                masks,
-                metas,
-                force_off=force_single_clock_off,
-            )
+            if self.native_temporal_geometry is None:
+                x = self.backbone(inputs)
+            else:
+                x = self.backbone(inputs, masks)
         else:
             x = inputs
+
+        x, masks, metas = self._align_native_temporal_geometry(x, masks, metas)
 
         self._assert_feature_mask_temporal_match(x, masks, "before token_compressor")
         if self.token_compressor is not None:
@@ -736,15 +359,12 @@ class ActionFormer(SingleStageDetector):
                     f"got {x.shape[-1]} and {self.max_seq_len}"
                 )
 
-        if self.true_time_residual is not None:
-            self._assert_feature_mask_temporal_match(x, masks, "before true_time_residual")
-            x = self.true_time_residual(x, masks, metas)
-            self._assert_feature_mask_temporal_match(x, masks, "after true_time_residual")
-
         x, masks = self.pad_data(x, masks)
 
         if self.with_projection:
             x, masks = self.projection(x, masks)
+
+        self._update_native_temporal_query_audit(x, masks)
 
         metas = self._inject_pc_ot_mras_reader_outputs(x, masks, metas)
 
@@ -752,7 +372,6 @@ class ActionFormer(SingleStageDetector):
             x, masks, metas = self._call_neck_forward(x, masks, metas=metas)
 
         rpn_proposals, rpn_scores = self._call_rpn_head_forward_test(x, masks, metas=metas, **kwargs)
-        self._last_forward_test_metas = metas
         predictions = rpn_proposals, rpn_scores
         return predictions
 
@@ -761,15 +380,8 @@ class ActionFormer(SingleStageDetector):
         # see https://github.com/karpathy/minGPT/blob/master/mingpt/model.py#L134
         decay = set()
         no_decay = set()
-        whitelist_weight_modules = (nn.Linear, nn.Conv1d, nn.Conv2d, nn.Conv3d)
-        blacklist_weight_modules = (
-            nn.LayerNorm,
-            nn.GroupNorm,
-            nn.BatchNorm1d,
-            nn.BatchNorm2d,
-            nn.BatchNorm3d,
-            nn.Embedding,
-        )
+        whitelist_weight_modules = (nn.Linear, nn.Conv1d)
+        blacklist_weight_modules = (nn.LayerNorm, nn.GroupNorm)
 
         # loop over all modules / params
         for mn, m in self.named_modules():
@@ -804,16 +416,8 @@ class ActionFormer(SingleStageDetector):
                     # pre-backbone selector reader slot queries are learned embeddings
                     no_decay.add(fpn)
 
-        param_dict = {pn: p for pn, p in self.named_parameters() if not pn.startswith("backbone") and p.requires_grad}
-        for fpn, param in param_dict.items():
-            if fpn in decay or fpn in no_decay or not fpn.startswith("frame_selector."):
-                continue
-            if fpn.endswith(".weight") and param.ndim >= 2:
-                decay.add(fpn)
-            else:
-                no_decay.add(fpn)
-
         # validate that we considered every parameter
+        param_dict = {pn: p for pn, p in self.named_parameters() if not pn.startswith("backbone") and p.requires_grad}
         inter_params = decay & no_decay
         union_params = decay | no_decay
         assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
@@ -821,158 +425,16 @@ class ActionFormer(SingleStageDetector):
             len(param_dict.keys() - union_params) == 0
         ), "parameters %s were not separated into either decay/no_decay set!" % (str(param_dict.keys() - union_params),)
 
-        selector = getattr(self, "frame_selector", None)
-        transition_only = getattr(selector, "selector_variant", None) == "transition_only"
-        protected_e2e = (
-            getattr(selector, "selector_variant", None)
-            == "protected_e2e_physical"
-        )
-
-        def parameter_lr(name):
-            scorer_prefixes = (
-                "frame_selector.adapter.transition_scorer.",
-                "frame_selector.adapter.density_mixture_head.",
-                "frame_selector.adapter.sampling_rate_utility_fusion.",
-            )
-            protected_adapter_prefix = (
-                "frame_selector.transition_scorer.selector_adapter."
-            )
-            protected_head_prefix = (
-                "frame_selector.transition_scorer.selector_score_head."
-            )
-            coarse_prefix = "frame_selector.raw_actionness_source.probe_module."
-            if transition_only and name.startswith(scorer_prefixes):
-                return float(selector.transition_scorer_lr)
-            if protected_e2e and name.startswith(
-                (protected_adapter_prefix, protected_head_prefix)
-            ):
-                return float(selector.selector_lr)
-            if name.startswith(coarse_prefix):
-                temporal_marker = ".official_temporal."
-                tail = name.split(temporal_marker, 1)[1] if temporal_marker in name else ""
-                parts = tail.split(".")
-                is_encoder_action_head = tail.startswith("encoder.conv_out.")
-                is_decoder_action_head = (
-                    len(parts) >= 4 and parts[0] == "decoders" and parts[2] == "conv_out"
-                )
-                if is_encoder_action_head or is_decoder_action_head:
-                    return float(selector.action_head_lr)
-                return float(selector.coarse_trunk_lr)
-            return float(cfg["lr"])
-
-        if protected_e2e:
-            protected_prefixes = (
-                "frame_selector.transition_scorer.selector_adapter.",
-                "frame_selector.transition_scorer.selector_score_head.",
-                "frame_selector.raw_actionness_source.probe_module.",
-            )
-            unexpected = sorted(
-                name
-                for name in param_dict
-                if name.startswith("frame_selector.")
-                and not name.startswith(protected_prefixes)
-            )
-            if unexpected:
-                raise AssertionError(
-                    "protected DUCA exposes trainable selector parameters outside "
-                    f"the frozen optimizer contract: {unexpected}"
-                )
-
-        grouped = {}
-        for names, weight_decay in ((decay, float(cfg["weight_decay"])), (no_decay, 0.0)):
-            for name in sorted(names):
-                lr = parameter_lr(name)
-                grouped.setdefault((lr, weight_decay), []).append(param_dict[name])
+        # create the pytorch optimizer object
         optim_groups = [
-            {"params": params, "weight_decay": weight_decay, "lr": lr}
-            for (lr, weight_decay), params in sorted(grouped.items())
-            if params
+            {
+                "params": [param_dict[pn] for pn in sorted(list(decay))],
+                "weight_decay": cfg["weight_decay"],
+                "lr": cfg["lr"],
+            },
+            {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0, "lr": cfg["lr"]},
         ]
         return optim_groups
-
-    def _capture_protected_detector_rng(self, inputs):
-        selector = getattr(self, "frame_selector", None)
-        if selector is None or not bool(
-            getattr(selector, "separate_detector_rng", False)
-        ):
-            return None
-        return {
-            "cpu": torch.random.get_rng_state(),
-            "cuda": (
-                torch.cuda.get_rng_state_all()
-                if torch.is_tensor(inputs) and inputs.is_cuda
-                else None
-            ),
-            "python": random.getstate(),
-            "numpy": np.random.get_state(),
-        }
-
-    @staticmethod
-    def _restore_protected_detector_rng(state):
-        if state is None:
-            return
-        torch.random.set_rng_state(state["cpu"])
-        if state["cuda"] is not None:
-            torch.cuda.set_rng_state_all(state["cuda"])
-        random.setstate(state["python"])
-        np.random.set_state(state["numpy"])
-
-    def _validate_protected_selector_contract(
-        self,
-        inputs,
-        masks,
-        metas,
-        *,
-        gt_segments=None,
-        gt_labels=None,
-        original_gt_segments=None,
-        original_gt_labels=None,
-    ):
-        selector = getattr(self, "frame_selector", None)
-        if getattr(selector, "selector_variant", None) != "protected_e2e_physical":
-            return
-        if masks.ndim != 2 or int(masks.shape[1]) > int(selector.budget):
-            raise RuntimeError("protected DUCA detector mask violates exact-K budget")
-        temporal_dim = 3 if inputs.ndim == 6 else 2
-        if inputs.ndim not in {3, 5, 6} or int(inputs.shape[temporal_dim]) != int(
-            masks.shape[1]
-        ):
-            raise RuntimeError(
-                "protected DUCA detector input and mask temporal axes disagree"
-            )
-        if not isinstance(metas, (list, tuple)) or len(metas) != int(
-            inputs.shape[0]
-        ):
-            raise RuntimeError("protected DUCA requires one detector meta per sample")
-        for meta, mask in zip(metas, masks):
-            if meta.get("duca_contract") != "duca_protected_e2e_physical_v1":
-                raise RuntimeError("protected DUCA metadata contract is missing")
-            if meta.get("irregular_native_axis") is not True:
-                raise RuntimeError("protected DUCA requires native dense detector axis")
-            if any(
-                bool(meta.get(key, False))
-                for key in (
-                    "remap_gt_to_selected_axis",
-                    "gt_remapped_to_selected_axis",
-                    "pc_ot_mras_prebackbone_remap_gt_to_selected_axis",
-                    "selected_axis_remap_required",
-                    "detector_prediction_inverse_map_required",
-                )
-            ):
-                raise RuntimeError("protected DUCA forbids selected-axis remapping")
-            if meta.get("detector_output_coordinate_space") != "dense_physical":
-                raise RuntimeError(
-                    "protected DUCA detector output must remain in dense physical coordinates"
-                )
-            selected_count = int(meta.get("irregular_selected_count", -1))
-            if selected_count != int(mask.to(dtype=torch.bool).sum().item()):
-                raise RuntimeError(
-                    "protected DUCA metadata selected count does not match detector mask"
-                )
-        if original_gt_segments is not None and gt_segments is not original_gt_segments:
-            raise RuntimeError("protected DUCA must preserve dense GT segment objects")
-        if original_gt_labels is not None and gt_labels is not original_gt_labels:
-            raise RuntimeError("protected DUCA must preserve dense GT label objects")
 
     def _freeze_non_selector_trainable_parameters(self):
         for name, param in self.named_parameters():

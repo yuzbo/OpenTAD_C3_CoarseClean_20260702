@@ -7,6 +7,8 @@ from .mlp_proj import MLPPyramidProj
 from .mamba_proj import MambaProj
 from .dyne_proj import DynEProj
 from .causal_proj import CausalProj
+from .irregular_actionformer_proj import IrregularConvTransformerProj
+from .phystime_projection import PhysTimeMeasureProjection, SupportIntegratedMeasureAttention
 
 __all__ = [
     "ConvSingleProj",
@@ -19,4 +21,7 @@ __all__ = [
     "MambaProj",
     "DynEProj",
     "CausalProj",
+    "IrregularConvTransformerProj",
+    "PhysTimeMeasureProjection",
+    "SupportIntegratedMeasureAttention",
 ]

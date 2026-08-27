@@ -48,7 +48,10 @@ class BackboneWrapper(nn.Module):
 
         # 5. freeze_backbone: whether to freeze the backbone, default is False
         self.freeze_backbone = getattr(custom_cfg, "freeze_backbone", False)
-        self.pjst_derivative_only = bool(getattr(custom_cfg, "pjst_derivative_only", False))
+        self.strict_temporal_padding_mask = bool(
+            getattr(custom_cfg, "strict_temporal_padding_mask", False)
+        )
+        self.latest_temporal_padding_mask_summary = None
 
         print("freeze_backbone: {}, norm_eval: {}".format(self.freeze_backbone, self.norm_eval))
 
@@ -64,16 +67,7 @@ class BackboneWrapper(nn.Module):
             self.temporal_checkpointing_chunk_num = custom_cfg.temporal_checkpointing_chunk_num
             self.temporal_checkpointing_chunk_dim = custom_cfg.temporal_checkpointing_chunk_dim
 
-    def forward(
-        self,
-        frames,
-        masks=None,
-        irregular_selected_positions=None,
-        irregular_dense_valid_len=None,
-        irregular_selected_mask=None,
-        single_clock_gate_zero=False,
-        metas=None,
-    ):
+    def forward(self, frames, masks=None):
         # two types: snippet or frame
 
         # snippet: 3D backbone, [bs, T, 3, clip_len, H, W]
@@ -82,15 +76,18 @@ class BackboneWrapper(nn.Module):
         # set all normalization layers
         self.set_norm_layer()
 
-        # PJST-D1 freezes K=384 (the selected input before clip rearrangement).
-        pjst_k = int(frames.shape[3])
-
         # data preprocessing: normalize mean and std
         frames, _ = self.model.data_preprocessor.preprocess(
             self.tensor_to_list(frames),  # need list input
             data_samples=None,
             training=False,  # for blending, which is not used in openTAD
         )
+        original_batches = int(frames.shape[0])
+        raw_masks = None
+        if self.strict_temporal_padding_mask:
+            if masks is None or masks.ndim != 2 or int(masks.shape[0]) != original_batches:
+                raise ValueError("strict temporal padding isolation requires raw masks with shape [B,K]")
+            raw_masks = masks.to(device=frames.device, dtype=torch.bool)
 
         # pre_processing_pipeline:
         if self.pre_processing_pipeline is not None:
@@ -98,46 +95,26 @@ class BackboneWrapper(nn.Module):
 
         # flatten the batch dimension and num_segs dimension
         batches, num_segs = frames.shape[0:2]
-        actual_positions = canonical_positions = None
-        dense_valid_len_per_clip = tubelet_valid_mask = None
-        pjst_pair_scale = pjst_pair_valid = pjst_exact_uniform = None
-        if self.pjst_derivative_only:
-            # ON extracts every sample's real selector positions from metas; the
-            # explicit single-clock position arguments are a different route.
-            if irregular_selected_positions is not None:
-                raise ValueError("PJST-D1 extracts positions from metas; do not pass irregular_selected_positions")
-            from opentad.models.utils.temporal_grid import (
-                pack_pjst_pair_metadata,
-                pjst_pair_metadata,
-                pjst_selector_positions_from_metas,
-            )
-            sel_positions, sel_dense_len, sel_mask = pjst_selector_positions_from_metas(
-                metas, k=pjst_k, device=frames.device
-            )
-            pair_meta = pjst_pair_metadata(sel_positions, sel_dense_len, sel_mask)
-            packed = pack_pjst_pair_metadata(pair_meta, clips=(pjst_k // 16))
-            pjst_pair_scale = packed["pair_scale"]
-            pjst_pair_valid = packed["pair_valid"]
-            pjst_exact_uniform = packed["exact_uniform_identity"]
-        elif irregular_selected_positions is not None:
-            from opentad.models.utils.temporal_grid import global_rank_clip_coordinates
-            coords = global_rank_clip_coordinates(
-                irregular_selected_positions,
-                irregular_dense_valid_len,
-                selected_valid_mask=irregular_selected_mask,
-                k=irregular_selected_positions.shape[1],
-                clip_len=16,
-                tubelet_size=2,
-            )
-            actual_positions = coords["actual"].flatten(0, 1)
-            canonical_positions = coords["canonical"].flatten(0, 1)
-            tubelet_valid_mask = coords["tubelet_valid_mask"].flatten(0, 1)
-            dense_valid_len_per_clip = (
-                coords["irregular_dense_valid_len"][:, None]
-                .expand(-1, coords["actual"].shape[1])
-                .flatten(0, 1)
-            )
         frames = frames.flatten(0, 1).contiguous()  # [bs*num_seg, ...]
+        backbone_temporal_mask = None
+        if self.strict_temporal_padding_mask:
+            if self.use_temporal_checkpointing:
+                raise ValueError("strict temporal padding isolation does not support wrapper checkpoint chunking")
+            temporal_length = int(frames.shape[2])
+            if batches % original_batches:
+                raise ValueError("pre-processing changed the batch axis incompatibly with temporal masking")
+            temporal_chunks = batches // original_batches
+            if int(raw_masks.shape[1]) != temporal_chunks * temporal_length:
+                raise ValueError("raw mask length does not match pre-processed temporal chunks")
+            backbone_temporal_mask = raw_masks.reshape(
+                original_batches, temporal_chunks, temporal_length
+            ).reshape(batches, temporal_length)
+            backbone_temporal_mask = (
+                backbone_temporal_mask[:, None, :]
+                .expand(batches, num_segs, temporal_length)
+                .reshape(batches * num_segs, temporal_length)
+            )
+            frames = frames * backbone_temporal_mask[:, None, :, None, None].to(dtype=frames.dtype)
 
         # go through the video backbone
         if self.freeze_backbone:  # freeze everything even in training
@@ -147,22 +124,12 @@ class BackboneWrapper(nn.Module):
                         frames,
                         self.temporal_checkpointing_chunk_num,
                         self.temporal_checkpointing_chunk_dim,
-                        actual_positions, canonical_positions,
-                        dense_valid_len_per_clip, tubelet_valid_mask,
-                        single_clock_gate_zero,
-                        pjst_pair_scale, pjst_pair_valid, pjst_exact_uniform,
                     )
                 else:
-                    features = self._backbone_forward(
-                        frames,
-                        actual_positions,
-                        canonical_positions,
-                        dense_valid_len_per_clip,
-                        tubelet_valid_mask,
-                        single_clock_gate_zero,
-                        pjst_pair_scale,
-                        pjst_pair_valid,
-                        pjst_exact_uniform,
+                    features = (
+                        self.model.backbone(frames, temporal_mask=backbone_temporal_mask)
+                        if self.strict_temporal_padding_mask
+                        else self.model.backbone(frames)
                     )
 
         else:  # let the model.train() or model.eval() decide whether to freeze
@@ -171,22 +138,12 @@ class BackboneWrapper(nn.Module):
                     frames,
                     self.temporal_checkpointing_chunk_num,
                     self.temporal_checkpointing_chunk_dim,
-                    actual_positions, canonical_positions,
-                    dense_valid_len_per_clip, tubelet_valid_mask,
-                    single_clock_gate_zero,
-                    pjst_pair_scale, pjst_pair_valid, pjst_exact_uniform,
                 )
             else:
-                features = self._backbone_forward(
-                    frames,
-                    actual_positions,
-                    canonical_positions,
-                    dense_valid_len_per_clip,
-                    tubelet_valid_mask,
-                    single_clock_gate_zero,
-                    pjst_pair_scale,
-                    pjst_pair_valid,
-                    pjst_exact_uniform,
+                features = (
+                    self.model.backbone(frames, temporal_mask=backbone_temporal_mask)
+                    if self.strict_temporal_padding_mask
+                    else self.model.backbone(frames)
                 )
 
         # unflatten and pool the features
@@ -197,37 +154,38 @@ class BackboneWrapper(nn.Module):
 
         # apply mask
         if masks is not None and features.dim() == 3:
-            features = features * masks.unsqueeze(1).detach().float()
+            if self.strict_temporal_padding_mask:
+                feature_length = int(features.shape[-1])
+                raw_length = int(raw_masks.shape[-1])
+                if raw_length % feature_length:
+                    raise ValueError("strict temporal padding mask cannot be reduced to backbone feature length")
+                output_masks = raw_masks.reshape(
+                    raw_masks.shape[0], feature_length, raw_length // feature_length
+                ).any(dim=-1)
+                features = features * output_masks.unsqueeze(1).to(dtype=features.dtype)
+                model_summary = getattr(
+                    self.model.backbone, "latest_temporal_padding_mask_summary", None
+                )
+                if not isinstance(model_summary, dict) or model_summary.get(
+                    "strict_isolation_verified"
+                ) is not True:
+                    raise RuntimeError("video backbone did not verify strict temporal padding isolation")
+                self.latest_temporal_padding_mask_summary = {
+                    **model_summary,
+                    "wrapper_enabled": True,
+                    "output_invalid_features_zeroed": True,
+                    "output_valid_counts": [int(row.sum().item()) for row in output_masks],
+                }
+            else:
+                features = features * masks.unsqueeze(1).detach().float()
+                self.latest_temporal_padding_mask_summary = {
+                    "enabled": False,
+                    "strict_isolation_verified": False,
+                }
 
         # make sure detector has the float32 input
         features = features.to(torch.float32)
         return features
-
-    def _backbone_forward(
-        self,
-        frames,
-        actual_positions,
-        canonical_positions,
-        dense_valid_len_per_clip,
-        tubelet_valid_mask,
-        single_clock_gate_zero,
-        pjst_pair_scale,
-        pjst_pair_valid,
-        pjst_exact_uniform,
-    ):
-        """Call the VideoMAE backbone, passing PJST kwargs only when ON."""
-        kwargs = dict(
-            actual_positions=actual_positions,
-            canonical_positions=canonical_positions,
-            dense_valid_len=dense_valid_len_per_clip,
-            tubelet_valid_mask=tubelet_valid_mask,
-            relative_physical_time_gate_zero=single_clock_gate_zero,
-        )
-        if self.pjst_derivative_only:
-            kwargs["pjst_pair_scale"] = pjst_pair_scale
-            kwargs["pjst_pair_valid"] = pjst_pair_valid
-            kwargs["pjst_exact_uniform_identity"] = pjst_exact_uniform
-        return self.model.backbone(frames, **kwargs)
 
     def tensor_to_list(self, tensor):
         return [t for t in tensor]
@@ -250,18 +208,7 @@ class BackboneWrapper(nn.Module):
                     for param in m.parameters():
                         param.requires_grad = False
 
-    def temporal_checkpointing(
-        self,
-        frames,
-        chunk_num,
-        chunk_dim,
-        actual_positions=None,
-        canonical_positions=None,
-        dense_valid_len=None,
-        tubelet_valid_mask=None,
-        single_clock_gate_zero=False,
-        pjst_pair_scale=None, pjst_pair_valid=None, pjst_exact_uniform=None,
-    ):
+    def temporal_checkpointing(self, frames, chunk_num, chunk_dim):
         """Temporal Checkpointing for Video Backbone.
 
         Temporal checkpointing will 1) split the video frames along the temporal dimension and sequentially forward each chunk with
@@ -274,54 +221,15 @@ class BackboneWrapper(nn.Module):
             chunk_dim (int): input shape is [B*N,3,T,H,W], so either dim=0 or 2 is fine
         """
 
-        if self.pjst_derivative_only and chunk_dim != 0:
-            raise ValueError("PJST-D1 temporal checkpointing requires chunk_dim=0")
+        def _inner_forward(frames):
+            return self.model.backbone(frames)
 
-        def _inner_forward(
-            frames,
-            actual_positions=None,
-            canonical_positions=None,
-            dense_valid_len=None,
-            tubelet_valid_mask=None,
-            pjst_pair_scale=None,
-            pjst_pair_valid=None,
-            pjst_exact_uniform=None,
-        ):
-            kwargs = dict(
-                actual_positions=actual_positions,
-                canonical_positions=canonical_positions,
-                dense_valid_len=dense_valid_len,
-                tubelet_valid_mask=tubelet_valid_mask,
-                relative_physical_time_gate_zero=single_clock_gate_zero,
-            )
-            if self.pjst_derivative_only:
-                kwargs["pjst_pair_scale"] = pjst_pair_scale
-                kwargs["pjst_pair_valid"] = pjst_pair_valid
-                kwargs["pjst_exact_uniform_identity"] = pjst_exact_uniform
-            return self.model.backbone(frames, **kwargs)
-
-        chunks = list(torch.chunk(frames, chunk_num, dim=chunk_dim))
         video_feat = []
-        for chunk_index, mini_frames in enumerate(chunks):
-            mini_actual = mini_canonical = mini_lengths = mini_valid = None
-            mini_scale = mini_pair_valid = mini_uniform = None
-            if chunk_dim == 0:
-                start = sum(x.shape[0] for x in chunks[:chunk_index])
-                end = start + mini_frames.shape[0]
-                if actual_positions is not None:
-                    mini_actual = actual_positions[start:end]
-                    mini_canonical = canonical_positions[start:end]
-                    mini_lengths = dense_valid_len[start:end]
-                    mini_valid = tubelet_valid_mask[start:end]
-                if pjst_pair_scale is not None:
-                    mini_scale = pjst_pair_scale[start:end]
-                    mini_pair_valid = pjst_pair_valid[start:end]
-                    mini_uniform = pjst_exact_uniform[start:end]
+        for mini_frames in torch.chunk(frames, chunk_num, dim=chunk_dim):  # B*N is chunked
             # we can use torch.cp.checkpoint to implement an efficient temporal checkpointing mechanism
             mini_feat = cp.checkpoint(
                 _inner_forward,
-                mini_frames, mini_actual, mini_canonical, mini_lengths, mini_valid,
-                mini_scale, mini_pair_valid, mini_uniform,
+                mini_frames,
                 use_reentrant=False,
             )
             video_feat.append(mini_feat)

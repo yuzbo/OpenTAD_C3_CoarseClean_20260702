@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import bisect
 import copy
 import math
 import os
@@ -132,68 +131,6 @@ def _max_unselected_hole(selected: set[int], valid_indices: Sequence[int]) -> in
     return max((length for _, _, length in runs), default=0)
 
 
-def _selected_valid_rank_map(valid_indices: Sequence[int]) -> dict[int, int]:
-    return {int(idx): rank for rank, idx in enumerate(valid_indices)}
-
-
-def _removal_hole_length(
-    selected_idx: int,
-    *,
-    selected_ranks: Sequence[int],
-    selected_rank_set: set[int],
-    valid_count: int,
-) -> int:
-    rank = int(selected_idx)
-    if rank not in selected_rank_set:
-        raise ValueError(f"selected rank {rank} is not selected")
-    offset = bisect.bisect_left(selected_ranks, rank)
-    left_rank = int(selected_ranks[offset - 1]) if offset > 0 else None
-    right_rank = int(selected_ranks[offset + 1]) if offset + 1 < len(selected_ranks) else None
-    if left_rank is None and right_rank is None:
-        return int(valid_count)
-    if left_rank is None:
-        return int(right_rank)
-    if right_rank is None:
-        return int(valid_count - 1 - left_rank)
-    return int(right_rank - left_rank - 1)
-
-
-def _choose_gap_repair_removal(
-    *,
-    selected: set[int],
-    added: int,
-    valid_rank: Mapping[int, int],
-    valid_count: int,
-    values: Sequence[Any],
-    max_hole: int,
-) -> int | None:
-    selected_ranks = sorted(valid_rank[int(idx)] for idx in selected if int(idx) in valid_rank)
-    selected_rank_set = set(selected_ranks)
-    safe: list[tuple[float, int]] = []
-    fallback: list[tuple[int, float, int]] = []
-    for candidate in selected:
-        candidate = int(candidate)
-        if candidate == int(added) or candidate not in valid_rank:
-            continue
-        removal_hole = _removal_hole_length(
-            valid_rank[candidate],
-            selected_ranks=selected_ranks,
-            selected_rank_set=selected_rank_set,
-            valid_count=int(valid_count),
-        )
-        score = float(values[candidate])
-        if removal_hole <= int(max_hole):
-            safe.append((score, candidate))
-        fallback.append((int(removal_hole), score, candidate))
-    if safe:
-        _score, remove_idx = min(safe, key=lambda item: (item[0], -item[1]))
-        return int(remove_idx)
-    if fallback:
-        _hole, _score, remove_idx = min(fallback, key=lambda item: (item[0], item[1], -item[2]))
-        return int(remove_idx)
-    return None
-
-
 def _score_key(values: Sequence[Any], idx: int) -> tuple[float, int]:
     return (float(values[int(idx)]), -int(idx))
 
@@ -222,8 +159,6 @@ def constrained_topk(
     if len(selected) < minimum_required:
         return sorted(selected)
 
-    valid_rank = _selected_valid_rank_map(valid_indices)
-    valid_count = len(valid_indices)
     for _ in range(len(valid_indices) + 1):
         violating = [
             run
@@ -253,17 +188,33 @@ def constrained_topk(
         if len(selected) <= int(budget):
             continue
 
-        remove_idx = _choose_gap_repair_removal(
-            selected=selected,
-            added=int(added),
-            valid_rank=valid_rank,
-            valid_count=valid_count,
-            values=values,
-            max_hole=max_hole,
-        )
-        if remove_idx is None:
+        removable: list[tuple[float, int, int]] = []
+        for candidate in selected:
+            if int(candidate) == int(added):
+                continue
+            trial = set(selected)
+            trial.remove(int(candidate))
+            trial_hole = _max_unselected_hole(trial, valid_indices)
+            if trial_hole <= max_hole:
+                removable.append((float(values[int(candidate)]), int(candidate), int(trial_hole)))
+        if removable:
+            _score, remove_idx, _trial_hole = min(removable, key=lambda item: (item[0], -item[1]))
+            selected.remove(int(remove_idx))
+            continue
+
+        # Keep the best learned repair even if an exact one-swap repair is not
+        # feasible; choose the removal that leaves the smallest residual hole.
+        fallback: list[tuple[int, float, int]] = []
+        for candidate in selected:
+            if int(candidate) == int(added):
+                continue
+            trial = set(selected)
+            trial.remove(int(candidate))
+            fallback.append((_max_unselected_hole(trial, valid_indices), float(values[int(candidate)]), int(candidate)))
+        if not fallback:
             selected.remove(int(added))
             break
+        _trial_hole, _score, remove_idx = min(fallback, key=lambda item: (item[0], item[1], -item[2]))
         selected.remove(int(remove_idx))
     return sorted(selected)
 

@@ -1,44 +1,19 @@
 from __future__ import annotations
 
-import copy
-import math
 from collections.abc import Mapping
 from typing import Any, Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-from opentad.duca_loss_contract import (
-    DUCA_LOSS_TO_WEIGHT_KEY,
-    DUCA_LOSS_WEIGHT_DEFAULTS,
-)
 
 from ..builder import SELECTORS
-from ..duca import (
-    C3CoarseProbeActionnessSource,
-    DucaAcquisitionAdapter,
-    DucaTemporalSamplingContract,
-    ZeroShotActionnessSource,
-    duca_losses,
-)
-from ..duca.counterfactual_utility import (
-    build_finite_hard_one_swap_candidates,
-    build_local_cell_hard_flip_candidates,
-    build_swap_incidence_matrix,
-    counterfactual_pair_scores,
-    counterfactual_utility_distillation_loss,
-    local_cell_signed_logistic_loss,
-    score_space_utility_alignment,
-    signed_one_swap_proximal_loss,
-)
+from ..duca import C3CoarseProbeActionnessSource, DucaAcquisitionAdapter, ZeroShotActionnessSource, duca_losses
 from ..duca.acquisition import (
     _assert_no_forbidden_payload,
     _elapsed_ms,
     _sync_profile_clock,
     validate_actionness_provenance,
 )
-from ..duca.structured_selection import exact_uniform_positions
 from ..utils.truetime_geometry import SELECTED_AXIS, TRUE_TIME_AXIS, TrueTimeMap
 
 
@@ -133,106 +108,6 @@ def _apply_slot_weights(inputs: torch.Tensor, weights: torch.Tensor) -> torch.Te
     raise ValueError(f"unsupported DUCA selector input shape: {tuple(inputs.shape)}")
 
 
-def _contribution_leaf_with_st_route(
-    selected_inputs: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Expose an identity-valued differentiable observation for contribution loss."""
-
-    # Real THUMOS clips are uint8. Autograd cannot differentiate integer leaves,
-    # so only the training-time contribution view is promoted to float. The
-    # detector sees identical numeric observations and the regular inference
-    # gather is untouched.
-    differentiable_inputs = (
-        selected_inputs
-        if torch.is_floating_point(selected_inputs) or torch.is_complex(selected_inputs)
-        else selected_inputs.float()
-    )
-    teacher_inputs = differentiable_inputs.detach().requires_grad_(True)
-    routed_inputs = teacher_inputs + differentiable_inputs - differentiable_inputs.detach()
-    return routed_inputs, teacher_inputs
-
-
-def _training_uniform_companion_mask(
-    batch_size: int,
-    *,
-    fraction: float,
-    device: torch.device,
-) -> torch.Tensor:
-    """Choose uniform-view rows while retaining one learned row per multi-row batch."""
-
-    mask = torch.zeros(int(batch_size), device=device, dtype=torch.bool)
-    if batch_size <= 1 or fraction <= 0.0:
-        return mask
-    uniform_count = max(1, int(round(float(batch_size) * float(fraction))))
-    uniform_count = min(uniform_count, int(batch_size) - 1)
-    permutation = torch.randperm(int(batch_size), device=device)
-    mask[permutation[:uniform_count]] = True
-    return mask
-
-
-def _training_uniform_companion_bridge_scale(
-    companion_mask: torch.Tensor,
-    *,
-    normalize_learned_gradient: bool,
-) -> torch.Tensor:
-    """Return per-row selector-gradient scales for a mixed learned/uniform batch."""
-
-    if companion_mask.ndim != 1 or companion_mask.dtype != torch.bool:
-        raise ValueError("uniform companion mask must be a one-dimensional bool tensor")
-    learned_mask = ~companion_mask
-    learned_count = int(learned_mask.long().sum().item())
-    if learned_count <= 0:
-        raise ValueError("uniform companion training requires at least one learned row")
-    scales = learned_mask.to(dtype=torch.float32)
-    if normalize_learned_gradient:
-        scales = scales * (float(companion_mask.numel()) / float(learned_count))
-    return scales
-
-
-def _exact_uniform_companion_tensors(
-    valid_mask: torch.Tensor,
-    *,
-    slot_count: int,
-    dtype: torch.dtype,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Build the canonical round(linspace) hard path and its one-hot slots."""
-
-    valid = valid_mask.bool()
-    batch, temporal_len = valid.shape
-    positions = torch.full(
-        (batch, int(slot_count)),
-        -1,
-        device=valid.device,
-        dtype=torch.long,
-    )
-    dense_mask = torch.zeros(
-        (batch, temporal_len),
-        device=valid.device,
-        dtype=torch.bool,
-    )
-    slot_assignment = torch.zeros(
-        (batch, int(slot_count), temporal_len),
-        device=valid.device,
-        dtype=dtype,
-    )
-    for batch_idx in range(batch):
-        valid_positions = torch.nonzero(valid[batch_idx], as_tuple=False).flatten()
-        effective_k = min(int(slot_count), int(valid_positions.numel()))
-        if effective_k <= 0:
-            raise ValueError("uniform companion requires one valid candidate")
-        anchors = exact_uniform_positions(
-            int(valid_positions.numel()),
-            effective_k,
-            device=valid.device,
-        )
-        selected = valid_positions[anchors]
-        positions[batch_idx, :effective_k] = selected
-        dense_mask[batch_idx, selected] = True
-        slots = torch.arange(effective_k, device=valid.device)
-        slot_assignment[batch_idx, slots, selected] = 1.0
-    return positions, dense_mask, slot_assignment
-
-
 def _add_soft_context_gradient_path(
     hard_selected: torch.Tensor,
     dense_inputs: torch.Tensor,
@@ -274,10 +149,8 @@ def _add_soft_to_hard_resample_gradient_path(
     radius: torch.Tensor,
     valid_mask: torch.Tensor,
     bridge_weight: float = 1.0,
-) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     bridge = float(bridge_weight)
-    if bridge <= 0.0:
-        return hard_selected, None
     context_inputs = dense_inputs if torch.is_floating_point(dense_inputs) or torch.is_complex(dense_inputs) else dense_inputs.float()
     hard_base = hard_selected if torch.is_floating_point(hard_selected) or torch.is_complex(hard_selected) else hard_selected.float()
     batch, temporal_len = int(center_scores.shape[0]), int(center_scores.shape[1])
@@ -310,211 +183,9 @@ def _add_soft_to_hard_resample_gradient_path(
     return hard_base + (soft - soft.detach()) * slot.to(dtype=soft.dtype) * bridge, weights
 
 
-def _add_structured_zero_forward_gradient_path(
-    hard_selected: torch.Tensor,
-    dense_inputs: torch.Tensor,
-    *,
-    soft_slot_assignment: torch.Tensor,
-    slot_mask: torch.Tensor,
-    bridge_weight: float,
-) -> torch.Tensor:
-    """Legacy local surrogate; forbidden as detector-utility evidence.
-
-    Its hard forward is exact, but its gradient need not agree with the loss
-    change from an actual discrete one-swap selection. Formal transition-only
-    configs must use detached hard counterfactual utility distillation instead.
-    """
-    if soft_slot_assignment.ndim != 3:
-        raise ValueError("structured soft_slot_assignment must be [B,K,T]")
-    temporal_dim = 2 if dense_inputs.ndim in {3, 5} else 3 if dense_inputs.ndim == 6 else None
-    if temporal_dim is None:
-        raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
-    expected = (int(hard_selected.shape[0]), int(slot_mask.shape[1]), int(dense_inputs.shape[temporal_dim]))
-    if tuple(soft_slot_assignment.shape) != expected:
-        raise ValueError(
-            "structured soft_slot_assignment shape must match [batch, selected slots, dense time]: "
-            f"expected {expected}, got {tuple(soft_slot_assignment.shape)}"
-        )
-    if slot_mask.shape != soft_slot_assignment.shape[:2]:
-        raise ValueError("slot_mask must match structured soft_slot_assignment [B,K]")
-    if not torch.isfinite(soft_slot_assignment).all():
-        raise ValueError("structured soft_slot_assignment must be finite")
-    if torch.any(soft_slot_assignment < 0):
-        raise ValueError("structured soft_slot_assignment must be non-negative")
-    slot_mass = soft_slot_assignment.sum(dim=-1)
-    active = slot_mask.to(device=slot_mass.device, dtype=torch.bool)
-    if active.any() and not torch.allclose(
-        slot_mass[active],
-        torch.ones_like(slot_mass[active]),
-        atol=1.0e-4,
-        rtol=1.0e-4,
-    ):
-        raise ValueError("every active structured slot assignment must sum to one")
-    if (~active).any() and not torch.allclose(
-        slot_mass[~active],
-        torch.zeros_like(slot_mass[~active]),
-        atol=1.0e-6,
-        rtol=0.0,
-    ):
-        raise ValueError("inactive structured slot assignments must have zero mass")
-    bridge = float(bridge_weight)
-    if bridge <= 0.0:
-        return hard_selected
-    context_inputs = dense_inputs if torch.is_floating_point(dense_inputs) or torch.is_complex(dense_inputs) else dense_inputs.float()
-    hard_base = hard_selected if torch.is_floating_point(hard_selected) or torch.is_complex(hard_selected) else hard_selected.float()
-    weights = soft_slot_assignment.to(device=context_inputs.device, dtype=context_inputs.dtype)
-    if context_inputs.ndim == 3:
-        soft = torch.einsum("bct,bkt->bck", context_inputs, weights)
-        slot = slot_mask[:, None, :]
-    elif context_inputs.ndim == 5:
-        soft = torch.einsum("bcthw,bkt->bckhw", context_inputs, weights)
-        slot = slot_mask[:, None, :, None, None]
-    elif context_inputs.ndim == 6:
-        soft = torch.einsum("bncthw,bkt->bnckhw", context_inputs, weights)
-        slot = slot_mask[:, None, None, :, None, None]
-    return hard_base + bridge * (soft - soft.detach()) * slot.to(dtype=soft.dtype)
-
-
-def _add_density_transport_gradient_path(
-    hard_selected: torch.Tensor,
-    dense_inputs: torch.Tensor,
-    *,
-    selected_positions: torch.Tensor,
-    soft_slot_assignment: torch.Tensor,
-    slot_mask: torch.Tensor,
-    bridge_weight: float,
-    bridge_row_scale: Optional[torch.Tensor] = None,
-) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
-    """Anchor inverse-CDF gradients at the frames used by the detector."""
-
-    return _add_protected_structured_transport_gradient_path(
-        hard_selected,
-        dense_inputs,
-        selected_positions=selected_positions,
-        soft_slot_assignment=soft_slot_assignment,
-        slot_mask=slot_mask,
-        bridge_weight=bridge_weight,
-        bridge_row_scale=bridge_row_scale,
-    )
-
-
-def _add_protected_structured_transport_gradient_path(
-    hard_selected: torch.Tensor,
-    dense_inputs: torch.Tensor,
-    *,
-    selected_positions: torch.Tensor,
-    soft_slot_assignment: torch.Tensor,
-    slot_mask: torch.Tensor,
-    bridge_weight: float,
-    bridge_row_scale: Optional[torch.Tensor] = None,
-) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
-    """Use a hard-anchored local transport derivative for detector feedback.
-
-    The forward value is the exact hard gather. Backward uses the expected
-    ordered slot position from the same exact-K/max-gap structured family and
-    the local temporal derivative around each actually selected observation.
-    This remains a surrogate and must pass the hard-swap alignment gate before
-    any full training run is admissible.
-    """
-
-    if soft_slot_assignment.ndim != 3:
-        raise ValueError("protected structured soft_slot_assignment must be [B,K,T]")
-    temporal_dim = 2 if dense_inputs.ndim in {3, 5} else 3 if dense_inputs.ndim == 6 else None
-    if temporal_dim is None:
-        raise ValueError(f"unsupported DUCA selector input shape: {tuple(dense_inputs.shape)}")
-    expected = (int(hard_selected.shape[0]), int(slot_mask.shape[1]), int(dense_inputs.shape[temporal_dim]))
-    if tuple(soft_slot_assignment.shape) != expected:
-        raise ValueError(
-            "protected structured soft_slot_assignment shape must match [batch, selected slots, dense time]: "
-            f"expected {expected}, got {tuple(soft_slot_assignment.shape)}"
-        )
-    if selected_positions.shape != slot_mask.shape or slot_mask.shape != soft_slot_assignment.shape[:2]:
-        raise ValueError("selected_positions and slot_mask must match protected structured slots [B,K]")
-    if not torch.isfinite(soft_slot_assignment).all():
-        raise ValueError("protected structured soft_slot_assignment must be finite")
-    if torch.any(soft_slot_assignment < 0):
-        raise ValueError("protected structured soft_slot_assignment must be non-negative")
-    slot_mass = soft_slot_assignment.sum(dim=-1)
-    active = slot_mask.to(device=slot_mass.device, dtype=torch.bool)
-    if active.any() and not torch.allclose(
-        slot_mass[active],
-        torch.ones_like(slot_mass[active]),
-        atol=1.0e-4,
-        rtol=1.0e-4,
-    ):
-        raise ValueError("every active protected structured slot assignment must sum to one")
-    if (~active).any() and not torch.allclose(
-        slot_mass[~active],
-        torch.zeros_like(slot_mass[~active]),
-        atol=1.0e-6,
-        rtol=0.0,
-    ):
-        raise ValueError("inactive protected structured slot assignments must have zero mass")
-    if active.any():
-        active_positions = selected_positions.to(device=active.device)[active]
-        if torch.any(active_positions < 0) or torch.any(active_positions >= expected[2]):
-            raise ValueError("active protected structured selected_positions are out of dense-time bounds")
-
-    bridge = float(bridge_weight)
-    if bridge <= 0.0:
-        return hard_selected, None
-    if bridge_row_scale is None:
-        row_scale = torch.ones(
-            int(hard_selected.shape[0]),
-            device=hard_selected.device,
-            dtype=torch.float32,
-        )
-    else:
-        if bridge_row_scale.ndim != 1 or int(bridge_row_scale.shape[0]) != int(
-            hard_selected.shape[0]
-        ):
-            raise ValueError("protected structured bridge_row_scale must be [B]")
-        if not torch.isfinite(bridge_row_scale).all() or torch.any(bridge_row_scale < 0):
-            raise ValueError("protected structured bridge_row_scale must be finite and non-negative")
-        row_scale = bridge_row_scale.to(device=hard_selected.device, dtype=torch.float32)
-    context_inputs = (
-        dense_inputs
-        if torch.is_floating_point(dense_inputs) or torch.is_complex(dense_inputs)
-        else dense_inputs.float()
-    )
-    hard_base = (
-        hard_selected
-        if torch.is_floating_point(hard_selected) or torch.is_complex(hard_selected)
-        else hard_selected.float()
-    )
-    weights = soft_slot_assignment.to(device=context_inputs.device, dtype=context_inputs.dtype)
-    time_axis = torch.arange(expected[2], device=weights.device, dtype=weights.dtype)
-    expected_positions = torch.einsum("bkt,t->bk", weights, time_axis)
-
-    hard_positions = selected_positions.to(device=context_inputs.device, dtype=torch.long).clamp_min(0)
-    left_positions = (hard_positions - 1).clamp_min(0)
-    right_positions = (hard_positions + 1).clamp_max(expected[2] - 1)
-    left = _gather_time(context_inputs, left_positions, slot_mask)
-    right = _gather_time(context_inputs, right_positions, slot_mask)
-    denominator = (right_positions - left_positions).clamp_min(1).to(dtype=context_inputs.dtype)
-    if context_inputs.ndim == 3:
-        slope = (right - left) / denominator[:, None, :]
-        displacement = (expected_positions - expected_positions.detach())[:, None, :]
-        slot = slot_mask[:, None, :]
-    elif context_inputs.ndim == 5:
-        slope = (right - left) / denominator[:, None, :, None, None]
-        displacement = (expected_positions - expected_positions.detach())[:, None, :, None, None]
-        slot = slot_mask[:, None, :, None, None]
-    else:
-        slope = (right - left) / denominator[:, None, None, :, None, None]
-        displacement = (expected_positions - expected_positions.detach())[:, None, None, :, None, None]
-        slot = slot_mask[:, None, None, :, None, None]
-    row_scale_view = row_scale.to(dtype=displacement.dtype).view(
-        int(row_scale.shape[0]), *([1] * (displacement.ndim - 1))
-    )
-    surrogate_delta = slope.detach() * displacement * row_scale_view
-    bridged = hard_base + bridge * surrogate_delta * slot.to(dtype=surrogate_delta.dtype)
-    return bridged, expected_positions
-
-
 @SELECTORS.register_module()
 class DucaOnlineFrameSelector(nn.Module):
-    """Registry-buildable full-window DUCA selector for offline TAD."""
+    """Registry-buildable online DUCA selector for OpenTAD frame_selector hooks."""
 
     def __init__(
         self,
@@ -527,76 +198,20 @@ class DucaOnlineFrameSelector(nn.Module):
         target_budget: Optional[float] = None,
         allow_external_budget_override: Optional[bool] = None,
         max_radius: int = 16,
-        acquisition_policy: str = "legacy_center_radius",
-        structured_temperature: float = 1.0,
-        local_cell_force_exact_uniform: bool = False,
-        density_temperature: float = 0.7,
-        density_coverage_floor: float = 0.05,
-        density_smoothing_kernel: int = 5,
-        sampling_rate_utility_components: str = "none",
-        inference_policy_alpha: float = 1.0,
-        training_uniform_companion_fraction: float = 0.0,
-        training_uniform_companion_normalize_learned_gradient: bool = False,
         dense_window_size: Optional[int] = None,
         selector_hidden_channels: int = 0,
-        coarse_trunk_lr: float = 2.5e-5,
-        action_head_lr: float = 5.0e-5,
-        transition_scorer_lr: float = 1.0e-4,
         actionness_weight: float = 0.05,
         transition_weight: float = 1.0,
         uncertainty_weight: float = 0.25,
         utility_weight: float = 0.50,
         boundary_weight: float = 1.0,
-        selector_variant: str = "direct_boundary",
-        parameter_free_selector: bool = False,
-        coarse_hidden_dim: Optional[int] = None,
-        use_coarse_hidden_features: bool = True,
-        require_coarse_hidden_features: Optional[bool] = None,
-        allow_frozen_coarse_probe: bool = False,
-        policy_hidden_gradient_scale: float = 0.0,
-        auxiliary_hidden_gradient_scale: float = 1.0,
-        max_unselected_hole: Optional[int] = None,
-        hard_max_gap_repair: bool = True,
-        fail_on_infeasible_max_gap: bool = True,
-        max_gap_loss_max_unselected_hole: Optional[int] = None,
-        max_gap_loss_min_window_mass: float = 1.0,
-        soft_max_gap_loss_enabled: bool = True,
-        transition_target_sigma: float = 2.0,
-        transition_target_radius: int = 4,
-        transition_boundary_radius: int = 4,
-        transition_distribution_temperature: float = 0.7,
-        transition_objective: str = "gaussian_mass",
-        boundary_burst_quota: float = 5.0,
-        boundary_burst_budget_fraction: float = 0.25,
-        boundary_burst_context_weight: float = 0.05,
-        boundary_burst_center_temperature: float = 0.7,
-        boundary_burst_offset_temperature: float = 1.0,
-        boundary_burst_require_bilateral_offsets: bool = False,
-        boundary_burst_require_global_mandatory_groups: bool = False,
-        boundary_burst_side_min_mass: float = 1.0,
-        boundary_burst_anchor_weight: float = 1.0,
-        boundary_burst_bilateral_weight: float = 1.0,
-        boundary_burst_quota_weight: float = 1.0,
-        boundary_burst_fairness_weight: float = 0.5,
-        boundary_burst_overfill_weight: float = 0.25,
         actionness_source_cfg: Optional[Mapping[str, Any]] = None,
         detector_gradient_mode: str = "st_sparse_gather",
-        detector_contribution_distillation_weight: float = 0.0,
-        detector_contribution_components: str = "both",
-        detector_contribution_temperature: float = 0.7,
-        counterfactual_utility_distillation_weight: float = 0.0,
-        counterfactual_utility_temperature: float = 1.0,
-        counterfactual_max_candidates: int = 4,
-        counterfactual_objective: str = "global_gram_proximal",
-        require_counterfactual_utility_teacher: bool = False,
         coordinate_space: str = SELECTED_AXIS,
         detector_output_coordinate_space: str = SELECTED_AXIS,
         selected_positions_unit: str = "original_time_index",
         true_time_source_axis: str = TRUE_TIME_AXIS,
-        temporal_sampling_contract: Optional[Mapping[str, Any]] = None,
         loss_weights: Optional[Mapping[str, float]] = None,
-        actionness_loss_mode: str = "posterior_bce",
-        strict_loss_contract: bool = False,
         loss_weight_schedule: Optional[Mapping[str, Any]] = None,
         no_ledger_decision: bool = True,
         remap_gt_to_selected_axis: bool = True,
@@ -611,7 +226,11 @@ class DucaOnlineFrameSelector(nn.Module):
         require_external_actionness: bool = False,
         profile_runtime: bool = False,
         profile_sync_cuda: bool = True,
-        retain_gradient_audit_tensors: bool = False,
+        use_coarse_hidden_features: bool = False,
+        require_coarse_hidden_features: bool = False,
+        coarse_hidden_dim: Optional[int] = None,
+        coarse_hidden_proj_dim: int = 0,
+        coarse_hidden_dropout: float = 0.0,
         metadata_keys: Optional[Mapping[str, str]] = None,
         **kwargs: Any,
     ) -> None:
@@ -641,191 +260,19 @@ class DucaOnlineFrameSelector(nn.Module):
         self.budget_multiple = int(budget_multiple)
         self.target_budget = float(self.budget if target_budget is None else target_budget)
         self.max_radius = int(max_radius)
-        self.acquisition_policy = str(acquisition_policy)
-        self.structured_temperature = float(structured_temperature)
-        self.local_cell_force_exact_uniform = bool(local_cell_force_exact_uniform)
-        self.density_temperature = float(density_temperature)
-        self.density_coverage_floor = float(density_coverage_floor)
-        self.density_smoothing_kernel = int(density_smoothing_kernel)
-        self.sampling_rate_utility_components = str(
-            sampling_rate_utility_components
-        ).lower()
-        if self.sampling_rate_utility_components not in {"none", "cls", "reg", "both"}:
-            raise ValueError(
-                "sampling_rate_utility_components must be none, cls, reg, or both"
-            )
-        self.inference_policy_alpha = float(inference_policy_alpha)
-        if not 0.0 <= self.inference_policy_alpha <= 1.0:
-            raise ValueError("inference_policy_alpha must lie in [0,1]")
-        self.training_uniform_companion_fraction = float(
-            training_uniform_companion_fraction
-        )
-        self.training_uniform_companion_normalize_learned_gradient = bool(
-            training_uniform_companion_normalize_learned_gradient
-        )
-        self.detector_contribution_distillation_weight = float(
-            detector_contribution_distillation_weight
-        )
-        self.detector_contribution_components = str(
-            detector_contribution_components
-        ).lower()
-        self.detector_contribution_temperature = float(
-            detector_contribution_temperature
-        )
-        if self.detector_contribution_components not in {"none", "cls", "reg", "both"}:
-            raise ValueError(
-                "detector_contribution_components must be none, cls, reg, or both"
-            )
-        if (
-            not math.isfinite(self.detector_contribution_distillation_weight)
-            or self.detector_contribution_distillation_weight < 0.0
-        ):
-            raise ValueError("detector_contribution_distillation_weight must be finite and non-negative")
-        if (
-            not math.isfinite(self.detector_contribution_temperature)
-            or self.detector_contribution_temperature <= 0.0
-        ):
-            raise ValueError("detector_contribution_temperature must be finite and positive")
-        if (
-            not math.isfinite(self.training_uniform_companion_fraction)
-            or not 0.0 <= self.training_uniform_companion_fraction < 1.0
-        ):
-            raise ValueError(
-                "training_uniform_companion_fraction must lie in [0,1)"
-            )
         self.dense_window_size = None if dense_window_size is None else int(dense_window_size)
-        self.coarse_trunk_lr = float(coarse_trunk_lr)
-        self.action_head_lr = float(action_head_lr)
-        self.transition_scorer_lr = float(transition_scorer_lr)
-        if min(self.coarse_trunk_lr, self.action_head_lr, self.transition_scorer_lr) <= 0.0:
-            raise ValueError("transition-only component learning rates must be positive")
         self.actionness_weight = float(actionness_weight)
-        self.parameter_free_selector = bool(parameter_free_selector)
         self.transition_weight = float(transition_weight)
         self.uncertainty_weight = float(uncertainty_weight)
         self.utility_weight = float(utility_weight)
         self.boundary_weight = float(boundary_weight)
-        self.selector_variant = str(selector_variant)
-        if self.selector_variant not in {"direct_boundary", "transition_only"}:
-            raise ValueError("selector_variant must be direct_boundary or transition_only")
-        self.coarse_hidden_dim = 0 if coarse_hidden_dim in (None, 0) else int(coarse_hidden_dim)
-        if self.coarse_hidden_dim < 0:
-            raise ValueError("coarse_hidden_dim must be non-negative")
-        self.use_coarse_hidden_features = bool(use_coarse_hidden_features)
-        self.require_coarse_hidden_features = (
-            None if require_coarse_hidden_features is None else bool(require_coarse_hidden_features)
-        )
-        self.allow_frozen_coarse_probe = bool(allow_frozen_coarse_probe)
-        self.policy_hidden_gradient_scale = float(policy_hidden_gradient_scale)
-        if (
-            not math.isfinite(self.policy_hidden_gradient_scale)
-            or not 0.0 <= self.policy_hidden_gradient_scale <= 1.0
-        ):
-            raise ValueError("policy_hidden_gradient_scale must lie in [0,1]")
-        self.auxiliary_hidden_gradient_scale = float(auxiliary_hidden_gradient_scale)
-        if (
-            not math.isfinite(self.auxiliary_hidden_gradient_scale)
-            or not 0.0 <= self.auxiliary_hidden_gradient_scale <= 1.0
-        ):
-            raise ValueError("auxiliary_hidden_gradient_scale must lie in [0,1]")
-        self.max_unselected_hole = None if max_unselected_hole in (None, 0) else int(max_unselected_hole)
-        if self.max_unselected_hole is not None and self.max_unselected_hole < 0:
-            raise ValueError("max_unselected_hole must be non-negative")
-        self.hard_max_gap_repair = bool(hard_max_gap_repair)
-        self.fail_on_infeasible_max_gap = bool(fail_on_infeasible_max_gap)
-        self.max_gap_loss_max_unselected_hole = (
-            self.max_unselected_hole
-            if max_gap_loss_max_unselected_hole in (None, 0)
-            else int(max_gap_loss_max_unselected_hole)
-        )
-        self.max_gap_loss_min_window_mass = float(max_gap_loss_min_window_mass)
-        self.soft_max_gap_loss_enabled = bool(soft_max_gap_loss_enabled)
-        self.transition_target_sigma = float(transition_target_sigma)
-        self.transition_target_radius = int(transition_target_radius)
-        self.transition_boundary_radius = int(transition_boundary_radius)
-        self.transition_distribution_temperature = float(transition_distribution_temperature)
-        self.transition_objective = str(transition_objective)
-        self.boundary_burst_quota = float(boundary_burst_quota)
-        self.boundary_burst_budget_fraction = float(boundary_burst_budget_fraction)
-        self.boundary_burst_context_weight = float(boundary_burst_context_weight)
-        self.boundary_burst_center_temperature = float(boundary_burst_center_temperature)
-        self.boundary_burst_offset_temperature = float(boundary_burst_offset_temperature)
-        self.boundary_burst_require_bilateral_offsets = bool(
-            boundary_burst_require_bilateral_offsets
-        )
-        self.boundary_burst_require_global_mandatory_groups = bool(
-            boundary_burst_require_global_mandatory_groups
-        )
-        self.boundary_burst_side_min_mass = float(boundary_burst_side_min_mass)
-        self.boundary_burst_anchor_weight = float(boundary_burst_anchor_weight)
-        self.boundary_burst_bilateral_weight = float(boundary_burst_bilateral_weight)
-        self.boundary_burst_quota_weight = float(boundary_burst_quota_weight)
-        self.boundary_burst_fairness_weight = float(boundary_burst_fairness_weight)
-        self.boundary_burst_overfill_weight = float(boundary_burst_overfill_weight)
-        if self.transition_target_sigma <= 0.0:
-            raise ValueError("transition_target_sigma must be positive")
-        if self.transition_distribution_temperature <= 0.0:
-            raise ValueError("transition_distribution_temperature must be positive")
-        if self.transition_target_radius < 0 or self.transition_boundary_radius < 0:
-            raise ValueError("transition target/coverage radii must be non-negative")
-        if self.transition_objective not in {"gaussian_mass", "boundary_burst"}:
-            raise ValueError("transition_objective must be gaussian_mass or boundary_burst")
-        if self.transition_objective == "boundary_burst":
-            if self.selector_variant != "transition_only" and not self.parameter_free_selector:
-                raise ValueError("boundary_burst requires transition_only or parameter-free evidence")
-            if self.transition_boundary_radius <= 0 or self.boundary_burst_quota <= 0.0:
-                raise ValueError("boundary burst radius/quota must be positive")
-            if not 0.0 < self.boundary_burst_budget_fraction <= 1.0:
-                raise ValueError("boundary burst budget fraction must lie in (0,1]")
-            if min(
-                self.boundary_burst_center_temperature,
-                self.boundary_burst_offset_temperature,
-            ) <= 0.0:
-                raise ValueError("boundary burst temperatures must be positive")
         self.detector_gradient_mode = str(detector_gradient_mode)
-        self.counterfactual_utility_distillation_weight = float(counterfactual_utility_distillation_weight)
-        self.counterfactual_utility_temperature = float(counterfactual_utility_temperature)
-        self.counterfactual_max_candidates = int(counterfactual_max_candidates)
-        self.counterfactual_objective = str(counterfactual_objective)
-        self.require_counterfactual_utility_teacher = bool(require_counterfactual_utility_teacher)
-        if self.counterfactual_utility_distillation_weight < 0.0:
-            raise ValueError("counterfactual_utility_distillation_weight must be non-negative")
-        if self.counterfactual_utility_temperature <= 0.0:
-            raise ValueError("counterfactual_utility_temperature must be positive")
-        if self.counterfactual_max_candidates <= 0:
-            raise ValueError("counterfactual_max_candidates must be positive")
-        if self.counterfactual_objective not in {"global_gram_proximal", "local_cell_signed_logistic"}:
-            raise ValueError(
-                "counterfactual_objective must be global_gram_proximal or local_cell_signed_logistic"
-            )
-        if self.require_counterfactual_utility_teacher and self.counterfactual_utility_distillation_weight <= 0.0:
-            raise ValueError("required counterfactual utility teacher needs a positive distillation weight")
         self.selected_positions_coordinate = str(coordinate_space)
         self.detector_output_coordinate_space = str(detector_output_coordinate_space)
         self.coordinate_space = self.detector_output_coordinate_space
         self.selected_positions_unit = str(selected_positions_unit)
         self.true_time_source_axis = str(true_time_source_axis)
-        self.temporal_sampling_contract = (
-            None
-            if temporal_sampling_contract is None
-            else DucaTemporalSamplingContract.from_mapping(dict(temporal_sampling_contract))
-        )
         self.loss_weights = dict(loss_weights or {})
-        self.actionness_loss_mode = str(actionness_loss_mode)
-        if self.actionness_loss_mode not in {"posterior_bce", "class_balanced_mean"}:
-            raise ValueError(
-                "actionness_loss_mode must be posterior_bce or class_balanced_mean"
-            )
-        self.strict_loss_contract = bool(strict_loss_contract)
-        if self.strict_loss_contract and set(self.loss_weights) != set(
-            DUCA_LOSS_WEIGHT_DEFAULTS
-        ):
-            missing = sorted(set(DUCA_LOSS_WEIGHT_DEFAULTS) - set(self.loss_weights))
-            extra = sorted(set(self.loss_weights) - set(DUCA_LOSS_WEIGHT_DEFAULTS))
-            raise ValueError(
-                "strict DUCA selector loss contract requires every loss weight "
-                f"exactly once; missing={missing}, extra={extra}"
-            )
         self.loss_weight_schedule = self._normalize_loss_weight_schedule(loss_weight_schedule)
         self.register_buffer("_loss_weight_schedule_step", torch.zeros((), dtype=torch.long), persistent=True)
         self.no_ledger_decision = bool(no_ledger_decision)
@@ -841,7 +288,11 @@ class DucaOnlineFrameSelector(nn.Module):
         self.require_external_actionness = bool(require_external_actionness)
         self.profile_runtime = bool(profile_runtime)
         self.profile_sync_cuda = bool(profile_sync_cuda)
-        self.retain_gradient_audit_tensors = bool(retain_gradient_audit_tensors)
+        self.use_coarse_hidden_features = bool(use_coarse_hidden_features)
+        self.require_coarse_hidden_features = bool(require_coarse_hidden_features)
+        self.coarse_hidden_dim = None if coarse_hidden_dim is None else int(coarse_hidden_dim)
+        self.coarse_hidden_proj_dim = int(coarse_hidden_proj_dim)
+        self.coarse_hidden_dropout = float(coarse_hidden_dropout)
         self.metadata_keys = dict(_DEFAULT_METADATA_KEYS)
         if metadata_keys:
             self.metadata_keys.update(dict(metadata_keys))
@@ -853,18 +304,13 @@ class DucaOnlineFrameSelector(nn.Module):
         self._pending_dynamic_budget_dual_mean: Optional[torch.Tensor] = None
         self._pending_dynamic_budget_dual_summary: Optional[dict[str, Any]] = None
         if self.detector_gradient_mode not in {
-            "none",
             "st_sparse_gather",
             "st_sparse_gather_soft_context",
             "soft_to_hard_resample",
-            "structured_zero_forward",
-            "protected_structured_transport",
-            "density_transport_st",
         }:
             raise ValueError(
-                "detector_gradient_mode must be none, st_sparse_gather, "
-                "st_sparse_gather_soft_context, soft_to_hard_resample, structured_zero_forward, "
-                "protected_structured_transport, or density_transport_st"
+                "detector_gradient_mode must be st_sparse_gather, "
+                "st_sparse_gather_soft_context, or soft_to_hard_resample"
             )
         if self.selected_positions_coordinate not in {"original_time", SELECTED_AXIS, TRUE_TIME_AXIS}:
             raise ValueError("coordinate_space must describe original-time selected positions or selected-axis detector output")
@@ -874,102 +320,18 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("selected_positions_unit must be original_time_index")
         if self.true_time_source_axis != TRUE_TIME_AXIS:
             raise ValueError("true_time_source_axis must be true_time_dense_index")
-        if self.temporal_sampling_contract is not None:
-            contract = self.temporal_sampling_contract
-            if contract.hard_budget != self.budget:
-                raise ValueError("temporal sampling contract hard_budget must match selector budget")
-            if self.dense_window_size is None or contract.dense_window_size != self.dense_window_size:
-                raise ValueError("temporal sampling contract dense_window_size must match selector")
-            if contract.max_unselected_hole_dense_candidates != self.max_unselected_hole:
-                raise ValueError("temporal sampling contract max gap must match selector max_unselected_hole")
-            if contract.detector_axis != self.detector_output_coordinate_space:
-                raise ValueError("temporal sampling contract detector_axis must match selector output axis")
         if self.dense_window_size is not None and self.dense_window_size <= 0:
             raise ValueError("dense_window_size must be positive")
         if not self.no_ledger_decision:
             raise ValueError("DUCA online selector requires no_ledger_decision=True")
         if self.detector_output_coordinate_space == SELECTED_AXIS and not self.remap_gt_to_selected_axis:
             raise ValueError("selected-axis detector output requires remap_gt_to_selected_axis=True")
-
         if self.forbid_external_actionness and (
             self.external_actionness_meta_key
             or self.external_actionness_logits_meta_key
             or self.require_external_actionness
         ):
             raise ValueError("forbid_external_actionness conflicts with configured external actionness inputs")
-        if self.selector_variant == "transition_only":
-            if self.budget_mode != "fixed":
-                raise ValueError("transition_only currently supports only a fixed exact budget")
-            if self.acquisition_policy not in {
-                "global_structured_topk",
-                "local_cell_deformation",
-                "continuous_density_transport",
-                "continuous_mixture_density_transport",
-                "budget_calibrated_sampling_rate",
-            }:
-                raise ValueError("transition_only requires a structured exact-budget acquisition policy")
-            if self.acquisition_policy == "global_structured_topk" and self.max_unselected_hole is None:
-                raise ValueError("global_structured_topk requires max_unselected_hole")
-            if not self.use_coarse_hidden_features:
-                raise ValueError("transition_only requires official ASFormer encoder hidden features")
-            if not self.forbid_external_actionness:
-                raise ValueError("transition_only requires an in-graph coarse probe, not external actionness")
-        if self.parameter_free_selector:
-            if self.selector_variant != "direct_boundary":
-                raise ValueError("parameter-free selection uses selector_variant='direct_boundary'")
-            if self.budget_mode != "fixed" or self.acquisition_policy != "global_structured_topk":
-                raise ValueError("parameter-free selection requires fixed global_structured_topk")
-            if self.max_unselected_hole is None:
-                raise ValueError("parameter-free selection requires max_unselected_hole")
-        if self.training_uniform_companion_fraction > 0.0:
-            if self.selector_variant != "transition_only":
-                raise ValueError(
-                    "uniform companion training is restricted to transition_only"
-                )
-            if self.budget_mode != "fixed":
-                raise ValueError(
-                    "uniform companion training requires a fixed exact budget"
-                )
-            if self.acquisition_policy not in {
-                "global_structured_topk",
-                "budget_calibrated_sampling_rate",
-            }:
-                raise ValueError(
-                    "uniform companion training requires a compatible fixed exact-K policy"
-                )
-            if self.detector_output_coordinate_space != SELECTED_AXIS:
-                raise ValueError(
-                    "uniform companion training is defined on the selected-axis detector path"
-                )
-        if self.training_uniform_companion_normalize_learned_gradient:
-            if self.training_uniform_companion_fraction <= 0.0:
-                raise ValueError(
-                    "learned-row gradient normalization requires a positive uniform companion fraction"
-                )
-            if self.detector_gradient_mode not in {
-                "protected_structured_transport",
-                "density_transport_st",
-            }:
-                raise ValueError(
-                    "learned-row gradient normalization requires a supported exact-K bridge"
-                )
-        if self.counterfactual_objective == "local_cell_signed_logistic":
-            if self.acquisition_policy != "local_cell_deformation":
-                raise ValueError("local-cell counterfactual utility requires local_cell_deformation")
-            if self.local_cell_force_exact_uniform and self.counterfactual_utility_distillation_weight > 0.0:
-                raise ValueError("the exact-uniform control must not request counterfactual utility")
-        continuous_transport_policies = {
-            "continuous_density_transport",
-            "continuous_mixture_density_transport",
-            "budget_calibrated_sampling_rate",
-        }
-        if self.detector_gradient_mode == "density_transport_st" and self.acquisition_policy not in continuous_transport_policies:
-            raise ValueError("density_transport_st requires a continuous transport acquisition policy")
-        if self.acquisition_policy in continuous_transport_policies and self.detector_gradient_mode not in {
-            "none",
-            "density_transport_st",
-        }:
-            raise ValueError("continuous transport supports detector gradient mode none or density_transport_st")
 
         actionness_source = None
         self.raw_actionness_source = None
@@ -979,33 +341,6 @@ class DucaOnlineFrameSelector(nn.Module):
             source_type = cfg.pop("type", "ZeroShotActionnessSource")
             self.actionness_source_name = str(cfg.get("source_name") or source_type)
             if source_type == "C3CoarseProbeActionnessSource":
-                if self.selector_variant == "transition_only":
-                    if str(cfg.get("probe_model", "")) != "official-action-seg":
-                        raise ValueError("transition_only requires probe_model='official-action-seg'")
-                    if str(cfg.get("official_action_seg_backend", "")) != "official_asformer":
-                        raise ValueError("transition_only requires the official ASFormer backend")
-                    coarse_frozen = bool(cfg.get("frozen", False)) or cfg.get("trainable") is False
-                    if coarse_frozen and not self.allow_frozen_coarse_probe:
-                        raise ValueError(
-                            "transition_only frozen ASFormer requires "
-                            "allow_frozen_coarse_probe=True"
-                        )
-                    cfg.setdefault("hidden_output_kind", "official_asformer_encoder_hidden")
-                    if cfg["hidden_output_kind"] != "official_asformer_encoder_hidden":
-                        raise ValueError("transition_only requires official ASFormer encoder hidden output")
-                inferred_hidden_dim = int(
-                    cfg.get("coarse_hidden_dim")
-                    or cfg.get("tcn_hidden_dim")
-                    or cfg.get("hidden_dim")
-                    or 0
-                )
-                if self.coarse_hidden_dim <= 0 and inferred_hidden_dim > 0:
-                    self.coarse_hidden_dim = inferred_hidden_dim
-                cfg.setdefault("return_hidden_features", bool(self.use_coarse_hidden_features))
-                cfg.setdefault(
-                    "require_hidden_features",
-                    bool(self.use_coarse_hidden_features and self.require_coarse_hidden_features is not False),
-                )
                 cfg.setdefault("source_name", self.actionness_source_name)
                 self.raw_actionness_source = C3CoarseProbeActionnessSource(**cfg)
                 actionness_source = ZeroShotActionnessSource(
@@ -1033,7 +368,7 @@ class DucaOnlineFrameSelector(nn.Module):
             else:
                 raise ValueError(f"unsupported actionness_source_cfg type {source_type!r}")
         self.adapter = DucaAcquisitionAdapter(
-            feature_dim=None if self.parameter_free_selector else self.in_channels,
+            feature_dim=self.in_channels,
             budget=None if self.budget_mode == "dynamic_must" else self.budget,
             budget_mode=self.budget_mode,
             budget_min=self.budget_min,
@@ -1042,13 +377,6 @@ class DucaOnlineFrameSelector(nn.Module):
             target_budget=self.target_budget,
             allow_external_budget_override=self.allow_external_budget_override,
             max_radius=self.max_radius,
-            acquisition_policy=self.acquisition_policy,
-            structured_temperature=self.structured_temperature,
-            local_cell_force_exact_uniform=self.local_cell_force_exact_uniform,
-            density_temperature=self.density_temperature,
-            density_coverage_floor=self.density_coverage_floor,
-            density_smoothing_kernel=self.density_smoothing_kernel,
-            sampling_rate_utility_components=self.sampling_rate_utility_components,
             hidden_dim=int(selector_hidden_channels),
             actionness_source=actionness_source,
             actionness_weight=self.actionness_weight,
@@ -1056,111 +384,14 @@ class DucaOnlineFrameSelector(nn.Module):
             uncertainty_weight=self.uncertainty_weight,
             utility_weight=self.utility_weight,
             boundary_weight=self.boundary_weight,
-            selector_variant=self.selector_variant,
-            parameter_free_selector=self.parameter_free_selector,
-            transition_objective=self.transition_objective,
-            boundary_burst_radius=self.transition_boundary_radius,
-            boundary_burst_quota=self.boundary_burst_quota,
-            boundary_burst_budget_fraction=self.boundary_burst_budget_fraction,
-            boundary_burst_context_weight=self.boundary_burst_context_weight,
-            boundary_burst_center_temperature=self.boundary_burst_center_temperature,
-            boundary_burst_offset_temperature=self.boundary_burst_offset_temperature,
-            boundary_burst_require_bilateral_offsets=(
-                self.boundary_burst_require_bilateral_offsets
-            ),
-            boundary_burst_require_global_mandatory_groups=(
-                self.boundary_burst_require_global_mandatory_groups
-            ),
-            coarse_hidden_dim=self.coarse_hidden_dim if self.use_coarse_hidden_features else 0,
-            require_coarse_hidden_features=bool(
-                self.use_coarse_hidden_features
-                and self.raw_actionness_source is not None
-                and self.require_coarse_hidden_features is not False
-            ),
-            policy_hidden_gradient_scale=self.policy_hidden_gradient_scale,
-            auxiliary_hidden_gradient_scale=self.auxiliary_hidden_gradient_scale,
-            max_unselected_hole=self.max_unselected_hole,
-            hard_max_gap_repair=self.hard_max_gap_repair,
-            fail_on_infeasible_max_gap=self.fail_on_infeasible_max_gap,
             profile_runtime=self.profile_runtime,
             profile_sync_cuda=self.profile_sync_cuda,
+            use_coarse_hidden_features=self.use_coarse_hidden_features,
+            require_coarse_hidden_features=self.require_coarse_hidden_features,
+            coarse_hidden_dim=self.coarse_hidden_dim,
+            coarse_hidden_proj_dim=self.coarse_hidden_proj_dim,
+            coarse_hidden_dropout=self.coarse_hidden_dropout,
         )
-
-    def capture_amp_replay_state(self) -> dict[str, Any]:
-        """Capture non-buffer forward state that must not leak across a replay."""
-        pending_dual = self._pending_dynamic_budget_dual_mean
-        adapter = getattr(self, "adapter", None)
-        return {
-            "last_forward_summary": copy.deepcopy(self.last_forward_summary),
-            "last_dual_update_summary": copy.deepcopy(self.last_dual_update_summary),
-            "last_loss_schedule_update_summary": copy.deepcopy(
-                self.last_loss_schedule_update_summary
-            ),
-            "last_counterfactual_summary": copy.deepcopy(
-                getattr(self, "last_counterfactual_summary", None)
-            ),
-            "last_selected_positions": copy.deepcopy(
-                getattr(self, "_last_selected_positions", None)
-            ),
-            "last_detector_grid_positions": copy.deepcopy(
-                getattr(self, "_last_detector_grid_positions", None)
-            ),
-            "pending_loss_schedule_advance": bool(
-                self._pending_loss_schedule_advance
-            ),
-            "pending_dynamic_budget_dual_mean": (
-                None if pending_dual is None else pending_dual.detach().clone()
-            ),
-            "pending_dynamic_budget_dual_summary": copy.deepcopy(
-                self._pending_dynamic_budget_dual_summary
-            ),
-            "adapter_last_compute_profile": copy.deepcopy(
-                getattr(adapter, "last_compute_profile", None)
-            ),
-        }
-
-    def restore_amp_replay_state(self, snapshot: Mapping[str, Any]) -> None:
-        self.last_forward_summary = copy.deepcopy(snapshot["last_forward_summary"])
-        self.last_dual_update_summary = copy.deepcopy(
-            snapshot["last_dual_update_summary"]
-        )
-        self.last_loss_schedule_update_summary = copy.deepcopy(
-            snapshot["last_loss_schedule_update_summary"]
-        )
-        self._restore_optional_replay_attribute(
-            "last_counterfactual_summary",
-            snapshot.get("last_counterfactual_summary"),
-        )
-        self._restore_optional_replay_attribute(
-            "_last_selected_positions",
-            snapshot.get("last_selected_positions"),
-        )
-        self._restore_optional_replay_attribute(
-            "_last_detector_grid_positions",
-            snapshot.get("last_detector_grid_positions"),
-        )
-        self._pending_loss_schedule_advance = bool(
-            snapshot["pending_loss_schedule_advance"]
-        )
-        pending_dual = snapshot.get("pending_dynamic_budget_dual_mean")
-        self._pending_dynamic_budget_dual_mean = (
-            None if pending_dual is None else pending_dual.detach().clone()
-        )
-        self._pending_dynamic_budget_dual_summary = copy.deepcopy(
-            snapshot.get("pending_dynamic_budget_dual_summary")
-        )
-        adapter = getattr(self, "adapter", None)
-        if adapter is not None:
-            adapter.last_compute_profile = copy.deepcopy(
-                snapshot.get("adapter_last_compute_profile")
-            )
-
-    def _restore_optional_replay_attribute(self, name: str, value: Any) -> None:
-        if value is None:
-            if hasattr(self, name):
-                delattr(self, name)
-            return
-        setattr(self, name, copy.deepcopy(value))
 
     def forward_train(
         self,
@@ -1169,7 +400,6 @@ class DucaOnlineFrameSelector(nn.Module):
         metas,
         gt_segments=None,
         gt_labels=None,
-        gt_boundary_validity=None,
         teacher_utility: Optional[torch.Tensor] = None,
         budget=None,
         **kwargs: Any,
@@ -1177,174 +407,38 @@ class DucaOnlineFrameSelector(nn.Module):
         self._reject_external_actionness_payload(metas)
         self._reject_train_decision_payload(metas)
         action_target = self._action_target_from_gt_segments(gt_segments, masks)
-        transition_target = None
-        if self.selector_variant == "transition_only":
-            start_target = end_target = context_target = None
-            if self.transition_objective == "boundary_burst":
-                transition_target = self._transition_event_target_from_gt_segments(
-                    gt_segments,
-                    masks,
-                    boundary_validity=gt_boundary_validity,
-                )
-            else:
-                transition_target = self._transition_target_from_gt_segments(
-                    gt_segments,
-                    masks,
-                    sigma=self.transition_target_sigma,
-                    truncate_radius=self.transition_target_radius,
-                    boundary_validity=gt_boundary_validity,
-                )
-            boundary_target = transition_target
-            boundary_utility_proxy_target = None
-        else:
-            endpoint_targets = self._endpoint_targets_from_gt_segments(gt_segments, masks)
-            if endpoint_targets is None:
-                start_target = end_target = context_target = boundary_target = None
-                boundary_utility_proxy_target = None
-            else:
-                start_target, end_target, context_target = endpoint_targets
-                boundary_target = start_target + end_target
-                boundary_utility_proxy_target = 0.45 * start_target + 0.45 * end_target + 0.10 * context_target
-                proxy_mass = boundary_utility_proxy_target.sum(dim=1, keepdim=True)
-                boundary_utility_proxy_target = torch.where(
-                    proxy_mass > 0,
-                    boundary_utility_proxy_target / proxy_mass.clamp_min(torch.finfo(proxy_mass.dtype).eps),
-                    boundary_utility_proxy_target,
-                )
+        boundary_target = self._boundary_target_from_gt_segments(
+            gt_segments,
+            masks,
+            boundary_radius=max(1, min(int(self.max_radius), 4)),
+        )
+        boundary_utility_proxy_target = self._boundary_utility_proxy_target_from_gt_segments(
+            gt_segments,
+            masks,
+            boundary_radius=max(1, min(int(self.max_radius), 4)),
+        )
         schedule_state = self._loss_schedule_state()
         outputs = self._forward_select(inputs, masks, metas, budget=budget, schedule_state=schedule_state)
         outputs["selector_outputs"]["loss_weight_schedule"] = schedule_state
-        outputs["selector_outputs"]["training_provenance"] = {
-            "uses_labels": gt_segments is not None,
-            "uses_gt_segments": gt_segments is not None,
-            "uses_gt_labels": gt_labels is not None,
-            "label_scope": "train_only",
-            "uses_labels_at_inference": False,
-            "target_kinds": (
-                ["coarse_actionness", "transition_boundary"]
-                if self.selector_variant == "transition_only"
-                else [
-                    "coarse_actionness",
-                    "start_endpoint",
-                    "end_endpoint",
-                    "boundary_context",
-                ]
-            )
-            if gt_segments is not None
-            else [],
-        }
         if action_target is not None:
             outputs["selector_outputs"]["action_target"] = action_target
         if boundary_target is not None:
             outputs["selector_outputs"]["boundary_target"] = boundary_target
-            if self.selector_variant == "transition_only":
-                outputs["selector_outputs"]["transition_target"] = transition_target
-                outputs["selector_outputs"]["transition_target_kind"] = (
-                    "deduplicated_valid_floor_start_ceil_end_minus_one_events"
-                    if self.transition_objective == "boundary_burst"
-                    else "equal_mass_fixed_sigma_truncated_start_end_gaussians"
-                )
-            else:
-                outputs["selector_outputs"]["start_target"] = start_target
-                outputs["selector_outputs"]["end_target"] = end_target
-                outputs["selector_outputs"]["context_target"] = context_target
         if boundary_utility_proxy_target is not None:
             outputs["selector_outputs"]["boundary_utility_proxy_target"] = boundary_utility_proxy_target
-            outputs["selector_outputs"]["boundary_utility_proxy_target_kind"] = (
-                "instance_normalized_start_end_context_proxy"
-            )
             outputs["selector_outputs"]["detector_utility_target"] = boundary_utility_proxy_target
-            outputs["selector_outputs"]["detector_utility_target_kind"] = "deprecated_alias_to_gt_boundary_utility_proxy"
+            outputs["selector_outputs"]["detector_utility_target_kind"] = "gt_boundary_utility_proxy"
         gt_segments, gt_labels, metas = self._remap_train_targets_to_selected_axis(
             gt_segments, gt_labels, outputs["metas"]
         )
-        active_loss_weights = {
-            key: float(schedule_state["weights"][key])
-            for key in DUCA_LOSS_WEIGHT_DEFAULTS
-            if key in schedule_state["weights"]
-        }
         selector_losses = duca_losses(
             outputs["selector_outputs"],
             teacher_utility=teacher_utility,
             boundary_target=boundary_target,
-            start_target=start_target if self.selector_variant == "direct_boundary" else None,
-            end_target=end_target if self.selector_variant == "direct_boundary" else None,
-            context_target=context_target if self.selector_variant == "direct_boundary" else None,
             action_target=action_target,
-            transition_target=transition_target,
-            boundary_utility_proxy_target=boundary_utility_proxy_target,
-            transition_boundary_radius=self.transition_boundary_radius,
-            transition_distribution_temperature=self.transition_distribution_temperature,
-            transition_objective=self.transition_objective,
-            boundary_burst_quota=self.boundary_burst_quota,
-            boundary_burst_side_min_mass=self.boundary_burst_side_min_mass,
-            boundary_burst_anchor_weight=self.boundary_burst_anchor_weight,
-            boundary_burst_bilateral_weight=self.boundary_burst_bilateral_weight,
-            boundary_burst_quota_weight=self.boundary_burst_quota_weight,
-            boundary_burst_fairness_weight=self.boundary_burst_fairness_weight,
-            boundary_burst_overfill_weight=self.boundary_burst_overfill_weight,
-            max_unselected_hole=(
-                self.max_gap_loss_max_unselected_hole if self.soft_max_gap_loss_enabled else 0
-            ),
-            max_gap_loss_min_window_mass=self.max_gap_loss_min_window_mass,
-            actionness_loss_mode=self.actionness_loss_mode,
-            loss_weights=active_loss_weights,
-            strict_loss_contract=self.strict_loss_contract,
+            detector_utility_target=boundary_utility_proxy_target,
+            loss_weights=schedule_state["weights"],
         )
-        supervision_loss_audit = self._supervision_loss_audit(
-            selector_losses,
-            active_loss_weights,
-        )
-        outputs["selector_outputs"]["supervision_loss_audit"] = (
-            supervision_loss_audit
-        )
-        if isinstance(self.last_forward_summary, dict):
-            self.last_forward_summary["supervision_loss_audit"] = (
-                supervision_loss_audit
-            )
-        if self.require_counterfactual_utility_teacher and teacher_utility is not None:
-            raise RuntimeError("integrated counterfactual teacher forbids externally supplied teacher_utility")
-        if self.counterfactual_utility_distillation_weight > 0.0 and teacher_utility is not None:
-            if self.counterfactual_objective == "local_cell_signed_logistic":
-                raise RuntimeError("local-cell utility requires the integrated hard-flip detector teacher")
-            selector_losses["counterfactual_utility_distillation_loss"] = (
-                    counterfactual_utility_distillation_loss(
-                        outputs["selector_outputs"]["center_scores"],
-                        teacher_utility,
-                        outputs["selector_outputs"]["valid_mask"],
-                        temperature=self.counterfactual_utility_temperature,
-                    )
-                    * self.counterfactual_utility_distillation_weight
-                )
-            outputs["selector_outputs"]["counterfactual_teacher_kind"] = (
-                    "train_only_detached_hard_one_swap_detector_loss_reduction"
-                )
-            outputs["selector_outputs"]["counterfactual_direct_detector_gradient"] = False
-        counterfactual_request = None
-        if self.counterfactual_utility_distillation_weight > 0.0 and teacher_utility is None:
-            positions = outputs["selector_outputs"]["grid"].selected_positions
-            if self.counterfactual_objective == "local_cell_signed_logistic":
-                cell_starts = outputs["selector_outputs"].get("local_cell_starts")
-                cell_ends = outputs["selector_outputs"].get("local_cell_ends")
-                if cell_starts is None or cell_ends is None:
-                    raise RuntimeError("local-cell counterfactual teacher requires decoded cell bounds")
-                counterfactual_request = build_local_cell_hard_flip_candidates(
-                    positions,
-                    outputs["selector_outputs"]["center_scores"],
-                    outputs["selector_outputs"]["valid_mask"],
-                    cell_starts,
-                    cell_ends,
-                    outputs["selector_outputs"].get("detector_grid_positions"),
-                    max_candidates=self.counterfactual_max_candidates,
-                )
-            else:
-                counterfactual_request = build_finite_hard_one_swap_candidates(
-                    positions,
-                    outputs["selector_outputs"]["center_scores"],
-                    outputs["selector_outputs"]["valid_mask"],
-                    max_candidates=self.counterfactual_max_candidates,
-                    max_unselected_hole=self.max_unselected_hole,
-                )
         self._record_pending_loss_schedule_step()
         return {
             "inputs": outputs["inputs"],
@@ -1354,369 +448,7 @@ class DucaOnlineFrameSelector(nn.Module):
             "gt_labels": gt_labels,
             "losses": selector_losses,
             "selector_outputs": outputs["selector_outputs"],
-            "counterfactual_request": counterfactual_request,
         }
-
-    @staticmethod
-    def _supervision_loss_audit(selector_losses, weights):
-        audit = {}
-        for loss_name, weight_name in DUCA_LOSS_TO_WEIGHT_KEY.items():
-            value = selector_losses.get(loss_name)
-            if not torch.is_tensor(value):
-                raise RuntimeError(f"DUCA loss inventory is missing {loss_name}")
-            weight = float(weights.get(weight_name, 0.0))
-            weighted = float(value.detach().float().cpu().item())
-            audit[loss_name] = {
-                "weight_name": weight_name,
-                "weight": weight,
-                "active": bool(weight != 0.0),
-                "requires_grad": bool(value.requires_grad),
-                "weighted": weighted,
-                "unweighted": None if weight == 0.0 else weighted / weight,
-            }
-        return audit
-
-    @staticmethod
-    def _selected_detector_contribution(
-        selected_inputs: torch.Tensor,
-        objective: torch.Tensor,
-    ) -> torch.Tensor:
-        """Return detached per-selected-frame first-order detector contribution."""
-
-        if objective.ndim != 0 or not objective.requires_grad:
-            raise ValueError("detector contribution objective must be a differentiable scalar")
-        if not selected_inputs.requires_grad:
-            raise RuntimeError(
-                "detector contribution distillation requires the real selected detector input "
-                "to retain its autograd path"
-            )
-        gradient = torch.autograd.grad(
-            objective,
-            selected_inputs,
-            retain_graph=True,
-            create_graph=False,
-            allow_unused=True,
-        )[0]
-        if gradient is None:
-            raise RuntimeError("detector objective is disconnected from selected detector inputs")
-        temporal_dim = 2 if selected_inputs.ndim in {3, 5} else 3 if selected_inputs.ndim == 6 else None
-        if temporal_dim is None:
-            raise ValueError(
-                f"unsupported selected detector input shape: {tuple(selected_inputs.shape)}"
-            )
-        reduce_dims = tuple(
-            index for index in range(selected_inputs.ndim)
-            if index not in {0, temporal_dim}
-        )
-        return (selected_inputs.detach() * gradient.detach()).abs().mean(dim=reduce_dims)
-
-    @staticmethod
-    def _interpolate_selected_contribution(
-        contribution: torch.Tensor,
-        positions: torch.Tensor,
-        valid_mask: torch.Tensor,
-    ) -> torch.Tensor:
-        """Linearly reconstruct a dense train-only utility field from uniform slots."""
-
-        if contribution.ndim != 2 or positions.shape != contribution.shape:
-            raise ValueError("selected contribution and positions must be aligned [B,K]")
-        valid = valid_mask.to(device=contribution.device, dtype=torch.bool)
-        if valid.ndim != 2 or valid.shape[0] != contribution.shape[0]:
-            raise ValueError("valid_mask must align with contribution batch")
-        dense_len = int(valid.shape[1])
-        dense_rows = []
-        query = torch.arange(dense_len, device=contribution.device, dtype=contribution.dtype)
-        for row_index in range(int(contribution.shape[0])):
-            active = positions[row_index] >= 0
-            row_positions = positions[row_index, active].to(device=contribution.device, dtype=torch.long)
-            row_values = contribution[row_index, active].to(dtype=contribution.dtype).clamp_min(0.0)
-            if int(row_positions.numel()) == 0:
-                dense_rows.append(contribution.new_zeros((dense_len,)))
-                continue
-            if int(row_positions.numel()) > 1 and bool(
-                torch.any(row_positions[1:] <= row_positions[:-1]).item()
-            ):
-                raise ValueError("detector contribution interpolation requires strictly ordered observations")
-            if int(row_positions.numel()) == 1:
-                dense = row_values.expand(dense_len)
-            else:
-                right = torch.searchsorted(row_positions, query.long(), right=False)
-                right = right.clamp(1, int(row_positions.numel()) - 1)
-                left = right - 1
-                left_pos = row_positions[left].to(dtype=contribution.dtype)
-                right_pos = row_positions[right].to(dtype=contribution.dtype)
-                fraction = (query - left_pos) / (right_pos - left_pos).clamp_min(1.0)
-                dense = row_values[left] + fraction.clamp(0.0, 1.0) * (
-                    row_values[right] - row_values[left]
-                )
-                dense = torch.where(query <= row_positions[0], row_values[0], dense)
-                dense = torch.where(query >= row_positions[-1], row_values[-1], dense)
-            dense_rows.append(dense.masked_fill(~valid[row_index], 0.0))
-        return torch.stack(dense_rows, dim=0)
-
-    @staticmethod
-    def _contribution_distribution_loss(
-        logits: torch.Tensor,
-        target: torch.Tensor,
-        valid_mask: torch.Tensor,
-        teacher_mask: torch.Tensor,
-        *,
-        temperature: float,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        if logits.shape != target.shape or logits.shape != valid_mask.shape:
-            raise ValueError("contribution logits, target, and validity must align [B,T]")
-        if teacher_mask.ndim != 1 or teacher_mask.shape[0] != logits.shape[0]:
-            raise ValueError("teacher_mask must be [B]")
-        valid = valid_mask.to(device=logits.device, dtype=torch.bool)
-        target = target.to(device=logits.device, dtype=logits.dtype).clamp_min(0.0)
-        target = target.masked_fill(~valid, 0.0)
-        mass = target.sum(dim=1)
-        active = teacher_mask.to(device=logits.device, dtype=torch.bool) & (mass > 1.0e-8)
-        if not bool(active.any().item()):
-            return logits.sum() * 0.0, active
-        normalized_target = target / mass[:, None].clamp_min(torch.finfo(target.dtype).eps)
-        scaled_logits = logits / float(temperature)
-        neg = -torch.finfo(scaled_logits.dtype).max
-        log_probs = F.log_softmax(
-            scaled_logits.masked_fill(~valid, neg),
-            dim=1,
-        )
-        loss = -(normalized_target * log_probs).sum(dim=1)[active].mean()
-        return loss, active
-
-    def detector_contribution_distillation_losses(
-        self,
-        *,
-        selector_outputs: Mapping[str, Any],
-        detector_losses: Mapping[str, torch.Tensor],
-        selected_inputs: torch.Tensor,
-    ) -> dict[str, torch.Tensor]:
-        """Distill uniform-pass cls/reg detector contribution into the rate policy.
-
-        The teacher exists only while training and only for rows that consumed
-        exact-uniform observations.  Its contribution map is detached before
-        interpolation, so no second detector objective or validation signal is
-        used for inference-time decisions.
-        """
-
-        if self.detector_contribution_distillation_weight <= 0.0:
-            return {}
-        if self.detector_contribution_components == "none":
-            return {}
-        predicted = selector_outputs.get("detector_contribution_logits")
-        if predicted is None:
-            raise RuntimeError("sampling-rate utility logits are missing from selector outputs")
-        if predicted.ndim != 3 or predicted.shape[-1] != 2:
-            raise ValueError("detector contribution logits must be [B,T,2]")
-        grid = selector_outputs.get("grid")
-        valid = selector_outputs.get("valid_mask")
-        teacher_mask = selector_outputs.get("detector_contribution_teacher_mask")
-        if grid is None or valid is None or teacher_mask is None:
-            raise RuntimeError("detector contribution distillation requires grid, validity, and teacher rows")
-        schedule = selector_outputs.get("loss_weight_schedule", {})
-        schedule_weights = schedule.get("weights", {}) if isinstance(schedule, Mapping) else {}
-        schedule_weight = float(schedule_weights.get("detector_contribution", 1.0))
-        weight = self.detector_contribution_distillation_weight * schedule_weight
-        if weight <= 0.0:
-            return {}
-        requested = {
-            "cls": self.detector_contribution_components in {"cls", "both"},
-            "reg": self.detector_contribution_components in {"reg", "both"},
-        }
-        output: dict[str, torch.Tensor] = {}
-        targets: dict[str, torch.Tensor] = {}
-        active_rows = None
-        for component_index, component in enumerate(("cls", "reg")):
-            if not requested[component]:
-                continue
-            terms = [
-                value
-                for name, value in detector_losses.items()
-                if torch.is_tensor(value)
-                and value.ndim == 0
-                and "loss" in str(name).lower()
-                and component in str(name).lower()
-            ]
-            if not terms:
-                raise RuntimeError(
-                    f"official detector did not expose a scalar {component} loss for contribution distillation"
-                )
-            contribution = self._selected_detector_contribution(
-                selected_inputs,
-                sum(terms),
-            )
-            dense_target = self._interpolate_selected_contribution(
-                contribution,
-                grid.selected_positions,
-                valid,
-            ).detach()
-            loss, active = self._contribution_distribution_loss(
-                predicted[:, :, component_index],
-                dense_target,
-                valid,
-                teacher_mask,
-                temperature=self.detector_contribution_temperature,
-            )
-            output[f"detector_{component}_contribution_distillation_loss"] = loss * weight
-            targets[component] = dense_target
-            active_rows = active if active_rows is None else (active_rows | active)
-        if isinstance(selector_outputs, dict):
-            selector_outputs["detector_contribution_targets"] = targets
-            selector_outputs["detector_contribution_teacher_active_rows"] = (
-                torch.zeros_like(teacher_mask, dtype=torch.bool)
-                if active_rows is None
-                else active_rows
-            )
-            selector_outputs["detector_contribution_distillation_weight"] = float(weight)
-            selector_outputs["detector_contribution_train_only"] = True
-        return output
-
-    def counterfactual_distillation_loss(
-        self,
-        selector_outputs,
-        candidate_positions,
-        replaced_slots,
-        candidate_utility,
-        candidate_valid,
-        *,
-        baseline_detector_loss=None,
-        candidate_detector_loss=None,
-    ):
-        valid = candidate_valid.bool()
-        center_scores = selector_outputs["center_scores"]
-        baseline_positions = selector_outputs["grid"].selected_positions
-        pair_scores = counterfactual_pair_scores(
-            center_scores,
-            candidate_positions,
-            replaced_slots,
-            baseline_positions,
-            valid,
-        )
-        if self.counterfactual_objective == "local_cell_signed_logistic":
-            loss = local_cell_signed_logistic_loss(
-                center_scores,
-                candidate_positions,
-                replaced_slots,
-                baseline_positions,
-                candidate_utility.detach(),
-                valid,
-                temperature=self.counterfactual_utility_temperature,
-            ) * self.counterfactual_utility_distillation_weight
-            distillation_loss_kind = "distinct_local_cell_weighted_signed_logistic"
-            gradient_alignment = {
-                "status": "not_computed_in_training_forward",
-                "spearman": 0.0,
-                "sign_agreement": 0.0,
-            }
-            alignment_available = False
-        else:
-            swap_incidence = build_swap_incidence_matrix(
-                center_scores,
-                candidate_positions,
-                replaced_slots,
-                baseline_positions,
-                valid,
-            )
-            loss = signed_one_swap_proximal_loss(
-                center_scores,
-                swap_incidence,
-                candidate_utility.detach(),
-                valid,
-                temperature=self.counterfactual_utility_temperature,
-            ) * self.counterfactual_utility_distillation_weight
-            distillation_loss_kind = "swap_gram_whitened_signed_proximal"
-            try:
-                gradient_alignment = score_space_utility_alignment(
-                    center_scores,
-                    loss,
-                    swap_incidence,
-                    candidate_utility.detach(),
-                    valid,
-                    temperature=self.counterfactual_utility_temperature,
-                )
-                alignment_available = True
-            except ValueError:
-                gradient_alignment = {"spearman": 0.0, "sign_agreement": 0.0}
-                alignment_available = False
-        with torch.no_grad():
-            student_pair = pair_scores[valid].float()
-            utility = candidate_utility.detach()[valid].float()
-            if (
-                student_pair.numel() >= 2
-                and not bool(torch.all(student_pair == student_pair[0]))
-                and not bool(torch.all(utility == utility[0]))
-            ):
-                student_rank = torch.argsort(torch.argsort(student_pair)).float()
-                utility_rank = torch.argsort(torch.argsort(utility)).float()
-                centered_d = student_rank - student_rank.mean()
-                centered_u = utility_rank - utility_rank.mean()
-                denom = centered_d.norm() * centered_u.norm()
-                spearman = float((centered_d @ centered_u / denom.clamp_min(1e-12)).item())
-            else:
-                spearman = 0.0
-            informative = (student_pair != 0) & (utility != 0)
-            distinct_utility = bool(
-                utility.numel() >= 2 and torch.unique(utility).numel() >= 2
-            )
-            sign = (
-                float(((student_pair[informative] * utility[informative]) > 0).float().mean().item())
-                if informative.any() else 0.0
-            )
-            safe_slots = replaced_slots.clamp_min(0)
-            removed_positions = torch.gather(baseline_positions.clamp_min(0), 1, safe_slots)
-            utility_consistency_max_abs_error = None
-            baseline_values = []
-            candidate_loss_values = []
-            if baseline_detector_loss is not None and candidate_detector_loss is not None:
-                baseline_tensor = baseline_detector_loss.detach().float()
-                candidate_loss_tensor = candidate_detector_loss.detach().float()
-                if bool(valid.any()):
-                    expected_utility = baseline_tensor[:, None] - candidate_loss_tensor
-                    utility_consistency_max_abs_error = float(
-                        (expected_utility[valid] - candidate_utility.detach().float()[valid]).abs().max().item()
-                    )
-                    baseline_values = [
-                        float(baseline_tensor[batch_index].item())
-                        for batch_index in range(int(baseline_tensor.shape[0]))
-                        for _ in range(int(valid[batch_index].sum().item()))
-                    ]
-                    candidate_loss_values = [
-                        float(value) for value in candidate_loss_tensor[valid].cpu().tolist()
-                    ]
-                else:
-                    utility_consistency_max_abs_error = 0.0
-            self.last_counterfactual_summary = {
-                "teacher_kind": (
-                    "detached_distinct_local_cell_hard_flip_official_actionformer_cls_plus_reg"
-                    if self.counterfactual_objective == "local_cell_signed_logistic"
-                    else "detached_hard_one_swap_official_actionformer_cls_plus_reg"
-                ),
-                "candidate_count": int(candidate_valid.sum().item()),
-                "direct_detector_gradient": False,
-                "sign_agreement": sign,
-                "spearman": spearman,
-                "finite": bool(torch.isfinite(candidate_utility[candidate_valid]).all().item()),
-                "distillation_loss_kind": distillation_loss_kind,
-                "no_op_teacher_utility": 0.0,
-                "no_op_student_score_delta": 0.0,
-                "no_op_role": "fixed_score_delta_reference_not_competition_class",
-                "candidate_utility_positive_count": int((utility > 0).sum().item()),
-                "candidate_utility_negative_count": int((utility < 0).sum().item()),
-                "candidate_utility_zero_count": int((utility == 0).sum().item()),
-                "candidate_utility_values": [float(value) for value in utility.cpu().tolist()],
-                "student_pair_score_values": [float(value) for value in student_pair.cpu().tolist()],
-                "candidate_add_positions": [int(value) for value in candidate_positions[valid].cpu().tolist()],
-                "candidate_remove_positions": [int(value) for value in removed_positions[valid].cpu().tolist()],
-                "candidate_cell_indices": [int(value) for value in replaced_slots[valid].cpu().tolist()],
-                "baseline_detector_loss_values": baseline_values,
-                "candidate_detector_loss_values": candidate_loss_values,
-                "utility_consistency_max_abs_error": utility_consistency_max_abs_error,
-                "alignment_kind": "score_space_pair_direction_vs_signed_detector_swap_gain",
-                "distillation_gradient_alignment": gradient_alignment,
-                "distillation_gradient_alignment_available": bool(alignment_available and distinct_utility),
-                "utility_alignment_informative": distinct_utility,
-            }
-        return loss
 
     @staticmethod
     def _normalize_loss_weight_schedule(config: Optional[Mapping[str, Any]]) -> Optional[dict[str, Any]]:
@@ -1738,7 +470,7 @@ class DucaOnlineFrameSelector(nn.Module):
         out["shape"] = str(out.get("shape", out.get("curve", "linear"))).lower()
         if out["shape"] not in {"linear", "cosine"}:
             raise ValueError("loss_weight_schedule.shape must be linear or cosine")
-        entries: dict[str, dict[str, Any]] = {}
+        entries: dict[str, tuple[float, float]] = {}
         reserved = {"type", "warmup_steps", "transition_steps", "ramp_steps", "shape", "curve", "enabled"}
         for key, value in out.items():
             if key in reserved:
@@ -1746,20 +478,7 @@ class DucaOnlineFrameSelector(nn.Module):
             if isinstance(value, Mapping):
                 if "start" not in value or "end" not in value:
                     raise ValueError(f"loss_weight_schedule.{key} must define start and end")
-                entry_warmup = int(value.get("warmup_steps", out["warmup_steps"]))
-                entry_transition = int(value.get("transition_steps", out["transition_steps"]))
-                entry_shape = str(value.get("shape", out["shape"])).lower()
-                if entry_warmup < 0 or entry_transition < 0:
-                    raise ValueError(f"loss_weight_schedule.{key} step counts must be non-negative")
-                if entry_shape not in {"linear", "cosine"}:
-                    raise ValueError(f"loss_weight_schedule.{key}.shape must be linear or cosine")
-                entries[str(key)] = {
-                    "start": float(value["start"]),
-                    "end": float(value["end"]),
-                    "warmup_steps": entry_warmup,
-                    "transition_steps": entry_transition,
-                    "shape": entry_shape,
-                }
+                entries[str(key)] = (float(value["start"]), float(value["end"]))
         out["entries"] = entries
         return out
 
@@ -1777,31 +496,9 @@ class DucaOnlineFrameSelector(nn.Module):
                 "detector_gradient_weight": 1.0,
             }
         progress = self._loss_schedule_progress(step)
-        entry_progress = {}
-        for key, entry in self.loss_weight_schedule["entries"].items():
-            item_progress = self._interpolation_progress(
-                step,
-                warmup=int(entry["warmup_steps"]),
-                transition=int(entry["transition_steps"]),
-                shape=str(entry["shape"]),
-            )
-            weights[key] = float(entry["start"] + (entry["end"] - entry["start"]) * item_progress)
-            entry_progress[key] = float(item_progress)
-        if self.selector_variant == "transition_only":
-            policy_alpha = float(weights.get("policy_alpha", 1.0))
-            detector_gradient = float(weights.get("detector_gradient", 0.0))
-            detector_end = float(
-                self.loss_weight_schedule["entries"].get("detector_gradient", {}).get("end", detector_gradient)
-            )
-            if policy_alpha <= 0.0:
-                phase = "uniform_policy_coarse_transition_learning"
-            elif policy_alpha < 1.0:
-                phase = "continuous_policy_homotopy"
-            elif detector_gradient < detector_end:
-                phase = "protected_detector_bridge_homotopy"
-            else:
-                phase = "joint_transition_detection"
-        elif progress <= 0.0:
+        for key, (start, end) in self.loss_weight_schedule["entries"].items():
+            weights[key] = float(start + (end - start) * progress)
+        if progress <= 0.0:
             phase = "coarse_actionness_warmup"
         elif progress >= 1.0:
             phase = "joint_detection_selection"
@@ -1817,48 +514,24 @@ class DucaOnlineFrameSelector(nn.Module):
             "progress": float(progress),
             "phase": phase,
             "weights": weights,
-            "entry_progress": entry_progress,
             "detector_gradient_weight": float(weights.get("detector_gradient", weights.get("detector", 1.0))),
         }
 
     def _loss_schedule_progress(self, step: int) -> float:
         if self.loss_weight_schedule is None:
             return 1.0
-        return self._interpolation_progress(
-            step,
-            warmup=int(self.loss_weight_schedule["warmup_steps"]),
-            transition=int(self.loss_weight_schedule["transition_steps"]),
-            shape=str(self.loss_weight_schedule.get("shape", "linear")),
-        )
-
-    @staticmethod
-    def _interpolation_progress(step: int, *, warmup: int, transition: int, shape: str) -> float:
+        warmup = int(self.loss_weight_schedule["warmup_steps"])
+        transition = int(self.loss_weight_schedule["transition_steps"])
         if step <= warmup:
             raw = 0.0
         elif transition <= 0:
             raw = 1.0
         else:
             raw = min(1.0, max(0.0, float(step - warmup) / float(transition)))
-        if shape == "cosine":
+        if self.loss_weight_schedule.get("shape") == "cosine":
             pi = torch.acos(torch.zeros((), dtype=torch.float64)).item() * 2.0
             raw = 0.5 - 0.5 * torch.cos(torch.tensor(raw * pi, dtype=torch.float64)).item()
         return float(raw)
-
-    def _use_stable_structured_selection(self, schedule_state: Optional[Mapping[str, Any]]) -> bool:
-        if self.selector_variant == "transition_only":
-            return False
-        if self.acquisition_policy != "global_structured_topk" or not self.training:
-            return False
-        if not isinstance(schedule_state, Mapping) or not bool(schedule_state.get("enabled", False)):
-            return False
-        progress = float(schedule_state.get("progress", 1.0))
-        if progress <= 0.0:
-            return True
-        if progress >= 1.0:
-            return False
-        step = int(schedule_state.get("step", 0))
-        learned_threshold = int(round(progress * 100.0))
-        return (step % 100) >= learned_threshold
 
     def _record_pending_loss_schedule_step(self) -> None:
         self._pending_loss_schedule_advance = bool(self.training and self.loss_weight_schedule is not None)
@@ -1924,7 +597,7 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("gt_segments length must match batch size for DUCA action target generation")
         device = masks.device
         dtype = torch.float32
-        centers = torch.arange(temporal_len, device=device, dtype=dtype)
+        centers = torch.arange(temporal_len, device=device, dtype=dtype) + 0.5
         target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
         valid = masks.to(device=device, dtype=torch.bool)
         for batch_idx, segments in enumerate(gt_segments):
@@ -1937,168 +610,8 @@ class DucaOnlineFrameSelector(nn.Module):
             seg = seg.reshape(-1, 2)
             starts = torch.minimum(seg[:, 0], seg[:, 1])[:, None]
             ends = torch.maximum(seg[:, 0], seg[:, 1])[:, None]
-            covered = ((centers[None, :] >= starts) & (centers[None, :] < ends)).any(dim=0)
+            covered = ((centers[None, :] >= starts) & (centers[None, :] <= ends)).any(dim=0)
             target[batch_idx] = covered.to(dtype=dtype)
-        return target.masked_fill(~valid, 0.0)
-
-    @staticmethod
-    def _endpoint_targets_from_gt_segments(
-        gt_segments,
-        masks: torch.Tensor,
-    ) -> Optional[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
-        if gt_segments is None:
-            return None
-        if masks.ndim != 2:
-            raise ValueError("DUCA endpoint target generation expects dense masks [B,T]")
-        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
-        if len(gt_segments) != batch:
-            raise ValueError("gt_segments length must match batch size for DUCA endpoint target generation")
-        device = masks.device
-        dtype = torch.float32
-        centers = torch.arange(temporal_len, device=device, dtype=dtype)
-        start_target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
-        end_target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
-        context_target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
-        valid = masks.to(device=device, dtype=torch.bool)
-        for batch_idx, segments in enumerate(gt_segments):
-            if segments is None:
-                continue
-            seg = segments if torch.is_tensor(segments) else torch.as_tensor(segments, dtype=dtype)
-            seg = seg.to(device=device, dtype=dtype)
-            if seg.numel() == 0:
-                continue
-            seg = seg.reshape(-1, 2)
-            starts = torch.minimum(seg[:, 0], seg[:, 1])
-            ends = torch.maximum(seg[:, 0], seg[:, 1])
-            row_valid = valid[batch_idx].to(dtype=dtype)
-            for start, end in zip(starts, ends):
-                duration = (end - start).clamp_min(1.0)
-                sigma = (0.08 * duration).clamp(min=0.75, max=4.0)
-                start_kernel = torch.exp(-0.5 * ((centers - start) / sigma).square()) * row_valid
-                end_kernel = torch.exp(-0.5 * ((centers - end) / sigma).square()) * row_valid
-                start_target[batch_idx] += start_kernel / start_kernel.sum().clamp_min(1.0e-6)
-                end_target[batch_idx] += end_kernel / end_kernel.sum().clamp_min(1.0e-6)
-
-                context_offset = (1.5 * sigma).clamp(min=1.0, max=6.0)
-                pre_kernel = torch.exp(-0.5 * ((centers - (start - context_offset)) / sigma).square()) * row_valid
-                post_kernel = torch.exp(-0.5 * ((centers - (end + context_offset)) / sigma).square()) * row_valid
-                context_target[batch_idx] += 0.5 * pre_kernel / pre_kernel.sum().clamp_min(1.0e-6)
-                context_target[batch_idx] += 0.5 * post_kernel / post_kernel.sum().clamp_min(1.0e-6)
-        return (
-            start_target.masked_fill(~valid, 0.0),
-            end_target.masked_fill(~valid, 0.0),
-            context_target.masked_fill(~valid, 0.0),
-        )
-
-    @staticmethod
-    def _transition_target_from_gt_segments(
-        gt_segments,
-        masks: torch.Tensor,
-        *,
-        sigma: float,
-        truncate_radius: int,
-        boundary_validity=None,
-    ) -> Optional[torch.Tensor]:
-        if gt_segments is None:
-            return None
-        if masks.ndim != 2:
-            raise ValueError("DUCA transition target generation expects dense masks [B,T]")
-        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
-        if len(gt_segments) != batch:
-            raise ValueError("gt_segments length must match batch size for transition targets")
-        if boundary_validity is not None and len(boundary_validity) != batch:
-            raise ValueError("gt_boundary_validity batch must match transition targets")
-        sigma = float(sigma)
-        truncate_radius = int(truncate_radius)
-        if sigma <= 0.0 or truncate_radius < 0:
-            raise ValueError("transition target sigma/radius are invalid")
-        device = masks.device
-        centers = torch.arange(temporal_len, device=device, dtype=torch.float32)
-        valid = masks.to(device=device, dtype=torch.bool)
-        target = torch.zeros(batch, temporal_len, device=device, dtype=torch.float32)
-        for batch_idx, segments in enumerate(gt_segments):
-            if segments is None:
-                continue
-            seg = segments if torch.is_tensor(segments) else torch.as_tensor(segments, dtype=torch.float32)
-            seg = seg.to(device=device, dtype=torch.float32).reshape(-1, 2)
-            if seg.numel() == 0:
-                continue
-            endpoint_matrix = torch.stack(
-                (torch.minimum(seg[:, 0], seg[:, 1]), torch.maximum(seg[:, 0], seg[:, 1])),
-                dim=1,
-            )
-            if boundary_validity is None:
-                endpoint_validity = torch.ones_like(endpoint_matrix, dtype=torch.bool)
-            else:
-                endpoint_validity = torch.as_tensor(
-                    boundary_validity[batch_idx],
-                    device=device,
-                    dtype=torch.bool,
-                ).reshape(-1, 2)
-                if endpoint_validity.shape != endpoint_matrix.shape:
-                    raise ValueError("gt_boundary_validity must align with GT segments")
-            endpoints = endpoint_matrix[endpoint_validity]
-            if endpoints.numel() == 0:
-                continue
-            row_valid = valid[batch_idx].to(dtype=torch.float32)
-            endpoint_mass = 1.0 / float(endpoints.numel())
-            for endpoint in endpoints:
-                distance = centers - endpoint
-                kernel = torch.exp(-0.5 * (distance / sigma).square())
-                kernel = kernel * (distance.abs() <= float(truncate_radius)).to(kernel.dtype) * row_valid
-                kernel_mass = kernel.sum()
-                if float(kernel_mass.detach().item()) > 0.0:
-                    target[batch_idx] += endpoint_mass * kernel / kernel_mass
-        return target.masked_fill(~valid, 0.0)
-
-    @staticmethod
-    def _transition_event_target_from_gt_segments(
-        gt_segments,
-        masks: torch.Tensor,
-        *,
-        boundary_validity=None,
-    ) -> Optional[torch.Tensor]:
-        """Build exact Oracle-compatible start/end events for burst supervision."""
-
-        if gt_segments is None:
-            return None
-        if masks.ndim != 2:
-            raise ValueError("DUCA transition events expect dense masks [B,T]")
-        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
-        if len(gt_segments) != batch:
-            raise ValueError("gt_segments length must match transition events")
-        if boundary_validity is not None and len(boundary_validity) != batch:
-            raise ValueError("gt_boundary_validity batch must match transition events")
-        device = masks.device
-        valid = masks.to(device=device, dtype=torch.bool)
-        target = torch.zeros(batch, temporal_len, device=device, dtype=torch.float32)
-        for batch_idx, segments in enumerate(gt_segments):
-            if segments is None:
-                continue
-            row = torch.as_tensor(
-                segments,
-                device=device,
-                dtype=torch.float32,
-            ).reshape(-1, 2)
-            if row.numel() == 0:
-                continue
-            starts = torch.minimum(row[:, 0], row[:, 1]).floor().long()
-            ends = torch.maximum(row[:, 0], row[:, 1]).ceil().long() - 1
-            endpoints = torch.stack((starts, ends), dim=1)
-            if boundary_validity is None:
-                endpoint_validity = torch.ones_like(endpoints, dtype=torch.bool)
-            else:
-                endpoint_validity = torch.as_tensor(
-                    boundary_validity[batch_idx],
-                    device=device,
-                    dtype=torch.bool,
-                ).reshape(-1, 2)
-                if endpoint_validity.shape != endpoints.shape:
-                    raise ValueError("gt_boundary_validity must align with GT segments")
-            for endpoint in endpoints[endpoint_validity].tolist():
-                endpoint = int(endpoint)
-                if 0 <= endpoint < temporal_len and bool(valid[batch_idx, endpoint].item()):
-                    target[batch_idx, endpoint] = 1.0
         return target.masked_fill(~valid, 0.0)
 
     @staticmethod
@@ -2108,12 +621,33 @@ class DucaOnlineFrameSelector(nn.Module):
         *,
         boundary_radius: int,
     ) -> Optional[torch.Tensor]:
-        del boundary_radius
-        targets = DucaOnlineFrameSelector._endpoint_targets_from_gt_segments(gt_segments, masks)
-        if targets is None:
+        if gt_segments is None:
             return None
-        start_target, end_target, _ = targets
-        return start_target + end_target
+        if masks.ndim != 2:
+            raise ValueError("DUCA boundary target generation expects dense masks [B,T]")
+        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
+        if len(gt_segments) != batch:
+            raise ValueError("gt_segments length must match batch size for DUCA boundary target generation")
+        device = masks.device
+        dtype = torch.float32
+        centers = torch.arange(temporal_len, device=device, dtype=dtype) + 0.5
+        target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
+        valid = masks.to(device=device, dtype=torch.bool)
+        radius = float(max(1, int(boundary_radius)))
+        for batch_idx, segments in enumerate(gt_segments):
+            if segments is None:
+                continue
+            seg = segments if torch.is_tensor(segments) else torch.as_tensor(segments, dtype=dtype)
+            seg = seg.to(device=device, dtype=dtype)
+            if seg.numel() == 0:
+                continue
+            seg = seg.reshape(-1, 2)
+            starts = torch.minimum(seg[:, 0], seg[:, 1])[:, None]
+            ends = torch.maximum(seg[:, 0], seg[:, 1])[:, None]
+            near_start = (centers[None, :] - starts).abs() <= radius
+            near_end = (centers[None, :] - ends).abs() <= radius
+            target[batch_idx] = (near_start | near_end).any(dim=0).to(dtype=dtype)
+        return target.masked_fill(~valid, 0.0)
 
     @staticmethod
     def _boundary_utility_proxy_target_from_gt_segments(
@@ -2122,18 +656,35 @@ class DucaOnlineFrameSelector(nn.Module):
         *,
         boundary_radius: int,
     ) -> Optional[torch.Tensor]:
-        del boundary_radius
-        targets = DucaOnlineFrameSelector._endpoint_targets_from_gt_segments(gt_segments, masks)
-        if targets is None:
+        if gt_segments is None:
             return None
-        start_target, end_target, context_target = targets
-        target = 0.45 * start_target + 0.45 * end_target + 0.10 * context_target
-        mass = target.sum(dim=1, keepdim=True)
-        return torch.where(
-            mass > 0,
-            target / mass.clamp_min(torch.finfo(target.dtype).eps),
-            target,
-        )
+        if masks.ndim != 2:
+            raise ValueError("DUCA boundary utility proxy generation expects dense masks [B,T]")
+        batch, temporal_len = int(masks.shape[0]), int(masks.shape[1])
+        if len(gt_segments) != batch:
+            raise ValueError("gt_segments length must match batch size for DUCA boundary utility proxy generation")
+        device = masks.device
+        dtype = torch.float32
+        centers = torch.arange(temporal_len, device=device, dtype=dtype) + 0.5
+        target = torch.zeros(batch, temporal_len, device=device, dtype=dtype)
+        valid = masks.to(device=device, dtype=torch.bool)
+        radius = float(max(1, int(boundary_radius)))
+        for batch_idx, segments in enumerate(gt_segments):
+            if segments is None:
+                continue
+            seg = segments if torch.is_tensor(segments) else torch.as_tensor(segments, dtype=dtype)
+            seg = seg.to(device=device, dtype=dtype)
+            if seg.numel() == 0:
+                continue
+            seg = seg.reshape(-1, 2)
+            starts = torch.minimum(seg[:, 0], seg[:, 1])[:, None]
+            ends = torch.maximum(seg[:, 0], seg[:, 1])[:, None]
+            inside = ((centers[None, :] >= starts) & (centers[None, :] <= ends)).any(dim=0)
+            near_start = (centers[None, :] - starts).abs() <= radius
+            near_end = (centers[None, :] - ends).abs() <= radius
+            boundary = (near_start | near_end).any(dim=0)
+            target[batch_idx] = torch.maximum(inside.to(dtype=dtype), boundary.to(dtype=dtype) * 1.5)
+        return target.masked_fill(~valid, 0.0)
 
     def forward_test(self, inputs: torch.Tensor, masks: torch.Tensor, metas=None, budget=None, **kwargs: Any) -> dict[str, Any]:
         self._reject_external_actionness_payload(metas)
@@ -2145,89 +696,6 @@ class DucaOnlineFrameSelector(nn.Module):
             "metas": outputs["metas"],
             "selector_outputs": outputs["selector_outputs"],
         }
-
-    def _apply_training_uniform_companion(self, grid, scores, valid_mask):
-        companion_mask = _training_uniform_companion_mask(
-            int(valid_mask.shape[0]),
-            fraction=self.training_uniform_companion_fraction,
-            device=valid_mask.device,
-        )
-        scores["training_uniform_companion_mask"] = companion_mask
-        scores["training_uniform_companion_fraction"] = float(
-            self.training_uniform_companion_fraction
-        )
-        if not bool(companion_mask.any().item()):
-            return companion_mask
-
-        slot_count = int(grid.selected_positions.shape[1])
-        score_dtype = scores["center_scores"].dtype
-        uniform_positions, uniform_dense_mask, uniform_assignment = (
-            _exact_uniform_companion_tensors(
-                valid_mask,
-                slot_count=slot_count,
-                dtype=score_dtype,
-            )
-        )
-        mask_bk = companion_mask[:, None]
-        mask_bkt = companion_mask[:, None, None]
-        blended_positions = torch.where(
-            mask_bk,
-            uniform_positions,
-            grid.selected_positions,
-        )
-        blended_dense_mask = torch.where(
-            mask_bk,
-            uniform_dense_mask,
-            grid.selected_mask.bool(),
-        )
-
-        structured_assignment = scores.get("structured_soft_slot_assignment")
-        if structured_assignment is None:
-            raise ValueError(
-                "uniform companion requires structured exact-K slot marginals"
-            )
-        scores["structured_soft_slot_assignment"] = torch.where(
-            mask_bkt,
-            uniform_assignment,
-            structured_assignment,
-        )
-        selected_mask_st = scores.get("selected_mask_st")
-        if selected_mask_st is None:
-            raise ValueError("uniform companion requires selected_mask_st")
-        scores["selected_mask_st"] = torch.where(
-            mask_bk,
-            uniform_dense_mask.to(dtype=selected_mask_st.dtype),
-            selected_mask_st,
-        )
-        detector_positions = scores.get("detector_grid_positions")
-        if detector_positions is not None:
-            scores["detector_grid_positions"] = torch.where(
-                mask_bk,
-                uniform_positions,
-                detector_positions,
-            )
-        scores["selected_indices_st"] = blended_positions
-        scores["training_uniform_companion_positions"] = uniform_positions
-
-        grid.selected_positions = blended_positions
-        grid.selected_mask = blended_dense_mask
-        grid.detector_input_length = blended_dense_mask.long().sum(dim=1)
-        grid.metadata = dict(grid.metadata)
-        grid.metadata.update(
-            {
-                "training_uniform_companion": True,
-                "training_uniform_companion_fraction": float(
-                    self.training_uniform_companion_fraction
-                ),
-                "training_uniform_companion_count": int(
-                    companion_mask.long().sum().item()
-                ),
-                "inference_uniform_companion": False,
-            }
-        )
-        scores["decode_metadata"] = grid.metadata
-        grid.validate()
-        return companion_mask
 
     def _forward_select(
         self,
@@ -2241,27 +709,9 @@ class DucaOnlineFrameSelector(nn.Module):
         sync_enabled = profile_enabled and bool(self.profile_sync_cuda)
         total_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         descriptor_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
-        if self.selector_variant == "transition_only":
-            descriptors = torch.zeros(
-                int(masks.shape[0]),
-                int(masks.shape[1]),
-                self.in_channels,
-                device=inputs.device,
-                dtype=torch.float32,
-            )
-        else:
-            descriptors = _time_descriptors_btc(inputs)
+        descriptors = _time_descriptors_btc(inputs)
         descriptor_ms = _elapsed_ms(descriptor_start, inputs, enabled=sync_enabled)
         descriptor_profile = self._descriptor_compute_profile(inputs, descriptors)
-        if self.selector_variant == "transition_only":
-            descriptor_profile = {
-                "operation": "omitted_raw_rgb_descriptor_for_transition_only",
-                "input_shape": [int(item) for item in inputs.shape],
-                "output_shape": [int(item) for item in descriptors.shape],
-                "estimated_macs": 0,
-                "estimated_flops": 0,
-                "uses_input_values": False,
-            }
         if descriptors.shape[-1] != self.in_channels:
             raise ValueError(f"DUCA selector expected {self.in_channels} channels, got {descriptors.shape[-1]}")
         masks = masks.to(device=inputs.device, dtype=torch.bool)
@@ -2278,124 +728,42 @@ class DucaOnlineFrameSelector(nn.Module):
         }
         actionness_logits = None
         p_action = None
-        actionness_provenance = None
         coarse_hidden_features = None
-        coarse_policy_hidden_features = None
-        coarse_hidden_kind = None
         if external_actionness is not None:
             actionness_logits = external_actionness.get("actionness_logits")
             p_action = external_actionness.get("p_action")
-            actionness_provenance = external_actionness["provenance"]
         elif online_actionness is not None:
             actionness_logits = online_actionness.get("logits")
             if actionness_logits is None:
                 actionness_logits = online_actionness.get("actionness_logits")
-            p_action = online_actionness.get("p_action")
-            actionness_provenance = online_actionness["provenance"]
-            if self.use_coarse_hidden_features:
-                coarse_hidden_features = online_actionness.get("coarse_hidden_features")
-                if coarse_hidden_features is None:
-                    coarse_hidden_features = online_actionness.get("hidden_features")
-                coarse_policy_hidden_features = online_actionness.get(
-                    "policy_hidden_features"
-                )
-                coarse_hidden_kind = online_actionness.get("hidden_kind")
-        stable_selection = self._use_stable_structured_selection(schedule_state)
-        policy_mix_alpha = self.inference_policy_alpha
-        policy_hidden_gradient_scale = self.policy_hidden_gradient_scale
-        if self.training and self.selector_variant == "transition_only" and isinstance(schedule_state, Mapping):
-            schedule_weights = schedule_state.get("weights", {})
-            if isinstance(schedule_weights, Mapping):
-                policy_mix_alpha = float(schedule_weights.get("policy_alpha", schedule_state.get("progress", 1.0)))
-                policy_hidden_gradient_scale = float(
-                    schedule_weights.get(
-                        "asformer_adapt",
-                        policy_hidden_gradient_scale,
-                    )
-                )
+            coarse_hidden_features = online_actionness.get("coarse_hidden_features")
         grid, scores = self.adapter.acquire(
             descriptors,
             budget=budget,
             valid_mask=masks,
             actionness_logits=actionness_logits,
             p_action=p_action,
-            actionness_provenance=actionness_provenance,
             coarse_hidden_features=coarse_hidden_features,
-            coarse_policy_hidden_features=coarse_policy_hidden_features,
-            coarse_hidden_kind=coarse_hidden_kind,
             compute_profile_context=profile_context,
-            stable_selection=stable_selection,
-            policy_mix_alpha=policy_mix_alpha,
-            policy_hidden_gradient_scale=policy_hidden_gradient_scale,
         )
-        uniform_companion_mask = torch.zeros(
-            int(masks.shape[0]),
-            device=masks.device,
-            dtype=torch.bool,
-        )
-        if self.training and self.training_uniform_companion_fraction > 0.0:
-            uniform_companion_mask = self._apply_training_uniform_companion(
-                grid,
-                scores,
-                masks,
-            )
-        uniform_policy_mask = torch.full(
-            (int(masks.shape[0]),),
-            bool(self.training and policy_mix_alpha <= 0.0),
-            device=masks.device,
-            dtype=torch.bool,
-        )
-        scores["detector_contribution_teacher_mask"] = (
-            uniform_policy_mask | uniform_companion_mask
-        )
-        scores["detector_contribution_teacher_source"] = (
-            "all_exact_uniform_policy"
-            if bool(uniform_policy_mask.all().item())
-            else "uniform_companion_rows"
-        )
-        companion_bridge_scale = _training_uniform_companion_bridge_scale(
-            uniform_companion_mask,
-            normalize_learned_gradient=(
-                self.training
-                and self.training_uniform_companion_normalize_learned_gradient
-            ),
-        ).to(device=inputs.device)
-        scores["training_uniform_companion_bridge_scale"] = companion_bridge_scale
         actionness_source_name = self.actionness_source_name
         if external_actionness is not None:
+            scores["provenance"] = external_actionness["provenance"]
             scores["external_actionness_provenance"] = external_actionness["provenance"]
             scores["external_actionness_source"] = external_actionness["source_name"]
             actionness_source_name = external_actionness["source_name"]
         elif online_actionness is not None:
+            scores["provenance"] = online_actionness["provenance"]
             scores["online_actionness_provenance"] = online_actionness["provenance"]
             scores["online_actionness_source"] = online_actionness["source_name"]
             actionness_source_name = online_actionness["source_name"]
         validate_actionness_provenance(scores.get("provenance", {}), context="DUCA selector actionness provenance")
         positions = grid.selected_positions.to(device=inputs.device)
-        detector_grid_positions = scores.get("detector_grid_positions")
-        if detector_grid_positions is None:
-            detector_grid_positions = positions
-        detector_grid_positions = detector_grid_positions.to(device=inputs.device, dtype=torch.long)
-        if detector_grid_positions.shape != positions.shape:
-            raise ValueError("detector_grid_positions must align with acquisition positions")
-        if not torch.equal(detector_grid_positions >= 0, positions >= 0):
-            raise ValueError("detector-grid and acquisition slot masks must be identical")
-        temporal_contract_audit = None
-        if self.temporal_sampling_contract is not None:
-            temporal_contract_audit = self.temporal_sampling_contract.audit_positions(positions, masks)
-            scores["temporal_sampling_contract_audit"] = temporal_contract_audit
-        self._last_selected_positions = positions.detach()
-        self._last_detector_grid_positions = detector_grid_positions.detach()
         slot_mask = positions >= 0
         gather_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
-        hard_gathered = _gather_time(inputs, positions, slot_mask)
-        hard_selected = hard_gathered
-        # The surrogate exists only to carry detector gradients during training.
-        # Running its zero-forward raw-pixel mixture in eval changes no values and
-        # only adds dense compute and memory traffic.
-        detector_gradient_weight = self._detector_gradient_weight(schedule_state) if self.training else 0.0
+        hard_selected = _gather_time(inputs, positions, slot_mask)
+        detector_gradient_weight = self._detector_gradient_weight(schedule_state)
         soft_resample_weights = None
-        structured_expected_positions = None
         bridge_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         bridge_ms = None
         if self.detector_gradient_mode == "st_sparse_gather_soft_context":
@@ -2417,72 +785,13 @@ class DucaOnlineFrameSelector(nn.Module):
                 valid_mask=masks,
                 bridge_weight=detector_gradient_weight,
             )
-        elif self.detector_gradient_mode == "structured_zero_forward":
-            assignment = scores.get("structured_soft_slot_assignment")
-            if assignment is None:
-                raise ValueError("structured_zero_forward requires structured slot marginals")
-            hard_selected = _add_structured_zero_forward_gradient_path(
-                hard_selected,
-                inputs,
-                soft_slot_assignment=assignment,
-                slot_mask=slot_mask,
-                bridge_weight=detector_gradient_weight,
-            )
-        elif self.detector_gradient_mode == "protected_structured_transport":
-            assignment = scores.get("structured_soft_slot_assignment")
-            if assignment is None:
-                raise ValueError("protected_structured_transport requires structured slot marginals")
-            hard_selected, structured_expected_positions = _add_protected_structured_transport_gradient_path(
-                hard_selected,
-                inputs,
-                selected_positions=positions,
-                soft_slot_assignment=assignment,
-                slot_mask=slot_mask,
-                bridge_weight=detector_gradient_weight,
-                bridge_row_scale=companion_bridge_scale,
-            )
-        elif self.detector_gradient_mode == "density_transport_st":
-            assignment = scores.get("structured_soft_slot_assignment")
-            if assignment is None:
-                raise ValueError("density_transport_st requires inverse-CDF slot assignments")
-            hard_selected, structured_expected_positions = _add_density_transport_gradient_path(
-                hard_selected,
-                inputs,
-                selected_positions=positions,
-                soft_slot_assignment=assignment,
-                slot_mask=slot_mask,
-                bridge_weight=detector_gradient_weight,
-                bridge_row_scale=companion_bridge_scale,
-            )
         bridge_ms = _elapsed_ms(bridge_start, inputs, enabled=sync_enabled)
-        hard_slot_weights = slot_mask.to(dtype=scores["center_scores"].dtype)
-        if self.detector_gradient_mode in {
-            "none",
-            "structured_zero_forward",
-            "protected_structured_transport",
-            "density_transport_st",
-        }:
-            st_weights = hard_slot_weights
-        else:
-            st_weights = torch.gather(scores["selected_mask_st"], 1, positions.clamp_min(0)) * slot_mask.to(
-                dtype=scores["selected_mask_st"].dtype
-            )
-            hard_slot_weights = slot_mask.to(dtype=st_weights.dtype)
-            st_weights = hard_slot_weights + float(detector_gradient_weight) * (st_weights - st_weights.detach())
+        st_weights = torch.gather(scores["selected_mask_st"], 1, positions.clamp_min(0)) * slot_mask.to(
+            dtype=scores["selected_mask_st"].dtype
+        )
+        hard_slot_weights = slot_mask.to(dtype=st_weights.dtype)
+        st_weights = hard_slot_weights + float(detector_gradient_weight) * (st_weights - st_weights.detach())
         selected_inputs = _apply_slot_weights(hard_selected, st_weights)
-        # The detector must see the exact hard observations, while contribution
-        # distillation also needs grad(loss, observation).  This identity-valued
-        # leaf records the latter without severing the ST route back to the
-        # sampling-rate policy or the permitted ASFormer policy layer.
-        contribution_teacher_inputs = None
-        if (
-            self.training
-            and self.detector_contribution_distillation_weight > 0.0
-            and self.detector_contribution_components != "none"
-        ):
-            selected_inputs, contribution_teacher_inputs = _contribution_leaf_with_st_route(
-                selected_inputs
-            )
         gather_ms = _elapsed_ms(gather_start, inputs, enabled=sync_enabled)
         total_selector_ms = _elapsed_ms(total_start, inputs, enabled=sync_enabled)
         compute_profile = dict(scores.get("compute_profile", {}))
@@ -2515,14 +824,12 @@ class DucaOnlineFrameSelector(nn.Module):
                 compute_profile,
                 dict(online_actionness.get("compute_profile", {})),
             )
-            if self.selector_variant == "transition_only":
-                compute_profile["pre_backbone_model"] = "OfficialASFormer+TransitionUtilityScorer"
         self._add_detector_gradient_bridge_profile(
             compute_profile,
-            dense_inputs=inputs,
             batch_size=int(descriptors.shape[0]),
             slot_count=int(positions.shape[1]),
             temporal_len=int(descriptors.shape[1]),
+            feature_dim=int(descriptors.shape[2]),
             mode=self.detector_gradient_mode,
             bridge_weight=float(detector_gradient_weight),
             bridge_ms=bridge_ms,
@@ -2530,43 +837,11 @@ class DucaOnlineFrameSelector(nn.Module):
         scores["compute_profile"] = compute_profile
         selected_masks = slot_mask.to(device=inputs.device, dtype=torch.bool)
         scores["grid"] = grid
-        scores["hard_selected_inputs"] = hard_gathered
-        if contribution_teacher_inputs is not None:
-            scores["detector_contribution_teacher_inputs"] = contribution_teacher_inputs
+        scores["hard_selected_inputs"] = hard_selected
         scores["selected_input_st_gradient_path"] = self.detector_gradient_mode
         scores["detector_gradient_weight"] = float(detector_gradient_weight)
         if soft_resample_weights is not None:
             scores["soft_resample_weights"] = soft_resample_weights
-        if structured_expected_positions is not None:
-            if (
-                self.retain_gradient_audit_tensors
-                and structured_expected_positions.requires_grad
-            ):
-                structured_expected_positions.retain_grad()
-            scores["structured_expected_positions"] = structured_expected_positions
-        if self.retain_gradient_audit_tensors:
-            self._gradient_audit_tensors = {
-                "center_scores": scores["center_scores"],
-                "structured_soft_slot_assignment": scores.get("structured_soft_slot_assignment"),
-                "selected_positions": positions,
-                "detector_gradient_weight": float(detector_gradient_weight),
-                "density_probabilities": scores.get("density_probabilities"),
-                "density_continuous_positions": scores.get(
-                    "density_continuous_positions"
-                ),
-                "density_projection_abs_displacement": scores.get(
-                    "density_projection_abs_displacement"
-                ),
-                "density_hard_anchored_expected_positions": structured_expected_positions,
-                "density_component_probabilities": scores.get(
-                    "density_component_probabilities"
-                ),
-                "density_mixture_weights": scores.get("density_mixture_weights"),
-                "density_component_names": scores.get("density_component_names"),
-                "density_observed_max_unselected_hole": scores.get(
-                    "density_observed_max_unselected_hole"
-                ),
-            }
         scores["sparse_grid"] = grid
         selected_counts = selected_masks.long().sum(dim=1).detach().cpu().tolist()
         self._record_pending_dynamic_budget_dual(scores, grid)
@@ -2586,43 +861,7 @@ class DucaOnlineFrameSelector(nn.Module):
             self.metadata_keys["source"]: actionness_source_name,
             "compute_profile": compute_profile,
             "detector_gradient_weight": float(detector_gradient_weight),
-            "uses_coarse_hidden_features": bool(scores.get("uses_coarse_hidden_features", False)),
-            "max_unselected_hole": self.max_unselected_hole,
-            "selection_path": scores.get("selection_path", "legacy_center_radius"),
-            "selector_variant": self.selector_variant,
-            "boundary_burst_local_bilateral_utility_enabled": bool(
-                scores.get("boundary_burst_local_bilateral_utility_enabled", False)
-            ),
-            "boundary_burst_global_mandatory_groups_enabled": bool(
-                scores.get("boundary_burst_global_mandatory_groups_enabled", False)
-            ),
-            "mandatory_boundary_group_count": scores.get(
-                "mandatory_boundary_group_count"
-            ),
-            "coarse_hidden_kind": scores.get("coarse_hidden_kind"),
-            "policy_hidden_gradient_scale": float(policy_hidden_gradient_scale),
-            "coarse_policy_hidden_requires_grad": bool(
-                coarse_policy_hidden_features is not None
-                and coarse_policy_hidden_features.requires_grad
-            ),
-            "policy_mix_alpha": float(scores.get("policy_mix_alpha", policy_mix_alpha)),
-            "training_uniform_companion_fraction": float(
-                self.training_uniform_companion_fraction
-            ),
-            "training_uniform_companion_count": int(
-                uniform_companion_mask.long().sum().detach().cpu().item()
-            ),
-            "training_uniform_companion_normalize_learned_gradient": bool(
-                self.training_uniform_companion_normalize_learned_gradient
-            ),
-            "training_uniform_companion_bridge_scale": [
-                float(value)
-                for value in companion_bridge_scale.detach().cpu().tolist()
-            ],
-            "inference_uniform_companion": False,
         }
-        if temporal_contract_audit is not None:
-            self.last_forward_summary["temporal_sampling_contract"] = temporal_contract_audit
         if isinstance(schedule_state, Mapping):
             self.last_forward_summary["loss_weight_schedule"] = dict(schedule_state)
         return {
@@ -2631,7 +870,6 @@ class DucaOnlineFrameSelector(nn.Module):
             "metas": self._write_metas(
                 metas,
                 grid,
-                detector_grid_positions=detector_grid_positions,
                 actionness_source_name=actionness_source_name,
                 compute_profile=compute_profile,
             ),
@@ -2642,82 +880,38 @@ class DucaOnlineFrameSelector(nn.Module):
     def _add_detector_gradient_bridge_profile(
         profile: dict[str, Any],
         *,
-        dense_inputs: torch.Tensor,
         batch_size: int,
         slot_count: int,
         temporal_len: int,
+        feature_dim: int,
         mode: str,
         bridge_weight: float,
         bridge_ms: Optional[float],
     ) -> None:
         components = dict(profile.get("components", {}))
-        component_name = str(mode)
-        supported_modes = {
-            "soft_to_hard_resample",
-            "structured_zero_forward",
-            "protected_structured_transport",
-            "density_transport_st",
-        }
-        enabled = component_name in supported_modes and float(bridge_weight) > 0.0
-        dense_input_elements = int(dense_inputs.numel())
-        if temporal_len <= 0 or dense_input_elements % int(temporal_len) != 0:
-            raise ValueError("detector gradient bridge requires a valid dense temporal dimension")
-        soft_selected_output_elements = (dense_input_elements // int(temporal_len)) * int(slot_count)
-        if enabled and component_name == "protected_structured_transport":
-            macs = int(batch_size * slot_count * temporal_len + 3 * soft_selected_output_elements)
-            complexity = "O(B*K*T + numel(selected_raw_video)) hard-anchored local transport"
-            accounting_scope = "expected_position_and_local_temporal_slope_lower_bound"
-        elif enabled and component_name == "density_transport_st":
-            macs = int(batch_size * slot_count * temporal_len + 3 * soft_selected_output_elements)
-            complexity = "O(B*K*T + numel(selected_raw_video)) hard-anchored density transport"
-            accounting_scope = "inverse_cdf_expected_position_and_hard_local_temporal_slope"
-        else:
-            macs = dense_input_elements * int(slot_count) if enabled else 0
-            complexity = "O(numel(dense_raw_video)*K) soft slot resampling" if enabled else "disabled"
-            accounting_scope = "dominant_einsum_lower_bound"
-        softmax_flops = (
-            int(batch_size * slot_count * temporal_len * 8)
-            if enabled and component_name == "soft_to_hard_resample"
-            else 0
-        )
+        enabled = mode == "soft_to_hard_resample"
+        macs = int(batch_size * slot_count * temporal_len * feature_dim) if enabled else 0
+        softmax_flops = int(batch_size * slot_count * temporal_len * 8) if enabled else 0
         flops = int(2 * macs + softmax_flops)
-        context_element_size = int(dense_inputs.element_size()) if dense_inputs.is_floating_point() else 4
         component = {
             "enabled": bool(enabled),
-            "mode": component_name,
+            "mode": str(mode),
             "slot_count": int(slot_count),
             "dense_temporal_len": int(temporal_len),
-            "dense_input_shape": [int(value) for value in dense_inputs.shape],
-            "dense_input_dtype": str(dense_inputs.dtype),
-            "dense_input_elements": dense_input_elements,
+            "feature_dim": int(feature_dim),
             "estimated_macs": int(macs),
             "estimated_flops": int(flops),
-            "dense_float_copy_bytes": (
-                dense_input_elements * 4 if enabled and not dense_inputs.is_floating_point() else 0
-            ),
-            "soft_selected_output_elements": int(soft_selected_output_elements),
-            "soft_selected_output_bytes": (
-                int(soft_selected_output_elements * context_element_size) if enabled else 0
-            ),
-            "slot_assignment_elements": int(batch_size * slot_count * temporal_len),
-            "complexity": complexity,
-            "accounting_scope": accounting_scope,
-            "estimated_flops_are_lower_bound": True,
-            "complete_memory_accounting": False,
+            "complexity": "O(B*K*T*C) soft slot resampling" if enabled else "disabled",
         }
-        components[component_name] = component
+        components["soft_to_hard_resample"] = component
         profile["components"] = components
         profile["estimated_macs"] = int(profile.get("estimated_macs", 0) or 0) + int(macs)
         profile["estimated_flops"] = int(profile.get("estimated_flops", 0) or 0) + int(flops)
-        if enabled:
-            profile["estimated_flops_are_lower_bound"] = True
-            profile["complete_memory_accounting"] = False
         profile["detector_gradient_bridge"] = {
-            "mode": component_name,
+            "mode": str(mode),
             "bridge_weight": float(bridge_weight),
             "latency_ms": bridge_ms,
-            "component": component_name,
-            "training_only": True,
+            "component": "soft_to_hard_resample",
         }
 
     def _record_pending_dynamic_budget_dual(self, scores: Mapping[str, Any], grid) -> None:
@@ -3016,7 +1210,6 @@ class DucaOnlineFrameSelector(nn.Module):
         metas,
         grid,
         *,
-        detector_grid_positions: Optional[torch.Tensor] = None,
         actionness_source_name: str,
         compute_profile: Optional[Mapping[str, Any]] = None,
     ) -> list[dict[str, Any]]:
@@ -3028,33 +1221,20 @@ class DucaOnlineFrameSelector(nn.Module):
                 raise ValueError("metas length must match batch size")
             out = [dict(meta) for meta in metas]
         positions_cpu = grid.selected_positions.detach().cpu().long()
-        if detector_grid_positions is None:
-            detector_grid_positions = grid.selected_positions
-        if detector_grid_positions.shape != grid.selected_positions.shape:
-            raise ValueError("detector_grid_positions must align with acquisition positions")
-        detector_positions_cpu = detector_grid_positions.detach().cpu().long()
         valid_lens = grid.valid_len.detach().cpu().long()
         requested_budget = grid.requested_budget.detach().cpu().long()
         effective_budget = grid.effective_budget.detach().cpu().long()
         for idx, meta in enumerate(out):
             positions = [int(item) for item in positions_cpu[idx].tolist() if int(item) >= 0]
-            detector_positions = [
-                int(item) for item in detector_positions_cpu[idx].tolist() if int(item) >= 0
-            ]
-            if len(detector_positions) != len(positions):
-                raise ValueError("detector-grid and acquisition positions must have the same active K")
             dense_valid_len = int(valid_lens[idx].item())
             remap = {
                 "source": SELECTED_AXIS,
                 "target": TRUE_TIME_AXIS,
-                "selected_to_original": {int(axis): int(pos) for axis, pos in enumerate(detector_positions)},
-                "original_to_selected": {int(pos): int(axis) for axis, pos in enumerate(detector_positions)},
-                "selected_axis_to_true_time_dense_index": detector_positions,
-                "acquisition_positions": positions,
+                "selected_to_original": {int(axis): int(pos) for axis, pos in enumerate(positions)},
+                "original_to_selected": {int(pos): int(axis) for axis, pos in enumerate(positions)},
+                "selected_axis_to_true_time_dense_index": positions,
             }
             meta["duca_online_selected_positions"] = positions
-            meta["duca_acquisition_positions"] = positions
-            meta["duca_detector_grid_positions"] = detector_positions
             meta["duca_online_selected_positions_unit"] = self.selected_positions_unit
             meta["duca_online_selected_mask"] = [True] * len(positions)
             meta["duca_online_budget"] = int(grid.budget)
@@ -3071,15 +1251,10 @@ class DucaOnlineFrameSelector(nn.Module):
                 meta["duca_online_compute_profile"] = dict(compute_profile)
             meta["duca_online_budget_unit"] = grid.budget_unit
             meta["duca_online_coordinate"] = grid.coordinate
-            if self.temporal_sampling_contract is not None:
-                fps = meta.get("avg_fps", meta.get("fps"))
-                meta["duca_temporal_sampling_contract"] = self.temporal_sampling_contract.to_dict(
-                    fps=None if fps is None else float(fps)
-                )
             meta["detector_output_coordinate_space"] = self.detector_output_coordinate_space
             meta["detector_prediction_inverse_map_required"] = self.detector_output_coordinate_space == SELECTED_AXIS
-            meta["selected_axis_to_true_time_dense_index"] = detector_positions
-            meta["truetime_selected_positions"] = detector_positions
+            meta["selected_axis_to_true_time_dense_index"] = positions
+            meta["truetime_selected_positions"] = positions
             meta["truetime_dense_len"] = int(grid.original_length)
             meta["truetime_dense_valid_len"] = dense_valid_len
             meta["irregular_selected_positions"] = positions

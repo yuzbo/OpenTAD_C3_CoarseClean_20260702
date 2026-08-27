@@ -40,7 +40,6 @@ model = dict(
     type="SingleStageDetector",
     frame_selector=dict(
         type="DucaOnlineFrameSelector",
-        in_channels=toy_input_channels,
         dense_window_size=dense_window_size,
         budget=window_size,
         coordinate_space="original_time",

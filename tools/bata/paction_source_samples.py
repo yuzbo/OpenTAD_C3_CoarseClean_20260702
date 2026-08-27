@@ -92,13 +92,6 @@ STRICT_DEPLOY_PAYLOAD_KEYS = (
 SELECTION_SOURCE_STRIP_KEYS = tuple(
     dict.fromkeys(STRICT_DEPLOY_PAYLOAD_KEYS + ("uses_gt_for_diagnostics", "diagnostic_only", "deploy_selection_ledger"))
 )
-SELECTION_SOURCE_STRIPPABLE_DIAGNOSTIC_TRUE_FLAGS = (
-    "uses_gt_for_diagnostics",
-    "diagnostic_only",
-)
-SELECTION_SOURCE_PRE_STRIP_FORBIDDEN_TRUE_FLAGS = tuple(
-    key for key in SELECTION_SOURCE_FORBIDDEN_TRUE_FLAGS if key not in SELECTION_SOURCE_STRIPPABLE_DIAGNOSTIC_TRUE_FLAGS
-)
 PROVENANCE_FALSE_FLAGS = (
     "uses_teacher",
     "uses_oracle",
@@ -205,39 +198,6 @@ def validate_paction_positive_provenance(provenance: Mapping[str, Any], *, sourc
     return copy.deepcopy(dict(provenance))
 
 
-def infer_paction_positive_provenance_from_row(row: Mapping[str, Any], *, source_name: str) -> dict[str, Any]:
-    for key in SELECTION_SOURCE_PRE_STRIP_FORBIDDEN_TRUE_FLAGS:
-        if _is_true(row.get(key, False)):
-            raise ValueError(f"{source_name}: cannot infer p_action provenance with forbidden source flag {key}=true")
-    p_action_source = row.get("p_action_source") or row.get("source_p_action") or "lowres_action_probe"
-    provenance: dict[str, Any] = {
-        "p_action_source": str(p_action_source),
-        "no_gt_generation": True,
-        "inferred_from_source_row": True,
-        "uses_gt": False,
-        "uses_gt_for_diagnostics": False,
-        "diagnostic_only": False,
-        "training_only": False,
-    }
-    for key in PROVENANCE_FALSE_FLAGS:
-        provenance[key] = False
-    for key in (
-        "probe_model",
-        "tcn_variant",
-        "matrix_model_id",
-        "official_action_seg_backend",
-        "spatial_size",
-        "probe_checkpoint_sha256",
-        "probe_manifest_sha256",
-    ):
-        value = row.get(key)
-        if _nonempty_text(value):
-            provenance[key] = str(value)
-        elif isinstance(value, int):
-            provenance[key] = int(value)
-    return validate_paction_positive_provenance(provenance, source_name=source_name)
-
-
 def paction_positive_provenance_from_row(row: Mapping[str, Any], *, source_name: str, strict: bool = True) -> dict[str, Any]:
     raw = row.get("paction_positive_provenance")
     if raw is None:
@@ -340,32 +300,20 @@ def write_deploy_selection_source_jsonl(
     *,
     report_json: str | Path | None = None,
     split: str = "",
-    allow_inferred_paction_positive_provenance: bool = False,
 ) -> dict[str, Any]:
     rows = _read_jsonl(input_jsonl)
     out_rows: list[dict[str, Any]] = []
     stripped_key_counts: dict[str, int] = {}
-    stripped_true_diagnostic_flag_counts: dict[str, int] = {}
-    inferred_paction_positive_provenance_count = 0
     for line_no, row in enumerate(rows, start=1):
         source_name = f"{input_jsonl}:{line_no}"
-        provenance = paction_positive_provenance_from_row(
-            row,
-            source_name=source_name,
-            strict=not bool(allow_inferred_paction_positive_provenance),
-        )
-        if not provenance and allow_inferred_paction_positive_provenance:
-            provenance = infer_paction_positive_provenance_from_row(row, source_name=source_name)
-            inferred_paction_positive_provenance_count += 1
-        for key in SELECTION_SOURCE_PRE_STRIP_FORBIDDEN_TRUE_FLAGS:
+        provenance = paction_positive_provenance_from_row(row, source_name=source_name, strict=True)
+        for key in SELECTION_SOURCE_FORBIDDEN_TRUE_FLAGS:
             if _is_true(row.get(key, False)):
                 raise ValueError(f"{source_name}: forbidden strict deploy p_action source flag {key}=true")
         stripped = _strip_selection_deploy_payload(row)
         for key in SELECTION_SOURCE_STRIP_KEYS:
             if key in row:
                 stripped_key_counts[key] = stripped_key_counts.get(key, 0) + 1
-                if key in SELECTION_SOURCE_STRIPPABLE_DIAGNOSTIC_TRUE_FLAGS and _is_true(row.get(key, False)):
-                    stripped_true_diagnostic_flag_counts[key] = stripped_true_diagnostic_flag_counts.get(key, 0) + 1
         stripped["paction_positive_provenance"] = provenance
         reject_strict_deploy_source_row(
             stripped,
@@ -385,13 +333,9 @@ def write_deploy_selection_source_jsonl(
         "input_rows": len(rows),
         "output_rows": len(out_rows),
         "stripped_key_counts": stripped_key_counts,
-        "stripped_true_diagnostic_flag_counts": stripped_true_diagnostic_flag_counts,
-        "inferred_paction_positive_provenance_count": int(inferred_paction_positive_provenance_count),
         "rejects_true_gt_teacher_or_cache_flags": True,
-        "selection_source_forbidden_true_flags": list(SELECTION_SOURCE_PRE_STRIP_FORBIDDEN_TRUE_FLAGS),
-        "selection_source_strippable_diagnostic_true_flags": list(SELECTION_SOURCE_STRIPPABLE_DIAGNOSTIC_TRUE_FLAGS),
+        "selection_source_forbidden_true_flags": list(SELECTION_SOURCE_FORBIDDEN_TRUE_FLAGS),
         "requires_paction_positive_provenance": True,
-        "allow_inferred_paction_positive_provenance": bool(allow_inferred_paction_positive_provenance),
     }
     if report_json is not None:
         _write_json(report_json, report)

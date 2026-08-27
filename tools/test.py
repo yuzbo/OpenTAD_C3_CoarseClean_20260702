@@ -1,7 +1,4 @@
 import os
-import json
-import hashlib
-import subprocess
 import sys
 
 sys.dont_write_bytecode = True
@@ -10,12 +7,15 @@ if path not in sys.path:
     sys.path.insert(0, path)
 
 import argparse
+import json
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 from mmengine.config import Config, DictAction
 from opentad.models import build_detector
-from opentad.models.utils.pc_ot_mras_raw_prediction_guard import assert_no_raw_prediction_shortcut_for_pc_ot_mras
+from opentad.models.utils.pc_ot_mras_raw_prediction_guard import (
+    assert_no_raw_prediction_shortcut_for_pc_ot_mras,
+)
 from opentad.datasets import build_dataset, build_dataloader
 from opentad.cores import eval_one_epoch
 from opentad.utils import update_workdir, set_seed, create_folder, setup_logger
@@ -23,33 +23,35 @@ from opentad.utils.training_guard import (
     assert_detector_training_allowed,
     assert_safe_cfg_options_for_gated_config,
 )
-from tools.bata.duca_p0_training import atomic_write_json, sha256_file
-from tools.bata import duca_cellcf_training
-from tools.bata import duca_protected_physical_training
-from tools.bata import duca_selected_axis_training
-from tools.bata.duca_p0_evaluation import (
-    canonical_jsonable,
-    evaluation_config_sha256,
-    normalize_evaluation_config,
-    official_evaluator_identity,
-)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Test a Temporal Action Detector")
     parser.add_argument("config", metavar="FILE", type=str, help="path to config file")
-    parser.add_argument("--checkpoint", type=str, default="none", help="the checkpoint path")
+    parser.add_argument(
+        "--checkpoint", type=str, default="none", help="the checkpoint path"
+    )
     parser.add_argument("--seed", type=int, default=42, help="random seed")
     parser.add_argument("--id", type=int, default=0, help="repeat experiment id")
-    parser.add_argument("--not_eval", action="store_true", help="whether to not to eval, only do inference")
-    parser.add_argument("--cfg-options", nargs="+", action=DictAction, help="override settings")
-    parser.add_argument("--metrics-json", default=None)
-    parser.add_argument("--single-clock-identity-json", default=None)
-    parser.add_argument("--expected-checkpoint-epoch", type=int, default=None)
     parser.add_argument(
-        "--checkpoint-state-key",
-        choices=("auto", "state_dict", "state_dict_ema"),
-        default="auto",
+        "--not_eval",
+        action="store_true",
+        help="whether to not to eval, only do inference",
+    )
+    parser.add_argument(
+        "--max-batches",
+        type=int,
+        default=None,
+        help="optional positive inference-batch limit for smoke tests",
+    )
+    parser.add_argument(
+        "--cfg-options", nargs="+", action=DictAction, help="override settings"
+    )
+    parser.add_argument(
+        "--s1-test-open-certificate",
+        type=str,
+        default=None,
+        help="required sealed-test certificate for manifest-bound S1 configs",
     )
     args = parser.parse_args()
     return args
@@ -60,33 +62,71 @@ def main():
 
     # load config
     cfg = Config.fromfile(args.config)
-    formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
-    cellcf_formal = formal_protocol == "duca_cellcf_v1"
-    protected_physical_formal = (
-        formal_protocol == "duca_protected_physical_v1"
+    assert_safe_cfg_options_for_gated_config(
+        cfg, args.cfg_options, entrypoint="tools/test.py"
     )
-    selected_axis_formal = duca_selected_axis_training.is_formal_protocol(
-        formal_protocol
-    )
-    r5_formal = formal_protocol == duca_selected_axis_training.R5_FORMAL_PROTOCOL
-    source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
-    if cellcf_formal:
-        duca_cellcf_training.assert_safe_cfg_options(
-            cfg, args.cfg_options, entrypoint="tools/test.py"
-        )
-    elif protected_physical_formal:
-        duca_protected_physical_training.assert_safe_cfg_options(
-            args.cfg_options,
-            entrypoint="tools/test.py",
-        )
-    elif selected_axis_formal:
-        duca_selected_axis_training.assert_safe_cfg_options(
-            args.cfg_options,
-            entrypoint="tools/test.py",
-        )
-    assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/test.py")
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    s1_binding = None
+    s1_bound_cfg = None
+    if "spatial_zoom_s1_contract" in cfg:
+        if args.checkpoint == "none" or not args.s1_test_open_certificate:
+            raise ValueError(
+                "S1 test requires an explicit selected checkpoint and test-open certificate"
+            )
+        if (
+            args.cfg_options is not None
+            or args.id != 0
+            or args.not_eval
+            or args.max_batches is not None
+        ):
+            raise ValueError(
+                "formal S1 test forbids cfg overrides, alternate ids, partial inference, and no-eval mode"
+            )
+        from tools.bata.spatial_zoom_s1_test_open import validate_test_open_certificate
+        from tools.bata.spatial_zoom_s1_contract import canonical_sha256
+        from tools.bata.spatial_zoom_s1_evidence import S1_TEST_OPEN_MARKER_SCHEMA
+        from tools.bata.spatial_zoom_s1_training import (
+            require_clean_git_checkout,
+            require_slurm_single_gpu_allocation,
+            validate_bound_s1_training_config,
+            validate_s1_checkpoint_sidecar,
+        )
+
+        require_slurm_single_gpu_allocation()
+        s1_bound_cfg = Config.fromfile(args.config)
+        if args.cfg_options is not None:
+            s1_bound_cfg.merge_from_dict(args.cfg_options)
+        s1_binding = validate_bound_s1_training_config(s1_bound_cfg, seed=args.seed)
+        if not s1_binding["formal_precheck_verified"]:
+            raise RuntimeError(
+                "formal S1 test requires the bound full precheck certificate"
+            )
+        require_clean_git_checkout(expected_commit=s1_binding["code_commit"])
+        certificate_path = os.path.abspath(args.s1_test_open_certificate)
+        with open(certificate_path, "r", encoding="utf-8") as handle:
+            certificate = json.load(handle)
+        certificate = validate_test_open_certificate(
+            certificate,
+            cfg=s1_bound_cfg,
+            seed=args.seed,
+            checkpoint_path=args.checkpoint,
+        )
+        sidecar = validate_s1_checkpoint_sidecar(args.checkpoint)
+        cfg.dataset.test.subset_name = "validation"
+        cfg.dataset.test.block_list = None
+        cfg.evaluation.subset = "validation"
+        cfg.post_processing.save_dict = False
+        cfg.spatial_zoom_s1_test_binding = dict(
+            bound_config_path=os.path.abspath(args.config),
+            certificate_path=certificate_path,
+            checkpoint_path=os.path.abspath(args.checkpoint),
+            checkpoint_epoch=int(sidecar["experiment_metadata"]["epoch"]),
+            state_key="state_dict_ema"
+            if bool(cfg.solver.get("ema", False))
+            else "state_dict",
+            seed=int(args.seed),
+        )
     assert_detector_training_allowed(cfg, entrypoint="tools/test.py")
     assert_no_raw_prediction_shortcut_for_pc_ot_mras(cfg)
 
@@ -94,78 +134,62 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
-    if cellcf_formal or protected_physical_formal or selected_axis_formal:
-        expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
-        observed_commit = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
-        ).strip()
-        if expected_commit != observed_commit:
-            raise RuntimeError("formal CellCF evaluation checkout differs from DUCA_EXPECTED_COMMIT")
-        status = subprocess.check_output(
-            ["git", "status", "--porcelain", "--untracked-files=normal"],
-            cwd=path,
-            text=True,
-            encoding="utf-8",
-        ).strip()
-        if status:
-            raise RuntimeError(
-                "formal evaluation requires a clean exact-commit checkout"
-            )
-        if args.world_size != 1 or args.not_eval:
-            raise RuntimeError(
-                "formal evaluation requires one process and official mAP evaluation"
-            )
-    if protected_physical_formal:
-        if source_resolved_config_sha256 != os.environ.get(
-            "DUCA_RESOLVED_CONFIG_SHA256"
-        ):
-            raise RuntimeError(
-                "formal protected evaluation source config differs from P0"
-            )
-        if (
-            args.seed != 3407
-            or args.expected_checkpoint_epoch != 59
-            or args.checkpoint_state_key != "state_dict_ema"
-            or not args.metrics_json
-        ):
-            raise RuntimeError(
-                "formal protected evaluation must use seed 3407, "
-                "terminal epoch-59 EMA, and structured metrics"
-            )
-    if selected_axis_formal:
-        expected_seed = int(cfg.r5_cell.seed) if r5_formal else 3407
-        if (
-            args.seed != expected_seed
-            or args.expected_checkpoint_epoch != 59
-            or args.checkpoint_state_key != "state_dict_ema"
-            or not args.metrics_json
-        ):
-            raise RuntimeError(
-                f"formal selected-axis evaluation must use seed {expected_seed}, "
-                "terminal epoch-59 EMA, and structured metrics"
-            )
-    print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
+    if s1_binding is not None and args.world_size != 1:
+        raise RuntimeError("formal S1 test is frozen to one Slurm GPU process")
+    print(
+        f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})"
+    )
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)
     torch.cuda.set_device(args.local_rank)
 
     # set random seed, create work_dir
     set_seed(args.seed)
     cfg = update_workdir(cfg, args.id, torch.cuda.device_count())
-    runtime_config_sha256 = _canonical_sha256(cfg.to_dict())
-    if cellcf_formal:
-        expected_runtime = os.environ.get("DUCA_CELLCF_EVAL_RUNTIME_CONFIG_SHA256")
-        if expected_runtime != runtime_config_sha256:
-            raise RuntimeError("formal CellCF evaluation effective config differs from the frozen launch")
+    if s1_binding is not None:
+        marker_path = os.path.join(cfg.work_dir, "test_open_started.json")
+        if os.path.exists(marker_path):
+            raise FileExistsError(
+                "sealed S1 test was already opened; refusing a second open"
+            )
     if args.rank == 0:
         create_folder(cfg.work_dir)
+        if s1_binding is not None:
+            marker = {
+                "schema_version": S1_TEST_OPEN_MARKER_SCHEMA,
+                "resolution": int(s1_binding["resolution"]),
+                "seed": int(args.seed),
+                "bound_config_sha256": canonical_sha256(s1_bound_cfg.to_dict()),
+                "code_commit": s1_binding["code_commit"],
+                "experiment_namespace": s1_binding["experiment_namespace"],
+                "canonical_experiment_root": s1_binding["canonical_experiment_root"],
+                "checkpoint_sha256": sidecar["checkpoint_sha256"],
+                "test_open_certificate_sha256": certificate["certificate_sha256"],
+            }
+            marker["marker_sha256"] = canonical_sha256(marker)
+            with open(marker_path, "x", encoding="utf-8") as handle:
+                json.dump(marker, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+            cfg.spatial_zoom_s1_test_binding.open_marker_path = os.path.abspath(
+                marker_path
+            )
 
     # setup logger
     logger = setup_logger("Test", save_dir=cfg.work_dir, distributed_rank=args.rank)
-    logger.info(f"Using torch version: {torch.__version__}, CUDA version: {torch.version.cuda}")
+    logger.info(
+        f"Using torch version: {torch.__version__}, CUDA version: {torch.version.cuda}"
+    )
     logger.info(f"Config: \n{cfg.pretty_text}")
 
     # build dataset
     test_dataset = build_dataset(cfg.dataset.test, default_args=dict(logger=logger))
+    if s1_binding is not None:
+        with open(s1_binding["manifest_path"], "r", encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        runtime_test_ids = {str(row[0]) for row in test_dataset.data_list}
+        if runtime_test_ids != set(manifest["splits"]["test"]):
+            raise ValueError(
+                "formal S1 test dataset does not match the sealed test split"
+            )
     test_loader = build_dataloader(
         test_dataset,
         rank=args.rank,
@@ -180,84 +204,47 @@ def main():
 
     # DDP
     model = model.to(args.local_rank)
-    model = DistributedDataParallel(model, device_ids=[args.local_rank], output_device=args.local_rank)
+    model = DistributedDataParallel(
+        model, device_ids=[args.local_rank], output_device=args.local_rank
+    )
     logger.info(f"Using DDP with total {args.world_size} GPUS...")
 
-    checkpoint_path = None
-    checkpoint_epoch = None
-    checkpoint_state_key = None
-    selected_axis_terminal_identity = None
-    if cfg.inference.load_from_raw_predictions:  # if load with saved predictions, no need to load checkpoint
+    evaluation_epoch = None
+    if (
+        cfg.inference.load_from_raw_predictions
+    ):  # if load with saved predictions, no need to load checkpoint
         logger.info(f"Loading from raw predictions: {cfg.inference.fuse_list}")
     else:  # load checkpoint: args -> config -> best
         if args.checkpoint != "none":
             checkpoint_path = args.checkpoint
         elif "test_epoch" in cfg.inference.keys():
-            checkpoint_path = os.path.join(cfg.work_dir, f"checkpoint/epoch_{cfg.inference.test_epoch}.pth")
+            checkpoint_path = os.path.join(
+                cfg.work_dir, f"checkpoint/epoch_{cfg.inference.test_epoch}.pth"
+            )
         else:
             checkpoint_path = os.path.join(cfg.work_dir, "checkpoint/best.pth")
         logger.info("Loading checkpoint from: {}".format(checkpoint_path))
         device = f"cuda:{args.rank % torch.cuda.device_count()}"
         checkpoint = torch.load(checkpoint_path, map_location=device)
-        checkpoint_epoch = int(checkpoint["epoch"])
-        logger.info("Checkpoint is epoch {}.".format(checkpoint_epoch))
-        if (
-            args.expected_checkpoint_epoch is not None
-            and checkpoint_epoch != args.expected_checkpoint_epoch
-        ):
-            raise RuntimeError(
-                f"checkpoint epoch {checkpoint_epoch} differs from expected "
-                f"{args.expected_checkpoint_epoch}"
-            )
+        logger.info("Checkpoint is epoch {}.".format(checkpoint["epoch"]))
+        evaluation_epoch = int(checkpoint["epoch"])
+        if s1_binding is not None:
+            if checkpoint.get("experiment_metadata") != sidecar["experiment_metadata"]:
+                raise ValueError(
+                    "S1 checkpoint payload metadata does not match its sidecar"
+                )
+            if int(checkpoint["epoch"]) != int(
+                cfg.spatial_zoom_s1_test_binding.checkpoint_epoch
+            ):
+                raise ValueError("S1 test checkpoint epoch mismatch")
 
         # Model EMA
         use_ema = getattr(cfg.solver, "ema", False)
-        checkpoint_state_key = args.checkpoint_state_key
-        if checkpoint_state_key == "auto":
-            checkpoint_state_key = "state_dict_ema" if use_ema else "state_dict"
-        if checkpoint_state_key not in checkpoint:
-            raise RuntimeError(
-                f"checkpoint does not contain requested state {checkpoint_state_key}"
-            )
-        if selected_axis_formal:
-            selected_axis_terminal_identity = (
-                duca_selected_axis_training.validate_terminal_checkpoint_binding(
-                    checkpoint_path=checkpoint_path,
-                    checkpoint=checkpoint,
-                    git_commit=os.environ["DUCA_EXPECTED_COMMIT"],
-                    variant=os.environ.get("DUCA_SELECTED_OPT_VARIANT", ""),
-                    seed=args.seed,
-                    slurm_job_id=os.environ.get("SLURM_JOB_ID"),
-                    source_config_path=args.config,
-                    source_config_sha256=sha256_file(args.config),
-                    resolved_config_sha256=source_resolved_config_sha256,
-                    checkpoint_epoch=checkpoint_epoch,
-                    checkpoint_state_key=checkpoint_state_key,
-                    evaluation_annotation_path=cfg.evaluation.ground_truth_filename,
-                    evaluation_class_map_path=cfg.dataset.test.class_map,
-                    evaluation_config=cfg.evaluation,
-                    runtime_pretrain_path=cfg.model.backbone.custom.pretrain,
-                    frozen_pretrain_path=os.environ.get(
-                        "DUCA_ADATAD_PRETRAIN_PATH", ""
-                    ),
-                    frozen_pretrain_sha256=os.environ.get(
-                        "DUCA_ADATAD_PRETRAIN_SHA256", ""
-                    ),
-                    selector_initialization=cfg.workflow.get(
-                        "selector_initialization", None
-                    ),
-                    formal_protocol=formal_protocol,
-                    r5_cell=cfg.get("r5_cell", None),
-                )
-            )
-        model.load_state_dict(checkpoint[checkpoint_state_key])
-        if checkpoint_state_key == "state_dict_ema":
+        if use_ema:
+            model.load_state_dict(checkpoint["state_dict_ema"])
             logger.info("Using Model EMA...")
-
-    if args.single_clock_identity_json:
-        if args.world_size != 1:
-            raise RuntimeError("SingleClock identity evidence requires one evaluation process")
-        model.module.enable_single_clock_identity_audit()
+        else:
+            model.load_state_dict(checkpoint["state_dict"])
 
     # AMP: automatic mixed precision
     use_amp = getattr(cfg.solver, "amp", False)
@@ -266,7 +253,7 @@ def main():
 
     # test the detector
     logger.info("Testing Starts...\n")
-    evaluation_summary = eval_one_epoch(
+    eval_one_epoch(
         test_loader,
         model,
         cfg,
@@ -276,167 +263,10 @@ def main():
         use_amp=use_amp,
         world_size=args.world_size,
         not_eval=args.not_eval,
+        max_batches=args.max_batches,
+        epoch=evaluation_epoch,
     )
-    single_clock_identity_path = None
-    if args.rank == 0 and args.single_clock_identity_json:
-        if checkpoint_path is None or checkpoint_state_key is None:
-            raise RuntimeError("SingleClock identity evidence requires a checkpoint")
-        identity_payload = model.module.single_clock_identity_payload()
-        identity_payload.update(
-            {
-                "git_commit": subprocess.check_output(
-                    ["git", "rev-parse", "HEAD"], cwd=path, text=True
-                ).strip(),
-                "config_path": os.path.abspath(args.config),
-                "config_sha256": sha256_file(args.config),
-                "resolved_config_sha256": source_resolved_config_sha256,
-                "runtime_config_sha256": runtime_config_sha256,
-                "checkpoint_path": os.path.abspath(checkpoint_path),
-                "checkpoint_sha256": sha256_file(checkpoint_path),
-                "checkpoint_epoch": checkpoint_epoch,
-                "checkpoint_state_key": checkpoint_state_key,
-                "single_clock_gate_zero": bool(model.module.single_clock_gate_zero),
-            }
-        )
-        single_clock_identity_path = os.path.abspath(args.single_clock_identity_json)
-        atomic_write_json(single_clock_identity_path, identity_payload)
-    if args.rank == 0 and args.metrics_json:
-        if checkpoint_path is None or checkpoint_state_key is None:
-            raise RuntimeError("structured metric evidence requires a checkpoint")
-        if not isinstance(evaluation_summary, dict):
-            raise RuntimeError("evaluation did not return a structured summary")
-        result_path = evaluation_summary.get("result_path")
-        if not result_path or not os.path.isfile(result_path):
-            raise RuntimeError("structured metric evidence requires saved predictions")
-        formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
-        r0_selected_axis_replay = (
-            formal_protocol == "duca_r0_selected_axis_holdout_replay_v1"
-        )
-        expected_evaluation_subset = (
-            "training" if r0_selected_axis_replay else "validation"
-        )
-        evaluation_config = normalize_evaluation_config(
-            cfg.evaluation,
-            expected_subset=expected_evaluation_subset,
-        )
-        evaluator_identity = official_evaluator_identity()
-        if evaluation_summary.get("evaluator") != evaluator_identity:
-            raise RuntimeError("runtime evaluator differs from the frozen OpenTAD mAP evaluator")
-        if formal_protocol == "duca_cellcf_v1":
-            evaluation_schema = "duca_cellcf_terminal_evaluation_v1"
-        elif formal_protocol == "duca_protected_physical_v1":
-            evaluation_schema = (
-                "duca_protected_physical_terminal_evaluation_v1"
-            )
-        elif r5_formal:
-            evaluation_schema = "duca_r5_terminal_evaluation_v1"
-        elif formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL:
-            evaluation_schema = "duca_selected_axis_terminal_evaluation_v1"
-        elif r0_selected_axis_replay:
-            evaluation_schema = "duca_r0_selected_axis_evaluation_v1"
-        else:
-            evaluation_schema = "duca_p0_terminal_evaluation_v3"
-        payload = {
-            "schema_version": evaluation_schema,
-            "git_commit": subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], cwd=path, text=True
-            ).strip(),
-            "task": "offline_temporal_action_detection",
-            "config_path": os.path.abspath(args.config),
-            "config_sha256": sha256_file(args.config),
-            "resolved_config_sha256": source_resolved_config_sha256,
-            "runtime_config_sha256": runtime_config_sha256,
-            "checkpoint_path": os.path.abspath(checkpoint_path),
-            "checkpoint_sha256": sha256_file(checkpoint_path),
-            "checkpoint_epoch": checkpoint_epoch,
-            "checkpoint_state_key": checkpoint_state_key,
-            "prediction_path": os.path.abspath(result_path),
-            "prediction_sha256": sha256_file(result_path),
-            "metrics": _jsonable(evaluation_summary.get("metrics")),
-            "result_count": int(evaluation_summary.get("result_count", 0)),
-            "video_count": int(evaluation_summary.get("video_count", 0)),
-            "evaluator": evaluator_identity,
-            "evaluation_config": evaluation_config,
-            "evaluation_config_sha256": evaluation_config_sha256(
-                evaluation_config,
-                expected_subset=expected_evaluation_subset,
-            ),
-            "evaluation_annotation_path": os.path.abspath(
-                os.path.expanduser(str(cfg.evaluation.ground_truth_filename))
-            ),
-            "evaluation_annotation_sha256": sha256_file(
-                cfg.evaluation.ground_truth_filename
-            ),
-            "evaluation_class_map_path": os.path.abspath(
-                os.path.expanduser(str(cfg.dataset.test.class_map))
-            ),
-            "evaluation_class_map_sha256": sha256_file(
-                cfg.dataset.test.class_map
-            ),
-        }
-        if single_clock_identity_path is not None:
-            payload.update(
-                {
-                    "single_clock_identity_path": single_clock_identity_path,
-                    "single_clock_identity_sha256": sha256_file(single_clock_identity_path),
-                }
-            )
-        if selected_axis_formal:
-            payload.update(
-                {
-                    "seed": int(args.seed),
-                    "variant": os.environ.get("DUCA_SELECTED_OPT_VARIANT"),
-                    "training_identity": selected_axis_terminal_identity,
-                }
-            )
-            if r5_formal:
-                payload["r5_cell"] = _jsonable(cfg.r5_cell)
-        if r0_selected_axis_replay:
-            allocation_artifact = os.path.abspath(
-                os.path.expanduser(
-                    os.environ.get("DUCA_ALLOCATION_ARTIFACT_PATH", "")
-                )
-            )
-            allocation_sha256 = os.environ.get(
-                "DUCA_ALLOCATION_ARTIFACT_SHA256", ""
-            )
-            family_key = os.environ.get("DUCA_ALLOCATION_FAMILY_KEY", "")
-            blocked_path = evaluation_config.get("blocked_videos")
-            if (
-                not family_key
-                or not os.path.isfile(allocation_artifact)
-                or sha256_file(allocation_artifact) != allocation_sha256
-                or not blocked_path
-                or not os.path.isfile(blocked_path)
-            ):
-                raise RuntimeError("R0 selected-axis replay identity is incomplete")
-            payload.update(
-                {
-                    "seed": int(args.seed),
-                    "family": family_key,
-                    "allocation_artifact_path": allocation_artifact,
-                    "allocation_artifact_sha256": allocation_sha256,
-                    "evaluation_blocked_videos_path": os.path.abspath(blocked_path),
-                    "evaluation_blocked_videos_sha256": sha256_file(blocked_path),
-                    "source_subset": "training_internal_holdout",
-                    "test_subset_consumed": False,
-                    "runtime_gt_input_to_selector": False,
-                }
-            )
-        payload["evaluation_sha256"] = _canonical_sha256(payload)
-        atomic_write_json(args.metrics_json, payload)
     logger.info("Testing Over...\n")
-
-
-def _jsonable(value):
-    return canonical_jsonable(value)
-
-
-def _canonical_sha256(value):
-    encoded = json.dumps(
-        _jsonable(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 if __name__ == "__main__":
