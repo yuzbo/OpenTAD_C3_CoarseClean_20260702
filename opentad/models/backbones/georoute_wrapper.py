@@ -484,6 +484,22 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
         self.branch_calibration_mode = str(
             getattr(custom_cfg, "georoute_branch_calibration_mode", "none")
         )
+        # F/N/Q causal arms.  F keeps both modifiers; N disables only the ROI
+        # modifier; Q disables both so routing reduces to the shared base
+        # utility.  These are routing-input switches only: global exact-B,
+        # dynamic K_t, ragged execution and the masked-zero carrier are
+        # unchanged, so the three sparse arms stay matched on everything but
+        # the modifier that enters ``u_hard``.
+        self.dynamic_roi_modifier_enabled = bool(
+            getattr(custom_cfg, "georoute_dynamic_roi_modifier_enabled", True)
+        )
+        self.dynamic_residual_modifier_enabled = bool(
+            getattr(
+                custom_cfg,
+                "georoute_dynamic_residual_modifier_enabled",
+                True,
+            )
+        )
         self.dynamic_aux_num_classes = int(
             getattr(custom_cfg, "georoute_dynamic_aux_num_classes", 20)
         )
@@ -2099,7 +2115,11 @@ class GeoRouteBackboneWrapper(BackboneWrapper):
             grid_width=source_grid_hw[1],
             temperature=self.roi_temperature,
         )
+        if not self.dynamic_roi_modifier_enabled:
+            delta_roi = torch.zeros_like(delta_roi)
         delta_residual_raw = delta_residual
+        if not self.dynamic_residual_modifier_enabled:
+            delta_residual_raw = torch.zeros_like(delta_residual_raw)
         delta_residual, residual_valid_mean_before = (
             calibrate_dynamic_residual_modifier(
                 delta_residual_raw,

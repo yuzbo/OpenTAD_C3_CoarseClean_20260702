@@ -24,6 +24,8 @@ dist/
 /tmp/
 /analysis_outputs/
 /.codex/
+/.claude/
+/.cvpr-pro-lab/
 *.pth
 *.pt
 *.ckpt

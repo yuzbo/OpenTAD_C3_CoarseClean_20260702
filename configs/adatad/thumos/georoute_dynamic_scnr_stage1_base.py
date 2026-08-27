@@ -21,6 +21,13 @@ model = dict(
             georoute_window_token_budget=matched_window_budget,
             georoute_zero_carrier_mode="masked_zero",
             georoute_branch_calibration_mode="none",
+            # F/N/Q causal arms (accepted decision).  F keeps both modifiers.
+            # N sets ``georoute_dynamic_roi_modifier_enabled=False``; Q sets both
+            # modifier switches False so routing reduces to the shared base
+            # utility.  Global exact-B, dynamic K_t, ragged execution and the
+            # masked-zero carrier are unchanged across the three sparse arms.
+            georoute_dynamic_roi_modifier_enabled=True,
+            georoute_dynamic_residual_modifier_enabled=True,
             georoute_dynamic_aux_num_classes=20,
             georoute_dynamic_aux_detector_length=window_size,
             georoute_dynamic_aux_weight=0.25,

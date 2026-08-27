@@ -2,11 +2,11 @@
 
 # Repository Instructions
 
-这是当前 C3/DUCA 高效时序计算路线的 OpenTAD 仓库。保持仓库可运行：不要加入旧 tracker、服务器日志、生成图、检查点、数据集、压缩包或与当前决策无关的旧路线报告。当前 `research-wiki/` 是必须维护的研究记忆，不属于应删除的历史负担。
+这是 ZoomToken 面向离线时序动作检测（TAD）的论文实验仓库。保持仓库可运行：不要加入旧 tracker、服务器日志、生成图、检查点、数据集、压缩包或与当前科学决策无关的旧路线报告。当前 `research-wiki/` 是必须维护的研究记忆，不属于应删除的历史负担。
 
 ## Objective
 
-最终目标是面向离线 TAD 的任务感知时序去冗余：使用低成本粗粒度动作/状态证据分配帧、片段或层级计算，在真实总成本下降时保护高 IoU 定位。C3/PAction/GAS-VT/lattice 是历史基线和归因工具；当前 DUCA 是待决定性实验裁决的 pre-backbone 候选，不能称 Online TAD，也不能在证据闭环前称论文最终方法。
+最终目标是面向离线 TAD 的任务感知冗余计算削减：在真实端到端成本下降时保护动作边界和高 tIoU 定位。当前主问题由 `ZoomToken-BPNS-R1` 检验：只依赖当前观测，在 VideoMAE 前保留连续无孔洞的 `8×8/K64` 原生空间支持，所有保留 token 仍完整通过 12 层主干和既有 Adapter。C3、PAction、GAS-VT、lattice 与 DUCA 是历史基线、归因工具或已停止候选；它们不是当前论文方法。BPNS-R1 已有单种子准确率证据，但真实效率尚未建立，因此也不能称为论文最终方法或 Online TAD。
 
 ## Scope
 
@@ -19,15 +19,15 @@
 - focused `tests/`
 - `research-wiki/` 中当前研究决策、idea、实验、claim、gap 与来源记录
 
-新增内容应服务当前 C3/DUCA/AdaTAD 路线或已声明的并行路线。不要把协调根里的旧 worktree、server log 或临时产物搬进来。
+新增内容应直接服务当前 BPNS-R1/AdaTAD 科学问题、必要对照或已明确声明的并行假设。不要把协调根里的旧 worktree、server log 或临时产物搬进来。
 
-## Research Wiki Memory Contract
+## Research Wiki Memory
 
-- 开始任何方法修改、实验部署、论文改写或 Pro 讨论前，必须先读 `research-wiki/query_pack.md` 和 `research-wiki/anti_repetition.md`。
-- 新 idea、否定理由、路线选择、实验状态、原始结果或 claim 变化必须在同轮更新对应 wiki 节点与 `research-wiki/log.md`。
-- 必须区分 `discussed`、`designed`、`implemented`、`tested`、`experiment_running`、`empirically_supported` 和 `paper_ready`；不得跨级声称完成。
-- 关系只写入 `research-wiki/graph/edges.jsonl`；原始来源登记在 `research-wiki/source_registry.md`。
-- failed/negative ideas 是高价值记忆，不能从 `query_pack.md` 与 `anti_repetition.md` 中删除。
+- 开始方法修改、实验部署、论文改写或新的科学讨论前，先读 `research-wiki/query_pack.md` 和 `research-wiki/anti_repetition.md`。
+- 当前记忆只需清楚保存：研究问题、最近相关工作、候选主张、机制、可证伪预测、最强替代解释、当前实验、决定性证据、已停止方向、未知项和下一项 Pro 科学决策。
+- 写作必须区分可核验事实、来源中的陈述、项目解释和待检验提案；实现完成、实验运行和论文证据是不同事实，不用私有状态码代替这些普通表述。
+- 只有科学问题、证据、路线或主张发生实质变化时才更新相应节点。原始结果和重要负证据保留在历史记录中；浏览器调度、队列、重复审查和一般协调信息不进入论文叙事。
+- failed/negative ideas 是高价值记忆，不能从 `query_pack.md` 与 `anti_repetition.md` 中删除或改写成成功叙事。
 
 ## Remote Rules
 
@@ -54,7 +54,7 @@ python -m pytest tests/test_c3_coarse_classifier_model_matrix.py tests/test_c3_a
 
 ## ChronoTransport Parallel Route
 
-ChronoTransport 是与 C3/DUCA 并行的动态特征刷新路线，不删除或重写现有路线。允许维护：
+ChronoTransport 是与 BPNS-R1 相互独立的动态特征刷新假设，不删除或重写现有路线。允许维护：
 
 - `opentad/models/chronotransport/`；
 - `configs/adatad/thumos/*chronotransport*`；

@@ -57,9 +57,9 @@ Scout 同时预测中心和连续宽高；每个 tubelet 执行矩形内全部 p
 
 ### R4：严格矩形核心 + 框外关键 Free Token
 
-每个 tubelet 先保留一个随内容移动、宽 8 格×高 6 格的严格矩形核心（48 个连续 token）；scout 中心确定性映射为合法离散 block 左上角。随后从矩形外仅按 ROI 无关的基础任务效用选择 16 个关键 token，总数保持 64。框内与框外候选互斥；框外名额严格不超过 16，ROI modifier 不得参与框外排序。
+每个 tubelet 先保留一个随内容移动的 7×7 严格矩形核心（49 个连续 token）；scout 中心确定性映射为合法离散 block 左上角。随后从矩形外仅按 ROI 无关的基础任务效用选择 15 个关键 token，总数保持 64。框内与框外候选互斥；框外名额严格不超过 15，ROI modifier 不得参与框外排序。先前讨论的 6×8+16 仅保留为被替代草案，不属于当前执行合同。
 
-作用：检验当前高 tIoU 损失是否来自严格 ROI 遗漏了框外边界、上下文或相关物体信息。该方法不是旧版“ROI 只加分、全图统一 Top-K”，因为 48 个矩形核心 token 是不可被框外 token 替换的硬支持。
+作用：检验当前高 tIoU 损失是否来自严格 ROI 遗漏了框外边界、上下文或相关物体信息。该方法不是旧版“ROI 只加分、全图统一 Top-K”，因为 49 个矩形核心 token 是不可被框外 token 替换的硬支持。
 
 ## 4. 备选方案与取舍
 
@@ -82,7 +82,7 @@ Scout 同时预测中心和连续宽高；每个 tubelet 执行矩形内全部 p
 
 `uint8 source/scout -> scout geometry/base utility -> hard rectangle membership -> arm-specific selection -> gather selected native tubelets -> one true-ragged VideoMAE forward -> same sparse adapter -> unchanged ActionFormer`。
 
-任何以下情况直接终止当前 batch/配置检查，不允许静默退回全图或补 dummy token：矩形越界、选择重复、框外 token 进入 R1/R2 core、R4 框外超过 16、执行 token 与 receipt 不一致、padding 非零、heavy forward 次数不是 1。R3 的 hard token 数可以变化，但不能用固定 K 或 padding 修复。
+任何以下情况直接终止当前 batch/配置检查，不允许静默退回全图或补 dummy token：矩形越界、选择重复、框外 token 进入 R1/R2 core、R4 框外超过 15、执行 token 与 receipt 不一致、padding 非零、heavy forward 次数不是 1。R3 的 hard token 数可以变化，但不能用固定 K 或 padding 修复。
 
 ## 7. 测试与实验判读
 
@@ -92,6 +92,6 @@ Scout 同时预测中心和连续宽高；每个 tubelet 执行矩形内全部 p
 
 ## 8. Claim 与反例边界
 
-可支持的初始 claim 只有：严格矩形、框内稀疏、动态矩形和框外补充在主干前原生 token 路径上的相对效果。若 R1 不优于当前 C，则“矩形完整性本身保护定位”的假设被否定；若 R4 显著恢复 mAP@0.7，则支持“框外关键证据解释固定 ROI 的边界损失”；若 R3 退化到全图或真实成本无下降，则动态面积路线失败。
+可支持的初始 claim 只有：严格矩形、框内稀疏、动态矩形和框外补充在主干前原生 token 路径上的相对效果。若 R1 不优于当前 C，则“矩形完整性本身保护定位”的假设被否定；若 7×7+15 的 R4 显著恢复 mAP@0.7，且胜过其框外乱序与全局 Top-64 对照，则支持“矩形外的任务相关证据解释固定 ROI 的边界损失”；若 R3 退化到全图或真实成本无下降，则动态面积路线失败。
 
 单 seed、token 数、FLOPs、静态测试或训练可运行性均不能升级为论文级效率结论。

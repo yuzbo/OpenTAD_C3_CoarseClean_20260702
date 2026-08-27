@@ -1,6 +1,6 @@
-# C3 粗分类模型 + OpenTAD 纯净代码库
+# ZoomToken：离线 TAD 冗余计算研究
 
-这是当前 C3 粗分类路线的纯净工作仓库，只保留 OpenTAD 代码库、当前粗分类探针、value-transport ledger 转换、C3 配置、N16R4 启动器和 focused tests。历史 `research-wiki/`、`logs/`、图表、检查点、压缩包和旧路线报告不属于本仓库。
+这是 ZoomToken 的论文实验仓库，研究如何在离线时序动作检测中减少 VideoMAE 的冗余计算，同时保护动作边界和高 tIoU 定位。仓库保留 OpenTAD 主代码、当前方法与必要对照、最小实验工具、focused tests，以及作为长期科学记忆的 `research-wiki/`。服务器日志、生成图、检查点、数据集、压缩包和与当前决策无关的旧路线报告不进入 Git 仓库。
 
 来源：2026-07-02 从 `E:\DeskTop\TAD\temrefuse-tad\OpenTAD_C3TCNCoarseProbe_Worktree_20260701` 创建；源分支为 `codex/c3-tcn-coarse-probe-20260701`，源 HEAD 为 `e9eee3b`，并包含当时本地未提交的粗分类训练器、GPU1 启动脚本和测试改动。
 
@@ -8,7 +8,7 @@
 
 最终目标是可部署的任务感知动态时序采集系统：根据视频、窗口、动作区域和难度动态分配帧/片段/Token，减少持续时间冗余，把更关键的信息送给 TAD 检测器，并尽量保持或提升高 IoU 定位性能。
 
-当前 C3 阶段是固定预算控制锚点：用低成本粗分类模型估计动作/背景概率 `p_action`，把它转换成严格的帧选择 ledger，再将 384/768 的选择输入送入 OpenTAD/AdaTAD 检测器。该阶段用于归因、安全门和失败诊断，不是最终论文贡献的全部形态。
+当前主问题由 `ZoomToken-BPNS-R1` 检验：仅根据当前观测，在 VideoMAE 前保留一个连续无孔洞的 `8×8/K64` 原生空间支持，所有保留 token 仍完整通过 12 层 VideoMAE-S 和既有 Adapter。已有单种子结果支持准确率可行性，但同硬件完整成本尚未测成，因此“36% 原生 token 减少”只能称结构性计算代理，不能称实际加速、节能或显存收益。C3 与 DUCA 继续作为历史基线和归因材料，不是当前论文方法。
 
 ## 目录
 
@@ -17,11 +17,12 @@
 - `tools/bata/`：粗分类训练、模型矩阵、ledger 转换和启动门验证工具。
 - `scripts/`：N16R4 GPU1 粗分类探针、ledger 导出、AdaTAD full-train 启动器。
 - `tests/`：当前 C3 路线的 focused tests。
+- `research-wiki/`：当前问题、证据、负结果、主张边界与下一科学决策。
 
 ## 本地使用
 
 ```powershell
-cd E:\DeskTop\TAD\OpenTAD_C3_CoarseClean_20260702
+cd E:\DeskTop\TAD\OpenTAD_ZoomToken_CVPR2027
 pip install -r requirements.txt
 ```
 
