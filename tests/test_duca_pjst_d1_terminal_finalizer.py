@@ -4,6 +4,7 @@ ROOT = Path(__file__).parents[1]
 EVAL = (ROOT / "scripts/run_duca_pjst_d1_terminal_eval_n16r4.sbatch").read_text()
 SHARD = (ROOT / "scripts/run_duca_pjst_d1_terminal_bootstrap_shard_n16r4.sbatch").read_text()
 MERGE = (ROOT / "scripts/run_duca_pjst_d1_terminal_bootstrap_merge_n16r4.sbatch").read_text()
+BUNDLE = (ROOT / "scripts/run_duca_pjst_d1_terminal_bootstrap_bundle_n16r4.sbatch").read_text()
 
 
 def test_eval_freezes_arm_checkpoint_and_serialization_contract():
@@ -29,3 +30,13 @@ def test_bootstrap_is_exactly_sharded_and_merged_after_all_inputs():
 def test_no_training_or_raw_prediction_shortcut():
     assert "tools/train.py" not in EVAL
     assert "inference.load_from_raw_predictions=False" in EVAL
+
+
+def test_bundle_has_bounded_parallelism_wait_propagation_and_ordered_merge():
+    assert "for i in $(seq 0 15)" in BUNDLE
+    assert "DUCA_BOOTSTRAP_WORKERS" in BUNDLE and "workers <= 16" in BUNDLE
+    assert "run_shard \"$i\" &" in BUNDLE
+    assert "wait \"${running[0]}\" || fail" in BUNDLE
+    assert "for pid in \"${running[@]}\"; do wait \"$pid\" || fail" in BUNDLE
+    assert "missing shard $i" in BUNDLE
+    assert BUNDLE.index("for pid in") < BUNDLE.index("merge_duca_h65_bootstrap_shards.py")
