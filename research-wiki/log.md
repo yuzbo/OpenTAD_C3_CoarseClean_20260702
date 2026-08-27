@@ -4635,3 +4635,12 @@ append_only: true
   所以成功终态只能间接证明测量窗口完成积分。final video-level NMS 的时间与能耗被摊销到窗口行，
   终态报告必须披露。该审计没有形成性能结论、没有改变科学路线，也不授权取消、重启或追加实验；
   终态后应把直接、可重算和未测证据连同全部异常交给 fresh Pro，独立裁决其论文证据充分性。
+
+- 2026-08-28：继续对 frozen candidate `e9323448…` 做结果盲 provenance 点验。accuracy reference
+  合同直接保存 source revision/path/symbol/SHA；每臂 prediction JSON 虽会落盘，但不保存 prediction
+  hash。`profile.json` 的 software 只包含 Python/Torch/CUDA 摘要，precheck 只保存 execution commit、
+  population 数量和 checkpoint epoch/EMA 参数数/role，不内嵌完整命令、annotation/class-map/video/
+  checkpoint 路径、完整 package lock 或成功侧 anomaly 清单。精确路径与命令仍可由冻结启动回执、
+  launcher 和 Slurm 日志外部复原，终态交接必须把它们标为外部 provenance，而不是 profiler 直接
+  产物；不得在运行后补造 prediction hash、命令字段或空 anomaly 记录。本次点验不读取结果、不改
+  代码、不干预 job，也不改变 Pro 已冻结的任务或判据。

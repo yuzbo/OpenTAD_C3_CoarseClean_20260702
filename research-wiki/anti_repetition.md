@@ -45,7 +45,12 @@ updated: 2026-08-28
    canonical prediction per arm, verifies repeated predictions in memory, embeds
    per-pass evaluator vectors in `profile.pass_receipts`, and retains ordered raw rows
    sufficient to reconstruct the pass population and frozen estimator. Treat these as
-   direct versus reconstructible evidence, not as identical artifacts. Do not relabel
+   direct versus reconstructible evidence, not as identical artifacts. The reference
+   source SHA exists, but prediction hashes do not; do not manufacture them post hoc.
+   The complete command, data/checkpoint paths, package identity and success-side anomaly
+   status are not fully serialized in `profile.json`; use the frozen start receipt,
+   launcher and Slurm logs as separately labelled external provenance rather than
+   pretending those fields were emitted by the profiler. Do not relabel
    observed latency or power order drift as thermal drift because temperature is not
    measured. Disclose that final video-level NMS cost is amortized across window rows.
    A fresh Pro review, not Codex post-hoc completion, must decide whether the terminal

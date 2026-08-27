@@ -50,13 +50,19 @@ max_chars: 8000
 - **Known terminal-evidence coverage deviations.** The current profiler persists one
   canonical prediction file per arm and checks repeated-pass prediction equality in
   memory; per-pass evaluator vectors live in `profile.pass_receipts`, rather than in
-  eight separate prediction/vector files. `cost_samples.jsonl` preserves the arm,
+  eight separate prediction/vector files. The accuracy-reference contract records its
+  source revision/path/symbol/SHA, but prediction-file hashes are not emitted.
+  `cost_samples.jsonl` preserves the arm,
   pass, ordered dataset-item identity and cost rows needed to reconstruct population
   identity and pass-level estimates, but no separate population receipt is emitted.
   Missing or invalid power samples abort integration, yet the artifacts expose no
   quantitative coverage/gap summary and measure no temperature; observed order drift
   must not be called thermal drift. Final video-level NMS time and energy are amortized
-  across window rows. Do not synthesize absent files or metadata after the run. At
+  across window rows. The profile records Python/Torch/CUDA summaries, but not the full
+  command, annotation/class-map/video/checkpoint paths, full package lock, or an explicit
+  success-side anomaly list; those identities are reconstructible only from the start
+  receipt, launcher and Slurm logs and must be labelled as external evidence. Do not
+  synthesize absent files or metadata after the run. At
   terminal state, disclose produced, reconstructible and unmeasured evidence separately
   and ask the fresh Pro review to judge whether it is claim-valid, diagnostic-only, or
   requires a new bounded measurement.
