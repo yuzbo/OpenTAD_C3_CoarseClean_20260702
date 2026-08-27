@@ -28,6 +28,8 @@ def test_counterbalanced_order_and_frozen_arms():
     assert MODULE.ARM_SPECS["K100"]["tokens_per_tubelet"] == 100
     assert MODULE.ARM_SPECS["R1"]["tokens_per_tubelet"] == 64
     assert MODULE.ARM_SPECS["R1"]["official_support"] == "strict_rect8x8"
+    assert MODULE.EXPECTED_VIDEO_COUNT == 211
+    assert MODULE.EXPECTED_WINDOW_COUNT == 792
 
 
 def test_statistics_and_energy_are_numerically_defined():
@@ -76,3 +78,10 @@ def test_launcher_preserves_slurm_and_result_blind_boundaries():
     assert "epoch_59.pth" in launcher
     assert "tools/train.py" not in launcher
     assert "--resume" not in launcher
+
+
+def test_power_sidecar_starts_before_detector_affinity_is_narrowed():
+    source = SOURCE.read_text(encoding="utf-8")
+    assert source.index("sidecar.start()") < source.index(
+        "os.sched_setaffinity(0, set(detector_cpus))"
+    )

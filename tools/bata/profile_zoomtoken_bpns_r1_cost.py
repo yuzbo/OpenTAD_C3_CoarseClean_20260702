@@ -32,8 +32,8 @@ REMOTE_BOUNDARY = Path("/data/run01/sczc063/yuzibo")
 PROFILE_ORDER = ("K100", "R1", "R1", "K100", "R1", "K100", "K100", "R1")
 WARMUP_WINDOWS = 50
 POWER_INTERVAL_MS = 20
-EXPECTED_VIDEO_COUNT = 40
-EXPECTED_WINDOW_COUNT = 136
+EXPECTED_VIDEO_COUNT = 211
+EXPECTED_WINDOW_COUNT = 792
 EXPECTED_STATE_ENTRIES = 527
 EXPECTED_METRICS_PERCENT = {
     "K100": {
@@ -844,8 +844,6 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError("formal BPNS profile requires exactly five allocated CPUs")
     sidecar_cpu = allocated[-1]
     detector_cpus = allocated[:-1]
-    os.sched_setaffinity(0, set(detector_cpus))
-
     args.result_root.mkdir(parents=True, exist_ok=False)
     scratch = Path("/tmp") / f"zoomtoken_bpns_cost_job{os.environ['SLURM_JOB_ID']}"
     sidecar = PowerSidecar(
@@ -855,6 +853,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         allocated_cpus=allocated,
     )
     sidecar.start()
+    os.sched_setaffinity(0, set(detector_cpus))
     time.sleep(0.05)
     all_samples = []
     pass_receipts = []
