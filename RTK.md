@@ -52,6 +52,7 @@ ZoomToken 由 Pro 冻结唯一科学任务与裁决门，Codex 只做最小忠�
 
 - 开始工作前必须读 `research-wiki/query_pack.md` 与 `research-wiki/anti_repetition.md`。
 - 科学决策、重要负结果、有效实验结果和论文主张变化写入相应 wiki 节点；原始历史只追加，不以文档润色改变既有证据。长期记忆保持精简，不保存浏览器、队列或一般协调流量。
+- 每轮出现实质科学讨论、冻结任务、代码实现、独立审查、正式实验、结果解释或路线裁决时，必须在同轮写入其既有单一事实源，并明确区分讨论、实现、运行与论文证据。无状态变化的实验轮询及浏览器、队列、锁等一般协调信息不形成科研记录。
 - 如使用 Project Sources，只保留当前目标/边界、当前研究状态和重要实验历史的最新聚合材料；当轮代码差异、专用报告与临时审查作为本轮输入，不制造版本堆积。
 - 不允许 validation/test GT 参与测试时选择。
 - 不允许 validation/test teacher leakage。
@@ -60,6 +61,16 @@ ZoomToken 由 Pro 冻结唯一科学任务与裁决门，Codex 只做最小忠�
 - GPU 任务必须使用 Slurm 正常分配的设备；不得固定物理索引或覆盖 Slurm 的 `CUDA_VISIBLE_DEVICES`。单卡任务在进程内使用 `cuda:0`。
 - 历史文件名中残留的 `gpu0`/`gpu1` 只代表旧协议，不得直接复用；再次运行前必须改成正常 Slurm 映射并重新门禁。
 - 不在 N16R4 登录节点直接训练；正式训练使用 Slurm 或已授权保护分配。
+
+### 浏览器配置串行与长时 Pro 存活检查（2026-08-28）
+
+- 同一个 iXBrowser profile 在任一时刻只允许一个浏览器操作。Source 上传、Pro 提交、生成等待和结果回取必须共用一个按稳定 profile ID 命名的独占锁；不同标签页不构成隔离。
+- computer-use 只负责创建或进入正确 Project、上传 Source 并确认远端文件名。完成后关闭自己创建的标签页并释放锁，不创建科研对话、不选择模型、不提交科研提示词。
+- Oracle 只负责在精确 Project URL 中创建全新对话、选择最高可验证的 Pro 模型、提交一次提示词并保存完整回复。每轮使用独立 `ORACLE_HOME_DIR`、唯一 nonce、Oracle session 与 conversation URL；不得依赖当前聚焦标签页、标签页序号、旧对话或 follow-up。
+- Oracle 从提交前路由核验开始一直持有 profile 锁，直到完整回复、session 元数据、conversation URL 和终态报告均已保存。其他进程发现锁存在时只能等待，不得打开标签页、进行浏览器预检查或触碰同一 profile。
+- Pro 深度思考超过一小时本身不是失败。若 Oracle 日志连续 30 分钟没有新增输出，只允许当前锁持有者使用 computer-use 对该次精确 conversation 做一次只读屏幕检查，判断页面仍在思考、已经完成或明确报错；不得切换 Project、点击提前回答、发送 follow-up 或重新提交。
+- 若页面仍显示正在思考，继续等待原 Oracle invocation；若已经完成，使用原 session 和 conversation 回取；若出现错误或 Project、nonce、conversation 任一绑定无法确认，返回客观阻塞并停止。未知状态下宁可不采信，也不得按内容相似性猜测归属。
+- 只有使用不同 iXBrowser profile、独立运行端点和独立 `ORACLE_HOME_DIR` 时才允许并行 Pro 讨论；共享同一 profile 的多个项目必须严格串行。
 
 ## 共享 AdaTAD 官方基线（跨项目唯一）
 
