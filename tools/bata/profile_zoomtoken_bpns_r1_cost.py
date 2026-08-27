@@ -20,6 +20,7 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -52,6 +53,15 @@ EXPECTED_METRICS_PERCENT = {
         "mAP@0.6": 61.14,
         "mAP@0.7": 46.57,
     },
+}
+ACCURACY_PARITY_METRIC_KEYS = tuple(EXPECTED_METRICS_PERCENT["K100"])
+ACCURACY_PARITY_TOLERANCE_PP = 0.05
+ACCURACY_PARITY_REFERENCE = {
+    "precision": "reported_2dp",
+    "source_revision": "b7357817d81127ab2d713b5471d008ea893efd35",
+    "source_path": "tools/bata/profile_zoomtoken_bpns_r1_cost.py",
+    "source_symbol": "EXPECTED_METRICS_PERCENT",
+    "source_sha256": "80f2ea7991e26886329a46179169295e46e0958e9f8cde698d45a8fdf0eccd4c",
 }
 ARM_SPECS = {
     "K100": {
@@ -428,14 +438,54 @@ def _evaluate_predictions(cfg: Any, predictions: Mapping[str, Any]) -> dict[str,
     return {key: float(value) for key, value in evaluator.evaluate().items()}
 
 
-def _assert_metric_parity(arm: str, metrics: Mapping[str, float]) -> None:
+def _accuracy_parity_contract() -> dict[str, Any]:
+    return {
+        "comparison_unit": "percentage_point",
+        "observed_value": "100 * evaluator_raw_fraction_without_rounding",
+        "display_rounding": "decimal_round_half_up_to_2dp",
+        "tolerance_pp": ACCURACY_PARITY_TOLERANCE_PP,
+        "tolerance_inclusive": True,
+        "required_metrics": list(ACCURACY_PARITY_METRIC_KEYS),
+        "reference": dict(ACCURACY_PARITY_REFERENCE),
+    }
+
+
+def _assert_metric_parity(arm: str, metrics: Mapping[str, float]) -> dict[str, Any]:
     expected = EXPECTED_METRICS_PERCENT[arm]
-    for key, target in expected.items():
-        observed = 100.0 * float(metrics[key])
-        if abs(observed - target) > 0.015:
+    tolerance = Decimal(str(ACCURACY_PARITY_TOLERANCE_PP))
+    metric_receipts = {}
+    for key in ACCURACY_PARITY_METRIC_KEYS:
+        if key not in metrics:
+            raise RuntimeError(f"{arm} final-EMA replay is missing required metric {key}")
+        raw_fraction = float(metrics[key])
+        if not math.isfinite(raw_fraction):
+            raise RuntimeError(f"{arm} final-EMA replay metric {key} is not finite")
+        target = float(expected[key])
+        observed_pp = Decimal(str(raw_fraction)) * Decimal("100")
+        target_pp = Decimal(str(target))
+        difference_pp = abs(observed_pp - target_pp)
+        if difference_pp > tolerance:
             raise RuntimeError(
-                f"{arm} final-EMA replay differs from its historical result: {key}={observed:.6f}, expected {target:.2f}"
+                f"{arm} final-EMA replay differs from its historical result: "
+                f"{key}={observed_pp:f} pp, expected {target_pp:f} pp, "
+                f"difference {difference_pp:f} pp exceeds {tolerance:f} pp"
             )
+        metric_receipts[key] = {
+            "evaluator_raw_fraction": raw_fraction,
+            "observed_pp_unrounded": float(observed_pp),
+            "display_pp_2dp_half_up": format(
+                observed_pp.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                ".2f",
+            ),
+            "reference_pp": target,
+            "absolute_difference_pp": float(difference_pp),
+            "within_tolerance": True,
+        }
+    return {
+        "status": "PASS",
+        "contract": _accuracy_parity_contract(),
+        "metrics": metric_receipts,
+    }
 
 
 def _sample_identity(cpu_batch: Mapping[str, Any], ordinal: int) -> dict[str, Any]:
@@ -623,7 +673,7 @@ def _profile_one_pass(
             sample["final_video_nms_ms"] = amortized_nms_ms
             sample["end_to_end_serial_ms"] += amortized_nms_ms
         metrics = _evaluate_predictions(cfg, finalized)
-        _assert_metric_parity(arm, metrics)
+        parity_receipt = _assert_metric_parity(arm, metrics)
     finally:
         for timer in (post_timer, heavy_timer, backbone_timer, forward_timer):
             timer.close()
@@ -642,6 +692,7 @@ def _profile_one_pass(
         "video_count": len(videos),
         "window_count": len(manifest),
         "metrics": metrics,
+        "accuracy_parity": parity_receipt,
         "runtime_audit": audit_receipt,
     }
     del ddp_model, model, loader, dataset
@@ -975,6 +1026,18 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         },
         "interpretation_boundary": "native token and attention-pair ratios are structural proxies; latency, memory and energy fields are measured full-stack evidence",
     }
+    accuracy_parity = {
+        "status": "PASS_ALL_PASSES",
+        "contract": _accuracy_parity_contract(),
+        "passes": [
+            {
+                "arm": receipt["arm"],
+                "pass_index": receipt["pass_index"],
+                "metrics": receipt["accuracy_parity"]["metrics"],
+            }
+            for receipt in pass_receipts
+        ],
+    }
     profile_payload = {
         "schema_version": "zoomtoken_bpns_r1_same_gpu_cost_v001",
         "status": "COMPLETED_FINAL_EMA_REPLAY",
@@ -990,6 +1053,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "cpu_partition": {"allocated": list(allocated), "detector": list(detector_cpus), "sidecar": sidecar_cpu},
         "precheck": preflight,
         "pass_receipts": pass_receipts,
+        "accuracy_parity": accuracy_parity,
         "arm_summaries": arm_summaries,
         "comparison": comparison,
         "training_or_resume_executed": False,
@@ -1010,6 +1074,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "execution_commit": args.expected_commit,
             "result_root": str(args.result_root),
             "profile": str(args.result_root / "profile.json"),
+            "accuracy_parity": accuracy_parity,
             "training_or_resume_executed": False,
             "official_test_opened": False,
         },

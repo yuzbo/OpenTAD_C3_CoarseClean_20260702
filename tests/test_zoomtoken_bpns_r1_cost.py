@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "tools" / "bata" / "profile_zoomtoken_bpns_r1_cost.py"
@@ -10,6 +12,13 @@ SPEC = importlib.util.spec_from_file_location("zoomtoken_bpns_cost", SOURCE)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(MODULE)
+
+
+def _reference_metrics(arm="K100"):
+    return {
+        key: value / 100.0
+        for key, value in MODULE.EXPECTED_METRICS_PERCENT[arm].items()
+    }
 
 
 def test_counterbalanced_order_and_frozen_arms():
@@ -105,3 +114,58 @@ def test_population_identity_preserves_official_duplicate_loader_items():
         MODULE.EXPECTED_WINDOW_COUNT = old_windows
     assert manifest == ["0:video_a:0", "1:video_a:0"]
     assert videos == {"video_a"}
+
+
+def test_accuracy_parity_accepts_known_unrounded_replay_value():
+    metrics = _reference_metrics()
+    metrics["mAP@0.7"] = 0.46246663
+
+    receipt = MODULE._assert_metric_parity("K100", metrics)
+
+    row = receipt["metrics"]["mAP@0.7"]
+    assert receipt["contract"]["reference"]["precision"] == "reported_2dp"
+    assert row["observed_pp_unrounded"] == pytest.approx(46.246663)
+    assert row["reference_pp"] == 46.27
+    assert row["absolute_difference_pp"] == pytest.approx(0.023337)
+    assert row["within_tolerance"] is True
+
+
+def test_accuracy_parity_tolerance_is_inclusive_and_distinguishing():
+    metrics = _reference_metrics()
+    metrics["average_mAP"] = 0.6856
+    MODULE._assert_metric_parity("K100", metrics)
+
+    metrics["average_mAP"] = 0.68560001
+    with pytest.raises(RuntimeError, match="exceeds 0.05 pp"):
+        MODULE._assert_metric_parity("K100", metrics)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("missing", "missing required metric"),
+        (float("nan"), "is not finite"),
+        (float("inf"), "is not finite"),
+        (0.0, "differs from its historical result"),
+    ],
+)
+def test_accuracy_parity_rejects_incomplete_nonfinite_or_out_of_bounds(mutation, message):
+    metrics = _reference_metrics()
+    if mutation == "missing":
+        del metrics["mAP@0.4"]
+    else:
+        metrics["mAP@0.4"] = mutation
+
+    with pytest.raises(RuntimeError, match=message):
+        MODULE._assert_metric_parity("K100", metrics)
+
+
+def test_accuracy_parity_display_rounding_is_decoupled_from_admission():
+    metrics = _reference_metrics()
+    metrics["mAP@0.7"] = 0.46246663
+
+    row = MODULE._assert_metric_parity("K100", metrics)["metrics"]["mAP@0.7"]
+
+    assert row["display_pp_2dp_half_up"] == "46.25"
+    assert row["display_pp_2dp_half_up"] != f"{row['reference_pp']:.2f}"
+    assert row["within_tolerance"] is True
