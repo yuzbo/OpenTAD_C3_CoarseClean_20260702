@@ -15,6 +15,9 @@ def test_eval_freezes_arm_checkpoint_and_serialization_contract():
     assert "post_processing.save_dict=True" in EVAL
     assert "video_count') != 211" in EVAL
     assert "output root already exists" in EVAL
+    assert 'ADATAD_PRETRAIN="${ADATAD_PRETRAIN:-/data/run01/sczc063/yuzibo/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"' in EVAL
+    assert '"$ADATAD_PRETRAIN"; do [[ -r "$p" ]]' in EVAL
+    assert 'model.backbone.custom.pretrain="$ADATAD_PRETRAIN"' in EVAL
 
 
 def test_bootstrap_is_exactly_sharded_and_merged_after_all_inputs():
