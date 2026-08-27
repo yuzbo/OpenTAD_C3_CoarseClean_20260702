@@ -25,20 +25,24 @@ updated: 2026-08-28
    review it, and obtain new run authorization. Keep identity checks minimal: exact
    job/config/path/EMA and numerical parity are sufficient; do not add a new
    hash/provenance framework merely because a review listed one.
-   That repair is now clean/pushed at `e9323448f6cd78b99bb3de53fd9ffb55f3676d65`;
-   focused tests, independent Critic and result-blind PRE_RUN passed. Exactly one fresh
-   formal replacement exists: job `1258299`, name `zt-bpns-r1-pv2-e9323448`, result
-   root `/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_r1_cost_parity_e9323448_seed42_20260828`.
-   It is running under the unchanged eight-pass protocol. Do not submit a duplicate,
-   resume job `1257281`, read live/partial metrics, or infer cost before complete
-   `profile.json`, `terminal_receipt.json`, predictions and power evidence exist.
+   That repair is clean/pushed at `e9323448f6cd78b99bb3de53fd9ffb55f3676d65`;
+   focused tests, independent Critic and result-blind PRE_RUN passed. Its only formal
+   replacement, job `1258299` (`zt-bpns-r1-pv2-e9323448`), is terminal `FAILED 1:0`.
+   The first R1 pass produced unrounded `mAP@0.6=61.0869609029443100 pp`, an absolute
+   difference of `0.0530390970556900 pp` from the frozen `61.14 pp` reference, so the
+   correctly implemented inclusive `0.05 pp` gate failed. Eight passes did not finish;
+   the result root is empty and contains no `profile.json`, `terminal_receipt.json`,
+   predictions, cost rows or power evidence. Seal both jobs and namespaces. Do not
+   submit a duplicate, resume, widen the tolerance, round before comparison, synthesize
+   missing artifacts, or infer model/cost performance from logs. The only next action is
+   a fresh neutral Pro review of this scientific/protocol ambiguity.
    Do not apply the primary 5% efficiency gate directly to the profiler's pooled
    `comparison.r1_over_k100` fields. The Pro-frozen primary estimator first computes
    one end-to-end p50 and one total-energy value for each complete pass, then takes
    the four-pass median per arm. Recompute those values from `cost_samples.jsonl`
    grouped by `(arm, pass_index)`; retain the pooled profiler summary only as a
-   separately labelled descriptive statistic. This uses existing raw evidence and
-   does not authorize a rerun or code change while job `1258299` is active.
+   separately labelled descriptive statistic. Job `1258299` emitted no raw evidence,
+   so no such recomputation exists for this run and the rule does not authorize a rerun.
    Do not fabricate eight per-pass prediction files, eight standalone evaluator-vector
    files, a separate population receipt, quantitative power-coverage metadata, or
    temperature measurements after terminal state. The current code produces one

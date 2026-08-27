@@ -1326,3 +1326,17 @@ Focused tests 为 `13 passed`，fresh independent Critic 为 `PASS`，fresh resu
 `experiment_running`：完整 `profile.json`、`terminal_receipt.json`、预测、evaluator vectors、
 功耗、显存、延迟、短动作和边界产物尚未形成，因此没有新的准确率、效率或论文结论。终态前
 不得读取或解释 partial 数值、重复提交、追加种子或替换科学问题。
+
+## 114. BPNS-R1 唯一替代回放在冻结一致性门处终止（2026-08-28）
+
+唯一替代 job `1258299` 在节点 `g0048` 运行 `01:13:06` 后以 `FAILED 1:0` 终止。首个 R1
+pass 的未舍入 `mAP@0.6=61.0869609029443100 pp` 与冻结 reference `61.14 pp` 相差
+`0.0530390970556900 pp`，超过 inclusive `0.05 pp`。候选实现只在差值严格大于门槛时失败，
+且 focused test 明确覆盖边界，因此该终止是冻结合同的正确执行，而不是单位、舍入展示或比较方向
+的工程错误。
+
+裁决记录为：该轮是 replay admission/protocol failure，不能成为 K100/R1 准确率、延迟、显存、
+能耗、短动作或边界的科学结果。八个 pass 未完成，result root 为空，完整 profile、终结收据、
+预测、cost samples 与功耗轨迹均不存在。Codex 不自行判断两位小数 reference 与 `0.05 pp` 合同
+是否应修订，也不放宽门槛、补造产物、恢复或重提。按照既有 Pro 任务的 stop/post-result 规则，
+下一步是一次全新的中性 Pro 科学复盘，由 Pro 独立决定停止、修订协议或其他唯一下一任务。

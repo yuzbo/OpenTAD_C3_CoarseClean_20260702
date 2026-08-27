@@ -6,13 +6,13 @@
 - **候选机制：** BPNS-R1 在 VideoMAE 前保留一个连续无孔洞的 `8×8/K64` 支持；所有保留 token 仍完整执行 12 层 VideoMAE-S 与既有 Adapter，不使用历史 cache、carry 或深度跳过。
 - **已有证据：** 单个 seed-42 中，K100 与 R1 的 final-EMA 为 `68.51/61.19/46.27` 与 `69.07/61.14/46.57`。这支持准确率可行性，并把“连续支持拓扑”保留为有价值的机制解释。
 - **不能主张：** 36% 原生 token 减少尚未转化为已测得的延迟、显存或能耗收益；也没有多种子、跨检测器或跨数据集证据。
-- **当前实验：** 旧回放 job `1257281` 的 raw/舍入绑定缺陷已由最小候选 `e9323448f6cd78b99bb3de53fd9ffb55f3676d65` 修正，并通过 focused tests、独立 Critic 和结果盲 Evaluator。唯一替代回放 job `1258299` 正在同一冻结协议下运行；目前没有可解释的新性能或成本结果。
-- **下一项决定性任务：** 等待 job `1258299` 终态并只在八个 pass、`profile.json`、`terminal_receipt.json`、预测和功耗轨迹完整后判断 BPNS-R1 的效率主张继续、缩小还是停止。终态主估计必须从 `cost_samples.jsonl` 按 pass 分组：每个 pass 先计算完整 decode→Soft-NMS p50 与总能耗，再对每臂四个 pass 取中位数；profiler 顶层跨窗口 pooled comparison 只作描述性结果。禁止读取 live/partial 数字或重复提交。
+- **当前实验：** 唯一替代回放 job `1258299` 已于 `2026-08-28 01:33:30 +08:00` 以 `FAILED 1:0` 终止。首个 R1 pass 的未舍入 `mAP@0.6=61.0869609029443100 pp` 与冻结 reference `61.14 pp` 相差 `0.0530390970556900 pp`，超过 inclusive `0.05 pp` 门槛；实现仅在差值严格大于门槛时失败，故该终止符合冻结合同。八个 pass 未完成，结果根为空，未形成 `profile.json`、`terminal_receipt.json` 或任何可解释的成本/质量产物。
+- **下一项决定性任务：** 立即把该数值一致性准入失败、空结果根、缺失终态产物和既有结果盲审计完整交给全新的 Pro 科学复盘。由 Pro 独立判断当前 reported-2dp reference 与 `0.05 pp` 合同是否足以支持 replay admission、BPNS-R1 效率主张是否应停止，以及唯一下一任务；Codex 不预设路线、不放宽门槛、不重提或补跑。
 - **已知终态证据覆盖偏差：** 当前 profiler 每个 arm 只持久化一份 canonical prediction，并在内存中核对重复 pass 的 prediction 相等；每个 pass 的 evaluator 向量嵌入 `profile.pass_receipts`，而不是另存八份 prediction/evaluator 文件。accuracy reference 合同保存 source revision/path/symbol/SHA，但 prediction 文件不保存 hash。`cost_samples.jsonl` 足以按 `(arm, pass_index, dataset_item_id)` 重建完整 population 与 pass-level 主估计，但没有单独的 population receipt。功耗采样缺失或非法会使运行失败，因此成功终态可间接证明测量窗口完成了积分；不过产物不包含定量 coverage/gap 统计，也未测量温度，故只能报告观察到的功耗/延迟顺序漂移，不能称为热漂移。视频级 final NMS 时间与能耗被摊入窗口行，必须明确披露。`profile.json` 只记录 Python/Torch/CUDA 摘要，不内嵌完整命令、annotation/class-map/video/checkpoint 路径、完整包锁或成功侧 anomaly 清单；这些身份只能从启动回执、launcher 与 Slurm 日志外部复原并按外部证据标注。不得事后伪造缺失的逐 pass 文件或元数据；终态后把直接证据、可重算证据和未测信息原样交给 fresh Pro，由其独立判断该轮证据能否支持论文主张、仅作诊断，或需要新的有界测量。
 
 以下按日期和实验族保留完整证据与负结果；运行标识用于定位原始材料，不替代上述科学判断。
 
-> **2026-08-28 正式成本回放 v002 运行中：** 从冻结基线 `b7357817…` 建立的最小 clean/pushed 候选 `e9323448…` 只修正 accuracy-parity 数值合同及 focused tests；`13 passed`，独立 Critic 为 `PASS`，结果盲 Evaluator 为 `PRE_RUN_READY`。唯一正式 job `1258299`（`zt-bpns-r1-pv2-e9323448`）已在 `g0048` 进入 `RUNNING`，使用 1 张 Slurm-visible GPU、5 CPU，并按不变的 `K100,R1,R1,K100,R1,K100,K100,R1` 顺序执行完整回放。该状态只证明实现、准入与调度成立，不构成准确率、延迟、显存、能耗、短动作或边界结果。
+> **2026-08-28 正式成本回放 v002 终止：** 从冻结基线 `b7357817…` 建立的最小 clean/pushed 候选 `e9323448…` 只修正 accuracy-parity 数值合同及 focused tests；`13 passed`，独立 Critic 为 `PASS`，结果盲 Evaluator 为 `PRE_RUN_READY`。唯一正式 job `1258299`（`zt-bpns-r1-pv2-e9323448`）在 `g0048` 运行 `01:13:06` 后以 `FAILED 1:0` 终止：首个 R1 pass 的 `mAP@0.6` 与冻结两位小数 reference 相差 `0.0530390970556900 pp`，严格超过 inclusive `0.05 pp` 门槛。八个 pass 未完成，结果根为空，未发布 profile/终结收据、预测、成本样本或功耗轨迹。因此该轮是协议有效的 replay admission failure，不是模型性能或效率结果；在 fresh Pro 裁决前不放宽门槛、不重提、不追加实验。
 
 > **2026-08-27 正式成本回放终止：** `ZoomToken-BPNS-R1` 同硬件 final-EMA 重放 job `1257281` 在 `g0003` 运行 `00:38:04` 后以 `FAILED 1:0` 终止。它完成了 K100 的完整 validation，但在首个 pass 的结果一致性门处发现当前回放 `mAP@0.7=46.246663` 与预填历史值 `46.27` 不一致，profiler 主动抛出 `RuntimeError`；因此未进入后续 R1/ABBA+BAAB 完整测量，也没有发布 `profile.json` 或 `terminal_receipt.json`。这是回放准入/数值绑定失败，不是模型性能或效率结论；现阶段仍不能声称 R1 实际加速、节能或降低显存。
 
@@ -32,7 +32,7 @@
 
 > **2026-08-25 动态选择性重计算复核：** 新一轮附件式 ZoomToken Project Pro 讨论进一步比较了 clip 内动态重计算 `IC-DRU`、重叠窗口精确缓存 `OW-ECR` 和 current-proxy 条件深度路由 `PCD-DRU`。理想已知骨干算术上界分别约节省 `50.12%`、`7.66%` 和 `60.16%`，但前两种动态路线要求平均仅刷新约 25% 的 token、仍保留 dense/full-refresh 峰值，并且其变化路由、轻量残差与逐 token 深度分配均可被已有 Eventful、视频缓存和 MoD/A-MoD 工作分解覆盖；窗口路线则因 Adapter 依赖传播和约 `54 MiB/样本` 的十二层缓存缺少全链路余量。Pro 对这三个精确定义候选给出 `STOP_BEFORE_IMPLEMENTATION`，新增正式实验为 0。本裁决是实施前设计判断，不是动态刷新、特征复用或 20%–30% 更新率的经验失败，也没有产生新的准确率或端到端成本结果。
 
-- 更新时间：2026-08-28（论文主线仍为当前观测的 `BPNS-R1`。旧同硬件回放 job `1257281` 保持数值绑定失败证据；最小修正候选 `e9323448…` 已通过独立准入，唯一替代 job `1258299` 正在执行完整八 pass 回放。终态前仍无完整端到端成本结果；DSR6-KV、MOD32-KV、DROP32 仅为后续辅助预算点，A-MoD-50 当前不训练）。
+- 更新时间：2026-08-28（论文主线仍为当前观测的 `BPNS-R1`，但同硬件成本证据仍未建立。旧 job `1257281` 保持原始数值绑定失败证据；最小修正候选 `e9323448…` 的唯一替代 job `1258299` 又在冻结 accuracy-parity 门处终止，八 pass 与成本终态产物均未形成。下一动作是 fresh Pro 独立裁决，不是 Codex 自动修复或重跑；DSR6-KV、MOD32-KV、DROP32 仅为后续辅助预算点，A-MoD-50 当前不训练）。
 - 证据等级：已有真实 THUMOS14 validation 性能。官方路径 A、全部 token + sparse adapter 的 B、主干前 ROI `K=64` + 同一 adapter 的 C，其 Avg-mAP/mAP@0.7 分别为 `68.73/47.24`、`68.51/46.27`、`68.22/45.35`。这是一种子严格归因结果；当前仍无完整端到端成本结果，不能声称计算效率提升。
 
 ## 1. 一句话问题与应用价值
@@ -170,10 +170,10 @@ APM-C32/FULL64 不减少重块计算且低于其 R1 基线，也不属于效率�
 
 ## 8. 当前未解决问题与下一科学决定
 
-截至当前，共享官方 AdaTAD job `1245842`（运行 `05:47:13`）、同源全计算 DN job `1245907`（运行 `04:24:56`）与 ROI-only G job `1245924`（运行 `05:46:15`）均为 `COMPLETED 0:0`，并完成 epoch 59 后的 validation；训练日志未见 Traceback、显存溢出或非有限数值硬故障。DN/G 结果根各保留最近三个 5-epoch 恢复点（epoch 44/49/54）。官方路径按原配方从后 20 轮起每 2 轮评测一次；DN/G 训练期间只在第 60 轮后评测一次，随后已用 recovery checkpoint 补齐 epoch 44/49/54 的中途曲线。旧 BPNS 回放 job `1257281` 的原始精度绑定缺陷已由最小修正 `e9323448…` 处理；唯一替代 job `1258299` 正在执行完整八 pass 回放，`profile.json` 与 `terminal_receipt.json` 尚未形成。当前缺的是可接受的端到端配对成本证据，而不是训练准确率。
+截至当前，共享官方 AdaTAD job `1245842`（运行 `05:47:13`）、同源全计算 DN job `1245907`（运行 `04:24:56`）与 ROI-only G job `1245924`（运行 `05:46:15`）均为 `COMPLETED 0:0`，并完成 epoch 59 后的 validation；训练日志未见 Traceback、显存溢出或非有限数值硬故障。DN/G 结果根各保留最近三个 5-epoch 恢复点（epoch 44/49/54）。官方路径按原配方从后 20 轮起每 2 轮评测一次；DN/G 训练期间只在第 60 轮后评测一次，随后已用 recovery checkpoint 补齐 epoch 44/49/54 的中途曲线。旧 BPNS 回放 job `1257281` 的原始精度绑定缺陷已由最小修正 `e9323448…` 处理，但唯一替代 job `1258299` 又因 R1 `mAP@0.6` 与冻结两位小数 reference 的差值 `0.0530390970556900 pp` 超过 `0.05 pp` 而 fail closed。八 pass、`profile.json` 与 `terminal_receipt.json` 均未形成。当前缺的是可接受的端到端配对成本证据，而不是训练准确率；合同是否需要科学修订由 fresh Pro 裁决。
 
 ROI60 首轮已经完成，为同一环境下的 ROI-only `G` 对同源全计算 `DN`（seed 3407、60 epoch）；`DO` 只消费共享官方回执。`G` 不是硬裁剪，ROI 外 token 仍可由基础效用选中。两臂均从同一预训练起点重新训练，不复用身份不明的旧 checkpoint；每 5 epoch 保存可恢复状态，最终统一使用预注册的 final/final-EMA 规则。
 
 首轮 DN/G 的 epoch 44/49/54 六项补充 validation 已全部 `COMPLETED 0:0` 并加载 EMA；G−DN Avg-mAP 分别为 `-3.08/-3.05/-3.04` 个百分点，与终态 `-3.24` 一致，排除了“差距仅由最后几轮退化造成”的解释。严格三臂现已进一步把 adapter 与固定 ROI 的影响拆开。端到端成本只有在同一硬件和完整测量链成立后才比较，不能以 token 数代理。
 
-主干前正式 B/C jobs `1248835/1248834`、R1 job `1249099`、RC32 修复版 jobs `1252179/1252180/1252181`、DSR6-KV job `1252527` 与 APM-C32/FULL64 job `1254008` 均已终态 `COMPLETED 0:0`。RC32 原 revision `836f2ce4…` 的首次部署 jobs `1250604/1250605/1250606` 仍封存为训练前失败；没有 resume 或重复 FULL64。既有 Q64-GLOBAL job `1249132` 终态 EMA 为 `67.84/60.66/45.39`。APM-C32/FULL64 因不省重块计算且降低准确率而停止，RC32-KV 因被同成本 MOD32-KV 严格支配而停止，ACR16/Eventful 直接迁移因新颖性与全栈收益余量同时不足而在实现前停止。当前没有运行中的正式训练；唯一正式成本作业是替代回放 job `1258299`，仍在同一冻结协议下运行。旧 job `1257281` 只保留为 `FAILED 1:0` 的数值合同证据；新 job 终态和完整 profile/终结收据形成前，不能声称实际加速、显存或能效提升，也不追加实验。
+主干前正式 B/C jobs `1248835/1248834`、R1 job `1249099`、RC32 修复版 jobs `1252179/1252180/1252181`、DSR6-KV job `1252527` 与 APM-C32/FULL64 job `1254008` 均已终态 `COMPLETED 0:0`。RC32 原 revision `836f2ce4…` 的首次部署 jobs `1250604/1250605/1250606` 仍封存为训练前失败；没有 resume 或重复 FULL64。既有 Q64-GLOBAL job `1249132` 终态 EMA 为 `67.84/60.66/45.39`。APM-C32/FULL64 因不省重块计算且降低准确率而停止，RC32-KV 因被同成本 MOD32-KV 严格支配而停止，ACR16/Eventful 直接迁移因新颖性与全栈收益余量同时不足而在实现前停止。当前没有运行中的正式训练或成本作业。jobs `1257281/1258299` 都只保留为 `FAILED 1:0` 的数值一致性准入证据；后者的结果根为空。不能声称实际加速、显存或能效提升，也不在 fresh Pro 裁决前自动修订协议或追加实验。

@@ -4644,3 +4644,16 @@ append_only: true
   launcher 和 Slurm 日志外部复原，终态交接必须把它们标为外部 provenance，而不是 profiler 直接
   产物；不得在运行后补造 prediction hash、命令字段或空 anomaly 记录。本次点验不读取结果、不改
   代码、不干预 job，也不改变 Pro 已冻结的任务或判据。
+
+- 2026-08-28：唯一正式 BPNS-R1 v002 成本回放 job `1258299`
+  （`zt-bpns-r1-pv2-e9323448`）在节点 `g0048` 从 `00:20:24` 运行至 `01:33:30 +08:00`，
+  终态 `FAILED 1:0`，耗时 `01:13:06`。精确异常来自首个 R1 pass 的 accuracy-parity gate：
+  未舍入 `mAP@0.6=61.0869609029443100 pp`，冻结 reference 为 `61.14 pp`，绝对差
+  `0.0530390970556900 pp`，严格超过 inclusive `0.05 pp`。代码使用未舍入百分点和
+  `difference > tolerance` 判定，focused test 也覆盖 `0.05` 通过、`0.050001` 失败，故该终止
+  符合冻结合同，不是单位或比较方向错误。八 pass 未完成；正式 result root 存在但为空，
+  `profile.json`、`terminal_receipt.json`、predictions、`cost_samples.jsonl`、
+  `power_trace.jsonl` 及全部成本/短动作/边界终态证据均不存在。该轮只能分类为 replay
+  admission/protocol failure；不能解释局部日志为模型性能、准确率保持或效率证据，也不得自动
+  放宽门槛、补造产物、resume 或 duplicate。下一动作是把完整事实与未决合同交给 fresh Pro
+  独立裁决；其返回前不追加实验。
