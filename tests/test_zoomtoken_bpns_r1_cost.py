@@ -85,3 +85,23 @@ def test_power_sidecar_starts_before_detector_affinity_is_narrowed():
     assert source.index("sidecar.start()") < source.index(
         "os.sched_setaffinity(0, set(detector_cpus))"
     )
+
+
+def test_population_identity_preserves_official_duplicate_loader_items():
+    class Dataset:
+        data_list = [
+            ["video_a", {}, {}, [0, 4]],
+            ["video_a", {}, {}, [0, 4]],
+        ]
+
+    old_videos = MODULE.EXPECTED_VIDEO_COUNT
+    old_windows = MODULE.EXPECTED_WINDOW_COUNT
+    MODULE.EXPECTED_VIDEO_COUNT = 1
+    MODULE.EXPECTED_WINDOW_COUNT = 2
+    try:
+        manifest, videos = MODULE._population_manifest(Dataset())
+    finally:
+        MODULE.EXPECTED_VIDEO_COUNT = old_videos
+        MODULE.EXPECTED_WINDOW_COUNT = old_windows
+    assert manifest == ["0:video_a:0", "1:video_a:0"]
+    assert videos == {"video_a"}

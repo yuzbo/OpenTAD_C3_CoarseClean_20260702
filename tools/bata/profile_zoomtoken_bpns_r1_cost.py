@@ -286,10 +286,11 @@ def _population_manifest(dataset: Any) -> tuple[list[str], set[str]]:
             raise ValueError(f"validation population row {ordinal} is malformed")
         video_id = str(row[0])
         videos.add(video_id)
-        manifest.append(f"{video_id}:{int(row[3][0])}")
+        manifest.append(f"{ordinal}:{video_id}:{int(row[3][0])}")
     if len(videos) != EXPECTED_VIDEO_COUNT or len(manifest) != EXPECTED_WINDOW_COUNT:
         raise ValueError(
-            f"expected 40 validation videos/136 windows, observed {len(videos)}/{len(manifest)}"
+            f"expected {EXPECTED_VIDEO_COUNT} validation videos/{EXPECTED_WINDOW_COUNT} loader items, "
+            f"observed {len(videos)}/{len(manifest)}"
         )
     if len(set(manifest)) != len(manifest):
         raise ValueError("validation population contains duplicate physical windows")
@@ -446,7 +447,13 @@ def _sample_identity(cpu_batch: Mapping[str, Any], ordinal: int) -> dict[str, An
     if start is None:
         raise ValueError(f"validation window {ordinal} has no start-frame identity")
     video_id = str(meta["video_name"])
-    return {"video_id": video_id, "physical_window_id": f"{video_id}:{int(start)}", "window_ordinal": ordinal}
+    content_window_id = f"{video_id}:{int(start)}"
+    return {
+        "video_id": video_id,
+        "content_window_id": content_window_id,
+        "dataset_item_id": f"{ordinal}:{content_window_id}",
+        "window_ordinal": ordinal,
+    }
 
 
 def _measure(fn, synchronize) -> tuple[Any, float]:
@@ -540,7 +547,7 @@ def _profile_one_pass(
             continuous_start = time.perf_counter()
             cpu_batch, input_ms = _measure(next_batch, synchronize)
             identity = _sample_identity(cpu_batch, ordinal)
-            if identity["physical_window_id"] != manifest[ordinal]:
+            if identity["dataset_item_id"] != manifest[ordinal]:
                 raise ValueError("runtime loader order differs from the frozen population")
             torch.cuda.reset_peak_memory_stats(device)
             gpu_batch, h2d_ms = _measure(lambda: _move_to_device(cpu_batch, device), synchronize)
