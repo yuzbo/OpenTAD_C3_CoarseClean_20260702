@@ -40,6 +40,13 @@ max_chars: 8000
   power trace, memory, latency, short-action and boundary artifacts before applying
   the frozen accuracy and efficiency gates. Do not retrain, resume, duplicate the job,
   or advance DSR6-KV/MOD32-KV/DROP32 while this primary comparison is active.
+- **Frozen primary aggregation.** The profiler's top-level `comparison` pools all
+  windows from four passes per arm. It is descriptive but does not implement the
+  Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by
+  `(arm, pass_index)`, compute decode-to-Soft-NMS p50 and total GPU joules for each
+  complete pass, then take the median of the four pass estimates per arm before
+  forming R1/K100 ratios. The raw rows contain the required fields, so this correction
+  requires no replay and must be disclosed separately from the pooled summary.
 
 ## Full-representation temporal reuse adjudication (2026-08-26)
 

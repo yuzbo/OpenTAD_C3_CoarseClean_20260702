@@ -4615,3 +4615,11 @@ append_only: true
   `/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_r1_cost_parity_e9323448_seed42_20260828`。
   当前只形成实现、准入和运行证据；终态前不读取或解释任何局部准确率、延迟、显存、能耗、
   短动作或边界数值，也不重复提交。
+
+- 2026-08-28：结果盲终态审计准备发现并经独立复核确认：profiler 顶层
+  `comparison.r1_over_k100` 将每臂四个 pass 的全部窗口合并后计算 p50 与窗口平均能耗，
+  不等同于 Pro 冻结的“每个完整 pass 先统计、再对四个 pass 取 arm-level median”主估计。
+  `cost_samples.jsonl` 的每行已有 `arm`、`pass_index`、`end_to_end_serial_ms` 与包含摊销
+  final-NMS 的 `gpu_energy_j`，因此终态可在不修改作业、不重放且不读取局部结果的前提下，
+  严格重算每 pass p50、每 pass 总能耗及其四-pass 中位数。后续必须同时披露该冻结主估计与
+  profiler pooled 描述性汇总，不能直接用后者应用 5% 论文门槛。

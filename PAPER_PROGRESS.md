@@ -7,7 +7,7 @@
 - **已有证据：** 单个 seed-42 中，K100 与 R1 的 final-EMA 为 `68.51/61.19/46.27` 与 `69.07/61.14/46.57`。这支持准确率可行性，并把“连续支持拓扑”保留为有价值的机制解释。
 - **不能主张：** 36% 原生 token 减少尚未转化为已测得的延迟、显存或能耗收益；也没有多种子、跨检测器或跨数据集证据。
 - **当前实验：** 旧回放 job `1257281` 的 raw/舍入绑定缺陷已由最小候选 `e9323448f6cd78b99bb3de53fd9ffb55f3676d65` 修正，并通过 focused tests、独立 Critic 和结果盲 Evaluator。唯一替代回放 job `1258299` 正在同一冻结协议下运行；目前没有可解释的新性能或成本结果。
-- **下一项决定性任务：** 等待 job `1258299` 终态并只在八个 pass、`profile.json`、`terminal_receipt.json`、预测和功耗轨迹完整后判断 BPNS-R1 的效率主张继续、缩小还是停止。禁止读取 live/partial 数字或重复提交。
+- **下一项决定性任务：** 等待 job `1258299` 终态并只在八个 pass、`profile.json`、`terminal_receipt.json`、预测和功耗轨迹完整后判断 BPNS-R1 的效率主张继续、缩小还是停止。终态主估计必须从 `cost_samples.jsonl` 按 pass 分组：每个 pass 先计算完整 decode→Soft-NMS p50 与总能耗，再对每臂四个 pass 取中位数；profiler 顶层跨窗口 pooled comparison 只作描述性结果。禁止读取 live/partial 数字或重复提交。
 
 以下按日期和实验族保留完整证据与负结果；运行标识用于定位原始材料，不替代上述科学判断。
 

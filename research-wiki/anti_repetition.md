@@ -32,6 +32,13 @@ updated: 2026-08-28
    It is running under the unchanged eight-pass protocol. Do not submit a duplicate,
    resume job `1257281`, read live/partial metrics, or infer cost before complete
    `profile.json`, `terminal_receipt.json`, predictions and power evidence exist.
+   Do not apply the primary 5% efficiency gate directly to the profiler's pooled
+   `comparison.r1_over_k100` fields. The Pro-frozen primary estimator first computes
+   one end-to-end p50 and one total-energy value for each complete pass, then takes
+   the four-pass median per arm. Recompute those values from `cost_samples.jsonl`
+   grouped by `(arm, pass_index)`; retain the pooled profiler summary only as a
+   separately labelled descriptive statistic. This uses existing raw evidence and
+   does not authorize a rerun or code change while job `1258299` is active.
 
 0. The exact `FULL_REPRESENTATION_TEMPORAL_REUSE-v001` route is terminal
    `STOP_BEFORE_IMPLEMENTATION` at revision `bffff43d...`. Do not implement a
