@@ -319,16 +319,89 @@ def test_complete_replay_acceptance_uses_registered_pass_level_rules():
         arm: {"all_four_hashes_identical": True}
         for arm in ("K100", "R1")
     }
-    boundary = {
-        "mean_abs_start_error_normalized": 0.1,
-        "mean_abs_end_error_normalized": 0.1,
-        "short_action": {"recall_at_tiou_0.70": 0.5},
-    }
-    quality = {
-        arm: {"metrics": {"boundary": boundary}}
+    pass_quality = [
+        {
+            "arm": arm,
+            "pass_index": pass_index,
+            "boundary": {
+                "mean_abs_start_error_normalized": 0.1,
+                "mean_abs_end_error_normalized": 0.1,
+                "short_action": {"recall_at_tiou_0.70": 0.5},
+            },
+        }
         for arm in ("K100", "R1")
-    }
-    result = MODULE._classify_complete_replay(pass_summaries, arm_summaries, stable, quality)
+        for pass_index in range(4)
+    ]
+    result = MODULE._classify_complete_replay(pass_summaries, arm_summaries, stable, pass_quality)
     assert result["decision"] == "ACCEPT_FOR_RESULT_TO_CLAIM_REVIEW"
     assert result["p50_reduction"] == pytest.approx(0.10)
     assert result["gross_energy_per_pass_reduction"] == pytest.approx(0.10)
+
+
+def test_quality_stop_requires_complete_adverse_pass_range_separation():
+    latency_keys = ["end_to_end_serial_ms"]
+    pass_summaries = []
+    for arm, p50, energy, accuracy in (
+        ("K100", 100.0, 100.0, _reference_metrics("K100")),
+        ("R1", 90.0, 90.0, _reference_metrics("R1")),
+    ):
+        for pass_index in range(4):
+            pass_summaries.append(
+                {
+                    "arm": arm,
+                    "pass_index": pass_index,
+                    "latency_ms": {"end_to_end_serial_ms": {name: p50 for name in ("mean", "p50", "p95", "min", "max")}},
+                    "throughput_windows_per_second": 1000.0 / p50,
+                    "peak_gpu_allocated_mb": p50,
+                    "peak_gpu_reserved_mb": p50,
+                    "gross_gpu_energy_j": energy,
+                    "gpu_energy_j_per_window": energy / MODULE.EXPECTED_WINDOW_COUNT,
+                    "final_ema_metrics": accuracy,
+                }
+            )
+    arm_summaries = {
+        arm: MODULE._median_of_four_arm_summary(pass_summaries, arm, latency_keys)
+        for arm in ("K100", "R1")
+    }
+    varied_hashes = {
+        "K100": {"all_four_hashes_identical": False},
+        "R1": {"all_four_hashes_identical": False},
+    }
+    pass_quality = []
+    for arm, starts, recalls in (
+        ("K100", (0.10, 0.10, 0.10, 0.10), (0.50, 0.50, 0.50, 0.50)),
+        ("R1", (0.09, 0.11, 0.09, 0.11), (0.49, 0.51, 0.49, 0.51)),
+    ):
+        for pass_index, (start, recall) in enumerate(zip(starts, recalls)):
+            pass_quality.append(
+                {
+                    "arm": arm,
+                    "pass_index": pass_index,
+                    "boundary": {
+                        "mean_abs_start_error_normalized": start,
+                        "mean_abs_end_error_normalized": start,
+                        "short_action": {"recall_at_tiou_0.70": recall},
+                    },
+                }
+            )
+    mixed = MODULE._classify_complete_replay(
+        pass_summaries, arm_summaries, varied_hashes, pass_quality
+    )
+    assert mixed["decision"] == "ACCEPT_FOR_RESULT_TO_CLAIM_REVIEW"
+    assert mixed["quality_reversals"] == []
+    assert mixed["prediction_hash_variation_diagnostic"] is True
+
+    for row in pass_quality:
+        if row["arm"] == "R1":
+            row["boundary"]["mean_abs_start_error_normalized"] = 0.20
+            row["boundary"]["mean_abs_end_error_normalized"] = 0.20
+            row["boundary"]["short_action"]["recall_at_tiou_0.70"] = 0.40
+    separated = MODULE._classify_complete_replay(
+        pass_summaries, arm_summaries, varied_hashes, pass_quality
+    )
+    assert separated["decision"] == "STOP_BPNS_R1_CANDIDATE"
+    assert set(separated["quality_reversals"]) == {
+        "short_action_recall_at_tiou_0.70",
+        "overall_boundary_mean_abs_start_error_normalized",
+        "overall_boundary_mean_abs_end_error_normalized",
+    }

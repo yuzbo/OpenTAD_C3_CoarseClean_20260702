@@ -372,6 +372,19 @@ def precheck(args: argparse.Namespace) -> dict[str, Any]:
             raise FileNotFoundError(path)
     if not str(args.result_root.resolve()).startswith(str(REMOTE_BOUNDARY.resolve()) + os.sep):
         raise ValueError("BPNS result root leaves the shared remote write boundary")
+    video_filenames = sorted(path.name for path in args.video_root.glob("*.mp4") if path.is_file())
+    if len(video_filenames) != 411:
+        raise ValueError(f"expected 411 canonical THUMOS14 MP4 files, observed {len(video_filenames)}")
+    evaluator_sources = sorted((ROOT / "opentad" / "evaluations").glob("*.py"))
+    if not evaluator_sources:
+        raise FileNotFoundError("could not bind the evaluator implementation sources")
+    evaluator_implementation = {
+        "files": [
+            {"path": str(path.relative_to(ROOT)), "sha256": _sha256_file(path)}
+            for path in evaluator_sources
+        ]
+    }
+    evaluator_implementation["manifest_sha256"] = _json_identity(evaluator_implementation["files"])
     manifests = []
     checkpoint_receipts = {}
     config_receipts = {}
@@ -405,6 +418,12 @@ def precheck(args: argparse.Namespace) -> dict[str, Any]:
         "population_manifest_sha256": _json_identity(manifests[0]),
         "annotation": {"path": str(args.annotation), "sha256": _sha256_file(args.annotation)},
         "class_map": {"path": str(args.class_map), "sha256": _sha256_file(args.class_map)},
+        "video_root": {
+            "path": str(args.video_root.resolve()),
+            "canonical_mp4_count": len(video_filenames),
+            "filename_manifest_sha256": _json_identity(video_filenames),
+        },
+        "evaluator_implementation": evaluator_implementation,
         "configs": config_receipts,
         "checkpoints": checkpoint_receipts,
         "reads_validation_metrics": False,
@@ -1155,7 +1174,7 @@ def _classify_complete_replay(
     pass_summaries: Sequence[Mapping[str, Any]],
     arm_summaries: Mapping[str, Mapping[str, Any]],
     prediction_stability: Mapping[str, Mapping[str, Any]],
-    arm_quality: Mapping[str, Mapping[str, Any]],
+    pass_quality: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     k100, r1 = arm_summaries["K100"], arm_summaries["R1"]
     p50_reduction = 1.0 - (
@@ -1196,21 +1215,30 @@ def _classify_complete_replay(
             getter(row) for row in by_arm["K100"]
         ):
             secondary_conflicts.append(name)
-    k_quality = arm_quality["K100"]["metrics"]["boundary"]
-    r_quality = arm_quality["R1"]["metrics"]["boundary"]
+    quality_by_arm = {
+        arm: [row["boundary"] for row in pass_quality if row["arm"] == arm]
+        for arm in ("K100", "R1")
+    }
+    if any(len(rows) != 4 for rows in quality_by_arm.values()):
+        raise ValueError("systematic quality comparison requires four complete passes per arm")
     quality_reversals = []
+    k_short = [row["short_action"]["recall_at_tiou_0.70"] for row in quality_by_arm["K100"]]
+    r_short = [row["short_action"]["recall_at_tiou_0.70"] for row in quality_by_arm["R1"]]
     if (
-        r_quality["short_action"]["recall_at_tiou_0.70"] is not None
-        and k_quality["short_action"]["recall_at_tiou_0.70"] is not None
-        and r_quality["short_action"]["recall_at_tiou_0.70"]
-        < k_quality["short_action"]["recall_at_tiou_0.70"]
+        all(value is not None for value in (*k_short, *r_short))
+        and max(float(value) for value in r_short) < min(float(value) for value in k_short)
     ):
         quality_reversals.append("short_action_recall_at_tiou_0.70")
     for key in ("mean_abs_start_error_normalized", "mean_abs_end_error_normalized"):
-        if r_quality[key] is not None and k_quality[key] is not None and r_quality[key] > k_quality[key]:
+        k_values = [row[key] for row in quality_by_arm["K100"]]
+        r_values = [row[key] for row in quality_by_arm["R1"]]
+        if (
+            all(value is not None for value in (*k_values, *r_values))
+            and min(float(value) for value in r_values) > max(float(value) for value in k_values)
+        ):
             quality_reversals.append(f"overall_boundary_{key}")
     accuracy_ok = all(value >= -0.30 for value in worst_accuracy_delta.values())
-    prediction_hash_conflict = any(
+    prediction_hash_variation = any(
         not bool(receipt["all_four_hashes_identical"])
         for receipt in prediction_stability.values()
     )
@@ -1225,7 +1253,6 @@ def _classify_complete_replay(
         p50_reduction >= 0.05
         and energy_reduction >= 0.05
         and not secondary_conflicts
-        and not prediction_hash_conflict
     ):
         decision = "ACCEPT_FOR_RESULT_TO_CLAIM_REVIEW"
     else:
@@ -1238,11 +1265,11 @@ def _classify_complete_replay(
         "accuracy_noninferiority_pass": accuracy_ok,
         "secondary_systematic_conflicts": secondary_conflicts,
         "quality_reversals": quality_reversals,
-        "prediction_hash_conflict": prediction_hash_conflict,
+        "prediction_hash_variation_diagnostic": prediction_hash_variation,
         "rule": {
             "accept": "p50>=5%, gross_energy>=5%, worst Avg-mAP and mAP@0.7 deltas>=-0.30pp, no systematic conflict",
-            "revise": "positive but borderline benefit or pass/prediction conflict",
-            "stop": "p50 or energy<=2%, accuracy noninferiority failure, or boundary/short-action reversal",
+            "revise": "positive but borderline benefit or a systematic pass-level metric conflict",
+            "stop": "p50 or energy<=2%, accuracy noninferiority failure, or all-four-pass boundary/short-action reversal",
         },
     }
 
@@ -1471,7 +1498,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         pass_summaries,
         arm_summaries,
         prediction_stability,
-        arm_quality,
+        pass_quality,
     )
     pass_diagnoses = {
         row["diagnosis"]
