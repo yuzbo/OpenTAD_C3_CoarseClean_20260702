@@ -1250,6 +1250,103 @@ class Block(BaseModule):
             raise RuntimeError("ragged attention buckets omitted a selected token")
         return out.reshape_as(x)
 
+    def _ragged_dense_attention_mlp_with_column_score(
+        self,
+        x: Tensor,
+        bucket_positions: List[Tensor],
+        *,
+        query_chunk_size: int,
+        packed_stats: Optional[Dict[str, int]],
+    ) -> Tuple[Tensor, Tensor]:
+        """Run dense ragged Attention+MLP and retain incoming-attention scores."""
+        if x.ndim != 3:
+            raise ValueError("ragged block inputs must be [B,S,C]")
+        if not bucket_positions:
+            raise ValueError("ragged block requires at least one non-empty clip")
+        flat = x.reshape(-1, int(x.shape[-1]))
+        out = flat.clone()
+        score_out = flat.new_zeros((int(flat.shape[0]),), dtype=torch.float32)
+        visited = torch.zeros(
+            int(flat.shape[0]),
+            device=x.device,
+            dtype=torch.bool,
+        )
+        for positions in bucket_positions:
+            if positions.ndim != 2 or positions.shape[1] <= 0:
+                raise ValueError("ragged bucket positions must be non-empty [R,L]")
+            flattened_positions = positions.reshape(-1)
+            if bool(visited.gather(0, flattened_positions).any().item()):
+                raise RuntimeError("ragged attention buckets overlap")
+            visited.scatter_(0, flattened_positions, True)
+            selected = flat[positions]
+            attention_output, score = self.attn.forward_with_column_mean(
+                self.norm1(selected),
+                query_chunk_size=int(query_chunk_size),
+            )
+            selected = selected + self.drop_path(attention_output)
+            selected = selected + self.drop_path(self.mlp(self.norm2(selected)))
+            out[positions] = selected
+            score_out[positions] = score.to(dtype=score_out.dtype)
+            if packed_stats is not None:
+                rows, tokens = map(int, positions.shape)
+                packed_stats["ragged_attention_bucket_call_count"] += 1
+                packed_stats["ragged_mlp_bucket_call_count"] += 1
+                packed_stats["executed_attention_tokens"] += rows * tokens
+                packed_stats["executed_kv_tokens"] += rows * tokens
+                packed_stats["executed_attention_pairs"] += rows * tokens * tokens
+                packed_stats["executed_mlp_tokens"] += rows * tokens
+        if not bool(visited.all().item()):
+            raise RuntimeError("ragged attention buckets omitted a selected token")
+        return out.reshape_as(x), score_out.reshape(x.shape[:2])
+
+    def forward_native_ragged_with_column_score(
+        self,
+        x: Tensor,
+        *,
+        bucket_positions: List[Tensor],
+        tubelet_indices: Tensor,
+        spatial_indices: Tensor,
+        total_tubelets: int,
+        grid_height: int,
+        grid_width: int,
+        query_chunk_size: int,
+        packed_stats: Optional[Dict[str, int]] = None,
+    ) -> Tuple[Tensor, Tensor]:
+        """Dense ragged block used immediately before one TAR32-FKV block."""
+        checkpoint_active = bool(self.with_cp and x.requires_grad)
+
+        def _inner_forward(value: Tensor) -> Tuple[Tensor, Tensor]:
+            active_stats = (
+                None
+                if checkpoint_active and torch.is_grad_enabled()
+                else packed_stats
+            )
+            value, score = self._ragged_dense_attention_mlp_with_column_score(
+                value,
+                bucket_positions,
+                query_chunk_size=int(query_chunk_size),
+                packed_stats=active_stats,
+            )
+            if self.use_adapter:
+                value = self.adapter.forward_native_ragged(
+                    value,
+                    tubelet_indices,
+                    spatial_indices,
+                    total_tubelets=total_tubelets,
+                    grid_height=grid_height,
+                    grid_width=grid_width,
+                )
+                if active_stats is not None:
+                    active_stats["ragged_adapter_forward_count"] += 1
+                    active_stats["executed_adapter_tokens"] += (
+                        int(value.shape[0]) * int(value.shape[1])
+                    )
+            return value, score.detach()
+
+        if checkpoint_active:
+            return cp.checkpoint(_inner_forward, x, use_reentrant=True)
+        return _inner_forward(x)
+
     def forward_native_ragged(
         self,
         x: Tensor,
@@ -1456,6 +1553,7 @@ class VisionTransformerAdapter(BaseModule):
         tubelet_packed_runtime_route: Optional[Dict] = None,
         chronotransport: Optional[Dict] = None,
         amod: Optional[Dict] = None,
+        tar32_fkv: Optional[Dict] = None,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -1475,6 +1573,7 @@ class VisionTransformerAdapter(BaseModule):
         self.latest_chronotransport_summary = None
         self.latest_native_packed_summary = None
         self.latest_amod_summary = None
+        self.latest_tar32_fkv_summary = None
         # Runtime evidence only.  GeoRoute records a before/after delta around
         # the actual packed call so P0 does not merely trust a hand-written
         # "one forward" field in a summary dictionary.
@@ -1584,6 +1683,61 @@ class VisionTransformerAdapter(BaseModule):
                 "unselected_update": "identity_bypass",
             }
 
+        self.tar32_fkv_config = None
+        if tar32_fkv is not None and bool(dict(tar32_fkv).get("enabled", True)):
+            tar32_cfg = dict(tar32_fkv)
+            expected_dense = (0, 2, 4, 6, 8, 10)
+            expected_sparse = (1, 3, 5, 7, 9, 11)
+            if int(depth) != 12:
+                raise ValueError("TAR32-FKV requires the frozen 12-block VideoMAE-S")
+            if float(attn_drop_rate) != 0.0:
+                raise ValueError("TAR32-FKV requires zero attention dropout")
+            if (
+                tubelet_token_redundancy_aux is not None
+                or packed_enabled
+                or chronotransport_enabled
+                or self.amod_config is not None
+            ):
+                raise ValueError(
+                    "TAR32-FKV is mutually exclusive with A-MoD/ROI/packed/ChronoTransport routes"
+                )
+            dense_blocks = tuple(
+                tar32_cfg.get("dense_block_indices", expected_dense)
+            )
+            sparse_blocks = tuple(
+                tar32_cfg.get("tar32_block_indices", expected_sparse)
+            )
+            if dense_blocks != expected_dense or sparse_blocks != expected_sparse:
+                raise ValueError(
+                    "TAR32-FKV must alternate dense-even and TAR32-odd blocks"
+                )
+            if int(tar32_cfg.get("support_tokens_per_tubelet", 64)) != 64:
+                raise ValueError("TAR32-FKV requires exact K64 support per tubelet")
+            if int(tar32_cfg.get("selected_tokens_per_tubelet", 32)) != 32:
+                raise ValueError("TAR32-FKV requires exact K32 queries per tubelet")
+            query_chunk_size = int(tar32_cfg.get("query_chunk_size", 128))
+            if query_chunk_size <= 0:
+                raise ValueError("TAR32-FKV query_chunk_size must be positive")
+            if tar32_cfg.get(
+                "routing_score", "preceding_dense_attention_column_mean"
+            ) != "preceding_dense_attention_column_mean":
+                raise ValueError(
+                    "TAR32-FKV routing score must come from the preceding dense block"
+                )
+            self.tar32_fkv_config = {
+                "schema_version": tar32_cfg.get(
+                    "schema_version", "zoomtoken_r1_tar32_fkv_v001"
+                ),
+                "support_tokens_per_tubelet": 64,
+                "selected_tokens_per_tubelet": 32,
+                "dense_block_indices": dense_blocks,
+                "tar32_block_indices": sparse_blocks,
+                "query_chunk_size": query_chunk_size,
+                "routing_score": "preceding_dense_attention_column_mean",
+                "unselected_update": "identity_bypass_attention_mlp",
+                "kv_context": "full_k64_same_tubelet_support",
+            }
+
         # stochastic depth decay rule
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
 
@@ -1608,6 +1762,10 @@ class VisionTransformerAdapter(BaseModule):
                 for i in range(depth)
             ]
         )
+        if self.tar32_fkv_config is not None and any(
+            not block.use_adapter for block in self.blocks
+        ):
+            raise ValueError("TAR32-FKV requires the existing Adapter on all K64 blocks")
 
         if use_mean_pooling:
             self.norm = nn.Identity()
@@ -2074,6 +2232,43 @@ class VisionTransformerAdapter(BaseModule):
             metadata,
         )
 
+    @staticmethod
+    def _tar32_fkv_mask(
+        scores: Tensor,
+        tubelet_indices: Tensor,
+        *,
+        total_tubelets: int,
+    ) -> Tensor:
+        """Stable exact-K32 selection inside every contiguous K64 tubelet."""
+        if scores.ndim != 2 or tubelet_indices.shape != scores.shape:
+            raise ValueError("TAR32-FKV scores and tubelet lineage must be [B,S]")
+        batch_size, token_count = map(int, scores.shape)
+        expected_tokens = int(total_tubelets) * 64
+        if token_count != expected_tokens:
+            raise ValueError("TAR32-FKV requires exact K64 support for every tubelet")
+        expected_lineage = torch.arange(
+            int(total_tubelets),
+            device=tubelet_indices.device,
+            dtype=torch.long,
+        ).repeat_interleave(64)
+        if not torch.equal(
+            tubelet_indices,
+            expected_lineage.view(1, -1).expand(batch_size, -1),
+        ):
+            raise ValueError(
+                "TAR32-FKV requires contiguous tubelet-major K64 lineage"
+            )
+        ranked = torch.argsort(
+            scores.detach().reshape(batch_size, int(total_tubelets), 64),
+            dim=-1,
+            descending=True,
+            stable=True,
+        )
+        selected = ranked[..., :32]
+        mask = torch.zeros_like(ranked, dtype=torch.bool)
+        mask.scatter_(dim=-1, index=selected, value=True)
+        return mask.reshape(batch_size, expected_tokens)
+
     def forward_native_ragged(
         self,
         selected_native_tubelets: Tensor,
@@ -2105,6 +2300,15 @@ class VisionTransformerAdapter(BaseModule):
         batch_size = int(metadata["batch_size"])
         window_budget = int(metadata["window_budget"])
         selected_total = batch_size * window_budget
+        tar32_fkv_enabled = self.tar32_fkv_config is not None
+        if tar32_fkv_enabled and (
+            refresh_mode != "full64"
+            or refresh_mask is not None
+            or refresh_alpha is not None
+        ):
+            raise ValueError(
+                "TAR32-FKV owns its per-block selection and requires the full64 R1 carrier"
+            )
         if refresh_mode not in {
             "full64",
             "drop32",
@@ -2168,7 +2372,53 @@ class VisionTransformerAdapter(BaseModule):
         }
         if refresh_mode == "dsr6_kv" and len(self.blocks) != 12:
             raise ValueError("DSR6-KV requires the frozen 12-block VideoMAE-S")
+        preceding_dense_score = None
+        last_tar32_mask = None
         for block_index, block in enumerate(self.blocks):
+            if tar32_fkv_enabled:
+                dense_blocks = self.tar32_fkv_config["dense_block_indices"]
+                tar32_blocks = self.tar32_fkv_config["tar32_block_indices"]
+                if block_index in dense_blocks:
+                    x, preceding_dense_score = (
+                        block.forward_native_ragged_with_column_score(
+                            x,
+                            bucket_positions=bucket_positions,
+                            tubelet_indices=tubelet_indices,
+                            spatial_indices=spatial_indices,
+                            total_tubelets=int(metadata["total_tubelets"]),
+                            grid_height=int(metadata["grid_height"]),
+                            grid_width=int(metadata["grid_width"]),
+                            query_chunk_size=self.tar32_fkv_config[
+                                "query_chunk_size"
+                            ],
+                            packed_stats=stats,
+                        )
+                    )
+                    continue
+                if block_index not in tar32_blocks or preceding_dense_score is None:
+                    raise RuntimeError(
+                        "TAR32-FKV block lacks its immediately preceding dense score"
+                    )
+                last_tar32_mask = self._tar32_fkv_mask(
+                    preceding_dense_score,
+                    tubelet_indices,
+                    total_tubelets=int(metadata["total_tubelets"]),
+                )
+                x = block.forward_native_ragged(
+                    x,
+                    bucket_positions=bucket_positions,
+                    tubelet_indices=tubelet_indices,
+                    spatial_indices=spatial_indices,
+                    total_tubelets=int(metadata["total_tubelets"]),
+                    grid_height=int(metadata["grid_height"]),
+                    grid_width=int(metadata["grid_width"]),
+                    packed_stats=stats,
+                    refresh_mask=last_tar32_mask,
+                    refresh_mode="mod32_kv",
+                    refresh_alpha=None,
+                )
+                preceding_dense_score = None
+                continue
             block_refresh_mask = refresh_mask
             block_refresh_mode = refresh_mode
             block_refresh_alpha = (
@@ -2206,7 +2456,15 @@ class VisionTransformerAdapter(BaseModule):
         ) or not isinstance(clip_indices, torch.Tensor):
             raise RuntimeError("ragged execution metadata lost its tensor ledger")
         full_attention_pairs = int(attention_pairs_per_window.sum().item())
-        if refresh_mask is None:
+        if tar32_fkv_enabled:
+            if preceding_dense_score is not None or last_tar32_mask is None:
+                raise RuntimeError("TAR32-FKV did not complete all dense/sparse pairs")
+            expected_attention_pairs = (
+                full_attention_pairs * 6 + (full_attention_pairs // 2) * 6
+            )
+            expected_kv_tokens = selected_total * len(self.blocks)
+            refresh_tokens_per_window = window_budget // 2
+        elif refresh_mask is None:
             expected_attention_pairs = full_attention_pairs * len(self.blocks)
             expected_kv_tokens = selected_total * len(self.blocks)
             refresh_tokens_per_window = window_budget
@@ -2234,7 +2492,9 @@ class VisionTransformerAdapter(BaseModule):
             raise RuntimeError("ragged patch execution count differs from selected B")
         if stats["executed_attention_pairs"] != expected_attention_pairs:
             raise RuntimeError("ragged attention-pair ledger differs from execution")
-        if refresh_mask is None:
+        if tar32_fkv_enabled:
+            kv_ledger_valid = stats["executed_kv_tokens"] == expected_kv_tokens
+        elif refresh_mask is None:
             kv_ledger_valid = stats["executed_kv_tokens"] in {
                 0,
                 expected_kv_tokens,
@@ -2243,14 +2503,43 @@ class VisionTransformerAdapter(BaseModule):
             kv_ledger_valid = stats["executed_kv_tokens"] == expected_kv_tokens
         if not kv_ledger_valid:
             raise RuntimeError("ragged KV-token ledger differs from execution")
-        depth_schedule_summary = (
-            {
+        if tar32_fkv_enabled:
+            expected_update_tokens = selected_total * 6 + (selected_total // 2) * 6
+            if stats["executed_attention_tokens"] != expected_update_tokens:
+                raise RuntimeError("TAR32-FKV attention-token ledger differs from execution")
+            if stats["executed_mlp_tokens"] != expected_update_tokens:
+                raise RuntimeError("TAR32-FKV MLP-token ledger differs from execution")
+            if stats["ragged_adapter_forward_count"] != len(self.blocks):
+                raise RuntimeError("TAR32-FKV did not execute every full-K64 Adapter")
+            if stats["executed_adapter_tokens"] != selected_total * len(self.blocks):
+                raise RuntimeError("TAR32-FKV Adapter-token ledger differs from execution")
+            depth_schedule_summary = {
+                "composite_execution_mode": "tar32_fkv",
+                "full_update_block_count": 6,
+                "tar32_update_block_count": 6,
+                "dense_block_indices": list(
+                    self.tar32_fkv_config["dense_block_indices"]
+                ),
+                "tar32_block_indices": list(
+                    self.tar32_fkv_config["tar32_block_indices"]
+                ),
+                "selected_tokens_per_tubelet": 32,
+                "selection_scope": "per_tubelet",
+                "routing_score": self.tar32_fkv_config["routing_score"],
+                "unselected_update": self.tar32_fkv_config[
+                    "unselected_update"
+                ],
+                "kv_context": self.tar32_fkv_config["kv_context"],
+                "temporal_state_reuse": False,
+                "new_trainable_parameters": False,
+            }
+        elif refresh_mode == "dsr6_kv":
+            depth_schedule_summary = {
                 "full_update_block_count": 6,
                 "refresh_update_block_count": 6,
             }
-            if refresh_mode == "dsr6_kv"
-            else {}
-        )
+        else:
+            depth_schedule_summary = {}
         self.latest_native_packed_summary = {
             "schema_version": "videomae_native_ragged_v1",
             "execution_mode": "true_clip_ragged_no_padding",
@@ -2305,6 +2594,11 @@ class VisionTransformerAdapter(BaseModule):
             "dense_adapter_forward_count": 0,
             "adapter_execution": "coordinate_lineage_true_ragged",
         }
+        self.latest_tar32_fkv_summary = (
+            dict(self.latest_native_packed_summary)
+            if tar32_fkv_enabled
+            else None
+        )
         return x
 
     def forward_native_dense_reference(
@@ -2347,6 +2641,10 @@ class VisionTransformerAdapter(BaseModule):
             Tensor: The feature of the input
                 samples extracted by the backbone.
         """
+        if self.tar32_fkv_config is not None:
+            raise RuntimeError(
+                "TAR32-FKV is defined only on the strict-R1 native ragged carrier"
+            )
         self._freeze_layers()
 
         b, _, _, h, w = x.shape

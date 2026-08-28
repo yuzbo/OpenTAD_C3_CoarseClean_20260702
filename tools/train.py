@@ -47,6 +47,7 @@ ZOOMTOKEN_RECOVERY_ARMS.update(
         "R1-MOD32-KV",
         "R1-RC32-KV",
         "R1-DSR6-KV",
+        "R1-TAR32-FKV",
         "AMOD50",
     }
 )
