@@ -31,6 +31,19 @@ def test_native_tubelet_candidates_preserve_two_frame_atoms() -> None:
     assert gathered.flatten().tolist() == [0.0, 1.0, 4.0, 5.0, 6.0, 7.0, 0.0, 0.0]
 
 
+def test_native_tubelet_gather_preserves_ncthw_layout_for_videomae_clips() -> None:
+    inputs = torch.arange(36, dtype=torch.float32).reshape(1, 1, 3, 12, 1, 1)
+    positions = torch.tensor([[0, 2, 3, 5]])
+    slot_mask = torch.ones_like(positions, dtype=torch.bool)
+    gathered, frame_positions = gather_native_tubelet_rgb(inputs, positions, slot_mask)
+    assert gathered.shape == (1, 1, 3, 8, 1, 1)
+    assert frame_positions.tolist() == [[0, 1, 4, 5, 6, 7, 10, 11]]
+    # The formal K=192 path analogously returns T=384, which the inherited
+    # t1=24 preprocessing partitions into 24 physical-input clips of 16 frames.
+    clips = gathered.reshape(1, 1, 3, 2, 4, 1, 1).permute(0, 3, 1, 2, 4, 5, 6)
+    assert clips.shape == (1, 2, 1, 3, 4, 1, 1)
+
+
 def test_task_state_coreset_is_exact_k_covered_and_endpoint_anchored() -> None:
     frames = 32
     actionness = torch.linspace(0.0, 1.0, frames).reshape(1, frames)
