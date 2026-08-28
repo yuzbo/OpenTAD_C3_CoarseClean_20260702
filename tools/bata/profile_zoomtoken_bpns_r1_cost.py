@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import math
 import os
@@ -103,6 +104,31 @@ def _write_jsonl(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(temporary, path)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _json_identity(payload: Any) -> str:
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _plain_mapping(value: Any) -> Any:
+    if hasattr(value, "to_dict"):
+        value = value.to_dict()
+    if isinstance(value, Mapping):
+        return {str(key): _plain_mapping(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain_mapping(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
 
 
 def percentile(values: Sequence[float], probability: float) -> float:
@@ -268,6 +294,14 @@ def _git_identity(root: Path, expected_commit: str) -> None:
     ).stdout.strip()
     if head != expected_commit or dirty:
         raise RuntimeError("BPNS cost replay requires its exact clean execution commit")
+    remote_contains = subprocess.run(
+        ["git", "-C", str(root), "branch", "-r", "--contains", head],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    if not remote_contains:
+        raise RuntimeError("BPNS cost replay requires an execution commit present on a remote ref")
 
 
 def _strip_ddp_prefix(state: Mapping[str, Any]) -> dict[str, Any]:
@@ -314,7 +348,14 @@ def _checkpoint_preflight(torch: Any, path: Path) -> dict[str, Any]:
         raise ValueError(f"checkpoint is not an epoch-59 EMA artifact: {path}")
     if len(state) != EXPECTED_STATE_ENTRIES:
         raise ValueError(f"checkpoint EMA parameter count differs from 527: {path}")
-    return {"epoch": 59, "ema_parameter_count": len(state), "checkpoint_role": checkpoint.get("checkpoint_role")}
+    return {
+        "path": str(path),
+        "sha256": _sha256_file(path),
+        "size_bytes": path.stat().st_size,
+        "epoch": 59,
+        "ema_parameter_count": len(state),
+        "checkpoint_role": checkpoint.get("checkpoint_role"),
+    }
 
 
 def precheck(args: argparse.Namespace) -> dict[str, Any]:
@@ -333,12 +374,21 @@ def precheck(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("BPNS result root leaves the shared remote write boundary")
     manifests = []
     checkpoint_receipts = {}
+    config_receipts = {}
     for arm in ("K100", "R1"):
         spec = ARM_SPECS[arm]
-        cfg = Config.fromfile(str(ROOT / spec["config"]))
+        config_path = ROOT / spec["config"]
+        cfg = Config.fromfile(str(config_path))
         _bind_test_config(cfg, args)
         manifest, videos = _population_manifest(build_dataset(copy.deepcopy(cfg.dataset.test)))
         manifests.append(manifest)
+        config_receipts[arm] = {
+            "path": str(config_path),
+            "sha256": _sha256_file(config_path),
+            "dataset_contract_sha256": _json_identity(_plain_mapping(cfg.dataset.test)),
+            "evaluator_contract_sha256": _json_identity(_plain_mapping(cfg.evaluation)),
+            "nms_contract_sha256": _json_identity(_plain_mapping(cfg.post_processing)),
+        }
         checkpoint_receipts[arm] = _checkpoint_preflight(
             torch, args.k100_checkpoint if arm == "K100" else args.r1_checkpoint
         )
@@ -352,6 +402,10 @@ def precheck(args: argparse.Namespace) -> dict[str, Any]:
         "profile_order": list(PROFILE_ORDER),
         "video_count": EXPECTED_VIDEO_COUNT,
         "window_count": EXPECTED_WINDOW_COUNT,
+        "population_manifest_sha256": _json_identity(manifests[0]),
+        "annotation": {"path": str(args.annotation), "sha256": _sha256_file(args.annotation)},
+        "class_map": {"path": str(args.class_map), "sha256": _sha256_file(args.class_map)},
+        "configs": config_receipts,
         "checkpoints": checkpoint_receipts,
         "reads_validation_metrics": False,
         "trains_or_resumes": False,
@@ -445,14 +499,44 @@ def _accuracy_parity_contract() -> dict[str, Any]:
         "display_rounding": "decimal_round_half_up_to_2dp",
         "tolerance_pp": ACCURACY_PARITY_TOLERANCE_PP,
         "tolerance_inclusive": True,
+        "admission_role": "nonblocking_historical_interval_diagnostic",
+        "reported_2dp_interval": "[reported-0.005, reported+0.005)",
         "required_metrics": list(ACCURACY_PARITY_METRIC_KEYS),
         "reference": dict(ACCURACY_PARITY_REFERENCE),
     }
 
 
+def _reported_2dp_interval_diagnosis(observed_pp: Decimal, reported_pp: Decimal) -> dict[str, Any]:
+    half_unit = Decimal("0.005")
+    tolerance = Decimal(str(ACCURACY_PARITY_TOLERANCE_PP))
+    lower = reported_pp - half_unit
+    upper = reported_pp + half_unit
+    allowed_lower = observed_pp - tolerance
+    allowed_upper = observed_pp + tolerance
+    if allowed_lower <= lower and allowed_upper >= upper:
+        diagnosis = "compatible"
+    elif allowed_upper < lower or allowed_lower >= upper:
+        diagnosis = "incompatible"
+    else:
+        diagnosis = "indeterminate"
+    if observed_pp < lower:
+        minimum_distance = lower - observed_pp
+    elif observed_pp >= upper:
+        minimum_distance = observed_pp - upper
+    else:
+        minimum_distance = Decimal("0")
+    return {
+        "diagnosis": diagnosis,
+        "reference_interval_pp": {
+            "lower_inclusive": float(lower),
+            "upper_exclusive": float(upper),
+        },
+        "minimum_distance_to_interval_pp": float(minimum_distance),
+    }
+
+
 def _assert_metric_parity(arm: str, metrics: Mapping[str, float]) -> dict[str, Any]:
     expected = EXPECTED_METRICS_PERCENT[arm]
-    tolerance = Decimal(str(ACCURACY_PARITY_TOLERANCE_PP))
     metric_receipts = {}
     for key in ACCURACY_PARITY_METRIC_KEYS:
         if key not in metrics:
@@ -464,12 +548,7 @@ def _assert_metric_parity(arm: str, metrics: Mapping[str, float]) -> dict[str, A
         observed_pp = Decimal(str(raw_fraction)) * Decimal("100")
         target_pp = Decimal(str(target))
         difference_pp = abs(observed_pp - target_pp)
-        if difference_pp > tolerance:
-            raise RuntimeError(
-                f"{arm} final-EMA replay differs from its historical result: "
-                f"{key}={observed_pp:f} pp, expected {target_pp:f} pp, "
-                f"difference {difference_pp:f} pp exceeds {tolerance:f} pp"
-            )
+        interval = _reported_2dp_interval_diagnosis(observed_pp, target_pp)
         metric_receipts[key] = {
             "evaluator_raw_fraction": raw_fraction,
             "observed_pp_unrounded": float(observed_pp),
@@ -479,10 +558,17 @@ def _assert_metric_parity(arm: str, metrics: Mapping[str, float]) -> dict[str, A
             ),
             "reference_pp": target,
             "absolute_difference_pp": float(difference_pp),
-            "within_tolerance": True,
+            **interval,
         }
+    diagnoses = {row["diagnosis"] for row in metric_receipts.values()}
+    if "incompatible" in diagnoses:
+        status = "NONBLOCKING_INCOMPATIBLE_PRESENT"
+    elif "indeterminate" in diagnoses:
+        status = "NONBLOCKING_INDETERMINATE_PRESENT"
+    else:
+        status = "NONBLOCKING_COMPATIBLE"
     return {
-        "status": "PASS",
+        "status": status,
         "contract": _accuracy_parity_contract(),
         "metrics": metric_receipts,
     }
@@ -742,13 +828,59 @@ def _load_power_trace(path: Path) -> list[tuple[float, float]]:
             sequence = int(row["sequence"])
             monotonic_ns = int(row["monotonic_ns"])
             power_w = float(row["power_w"])
-            if sequence != expected_sequence or monotonic_ns <= previous or power_w < 0.0:
+            if (
+                sequence != expected_sequence
+                or monotonic_ns <= previous
+                or not math.isfinite(power_w)
+                or power_w < 0.0
+            ):
                 raise ValueError("power trace violates ordering or finiteness")
             previous = monotonic_ns
             samples.append((monotonic_ns / 1e9, power_w))
     if len(samples) < 2:
         raise ValueError("power sidecar produced too few samples")
     return samples
+
+
+def _power_coverage_summary(
+    samples: Sequence[tuple[float, float]], windows: Sequence[tuple[float, float]]
+) -> dict[str, Any]:
+    checked = [(float(timestamp), float(power)) for timestamp, power in samples]
+    if len(checked) < 2:
+        raise ValueError("power coverage requires at least two samples")
+    if any(
+        not math.isfinite(timestamp) or not math.isfinite(power) or power < 0.0
+        for timestamp, power in checked
+    ):
+        raise ValueError("power coverage contains a non-finite or negative sample")
+    if any(right[0] <= left[0] for left, right in zip(checked[:-1], checked[1:])):
+        raise ValueError("power coverage timestamps are not strictly increasing")
+    measured = [(float(start), float(end)) for start, end in windows]
+    if not measured or any(
+        not math.isfinite(start) or not math.isfinite(end) or end <= start
+        for start, end in measured
+    ):
+        raise ValueError("measurement windows are missing or invalid")
+    measurement_start = min(start for start, _ in measured)
+    measurement_end = max(end for _, end in measured)
+    if checked[0][0] > measurement_start or checked[-1][0] < measurement_end:
+        raise RuntimeError("power trace does not fully cover the measured pass")
+    covered_samples = [row for row in checked if measurement_start <= row[0] <= measurement_end]
+    if not covered_samples:
+        raise RuntimeError("power trace contains no samples inside the measured pass")
+    return {
+        "status": "COMPLETE",
+        "sample_count_total": len(checked),
+        "sample_count_inside_measurement": len(covered_samples),
+        "trace_first_monotonic_s": checked[0][0],
+        "trace_last_monotonic_s": checked[-1][0],
+        "measurement_first_monotonic_s": measurement_start,
+        "measurement_last_monotonic_s": measurement_end,
+        "max_trace_gap_ms": 1000.0
+        * max(right[0] - left[0] for left, right in zip(checked[:-1], checked[1:])),
+        "covers_measurement_start": True,
+        "covers_measurement_end": True,
+    }
 
 
 class PowerSidecar:
@@ -883,7 +1015,263 @@ def _short_action_annotation(annotation: Mapping[str, Any]) -> dict[str, Any]:
     return filtered
 
 
+def _persist_pass_artifacts(
+    result_root: Path,
+    pass_receipts: Sequence[dict[str, Any]],
+    predictions_by_pass: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    if len(pass_receipts) != len(PROFILE_ORDER) or len(predictions_by_pass) != len(PROFILE_ORDER):
+        raise ValueError("complete v003 replay requires one artifact pair for each of eight passes")
+    artifacts = []
+    for receipt, predictions in zip(pass_receipts, predictions_by_pass):
+        pass_index = int(receipt["pass_index"])
+        arm = str(receipt["arm"])
+        if PROFILE_ORDER[pass_index] != arm:
+            raise ValueError("pass artifact identity differs from the frozen profile order")
+        stem = f"pass_{pass_index:02d}_{arm.lower()}"
+        prediction_path = result_root / f"{stem}_predictions.json"
+        evaluator_path = result_root / f"{stem}_evaluator_raw_vector.json"
+        _atomic_json(prediction_path, predictions)
+        _atomic_json(evaluator_path, receipt["metrics"])
+        artifact = {
+            "pass_index": pass_index,
+            "arm": arm,
+            "prediction_path": str(prediction_path),
+            "prediction_sha256": _sha256_file(prediction_path),
+            "evaluator_raw_vector_path": str(evaluator_path),
+            "evaluator_raw_vector_sha256": _sha256_file(evaluator_path),
+        }
+        receipt["artifacts"] = artifact
+        artifacts.append(artifact)
+    return artifacts
+
+
+def _summarize_pass(
+    rows: Sequence[Mapping[str, Any]],
+    receipt: Mapping[str, Any],
+    latency_keys: Sequence[str],
+    *,
+    expected_window_count: int = EXPECTED_WINDOW_COUNT,
+) -> dict[str, Any]:
+    if len(rows) != expected_window_count:
+        raise ValueError(
+            f"pass {receipt['pass_index']} has {len(rows)} cost rows; expected {expected_window_count}"
+        )
+    arm = str(receipt["arm"])
+    pass_index = int(receipt["pass_index"])
+    if any(str(row["arm"]) != arm or int(row["pass_index"]) != pass_index for row in rows):
+        raise ValueError("cost row identity differs from its pass receipt")
+    energies = [float(row["gpu_energy_j"]) for row in rows]
+    if not all(math.isfinite(value) and value >= 0.0 for value in energies):
+        raise ValueError("pass contains missing, negative, or non-finite energy")
+    total_seconds = sum(float(row["end_to_end_serial_ms"]) for row in rows) / 1000.0
+    if not math.isfinite(total_seconds) or total_seconds <= 0.0:
+        raise ValueError("pass duration is invalid")
+    gross_energy = sum(energies)
+    return {
+        "arm": arm,
+        "pass_index": pass_index,
+        "sample_count": len(rows),
+        "latency_ms": {key: summarize([float(row[key]) for row in rows]) for key in latency_keys},
+        "throughput_windows_per_second": len(rows) / total_seconds,
+        "peak_gpu_allocated_mb": max(float(row["peak_gpu_allocated_mb"]) for row in rows),
+        "peak_gpu_reserved_mb": max(float(row["peak_gpu_reserved_mb"]) for row in rows),
+        "gross_gpu_energy_j": gross_energy,
+        "gpu_energy_j_per_window": gross_energy / len(rows),
+        "final_ema_metrics": dict(receipt["metrics"]),
+        "accuracy_diagnostic": receipt["accuracy_parity"],
+        "power_coverage": receipt["power_coverage"],
+    }
+
+
+def _median_of_four_arm_summary(
+    pass_summaries: Sequence[Mapping[str, Any]], arm: str, latency_keys: Sequence[str]
+) -> dict[str, Any]:
+    selected = [row for row in pass_summaries if row["arm"] == arm]
+    if len(selected) != 4:
+        raise ValueError(f"{arm} primary estimate requires exactly four complete passes")
+    return {
+        "primary_estimator": "median_of_four_pass_estimates",
+        "pass_indices": [int(row["pass_index"]) for row in selected],
+        "sample_count_per_pass": EXPECTED_WINDOW_COUNT,
+        "latency_ms": {
+            key: {
+                statistic: statistics.median(
+                    float(row["latency_ms"][key][statistic]) for row in selected
+                )
+                for statistic in ("mean", "p50", "p95", "min", "max")
+            }
+            for key in latency_keys
+        },
+        "throughput_windows_per_second": statistics.median(
+            float(row["throughput_windows_per_second"]) for row in selected
+        ),
+        "peak_gpu_allocated_mb": statistics.median(
+            float(row["peak_gpu_allocated_mb"]) for row in selected
+        ),
+        "peak_gpu_reserved_mb": statistics.median(
+            float(row["peak_gpu_reserved_mb"]) for row in selected
+        ),
+        "worst_pass_peak_gpu_allocated_mb": max(
+            float(row["peak_gpu_allocated_mb"]) for row in selected
+        ),
+        "worst_pass_peak_gpu_reserved_mb": max(
+            float(row["peak_gpu_reserved_mb"]) for row in selected
+        ),
+        "gross_gpu_energy_j": statistics.median(
+            float(row["gross_gpu_energy_j"]) for row in selected
+        ),
+        "gpu_energy_j_per_window": statistics.median(
+            float(row["gpu_energy_j_per_window"]) for row in selected
+        ),
+        "final_ema_metrics": {
+            key: statistics.median(float(row["final_ema_metrics"][key]) for row in selected)
+            for key in ACCURACY_PARITY_METRIC_KEYS
+        },
+    }
+
+
+def _median_numeric_tree(values: Sequence[Any]) -> Any:
+    if not values:
+        raise ValueError("cannot aggregate an empty quality sequence")
+    if all(isinstance(value, Mapping) for value in values):
+        keys = set(values[0])
+        if any(set(value) != keys for value in values[1:]):
+            raise ValueError("pass quality structures differ")
+        return {key: _median_numeric_tree([value[key] for value in values]) for key in sorted(keys)}
+    if all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in values):
+        checked = [float(value) for value in values]
+        if not all(math.isfinite(value) for value in checked):
+            raise ValueError("pass quality contains a non-finite value")
+        return statistics.median(checked)
+    if all(value is None for value in values):
+        return None
+    if all(value == values[0] for value in values[1:]):
+        return values[0]
+    return list(values)
+
+
+def _classify_complete_replay(
+    pass_summaries: Sequence[Mapping[str, Any]],
+    arm_summaries: Mapping[str, Mapping[str, Any]],
+    prediction_stability: Mapping[str, Mapping[str, Any]],
+    arm_quality: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    k100, r1 = arm_summaries["K100"], arm_summaries["R1"]
+    p50_reduction = 1.0 - (
+        float(r1["latency_ms"]["end_to_end_serial_ms"]["p50"])
+        / float(k100["latency_ms"]["end_to_end_serial_ms"]["p50"])
+    )
+    energy_reduction = 1.0 - (
+        float(r1["gross_gpu_energy_j"]) / float(k100["gross_gpu_energy_j"])
+    )
+    by_arm = {
+        arm: [row for row in pass_summaries if row["arm"] == arm]
+        for arm in ("K100", "R1")
+    }
+    worst_accuracy_delta = {
+        key: 100.0
+        * (
+            min(float(row["final_ema_metrics"][key]) for row in by_arm["R1"])
+            - max(float(row["final_ema_metrics"][key]) for row in by_arm["K100"])
+        )
+        for key in ("average_mAP", "mAP@0.7")
+    }
+    secondary_conflicts = []
+    lower_is_better = {
+        "full_stack_p95_ms": lambda row: float(row["latency_ms"]["end_to_end_serial_ms"]["p95"]),
+        "peak_gpu_allocated_mb": lambda row: float(row["peak_gpu_allocated_mb"]),
+        "peak_gpu_reserved_mb": lambda row: float(row["peak_gpu_reserved_mb"]),
+    }
+    higher_is_better = {
+        "throughput_windows_per_second": lambda row: float(row["throughput_windows_per_second"]),
+    }
+    for name, getter in lower_is_better.items():
+        if min(getter(row) for row in by_arm["R1"]) > max(
+            getter(row) for row in by_arm["K100"]
+        ):
+            secondary_conflicts.append(name)
+    for name, getter in higher_is_better.items():
+        if max(getter(row) for row in by_arm["R1"]) < min(
+            getter(row) for row in by_arm["K100"]
+        ):
+            secondary_conflicts.append(name)
+    k_quality = arm_quality["K100"]["metrics"]["boundary"]
+    r_quality = arm_quality["R1"]["metrics"]["boundary"]
+    quality_reversals = []
+    if (
+        r_quality["short_action"]["recall_at_tiou_0.70"] is not None
+        and k_quality["short_action"]["recall_at_tiou_0.70"] is not None
+        and r_quality["short_action"]["recall_at_tiou_0.70"]
+        < k_quality["short_action"]["recall_at_tiou_0.70"]
+    ):
+        quality_reversals.append("short_action_recall_at_tiou_0.70")
+    for key in ("mean_abs_start_error_normalized", "mean_abs_end_error_normalized"):
+        if r_quality[key] is not None and k_quality[key] is not None and r_quality[key] > k_quality[key]:
+            quality_reversals.append(f"overall_boundary_{key}")
+    accuracy_ok = all(value >= -0.30 for value in worst_accuracy_delta.values())
+    prediction_hash_conflict = any(
+        not bool(receipt["all_four_hashes_identical"])
+        for receipt in prediction_stability.values()
+    )
+    if (
+        p50_reduction <= 0.02
+        or energy_reduction <= 0.02
+        or not accuracy_ok
+        or quality_reversals
+    ):
+        decision = "STOP_BPNS_R1_CANDIDATE"
+    elif (
+        p50_reduction >= 0.05
+        and energy_reduction >= 0.05
+        and not secondary_conflicts
+        and not prediction_hash_conflict
+    ):
+        decision = "ACCEPT_FOR_RESULT_TO_CLAIM_REVIEW"
+    else:
+        decision = "REVISE_AND_RETURN_TO_PRO"
+    return {
+        "decision": decision,
+        "p50_reduction": p50_reduction,
+        "gross_energy_per_pass_reduction": energy_reduction,
+        "worst_case_accuracy_delta_percentage_points": worst_accuracy_delta,
+        "accuracy_noninferiority_pass": accuracy_ok,
+        "secondary_systematic_conflicts": secondary_conflicts,
+        "quality_reversals": quality_reversals,
+        "prediction_hash_conflict": prediction_hash_conflict,
+        "rule": {
+            "accept": "p50>=5%, gross_energy>=5%, worst Avg-mAP and mAP@0.7 deltas>=-0.30pp, no systematic conflict",
+            "revise": "positive but borderline benefit or pass/prediction conflict",
+            "stop": "p50 or energy<=2%, accuracy noninferiority failure, or boundary/short-action reversal",
+        },
+    }
+
+
+def _write_failure_terminal_receipt(args: argparse.Namespace, error: BaseException) -> Path:
+    if args.result_root.exists():
+        path = args.result_root / "terminal_receipt.json"
+    else:
+        path = args.result_root.with_name(f"{args.result_root.name}.terminal_receipt.json")
+    if path.exists():
+        path = path.with_name(f"terminal_failure_receipt_{os.getpid()}.json")
+    _atomic_json(
+        path,
+        {
+            "status": "FAILED_PROTOCOL_INVALID",
+            "phase": args.command,
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            "execution_commit": args.expected_commit,
+            "result_root": str(args.result_root),
+            "training_or_resume_executed": False,
+            "official_test_opened": False,
+        },
+    )
+    return path
+
+
 def profile(args: argparse.Namespace) -> dict[str, Any]:
+    import mmengine
     import torch
     import torch.distributed as dist
     from mmengine.config import Config
@@ -915,9 +1303,10 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     time.sleep(0.05)
     all_samples = []
     pass_receipts = []
-    predictions_by_arm = {}
+    predictions_by_pass = []
     energy_windows_by_pass = []
     nms_windows = []
+    primary_error = None
     try:
         for pass_index, arm in enumerate(PROFILE_ORDER):
             checkpoint = args.k100_checkpoint if arm == "K100" else args.r1_checkpoint
@@ -929,18 +1318,27 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 args=args,
                 device=device,
             )
-            if arm in predictions_by_arm and predictions_by_arm[arm] != predictions:
-                raise RuntimeError(f"{arm} repeated replay produced different predictions")
-            predictions_by_arm.setdefault(arm, predictions)
             all_samples.extend(samples)
             pass_receipts.append(receipt)
+            predictions_by_pass.append(predictions)
             energy_windows_by_pass.append(energy_windows)
             nms_windows.append(nms_window)
+    except BaseException as error:
+        primary_error = error
+        raise
     finally:
         time.sleep(0.05)
-        sidecar.stop()
+        try:
+            sidecar.stop()
+        except Exception:
+            if primary_error is None:
+                raise
 
     for pass_index, energy_windows in enumerate(energy_windows_by_pass):
+        pass_receipts[pass_index]["power_coverage"] = _power_coverage_summary(
+            sidecar.samples,
+            [*energy_windows, nms_windows[pass_index]],
+        )
         nms_energy = integrate_energy(sidecar.samples, start=nms_windows[pass_index][0], end=nms_windows[pass_index][1])
         if nms_energy is None:
             raise RuntimeError("power trace does not cover final NMS")
@@ -951,15 +1349,25 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 raise RuntimeError("power trace does not cover a measured validation window")
             row["gpu_energy_j"] = energy + nms_energy / len(pass_rows)
 
+    pass_artifacts = _persist_pass_artifacts(args.result_root, pass_receipts, predictions_by_pass)
+    prediction_stability = {}
+    for arm in ("K100", "R1"):
+        selected = [row for row in pass_artifacts if row["arm"] == arm]
+        hashes = [row["prediction_sha256"] for row in selected]
+        prediction_stability[arm] = {
+            "pass_indices": [row["pass_index"] for row in selected],
+            "prediction_sha256": hashes,
+            "all_four_hashes_identical": len(set(hashes)) == 1,
+        }
+
     annotation = json.loads(args.annotation.read_text(encoding="utf-8"))
     short_annotation_path = args.result_root / "short_action_validation_gt.json"
     _atomic_json(short_annotation_path, _short_action_annotation(annotation))
-    arm_quality = {}
+    pass_quality = []
     from opentad.evaluations import build_evaluator
 
-    for arm, prediction in predictions_by_arm.items():
-        prediction_path = args.result_root / f"{arm.lower()}_predictions.json"
-        _atomic_json(prediction_path, prediction)
+    for receipt, prediction in zip(pass_receipts, predictions_by_pass):
+        arm = receipt["arm"]
         cfg = Config.fromfile(str(ROOT / ARM_SPECS[arm]["config"]))
         _bind_test_config(cfg, args)
         short_evaluator = build_evaluator(
@@ -970,11 +1378,25 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 tiou_thresholds=[0.3, 0.4, 0.5, 0.6, 0.7],
             )
         )
-        arm_quality[arm] = {
+        quality = {
             "boundary": boundary_quality(annotation, prediction["results"]),
             "short_action_mAP": {key: float(value) for key, value in short_evaluator.evaluate().items()},
-            "prediction_path": str(prediction_path),
         }
+        receipt["quality"] = quality
+        pass_quality.append({"arm": arm, "pass_index": receipt["pass_index"], **quality})
+    arm_quality = {
+        arm: {
+            "primary_estimator": "median_of_four_pass_estimates",
+            "metrics": _median_numeric_tree(
+                [
+                    {"boundary": row["boundary"], "short_action_mAP": row["short_action_mAP"]}
+                    for row in pass_quality
+                    if row["arm"] == arm
+                ]
+            ),
+        }
+        for arm in ("K100", "R1")
+    }
 
     latency_keys = (
         "input_pipeline_serial_ms",
@@ -988,15 +1410,23 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "decode_to_window_output_wall_ms",
         "end_to_end_serial_ms",
     )
+    pass_summaries = []
+    for receipt in pass_receipts:
+        pass_rows = [
+            row for row in all_samples if int(row["pass_index"]) == int(receipt["pass_index"])
+        ]
+        pass_summaries.append(_summarize_pass(pass_rows, receipt, latency_keys))
+
     grouped = defaultdict(list)
     for row in all_samples:
         grouped[row["arm"]].append(row)
-    arm_summaries = {}
+    descriptive_pooled_arm_summaries = {}
     for arm in ("K100", "R1"):
         rows = grouped[arm]
         total_seconds = sum(row["end_to_end_serial_ms"] for row in rows) / 1000.0
         gross_energy = sum(float(row["gpu_energy_j"]) for row in rows)
-        arm_summaries[arm] = {
+        descriptive_pooled_arm_summaries[arm] = {
+            "estimator_role": "descriptive_only_not_primary",
             "sample_count": len(rows),
             "pass_count": PROFILE_ORDER.count(arm),
             "latency_ms": {key: summarize([row[key] for row in rows]) for key in latency_keys},
@@ -1010,8 +1440,19 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "tokens_per_tubelet": ARM_SPECS[arm]["tokens_per_tubelet"],
             "executed_tokens_per_window": ARM_SPECS[arm]["executed_tokens_per_window"],
         }
+    arm_summaries = {}
+    for arm in ("K100", "R1"):
+        arm_summaries[arm] = _median_of_four_arm_summary(pass_summaries, arm, latency_keys)
+        arm_summaries[arm].update(
+            {
+                "quality": arm_quality[arm],
+                "tokens_per_tubelet": ARM_SPECS[arm]["tokens_per_tubelet"],
+                "executed_tokens_per_window": ARM_SPECS[arm]["executed_tokens_per_window"],
+            }
+        )
     comparison = {
         "r1_over_k100": {
+            "primary_estimator": "ratio_of_arm_median_of_four_pass_estimates",
             "native_spatial_input_ratio": 64.0 / 100.0,
             "native_spatial_input_reduction": 0.36,
             "attention_pair_ratio_per_tubelet": (64.0 / 100.0) ** 2,
@@ -1024,10 +1465,22 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
                 for key in EXPECTED_METRICS_PERCENT["K100"]
             },
         },
-        "interpretation_boundary": "native token and attention-pair ratios are structural proxies; latency, memory and energy fields are measured full-stack evidence",
+        "interpretation_boundary": "native token and attention-pair ratios are structural proxies; latency, memory and energy fields are measured full-stack evidence; pooled rows are descriptive only",
+    }
+    scientific_decision = _classify_complete_replay(
+        pass_summaries,
+        arm_summaries,
+        prediction_stability,
+        arm_quality,
+    )
+    pass_diagnoses = {
+        row["diagnosis"]
+        for receipt in pass_receipts
+        for row in receipt["accuracy_parity"]["metrics"].values()
     }
     accuracy_parity = {
-        "status": "PASS_ALL_PASSES",
+        "status": "NONBLOCKING_DIAGNOSTIC_COMPLETE",
+        "diagnoses_present": sorted(pass_diagnoses),
         "contract": _accuracy_parity_contract(),
         "passes": [
             {
@@ -1039,7 +1492,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         ],
     }
     profile_payload = {
-        "schema_version": "zoomtoken_bpns_r1_same_gpu_cost_v001",
+        "schema_version": "zoomtoken_bpns_r1_identity_gated_full_stack_v003",
         "status": "COMPLETED_FINAL_EMA_REPLAY",
         "execution_commit": args.expected_commit,
         "seed": 42,
@@ -1049,21 +1502,55 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "power_interval_ms": POWER_INTERVAL_MS,
         "dataset": {"name": "THUMOS14", "split": "validation", "video_count": EXPECTED_VIDEO_COUNT, "window_count": EXPECTED_WINDOW_COUNT, "official_test_opened": False},
         "hardware": hardware,
-        "software": {"python": platform.python_version(), "torch": torch.__version__, "cuda": torch.version.cuda},
+        "software": {
+            "python": platform.python_version(),
+            "torch": torch.__version__,
+            "cuda": torch.version.cuda,
+            "mmengine": mmengine.__version__,
+            "precision": "torch.autocast_cuda_float16",
+            "cudnn_deterministic": bool(torch.backends.cudnn.deterministic),
+            "cudnn_benchmark": bool(torch.backends.cudnn.benchmark),
+        },
         "cpu_partition": {"allocated": list(allocated), "detector": list(detector_cpus), "sidecar": sidecar_cpu},
         "precheck": preflight,
         "pass_receipts": pass_receipts,
+        "pass_artifacts": pass_artifacts,
+        "prediction_stability": prediction_stability,
+        "pass_summaries": pass_summaries,
         "accuracy_parity": accuracy_parity,
         "arm_summaries": arm_summaries,
+        "descriptive_pooled_arm_summaries": descriptive_pooled_arm_summaries,
         "comparison": comparison,
+        "scientific_decision": scientific_decision,
         "training_or_resume_executed": False,
         "paper_claim_allowed_without_independent_result_to_claim": False,
     }
     _write_jsonl(args.result_root / "cost_samples.jsonl", all_samples)
-    power_rows = [
-        {"sequence": index, "monotonic_s": timestamp, "power_w": power}
-        for index, (timestamp, power) in enumerate(sidecar.samples)
+    pass_bounds = [
+        (
+            pass_index,
+            PROFILE_ORDER[pass_index],
+            min(start for start, _ in [*energy_windows_by_pass[pass_index], nms_windows[pass_index]]),
+            max(end for _, end in [*energy_windows_by_pass[pass_index], nms_windows[pass_index]]),
+        )
+        for pass_index in range(len(PROFILE_ORDER))
     ]
+    power_rows = []
+    for index, (timestamp, power) in enumerate(sidecar.samples):
+        membership = [
+            (pass_index, arm)
+            for pass_index, arm, start, end in pass_bounds
+            if start <= timestamp <= end
+        ]
+        power_rows.append(
+            {
+                "sequence": index,
+                "monotonic_s": timestamp,
+                "power_w": power,
+                "pass_index": membership[0][0] if membership else None,
+                "arm": membership[0][1] if membership else None,
+            }
+        )
     _write_jsonl(args.result_root / "power_trace.jsonl", power_rows)
     _atomic_json(args.result_root / "profile.json", profile_payload)
     _atomic_json(
@@ -1075,6 +1562,8 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             "result_root": str(args.result_root),
             "profile": str(args.result_root / "profile.json"),
             "accuracy_parity": accuracy_parity,
+            "scientific_decision": scientific_decision,
+            "command": list(sys.argv),
             "training_or_resume_executed": False,
             "official_test_opened": False,
         },
@@ -1112,9 +1601,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "sidecar":
         return run_power_sidecar(args)
-    result = precheck(args) if args.command == "precheck" else profile(args)
-    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0
+    try:
+        result = precheck(args) if args.command == "precheck" else profile(args)
+        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    except BaseException as error:
+        _write_failure_terminal_receipt(args, error)
+        raise
+    finally:
+        try:
+            import torch.distributed as dist
+
+            if dist.is_available() and dist.is_initialized():
+                dist.destroy_process_group()
+        except ImportError:
+            pass
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
 from pathlib import Path
 
@@ -81,6 +82,8 @@ def test_launcher_preserves_slurm_and_result_blind_boundaries():
     )
     assert "SLURM_JOB_ID" in launcher
     assert "SLURM_CPUS_PER_TASK" in launcher
+    assert "SLURM_JOB_NAME" in launcher
+    assert "v003" in launcher
     assert "CUDA_VISIBLE_DEVICES=" not in launcher
     assert "PRECHECK_ONLY" in launcher
     assert "profile_zoomtoken_bpns_r1_cost.py precheck" in launcher
@@ -91,8 +94,12 @@ def test_launcher_preserves_slurm_and_result_blind_boundaries():
 
 def test_power_sidecar_starts_before_detector_affinity_is_narrowed():
     source = SOURCE.read_text(encoding="utf-8")
+    assert source.index("preflight = precheck(args)") < source.index("sidecar.start()")
     assert source.index("sidecar.start()") < source.index(
         "os.sched_setaffinity(0, set(detector_cpus))"
+    )
+    assert source.index("sidecar.stop()") < source.index(
+        "pass_artifacts = _persist_pass_artifacts("
     )
 
 
@@ -127,17 +134,18 @@ def test_accuracy_parity_accepts_known_unrounded_replay_value():
     assert row["observed_pp_unrounded"] == pytest.approx(46.246663)
     assert row["reference_pp"] == 46.27
     assert row["absolute_difference_pp"] == pytest.approx(0.023337)
-    assert row["within_tolerance"] is True
+    assert row["diagnosis"] == "compatible"
 
 
 def test_accuracy_parity_tolerance_is_inclusive_and_distinguishing():
     metrics = _reference_metrics()
     metrics["average_mAP"] = 0.6856
-    MODULE._assert_metric_parity("K100", metrics)
+    row = MODULE._assert_metric_parity("K100", metrics)["metrics"]["average_mAP"]
+    assert row["diagnosis"] == "indeterminate"
 
-    metrics["average_mAP"] = 0.68560001
-    with pytest.raises(RuntimeError, match="exceeds 0.05 pp"):
-        MODULE._assert_metric_parity("K100", metrics)
+    metrics["average_mAP"] = 0.68565001
+    row = MODULE._assert_metric_parity("K100", metrics)["metrics"]["average_mAP"]
+    assert row["diagnosis"] == "incompatible"
 
 
 @pytest.mark.parametrize(
@@ -146,10 +154,9 @@ def test_accuracy_parity_tolerance_is_inclusive_and_distinguishing():
         ("missing", "missing required metric"),
         (float("nan"), "is not finite"),
         (float("inf"), "is not finite"),
-        (0.0, "differs from its historical result"),
     ],
 )
-def test_accuracy_parity_rejects_incomplete_nonfinite_or_out_of_bounds(mutation, message):
+def test_accuracy_parity_rejects_incomplete_or_nonfinite(mutation, message):
     metrics = _reference_metrics()
     if mutation == "missing":
         del metrics["mAP@0.4"]
@@ -168,4 +175,160 @@ def test_accuracy_parity_display_rounding_is_decoupled_from_admission():
 
     assert row["display_pp_2dp_half_up"] == "46.25"
     assert row["display_pp_2dp_half_up"] != f"{row['reference_pp']:.2f}"
-    assert row["within_tolerance"] is True
+    assert row["diagnosis"] == "compatible"
+
+
+def test_v002_observation_is_nonblocking_indeterminate():
+    metrics = _reference_metrics("R1")
+    metrics["mAP@0.6"] = 0.6108696090294431
+    receipt = MODULE._assert_metric_parity("R1", metrics)
+    row = receipt["metrics"]["mAP@0.6"]
+    assert row["diagnosis"] == "indeterminate"
+    assert row["reference_interval_pp"] == {
+        "lower_inclusive": 61.135,
+        "upper_exclusive": 61.145,
+    }
+    assert row["minimum_distance_to_interval_pp"] == pytest.approx(0.04803909705569)
+
+
+def test_out_of_interval_history_is_diagnostic_not_a_hard_gate():
+    metrics = _reference_metrics("R1")
+    metrics["mAP@0.6"] = 0.0
+    receipt = MODULE._assert_metric_parity("R1", metrics)
+    assert receipt["status"] == "NONBLOCKING_INCOMPATIBLE_PRESENT"
+    assert receipt["metrics"]["mAP@0.6"]["diagnosis"] == "incompatible"
+
+
+def test_power_coverage_rejects_nonfinite_and_incomplete_traces():
+    summary = MODULE._power_coverage_summary(
+        [(0.0, 100.0), (0.02, 101.0), (0.04, 99.0)],
+        [(0.01, 0.03)],
+    )
+    assert summary["status"] == "COMPLETE"
+    assert summary["max_trace_gap_ms"] == pytest.approx(20.0)
+    with pytest.raises(ValueError, match="non-finite"):
+        MODULE._power_coverage_summary([(0.0, 100.0), (0.02, float("nan"))], [(0.0, 0.01)])
+    with pytest.raises(RuntimeError, match="does not fully cover"):
+        MODULE._power_coverage_summary([(0.02, 100.0), (0.04, 100.0)], [(0.01, 0.03)])
+
+
+def test_missing_cost_row_invalidates_a_pass():
+    rows = [
+        {
+            "arm": "K100",
+            "pass_index": 0,
+            "end_to_end_serial_ms": 1.0,
+            "gpu_energy_j": 1.0,
+            "peak_gpu_allocated_mb": 1.0,
+            "peak_gpu_reserved_mb": 1.0,
+        }
+    ]
+    receipt = {
+        "arm": "K100",
+        "pass_index": 0,
+        "metrics": _reference_metrics(),
+        "accuracy_parity": MODULE._assert_metric_parity("K100", _reference_metrics()),
+        "power_coverage": {"status": "COMPLETE"},
+    }
+    with pytest.raises(ValueError, match="expected 2"):
+        MODULE._summarize_pass(rows, receipt, ["end_to_end_serial_ms"], expected_window_count=2)
+
+
+def test_every_pass_persists_predictions_and_raw_evaluator_vector(tmp_path):
+    receipts = []
+    predictions = []
+    for pass_index, arm in enumerate(MODULE.PROFILE_ORDER):
+        receipts.append({"pass_index": pass_index, "arm": arm, "metrics": _reference_metrics(arm)})
+        predictions.append({"results": {"v": [{"score": pass_index}]}})
+    artifacts = MODULE._persist_pass_artifacts(tmp_path, receipts, predictions)
+    assert len(artifacts) == 8
+    assert len({row["prediction_path"] for row in artifacts}) == 8
+    assert all(Path(row["prediction_path"]).is_file() for row in artifacts)
+    assert all(len(row["prediction_sha256"]) == 64 for row in artifacts)
+    assert all(Path(row["evaluator_raw_vector_path"]).is_file() for row in artifacts)
+
+
+def test_primary_estimator_is_median_of_four_passes():
+    passes = []
+    for pass_index, value in enumerate((1.0, 2.0, 100.0, 4.0)):
+        passes.append(
+            {
+                "arm": "K100",
+                "pass_index": pass_index,
+                "latency_ms": {"end_to_end_serial_ms": {name: value for name in ("mean", "p50", "p95", "min", "max")}},
+                "throughput_windows_per_second": value,
+                "peak_gpu_allocated_mb": value,
+                "peak_gpu_reserved_mb": value,
+                "gross_gpu_energy_j": value,
+                "gpu_energy_j_per_window": value,
+                "final_ema_metrics": _reference_metrics(),
+            }
+        )
+    summary = MODULE._median_of_four_arm_summary(passes, "K100", ["end_to_end_serial_ms"])
+    assert summary["primary_estimator"] == "median_of_four_pass_estimates"
+    assert summary["latency_ms"]["end_to_end_serial_ms"]["p50"] == 3.0
+    assert summary["gpu_energy_j_per_window"] == 3.0
+
+
+def test_controlled_failure_writes_terminal_receipt(tmp_path):
+    args = argparse.Namespace(
+        command="precheck",
+        result_root=tmp_path / "formal_v003",
+        expected_commit="a" * 40,
+    )
+    path = MODULE._write_failure_terminal_receipt(args, RuntimeError("identity mismatch"))
+    payload = path.read_text(encoding="utf-8")
+    assert '"status": "FAILED_PROTOCOL_INVALID"' in payload
+    assert '"error_message": "identity mismatch"' in payload
+
+
+def test_complete_replay_acceptance_uses_registered_pass_level_rules():
+    latency_keys = ["end_to_end_serial_ms"]
+    pass_summaries = []
+    for arm, p50, energy, accuracy in (
+        ("K100", 100.0, 100.0, _reference_metrics("K100")),
+        ("R1", 90.0, 90.0, _reference_metrics("R1")),
+    ):
+        for pass_index in range(4):
+            pass_summaries.append(
+                {
+                    "arm": arm,
+                    "pass_index": pass_index,
+                    "latency_ms": {
+                        "end_to_end_serial_ms": {
+                            "mean": p50,
+                            "p50": p50,
+                            "p95": p50,
+                            "min": p50,
+                            "max": p50,
+                        }
+                    },
+                    "throughput_windows_per_second": 1000.0 / p50,
+                    "peak_gpu_allocated_mb": p50,
+                    "peak_gpu_reserved_mb": p50,
+                    "gross_gpu_energy_j": energy,
+                    "gpu_energy_j_per_window": energy / MODULE.EXPECTED_WINDOW_COUNT,
+                    "final_ema_metrics": accuracy,
+                }
+            )
+    arm_summaries = {
+        arm: MODULE._median_of_four_arm_summary(pass_summaries, arm, latency_keys)
+        for arm in ("K100", "R1")
+    }
+    stable = {
+        arm: {"all_four_hashes_identical": True}
+        for arm in ("K100", "R1")
+    }
+    boundary = {
+        "mean_abs_start_error_normalized": 0.1,
+        "mean_abs_end_error_normalized": 0.1,
+        "short_action": {"recall_at_tiou_0.70": 0.5},
+    }
+    quality = {
+        arm: {"metrics": {"boundary": boundary}}
+        for arm in ("K100", "R1")
+    }
+    result = MODULE._classify_complete_replay(pass_summaries, arm_summaries, stable, quality)
+    assert result["decision"] == "ACCEPT_FOR_RESULT_TO_CLAIM_REVIEW"
+    assert result["p50_reduction"] == pytest.approx(0.10)
+    assert result["gross_energy_per_pass_reduction"] == pytest.approx(0.10)
