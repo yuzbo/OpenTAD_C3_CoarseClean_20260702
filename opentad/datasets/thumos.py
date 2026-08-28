@@ -7,9 +7,9 @@ from copy import deepcopy
 from .base import (
     PaddingDataset,
     SlidingWindowDataset,
-    compute_gt_completeness,
     filter_same_annotation,
 )
+from .base.sliding_dataset import compute_gt_completeness
 from .builder import DATASETS
 
 
