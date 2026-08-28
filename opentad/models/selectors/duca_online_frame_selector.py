@@ -19,8 +19,10 @@ from ..duca import (
     C3CoarseProbeActionnessSource,
     DucaAcquisitionAdapter,
     DucaTemporalSamplingContract,
+    NATIVE_TUBELET_POLICIES,
     ZeroShotActionnessSource,
     duca_losses,
+    run_native_tubelet_selection,
 )
 from ..duca.counterfactual_utility import (
     build_finite_hard_one_swap_candidates,
@@ -529,6 +531,7 @@ class DucaOnlineFrameSelector(nn.Module):
         max_radius: int = 16,
         acquisition_policy: str = "legacy_center_radius",
         structured_temperature: float = 1.0,
+        native_tubelet_selected_count: int = 192,
         local_cell_force_exact_uniform: bool = False,
         density_temperature: float = 0.7,
         density_coverage_floor: float = 0.05,
@@ -642,6 +645,10 @@ class DucaOnlineFrameSelector(nn.Module):
         self.target_budget = float(self.budget if target_budget is None else target_budget)
         self.max_radius = int(max_radius)
         self.acquisition_policy = str(acquisition_policy)
+        self.native_tubelet_policy = self.acquisition_policy in NATIVE_TUBELET_POLICIES
+        self.native_tubelet_selected_count = int(native_tubelet_selected_count)
+        if self.native_tubelet_policy and self.native_tubelet_selected_count <= 0:
+            raise ValueError("native_tubelet_selected_count must be positive")
         self.structured_temperature = float(structured_temperature)
         self.local_cell_force_exact_uniform = bool(local_cell_force_exact_uniform)
         self.density_temperature = float(density_temperature)
@@ -906,6 +913,8 @@ class DucaOnlineFrameSelector(nn.Module):
                 "continuous_density_transport",
                 "continuous_mixture_density_transport",
                 "budget_calibrated_sampling_rate",
+                "native_tubelet_uniform",
+                "native_tubelet_coreset",
             }:
                 raise ValueError("transition_only requires a structured exact-budget acquisition policy")
             if self.acquisition_policy == "global_structured_topk" and self.max_unselected_hole is None:
@@ -1042,7 +1051,14 @@ class DucaOnlineFrameSelector(nn.Module):
             target_budget=self.target_budget,
             allow_external_budget_override=self.allow_external_budget_override,
             max_radius=self.max_radius,
-            acquisition_policy=self.acquisition_policy,
+            # Keep the Stage-1 selector state layout exactly load-compatible.
+            # The native policies bypass this adapter at runtime and use the
+            # frozen scout plus the tubelet-domain structured selector instead.
+            acquisition_policy=(
+                "budget_calibrated_sampling_rate"
+                if self.native_tubelet_policy
+                else self.acquisition_policy
+            ),
             structured_temperature=self.structured_temperature,
             local_cell_force_exact_uniform=self.local_cell_force_exact_uniform,
             density_temperature=self.density_temperature,
@@ -1085,6 +1101,11 @@ class DucaOnlineFrameSelector(nn.Module):
             profile_runtime=self.profile_runtime,
             profile_sync_cuda=self.profile_sync_cuda,
         )
+        if self.native_tubelet_policy:
+            for parameter in self.parameters():
+                parameter.requires_grad_(False)
+            if self.raw_actionness_source is not None:
+                self.raw_actionness_source.eval()
 
     def capture_amp_replay_state(self) -> dict[str, Any]:
         """Capture non-buffer forward state that must not leak across a replay."""
@@ -1176,6 +1197,18 @@ class DucaOnlineFrameSelector(nn.Module):
     ) -> dict[str, Any]:
         self._reject_external_actionness_payload(metas)
         self._reject_train_decision_payload(metas)
+        if self.native_tubelet_policy:
+            outputs = run_native_tubelet_selection(self, inputs, masks, metas)
+            return {
+                "inputs": outputs["inputs"],
+                "masks": outputs["masks"],
+                "metas": outputs["metas"],
+                "gt_segments": gt_segments,
+                "gt_labels": gt_labels,
+                "losses": {},
+                "selector_outputs": outputs["selector_outputs"],
+                "counterfactual_request": None,
+            }
         action_target = self._action_target_from_gt_segments(gt_segments, masks)
         transition_target = None
         if self.selector_variant == "transition_only":
@@ -2138,6 +2171,14 @@ class DucaOnlineFrameSelector(nn.Module):
     def forward_test(self, inputs: torch.Tensor, masks: torch.Tensor, metas=None, budget=None, **kwargs: Any) -> dict[str, Any]:
         self._reject_external_actionness_payload(metas)
         _assert_no_forbidden_payload({"metas": metas, "kwargs": kwargs})
+        if self.native_tubelet_policy:
+            outputs = run_native_tubelet_selection(self, inputs, masks, metas)
+            return {
+                "inputs": outputs["inputs"],
+                "masks": outputs["masks"],
+                "metas": outputs["metas"],
+                "selector_outputs": outputs["selector_outputs"],
+            }
         outputs = self._forward_select(inputs, masks, metas, budget=budget)
         return {
             "inputs": outputs["inputs"],

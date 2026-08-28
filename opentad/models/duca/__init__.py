@@ -53,6 +53,18 @@ from .structured_selection import (
 )
 from .temporal_contract import DucaTemporalSamplingContract
 from .true_time_residual import TrueTimeFeatureResidual
+from .tubelet_coreset import (
+    NATIVE_TUBELET_POLICIES,
+    aggregate_frame_signals_to_tubelets,
+    assign_discarded_tubelets_to_anchors,
+    build_native_tubelet_candidates,
+    gather_native_tubelet_rgb,
+    merge_discarded_scout_context,
+    run_native_tubelet_selection,
+    select_native_tubelet_coreset,
+    task_state_tubelet_scores,
+)
+from .physical_time_reconstruction import PhysicalTimeCoresetReconstructor
 from .transition_only import (
     ASFORMER_ENCODER_HIDDEN_KIND,
     DucaMixtureDensityHead,
@@ -88,6 +100,16 @@ __all__ = [
     "DucaTransitionUtilityScorer",
     "DucaTemporalSamplingContract",
     "TrueTimeFeatureResidual",
+    "PhysicalTimeCoresetReconstructor",
+    "NATIVE_TUBELET_POLICIES",
+    "aggregate_frame_signals_to_tubelets",
+    "assign_discarded_tubelets_to_anchors",
+    "build_native_tubelet_candidates",
+    "gather_native_tubelet_rgb",
+    "merge_discarded_scout_context",
+    "run_native_tubelet_selection",
+    "select_native_tubelet_coreset",
+    "task_state_tubelet_scores",
     "enumerate_legal_local_hard_swaps",
     "hard_soft_alignment_report",
     "preregistered_hard_soft_gate",
