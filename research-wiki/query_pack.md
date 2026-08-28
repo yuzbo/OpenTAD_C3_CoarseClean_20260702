@@ -26,7 +26,7 @@ max_chars: 8000
   decode-to-NMS latency, energy or peak memory because decoding, transfers, Adapter,
   detector, postprocessing and sparse-execution overhead remain. The observed
   accuracy difference may also be seed-specific.
-- **Terminal replay diagnosis.** Both same-hardware K100/R1 replays are admission
+- **Terminal replay diagnosis.** The first two same-hardware K100/R1 replays are admission
   failures, not cost evidence. Job `1257281` exposed a raw-versus-rounded reference
   binding defect. Minimal candidate
   `e9323448f6cd78b99bb3de53fd9ffb55f3676d65` correctly implemented the subsequently
@@ -34,6 +34,12 @@ max_chars: 8000
   `1258299`, stopped in the first R1 pass: unrounded `mAP@0.6=61.0869609029443100 pp`
   differs from reported-2dp `61.14 pp` by `0.0530390970556900 pp`. The eight passes
   did not complete, the result root is empty, and no cost or boundary artifact exists.
+  The identity-gated v003 job `1258526` later completed all eight frozen prediction/
+  evaluator passes, but terminated `FAILED_PROTOCOL_INVALID` in the profile phase because
+  the short-action evaluator configuration omitted registry key `type`. It emitted no
+  `profile.json`, cost rows, power trace, measured latency/energy/memory, short-action or
+  boundary summary. This deterministic evaluator-construction omission is also not a
+  model result or efficiency evidence.
 - **Fresh Pro adjudication.** The exact-Project Pro review returned `REVISE` and
   permanently closed v002 as efficiency evidence. It classified the run as a valid
   execution of a scientifically unidentifiable admission rule: reported `61.14`
@@ -42,24 +48,21 @@ max_chars: 8000
   parity diagnosis is therefore `indeterminate`, not a hard failure or a new reference.
   BPNS-R1 remains `single-seed accuracy feasible; efficiency unknown` and is not yet
   publishable as an efficiency result.
-- **Only next decision-changing task.** Execute
-  `ZOOMTOKEN-BPNS-R1-IDENTITY-GATED-FULL-STACK-REPLAY-v003` from a minimal clean
-  descendant of `e9323448…`. Hard gates cover execution identity and measurement
-  completeness; the historical reported-2dp accuracy check is a nonblocking
-  interval-aware `compatible/incompatible/indeterminate` diagnosis. Preserve the
-  eight-pass `K100,R1,R1,K100,R1,K100,K100,R1` order, emit per-pass predictions,
-  evaluator vectors and identities, aggregate latency and gross energy as the median
-  of four complete pass estimates per arm, and fail closed on identity or measurement
-  incompleteness without automatic resubmission. Do not rerun v002, widen its tolerance,
-  promote `61.0869609` to a historical reference, or start secondary arms.
+- **Only next decision-changing task.** Complete one fresh exact-Project post-result Pro
+  adjudication for the frozen v003 terminal evidence. Codex must not repair, rerun,
+  resume, create a successor, select a route, widen a threshold or start secondary arms
+  before that independent decision.
 - **Current execution state.** The minimal clean/pushed v003 descendant is
   `8a59d655005b9030d8ea5dc17ee2620844cb587b`; only the profiler, its focused
   tests, and the v003 launcher differ from `e9323448…`. Local and N16R4 focused
   checks both report `21 passed`; a fresh independent Critic returned `PASS`
   and a fresh result-blind Evaluator returned `PRE_RUN_READY`. Slurm precheck
-  job `1258524` completed `0:0` without reading validation metrics or training,
-  and formal job `1258526` started on `g0063` at `2026-08-28 11:58:39 +08:00`.
-  No live or partial metric from that job is admissible evidence.
+  job `1258524` completed `0:0` without reading validation metrics or training.
+  Formal job `1258526` ran on `g0063` from `11:58:39` to `17:32:11 +08:00` and ended
+  `FAILED 1:0 / FAILED_PROTOCOL_INVALID`. All eight predictions and unrounded evaluator
+  vectors exist and are identical within each arm, but measurement completeness failed
+  before any cost/power/boundary evidence was persisted. These vectors are diagnostic
+  only; a fresh post-result Pro review is pending.
 - **Frozen primary aggregation (not instantiated by job `1258299`).** The profiler's top-level `comparison` pools all
   windows from four passes per arm. It is descriptive but does not implement the
   Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by

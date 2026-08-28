@@ -51,7 +51,14 @@ updated: 2026-08-28
    measurement failure is protocol-invalid only and must not auto-resubmit. The user
    explicitly authorized autonomous Git push, remote deployment and Slurm/GPU execution;
    candidate `8a59d655005b9030d8ea5dc17ee2620844cb587b` is pushed, precheck job `1258524`
-   completed `0:0`, and the only formal v003 job is `1258526`. Do not submit a duplicate.
+   completed `0:0`, and the only formal v003 job `1258526` is terminal `FAILED 1:0 /
+   FAILED_PROTOCOL_INVALID`. It completed the eight frozen prediction/evaluator passes,
+   then failed when the short-action evaluator config omitted registry key `type`.
+   `profile.json`, cost rows, power trace and all latency/energy/memory/short-action/
+   boundary summaries are absent. Treat this as deterministic evaluator-interface and
+   measurement-completeness failure, not model, accuracy or efficiency evidence. Do not
+   submit a duplicate, patch-and-rerun, resume, synthesize missing artifacts or select a
+   successor before the fresh exact-Project post-result Pro adjudication.
    Do not apply the primary 5% efficiency gate directly to the profiler's pooled
    `comparison.r1_over_k100` fields. The Pro-frozen primary estimator first computes
    one end-to-end p50 and one total-energy value for each complete pass, then takes

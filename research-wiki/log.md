@@ -4682,3 +4682,14 @@ append_only: true
   不训练或 resume。唯一正式 job `1258526`（`zt-bpns-v003-8a59d655`）于
   `2026-08-28 11:58:39 +08:00` 在 `g0063` 开始，资源为 gpu partition、1 GPU、5 CPU、8 小时。
   当前只形成实现、准入与运行状态证据；终态前不读取或解释任何 partial 性能、成本或边界数值。
+
+- 2026-08-28：唯一正式 v003 job `1258526` 在 `g0063` 从 `11:58:39` 运行至
+  `17:32:11 +08:00`，终态 `FAILED 1:0 / FAILED_PROTOCOL_INVALID`，耗时 `05:33:32`。
+  它按冻结顺序完成八个 K100/R1 validation pass，并分别保存 prediction、SHA 与六项未舍入
+  evaluator vector；arm 内四次结果完全一致。随后 profile 阶段构造短动作 evaluator 时，因配置
+  缺少 registry 必需的 `type` 字段而抛出确定性 `KeyError`。focused tests 覆盖统计函数但没有执行
+  真实 evaluator 构造路径。结果根没有 `profile.json`、`cost_samples.jsonl`、
+  `power_trace.jsonl` 或延迟、显存、能耗、短动作、边界汇总，因此 measurement completeness
+  硬门未通过，冻结的四-pass-median 成本主估计不可计算。该轮是 evaluator 接口/协议失败，不是
+  模型失败或科学负结果；八个 accuracy vectors 仅作终态诊断。job 不恢复、不重跑、不补造产物；
+  完整事实交给一次 fresh exact-Project Pro 独立裁决，在其返回前不创建 successor 或选线。
