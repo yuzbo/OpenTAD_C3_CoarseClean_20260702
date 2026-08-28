@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-08-28
+updated: 2026-08-29
 ---
 
 ## GeoRoute deployment anti-repetition
@@ -65,6 +65,18 @@ updated: 2026-08-28
    reduce this to adding a missing `type`, change the frozen science/evaluator/estimator,
    or add model, training, seed, auxiliary arm, resume or retry behavior. If v004 fails
    before raw acquisition completes, no v005 or further BPNS replay is authorized.
+   Separately, the user confirmed a newer Pro instruction opening exactly one stateless
+   composition probe, `R1-TAR32-FKV`, from base `2d945e64…`. This does not replace or
+   modify v004. Keep its branch, worktree, jobs, roots and evidence separate. The probe
+   must retain R1 K64 support and K64 Adapter; even blocks are dense K64, odd blocks use
+   the immediately preceding dense attention column mean to select exact K32 per tubelet
+   for Query/output/MLP while all K64 remain K/V context. Do not add a cache, new router,
+   loss, dynamic cardinality, global top-K arm, capacity/threshold sweep, second seed,
+   fallback or rescue. Do not claim A-MoD novelty, full-K/V novelty, synergy or real
+   speed from the `79.06%` heavy-block proxy. Its only clean/pushed formal candidate is
+   `b0a1ca113bec1d8ca66b355f83dbb272bb7b3cb7`; the only formal training is job
+   `1260166`. Do not submit a duplicate, read live/partial performance, mix it with v004
+   job `1260095`, or let either terminal package stand in for the other's Pro review.
    Do not apply the primary 5% efficiency gate directly to the profiler's pooled
    `comparison.r1_over_k100` fields. The Pro-frozen primary estimator first computes
    one end-to-end p50 and one total-energy value for each complete pass, then takes

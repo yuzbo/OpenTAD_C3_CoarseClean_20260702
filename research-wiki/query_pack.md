@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-08-28
+updated: 2026-08-29
 max_chars: 8000
 ---
 
@@ -8,7 +8,7 @@ max_chars: 8000
 
 除下方首节外，本文其余部分均是按日期保存的历史证据；历史标题中的 “current” 或“当前”只描述当时状态，不覆盖首节的现时判断。
 
-## Current paper question: BPNS-R1 (updated 2026-08-28)
+## Current paper question: BPNS-R1 (updated 2026-08-29)
 
 - **Question.** Can current-frame contiguous native support remove substantial spatial
   VideoMAE work in offline TAD while preserving high-tIoU localization and reducing
@@ -53,6 +53,21 @@ max_chars: 8000
   diagnostics, persist each pass before any later diagnostic can fail, use the frozen
   four-pass-median p50 and complete-pass-energy ratios, then return any terminal state to
   one fresh Pro. No v005, retry, resume, seed, auxiliary arm or threshold change is allowed.
+- **Parallel Pro-frozen composite probe (user-confirmed 2026-08-29).** The latest Pro
+  instruction independently opens `ZoomToken-R1-TAR32-FKV`: retain R1 contiguous K64
+  support and full-K64 Adapter, run dense K64 updates in even VideoMAE blocks, and in each
+  odd block use the immediately preceding dense attention column mean to select exact K32
+  per tubelet for Query/output/MLP while all K64 remain Key/Value context. It is a
+  composition-first research probe, not an established method or novelty claim. Its exact
+  base is `2d945e64bdccd09ae2e2916524562e3f388c5a2a`; the minimal clean/pushed candidate is
+  `b0a1ca113bec1d8ca66b355f83dbb272bb7b3cb7` on
+  `codex/zoomtoken-r1-tar32-fkv-v001`. N16R4 focused checks report `32 passed, 1 skipped`
+  plus `9 passed` for strict-R1 regressions; fresh Critic is `PASS`, fresh result-blind
+  Evaluator is `PRE_RUN_READY`, and real-shape CUDA AMP pre-run job `1260163` completed
+  `0:0` with the frozen `[64,32]x6` route ledger and zero fallback/failure. The only formal
+  seed-42 training is job `1260166`, started on `g0059` with 2 GPUs. It must not alter,
+  consume partial evidence from, or delay v004 job `1260095`; the two terminal evidence
+  packages return separately to fresh Pro review.
 - **Current execution state.** The minimal clean/pushed v003 descendant is
   `8a59d655005b9030d8ea5dc17ee2620844cb587b`; only the profiler, its focused
   tests, and the v003 launcher differ from `e9323448…`. Local and N16R4 focused
@@ -63,8 +78,9 @@ max_chars: 8000
   `FAILED 1:0 / FAILED_PROTOCOL_INVALID`. All eight predictions and unrounded evaluator
   vectors exist and are identical within each arm, but measurement completeness failed
   before any cost/power/boundary evidence was persisted. These vectors are diagnostic
-  only. The audited Pro review is complete; v004 Builder is active under the bounded
-  successor above.
+  only. The audited Pro review is complete; v004 job `1260095` remains independently
+  frozen under the bounded successor above. In parallel, TAR32-FKV formal job `1260166`
+  is under event-driven terminal-only waiting. Neither running job supplies a result yet.
 - **Frozen primary aggregation (not instantiated by job `1258299`).** The profiler's top-level `comparison` pools all
   windows from four passes per arm. It is descriptive but does not implement the
   Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by

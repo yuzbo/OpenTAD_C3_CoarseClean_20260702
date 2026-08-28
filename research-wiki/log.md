@@ -4704,3 +4704,28 @@ append_only: true
   才运行非计时短动作与边界诊断；主 p50 与 complete-pass energy 的四-pass 中位数比均须
   `<=0.95`。只允许一个新 Slurm job；若 raw acquisition 前再次协议失败，则不授权 v005 或更多
   BPNS replay，效率保持未知并转交 fresh Pro。
+
+- 2026-08-29：用户确认粘贴的 `CONTINUE_COMPOSITE_PROBE` 是最新 Pro 指示，并要求
+  不中断唯一 v004 成本作业的同时开始独立 `ZoomToken-R1-TAR32-FKV` Builder。新 probe
+  从 exact base `2d945e64bdccd09ae2e2916524562e3f388c5a2a` 建立独立分支/工作树：R1
+  连续 K64 支持不变，偶数 VideoMAE 层更新全 K64，奇数层用紧邻前一完整层
+  attention column mean 每 tubelet 选 exact K32，只为 K32 计算 Query/output/MLP，但全
+  K64 继续提供 Key/Value 上下文并执行现有 Adapter。它是 composition-first research
+  probe，不是已成立论文方法或 novelty。v004 job `1260095` 的 candidate/source/result root/
+  watcher 均保持冻结；两条证据链不混用 partial 结果，各自终态后返回 fresh Pro。
+
+- 2026-08-29：`R1-TAR32-FKV` 已从 Builder 进入唯一正式训练。最小 clean/pushed
+  candidate 为 `b0a1ca113bec1d8ca66b355f83dbb272bb7b3cb7`，分支
+  `codex/zoomtoken-r1-tar32-fkv-v001`，相对 base `2d945e64…` 只修改冻结允许的
+  backbone/config/launcher/focused-test/training-route allowlist 表面。N16R4 CPU focused
+  suites 为 `32 passed, 1 skipped` 与独立 strict-R1 `9 passed`；fresh Critic `PASS`，fresh
+  result-blind Evaluator `PRE_RUN_READY`。首次实际 pre-run job `1260162` 仅因 `/bin/sh`
+  wrapper 在 Python/CUDA 前 exit 127，封存为操作失败；replacement `1260163` 在 `g0048`
+  `COMPLETED 0:0`，真实 canonical batch 的 CUDA AMP forward/backward 有限，route ledger
+  为 `[64,32]x6`、fallback/failure 为 0，未读取 accuracy 或 prediction。唯一正式
+  seed-42、60-epoch training job `1260166`（`zt-r1-tar32-fkv-s42-e60-v001`）于
+  `2026-08-29 02:29:38 +08:00` 在 `g0059` 开始，2 GPU、8 CPU、16 小时；source root
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_r1_tar32_fkv_src_b0a1ca11`，result root
+  `/data/run01/sczc063/yuzibo/projects/zoomtoken_r1_tar32_fkv_v001_seed42_20260830`。
+  后端 watcher `j-ucv5ag` 只等待终态；运行期间不读取或解释 partial 性能。v004 job
+  `1260095` 及其 watcher `j-sjvtib` 保持独立、未修改、未重排。
