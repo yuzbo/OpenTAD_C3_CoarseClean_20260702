@@ -17,8 +17,11 @@ ROOT="${ZOOMTOKEN_TAR32_SOURCE_ROOT:?set the reviewed clean TAR32-FKV checkout}"
 RUN_ROOT="${ZOOMTOKEN_TAR32_RUN_ROOT:?set the immutable TAR32-FKV result root}"
 RESUME="${ZOOMTOKEN_TAR32_RESUME:-}"
 PRECHECK_ONLY="${PRECHECK_ONLY:-0}"
+EXPECTED_JOB_NAME="zt-r1-tar32-fkv-s42-e60-v001"
 CONFIG="${ROOT}/configs/adatad/thumos/georoute_official_r1_tar32_fkv_prebackbone_seed42_v001.py"
 CELL_ROOT="${RUN_ROOT}/cells/r1_tar32_fkv_prebackbone_sparse_adapter/seed42"
+LAUNCH_RECEIPT="${RUN_ROOT}/launch_receipt.tsv"
+TERMINAL_RECEIPT="${RUN_ROOT}/terminal_receipt.tsv"
 ANNOTATION="${BASE}/thumos14/annotations/thumos_14_anno.json"
 CLASS_MAP="${BASE}/thumos14/annotations/category_idx.txt"
 VIDEO_ROOT="${BASE}/thumos14/raw_data/video"
@@ -54,9 +57,12 @@ if [[ "${PRECHECK_ONLY}" == "1" ]]; then
   [[ -z "${RESUME}" ]] || fail 'PRECHECK_ONLY cannot resume training'
   printf '[ZOOMTOKEN_R1_TAR32_FKV][PRECHECK_READY] commit=%s source=%s run_root=%s\n' \
     "${EXPECTED_COMMIT}" "${ROOT}" "${RUN_ROOT}"
+  printf '[ZOOMTOKEN_R1_TAR32_FKV][OUTPUT_SCHEMA] launch_receipt.tsv terminal_receipt.tsv cells/r1_tar32_fkv_prebackbone_sparse_adapter/seed42\n'
   exit 0
 fi
 [[ "${PRECHECK_ONLY}" == "0" ]] || fail 'PRECHECK_ONLY must be 0 or 1'
+[[ "${SLURM_JOB_NAME:-}" == "${EXPECTED_JOB_NAME}" ]] || \
+  fail "formal JobName must be ${EXPECTED_JOB_NAME}"
 
 resume_args=()
 if [[ -n "${RESUME}" ]]; then
@@ -87,7 +93,23 @@ export PYTHONNOUSERSITE=1
 export PYTHONDONTWRITEBYTECODE=1
 
 cd "${ROOT}"
-exec torchrun --nnodes=1 --nproc_per_node=2 \
+mkdir -p "${RUN_ROOT}"
+launch_tmp="${LAUNCH_RECEIPT}.tmp.$$"
+{
+  printf 'schema_version\tzoomtoken_r1_tar32_fkv_launch_v001\n'
+  printf 'created_at\t%s\n' "$(date -Iseconds)"
+  printf 'commit\t%s\n' "${EXPECTED_COMMIT}"
+  printf 'config\t%s\n' "${CONFIG}"
+  printf 'slurm_job_id\t%s\n' "${SLURM_JOB_ID}"
+  printf 'slurm_job_name\t%s\n' "${SLURM_JOB_NAME}"
+  printf 'seed\t42\nrank_count\t2\nlocal_batch\t1\nglobal_batch\t2\n'
+  printf 'scheduler_max_epoch\t100\nactual_end_epoch\t60\n'
+  printf 'primary_checkpoint\tepoch_59 state_dict_ema\n'
+} > "${launch_tmp}"
+mv "${launch_tmp}" "${LAUNCH_RECEIPT}"
+
+set +e
+torchrun --nnodes=1 --nproc_per_node=2 \
   --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:0 \
   --rdzv_id="zoomtoken-r1-tar32-fkv-${SLURM_JOB_ID}-seed42" \
   tools/train.py "${CONFIG}" --seed 42 --id 0 "${resume_args[@]}" \
@@ -108,3 +130,19 @@ exec torchrun --nnodes=1 --nproc_per_node=2 \
   "dataset.test.subset_name=validation" \
   "evaluation.ground_truth_filename=${ANNOTATION}" \
   "model.backbone.custom.pretrain=${PRETRAINED}"
+torchrun_status=$?
+set -e
+
+terminal_tmp="${TERMINAL_RECEIPT}.tmp.$$"
+{
+  printf 'schema_version\tzoomtoken_r1_tar32_fkv_terminal_v001\n'
+  printf 'finished_at\t%s\n' "$(date -Iseconds)"
+  printf 'commit\t%s\n' "${EXPECTED_COMMIT}"
+  printf 'slurm_job_id\t%s\n' "${SLURM_JOB_ID}"
+  printf 'slurm_job_name\t%s\n' "${SLURM_JOB_NAME}"
+  printf 'torchrun_exit_code\t%s\n' "${torchrun_status}"
+  printf 'cell_root\t%s\n' "${CELL_ROOT}"
+  printf 'primary_checkpoint\t%s\n' "${CELL_ROOT}/gpu2_id0/checkpoint/epoch_59.pth"
+} > "${terminal_tmp}"
+mv "${terminal_tmp}" "${TERMINAL_RECEIPT}"
+exit "${torchrun_status}"

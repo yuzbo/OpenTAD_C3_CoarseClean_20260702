@@ -2242,6 +2242,8 @@ class VisionTransformerAdapter(BaseModule):
         """Stable exact-K32 selection inside every contiguous K64 tubelet."""
         if scores.ndim != 2 or tubelet_indices.shape != scores.shape:
             raise ValueError("TAR32-FKV scores and tubelet lineage must be [B,S]")
+        if not bool(torch.isfinite(scores).all().item()):
+            raise ValueError("TAR32-FKV routing scores must be finite")
         batch_size, token_count = map(int, scores.shape)
         expected_tokens = int(total_tubelets) * 64
         if token_count != expected_tokens:
@@ -2532,6 +2534,24 @@ class VisionTransformerAdapter(BaseModule):
                 "kv_context": self.tar32_fkv_config["kv_context"],
                 "temporal_state_reuse": False,
                 "new_trainable_parameters": False,
+                "per_layer_route_counts": [
+                    {
+                        "block_index": block_index,
+                        "query_tokens_per_tubelet": (
+                            64 if block_index in self.tar32_fkv_config["dense_block_indices"] else 32
+                        ),
+                        "kv_tokens_per_tubelet": 64,
+                        "mlp_tokens_per_tubelet": (
+                            64 if block_index in self.tar32_fkv_config["dense_block_indices"] else 32
+                        ),
+                        "adapter_tokens_per_tubelet": 64,
+                    }
+                    for block_index in range(len(self.blocks))
+                ],
+                "per_tubelet_selected_counts": [
+                    32 for _ in range(int(metadata["total_tubelets"]))
+                ],
+                "fallback_or_failure_count": 0,
             }
         elif refresh_mode == "dsr6_kv":
             depth_schedule_summary = {

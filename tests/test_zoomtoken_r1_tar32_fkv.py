@@ -2,6 +2,7 @@ from pathlib import Path
 from types import MethodType
 import subprocess
 
+import pytest
 import torch
 from mmengine import Config
 
@@ -80,6 +81,23 @@ def test_tar32_mask_is_exact_per_tubelet_and_stable_on_ties():
     assert mask[0, 64 : 64 + 24].all()
 
 
+def test_tar32_mask_fails_closed_on_malformed_or_nonfinite_scores():
+    scores = torch.zeros(1, 128)
+    lineage = torch.arange(2).repeat_interleave(64).view(1, -1)
+    with pytest.raises(ValueError, match="finite"):
+        VisionTransformerAdapter._tar32_fkv_mask(
+            scores.index_fill(1, torch.tensor([7]), float("nan")),
+            lineage,
+            total_tubelets=2,
+        )
+    with pytest.raises(ValueError, match="contiguous"):
+        VisionTransformerAdapter._tar32_fkv_mask(
+            scores,
+            lineage.roll(1),
+            total_tubelets=2,
+        )
+
+
 def test_dense_score_then_tar32_short_query_uses_full_k64_context():
     torch.manual_seed(41)
     dense = Block(embed_dims=8, num_heads=2, use_adapter=False).eval()
@@ -131,6 +149,38 @@ def test_dense_score_then_tar32_short_query_uses_full_k64_context():
     assert stats["executed_mlp_tokens"] == 64
     gradient = torch.autograd.grad(output[refresh].sum(), dense_output)[0]
     assert gradient[~refresh].abs().sum().item() > 0
+
+
+def test_grouped_k64_query_context_primitive_matches_dense_block():
+    torch.manual_seed(42)
+    dense = Block(embed_dims=8, num_heads=2, use_adapter=False).eval()
+    grouped = Block(embed_dims=8, num_heads=2, use_adapter=False).eval()
+    grouped.load_state_dict(dense.state_dict())
+    inputs = torch.randn(1, 128, 8)
+    lineage = torch.arange(2).repeat_interleave(64).view(1, -1)
+    spatial = torch.arange(64).repeat(2).view(1, -1)
+    buckets = [torch.arange(128).view(2, 64)]
+    dense_output = dense.forward_native_ragged(
+        inputs,
+        bucket_positions=buckets,
+        tubelet_indices=lineage,
+        spatial_indices=spatial,
+        total_tubelets=2,
+        grid_height=8,
+        grid_width=8,
+    )
+    grouped_output = grouped.forward_native_ragged(
+        inputs,
+        bucket_positions=buckets,
+        tubelet_indices=lineage,
+        spatial_indices=spatial,
+        total_tubelets=2,
+        grid_height=8,
+        grid_width=8,
+        refresh_mask=torch.ones(1, 128, dtype=torch.bool),
+        refresh_mode="mod32_kv",
+    )
+    assert torch.allclose(grouped_output, dense_output, atol=1e-6, rtol=1e-5)
 
 
 def test_tar32_end_to_end_alternates_immediate_scores_and_keeps_full_adapter():
@@ -197,12 +247,32 @@ def test_tar32_end_to_end_alternates_immediate_scores_and_keeps_full_adapter():
         )
 
     adapter_shapes = []
-    handles = [
-        block.adapter.register_forward_pre_hook(
-            lambda _module, args: adapter_shapes.append(tuple(args[0].shape))
+    original_adapter_forwards = []
+    for block in model.blocks:
+        original = block.adapter.forward_native_ragged
+        original_adapter_forwards.append(original)
+
+        def adapter_with_observer(
+            self,
+            inputs,
+            tubelet_indices,
+            spatial_indices,
+            *,
+            original=original,
+            **kwargs,
+        ):
+            adapter_shapes.append(tuple(inputs.shape))
+            return original(
+                inputs,
+                tubelet_indices,
+                spatial_indices,
+                **kwargs,
+            )
+
+        block.adapter.forward_native_ragged = MethodType(
+            adapter_with_observer,
+            block.adapter,
         )
-        for block in model.blocks
-    ]
     try:
         with torch.no_grad():
             output = model.forward_native_ragged(
@@ -213,8 +283,8 @@ def test_tar32_end_to_end_alternates_immediate_scores_and_keeps_full_adapter():
                 use_absolute_position=False,
             )
     finally:
-        for handle in handles:
-            handle.remove()
+        for block, original in zip(model.blocks, original_adapter_forwards):
+            block.adapter.forward_native_ragged = original
 
     assert output.shape == (1, 128, 8)
     assert len(observed_masks) == 6
@@ -233,6 +303,82 @@ def test_tar32_end_to_end_alternates_immediate_scores_and_keeps_full_adapter():
     assert summary["attention_pairs_all_blocks"] == 73728
     assert summary["temporal_state_reuse"] is False
     assert summary["new_trainable_parameters"] is False
+    assert [row["query_tokens_per_tubelet"] for row in summary["per_layer_route_counts"]] == [
+        64,
+        32,
+    ] * 6
+    assert summary["per_tubelet_selected_counts"] == [32, 32]
+    assert summary["fallback_or_failure_count"] == 0
+
+
+def test_tar32_is_stateless_under_batch_reordering():
+    torch.manual_seed(45)
+    model = _tiny_backbone(tar32=True, adapter_index=range(12)).eval()
+    inputs = torch.randn(2, 128, 3, 2, 16, 16)
+    physical = _strict_r1_two_tubelet_indices().expand(2, -1)
+    with torch.no_grad():
+        forward = model.forward_native_ragged(
+            inputs,
+            physical,
+            total_tubelets=2,
+            source_grid_hw=(10, 10),
+            use_absolute_position=False,
+        )
+        reversed_forward = model.forward_native_ragged(
+            inputs.flip(0),
+            physical,
+            total_tubelets=2,
+            source_grid_hw=(10, 10),
+            use_absolute_position=False,
+        ).flip(0)
+    assert torch.allclose(forward, reversed_forward, atol=1e-6, rtol=1e-5)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a Slurm CUDA allocation")
+def test_tar32_real_shape_amp_forward_backward_is_finite():
+    torch.manual_seed(46)
+    model = VisionTransformerAdapter(
+        img_size=160,
+        patch_size=16,
+        embed_dims=384,
+        depth=12,
+        num_heads=6,
+        mlp_ratio=4.0,
+        num_frames=16,
+        tubelet_size=2,
+        total_frames=16,
+        adapter_index=list(range(12)),
+        use_mean_pooling=False,
+        with_cp=True,
+        tar32_fkv=_tar32_config(),
+    ).cuda().train()
+    spatial = torch.tensor(
+        [row * 10 + col for row in range(8) for col in range(8)],
+        device="cuda",
+        dtype=torch.long,
+    )
+    physical = torch.cat([spatial + tubelet * 100 for tubelet in range(8)]).view(1, -1)
+    inputs = torch.randn(1, 512, 3, 2, 16, 16, device="cuda", requires_grad=True)
+    scaler = torch.cuda.amp.GradScaler()
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        output = model.forward_native_ragged(
+            inputs,
+            physical,
+            total_tubelets=8,
+            source_grid_hw=(10, 10),
+            use_absolute_position=False,
+        )
+        loss = output.float().square().mean()
+    assert torch.isfinite(output).all()
+    assert torch.isfinite(loss)
+    scaler.scale(loss).backward()
+    gradients = [
+        parameter.grad
+        for parameter in model.parameters()
+        if parameter.requires_grad and parameter.grad is not None
+    ]
+    assert gradients
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
 
 
 def test_tar32_checkpoint_path_backpropagates_through_every_adapter():
@@ -274,6 +420,15 @@ def test_tar32_config_launcher_and_training_recovery_are_bound(tmp_path):
     assert tuple(tar32.tar32_block_indices) == (1, 3, 5, 7, 9, 11)
     assert tar32.selected_tokens_per_tubelet == 32
     assert config.model.backbone.custom.zoomtoken_refresh_carry_mode == "full64"
+    assert config.model.backbone.custom.zoomtoken_query_tokens == 64
+    assert config.model.backbone.custom.zoomtoken_mlp_tokens == 64
+    assert config.official_bc_contract.outer_carrier_contract == (
+        "strict_r1_full64_physical_support"
+    )
+    assert config.official_bc_contract.internal_tar32_query_tokens == 32
+    assert config.official_bc_contract.internal_tar32_mlp_tokens == 32
+    assert config.scheduler.max_epoch == 100
+    assert config.workflow.end_epoch == 60
     assert config.zoomtoken_p1_config.temporal_state_reuse is False
     assert config.zoomtoken_p1_config.new_trainable_router is False
     assert "R1-TAR32-FKV" in train_module.ZOOMTOKEN_RECOVERY_ARMS

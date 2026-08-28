@@ -28,6 +28,10 @@ model = dict(
     )
 )
 
+# The inherited scheduler remains calibrated to 100 epochs, while the frozen
+# experiment terminates after 60 actual epochs and selects epoch_59 EMA.
+workflow = dict(end_epoch=60)
+
 zoomtoken_p1_config = dict(
     schema_version="zoomtoken_r1_tar32_fkv_v001",
     arm_surface="R1-TAR32-FKV",
@@ -74,6 +78,16 @@ official_bc_contract = dict(
     temporal_cache=False,
     new_trainable_module=False,
     selector_inclusive_cost_measured=False,
+    outer_carrier_contract="strict_r1_full64_physical_support",
+    outer_carrier_query_tokens=64,
+    outer_carrier_kv_tokens=64,
+    outer_carrier_mlp_tokens=64,
+    internal_tar32_query_tokens=32,
+    internal_tar32_kv_tokens=64,
+    internal_tar32_mlp_tokens=32,
+    scheduler_max_epoch=100,
+    actual_end_epoch=60,
+    primary_checkpoint="epoch_59_state_dict_ema",
 )
 
 work_dir = (
