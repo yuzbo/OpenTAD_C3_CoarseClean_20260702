@@ -17,7 +17,17 @@ ZoomToken 由 Pro 冻结唯一科学任务与裁决门，Codex 只做最小忠�
 
 当证据形成真实科学选择、缺失信息或来源冲突时，Codex 可主动提交充分权威上下文并请求 Pro 独立建议、裁决或下一任务；不得预置偏好路线、默认方案、期望裁决或穷尽候选，必须允许 Pro 拒绝当前 framing、提出未列替代并独立决定方向。
 
-ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务由 Codex 连续推进至正式终态证据摄取和 fresh post-result Pro 裁决，不因普通 Git、远端、Slurm、后台等待或证据摄取步骤重复请示。长时等待后端化且前台静默。Pro 请求无实际 submission 时恢复同一 request；已有 submission/conversation 时只等待或回取，禁止 duplicate/follow-up。工程或协议失败没有科学方向，正式终态默认不得自动重跑，除非冻结任务明确授权。
+ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务由 Codex 连续推进至正式终态证据摄取和 fresh post-result Pro 裁决，不因普通 Git、远端、Slurm 或证据摄取步骤重复请示。长时任务提交并确认后，等待责任转交计算系统，Codex 结束主动推理阶段；这不构成任务放弃。Pro 请求无实际 submission 时恢复同一 request；已有 submission/conversation 时只等待或回取，禁止 duplicate/follow-up。工程或协议失败没有科学方向，正式终态默认不得自动重跑，除非冻结任务明确授权。
+
+### 长任务的事件驱动等待
+
+- 已提交的下载、传输、Slurm 作业、训练或 Pro 生成不是主动推理工作。提交方先记录不可变 job/session 身份、配置身份、预期终态产物、最长时限和恢复规则，并确认后端已经接受任务。
+- 能由计算系统记录终态时，优先使用作业自身的 terminal receipt 或依赖收尾；既有任务不允许追加远端收尾作业时，可用一个机器侧后台等待进程。`sleep` 与状态判断留在机器进程中，不进入 Codex 推理循环。
+- Codex 不主动消费 heartbeat，也不得为了确认“仍在运行”而重复调用 `squeue`、`sacct`、`tail`、`ps`、`stat` 或等价工具。heartbeat 由计算系统产生，只在终态回取、用户重新进入、客观预计终态时间到达或已有异常证据时读取。
+- 普通 goal continuation 不构成状态查询理由，不输出“仍在等待”一类前台文字。恢复只由终态信号、用户重新进入、预先记录的预计终态时间或客观异常触发；恢复后先做一次终态核验，再收集结果或保存 blocker。
+- 当前闭环只需使用普通的 `SUBMITTED`、`TERMINAL`、`NEEDS_SCIENTIFIC_DECISION` 三种含义：`SUBMITTED` 后停止主动等待；`TERMINAL` 后摄取冻结证据；只有完整结果或必须改变科学条件时才进入 Pro 科学裁决。
+
+进度不是科学结果，不需要持续占用模型注意力。`/goal` 用于保存未完成目标，不用于陪同 GPU 或浏览器等待。
 
 本文件是当前仓库的简短上下文锚点。详细研究记忆以 `research-wiki/` 为单一事实源。
 

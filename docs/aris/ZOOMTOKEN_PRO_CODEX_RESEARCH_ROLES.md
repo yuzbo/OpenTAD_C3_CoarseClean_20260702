@@ -44,7 +44,7 @@ Codex 把 Pro 的唯一科学任务转化为最小、忠实、可运行的代码
 
 Pro 已冻结唯一任务且用户已授权所需资源后，Codex 对该轮承担连续责任：完成最小实现与 focused checks、Git commit/push、远端部署、一次 Critic、一次 result-blind Evaluator、precheck、一次正式提交、后端静默监控、终态证据摄取，以及一次全新的 post-result Pro 交接。普通执行步骤不再逐项请示；一轮只有在终态证据已经保存且 Pro 返回下一任务、停止决定或必须由用户决定的资源/投稿问题后才结束。代码完成、作业提交、作业运行中和收据存在均不等于一轮完成。
 
-Codex 仅在需要新权限，或拟改变机制、对照、数据、checkpoint、指标、聚合、阈值、成本含义、资源语义、官方测试或论文主张时停止并请求裁决。长时 Slurm、Pro 或浏览器等待必须在后端进行，前台只在状态变化、正式终态、硬 blocker 或固定报告节点通知。正式作业提交后不得自行创建 successor、retry、resume 或 rerun，除非冻结任务明确授权。
+Codex 仅在需要新权限，或拟改变机制、对照、数据、checkpoint、指标、聚合、阈值、成本含义、资源语义、官方测试或论文主张时停止并请求裁决。长时 Slurm、Pro 或浏览器任务一经后端接受，Codex 必须记录不可变身份、预期产物、最长时限和恢复规则，然后结束主动推理阶段；不得用定时 LLM heartbeat 或普通 goal continuation 反复读取运行状态。heartbeat 由计算系统产生而不是由 Codex 主动消费，前台只由终态信号、用户重新进入、客观预计终态时间或已有异常证据恢复。若必须等待，只允许一个机器侧后台等待进程承担 `sleep` 和终态判断。正式作业提交后不得自行创建 successor、retry、resume 或 rerun，除非冻结任务明确授权。
 
 Pro 请求由 Project ID、request ID 和 nonce 共同识别。没有实际 submission 时只恢复同一 request；已有 submission 或 conversation 时只等待或回取；归属不明时只做一次精确核对，禁止 duplicate、follow-up 或按相似内容猜测。默认每轮只进行一次 Critic 和一次 Evaluator；若发现会使实验无效的决定性缺陷，只允许一次最小修复并针对改动表面重新审查。只有新的、独立的致命问题才能触发第二次审查；同一问题重复出现或第二次仍不准入时直接返回 Pro，不得无限审计。
 
