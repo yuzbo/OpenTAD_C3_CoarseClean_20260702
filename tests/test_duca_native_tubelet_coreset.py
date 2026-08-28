@@ -12,6 +12,7 @@ from opentad.models.duca.tubelet_coreset import (
     select_native_tubelet_coreset,
     task_state_tubelet_scores,
 )
+from tools.bata.duca_p0_training import formal_training_contract
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,3 +94,8 @@ def test_uniform_and_coreset_configs_have_one_scientific_difference(monkeypatch)
     uniform.native_tubelet_contract.selection_policy = "matched"
     coreset.native_tubelet_contract.selection_policy = "matched"
     assert uniform.to_dict() == coreset.to_dict()
+
+    contract = formal_training_contract(uniform)
+    assert contract["intermediate_validation"] is False
+    assert contract["primary_checkpoint_epoch"] == 59
+    assert contract["primary_checkpoint_state_key"] == "state_dict_ema"
