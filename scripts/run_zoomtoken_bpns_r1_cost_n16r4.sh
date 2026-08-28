@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 if [ -z "${BASH_VERSION:-}" ]; then
-  printf '[ZOOMTOKEN_BPNS_COST_V003][FAIL] invoke this packet with bash, never sh\n' >&2
+  printf '[ZOOMTOKEN_BPNS_COST_V004][FAIL] invoke this packet with bash, never sh\n' >&2
   exit 2
 fi
 set -euo pipefail
 
 fail() {
-  printf '[ZOOMTOKEN_BPNS_COST_V003][FAIL] %s\n' "$*" >&2
+  printf '[ZOOMTOKEN_BPNS_COST_V004][FAIL] %s\n' "$*" >&2
   exit 2
 }
 
@@ -23,7 +23,7 @@ CONDA_ACTIVATE="${BASE}/conda_envs/opentad/bin/activate"
 PRECHECK_ONLY="${PRECHECK_ONLY:-0}"
 
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail 'BPNS cost replay requires a Slurm allocation'
-[[ "${SLURM_JOB_NAME:-}" == *v003* ]] || fail 'formal Slurm JobName must use a fresh v003 namespace'
+[[ "${SLURM_JOB_NAME:-}" == *v004* ]] || fail 'formal Slurm JobName must use a fresh v004 namespace'
 IFS=',' read -r -a visible_gpus <<< "${CUDA_VISIBLE_DEVICES:-}"
 [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${#visible_gpus[@]}" -eq 1 ]] || \
   fail 'BPNS cost replay requires exactly one Slurm-visible GPU'
@@ -43,7 +43,7 @@ case "${RESULT_ROOT}" in
   *) fail 'result root leaves /data/run01/sczc063/yuzibo' ;;
 esac
 [[ ! -e "${RESULT_ROOT}" ]] || fail 'result root already exists; duplicate replay is forbidden'
-[[ "$(basename "${RESULT_ROOT}")" == *v003* ]] || fail 'formal result root must use a fresh v003 namespace'
+[[ "$(basename "${RESULT_ROOT}")" == *v004* ]] || fail 'formal result root must use a fresh v004 namespace'
 
 if [[ -r /etc/profile ]]; then
   set +u
@@ -76,5 +76,5 @@ fi
 [[ "${PRECHECK_ONLY}" == "0" ]] || fail 'PRECHECK_ONLY must be 0 or 1'
 exec torchrun --nnodes=1 --nproc_per_node=1 \
   --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:0 \
-  --rdzv_id="zoomtoken-bpns-r1-cost-v003-${SLURM_JOB_ID}" \
+  --rdzv_id="zoomtoken-bpns-r1-cost-v004-${SLURM_JOB_ID}" \
   tools/bata/profile_zoomtoken_bpns_r1_cost.py profile "${common_args[@]}"
