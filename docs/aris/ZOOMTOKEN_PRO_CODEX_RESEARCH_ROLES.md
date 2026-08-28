@@ -40,6 +40,14 @@ Codex 把 Pro 的唯一科学任务转化为最小、忠实、可运行的代码
 6. 每个正式终态或客观 blocker 出现后，Codex 必须停止追加实验，并在新的 ZoomToken Project Pro 会话中提交冻结证据，等待下一项唯一科学裁决。
 7. 在正式终态之外，只要出现真实的科学选择、缺失上下文或可改变结论的来源冲突，也可按上节中立规则主动请求 Pro 独立建议；不得自行补全科学含义或提前选线。
 
+### 冻结任务的连续执行责任
+
+Pro 已冻结唯一任务且用户已授权所需资源后，Codex 对该轮承担连续责任：完成最小实现与 focused checks、Git commit/push、远端部署、一次 Critic、一次 result-blind Evaluator、precheck、一次正式提交、后端静默监控、终态证据摄取，以及一次全新的 post-result Pro 交接。普通执行步骤不再逐项请示；一轮只有在终态证据已经保存且 Pro 返回下一任务、停止决定或必须由用户决定的资源/投稿问题后才结束。代码完成、作业提交、作业运行中和收据存在均不等于一轮完成。
+
+Codex 仅在需要新权限，或拟改变机制、对照、数据、checkpoint、指标、聚合、阈值、成本含义、资源语义、官方测试或论文主张时停止并请求裁决。长时 Slurm、Pro 或浏览器等待必须在后端进行，前台只在状态变化、正式终态、硬 blocker 或固定报告节点通知。正式作业提交后不得自行创建 successor、retry、resume 或 rerun，除非冻结任务明确授权。
+
+Pro 请求由 Project ID、request ID 和 nonce 共同识别。没有实际 submission 时只恢复同一 request；已有 submission 或 conversation 时只等待或回取；归属不明时只做一次精确核对，禁止 duplicate、follow-up 或按相似内容猜测。默认每轮只进行一次 Critic 和一次 Evaluator；若发现会使实验无效的决定性缺陷，只允许一次最小修复并针对改动表面重新审查。只有新的、独立的致命问题才能触发第二次审查；同一问题重复出现或第二次仍不准入时直接返回 Pro，不得无限审计。
+
 ## Independent Critic：决定性、有限范围的独立审查
 
 Critic 在独立上下文中只检查能够改变实验准入或结果解释的问题，包括：

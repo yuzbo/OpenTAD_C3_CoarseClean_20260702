@@ -17,6 +17,8 @@ ZoomToken 由 Pro 冻结唯一科学任务与裁决门，Codex 只做最小忠�
 
 当证据形成真实科学选择、缺失信息或来源冲突时，Codex 可主动提交充分权威上下文并请求 Pro 独立建议、裁决或下一任务；不得预置偏好路线、默认方案、期望裁决或穷尽候选，必须允许 Pro 拒绝当前 framing、提出未列替代并独立决定方向。
 
+ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务由 Codex 连续推进至正式终态证据摄取和 fresh post-result Pro 裁决，不因普通 Git、远端、Slurm、后台等待或证据摄取步骤重复请示。长时等待后端化且前台静默。Pro 请求无实际 submission 时恢复同一 request；已有 submission/conversation 时只等待或回取，禁止 duplicate/follow-up。工程或协议失败没有科学方向，正式终态默认不得自动重跑，除非冻结任务明确授权。
+
 本文件是当前仓库的简短上下文锚点。详细研究记忆以 `research-wiki/` 为单一事实源。
 
 ## 当前目标
