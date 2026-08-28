@@ -56,9 +56,15 @@ updated: 2026-08-28
    then failed when the short-action evaluator config omitted registry key `type`.
    `profile.json`, cost rows, power trace and all latency/energy/memory/short-action/
    boundary summaries are absent. Treat this as deterministic evaluator-interface and
-   measurement-completeness failure, not model, accuracy or efficiency evidence. Do not
-   submit a duplicate, patch-and-rerun, resume, synthesize missing artifacts or select a
-   successor before the fresh exact-Project post-result Pro adjudication.
+   measurement-completeness failure, not model, accuracy or efficiency evidence. The
+   fresh exact-Project review authorized exactly one successor,
+   `ZOOMTOKEN-BPNS-R1-DECOUPLED-DIAGNOSTIC-AND-COST-CLOSURE-v004`, from `8a59d655…`.
+   It must atomically persist each pass's raw cost, power coverage, prediction SHA and
+   receipt before any non-timed diagnostic; the short evaluator must come from a deep copy
+   of the production evaluation config and pass a synthetic known-answer call. Do not
+   reduce this to adding a missing `type`, change the frozen science/evaluator/estimator,
+   or add model, training, seed, auxiliary arm, resume or retry behavior. If v004 fails
+   before raw acquisition completes, no v005 or further BPNS replay is authorized.
    Do not apply the primary 5% efficiency gate directly to the profiler's pooled
    `comparison.r1_over_k100` fields. The Pro-frozen primary estimator first computes
    one end-to-end p50 and one total-energy value for each complete pass, then takes

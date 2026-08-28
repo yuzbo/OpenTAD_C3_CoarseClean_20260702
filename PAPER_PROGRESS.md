@@ -7,9 +7,9 @@
 - **已有证据：** 单个 seed-42 中，K100 与 R1 的 final-EMA 为 `68.51/61.19/46.27` 与 `69.07/61.14/46.57`。这支持准确率可行性，并把“连续支持拓扑”保留为有价值的机制解释。
 - **不能主张：** 36% 原生 token 减少尚未转化为已测得的延迟、显存或能耗收益；也没有多种子、跨检测器或跨数据集证据。
 - **当前实验：** v002 job `1258299` 已永久封存为无效率结果的准入协议失败。Pro 冻结的 v003 clean/pushed revision `8a59d655005b9030d8ea5dc17ee2620844cb587b` 通过 local/remote `21 passed`、fresh Critic `PASS`、fresh result-blind Evaluator `PRE_RUN_READY` 与 precheck `1258524 COMPLETED 0:0`。唯一正式 job `1258526` 在 `g0063` 运行 `05:33:32` 后终态 `FAILED 1:0 / FAILED_PROTOCOL_INVALID`：八个 prediction/evaluator pass 已保存，但短动作 evaluator 配置遗漏 registry 的 `type`，在形成成本、功耗、显存、短动作或边界汇总前确定性终止。
-- **Pro 裁决：** 全新 exact-Project Pro 复盘已返回 `REVISE`。v002 被永久关闭为效率证据，但不是模型失败：历史 `61.14` 只是舍入区间 `[61.135,61.145)`，当前 `61.0869609` 到最近兼容原始值的最小距离为 `0.0480391 pp`，因此科学上只能判为 `indeterminate`，不能用两位小数点值执行二元硬准入。
-- **唯一下一任务：** 将 v003 完整终态、根因、已保存与缺失证据提交一次全新的 exact-Project post-result Pro 独立裁决。在 Pro 返回前不得修补后重跑、resume、创建 successor、启动辅助臂或自行选线。
-- **证据边界：** v003 直接保存了八个 prediction、SHA 与未舍入 evaluator vectors；arm 内四次完全一致。由于缺少 `profile.json`、cost rows、power trace 和短动作/边界汇总，冻结的 measurement completeness 硬门未通过，四-pass-median 成本主估计不可计算。这些 accuracy vectors 只能作诊断；不能声称加速、显存、能效或边界保护，也不能把协议失败写成模型负结果。
+- **Pro 裁决：** v003 的全新 exact-Project 复盘已返回 `CONTINUE_ONCE_WITH_DECOUPLED_COST_CLOSURE`，角色合同 `KEEP`。v003 是工程缺陷触发、协议无效、科学无方向的终态；八个 raw vectors 只说明固定 seed/checkpoint 下 R1 没有广泛准确率崩塌，不能支持效率或边界主张。
+- **唯一下一任务：** 从 `8a59d655…` 建立一个最小 v004，把逐-pass raw cost/power 持久化、prediction identity 与非计时 short-action/boundary diagnostics 解耦。每臂以四个 pass 的 p50 和完整 pass energy 中位数形成主估计；两项 R1/K100 比值都必须不高于 `0.95`。只允许一个新 Slurm job；任何终态都必须回到 fresh Pro，协议若在 raw acquisition 完成前再次失败则不授权 v005。
+- **证据边界：** v003 直接保存了八个 prediction、SHA 与未舍入 evaluator vectors；arm 内四次完全一致。R1−K100 为 Avg-mAP `+0.5353 pp`，而 mAP@0.6 为 `-0.1042 pp`，结果是混合且接近的。缺失 `profile.json`、cost rows、power trace 和短动作/边界汇总，四-pass-median 成本主估计仍不可计算；不能声称加速、显存、能效或边界保护。
 
 以下按日期和实验族保留完整证据与负结果；运行标识用于定位原始材料，不替代上述科学判断。
 
@@ -35,7 +35,7 @@
 
 > **2026-08-25 动态选择性重计算复核：** 新一轮附件式 ZoomToken Project Pro 讨论进一步比较了 clip 内动态重计算 `IC-DRU`、重叠窗口精确缓存 `OW-ECR` 和 current-proxy 条件深度路由 `PCD-DRU`。理想已知骨干算术上界分别约节省 `50.12%`、`7.66%` 和 `60.16%`，但前两种动态路线要求平均仅刷新约 25% 的 token、仍保留 dense/full-refresh 峰值，并且其变化路由、轻量残差与逐 token 深度分配均可被已有 Eventful、视频缓存和 MoD/A-MoD 工作分解覆盖；窗口路线则因 Adapter 依赖传播和约 `54 MiB/样本` 的十二层缓存缺少全链路余量。Pro 对这三个精确定义候选给出 `STOP_BEFORE_IMPLEMENTATION`，新增正式实验为 0。本裁决是实施前设计判断，不是动态刷新、特征复用或 20%–30% 更新率的经验失败，也没有产生新的准确率或端到端成本结果。
 
-- 更新时间：2026-08-28（论文主线仍为当前观测的 `BPNS-R1`，但同硬件成本证据仍未建立。jobs `1257281/1258299` 封存为 replay-admission 失败；job `1258526` 封存为短动作 evaluator 构造遗漏导致的 measurement-completeness 协议失败。fresh post-result Pro 裁决待回取；此前不修补重跑、不自行选线，也不启动 DSR6-KV、MOD32-KV、DROP32 或 A-MoD-50）。
+- 更新时间：2026-08-28（论文主线仍为当前观测的 `BPNS-R1`，同硬件成本证据仍未建立。jobs `1257281/1258299` 封存为 replay-admission 失败；job `1258526` 封存为 measurement-completeness 协议失败。fresh Pro 已授权最后一次有界 v004：逐 pass 先保存原始成本/功耗，再做非计时诊断；不启动 DSR6-KV、MOD32-KV、DROP32、A-MoD-50 或其他辅助路线）。
 - 证据等级：已有真实 THUMOS14 validation 性能。官方路径 A、全部 token + sparse adapter 的 B、主干前 ROI `K=64` + 同一 adapter 的 C，其 Avg-mAP/mAP@0.7 分别为 `68.73/47.24`、`68.51/46.27`、`68.22/45.35`。这是一种子严格归因结果；当前仍无完整端到端成本结果，不能声称计算效率提升。
 
 ## 1. 一句话问题与应用价值

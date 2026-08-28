@@ -1364,3 +1364,17 @@ Evaluator `17:00`，formal action `17:30`，queue check `2026-08-29 00:00`，blo
 `00:15`，scientific return `12:00`。完整结果的主接受门为 p50 与 gross energy 各至少下降 `5%`，
 且 worst-case `min(R1)-max(K100)` 的 Avg-mAP 与 mAP@0.7 均不低于 `-0.30 pp`；未取得完整
 终态前不形成效率结论。
+
+## 116. v003 协议失败后只允许一次解耦式成本闭环（2026-08-28）
+
+fresh exact-Project post-result Pro 将 v003 裁为 `CONTINUE_ONCE_WITH_DECOUPLED_COST_CLOSURE`，
+角色合同 `KEEP`。v003 的八个 prediction/SHA/vector 是执行确定性和固定种子准确率诊断；R1 相对
+K100 的 Avg-mAP 为 `+0.5353 pp`，mAP@0.6 为 `-0.1042 pp`，属于混合且接近的观察。由于没有
+成本、功耗、显存和边界产物，它既不能支持也不能否定效率主张。
+
+唯一 successor 是 `ZOOMTOKEN-BPNS-R1-DECOUPLED-DIAGNOSTIC-AND-COST-CLOSURE-v004`。
+成本采集、prediction identity 与离线诊断必须解耦：每 pass 先原子保存 raw cost、power coverage、
+prediction SHA 和 pass receipt，八 pass 后才运行非计时 diagnostics。主判据冻结为每臂四 pass
+p50 中位数比与完整 pass gross-energy 中位数比均 `<=0.95`。任一失败即停止当前效率 headline；
+若在 raw acquisition 完成前再次协议失败，则不授权 v005 或更多 BPNS 重放。任何终态均先交 fresh
+Pro，不自动添加种子、辅助臂、阈值修订、resume 或 rerun。

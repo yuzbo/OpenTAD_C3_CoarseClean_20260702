@@ -4693,3 +4693,14 @@ append_only: true
   硬门未通过，冻结的四-pass-median 成本主估计不可计算。该轮是 evaluator 接口/协议失败，不是
   模型失败或科学负结果；八个 accuracy vectors 仅作终态诊断。job 不恢复、不重跑、不补造产物；
   完整事实交给一次 fresh exact-Project Pro 独立裁决，在其返回前不创建 successor 或选线。
+
+- 2026-08-28：v003 的 fresh exact-Project post-result Pro 复盘已审计完成。conversation
+  `6a919f06-bc94-83ea-b3e6-dd07f22375ee` 使用浏览器可见 `GPT-5.6 Pro`、七个 attachment-only
+  文件、实际提交 1 次、follow-up 0；角色合同 `KEEP`。Pro 将 v003 判为工程缺陷触发、协议无效、
+  科学无方向，并给出 `CONTINUE_ONCE_WITH_DECOUPLED_COST_CLOSURE`。八个 raw evaluator vector
+  只支持固定 seed/checkpoint 的准确率可行性诊断；R1−K100 为 Avg-mAP `+0.5353 pp`，mAP@0.6
+  `-0.1042 pp`，其余阈值混合但接近，不能承担效率或边界主张。唯一 v004 从 `8a59d655…` 建立
+  clean minimal descendant，逐 pass 先原子保存 raw cost/power/prediction SHA/receipt，八 pass 后
+  才运行非计时短动作与边界诊断；主 p50 与 complete-pass energy 的四-pass 中位数比均须
+  `<=0.95`。只允许一个新 Slurm job；若 raw acquisition 前再次协议失败，则不授权 v005 或更多
+  BPNS replay，效率保持未知并转交 fresh Pro。

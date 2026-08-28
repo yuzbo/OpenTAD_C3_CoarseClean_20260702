@@ -40,18 +40,19 @@ max_chars: 8000
   `profile.json`, cost rows, power trace, measured latency/energy/memory, short-action or
   boundary summary. This deterministic evaluator-construction omission is also not a
   model result or efficiency evidence.
-- **Fresh Pro adjudication.** The exact-Project Pro review returned `REVISE` and
-  permanently closed v002 as efficiency evidence. It classified the run as a valid
-  execution of a scientifically unidentifiable admission rule: reported `61.14`
-  denotes the rounding interval `[61.135, 61.145)`, so the observed value is only
-  `0.0480390970556900 pp` from the closest compatible raw value. The correct historical
-  parity diagnosis is therefore `indeterminate`, not a hard failure or a new reference.
-  BPNS-R1 remains `single-seed accuracy feasible; efficiency unknown` and is not yet
-  publishable as an efficiency result.
-- **Only next decision-changing task.** Complete one fresh exact-Project post-result Pro
-  adjudication for the frozen v003 terminal evidence. Codex must not repair, rerun,
-  resume, create a successor, select a route, widen a threshold or start secondary arms
-  before that independent decision.
+- **Fresh Pro adjudication.** The exact-Project post-result review classified v003 as
+  engineering-defective, protocol-invalid and scientifically directionless, then returned
+  `CONTINUE_ONCE_WITH_DECOUPLED_COST_CLOSURE`; the role contract remains `KEEP`. The exact
+  raw diagnostic differences are mixed rather than uniformly positive: R1−K100 is
+  `+0.5353 pp` Avg-mAP and `+0.7520/+0.1518/+1.6238/-0.1042/+0.2528 pp` at tIoU
+  `0.3/0.4/0.5/0.6/0.7`. This supports only fixed-seed accuracy feasibility; efficiency,
+  memory, energy and boundary protection remain unknown.
+- **Only next decision-changing task.** Execute exactly one
+  `ZOOMTOKEN-BPNS-R1-DECOUPLED-DIAGNOSTIC-AND-COST-CLOSURE-v004` from clean base
+  `8a59d655…`. Decouple raw cost/power persistence from prediction identity and offline
+  diagnostics, persist each pass before any later diagnostic can fail, use the frozen
+  four-pass-median p50 and complete-pass-energy ratios, then return any terminal state to
+  one fresh Pro. No v005, retry, resume, seed, auxiliary arm or threshold change is allowed.
 - **Current execution state.** The minimal clean/pushed v003 descendant is
   `8a59d655005b9030d8ea5dc17ee2620844cb587b`; only the profiler, its focused
   tests, and the v003 launcher differ from `e9323448…`. Local and N16R4 focused
@@ -62,7 +63,8 @@ max_chars: 8000
   `FAILED 1:0 / FAILED_PROTOCOL_INVALID`. All eight predictions and unrounded evaluator
   vectors exist and are identical within each arm, but measurement completeness failed
   before any cost/power/boundary evidence was persisted. These vectors are diagnostic
-  only; a fresh post-result Pro review is pending.
+  only. The audited Pro review is complete; v004 Builder is active under the bounded
+  successor above.
 - **Frozen primary aggregation (not instantiated by job `1258299`).** The profiler's top-level `comparison` pools all
   windows from four passes per arm. It is descriptive but does not implement the
   Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by
