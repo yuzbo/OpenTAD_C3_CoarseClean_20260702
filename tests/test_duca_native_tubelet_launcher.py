@@ -12,6 +12,9 @@ def test_launcher_binds_the_two_arms_and_terminal_ema_evaluation() -> None:
     assert "duca_native_tubelet_uniform_reconstruct_fixed384_official60.py" in text
     assert "duca_native_tubelet_coreset_fixed384_official60.py" in text
     assert "workflow.max_train_iters=2" in text
+    assert '--resume "$PRE_RUN_CHECKPOINT"' in text
+    assert "successful_optimizer_updates\"]) == 4" in text
+    assert "successful_optimizer_updates\"]) == 6000" in text
     assert "epoch_59.pth" in text
     assert "--checkpoint-state-key state_dict_ema" in text
     assert "--expected-checkpoint-epoch 59" in text

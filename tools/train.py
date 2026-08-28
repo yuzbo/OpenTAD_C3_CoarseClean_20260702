@@ -514,6 +514,7 @@ def main():
         or cfg.workflow.get("training_probe_json", None)
     )
     update_audit = duca_training.new_update_audit() if collect_update_audit else None
+    preserve_resume_state = bool(cfg.workflow.get("preserve_resume_state", False))
     epoch_records = []
 
     # resume: reset epoch, optimizer, scheduler, EMA, scaler, and formal audit
@@ -532,7 +533,7 @@ def main():
             model_ema.module.load_state_dict(checkpoint["state_dict_ema"])
         if scaler is not None and "grad_scaler" in checkpoint:
             scaler.load_state_dict(checkpoint["grad_scaler"])
-        elif duca_formal_contract is not None:
+        elif duca_formal_contract is not None or preserve_resume_state:
             raise RuntimeError("formal DUCA resume checkpoint lacks GradScaler state")
         if duca_formal_contract is not None:
             update_audit, epoch_records = duca_training.restore_training_state(
@@ -555,6 +556,20 @@ def main():
             rng_state = checkpoint.get("rng_state")
             if not isinstance(rng_state, dict):
                 raise RuntimeError("formal DUCA resume checkpoint lacks global RNG state")
+            duca_training.restore_global_rng_state(rng_state)
+        elif preserve_resume_state:
+            successful_updates = checkpoint.get("successful_optimizer_updates")
+            if (
+                update_audit is None
+                or not isinstance(successful_updates, int)
+                or isinstance(successful_updates, bool)
+                or successful_updates < 0
+            ):
+                raise RuntimeError("resume checkpoint lacks a valid optimizer update count")
+            update_audit["successful_optimizer_updates"] = successful_updates
+            rng_state = checkpoint.get("rng_state")
+            if not isinstance(rng_state, dict):
+                raise RuntimeError("resume checkpoint lacks global RNG state")
             duca_training.restore_global_rng_state(rng_state)
 
         del checkpoint  #  save memory if the model is very large such as ViT-g
@@ -715,7 +730,7 @@ def main():
                     scaler=scaler,
                     rng_state=(
                         None
-                        if duca_formal_contract is None
+                        if duca_formal_contract is None and not preserve_resume_state
                         else duca_training.capture_global_rng_state()
                     ),
                     successful_optimizer_updates=(

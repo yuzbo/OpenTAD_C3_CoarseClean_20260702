@@ -82,11 +82,22 @@ if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then
 fi
 
 if [[ "${PRE_RUN_ONLY:-0}" == 1 ]]; then
-  exec "$PYTHON" tools/train.py "$CONFIG" --seed 3407 --cfg-options \
+  "$PYTHON" tools/train.py "$CONFIG" --seed 3407 --cfg-options \
     work_dir="$RUN_ROOT/work" "${common_cfg[@]}" \
     workflow.end_epoch=1 workflow.max_train_iters=2 \
     workflow.val_eval_interval=-1 workflow.val_loss_interval=-1 \
     workflow.val_start_epoch=9999 workflow.checkpoint_interval=1
+  PRE_RUN_CHECKPOINT="$RUN_ROOT/work/gpu1_id0/checkpoint/epoch_0.pth"
+  [[ -r "$PRE_RUN_CHECKPOINT" ]] || fail "PRE_RUN checkpoint is missing"
+  "$PYTHON" tools/train.py "$CONFIG" --seed 3407 --resume "$PRE_RUN_CHECKPOINT" \
+    --cfg-options work_dir="$RUN_ROOT/resume" "${common_cfg[@]}" \
+    workflow.end_epoch=2 workflow.max_train_iters=2 \
+    workflow.val_eval_interval=-1 workflow.val_loss_interval=-1 \
+    workflow.val_start_epoch=9999 workflow.checkpoint_interval=1
+  RESUMED_CHECKPOINT="$RUN_ROOT/resume/gpu1_id0/checkpoint/epoch_1.pth"
+  [[ -r "$RESUMED_CHECKPOINT" ]] || fail "resumed PRE_RUN checkpoint is missing"
+  "$PYTHON" -c 'import sys, torch; c=torch.load(sys.argv[1], map_location="cpu"); required={"state_dict", "state_dict_ema", "optimizer", "scheduler", "grad_scaler", "epoch", "successful_optimizer_updates", "rng_state"}; missing=sorted(required.difference(c)); assert not missing, missing; assert int(c["epoch"]) == 1; assert int(c["successful_optimizer_updates"]) == 4' "$RESUMED_CHECKPOINT"
+  exit 0
 fi
 
 "$PYTHON" tools/train.py "$CONFIG" --seed 3407 --cfg-options \
@@ -94,6 +105,7 @@ fi
 
 CHECKPOINT="$RUN_ROOT/work/gpu1_id0/checkpoint/epoch_59.pth"
 [[ -r "$CHECKPOINT" ]] || fail "terminal epoch-59 checkpoint is missing"
+"$PYTHON" -c 'import sys, torch; c=torch.load(sys.argv[1], map_location="cpu"); required={"state_dict", "state_dict_ema", "optimizer", "scheduler", "grad_scaler", "epoch", "successful_optimizer_updates", "rng_state"}; missing=sorted(required.difference(c)); assert not missing, missing; assert int(c["epoch"]) == 59; assert int(c["successful_optimizer_updates"]) == 6000' "$CHECKPOINT"
 "$PYTHON" tools/test.py "$CONFIG" --checkpoint "$CHECKPOINT" --seed 3407 \
   --expected-checkpoint-epoch 59 --checkpoint-state-key state_dict_ema \
   --metrics-json "$RUN_ROOT/metrics_epoch59_ema.json" --cfg-options \
