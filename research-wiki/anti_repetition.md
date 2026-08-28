@@ -48,8 +48,10 @@ updated: 2026-08-28
    `K100,R1,R1,K100,R1,K100,K100,R1` order, persist each pass's prediction/evaluator
    evidence and identity, use the four-pass median per arm for p50 and gross energy,
    and emit success plus controlled-failure terminal receipts. Any identity or
-   measurement failure is protocol-invalid only and must not auto-resubmit. Git push,
-   remote write and Slurm/GPU execution require explicit human authorization.
+   measurement failure is protocol-invalid only and must not auto-resubmit. The user
+   explicitly authorized autonomous Git push, remote deployment and Slurm/GPU execution;
+   candidate `8a59d655005b9030d8ea5dc17ee2620844cb587b` is pushed, precheck job `1258524`
+   completed `0:0`, and the only formal v003 job is `1258526`. Do not submit a duplicate.
    Do not apply the primary 5% efficiency gate directly to the profiler's pooled
    `comparison.r1_over_k100` fields. The Pro-frozen primary estimator first computes
    one end-to-end p50 and one total-energy value for each complete pass, then takes
@@ -72,8 +74,8 @@ updated: 2026-08-28
    observed latency or power order drift as thermal drift because temperature is not
    measured. Disclose that final video-level NMS cost is amortized across window rows.
    These v002 coverage limitations are historical facts, not a template for v003.
-   Pro has required v003 to persist complete per-pass evidence and measurement identity;
-   do not backfill v002 or silently reuse its incomplete serializer.
+   The fixed v003 profiler persists complete per-pass evidence and measurement identity;
+   do not backfill v002, read partial v003 metrics, or silently reuse the v002 serializer.
 
 0. The exact `FULL_REPRESENTATION_TEMPORAL_REUSE-v001` route is terminal
    `STOP_BEFORE_IMPLEMENTATION` at revision `bffff43d...`. Do not implement a

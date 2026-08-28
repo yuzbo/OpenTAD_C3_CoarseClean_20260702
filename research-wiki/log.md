@@ -4668,3 +4668,17 @@ append_only: true
   完整性，历史精度改为非阻塞三态诊断，完整保存八 pass 证据并按每臂四 pass 中位数计算主要
   p50/能耗估计。角色合同 `KEEP`；Git push、远端写入和 Slurm/GPU 动作需人工授权。本条只摄取
   Pro 裁决和任务，不新增模型、性能或成本结果。
+
+- 2026-08-28：用户明确授权 Codex 自主推进正常 Git、远端部署和 Slurm/GPU 实验步骤。v003
+  Builder 从 `e9323448f6cd78b99bb3de53fd9ffb55f3676d65` 建立最小 clean descendant
+  `8a59d655005b9030d8ea5dc17ee2620844cb587b`，仅修改 profiler、focused tests 和 v003
+  launcher。修正后的历史两位小数 parity 只作三态诊断；执行身份与测量完整性 fail closed；八个
+  pass 分别保存 prediction/evaluator/hash；主估计为每臂四 pass 中位数；prediction hash 变化只
+  作诊断；短动作/边界停止条件使用四个 R1 pass 全部劣于四个 K100 pass 的范围完全分离。
+  local 与 N16R4 focused tests 均 `21 passed`；fresh independent Critic `PASS`，fresh result-blind
+  Evaluator `PRE_RUN_READY`。候选已推送并部署到独立 clean source root。结果盲 precheck job
+  `1258524` 于 `g0063` `COMPLETED 0:0`，返回 `PRECHECK_READY`、411 MP4、211/792 population、
+  exact commit 与 data/checkpoint/config/evaluator identity，且明确不读取 validation metrics、
+  不训练或 resume。唯一正式 job `1258526`（`zt-bpns-v003-8a59d655`）于
+  `2026-08-28 11:58:39 +08:00` 在 `g0063` 开始，资源为 gpu partition、1 GPU、5 CPU、8 小时。
+  当前只形成实现、准入与运行状态证据；终态前不读取或解释任何 partial 性能、成本或边界数值。

@@ -6,10 +6,10 @@
 - **候选机制：** BPNS-R1 在 VideoMAE 前保留一个连续无孔洞的 `8×8/K64` 支持；所有保留 token 仍完整执行 12 层 VideoMAE-S 与既有 Adapter，不使用历史 cache、carry 或深度跳过。
 - **已有证据：** 单个 seed-42 中，K100 与 R1 的 final-EMA 为 `68.51/61.19/46.27` 与 `69.07/61.14/46.57`。这支持准确率可行性，并把“连续支持拓扑”保留为有价值的机制解释。
 - **不能主张：** 36% 原生 token 减少尚未转化为已测得的延迟、显存或能耗收益；也没有多种子、跨检测器或跨数据集证据。
-- **当前实验：** 唯一替代回放 job `1258299` 已于 `2026-08-28 01:33:30 +08:00` 以 `FAILED 1:0` 终止。首个 R1 pass 的未舍入 `mAP@0.6=61.0869609029443100 pp` 与冻结 reference `61.14 pp` 相差 `0.0530390970556900 pp`，超过 inclusive `0.05 pp` 门槛；实现仅在差值严格大于门槛时失败，故该终止符合冻结合同。八个 pass 未完成，结果根为空，未形成 `profile.json`、`terminal_receipt.json` 或任何可解释的成本/质量产物。
+- **当前实验：** v002 job `1258299` 已永久封存为无效率结果的准入协议失败。Pro 冻结的 v003 已实现于 clean/pushed revision `8a59d655005b9030d8ea5dc17ee2620844cb587b`；local/remote focused tests 均为 `21 passed`，fresh Critic `PASS`，fresh result-blind Evaluator `PRE_RUN_READY`。结果盲 precheck job `1258524` 已 `COMPLETED 0:0`；唯一正式 job `1258526` 于 `2026-08-28 11:58:39 +08:00` 在 `g0063` 开始运行。运行中不读取或解释 partial 性能。
 - **Pro 裁决：** 全新 exact-Project Pro 复盘已返回 `REVISE`。v002 被永久关闭为效率证据，但不是模型失败：历史 `61.14` 只是舍入区间 `[61.135,61.145)`，当前 `61.0869609` 到最近兼容原始值的最小距离为 `0.0480391 pp`，因此科学上只能判为 `indeterminate`，不能用两位小数点值执行二元硬准入。
-- **唯一下一任务：** `ZOOMTOKEN-BPNS-R1-IDENTITY-GATED-FULL-STACK-REPLAY-v003`。只从 `e9323448…` 的最小 clean descendant 修订 profiler/tests/launcher：硬门只检查执行身份与测量完整性；历史准确率改为非阻塞三态诊断；完整保存八个 pass 的预测、evaluator 向量与身份，以每臂四次完整 pass 的中位数计算 p50 和 gross energy。不得重跑 v002、改写历史 reference、启动辅助臂或在无人工授权时推送/远端写入/提交 Slurm。
-- **已知终态证据覆盖偏差：** 当前 profiler 每个 arm 只持久化一份 canonical prediction，并在内存中核对重复 pass 的 prediction 相等；每个 pass 的 evaluator 向量嵌入 `profile.pass_receipts`，而不是另存八份 prediction/evaluator 文件。accuracy reference 合同保存 source revision/path/symbol/SHA，但 prediction 文件不保存 hash。`cost_samples.jsonl` 足以按 `(arm, pass_index, dataset_item_id)` 重建完整 population 与 pass-level 主估计，但没有单独的 population receipt。功耗采样缺失或非法会使运行失败，因此成功终态可间接证明测量窗口完成了积分；不过产物不包含定量 coverage/gap 统计，也未测量温度，故只能报告观察到的功耗/延迟顺序漂移，不能称为热漂移。视频级 final NMS 时间与能耗被摊入窗口行，必须明确披露。`profile.json` 只记录 Python/Torch/CUDA 摘要，不内嵌完整命令、annotation/class-map/video/checkpoint 路径、完整包锁或成功侧 anomaly 清单；这些身份只能从启动回执、launcher 与 Slurm 日志外部复原并按外部证据标注。不得事后伪造缺失的逐 pass 文件或元数据；终态后把直接证据、可重算证据和未测信息原样交给 fresh Pro，由其独立判断该轮证据能否支持论文主张、仅作诊断，或需要新的有界测量。
+- **唯一下一任务：** `ZOOMTOKEN-BPNS-R1-IDENTITY-GATED-FULL-STACK-REPLAY-v003` 正在执行。硬门只检查执行身份与测量完整性；历史准确率是非阻塞三态诊断；八个 pass 分别保存预测、evaluator 向量与身份，主要 p50 和 gross energy 使用每臂四次完整 pass 的中位数。不得重跑 v002、改写历史 reference、启动辅助臂或在 v003 终态前追加实验。
+- **证据边界：** v003 已补齐逐 pass prediction/evaluator hash、population/evaluator/data/checkpoint/runtime 身份、功耗 coverage、pass-level 主估计和成功/受控失败 terminal receipt。prediction hash 变化本身只作诊断；短动作或边界停止条件必须是四次 R1 全部劣于四次 K100 的范围完全分离。当前仍无 v003 终态性能、成本或边界结果，不能声称加速、显存或能效提升。
 
 以下按日期和实验族保留完整证据与负结果；运行标识用于定位原始材料，不替代上述科学判断。
 
@@ -35,7 +35,7 @@
 
 > **2026-08-25 动态选择性重计算复核：** 新一轮附件式 ZoomToken Project Pro 讨论进一步比较了 clip 内动态重计算 `IC-DRU`、重叠窗口精确缓存 `OW-ECR` 和 current-proxy 条件深度路由 `PCD-DRU`。理想已知骨干算术上界分别约节省 `50.12%`、`7.66%` 和 `60.16%`，但前两种动态路线要求平均仅刷新约 25% 的 token、仍保留 dense/full-refresh 峰值，并且其变化路由、轻量残差与逐 token 深度分配均可被已有 Eventful、视频缓存和 MoD/A-MoD 工作分解覆盖；窗口路线则因 Adapter 依赖传播和约 `54 MiB/样本` 的十二层缓存缺少全链路余量。Pro 对这三个精确定义候选给出 `STOP_BEFORE_IMPLEMENTATION`，新增正式实验为 0。本裁决是实施前设计判断，不是动态刷新、特征复用或 20%–30% 更新率的经验失败，也没有产生新的准确率或端到端成本结果。
 
-- 更新时间：2026-08-28（论文主线仍为当前观测的 `BPNS-R1`，但同硬件成本证据仍未建立。jobs `1257281/1258299` 均封存为 replay-admission 失败；fresh Pro 已裁决 `REVISE` 并冻结唯一 v003 身份门控完整栈回放。下一动作是按 Pro 合同完成最小 Builder/Critic/Evaluator 闭环，并在人工授权后才进行 Git push、远端写入与 Slurm/GPU 操作；DSR6-KV、MOD32-KV、DROP32 不先行，A-MoD-50 当前不训练）。
+- 更新时间：2026-08-28（论文主线仍为当前观测的 `BPNS-R1`，但同硬件成本证据仍未建立。jobs `1257281/1258299` 均封存为 replay-admission 失败；fresh Pro 已裁决 `REVISE`。v003 已完成 Builder/Critic/Evaluator 与结果盲 precheck，唯一正式 job `1258526` 正在运行；终态前不读取 partial 性能，也不启动 DSR6-KV、MOD32-KV、DROP32 或 A-MoD-50）。
 - 证据等级：已有真实 THUMOS14 validation 性能。官方路径 A、全部 token + sparse adapter 的 B、主干前 ROI `K=64` + 同一 adapter 的 C，其 Avg-mAP/mAP@0.7 分别为 `68.73/47.24`、`68.51/46.27`、`68.22/45.35`。这是一种子严格归因结果；当前仍无完整端到端成本结果，不能声称计算效率提升。
 
 ## 1. 一句话问题与应用价值

@@ -52,6 +52,14 @@ max_chars: 8000
   of four complete pass estimates per arm, and fail closed on identity or measurement
   incompleteness without automatic resubmission. Do not rerun v002, widen its tolerance,
   promote `61.0869609` to a historical reference, or start secondary arms.
+- **Current execution state.** The minimal clean/pushed v003 descendant is
+  `8a59d655005b9030d8ea5dc17ee2620844cb587b`; only the profiler, its focused
+  tests, and the v003 launcher differ from `e9323448…`. Local and N16R4 focused
+  checks both report `21 passed`; a fresh independent Critic returned `PASS`
+  and a fresh result-blind Evaluator returned `PRE_RUN_READY`. Slurm precheck
+  job `1258524` completed `0:0` without reading validation metrics or training,
+  and formal job `1258526` started on `g0063` at `2026-08-28 11:58:39 +08:00`.
+  No live or partial metric from that job is admissible evidence.
 - **Frozen primary aggregation (not instantiated by job `1258299`).** The profiler's top-level `comparison` pools all
   windows from four passes per arm. It is descriptive but does not implement the
   Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by
