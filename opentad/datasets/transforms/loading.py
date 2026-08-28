@@ -1,4 +1,5 @@
 import copy
+import json
 import os
 import pickle
 import random
@@ -143,6 +144,153 @@ class SlidingWindowTrunc:
             results["masks"] = masks.bool()
 
         results["feats"] = window_feats.float()
+        return results
+
+
+@PIPELINES.register_module()
+class LoadDucaWindowBudgetFrames:
+    """Load the table-frozen exact-K RGB observations for one THUMOS window."""
+
+    _ARMS = {"fixed384", "semantic", "permuted_control"}
+
+    def __init__(self, table_path, arm, detector_length=384, clip_len=16, scale_factor=1):
+        self.table_path = os.path.abspath(os.path.expanduser(str(table_path)))
+        self.arm = str(arm)
+        self.detector_length = int(detector_length)
+        self.clip_len = int(clip_len)
+        self.scale_factor = int(scale_factor)
+        if self.arm not in self._ARMS:
+            raise ValueError(f"unsupported DUCA budget arm: {self.arm}")
+        if self.detector_length <= 1 or self.clip_len <= 0 or self.scale_factor != 1:
+            raise ValueError("DUCA budget frames require detector_length>1, clip_len>0 and scale_factor=1")
+        if not os.path.isfile(self.table_path):
+            raise FileNotFoundError(self.table_path)
+        self.rows = self._read_table(self.table_path)
+
+    @staticmethod
+    def _read_table(path):
+        rows = {}
+        with open(path, "r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                key = (
+                    str(row["split"]),
+                    str(row["video_name"]),
+                    int(row["window_index"]),
+                )
+                if key in rows:
+                    raise ValueError(f"duplicate DUCA window-table key {key} at line {line_number}")
+                rows[key] = row
+        if not rows:
+            raise ValueError("DUCA window table is empty")
+        return rows
+
+    @staticmethod
+    def _selected_to_detector_grid(selected_positions, detector_length):
+        selected = np.asarray(selected_positions, dtype=np.float64)
+        if selected.ndim != 1 or selected.size < 2 or selected.size % 2 != 0:
+            raise ValueError("selected positions must be a non-empty even 1-D sequence")
+        if np.any(np.diff(selected) <= 0):
+            raise ValueError("selected positions must be strictly increasing")
+        tubelet_centers = selected.reshape(-1, 2).mean(axis=1)
+        source_axis = np.arange(tubelet_centers.size, dtype=np.float64)
+        target_axis = np.linspace(0.0, float(tubelet_centers.size - 1), detector_length)
+        detector_grid = np.interp(target_axis, source_axis, tubelet_centers)
+        if np.any(np.diff(detector_grid) <= 0):
+            raise ValueError("detector physical-time grid must be strictly increasing")
+        return detector_grid.astype(np.float32)
+
+    @staticmethod
+    def _true_to_detector(values, detector_grid, valid_len):
+        true_knots = np.asarray(detector_grid, dtype=np.float64)
+        detector_knots = np.arange(true_knots.size, dtype=np.float64)
+        if true_knots[0] > 0.0:
+            true_knots = np.concatenate(([0.0], true_knots))
+            detector_knots = np.concatenate(([-1.0], detector_knots))
+        if true_knots[-1] < float(valid_len):
+            true_knots = np.concatenate((true_knots, [float(valid_len)]))
+            detector_knots = np.concatenate((detector_knots, [float(detector_grid.size)]))
+        return np.interp(values, true_knots, detector_knots).astype(np.float32)
+
+    def __call__(self, results):
+        split = str(results["duca_split"])
+        video_name = str(results["video_name"])
+        window_index = int(results["duca_window_index"])
+        key = (split, video_name, window_index)
+        if key not in self.rows:
+            raise KeyError(f"DUCA window table has no row for {key}")
+        row = self.rows[key]
+        if int(row["window_count"]) != int(results["duca_window_count"]):
+            raise ValueError(f"DUCA window count mismatch for {key}")
+        if int(row["window_start_frame"]) != int(results["window_start_frame"]):
+            raise ValueError(f"DUCA window start mismatch for {key}")
+        if int(row["window_end_frame"]) != int(results["window_end_frame"]):
+            raise ValueError(f"DUCA window end mismatch for {key}")
+
+        requested_k = 384 if self.arm == "fixed384" else int(row[f"{self.arm}_budget"])
+        if requested_k not in {256, 384, 512} or requested_k % self.clip_len != 0:
+            raise ValueError(f"invalid DUCA exact-K budget {requested_k} for {key}")
+        selected_positions = np.asarray(
+            row["positions_by_budget"][str(requested_k)], dtype=np.int64
+        )
+        if selected_positions.shape != (requested_k,):
+            raise ValueError(f"DUCA row {key} does not contain exact K={requested_k} positions")
+        if selected_positions.tolist() != sorted(set(selected_positions.tolist())):
+            raise ValueError(f"DUCA selected positions must be sorted unique for {key}")
+
+        total_frames = int(results["total_frames"])
+        frame_stride = int(results["snippet_stride"])
+        dense_frame_indices = np.arange(0, total_frames, frame_stride)
+        start = min(int(results["feature_start_idx"]), len(dense_frame_indices))
+        end = min(int(results["feature_end_idx"]) + 1, len(dense_frame_indices))
+        dense_window = dense_frame_indices[start:end]
+        valid_len = int(dense_window.size)
+        if valid_len < requested_k:
+            raise RuntimeError(
+                f"DUCA exact-K={requested_k} exceeds valid window length {valid_len} for {key}"
+            )
+        if selected_positions[0] < 0 or selected_positions[-1] >= valid_len:
+            raise ValueError(f"DUCA selected positions exceed valid window for {key}")
+
+        detector_grid = self._selected_to_detector_grid(selected_positions, self.detector_length)
+        if "gt_segments" in results:
+            results["gt_segments"] = self._true_to_detector(
+                np.asarray(results["gt_segments"], dtype=np.float32),
+                detector_grid,
+                valid_len,
+            )
+            results["gt_remapped_to_selected_axis"] = True
+            results["gt_coordinate_space"] = "selected_axis_index"
+
+        results["frame_inds"] = dense_window[selected_positions].astype(np.int64)
+        results["num_clips"] = requested_k // self.clip_len
+        results["clip_len"] = self.clip_len
+        results["masks"] = torch.ones(self.detector_length, dtype=torch.bool)
+        results["duca_budget_arm"] = self.arm
+        results["duca_requested_k"] = requested_k
+        results["duca_effective_k"] = requested_k
+        results["duca_unique_k"] = int(selected_positions.size)
+        results["duca_actual_backbone_input_k"] = requested_k
+        results["duca_actual_backbone_chunks"] = requested_k // self.clip_len
+        results["duca_detector_length"] = self.detector_length
+        # This becomes true only after the backbone has actually consumed the
+        # requested K without global-max padding.
+        results["duca_dynamic_compute_realized"] = False
+        results["duca_acquisition_positions"] = selected_positions.tolist()
+        results["selected_axis_to_true_time_dense_index"] = detector_grid.tolist()
+        results["irregular_selected_positions"] = detector_grid.tolist()
+        results["irregular_selected_count"] = self.detector_length
+        results["irregular_selected_valid_len"] = self.detector_length
+        results["irregular_dense_valid_len"] = valid_len
+        results["truetime_dense_len"] = int(results["window_size"])
+        results["truetime_dense_valid_len"] = valid_len
+        results["detector_prediction_inverse_map_required"] = True
+        results["detector_output_coordinate_space"] = "selected_axis_index"
+        results["irregular_native_axis"] = False
+        results["duca_window_table_path"] = self.table_path
         return results
 
 

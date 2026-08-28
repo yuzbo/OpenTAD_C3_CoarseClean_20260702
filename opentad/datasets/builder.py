@@ -24,12 +24,14 @@ def build_dataset(cfg, default_args=None):
 
 
 def build_dataloader(dataset, batch_size, rank, world_size, shuffle=False, drop_last=False, **kwargs):
+    sampler_seed = int(kwargs.pop("sampler_seed", 0))
     sampler = torch.utils.data.distributed.DistributedSampler(
         dataset,
         num_replicas=world_size,
         rank=rank,
         shuffle=shuffle,
         drop_last=drop_last,
+        seed=sampler_seed,
     )
 
     assert batch_size % world_size == 0, f"batch size {batch_size} should be divided by world size {world_size}"
@@ -47,6 +49,22 @@ def build_dataloader(dataset, batch_size, rank, world_size, shuffle=False, drop_
 def collate(batch):
     if not isinstance(batch, Sequence):
         raise TypeError(f"{batch.dtype} is not supported.")
+
+    if batch and isinstance(batch[0], list):
+        window_counts = [len(video_windows) for video_windows in batch]
+        batch = [window for video_windows in batch for window in video_windows]
+        if not batch:
+            raise ValueError("video-grouped DUCA batch contains no windows")
+        collate_data = {
+            "inputs": [sample["inputs"] for sample in batch],
+            "masks": [sample["masks"] for sample in batch],
+            "duca_video_window_counts": window_counts,
+        }
+        for key in batch[0]:
+            if key in {"inputs", "masks"}:
+                continue
+            collate_data[key] = [sample[key] for sample in batch]
+        return collate_data
 
     gpu_stack_keys = ["inputs", "masks"]
 

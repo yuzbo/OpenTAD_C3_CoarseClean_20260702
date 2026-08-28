@@ -1,5 +1,6 @@
 import inspect
 import random
+import time
 from contextlib import nullcontext
 
 import numpy as np
@@ -41,6 +42,9 @@ class ActionFormer(SingleStageDetector):
         pc_ot_mras_reader_eval_override=None,
         selector_train_only=False,
         selector_train_only_skip_detector=False,
+        offline_window_table=False,
+        freeze_frame_selector=False,
+        profile_variable_k=False,
     ):
         super().__init__(
             backbone=backbone,
@@ -72,6 +76,18 @@ class ActionFormer(SingleStageDetector):
         if self.pc_ot_mras_reader_value_loss is not None and self.pc_ot_mras_reader is None:
             raise ValueError("pc_ot_mras_reader_value_loss requires pc_ot_mras_reader")
         self.selector_train_only = bool(selector_train_only)
+        self.offline_window_table = bool(offline_window_table)
+        self.freeze_frame_selector = bool(freeze_frame_selector)
+        self.profile_variable_k = bool(profile_variable_k)
+        self.last_variable_k_work = None
+        if self.offline_window_table and self.token_compressor is not None:
+            raise ValueError("offline_window_table is incompatible with token_compressor")
+        if self.freeze_frame_selector:
+            if self.frame_selector is None:
+                raise ValueError("freeze_frame_selector=True requires frame_selector")
+            self.frame_selector.eval()
+            for parameter in self.frame_selector.parameters():
+                parameter.requires_grad = False
         self.selector_train_only_skip_detector = bool(
             selector_train_only_skip_detector
         )
@@ -130,6 +146,8 @@ class ActionFormer(SingleStageDetector):
 
     def train(self, mode=True):
         super().train(mode)
+        if self.freeze_frame_selector:
+            self.frame_selector.eval()
         if self.selector_train_only:
             self.frame_selector.train(mode)
             for module in (
@@ -142,8 +160,14 @@ class ActionFormer(SingleStageDetector):
                     module.eval()
         return self
 
+    def after_optimizer_step(self):
+        if self.offline_window_table:
+            return None
+        return super().after_optimizer_step()
+
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
-        skip_frame_selector = bool(kwargs.pop("_duca_skip_frame_selector", False))
+        kwargs.pop("duca_video_window_counts", None)
+        skip_frame_selector = bool(kwargs.pop("_duca_skip_frame_selector", False)) or self.offline_window_table
         counterfactual_eval = bool(kwargs.pop("_duca_counterfactual_eval", False))
         gt_boundary_validity = kwargs.pop("gt_boundary_validity", None)
         losses = dict()
@@ -218,7 +242,9 @@ class ActionFormer(SingleStageDetector):
             )
 
         self._restore_protected_detector_rng(detector_rng_state)
-        if self.with_backbone:
+        if self.with_backbone and self.offline_window_table:
+            x, masks = self._offline_window_table_backbone(inputs, masks, metas)
+        elif self.with_backbone:
             x = self.backbone(inputs)
         else:
             x = inputs
@@ -490,7 +516,7 @@ class ActionFormer(SingleStageDetector):
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
         self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
         detector_rng_state = self._capture_protected_detector_rng(inputs)
-        if self.frame_selector is not None:
+        if self.frame_selector is not None and not self.offline_window_table:
             selector_outputs = self.frame_selector.forward_test(
                 inputs=inputs,
                 masks=masks,
@@ -508,7 +534,9 @@ class ActionFormer(SingleStageDetector):
             self._require_selector_remap_metadata(metas)
 
         self._restore_protected_detector_rng(detector_rng_state)
-        if self.with_backbone:
+        if self.with_backbone and self.offline_window_table:
+            x, masks = self._offline_window_table_backbone(inputs, masks, metas)
+        elif self.with_backbone:
             x = self.backbone(inputs)
         else:
             x = inputs
@@ -550,6 +578,81 @@ class ActionFormer(SingleStageDetector):
         self._last_forward_test_metas = metas
         predictions = rpn_proposals, rpn_scores
         return predictions
+
+    def _offline_window_table_backbone(self, inputs, masks, metas):
+        if not isinstance(metas, (list, tuple)) or not metas:
+            raise ValueError("offline window-table execution requires non-empty per-window metas")
+        if torch.is_tensor(inputs):
+            input_rows = [inputs[index] for index in range(int(inputs.shape[0]))]
+        elif isinstance(inputs, (list, tuple)):
+            input_rows = list(inputs)
+        else:
+            raise TypeError("offline window-table inputs must be a tensor or tensor list")
+        if torch.is_tensor(masks):
+            mask_rows = [masks[index] for index in range(int(masks.shape[0]))]
+        elif isinstance(masks, (list, tuple)):
+            mask_rows = list(masks)
+        else:
+            raise TypeError("offline window-table masks must be a tensor or tensor list")
+        if len(input_rows) != len(metas) or len(mask_rows) != len(metas):
+            raise ValueError("offline window-table inputs, masks and metas must have equal length")
+
+        buckets = {}
+        for index, (sample, meta) in enumerate(zip(input_rows, metas)):
+            if not torch.is_tensor(sample) or sample.ndim != 5:
+                raise ValueError("each offline window must be [clips,C,clip_len,H,W]")
+            actual_k = int(meta.get("duca_actual_backbone_input_k", -1))
+            observed_k = int(sample.shape[0] * sample.shape[2])
+            if actual_k not in {256, 384, 512} or observed_k != actual_k:
+                raise ValueError(
+                    f"offline window actual K mismatch: metadata={actual_k}, observed={observed_k}"
+                )
+            if int(mask_rows[index].numel()) != int(self.max_seq_len):
+                raise ValueError("offline detector mask must match projection.max_seq_len")
+            buckets.setdefault(actual_k, []).append(index)
+
+        feature_rows = [None] * len(input_rows)
+        work = []
+        for actual_k in sorted(buckets):
+            indices = buckets[actual_k]
+            bucket_inputs = torch.stack([input_rows[index] for index in indices], dim=0)
+            if self.profile_variable_k and bucket_inputs.is_cuda:
+                torch.cuda.synchronize(bucket_inputs.device)
+            start = time.perf_counter()
+            bucket_features = self.backbone(bucket_inputs)
+            if self.profile_variable_k and bucket_inputs.is_cuda:
+                torch.cuda.synchronize(bucket_inputs.device)
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            if bucket_features.ndim != 3 or int(bucket_features.shape[-1]) != int(self.max_seq_len):
+                raise RuntimeError(
+                    "offline variable-K backbone must return [B,C,projection.max_seq_len], "
+                    f"got {tuple(bucket_features.shape)}"
+                )
+            for local_index, original_index in enumerate(indices):
+                feature_rows[original_index] = bucket_features[local_index : local_index + 1]
+                metas[original_index]["duca_dynamic_compute_realized"] = True
+            work.append(
+                {
+                    "actual_backbone_input_k": int(actual_k),
+                    "actual_backbone_chunks": int(actual_k // 16),
+                    "window_count": int(len(indices)),
+                    "elapsed_ms": float(elapsed_ms),
+                    "max_memory_allocated_bytes": (
+                        int(torch.cuda.max_memory_allocated(bucket_inputs.device))
+                        if bucket_inputs.is_cuda
+                        else 0
+                    ),
+                }
+            )
+        if any(row is None for row in feature_rows):
+            raise RuntimeError("offline variable-K backbone failed to restore window order")
+        self.last_variable_k_work = {
+            "dynamic_compute_realized": True,
+            "padded_to_global_max_k": False,
+            "detector_length": int(self.max_seq_len),
+            "buckets": work,
+        }
+        return torch.cat(feature_rows, dim=0), torch.stack(mask_rows, dim=0).bool()
 
     def get_optim_groups(self, cfg):
         # separate out all parameters that with / without weight decay

@@ -2,7 +2,7 @@ from .builder import build_dataset, build_dataloader
 from .transforms import *
 from .base import *
 from .anet import AnetResizeDataset, AnetPaddingDataset, AnetSlidingDataset
-from .thumos import ThumosSlidingDataset, ThumosPaddingDataset
+from .thumos import DucaVideoGroupedThumosSlidingDataset, ThumosSlidingDataset, ThumosPaddingDataset
 from .ego4d import Ego4DSlidingDataset, Ego4DPaddingDataset, Ego4DResizeDataset
 from .epic_kitchens import EpicKitchensSlidingDataset, EpicKitchensPaddingDataset
 from .duca_stateless import DucaStatelessThumosPaddingDataset
@@ -15,6 +15,7 @@ __all__ = [
     "AnetSlidingDataset",
     "ThumosSlidingDataset",
     "ThumosPaddingDataset",
+    "DucaVideoGroupedThumosSlidingDataset",
     "Ego4DSlidingDataset",
     "Ego4DPaddingDataset",
     "Ego4DResizeDataset",
