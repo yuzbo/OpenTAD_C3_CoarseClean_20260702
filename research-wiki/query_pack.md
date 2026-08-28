@@ -26,22 +26,32 @@ max_chars: 8000
   decode-to-NMS latency, energy or peak memory because decoding, transfers, Adapter,
   detector, postprocessing and sparse-execution overhead remain. The observed
   accuracy difference may also be seed-specific.
-- **Unresolved experiment.** Both same-hardware K100/R1 replays are admission
+- **Terminal replay diagnosis.** Both same-hardware K100/R1 replays are admission
   failures, not cost evidence. Job `1257281` exposed a raw-versus-rounded reference
   binding defect. Minimal candidate
-  `e9323448f6cd78b99bb3de53fd9ffb55f3676d65` then implemented the frozen inclusive
-  `0.05 pp` comparison correctly and passed focused tests, independent Critic and
-  result-blind PRE_RUN. Its sole formal replay, job `1258299`, nevertheless failed
-  closed in the first R1 pass: unrounded `mAP@0.6=61.0869609029443100 pp` differs
-  from reference `61.14 pp` by `0.0530390970556900 pp`. The eight passes did not
-  complete, the result root is empty, and no profile, terminal receipt, prediction,
-  cost sample or power artifact exists.
-- **Next decision-changing task.** Return the exact gate failure, frozen contract,
-  empty artifact inventory and independent result-blind audits to a fresh Pro review.
-  Pro must independently decide whether the reported-2dp reference/tolerance contract
-  is scientifically adequate, whether the BPNS-R1 efficiency headline stops, and the
-  one next task. Do not widen the tolerance, synthesize terminal artifacts, rerun,
-  resume, duplicate, or advance secondary cost arms before that decision.
+  `e9323448f6cd78b99bb3de53fd9ffb55f3676d65` correctly implemented the subsequently
+  frozen inclusive `0.05 pp` point-distance gate, but its sole formal replay, job
+  `1258299`, stopped in the first R1 pass: unrounded `mAP@0.6=61.0869609029443100 pp`
+  differs from reported-2dp `61.14 pp` by `0.0530390970556900 pp`. The eight passes
+  did not complete, the result root is empty, and no cost or boundary artifact exists.
+- **Fresh Pro adjudication.** The exact-Project Pro review returned `REVISE` and
+  permanently closed v002 as efficiency evidence. It classified the run as a valid
+  execution of a scientifically unidentifiable admission rule: reported `61.14`
+  denotes the rounding interval `[61.135, 61.145)`, so the observed value is only
+  `0.0480390970556900 pp` from the closest compatible raw value. The correct historical
+  parity diagnosis is therefore `indeterminate`, not a hard failure or a new reference.
+  BPNS-R1 remains `single-seed accuracy feasible; efficiency unknown` and is not yet
+  publishable as an efficiency result.
+- **Only next decision-changing task.** Execute
+  `ZOOMTOKEN-BPNS-R1-IDENTITY-GATED-FULL-STACK-REPLAY-v003` from a minimal clean
+  descendant of `e9323448…`. Hard gates cover execution identity and measurement
+  completeness; the historical reported-2dp accuracy check is a nonblocking
+  interval-aware `compatible/incompatible/indeterminate` diagnosis. Preserve the
+  eight-pass `K100,R1,R1,K100,R1,K100,K100,R1` order, emit per-pass predictions,
+  evaluator vectors and identities, aggregate latency and gross energy as the median
+  of four complete pass estimates per arm, and fail closed on identity or measurement
+  incompleteness without automatic resubmission. Do not rerun v002, widen its tolerance,
+  promote `61.0869609` to a historical reference, or start secondary arms.
 - **Frozen primary aggregation (not instantiated by job `1258299`).** The profiler's top-level `comparison` pools all
   windows from four passes per arm. It is descriptive but does not implement the
   Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by

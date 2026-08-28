@@ -29,13 +29,27 @@ updated: 2026-08-28
    focused tests, independent Critic and result-blind PRE_RUN passed. Its only formal
    replacement, job `1258299` (`zt-bpns-r1-pv2-e9323448`), is terminal `FAILED 1:0`.
    The first R1 pass produced unrounded `mAP@0.6=61.0869609029443100 pp`, an absolute
-   difference of `0.0530390970556900 pp` from the frozen `61.14 pp` reference, so the
+   point difference of `0.0530390970556900 pp` from reported-2dp `61.14 pp`, so the
    correctly implemented inclusive `0.05 pp` gate failed. Eight passes did not finish;
    the result root is empty and contains no `profile.json`, `terminal_receipt.json`,
-   predictions, cost rows or power evidence. Seal both jobs and namespaces. Do not
-   submit a duplicate, resume, widen the tolerance, round before comparison, synthesize
-   missing artifacts, or infer model/cost performance from logs. The only next action is
-   a fresh neutral Pro review of this scientific/protocol ambiguity.
+   predictions, cost rows or power evidence. A fresh exact-Project Pro review returned
+   `REVISE` and permanently closed v002 as efficiency evidence. Because `61.14` denotes
+   `[61.135,61.145)`, the observed value is only `0.0480390970556900 pp` from the nearest
+   compatible raw value; reported-2dp parity is therefore `indeterminate`, not a valid
+   binary admission failure and not permission to replace the historical reference.
+   Seal both v001/v002 jobs and namespaces. Do not submit a duplicate, resume, widen the
+   tolerance, round before comparison, synthesize missing artifacts, infer model/cost
+   performance from logs, or promote `61.0869609` as a new baseline.
+   The only authorized successor is
+   `ZOOMTOKEN-BPNS-R1-IDENTITY-GATED-FULL-STACK-REPLAY-v003`, based on a minimal clean
+   descendant of `e9323448…`. Its hard gates are execution identity and measurement
+   completeness; historical accuracy is a nonblocking interval-aware three-state
+   diagnosis. Preserve exactly eight passes in
+   `K100,R1,R1,K100,R1,K100,K100,R1` order, persist each pass's prediction/evaluator
+   evidence and identity, use the four-pass median per arm for p50 and gross energy,
+   and emit success plus controlled-failure terminal receipts. Any identity or
+   measurement failure is protocol-invalid only and must not auto-resubmit. Git push,
+   remote write and Slurm/GPU execution require explicit human authorization.
    Do not apply the primary 5% efficiency gate directly to the profiler's pooled
    `comparison.r1_over_k100` fields. The Pro-frozen primary estimator first computes
    one end-to-end p50 and one total-energy value for each complete pass, then takes
@@ -57,9 +71,9 @@ updated: 2026-08-28
    pretending those fields were emitted by the profiler. Do not relabel
    observed latency or power order drift as thermal drift because temperature is not
    measured. Disclose that final video-level NMS cost is amortized across window rows.
-   A fresh Pro review, not Codex post-hoc completion, must decide whether the terminal
-   package is sufficient for a paper claim, diagnostic only, or needs a new bounded
-   measurement.
+   These v002 coverage limitations are historical facts, not a template for v003.
+   Pro has required v003 to persist complete per-pass evidence and measurement identity;
+   do not backfill v002 or silently reuse its incomplete serializer.
 
 0. The exact `FULL_REPRESENTATION_TEMPORAL_REUSE-v001` route is terminal
    `STOP_BEFORE_IMPLEMENTATION` at revision `bffff43d...`. Do not implement a

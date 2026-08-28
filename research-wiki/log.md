@@ -4657,3 +4657,14 @@ append_only: true
   admission/protocol failure；不能解释局部日志为模型性能、准确率保持或效率证据，也不得自动
   放宽门槛、补造产物、resume 或 duplicate。下一动作是把完整事实与未决合同交给 fresh Pro
   独立裁决；其返回前不追加实验。
+
+- 2026-08-28：exact ZoomToken Project 的唯一有效全新 Pro 终态复盘完成。浏览器可见模型为
+  `GPT-5.6 Pro`，六个附件均以 attachment-only 方式提交，实际科研提交 1 次、follow-up 0。
+  Pro 返回 `REVISE`：v002 正确执行冻结合同，但 reported-2dp `61.14` 表示
+  `[61.135,61.145)`，观测 `61.0869609029443100` 到最近兼容 raw 值只有
+  `0.0480390970556900 pp`，所以该比较科学上是 `indeterminate`，不能承担二元硬准入。v002
+  永久关闭为效率证据，BPNS-R1 仅保留单种子准确率可行、效率未知的窄主张。唯一下一任务是
+  `ZOOMTOKEN-BPNS-R1-IDENTITY-GATED-FULL-STACK-REPLAY-v003`：硬门只覆盖执行身份与测量
+  完整性，历史精度改为非阻塞三态诊断，完整保存八 pass 证据并按每臂四 pass 中位数计算主要
+  p50/能耗估计。角色合同 `KEEP`；Git push、远端写入和 Slurm/GPU 动作需人工授权。本条只摄取
+  Pro 裁决和任务，不新增模型、性能或成本结果。

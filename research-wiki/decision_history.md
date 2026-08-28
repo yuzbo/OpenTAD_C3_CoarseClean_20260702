@@ -1340,3 +1340,27 @@ pass 的未舍入 `mAP@0.6=61.0869609029443100 pp` 与冻结 reference `61.14 pp
 预测、cost samples 与功耗轨迹均不存在。Codex 不自行判断两位小数 reference 与 `0.05 pp` 合同
 是否应修订，也不放宽门槛、补造产物、恢复或重提。按照既有 Pro 任务的 stop/post-result 规则，
 下一步是一次全新的中性 Pro 科学复盘，由 Pro 独立决定停止、修订协议或其他唯一下一任务。
+
+## 115. Pro 修订 replay admission 并冻结唯一 v003 任务（2026-08-28）
+
+exact ZoomToken Project 的唯一有效全新 Pro 复盘在 verified Pro 路由下完成，裁决为 `REVISE`，
+角色合同为 `KEEP`。Pro 将 v002 分类为
+`VALID_FROZEN_CONTRACT_EXECUTION__INVALID_SCIENTIFIC_ADMISSION__NO_MODEL_OR_COST_RESULT`：
+实现正确执行了冻结的 point-distance 合同，但 reported-2dp `61.14` 只标识舍入区间
+`[61.135,61.145)`。观测 `61.0869609029443100` 到该区间的最小距离为
+`0.0480390970556900 pp`，因此不能从点值差 `0.0530390970556900 pp` 识别真实 raw-to-raw
+差是否超过 `0.05 pp`。该历史比较只能判为 `indeterminate`。v002 永久关闭为效率证据，且不得
+把当前观测改写成新的历史 reference；BPNS-R1 只保留单种子准确率可行、效率未知的窄主张。
+
+唯一下一任务冻结为 `ZOOMTOKEN-BPNS-R1-IDENTITY-GATED-FULL-STACK-REPLAY-v003`。候选必须是
+`e9323448…` 的最小 clean descendant；硬门只覆盖 execution identity 与 measurement completeness，
+历史两位小数准确率改为非阻塞的 `compatible/incompatible/indeterminate` 诊断。完整回放顺序仍为
+`K100,R1,R1,K100,R1,K100,K100,R1`，每个 pass 持久化预测、evaluator 向量和身份，延迟与
+gross energy 的主估计先按 pass 计算再取每臂四次的中位数。身份或测量不完整只形成协议无效终态，
+不解释性能也不自动重提。Git push、远端写入和 Slurm/GPU 动作依赖人工授权。
+
+北京时间节点冻结为：Builder plan `2026-08-28 10:00`，candidate `14:30`，Critic `16:00`，
+Evaluator `17:00`，formal action `17:30`，queue check `2026-08-29 00:00`，blocker return
+`00:15`，scientific return `12:00`。完整结果的主接受门为 p50 与 gross energy 各至少下降 `5%`，
+且 worst-case `min(R1)-max(K100)` 的 Avg-mAP 与 mAP@0.7 均不低于 `-0.30 pp`；未取得完整
+终态前不形成效率结论。
