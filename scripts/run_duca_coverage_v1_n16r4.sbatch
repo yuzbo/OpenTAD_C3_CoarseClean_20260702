@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 #SBATCH --partition=gpu
-#SBATCH --account=gpugpu
-#SBATCH --qos=normal
 #SBATCH --job-name=duca-coverage-v1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
