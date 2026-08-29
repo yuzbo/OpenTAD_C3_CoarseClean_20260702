@@ -20,7 +20,7 @@ Slurm job `1260166` is read**. It does not report or imply a terminal result.
    - path: `docs/aris/ZOOMTOKEN_R1_TAR32_FKV_FORMAL_TRAINING_START_RECEIPT-2026-08-29.md`
    - SHA-256: `9649b7d6f7a379eb4ca9d656dec8b90de77127adcd5bf92abb3a56a31bc3c196`
 4. BPNS-R1 v004 terminal Pro review, which orders TAR32 terminal validation and
-   the conditional K100-matched cost closure:
+   a conditional matched cost closure:
    - path: `docs/aris/ZOOMTOKEN_BPNS_R1_V004_TERMINAL_PRO_REVIEW_RECEIPT-2026-08-29.md`
    - unique next task: `ZOOMTOKEN-R1-TAR32-FKV-TERMINAL-VALIDATION-AND-K100-MATCHED-FULL-STACK-COST-CLOSURE-v001`
 5. User-supplied final route revision:
@@ -78,11 +78,14 @@ BPNS-v004 values, rounded terminal observations, or a post-hoc wider gate.
 
 First perform one immutable terminal audit, one independent Critic, and one
 result Evaluator. If training/model/checkpoint identity is valid and the original
-accuracy gate passes, authorize exactly one same-job K100 versus TAR32 matched
-full-stack cost measurement. The latest Pro cost protocol controls that conditional
-measurement: order `K100,TAR32,TAR32,K100,TAR32,K100,K100,TAR32`, 792 ordered
-items, 50 warmup windows per pass, decode-to-Soft-NMS scope, pass-local 20 ms power
-sampling, coverage `1.0`, and local maximum gap `<=100 ms`.
+accuracy gate passes, authorize exactly one same-job `R1/FULL64` versus
+`R1-TAR32-FKV` matched full-stack cost measurement. The user-supplied final route
+is the most recent authority for the arm identity and supersedes the earlier v004
+receipt's `K100` label for this current TAR32 closure; `K100` is reserved for the
+frozen successor residual-probe task. The matched order is
+`R1/FULL64,TAR32,TAR32,R1/FULL64,TAR32,R1/FULL64,R1/FULL64,TAR32`, with 792
+ordered items, 50 warmup windows per pass, decode-to-Soft-NMS scope, pass-local
+20 ms power sampling, coverage `1.0`, and local maximum gap `<=100 ms`.
 
 If the protocol is valid but accuracy fails, the frozen classification is
 `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`. If the checkpoint is valid but formal EMA
