@@ -107,6 +107,9 @@
         "tool": "tools/bata/evaluate_zoomtoken_tar32_terminal_diagnostics.py",
         "tests": "10 passed",
         "critic": "PASS",
+        "reference_prediction": "/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_r1_decoupled_v004_a4694019_seed42_20260829/pass_01_r1_predictions.json",
+        "reference_prediction_sha256": "ffc78393e4097a578def8fdd62ffe4f36dd87c2dddd52de9b3ae248cb108c734",
+        "candidate_prediction": "/data/run01/sczc063/yuzibo/projects/zoomtoken_r1_tar32_fkv_eval_only_b0a1ca11_seed42_20260829/gpu2_id0/result_detection.json",
         "full_accuracy_source": "terminal evaluation.log",
         "short_boundary_source": "reconstructed from frozen R1 and TAR32 predictions plus canonical annotation",
         "cost_or_route_authority": false
@@ -387,5 +390,5 @@
   "schema_version": "1.0",
   "stage": "G6_FULL_EVAL",
   "status": "TAR32_EVAL_ONLY_REPLACEMENT_RUNNING__TERMINAL_WATCHER_OWNS_WAIT",
-  "updated_at": "2026-08-29T13:37:13Z"
+  "updated_at": "2026-08-29T13:38:00Z"
 }

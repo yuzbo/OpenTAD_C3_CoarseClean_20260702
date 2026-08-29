@@ -77,6 +77,19 @@ tIoU and guard thresholds, score-ordered one-to-one matching, median-versus-mean
 semantics, zero-length official false positives, malformed inputs and empty
 matches.
 
+The frozen R1 reference is the v004 pass-1 artifact:
+
+`/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_r1_decoupled_v004_a4694019_seed42_20260829/pass_01_r1_predictions.json`
+
+Its required SHA-256 is
+`ffc78393e4097a578def8fdd62ffe4f36dd87c2dddd52de9b3ae248cb108c734`.
+Passes `1/2/4/7` were independently verified byte-identical at v004 terminal;
+pass 1 is selected only to give the reconstruction one unambiguous input path.
+The TAR32 candidate path remains
+`<replacement-result-root>/gpu2_id0/result_detection.json`, whose SHA must first
+match `terminal_receipt.tsv`. A missing or mismatched reference/candidate artifact
+is an evidence-completeness blocker, not permission to substitute another result.
+
 ## Source anchors
 
 - launcher artifact paths and receipts:
