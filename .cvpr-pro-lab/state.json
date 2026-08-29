@@ -256,8 +256,28 @@
     "needs_attention_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V004_TERMINAL_COST_AND_DIAGNOSTIC_REVIEW_NEEDS_ATTENTION-v001.md",
     "blocker": null
   },
+  "tar32_eval_blocker_review": {
+    "request_id": "PRO_CPTC_TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER_ADJUDICATION-v001",
+    "nonce": "ZOOMTOKEN-CPTC-TAR32-EVAL-BLOCKER-PRO-v001-20260829T203500+0800",
+    "status": "WAITING_BROWSER_VISIBLE_PRO_ROUTE",
+    "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
+    "profile_id": "61",
+    "last_cdp": "127.0.0.1:39567",
+    "session_authenticated": true,
+    "exact_project_reached": true,
+    "actual_submission_count": 0,
+    "follow_up_count": 0,
+    "conversation_created": false,
+    "attachments_uploaded": false,
+    "prompt_submitted": false,
+    "browser_model_options": ["Extra High", "GPT-5.6 Sol", "GPT-5.5"],
+    "blocker": "browser_visible_Pro_route_not_exposed",
+    "request_path": ".cvpr-pro-lab/reviews/PRO_CPTC_TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER_ADJUDICATION-v001.md",
+    "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_CPTC_TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER_ADJUDICATION_TERMINAL_RECEIPT-ATTEMPT1-v001.json",
+    "response_path": ".cvpr-pro-lab/reviews/PRO_CPTC_TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER_ADJUDICATION_RESPONSE-v001.md"
+  },
   "epoch": 21,
-  "execution_state": "TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER__FRESH_PRO_ADJUDICATION_REQUIRED",
+  "execution_state": "TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER__WAITING_BROWSER_VISIBLE_PRO_ROUTE",
   "last_pro_review_at": "2026-08-29T11:52:39Z",
   "new_evidence_since_pro": true,
   "next_pro_review_due_at": null,
@@ -320,6 +340,6 @@
   },
   "schema_version": "1.0",
   "stage": "G6_FULL_EVAL",
-  "status": "TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER__FRESH_PRO_ADJUDICATION_REQUIRED",
-  "updated_at": "2026-08-29T12:27:00Z"
+  "status": "TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER__WAITING_BROWSER_VISIBLE_PRO_ROUTE",
+  "updated_at": "2026-08-29T12:38:00Z"
 }

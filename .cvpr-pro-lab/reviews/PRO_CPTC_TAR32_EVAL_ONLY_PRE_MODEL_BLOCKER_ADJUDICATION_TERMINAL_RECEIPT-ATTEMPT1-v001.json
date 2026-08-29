@@ -1,0 +1,32 @@
+{
+  "schema_version": "zoomtoken_project_pro_precontact_terminal_v001",
+  "request_id": "PRO_CPTC_TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER_ADJUDICATION-v001",
+  "nonce": "ZOOMTOKEN-CPTC-TAR32-EVAL-BLOCKER-PRO-v001-20260829T203500+0800",
+  "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
+  "profile_id": "61",
+  "cdp": "127.0.0.1:39567",
+  "session_authenticated": true,
+  "exact_project_reached": true,
+  "requested_model": "Pro",
+  "browser_model_options": [
+    "Extra High",
+    "GPT-5.6 Sol",
+    "GPT-5.5"
+  ],
+  "pro_route_visible": false,
+  "status": "PRECONTACT_MODEL_ROUTE_UNAVAILABLE",
+  "attachments_uploaded": false,
+  "prompt_submitted": false,
+  "conversation_created": false,
+  "actual_scientific_submission_count": 0,
+  "follow_up_count": 0,
+  "browser_inline_files": false,
+  "oracle_session": "zoomtoken-cptc-tar32-blocker-pro",
+  "fastctx_job": "j-arjkmh",
+  "started_at_beijing": "2026-08-29T20:36:00+08:00",
+  "ended_at_beijing": "2026-08-29T20:37:04+08:00",
+  "blocker": "The exact Project was authenticated, but the browser model picker did not expose a verifiable Pro route. Oracle stopped before file upload and prompt submission. GPT-5.6 Sol or GPT-5.5 was not substituted for Pro.",
+  "request_path": ".cvpr-pro-lab/reviews/PRO_CPTC_TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER_ADJUDICATION-v001.md",
+  "response_path": ".cvpr-pro-lab/reviews/PRO_CPTC_TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER_ADJUDICATION_RESPONSE-v001.md",
+  "oracle_log": ".cvpr-pro-lab/reviews/runs/zoomtoken-cptc-tar32-eval-blocker-pro-20260829t203500/oracle.log"
+}
