@@ -81,8 +81,14 @@ max_chars: 8000
   `RPL1_EVALUATION_ONLY_COMPLETION`: scheduler ordinal 2, scientific-attempt ordinal 1,
   with no third submission. The one-line `find -L` correction passed Builder checks,
   independent Critic `PASS`, and result-blind Evaluator `PRE_RUN_READY_REPLACEMENT`.
-  Replacement job `1261142` started on `g0067`; terminal-only watcher `j-sdfhnd` owns
-  waiting. Cost and the residual successor are frozen pending a fresh terminal Pro turn.
+  Replacement job `1261142` completed `0:0` on `g0067` after `00:14:58`. Its official
+  unrounded Average-mAP/mAP@0.6/mAP@0.7 are `64.98114/57.37074/43.66910`; all three
+  main admission thresholds fail. Reconstructed short-action mAP falls by `3.31759 pp`
+  and fails its guard, while start/end normalized median-error ratios
+  `1.09259/1.01788` pass. Identity, official prediction/evaluator and diagnostic evidence
+  are complete, so the frozen classification is `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`,
+  not a protocol blocker. Cost and the residual successor remain frozen pending exactly
+  one fresh terminal Pro turn.
 - **Parallel Pro-frozen composite probe (user-confirmed 2026-08-29).** The latest Pro
   instruction independently opens `ZoomToken-R1-TAR32-FKV`: retain R1 contiguous K64
   support and full-K64 Adapter, run dense K64 updates in even VideoMAE blocks, and in each
@@ -111,16 +117,13 @@ max_chars: 8000
   mixed, so no boundary-protection claim is supported. K100 pass 3 has a disclosed
   `2804.82 ms` in-pass power sampling gap; coverage remains complete and the frozen
   protocol had no gap threshold, so this is uncertainty rather than replay authority.
-  The v004 post-result Pro turn is complete. TAR32 training identity and checkpoint are
-  valid; replacement final-EMA evaluation job `1261142` is the only current scientific
-  attempt. No live or partial result is consumed. If the frozen accuracy gate passes, the
-  current task ends at `ACCURACY_ADMITTED_PENDING_FRESH_PRO`; it does not open cost. If it
-  fails, the classification is `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`; an incomplete or
-  invalid run returns `ENGINEERING_OR_PROTOCOL_BLOCKER`. A third submission is forbidden.
-  A result-blind offline diagnostic now reconstructs the preregistered short-action mAP
-  and median absolute normalized start/end errors for both frozen R1 and TAR32 predictions
-  with matched evaluator semantics; focused checks are `10 passed` and an isolated Critic
-  returned `PASS`. This is implementation readiness, not a TAR32 result.
+  The v004 post-result Pro turn is complete. TAR32 training identity, checkpoint and the
+  single authorized replacement evaluation are now terminal and valid. No live or partial
+  result was consumed. The valid negative result fails Average-mAP, mAP@0.6, mAP@0.7 and
+  short-action guards; start/end boundary guards pass. It supports only the statement that
+  this exact single-seed composition did not preserve frozen R1 accuracy. It provides no
+  cost, novelty, multi-seed or general CPTC-mechanism conclusion. A third submission is
+  forbidden, and fresh Pro adjudication is mandatory before any successor or cost work.
 - **Frozen primary aggregation (instantiated by v004).** The profiler's top-level `comparison` pools all
   windows from four passes per arm. It is descriptive but does not implement the
   Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by

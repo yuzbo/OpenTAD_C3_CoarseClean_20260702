@@ -4777,3 +4777,14 @@ append_only: true
   使用 2 GPU / 8 CPU，只加载冻结 epoch-59 `state_dict_ema` 并运行 official validation；不训练、
   resume 或更新参数。FastCtx watcher `j-sdfhnd` 每 300 秒只检测终态，Codex 不读取 live/partial
   accuracy、prediction、route 或其他指标，也不创建第三提交、成本或 successor。
+
+- 2026-08-29：唯一 TAR32 replacement job `1261142` 已在 `g0067` 终态 `COMPLETED 0:0`，运行
+  `00:14:58`；candidate、epoch-59 EMA、canonical 211-video/792-window population、官方
+  evaluator/Soft-NMS、prediction 与 receipt SHA 均匹配。官方未舍入 Average-mAP/mAP@0.6/
+  mAP@0.7 为 `64.9811408/57.3707378/43.6691029`，低于冻结 R1 reference
+  `69.07/61.14/46.57`。从冻结双臂 prediction 重建的短动作 mAP 下降 `3.3175919 pp` 并失败；
+  start/end median normalized boundary-error 比 `1.0925926/1.0178819` 均通过。四项准确率/
+  短动作门失败、两项边界门通过，因此有效终态为
+  `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`。该结果只否定当前 single-seed exact composition
+  的 accuracy admission；没有测 latency、energy、memory、多 seed 或机制因果。第三提交、成本和
+  residual successor 均保持冻结，完整终态包只进入一次 fresh Project Pro。

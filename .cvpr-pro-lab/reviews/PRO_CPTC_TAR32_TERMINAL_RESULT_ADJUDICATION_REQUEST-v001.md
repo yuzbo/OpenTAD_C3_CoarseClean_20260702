@@ -1,15 +1,13 @@
 # CPTC TAR32 terminal result — fresh Pro adjudication request
 
-> Status: `RESULT_BLIND_TEMPLATE_AWAITING_TERMINAL_BINDING`. This file is not an
-> admissible Pro request until every `TO_BIND_AFTER_TERMINAL` field has been replaced
-> from frozen terminal evidence and the final attachment manifest has been verified.
-> Preparing this template did not access the running job, its logs or its result root,
-> and did not contact the browser.
+> Status: `TERMINAL_BOUND_READY_FOR_SINGLE_SUBMISSION`. Every terminal field below is
+> bound from frozen evidence. Preparing and binding this request did not contact the
+> browser; its actual submission count remains zero until the single fresh turn is sent.
 
 ## Immutable request identity
 
 - request_id: `PRO_CPTC_TAR32_TERMINAL_RESULT_ADJUDICATION-v001`
-- nonce: `TO_BIND_AFTER_TERMINAL`
+- nonce: `ZOOMTOKEN-CPTC-TAR32-TERMINAL-PRO-v001-20260829T224000+0800`
 - exact Project: `g-p-6a79701398bc8191a9ef61db6302b24b`
 - route authority: `CPTC-vFinal-20260829`
 - completed task to adjudicate: `ZT-CPTC-TAR32-TERMINAL-001`
@@ -73,33 +71,54 @@ successor work remain frozen until this fresh terminal Pro adjudication.
 - frozen R1 reference prediction SHA-256:
   `ffc78393e4097a578def8fdd62ffe4f36dd87c2dddd52de9b3ae248cb108c734`
 
-## Terminal evidence — bind verbatim after terminal
+## Terminal evidence
 
-The final request must replace every field below and attach the evidence that supports
-it. Do not infer a missing value, use a partial log, or convert absence into success.
-
-- Slurm state / exit code / node: `TO_BIND_AFTER_TERMINAL`
-- terminal time / elapsed: `TO_BIND_AFTER_TERMINAL`
-- protocol classification: `TO_BIND_AFTER_TERMINAL`
-- terminal receipt path and SHA-256: `TO_BIND_AFTER_TERMINAL`
-- launcher/identity receipt path and SHA-256: `TO_BIND_AFTER_TERMINAL`
-- prediction path and SHA-256: `TO_BIND_AFTER_TERMINAL`
-- raw official evaluation log path and SHA-256: `TO_BIND_AFTER_TERMINAL`
-- official unrounded Avg-mAP and six-threshold mAP vector: `TO_BIND_AFTER_TERMINAL`
-- configured Soft-NMS and population completion evidence: `TO_BIND_AFTER_TERMINAL`
-- route ledger, K64/K32 schedule, fallback/failure counts: `TO_BIND_AFTER_TERMINAL`
-- checkpoint/config/data/evaluator identity checks: `TO_BIND_AFTER_TERMINAL`
-- reconstructed diagnostic receipt path and SHA-256: `TO_BIND_AFTER_TERMINAL`
-- reconstructed short-action mAP for TAR32 and R1 reference: `TO_BIND_AFTER_TERMINAL`
-- reconstructed start/end boundary median absolute error for TAR32 and R1 reference:
-  `TO_BIND_AFTER_TERMINAL`
-- direct measurements present: `TO_BIND_AFTER_TERMINAL`
-- reconstructed quantities present: `TO_BIND_AFTER_TERMINAL`
-- structural proxies present: `TO_BIND_AFTER_TERMINAL`
-- explicitly unmeasured quantities: `TO_BIND_AFTER_TERMINAL`
-- missing, invalid, conflicting or anomalous evidence: `TO_BIND_AFTER_TERMINAL`
-- Builder checks / independent Critic / result-blind Evaluator receipts:
-  `TO_BIND_AFTER_TERMINAL`
+- Slurm state / exit code / node: `COMPLETED` / `0:0` / `g0067`
+- terminal time / elapsed: `2026-08-29T21:26:36+08:00` / `00:14:58`
+- protocol classification: valid evaluation-only terminal; scientific classification
+  `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`
+- terminal receipt: remote `terminal_receipt.tsv`, SHA-256
+  `b07b9644c6b7d99e2c611243a9be8136b2941109f7584d007ca48e16698f73d3`
+- launcher/identity receipt: remote `launch_receipt.tsv`, SHA-256
+  `20b83360bd4b76aaf1f9994d94ef42c92b2a8d423022a894b1871013c9027604`
+- prediction: remote `gpu2_id0/result_detection.json`, SHA-256
+  `a70bae55e05219ed1c03b918fb57a4e560c19f0c8c6770908628b9b08ea767df`
+- raw official evaluation log: remote `evaluation.log`, SHA-256
+  `1ecc94904017c0d8f0b7763c50c41dd73fcf86649aa5c2570d0440e6524f0381`
+- official unrounded percent values: Average mAP `64.98114078028013`; mAP at
+  `0.3/0.4/0.5/0.6/0.7` =
+  `80.06313890018572/75.25400276430542/68.54872153389365/57.37073781627205/43.66910288674386`
+- configured Soft-NMS and population: official evaluator plus configured Soft-NMS;
+  canonical validation 211 videos / 792 ordered windows / 411 MP4; 3,325 ground-truth
+  instances and 422,000 predictions
+- route evidence: fixed `[K64,K32]x6`; full K64 K/V and Adapter; no configured fallback;
+  terminal receipt asserts every official forward passed in-forward route assertions.
+  There is no standalone per-window route ledger or independently counted fallback row.
+- identities: candidate, checkpoint, config, annotation, class map, pretrained source,
+  population and evaluator match the launch receipt; hashes are listed in the attached
+  terminal receipt and evidence manifest
+- reconstructed diagnostic: `ZOOMTOKEN_CPTC_TAR32_TERMINAL_DIAGNOSTICS-2026-08-29.json`,
+  SHA-256 `2d2c3e6b9e41df22cc61d5442619299ea35d8dc8a9dfdd0bc6f6fc0bbfed1b96`
+- reconstructed short-action Average mAP: R1 `41.15554711506739%`; TAR32
+  `37.83795524307160%`; decrease `3.31759187199580 pp` (guard fails)
+- reconstructed median normalized boundary error: start R1/TAR32
+  `0.09152542372880687/0.10000000000000014`, ratio `1.092592592592674` (passes);
+  end `0.08292682926829344/0.08440972222222115`, ratio
+  `1.0178819444444223` (passes)
+- direct evidence: run/identity receipts, official prediction, official full-validation mAP
+- reconstructed quantities: unrounded official vector from frozen prediction, short-action
+  mAP, start/end boundary errors and frozen-guard comparisons
+- structural proxy: fixed schedule and route assertions only; no efficiency proxy is used
+  for admission
+- explicitly unmeasured: latency, p50/p95, throughput, energy, memory, temperature,
+  multi-seed, cross-hardware, cross-dataset and route-level causal behavior
+- missing/anomalous: no standalone per-window route ledger; no cost/power/profile; the
+  original template's phrase “six-threshold vector” is corrected to five thresholds plus
+  Average mAP, matching the official evaluator. No traceback, OOM or non-finite failure.
+- Builder / Critic / Evaluator: original focused `32 passed, 1 skipped` plus strict-R1
+  `9 passed`; pre-run `1260163 COMPLETED 0:0`; fresh Critic `PASS`; result-blind
+  Evaluator `PRE_RUN_READY`; replacement one-line fix, Critic `PASS`, Evaluator
+  `PRE_RUN_READY_REPLACEMENT`; diagnostic focused tests `10 passed`, isolated Critic `PASS`
 
 The official full accuracy vector comes directly from the terminal official evaluator.
 Short-action and boundary diagnostics are separately reconstructed from the frozen R1
@@ -159,7 +178,7 @@ In one complete Chinese answer:
 Start the answer by echoing the bound nonce, request_id, exact Project ID, attachment
 filenames actually used, and browser-visible model route. Do not request a follow-up.
 
-## Final attachment manifest — verify and bind after terminal
+## Final attachment manifest
 
 The submission must use attachment-only transport and visibly bind the final versions of:
 
@@ -167,12 +186,11 @@ The submission must use attachment-only transport and visibly bind the final ver
 2. `PAPER_PROGRESS.md`;
 3. `docs/aris/ZOOMTOKEN_CPTC_TAR32_EVAL_BLOCKER_PRO_REVIEW_RECEIPT-2026-08-29.md`;
 4. `docs/aris/ZOOMTOKEN_CPTC_TAR32_EVAL_ONLY_REPLACEMENT_START_RECEIPT-2026-08-29.md`;
-5. `TO_BIND_AFTER_TERMINAL` — TAR32 replacement terminal receipt;
-6. `TO_BIND_AFTER_TERMINAL` — terminal diagnostic receipt/result;
+5. `docs/aris/ZOOMTOKEN_CPTC_TAR32_EVAL_ONLY_REPLACEMENT_TERMINAL_RECEIPT-2026-08-29.md`;
+6. `docs/aris/ZOOMTOKEN_CPTC_TAR32_TERMINAL_DIAGNOSTICS-2026-08-29.json`;
 7. `docs/aris/ZOOMTOKEN_PRO_CODEX_RESEARCH_ROLES.md`;
-8. `TO_BIND_AFTER_TERMINAL` — exact candidate diff/identity and final evidence manifest.
+8. `docs/aris/ZOOMTOKEN_CPTC_TAR32_TERMINAL_EVIDENCE_MANIFEST-2026-08-29.md`.
 
-The final manifest may replace a placeholder with its authoritative generated filename,
-but may not omit terminal failures, negative evidence, deviations, unknowns, conflicts,
-or the Pro/Codex role rules. Submission count is zero until the completed request is sent
-in one fresh exact-Project conversation after terminal evidence ingestion.
+The manifest includes the terminal negative evidence, deviations, unknowns, conflicts and
+the Pro/Codex role rules. Submission count is zero until this completed request is sent in
+one fresh exact-Project conversation after terminal evidence ingestion.

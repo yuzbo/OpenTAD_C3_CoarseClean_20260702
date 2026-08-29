@@ -1,0 +1,106 @@
+{
+  "arms": {
+    "candidate_tar32": {
+      "boundary": {
+        "ground_truth_count": 3325,
+        "matched_count": 3278,
+        "matching": "score_greedy_same_class_tiou_at_least_0.50",
+        "mean_abs_end_error_normalized": 0.13375423377900172,
+        "mean_abs_start_error_normalized": 0.15646064386650313,
+        "median_abs_end_error_normalized": 0.08440972222222115,
+        "median_abs_start_error_normalized": 0.10000000000000014,
+        "normalization": "absolute_endpoint_error_divided_by_ground_truth_duration",
+        "short_action": {
+          "definition_seconds": "0 < duration <= 5.0",
+          "ground_truth_count": 2208,
+          "matched_count": 2164,
+          "median_abs_end_error_normalized": 0.11096096096095887,
+          "median_abs_start_error_normalized": 0.11270161290324783
+        }
+      },
+      "short_action_mAP": {
+        "average_mAP": 0.37837955243071597,
+        "class_count": 20,
+        "definition_seconds": "0 < duration <= 5.0",
+        "evaluator": "OpenTAD compute_average_precision_detection",
+        "ground_truth_count": 2208,
+        "mAP_by_tiou": {
+          "0.3": 0.500836488100782,
+          "0.4": 0.4586755454893182,
+          "0.5": 0.40125240157021347,
+          "0.6": 0.31171203477852905,
+          "0.7": 0.2194212922147373
+        },
+        "prediction_count": 422000
+      }
+    },
+    "reference_r1": {
+      "boundary": {
+        "ground_truth_count": 3325,
+        "matched_count": 3287,
+        "matching": "score_greedy_same_class_tiou_at_least_0.50",
+        "mean_abs_end_error_normalized": 0.13312441031848543,
+        "mean_abs_start_error_normalized": 0.14910064698535522,
+        "median_abs_end_error_normalized": 0.08292682926829344,
+        "median_abs_start_error_normalized": 0.09152542372880687,
+        "normalization": "absolute_endpoint_error_divided_by_ground_truth_duration",
+        "short_action": {
+          "definition_seconds": "0 < duration <= 5.0",
+          "ground_truth_count": 2208,
+          "matched_count": 2172,
+          "median_abs_end_error_normalized": 0.10714285714285907,
+          "median_abs_start_error_normalized": 0.1058823529411803
+        }
+      },
+      "short_action_mAP": {
+        "average_mAP": 0.4115554711506739,
+        "class_count": 20,
+        "definition_seconds": "0 < duration <= 5.0",
+        "evaluator": "OpenTAD compute_average_precision_detection",
+        "ground_truth_count": 2208,
+        "mAP_by_tiou": {
+          "0.3": 0.5350699580303651,
+          "0.4": 0.4965112568057461,
+          "0.5": 0.4405538879263743,
+          "0.6": 0.34533242616777604,
+          "0.7": 0.24030982682310795
+        },
+        "prediction_count": 422000
+      }
+    }
+  },
+  "comparison": {
+    "boundary_end_guard_passed": true,
+    "boundary_end_worsening_ratio": 1.0178819444444223,
+    "boundary_max_worsening_ratio": 1.1,
+    "boundary_start_guard_passed": true,
+    "boundary_start_worsening_ratio": 1.092592592592674,
+    "reconstructed_guards_passed": false,
+    "short_action_guard_passed": false,
+    "short_action_mAP_decrease_pp": 3.3175918719957953,
+    "short_action_max_decrease_pp": 1.5
+  },
+  "evidence_type": "reconstructed_from_frozen_predictions_and_canonical_annotation",
+  "inputs": {
+    "candidate_prediction": {
+      "path": "/data/run01/sczc063/yuzibo/projects/zoomtoken_r1_tar32_fkv_eval_only_b0a1ca11_seed42_20260829/gpu2_id0/result_detection.json",
+      "sha256": "a70bae55e05219ed1c03b918fb57a4e560c19f0c8c6770908628b9b08ea767df"
+    },
+    "ground_truth": {
+      "path": "/data/run01/sczc063/yuzibo/thumos14/annotations/thumos_14_anno.json",
+      "sha256": "ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad"
+    },
+    "reference_prediction": {
+      "path": "/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_r1_decoupled_v004_a4694019_seed42_20260829/pass_01_r1_predictions.json",
+      "sha256": "ffc78393e4097a578def8fdd62ffe4f36dd87c2dddd52de9b3ae248cb108c734"
+    }
+  },
+  "schema": "zoomtoken-tar32-terminal-diagnostics-v1",
+  "scope": {
+    "cost_authorized": false,
+    "fresh_pro_review_required": true,
+    "official_full_accuracy_metrics_included": false,
+    "route_decision_authorized": false
+  },
+  "subset": "validation"
+}

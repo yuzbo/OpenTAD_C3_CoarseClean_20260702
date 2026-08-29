@@ -97,9 +97,14 @@ updated: 2026-08-29
 	   `REVISE_AND_CONTINUE` and authorized exactly one replacement completion: scheduler
 	   ordinal 2 / scientific-attempt ordinal 1. The sole replacement is job `1261142`, using
 	   only the result-blind `find -L` inventory correction. Do not foreground-poll or consume
-	   partial metrics. No third submission, retry, resume, second seed, cost measurement or
-	   automatic successor is allowed. Accuracy pass only yields
-	   `ACCURACY_ADMITTED_PENDING_FRESH_PRO`; cost remains frozen until that fresh review.
+	   partial metrics. Replacement job `1261142` is now terminal `COMPLETED 0:0` and valid:
+	   official Average-mAP/mAP@0.6/mAP@0.7 are `64.98114/57.37074/43.66910`, all below
+	   their frozen thresholds; short-action mAP decreases `3.31759 pp` and fails, while
+	   start/end boundary-error ratios `1.09259/1.01788` pass. Preserve this exact-composition
+	   negative result as `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`; do not reframe it as a
+	   protocol failure or as a universal refutation of CPTC. No third submission, retry,
+	   resume, second seed, cost measurement or automatic successor is allowed. Cost remains
+	   frozen until the mandatory fresh review.
    Do not apply the primary 5% efficiency gate directly to the profiler's pooled
    `comparison.r1_over_k100` fields. The Pro-frozen primary estimator first computes
    one end-to-end p50 and one total-energy value for each complete pass, then takes
