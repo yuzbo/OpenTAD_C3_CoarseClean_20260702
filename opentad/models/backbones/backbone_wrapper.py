@@ -48,6 +48,11 @@ class BackboneWrapper(nn.Module):
 
         # 5. freeze_backbone: whether to freeze the backbone, default is False
         self.freeze_backbone = getattr(custom_cfg, "freeze_backbone", False)
+        self.variable_clip_len = getattr(custom_cfg, "variable_clip_len", None)
+        if self.variable_clip_len is not None:
+            self.variable_clip_len = int(self.variable_clip_len)
+            if self.variable_clip_len <= 0:
+                raise ValueError("variable_clip_len must be positive")
 
         print("freeze_backbone: {}, norm_eval: {}".format(self.freeze_backbone, self.norm_eval))
 
@@ -64,7 +69,7 @@ class BackboneWrapper(nn.Module):
             self.temporal_checkpointing_chunk_dim = custom_cfg.temporal_checkpointing_chunk_dim
 
     def forward(self, frames, masks=None, irregular_selected_positions=None,
-                irregular_dense_valid_len=None):
+                irregular_dense_valid_len=None, variable_num_clips=None):
         # two types: snippet or frame
 
         # snippet: 3D backbone, [bs, T, 3, clip_len, H, W]
@@ -80,8 +85,24 @@ class BackboneWrapper(nn.Module):
             training=False,  # for blending, which is not used in openTAD
         )
 
-        # pre_processing_pipeline:
-        if self.pre_processing_pipeline is not None:
+        variable_batch_size = None
+        if variable_num_clips is not None:
+            if self.variable_clip_len is None:
+                raise ValueError("variable_num_clips requires custom.variable_clip_len")
+            variable_num_clips = int(variable_num_clips)
+            if frames.ndim != 6:
+                raise ValueError("variable clip execution expects [B,N,C,T,H,W]")
+            variable_batch_size = int(frames.shape[0])
+            expected_frames = variable_num_clips * self.variable_clip_len
+            if int(frames.shape[3]) != expected_frames:
+                raise ValueError("variable clip input length does not match the real clip budget")
+            b, n, c, _, h, w = frames.shape
+            frames = (
+                frames.reshape(b, n, c, variable_num_clips, self.variable_clip_len, h, w)
+                .permute(0, 3, 1, 2, 4, 5, 6)
+                .reshape(b * variable_num_clips, n, c, self.variable_clip_len, h, w)
+            )
+        elif self.pre_processing_pipeline is not None:
             frames = self.pre_processing_pipeline(dict(frames=frames))["frames"]
 
         # flatten the batch dimension and num_segs dimension
@@ -119,7 +140,20 @@ class BackboneWrapper(nn.Module):
                 features = self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions)
 
         # unflatten and pool the features
-        if isinstance(features, (tuple, list)):
+        if variable_num_clips is not None:
+            if isinstance(features, (tuple, list)):
+                pooled = [
+                    self._pool_variable_clip_features(
+                        f, variable_batch_size, variable_num_clips, num_segs
+                    )
+                    for f in features
+                ]
+                features = torch.cat(pooled, dim=1)
+            else:
+                features = self._pool_variable_clip_features(
+                    features, variable_batch_size, variable_num_clips, num_segs
+                )
+        elif isinstance(features, (tuple, list)):
             features = torch.cat([self.unflatten_and_pool_features(f, batches, num_segs) for f in features], dim=1)
         else:
             features = self.unflatten_and_pool_features(features, batches, num_segs)
@@ -131,6 +165,19 @@ class BackboneWrapper(nn.Module):
         # make sure detector has the float32 input
         features = features.to(torch.float32)
         return features
+
+    @staticmethod
+    def _pool_variable_clip_features(features, batches, clips, num_segs):
+        features = features.unflatten(dim=0, sizes=(batches * clips, num_segs))
+        if features.ndim != 6:
+            raise ValueError("variable VideoMAE features must be [B*clips,N,C,T,H,W]")
+        features = features.mean(dim=(1, 4, 5))
+        _, channels, tokens_per_clip = features.shape
+        return (
+            features.reshape(batches, clips, channels, tokens_per_clip)
+            .permute(0, 2, 1, 3)
+            .reshape(batches, channels, clips * tokens_per_clip)
+        )
 
     def tensor_to_list(self, tensor):
         return [t for t in tensor]

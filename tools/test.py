@@ -345,6 +345,11 @@ def main():
                 cfg.dataset.test.class_map
             ),
         }
+        evidence_model = model.module if hasattr(model, "module") else model
+        if hasattr(evidence_model, "native_tubelet_compute_evidence"):
+            compute_evidence = evidence_model.native_tubelet_compute_evidence()
+            if compute_evidence is not None:
+                payload["native_tubelet_compute"] = _jsonable(compute_evidence)
         if selected_axis_formal:
             payload.update(
                 {

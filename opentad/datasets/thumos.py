@@ -30,6 +30,9 @@ class ThumosSlidingDataset(SlidingWindowDataset):
 
     def __getitem__(self, index):
         video_name, video_info, video_anno, window_snippet_centers = self.data_list[index]
+        dynamic_clip_budget = self.duca_native_tubelet_budget_clips(
+            video_name, window_snippet_centers[0]
+        )
 
         if video_anno != {}:
             video_anno = deepcopy(video_anno)  # avoid modify the original dict
@@ -53,6 +56,11 @@ class ThumosSlidingDataset(SlidingWindowDataset):
                 window_start_frame=window_snippet_centers[0],
                 duration=video_info["duration"],
                 offset_frames=self.offset_frames,
+                **(
+                    {"duca_native_tubelet_budget_clips": dynamic_clip_budget}
+                    if dynamic_clip_budget is not None
+                    else {}
+                ),
                 # training setting
                 **video_anno,
             )

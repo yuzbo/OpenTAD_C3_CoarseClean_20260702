@@ -56,6 +56,7 @@ from .true_time_residual import TrueTimeFeatureResidual
 from .tubelet_coreset import (
     NATIVE_TUBELET_POLICIES,
     aggregate_frame_signals_to_tubelets,
+    assign_dynamic_native_tubelet_clip_budgets,
     assign_discarded_tubelets_to_anchors,
     build_native_tubelet_candidates,
     gather_native_tubelet_rgb,
@@ -103,6 +104,7 @@ __all__ = [
     "PhysicalTimeCoresetReconstructor",
     "NATIVE_TUBELET_POLICIES",
     "aggregate_frame_signals_to_tubelets",
+    "assign_dynamic_native_tubelet_clip_budgets",
     "assign_discarded_tubelets_to_anchors",
     "build_native_tubelet_candidates",
     "gather_native_tubelet_rgb",

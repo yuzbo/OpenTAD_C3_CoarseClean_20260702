@@ -128,6 +128,102 @@ class ActionFormer(SingleStageDetector):
         pad_masks[:, :feat_len] = masks
         return inputs, pad_masks
 
+    @staticmethod
+    def _slice_native_tubelet_frames(inputs, frame_count):
+        if inputs.ndim == 5:
+            return inputs[:, :, :frame_count]
+        if inputs.ndim == 6:
+            return inputs[:, :, :, :frame_count]
+        raise ValueError("dynamic native-tubelet backbone expects NCTHW or BNCTHW inputs")
+
+    def _forward_heavy_backbone(self, inputs, masks, metas):
+        dynamic = bool(metas) and all(
+            str(meta.get("duca_native_tubelet_policy", ""))
+            == "native_tubelet_dynamic_uniform"
+            for meta in metas
+        )
+        if not dynamic:
+            return self.backbone(inputs)
+        clip_buckets = {}
+        for index, meta in enumerate(metas):
+            clips = int(meta.get("duca_native_tubelet_actual_clips", 0))
+            if clips not in {16, 20, 24}:
+                raise ValueError("dynamic native-tubelet execution requires 16/20/24 clips")
+            active = int(masks[index].long().sum().item())
+            if active != clips * 8:
+                raise ValueError("dynamic native-tubelet mask does not match actual clip work")
+            clip_buckets.setdefault(clips, []).append(index)
+
+        rows = [None] * int(inputs.shape[0])
+        bucket_summary = []
+        for clips in sorted(clip_buckets):
+            indices = torch.as_tensor(clip_buckets[clips], device=inputs.device, dtype=torch.long)
+            bucket_inputs = inputs.index_select(0, indices)
+            bucket_inputs = self._slice_native_tubelet_frames(bucket_inputs, clips * 16)
+            bucket_features = self.backbone(
+                bucket_inputs,
+                variable_num_clips=clips,
+            )
+            expected_tokens = clips * 8
+            if int(bucket_features.shape[-1]) != expected_tokens:
+                raise RuntimeError("VideoMAE variable clip execution returned the wrong token count")
+            for local_index, original_index in enumerate(clip_buckets[clips]):
+                rows[original_index] = bucket_features[local_index : local_index + 1]
+            bucket_summary.append(
+                {
+                    "clips": clips,
+                    "tubelets": expected_tokens,
+                    "frames": clips * 16,
+                    "window_count": len(clip_buckets[clips]),
+                }
+            )
+        max_tokens = max(int(row.shape[-1]) for row in rows if row is not None)
+        padded_rows = [
+            torch.nn.functional.pad(row, (0, max_tokens - int(row.shape[-1])))
+            for row in rows
+        ]
+        self.last_variable_compute_summary = {
+            "dynamic_compute_realized": True,
+            "padded_before_heavy_backbone": False,
+            "post_backbone_feature_padding_only": True,
+            "buckets": bucket_summary,
+        }
+        if not hasattr(self, "variable_compute_totals"):
+            self.variable_compute_totals = {
+                "forward_calls": 0,
+                "windows": 0,
+                "clips": 0,
+                "tubelets": 0,
+                "frames": 0,
+            }
+        self.variable_compute_totals["forward_calls"] += 1
+        self.variable_compute_totals["windows"] += len(metas)
+        self.variable_compute_totals["clips"] += sum(
+            row["clips"] * row["window_count"] for row in bucket_summary
+        )
+        self.variable_compute_totals["tubelets"] += sum(
+            row["tubelets"] * row["window_count"] for row in bucket_summary
+        )
+        self.variable_compute_totals["frames"] += sum(
+            row["frames"] * row["window_count"] for row in bucket_summary
+        )
+        return torch.cat(padded_rows, dim=0)
+
+    def native_tubelet_compute_evidence(self):
+        totals = dict(getattr(self, "variable_compute_totals", {}))
+        windows = int(totals.get("windows", 0))
+        if windows <= 0:
+            return None
+        totals.update(
+            {
+                "schema_version": "duca_dynamic_native_tubelet_compute_v1",
+                "mean_clips_per_window": float(totals["clips"]) / float(windows),
+                "padded_before_heavy_backbone": False,
+                "actual_heavy_clip_count": True,
+            }
+        )
+        return totals
+
     def train(self, mode=True):
         super().train(mode)
         if self.selector_train_only:
@@ -219,7 +315,7 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self._forward_heavy_backbone(inputs, masks, metas)
         else:
             x = inputs
 
@@ -509,7 +605,7 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self._forward_heavy_backbone(inputs, masks, metas)
         else:
             x = inputs
 

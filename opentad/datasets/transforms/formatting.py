@@ -52,6 +52,7 @@ class Collect:
             "remap_gt_to_selected_axis",
             "gt_remapped_to_selected_axis",
             "pc_ot_mras_prebackbone_remap_gt_to_selected_axis",
+            "duca_native_tubelet_budget_clips",
         ],
     ):
         self.inputs = inputs

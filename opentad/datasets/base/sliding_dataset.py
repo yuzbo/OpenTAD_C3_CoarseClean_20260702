@@ -29,6 +29,7 @@ class SlidingWindowDataset:
         ioa_thresh=0.75,  # the threshold of the completeness of the gt inside the window
         include_background_windows=False,
         fps=-1,  # some annotations are based on video-seconds
+        duca_native_tubelet_budget_table=None,
         logger=None,
     ):
         super(SlidingWindowDataset, self).__init__()
@@ -59,9 +60,51 @@ class SlidingWindowDataset:
         self.include_background_windows = bool(include_background_windows)
 
         self.get_dataset()
+        self.duca_native_tubelet_budget_table = self._load_duca_native_tubelet_budget_table(
+            duca_native_tubelet_budget_table
+        )
         self.logger(
             f"{self.subset_name} subset: {len(set([data[0] for data in self.data_list]))} videos, "
             f"truncated as {len(self.data_list)} windows."
+        )
+
+    def _load_duca_native_tubelet_budget_table(self, path):
+        if path is None:
+            return None
+        path = os.path.expandvars(os.path.expanduser(str(path)))
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if payload.get("schema_version") != "duca_dynamic_native_tubelet_budget_v1":
+            raise ValueError("unsupported DUCA native-tubelet budget table schema")
+        forbidden = {"gt_segments", "gt_labels", "teacher", "predictions", "metrics"}
+        index = {}
+        for row in payload.get("rows", []):
+            if forbidden.intersection(row):
+                raise ValueError("DUCA budget table contains a forbidden decision input")
+            key = (str(row.get("video_name", "")), int(row.get("window_start_frame", -1)))
+            clips = int(row.get("clip_budget", 0))
+            if not key[0] or key[1] < 0 or clips not in {16, 20, 24}:
+                raise ValueError("invalid DUCA budget-table row")
+            if key in index:
+                raise ValueError("duplicate DUCA budget-table window identity")
+            index[key] = clips
+        expected = {
+            (str(video_name), int(window_snippet_centers[0]))
+            for video_name, _, _, window_snippet_centers in self.data_list
+        }
+        if set(index) != expected:
+            missing = sorted(expected - set(index))[:3]
+            extra = sorted(set(index) - expected)[:3]
+            raise ValueError(
+                f"DUCA budget table does not exactly cover this split: missing={missing}, extra={extra}"
+            )
+        return index
+
+    def duca_native_tubelet_budget_clips(self, video_name, window_start_frame):
+        if self.duca_native_tubelet_budget_table is None:
+            return None
+        return int(
+            self.duca_native_tubelet_budget_table[(str(video_name), int(window_start_frame))]
         )
 
     def get_dataset(self):

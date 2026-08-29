@@ -12,7 +12,11 @@ from .structured_selection import exact_uniform_positions, global_structured_top
 NATIVE_TUBELET_POLICIES = {
     "native_tubelet_uniform",
     "native_tubelet_coreset",
+    "native_tubelet_dynamic_uniform",
 }
+
+_DYNAMIC_CLIP_BUDGETS = (16, 20, 24)
+_TUBELETS_PER_CLIP = 8
 
 
 def build_native_tubelet_candidates(valid_mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -121,12 +125,91 @@ def task_state_tubelet_scores(
     }
 
 
+def assign_dynamic_native_tubelet_clip_budgets(
+    window_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Assign 16/20/24 real clip budgets by within-video demand rank.
+
+    The input is a split-local, frozen-scout table.  No detector or label value
+    is accepted by this function.  Ties are resolved by the physical window
+    start, as fixed by the Pro decision.
+    """
+
+    forbidden = {
+        "gt_segments",
+        "gt_labels",
+        "teacher",
+        "predictions",
+        "metrics",
+        "raw_prediction_cache",
+    }
+    grouped: dict[str, list[tuple[int, Mapping[str, Any]]]] = {}
+    for index, row in enumerate(window_rows):
+        if not isinstance(row, Mapping):
+            raise ValueError("dynamic window evidence rows must be mappings")
+        if forbidden.intersection(row):
+            raise ValueError("dynamic window evidence contains a forbidden decision input")
+        video_name = str(row.get("video_name", ""))
+        if not video_name:
+            raise ValueError("dynamic window evidence requires video_name")
+        grouped.setdefault(video_name, []).append((index, row))
+
+    output: list[dict[str, Any] | None] = [None] * len(window_rows)
+    for video_name, indexed_rows in grouped.items():
+        indexed_rows = sorted(
+            indexed_rows,
+            key=lambda item: (int(item[1]["window_start_frame"]), item[0]),
+        )
+        component_values = []
+        for key in ("mean_actionness", "p90_boundary", "p90_novelty"):
+            values = torch.tensor(
+                [float(row[key]) for _, row in indexed_rows], dtype=torch.float64
+            )
+            if not bool(torch.isfinite(values).all().item()):
+                raise ValueError(f"non-finite dynamic window evidence: {key}")
+            valid = torch.ones((1, values.numel()), dtype=torch.bool)
+            component_values.append(_stable_percentile_rank(values[None], valid)[0])
+        demand = (
+            0.35 * component_values[0]
+            + 0.45 * component_values[1]
+            + 0.20 * component_values[2]
+        )
+        order = sorted(
+            range(len(indexed_rows)),
+            key=lambda pos: (
+                float(demand[pos].item()),
+                int(indexed_rows[pos][1]["window_start_frame"]),
+            ),
+        )
+        half = len(order) // 2
+        budgets = [20] * len(order)
+        for pos in order[:half]:
+            budgets[pos] = 16
+        for pos in order[len(order) - half :]:
+            budgets[pos] = 24
+        if sum(budgets) != 20 * len(budgets):
+            raise RuntimeError("dynamic native-tubelet budgets must average 20 clips per video")
+        for local_pos, (original_index, row) in enumerate(indexed_rows):
+            output[original_index] = {
+                "video_name": video_name,
+                "window_start_frame": int(row["window_start_frame"]),
+                "mean_actionness": float(row["mean_actionness"]),
+                "p90_boundary": float(row["p90_boundary"]),
+                "p90_novelty": float(row["p90_novelty"]),
+                "demand_score": float(demand[local_pos].item()),
+                "clip_budget": int(budgets[local_pos]),
+            }
+    if any(row is None for row in output):
+        raise RuntimeError("dynamic native-tubelet budget assignment lost a window")
+    return [dict(row) for row in output if row is not None]
+
+
 def select_native_tubelet_coreset(
     scores: torch.Tensor,
     valid_mask: torch.Tensor,
     *,
     policy: str,
-    selected_tubelets: int = 192,
+    selected_tubelets: int | Sequence[int] | torch.Tensor = 192,
     max_unselected_hole: int = 7,
     temperature: float = 0.7,
 ) -> dict[str, torch.Tensor]:
@@ -137,19 +220,28 @@ def select_native_tubelet_coreset(
     if scores.shape != valid_mask.shape:
         raise ValueError("tubelet scores and valid mask must share [B,U]")
     batch, tubelet_count = scores.shape
+    if torch.is_tensor(selected_tubelets):
+        requested = [int(value) for value in selected_tubelets.detach().cpu().tolist()]
+    elif isinstance(selected_tubelets, Sequence) and not isinstance(selected_tubelets, (str, bytes)):
+        requested = [int(value) for value in selected_tubelets]
+    else:
+        requested = [int(selected_tubelets)] * batch
+    if len(requested) != batch or any(value <= 0 for value in requested):
+        raise ValueError("selected_tubelets must provide one positive budget per batch row")
+    max_selected = max(requested)
     positions = torch.full(
-        (batch, selected_tubelets), -1, device=scores.device, dtype=torch.long
+        (batch, max_selected), -1, device=scores.device, dtype=torch.long
     )
     selected_mask = torch.zeros_like(valid_mask, dtype=torch.bool)
     slot_mask = torch.zeros(
-        (batch, selected_tubelets), device=scores.device, dtype=torch.bool
+        (batch, max_selected), device=scores.device, dtype=torch.bool
     )
     for batch_idx in range(batch):
         valid_count = int(valid_mask[batch_idx].long().sum().item())
         if valid_count <= 0:
             raise ValueError("native tubelet selection requires at least one valid tubelet")
-        k = min(int(selected_tubelets), valid_count)
-        if policy == "native_tubelet_uniform" or k == valid_count:
+        k = min(requested[batch_idx], valid_count)
+        if policy in {"native_tubelet_uniform", "native_tubelet_dynamic_uniform"} or k == valid_count:
             row_positions = exact_uniform_positions(valid_count, k, device=scores.device)
         else:
             required = torch.zeros((1, valid_count), device=scores.device, dtype=torch.bool)
@@ -289,6 +381,8 @@ def _native_tubelet_metas(
                 "duca_native_tubelet_centers": [2.0 * value + 0.5 for value in selected_list],
                 "duca_native_tubelet_valid_len": valid_count,
                 "duca_native_tubelet_selected_count": active,
+                "duca_native_tubelet_actual_clips": active // _TUBELETS_PER_CLIP,
+                "duca_native_tubelet_padded_to_global_max": False,
                 "duca_native_tubelet_scout_hidden": evidence["hidden"][batch_idx, :valid_count].detach(),
                 "duca_native_tubelet_scores": evidence["score"][batch_idx, :valid_count].detach(),
                 "detector_prediction_inverse_map_required": False,
@@ -339,11 +433,22 @@ def run_native_tubelet_selection(
         aggregated["valid_mask"],
     )
     evidence = {**aggregated, **scoring}
+    if policy == "native_tubelet_dynamic_uniform":
+        if metas is None:
+            raise ValueError("dynamic native-tubelet selection requires window budget metadata")
+        clip_budgets = [int(meta.get("duca_native_tubelet_budget_clips", 0)) for meta in metas]
+        if any(value not in _DYNAMIC_CLIP_BUDGETS for value in clip_budgets):
+            raise ValueError("dynamic native-tubelet clip budgets must be 16, 20, or 24")
+        selected_tubelets: int | list[int] = [
+            value * _TUBELETS_PER_CLIP for value in clip_budgets
+        ]
+    else:
+        selected_tubelets = int(selector.native_tubelet_selected_count)
     selection = select_native_tubelet_coreset(
         scoring["score"],
         aggregated["valid_mask"],
         policy=policy,
-        selected_tubelets=int(selector.native_tubelet_selected_count),
+        selected_tubelets=selected_tubelets,
         max_unselected_hole=int(selector.max_unselected_hole),
         temperature=float(selector.structured_temperature),
     )
@@ -365,7 +470,8 @@ def run_native_tubelet_selection(
         "selected_frame_positions": selected_frame_positions,
         "selection_policy": policy,
         "selected_tubelet_count": selection["slot_mask"].long().sum(dim=1),
-        "heavy_frame_slots": int(selected_inputs.shape[3] if selected_inputs.ndim == 6 else selected_inputs.shape[2]),
+        "heavy_frame_slots": selection["slot_mask"].long().sum(dim=1) * 2,
+        "actual_clip_count": selection["slot_mask"].long().sum(dim=1) // _TUBELETS_PER_CLIP,
         "scout_frozen": True,
     }
     selector.last_forward_summary = {
@@ -373,13 +479,19 @@ def run_native_tubelet_selection(
         "selected_tubelets": [
             int(value) for value in selector_outputs["selected_tubelet_count"].detach().cpu().tolist()
         ],
-        "heavy_frame_slots": selector_outputs["heavy_frame_slots"],
+        "heavy_frame_slots": [
+            int(value) for value in selector_outputs["heavy_frame_slots"].detach().cpu().tolist()
+        ],
+        "actual_clips": [
+            int(value) for value in selector_outputs["actual_clip_count"].detach().cpu().tolist()
+        ],
+        "padded_to_global_max": False,
         "tubelet_size_frames": 2,
         "scout_frozen": True,
     }
     return {
         "inputs": selected_inputs,
-        # This mask describes the 192 VideoMAE temporal tubelets, not RGB slots.
+        # This mask describes VideoMAE temporal tubelets, not RGB slots.
         "masks": selection["slot_mask"],
         "metas": updated_metas,
         "selector_outputs": selector_outputs,
@@ -388,6 +500,7 @@ def run_native_tubelet_selection(
 
 __all__ = [
     "NATIVE_TUBELET_POLICIES",
+    "assign_dynamic_native_tubelet_clip_budgets",
     "aggregate_frame_signals_to_tubelets",
     "assign_discarded_tubelets_to_anchors",
     "build_native_tubelet_candidates",

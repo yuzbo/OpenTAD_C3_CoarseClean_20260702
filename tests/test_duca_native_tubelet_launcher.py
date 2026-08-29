@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = ROOT / "scripts/run_duca_native_tubelet_coreset_n16r4.sbatch"
+DYNAMIC_LAUNCHER = ROOT / "scripts/run_duca_dynamic_native_tubelet_budget_n16r4.sbatch"
 
 
 def test_launcher_binds_the_two_arms_and_terminal_ema_evaluation() -> None:
@@ -19,4 +20,18 @@ def test_launcher_binds_the_two_arms_and_terminal_ema_evaluation() -> None:
     assert "--checkpoint-state-key state_dict_ema" in text
     assert "--expected-checkpoint-epoch 59" in text
     assert "DUCA_STAGE1_CHECKPOINT_EPOCH=29" in text
+    assert "CUDA_VISIBLE_DEVICES=" not in text
+
+
+def test_dynamic_launcher_builds_split_tables_and_preserves_terminal_contract() -> None:
+    text = DYNAMIC_LAUNCHER.read_text(encoding="utf-8")
+    assert "build_duca_dynamic_native_tubelet_budget_table.py" in text
+    assert "--split train" in text and "--split val" in text
+    assert "duca_dynamic_native_tubelet_budget_official60.py" in text
+    assert "workflow.max_train_iters=2" in text
+    assert '--resume "$PRE_RUN_CHECKPOINT"' in text
+    assert "successful_optimizer_updates\"]) == 4" in text
+    assert "successful_optimizer_updates\"]) == 6000" in text
+    assert "--checkpoint-state-key state_dict_ema" in text
+    assert "--metrics-json" in text
     assert "CUDA_VISIBLE_DEVICES=" not in text
