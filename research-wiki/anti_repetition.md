@@ -13,9 +13,8 @@ updated: 2026-08-29
    relabel it as preceding-frame reuse, resurrect stopped cache routes inside it, or
    start A-MoD-50/new seeds/K24/K18 as a prerequisite. Do not retrain K100 job
    `1248835`, R1 job `1249099`, DSR6 job `1252527`, MOD32 job `1252180` or DROP32
-   job `1252179`. The next primary comparison is a same-hardware final-EMA K100-R1
-   replay with full decode-to-NMS latency, memory, gross energy and boundary quality;
-   theoretical token/block FLOPs are not speed evidence. DSR6/MOD32/DROP32 are
+   job `1252179`. The same-hardware final-EMA K100-R1 comparison is now terminal in
+   v004; theoretical token/block FLOPs remain non-evidence for speed. DSR6/MOD32/DROP32 are
    secondary points and must not delay K100-R1. Formal replay job `1257281` is not
    cost evidence: it completed only the first K100 validation pass, then stopped when
    raw `mAP@0.7=46.246663` was compared with rounded history `46.27`. R1 and the
@@ -63,8 +62,17 @@ updated: 2026-08-29
    receipt before any non-timed diagnostic; the short evaluator must come from a deep copy
    of the production evaluation config and pass a synthetic known-answer call. Do not
    reduce this to adding a missing `type`, change the frozen science/evaluator/estimator,
-   or add model, training, seed, auxiliary arm, resume or retry behavior. If v004 fails
-   before raw acquisition completes, no v005 or further BPNS replay is authorized.
+   or add model, training, seed, auxiliary arm, resume or retry behavior. v004 job
+   `1260095` completed all eight passes and raw acquisition. Frozen pass-median ratios
+   are p50 `0.9849289616` and gross energy `0.9350002508`; the conjunctive 5% gate
+   therefore fails on latency. The terminal classification is
+   `STOP_BPNS_R1_EFFICIENCY_HEADLINE`. Do not create v005, replay, retry, resume, widen a
+   threshold, add a seed/arm, or use memory/energy-only gains to revive the headline.
+   Treat peak-memory reduction and 6.50% gross-energy reduction as fixed-condition measured
+   observations only. Do not claim boundary protection: short-action and start/end errors
+   are small and mixed. Disclose the `2804.82 ms` K100 pass-3 power gap; it does not change
+   the latency failure and does not authorize a rerun. The only admissible next BPNS action
+   is the required fresh exact-Project Pro review of the complete terminal package.
    Separately, the user confirmed a newer Pro instruction opening exactly one stateless
    composition probe, `R1-TAR32-FKV`, from base `2d945e64…`. This does not replace or
    modify v004. Keep its branch, worktree, jobs, roots and evidence separate. The probe

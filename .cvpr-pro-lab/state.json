@@ -2,15 +2,15 @@
   "active_job": {
     "job_id": "1260095",
     "job_name": "zt-bpns-v004-a4694019",
-    "state": "PENDING",
+    "state": "COMPLETED",
     "source_commit": "a4694019fd4cbbdc74885e160163e23d947dc05f",
     "source_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_cost_src_a4694019_v004",
     "result_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_r1_decoupled_v004_a4694019_seed42_20260829",
     "log_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_v004_logs_a4694019_20260829"
   },
-  "active_jobs": ["1260095", "1260166"],
+  "active_jobs": ["1260166"],
   "machine_terminal_wait": {
-    "mode": "EVENT_DRIVEN_MACHINE_SIDE_WAIT",
+    "mode": "TERMINAL_EVIDENCE_INGESTED",
     "job_id": "1260095",
     "waiter_backend": "fastctx-background",
     "waiter_job_id": "j-sjvtib",
@@ -18,7 +18,7 @@
     "machine_poll_interval_seconds": 300,
     "llm_consumes_running_heartbeat": false,
     "started_at_beijing": "2026-08-29T00:38:00+08:00",
-    "expected_resume_at_beijing": "2026-08-29T08:45:00+08:00",
+    "expected_resume_at_beijing": null,
     "resume_triggers": ["terminal-signal", "user-reentry", "expected-terminal-time", "objective-anomaly-evidence"],
     "scientific_metrics_read_while_running": false
   },
@@ -45,7 +45,7 @@
     "formal_job": {
       "job_id": "1260166",
       "job_name": "zt-r1-tar32-fkv-s42-e60-v001",
-      "state": "RUNNING",
+      "state": "TERMINAL_SIGNAL_PENDING_PROTOCOL_VALIDATION",
       "node": "g0059",
       "submitted_at_beijing": "2026-08-29T02:29:35+08:00",
       "started_at_beijing": "2026-08-29T02:29:38+08:00",
@@ -171,10 +171,51 @@
     "post_result_review_still_required": true,
     "blocker": null
   },
-  "epoch": 19,
-  "execution_state": "BPNS_R1_V004_AND_TAR32_FORMAL_ACTIVE",
+  "v004_terminal": {
+    "job_id": "1260095",
+    "job_name": "zt-bpns-v004-a4694019",
+    "slurm_state": "COMPLETED",
+    "exit_code": "0:0",
+    "node": "g0059",
+    "started_at_beijing": "2026-08-29T00:37:38+08:00",
+    "ended_at_beijing": "2026-08-29T06:10:03+08:00",
+    "elapsed": "05:32:25",
+    "protocol_status": "VALID_COMPLETE",
+    "eight_pass_order": ["K100", "R1", "R1", "K100", "R1", "K100", "K100", "R1"],
+    "cost_rows": 6336,
+    "power_rows": 929889,
+    "prediction_identity_passed": true,
+    "measurement_completeness_passed": true,
+    "median4_r1_over_k100": {
+      "p50": 0.984928961577845,
+      "p95": 0.9780185511718777,
+      "gross_energy": 0.9350002508003068,
+      "throughput": 1.0171116287953128,
+      "peak_allocated": 0.7512973880094861,
+      "peak_reserved": 0.6896551724137931
+    },
+    "frozen_latency_gate_passed": false,
+    "frozen_energy_gate_passed": true,
+    "scientific_classification": "STOP_BPNS_R1_EFFICIENCY_HEADLINE",
+    "boundary_claim_supported": false,
+    "disclosed_power_trace_gap_ms": 2804.8198968172073,
+    "durable_receipt": "docs/aris/ZOOMTOKEN_BPNS_R1_DECOUPLED_DIAGNOSTIC_AND_COST_CLOSURE_V004_TERMINAL_RECEIPT-2026-08-29.md"
+  },
+  "v004_post_result_review": {
+    "request_id": "PRO_BPNS_R1_V004_TERMINAL_COST_AND_DIAGNOSTIC_REVIEW_REQUEST-v001",
+    "nonce": "ZOOMTOKEN-BPNS-R1-V004-TERMINAL-PRO-v001-20260829T130000+0800",
+    "status": "MATERIAL_READY_NOT_SUBMITTED",
+    "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
+    "profile_id": "61",
+    "actual_submission_count": 0,
+    "follow_up_count": 0,
+    "request_path": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V004_TERMINAL_COST_AND_DIAGNOSTIC_REVIEW_REQUEST-v001.md",
+    "post_result_review_still_required": true
+  },
+  "epoch": 20,
+  "execution_state": "V004_TERMINAL_INGESTED_FRESH_PRO_PENDING__TAR32_TERMINAL_VALIDATION_DEFERRED",
   "last_pro_review_at": "2026-08-28T14:59:47Z",
-  "new_evidence_since_pro": false,
+  "new_evidence_since_pro": true,
   "next_pro_review_due_at": null,
   "pause_reason": null,
   "midday_report": {
@@ -187,8 +228,8 @@
   "pro_decision": {
     "process_review_role_contract": "REVISE",
     "v002_evidence_status": "PERMANENTLY_CLOSED_AS_EFFICIENCY_EVIDENCE",
-    "bpns_r1_status": "SINGLE_SEED_ACCURACY_FEASIBLE_EFFICIENCY_UNKNOWN",
-    "verdict": "CONTINUE_ONCE_WITH_DECOUPLED_COST_CLOSURE",
+    "bpns_r1_status": "V004_COMPLETE__EFFICIENCY_HEADLINE_STOPPED_BY_LATENCY_GATE",
+    "verdict": "AWAITING_FRESH_V004_POST_RESULT_PRO",
     "role_contract": "KEEP",
     "next_task": "ZOOMTOKEN-BPNS-R1-DECOUPLED-DIAGNOSTIC-AND-COST-CLOSURE-v004",
     "base_commit": "8a59d655005b9030d8ea5dc17ee2620844cb587b",
@@ -235,6 +276,6 @@
   },
   "schema_version": "1.0",
   "stage": "G6_FULL_EVAL",
-  "status": "V004_AND_TAR32_FORMAL_ACTIVE",
-  "updated_at": "2026-08-28T18:31:00Z"
+  "status": "V004_TERMINAL_PRO_PENDING__TAR32_VALIDATION_DEFERRED",
+  "updated_at": "2026-08-29T05:00:00Z"
 }

@@ -40,19 +40,24 @@ max_chars: 8000
   `profile.json`, cost rows, power trace, measured latency/energy/memory, short-action or
   boundary summary. This deterministic evaluator-construction omission is also not a
   model result or efficiency evidence.
-- **Fresh Pro adjudication.** The exact-Project post-result review classified v003 as
+- **Previous Pro adjudication.** The exact-Project post-result review classified v003 as
   engineering-defective, protocol-invalid and scientifically directionless, then returned
   `CONTINUE_ONCE_WITH_DECOUPLED_COST_CLOSURE`; the role contract remains `KEEP`. The exact
   raw diagnostic differences are mixed rather than uniformly positive: R1−K100 is
   `+0.5353 pp` Avg-mAP and `+0.7520/+0.1518/+1.6238/-0.1042/+0.2528 pp` at tIoU
   `0.3/0.4/0.5/0.6/0.7`. This supports only fixed-seed accuracy feasibility; efficiency,
   memory, energy and boundary protection remain unknown.
-- **Only next decision-changing task.** Execute exactly one
-  `ZOOMTOKEN-BPNS-R1-DECOUPLED-DIAGNOSTIC-AND-COST-CLOSURE-v004` from clean base
-  `8a59d655…`. Decouple raw cost/power persistence from prediction identity and offline
-  diagnostics, persist each pass before any later diagnostic can fail, use the frozen
-  four-pass-median p50 and complete-pass-energy ratios, then return any terminal state to
-  one fresh Pro. No v005, retry, resume, seed, auxiliary arm or threshold change is allowed.
+- **v004 decision-changing result.** The sole v004 job `1260095`, candidate
+  `a4694019fd4cbbdc74885e160163e23d947dc05f`, completed all eight frozen passes and
+  emitted complete cost, power, prediction, evaluator, short-action, boundary, profile and
+  terminal evidence. Independent pass-level recomputation gives R1/K100 ratios of
+  `0.9849289616` for p50 and `0.9350002508` for gross energy. Energy passes the 5% gate,
+  but p50 improves only `1.51%` and fails. Under the frozen conjunctive rule this is
+  `STOP_BPNS_R1_EFFICIENCY_HEADLINE`: BPNS-R1 cannot be the current end-to-end efficiency
+  headline. Peak allocated/reserved memory ratios are `0.7513/0.6897`, but these fixed
+  single-hardware observations do not override the latency failure. No v005, replay,
+  threshold change, seed or auxiliary arm is authorized. The only immediate action is one
+  fresh exact-Project Pro adjudication of this complete terminal package.
 - **Parallel Pro-frozen composite probe (user-confirmed 2026-08-29).** The latest Pro
   instruction independently opens `ZoomToken-R1-TAR32-FKV`: retain R1 contiguous K64
   support and full-K64 Adapter, run dense K64 updates in even VideoMAE blocks, and in each
@@ -65,31 +70,30 @@ max_chars: 8000
   plus `9 passed` for strict-R1 regressions; fresh Critic is `PASS`, fresh result-blind
   Evaluator is `PRE_RUN_READY`, and real-shape CUDA AMP pre-run job `1260163` completed
   `0:0` with the frozen `[64,32]x6` route ledger and zero fallback/failure. The only formal
-  seed-42 training is job `1260166`, started on `g0059` with 2 GPUs. It must not alter,
-  consume partial evidence from, or delay v004 job `1260095`; the two terminal evidence
-  packages return separately to fresh Pro review.
-- **Current execution state.** The minimal clean/pushed v003 descendant is
-  `8a59d655005b9030d8ea5dc17ee2620844cb587b`; only the profiler, its focused
-  tests, and the v003 launcher differ from `e9323448…`. Local and N16R4 focused
-  checks both report `21 passed`; a fresh independent Critic returned `PASS`
-  and a fresh result-blind Evaluator returned `PRE_RUN_READY`. Slurm precheck
-  job `1258524` completed `0:0` without reading validation metrics or training.
-  Formal job `1258526` ran on `g0063` from `11:58:39` to `17:32:11 +08:00` and ended
-  `FAILED 1:0 / FAILED_PROTOCOL_INVALID`. All eight predictions and unrounded evaluator
-  vectors exist and are identical within each arm, but measurement completeness failed
-  before any cost/power/boundary evidence was persisted. These vectors are diagnostic
-  only. The audited Pro review is complete; v004 job `1260095` remains independently
-  frozen under the bounded successor above. In parallel, TAR32-FKV formal job `1260166`
-  is under event-driven terminal-only waiting. Neither running job supplies a result yet.
-- **Frozen primary aggregation (not instantiated by job `1258299`).** The profiler's top-level `comparison` pools all
+  seed-42 training is job `1260166`, started on `g0059` with 2 GPUs. It was strictly
+  isolated from v004. A Slurm terminal signal is available, but its model, checkpoint,
+  route-ledger, accuracy and protocol evidence are intentionally not interpreted until the
+  complete v004 package has been adjudicated by a fresh Pro turn. If that later validation
+  finds a valid model output and complete protocol, exactly one matched full-stack cost
+  measurement is required; no retry, resume, second seed or auxiliary arm is allowed.
+- **Current execution state.** v004 is terminal `COMPLETED 0:0` and fully ingested. Its
+  eight-pass order is `K100,R1,R1,K100,R1,K100,K100,R1`; all four prediction SHAs per
+  arm match their frozen anchors, and 6,336 cost rows plus 929,889 power rows are present.
+  R1−K100 accuracy deltas are mixed, while short-action/boundary changes are small and
+  mixed, so no boundary-protection claim is supported. K100 pass 3 has a disclosed
+  `2804.82 ms` in-pass power sampling gap; coverage remains complete and the frozen
+  protocol had no gap threshold, so this is uncertainty rather than replay authority.
+  The v004 post-result Pro request is the only active scientific decision point. TAR32-FKV
+  terminal validation follows only after that Pro turn.
+- **Frozen primary aggregation (instantiated by v004).** The profiler's top-level `comparison` pools all
   windows from four passes per arm. It is descriptive but does not implement the
   Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by
   `(arm, pass_index)`, compute decode-to-Soft-NMS p50 and total GPU joules for each
   complete pass, then take the median of the four pass estimates per arm before
-  forming R1/K100 ratios. The raw rows contain the required fields, so this correction
-  would require no replay if complete raw rows existed and must be disclosed separately
-  from the pooled summary. Job `1258299` produced no `cost_samples.jsonl`, so this
-  aggregation cannot be computed for that run.
+  forming R1/K100 ratios. v004 provides the required complete raw rows. The reconstructed
+  K100/R1 median p50 values are `2481.9575/2444.5518 ms`; median complete-pass energies
+  are `144194.4432/134821.8406 J`. These produce the frozen ratios above. The pooled
+  profiler summary remains descriptive and cannot replace this primary estimate.
 - **Known terminal-evidence coverage deviations.** The current profiler persists one
   canonical prediction file per arm and checks repeated-pass prediction equality in
   memory; per-pass evaluator vectors live in `profile.pass_receipts`, rather than in

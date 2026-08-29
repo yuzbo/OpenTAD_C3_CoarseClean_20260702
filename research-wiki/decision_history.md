@@ -1378,3 +1378,17 @@ prediction SHA 和 pass receipt，八 pass 后才运行非计时 diagnostics。�
 p50 中位数比与完整 pass gross-energy 中位数比均 `<=0.95`。任一失败即停止当前效率 headline；
 若在 raw acquisition 完成前再次协议失败，则不授权 v005 或更多 BPNS 重放。任何终态均先交 fresh
 Pro，不自动添加种子、辅助臂、阈值修订、resume 或 rerun。
+
+## 117. v004 完整成本否定 BPNS-R1 效率 headline（2026-08-29）
+
+唯一 v004 job `1260095` 完成冻结的八 pass、raw cost、power、prediction identity、offline
+short-action/boundary diagnostics、profile 与 terminal receipt。按每臂四个完整 pass 重算中位数后，
+R1/K100 的 p50 比为 `0.9849289616`，gross-energy 比为 `0.9350002508`。能耗下降 6.50%，
+但 p50 只下降 1.51%，没有满足两项均不高于 `0.95` 的预注册联合门。
+
+因此科学裁决按冻结规则直接记录为 `STOP_BPNS_R1_EFFICIENCY_HEADLINE`：连续 K64 支持仍可保留为
+单种子准确率与机制归因观察，但不能作为当前论文的真实端到端效率主张。显存下降与能耗通过只可
+作为单硬件固定条件测量事实，不覆盖延迟失败。短动作与边界指标方向混合，不建立边界保护主张。
+K100 pass 3 的约 `2.805 s` 功耗采样 gap 作为能耗不确定性披露；它不影响延迟判据，也不授权
+重放。禁止 v005、retry、resume、阈值调整、额外 seed 或辅助臂；下一步仅为一次 fresh exact-Project
+Pro 独立裁决，Codex 不自行选择替代路线。

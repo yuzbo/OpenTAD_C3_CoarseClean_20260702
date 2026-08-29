@@ -4,13 +4,13 @@
 
 - **问题：** 当前观测上的连续 K64 原生支持，能否在保护高 tIoU 定位的同时降低离线 TAD 的真实端到端成本？
 - **候选机制：** BPNS-R1 在 VideoMAE 前保留一个连续无孔洞的 `8×8/K64` 支持；所有保留 token 仍完整执行 12 层 VideoMAE-S 与既有 Adapter，不使用历史 cache、carry 或深度跳过。
-- **已有证据：** 单个 seed-42 中，K100 与 R1 的 final-EMA 为 `68.51/61.19/46.27` 与 `69.07/61.14/46.57`。这支持准确率可行性，并把“连续支持拓扑”保留为有价值的机制解释。
-- **不能主张：** 36% 原生 token 减少尚未转化为已测得的延迟、显存或能耗收益；也没有多种子、跨检测器或跨数据集证据。
+- **已有证据：** 单个 seed-42 中，K100 与 R1 的 final-EMA 为 `68.51/61.19/46.27` 与 `69.07/61.14/46.57`。v004 同硬件八-pass 成本闭环进一步测得 R1/K100 的 p50、gross energy 与 peak allocated/reserved memory 比值分别为 `0.98493/0.93500/0.75130/0.68966`。
+- **不能主张：** 36% 原生 token 减少没有转化为冻结要求的至少 5% p50 改善；端到端 p50 只下降 `1.51%`。因此不能再把 BPNS-R1 作为当前效率 headline，也没有多种子、跨硬件、跨检测器或跨数据集证据。
 - **当前实验：** v002 job `1258299` 已永久封存为无效率结果的准入协议失败。Pro 冻结的 v003 clean/pushed revision `8a59d655005b9030d8ea5dc17ee2620844cb587b` 通过 local/remote `21 passed`、fresh Critic `PASS`、fresh result-blind Evaluator `PRE_RUN_READY` 与 precheck `1258524 COMPLETED 0:0`。唯一正式 job `1258526` 在 `g0063` 运行 `05:33:32` 后终态 `FAILED 1:0 / FAILED_PROTOCOL_INVALID`：八个 prediction/evaluator pass 已保存，但短动作 evaluator 配置遗漏 registry 的 `type`，在形成成本、功耗、显存、短动作或边界汇总前确定性终止。
 - **Pro 裁决：** v003 的全新 exact-Project 复盘已返回 `CONTINUE_ONCE_WITH_DECOUPLED_COST_CLOSURE`，角色合同 `KEEP`。v003 是工程缺陷触发、协议无效、科学无方向的终态；八个 raw vectors 只说明固定 seed/checkpoint 下 R1 没有广泛准确率崩塌，不能支持效率或边界主张。
-- **BPNS 主线唯一下一任务：** 从 `8a59d655…` 建立一个最小 v004，把逐-pass raw cost/power 持久化、prediction identity 与非计时 short-action/boundary diagnostics 解耦。每臂以四个 pass 的 p50 和完整 pass energy 中位数形成主估计；两项 R1/K100 比值都必须不高于 `0.95`。只允许一个新 Slurm job；任何终态都必须回到 fresh Pro，协议若在 raw acquisition 完成前再次失败则不授权 v005。
+- **BPNS 主线终态：** 唯一 v004 job `1260095` 已 `COMPLETED 0:0` 并形成完整八-pass 证据。能耗下降 `6.50%` 通过门槛，但 p50 仅下降 `1.51%`，未通过冻结的联合门；终态为 `STOP_BPNS_R1_EFFICIENCY_HEADLINE`。不存在 v005、重放或阈值修订授权；完整结果只送一次 fresh Pro 独立裁决。
 - **并行组合探针：** 最新 Pro 另行冻结 `R1-TAR32-FKV`。它保持 R1 K64 支持和全 K64 Adapter，偶数块更新 K64，奇数块由前一稠密块注意力列均值逐 tubelet 稳定选择 K32，只对 K32 执行 Query/output/MLP，而全 K64 继续提供 K/V。clean/pushed candidate 为 `b0a1ca113bec1d8ca66b355f83dbb272bb7b3cb7`；正式 seed-42 job `1260166` 已独立启动。这是 composition-first probe，不是已成立方法、新颖性或效率证据，也不替代或延迟 v004 job `1260095`。
-- **证据边界：** v003 直接保存了八个 prediction、SHA 与未舍入 evaluator vectors；arm 内四次完全一致。R1−K100 为 Avg-mAP `+0.5353 pp`，而 mAP@0.6 为 `-0.1042 pp`，结果是混合且接近的。缺失 `profile.json`、cost rows、power trace 和短动作/边界汇总，四-pass-median 成本主估计仍不可计算；不能声称加速、显存、能效或边界保护。
+- **证据边界：** v004 的 prediction identity、6,336 cost rows、929,889 power rows、profile、terminal receipt 和离线诊断均完整。R1−K100 准确率与边界变化混合；不能主张边界保护。第 3 号 K100 pass 有一次约 `2.805 s` 功耗采样间隙，必须作为能耗不确定性披露，但它不改变 p50 门失败，也不授权重放。
 
 以下按日期和实验族保留完整证据与负结果；运行标识用于定位原始材料，不替代上述科学判断。
 
@@ -36,8 +36,8 @@
 
 > **2026-08-25 动态选择性重计算复核：** 新一轮附件式 ZoomToken Project Pro 讨论进一步比较了 clip 内动态重计算 `IC-DRU`、重叠窗口精确缓存 `OW-ECR` 和 current-proxy 条件深度路由 `PCD-DRU`。理想已知骨干算术上界分别约节省 `50.12%`、`7.66%` 和 `60.16%`，但前两种动态路线要求平均仅刷新约 25% 的 token、仍保留 dense/full-refresh 峰值，并且其变化路由、轻量残差与逐 token 深度分配均可被已有 Eventful、视频缓存和 MoD/A-MoD 工作分解覆盖；窗口路线则因 Adapter 依赖传播和约 `54 MiB/样本` 的十二层缓存缺少全链路余量。Pro 对这三个精确定义候选给出 `STOP_BEFORE_IMPLEMENTATION`，新增正式实验为 0。本裁决是实施前设计判断，不是动态刷新、特征复用或 20%–30% 更新率的经验失败，也没有产生新的准确率或端到端成本结果。
 
-- 更新时间：2026-08-29（论文主线仍为当前观测的 `BPNS-R1`，同硬件成本证据仍未建立。jobs `1257281/1258299` 封存为 replay-admission 失败；job `1258526` 封存为 measurement-completeness 协议失败。v004 正式成本 job `1260095` 与 Pro 单独冻结的 TAR32-FKV 正式训练 job `1260166` 并行且证据隔离；不从任一运行中结果选线，也不启动其他辅助路线）。
-- 证据等级：已有真实 THUMOS14 validation 性能。官方路径 A、全部 token + sparse adapter 的 B、主干前 ROI `K=64` + 同一 adapter 的 C，其 Avg-mAP/mAP@0.7 分别为 `68.73/47.24`、`68.51/46.27`、`68.22/45.35`。这是一种子严格归因结果；当前仍无完整端到端成本结果，不能声称计算效率提升。
+- 更新时间：2026-08-29（BPNS-R1 v004 已形成完整同硬件终态成本证据，并因 p50 主门失败而停止效率 headline；完整包正进入 fresh Pro。TAR32-FKV 保持隔离，只有在 v004 Pro 回取后才验证训练终态并决定是否提交冻结的唯一成本测量）。
+- 证据等级：已有真实 THUMOS14 validation 与单硬件、单 seed 的八-pass 端到端成本。官方路径 A、全部 token + sparse adapter 的 B、主干前 ROI `K=64` + 同一 adapter 的 C，其 Avg-mAP/mAP@0.7 分别为 `68.73/47.24`、`68.51/46.27`、`68.22/45.35`。v004 证明固定条件下 R1 能耗与显存下降，但延迟收益不足；不能声称总体计算效率提升。
 
 ## 1. 一句话问题与应用价值
 
@@ -88,7 +88,7 @@ ZoomToken 研究离线时序动作检测（Temporal Action Detection，TAD）中
 
 **主干前严格因果矩阵。** A 仍只读复用官方 job `1245842`；B job `1248835` 在每个 tubelet 上让全部 `100` 个原生 token 进入 true-ragged VideoMAE 与 sparse adapter；C job `1248834` 只在重主干之前将支持改为 ROI fixed `K=64`，其余模型和训练配方与 B 相同。两臂绑定 clean revision `70dcbe10…`、seed `42`、双卡 global/local batch `2/1`、官方增强、AdamW/调度器、AMP、EMA、evaluator、Soft-NMS、60 轮以及每 2 轮 checkpoint/validation。两项均为 `COMPLETED 0:0`，各保存 30 个周期检查点并完成 epoch-59 官方 validation。
 
-**严格矩形 R1 falsifier。** R1 job `1249099` 绑定 clean revision `9e25c6d…`、seed `42`、相同双卡 global/local batch `2/1`、60 轮、官方 training/validation、AdamW/调度器、AMP、EMA、evaluator 与 Soft-NMS。唯一科学差异是把 C 的椭圆/高斯 Top-64 支持换成一个完整 `8×8` 原生矩形；token 数仍为 64。每 5 轮保存完整恢复状态、保留最近 3 份，final checkpoint 同时保存 raw 与 EMA，EMA 为预注册主结果。训练已完成，终态 EMA 为 `69.07/61.14/46.57`（Avg-mAP/mAP@0.6/mAP@0.7）；尚无 R1 配对成本或多 seed 结果。
+**严格矩形 R1 falsifier。** R1 job `1249099` 绑定 clean revision `9e25c6d…`、seed `42`、相同双卡 global/local batch `2/1`、60 轮、官方 training/validation、AdamW/调度器、AMP、EMA、evaluator 与 Soft-NMS。唯一科学差异是把 C 的椭圆/高斯 Top-64 支持换成一个完整 `8×8` 原生矩形；token 数仍为 64。每 5 轮保存完整恢复状态、保留最近 3 份，final checkpoint 同时保存 raw 与 EMA，EMA 为预注册主结果。训练已完成，终态 EMA 为 `69.07/61.14/46.57`（Avg-mAP/mAP@0.6/mAP@0.7）；v004 已完成 R1/K100 配对成本，但 p50 只下降 1.51%，未通过效率主门，且仍无多 seed 结果。
 
 **BPNS-R1 同硬件成本回放。** 不新增训练，严格复用 K100 job `1248835` 与 R1 job `1249099` 的 epoch-59 EMA。正式 population 是完整 official validation loader 的 211 个视频、792 个有序样本项；K100/R1 原计划在同一张 Slurm GPU 内按 `K100,R1,R1,K100,R1,K100,K100,R1` 各执行四次，每次先 warmup 50 个窗口。正式 job `1257281` 在首个 K100 pass 后因 `mAP@0.7=46.246663` 与预填历史值 `46.27` 不一致而 fail closed，未完成 R1 和其余 counterbalanced passes，且未发布完整 profile/终结收据。该 namespace 不提供效率证据；在明确历史数值的原始精度、舍入与容差合同并重新通过独立结果盲检查前，不解释任何局部计时或能耗输出。
 
@@ -106,7 +106,7 @@ ZoomToken 研究离线时序动作检测（Temporal Action Detection，TAD）中
 
 代码层面的准备已经完成：现有稀疏 Adapter 路径保留 `(tubelet index, spatial index)` 原生坐标，数据样本保留视频名和窗口起点，ChronoTransport 分支已有可复用的状态容器、状态年龄、首块强制重计算和非有限值回退。它们尚不包含可靠的跨帧对应、遮挡/场景切换失效或跨窗口身份管理，因此当前只作为实现基础，不作为已完成方法或性能证据。
 
-**指标和停止规则。** 主要准确率为 Avg-mAP、mAP@0.6、mAP@0.7；同时按已冻结定义报告短动作、起止边界误差和高 IoU 错误分解。离线边界评估器只消费最终 prediction/annotation JSON，不进入训练或选择 checkpoint。历史 P1/Q 成本合同使用 136 windows、40 video clusters 和配对 bootstrap；它不适用于本次 BPNS 回放。本次 K100/R1 合同使用完整 official validation loader 的 211 个视频、792 个有序样本项，并在同一 GPU 上按 ABBA+BAAB 各执行四次，覆盖 decode→H2D→model→postprocess→NMS 的 p50/p95、吞吐率、峰值内存和连续 gross energy。只有官方 evaluator 数值 parity 与完整终态产物同时通过，才判断 R1 的真实收益。
+**指标和停止规则。** 主要准确率为 Avg-mAP、mAP@0.6、mAP@0.7；同时按已冻结定义报告短动作、起止边界误差和高 IoU 错误分解。离线边界评估器只消费最终 prediction/annotation JSON，不进入训练或选择 checkpoint。历史 P1/Q 成本合同使用 136 windows、40 video clusters 和配对 bootstrap；它不适用于本次 BPNS 回放。v004 已在完整 official validation loader 的 211 个视频、792 个有序样本项上按 ABBA+BAAB 各执行四次，覆盖 decode→H2D→model→postprocess→NMS 的 p50/p95、吞吐率、峰值内存和连续 gross energy。完整性通过，但 p50 联合门失败，因此 R1 的总体效率主张停止。
 
 **checkpoint。** 未来非 untouched-official 的 DN/U/R/Q/R1 完整训练每 5 个 epoch 保存原子可恢复 `.pth`，保留最近 3 个有效恢复点以及预定义 milestone/final；恢复必须恢复 model、EMA、optimizer、scheduler、AMP scaler、epoch/update 与成功更新计数、sampler epoch、Python/NumPy/Torch CPU/CUDA 随机状态。只使用预注册的 final/final-EMA 选择规则，不能据中间验证挑选最好 checkpoint。未修改的共享官方 AdaTAD 配方保持其原生每 2 epoch 保存节奏。
 

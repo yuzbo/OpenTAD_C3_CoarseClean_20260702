@@ -4729,3 +4729,14 @@ append_only: true
   `/data/run01/sczc063/yuzibo/projects/zoomtoken_r1_tar32_fkv_v001_seed42_20260830`。
   后端 watcher `j-ucv5ag` 只等待终态；运行期间不读取或解释 partial 性能。v004 job
   `1260095` 及其 watcher `j-sjvtib` 保持独立、未修改、未重排。
+
+- 2026-08-29：BPNS-R1 v004 唯一正式 job `1260095` 在 `g0059` 从 `00:37:38` 运行至
+  `06:10:03 +08:00`，终态 `COMPLETED 0:0`。八 pass 严格按
+  `K100,R1,R1,K100,R1,K100,K100,R1` 完成，4/4 prediction SHA 每臂一致并匹配冻结锚点；
+  6,336 cost rows、929,889 power rows、pass receipts、profile、terminal receipt、短动作和边界
+  诊断均完整。按 raw rows 独立重算的 R1/K100 四-pass 中位数比为：p50 `0.9849289616`、
+  gross energy `0.9350002508`、p95 `0.9780185512`、peak allocated/reserved memory
+  `0.7512973880/0.6896551724`。能耗通过 5% 门，但 p50 只下降 1.51% 并失败；按冻结联合规则
+  终态为 `STOP_BPNS_R1_EFFICIENCY_HEADLINE`。短动作与起止边界差异小且混合，不支持边界保护
+  主张。K100 pass 3 存在 `2804.82 ms` 功耗采样间隙，coverage 仍完整且冻结协议无 gap 阈值；
+  作为能耗不确定性披露，但不改变延迟失败且不授权重跑。终态包只进入一次 fresh Pro。
