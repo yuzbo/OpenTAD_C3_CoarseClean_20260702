@@ -204,22 +204,28 @@
   "v004_post_result_review": {
     "request_id": "PRO_BPNS_R1_V004_TERMINAL_COST_AND_DIAGNOSTIC_REVIEW_REQUEST-v001",
     "nonce": "ZOOMTOKEN-BPNS-R1-V004-TERMINAL-PRO-v001-20260829T130000+0800",
-    "status": "WAITING_USER_LOGIN",
+    "status": "BLOCKED_PRO_TIER_UNAVAILABLE_PRE_SUBMISSION",
     "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
     "profile_id": "61",
     "last_cdp": "127.0.0.1:39567",
+    "session_authenticated": true,
+    "exact_project_reached": true,
+    "browser_model_options": ["Extra High", "GPT-5.6 Sol", "GPT-5.5"],
     "actual_submission_count": 0,
     "follow_up_count": 0,
     "request_path": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V004_TERMINAL_COST_AND_DIAGNOSTIC_REVIEW_REQUEST-v001.md",
     "post_result_review_still_required": true,
-    "blocker": "profile 61 runtime CDP 127.0.0.1:39567 is open but ChatGPT targets resolve to /auth/login; no attachment upload, conversation creation or prompt submission occurred"
+    "streaming_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V004_TERMINAL_COST_AND_DIAGNOSTIC_REVIEW_STREAMING_RECEIPT-v001.json",
+    "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V004_TERMINAL_COST_AND_DIAGNOSTIC_REVIEW_TERMINAL_RECEIPT-v001.json",
+    "needs_attention_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V004_TERMINAL_COST_AND_DIAGNOSTIC_REVIEW_NEEDS_ATTENTION-v001.md",
+    "blocker": "authenticated exact Project reached, but model picker exposes only Extra High, GPT-5.6 Sol and GPT-5.5; no browser-verifiable Pro option; failure occurred before attachment upload and prompt submission"
   },
   "epoch": 20,
-  "execution_state": "V004_TERMINAL_INGESTED__FRESH_PRO_WAITING_USER_LOGIN__TAR32_VALIDATION_DEFERRED",
+  "execution_state": "V004_TERMINAL_INGESTED__FRESH_PRO_BLOCKED_PRE_SUBMISSION_MODEL_TIER__TAR32_VALIDATION_DEFERRED",
   "last_pro_review_at": "2026-08-28T14:59:47Z",
   "new_evidence_since_pro": true,
   "next_pro_review_due_at": null,
-  "pause_reason": "WAITING_USER_LOGIN_PROFILE61_CDP_127.0.0.1_39567",
+  "pause_reason": "PRO_TIER_NOT_EXPOSED_IN_AUTHENTICATED_PROFILE61_PROJECT_MODEL_PICKER",
   "midday_report": {
     "required_at_beijing": "2026-08-28T12:00:00+08:00",
     "delivered_at_beijing": "2026-08-28T12:04:48+08:00",
@@ -278,6 +284,6 @@
   },
   "schema_version": "1.0",
   "stage": "G6_FULL_EVAL",
-  "status": "V004_TERMINAL_PRO_WAITING_USER_LOGIN__TAR32_VALIDATION_DEFERRED",
-  "updated_at": "2026-08-29T05:15:00Z"
+  "status": "V004_TERMINAL_PRO_BLOCKED_PRE_SUBMISSION_MODEL_TIER__TAR32_VALIDATION_DEFERRED",
+  "updated_at": "2026-08-29T11:08:00Z"
 }
