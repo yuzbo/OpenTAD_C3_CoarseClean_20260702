@@ -6,6 +6,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gpus=1
 #SBATCH --time=7-00:00:00
+source /etc/profile
 set -euo pipefail
 
 fail() { echo "[DUCA_COVERAGE_V1][FAIL] $*" >&2; exit 1; }
