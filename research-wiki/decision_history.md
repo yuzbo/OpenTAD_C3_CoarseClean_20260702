@@ -1,6 +1,6 @@
 ---
 type: decision_history
-updated: 2026-08-28
+updated: 2026-08-29
 ---
 
 # 路线演化与选择理由
@@ -1392,3 +1392,23 @@ R1/K100 的 p50 比为 `0.9849289616`，gross-energy 比为 `0.9350002508`。能
 K100 pass 3 的约 `2.805 s` 功耗采样 gap 作为能耗不确定性披露；它不影响延迟判据，也不授权
 重放。禁止 v005、retry、resume、阈值调整、额外 seed 或辅助臂；下一步仅为一次 fresh exact-Project
 Pro 独立裁决，Codex 不自行选择替代路线。
+
+## 118. v004 Pro 冻结 BPNS 并转向 TAR32 终态与匹配成本闭环（2026-08-29）
+
+fresh exact-Project `GPT-5.6 Pro` 复盘返回 `PIVOT`，角色合同 `KEEP`。v004 工程证据为
+`PASS_STRONG`，协议为 `VALID_WITH_DISCLOSED_POWER_UNCERTAINTY`，科学证据为
+`VALID_NEGATIVE_FOR_STANDALONE_FULL_STACK_LATENCY_HEADLINE`。因此
+`STOP_BPNS_R1_EFFICIENCY_HEADLINE` 维持不变；BPNS-R1 只冻结为空间支持可行性、局部 GPU/显存/
+能耗归因以及“结构计算下降没有转化为 5% 串行全栈 p50 收益”的负系统证据。2.805 s 功耗 gap
+只作能耗不确定性披露；下一成本工具必须按 pass 区间重算局部 gap。没有 v005、BPNS replay、额外
+seed、阈值修订或边界保护主张。
+
+唯一下一任务是
+`ZOOMTOKEN-R1-TAR32-FKV-TERMINAL-VALIDATION-AND-K100-MATCHED-FULL-STACK-COST-CLOSURE-v001`。
+先在读取指标前绑定原始 TAR32 授权、准确率门和成本规则的路径与 SHA，只读核验 job `1260166` 的
+exact revision、60 epoch、epoch-59 EMA、official evaluator/prediction、`[64,32]x6` ledger 与无
+fallback/新参数/新 loss。身份或终态产物无效即 `STOP_BEFORE_COST`。有效时仅允许从
+`b0a1ca113bec1d8ca66b355f83dbb272bb7b3cb7` 建立模型零修改的成本后继，经过一次 Critic、一次
+结果盲 Evaluator 后提交一个 K100/TAR32 同 GPU 八-pass 作业；p50 与 gross energy 分别按每 pass
+计算、每臂四-pass 中位数形成比值，均须 `<=0.95`，功耗 coverage 为 `1.0` 且 pass-local gap
+`<=100 ms`。任何终态后先做 fresh Pro，不自动 retry、resume、第二 seed 或第三臂。

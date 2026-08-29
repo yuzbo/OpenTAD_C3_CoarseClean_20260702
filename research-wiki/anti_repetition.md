@@ -71,8 +71,9 @@ updated: 2026-08-29
    Treat peak-memory reduction and 6.50% gross-energy reduction as fixed-condition measured
    observations only. Do not claim boundary protection: short-action and start/end errors
    are small and mixed. Disclose the `2804.82 ms` K100 pass-3 power gap; it does not change
-   the latency failure and does not authorize a rerun. The only admissible next BPNS action
-   is the required fresh exact-Project Pro review of the complete terminal package.
+   the latency failure and does not authorize a rerun. The fresh exact-Project Pro review is
+   now complete: `PIVOT`, role contract `KEEP`, and BPNS-R1 is frozen as attribution plus
+   negative systems evidence. Do not reopen BPNS-R1 as a standalone efficiency headline.
    Separately, the user confirmed a newer Pro instruction opening exactly one stateless
    composition probe, `R1-TAR32-FKV`, from base `2d945e64…`. This does not replace or
    modify v004. Keep its branch, worktree, jobs, roots and evidence separate. The probe
@@ -83,8 +84,13 @@ updated: 2026-08-29
    fallback or rescue. Do not claim A-MoD novelty, full-K/V novelty, synergy or real
    speed from the `79.06%` heavy-block proxy. Its only clean/pushed formal candidate is
    `b0a1ca113bec1d8ca66b355f83dbb272bb7b3cb7`; the only formal training is job
-   `1260166`. Do not submit a duplicate, read live/partial performance, mix it with v004
-   job `1260095`, or let either terminal package stand in for the other's Pro review.
+   `1260166`. Pro's unique atomic successor is
+   `ZOOMTOKEN-R1-TAR32-FKV-TERMINAL-VALIDATION-AND-K100-MATCHED-FULL-STACK-COST-CLOSURE-v001`.
+   Bind the original authority before reading terminal metrics. If job/model/output identity
+   is invalid, stop before cost. If valid, allow only one same-job K100/TAR32 cost replay in
+   order `K100,TAR32,TAR32,K100,TAR32,K100,K100,TAR32`, with 792 items/pass, 50 warmup,
+   pass-local power coverage `1.0` and max gap `<=100 ms`. Do not reuse v004 K100 cost,
+   submit a duplicate, add a third arm, retry, resume, second seed or automatic successor.
    Do not apply the primary 5% efficiency gate directly to the profiler's pooled
    `comparison.r1_over_k100` fields. The Pro-frozen primary estimator first computes
    one end-to-end p50 and one total-energy value for each complete pass, then takes

@@ -4740,3 +4740,13 @@ append_only: true
   终态为 `STOP_BPNS_R1_EFFICIENCY_HEADLINE`。短动作与起止边界差异小且混合，不支持边界保护
   主张。K100 pass 3 存在 `2804.82 ms` 功耗采样间隙，coverage 仍完整且冻结协议无 gap 阈值；
   作为能耗不确定性披露，但不改变延迟失败且不授权重跑。终态包只进入一次 fresh Pro。
+
+- 2026-08-29：v004 fresh exact-Project post-result Pro 复盘已审计完成。conversation
+  `6a92c125-e2e4-83e9-87f8-3123c9287afc` 使用浏览器可见 `GPT-5.6 Pro`、七个
+  attachment-only 文件、实际科研提交 1 次、follow-up 0；裁决 `PIVOT`，角色合同 `KEEP`。
+  Pro 确认 `STOP_BPNS_R1_EFFICIENCY_HEADLINE`，将 BPNS-R1 冻结为空间支持可行性、局部
+  GPU/显存/能耗归因和负系统结果；不授权 v005、重放、额外 seed 或边界保护主张。唯一原子任务为
+  `ZOOMTOKEN-R1-TAR32-FKV-TERMINAL-VALIDATION-AND-K100-MATCHED-FULL-STACK-COST-CLOSURE-v001`：
+  先绑定原始 TAR32 权威并只读验收 job `1260166`；有效模型输出条件下，模型代码零修改，只执行
+  一次 K100/TAR32 同 GPU 八-pass 成本闭环，功耗按 pass-local gap `<=100 ms` fail closed；任何
+  终态随后只进入一次 fresh Pro，不自动重跑或增加 seed/第三臂。

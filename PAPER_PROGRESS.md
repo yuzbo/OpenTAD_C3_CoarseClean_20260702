@@ -7,9 +7,9 @@
 - **已有证据：** 单个 seed-42 中，K100 与 R1 的 final-EMA 为 `68.51/61.19/46.27` 与 `69.07/61.14/46.57`。v004 同硬件八-pass 成本闭环进一步测得 R1/K100 的 p50、gross energy 与 peak allocated/reserved memory 比值分别为 `0.98493/0.93500/0.75130/0.68966`。
 - **不能主张：** 36% 原生 token 减少没有转化为冻结要求的至少 5% p50 改善；端到端 p50 只下降 `1.51%`。因此不能再把 BPNS-R1 作为当前效率 headline，也没有多种子、跨硬件、跨检测器或跨数据集证据。
 - **当前实验：** v002 job `1258299` 已永久封存为无效率结果的准入协议失败。Pro 冻结的 v003 clean/pushed revision `8a59d655005b9030d8ea5dc17ee2620844cb587b` 通过 local/remote `21 passed`、fresh Critic `PASS`、fresh result-blind Evaluator `PRE_RUN_READY` 与 precheck `1258524 COMPLETED 0:0`。唯一正式 job `1258526` 在 `g0063` 运行 `05:33:32` 后终态 `FAILED 1:0 / FAILED_PROTOCOL_INVALID`：八个 prediction/evaluator pass 已保存，但短动作 evaluator 配置遗漏 registry 的 `type`，在形成成本、功耗、显存、短动作或边界汇总前确定性终止。
-- **Pro 裁决：** v003 的全新 exact-Project 复盘已返回 `CONTINUE_ONCE_WITH_DECOUPLED_COST_CLOSURE`，角色合同 `KEEP`。v003 是工程缺陷触发、协议无效、科学无方向的终态；八个 raw vectors 只说明固定 seed/checkpoint 下 R1 没有广泛准确率崩塌，不能支持效率或边界主张。
+- **Pro 裁决：** v004 的全新 exact-Project `GPT-5.6 Pro` 复盘已返回 `PIVOT`，角色合同 `KEEP`。工程为 `PASS_STRONG`，协议为 `VALID_WITH_DISCLOSED_POWER_UNCERTAINTY`，科学为 `VALID_NEGATIVE_FOR_STANDALONE_FULL_STACK_LATENCY_HEADLINE`。BPNS-R1 永久退出独立效率 headline，只保留为空间支持可行性、局部 GPU/显存/能耗归因和负系统结果。
 - **BPNS 主线终态：** 唯一 v004 job `1260095` 已 `COMPLETED 0:0` 并形成完整八-pass 证据。能耗下降 `6.50%` 通过门槛，但 p50 仅下降 `1.51%`，未通过冻结的联合门；终态为 `STOP_BPNS_R1_EFFICIENCY_HEADLINE`。不存在 v005、重放或阈值修订授权；完整结果只送一次 fresh Pro 独立裁决。
-- **并行组合探针：** 最新 Pro 另行冻结 `R1-TAR32-FKV`。它保持 R1 K64 支持和全 K64 Adapter，偶数块更新 K64，奇数块由前一稠密块注意力列均值逐 tubelet 稳定选择 K32，只对 K32 执行 Query/output/MLP，而全 K64 继续提供 K/V。clean/pushed candidate 为 `b0a1ca113bec1d8ca66b355f83dbb272bb7b3cb7`；正式 seed-42 job `1260166` 已独立启动。这是 composition-first probe，不是已成立方法、新颖性或效率证据，也不替代或延迟 v004 job `1260095`。
+- **当前唯一任务：** `ZOOMTOKEN-R1-TAR32-FKV-TERMINAL-VALIDATION-AND-K100-MATCHED-FULL-STACK-COST-CLOSURE-v001`。先只读核验唯一 seed-42 job `1260166` 的 60 轮、epoch-59 EMA、原始 evaluator/prediction 与 `[64,32]×6` route ledger；若终态模型与协议有效，则从 `b0a1ca113bec1d8ca66b355f83dbb272bb7b3cb7` 建立模型零修改的最小成本后继，并只提交一个 K100/TAR32 八-pass 同 GPU 成本作业。这仍是 composition-first falsifier，不是已成立方法、新颖性或效率证据。
 - **证据边界：** v004 的 prediction identity、6,336 cost rows、929,889 power rows、profile、terminal receipt 和离线诊断均完整。R1−K100 准确率与边界变化混合；不能主张边界保护。第 3 号 K100 pass 有一次约 `2.805 s` 功耗采样间隙，必须作为能耗不确定性披露，但它不改变 p50 门失败，也不授权重放。
 
 以下按日期和实验族保留完整证据与负结果；运行标识用于定位原始材料，不替代上述科学判断。
@@ -36,7 +36,7 @@
 
 > **2026-08-25 动态选择性重计算复核：** 新一轮附件式 ZoomToken Project Pro 讨论进一步比较了 clip 内动态重计算 `IC-DRU`、重叠窗口精确缓存 `OW-ECR` 和 current-proxy 条件深度路由 `PCD-DRU`。理想已知骨干算术上界分别约节省 `50.12%`、`7.66%` 和 `60.16%`，但前两种动态路线要求平均仅刷新约 25% 的 token、仍保留 dense/full-refresh 峰值，并且其变化路由、轻量残差与逐 token 深度分配均可被已有 Eventful、视频缓存和 MoD/A-MoD 工作分解覆盖；窗口路线则因 Adapter 依赖传播和约 `54 MiB/样本` 的十二层缓存缺少全链路余量。Pro 对这三个精确定义候选给出 `STOP_BEFORE_IMPLEMENTATION`，新增正式实验为 0。本裁决是实施前设计判断，不是动态刷新、特征复用或 20%–30% 更新率的经验失败，也没有产生新的准确率或端到端成本结果。
 
-- 更新时间：2026-08-29（BPNS-R1 v004 已形成完整同硬件终态成本证据，并因 p50 主门失败而停止效率 headline；完整包正进入 fresh Pro。TAR32-FKV 保持隔离，只有在 v004 Pro 回取后才验证训练终态并决定是否提交冻结的唯一成本测量）。
+- 更新时间：2026-08-29（BPNS-R1 v004 已形成完整同硬件终态成本证据，fresh Pro 确认 `PIVOT` 并停止独立效率 headline。当前按唯一原子任务核验 TAR32-FKV 训练终态；协议有效才提交冻结的唯一 K100/TAR32 成本测量）。
 - 证据等级：已有真实 THUMOS14 validation 与单硬件、单 seed 的八-pass 端到端成本。官方路径 A、全部 token + sparse adapter 的 B、主干前 ROI `K=64` + 同一 adapter 的 C，其 Avg-mAP/mAP@0.7 分别为 `68.73/47.24`、`68.51/46.27`、`68.22/45.35`。v004 证明固定条件下 R1 能耗与显存下降，但延迟收益不足；不能声称总体计算效率提升。
 
 ## 1. 一句话问题与应用价值
@@ -181,4 +181,4 @@ ROI60 首轮已经完成，为同一环境下的 ROI-only `G` 对同源全计算
 
 首轮 DN/G 的 epoch 44/49/54 六项补充 validation 已全部 `COMPLETED 0:0` 并加载 EMA；G−DN Avg-mAP 分别为 `-3.08/-3.05/-3.04` 个百分点，与终态 `-3.24` 一致，排除了“差距仅由最后几轮退化造成”的解释。严格三臂现已进一步把 adapter 与固定 ROI 的影响拆开。端到端成本只有在同一硬件和完整测量链成立后才比较，不能以 token 数代理。
 
-主干前正式 B/C jobs `1248835/1248834`、R1 job `1249099`、RC32 修复版 jobs `1252179/1252180/1252181`、DSR6-KV job `1252527` 与 APM-C32/FULL64 job `1254008` 均已终态 `COMPLETED 0:0`。RC32 原 revision `836f2ce4…` 的首次部署 jobs `1250604/1250605/1250606` 仍封存为训练前失败；没有 resume 或重复 FULL64。既有 Q64-GLOBAL job `1249132` 终态 EMA 为 `67.84/60.66/45.39`。APM-C32/FULL64 因不省重块计算且降低准确率而停止，RC32-KV 因被同成本 MOD32-KV 严格支配而停止，ACR16/Eventful 直接迁移因新颖性与全栈收益余量同时不足而在实现前停止。当前运行中的两个正式作业是相互隔离的 v004 成本 job `1260095` 与 TAR32-FKV 训练 job `1260166`；两者均由后端终态 watcher 承担静默等待，不读取 partial 性能。jobs `1257281/1258299` 只保留为 `FAILED 1:0` 的数值一致性准入证据；后者结果根为空。终态前不能声称实际加速、显存、能效或 TAR32 准确率收益，也不自动创建 successor。
+主干前正式 B/C jobs `1248835/1248834`、R1 job `1249099`、RC32 修复版 jobs `1252179/1252180/1252181`、DSR6-KV job `1252527` 与 APM-C32/FULL64 job `1254008` 均已终态 `COMPLETED 0:0`。RC32 原 revision `836f2ce4…` 的首次部署 jobs `1250604/1250605/1250606` 仍封存为训练前失败；没有 resume 或重复 FULL64。既有 Q64-GLOBAL job `1249132` 终态 EMA 为 `67.84/60.66/45.39`。APM-C32/FULL64 因不省重块计算且降低准确率而停止，RC32-KV 因被同成本 MOD32-KV 严格支配而停止，ACR16/Eventful 直接迁移因新颖性与全栈收益余量同时不足而在实现前停止。v004 成本 job `1260095` 已终态并经 Pro 冻结；TAR32-FKV job `1260166` 的终态只按新任务读取审计。jobs `1257281/1258299` 只保留为 `FAILED 1:0` 的数值一致性准入证据；后者结果根为空。TAR32 审计完成前不能声称其准确率或效率收益，也不自动创建 successor。

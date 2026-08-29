@@ -56,8 +56,15 @@ max_chars: 8000
   `STOP_BPNS_R1_EFFICIENCY_HEADLINE`: BPNS-R1 cannot be the current end-to-end efficiency
   headline. Peak allocated/reserved memory ratios are `0.7513/0.6897`, but these fixed
   single-hardware observations do not override the latency failure. No v005, replay,
-  threshold change, seed or auxiliary arm is authorized. The only immediate action is one
-  fresh exact-Project Pro adjudication of this complete terminal package.
+  threshold change, seed or auxiliary arm is authorized.
+- **v004 terminal Pro adjudication.** One fresh exact-Project `GPT-5.6 Pro` turn returned
+  `PIVOT`, with engineering `PASS_STRONG`, protocol
+  `VALID_WITH_DISCLOSED_POWER_UNCERTAINTY`, science
+  `VALID_NEGATIVE_FOR_STANDALONE_FULL_STACK_LATENCY_HEADLINE`, and role contract `KEEP`.
+  `STOP_BPNS_R1_EFFICIENCY_HEADLINE` is confirmed. BPNS-R1 is frozen only as an
+  accuracy-feasible support primitive, local GPU/memory/energy attribution and a valid
+  negative systems result. The 2.805 s power gap remains disclosed uncertainty; future
+  tools must compute pass-local rather than cumulative gap statistics.
 - **Parallel Pro-frozen composite probe (user-confirmed 2026-08-29).** The latest Pro
   instruction independently opens `ZoomToken-R1-TAR32-FKV`: retain R1 contiguous K64
   support and full-K64 Adapter, run dense K64 updates in even VideoMAE blocks, and in each
@@ -73,9 +80,11 @@ max_chars: 8000
   seed-42 training is job `1260166`, started on `g0059` with 2 GPUs. It was strictly
   isolated from v004. A Slurm terminal signal is available, but its model, checkpoint,
   route-ledger, accuracy and protocol evidence are intentionally not interpreted until the
-  complete v004 package has been adjudicated by a fresh Pro turn. If that later validation
-  finds a valid model output and complete protocol, exactly one matched full-stack cost
-  measurement is required; no retry, resume, second seed or auxiliary arm is allowed.
+  complete v004 package was adjudicated. The unique next task is now
+  `ZOOMTOKEN-R1-TAR32-FKV-TERMINAL-VALIDATION-AND-K100-MATCHED-FULL-STACK-COST-CLOSURE-v001`.
+  It first binds the original authority and audits job `1260166`; if the final model output
+  and protocol are valid, it performs exactly one matched K100/TAR32 full-stack cost job.
+  No retry, resume, second seed or auxiliary arm is allowed.
 - **Current execution state.** v004 is terminal `COMPLETED 0:0` and fully ingested. Its
   eight-pass order is `K100,R1,R1,K100,R1,K100,K100,R1`; all four prediction SHAs per
   arm match their frozen anchors, and 6,336 cost rows plus 929,889 power rows are present.
@@ -83,8 +92,11 @@ max_chars: 8000
   mixed, so no boundary-protection claim is supported. K100 pass 3 has a disclosed
   `2804.82 ms` in-pass power sampling gap; coverage remains complete and the frozen
   protocol had no gap threshold, so this is uncertainty rather than replay authority.
-  The v004 post-result Pro request is the only active scientific decision point. TAR32-FKV
-  terminal validation follows only after that Pro turn.
+  The v004 post-result Pro turn is complete. The active decision point is the read-only
+  TAR32-FKV terminal audit, followed conditionally by the single matched cost closure. The
+  cost order is `K100,TAR32,TAR32,K100,TAR32,K100,K100,TAR32`; power coverage must be
+  `1.0` with pass-local maximum gap at most `100 ms`, and the primary p50/energy estimator
+  remains the four-pass median per arm.
 - **Frozen primary aggregation (instantiated by v004).** The profiler's top-level `comparison` pools all
   windows from four passes per arm. It is descriptive but does not implement the
   Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by
