@@ -19,6 +19,8 @@ ZoomToken 由 Pro 冻结唯一科学任务与裁决门，Codex 只做最小忠�
 
 ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务由 Codex 连续推进至正式终态证据摄取和 fresh post-result Pro 裁决，不因普通 Git、远端、Slurm 或证据摄取步骤重复请示。长时任务提交并确认后，等待责任转交计算系统，Codex 结束主动推理阶段；这不构成任务放弃。Pro 请求无实际 submission 时恢复同一 request；已有 submission/conversation 时只等待或回取，禁止 duplicate/follow-up。工程或协议失败没有科学方向，正式终态默认不得自动重跑，除非冻结任务明确授权。
 
+一次科学实验限制的是一次真正进入模型、canonical 数据或 evaluator 的科学尝试，不简单等同于一次 `sbatch` 调用。纯外部 launcher 的确定性、结果盲、零科学执行失败，在候选、模型、配置、数据、checkpoint、seed、资源语义、evaluator/NMS、阈值和主张范围均不漂移时，可经一次最小变更面 Critic 与 result-blind Evaluator 后替代一次；旧作业仍计入总 Slurm 提交数。replacement 无论在哪一阶段再次失败，都不得自动产生第三次提交，必须返回 fresh Pro；若冻结任务明确把 `sbatch` 调用次数本身设为硬上限，则服从该更严格规则。
+
 ### 长任务的事件驱动等待
 
 - 已提交的下载、传输、Slurm 作业、训练或 Pro 生成不是主动推理工作。提交方先记录不可变 job/session 身份、配置身份、预期终态产物、最长时限和恢复规则，并确认后端已经接受任务。

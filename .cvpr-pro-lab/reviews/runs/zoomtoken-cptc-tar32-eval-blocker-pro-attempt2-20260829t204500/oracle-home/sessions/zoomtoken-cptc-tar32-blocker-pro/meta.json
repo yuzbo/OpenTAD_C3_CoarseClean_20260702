@@ -1,0 +1,172 @@
+{
+  "id": "zoomtoken-cptc-tar32-blocker-pro",
+  "createdAt": "2026-08-29T12:51:01.929Z",
+  "status": "completed",
+  "promptPreview": "ZOOMTOKEN-CPTC-TAR32-EVAL-BLOCKER-PRO-v001-20260829T203500+0800::g-p-6a79701398bc8191a9ef61db6302b24b\nThis is ATTEMPT2 for the same previously unsubmitted singl",
+  "model": "gpt-5.5-pro",
+  "models": [
+    {
+      "model": "gpt-5.5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5.5-pro.log"
+      },
+      "startedAt": "2026-08-29T12:51:02.814Z",
+      "completedAt": "2026-08-29T13:03:57.352Z",
+      "usage": {
+        "inputTokens": 60361,
+        "outputTokens": 3265,
+        "reasoningTokens": 0,
+        "totalTokens": 63626
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_ZoomToken_CVPR2027",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 39567
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 39567,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "323ECD82E3F4DDA9DAD963CD6D1A15A9",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b-zoomtoken/c/6a92d5cb-ac50-83ea-8e0f-3ca229ce9ba7",
+      "conversationId": "6a92d5cb-ac50-83ea-8e0f-3ca229ce9ba7",
+      "promptSubmitted": true,
+      "controllerPid": 89172
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b-zoomtoken/c/6a92d5cb-ac50-83ea-8e0f-3ca229ce9ba7"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-29T12:51:07.260Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "ZOOMTOKEN-CPTC-TAR32-EVAL-BLOCKER-PRO-v001-20260829T203500+0800::g-p-6a79701398bc8191a9ef61db6302b24b\nThis is ATTEMPT2 for the same previously unsubmitted single-turn Project Pro adjudication, request_id=PRO_CPTC_TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER_ADJUDICATION-v001. ATTEMPT1 stopped before attachments, prompt submission, or conversation creation because no Pro route was browser-visible; it was not a scientific submission. Read all nine attachment-only files completely; the request file is the authoritative question and the final-route source is the governing scientific route. Independently decide the pre-model one-submit blocker without accepting Codex's framing by default. Return one complete Chinese answer, one unique next task, explicit Beijing deadlines, and KEEP or REVISE for the role contract. Do not ask for a follow-up. Begin by echoing the marker, request_id, exact Project ID, filenames actually used, and browser-visible model route.",
+    "file": [
+      "E:\\DeskTop\\TAD\\OpenTAD_ZoomToken_CVPR2027\\.cvpr-pro-lab\\reviews\\PRO_CPTC_TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER_ADJUDICATION-v001.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_ZoomToken_CVPR2027\\docs\\aris\\ZOOMTOKEN_R1_TAR32_FKV_EVAL_ONLY_SUBMISSION_BLOCKER_RECEIPT-2026-08-29.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_ZoomToken_CVPR2027\\docs\\aris\\ZOOMTOKEN_R1_TAR32_FKV_TERMINAL_AUTHORITY_BINDING_RECEIPT-2026-08-29.md",
+      "C:\\Users\\skywalker\\.codex\\attachments\\218e5755-062c-4fbf-97d6-e7b44c1bb82c\\pasted-text.txt",
+      "E:\\DeskTop\\TAD\\OpenTAD_ZoomToken_CVPR2027\\docs\\aris\\ZOOMTOKEN_R1_TAR32_FKV_TERMINAL_CRITIC_RECEIPT-2026-08-29.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_ZoomToken_CVPR2027\\scripts\\run_zoomtoken_r1_tar32_fkv_eval_only_n16r4.sh",
+      "E:\\DeskTop\\TAD\\OpenTAD_ZoomToken_CVPR2027\\PAPER_PROGRESS.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_ZoomToken_CVPR2027\\research-wiki\\query_pack.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_ZoomToken_CVPR2027\\docs\\aris\\ZOOMTOKEN_PRO_CODEX_RESEARCH_ROLES.md"
+    ],
+    "model": "gpt-5.5-pro",
+    "models": [
+      "gpt-5.5-pro"
+    ],
+    "effectiveModelId": "gpt-5.5-pro",
+    "filesReport": true,
+    "slug": "zoomtoken-cptc-tar32-blocker-pro",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 39567
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "always",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 10800,
+    "httpTimeoutMs": 10800000,
+    "zombieTimeoutMs": 10800000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_ZoomToken_CVPR2027\\.cvpr-pro-lab\\reviews\\PRO_CPTC_TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER_ADJUDICATION_RESPONSE-v001.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 89172,
+    "reattachCommand": "oracle session zoomtoken-cptc-tar32-blocker-pro"
+  },
+  "startedAt": "2026-08-29T12:51:02.810Z",
+  "completedAt": "2026-08-29T13:03:57.390Z",
+  "usage": {
+    "inputTokens": 60361,
+    "outputTokens": 3265,
+    "reasoningTokens": 0,
+    "totalTokens": 63626
+  },
+  "elapsedMs": 774250,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_ZoomToken_CVPR2027\\.cvpr-pro-lab\\reviews\\runs\\zoomtoken-cptc-tar32-eval-blocker-pro-attempt2-20260829t204500\\oracle-home\\sessions\\zoomtoken-cptc-tar32-blocker-pro\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 20663,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b-zoomtoken/c/6a92d5cb-ac50-83ea-8e0f-3ca229ce9ba7",
+      "sha256": "eec189d79e1586693ee77f6ccba10c12421d0cb96a1a9abf9c7c8ac388cd08b2",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

@@ -90,16 +90,16 @@ updated: 2026-08-29
 	   `CPTC-vFinal-20260829` makes the current conditional cost contrast `R1/FULL64` versus
 	   `R1-TAR32-FKV`; K100 belongs only to the frozen successor residual probe. Formal training
 	   job `1260166` completed with a valid epoch-59 EMA checkpoint but no final validation.
-	   The sole evaluation-only submission, job `1261121`, stopped before model load because
+	   The first evaluation-only submission, job `1261121`, stopped before model load because
 	   its external launcher counted top-level regular MP4s rather than the canonical 411
 	   recursive MP4 symlinks. Do not treat this as accuracy or route evidence and do not
-	   silently submit a replacement: scientific execution count is zero, but the route's
-	   one-submit allowance was consumed, so the exact one-line launcher correction returns to
-	   fresh Pro. If that correction is authorized and the model passes the frozen accuracy
-	   gate, allow only one same-job R1/FULL64/TAR32 cost replay in order
-	   `R1/FULL64,TAR32,TAR32,R1/FULL64,TAR32,R1/FULL64,R1/FULL64,TAR32`, with 792 items/pass, 50 warmup,
-   pass-local power coverage `1.0` and max gap `<=100 ms`. Do not reuse v004 K100 cost,
-   submit a duplicate, add a third arm, retry, resume, second seed or automatic successor.
+	   treat this as accuracy or route evidence. Fresh Project Pro returned
+	   `REVISE_AND_CONTINUE` and authorized exactly one replacement completion: scheduler
+	   ordinal 2 / scientific-attempt ordinal 1. The sole replacement is job `1261142`, using
+	   only the result-blind `find -L` inventory correction. Do not foreground-poll or consume
+	   partial metrics. No third submission, retry, resume, second seed, cost measurement or
+	   automatic successor is allowed. Accuracy pass only yields
+	   `ACCURACY_ADMITTED_PENDING_FRESH_PRO`; cost remains frozen until that fresh review.
    Do not apply the primary 5% efficiency gate directly to the profiler's pooled
    `comparison.r1_over_k100` fields. The Pro-frozen primary estimator first computes
    one end-to-end p50 and one total-energy value for each complete pass, then takes

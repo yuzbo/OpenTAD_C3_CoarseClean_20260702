@@ -77,19 +77,19 @@ BPNS-v004 values, rounded terminal observations, or a post-hoc wider gate.
 ## Conditional next action
 
 First perform one immutable terminal audit, one independent Critic, and one
-result Evaluator. If training/model/checkpoint identity is valid and the original
-accuracy gate passes, authorize exactly one same-job `R1/FULL64` versus
-`R1-TAR32-FKV` matched full-stack cost measurement. The user-supplied final route
-is the most recent authority for the arm identity and supersedes the earlier v004
-receipt's `K100` label for this current TAR32 closure; `K100` is reserved for the
-frozen successor residual-probe task. The matched order is
-`R1/FULL64,TAR32,TAR32,R1/FULL64,TAR32,R1/FULL64,R1/FULL64,TAR32`, with 792
-ordered items, 50 warmup windows per pass, decode-to-Soft-NMS scope, pass-local
-20 ms power sampling, coverage `1.0`, and local maximum gap `<=100 ms`.
+result Evaluator. The fresh exact-Project Pro adjudication of the pre-model blocker
+supersedes the earlier conditional cost wording for the current atomic task. If
+training/model/checkpoint identity is valid and the original accuracy gate passes,
+classify the result only as `ACCURACY_ADMITTED_PENDING_FRESH_PRO`; do not start a
+cost measurement. The user-supplied final route still fixes the eventual arm
+identity, if a later fresh Pro explicitly authorizes cost, as `R1/FULL64` versus
+`R1-TAR32-FKV`; `K100` remains reserved for the frozen successor residual probe.
 
 If the protocol is valid but accuracy fails, the frozen classification is
 `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`. If the checkpoint is valid but formal EMA
-validation is absent, only one evaluation-only completion is allowed. If the
-training/checkpoint identity is invalid, return an engineering/protocol blocker and
-do not infer a scientific direction. `ZT-CPTC-RP-K100-v001` remains frozen and
-unauthorized until a fresh Project Pro adjudication after this terminal closure.
+validation is absent, Pro authorizes exactly one replacement evaluation-only
+completion as scheduler ordinal 2 and scientific-attempt ordinal 1. A third
+submission is forbidden. If training/checkpoint identity is invalid or the
+replacement cannot complete, return `ENGINEERING_OR_PROTOCOL_BLOCKER` and do not
+infer a scientific direction. Cost and `ZT-CPTC-RP-K100-v001` both remain frozen
+until a fresh Project Pro adjudication after this terminal closure.

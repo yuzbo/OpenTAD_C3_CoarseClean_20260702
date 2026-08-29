@@ -4761,4 +4761,19 @@ append_only: true
   recursive symlink=411、follow-links regular=411。结果根未创建，prediction/metric/训练/resume/
   参数更新均为 0；这是工程/协议 blocker，不是 TAR32 科学结果。最终路线明确“一次提交”，因此
   不静默重提；一行 `find -L` 修正与完整 blocker 先进入 fresh Project Pro 独立裁决，Residual
-  Probe 仍冻结。
+	  Probe 仍冻结。
+
+- 2026-08-29：pre-model 清单 blocker 的 fresh exact-Project `GPT-5.6 Pro` 复盘已完成。
+  conversation `6a92d5cb-ac50-83ea-8e0f-3ca229ce9ba7` 使用 9 个 attachment-only 文件、实际
+  提交 1 次、follow-up 0；裁决 `REVISE_AND_CONTINUE`，角色合同 `REVISE`。Pro 区分 scheduler
+  submission 与 scientific attempt：job `1261121` 没有进入科学执行，因此只授权一次
+  `RPL1_EVALUATION_ONLY_COMPLETION`，其计数为 scheduler ordinal 2 / scientific-attempt ordinal 1，
+  第三次提交禁止。若冻结准确率门通过，只形成 `ACCURACY_ADMITTED_PENDING_FRESH_PRO`；当前不授权
+  成本或 `ZT-CPTC-RP-K100-v001`。
+
+- 2026-08-29：TAR32 replacement 的一行 `find -L` launcher 修正通过 Builder 身份检查、独立
+  Critic `PASS` 和结果盲 Evaluator `PRE_RUN_READY_REPLACEMENT`。唯一替代 job `1261142`
+  （`zt-r1-tar32-eval-b0a1`）于 `21:11:36 +08:00` 提交、`21:11:38` 在 `g0067` 开始，
+  使用 2 GPU / 8 CPU，只加载冻结 epoch-59 `state_dict_ema` 并运行 official validation；不训练、
+  resume 或更新参数。FastCtx watcher `j-sdfhnd` 每 300 秒只检测终态，Codex 不读取 live/partial
+  accuracy、prediction、route 或其他指标，也不创建第三提交、成本或 successor。

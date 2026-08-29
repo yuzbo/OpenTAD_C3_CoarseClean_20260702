@@ -9,7 +9,7 @@
 - **当前实验：** v002 job `1258299` 已永久封存为无效率结果的准入协议失败。Pro 冻结的 v003 clean/pushed revision `8a59d655005b9030d8ea5dc17ee2620844cb587b` 通过 local/remote `21 passed`、fresh Critic `PASS`、fresh result-blind Evaluator `PRE_RUN_READY` 与 precheck `1258524 COMPLETED 0:0`。唯一正式 job `1258526` 在 `g0063` 运行 `05:33:32` 后终态 `FAILED 1:0 / FAILED_PROTOCOL_INVALID`：八个 prediction/evaluator pass 已保存，但短动作 evaluator 配置遗漏 registry 的 `type`，在形成成本、功耗、显存、短动作或边界汇总前确定性终止。
 - **Pro 裁决：** v004 的全新 exact-Project `GPT-5.6 Pro` 复盘已返回 `PIVOT`，角色合同 `KEEP`。工程为 `PASS_STRONG`，协议为 `VALID_WITH_DISCLOSED_POWER_UNCERTAINTY`，科学为 `VALID_NEGATIVE_FOR_STANDALONE_FULL_STACK_LATENCY_HEADLINE`。BPNS-R1 永久退出独立效率 headline，只保留为空间支持可行性、局部 GPU/显存/能耗归因和负系统结果。
 - **BPNS 主线终态：** 唯一 v004 job `1260095` 已 `COMPLETED 0:0` 并形成完整八-pass 证据。能耗下降 `6.50%` 通过门槛，但 p50 仅下降 `1.51%`，未通过冻结的联合门；终态为 `STOP_BPNS_R1_EFFICIENCY_HEADLINE`。不存在 v005、重放或阈值修订授权；完整结果只送一次 fresh Pro 独立裁决。
-- **当前唯一任务：** `ZT-CPTC-TAR32-TERMINAL-001`。唯一 seed-42 training job `1260166` 已完成并保留有效 epoch-59 EMA，但没有正式 final validation。按 `CPTC-vFinal-20260829` 提交的唯一 evaluation-only job `1261121` 在模型加载前 4 秒失败：外部 launcher 误把 canonical 视频清单当作顶层普通文件，而实际是递归目录内 411 个有效 MP4 软链接。没有 prediction、metric、训练、resume 或参数更新，因此这是工程/协议 blocker，不是 TAR32 性能结果。最终路线只允许一次 evaluation-only 提交；当前不静默重提，先把一行清单修正交给 fresh Project Pro 独立裁决。若获准完成且原冻结准确率门通过，唯一成本对照为 `R1/FULL64` 与 `R1-TAR32-FKV`；K100 只属于尚未解冻的残差后继探针。
+- **当前唯一任务：** `ZT-CPTC-TAR32-TERMINAL-001`。唯一 seed-42 training job `1260166` 已完成并保留有效 epoch-59 EMA，但没有正式 final validation。首个 evaluation-only job `1261121` 在模型加载前因 canonical 411 个递归 MP4 软链接的清单检查错误而失败；没有产生科学执行。fresh exact-Project `GPT-5.6 Pro` 已裁决 `REVISE_AND_CONTINUE`、角色合同 `REVISE`，仅授权一次 `RPL1_EVALUATION_ONLY_COMPLETION`。一行 `find -L` 修正通过 Builder、独立 Critic `PASS` 和结果盲 Evaluator `PRE_RUN_READY_REPLACEMENT`；替代 job `1261142` 已按 scheduler ordinal 2 / scientific-attempt ordinal 1 启动并由后台 terminal-only watcher 静默等待。第三次提交、成本测量和 `ZT-CPTC-RP-K100-v001` 均冻结；即使准确率通过，也只记录 `ACCURACY_ADMITTED_PENDING_FRESH_PRO`。
 - **证据边界：** v004 的 prediction identity、6,336 cost rows、929,889 power rows、profile、terminal receipt 和离线诊断均完整。R1−K100 准确率与边界变化混合；不能主张边界保护。第 3 号 K100 pass 有一次约 `2.805 s` 功耗采样间隙，必须作为能耗不确定性披露，但它不改变 p50 门失败，也不授权重放。
 
 以下按日期和实验族保留完整证据与负结果；运行标识用于定位原始材料，不替代上述科学判断。
@@ -36,7 +36,7 @@
 
 > **2026-08-25 动态选择性重计算复核：** 新一轮附件式 ZoomToken Project Pro 讨论进一步比较了 clip 内动态重计算 `IC-DRU`、重叠窗口精确缓存 `OW-ECR` 和 current-proxy 条件深度路由 `PCD-DRU`。理想已知骨干算术上界分别约节省 `50.12%`、`7.66%` 和 `60.16%`，但前两种动态路线要求平均仅刷新约 25% 的 token、仍保留 dense/full-refresh 峰值，并且其变化路由、轻量残差与逐 token 深度分配均可被已有 Eventful、视频缓存和 MoD/A-MoD 工作分解覆盖；窗口路线则因 Adapter 依赖传播和约 `54 MiB/样本` 的十二层缓存缺少全链路余量。Pro 对这三个精确定义候选给出 `STOP_BEFORE_IMPLEMENTATION`，新增正式实验为 0。本裁决是实施前设计判断，不是动态刷新、特征复用或 20%–30% 更新率的经验失败，也没有产生新的准确率或端到端成本结果。
 
-- 更新时间：2026-08-29（BPNS-R1 v004 已形成完整同硬件终态成本证据，fresh Pro 确认 `PIVOT` 并停止独立效率 headline。TAR32-FKV 训练 checkpoint 有效，但唯一 evaluation-only submission 在模型前被错误视频清单门拒绝；无科学结果，修正与是否允许替代 completion 已转交 fresh Pro）。
+- 更新时间：2026-08-29（BPNS-R1 v004 已形成完整同硬件终态成本证据并停止独立效率 headline。TAR32-FKV 的 pre-model 清单 blocker 已由 fresh Pro 裁为 `REVISE_AND_CONTINUE`；唯一授权替代 job `1261142` 正在执行 final-EMA evaluation-only，后台只等待终态，不读取 partial 指标）。
 - 证据等级：已有真实 THUMOS14 validation 与单硬件、单 seed 的八-pass 端到端成本。官方路径 A、全部 token + sparse adapter 的 B、主干前 ROI `K=64` + 同一 adapter 的 C，其 Avg-mAP/mAP@0.7 分别为 `68.73/47.24`、`68.51/46.27`、`68.22/45.35`。v004 证明固定条件下 R1 能耗与显存下降，但延迟收益不足；不能声称总体计算效率提升。
 
 ## 1. 一句话问题与应用价值

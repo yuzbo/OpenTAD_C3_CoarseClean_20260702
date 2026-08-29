@@ -48,6 +48,10 @@ Codex 仅在需要新权限，或拟改变机制、对照、数据、checkpoint�
 
 Pro 请求由 Project ID、request ID 和 nonce 共同识别。没有实际 submission 时只恢复同一 request；已有 submission 或 conversation 时只等待或回取；归属不明时只做一次精确核对，禁止 duplicate、follow-up 或按相似内容猜测。默认每轮只进行一次 Critic 和一次 Evaluator；若发现会使实验无效的决定性缺陷，只允许一次最小修复并针对改动表面重新审查。只有新的、独立的致命问题才能触发第二次审查；同一问题重复出现或第二次仍不准入时直接返回 Pro，不得无限审计。
 
+### 预科学执行失败与替代提交
+
+“一次正式实验”或“一次提交”默认约束一次真正进入冻结科学执行边界的尝试，而不单纯等同于一次 `sbatch` 调度调用。若作业在模型/检查点加载、canonical 数据加载器、evaluator、prediction、metric 和任何参数更新全部发生前，因外部 launcher 的确定性且结果盲缺陷终止；且修复不改变候选、模型、配置、数据、checkpoint、seed、资源语义、evaluator/NMS、阈值或主张范围，则原作业必须永久保留并计入调度提交数，但不消耗科学尝试名额。Codex 可在对变更面完成一次最小 Critic 和 result-blind Evaluator 后，连续执行至多一次 replacement submission，无需逐步请求权限。该 replacement 无论在哪一阶段再次失败，都不得自动产生第三次提交，必须返回 fresh Pro。若某项任务明确规定 `sbatch` 调用次数本身即硬上限，则以该更严格字面规则为准。
+
 ## Independent Critic：决定性、有限范围的独立审查
 
 Critic 在独立上下文中只检查能够改变实验准入或结果解释的问题，包括：

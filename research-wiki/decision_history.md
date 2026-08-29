@@ -1412,3 +1412,19 @@ fallback/新参数/新 loss。身份或终态产物无效即 `STOP_BEFORE_COST`�
 结果盲 Evaluator 后提交一个 K100/TAR32 同 GPU 八-pass 作业；p50 与 gross energy 分别按每 pass
 计算、每臂四-pass 中位数形成比值，均须 `<=0.95`，功耗 coverage 为 `1.0` 且 pass-local gap
 `<=100 ms`。任何终态后先做 fresh Pro，不自动 retry、resume、第二 seed 或第三臂。
+
+## 119. pre-model blocker 只授权一次 TAR32 replacement evaluation（2026-08-29）
+
+fresh exact-Project `GPT-5.6 Pro` 对 job `1261121` 的四秒失败裁决为
+`REVISE_AND_CONTINUE`，角色合同 `REVISE`。该 job 在模型、checkpoint、loader 和 evaluator 前退出，
+没有 prediction、metric、训练、resume 或参数更新，因此 scheduler submission 为 1，但 scientific
+attempt 为 0；它不是 TAR32 正负结果。Pro 只授权 `RPL1_EVALUATION_ONLY_COMPLETION`：修正外部
+launcher 的递归软链接清单检查，冻结 candidate、checkpoint、数据、evaluator、资源和无训练语义，
+提交 scheduler ordinal 2 / scientific-attempt ordinal 1。第三提交、retry、resume 均禁止。
+
+Builder、独立 Critic 和结果盲 Evaluator 已分别完成身份检查、`PASS` 与
+`PRE_RUN_READY_REPLACEMENT`；唯一 replacement job `1261142` 已启动。终态前不消费 partial 指标。
+若原冻结准确率门通过，只记 `ACCURACY_ADMITTED_PENDING_FRESH_PRO`；若失败，记
+`STOP_R1_TAR32_FKV_EXACT_COMPOSITION`；身份或产物不完整则记
+`ENGINEERING_OR_PROTOCOL_BLOCKER`。当前任务不授权成本，`ZT-CPTC-RP-K100-v001` 仍冻结，任何终态
+均先进入一次新的 Project Pro 裁决。

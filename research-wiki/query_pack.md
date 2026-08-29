@@ -65,7 +65,7 @@ max_chars: 8000
   accuracy-feasible support primitive, local GPU/memory/energy attribution and a valid
   negative systems result. The 2.805 s power gap remains disclosed uncertainty; future
   tools must compute pass-local rather than cumulative gap statistics.
-- **CPTC final route and TAR32 terminal blocker (user-confirmed 2026-08-29).** The
+- **CPTC final route and TAR32 replacement evaluation (user-confirmed 2026-08-29).** The
   final route is `CPTC-vFinal-20260829`, which treats TAR32 as a context-preserved
   transformation-compression probe rather than state reuse: current dense token identity,
   full current K/V context and all-K64 Adapter execution remain, while only odd-block
@@ -76,11 +76,13 @@ max_chars: 8000
   top-level regular files, while the canonical inventory is 411 recursively nested MP4
   symbolic links. No model/checkpoint load, validation item, prediction, metric, training,
   resume or parameter update occurred. This is an engineering/protocol blocker, not a
-  TAR32 result. Because the final route says one evaluation-only submission, no replacement
-  is silently submitted; a fresh Project Pro must adjudicate the exact zero-science-execution
-  blocker and the one-line result-blind launcher correction. The conditional cost baseline,
-  if later authorized and accuracy-admitted, is `R1/FULL64` versus `R1-TAR32-FKV`; K100 is
-  reserved for the frozen successor residual probe.
+  TAR32 result. A fresh exact-Project `GPT-5.6 Pro` turn returned
+  `REVISE_AND_CONTINUE` with role contract `REVISE` and authorized exactly one
+  `RPL1_EVALUATION_ONLY_COMPLETION`: scheduler ordinal 2, scientific-attempt ordinal 1,
+  with no third submission. The one-line `find -L` correction passed Builder checks,
+  independent Critic `PASS`, and result-blind Evaluator `PRE_RUN_READY_REPLACEMENT`.
+  Replacement job `1261142` started on `g0067`; terminal-only watcher `j-sdfhnd` owns
+  waiting. Cost and the residual successor are frozen pending a fresh terminal Pro turn.
 - **Parallel Pro-frozen composite probe (user-confirmed 2026-08-29).** The latest Pro
   instruction independently opens `ZoomToken-R1-TAR32-FKV`: retain R1 contiguous K64
   support and full-K64 Adapter, run dense K64 updates in even VideoMAE blocks, and in each
@@ -110,13 +112,11 @@ max_chars: 8000
   `2804.82 ms` in-pass power sampling gap; coverage remains complete and the frozen
   protocol had no gap threshold, so this is uncertainty rather than replay authority.
   The v004 post-result Pro turn is complete. TAR32 training identity and checkpoint are
-  valid, but the one allowed evaluation-only submission is terminal before scientific
-  execution because of the launcher inventory error above. Pending fresh Pro adjudication,
-  no cost or successor starts. If a corrected completion is authorized and accuracy passes,
-  the final-route order is
-  `R1/FULL64,TAR32,TAR32,R1/FULL64,TAR32,R1/FULL64,R1/FULL64,TAR32`; power coverage
-  must be `1.0` with pass-local maximum gap at most `100 ms`, and the primary p50/energy
-  estimator remains the four-pass median per arm.
+  valid; replacement final-EMA evaluation job `1261142` is the only current scientific
+  attempt. No live or partial result is consumed. If the frozen accuracy gate passes, the
+  current task ends at `ACCURACY_ADMITTED_PENDING_FRESH_PRO`; it does not open cost. If it
+  fails, the classification is `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`; an incomplete or
+  invalid run returns `ENGINEERING_OR_PROTOCOL_BLOCKER`. A third submission is forbidden.
 - **Frozen primary aggregation (instantiated by v004).** The profiler's top-level `comparison` pools all
   windows from four passes per arm. It is descriptive but does not implement the
   Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by
