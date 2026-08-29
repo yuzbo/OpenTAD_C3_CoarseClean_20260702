@@ -4799,3 +4799,12 @@ append_only: true
   在 native K100 上补齐 `[K100,K50]x6` 交互归因单元，绑定 strict A-MoD capacity=1 job
   `1254040`，只允许一个 seed-42、60-epoch、final-EMA official-validation Slurm 提交；任何正式
   失败直接回 Pro，不 retry/resume/replacement，任何有效终态也必须先 fresh Pro，且不自动测成本。
+
+- 2026-08-30：K100-TAR50 Builder 候选 `fac88624723aed08175a947025a7f1d8a2af3171`
+  已 clean/pushed。候选只添加 task-specific reference alias、precheck/formal launcher 与 focused
+  tests；模型路径仍是已验证的 strict A-MoD capacity=0.5。N16R4 focused suite `14 passed`，job
+  `1254040` 的 checkpoint/prediction/reference-config SHA 与任务 alias config SHA 均在远端重算
+  匹配；fresh Critic `PASS`、fresh result-blind Evaluator `PRE_RUN_READY`。首次非科学 precheck
+  在 job 创建前被 Slurm `AssocMaxSubmitJobLimit` 拒绝，Job ID 不存在、formal submission 仍为
+  `0/1`、result root 未创建、训练/评测未开始。共享提交槽由 machine-side `sleep 300` waiter
+  `j-00wllb` 静默等待；不取消或修改无关作业，也不绕过 precheck。

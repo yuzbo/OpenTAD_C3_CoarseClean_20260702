@@ -392,12 +392,37 @@
   },
   "k100_tar50_interaction_falsifier": {
     "task_id": "ZT-CPTC-K100-TAR50-INTERACTION-FALSIFIER-001",
-    "status": "BUILDER_ACTIVE",
+    "status": "PRE_RUN_READY_WAITING_SHARED_SUBMIT_SLOT",
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",
+    "candidate_commit": "fac88624723aed08175a947025a7f1d8a2af3171",
+    "branch": "codex/zoomtoken-k100-tar50-interaction-v001",
+    "source_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_k100_tar50_src_fac88624",
+    "result_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_k100_tar50_interaction_fac88624_seed42_20260830",
+    "log_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_k100_tar50_logs_fac88624_20260830",
     "reference_job": "1254040",
     "reference_metrics": {"average_mAP": 68.73, "mAP@0.6": 61.59, "mAP@0.7": 47.20},
+    "reference_checkpoint_sha256": "3aca10bc3593e301b7d7e77271419b8bb557d8f8b29bead195fa2aa350e34ddd",
+    "reference_prediction_sha256": "0d09e3fec839449923db1158a18ead631e813b9d00cdab051328cb2b407485f3",
+    "reference_config_sha256": "81c805838502639d4fb0e6fcdd0848c53ccbd8eeccf7d1501562af2e84d9ac87",
+    "candidate_config_sha256": "bf40b67a52ef35c58e425634ca8d888d6787570a7fe33a669f9acdb27055c110",
+    "verification": {
+      "local_static": "2 passed",
+      "local_torch": "BLOCKED_BY_DOCUMENTED_WINDOWS_C10_DLL",
+      "n16r4_focused": "14 passed in 42.77s",
+      "critic": "PASS",
+      "evaluator": "PRE_RUN_READY"
+    },
+    "precheck": {
+      "status": "WAITING_SHARED_SUBMIT_SLOT",
+      "job_id": null,
+      "last_rejection": "AssocMaxSubmitJobLimit",
+      "scientific_execution_count": 0,
+      "machine_waiter": "j-00wllb"
+    },
+    "formal_submission_count": 0,
     "formal_submission_limit": 1,
     "cost_authorized": false,
+    "durable_receipt": "docs/aris/ZOOMTOKEN_CPTC_K100_TAR50_INTERACTION_FALSIFIER_START_RECEIPT-2026-08-30.md",
     "builder_candidate_due_beijing": "2026-08-30T09:30:00+08:00",
     "critic_due_beijing": "2026-08-30T11:00:00+08:00",
     "evaluator_due_beijing": "2026-08-30T12:30:00+08:00",
@@ -406,7 +431,7 @@
     "fresh_pro_due_beijing": "2026-08-31T13:00:00+08:00"
   },
   "epoch": 24,
-  "execution_state": "K100_TAR50_INTERACTION_FALSIFIER_BUILDER_ACTIVE",
+  "execution_state": "K100_TAR50_PRE_RUN_READY__WAITING_SHARED_SUBMIT_SLOT",
   "last_pro_review_at": "2026-08-29T17:05:07.051Z",
   "new_evidence_since_pro": false,
   "next_pro_review_due_at": null,
@@ -434,7 +459,7 @@
     "scientific_return_due_beijing": "2026-08-31T12:00:00+08:00",
     "fresh_pro_due_beijing": "2026-08-31T13:00:00+08:00"
   },
-  "research_stage": "G5_IMPL_CHECK",
+  "research_stage": "G6_FULL_EVAL",
   "roles": {
     "builder": {
       "access": "writable",
@@ -466,7 +491,7 @@
     }
   },
   "schema_version": "1.0",
-  "stage": "G5_IMPL_CHECK",
-  "status": "K100_TAR50_INTERACTION_FALSIFIER_BUILDER_ACTIVE",
-  "updated_at": "2026-08-29T17:05:07.051Z"
+  "stage": "G6_FULL_EVAL",
+  "status": "K100_TAR50_PRE_RUN_READY__WAITING_SHARED_SUBMIT_SLOT",
+  "updated_at": "2026-08-29T17:36:48Z"
 }
