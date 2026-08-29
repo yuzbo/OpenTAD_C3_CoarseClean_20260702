@@ -352,7 +352,7 @@
   "tar32_post_result_review": {
     "request_id": "PRO_CPTC_TAR32_TERMINAL_RESULT_ADJUDICATION-v001",
     "nonce": "ZOOMTOKEN-CPTC-TAR32-TERMINAL-PRO-v001-20260829T224000+0800",
-    "status": "TERMINAL_BOUND_READY_FOR_SINGLE_SUBMISSION",
+    "status": "WAITING_EXTERNAL_PROFILE61_RUNTIME",
     "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
     "profile_id": "61",
     "request_path": ".cvpr-pro-lab/reviews/PRO_CPTC_TAR32_TERMINAL_RESULT_ADJUDICATION_REQUEST-v001.md",
@@ -366,10 +366,21 @@
     "terminal_binding_complete": true,
     "cost_allowed_before_fresh_pro": false,
     "successor_allowed_before_fresh_pro": false,
-    "browser_contacted_during_preparation": false
+    "browser_contacted_during_preparation": false,
+    "blocker": {
+      "class": "BLOCKED_EXTERNAL_PROFILE_RUNTIME",
+      "detected_at_beijing": "2026-08-29T22:52:33+08:00",
+      "ixbrowser_local_api": "127.0.0.1:53200_CONNECTION_REFUSED",
+      "verified_runtime_cdp": null,
+      "ixbrowser_process_present": false,
+      "ixbrowser_window_present": false,
+      "actual_submission_count": 0,
+      "needs_attention_receipt": ".cvpr-pro-lab/reviews/PRO_CPTC_TAR32_TERMINAL_RESULT_ADJUDICATION_NEEDS_ATTENTION-v001.md",
+      "recovery": "make iXBrowser profile 61 available; then dynamically verify and submit the same single request"
+    }
   },
   "epoch": 23,
-  "execution_state": "TAR32_VALID_NEGATIVE_INGESTED__FRESH_PRO_REQUIRED",
+  "execution_state": "TAR32_VALID_NEGATIVE_INGESTED__WAITING_PROFILE61_FOR_FRESH_PRO",
   "last_pro_review_at": "2026-08-29T13:03:57Z",
   "new_evidence_since_pro": true,
   "next_pro_review_due_at": null,
@@ -430,6 +441,6 @@
   },
   "schema_version": "1.0",
   "stage": "G6_FULL_EVAL",
-  "status": "TAR32_VALID_NEGATIVE_INGESTED__FRESH_PRO_REQUIRED",
-  "updated_at": "2026-08-29T14:40:00Z"
+  "status": "TAR32_VALID_NEGATIVE_INGESTED__WAITING_PROFILE61_FOR_FRESH_PRO",
+  "updated_at": "2026-08-29T14:52:33Z"
 }
