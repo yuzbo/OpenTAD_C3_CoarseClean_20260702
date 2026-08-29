@@ -1326,6 +1326,28 @@ max_chars: 8000
    extra selector heads or loss weights. Preserve failed evidence in the
    experiment record and `anti_repetition.md`.
 
+## Current Decision Question: K100-TAR50 Interaction Falsifier
+
+- TAR32 is a valid single-seed negative result for the exact R1/K64 plus
+  `[K64,K32]x6` composition: `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`. It does not
+  establish latency, energy, memory, multi-seed generalization or a universal
+  failure of context-preserved transformation compression.
+- The only open causal ambiguity is whether fixed half transformation fails on
+  native K100 by itself or only after it is stacked with R1/K64 spatial
+  compression. The unique next task is
+  `ZT-CPTC-K100-TAR50-INTERACTION-FALSIFIER-001`.
+- The frozen candidate is a minimal clean descendant of `2d945e64...`: native
+  K100, `[K100,K50]x6` (800/400 flattened tokens), immediately preceding dense
+  attention-column ranking, full K/V, full Adapter, dense detector input and
+  exact identity bypass. No new parameters, loss, cache, fallback, dynamic K,
+  residual predictor or selector sweep is allowed.
+- Strict A-MoD capacity=1 job `1254040` is the route-matched reference:
+  Average mAP/mAP@0.6/mAP@0.7 `68.73/61.59/47.20`. One seed-42, 60-epoch,
+  epoch-59-EMA official-validation Slurm submission is allowed. All six frozen
+  accuracy/short-action/boundary gates must pass; any valid failure stops the
+  fixed-half-update attention-column identity-bypass family. No cost is
+  authorized before a fresh Pro review.
+
 ## Pointers
 
 - GeoRoute implementation and gates:

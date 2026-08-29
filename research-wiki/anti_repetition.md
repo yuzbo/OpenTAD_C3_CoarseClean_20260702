@@ -1317,3 +1317,10 @@ updated: 2026-08-29
 22. 决定性实验未完成前，不宣布 DUCA 成功；同样也不宣布其必然失败。
 23. 每次部署前必须记录 commit、配置、checkpoint、数据、Job ID 和 run root。
 24. 新结果必须先更新 experiment/claim 节点，再改论文叙事。
+
+25. 不再对 `R1-TAR32-FKV` 做第三次评测、重训、附加 seed、预算/层序/selector sweep、成本测量或
+    residual rescue；其有效单种子终态固定为 `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`。
+26. 不把 TAR32 负结果外推为全部 CPTC 失败。当前只允许补齐一次 native K100 的
+    `[K100,K50]x6` 交互归因单元；不得把它改写成 A-MoD 新颖性主张或 TAR32 补救。
+27. `ZT-CPTC-K100-TAR50-INTERACTION-FALSIFIER-001` 的正式 `sbatch` 上限为 1。任何正式失败
+    直接返回 Pro，不 retry、resume、replacement；有效通过也不自动测成本或重组 R1。

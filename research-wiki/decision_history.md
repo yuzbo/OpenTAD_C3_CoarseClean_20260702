@@ -1428,3 +1428,19 @@ Builder、独立 Critic 和结果盲 Evaluator 已分别完成身份检查、`PA
 `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`；身份或产物不完整则记
 `ENGINEERING_OR_PROTOCOL_BLOCKER`。当前任务不授权成本，`ZT-CPTC-RP-K100-v001` 仍冻结，任何终态
 均先进入一次新的 Project Pro 裁决。
+
+## 120. TAR32 有效负结果停止精确组合并补齐 K100-TAR50 交互单元（2026-08-30）
+
+fresh exact-Project `GPT-5.6 Sol / Power=Pro (5 of 5)` 裁决为 `PIVOT`，角色合同 `KEEP`。
+job `1261142` 及冻结诊断足以形成单种子、准确率层面的有效负结果：三个官方主指标与短动作门均
+失败，因此 `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`。TAR32 成本、第三次评测、重训、附加 seed、
+预算/层序/selector sweep、原地 residual rescue 和 `ZT-CPTC-RP-K100-v001` 全部冻结。该裁决只
+否定 R1/K64 空间压缩与 `[K64,K32]x6` 固定半变换叠加的精确组合，不否定所有 CPTC。
+
+唯一下一任务是 `ZT-CPTC-K100-TAR50-INTERACTION-FALSIFIER-001`，用于补齐 K100+半变换这一
+2x2 机制矩阵缺口，区分“固定半更新本身失败”与“它只在叠加 R1/K64 后失败”。执行必须是
+`2d945e64...` 的最小 clean descendant、native K100、`[K100,K50]x6`、full K/V、full Adapter、
+恒等旁路、seed 42、60 epoch、epoch-59 EMA、一个正式 Slurm 提交。先绑定 capacity=1 job
+`1254040` 及其 checkpoint/prediction/config SHA 和官方向量；正式失败不重提。六项准确率、短动作和
+边界门全通过才记 `K100_TAR50_ACCURACY_ADMITTED_PENDING_FRESH_PRO`；任一有效失败即停止固定半更新
+attention-column/identity-bypass family。无论结果如何，成本和后继仍需 fresh Pro 才能解冻。

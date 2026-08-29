@@ -4788,3 +4788,14 @@ append_only: true
   `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`。该结果只否定当前 single-seed exact composition
   的 accuracy admission；没有测 latency、energy、memory、多 seed 或机制因果。第三提交、成本和
   residual successor 均保持冻结，完整终态包只进入一次 fresh Project Pro。
+
+- 2026-08-30：TAR32 终态 fresh exact-Project Pro 复盘已完成。conversation
+  `6a930db4-fb90-83ea-ae8b-16e5028b6a45` 使用浏览器可见 `GPT-5.6 Sol / Power=Pro
+  (5 of 5)`、8 个 attachment-only 文件、实际科研提交 1 次、follow-up 0；裁决 `PIVOT`，
+  角色合同 `KEEP`。Pro 接受该单种子准确率负结果并冻结
+  `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`，不授权 TAR32 成本、第三次评测、重训、附加 seed、
+  原地 residual rescue 或 `ZT-CPTC-RP-K100-v001`。负结果只否定 R1/K64 与固定半更新的精确
+  组合，不外推到全部 CPTC。唯一下一任务为 `ZT-CPTC-K100-TAR50-INTERACTION-FALSIFIER-001`：
+  在 native K100 上补齐 `[K100,K50]x6` 交互归因单元，绑定 strict A-MoD capacity=1 job
+  `1254040`，只允许一个 seed-42、60-epoch、final-EMA official-validation Slurm 提交；任何正式
+  失败直接回 Pro，不 retry/resume/replacement，任何有效终态也必须先 fresh Pro，且不自动测成本。
