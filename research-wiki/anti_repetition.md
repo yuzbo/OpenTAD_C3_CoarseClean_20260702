@@ -84,11 +84,20 @@ updated: 2026-08-29
    fallback or rescue. Do not claim A-MoD novelty, full-K/V novelty, synergy or real
    speed from the `79.06%` heavy-block proxy. Its only clean/pushed formal candidate is
    `b0a1ca113bec1d8ca66b355f83dbb272bb7b3cb7`; the only formal training is job
-   `1260166`. Pro's unique atomic successor is
-   `ZOOMTOKEN-R1-TAR32-FKV-TERMINAL-VALIDATION-AND-K100-MATCHED-FULL-STACK-COST-CLOSURE-v001`.
-   Bind the original authority before reading terminal metrics. If job/model/output identity
-   is invalid, stop before cost. If valid, allow only one same-job K100/TAR32 cost replay in
-   order `K100,TAR32,TAR32,K100,TAR32,K100,K100,TAR32`, with 792 items/pass, 50 warmup,
+	   `1260166`. Pro's unique atomic successor is
+	   `ZOOMTOKEN-R1-TAR32-FKV-TERMINAL-VALIDATION-AND-K100-MATCHED-FULL-STACK-COST-CLOSURE-v001`.
+	   Bind the original authority before reading terminal metrics. The newer user-frozen
+	   `CPTC-vFinal-20260829` makes the current conditional cost contrast `R1/FULL64` versus
+	   `R1-TAR32-FKV`; K100 belongs only to the frozen successor residual probe. Formal training
+	   job `1260166` completed with a valid epoch-59 EMA checkpoint but no final validation.
+	   The sole evaluation-only submission, job `1261121`, stopped before model load because
+	   its external launcher counted top-level regular MP4s rather than the canonical 411
+	   recursive MP4 symlinks. Do not treat this as accuracy or route evidence and do not
+	   silently submit a replacement: scientific execution count is zero, but the route's
+	   one-submit allowance was consumed, so the exact one-line launcher correction returns to
+	   fresh Pro. If that correction is authorized and the model passes the frozen accuracy
+	   gate, allow only one same-job R1/FULL64/TAR32 cost replay in order
+	   `R1/FULL64,TAR32,TAR32,R1/FULL64,TAR32,R1/FULL64,R1/FULL64,TAR32`, with 792 items/pass, 50 warmup,
    pass-local power coverage `1.0` and max gap `<=100 ms`. Do not reuse v004 K100 cost,
    submit a duplicate, add a third arm, retry, resume, second seed or automatic successor.
    Do not apply the primary 5% efficiency gate directly to the profiler's pooled

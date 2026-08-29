@@ -8,7 +8,7 @@
     "result_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_r1_decoupled_v004_a4694019_seed42_20260829",
     "log_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_bpns_v004_logs_a4694019_20260829"
   },
-  "active_jobs": ["1260166"],
+  "active_jobs": [],
   "machine_terminal_wait": {
     "mode": "TERMINAL_EVIDENCE_INGESTED",
     "job_id": "1260095",
@@ -45,7 +45,7 @@
     "formal_job": {
       "job_id": "1260166",
       "job_name": "zt-r1-tar32-fkv-s42-e60-v001",
-      "state": "TERMINAL_SIGNAL_PENDING_PROTOCOL_VALIDATION",
+      "state": "COMPLETED_0_0_CHECKPOINT_VALID_FINAL_VALIDATION_ABSENT",
       "node": "g0059",
       "submitted_at_beijing": "2026-08-29T02:29:35+08:00",
       "started_at_beijing": "2026-08-29T02:29:38+08:00",
@@ -63,7 +63,26 @@
       "scientific_metrics_read_while_running": false
     },
     "isolated_from_v004_job": "1260095",
-    "post_result_pro_required": true
+    "post_result_pro_required": true,
+    "terminal_task": "ZT-CPTC-TAR32-TERMINAL-001",
+    "eval_only_submission": {
+      "job_id": "1261121",
+      "job_name": "zt-r1-tar32-eval-b0a1",
+      "state": "FAILED",
+      "exit_code": "2:0",
+      "submitted_at_beijing": "2026-08-29T20:26:04+08:00",
+      "started_at_beijing": "2026-08-29T20:26:08+08:00",
+      "ended_at_beijing": "2026-08-29T20:26:12+08:00",
+      "elapsed": "00:00:04",
+      "actual_submission_count": 1,
+      "scientific_execution_count": 0,
+      "model_or_checkpoint_loaded": false,
+      "prediction_present": false,
+      "metric_present": false,
+      "root_cause": "launcher_counted_only_top_level_regular_mp4_instead_of_411_recursive_symlinks",
+      "scientific_classification": "PRE_MODEL_ENGINEERING_PROTOCOL_BLOCKER_NO_TAR32_RESULT",
+      "durable_receipt": "docs/aris/ZOOMTOKEN_R1_TAR32_FKV_EVAL_ONLY_SUBMISSION_BLOCKER_RECEIPT-2026-08-29.md"
+    }
   },
   "browser_request": {
     "request_id": "PRO_BPNS_R1_V002_TERMINAL_PARITY_FAILURE_REVIEW_REQUEST-v001",
@@ -238,9 +257,9 @@
     "blocker": null
   },
   "epoch": 21,
-  "execution_state": "V004_TERMINAL_PRO_PIVOT_INGESTED__TAR32_TERMINAL_AUDIT_ACTIVE",
+  "execution_state": "TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER__FRESH_PRO_ADJUDICATION_REQUIRED",
   "last_pro_review_at": "2026-08-29T11:52:39Z",
-  "new_evidence_since_pro": false,
+  "new_evidence_since_pro": true,
   "next_pro_review_due_at": null,
   "pause_reason": null,
   "midday_report": {
@@ -301,6 +320,6 @@
   },
   "schema_version": "1.0",
   "stage": "G6_FULL_EVAL",
-  "status": "V004_TERMINAL_PRO_PIVOT_INGESTED__TAR32_TERMINAL_AUDIT_ACTIVE",
-  "updated_at": "2026-08-29T12:05:00Z"
+  "status": "TAR32_EVAL_ONLY_PRE_MODEL_BLOCKER__FRESH_PRO_ADJUDICATION_REQUIRED",
+  "updated_at": "2026-08-29T12:27:00Z"
 }

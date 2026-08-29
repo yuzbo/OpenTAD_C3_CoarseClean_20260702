@@ -66,7 +66,7 @@ check_sha "${EXPECTED_CONFIG_SHA}" "${CONFIG}"
 check_sha "${EXPECTED_ANNOTATION_SHA}" "${ANNOTATION}"
 check_sha "${EXPECTED_CLASS_MAP_SHA}" "${CLASS_MAP}"
 check_sha "${EXPECTED_PRETRAINED_SHA}" "${PRETRAINED}"
-[[ "$(find "${VIDEO_ROOT}" -maxdepth 1 -type f -name '*.mp4' | wc -l | tr -d ' ')" == "411" ]] || \
+[[ "$(find -L "${VIDEO_ROOT}" -type f -name '*.mp4' | wc -l | tr -d ' ')" == "411" ]] || \
   fail 'canonical video inventory is not 411 MP4 files'
 
 if ! command -v module >/dev/null 2>&1 && [[ -r /etc/profile ]]; then

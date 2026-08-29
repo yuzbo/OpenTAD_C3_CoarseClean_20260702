@@ -4748,5 +4748,17 @@ append_only: true
   GPU/显存/能耗归因和负系统结果；不授权 v005、重放、额外 seed 或边界保护主张。唯一原子任务为
   `ZOOMTOKEN-R1-TAR32-FKV-TERMINAL-VALIDATION-AND-K100-MATCHED-FULL-STACK-COST-CLOSURE-v001`：
   先绑定原始 TAR32 权威并只读验收 job `1260166`；有效模型输出条件下，模型代码零修改，只执行
-  一次 K100/TAR32 同 GPU 八-pass 成本闭环，功耗按 pass-local gap `<=100 ms` fail closed；任何
-  终态随后只进入一次 fresh Pro，不自动重跑或增加 seed/第三臂。
+	  一次 K100/TAR32 同 GPU 八-pass 成本闭环，功耗按 pass-local gap `<=100 ms` fail closed；任何
+	  终态随后只进入一次 fresh Pro，不自动重跑或增加 seed/第三臂。
+
+- 2026-08-29：`CPTC-vFinal-20260829` 已冻结 TAR32 的终态执行语义：当前成本对照若获准
+  应为 `R1/FULL64` 与 `R1-TAR32-FKV`，K100 仅属于后继残差探针。training job
+  `1260166` 的 exact candidate、epoch-59 EMA checkpoint 与终态身份有效，但没有官方 final
+  validation；单一 Critic 因此给出 `PASS_WITH_BLOCKER` 并只授权一次 evaluation-only completion。
+  唯一 evaluation-only submission job `1261121` 在 `g0067` 运行 4 秒后 `FAILED 2:0`，在模型、
+  checkpoint、loader 和 evaluator 前被外部 launcher 拒绝。原因是 Builder 用顶层 regular-file
+  查询统计视频，而 canonical 411 个 MP4 是递归目录内的有效软链接；只读重建为顶层 regular=0、
+  recursive symlink=411、follow-links regular=411。结果根未创建，prediction/metric/训练/resume/
+  参数更新均为 0；这是工程/协议 blocker，不是 TAR32 科学结果。最终路线明确“一次提交”，因此
+  不静默重提；一行 `find -L` 修正与完整 blocker 先进入 fresh Project Pro 独立裁决，Residual
+  Probe 仍冻结。

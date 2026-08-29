@@ -65,6 +65,22 @@ max_chars: 8000
   accuracy-feasible support primitive, local GPU/memory/energy attribution and a valid
   negative systems result. The 2.805 s power gap remains disclosed uncertainty; future
   tools must compute pass-local rather than cumulative gap statistics.
+- **CPTC final route and TAR32 terminal blocker (user-confirmed 2026-08-29).** The
+  final route is `CPTC-vFinal-20260829`, which treats TAR32 as a context-preserved
+  transformation-compression probe rather than state reuse: current dense token identity,
+  full current K/V context and all-K64 Adapter execution remain, while only odd-block
+  Query/output/MLP transformation updates are restricted to K32. Formal training job
+  `1260166` completed with a valid epoch-59 EMA checkpoint, but emitted no official final
+  validation. The sole evaluation-only submission, job `1261121`, stopped after four
+  seconds in the external launcher's video-inventory gate: it incorrectly counted only
+  top-level regular files, while the canonical inventory is 411 recursively nested MP4
+  symbolic links. No model/checkpoint load, validation item, prediction, metric, training,
+  resume or parameter update occurred. This is an engineering/protocol blocker, not a
+  TAR32 result. Because the final route says one evaluation-only submission, no replacement
+  is silently submitted; a fresh Project Pro must adjudicate the exact zero-science-execution
+  blocker and the one-line result-blind launcher correction. The conditional cost baseline,
+  if later authorized and accuracy-admitted, is `R1/FULL64` versus `R1-TAR32-FKV`; K100 is
+  reserved for the frozen successor residual probe.
 - **Parallel Pro-frozen composite probe (user-confirmed 2026-08-29).** The latest Pro
   instruction independently opens `ZoomToken-R1-TAR32-FKV`: retain R1 contiguous K64
   support and full-K64 Adapter, run dense K64 updates in even VideoMAE blocks, and in each
@@ -81,9 +97,10 @@ max_chars: 8000
   isolated from v004. A Slurm terminal signal is available, but its model, checkpoint,
   route-ledger, accuracy and protocol evidence are intentionally not interpreted until the
   complete v004 package was adjudicated. The unique next task is now
-  `ZOOMTOKEN-R1-TAR32-FKV-TERMINAL-VALIDATION-AND-K100-MATCHED-FULL-STACK-COST-CLOSURE-v001`.
-  It first binds the original authority and audits job `1260166`; if the final model output
-  and protocol are valid, it performs exactly one matched K100/TAR32 full-stack cost job.
+  `ZT-CPTC-TAR32-TERMINAL-001`, superseding the old K100-labelled closure for this
+  current arm. It first binds the original authority and audits job `1260166`; if a valid
+  final model output later passes the frozen gate, it conditionally performs exactly one
+  matched R1/FULL64 versus R1-TAR32-FKV full-stack cost job.
   No retry, resume, second seed or auxiliary arm is allowed.
 - **Current execution state.** v004 is terminal `COMPLETED 0:0` and fully ingested. Its
   eight-pass order is `K100,R1,R1,K100,R1,K100,K100,R1`; all four prediction SHAs per
@@ -92,11 +109,14 @@ max_chars: 8000
   mixed, so no boundary-protection claim is supported. K100 pass 3 has a disclosed
   `2804.82 ms` in-pass power sampling gap; coverage remains complete and the frozen
   protocol had no gap threshold, so this is uncertainty rather than replay authority.
-  The v004 post-result Pro turn is complete. The active decision point is the read-only
-  TAR32-FKV terminal audit, followed conditionally by the single matched cost closure. The
-  cost order is `K100,TAR32,TAR32,K100,TAR32,K100,K100,TAR32`; power coverage must be
-  `1.0` with pass-local maximum gap at most `100 ms`, and the primary p50/energy estimator
-  remains the four-pass median per arm.
+  The v004 post-result Pro turn is complete. TAR32 training identity and checkpoint are
+  valid, but the one allowed evaluation-only submission is terminal before scientific
+  execution because of the launcher inventory error above. Pending fresh Pro adjudication,
+  no cost or successor starts. If a corrected completion is authorized and accuracy passes,
+  the final-route order is
+  `R1/FULL64,TAR32,TAR32,R1/FULL64,TAR32,R1/FULL64,R1/FULL64,TAR32`; power coverage
+  must be `1.0` with pass-local maximum gap at most `100 ms`, and the primary p50/energy
+  estimator remains the four-pass median per arm.
 - **Frozen primary aggregation (instantiated by v004).** The profiler's top-level `comparison` pools all
   windows from four passes per arm. It is descriptive but does not implement the
   Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by
