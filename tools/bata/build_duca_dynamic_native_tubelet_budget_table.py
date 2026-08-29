@@ -108,9 +108,18 @@ def build_table(args):
                                 interpolation="linear",
                             ).item()
                         ),
+                        "valid_native_tubelets": valid_len,
                     }
                 )
     assigned = assign_dynamic_native_tubelet_clip_budgets(rows)
+    for row in assigned:
+        required_tubelets = int(row["clip_budget"]) * 8
+        if int(row["valid_native_tubelets"]) < required_tubelets:
+            raise ValueError(
+                "assigned dynamic clip budget exceeds a window's valid physical tubelet grid: "
+                f"video={row['video_name']} start={row['window_start_frame']} "
+                f"valid={row['valid_native_tubelets']} required={required_tubelets}"
+            )
     output = {
         "schema_version": "duca_dynamic_native_tubelet_budget_v1",
         "split": str(args.split),

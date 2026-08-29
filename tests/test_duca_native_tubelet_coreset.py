@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import torch
 from mmengine.config import Config
 
@@ -135,6 +136,22 @@ def test_dynamic_uniform_selects_real_per_row_tubelet_counts() -> None:
         selected["selected_positions"][row, count - 1].item()
         for row, count in enumerate((128, 160, 192))
     ] == [383, 383, 383]
+
+
+def test_dynamic_uniform_rejects_budget_larger_than_valid_physical_grid() -> None:
+    scores = torch.zeros((1, 192), dtype=torch.float32)
+    valid = torch.zeros_like(scores, dtype=torch.bool)
+    valid[:, :127] = True
+    with pytest.raises(
+        ValueError,
+        match="budget exceeds the valid physical tubelet grid",
+    ):
+        select_native_tubelet_coreset(
+            scores,
+            valid,
+            policy="native_tubelet_dynamic_uniform",
+            selected_tubelets=[128],
+        )
 
 
 class _RecordingVariableBackbone(torch.nn.Module):

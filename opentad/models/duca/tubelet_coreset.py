@@ -240,6 +240,16 @@ def select_native_tubelet_coreset(
         valid_count = int(valid_mask[batch_idx].long().sum().item())
         if valid_count <= 0:
             raise ValueError("native tubelet selection requires at least one valid tubelet")
+        if policy == "native_tubelet_dynamic_uniform":
+            requested_count = requested[batch_idx]
+            if requested_count % _TUBELETS_PER_CLIP != 0:
+                raise ValueError(
+                    "dynamic native-tubelet budgets must contain whole 16-frame clips"
+                )
+            if valid_count < requested_count:
+                raise ValueError(
+                    "dynamic native-tubelet budget exceeds the valid physical tubelet grid"
+                )
         k = min(requested[batch_idx], valid_count)
         if policy in {"native_tubelet_uniform", "native_tubelet_dynamic_uniform"} or k == valid_count:
             row_positions = exact_uniform_positions(valid_count, k, device=scores.device)
