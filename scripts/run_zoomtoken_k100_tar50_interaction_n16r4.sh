@@ -17,7 +17,8 @@ ROOT="${ZOOMTOKEN_K100_TAR50_SOURCE_ROOT:?set the reviewed clean checkout}"
 RUN_ROOT="${ZOOMTOKEN_K100_TAR50_RUN_ROOT:?set the fresh result root}"
 PRECHECK_ONLY="${PRECHECK_ONLY:-0}"
 REMOTE_REF="refs/remotes/origin/codex/zoomtoken-k100-tar50-interaction-v001"
-CONFIG="${ROOT}/configs/adatad/thumos/georoute_official_amod50_prebackbone_seed42_v001.py"
+CONFIG="${ROOT}/configs/adatad/thumos/georoute_official_k100_tar50_interaction_seed42_v001.py"
+REFERENCE_CONFIG="${ROOT}/configs/adatad/thumos/georoute_official_amod50_prebackbone_seed42_v001.py"
 CELL_ROOT="${RUN_ROOT}/cells/k100_tar50_interaction/seed42"
 EVAL_ROOT="${RUN_ROOT}/final_ema_eval"
 CHECKPOINT="${CELL_ROOT}/gpu2_id0/checkpoint/epoch_59.pth"
@@ -32,6 +33,7 @@ REFERENCE_PREDICTION="${BASE}/projects/zoomtoken_amod50_capacity1_parity_2d945e6
 REFERENCE_CHECKPOINT_SHA="3aca10bc3593e301b7d7e77271419b8bb557d8f8b29bead195fa2aa350e34ddd"
 REFERENCE_PREDICTION_SHA="0d09e3fec839449923db1158a18ead631e813b9d00cdab051328cb2b407485f3"
 REFERENCE_CONFIG_SHA="81c805838502639d4fb0e6fcdd0848c53ccbd8eeccf7d1501562af2e84d9ac87"
+EXPECTED_CONFIG_SHA="bf40b67a52ef35c58e425634ca8d888d6787570a7fe33a669f9acdb27055c110"
 EXPECTED_ANNOTATION_SHA="ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad"
 EXPECTED_CLASS_MAP_SHA="a158b7c4c130ce74375a9b114160e2faae7a0221e605a0464a556fe082644f31"
 EXPECTED_PRETRAINED_SHA="4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251"
@@ -55,7 +57,7 @@ git -C "${ROOT}" merge-base --is-ancestor "${TASK_BASE}" "${EXPECTED_COMMIT}" ||
 [[ -z "$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all)" ]] || fail 'source snapshot is not clean'
 [[ "$(git -C "${ROOT}" rev-parse "${REMOTE_REF}")" == "${EXPECTED_COMMIT}" ]] || fail 'candidate is not bound to the pushed remote-tracking ref'
 
-for path in "${CONFIG}" "${ANNOTATION}" "${CLASS_MAP}" "${PRETRAINED}" "${CONDA_ACTIVATE}" "${REFERENCE_CHECKPOINT}" "${REFERENCE_PREDICTION}"; do
+for path in "${CONFIG}" "${REFERENCE_CONFIG}" "${ANNOTATION}" "${CLASS_MAP}" "${PRETRAINED}" "${CONDA_ACTIVATE}" "${REFERENCE_CHECKPOINT}" "${REFERENCE_PREDICTION}"; do
   [[ -f "${path}" ]] || fail "required file does not exist: ${path}"
 done
 [[ -d "${VIDEO_ROOT}" ]] || fail "canonical THUMOS14 video root does not exist: ${VIDEO_ROOT}"
@@ -75,7 +77,8 @@ check_sha() {
 }
 check_sha "${REFERENCE_CHECKPOINT_SHA}" "${REFERENCE_CHECKPOINT}"
 check_sha "${REFERENCE_PREDICTION_SHA}" "${REFERENCE_PREDICTION}"
-check_sha "${REFERENCE_CONFIG_SHA}" "${CONFIG}"
+check_sha "${REFERENCE_CONFIG_SHA}" "${REFERENCE_CONFIG}"
+check_sha "${EXPECTED_CONFIG_SHA}" "${CONFIG}"
 check_sha "${EXPECTED_ANNOTATION_SHA}" "${ANNOTATION}"
 check_sha "${EXPECTED_CLASS_MAP_SHA}" "${CLASS_MAP}"
 check_sha "${EXPECTED_PRETRAINED_SHA}" "${PRETRAINED}"
@@ -108,7 +111,8 @@ launch_tmp="${LAUNCH_RECEIPT}.tmp.$$"
   printf 'created_at\t%s\n' "$(date -Iseconds)"
   printf 'task\tZT-CPTC-K100-TAR50-INTERACTION-FALSIFIER-001\n'
   printf 'commit\t%s\nbase_commit\t%s\n' "${EXPECTED_COMMIT}" "${TASK_BASE}"
-  printf 'config\t%s\nconfig_sha256\t%s\n' "${CONFIG}" "${REFERENCE_CONFIG_SHA}"
+  printf 'config\t%s\nconfig_sha256\t%s\n' "${CONFIG}" "${EXPECTED_CONFIG_SHA}"
+  printf 'reference_config\t%s\nreference_config_sha256\t%s\n' "${REFERENCE_CONFIG}" "${REFERENCE_CONFIG_SHA}"
   printf 'reference_job\t1254040\nreference_checkpoint_sha256\t%s\nreference_prediction_sha256\t%s\n' "${REFERENCE_CHECKPOINT_SHA}" "${REFERENCE_PREDICTION_SHA}"
   printf 'reference_official_vector\t68.73/61.59/47.20\nreference_population\t211 videos / 792 ordered windows / 411 MP4\n'
   printf 'slurm_job_id\t%s\nslurm_job_name\t%s\nseed\t42\nrank_count\t2\n' "${SLURM_JOB_ID}" "${SLURM_JOB_NAME}"

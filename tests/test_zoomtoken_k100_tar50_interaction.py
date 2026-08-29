@@ -9,7 +9,7 @@ CONFIG_PATH = (
     / "configs"
     / "adatad"
     / "thumos"
-    / "georoute_official_amod50_prebackbone_seed42_v001.py"
+    / "georoute_official_k100_tar50_interaction_seed42_v001.py"
 )
 LAUNCHER_PATH = ROOT / "scripts" / "run_zoomtoken_k100_tar50_interaction_n16r4.sh"
 
@@ -19,7 +19,10 @@ def test_k100_tar50_reuses_the_frozen_parameter_free_amod50_route():
     amod = config.model.backbone.backbone.amod
     contract = config.official_amod_contract
 
-    assert config.official_bc_arm == "AMOD50"
+    assert config.official_bc_arm == "K100-TAR50"
+    assert config.cptc_task_id == "ZT-CPTC-K100-TAR50-INTERACTION-FALSIFIER-001"
+    assert config.zoomtoken_p1_config.arm_surface == "AMOD50"
+    assert config.zoomtoken_p1_config.task_surface == "K100-TAR50"
     assert amod.capacity == 0.5
     assert tuple(amod.dense_block_indices) == (0, 2, 4, 6, 8, 10)
     assert tuple(amod.amod_block_indices) == (1, 3, 5, 7, 9, 11)
@@ -32,6 +35,9 @@ def test_k100_tar50_reuses_the_frozen_parameter_free_amod50_route():
     assert contract.new_trainable_router is False
     assert contract.auxiliary_loss is False
     assert contract.temporal_cache is False
+    assert contract.official_reference_job == "1254040"
+    assert contract.route_matched_reference_job == "1254040"
+    assert tuple(contract.reference_official_vector) == (68.73, 61.59, 47.20)
     assert config.workflow.end_epoch == 60
 
 
@@ -43,6 +49,7 @@ def test_formal_launcher_binds_reference_and_one_final_ema_evaluation():
     assert "3aca10bc3593e301b7d7e77271419b8bb557d8f8b29bead195fa2aa350e34ddd" in source
     assert "0d09e3fec839449923db1158a18ead631e813b9d00cdab051328cb2b407485f3" in source
     assert "81c805838502639d4fb0e6fcdd0848c53ccbd8eeccf7d1501562af2e84d9ac87" in source
+    assert "bf40b67a52ef35c58e425634ca8d888d6787570a7fe33a669f9acdb27055c110" in source
     assert "epoch_59.pth" in source
     assert 'checkpoint.get("state_dict_ema")' in source
     assert source.count("tools/train.py") == 1
