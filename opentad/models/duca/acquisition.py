@@ -71,6 +71,119 @@ FORBIDDEN_DECISION_KEYS = {
     "ledger_path",
 }
 
+
+class TemporalCoverageSelector(nn.Module):
+    """Fixed-budget temporal facility-location selection over H65 priorities.
+
+    The only sequential operation is the cardinality-constrained greedy loop.
+    Batch rows, candidates, and temporal anchors remain tensorized throughout.
+    """
+
+    def __init__(
+        self,
+        *,
+        target_k: int = 384,
+        anchor_count: int = 96,
+        eps: float = 1.0e-6,
+    ) -> None:
+        super().__init__()
+        self.target_k = int(target_k)
+        self.anchor_count = int(anchor_count)
+        self.eps = float(eps)
+        if self.target_k <= 0:
+            raise ValueError("target_k must be positive")
+        if self.anchor_count <= 1:
+            raise ValueError("anchor_count must be greater than one")
+        if not math.isfinite(self.eps) or self.eps <= 0.0:
+            raise ValueError("eps must be finite and positive")
+        self.register_buffer(
+            "anchor_coordinates",
+            torch.linspace(0.0, 1.0, steps=self.anchor_count, dtype=torch.float32),
+            persistent=False,
+        )
+
+    @torch.no_grad()
+    def forward(
+        self,
+        priority_scores: torch.Tensor,
+        timestamps: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        if priority_scores.ndim != 2:
+            raise ValueError("priority_scores must be [B,T]")
+        if timestamps.shape != priority_scores.shape:
+            raise ValueError("timestamps must match priority_scores [B,T]")
+        if valid_mask.shape != priority_scores.shape:
+            raise ValueError("valid_mask must match priority_scores [B,T]")
+        if int(priority_scores.shape[1]) < self.target_k:
+            raise ValueError("temporal length must be at least target_k")
+
+        valid = valid_mask.to(device=priority_scores.device, dtype=torch.bool)
+        scores = priority_scores.float()
+        times = timestamps.to(device=scores.device, dtype=torch.float32)
+        positive_inf = torch.tensor(torch.inf, device=scores.device, dtype=scores.dtype)
+        negative_inf = torch.tensor(-torch.inf, device=scores.device, dtype=scores.dtype)
+
+        score_min = scores.masked_fill(~valid, positive_inf).amin(dim=1, keepdim=True)
+        score_max = scores.masked_fill(~valid, negative_inf).amax(dim=1, keepdim=True)
+        quality = (scores - score_min) / (score_max - score_min + self.eps)
+        quality = quality.masked_fill(~valid, 0.0)
+
+        time_min = times.masked_fill(~valid, positive_inf).amin(dim=1, keepdim=True)
+        time_max = times.masked_fill(~valid, negative_inf).amax(dim=1, keepdim=True)
+        normalized_time = (times - time_min) / (time_max - time_min + self.eps)
+        normalized_time = normalized_time.masked_fill(~valid, 0.0)
+
+        anchors = self.anchor_coordinates.to(device=scores.device, dtype=scores.dtype)
+        sigma = 1.0 / float(self.anchor_count - 1)
+        kernel = torch.exp(
+            -torch.abs(normalized_time.unsqueeze(-1) - anchors.view(1, 1, -1))
+            / sigma
+        )
+        kernel = kernel.masked_fill(~valid.unsqueeze(-1), 0.0)
+
+        batch, temporal_len = priority_scores.shape
+        valid_count = valid.long().sum(dim=1)
+        selected_mask = torch.zeros(
+            (batch, temporal_len), device=scores.device, dtype=torch.bool
+        )
+        covered_anchor = torch.zeros(
+            (batch, self.anchor_count), device=scores.device, dtype=scores.dtype
+        )
+        selected_idx = torch.empty(
+            (batch, self.target_k), device=scores.device, dtype=torch.long
+        )
+        coverage_scale = float(self.target_k) / float(self.anchor_count)
+        masked_value = torch.finfo(scores.dtype).min
+
+        for slot in range(self.target_k):
+            active = slot < valid_count
+            marginal_cover = torch.relu(
+                kernel - covered_anchor.unsqueeze(1)
+            ).sum(dim=-1)
+            marginal_gain = quality + coverage_scale * marginal_cover
+            marginal_gain = marginal_gain.masked_fill(
+                selected_mask | (~valid), masked_value
+            )
+            best_idx = torch.argmax(marginal_gain, dim=1)
+            selected_idx[:, slot] = torch.where(active, best_idx, temporal_len)
+            newly_selected = torch.zeros_like(selected_mask)
+            newly_selected.scatter_(1, best_idx.unsqueeze(1), active.unsqueeze(1))
+            selected_mask.logical_or_(newly_selected)
+            chosen_kernel = torch.gather(
+                kernel,
+                dim=1,
+                index=best_idx.view(batch, 1, 1).expand(-1, 1, self.anchor_count),
+            ).squeeze(1)
+            covered_anchor = torch.where(
+                active.unsqueeze(1),
+                torch.maximum(covered_anchor, chosen_kernel),
+                covered_anchor,
+            )
+
+        selected_idx = torch.sort(selected_idx, dim=1).values
+        return selected_idx.masked_fill(selected_idx == temporal_len, -1)
+
 _PROVENANCE_REQUIRED_KEYS = (
     "thumos_trained",
     "uses_labels",
@@ -1476,13 +1589,14 @@ class DucaAcquisitionAdapter(nn.Module):
         if self.acquisition_policy not in {
             "legacy_center_radius",
             "global_structured_topk",
+            "temporal_coverage",
             "local_cell_deformation",
             "continuous_density_transport",
             "continuous_mixture_density_transport",
             "budget_calibrated_sampling_rate",
         }:
             raise ValueError(
-                "acquisition_policy must be legacy_center_radius, global_structured_topk, "
+                "acquisition_policy must be legacy_center_radius, global_structured_topk, temporal_coverage, "
                 "local_cell_deformation, continuous_density_transport, or "
                 "continuous_mixture_density_transport, or budget_calibrated_sampling_rate"
             )
@@ -1598,6 +1712,11 @@ class DucaAcquisitionAdapter(nn.Module):
         self.profile_runtime = bool(profile_runtime)
         self.profile_sync_cuda = bool(profile_sync_cuda)
         self.last_compute_profile: Dict[str, Any] = {}
+        self.temporal_coverage_selector = (
+            TemporalCoverageSelector(target_k=self.budget, anchor_count=96)
+            if self.acquisition_policy == "temporal_coverage"
+            else None
+        )
         self.actionness_source = actionness_source or ZeroShotActionnessSource(feature_dim=feature_dim, mode="motion")
         self.feature_dim = None if feature_dim is None else int(feature_dim)
         self.transition_scorer = None
@@ -1608,6 +1727,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 raise ValueError("transition_only is intentionally fixed-budget until its fixed policy is validated")
             if self.acquisition_policy not in {
                 "global_structured_topk",
+                "temporal_coverage",
                 "local_cell_deformation",
                 "continuous_density_transport",
                 "continuous_mixture_density_transport",
@@ -1652,7 +1772,10 @@ class DucaAcquisitionAdapter(nn.Module):
                     hidden_dim=self.coarse_hidden_dim,
                     scorer_hidden_dim=int(hidden_dim),
                 )
-            if self.acquisition_policy == "budget_calibrated_sampling_rate":
+            if self.acquisition_policy in {
+                "budget_calibrated_sampling_rate",
+                "temporal_coverage",
+            }:
                 self.sampling_rate_utility_fusion = nn.Linear(2, 1)
                 nn.init.zeros_(self.sampling_rate_utility_fusion.weight)
                 nn.init.zeros_(self.sampling_rate_utility_fusion.bias)
@@ -1899,6 +2022,10 @@ class DucaAcquisitionAdapter(nn.Module):
             soft_coverage_macs = dp_states * (3 if self.training else 1)
             soft_coverage_flops = soft_coverage_macs * 8
             structured_complexity = "O(B*T*K*(G+1)) exact-K/max-gap dynamic program"
+        elif self.acquisition_policy == "temporal_coverage":
+            soft_coverage_macs = batch_size * temporal_len * self.budget * 96
+            soft_coverage_flops = soft_coverage_macs * 5
+            structured_complexity = "O(B*T*K*M) tensorized temporal facility-location greedy selection"
         elif self.acquisition_policy == "local_cell_deformation":
             soft_coverage_macs = batch_size * temporal_len
             soft_coverage_flops = soft_coverage_macs * 8
@@ -2151,9 +2278,12 @@ class DucaAcquisitionAdapter(nn.Module):
                     hidden=mixture_hidden,
                     valid_mask=valid,
                 )
-            if self.acquisition_policy == "budget_calibrated_sampling_rate":
+            if self.acquisition_policy in {
+                "budget_calibrated_sampling_rate",
+                "temporal_coverage",
+            }:
                 if self.sampling_rate_utility_fusion is None:
-                    raise RuntimeError("sampling-rate acquisition requires its utility fusion head")
+                    raise RuntimeError("H65 priority path requires its utility fusion head")
                 # A rate-only control must be a real ablation: do not merely
                 # mask the contribution logits after constructing their head.
                 # Otherwise detector loss can still update that head through
@@ -2538,6 +2668,66 @@ class DucaAcquisitionAdapter(nn.Module):
             "mandatory_boundary_group_count": mandatory_group_counts,
         }
 
+    def _decode_temporal_coverage(
+        self,
+        center_scores: torch.Tensor,
+        valid_mask: torch.Tensor,
+        budgets: torch.Tensor,
+    ) -> Dict[str, Any]:
+        if self.temporal_coverage_selector is None:
+            raise RuntimeError("temporal coverage selector is not initialized")
+        if torch.any(budgets != int(self.budget)):
+            raise ValueError("temporal coverage requires the configured fixed budget")
+        temporal_len = int(center_scores.shape[1])
+        timestamps = torch.arange(
+            temporal_len,
+            device=center_scores.device,
+            dtype=torch.float32,
+        ).view(1, temporal_len).expand(center_scores.shape[0], -1)
+        positions = self.temporal_coverage_selector(
+            priority_scores=center_scores,
+            timestamps=timestamps,
+            valid_mask=valid_mask,
+        )
+        slot_valid = positions >= 0
+        slot_assignment = F.one_hot(
+            positions.clamp_min(0), num_classes=temporal_len
+        ).to(dtype=center_scores.dtype)
+        slot_assignment = slot_assignment * slot_valid.unsqueeze(-1).to(
+            dtype=center_scores.dtype
+        )
+        dense_mask = slot_assignment.bool().any(dim=1)
+        effective = torch.minimum(
+            valid_mask.long().sum(dim=1),
+            torch.full(
+                (center_scores.shape[0],),
+                int(self.budget),
+                device=center_scores.device,
+                dtype=torch.long,
+            ),
+        )
+        return {
+            "selected_positions": positions,
+            "selected_mask": dense_mask,
+            "selection_st": dense_mask.to(dtype=center_scores.dtype),
+            "soft_coverage": dense_mask.to(dtype=center_scores.dtype),
+            "soft_slot_assignment": slot_assignment,
+            "effective_budget": effective,
+            "detector_input_length": effective.clone(),
+            "selected_centers": [[] for _ in range(center_scores.shape[0])],
+            "selected_radius": [[] for _ in range(center_scores.shape[0])],
+            "fill_strategy": [
+                "temporal_facility_location" for _ in range(center_scores.shape[0])
+            ],
+            "max_gap_repair": [
+                {"enabled": False, "encoded_in_policy": True}
+                for _ in range(center_scores.shape[0])
+            ],
+            "selection_path": "h65_priority_temporal_facility_location",
+            "decode_policy_logits": center_scores,
+            "policy_mix_alpha": 1.0,
+        }
+
     def _decode_continuous_density(
         self,
         center_scores: torch.Tensor,
@@ -2866,6 +3056,12 @@ class DucaAcquisitionAdapter(nn.Module):
                     "boundary_burst_offset_inclusion"
                 ),
             )
+        elif self.acquisition_policy == "temporal_coverage":
+            decoded = self._decode_temporal_coverage(
+                scores["center_scores"],
+                scores["valid_mask"],
+                budgets,
+            )
         elif self.acquisition_policy in {
             "continuous_density_transport",
             "continuous_mixture_density_transport",
@@ -3026,6 +3222,7 @@ class DucaAcquisitionAdapter(nn.Module):
         soft_coverage_start = _sync_profile_clock(dense_observations, enabled=sync_enabled) if profile_enabled else None
         if self.acquisition_policy in {
             "global_structured_topk",
+            "temporal_coverage",
             "local_cell_deformation",
             "continuous_density_transport",
             "continuous_mixture_density_transport",

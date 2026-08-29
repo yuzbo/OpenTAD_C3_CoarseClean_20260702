@@ -553,6 +553,7 @@ class DucaOnlineFrameSelector(nn.Module):
         use_coarse_hidden_features: bool = True,
         require_coarse_hidden_features: Optional[bool] = None,
         allow_frozen_coarse_probe: bool = False,
+        freeze_priority_path: bool = False,
         policy_hidden_gradient_scale: float = 0.0,
         auxiliary_hidden_gradient_scale: float = 1.0,
         max_unselected_hole: Optional[int] = None,
@@ -716,6 +717,7 @@ class DucaOnlineFrameSelector(nn.Module):
             None if require_coarse_hidden_features is None else bool(require_coarse_hidden_features)
         )
         self.allow_frozen_coarse_probe = bool(allow_frozen_coarse_probe)
+        self.freeze_priority_path = bool(freeze_priority_path)
         self.policy_hidden_gradient_scale = float(policy_hidden_gradient_scale)
         if (
             not math.isfinite(self.policy_hidden_gradient_scale)
@@ -902,6 +904,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 raise ValueError("transition_only currently supports only a fixed exact budget")
             if self.acquisition_policy not in {
                 "global_structured_topk",
+                "temporal_coverage",
                 "local_cell_deformation",
                 "continuous_density_transport",
                 "continuous_mixture_density_transport",
@@ -933,6 +936,7 @@ class DucaOnlineFrameSelector(nn.Module):
             if self.acquisition_policy not in {
                 "global_structured_topk",
                 "budget_calibrated_sampling_rate",
+                "temporal_coverage",
             }:
                 raise ValueError(
                     "uniform companion training requires a compatible fixed exact-K policy"
@@ -962,6 +966,7 @@ class DucaOnlineFrameSelector(nn.Module):
             "continuous_density_transport",
             "continuous_mixture_density_transport",
             "budget_calibrated_sampling_rate",
+            "temporal_coverage",
         }
         if self.detector_gradient_mode == "density_transport_st" and self.acquisition_policy not in continuous_transport_policies:
             raise ValueError("density_transport_st requires a continuous transport acquisition policy")
@@ -1085,6 +1090,22 @@ class DucaOnlineFrameSelector(nn.Module):
             profile_runtime=self.profile_runtime,
             profile_sync_cuda=self.profile_sync_cuda,
         )
+        if self.freeze_priority_path:
+            if self.raw_actionness_source is not None:
+                self.raw_actionness_source.eval()
+                for parameter in self.raw_actionness_source.parameters():
+                    parameter.requires_grad_(False)
+            self.adapter.eval()
+            for parameter in self.adapter.parameters():
+                parameter.requires_grad_(False)
+
+    def train(self, mode: bool = True) -> "DucaOnlineFrameSelector":
+        super().train(mode)
+        if self.freeze_priority_path:
+            if self.raw_actionness_source is not None:
+                self.raw_actionness_source.eval()
+            self.adapter.eval()
+        return self
 
     def capture_amp_replay_state(self) -> dict[str, Any]:
         """Capture non-buffer forward state that must not leak across a replay."""
