@@ -80,6 +80,7 @@ PY
 
 run_smoke() {
   local arm="$1" config="$2" work="$3"
+  mkdir -p "${work%/work}"
   DUCA_COVERAGE_PRE_RUN=1 "$PYTHON" -m torch.distributed.run \
     --standalone --nproc_per_node=1 \
     tools/train.py "$config" --id 0 --seed 3407 --cfg-options \
