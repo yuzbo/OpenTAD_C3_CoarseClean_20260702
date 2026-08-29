@@ -102,6 +102,15 @@
       "evaluator": "PRE_RUN_READY_REPLACEMENT",
       "evaluator_receipt": "docs/aris/ZOOMTOKEN_CPTC_TAR32_EVAL_ONLY_REPLACEMENT_EVALUATOR_RECEIPT-2026-08-29.md",
       "terminal_ingestion_map": "docs/aris/ZOOMTOKEN_CPTC_TAR32_TERMINAL_INGESTION_MAP-2026-08-29.md",
+      "terminal_diagnostics": {
+        "status": "RESULT_BLIND_READY",
+        "tool": "tools/bata/evaluate_zoomtoken_tar32_terminal_diagnostics.py",
+        "tests": "10 passed",
+        "critic": "PASS",
+        "full_accuracy_source": "terminal evaluation.log",
+        "short_boundary_source": "reconstructed from frozen R1 and TAR32 predictions plus canonical annotation",
+        "cost_or_route_authority": false
+      },
       "terminal_waiter": "j-sdfhnd",
       "durable_receipt": "docs/aris/ZOOMTOKEN_CPTC_TAR32_EVAL_ONLY_REPLACEMENT_START_RECEIPT-2026-08-29.md"
     }
@@ -378,5 +387,5 @@
   "schema_version": "1.0",
   "stage": "G6_FULL_EVAL",
   "status": "TAR32_EVAL_ONLY_REPLACEMENT_RUNNING__TERMINAL_WATCHER_OWNS_WAIT",
-  "updated_at": "2026-08-29T13:12:00Z"
+  "updated_at": "2026-08-29T13:37:13Z"
 }

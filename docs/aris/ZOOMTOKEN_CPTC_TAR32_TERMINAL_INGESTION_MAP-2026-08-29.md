@@ -55,6 +55,28 @@ and logs its output.
 6. Apply the frozen gate and classify the complete terminal package. Even a pass ends
    at `ACCURACY_ADMITTED_PENDING_FRESH_PRO`; it does not authorize cost.
 
+The result-blind reconstruction entrypoint is
+`tools/bata/evaluate_zoomtoken_tar32_terminal_diagnostics.py`. It compares the
+frozen R1 reference prediction and terminal TAR32 prediction under one evaluator
+surface:
+
+- short actions are exactly `0 < duration <= 5.0 seconds` and use OpenTAD's
+  existing `compute_average_precision_detection` primitive at tIoU
+  `0.3,0.4,0.5,0.6,0.7`;
+- boundary matching is score-descending, same-video and same-class, one-to-one,
+  with inclusive `tIoU >= 0.50`;
+- start/end errors are absolute endpoint differences divided by ground-truth
+  duration, and the frozen comparison uses their medians;
+- the output reports only the reconstructed short/boundary guards. It neither
+  supplies the official full-accuracy values nor authorizes cost or route choice.
+
+The focused result-blind suite is
+`tests/test_zoomtoken_tar32_terminal_diagnostics.py`: `10 passed`; an isolated
+Critic returned `PASS`. The tests cover the exact five-second boundary, inclusive
+tIoU and guard thresholds, score-ordered one-to-one matching, median-versus-mean
+semantics, zero-length official false positives, malformed inputs and empty
+matches.
+
 ## Source anchors
 
 - launcher artifact paths and receipts:
@@ -63,3 +85,7 @@ and logs its output.
 - prediction serialization and evaluator call: `opentad/cores/test_engine.py:222-265`
 - frozen gate:
   `docs/aris/ZOOMTOKEN_R1_TAR32_FKV_TERMINAL_AUTHORITY_BINDING_RECEIPT-2026-08-29.md:61-75`
+- reconstructed diagnostic implementation:
+  `tools/bata/evaluate_zoomtoken_tar32_terminal_diagnostics.py`
+- focused reconstruction tests:
+  `tests/test_zoomtoken_tar32_terminal_diagnostics.py`

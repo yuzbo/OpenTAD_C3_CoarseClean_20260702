@@ -117,6 +117,10 @@ max_chars: 8000
   current task ends at `ACCURACY_ADMITTED_PENDING_FRESH_PRO`; it does not open cost. If it
   fails, the classification is `STOP_R1_TAR32_FKV_EXACT_COMPOSITION`; an incomplete or
   invalid run returns `ENGINEERING_OR_PROTOCOL_BLOCKER`. A third submission is forbidden.
+  A result-blind offline diagnostic now reconstructs the preregistered short-action mAP
+  and median absolute normalized start/end errors for both frozen R1 and TAR32 predictions
+  with matched evaluator semantics; focused checks are `10 passed` and an isolated Critic
+  returned `PASS`. This is implementation readiness, not a TAR32 result.
 - **Frozen primary aggregation (instantiated by v004).** The profiler's top-level `comparison` pools all
   windows from four passes per arm. It is descriptive but does not implement the
   Pro-frozen primary estimate. Terminal analysis must group `cost_samples.jsonl` by
