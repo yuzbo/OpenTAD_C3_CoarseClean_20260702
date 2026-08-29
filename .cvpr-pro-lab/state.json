@@ -101,6 +101,7 @@
       "critic": "PASS",
       "evaluator": "PRE_RUN_READY_REPLACEMENT",
       "evaluator_receipt": "docs/aris/ZOOMTOKEN_CPTC_TAR32_EVAL_ONLY_REPLACEMENT_EVALUATOR_RECEIPT-2026-08-29.md",
+      "terminal_ingestion_map": "docs/aris/ZOOMTOKEN_CPTC_TAR32_TERMINAL_INGESTION_MAP-2026-08-29.md",
       "terminal_waiter": "j-sdfhnd",
       "durable_receipt": "docs/aris/ZOOMTOKEN_CPTC_TAR32_EVAL_ONLY_REPLACEMENT_START_RECEIPT-2026-08-29.md"
     }
