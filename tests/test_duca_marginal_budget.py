@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -26,6 +27,9 @@ from opentad.models.duca import (  # noqa: E402
     marginal_budget_accounting,
     nested_h65_budget_prefixes,
     validate_real_heavy_observation_tensor,
+)
+from tools.bata.run_duca_marginal_frozen_h65_probe import (  # noqa: E402
+    _json_block_list_for_evaluator,
 )
 
 
@@ -237,3 +241,17 @@ def test_short_window_accounting_contract_examples() -> None:
     assert torch.equal(baseline["actual_cost"], torch.tensor([67, 300, 384, 384]))
     assert torch.equal(upper["actual_cost"], torch.tensor([67, 300, 401, 512]))
     assert torch.equal(upper["execution_slots"], torch.tensor([384, 384, 416, 512]))
+
+
+def test_text_block_list_is_serialized_for_the_map_evaluator(tmp_path) -> None:
+    source = tmp_path / "frontend_holdout_block_list.txt"
+    source.write_text("video_train_2\nvideo_train_1\n", encoding="utf-8")
+
+    target = _json_block_list_for_evaluator(source)
+
+    assert target == source.with_suffix(".evaluator.json")
+    assert json.loads(target.read_text(encoding="utf-8")) == [
+        "video_train_2",
+        "video_train_1",
+    ]
+    assert _json_block_list_for_evaluator(source) == target

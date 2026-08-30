@@ -1111,6 +1111,25 @@ def _apply_sliding_window_nms(raw_results: Mapping[str, list], *, nms_cfg) -> di
     return output
 
 
+def _json_block_list_for_evaluator(block_list: str | Path) -> Path:
+    source = Path(block_list).expanduser().resolve()
+    blocked_videos = [
+        line.strip()
+        for line in source.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    target = source.with_suffix(".evaluator.json")
+    payload = json.dumps(blocked_videos, indent=2, sort_keys=False) + "\n"
+    if target.exists():
+        if target.read_text(encoding="utf-8") != payload:
+            raise FileExistsError(
+                f"refusing to overwrite a different evaluator block list: {target}"
+            )
+    else:
+        target.write_text(payload, encoding="utf-8")
+    return target
+
+
 def _official_holdout_metrics(
     cfg,
     *,
@@ -1125,7 +1144,9 @@ def _official_holdout_metrics(
     evaluation = copy.deepcopy(cfg.evaluation)
     evaluation.ground_truth_filename = str(annotation)
     evaluation.subset = "training"
-    evaluation.blocked_videos = str(holdout_block_list)
+    evaluation.blocked_videos = str(
+        _json_block_list_for_evaluator(holdout_block_list)
+    )
     evaluation.thread = int(evaluator_threads)
     evaluator = build_evaluator(
         dict(prediction_filename={"results": final_results}, **evaluation)
