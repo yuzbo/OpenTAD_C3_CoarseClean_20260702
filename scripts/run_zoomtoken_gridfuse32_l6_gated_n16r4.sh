@@ -66,20 +66,15 @@ if [[ "${PRECHECK_ONLY}" == "1" ]]; then
     tools/bata/profile_zoomtoken_gridfuse32_l6_segment.py \
     tools/bata/profile_zoomtoken_gridfuse32_l6_fullstack.py
   python -m pytest tests/test_zoomtoken_gridfuse32_l6.py -q
-  python - "${CONFIG}" "${R1_CHECKPOINT}" <<'PY'
-import sys
-from mmengine import Config
-import torch
-
-config = Config.fromfile(sys.argv[1])
-route = config.model.backbone.backbone.gridfuse32_l6
-assert tuple(route.dense_block_indices) == tuple(range(6))
-assert tuple(route.fused_block_indices) == tuple(range(6, 12))
-checkpoint = torch.load(sys.argv[2], map_location="cpu")
-assert int(checkpoint["epoch"]) == 59
-assert "state_dict_ema" in checkpoint
-print("[ZOOMTOKEN_GRIDFUSE32_L6][PRECHECK_READY]")
-PY
+  python tools/bata/profile_zoomtoken_gridfuse32_l6_segment.py \
+    --config "${CONFIG}" \
+    --checkpoint "${R1_CHECKPOINT}" \
+    --run-root "${RESULT_ROOT}/construction_witness_not_persisted" \
+    --expected-commit "${EXPECTED_COMMIT}" \
+    --warmup 100 \
+    --iterations 500 \
+    --construction-witness-only
+  printf '[ZOOMTOKEN_GRIDFUSE32_L6][PRECHECK_READY]\n'
   exit 0
 fi
 

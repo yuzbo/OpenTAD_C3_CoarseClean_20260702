@@ -1,4 +1,6 @@
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 import torch
@@ -8,6 +10,13 @@ from opentad.models.backbones.vit_adapter import Block, VisionTransformerAdapter
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CONFIG = (
+    ROOT
+    / "configs"
+    / "adatad"
+    / "thumos"
+    / "georoute_official_r1_gridfuse32_l6_prebackbone_seed42_v001.py"
+)
 
 
 def _lineage():
@@ -210,13 +219,7 @@ def test_gridfuse_adds_no_parameters_and_config_freezes_all_gates():
         parameter.numel() for parameter in fused.parameters()
     )
 
-    config = Config.fromfile(
-        ROOT
-        / "configs"
-        / "adatad"
-        / "thumos"
-        / "georoute_official_r1_gridfuse32_l6_prebackbone_seed42_v001.py"
-    )
+    config = Config.fromfile(CONFIG)
     route = config.model.backbone.backbone.gridfuse32_l6
     assert tuple(route.dense_block_indices) == tuple(range(6))
     assert tuple(route.fused_block_indices) == tuple(range(6, 12))
@@ -262,3 +265,51 @@ def test_slurm_action_verifies_prefetched_remote_tracking_ref_without_network():
     assert 'rev-parse "${REMOTE_REF}"' in launcher
     assert "prefetched GitHub remote-tracking ref" in launcher
     assert "git -C \"${ROOT}\" fetch" not in launcher
+
+
+def test_old_segment_construction_path_reproduces_missing_transform_registry():
+    script = f"""
+from mmengine import Config
+from opentad.models import build_detector
+config = Config.fromfile({str(CONFIG)!r})
+model_config = config.model.copy()
+model_config.backbone.custom.pretrain = None
+build_detector(model_config)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "Rearrange is not in the mmengine::transform registry" in combined
+
+
+def test_canonical_transform_initialization_constructs_the_real_detector():
+    from mmengine.registry import TRANSFORMS
+    from opentad.models import build_detector
+    from tools.bata.profile_zoomtoken_gridfuse32_l6_segment import (
+        _initialize_opentad_transform_registry,
+    )
+
+    registered = _initialize_opentad_transform_registry()
+    assert registered == ("Rearrange", "Reduce", "Interpolate")
+    assert all(TRANSFORMS.get(name) is not None for name in registered)
+
+    config = Config.fromfile(CONFIG)
+    model_config = config.model.copy()
+    model_config.backbone.custom.pretrain = None
+    detector = build_detector(model_config)
+    assert detector is not None
+
+
+def test_precheck_executes_the_production_construction_witness():
+    launcher = (
+        ROOT / "scripts" / "run_zoomtoken_gridfuse32_l6_gated_n16r4.sh"
+    ).read_text(encoding="utf-8")
+    assert "profile_zoomtoken_gridfuse32_l6_segment.py" in launcher
+    assert "--construction-witness-only" in launcher
+    assert 'printf \'[ZOOMTOKEN_GRIDFUSE32_L6][PRECHECK_READY]\\n\'' in launcher

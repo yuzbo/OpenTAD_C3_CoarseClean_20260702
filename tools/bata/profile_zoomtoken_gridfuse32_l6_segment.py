@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import json
 import math
 import statistics
@@ -104,10 +105,27 @@ def _empty_stats() -> dict[str, int]:
     }
 
 
-def profile(args: argparse.Namespace) -> dict[str, Any]:
+def _initialize_opentad_transform_registry() -> tuple[str, ...]:
+    """Mirror the canonical registry initialization used by train/test entrypoints."""
+    importlib.import_module("opentad.datasets")
+    from mmengine.registry import TRANSFORMS
+
+    required = ("Rearrange", "Reduce", "Interpolate")
+    missing = tuple(name for name in required if TRANSFORMS.get(name) is None)
+    if missing:
+        raise RuntimeError(
+            "canonical OpenTAD transform registry initialization is incomplete: "
+            + ", ".join(missing)
+        )
+    return required
+
+
+def prepare_gridfuse32_l6_g0(args: argparse.Namespace) -> dict[str, Any]:
+    """Build, strict-load, bind, and dry-witness the exact production G0 path."""
     import torch
     from mmengine import Config
 
+    registered_transforms = _initialize_opentad_transform_registry()
     from opentad.models import build_detector
 
     if not torch.cuda.is_available():
@@ -126,7 +144,6 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     if not args.checkpoint.is_file() or not args.config.is_file():
         raise FileNotFoundError("GridFuse32 G0 checkpoint or config is missing")
 
-    args.run_root.mkdir(parents=True, exist_ok=False)
     cfg = Config.fromfile(str(args.config))
     route = cfg.model.backbone.backbone.gridfuse32_l6
     if (
@@ -143,7 +160,11 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
     if int(checkpoint.get("epoch", -1)) != 59 or "state_dict_ema" not in checkpoint:
         raise ValueError("GridFuse32 G0 requires the frozen epoch-59 EMA checkpoint")
-    model.load_state_dict(_strip_ddp_prefix(checkpoint["state_dict_ema"]), strict=True)
+    load_result = model.load_state_dict(
+        _strip_ddp_prefix(checkpoint["state_dict_ema"]), strict=True
+    )
+    if load_result.missing_keys or load_result.unexpected_keys:
+        raise RuntimeError("strict epoch-59 EMA checkpoint load was not exact")
     del checkpoint
 
     device = torch.device("cuda:0")
@@ -213,6 +234,59 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
             raise RuntimeError(f"candidate G0 ledger mismatch for {key}")
     if int(candidate_ledger["gridfuse_bucket_call_count"]) != 6:
         raise RuntimeError("candidate G0 did not execute exactly six fused blocks")
+
+    witness = {
+        "schema_version": "zoomtoken_gridfuse32_l6_g0_construction_witness_v001",
+        "status": "GRIDFUSE32_L6_G0_CONSTRUCTION_WITNESS_PASS",
+        "source_commit": expected_commit,
+        "canonical_registered_transforms": list(registered_transforms),
+        "detector_constructed": True,
+        "checkpoint": {
+            "path": str(args.checkpoint.resolve()),
+            "sha256": _sha256(args.checkpoint),
+            "epoch": 59,
+            "state": "state_dict_ema",
+            "strict_load": True,
+            "missing_keys": [],
+            "unexpected_keys": [],
+        },
+        "shape": {
+            "batch_size": 1,
+            "tubelets_per_clip": 8,
+            "tokens_per_tubelet": 64,
+            "dense_tokens": 512,
+            "candidate_tokens": 256,
+            "embed_dims": 384,
+            "num_heads": 6,
+            "blocks": list(range(6, 12)),
+            "dense_adapter": True,
+        },
+        "dry_ledger": {"dense": dense_ledger, "candidate": candidate_ledger},
+        "timing_executed": False,
+        "memory_measurement_executed": False,
+        "prediction_or_metric_executed": False,
+        "training_or_resume_executed": False,
+    }
+    return {
+        "torch": torch,
+        "device": device,
+        "execute": execute,
+        "dense_ledger": dense_ledger,
+        "candidate_ledger": candidate_ledger,
+        "witness": witness,
+        "expected_commit": expected_commit,
+    }
+
+
+def profile(args: argparse.Namespace) -> dict[str, Any]:
+    args.run_root.mkdir(parents=True, exist_ok=False)
+    prepared = prepare_gridfuse32_l6_g0(args)
+    torch = prepared["torch"]
+    device = prepared["device"]
+    execute = prepared["execute"]
+    dense_ledger = prepared["dense_ledger"]
+    candidate_ledger = prepared["candidate_ledger"]
+    expected_commit = prepared["expected_commit"]
 
     for index in range(int(args.warmup)):
         order = ("dense", "candidate") if index % 2 == 0 else ("candidate", "dense")
@@ -299,6 +373,7 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "timing": timing,
         "memory": memory,
         "ledger": {"dense": dense_ledger, "candidate": candidate_ledger},
+        "construction_witness": prepared["witness"],
         "gate": {
             "p50_speedup": speedup,
             "p50_speedup_min": 1.35,
@@ -326,11 +401,32 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--warmup", type=int, default=100)
     parser.add_argument("--iterations", type=int, default=500)
+    parser.add_argument("--construction-witness-only", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
+    if args.construction_witness_only:
+        try:
+            prepared = prepare_gridfuse32_l6_g0(args)
+            print(json.dumps(prepared["witness"], sort_keys=True))
+            print("[ZOOMTOKEN_GRIDFUSE32_L6][CONSTRUCTION_WITNESS_READY]")
+            return 0
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {
+                        "status": "GRIDFUSE32_L6_G0_CONSTRUCTION_WITNESS_BLOCKER",
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                        "traceback": traceback.format_exc(),
+                    },
+                    sort_keys=True,
+                ),
+                file=sys.stderr,
+            )
+            return 2
     terminal: dict[str, Any]
     try:
         result = profile(args)
