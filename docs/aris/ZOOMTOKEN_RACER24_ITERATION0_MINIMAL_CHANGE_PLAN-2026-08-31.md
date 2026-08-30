@@ -100,4 +100,4 @@ forward_selected_query_full_kv(query_x, kv_x)
 
 ## 7. 计划结论
 
-MCL 机械可行，但它要求真正新增 selected-Q/full-KV attention 与 dense completion 机制；不是纯配置改动。当前停止点为：等待 exact Project provenance 或用户明确把手工转交材料提升为 Iteration-0 实施授权。该权限到位前不编辑模型代码。
+MCL 机械可行，但它要求真正新增 selected-Q/full-KV attention 与 dense completion 机制；不是纯配置改动。用户已于 `2026-08-31T01:23:36+08:00` 明确授权 RACER24 Iteration-0 实施。下一责任人是独立 Builder：绑定 proposed base 后实现最小候选并返回 clean revision 与 focused checks；60-epoch训练与后继仍冻结。

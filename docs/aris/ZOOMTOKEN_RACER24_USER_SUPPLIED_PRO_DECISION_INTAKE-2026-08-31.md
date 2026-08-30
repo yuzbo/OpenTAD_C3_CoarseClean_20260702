@@ -50,5 +50,7 @@
 
 MCL 确认 selected-Q/full-KV 与 parameter-free completion 都是新增机制，不是现有 helper；Iteration-0
 最小面为 `vit_adapter.py`、一个 RACER24 config、一个 focused test、一个 task-specific profiler和一个
-microbenchmark launcher。当前停止点为等待 exact Project provenance，或用户明确把手工转交材料提升为
-Iteration-0 实施授权；在此之前不编辑模型代码、不运行 GPU/Slurm/训练。
+microbenchmark launcher。用户已于 `2026-08-31T01:23:36+08:00` 明确确认：将这份手工转交材料提升为
+RACER24 Iteration-0 实施授权。该确认解冻最小实现、focused checks、独立 Critic、结果盲 Evaluator 与
+冻结的 real-shape microbenchmark；它不追溯补齐缺失的 Project provenance，也不授权 60-epoch训练、
+正式 full-stack cost、FARM24 或 PairLatent32。
