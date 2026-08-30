@@ -4875,3 +4875,10 @@ append_only: true
   launcher 内的 focused suite 再次为 `9 passed`。随后只提交一个正式 G0 job `1262090`
   (`zt-gf32-l6-g0`，1 GPU，4 CPU，2 小时)，提交时为 `PENDING/Priority`。本轮只测冻结的六层
   real-shape segment gate；G1/G2 未开放，运行中不读取或解释 partial timing/memory。
+
+- 2026-08-31：正式 G0 job `1262090` 于 `g0030` 运行 `00:00:15` 后终态 `FAILED 2:0`。
+  segment profiler 在 `build_detector` 构建 pre-processing pipeline 时因 `Rearrange` 未注册到 mmengine
+  transform registry 而退出；任何 warmup、alternating timing 或 memory measurement 都未开始。
+  `terminal_receipt.json` 已生成，`profile.json` 缺失，因而分类为
+  `GRIDFUSE32_L6_G0_ENGINEERING_OR_PROTOCOL_BLOCKER`，不是效率负结果。正式 G0 提交数 `1/1` 已用尽，
+  G1/G2 未开放；不静默补 import、不重跑，先向 fresh exact-Project Pro 交回完整终态。

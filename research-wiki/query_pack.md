@@ -1423,6 +1423,12 @@ max_chars: 8000
   formal G0 job, `1262090` (`zt-gf32-l6-g0`, one GPU, four CPUs), was submitted
   against exact candidate `0b734ab8…`; G1/G2 remain closed pending its terminal
   frozen gate evidence.
+- Formal G0 job `1262090` is terminal `FAILED 2:0` after 15 seconds on `g0030`.
+  Model construction stopped before warmup or any timing/memory measurement because
+  `Rearrange` was absent from the mmengine transform registry. The exclusive terminal
+  receipt exists, `profile.json` does not, and no G0 gate is evaluated. This is an
+  engineering/protocol blocker, not GridFuse performance evidence. G1/G2 remain closed;
+  the sole next action is fresh exact-Project Pro adjudication.
 
 ## Pointers
 

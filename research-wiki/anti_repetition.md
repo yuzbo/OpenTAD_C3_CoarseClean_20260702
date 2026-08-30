@@ -1360,3 +1360,6 @@ updated: 2026-08-29
 43. precheck jobs `1262078/1262079` 均在计算节点 GitHub DNS 身份检查处、任何测试或科学执行前停止；不得
     写成 G0 失败，也不得继续重提旧 launcher。最终候选仅把 fresh-fetch 移至登录节点，并在计算节点核验
     persistent remote-tracking ref；这不是放宽 source identity，也不改变模型或冻结门。
+44. 正式 G0 job `1262090` 在任何 warmup/timing/memory 前因 `Rearrange` 未注册而终止；没有
+    `profile.json`，不得写成 G0 性能失败、不得从 15 秒运行时间推断效率，也不得自行补 import 后重跑。
+    G1/G2 继续关闭，是否允许 wrapper-only replacement 或转向必须由 fresh Pro 独立裁决。

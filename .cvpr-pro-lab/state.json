@@ -1,8 +1,6 @@
 {
-  "active_job": "1262090",
-  "active_jobs": [
-    "1262090"
-  ],
+  "active_job": null,
+  "active_jobs": [],
   "browser_request": {
     "active_streaming_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V002_TERMINAL_PARITY_FAILURE_REVIEW_STREAMING_RECEIPT-ATTEMPT4-v001.json",
     "actual_submission_count": 1,
@@ -33,7 +31,7 @@
     "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V002_TERMINAL_PARITY_FAILURE_REVIEW_TERMINAL_RECEIPT-ATTEMPT4-v001.json"
   },
   "epoch": 31,
-  "execution_state": "GRIDFUSE32_L6_G0_SUBMITTED_PENDING_TERMINAL",
+  "execution_state": "GRIDFUSE32_L6_G0_ENGINEERING_BLOCKER_PENDING_FRESH_PRO",
   "gridfuse32_l6_gated": {
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",
     "branch": "codex/zoomtoken-gridfuse32-l6-v001",
@@ -56,15 +54,22 @@
     },
     "g0_formal_job": {
       "cpus_per_task": 4,
+      "elapsed": "00:00:15",
+      "ended_at_beijing": "2026-08-31T04:28:20+08:00",
+      "exit_code": "2:0",
       "gpus": 1,
       "job_id": "1262090",
       "job_name": "zt-gf32-l6-g0",
       "log_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_logs_0b734ab8_20260901",
+      "node": "g0030",
       "partition": "gpu",
+      "profile_present": false,
       "result_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_gated_0b734ab8_seed42_20260901",
-      "state_at_receipt": "PENDING_PRIORITY",
+      "state": "FAILED",
+      "status": "GRIDFUSE32_L6_G0_ENGINEERING_OR_PROTOCOL_BLOCKER",
       "submission_count": 1,
       "submitted_at_beijing": "2026-08-31T04:27:53+08:00",
+      "terminal_receipt": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_gated_0b734ab8_seed42_20260901/g0/terminal_receipt.json",
       "walltime": "02:00:00"
     },
     "g1_gate": {
@@ -106,8 +111,16 @@
     },
     "remote_source_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_src_0b734ab8",
     "pre_run_receipt": "docs/aris/ZOOMTOKEN_GRIDFUSE32_L6_GATED_PRE_RUN_READY-2026-08-31.md",
+    "fresh_pro_request": {
+      "actual_submission_count": 0,
+      "nonce": "ZOOMTOKEN-GRIDFUSE32-L6-G0-TERMINAL-PRO-v001-20260831T043409+0800",
+      "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
+      "request_id": "PRO_GRIDFUSE32_L6_G0_TERMINAL_ENGINEERING_BLOCKER_ADJUDICATION-v001",
+      "request_path": ".cvpr-pro-lab/reviews/PRO_GRIDFUSE32_L6_G0_TERMINAL_ENGINEERING_BLOCKER_ADJUDICATION_REQUEST-v001.md",
+      "status": "READY_NOT_SUBMITTED"
+    },
     "scientific_return_due_beijing": "2026-09-03T12:00:00+08:00",
-    "status": "G0_SUBMITTED_PENDING_TERMINAL",
+    "status": "G0_ENGINEERING_BLOCKER_PENDING_FRESH_PRO",
     "task_id": "ZOOMTOKEN-GRIDFUSE32-L6-GATED-v001"
   },
   "k100_tar50_interaction_falsifier": {
@@ -587,8 +600,8 @@
     }
   },
   "schema_version": "1.0",
-  "stage": "G7_G0_TERMINAL_WAIT",
-  "status": "GRIDFUSE32_L6_G0_SUBMITTED_PENDING_TERMINAL",
+  "stage": "G8_POST_RESULT_PRO",
+  "status": "GRIDFUSE32_L6_G0_ENGINEERING_BLOCKER_PENDING_FRESH_PRO",
   "tar32_eval_blocker_review": {
     "actual_submission_count": 1,
     "attachment_count": 9,
