@@ -17,6 +17,7 @@ RESULT_ROOT="${ZOOMTOKEN_GRIDFUSE_RESULT_ROOT:?set the immutable task result roo
 PHASE="${ZOOMTOKEN_GRIDFUSE_PHASE:-G0}"
 PRECHECK_ONLY="${PRECHECK_ONLY:-0}"
 BRANCH="codex/zoomtoken-gridfuse32-l6-v001"
+REMOTE_REF="refs/remotes/origin/${BRANCH}"
 CONFIG="${ROOT}/configs/adatad/thumos/georoute_official_r1_gridfuse32_l6_prebackbone_seed42_v001.py"
 CONTROL_CONFIG="${ROOT}/configs/adatad/thumos/georoute_official_r1_strict_rect8x8_prebackbone_seed42_v001.py"
 R1_CHECKPOINT="${ZOOMTOKEN_GRIDFUSE_R1_CHECKPOINT:-${BASE}/projects/zoomtoken_official_prebackbone_r1_9e25c6d3_seed42_20260822T080108Z/cells/r1_strict_rect8x8_prebackbone_sparse_adapter/seed42/gpu2_id0/checkpoint/epoch_59.pth}"
@@ -39,9 +40,8 @@ done
 [[ -d "${VIDEO_ROOT}" ]] || fail 'canonical THUMOS14 video root is missing'
 [[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail 'source commit mismatch'
 [[ -z "$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all)" ]] || fail 'source checkout is not clean'
-git -C "${ROOT}" fetch --quiet origin "${BRANCH}"
-[[ "$(git -C "${ROOT}" rev-parse FETCH_HEAD)" == "${EXPECTED_COMMIT}" ]] || \
-  fail 'fresh GitHub fetch does not resolve to the reviewed candidate'
+[[ "$(git -C "${ROOT}" rev-parse "${REMOTE_REF}")" == "${EXPECTED_COMMIT}" ]] || \
+  fail 'prefetched GitHub remote-tracking ref does not resolve to the reviewed candidate'
 
 if ! command -v module >/dev/null 2>&1 && [[ -r /etc/profile ]]; then
   set +u

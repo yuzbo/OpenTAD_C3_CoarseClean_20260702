@@ -252,3 +252,13 @@ def test_g2_binds_candidate_checkpoint_to_the_g1_terminal_receipt():
         'terminal["primary_state"] == "state_dict_ema"',
     ):
         assert binding in launcher
+
+
+def test_slurm_action_verifies_prefetched_remote_tracking_ref_without_network():
+    launcher = (
+        ROOT / "scripts" / "run_zoomtoken_gridfuse32_l6_gated_n16r4.sh"
+    ).read_text(encoding="utf-8")
+    assert 'REMOTE_REF="refs/remotes/origin/${BRANCH}"' in launcher
+    assert 'rev-parse "${REMOTE_REF}"' in launcher
+    assert "prefetched GitHub remote-tracking ref" in launcher
+    assert "git -C \"${ROOT}\" fetch" not in launcher
