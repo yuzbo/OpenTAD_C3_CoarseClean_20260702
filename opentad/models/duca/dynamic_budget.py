@@ -90,7 +90,11 @@ class VideoBudgetAllocation:
     """
 
     budget: torch.Tensor
+    effective_budget: torch.Tensor
     actual_cost: torch.Tensor
+    execution_slots: torch.Tensor
+    padding_slots: torch.Tensor
+    collapsed_to_baseline: torch.Tensor
     changed_mask: torch.Tensor
     predicted_total_utility: torch.Tensor
     target_actual_cost: int
@@ -103,14 +107,32 @@ class VideoBudgetAllocation:
             raise ValueError("video budget allocation must be one-dimensional")
         if self.actual_cost.shape != self.budget.shape:
             raise ValueError("actual_cost must align with budget")
+        if self.effective_budget.shape != self.budget.shape:
+            raise ValueError("effective_budget must align with budget")
+        if self.execution_slots.shape != self.budget.shape:
+            raise ValueError("execution_slots must align with budget")
+        if self.padding_slots.shape != self.budget.shape:
+            raise ValueError("padding_slots must align with budget")
+        if self.collapsed_to_baseline.shape != self.budget.shape:
+            raise ValueError("collapsed_to_baseline must align with budget")
+        if self.collapsed_to_baseline.dtype != torch.bool:
+            raise ValueError("collapsed_to_baseline must be boolean")
         if self.changed_mask.shape != self.budget.shape:
             raise ValueError("changed_mask must align with budget")
         if self.changed_mask.dtype != torch.bool:
             raise ValueError("changed_mask must be boolean")
         if window_count is not None and self.budget.numel() != int(window_count):
             raise ValueError("video budget allocation window count mismatch")
-        if torch.any(self.actual_cost < 0) or torch.any(self.actual_cost > self.budget):
-            raise ValueError("actual observation cost must lie in [0, requested budget]")
+        if torch.any(self.actual_cost <= 0) or torch.any(self.actual_cost > self.budget):
+            raise ValueError("actual observation cost must lie in (0, requested budget]")
+        if torch.any(self.execution_slots < self.actual_cost):
+            raise ValueError("execution slots cannot be smaller than actual observation cost")
+        if torch.any(self.execution_slots % 16 != 0):
+            raise ValueError("execution slots must be packet aligned")
+        if not torch.equal(self.padding_slots, self.execution_slots - self.actual_cost):
+            raise ValueError("padding_slots must equal execution_slots - actual_cost")
+        if torch.any(self.changed_mask != (self.effective_budget != 384)):
+            raise ValueError("changed_mask must describe effective, not requested, tier changes")
         if self.predicted_total_utility.ndim != 0 or not bool(
             torch.isfinite(self.predicted_total_utility).item()
         ):
@@ -120,6 +142,49 @@ class VideoBudgetAllocation:
         ):
             raise ValueError("feasible allocation must meet the exact actual-cost target")
         return self
+
+
+def marginal_budget_accounting(
+    valid_observations: torch.Tensor,
+    requested_budget: int,
+    *,
+    baseline_budget: int = 384,
+    packet_size: int = 16,
+) -> dict[str, torch.Tensor]:
+    """Canonicalize one requested tier under the frozen short-window contract."""
+
+    valid = valid_observations.to(dtype=torch.long).reshape(-1)
+    requested_budget = int(requested_budget)
+    baseline_budget = int(baseline_budget)
+    packet_size = int(packet_size)
+    if torch.any(valid <= 0):
+        raise ValueError("valid_observations must be positive")
+    if requested_budget not in {256, 384, 512}:
+        raise ValueError("requested marginal budget must be 256, 384, or 512")
+    if baseline_budget != 384 or packet_size != 16:
+        raise ValueError("the frozen marginal contract uses baseline 384 and packet size 16")
+
+    requested = torch.full_like(valid, requested_budget)
+    baseline = torch.full_like(valid, baseline_budget)
+    actual = torch.minimum(valid, requested)
+    baseline_actual = torch.minimum(valid, baseline)
+    collapsed = (requested_budget != baseline_budget) & (actual == baseline_actual)
+    effective = torch.where(collapsed, baseline, requested)
+    distinct_nonbaseline = effective != baseline_budget
+    packetized = ((actual + packet_size - 1) // packet_size) * packet_size
+    execution = torch.where(distinct_nonbaseline, packetized, baseline)
+    padding = execution - actual
+    if torch.any(distinct_nonbaseline & (padding >= packet_size)):
+        raise ValueError("distinct nonbaseline padding must be confined to the final packet")
+    return {
+        "requested_budget": requested,
+        "actual_cost": actual,
+        "baseline_actual_cost": baseline_actual,
+        "effective_budget": effective,
+        "execution_slots": execution,
+        "padding_slots": padding,
+        "collapsed_to_baseline": collapsed,
+    }
 
 
 class SignedTwoSidedMarginalUtilityHead(nn.Module):
@@ -153,30 +218,50 @@ class SignedTwoSidedMarginalUtilityHead(nn.Module):
 def validate_real_heavy_observation_tensor(
     observations: torch.Tensor,
     *,
-    expected_budget: int,
+    actual_observations: torch.Tensor | int,
+    execution_slots: int,
+    acquisition_mask: torch.Tensor,
+    baseline_execution: bool = False,
 ) -> torch.Tensor:
-    """Require the heavy path to receive exactly the requested observations.
+    """Validate packetized execution separately from unique-observation cost."""
 
-    The frozen marginal probe executes one budget group at a time.  This guard
-    makes nominal dynamic budgets impossible when the actual raw-video tensor
-    has instead been padded to the largest budget.
-    """
-
-    budget = int(expected_budget)
-    if budget not in {256, 384, 512}:
-        raise ValueError("marginal heavy budget must be one of 256, 384, or 512")
+    execution_slots = int(execution_slots)
+    if execution_slots <= 0 or execution_slots > 512 or execution_slots % 16 != 0:
+        raise ValueError("execution_slots must be packet aligned and lie in (0, 512]")
     if not torch.is_tensor(observations) or observations.ndim not in {5, 6}:
         raise ValueError(
             "heavy observations must be [B,C,K,H,W] or [B,N,C,K,H,W]"
         )
     temporal_dim = 2 if observations.ndim == 5 else 3
     actual = int(observations.shape[temporal_dim])
-    if actual != budget:
+    if actual != execution_slots:
         raise ValueError(
-            f"actual heavy observation count {actual} does not match requested budget {budget}"
+            f"heavy execution length {actual} does not match execution_slots {execution_slots}"
         )
-    if budget % 16 != 0:
-        raise ValueError("heavy observation budget must contain whole 16-frame packets")
+    batch_size = int(observations.shape[0])
+    counts = torch.as_tensor(
+        actual_observations,
+        device=observations.device,
+        dtype=torch.long,
+    ).reshape(-1)
+    if counts.numel() == 1 and batch_size != 1:
+        counts = counts.expand(batch_size)
+    if counts.shape != (batch_size,) or torch.any(counts <= 0) or torch.any(counts > execution_slots):
+        raise ValueError("actual_observations must contain one valid count per batch item")
+    mask = acquisition_mask.to(device=observations.device, dtype=torch.bool)
+    if mask.shape != (batch_size, execution_slots):
+        raise ValueError("acquisition_mask must be [B, execution_slots]")
+    expected_mask = torch.arange(execution_slots, device=observations.device)[None, :] < counts[:, None]
+    if not torch.equal(mask, expected_mask):
+        raise ValueError("acquisition_mask must be one active prefix followed by trailing padding")
+    padding = execution_slots - counts
+    if not baseline_execution and torch.any(padding >= 16):
+        raise ValueError("distinct nonbaseline execution may pad only the final packet")
+    mask_view = [batch_size] + [1] * (observations.ndim - 1)
+    mask_view[temporal_dim] = execution_slots
+    padded_values = observations.masked_select(~mask.view(mask_view).expand_as(observations))
+    if padded_values.numel() and torch.any(padded_values != 0):
+        raise ValueError("trailing heavy-execution padding must be exactly zero")
     return observations
 
 
@@ -267,7 +352,7 @@ def allocate_video_budgets_exact(
     *,
     budget_levels: Sequence[int],
     baseline_budget: int,
-    target_actual_cost: int,
+    target_actual_cost: Optional[int] = None,
     max_changed_fraction: float = 0.5,
 ) -> VideoBudgetAllocation:
     """Maximize detached predicted utility under one exact per-video cost.
@@ -292,9 +377,6 @@ def allocate_video_budgets_exact(
     utility = relative_utility.detach().to(device="cpu", dtype=torch.float64)
     if not bool(torch.isfinite(utility).all().item()):
         raise ValueError("relative_utility must be finite")
-    target = int(target_actual_cost)
-    if target <= 0:
-        raise ValueError("target_actual_cost must be positive")
     fraction = float(max_changed_fraction)
     if not 0.0 <= fraction <= 1.0:
         raise ValueError("max_changed_fraction must lie in [0,1]")
@@ -303,6 +385,12 @@ def allocate_video_budgets_exact(
     baseline_index = levels.index(int(baseline_budget))
     baseline_requested = torch.full((window_count,), int(baseline_budget), dtype=torch.long)
     baseline_actual = torch.minimum(baseline_requested, valid)
+    frozen_target = int(baseline_actual.sum().item())
+    target = frozen_target if target_actual_cost is None else int(target_actual_cost)
+    if target != frozen_target:
+        raise ValueError(
+            "target_actual_cost must equal sum(min(valid_observations, baseline_budget))"
+        )
     max_changed = int(window_count * fraction)
 
     # state[(actual_cost, changed_count)] = (utility, tuple(level_indices))
@@ -312,11 +400,14 @@ def allocate_video_budgets_exact(
     for window_index in range(window_count):
         next_states: dict[tuple[int, int], tuple[float, tuple[int, ...]]] = {}
         for (running_cost, changed_count), (running_utility, choices) in states.items():
+            baseline_cost = int(baseline_actual[window_index].item())
             for level_index, level in enumerate(levels):
+                actual = min(int(level), int(valid[window_index].item()))
+                if level_index != baseline_index and actual == baseline_cost:
+                    continue
                 changed = changed_count + int(level_index != baseline_index)
                 if changed > max_changed:
                     continue
-                actual = min(int(level), int(valid[window_index].item()))
                 new_cost = running_cost + actual
                 if new_cost > target:
                     continue
@@ -324,8 +415,15 @@ def allocate_video_budgets_exact(
                 key = (new_cost, changed)
                 candidate = (score, choices + (level_index,))
                 current = next_states.get(key)
+                tie_rank = {baseline_index: 0, levels.index(256): 1, levels.index(512): 2}
+                candidate_tie = tuple(tie_rank[index] for index in candidate[1])
+                current_tie = (
+                    tuple(tie_rank[index] for index in current[1])
+                    if current is not None
+                    else None
+                )
                 if current is None or score > current[0] + 1.0e-12 or (
-                    abs(score - current[0]) <= 1.0e-12 and candidate[1] < current[1]
+                    abs(score - current[0]) <= 1.0e-12 and candidate_tie < current_tie
                 ):
                     next_states[key] = candidate
         states = next_states
@@ -339,10 +437,15 @@ def allocate_video_budgets_exact(
     ]
     baseline_is_exact = int(baseline_actual.sum().item()) == target
     if not candidates:
-        reason = "exact actual observation target is infeasible for this video's valid lengths"
+        reason = "the all-K384 baseline could not be recovered at its own actual-cost target"
+        baseline_accounting = marginal_budget_accounting(valid, int(baseline_budget))
         result = VideoBudgetAllocation(
             budget=baseline_requested.to(device=relative_utility.device),
+            effective_budget=baseline_accounting["effective_budget"].to(device=relative_utility.device),
             actual_cost=baseline_actual.to(device=relative_utility.device),
+            execution_slots=baseline_accounting["execution_slots"].to(device=relative_utility.device),
+            padding_slots=baseline_accounting["padding_slots"].to(device=relative_utility.device),
+            collapsed_to_baseline=baseline_accounting["collapsed_to_baseline"].to(device=relative_utility.device),
             changed_mask=torch.zeros(
                 window_count, device=relative_utility.device, dtype=torch.bool
             ),
@@ -357,35 +460,36 @@ def allocate_video_budgets_exact(
 
     # Prefer larger utility, then fewer changed windows, then the deterministic
     # lexicographically smaller tier sequence.
-    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
+    tie_rank = {baseline_index: 0, levels.index(256): 1, levels.index(512): 2}
+    candidates.sort(
+        key=lambda item: (
+            -item[0],
+            item[1],
+            tuple(tie_rank[index] for index in item[2]),
+        )
+    )
     best_score, _changed, best_choices = candidates[0]
     if best_score <= 0.0 and baseline_is_exact:
         best_choices = (baseline_index,) * window_count
         best_score = 0.0
-    elif best_score <= 0.0:
-        result = VideoBudgetAllocation(
-            budget=baseline_requested.to(device=relative_utility.device),
-            actual_cost=baseline_actual.to(device=relative_utility.device),
-            changed_mask=torch.zeros(
-                window_count, device=relative_utility.device, dtype=torch.bool
-            ),
-            predicted_total_utility=torch.tensor(
-                best_score,
-                device=relative_utility.device,
-                dtype=relative_utility.dtype,
-            ),
-            target_actual_cost=target,
-            feasible=False,
-            reason="meeting the exact target requires a non-positive predicted transfer",
-        )
-        return result.validate(window_count=window_count)
-
     requested = torch.tensor([levels[index] for index in best_choices], dtype=torch.long)
-    actual = torch.minimum(requested, valid)
-    changed_mask = requested != int(baseline_budget)
+    accounting_rows = [
+        marginal_budget_accounting(valid[index : index + 1], int(requested[index].item()))
+        for index in range(window_count)
+    ]
+    actual = torch.cat([row["actual_cost"] for row in accounting_rows])
+    effective = torch.cat([row["effective_budget"] for row in accounting_rows])
+    execution = torch.cat([row["execution_slots"] for row in accounting_rows])
+    padding = torch.cat([row["padding_slots"] for row in accounting_rows])
+    collapsed = torch.cat([row["collapsed_to_baseline"] for row in accounting_rows])
+    changed_mask = effective != int(baseline_budget)
     result = VideoBudgetAllocation(
         budget=requested.to(device=relative_utility.device),
+        effective_budget=effective.to(device=relative_utility.device),
         actual_cost=actual.to(device=relative_utility.device),
+        execution_slots=execution.to(device=relative_utility.device),
+        padding_slots=padding.to(device=relative_utility.device),
+        collapsed_to_baseline=collapsed.to(device=relative_utility.device),
         changed_mask=changed_mask.to(device=relative_utility.device),
         predicted_total_utility=torch.tensor(
             best_score,
@@ -394,7 +498,11 @@ def allocate_video_budgets_exact(
         ),
         target_actual_cost=target,
         feasible=True,
-        reason="exact target satisfied",
+        reason=(
+            "all-K384 fallback: no positive exact nonbaseline transfer"
+            if int(changed_mask.sum().item()) == 0
+            else "exact actual-observation target satisfied"
+        ),
     )
     return result.validate(window_count=window_count)
 
@@ -422,7 +530,7 @@ def allocate_equal_budget_marginal_reallocation(
         valid_observations,
         budget_levels=(int(lower_budget), int(baseline_budget), int(upper_budget)),
         baseline_budget=int(baseline_budget),
-        target_actual_cost=int(baseline_budget) * int(downgrade_penalty.numel()),
+        target_actual_cost=None,
         max_changed_fraction=max_changed_fraction,
     )
 

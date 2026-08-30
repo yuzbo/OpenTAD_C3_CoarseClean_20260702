@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from typing import Callable, Dict, Mapping
+from typing import Callable, Dict, Mapping, Optional
 
 import torch
 import torch.nn.functional as F
@@ -9,8 +9,9 @@ import torch.nn.functional as F
 
 def detached_three_budget_prefix_utilities(
     selections_by_budget: Mapping[int, torch.Tensor],
-    evaluate_detector_loss: Callable[[torch.Tensor, int], torch.Tensor],
+    evaluate_detector_loss: Callable[..., torch.Tensor],
     *,
+    actual_count_by_budget: Optional[Mapping[int, torch.Tensor]] = None,
     lower_budget: int = 256,
     baseline_budget: int = 384,
     upper_budget: int = 512,
@@ -30,6 +31,7 @@ def detached_three_budget_prefix_utilities(
         raise ValueError(f"missing selections for budgets {missing}")
     batch_size = None
     normalized: dict[int, torch.Tensor] = {}
+    active_counts: dict[int, torch.Tensor] = {}
     for budget in budgets:
         positions = selections_by_budget[budget]
         if not torch.is_tensor(positions) or positions.ndim != 2:
@@ -40,30 +42,77 @@ def detached_three_budget_prefix_utilities(
             raise ValueError("all budget selections must share the batch dimension")
         if int(positions.shape[1]) != budget:
             raise ValueError(f"budget {budget} selection must contain exactly {budget} slots")
-        if torch.any(positions < 0):
-            raise ValueError("three-budget utility requires fully valid exact-K selections")
-        if positions.shape[1] > 1 and torch.any(positions[:, 1:] <= positions[:, :-1]):
-            raise ValueError("three-budget selections must be strictly time ordered")
+        if actual_count_by_budget is None:
+            counts = torch.full(
+                (batch_size,),
+                int(budget),
+                device=positions.device,
+                dtype=torch.long,
+            )
+        else:
+            if budget not in actual_count_by_budget:
+                raise ValueError(f"missing actual counts for budget {budget}")
+            counts = actual_count_by_budget[budget].to(
+                device=positions.device,
+                dtype=torch.long,
+            ).reshape(-1)
+        if counts.shape != (batch_size,) or torch.any(counts <= 0) or torch.any(counts > budget):
+            raise ValueError("actual counts must provide one value in (0, requested budget] per sample")
+        for row in range(batch_size):
+            count = int(counts[row].item())
+            active = positions[row, :count]
+            inactive = positions[row, count:]
+            if torch.any(active < 0) or (
+                active.numel() > 1 and torch.any(active[1:] <= active[:-1])
+            ):
+                raise ValueError("active three-budget positions must be ordered and non-negative")
+            if inactive.numel() and torch.any(inactive != -1):
+                raise ValueError("inactive three-budget positions must use trailing -1 padding")
         normalized[budget] = positions
+        active_counts[budget] = counts
 
-    lower_set = normalized[budgets[0]][:, :, None]
-    baseline_set = normalized[budgets[1]][:, None, :]
-    upper_set = normalized[budgets[2]][:, None, :]
-    if not bool((lower_set == baseline_set).any(dim=2).all().item()):
-        raise ValueError("lower-budget selection must be a subset of the baseline selection")
-    baseline_membership = (
-        normalized[budgets[1]][:, :, None] == upper_set
-    ).any(dim=2)
-    if not bool(baseline_membership.all().item()):
-        raise ValueError("baseline selection must be a subset of the upper-budget selection")
+    for row in range(batch_size):
+        lower = normalized[budgets[0]][row, : int(active_counts[budgets[0]][row].item())]
+        baseline = normalized[budgets[1]][row, : int(active_counts[budgets[1]][row].item())]
+        upper = normalized[budgets[2]][row, : int(active_counts[budgets[2]][row].item())]
+        if lower.numel() and not bool((lower[:, None] == baseline[None, :]).any(dim=1).all().item()):
+            raise ValueError("lower-budget active prefix must be a subset of baseline")
+        if baseline.numel() and not bool((baseline[:, None] == upper[None, :]).any(dim=1).all().item()):
+            raise ValueError("baseline active prefix must be a subset of upper")
+
+    downgrade_valid = active_counts[budgets[0]] < active_counts[budgets[1]]
+    upgrade_valid = active_counts[budgets[1]] < active_counts[budgets[2]]
 
     losses: dict[int, torch.Tensor] = {}
     with torch.no_grad():
-        for budget in budgets:
-            loss = evaluate_detector_loss(normalized[budget].clone(), budget).reshape(-1)
-            if loss.numel() != batch_size or not bool(torch.isfinite(loss).all().item()):
-                raise ValueError("evaluate_detector_loss must return one finite loss per sample")
-            losses[budget] = loss.detach()
+        baseline_loss = (
+            evaluate_detector_loss(
+                normalized[budgets[1]].clone(),
+                budgets[1],
+                active_counts[budgets[1]].clone(),
+            )
+            if actual_count_by_budget is not None
+            else evaluate_detector_loss(normalized[budgets[1]].clone(), budgets[1])
+        ).reshape(-1)
+        if baseline_loss.numel() != batch_size or not bool(torch.isfinite(baseline_loss).all().item()):
+            raise ValueError("baseline detector loss must be finite and batch aligned")
+        losses[budgets[1]] = baseline_loss.detach()
+        for budget, eligible in ((budgets[0], downgrade_valid), (budgets[2], upgrade_valid)):
+            aliased = baseline_loss.detach().clone()
+            if bool(eligible.any().item()):
+                evaluated = (
+                    evaluate_detector_loss(
+                        normalized[budget][eligible].clone(),
+                        budget,
+                        active_counts[budget][eligible].clone(),
+                    )
+                    if actual_count_by_budget is not None
+                    else evaluate_detector_loss(normalized[budget][eligible].clone(), budget)
+                ).reshape(-1)
+                if evaluated.numel() != int(eligible.sum().item()) or not bool(torch.isfinite(evaluated).all().item()):
+                    raise ValueError("distinct detector losses must be finite and eligibility aligned")
+                aliased[eligible] = evaluated.detach()
+            losses[budget] = aliased
     downgrade_penalty = (losses[budgets[0]] - losses[budgets[1]]).detach()
     upgrade_gain = (losses[budgets[1]] - losses[budgets[2]]).detach()
     return {
@@ -72,6 +121,8 @@ def detached_three_budget_prefix_utilities(
         "loss_upper": losses[budgets[2]],
         "downgrade_penalty": downgrade_penalty,
         "upgrade_gain": upgrade_gain,
+        "downgrade_target_valid": downgrade_valid.detach(),
+        "upgrade_target_valid": upgrade_valid.detach(),
         "teacher_kind": "detached_frozen_detector_three_budget_prefix_loss",
         "direct_detector_gradient": False,
     }

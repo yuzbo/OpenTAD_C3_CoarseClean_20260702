@@ -23,75 +23,72 @@ from opentad.models.duca import (  # noqa: E402
     build_frozen_scout_marginal_features,
     detached_three_budget_prefix_utilities,
     interpolate_acquisition_time_to_detector_grid,
+    marginal_budget_accounting,
     nested_h65_budget_prefixes,
     validate_real_heavy_observation_tensor,
 )
 
 
 def test_nested_h65_prefixes_preserve_the_sealed_baseline_and_are_nested() -> None:
-    baseline = torch.tensor(
-        [
-            [0, 2, 4, 6],
-            [0, 1, 2, -1],
-        ],
-        dtype=torch.long,
-    )
-    priority = torch.tensor(
-        [
-            [0.1, 0.9, 0.4, 0.8, 0.3, 0.7, 0.2, 0.6],
-            [0.3, 0.8, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0],
-        ]
-    )
-    valid = torch.tensor(
-        [
-            [1, 1, 1, 1, 1, 1, 1, 1],
-            [1, 1, 1, 0, 0, 0, 0, 0],
-        ],
-        dtype=torch.bool,
-    )
+    valid_lengths = torch.tensor([67, 300, 401, 600])
+    baseline = torch.full((4, 384), -1, dtype=torch.long)
+    valid = torch.zeros(4, 600, dtype=torch.bool)
+    for row, valid_length in enumerate(valid_lengths.tolist()):
+        baseline_count = min(valid_length, 384)
+        baseline[row, :baseline_count] = torch.arange(baseline_count)
+        valid[row, :valid_length] = True
+    priority = -torch.arange(600, dtype=torch.float32)[None, :].expand(4, -1)
 
     result = nested_h65_budget_prefixes(
         baseline,
         priority,
         valid,
-        budgets=(2, 4, 6),
-        baseline_budget=4,
+        budgets=(256, 384, 512),
+        baseline_budget=384,
     )
 
-    assert torch.equal(result.positions_by_budget[4], baseline)
-    assert torch.equal(result.positions_by_budget[2][0], torch.tensor([2, 4]))
-    assert torch.equal(
-        result.positions_by_budget[6][0],
-        torch.tensor([0, 1, 2, 3, 4, 6]),
-    )
-    assert torch.equal(result.actual_count_by_budget[2], torch.tensor([2, 2]))
-    assert torch.equal(result.actual_count_by_budget[4], torch.tensor([4, 3]))
-    assert torch.equal(result.actual_count_by_budget[6], torch.tensor([6, 3]))
-    assert torch.equal(result.positions_by_budget[6][1], torch.tensor([0, 1, 2, -1, -1, -1]))
+    assert torch.equal(result.positions_by_budget[384], baseline)
+    assert torch.equal(result.actual_count_by_budget[256], torch.tensor([67, 256, 256, 256]))
+    assert torch.equal(result.actual_count_by_budget[384], torch.tensor([67, 300, 384, 384]))
+    assert torch.equal(result.actual_count_by_budget[512], torch.tensor([67, 300, 401, 512]))
+    assert torch.equal(result.effective_budget_by_requested[256], torch.tensor([384, 256, 256, 256]))
+    assert torch.equal(result.effective_budget_by_requested[512], torch.tensor([384, 384, 512, 512]))
+    assert torch.equal(result.execution_slots_by_budget[256], torch.tensor([384, 256, 256, 256]))
+    assert torch.equal(result.execution_slots_by_budget[384], torch.tensor([384, 384, 384, 384]))
+    assert torch.equal(result.execution_slots_by_budget[512], torch.tensor([384, 384, 416, 512]))
+    assert torch.equal(result.positions_by_budget[256][0, :67], baseline[0, :67])
+    assert torch.equal(result.positions_by_budget[512][1, :300], baseline[1, :300])
+    assert torch.equal(result.execution_positions_by_budget[512][2][:401], torch.arange(401))
+    assert torch.equal(result.execution_positions_by_budget[512][2][401:], torch.full((15,), -1))
 
 
 def test_three_budget_prefix_utility_targets_are_signed_and_detached() -> None:
-    selections = {
-        2: torch.tensor([[0, 2], [1, 3]]),
-        4: torch.tensor([[0, 1, 2, 3], [0, 1, 2, 3]]),
-        6: torch.tensor([[0, 1, 2, 3, 4, 5], [0, 1, 2, 3, 4, 5]]),
-    }
-    losses = {
-        2: torch.tensor([5.0, 2.0], requires_grad=True),
-        4: torch.tensor([3.0, 3.0], requires_grad=True),
-        6: torch.tensor([2.0, 4.0], requires_grad=True),
-    }
+    valid_lengths = torch.tensor([67, 300, 401])
+    baseline = torch.full((3, 384), -1, dtype=torch.long)
+    valid = torch.zeros(3, 401, dtype=torch.bool)
+    for row, valid_length in enumerate(valid_lengths.tolist()):
+        baseline[row, : min(valid_length, 384)] = torch.arange(min(valid_length, 384))
+        valid[row, :valid_length] = True
+    priority = -torch.arange(401, dtype=torch.float32)[None, :].expand(3, -1)
+    nested = nested_h65_budget_prefixes(baseline, priority, valid)
+    calls = []
+
+    def evaluate(_positions, budget, counts):
+        calls.append((budget, counts.clone()))
+        value = {256: 5.0, 384: 3.0, 512: 2.0}[budget]
+        return torch.full((counts.numel(),), value, requires_grad=True)
 
     output = detached_three_budget_prefix_utilities(
-        selections,
-        lambda _positions, budget: losses[budget],
-        lower_budget=2,
-        baseline_budget=4,
-        upper_budget=6,
+        nested.positions_by_budget,
+        evaluate,
+        actual_count_by_budget=nested.actual_count_by_budget,
     )
 
-    assert torch.equal(output["downgrade_penalty"], torch.tensor([2.0, -1.0]))
-    assert torch.equal(output["upgrade_gain"], torch.tensor([1.0, -1.0]))
+    assert torch.equal(output["downgrade_penalty"], torch.tensor([0.0, 2.0, 2.0]))
+    assert torch.equal(output["upgrade_gain"], torch.tensor([0.0, 0.0, 1.0]))
+    assert torch.equal(output["downgrade_target_valid"], torch.tensor([False, True, True]))
+    assert torch.equal(output["upgrade_target_valid"], torch.tensor([False, False, True]))
+    assert [(budget, counts.numel()) for budget, counts in calls] == [(384, 3), (256, 2), (512, 1)]
     assert output["downgrade_penalty"].requires_grad is False
     assert output["upgrade_gain"].requires_grad is False
     assert output["direct_detector_gradient"] is False
@@ -178,42 +175,65 @@ def test_equal_budget_allocator_transfers_cost_only_for_positive_total_utility()
 
 def test_allocator_accounts_for_real_short_window_cost_and_reports_infeasibility() -> None:
     feasible = allocate_video_budgets_exact(
-        relative_utility=torch.tensor([[1.0, 0.0, -1.0], [-1.0, 0.0, 2.0]]),
-        valid_observations=torch.tensor([300, 512]),
+        relative_utility=torch.tensor([[1.0, 0.0, -1.0], [-1.0, 0.0, 2.0], [0.0, 0.0, 0.5], [0.0, 0.0, 0.4]]),
+        valid_observations=torch.tensor([300, 428, 512, 512]),
         budget_levels=(256, 384, 512),
         baseline_budget=384,
-        target_actual_cost=768,
         max_changed_fraction=1.0,
     )
     assert feasible.feasible is True
-    assert torch.equal(feasible.budget, torch.tensor([256, 512]))
-    assert torch.equal(feasible.actual_cost, torch.tensor([256, 512]))
+    assert torch.equal(feasible.effective_budget, torch.tensor([256, 512, 384, 384]))
+    assert torch.equal(feasible.actual_cost, torch.tensor([256, 428, 384, 384]))
+    assert feasible.target_actual_cost == 1452
 
-    impossible = allocate_equal_budget_marginal_reallocation(
+    baseline = allocate_equal_budget_marginal_reallocation(
         downgrade_penalty=torch.zeros(4),
         upgrade_gain=torch.ones(4),
         valid_observations=torch.full((4,), 300),
     )
-    assert impossible.feasible is False
-    assert "infeasible" in impossible.reason
-    assert int(impossible.actual_cost.sum().item()) == 1200
+    assert baseline.feasible is True
+    assert torch.equal(baseline.effective_budget, torch.full((4,), 384))
+    assert int(baseline.actual_cost.sum().item()) == 1200
+    assert "all-K384 fallback" in baseline.reason
 
 
-def test_budget_grouped_heavy_execution_uses_three_real_temporal_shapes() -> None:
-    for budget in (256, 384, 512):
-        observations = torch.zeros(1, 1, 3, budget, 2, 2)
-        assert (
-            validate_real_heavy_observation_tensor(
-                observations,
-                expected_budget=budget,
-            )
-            is observations
-        )
+def test_budget_grouped_heavy_execution_supports_partial_final_packet() -> None:
+    observations = torch.zeros(1, 1, 3, 416, 2, 2)
+    acquisition_mask = torch.arange(416)[None, :] < 401
+    assert validate_real_heavy_observation_tensor(
+        observations,
+        actual_observations=401,
+        execution_slots=416,
+        acquisition_mask=acquisition_mask,
+    ) is observations
+
+    historical = torch.zeros(1, 1, 3, 384, 2, 2)
+    historical_mask = torch.arange(384)[None, :] < 67
+    assert validate_real_heavy_observation_tensor(
+        historical,
+        actual_observations=67,
+        execution_slots=384,
+        acquisition_mask=historical_mask,
+        baseline_execution=True,
+    ) is historical
 
 
 def test_nominal_k256_rejects_a_tensor_padded_to_512_observations() -> None:
-    with pytest.raises(ValueError, match="does not match requested budget"):
+    with pytest.raises(ValueError, match="does not match execution_slots"):
         validate_real_heavy_observation_tensor(
             torch.zeros(1, 1, 3, 512, 2, 2),
-            expected_budget=256,
+            actual_observations=401,
+            execution_slots=416,
+            acquisition_mask=torch.arange(416)[None, :] < 401,
         )
+
+
+def test_short_window_accounting_contract_examples() -> None:
+    valid = torch.tensor([67, 300, 401, 600])
+    lower = marginal_budget_accounting(valid, 256)
+    baseline = marginal_budget_accounting(valid, 384)
+    upper = marginal_budget_accounting(valid, 512)
+    assert torch.equal(lower["actual_cost"], torch.tensor([67, 256, 256, 256]))
+    assert torch.equal(baseline["actual_cost"], torch.tensor([67, 300, 384, 384]))
+    assert torch.equal(upper["actual_cost"], torch.tensor([67, 300, 401, 512]))
+    assert torch.equal(upper["execution_slots"], torch.tensor([384, 384, 416, 512]))

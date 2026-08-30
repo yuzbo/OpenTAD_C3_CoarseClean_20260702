@@ -37,6 +37,7 @@
 - C3 主线优化默认使用物理 GPU1；GPU0 保留给发散创新实验，除非用户同轮明确覆盖。
 - 不在 N16R4 登录节点直接训练；正式训练使用 Slurm 或已授权保护分配。
 - 发起 Pro 讨论时，默认共享本机 Chrome `--remote-debugging-port=9223` 实例；Chrome 只开一个，例如 `chrome.exe --remote-debugging-port=9223 --user-data-dir=<shared-profile>`。共享端口的核心是共享 DevTools 入口，但不共享同时控制权。
+- 每次 Pro 讨论必须绑定已经推送的最新公开实现：提示词同时提供 GitHub 仓库 URL、当前分支 URL、精确提交 URL，以及本轮机制和实验入口的关键文件 URL。未推送的本地提交、过时快照或仅有仓库首页不能作为讨论代码身份。
 - 共享 Chrome 9223 时必须加全局调度锁，默认锁文件为当前仓库 `.codex/chrome-9223.lock`；同一时间只允许一个 agent 操作页面。
 - agent 操作前先抢锁；拿到锁后调用 `http://127.0.0.1:9223/json/list` 找到或新建自己的页面，并在锁内容中记录 `owner`、`pid`、`targetId`、`pageId`、`webSocketDebuggerUrl`、`url`、`startedAt`、`expiresAt`。
 - agent 只操作锁中绑定的 Chrome DevTools `targetId`/`pageId`，不要临时切到“当前激活页”或其他未绑定页面。

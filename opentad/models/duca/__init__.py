@@ -36,6 +36,7 @@ from .dynamic_budget import (
     allocate_equal_budget_marginal_reallocation,
     allocate_video_budgets_exact,
     build_frozen_scout_marginal_features,
+    marginal_budget_accounting,
     validate_real_heavy_observation_tensor,
 )
 from .hard_soft_alignment import (
@@ -145,6 +146,7 @@ __all__ = [
     "allocate_equal_budget_marginal_reallocation",
     "allocate_video_budgets_exact",
     "build_frozen_scout_marginal_features",
+    "marginal_budget_accounting",
     "validate_real_heavy_observation_tensor",
     "temporal_max_gap_hole_loss",
     "transition_distribution_loss",

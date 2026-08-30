@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 import random
 import subprocess
+import sys
 from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
@@ -18,6 +19,7 @@ import numpy as np
 BUDGETS = (256, 384, 512)
 BASELINE_BUDGET = 384
 DETECTOR_LENGTH = 384
+PACKET_SIZE = 16
 
 
 def _sha256(path: Path) -> str:
@@ -147,6 +149,7 @@ def _stage_paths(output_dir: Path) -> dict[str, Path]:
         "k256_receipt": output_dir / "counterfactual_k256_receipt.json",
         "k512_receipt": output_dir / "counterfactual_k512_receipt.json",
         "result": output_dir / "probe_result.json",
+        "pre_run": output_dir / "pre_run_receipt.json",
         "split_dir": output_dir / "controller_split",
     }
 
@@ -240,13 +243,13 @@ def _build_loader(dataset, *, num_workers: int):
     )
 
 
-def _configure_real_budget_shape(model_cfg, *, budget: int, pretrain: Path):
+def _configure_real_budget_shape(model_cfg, *, execution_slots: int, pretrain: Path):
     model_cfg = copy.deepcopy(model_cfg)
-    budget = int(budget)
-    if budget not in BUDGETS or budget % 16 != 0:
-        raise ValueError("counterfactual budget must be 256, 384, or 512")
+    execution_slots = int(execution_slots)
+    if execution_slots <= 0 or execution_slots > 512 or execution_slots % PACKET_SIZE != 0:
+        raise ValueError("heavy execution length must be packet aligned and at most 512")
     model_cfg.backbone.custom.pretrain = str(pretrain)
-    chunk_count = budget // 16
+    chunk_count = execution_slots // PACKET_SIZE
     pre_hits = 0
     for operation in model_cfg.backbone.custom.pre_processing_pipeline:
         if str(operation.get("type")) == "Rearrange" and "t1" in operation:
@@ -271,7 +274,7 @@ def _load_frozen_model(
     *,
     checkpoint: Path,
     pretrain: Path,
-    budget: int,
+    execution_slots: int,
     device,
 ):
     import torch
@@ -279,7 +282,7 @@ def _load_frozen_model(
 
     model_cfg = _configure_real_budget_shape(
         cfg.model,
-        budget=budget,
+        execution_slots=execution_slots,
         pretrain=pretrain,
     )
     model = build_detector(model_cfg)
@@ -405,8 +408,8 @@ def _explicit_meta(
 ) -> dict[str, Any]:
     if len(detector_positions) != DETECTOR_LENGTH:
         raise ValueError("detector position map must contain 384 coordinates")
-    if len(acquisition_positions) not in BUDGETS:
-        raise ValueError("acquisition positions must use one frozen marginal budget")
+    if not 0 < len(acquisition_positions) <= max(BUDGETS):
+        raise ValueError("acquisition positions must contain at most 512 real observations")
     out = dict(raw_meta)
     detector_values = [float(value) for value in detector_positions]
     acquisition_values = [int(value) for value in acquisition_positions]
@@ -450,24 +453,46 @@ def _prepare_explicit_window(
     gt_labels,
     positions: Sequence[int],
     detector_positions: Sequence[float],
-    budget: int,
+    actual_count: int,
+    execution_slots: int,
+    baseline_execution: bool = False,
 ):
     import torch
     from opentad.models.duca import validate_real_heavy_observation_tensor
 
-    position_tensor = torch.as_tensor(
+    stored_positions = torch.as_tensor(
         positions,
         device=raw_inputs.device,
         dtype=torch.long,
     ).reshape(1, -1)
-    if position_tensor.shape[1] != int(budget):
-        raise ValueError("stored nested prefix does not match the requested budget")
-    if torch.any(position_tensor < 0) or torch.any(
-        position_tensor[:, 1:] <= position_tensor[:, :-1]
-    ):
-        raise ValueError("formal marginal probe requires fully valid ordered exact-K prefixes")
-    selected = model._duca_gather_raw(raw_inputs, position_tensor)
-    validate_real_heavy_observation_tensor(selected, expected_budget=int(budget))
+    actual_count = int(actual_count)
+    execution_slots = int(execution_slots)
+    if not 0 < actual_count <= int(stored_positions.shape[1]):
+        raise ValueError("actual_count must identify a non-empty stored active prefix")
+    active = stored_positions[:, :actual_count]
+    inactive = stored_positions[:, actual_count:]
+    if torch.any(active < 0) or torch.any(active[:, 1:] <= active[:, :-1]):
+        raise ValueError("active marginal positions must be ordered and non-negative")
+    if inactive.numel() and torch.any(inactive != -1):
+        raise ValueError("inactive stored marginal positions must use trailing -1 padding")
+    if execution_slots < actual_count:
+        raise ValueError("execution_slots cannot be smaller than actual_count")
+    execution_positions = torch.full(
+        (1, execution_slots),
+        -1,
+        device=raw_inputs.device,
+        dtype=torch.long,
+    )
+    execution_positions[:, :actual_count] = active
+    acquisition_mask = execution_positions >= 0
+    selected = model._duca_gather_raw(raw_inputs, execution_positions)
+    validate_real_heavy_observation_tensor(
+        selected,
+        actual_observations=torch.tensor([actual_count], device=raw_inputs.device),
+        execution_slots=execution_slots,
+        acquisition_mask=acquisition_mask,
+        baseline_execution=baseline_execution,
+    )
     detector_masks = torch.ones(
         1,
         DETECTOR_LENGTH,
@@ -476,7 +501,7 @@ def _prepare_explicit_window(
     )
     meta = _explicit_meta(
         raw_meta,
-        acquisition_positions=positions,
+        acquisition_positions=[int(value) for value in active[0].detach().cpu().tolist()],
         detector_positions=detector_positions,
         dense_len=int(raw_masks.shape[1]),
         valid_len=int(raw_masks[0].long().sum().item()),
@@ -489,6 +514,34 @@ def _prepare_explicit_window(
         )
     )
     return selected, detector_masks, remapped_metas, remapped_segments, remapped_labels
+
+
+def _historical_k384_loss(
+    model,
+    *,
+    raw_inputs,
+    raw_masks,
+    metas,
+    gt_segments,
+    gt_labels,
+    amp: bool,
+) -> float:
+    import torch
+
+    with torch.no_grad(), _autocast(raw_inputs.device, amp):
+        losses = model.forward_train(
+            raw_inputs,
+            raw_masks,
+            metas,
+            gt_segments,
+            gt_labels,
+            _duca_counterfactual_eval=True,
+        )
+        objective = model._duca_detector_objective(losses)
+    value = float(objective.detach().float().cpu().item())
+    if not math.isfinite(value):
+        raise RuntimeError("historical K384 detector loss is not finite")
+    return value
 
 
 def _explicit_loss_and_predictions(
@@ -612,7 +665,7 @@ def run_selection_stage(args: argparse.Namespace) -> dict[str, Any]:
         cfg,
         checkpoint=checkpoint,
         pretrain=pretrain,
-        budget=BASELINE_BUDGET,
+        execution_slots=BASELINE_BUDGET,
         device=device,
     )
     inference, post = _inference_settings(cfg)
@@ -646,6 +699,15 @@ def run_selection_stage(args: argparse.Namespace) -> dict[str, Any]:
                 disable_selector=False,
             )
             normal_positions = model.frame_selector._last_selected_positions.detach().clone()
+            loss_k384 = _historical_k384_loss(
+                model,
+                raw_inputs=raw_inputs,
+                raw_masks=raw_masks,
+                metas=metas,
+                gt_segments=gt_segments,
+                gt_labels=gt_labels,
+                amp=args.amp,
+            )
             with torch.no_grad(), _autocast(device, args.amp):
                 prefixes = model.frame_selector.forward_marginal_prefixes(
                     raw_inputs,
@@ -658,10 +720,6 @@ def run_selection_stage(args: argparse.Namespace) -> dict[str, Any]:
             if not torch.equal(normal_positions, baseline_positions):
                 raise RuntimeError(f"{sample_id}: nested K384 is not bit-exact H65 selection")
             valid_count = int(prefixes["valid_count"][0].detach().cpu().item())
-            if valid_count < max(BUDGETS):
-                raise RuntimeError(
-                    f"{sample_id}: only {valid_count} valid observations; exact K512 is unavailable"
-                )
             features = build_frozen_scout_marginal_features(
                 prefixes["selector_outputs"],
                 baseline_positions,
@@ -690,33 +748,49 @@ def run_selection_stage(args: argparse.Namespace) -> dict[str, Any]:
                 ]
                 for budget in BUDGETS
             }
-            prepared = _prepare_explicit_window(
-                model,
-                raw_inputs=raw_inputs,
-                raw_masks=raw_masks,
-                raw_meta=meta,
-                gt_segments=gt_segments,
-                gt_labels=gt_labels,
-                positions=selected_positions[str(BASELINE_BUDGET)],
-                detector_positions=detector_positions[str(BASELINE_BUDGET)],
-                budget=BASELINE_BUDGET,
-            )
-            loss_k384, explicit = _explicit_loss_and_predictions(
-                model,
-                prepared=prepared,
-                class_map=class_map,
-                inference=inference,
-                post=post,
-                amp=args.amp,
-                emit_predictions=True,
-            )
             normal_hash = _canonical_sha256(normal)
-            explicit_hash = _canonical_sha256(explicit)
-            if normal_hash != explicit_hash:
-                raise RuntimeError(
-                    f"{sample_id}: explicit K384 prediction differs from frozen H65"
+            explicit_hash = None
+            parity_path = "historical_padded_k384_short_window"
+            if valid_count >= BASELINE_BUDGET:
+                prepared = _prepare_explicit_window(
+                    model,
+                    raw_inputs=raw_inputs,
+                    raw_masks=raw_masks,
+                    raw_meta=meta,
+                    gt_segments=gt_segments,
+                    gt_labels=gt_labels,
+                    positions=selected_positions[str(BASELINE_BUDGET)],
+                    detector_positions=detector_positions[str(BASELINE_BUDGET)],
+                    actual_count=BASELINE_BUDGET,
+                    execution_slots=BASELINE_BUDGET,
+                    baseline_execution=True,
                 )
-            prediction = explicit.get(video_id, []) if video_id in holdout else None
+                _explicit_loss, explicit = _explicit_loss_and_predictions(
+                    model,
+                    prepared=prepared,
+                    class_map=class_map,
+                    inference=inference,
+                    post=post,
+                    amp=args.amp,
+                    emit_predictions=True,
+                )
+                explicit_hash = _canonical_sha256(explicit)
+                if normal_hash != explicit_hash:
+                    raise RuntimeError(
+                        f"{sample_id}: explicit K384 prediction differs from frozen H65"
+                    )
+                parity_path = "full_window_explicit_k384_matches_historical"
+            accounting = {
+                str(budget): {
+                    "actual_cost": int(prefixes["actual_count_by_budget"][budget][0].item()),
+                    "effective_tier": int(prefixes["effective_budget_by_requested"][budget][0].item()),
+                    "execution_slots": int(prefixes["execution_slots_by_budget"][budget][0].item()),
+                    "padding_slots": int(prefixes["padding_slots_by_budget"][budget][0].item()),
+                    "collapsed_to_k384": bool(prefixes["collapsed_to_baseline_by_budget"][budget][0].item()),
+                }
+                for budget in BUDGETS
+            }
+            prediction = normal.get(video_id, []) if video_id in holdout else None
             row = {
                 "schema": "duca_marginal_selection_k384_v1",
                 "sample_id": sample_id,
@@ -725,6 +799,7 @@ def run_selection_stage(args: argparse.Namespace) -> dict[str, Any]:
                 "valid_observations": valid_count,
                 "controller_partition": "holdout" if video_id in holdout else "fit",
                 "positions": selected_positions,
+                "budget_accounting": accounting,
                 "detector_grid_positions": detector_positions,
                 "scout_features": [
                     float(value) for value in features[0].detach().float().cpu().tolist()
@@ -733,6 +808,7 @@ def run_selection_stage(args: argparse.Namespace) -> dict[str, Any]:
                 "prediction_k384": prediction,
                 "normal_h65_prediction_sha256": normal_hash,
                 "explicit_k384_prediction_sha256": explicit_hash,
+                "k384_parity_path": parity_path,
                 "k384_selection_bit_exact": True,
                 "k384_prediction_exact": True,
             }
@@ -810,80 +886,130 @@ def run_counterfactual_stage(args: argparse.Namespace, *, budget: int) -> dict[s
         class_map=class_map_path,
         train_data=train_data,
     )
-    loader = _build_loader(dataset, num_workers=args.num_workers)
     device = torch.device(args.device)
     if device.type == "cuda":
         torch.cuda.set_device(device)
-    model, payload, frozen_normalizer = _load_frozen_model(
-        cfg,
-        checkpoint=checkpoint,
-        pretrain=pretrain,
-        budget=budget,
-        device=device,
-    )
     inference, post = _inference_settings(cfg)
     class_map = list(dataset.class_map)
-    rows: list[dict[str, Any]] = []
-    seen = set()
-    try:
-        for index, data in enumerate(loader):
-            raw_inputs, raw_masks, metas, gt_segments, gt_labels = _move_batch(
-                data,
-                device=device,
-            )
-            meta = metas[0]
-            sample_id = _sample_id(meta)
-            source_row = selection_by_id.get(sample_id)
-            if source_row is None:
-                raise RuntimeError(f"selection artifact is missing {sample_id}")
-            if sample_id in seen:
-                raise ValueError(f"duplicate training window identity: {sample_id}")
-            seen.add(sample_id)
-            video_id = str(meta["video_name"])
-            positions = source_row["positions"][str(budget)]
-            detector_positions = source_row["detector_grid_positions"][str(budget)]
-            prepared = _prepare_explicit_window(
-                model,
-                raw_inputs=raw_inputs,
-                raw_masks=raw_masks,
-                raw_meta=meta,
-                gt_segments=gt_segments,
-                gt_labels=gt_labels,
-                positions=positions,
-                detector_positions=detector_positions,
-                budget=budget,
-            )
-            loss, predictions = _explicit_loss_and_predictions(
-                model,
-                prepared=prepared,
-                class_map=class_map,
-                inference=inference,
-                post=post,
-                amp=args.amp,
-                emit_predictions=video_id in holdout,
-            )
-            rows.append(
-                {
-                    "schema": f"duca_marginal_counterfactual_k{budget}_v1",
+    dataset_index_by_id: dict[str, int] = {}
+    for dataset_index, item in enumerate(dataset.data_list):
+        video_id = str(item[0])
+        window_positions = item[3]
+        sample_id = f"{video_id}|{int(round(float(window_positions[0])))}"
+        if sample_id in dataset_index_by_id:
+            raise ValueError(f"duplicate dataset sample identity: {sample_id}")
+        dataset_index_by_id[sample_id] = dataset_index
+    if set(dataset_index_by_id) != set(selection_by_id):
+        raise RuntimeError("counterfactual dataset identities differ from selection stage")
+
+    row_by_id: dict[str, dict[str, Any]] = {}
+    groups: dict[int, list[int]] = {}
+    collapsed_count = 0
+    for source_row in selection_rows:
+        sample_id = str(source_row["sample_id"])
+        accounting = source_row["budget_accounting"][str(budget)]
+        if bool(accounting["collapsed_to_k384"]):
+            collapsed_count += 1
+            row_by_id[sample_id] = {
+                "schema": f"duca_marginal_counterfactual_k{budget}_v2",
+                "sample_id": sample_id,
+                "video_id": str(source_row["video_id"]),
+                "requested_budget": budget,
+                "effective_tier": BASELINE_BUDGET,
+                "actual_heavy_observations": int(accounting["actual_cost"]),
+                "execution_slots": BASELINE_BUDGET,
+                "padding_slots": int(accounting["padding_slots"]),
+                "collapsed_to_k384": True,
+                "detector_forward_executed": False,
+                "loss": float(source_row["loss_k384"]),
+                "prediction": source_row["prediction_k384"],
+                "controller_partition": source_row["controller_partition"],
+                "detector_frozen": True,
+                "scout_not_executed_in_counterfactual_stage": True,
+            }
+            continue
+        execution_slots = int(accounting["execution_slots"])
+        groups.setdefault(execution_slots, []).append(dataset_index_by_id[sample_id])
+
+    payload_epoch = None
+    frozen_normalizers = set()
+    for execution_slots, dataset_indices in sorted(groups.items()):
+        model, payload, frozen_normalizer = _load_frozen_model(
+            cfg,
+            checkpoint=checkpoint,
+            pretrain=pretrain,
+            execution_slots=execution_slots,
+            device=device,
+        )
+        payload_epoch = int(payload["epoch"])
+        frozen_normalizers.add(float(frozen_normalizer))
+        loader = _build_loader(
+            torch.utils.data.Subset(dataset, dataset_indices),
+            num_workers=args.num_workers,
+        )
+        try:
+            for data in loader:
+                raw_inputs, raw_masks, metas, gt_segments, gt_labels = _move_batch(
+                    data,
+                    device=device,
+                )
+                meta = metas[0]
+                sample_id = _sample_id(meta)
+                source_row = selection_by_id[sample_id]
+                video_id = str(meta["video_name"])
+                accounting = source_row["budget_accounting"][str(budget)]
+                if bool(accounting["collapsed_to_k384"]):
+                    raise RuntimeError("collapsed counterfactual entered a detector execution group")
+                if int(accounting["execution_slots"]) != execution_slots:
+                    raise RuntimeError("counterfactual execution group does not match saved accounting")
+                positions = source_row["positions"][str(budget)]
+                detector_positions = source_row["detector_grid_positions"][str(budget)]
+                prepared = _prepare_explicit_window(
+                    model,
+                    raw_inputs=raw_inputs,
+                    raw_masks=raw_masks,
+                    raw_meta=meta,
+                    gt_segments=gt_segments,
+                    gt_labels=gt_labels,
+                    positions=positions,
+                    detector_positions=detector_positions,
+                    actual_count=int(accounting["actual_cost"]),
+                    execution_slots=execution_slots,
+                )
+                loss, predictions = _explicit_loss_and_predictions(
+                    model,
+                    prepared=prepared,
+                    class_map=class_map,
+                    inference=inference,
+                    post=post,
+                    amp=args.amp,
+                    emit_predictions=video_id in holdout,
+                )
+                row_by_id[sample_id] = {
+                    "schema": f"duca_marginal_counterfactual_k{budget}_v2",
                     "sample_id": sample_id,
                     "video_id": video_id,
-                    "budget": budget,
-                    "actual_heavy_observations": budget,
+                    "requested_budget": budget,
+                    "effective_tier": budget,
+                    "actual_heavy_observations": int(accounting["actual_cost"]),
+                    "execution_slots": execution_slots,
+                    "padding_slots": int(accounting["padding_slots"]),
+                    "collapsed_to_k384": False,
+                    "detector_forward_executed": True,
                     "loss": loss,
-                    "prediction": (
-                        None if predictions is None else predictions.get(video_id, [])
-                    ),
+                    "prediction": None if predictions is None else predictions.get(video_id, []),
                     "controller_partition": "holdout" if video_id in holdout else "fit",
                     "detector_frozen": True,
                     "scout_not_executed_in_counterfactual_stage": True,
-                    "padded_to_k512": False,
                 }
-            )
-            if (index + 1) % 25 == 0:
-                print(f"counterfactual_k{budget} windows={index + 1}/{len(dataset)}", flush=True)
-    finally:
-        model.rpn_head.duca_set_frozen_loss_normalizer(None)
+        finally:
+            model.rpn_head.duca_set_frozen_loss_normalizer(None)
+            del model
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
 
+    rows = [row_by_id[str(row["sample_id"])] for row in selection_rows]
+    seen = set(row_by_id)
     if seen != set(selection_by_id):
         missing = sorted(set(selection_by_id) - seen)
         raise RuntimeError(f"counterfactual K{budget} missed windows: {missing[:5]}")
@@ -905,10 +1031,13 @@ def run_counterfactual_stage(args: argparse.Namespace, *, budget: int) -> dict[s
         "artifact_sha256": _sha256(paths[artifact_key]),
         "window_count": row_count,
         "video_count": len(videos),
-        "actual_heavy_observations_per_window": budget,
+        "requested_budget": budget,
+        "distinct_forward_count": len(rows) - collapsed_count,
+        "collapsed_alias_count": collapsed_count,
+        "observed_execution_slot_classes": sorted(groups),
         "padded_to_k512": False,
-        "checkpoint_payload_epoch": int(payload["epoch"]),
-        "frozen_loss_normalizer": frozen_normalizer,
+        "checkpoint_payload_epoch": 59 if payload_epoch is None else payload_epoch,
+        "frozen_loss_normalizers": sorted(frozen_normalizers),
         "detector_frozen": True,
         "source": source,
     }
@@ -941,6 +1070,8 @@ def _spearman(actual: Sequence[float], predicted: Sequence[float]) -> float:
 def _sign_accuracy(actual: Sequence[float], predicted: Sequence[float]) -> float:
     left = np.sign(np.asarray(actual, dtype=np.float64))
     right = np.sign(np.asarray(predicted, dtype=np.float64))
+    if left.size == 0:
+        return 0.0
     return float(np.mean(left == right))
 
 
@@ -1020,6 +1151,7 @@ def _allocate_rows_by_video(
     budgets = [BASELINE_BUDGET] * len(rows)
     allocation_summaries = {}
     for video_id, indices in sorted(by_video.items()):
+        indices = sorted(indices, key=lambda index: str(rows[index]["sample_id"]))
         decision = allocate_equal_budget_marginal_reallocation(
             torch.tensor([downgrade[index] for index in indices], dtype=torch.float32),
             torch.tensor([upgrade[index] for index in indices], dtype=torch.float32),
@@ -1031,13 +1163,17 @@ def _allocate_rows_by_video(
         )
         if not decision.feasible:
             raise RuntimeError(f"{video_id}: exact equal-budget allocation failed: {decision.reason}")
-        values = [int(value) for value in decision.budget.cpu().tolist()]
+        values = [int(value) for value in decision.effective_budget.cpu().tolist()]
         for row_index, budget in zip(indices, values):
             budgets[row_index] = budget
         allocation_summaries[video_id] = {
             "window_count": len(indices),
             "budgets": values,
+            "requested_budgets": [int(value) for value in decision.budget.cpu().tolist()],
             "actual_cost": [int(value) for value in decision.actual_cost.cpu().tolist()],
+            "execution_slots": [int(value) for value in decision.execution_slots.cpu().tolist()],
+            "padding_slots": [int(value) for value in decision.padding_slots.cpu().tolist()],
+            "collapsed_to_k384": [bool(value) for value in decision.collapsed_to_baseline.cpu().tolist()],
             "target_actual_cost": int(decision.target_actual_cost),
             "actual_budget_error": int(decision.actual_cost.sum().item())
             - int(decision.target_actual_cost),
@@ -1077,6 +1213,10 @@ def _fit_utility_head(
         [[row["downgrade_penalty"], row["upgrade_gain"]] for row in fit_rows],
         dtype=torch.float32,
     )
+    target_valid = torch.tensor(
+        [[row["downgrade_target_valid"], row["upgrade_target_valid"]] for row in fit_rows],
+        dtype=torch.bool,
+    )
     head = SignedTwoSidedMarginalUtilityHead(
         input_dim=int(features.shape[1]),
         hidden_dim=128,
@@ -1088,7 +1228,7 @@ def _fit_utility_head(
     )
     generator = torch.Generator().manual_seed(int(seed))
     loader = torch.utils.data.DataLoader(
-        torch.utils.data.TensorDataset(features, targets),
+        torch.utils.data.TensorDataset(features, targets, target_valid),
         batch_size=256,
         shuffle=True,
         generator=generator,
@@ -1098,18 +1238,22 @@ def _fit_utility_head(
     for _epoch in range(20):
         epoch_loss = 0.0
         sample_count = 0
-        for feature_batch, target_batch in loader:
+        for feature_batch, target_batch, valid_batch in loader:
+            valid_count = int(valid_batch.long().sum().item())
+            if valid_count == 0:
+                continue
             optimizer.zero_grad(set_to_none=True)
             prediction = head(feature_batch)
             values = torch.stack(
                 (prediction["downgrade_penalty"], prediction["upgrade_gain"]),
                 dim=1,
             )
-            loss = torch.nn.functional.mse_loss(values, target_batch)
+            squared = (values - target_batch).square()
+            loss = squared.masked_select(valid_batch).mean()
             loss.backward()
             optimizer.step()
-            epoch_loss += float(loss.detach().item()) * int(feature_batch.shape[0])
-            sample_count += int(feature_batch.shape[0])
+            epoch_loss += float(loss.detach().item()) * valid_count
+            sample_count += valid_count
         terminal_loss = epoch_loss / max(1, sample_count)
     return head.eval(), float(terminal_loss)
 
@@ -1155,6 +1299,8 @@ def run_summary_stage(args: argparse.Namespace) -> dict[str, Any]:
                 "loss_k512": loss512,
                 "downgrade_penalty": loss256 - loss384,
                 "upgrade_gain": loss384 - loss512,
+                "downgrade_target_valid": not bool(k256_rows[sample_id]["collapsed_to_k384"]),
+                "upgrade_target_valid": not bool(k512_rows[sample_id]["collapsed_to_k384"]),
                 "predictions": {
                     "256": k256_rows[sample_id]["prediction"],
                     "384": selected["prediction_k384"],
@@ -1181,6 +1327,8 @@ def run_summary_stage(args: argparse.Namespace) -> dict[str, Any]:
     )
     actual_downgrade = [float(row["downgrade_penalty"]) for row in holdout_rows]
     actual_upgrade = [float(row["upgrade_gain"]) for row in holdout_rows]
+    downgrade_valid = [bool(row["downgrade_target_valid"]) for row in holdout_rows]
+    upgrade_valid = [bool(row["upgrade_target_valid"]) for row in holdout_rows]
     oracle_budgets, oracle_allocations = _allocate_rows_by_video(
         holdout_rows,
         downgrade=actual_downgrade,
@@ -1225,12 +1373,20 @@ def run_summary_stage(args: argparse.Namespace) -> dict[str, Any]:
             "k384_prediction_exact_all_windows": all(
                 bool(row["k384_prediction_exact"]) for row in selection_rows
             ),
-            "actual_heavy_shapes": [256, 384, 512],
+            "observed_distinct_execution_slot_classes": sorted(
+                {
+                    int(source["execution_slots"])
+                    for rows_by_budget in (k256_rows, k512_rows)
+                    for source in rows_by_budget.values()
+                    if not bool(source["collapsed_to_k384"])
+                }
+            ),
             "padded_to_upper_budget": False,
             "detector_frozen": True,
             "scout_frozen": True,
             "utility_targets_detached": True,
         },
+        "fixed_arm_name": "Fixed-H65-384",
         "fixed_h65_384": fixed_metrics,
         "oracle_reallocate_384": oracle_metrics,
         "oracle_headroom": {
@@ -1305,13 +1461,37 @@ def run_summary_stage(args: argparse.Namespace) -> dict[str, Any]:
         budget_errors = [
             int(value["actual_budget_error"]) for value in learned_allocations.values()
         ]
+        actual_downgrade_eligible = [
+            value for value, eligible in zip(actual_downgrade, downgrade_valid) if eligible
+        ]
+        predicted_downgrade_eligible = [
+            value for value, eligible in zip(predicted_downgrade, downgrade_valid) if eligible
+        ]
+        actual_upgrade_eligible = [
+            value for value, eligible in zip(actual_upgrade, upgrade_valid) if eligible
+        ]
+        predicted_upgrade_eligible = [
+            value for value, eligible in zip(predicted_upgrade, upgrade_valid) if eligible
+        ]
         predictability = {
-            "downgrade_spearman": _spearman(actual_downgrade, predicted_downgrade),
-            "upgrade_spearman": _spearman(actual_upgrade, predicted_upgrade),
-            "downgrade_sign_accuracy": _sign_accuracy(
-                actual_downgrade, predicted_downgrade
+            "downgrade_spearman": _spearman(
+                actual_downgrade_eligible,
+                predicted_downgrade_eligible,
             ),
-            "upgrade_sign_accuracy": _sign_accuracy(actual_upgrade, predicted_upgrade),
+            "upgrade_spearman": _spearman(
+                actual_upgrade_eligible,
+                predicted_upgrade_eligible,
+            ),
+            "downgrade_sign_accuracy": _sign_accuracy(
+                actual_downgrade_eligible,
+                predicted_downgrade_eligible,
+            ),
+            "upgrade_sign_accuracy": _sign_accuracy(
+                actual_upgrade_eligible,
+                predicted_upgrade_eligible,
+            ),
+            "downgrade_eligible_window_count": len(actual_downgrade_eligible),
+            "upgrade_eligible_window_count": len(actual_upgrade_eligible),
             "learned_oracle_gain_fraction": recovered,
             "k256_window_fraction": fraction_256,
             "k512_window_fraction": fraction_512,
@@ -1367,6 +1547,409 @@ def run_summary_stage(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def _single_dataset_batch(dataset, index: int, *, num_workers: int):
+    import torch
+
+    loader = _build_loader(
+        torch.utils.data.Subset(dataset, [int(index)]),
+        num_workers=int(num_workers),
+    )
+    return next(iter(loader))
+
+
+def run_pre_run_stage(args: argparse.Namespace) -> dict[str, Any]:
+    """Bounded scientific preflight for the frozen short-window contract."""
+
+    import torch
+
+    (
+        repo_root,
+        config_path,
+        cfg,
+        checkpoint,
+        checkpoint_sha,
+        annotation,
+        class_map_path,
+        train_data,
+        pretrain,
+    ) = _load_config_and_paths(args)
+    output_dir = Path(args.output_dir).expanduser().resolve()
+    paths = _stage_paths(output_dir)
+    identity = _git_identity(repo_root)
+    if identity["dirty"]:
+        raise RuntimeError("PRE_RUN requires one clean Git commit")
+    if not sys.platform.startswith("linux"):
+        raise RuntimeError("PRE_RUN must execute in the bound Linux runtime")
+
+    focused_files = [
+        "opentad/models/duca/dynamic_budget.py",
+        "opentad/models/duca/acquisition.py",
+        "opentad/models/duca/counterfactual_utility.py",
+        "opentad/models/selectors/duca_online_frame_selector.py",
+        "tools/bata/run_duca_marginal_frozen_h65_probe.py",
+        "tools/bata/train_lowres_action_probe.py",
+        "tools/train.py",
+        "tests/test_duca_marginal_budget.py",
+    ]
+    subprocess.run(["git", "diff", "--check"], cwd=repo_root, check=True)
+    subprocess.run(
+        [sys.executable, "-m", "py_compile", *focused_files],
+        cwd=repo_root,
+        check=True,
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests/test_duca_marginal_budget.py",
+            "tests/test_c3_coarse_classifier_model_matrix.py",
+            "tests/test_c3_asformer_delta_ledger_full_train.py",
+            "-q",
+        ],
+        cwd=repo_root,
+        check=True,
+    )
+
+    split = _create_or_validate_split(annotation, paths["split_dir"])
+    fit_videos = set(str(value) for value in split["train_videos"])
+    holdout_videos = set(str(value) for value in split["holdout_videos"])
+    if fit_videos & holdout_videos or len(fit_videos) != 160 or len(holdout_videos) != 40:
+        raise RuntimeError("PRE_RUN split must be disjoint 160/40")
+    dataset, _dataset_cfg, videos = _build_training_window_dataset(
+        cfg,
+        annotation=annotation,
+        class_map=class_map_path,
+        train_data=train_data,
+    )
+    if fit_videos | holdout_videos != set(videos):
+        raise RuntimeError("PRE_RUN split union must equal all 200 training-side videos")
+
+    device = torch.device(args.device)
+    if device.type == "cuda":
+        torch.cuda.set_device(device)
+    model, payload, frozen_normalizer = _load_frozen_model(
+        cfg,
+        checkpoint=checkpoint,
+        pretrain=pretrain,
+        execution_slots=BASELINE_BUDGET,
+        device=device,
+    )
+    if any(parameter.requires_grad for parameter in model.parameters()):
+        raise RuntimeError("PRE_RUN detector and Scout must have no trainable parameters")
+
+    loader = _build_loader(dataset, num_workers=args.num_workers)
+    baseline_cost_by_video: dict[str, int] = {}
+    expected_baseline_cost_by_video: dict[str, int] = {}
+    scanned_videos = set()
+    scanned_windows = 0
+    collapsed_alias_count = 0
+    representatives: dict[tuple[int, int], dict[str, Any]] = {}
+    short_k384_index = None
+    full_k384_example = None
+    try:
+        for dataset_index, data in enumerate(loader):
+            raw_inputs, raw_masks, metas, gt_segments, gt_labels = _move_batch(
+                data,
+                device=device,
+            )
+            meta = metas[0]
+            video_id = str(meta["video_name"])
+            sample_id = _sample_id(meta)
+            raw_valid_count = int(raw_masks[0].long().sum().item())
+            with torch.no_grad(), _autocast(device, args.amp):
+                normal_outputs = model.frame_selector.forward_test(raw_inputs, raw_masks, metas)
+                normal_positions = model.frame_selector._last_selected_positions.detach().clone()
+                prefixes = model.frame_selector.forward_marginal_prefixes(
+                    raw_inputs,
+                    raw_masks,
+                    metas,
+                    budgets=BUDGETS,
+                    detector_length=DETECTOR_LENGTH,
+                )
+            if not torch.equal(normal_positions, prefixes["positions_by_budget"][BASELINE_BUDGET]):
+                raise RuntimeError(f"{sample_id}: full K384 tensor differs from normal H65")
+            if not torch.equal(normal_outputs["inputs"], prefixes["historical_k384_inputs"]):
+                raise RuntimeError(f"{sample_id}: K384 detector input differs from normal H65")
+            if not torch.equal(normal_outputs["masks"], prefixes["historical_k384_masks"]):
+                raise RuntimeError(f"{sample_id}: K384 detector mask differs from normal H65")
+            valid_count = int(prefixes["valid_count"][0].item())
+            if valid_count != raw_valid_count:
+                raise RuntimeError(f"{sample_id}: selector valid count differs from the raw mask")
+            baseline_actual = min(valid_count, BASELINE_BUDGET)
+            baseline_cost_by_video[video_id] = baseline_cost_by_video.get(video_id, 0) + baseline_actual
+            expected_baseline_cost_by_video[video_id] = (
+                expected_baseline_cost_by_video.get(video_id, 0)
+                + min(raw_valid_count, BASELINE_BUDGET)
+            )
+            scanned_videos.add(video_id)
+            scanned_windows += 1
+            if valid_count < BASELINE_BUDGET and short_k384_index is None:
+                short_k384_index = dataset_index
+            if valid_count >= BASELINE_BUDGET and full_k384_example is None:
+                full_k384_example = {
+                    "dataset_index": dataset_index,
+                    "positions": prefixes["positions_by_budget"][384][0].detach().cpu().tolist(),
+                    "detector_positions": prefixes["detector_grid_by_budget"][384][0].detach().cpu().tolist(),
+                }
+            for budget in BUDGETS:
+                accounting = prefixes["effective_budget_by_requested"][budget]
+                actual = int(prefixes["actual_count_by_budget"][budget][0].item())
+                effective = int(accounting[0].item())
+                execution_slots = int(prefixes["execution_slots_by_budget"][budget][0].item())
+                padding_slots = int(prefixes["padding_slots_by_budget"][budget][0].item())
+                collapsed = bool(prefixes["collapsed_to_baseline_by_budget"][budget][0].item())
+                expected_actual = min(valid_count, budget)
+                expected_baseline = min(valid_count, BASELINE_BUDGET)
+                expected_effective = BASELINE_BUDGET if expected_actual == expected_baseline else budget
+                expected_execution = (
+                    BASELINE_BUDGET
+                    if expected_effective == BASELINE_BUDGET
+                    else PACKET_SIZE * ((expected_actual + PACKET_SIZE - 1) // PACKET_SIZE)
+                )
+                if (actual, effective, execution_slots, padding_slots) != (
+                    expected_actual,
+                    expected_effective,
+                    expected_execution,
+                    expected_execution - expected_actual,
+                ):
+                    raise RuntimeError(f"{sample_id}: short-window budget accounting mismatch at K{budget}")
+                if collapsed:
+                    collapsed_alias_count += 1
+                    if effective != BASELINE_BUDGET:
+                        raise RuntimeError("collapsed arm did not canonicalize to K384")
+                    continue
+                if budget == BASELINE_BUDGET:
+                    continue
+                representatives.setdefault(
+                    (budget, execution_slots),
+                    {
+                        "dataset_index": dataset_index,
+                        "sample_id": sample_id,
+                        "positions": prefixes["positions_by_budget"][budget][0].detach().cpu().tolist(),
+                        "detector_positions": prefixes["detector_grid_by_budget"][budget][0].detach().cpu().tolist(),
+                        "actual_count": actual,
+                        "execution_slots": execution_slots,
+                    },
+                )
+    finally:
+        # Keep the frozen normalizer active for the bounded representative
+        # K384 forwards below. The model is released immediately afterwards.
+        pass
+
+    if scanned_windows != len(dataset) or scanned_videos != set(videos):
+        raise RuntimeError("PRE_RUN metadata scan excluded training-side windows or videos")
+    if baseline_cost_by_video != expected_baseline_cost_by_video:
+        raise RuntimeError("PRE_RUN per-video K384 actual cost differs from the raw-mask target")
+    if any(parameter.grad is not None for parameter in model.parameters()):
+        raise RuntimeError("PRE_RUN created detector or Scout gradients")
+
+    inference, post = _inference_settings(cfg)
+    class_map = list(dataset.class_map)
+    real_forward_classes = []
+    if short_k384_index is not None:
+        data = _single_dataset_batch(dataset, short_k384_index, num_workers=args.num_workers)
+        raw_inputs, raw_masks, metas, gt_segments, gt_labels = _move_batch(data, device=device)
+        _historical_k384_loss(
+            model,
+            raw_inputs=raw_inputs,
+            raw_masks=raw_masks,
+            metas=metas,
+            gt_segments=gt_segments,
+            gt_labels=gt_labels,
+            amp=args.amp,
+        )
+        real_forward_classes.append("historical_k384_short")
+
+    if full_k384_example is not None:
+        data = _single_dataset_batch(
+            dataset,
+            int(full_k384_example["dataset_index"]),
+            num_workers=args.num_workers,
+        )
+        raw_inputs, raw_masks, metas, gt_segments, gt_labels = _move_batch(data, device=device)
+        normal = _one_window_predictions(
+            model,
+            inputs=raw_inputs,
+            masks=raw_masks,
+            metas=metas,
+            class_map=class_map,
+            inference=inference,
+            post=post,
+            amp=args.amp,
+            disable_selector=False,
+        )
+        prepared = _prepare_explicit_window(
+            model,
+            raw_inputs=raw_inputs,
+            raw_masks=raw_masks,
+            raw_meta=metas[0],
+            gt_segments=gt_segments,
+            gt_labels=gt_labels,
+            positions=full_k384_example["positions"],
+            detector_positions=full_k384_example["detector_positions"],
+            actual_count=BASELINE_BUDGET,
+            execution_slots=BASELINE_BUDGET,
+            baseline_execution=True,
+        )
+        _loss, explicit = _explicit_loss_and_predictions(
+            model,
+            prepared=prepared,
+            class_map=class_map,
+            inference=inference,
+            post=post,
+            amp=args.amp,
+            emit_predictions=True,
+        )
+        if _canonical_sha256(normal) != _canonical_sha256(explicit):
+            raise RuntimeError("PRE_RUN full-window explicit K384 prediction is not historical parity")
+        real_forward_classes.append("explicit_k384_full")
+    model.rpn_head.duca_set_frozen_loss_normalizer(None)
+    del model
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+
+    for (budget, execution_slots), example in sorted(representatives.items()):
+        model, _payload, _normalizer = _load_frozen_model(
+            cfg,
+            checkpoint=checkpoint,
+            pretrain=pretrain,
+            execution_slots=execution_slots,
+            device=device,
+        )
+        try:
+            data = _single_dataset_batch(
+                dataset,
+                int(example["dataset_index"]),
+                num_workers=args.num_workers,
+            )
+            raw_inputs, raw_masks, metas, gt_segments, gt_labels = _move_batch(data, device=device)
+            prepared = _prepare_explicit_window(
+                model,
+                raw_inputs=raw_inputs,
+                raw_masks=raw_masks,
+                raw_meta=metas[0],
+                gt_segments=gt_segments,
+                gt_labels=gt_labels,
+                positions=example["positions"],
+                detector_positions=example["detector_positions"],
+                actual_count=int(example["actual_count"]),
+                execution_slots=execution_slots,
+            )
+            _explicit_loss_and_predictions(
+                model,
+                prepared=prepared,
+                class_map=class_map,
+                inference=inference,
+                post=post,
+                amp=args.amp,
+                emit_predictions=False,
+            )
+            if any(parameter.grad is not None for parameter in model.parameters()):
+                raise RuntimeError("PRE_RUN distinct frozen forward created gradients")
+            real_forward_classes.append(f"k{budget}_exec{execution_slots}")
+        finally:
+            model.rpn_head.duca_set_frozen_loss_normalizer(None)
+            del model
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+
+    receipt = {
+        "status": "PRE_RUN_PASS",
+        "stage": "pre-run",
+        "source": _stage_source(
+            repo_root=repo_root,
+            config_path=config_path,
+            checkpoint=checkpoint,
+            checkpoint_sha256=checkpoint_sha,
+            annotation=annotation,
+            class_map=class_map_path,
+            train_data=train_data,
+            pretrain=pretrain,
+        ),
+        "checkpoint_payload_epoch": int(payload["epoch"]),
+        "checkpoint_state_key": "state_dict_ema",
+        "frozen_loss_normalizer": frozen_normalizer,
+        "fit_video_count": len(fit_videos),
+        "holdout_video_count": len(holdout_videos),
+        "training_video_count": len(videos),
+        "training_window_count": scanned_windows,
+        "short_windows_included": short_k384_index is not None,
+        "collapsed_alias_count": collapsed_alias_count,
+        "real_forward_execution_classes": real_forward_classes,
+        "all_k384_video_actual_cost": baseline_cost_by_video,
+        "all_k384_video_expected_target": expected_baseline_cost_by_video,
+        "all_k384_video_target_exact": True,
+        "k384_full_tensor_equal_all_windows": True,
+        "utility_head_fit_performed": False,
+        "official_evaluator_called": False,
+        "official_test_consumed": False,
+        "detector_training_performed": False,
+        "detector_or_scout_gradients_created": False,
+    }
+    _write_json(paths["pre_run"], receipt)
+    return receipt
+
+
+def _require_pre_run_pass(args: argparse.Namespace) -> None:
+    output_dir = Path(args.output_dir).expanduser().resolve()
+    receipt_path = _stage_paths(output_dir)["pre_run"]
+    if not receipt_path.is_file():
+        raise RuntimeError("the frozen probe requires PRE_RUN_PASS on the same output root")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if receipt.get("status") != "PRE_RUN_PASS":
+        raise RuntimeError("the frozen probe PRE_RUN receipt is not a pass")
+    current = _git_identity(Path(__file__).resolve().parents[2])
+    if receipt.get("source", {}).get("git", {}).get("head") != current["head"] or current["dirty"]:
+        raise RuntimeError("PRE_RUN_PASS does not bind the current clean Git commit")
+    (
+        repo_root,
+        config_path,
+        _cfg,
+        checkpoint,
+        checkpoint_sha,
+        annotation,
+        class_map_path,
+        train_data,
+        pretrain,
+    ) = _load_config_and_paths(args)
+    current_source = _stage_source(
+        repo_root=repo_root,
+        config_path=config_path,
+        checkpoint=checkpoint,
+        checkpoint_sha256=checkpoint_sha,
+        annotation=annotation,
+        class_map=class_map_path,
+        train_data=train_data,
+        pretrain=pretrain,
+    )
+    receipt_source = receipt.get("source", {})
+    identity_keys = (
+        "config",
+        "config_sha256",
+        "checkpoint",
+        "checkpoint_sha256",
+        "checkpoint_epoch",
+        "checkpoint_state_key",
+        "annotation",
+        "annotation_sha256",
+        "class_map",
+        "class_map_sha256",
+        "train_data",
+        "videomae_pretrain",
+        "videomae_pretrain_sha256",
+    )
+    mismatched = [
+        key for key in identity_keys if receipt_source.get(key) != current_source.get(key)
+    ]
+    if mismatched:
+        raise RuntimeError(
+            "PRE_RUN_PASS does not bind the current frozen inputs: " + ", ".join(mismatched)
+        )
+    if receipt.get("checkpoint_payload_epoch") != 59 or receipt.get("checkpoint_state_key") != "state_dict_ema":
+        raise RuntimeError("PRE_RUN_PASS does not bind epoch-59 state_dict_ema")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     repo_root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(
@@ -1379,6 +1962,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--stage",
         required=True,
         choices=(
+            "pre-run",
             "select-k384",
             "counterfactual-k256",
             "counterfactual-k512",
@@ -1414,7 +1998,7 @@ def main() -> int:
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     try:
-        stages = (
+        probe_stages = (
             (
                 "select-k384",
                 lambda: run_selection_stage(args),
@@ -1432,7 +2016,15 @@ def main() -> int:
                 lambda: run_summary_stage(args),
             ),
         )
-        selected = stages if args.stage == "all" else [item for item in stages if item[0] == args.stage]
+        if args.stage == "pre-run":
+            selected = [("pre-run", lambda: run_pre_run_stage(args))]
+        else:
+            _require_pre_run_pass(args)
+            selected = (
+                probe_stages
+                if args.stage == "all"
+                else [item for item in probe_stages if item[0] == args.stage]
+            )
         if not selected:
             raise ValueError(f"unsupported stage {args.stage}")
         final = None
@@ -1447,7 +2039,7 @@ def main() -> int:
         return 0
     except BaseException as exc:
         failure = {
-            "status": "DUCA_MARGINAL_PROBE_FAILED",
+            "status": "PRE_RUN_FAIL" if args.stage == "pre-run" else "DUCA_MARGINAL_PROBE_FAILED",
             "stage": args.stage,
             "error_type": type(exc).__name__,
             "error": str(exc),

@@ -17,7 +17,11 @@ from opentad.duca_loss_contract import (
     DUCA_LOSS_WEIGHT_DEFAULTS,
 )
 
-from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
+from .dynamic_budget import (
+    DynamicBudgetDecision,
+    PrefixMarginalUtilityBudgetController,
+    marginal_budget_accounting,
+)
 from .structured_selection import (
     budget_calibrated_sampling_rate,
     continuous_density_transport,
@@ -386,6 +390,14 @@ class NestedH65PrefixSelection:
 
     positions_by_budget: Dict[int, torch.Tensor]
     actual_count_by_budget: Dict[int, torch.Tensor]
+    effective_budget_by_requested: Dict[int, torch.Tensor]
+    execution_slots_by_budget: Dict[int, torch.Tensor]
+    padding_slots_by_budget: Dict[int, torch.Tensor]
+    collapsed_to_baseline_by_budget: Dict[int, torch.Tensor]
+    acquisition_mask_by_budget: Dict[int, torch.Tensor]
+    active_positions_by_budget: Dict[int, List[torch.Tensor]]
+    execution_positions_by_budget: Dict[int, List[torch.Tensor]]
+    execution_acquisition_mask_by_budget: Dict[int, List[torch.Tensor]]
     priority_order: torch.Tensor
     baseline_positions: torch.Tensor
     valid_count: torch.Tensor
@@ -411,6 +423,39 @@ class NestedH65PrefixSelection:
                     raise ValueError("active nested H65 positions must be sorted and unique")
                 if inactive.numel() and torch.any(inactive != -1):
                     raise ValueError("inactive nested H65 positions must use -1 padding")
+            accounting = marginal_budget_accounting(
+                self.valid_count,
+                int(budget),
+                baseline_budget=int(self.baseline_budget),
+            )
+            for name, expected in (
+                ("effective_budget_by_requested", accounting["effective_budget"]),
+                ("execution_slots_by_budget", accounting["execution_slots"]),
+                ("padding_slots_by_budget", accounting["padding_slots"]),
+                ("collapsed_to_baseline_by_budget", accounting["collapsed_to_baseline"]),
+            ):
+                actual = getattr(self, name)[budget].to(device=expected.device, dtype=expected.dtype)
+                if not torch.equal(actual, expected):
+                    raise ValueError(f"{name} violates the frozen short-window accounting contract")
+            if not torch.equal(self.acquisition_mask_by_budget[budget], positions >= 0):
+                raise ValueError("acquisition masks must identify the complete active prefix")
+            for row in range(batch):
+                count = int(counts[row].item())
+                active = self.active_positions_by_budget[budget][row]
+                if not torch.equal(active, positions[row, :count]):
+                    raise ValueError("active position view must equal the unpadded position prefix")
+                execution_slots = int(self.execution_slots_by_budget[budget][row].item())
+                execution_positions = self.execution_positions_by_budget[budget][row]
+                execution_mask = self.execution_acquisition_mask_by_budget[budget][row]
+                if execution_positions.shape != (execution_slots,) or execution_mask.shape != (execution_slots,):
+                    raise ValueError("execution views must match their realized packetized length")
+                if not torch.equal(execution_positions[:count], active):
+                    raise ValueError("execution positions must begin with the active observations")
+                if torch.any(execution_positions[count:] != -1):
+                    raise ValueError("execution position padding must be trailing -1")
+                expected_mask = torch.arange(execution_slots, device=execution_mask.device) < count
+                if not torch.equal(execution_mask, expected_mask):
+                    raise ValueError("execution acquisition mask must be one active prefix")
         if not torch.equal(
             self.positions_by_budget[int(self.baseline_budget)],
             self.baseline_positions,
@@ -428,6 +473,14 @@ class NestedH65PrefixSelection:
                 raise ValueError("lower H65 prefix must be a subset of K=384")
             if middle.numel() and not bool((middle[:, None] == high[None, :]).any(dim=1).all().item()):
                 raise ValueError("K=384 must be a subset of the upper H65 prefix")
+            baseline_count = int(self.actual_count_by_budget[baseline][row].item())
+            baseline_active = self.positions_by_budget[baseline][row, :baseline_count]
+            for budget in (lower, upper):
+                count = int(self.actual_count_by_budget[budget][row].item())
+                if count == baseline_count:
+                    active = self.positions_by_budget[budget][row, :count]
+                    if not torch.equal(active, baseline_active):
+                        raise ValueError("a collapsed tier must alias the exact K384 active positions")
         return self
 
 
@@ -535,11 +588,53 @@ def nested_h65_budget_prefixes(
             )
             for budget in budgets
         },
+        effective_budget_by_requested={},
+        execution_slots_by_budget={},
+        padding_slots_by_budget={},
+        collapsed_to_baseline_by_budget={},
+        acquisition_mask_by_budget={},
+        active_positions_by_budget={},
+        execution_positions_by_budget={},
+        execution_acquisition_mask_by_budget={},
         priority_order=torch.stack(priority_rows, dim=0),
         baseline_positions=h65_positions.detach().clone(),
         valid_count=valid.long().sum(dim=1),
         baseline_budget=int(baseline_budget),
     )
+    for budget in budgets:
+        accounting = marginal_budget_accounting(
+            result.valid_count,
+            int(budget),
+            baseline_budget=int(baseline_budget),
+        )
+        result.effective_budget_by_requested[budget] = accounting["effective_budget"]
+        result.execution_slots_by_budget[budget] = accounting["execution_slots"]
+        result.padding_slots_by_budget[budget] = accounting["padding_slots"]
+        result.collapsed_to_baseline_by_budget[budget] = accounting["collapsed_to_baseline"]
+        positions = result.positions_by_budget[budget]
+        counts = result.actual_count_by_budget[budget]
+        result.acquisition_mask_by_budget[budget] = positions >= 0
+        result.active_positions_by_budget[budget] = []
+        result.execution_positions_by_budget[budget] = []
+        result.execution_acquisition_mask_by_budget[budget] = []
+        for row in range(batch):
+            count = int(counts[row].item())
+            execution_slots = int(accounting["execution_slots"][row].item())
+            active = positions[row, :count].detach().clone()
+            execution_positions = torch.full(
+                (execution_slots,),
+                -1,
+                device=positions.device,
+                dtype=torch.long,
+            )
+            execution_positions[:count] = active
+            execution_mask = torch.arange(
+                execution_slots,
+                device=positions.device,
+            ) < count
+            result.active_positions_by_budget[budget].append(active)
+            result.execution_positions_by_budget[budget].append(execution_positions)
+            result.execution_acquisition_mask_by_budget[budget].append(execution_mask)
     return result.validate()
 
 
