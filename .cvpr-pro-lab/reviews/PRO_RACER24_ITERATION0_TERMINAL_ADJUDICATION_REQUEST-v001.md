@@ -6,7 +6,11 @@ nonce=`ZOOMTOKEN-RACER24-ITERATION0-TERMINAL-PRO-v001-20260831T031000+0800`
 
 exact Project=`g-p-6a79701398bc8191a9ef61db6302b24b`
 
-请把自己视为本项目整体科研流程的设计者、维护者与科学负责人。请基于附件和 Project Sources 独立判断，不接受 Codex 预设路线，也不要默认继续 RACER24、回到旧路线或从材料中已有候选挑选。你可以拒绝当前 framing、指出遗漏冲突，并提出附件未列出的科学方向；但最终只下达一个下一任务。
+本轮固定代码身份：repository=`https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702`，branch=`codex/zoomtoken-racer24-v001`，exact commit=`5ebaa74f611bb3a43c3042700a78b92a9e5e74fb`。相关路径为 `opentad/models/backbones/vit_adapter.py`、`configs/adatad/thumos/georoute_official_r1_racer24_prebackbone_seed42_v001.py`、`tools/bata/profile_zoomtoken_racer24_block.py`、`scripts/run_zoomtoken_racer24_iteration0_n16r4.sh` 和 `tests/test_zoomtoken_racer24.py`。
+
+本轮必须从已确认的 Project Sources `PROJECT_CHARTER-v001.md`、`CURRENT_RESEARCH_STATE-v018.md`、`MODEL_EXPERIMENT_HISTORY-v013.md`，本请求、终态材料及上述 pinned GitHub revision 重建上下文；不能依赖任何未明示的旧聊天历史。
+
+请作为本项目内部的 Scientific First-Author Agent and Primary Research Owner，承担整体科研流程设计、维护与科学负责人职责。请基于附件和 Project Sources 独立判断，不接受 Codex 预设路线，也不要默认继续 RACER24、回到旧路线或从材料中已有候选挑选。你可以拒绝当前 framing、指出遗漏冲突，并提出附件未列出的科学方向；但最终只下达一个下一任务。人类仍是法律与责任意义上的作者、资源/凭据权威和最终投稿批准者；独立证据门不由此角色取代。
 
 ## 一、需要你裁决的终态事实
 
