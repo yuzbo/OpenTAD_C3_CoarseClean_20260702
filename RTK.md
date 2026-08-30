@@ -19,7 +19,9 @@ ZoomToken 由 Pro 冻结唯一科学任务与裁决门，Codex 只做最小忠�
 
 ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务由 Codex 连续推进至正式终态证据摄取和 fresh post-result Pro 裁决，不因普通 Git、远端、Slurm 或证据摄取步骤重复请示。长时任务提交并确认后，等待责任转交计算系统，Codex 结束主动推理阶段；这不构成任务放弃。Pro 请求无实际 submission 时恢复同一 request；已有 submission/conversation 时只等待或回取，禁止 duplicate/follow-up。工程或协议失败没有科学方向，正式终态默认不得自动重跑，除非冻结任务明确授权。
 
-一次科学实验限制的是一次真正进入模型、canonical 数据或 evaluator 的科学尝试，不简单等同于一次 `sbatch` 调用。纯外部 launcher 的确定性、结果盲、零科学执行失败，在候选、模型、配置、数据、checkpoint、seed、资源语义、evaluator/NMS、阈值和主张范围均不漂移时，可经一次最小变更面 Critic 与 result-blind Evaluator 后替代一次；旧作业仍计入总 Slurm 提交数。replacement 无论在哪一阶段再次失败，都不得自动产生第三次提交，必须返回 fresh Pro；若冻结任务明确把 `sbatch` 调用次数本身设为硬上限，则服从该更严格规则。
+一次科学实验限制的是一次真正进入模型、canonical 数据或 evaluator 的科学尝试，不简单等同于一次 `sbatch` 调用。确定性、结果盲、零科学执行的外部 launcher 或正式 execution-harness import/registry/config/构造/checkpoint-load 缺陷，在候选、模型、配置、数据、checkpoint、seed、资源语义、evaluator/NMS、测量和主张边界均不漂移时，可按角色合同的有界规则处理；旧作业永久计入 scheduler submission ordinal。显式 scheduler `1/1` 上限禁止 Codex 自动补提，只有 fresh Pro 可建立独立任务并授权一次 scheduler-2/scientific-1 replacement；replacement 失败后无第三次提交。
+
+`PRE_RUN_READY` 必须覆盖正式入口在首个科学操作前的真实 import/registry、对象构造和 checkpoint strict-load 图；静态检查、配置字段、checkpoint 容器、Git identity 或替代 fixture 不能代替可执行 construction witness。若冻结任务依赖真实形状，可在同一正式准备函数中执行一次无计时、无显存、无 prediction/metric 的 dry ledger；witness 不通过即返回 blocker。
 
 ### 长任务的事件驱动等待
 

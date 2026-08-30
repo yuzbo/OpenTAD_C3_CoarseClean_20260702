@@ -1428,7 +1428,14 @@ max_chars: 8000
   `Rearrange` was absent from the mmengine transform registry. The exclusive terminal
   receipt exists, `profile.json` does not, and no G0 gate is evaluated. This is an
   engineering/protocol blocker, not GridFuse performance evidence. G1/G2 remain closed;
-  the sole next action is fresh exact-Project Pro adjudication.
+  it is not repaired under the old task.
+- Fresh exact-Project Pro conversation `6a9494ad-dab4-83ea-83f6-e9cc2fabc722`
+  returned `REVISE / CONTINUE_ONCE_WITH_EXACT-CONSTRUCTION-WITNESSED_G0_REPLACEMENT`
+  and role contract `REVISE`. The old scheduler submission remains ordinal 1; the new
+  task may submit exactly one scheduler-ordinal-2 / G0-measurement-attempt-1 replacement
+  only after the exact production construction witness and fresh Critic/Evaluator pass.
+  The unique task is `ZOOMTOKEN-GRIDFUSE32-L6-G0-CONSTRUCTION-WITNESS-AND-RPL1-v001`;
+  G1/G2 remain forbidden and every terminal returns to a fresh Pro.
 
 ## Pointers
 

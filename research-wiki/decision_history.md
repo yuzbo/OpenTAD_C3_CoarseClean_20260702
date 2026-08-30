@@ -1488,3 +1488,16 @@ K64、全部 temporal tubelet 与 dense Adapter；blocks 6–11 用固定相邻 
 序列缩到 N256，再把 block residual 广播回 N512。G0 先要求六-block segment p50 speedup `>=1.35x`
 且 allocated/reserved ratios 均 `<=1.05`；仅通过才开启单 seed G1，G1 通过才开启 matched full-stack G2。
 任一门失败即终态并返回 fresh Pro，不做 rescue、sweep、第二候选或额外 seed。
+## 124. GridFuse G0 零测量 blocker 获一次 construction-witnessed replacement（2026-08-31）
+
+exact-Project fresh Pro conversation `6a9494ad-dab4-83ea-83f6-e9cc2fabc722` 以 GPT-5.6 Pro
+完成一次提交、零 follow-up，
+并绑定 GitHub exact candidate `0b734ab839973b2c945b012f066db8222d235bb9`。裁决为 `REVISE`，角色合同
+`REVISE`。
+
+job `1262090` 在任何 warmup、timing、memory 或 gate 前因 production profiler 未初始化 canonical
+transform registry 而失败，因此没有新的科学证据；旧任务与 scheduler submission ordinal 1 已终态，
+不得静默重跑。Pro 建立独立任务 `ZOOMTOKEN-GRIDFUSE32-L6-G0-CONSTRUCTION-WITNESS-AND-RPL1-v001`，
+只允许在同环境、同 config、同正式准备函数、同 epoch-59 EMA 的 construction witness 通过后，提交一个
+scheduler ordinal 2 / G0 measurement-attempt ordinal 1 replacement。无第三次提交；G0 成功也只获得
+fresh Pro 复盘资格，不自动开放 G1；有效 G0 任一门失败即 `STOP_GRIDFUSE32_L6_BEFORE_TRAINING`。

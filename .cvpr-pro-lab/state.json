@@ -30,8 +30,8 @@
     "submitted_at": "2026-08-28T00:27:41Z",
     "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V002_TERMINAL_PARITY_FAILURE_REVIEW_TERMINAL_RECEIPT-ATTEMPT4-v001.json"
   },
-  "epoch": 31,
-  "execution_state": "GRIDFUSE32_L6_G0_ENGINEERING_BLOCKER_PENDING_FRESH_PRO",
+  "epoch": 32,
+  "execution_state": "GRIDFUSE32_L6_G0_REPLACEMENT_BUILDER",
   "gridfuse32_l6_gated": {
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",
     "branch": "codex/zoomtoken-gridfuse32-l6-v001",
@@ -112,15 +112,40 @@
     "remote_source_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_src_0b734ab8",
     "pre_run_receipt": "docs/aris/ZOOMTOKEN_GRIDFUSE32_L6_GATED_PRE_RUN_READY-2026-08-31.md",
     "fresh_pro_request": {
-      "actual_submission_count": 0,
+      "actual_submission_count": 1,
+      "attachment_count": 8,
+      "browser_inline_files": false,
+      "completed_at_beijing": "2026-08-31T04:49:06+08:00",
+      "conversation_id": "6a9494ad-dab4-83ea-83f6-e9cc2fabc722",
+      "conversation_url": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b-zoomtoken/c/6a9494ad-dab4-83ea-83f6-e9cc2fabc722",
+      "decision": "REVISE",
+      "follow_up_count": 0,
+      "model_picker_label": "Pro",
       "nonce": "ZOOMTOKEN-GRIDFUSE32-L6-G0-TERMINAL-PRO-v001-20260831T043409+0800",
+      "observed_model_label": "GPT-5.6 Pro",
       "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
       "request_id": "PRO_GRIDFUSE32_L6_G0_TERMINAL_ENGINEERING_BLOCKER_ADJUDICATION-v001",
       "request_path": ".cvpr-pro-lab/reviews/PRO_GRIDFUSE32_L6_G0_TERMINAL_ENGINEERING_BLOCKER_ADJUDICATION_REQUEST-v001.md",
-      "status": "READY_NOT_SUBMITTED"
+      "response_path": ".cvpr-pro-lab/reviews/PRO_GRIDFUSE32_L6_G0_TERMINAL_ENGINEERING_BLOCKER_ADJUDICATION_RESPONSE-v001.md",
+      "role_contract": "REVISE",
+      "status": "COMPLETED_AUDITED",
+      "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_GRIDFUSE32_L6_G0_TERMINAL_ENGINEERING_BLOCKER_ADJUDICATION_TERMINAL_RECEIPT-v001.json"
+    },
+    "g0_replacement_task": {
+      "base_commit": "0b734ab839973b2c945b012f066db8222d235bb9",
+      "builder_candidate_due_beijing": "2026-08-31T08:30:00+08:00",
+      "builder_plan_due_beijing": "2026-08-31T05:45:00+08:00",
+      "critic_due_beijing": "2026-08-31T09:30:00+08:00",
+      "evaluator_due_beijing": "2026-08-31T10:45:00+08:00",
+      "formal_action_due_beijing": "2026-08-31T11:30:00+08:00",
+      "g0_measurement_attempt_ordinal": 1,
+      "scheduler_submission_ordinal": 2,
+      "scientific_return_due_beijing": "2026-09-01T12:00:00+08:00",
+      "selected_task": "ZOOMTOKEN-GRIDFUSE32-L6-G0-CONSTRUCTION-WITNESS-AND-RPL1-v001",
+      "status": "BUILDER_IN_PROGRESS"
     },
     "scientific_return_due_beijing": "2026-09-03T12:00:00+08:00",
-    "status": "G0_ENGINEERING_BLOCKER_PENDING_FRESH_PRO",
+    "status": "G0_REPLACEMENT_BUILDER",
     "task_id": "ZOOMTOKEN-GRIDFUSE32-L6-GATED-v001"
   },
   "k100_tar50_interaction_falsifier": {
@@ -600,8 +625,8 @@
     }
   },
   "schema_version": "1.0",
-  "stage": "G8_POST_RESULT_PRO",
-  "status": "GRIDFUSE32_L6_G0_ENGINEERING_BLOCKER_PENDING_FRESH_PRO",
+  "stage": "G5_REPLACEMENT_IMPL_CHECK",
+  "status": "GRIDFUSE32_L6_G0_REPLACEMENT_BUILDER",
   "tar32_eval_blocker_review": {
     "actual_submission_count": 1,
     "attachment_count": 9,

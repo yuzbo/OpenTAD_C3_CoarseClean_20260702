@@ -1363,3 +1363,7 @@ updated: 2026-08-29
 44. 正式 G0 job `1262090` 在任何 warmup/timing/memory 前因 `Rearrange` 未注册而终止；没有
     `profile.json`，不得写成 G0 性能失败、不得从 15 秒运行时间推断效率，也不得自行补 import 后重跑。
     G1/G2 继续关闭，是否允许 wrapper-only replacement 或转向必须由 fresh Pro 独立裁决。
+45. fresh Pro 已建立独立任务 `ZOOMTOKEN-GRIDFUSE32-L6-G0-CONSTRUCTION-WITNESS-AND-RPL1-v001`，只允许
+    scheduler ordinal 2 / G0 measurement-attempt ordinal 1。不得改模型、config、checkpoint、shape、dtype、
+    资源、warmup、iteration、order 或 gate；不得修改 dataset/transform source，手工/force 注册，绕过 pipeline，
+    或提前运行 G1/G2。construction witness 或 replacement 任一失败都无第三次提交，直接 fresh Pro。

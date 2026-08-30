@@ -4882,3 +4882,12 @@ append_only: true
   `terminal_receipt.json` 已生成，`profile.json` 缺失，因而分类为
   `GRIDFUSE32_L6_G0_ENGINEERING_OR_PROTOCOL_BLOCKER`，不是效率负结果。正式 G0 提交数 `1/1` 已用尽，
   G1/G2 未开放；不静默补 import、不重跑，先向 fresh exact-Project Pro 交回完整终态。
+
+- 2026-08-31：fresh exact-Project Pro conversation `6a9494ad-dab4-83ea-83f6-e9cc2fabc722` 以
+  GPT-5.6 Pro、八个 attachment-only 文件、submission `1`、follow-up `0` 完整返回；prompt 明确绑定
+  GitHub repository、branch 与 exact `0b734ab8…` commit。裁决为
+  `REVISE / CONTINUE_ONCE_WITH_EXACT-CONSTRUCTION-WITNESSED_G0_REPLACEMENT`，角色合同 `REVISE`。
+  旧任务与 job `1262090` 保持 scheduler ordinal 1 终态；新任务
+  `ZOOMTOKEN-GRIDFUSE32-L6-G0-CONSTRUCTION-WITNESS-AND-RPL1-v001` 只允许在 production construction
+  witness、fresh Critic 与 result-blind Evaluator 通过后提交一个 scheduler-2/scientific-1 replacement。
+  无第三次提交；G1/G2 仍关闭。
