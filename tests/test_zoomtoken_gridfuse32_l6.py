@@ -1,4 +1,5 @@
 from pathlib import Path
+import inspect
 import subprocess
 import sys
 
@@ -248,9 +249,15 @@ def test_gridfuse_adds_no_parameters_and_config_freezes_all_gates():
 def test_production_config_keeps_the_pretrained_adapter_temporal_axis():
     config = Config.fromfile(CONFIG)
     backbone = config.model.backbone.backbone
+    tubelet_size = backbone.get(
+        "tubelet_size",
+        inspect.signature(VisionTransformerAdapter.__init__)
+        .parameters["tubelet_size"]
+        .default,
+    )
     assert backbone.total_frames == 768
-    assert backbone.tubelet_size == 2
-    assert backbone.total_frames // backbone.tubelet_size == 384
+    assert tubelet_size == 2
+    assert backbone.total_frames // tubelet_size == 384
 
 
 def test_old_eight_tubelet_segment_rejects_the_production_adapter_axis():
