@@ -4860,8 +4860,13 @@ append_only: true
   即终态并 fresh Pro，不开启 rescue、第二候选、sweep 或额外 seed。
 
 - 2026-08-31：GridFuse32-L6 最小实现以 clean/pushed candidate
-  `3f1e7961720ceb7c7fa4a6276b6767a42adff94c` 固定。GitHub branch 与 exact commit 均经 fresh fetch/
-  ls-remote 核验。N16R4 精确 checkout 在独立进程中通过 GridFuse `8`、R1 regression `12`、
+  `0b734ab839973b2c945b012f066db8222d235bb9` 固定。GitHub branch 与 exact commit 均经 fresh fetch/
+  ls-remote 核验。N16R4 精确 checkout 在独立进程中通过 GridFuse `9`、R1 regression `12`、
   strict-rectangle `8` 项测试；fresh Critic 为 `PASS`。初次结果盲 Evaluator 发现 G2 未绑定 G1 checkpoint
   lineage；最小修正加入 canonical path、SHA256、epoch59、`state_dict_ema` 四项绑定后，新的结果盲
   Evaluator 返回 `PRE_RUN_READY`。这只说明可进入非科学 precheck，不构成 G0 加速证据。
+
+- 2026-08-31：非科学 precheck jobs `1262078/1262079` 都在测试前因计算节点无法解析 GitHub 而停止，
+  未执行模型或 G0。最终 launcher-only 修正把 fresh-fetch 放在登录节点，并让 Slurm action 核验 clean
+  exact HEAD 与 persistent remote-tracking ref 同时等于 reviewed SHA；模型、门槛和结果解释未改变。最终
+  exact candidate 的 fresh Critic/Evaluator 为 `PASS/PRE_RUN_READY`。

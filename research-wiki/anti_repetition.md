@@ -1354,6 +1354,9 @@ updated: 2026-08-29
     该差异必须保留为 provenance discrepancy，不得把 7 改写为浏览器事实，也不得为补附件重提或 follow-up。
 41. GridFuse32-L6 在 focused checks、fresh Critic、result-blind Evaluator、真实 G0 和后续条件门完成前只是
     待检验提案，不能写成已加速、已保护边界或论文主方法。
-42. GridFuse32-L6 clean/pushed candidate `3f1e7961…` 的远端 focused checks、Critic `PASS` 与 Evaluator
+42. GridFuse32-L6 clean/pushed candidate `0b734ab8…` 的远端 focused checks、Critic `PASS` 与 Evaluator
     `PRE_RUN_READY` 只解除执行前工程阻塞，不等于 G0 通过。必须先运行非科学 `PRECHECK_ONLY`，再提交唯一
     G0；不得跳过 G0、提前训练 G1、运行 G2、调整 pair/depth/门槛或并行候选。
+43. precheck jobs `1262078/1262079` 均在计算节点 GitHub DNS 身份检查处、任何测试或科学执行前停止；不得
+    写成 G0 失败，也不得继续重提旧 launcher。最终候选仅把 fresh-fetch 移至登录节点，并在计算节点核验
+    persistent remote-tracking ref；这不是放宽 source identity，也不改变模型或冻结门。

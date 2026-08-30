@@ -1407,13 +1407,18 @@ max_chars: 8000
   seed-42 G1 training cell; only a full G1 pass opens matched full-stack G2.
   A failed gate is terminal and returns to a fresh Pro without rescue or sweep.
 - The minimal implementation is clean and pushed at
-  `3f1e7961720ceb7c7fa4a6276b6767a42adff94c` on
+  `0b734ab839973b2c945b012f066db8222d235bb9` on
   `codex/zoomtoken-gridfuse32-l6-v001`. Exact N16R4 checks passed in separate
-  processes: GridFuse `8`, R1 regression `12`, and strict-rectangle `8` tests.
+  processes: GridFuse `9`, R1 regression `12`, and strict-rectangle `8` tests.
   A fresh Critic returned `PASS`; after binding G2 to the canonical G1 terminal
   checkpoint path, SHA256, epoch 59 and `state_dict_ema`, a fresh result-blind
   Evaluator returned `PRE_RUN_READY`. These are implementation/protocol facts,
   not G0 performance evidence.
+- Precheck jobs `1262078` and `1262079` both stopped before tests because compute
+  nodes could not resolve GitHub. The final launcher-only correction requires a
+  login-node fresh-fetch and verifies exact clean HEAD plus the persistent
+  remote-tracking ref on the compute node. Fresh Critic/Evaluator on the final
+  candidate returned `PASS/PRE_RUN_READY`; no G0 action has run yet.
 
 ## Pointers
 
