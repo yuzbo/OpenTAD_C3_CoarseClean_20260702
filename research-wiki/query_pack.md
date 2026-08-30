@@ -1458,6 +1458,18 @@ max_chars: 8000
   exists, with no replacement. Any construction/execution/artifact or valid gate
   failure permanently stops this exact route; a pass only returns to fresh Pro and
   does not automatically open G1.
+- The sole production-full-window atomic G0 job `1262108` is terminal. Its
+  construction witness, checkpoint strict load, exact full-window shape, dry/final
+  ledgers, 100 warmups per arm, 500 alternating samples per arm, memory profile and
+  terminal receipt are complete. Dense/candidate p50 is
+  `178.500099/314.885696 ms`; frozen speedup is `0.56687268x`, far below `1.35x`.
+  Allocated and reserved memory ratios are both `1.0`. Slurm `FAILED 3:0` is the
+  launcher's fail-closed encoding of the complete gate failure, not a construction
+  or artifact blocker. Status is
+  `STOP_GRIDFUSE32_L6_EXACT_ROUTE_VALID_G0_NEGATIVE`; no G1/G2, repair, replacement,
+  ordinal 3, training or sweep is allowed. Fresh Pro review must bind the latest
+  repository, branch and exact GitHub commit `dde46aee…` and independently choose
+  the one next scientific task.
 
 ## Pointers
 

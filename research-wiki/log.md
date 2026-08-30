@@ -4916,3 +4916,12 @@ append_only: true
   `PRE_RUN_READY_ATOMIC_FULLWINDOW_G0`。唯一 final scheduler-ordinal-2/scientific-measurement-1 job
   `1262108` 于 `2026-08-31T05:38:35+08:00` 在 `g0041` 启动，1 GPU、4 CPU、2 小时；终态前不读取
   或解释 partial timing/memory，且没有 replacement 或 ordinal 3。
+
+- 2026-08-31：唯一 job `1262108` 在 `g0041` 终态 `FAILED 3:0`，但完整写出了 construction
+  witness、`profile.json` 和 `terminal_receipt.json`；非零退出来自冻结 gate failure，而非执行或产物
+  blocker。真实 `B1/T384/K64/N24576`、48 bucket、dense temporal-384 Adapter、100 warmups/arm
+  和 500 alternating samples/arm 均完成。dense/candidate p50 为 `178.500099/314.885696 ms`，
+  speedup `0.56687268x < 1.35x`；allocated/reserved memory ratio 均为 `1.0`。终态为
+  `STOP_GRIDFUSE32_L6_EXACT_ROUTE_VALID_G0_NEGATIVE`：exact GridFuse32-L6 路线永久停止，不修复、不重跑、
+  不开 G1/G2。最新实现审查身份固定为 GitHub commit `dde46aee…`，下一动作只有携带 repository、branch、
+  exact commit 链接及完整终态证据的一次 fresh exact-Project Pro 裁决。

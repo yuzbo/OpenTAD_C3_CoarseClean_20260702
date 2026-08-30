@@ -1379,3 +1379,9 @@ updated: 2026-08-31
     `total_tubelets=384`、padding/dummy/zero fill。该任务只有一个 atomic scheduler-ordinal-2 提交且无
     replacement；任何 construction/OOM/完整性/walltime/gate failure 永久停止 exact GridFuse32-L6，
     不再修复、重提、训练、G1/G2 或 sweep。
+48. production-full-window atomic G0 job `1262108` 已形成完整有效负结果。dense/candidate p50 为
+    `178.500099/314.885696 ms`，speedup `0.56687268x`；allocated/reserved memory ratio 均为 `1.0`。
+    `FAILED 3:0` 是完整 gate failure 写盘后的预期 fail-closed 退出，不得重写成 execution blocker，也不得用
+    memory 门通过掩盖 p50 门失败。禁止修复、重跑、replacement、ordinal 3、G1/G2、训练、sweep 或从该
+    microbenchmark 外推 accuracy/full-stack/energy/家族级失败；只能把 exact GitHub commit `dde46aee…`
+    和完整终态证据交给一次 fresh Pro 独立裁决。

@@ -1501,3 +1501,19 @@ transform registry 而失败，因此没有新的科学证据；旧任务与 sch
 只允许在同环境、同 config、同正式准备函数、同 epoch-59 EMA 的 construction witness 通过后，提交一个
 scheduler ordinal 2 / G0 measurement-attempt ordinal 1 replacement。无第三次提交；G0 成功也只获得
 fresh Pro 复盘资格，不自动开放 G1；有效 G0 任一门失败即 `STOP_GRIDFUSE32_L6_BEFORE_TRAINING`。
+
+## 125. production-full-window atomic G0 有效负结果永久停止 exact GridFuse32-L6（2026-08-31）
+
+最终 clean/pushed implementation `dde46aee17f10bf793e5407055fc7b3416d93205` 通过 N16R4
+GridFuse/R1/strict-rectangle `16/12/8` tests、fresh Critic `PASS` 与 fresh result-blind Evaluator
+`PRE_RUN_READY_ATOMIC_FULLWINDOW_G0`。唯一 scheduler-ordinal-2/scientific-measurement-1 job
+`1262108` 完成真实 full-window construction、checkpoint strict load、冻结 ledger、100 warmups/arm、
+500 alternating samples/arm 及 memory measurement。dense/candidate p50 为
+`178.500099/314.885696 ms`，speedup `0.56687268x` 未通过 `>=1.35x`；allocated/reserved ratio 均为
+`1.0` 并通过 `<=1.05`。Slurm `FAILED 3:0` 是完整 failed-gate receipt 写出后的预期退出，不降级为
+execution blocker。
+
+决定：`STOP_GRIDFUSE32_L6_EXACT_ROUTE_VALID_G0_NEGATIVE`。不修复、不重跑、不提交 replacement/ordinal 3，
+不开 G1/G2、不训练、不 sweep。该证据只否定这一 exact production-full-window GridFuse32-L6 实现的冻结
+G0 工程效率可行性，不外推 accuracy、边界、full-stack、energy 或整个 token-fusion/CPTC 家族。下一任务
+必须由携带最新 repository、branch 与 exact commit GitHub 链接的 fresh exact-Project Pro 独立下达。

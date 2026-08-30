@@ -1,8 +1,6 @@
 {
-  "active_job": "1262108",
-  "active_jobs": [
-    "1262108"
-  ],
+  "active_job": null,
+  "active_jobs": [],
   "browser_request": {
     "active_streaming_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V002_TERMINAL_PARITY_FAILURE_REVIEW_STREAMING_RECEIPT-ATTEMPT4-v001.json",
     "actual_submission_count": 1,
@@ -32,8 +30,8 @@
     "submitted_at": "2026-08-28T00:27:41Z",
     "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V002_TERMINAL_PARITY_FAILURE_REVIEW_TERMINAL_RECEIPT-ATTEMPT4-v001.json"
   },
-  "epoch": 35,
-  "execution_state": "GRIDFUSE32_L6_PRODUCTION_FULLWINDOW_ATOMIC_G0_RUNNING",
+  "epoch": 36,
+  "execution_state": "GRIDFUSE32_L6_PRODUCTION_FULLWINDOW_ATOMIC_G0_VALID_NEGATIVE_PENDING_FRESH_PRO",
   "gridfuse32_l6_gated": {
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",
     "branch": "codex/zoomtoken-gridfuse32-l6-v001",
@@ -199,6 +197,9 @@
       "evaluator": "PRE_RUN_READY_ATOMIC_FULLWINDOW_G0",
       "formal_job": {
         "cpus_per_task": 4,
+        "elapsed": "00:05:33",
+        "ended_at_beijing": "2026-08-31T05:44:08+08:00",
+        "exit_code": "3:0",
         "gpus": 1,
         "job_id": "1262108",
         "job_name": "zt-gf32-fw-g0-final",
@@ -207,19 +208,34 @@
         "partition": "gpu",
         "result_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_production_fullwindow_atomic_g0_final_20260831",
         "started_at_beijing": "2026-08-31T05:38:35+08:00",
-        "state": "RUNNING",
+        "state": "FAILED",
         "submission_count": 1,
         "terminal_waiter": "j-iaqmxn",
+        "terminal_waiter_state": "ENDED",
         "walltime": "02:00:00"
+      },
+      "gate_result": {
+        "allocated_ratio": 1.0,
+        "candidate_p50_ms": 314.8856964111328,
+        "candidate_p95_ms": 316.6118301391602,
+        "dense_p50_ms": 178.5000991821289,
+        "dense_p95_ms": 179.72490463256835,
+        "gate_passed": false,
+        "p50_speedup": 0.5668726817907567,
+        "reserved_ratio": 1.0,
+        "status": "STOP_GRIDFUSE32_L6_EXACT_ROUTE_VALID_G0_NEGATIVE"
       },
       "github_branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-gridfuse32-l6-v001",
       "github_commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/dde46aee17f10bf793e5407055fc7b3416d93205",
       "github_repository_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
+      "local_durable_receipt": "docs/aris/ZOOMTOKEN_GRIDFUSE32_L6_PRODUCTION_FULLWINDOW_ATOMIC_G0_TERMINAL_RECEIPT-2026-08-31.md",
+      "profile_path": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_production_fullwindow_atomic_g0_final_20260831/g0/profile.json",
       "remote_source_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_src_dde46aee",
-      "status": "FORMAL_ATOMIC_G0_RUNNING"
+      "status": "TERMINAL_VALID_G0_NEGATIVE_PENDING_FRESH_PRO",
+      "terminal_receipt_path": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_production_fullwindow_atomic_g0_final_20260831/g0/terminal_receipt.json"
     },
     "scientific_return_due_beijing": "2026-09-03T12:00:00+08:00",
-    "status": "PRODUCTION_FULLWINDOW_ATOMIC_G0_RUNNING",
+    "status": "PRODUCTION_FULLWINDOW_ATOMIC_G0_VALID_NEGATIVE_PENDING_FRESH_PRO",
     "task_id": "ZOOMTOKEN-GRIDFUSE32-L6-PRODUCTION-FULLWINDOW-ATOMIC-G0-v001"
   },
   "k100_tar50_interaction_falsifier": {
