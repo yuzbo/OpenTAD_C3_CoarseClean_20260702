@@ -20,8 +20,18 @@ PROFILER="${ROOT}/tools/bata/profile_zoomtoken_racer24_block.py"
 PROFILE_PATH="${OUTPUT_ROOT}/profile.json"
 RECEIPT_PATH="${OUTPUT_ROOT}/terminal_receipt.json"
 PROTOCOL_IDENTITY="zoomtoken_racer24_iteration0_n16r4_v001"
-COMMAND_IDENTITY="racer24_block:B1:T8:K64:Q24:KV64:warmup50:measurements200:gates1.08x_1.05x:seed42"
-CURRENT_STEP="output_root_preflight"
+COMMAND_IDENTITY="racer24_block:B1:T8:K64:per_tubelet_Q24_KV64:total_Q192_KV512:warmup50:measurements200:gates1.08x_1.05x:seed42"
+
+if [[ -e "${OUTPUT_ROOT}" && ! -d "${OUTPUT_ROOT}" ]]; then
+  fail 'output root exists but is not a directory'
+fi
+if [[ -d "${OUTPUT_ROOT}" ]] && \
+   [[ -n "$(find "${OUTPUT_ROOT}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+  fail 'output root already exists and is non-empty'
+fi
+mkdir -p "${OUTPUT_ROOT}"
+
+CURRENT_STEP="source_preflight"
 
 write_receipt() {
   local receipt_status="$1"
@@ -73,16 +83,6 @@ on_exit() {
 }
 
 trap on_exit EXIT
-if [[ -e "${OUTPUT_ROOT}" && ! -d "${OUTPUT_ROOT}" ]]; then
-  fail 'output root exists but is not a directory'
-fi
-if [[ -d "${OUTPUT_ROOT}" ]] && \
-   [[ -n "$(find "${OUTPUT_ROOT}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
-  fail 'output root already exists and is non-empty'
-fi
-mkdir -p "${OUTPUT_ROOT}"
-
-CURRENT_STEP="source_preflight"
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail 'expected commit must be a full SHA'
 [[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || \
   fail 'source commit mismatch'

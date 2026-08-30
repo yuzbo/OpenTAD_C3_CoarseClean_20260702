@@ -1,5 +1,8 @@
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 from types import MethodType
 
 import pytest
@@ -312,6 +315,71 @@ def test_profiler_persists_the_same_json_to_stdout_and_output(tmp_path, capsys):
         _publish_result(result, output)
 
 
+def _launcher_environment(output_root, source_root):
+    environment = os.environ.copy()
+    environment.update(
+        ZOOMTOKEN_RACER24_SOURCE_ROOT=str(source_root),
+        ZOOMTOKEN_RACER24_EXPECTED_COMMIT="0" * 40,
+        ZOOMTOKEN_RACER24_OUTPUT_ROOT=str(output_root),
+        ZOOMTOKEN_RACER24_PYTHON=sys.executable,
+        CUDA_VISIBLE_DEVICES="0",
+    )
+    return environment
+
+
+def test_launcher_rejects_nonempty_output_root_without_modifying_it(tmp_path):
+    output_root = tmp_path / "occupied"
+    output_root.mkdir()
+    sentinel = output_root / "sentinel.txt"
+    sentinel.write_bytes(b"keep-exactly")
+    launcher = ROOT / "scripts" / "run_zoomtoken_racer24_iteration0_n16r4.sh"
+
+    completed = subprocess.run(
+        ["bash", str(launcher.relative_to(ROOT))],
+        cwd=ROOT,
+        env=_launcher_environment(output_root, tmp_path / "missing-source"),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert sentinel.read_bytes() == b"keep-exactly"
+    assert sorted(path.name for path in output_root.iterdir()) == ["sentinel.txt"]
+    assert not (output_root / "terminal_receipt.json").exists()
+    assert not (output_root / "profile.json").exists()
+
+
+def test_launcher_writes_failure_receipt_after_creating_new_output_root(tmp_path):
+    output_root = tmp_path / "fresh-output"
+    missing_source = tmp_path / "missing-source"
+    launcher = ROOT / "scripts" / "run_zoomtoken_racer24_iteration0_n16r4.sh"
+
+    completed = subprocess.run(
+        ["bash", str(launcher.relative_to(ROOT))],
+        cwd=ROOT,
+        env=_launcher_environment(output_root, missing_source),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    receipt = json.loads(
+        (output_root / "terminal_receipt.json").read_text(encoding="utf-8")
+    )
+    assert receipt["status"] == "failure"
+    assert receipt["exit_status"] == completed.returncode
+    assert receipt["step"] == "source_preflight"
+    assert receipt["exact_commit"] == "0" * 40
+    assert receipt["source_root"] == str(missing_source)
+    assert receipt["output_root"] == str(output_root)
+    assert receipt["profile_path"] == str(output_root / "profile.json")
+    assert "per_tubelet_Q24_KV64" in receipt["command_identity"]
+    assert "total_Q192_KV512" in receipt["command_identity"]
+    assert not (output_root / "profile.json").exists()
+
+
 def test_config_recipe_and_iteration0_launcher_are_frozen_and_nontraining():
     config_dir = ROOT / "configs" / "adatad" / "thumos"
     config = Config.fromfile(
@@ -339,12 +407,17 @@ def test_config_recipe_and_iteration0_launcher_are_frozen_and_nontraining():
     assert "--max-memory-ratio 1.05" in launcher
     assert 'OUTPUT_ROOT="${ZOOMTOKEN_RACER24_OUTPUT_ROOT:' in launcher
     assert "output root already exists and is non-empty" in launcher
+    assert launcher.index("output root already exists and is non-empty") < launcher.index(
+        "write_receipt()"
+    )
     assert 'PROFILE_PATH="${OUTPUT_ROOT}/profile.json"' in launcher
     assert 'RECEIPT_PATH="${OUTPUT_ROOT}/terminal_receipt.json"' in launcher
     assert '--output "${PROFILE_PATH}"' in launcher
     assert "trap on_exit EXIT" in launcher
     assert 'write_receipt "success" 0' in launcher
     assert 'write_receipt "failure" "${exit_status}"' in launcher
+    assert "per_tubelet_Q24_KV64" in launcher
+    assert "total_Q192_KV512" in launcher
     for field in (
         "exact_commit",
         "source_root",
