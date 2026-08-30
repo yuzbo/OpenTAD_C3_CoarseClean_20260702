@@ -8,6 +8,7 @@ from opentad.models.duca.acquisition import (
     DucaAcquisitionAdapter,
     TemporalCoverageSelector,
 )
+from tools.bata.duca_p0_training import formal_training_contract
 
 
 CONFIG_ROOT = Path(__file__).resolve().parents[1] / "configs" / "adatad" / "thumos"
@@ -161,3 +162,16 @@ def test_coverage_and_control_configs_change_only_allocation_policy(monkeypatch)
     assert control.workflow.checkpoint_interval == coverage.workflow.checkpoint_interval == 5
     assert control.workflow.primary_checkpoint_state_key == "state_dict_ema"
     assert coverage.workflow.primary_checkpoint_state_key == "state_dict_ema"
+    assert control.workflow.intermediate_validation_role == "learning_curve_only"
+    assert coverage.workflow.intermediate_validation_role == "learning_curve_only"
+    assert control.workflow.intermediate_validation_selects_checkpoint is False
+    assert coverage.workflow.intermediate_validation_selects_checkpoint is False
+
+    control_contract = formal_training_contract(control)
+    coverage_contract = formal_training_contract(coverage)
+    assert control_contract is not None
+    assert coverage_contract is not None
+    assert control_contract["intermediate_validation"] is True
+    assert coverage_contract["intermediate_validation"] is True
+    assert control_contract["intermediate_validation_role"] == "learning_curve_only"
+    assert coverage_contract["intermediate_validation_role"] == "learning_curve_only"

@@ -128,12 +128,25 @@ def formal_training_contract(
             raise ValueError("formal DUCA performance-curve evaluation must anchor at epoch five")
         if int(workflow.get("val_start_epoch", -1)) != 4:
             raise ValueError("formal DUCA performance-curve evaluation must start after epoch four")
-        if str(workflow.get("intermediate_validation_role", "")) != (
-            "full_curve_and_best_validation_checkpoint"
-        ):
+        intermediate_validation_role = str(
+            workflow.get("intermediate_validation_role", "")
+        )
+        expected_selection_by_role = {
+            "full_curve_and_best_validation_checkpoint": True,
+            "learning_curve_only": False,
+        }
+        if intermediate_validation_role not in expected_selection_by_role:
             raise ValueError("formal DUCA intermediate validation role is not explicit")
-        if workflow.get("intermediate_validation_selects_checkpoint", None) is not True:
-            raise ValueError("formal DUCA performance curve must retain the best validation checkpoint")
+        selects_checkpoint = workflow.get(
+            "intermediate_validation_selects_checkpoint", None
+        )
+        if selects_checkpoint is not expected_selection_by_role[
+            intermediate_validation_role
+        ]:
+            raise ValueError(
+                "formal DUCA intermediate validation role and checkpoint "
+                "selection disagree"
+            )
     elif workflow.get("intermediate_validation_selects_checkpoint", False):
         raise ValueError("checkpoint selection requires an enabled intermediate validation schedule")
     contract["intermediate_validation"] = intermediate_validation

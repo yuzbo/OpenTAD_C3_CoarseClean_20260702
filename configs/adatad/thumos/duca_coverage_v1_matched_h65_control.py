@@ -71,6 +71,11 @@ workflow = dict(
     primary_checkpoint_epoch=59,
     primary_checkpoint_state_key="state_dict_ema",
     checkpoint_criterion="terminal_epoch_59_state_dict_ema",
+    # The five-epoch validation curve is diagnostic only.  Coverage-v1 is
+    # judged by the pre-registered terminal epoch-59 EMA, never a curve-best
+    # checkpoint.
+    intermediate_validation_role="learning_curve_only",
+    intermediate_validation_selects_checkpoint=False,
 )
 
 work_dir = "exps/thumos/adatad/duca_coverage_v1_matched_h65_control"
