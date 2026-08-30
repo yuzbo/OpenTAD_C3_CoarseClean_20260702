@@ -1337,3 +1337,11 @@ updated: 2026-08-29
 32. RACER24 当前只进入 Iteration-0 Builder MCL。没有 clean candidate、focused parity、真实形状
     microbenchmark、fresh Critic 与 result-blind Evaluator 前，不得启动数据/GPU/Slurm/训练/成本。
 33. FARM24 与 PairLatent32 不是并行候选；在 RACER24 的冻结触发条件和 fresh Pro 裁决前，两者均不实现。
+34. RACER24 Iteration-0 job `1262068` 已形成完整 matched block 负结果：p50 speedup `0.24964x`，
+    peak allocated/reserved ratio `1.98884/1.84615`；不得把它写成加速、节省显存或“仅差一点”。
+35. 不得用 job `1262067` 的 `/bin/sh` wrapper 失败覆盖或稀释 `1262068` 的有效负结果；前者是
+    pre-execution operational blocker，后者才是唯一科学尝试。
+36. 不得对当前 RACER24 调 K、改 blocks、换 warmup/次数、训练、测 full-stack cost或添加 selector/loss
+    来 rescue 冻结门失败；也不得自动实现 FARM24/PairLatent32。
+37. 该负结果只否定当前 exact candidate 的最低 block-path 工程效率可行性，不外推为全部 selected-Q/
+    full-KV、residual completion 或 CPTC 方向失败。下一路线只能由 fresh Pro 独立裁决。

@@ -2,15 +2,15 @@
   "active_job": {
     "job_id": "1262068",
     "job_name": "zt-racer24-i0-rpl1-5ebaa74f",
-    "state": "SUBMITTED",
+    "state": "FAILED_VALID_NEGATIVE_GATE_RESULT",
     "source_commit": "5ebaa74f611bb3a43c3042700a78b92a9e5e74fb",
     "source_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_racer24_src_5ebaa74f",
     "result_root": "/data/run01/sczc063/yuzibo/results/zoomtoken_racer24_i0_5ebaa74f_20260831",
     "log_root": "/data/run01/sczc063/yuzibo/logs/zoomtoken_racer24_i0_5ebaa74f_20260831"
   },
-  "active_jobs": ["1262068"],
+  "active_jobs": [],
   "machine_terminal_wait": {
-    "mode": "EVENT_DRIVEN_MACHINE_SIDE_WAIT",
+    "mode": "TERMINAL_WAITER_ENDED",
     "job_id": "1262068",
     "waiter_backend": "fastctx-background-terminal-only",
     "waiter_job_id": "j-add984",
@@ -21,9 +21,9 @@
     "expected_resume_at_beijing": "2026-08-31T03:04:00+08:00",
     "resume_triggers": ["terminal-signal", "user-reentry", "expected-terminal-time", "objective-anomaly-evidence"],
     "scientific_metrics_read_while_running": false,
-    "slurm_terminal_confirmed": false,
-    "slurm_exit_code": null,
-    "ended_at_beijing": null
+    "slurm_terminal_confirmed": true,
+    "slurm_exit_code": "2:0",
+    "ended_at_beijing": "2026-08-31T02:56:30+08:00"
   },
   "parallel_composite_probe": {
     "task_id": "ZT-CODEX-COMP-PROBE-001",
@@ -512,13 +512,27 @@
       "replacement_authority": "INDEPENDENT_EVALUATOR_REPLACEMENT_PRE_RUN_READY",
       "job_id": "1262068",
       "job_name": "zt-racer24-i0-rpl1-5ebaa74f",
-      "state": "SUBMITTED",
+      "state": "FAILED_VALID_COMPLETE_NEGATIVE_GATE_RESULT",
       "scientific_attempt_ordinal": 1,
       "resources": "1 GPU / 4 CPU / 00:10:00",
       "result_root": "/data/run01/sczc063/yuzibo/results/zoomtoken_racer24_i0_5ebaa74f_20260831",
       "log_root": "/data/run01/sczc063/yuzibo/logs/zoomtoken_racer24_i0_5ebaa74f_20260831",
       "terminal_waiter": "j-add984",
-      "durable_start_receipt": "docs/aris/ZOOMTOKEN_RACER24_ITERATION0_MICROBENCHMARK_START_RECEIPT-2026-08-31.md"
+      "slurm_exit_code": "2:0",
+      "node": "g0041",
+      "elapsed": "00:01:21",
+      "focused_tests": "16 passed in 54.26s",
+      "p50_dense_ms": 1.3347729109227657,
+      "p50_racer24_ms": 5.3468430414795876,
+      "p95_dense_ms": 1.3655385468155143,
+      "p95_racer24_ms": 5.512358201667666,
+      "p50_speedup": 0.24963757128606587,
+      "peak_allocated_ratio": 1.9888417956924143,
+      "peak_reserved_ratio": 1.8461538461538463,
+      "gates_passed": false,
+      "scientific_classification": "STOP_RACER24_ITERATION0_ENGINEERING_EFFICIENCY_GATE_FAILURE",
+      "durable_start_receipt": "docs/aris/ZOOMTOKEN_RACER24_ITERATION0_MICROBENCHMARK_START_RECEIPT-2026-08-31.md",
+      "durable_terminal_receipt": "docs/aris/ZOOMTOKEN_RACER24_ITERATION0_MICROBENCHMARK_TERMINAL_RECEIPT-2026-08-31.md"
     },
     "formal_experiment_authorized": false,
     "gpu_microbenchmark_authorized": true,
@@ -527,8 +541,8 @@
     "beijing_deadline_supplied": false,
     "durable_intake": "docs/aris/ZOOMTOKEN_RACER24_USER_SUPPLIED_PRO_DECISION_INTAKE-2026-08-31.md"
   },
-  "epoch": 29,
-  "execution_state": "RACER24_ITERATION0_MICROBENCHMARK_RUNNING",
+  "epoch": 30,
+  "execution_state": "RACER24_ITERATION0_STOPPED_PENDING_FRESH_PRO",
   "last_pro_review_at": "2026-08-29T17:05:07.051Z",
   "new_evidence_since_pro": true,
   "next_pro_review_due_at": null,
@@ -589,6 +603,6 @@
   },
   "schema_version": "1.0",
   "stage": "G5_IMPL_CHECK",
-  "status": "RACER24_ITERATION0_MICROBENCHMARK_RUNNING",
-  "updated_at": "2026-08-30T18:54:00Z"
+  "status": "RACER24_ITERATION0_STOPPED_PENDING_FRESH_PRO",
+  "updated_at": "2026-08-30T19:00:00Z"
 }

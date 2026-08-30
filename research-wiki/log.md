@@ -4833,3 +4833,16 @@ append_only: true
   MCL 将文件面限制为 `vit_adapter.py`、一个 config、一个 focused test、一个 task-specific profiler和
   一个 microbenchmark launcher；matched real-shape gate 为至少 200 次、p50 至少 `1.08x`、peak memory
   不超过 dense control `5%`。当前仍无模型代码编辑或实验，等待来源绑定或明确的 Iteration-0 实施授权。
+
+- 2026-08-31：用户明确授权后，RACER24 clean candidate
+  `5ebaa74f611bb3a43c3042700a78b92a9e5e74fb` 完成 Builder、两轮确定性审查修正、fresh Critic
+  `PASS`、N16R4 focused tests `16 passed` 与 result-blind Evaluator `PRE_RUN_READY`。首次 job
+  `1262067` 只因 Slurm `/bin/sh` wrapper 缺少 `source/module/python` 在 1 秒内退出，没有 Python、模型或
+  CUDA 执行；独立 Evaluator将其判为 pre-execution blocker，并准入一次显式 Bash replacement。
+
+- 2026-08-31：唯一科学微基准 job `1262068` 在 `g0041` 完成 50 warmup 与每臂 200 次 real-shape
+  matched block 测量。dense/RACER24 p50 为 `1.33477/5.34684 ms`，p95 为 `1.36554/5.51236 ms`；
+  p50 speedup 仅 `0.24964x`。RACER24 peak allocated/reserved 为 dense 的 `1.98884/1.84615x`。
+  `>=1.08x` speed 与 `<=1.05x` memory 门全部失败，故终态为
+  `STOP_RACER24_ITERATION0_AND_RETURN_TO_PRO`。这是当前 exact block-path 实现的有效负结果，不是
+  accuracy、full-stack TAD、energy 或整个方法家族结论；不训练、不调参、不救援、不打开后继候选。

@@ -1375,11 +1375,27 @@ max_chars: 8000
 - Two source statements are explicitly rejected as project facts: job `1258299`
   is terminal rather than running, and the current base has no ready-made
   selected-query/full-KV or RACER-completion helper.
-- Current authority is limited to an Iteration-0 Builder minimal-change plan.
-  There is no clean RACER candidate, implementation, Critic, result-blind
-  Evaluator, microbenchmark, training, cost result or new Beijing deadline. No
-  data/GPU/Slurm run or FARM24/PairLatent32 contingency is authorized from this
-  intake alone.
+- The user separately authorized the frozen Iteration-0 implementation and
+  matched block microbenchmark. Clean candidate `5ebaa74f...` passed the focused
+  implementation checks, fresh Critic and result-blind Evaluator PRE_RUN.
+- The only valid microbenchmark job `1262068` measured dense/RACER24 p50 as
+  `1.33477/5.34684 ms`; speedup was only `0.24964x`. RACER24 peak allocated and
+  reserved memory were `1.98884x/1.84615x` the dense control. The frozen
+  `>=1.08x` speed and `<=1.05x` memory gates all failed.
+- This is a valid negative result for the current RACER24 block-path
+  implementation, not accuracy, full-stack TAD, energy or family-universal
+  evidence. Iteration-0 is stopped. Training, K/block tuning, full-stack cost,
+  FARM24 and PairLatent32 remain forbidden pending a fresh Pro decision.
+
+## Current Decision Question: RACER24 Terminal Adjudication
+
+- Does the decisive `0.24964x` speedup and approximately `1.99x/1.85x` memory
+  overhead terminate RACER24 as the primary route, or is there a scientifically
+  distinct route worth defining? Codex does not propose or select that successor.
+- Pro must receive the exact candidate, implementation/Critic/Evaluator record,
+  raw profile, terminal receipt, negative result, provenance warning and the
+  still-unresolved K100-TAR50 protocol blocker, then issue one independent next
+  task. No experiment runs before that adjudication.
 
 ## Pointers
 

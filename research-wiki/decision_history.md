@@ -1458,3 +1458,16 @@ job `1258299` 已终态而非仍在运行；当前 base 没有现成 selected-Q/
 同一 Builder 返回 Iteration-0 `MINIMAL_CHANGE_PLAN`；在 clean candidate、parity、真实形状
 microbenchmark、fresh Critic 与 result-blind Evaluator 前，不进行数据/GPU/Slurm/训练/成本，也不解冻
 FARM24 或 PairLatent32。材料未给出新的北京时间 deadline，旧任务 deadline 不迁移。
+
+## 122. RACER24 Iteration-0 未通过最低工程效率门并停止（2026-08-31）
+
+用户另行确认了 provenance-warning 下的 Iteration-0 实现与冻结微基准权威。clean candidate
+`5ebaa74f611bb3a43c3042700a78b92a9e5e74fb` 通过 focused tests、fresh Critic 与 result-blind
+Evaluator。唯一有效微基准 job `1262068` 在固定 `B=1/T8/K64/Q192/KV512`、warmup 50、每臂 200 次
+的 matched block path 上测得 p50 speedup `0.24964x`；peak allocated/reserved memory ratio 为
+`1.98884/1.84615x`。因此预注册 `>=1.08x` speed 与 `<=1.05x` memory 门全部失败。
+
+决定：`STOP_RACER24_ITERATION0_AND_RETURN_TO_PRO`。不运行训练、full-stack cost、K/block 调整、
+FARM24、PairLatent32 或其他 rescue。该结果只否定当前 exact RACER24 实现的最低 block-path 工程效率
+可行性；不外推为全部 selected-Q/full-KV、completion 或 CPTC 失败。下一科学任务必须由 fresh Pro
+在完整负结果与 provenance 边界上独立下达。
