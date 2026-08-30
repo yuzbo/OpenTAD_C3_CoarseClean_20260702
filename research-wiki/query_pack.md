@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-08-29
+updated: 2026-08-31
 max_chars: 8000
 ---
 
@@ -1436,6 +1436,16 @@ max_chars: 8000
   only after the exact production construction witness and fresh Critic/Evaluator pass.
   The unique task is `ZOOMTOKEN-GRIDFUSE32-L6-G0-CONSTRUCTION-WITNESS-AND-RPL1-v001`;
   G1/G2 remain forbidden and every terminal returns to a fresh Pro.
+- The authorized minimal descendant is clean and pushed at
+  `b5993faaaa59be318557ca314697e38c4b39b6a1`. It uses the canonical transform
+  registry and one shared production preparation function; exact N16R4 GridFuse,
+  R1-regression and strict-rectangle suites passed `12/12/8`. Construction-witness
+  job `1262099` confirmed real detector construction and strict checkpoint load,
+  then failed in the first dense real-shape ledger with `ragged Adapter temporal
+  axis differs from pretrained Adapter`. No timing, memory, prediction, metric,
+  gate or parameter update began. This is a second independent construction/shape
+  blocker, not G0 performance evidence. The frozen task forbids another repair,
+  Critic/Evaluator, replacement, G1 or G2 before a fresh exact-Project Pro decision.
 
 ## Pointers
 

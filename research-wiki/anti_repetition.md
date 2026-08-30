@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-08-29
+updated: 2026-08-31
 ---
 
 ## GeoRoute deployment anti-repetition
@@ -1367,3 +1367,9 @@ updated: 2026-08-29
     scheduler ordinal 2 / G0 measurement-attempt ordinal 1。不得改模型、config、checkpoint、shape、dtype、
     资源、warmup、iteration、order 或 gate；不得修改 dataset/transform source，手工/force 注册，绕过 pipeline，
     或提前运行 G1/G2。construction witness 或 replacement 任一失败都无第三次提交，直接 fresh Pro。
+46. 最新 clean/pushed candidate `b5993faa…` 已修复 canonical registry 初始化并在 N16R4 通过
+    GridFuse/R1/strict-rectangle `12/12/8` tests；不得再把 `Rearrange` 缺失当作当前 blocker。
+    construction-witness job `1262099` 在 detector 构造与 strict checkpoint load 后、首个 dense real-shape
+    dry ledger 的 Adapter 中因 `ragged Adapter temporal axis differs from pretrained Adapter` 终止。不得把它写成
+    G0 性能失败，也不得自行修改 Adapter/model/config/shape、追加第二次 repair/review、提交 replacement、运行
+    G1/G2 或将缺失结果补造为证据；只允许 fresh exact-Project Pro 裁决。

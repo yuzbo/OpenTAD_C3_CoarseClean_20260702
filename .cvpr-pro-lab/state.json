@@ -30,14 +30,14 @@
     "submitted_at": "2026-08-28T00:27:41Z",
     "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V002_TERMINAL_PARITY_FAILURE_REVIEW_TERMINAL_RECEIPT-ATTEMPT4-v001.json"
   },
-  "epoch": 32,
-  "execution_state": "GRIDFUSE32_L6_G0_REPLACEMENT_BUILDER",
+  "epoch": 33,
+  "execution_state": "GRIDFUSE32_L6_G0_CONSTRUCTION_WITNESS_BLOCKER_PENDING_FRESH_PRO",
   "gridfuse32_l6_gated": {
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",
     "branch": "codex/zoomtoken-gridfuse32-l6-v001",
     "builder_candidate_due_beijing": "2026-08-31T20:00:00+08:00",
     "builder_mcl_due_beijing": "2026-08-31T07:30:00+08:00",
-    "candidate_commit": "0b734ab839973b2c945b012f066db8222d235bb9",
+    "candidate_commit": "b5993faaaa59be318557ca314697e38c4b39b6a1",
     "candidate_pushed": true,
     "conditional_fullstack_due_beijing": "within_2h_of_G1_terminal_not_later_than_2026-09-02T08:00:00+08:00",
     "conditional_training_due_beijing": "2026-09-01T06:00:00+08:00",
@@ -45,7 +45,7 @@
     "evaluator_due_beijing": "2026-09-01T01:00:00+08:00",
     "formal_action_due_beijing": "2026-09-01T02:00:00+08:00",
     "github_branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-gridfuse32-l6-v001",
-    "github_commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/0b734ab839973b2c945b012f066db8222d235bb9",
+    "github_commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/b5993faaaa59be318557ca314697e38c4b39b6a1",
     "github_repository_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
     "g0_gate": {
       "peak_allocated_ratio_max": 1.05,
@@ -105,11 +105,11 @@
       }
     ],
     "remote_focused_tests": {
-      "gridfuse32_l6": "9 passed in 31.74s",
-      "r1_regression": "12 passed in 40.27s",
-      "strict_rectangle_separate_process": "8 passed in 0.67s"
+      "gridfuse32_l6": "12 passed in 80.51s",
+      "r1_regression": "12 passed in 41.73s",
+      "strict_rectangle_separate_process": "8 passed in 0.76s"
     },
-    "remote_source_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_src_0b734ab8",
+    "remote_source_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_src_b5993faa",
     "pre_run_receipt": "docs/aris/ZOOMTOKEN_GRIDFUSE32_L6_GATED_PRE_RUN_READY-2026-08-31.md",
     "fresh_pro_request": {
       "actual_submission_count": 1,
@@ -142,10 +142,34 @@
       "scheduler_submission_ordinal": 2,
       "scientific_return_due_beijing": "2026-09-01T12:00:00+08:00",
       "selected_task": "ZOOMTOKEN-GRIDFUSE32-L6-G0-CONSTRUCTION-WITNESS-AND-RPL1-v001",
-      "status": "BUILDER_IN_PROGRESS"
+      "candidate_commit": "b5993faaaa59be318557ca314697e38c4b39b6a1",
+      "construction_witness": {
+        "elapsed": "00:01:52",
+        "ended_at_beijing": "2026-08-31T05:03:30+08:00",
+        "exit_code": "2:0",
+        "job_id": "1262099",
+        "job_name": "zt-gf32-l6-cw-rpl1",
+        "node": "g0063",
+        "reason": "ragged Adapter temporal axis differs from pretrained Adapter",
+        "state": "FAILED",
+        "status": "CONSTRUCTION_SHAPE_CONTRACT_BLOCKER"
+      },
+      "status": "TERMINAL_BLOCKER_PENDING_FRESH_PRO"
+    },
+    "construction_witness_fresh_pro_request": {
+      "actual_submission_count": 0,
+      "attachment_count": 8,
+      "browser_inline_files": false,
+      "follow_up_count": 0,
+      "nonce": "ZOOMTOKEN-GRIDFUSE32-L6-G0-CW-BLOCKER-PRO-v001-20260831T050330+0800",
+      "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
+      "request_id": "PRO_GRIDFUSE32_L6_G0_CONSTRUCTION_WITNESS_BLOCKER_ADJUDICATION-v001",
+      "request_path": ".cvpr-pro-lab/reviews/PRO_GRIDFUSE32_L6_G0_CONSTRUCTION_WITNESS_BLOCKER_ADJUDICATION_REQUEST-v001.md",
+      "status": "MATERIALS_READY_NOT_SUBMITTED",
+      "transport": "attachment-only"
     },
     "scientific_return_due_beijing": "2026-09-03T12:00:00+08:00",
-    "status": "G0_REPLACEMENT_BUILDER",
+    "status": "G0_CONSTRUCTION_WITNESS_BLOCKER_PENDING_FRESH_PRO",
     "task_id": "ZOOMTOKEN-GRIDFUSE32-L6-GATED-v001"
   },
   "k100_tar50_interaction_falsifier": {

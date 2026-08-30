@@ -4891,3 +4891,11 @@ append_only: true
   `ZOOMTOKEN-GRIDFUSE32-L6-G0-CONSTRUCTION-WITNESS-AND-RPL1-v001` 只允许在 production construction
   witness、fresh Critic 与 result-blind Evaluator 通过后提交一个 scheduler-2/scientific-1 replacement。
   无第三次提交；G1/G2 仍关闭。
+
+- 2026-08-31：唯一 construction-witness candidate
+  `b5993faaaa59be318557ca314697e38c4b39b6a1` 已 clean push，且后续 Pro 请求固定携带 repository、branch 与
+  exact commit GitHub 链接。候选只修改获准的 profiler/launcher/test，N16R4 GridFuse/R1/strict-rectangle
+  suites 为 `12/12/8 passed`。Slurm witness job `1262099` 在 `g0063` 以 `FAILED 2:0` 终态：canonical
+  registry、真实 detector construction 和 checkpoint strict load 已通过，但第一段 dense real-shape dry ledger
+  在 Adapter 中触发 `ragged Adapter temporal axis differs from pretrained Adapter`。未进入 timing、memory、
+  prediction、metric、gate 或训练，因此没有科学结果；不再 repair/review/submit replacement，立即 fresh Pro。
