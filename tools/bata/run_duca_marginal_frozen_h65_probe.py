@@ -20,6 +20,9 @@ BUDGETS = (256, 384, 512)
 BASELINE_BUDGET = 384
 DETECTOR_LENGTH = 384
 PACKET_SIZE = 16
+SEALED_PRODUCER_REVISION = "f87555f7da362fe1a20d4ca08f7a68c975ed8280"
+CAP_RELEASE_BASE_REVISION = "f67d96fdf68a295eaa7f678f3dfc125530828889"
+TIOU_THRESHOLDS = (0.3, 0.4, 0.5, 0.6, 0.7)
 
 
 def _sha256(path: Path) -> str:
@@ -149,6 +152,7 @@ def _stage_paths(output_dir: Path) -> dict[str, Path]:
         "k256_receipt": output_dir / "counterfactual_k256_receipt.json",
         "k512_receipt": output_dir / "counterfactual_k512_receipt.json",
         "result": output_dir / "probe_result.json",
+        "cap_release_result": output_dir / "oracle_cap_release_result.json",
         "pre_run": output_dir / "pre_run_receipt.json",
         "split_dir": output_dir / "controller_split",
     }
@@ -1162,6 +1166,7 @@ def _allocate_rows_by_video(
     *,
     downgrade: Sequence[float],
     upgrade: Sequence[float],
+    max_changed_fraction: float = 0.5,
 ):
     import torch
     from opentad.models.duca import allocate_equal_budget_marginal_reallocation
@@ -1180,7 +1185,7 @@ def _allocate_rows_by_video(
                 [int(rows[index]["valid_observations"]) for index in indices],
                 dtype=torch.long,
             ),
-            max_changed_fraction=0.5,
+            max_changed_fraction=float(max_changed_fraction),
         )
         if not decision.feasible:
             raise RuntimeError(f"{video_id}: exact equal-budget allocation failed: {decision.reason}")
@@ -1201,6 +1206,14 @@ def _allocate_rows_by_video(
             "predicted_total_utility": float(decision.predicted_total_utility.item()),
         }
     return budgets, allocation_summaries
+
+
+def _write_cap_release_result(output_dir: Path, value: Mapping[str, Any]) -> None:
+    paths = _stage_paths(output_dir)
+    original_sha = _sha256(paths["result"])
+    _write_json(paths["cap_release_result"], value)
+    if _sha256(paths["result"]) != original_sha:
+        raise RuntimeError("cap-release diagnostic modified the original probe result")
 
 
 def _raw_results_for_budgets(
@@ -1565,6 +1578,582 @@ def run_summary_stage(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     _write_json(paths["result"], result)
+    return result
+
+
+def _merge_sealed_stage_rows(paths: Mapping[str, Path]):
+    selection_rows = _read_jsonl_gz(paths["selection"])
+    k256_rows = {row["sample_id"]: row for row in _read_jsonl_gz(paths["k256"])}
+    k512_rows = {row["sample_id"]: row for row in _read_jsonl_gz(paths["k512"])}
+    sample_ids = {row["sample_id"] for row in selection_rows}
+    if set(k256_rows) != sample_ids or set(k512_rows) != sample_ids:
+        raise ValueError("sealed counterfactual sample sets differ from selection stage")
+    merged = []
+    for selected in selection_rows:
+        sample_id = str(selected["sample_id"])
+        loss256 = float(k256_rows[sample_id]["loss"])
+        loss384 = float(selected["loss_k384"])
+        loss512 = float(k512_rows[sample_id]["loss"])
+        row = dict(selected)
+        row.update(
+            {
+                "loss_k256": loss256,
+                "loss_k512": loss512,
+                "downgrade_penalty": loss256 - loss384,
+                "upgrade_gain": loss384 - loss512,
+                "predictions": {
+                    "256": k256_rows[sample_id]["prediction"],
+                    "384": selected["prediction_k384"],
+                    "512": k512_rows[sample_id]["prediction"],
+                },
+            }
+        )
+        merged.append(row)
+    return selection_rows, merged
+
+
+def _verify_cap_release_inputs(
+    *,
+    repo_root: Path,
+    paths: Mapping[str, Path],
+    current_source: Mapping[str, Any],
+    original_result: Mapping[str, Any],
+) -> dict[str, Any]:
+    current_git = _git_identity(repo_root)
+    if current_git["dirty"]:
+        raise RuntimeError("cap-release diagnostic requires one clean Git commit")
+    revision_line = subprocess.check_output(
+        ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
+        cwd=repo_root,
+        text=True,
+    ).strip().split()
+    if len(revision_line) != 2 or revision_line[1] != CAP_RELEASE_BASE_REVISION:
+        raise RuntimeError("cap-release diagnostic must be one commit above the frozen base")
+    original_source = original_result.get("source", {})
+    if original_source.get("git", {}).get("head") != CAP_RELEASE_BASE_REVISION:
+        raise RuntimeError("original probe result is not bound to the frozen summary revision")
+    identity_keys = (
+        "config_sha256",
+        "checkpoint_sha256",
+        "checkpoint_epoch",
+        "checkpoint_state_key",
+        "annotation_sha256",
+        "class_map_sha256",
+        "videomae_pretrain_sha256",
+    )
+    mismatched = [
+        key for key in identity_keys if current_source.get(key) != original_source.get(key)
+    ]
+    if mismatched:
+        raise RuntimeError(
+            "cap-release inputs differ from the frozen summary: " + ", ".join(mismatched)
+        )
+
+    pre_run = json.loads(paths["pre_run"].read_text(encoding="utf-8"))
+    if (
+        pre_run.get("status") != "PRE_RUN_PASS"
+        or pre_run.get("source", {}).get("git", {}).get("head")
+        != CAP_RELEASE_BASE_REVISION
+    ):
+        raise RuntimeError("cap-release diagnostic requires the sealed f67d96fd PRE_RUN_PASS")
+
+    artifact_spec = {
+        "selection": "selection_receipt",
+        "k256": "k256_receipt",
+        "k512": "k512_receipt",
+    }
+    verified = {}
+    for artifact_key, receipt_key in artifact_spec.items():
+        artifact = paths[artifact_key]
+        receipt_path = paths[receipt_key]
+        if not artifact.is_file() or not receipt_path.is_file():
+            raise FileNotFoundError(
+                f"sealed {artifact_key} artifact or receipt is missing"
+            )
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        actual_sha = _sha256(artifact)
+        result_sha = original_result["stage_artifacts"][artifact_key]["sha256"]
+        if actual_sha != receipt.get("artifact_sha256") or actual_sha != result_sha:
+            raise RuntimeError(f"sealed {artifact_key} SHA256 does not match its receipt")
+        if receipt.get("source", {}).get("git", {}).get("head") != SEALED_PRODUCER_REVISION:
+            raise RuntimeError(f"sealed {artifact_key} receipt has the wrong producer revision")
+        verified[artifact_key] = {
+            "path": str(artifact),
+            "sha256": actual_sha,
+            "producer_revision": SEALED_PRODUCER_REVISION,
+        }
+    return {
+        "current_git": current_git,
+        "base_revision": CAP_RELEASE_BASE_REVISION,
+        "sealed_pre_run": str(paths["pre_run"]),
+        "stage_artifacts": verified,
+    }
+
+
+def _metric_reproduction_error_pp(
+    observed: Mapping[str, float], expected: Mapping[str, float]
+) -> dict[str, float]:
+    keys = ("average_mAP", "mAP@0.3", "mAP@0.4", "mAP@0.5", "mAP@0.6", "mAP@0.7")
+    return {key: 100.0 * abs(float(observed[key]) - float(expected[key])) for key in keys}
+
+
+def _allocation_counts(budgets: Sequence[int]) -> dict[str, int]:
+    return {str(budget): sum(int(value) == budget for value in budgets) for budget in BUDGETS}
+
+
+def _allocation_diagnostics(
+    budgets: Sequence[int], allocations: Mapping[str, Mapping[str, Any]]
+) -> dict[str, Any]:
+    changed_windows = sum(int(value) != BASELINE_BUDGET for value in budgets)
+    changed_videos = 0
+    cap_hit_videos = 0
+    actual_cost = 0
+    target_cost = 0
+    for summary in allocations.values():
+        video_changed = sum(
+            int(value) != BASELINE_BUDGET for value in summary["budgets"]
+        )
+        changed_videos += int(video_changed > 0)
+        cap_hit_videos += int(
+            video_changed > 0
+            and video_changed == int(0.5 * int(summary["window_count"]))
+        )
+        actual_cost += sum(int(value) for value in summary["actual_cost"])
+        target_cost += int(summary["target_actual_cost"])
+    return {
+        "budget_counts": _allocation_counts(budgets),
+        "changed_window_count": changed_windows,
+        "changed_video_count": changed_videos,
+        "capped_allocation_limit_hit_video_count": cap_hit_videos,
+        "actual_observation_cost": actual_cost,
+        "target_observation_cost": target_cost,
+        "actual_budget_error": actual_cost - target_cost,
+    }
+
+
+def _bootstrap_segment_iou(
+    segment: tuple[float, float], candidates: Sequence[tuple[float, float]]
+) -> np.ndarray:
+    if not candidates:
+        return np.empty((0,), dtype=np.float64)
+    values = np.asarray(candidates, dtype=np.float64)
+    intersection = np.maximum(
+        0.0,
+        np.minimum(float(segment[1]), values[:, 1])
+        - np.maximum(float(segment[0]), values[:, 0]),
+    )
+    union = (
+        float(segment[1])
+        - float(segment[0])
+        + values[:, 1]
+        - values[:, 0]
+        - intersection
+    )
+    return intersection / np.maximum(union, np.finfo(np.float64).eps)
+
+
+def _bootstrap_interpolated_ap(precision: np.ndarray, recall: np.ndarray) -> float:
+    precision = np.hstack(([0.0], precision, [0.0]))
+    recall = np.hstack(([0.0], recall, [1.0]))
+    for index in range(len(precision) - 2, -1, -1):
+        precision[index] = max(precision[index], precision[index + 1])
+    changed = np.where(recall[1:] != recall[:-1])[0] + 1
+    return float(
+        np.sum((recall[changed] - recall[changed - 1]) * precision[changed])
+    )
+
+
+def _bootstrap_class_ap(
+    *,
+    gt_by_video: Mapping[str, Sequence[tuple[float, float]]],
+    predictions_by_video: Mapping[str, Sequence[tuple[float, float, float]]],
+    video_sample: Sequence[str],
+) -> np.ndarray | None:
+    gt_by_cluster: dict[int, list[tuple[float, float]]] = {}
+    predictions: list[tuple[float, int, tuple[float, float]]] = []
+    for cluster_id, video_id in enumerate(video_sample):
+        gt_by_cluster[cluster_id] = list(gt_by_video.get(str(video_id), ()))
+        for score, start, end in predictions_by_video.get(str(video_id), ()):
+            predictions.append((float(score), cluster_id, (float(start), float(end))))
+    positive_count = sum(len(values) for values in gt_by_cluster.values())
+    if positive_count == 0:
+        return None
+    predictions.sort(key=lambda row: -row[0])
+    thresholds = np.asarray(TIOU_THRESHOLDS, dtype=np.float64)
+    true_positive = np.zeros((len(thresholds), len(predictions)), dtype=np.float64)
+    false_positive = np.zeros_like(true_positive)
+    locks = {
+        cluster_id: np.zeros((len(thresholds), len(values)), dtype=np.bool_)
+        for cluster_id, values in gt_by_cluster.items()
+    }
+    for prediction_index, (_score, cluster_id, segment) in enumerate(predictions):
+        gt_segments = gt_by_cluster[cluster_id]
+        if not gt_segments:
+            false_positive[:, prediction_index] = 1.0
+            continue
+        overlaps = _bootstrap_segment_iou(segment, gt_segments)
+        order = np.argsort(overlaps)[::-1]
+        for threshold_index, threshold in enumerate(thresholds):
+            matched = False
+            for gt_index in order:
+                if overlaps[gt_index] < threshold:
+                    break
+                if not locks[cluster_id][threshold_index, gt_index]:
+                    locks[cluster_id][threshold_index, gt_index] = True
+                    true_positive[threshold_index, prediction_index] = 1.0
+                    matched = True
+                    break
+            if not matched:
+                false_positive[threshold_index, prediction_index] = 1.0
+    values = np.zeros(len(thresholds), dtype=np.float64)
+    for threshold_index in range(len(thresholds)):
+        true_cumulative = np.cumsum(true_positive[threshold_index])
+        false_cumulative = np.cumsum(false_positive[threshold_index])
+        recall = true_cumulative / float(positive_count)
+        precision = true_cumulative / np.maximum(
+            true_cumulative + false_cumulative,
+            np.finfo(np.float64).eps,
+        )
+        values[threshold_index] = _bootstrap_interpolated_ap(precision, recall)
+    return values
+
+
+def _bootstrap_corpus(
+    *,
+    annotation: Path,
+    predictions: Mapping[str, Sequence[Mapping[str, Any]]],
+    video_ids: Sequence[str],
+):
+    payload = json.loads(annotation.read_text(encoding="utf-8"))
+    database = payload.get("database")
+    if not isinstance(database, Mapping):
+        raise ValueError("THUMOS14 annotation has no database mapping")
+    selected = tuple(sorted(set(map(str, video_ids))))
+    selected_set = set(selected)
+    ground_truth: dict[str, dict[str, list[tuple[float, float]]]] = {}
+    for video_id in selected:
+        video = database.get(video_id)
+        if not isinstance(video, Mapping) or str(video.get("subset")) != "training":
+            raise ValueError(f"holdout video {video_id!r} is not in the training subset")
+        seen = set()
+        for row in video.get("annotations", []):
+            label = str(row.get("label", ""))
+            segment = row.get("segment", ())
+            if label == "Ambiguous" or len(segment) != 2:
+                continue
+            start, end = float(segment[0]), float(segment[1])
+            identity = (label, start, end)
+            if end <= start or identity in seen:
+                continue
+            seen.add(identity)
+            ground_truth.setdefault(label, {}).setdefault(video_id, []).append(
+                (start, end)
+            )
+    prediction_by_class: dict[
+        str, dict[str, list[tuple[float, float, float]]]
+    ] = {}
+    unexpected_videos = set(map(str, predictions)) - selected_set
+    if unexpected_videos:
+        raise ValueError("bootstrap predictions contain videos outside the holdout")
+    for video_id, rows in predictions.items():
+        for row in rows:
+            label = str(row["label"])
+            if label not in ground_truth:
+                raise ValueError(f"bootstrap prediction label {label!r} has no ground truth")
+            start, end = (float(value) for value in row["segment"])
+            prediction_by_class.setdefault(label, {}).setdefault(
+                str(video_id), []
+            ).append((float(row["score"]), start, end))
+    return ground_truth, prediction_by_class, selected
+
+
+def _bootstrap_map_vector(
+    ground_truth: Mapping[str, Mapping[str, Sequence[tuple[float, float]]]],
+    predictions: Mapping[str, Mapping[str, Sequence[tuple[float, float, float]]]],
+    *,
+    video_sample: Sequence[str],
+) -> np.ndarray:
+    rows = []
+    for label in sorted(ground_truth):
+        values = _bootstrap_class_ap(
+            gt_by_video=ground_truth[label],
+            predictions_by_video=predictions.get(label, {}),
+            video_sample=video_sample,
+        )
+        if values is None:
+            raise ValueError(f"bootstrap sample has no support for class {label!r}")
+        rows.append(values)
+    return np.mean(np.stack(rows, axis=0), axis=0) * 100.0
+
+
+def _paired_whole_video_bootstrap(
+    *,
+    annotation: Path,
+    fixed_predictions: Mapping[str, Sequence[Mapping[str, Any]]],
+    candidate_predictions: Mapping[str, Sequence[Mapping[str, Any]]],
+    video_ids: Sequence[str],
+    fixed_metrics: Mapping[str, float],
+    candidate_metrics: Mapping[str, float],
+    replicates: int = 10_000,
+    seed: int = 3407,
+) -> dict[str, Any]:
+    fixed_gt, fixed_rows, selected = _bootstrap_corpus(
+        annotation=annotation,
+        predictions=fixed_predictions,
+        video_ids=video_ids,
+    )
+    candidate_gt, candidate_rows, candidate_selected = _bootstrap_corpus(
+        annotation=annotation,
+        predictions=candidate_predictions,
+        video_ids=video_ids,
+    )
+    if fixed_gt != candidate_gt or selected != candidate_selected:
+        raise RuntimeError("paired bootstrap arms do not share one ground-truth population")
+    fixed_point = _bootstrap_map_vector(fixed_gt, fixed_rows, video_sample=selected)
+    candidate_point = _bootstrap_map_vector(
+        candidate_gt,
+        candidate_rows,
+        video_sample=selected,
+    )
+    for vector, metrics, name in (
+        (fixed_point, fixed_metrics, "fixed"),
+        (candidate_point, candidate_metrics, "candidate"),
+    ):
+        expected = np.asarray(
+            [100.0 * float(metrics[f"mAP@{threshold:.1f}"]) for threshold in TIOU_THRESHOLDS]
+        )
+        if not np.allclose(vector, expected, rtol=0.0, atol=1.0e-6):
+            raise RuntimeError(f"{name} bootstrap metric implementation lacks point parity")
+
+    rng = np.random.default_rng(int(seed))
+    ids = np.asarray(selected, dtype=object)
+    deltas_avg = np.empty(int(replicates), dtype=np.float64)
+    deltas_07 = np.empty(int(replicates), dtype=np.float64)
+    completed = 0
+    attempts = 0
+    max_attempts = max(1000, int(replicates) * 100)
+    while completed < int(replicates) and attempts < max_attempts:
+        attempts += 1
+        sample = tuple(map(str, rng.choice(ids, size=len(ids), replace=True).tolist()))
+        selected_set = set(sample)
+        if not all(
+            any(video_id in selected_set and segments for video_id, segments in by_video.items())
+            for by_video in fixed_gt.values()
+        ):
+            continue
+        fixed_vector = _bootstrap_map_vector(fixed_gt, fixed_rows, video_sample=sample)
+        candidate_vector = _bootstrap_map_vector(
+            candidate_gt,
+            candidate_rows,
+            video_sample=sample,
+        )
+        delta = candidate_vector - fixed_vector
+        deltas_avg[completed] = float(np.mean(delta))
+        deltas_07[completed] = float(delta[-1])
+        completed += 1
+    if completed != int(replicates):
+        raise RuntimeError("unable to draw class-supported whole-video bootstrap samples")
+
+    def interval(values: np.ndarray) -> dict[str, float]:
+        lower, upper = np.percentile(values, (2.5, 97.5))
+        return {
+            "lower_pp": float(lower),
+            "upper_pp": float(upper),
+            "positive_fraction": float(np.mean(values > 0.0)),
+        }
+
+    return {
+        "unit": "whole_video",
+        "paired": True,
+        "replicates": int(replicates),
+        "seed": int(seed),
+        "average_mAP_delta": interval(deltas_avg),
+        "mAP_at_0.7_delta": interval(deltas_07),
+    }
+
+
+def run_oracle_cap_release_stage(args: argparse.Namespace) -> dict[str, Any]:
+    (
+        repo_root,
+        config_path,
+        cfg,
+        checkpoint,
+        checkpoint_sha,
+        annotation,
+        class_map_path,
+        train_data,
+        pretrain,
+    ) = _load_config_and_paths(args)
+    output_dir = Path(args.output_dir).expanduser().resolve()
+    paths = _stage_paths(output_dir)
+    if paths["cap_release_result"].exists():
+        return json.loads(paths["cap_release_result"].read_text(encoding="utf-8"))
+    if not paths["result"].is_file():
+        raise FileNotFoundError("cap-release diagnostic requires the sealed probe_result.json")
+    original_result_sha = _sha256(paths["result"])
+    original_result = json.loads(paths["result"].read_text(encoding="utf-8"))
+    if original_result.get("status") != "ORACLE_HEADROOM_GRAY_ZONE_RETURN_TO_PRO":
+        raise RuntimeError("cap-release diagnostic requires the admitted gray-zone result")
+    current_source = _stage_source(
+        repo_root=repo_root,
+        config_path=config_path,
+        checkpoint=checkpoint,
+        checkpoint_sha256=checkpoint_sha,
+        annotation=annotation,
+        class_map=class_map_path,
+        train_data=train_data,
+        pretrain=pretrain,
+    )
+    provenance = _verify_cap_release_inputs(
+        repo_root=repo_root,
+        paths=paths,
+        current_source=current_source,
+        original_result=original_result,
+    )
+    _selection_rows, merged = _merge_sealed_stage_rows(paths)
+    split = _create_or_validate_split(annotation, paths["split_dir"])
+    holdout_videos = set(str(value) for value in split["holdout_videos"])
+    holdout_rows = [row for row in merged if row["video_id"] in holdout_videos]
+    if {row["video_id"] for row in holdout_rows} != holdout_videos:
+        raise RuntimeError("sealed artifacts do not cover all frozen holdout videos")
+
+    fixed_budgets = [BASELINE_BUDGET] * len(holdout_rows)
+    fixed_metrics, fixed_predictions = _official_holdout_metrics(
+        cfg,
+        raw_results=_raw_results_for_budgets(holdout_rows, fixed_budgets),
+        annotation=annotation,
+        holdout_block_list=split["holdout_block_list"],
+        evaluator_threads=args.evaluator_threads,
+    )
+    actual_downgrade = [float(row["downgrade_penalty"]) for row in holdout_rows]
+    actual_upgrade = [float(row["upgrade_gain"]) for row in holdout_rows]
+    capped_budgets, capped_allocations = _allocate_rows_by_video(
+        holdout_rows,
+        downgrade=actual_downgrade,
+        upgrade=actual_upgrade,
+    )
+    capped_metrics, _capped_predictions = _official_holdout_metrics(
+        cfg,
+        raw_results=_raw_results_for_budgets(holdout_rows, capped_budgets),
+        annotation=annotation,
+        holdout_block_list=split["holdout_block_list"],
+        evaluator_threads=args.evaluator_threads,
+    )
+    reproduction_errors = {
+        "fixed_h65_384": _metric_reproduction_error_pp(
+            fixed_metrics, original_result["fixed_h65_384"]
+        ),
+        "capped_oracle": _metric_reproduction_error_pp(
+            capped_metrics, original_result["oracle_reallocate_384"]
+        ),
+    }
+    if max(
+        value for errors in reproduction_errors.values() for value in errors.values()
+    ) > 1.0e-6:
+        raise RuntimeError("original capped result did not reproduce within 1e-6 pp")
+    if _allocation_counts(capped_budgets) != {"256": 11, "384": 102, "512": 11}:
+        raise RuntimeError("original capped allocation counts did not reproduce")
+    for video_id, expected in original_result["oracle_allocation"].items():
+        observed = capped_allocations.get(video_id)
+        if observed is None or any(
+            observed[key] != expected[key]
+            for key in ("budgets", "requested_budgets", "actual_cost", "actual_budget_error")
+        ):
+            raise RuntimeError(f"capped allocation did not reproduce for {video_id}")
+
+    release_budgets, release_allocations = _allocate_rows_by_video(
+        holdout_rows,
+        downgrade=actual_downgrade,
+        upgrade=actual_upgrade,
+        max_changed_fraction=1.0,
+    )
+    release_metrics, release_predictions = _official_holdout_metrics(
+        cfg,
+        raw_results=_raw_results_for_budgets(holdout_rows, release_budgets),
+        annotation=annotation,
+        holdout_block_list=split["holdout_block_list"],
+        evaluator_threads=args.evaluator_threads,
+    )
+    delta_avg_pp = 100.0 * (
+        release_metrics["average_mAP"] - fixed_metrics["average_mAP"]
+    )
+    delta_07_pp = 100.0 * (
+        release_metrics["mAP@0.7"] - fixed_metrics["mAP@0.7"]
+    )
+    strong_gate_pass = delta_avg_pp >= 0.8 and delta_07_pp >= 1.0
+    bootstrap = None
+    interval_pass = False
+    if strong_gate_pass:
+        bootstrap = _paired_whole_video_bootstrap(
+            annotation=annotation,
+            fixed_predictions=fixed_predictions,
+            candidate_predictions=release_predictions,
+            video_ids=sorted(holdout_videos),
+            fixed_metrics=fixed_metrics,
+            candidate_metrics=release_metrics,
+            replicates=10_000,
+            seed=3407,
+        )
+        interval_pass = bool(
+            bootstrap["average_mAP_delta"]["lower_pp"] > 0.0
+            and bootstrap["mAP_at_0.7_delta"]["lower_pp"] > 0.0
+        )
+    status = (
+        "CAP_RELEASE_POINT_GATE_FAILED_STOP_CURRENT_MECHANISM"
+        if not strong_gate_pass
+        else "CAP_RELEASE_INTERVAL_FAILED_STOP_CURRENT_MECHANISM"
+        if not interval_pass
+        else "CAP_RELEASE_POINT_AND_INTERVAL_PASS_RETURN_TO_PRO"
+    )
+    capped_diagnostics = _allocation_diagnostics(capped_budgets, capped_allocations)
+    release_diagnostics = _allocation_diagnostics(release_budgets, release_allocations)
+    result = {
+        "schema": "duca_marginal_oracle_cap_release_result_v1",
+        "method": "DUCA-Marginal-v1",
+        "status": status,
+        "paper_claim_allowed": False,
+        "official_test_consumed": False,
+        "detector_forward_executed": False,
+        "utility_head_training_performed": False,
+        "holdout_video_count": len(holdout_videos),
+        "holdout_window_count": len(holdout_rows),
+        "intervention": {
+            "only_changed_variable": "max_changed_fraction",
+            "capped_value": 0.5,
+            "released_value": 1.0,
+        },
+        "original_result": {
+            "path": str(paths["result"]),
+            "sha256": original_result_sha,
+            "reproduction_error_pp": reproduction_errors,
+        },
+        "fixed_h65_384": fixed_metrics,
+        "capped_oracle_384": capped_metrics,
+        "cap_release_oracle_384": release_metrics,
+        "cap_release_headroom": {
+            "delta_average_mAP_pp": delta_avg_pp,
+            "delta_mAP_at_0.7_pp": delta_07_pp,
+            "delta_over_capped_average_mAP_pp": 100.0
+            * (release_metrics["average_mAP"] - capped_metrics["average_mAP"]),
+            "delta_over_capped_mAP_at_0.7_pp": 100.0
+            * (release_metrics["mAP@0.7"] - capped_metrics["mAP@0.7"]),
+            "strong_gate_pass": strong_gate_pass,
+            "paired_interval_required": strong_gate_pass,
+            "paired_interval_pass": interval_pass if strong_gate_pass else None,
+        },
+        "capped_allocation_summary": capped_diagnostics,
+        "cap_release_allocation_summary": release_diagnostics,
+        "capped_allocation": capped_allocations,
+        "cap_release_allocation": release_allocations,
+        "paired_whole_video_bootstrap": bootstrap,
+        "provenance": provenance,
+        "source": current_source,
+    }
+    _write_json(
+        output_dir / "holdout_oracle_cap_release_384_predictions.json",
+        {"results": release_predictions},
+    )
+    _write_cap_release_result(output_dir, result)
     return result
 
 
@@ -1988,6 +2577,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "counterfactual-k256",
             "counterfactual-k512",
             "summarize",
+            "oracle-cap-release",
             "all",
         ),
     )
@@ -2039,6 +2629,10 @@ def main() -> int:
         )
         if args.stage == "pre-run":
             selected = [("pre-run", lambda: run_pre_run_stage(args))]
+        elif args.stage == "oracle-cap-release":
+            selected = [
+                ("oracle-cap-release", lambda: run_oracle_cap_release_stage(args))
+            ]
         else:
             _require_pre_run_pass(args)
             selected = (

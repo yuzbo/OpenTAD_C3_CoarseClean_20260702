@@ -29,7 +29,11 @@ from opentad.models.duca import (  # noqa: E402
     validate_real_heavy_observation_tensor,
 )
 from tools.bata.run_duca_marginal_frozen_h65_probe import (  # noqa: E402
+    _allocate_rows_by_video,
+    _build_parser,
     _json_block_list_for_evaluator,
+    _stage_paths,
+    _write_cap_release_result,
 )
 
 
@@ -255,3 +259,80 @@ def test_text_block_list_is_serialized_for_the_map_evaluator(tmp_path) -> None:
         "video_train_1",
     ]
     assert _json_block_list_for_evaluator(source) == target
+
+
+def test_cap_release_allows_two_positive_transfers_without_changing_cost() -> None:
+    rows = [
+        {
+            "video_id": "video_a",
+            "sample_id": f"video_a|{index}",
+            "valid_observations": 512,
+        }
+        for index in range(4)
+    ]
+    downgrade = [0.1, 0.2, 9.0, 9.0]
+    upgrade = [0.0, 0.0, 2.0, 1.5]
+
+    default_budgets, default_summary = _allocate_rows_by_video(
+        rows,
+        downgrade=downgrade,
+        upgrade=upgrade,
+    )
+    explicit_capped, _ = _allocate_rows_by_video(
+        rows,
+        downgrade=downgrade,
+        upgrade=upgrade,
+        max_changed_fraction=0.5,
+    )
+    released_budgets, released_summary = _allocate_rows_by_video(
+        rows,
+        downgrade=downgrade,
+        upgrade=upgrade,
+        max_changed_fraction=1.0,
+    )
+
+    assert default_budgets == explicit_capped == [256, 384, 512, 384]
+    assert released_budgets == [256, 256, 512, 512]
+    assert sum(default_summary["video_a"]["actual_cost"]) == 4 * 384
+    assert sum(released_summary["video_a"]["actual_cost"]) == 4 * 384
+    assert default_summary["video_a"]["actual_budget_error"] == 0
+    assert released_summary["video_a"]["actual_budget_error"] == 0
+
+
+def test_cap_release_preserves_the_frozen_allocator_tie_break() -> None:
+    rows = [
+        {
+            "video_id": "video_a",
+            "sample_id": f"video_a|{index}",
+            "valid_observations": 512,
+        }
+        for index in range(4)
+    ]
+
+    budgets, _summary = _allocate_rows_by_video(
+        rows,
+        downgrade=[0.1] * 4,
+        upgrade=[1.0] * 4,
+        max_changed_fraction=0.5,
+    )
+
+    assert budgets == [384, 384, 256, 512]
+
+
+def test_cap_release_result_has_an_independent_stage_and_never_overwrites_probe(
+    tmp_path,
+) -> None:
+    original = '{"status":"ORACLE_HEADROOM_GRAY_ZONE_RETURN_TO_PRO"}\n'
+    paths = _stage_paths(tmp_path)
+    paths["result"].write_text(original, encoding="utf-8")
+
+    _write_cap_release_result(tmp_path, {"status": "CAP_RELEASE_TEST"})
+
+    assert paths["result"].read_text(encoding="utf-8") == original
+    assert json.loads(paths["cap_release_result"].read_text(encoding="utf-8")) == {
+        "status": "CAP_RELEASE_TEST"
+    }
+    args = _build_parser().parse_args(
+        ["--stage", "oracle-cap-release", "--output-dir", str(tmp_path)]
+    )
+    assert args.stage == "oracle-cap-release"
