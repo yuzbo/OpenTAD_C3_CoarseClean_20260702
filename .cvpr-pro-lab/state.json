@@ -453,6 +453,21 @@
     "scientific_metrics_present": false,
     "specification_implementation_conflict": "Frozen prose says full-800 K/V and per-tubelet K50; inherited strict A-MoD runs odd-block attention on global flattened selected top-400, so K/V are selected-400.",
     "fresh_pro_required": true,
+    "fresh_pro_request": {
+      "request_id": "PRO_CPTC_K100_TAR50_TERMINAL_PROTOCOL_BLOCKER_ADJUDICATION-v001",
+      "nonce": "ZOOMTOKEN-CPTC-K100-TAR50-TERMINAL-PRO-v001-20260830T134700+0800",
+      "status": "WAITING_SHARED_PROFILE_IDLE",
+      "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
+      "profile_id": "61",
+      "transport": "attachment-only",
+      "browser_inline_files": false,
+      "attachment_count": 8,
+      "actual_submission_count": 0,
+      "follow_up_count": 0,
+      "slot_guard_job": "j-6lcwat",
+      "run_root": ".cvpr-pro-lab/reviews/runs/zoomtoken-cptc-k100-tar50-terminal-pro-20260830t134700",
+      "blocker": "Another ChatGPT generation is active on shared profile 61; wait for natural terminal state without stop/refresh/restart."
+    },
     "builder_candidate_due_beijing": "2026-08-30T09:30:00+08:00",
     "critic_due_beijing": "2026-08-30T11:00:00+08:00",
     "evaluator_due_beijing": "2026-08-30T12:30:00+08:00",
@@ -523,5 +538,5 @@
   "schema_version": "1.0",
   "stage": "G6_FULL_EVAL",
   "status": "K100_TAR50_FORMAL_TERMINAL_ENGINEERING_PROTOCOL_BLOCKER_PENDING_FRESH_PRO",
-  "updated_at": "2026-08-30T05:07:17Z"
+  "updated_at": "2026-08-30T05:53:00Z"
 }
