@@ -30,19 +30,23 @@
     "submitted_at": "2026-08-28T00:27:41Z",
     "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V002_TERMINAL_PARITY_FAILURE_REVIEW_TERMINAL_RECEIPT-ATTEMPT4-v001.json"
   },
-  "epoch": 30,
-  "execution_state": "GRIDFUSE32_L6_BUILDER_MCL",
+  "epoch": 31,
+  "execution_state": "GRIDFUSE32_L6_PRE_RUN_READY_PENDING_SLURM_PRECHECK",
   "gridfuse32_l6_gated": {
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",
     "branch": "codex/zoomtoken-gridfuse32-l6-v001",
     "builder_candidate_due_beijing": "2026-08-31T20:00:00+08:00",
     "builder_mcl_due_beijing": "2026-08-31T07:30:00+08:00",
-    "candidate_commit": null,
+    "candidate_commit": "3f1e7961720ceb7c7fa4a6276b6767a42adff94c",
+    "candidate_pushed": true,
     "conditional_fullstack_due_beijing": "within_2h_of_G1_terminal_not_later_than_2026-09-02T08:00:00+08:00",
     "conditional_training_due_beijing": "2026-09-01T06:00:00+08:00",
     "critic_due_beijing": "2026-08-31T23:00:00+08:00",
     "evaluator_due_beijing": "2026-09-01T01:00:00+08:00",
     "formal_action_due_beijing": "2026-09-01T02:00:00+08:00",
+    "github_branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-gridfuse32-l6-v001",
+    "github_commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/3f1e7961720ceb7c7fa4a6276b6767a42adff94c",
+    "github_repository_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
     "g0_gate": {
       "peak_allocated_ratio_max": 1.05,
       "peak_reserved_ratio_max": 1.05,
@@ -64,8 +68,19 @@
     },
     "mandatory_fresh_pro_due_beijing": "2026-09-03T18:00:00+08:00",
     "mechanism": "R1 K64; blocks 0-5 dense; blocks 6-11 fixed adjacent per-tubelet 64-to-32 mean fusion; full QKV/MLP on N256; residual broadcast to N512; dense Adapter",
+    "pre_run_reviews": {
+      "critic": "PASS",
+      "evaluator": "PRE_RUN_READY"
+    },
+    "remote_focused_tests": {
+      "gridfuse32_l6": "8 passed in 38.57s",
+      "r1_regression": "12 passed in 40.97s",
+      "strict_rectangle_separate_process": "8 passed in 0.65s"
+    },
+    "remote_source_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_src_3f1e7961_v3",
+    "pre_run_receipt": "docs/aris/ZOOMTOKEN_GRIDFUSE32_L6_GATED_PRE_RUN_READY-2026-08-31.md",
     "scientific_return_due_beijing": "2026-09-03T12:00:00+08:00",
-    "status": "BUILDER_MCL_IN_PROGRESS",
+    "status": "PRE_RUN_READY_PENDING_SLURM_PRECHECK",
     "task_id": "ZOOMTOKEN-GRIDFUSE32-L6-GATED-v001"
   },
   "k100_tar50_interaction_falsifier": {
@@ -545,8 +560,8 @@
     }
   },
   "schema_version": "1.0",
-  "stage": "G5_IMPL_CHECK",
-  "status": "GRIDFUSE32_L6_BUILDER_MCL",
+  "stage": "G6_PRE_RUN_GATE",
+  "status": "GRIDFUSE32_L6_PRE_RUN_READY_PENDING_SLURM_PRECHECK",
   "tar32_eval_blocker_review": {
     "actual_submission_count": 1,
     "attachment_count": 9,

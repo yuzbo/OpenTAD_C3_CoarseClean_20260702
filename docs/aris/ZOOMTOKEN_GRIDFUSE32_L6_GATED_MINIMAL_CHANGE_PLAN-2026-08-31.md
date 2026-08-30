@@ -7,7 +7,9 @@
 - Frozen execution base: `2d945e64bdccd09ae2e2916524562e3f388c5a2a`.
 - Candidate branch: `codex/zoomtoken-gridfuse32-l6-v001`.
 - GitHub branch URL: <https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-gridfuse32-l6-v001>.
-- The exact candidate commit URL is recorded only after the minimal implementation and focused tests are complete and the clean commit is pushed.
+- Exact clean/pushed candidate: `3f1e7961720ceb7c7fa4a6276b6767a42adff94c`.
+- GitHub commit URL: <https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/3f1e7961720ceb7c7fa4a6276b6767a42adff94c>.
+- GitHub repository URL: <https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702>.
 
 This plan does not authorize a second mechanism, capacity sweep, rescue, or any GridFuse training before the real-shape G0 gate passes.
 

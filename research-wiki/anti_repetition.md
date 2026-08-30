@@ -1354,3 +1354,6 @@ updated: 2026-08-29
     该差异必须保留为 provenance discrepancy，不得把 7 改写为浏览器事实，也不得为补附件重提或 follow-up。
 41. GridFuse32-L6 在 focused checks、fresh Critic、result-blind Evaluator、真实 G0 和后续条件门完成前只是
     待检验提案，不能写成已加速、已保护边界或论文主方法。
+42. GridFuse32-L6 clean/pushed candidate `3f1e7961…` 的远端 focused checks、Critic `PASS` 与 Evaluator
+    `PRE_RUN_READY` 只解除执行前工程阻塞，不等于 G0 通过。必须先运行非科学 `PRECHECK_ONLY`，再提交唯一
+    G0；不得跳过 G0、提前训练 G1、运行 G2、调整 pair/depth/门槛或并行候选。

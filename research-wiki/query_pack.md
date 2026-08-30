@@ -1406,6 +1406,14 @@ max_chars: 8000
   and allocated/reserved ratios `<=1.05`. Only a full G0 pass opens the single
   seed-42 G1 training cell; only a full G1 pass opens matched full-stack G2.
   A failed gate is terminal and returns to a fresh Pro without rescue or sweep.
+- The minimal implementation is clean and pushed at
+  `3f1e7961720ceb7c7fa4a6276b6767a42adff94c` on
+  `codex/zoomtoken-gridfuse32-l6-v001`. Exact N16R4 checks passed in separate
+  processes: GridFuse `8`, R1 regression `12`, and strict-rectangle `8` tests.
+  A fresh Critic returned `PASS`; after binding G2 to the canonical G1 terminal
+  checkpoint path, SHA256, epoch 59 and `state_dict_ema`, a fresh result-blind
+  Evaluator returned `PRE_RUN_READY`. These are implementation/protocol facts,
+  not G0 performance evidence.
 
 ## Pointers
 

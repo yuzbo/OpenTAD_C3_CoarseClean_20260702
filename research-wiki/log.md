@@ -4858,3 +4858,10 @@ append_only: true
   8 个 temporal tubelet 和 dense Adapter，blocks 6–11 用固定相邻 pair 把完整 Q/K/V/MLP 物理序列
   从 N512 缩到 N256，再将 block residual 广播回 dense carrier。G0/G1/G2 是单一门控链；前门失败
   即终态并 fresh Pro，不开启 rescue、第二候选、sweep 或额外 seed。
+
+- 2026-08-31：GridFuse32-L6 最小实现以 clean/pushed candidate
+  `3f1e7961720ceb7c7fa4a6276b6767a42adff94c` 固定。GitHub branch 与 exact commit 均经 fresh fetch/
+  ls-remote 核验。N16R4 精确 checkout 在独立进程中通过 GridFuse `8`、R1 regression `12`、
+  strict-rectangle `8` 项测试；fresh Critic 为 `PASS`。初次结果盲 Evaluator 发现 G2 未绑定 G1 checkpoint
+  lineage；最小修正加入 canonical path、SHA256、epoch59、`state_dict_ema` 四项绑定后，新的结果盲
+  Evaluator 返回 `PRE_RUN_READY`。这只说明可进入非科学 precheck，不构成 G0 加速证据。
