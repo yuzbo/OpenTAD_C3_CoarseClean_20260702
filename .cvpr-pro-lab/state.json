@@ -392,7 +392,7 @@
   },
   "k100_tar50_interaction_falsifier": {
     "task_id": "ZT-CPTC-K100-TAR50-INTERACTION-FALSIFIER-001",
-    "status": "PRE_RUN_READY_WAITING_SHARED_SUBMIT_SLOT",
+    "status": "FORMAL_SUBMITTED_PENDING",
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",
     "candidate_commit": "fac88624723aed08175a947025a7f1d8a2af3171",
     "branch": "codex/zoomtoken-k100-tar50-interaction-v001",
@@ -413,13 +413,30 @@
       "evaluator": "PRE_RUN_READY"
     },
     "precheck": {
-      "status": "WAITING_SHARED_SUBMIT_SLOT",
-      "job_id": null,
-      "last_rejection": "AssocMaxSubmitJobLimit",
-      "scientific_execution_count": 0,
-      "machine_waiter": "j-00wllb"
+      "status": "COMPLETED_PRECHECK_READY",
+      "job_id": "1261670",
+      "state": "COMPLETED",
+      "exit_code": "0:0",
+      "submitted_at_beijing": "2026-08-30T12:34:29+08:00",
+      "started_at_beijing": "2026-08-30T12:59:38+08:00",
+      "ended_at_beijing": "2026-08-30T12:59:45+08:00",
+      "node": "g0087",
+      "resources": "2 GPU / 8 CPU",
+      "scientific_execution_count": 0
     },
-    "formal_submission_count": 0,
+    "formal_job": {
+      "job_id": "1261680",
+      "job_name": "zt-k100-tar50-s42",
+      "state": "PENDING",
+      "reason": "AssocGrpGRES",
+      "submitted_at_beijing": "2026-08-30T13:00:57+08:00",
+      "started_at_beijing": null,
+      "node": null,
+      "resources": "2 GPU / 8 CPU / 16:00:00",
+      "launcher": "scripts/run_zoomtoken_k100_tar50_interaction_n16r4.sh",
+      "terminal_waiter": "j-cz81o5"
+    },
+    "formal_submission_count": 1,
     "formal_submission_limit": 1,
     "cost_authorized": false,
     "durable_receipt": "docs/aris/ZOOMTOKEN_CPTC_K100_TAR50_INTERACTION_FALSIFIER_START_RECEIPT-2026-08-30.md",
@@ -431,7 +448,7 @@
     "fresh_pro_due_beijing": "2026-08-31T13:00:00+08:00"
   },
   "epoch": 24,
-  "execution_state": "K100_TAR50_PRE_RUN_READY__WAITING_SHARED_SUBMIT_SLOT",
+  "execution_state": "K100_TAR50_FORMAL_SUBMITTED_PENDING",
   "last_pro_review_at": "2026-08-29T17:05:07.051Z",
   "new_evidence_since_pro": false,
   "next_pro_review_due_at": null,
@@ -492,6 +509,6 @@
   },
   "schema_version": "1.0",
   "stage": "G6_FULL_EVAL",
-  "status": "K100_TAR50_PRE_RUN_READY__WAITING_SHARED_SUBMIT_SLOT",
-  "updated_at": "2026-08-29T17:36:48Z"
+  "status": "K100_TAR50_FORMAL_SUBMITTED_PENDING",
+  "updated_at": "2026-08-30T05:00:57Z"
 }

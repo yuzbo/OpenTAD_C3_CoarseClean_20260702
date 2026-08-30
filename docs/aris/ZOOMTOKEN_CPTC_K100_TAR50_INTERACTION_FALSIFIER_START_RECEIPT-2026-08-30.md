@@ -38,12 +38,25 @@ The first Evaluator pass correctly identified that the inherited generic config 
 
 ## Slurm disposition
 
-The non-scientific `PRECHECK_ONLY=1` submission was rejected by Slurm before job creation with `AssocMaxSubmitJobLimit`. It therefore has no Job ID, consumed no scientific execution and did not increment the formal submission count. At detection time the shared account had 16 visible queue entries, including an unrelated 15-element running array and unrelated pending jobs. No unrelated job is modified or cancelled.
+The first non-scientific `PRECHECK_ONLY=1` submission was rejected by Slurm before job creation with `AssocMaxSubmitJobLimit`. It consumed no scientific execution and did not increment the formal submission count. No unrelated job was modified or cancelled. A single machine-side submitter then retried only this non-scientific precheck at real 60-second intervals.
 
-- Precheck state: `WAITING_SHARED_SUBMIT_SLOT`
-- Formal `sbatch` count: `0 / 1`
+The same frozen precheck was admitted as job `1261670` and reached `COMPLETED 0:0` with `PRECHECK_READY`:
+
+- Submitted: `2026-08-30 12:34:29+08:00`
+- Started/ended: `2026-08-30 12:59:38+08:00` / `12:59:45+08:00`
+- Node/resources: `g0087`, 2 GPUs, 8 CPUs
+- Scientific execution count: `0`
+
+After that successful precheck, the sole authorized formal submission was created:
+
+- Formal Job ID / name: `1261680` / `zt-k100-tar50-s42`
+- Submitted: `2026-08-30 13:00:57+08:00`
+- Requested resources: 2 GPUs, 8 CPUs, 16-hour walltime
+- Current authoritative state at receipt update: `PENDING`, reason `AssocGrpGRES`, node unassigned
+- Frozen launcher: `scripts/run_zoomtoken_k100_tar50_interaction_n16r4.sh`
+- Formal `sbatch` count: `1 / 1`
 - Result root created: `false`
 - Training/evaluation started: `false`
-- Machine-side slot waiter: FastCtx `j-00wllb`, real `sleep 300`, emits only after the visible queue count decreases
+- Terminal-only waiter: FastCtx `j-cz81o5`, real `sleep 300`, bound only to job `1261680`
 
-When a slot becomes available, the same exact candidate will run one Slurm precheck. Only `PRECHECK_READY` authorizes the sole formal seed-42, 60-epoch, two-GPU training plus epoch-59 `state_dict_ema` official validation submission. A formal failure returns to fresh Pro without retry, resume or replacement; no cost is authorized.
+The formal job is now the only authorized scientific execution. Queue state is not a scientific result. The terminal waiter emits only an authoritative terminal state; live loss, accuracy, prediction and intermediate validation are not read. The frozen job performs seed-42, 60-epoch, two-GPU training followed by epoch-59 `state_dict_ema` official validation. Any formal failure returns to fresh Pro without retry, resume or replacement; no cost is authorized.
