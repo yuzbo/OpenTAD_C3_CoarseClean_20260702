@@ -19,8 +19,11 @@ from ..duca import (
     C3CoarseProbeActionnessSource,
     DucaAcquisitionAdapter,
     DucaTemporalSamplingContract,
+    SparseTemporalGrid,
     ZeroShotActionnessSource,
     duca_losses,
+    interpolate_acquisition_time_to_detector_grid,
+    nested_h65_budget_prefixes,
 )
 from ..duca.counterfactual_utility import (
     build_finite_hard_one_swap_candidates,
@@ -2144,6 +2147,138 @@ class DucaOnlineFrameSelector(nn.Module):
             "masks": outputs["masks"],
             "metas": outputs["metas"],
             "selector_outputs": outputs["selector_outputs"],
+        }
+
+    def forward_marginal_prefixes(
+        self,
+        inputs: torch.Tensor,
+        masks: torch.Tensor,
+        metas=None,
+        *,
+        budgets=(256, 384, 512),
+        detector_length=384,
+    ) -> dict[str, Any]:
+        """Return nested H65 sets without changing the normal detector path."""
+
+        if self.acquisition_policy != "budget_calibrated_sampling_rate":
+            raise ValueError("marginal prefixes require the H65 sampling-rate policy")
+        if self.budget_mode != "fixed" or int(self.budget) != 384:
+            raise ValueError("marginal prefixes require the sealed fixed K=384 H65 selector")
+        self._reject_external_actionness_payload(metas)
+        outputs = self._forward_select(inputs, masks, metas, budget=None)
+        state = outputs["selector_outputs"]
+        sampling_priority = state.get("sampling_rates")
+        if sampling_priority is None:
+            raise RuntimeError("H65 marginal prefixes require calibrated sampling rates")
+        nested = nested_h65_budget_prefixes(
+            state["grid"].selected_positions,
+            sampling_priority,
+            state.get("valid_mask", masks),
+            budgets=tuple(int(value) for value in budgets),
+            baseline_budget=384,
+        )
+        inputs_by_budget = {}
+        masks_by_budget = {}
+        acquisition_masks_by_budget = {}
+        metas_by_budget = {}
+        detector_grid_by_budget = {}
+        grids_by_budget = {}
+        valid = state.get("valid_mask", masks).to(device=inputs.device, dtype=torch.bool)
+        for requested_budget, positions in nested.positions_by_budget.items():
+            positions = positions.to(device=inputs.device)
+            slot_mask = positions >= 0
+            dense_selected_mask = torch.zeros_like(valid, dtype=torch.long)
+            dense_selected_mask.scatter_add_(
+                1,
+                positions.clamp_min(0),
+                slot_mask.long(),
+            )
+            effective = nested.actual_count_by_budget[requested_budget].to(
+                device=inputs.device
+            )
+            grid = SparseTemporalGrid(
+                selected_positions=positions,
+                selected_mask=dense_selected_mask.bool(),
+                original_length=int(valid.shape[1]),
+                valid_len=nested.valid_count.to(device=inputs.device),
+                budget=int(requested_budget),
+                requested_budget=torch.full_like(effective, int(requested_budget)),
+                effective_budget=effective,
+                detector_input_length=effective,
+                metadata={
+                    "budget_is_dynamic": False,
+                    "budget_policy": "frozen_h65_nested_prefix",
+                    "budget_target": float(requested_budget),
+                    "budget_multiple": 16,
+                },
+            ).validate()
+            inputs_by_budget[requested_budget] = _gather_time(inputs, positions, slot_mask)
+            acquisition_masks_by_budget[requested_budget] = slot_mask
+            detector_grid = interpolate_acquisition_time_to_detector_grid(
+                positions,
+                effective,
+                detector_length=int(detector_length),
+            )
+            masks_by_budget[requested_budget] = torch.ones(
+                int(valid.shape[0]),
+                int(detector_length),
+                device=inputs.device,
+                dtype=torch.bool,
+            )
+            budget_metas = self._write_metas(
+                metas,
+                grid,
+                detector_grid_positions=positions,
+                actionness_source_name=self.actionness_source_name,
+                compute_profile=state.get("compute_profile"),
+            )
+            for row, meta in enumerate(budget_metas):
+                detector_positions = [
+                    float(value)
+                    for value in detector_grid[row].detach().cpu().tolist()
+                ]
+                acquisition_positions = [
+                    int(value)
+                    for value in positions[row].detach().cpu().tolist()
+                    if int(value) >= 0
+                ]
+                remap = {
+                    "source": SELECTED_AXIS,
+                    "target": TRUE_TIME_AXIS,
+                    "selected_to_original": {
+                        int(axis): float(value)
+                        for axis, value in enumerate(detector_positions)
+                    },
+                    "selected_axis_to_true_time_dense_index": detector_positions,
+                    "acquisition_positions": acquisition_positions,
+                }
+                meta["duca_acquisition_positions"] = acquisition_positions
+                meta["duca_acquisition_timestamps"] = acquisition_positions
+                meta["duca_detector_grid_positions"] = detector_positions
+                meta["duca_online_selected_axis_remap"] = remap
+                meta["selected_axis_to_true_time_dense_index"] = detector_positions
+                meta["truetime_selected_positions"] = detector_positions
+                meta["irregular_selected_positions"] = detector_positions
+                meta["irregular_selected_count"] = int(detector_length)
+                meta["irregular_selected_valid_len"] = int(detector_length)
+                meta["duca_detector_grid_length"] = int(detector_length)
+            metas_by_budget[requested_budget] = budget_metas
+            detector_grid_by_budget[requested_budget] = detector_grid
+            grids_by_budget[requested_budget] = grid
+        return {
+            "inputs_by_budget": inputs_by_budget,
+            "masks_by_budget": masks_by_budget,
+            "acquisition_masks_by_budget": acquisition_masks_by_budget,
+            "metas_by_budget": metas_by_budget,
+            "detector_grid_by_budget": detector_grid_by_budget,
+            "grids_by_budget": grids_by_budget,
+            "positions_by_budget": nested.positions_by_budget,
+            "actual_count_by_budget": nested.actual_count_by_budget,
+            "priority_order": nested.priority_order,
+            "baseline_positions": nested.baseline_positions,
+            "valid_count": nested.valid_count,
+            "selector_outputs": state,
+            "metas": outputs["metas"],
         }
 
     def _apply_training_uniform_companion(self, grid, scores, valid_mask):

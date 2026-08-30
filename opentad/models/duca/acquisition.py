@@ -380,6 +380,212 @@ class SparseTemporalGrid:
         return self
 
 
+@dataclass
+class NestedH65PrefixSelection:
+    """Nested H65 observation sets anchored to the sealed K=384 selection."""
+
+    positions_by_budget: Dict[int, torch.Tensor]
+    actual_count_by_budget: Dict[int, torch.Tensor]
+    priority_order: torch.Tensor
+    baseline_positions: torch.Tensor
+    valid_count: torch.Tensor
+    baseline_budget: int = 384
+
+    def validate(self) -> "NestedH65PrefixSelection":
+        budgets = tuple(sorted(self.positions_by_budget))
+        if len(budgets) != 3 or int(self.baseline_budget) not in budgets:
+            raise ValueError("nested H65 selection requires three tiers including baseline")
+        batch = int(self.baseline_positions.shape[0])
+        for budget in budgets:
+            positions = self.positions_by_budget[budget]
+            counts = self.actual_count_by_budget[budget]
+            if positions.shape != (batch, int(budget)) or counts.shape != (batch,):
+                raise ValueError("nested H65 budget tensors have inconsistent shapes")
+            for row in range(batch):
+                active = positions[row, : int(counts[row].item())]
+                inactive = positions[row, int(counts[row].item()) :]
+                if active.numel() and (
+                    torch.any(active < 0)
+                    or (active.numel() > 1 and torch.any(active[1:] <= active[:-1]))
+                ):
+                    raise ValueError("active nested H65 positions must be sorted and unique")
+                if inactive.numel() and torch.any(inactive != -1):
+                    raise ValueError("inactive nested H65 positions must use -1 padding")
+        if not torch.equal(
+            self.positions_by_budget[int(self.baseline_budget)],
+            self.baseline_positions,
+        ):
+            raise ValueError("nested K=384 positions must be bit-exact with sealed H65")
+        lower, baseline, upper = budgets
+        for row in range(batch):
+            low = self.positions_by_budget[lower][row]
+            low = low[low >= 0]
+            middle = self.positions_by_budget[baseline][row]
+            middle = middle[middle >= 0]
+            high = self.positions_by_budget[upper][row]
+            high = high[high >= 0]
+            if low.numel() and not bool((low[:, None] == middle[None, :]).any(dim=1).all().item()):
+                raise ValueError("lower H65 prefix must be a subset of K=384")
+            if middle.numel() and not bool((middle[:, None] == high[None, :]).any(dim=1).all().item()):
+                raise ValueError("K=384 must be a subset of the upper H65 prefix")
+        return self
+
+
+def nested_h65_budget_prefixes(
+    h65_positions: torch.Tensor,
+    h65_priority: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    budgets: Tuple[int, int, int] = (256, 384, 512),
+    baseline_budget: int = 384,
+) -> NestedH65PrefixSelection:
+    """Construct one deterministic arbitrary-budget order around sealed H65.
+
+    The baseline set is never recomputed. Its highest H65-rate members form the
+    lower prefix, and the highest-rate unselected candidates extend the upper
+    prefix. Each detector-facing set is returned in physical-time order.
+    """
+
+    budgets = tuple(int(value) for value in budgets)
+    if tuple(sorted(set(budgets))) != budgets or len(budgets) != 3:
+        raise ValueError("budgets must contain three unique increasing tiers")
+    if int(baseline_budget) != budgets[1]:
+        raise ValueError("baseline_budget must be the middle tier")
+    if h65_positions.ndim != 2 or h65_priority.ndim != 2:
+        raise ValueError("H65 positions and priority must be rank-two tensors")
+    if h65_positions.shape[0] != h65_priority.shape[0]:
+        raise ValueError("H65 positions and priority must share the batch dimension")
+    if h65_positions.device != h65_priority.device:
+        raise ValueError("H65 positions and priority must share one device")
+    valid = valid_mask.to(device=h65_priority.device, dtype=torch.bool)
+    if valid.shape != h65_priority.shape:
+        raise ValueError("valid_mask must align with H65 priority")
+    if int(h65_positions.shape[1]) != int(baseline_budget):
+        raise ValueError("sealed H65 positions must expose exactly the baseline slots")
+    if not bool(torch.isfinite(h65_priority[valid]).all().item()):
+        raise ValueError("valid H65 priority values must be finite")
+
+    batch, temporal_len = h65_priority.shape
+    rows: Dict[int, List[torch.Tensor]] = {budget: [] for budget in budgets}
+    count_rows: Dict[int, List[int]] = {budget: [] for budget in budgets}
+    priority_rows: List[torch.Tensor] = []
+    max_budget = budgets[-1]
+    for row in range(batch):
+        valid_positions = torch.nonzero(valid[row], as_tuple=False).flatten()
+        expected = torch.arange(
+            valid_positions.numel(),
+            device=valid_positions.device,
+            dtype=valid_positions.dtype,
+        )
+        if not torch.equal(valid_positions, expected):
+            raise ValueError("nested H65 prefixes require a contiguous valid prefix")
+        base = h65_positions[row]
+        base = base[base >= 0]
+        if base.numel() != min(int(baseline_budget), int(valid_positions.numel())):
+            raise ValueError("sealed H65 selection has the wrong effective baseline count")
+        if base.numel() > 1 and torch.any(base[1:] <= base[:-1]):
+            raise ValueError("sealed H65 positions must be strictly time ordered")
+        if base.numel() and torch.any(base >= valid_positions.numel()):
+            raise ValueError("sealed H65 positions exceed the valid prefix")
+
+        base_scores = h65_priority[row, base]
+        base_priority_order = base[
+            torch.argsort(base_scores, descending=True, stable=True)
+        ]
+        selected_mask = torch.zeros(temporal_len, device=base.device, dtype=torch.bool)
+        if base.numel():
+            selected_mask[base] = True
+        remaining = valid_positions[~selected_mask[valid_positions]]
+        remaining_scores = h65_priority[row, remaining]
+        remaining_priority_order = remaining[
+            torch.argsort(remaining_scores, descending=True, stable=True)
+        ]
+        acquisition_order = torch.cat((base_priority_order, remaining_priority_order))
+        padded_order = torch.full(
+            (max_budget,), -1, device=base.device, dtype=torch.long
+        )
+        order_count = min(max_budget, int(acquisition_order.numel()))
+        padded_order[:order_count] = acquisition_order[:order_count]
+        priority_rows.append(padded_order)
+
+        for budget in budgets:
+            effective = min(int(budget), int(valid_positions.numel()))
+            if budget < baseline_budget:
+                selected = base_priority_order[:effective]
+            elif budget == baseline_budget:
+                selected = base
+            else:
+                add_count = max(0, effective - int(base.numel()))
+                selected = torch.cat((base, remaining_priority_order[:add_count]))
+            selected = torch.sort(selected).values
+            padded = torch.full(
+                (budget,), -1, device=base.device, dtype=torch.long
+            )
+            padded[:effective] = selected
+            rows[budget].append(padded)
+            count_rows[budget].append(effective)
+
+    result = NestedH65PrefixSelection(
+        positions_by_budget={
+            budget: torch.stack(rows[budget], dim=0) for budget in budgets
+        },
+        actual_count_by_budget={
+            budget: torch.tensor(
+                count_rows[budget], device=h65_positions.device, dtype=torch.long
+            )
+            for budget in budgets
+        },
+        priority_order=torch.stack(priority_rows, dim=0),
+        baseline_positions=h65_positions.detach().clone(),
+        valid_count=valid.long().sum(dim=1),
+        baseline_budget=int(baseline_budget),
+    )
+    return result.validate()
+
+
+def interpolate_acquisition_time_to_detector_grid(
+    selected_positions: torch.Tensor,
+    actual_count: torch.Tensor,
+    *,
+    detector_length: int = 384,
+) -> torch.Tensor:
+    """Map a variable-K acquisition axis onto the unchanged detector grid.
+
+    At K=384 this is the existing H65 selected-position mapping exactly.  Other
+    K values use monotone linear interpolation over the same physical positions;
+    no detector prediction is interpreted on a padded heavy-observation axis.
+    """
+
+    if selected_positions.ndim != 2:
+        raise ValueError("selected_positions must be [B,K]")
+    if actual_count.shape != (selected_positions.shape[0],):
+        raise ValueError("actual_count must be [B]")
+    detector_length = int(detector_length)
+    if detector_length <= 1:
+        raise ValueError("detector_length must exceed one")
+    rows = []
+    for row in range(int(selected_positions.shape[0])):
+        count = int(actual_count[row].item())
+        if count <= 1 or count > int(selected_positions.shape[1]):
+            raise ValueError("each detector-grid mapping requires at least two active positions")
+        active = selected_positions[row, :count]
+        if torch.any(active < 0) or torch.any(active[1:] <= active[:-1]):
+            raise ValueError("active acquisition positions must be non-negative and increasing")
+        if count == detector_length:
+            detector_positions = active.float()
+        else:
+            detector_positions = F.interpolate(
+                active.float()[None, None, :],
+                size=detector_length,
+                mode="linear",
+                align_corners=True,
+            )[0, 0]
+        if torch.any(detector_positions[1:] <= detector_positions[:-1]):
+            raise ValueError("interpolated detector physical-time grid must be increasing")
+        rows.append(detector_positions)
+    return torch.stack(rows, dim=0)
+
+
 class ZeroShotActionnessSource(nn.Module):
     """Deploy-visible no-THUMOS-label actionness abstraction.
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Mapping, Optional, Sequence
 
 import torch
 import torch.nn as nn
@@ -78,6 +78,353 @@ class DynamicBudgetDecision:
         if self.prefix_hard.shape[1] > 1 and torch.any(self.prefix_hard[:, 1:] > self.prefix_hard[:, :-1]):
             raise ValueError("prefix_hard must be monotonic non-increasing")
         return self
+
+
+@dataclass
+class VideoBudgetAllocation:
+    """One video's discrete heavy-observation allocation.
+
+    ``budget`` is the requested tier and ``actual_cost`` is the number of real
+    observations available to the heavy path after short-window truncation.
+    The allocator never represents missing observations with padding.
+    """
+
+    budget: torch.Tensor
+    actual_cost: torch.Tensor
+    changed_mask: torch.Tensor
+    predicted_total_utility: torch.Tensor
+    target_actual_cost: int
+    feasible: bool
+    reason: str
+    policy_name: str = "video_level_exact_total_marginal_reallocation"
+
+    def validate(self, *, window_count: Optional[int] = None) -> "VideoBudgetAllocation":
+        if self.budget.ndim != 1:
+            raise ValueError("video budget allocation must be one-dimensional")
+        if self.actual_cost.shape != self.budget.shape:
+            raise ValueError("actual_cost must align with budget")
+        if self.changed_mask.shape != self.budget.shape:
+            raise ValueError("changed_mask must align with budget")
+        if self.changed_mask.dtype != torch.bool:
+            raise ValueError("changed_mask must be boolean")
+        if window_count is not None and self.budget.numel() != int(window_count):
+            raise ValueError("video budget allocation window count mismatch")
+        if torch.any(self.actual_cost < 0) or torch.any(self.actual_cost > self.budget):
+            raise ValueError("actual observation cost must lie in [0, requested budget]")
+        if self.predicted_total_utility.ndim != 0 or not bool(
+            torch.isfinite(self.predicted_total_utility).item()
+        ):
+            raise ValueError("predicted_total_utility must be one finite scalar")
+        if self.feasible and int(self.actual_cost.sum().item()) != int(
+            self.target_actual_cost
+        ):
+            raise ValueError("feasible allocation must meet the exact actual-cost target")
+        return self
+
+
+class SignedTwoSidedMarginalUtilityHead(nn.Module):
+    """Predict signed downgrade penalty and upgrade gain for one window."""
+
+    def __init__(self, input_dim: int, hidden_dim: int = 128) -> None:
+        super().__init__()
+        self.input_dim = int(input_dim)
+        self.hidden_dim = int(hidden_dim)
+        if self.input_dim <= 0 or self.hidden_dim <= 0:
+            raise ValueError("utility head dimensions must be positive")
+        self.net = nn.Sequential(
+            nn.LayerNorm(self.input_dim),
+            nn.Linear(self.input_dim, self.hidden_dim),
+            nn.GELU(),
+            nn.Linear(self.hidden_dim, 2),
+        )
+
+    def forward(self, window_features: torch.Tensor) -> dict[str, torch.Tensor]:
+        if window_features.ndim != 2 or int(window_features.shape[1]) != self.input_dim:
+            raise ValueError(
+                f"window_features must be [W,{self.input_dim}], got {tuple(window_features.shape)}"
+            )
+        values = self.net(window_features.float())
+        return {
+            "downgrade_penalty": values[:, 0],
+            "upgrade_gain": values[:, 1],
+        }
+
+
+def validate_real_heavy_observation_tensor(
+    observations: torch.Tensor,
+    *,
+    expected_budget: int,
+) -> torch.Tensor:
+    """Require the heavy path to receive exactly the requested observations.
+
+    The frozen marginal probe executes one budget group at a time.  This guard
+    makes nominal dynamic budgets impossible when the actual raw-video tensor
+    has instead been padded to the largest budget.
+    """
+
+    budget = int(expected_budget)
+    if budget not in {256, 384, 512}:
+        raise ValueError("marginal heavy budget must be one of 256, 384, or 512")
+    if not torch.is_tensor(observations) or observations.ndim not in {5, 6}:
+        raise ValueError(
+            "heavy observations must be [B,C,K,H,W] or [B,N,C,K,H,W]"
+        )
+    temporal_dim = 2 if observations.ndim == 5 else 3
+    actual = int(observations.shape[temporal_dim])
+    if actual != budget:
+        raise ValueError(
+            f"actual heavy observation count {actual} does not match requested budget {budget}"
+        )
+    if budget % 16 != 0:
+        raise ValueError("heavy observation budget must contain whole 16-frame packets")
+    return observations
+
+
+def _masked_window_statistics(values: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+    if values.ndim != 2 or values.shape != valid.shape:
+        raise ValueError("window statistic values and validity must be aligned [W,T]")
+    masked = values.float().masked_fill(~valid, 0.0)
+    count = valid.long().sum(dim=1).clamp_min(1).to(dtype=masked.dtype)
+    mean = masked.sum(dim=1) / count
+    centered = (masked - mean[:, None]).masked_fill(~valid, 0.0)
+    std = torch.sqrt(centered.square().sum(dim=1) / count)
+    maximum = masked.masked_fill(~valid, torch.finfo(masked.dtype).min).amax(dim=1)
+    return torch.stack((mean, std, maximum), dim=1)
+
+
+def build_frozen_scout_marginal_features(
+    selector_outputs: Mapping[str, torch.Tensor],
+    baseline_positions: torch.Tensor,
+) -> torch.Tensor:
+    """Pool only deploy-visible frozen-Scout evidence for the utility head.
+
+    Ground truth, detector predictions, and counterfactual losses are deliberately
+    not accepted as inputs.  The final four values describe temporal redundancy
+    of the sealed K=384 observations; all other values come directly from the
+    existing H65 Scout state.
+    """
+
+    valid = selector_outputs.get("valid_mask")
+    hidden = selector_outputs.get("coarse_hidden_features")
+    if hidden is None:
+        hidden = selector_outputs.get("selection_features")
+    if not torch.is_tensor(valid) or valid.ndim != 2:
+        raise ValueError("frozen Scout marginal features require valid_mask [W,T]")
+    valid = valid.bool()
+    if not torch.is_tensor(hidden) or hidden.ndim != 3 or hidden.shape[:2] != valid.shape:
+        raise ValueError("frozen Scout marginal features require hidden state [W,T,D]")
+    if baseline_positions.ndim != 2 or baseline_positions.shape[0] != valid.shape[0]:
+        raise ValueError("baseline_positions must be [W,K]")
+    if baseline_positions.device != valid.device:
+        raise ValueError("baseline positions and Scout state must share one device")
+    if torch.any(valid.long().sum(dim=1) <= 0):
+        raise ValueError("every marginal window must contain a valid observation")
+
+    valid_float = valid.to(dtype=hidden.dtype)
+    pooled_hidden = (hidden * valid_float[:, :, None]).sum(dim=1)
+    pooled_hidden = pooled_hidden / valid_float.sum(dim=1, keepdim=True).clamp_min(1.0)
+    pooled_hidden = pooled_hidden.float()
+
+    scalar_names = ("p_action", "transition_score", "uncertainty")
+    scalar_stats = []
+    for name in scalar_names:
+        values = selector_outputs.get(name)
+        if not torch.is_tensor(values) or values.shape != valid.shape:
+            raise ValueError(f"frozen Scout marginal features require {name} [W,T]")
+        scalar_stats.append(_masked_window_statistics(values, valid))
+
+    redundancy_rows = []
+    valid_counts = valid.long().sum(dim=1)
+    for row in range(int(valid.shape[0])):
+        positions = baseline_positions[row]
+        positions = positions[positions >= 0]
+        if positions.numel() > 1 and torch.any(positions[1:] <= positions[:-1]):
+            raise ValueError("baseline positions must be strictly time ordered")
+        if positions.numel() and torch.any(positions >= valid_counts[row]):
+            raise ValueError("baseline positions exceed the valid Scout window")
+        denominator = max(1, int(valid_counts[row].item()) - 1)
+        if positions.numel() > 1:
+            gaps = (positions[1:] - positions[:-1]).float() / float(denominator)
+            gap_mean = gaps.mean()
+            gap_std = gaps.std(unbiased=False)
+            gap_max = gaps.max()
+        else:
+            gap_mean = gap_std = gap_max = pooled_hidden.new_zeros(())
+        coverage_ratio = pooled_hidden.new_tensor(
+            float(positions.numel()) / float(max(1, int(valid_counts[row].item())))
+        )
+        redundancy_rows.append(torch.stack((gap_mean, gap_std, gap_max, coverage_ratio)))
+    redundancy = torch.stack(redundancy_rows, dim=0).to(
+        device=pooled_hidden.device,
+        dtype=pooled_hidden.dtype,
+    )
+    return torch.cat((pooled_hidden, *scalar_stats, redundancy), dim=1).detach()
+
+
+def allocate_video_budgets_exact(
+    relative_utility: torch.Tensor,
+    valid_observations: torch.Tensor,
+    *,
+    budget_levels: Sequence[int],
+    baseline_budget: int,
+    target_actual_cost: int,
+    max_changed_fraction: float = 0.5,
+) -> VideoBudgetAllocation:
+    """Maximize detached predicted utility under one exact per-video cost.
+
+    This is a small control-plane dynamic program over the three preregistered
+    budget tiers. It is intentionally independent for each video, so allocations
+    cannot change with dataloader batch composition.
+    """
+
+    if relative_utility.ndim != 2:
+        raise ValueError("relative_utility must be [W,J]")
+    levels = tuple(int(value) for value in budget_levels)
+    if not levels or tuple(sorted(set(levels))) != levels:
+        raise ValueError("budget_levels must be unique and strictly increasing")
+    if int(relative_utility.shape[1]) != len(levels):
+        raise ValueError("relative_utility columns must match budget_levels")
+    if int(baseline_budget) not in levels:
+        raise ValueError("baseline_budget must be one of budget_levels")
+    valid = valid_observations.detach().to(device="cpu", dtype=torch.long).reshape(-1)
+    if valid.numel() != int(relative_utility.shape[0]) or torch.any(valid <= 0):
+        raise ValueError("valid_observations must contain one positive count per window")
+    utility = relative_utility.detach().to(device="cpu", dtype=torch.float64)
+    if not bool(torch.isfinite(utility).all().item()):
+        raise ValueError("relative_utility must be finite")
+    target = int(target_actual_cost)
+    if target <= 0:
+        raise ValueError("target_actual_cost must be positive")
+    fraction = float(max_changed_fraction)
+    if not 0.0 <= fraction <= 1.0:
+        raise ValueError("max_changed_fraction must lie in [0,1]")
+
+    window_count = int(valid.numel())
+    baseline_index = levels.index(int(baseline_budget))
+    baseline_requested = torch.full((window_count,), int(baseline_budget), dtype=torch.long)
+    baseline_actual = torch.minimum(baseline_requested, valid)
+    max_changed = int(window_count * fraction)
+
+    # state[(actual_cost, changed_count)] = (utility, tuple(level_indices))
+    states: dict[tuple[int, int], tuple[float, tuple[int, ...]]] = {
+        (0, 0): (0.0, ())
+    }
+    for window_index in range(window_count):
+        next_states: dict[tuple[int, int], tuple[float, tuple[int, ...]]] = {}
+        for (running_cost, changed_count), (running_utility, choices) in states.items():
+            for level_index, level in enumerate(levels):
+                changed = changed_count + int(level_index != baseline_index)
+                if changed > max_changed:
+                    continue
+                actual = min(int(level), int(valid[window_index].item()))
+                new_cost = running_cost + actual
+                if new_cost > target:
+                    continue
+                score = running_utility + float(utility[window_index, level_index].item())
+                key = (new_cost, changed)
+                candidate = (score, choices + (level_index,))
+                current = next_states.get(key)
+                if current is None or score > current[0] + 1.0e-12 or (
+                    abs(score - current[0]) <= 1.0e-12 and candidate[1] < current[1]
+                ):
+                    next_states[key] = candidate
+        states = next_states
+        if not states:
+            break
+
+    candidates = [
+        (score, changed, choices)
+        for (cost, changed), (score, choices) in states.items()
+        if cost == target
+    ]
+    baseline_is_exact = int(baseline_actual.sum().item()) == target
+    if not candidates:
+        reason = "exact actual observation target is infeasible for this video's valid lengths"
+        result = VideoBudgetAllocation(
+            budget=baseline_requested.to(device=relative_utility.device),
+            actual_cost=baseline_actual.to(device=relative_utility.device),
+            changed_mask=torch.zeros(
+                window_count, device=relative_utility.device, dtype=torch.bool
+            ),
+            predicted_total_utility=torch.zeros(
+                (), device=relative_utility.device, dtype=relative_utility.dtype
+            ),
+            target_actual_cost=target,
+            feasible=False,
+            reason=reason,
+        )
+        return result.validate(window_count=window_count)
+
+    # Prefer larger utility, then fewer changed windows, then the deterministic
+    # lexicographically smaller tier sequence.
+    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
+    best_score, _changed, best_choices = candidates[0]
+    if best_score <= 0.0 and baseline_is_exact:
+        best_choices = (baseline_index,) * window_count
+        best_score = 0.0
+    elif best_score <= 0.0:
+        result = VideoBudgetAllocation(
+            budget=baseline_requested.to(device=relative_utility.device),
+            actual_cost=baseline_actual.to(device=relative_utility.device),
+            changed_mask=torch.zeros(
+                window_count, device=relative_utility.device, dtype=torch.bool
+            ),
+            predicted_total_utility=torch.tensor(
+                best_score,
+                device=relative_utility.device,
+                dtype=relative_utility.dtype,
+            ),
+            target_actual_cost=target,
+            feasible=False,
+            reason="meeting the exact target requires a non-positive predicted transfer",
+        )
+        return result.validate(window_count=window_count)
+
+    requested = torch.tensor([levels[index] for index in best_choices], dtype=torch.long)
+    actual = torch.minimum(requested, valid)
+    changed_mask = requested != int(baseline_budget)
+    result = VideoBudgetAllocation(
+        budget=requested.to(device=relative_utility.device),
+        actual_cost=actual.to(device=relative_utility.device),
+        changed_mask=changed_mask.to(device=relative_utility.device),
+        predicted_total_utility=torch.tensor(
+            best_score,
+            device=relative_utility.device,
+            dtype=relative_utility.dtype,
+        ),
+        target_actual_cost=target,
+        feasible=True,
+        reason="exact target satisfied",
+    )
+    return result.validate(window_count=window_count)
+
+
+def allocate_equal_budget_marginal_reallocation(
+    downgrade_penalty: torch.Tensor,
+    upgrade_gain: torch.Tensor,
+    valid_observations: torch.Tensor,
+    *,
+    lower_budget: int = 256,
+    baseline_budget: int = 384,
+    upper_budget: int = 512,
+    max_changed_fraction: float = 0.5,
+) -> VideoBudgetAllocation:
+    """Allocate K in {lower, baseline, upper} at the baseline total cost."""
+
+    if downgrade_penalty.ndim != 1 or upgrade_gain.shape != downgrade_penalty.shape:
+        raise ValueError("downgrade_penalty and upgrade_gain must be aligned [W] tensors")
+    relative = torch.stack(
+        (-downgrade_penalty, torch.zeros_like(downgrade_penalty), upgrade_gain),
+        dim=1,
+    )
+    return allocate_video_budgets_exact(
+        relative,
+        valid_observations,
+        budget_levels=(int(lower_budget), int(baseline_budget), int(upper_budget)),
+        baseline_budget=int(baseline_budget),
+        target_actual_cost=int(baseline_budget) * int(downgrade_penalty.numel()),
+        max_changed_fraction=max_changed_fraction,
+    )
 
 
 class PrefixMarginalUtilityBudgetController(nn.Module):

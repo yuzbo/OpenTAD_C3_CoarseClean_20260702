@@ -1,10 +1,80 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from typing import Callable, Dict
+from typing import Callable, Dict, Mapping
 
 import torch
 import torch.nn.functional as F
+
+
+def detached_three_budget_prefix_utilities(
+    selections_by_budget: Mapping[int, torch.Tensor],
+    evaluate_detector_loss: Callable[[torch.Tensor, int], torch.Tensor],
+    *,
+    lower_budget: int = 256,
+    baseline_budget: int = 384,
+    upper_budget: int = 512,
+) -> Dict[str, torch.Tensor]:
+    """Measure signed frozen-detector utility for one nested budget triple.
+
+    The callback receives the time-sorted selected positions and the requested
+    budget. Detector parameters and graphs are outside this supervision path;
+    every returned target is detached by construction.
+    """
+
+    budgets = (int(lower_budget), int(baseline_budget), int(upper_budget))
+    if not budgets[0] < budgets[1] < budgets[2]:
+        raise ValueError("three-budget utility requires lower < baseline < upper")
+    missing = [budget for budget in budgets if budget not in selections_by_budget]
+    if missing:
+        raise ValueError(f"missing selections for budgets {missing}")
+    batch_size = None
+    normalized: dict[int, torch.Tensor] = {}
+    for budget in budgets:
+        positions = selections_by_budget[budget]
+        if not torch.is_tensor(positions) or positions.ndim != 2:
+            raise ValueError("each budget selection must be a [B,K] tensor")
+        if batch_size is None:
+            batch_size = int(positions.shape[0])
+        if int(positions.shape[0]) != batch_size:
+            raise ValueError("all budget selections must share the batch dimension")
+        if int(positions.shape[1]) != budget:
+            raise ValueError(f"budget {budget} selection must contain exactly {budget} slots")
+        if torch.any(positions < 0):
+            raise ValueError("three-budget utility requires fully valid exact-K selections")
+        if positions.shape[1] > 1 and torch.any(positions[:, 1:] <= positions[:, :-1]):
+            raise ValueError("three-budget selections must be strictly time ordered")
+        normalized[budget] = positions
+
+    lower_set = normalized[budgets[0]][:, :, None]
+    baseline_set = normalized[budgets[1]][:, None, :]
+    upper_set = normalized[budgets[2]][:, None, :]
+    if not bool((lower_set == baseline_set).any(dim=2).all().item()):
+        raise ValueError("lower-budget selection must be a subset of the baseline selection")
+    baseline_membership = (
+        normalized[budgets[1]][:, :, None] == upper_set
+    ).any(dim=2)
+    if not bool(baseline_membership.all().item()):
+        raise ValueError("baseline selection must be a subset of the upper-budget selection")
+
+    losses: dict[int, torch.Tensor] = {}
+    with torch.no_grad():
+        for budget in budgets:
+            loss = evaluate_detector_loss(normalized[budget].clone(), budget).reshape(-1)
+            if loss.numel() != batch_size or not bool(torch.isfinite(loss).all().item()):
+                raise ValueError("evaluate_detector_loss must return one finite loss per sample")
+            losses[budget] = loss.detach()
+    downgrade_penalty = (losses[budgets[0]] - losses[budgets[1]]).detach()
+    upgrade_gain = (losses[budgets[1]] - losses[budgets[2]]).detach()
+    return {
+        "loss_lower": losses[budgets[0]],
+        "loss_baseline": losses[budgets[1]],
+        "loss_upper": losses[budgets[2]],
+        "downgrade_penalty": downgrade_penalty,
+        "upgrade_gain": upgrade_gain,
+        "teacher_kind": "detached_frozen_detector_three_budget_prefix_loss",
+        "direct_detector_gradient": False,
+    }
 
 
 def build_finite_hard_one_swap_candidates(
