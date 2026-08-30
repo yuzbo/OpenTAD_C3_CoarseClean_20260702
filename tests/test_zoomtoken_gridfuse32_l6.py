@@ -368,6 +368,15 @@ def test_launcher_exposes_only_one_atomic_full_window_g0_action():
     assert "G2)" not in launcher
     assert "standalone PRECHECK_ONLY scheduler job" in launcher
     assert "G1 and G2 remain closed pending a fresh Pro decision" in launcher
+    assert "ZOOMTOKEN-GRIDFUSE32-L6-PRODUCTION-FULLWINDOW-ATOMIC-G0-v001" in launcher
+    assert "scheduler action must be ordinal 2" in launcher
+    assert "scientific measurement must be ordinal 1" in launcher
+    assert "TimeLimit=02:00:00" in launcher
+    assert "source branch mismatch" in launcher
+    assert (
+        "zoomtoken_gridfuse32_l6_production_fullwindow_atomic_g0_final_20260831"
+        in launcher
+    )
     assert launcher.count("profile_zoomtoken_gridfuse32_l6_segment.py") == 1
 
 

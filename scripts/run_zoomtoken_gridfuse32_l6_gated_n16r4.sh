@@ -11,28 +11,34 @@ fail() {
 }
 
 BASE="/data/run01/sczc063/yuzibo"
+TASK_ID="${ZOOMTOKEN_GRIDFUSE_TASK_ID:?set the frozen task identity}"
 EXPECTED_COMMIT="${ZOOMTOKEN_GRIDFUSE_EXPECTED_COMMIT:?set the reviewed clean commit}"
 ROOT="${ZOOMTOKEN_GRIDFUSE_SOURCE_ROOT:?set the reviewed clean checkout}"
 RESULT_ROOT="${ZOOMTOKEN_GRIDFUSE_RESULT_ROOT:?set the immutable task result root}"
+ACTION_ORDINAL="${ZOOMTOKEN_GRIDFUSE_ACTION_ORDINAL:?set the scheduler action ordinal}"
+MEASUREMENT_ORDINAL="${ZOOMTOKEN_GRIDFUSE_MEASUREMENT_ORDINAL:?set the scientific measurement ordinal}"
 PHASE="${ZOOMTOKEN_GRIDFUSE_PHASE:-G0}"
 PRECHECK_ONLY="${PRECHECK_ONLY:-0}"
 BRANCH="codex/zoomtoken-gridfuse32-l6-v001"
 REMOTE_REF="refs/remotes/origin/${BRANCH}"
+EXPECTED_TASK_ID="ZOOMTOKEN-GRIDFUSE32-L6-PRODUCTION-FULLWINDOW-ATOMIC-G0-v001"
+EXPECTED_RESULT_ROOT="${BASE}/projects/zoomtoken_gridfuse32_l6_production_fullwindow_atomic_g0_final_20260831"
 CONFIG="${ROOT}/configs/adatad/thumos/georoute_official_r1_gridfuse32_l6_prebackbone_seed42_v001.py"
 R1_CHECKPOINT="${ZOOMTOKEN_GRIDFUSE_R1_CHECKPOINT:-${BASE}/projects/zoomtoken_official_prebackbone_r1_9e25c6d3_seed42_20260822T080108Z/cells/r1_strict_rect8x8_prebackbone_sparse_adapter/seed42/gpu2_id0/checkpoint/epoch_59.pth}"
 CONDA_ACTIVATE="${BASE}/conda_envs/opentad/bin/activate"
 
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || fail 'expected commit must be a full lowercase SHA'
+[[ "${TASK_ID}" == "${EXPECTED_TASK_ID}" ]] || fail 'task identity mismatch'
+[[ "${ACTION_ORDINAL}" == "2" ]] || fail 'final scheduler action must be ordinal 2'
+[[ "${MEASUREMENT_ORDINAL}" == "1" ]] || fail 'scientific measurement must be ordinal 1'
 [[ -n "${SLURM_JOB_ID:-}" ]] || fail 'GridFuse32-L6 actions require a Slurm allocation'
-case "${RESULT_ROOT}" in
-  "${BASE}"/*) ;;
-  *) fail 'result root leaves the remote write boundary' ;;
-esac
+[[ "${RESULT_ROOT}" == "${EXPECTED_RESULT_ROOT}" ]] || fail 'result root identity mismatch'
 [[ "${RESULT_ROOT}/" != "${ROOT}/"* ]] || fail 'result root must be outside the source checkout'
 for path in "${CONFIG}" "${R1_CHECKPOINT}" "${CONDA_ACTIVATE}"; do
   [[ -f "${path}" ]] || fail "required file is missing: ${path}"
 done
 [[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || fail 'source commit mismatch'
+[[ "$(git -C "${ROOT}" symbolic-ref --short HEAD)" == "${BRANCH}" ]] || fail 'source branch mismatch'
 [[ -z "$(git -C "${ROOT}" status --porcelain=v1 --untracked-files=all)" ]] || fail 'source checkout is not clean'
 [[ "$(git -C "${ROOT}" rev-parse "${REMOTE_REF}")" == "${EXPECTED_COMMIT}" ]] || \
   fail 'prefetched GitHub remote-tracking ref does not resolve to the reviewed candidate'
@@ -53,6 +59,9 @@ export PYTHONDONTWRITEBYTECODE=1
 cd "${ROOT}"
 
 IFS=',' read -r -a visible_gpus <<< "${CUDA_VISIBLE_DEVICES:-}"
+command -v scontrol >/dev/null 2>&1 || fail 'scontrol is unavailable'
+job_record="$(scontrol show job "${SLURM_JOB_ID}" --oneliner)"
+[[ "${job_record}" == *"TimeLimit=02:00:00"* ]] || fail 'atomic G0 requires a real two-hour Slurm time limit'
 [[ "${PRECHECK_ONLY}" == "0" ]] || \
   fail 'the final atomic task forbids a standalone PRECHECK_ONLY scheduler job'
 [[ "${PHASE}" == "G0" ]] || \

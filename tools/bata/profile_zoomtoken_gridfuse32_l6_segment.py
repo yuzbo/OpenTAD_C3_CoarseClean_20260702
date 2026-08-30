@@ -456,6 +456,13 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         "slurm": {
             "job_id": __import__("os").environ.get("SLURM_JOB_ID"),
             "cuda_visible_devices": __import__("os").environ.get("CUDA_VISIBLE_DEVICES"),
+            "task_id": __import__("os").environ.get("ZOOMTOKEN_GRIDFUSE_TASK_ID"),
+            "scheduler_action_ordinal": int(
+                __import__("os").environ["ZOOMTOKEN_GRIDFUSE_ACTION_ORDINAL"]
+            ),
+            "scientific_measurement_ordinal": int(
+                __import__("os").environ["ZOOMTOKEN_GRIDFUSE_MEASUREMENT_ORDINAL"]
+            ),
         },
         "training_or_resume_executed": False,
     }
@@ -484,6 +491,11 @@ def main() -> int:
             ),
             "status": result["status"],
             "gate_passed": result["gate_passed"],
+            "source_commit": result["source_commit"],
+            "task_id": result["slurm"]["task_id"],
+            "scheduler_action_ordinal": result["slurm"]["scheduler_action_ordinal"],
+            "scientific_measurement_ordinal": result["slurm"]["scientific_measurement_ordinal"],
+            "slurm_job_id": result["slurm"]["job_id"],
             "profile": str((args.run_root / "profile.json").resolve()),
         }
         _write_exclusive(args.run_root / "terminal_receipt.json", terminal)
@@ -496,6 +508,15 @@ def main() -> int:
                 "zoomtoken_gridfuse32_l6_production_fullwindow_atomic_g0_terminal_v001"
             ),
             "status": "STOP_GRIDFUSE32_L6_EXACT_ROUTE_FINAL_EXECUTION_BLOCKER",
+            "source_commit": str(args.expected_commit).lower(),
+            "task_id": __import__("os").environ.get("ZOOMTOKEN_GRIDFUSE_TASK_ID"),
+            "scheduler_action_ordinal": __import__("os").environ.get(
+                "ZOOMTOKEN_GRIDFUSE_ACTION_ORDINAL"
+            ),
+            "scientific_measurement_ordinal": __import__("os").environ.get(
+                "ZOOMTOKEN_GRIDFUSE_MEASUREMENT_ORDINAL"
+            ),
+            "slurm_job_id": __import__("os").environ.get("SLURM_JOB_ID"),
             "error_type": type(exc).__name__,
             "error": str(exc),
             "traceback": traceback.format_exc(),
