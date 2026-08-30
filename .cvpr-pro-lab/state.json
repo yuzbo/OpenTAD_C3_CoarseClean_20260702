@@ -503,7 +503,12 @@
     "critic_status": "PASS",
     "evaluator_status": "PRE_RUN_READY",
     "n16r4_focused_tests": "16 passed in 48.99s",
-    "github_push_status": "BLOCKED_BY_LOCAL_SSL_ERROR_SYSCALL_REMOTE_BUNDLE_DEPLOYMENT_USED",
+    "github_push_status": "PUSHED_AND_GITHUB_REF_COMMIT_API_VERIFIED_AFTER_MICROBENCHMARK",
+    "github_branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-racer24-v001",
+    "github_commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/5ebaa74f611bb3a43c3042700a78b92a9e5e74fb",
+    "github_verified_sha": "5ebaa74f611bb3a43c3042700a78b92a9e5e74fb",
+    "github_verified_at_beijing": "2026-08-31T03:03:44+08:00",
+    "github_push_timing": "POST_MICROBENCHMARK_PRE_FRESH_PRO",
     "deployment_policy_deviation": "UNPUSHED_COMMIT_TRANSFERRED_BY_GIT_BUNDLE_CONTRARY_TO_RTK_PUSHED_OBJECT_ONLY_RULE_PENDING_PRO_EVIDENCE_GRADE_ADJUDICATION",
     "remote_source_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_racer24_src_5ebaa74f",
     "microbenchmark": {
@@ -605,5 +610,5 @@
   "schema_version": "1.0",
   "stage": "G5_IMPL_CHECK",
   "status": "RACER24_ITERATION0_STOPPED_PENDING_FRESH_PRO",
-  "updated_at": "2026-08-30T19:00:00Z"
+  "updated_at": "2026-08-30T19:03:44Z"
 }
