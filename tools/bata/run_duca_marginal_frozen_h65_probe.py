@@ -5,6 +5,7 @@ import copy
 from contextlib import contextmanager, nullcontext
 import gzip
 import hashlib
+from itertools import product
 import json
 import math
 from pathlib import Path
@@ -22,7 +23,16 @@ DETECTOR_LENGTH = 384
 PACKET_SIZE = 16
 SEALED_PRODUCER_REVISION = "f87555f7da362fe1a20d4ca08f7a68c975ed8280"
 CAP_RELEASE_BASE_REVISION = "f67d96fdf68a295eaa7f678f3dfc125530828889"
+CAP_RELEASE_TERMINAL_REVISION = "d2fad7c0dfc4a5efe98b10b9eee4723c6805699f"
 TIOU_THRESHOLDS = (0.3, 0.4, 0.5, 0.6, 0.7)
+METRIC_KEYS = (
+    "average_mAP",
+    "mAP@0.3",
+    "mAP@0.4",
+    "mAP@0.5",
+    "mAP@0.6",
+    "mAP@0.7",
+)
 
 
 def _sha256(path: Path) -> str:
@@ -153,6 +163,9 @@ def _stage_paths(output_dir: Path) -> dict[str, Path]:
         "k512_receipt": output_dir / "counterfactual_k512_receipt.json",
         "result": output_dir / "probe_result.json",
         "cap_release_result": output_dir / "oracle_cap_release_result.json",
+        "cap_release_neighborhood_result": (
+            output_dir / "oracle_cap_release_neighborhood_result.json"
+        ),
         "pre_run": output_dir / "pre_run_receipt.json",
         "split_dir": output_dir / "controller_split",
     }
@@ -1216,6 +1229,282 @@ def _write_cap_release_result(output_dir: Path, value: Mapping[str, Any]) -> Non
         raise RuntimeError("cap-release diagnostic modified the original probe result")
 
 
+def _write_cap_release_neighborhood_result(
+    output_dir: Path, value: Mapping[str, Any]
+) -> None:
+    paths = _stage_paths(output_dir)
+    protected = {
+        key: _sha256(paths[key]) for key in ("result", "cap_release_result")
+    }
+    _write_json(paths["cap_release_neighborhood_result"], value)
+    for key, expected_sha in protected.items():
+        if _sha256(paths[key]) != expected_sha:
+            raise RuntimeError(
+                "cap-release neighborhood diagnostic modified a sealed input: "
+                + key
+            )
+
+
+def _actual_observation_cost(row: Mapping[str, Any], budget: int) -> int:
+    accounting = row.get("budget_accounting", {}).get(str(int(budget)))
+    if not isinstance(accounting, Mapping) or "actual_cost" not in accounting:
+        raise ValueError(
+            f"{row.get('sample_id', '<unknown>')}: missing actual-cost accounting "
+            f"for K{budget}"
+        )
+    return int(accounting["actual_cost"])
+
+
+def _derive_cap_release_neighborhood(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    capped_budgets: Sequence[int],
+    released_budgets: Sequence[int],
+) -> dict[str, Any]:
+    """Derive every exact-cost state between capped and released allocations."""
+
+    if not (len(rows) == len(capped_budgets) == len(released_budgets)):
+        raise ValueError("rows and allocation vectors must have identical lengths")
+    sample_ids = [str(row["sample_id"]) for row in rows]
+    if len(set(sample_ids)) != len(sample_ids):
+        raise ValueError("cap-release neighborhood requires unique sample IDs")
+
+    rows_by_video: dict[str, list[int]] = {}
+    for row_index, row in enumerate(rows):
+        rows_by_video.setdefault(str(row["video_id"]), []).append(row_index)
+    for video_id in rows_by_video:
+        rows_by_video[video_id].sort(key=lambda index: sample_ids[index])
+
+    difference_indices = tuple(
+        index
+        for index, (capped, released) in enumerate(
+            zip(capped_budgets, released_budgets)
+        )
+        if int(capped) != int(released)
+    )
+    if not difference_indices:
+        raise ValueError("capped and released allocations have no difference window")
+    difference_by_video: dict[str, list[int]] = {}
+    for row_index in difference_indices:
+        difference_by_video.setdefault(str(rows[row_index]["video_id"]), []).append(
+            row_index
+        )
+    changed_videos = tuple(sorted(difference_by_video))
+
+    capped_cost = sum(
+        _actual_observation_cost(row, int(budget))
+        for row, budget in zip(rows, capped_budgets)
+    )
+    released_cost = sum(
+        _actual_observation_cost(row, int(budget))
+        for row, budget in zip(rows, released_budgets)
+    )
+    if released_cost != capped_cost:
+        raise RuntimeError("released allocation does not preserve actual observation cost")
+
+    video_states: dict[str, list[dict[str, Any]]] = {}
+    for video_id in changed_videos:
+        video_row_indices = rows_by_video[video_id]
+        changed_indices = sorted(
+            difference_by_video[video_id], key=lambda index: sample_ids[index]
+        )
+        target_cost = sum(
+            _actual_observation_cost(rows[index], int(capped_budgets[index]))
+            for index in video_row_indices
+        )
+        deduplicated: dict[tuple[int, ...], dict[str, Any]] = {}
+        for release_flags in product((False, True), repeat=len(changed_indices)):
+            released_indices = tuple(
+                index
+                for index, use_released in zip(changed_indices, release_flags)
+                if use_released
+            )
+            budgets = {
+                index: int(released_budgets[index])
+                if index in released_indices
+                else int(capped_budgets[index])
+                for index in changed_indices
+            }
+            local_vector = tuple(
+                budgets.get(index, int(capped_budgets[index]))
+                for index in video_row_indices
+            )
+            actual_cost = sum(
+                _actual_observation_cost(rows[index], budget)
+                for index, budget in zip(video_row_indices, local_vector)
+            )
+            if actual_cost != target_cost:
+                continue
+            deduplicated.setdefault(
+                local_vector,
+                {
+                    "video_id": video_id,
+                    "released_row_indices": list(released_indices),
+                    "released_sample_ids": [sample_ids[index] for index in released_indices],
+                    "budgets": list(local_vector),
+                    "actual_observation_cost": actual_cost,
+                    "target_observation_cost": target_cost,
+                },
+            )
+        states = sorted(
+            deduplicated.values(),
+            key=lambda state: (
+                len(state["released_row_indices"]),
+                tuple(state["released_sample_ids"]),
+            ),
+        )
+        if not states or states[0]["released_row_indices"]:
+            raise RuntimeError(f"{video_id}: exact-cost neighborhood lost capped baseline")
+        full_difference = set(changed_indices)
+        if not any(set(state["released_row_indices"]) == full_difference for state in states):
+            raise RuntimeError(f"{video_id}: released allocation is absent from neighborhood")
+        for local_index, state in enumerate(states):
+            state["local_state_id"] = f"{video_id}:state_{local_index:02d}"
+        video_states[video_id] = states
+
+    minimal_transfers: list[dict[str, Any]] = []
+    for video_id in changed_videos:
+        nonempty = [
+            state for state in video_states[video_id] if state["released_row_indices"]
+        ]
+        minimal = [
+            state
+            for state in nonempty
+            if not any(
+                set(other["released_row_indices"])
+                < set(state["released_row_indices"])
+                for other in nonempty
+            )
+        ]
+        for local_index, state in enumerate(minimal):
+            minimal_transfers.append(
+                {
+                    "transfer_id": f"{video_id}:transfer_{local_index:02d}",
+                    "video_id": video_id,
+                    "released_row_indices": list(state["released_row_indices"]),
+                    "released_sample_ids": list(state["released_sample_ids"]),
+                    "local_state_id": state["local_state_id"],
+                }
+            )
+
+    joint_by_vector: dict[tuple[int, ...], dict[str, Any]] = {}
+    state_lists = [video_states[video_id] for video_id in changed_videos]
+    for choices in product(*state_lists):
+        budgets = [int(value) for value in capped_budgets]
+        released_indices: set[int] = set()
+        for choice in choices:
+            for row_index in choice["released_row_indices"]:
+                budgets[row_index] = int(released_budgets[row_index])
+                released_indices.add(int(row_index))
+        if not released_indices.issubset(difference_indices):
+            raise RuntimeError("neighborhood state changed a non-difference window")
+        actual_cost = sum(
+            _actual_observation_cost(row, budget)
+            for row, budget in zip(rows, budgets)
+        )
+        if actual_cost != capped_cost:
+            raise RuntimeError("neighborhood state violates the global actual-cost target")
+        for video_id in changed_videos:
+            indices = rows_by_video[video_id]
+            observed = sum(
+                _actual_observation_cost(rows[index], budgets[index]) for index in indices
+            )
+            expected = sum(
+                _actual_observation_cost(rows[index], int(capped_budgets[index]))
+                for index in indices
+            )
+            if observed != expected:
+                raise RuntimeError(
+                    f"{video_id}: neighborhood state violates its actual-cost target"
+                )
+        vector = tuple(budgets)
+        joint_by_vector.setdefault(
+            vector,
+            {
+                "released_row_indices": sorted(released_indices),
+                "released_sample_ids": sorted(sample_ids[index] for index in released_indices),
+                "budgets": budgets,
+                "actual_observation_cost": actual_cost,
+                "selected_local_state_ids": [
+                    str(choice["local_state_id"]) for choice in choices
+                ],
+            },
+        )
+    joint_states = sorted(
+        joint_by_vector.values(),
+        key=lambda state: (
+            len(state["released_row_indices"]),
+            tuple(state["released_sample_ids"]),
+        ),
+    )
+    for state_index, state in enumerate(joint_states):
+        state["state_id"] = f"state_{state_index:03d}"
+
+    atom_sets = {
+        transfer["transfer_id"]: frozenset(transfer["released_row_indices"])
+        for transfer in minimal_transfers
+    }
+    state_by_released = {
+        frozenset(state["released_row_indices"]): state for state in joint_states
+    }
+    for transfer in minimal_transfers:
+        transfer["joint_state_id"] = state_by_released[
+            frozenset(transfer["released_row_indices"])
+        ]["state_id"]
+
+    atom_ids = tuple(sorted(atom_sets))
+    for state in joint_states:
+        target = frozenset(state["released_row_indices"])
+        decompositions: list[list[str]] = []
+        for include in product((False, True), repeat=len(atom_ids)):
+            chosen = [atom_id for atom_id, keep in zip(atom_ids, include) if keep]
+            union: set[int] = set()
+            disjoint = True
+            for atom_id in chosen:
+                if union.intersection(atom_sets[atom_id]):
+                    disjoint = False
+                    break
+                union.update(atom_sets[atom_id])
+            if disjoint and frozenset(union) == target:
+                decompositions.append(chosen)
+        if not decompositions:
+            raise RuntimeError(
+                f"{state['state_id']}: state has no exact minimal-transfer decomposition"
+            )
+        state["minimal_transfer_decompositions"] = decompositions
+
+    full_released = frozenset(difference_indices)
+    full_state = state_by_released.get(full_released)
+    if full_state is None:
+        raise RuntimeError("joint neighborhood does not contain the released allocation")
+    full_group_counts = sorted(
+        {len(value) for value in full_state["minimal_transfer_decompositions"]}
+    )
+    return {
+        "difference_video_count": len(changed_videos),
+        "difference_window_count": len(difference_indices),
+        "difference_videos": list(changed_videos),
+        "difference_sample_ids": [sample_ids[index] for index in difference_indices],
+        "global_target_observation_cost": capped_cost,
+        "video_state_counts": {
+            video_id: len(video_states[video_id]) for video_id in changed_videos
+        },
+        "video_states": video_states,
+        "minimal_transfers": minimal_transfers,
+        "minimal_transfer_count": len(minimal_transfers),
+        "full_release_state_id": full_state["state_id"],
+        "full_release_decompositions": full_state[
+            "minimal_transfer_decompositions"
+        ],
+        "net_transfer_group_count_candidates": full_group_counts,
+        "net_transfer_group_count": (
+            full_group_counts[0] if len(full_group_counts) == 1 else None
+        ),
+        "joint_state_count": len(joint_states),
+        "joint_states": joint_states,
+    }
+
+
 def _raw_results_for_budgets(
     rows: Sequence[Mapping[str, Any]],
     budgets: Sequence[int],
@@ -1618,17 +1907,19 @@ def _verify_cap_release_inputs(
     paths: Mapping[str, Path],
     current_source: Mapping[str, Any],
     original_result: Mapping[str, Any],
+    expected_parent_revision: str = CAP_RELEASE_BASE_REVISION,
+    stage_label: str = "cap-release diagnostic",
 ) -> dict[str, Any]:
     current_git = _git_identity(repo_root)
     if current_git["dirty"]:
-        raise RuntimeError("cap-release diagnostic requires one clean Git commit")
+        raise RuntimeError(f"{stage_label} requires one clean Git commit")
     revision_line = subprocess.check_output(
         ["git", "rev-list", "--parents", "-n", "1", "HEAD"],
         cwd=repo_root,
         text=True,
     ).strip().split()
-    if len(revision_line) != 2 or revision_line[1] != CAP_RELEASE_BASE_REVISION:
-        raise RuntimeError("cap-release diagnostic must be one commit above the frozen base")
+    if len(revision_line) != 2 or revision_line[1] != expected_parent_revision:
+        raise RuntimeError(f"{stage_label} must be one commit above the frozen base")
     original_source = original_result.get("source", {})
     if original_source.get("git", {}).get("head") != CAP_RELEASE_BASE_REVISION:
         raise RuntimeError("original probe result is not bound to the frozen summary revision")
@@ -1684,17 +1975,86 @@ def _verify_cap_release_inputs(
         }
     return {
         "current_git": current_git,
-        "base_revision": CAP_RELEASE_BASE_REVISION,
+        "base_revision": expected_parent_revision,
         "sealed_pre_run": str(paths["pre_run"]),
         "stage_artifacts": verified,
     }
 
 
+def _verify_cap_release_neighborhood_inputs(
+    *,
+    repo_root: Path,
+    paths: Mapping[str, Path],
+    current_source: Mapping[str, Any],
+    original_result: Mapping[str, Any],
+    cap_release_result: Mapping[str, Any],
+) -> dict[str, Any]:
+    provenance = _verify_cap_release_inputs(
+        repo_root=repo_root,
+        paths=paths,
+        current_source=current_source,
+        original_result=original_result,
+        expected_parent_revision=CAP_RELEASE_TERMINAL_REVISION,
+        stage_label="cap-release neighborhood diagnostic",
+    )
+    if cap_release_result.get("status") != "CAP_RELEASE_POINT_GATE_FAILED_STOP_CURRENT_MECHANISM":
+        raise RuntimeError("neighborhood diagnostic requires the terminal cap-release result")
+    terminal_source = cap_release_result.get("source", {})
+    if terminal_source.get("git", {}).get("head") != CAP_RELEASE_TERMINAL_REVISION:
+        raise RuntimeError("terminal cap-release result has the wrong Git revision")
+    identity_keys = (
+        "config_sha256",
+        "checkpoint_sha256",
+        "checkpoint_epoch",
+        "checkpoint_state_key",
+        "annotation_sha256",
+        "class_map_sha256",
+        "videomae_pretrain_sha256",
+    )
+    mismatched = [
+        key for key in identity_keys if current_source.get(key) != terminal_source.get(key)
+    ]
+    if mismatched:
+        raise RuntimeError(
+            "terminal cap-release inputs differ from the neighborhood run: "
+            + ", ".join(mismatched)
+        )
+    original_sha = _sha256(paths["result"])
+    if cap_release_result.get("original_result", {}).get("sha256") != original_sha:
+        raise RuntimeError("terminal cap-release result does not bind probe_result.json")
+    terminal_provenance = cap_release_result.get("provenance", {})
+    if (
+        terminal_provenance.get("current_git", {}).get("head")
+        != CAP_RELEASE_TERMINAL_REVISION
+        or terminal_provenance.get("base_revision") != CAP_RELEASE_BASE_REVISION
+    ):
+        raise RuntimeError("terminal cap-release provenance is inconsistent")
+    if terminal_provenance.get("stage_artifacts") != provenance["stage_artifacts"]:
+        raise RuntimeError("terminal cap-release result does not bind the sealed producers")
+    provenance["terminal_cap_release_result"] = {
+        "path": str(paths["cap_release_result"]),
+        "sha256": _sha256(paths["cap_release_result"]),
+        "producer_revision": CAP_RELEASE_TERMINAL_REVISION,
+    }
+    return provenance
+
+
 def _metric_reproduction_error_pp(
     observed: Mapping[str, float], expected: Mapping[str, float]
 ) -> dict[str, float]:
-    keys = ("average_mAP", "mAP@0.3", "mAP@0.4", "mAP@0.5", "mAP@0.6", "mAP@0.7")
-    return {key: 100.0 * abs(float(observed[key]) - float(expected[key])) for key in keys}
+    return {
+        key: 100.0 * abs(float(observed[key]) - float(expected[key]))
+        for key in METRIC_KEYS
+    }
+
+
+def _metric_delta_pp(
+    observed: Mapping[str, float], reference: Mapping[str, float]
+) -> dict[str, float]:
+    return {
+        key: 100.0 * (float(observed[key]) - float(reference[key]))
+        for key in METRIC_KEYS
+    }
 
 
 def _allocation_counts(budgets: Sequence[int]) -> dict[str, int]:
@@ -2157,6 +2517,365 @@ def run_oracle_cap_release_stage(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
+def run_cap_release_neighborhood_stage(args: argparse.Namespace) -> dict[str, Any]:
+    (
+        repo_root,
+        config_path,
+        cfg,
+        checkpoint,
+        checkpoint_sha,
+        annotation,
+        class_map_path,
+        train_data,
+        pretrain,
+    ) = _load_config_and_paths(args)
+    output_dir = Path(args.output_dir).expanduser().resolve()
+    paths = _stage_paths(output_dir)
+    result_path = paths["cap_release_neighborhood_result"]
+    if result_path.exists():
+        return json.loads(result_path.read_text(encoding="utf-8"))
+    if not paths["result"].is_file() or not paths["cap_release_result"].is_file():
+        raise FileNotFoundError(
+            "cap-release neighborhood requires both sealed terminal result files"
+        )
+    original_result = json.loads(paths["result"].read_text(encoding="utf-8"))
+    cap_release_result = json.loads(
+        paths["cap_release_result"].read_text(encoding="utf-8")
+    )
+    if original_result.get("status") != "ORACLE_HEADROOM_GRAY_ZONE_RETURN_TO_PRO":
+        raise RuntimeError("neighborhood diagnostic requires the admitted gray-zone result")
+    current_source = _stage_source(
+        repo_root=repo_root,
+        config_path=config_path,
+        checkpoint=checkpoint,
+        checkpoint_sha256=checkpoint_sha,
+        annotation=annotation,
+        class_map=class_map_path,
+        train_data=train_data,
+        pretrain=pretrain,
+    )
+    provenance = _verify_cap_release_neighborhood_inputs(
+        repo_root=repo_root,
+        paths=paths,
+        current_source=current_source,
+        original_result=original_result,
+        cap_release_result=cap_release_result,
+    )
+    _selection_rows, merged = _merge_sealed_stage_rows(paths)
+    split = _create_or_validate_split(annotation, paths["split_dir"])
+    holdout_videos = set(str(value) for value in split["holdout_videos"])
+    holdout_rows = [row for row in merged if row["video_id"] in holdout_videos]
+    if {row["video_id"] for row in holdout_rows} != holdout_videos:
+        raise RuntimeError("sealed artifacts do not cover all frozen holdout videos")
+
+    actual_downgrade = [float(row["downgrade_penalty"]) for row in holdout_rows]
+    actual_upgrade = [float(row["upgrade_gain"]) for row in holdout_rows]
+    capped_budgets, capped_allocations = _allocate_rows_by_video(
+        holdout_rows,
+        downgrade=actual_downgrade,
+        upgrade=actual_upgrade,
+    )
+    released_budgets, released_allocations = _allocate_rows_by_video(
+        holdout_rows,
+        downgrade=actual_downgrade,
+        upgrade=actual_upgrade,
+        max_changed_fraction=1.0,
+    )
+
+    def require_allocation(
+        name: str,
+        observed: Mapping[str, Mapping[str, Any]],
+        expected: Mapping[str, Mapping[str, Any]],
+    ) -> None:
+        if set(observed) != set(expected):
+            raise RuntimeError(f"{name} allocation video sets differ")
+        keys = (
+            "budgets",
+            "requested_budgets",
+            "actual_cost",
+            "actual_budget_error",
+            "target_actual_cost",
+        )
+        for video_id in sorted(expected):
+            if any(observed[video_id][key] != expected[video_id][key] for key in keys):
+                raise RuntimeError(f"{name} allocation differs for {video_id}")
+
+    require_allocation(
+        "capped",
+        capped_allocations,
+        cap_release_result["capped_allocation"],
+    )
+    require_allocation(
+        "released",
+        released_allocations,
+        cap_release_result["cap_release_allocation"],
+    )
+    if _allocation_diagnostics(capped_budgets, capped_allocations) != cap_release_result[
+        "capped_allocation_summary"
+    ]:
+        raise RuntimeError("capped allocation summary did not reproduce")
+    if _allocation_diagnostics(released_budgets, released_allocations) != cap_release_result[
+        "cap_release_allocation_summary"
+    ]:
+        raise RuntimeError("released allocation summary did not reproduce")
+
+    neighborhood = _derive_cap_release_neighborhood(
+        holdout_rows,
+        capped_budgets=capped_budgets,
+        released_budgets=released_budgets,
+    )
+    expected_shape = {
+        "difference_video_count": 5,
+        "difference_window_count": 12,
+        "net_transfer_group_count": 6,
+        "joint_state_count": 96,
+        "global_target_observation_cost": 47_110,
+    }
+    shape_mismatch = {
+        key: {"expected": value, "observed": neighborhood.get(key)}
+        for key, value in expected_shape.items()
+        if neighborhood.get(key) != value
+    }
+    if shape_mismatch:
+        raise RuntimeError(
+            "derived cap-release neighborhood differs from the frozen input: "
+            + json.dumps(shape_mismatch, sort_keys=True)
+        )
+
+    fixed_metrics = {
+        key: float(value)
+        for key, value in original_result["fixed_h65_384"].items()
+    }
+    fixed_reproduction = _metric_reproduction_error_pp(
+        cap_release_result["fixed_h65_384"], fixed_metrics
+    )
+    if max(fixed_reproduction.values()) > 1.0e-6:
+        raise RuntimeError("sealed fixed K384 metrics disagree by more than 1e-6 pp")
+
+    state_records = neighborhood["joint_states"]
+    for state_index, state in enumerate(state_records, start=1):
+        metrics, _predictions = _official_holdout_metrics(
+            cfg,
+            raw_results=_raw_results_for_budgets(holdout_rows, state["budgets"]),
+            annotation=annotation,
+            holdout_block_list=split["holdout_block_list"],
+            evaluator_threads=args.evaluator_threads,
+        )
+        state["metrics"] = metrics
+        state["budget_counts"] = _allocation_counts(state["budgets"])
+        state["delta_vs_fixed_pp"] = _metric_delta_pp(metrics, fixed_metrics)
+        state["delta_vs_capped_pp"] = None
+        state["delta_vs_released_pp"] = None
+        if state_index % 8 == 0 or state_index == len(state_records):
+            print(
+                "cap_release_neighborhood "
+                f"states={state_index}/{len(state_records)}",
+                flush=True,
+            )
+
+    state_by_id = {state["state_id"]: state for state in state_records}
+    capped_state = next(
+        state for state in state_records if not state["released_row_indices"]
+    )
+    released_state = state_by_id[neighborhood["full_release_state_id"]]
+    capped_metrics = capped_state["metrics"]
+    released_metrics = released_state["metrics"]
+    reproduction_errors = {
+        "fixed_h65_384": fixed_reproduction,
+        "capped_oracle_original": _metric_reproduction_error_pp(
+            capped_metrics, original_result["oracle_reallocate_384"]
+        ),
+        "capped_oracle_terminal": _metric_reproduction_error_pp(
+            capped_metrics, cap_release_result["capped_oracle_384"]
+        ),
+        "released_oracle_terminal": _metric_reproduction_error_pp(
+            released_metrics, cap_release_result["cap_release_oracle_384"]
+        ),
+    }
+    if max(
+        value for errors in reproduction_errors.values() for value in errors.values()
+    ) > 1.0e-6:
+        raise RuntimeError("fixed/capped/released metrics did not reproduce within 1e-6 pp")
+
+    for state in state_records:
+        state["delta_vs_capped_pp"] = _metric_delta_pp(
+            state["metrics"], capped_metrics
+        )
+        state["delta_vs_released_pp"] = _metric_delta_pp(
+            state["metrics"], released_metrics
+        )
+
+    transfer_by_id = {
+        transfer["transfer_id"]: transfer
+        for transfer in neighborhood["minimal_transfers"]
+    }
+    for transfer in transfer_by_id.values():
+        transfer_state = state_by_id[transfer["joint_state_id"]]
+        transfer["metrics"] = transfer_state["metrics"]
+        transfer["delta_vs_capped_pp"] = transfer_state["delta_vs_capped_pp"]
+
+    for state in state_records:
+        interaction_records = []
+        for decomposition in state["minimal_transfer_decompositions"]:
+            additive = {
+                key: sum(
+                    transfer_by_id[transfer_id]["delta_vs_capped_pp"][key]
+                    for transfer_id in decomposition
+                )
+                for key in METRIC_KEYS
+            }
+            interaction_records.append(
+                {
+                    "minimal_transfer_ids": decomposition,
+                    "summed_single_transfer_delta_pp": additive,
+                    "interaction_residual_pp": {
+                        key: state["delta_vs_capped_pp"][key] - additive[key]
+                        for key in METRIC_KEYS
+                    },
+                }
+            )
+        state["interaction_decompositions"] = interaction_records
+
+    passing_states = [
+        state
+        for state in state_records
+        if state["delta_vs_fixed_pp"]["average_mAP"] >= 0.8
+        and state["delta_vs_fixed_pp"]["mAP@0.7"] >= 1.0
+    ]
+
+    def joint_gate_margin(state: Mapping[str, Any]) -> float:
+        delta = state["delta_vs_fixed_pp"]
+        return min(
+            float(delta["average_mAP"]) - 0.8,
+            float(delta["mAP@0.7"]) - 1.0,
+        )
+
+    best_joint_gate_state = sorted(
+        state_records,
+        key=lambda state: (
+            -joint_gate_margin(state),
+            -float(state["delta_vs_fixed_pp"]["average_mAP"]),
+            -float(state["delta_vs_fixed_pp"]["mAP@0.7"]),
+            str(state["state_id"]),
+        ),
+    )[0]
+    best_average_state = sorted(
+        state_records,
+        key=lambda state: (
+            -float(state["metrics"]["average_mAP"]),
+            -float(state["metrics"]["mAP@0.7"]),
+            str(state["state_id"]),
+        ),
+    )[0]
+    best_high_tiou_state = sorted(
+        state_records,
+        key=lambda state: (
+            -float(state["metrics"]["mAP@0.7"]),
+            -float(state["metrics"]["average_mAP"]),
+            str(state["state_id"]),
+        ),
+    )[0]
+
+    positive_transfer_ids = sorted(
+        transfer_id
+        for transfer_id, transfer in transfer_by_id.items()
+        if transfer["delta_vs_capped_pp"]["average_mAP"] > 0.0
+        and transfer["delta_vs_capped_pp"]["mAP@0.7"] > 0.0
+    )
+    interaction_witnesses = []
+    positive_set = set(positive_transfer_ids)
+    for state in state_records:
+        for interaction in state["interaction_decompositions"]:
+            component_ids = interaction["minimal_transfer_ids"]
+            if len(component_ids) < 2 or not set(component_ids).issubset(positive_set):
+                continue
+            joint_delta = state["delta_vs_capped_pp"]
+            best_single_avg = max(
+                transfer_by_id[value]["delta_vs_capped_pp"]["average_mAP"]
+                for value in component_ids
+            )
+            best_single_07 = max(
+                transfer_by_id[value]["delta_vs_capped_pp"]["mAP@0.7"]
+                for value in component_ids
+            )
+            reverses_or_underperforms = bool(
+                joint_delta["average_mAP"] <= 0.0
+                or joint_delta["mAP@0.7"] <= 0.0
+                or joint_delta["average_mAP"] < best_single_avg
+                or joint_delta["mAP@0.7"] < best_single_07
+            )
+            if reverses_or_underperforms:
+                interaction_witnesses.append(
+                    {
+                        "state_id": state["state_id"],
+                        "minimal_transfer_ids": component_ids,
+                        "joint_delta_vs_capped_pp": joint_delta,
+                        "best_single_average_mAP_delta_pp": best_single_avg,
+                        "best_single_mAP_at_0.7_delta_pp": best_single_07,
+                    }
+                )
+    if not positive_transfer_ids:
+        root_cause = "single-item misranking primary"
+    elif len(positive_transfer_ids) >= 2 and interaction_witnesses:
+        root_cause = "window interaction primary"
+    else:
+        root_cause = "mixed"
+
+    status = (
+        "JOINT_NEIGHBORHOOD_HEADROOM_PASS_RETURN_TO_PRO"
+        if passing_states
+        else "JOINT_NEIGHBORHOOD_GATE_FAILED_STOP_DIFFERENCE_REPAIR"
+    )
+    result = {
+        "schema": "duca_marginal_cap_release_joint_map_neighborhood_v1",
+        "status": status,
+        "paper_claim_allowed": False,
+        "deployable_policy_claim_allowed": False,
+        "same_holdout_metric_oracle_diagnostic": True,
+        "official_test_consumed": False,
+        "training_performed": False,
+        "utility_head_training_performed": False,
+        "detector_forward_executed": False,
+        "scout_forward_executed": False,
+        "gradient_computation_performed": False,
+        "bootstrap_performed": False,
+        "evaluator_call_count": len(state_records),
+        "holdout_video_count": len(holdout_videos),
+        "holdout_window_count": len(holdout_rows),
+        "frozen_continue_rule": {
+            "delta_average_mAP_pp_at_least": 0.8,
+            "delta_mAP_at_0.7_pp_at_least": 1.0,
+            "passing_state_count": len(passing_states),
+            "passing_state_ids": [state["state_id"] for state in passing_states],
+        },
+        "root_cause_classification": root_cause,
+        "root_cause_evidence": {
+            "individually_positive_minimal_transfer_ids": positive_transfer_ids,
+            "interaction_witnesses": interaction_witnesses,
+        },
+        "sealed_reference_metrics": {
+            "fixed_h65_384": fixed_metrics,
+            "capped_oracle_384": capped_metrics,
+            "cap_release_oracle_384": released_metrics,
+            "reproduction_error_pp": reproduction_errors,
+        },
+        "best_state_by_joint_gate_margin": {
+            "state_id": best_joint_gate_state["state_id"],
+            "joint_gate_margin_pp": joint_gate_margin(best_joint_gate_state),
+            "metrics": best_joint_gate_state["metrics"],
+            "delta_vs_fixed_pp": best_joint_gate_state["delta_vs_fixed_pp"],
+            "released_sample_ids": best_joint_gate_state["released_sample_ids"],
+        },
+        "best_state_by_average_mAP": best_average_state["state_id"],
+        "best_state_by_mAP_at_0.7": best_high_tiou_state["state_id"],
+        "neighborhood": neighborhood,
+        "provenance": provenance,
+        "source": current_source,
+    }
+    _write_cap_release_neighborhood_result(output_dir, result)
+    return result
+
+
 def _single_dataset_batch(dataset, index: int, *, num_workers: int):
     import torch
 
@@ -2578,6 +3297,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "counterfactual-k512",
             "summarize",
             "oracle-cap-release",
+            "oracle-cap-release-neighborhood",
             "all",
         ),
     )
@@ -2632,6 +3352,13 @@ def main() -> int:
         elif args.stage == "oracle-cap-release":
             selected = [
                 ("oracle-cap-release", lambda: run_oracle_cap_release_stage(args))
+            ]
+        elif args.stage == "oracle-cap-release-neighborhood":
+            selected = [
+                (
+                    "oracle-cap-release-neighborhood",
+                    lambda: run_cap_release_neighborhood_stage(args),
+                )
             ]
         else:
             _require_pre_run_pass(args)

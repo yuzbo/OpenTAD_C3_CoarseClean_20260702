@@ -31,8 +31,10 @@ from opentad.models.duca import (  # noqa: E402
 from tools.bata.run_duca_marginal_frozen_h65_probe import (  # noqa: E402
     _allocate_rows_by_video,
     _build_parser,
+    _derive_cap_release_neighborhood,
     _json_block_list_for_evaluator,
     _stage_paths,
+    _write_cap_release_neighborhood_result,
     _write_cap_release_result,
 )
 
@@ -336,3 +338,115 @@ def test_cap_release_result_has_an_independent_stage_and_never_overwrites_probe(
         ["--stage", "oracle-cap-release", "--output-dir", str(tmp_path)]
     )
     assert args.stage == "oracle-cap-release"
+
+
+def test_cap_release_neighborhood_derives_all_exact_cost_states_without_pairing() -> None:
+    rows = []
+    capped = []
+    released = []
+    for video_number in range(4):
+        video_id = f"video_{video_number}"
+        for window, released_budget in enumerate((256, 512)):
+            rows.append(
+                {
+                    "video_id": video_id,
+                    "sample_id": f"{video_id}|{window}",
+                    "budget_accounting": {
+                        "256": {"actual_cost": 93},
+                        "384": {"actual_cost": 100},
+                        "512": {"actual_cost": 107},
+                    },
+                }
+            )
+            capped.append(384)
+            released.append(released_budget)
+    special_video = "video_validation_0000419"
+    for window, released_budget in enumerate((256, 256, 512, 512)):
+        rows.append(
+            {
+                "video_id": special_video,
+                "sample_id": f"{special_video}|{window}",
+                "budget_accounting": {
+                    "256": {"actual_cost": 93},
+                    "384": {"actual_cost": 100},
+                    "512": {"actual_cost": 107},
+                },
+            }
+        )
+        capped.append(384)
+        released.append(released_budget)
+
+    neighborhood = _derive_cap_release_neighborhood(
+        rows,
+        capped_budgets=capped,
+        released_budgets=released,
+    )
+
+    assert neighborhood["difference_video_count"] == 5
+    assert neighborhood["difference_window_count"] == 12
+    assert neighborhood["video_state_counts"] == {
+        "video_0": 2,
+        "video_1": 2,
+        "video_2": 2,
+        "video_3": 2,
+        special_video: 6,
+    }
+    assert neighborhood["joint_state_count"] == 96
+    assert neighborhood["minimal_transfer_count"] == 8
+    assert neighborhood["net_transfer_group_count"] == 6
+    assert neighborhood["global_target_observation_cost"] == 1200
+    assert all(
+        state["actual_observation_cost"] == 1200
+        for state in neighborhood["joint_states"]
+    )
+
+    special_transfers = [
+        set(transfer["released_sample_ids"])
+        for transfer in neighborhood["minimal_transfers"]
+        if transfer["video_id"] == special_video
+    ]
+    expected_special_transfers = [
+        {f"{special_video}|{down}", f"{special_video}|{up}"}
+        for down in (0, 1)
+        for up in (2, 3)
+    ]
+    assert len(special_transfers) == 4
+    assert {frozenset(value) for value in special_transfers} == {
+        frozenset(value) for value in expected_special_transfers
+    }
+    assert len(neighborhood["full_release_decompositions"]) == 2
+    assert all(
+        len(decomposition) == 6
+        for decomposition in neighborhood["full_release_decompositions"]
+    )
+
+
+def test_cap_release_neighborhood_result_is_independent_and_parser_exposes_stage(
+    tmp_path,
+) -> None:
+    paths = _stage_paths(tmp_path)
+    paths["result"].write_text('{"status":"ORIGINAL"}\n', encoding="utf-8")
+    paths["cap_release_result"].write_text(
+        '{"status":"CAP_RELEASE"}\n', encoding="utf-8"
+    )
+    original_probe = paths["result"].read_bytes()
+    original_cap_release = paths["cap_release_result"].read_bytes()
+
+    _write_cap_release_neighborhood_result(
+        tmp_path, {"status": "NEIGHBORHOOD_TEST"}
+    )
+
+    assert paths["result"].read_bytes() == original_probe
+    assert paths["cap_release_result"].read_bytes() == original_cap_release
+    assert json.loads(
+        paths["cap_release_neighborhood_result"].read_text(encoding="utf-8")
+    ) == {"status": "NEIGHBORHOOD_TEST"}
+    args = _build_parser().parse_args(
+        [
+            "--stage",
+            "oracle-cap-release-neighborhood",
+            "--output-dir",
+            str(tmp_path),
+        ]
+    )
+    assert args.stage == "oracle-cap-release-neighborhood"
