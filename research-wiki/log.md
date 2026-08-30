@@ -4870,3 +4870,8 @@ append_only: true
   未执行模型或 G0。最终 launcher-only 修正把 fresh-fetch 放在登录节点，并让 Slurm action 核验 clean
   exact HEAD 与 persistent remote-tracking ref 同时等于 reviewed SHA；模型、门槛和结果解释未改变。最终
   exact candidate 的 fresh Critic/Evaluator 为 `PASS/PRE_RUN_READY`。
+
+- 2026-08-31：最终非科学 precheck job `1262089` 以 `COMPLETED 0:0 / PRECHECK_READY` 终态，
+  launcher 内的 focused suite 再次为 `9 passed`。随后只提交一个正式 G0 job `1262090`
+  (`zt-gf32-l6-g0`，1 GPU，4 CPU，2 小时)，提交时为 `PENDING/Priority`。本轮只测冻结的六层
+  real-shape segment gate；G1/G2 未开放，运行中不读取或解释 partial timing/memory。

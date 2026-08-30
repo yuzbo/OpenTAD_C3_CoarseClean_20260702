@@ -1419,6 +1419,10 @@ max_chars: 8000
   login-node fresh-fetch and verifies exact clean HEAD plus the persistent
   remote-tracking ref on the compute node. Fresh Critic/Evaluator on the final
   candidate returned `PASS/PRE_RUN_READY`; no G0 action has run yet.
+- Final precheck job `1262089` completed `0:0` with `PRECHECK_READY`. Exactly one
+  formal G0 job, `1262090` (`zt-gf32-l6-g0`, one GPU, four CPUs), was submitted
+  against exact candidate `0b734ab8…`; G1/G2 remain closed pending its terminal
+  frozen gate evidence.
 
 ## Pointers
 
