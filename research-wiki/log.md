@@ -4907,3 +4907,12 @@ append_only: true
   不是 GridFuse 科学失败。唯一任务变为一个无 replacement 的 production-full-window atomic G0：同一单次
   job 内完成 full-window construction/ledger、100 warmups、500 alternating measurements 和冻结 gate；任一
   blocker 或 gate failure 都永久停止 exact GridFuse32-L6，完整 pass 也只返回 fresh Pro，不自动训练。
+
+- 2026-08-31：production-full-window atomic G0 最终 clean/pushed candidate 为
+  `dde46aee17f10bf793e5407055fc7b3416d93205`，GitHub branch 与 exact commit 已绑定。实现只修改 Pro
+  许可的 profiler、focused test 和 launcher，真实使用 `B1/T384/K64/N24576`、48 个 attention buckets
+  和 temporal-384 Adapter；G1/G2、训练、full-stack 与独立 GPU witness 均关闭。N16R4 GridFuse/R1/
+  strict-rectangle suites 为 `16/12/8 passed`，fresh Critic `PASS`，fresh result-blind Evaluator
+  `PRE_RUN_READY_ATOMIC_FULLWINDOW_G0`。唯一 final scheduler-ordinal-2/scientific-measurement-1 job
+  `1262108` 于 `2026-08-31T05:38:35+08:00` 在 `g0041` 启动，1 GPU、4 CPU、2 小时；终态前不读取
+  或解释 partial timing/memory，且没有 replacement 或 ordinal 3。
