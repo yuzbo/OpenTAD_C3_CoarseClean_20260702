@@ -1385,3 +1385,9 @@ updated: 2026-08-31
     memory 门通过掩盖 p50 门失败。禁止修复、重跑、replacement、ordinal 3、G1/G2、训练、sweep 或从该
     microbenchmark 外推 accuracy/full-stack/energy/家族级失败；只能把 exact GitHub commit `dde46aee…`
     和完整终态证据交给一次 fresh Pro 独立裁决。
+49. fresh Pro 已裁决 `PIVOT / KEEP`，永久关闭 exact GridFuse32-L6；不得修正旧 config 元数据后重跑，
+    不得开 G1/G2、训练、compile/kernel rescue 或更换 pair/depth。唯一任务是冻结 FULL64、DSR6-KV、
+    MOD32-KV、DROP32 四个 epoch-59 EMA checkpoint 的只读同 GPU full-stack Pareto 测量。不得新增模型、
+    seed、arm、训练或并行 successor；必须先严格核验四臂 identity/EMA/config，使用冻结 16-pass Williams
+    order 与 pass-local median。任一 construction/identity/artifact/power/OOM/walltime blocker 无 replacement，
+    直接 fresh Pro；不得用历史 FLOPs 代理代替实测 latency/energy。

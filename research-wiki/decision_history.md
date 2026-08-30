@@ -1517,3 +1517,18 @@ execution blocker。
 不开 G1/G2、不训练、不 sweep。该证据只否定这一 exact production-full-window GridFuse32-L6 实现的冻结
 G0 工程效率可行性，不外推 accuracy、边界、full-stack、energy 或整个 token-fusion/CPTC 家族。下一任务
 必须由携带最新 repository、branch 与 exact commit GitHub 链接的 fresh exact-Project Pro 独立下达。
+
+## 126. fresh Pro 转向冻结四臂 full-stack Pareto 闭环（2026-08-31）
+
+exact ZoomToken Project conversation `6a94a6c7-e0a4-83e9-b4cc-e5dd883cf6b6` 以 `GPT-5.6 Pro`、九个
+attachment-only 文件、一次提交、零 follow-up 完整返回，并在 prompt/response 中绑定 repository、branch 与
+exact `dde46aee…` GitHub commit。裁决 `PIVOT / KEEP`：确认 job `1262108` 是
+`PROTOCOL_COMPLETE_VALID_G0_NEGATIVE`，同时把 config 保留旧 GATED task/failure 元数据记录为 nonfatal
+provenance blocker；证据可用于路线停止，但不是 claim-grade self-contained result。
+
+唯一任务为 `ZOOMTOKEN-R1-DEPTH-SPARSITY-READONLY-FOUR-ARM-FULLSTACK-PARETO-CLOSURE-v001`。冻结
+R1/FULL64、DSR6-KV、MOD32-KV、DROP32 四个现有 epoch-59 EMA checkpoint，不训练、不改模型，只在一个
+GPU 上按 `ABDC/BCAD/CDBA/DACB` 的 16-pass Williams order 测完整 decode-to-Soft-NMS p50、gross energy 与
+peak memory。先逐 pass 计算 p50/total joules，再对每臂四 pass 取中位数；任一候选同时达到 latency/energy
+ratio `<=0.95` 且 allocated/reserved ratio `<=1.05` 才保留为 Pareto survivor。formal submission `1/1`、
+无 replacement；完整终态或客观 blocker 均必须 fresh Pro。

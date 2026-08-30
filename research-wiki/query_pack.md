@@ -1470,6 +1470,17 @@ max_chars: 8000
   ordinal 3, training or sweep is allowed. Fresh Pro review must bind the latest
   repository, branch and exact GitHub commit `dde46aee…` and independently choose
   the one next scientific task.
+- Fresh exact-Project conversation `6a94a6c7-e0a4-83e9-b4cc-e5dd883cf6b6`
+  read nine attachment-only files and explicitly bound the repository, branch and
+  exact `dde46aee…` GitHub commit. It returned `PIVOT / KEEP`, confirmed
+  `PROTOCOL_COMPLETE_VALID_G0_NEGATIVE`, and recorded a nonfatal provenance blocker:
+  the exact config retained old GATED task/failure metadata. This prevents
+  claim-grade self-containment but does not invalidate the decision-grade stop.
+  The unique task is now a read-only, four-arm same-GPU full-stack Pareto closure
+  over frozen epoch-59 EMA checkpoints A=R1/FULL64, B=DSR6-KV, C=MOD32-KV,
+  D=DROP32. It permits only one profiler, launcher and focused test file, no model
+  or training change, one formal job, no replacement, and mandatory fresh Pro on
+  complete terminal evidence or objective blocker.
 
 ## Pointers
 

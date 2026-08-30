@@ -30,8 +30,8 @@
     "submitted_at": "2026-08-28T00:27:41Z",
     "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_BPNS_R1_V002_TERMINAL_PARITY_FAILURE_REVIEW_TERMINAL_RECEIPT-ATTEMPT4-v001.json"
   },
-  "epoch": 36,
-  "execution_state": "GRIDFUSE32_L6_PRODUCTION_FULLWINDOW_ATOMIC_G0_VALID_NEGATIVE_PENDING_FRESH_PRO",
+  "epoch": 37,
+  "execution_state": "R1_DEPTH_SPARSITY_FOUR_ARM_FULLSTACK_PARETO_BUILDER",
   "gridfuse32_l6_gated": {
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",
     "branch": "codex/zoomtoken-gridfuse32-l6-v001",
@@ -235,8 +235,56 @@
       "terminal_receipt_path": "/data/run01/sczc063/yuzibo/projects/zoomtoken_gridfuse32_l6_production_fullwindow_atomic_g0_final_20260831/g0/terminal_receipt.json"
     },
     "scientific_return_due_beijing": "2026-09-03T12:00:00+08:00",
-    "status": "PRODUCTION_FULLWINDOW_ATOMIC_G0_VALID_NEGATIVE_PENDING_FRESH_PRO",
+    "terminal_fresh_pro_request": {
+      "actual_submission_count": 1,
+      "attachment_count": 9,
+      "browser_inline_files": false,
+      "completed_at": "2026-08-30T22:12:26.668Z",
+      "conversation_id": "6a94a6c7-e0a4-83e9-b4cc-e5dd883cf6b6",
+      "conversation_url": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b-zoomtoken/c/6a94a6c7-e0a4-83e9-b4cc-e5dd883cf6b6",
+      "decision": "PIVOT",
+      "follow_up_count": 0,
+      "model_picker_label": "Pro",
+      "nonce": "ZOOMTOKEN-GRIDFUSE32-L6-PRODUCTION-FULLWINDOW-G0-TERMINAL-PRO-v001-20260831T055129+0800",
+      "observed_model_label": "GPT-5.6 Pro",
+      "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
+      "request_id": "PRO_GRIDFUSE32_L6_PRODUCTION_FULLWINDOW_ATOMIC_G0_TERMINAL_NEGATIVE_ADJUDICATION-v001",
+      "response_path": ".cvpr-pro-lab/reviews/PRO_GRIDFUSE32_L6_PRODUCTION_FULLWINDOW_ATOMIC_G0_TERMINAL_NEGATIVE_ADJUDICATION_RESPONSE-v001.md",
+      "role_contract": "KEEP",
+      "selected_task": "ZOOMTOKEN-R1-DEPTH-SPARSITY-READONLY-FOUR-ARM-FULLSTACK-PARETO-CLOSURE-v001",
+      "status": "COMPLETED_AUDITED",
+      "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_GRIDFUSE32_L6_PRODUCTION_FULLWINDOW_ATOMIC_G0_TERMINAL_NEGATIVE_ADJUDICATION_TERMINAL_RECEIPT-v001.json"
+    },
+    "status": "PRODUCTION_FULLWINDOW_ATOMIC_G0_STOPPED_FRESH_PRO_PIVOT",
     "task_id": "ZOOMTOKEN-GRIDFUSE32-L6-PRODUCTION-FULLWINDOW-ATOMIC-G0-v001"
+  },
+  "r1_depth_sparsity_four_arm_pareto": {
+    "allowed_paths": [
+      "tools/bata/profile_zoomtoken_r1_depth_pareto_cost.py",
+      "scripts/run_zoomtoken_r1_depth_pareto_cost_n16r4.sh",
+      "tests/test_zoomtoken_r1_depth_pareto_cost.py"
+    ],
+    "arms": {
+      "A": "R1_FULL64_job1249099_epoch59_ema",
+      "B": "DSR6_KV_job1252527_epoch59_ema",
+      "C": "MOD32_KV_job1252180_epoch59_ema",
+      "D": "DROP32_job1252179_epoch59_ema"
+    },
+    "builder_candidate_due_beijing": "2026-08-31T12:00:00+08:00",
+    "builder_plan_due_beijing": "2026-08-31T07:00:00+08:00",
+    "critic_due_beijing": "2026-08-31T13:15:00+08:00",
+    "evaluator_due_beijing": "2026-08-31T14:45:00+08:00",
+    "execution_base": "c6327a891809aa30370b3b2d9bedab0dcfe0d326",
+    "formal_action_due_beijing": "2026-08-31T15:15:00+08:00",
+    "formal_pass_order": ["A", "B", "D", "C", "B", "C", "A", "D", "C", "D", "B", "A", "D", "A", "C", "B"],
+    "formal_submission_limit": 1,
+    "latest_start_or_blocker_due_beijing": "2026-08-31T18:00:00+08:00",
+    "replacement_allowed": false,
+    "resource_limit": "1 GPU / 5 CPU / 16:00:00",
+    "scientific_return_due_beijing": "2026-09-01T11:00:00+08:00",
+    "selected_task": "ZOOMTOKEN-R1-DEPTH-SPARSITY-READONLY-FOUR-ARM-FULLSTACK-PARETO-CLOSURE-v001",
+    "status": "BUILDER_PLAN_IN_PROGRESS",
+    "warmup_windows_per_pass": 50
   },
   "k100_tar50_interaction_falsifier": {
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",

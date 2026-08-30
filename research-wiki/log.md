@@ -4925,3 +4925,11 @@ append_only: true
   `STOP_GRIDFUSE32_L6_EXACT_ROUTE_VALID_G0_NEGATIVE`：exact GridFuse32-L6 路线永久停止，不修复、不重跑、
   不开 G1/G2。最新实现审查身份固定为 GitHub commit `dde46aee…`，下一动作只有携带 repository、branch、
   exact commit 链接及完整终态证据的一次 fresh exact-Project Pro 裁决。
+
+- 2026-08-31：fresh exact-Project conversation `6a94a6c7-e0a4-83e9-b4cc-e5dd883cf6b6` 以 verified
+  `GPT-5.6 Pro`、九个 attachment-only 文件、submission `1`、follow-up `0` 完成；prompt 与 response
+  均回显 repository、branch 与 exact `dde46aee…` commit 链接。裁决 `PIVOT / KEEP`，确认 G0 是
+  `PROTOCOL_COMPLETE_VALID_G0_NEGATIVE`，但旧 config task/failure 元数据构成 nonfatal provenance blocker，
+  所以只作 decision-grade。唯一下一任务转为不训练的四臂同硬件 full-stack Pareto 闭环：冻结
+  R1/FULL64、DSR6-KV、MOD32-KV、DROP32 epoch-59 EMA，以 16-pass Williams order、pass-local median、
+  continuous NVML 和严格 coverage 门决定是否存在真实 latency-energy-memory survivor。
