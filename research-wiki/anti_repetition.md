@@ -1391,3 +1391,9 @@ updated: 2026-08-31
     seed、arm、训练或并行 successor；必须先严格核验四臂 identity/EMA/config，使用冻结 16-pass Williams
     order 与 pass-local median。任一 construction/identity/artifact/power/OOM/walltime blocker 无 replacement，
     直接 fresh Pro；不得用历史 FLOPs 代理代替实测 latency/energy。
+50. 四臂只读 full-stack 实现已冻结为 clean/pushed GitHub commit `b82441c1…`；local/N16R4 focused
+    tests、fresh Critic、fresh result-blind Evaluator 与 precheck `1262119` 均已通过。唯一 formal job
+    `1262120` 已使用 1 GPU/5 CPU/16h 提交，submission `1/1`。不得在其运行中读取或解释 partial
+    latency、energy、memory、prediction、accuracy、短动作或边界结果；不得创建 retry、resume、replacement、
+    第二 seed、额外 arm 或并行 successor。终态后 fresh Pro prompt 必须包含最新 repository、branch 与 exact
+    commit GitHub URL，不能只附本地材料或分支名称。

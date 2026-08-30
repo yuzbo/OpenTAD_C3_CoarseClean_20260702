@@ -4933,3 +4933,12 @@ append_only: true
   所以只作 decision-grade。唯一下一任务转为不训练的四臂同硬件 full-stack Pareto 闭环：冻结
   R1/FULL64、DSR6-KV、MOD32-KV、DROP32 epoch-59 EMA，以 16-pass Williams order、pass-local median、
   continuous NVML 和严格 coverage 门决定是否存在真实 latency-energy-memory survivor。
+
+- 2026-08-31：四臂只读 full-stack profiler/launcher/test 已冻结并推送为
+  `b82441c1aa2663069033d394794298d5c723bbb6`，GitHub repository、branch 和 exact commit 链接均已绑定。
+  local focused suite 为 `22 passed, 1 skipped`，N16R4 exact checkout 为 `23 passed`；fresh independent
+  Critic `PASS`，fresh result-blind Evaluator `PRE_RUN_READY`。非科学 precheck job `1262119` 在 `g0063`
+  `COMPLETED 0:0 / PRECHECK_READY`，核验四臂 checkpoint SHA、epoch-59 EMA、config/evaluator/NMS、211/792
+  population 与 atomic writers，未读取科学指标。唯一 formal job `1262120` 已于
+  `2026-08-31T06:37:14+08:00` 以 1 GPU、5 CPU、16 小时提交，formal submission `1/1`、无 replacement；
+  运行中不读取 partial 结果，终态或 blocker 后只发起一次携带最新 GitHub 三链接的 fresh Pro。

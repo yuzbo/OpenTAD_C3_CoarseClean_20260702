@@ -1481,6 +1481,20 @@ max_chars: 8000
   D=DROP32. It permits only one profiler, launcher and focused test file, no model
   or training change, one formal job, no replacement, and mandatory fresh Pro on
   complete terminal evidence or objective blocker.
+- The four-arm replay implementation is now frozen and pushed at GitHub commit
+  `b82441c1aa2663069033d394794298d5c723bbb6` on branch
+  `codex/zoomtoken-r1-depth-pareto-v001`. Local focused checks are 22 passed with
+  one N16R4-only skip; the exact N16R4 checkout passes all 23 tests. A fresh
+  independent Critic returned `PASS` and a fresh result-blind Evaluator returned
+  `PRE_RUN_READY`.
+- Non-scientific precheck job `1262119` completed `0:0 / PRECHECK_READY`, binding
+  all four checkpoint SHA256 values, epoch-59 EMA identity, clean source commit,
+  211/792 population, evaluator/NMS contracts and atomic writers without reading
+  validation performance. The sole formal job `1262120` has been submitted with
+  one GPU, five CPUs and a 16-hour limit; formal submission is `1/1`, no
+  replacement. No running/partial result is consumed. Terminal evidence or an
+  objective blocker must return to one fresh Pro request that explicitly includes
+  the repository, branch and exact implementation commit URLs.
 
 ## Pointers
 
