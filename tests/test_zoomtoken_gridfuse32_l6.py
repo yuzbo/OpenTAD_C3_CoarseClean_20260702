@@ -238,3 +238,17 @@ def test_gridfuse_adds_no_parameters_and_config_freezes_all_gates():
     assert config.gridfuse32_l6_contract.new_trainable_parameters is False
     assert config.gridfuse32_l6_contract.gt_for_route_allowed is False
     assert config.gridfuse32_l6_contract.teacher_for_route_allowed is False
+
+
+def test_g2_binds_candidate_checkpoint_to_the_g1_terminal_receipt():
+    launcher = (
+        ROOT / "scripts" / "run_zoomtoken_gridfuse32_l6_gated_n16r4.sh"
+    ).read_text(encoding="utf-8")
+    for binding in (
+        'G1_TERMINAL="${RESULT_ROOT}/g1/terminal_receipt.json"',
+        'terminal["checkpoint"] == candidate',
+        'terminal["checkpoint_sha256"] == digest.hexdigest()',
+        'terminal["checkpoint_epoch"] == 59',
+        'terminal["primary_state"] == "state_dict_ema"',
+    ):
+        assert binding in launcher

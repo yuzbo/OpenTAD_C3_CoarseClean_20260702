@@ -143,8 +143,15 @@ PY
     set -e
     checkpoint="${G1_CELL}/gpu2_id0/checkpoint/epoch_59.pth"
     python - "${G1_ROOT}/terminal_receipt.json" "${status}" "${checkpoint}" "${EXPECTED_COMMIT}" <<'PY'
-import json, os, sys
+import hashlib, json, os, sys
 path, code, checkpoint, commit = sys.argv[1:]
+checkpoint_sha256 = None
+if os.path.isfile(checkpoint):
+    digest = hashlib.sha256()
+    with open(checkpoint, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    checkpoint_sha256 = digest.hexdigest()
 payload = {
     "schema_version": "zoomtoken_gridfuse32_l6_g1_terminal_v001",
     "status": (
@@ -154,7 +161,8 @@ payload = {
     ),
     "exit_code": int(code),
     "source_commit": commit,
-    "checkpoint": checkpoint if os.path.isfile(checkpoint) else None,
+    "checkpoint": os.path.realpath(checkpoint) if os.path.isfile(checkpoint) else None,
+    "checkpoint_sha256": checkpoint_sha256,
     "checkpoint_epoch": 59 if os.path.isfile(checkpoint) else None,
     "primary_state": "state_dict_ema" if os.path.isfile(checkpoint) else None,
 }
@@ -168,14 +176,28 @@ PY
     [[ "${#visible_gpus[@]}" -eq 1 ]] || fail 'G2 requires exactly one visible GPU'
     [[ "${SLURM_CPUS_PER_TASK:-}" == "5" ]] || fail 'G2 requires --cpus-per-task=5'
     G1_GATE="${ZOOMTOKEN_GRIDFUSE_G1_GATE_RECEIPT:?G2 requires the frozen G1 gate receipt}"
+    G1_TERMINAL="${RESULT_ROOT}/g1/terminal_receipt.json"
     CANDIDATE_CHECKPOINT="${ZOOMTOKEN_GRIDFUSE_CANDIDATE_CHECKPOINT:?G2 requires epoch-59 candidate EMA}"
-    [[ -f "${G1_GATE}" && -f "${CANDIDATE_CHECKPOINT}" ]] || fail 'G2 gate or checkpoint is missing'
-    python - "${G1_GATE}" <<'PY'
-import json, sys
+    [[ -f "${G1_GATE}" && -f "${G1_TERMINAL}" && -f "${CANDIDATE_CHECKPOINT}" ]] || \
+      fail 'G2 gate, G1 terminal receipt, or checkpoint is missing'
+    python - "${G1_GATE}" "${G1_TERMINAL}" "${CANDIDATE_CHECKPOINT}" <<'PY'
+import hashlib, json, os, sys
 with open(sys.argv[1], encoding="utf-8") as handle:
-    payload = json.load(handle)
-assert payload["gate_passed"] is True
-assert payload["status"] == "GRIDFUSE32_L6_G1_ACCURACY_PASS_PENDING_G2"
+    gate = json.load(handle)
+with open(sys.argv[2], encoding="utf-8") as handle:
+    terminal = json.load(handle)
+candidate = os.path.realpath(sys.argv[3])
+digest = hashlib.sha256()
+with open(candidate, "rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+assert gate["gate_passed"] is True
+assert gate["status"] == "GRIDFUSE32_L6_G1_ACCURACY_PASS_PENDING_G2"
+assert terminal["status"] == "GRIDFUSE32_L6_G1_TRAINING_COMPLETED_PENDING_RESULT_INGEST"
+assert terminal["checkpoint"] == candidate
+assert terminal["checkpoint_sha256"] == digest.hexdigest()
+assert terminal["checkpoint_epoch"] == 59
+assert terminal["primary_state"] == "state_dict_ema"
 PY
     G2_ROOT="${RESULT_ROOT}/g2"
     [[ ! -e "${G2_ROOT}" ]] || fail 'exclusive G2 result root already exists'
