@@ -11,6 +11,8 @@
 - raw profile：`/data/run01/sczc063/yuzibo/results/zoomtoken_racer24_i0_5ebaa74f_20260831/profile.json`
 - raw terminal receipt：`/data/run01/sczc063/yuzibo/results/zoomtoken_racer24_i0_5ebaa74f_20260831/terminal_receipt.json`
 
+执行偏差：本机 GitHub HTTPS push 失败后，未推送的 exact commit 通过增量 Git bundle 部署到 remote clean checkout；这违反 RTK 的“bundle 只传递已推送对象”同步纪律。local/remote HEAD 和 clean identity 精确一致，但 GitHub branch 仍不可验证。该偏差不被隐去，结果的最终证据等级交 fresh Pro 裁决。
+
 首次 job `1262067` 仅因 `/bin/sh` wrapper 无 `source/module/python` 而在 1 秒内退出；没有 Python、模型或 CUDA 执行。独立 Evaluator 将其定性为 `PRE_EXECUTION_OPERATIONAL_BLOCKER` 并准入一次显式 `/bin/bash -lc` replacement。它不计科学尝试，也不提供性能证据。
 
 ## 冻结测量

@@ -504,6 +504,7 @@
     "evaluator_status": "PRE_RUN_READY",
     "n16r4_focused_tests": "16 passed in 48.99s",
     "github_push_status": "BLOCKED_BY_LOCAL_SSL_ERROR_SYSCALL_REMOTE_BUNDLE_DEPLOYMENT_USED",
+    "deployment_policy_deviation": "UNPUSHED_COMMIT_TRANSFERRED_BY_GIT_BUNDLE_CONTRARY_TO_RTK_PUSHED_OBJECT_ONLY_RULE_PENDING_PRO_EVIDENCE_GRADE_ADJUDICATION",
     "remote_source_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_racer24_src_5ebaa74f",
     "microbenchmark": {
       "initial_job_id": "1262067",
