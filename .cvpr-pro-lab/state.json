@@ -456,7 +456,7 @@
     "fresh_pro_request": {
       "request_id": "PRO_CPTC_K100_TAR50_TERMINAL_PROTOCOL_BLOCKER_ADJUDICATION-v001",
       "nonce": "ZOOMTOKEN-CPTC-K100-TAR50-TERMINAL-PRO-v001-20260830T134700+0800",
-      "status": "WAITING_SHARED_PROFILE_IDLE",
+      "status": "PRECONTACT_ORACLE_ARGUMENT_BLOCKER",
       "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
       "profile_id": "61",
       "transport": "attachment-only",
@@ -465,8 +465,15 @@
       "actual_submission_count": 0,
       "follow_up_count": 0,
       "slot_guard_job": "j-6lcwat",
+      "slot_guard_state": "EXITED_1",
       "run_root": ".cvpr-pro-lab/reviews/runs/zoomtoken-cptc-k100-tar50-terminal-pro-20260830t134700",
-      "blocker": "Another ChatGPT generation is active on shared profile 61; wait for natural terminal state without stop/refresh/restart."
+      "browser_contacted": false,
+      "attachments_uploaded": false,
+      "conversation_created": false,
+      "prompt_submitted": false,
+      "scientific_turn_consumed": false,
+      "blocker": "Oracle 0.17.1 rejected --reasoning-effort because it requires --engine api; this browser invocation stopped before browser contact.",
+      "blocker_receipt": ".cvpr-pro-lab/reviews/PRO_CPTC_K100_TAR50_TERMINAL_PROTOCOL_BLOCKER_ADJUDICATION_PRECONTACT_BLOCKER-v001.json"
     },
     "builder_candidate_due_beijing": "2026-08-30T09:30:00+08:00",
     "critic_due_beijing": "2026-08-30T11:00:00+08:00",
@@ -480,7 +487,7 @@
   "last_pro_review_at": "2026-08-29T17:05:07.051Z",
   "new_evidence_since_pro": true,
   "next_pro_review_due_at": "IMMEDIATE_AFTER_TERMINAL_INGESTION",
-  "pause_reason": "FRESH_PRO_REQUIRED_AFTER_TERMINAL_ENGINEERING_PROTOCOL_BLOCKER",
+  "pause_reason": "PRECONTACT_ORACLE_ARGUMENT_BLOCKER_NO_AUTOMATIC_RESUBMISSION",
   "midday_report": {
     "required_at_beijing": "2026-08-28T12:00:00+08:00",
     "delivered_at_beijing": "2026-08-28T12:04:48+08:00",
@@ -538,5 +545,5 @@
   "schema_version": "1.0",
   "stage": "G6_FULL_EVAL",
   "status": "K100_TAR50_FORMAL_TERMINAL_ENGINEERING_PROTOCOL_BLOCKER_PENDING_FRESH_PRO",
-  "updated_at": "2026-08-30T05:53:00Z"
+  "updated_at": "2026-08-30T07:09:11Z"
 }
