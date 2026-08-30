@@ -1471,3 +1471,20 @@ Evaluator。唯一有效微基准 job `1262068` 在固定 `B=1/T8/K64/Q192/KV512
 FARM24、PairLatent32 或其他 rescue。该结果只否定当前 exact RACER24 实现的最低 block-path 工程效率
 可行性；不外推为全部 selected-Q/full-KV、completion 或 CPTC 失败。下一科学任务必须由 fresh Pro
 在完整负结果与 provenance 边界上独立下达。
+
+## 123. fresh Pro 停止 RACER24 并冻结 GridFuse32-L6 门控任务（2026-08-31）
+
+exact ZoomToken Project conversation `6a94842b-1370-83ea-a13c-2cc492170597` 在浏览器可验证 Pro
+路由下完成一次提交、零 follow-up。裁决为 `PIVOT`、`STOP_RACER24_ITERATION0`、角色合同 `KEEP`。
+job `1262068` 保留为 `DECISION_GRADE_VALID_NEGATIVE_NOT_CLAIM_GRADE`：运行时 candidate 尚未推送，
+所以同时性 provenance 降级，但 local、remote 与后来 GitHub 上的 exact SHA 一致，足以支持内部停止，
+不授权重跑。它不支持 accuracy、full-stack、energy、跨硬件或家族级外推。
+
+浏览器日志实际上传 6 个文件；Pro 回答声称读取 7 个 attachment-only 文件并额外列出旧 BPNS 回执。
+该冲突作为传输审计差异保存，不用第二次提交或 follow-up 修补。
+
+唯一下一任务为 `ZOOMTOKEN-GRIDFUSE32-L6-GATED-v001`：从 clean base `2d945e64...` 开始，保持 R1
+K64、全部 temporal tubelet 与 dense Adapter；blocks 6–11 用固定相邻 pair 将完整 Q/K/V/MLP 的物理
+序列缩到 N256，再把 block residual 广播回 N512。G0 先要求六-block segment p50 speedup `>=1.35x`
+且 allocated/reserved ratios 均 `<=1.05`；仅通过才开启单 seed G1，G1 通过才开启 matched full-stack G2。
+任一门失败即终态并返回 fresh Pro，不做 rescue、sweep、第二候选或额外 seed。

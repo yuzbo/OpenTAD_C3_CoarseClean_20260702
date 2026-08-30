@@ -1387,15 +1387,25 @@ max_chars: 8000
   evidence. Iteration-0 is stopped. Training, K/block tuning, full-stack cost,
   FARM24 and PairLatent32 remain forbidden pending a fresh Pro decision.
 
-## Current Decision Question: RACER24 Terminal Adjudication
+## Fresh Pro Adjudication and Unique Task: GridFuse32-L6
 
-- Does the decisive `0.24964x` speedup and approximately `1.99x/1.85x` memory
-  overhead terminate RACER24 as the primary route, or is there a scientifically
-  distinct route worth defining? Codex does not propose or select that successor.
-- Pro must receive the exact candidate, implementation/Critic/Evaluator record,
-  raw profile, terminal receipt, negative result, provenance warning and the
-  still-unresolved K100-TAR50 protocol blocker, then issue one independent next
-  task. No experiment runs before that adjudication.
+- The exact-Project fresh Pro conversation
+  `6a94842b-1370-83ea-a13c-2cc492170597` returned `PIVOT`, role contract `KEEP`,
+  and permanently stopped the exact RACER24 Iteration-0 implementation. The
+  `1262068` result is a decision-grade valid negative with a disclosed pre-push
+  deployment deviation, but it is not claim-grade evidence and is not rerun.
+- Browser evidence records one prompt, zero follow-ups and six uploaded files.
+  The Pro response says it read seven attachment-only files and names an old BPNS
+  receipt that the upload log does not contain. Preserve this as an attachment
+  provenance discrepancy; do not rewrite the browser count or resubmit the turn.
+- The only next task is `ZOOMTOKEN-GRIDFUSE32-L6-GATED-v001`: keep all eight
+  temporal tubelets and the R1 K64 carrier, keep blocks 0–5 dense, and in blocks
+  6–11 use fixed adjacent spatial pairs to run full Q/K/V/MLP on N256, broadcast
+  the block residual back to N512, and then run the existing dense Adapter.
+- G0 is a pre-training six-block real-shape gate requiring p50 speedup `>=1.35x`
+  and allocated/reserved ratios `<=1.05`. Only a full G0 pass opens the single
+  seed-42 G1 training cell; only a full G1 pass opens matched full-stack G2.
+  A failed gate is terminal and returns to a fresh Pro without rescue or sweep.
 
 ## Pointers
 

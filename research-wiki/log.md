@@ -4846,3 +4846,15 @@ append_only: true
   `>=1.08x` speed 与 `<=1.05x` memory 门全部失败，故终态为
   `STOP_RACER24_ITERATION0_AND_RETURN_TO_PRO`。这是当前 exact block-path 实现的有效负结果，不是
   accuracy、full-stack TAD、energy 或整个方法家族结论；不训练、不调参、不救援、不打开后继候选。
+
+- 2026-08-31：fresh exact-Project Pro conversation `6a94842b-1370-83ea-a13c-2cc492170597` 已终态。
+  唯一 prompt 绑定了最新 GitHub branch 与 exact commit URL；model picker `Pro` 已验证，提交 `1`、
+  follow-up `0`。Pro 裁决 `PIVOT / STOP_RACER24_ITERATION0 / KEEP`，把 RACER24 负结果降为带
+  pre-push deployment deviation 披露的 decision-grade evidence，不重跑、不升级为论文 claim。
+  浏览器上传日志为 6 个文件，而 Pro 文本声称读取 7 个并列出一个未在日志中的旧 BPNS 回执；该差异
+  作为 provenance discrepancy 保存，不重提。
+
+- 2026-08-31：Pro 独立下达唯一任务 `ZOOMTOKEN-GRIDFUSE32-L6-GATED-v001`。该候选保持 R1 K64、
+  8 个 temporal tubelet 和 dense Adapter，blocks 6–11 用固定相邻 pair 把完整 Q/K/V/MLP 物理序列
+  从 N512 缩到 N256，再将 block residual 广播回 dense carrier。G0/G1/G2 是单一门控链；前门失败
+  即终态并 fresh Pro，不开启 rescue、第二候选、sweep 或额外 seed。

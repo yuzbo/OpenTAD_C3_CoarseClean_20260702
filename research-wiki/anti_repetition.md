@@ -1345,3 +1345,12 @@ updated: 2026-08-29
     来 rescue 冻结门失败；也不得自动实现 FARM24/PairLatent32。
 37. 该负结果只否定当前 exact candidate 的最低 block-path 工程效率可行性，不外推为全部 selected-Q/
     full-KV、residual completion 或 CPTC 方向失败。下一路线只能由 fresh Pro 独立裁决。
+38. exact-Project fresh Pro 已给出 `STOP_RACER24_ITERATION0`；不得重跑、训练、full-stack 测量或以
+    编译、自定义 kernel、改 K/blocks 等方式救援。当前数值只作 disclosed pre-push deviation 下的
+    decision-grade negative；若未来论文引用精确数值，必须另经 Pro 授权并在运行前验证 pushed SHA。
+39. 当前唯一任务是 `ZOOMTOKEN-GRIDFUSE32-L6-GATED-v001`。不得并行 FARM24、PairLatent32、第二候选、
+    pair/capacity/depth/direction sweep、teacher、辅助 loss、cache 或额外 seed。G0/G1/G2 只能按前门依次开启。
+40. 浏览器日志证明本轮 Pro 实际上传 6 个文件；Pro 回答声称 7 个并列出未在上传日志中的旧 BPNS 回执。
+    该差异必须保留为 provenance discrepancy，不得把 7 改写为浏览器事实，也不得为补附件重提或 follow-up。
+41. GridFuse32-L6 在 focused checks、fresh Critic、result-blind Evaluator、真实 G0 和后续条件门完成前只是
+    待检验提案，不能写成已加速、已保护边界或论文主方法。
