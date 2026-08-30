@@ -4808,3 +4808,12 @@ append_only: true
   在 job 创建前被 Slurm `AssocMaxSubmitJobLimit` 拒绝，Job ID 不存在、formal submission 仍为
   `0/1`、result root 未创建、训练/评测未开始。共享提交槽由 machine-side `sleep 300` waiter
   `j-00wllb` 静默等待；不取消或修改无关作业，也不绕过 precheck。
+
+- 2026-08-30：非科学 precheck job `1261670` 已 `COMPLETED 0:0 / PRECHECK_READY`，随后唯一
+  formal job `1261680` 在 `g0087` 运行 `00:00:38` 后终态 `FAILED 1:0`。训练到 epoch 0、首个成功
+  optimizer update 前即因 `successful update indexing requires a GeoRoute backbone` 退出；result root
+  只有 launch/terminal receipt 与 training log，没有 checkpoint、official prediction/vector、短动作、
+  边界或成本证据。该终态是 `ENGINEERING_OR_PROTOCOL_BLOCKER`，不触发六门，也不支持 family stop。
+  同一终态审计还确认冻结 prose 的 full-800 K/V、per-tubelet K50 语义与未修改的 strict A-MoD
+  实现不一致：继承 odd block 在全局 flattened top-400 selected tensor 上执行 attention，K/V 也只有
+  selected-400。正式提交已用尽 `1/1`；两项问题原样交 fresh Project Pro，不自动修复或重跑。

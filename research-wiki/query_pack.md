@@ -1347,6 +1347,18 @@ max_chars: 8000
   accuracy/short-action/boundary gates must pass; any valid failure stops the
   fixed-half-update attention-column identity-bypass family. No cost is
   authorized before a fresh Pro review.
+- Formal job `1261680` exhausted the single authorized submission and failed
+  before its first successful optimizer update with `ValueError: successful
+  update indexing requires a GeoRoute backbone`. It produced no checkpoint,
+  official vector, short-action/boundary diagnostic or cost evidence and is
+  therefore `ENGINEERING_OR_PROTOCOL_BLOCKER`, not a scientific negative.
+- A material specification conflict was found during terminal audit. The frozen
+  prose says full K/V over all 800 tokens and `[K100,K50]x6`, but the unchanged
+  inherited strict A-MoD odd block gathers a global flattened top 400 and runs
+  attention on that selected tensor, so its K/V are selected-400 rather than
+  full-800 and it is not an explicit per-tubelet K50 contract. This conflict and
+  the hook failure must be adjudicated by a fresh Project Pro; no corrected run,
+  route decision or family-level claim is authorized locally.
 
 ## Pointers
 

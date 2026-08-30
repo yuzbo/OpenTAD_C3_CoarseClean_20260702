@@ -1324,3 +1324,9 @@ updated: 2026-08-29
     `[K100,K50]x6` 交互归因单元；不得把它改写成 A-MoD 新颖性主张或 TAR32 补救。
 27. `ZT-CPTC-K100-TAR50-INTERACTION-FALSIFIER-001` 的正式 `sbatch` 上限为 1。任何正式失败
     直接返回 Pro，不 retry、resume、replacement；有效通过也不自动测成本或重组 R1。
+28. job `1261680` 已在首个成功 optimizer update 前因 non-GeoRoute backbone 与
+    `successful update indexing` 钩子不兼容而终态失败。不得把它写成 K100-TAR50 准确率负结果，
+    不得重提、恢复、替换或补测成本。
+29. 不得继续沿用“strict A-MoD capacity 0.5 等同 full-K/V `[K100,K50]x6`”的表述。现有继承实现
+    在 odd block 对全局 flattened top-400 selected tensor 做 attention，K/V 也只有 selected-400；
+    该规格冲突必须原样返回 fresh Pro，未裁决前不得自行修正文案或代码后重跑。
