@@ -179,7 +179,7 @@ def test_allocator_accounts_for_real_short_window_cost_and_reports_infeasibility
         valid_observations=torch.tensor([300, 428, 512, 512]),
         budget_levels=(256, 384, 512),
         baseline_budget=384,
-        max_changed_fraction=1.0,
+        max_changed_fraction=0.5,
     )
     assert feasible.feasible is True
     assert torch.equal(feasible.effective_budget, torch.tensor([256, 512, 384, 384]))
