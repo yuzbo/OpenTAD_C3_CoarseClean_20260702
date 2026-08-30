@@ -1204,6 +1204,7 @@ class Block(BaseModule):
         x: Tensor,
         bucket_positions: List[Tensor],
         packed_stats: Optional[Dict[str, int]],
+        record_kv_tokens: bool = False,
     ) -> Tensor:
         if x.ndim != 3:
             raise ValueError("ragged block inputs must be [B,S,C]")
@@ -1240,6 +1241,10 @@ class Block(BaseModule):
                 packed_stats["executed_attention_tokens"] = int(
                     packed_stats.get("executed_attention_tokens", 0)
                 ) + rows * tokens
+                if record_kv_tokens:
+                    packed_stats["executed_kv_tokens"] = int(
+                        packed_stats.get("executed_kv_tokens", 0)
+                    ) + rows * tokens
                 packed_stats["executed_attention_pairs"] = int(
                     packed_stats.get("executed_attention_pairs", 0)
                 ) + rows * tokens * tokens
@@ -1248,6 +1253,178 @@ class Block(BaseModule):
                 ) + rows * tokens
         if not bool(visited.all().item()):
             raise RuntimeError("ragged attention buckets omitted a selected token")
+        return out.reshape_as(x)
+
+    def _gridfuse32_attention_mlp_forward(
+        self,
+        x: Tensor,
+        bucket_positions: List[Tensor],
+        tubelet_indices: Tensor,
+        spatial_indices: Tensor,
+        *,
+        grid_height: int,
+        grid_width: int,
+        orientation: str,
+        packed_stats: Optional[Dict[str, int]],
+    ) -> Tensor:
+        """Run one fixed-pair GridFuse block and restore the native carrier."""
+
+        if x.ndim != 3:
+            raise ValueError("GridFuse32 block inputs must be [B,S,C]")
+        if orientation not in {"horizontal", "vertical"}:
+            raise ValueError("GridFuse32 orientation must be horizontal or vertical")
+        if int(grid_height) != 10 or int(grid_width) != 10:
+            raise ValueError("GridFuse32 requires the frozen native 10x10 patch lattice")
+        if tubelet_indices.shape != x.shape[:2] or spatial_indices.shape != x.shape[:2]:
+            raise ValueError("GridFuse32 lineage must match the native carrier")
+        if not bucket_positions:
+            raise ValueError("GridFuse32 requires at least one non-empty clip")
+
+        flat = x.reshape(-1, int(x.shape[-1]))
+        flat_tubelets = tubelet_indices.reshape(-1)
+        flat_spatial = spatial_indices.reshape(-1)
+        out = flat.clone()
+        visited = torch.zeros(
+            int(flat.shape[0]),
+            device=x.device,
+            dtype=torch.bool,
+        )
+        for positions in bucket_positions:
+            if positions.ndim != 2 or int(positions.shape[1]) != 512:
+                raise ValueError("GridFuse32 requires exactly 512 native tokens per clip")
+            if positions.dtype != torch.long:
+                raise TypeError("GridFuse32 bucket positions must be torch.long")
+            flattened_positions = positions.reshape(-1)
+            if bool(visited.gather(0, flattened_positions).any().item()):
+                raise RuntimeError("GridFuse32 clip buckets overlap")
+            visited.scatter_(0, flattened_positions, True)
+
+            rows = int(positions.shape[0])
+            clip_tubelets = flat_tubelets[positions].reshape(rows, 8, 64)
+            if not bool(
+                (clip_tubelets == clip_tubelets[:, :, :1]).all().item()
+            ):
+                raise ValueError("GridFuse32 token order must group K64 by tubelet")
+            clip_bases = clip_tubelets[:, 0, 0]
+            if bool((clip_bases.remainder(8) != 0).any().item()):
+                raise ValueError("GridFuse32 clips must start at an eight-tubelet boundary")
+            expected_tubelets = clip_bases.view(rows, 1) + torch.arange(
+                8,
+                device=x.device,
+                dtype=torch.long,
+            ).view(1, 8)
+            if not torch.equal(clip_tubelets[:, :, 0], expected_tubelets):
+                raise ValueError("GridFuse32 requires all eight ordered tubelets per clip")
+
+            spatial_grid = flat_spatial[positions].reshape(rows, 8, 8, 8)
+            spatial_rows = torch.div(
+                spatial_grid,
+                int(grid_width),
+                rounding_mode="floor",
+            )
+            spatial_cols = spatial_grid.remainder(int(grid_width))
+            row_starts = spatial_rows[:, :, :1, :1]
+            col_starts = spatial_cols[:, :, :1, :1]
+            expected_rows = row_starts + torch.arange(
+                8,
+                device=x.device,
+                dtype=torch.long,
+            ).view(1, 1, 8, 1)
+            expected_cols = col_starts + torch.arange(
+                8,
+                device=x.device,
+                dtype=torch.long,
+            ).view(1, 1, 1, 8)
+            if not bool((spatial_rows == expected_rows).all().item()) or not bool(
+                (spatial_cols == expected_cols).all().item()
+            ):
+                raise ValueError(
+                    "GridFuse32 requires one ordered hole-free 8x8 rectangle per tubelet"
+                )
+
+            selected = flat[positions].reshape(rows, 8, 8, 8, int(x.shape[-1]))
+            if orientation == "horizontal":
+                merged = selected.reshape(
+                    rows,
+                    8,
+                    8,
+                    4,
+                    2,
+                    int(x.shape[-1]),
+                ).mean(dim=4)
+            else:
+                merged = selected.reshape(
+                    rows,
+                    8,
+                    4,
+                    2,
+                    8,
+                    int(x.shape[-1]),
+                ).mean(dim=3)
+            merged = merged.reshape(rows, 256, int(x.shape[-1]))
+            merged_out = merged + self.drop_path(self.attn(self.norm1(merged)))
+            merged_out = merged_out + self.drop_path(self.mlp(self.norm2(merged_out)))
+            delta = (merged_out - merged).reshape(
+                rows,
+                8,
+                8,
+                4,
+                int(x.shape[-1]),
+            ) if orientation == "horizontal" else (merged_out - merged).reshape(
+                rows,
+                8,
+                4,
+                8,
+                int(x.shape[-1]),
+            )
+            if orientation == "horizontal":
+                expanded_delta = delta.unsqueeze(4).expand(
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    2,
+                    -1,
+                ).reshape_as(selected)
+            else:
+                expanded_delta = delta.unsqueeze(3).expand(
+                    -1,
+                    -1,
+                    -1,
+                    2,
+                    -1,
+                    -1,
+                ).reshape_as(selected)
+            out[positions] = (selected + expanded_delta).reshape(
+                rows,
+                512,
+                int(x.shape[-1]),
+            )
+
+            if packed_stats is not None:
+                packed_stats["gridfuse_bucket_call_count"] = int(
+                    packed_stats.get("gridfuse_bucket_call_count", 0)
+                ) + 1
+                packed_stats["ragged_attention_bucket_call_count"] = int(
+                    packed_stats.get("ragged_attention_bucket_call_count", 0)
+                ) + 1
+                packed_stats["ragged_mlp_bucket_call_count"] = int(
+                    packed_stats.get("ragged_mlp_bucket_call_count", 0)
+                ) + 1
+                packed_stats["executed_attention_tokens"] = int(
+                    packed_stats.get("executed_attention_tokens", 0)
+                ) + rows * 256
+                packed_stats["executed_kv_tokens"] = int(
+                    packed_stats.get("executed_kv_tokens", 0)
+                ) + rows * 256
+                packed_stats["executed_attention_pairs"] = int(
+                    packed_stats.get("executed_attention_pairs", 0)
+                ) + rows * 256 * 256
+                packed_stats["executed_mlp_tokens"] = int(
+                    packed_stats.get("executed_mlp_tokens", 0)
+                ) + rows * 256
+        if not bool(visited.all().item()):
+            raise RuntimeError("GridFuse32 clip buckets omitted a native token")
         return out.reshape_as(x)
 
     def forward_native_ragged(
@@ -1264,6 +1441,8 @@ class Block(BaseModule):
         refresh_mask: Optional[Tensor] = None,
         refresh_mode: str = "full64",
         refresh_alpha: Optional[Tensor] = None,
+        gridfuse_orientation: Optional[str] = None,
+        record_kv_tokens: bool = False,
     ) -> Tensor:
         """Execute one block on true clip-ragged selected-token sequences."""
 
@@ -1282,11 +1461,25 @@ class Block(BaseModule):
                 if checkpoint_active and torch.is_grad_enabled()
                 else packed_stats
             )
-            if refresh_mask is None:
+            if gridfuse_orientation is not None:
+                if refresh_mask is not None or refresh_alpha is not None:
+                    raise ValueError("GridFuse32 cannot combine with a refresh arm")
+                value = self._gridfuse32_attention_mlp_forward(
+                    value,
+                    bucket_positions,
+                    tubelet_indices,
+                    spatial_indices,
+                    grid_height=grid_height,
+                    grid_width=grid_width,
+                    orientation=gridfuse_orientation,
+                    packed_stats=active_stats,
+                )
+            elif refresh_mask is None:
                 value = self._ragged_attention_mlp_forward(
                     value,
                     bucket_positions,
                     active_stats,
+                    record_kv_tokens=record_kv_tokens,
                 )
             else:
                 value = self._ragged_refresh_attention_mlp_forward(
@@ -1456,6 +1649,7 @@ class VisionTransformerAdapter(BaseModule):
         tubelet_packed_runtime_route: Optional[Dict] = None,
         chronotransport: Optional[Dict] = None,
         amod: Optional[Dict] = None,
+        gridfuse32_l6: Optional[Dict] = None,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -1475,6 +1669,7 @@ class VisionTransformerAdapter(BaseModule):
         self.latest_chronotransport_summary = None
         self.latest_native_packed_summary = None
         self.latest_amod_summary = None
+        self.latest_gridfuse32_l6_summary = None
         # Runtime evidence only.  GeoRoute records a before/after delta around
         # the actual packed call so P0 does not merely trust a hand-written
         # "one forward" field in a summary dictionary.
@@ -1543,6 +1738,48 @@ class VisionTransformerAdapter(BaseModule):
                 "tubelet_packed_runtime_route and ChronoTransport are mutually exclusive"
             )
 
+        self.gridfuse32_l6_config = None
+        if gridfuse32_l6 is not None and bool(dict(gridfuse32_l6).get("enabled", True)):
+            gridfuse_cfg = dict(gridfuse32_l6)
+            if int(depth) != 12:
+                raise ValueError("GridFuse32-L6 requires the frozen 12-block VideoMAE-S")
+            if int(num_frames) // int(tubelet_size) != 8:
+                raise ValueError("GridFuse32-L6 requires eight tubelets per clip")
+            if tuple(adapter_index) != tuple(range(12)):
+                raise ValueError("GridFuse32-L6 requires the existing Adapter in all 12 blocks")
+            if tubelet_token_redundancy_aux is not None or packed_enabled or chronotransport_enabled:
+                raise ValueError(
+                    "GridFuse32-L6 is mutually exclusive with ROI/packed/ChronoTransport routes"
+                )
+            dense_blocks = tuple(gridfuse_cfg.get("dense_block_indices", range(6)))
+            fused_blocks = tuple(gridfuse_cfg.get("fused_block_indices", range(6, 12)))
+            if dense_blocks != tuple(range(6)) or fused_blocks != tuple(range(6, 12)):
+                raise ValueError("GridFuse32-L6 must keep blocks 0-5 dense and fuse blocks 6-11")
+            if gridfuse_cfg.get("even_pairing", "horizontal") != "horizontal":
+                raise ValueError("GridFuse32-L6 even blocks require horizontal pairs")
+            if gridfuse_cfg.get("odd_pairing", "vertical") != "vertical":
+                raise ValueError("GridFuse32-L6 odd blocks require vertical pairs")
+            if int(gridfuse_cfg.get("native_tokens_per_clip", 512)) != 512:
+                raise ValueError("GridFuse32-L6 requires 512 native tokens per clip")
+            if int(gridfuse_cfg.get("merged_tokens_per_clip", 256)) != 256:
+                raise ValueError("GridFuse32-L6 requires 256 merged tokens per clip")
+            if gridfuse_cfg.get("completion", "broadcast_residual_delta") != (
+                "broadcast_residual_delta"
+            ):
+                raise ValueError("GridFuse32-L6 completion must broadcast the pair residual delta")
+            self.gridfuse32_l6_config = {
+                "schema_version": gridfuse_cfg.get(
+                    "schema_version", "zoomtoken_gridfuse32_l6_v001"
+                ),
+                "dense_block_indices": dense_blocks,
+                "fused_block_indices": fused_blocks,
+                "even_pairing": "horizontal",
+                "odd_pairing": "vertical",
+                "native_tokens_per_clip": 512,
+                "merged_tokens_per_clip": 256,
+                "completion": "broadcast_residual_delta",
+            }
+
         self.amod_config = None
         if amod is not None and bool(dict(amod).get("enabled", True)):
             amod_cfg = dict(amod)
@@ -1552,7 +1789,12 @@ class VisionTransformerAdapter(BaseModule):
                 raise ValueError("paper-exact VideoMAE A-MoD requires 12 blocks")
             if float(attn_drop_rate) != 0.0:
                 raise ValueError("paper-exact VideoMAE A-MoD requires zero attention dropout")
-            if tubelet_token_redundancy_aux is not None or packed_enabled or chronotransport_enabled:
+            if (
+                tubelet_token_redundancy_aux is not None
+                or packed_enabled
+                or chronotransport_enabled
+                or self.gridfuse32_l6_config is not None
+            ):
                 raise ValueError(
                     "A-MoD is mutually exclusive with ROI/packed/ChronoTransport routes"
                 )
@@ -2105,6 +2347,7 @@ class VisionTransformerAdapter(BaseModule):
         batch_size = int(metadata["batch_size"])
         window_budget = int(metadata["window_budget"])
         selected_total = batch_size * window_budget
+        gridfuse_active = self.gridfuse32_l6_config is not None
         if refresh_mode not in {
             "full64",
             "drop32",
@@ -2153,6 +2396,23 @@ class VisionTransformerAdapter(BaseModule):
                 or int(refresh_alpha.numel()) != len(self.blocks)
             ):
                 raise ValueError("RC32-KV requires one scalar carry mix per block")
+        if gridfuse_active:
+            if refresh_mode != "full64" or refresh_mask is not None or refresh_alpha is not None:
+                raise ValueError("GridFuse32-L6 requires the unchanged R1 FULL64 route")
+            if int(metadata["temporal_per_chunk"]) != 8:
+                raise ValueError("GridFuse32-L6 requires eight tubelets per clip")
+            support_counts = torch.zeros(
+                (batch_size, int(metadata["total_tubelets"])),
+                device=x.device,
+                dtype=torch.long,
+            ).scatter_add_(1, tubelet_indices, torch.ones_like(tubelet_indices))
+            if not bool((support_counts == 64).all().item()):
+                raise ValueError("GridFuse32-L6 requires exact K64 support per tubelet")
+            clip_counts_for_gridfuse = metadata["clip_counts"]
+            if not isinstance(clip_counts_for_gridfuse, torch.Tensor) or not bool(
+                (clip_counts_for_gridfuse == 512).all().item()
+            ):
+                raise ValueError("GridFuse32-L6 requires all eight K64 tubelets in every clip")
         stats: Dict[str, int] = {
             "heavy_backbone_forward_count": 1,
             "executed_patch_tokens": selected_total,
@@ -2165,6 +2425,7 @@ class VisionTransformerAdapter(BaseModule):
             "executed_mlp_tokens": 0,
             "executed_adapter_tokens": 0,
             "dense_adapter_forward_count": 0,
+            "gridfuse_bucket_call_count": 0,
         }
         if refresh_mode == "dsr6_kv" and len(self.blocks) != 12:
             raise ValueError("DSR6-KV requires the frozen 12-block VideoMAE-S")
@@ -2182,6 +2443,14 @@ class VisionTransformerAdapter(BaseModule):
                     block_refresh_mode = "full64"
                 else:
                     block_refresh_mode = "mod32_kv"
+            gridfuse_orientation = None
+            record_kv_tokens = False
+            if gridfuse_active:
+                record_kv_tokens = block_index < 6
+                if block_index >= 6:
+                    gridfuse_orientation = (
+                        "horizontal" if block_index % 2 == 0 else "vertical"
+                    )
             x = block.forward_native_ragged(
                 x,
                 bucket_positions=bucket_positions,
@@ -2194,6 +2463,8 @@ class VisionTransformerAdapter(BaseModule):
                 refresh_mask=block_refresh_mask,
                 refresh_mode=block_refresh_mode,
                 refresh_alpha=block_refresh_alpha,
+                gridfuse_orientation=gridfuse_orientation,
+                record_kv_tokens=record_kv_tokens,
             )
         x = self.norm(x)
 
@@ -2206,7 +2477,17 @@ class VisionTransformerAdapter(BaseModule):
         ) or not isinstance(clip_indices, torch.Tensor):
             raise RuntimeError("ragged execution metadata lost its tensor ledger")
         full_attention_pairs = int(attention_pairs_per_window.sum().item())
-        if refresh_mask is None:
+        if gridfuse_active:
+            clip_total = batch_size * int(metadata["chunk_count"])
+            merged_tokens_total = clip_total * 256
+            expected_attention_pairs = (
+                full_attention_pairs * 6 + merged_tokens_total * 256 * 6
+            )
+            expected_kv_tokens = selected_total * 6 + merged_tokens_total * 6
+            expected_attention_tokens = expected_kv_tokens
+            expected_mlp_tokens = expected_kv_tokens
+            refresh_tokens_per_window = int(metadata["chunk_count"]) * 256
+        elif refresh_mask is None:
             expected_attention_pairs = full_attention_pairs * len(self.blocks)
             expected_kv_tokens = selected_total * len(self.blocks)
             refresh_tokens_per_window = window_budget
@@ -2234,7 +2515,9 @@ class VisionTransformerAdapter(BaseModule):
             raise RuntimeError("ragged patch execution count differs from selected B")
         if stats["executed_attention_pairs"] != expected_attention_pairs:
             raise RuntimeError("ragged attention-pair ledger differs from execution")
-        if refresh_mask is None:
+        if gridfuse_active:
+            kv_ledger_valid = stats["executed_kv_tokens"] == expected_kv_tokens
+        elif refresh_mask is None:
             kv_ledger_valid = stats["executed_kv_tokens"] in {
                 0,
                 expected_kv_tokens,
@@ -2243,6 +2526,11 @@ class VisionTransformerAdapter(BaseModule):
             kv_ledger_valid = stats["executed_kv_tokens"] == expected_kv_tokens
         if not kv_ledger_valid:
             raise RuntimeError("ragged KV-token ledger differs from execution")
+        if gridfuse_active and (
+            stats["executed_attention_tokens"] != expected_attention_tokens
+            or stats["executed_mlp_tokens"] != expected_mlp_tokens
+        ):
+            raise RuntimeError("GridFuse32-L6 query/MLP ledger differs from execution")
         depth_schedule_summary = (
             {
                 "full_update_block_count": 6,
@@ -2251,6 +2539,20 @@ class VisionTransformerAdapter(BaseModule):
             if refresh_mode == "dsr6_kv"
             else {}
         )
+        if gridfuse_active:
+            depth_schedule_summary = {
+                "gridfuse_schema_version": self.gridfuse32_l6_config[
+                    "schema_version"
+                ],
+                "dense_block_count": 6,
+                "gridfuse_block_count": 6,
+                "gridfuse_even_pairing": "horizontal",
+                "gridfuse_odd_pairing": "vertical",
+                "gridfuse_native_tokens_per_clip": 512,
+                "gridfuse_merged_tokens_per_clip": 256,
+                "gridfuse_completion": "broadcast_residual_delta",
+                "gridfuse_bucket_call_count": stats["gridfuse_bucket_call_count"],
+            }
         self.latest_native_packed_summary = {
             "schema_version": "videomae_native_ragged_v1",
             "execution_mode": "true_clip_ragged_no_padding",
@@ -2305,6 +2607,9 @@ class VisionTransformerAdapter(BaseModule):
             "dense_adapter_forward_count": 0,
             "adapter_execution": "coordinate_lineage_true_ragged",
         }
+        self.latest_gridfuse32_l6_summary = (
+            dict(self.latest_native_packed_summary) if gridfuse_active else None
+        )
         return x
 
     def forward_native_dense_reference(
