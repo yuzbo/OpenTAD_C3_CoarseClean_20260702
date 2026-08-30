@@ -1373,3 +1373,9 @@ updated: 2026-08-31
     dry ledger 的 Adapter 中因 `ragged Adapter temporal axis differs from pretrained Adapter` 终止。不得把它写成
     G0 性能失败，也不得自行修改 Adapter/model/config/shape、追加第二次 repair/review、提交 replacement、运行
     G1/G2 或将缺失结果补造为证据；只允许 fresh exact-Project Pro 裁决。
+47. fresh Pro 已永久关闭旧 8-tubelet segment-G0 协议，并且只授权
+    `ZOOMTOKEN-GRIDFUSE32-L6-PRODUCTION-FULLWINDOW-ATOMIC-G0-v001`。必须真实执行 384 tubelets、
+    24,576 native tokens、48 个 attention buckets 和 dense temporal-384 Adapter；不得用八 tubelets 加伪
+    `total_tubelets=384`、padding/dummy/zero fill。该任务只有一个 atomic scheduler-ordinal-2 提交且无
+    replacement；任何 construction/OOM/完整性/walltime/gate failure 永久停止 exact GridFuse32-L6，
+    不再修复、重提、训练、G1/G2 或 sweep。

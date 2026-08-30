@@ -1446,6 +1446,18 @@ max_chars: 8000
   gate or parameter update began. This is a second independent construction/shape
   blocker, not G0 performance evidence. The frozen task forbids another repair,
   Critic/Evaluator, replacement, G1 or G2 before a fresh exact-Project Pro decision.
+- Fresh exact-Project conversation `6a949bec-1334-83ea-b410-a47ecdd451f7`
+  verified the latest repository/branch/`b5993faa…` commit and returned `REVISE`.
+  It permanently closes the incorrect 8-tubelet segment-G0 protocol and attributes
+  the failure to a protocol-construction mismatch embodied as a harness/test defect,
+  not to GridFuse science. The only task is now
+  `ZOOMTOKEN-GRIDFUSE32-L6-PRODUCTION-FULLWINDOW-ATOMIC-G0-v001`: an actual
+  B1/T384/K64/N24576, 48-bucket, dense-Adapter full-window atomic construction-plus-
+  measurement job. It preserves the model/config/checkpoint/mechanism and original
+  speed/memory gates. One final scheduler-ordinal-2/scientific-attempt-1 submission
+  exists, with no replacement. Any construction/execution/artifact or valid gate
+  failure permanently stops this exact route; a pass only returns to fresh Pro and
+  does not automatically open G1.
 
 ## Pointers
 

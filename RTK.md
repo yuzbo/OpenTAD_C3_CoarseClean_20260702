@@ -23,6 +23,8 @@ ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务�
 
 `PRE_RUN_READY` 必须覆盖正式入口在首个科学操作前的真实 import/registry、对象构造和 checkpoint strict-load 图；静态检查、配置字段、checkpoint 容器、Git identity 或替代 fixture 不能代替可执行 construction witness。若冻结任务依赖真实形状，可在同一正式准备函数中执行一次无计时、无显存、无 prediction/metric 的 dry ledger；witness 不通过即返回 blocker。
 
+同一候选连续两个独立 construction blocker 后退出普通 repair 模式：fresh Pro 只能 STOP，或授权一次无 replacement 的 production-faithful atomic witness+measurement；该动作任一失败即终止精确定义候选。
+
 ### 长任务的事件驱动等待
 
 - 已提交的下载、传输、Slurm 作业、训练或 Pro 生成不是主动推理工作。提交方先记录不可变 job/session 身份、配置身份、预期终态产物、最长时限和恢复规则，并确认后端已经接受任务。

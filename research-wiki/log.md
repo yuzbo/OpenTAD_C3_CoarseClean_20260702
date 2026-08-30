@@ -4899,3 +4899,11 @@ append_only: true
   registry、真实 detector construction 和 checkpoint strict load 已通过，但第一段 dense real-shape dry ledger
   在 Adapter 中触发 `ragged Adapter temporal axis differs from pretrained Adapter`。未进入 timing、memory、
   prediction、metric、gate 或训练，因此没有科学结果；不再 repair/review/submit replacement，立即 fresh Pro。
+
+- 2026-08-31：fresh exact-Project conversation `6a949bec-1334-83ea-b410-a47ecdd451f7` 以 verified
+  `GPT-5.6 Pro`、八个 attachment-only 文件、submission `1`、follow-up `0` 完整返回；prompt 与 response
+  均绑定 repository、branch 和 exact `b5993faa…` commit。裁决 `REVISE`，永久关闭错误的 8-tubelet
+  segment-G0，并把 blocker 定性为 production 384-tubelet Adapter 与旧 witness shape 的协议构造不匹配，
+  不是 GridFuse 科学失败。唯一任务变为一个无 replacement 的 production-full-window atomic G0：同一单次
+  job 内完成 full-window construction/ledger、100 warmups、500 alternating measurements 和冻结 gate；任一
+  blocker 或 gate failure 都永久停止 exact GridFuse32-L6，完整 pass 也只返回 fresh Pro，不自动训练。

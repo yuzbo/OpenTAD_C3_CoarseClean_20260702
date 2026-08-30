@@ -69,6 +69,16 @@ Pro 请求由 Project ID、request ID 和 nonce 共同识别。没有实际 subm
 
 `py_compile`、静态或替代 fixture 测试、配置字段检查、checkpoint 字典存在性检查、文件清单、`sbatch --test-only` 和仅验证 Git identity 均不能单独产生 `PRE_RUN_READY`。同一 exact commit、同一入口和同一构造图只执行一次 construction witness；通过后不得增加通用审计。若一次最小修正后仍不能通过，立即返回 blocker，不得循环复核。
 
+### 连续两个独立 construction blocker 的强制收束
+
+对同一精确定义候选、同一科学门和同一正式执行链：
+
+1. 首个结果盲、预科学 construction blocker 至多获得一次由 fresh Pro 明确授权的最小修复任务。该任务不得改变候选机制、模型前向、正式 config、数据、checkpoint、资源语义、测量范围、聚合、门槛或论文主张。
+2. 上述最小修复的 exact candidate 若在科学测量开始前又出现第二个独立 construction blocker，原 repair task 立即永久关闭。Codex 不得继续修改、再次请求 Critic/Evaluator、另建 construction witness、提交 replacement，或把不同异常拆成无限多个准入循环。
+3. fresh Pro 此时只能作出以下二选一裁决：STOP 该精确定义候选；或当不可变证据证明 blocker 主要属于实验协议而非候选机制时，重新定义恰好一个 final atomic task。该任务必须保持模型、正式 config、数据、checkpoint 和原科学门不变，只删除已被证明错误的协议假设。
+4. final atomic task 只允许一个 scheduler submission，不设 replacement。同一作业必须先执行不计时、不记录显存、不产生 prediction/metric 的 fail-closed production construction phase；只有该 phase 完整通过后，才在同一进程和同一作业中进入冻结测量。任何 construction、OOM、完整性、walltime 或 gate failure 都终止该精确定义候选，不再修复或重提。
+5. final atomic task 通过只意味着返回 fresh Pro 复盘资格，不自动开启训练、下一 gate、额外 seed、full-stack replay 或论文主张。
+
 ## Independent Critic：决定性、有限范围的独立审查
 
 Critic 在独立上下文中只检查能够改变实验准入或结果解释的问题，包括：
