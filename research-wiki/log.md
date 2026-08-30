@@ -4817,3 +4817,19 @@ append_only: true
   同一终态审计还确认冻结 prose 的 full-800 K/V、per-tubelet K50 语义与未修改的 strict A-MoD
   实现不一致：继承 odd block 在全局 flattened top-400 selected tensor 上执行 attention，K/V 也只有
   selected-400。正式提交已用尽 `1/1`；两项问题原样交 fresh Project Pro，不自动修复或重跑。
+
+- 2026-08-31：用户手工转交一份 Pro 风格 `PIVOT / KEEP` 响应，提出 `ZoomToken-RACER24` 与
+  `ZOOMTOKEN-COMPOSITE-SPRINT-AGENTS-ORDER-v001`。该材料没有可绑定的 exact Project ID、conversation、
+  nonce、浏览器模型/effort、附件、提交计数、Oracle transcript/meta 或 terminal receipt，因此按
+  provenance-warning 的来源陈述摄取，而不冒充浏览器审计证据。其可执行提案是：保持 BPNS K64、在
+  blocks `{4,6,8,10}` 做 per-tubelet 24/64 selected-Q/full-KV，parameter-free completion 后恢复 dense
+  carrier，并让既有 Adapter处理全部 token。材料中“job `1258299` 仍运行”和“base 已有 full-KV helper”
+  两项与权威终态/代码不符，已明确隔离。当前只允许同一 Builder 补交 Iteration-0 MCL；没有代码、
+  microbenchmark、训练、成本或 contingency successor 授权，也没有新的北京时间 deadline。
+
+- 2026-08-31：RACER24 Iteration-0 只读 `MINIMAL_CHANGE_PLAN` 已完成。代码核验确认现有
+  `Attention.forward` 只能同源生成 Q/K/V，native packed/ragged 路径也是 selected-only self-attention；
+  因而 selected-Q/full-KV 与未选 token completion 必须作为最小新机制实现，不能用已有 helper冒充。
+  MCL 将文件面限制为 `vit_adapter.py`、一个 config、一个 focused test、一个 task-specific profiler和
+  一个 microbenchmark launcher；matched real-shape gate 为至少 200 次、p50 至少 `1.08x`、peak memory
+  不超过 dense control `5%`。当前仍无模型代码编辑或实验，等待来源绑定或明确的 Iteration-0 实施授权。

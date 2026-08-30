@@ -1330,3 +1330,10 @@ updated: 2026-08-29
 29. 不得继续沿用“strict A-MoD capacity 0.5 等同 full-K/V `[K100,K50]x6`”的表述。现有继承实现
     在 odd block 对全局 flattened top-400 selected tensor 做 attention，K/V 也只有 selected-400；
     该规格冲突必须原样返回 fresh Pro，未裁决前不得自行修正文案或代码后重跑。
+30. 用户手工转交的 RACER24 Pro 风格响应没有 exact Project/conversation/nonce/model/attachments/
+    submission/terminal receipt；不得把它追溯写成浏览器审计完成的 Pro turn，也不得补造 deadline。
+31. 不得重复材料中的过时事实：job `1258299` 已终态失败而非仍在运行；当前代码也没有现成的
+    selected-Q/full-KV 或 RACER residual-completion helper。
+32. RACER24 当前只进入 Iteration-0 Builder MCL。没有 clean candidate、focused parity、真实形状
+    microbenchmark、fresh Critic 与 result-blind Evaluator 前，不得启动数据/GPU/Slurm/训练/成本。
+33. FARM24 与 PairLatent32 不是并行候选；在 RACER24 的冻结触发条件和 fresh Pro 裁决前，两者均不实现。

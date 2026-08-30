@@ -1444,3 +1444,17 @@ job `1261142` 及冻结诊断足以形成单种子、准确率层面的有效负
 `1254040` 及其 checkpoint/prediction/config SHA 和官方向量；正式失败不重提。六项准确率、短动作和
 边界门全通过才记 `K100_TAR50_ACCURACY_ADMITTED_PENDING_FRESH_PRO`；任一有效失败即停止固定半更新
 attention-column/identity-bypass family。无论结果如何，成本和后继仍需 fresh Pro 才能解冻。
+
+## 121. RACER24 用户转交裁决按 provenance-warning 进入 Builder 规划（2026-08-31）
+
+用户转交的 Pro 风格材料给出 `PIVOT`、角色合同 `KEEP`，并提出唯一候选 `ZoomToken-RACER24`：
+保留 BPNS K64 连续原生支持，在 blocks `{4,6,8,10}` 进行 per-tubelet 24/64 selected-Q/full-KV，
+以无参数 residual completion 恢复未选 token，随后维持 dense carrier 和全 token Adapter。该结构、
+Iteration-0/1 顺序和停止门按 proposal 保存。
+
+但材料没有 exact Project/conversation/nonce/model/附件/提交/terminal receipt，且包含两项已核验错误：
+job `1258299` 已终态而非仍在运行；当前 base 没有现成 selected-Q/full-KV helper。因此本轮不把它
+登记为浏览器审计完成的 Pro turn，也不把 RACER24 写成已实现或已授权训练的项目事实。唯一决策是允许
+同一 Builder 返回 Iteration-0 `MINIMAL_CHANGE_PLAN`；在 clean candidate、parity、真实形状
+microbenchmark、fresh Critic 与 result-blind Evaluator 前，不进行数据/GPU/Slurm/训练/成本，也不解冻
+FARM24 或 PairLatent32。材料未给出新的北京时间 deadline，旧任务 deadline 不迁移。

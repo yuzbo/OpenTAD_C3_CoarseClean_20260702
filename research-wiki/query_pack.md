@@ -1360,6 +1360,27 @@ max_chars: 8000
   the hook failure must be adjudicated by a fresh Project Pro; no corrected run,
   route decision or family-level claim is authorized locally.
 
+## User-Supplied Pro Pivot Intake: RACER24
+
+- The user manually transferred a Pro-style response with verdict `PIVOT`, role
+  contract `KEEP`, and a proposed unique candidate `ZoomToken-RACER24`. No exact
+  Project/conversation/nonce/model/attachment/submission/Oracle receipt exists in
+  the repository for that response, so it is preserved as a provenance-warning
+  source statement rather than browser-audited Project Pro evidence.
+- The proposed mechanism keeps BPNS contiguous native K64 support and a dense
+  carrier, applies RACER at blocks `{4,6,8,10}`, selects exactly 24/64 tokens per
+  tubelet, computes selected queries against all 512 keys/values, and completes
+  unselected residuals without new trainable parameters before the existing
+  Adapter processes all 512 tokens.
+- Two source statements are explicitly rejected as project facts: job `1258299`
+  is terminal rather than running, and the current base has no ready-made
+  selected-query/full-KV or RACER-completion helper.
+- Current authority is limited to an Iteration-0 Builder minimal-change plan.
+  There is no clean RACER candidate, implementation, Critic, result-blind
+  Evaluator, microbenchmark, training, cost result or new Beijing deadline. No
+  data/GPU/Slurm run or FARM24/PairLatent32 contingency is authorized from this
+  intake alone.
+
 ## Pointers
 
 - GeoRoute implementation and gates:
