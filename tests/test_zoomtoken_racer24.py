@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import MethodType
 
@@ -6,6 +7,7 @@ import torch
 from mmengine import Config
 
 from opentad.models.backbones.vit_adapter import Attention, Block, VisionTransformerAdapter
+from tools.bata.profile_zoomtoken_racer24_block import _publish_result
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -295,6 +297,21 @@ def test_backbone_schedule_adapter_dense512_no_new_parameters_and_no_state():
     assert torch.equal(first, second)
 
 
+def test_profiler_persists_the_same_json_to_stdout_and_output(tmp_path, capsys):
+    result = {
+        "schema_version": "zoomtoken_racer24_block_profile_v001",
+        "measurements_per_arm": 200,
+        "p50_speedup": 1.08,
+        "gates": {"passed": True},
+    }
+    output = tmp_path / "profile.json"
+    _publish_result(result, output)
+    assert json.loads(capsys.readouterr().out) == result
+    assert json.loads(output.read_text(encoding="utf-8")) == result
+    with pytest.raises(FileExistsError):
+        _publish_result(result, output)
+
+
 def test_config_recipe_and_iteration0_launcher_are_frozen_and_nontraining():
     config_dir = ROOT / "configs" / "adatad" / "thumos"
     config = Config.fromfile(
@@ -320,6 +337,24 @@ def test_config_recipe_and_iteration0_launcher_are_frozen_and_nontraining():
     assert "--measurements 200" in launcher
     assert "--min-speedup 1.08" in launcher
     assert "--max-memory-ratio 1.05" in launcher
+    assert 'OUTPUT_ROOT="${ZOOMTOKEN_RACER24_OUTPUT_ROOT:' in launcher
+    assert "output root already exists and is non-empty" in launcher
+    assert 'PROFILE_PATH="${OUTPUT_ROOT}/profile.json"' in launcher
+    assert 'RECEIPT_PATH="${OUTPUT_ROOT}/terminal_receipt.json"' in launcher
+    assert '--output "${PROFILE_PATH}"' in launcher
+    assert "trap on_exit EXIT" in launcher
+    assert 'write_receipt "success" 0' in launcher
+    assert 'write_receipt "failure" "${exit_status}"' in launcher
+    for field in (
+        "exact_commit",
+        "source_root",
+        "output_root",
+        "command_identity",
+        "protocol_identity",
+        "exit_status",
+        "profile_path",
+    ):
+        assert f'"{field}"' in launcher
     assert "tools/train.py" not in launcher
     assert "sbatch" not in launcher
 

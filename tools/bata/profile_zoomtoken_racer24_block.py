@@ -26,6 +26,7 @@ def _arguments():
     parser.add_argument("--max-memory-ratio", type=float, default=1.05)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--dtype", choices=("float16", "bfloat16"), default="float16")
+    parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -64,6 +65,14 @@ def _stats():
         "racer24_clip_count": 0,
         "racer24_selected_query_tokens": 0,
     }
+
+
+def _publish_result(result, output_path):
+    payload = json.dumps(result, indent=2, sort_keys=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("x", encoding="utf-8") as stream:
+        stream.write(payload + "\n")
+    print(payload)
 
 
 def main():
@@ -197,7 +206,7 @@ def main():
         "scope": "matched_block_only_not_full_stack_tad",
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
     }
-    print(json.dumps(result, indent=2, sort_keys=True))
+    _publish_result(result, args.output)
     if not passed:
         raise SystemExit(2)
 
