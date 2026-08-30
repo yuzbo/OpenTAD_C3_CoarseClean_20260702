@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Matched real-shape six-block G0 profiler for GridFuse32-L6."""
+"""Atomic production-full-window six-block G0 profiler for GridFuse32-L6."""
 
 from __future__ import annotations
 
@@ -76,19 +76,77 @@ def _strip_ddp_prefix(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+FULL_WINDOW_TUBELETS = 384
+TUBELETS_PER_BUCKET = 8
+TOKENS_PER_TUBELET = 64
+TOKENS_PER_BUCKET = TUBELETS_PER_BUCKET * TOKENS_PER_TUBELET
+BUCKET_COUNT = FULL_WINDOW_TUBELETS // TUBELETS_PER_BUCKET
+FULL_WINDOW_TOKENS = FULL_WINDOW_TUBELETS * TOKENS_PER_TUBELET
+MERGED_TOKENS_PER_BUCKET = 256
+PROFILED_BLOCK_COUNT = 6
+
+
 def _lineage(torch: Any, device: Any):
     tubelets = (
-        torch.arange(8, device=device, dtype=torch.long)
-        .repeat_interleave(64)
-        .view(1, 512)
+        torch.arange(FULL_WINDOW_TUBELETS, device=device, dtype=torch.long)
+        .repeat_interleave(TOKENS_PER_TUBELET)
+        .view(1, FULL_WINDOW_TOKENS)
     )
     rectangle = (
         torch.arange(8, device=device, dtype=torch.long).view(8, 1) * 10
         + torch.arange(8, device=device, dtype=torch.long).view(1, 8)
     ).reshape(-1)
-    spatial = rectangle.repeat(8).view(1, 512)
-    positions = [torch.arange(512, device=device, dtype=torch.long).view(1, 512)]
+    spatial = rectangle.repeat(FULL_WINDOW_TUBELETS).view(1, FULL_WINDOW_TOKENS)
+    positions = [
+        torch.arange(
+            bucket_index * TOKENS_PER_BUCKET,
+            (bucket_index + 1) * TOKENS_PER_BUCKET,
+            device=device,
+            dtype=torch.long,
+        ).view(1, TOKENS_PER_BUCKET)
+        for bucket_index in range(BUCKET_COUNT)
+    ]
     return tubelets, spatial, positions
+
+
+def _expected_ledgers() -> tuple[dict[str, int], dict[str, int]]:
+    dense = {
+        "ragged_attention_bucket_call_count": PROFILED_BLOCK_COUNT * BUCKET_COUNT,
+        "ragged_mlp_bucket_call_count": PROFILED_BLOCK_COUNT * BUCKET_COUNT,
+        "ragged_adapter_forward_count": PROFILED_BLOCK_COUNT,
+        "executed_attention_tokens": PROFILED_BLOCK_COUNT * FULL_WINDOW_TOKENS,
+        "executed_kv_tokens": PROFILED_BLOCK_COUNT * FULL_WINDOW_TOKENS,
+        "executed_attention_pairs": (
+            PROFILED_BLOCK_COUNT * BUCKET_COUNT * TOKENS_PER_BUCKET**2
+        ),
+        "executed_mlp_tokens": PROFILED_BLOCK_COUNT * FULL_WINDOW_TOKENS,
+        "executed_adapter_tokens": PROFILED_BLOCK_COUNT * FULL_WINDOW_TOKENS,
+        "gridfuse_bucket_call_count": 0,
+        "restored_native_tokens_per_block": FULL_WINDOW_TOKENS,
+    }
+    candidate = {
+        "ragged_attention_bucket_call_count": PROFILED_BLOCK_COUNT * BUCKET_COUNT,
+        "ragged_mlp_bucket_call_count": PROFILED_BLOCK_COUNT * BUCKET_COUNT,
+        "ragged_adapter_forward_count": PROFILED_BLOCK_COUNT,
+        "executed_attention_tokens": (
+            PROFILED_BLOCK_COUNT * BUCKET_COUNT * MERGED_TOKENS_PER_BUCKET
+        ),
+        "executed_kv_tokens": (
+            PROFILED_BLOCK_COUNT * BUCKET_COUNT * MERGED_TOKENS_PER_BUCKET
+        ),
+        "executed_attention_pairs": (
+            PROFILED_BLOCK_COUNT
+            * BUCKET_COUNT
+            * MERGED_TOKENS_PER_BUCKET**2
+        ),
+        "executed_mlp_tokens": (
+            PROFILED_BLOCK_COUNT * BUCKET_COUNT * MERGED_TOKENS_PER_BUCKET
+        ),
+        "executed_adapter_tokens": PROFILED_BLOCK_COUNT * FULL_WINDOW_TOKENS,
+        "gridfuse_bucket_call_count": PROFILED_BLOCK_COUNT * BUCKET_COUNT,
+        "restored_native_tokens_per_block": FULL_WINDOW_TOKENS,
+    }
+    return dense, candidate
 
 
 def _empty_stats() -> dict[str, int]:
@@ -102,6 +160,7 @@ def _empty_stats() -> dict[str, int]:
         "executed_mlp_tokens": 0,
         "executed_adapter_tokens": 0,
         "gridfuse_bucket_call_count": 0,
+        "restored_native_tokens_per_block": 0,
     }
 
 
@@ -179,8 +238,17 @@ def prepare_gridfuse32_l6_g0(args: argparse.Namespace) -> dict[str, Any]:
     if len(blocks) != 6 or not all(block.use_adapter for block in blocks):
         raise RuntimeError("GridFuse32 G0 requires the same dense Adapter in all six blocks")
 
+    if not all(int(block.adapter.temporal_size) == FULL_WINDOW_TUBELETS for block in blocks):
+        raise RuntimeError("GridFuse32 G0 requires production Adapter temporal_size=384")
+
     torch.manual_seed(42)
-    inputs = torch.randn(1, 512, 384, device=device, dtype=torch.float32)
+    inputs = torch.randn(
+        1,
+        FULL_WINDOW_TOKENS,
+        384,
+        device=device,
+        dtype=torch.float32,
+    )
     tubelets, spatial, positions = _lineage(torch, device)
 
     def execute(arm: str, stats: dict[str, int] | None = None):
@@ -194,7 +262,7 @@ def prepare_gridfuse32_l6_g0(args: argparse.Namespace) -> dict[str, Any]:
                     bucket_positions=positions,
                     tubelet_indices=tubelets,
                     spatial_indices=spatial,
-                    total_tubelets=8,
+                    total_tubelets=FULL_WINDOW_TUBELETS,
                     grid_height=10,
                     grid_width=10,
                     packed_stats=stats,
@@ -205,6 +273,12 @@ def prepare_gridfuse32_l6_g0(args: argparse.Namespace) -> dict[str, Any]:
                     ),
                     record_kv_tokens=arm == "dense",
                 )
+                if tuple(value.shape) != (1, FULL_WINDOW_TOKENS, 384):
+                    raise RuntimeError(
+                        "GridFuse32 G0 failed to restore the full native carrier"
+                    )
+                if stats is not None:
+                    stats["restored_native_tokens_per_block"] = int(value.shape[1])
         return value
 
     dense_ledger = _empty_stats()
@@ -212,32 +286,18 @@ def prepare_gridfuse32_l6_g0(args: argparse.Namespace) -> dict[str, Any]:
     execute("dense", dense_ledger)
     execute("candidate", candidate_ledger)
     torch.cuda.synchronize(device)
-    expected_dense = {
-        "executed_attention_tokens": 6 * 512,
-        "executed_kv_tokens": 6 * 512,
-        "executed_attention_pairs": 6 * 512 * 512,
-        "executed_mlp_tokens": 6 * 512,
-        "executed_adapter_tokens": 6 * 512,
-    }
-    expected_candidate = {
-        "executed_attention_tokens": 6 * 256,
-        "executed_kv_tokens": 6 * 256,
-        "executed_attention_pairs": 6 * 256 * 256,
-        "executed_mlp_tokens": 6 * 256,
-        "executed_adapter_tokens": 6 * 512,
-    }
+    expected_dense, expected_candidate = _expected_ledgers()
     for key, expected in expected_dense.items():
         if int(dense_ledger[key]) != expected:
             raise RuntimeError(f"dense G0 ledger mismatch for {key}")
     for key, expected in expected_candidate.items():
         if int(candidate_ledger[key]) != expected:
             raise RuntimeError(f"candidate G0 ledger mismatch for {key}")
-    if int(candidate_ledger["gridfuse_bucket_call_count"]) != 6:
-        raise RuntimeError("candidate G0 did not execute exactly six fused blocks")
-
     witness = {
-        "schema_version": "zoomtoken_gridfuse32_l6_g0_construction_witness_v001",
-        "status": "GRIDFUSE32_L6_G0_CONSTRUCTION_WITNESS_PASS",
+        "schema_version": (
+            "zoomtoken_gridfuse32_l6_production_fullwindow_atomic_g0_witness_v001"
+        ),
+        "status": "GRIDFUSE32_L6_PRODUCTION_FULLWINDOW_G0_CONSTRUCTION_PASS",
         "source_commit": expected_commit,
         "canonical_registered_transforms": list(registered_transforms),
         "detector_constructed": True,
@@ -252,10 +312,13 @@ def prepare_gridfuse32_l6_g0(args: argparse.Namespace) -> dict[str, Any]:
         },
         "shape": {
             "batch_size": 1,
-            "tubelets_per_clip": 8,
+            "total_tubelets": FULL_WINDOW_TUBELETS,
+            "tubelets_per_bucket": TUBELETS_PER_BUCKET,
+            "bucket_count": BUCKET_COUNT,
             "tokens_per_tubelet": 64,
-            "dense_tokens": 512,
-            "candidate_tokens": 256,
+            "full_native_tokens": FULL_WINDOW_TOKENS,
+            "dense_tokens_per_bucket": TOKENS_PER_BUCKET,
+            "candidate_tokens_per_bucket": MERGED_TOKENS_PER_BUCKET,
             "embed_dims": 384,
             "num_heads": 6,
             "blocks": list(range(6, 12)),
@@ -336,11 +399,13 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
     )
     passed = speedup >= 1.35 and allocated_ratio <= 1.05 and reserved_ratio <= 1.05
     return {
-        "schema_version": "zoomtoken_gridfuse32_l6_g0_profile_v001",
+        "schema_version": (
+            "zoomtoken_gridfuse32_l6_production_fullwindow_atomic_g0_profile_v001"
+        ),
         "status": (
-            "GRIDFUSE32_L6_G0_PASS_PENDING_G1"
+            "GRIDFUSE32_L6_PRODUCTION_FULLWINDOW_G0_PASS_PENDING_FRESH_PRO"
             if passed
-            else "STOP_GRIDFUSE32_L6_BEFORE_TRAINING"
+            else "STOP_GRIDFUSE32_L6_EXACT_ROUTE_VALID_G0_NEGATIVE"
         ),
         "gate_passed": passed,
         "source_commit": expected_commit,
@@ -353,10 +418,13 @@ def profile(args: argparse.Namespace) -> dict[str, Any]:
         },
         "shape": {
             "batch_size": 1,
-            "tubelets_per_clip": 8,
+            "total_tubelets": FULL_WINDOW_TUBELETS,
+            "tubelets_per_bucket": TUBELETS_PER_BUCKET,
+            "bucket_count": BUCKET_COUNT,
             "tokens_per_tubelet": 64,
-            "dense_tokens": 512,
-            "candidate_tokens": 256,
+            "full_native_tokens": FULL_WINDOW_TOKENS,
+            "dense_tokens_per_bucket": TOKENS_PER_BUCKET,
+            "candidate_tokens_per_bucket": MERGED_TOKENS_PER_BUCKET,
             "embed_dims": 384,
             "num_heads": 6,
             "dtype": "fp16_autocast",
@@ -401,38 +469,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--warmup", type=int, default=100)
     parser.add_argument("--iterations", type=int, default=500)
-    parser.add_argument("--construction-witness-only", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
-    if args.construction_witness_only:
-        try:
-            prepared = prepare_gridfuse32_l6_g0(args)
-            print(json.dumps(prepared["witness"], sort_keys=True))
-            print("[ZOOMTOKEN_GRIDFUSE32_L6][CONSTRUCTION_WITNESS_READY]")
-            return 0
-        except Exception as exc:
-            print(
-                json.dumps(
-                    {
-                        "status": "GRIDFUSE32_L6_G0_CONSTRUCTION_WITNESS_BLOCKER",
-                        "error_type": type(exc).__name__,
-                        "error": str(exc),
-                        "traceback": traceback.format_exc(),
-                    },
-                    sort_keys=True,
-                ),
-                file=sys.stderr,
-            )
-            return 2
     terminal: dict[str, Any]
     try:
         result = profile(args)
         _write_exclusive(args.run_root / "profile.json", result)
         terminal = {
-            "schema_version": "zoomtoken_gridfuse32_l6_g0_terminal_v001",
+            "schema_version": (
+                "zoomtoken_gridfuse32_l6_production_fullwindow_atomic_g0_terminal_v001"
+            ),
             "status": result["status"],
             "gate_passed": result["gate_passed"],
             "profile": str((args.run_root / "profile.json").resolve()),
@@ -443,8 +492,10 @@ def main() -> int:
     except Exception as exc:
         args.run_root.mkdir(parents=True, exist_ok=True)
         terminal = {
-            "schema_version": "zoomtoken_gridfuse32_l6_g0_terminal_v001",
-            "status": "GRIDFUSE32_L6_G0_ENGINEERING_OR_PROTOCOL_BLOCKER",
+            "schema_version": (
+                "zoomtoken_gridfuse32_l6_production_fullwindow_atomic_g0_terminal_v001"
+            ),
+            "status": "STOP_GRIDFUSE32_L6_EXACT_ROUTE_FINAL_EXECUTION_BLOCKER",
             "error_type": type(exc).__name__,
             "error": str(exc),
             "traceback": traceback.format_exc(),

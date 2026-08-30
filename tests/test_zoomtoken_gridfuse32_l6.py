@@ -6,7 +6,7 @@ import pytest
 import torch
 from mmengine import Config
 
-from opentad.models.backbones.vit_adapter import Block, VisionTransformerAdapter
+from opentad.models.backbones.vit_adapter import Adapter, Block, VisionTransformerAdapter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +38,8 @@ def _stats():
         "executed_kv_tokens": 0,
         "executed_attention_pairs": 0,
         "executed_mlp_tokens": 0,
+        "ragged_adapter_forward_count": 0,
+        "executed_adapter_tokens": 0,
         "gridfuse_bucket_call_count": 0,
     }
 
@@ -243,18 +245,123 @@ def test_gridfuse_adds_no_parameters_and_config_freezes_all_gates():
     assert config.gridfuse32_l6_contract.teacher_for_route_allowed is False
 
 
-def test_g2_binds_candidate_checkpoint_to_the_g1_terminal_receipt():
+def test_production_config_keeps_the_pretrained_adapter_temporal_axis():
+    config = Config.fromfile(CONFIG)
+    backbone = config.model.backbone.backbone
+    assert backbone.total_frames == 768
+    assert backbone.tubelet_size == 2
+    assert backbone.total_frames // backbone.tubelet_size == 384
+
+
+def test_old_eight_tubelet_segment_rejects_the_production_adapter_axis():
+    adapter = Adapter(embed_dims=8, temporal_size=384).eval()
+    inputs = torch.randn(1, 512, 8)
+    tubelets, spatial, _ = _lineage()
+    with pytest.raises(
+        ValueError,
+        match="ragged Adapter temporal axis differs from pretrained Adapter",
+    ):
+        adapter.forward_native_ragged(
+            inputs,
+            tubelets,
+            spatial,
+            total_tubelets=8,
+            grid_height=10,
+            grid_width=10,
+        )
+
+
+def test_production_full_window_adapter_and_gridfuse_forward_restores_all_tokens():
+    from tools.bata.profile_zoomtoken_gridfuse32_l6_segment import _lineage
+
+    torch.manual_seed(13)
+    device = torch.device("cpu")
+    tubelets, spatial, positions = _lineage(torch, device)
+    block = Block(
+        embed_dims=8,
+        num_heads=2,
+        mlp_ratio=2.0,
+        use_adapter=True,
+        temporal_size=384,
+    ).eval()
+    inputs = torch.randn(1, 24_576, 8)
+    stats = _stats()
+    output = block.forward_native_ragged(
+        inputs,
+        bucket_positions=positions,
+        tubelet_indices=tubelets,
+        spatial_indices=spatial,
+        total_tubelets=384,
+        grid_height=10,
+        grid_width=10,
+        packed_stats=stats,
+        gridfuse_orientation="horizontal",
+    )
+    assert output.shape == (1, 24_576, 8)
+    assert stats["gridfuse_bucket_call_count"] == 48
+    assert stats["executed_attention_tokens"] == 48 * 256
+    assert stats["executed_kv_tokens"] == 48 * 256
+    assert stats["executed_attention_pairs"] == 48 * 256 * 256
+    assert stats["executed_mlp_tokens"] == 48 * 256
+    assert stats["ragged_adapter_forward_count"] == 1
+    assert stats["executed_adapter_tokens"] == 24_576
+
+
+def test_full_window_buckets_cover_every_native_token_exactly_once():
+    from tools.bata.profile_zoomtoken_gridfuse32_l6_segment import _lineage
+
+    tubelets, spatial, positions = _lineage(torch, torch.device("cpu"))
+    flattened = torch.cat([bucket.reshape(-1) for bucket in positions])
+    assert tubelets.shape == spatial.shape == (1, 24_576)
+    assert len(positions) == 48
+    assert all(tuple(bucket.shape) == (1, 512) for bucket in positions)
+    assert torch.equal(flattened, torch.arange(24_576, dtype=torch.long))
+    assert torch.unique(flattened).numel() == 24_576
+
+
+def test_atomic_full_window_ledger_is_exact():
+    from tools.bata.profile_zoomtoken_gridfuse32_l6_segment import (
+        _expected_ledgers,
+    )
+
+    dense, candidate = _expected_ledgers()
+    assert dense == {
+        "ragged_attention_bucket_call_count": 288,
+        "ragged_mlp_bucket_call_count": 288,
+        "ragged_adapter_forward_count": 6,
+        "executed_attention_tokens": 147_456,
+        "executed_kv_tokens": 147_456,
+        "executed_attention_pairs": 75_497_472,
+        "executed_mlp_tokens": 147_456,
+        "executed_adapter_tokens": 147_456,
+        "gridfuse_bucket_call_count": 0,
+        "restored_native_tokens_per_block": 24_576,
+    }
+    assert candidate == {
+        "ragged_attention_bucket_call_count": 288,
+        "ragged_mlp_bucket_call_count": 288,
+        "ragged_adapter_forward_count": 6,
+        "executed_attention_tokens": 73_728,
+        "executed_kv_tokens": 73_728,
+        "executed_attention_pairs": 18_874_368,
+        "executed_mlp_tokens": 73_728,
+        "executed_adapter_tokens": 147_456,
+        "gridfuse_bucket_call_count": 288,
+        "restored_native_tokens_per_block": 24_576,
+    }
+
+
+def test_launcher_exposes_only_one_atomic_full_window_g0_action():
     launcher = (
         ROOT / "scripts" / "run_zoomtoken_gridfuse32_l6_gated_n16r4.sh"
     ).read_text(encoding="utf-8")
-    for binding in (
-        'G1_TERMINAL="${RESULT_ROOT}/g1/terminal_receipt.json"',
-        'terminal["checkpoint"] == candidate',
-        'terminal["checkpoint_sha256"] == digest.hexdigest()',
-        'terminal["checkpoint_epoch"] == 59',
-        'terminal["primary_state"] == "state_dict_ema"',
-    ):
-        assert binding in launcher
+    assert "--construction-witness-only" not in launcher
+    assert "torchrun" not in launcher
+    assert "G1)" not in launcher
+    assert "G2)" not in launcher
+    assert "standalone PRECHECK_ONLY scheduler job" in launcher
+    assert "G1 and G2 remain closed pending a fresh Pro decision" in launcher
+    assert launcher.count("profile_zoomtoken_gridfuse32_l6_segment.py") == 1
 
 
 def test_slurm_action_verifies_prefetched_remote_tracking_ref_without_network():
@@ -304,12 +411,3 @@ def test_canonical_transform_initialization_constructs_the_real_detector():
     model_config.backbone.custom.pretrain = None
     detector = build_detector(model_config)
     assert detector is not None
-
-
-def test_precheck_executes_the_production_construction_witness():
-    launcher = (
-        ROOT / "scripts" / "run_zoomtoken_gridfuse32_l6_gated_n16r4.sh"
-    ).read_text(encoding="utf-8")
-    assert "profile_zoomtoken_gridfuse32_l6_segment.py" in launcher
-    assert "--construction-witness-only" in launcher
-    assert 'printf \'[ZOOMTOKEN_GRIDFUSE32_L6][PRECHECK_READY]\\n\'' in launcher
