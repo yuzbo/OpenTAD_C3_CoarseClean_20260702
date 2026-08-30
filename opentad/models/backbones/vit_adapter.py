@@ -891,6 +891,54 @@ class Attention(BaseModule):
         out = out.transpose(1, 2).reshape(query.shape[0], query.shape[1], self.embed_dims)
         return self.proj_drop(self.proj(out))
 
+    def forward_selected_query_full_kv(
+        self,
+        query_x: Tensor,
+        kv_x: Tensor,
+        *,
+        return_full_keys: bool = False,
+    ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
+        """Project selected queries against the complete K/V carrier.
+
+        RACER24 needs the current full keys for its parameter-free completion,
+        so this intentionally remains separate from the older selected-only
+        packed paths.  It reuses the pretrained QKV and output projections and
+        registers no parameters.
+        """
+
+        if query_x.ndim != 3 or kv_x.ndim != 3:
+            raise ValueError("selected-query/full-KV inputs must be [B,N,C]")
+        if query_x.shape[0] != kv_x.shape[0]:
+            raise ValueError("selected queries and full K/V must share a batch")
+        if query_x.shape[-1] != self.embed_dims or kv_x.shape[-1] != self.embed_dims:
+            raise ValueError("selected-query/full-KV channels must match attention")
+        if int(query_x.shape[1]) <= 0 or int(kv_x.shape[1]) <= 0:
+            raise ValueError("selected-query/full-KV token counts must be positive")
+
+        channels = int(self.embed_dims)
+        q_bias = self.q_bias if hasattr(self, "q_bias") else None
+        v_bias = self.v_bias if hasattr(self, "v_bias") else None
+        q = F.linear(query_x, self.qkv.weight[:channels], q_bias)
+        k = F.linear(kv_x, self.qkv.weight[channels : 2 * channels], None)
+        v = F.linear(kv_x, self.qkv.weight[2 * channels :], v_bias)
+        q = q.reshape(
+            query_x.shape[0], query_x.shape[1], self.num_heads, -1
+        ).transpose(1, 2)
+        k = k.reshape(
+            kv_x.shape[0], kv_x.shape[1], self.num_heads, -1
+        ).transpose(1, 2)
+        v = v.reshape(
+            kv_x.shape[0], kv_x.shape[1], self.num_heads, -1
+        ).transpose(1, 2)
+        out = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p)
+        out = out.transpose(1, 2).reshape(
+            query_x.shape[0], query_x.shape[1], self.embed_dims
+        )
+        out = self.proj_drop(self.proj(out))
+        if return_full_keys:
+            return out, k
+        return out
+
 
 class Block(BaseModule):
     """The basic block in the Vision Transformer.
@@ -1199,18 +1247,300 @@ class Block(BaseModule):
             raise RuntimeError("ragged refresh buckets omitted a support token")
         return out.reshape_as(x)
 
+    @staticmethod
+    def _stable_descending_ranks(values: Tensor) -> Tensor:
+        """Return high-is-good ranks with stable lower-position tie breaks."""
+
+        order = torch.argsort(values, dim=-1, descending=True, stable=True)
+        rank_values = torch.arange(
+            int(values.shape[-1]),
+            0,
+            -1,
+            device=values.device,
+            dtype=values.dtype,
+        )
+        ranks = torch.zeros_like(values)
+        return ranks.scatter(-1, order, rank_values.expand_as(order))
+
+    @classmethod
+    def _racer24_route_indices(
+        cls,
+        current: Tensor,
+        previous_dense_residual: Tensor,
+        spatial_indices: Tensor,
+        *,
+        selected_per_tubelet: int = 24,
+    ) -> Tuple[Tensor, Tensor]:
+        """Route exactly 24 of 64 native tokens in each of eight tubelets."""
+
+        if current.ndim != 4 or previous_dense_residual.shape != current.shape:
+            raise ValueError("RACER24 router inputs must share [Bclip,8,64,C]")
+        if spatial_indices.shape != current.shape[:3]:
+            raise ValueError("RACER24 spatial lineage must match [Bclip,8,64]")
+        rows, tubelets, spatial_tokens, _ = map(int, current.shape)
+        if tubelets != 8 or spatial_tokens != 64:
+            raise ValueError("RACER24 requires eight tubelets with K64 support")
+        if int(selected_per_tubelet) != 24:
+            raise ValueError("RACER24 requires exact per-tubelet K24 queries")
+        if spatial_indices.dtype != torch.long:
+            raise TypeError("RACER24 spatial lineage must be torch.long")
+        if not bool((spatial_indices[..., 1:] > spatial_indices[..., :-1]).all().item()):
+            raise ValueError("RACER24 native indices must be strictly increasing")
+
+        del rows
+        residual = previous_dense_residual.detach().float()
+        carrier = current.detach().float()
+        residual_norm = residual.norm(dim=-1)
+        relative_magnitude = residual_norm / carrier.norm(dim=-1).clamp_min(1e-6)
+
+        surprise = torch.zeros_like(relative_magnitude)
+        for tubelet in range(tubelets):
+            neighbor_surprises = []
+            missing_neighbor = torch.zeros_like(
+                relative_magnitude[:, tubelet], dtype=torch.bool
+            )
+            for neighbor in (tubelet - 1, tubelet + 1):
+                if neighbor < 0 or neighbor >= tubelets:
+                    continue
+                matches = (
+                    spatial_indices[:, tubelet].unsqueeze(-1)
+                    == spatial_indices[:, neighbor].unsqueeze(-2)
+                )
+                hit = matches.any(dim=-1)
+                neighbor_residual = torch.einsum(
+                    "bij,bjc->bic",
+                    matches.to(dtype=residual.dtype),
+                    residual[:, neighbor],
+                )
+                neighbor_surprises.append(
+                    (residual[:, tubelet] - neighbor_residual).norm(dim=-1)
+                    / residual_norm[:, tubelet].clamp_min(1e-6)
+                )
+                missing_neighbor |= ~hit
+            if not neighbor_surprises:
+                raise RuntimeError("RACER24 tubelet has no within-clip neighbor")
+            tubelet_surprise = torch.stack(neighbor_surprises, dim=0).amax(dim=0)
+            maximum = tubelet_surprise.amax(dim=-1, keepdim=True)
+            surprise[:, tubelet] = torch.where(
+                missing_neighbor,
+                maximum + 1.0,
+                tubelet_surprise,
+            )
+
+        magnitude_rank = cls._stable_descending_ranks(relative_magnitude)
+        surprise_rank = cls._stable_descending_ranks(surprise)
+        route_score = (magnitude_rank + surprise_rank).detach()
+        selected = torch.argsort(
+            route_score,
+            dim=-1,
+            descending=True,
+            stable=True,
+        )[..., : int(selected_per_tubelet)]
+        # Physical execution is restored to native order after ranking.
+        selected = selected.sort(dim=-1).values.detach()
+        return selected, route_score
+
+    @staticmethod
+    def _racer24_complete_residual(
+        full_keys: Tensor,
+        selected_indices: Tensor,
+        selected_residual: Tensor,
+        previous_dense_residual: Tensor,
+        *,
+        attention_scale: float,
+    ) -> Tensor:
+        """Complete the 40 unselected tokens without parameters or state."""
+
+        rows, tubelets, spatial_tokens, channels = map(
+            int, previous_dense_residual.shape
+        )
+        if (tubelets, spatial_tokens) != (8, 64):
+            raise ValueError("RACER24 completion requires [Bclip,8,64,C]")
+        if selected_indices.shape != (rows, tubelets, 24):
+            raise ValueError("RACER24 completion requires 24 indices per tubelet")
+        if selected_residual.shape != (rows, tubelets * 24, channels):
+            raise ValueError("RACER24 selected residual must contain 192 queries")
+        if full_keys.ndim != 4 or tuple(full_keys.shape[:3:2]) != (
+            rows,
+            tubelets * spatial_tokens,
+        ):
+            raise ValueError("RACER24 full keys must cover the dense 512 carrier")
+
+        heads = int(full_keys.shape[1])
+        head_dims = int(full_keys.shape[-1])
+        keys = full_keys.reshape(
+            rows, heads, tubelets, spatial_tokens, head_dims
+        ).permute(0, 2, 1, 3, 4)
+        key_index = selected_indices.unsqueeze(2).unsqueeze(-1).expand(
+            rows,
+            tubelets,
+            heads,
+            24,
+            head_dims,
+        )
+        selected_keys = torch.gather(keys, 3, key_index)
+        logits = (
+            keys.float().unsqueeze(4)
+            * selected_keys.float().unsqueeze(3)
+        ).sum(dim=-1)
+        logits = logits.mul(float(attention_scale)).mean(dim=2)
+        weights = logits.softmax(dim=-1).detach()
+
+        selected_residual_grid = selected_residual.reshape(
+            rows, tubelets, 24, channels
+        )
+        interpolated = torch.einsum(
+            "btks,btsc->btkc",
+            weights,
+            selected_residual_grid.float(),
+        )
+        residual_index = selected_indices.unsqueeze(-1).expand(
+            rows, tubelets, 24, channels
+        )
+        previous_selected = torch.gather(
+            previous_dense_residual,
+            2,
+            residual_index,
+        )
+        numerator = (
+            previous_selected.float() * selected_residual_grid.detach().float()
+        ).sum(dim=(-1, -2))
+        denominator = previous_selected.float().square().sum(dim=(-1, -2))
+        calibration = torch.where(
+            denominator > 1e-12,
+            numerator / denominator.clamp_min(1e-12),
+            torch.zeros_like(numerator),
+        ).clamp(-2.0, 2.0).detach()
+        calibrated_previous = (
+            calibration.unsqueeze(-1).unsqueeze(-1)
+            * previous_dense_residual.float()
+        )
+
+        entropy = -(
+            weights * weights.clamp_min(1e-12).log()
+        ).sum(dim=-1)
+        confidence = (
+            1.0 - entropy / math.log(24.0)
+        ).clamp(0.0, 1.0).detach()
+        completed = (
+            confidence.unsqueeze(-1) * interpolated
+            + (1.0 - confidence).unsqueeze(-1) * calibrated_previous
+        ).to(dtype=selected_residual.dtype)
+        return completed.scatter(
+            2,
+            residual_index,
+            selected_residual_grid,
+        )
+
+    def _ragged_racer24_attention_mlp_forward(
+        self,
+        x: Tensor,
+        previous_dense_residual: Tensor,
+        bucket_positions: List[Tensor],
+        tubelet_indices: Tensor,
+        spatial_indices: Tensor,
+        packed_stats: Optional[Dict[str, int]],
+    ) -> Tensor:
+        """Execute RACER24 per clip, then restore the full native carrier."""
+
+        if previous_dense_residual.shape != x.shape:
+            raise ValueError("RACER24 requires its preceding dense residual")
+        flat = x.reshape(-1, int(x.shape[-1]))
+        flat_previous = previous_dense_residual.reshape_as(flat)
+        flat_tubelets = tubelet_indices.reshape(-1)
+        flat_spatial = spatial_indices.reshape(-1)
+        out = flat.clone()
+        visited = torch.zeros(
+            int(flat.shape[0]), device=x.device, dtype=torch.bool
+        )
+        for positions in bucket_positions:
+            rows, tokens = map(int, positions.shape)
+            if tokens != 512:
+                raise ValueError("RACER24 requires dense 8x64 clip buckets")
+            flattened_positions = positions.reshape(-1)
+            if bool(visited.gather(0, flattened_positions).any().item()):
+                raise RuntimeError("RACER24 clip buckets overlap")
+            visited.scatter_(0, flattened_positions, True)
+
+            context = flat[positions].reshape(rows, 8, 64, -1)
+            previous = flat_previous[positions].reshape_as(context)
+            tubelet_grid = flat_tubelets[positions].reshape(rows, 8, 64)
+            spatial_grid = flat_spatial[positions].reshape(rows, 8, 64)
+            if not bool(
+                (tubelet_grid == tubelet_grid[..., :1]).all().item()
+            ):
+                raise ValueError("RACER24 tubelet groups must contain exact K64")
+            tubelet_ids = tubelet_grid[..., 0]
+            expected_local = torch.arange(
+                8, device=x.device, dtype=torch.long
+            ).view(1, 8)
+            if not bool((tubelet_ids.remainder(8) == expected_local).all().item()):
+                raise ValueError("RACER24 bucket must contain one complete clip")
+
+            selected_indices, _ = self._racer24_route_indices(
+                context,
+                previous,
+                spatial_grid,
+            )
+            channels = int(context.shape[-1])
+            gather_index = selected_indices.unsqueeze(-1).expand(
+                rows, 8, 24, channels
+            )
+            selected = torch.gather(context, 2, gather_index).reshape(
+                rows, 192, channels
+            )
+            attention_output, full_keys = self.attn.forward_selected_query_full_kv(
+                self.norm1(selected),
+                self.norm1(context.reshape(rows, 512, channels)),
+                return_full_keys=True,
+            )
+            selected_output = selected + self.drop_path(attention_output)
+            selected_output = selected_output + self.drop_path(
+                self.mlp(self.norm2(selected_output))
+            )
+            selected_residual = selected_output - selected
+            dense_residual = self._racer24_complete_residual(
+                full_keys,
+                selected_indices,
+                selected_residual,
+                previous,
+                attention_scale=self.attn.scale,
+            )
+            out[positions] = (
+                context + dense_residual
+            ).reshape(rows, 512, channels)
+
+            if packed_stats is not None:
+                packed_stats["ragged_attention_bucket_call_count"] += 1
+                packed_stats["ragged_mlp_bucket_call_count"] += 1
+                packed_stats["executed_attention_tokens"] += rows * 192
+                packed_stats["executed_kv_tokens"] += rows * 512
+                packed_stats["executed_attention_pairs"] += rows * 192 * 512
+                packed_stats["executed_mlp_tokens"] += rows * 192
+                packed_stats["racer24_clip_count"] += rows
+                packed_stats["racer24_selected_query_tokens"] += rows * 192
+        if not bool(visited.all().item()):
+            raise RuntimeError("RACER24 clip buckets omitted a support token")
+        if packed_stats is not None:
+            packed_stats["racer24_block_forward_count"] += 1
+        return out.reshape_as(x)
+
     def _ragged_attention_mlp_forward(
         self,
         x: Tensor,
         bucket_positions: List[Tensor],
         packed_stats: Optional[Dict[str, int]],
-    ) -> Tensor:
+        *,
+        return_pre_adapter_residual: bool = False,
+        count_full_kv_tokens: bool = False,
+    ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         if x.ndim != 3:
             raise ValueError("ragged block inputs must be [B,S,C]")
         if not bucket_positions:
             raise ValueError("ragged block requires at least one non-empty clip")
         flat = x.reshape(-1, int(x.shape[-1]))
         out = flat.clone()
+        residual = torch.zeros_like(flat) if return_pre_adapter_residual else None
         visited = torch.zeros(
             int(flat.shape[0]),
             device=x.device,
@@ -1226,9 +1556,12 @@ class Block(BaseModule):
                 raise RuntimeError("ragged attention buckets overlap")
             visited.scatter_(0, flattened_positions, True)
             selected = flat[positions]
+            selected_input = selected
             selected = selected + self.drop_path(self.attn(self.norm1(selected)))
             selected = selected + self.drop_path(self.mlp(self.norm2(selected)))
             out[positions] = selected
+            if residual is not None:
+                residual[positions] = selected - selected_input
             if packed_stats is not None:
                 rows, tokens = map(int, positions.shape)
                 packed_stats["ragged_attention_bucket_call_count"] = int(
@@ -1243,12 +1576,19 @@ class Block(BaseModule):
                 packed_stats["executed_attention_pairs"] = int(
                     packed_stats.get("executed_attention_pairs", 0)
                 ) + rows * tokens * tokens
+                if count_full_kv_tokens:
+                    packed_stats["executed_kv_tokens"] = int(
+                        packed_stats.get("executed_kv_tokens", 0)
+                    ) + rows * tokens
                 packed_stats["executed_mlp_tokens"] = int(
                     packed_stats.get("executed_mlp_tokens", 0)
                 ) + rows * tokens
         if not bool(visited.all().item()):
             raise RuntimeError("ragged attention buckets omitted a selected token")
-        return out.reshape_as(x)
+        out = out.reshape_as(x)
+        if residual is not None:
+            return out, residual.reshape_as(x)
+        return out
 
     def forward_native_ragged(
         self,
@@ -1264,15 +1604,25 @@ class Block(BaseModule):
         refresh_mask: Optional[Tensor] = None,
         refresh_mode: str = "full64",
         refresh_alpha: Optional[Tensor] = None,
-    ) -> Tensor:
+        racer24_previous_dense_residual: Optional[Tensor] = None,
+        return_pre_adapter_residual: bool = False,
+        count_full_kv_tokens: bool = False,
+    ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         """Execute one block on true clip-ragged selected-token sequences."""
 
+        if racer24_previous_dense_residual is not None and refresh_mask is not None:
+            raise ValueError("RACER24 cannot combine with a refresh mask")
+        if racer24_previous_dense_residual is not None and return_pre_adapter_residual:
+            raise ValueError("a RACER24 block cannot also be its dense predecessor")
+        if return_pre_adapter_residual and refresh_mask is not None:
+            raise ValueError("only a dense full-KV block can expose RACER24 residual")
         checkpoint_active = bool(self.with_cp and x.requires_grad)
 
         def _inner_forward(
             value: Tensor,
             alpha_value: Optional[Tensor] = None,
-        ) -> Tensor:
+            previous_residual_value: Optional[Tensor] = None,
+        ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
             # Reentrant checkpoint executes its first pass without autograd and
             # replays the block with autograd during backward.  Record the
             # physical ledger only on the first pass so recomputation cannot be
@@ -1282,12 +1632,28 @@ class Block(BaseModule):
                 if checkpoint_active and torch.is_grad_enabled()
                 else packed_stats
             )
-            if refresh_mask is None:
-                value = self._ragged_attention_mlp_forward(
+            pre_adapter_residual = None
+            if previous_residual_value is not None:
+                value = self._ragged_racer24_attention_mlp_forward(
+                    value,
+                    previous_residual_value,
+                    bucket_positions,
+                    tubelet_indices,
+                    spatial_indices,
+                    active_stats,
+                )
+            elif refresh_mask is None:
+                dense_result = self._ragged_attention_mlp_forward(
                     value,
                     bucket_positions,
                     active_stats,
+                    return_pre_adapter_residual=return_pre_adapter_residual,
+                    count_full_kv_tokens=count_full_kv_tokens,
                 )
+                if return_pre_adapter_residual:
+                    value, pre_adapter_residual = dense_result
+                else:
+                    value = dense_result
             else:
                 value = self._ragged_refresh_attention_mlp_forward(
                     value,
@@ -1317,9 +1683,21 @@ class Block(BaseModule):
                     active_stats["executed_adapter_tokens"] = int(
                         active_stats.get("executed_adapter_tokens", 0)
                     ) + int(value.shape[0]) * int(value.shape[1])
+            if pre_adapter_residual is not None:
+                return value, pre_adapter_residual
             return value
 
         if checkpoint_active:
+            if racer24_previous_dense_residual is not None:
+                return cp.checkpoint(
+                    lambda value, previous: _inner_forward(
+                        value,
+                        previous_residual_value=previous,
+                    ),
+                    x,
+                    racer24_previous_dense_residual,
+                    use_reentrant=True,
+                )
             if refresh_alpha is None:
                 return cp.checkpoint(_inner_forward, x, use_reentrant=True)
             return cp.checkpoint(
@@ -1328,7 +1706,11 @@ class Block(BaseModule):
                 refresh_alpha,
                 use_reentrant=True,
             )
-        return _inner_forward(x, refresh_alpha)
+        return _inner_forward(
+            x,
+            refresh_alpha,
+            racer24_previous_dense_residual,
+        )
 
     def forward(
         self,
@@ -1456,6 +1838,7 @@ class VisionTransformerAdapter(BaseModule):
         tubelet_packed_runtime_route: Optional[Dict] = None,
         chronotransport: Optional[Dict] = None,
         amod: Optional[Dict] = None,
+        racer24: Optional[Dict] = None,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -1582,6 +1965,42 @@ class VisionTransformerAdapter(BaseModule):
                 "query_chunk_size": query_chunk_size,
                 "routing_score": "preceding_dense_attention_column_mean",
                 "unselected_update": "identity_bypass",
+            }
+
+        self.racer24_config = None
+        if racer24 is not None and bool(dict(racer24).get("enabled", True)):
+            racer_cfg = dict(racer24)
+            expected = {
+                "racer_blocks": (4, 6, 8, 10),
+                "tubelets_per_clip": 8,
+                "spatial_tokens_per_tubelet": 64,
+                "selected_per_tubelet": 24,
+                "selected_query_tokens_per_clip": 192,
+                "full_kv_tokens_per_clip": 512,
+                "completion": "parameter_free_key_residual_entropy",
+                "router": "preceding_dense_residual_plus_adjacent_surprise",
+            }
+            if int(depth) != 12:
+                raise ValueError("RACER24 requires the frozen 12-block VideoMAE-S")
+            if self.amod_config is not None:
+                raise ValueError("RACER24 cannot combine with A-MoD")
+            if tubelet_token_redundancy_aux is not None or packed_enabled or chronotransport_enabled:
+                raise ValueError(
+                    "RACER24 cannot combine with auxiliary, packed, or transport routes"
+                )
+            for key, expected_value in expected.items():
+                configured = racer_cfg.get(key, expected_value)
+                if isinstance(expected_value, tuple):
+                    configured = tuple(configured)
+                if configured != expected_value:
+                    raise ValueError(
+                        f"RACER24 {key} must equal frozen value {expected_value!r}"
+                    )
+            self.racer24_config = {
+                "schema_version": racer_cfg.get(
+                    "schema_version", "zoomtoken_racer24_iteration0_v001"
+                ),
+                **expected,
             }
 
         # stochastic depth decay rule
@@ -2105,6 +2524,7 @@ class VisionTransformerAdapter(BaseModule):
         batch_size = int(metadata["batch_size"])
         window_budget = int(metadata["window_budget"])
         selected_total = batch_size * window_budget
+        racer24_enabled = self.racer24_config is not None
         if refresh_mode not in {
             "full64",
             "drop32",
@@ -2153,6 +2573,23 @@ class VisionTransformerAdapter(BaseModule):
                 or int(refresh_alpha.numel()) != len(self.blocks)
             ):
                 raise ValueError("RC32-KV requires one scalar carry mix per block")
+        if racer24_enabled:
+            if refresh_mode != "full64" or refresh_mask is not None or refresh_alpha is not None:
+                raise ValueError("RACER24 requires the unchanged FULL64 BPNS path")
+            support_counts = torch.zeros(
+                (batch_size, int(metadata["total_tubelets"])),
+                device=x.device,
+                dtype=torch.long,
+            ).scatter_add_(1, tubelet_indices, torch.ones_like(tubelet_indices))
+            if not bool((support_counts == 64).all().item()):
+                raise ValueError("RACER24 requires exact native K64 per tubelet")
+            if int(metadata["temporal_per_chunk"]) != 8:
+                raise ValueError("RACER24 requires eight tubelets per clip")
+            racer_clip_counts = metadata["clip_counts"]
+            if not isinstance(racer_clip_counts, torch.Tensor) or not bool(
+                (racer_clip_counts == 512).all().item()
+            ):
+                raise ValueError("RACER24 requires one dense 512-token carrier per clip")
         stats: Dict[str, int] = {
             "heavy_backbone_forward_count": 1,
             "executed_patch_tokens": selected_total,
@@ -2165,9 +2602,16 @@ class VisionTransformerAdapter(BaseModule):
             "executed_mlp_tokens": 0,
             "executed_adapter_tokens": 0,
             "dense_adapter_forward_count": 0,
+            "racer24_block_forward_count": 0,
+            "racer24_clip_count": 0,
+            "racer24_selected_query_tokens": 0,
         }
         if refresh_mode == "dsr6_kv" and len(self.blocks) != 12:
             raise ValueError("DSR6-KV requires the frozen 12-block VideoMAE-S")
+        racer24_previous_dense_residual = None
+        racer24_blocks = (
+            self.racer24_config["racer_blocks"] if racer24_enabled else ()
+        )
         for block_index, block in enumerate(self.blocks):
             block_refresh_mask = refresh_mask
             block_refresh_mode = refresh_mode
@@ -2182,8 +2626,7 @@ class VisionTransformerAdapter(BaseModule):
                     block_refresh_mode = "full64"
                 else:
                     block_refresh_mode = "mod32_kv"
-            x = block.forward_native_ragged(
-                x,
+            common_block_args = dict(
                 bucket_positions=bucket_positions,
                 tubelet_indices=tubelet_indices,
                 spatial_indices=spatial_indices,
@@ -2195,6 +2638,31 @@ class VisionTransformerAdapter(BaseModule):
                 refresh_mode=block_refresh_mode,
                 refresh_alpha=block_refresh_alpha,
             )
+            if racer24_enabled and block_index in racer24_blocks:
+                if racer24_previous_dense_residual is None:
+                    raise RuntimeError("RACER24 block lacks its preceding dense residual")
+                x = block.forward_native_ragged(
+                    x,
+                    **common_block_args,
+                    racer24_previous_dense_residual=racer24_previous_dense_residual,
+                    count_full_kv_tokens=True,
+                )
+                racer24_previous_dense_residual = None
+            elif racer24_enabled and (block_index + 1) in racer24_blocks:
+                x, racer24_previous_dense_residual = block.forward_native_ragged(
+                    x,
+                    **common_block_args,
+                    return_pre_adapter_residual=True,
+                    count_full_kv_tokens=True,
+                )
+            else:
+                x = block.forward_native_ragged(
+                    x,
+                    **common_block_args,
+                    count_full_kv_tokens=racer24_enabled,
+                )
+        if racer24_previous_dense_residual is not None:
+            raise RuntimeError("RACER24 left an unconsumed dense residual")
         x = self.norm(x)
 
         clip_counts = metadata["clip_counts"]
@@ -2206,7 +2674,25 @@ class VisionTransformerAdapter(BaseModule):
         ) or not isinstance(clip_indices, torch.Tensor):
             raise RuntimeError("ragged execution metadata lost its tensor ledger")
         full_attention_pairs = int(attention_pairs_per_window.sum().item())
-        if refresh_mask is None:
+        racer24_query_tokens_per_window = None
+        if racer24_enabled:
+            racer24_query_counts = clip_counts.div(64, rounding_mode="floor") * 24
+            racer24_query_tokens_per_window = int(
+                racer24_query_counts.sum(dim=-1)[0].item()
+            )
+            racer24_attention_pairs = int(
+                (clip_counts * racer24_query_counts).sum().item()
+            )
+            expected_attention_pairs = (
+                full_attention_pairs * 8 + racer24_attention_pairs * 4
+            )
+            expected_kv_tokens = selected_total * len(self.blocks)
+            expected_attention_tokens = (
+                selected_total * 8
+                + batch_size * racer24_query_tokens_per_window * 4
+            )
+            refresh_tokens_per_window = window_budget
+        elif refresh_mask is None:
             expected_attention_pairs = full_attention_pairs * len(self.blocks)
             expected_kv_tokens = selected_total * len(self.blocks)
             refresh_tokens_per_window = window_budget
@@ -2234,7 +2720,19 @@ class VisionTransformerAdapter(BaseModule):
             raise RuntimeError("ragged patch execution count differs from selected B")
         if stats["executed_attention_pairs"] != expected_attention_pairs:
             raise RuntimeError("ragged attention-pair ledger differs from execution")
-        if refresh_mask is None:
+        if racer24_enabled:
+            kv_ledger_valid = stats["executed_kv_tokens"] == expected_kv_tokens
+            if stats["executed_attention_tokens"] != expected_attention_tokens:
+                raise RuntimeError("RACER24 query-token ledger differs from execution")
+            if stats["executed_mlp_tokens"] != expected_attention_tokens:
+                raise RuntimeError("RACER24 MLP-token ledger differs from execution")
+            if stats["racer24_block_forward_count"] != 4:
+                raise RuntimeError("RACER24 did not execute exactly four blocks")
+            if stats["racer24_selected_query_tokens"] != (
+                batch_size * racer24_query_tokens_per_window * 4
+            ):
+                raise RuntimeError("RACER24 selected-query ledger differs from execution")
+        elif refresh_mask is None:
             kv_ledger_valid = stats["executed_kv_tokens"] in {
                 0,
                 expected_kv_tokens,
@@ -2251,6 +2749,24 @@ class VisionTransformerAdapter(BaseModule):
             if refresh_mode == "dsr6_kv"
             else {}
         )
+        if racer24_enabled:
+            depth_schedule_summary = {
+                "racer24_enabled": True,
+                "dense_block_indices": [0, 1, 2, 3, 5, 7, 9, 11],
+                "racer_block_indices": [4, 6, 8, 10],
+                "racer24_selected_per_tubelet": 24,
+                "racer24_query_tokens_per_clip": 192,
+                "racer24_kv_tokens_per_clip": 512,
+                "racer24_query_tokens_per_window": racer24_query_tokens_per_window,
+                "racer24_block_forward_count": stats[
+                    "racer24_block_forward_count"
+                ],
+                "racer24_completion": "parameter_free_key_residual_entropy",
+                "racer24_router": (
+                    "preceding_dense_residual_plus_adjacent_surprise_stopgrad"
+                ),
+                "racer24_cross_clip_state": False,
+            }
         self.latest_native_packed_summary = {
             "schema_version": "videomae_native_ragged_v1",
             "execution_mode": "true_clip_ragged_no_padding",
