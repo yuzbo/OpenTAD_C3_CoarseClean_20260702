@@ -1360,14 +1360,20 @@ class Block(BaseModule):
             raise ValueError("RACER24 completion requires 24 indices per tubelet")
         if selected_residual.shape != (rows, tubelets * 24, channels):
             raise ValueError("RACER24 selected residual must contain 192 queries")
-        if full_keys.ndim != 4 or tuple(full_keys.shape[:3:2]) != (
-            rows,
-            tubelets * spatial_tokens,
-        ):
-            raise ValueError("RACER24 full keys must cover the dense 512 carrier")
+        if full_keys.ndim != 4:
+            raise ValueError(
+                "RACER24 full keys must be [rows,heads,512,head_dim]"
+            )
+        key_rows, heads, key_tokens, head_dims = map(int, full_keys.shape)
+        if key_rows != rows:
+            raise ValueError("RACER24 full-key rows must match the clip batch")
+        if key_tokens != tubelets * spatial_tokens:
+            raise ValueError("RACER24 full-key token axis must be exactly 512")
+        if heads <= 0 or head_dims <= 0 or heads * head_dims != channels:
+            raise ValueError(
+                "RACER24 full-key heads and head_dim must match query channels"
+            )
 
-        heads = int(full_keys.shape[1])
-        head_dims = int(full_keys.shape[-1])
         keys = full_keys.reshape(
             rows, heads, tubelets, spatial_tokens, head_dims
         ).permute(0, 2, 1, 3, 4)

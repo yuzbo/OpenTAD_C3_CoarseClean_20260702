@@ -146,6 +146,37 @@ def test_completion_is_finite_and_scatter_preserves_selected_exact_residuals():
     assert torch.equal(gathered, selected_residual.reshape(1, 8, 24, 8))
 
 
+def test_completion_full_kv_layout_accepts_rows_heads_tokens_head_dim():
+    completed = Block._racer24_complete_residual(
+        torch.zeros(1, 2, 512, 4),
+        torch.arange(24).view(1, 1, 24).repeat(1, 8, 1),
+        torch.zeros(1, 192, 8),
+        torch.zeros(1, 8, 64, 8),
+        attention_scale=0.5,
+    )
+    assert completed.shape == (1, 8, 64, 8)
+
+
+@pytest.mark.parametrize(
+    ("shape", "message"),
+    [
+        ((2, 2, 512, 4), "rows"),
+        ((1, 2, 511, 4), "token axis"),
+        ((1, 512, 2, 4), "token axis"),
+        ((1, 4, 512, 4), "heads and head_dim"),
+    ],
+)
+def test_completion_full_kv_layout_rejects_wrong_axes(shape, message):
+    with pytest.raises(ValueError, match=message):
+        Block._racer24_complete_residual(
+            torch.zeros(shape),
+            torch.arange(24).view(1, 1, 24).repeat(1, 8, 1),
+            torch.zeros(1, 192, 8),
+            torch.zeros(1, 8, 64, 8),
+            attention_scale=0.5,
+        )
+
+
 def test_racer_block_executes_q192_kv512_mlp192_and_restores_dense_carrier():
     torch.manual_seed(9)
     block = Block(embed_dims=8, num_heads=2, mlp_ratio=1.0, use_adapter=True, temporal_size=8).eval()
