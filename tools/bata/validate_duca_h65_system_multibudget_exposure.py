@@ -225,9 +225,12 @@ def _validate_matched_configs(
         for key, expected in expected_workflow.items():
             if workflow.get(key) != expected:
                 raise SystemExit(f"control workflow.{key} differs from {expected!r}")
+        if workflow.formal_successful_update_contract:
+            raise SystemExit(
+                "H65 multi-budget training must not route through the legacy P0 binder"
+            )
         if (
-            not workflow.formal_successful_update_contract
-            or not workflow.seal_eval_dataloaders_during_training
+            not workflow.seal_eval_dataloaders_during_training
             or control.dataset.val is not None
             or workflow.val_eval_interval > 0
             or workflow.val_loss_interval > 0

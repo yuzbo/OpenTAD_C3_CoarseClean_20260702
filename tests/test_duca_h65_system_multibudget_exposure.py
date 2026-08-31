@@ -603,7 +603,7 @@ def test_matched_configs_differ_only_by_budget_exposure(monkeypatch) -> None:
         str(CONFIG_ROOT / "duca_h65_system_multibudget_exposure_candidate.py")
     )
     assert control.seed == candidate.seed == 3408
-    assert control.workflow.formal_successful_update_contract is True
+    assert control.workflow.formal_successful_update_contract is False
     assert control.workflow.seal_eval_dataloaders_during_training is True
     assert control.workflow.expected_successful_optimizer_updates == 6000
     assert control.workflow.val_eval_interval == -1

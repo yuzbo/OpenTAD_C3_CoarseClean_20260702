@@ -33,7 +33,10 @@ duca_multibudget_exposure_contract = dict(
 
 workflow = dict(
     training_profile="duca_h65_system_multibudget_exposure_control",
-    formal_successful_update_contract=True,
+    # This Stage-2 experiment is not one of the historical P0 variants.  Keep
+    # the inherited fail-closed update audit without routing through the P0
+    # provenance binder.
+    formal_successful_update_contract=False,
     seal_eval_dataloaders_during_training=True,
     expected_train_batches_per_epoch=100,
     expected_successful_optimizer_updates=6000,
