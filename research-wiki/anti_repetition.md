@@ -1410,5 +1410,11 @@ updated: 2026-08-31
     profiler/launcher/test 三个文件，decode 必须留在 full-stack 计时内，不能用 async prefetch、worker sweep、
     full-video 常驻、跨 arm/pass cache、prediction/model/hidden cache 或 GT/teacher。正式 population 固定完整
     validation 211/792，pass order `K100,R1,R1,K100,R1,K100,K100,R1`，submission `1/1`、无 replacement。
-    若有效结果任一 wall-time/energy `<=0.95` 或 memory `<=1.05` 门失败，永久停止 R1 contiguous support 作为
-    当前单 GPU 效率路线；不得再追加局部模型变体，必须 fresh Pro。
+	    若有效结果任一 wall-time/energy `<=0.95` 或 memory `<=1.05` 门失败，永久停止 R1 contiguous support 作为
+	    当前单 GPU 效率路线；不得再追加局部模型变体，必须 fresh Pro。
+53. ordered-video reuse clean/pushed candidate 固定为 `6139e793e530033e2af6d992819cbe327d5bbd86`。
+    precheck job `1262717` 已在完整 211 videos/792 ordered windows 上证明 legacy/rolling 的 pre-H2D tensor、
+    mask、metadata、frame-index exact parity，并以 `COMPLETED 0:0 / PRECHECK_READY` 终态。唯一 formal job
+    `1262753` 已提交并启动，submission `1/1`、无 replacement。不得读取或解释 live/partial latency、energy、
+    memory、prediction、evaluator、short-action 或 boundary；不得创建 retry、resume、第二 arm/seed、训练或
+    official-test。只有完整终态或客观 blocker 才可更新科学记录并发起一次 fresh Pro。

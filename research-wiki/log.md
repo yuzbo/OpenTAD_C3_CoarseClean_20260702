@@ -4962,3 +4962,12 @@ append_only: true
   8-pass、1 GPU、submission `1/1`、无 replacement 的正式 closure 决定 R1 当前单 GPU 效率生命力。Oracle
   manifest 第 12 附件是 `AGENTS.md`，Pro 清单却写为 stale `state.json`；该名称偏差已披露，不影响 raw terminal、
   GitHub 身份和裁决数值。
+
+- 2026-09-01：ordered-video decode reuse 的最小实现已冻结并推送为
+  `6139e793e530033e2af6d992819cbe327d5bbd86`。focused tests `8 passed`；首轮 Critic 指出的 evaluator raw-vector
+  非 exact 门控和 frame-index 未显式绑定均已修复，fresh re-Critic `PASS`，fresh result-blind Evaluator
+  `PRE_RUN_READY`。非科学 precheck job `1262717` 在 `g0063` 终态 `COMPLETED 0:0 / PRECHECK_READY`，完整
+  211 videos/792 windows 的 legacy/rolling pre-H2D tensor、mask、metadata、frame-index exact parity 通过，未读
+  validation metric、未训练/恢复，且 formal result root 在终态前保持不存在。唯一 formal job `1262753` 已于
+  `2026-09-01T00:44:40+08:00` 以 1 GPU、6 CPU、16 小时提交并在 `g0030` 启动，submission `1/1`、无
+  replacement。终态前不消费 partial 结果；完整终态或客观 blocker 后只返回一次 fresh exact-Project Pro。

@@ -1527,6 +1527,17 @@ max_chars: 8000
   permanently stops R1 contiguous support on the current single-GPU execution base.
   No training, official test, alternative arm, asynchronous prefetch, retry or
   replacement is authorized.
+- The clean/pushed implementation is exact GitHub commit
+  `6139e793e530033e2af6d992819cbe327d5bbd86` on branch
+  `codex/zoomtoken-ordered-video-reuse-r1-k100-v001`. Focused tests are `8 passed`;
+  after two deterministic Critic blockers were fixed, a fresh re-Critic returned
+  `PASS` and a fresh result-blind Evaluator returned `PRE_RUN_READY`. Non-scientific
+  precheck job `1262717` completed `0:0 / PRECHECK_READY` and established exact
+  legacy-versus-rolling pre-H2D tensor, mask, metadata and frame-index parity across
+  all 211 validation videos and 792 ordered windows without reading metrics or creating
+  the formal result root. The sole formal job `1262753` was submitted `1/1` with one
+  GPU, six CPUs and a 16-hour ceiling, and started on `g0030`. No partial result is
+  consumed; terminal evidence or an objective blocker returns once to fresh Pro.
 
 ## Pointers
 
