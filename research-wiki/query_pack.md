@@ -1564,6 +1564,17 @@ max_chars: 8000
   and read-only identity of the exact-nine D160/G96/U128 training artifacts plus the
   129-window population. Acceptance only means protocol readiness; any terminal must
   return to a fresh Pro before raw inference, metrics, cost, S3, retraining or official test.
+- Final candidate `10aed28659a08fa703def278fc0f5f1422dcad89` is clean, pushed,
+  limited to the four authorized files, and passed `12` focused tests on the frozen
+  N16R4/Linux runtime plus fresh Critic `PASS` and result-blind Evaluator
+  `PRE_RUN_READY`. The sole CPU closure reproduced the canonical 17-candidate manifest
+  (`ad7e4ba1…`) and sanitized 129-window population (`e46e42fb…`) but found all nine
+  `epoch_59.pth` files and all nine metadata sidecars absent from the exact campaign
+  root. It therefore terminated as
+  `STOP_CONTINUOUS_ROI_S2_REFERENCE_ROUTE_BEFORE_INFERENCE`. This is an artifact-
+  availability stop, not crop-sufficiency or performance evidence. No receipt hash may
+  substitute for the missing bytes; no reconstruction, retraining, inference, metric,
+  cost, S3, or official test is authorized before fresh Pro adjudication.
 
 ## Pointers
 

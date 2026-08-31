@@ -4988,3 +4988,12 @@ append_only: true
   reference protocol corrigendum 和 CPU-only known-answer closure：限定四个文件，冻结 shared physical center、
   deterministic Sobol bytes、equal privilege、raw/privileged ID 与 no-GT 边界、v2.1 statistics 和 exact-nine/
   129-window 只读身份。该任务不授权训练、inference、metric、cost、S3 或 official test；任何终态必须 fresh Pro。
+
+- 2026-09-01：Continuous-RoI S2 v2.2 final candidate `10aed28659a08fa703def278fc0f5f1422dcad89`
+  已 clean/pushed，仅含四个授权文件；N16R4/Linux focused suite `12 passed`，fresh Critic `PASS`，fresh
+  result-blind Evaluator `PRE_RUN_READY`。唯一正式 CPU known-answer closure 于 `06:47:47+08:00` 完成：17 个
+  Sobol candidate（每个 48 tubelets）与 129-window sanitized population 的 canonical SHA 均匹配。exact-nine campaign
+  的 config、completion、matrix、source manifest、development DB 与 population 身份通过，但九个 `epoch_59.pth`
+  和九个 metadata sidecar 均不存在，故受控返回 `STOP_CONTINUOUS_ROI_S2_REFERENCE_ROUTE_BEFORE_INFERENCE`。
+  全程 training/raw inference/performance/official-test 均为 false；该 terminal 只证明 reference bytes 不可用，不形成
+  crop-sufficiency 或性能结论。下一步只允许一次 fresh exact-Project Pro。

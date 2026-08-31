@@ -1595,3 +1595,16 @@ known-answer closure。它必须冻结 FS/VS shared physical center、arm-specif
 Sobol 与 canonical manifest bytes、equal search privilege、raw enumerated ID 与 post-seal privileged preferred ID
 隔离、no-GT raw graph、v2.1 statistical rules，以及 exact-nine final-EMA/campaign/config/fit/gate 与 129-window
 population 身份。该任务不产生 crop-sufficiency 或性能主张；ready、stop 或 blocker 后均必须 fresh Pro。
+
+## 131. Continuous-RoI S2 v2.2 因 exact-nine checkpoint 字节缺失而在推理前停止（2026-09-01）
+
+四文件 final candidate `10aed28659a08fa703def278fc0f5f1422dcad89` 通过 N16R4/Linux `12 passed`、fresh
+Critic `PASS` 和 fresh result-blind Evaluator `PRE_RUN_READY`。唯一 CPU-only known-answer closure 正确重现
+17-candidate/48-tubelet deterministic Sobol manifest 与 129-window sanitized development population；未运行训练、raw
+inference、prediction、metric、cost、performance access 或 official test。
+
+只读 external identity closure 确认 retained matrix/config/completion/source/database/population 身份均匹配，但九个
+D160/G96/U128 × seeds 3407/3408/3409 的 `epoch_59.pth` 及其九个 metadata sidecar 均已缺失。旧 receipt 中的 hash
+不能证明当前 checkpoint bytes，因此冻结决定为 `STOP_CONTINUOUS_ROI_S2_REFERENCE_ROUTE_BEFORE_INFERENCE`。
+这是 reference-artifact availability stop，不是否定 Continuous-RoI 或 fixed/variable crop 的科学结果；fresh Pro 前不重建、
+重训、推理、测 metric/cost、开启 S3 或 official test，也不自行建立 successor。

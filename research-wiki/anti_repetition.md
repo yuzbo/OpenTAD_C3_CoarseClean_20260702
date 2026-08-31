@@ -1432,3 +1432,9 @@ updated: 2026-08-31
     prediction、metric、cost、S3、official test 或修改 v2.1 历史。必须修正 equal-logit 与 equal-physical-center 的
     混淆，冻结 Owen-scrambled Sobol 字节身份、equal privilege、raw/privileged ID 边界、no-GT object graph、v2.1
     statistics 以及 exact-nine/129-window 只读身份。协议 ready/stop/blocker 后均必须 fresh Pro，禁止自动 successor。
+56. Continuous-RoI S2 v2.2 final candidate `10aed28659a08fa703def278fc0f5f1422dcad89` 已通过 Linux
+    `12 passed`、fresh Critic `PASS` 与 result-blind Evaluator `PRE_RUN_READY`。唯一 CPU closure 已重现 17 个候选和
+    129-window population，但 frozen exact-nine 的九个 final-EMA checkpoint 与九个 metadata sidecar 均缺失，故按
+    `STOP_CONTINUOUS_ROI_S2_REFERENCE_ROUTE_BEFORE_INFERENCE` 终止。不得用旧 receipt/hash 代替 checkpoint bytes，
+    不得重建、重训、运行 raw reference inference/metric/cost/S3/official test，也不得把 artifact-availability stop 写成
+    Continuous-RoI 科学失败；唯一下一动作是 fresh exact-Project Pro。
