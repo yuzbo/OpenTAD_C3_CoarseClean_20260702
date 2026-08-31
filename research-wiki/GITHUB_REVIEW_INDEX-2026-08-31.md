@@ -38,6 +38,13 @@ scope: complete DUCA research history and public implementation lineage
 - 该报告只是独立咨询。其未隔离的根因判断、数值阈值、里程碑和路线偏好均须由 Pro
   结合原始代码与正式证据重新裁决。
 
+## 本轮 Pro 全历史裁决
+
+- Pro 完整报告：
+  <https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/duca-wiki-complete-sync-20260831/research-wiki/sources/2026-08-31-pro-github-wiki-comprehensive-review-v002.md>
+- 裁决为 `REVISE`。当前唯一任务是完整数据身份审计；模型实现尚未授权。数据通过并返回 Pro 后，才条件解锁固定
+  K384 与 K256/K384/K512 多预算训练暴露的两臂、三种子、完整训练和一次性完整 held-out 比较。
+
 ## 关键实现谱系
 
 下列链接用于逐版本核验，不代表未列出的提交可以忽略。完整细节见

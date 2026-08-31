@@ -4961,3 +4961,18 @@ project decision.
   `research-wiki/sources/2026-08-31-duca-irregular-temporal-sampling-external-proposal.md`.
 - Complete raw text:
   `docs/methods/reviews/2026-08-31-duca-irregular-temporal-sampling-external-proposal-raw.txt`.
+
+### 2026-08-31 — Comprehensive GitHub/Wiki Pro review reaffirms identity audit before model work
+
+- A fresh exact-Project Pro turn read the complete public Wiki, Gemini review and the key exact GitHub implementation lineage. It
+  returned `REVISE` with the required nonce and terminal marker. Full text:
+  `research-wiki/sources/2026-08-31-pro-github-wiki-comprehensive-review-v002.md`.
+- H65 `04c35a3b...` remains the only clean model mainline. The Wiki synchronization revision is documentation-only, and
+  `33e4ed...` remains a read-only negative diagnostic rather than a new-model parent.
+- The only current task is `feature/duca-full-data-identity-audit-v1-20260831`: materialize literal annotation, physical-media,
+  loader, evaluator, historical 211-prediction and ActionFormer 212-source ID sets; explain every set difference; return exactly
+  `DATA_IDENTITY_PASS` or `DATA_IDENTITY_BLOCKED` after independent Critic and CPU Evaluator review.
+- No model, checkpoint, PRE_RUN, GPU, training, held-out prediction or mAP is authorized before that result returns to Pro.
+- Conditional on data admission, the sole model experiment is fixed K384 versus matched K256/K384/K512 training exposure using
+  all 200 training videos, seeds 3407/3408/3409, 6,000 successful updates, sealed predictions, one complete held-out evaluation and
+  10,000 paired whole-video bootstrap replicates. It does not add budget embeddings, distillation, a new selector or another route.

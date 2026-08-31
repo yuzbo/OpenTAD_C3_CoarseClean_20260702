@@ -46,7 +46,7 @@ project: C3-DUCA efficient temporal acquisition for TAD
 19. [SparseHead 唯一路线合并](experiments/sparsehead-route-consolidation-20260728.md)：
    当前唯一可写稀疏头代码面、旧仓封存边界与可继承证据。
 20. [DUCA GitHub 深度审查入口（2026-08-31）](GITHUB_REVIEW_INDEX-2026-08-31.md)：
-   完整 Wiki、Gemini 全量预审、关键公开代码版本与逐版本审查边界。
+   完整 Wiki、Gemini 全量预审、关键公开代码版本、逐版本审查边界与 Pro 全历史裁决。
 
 ## 当前最终目标
 

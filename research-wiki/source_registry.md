@@ -3947,3 +3947,21 @@ Primary near-neighbor sources additionally checked during project audit:
   hypotheses unless separately supported by the Wiki and exact code. They do not authorize a route or an experiment.
 - Required downstream use: the next Pro turn must read the full public Wiki tree and exact GitHub versions, reconcile Gemini's
   recommendations against original evidence, and independently choose the scientific route and unique next task.
+
+### `source:pro-duca-github-wiki-comprehensive-review-v002-20260831`
+
+- Source type: fresh exact-Project Pro scientific adjudication over the complete public Wiki and exact historical GitHub revisions.
+- Identity: Project `g-p-6a91061f789881918ccd8357ca3d6c92`, conversation
+  `6a954e5a-9c9c-83ea-95a8-2e1345c9178a`, nonce
+  `DUCA-GITHUB-WIKI-COMPREHENSIVE-REVIEW-v002-20260831`, terminal marker
+  `DUCA_GITHUB_WIKI_COMPREHENSIVE_REVIEW_READY`.
+- Public evidence base: Wiki revision `8935e97219431b006fb04bbfc12c1005ebd81a05`, H65 scientific base
+  `04c35a3b76897e6c1569eeede41ed3aecaf7f854`, whole-video diagnostic revision
+  `33e4ed137c33eef07f0452b44506a6993bdf7535`, plus the Gemini full-history review.
+- Complete report: `research-wiki/sources/2026-08-31-pro-github-wiki-comprehensive-review-v002.md`.
+- Decision: `REVISE`. The current frozen-detector three-budget transfer route remains stopped. The only present task is a
+  read-only full-data identity audit; model implementation is not authorized until its PASS/BLOCK return is independently reviewed
+  and admitted by Pro.
+- Conditional experiment: after data admission only, compare fixed K384 training with matched K256/K384/K512 training exposure on
+  the complete 200-video training population, three seeds, 6,000 successful updates, sealed predictions, one complete held-out
+  evaluation and paired whole-video uncertainty analysis.

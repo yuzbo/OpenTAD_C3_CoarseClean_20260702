@@ -7279,3 +7279,16 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
 - 此前两次 Oracle 本地传输均在远端提交前终止：第一次卡在超长前端编辑器写入，第二次只遇到已终止会话的本地
   重复检测，后续压缩尝试在 `RUNNING_PREFLIGHT` 被用户的新材料要求取代。均未生成新 conversation、未提交 Prompt、
   未开始 Pro 推理；现有 profile61 浏览器、端口、登录和页面均未关闭或重启。
+
+## 2026-08-31 — GitHub 全历史 Pro 复核完成并冻结数据身份任务
+
+- 完整 Wiki 已公开于 `codex/duca-wiki-complete-sync-20260831@8935e972...`，Pro 请求只携带任务说明和公开链接，未把
+  Wiki 或代码文件重新塞入 Prompt。Oracle 两次均在创建对话前发生前端传输故障；随后在不关闭或重启 profile61 的
+  前提下，通过现有 CDP 标签页提交唯一一轮。精确对话为
+  `https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a954e5a-9c9c-83ea-95a8-2e1345c9178a`。
+- Pro 完成 24,346 字终态报告，Project、nonce 与终止标记一致。完整原文保存于
+  `research-wiki/sources/2026-08-31-pro-github-wiki-comprehensive-review-v002.md`。
+- 裁决为 `REVISE`：H65 `04c35a3b...` 仍是唯一 clean 模型主线，`33e4ed...` 只保留为冻结检测器动作空间的终态
+  负诊断。当前三档转移路线继续停止；当前唯一任务是完整 200-video training 与 211/212 held-out 身份审计。
+- 数据身份未经 Builder、独立 Critic、N16R4 CPU Evaluator 和 Pro 准入前，禁止模型代码、checkpoint、PRE_RUN、GPU、
+  训练、held-out prediction 和 mAP。通过后才解锁固定 K384 与多预算暴露的两臂、三种子完整正式实验。

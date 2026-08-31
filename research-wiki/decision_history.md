@@ -1113,3 +1113,14 @@ GPU、训练、held-out temporal labels、预测或 mAP。
 未来若获得 Pro 数据身份准入，两臂的全部固定预算和同一无标签 fixed mixed-budget 预测先密封，再一次性开放 held-out
 标签，执行统一评测和 10,000 次整视频配对 bootstrap。K384 安全门保持 `-0.2/-0.2` 个百分点；mixed 直接差异门
 保持 `+0.8/+1.0` 且成本不高于全 K384，并要求两项区间下界均大于零。该预冻结不构成当前模型实现授权。
+
+## 65. REVISE：GitHub 全历史复核确认数据审计优先与终局多预算实验（2026-08-31）
+
+新的精确 Project Pro turn 直接读取公开 Wiki revision `8935e972...`、Gemini 全量预审、H65 `04c35a3b...`、
+whole-video `33e4ed...` 和关键历史提交，返回 24,346 字终态报告。它保持第 64 项的数据准入边界：当前唯一任务仍是
+完整 200-video training 与 211/212 held-out 字面身份审计，且必须经独立 Critic、N16R4 CPU Evaluator 后返回 Pro。
+
+Pro 同时把数据通过后的唯一实验进一步冻结为两个训练臂、三个种子和完整正式比较：固定 K384 训练暴露对照与
+K256/K384/K512 多预算训练暴露候选。两臂从同一 Stage-1 EMA 开始，各完成 6,000 次成功更新，先密封全部 prediction
+与真实成本，再一次性打开完整 held-out 进行统一评价和 10,000 次整视频配对 bootstrap。任何预算条件嵌入、蒸馏、
+新 selector、TrueTime、重构核或后端重构都不进入第一轮。该条件计划不构成当前模型 Builder 授权。

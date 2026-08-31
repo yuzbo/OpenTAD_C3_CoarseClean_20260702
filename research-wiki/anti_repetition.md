@@ -3851,3 +3851,15 @@ updated: 2026-07-21
 - Do not repeat the 30-uniform+60-joint curriculum as a fair curriculum result: it used 90 total epochs against a 60-epoch control.
   Do not rerun the completed homotopy or CellCF utility-distillation arms unchanged; all underperformed their relevant controls.
   A future curriculum/distillation claim requires identical successful-update budgets and a no-distillation matched arm.
+
+### 2026-08-31 — Comprehensive Pro review: one data task, one conditional terminal experiment
+
+- Do not interpret the GitHub/Wiki review as permission to begin multi-budget model implementation. The only current action is the
+  full-data identity audit; it must return through an independent Critic and N16R4 CPU Evaluator to Pro.
+- Do not choose 211 or 212 by count, convention or repository reputation. Every annotation/physical/loader/evaluator/prediction
+  difference must have a source-backed explanation; unexplained differences block the route.
+- After data admission, do not add budget embedding, distillation, Gumbel selection, a new Scout, TrueTime, reconstruction kernels,
+  Mamba, Block Drop, TensorRT or a third arm to the first experiment. Its only variable is K384-only versus K256/K384/K512
+  training exposure under the same H65 nested positions and trainable parameter set.
+- If that complete two-arm, three-seed experiment fails its frozen mixed-workload gain, K384 safety, uncertainty or real-cost gates,
+  stop the H65 K256/K384/K512 dynamic-budget mainline. Do not use another mechanism as a recovery loop for that result.
