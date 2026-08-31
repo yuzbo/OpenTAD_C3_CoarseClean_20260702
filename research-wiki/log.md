@@ -4971,3 +4971,12 @@ append_only: true
   validation metric、未训练/恢复，且 formal result root 在终态前保持不存在。唯一 formal job `1262753` 已于
   `2026-09-01T00:44:40+08:00` 以 1 GPU、6 CPU、16 小时提交并在 `g0030` 启动，submission `1/1`、无
   replacement。终态前不消费 partial 结果；完整终态或客观 blocker 后只返回一次 fresh exact-Project Pro。
+
+- 2026-09-01：ordered-video decode reuse formal job `1262753` 在 `g0030` 终态 `COMPLETED 0:0`，运行
+  `03:49:58`。八 pass、211/792 population、6,336 cost rows、485,950 power rows、prediction/evaluator identity、
+  profile、terminal receipt、短动作与边界诊断均完整，零 anomalies；两名 fresh independent reviewer 分别复核
+  artifact integrity 与 result-to-claim，均通过。R1/K100 median-four p50/energy/allocated/reserved 比值为
+  `0.980999/0.921086/0.751260/0.689655`。能耗和显存通过，p50 只改善约 `1.90%`，未达到 `5%`，故冻结决定
+  `STOP_R1_CURRENT_CONTIGUOUS_SUPPORT_AS_SINGLE_GPU_EFFICIENCY_ROUTE`。这是 validation/single-RTX4090 上的窄负
+  系统结果；不形成正向 latency、official-test、matched-training、多 seed、边界保护或家族级主张。终态材料将只
+  提交一次 fresh exact-Project Pro，裁决前没有 successor。

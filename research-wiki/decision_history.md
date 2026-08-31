@@ -1564,3 +1564,17 @@ reuse 的完整 792-window pre-H2D tensor、prediction/evaluator 必须一致，
 正式仅比较 K100/R1，8-pass order `K100,R1,R1,K100,R1,K100,K100,R1`，1 RTX 4090/6 CPU/16h，
 submission `1/1`、无 replacement。R1 只有同时达到 wall-time/energy `<=0.95` 与 allocated/reserved `<=1.05`
 才保留；任一有效成本门失败即永久停止 R1 contiguous support 作为当前单 GPU 效率路线并 fresh Pro。
+
+## 129. ordered-video decode reuse 完整负终态（2026-09-01）
+
+唯一 formal job `1262753` 在 `g0030` 终态 `COMPLETED 0:0`，完整执行
+`K100,R1,R1,K100,R1,K100,K100,R1` 八 pass，每 pass 211 videos/792 ordered windows 和 50 warmup。完整
+证据包括 6,336 cost rows、485,950 power rows、八组 prediction/evaluator、短动作/边界诊断、profile 与 terminal
+receipt；prediction/evaluator 按 arm 四次完全一致，功耗覆盖完整，独立完整性与 result-to-claim reviewer 均复算通过。
+
+K100/R1 median-four p50 为 `1310.197414/1285.302627 ms`，energy 为 `87851.062998/80918.384552 J`；
+R1/K100 的 p50/energy/allocated/reserved 比值为 `0.980999/0.921086/0.751260/0.689655`。冻结合取门只有 p50
+失败，因此决定为 `STOP_R1_CURRENT_CONTIGUOUS_SUPPORT_AS_SINGLE_GPU_EFFICIENCY_ROUTE`。这是当前单 RTX 4090、
+完整 THUMOS14 validation 与冻结 checkpoints 上的有效负系统结果；不重跑、不改门、不用能耗/显存改善替代延迟门，
+也不升级为 official-test、matched-training、multi-seed、边界保护或普适 decode-reuse 结论。唯一下一动作是 fresh
+exact-Project Pro；其裁决前不执行 successor。

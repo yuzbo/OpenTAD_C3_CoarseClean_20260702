@@ -1418,3 +1418,10 @@ updated: 2026-08-31
     `1262753` 已提交并启动，submission `1/1`、无 replacement。不得读取或解释 live/partial latency、energy、
     memory、prediction、evaluator、short-action 或 boundary；不得创建 retry、resume、第二 arm/seed、训练或
     official-test。只有完整终态或客观 blocker 才可更新科学记录并发起一次 fresh Pro。
+54. formal job `1262753` 已 `COMPLETED 0:0`，八 pass、211/792 population、6,336 cost rows、485,950
+    power rows、prediction/evaluator identity、profile 与 terminal receipt 均完整。R1/K100 的 p50/energy/
+    allocated/reserved 比值为 `0.980999/0.921086/0.751260/0.689655`；p50 没有达到 `<=0.95`，因此冻结
+    `STOP_R1_CURRENT_CONTIGUOUS_SUPPORT_AS_SINGLE_GPU_EFFICIENCY_ROUTE` 已触发。不得以能耗或显存通过掩盖
+    full-stack latency 失败，不得重跑、换 GPU/population、改门、增加 async/prefetch/worker tuning、模型救援或
+    successor。该 STOP 只约束当前 R1 contiguous-support single-GPU 效率路线，不外推所有 decode reuse、动态计算、
+    official test、训练泛化或边界保护；唯一下一动作是一次 fresh exact-Project Pro。

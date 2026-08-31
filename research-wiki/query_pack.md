@@ -1535,9 +1535,17 @@ max_chars: 8000
   precheck job `1262717` completed `0:0 / PRECHECK_READY` and established exact
   legacy-versus-rolling pre-H2D tensor, mask, metadata and frame-index parity across
   all 211 validation videos and 792 ordered windows without reading metrics or creating
-  the formal result root. The sole formal job `1262753` was submitted `1/1` with one
-  GPU, six CPUs and a 16-hour ceiling, and started on `g0030`. No partial result is
-  consumed; terminal evidence or an objective blocker returns once to fresh Pro.
+  the formal result root. The sole formal job `1262753` completed `0:0` on `g0030`
+  after `03:49:58`, with all eight passes, 6,336 cost rows, 485,950 power rows,
+  complete power coverage and exact per-arm prediction/evaluator identity. Median-four
+  R1/K100 p50, gross-energy, allocated-memory and reserved-memory ratios are
+  `0.980999/0.921086/0.751260/0.689655`. The p50 ratio fails the frozen `<=0.95`
+  threshold while the other three pass, so the valid terminal decision is
+  `STOP_R1_CURRENT_CONTIGUOUS_SUPPORT_AS_SINGLE_GPU_EFFICIENCY_ROUTE`. This is a
+  complete negative systems result for the current single RTX 4090 execution base and
+  full validation population, not a positive latency, official-test, matched-training,
+  multi-seed, boundary-protection or universal decode-reuse claim. One fresh exact-
+  Project Pro adjudication is mandatory before any successor.
 
 ## Pointers
 
