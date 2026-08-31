@@ -16,7 +16,10 @@ from opentad.models.duca.acquisition import (
     interpolate_h65_positions_to_detector_grid,
     nested_h65_budget_positions,
 )
-from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
+from opentad.models.selectors.duca_online_frame_selector import (
+    DucaOnlineFrameSelector,
+    _DEFAULT_METADATA_KEYS,
+)
 from opentad.cores.test_engine import summarize_duca_execution_cost
 from opentad.evaluations.mAP import compute_average_precision_detection
 from tools.bata.evaluate_duca_h65_system_multibudget_exposure import (
@@ -112,6 +115,11 @@ def _selector_shell(probabilities=None) -> DucaOnlineFrameSelector:
     selector.register_buffer(
         "_loss_weight_schedule_step", torch.zeros((), dtype=torch.long), persistent=True
     )
+    selector.metadata_keys = dict(_DEFAULT_METADATA_KEYS)
+    selector.selected_positions_unit = "original_time_index"
+    selector.detector_output_coordinate_space = "selected_axis_index"
+    selector.temporal_sampling_contract = None
+    selector.remap_gt_to_selected_axis = True
     return selector
 
 
@@ -368,6 +376,64 @@ def test_forced_k384_exposure_preserves_h65_grid_assignment_and_mask_exactly() -
     assert torch.equal(exposure["detector_grid_positions"], baseline.float())
     assert torch.equal(exposure["detector_mask"], baseline >= 0)
     assert torch.equal(scores["structured_soft_slot_assignment"], assignment)
+
+
+def test_short_window_collapsed_budgets_publish_only_active_true_time_positions() -> None:
+    valid_counts = torch.tensor([300, 200])
+    valid = _valid_mask(valid_counts)
+    baseline = _baseline_positions(valid_counts)
+    dense_mask = torch.zeros_like(valid)
+    for row in range(2):
+        dense_mask[row, baseline[row][baseline[row] >= 0]] = True
+    grid = SparseTemporalGrid(
+        selected_positions=baseline,
+        selected_mask=dense_mask,
+        original_length=768,
+        valid_len=valid_counts,
+        budget=384,
+        requested_budget=torch.tensor([384, 384]),
+        effective_budget=torch.minimum(valid_counts, torch.tensor(384)),
+        detector_input_length=dense_mask.long().sum(dim=1),
+    ).validate()
+    assignment = F.one_hot(baseline.clamp_min(0), num_classes=768).float()
+    assignment *= (baseline >= 0)[:, :, None]
+    scores = {
+        "sampling_rates": torch.arange(768, dtype=torch.float32)[None, :].expand(2, -1),
+        "structured_soft_slot_assignment": assignment,
+        "detector_grid_positions": baseline,
+    }
+    selector = _selector_shell()
+    exposure = selector._apply_h65_multi_budget_exposure(
+        grid=grid,
+        scores=scores,
+        valid_mask=valid,
+        requested_budget=torch.tensor([384, 512]),
+    )
+    metas = selector._write_metas(
+        [{}, {}],
+        grid,
+        acquisition_positions=exposure["positions"],
+        detector_grid_positions=exposure["detector_grid_positions"],
+        exposure=exposure,
+        actionness_source_name="synthetic",
+    )
+
+    for row, valid_len in enumerate(valid_counts.tolist()):
+        active_positions = metas[row]["selected_axis_to_true_time_dense_index"]
+        assert len(active_positions) == valid_len
+        assert active_positions == [float(index) for index in range(valid_len)]
+        assert all(0.0 <= position < valid_len for position in active_positions)
+        assert metas[row]["irregular_selected_count"] == valid_len
+        assert metas[row]["duca_budget_collapsed_to_k384"] is (row == 1)
+
+    segments = [torch.tensor([[10.0, 100.0]]), torch.tensor([[10.0, 100.0]])]
+    remapped, _, remapped_metas = selector._remap_train_targets_to_selected_axis(
+        segments,
+        [torch.tensor([0]), torch.tensor([0])],
+        metas,
+    )
+    assert all(torch.isfinite(item).all() for item in remapped)
+    assert all(meta["gt_remapped_to_selected_axis"] for meta in remapped_metas)
 
 
 class _FakeDataPreprocessor:

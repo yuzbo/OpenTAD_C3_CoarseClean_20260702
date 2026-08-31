@@ -3407,8 +3407,14 @@ class DucaOnlineFrameSelector(nn.Module):
             if exposure is None
             else exposure["collapsed_to_baseline"].detach().cpu().bool()
         )
+        detector_mask_cpu = (
+            None
+            if exposure is None
+            else exposure["detector_mask"].detach().cpu().bool()
+        )
         for idx, meta in enumerate(out):
             positions = [int(item) for item in positions_cpu[idx].tolist() if int(item) >= 0]
+            dense_valid_len = int(valid_lens[idx].item())
             if exposure is None:
                 detector_positions = [
                     int(item) for item in detector_positions_cpu[idx].tolist() if int(item) >= 0
@@ -3416,10 +3422,33 @@ class DucaOnlineFrameSelector(nn.Module):
                 if len(detector_positions) != len(positions):
                     raise ValueError("detector-grid and acquisition positions must have the same active K")
             else:
-                detector_positions = [float(item) for item in detector_positions_cpu[idx].tolist()]
-                if len(detector_positions) != 384:
+                full_detector_positions = [
+                    float(item) for item in detector_positions_cpu[idx].tolist()
+                ]
+                if len(full_detector_positions) != 384:
                     raise ValueError("multi-budget exposure must preserve the 384-point detector grid")
-            dense_valid_len = int(valid_lens[idx].item())
+                active_detector_mask = detector_mask_cpu[idx].tolist()
+                if len(active_detector_mask) != len(full_detector_positions):
+                    raise ValueError("multi-budget detector mask must match the detector grid")
+                detector_positions = [
+                    position
+                    for position, is_active in zip(full_detector_positions, active_detector_mask)
+                    if is_active
+                ]
+                if not detector_positions:
+                    raise ValueError("multi-budget detector grid must contain an active position")
+                if any(
+                    not math.isfinite(position)
+                    or position < 0.0
+                    or position >= float(dense_valid_len)
+                    for position in detector_positions
+                ):
+                    raise ValueError("active detector positions must stay inside valid_len")
+                if any(
+                    right <= left
+                    for left, right in zip(detector_positions, detector_positions[1:])
+                ):
+                    raise ValueError("active detector positions must be strictly increasing")
             remap = {
                 "source": SELECTED_AXIS,
                 "target": TRUE_TIME_AXIS,
