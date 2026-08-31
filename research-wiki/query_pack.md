@@ -5023,3 +5023,16 @@ project decision.
   K256/K384/K512 positions with actual-observation-matched probabilities. The full H65 Stage-2 trainable set remains unchanged.
 - No model code, PRE_RUN, training, held-out prediction, mAP or cost result existed at this admission point. Builder must return one
   exact clean revision to an independent Critic before any Evaluator execution.
+
+### 2026-08-31 — Gemini 3.7 Flash High independently reviews the admitted Builder task
+
+- A fresh `agy` CLI read-only consultation inspected the exact Wiki commit `a6c246a6...`, H65 base `04c35a3b...`, data audit
+  `fdd2bcdd...`, frozen-detector falsifier `33e4ed...`, and the still-unimplemented public Builder branch. Complete response:
+  `research-wiki/sources/2026-08-31-agy-gemini-duca-post-admission-optimization-v001.md`.
+- It supports the current single-variable experiment and highlights budget-homogeneous logical updates, an independent budget RNG,
+  short-window actual-cost collapse, true variable-length packet execution, K384 parity, and successful-update/EMA clock integrity as
+  the highest-value Builder checks.
+- It has advisory authority only. Its proposed `0.1%` tolerance, exact changed-file list, later controller ablations and spatial-route
+  fallback are not current tasks. Its claims that PASS proves a particular mechanism or FAIL proves an intrinsic discontinuity and
+  closes the project are stronger than the evidence and must not be adopted. Pro remains the only scientific decision maker.
+- There is still no multi-budget model commit, PRE_RUN, training, held-out prediction, performance or cost result.

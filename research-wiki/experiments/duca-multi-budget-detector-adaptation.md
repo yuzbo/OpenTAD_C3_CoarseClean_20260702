@@ -77,3 +77,18 @@ Gumbel、Mamba、Block Drop、频域模块、detector wrapper 或工作流平台
 两臂 6,000-update 日程、一次性评测、fixed mixed-budget 直接差异和配对区间。完整报告保存在
 `.cvpr-pro-lab/pro-reviews/runs/duca-full-data-comparable-protocol-v001/visible-report.md`；规范化记录位于
 `research-wiki/sources/2026-08-31-duca-full-data-comparable-protocol-v001.md`。
+
+## Gemini 只读实现咨询
+
+`agy` CLI 的 Gemini 3.7 Flash High 已在 `effort=high`、只读 plan 模式下检查最新 Pro 原文、完整 Wiki、H65
+`04c35a3b...`、数据身份审计 `fdd2bcdd...`、冻结检测器证伪 `33e4ed...` 和当前尚未实现的 Builder 分支。
+它支持继续保持本页唯一实验，不引入 controller、预算嵌入、蒸馏或新架构。
+
+对 Builder 有直接价值的风险提示是：每个成功 update 使用单一预算档；预算采样使用独立随机数流；短窗口按真实
+observation 折叠；变长 packet 不得伪装成固定最大长度重型执行；K384 必须与 H65 路径一致；AMP 重放不得推进
+optimizer、schedule 或 EMA 时钟。这些仍须按基座代码逐项核验，不能因 Gemini 建议而改变 Pro 冻结变量。
+
+Gemini 另外提出的 `0.1%` 成本误差、固定文件清单、PASS 后的具体 controller 消融、FAIL 后转向空间裁剪等均是
+咨询建议，不是已冻结实验合同。其“PASS 证明跨预算机制”“FAIL 证明固有非连续性瓶颈并触发项目级停止”的表述
+过强；正式结论仍只能由 Pro 根据完整三种子结果在本实验的预注册边界内裁决。完整原文保存于
+`research-wiki/sources/2026-08-31-agy-gemini-duca-post-admission-optimization-v001.md`。

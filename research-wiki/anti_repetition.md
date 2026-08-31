@@ -3894,3 +3894,12 @@ updated: 2026-07-21
 - Do not open held-out labels or aggregate metrics until all six training units and all Control-K384, Candidate-K384 and
   Candidate-mixed predictions are sealed. After the one held-out opening, no code, method, checkpoint, probability, manifest,
   threshold or prediction regeneration is allowed.
+
+### 2026-08-31 — Gemini post-admission advice does not change scientific authority
+
+- Do not convert Gemini's proposed `0.1%` cost tolerance, exact file list, controller ablations or spatial-cropping fallback into
+  Builder gates or follow-up tasks. They are external suggestions, not part of Pro's frozen task order.
+- Do not claim that a PASS proves cross-budget representation mismatch was the unique root cause. It would support the total effect
+  of H65 system-level multi-budget exposure under the frozen comparison.
+- Do not claim that a FAIL proves an intrinsic temporal-discontinuity bottleneck or independently authorizes a project-wide pivot.
+  It closes the current H65 K256/K384/K512 exposure route under its frozen protocol; Pro must decide any broader interpretation.

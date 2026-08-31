@@ -7327,3 +7327,16 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
   211-video held-out 标签，统一计算官方指标、10,000 次整视频配对 bootstrap 和真实成本。
 - 当前进入 Builder，分支名固定为 `feature/duca-h65-system-multibudget-exposure-v1-20260831`。尚无模型实现提交、
   PRE_RUN、训练、held-out prediction、mAP 或成本结果。
+
+## 2026-08-31 — Gemini 3.7 Flash High 完成数据准入后模型优化咨询
+
+- 按用户要求通过 `agy` CLI 使用 `gemini-3.7-flash-high`、`effort=high`、只读 plan/sandbox 模式发起一轮新咨询。
+  输入以 GitHub 精确链接和本地只读 worktree 为主，覆盖 Wiki `a6c246a6...`、H65 `04c35a3b...`、身份审计
+  `fdd2bcdd...`、冻结检测器证伪 `33e4ed...` 与当前公开 Builder 分支；未修改代码、未启动训练或远端作业，未
+  读取 held-out 标签或指标。
+- Gemini 返回结束标记 `GEMINI_DUCA_POST_ADMISSION_OPTIMIZATION_READY`，完整原文 SHA-256 为
+  `77c0c02dc7358b1ed822a15a73b052c683bcc1163deabc24b51ec452d0e73712`，保存于
+  `research-wiki/sources/2026-08-31-agy-gemini-duca-post-admission-optimization-v001.md`。
+- 咨询总体支持唯一 H65 系统级多预算暴露任务，并强调单 update 单 K、独立预算随机数流、短窗口真实成本、
+  packet 变长执行、K384 parity 与成功 update/EMA 时钟。它建议的具体容差、文件清单、后继 controller 和空间路线
+  不构成授权；PASS/FAIL 的机制证明表述过强，保留为待 Pro 裁决的咨询意见。

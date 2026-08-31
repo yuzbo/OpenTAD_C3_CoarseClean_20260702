@@ -4010,3 +4010,21 @@ Primary near-neighbor sources additionally checked during project audit:
   training units and predictions are sealed.
 - Scope: Control K384-only versus Candidate nested K256/K384/K512 Stage-2 exposure with unchanged H65 trainable mask, model,
   loss, NMS and evaluator. No new selector/controller, budget embedding, distillation or alternate architecture.
+
+### `source:agy-gemini-duca-post-admission-optimization-v001-20260831`
+
+- Source type: independent external-model code and experiment-design consultation after Pro data admission.
+- Transport identity: `agy` CLI, model `gemini-3.7-flash-high` (Gemini 3.7 Flash High), `effort=high`, read-only
+  plan/sandbox mode; FastCtx job `j-r7osx1` completed with terminal marker
+  `GEMINI_DUCA_POST_ADMISSION_OPTIMIZATION_READY`.
+- Prompt: `docs/gemini-packets/DUCA_POST_ADMISSION_OPTIMIZATION-v001/00_PROMPT.md`; SHA-256
+  `05a602eafd1dca1b51dcc87bd2d5578ee7853af1fdb3055629031a09dd87e650`.
+- Complete verbatim response:
+  `research-wiki/sources/2026-08-31-agy-gemini-duca-post-admission-optimization-v001.md`; SHA-256
+  `77c0c02dc7358b1ed822a15a73b052c683bcc1163deabc24b51ec452d0e73712`.
+- Inspected identities: Wiki/evidence `a6c246a6...`, H65 base `04c35a3b...`, identity audit `fdd2bcdd...`, frozen-detector
+  falsifier `33e4ed...`, and the public unimplemented Builder branch.
+- Useful implementation advice: budget-homogeneous logical updates, independent budget RNG, short-window actual-cost collapse,
+  true variable-length packet execution, K384 parity and successful-update/EMA clock integrity.
+- Authority boundary: advisory only. Suggested tolerances, file lists, later ablations and route pivots are not frozen. PASS/FAIL
+  mechanism-proof language is overbroad and must return to Pro rather than becoming a project fact.
