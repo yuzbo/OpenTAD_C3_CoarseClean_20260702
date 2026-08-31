@@ -7258,3 +7258,24 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
   单变量比较仍未闭环。
 - 上述核验只收紧未来防重复边界，没有形成新科学裁决或模型授权。当前唯一任务仍是 211/212 数据身份审计；任何
   新机制实验仍需在数据准入后由 Pro 单独冻结。
+
+## 2026-08-31 — Gemini 全量预审完成，完整 Wiki 发布到 GitHub
+
+- 在下一次 Pro 科学裁决前，使用 `agy` CLI 的 `gemini-3.7-flash-high`、`effort=high` 对当前完整 Wiki 历史与
+  H65、TrueTime、whole-video 三个精确实现快照完成一次只读预审。终态标记为
+  `GEMINI_DUCA_ADVISORY_READY`；完整原文保存于
+  `research-wiki/sources/2026-08-31-agy-gemini-comprehensive-wiki-code-review-v001.md`。
+- Gemini 建议把多预算检测器适应作为下一候选，但其把跨预算表示不匹配、旧端到端失败和非连续 tubelet 影响写成
+  已证实根因的部分没有单变量证据。该报告只作为独立咨询与审查问题清单，不替 Pro 选线，也不授权实现或实验。
+- 为避免把数十个 Wiki/代码文件塞入 Pro Prompt，建立独立公开分支
+  `codex/duca-wiki-complete-sync-20260831`，初始完整快照提交为
+  `9624d220d67d3947bfe7e49379e8bf3168e52b8e`。该提交以 whole-video 终态代码
+  `33e4ed137c33eef07f0452b44506a6993bdf7535` 为基座，只发布完整 `research-wiki/`、
+  `PAPER_PROGRESS.md` 和 Wiki 跟踪规则，没有修改模型、配置、训练、数据或评价代码。
+- GitHub 深度审查入口为
+  `research-wiki/GITHUB_REVIEW_INDEX-2026-08-31.md`。它链接完整 Wiki 树、Gemini 原文、全部远端分支入口，
+  以及 H65、TrueTime、native tubelet、dynamic budget、Coverage、Marginal、cap-release 和 whole-video 等关键
+  精确提交。下一次 Pro Prompt 只提供该公开索引、完整仓库与精确版本链接，并要求 Pro 自主逐版本阅读和裁决。
+- 此前两次 Oracle 本地传输均在远端提交前终止：第一次卡在超长前端编辑器写入，第二次只遇到已终止会话的本地
+  重复检测，后续压缩尝试在 `RUNNING_PREFLIGHT` 被用户的新材料要求取代。均未生成新 conversation、未提交 Prompt、
+  未开始 Pro 推理；现有 profile61 浏览器、端口、登录和页面均未关闭或重启。
