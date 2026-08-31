@@ -1,6 +1,6 @@
 ---
 type: experiment
-status: designed
+status: tested
 updated: 2026-08-31
 project: DUCA
 ---
@@ -92,3 +92,34 @@ Gemini 另外提出的 `0.1%` 成本误差、固定文件清单、PASS 后的具
 咨询建议，不是已冻结实验合同。其“PASS 证明跨预算机制”“FAIL 证明固有非连续性瓶颈并触发项目级停止”的表述
 过强；正式结论仍只能由 Pro 根据完整三种子结果在本实验的预注册边界内裁决。完整原文保存于
 `research-wiki/sources/2026-08-31-agy-gemini-duca-post-admission-optimization-v001.md`。
+
+## 最小实现与提交前验证
+
+Builder 已在精确父提交 `04c35a3b76897e6c1569eeede41ed3aecaf7f854` 上完成并公开实现：
+
+- 分支：`feature/duca-h65-system-multibudget-exposure-v1-20260831`；
+- 精确提交：`0d67d49c2fc4a5f50aa784f7809c0dd936492109`；
+- GitHub：`https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/0d67d49c2fc4a5f50aa784f7809c0dd936492109`。
+
+实现保持 K384 的历史 H65 选择与重型骨干执行路径不变；候选只从同一 H65 priority sequence 构造嵌套的
+K256/K384/K512 集合。每个成功 optimizer update 使用一个 batch 内同质预算，预算时钟不消费数据增强随机数流；
+6,000 次更新的冻结 occurrence 计划为 K256/K384/K512 `1454/3000/1546`。实际概率由完整训练集合中的短窗口
+折叠和真实 observation 数唯一校准，当前无标签准备结果为
+`p256=0.24235161911751213`、`p384=0.5`、`p512=0.25764838088248787`。
+
+非 K384 路径按 16 帧 packet 真实缩短 VideoMAE 执行，不把补齐位置计作有效 observation；最后一个 packet 的
+人工 padding 对应特征在恢复 384 点 detector 网格前被裁掉。预处理和后处理与 H65 一致：packet 化、segment 与
+空间维聚合、时间拼接和线性插值。K384 或短窗口折叠到 K384 的样本继续走原始路径。
+
+完整 211-video prediction 使用不含动作类别与时间段的推理 annotation。三个种子的
+Control-K384、Candidate-K384 和 Candidate-mixed 共九份预测必须连同 checkpoint、配置、实际 observation、真实
+执行时延和输入身份先封存；一次性 evaluator 在全部封存通过后才解析完整 held-out annotation 一次，并对所有视图
+复用同一官方 evaluator 与同一组 10,000 次整视频 bootstrap 索引。成本报告包括数据消费等待、模型与窗口处理、
+逐视频 Soft-NMS、完整 population wall-clock、Scout/VideoMAE/detector 分项时间和 GPU 峰值显存；名义 K 与 packet
+padding 不替代真实成本。
+
+提交前检查已经完成：本地 `git diff --check`、Python 编译和两个 Slurm 启动器语法通过；N16R4 的当前实现运行
+25 项聚焦与恢复合同测试，结果为 `25 passed`。完整 200-video training、211-video held-out 身份、校准产物、
+固定 mixed manifest 和 bootstrap 索引的无标签准备与验证通过。上述仅证明实现可执行和实验身份闭合，不是模型
+有效性、mAP 或成本收益证据。尚未运行正式 PRE_RUN 或任何新训练；下一步必须先由新的独立 Critic 对该精确提交
+作只读审查。

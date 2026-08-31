@@ -3903,3 +3903,18 @@ updated: 2026-07-21
   of H65 system-level multi-budget exposure under the frozen comparison.
 - Do not claim that a FAIL proves an intrinsic temporal-discontinuity bottleneck or independently authorizes a project-wide pivot.
   It closes the current H65 K256/K384/K512 exposure route under its frozen protocol; Pro must decide any broader interpretation.
+
+### 2026-08-31 — Do not fork or embellish the implemented multi-budget experiment
+
+- The only implementation identity is `0d67d49c...` on
+  `feature/duca-h65-system-multibudget-exposure-v1-20260831`. Do not create a parallel selector, detector wrapper, evaluation script
+  or orchestration layer while this exact revision is under Critic review and formal execution.
+- Do not reinterpret the deterministic `1454/3000/1546` budget occurrence schedule as a tunable hyperparameter sweep. Its calibrated
+  probabilities and fixed mixed held-out manifest are frozen before held-out labels are opened.
+- Do not use the label-free 200/211 preparation pass or the `25 passed` focused suite as model evidence. They establish executable
+  identity only; mAP, paired intervals and cost benefit remain unknown.
+- Do not read or report any one seed's held-out metric between training units. The one-time evaluator is the only authorized label
+  opening after all nine prediction/cost seals exist.
+- Do not call model-only timing end-to-end. The implemented cost record explicitly includes realized data-consumer wait and final
+  per-video Soft-NMS, reports full-population wall time, and leaves framework overhead visible rather than attributing it to a model
+  component.

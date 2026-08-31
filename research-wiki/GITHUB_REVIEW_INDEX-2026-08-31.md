@@ -42,8 +42,11 @@ scope: complete DUCA research history and public implementation lineage
 
 - Pro 完整报告：
   <https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/duca-wiki-complete-sync-20260831/research-wiki/sources/2026-08-31-pro-github-wiki-comprehensive-review-v002.md>
-- 裁决为 `REVISE`。当前唯一任务是完整数据身份审计；模型实现尚未授权。数据通过并返回 Pro 后，才条件解锁固定
-  K384 与 K256/K384/K512 多预算训练暴露的两臂、三种子、完整训练和一次性完整 held-out 比较。
+- 后续数据身份审计与 Pro 准入报告：
+  <https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/duca-wiki-complete-sync-20260831/research-wiki/sources/2026-08-31-pro-duca-full-data-identity-admission-v001.md>
+- 最新裁决为 `CONTINUE`：完整 200-video `training` 与 211-video OpenTAD `validation` 已准入；当前唯一实验是固定
+  K384 与 K256/K384/K512 多预算训练暴露的两臂、三种子、完整训练和一次性完整 held-out 比较。Builder 已完成，
+  正等待独立 Critic。
 
 ## 关键实现谱系
 
@@ -65,11 +68,12 @@ scope: complete DUCA research history and public implementation lineage
 | Marginal budget | [`f67d96fdf68a295eaa7f678f3dfc125530828889`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/f67d96fdf68a295eaa7f678f3dfc125530828889) | 加性边际效用与 training-side oracle |
 | Cap-release neighborhood | [`46812facc8773d9b4a9c21833cbe397c8aaa5a2d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/46812facc8773d9b4a9c21833cbe397c8aaa5a2d) | 解除饱和预算上限后的联合门诊断 |
 | Whole-video 704-state falsifier | [`33e4ed137c33eef07f0452b44506a6993bdf7535`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/33e4ed137c33eef07f0452b44506a6993bdf7535) | 冻结检测器三档预算动作空间的终态负结果 |
+| H65 system multi-budget exposure | [`0d67d49c2fc4a5f50aa784f7809c0dd936492109`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/0d67d49c2fc4a5f50aa784f7809c0dd936492109) | 当前完整数据、三种子正式比较的最小实现；只有局部测试证据 |
 
 ## 审查边界
 
 1. 先读完整 Wiki，再逐项打开精确提交和相关实验页；不得只读当前状态摘要。
 2. 对每条路线分别区分：设计、代码存在、局部测试、工程中断、正式性能证据和论文可用主张。
 3. 历史训练侧 holdout、内部 oracle、局部 smoke 和中间验证均不能替代完整训练集与一次性完整留出评估。
-4. OpenTAD 的 211-video `validation` 与 ActionFormer 的 212-video `test` 身份仍未准入；在解释所有差集前，不得启动模型实现或正式训练。
+4. OpenTAD 的 211-video `validation` 已经数据审计与 Pro 准入；ActionFormer 212 仅保留为来源差异，不进入本轮正式比较。
 5. Pro 应独立整合路线并下达唯一下一项可证伪任务；Gemini 与 Codex 只提供证据和实现核验，不预先替 Pro 选线。

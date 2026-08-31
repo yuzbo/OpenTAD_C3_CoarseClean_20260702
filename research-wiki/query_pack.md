@@ -5036,3 +5036,23 @@ project decision.
   fallback are not current tasks. Its claims that PASS proves a particular mechanism or FAIL proves an intrinsic discontinuity and
   closes the project are stronger than the evidence and must not be adopted. Pro remains the only scientific decision maker.
 - There is still no multi-budget model commit, PRE_RUN, training, held-out prediction, performance or cost result.
+
+### 2026-08-31 — H65 system multi-budget Builder is implemented and awaits independent Critic
+
+- The exact public implementation is
+  `feature/duca-h65-system-multibudget-exposure-v1-20260831@0d67d49c2fc4a5f50aa784f7809c0dd936492109`,
+  whose sole parent is H65 `04c35a3b76897e6c1569eeede41ed3aecaf7f854`.
+- Control retains the exact historical K384 path. Candidate constructs nested K256/K384/K512 exposure from the same H65 priority
+  sequence, uses one homogeneous budget per successful optimizer update without consuming the data RNG, executes actual
+  VideoMAE packets, removes padded terminal-packet features, and restores the frozen 384-point detector grid.
+- The 6,000-update occurrence plan is `1454/3000/1546`; full-training actual-cost calibration gives probabilities
+  `0.24235161911751213/0.5/0.25764838088248787`. These are label-free preparation facts, not performance evidence.
+- Held-out inference uses a 211-video annotation stripped of action labels and temporal segments. Nine prediction/cost views must be
+  sealed before the one-time evaluator parses the complete held-out annotation once and applies shared 10,000-replicate whole-video
+  bootstrap indices.
+- Cost sealing now distinguishes actual observations and packet slots, realized data-consumer wait, model/window processing,
+  per-video Soft-NMS, full-population wall time, Scout/VideoMAE/detector time and GPU peak memory. It does not infer savings from K
+  or padding.
+- Local diff/compile/launcher checks and N16R4 focused tests pass (`25 passed`). This advances the task only to implemented and
+  locally tested. No PRE_RUN, full training, prediction, mAP, interval or efficiency result exists. A fresh independent Critic must
+  review the exact commit before Evaluator work.

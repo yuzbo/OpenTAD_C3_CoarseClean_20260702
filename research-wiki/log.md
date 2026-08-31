@@ -7340,3 +7340,25 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
 - 咨询总体支持唯一 H65 系统级多预算暴露任务，并强调单 update 单 K、独立预算随机数流、短窗口真实成本、
   packet 变长执行、K384 parity 与成功 update/EMA 时钟。它建议的具体容差、文件清单、后继 controller 和空间路线
   不构成授权；PASS/FAIL 的机制证明表述过强，保留为待 Pro 裁决的咨询意见。
+
+## 2026-08-31 — H65 系统多预算暴露 Builder 实现与局部验证完成
+
+- 唯一公开实现为
+  `feature/duca-h65-system-multibudget-exposure-v1-20260831@0d67d49c2fc4a5f50aa784f7809c0dd936492109`，
+  sole parent 是冻结 H65 `04c35a3b...`。提交包含 19 个与模型、两臂配置、PRE_RUN、训练/预测启动器、prediction
+  封存、一次性 evaluator 和聚焦测试直接相关的文件，没有引入新 Scout、selector 家族、controller、预算条件、
+  蒸馏、Gumbel、Mamba、Block Drop 或跨数据集路线。
+- K384 继续走历史 H65 原路径；Candidate 使用同一 priority sequence 的嵌套 K256/K384/K512。预算以成功 optimizer
+  update 为时钟，每个 batch 只见一个 K，冻结 occurrence 为 `1454/3000/1546`；完整训练集合实际成本校准概率为
+  `0.24235161911751213/0.5/0.25764838088248787`。
+- 非 K384 输入按 16 帧 packet 真实缩短 VideoMAE 执行；短窗口与末 packet padding 分开计数，padding 对应特征在
+  detector 插值前裁掉。预处理/后处理链已与 H65 的 packet rearrange、空间/segment reduce、时间拼接和 384 点插值
+  对照核验。
+- 完整 held-out 推理仅使用移除动作类别与时间段的 211-video annotation。全部三种子的 Control-K384、
+  Candidate-K384、Candidate-mixed 九份 prediction 和成本必须先封存；唯一 evaluator 随后才解析完整 annotation 一次，
+  复用同一官方 evaluator 和同一组 10,000 次整视频 bootstrap 索引。
+- 成本入口已修正为真实 inference wall-clock 分解：数据消费等待、模型与窗口后处理、逐视频 Soft-NMS、完整 population
+  wall time、Scout/VideoMAE/detector 分项和 GPU 峰值显存；实际 observation 与 packet slot 分开记录。
+- 本地 diff/compile/Slurm syntax 通过；N16R4 当前聚焦和 checkpoint 合同套件为 `25 passed`。完整 200/211 无标签
+  准备与 validator 通过。没有运行正式 PRE_RUN、训练或 held-out 评测，也没有 mAP、区间或成本收益。下一步仅为
+  fresh independent Critic 对精确提交的只读审查。
