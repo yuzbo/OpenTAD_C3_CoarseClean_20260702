@@ -36,6 +36,13 @@
 - official test 只能在独立冻结、无 validation/test GT 泄漏的 test-opening 协议下完整运行。无法由终态 receipt 证明训练集或评测集完整性时，结果分类为协议 blocker，不从子集外推科学结论。
 - 只读成本实验不重新训练模型，但仍必须在所有 arm 上使用相同的完整冻结评测 population 和完整端到端通路。当前四臂 job `1262120` 固定为完整 THUMOS14 validation population（211 videos / 792 ordered windows）的 matched full-stack 成本回放；它不是 official-test 准确率实验，不得升级为 official-test 证据。
 
+## Silent Terminal Waiting
+
+- 当冻结长任务已经由后端接受、当前没有其他立即可执行的科学或工程步骤、唯一正确动作是等待时，必须使用真实终端计时命令静默等待；Bash 使用 `sleep <seconds>`，PowerShell 使用 `Start-Sleep -Seconds <seconds>`。不得用模型推理、字符输出、预计完成时间或连续快速查询模拟墙钟等待。
+- 默认等待间隔为 10 分钟，除非冻结任务另有规定。只允许一个计时器/终态 waiter；已有后端 waiter 时不得再建立第二套前台或后台轮询。
+- 从计时命令开始到返回的整个窗口内不得打印倒计时、进度点、“仍在等待”等文字，不得查询任务状态、读取日志或 partial 指标，不得修改文件、操作浏览器、提交新任务或执行任何与计时无关的命令。
+- 计时返回后只做一次权威终态检查。若仍未终态且没有硬故障或预注册恢复条件，立即进入下一轮同样的静默终端等待；只有终态、失败/停止条件或真正需要人类输入的 blocker 才离开等待循环。
+
 ## Remote Rules
 
 远端写入边界是 `~/run/yuzibo` / `/data/run01/sczc063/yuzibo`。默认环境：
