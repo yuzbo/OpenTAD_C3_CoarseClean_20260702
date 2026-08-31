@@ -29,6 +29,13 @@
 - 只有科学问题、证据、路线或主张发生实质变化时才更新相应节点。原始结果和重要负证据保留在历史记录中；浏览器调度、队列、重复审查和一般协调信息不进入论文叙事。
 - failed/negative ideas 是高价值记忆，不能从 `query_pack.md` 与 `anti_repetition.md` 中删除或改写成成功叙事。
 
+## Formal Dataset Completeness
+
+- 任何用于模型准确率、泛化结论或论文表格的正式训练，必须覆盖冻结协议指定的完整官方训练集、完整 epoch/update 计划和全部训练样本。subset、short-run、截断 epoch、缩短 loader、smoke 或 `PRECHECK_ONLY` 只能形成工程证据，不能冒充科学结果。
+- 任何可比较的正式评测必须让所有 arm 覆盖同一个完整官方评测/测试 population，并匹配 annotation、媒体 inventory、样本顺序与数量、evaluator、postprocess 和 NMS。不得用 validation 子集、抽样窗口或 development replay 替代要求的 official test。
+- official test 只能在独立冻结、无 validation/test GT 泄漏的 test-opening 协议下完整运行。无法由终态 receipt 证明训练集或评测集完整性时，结果分类为协议 blocker，不从子集外推科学结论。
+- 只读成本实验不重新训练模型，但仍必须在所有 arm 上使用相同的完整冻结评测 population 和完整端到端通路。当前四臂 job `1262120` 固定为完整 THUMOS14 validation population（211 videos / 792 ordered windows）的 matched full-stack 成本回放；它不是 official-test 准确率实验，不得升级为 official-test 证据。
+
 ## Remote Rules
 
 远端写入边界是 `~/run/yuzibo` / `/data/run01/sczc063/yuzibo`。默认环境：

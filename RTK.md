@@ -77,6 +77,9 @@ ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务�
 - 不允许 validation/test teacher leakage。
 - 不允许 hidden raw-prediction cache shortcut。
 - ledger 若用于 deployable selection，必须记录 no-GT/no-teacher/no-oracle/no-raw-prediction/no-checkpoint flags。
+- 可比较的正式训练必须覆盖冻结协议指定的完整官方训练 population、完整 epoch/update 计划和全部样本；子集、截断 epoch、缩短 loader 或 smoke/precheck 只能作为工程证据，不能进入模型准确率、泛化或论文主张。
+- 可比较的正式评测必须让所有 arm 覆盖同一个完整官方评测 population，并匹配 annotation、媒体 inventory、loader population/order、evaluator、postprocess 与 NMS。若论文结论要求 official test，则必须在独立冻结且无泄漏的 test-opening 协议下完整运行，不能用 validation 子集或 development replay 冒充。
+- 训练或评测的完整 population 不能由终态 receipt 证明时，分类为协议 blocker，不从子集外推科学结论。当前四臂只读成本回放不是训练实验：它固定使用完整 THUMOS14 validation population（211 videos / 792 ordered windows）做 matched full-stack measurement，official test 保持未打开，因此只能形成该 population 上的成本证据，不能升级为 official-test 准确率证据。
 - GPU 任务必须使用 Slurm 正常分配的设备；不得固定物理索引或覆盖 Slurm 的 `CUDA_VISIBLE_DEVICES`。单卡任务在进程内使用 `cuda:0`。
 - 历史文件名中残留的 `gpu0`/`gpu1` 只代表旧协议，不得直接复用；再次运行前必须改成正常 Slurm 映射并重新门禁。
 - 不在 N16R4 登录节点直接训练；正式训练使用 Slurm 或已授权保护分配。
