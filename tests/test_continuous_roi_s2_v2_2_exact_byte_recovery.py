@@ -4,6 +4,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,7 @@ def _synthetic_manifest(root: Path) -> dict:
                 "root": str(root),
                 "max_depth": 4,
                 "candidate_basenames": ["epoch_59.pth", "epoch_59.pth.metadata.json"],
+                "preexisting_before_beijing": "2099-01-01T00:00:00+08:00",
             }
         ]
     }
@@ -152,13 +154,93 @@ def test_partial_matches_never_create_quarantine(tmp_path: Path) -> None:
             "expected_sha256": _sha(b"sidecar"),
         },
     ]
-    with pytest.raises(ValueError, match="all-or-none quarantine is missing A-sidecar"):
+    with pytest.raises(
+        ValueError,
+        match="all-or-none quarantine requires exactly one source for A-sidecar",
+    ):
         MODULE.materialize_quarantine(
             tmp_path / "quarantine",
             expected,
             {"A-checkpoint": [{"source_path": str(source)}], "A-sidecar": []},
         )
     assert not (tmp_path / "quarantine").exists()
+
+
+def test_ambiguous_source_never_publishes_quarantine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    expected = []
+    matches = {}
+    candidates = []
+    for index in range(18):
+        kind = "checkpoint" if index < 9 else "sidecar"
+        artifact_id = f"A-{index}"
+        item = {
+            "artifact_id": artifact_id,
+            "kind": kind,
+            "filename": "epoch_59.pth" if kind == "checkpoint" else "epoch_59.pth.metadata.json",
+            "original_relative_path": f"cell-{index}/artifact",
+            "expected_sha256": f"{index:064x}",
+        }
+        expected.append(item)
+        record = {
+            "source_path": str(tmp_path / f"source-{index}"),
+            "provenance_valid": True,
+            "mtime_ns": 1,
+        }
+        candidates.append(record)
+        matches[artifact_id] = [record]
+    matches[expected[0]["artifact_id"]] = [
+        candidates[0],
+        {**candidates[0], "source_path": str(tmp_path / "duplicate")},
+    ]
+    monkeypatch.setattr(MODULE, "expected_artifacts_from_protocol", lambda protocol: expected)
+    monkeypatch.setattr(
+        MODULE, "_metadata_snapshot", lambda root, max_depth: {"unchanged": True}
+    )
+    monkeypatch.setattr(
+        MODULE, "scan_payload_sources", lambda manifest, observed_expected: (candidates, matches)
+    )
+    monkeypatch.setattr(MODULE, "audit_catalogs", lambda manifest, observed_expected: [])
+    quarantine = tmp_path / "quarantine"
+    manifest = {
+        "manifest_sha256": "a" * 64,
+        "scan_sources": [{"kind": "payload_tree", "root": str(tmp_path), "max_depth": 4}],
+        "quarantine": {"final_root": str(quarantine)},
+    }
+    inventory, receipt = MODULE.run_formal(manifest, {})
+    assert receipt["terminal_classification"] == MODULE.STOP
+    assert receipt["all_artifacts_have_one_unambiguous_source"] is False
+    assert receipt["blockers"] == ["AMBIGUOUS_EXACT_BYTES::A-0::2"]
+    assert inventory["all_artifacts_have_one_unambiguous_source"] is False
+    assert not quarantine.exists()
+
+
+def test_candidate_file_must_predate_frozen_cutoff(tmp_path: Path) -> None:
+    candidate = tmp_path / "epoch_59.pth"
+    candidate.write_bytes(b"checkpoint")
+    manifest = _synthetic_manifest(tmp_path)
+    manifest["scan_sources"][0]["preexisting_before_beijing"] = "2000-01-01T00:00:00+08:00"
+    expected = [
+        {
+            "artifact_id": "A-checkpoint",
+            "filename": candidate.name,
+            "expected_sha256": _sha(b"checkpoint"),
+        }
+    ]
+    candidates, matches = MODULE.scan_payload_sources(manifest, expected)
+    assert candidates[0]["provenance_valid"] is False
+    assert matches == {"A-checkpoint": []}
+
+
+def test_metadata_snapshot_includes_nested_directories(tmp_path: Path) -> None:
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    before = MODULE._metadata_snapshot(tmp_path, 4)
+    current = nested.stat().st_mtime_ns
+    os.utime(nested, ns=(current + 1_000_000_000, current + 1_000_000_000))
+    after = MODULE._metadata_snapshot(tmp_path, 4)
+    assert before != after
 
 
 def test_publish_once_refuses_overwrite(tmp_path: Path) -> None:
@@ -222,6 +304,37 @@ def test_formal_exception_publishes_stop_receipt(
     assert inventory["formal_action_incomplete"] is True
     assert receipt["blockers"] == [
         "FORMAL_ACTION_INCOMPLETE::RuntimeError::synthetic scan failure"
+    ]
+
+
+def test_formal_precheck_exception_publishes_stop_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = {"manifest_sha256": "b" * 64}
+    monkeypatch.setattr(
+        MODULE,
+        "load_and_validate_contract",
+        lambda manifest_path, protocol_path: (manifest, {}),
+    )
+
+    def fail_precheck(observed_manifest: dict):
+        raise ValueError("synthetic catalog identity drift")
+
+    monkeypatch.setattr(MODULE, "precheck_sources", fail_precheck)
+    monkeypatch.setattr(
+        MODULE,
+        "run_formal",
+        lambda observed_manifest, protocol: pytest.fail("formal scan must not run"),
+    )
+    result_root = tmp_path / "formal"
+    assert MODULE.main(["--result-root", str(result_root)]) == 2
+    receipt = json.loads(
+        (result_root / "terminal_receipt.json").read_text(encoding="utf-8")
+    )
+    assert receipt["terminal_classification"] == MODULE.STOP
+    assert receipt["all_sources_preexisting_and_provenance_valid"] is False
+    assert receipt["blockers"] == [
+        "FORMAL_ACTION_INCOMPLETE::ValueError::synthetic catalog identity drift"
     ]
 
 

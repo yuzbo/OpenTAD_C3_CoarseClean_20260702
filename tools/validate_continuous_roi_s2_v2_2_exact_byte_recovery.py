@@ -215,17 +215,42 @@ def _metadata_snapshot(root: Path, max_depth: int) -> dict[str, Any]:
             "mtime_ns": root_stat.st_mtime_ns,
         }
     )
-    for path, relative in _bounded_files(root, max_depth):
-        item_stat = path.stat()
-        entries.append(
-            {
-                "path": relative,
-                "kind": "file",
-                "mode": stat.S_IMODE(item_stat.st_mode),
-                "mtime_ns": item_stat.st_mtime_ns,
-                "size_bytes": item_stat.st_size,
-            }
+    for current_text, directories, files in os.walk(root, followlinks=False):
+        current = Path(current_text)
+        relative_current = current.relative_to(root)
+        depth = 0 if relative_current == Path(".") else len(relative_current.parts)
+        directories[:] = sorted(
+            name for name in directories if not (current / name).is_symlink()
         )
+        for name in directories:
+            path = current / name
+            relative = path.relative_to(root)
+            if len(relative.parts) <= max_depth:
+                item_stat = path.stat()
+                entries.append(
+                    {
+                        "path": relative.as_posix(),
+                        "kind": "directory",
+                        "mode": stat.S_IMODE(item_stat.st_mode),
+                        "mtime_ns": item_stat.st_mtime_ns,
+                    }
+                )
+        if depth >= max_depth:
+            directories[:] = []
+        for name in sorted(files):
+            path = current / name
+            relative = path.relative_to(root)
+            if len(relative.parts) <= max_depth and not path.is_symlink():
+                item_stat = path.stat()
+                entries.append(
+                    {
+                        "path": relative.as_posix(),
+                        "kind": "file",
+                        "mode": stat.S_IMODE(item_stat.st_mode),
+                        "mtime_ns": item_stat.st_mtime_ns,
+                        "size_bytes": item_stat.st_size,
+                    }
+                )
     return {
         "entry_count": len(entries),
         "metadata_sha256": canonical_sha256(entries),
@@ -282,22 +307,30 @@ def scan_payload_sources(
             continue
         root = Path(source["root"])
         allowed = set(source["candidate_basenames"])
+        cutoff = _parse_beijing(source["preexisting_before_beijing"])
         for path, relative in _bounded_files(root, int(source["max_depth"])):
             if path.name not in allowed:
                 continue
+            item_stat = path.stat()
+            provenance_valid = item_stat.st_mtime <= cutoff
             actual = sha256_file(path)
             record = {
                 "source_id": source["id"],
                 "source_path": str(path),
                 "relative_path": relative,
                 "filename": path.name,
-                "size_bytes": path.stat().st_size,
+                "size_bytes": item_stat.st_size,
+                "mtime_ns": item_stat.st_mtime_ns,
                 "actual_sha256": actual,
-                "provenance_valid": True,
+                "provenance_valid": provenance_valid,
             }
             candidates.append(record)
             target = by_hash.get(actual)
-            if target is not None and target["filename"] == path.name:
+            if (
+                provenance_valid
+                and target is not None
+                and target["filename"] == path.name
+            ):
                 matches[target["artifact_id"]].append(record)
     return candidates, matches
 
@@ -384,8 +417,8 @@ def materialize_quarantine(
     _require(not quarantine_root.exists(), f"quarantine already exists: {quarantine_root}")
     for item in expected:
         _require(
-            bool(matches.get(item["artifact_id"])),
-            f"all-or-none quarantine is missing {item['artifact_id']}",
+            len(matches.get(item["artifact_id"], [])) == 1,
+            f"all-or-none quarantine requires exactly one source for {item['artifact_id']}",
         )
     quarantine_root.parent.mkdir(parents=True, exist_ok=True)
     temporary = quarantine_root.with_name(f".{quarantine_root.name}.{os.getpid()}.tmp")
@@ -475,18 +508,36 @@ def run_formal(
         row["kind"] == "sidecar" and row["exact_match_found"] for row in rows
     )
     all_exact = checkpoint_matches == 9 and sidecar_matches == 9
+    all_unambiguous = all(row["match_count"] == 1 for row in rows)
+    all_candidate_provenance_valid = all(
+        candidate["provenance_valid"] for candidate in candidates
+    )
     blockers = []
     for row in rows:
         if not row["exact_match_found"]:
             blockers.append(f"MISSING_EXACT_BYTES::{row['artifact_id']}::{row['expected_sha256']}")
+        elif row["match_count"] != 1:
+            blockers.append(
+                f"AMBIGUOUS_EXACT_BYTES::{row['artifact_id']}::{row['match_count']}"
+            )
+    for candidate in candidates:
+        if not candidate["provenance_valid"]:
+            blockers.append(
+                "SOURCE_NOT_PREEXISTING::"
+                f"{candidate['source_path']}::{candidate['mtime_ns']}"
+            )
     if original_modified:
         blockers.append("ORIGINAL_CAMPAIGN_ROOT_METADATA_CHANGED_DURING_READ_ONLY_SCAN")
     quarantine_manifest = None
-    if all_exact and not blockers:
+    if all_exact and all_unambiguous and all_candidate_provenance_valid and not blockers:
         quarantine_manifest = materialize_quarantine(
             Path(manifest["quarantine"]["final_root"]), expected, matches
         )
-    terminal = PASS if all_exact and not blockers else STOP
+    terminal = (
+        PASS
+        if all_exact and all_unambiguous and all_candidate_provenance_valid and not blockers
+        else STOP
+    )
     inventory = {
         "schema_version": INVENTORY_SCHEMA,
         "manifest_sha256": manifest["manifest_sha256"],
@@ -499,8 +550,9 @@ def run_formal(
         "checkpoint_matches": checkpoint_matches,
         "sidecar_matches": sidecar_matches,
         "all_sha256_exact": all_exact,
+        "all_artifacts_have_one_unambiguous_source": all_unambiguous,
         "all_sources_in_frozen_search_manifest": True,
-        "all_sources_preexisting_and_provenance_valid": True,
+        "all_sources_preexisting_and_provenance_valid": all_candidate_provenance_valid,
         "original_root_metadata_before": before,
         "original_root_metadata_after": after,
         "original_campaign_root_modified": original_modified,
@@ -523,8 +575,9 @@ def run_formal(
         "checkpoint_matches": checkpoint_matches,
         "sidecar_matches": sidecar_matches,
         "all_sha256_exact": all_exact,
+        "all_artifacts_have_one_unambiguous_source": all_unambiguous,
         "all_sources_in_frozen_search_manifest": True,
-        "all_sources_preexisting_and_provenance_valid": True,
+        "all_sources_preexisting_and_provenance_valid": all_candidate_provenance_valid,
         "source_destination_hash_parity": source_destination_hash_parity,
         "original_campaign_root_modified": original_modified,
         "reconstruction_used": False,
@@ -563,6 +616,7 @@ def formal_failure_artifacts(
         "checkpoint_matches": 0,
         "sidecar_matches": 0,
         "all_sha256_exact": False,
+        "all_artifacts_have_one_unambiguous_source": False,
         "all_sources_in_frozen_search_manifest": True,
         "all_sources_preexisting_and_provenance_valid": False,
         "original_campaign_root_modified": None,
@@ -581,6 +635,7 @@ def formal_failure_artifacts(
         "checkpoint_matches": 0,
         "sidecar_matches": 0,
         "all_sha256_exact": False,
+        "all_artifacts_have_one_unambiguous_source": False,
         "all_sources_in_frozen_search_manifest": True,
         "all_sources_preexisting_and_provenance_valid": False,
         "source_destination_hash_parity": False,
@@ -619,14 +674,15 @@ def parse_args(argv: Sequence[str] | None = None):
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     manifest, protocol = load_and_validate_contract(args.manifest, args.protocol)
-    precheck = precheck_sources(manifest)
     if args.precheck_only:
+        precheck = precheck_sources(manifest)
         print(json.dumps(precheck, indent=2, sort_keys=True))
         return 0
     _require(args.result_root is not None, "formal action requires --result-root")
     _require(not args.result_root.exists(), f"formal result root already exists: {args.result_root}")
     exit_code = 0
     try:
+        precheck_sources(manifest)
         inventory, receipt = run_formal(manifest, protocol)
     except Exception as error:
         inventory, receipt = formal_failure_artifacts(manifest, error)
