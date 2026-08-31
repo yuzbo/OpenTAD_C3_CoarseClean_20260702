@@ -49,7 +49,7 @@ project: DUCA
 若 K384 安全门、mixed 任一实际效应门或成本条件失败，则停止当前三档适应路线；点估计通过但配对区间包含零时，
 当前实验同样终结且不前进。任何 controller、预算条件或新结构都必须由后续 Pro 另行冻结，不能在本实验中预埋。
 
-## 数据身份核验结果与当前执行边界
+## 数据身份准入与当前执行边界
 
 只读 split identity audit 已在 `fdd2bcdd...` 上完成并由独立 Critic 与 N16R4 CPU Evaluator 检查。完整训练侧的
 annotation、loader 与 physical 集合均为相同 200 个视频；OpenTAD `validation` 的 annotation、loader、physical、
@@ -57,11 +57,18 @@ evaluator 与历史 prediction 集合均为相同 211 个视频。ActionFormer �
 是 `video_test_0000270`；OpenTAD README 明确记录其因错误标注被排除。411 个期望视频均可基本解码。
 
 审计结论为 `DATA_IDENTITY_PASS_211`，完整报告 SHA-256 为
-`d7251c11935644cf8661e6bfdcfb857e29d2357cb894b7de9d8b2bd7eaf6f1ab`。该结果现在返回 Pro；在 Pro 正式签发
-数据准入前仍不建立模型 Builder、不提交 PRE_RUN 或训练。当前仍没有新模型代码、正式作业、性能或成本结果。
+`d7251c11935644cf8661e6bfdcfb857e29d2357cb894b7de9d8b2bd7eaf6f1ab`。Pro 已在 nonce
+`DUCA-FULL-DATA-IDENTITY-ADMISSION-v001-20260831` 下正式准入完整 200-video `training` 与完整 211-video OpenTAD
+`validation`，并解锁本页模型 Builder。当前仍没有新模型提交、PRE_RUN、正式作业、性能或成本结果。
 
-两份最新 Pro 报告对后续正式种子顺序有一项未决差异：一个要求直接完成三种子，另一个要求 seed 3407 先通过
-全部门再复制 3408/3409。该差异不影响数据身份结论，由 Pro 在数据准入时统一。
+种子冲突已裁决：按 `3407 → 3408 → 3409` 顺序盲执行全部三种子；六个训练单元和全部 prediction 封存前不得
+读取 held-out 指标，也不得根据 3407 决定是否运行后两枚种子。
+
+当前唯一 Builder 分支必须从 `04c35a3b...` 建立为
+`feature/duca-h65-system-multibudget-exposure-v1-20260831`。只允许最小实现三档嵌套变长执行、真实 observation
+计数、K384 parity、两臂配置、prediction 封存与 focused tests；禁止增加新 selector、controller、预算条件、蒸馏、
+Gumbel、Mamba、Block Drop、频域模块、detector wrapper 或工作流平台。完整 Pro 任务单见
+`research-wiki/sources/2026-08-31-pro-duca-full-data-identity-admission-v001.md`。
 
 ## Pro 完整数据协议终态与当前处置
 

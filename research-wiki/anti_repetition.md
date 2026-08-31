@@ -3880,3 +3880,17 @@ updated: 2026-07-21
 - Do not silently choose the later seed schedule. The comprehensive Wiki review says all three seeds; the newer route-integration
   report says seed 3407 first and 3408/3409 only after it passes. Return that conflict with the data evidence and follow Pro's
   explicit resolution.
+
+### 2026-08-31 — Data admission and three-seed blindness are now settled
+
+- Pro has admitted the literal 200-video training and 211-video OpenTAD held-out identities. Do not reopen 211/212, add physical
+  extras, or run a parallel ActionFormer-212 comparison.
+- The seed conflict is closed: execute `3407`, `3408`, and `3409` in that order, but do not read any held-out metric between seeds.
+  Do not turn seed 3407 into a route gate or selectively omit later seeds.
+- Do not call the current task detector-only adaptation. Its estimand is the total effect of changing Stage-2 budget exposure under
+  the unchanged H65 Stage-2 trainable mask.
+- Do not add a third arm, new selector/controller, budget embedding, distillation, Gumbel, Mamba, Block Drop, DFT, TensorRT,
+  detector wrapper or another route. Do not resurrect the frozen-detector oracle or Coverage-v1.
+- Do not open held-out labels or aggregate metrics until all six training units and all Control-K384, Candidate-K384 and
+  Candidate-mixed predictions are sealed. After the one held-out opening, no code, method, checkpoint, probability, manifest,
+  threshold or prediction regeneration is allowed.

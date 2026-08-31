@@ -1124,3 +1124,16 @@ Pro 同时把数据通过后的唯一实验进一步冻结为两个训练臂、�
 K256/K384/K512 多预算训练暴露候选。两臂从同一 Stage-1 EMA 开始，各完成 6,000 次成功更新，先密封全部 prediction
 与真实成本，再一次性打开完整 held-out 进行统一评价和 10,000 次整视频配对 bootstrap。任何预算条件嵌入、蒸馏、
 新 selector、TrueTime、重构核或后端重构都不进入第一轮。该条件计划不构成当前模型 Builder 授权。
+
+## 66. CONTINUE：完整 200/211 数据准入并解锁 H65 系统多预算暴露（2026-08-31）
+
+数据身份审计 `fdd2bcdd...` 经独立 Critic 与 N16R4 CPU Evaluator 后，证明 training annotation/loader/physical 为
+同一 200，OpenTAD held-out annotation/loader/physical/evaluator/historical prediction IDs 为同一 211；ActionFormer
+212 唯一额外 annotation ID `video_test_0000270` 有错误标注排除来源。Pro 正式准入 200-video `training` 与 211-video
+OpenTAD `validation`，ActionFormer 212 不进入正式比较。
+
+Pro 同时解锁唯一 Builder：从 H65 `04c35a3b...` 建立
+`feature/duca-h65-system-multibudget-exposure-v1-20260831`，只比较 Stage-2 固定 K384 暴露与既有嵌套
+K256/K384/K512 暴露。该估计量属于完整 H65 Stage-2 系统，不是纯 detector-only 适应。三种子按
+`3407 → 3408 → 3409` 全部盲执行，所有六个训练单元和预测封存前不得读取 held-out 指标；随后一次性完成官方评价、
+配对不确定性与真实成本。当前尚无模型代码或性能证据。

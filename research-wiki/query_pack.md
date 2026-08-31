@@ -5006,3 +5006,20 @@ project decision.
 - Current conclusion is `DATA_IDENTITY_PASS_211`, but model work remains blocked until Pro explicitly admits this evidence. The two
   latest Pro reports differ only on the later seed launch order: immediate three-seed execution versus seed 3407 followed by
   3408/3409 only after all gates pass. Codex does not resolve that downstream difference.
+
+### 2026-08-31 — Pro admits 200/211 and unlocks one H65 system-level experiment
+
+- Exact Project Pro conversation `6a956592-da38-83e9-b50c-fd3906c0ec41`, nonce
+  `DUCA-FULL-DATA-IDENTITY-ADMISSION-v001-20260831`, returned `CONTINUE` and formally admitted the complete 200-video
+  `training` set plus the complete 211-video OpenTAD `validation` held-out set. Full report:
+  `research-wiki/sources/2026-08-31-pro-duca-full-data-identity-admission-v001.md`.
+- ActionFormer 212 remains source-tracing only; `video_test_0000270` is excluded for wrong annotations and
+  `video_test_0001292` is not an annotation evaluation member. The 211 held-out set cannot be used for checkpoint, threshold,
+  budget mixture, rule, arm, seed or route selection.
+- The seed conflict is resolved as blind sequential execution of all three seeds `3407 → 3408 → 3409`. No held-out metric may be
+  read until all six Control/Candidate training units and all complete prediction views are sealed.
+- The only current task is the Builder for `feature/duca-h65-system-multibudget-exposure-v1-20260831`, directly from H65
+  `04c35a3b...`. The sole variable is Stage-2 budget exposure: Control always K384; Candidate uses the existing nested
+  K256/K384/K512 positions with actual-observation-matched probabilities. The full H65 Stage-2 trainable set remains unchanged.
+- No model code, PRE_RUN, training, held-out prediction, mAP or cost result existed at this admission point. Builder must return one
+  exact clean revision to an independent Critic before any Evaluator execution.

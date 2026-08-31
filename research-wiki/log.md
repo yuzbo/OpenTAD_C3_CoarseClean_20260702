@@ -7311,3 +7311,19 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
 - 完整报告和 literal manifests 已写入
   `research-wiki/sources/2026-08-31-duca-full-data-identity-audit-fdd2bcdd/`。当前仍不启动模型：先把数据证据和两份
   Pro 报告关于三种子立即执行或 3407 先行的唯一冲突返回 Pro。
+
+## 2026-08-31 — Pro 正式准入 200/211 并解锁唯一模型 Builder
+
+- GitHub 证据提交 `68690dbb...` 和提示词提交 `49c6a1c7...` 已公开。Oracle 绑定现有 profile61/CDP
+  `127.0.0.1:15359`，没有关闭或重启浏览器，在精确 DUCA Project 创建新对话
+  `6a956592-da38-83e9-b50c-fd3906c0ec41`。Project、nonce、Pro 选择和结束标记均通过终态核验。
+- Pro 返回 `CONTINUE`：完整 200-video `training` 与完整 211-video OpenTAD `validation` 正式准入；ActionFormer 212
+  仅作来源差异。完整原文保存为
+  `research-wiki/sources/2026-08-31-pro-duca-full-data-identity-admission-v001.md`，SHA-256 为
+  `38739903281c0f01b0289cb332b6e1922886fdb129f3ab49fa5b2d9bfa965b54`。
+- 唯一实验解锁为 H65 系统级多预算暴露适应。两臂仍从 H65 `04c35a3b...` 的同一 Stage-1 EMA 开始，唯一变量为
+  Stage-2 是否只见 K384 或见嵌套 K256/K384/K512；不得称为纯 detector-only 适应。
+- 种子顺序冻结为 `3407 → 3408 → 3409` 且全部盲执行。所有六个训练单元与完整预测封存后，才能一次性打开
+  211-video held-out 标签，统一计算官方指标、10,000 次整视频配对 bootstrap 和真实成本。
+- 当前进入 Builder，分支名固定为 `feature/duca-h65-system-multibudget-exposure-v1-20260831`。尚无模型实现提交、
+  PRE_RUN、训练、held-out prediction、mAP 或成本结果。

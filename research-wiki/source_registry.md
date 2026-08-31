@@ -3995,3 +3995,18 @@ Primary near-neighbor sources additionally checked during project audit:
   canonical videos decode; no intersection, missing media, duplicate, unassigned ID or unexplained difference.
 - Isolation: no held-out label/segment decoding, checkpoint/model/GPU/mAP, prediction payload or per-video utility access.
 - Verdict: `DATA_IDENTITY_PASS_211`. This verdict must return to Pro and does not independently authorize model work.
+
+### `source:pro-duca-full-data-identity-admission-v001-20260831`
+
+- Source type: fresh exact-Project Pro data-admission and single-task scientific adjudication.
+- Identity: Project `g-p-6a91061f789881918ccd8357ca3d6c92`, conversation
+  `6a956592-da38-83e9-b50c-fd3906c0ec41`, nonce `DUCA-FULL-DATA-IDENTITY-ADMISSION-v001-20260831`, terminal marker
+  `DUCA_FULL_DATA_IDENTITY_ADMISSION_READY`; verified Pro picker through the existing profile61 session.
+- Complete report: `research-wiki/sources/2026-08-31-pro-duca-full-data-identity-admission-v001.md`; SHA-256
+  `38739903281c0f01b0289cb332b6e1922886fdb129f3ab49fa5b2d9bfa965b54`.
+- Decision: `CONTINUE`. Admit complete OpenTAD 200-video `training` and complete 211-video `validation`; keep ActionFormer 212 as
+  source-tracing only. Unlock exactly one H65 system multi-budget exposure experiment from `04c35a3b...`.
+- Seed resolution: blindly execute all three seeds in order `3407 → 3408 → 3409`; do not read held-out metrics until all six
+  training units and predictions are sealed.
+- Scope: Control K384-only versus Candidate nested K256/K384/K512 Stage-2 exposure with unchanged H65 trainable mask, model,
+  loss, NMS and evaluator. No new selector/controller, budget embedding, distillation or alternate architecture.
