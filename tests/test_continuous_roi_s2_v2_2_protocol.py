@@ -196,6 +196,20 @@ def test_protocol_rejects_generator_version_drift_even_when_resigned():
         validate_protocol(payload)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("job_id", "9999999"), ("job_name", "replacement-job")),
+)
+def test_protocol_rejects_exact_job_identity_drift_even_when_resigned(field, value):
+    from tools.validate_continuous_roi_s2_v2_2_protocol import validate_protocol
+
+    payload = load_protocol()
+    payload["frozen_training_identities"]["cells"][0][field] = value
+    resign(payload)
+    with pytest.raises(ValueError, match="job identity changed"):
+        validate_protocol(payload)
+
+
 def test_result_blind_statistics_are_machine_frozen():
     protocol = load_protocol()
     statistics = protocol["statistics"]

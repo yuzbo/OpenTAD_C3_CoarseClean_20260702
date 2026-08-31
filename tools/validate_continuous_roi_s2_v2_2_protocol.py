@@ -456,7 +456,23 @@ def validate_protocol(protocol: Mapping[str, Any]) -> dict[str, Any]:
     expected_pairs = {(family, seed) for family in ("D160", "G96", "U128") for seed in (3407, 3408, 3409)}
     observed_pairs = {(item["family"], item["seed"]) for item in identities["cells"]}
     _require(observed_pairs == expected_pairs, "exact-nine identity matrix changed")
+    expected_job_identities = {
+        (family, seed): (
+            str(1177668 + ordinal),
+            f"crs2_77c2149a_{family.lower()}_{seed}",
+        )
+        for ordinal, (family, seed) in enumerate(
+            (family, seed)
+            for family in ("D160", "G96", "U128")
+            for seed in (3407, 3408, 3409)
+        )
+    }
     for item in identities["cells"]:
+        pair = (item["family"], item["seed"])
+        _require(
+            (item.get("job_id"), item.get("job_name")) == expected_job_identities[pair],
+            f"{item['family']} seed {item['seed']} job identity changed",
+        )
         for key in (
             "config_sha256",
             "completion_file_sha256",
