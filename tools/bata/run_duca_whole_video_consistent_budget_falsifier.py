@@ -126,10 +126,10 @@ def _prepare_unlabeled_bundle(input_dir: Path) -> dict[str, Any]:
         }
         merged_rows.append(row)
     holdout_set = set(holdout_videos)
-    rows = sorted(
-        (row for row in merged_rows if str(row["video_id"]) in holdout_set),
-        key=lambda row: (str(row["video_id"]), str(row["sample_id"])),
-    )
+    # Preserve the sealed producer order. Sliding-window proposals are concatenated
+    # in this order before the unchanged Soft-NMS, so re-sorting sample IDs can
+    # perturb deterministic tie handling even when every prediction is unchanged.
+    rows = [row for row in merged_rows if str(row["video_id"]) in holdout_set]
     sample_ids = [str(row["sample_id"]) for row in rows]
     observed_videos = {str(row["video_id"]) for row in rows}
     if len(rows) != EXPECTED_HOLDOUT_WINDOWS:

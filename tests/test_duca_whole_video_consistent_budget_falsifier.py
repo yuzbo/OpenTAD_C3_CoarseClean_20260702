@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from inspect import getsource
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -82,6 +83,50 @@ def test_complete_whole_video_candidate_space_uses_real_cost_and_uniform_tiers()
     source = getsource(runner)
     assert "allocate_equal_budget_marginal_reallocation" not in source
     assert "_allocate_rows_by_video" not in source
+
+
+def test_input_bundle_preserves_sealed_prediction_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows, videos = _frozen_shape_rows()
+    sealed_rows = [rows[3], rows[1], rows[2], rows[0], *rows[4:]]
+    split_dir = tmp_path / "controller_split"
+    split_dir.mkdir()
+    (split_dir / "frontend_split_manifest.json").write_text(
+        json.dumps({"holdout_videos": videos}), encoding="utf-8"
+    )
+
+    selection = [
+        {**row, "prediction_k384": [{"sample_id": row["sample_id"]}]}
+        for row in sealed_rows
+    ]
+    counterfactual = {
+        budget: [
+            {
+                "sample_id": row["sample_id"],
+                "prediction": [{"sample_id": row["sample_id"], "budget": budget}],
+            }
+            for row in sealed_rows
+        ]
+        for budget in (256, 512)
+    }
+
+    def read_rows(path: Path):
+        if path.name == "selection_k384.jsonl.gz":
+            return selection
+        if path.name == "counterfactual_k256.jsonl.gz":
+            return counterfactual[256]
+        if path.name == "counterfactual_k512.jsonl.gz":
+            return counterfactual[512]
+        raise AssertionError(path)
+
+    monkeypatch.setattr(runner, "_read_jsonl_gz", read_rows)
+
+    bundle = runner._prepare_unlabeled_bundle(tmp_path)
+
+    assert [row["sample_id"] for row in bundle["rows"]] == [
+        row["sample_id"] for row in sealed_rows
+    ]
 
 
 def test_short_windows_collapse_by_actual_observations_not_requested_budget() -> None:
