@@ -1548,3 +1548,19 @@ hardware 或 population，不新增 arm/successor，也不用显存下降掩盖 
 固定点作为当前效率路线，证据范围限于单个 RTX 4090 和完整 validation replay；它不否定所有 depth-sparsity，
 不形成 official-test、matched-training、multi-seed、Online TAD 或边界保护主张。唯一下一动作是 fresh exact-
 Project Pro 独立裁决；Pro 前不执行新实验。
+
+## 128. fresh Pro 转向 ordered-video decode reuse viability closure（2026-08-31）
+
+exact ZoomToken Project conversation `6a958d01-9768-83ea-b163-9b481bb64856` 以 `GPT-5.6 Pro`、一次科研
+submission、零 follow-up 完整返回，并绑定 GitHub implementation `b82441c1…` 与 terminal-doc `51455628…`。
+裁决 `PIVOT / KEEP`：job `1262120` 是 `VALID_FOR_NARROW_CLAIM_GRADE_SYSTEMS_NEGATIVE`，足以永久停止
+B/C/D 三个 frozen point 和相同 execution base 上的 K/depth/fixed-refresh 局部 sweep，但不否定动态计算分配
+家族。角色合同保持，不修改通用 Pro/Codex/Critic/Evaluator 边界。
+
+唯一任务为 `ZOOMTOKEN-ORDERED-VIDEO-DECODE-REUSE-R1-K100-FULLSTACK-VIABILITY-CLOSURE-v001`。从
+`b82441c1…` 建立 clean descendant，只新增 profiler、launcher、focused test；用 bounded CPU uint8 rolling
+buffer 让同一视频、arm、pass 的源帧最多顺序解码一次，并在视频/不连续顺序/arm/pass 切换时清空。legacy 与
+reuse 的完整 792-window pre-H2D tensor、prediction/evaluator 必须一致，decode 仍在 timed full-stack 边界内。
+正式仅比较 K100/R1，8-pass order `K100,R1,R1,K100,R1,K100,K100,R1`，1 RTX 4090/6 CPU/16h，
+submission `1/1`、无 replacement。R1 只有同时达到 wall-time/energy `<=0.95` 与 allocated/reserved `<=1.05`
+才保留；任一有效成本门失败即永久停止 R1 contiguous support 作为当前单 GPU 效率路线并 fresh Pro。

@@ -4952,3 +4952,13 @@ append_only: true
   `STOP_R1_FIXED_DEPTH_SPARSITY_FOURPOINT_AS_CURRENT_EFFICIENCY_ROUTE`。这是本硬件、本 population 和四个固定
   checkpoint 的完整负系统结果；不构成 official-test、matched-training、multi-seed、边界保护或家族级证据。
   fresh 独立 result-to-claim reviewer 同意该窄结论；下一动作仅为携带完整终态和 GitHub 三链接的一次 fresh Pro。
+
+- 2026-08-31：fresh exact-Project conversation `6a958d01-9768-83ea-b163-9b481bb64856` 以 browser-visible
+  `GPT-5.6 Pro`、12 个 attachment-only 输入、submission `1`、follow-up `0` 完成，绑定 implementation
+  `b82441c1…` 与 terminal-doc `51455628…`。裁决 `PIVOT / KEEP`：工程 `PASS_STRONG`，协议为窄范围
+  claim-grade，科学上是 B/C/D 三个固定点的高置信负结果，可进入 negative ablation、不能作为正向 headline。
+  唯一下一任务改为 ordered-video decode reuse 的 K100/R1 full-stack viability closure：不改模型，只用有界 CPU
+  rolling buffer 消除同视频重叠窗口重复 decode，并要求完整 792-window tensor/prediction/evaluator parity；一项
+  8-pass、1 GPU、submission `1/1`、无 replacement 的正式 closure 决定 R1 当前单 GPU 效率生命力。Oracle
+  manifest 第 12 附件是 `AGENTS.md`，Pro 清单却写为 stale `state.json`；该名称偏差已披露，不影响 raw terminal、
+  GitHub 身份和裁决数值。

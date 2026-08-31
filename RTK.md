@@ -47,9 +47,9 @@ ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务�
 当前科学状态：
 
 - C3/PAction/GAS-VT/lattice 保留为固定预算、no-leak、归因与失败诊断基线；
-- 当前主路线 BPNS-R1 只用当前观测，在 VideoMAE 前选择连续 `8×8/K64` 原生支持，并让 K64 完整执行全部主干和 Adapter；它不使用 cache、carry 或深度跳过；
-- 同源 K100 与 R1 的 seed-42 final-EMA 为 `68.51/61.19/46.27` 与 `69.07/61.14/46.57`（Avg-mAP/mAP@0.6/mAP@0.7）。这支持单种子准确率可行性，不证明泛化或真实效率；
-- R1 减少 36% 原生空间输入是结构事实。旧同硬件回放 job `1257281` 因 K100 原始精度值与舍入口径未正确绑定而终止；最小数值合同修正 `e9323448…` 已通过独立准入，但唯一替代 job `1258299` 又在正确执行的冻结 accuracy-parity 门处终止，八 pass 与终态成本产物均未形成。当前仍没有 R1 延迟、显存或能耗结果；在 fresh Pro 裁决前不得放宽门槛、重提或追加实验；
+- BPNS-R1 只用当前观测，在 VideoMAE 前选择连续 `8×8/K64` 原生支持，并让 K64 完整执行全部主干和 Adapter；它不使用历史 hidden/KV、carry 或深度跳过。其单种子准确率可行，但 v004 的真实 full-stack p50 只改善约 `1.51%`，已停止独立效率 headline；
+- 四臂只读 full-stack job `1262120` 已在完整 THUMOS14 validation 211 videos/792 ordered windows 上完成 16-pass Williams replay。相对 A/R1-FULL64，B/DSR6-KV、C/MOD32-KV、D/DROP32 的 p50 比值为 `1.112325/1.110211/1.102807`，gross-energy 比值为 `1.102719/1.099873/1.064409`；无 Pareto survivor。fresh Pro 将其裁决为窄范围 claim-grade 负系统结果，永久停止这三个固定点及同底座局部 K/depth/refresh sweep，但不外推整个动态计算家族；
+- 当前唯一任务是 `ZOOMTOKEN-ORDERED-VIDEO-DECODE-REUSE-R1-K100-FULLSTACK-VIABILITY-CLOSURE-v001`。它只在评测侧为 K100/R1 对称实现 bounded per-video rolling decode reuse，保持模型、checkpoint、数据语义和 decode-to-Soft-NMS 计时边界不变，检验去除重叠窗口重复解码后 R1 是否同时达到 wall-time/energy `<=0.95` 与 memory `<=1.05`；
 - DUCA、RC32 carry、当前 APM 载体和若干直接缓存/深度路线保留为历史候选与负证据，不得复活为当前主方法；
 - ChronoTransport 与 PhysTime 是独立并行假设，不得与 BPNS-R1 或历史 DUCA 证据混用。
 

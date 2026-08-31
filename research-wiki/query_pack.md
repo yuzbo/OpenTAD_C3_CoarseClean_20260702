@@ -1506,6 +1506,27 @@ max_chars: 8000
   multi-seed, boundary-protection or universal depth-sparsity evidence. The only
   next action is one fresh Pro request binding the repository, branch and exact
   implementation commit URLs; no experiment or successor is authorized before it.
+- Fresh exact-Project conversation `6a958d01-9768-83ea-b163-9b481bb64856`
+  completed with browser-visible `GPT-5.6 Pro`, one scientific submission, zero
+  follow-ups, 12 attachment-only inputs and explicit GitHub bindings. It returned
+  `PIVOT / KEEP`, classified the terminal as `PASS_STRONG /
+  VALID_FOR_NARROW_CLAIM_GRADE_SYSTEMS_NEGATIVE /
+  VALID_HIGH_CONFIDENCE_NEGATIVE_FOR_THE_THREE_FIXED_POINTS`, and allowed the
+  result only as a negative ablation rather than a positive headline. Oracle's
+  attachment manifest contains `AGENTS.md` as item 12 while the response names
+  stale `state.json`; this is a disclosed nonfatal name-reporting discrepancy,
+  not a terminal-science conflict.
+- The unique task is now
+  `ZOOMTOKEN-ORDERED-VIDEO-DECODE-REUSE-R1-K100-FULLSTACK-VIABILITY-CLOSURE-v001`:
+  add only a bounded evaluation-side per-video rolling decode iterator, symmetrically
+  serve frozen K100/R1, retain decode inside the timed boundary, and require exact
+  792-window pre-H2D tensor plus prediction/evaluator parity. One eight-pass same-GPU
+  formal job is allowed after focused tests, fresh Critic and result-blind Evaluator.
+  R1 survives only if median-four complete-pass wall time and gross energy are both
+  `<=0.95` of K100 and allocated/reserved memory are both `<=1.05`; a valid failure
+  permanently stops R1 contiguous support on the current single-GPU execution base.
+  No training, official test, alternative arm, asynchronous prefetch, retry or
+  replacement is authorized.
 
 ## Pointers
 

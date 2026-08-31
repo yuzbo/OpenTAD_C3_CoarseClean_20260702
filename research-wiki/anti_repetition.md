@@ -1404,3 +1404,11 @@ updated: 2026-08-31
     重跑、换 seed/GPU/population、调整门槛，或把显存下降写成 Pareto survivor。该 STOP 只约束冻结的四点、
     RTX 4090 和完整 validation 成本协议，不得外推整个 depth-sparsity 家族、official test、训练泛化或边界保护。
     完整证据必须先交一次 fresh Pro；Pro 裁决前没有 successor 实验。
+52. fresh Pro 已裁决 `PIVOT / KEEP`，停止 B/C/D 三个固定点及同 execution base 上继续搜索 K、depth split、
+    fixed refresh ratio 或 identity-bypass 局部变体。不得再把 FLOPs、显存下降或另一个固定 token operator 当作
+    R1 效率救援。唯一允许任务是 K100/R1 对称的 ordered-video rolling decode reuse closure：只能新增冻结的
+    profiler/launcher/test 三个文件，decode 必须留在 full-stack 计时内，不能用 async prefetch、worker sweep、
+    full-video 常驻、跨 arm/pass cache、prediction/model/hidden cache 或 GT/teacher。正式 population 固定完整
+    validation 211/792，pass order `K100,R1,R1,K100,R1,K100,K100,R1`，submission `1/1`、无 replacement。
+    若有效结果任一 wall-time/energy `<=0.95` 或 memory `<=1.05` 门失败，永久停止 R1 contiguous support 作为
+    当前单 GPU 效率路线；不得再追加局部模型变体，必须 fresh Pro。
