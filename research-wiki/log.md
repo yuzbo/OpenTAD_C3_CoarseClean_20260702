@@ -4980,3 +4980,11 @@ append_only: true
   `STOP_R1_CURRENT_CONTIGUOUS_SUPPORT_AS_SINGLE_GPU_EFFICIENCY_ROUTE`。这是 validation/single-RTX4090 上的窄负
   系统结果；不形成正向 latency、official-test、matched-training、多 seed、边界保护或家族级主张。终态材料将只
   提交一次 fresh exact-Project Pro，裁决前没有 successor。
+
+- 2026-09-01：fresh exact-Project conversation `6a95f0ff-f7f4-83ea-ba00-18ea97d18da7` 以 `GPT-5.6 Pro`、
+  十个 attachment-only 文件、submission `1`、follow-up `0` 完成。Pro 返回 `PIVOT / KEEP`，接受 R1 的
+  `STOP_R1_CURRENT_CONTIGUOUS_SUPPORT_AS_SINGLE_GPU_EFFICIENCY_ROUTE`，并把其解释为窄范围有效负系统结果，
+  禁止 latency 门失败后的 K/depth/worker/prefetch/kernel/seed rescue。唯一下一任务是 Continuous-RoI S2 v2.2
+  reference protocol corrigendum 和 CPU-only known-answer closure：限定四个文件，冻结 shared physical center、
+  deterministic Sobol bytes、equal privilege、raw/privileged ID 与 no-GT 边界、v2.1 statistics 和 exact-nine/
+  129-window 只读身份。该任务不授权训练、inference、metric、cost、S3 或 official test；任何终态必须 fresh Pro。

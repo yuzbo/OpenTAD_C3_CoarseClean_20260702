@@ -1578,3 +1578,20 @@ R1/K100 的 p50/energy/allocated/reserved 比值为 `0.980999/0.921086/0.751260/
 完整 THUMOS14 validation 与冻结 checkpoints 上的有效负系统结果；不重跑、不改门、不用能耗/显存改善替代延迟门，
 也不升级为 official-test、matched-training、multi-seed、边界保护或普适 decode-reuse 结论。唯一下一动作是 fresh
 exact-Project Pro；其裁决前不执行 successor。
+
+## 130. fresh Pro 接受 R1 停止并转向 Continuous-RoI S2 v2.2 协议闭合（2026-09-01）
+
+exact ZoomToken Project conversation `6a95f0ff-f7f4-83ea-ba00-18ea97d18da7` 以 browser-visible
+`GPT-5.6 Pro`、十个 attachment-only 文件、一次科研提交、零 follow-up 完整返回。裁决为 `PIVOT / KEEP`：
+工程 `PASS_STRONG`，协议 `VALID_WITH_DISCLOSED_SCOPE_LIMITS`，科学证据为
+`VALID_NEGATIVE_FOR_STANDALONE_SINGLE_GPU_FULL_STACK_LATENCY_ROUTE`，并接受原预注册停止边界。BPNS-R1/
+contiguous-support 不再作为当前 standalone single-GPU efficiency 路线；它只保留为单 seed accuracy-feasible
+support primitive、固定硬件 energy/memory attribution point 与“token reduction 不自动转化为 full-stack latency”
+的负面系统证据。
+
+唯一下一任务为 `ZOOMTOKEN-CONTINUOUS-ROI-S2-V2.2-REFERENCE-PROTOCOL-CORRIGENDUM-AND-KNOWN-ANSWER-CLOSURE-v001`。
+任务从 `9e774eee…` 创建独立分支，只能新增/修改 Pro 指定四个协议/验证文件，执行一次 clean Linux CPU-only
+known-answer closure。它必须冻结 FS/VS shared physical center、arm-specific inverse logits、确定性 Owen-scrambled
+Sobol 与 canonical manifest bytes、equal search privilege、raw enumerated ID 与 post-seal privileged preferred ID
+隔离、no-GT raw graph、v2.1 statistical rules，以及 exact-nine final-EMA/campaign/config/fit/gate 与 129-window
+population 身份。该任务不产生 crop-sufficiency 或性能主张；ready、stop 或 blocker 后均必须 fresh Pro。

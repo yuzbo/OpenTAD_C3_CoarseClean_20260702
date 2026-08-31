@@ -1544,8 +1544,26 @@ max_chars: 8000
   `STOP_R1_CURRENT_CONTIGUOUS_SUPPORT_AS_SINGLE_GPU_EFFICIENCY_ROUTE`. This is a
   complete negative systems result for the current single RTX 4090 execution base and
   full validation population, not a positive latency, official-test, matched-training,
-  multi-seed, boundary-protection or universal decode-reuse claim. One fresh exact-
-  Project Pro adjudication is mandatory before any successor.
+  multi-seed, boundary-protection or universal decode-reuse claim.
+- Fresh exact-Project conversation `6a95f0ff-f7f4-83ea-ba00-18ea97d18da7`
+  completed with browser-visible `GPT-5.6 Pro`, ten attachment-only files, one
+  scientific submission and zero follow-ups. Pro returned `PIVOT / KEEP`, accepted
+  the preregistered stop boundary, and classified the result as `PASS_STRONG /
+  VALID_WITH_DISCLOSED_SCOPE_LIMITS /
+  VALID_NEGATIVE_FOR_STANDALONE_SINGLE_GPU_FULL_STACK_LATENCY_ROUTE`. BPNS-R1 and
+  contiguous K64 support are closed as the current standalone single-GPU efficiency
+  route; energy and memory observations remain valid but cannot rescue the failed
+  latency gate.
+- The sole next task is
+  `ZOOMTOKEN-CONTINUOUS-ROI-S2-V2.2-REFERENCE-PROTOCOL-CORRIGENDUM-AND-KNOWN-ANSWER-CLOSURE-v001`.
+  It is a four-file, CPU-only development closure from `9e774eee…`, not training or
+  inference. It must freeze shared physical centers for fixed/variable crops,
+  arm-specific inverse logits including `w/h=1`, deterministic Owen-scrambled Sobol
+  bytes and candidate-manifest known answers, equal search privilege, raw-ID versus
+  post-seal privileged-ID separation, no-GT raw object graphs, v2.1 statistical rules,
+  and read-only identity of the exact-nine D160/G96/U128 training artifacts plus the
+  129-window population. Acceptance only means protocol readiness; any terminal must
+  return to a fresh Pro before raw inference, metrics, cost, S3, retraining or official test.
 
 ## Pointers
 

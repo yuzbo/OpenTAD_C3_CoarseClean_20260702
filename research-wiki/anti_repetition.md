@@ -1425,3 +1425,10 @@ updated: 2026-08-31
     full-stack latency 失败，不得重跑、换 GPU/population、改门、增加 async/prefetch/worker tuning、模型救援或
     successor。该 STOP 只约束当前 R1 contiguous-support single-GPU 效率路线，不外推所有 decode reuse、动态计算、
     official test、训练泛化或边界保护；唯一下一动作是一次 fresh exact-Project Pro。
+55. fresh Pro conversation `6a95f0ff-f7f4-83ea-ba00-18ea97d18da7` 已裁决 `PIVOT / KEEP / ACCEPT_STOP`。
+    不得复活 BPNS-R1 standalone-efficiency 路线，不得做 K/depth/worker/prefetch/kernel/seed rescue，也不得以能耗或
+    显存替换失败的 full-stack latency 主门。唯一任务是 Continuous-RoI S2 v2.2 reference protocol corrigendum：
+    只能修改 Pro 指定的 contract、protocol JSON、validator 和 focused test 四个文件；不得训练、raw inference、
+    prediction、metric、cost、S3、official test 或修改 v2.1 历史。必须修正 equal-logit 与 equal-physical-center 的
+    混淆，冻结 Owen-scrambled Sobol 字节身份、equal privilege、raw/privileged ID 边界、no-GT object graph、v2.1
+    statistics 以及 exact-nine/129-window 只读身份。协议 ready/stop/blocker 后均必须 fresh Pro，禁止自动 successor。
