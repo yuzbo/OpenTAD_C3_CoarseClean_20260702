@@ -1532,3 +1532,19 @@ GPU 上按 `ABDC/BCAD/CDBA/DACB` 的 16-pass Williams order 测完整 decode-to-
 peak memory。先逐 pass 计算 p50/total joules，再对每臂四 pass 取中位数；任一候选同时达到 latency/energy
 ratio `<=0.95` 且 allocated/reserved ratio `<=1.05` 才保留为 Pareto survivor。formal submission `1/1`、
 无 replacement；完整终态或客观 blocker 均必须 fresh Pro。
+
+## 127. 四臂 full-stack Pareto 闭环无 survivor（2026-08-31）
+
+唯一 formal job `1262120` 在 RTX 4090 `g0063` 完成全部 16 个 Williams-order pass、完整 THUMOS14
+validation 211 videos/792 ordered windows、12,672 cost rows、连续功耗、prediction/evaluator、短动作、边界、
+profile 和 terminal receipt。协议、SHA、coverage、raw-row 重建和日志故障扫描均通过。A/R1-FULL64 的
+p50/gross energy/peak allocated/peak reserved 为 `2848.736980 ms / 165094.263331 J / 1544.179199 MB /
+1722 MB`。B、C、D 的 p50 比值分别为 `1.112325/1.110211/1.102807`，energy 比值为
+`1.102719/1.099873/1.064409`；三者均未通过冻结 `<=0.95` latency-energy 门。D 虽将 allocated/reserved
+降至 `0.739485/0.830430`，仍不是 conjunctive Pareto survivor。
+
+决定：`STOP_R1_FIXED_DEPTH_SPARSITY_FOURPOINT_AS_CURRENT_EFFICIENCY_ROUTE`。不重跑、不换门槛、seed、
+hardware 或 population，不新增 arm/successor，也不用显存下降掩盖 latency/energy 失败。该决定只停止这四个
+固定点作为当前效率路线，证据范围限于单个 RTX 4090 和完整 validation replay；它不否定所有 depth-sparsity，
+不形成 official-test、matched-training、multi-seed、Online TAD 或边界保护主张。唯一下一动作是 fresh exact-
+Project Pro 独立裁决；Pro 前不执行新实验。

@@ -4942,3 +4942,13 @@ append_only: true
   population 与 atomic writers，未读取科学指标。唯一 formal job `1262120` 已于
   `2026-08-31T06:37:14+08:00` 以 1 GPU、5 CPU、16 小时提交，formal submission `1/1`、无 replacement；
   运行中不读取 partial 结果，终态或 blocker 后只发起一次携带最新 GitHub 三链接的 fresh Pro。
+
+- 2026-08-31：job `1262120` 在 `g0063` 终态 `COMPLETED 0:0`，运行 `14:56:20`。完整 THUMOS14
+  validation 211 videos/792 ordered windows 上的 16-pass Williams replay、12,672 cost rows、16 组 prediction/
+  evaluator、2,527,501 raw power samples、pass receipts、short-action/boundary、profile 和 terminal receipt 均完整，
+  raw-row 重建、SHA 与 coverage 独立核验通过。相对 A/R1-FULL64，B/C/D 的 p50 比值为
+  `1.112325/1.110211/1.102807`，gross-energy 比值为 `1.102719/1.099873/1.064409`；没有 arm 同时满足
+  p50/energy `<=0.95` 与 allocated/reserved memory `<=1.05`。冻结决策为
+  `STOP_R1_FIXED_DEPTH_SPARSITY_FOURPOINT_AS_CURRENT_EFFICIENCY_ROUTE`。这是本硬件、本 population 和四个固定
+  checkpoint 的完整负系统结果；不构成 official-test、matched-training、multi-seed、边界保护或家族级证据。
+  fresh 独立 result-to-claim reviewer 同意该窄结论；下一动作仅为携带完整终态和 GitHub 三链接的一次 fresh Pro。

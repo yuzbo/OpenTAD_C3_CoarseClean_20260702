@@ -1397,3 +1397,10 @@ updated: 2026-08-31
     latency、energy、memory、prediction、accuracy、短动作或边界结果；不得创建 retry、resume、replacement、
     第二 seed、额外 arm 或并行 successor。终态后 fresh Pro prompt 必须包含最新 repository、branch 与 exact
     commit GitHub URL，不能只附本地材料或分支名称。
+51. job `1262120` 已 `COMPLETED 0:0` 并形成完整 16-pass、211/792 population、成本、功耗、prediction、
+    evaluator、短动作、边界、profile 与 terminal receipt。B/C/D 相对 A 的 p50 比值为
+    `1.112325/1.110211/1.102807`，energy 比值为 `1.102719/1.099873/1.064409`；即使 D 的 allocated/
+    reserved memory 比值降至 `0.739485/0.830430`，也不能掩盖 latency/energy 失败。不得复活这三个固定点、
+    重跑、换 seed/GPU/population、调整门槛，或把显存下降写成 Pareto survivor。该 STOP 只约束冻结的四点、
+    RTX 4090 和完整 validation 成本协议，不得外推整个 depth-sparsity 家族、official test、训练泛化或边界保护。
+    完整证据必须先交一次 fresh Pro；Pro 裁决前没有 successor 实验。

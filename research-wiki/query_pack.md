@@ -1490,11 +1490,22 @@ max_chars: 8000
 - Non-scientific precheck job `1262119` completed `0:0 / PRECHECK_READY`, binding
   all four checkpoint SHA256 values, epoch-59 EMA identity, clean source commit,
   211/792 population, evaluator/NMS contracts and atomic writers without reading
-  validation performance. The sole formal job `1262120` has been submitted with
-  one GPU, five CPUs and a 16-hour limit; formal submission is `1/1`, no
-  replacement. No running/partial result is consumed. Terminal evidence or an
-  objective blocker must return to one fresh Pro request that explicitly includes
-  the repository, branch and exact implementation commit URLs.
+  validation performance. The sole formal job `1262120` then completed `0:0` on
+  `g0063` after `14:56:20`. All 16 Williams-order passes, 12,672 cost rows, 16
+  predictions/evaluator vectors, 2,527,501 raw power samples, pass receipts,
+  short-action/boundary diagnostics, `profile.json` and `terminal_receipt.json`
+  are complete; raw-row recomputation and recorded SHA/coverage checks pass.
+- Relative to A/R1-FULL64, B/DSR6-KV has p50/energy/allocated/reserved ratios
+  `1.112325/1.102719/0.937153/0.958188`, C/MOD32-KV has
+  `1.110211/1.099873/0.999039/1.001161`, and D/DROP32 has
+  `1.102807/1.064409/0.739485/0.830430`. No candidate satisfies the frozen
+  conjunctive `<=0.95/<=0.95/<=1.05/<=1.05` gate. The valid conclusion is
+  `STOP_R1_FIXED_DEPTH_SPARSITY_FOURPOINT_AS_CURRENT_EFFICIENCY_ROUTE`: a complete
+  negative systems result for these four fixed points on this single RTX 4090 and
+  full THUMOS14 validation population, not official-test, matched-training,
+  multi-seed, boundary-protection or universal depth-sparsity evidence. The only
+  next action is one fresh Pro request binding the repository, branch and exact
+  implementation commit URLs; no experiment or successor is authorized before it.
 
 ## Pointers
 
