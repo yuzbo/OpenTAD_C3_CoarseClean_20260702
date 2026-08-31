@@ -5056,3 +5056,13 @@ project decision.
 - Local diff/compile/launcher checks and N16R4 focused tests pass (`25 passed`). This advances the task only to implemented and
   locally tested. No PRE_RUN, full training, prediction, mAP, interval or efficiency result exists. A fresh independent Critic must
   review the exact commit before Evaluator work.
+
+### 2026-08-31 — Exact multi-budget implementation passes independent Critic
+
+- A fresh, read-only Critic reviewed exact clean commit `0d67d49c2fc4a5f50aa784f7809c0dd936492109` and returned `PASS`.
+  It confirmed the frozen single variable, 6,000-successful-update clock, K384 legacy execution, nested budget sets, real packet
+  execution and padding trim, complete 200/211 boundary, nine sealed views, one-time annotation parse, official evaluator, shared
+  paired bootstrap and measured-cost boundary.
+- The Critic could not import local Windows PyTorch because of the existing `c10.dll` initialization failure; this does not negate
+  the N16R4 Linux `25 passed` result. The review gate is now closed, so the next action is PRE_RUN on the same exact commit.
+- This is code-admission evidence only. There is still no full training, held-out prediction, mAP, interval or efficiency result.

@@ -1149,3 +1149,12 @@ Builder 已从第 66 项冻结的 H65 父提交直接产生公开提交
 10,000 次整视频配对 bootstrap。成本记录覆盖真实 observation、逐视频 wall-clock、分模块时间和 GPU 峰值显存。
 N16R4 聚焦与恢复合同测试为 `25 passed`。这些只把状态推进到已有代码并通过局部测试，不改变科学裁决，也不产生
 性能证据。下一动作是新的独立 Critic 对精确提交作只读通过或阻断审查；通过前不得运行 PRE_RUN。
+
+## 68. CONTINUE：独立 Critic 通过并解除 PRE_RUN 审查门（2026-08-31）
+
+新的无实现上下文 Critic 对精确 clean commit `0d67d49c2fc4a5f50aa784f7809c0dd936492109` 返回 `PASS`。审查确认
+冻结的唯一变量、6,000 次成功更新时钟、K384 历史路径、嵌套三档集合、真实 packet 执行、padding 特征裁剪、完整
+200/211 数据边界、九份封存、一次性 annotation 解析、官方 evaluator、共享 paired bootstrap 与实测成本口径。
+
+该终态只解除 PRE_RUN 前的代码审查门，不是模型、性能或效率证据。下一动作是在 N16R4 部署同一精确提交并运行
+PRE_RUN；不得据此改动实验、读取 held-out 指标或提前启动未通过运行前检查的完整训练。

@@ -121,5 +121,12 @@ padding 不替代真实成本。
 提交前检查已经完成：本地 `git diff --check`、Python 编译和两个 Slurm 启动器语法通过；N16R4 的当前实现运行
 25 项聚焦与恢复合同测试，结果为 `25 passed`。完整 200-video training、211-video held-out 身份、校准产物、
 固定 mixed manifest 和 bootstrap 索引的无标签准备与验证通过。上述仅证明实现可执行和实验身份闭合，不是模型
-有效性、mAP 或成本收益证据。尚未运行正式 PRE_RUN 或任何新训练；下一步必须先由新的独立 Critic 对该精确提交
-作只读审查。
+有效性、mAP 或成本收益证据。尚未运行正式 PRE_RUN 或任何新训练；独立 Critic 的终态如下。
+
+## 独立 Critic 终态
+
+新的无实现上下文 Critic 已对精确提交 `0d67d49c...` 完成只读审查并返回 `PASS`。它确认工作树 clean、sole parent
+为 `04c35a3b...`，并核验唯一变量、成功 update 预算时钟、K384 原路径、嵌套集合、真实 packet 执行、padding 特征
+裁剪、完整数据边界、九份封存、一次性 annotation 解析、官方 evaluator、配对 bootstrap 和成本口径。Critic 在当前
+Windows Python 中受 PyTorch `c10.dll` 初始化限制而未重复运行 pytest；该环境限制不覆盖 Builder 已在 N16R4 得到的
+`25 passed` Linux 结果。当前已解除 PRE_RUN 审查门，但仍没有模型性能或效率证据。

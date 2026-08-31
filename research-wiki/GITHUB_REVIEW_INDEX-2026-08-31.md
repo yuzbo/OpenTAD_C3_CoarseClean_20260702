@@ -46,7 +46,7 @@ scope: complete DUCA research history and public implementation lineage
   <https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/duca-wiki-complete-sync-20260831/research-wiki/sources/2026-08-31-pro-duca-full-data-identity-admission-v001.md>
 - 最新裁决为 `CONTINUE`：完整 200-video `training` 与 211-video OpenTAD `validation` 已准入；当前唯一实验是固定
   K384 与 K256/K384/K512 多预算训练暴露的两臂、三种子、完整训练和一次性完整 held-out 比较。Builder 已完成，
-  正等待独立 Critic。
+  独立 Critic 对精确 clean 提交返回 `PASS`，下一步是同一冻结版本的 PRE_RUN。
 
 ## 关键实现谱系
 

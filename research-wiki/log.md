@@ -7362,3 +7362,12 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
 - 本地 diff/compile/Slurm syntax 通过；N16R4 当前聚焦和 checkpoint 合同套件为 `25 passed`。完整 200/211 无标签
   准备与 validator 通过。没有运行正式 PRE_RUN、训练或 held-out 评测，也没有 mAP、区间或成本收益。下一步仅为
   fresh independent Critic 对精确提交的只读审查。
+
+## 2026-08-31 — H65 系统多预算暴露独立 Critic 通过
+
+- 新的无实现上下文 Critic 对 exact clean commit `0d67d49c2fc4a5f50aa784f7809c0dd936492109` 返回 `PASS`。
+- 它核验了唯一预算暴露变量、成功 update 时钟、K384 历史路径、嵌套 K256/K384/K512、真实 packet 执行与 padding
+  裁剪、完整 200/211 数据边界、九份 prediction/cost 封存、一次性 annotation 读取、官方 evaluator、10,000 次整视频
+  配对 bootstrap 和实测成本口径。
+- Critic 的 Windows Python 受既有 PyTorch `c10.dll` 初始化错误阻断，未重复 N16R4 的 Linux 测试；远端已有
+  `25 passed`。该终态解除 PRE_RUN 审查门，但没有产生训练、held-out prediction、mAP、置信区间或效率证据。
