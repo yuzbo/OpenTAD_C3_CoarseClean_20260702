@@ -1,0 +1,271 @@
+{
+  "builder_plan": {
+    "candidate_content_read_before_freeze": false,
+    "purpose": "One bounded all-or-none census for the original bytes of the frozen exact-nine Continuous-RoI S2 artifacts.",
+    "result_informed_root_expansion_allowed": false,
+    "scan_ordinal": "1/1"
+  },
+  "evidence_base": "72965e22df8e25471ddc896dd46d2d856cce84f3",
+  "expected_artifacts": [
+    {
+      "artifact_id": "D160-3407-checkpoint",
+      "expected_sha256": "9d0f41f038436a9cff9fb6a9e6bf4a0734ebda148da3ff143597a03862e905e4",
+      "family": "D160",
+      "filename": "epoch_59.pth",
+      "job_id": "1177668",
+      "kind": "checkpoint",
+      "original_relative_path": "d160/seed3407/checkpoint/epoch_59.pth",
+      "seed": 3407
+    },
+    {
+      "artifact_id": "D160-3407-sidecar",
+      "expected_sha256": "b284965cc4d65cf73528ef7f5e52a4ac365a3a36904bd4d624d908be3e754a55",
+      "family": "D160",
+      "filename": "epoch_59.pth.metadata.json",
+      "job_id": "1177668",
+      "kind": "sidecar",
+      "original_relative_path": "d160/seed3407/checkpoint/epoch_59.pth.metadata.json",
+      "seed": 3407
+    },
+    {
+      "artifact_id": "D160-3408-checkpoint",
+      "expected_sha256": "0958f4937280724a27c330dfab483b200f514ce0edfdcff06d4fbb0e712214c1",
+      "family": "D160",
+      "filename": "epoch_59.pth",
+      "job_id": "1177669",
+      "kind": "checkpoint",
+      "original_relative_path": "d160/seed3408/checkpoint/epoch_59.pth",
+      "seed": 3408
+    },
+    {
+      "artifact_id": "D160-3408-sidecar",
+      "expected_sha256": "8354609a560cd7585abbc4f004949de194d5fa0e906faacfd260fe3c0847ac5e",
+      "family": "D160",
+      "filename": "epoch_59.pth.metadata.json",
+      "job_id": "1177669",
+      "kind": "sidecar",
+      "original_relative_path": "d160/seed3408/checkpoint/epoch_59.pth.metadata.json",
+      "seed": 3408
+    },
+    {
+      "artifact_id": "D160-3409-checkpoint",
+      "expected_sha256": "739a0bb192ccb5f6e2c8a28a3456df17520b536236b33e3e79a357cbdc172603",
+      "family": "D160",
+      "filename": "epoch_59.pth",
+      "job_id": "1177670",
+      "kind": "checkpoint",
+      "original_relative_path": "d160/seed3409/checkpoint/epoch_59.pth",
+      "seed": 3409
+    },
+    {
+      "artifact_id": "D160-3409-sidecar",
+      "expected_sha256": "1e6fabada558eeb0392c8771c5b03ad9ee35b7c86969a40198f2f2780016cc84",
+      "family": "D160",
+      "filename": "epoch_59.pth.metadata.json",
+      "job_id": "1177670",
+      "kind": "sidecar",
+      "original_relative_path": "d160/seed3409/checkpoint/epoch_59.pth.metadata.json",
+      "seed": 3409
+    },
+    {
+      "artifact_id": "G96-3407-checkpoint",
+      "expected_sha256": "01ee1fee65ceb9ef4297cc39fbd92960ff5e2800aa908dfaf4d084784b39b4fd",
+      "family": "G96",
+      "filename": "epoch_59.pth",
+      "job_id": "1177671",
+      "kind": "checkpoint",
+      "original_relative_path": "g96/seed3407/checkpoint/epoch_59.pth",
+      "seed": 3407
+    },
+    {
+      "artifact_id": "G96-3407-sidecar",
+      "expected_sha256": "ecd26a3b12e6b378f41de6fa90ce0dc2cd683f0273ffcb91f2206e77de47451b",
+      "family": "G96",
+      "filename": "epoch_59.pth.metadata.json",
+      "job_id": "1177671",
+      "kind": "sidecar",
+      "original_relative_path": "g96/seed3407/checkpoint/epoch_59.pth.metadata.json",
+      "seed": 3407
+    },
+    {
+      "artifact_id": "G96-3408-checkpoint",
+      "expected_sha256": "f27855430e04380e41fefffa79ef4c9cdb0db3c8a091c03f71fc18a8875e5df7",
+      "family": "G96",
+      "filename": "epoch_59.pth",
+      "job_id": "1177672",
+      "kind": "checkpoint",
+      "original_relative_path": "g96/seed3408/checkpoint/epoch_59.pth",
+      "seed": 3408
+    },
+    {
+      "artifact_id": "G96-3408-sidecar",
+      "expected_sha256": "d33c173f5f79f4b35271d7882911075eb70024052977b9261278f257c130378a",
+      "family": "G96",
+      "filename": "epoch_59.pth.metadata.json",
+      "job_id": "1177672",
+      "kind": "sidecar",
+      "original_relative_path": "g96/seed3408/checkpoint/epoch_59.pth.metadata.json",
+      "seed": 3408
+    },
+    {
+      "artifact_id": "G96-3409-checkpoint",
+      "expected_sha256": "ea8295d2416a9986f1d0e70132f8ca54d14d60305e241c83ab40c4b683b17ea9",
+      "family": "G96",
+      "filename": "epoch_59.pth",
+      "job_id": "1177673",
+      "kind": "checkpoint",
+      "original_relative_path": "g96/seed3409/checkpoint/epoch_59.pth",
+      "seed": 3409
+    },
+    {
+      "artifact_id": "G96-3409-sidecar",
+      "expected_sha256": "740d5a3b23c35c0b370d97a45f4c2676a5bd01af975d197dcb09f9be7d3f762a",
+      "family": "G96",
+      "filename": "epoch_59.pth.metadata.json",
+      "job_id": "1177673",
+      "kind": "sidecar",
+      "original_relative_path": "g96/seed3409/checkpoint/epoch_59.pth.metadata.json",
+      "seed": 3409
+    },
+    {
+      "artifact_id": "U128-3407-checkpoint",
+      "expected_sha256": "ee5232d14bd8ed5fe4835e8d715c8b1f7fe66de072a0b3c39bb0408f5120b1d8",
+      "family": "U128",
+      "filename": "epoch_59.pth",
+      "job_id": "1177674",
+      "kind": "checkpoint",
+      "original_relative_path": "u128/seed3407/checkpoint/epoch_59.pth",
+      "seed": 3407
+    },
+    {
+      "artifact_id": "U128-3407-sidecar",
+      "expected_sha256": "1725e48fb4b4ad35c3565c03e63a4a050e49a302808b2fda600aca30e65880a8",
+      "family": "U128",
+      "filename": "epoch_59.pth.metadata.json",
+      "job_id": "1177674",
+      "kind": "sidecar",
+      "original_relative_path": "u128/seed3407/checkpoint/epoch_59.pth.metadata.json",
+      "seed": 3407
+    },
+    {
+      "artifact_id": "U128-3408-checkpoint",
+      "expected_sha256": "5f3ae95128e1b2fd04e4d31140a8a2c48ad3048b864c3fce432be8583ab146ff",
+      "family": "U128",
+      "filename": "epoch_59.pth",
+      "job_id": "1177675",
+      "kind": "checkpoint",
+      "original_relative_path": "u128/seed3408/checkpoint/epoch_59.pth",
+      "seed": 3408
+    },
+    {
+      "artifact_id": "U128-3408-sidecar",
+      "expected_sha256": "1b779fb126e2b884444df842606d21762b61a77f040896834569c23a122817a7",
+      "family": "U128",
+      "filename": "epoch_59.pth.metadata.json",
+      "job_id": "1177675",
+      "kind": "sidecar",
+      "original_relative_path": "u128/seed3408/checkpoint/epoch_59.pth.metadata.json",
+      "seed": 3408
+    },
+    {
+      "artifact_id": "U128-3409-checkpoint",
+      "expected_sha256": "73b8c62ac66cbec0a39cfd1cda7584d1f7710ab4bceaa64c76b4c7765c90b7a5",
+      "family": "U128",
+      "filename": "epoch_59.pth",
+      "job_id": "1177676",
+      "kind": "checkpoint",
+      "original_relative_path": "u128/seed3409/checkpoint/epoch_59.pth",
+      "seed": 3409
+    },
+    {
+      "artifact_id": "U128-3409-sidecar",
+      "expected_sha256": "b1fca68ccfd8e03a9a4e7612e09bf93f0d6cd7187203f896145e22f1388dbb32",
+      "family": "U128",
+      "filename": "epoch_59.pth.metadata.json",
+      "job_id": "1177676",
+      "kind": "sidecar",
+      "original_relative_path": "u128/seed3409/checkpoint/epoch_59.pth.metadata.json",
+      "seed": 3409
+    }
+  ],
+  "forbidden_roots": [
+    "/data/run01/sczc063/yuzibo",
+    "/data/run01/sczc063/yuzibo/datasets",
+    "/data/run01/sczc063/yuzibo/models",
+    "/data/run01/sczc063/yuzibo/projects",
+    "/home",
+    "/root"
+  ],
+  "freeze_observed_at_beijing": "2026-09-01T07:35:59+08:00",
+  "implementation_base": "10aed28659a08fa703def278fc0f5f1422dcad89",
+  "manifest_sha256": "3754d24fd7115092f6f813bc8c7abf382959e17c607df24f5a27597db76b049d",
+  "pre_scan_observations": {
+    "candidate_payload_bytes_read_or_hashed": false,
+    "canonical_campaign_root_mtime": "2026-07-21T02:23:30.786436955+08:00",
+    "cleanup_catalog_mtime": "2026-08-01T23:38:10.972309416+08:00",
+    "cleanup_catalog_records_exact_nine_checkpoint_deletions": true,
+    "cleanup_catalog_records_exact_nine_sidecar_deletions": true,
+    "cleanup_catalog_records_no_backup_archive_snapshot_or_destination_field": true,
+    "conventional_snapshot_paths_present": false,
+    "documented_absence_cause": "The preexisting 2026-08-01 global checkpoint-retention operation deleted the exact nine checkpoint paths and their exact nine metadata sidecars.",
+    "no_archive_or_snapshot_payload_source_discovered": true
+  },
+  "protocol": {
+    "declared_protocol_sha256": "644f0c5648e0f5be004db3a3e7240a8f24a3c1d561f933502bccb8dca200cb46",
+    "path": "docs/methods/continuous_roi_s2_v2_2_protocol.json"
+  },
+  "quarantine": {
+    "final_root": "/data/run01/sczc063/yuzibo/projects/zoomtoken_continuous_roi_s2_v22_exact_byte_quarantine_v001_20260901",
+    "original_campaign_mutation_allowed": false,
+    "publish_only_after_all_18_exact_matches": true,
+    "read_only_after_publish": true
+  },
+  "scan_sources": [
+    {
+      "candidate_basenames": [
+        "epoch_59.pth",
+        "epoch_59.pth.metadata.json"
+      ],
+      "id": "canonical_exact_nine_campaign",
+      "kind": "payload_tree",
+      "max_depth": 4,
+      "preexisting_before_beijing": "2026-09-01T06:47:47+08:00",
+      "provenance_evidence": [
+        "research-wiki/source_registry.md:1339-1355",
+        "research-wiki/experiments/native-crop-s2-crop-sufficiency.md:104-128",
+        "research-wiki/log.md:740-772"
+      ],
+      "root": "/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/continuous_roi_s2_canonical/469652821b1ffb984ced17360a333cf1fed2700465ec6f8ac210b578e7dc5de9/campaigns/77c2149aa9fe7d6b19c777bebe5a95de710a0a738d89158431e69a9c5e78d066"
+    },
+    {
+      "candidate_payload_allowed": false,
+      "exact_files": [
+        {
+          "relative_path": "global_training_checkpoint_retention_20260801T151923Z.json",
+          "sha256": "86ce0553758d5fc31d35f9f4a3f32215c78feb6f09407f0ee812a14d4655ce93"
+        },
+        {
+          "relative_path": "global_training_checkpoint_retention_20260801T151923Z.apply.journal.jsonl",
+          "sha256": "c74c115acb51ce59765dc5a3f4fb3ab24d1049e9171ae923a191338f9e33ec46"
+        },
+        {
+          "relative_path": "global_training_checkpoint_retention_20260801T151923Z.applied.json",
+          "sha256": "69a73f6907557a952d3cc5b43f5ed91bc41ff73f8eb5ef9f67a2436a1561584e"
+        }
+      ],
+      "id": "global_training_checkpoint_retention_20260801_catalog",
+      "kind": "provenance_catalog",
+      "max_depth": 1,
+      "preexisting_before_beijing": "2026-09-01T06:47:47+08:00",
+      "provenance_evidence": [
+        "remote:/data/run01/sczc063/yuzibo/checkpoint_cleanup_manifests/global_training_checkpoint_retention_20260801T151923Z.json",
+        "remote:/data/run01/sczc063/yuzibo/checkpoint_cleanup_manifests/global_training_checkpoint_retention_20260801T151923Z.apply.journal.jsonl",
+        "remote:/data/run01/sczc063/yuzibo/checkpoint_cleanup_manifests/global_training_checkpoint_retention_20260801T151923Z.applied.json"
+      ],
+      "purpose": "Prove that the preexisting 2026-08-01 retention operation deleted the exact nine checkpoint paths and exact nine sidecars while recording no backup, archive, snapshot, copy, move, or destination field; never treat catalog text or stored hashes as artifact bytes.",
+      "root": "/data/run01/sczc063/yuzibo/checkpoint_cleanup_manifests"
+    }
+  ],
+  "schema_version": "continuous_roi_s2_v2_2_exact_byte_search_manifest_v1",
+  "task_id": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V2.2-EXACT-BYTE-PROVENANCE-CENSUS-AND-ALL-OR-NONE-RECOVERY-CLOSURE-v001"
+}
