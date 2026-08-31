@@ -2,7 +2,7 @@
 
 - 更新日期：2026-08-31
 - 名称说明：DUCA 是本项目沿用的方法路线名称。
-- 当前结论：固定 `K=384` 的任务状态时序 coreset 低于匹配均匀选择，`DUCA-Coverage-v1` 也未通过预注册中间机制门。冻结 H65 的三档边际预算诊断、96-state 联合邻域和最终 704-state 整视频枚举均未达到 `+0.8/+1.0` 联合门；Pro 对这一冻结检测器的旧动作空间作出的 `STOP` 继续有效。新的 Pro 数据准入裁决在该边界之外选择 `CONTINUE`：完整 200-video `training` 与完整 211-video OpenTAD `validation` 已正式准入，ActionFormer 212 只保留为来源差异。唯一模型任务是比较固定 K384 暴露与嵌套 K256/K384/K512 暴露下的完整 H65 Stage-2 系统；三种子按 `3407 → 3408 → 3409` 全部盲执行，所有训练和 prediction 封存后才一次性读取 held-out 指标。Builder 已在 `0d67d49c...` 完成最小实现并通过 N16R4 的 25 项聚焦测试；新的独立 Critic 已对精确 clean 提交返回 `PASS`，当前进入 PRE_RUN，仍没有训练、prediction、mAP 或成本结果。
+- 当前结论：固定 `K=384` 的任务状态时序 coreset 低于匹配均匀选择，`DUCA-Coverage-v1` 也未通过预注册中间机制门。冻结 H65 的三档边际预算诊断、96-state 联合邻域和最终 704-state 整视频枚举均未达到 `+0.8/+1.0` 联合门；Pro 对这一冻结检测器的旧动作空间作出的 `STOP` 继续有效。新的 Pro 数据准入裁决在该边界之外选择 `CONTINUE`：完整 200-video `training` 与完整 211-video OpenTAD `validation` 已正式准入，ActionFormer 212 只保留为来源差异。唯一模型任务是比较固定 K384 暴露与嵌套 K256/K384/K512 暴露下的完整 H65 Stage-2 系统；三种子按 `3407 → 3408 → 3409` 全部盲执行，所有训练和 prediction 封存后才一次性读取 held-out 指标。Builder 已在 `0d67d49c...` 完成最小实现并通过 N16R4 的 25 项聚焦测试；新的独立 Critic 已对精确 clean 提交返回 `PASS`。唯一 PRE_RUN Job `1262690` 已提交，仍没有完整训练、prediction、mAP 或成本结果。
 
 ## 1. 论文问题与应用价值
 
@@ -70,7 +70,7 @@ seed `3407`；单种子结果不能支持稳定性或显著性结论。
 5. 同一 H65 代码基座上的 matched allocation control 与 `DUCA-Coverage-v1` 已完成真实训练样本无标签重放门；该门未通过，因此两个 60 轮完整训练臂没有启动。当前对照实现是预算校准系统采样，而冻结设计曾概括为 Top-K；在 Pro 裁决该基线身份和失败机制前不得重提正式训练。
 6. 冻结 H65 的 K256/K384/K512 反事实边际预算实验、cap-release 诊断和 capped→released 差分邻域的 96 个联合状态枚举均已完成。50% 上限 oracle 的 Avg-mAP/mAP@0.7 增益为 `+0.726/+0.729` 个百分点；解除上限后反而降为 `+0.427/+0.450`。96-state 中没有状态同时达到 `+0.8/+1.0`；当前加性 Marginal-v1 及其本次视频级联合效用修复均按冻结规则停止。
 7. 整视频一致预算的跨视频单次转移 oracle 已完成：donor 视频所有窗口请求 K256，recipient 视频所有窗口请求 K512，其余视频保持 K384；候选总实际 observation 成本不超过固定 K384 的 `47110`。候选集合在读取标签或指标前完整生成，随后仅复用密封预测和相同评估器。1560 个有序对中 704 个合法候选完成评估，没有候选通过联合门；没有执行模型前向、训练、bootstrap 或 official test。
-8. 新设计的单变量实验比较固定 K384 暴露与 K256/K384/K512 多预算暴露下的完整 H65 Stage-2 系统。Pro 已冻结两臂从同一 H65 Stage-1 `epoch_29/state_dict_ema` 开始、在完整 200-video `training` 集合上各完成 6,000 次成功更新，并让候选概率按冻结 occurrence 计划的实际 observation 成本匹配 K384。旧 160/40 划分、有标签训练侧 mAP 门和 oracle 已撤销。三种子全部训练并正式预测封存后，两个模型在同一个无标签 fixed mixed-budget manifest 上直接比较，并在完整 211-video `validation` held-out 集合上一次性执行统一评测和 10,000 次整视频配对 bootstrap。Builder 已在 `0d67d49c...` 完成并公开最小实现，局部验证通过；独立 Critic 已返回 `PASS`，当前进入 PRE_RUN，仍没有训练、prediction 或实验结果。
+8. 新设计的单变量实验比较固定 K384 暴露与 K256/K384/K512 多预算暴露下的完整 H65 Stage-2 系统。Pro 已冻结两臂从同一 H65 Stage-1 `epoch_29/state_dict_ema` 开始、在完整 200-video `training` 集合上各完成 6,000 次成功更新，并让候选概率按冻结 occurrence 计划的实际 observation 成本匹配 K384。旧 160/40 划分、有标签训练侧 mAP 门和 oracle 已撤销。三种子全部训练并正式预测封存后，两个模型在同一个无标签 fixed mixed-budget manifest 上直接比较，并在完整 211-video `validation` held-out 集合上一次性执行统一评测和 10,000 次整视频配对 bootstrap。Builder 已在 `0d67d49c...` 完成并公开最小实现，局部验证和独立 Critic 均通过；唯一 PRE_RUN Job `1262690` 已提交，仍没有完整训练、prediction 或实验结果。
 
 主要指标为 tIoU 0.3、0.4、0.5、0.6、0.7 下的 mAP，以及五个阈值的平均值；同时报告短动作、边界定位和完整端到端计算成本。任何计算节省主张都必须来自实际执行的 VideoMAE 工作量和相同硬件条件下的测量，不能由 padding 后的名义帧数推断。
 

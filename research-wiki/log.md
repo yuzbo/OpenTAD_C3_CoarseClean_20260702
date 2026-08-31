@@ -7371,3 +7371,11 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
   配对 bootstrap 和实测成本口径。
 - Critic 的 Windows Python 受既有 PyTorch `c10.dll` 初始化错误阻断，未重复 N16R4 的 Linux 测试；远端已有
   `25 passed`。该终态解除 PRE_RUN 审查门，但没有产生训练、held-out prediction、mAP、置信区间或效率证据。
+
+## 2026-08-31 — H65 系统多预算暴露 PRE_RUN 提交
+
+- 精确提交 `0d67d49c2fc4a5f50aa784f7809c0dd936492109` 已通过 Git bundle 部署为 N16R4 clean snapshot
+  `/data/run01/sczc063/yuzibo/duca_h65_multibudget_0d67d49c_20260831`；远端 HEAD、sole parent 和 clean 状态已核对。
+- 唯一 PRE_RUN Job 为 `1262690`，输出根为
+  `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_0d67d49c_20260831`。该作业只运行冻结准备、聚焦测试、
+  编译、四次成功更新与 checkpoint/probe validator；未读取 held-out 指标，也未启动六个完整训练单元。

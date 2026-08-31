@@ -5066,3 +5066,12 @@ project decision.
 - The Critic could not import local Windows PyTorch because of the existing `c10.dll` initialization failure; this does not negate
   the N16R4 Linux `25 passed` result. The review gate is now closed, so the next action is PRE_RUN on the same exact commit.
 - This is code-admission evidence only. There is still no full training, held-out prediction, mAP, interval or efficiency result.
+
+### 2026-08-31 — Exact PRE_RUN submitted
+
+- Exact commit `0d67d49c2fc4a5f50aa784f7809c0dd936492109` is deployed as the clean N16R4 snapshot
+  `/data/run01/sczc063/yuzibo/duca_h65_multibudget_0d67d49c_20260831`.
+- The sole PRE_RUN is Slurm Job `1262690`, with immutable output root
+  `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_0d67d49c_20260831`.
+- It may only establish runtime eligibility through preparation, focused tests, compilation, four successful updates and strict
+  checkpoint/probe validation. It does not access held-out metrics and is not a performance or efficiency result.

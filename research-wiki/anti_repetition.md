@@ -3864,6 +3864,18 @@ updated: 2026-07-21
 - If that complete two-arm, three-seed experiment fails its frozen mixed-workload gain, K384 safety, uncertainty or real-cost gates,
   stop the H65 K256/K384/K512 dynamic-budget mainline. Do not use another mechanism as a recovery loop for that result.
 
+### 2026-08-31 — H65 system multi-budget PRE_RUN identity
+
+- The only implementation is
+  `feature/duca-h65-system-multibudget-exposure-v1-20260831@0d67d49c2fc4a5f50aa784f7809c0dd936492109`,
+  with sole parent H65 `04c35a3b...`; a fresh independent Critic returned `PASS`.
+- The sole PRE_RUN is Job `1262690` against clean snapshot
+  `/data/run01/sczc063/yuzibo/duca_h65_multibudget_0d67d49c_20260831` and output root
+  `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_0d67d49c_20260831`. Do not duplicate, restart, alter or interpret it
+  before terminal.
+- PRE_RUN success authorizes only the already frozen six complete training units. It is not model, mAP, interval, cost-saving or
+  paper evidence; PRE_RUN failure must be classified before any correction or training submission.
+
 ### 2026-08-31 — Admitted identity evidence must use OpenTAD 200/211 literally
 
 - Do not reopen the 211/212 question by count or naming convention. The clean `fdd2bcdd...` audit has materialized the literal

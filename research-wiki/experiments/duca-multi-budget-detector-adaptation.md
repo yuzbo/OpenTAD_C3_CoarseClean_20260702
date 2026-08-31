@@ -130,3 +130,11 @@ padding 不替代真实成本。
 裁剪、完整数据边界、九份封存、一次性 annotation 解析、官方 evaluator、配对 bootstrap 和成本口径。Critic 在当前
 Windows Python 中受 PyTorch `c10.dll` 初始化限制而未重复运行 pytest；该环境限制不覆盖 Builder 已在 N16R4 得到的
 `25 passed` Linux 结果。当前已解除 PRE_RUN 审查门，但仍没有模型性能或效率证据。
+
+## PRE_RUN 提交
+
+精确 clean commit `0d67d49c...` 已部署到 N16R4：
+`/data/run01/sczc063/yuzibo/duca_h65_multibudget_0d67d49c_20260831`。唯一 PRE_RUN Job 为 `1262690`，
+输出根为 `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_0d67d49c_20260831`。它只执行冻结准备、
+25 项聚焦测试、编译、四次成功更新和 checkpoint/恢复合同核验，不读取 held-out 指标。作业终态前没有训练准入
+结论，也不得重复提交同一 PRE_RUN。
