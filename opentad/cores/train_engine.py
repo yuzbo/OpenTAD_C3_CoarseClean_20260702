@@ -498,6 +498,13 @@ def _selector_probe_snapshot(model):
             snapshot["frontend_only_detector_skipped"] = bool(
                 summary["frontend_only_detector_skipped"]
             )
+        exposure = summary.get("h65_multi_budget_exposure")
+        if isinstance(exposure, dict):
+            snapshot["h65_multi_budget_exposure"] = _probe_jsonable(exposure)
+    backbone = getattr(module, "backbone", None)
+    execution_profile = getattr(backbone, "last_execution_profile", None)
+    if isinstance(execution_profile, dict):
+        snapshot["backbone_execution_profile"] = _probe_jsonable(execution_profile)
     counterfactual = getattr(selector, "last_counterfactual_summary", None)
     if isinstance(counterfactual, dict):
         snapshot["counterfactual"] = {

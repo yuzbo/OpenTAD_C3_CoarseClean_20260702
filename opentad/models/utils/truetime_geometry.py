@@ -197,7 +197,7 @@ def inverse_map_prediction_segments(predictions: Mapping, time_map: TrueTimeMap,
     mapped["source_coordinate_space"] = source_space
     mapped["coordinate_space"] = time_map.true_time_axis_name
     mapped["true_time_map"] = {
-        "selected_positions": [int(item) for item in time_map.selected_positions.long().tolist()],
+        "selected_positions": [float(item) for item in time_map.selected_positions.tolist()],
         "dense_len": int(time_map.dense_len),
         "valid_len": int(time_map.valid_len),
         "selected_axis_name": time_map.selected_axis_name,

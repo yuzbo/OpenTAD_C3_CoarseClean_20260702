@@ -1,5 +1,6 @@
 import inspect
 import random
+import time
 from contextlib import nullcontext
 
 import numpy as np
@@ -20,6 +21,22 @@ _PC_OT_MRAS_VALUE_TARGET_KEYS = (
     "teacher_value_targets",
     "pc_ot_mras_value_manifest",
 )
+
+
+def _duca_runtime_clock(tensor, *, enabled, synchronize):
+    if not enabled:
+        return None
+    if synchronize and torch.is_tensor(tensor) and tensor.is_cuda:
+        torch.cuda.synchronize(tensor.device)
+    return time.perf_counter()
+
+
+def _duca_runtime_elapsed(start, tensor, *, enabled, synchronize):
+    if not enabled or start is None:
+        return None
+    if synchronize and torch.is_tensor(tensor) and tensor.is_cuda:
+        torch.cuda.synchronize(tensor.device)
+    return (time.perf_counter() - start) * 1000.0
 
 
 @DETECTORS.register_module()
@@ -149,6 +166,7 @@ class ActionFormer(SingleStageDetector):
         losses = dict()
         selector_loss_keys = set()
         raw_selector_context = None
+        backbone_context = None
         detector_rng_state = self._capture_protected_detector_rng(inputs)
         if self.frame_selector is not None and not skip_frame_selector:
             raw_selector_context = (inputs, masks, metas, gt_segments, gt_labels)
@@ -165,6 +183,7 @@ class ActionFormer(SingleStageDetector):
             metas = selector_outputs.get("metas", metas)
             gt_segments = selector_outputs["gt_segments"]
             gt_labels = selector_outputs["gt_labels"]
+            backbone_context = selector_outputs.get("backbone_context")
             self._validate_protected_selector_contract(
                 inputs,
                 masks,
@@ -219,7 +238,11 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = (
+                self.backbone(inputs)
+                if backbone_context is None
+                else self.backbone(inputs, duca_multibudget_context=backbone_context)
+            )
         else:
             x = inputs
 
@@ -489,7 +512,21 @@ class ActionFormer(SingleStageDetector):
 
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
         self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
+        profile_enabled = bool(
+            self.frame_selector is not None
+            and getattr(self.frame_selector, "profile_runtime", False)
+        )
+        profile_sync = bool(
+            profile_enabled and getattr(self.frame_selector, "profile_sync_cuda", True)
+        )
+        total_start = _duca_runtime_clock(
+            inputs, enabled=profile_enabled, synchronize=profile_sync
+        )
         detector_rng_state = self._capture_protected_detector_rng(inputs)
+        backbone_context = None
+        selector_start = _duca_runtime_clock(
+            inputs, enabled=profile_enabled, synchronize=profile_sync
+        )
         if self.frame_selector is not None:
             selector_outputs = self.frame_selector.forward_test(
                 inputs=inputs,
@@ -499,6 +536,7 @@ class ActionFormer(SingleStageDetector):
             inputs = selector_outputs["inputs"]
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
+            backbone_context = selector_outputs.get("backbone_context")
             self._validate_protected_selector_contract(
                 inputs,
                 masks,
@@ -506,13 +544,29 @@ class ActionFormer(SingleStageDetector):
             )
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
             self._require_selector_remap_metadata(metas)
+        selector_ms = _duca_runtime_elapsed(
+            selector_start, inputs, enabled=profile_enabled, synchronize=profile_sync
+        )
 
         self._restore_protected_detector_rng(detector_rng_state)
+        backbone_start = _duca_runtime_clock(
+            inputs, enabled=profile_enabled, synchronize=profile_sync
+        )
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = (
+                self.backbone(inputs)
+                if backbone_context is None
+                else self.backbone(inputs, duca_multibudget_context=backbone_context)
+            )
         else:
             x = inputs
+        videomae_ms = _duca_runtime_elapsed(
+            backbone_start, x, enabled=profile_enabled, synchronize=profile_sync
+        )
 
+        detector_start = _duca_runtime_clock(
+            x, enabled=profile_enabled, synchronize=profile_sync
+        )
         self._assert_feature_mask_temporal_match(x, masks, "before token_compressor")
         if self.token_compressor is not None:
             compressor_outputs = self.token_compressor.forward_test(
@@ -547,6 +601,24 @@ class ActionFormer(SingleStageDetector):
             x, masks, metas = self._call_neck_forward(x, masks, metas=metas)
 
         rpn_proposals, rpn_scores = self._call_rpn_head_forward_test(x, masks, metas=metas, **kwargs)
+        detector_ms = _duca_runtime_elapsed(
+            detector_start, x, enabled=profile_enabled, synchronize=profile_sync
+        )
+        total_model_ms = _duca_runtime_elapsed(
+            total_start, x, enabled=profile_enabled, synchronize=profile_sync
+        )
+        if profile_enabled:
+            runtime_profile = {
+                "selector_ms": float(selector_ms),
+                "videomae_ms": float(videomae_ms),
+                "detector_ms": float(detector_ms),
+                "total_model_ms": float(total_model_ms),
+                "cuda_synchronized": bool(profile_sync),
+            }
+            metas = [
+                {**dict(meta), "duca_runtime_profile": dict(runtime_profile)}
+                for meta in metas
+            ]
         self._last_forward_test_metas = metas
         predictions = rpn_proposals, rpn_scores
         return predictions

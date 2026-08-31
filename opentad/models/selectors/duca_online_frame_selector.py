@@ -21,6 +21,8 @@ from ..duca import (
     DucaTemporalSamplingContract,
     ZeroShotActionnessSource,
     duca_losses,
+    interpolate_h65_positions_to_detector_grid,
+    nested_h65_budget_positions,
 )
 from ..duca.counterfactual_utility import (
     build_finite_hard_one_swap_candidates,
@@ -516,6 +518,74 @@ def _add_protected_structured_transport_gradient_path(
 class DucaOnlineFrameSelector(nn.Module):
     """Registry-buildable full-window DUCA selector for offline TAD."""
 
+    @staticmethod
+    def _normalize_multi_budget_exposure(
+        config: Optional[Mapping[str, Any]],
+    ) -> Optional[dict[str, Any]]:
+        if config is None:
+            return None
+        cfg = dict(config)
+        if cfg.pop("enabled", True) is not True:
+            raise ValueError("multi_budget_exposure must be omitted instead of disabled")
+        budgets = tuple(int(value) for value in cfg.pop("budgets", (256, 384, 512)))
+        if budgets != (256, 384, 512):
+            raise ValueError("multi_budget_exposure budgets are frozen to 256/384/512")
+        total_updates = int(cfg.pop("total_updates", 6000))
+        if total_updates != 6000:
+            raise ValueError("multi_budget_exposure is frozen to 6000 successful updates")
+        detector_length = int(cfg.pop("detector_length", 384))
+        packet_size = int(cfg.pop("packet_size", 16))
+        if detector_length != 384 or packet_size != 16:
+            raise ValueError("multi_budget_exposure keeps a 384-point detector and 16-frame packets")
+        seed = int(cfg.pop("seed"))
+        raw_probabilities = cfg.pop("probabilities")
+        probabilities = {
+            int(key): float(value) for key, value in dict(raw_probabilities).items()
+        }
+        if set(probabilities) != set(budgets):
+            raise ValueError("multi_budget_exposure probabilities must define K256/K384/K512")
+        if abs(probabilities[384] - 0.5) > 1.0e-12:
+            raise ValueError("p384 is frozen to 0.5")
+        if any(not math.isfinite(value) or value < 0.0 or value > 0.5 for value in probabilities.values()):
+            raise ValueError("multi-budget probabilities must be finite and lie in [0,0.5]")
+        if abs(sum(probabilities.values()) - 1.0) > 1.0e-9:
+            raise ValueError("multi-budget probabilities must sum to one")
+
+        count_384 = total_updates // 2
+        count_256 = int(round(probabilities[256] * total_updates))
+        count_512 = total_updates - count_384 - count_256
+        counts = {256: count_256, 384: count_384, 512: count_512}
+        for budget in budgets:
+            if abs(counts[budget] / total_updates - probabilities[budget]) > 1.0 / total_updates + 1.0e-12:
+                raise ValueError("6000-update exposure counts cannot represent the calibrated probabilities")
+
+        evaluation_budget = int(cfg.pop("evaluation_budget", 384))
+        if evaluation_budget not in budgets:
+            raise ValueError("evaluation_budget must be 256, 384, or 512")
+        evaluation_manifest = cfg.pop("evaluation_manifest", None)
+        if evaluation_manifest is not None:
+            evaluation_manifest = {
+                str(key): int(value) for key, value in dict(evaluation_manifest).items()
+            }
+            invalid = sorted(
+                key for key, value in evaluation_manifest.items() if value not in budgets
+            )
+            if invalid:
+                raise ValueError("evaluation_manifest contains a budget outside 256/384/512")
+        if cfg:
+            raise ValueError(f"unknown multi_budget_exposure fields: {sorted(cfg)}")
+        return {
+            "budgets": budgets,
+            "probabilities": probabilities,
+            "counts": counts,
+            "total_updates": total_updates,
+            "seed": seed,
+            "detector_length": detector_length,
+            "packet_size": packet_size,
+            "evaluation_budget": evaluation_budget,
+            "evaluation_manifest": evaluation_manifest,
+        }
+
     def __init__(
         self,
         in_channels: int,
@@ -594,6 +664,7 @@ class DucaOnlineFrameSelector(nn.Module):
         selected_positions_unit: str = "original_time_index",
         true_time_source_axis: str = TRUE_TIME_AXIS,
         temporal_sampling_contract: Optional[Mapping[str, Any]] = None,
+        multi_budget_exposure: Optional[Mapping[str, Any]] = None,
         loss_weights: Optional[Mapping[str, float]] = None,
         actionness_loss_mode: str = "posterior_bce",
         strict_loss_contract: bool = False,
@@ -810,6 +881,9 @@ class DucaOnlineFrameSelector(nn.Module):
             if temporal_sampling_contract is None
             else DucaTemporalSamplingContract.from_mapping(dict(temporal_sampling_contract))
         )
+        self.multi_budget_exposure = self._normalize_multi_budget_exposure(
+            multi_budget_exposure
+        )
         self.loss_weights = dict(loss_weights or {})
         self.actionness_loss_mode = str(actionness_loss_mode)
         if self.actionness_loss_mode not in {"posterior_bce", "class_balanced_mean"}:
@@ -884,6 +958,15 @@ class DucaOnlineFrameSelector(nn.Module):
                 raise ValueError("temporal sampling contract max gap must match selector max_unselected_hole")
             if contract.detector_axis != self.detector_output_coordinate_space:
                 raise ValueError("temporal sampling contract detector_axis must match selector output axis")
+        if self.multi_budget_exposure is not None:
+            if self.budget_mode != "fixed" or int(self.budget) != 384:
+                raise ValueError("H65 multi-budget exposure requires the fixed K384 selector")
+            if self.selector_variant != "transition_only":
+                raise ValueError("H65 multi-budget exposure requires the transition-only H65 system")
+            if self.acquisition_policy != "budget_calibrated_sampling_rate":
+                raise ValueError("H65 multi-budget exposure requires budget_calibrated_sampling_rate")
+            if self.detector_output_coordinate_space != SELECTED_AXIS:
+                raise ValueError("H65 multi-budget exposure keeps the 384-point selected detector axis")
         if self.dense_window_size is not None and self.dense_window_size <= 0:
             raise ValueError("dense_window_size must be positive")
         if not self.no_ledger_decision:
@@ -1162,6 +1245,218 @@ class DucaOnlineFrameSelector(nn.Module):
             return
         setattr(self, name, copy.deepcopy(value))
 
+    @staticmethod
+    def _evaluation_manifest_key(meta: Mapping[str, Any]) -> str:
+        video_name = meta.get("video_name")
+        window_start = meta.get("window_start_frame")
+        if video_name in (None, "") or window_start is None:
+            raise ValueError(
+                "mixed-budget evaluation requires video_name and window_start_frame metadata"
+            )
+        return f"{video_name}|{int(window_start)}"
+
+    def _requested_multi_budget_exposure(
+        self,
+        *,
+        batch_size: int,
+        device: torch.device,
+        metas,
+        explicit_budget=None,
+    ) -> Optional[torch.Tensor]:
+        cfg = self.multi_budget_exposure
+        if cfg is None:
+            return None
+        budgets = cfg["budgets"]
+        if self.training:
+            if explicit_budget is not None:
+                raise ValueError("training multi-budget exposure forbids an external budget override")
+            step = int(self._loss_weight_schedule_step.detach().item())
+            if step < 0 or step >= int(cfg["total_updates"]):
+                raise RuntimeError(
+                    f"multi-budget exposure step {step} is outside the frozen 6000-update course"
+                )
+            # A bijection over [0,6000) gives exact preregistered counts while
+            # consuming no data/augmentation RNG.  AMP replay and resume reuse
+            # the same successful-update index and therefore the same budget.
+            rank = (step * 2593 + int(cfg["seed"])) % int(cfg["total_updates"])
+            if rank < int(cfg["counts"][256]):
+                requested = 256
+            elif rank < int(cfg["counts"][256] + cfg["counts"][384]):
+                requested = 384
+            else:
+                requested = 512
+            return torch.full((batch_size,), requested, device=device, dtype=torch.long)
+
+        if explicit_budget is not None:
+            requested = torch.as_tensor(explicit_budget, device=device, dtype=torch.long).reshape(-1)
+            if requested.numel() == 1:
+                requested = requested.expand(batch_size)
+            if requested.shape != (batch_size,) or torch.any(
+                ~torch.isin(requested, torch.tensor(budgets, device=device, dtype=torch.long))
+            ):
+                raise ValueError("evaluation budget must contain one of 256/384/512 per row")
+            return requested
+        manifest = cfg.get("evaluation_manifest")
+        if manifest is not None:
+            if metas is None or len(metas) != batch_size:
+                raise ValueError("mixed-budget evaluation manifest requires one metadata row per sample")
+            values = []
+            for meta in metas:
+                key = self._evaluation_manifest_key(meta)
+                if key not in manifest:
+                    raise ValueError(f"mixed-budget evaluation manifest is missing {key!r}")
+                values.append(int(manifest[key]))
+            return torch.tensor(values, device=device, dtype=torch.long)
+        return torch.full(
+            (batch_size,), int(cfg["evaluation_budget"]), device=device, dtype=torch.long
+        )
+
+    def _apply_h65_multi_budget_exposure(
+        self,
+        *,
+        grid,
+        scores: dict[str, Any],
+        valid_mask: torch.Tensor,
+        requested_budget: torch.Tensor,
+    ) -> dict[str, Any]:
+        cfg = self.multi_budget_exposure
+        if cfg is None:
+            raise RuntimeError("multi-budget exposure configuration is missing")
+        priority = scores.get("sampling_rates")
+        assignment = scores.get("structured_soft_slot_assignment")
+        if priority is None or assignment is None:
+            raise RuntimeError("H65 multi-budget exposure requires sampling rates and slot assignments")
+        nested = nested_h65_budget_positions(
+            grid.selected_positions,
+            priority,
+            valid_mask,
+        )
+        batch_size, temporal_len = valid_mask.shape
+        if requested_budget.shape != (batch_size,):
+            raise ValueError("requested multi-budget exposure must be [B]")
+
+        actual_count = torch.empty_like(requested_budget)
+        effective_budget = torch.empty_like(requested_budget)
+        execution_slots = torch.empty_like(requested_budget)
+        collapsed = torch.empty_like(requested_budget, dtype=torch.bool)
+        for budget in cfg["budgets"]:
+            rows = requested_budget == int(budget)
+            actual_count[rows] = nested.actual_count_by_budget[budget][rows]
+            effective_budget[rows] = nested.effective_budget_by_requested[budget][rows]
+            execution_slots[rows] = nested.execution_slots_by_budget[budget][rows]
+            collapsed[rows] = nested.collapsed_to_baseline_by_budget[budget][rows]
+        max_execution = int(execution_slots.max().item())
+        exposure_positions = torch.full(
+            (batch_size, max_execution),
+            -1,
+            device=grid.selected_positions.device,
+            dtype=torch.long,
+        )
+        for budget in cfg["budgets"]:
+            rows = torch.nonzero(requested_budget == int(budget), as_tuple=False).flatten()
+            for row in rows.tolist():
+                count = int(actual_count[row].item())
+                exposure_positions[row, :count] = nested.positions_by_budget[budget][row, :count]
+        exposure_mask = exposure_positions >= 0
+
+        baseline_positions = grid.selected_positions.to(device=exposure_positions.device, dtype=torch.long)
+        baseline_assignment = assignment
+        if baseline_assignment.shape != (batch_size, 384, temporal_len):
+            raise ValueError("the H65 baseline slot assignment must be [B,384,T]")
+        dense_to_baseline_slot = torch.full(
+            (batch_size, temporal_len), -1, device=exposure_positions.device, dtype=torch.long
+        )
+        baseline_active = baseline_positions >= 0
+        for row in range(batch_size):
+            count = int(baseline_active[row].long().sum().item())
+            if count:
+                dense_to_baseline_slot[row, baseline_positions[row, :count]] = torch.arange(
+                    count, device=exposure_positions.device, dtype=torch.long
+                )
+        source_slot = torch.gather(dense_to_baseline_slot, 1, exposure_positions.clamp_min(0))
+        gathered_assignment = torch.gather(
+            baseline_assignment,
+            1,
+            source_slot.clamp_min(0)[:, :, None].expand(-1, -1, temporal_len),
+        )
+        hard_added_assignment = F.one_hot(
+            exposure_positions.clamp_min(0), num_classes=temporal_len
+        ).to(dtype=baseline_assignment.dtype)
+        exposure_assignment = torch.where(
+            (source_slot >= 0)[:, :, None],
+            gathered_assignment,
+            hard_added_assignment,
+        )
+        exposure_assignment = exposure_assignment * exposure_mask[:, :, None].to(
+            dtype=exposure_assignment.dtype
+        )
+
+        baseline_detector_grid = scores.get("detector_grid_positions", baseline_positions)
+        baseline_detector_grid = baseline_detector_grid.to(
+            device=exposure_positions.device, dtype=torch.float32
+        )
+        if baseline_detector_grid.shape != baseline_positions.shape:
+            raise ValueError("the H65 baseline detector grid must align with its 384 slots")
+        detector_grid = torch.empty(
+            (batch_size, int(cfg["detector_length"])),
+            device=exposure_positions.device,
+            dtype=torch.float32,
+        )
+        detector_mask = torch.ones(
+            (batch_size, int(cfg["detector_length"])),
+            device=exposure_positions.device,
+            dtype=torch.bool,
+        )
+        baseline_detector_mask = baseline_positions >= 0
+        for budget in cfg["budgets"]:
+            rows = torch.nonzero(requested_budget == int(budget), as_tuple=False).flatten()
+            if rows.numel() == 0:
+                continue
+            budget_positions = nested.positions_by_budget[budget][rows]
+            budget_counts = nested.actual_count_by_budget[budget][rows]
+            interpolated = interpolate_h65_positions_to_detector_grid(
+                budget_positions,
+                budget_counts,
+                detector_length=int(cfg["detector_length"]),
+            )
+            detector_grid[rows] = interpolated
+        baseline_rows = (effective_budget == 384)
+        detector_grid[baseline_rows] = baseline_detector_grid[baseline_rows]
+        detector_mask[baseline_rows] = baseline_detector_mask[baseline_rows]
+
+        scores["baseline_structured_soft_slot_assignment"] = baseline_assignment
+        scores["structured_soft_slot_assignment"] = exposure_assignment
+        scores["h65_multi_budget_exposure"] = {
+            "requested_budget": requested_budget,
+            "effective_budget": effective_budget,
+            "actual_observations": actual_count,
+            "execution_slots": execution_slots,
+            "collapsed_to_baseline": collapsed,
+            "positions": exposure_positions,
+            "detector_grid_positions": detector_grid,
+        }
+        scores["detector_contribution_positions"] = exposure_positions
+        return {
+            "positions": exposure_positions,
+            "slot_mask": exposure_mask,
+            "detector_grid_positions": detector_grid,
+            "detector_mask": detector_mask,
+            "requested_budget": requested_budget,
+            "effective_budget": effective_budget,
+            "actual_observations": actual_count,
+            "execution_slots": execution_slots,
+            "collapsed_to_baseline": collapsed,
+            "backbone_context": {
+                "requested_budget": requested_budget,
+                "effective_budget": effective_budget,
+                "actual_observations": actual_count,
+                "execution_slots": execution_slots,
+                "collapsed_to_baseline": collapsed,
+                "detector_length": int(cfg["detector_length"]),
+                "packet_size": int(cfg["packet_size"]),
+            },
+        }
+
     def forward_train(
         self,
         inputs: torch.Tensor,
@@ -1355,6 +1650,7 @@ class DucaOnlineFrameSelector(nn.Module):
             "losses": selector_losses,
             "selector_outputs": outputs["selector_outputs"],
             "counterfactual_request": counterfactual_request,
+            "backbone_context": outputs.get("backbone_context"),
         }
 
     @staticmethod
@@ -1547,7 +1843,9 @@ class DucaOnlineFrameSelector(nn.Module):
             )
             dense_target = self._interpolate_selected_contribution(
                 contribution,
-                grid.selected_positions,
+                selector_outputs.get(
+                    "detector_contribution_positions", grid.selected_positions
+                ),
                 valid,
             ).detach()
             loss, active = self._contribution_distribution_loss(
@@ -2144,6 +2442,7 @@ class DucaOnlineFrameSelector(nn.Module):
             "masks": outputs["masks"],
             "metas": outputs["metas"],
             "selector_outputs": outputs["selector_outputs"],
+            "backbone_context": outputs.get("backbone_context"),
         }
 
     def _apply_training_uniform_companion(self, grid, scores, valid_mask):
@@ -2265,6 +2564,12 @@ class DucaOnlineFrameSelector(nn.Module):
         if descriptors.shape[-1] != self.in_channels:
             raise ValueError(f"DUCA selector expected {self.in_channels} channels, got {descriptors.shape[-1]}")
         masks = masks.to(device=inputs.device, dtype=torch.bool)
+        exposure_requested_budget = self._requested_multi_budget_exposure(
+            batch_size=int(masks.shape[0]),
+            device=inputs.device,
+            metas=metas,
+            explicit_budget=budget,
+        )
         external_actionness = self._external_actionness_from_metas(metas, descriptors=descriptors)
         online_actionness = None
         if external_actionness is None and self.raw_actionness_source is not None:
@@ -2315,7 +2620,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 )
         grid, scores = self.adapter.acquire(
             descriptors,
-            budget=budget,
+            budget=None if exposure_requested_budget is not None else budget,
             valid_mask=masks,
             actionness_logits=actionness_logits,
             p_action=p_action,
@@ -2371,22 +2676,36 @@ class DucaOnlineFrameSelector(nn.Module):
             scores["online_actionness_source"] = online_actionness["source_name"]
             actionness_source_name = online_actionness["source_name"]
         validate_actionness_provenance(scores.get("provenance", {}), context="DUCA selector actionness provenance")
-        positions = grid.selected_positions.to(device=inputs.device)
-        detector_grid_positions = scores.get("detector_grid_positions")
-        if detector_grid_positions is None:
-            detector_grid_positions = positions
-        detector_grid_positions = detector_grid_positions.to(device=inputs.device, dtype=torch.long)
-        if detector_grid_positions.shape != positions.shape:
-            raise ValueError("detector_grid_positions must align with acquisition positions")
-        if not torch.equal(detector_grid_positions >= 0, positions >= 0):
-            raise ValueError("detector-grid and acquisition slot masks must be identical")
+        exposure = None
+        if exposure_requested_budget is not None:
+            exposure = self._apply_h65_multi_budget_exposure(
+                grid=grid,
+                scores=scores,
+                valid_mask=masks,
+                requested_budget=exposure_requested_budget,
+            )
+            positions = exposure["positions"]
+            detector_grid_positions = exposure["detector_grid_positions"]
+            slot_mask = exposure["slot_mask"]
+        else:
+            positions = grid.selected_positions.to(device=inputs.device)
+            detector_grid_positions = scores.get("detector_grid_positions")
+            if detector_grid_positions is None:
+                detector_grid_positions = positions
+            detector_grid_positions = detector_grid_positions.to(device=inputs.device, dtype=torch.long)
+            if detector_grid_positions.shape != positions.shape:
+                raise ValueError("detector_grid_positions must align with acquisition positions")
+            if not torch.equal(detector_grid_positions >= 0, positions >= 0):
+                raise ValueError("detector-grid and acquisition slot masks must be identical")
+            slot_mask = positions >= 0
         temporal_contract_audit = None
         if self.temporal_sampling_contract is not None:
-            temporal_contract_audit = self.temporal_sampling_contract.audit_positions(positions, masks)
+            temporal_contract_audit = self.temporal_sampling_contract.audit_positions(
+                grid.selected_positions, masks
+            )
             scores["temporal_sampling_contract_audit"] = temporal_contract_audit
         self._last_selected_positions = positions.detach()
         self._last_detector_grid_positions = detector_grid_positions.detach()
-        slot_mask = positions >= 0
         gather_start = _sync_profile_clock(inputs, enabled=sync_enabled) if profile_enabled else None
         hard_gathered = _gather_time(inputs, positions, slot_mask)
         hard_selected = hard_gathered
@@ -2528,7 +2847,11 @@ class DucaOnlineFrameSelector(nn.Module):
             bridge_ms=bridge_ms,
         )
         scores["compute_profile"] = compute_profile
-        selected_masks = slot_mask.to(device=inputs.device, dtype=torch.bool)
+        selected_masks = (
+            exposure["detector_mask"]
+            if exposure is not None
+            else slot_mask.to(device=inputs.device, dtype=torch.bool)
+        )
         scores["grid"] = grid
         scores["hard_selected_inputs"] = hard_gathered
         if contribution_teacher_inputs is not None:
@@ -2568,7 +2891,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 ),
             }
         scores["sparse_grid"] = grid
-        selected_counts = selected_masks.long().sum(dim=1).detach().cpu().tolist()
+        selected_counts = slot_mask.long().sum(dim=1).detach().cpu().tolist()
         self._record_pending_dynamic_budget_dual(scores, grid)
         self.last_forward_summary = {
             self.metadata_keys["selected_count"]: int(selected_counts[0]) if selected_counts else 0,
@@ -2621,6 +2944,24 @@ class DucaOnlineFrameSelector(nn.Module):
             ],
             "inference_uniform_companion": False,
         }
+        if exposure is not None:
+            self.last_forward_summary["h65_multi_budget_exposure"] = {
+                "requested_budget": [
+                    int(value) for value in exposure["requested_budget"].detach().cpu().tolist()
+                ],
+                "effective_budget": [
+                    int(value) for value in exposure["effective_budget"].detach().cpu().tolist()
+                ],
+                "actual_observations": [
+                    int(value) for value in exposure["actual_observations"].detach().cpu().tolist()
+                ],
+                "execution_slots": [
+                    int(value) for value in exposure["execution_slots"].detach().cpu().tolist()
+                ],
+                "collapsed_to_baseline": [
+                    bool(value) for value in exposure["collapsed_to_baseline"].detach().cpu().tolist()
+                ],
+            }
         if temporal_contract_audit is not None:
             self.last_forward_summary["temporal_sampling_contract"] = temporal_contract_audit
         if isinstance(schedule_state, Mapping):
@@ -2631,11 +2972,14 @@ class DucaOnlineFrameSelector(nn.Module):
             "metas": self._write_metas(
                 metas,
                 grid,
+                acquisition_positions=positions,
                 detector_grid_positions=detector_grid_positions,
+                exposure=exposure,
                 actionness_source_name=actionness_source_name,
                 compute_profile=compute_profile,
             ),
             "selector_outputs": scores,
+            "backbone_context": None if exposure is None else exposure["backbone_context"],
         }
 
     @staticmethod
@@ -3016,7 +3360,9 @@ class DucaOnlineFrameSelector(nn.Module):
         metas,
         grid,
         *,
+        acquisition_positions: Optional[torch.Tensor] = None,
         detector_grid_positions: Optional[torch.Tensor] = None,
+        exposure: Optional[Mapping[str, Any]] = None,
         actionness_source_name: str,
         compute_profile: Optional[Mapping[str, Any]] = None,
     ) -> list[dict[str, Any]]:
@@ -3027,28 +3373,58 @@ class DucaOnlineFrameSelector(nn.Module):
             if len(metas) != batch:
                 raise ValueError("metas length must match batch size")
             out = [dict(meta) for meta in metas]
-        positions_cpu = grid.selected_positions.detach().cpu().long()
+        if acquisition_positions is None:
+            acquisition_positions = grid.selected_positions
+        positions_cpu = acquisition_positions.detach().cpu().long()
         if detector_grid_positions is None:
             detector_grid_positions = grid.selected_positions
-        if detector_grid_positions.shape != grid.selected_positions.shape:
-            raise ValueError("detector_grid_positions must align with acquisition positions")
-        detector_positions_cpu = detector_grid_positions.detach().cpu().long()
+        if detector_grid_positions.ndim != 2 or detector_grid_positions.shape[0] != batch:
+            raise ValueError("detector_grid_positions must be [B,L]")
+        detector_positions_cpu = detector_grid_positions.detach().cpu()
         valid_lens = grid.valid_len.detach().cpu().long()
-        requested_budget = grid.requested_budget.detach().cpu().long()
-        effective_budget = grid.effective_budget.detach().cpu().long()
+        requested_budget = (
+            grid.requested_budget
+            if exposure is None
+            else exposure["requested_budget"]
+        ).detach().cpu().long()
+        effective_budget = (
+            grid.effective_budget
+            if exposure is None
+            else exposure["effective_budget"]
+        ).detach().cpu().long()
+        actual_observations = (
+            (positions_cpu >= 0).long().sum(dim=1)
+            if exposure is None
+            else exposure["actual_observations"].detach().cpu().long()
+        )
+        execution_slots = (
+            torch.full_like(actual_observations, int(positions_cpu.shape[1]))
+            if exposure is None
+            else exposure["execution_slots"].detach().cpu().long()
+        )
+        collapsed = (
+            torch.zeros(batch, dtype=torch.bool)
+            if exposure is None
+            else exposure["collapsed_to_baseline"].detach().cpu().bool()
+        )
         for idx, meta in enumerate(out):
             positions = [int(item) for item in positions_cpu[idx].tolist() if int(item) >= 0]
-            detector_positions = [
-                int(item) for item in detector_positions_cpu[idx].tolist() if int(item) >= 0
-            ]
-            if len(detector_positions) != len(positions):
-                raise ValueError("detector-grid and acquisition positions must have the same active K")
+            if exposure is None:
+                detector_positions = [
+                    int(item) for item in detector_positions_cpu[idx].tolist() if int(item) >= 0
+                ]
+                if len(detector_positions) != len(positions):
+                    raise ValueError("detector-grid and acquisition positions must have the same active K")
+            else:
+                detector_positions = [float(item) for item in detector_positions_cpu[idx].tolist()]
+                if len(detector_positions) != 384:
+                    raise ValueError("multi-budget exposure must preserve the 384-point detector grid")
             dense_valid_len = int(valid_lens[idx].item())
             remap = {
                 "source": SELECTED_AXIS,
                 "target": TRUE_TIME_AXIS,
-                "selected_to_original": {int(axis): int(pos) for axis, pos in enumerate(detector_positions)},
-                "original_to_selected": {int(pos): int(axis) for axis, pos in enumerate(detector_positions)},
+                "selected_to_original": {int(axis): pos for axis, pos in enumerate(detector_positions)},
+                "original_to_selected": {pos: int(axis) for axis, pos in enumerate(detector_positions)},
                 "selected_axis_to_true_time_dense_index": detector_positions,
                 "acquisition_positions": positions,
             }
@@ -3057,9 +3433,12 @@ class DucaOnlineFrameSelector(nn.Module):
             meta["duca_detector_grid_positions"] = detector_positions
             meta["duca_online_selected_positions_unit"] = self.selected_positions_unit
             meta["duca_online_selected_mask"] = [True] * len(positions)
-            meta["duca_online_budget"] = int(grid.budget)
+            meta["duca_online_budget"] = int(requested_budget[idx].item())
             meta["duca_online_requested_budget"] = int(requested_budget[idx].item())
             meta["duca_online_effective_budget"] = int(effective_budget[idx].item())
+            meta["duca_actual_heavy_observations"] = int(actual_observations[idx].item())
+            meta["duca_heavy_execution_slots"] = int(execution_slots[idx].item())
+            meta["duca_budget_collapsed_to_k384"] = bool(collapsed[idx].item())
             meta["duca_online_dynamic_budget"] = bool(grid.metadata.get("budget_is_dynamic", False))
             meta["duca_online_budget_policy"] = str(grid.metadata.get("budget_policy", "fixed_budget"))
             meta["duca_online_budget_target"] = float(grid.metadata.get("budget_target", float(grid.budget)))
@@ -3082,11 +3461,11 @@ class DucaOnlineFrameSelector(nn.Module):
             meta["truetime_selected_positions"] = detector_positions
             meta["truetime_dense_len"] = int(grid.original_length)
             meta["truetime_dense_valid_len"] = dense_valid_len
-            meta["irregular_selected_positions"] = positions
+            meta["irregular_selected_positions"] = detector_positions
             meta["irregular_native_axis"] = True
-            meta["irregular_selected_count"] = len(positions)
+            meta["irregular_selected_count"] = len(detector_positions)
             meta["irregular_dense_valid_len"] = dense_valid_len
-            meta["irregular_selected_valid_len"] = len(positions)
+            meta["irregular_selected_valid_len"] = len(detector_positions)
             meta[self.metadata_keys["selected_positions"]] = positions
             meta[self.metadata_keys["selected_positions_unit"]] = self.selected_positions_unit
             meta[self.metadata_keys["selected_mask"]] = [True] * len(positions)

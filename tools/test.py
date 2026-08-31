@@ -46,6 +46,9 @@ def parse_args():
     parser.add_argument("--metrics-json", default=None)
     parser.add_argument("--expected-checkpoint-epoch", type=int, default=None)
     parser.add_argument(
+        "--expected-successful-optimizer-updates", type=int, default=None
+    )
+    parser.add_argument(
         "--checkpoint-state-key",
         choices=("auto", "state_dict", "state_dict_ema"),
         default="auto",
@@ -208,6 +211,15 @@ def main():
                 f"checkpoint epoch {checkpoint_epoch} differs from expected "
                 f"{args.expected_checkpoint_epoch}"
             )
+        if args.expected_successful_optimizer_updates is not None:
+            observed_updates = int(
+                checkpoint.get("successful_optimizer_updates", -1)
+            )
+            if observed_updates != args.expected_successful_optimizer_updates:
+                raise RuntimeError(
+                    f"checkpoint successful optimizer updates {observed_updates} "
+                    f"differ from expected {args.expected_successful_optimizer_updates}"
+                )
 
         # Model EMA
         use_ema = getattr(cfg.solver, "ema", False)

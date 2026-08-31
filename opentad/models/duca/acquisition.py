@@ -380,6 +380,226 @@ class SparseTemporalGrid:
         return self
 
 
+@dataclass
+class NestedH65BudgetSelection:
+    """Nested observation sets anchored to the existing H65 K=384 result."""
+
+    positions_by_budget: Dict[int, torch.Tensor]
+    actual_count_by_budget: Dict[int, torch.Tensor]
+    effective_budget_by_requested: Dict[int, torch.Tensor]
+    execution_slots_by_budget: Dict[int, torch.Tensor]
+    collapsed_to_baseline_by_budget: Dict[int, torch.Tensor]
+    baseline_positions: torch.Tensor
+    valid_count: torch.Tensor
+    baseline_budget: int = 384
+
+    def validate(self) -> "NestedH65BudgetSelection":
+        budgets = tuple(sorted(self.positions_by_budget))
+        if budgets != (256, 384, 512) or int(self.baseline_budget) != 384:
+            raise ValueError("nested H65 exposure requires budgets 256/384/512 with K384 baseline")
+        batch = int(self.baseline_positions.shape[0])
+        if self.baseline_positions.shape != (batch, 384):
+            raise ValueError("baseline H65 positions must be [B,384]")
+        if not torch.equal(self.positions_by_budget[384], self.baseline_positions):
+            raise ValueError("nested K384 positions must be bit-exact with the H65 baseline")
+        for budget in budgets:
+            positions = self.positions_by_budget[budget]
+            counts = self.actual_count_by_budget[budget]
+            effective = self.effective_budget_by_requested[budget]
+            execution = self.execution_slots_by_budget[budget]
+            collapsed = self.collapsed_to_baseline_by_budget[budget]
+            if positions.shape != (batch, budget) or counts.shape != (batch,):
+                raise ValueError("nested H65 tensors have inconsistent shapes")
+            if effective.shape != counts.shape or execution.shape != counts.shape or collapsed.shape != counts.shape:
+                raise ValueError("nested H65 accounting tensors must be [B]")
+            if torch.any(execution < counts) or torch.any(execution % 16 != 0):
+                raise ValueError("heavy execution slots must be packet aligned and cover every observation")
+            for row in range(batch):
+                count = int(counts[row].item())
+                active = positions[row, :count]
+                inactive = positions[row, count:]
+                if active.numel() == 0 or torch.any(active < 0):
+                    raise ValueError("every nested H65 row must contain an active observation")
+                if active.numel() > 1 and torch.any(active[1:] <= active[:-1]):
+                    raise ValueError("nested H65 positions must be strictly time ordered")
+                if inactive.numel() and torch.any(inactive != -1):
+                    raise ValueError("inactive nested H65 slots must use -1 padding")
+        for row in range(batch):
+            low = self.positions_by_budget[256][row]
+            low = low[low >= 0]
+            middle = self.positions_by_budget[384][row]
+            middle = middle[middle >= 0]
+            high = self.positions_by_budget[512][row]
+            high = high[high >= 0]
+            if low.numel() and not bool((low[:, None] == middle[None, :]).any(dim=1).all().item()):
+                raise ValueError("S256 must be a subset of S384")
+            if middle.numel() and not bool((middle[:, None] == high[None, :]).any(dim=1).all().item()):
+                raise ValueError("S384 must be a subset of S512")
+            for budget in (256, 512):
+                if bool(self.collapsed_to_baseline_by_budget[budget][row].item()):
+                    count = int(self.actual_count_by_budget[budget][row].item())
+                    base_count = int(self.actual_count_by_budget[384][row].item())
+                    if count != base_count or not torch.equal(
+                        self.positions_by_budget[budget][row, :count], middle
+                    ):
+                        raise ValueError("a collapsed tier must alias the exact active K384 positions")
+        return self
+
+
+def h65_budget_accounting(
+    valid_observations: torch.Tensor,
+    requested_budget: int,
+    *,
+    baseline_budget: int = 384,
+    packet_size: int = 16,
+) -> Dict[str, torch.Tensor]:
+    """Resolve requested, effective, and actually executed H65 observations."""
+
+    valid = valid_observations.to(dtype=torch.long).reshape(-1)
+    requested_budget = int(requested_budget)
+    baseline_budget = int(baseline_budget)
+    packet_size = int(packet_size)
+    if requested_budget not in {256, 384, 512}:
+        raise ValueError("requested H65 exposure budget must be 256, 384, or 512")
+    if baseline_budget != 384 or packet_size != 16:
+        raise ValueError("the frozen H65 exposure contract uses K384 and 16-frame packets")
+    if torch.any(valid <= 0):
+        raise ValueError("valid observation counts must be positive")
+    requested = torch.full_like(valid, requested_budget)
+    baseline = torch.full_like(valid, baseline_budget)
+    actual = torch.minimum(valid, requested)
+    baseline_actual = torch.minimum(valid, baseline)
+    collapsed = (requested_budget != baseline_budget) & (actual == baseline_actual)
+    effective = torch.where(collapsed, baseline, requested)
+    packetized = ((actual + packet_size - 1) // packet_size) * packet_size
+    execution = torch.where(effective == baseline_budget, baseline, packetized)
+    if torch.any(execution < actual):
+        raise ValueError("packet execution cannot omit an active observation")
+    if torch.any((effective != baseline_budget) & ((execution - actual) >= packet_size)):
+        raise ValueError("nonbaseline execution may pad only its final packet")
+    return {
+        "requested_budget": requested,
+        "actual_count": actual,
+        "baseline_actual_count": baseline_actual,
+        "effective_budget": effective,
+        "execution_slots": execution,
+        "collapsed_to_baseline": collapsed,
+    }
+
+
+def nested_h65_budget_positions(
+    h65_positions: torch.Tensor,
+    h65_priority: torch.Tensor,
+    valid_mask: torch.Tensor,
+) -> NestedH65BudgetSelection:
+    """Build S256 subset S384 subset S512 without recomputing the H65 baseline."""
+
+    if h65_positions.ndim != 2 or h65_positions.shape[1] != 384:
+        raise ValueError("sealed H65 positions must be [B,384]")
+    if h65_priority.ndim != 2 or h65_priority.shape[0] != h65_positions.shape[0]:
+        raise ValueError("H65 priority must be [B,T]")
+    valid = valid_mask.to(device=h65_priority.device, dtype=torch.bool)
+    if valid.shape != h65_priority.shape:
+        raise ValueError("valid_mask must align with H65 priority")
+    if h65_positions.device != h65_priority.device:
+        raise ValueError("H65 positions and priority must share one device")
+    if not bool(torch.isfinite(h65_priority[valid]).all().item()):
+        raise ValueError("valid H65 priorities must be finite")
+
+    budgets = (256, 384, 512)
+    rows: Dict[int, List[torch.Tensor]] = {budget: [] for budget in budgets}
+    counts: Dict[int, List[int]] = {budget: [] for budget in budgets}
+    valid_counts = valid.long().sum(dim=1)
+    temporal_len = int(valid.shape[1])
+    for row in range(int(valid.shape[0])):
+        valid_positions = torch.nonzero(valid[row], as_tuple=False).flatten()
+        if not torch.equal(
+            valid_positions,
+            torch.arange(valid_positions.numel(), device=valid_positions.device),
+        ):
+            raise ValueError("nested H65 exposure requires a contiguous valid prefix")
+        baseline = h65_positions[row]
+        baseline = baseline[baseline >= 0]
+        if baseline.numel() != min(384, int(valid_positions.numel())):
+            raise ValueError("sealed H65 selection has the wrong active K384 count")
+        if baseline.numel() > 1 and torch.any(baseline[1:] <= baseline[:-1]):
+            raise ValueError("sealed H65 positions must be strictly time ordered")
+        baseline_priority_order = baseline[
+            torch.argsort(h65_priority[row, baseline], descending=True, stable=True)
+        ]
+        baseline_mask = torch.zeros(temporal_len, device=baseline.device, dtype=torch.bool)
+        baseline_mask[baseline] = True
+        remaining = valid_positions[~baseline_mask[valid_positions]]
+        remaining_priority_order = remaining[
+            torch.argsort(h65_priority[row, remaining], descending=True, stable=True)
+        ]
+        for budget in budgets:
+            count = min(budget, int(valid_positions.numel()))
+            if budget < 384:
+                selected = baseline_priority_order[:count]
+            elif budget == 384:
+                selected = baseline
+            else:
+                selected = torch.cat((baseline, remaining_priority_order[: max(0, count - baseline.numel())]))
+            selected = torch.sort(selected).values
+            padded = torch.full((budget,), -1, device=baseline.device, dtype=torch.long)
+            padded[:count] = selected
+            rows[budget].append(padded)
+            counts[budget].append(count)
+
+    result = NestedH65BudgetSelection(
+        positions_by_budget={budget: torch.stack(rows[budget], dim=0) for budget in budgets},
+        actual_count_by_budget={
+            budget: torch.tensor(counts[budget], device=h65_positions.device, dtype=torch.long)
+            for budget in budgets
+        },
+        effective_budget_by_requested={},
+        execution_slots_by_budget={},
+        collapsed_to_baseline_by_budget={},
+        baseline_positions=h65_positions.detach().clone(),
+        valid_count=valid_counts,
+    )
+    for budget in budgets:
+        accounting = h65_budget_accounting(valid_counts, budget)
+        result.effective_budget_by_requested[budget] = accounting["effective_budget"]
+        result.execution_slots_by_budget[budget] = accounting["execution_slots"]
+        result.collapsed_to_baseline_by_budget[budget] = accounting["collapsed_to_baseline"]
+    return result.validate()
+
+
+def interpolate_h65_positions_to_detector_grid(
+    selected_positions: torch.Tensor,
+    actual_count: torch.Tensor,
+    *,
+    detector_length: int = 384,
+) -> torch.Tensor:
+    """Interpolate a variable observation axis onto the frozen detector length."""
+
+    if selected_positions.ndim != 2 or actual_count.shape != (selected_positions.shape[0],):
+        raise ValueError("selected_positions and actual_count must be [B,K] and [B]")
+    detector_length = int(detector_length)
+    if detector_length <= 1:
+        raise ValueError("detector_length must exceed one")
+    rows = []
+    for row in range(int(selected_positions.shape[0])):
+        count = int(actual_count[row].item())
+        if count <= 1 or count > int(selected_positions.shape[1]):
+            raise ValueError("each detector grid needs at least two active observations")
+        active = selected_positions[row, :count]
+        if torch.any(active < 0) or torch.any(active[1:] <= active[:-1]):
+            raise ValueError("active H65 exposure positions must be increasing")
+        mapped = active.float() if count == detector_length else F.interpolate(
+            active.float()[None, None, :],
+            size=detector_length,
+            mode="linear",
+            align_corners=True,
+        )[0, 0]
+        if torch.any(mapped[1:] <= mapped[:-1]):
+            raise ValueError("detector-grid physical time must remain strictly increasing")
+        rows.append(mapped)
+    return torch.stack(rows, dim=0)
+
+
 class ZeroShotActionnessSource(nn.Module):
     """Deploy-visible no-THUMOS-label actionness abstraction.
 
