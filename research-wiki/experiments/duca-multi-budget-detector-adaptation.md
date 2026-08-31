@@ -227,3 +227,13 @@ batch 脚本启动前以 signal 53 终止。两个作业均没有 stdout、模�
 
 它们仍绑定 exact commit `2b3b3243...`、同一 calibration、完整 200-video training 和原冻结比较；不得把运输重提
 解释成新的科学尝试或额外 seed。
+
+## seed 3407 训练终态
+
+Control Job `1262743` 与 Candidate Job `1262744` 分别以 `COMPLETED 0:0` 完成 60 轮。两臂的终态
+`update_audit.json` 均记录 6,000 次 attempted batch、成功 optimizer update、scheduler update、EMA update 和 DUCA
+schedule update；两臂均生成 `work/gpu1_id0/checkpoint/epoch_59.pth`。依赖链已自动启动 seed-3408 Jobs
+`1262745/1262746`；seed-3409 Jobs `1262747/1262748` 继续等待。
+
+上述事实只证明第一种子的匹配训练完成。没有读取训练中或 held-out mAP，也没有生成 prediction、置信区间或成本结论；
+在三种子和九份 prediction/cost 全部封存前，held-out 评价仍保持关闭。

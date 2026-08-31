@@ -5123,3 +5123,12 @@ project decision.
   binds the Slurm working directory to the same exact clean snapshot.
 - The authoritative blind chain is now `1262743/1262744` (seed 3407), `1262745/1262746` (seed 3408), and
   `1262747/1262748` (seed 3409), with the same strict `afterok` order. This is not a new scientific attempt or extra seed.
+
+### 2026-09-01 — Seed 3407 matched training is complete; held-out remains sealed
+
+- Control `1262743` and Candidate `1262744` both completed `0:0`. Each terminal audit records 6,000 successful optimizer,
+  scheduler, EMA and DUCA schedule updates, and each run has an epoch-59 checkpoint.
+- The dependency chain automatically started seed-3408 Jobs `1262745/1262746`; seed-3409 Jobs `1262747/1262748` remain
+  dependency-blocked.
+- No intermediate or held-out metric has been read. Predictions and one-time evaluation remain blocked until all three seeds finish
+  and every terminal identity is validated.

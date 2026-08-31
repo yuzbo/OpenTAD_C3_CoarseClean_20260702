@@ -7431,3 +7431,10 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
 - 该事件只表明节点级启动失败，不是模型、训练或性能负结果。代码、配置、calibration 和科学协议均未修改。
 - 唯一运输恢复排除 `g0030` 并显式绑定同一 source working directory。当前权威链为 seed 3407
   `1262743/1262744`、seed 3408 `1262745/1262746`、seed 3409 `1262747/1262748`，依赖顺序保持不变。
+
+## 2026-09-01 — seed 3407 两臂完成，seed 3408 自动启动
+
+- Control `1262743` 与 Candidate `1262744` 均 `COMPLETED 0:0`。两臂终态审计各记录 6,000 次成功 optimizer、
+  scheduler、EMA 与 DUCA schedule 更新，并各自生成 epoch-59 checkpoint。
+- 严格依赖链已自动启动 seed-3408 Jobs `1262745/1262746`；seed-3409 Jobs `1262747/1262748` 保持等待。
+- 未读取任何中间或 held-out mAP；第一种子终态是训练执行证据，不是性能、效率或论文结论。
