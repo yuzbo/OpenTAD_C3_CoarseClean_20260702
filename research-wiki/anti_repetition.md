@@ -3939,3 +3939,12 @@ updated: 2026-07-21
   padding policy, clamp positions, change `valid_len`, alter the detector mask, or modify acquisition/model/config/data/statistics.
 - Job `1262693` is the sole corrected PRE_RUN. Do not duplicate it or submit any complete training arm until it passes the frozen
   four-update checkpoint/probe contract.
+
+### 2026-08-31 — Complete multi-budget training DAG is immutable
+
+- Corrected PRE_RUN `1262693` passed; do not rerun it. The only full-training units are `1262696/1262697` (seed 3407),
+  `1262698/1262699` (seed 3408) and `1262700/1262701` (seed 3409).
+- Do not remove or weaken the `afterok` seed order, submit duplicates, inspect held-out metrics, select a seed, change the update
+  budget, or regenerate calibration while these jobs run.
+- A training terminal is an infrastructure/model-execution fact, not a held-out result. Generate predictions only after all six jobs
+  complete successfully and terminal epoch-59 EMA identities are validated.

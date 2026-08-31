@@ -5089,3 +5089,14 @@ project decision.
 - The only corrected PRE_RUN is Job `1262693`, output root
   `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_409f370a_20260831`. Six complete training units remain blocked until
   this same job passes all four successful updates and checkpoint/probe validation.
+
+### 2026-08-31 — Corrected PRE_RUN passes; six complete training units are deployed blind
+
+- Job `1262693` completed `0:0`: four attempted batches produced four finite-loss, finite-gradient and successful optimizer updates;
+  optimizer, scheduler, EMA and DUCA schedule counters all equal four; the smoke checkpoint exists and the strict validator emitted
+  `PRE_RUN_PASS`.
+- Full-training jobs are Control/Candidate `1262696/1262697` for seed 3407, `1262698/1262699` for seed 3408, and
+  `1262700/1262701` for seed 3409. The latter pairs use strict `afterok` dependencies on the preceding seed pair.
+- All jobs bind exact commit `409f370a...`, the admitted complete 200-video training population, the same Stage-1 epoch-29 EMA,
+  6,000 successful updates and terminal epoch-59 EMA rule. No held-out label, metric or intermediate performance has been read.
+- The next admissible event is a training terminal. Predictions remain blocked until all six training units complete successfully.

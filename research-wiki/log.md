@@ -7397,3 +7397,15 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
 - 修正后唯一 PRE_RUN Job 为 `1262693`，输出根为
   `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_409f370a_20260831`。只有该作业完成四次成功更新并通过
   checkpoint/probe validator，才可提交冻结的六个完整训练单元。
+
+## 2026-08-31 — 修正后 PRE_RUN 通过并部署六个完整训练单元
+
+- Job `1262693` 终态 `COMPLETED 0:0`。`training_probe.json` 记录 4 次 attempted step、4 次有限 loss 与有限 gradient；
+  `update_audit.json` 记录 4 次成功 optimizer、scheduler、EMA 与 DUCA schedule 更新，0 次 AMP skip、0 次非有限损失
+  重放。`epoch_0.pth` 存在，终态输出包含 `PRE_RUN_PASS`。
+- 同一 `409f370a...` clean snapshot 已提交完整训练：seed 3407 Control/Candidate 为 `1262696/1262697`；seed 3408
+  为 `1262698/1262699`，依赖 `afterok:1262696:1262697`；seed 3409 为 `1262700/1262701`，依赖
+  `afterok:1262698:1262699`。
+- 六个单元全部使用完整 200-video training、共同 Stage-1 epoch-29 EMA、6,000 成功更新、相同 trainable mask、
+  optimizer/schedule 与 terminal epoch-59 EMA 规则。没有读取 held-out 标签、mAP 或任何中间性能；九份 prediction
+  仍被完整训练终态阻断。

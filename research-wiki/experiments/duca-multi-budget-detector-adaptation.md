@@ -159,3 +159,22 @@ VideoMAE 执行、模型、配置、数据、损失、NMS、评价器和统计�
 修正后唯一 PRE_RUN 为 Job `1262693`，输出根为
 `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_409f370a_20260831`。在它完整通过四次成功更新、checkpoint
 与 probe validator 前，不得提交六个完整训练单元。
+
+## PRE_RUN 通过与完整训练部署
+
+Job `1262693` 终态为 `COMPLETED 0:0`。终态产物记录 4 个 attempted batches、4 次有限损失、4 次有限梯度、
+4 次成功 optimizer update，以及各 4 次 scheduler、EMA 和 DUCA schedule 更新；不存在 AMP skip、非有限损失重放
+或 replay exhaustion。`epoch_0.pth` 已生成，严格 validator 返回 `PRE_RUN_PASS`。该结果只解除完整训练的运行门，
+不构成性能或效率证据。
+
+六个完整 60 轮训练单元已在同一 `409f370a...` clean snapshot 上部署：
+
+| seed | Control K384 | Candidate multi-budget | 顺序 |
+|---:|---:|---:|---|
+| 3407 | `1262696` | `1262697` | 直接提交 |
+| 3408 | `1262698` | `1262699` | `afterok:1262696:1262697` |
+| 3409 | `1262700` | `1262701` | `afterok:1262698:1262699` |
+
+每个作业使用完整 200-video training、共同 Stage-1 epoch-29 EMA、相同 6,000 成功更新预算、优化器、学习率日程、
+可训练参数集合与 terminal epoch-59 EMA 规则。依赖链只保证冻结的种子盲顺序；没有读取 held-out 标签、训练中验证
+或任何中间 mAP。只有六个训练单元全部成功后，才能生成并封存九份完整 prediction/cost 视图。
