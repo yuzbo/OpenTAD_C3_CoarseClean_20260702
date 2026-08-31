@@ -19,7 +19,6 @@ log
 /wandb/
 build/
 dist/
-/research-wiki/
 /figures/
 /local_artifacts/
 /tmp/

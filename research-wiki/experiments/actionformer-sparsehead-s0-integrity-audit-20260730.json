@@ -1,0 +1,61 @@
+{
+  "date": "2026-07-30",
+  "auditor": "codex-source-and-receipt-audit; external_cross_model_unavailable",
+  "overall_verdict": "warn",
+  "integrity_status": "warn",
+  "warning_reason": "Scientific artifacts and official evaluator checks pass, but configured external cross-model file-level reviewers were unavailable and the evidence scope is one official paired seed plus diagnostic-only follow-ups.",
+  "checks": {
+    "gt_provenance": {
+      "status": "pass",
+      "eval_type": "real_gt",
+      "details": "Official S0 and 2x2 use the dataset THUMOS test split; assignment audit uses exactly 64 validation-training windows and asserts test_gt_used=false."
+    },
+    "official_comparability": {
+      "status": "pass",
+      "details": "Same-run dense and K384 arms share official data, schedule, terminal EMA, evaluator and environment. The result is official-comparable screening, not a released-number reproduction."
+    },
+    "score_normalization": {
+      "status": "pass",
+      "details": "Official AP uses raw prediction ordering and dataset-GT denominators; no prediction-derived self-normalization is used."
+    },
+    "result_existence": {
+      "status": "pass",
+      "details": "Jobs 1205599, 1205701 and 1205799 are terminal COMPLETED 0:0 and their completion SHA-256 receipts are recorded in the Markdown audit."
+    },
+    "dead_code": {
+      "status": "pass",
+      "details": "Launchers directly invoke official evaluation, independent recomputation, 2x2 contrast assembly and assignment audit producers."
+    },
+    "scope": {
+      "status": "warn",
+      "details": "One paired official seed, no end-to-end cost, and diagnostic-only 2x2/post-NMS/64-window assignment evidence."
+    },
+    "diagnostic_boundary": {
+      "status": "pass",
+      "details": "All diagnostic artifacts explicitly forbid main-table, model-selection and efficiency claims."
+    },
+    "mechanistic_inference": {
+      "status": "pass",
+      "details": "Evidence supports hard K384 support/coverage loss as the leading cause for this intervention, with selected-loss and calibration secondary; universal sparse-head causality remains unsupported."
+    }
+  },
+  "claims": [
+    {
+      "id": "S0_exact_intervention_negative",
+      "impact": "supported_with_single_seed_and_appendix_qualifier"
+    },
+    {
+      "id": "hard_k384_coverage_is_dominant_observed_factor",
+      "impact": "supported_as_diagnostic_attribution"
+    },
+    {
+      "id": "sparsehead_positive_efficiency",
+      "impact": "unsupported"
+    },
+    {
+      "id": "all_sparse_heads_fail",
+      "impact": "unsupported"
+    }
+  ]
+}
+
