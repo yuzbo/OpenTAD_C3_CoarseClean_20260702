@@ -7,7 +7,7 @@
       "name": "torch.quasirandom.SobolEngine",
       "version": "2.0.1"
     },
-    "known_answer_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "known_answer_manifest_sha256": "ad7e4ba19ea960e77d69c97d8cd8d692275758b19c7526c8206cfa4f9547cb17",
     "knots": 12,
     "non_anchor_candidates": 16,
     "scramble": true,
@@ -50,7 +50,7 @@
     "source_manifest_path": "/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/native_crop_s1_0bf59be_20260720_0225/protocol/spatial_zoom_s1_manifest.json",
     "source_manifest_semantic_sha256": "10b14faac57d4631dfae93c9a7d14eb81b8dc308f0e80232469e5b7c974589ca"
   },
-  "declared_protocol_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "declared_protocol_sha256": "644f0c5648e0f5be004db3a3e7240a8f24a3c1d561f933502bccb8dca200cb46",
   "frozen_training_identities": {
     "base_namespace": "469652821b1ffb984ced17360a333cf1fed2700465ec6f8ac210b578e7dc5de9",
     "campaign_namespace": "77c2149aa9fe7d6b19c777bebe5a95de710a0a738d89158431e69a9c5e78d066",
@@ -332,7 +332,7 @@
       "video_validation_0000985",
       "video_validation_0000990"
     ],
-    "known_answer_manifest_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "known_answer_manifest_sha256": "e46e42fb886f898bdb43e21020c8c10b9305a6b313f8b4f7efc8bcb02efa617e",
     "raw_runtime_reads_development_database": false,
     "windowing": {
       "feature_stride": 4,
