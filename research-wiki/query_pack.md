@@ -5075,3 +5075,17 @@ project decision.
   `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_0d67d49c_20260831`.
 - It may only establish runtime eligibility through preparation, focused tests, compilation, four successful updates and strict
   checkpoint/probe validation. It does not access held-out metrics and is not a performance or efficiency result.
+
+### 2026-08-31 — First PRE_RUN exposes short-window true-time metadata defect; one minimal recovery submitted
+
+- Job `1262690` failed during the first real training forward, before any successful optimizer update, because a short-window K384
+  row carried inactive `-1` detector padding into `selected_axis_to_true_time_dense_index`. `TrueTimeMap` correctly rejected those
+  positions as outside `valid_len`. No checkpoint, complete training, held-out prediction, mAP, interval or cost result was produced.
+- Exact correction `409f370a7ed14e7077bc87138196ab6abe459f99` has sole parent `0d67d49c...` and changes only selector metadata plus one
+  focused regression. It filters true-time/remap metadata with the existing detector mask; the 384-point execution tensor and mask,
+  acquisition sets, model/config/data/loss/NMS/evaluator/statistic surfaces remain unchanged.
+- Exact N16R4 snapshot `/data/run01/sczc063/yuzibo/duca_h65_multibudget_409f370a_20260831` returns `26 passed`; a fresh
+  independent Critic returned `PASS`.
+- The only corrected PRE_RUN is Job `1262693`, output root
+  `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_409f370a_20260831`. Six complete training units remain blocked until
+  this same job passes all four successful updates and checkpoint/probe validation.

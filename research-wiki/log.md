@@ -7379,3 +7379,21 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
 - 唯一 PRE_RUN Job 为 `1262690`，输出根为
   `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_0d67d49c_20260831`。该作业只运行冻结准备、聚焦测试、
   编译、四次成功更新与 checkpoint/probe validator；未读取 held-out 指标，也未启动六个完整训练单元。
+
+## 2026-08-31 — 首次 PRE_RUN 终态、根因与唯一修复
+
+- Job `1262690` 终态为 `FAILED 1:0`。它通过准备、测试和模型构建后，在首个真实训练前向由 `TrueTimeMap` 报错
+  `selected_positions must stay inside valid_len`；没有任何成功 optimizer update、smoke checkpoint、完整训练或
+  held-out 产物。
+- 根因是短窗口的 K384 或 K512→K384 折叠行仍以 384 槽运行，但 `_write_metas` 把 inactive `-1` padding 一并写入
+  真时间映射。嵌套选择集合、真实 observation 计数与 detector mask 本身正确，因此归类为实现元数据缺陷，不是科学
+  负结果。
+- 唯一修复提交为 `409f370a7ed14e7077bc87138196ab6abe459f99`：只按已有 detector mask 写出活动真时间位置，
+  同时补 `valid_len=300/K384` 与 `valid_len=200/K512→K384` 的目标重映射回归。模型、配置、采集、执行、数据、损失、
+  NMS、评价器和统计协议均不变。
+- GitHub 已同步；N16R4 exact clean snapshot
+  `/data/run01/sczc063/yuzibo/duca_h65_multibudget_409f370a_20260831` 取得 `26 passed`，新的独立 Critic 返回
+  `PASS`。本地静态检查和 Python 编译通过；本地 pytest 仍受既有 Windows PyTorch `c10.dll` 初始化故障阻断。
+- 修正后唯一 PRE_RUN Job 为 `1262693`，输出根为
+  `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_409f370a_20260831`。只有该作业完成四次成功更新并通过
+  checkpoint/probe validator，才可提交冻结的六个完整训练单元。

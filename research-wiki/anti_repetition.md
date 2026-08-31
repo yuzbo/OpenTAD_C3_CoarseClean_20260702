@@ -3930,3 +3930,12 @@ updated: 2026-07-21
 - Do not call model-only timing end-to-end. The implemented cost record explicitly includes realized data-consumer wait and final
   per-video Soft-NMS, reports full-population wall time, and leaves framework overhead visible rather than attributing it to a model
   component.
+
+### 2026-08-31 — Short-window PRE_RUN recovery is closed to one metadata correction
+
+- Do not retry or reinterpret failed Job `1262690`. It reached no successful optimizer update and only exposed inactive `-1` padding
+  in the short-window true-time metadata; it is not a model, optimization or performance result.
+- The only recovery identity is `409f370a7ed14e7077bc87138196ab6abe459f99`, whose parent is `0d67d49c...`. Do not add a
+  padding policy, clamp positions, change `valid_len`, alter the detector mask, or modify acquisition/model/config/data/statistics.
+- Job `1262693` is the sole corrected PRE_RUN. Do not duplicate it or submit any complete training arm until it passes the frozen
+  four-update checkpoint/probe contract.

@@ -138,3 +138,24 @@ Windows Python 中受 PyTorch `c10.dll` 初始化限制而未重复运行 pytest
 输出根为 `/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_0d67d49c_20260831`。它只执行冻结准备、
 25 项聚焦测试、编译、四次成功更新和 checkpoint/恢复合同核验，不读取 held-out 指标。作业终态前没有训练准入
 结论，也不得重复提交同一 PRE_RUN。
+
+## PRE_RUN 终态与唯一实现修复
+
+Job `1262690` 终态为 `FAILED 1:0`，运行到真实训练前向时由 `TrueTimeMap` 抛出
+`selected_positions must stay inside valid_len`。短窗口请求 K384，或请求 K512 后按冻结规则折叠到 K384 时，运行张量
+正确保留 384 个槽位和对应 detector mask；但元数据错误地把含 padded `-1` 的完整 384 项列表写入
+`selected_axis_to_true_time_dense_index`。该错误发生在第一个成功 optimizer update 之前，没有 smoke checkpoint、完整训练、
+held-out prediction、mAP、区间或成本结果。
+
+唯一修复提交为
+[`409f370a7ed14e7077bc87138196ab6abe459f99`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/409f370a7ed14e7077bc87138196ab6abe459f99)，
+父提交为 `0d67d49c...`。它只在写出真时间映射、目标重映射和 irregular-time 元数据时按既有 detector mask 排除
+inactive padding，并检查活动位置有限、位于 `valid_len` 内且严格递增；采集集合、384 点 detector 张量与 mask、
+VideoMAE 执行、模型、配置、数据、损失、NMS、评价器和统计合同均未改变。新增回归覆盖 `valid_len=300` 的 K384
+与 `valid_len=200` 的 K512→K384 折叠并实际执行目标重映射。N16R4 精确 clean snapshot
+`/data/run01/sczc063/yuzibo/duca_h65_multibudget_409f370a_20260831` 的同款测试为 `26 passed`；新的独立 Critic 对
+该精确提交返回 `PASS`。
+
+修正后唯一 PRE_RUN 为 Job `1262693`，输出根为
+`/data/run01/sczc063/yuzibo/duca_h65_multibudget_prerun_409f370a_20260831`。在它完整通过四次成功更新、checkpoint
+与 probe validator 前，不得提交六个完整训练单元。

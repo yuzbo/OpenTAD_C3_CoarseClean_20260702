@@ -68,7 +68,7 @@ scope: complete DUCA research history and public implementation lineage
 | Marginal budget | [`f67d96fdf68a295eaa7f678f3dfc125530828889`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/f67d96fdf68a295eaa7f678f3dfc125530828889) | 加性边际效用与 training-side oracle |
 | Cap-release neighborhood | [`46812facc8773d9b4a9c21833cbe397c8aaa5a2d`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/46812facc8773d9b4a9c21833cbe397c8aaa5a2d) | 解除饱和预算上限后的联合门诊断 |
 | Whole-video 704-state falsifier | [`33e4ed137c33eef07f0452b44506a6993bdf7535`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/33e4ed137c33eef07f0452b44506a6993bdf7535) | 冻结检测器三档预算动作空间的终态负结果 |
-| H65 system multi-budget exposure | [`0d67d49c2fc4a5f50aa784f7809c0dd936492109`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/0d67d49c2fc4a5f50aa784f7809c0dd936492109) | 当前完整数据、三种子正式比较的最小实现；只有局部测试证据 |
+| H65 system multi-budget exposure | [`409f370a7ed14e7077bc87138196ab6abe459f99`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/409f370a7ed14e7077bc87138196ab6abe459f99) | 当前完整数据、三种子正式比较的最小实现；相对 `0d67d49c...` 仅修复短窗口真时间元数据；只有局部测试证据 |
 
 ## 审查边界
 
