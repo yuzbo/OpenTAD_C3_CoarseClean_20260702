@@ -7423,3 +7423,11 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
 - 当前完整训练链为 seed 3407 `1262719/1262720`、seed 3408 `1262721/1262722`（依赖前一对）、seed 3409
   `1262723/1262724`（依赖 seed 3408）。所有作业绑定 exact commit `2b3b3243...` 和同一冻结 calibration；没有读取
   held-out 标签或中间 mAP。
+
+## 2026-09-01 — 节点级启动故障后原样重提完整训练链
+
+- Jobs `1262719/1262720` 同时分配到 `g0030`，在 batch 脚本启动前分别运行 0/1 秒并以 signal 53 终止；没有
+  stdout、模型进程、成功 update、run root 或 checkpoint。依赖 Jobs `1262721`–`1262724` 已取消且从未启动。
+- 该事件只表明节点级启动失败，不是模型、训练或性能负结果。代码、配置、calibration 和科学协议均未修改。
+- 唯一运输恢复排除 `g0030` 并显式绑定同一 source working directory。当前权威链为 seed 3407
+  `1262743/1262744`、seed 3408 `1262745/1262746`、seed 3409 `1262747/1262748`，依赖顺序保持不变。

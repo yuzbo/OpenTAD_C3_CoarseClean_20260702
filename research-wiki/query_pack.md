@@ -5114,3 +5114,12 @@ project decision.
 - The current blind full-training chain is Control/Candidate `1262719/1262720` for seed 3407, `1262721/1262722` for seed 3408,
   and `1262723/1262724` for seed 3409, with strict pairwise `afterok` seed order. All bind exact commit `2b3b3243...` and the same
   frozen calibration. No held-out metric may be read before all training and prediction seals are complete.
+
+### 2026-09-01 — Node-level launch abort is transport-only; replacement DAG is authoritative
+
+- Root Jobs `1262719/1262720` were both placed on `g0030` and aborted with signal 53 before their batch scripts started. They have
+  no stdout, model process, successful update, run root or checkpoint. Dependent Jobs `1262721`–`1262724` were cancelled unstarted.
+- No code, model, configuration, calibration or scientific protocol changed. The sole transport correction excludes `g0030` and
+  binds the Slurm working directory to the same exact clean snapshot.
+- The authoritative blind chain is now `1262743/1262744` (seed 3407), `1262745/1262746` (seed 3408), and
+  `1262747/1262748` (seed 3409), with the same strict `afterok` order. This is not a new scientific attempt or extra seed.

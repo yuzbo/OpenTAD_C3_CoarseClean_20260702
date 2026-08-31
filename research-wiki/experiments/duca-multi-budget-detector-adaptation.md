@@ -210,3 +210,20 @@ PRE_RUN Job `1262715` 终态为 `COMPLETED 0:0`。`training_probe.json` 记录 4
 
 六个作业绑定 exact commit `2b3b3243...`、完整 200-video training、共同 Stage-1 epoch-29 EMA、每臂每种子 6,000
 次成功更新和 terminal epoch-59 EMA。旧 Jobs `1262696`–`1262701` 不得再作为活动训练链或实验结果引用。
+
+## 节点级启动故障与运输重提
+
+第一次从 `2b3b3243...` 提交的 seed-3407 Jobs `1262719/1262720` 同时分配到 `g0030`，分别在 0 和 1 秒内于
+batch 脚本启动前以 signal 53 终止。两个作业均没有 stdout、模型进程、成功更新、run root 或 checkpoint；依赖 Jobs
+`1262721`–`1262724` 随后取消且从未启动。这一事件归类为节点级启动故障，不改变代码、配置、数据、模型或科学合同。
+
+运输恢复仅排除 `g0030` 并显式把 Slurm working directory 绑定到同一 clean snapshot。当前权威作业为：
+
+| seed | Control K384 | Candidate multi-budget | 顺序 |
+|---:|---:|---:|---|
+| 3407 | `1262743` | `1262744` | 直接提交 |
+| 3408 | `1262745` | `1262746` | `afterok:1262743:1262744` |
+| 3409 | `1262747` | `1262748` | `afterok:1262745:1262746` |
+
+它们仍绑定 exact commit `2b3b3243...`、同一 calibration、完整 200-video training 和原冻结比较；不得把运输重提
+解释成新的科学尝试或额外 seed。

@@ -3957,3 +3957,10 @@ updated: 2026-07-21
   legacy binder artifacts, weaken the 6,000-successful-update audit, or add new contract machinery.
 - PRE_RUN `1262715` passed and must not be duplicated. The only active full-training chain is `1262719/1262720` →
   `1262721/1262722` → `1262723/1262724`; preserve its strict seed order and blind held-out boundary.
+
+### 2026-09-01 — Do not reuse the g0030-aborted job identities
+
+- Jobs `1262719/1262720` never entered the batch script, and Jobs `1262721`–`1262724` were cancelled unstarted. Do not resume,
+  retry, cite or reinterpret these six job IDs as training or scientific evidence.
+- The only transport recovery is the same commit/calibration with `g0030` excluded. The active chain is `1262743/1262744` →
+  `1262745/1262746` → `1262747/1262748`; do not create a parallel DAG or alter the frozen experiment.
