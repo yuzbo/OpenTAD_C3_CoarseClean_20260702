@@ -3948,3 +3948,12 @@ updated: 2026-07-21
   budget, or regenerate calibration while these jobs run.
 - A training terminal is an infrastructure/model-execution fact, not a held-out result. Generate predictions only after all six jobs
   complete successfully and terminal epoch-59 EMA identities are validated.
+
+### 2026-08-31 — Do not revive the failed legacy-binder DAG
+
+- Jobs `1262696/1262697` failed before training because this experiment was incorrectly routed through an unrelated legacy P0
+  binder; Jobs `1262698`–`1262701` were cancelled without starting. Do not retry, resume, reinterpret or cite them as model evidence.
+- The sole current implementation identity is `2b3b3243066a89e5a4be5acdb178c318fbeceac0`. Do not assign a false P0 variant, restore
+  legacy binder artifacts, weaken the 6,000-successful-update audit, or add new contract machinery.
+- PRE_RUN `1262715` passed and must not be duplicated. The only active full-training chain is `1262719/1262720` →
+  `1262721/1262722` → `1262723/1262724`; preserve its strict seed order and blind held-out boundary.

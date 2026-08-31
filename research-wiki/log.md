@@ -7409,3 +7409,17 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
 - 六个单元全部使用完整 200-video training、共同 Stage-1 epoch-29 EMA、6,000 成功更新、相同 trainable mask、
   optimizer/schedule 与 terminal epoch-59 EMA 规则。没有读取 held-out 标签、mAP 或任何中间性能；九份 prediction
   仍被完整训练终态阻断。
+
+## 2026-08-31 — 首个完整训练链在训练前失败；最小恢复通过并重新部署
+
+- seed-3407 Jobs `1262696/1262697` 均在进入模型和数据训练前因 legacy `duca_p0_training` binder 收到空 formal
+  variant 而退出；没有成功 update、checkpoint、prediction 或 held-out 指标。依赖 Jobs `1262698`–`1262701` 已取消且
+  从未启动。这是启动合同错配，不是模型、优化或性能负结果。
+- 恢复提交 `2b3b3243066a89e5a4be5acdb178c318fbeceac0` 只停用本实验不适用的 legacy P0 binder，同时保留 6,000
+  successful updates、有限损失/AMP 失败关闭、update audit、terminal EMA 和 held-out sealing。N16R4 exact snapshot
+  `/data/run01/sczc063/yuzibo/duca_h65_multibudget_2b3b3243_20260831` 为 `26 passed`，新的独立 Critic 返回 `PASS`。
+- PRE_RUN `1262715` 终态 `COMPLETED 0:0`：4/4 次有限 loss 与 gradient，optimizer、scheduler、EMA 与 DUCA schedule
+  各 4 次成功更新，smoke checkpoint 存在。它只建立运行准入，不是性能或效率证据。
+- 当前完整训练链为 seed 3407 `1262719/1262720`、seed 3408 `1262721/1262722`（依赖前一对）、seed 3409
+  `1262723/1262724`（依赖 seed 3408）。所有作业绑定 exact commit `2b3b3243...` 和同一冻结 calibration；没有读取
+  held-out 标签或中间 mAP。

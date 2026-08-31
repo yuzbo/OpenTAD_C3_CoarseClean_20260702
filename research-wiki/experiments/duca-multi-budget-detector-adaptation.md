@@ -178,3 +178,35 @@ Job `1262693` 终态为 `COMPLETED 0:0`。终态产物记录 4 个 attempted bat
 每个作业使用完整 200-video training、共同 Stage-1 epoch-29 EMA、相同 6,000 成功更新预算、优化器、学习率日程、
 可训练参数集合与 terminal epoch-59 EMA 规则。依赖链只保证冻结的种子盲顺序；没有读取 held-out 标签、训练中验证
 或任何中间 mAP。只有六个训练单元全部成功后，才能生成并封存九份完整 prediction/cost 视图。
+
+## 首个完整训练链的启动失败与最小恢复
+
+seed-3407 Jobs `1262696/1262697` 均在进入模型和数据训练前终止。`tools/train.py` 将空的 formal protocol 路由到
+legacy `duca_p0_training` binder，后者要求与本实验无关的 P0 variant；因此两个作业以
+`invalid formal DUCA variant` 退出，没有成功 optimizer update、checkpoint、prediction 或 held-out 指标。依赖 Jobs
+`1262698`–`1262701` 已取消且从未启动。该终态是启动合同错配，不是模型、优化或性能负结果。
+
+恢复提交为
+[`2b3b3243066a89e5a4be5acdb178c318fbeceac0`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/2b3b3243066a89e5a4be5acdb178c318fbeceac0)，
+父提交为 `409f370a...`。它只在两个实验配置中恢复 `formal_successful_update_contract=False`，避免把新的多预算暴露实验
+冒充 legacy P0 variant；6,000 次成功更新、有限损失与 AMP 失败关闭、update audit、terminal epoch-59 EMA 和 held-out
+sealing 均保留。validator 和回归测试同时禁止重新进入 legacy binder。N16R4 exact clean snapshot
+`/data/run01/sczc063/yuzibo/duca_h65_multibudget_2b3b3243_20260831` 的同款测试为 `26 passed`，新的独立 Critic 返回
+`PASS`。这些只证明实现和启动边界，不构成模型有效性证据。
+
+## 恢复后 PRE_RUN 与当前完整训练链
+
+PRE_RUN Job `1262715` 终态为 `COMPLETED 0:0`。`training_probe.json` 记录 4/4 次有限损失和有限梯度；
+`update_audit.json` 记录 optimizer、scheduler、EMA 和 DUCA schedule 各 4 次成功更新，且 smoke checkpoint 已生成。
+它只重新建立正式训练准入，没有产生 mAP、置信区间或成本结果。
+
+当前权威完整训练链为：
+
+| seed | Control K384 | Candidate multi-budget | 顺序 |
+|---:|---:|---:|---|
+| 3407 | `1262719` | `1262720` | 直接提交 |
+| 3408 | `1262721` | `1262722` | `afterok:1262719:1262720` |
+| 3409 | `1262723` | `1262724` | `afterok:1262721:1262722` |
+
+六个作业绑定 exact commit `2b3b3243...`、完整 200-video training、共同 Stage-1 epoch-29 EMA、每臂每种子 6,000
+次成功更新和 terminal epoch-59 EMA。旧 Jobs `1262696`–`1262701` 不得再作为活动训练链或实验结果引用。

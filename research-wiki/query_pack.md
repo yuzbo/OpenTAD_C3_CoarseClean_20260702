@@ -5100,3 +5100,17 @@ project decision.
 - All jobs bind exact commit `409f370a...`, the admitted complete 200-video training population, the same Stage-1 epoch-29 EMA,
   6,000 successful updates and terminal epoch-59 EMA rule. No held-out label, metric or intermediate performance has been read.
 - The next admissible event is a training terminal. Predictions remain blocked until all six training units complete successfully.
+
+### 2026-08-31 — Legacy training binder mismatch is removed; authoritative training DAG is replaced
+
+- Seed-3407 Jobs `1262696/1262697` exited before model/data training because an empty formal protocol was incorrectly routed into
+  the unrelated legacy `duca_p0_training` binder. They produced no successful update, checkpoint, prediction or held-out metric.
+  Dependent Jobs `1262698`–`1262701` were cancelled without starting. This is execution-binding evidence, not a scientific result.
+- Exact recovery `2b3b3243066a89e5a4be5acdb178c318fbeceac0` disables only that inapplicable legacy binder while preserving the 6,000
+  successful-update budget, update audit, terminal EMA and held-out sealing. N16R4 returns `26 passed`; a fresh independent Critic
+  returns `PASS`.
+- PRE_RUN `1262715` completed `0:0`: all four updates have finite loss and gradient; optimizer, scheduler, EMA and DUCA counters
+  are four; the smoke checkpoint exists. This restores runtime admission only.
+- The current blind full-training chain is Control/Candidate `1262719/1262720` for seed 3407, `1262721/1262722` for seed 3408,
+  and `1262723/1262724` for seed 3409, with strict pairwise `afterok` seed order. All bind exact commit `2b3b3243...` and the same
+  frozen calibration. No held-out metric may be read before all training and prediction seals are complete.
