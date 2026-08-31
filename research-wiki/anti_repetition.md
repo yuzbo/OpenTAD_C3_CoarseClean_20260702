@@ -3863,3 +3863,20 @@ updated: 2026-07-21
   training exposure under the same H65 nested positions and trainable parameter set.
 - If that complete two-arm, three-seed experiment fails its frozen mixed-workload gain, K384 safety, uncertainty or real-cost gates,
   stop the H65 K256/K384/K512 dynamic-budget mainline. Do not use another mechanism as a recovery loop for that result.
+
+### 2026-08-31 — Admitted identity evidence must use OpenTAD 200/211 literally
+
+- Do not reopen the 211/212 question by count or naming convention. The clean `fdd2bcdd...` audit has materialized the literal
+  sets: OpenTAD training annotation/loader/physical are identical 200; OpenTAD held-out annotation/loader/physical/evaluator and
+  historical prediction IDs are identical 211; train-held-out intersection and decode failures are empty.
+- Do not merge ActionFormer's 212-video `Test` set with OpenTAD's 211-video `validation`. Their only literal difference is
+  `video_test_0000270`, which OpenTAD source line 11 excludes for wrong annotations. `video_test_0001292` is not an ActionFormer
+  annotation video and must not be added to either evaluation set merely because it exists in physical/feature storage.
+- Do not treat the first lowercase `test` invocation as a scientific or data failure. ActionFormer subset literals are
+  case-sensitive `Test`/`Validation`; the preserved corrected CPU evaluation, with unchanged code and data, is the effective
+  report and has SHA-256 `d7251c...`.
+- `DATA_IDENTITY_PASS_211` is evidence for Pro admission, not self-executing permission. Until Pro signs the data boundary, do not
+  create the multi-budget model branch, load Stage-1, run PRE_RUN/GPU/training, generate held-out predictions or compute mAP.
+- Do not silently choose the later seed schedule. The comprehensive Wiki review says all three seeds; the newer route-integration
+  report says seed 3407 first and 3408/3409 only after it passes. Return that conflict with the data evidence and follow Pro's
+  explicit resolution.

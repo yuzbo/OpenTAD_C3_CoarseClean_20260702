@@ -5,13 +5,13 @@ updated: 2026-08-31
 project: DUCA
 ---
 
-# DUCA 多预算检测器适应
+# DUCA H65 系统多预算暴露适应
 
 ## 科学问题
 
-在保持 H65 的当前嵌套 K256/K384/K512 位置构造、Scout、检测器结构和评价协议不变时，仅让检测器在三种预算
-分布上共同训练，能否恢复跨预算检测兼容性，并在相同、无标签、等价预算的 fixed mixed-budget workload 下，
-相对只在 K384 上训练的匹配控制提高 Avg-mAP 与高时间交并比性能？
+在保持 H65 的当前嵌套 K256/K384/K512 位置构造、模型结构和评价协议不变时，只改变 Stage-2 训练所见的预算
+分布，能否建立跨预算兼容性，并在相同、无标签、等价预算的 fixed mixed-budget workload 下，相对只见 K384
+的匹配控制提高 Avg-mAP 与高时间交并比性能？
 
 这是位于此前项目级 `STOP` 边界之外的新机制检验。旧结论仍成立：冻结 K384 检测器后进行三档预算转移没有
 达到预登记联合门。新实验不重跑旧 oracle，也不把跨预算表示不匹配预先写成已证实根因。
@@ -22,10 +22,11 @@ project: DUCA
 - 候选在 K256/K384/K512 上共同训练；冻结 `p384=0.50`，其余两档概率根据完整 200-video 训练集上的冻结
   6,000-update sample occurrence 计划和短窗口折叠后的实际 observation 成本唯一校准。
 - 两臂使用同一 H65 起点、相同成功更新数、优化器、学习率日程、随机种子、可训练参数集合和最终指数移动平均
-  模型选择规则。
+  模型选择规则。H65 Stage-2 同时适配 coarse trunk、action head、transition scorer、ASFormer policy path 和
+  detector-feedback path，因此该总效应不能称为“纯检测器适应”。
 
 第一轮保留当前嵌套位置构造。不得同时改成预算原生 H65 采样；否则将同时改变选点和训练分布，无法把结果归因
-于检测器预算适应。
+于预算暴露。
 
 ## 代码边界
 
@@ -48,15 +49,19 @@ project: DUCA
 若 K384 安全门、mixed 任一实际效应门或成本条件失败，则停止当前三档适应路线；点估计通过但配对区间包含零时，
 当前实验同样终结且不前进。任何 controller、预算条件或新结构都必须由后续 Pro 另行冻结，不能在本实验中预埋。
 
-## 当前唯一执行项
+## 数据身份核验结果与当前执行边界
 
-Pro 已冻结 H65/OpenTAD 的 `training → validation` 数据语义，但 literal ID 集和 211/212 差异仍须由只读事实核验
-物化。当前唯一任务是基于 `04c35a3b...` 建立最小 split identity audit，核对 annotation、config、loader、物理
-视频、evaluator、历史 211 IDs 和 ActionFormer 212 来源；不得读取 held-out 动作类别、时间边界、预测或 mAP。
+只读 split identity audit 已在 `fdd2bcdd...` 上完成并由独立 Critic 与 N16R4 CPU Evaluator 检查。完整训练侧的
+annotation、loader 与 physical 集合均为相同 200 个视频；OpenTAD `validation` 的 annotation、loader、physical、
+evaluator 与历史 prediction 集合均为相同 211 个视频。ActionFormer 原始 `Test` annotation 为 212，唯一额外 ID
+是 `video_test_0000270`；OpenTAD README 明确记录其因错误标注被排除。411 个期望视频均可基本解码。
 
-身份核验的 Builder 提交须经独立 Critic；Critic 通过后，独立 Evaluator 在 N16R4 CPU 上运行一次。结果无论通过
-或阻断，都先返回 Pro；在 Pro 数据身份准入前不建立模型 Builder、不提交 PRE_RUN 或训练。当前仍没有新模型代码、
-正式作业、性能或成本结果。
+审计结论为 `DATA_IDENTITY_PASS_211`，完整报告 SHA-256 为
+`d7251c11935644cf8661e6bfdcfb857e29d2357cb894b7de9d8b2bd7eaf6f1ab`。该结果现在返回 Pro；在 Pro 正式签发
+数据准入前仍不建立模型 Builder、不提交 PRE_RUN 或训练。当前仍没有新模型代码、正式作业、性能或成本结果。
+
+两份最新 Pro 报告对后续正式种子顺序有一项未决差异：一个要求直接完成三种子，另一个要求 seed 3407 先通过
+全部门再复制 3408/3409。该差异不影响数据身份结论，由 Pro 在数据准入时统一。
 
 ## Pro 完整数据协议终态与当前处置
 

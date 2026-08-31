@@ -3965,3 +3965,33 @@ Primary near-neighbor sources additionally checked during project audit:
 - Conditional experiment: after data admission only, compare fixed K384 training with matched K256/K384/K512 training exposure on
   the complete 200-video training population, three seeds, 6,000 successful updates, sealed predictions, one complete held-out
   evaluation and paired whole-video uncertainty analysis.
+
+### `source:pro-duca-comprehensive-route-integration-v001-20260831`
+
+- Source type: newer exact-Project Pro comprehensive scientific, code and publication-route adjudication supplied by the user.
+- Identity: Project `g-p-6a91061f789881918ccd8357ca3d6c92`, nonce
+  `DUCA-COMPREHENSIVE-ROUTE-INTEGRATION-v001-20260831`.
+- Complete report: `research-wiki/sources/2026-08-31-pro-duca-comprehensive-route-integration-v001.md`.
+- Decision: `REVISE`. The only current task remains the complete train/held-out identity audit. Conditional on later data
+  admission, test H65 system multi-budget exposure adaptation under unchanged nested K256/K384/K512 positions; do not call the
+  estimand detector-only because the Stage-2 trainable system includes Scout/selector-related and feedback paths.
+- Downstream conflict retained: this report uses seed 3407 as a mechanism gate and launches 3408/3409 only after it passes, whereas
+  `source:pro-duca-github-wiki-comprehensive-review-v002-20260831` describes the formal comparison as three seeds. The conflict is
+  irrelevant to the identity audit and must be resolved by Pro before model execution.
+
+### `source:duca-full-data-identity-audit-fdd2bcdd-20260831`
+
+- Source type: read-only full-data identity evidence produced by the authorized Builder, independent Critic and N16R4 CPU
+  Evaluator chain.
+- Code identity: branch `feature/duca-full-data-identity-audit-v1-20260831`, commit
+  `fdd2bcdddf3f23f3546244adf90c4427ed022837`, parent
+  `04c35a3b76897e6c1569eeede41ed3aecaf7f854`, clean tree; only audit tool and focused test differ.
+- GitHub commit: <https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/fdd2bcdddf3f23f3546244adf90c4427ed022837>.
+- Full report and literal manifests:
+  `research-wiki/sources/2026-08-31-duca-full-data-identity-audit-fdd2bcdd/`.
+- Effective report SHA-256: `d7251c11935644cf8661e6bfdcfb857e29d2357cb894b7de9d8b2bd7eaf6f1ab`.
+- Result: 200/200/200 training identity; 211/211/211/211/211 OpenTAD held-out identity; 212 ActionFormer annotation IDs with
+  sole additional ID `video_test_0000270`, explained by OpenTAD source line 11 as removed for wrong annotations. All 411 expected
+  canonical videos decode; no intersection, missing media, duplicate, unassigned ID or unexplained difference.
+- Isolation: no held-out label/segment decoding, checkpoint/model/GPU/mAP, prediction payload or per-video utility access.
+- Verdict: `DATA_IDENTITY_PASS_211`. This verdict must return to Pro and does not independently authorize model work.

@@ -4976,3 +4976,33 @@ project decision.
 - Conditional on data admission, the sole model experiment is fixed K384 versus matched K256/K384/K512 training exposure using
   all 200 training videos, seeds 3407/3408/3409, 6,000 successful updates, sealed predictions, one complete held-out evaluation and
   10,000 paired whole-video bootstrap replicates. It does not add budget embeddings, distillation, a new selector or another route.
+
+### 2026-08-31 — Full-data identity audit returns `DATA_IDENTITY_PASS_211`
+
+- A newer exact-Project Pro report, nonce `DUCA-COMPREHENSIVE-ROUTE-INTEGRATION-v001-20260831`, independently reviewed the
+  historical code and evidence, renamed the conditional experiment to H65 system multi-budget exposure adaptation, and kept the
+  read-only full-data identity audit as the sole current task. Complete text:
+  `research-wiki/sources/2026-08-31-pro-duca-comprehensive-route-integration-v001.md`.
+- Builder implementation is the clean direct child `fdd2bcdddf3f23f3546244adf90c4427ed022837` of H65
+  `04c35a3b76897e6c1569eeede41ed3aecaf7f854`, on branch
+  `feature/duca-full-data-identity-audit-v1-20260831`. Only the audit tool and one focused test were added. Local checks produced
+  29 passes; the N16R4 focused run produced 6 passes. An independent read-only Critic returned `PASS`.
+- The N16R4 CPU Evaluator used no GPU, model, checkpoint, held-out label/segment, prediction payload or metric. It verified all
+  411 expected canonical videos with `ffprobe`: no missing file, broken symlink, duplicate ID, unassigned ID or decode failure.
+- Training annotation, formal loader replay and canonical physical media are the same 200 IDs; all three manifests have SHA-256
+  `5b11e290eb24c93c79f23cb1aecc8b85be4c13b47d7cf3b35e30601c1663f4c0`. Train-held-out intersection is empty.
+- OpenTAD held-out annotation, loader, physical media, evaluator and the historical PJST prediction-key set are the same 211 IDs;
+  all five manifests have SHA-256 `5f9adf639fbcff869075ac78f6aa26d9da14986199a7d5b2181127769600746e`.
+- The original ActionFormer annotation has 212 literal `Test` IDs. Its only right-only ID versus OpenTAD is
+  `video_test_0000270`. OpenTAD `tools/prepare_data/thumos/README.md:11` states that this video is removed for wrong annotations
+  and `video_test_0001292` is removed for empty annotations. The latter is not in ActionFormer's 212 annotation set; it is an
+  extra physical/feature file, not an evaluated video.
+- The effective report is under remote `result_v2` and has SHA-256
+  `d7251c11935644cf8661e6bfdcfb857e29d2357cb894b7de9d8b2bd7eaf6f1ab`. Full report and literal manifests are preserved at
+  `research-wiki/sources/2026-08-31-duca-full-data-identity-audit-fdd2bcdd/`.
+- The first evaluator invocation passed lowercase `test` instead of the source's case-sensitive literal `Test`, yielding an empty
+  ActionFormer set and an invocation-layer `BLOCK`. That output is preserved remotely. A single argument-only correction produced
+  the effective `PASS`; code, data and source files were unchanged. Do not report the first result as a dataset conflict.
+- Current conclusion is `DATA_IDENTITY_PASS_211`, but model work remains blocked until Pro explicitly admits this evidence. The two
+  latest Pro reports differ only on the later seed launch order: immediate three-seed execution versus seed 3407 followed by
+  3408/3409 only after all gates pass. Codex does not resolve that downstream difference.

@@ -7292,3 +7292,22 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
   负诊断。当前三档转移路线继续停止；当前唯一任务是完整 200-video training 与 211/212 held-out 身份审计。
 - 数据身份未经 Builder、独立 Critic、N16R4 CPU Evaluator 和 Pro 准入前，禁止模型代码、checkpoint、PRE_RUN、GPU、
   训练、held-out prediction 和 mAP。通过后才解锁固定 K384 与多预算暴露的两臂、三种子完整正式实验。
+
+## 2026-08-31 — 完整数据身份审计得到 `DATA_IDENTITY_PASS_211`
+
+- 新 Pro 综合裁决 `DUCA-COMPREHENSIVE-ROUTE-INTEGRATION-v001-20260831` 已完整归档。它继续把完整 train/held-out
+  身份审计作为唯一任务，并把未来候选准确表述为 H65 系统的多预算暴露适应，而不是纯 detector-only 适应。
+- Builder 在 H65 `04c35a3b...` 的直接子提交 `fdd2bcdd...` 上只增加审计工具与聚焦测试。分支 clean，29 项本地
+  测试与 6 项 N16R4 聚焦测试通过；独立只读 Critic 返回 `PASS`。实现与测试已同步 GitHub。
+- N16R4 CPU Evaluator 遍历完整 411 个 canonical 视频并完成基本解码。training 的 annotation/loader/physical 三集合
+  均为同一 200，held-out 的 annotation/loader/physical/evaluator/historical prediction-key 五集合均为同一 211，
+  训练与留出无交集；无缺失、重复、未分配或解码失败。
+- ActionFormer 原始 source 使用区分大小写的 `Test`/`Validation`，分别为 212/200。相对 OpenTAD 211 的唯一额外
+  ID 是 `video_test_0000270`；OpenTAD `tools/prepare_data/thumos/README.md:11` 明确记录其错误标注排除规则，同时说明
+  `video_test_0001292` 因空标注排除。后者不在 ActionFormer 212 annotation 中，只是额外物理/特征文件。
+- 首次 CPU 命令误传小写 `test`，得到调用层 `BLOCK`；保留原输出后只把参数修正为源字面值 `Test`，未修改代码、
+  数据或来源。有效 `result_v2` 返回 `PASS`，报告 SHA-256 为
+  `d7251c11935644cf8661e6bfdcfb857e29d2357cb894b7de9d8b2bd7eaf6f1ab`。
+- 完整报告和 literal manifests 已写入
+  `research-wiki/sources/2026-08-31-duca-full-data-identity-audit-fdd2bcdd/`。当前仍不启动模型：先把数据证据和两份
+  Pro 报告关于三种子立即执行或 3407 先行的唯一冲突返回 Pro。

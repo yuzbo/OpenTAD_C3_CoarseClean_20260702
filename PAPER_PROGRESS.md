@@ -2,7 +2,7 @@
 
 - 更新日期：2026-08-31
 - 名称说明：DUCA 是本项目沿用的方法路线名称。
-- 当前结论：固定 `K=384` 的任务状态时序 coreset 低于匹配均匀选择，`DUCA-Coverage-v1` 也未通过预注册中间机制门。冻结 H65 的三档边际预算诊断、96-state 联合邻域和最终 704-state 整视频枚举均未达到 `+0.8/+1.0` 联合门；Pro 对这一冻结检测器的旧动作空间作出的 `STOP` 继续有效。新的 Pro 完整数据协议裁决在该边界之外选择 `REVISE`：保留现有嵌套 K256/K384/K512 位置构造，只比较固定 K384 训练与三档多预算适应；两臂都使用完整 200-video `training` 集合、同一 H65 Stage-1 EMA 和 6,000 次成功更新，并在完整 `validation` held-out 集合上作一次冻结评测。上一轮 160/40 正式协议和有标签训练侧 oracle 已撤销。当前唯一任务是无标签、只读核验完整 train/held-out ID 和 211/212 差异；Pro 数据身份准入前没有模型 Builder、PRE_RUN、训练或新性能结果。
+- 当前结论：固定 `K=384` 的任务状态时序 coreset 低于匹配均匀选择，`DUCA-Coverage-v1` 也未通过预注册中间机制门。冻结 H65 的三档边际预算诊断、96-state 联合邻域和最终 704-state 整视频枚举均未达到 `+0.8/+1.0` 联合门；Pro 对这一冻结检测器的旧动作空间作出的 `STOP` 继续有效。新的 Pro 完整数据协议裁决在该边界之外选择 `REVISE`：保留现有嵌套 K256/K384/K512 位置构造，只比较固定 K384 暴露与三档多预算暴露下的完整 H65 Stage-2 系统；两臂都使用完整 200-video `training` 集合、同一 H65 Stage-1 EMA 和 6,000 次成功更新，并在完整 `validation` held-out 集合上作一次冻结评测。上一轮 160/40 正式协议和有标签训练侧 oracle 已撤销。无标签数据身份审计现已证明 OpenTAD 正式训练集为同一完整 200、正式 held-out 为同一 211；ActionFormer 212 唯一额外 ID 是因错误标注被 OpenTAD 明确排除的 `video_test_0000270`。审计结论先返回 Pro；数据准入前仍没有模型 Builder、PRE_RUN、训练或新性能结果。
 
 ## 1. 论文问题与应用价值
 
@@ -21,7 +21,7 @@
 
 固定 K 内的 coverage 和其后的三档预算转移均已结束。后者冻结 H65 Scout 与 detector，并从同一非连续 H65 priority sequence 构造 K256/K384/K512 的嵌套集合，在逐窗口、差分联合邻域和整视频跨视频三个层次搜索不增加真实 observation 成本的重分配。完整开发集 oracle 枚举没有产生预登记的 Avg-mAP 与高 tIoU 联合 headroom。Pro 因而关闭这一动作空间；它不是完整训练后的论文主模型，也不授权 Codex 自动恢复历史路线或自行选择新机制。
 
-最新 `REVISE` 将下一项机制检验限定为检测器的多预算适应：第一轮继续使用上述嵌套位置构造，只改变训练时检测器是否同时见到 K256/K384/K512。它不把输入分布不匹配当作已证实根因，也不同时加入渐进解冻、STE 温度退火、五档预算曲线、预算条件嵌入、蒸馏、Gumbel-Softmax、新 Scout、Mamba、Block Drop、部署优化或跨数据集扩展。较早附件提出的“预算原生选点 + 多预算训练”和同轮未落盘 `research_project_analysis.md` 摘要中的新增路线均不进入第一轮。
+最新 `REVISE` 将下一项机制检验限定为 H65 系统的多预算暴露适应：第一轮继续使用上述嵌套位置构造，只改变 Stage-2 训练是否同时见到 K256/K384/K512。由于 Stage-2 还继续适配 Scout/selector 相关路径和 detector feedback，该结果不能称为纯检测器适应。它不把输入分布不匹配当作已证实根因，也不同时加入渐进解冻、STE 温度退火、五档预算曲线、预算条件嵌入、蒸馏、Gumbel-Softmax、新 Scout、Mamba、Block Drop、部署优化或跨数据集扩展。较早附件提出的“预算原生选点 + 多预算训练”和同轮未落盘 `research_project_analysis.md` 摘要中的新增路线均不进入第一轮。
 
 ## 3. 与官方基线的真实差异
 
@@ -46,6 +46,7 @@ DUCA 与官方 dense 模型的目标差异只应来自输入采样与预算：�
 - 整视频最终 falsifier 位于 [`feature/duca-whole-video-consistent-budget-falsifier-v1-20260831`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/feature/duca-whole-video-consistent-budget-falsifier-v1-20260831)，权威公开提交为 [`33e4ed137c33eef07f0452b44506a6993bdf7535`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/33e4ed137c33eef07f0452b44506a6993bdf7535)。父提交 `c27d77...` 的首次 PRE_RUN `1262147` 暴露密封 proposal 被额外排序、从而改变 Soft-NMS 并破坏锚点复现的确定性证据错误；`33e4ed...` 只恢复密封 producer 原始顺序并增加回归测试，不改变候选、成本、预测、NMS、评估器或三档预算。28 项聚焦测试与独立 Critic 通过。修正后 PRE_RUN `1262161` 复现全部锚点；唯一恢复 Job `1262190` 完成 704 个候选。终态 JSON SHA-256 为 `40686fa73114eedfa14b3d34a01717aacb0b93f629f5a1e7f2ee27de300ad19c`，通过候选数为零。Pro 随后使用该最新 GitHub 身份作出项目级 `STOP`；该分支与 Marginal-v1、cap-release、96-state 分支均只作为负证据读取。
 - 新设计的多预算检测器适应实验以 H65 干净提交 `04c35a3b76897e6c1569eeede41ed3aecaf7f854` 为模型基座，并且只允许从 `33e4ed...` 移植真实变长执行、packet 对齐、实际 observation 计数、K384 parity、whole-video 评价和原始生成顺序保持。当前尚未建立模型实现分支或提交；`33e4ed...` 不是新模型的科学基座。Pro 当前只授权从 `04c35a3b...` 建立 `feature/duca-full-data-identity-audit-v1-20260831`，只读物化完整数据身份。
 - 2026-08-31 的 GitHub 全历史 Pro 复核已逐项读取公开 Wiki、Gemini 预审和关键精确提交，并再次裁决 `REVISE`。它没有授权模型实现：当前仍只执行完整数据身份审计。只有数据身份返回 Pro 并获准后，才解锁固定 K384 与 K256/K384/K512 多预算暴露两个训练臂；两臂使用完整 200-video training、种子 `3407/3408/3409`、每种子 6,000 次成功更新、一次性完整 held-out 评估和整视频配对 bootstrap。完整原文见 `research-wiki/sources/2026-08-31-pro-github-wiki-comprehensive-review-v002.md`。
+- 完整数据身份审计实现位于 [`feature/duca-full-data-identity-audit-v1-20260831`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/feature/duca-full-data-identity-audit-v1-20260831)，精确提交为 [`fdd2bcdddf3f23f3546244adf90c4427ed022837`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/fdd2bcdddf3f23f3546244adf90c4427ed022837)，父提交为 H65 `04c35a3b...`。独立 Critic `PASS`，N16R4 CPU Evaluator 得到 `DATA_IDENTITY_PASS_211`；完整报告 SHA-256 为 `d7251c11935644cf8661e6bfdcfb857e29d2357cb894b7de9d8b2bd7eaf6f1ab`。这只解决数据事实，须返回 Pro 后才可能解除模型实现阻断。
 
 项目根目录承担多路线协调，工作区可能包含尚未归档的修改。论文实验身份必须引用上述独立 clean revision，而不能用项目根当前 `HEAD` 代替。
 
@@ -54,8 +55,9 @@ DUCA 与官方 dense 模型的目标差异只应来自输入采样与预算：�
 正式比较要求两臂使用完整 THUMOS14 训练集，并在设计与全部选择规则冻结后，于完整官方 held-out evaluation
 split 上使用同一检测器、损失、Soft-NMS、评估器和预登记模型选择规则作最终比较。训练侧子集只可用于前置诊断，
 不能替代正式证据；官方留出评估不得参与调参、checkpoint/阈值/规则选择或路线迭代。当前项目同时存在 OpenTAD
-`training/validation`（211 个评估视频）和 ActionFormer `validation/test`（历史记录为 212 个评估视频）两种命名与
-视频集合口径，具体 subset 名称和完整视频 ID 必须由 Pro 冻结，不能由 Codex 静默等同。当前已有实验主要使用
+`training/validation` 与 ActionFormer `Validation/Test` 两种命名。字面审计证明 OpenTAD 的 annotation、loader、
+physical、evaluator 与历史 prediction 均使用相同 211 个 held-out 视频；ActionFormer `Test` 为 212，唯一额外 ID
+是 `video_test_0000270`，OpenTAD 源码说明其因错误标注被删除。该事实仍须由 Pro 正式准入，不能仅按数量等同。当前已有实验主要使用
 seed `3407`；单种子结果不能支持稳定性或显著性结论。
 
 当前与后续实验矩阵按以下顺序组织：
@@ -67,7 +69,7 @@ seed `3407`；单种子结果不能支持稳定性或显著性结论。
 5. 同一 H65 代码基座上的 matched allocation control 与 `DUCA-Coverage-v1` 已完成真实训练样本无标签重放门；该门未通过，因此两个 60 轮完整训练臂没有启动。当前对照实现是预算校准系统采样，而冻结设计曾概括为 Top-K；在 Pro 裁决该基线身份和失败机制前不得重提正式训练。
 6. 冻结 H65 的 K256/K384/K512 反事实边际预算实验、cap-release 诊断和 capped→released 差分邻域的 96 个联合状态枚举均已完成。50% 上限 oracle 的 Avg-mAP/mAP@0.7 增益为 `+0.726/+0.729` 个百分点；解除上限后反而降为 `+0.427/+0.450`。96-state 中没有状态同时达到 `+0.8/+1.0`；当前加性 Marginal-v1 及其本次视频级联合效用修复均按冻结规则停止。
 7. 整视频一致预算的跨视频单次转移 oracle 已完成：donor 视频所有窗口请求 K256，recipient 视频所有窗口请求 K512，其余视频保持 K384；候选总实际 observation 成本不超过固定 K384 的 `47110`。候选集合在读取标签或指标前完整生成，随后仅复用密封预测和相同评估器。1560 个有序对中 704 个合法候选完成评估，没有候选通过联合门；没有执行模型前向、训练、bootstrap 或 official test。
-8. 新设计的单变量实验比较固定 K384 训练与 K256/K384/K512 多预算检测器适应。Pro 完整数据协议已冻结两臂从同一 H65 Stage-1 `epoch_29/state_dict_ema` 开始、在完整 200-video `training` 集合上各完成 6,000 次成功更新，并让候选概率按冻结 occurrence 计划的实际 observation 成本匹配 K384。旧 160/40 划分、有标签训练侧 mAP 门和 oracle 已撤销。正式预测全部密封后，两个模型在同一个无标签 fixed mixed-budget manifest 上直接比较，并在完整 `validation` held-out 集合上执行一次评测和 10,000 次整视频配对 bootstrap。当前先只读解决 literal ID 和 211/212 差异；在 Pro 数据身份准入前不进入模型实现或训练。
+8. 新设计的单变量实验比较固定 K384 暴露与 K256/K384/K512 多预算暴露下的完整 H65 Stage-2 系统。Pro 完整数据协议已冻结两臂从同一 H65 Stage-1 `epoch_29/state_dict_ema` 开始、在完整 200-video `training` 集合上各完成 6,000 次成功更新，并让候选概率按冻结 occurrence 计划的实际 observation 成本匹配 K384。旧 160/40 划分、有标签训练侧 mAP 门和 oracle 已撤销。正式预测全部密封后，两个模型在同一个无标签 fixed mixed-budget manifest 上直接比较，并在准入后的完整 211-video `validation` held-out 集合上执行一次评测和 10,000 次整视频配对 bootstrap。数据身份事实已经核验通过，但仍须先返回 Pro 签发准入；在此之前不进入模型实现或训练。
 
 主要指标为 tIoU 0.3、0.4、0.5、0.6、0.7 下的 mAP，以及五个阈值的平均值；同时报告短动作、边界定位和完整端到端计算成本。任何计算节省主张都必须来自实际执行的 VideoMAE 工作量和相同硬件条件下的测量，不能由 padding 后的名义帧数推断。
 
@@ -125,7 +127,7 @@ PJST-D1 的配对区间仍属未完成证据，但它不会改变当前路线，
 
 Pro 冻结的 96-state 联合 mAP 邻域诊断已经在公开提交 `46812fac...` 上完成。原 fixed/capped/released 三结果复现误差为 `0.0` 个百分点，96 次评估保持逐视频预算和全局成本 `47110`；没有状态通过 `+0.8/+1.0` 联合门，也没有单个最小合法转移同时改善两个门指标。Pro 已据此最终裁决 `STOP`：现有加性 Marginal-v1 及本次邻域修复关闭，不再重跑、改门、补 bootstrap、训练 utility head 或访问 official test。当前分支只作为负证据读取；未来若重新研究动态计算，必须由 Pro 以新的机制假设和独立任务启动，不能作为 Marginal-v1 的恢复。
 
-项目级 Pro 对旧三档预算转移动作空间的 `STOP` 继续有效。Pro 已把“检测器只适应 K384”冻结成一项新的、边界之外的可证伪实验，并用完整数据协议撤销 160/40 与有标签训练侧 oracle。当前只读身份任务必须证明 `training` 的 annotation/loader/物理文件均为同一 200 个视频，并为 `validation` 的 211/212 差异给出 source-backed 事实；无法解释时阻断而不是自行选择。身份 Builder 的精确提交须经独立 Critic 和 N16R4 CPU Evaluator，再把 PASS/BLOCK 返回 Pro。只有 Pro 数据身份准入后才建立模型 Builder。K384 安全门为相对同更新数控制的 Avg-mAP 与 mAP@0.7 均不低于 `-0.2` 个百分点；相同 fixed mixed-budget manifest 上的直接继续门为 `+0.8/+1.0` 且实际成本不高于全 K384，并要求两项配对区间下界均大于零。
+项目级 Pro 对旧三档预算转移动作空间的 `STOP` 继续有效。Pro 已把“K384-only 训练是否缺少跨预算兼容性”冻结成一项新的、边界之外的可证伪实验，并用完整数据协议撤销 160/40 与有标签训练侧 oracle。身份 Builder `fdd2bcdd...`、独立 Critic 和 N16R4 CPU Evaluator 已证明 `training` 的 annotation/loader/物理文件均为同一 200 个视频，`validation` 的 annotation/loader/physical/evaluator/historical prediction 均为同一 211；ActionFormer 212 唯一额外 ID `video_test_0000270` 有 OpenTAD 源码解释。当前下一动作只把 `DATA_IDENTITY_PASS_211` 返回 Pro；只有 Pro 数据准入后才建立模型 Builder。K384 安全门为相对同更新数控制的 Avg-mAP 与 mAP@0.7 均不低于 `-0.2` 个百分点；相同 fixed mixed-budget manifest 上的直接继续门为 `+0.8/+1.0` 且实际成本不高于全 K384，并要求两项配对区间下界均大于零。两份最新 Pro 报告对 3407 与 3408/3409 的启动顺序存在差异，需在数据准入时统一。
 
 ## 9. 可发表性边界
 
