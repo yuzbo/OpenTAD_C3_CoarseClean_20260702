@@ -39,9 +39,10 @@ def test_detector_forward_train_and_test(cfg_path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     detector = detector.to(device)
 
-    # Synthetic batch: 1 sample, 1 clip, 3 channels, 768 frames, 160x160 resolution
-    B, C, T, H, W = 1, 3, 768, 160, 160
+    # Synthetic batch: 1 sample, 1 clip, 3 channels, 768 frames, 32x32 resolution (divisible by patch_size=16)
+    B, C, T, H, W = 1, 3, 768, 32, 32
     inputs = torch.randn(B, 1, C, T, H, W, device=device)
+
     masks = torch.ones(B, T, dtype=torch.bool, device=device)
     metas = [{"video_name": "test_video_0", "fps": 25.0, "duration": 30.0, "snippet_stride": 4, "offset_frames": 0}]
     if cfg.model.frame_selector.get("use_h65_selection", False):
