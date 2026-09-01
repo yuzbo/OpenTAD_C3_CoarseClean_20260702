@@ -97,6 +97,17 @@ def validate_cell_config(config_path: str | Path, expected_arm: str, expected_se
     }
 
 
+ARM_CONFIG_NAMES = {
+    "D160": "d160",
+    "G96": "g96",
+    "U128-ALL48-A0": "u128_all48_a0",
+    "U16-UNIFORM-A0": "u16_uniform_a0",
+    "BAFDR-K16-LATE": "late",
+    "BAFDR-K16-NOKD": "nokd",
+    "BAFDR-K16-FULL": "full",
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description="BA-FDR K16 Master Orchestrator")
     parser.add_argument("--repo-root", type=str, default=".", help="path to repo root")
@@ -109,8 +120,9 @@ def main():
     print(f"[BA-FDR] Validating 21 configs on commit {head}...")
     matrix_cells = []
     for arm in ARMS:
+        slug = ARM_CONFIG_NAMES.get(arm, arm.lower().replace("-", "_"))
         for seed in SEEDS:
-            cfg_name = f"bafdr_k16_{arm.lower().replace('-', '_')}_seed{seed}.py"
+            cfg_name = f"bafdr_k16_{slug}_seed{seed}.py"
             cfg_path = root / "configs" / "adatad" / "thumos" / cfg_name
             if not cfg_path.exists():
                 raise FileNotFoundError(f"Missing config {cfg_path}")
