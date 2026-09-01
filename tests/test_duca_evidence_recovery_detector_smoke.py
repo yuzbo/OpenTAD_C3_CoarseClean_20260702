@@ -34,10 +34,13 @@ def test_detector_forward_train_and_test(cfg_path):
     detector = build_detector(cfg.model)
     detector.eval()
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    detector = detector.to(device)
+
     # Synthetic batch: 1 sample, 1 clip, 3 channels, 768 frames, 160x160 resolution
     B, C, T, H, W = 1, 3, 768, 160, 160
-    inputs = torch.randn(B, 1, C, T, H, W)
-    masks = torch.ones(B, T, dtype=torch.bool)
+    inputs = torch.randn(B, 1, C, T, H, W, device=device)
+    masks = torch.ones(B, T, dtype=torch.bool, device=device)
     metas = [{"video_name": "test_video_0", "fps": 25.0, "duration": 30.0, "snippet_stride": 4, "offset_frames": 0}]
     if cfg.model.frame_selector.get("use_h65_selection", False):
         h65_positions = exact_uniform_positions(T, cfg.model.frame_selector.budget).tolist()
@@ -50,8 +53,8 @@ def test_detector_forward_train_and_test(cfg_path):
                 "selected_valid_len": cfg.model.frame_selector.budget,
             }
         )
-    gt_segments = [torch.tensor([[10.0, 50.0], [100.0, 200.0]])]
-    gt_labels = [torch.tensor([1, 2])]
+    gt_segments = [torch.tensor([[10.0, 50.0], [100.0, 200.0]], device=device)]
+    gt_labels = [torch.tensor([1, 2], device=device)]
 
     infer_cfg = getattr(cfg, "inference", None)
     post_cfg = getattr(cfg, "post_processing", None)
@@ -70,8 +73,6 @@ def test_detector_forward_train_and_test(cfg_path):
         )
         assert test_out is not None
 
-
-
     # 2. Forward Train
     detector.train()
     train_losses = detector(
@@ -85,3 +86,10 @@ def test_detector_forward_train_and_test(cfg_path):
     assert isinstance(train_losses, dict)
     assert "cost" in train_losses
     assert torch.isfinite(train_losses["cost"]).item()
+
+    del detector, inputs, masks, metas, gt_segments, gt_labels, test_out, train_losses
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
