@@ -1547,6 +1547,23 @@ max_chars: 8000
   multi-seed, boundary-protection or universal decode-reuse claim. One fresh exact-
   Project Pro adjudication is mandatory before any successor.
 
+- **User-supplied BA-FDR full-matrix prompt intake (2026-09-01).** The user supplied
+  `ZOOMTOKEN_BA_FDR_FULL_MATRIX_AGENT_PROMPT-v001.md`,
+  `run_zoomtoken_bafdr_full_matrix_agent.sh`, and a pasted report recommending direct
+  execution of a 7-arm x 3-seed `BA-FDR-K16` matrix from commit
+  `5628512a6ea000757c084c06f4e27a90d4cf03e6`. This is a coherent candidate proposal:
+  complete G96 temporal carrier, fixed K16 physical U128 refresh, dense residual
+  scatter, L0/L1-only residual injection, D160 training-only boundary distillation,
+  and `detection performance vs full executed computation` as the main plane. It is
+  not current execution authority. BA-FDR adds new router/projection/loss/teacher/model
+  surfaces, a 21-cell matrix, new thresholds including `C_exec <= 0.70`, and an
+  `official test closed` formal validation plan; these require a fresh exact-Project
+  Pro decision before implementation or Slurm submission. Existing NativeCrop/D2S
+  paths execute or materialize the full local branch before selection and therefore
+  cannot be relabelled as BA-FDR physical skip. Existing PA-TAD projection does not yet
+  implement true L0/L1 residual-only injection with L2-L5 invariance. The one-command
+  script must not be run as written in this project state.
+
 ## Pointers
 
 - GeoRoute implementation and gates:

@@ -8,7 +8,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..builder import BACKBONES
 from .backbone_wrapper import BackboneWrapper
 from .native_crop_wrapper import deterministic_linear_2x
 
@@ -61,7 +60,6 @@ class BAFDRRouterHead(nn.Module):
         return logits
 
 
-@BACKBONES.register_module()
 class BAFDRBackboneWrapper(BackboneWrapper):
     """BA-FDR Backbone: G96 Global Carrier + Fixed K=16 U128 Local Refresh + Residual Scatter.
     

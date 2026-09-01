@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-08-31
+updated: 2026-09-01
 ---
 
 ## GeoRoute deployment anti-repetition
@@ -1425,3 +1425,10 @@ updated: 2026-08-31
     full-stack latency 失败，不得重跑、换 GPU/population、改门、增加 async/prefetch/worker tuning、模型救援或
     successor。该 STOP 只约束当前 R1 contiguous-support single-GPU 效率路线，不外推所有 decode reuse、动态计算、
     official test、训练泛化或边界保护；唯一下一动作是一次 fresh exact-Project Pro。
+55. 用户提供的 BA-FDR full-matrix prompt/script/pasted report 是候选提案输入，不是 fresh exact-Project Pro
+    授权或实现 receipt。不得直接运行 `run_zoomtoken_bafdr_full_matrix_agent.sh`，不得把它的 7-arm x 3-seed
+    21-cell 矩阵、`BAFDR-K16-FULL` 主候选、D160 teacher distillation、router/projection/loss 新模型面、
+    `C_exec <= 0.70` 门或 `official test closed` 评估方案写成当前冻结任务。现有 NativeCrop/D2S 路径会预先
+    materialize 或完整执行 local branch，不能冒充 K16 physical skip；现有 PA-TAD projection 也不能冒充 L0/L1-only
+    residual injection。若要推进 BA-FDR，必须先由 fresh exact-Project Pro 重新冻结 latest base、完整官方数据身份、
+    selection/test boundary、是否允许 teacher/KD、新 21-cell 或更小准入设计，以及唯一 `C_exec` 门。
