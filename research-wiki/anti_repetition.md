@@ -3964,3 +3964,11 @@ updated: 2026-07-21
   retry, cite or reinterpret these six job IDs as training or scientific evidence.
 - The only transport recovery is the same commit/calibration with `g0030` excluded. The active chain is `1262743/1262744` →
   `1262745/1262746` → `1262747/1262748`; do not create a parallel DAG or alter the frozen experiment.
+
+### 2026-09-01 — Gemini H65 性能保持咨询不能提前改写路线
+
+- 不得把当前实验通过写成“预算分布失配已被证明是唯一根因”，也不得把失败写成“非连续采样或检测后端存在不可逾越障碍”。当前实验只裁决 exact H65 系统、多预算暴露与嵌套位置构造的总效应。
+- 不得把 H65 能力栈中的每个组件写成已分别获得因果证据；代码存在、组合模型有效与单组件因果贡献是三件不同的事。
+- 不得把 Gemini 建议的教师锚定、预算专用归一化、Scout 控制器或任何数字阈值加入当前实验。它们只有在正式终态后经 Pro 单独选择，才可能成为新的匹配实验。
+- 当前一次性 211-video held-out 一旦开封用于路线裁决，就不得再用于后继控制器的设计、阈值选择、反复修改与最终论文宣称；未来评估边界必须由 Pro 另行冻结。
+- 不得把单种子诊断、外部模型给出的经验波动范围或名义 observation 变化升级为正式三种子、配对区间或实测端到端成本证据。

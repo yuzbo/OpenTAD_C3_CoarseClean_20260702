@@ -7438,3 +7438,11 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
   scheduler、EMA 与 DUCA schedule 更新，并各自生成 epoch-59 checkpoint。
 - 严格依赖链已自动启动 seed-3408 Jobs `1262745/1262746`；seed-3409 Jobs `1262747/1262748` 保持等待。
 - 未读取任何中间或 held-out mAP；第一种子终态是训练执行证据，不是性能、效率或论文结论。
+
+## 2026-09-01 — Gemini 3.7 Flash High 完成 H65 性能保持咨询
+
+- 按用户要求，AGY CLI 使用 `gemini-3.7-flash-high`、`effort=high` 对 exact 当前实现、H65 基线、完整 Wiki 和历史 falsifier 做只读分析；回复以 `GEMINI_DUCA_H65_PRESERVATION_ADVISORY_READY` 结束。
+- 完整原文保存于 `research-wiki/sources/2026-09-01-agy-gemini-h65-performance-preserving-optimization-v001.md`，项目事实与因果审计保存于 `research-wiki/sources/2026-09-01-agy-gemini-h65-preservation-review-audit-v001.md`。
+- 可保留的核心建议是“先检验多预算训练后 K=384 是否保持 H65，再判断混合预算是否建立等成本 headroom”；当前三种子完整实验和盲评协议原样保持。
+- Gemini 对若干历史失败的根因、当前 PASS/FAIL 可证明的范围、种子噪声以及后续控制器 held-out 使用做了过强推断。审计已明确降格，并指出同一 211-video 评估集不能在当前开封后又用于后续控制器设计和最终宣称。
+- 本轮没有修改模型、配置、数据、作业或评价协议，没有读取中间或 held-out 性能，也没有授权教师约束、预算归一化、控制器或新路线；所有下一项科学选择仍需 Pro 在当前正式终态后独立裁决。

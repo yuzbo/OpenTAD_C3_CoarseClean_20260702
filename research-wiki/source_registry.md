@@ -4028,3 +4028,13 @@ Primary near-neighbor sources additionally checked during project audit:
   true variable-length packet execution, K384 parity and successful-update/EMA clock integrity.
 - Authority boundary: advisory only. Suggested tolerances, file lists, later ablations and route pivots are not frozen. PASS/FAIL
   mechanism-proof language is overbroad and must return to Pro rather than becoming a project fact.
+
+### `source:agy-gemini-h65-performance-preserving-optimization-v001-20260901`
+
+- Source type: independent external-model consultation on preserving H65 performance while considering later optimization.
+- Transport identity: AGY CLI, `gemini-3.7-flash-high`, `effort=high`, read-only plan/sandbox execution; terminal marker `GEMINI_DUCA_H65_PRESERVATION_ADVISORY_READY`.
+- Inspected identities: current implementation `2b3b3243066a89e5a4be5acdb178c318fbeceac0`, H65 base `04c35a3b76897e6c1569eeede41ed3aecaf7f854`, frozen-detector falsifier `33e4ed137c33eef07f0452b44506a6993bdf7535`, and Wiki revision `aece35372ac8d4a37ceff4ec7f88a1aff0896fb6`.
+- Complete response: `research-wiki/sources/2026-09-01-agy-gemini-h65-performance-preserving-optimization-v001.md`.
+- Project audit: `research-wiki/sources/2026-09-01-agy-gemini-h65-preservation-review-audit-v001.md`.
+- Useful advisory core: establish K=384 preservation first; if exact current system creates valid headroom, only then ask whether deploy-visible Scout signals beat a content-independent matched budget allocation at the same real cost.
+- Authority boundary: no current experiment change. Causal claims, numeric gates, teacher anchoring, budget-specific normalization and controller design remain unapproved hypotheses for Pro adjudication.
