@@ -217,8 +217,17 @@ workflow = dict(
 
 # Post processing setting: ensure save_dict=True so result_path is generated for structured metrics
 post_processing = dict(
+    sliding_window=False,
+    nms=dict(
+        use_soft_nms=True,
+        sigma=0.7,
+        max_seg_num=2000,
+        multiclass=True,
+        voting_thresh=0.7,
+    ),
     save_dict=True,
 )
+
 
 # Base model with DucaEvidenceRecoveryFrameSelector
 model = dict(

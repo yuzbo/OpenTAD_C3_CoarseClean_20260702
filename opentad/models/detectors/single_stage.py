@@ -217,8 +217,11 @@ class SingleStageDetector(BaseDetector):
             segments, meta = self._remap_selector_segments_for_post_processing(segments, meta)
 
             # if not sliding window, do nms
-            if post_cfg.sliding_window == False and post_cfg.nms is not None:
-                segments, scores, labels = batched_nms(segments, scores, labels, **post_cfg.nms)
+            sliding_window = post_cfg.get("sliding_window", False) if hasattr(post_cfg, "get") else getattr(post_cfg, "sliding_window", False)
+            nms_cfg = post_cfg.get("nms", None) if hasattr(post_cfg, "get") else getattr(post_cfg, "nms", None)
+            if not sliding_window and nms_cfg is not None:
+                segments, scores, labels = batched_nms(segments, scores, labels, **nms_cfg)
+
 
             video_id = meta["video_name"]
 
