@@ -1,9 +1,9 @@
 ---
 
-## 2026-09-01 边训边测全周期评估执行铁律 (Online Validation Evaluation Guardrail)
+## 2026-09-01 验证评估轮次规范 (Validation Schedule Standard)
 
-- **严格执行边训边测**：后续所有训练与消融实验配置必须显式设定 `workflow.val_start_epoch=1` 与 `workflow.val_eval_interval=2`（或 1），严禁将验证集评估推迟至末尾轮次（如 `val_start_epoch=40`）。
-- **全生命周期监控**：必须在训练初期（Epoch 1 起）即持续产出并在日志中记录官方验证集的定位指标（mAP@0.3~0.7 及 Avg-mAP），以便实时诊断特征表征与边界定位演化曲线。
+- **保持 40 轮起评标准**：所有模型训练严格保持自 **第 40 轮开始进行验证集评估（`val_start_epoch=40, val_eval_interval=2, end_epoch=60`）** 的标准协议。
+- **禁止早期冗余评测**：严禁在未收敛的早期轮次（如第 1 轮起）进行全量验证集频繁评估，避免破坏计算预算并产生无意义的未收敛评测开销。
 
 ## 2026-07-28 SparseHead consolidation guardrails
 

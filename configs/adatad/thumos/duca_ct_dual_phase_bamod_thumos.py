@@ -81,7 +81,7 @@ workflow = dict(
     checkpoint_interval=2,
     val_loss_interval=-1,
     val_eval_interval=2,
-    val_start_epoch=1,
+    val_start_epoch=40,
     end_epoch=60,
 )
 
