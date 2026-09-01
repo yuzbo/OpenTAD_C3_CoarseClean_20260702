@@ -439,6 +439,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.seed != int(binding.seed):
             raise ValueError("CLI seed differs from the frozen config")
         cfg.dataset.train.ann_file = manifest["training"]["training_only_annotation"]
+        cfg.dataset.train.class_map = manifest["class_map"]["path"]
+        cfg.dataset.train.data_path = manifest["media"]["root"]
         cfg.work_dir = str(args.work_dir.resolve())
         set_seed(args.seed, False, deterministic_warn_only=True)
         if args.resume is None and args.work_dir.exists():

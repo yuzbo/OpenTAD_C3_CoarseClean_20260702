@@ -286,6 +286,8 @@ def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
     validate_cell_config(cell["config_path"], arm=args.arm, seed=args.seed)
     cfg = Config.fromfile(cell["config_path"])
     cfg.dataset.test.ann_file = manifest["evaluation"]["heldout_inference_annotation"]
+    cfg.dataset.test.class_map = manifest["class_map"]["path"]
+    cfg.dataset.test.data_path = manifest["media"]["root"]
     cfg.work_dir = str(args.work_dir.resolve())
     cfg.inference.save_raw_prediction = False
     cfg.inference.load_from_raw_predictions = False
