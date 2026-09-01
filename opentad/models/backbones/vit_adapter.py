@@ -64,12 +64,15 @@ class Adapter(BaseModule):
         x = self.act(x)
 
         # temporal depth-wise convolution
-        B, N, C = x.shape  # 48, 8*10*10, 384
-        attn = x.reshape(-1, self.temporal_size, h, w, x.shape[-1])  # [b,t,h,w,c]  [1,384,10,10,384]
-        attn = attn.permute(0, 2, 3, 4, 1).flatten(0, 2)  # [b*h*w,c,t] [1*10*10,384,384]
-        attn = self.dwconv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
-        attn = self.conv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
-        attn = attn.unflatten(0, (-1, h, w)).permute(0, 4, 1, 2, 3)  # [b,t,h,w,c] [1,384,10,10,384]
+        B, N, C = x.shape
+        spatial_tokens = h * w
+        tubelets_per_batch = max(1, N // spatial_tokens) if spatial_tokens > 0 else 1
+        total_tubelets = B * tubelets_per_batch
+        attn = x.reshape(-1, total_tubelets, h, w, x.shape[-1])  # [b,t,h,w,c]
+        attn = attn.permute(0, 2, 3, 4, 1).flatten(0, 2)  # [b*h*w,c,t]
+        attn = self.dwconv(attn)  # [b*h*w,c,t]
+        attn = self.conv(attn)  # [b*h*w,c,t]
+        attn = attn.unflatten(0, (-1, h, w)).permute(0, 4, 1, 2, 3)  # [b,t,h,w,c]
         attn = attn.reshape(B, N, C)
         x = x + attn
 
