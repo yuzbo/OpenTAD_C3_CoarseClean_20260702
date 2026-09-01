@@ -504,9 +504,9 @@ class DucaEvidenceRecoveryModule(BaseModule):
         }
 
 
-@SELECTORS.register_module()
 @MODELS.register_module()
 class DucaEvidenceRecoveryFrameSelector(BaseModule):
+
     """Pre-backbone frame selector implementing the DUCA Evidence Recovery strategy."""
 
     def __init__(
