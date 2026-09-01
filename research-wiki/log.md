@@ -5,6 +5,17 @@ append_only: true
 
 # Research Wiki Log
 
+- 2026-09-01：DUCA/CT-DP-TAD 完备 2×2 正交消融矩阵部署上线（N16R4 集群）：
+  1. 取消历史早期受阻作业（`1264291` ~ `1264294`），完全清除旧时间间隔混淆产物；
+  2. 代码库基于最新 commit `9cd6f3c0`（含物理时间双链严格解耦、`align_corners=False` 对齐、零偏置初始化对齐与 20/20 项全绿单测）完成集群部署；
+  3. 成功提交单种子 `seed=3407` 完备 2×2 消融 Slurm 任务：
+     - **Arm 1 (Full 主方法)**: Job `1264438` (`duca_ct_dual_phase_bamod_thumos.py`)
+     - **Arm 2 (消融 CT-Conv)**: Job `1264439` (`duca_dual_phase_bamod_thumos.py`)
+     - **Arm 3 (消融 B-AMoD)**: Job `1264440` (`duca_ct_dual_phase_densevit_thumos.py`)
+     - **Arm 4 (双消融基准对照)**: Job `1264441` (`duca_dual_phase_densevit_stdconv_thumos.py`)
+  4. 严格执行第 42~60 轮评估协议，登记更新至 `docs/experiments_registry.md`。
+
+
 - 2026-09-01：DUCA/CT-DP 几何解耦与严谨性全量修正（Commit `93b32e1a`）：
   1. **物理时间双链严格解耦**：
      - 将 CT-Tubelet 的原始帧对时间步长 $\Delta t^{\text{pair}}_j = t_{2j+1} - t_{2j}$ (`[B, 192]`) 与检测特征网格的插值步长 $\Delta t^{\text{detector}}_i$ (`[B, 384]`) 彻底解耦；
