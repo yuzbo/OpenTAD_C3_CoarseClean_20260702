@@ -14,10 +14,11 @@ SEED="${SEED:-3407}"
 EXP_ID="${EXP_ID:-0}"
 
 BASE="${BASE:-/data/run01/sczc063/yuzibo}"
-export HOME="${HOME:-${BASE}/tmp/home}"
-export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${BASE}/tmp/xdg_cache}"
-export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${BASE}/tmp/xdg_config}"
-mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" logs
+export HOME="${BASE}/tmp/home"
+export XDG_CACHE_HOME="${BASE}/tmp/xdg_cache"
+export XDG_CONFIG_HOME="${BASE}/tmp/xdg_config"
+mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${REPO_ROOT}/logs" "${BASE}/slurm_logs"
+
 
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
