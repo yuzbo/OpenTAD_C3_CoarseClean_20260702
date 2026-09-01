@@ -1,0 +1,395 @@
+## 1. Visibility check
+
+Reviewed branch: `codex/gas-vt-stage23-detector-aware-20260706`.
+
+Accessible HEAD commit: `c69c1a01cbb86cdce1ceba13b3a491d0b489f76f`. GitHub shows the branch as public and the latest branch commit as `c69c1a0`, titled `docs: add paction vs gasvt review prompt`; the full SHA is visible in the commit page URL. ([GitHub][1])
+
+Important visibility limitation: the repository does **not** include the actual long training logs/checkpoints/result JSONs needed to verify the reported `GAS-VT fixed_384 ≈44.90` or any higher PAction mAP. The README explicitly says checkpoints/logs are excluded. Therefore, all metric claims below are treated as **unverified monitoring hypotheses**, not accepted experimental results. ([GitHub][1])
+
+One requested Stage2 file is not accessible on this branch: `tools/bata/export_dense_adatad_teacher_utility.py` returns 404. That is a Stage2 route blocker, because the dense-teacher utility export path cannot be audited from the requested file surface.
+
+---
+
+## 2. Executive verdict
+
+**Code correctness verdict: HOLD.** The Stage1 deploy-ledger path has many good safety mechanisms: split checks, deploy payload stripping, source hashing, checkpoint hashing, selected-position uniqueness checks, duplicate-sample guards, and no obvious val/test GT usage in the final deploy application path. However, GAS-VT has a serious train/apply distribution mismatch and the current implementation is not truly sequential/gap-aware in the sense implied by the method name. It is closer to `p_action feature ranker + hand-coded hard gap repair + constrained top-k`.
+
+**Experimental-logic verdict: HOLD.** The PAction and GAS AdaTAD configs are largely matched, including base config, data method, `remap_gt_to_selected_axis=True`, selected-count requirements, optimizer/scheduler family, pretrain path shape, and 60-epoch schedule. But repository evidence is insufficient for any performance comparison claim because the logs/checkpoints/result JSONs are not in GitHub. Old GAS logs versus current PAction logs are not a fair matched matrix.
+
+**Paper-claim readiness verdict: FAIL.** Stage1 can be claimed only as a strict offline-ledger baseline. GAS-VT should be demoted from “main method” to “strong engineered baseline.” Stage2/3 are promising route scaffolds but not claim-ready: Stage2 is missing the requested teacher-utility export script, and Stage3 TrueTime is a precheck-oriented straight-through selector, not yet demonstrated as a real detector-loss-trained acquisition module.
+
+**Most important diagnosis:** PAction learned fixed_384 can plausibly outperform GAS-VT fixed_384 for boring reasons: it is simpler, denser, easier to optimize, more directly tied to `p_action` and GT-derived action/boundary surrogate targets during training, and less over-regularized. GAS-VT’s “structured” losses can easily suppress high-value peaks and push selection toward uniform-like coverage, especially because its apply-time features are not built with the same target-budget conditioning as training.
+
+---
+
+## 3. PAction learned vs GAS-VT comparison
+
+| Aspect                 | PAction learned                                                                              | GAS-VT Stage0/1                                                                                                        | Review judgment                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Input signal           | `p_action` plus derived local features such as delta, uncertainty, entropy, time, valid mask | PAction feature set plus density/change/distance/budget-pressure/gap-urgency features                                  | GAS has more features, but not necessarily more useful signal.                                       |
+| Training target        | GT-derived `action_target`, boundary targets, budget/gap-style surrogate losses              | GT-derived action, boundaries, action-interior bins, boundary bracket, CVaR max-hole, budget, paction-dependence terms | Both are **train-split supervised surrogate selectors**, not detector-aware selectors.               |
+| Deployment input       | Deploy-visible `p_action` rows; invisible payloads stripped before ledger generation         | Same deploy-visible `p_action` source concept; invisible payloads stripped                                             | No direct deploy GT leak seen in the application path.                                               |
+| Decoder                | `constrained_topk`: rank by learned frame value, then optional hard max-hole repair          | `hard_gap_aware_topk`, which delegates to the same constrained top-k machinery                                         | GAS decoder is not substantially different from PAction; the “VT” part is weak.                      |
+| Sequential state       | None                                                                                         | Function signatures expose `selected_so_far`, but train/apply do not implement an autoregressive selection loop        | GAS is not faithful to a sequential acquisition story.                                               |
+| Fixed_384 density      | Selects about half of a 768 dense window                                                     | Same budget                                                                                                            | Fixed_384 naturally reduces p95 holes; strong hole metrics are not proof of intelligent acquisition. |
+| Boundary coverage      | Can come from GT-derived boundary training loss, p_action/delta correlation, and 50% density | Can come from boundary bracket/interior losses plus hard repair                                                        | Boundary coverage is not automatically detector utility.                                             |
+| Validation gates       | PAction pipeline exposes boundary/action/gap/uniform/provenance-style gates                  | GAS validation emphasizes gap/uniform/provenance; boundary/action gates are less symmetric in the pipeline             | Gate asymmetry weakens direct comparison.                                                            |
+| Likely performance gap | Simple direct ranking + dense budget + easier optimization                                   | Over-regularized coverage/holes; train/apply feature mismatch; uniform-like repair                                     | PAction being better does **not** prove a better research method yet.                                |
+
+Code surfaces supporting this: PAction uses a learned policy plus constrained top-k and training losses over action/boundary/gap-style targets; GAS-VT defines additional gap-aware features/losses but its hard decoder still calls the PAction constrained top-k route; detector-aware Stage2 reuses GAS-VT feature machinery rather than introducing a fundamentally detector-native decoder. ([GitHub][2])
+
+---
+
+## 4. Root-cause analysis
+
+### 4.1 Why PAction learned_fixed_384 may be better
+
+PAction fixed_384 is a high-density selector. On a 768-length dense window, selecting 384 positions already guarantees that the average temporal gap is small. With even a weakly useful `p_action` signal, fixed_384 can cover action interiors and many boundaries without needing a sophisticated acquisition model. Therefore, small p95 hole and strong boundary coverage are not sufficient evidence that PAction learned a deployable “where to look” policy.
+
+PAction also has a more direct optimization path. The network learns frame values from `p_action`-derived features with GT-derived action and boundary targets on the training split. That is a much easier surrogate than GAS-VT’s combined BCE, boundary bracket, action interior, CVaR max-hole, budget, and dependence terms. Simpler ranking often wins when the budget is already generous.
+
+The strongest interpretation is: PAction learned_fixed_384 is currently a **strong supervised p_action ranker plus dense budget**, not yet a detector-aware temporal acquisition method. Its advantage could be real, but the cause is not yet isolated.
+
+### 4.2 Why GAS-VT can reach ~40 mAP early and plateau around 44–46
+
+That behavior is plausible under sparse TAD. AdaTAD can quickly learn coarse action classification and low-IoU localization from a half-density signal, causing early mAP to jump. The plateau likely comes when high-IoU localization depends on boundary precision, true-time geometry, and selected-axis remapping quality. If the selected ledger is coverage-heavy or uniform-like, the detector receives enough context for coarse detection but not enough boundary-discriminative evidence for high tIoU.
+
+The code also gives a sharper explanation: current GAS-VT is not actually performing a sequential gap-aware policy. Its feature builder has `selected_so_far` and budget-pressure concepts, but the training/application path builds a feature matrix once and then decodes using hard top-k. The hard decoder ultimately delegates to the same constrained top-k used by PAction. This means the structured terms may regularize scores without providing a genuinely stronger acquisition mechanism. ([GitHub][3])
+
+The most concerning concrete bug is train/apply mismatch: GAS training builds features with a `target_budget`, while GAS application builds features without a target budget. That changes budget-pressure/remaining-budget/gap-urgency style inputs at inference time. This alone can explain a policy that appears to train but plateaus or collapses at detector evaluation. ([GitHub][4])
+
+### 4.3 Why `uniform similarity above threshold: 1.0` can happen
+
+The validator’s uniform similarity is an exact overlap against a rounded uniform reference, not a robust distributional uniformity test. For `valid_len=768, k=384`, the uniform reference can become essentially every other index. If the selected positions exactly match that reference for even one row, the max uniform similarity becomes `1.0`. Hard max-hole repair can also create nearly uniform grids while still reporting `uses_uniform_fill=False` and `uses_uniform_scaffold=False`. The validator therefore catches one collapse mode but can both over-trigger on a single row and under-detect phase-shifted uniform-like selection. ([GitHub][5])
+
+---
+
+## 5. Strict bug / risk list
+
+I am not fabricating line numbers where GitHub’s raw renderer collapsed Python files into a single displayed line in this environment. The file/function references below are the exact audited code surfaces; the line ranges are the relevant function blocks visible in GitHub blobs/raw pages.
+
+### P0 — blocking correctness or claim validity
+
+**P0-1 — GAS-VT train/apply feature mismatch.**
+Files: `tools/bata/train_gap_aware_acquisition_policy.py::_prepared_rows`, `tools/bata/apply_gap_aware_acquisition_policy.py::checkpoint_policy_scores`.
+Training calls `build_gap_aware_feature_matrix(..., target_budget=dynamic_budget_target)`. Application calls `build_gap_aware_feature_matrix(p_action, valid=valid)` without target budget. This changes the semantics of budget-pressure, remaining-budget, and gap-urgency features at inference. This is a real distribution shift and a plausible cause of GAS plateau/collapse. ([GitHub][4])
+
+**Patch direction:** build features per requested budget at application time, or remove target-budget-dependent features from training.
+
+```python
+def checkpoint_policy_scores_for_budget(
+    model,
+    p_action,
+    *,
+    valid,
+    target_budget: int,
+    device: str = "cuda",
+):
+    import torch
+
+    features = gas_vt.build_gap_aware_feature_matrix(
+        p_action,
+        valid=valid,
+        target_budget=int(target_budget),
+    )
+    with torch.no_grad():
+        x = torch.tensor([features], dtype=torch.float32, device=device)
+        m = torch.tensor([list(valid)], dtype=torch.bool, device=device)
+        b = torch.tensor([int(target_budget)], dtype=torch.float32, device=device)
+        out = model(x, m, target_budget=b)
+
+    return [float(v) for v in out["frame_value"][0].cpu().tolist()]
+```
+
+For fixed_384 and fixed_768, decode from scores computed with 384 and 768 respectively. For dynamic, first predict the budget, then recompute features with that predicted budget before final frame scoring.
+
+---
+
+**P0-2 — GAS-VT is not faithful to the claimed sequential value-transport design.**
+Files: `tools/bata/gas_vt_paction_policy.py::build_gap_aware_feature_matrix`, `::hard_gap_aware_topk`, `::add_gas_vt_decision_to_sample_row`, `::GapAwareSequentialAcquisitionPolicy.forward`.
+The code exposes state-like features but does not perform autoregressive selection with updated `selected_so_far`. `hard_gap_aware_topk` delegates to the PAction constrained top-k decoder. That makes GAS-VT an engineered p_action-ranker baseline, not a faithful sequential acquisition method. ([GitHub][3])
+
+**Patch direction:** either demote/rename it, or implement actual iterative selection:
+
+```python
+def sequential_gap_aware_decode(
+    model,
+    p_action,
+    *,
+    valid,
+    budget: int,
+    max_unselected_hole: int | None,
+    device: str = "cuda",
+):
+    selected: list[int] = []
+    valid_len = sum(bool(v) for v in valid)
+
+    for step in range(min(int(budget), valid_len)):
+        features = gas_vt.build_gap_aware_feature_matrix(
+            p_action,
+            valid=valid,
+            selected_so_far=selected,
+            target_budget=int(budget),
+        )
+        scores = model.score_frames(features, valid=valid, device=device)
+
+        for idx in selected:
+            scores[idx] = float("-inf")
+
+        next_idx = int(max(range(valid_len), key=lambda i: scores[i]))
+        selected.append(next_idx)
+
+        selected = repair_if_needed(
+            selected,
+            valid_len=valid_len,
+            max_unselected_hole=max_unselected_hole,
+        )
+
+    return sorted(set(selected))[: int(budget)]
+```
+
+---
+
+**P0-3 — `uses_uniform_fill=False` does not prove non-uniform acquisition.**
+Files: `tools/bata/paction_acquisition_policy.py::constrained_topk`, `tools/bata/gas_vt_paction_policy.py::hard_gap_aware_topk`, `tools/bata/validate_paction_learned_policy_ledger.py::_uniform_similarity`.
+Hard max-hole repair can create a uniform-like lattice while metadata still says no uniform fill/scaffold. This is not necessarily data leakage, but it invalidates claims like “not uniform-like” unless repair statistics are tracked. ([GitHub][2])
+
+**Patch direction:** record hard repair explicitly.
+
+```python
+@dataclass
+class TopKRepairStats:
+    repair_inserted_count: int = 0
+    repair_replaced_count: int = 0
+    max_hole_before: int | None = None
+    max_hole_after: int | None = None
+    uniform_similarity_after: float | None = None
+
+# Store in policy metadata:
+policy_meta["hard_gap_repair_enabled"] = max_unselected_hole is not None
+policy_meta["gap_repair_inserted_count"] = stats.repair_inserted_count
+policy_meta["gap_repair_replaced_count"] = stats.repair_replaced_count
+policy_meta["uses_uniform_like_hard_repair"] = (
+    stats.uniform_similarity_after is not None
+    and stats.uniform_similarity_after >= 0.95
+)
+```
+
+---
+
+**P0-4 — Requested Stage2 teacher utility exporter is missing.**
+File: `tools/bata/export_dense_adatad_teacher_utility.py`.
+The requested file returns 404. Stage2 cannot be audited as a complete dense-teacher utility pipeline without it. Existing Stage2 train/apply/pipeline files expect signed train-only teacher utility, but the export path that creates those targets is absent from the requested branch surface.
+
+---
+
+### P1 — serious experiment/fairness risks
+
+**P1-1 — GAS and PAction validation gates are not fully symmetric.**
+Files: `tools/bata/run_paction_learned_policy_ledger_pipeline.py`, `tools/bata/run_gap_aware_ledger_pipeline.py`, `tools/bata/run_detector_aware_ledger_pipeline.py`.
+PAction exposes stricter boundary/action/gap-style gates; GAS appears more focused on gap/uniform/provenance. This can make one route look cleaner or fail earlier for reasons unrelated to detector mAP.
+
+**P1-2 — `uniform_similarity` is too narrow.**
+File: `tools/bata/validate_paction_learned_policy_ledger.py::_uniform_reference_positions`, `::_uniform_similarity`, `::validate_ledger`.
+It measures exact overlap with one rounded reference grid. It can miss phase-shifted uniform grids and over-trigger on a single exactly uniform row. Keep it, but add gap-CV, rank-distance-to-uniform, selected CDF KS distance, and per-row p95/p99 hole metrics. ([GitHub][5])
+
+```python
+def uniformity_metrics(selected: list[int], valid_len: int) -> dict[str, float]:
+    import math
+    import statistics
+
+    selected = sorted(set(int(i) for i in selected if 0 <= int(i) < valid_len))
+    k = len(selected)
+    if k <= 1:
+        return {"uniform_rank_mae": 0.0, "gap_cv": 0.0}
+
+    ideal = [i * (valid_len - 1) / float(k - 1) for i in range(k)]
+    rank_mae = sum(abs(s - t) for s, t in zip(selected, ideal)) / float(k)
+
+    gaps = [selected[0] + 1]
+    gaps += [b - a for a, b in zip(selected, selected[1:])]
+    gaps += [valid_len - selected[-1]]
+    mean_gap = statistics.fmean(gaps)
+    gap_cv = 0.0 if mean_gap <= 0 else statistics.pstdev(gaps) / mean_gap
+
+    return {
+        "uniform_rank_mae": float(rank_mae),
+        "gap_cv": float(gap_cv),
+    }
+```
+
+**P1-3 — PAction `val_jsonl` support is dangerous if used for policy selection.**
+File: `tools/bata/train_paction_acquisition_policy.py::run_training`.
+The launcher appears to train on train split, but the trainer supports a validation JSONL with GT-derived action/boundary targets. That is acceptable only as a training-diagnostic split, not official validation/test model selection. This must be documented and fail-closed for `expected_split != training`.
+
+**P1-4 — Dynamic-budget variants are not yet fair evidence.**
+Files: PAction/GAS/detector-aware policy trainers and ledger pipelines.
+Dynamic budget targets are trained from supervised targets or utility-derived calibration, then decoded with short-valid-ratio handling. Dynamic variants must be compared against matched selected-count histograms, not just fixed_384/fixed_768.
+
+**P1-5 — Stage2 detector-aware apply path repeats the same GAS budget-conditioning problem.**
+Files: `tools/bata/train_detector_aware_acquisition_policy.py::_prepared_rows`, `tools/bata/apply_detector_aware_acquisition_policy.py::checkpoint_policy_scores`.
+Training builds detector-aware features with target-budget conditioning; checkpoint application builds detector-aware features without target budget. Since detector-aware features are just GAS-VT features reused, Stage2 inherits the same train/apply mismatch unless fixed. ([GitHub][6])
+
+**P1-6 — Stage3 TrueTime currently proves shape/contract more than detector-aware learning.**
+File: `opentad/models/selectors/truetime_joint_selector.py`.
+The selector rejects GT/teacher metadata by default and has explicit selected-axis/true-time contracts, which is good. But its selector losses are diagnostic placeholders, and the real claim still requires proof that detector loss creates nonzero useful gradients into selector parameters and improves high-IoU mAP. ([GitHub][7])
+
+---
+
+### P2 — cleanup and reporting issues
+
+**P2-1 — GAS config wording overstates the implementation.**
+File: `configs/adatad/thumos/c3_gas_vt_ledger_adatad_full_train.py`.
+Config metadata says gap-aware/learned route, but the effective decode is hard constrained top-k. Rename to “GAS-engineered constrained p_action baseline” unless true sequential decoding is implemented.
+
+**P2-2 — GPU/script asymmetry.**
+Files: `scripts/run_c3_paction_learned_policy_adatad_full_train_gpu1.sh`, `scripts/run_c3_gas_vt_policy_adatad_full_train_gpu1.sh`.
+The PAction script is stricter about GPU1. The GAS script has a GPU0 override path. This is not a scientific blocker, but for matched reruns the script environment should be identical and logged.
+
+**P2-3 — `paction_dependence_loss` naming is misleading.**
+File: `tools/bata/gas_vt_paction_policy.py::gas_vt_training_objective`.
+From the inspected code, the term behaves more like a probability-variance/saturation regularizer than a direct dependence-on-p_action proof. Rename or add an actual correlation/dependence metric.
+
+---
+
+## 6. Fairness checklist for matched reruns
+
+Do not compare current PAction logs to old GAS logs. Rerun a matched matrix from the same HEAD commit.
+
+Required controls:
+
+1. Same commit: `c69c1a01cbb86cdce1ceba13b3a491d0b489f76f`.
+2. Same source JSONL SHA for train/val/test.
+3. Same p_action provenance and p_action checkpoint/source SHA.
+4. Same AdaTAD base config, pretrain checkpoint SHA, train/eval data paths, window size, `dense_window_size=768`, augmentation, optimizer, EMA, scheduler, batch size, seed, and GPU type.
+5. Same validation epochs: intended zero-based epochs `9, 19, 29, 39, 49, 59`; verify by emitted log timestamps, not config text alone.
+6. Same selected-count contract: fixed_384 must actually produce 384 except short-valid-ratio rows; fixed_768 likewise; dynamic must report selected-count histogram and entropy.
+7. Same short-valid-ratio policy.
+8. Same true-time metadata and `remap_gt_to_selected_axis=True`.
+9. Same post-processing/NMS/eval config.
+10. Save full logs, raw prediction counts, mAP JSON, tIoU breakdown, ledger validation summary, selected-count summary, hole metrics, uniformity metrics, boundary/action coverage, and policy checkpoint hashes.
+
+Minimal matched methods:
+
+| Family           | Variants                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| Baselines        | uniform fixed_384, random fixed_384, p_action top-k fixed_384                      |
+| PAction          | learned fixed_384 no max-hole, learned fixed_384 with max-hole, fixed_768, dynamic |
+| GAS-VT current   | fixed_384 no max-hole, fixed_384 with max-hole, fixed_768, dynamic                 |
+| GAS-VT repaired  | train/apply-budget-consistent fixed_384/768/dynamic                                |
+| Density ablation | 256, 320, 384, 512 selected positions                                              |
+| Decoder ablation | plain top-k vs constrained top-k vs true sequential decoder                        |
+
+---
+
+## 7. Corrected experiment plan
+
+### Immediate reruns / ablations
+
+First fix the GAS train/apply budget-conditioning bug. Then run:
+
+1. `p_action top-k` vs `PAction learned` under identical constrained decoder.
+2. `PAction learned` with and without boundary loss.
+3. `PAction learned` with and without max-hole repair.
+4. `GAS-VT` with and without CVaR max-hole loss.
+5. `GAS-VT` with and without hard repair.
+6. `GAS-VT` before/after train/apply budget fix.
+7. Uniform similarity threshold disabled only for diagnostic runs, never for final claim runs.
+8. Report per-epoch mAP curves and high-IoU mAP, not only final average mAP.
+
+The key question is not “which mAP is higher once”; it is:
+
+> Does a learned acquisition policy outperform p_action top-k and uniform under the same budget, same decoder, same AdaTAD config, and same ledger geometry?
+
+### Stage2 dense teacher utility
+
+Stage2 should answer one question only:
+
+> Can dense AdaTAD teacher utility train a selector better than p_action-only and GAS-engineered baselines?
+
+Requirements:
+
+1. Restore/add `tools/bata/export_dense_adatad_teacher_utility.py`.
+2. Export teacher utility only for train split.
+3. Use signed utility: positive observation gain and negative observation risk.
+4. Never write teacher utility into deploy val/test ledgers.
+5. Report detector-utility NDCG/coverage and final AdaTAD mAP.
+6. Compare against matched PAction/GAS budgets and selected-count histograms.
+
+Stage2 is not end-to-end; label it as offline detector-aware distillation.
+
+### Stage3 true joint selector
+
+Stage3 should answer:
+
+> Can detector loss backpropagate into selector parameters in one graph and improve TAD mAP without collapsing selected geometry?
+
+Minimum proof:
+
+1. One forward graph: selector → sparse inputs → AdaTAD head → detector loss.
+2. `selector_grad_norm > 0` after detector loss backward.
+3. Selector parameters change after optimizer step.
+4. No GT/teacher metadata in selection during val/test.
+5. Selected positions remain on dense local true-time axis.
+6. No dense teacher utility in deploy.
+7. mAP compared against fixed ledgers under the same budget.
+
+The current TrueTime selector is a useful precheck, but not yet evidence of a working Stage3 method. ([GitHub][7])
+
+### Stage4 curriculum / bilevel stabilization
+
+Use Stage4 only after Stage3 gradient proof passes.
+
+Recommended schedule:
+
+1. Warm-start selector from Stage2 detector-aware policy.
+2. Freeze AdaTAD detector for selector pretraining.
+3. Freeze selector and train detector.
+4. Joint fine-tune with small selector LR.
+5. Add collapse guards: entropy, duplicate rate, uniformity, max-hole, p_action-only correlation, selected-count variance.
+6. Validate high-IoU mAP separately from average mAP.
+
+---
+
+## 8. Final route judgment
+
+**PAction learned_fixed_384 may be a stronger current baseline than GAS-VT fixed_384, but the likely reason is not that it solved detector-aware acquisition.** It is probably benefiting from direct p_action ranking, GT-derived train targets, high 50% density, easier optimization, and fewer over-regularizing constraints.
+
+**GAS-VT should be demoted.** As currently implemented, it is acceptable as a Stage1 engineered baseline, not as the main method. The name “GAS-VT” overclaims unless you implement true sequential state updates or explicitly redefine it as a constrained p_action acquisition baseline.
+
+**Stage2 is the correct next scientific direction, but currently incomplete on this branch because the requested dense teacher utility exporter is missing.**
+
+**Stage3 is the correct final direction for the paper story, but only after proving detector-loss gradients reach the selector and that the selector improves high-IoU localization rather than collapsing into uniform or p_action top-k behavior.**
+
+### Machine-readable verdict
+
+```text
+VISIBILITY: PASS
+REVIEWED_BRANCH: codex/gas-vt-stage23-detector-aware-20260706
+REVIEWED_COMMIT: c69c1a01cbb86cdce1ceba13b3a491d0b489f76f
+
+CODE_CORRECTNESS: HOLD
+EXPERIMENTAL_LOGIC: HOLD
+PAPER_CLAIM_READINESS: FAIL
+
+GAS_VT_MAIN_METHOD_STATUS: DEMOTE_TO_ENGINEERED_STAGE1_BASELINE
+PACTION_RESULT_STATUS: UNVERIFIED_WITHOUT_MATCHED_LOGS
+STAGE2_STATUS: HOLD_MISSING_TEACHER_UTILITY_EXPORTER
+STAGE3_STATUS: PRECHECK_ONLY_NOT_MAP_CLAIM_READY
+
+PRIMARY_BLOCKERS:
+- GAS train/apply target-budget feature mismatch
+- GAS not truly sequential despite value-transport wording
+- hard gap repair can mimic uniform fill while flags stay false
+- uniform_similarity metric is too narrow
+- Stage2 requested teacher utility exporter missing
+- no repository logs/checkpoints/result JSONs for metric claims
+```
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/gas-vt-stage23-detector-aware-20260706 "GitHub - yuzbo/OpenTAD_C3_CoarseClean_20260702 at codex/gas-vt-stage23-detector-aware-20260706 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/raw/c69c1a01cbb86cdce1ceba13b3a491d0b489f76f/tools/bata/paction_acquisition_policy.py "raw.githubusercontent.com"
+[3]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/c69c1a01cbb86cdce1ceba13b3a491d0b489f76f/tools/bata/gas_vt_paction_policy.py "raw.githubusercontent.com"
+[4]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/c69c1a01cbb86cdce1ceba13b3a491d0b489f76f/tools/bata/train_gap_aware_acquisition_policy.py "raw.githubusercontent.com"
+[5]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/c69c1a01cbb86cdce1ceba13b3a491d0b489f76f/tools/bata/validate_paction_learned_policy_ledger.py "raw.githubusercontent.com"
+[6]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/train_detector_aware_acquisition_policy.py "raw.githubusercontent.com"
+[7]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/opentad/models/selectors/truetime_joint_selector.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/selectors/truetime_joint_selector.py at codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-25T15:52:18Z",
+  "deadline": null,
+  "from_role": "builder",
+  "kind": "PJST_D1_FOCUSED_RECHECK",
+  "message_id": "msg-20260825T155218Z-9db3c2cbc9f4",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-returns/CRITIC_PJST_D1_INDEPENDENT_IMPLEMENTATION_REVIEW-v001.md",
+    "size": 4191
+  },
+  "priority": "high",
+  "requested_action": "Recheck only the previously identified bounded deterministic set on commit 84325205 and verify no new claim-preserving integration defect. PASS or terminal BLOCKED; no further correction loop.",
+  "required_gate": "same frozen science; single recovery consumed; no PRE_RUN unless PASS",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-12T21:02:34Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_PLAN",
+  "message_id": "msg-20260812T210234Z-8c74f8097f7c",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_EXECUTION_PLAN-v002",
+    "CRITIC_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_PLAN_V002_FOCUSED_RECHECK-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Author only the exact NOT_EXECUTED E1 independent-reference PRE_RUN/admission manifest candidate required by accepted PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001 and role-separated plan v002. It must name one literal remote CPU argv, interpreter, working directory, allowed sealed inputs, phase-relative output-root state, environment denials, one-shot limit, expected machine-readable E1 receipt path/schema, first-fail condition, and zero-forbidden-access attestation. It may use only the existing Evaluator-owned authored static reference interface/contract to form the candidate; do not import/compile/invoke it or access the Builder checkout/production adapter/reference outputs. Preserve all frozen science, Q/18/9/6 ordering, exhaustive T<=385/reference-DAG allocation, exact input-line bytes, role separation, and NOT_EXECUTED status. Do not execute any command, access remote/SSH/data/model/checkpoint/metric/GPU/CUDA/Slurm/browser, materialize fixtures, or alter files outside this Evaluator-owned durable candidate. This document does not make PRE_RUN_READY or authorize E1.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

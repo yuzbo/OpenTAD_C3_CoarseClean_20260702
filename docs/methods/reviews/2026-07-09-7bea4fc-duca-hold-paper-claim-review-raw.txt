@@ -1,0 +1,403 @@
+## 审稿裁决：**HOLD / 不能直接支撑论文主张**
+
+我确认看到的是 GitHub 上的 `7bea4fc`，commit message 是 **“Fix DUCA official proof loss config”**。这个 commit 只改了 `tools/bata/run_duca_official_adatad_one_step_grad_proof.py` 这一个文件，diff 是 `+3/-1`，主要是把 `ConfigDict` 引入并把 `rpn_head["loss"]` 包成 `ConfigDict`，然后继续构造 `ActionFormerHead`。这说明 `7bea4fc` 的新增价值主要是**修复 one-step proof 脚本**，不是重写 selector、config 或 full training 路线。([GitHub][1])
+
+我的裁决是：
+
+**代码结构已经从 proof-of-concept 进入“论文方法候选”的门口，但还没有进入“可支撑主论文 claim”的状态。**
+它现在可以较有力地证明：DUCA 插件接到了 official ActionFormer/AdaTAD 风格 backend，coarse probe / selector / dynamic budget controller 在 one-step proof 中可以收到 detector loss 梯度。它还不能证明：这个 selector 真正学到了 detector-utility-calibrated temporal acquisition，更不能证明 dynamic MUST 是有效的 adaptive budget policy。
+
+最危险的点不是“有没有梯度”。最危险的是：**detector utility 仍不是 detector-derived utility；dynamic MUST 结果近乎崩溃；所有 running 主实验都不是最新 `7bea4fc`；fixed-384 的 40.94% 只能证明链路不死，不能证明方法成立。**
+
+---
+
+## 1. 是否真正符合最终目标？
+
+**部分符合，但不能按论文主张直接宣称成功。**
+
+符合的部分：
+
+第一，粗分类 probe 不再只是外部 `p_action` 曲线。`C3CoarseProbeActionnessSource` 会调用 probe，并且在需要 hidden features 时要求返回 hidden；代码会检查 hidden 维度、时间长度，并把 `coarse_hidden_features` 和 `hidden_features` 返回给下游。([GitHub][2]) 动态配置里也明确 `return_hidden_features=True`、`require_hidden_features=True`，并且 selector 设置 `use_coarse_hidden_features=True` / `require_coarse_hidden_features=True`。([GitHub][3])
+
+第二，selector 的配置确实把 actionness 降为辅助项。动态配置默认 `actionness_weight=0.05`，而 `transition_weight=1.0`、`boundary_weight=1.0`；配置还显式检查 `actionness_weight < transition_weight` 且 `< boundary_weight`，否则直接报错。([GitHub][3]) dynamic contract 也写了 `actionness_role="auxiliary_calibration_not_coverage"`、`selector_score_priority="transition_boundary_utility_first"`。([GitHub][3])
+
+第三，backend 不是 fake head。validator 要求 `cfg.model.type == "ActionFormer"`、`head.type == "ActionFormerHead"`，并要求 `ActionFormerHead` config 与 official base 一致，同时禁止 `DucaOnlinePrecheckHead`。([GitHub][4]) one-step proof 也 fail-closed 地检查 built model 是 `ActionFormer`、`rpn_head` 是 `ActionFormerHead`，不是 precheck head。([GitHub][5])
+
+第四，detector loss 到 selector 的梯度链路不再是口头 claim。selector 里有 `soft_to_hard_resample` 梯度桥：hard forward 仍使用 selected positions，但 backward 通过 soft temporal weights 回传；代码会记录 `gradient_path` 和 `soft_resample_weights`。([GitHub][6]) one-step proof 用 `losses["cost"].backward()`，检查 `coarse_probe_grad_sum`、`selector_encoder_grad_sum`、`selector_center_head_grad_sum`，dynamic 模式还要求 `budget_controller_grad_sum` 非零。([GitHub][5])
+
+不符合或仍危险的部分：
+
+**“Detector-utility-calibrated” 这个词目前不能无条件使用。** fixed 和 dynamic validator 都明确要求：`detector_utility_target_kind` 只是 `deprecated_alias_to_gt_boundary_utility_proxy`，并且 `detector_utility_target_is_true_detector_derived=False`。这不是我主观挑刺，是你自己的 validator 在 fail-closed 地防止误称 true detector-derived utility。([GitHub][4])
+
+**dynamic MUST 不是实际 variable-length detector。** dynamic contract 明确 `actual_variable_length_detector=False`，`runtime_flops_claim_allowed=False`，config 里 detector 的 `window_size = budget_max`，backbone `total_frames` 和 projection `max_seq_len` 都等于 cap。([GitHub][3]) 所以动态预算现在是“policy 层动态 + padded/capped backend”，不能 claim 真正的 variable-length runtime saving。
+
+---
+
+## 2. 是否仍有 actionness 主导、boundary 名不副实、detector gradient 断开、max-gap 只是工程补丁的问题？
+
+### Actionness 是否主导？
+
+**配置上不是主导，机制上仍有隐性主导风险。**
+
+配置已经把 actionness weight 压到 0.05，transition/boundary 是 1.0。这个方向是对的。问题是：DUCA 的 transition features 本身仍来自 `p_action` 的 temporal derivative 和 uncertainty peak，例如 `delta_p_action`、`abs_delta_p_action`、`uncertainty_peak`、`transition_score` 都由 actionness 曲线派生。raw source 里 `transition_score = abs_delta + uncertainty_peak`，这意味着“transition-first”在实现上很大程度仍是“p_action change-first”。([GitHub][7])
+
+因此，论文里不能写成“我们摆脱 actionness 覆盖选帧”。更准确的表述应是：
+
+> DUCA does not rank frames by actionness coverage alone; it uses actionness-derived transition cues, learned hidden features, boundary proxy supervision, and detector-loss gradient through a soft-to-hard bridge.
+
+要把“actionness 不主导”讲硬，必须做 ablation：`actionness_weight=0`、`no p_action transition features`、`hidden-only transition`、`p_action top-K`、`DUCA full`。
+
+### Boundary 监督是否名不副实？
+
+**Boundary 本身是真的 GT-boundary proxy；utility 名不副实。**
+
+selector 的 train forward 会从 GT segments 构造 action target、boundary target、boundary utility proxy target，然后把这些送入 `duca_losses`。([GitHub][6]) 这说明 boundary target 是有意义的训练信号，不是空壳。
+
+但 `detector_utility` 不是 detector-derived。validator 明确要求它只能叫 `deprecated_alias_to_gt_boundary_utility_proxy`，并且不能 claim true detector-derived utility。([GitHub][4]) 所以论文里可以说：
+
+> GT boundary-utility proxy + detector-loss gradient feedback.
+
+不能说：
+
+> Supervised by detector utility labels / learned detector utility target.
+
+### Detector gradient 是否断开？
+
+**one-step 级别没有断开；full training 级别未证明稳定有效。**
+
+`soft_to_hard_resample` 让 detector loss 有路径回到 selector，proof 脚本也检查 official `ActionFormerHead` loss key 包含 `cost/cls_loss/reg_loss`，然后反传并检查 coarse probe、selector encoder、center head、dynamic budget controller 梯度。([GitHub][5])
+
+但是 one-step proof 只证明“图连通”，不证明“训练可收敛”。dynamic MUST 当前 2.90% / 7.69% 的 mAP 正是在说明：图连通不等于方法有效。
+
+### Max-gap 是否只是工程补丁？
+
+**现在是“soft loss + hard repair”的混合。soft loss 是训练约束，但 hard repair 仍可能掩盖 selector 失败。**
+
+测试里 `temporal_max_gap_hole_loss` 确实会惩罚空窗，并且能 backprop。([GitHub][8]) 但 decode 阶段也有 hard max-gap repair：如果启用 `hard_max_gap_repair` 和 `max_unselected_hole`，会对 selected positions 做后处理修复，不可行时 fail。([GitHub][9])
+
+所以论文不能只写“we learn a max-gap constraint”。必须报告四组 ablation：
+
+1. no max-gap；
+2. soft max-gap loss only；
+3. hard repair only；
+4. soft loss + hard repair。
+
+否则 reviewer 会认为 high-IoU 稳定性来自 deterministic repair，而不是 acquisition policy 学会了避免空洞。
+
+---
+
+## 3. 当前 running experiments 能否作为论文主结果？
+
+**不能。全部只能算旧版本诊断。**
+
+你给出的 running jobs 都是 `0b0b0f5` 或 `009f9d7`，不是 `7bea4fc`。而 `7bea4fc` 只修了 one-step official gradient proof 的 loss config，不等价于 full training 主实验已经被验证。([GitHub][1])
+
+具体归类：
+
+* `1151863 fixed-384 official/JCT, commit 0b0b0f5, Avg 40.94%`：只能作为**旧版本链路诊断**。
+* `1151864 dynamic, commit 0b0b0f5, Avg 7.69%`：只能作为**dynamic collapse evidence**。
+* `1151927 fixed-384, commit 009f9d7, Avg 19.40%`：旧版本失败/不稳定诊断。
+* `1151928 dynamic, commit 009f9d7, Avg 2.90%`：dynamic collapse evidence。
+* `1151929 fixed budget curve budget=128, Avg 5.86%`：低预算旧实现诊断。
+* `1151955 MUST target 128, Avg 3.12%`：dynamic low-budget failure diagnosis。
+
+论文 main table 只能使用固定 commit、固定 config、完整训练、完整 eval、同一 baseline 协议下的结果。现在这些 job 不能混入主结果表，只能在 internal audit 或 appendix diagnostic 里解释路线演化。
+
+---
+
+## 4. 为什么 dynamic DUCA-MUST 当前性能极低？
+
+最可能不是单一 bug，而是 **dynamic policy、detector backend、预算压力、loss schedule 共同导致的 collapse**。
+
+第一，dynamic backend 不是实际 variable-length detector，而是 cap 到 `budget_max` 的 padded/capped detector。dynamic validator 要求当前 padded detector length 等于 `budget_max`，并明确 `actual_variable_length_detector=False`。([GitHub][10]) 这意味着 dynamic budget 不是让 detector natural 地吃任意长度，而是在固定 cap/backend 内通过 mask/selection 近似。这个近似对 ActionFormer 的 temporal assignment、projection max length、selected-axis remap 都很脆。
+
+第二，dynamic 的 default `budget_min=64`、`budget_max=384`、`budget_target=256`，但你当前 target curve 有 target budget 128。([GitHub][3]) 128/768 是 1/6 观测。如果 selector 还没学稳，gap repair 会消耗一部分 slots 做覆盖，真正留给 boundary/utility 的自由 slots 更少。低预算下 mAP 掉到 3% 并不意外。
+
+第三，detector-gradient schedule 默认从 0 ramp 到 1，dynamic 的 loss schedule 里 `detector_gradient` start 是 0、end 是 1，`lagrangian_budget` 也是 0 到 1；early phase 主要由 actionness/boundary proxy/max-gap 牵引，而不是 detector loss 牵引。([GitHub][3]) 如果 early selection 很差，backend 会在坏的 sparse temporal distribution 上训练，之后 selector 再接 detector gradient 时已经进入坏盆地。
+
+第四，budget controller 的 proof 只证明有非零梯度，不证明 budget decision 与 final mAP 对齐。one-step proof 使用 synthetic random input 和单个 GT segment，检查的是 `losses["cost"].backward()` 后梯度和 optimizer coverage。([GitHub][5]) 这不足以证明 prefix marginal utility policy 学到合理停止策略。
+
+第五，所谓 utility 仍是 GT boundary utility proxy，不是真正 detector loss delta 或 detector sensitivity。dynamic budget controller 若依赖这种 proxy，很可能学到“边界附近/动作内部 proxy”，但未学到“多花一个 observation 对 ActionFormer mAP 有多少收益”。validator 已经明确禁止把它称为 true detector-derived utility。([GitHub][10])
+
+第六，hard max-gap repair 可能在 low budget 下把 policy 推向“满足覆盖约束”而不是“保护高 IoU boundary”。这会解释为什么 dynamic low budget 的 mAP 接近崩溃：预算被覆盖约束、selected-axis remap、早期 proxy training 分摊掉，检测头看不到足够有效动作证据。
+
+我会优先检查这几个日志曲线，而不是先改模型名：
+
+* selected_count / expected_cost / hard budget / budget lambda；
+* max unselected hole 分布；
+* repair 插入点比例；
+* center/radius entropy；
+* boundary recall@selected；
+* selected positions 与 GT start/end 最近距离；
+* detector loss 梯度到 center head 的 grad norm 随 epoch 曲线；
+* dynamic 是否长期贴 `budget_min` 或随机震荡；
+* `soft_resample_weights` 是否接近 uniform 或 collapse 到少数点。
+
+---
+
+## 5. fixed-384 到 40.94% 说明什么？足以支持主方法吗？
+
+**说明链路不死；不说明方法成立。**
+
+40.94% 的意义：
+
+* official backend 能跑通；
+* fixed-384 selection 不再是 0 mAP / 5 mAP 的几何崩溃；
+* selected-axis remap、detector input length、basic training loop 大概率没有完全断；
+* compared with dynamic 的 2.90% / 7.69%，fixed mode 至少是可训练的。
+
+但它不够支撑论文主方法：
+
+第一，它不是最新 `7bea4fc` 的 full training。
+第二，它只是 K=384 fixed budget，仍是 768 的 50% 观测，不是 adaptive budget。
+第三，没有同 commit、同 schedule、同 backend 的 dense AdaTAD、uniform-384、random-384、actionness-topK、boundary-only、no-detector-gradient 对照，40.94% 没有解释力。
+第四，fixed-384 如果显著低于官方 dense AdaTAD 或 uniform-384，它只能说明 DUCA 插件造成性能损伤；如果高于 naive baselines，才开始有论文价值。
+第五，你的 repo README 也把当前 C3 fixed-budget 阶段描述为 anchor/diagnostic，而不是完整最终贡献。([GitHub][11])
+
+所以 fixed-384 40.94% 现在最多是 **sanity anchor**，不是 main claim evidence。
+
+---
+
+## 6. 还必须补哪些实验？
+
+必须补，不是可选：
+
+### Main baselines
+
+同一 commit、同一 official backend、同一训练 epoch、同一 data pipeline 下：
+
+* Dense official AdaTAD / ActionFormerHead, 768 observations；
+* Uniform fixed K=384；
+* Uniform fixed K=256；
+* Uniform fixed K=128；
+* Random fixed K=384/256/128，至少 3 seeds；
+* C3 `p_action` top-K；
+* transition-only；
+* boundary-proxy-only；
+* DUCA fixed K=384；
+* DUCA fixed K=256；
+* DUCA-MUST dynamic target 384/256/128；
+* DUCA-MUST adaptive with reported average budget, not just target budget.
+
+### Claim-critical ablations
+
+* `actionness_weight=0 / 0.05 / 0.25 / 1.0`；
+* no coarse hidden features；
+* p_action-only, hidden-only, transition-only；
+* no boundary loss；
+* no boundary utility proxy；
+* no detector-gradient bridge；
+* `st_sparse_gather` vs `soft_to_hard_resample`；
+* no max-gap / soft only / hard only / soft+hard；
+* fixed policy forced K vs dynamic MUST using same acquisition module；
+* dynamic warm-start from fixed vs no warm-start；
+* budget controller on/off；
+* target budget schedule: 384→256→128 vs direct 128.
+
+### Metrics beyond mAP
+
+必须报告：
+
+* Avg-mAP and mAP@0.3/0.4/0.5/0.6/0.7；
+* selected_count mean/std/p5/p95；
+* max unselected hole mean/p95/max；
+* boundary recall@selected；
+* distance from selected positions to GT start/end；
+* repair ratio；
+* runtime/FLOPs including coarse probe + selector + soft-to-hard bridge；
+* memory；
+* train stability: seeds, gradient norm, nonfinite count；
+* dynamic expected cost vs actual selected count。
+
+---
+
+## 7. 多检测头泛化实验如何最小但有力地落地？
+
+OpenTAD 本身支持多个 dense heads，包括 `actionformer_head.py`、`anchor_free_head.py`、`temporalmaxer_head.py`、`tridet_head.py` 等。([GitHub][12]) OpenTAD README 也列出 ActionFormer、TriDet、TemporalMaxer、BMN、GTAD、AFSD、AdaTAD 等模型家族。([GitHub][13])
+
+最小但有力的设计：
+
+**主检测头：ActionFormerHead / AdaTAD official backend。**
+这是 main table。
+
+**第二检测头：TriDetHead 或 TemporalMaxerHead。**
+选择一个在 OpenTAD 中已有官方 config、训练成本可控、assignment/head 逻辑与 ActionFormer 不完全相同的 head。重点不是刷 SOTA，而是证明 DUCA 不是 ActionFormer-specific hack。
+
+**实验矩阵最小化：**
+
+| Backend                        | Dense | Uniform-384 | DUCA fixed-384 | DUCA-MUST target-256 |
+| ------------------------------ | ----: | ----------: | -------------: | -------------------: |
+| ActionFormerHead               |    必跑 |          必跑 |             必跑 |                   必跑 |
+| TriDetHead 或 TemporalMaxerHead |    必跑 |          必跑 |             必跑 |              可选但强烈建议 |
+
+规则：selector 结构、loss weights、max-gap、budget policy 不随 head 重新调参；最多允许 detector lr/schedule 用该 backend 官方默认。否则 reviewer 会说你是 per-head hand tuning。
+
+---
+
+## 8. X3D / SlowFast dense frozen prior 如何合理使用？
+
+**只能作为 frozen prior baseline / upper-bound / appendix diagnostic，不能作为主 pre-backbone plugin。**
+
+你取消 X3D dense grid/export 是正确的。X3D/SlowFast 如果在 dense 768 上跑一遍，再用其 actionness 来选帧，计算量很可能已经接近或超过你想节省的 detector/backbone 成本。这样会被 reviewer 直接抓住：你不是降低计算，而是把成本转移到另一个 dense video model。
+
+合理用法：
+
+* frozen X3D/SlowFast actionness top-K：appendix baseline；
+* frozen X3D/SlowFast + DUCA adapter：upper-bound baseline；
+* 必须报告 **prior cost + selector cost + detector cost**；
+* 不允许只报 detector consumed frames；
+* 不允许把 precomputed X3D logits 当作 deploy-visible zero-cost input；
+* 如果使用 cache，只能标成 offline oracle/diagnostic，不能进 main method。
+
+论文主线应该坚持：low-cost C3/ASFormer-like online probe + selector + official detector。X3D/SlowFast 的价值是回答 reviewer：“更强 dense prior 是否能提升 selection？代价是多少？”而不是作为 DUCA 的核心组件。
+
+---
+
+## 9. 最终论文实验矩阵
+
+### Main Table：核心结果
+
+| Method                             | Budget policy       |  Avg budget |  Avg mAP |  mAP@0.7 | FLOPs/latency incl. probe | Max-hole p95 |
+| ---------------------------------- | ------------------- | ----------: | -------: | -------: | ------------------------: | -----------: |
+| Dense official AdaTAD/ActionFormer | 768                 |         768 | baseline | baseline |                      full |            0 |
+| Uniform                            | fixed 384           |         384 |          |          |                           |              |
+| Uniform                            | fixed 256           |         256 |          |          |                           |              |
+| Uniform                            | fixed 128           |         128 |          |          |                           |              |
+| Random                             | fixed 384           |         384 | mean±std |          |                           |              |
+| C3 actionness top-K                | fixed 384           |         384 |          |          |                           |              |
+| DUCA fixed                         | fixed 384           |         384 |          |          |                           |              |
+| DUCA fixed                         | fixed 256           |         256 |          |          |                           |              |
+| DUCA-MUST                          | adaptive target 256 | actual mean |          |          |                           |              |
+| DUCA-MUST                          | adaptive target 128 | actual mean |          |          |                           |              |
+
+Main table 不放旧 commit 结果，不放 X3D cached prior，不放 fake/precheck head。
+
+### Ablation Table：方法机制
+
+| Variant                              | Purpose                        |
+| ------------------------------------ | ------------------------------ |
+| no detector gradient                 | 证明 detector feedback 是否有效      |
+| no coarse hidden                     | 证明不是只靠 p_action                |
+| actionness_weight=0                  | 证明非 actionness 覆盖              |
+| actionness_weight=1                  | 证明 actionness 主导会劣化/不同         |
+| no boundary proxy                    | 证明 boundary-first 的价值          |
+| no utility proxy                     | 证明 proxy 的价值                   |
+| no max-gap                           | 证明空洞约束必要                       |
+| soft max-gap only                    | 证明训练约束有效                       |
+| hard repair only                     | 分离工程后处理收益                      |
+| soft + hard                          | 最终设置                           |
+| fixed policy vs dynamic same adapter | 证明 fixed 是 dynamic 的特例，而不是两套方法 |
+
+### Diagnostic Table：审稿防御
+
+* one-step official gradient proof；
+* optimizer coverage；
+* selected-axis remap sanity；
+* gradient norm by module；
+* dynamic budget expected vs actual；
+* repair ratio；
+* selected visualization；
+* mAP vs selected boundary recall；
+* low budget collapse analysis；
+* old commit runs as “historical diagnostics only”。
+
+### Appendix
+
+* X3D/SlowFast frozen prior；
+* multi-head generalization；
+* extra budgets；
+* seed sensitivity；
+* runtime profiling details；
+* failure cases；
+* per-class mAP；
+* qualitative selected positions.
+
+---
+
+## 10. 立即修改 / 排队任务清单
+
+### P0：不做就不能投主方法
+
+1. **立即排 `7bea4fc` full training：fixed-384 official + DUCA-MUST dynamic。**
+   旧 commit 的所有 mAP 都从 main evidence 中移除，只保留为 diagnostic。
+
+2. **把 dynamic MUST 的 collapse 当 P0 bug 处理。**
+   先不追求 128。先跑 target 384 / 320 / 256，确认 selected_count、expected_cost、lambda、repair ratio、max-hole、boundary recall 正常，再下探 128。
+
+3. **dynamic 采用 fixed-384 warm-start。**
+   直接从随机初始化训练 dynamic target 128 是在折磨模型。先 fixed-384 收敛，再解锁 budget controller，再 anneal target。
+
+4. **强制记录 dynamic budget 诊断。**
+   每个 epoch 输出 expected_cost_mean、actual_selected_mean、budget lambda、repair slots、max-hole p95、boundary recall@selected、soft_resample entropy。
+
+5. **主 config 的 claim gate 保持关闭，直到 full result 通过。**
+   dynamic config 现在写了 `paper_claim_allowed=False`、`metric_claim_allowed=False`、`deploy_claim_allowed=False`，这是诚实的。不要在论文里越过这个 gate。([GitHub][3])
+
+6. **禁止把 `detector_utility` 写成 true detector utility。**
+   要么改论文措辞：GT boundary-utility proxy + detector loss gradient。要么实现真正 detector-derived utility，例如 loss delta、gradient sensitivity、proposal quality delta，但这会增加复杂度。
+
+### P1：决定论文能不能站住
+
+7. **补齐 actionness dominance ablation。**
+   必须证明 DUCA 不只是 actionness top-K 的复杂版本。
+
+8. **补齐 hidden feature ablation。**
+   当前代码要求 hidden features，这是好事；但论文必须证明 hidden features 对 selection 有贡献。
+
+9. **补齐 max-gap ablation。**
+   soft only / hard only / both 必须分开，否则 max-gap 会被认为是 post-hoc repair。
+
+10. **补齐 no-detector-gradient ablation。**
+    one-step proof 只能证明梯度存在；ablation 要证明 detector gradient 对 mAP 有用。
+
+11. **补同 commit baseline。**
+    Dense official、uniform、random、C3 top-K 必须在同 commit / 同 schedule / 同 backend 下跑，否则 reviewer 不接受横向比较。
+
+12. **计算成本必须闭环。**
+    报告 coarse probe、selector、soft-to-hard bridge、detector backend 全部成本。selector 代码里 soft-to-hard profile 本身也承认复杂度是 `O(B*K*T*C)` 级别。([GitHub][6])
+
+### P2：增强论文说服力
+
+13. **最小多检测头泛化。**
+    ActionFormerHead 主结果；TriDetHead 或 TemporalMaxerHead 做一组小矩阵。
+
+14. **X3D/SlowFast 只做 appendix prior baseline。**
+    不进入 main method，不隐藏 compute，不使用 cached logits 支撑 deploy claim。
+
+15. **整理 old runs 为 failure analysis。**
+    0b0b0f5 / 009f9d7 的结果可以说明路线进化，但不能混入主结果。
+
+---
+
+## 最危险的失败点
+
+按危险程度排序：
+
+1. **dynamic MUST 当前几乎失败。** 如果 dynamic 不能恢复到合理 mAP，你的论文不能主打 adaptive budget，只能退回 fixed-budget DUCA plugin。
+2. **`detector_utility` 不是 true detector-derived utility。** 这是术语级高危点。validator 已经承认它只是 GT boundary proxy alias。([GitHub][4])
+3. **没有 `7bea4fc` full training。** one-step proof 不能替代 mAP。
+4. **actionness 可能通过 transition features 隐性主导。** 权重小不等于因果贡献小。
+5. **max-gap hard repair 可能掩盖 selector 学习失败。**
+6. **dynamic backend 不是实际 variable-length compute saving。** contract 明确 `actual_variable_length_detector=False` 和 `runtime_flops_claim_allowed=False`。([GitHub][3])
+7. **fixed-384 40.94% 只是链路 sanity，不是论文结果。**
+
+最终判断：**现在可以继续，但不能按当前实验状态写成论文主方法已经成立。** 最合理的论文定位是：
+
+> DUCA is an online pre-backbone temporal acquisition plugin with an online C3 coarse probe, transition/boundary-oriented selection, original-time selected positions, official ActionFormer/AdaTAD backend, and detector-loss gradient feedback through a soft-to-hard bridge. Current utility supervision is a GT boundary-utility proxy; detector-awareness is supplied by end-to-end detector loss gradient, not by true detector-derived utility labels.
+
+这句话能防住 reviewer。
+“Dynamic detector-utility-calibrated MUST 已经有效降低计算并保持 mAP”这句话目前防不住。
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/7bea4fc "Fix DUCA official proof loss config · yuzbo/OpenTAD_C3_CoarseClean_20260702@7bea4fc · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/7bea4fc/opentad/models/duca/acquisition.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/opentad/models/duca/acquisition.py at 7bea4fcde349922560ca97812ec7f5ee8783c6a6 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/7bea4fc/configs/adatad/thumos/duca_must_dynamic_official_adatad_backend_full_train.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/duca_must_dynamic_official_adatad_backend_full_train.py at 7bea4fcde349922560ca97812ec7f5ee8783c6a6 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/7bea4fc/tools/bata/validate_duca_official_adatad_backend.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/tools/bata/validate_duca_official_adatad_backend.py at 7bea4fcde349922560ca97812ec7f5ee8783c6a6 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/7bea4fc/tools/bata/run_duca_official_adatad_one_step_grad_proof.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/tools/bata/run_duca_official_adatad_one_step_grad_proof.py at 7bea4fcde349922560ca97812ec7f5ee8783c6a6 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[6]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/7bea4fc/opentad/models/selectors/duca_online_frame_selector.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/opentad/models/selectors/duca_online_frame_selector.py at 7bea4fcde349922560ca97812ec7f5ee8783c6a6 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[7]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/7bea4fc/opentad/models/duca/acquisition.py "raw.githubusercontent.com"
+[8]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/7bea4fc/tests/test_duca_online_acquisition.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/tests/test_duca_online_acquisition.py at 7bea4fcde349922560ca97812ec7f5ee8783c6a6 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[9]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/raw/7bea4fcde349922560ca97812ec7f5ee8783c6a6/opentad/models/duca/acquisition.py "raw.githubusercontent.com"
+[10]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/7bea4fc/tools/bata/validate_duca_must_dynamic_official_adatad_backend.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/tools/bata/validate_duca_must_dynamic_official_adatad_backend.py at 7bea4fcde349922560ca97812ec7f5ee8783c6a6 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[11]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/gas-vt-stage23-detector-aware-20260706 "GitHub - yuzbo/OpenTAD_C3_CoarseClean_20260702 at codex/gas-vt-stage23-detector-aware-20260706 · GitHub"
+[12]: https://github.com/sming256/OpenTAD/tree/main/opentad/models/dense_heads "OpenTAD/opentad/models/dense_heads at main · sming256/OpenTAD · GitHub"
+[13]: https://github.com/sming256/OpenTAD "GitHub - sming256/OpenTAD: OpenTAD is an open-source temporal action detection (TAD) toolbox based on PyTorch. · GitHub"

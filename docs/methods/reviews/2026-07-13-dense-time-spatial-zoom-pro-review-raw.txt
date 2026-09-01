@@ -1,0 +1,1821 @@
+# 1. Skill Loading Certificate
+
+检索与审查截止日期：**2026-07-13**。本轮严格停留在只读审查、查新和方法设计，没有修改仓库、运行训练、连接远端、部署、提交或推送代码。
+
+状态含义：
+
+* `loaded`：实际读取到了可执行 skill manifest。
+* `unavailable`：当前环境中没有发现该精确名称对应的 skill。
+* `emulated`：没有加载该 skill，但按其预期功能手工执行了相应审查流程。
+
+| 类别            | 逐项状态                                                                                                                                                                                                                                                                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 工作流与发散        | `superpowers:using-superpowers` — unavailable → emulated；`brainstorming` — unavailable → emulated；`conductor` — unavailable → emulated；`divergent-route-orchestrator` — unavailable → emulated                                                                                                                                                               |
+| 研究记忆与查新       | `research-wiki` — unavailable as skill；仓库中的 `research-wiki/` 已作为项目证据读取；`academic-research-suite` — unavailable → emulated；`research-lit` — unavailable → emulated；`systematic-review` — unavailable → emulated；`novelty-check` — unavailable → emulated；`arxiv` — unavailable as skill → 以官方论文检索替代；`semantic-scholar` — unavailable；`openalex` — unavailable |
+| 严厉评审          | `gpt-5-pro` — unavailable as skill → 由当前模型原生推理替代；`research-review` — unavailable → emulated；`ccf-a-editorial-review` — unavailable → emulated；`kill-argument` — unavailable → emulated；`paper-claim-audit` — unavailable → emulated                                                                                                                          |
+| 方法与实验         | `innovation-validity-loop` — unavailable → emulated；`formula-derivation` — unavailable → emulated；`experimental-design` — unavailable → emulated；`experiment-plan` — unavailable → emulated；`experiment-audit` — unavailable → emulated；`ablation-planner` — unavailable → emulated；`result-to-claim` — unavailable → emulated                               |
+| 实现与成本         | `oss-audit` — unavailable → emulated；`pytorch-training` — unavailable → emulated；`cv-detection` — unavailable → emulated；`data-loading` — unavailable → emulated；`mixed-precision` — unavailable → emulated；`system-profile` — unavailable → emulated                                                                                                        |
+| 实际加载的辅助 skill | GitHub repository audit skill — **loaded**                                                                                                                                                                                                                                                                                                                   |
+
+当前环境没有可调用的独立并行 reviewer 编排器。因此我没有虚构“并行 agent 已运行”。实际执行方式是四轮隔离证据审查，每轮先形成局部结论，最后再统一裁决：
+
+1. `prior-art/novelty`：独立查新与碰撞审计；
+2. `TAD method`：任务信息结构、边界语义和可识别性；
+3. `PyTorch/code`：固定提交的输入、backbone、detector、target、evaluator 数据流；
+4. `systems/cost`：decode、preprocessing、H2D、crop、backbone、latency、energy；
+5. 最后一轮 adversarial synthesis 专门尝试否定前四轮的共同结论。
+
+---
+
+# 2. Repository Visibility Certificate
+
+## 2.1 可见对象
+
+| 对象                                                      | 状态                               | 证书                                                                                                                                                                                                                      |
+| ------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 仓库                                                      | **visible**                      | [`yuzbo/OpenTAD_C3_CoarseClean_20260702`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702)                                                                                                                     |
+| 固定提交                                                    | **visible**                      | [`1f5f7254a390f183121e6c4b7cebcebd2f2954d1`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/1f5f7254a390f183121e6c4b7cebcebd2f2954d1)，提交信息为 `docs: publish ChronoTransport Pro review context`。        |
+| 用户给定本地分支 `codex/chronotransport-pro-review`             | **unavailable publicly**         | GitHub 公开分支检索未找到。只能记作用户声明的本地分支名，不能当作公开仓库事实                                                                                                                                                                              |
+| `AGENTS.md`                                             | **visible**                      | [`AGENTS.md:7-32`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/AGENTS.md#L7-L32)                                                                             |
+| `RTK.md`                                                | **visible**                      | [`RTK.md:7-19`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/RTK.md#L7-L19)                                                                                   |
+| `research-wiki/query_pack.md`                           | **visible**                      | [`query_pack.md:9-80`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/research-wiki/query_pack.md#L9-L80)                                                       |
+| `research-wiki/anti_repetition.md`                      | **visible**                      | [`anti_repetition.md:8-55`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/research-wiki/anti_repetition.md#L8-L55)                                             |
+| `research-wiki/ideas/dense-time-spatial-zoom-tad.md`    | **absent at pinned commit**      | 后续设计只能依据本 prompt，不能称其已写入仓库或已实现                                                                                                                                                                                          |
+| AdaTAD 160 配置                                           | **visible**                      | [`e2e_thumos_videomae_s_768x1_160_adapter.py`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py) |
+| `vit_adapter.py`                                        | **visible**                      | [`vit_adapter.py`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/opentad/models/backbones/vit_adapter.py)                                                      |
+| ActionFormer detector/head、raw-video pipeline、evaluator | **visible**                      | 已逐文件核验                                                                                                                                                                                                                  |
+| DUCA selector                                           | **not present at pinned commit** | 历史正式 DUCA selector 可见于 [`70aa069…`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/70aa069b895322c2307ffbb13dfdef9fac0d1305/opentad/models/selectors/duca_online_frame_selector.py)，但不能冒充 `1f5f725…` 的代码 |
+| DUCA full-stack profiler                                | **not present at pinned commit** | 历史 profiler 可见于 [`a5e1774…`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/a5e1774b9941312569ca645341da1abad339db61/tools/bata/profile_duca_full_stack_cost.py)，同样不能冒充当前固定提交                            |
+
+## 2.2 关键版本边界
+
+`1f5f725…` 与正式 DUCA 训练提交 `70aa069…`、成本审计提交 `a5e1774…` 是分叉关系，而不是简单的后继关系。仓库自身的 RTK 仍把 `70aa069` 标为正式 fixed-384 版本，把 `a5e1774` 标为成本与后端审计版本。
+
+因此本报告采用三层证据边界：
+
+* **当前代码事实**：只来自 `1f5f725…`。
+* **历史代码事实**：明确注明 `70aa069…` 或 `a5e1774…`。
+* **空间 Zoom 设计**：全部是新 proposal，没有实现、训练和性能证据。
+
+---
+
+# 3. 已核验事实与未核验假设
+
+下文统一使用：
+
+* `[C]`：代码事实；
+* `[E]`：实验事实；
+* `[P]`：公开论文或官方代码事实；
+* `[I]`：基于证据的推断；
+* `[D]`：设计建议；
+* `[U]`：未核验或当前不可见。
+
+## 3.1 已核验事实
+
+### 当前任务与项目状态
+
+* `[C]` 当前项目明确是**离线 TAD**，而不是 causal、streaming 或 Online TAD。仓库禁止在决定性实验前把 DUCA 称为最终论文方法。见 [`AGENTS.md:9-30`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/AGENTS.md#L9-L30)。
+* `[C]` `query_pack.md` 要求真实成本覆盖 decode、预处理、H2D、probe、selector、backbone、head、后处理、显存和能耗，而不是只报 FLOPs。见 [`query_pack.md:11-16`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/research-wiki/query_pack.md#L11-L16)。
+* `[C]` 仓库自身已记录 actionness top-k 容易偏向动作内部、边界覆盖不足，且 smoke/nonzero-gradient 不能证明 detector utility。见 [`query_pack.md:41-55`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/research-wiki/query_pack.md#L41-L55)。
+
+### 真实输入分辨率
+
+* `[C]` 当前训练链路先 decode，经过 short-side 182、RandomResizedCrop，最后显式 resize 到 **160×160**；验证和测试同样显式 resize/center-crop 到 **160×160**。见 [`config:13-64`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py#L13-L64)。
+* `[C]` 配置中的 `img_size=224` 是位置编码初始化参考尺寸，不代表运行时输入为 224。运行时 `h,w` 从真实输入计算；当实际网格不是初始化网格时，代码对 spatial positional embedding 做 bicubic interpolation。见 [`vit_adapter.py:921-940`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/opentad/models/backbones/vit_adapter.py#L921-L940)。
+* `[C]` `patch_size=16`、默认 `tubelet_size=2`，3D patch embedding 的 kernel 和 stride 都是 `(2,16,16)`。见 [`vit_adapter.py:724-790`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/opentad/models/backbones/vit_adapter.py#L724-L790)。
+* `[C]` 因而当前每个 16-frame clip 的理论输入 token 数为：
+
+[
+N(q)=\frac{16}{2}\left(\frac{q}{16}\right)^2
+]
+
+即：
+
+[
+N(160)=800,\qquad N(112)=392,\qquad N(96)=288.
+]
+
+这只是输入 token 诊断量，**不是 latency 或 energy 结果**。
+
+### 时间网格与 detector
+
+* `[C]` 当前 AdaTAD 配置把 768 帧拆成 48 个 16-frame chunk；backbone 输出先空间平均，再重排为 384 个 tubelet-time features，最后插值到 768 个 detector 位置。见 [`config:8-10`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py#L8-L10) 与 [`config:96-103`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py#L96-L103)。
+* `[C]` ActionFormer 在 selector 之后才运行 backbone；selector 可以改变 inputs、masks、metas 和 GT。空间 Zoom 若复用这个 temporal selector hook，会把一个“帧内算力分配”问题错误编码成“时序坐标变换”问题。见 [`actionformer.py:128-175`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/opentad/models/detectors/actionformer.py#L128-L175)。
+* `[C]` 只要空间方法最终仍产生 `[B,384,768]` 和原始 `[B,768]` mask，现有 projection、neck、ActionFormerHead、GT target generation 和 NMS 可以保持规则物理时间语义。ActionFormer 当前要求 feature/mask temporal length 一致，并在后续使用规则 point grid。见 [`actionformer.py:150-215`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/opentad/models/detectors/actionformer.py#L150-L215) 与 [`anchor_free_head.py:286-412`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/opentad/models/dense_heads/anchor_free_head.py#L286-L412)。
+
+### 文献中的空间分辨率先验
+
+* `[P]` AdaTAD 原论文的 THUMOS14 消融中，VideoMAE-S 在 768 帧下由 `160²` 提升到 `224²`，报告 Avg-mAP 从 **68.8** 提升到 **70.7**。这是公开论文中的积极先验，不是当前仓库、当前 checkpoint 或 matched protocol 的实验事实。([CVF Open Access][1])
+* `[P]` Uni-AdaFocus 已经覆盖轻量 global branch、重型 local crop、动态空间尺度/形状和时序采样，并讨论了 pixel-space differentiable crop 梯度的不稳定性。([ar5iv][2])
+* `[P]` AdaSpot 已经在精确事件 spotting 中实现 dense-time low-resolution global view、每帧 high-resolution ROI、training-free saliency、时空平滑和自适应 ROI 尺度。([CVF Open Access][3])
+* `[P]` AdaSpot 官方代码直接从 low-res feature map 做 channel mean、归一化、三维高斯平滑、峰值搜索和 adaptive size，并从 high-res stream 提取 ROI。见 [`ROISelector:141-248`](https://github.com/arturxe2/AdaSpot/blob/6a46bbc0f4b3120d75ebcd6179c7275449388431/model/modules.py#L141-L248) 与 [`model.py:181-249`](https://github.com/arturxe2/AdaSpot/blob/6a46bbc0f4b3120d75ebcd6179c7275449388431/model/model.py#L181-L249)。
+
+## 3.2 当前没有被证明的假设
+
+以下均为 `[U]`：
+
+1. 当前项目的 dense 224/256 是否在 matched training 下稳定改善 mAP@0.6/0.7；
+2. 高分辨率增益是否来自动作主体细节，而不是训练配置或增强差异；
+3. 一个或两个 96/112 ROI 是否足以恢复 dense high-resolution 的 TAD 性能；
+4. training-free saliency、motion 或 person proposal 是否能识别 detector-useful ROI；
+5. boundary risk 是否能预测应增加 ROI scale/count，而不是仅预测动作边界；
+6. 高分辨率 source decode、resize、H2D 和 crop 是否会吞掉 heavy-backbone 节省；
+7. hard discrete ROI regret 是否能够被 deploy-visible scout 特征预测；
+8. 当前 Zoom 设计是否能在 AdaSpot 之后形成足够不可还原的论文贡献。
+
+---
+
+# 4. 严厉总裁决
+
+## 总裁决：`HOLD`
+
+这不是对空间 Zoom 的否定，而是：
+
+> **只批准 Gate S1 和 Gate S2；不批准直接实现完整 learned Zoom model。**
+
+## 现在是否应放弃选帧主线
+
+**是——应立即停止把 learned temporal frame selection 当作下一阶段主方法开发。**
+
+但同时：
+
+**否——不能删除 exact-uniform、periodic、random 和冻结 DUCA；它们必须保留为强基线和因果对照。**
+
+更精确的状态是：
+
+| 对象                              | 当前处理                                               |
+| ------------------------------- | -------------------------------------------------- |
+| DUCA learned frame selection    | 冻结，不再增加 selector head、loss、repair 或 dynamic budget |
+| exact-uniform temporal sampling | 保留为必须比较的强基线                                        |
+| 历史 DUCA                         | 保留为 matched 复现实验候选，不再作为默认主方法                       |
+| Dense-time spatial Zoom         | 仅开放 S1/S2 falsification                            |
+| 完整 learned Zoom                 | Gate S1、S2 均通过后才解锁                                 |
+| “空间 Zoom 已取代 DUCA” claim        | 当前禁止                                               |
+
+## 裁决理由
+
+1. `[I]` 对高 tIoU TAD，规则时间网格直接服务于边界回归、FPN stride、center sampling 和 regression range；删帧会同时破坏观测覆盖与 detector geometry。空间分配至少不必承担第二种几何错配。
+2. `[P]` AdaTAD 的公开分辨率消融表明空间 headroom 不是无依据的想象，但当前项目仍缺 matched S1。([CVF Open Access][1])
+3. `[P]` AdaSpot 已显著压缩了“dense time + low-res global + high-res ROI”的新颖性空间。直接移植只够成为 baseline。([arXiv][4])
+4. `[I]` 当前最大风险不是 policy 是否够复杂，而是 **160 是否已经足够、ROI 是否有 oracle sufficiency、以及 source/H2D 是否吞掉节省**。这三项不能用更多 loss 修复。
+
+---
+
+# 5. Prior-art Collision Matrix
+
+检索范围为 2021–2026，截止 **2026-07-13**，仅使用论文、官方代码或官方项目页面。
+
+| 工作                                                                                                                                                                                                                                             | 任务                     | 决策变量                                                                                   | 监督                                          | 时间是否稠密                            | 是否实测全成本                                                 | 与本路线重叠                                              | 剩余不可还原 delta                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------- | ------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [TokenLearner](https://arxiv.org/abs/2106.11297), 2021                                                                                                                                                                                         | 图像/视频识别                | 从 dense feature map 学少量 visual tokens                                                  | 分类损失                                        | 输入可稠密，内部 token 稀疏                 | 否，主要是模型计算                                               | 与路线 D 的 spatial token routing 高度重叠                  | TAD interval loss、规则时间网格、真实部署成本。([arXiv][5])                                                             |
+| [AdaFocus](https://arxiv.org/abs/2105.03245), 2021                                                                                                                                                                                             | 视频识别                   | 每帧局部 crop                                                                              | 分类、policy learning                          | 不保证完整 dense-time heavy processing | 部分模型级成本                                                 | “global glance + local focus” 概念直接重叠                | 边界定位、segment detector utility、无删帧合同。([arXiv][6])                                                         |
+| [AdaFocus V2](https://arxiv.org/abs/2112.14238), 2022                                                                                                                                                                                          | 视频识别                   | 可学习空间 crop                                                                             | 分类、可微 policy                                | 主要针对识别                            | 非完整 decode→H2D                                          | 可微 crop、局部高分辨率重叠                                    | hard crop utility、TAD counterfactual regret。([arXiv][7])                                                 |
+| [AdaFocus V3](https://arxiv.org/abs/2209.13465), 2022                                                                                                                                                                                          | 视频识别                   | 联合空间 crop 与时序选择                                                                        | 分类                                          | 非稠密 heavy time                    | 模型级                                                     | 空间—时间联合动态计算已覆盖                                      | 本路线必须明确拒绝删帧，并证明 interval-specific 必要性。([arXiv][8])                                                       |
+| [STTS](https://arxiv.org/abs/2207.10605), 2022                                                                                                                                                                                                 | 高效视频识别                 | 时空 token selection                                                                     | 分类                                          | 内部时间/空间 token 稀疏                  | 主要 FLOPs/吞吐                                             | 与路线 D 的 sparse token path 重叠                        | detector-compatible dense temporal output 与 boundary evidence。([arXiv][9])                               |
+| [Task-Adaptive Spatial-Temporal Video Sampler](https://arxiv.org/abs/2207.11240), 2022                                                                                                                                                         | 视频理解/识别                | 自适应空间与时间采样                                                                             | task labels                                 | 可稀疏                               | 非完整系统成本                                                 | 任务相关空间—时间采样碰撞                                       | TAD hard detector regret 与规则物理网格。([arXiv][10])                                                           |
+| [Uni-AdaFocus](https://arxiv.org/abs/2412.11228) / [官方代码](https://github.com/LeapLabTHU/Uni-AdaFocus), 2024                                                                                                                                    | 视频识别                   | global/light branch、local heavy crop、动态位置/尺度/形状、时序采样                                   | 分类与辅助 policy losses                         | 可选择时间，非强制 dense time              | 有模型运行效率，但非完整 source decode→H2D→postprocess              | 与普通 learned Zoom 几乎全面重叠                             | interval detector regret、clip-tube structured routing、无删帧、full-stack cost。([ar5iv][2])                   |
+| [Principles of Visual Tokens](https://arxiv.org/abs/2407.01092), 2024                                                                                                                                                                          | 高效视频理解分析               | token selection/merging                                                                | 多种                                          | 依方法而定                             | 非本项目全成本                                                 | 提醒 learned token policy 常未稳定优于 random，而 oracle 可能很强 | 强制 random、oracle sufficiency 和 predictability gate。([arXiv][11])                                         |
+| [AdaTAD](https://openaccess.thecvf.com/content/CVPR2024/html/Liu_End-to-End_Temporal_Action_Detection_with_1B_Parameters_Across_1000_Frames_CVPR_2024_paper.html) / [官方实现](https://github.com/sming256/OpenTAD/tree/main/configs/adatad), 2024 | 离线 TAD                 | dense raw-video backbone、adapter                                                       | temporal segments                           | 稠密                                | 报模型成本/显存，不是本路线完整 input stack                            | 提供 backbone、detector 和分辨率 headroom 基础               | 不做空间自适应；没有 ROI policy。([CVF Open Access][12])                                                            |
+| [HaltingVT](https://arxiv.org/abs/2403.04978), 2024                                                                                                                                                                                            | 高效视频 Transformer       | 动态 token/计算停止                                                                          | task loss                                   | 内部动态                              | 非完整 pipeline                                            | 与路线 D 的计算路由相撞                                       | TAD-specific dense temporal output、boundary-sensitive utility。([arXiv][13])                              |
+| [AdaSpot](https://openaccess.thecvf.com/content/CVPR2026/html/Xarles_AdaSpot_Spend_Resolution_Where_It_Matters_for_Precise_Event_Spotting_CVPR_2026_paper.html) / [官方代码](https://github.com/arturxe2/AdaSpot), 2026                            | Precise Event Spotting | dense low-res global、每帧 1 ROI、training-free saliency、temporal smoothing、adaptive scale | event timestamp labels；ROI 本身 training-free | **是**                             | 主要 GFLOPs/模型效率，未形成本 prompt 要求的完整 p50/p95 input-stack 合同 | 与 A 路线以及普通 dense-time Zoom 高度重叠                     | interval start/end、multi-instance ROI、detector-regret、规则 TAD head、full-stack cost。([CVF Open Access][3]) |
+
+## AdaSpot 之后还剩多少创新空间
+
+### 已基本被占满
+
+以下叙事已经不足以支撑主会方法创新：
+
+* “时间全部保留，空间只看重要区域”；
+* “低分辨率 global + 高分辨率 local ROI”；
+* “用低分辨率 feature saliency 找 ROI”；
+* “对 ROI center 做时序平滑”；
+* “根据 saliency 自适应 crop scale”；
+* “global/local feature 融合后做时间预测”。
+
+### 仍可能成立、但必须实验拆出的不可还原 delta
+
+1. **TAD counterfactual utility**：ROI 的监督不是 saliency、分类 confidence 或 event timestamp，而是对 segment classification 和 start/end regression 的 hard detector regret。
+2. **结构化 ROI tube 路由**：决策单位与 VideoMAE 16-frame clip 对齐，输出平滑 tube、scale、count，而不是逐帧独立 crop。
+3. **规则物理时间合同**：不删除任何时间位置，不 remap GT，不改变 ActionFormer point grid、FPN stride 和 regression range。
+4. **成本诚实性**：decode、canonical resize、H2D、global scout、policy、crop、local backbone、fusion、detector、postprocess 全计入 p50/p95、memory 和 energy。
+5. **多区域与边界风险**：边界风险只控制 scale/count/reset，不直接假装是二维位置监督。
+
+即便上述五项都实现，仍需消融证明它们不是“把 AdaSpot 接到 AdaTAD，再加一个 teacher loss”。
+
+---
+
+# 6. 当前代码、数据与成本条件是否支持空间 Zoom
+
+## 6.1 支持与缺口
+
+| 条件                                   | 当前支持度     | 审计                                                                                                                                                                                                                            |
+| ------------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 96/112 native VideoMAE 输入            | **结构上支持** | backbone 根据运行时 `h,w` 计算网格并插值位置编码。见 [`vit_adapter.py:921-940`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/opentad/models/backbones/vit_adapter.py#L921-L940)       |
+| 保留 768 点 detector 时间网格               | **支持**    | 空间融合后输出 `[B,384,768]` 即可沿用 projection/head                                                                                                                                                                                    |
+| 当前数据 pipeline 保留高分辨率 source          | **不支持**   | 现有 transform 在模型前已经压到 160。见 [`config:25-32`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py#L25-L32) |
+| 用现有 temporal selector hook 实现空间 Zoom | **不建议**   | selector 可改 masks/GT/时间长度，语义不匹配。见 [`actionformer.py:128-175`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/opentad/models/detectors/actionformer.py#L128-L175)      |
+| 现成 full-stack spatial profiler       | **没有**    | 当前固定提交中不存在；只能从历史 `a5e1774` profiler 迁移                                                                                                                                                                                        |
+| 数据、checkpoint、GPU 环境可在本轮验证           | **不可见**   | 本轮没有挂载数据、checkpoint 或运行日志                                                                                                                                                                                                     |
+| 当前 Zoom 结果                           | **没有**    | 仅为 discussed/oracle_gate_required                                                                                                                                                                                             |
+
+## 6.2 核心十问裁决
+
+### 1. Spatial Zoom 是否比继续删帧更符合高 tIoU TAD？
+
+`[I]` **信息结构上更符合，但尚未证明性能上更优。**
+
+删帧同时损伤：
+
+* endpoint 附近观测；
+  -短动作覆盖；
+  -连续 motion phase；
+  -规则 temporal convolution/FPN 的物理含义；
+  -回归距离与 stride 的一致性。
+
+空间 Zoom 保留这些时间信息，但可能损伤：
+
+-全局场景；
+-远距离对象关系；
+-多个参与者；
+-多个同时有效区域；
+-极小物体与大动作主体不共址的动作。
+
+因此最终系统必须保留 cheap global branch，并允许最多两个 ROI；单 ROI 不能被当作一般充分条件。
+
+### 2. 当前 160 是否已经足够？
+
+`[U]` 未知。AdaTAD 论文给出积极先验，但不能外推到当前 checkpoint。
+
+**dense 224/256 没有稳定高 tIoU 增益，则路线立即 KILL。**
+
+不得在 S1 失败后用“更好的 crop policy”“更强 teacher”“更复杂 fusion”延长路线。
+
+### 3. 真正省算需要怎样的 source pipeline？
+
+可信路线必须满足：
+
+* heavy VideoMAE 真正接收 `96×96` 或 `112×112`；
+  -不能把 ROI 再 resize 到 160/224 后送入相同 heavy backbone；
+  -原始 decode、canonical resize 和高分辨率 H2D 全部计费；
+  -高分辨率 source canvas 只用于 crop，不执行 dense heavy backbone；
+  -完成 crop 后尽早释放 source canvas；
+  -报告 source codec、原始尺寸、canonical 尺寸和 H2D bytes。
+
+原始视频 decode 通常仍需解出完整帧，因此本路线承诺的是**减少 heavy visual processing**，不是必然减少 bitstream decode。
+
+### 4. ROI 决策应按什么粒度？
+
+最终建议：
+
+> **按 16-frame clip 决策，输出 clip 内 piecewise-linear ROI tube；backbone 内按 2-frame tubelet 采样该 tube。**
+
+原因：
+
+* 与现有 48×16-frame VideoMAE 调用一致；
+  -逐帧 crop 容易抖动并产生大量小 kernel；
+  -整段 768 帧一条 track 又过于僵硬；
+  -clip-level 允许稳定打包成 `q=96`、`q=112` 两个 bucket；
+  -最多 `K=2`，避免任意数量 ROI 带来的 ragged batching 和 kernel fragmentation。
+
+### 5. 无空间框时如何训练 ROI？
+
+排序如下：
+
+1. **A baseline**：AdaSpot training-free saliency；
+2. motion/person proposals：作为 deployable baselines，person detector 成本必须计入；
+3. **最终 learned route**：train-only dense EMA detector 的 hard candidate counterfactual regret；
+4. 不推荐 RL：方差高、训练昂贵、与 hard detector utility 的归因弱；
+5. 不推荐直接靠 `grid_sample` 给位置 policy 反传：Uni-AdaFocus 已讨论 pixel crop 梯度歧义，AdaSpot 也选择 training-free ROI。([ar5iv][2])
+
+### 6. Global branch 应承担什么？
+
+同一个 tiny scout 必须同时提供：
+
+* full-frame context；
+  -低成本 action/state feature；
+  -temporal transition/boundary risk；
+  -二维 saliency/motion proposals；
+  -policy visible descriptor。
+
+禁止再叠加独立 MobileNet + ASFormer + saliency network。建议硬门：
+
+[
+T_{\text{scout}} \le 0.1,T_{\text{dense160,e2e}}
+]
+
+且全部 routing overhead 不得超过 gross heavy-backbone saving 的 40%。
+
+### 7. 如何保持 detector 语义完全规则？
+
+global/local 在 backbone 输出、spatial pooling 之后融合，最终形成：
+
+[
+F_{\text{fused}}\in\mathbb{R}^{B\times384\times384}
+\rightarrow
+\operatorname{Interp}_t
+\rightarrow
+\mathbb{R}^{B\times384\times768}.
+]
+
+原始 mask、GT segments、point grid、projection、neck、ActionFormerHead、NMS 全部不变。
+
+不启用 selected-axis remap，也不需要当前 irregular physical-grid extension。
+
+### 8. Boundary risk 应控制什么？
+
+合理控制：
+
+* `K=1/2`；
+  -`q=96/112`；
+  -source field-of-view；
+  -是否允许 track reset；
+  -Viterbi transition penalty。
+
+不应直接控制：
+
+-二维中心位置。
+
+二维位置必须来自 spatial evidence；boundary risk 本质上是一维时间变量，直接用它预测 `(x,y)` 是欠识别的。
+
+### 9. Detector gradient 应如何进入 policy？
+
+不采用“hard forward + `grid_sample` soft gradient”作为主监督。
+
+采用：
+
+* hard discrete candidate crop；
+  -EMA dense teacher；
+  -train-only one-clip replacement；
+  -detector loss regret；
+  -pairwise ranking 和 hard choice distillation。
+
+crop coordinates 在 forward 中 detach；policy 只通过 regret/ranking target 学习。这样训练目标与最终硬执行动作一致。
+
+### 10. 哪些构件可复用，哪些必须作为 baseline？
+
+合法复用：
+
+* Uni-AdaFocus 的 crop coordinate convention、native crop 工程；
+  -AdaSpot 的 saliency smoothing、border handling 和 adaptive proposal 思路；
+  -AdaTAD 的 VideoMAE adapter、projection、head 和 evaluator。
+
+必须作为 baseline：
+
+* Uni-AdaFocus-style learned crop；
+  -AdaSpot-like training-free saliency；
+  -fixed center、random、motion/person；
+  -dense96/112 full-frame；
+  -dense160、高分辨率 dense；
+  -exact-uniform temporal sampling。
+
+原样搬移后会被拒：
+
+* low-res branch + one saliency ROI + max fusion；
+  -learned crop + classification loss；
+  -仅报告 FLOPs/token reduction；
+  -不考虑多 ROI、interval boundary 和 full-stack input cost。
+
+---
+
+# 7. 四条互斥路线及红队批评
+
+## 路线总表
+
+| 路线 | 主决策                                            | 新颖性 | 可识别性 | 系统风险 | 当前角色             |
+| -- | ---------------------------------------------- | --: | ---: | ---: | ---------------- |
+| A  | training-free saliency ROI                     |   低 |    高 |    低 | 强 baseline       |
+| B  | boundary risk 控制 scale/count                   |  中低 |    中 |    中 | ablation/备选      |
+| C  | hard candidate detector-regret tube routing    |  中高 |   中高 |   中高 | **唯一最终候选**       |
+| D  | foveated sparse high-res tokens，不做 raster crop | 潜在高 |    低 |   极高 | 前沿替代路线，不选为当前最终候选 |
+
+## A. AdaSpot-like training-free saliency zoom
+
+**输入**：dense-time canonical high-res frames，以及其低分辨率 global view。
+**输出**：每帧或每 clip 一个平滑 ROI center 和 adaptive scale。
+**可见信息**：low-res feature maps、帧差、时间邻域。
+**训练期特权信息**：无 ROI teacher；仅正常 TAD GT 训练 detector。
+**推理期信息**：与训练一致，无 GT、teacher、cache。
+
+目标：
+
+[
+\mathcal L_A
+============
+
+\mathcal L_{\mathrm{TAD}}^{\mathrm{fused}}
++\lambda_g\mathcal L_{\mathrm{TAD}}^{\mathrm{global}}
++\lambda_l\mathcal L_{\mathrm{TAD}}^{\mathrm{local}}.
+]
+
+**Hard forward**：从 saliency map 取 peak，时空平滑后 hard crop。
+**Gradient**：ROI selector 不接梯度。
+**坐标**：规则 temporal grid；normalized source coordinates。
+**复杂度**：低，近似 `O(T·H_g·W_g)` saliency 与一次 local backbone。
+
+**主要失败模式**
+
+* feature activation 与 TAD boundary utility 不一致；
+  -单 ROI 丢失多个参与者/对象；
+  -平滑导致动作切换附近跟踪滞后；
+  -直接与 AdaSpot 碰撞。
+
+**Kill condition**
+
+* equal full cost 下不能显著优于 fixed center 和 random；
+  -或者 S1/S2 任一失败。
+
+**裁决**：不得作为主方法，只能作为强 baseline。
+
+---
+
+## B. Boundary-risk-conditioned ROI scale/count
+
+**输入**：training-free spatial proposals + cheap temporal scout。
+**输出**：proposal center 固定由 saliency/motion产生；learned head 仅决定 `K`、`q`、FOV 和 track reset。
+**可见信息**：global features、action state、transition、boundary risk。
+**训练特权**：train GT start/end，用于 boundary target。
+**推理信息**：仅 scout 和 proposals。
+
+边界目标：
+
+[
+b_m^\star
+=========
+
+\max_{e\in{\text{starts,ends}}}
+\exp\left(-\frac{(t_m-e)^2}{2\sigma_b^2}\right).
+]
+
+容量决策：
+
+[
+a_m
+===
+
+\arg\min_{a\in\mathcal A}
+\left[
+\widehat r_m(a)
++\lambda c(a)
+-\eta b_m,\operatorname{capacity}(a)
+\right].
+]
+
+**Hard forward**：离散选择 `1×96`、`1×112`、`2×96` 等。
+**Gradient**：boundary BCE/focal loss；capacity classifier 用 detector loss 或 GT boundary proxy。
+**坐标**：中心不由 boundary head预测。
+**复杂度**：低于 C，不需要运行完整 candidate counterfactual teacher。
+
+**红队批评**
+
+* boundary risk 与“需要更高空间分辨率”不是同一件事；
+  -动作边界可能主要是 motion/phase 变化，而非更精细的外观；
+  -在 AdaSpot adaptive scale 之后，这条路线很可能只构成 incremental extension；
+  -若位置 proposal 已错，扩大 ROI 不能修复。
+
+**Kill condition**
+
+* boundary risk 与 oracle capacity choice 的 per-clip Spearman 中位数 <0.2；
+  -移除 boundary conditioning 后性能/成本不变；
+  -不能优于固定 scale/count AdaSpot-like baseline。
+
+**裁决**：可以作为 C 的消融，但不建议单独作为最终论文方法。
+
+---
+
+## C. Discrete ROI-tube candidates + train-only detector-regret distillation
+
+**输入**：dense-time global scout features、低成本 saliency/motion proposals、固定 candidate library。
+**输出**：每个 16-frame clip 的 hard route：
+
+[
+j_m=(\text{tube},K,q,\text{FOV}).
+]
+
+**训练期特权信息**：
+
+-同一 checkpoint 的 EMA dense-high-resolution branch；
+-train GT temporal segments；
+-one-clip candidate counterfactual detector losses。
+
+**推理信息**：
+
+-当前视频的 global scout；
+-candidate descriptors；
+-policy predicted regret；
+-measured cost lookup。
+
+**目标**
+
+[
+r_{m,j}
+=======
+
+\operatorname{stopgrad}
+\left[
+\max
+\left(
+0,,
+\mathcal L_{\det}
+(F^{H\leftarrow(m,j)})
+----------------------
+
+\mathcal L_{\det}(F^H)
+\right)
+\right].
+]
+
+[
+\mathcal L_{\mathrm{regret}}
+============================
+
+\operatorname{Huber}(\hat r_{m,j},r_{m,j})
++
+\lambda_{\mathrm{rank}}\mathcal L_{\mathrm{pairwise}}.
+]
+
+结构化推理：
+
+[
+\begin{aligned}
+j_{1:M}^{\star}
+===============
+
+\arg\min_{j_{1:M}}
+&\sum_{m=1}^{M}
+\left[
+\hat r_{m,j_m}
++\lambda_c c(j_m)
+-\eta b_m a(j_m)
+\right]\
+&+
+\mu\sum_{m=2}^{M}
+(1-b_m)
+d(j_{m-1},j_m).
+\end{aligned}
+]
+
+**Hard forward**：Viterbi 选择离散 route；坐标 detach；native 96/112 crop。
+**Gradient**：policy 不从 crop 接梯度，只接 regret/ranking/choice。
+**时间坐标**：完整 768 时间位置。
+**空间坐标**：normalized canonical canvas；clip 内线性 tube。
+**复杂度**：`O(MJ²)` 的 Viterbi；`M=48,J=16` 时只有约 1.2 万次 transition 比较，真实成本主要仍是 scout/crop/local backbone。
+
+**失败模式**
+
+-候选库没有包含正确区域；
+-EMA dense teacher 自身不稳定；
+-one-clip regret 不能加和预测完整 route；
+-policy 只能学到 saliency 或 actionness；
+-train-only teacher 成本过高；
+-source/H2D 吞掉节省。
+
+**创新碰撞**
+
+* crop/global-local 与 Uni-AdaFocus、AdaSpot 重叠；
+* counterfactual teacher 与 distillation/learning-to-route 有邻近；
+  -真正剩余的新颖性在 TAD segment regret、structured tube route、规则时间合同和实测成本闭环。
+
+**Kill condition**
+
+* S1/S2 失败；
+  -oracle regret 与实际 schedule regret 相关性不足；
+  -policy 不显著优于 AdaSpot/random；
+  -full-stack latency或energy不形成 Pareto；
+  -第二 detector 或第二数据集完全反转。
+
+**裁决**：Gate 通过后唯一值得实现的最终候选。
+
+---
+
+## D. Foveated spatial token lifting，不做 ROI raster crop
+
+**输入**：低分辨率 global tokens，以及从高分辨率 source 选出的少量 sparse patches。
+**输出**：规则时间位置上的 mixed-resolution token set。
+**训练特权**：可使用 dense feature teacher。
+**推理信息**：global tokens、patch routing scores。
+**目标**：选择高分辨率 patches，使 fused token representation 接近 dense teacher，同时优化 TAD loss 和真实稀疏 kernel cost。
+
+**Hard forward**
+
+-低分辨率全局 patch grid；
+-选少数高分辨率 source patches；
+-通过 sparse cross-attention 或 token lifting 融合；
+-不生成连续 raster ROI。
+
+**Gradient**
+
+-可用 hard token selection + regret/ranking；
+-不依赖 crop `grid_sample`。
+
+**优势**
+
+-可处理多个离散小区域；
+-比矩形 ROI 更灵活；
+-理论上更接近真正的 spatial compute routing。
+
+**红队批评**
+
+-与 TokenLearner、STTS、HaltingVT 等高度碰撞；
+-irregular sparse attention 在现有 GPU 上可能比规则 96/112 crop 更慢；
+-需要大改 VideoMAE positional encoding、attention packing 和 checkpoint compatibility；
+-早期 dense patch embedding/H2D 仍可能存在；
+-更难保持 AdaTAD official-derived 语义。
+
+**Kill condition**
+
+-真实 p95/energy 不优于规则 crop；
+-packed sparse kernel overhead超过 gross saving 的 40%；
+-需要重训完整 VideoMAE 而不能复用 pretrained adapter；
+-第二硬件上速度排序反转。
+
+**裁决**：科学上值得保留，但不是当前最小、最可证伪路线。
+
+---
+
+# 8. Gate S1 / S2 的精确定义与 Kill Rules
+
+## 8.1 公共实验纪律
+
+`[D]`
+
+1. 从 THUMOS14 官方 validation/training videos 预先冻结 `fit` 与 `gate` manifests；官方 test 在设计冻结前保持封存。
+2. manifests 按 class support 和动作时长分层，不允许看候选方法结果后重划。
+3. seeds 固定为 `3407 / 3408 / 3409`。
+4. 所有方法使用相同：
+   -成功 optimizer updates；
+   -effective batch；
+   -pretraining；
+   -augmentation family；
+   -temporal window；
+   -evaluator；
+   -checkpoint selection rule。
+5. 高分辨率显存不足时使用 gradient accumulation，不缩短训练 steps。
+6. 统计单位为**视频 cluster**：
+   -每 seed 对视频做 paired bootstrap；
+   -每次重算完整 20-class AP/mAP；
+   -resampling 保证每类 GT support 非空；
+   -10,000 replicates；
+   -同时报告 pooled hierarchical CI 和三个独立 seed。
+7. 时长分组由 fit split GT duration quartiles 冻结：
+   -short = Q1；
+   -medium = Q2–Q3；
+   -long = Q4。
+8. 224/256 两个分辨率的主比较使用 simultaneous/max-T bootstrap，避免挑最好分辨率造成隐性多重比较。
+
+---
+
+## Gate S1：Spatial-resolution headroom
+
+### 比较方法
+
+* `Dense-160`
+* `Dense-224`
+* `Dense-256`
+
+除此之外完全 matched。
+
+### 主指标
+
+[
+H_R
+===
+
+\frac{
+\operatorname{mAP}*{R}@0.6+
+\operatorname{mAP}*{R}@0.7
+}{2}.
+]
+
+[
+\Delta H_R=H_R-H_{160}.
+]
+
+### 必报
+
+* Avg-mAP@0.3:0.7；
+  -每个 tIoU；
+  -short/medium/long；
+  -short-Q1 mAP@0.7；
+  -boundary start/end absolute error；
+  -trained-checkpoint p50/p95；
+  -peak allocated/reserved GPU memory；
+  -energy/window。
+
+### `GO` 条件
+
+至少一个 (R\in{224,256}) 同时满足：
+
+1. (\Delta H_R\ge 1.0) absolute mAP point；
+2. simultaneous paired 95% CI lower bound (>0)；
+3. Avg-mAP 增益 (\ge0.5)；
+4. shortest-Q1 mAP@0.7 增益 (\ge0.5)；
+5. mAP@0.6 和 mAP@0.7 在至少 2/3 seeds 都为正；
+6. 没有任何低 tIoU 指标出现超过 0.5 point 的稳定退化。
+
+### `KILL` 条件
+
+* 没有分辨率满足全部条件；
+  -只有 Avg-mAP 提升、mAP@0.6/0.7 不提升；
+  -增益只来自单 seed；
+  -256 比224更慢更大，却没有额外高 tIoU 增益。
+
+**S1 KILL 后停止路线。不得运行 learned ROI policy。**
+
+---
+
+## Gate S2：Oracle ROI sufficiency at equal total cost
+
+### 前提
+
+* S1 通过；
+  -冻结表现最好的 (R_H\in{224,256})；
+  -所有 source preprocessing 以 (R_H) canonical canvas 为基准。
+
+### Deployable baselines
+
+1. `LowRes-heavy-full`：VideoMAE 在完整 `96×96` frame 上运行；
+2. `Scout-only`；
+3. fixed-center ROI；
+4. random ROI；
+5. low-res motion ROI；
+6. person ROI，person detector 全成本计入；
+7. AdaSpot-like saliency；
+8. 1 ROI；
+9. 2 ROI；
+10. Uni-AdaFocus-style learned crop，保持 dense time；
+11. dense high-resolution。
+
+### Candidate library
+
+每个 16-frame clip 冻结最多 16 个候选，覆盖：
+
+* center；
+  -saliency top-1；
+  -saliency top-2；
+  -low-res motion peak；
+  -saliency–motion hybrid；
+  -constant 与 linear tube；
+  -(K\in{1,2})；
+  -(q\in{96,112})；
+  -若干 frozen FOV scales；
+  -一个 full-frame 96 fallback。
+
+测试期间不扩充候选库。
+
+### Privileged oracle：不使用测试标签
+
+冻结的 dense high-resolution EMA teacher 对每个候选产生：
+
+[
+d_{m,j}
+=======
+
+\alpha
+|f_{m,j}-f_m^H|*1
++
+\beta
+\operatorname{JS}(p*{m,j},p_m^H)
++
+\gamma
+|\delta_{m,j}-\delta_m^H|_1,
+]
+
+其中：
+
+* (f)：teacher feature；
+* (p)：class probability；
+* (\delta)：start/end regression output。
+
+选择：
+
+[
+j_m^{\mathrm{oracle}}
+=====================
+
+\arg\min_{j:c_{\mathrm{measured}}(j)\le B^\star}
+d_{m,j}.
+]
+
+这允许 oracle 在 gate/test 视频上读取 frozen dense teacher，但：
+
+* 不读取 GT；
+  -不读取 spatial boxes；
+  -不读取评价结果；
+  -不用于训练或 deploy；
+  -选择后只重放被选 route，并单独评估；
+  -oracle 选择计算不算作 deploy cost，但必须另外报告。
+
+可以在 fit split 额外报告 GT detector-loss oracle，但只能标为 train-only diagnostic。
+
+### Equal-cost 定义
+
+主部署预算：
+
+[
+B^\star
+=======
+
+p50\left(T_{\mathrm{Dense160,e2e}}\right).
+]
+
+候选必须满足：
+
+[
+p50(T_{\mathrm{candidate,e2e}})\le B^\star,
+]
+
+[
+p95(T_{\mathrm{candidate,e2e}})
+\le 1.05,
+p95(T_{\mathrm{Dense160,e2e}}),
+]
+
+并且：
+
+[
+E_{\mathrm{candidate}}
+\le1.05 E_{\mathrm{Dense160}}.
+]
+
+匹配的是完整执行成本，不是 crop 面积、token 数或 FLOPs。
+
+### Headroom recovery
+
+[
+G_H=H_{\mathrm{DenseHigh}}-H_{\mathrm{LowRes}},
+]
+
+[
+\rho_{\mathrm{oracle}}
+======================
+
+\frac{
+H_{\mathrm{oracle}}-H_{\mathrm{LowRes}}
+}{
+G_H
+}.
+]
+
+### `GO` 条件
+
+全部满足：
+
+1. (\rho_{\mathrm{oracle}}\ge0.75)；
+2. paired 95% CI lower bound of recovery (>0.50)；
+3. oracle mAP@0.7 距 dense high-resolution 不超过 1.0 point；
+4. 至少一个 deployable、非 learned heuristic 恢复 (25%) 以上 (G_H)；
+5. 该 heuristic 相对 random 的 mAP@0.7 增益至少 0.5 point，paired CI lower bound (>0)；
+6. deploy-visible descriptor 与 oracle utility 的 per-clip Spearman 中位数 (\ge0.2)，cluster bootstrap CI lower bound (>0)；
+7. equal full-cost 条件全部通过。
+
+### `KILL` 条件
+
+任一失败即 KILL，特别是：
+
+* dense highres 有增益，但任何一/二 ROI 都无法恢复；
+  -只有 test-label oracle 才能找到 ROI；
+  -AdaSpot/motion/saliency 与 random 无区别；
+  -候选 oracle 强，但 deploy-visible feature 无法预测；
+  -H2D/crop/scout 使 full-stack 成本超过 dense160。
+
+**S2 失败后不得再增加 policy、RL、loss 或候选数量。**
+
+---
+
+# 9. 唯一最终候选：DART-Zoom
+
+## 9.1 Thesis
+
+> **DART-Zoom：Dense-time Action-Regret Tube Zoom** 保留所有物理时间位置，用训练期 dense high-resolution EMA TAD detector 的 hard candidate tube counterfactual regret，监督一个预算校准、边界风险结构化的离散 ROI tube/scale/count policy，并让 heavy VideoMAE 真实执行 native 96/112 输入。
+
+相对 Uni-AdaFocus/AdaSpot 的不可还原 delta 是：
+
+> **segment classification + boundary regression regret、16-frame structured tube routing、规则 768 点 detector grid，以及完整 source-to-output 实测成本。**
+
+---
+
+## 9.2 完整 forward
+
+### 输入与 canonical source
+
+逻辑输入：
+
+[
+X^H\in\mathbb{R}^{B\times3\times768\times R_H\times R_H},
+\qquad
+R_H\in{224,256},
+]
+
+其中 (R_H) 由 S1 冻结。
+
+数据 pipeline：
+
+1. decode 原视频帧；
+   2.保持原始 source 尺寸做 augmentation；
+   3.生成与 dense high-res baseline 完全相同的 (R_H\times R_H) canonical canvas；
+   4.以 uint8 或低精度形式 H2D 一次；
+   5.从同一 canvas 生成 global view 和 ROI；
+   6.所有 H2D bytes、canonical resize 和 source residency 都计入成本。
+
+不把 full-HD source 长期保留在 GPU；只保留 (R_H) canonical canvas。
+
+### Low-resolution global scout
+
+[
+X^g=\operatorname{Resize}(X^H,80,80).
+]
+
+一个 tiny `TubeletScout`：
+
+* temporal stride 2；
+  -spatial stride 8；
+  -depthwise-separable 3D blocks；
+  -hidden width 64；
+  -总层数不超过 4。
+
+输出：
+
+[
+S\in\mathbb{R}^{B\times64\times384\times10\times10},
+]
+
+[
+g\in\mathbb{R}^{B\times384\times384},
+]
+
+[
+b\in[0,1]^{B\times48}.
+]
+
+同一 trunk 提供 global context、saliency、motion descriptor、action state 和 boundary risk。
+
+### Candidate generation
+
+每个 16-frame clip (m) 构造固定 (J=16) 个候选：
+
+[
+c_{m,j}
+=======
+
+(\text{center tube},\text{FOV},q,K,\text{proposal source}),
+]
+
+其中：
+
+* (q\in{96,112})；
+* (K\in{1,2})；
+  -center tube 在 clip 内为 constant 或 linear；
+  -proposal source 为 center、saliency、motion、hybrid；
+  -至少一个 full-frame-96 fallback。
+
+### Policy 与 structured route
+
+policy 输入：
+
+[
+u_{m,j}
+=======
+
+[
+\operatorname{stopgrad}(g_m),
+\operatorname{stopgrad}(b_m),
+\phi(c_{m,j})
+].
+]
+
+输出：
+
+[
+\hat r_{m,j}=\operatorname{MLP}*{\pi}(u*{m,j}).
+]
+
+实际 route 由前述 Viterbi 目标求解。boundary risk：
+
+-高时降低 track reset penalty；
+-提高 `K=2/q=112` 候选的相对价值；
+-不产生二维中心。
+
+### Hard native crop
+
+按 route 打包为两个规则 bucket：
+
+[
+X_{96}^{\mathrm{ROI}}
+\in
+\mathbb{R}^{N_{96}\times3\times16\times96\times96},
+]
+
+[
+X_{112}^{\mathrm{ROI}}
+\in
+\mathbb{R}^{N_{112}\times3\times16\times112\times112}.
+]
+
+约束：
+
+* coordinates detach；
+  -不把 96 padding 到112；
+  -不把 ROI resize 到160或224；
+  -border 使用 replicate padding；
+  -无效 temporal clip 不生成 ROI；
+  -horizontal flip 后执行 (x\leftarrow1-x)。
+
+### Shared local VideoMAE-S
+
+两个 bucket 使用同一权重的 VideoMAE-S：
+
+[
+F_q^l
+\in
+\mathbb{R}^{
+N_q\times384\times8\times(q/16)\times(q/16)
+}.
+]
+
+因此：
+
+* `96`：(8\times6\times6=288) input tokens/ROI/clip；
+* `112`：(8\times7\times7=392)；
+* `160`：(8\times10\times10=800)。
+
+base VideoMAE 参数继续冻结，AdaTAD adapters 训练，与当前配置的参数分组原则一致。当前配置将 backbone base LR 设为 0，仅 adapter 使用非零 LR。见 [`config:126-137`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py#L126-L137)。
+
+空间 pooling 后 scatter：
+
+[
+L
+\in
+\mathbb{R}^{B\times48\times2\times384\times8}.
+]
+
+### Global/local fusion
+
+对每个 tubelet time：
+
+[
+\alpha_{m,\tau,k}
+=================
+
+\operatorname{softmax}*k
+\left[
+q(g*{m,\tau})^\top
+k(l_{m,\tau,k})
+\right],
+]
+
+[
+\bar l_{m,\tau}
+===============
+
+\sum_k
+\alpha_{m,\tau,k}
+\left[
+P_l l_{m,\tau,k}
++
+E_{\mathrm{coord}}(x,y,\log s,q,K)
+\right].
+]
+
+[
+z_{m,\tau}
+==========
+
+\operatorname{LN}
+\left[
+P_g g_{m,\tau}
++
+\sigma(W_g g_{m,\tau})
+\odot
+\bar l_{m,\tau}
+\right].
+]
+
+得到：
+
+[
+Z_{384}\in\mathbb{R}^{B\times384\times384}.
+]
+
+再执行与现有 AdaTAD 一致的 temporal interpolation：
+
+[
+Z_{768}
+=======
+
+\operatorname{Interp}*t(Z*{384},768)
+\odot M.
+]
+
+随后进入**未修改的** projection、neck、ActionFormerHead、target generation 和 NMS。
+
+---
+
+## 9.3 位置编码、padding 与 mask
+
+1. local VideoMAE 内部 positional embedding 从 nominal 14×14 网格自动插值到 6×6 或7×7；这是现有代码已支持的行为。见 [`vit_adapter.py:929-940`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/opentad/models/backbones/vit_adapter.py#L929-L940)。
+2. local positional embedding只表示 ROI 内坐标；全局位置由 `E_coord` 补回。
+3. temporal masks 与原始 LoadFrames mask bitwise 保持一致。
+4. padded temporal positions：
+   -不参与 candidate generation；
+   -local feature 置零；
+   -最终仍由原 mask 排除。
+5. `K=1` 时第二 ROI 用 route mask 屏蔽，而不是复制第一 ROI。
+6. 96/112 分 bucket 执行，禁止统一 padding 造成虚假计算节省。
+
+---
+
+## 9.4 数学目标与监督来源
+
+总损失：
+
+[
+\begin{aligned}
+\mathcal L
+={}&
+\mathcal L_{\mathrm{TAD}}^{\mathrm{fused}}
++0.25\mathcal L_{\mathrm{TAD}}^{\mathrm{global}}
++0.25\mathcal L_{\mathrm{TAD}}^{\mathrm{local}}\
+&+0.1\mathcal L_{\mathrm{boundary}}
++\mathcal L_{\mathrm{regret}}
++0.2\mathcal L_{\mathrm{rank}}
++0.2\mathcal L_{\mathrm{choice}}\
+&+0.1\mathcal L_{\mathrm{schedule}}
++0.1\mathcal L_{\mathrm{feature}}.
+\end{aligned}
+]
+
+### TAD losses
+
+三路均使用 train GT temporal segments：
+
+* fused：主检测；
+  -global：确保全局 context 不退化为纯 selector；
+  -local：确保 ROI feature 本身可检测。
+
+ActionFormer 当前 detection loss由 classification 和 regression loss构成，并在规则 point grid 上计算。见 [`anchor_free_head.py:365-412`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/opentad/models/dense_heads/anchor_free_head.py#L365-L412)。
+
+### Boundary loss
+
+train GT start/end 在 48-clip grid 上生成 soft target：
+
+[
+\mathcal L_{\mathrm{boundary}}
+==============================
+
+\operatorname{FocalBCE}(b,b^\star).
+]
+
+### Counterfactual regret
+
+EMA teacher 使用 dense (R_H) feature (F^H)。对抽样 clip (m) 和候选 (j)，只替换该 clip feature：
+
+[
+F^{H\leftarrow(m,j)}.
+]
+
+[
+r_{m,j}
+=======
+
+\operatorname{stopgrad}
+\left[
+\max\left(
+0,
+\mathcal L_{\det}
+(D_{\bar\theta}(F^{H\leftarrow(m,j)}),y)
+----------------------------------------
+
+\mathcal L_{\det}
+(D_{\bar\theta}(F^H),y)
+\right)
+\right].
+]
+
+### Ranking
+
+[
+\mathcal L_{\mathrm{rank}}
+==========================
+
+\sum_{j,k}
+\max
+\left(
+0,
+m-
+\operatorname{sign}(r_k-r_j)
+(\hat r_k-\hat r_j)
+\right).
+]
+
+### Cost-aware hard choice
+
+[
+j^\dagger
+=========
+
+\arg\min_j
+\left[
+r_{m,j}
++\lambda_c c_{\mathrm{measured}}(j)
+\right],
+]
+
+[
+\mathcal L_{\mathrm{choice}}
+============================
+
+\operatorname{CE}
+\left(
+-\hat r_{m,:}-\lambda_c c(:),
+j^\dagger
+\right).
+]
+
+### Schedule calibration
+
+one-clip regrets未必可加。每 10 个 teacher batch 运行一次完整 route：
+
+[
+R_{\mathrm{schedule}}
+=====================
+
+\left[
+\mathcal L_{\det}(F^{\mathrm{route}})
+-------------------------------------
+
+\mathcal L_{\det}(F^H)
+\right]_+,
+]
+
+[
+\mathcal L_{\mathrm{schedule}}
+==============================
+
+\operatorname{Huber}
+\left(
+\sum_m\hat r_{m,j_m},
+R_{\mathrm{schedule}}
+\right).
+]
+
+### Feature distillation
+
+[
+\mathcal L_{\mathrm{feature}}
+=============================
+
+|Z_{384}-F^H_{384}|_1.
+]
+
+### 实际预算 dual
+
+只根据 hard executed route 更新：
+
+[
+\lambda_c
+\leftarrow
+\left[
+\lambda_c
++
+\eta
+\left(
+\frac1M\sum_m c_{\mathrm{measured}}(j_m)-B
+\right)
+\right]_+.
+]
+
+禁止用 soft expected token count 冒充实际执行预算。
+
+---
+
+## 9.5 梯度所有权
+
+| 参数                           | 接收梯度                                 |
+| ---------------------------- | ------------------------------------ |
+| frozen VideoMAE base         | 无                                    |
+| local adapters               | fused/local TAD、feature distillation |
+| global scout trunk           | fused/global TAD、boundary            |
+| boundary head                | boundary loss                        |
+| policy MLP                   | regret、rank、choice、schedule          |
+| candidate coordinates        | 无；hard detached                      |
+| fusion                       | fused TAD、feature distillation       |
+| ActionFormer projection/head | fused/global/local TAD               |
+| EMA teacher                  | 无；optimizer step 后 EMA 更新            |
+
+policy 输入使用 detached scout features，防止 counterfactual label 把 scout 变成第二个昂贵 detector proxy。
+
+---
+
+## 9.6 单 checkpoint 训练方案
+
+一个连续 run、一个 optimizer/scheduler、一个 checkpoint schema。
+
+### 0–10% successful updates
+
+* dense high-resolution branch建立 EMA teacher；
+  -fixed AdaSpot-like `1×112` route；
+  -训练 scout、local adapters、fusion、detector；
+  -policy 暂不控制 hard route。
+
+### 10–40%
+
+-每 4 个 batch 运行一次 dense EMA teacher；
+-每个 teacher batch 抽样 2 个 clip × 4 个 candidates；
+-训练 regret/rank/choice；
+-hard route 比例从 0 线性升到 1。
+
+### 40–100%
+
+-所有 student forward 使用 hard Viterbi route；
+-teacher 每 4–8 个 batch运行；
+-10% teacher batches 做完整 schedule calibration；
+-预算 dual 根据真实 executed route 更新。
+
+checkpoint 中保存：
+
+* student；
+  -EMA；
+  -optimizer/scaler/scheduler；
+  -budget dual；
+  -cost-table hash；
+  -candidate-library hash；
+  -training manifest。
+
+部署时只导出 student。
+
+训练期 dense teacher 的 wall time 和 energy 必须完整披露；它不计入推理成本，但不能隐藏。
+
+---
+
+## 9.7 推理合同
+
+推理时严格禁止：
+
+* GT segments或labels；
+  -dense teacher；
+  -dense feature/prediction cache；
+  -train regret ledger；
+  -validation prediction；
+  -spatial boxes；
+  -外部隐式 JSONL；
+  -selected-axis remap；
+  -任何帧删除。
+
+推理固定执行：
+
+1. decode + canonical (R_H) canvas；
+2. global scout；
+3. candidate generation；
+4. policy regret；
+5. Viterbi hard route；
+6. native 96/112 crop；
+7. local VideoMAE；
+8. fusion；
+   9.规则 768 点 ActionFormer；
+   10.原始 NMS。
+
+---
+
+## 9.8 最可能失败的五个原因
+
+| 失败原因                       | 最小诊断                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| 160 已足够                    | S1；若失败立即 KILL                                                                 |
+| ROI candidate recall 不足    | S2 oracle recovery；按动作类别和多区域需求分层                                              |
+| regret 不可预测                | per-clip candidate-vector Spearman、random-label/shuffled-window 对照            |
+| one-clip regret 不可加        | predicted sum vs full-route regret、schedule calibration error                 |
+| full source/H2D 吞掉 savings | source-resolution/H2D bytes、stage p50/p95、CPU/GPU crop backend microbenchmark |
+
+---
+
+# 10. 实现映射与关键伪代码
+
+## 10.1 不应复用 temporal selector hook
+
+当前 selector hook 能改变 temporal inputs、masks 和 GT。见 [`actionformer.py:128-175`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/1f5f7254a390f183121e6c4b7cebcebd2f2954d1/opentad/models/detectors/actionformer.py#L128-L175)。空间 Zoom 不应挂在那里。
+
+## 10.2 最小文件清单
+
+### 新增
+
+```text
+opentad/models/detectors/dart_zoom_actionformer.py
+opentad/models/backbones/dart_zoom_backbone.py
+opentad/models/spatial_routing/__init__.py
+opentad/models/spatial_routing/candidates.py
+opentad/models/spatial_routing/policy.py
+opentad/models/spatial_routing/viterbi.py
+opentad/models/spatial_routing/counterfactual.py
+opentad/datasets/transforms/spatial_zoom.py
+configs/adatad/thumos/e2e_thumos_videomae_s_768x1_dart_zoom.py
+tools/bata/profile_spatial_zoom_full_stack.py
+tests/test_dart_zoom_geometry.py
+tests/test_dart_zoom_inference_contract.py
+tests/test_dart_zoom_gradient_ownership.py
+tests/test_dart_zoom_cost_accounting.py
+tests/test_dart_zoom_detector_semantics.py
+```
+
+### 最小修改
+
+```text
+opentad/models/__init__.py
+opentad/models/detectors/__init__.py
+opentad/datasets/transforms/__init__.py
+```
+
+### 保持不改
+
+```text
+opentad/models/dense_heads/anchor_free_head.py
+configs/_base_/models/actionformer.py
+opentad/evaluations/mAP.py
+现有 target generation
+现有 NMS
+```
+
+## 10.3 关键接口
+
+```python
+@dataclass(frozen=True)
+class SpatialRoute:
+    clip_index: int
+    roi_count: int
+    native_size: int              # 96 or 112
+    centers_xy: Tensor            # [K, 2, 2], start/end normalized centers
+    fov_hw: Tensor                # [K, 2]
+    candidate_id: int
+    measured_cost_ms: float
+
+
+class DARTZoomBackbone(nn.Module):
+    def forward(
+        self,
+        source_frames: Tensor,     # [B, 3, 768, RH, RH]
+        temporal_mask: Tensor,     # [B, 768]
+        *,
+        teacher_mode: bool = False,
+    ) -> dict[str, Tensor | list[SpatialRoute]]:
+        ...
+```
+
+## 10.4 Forward 伪代码
+
+```python
+def forward_student(source, masks):
+    # source: canonical high-resolution canvas
+    global_view = resize_video(source, size=(80, 80))
+
+    spatial_map, global_feat_384, boundary_risk_48 = scout(global_view)
+
+    candidates = build_fixed_candidates(
+        spatial_map=spatial_map,
+        lowres_motion=frame_difference(global_view),
+        masks=masks,
+    )
+
+    predicted_regret = policy(
+        global_feat_384.detach(),
+        boundary_risk_48.detach(),
+        candidates,
+    )
+
+    routes = viterbi_select(
+        predicted_regret=predicted_regret,
+        measured_cost=candidates.measured_cost,
+        boundary_risk=boundary_risk_48,
+        transition_distance=candidates.transition_distance,
+    )
+
+    roi96, roi112, scatter = hard_native_crop_pack(
+        source=source,
+        routes=routes,
+        detach_coordinates=True,
+        border_mode="replicate",
+    )
+
+    feat96 = local_videomae(roi96) if len(roi96) else None
+    feat112 = local_videomae(roi112) if len(roi112) else None
+
+    local_384 = spatial_pool_and_scatter(
+        feat96, feat112, scatter, output_time=384
+    )
+
+    fused_384 = coordinate_aware_fusion(
+        global_feat_384,
+        local_384,
+        routes,
+    )
+
+    fused_768 = temporal_interpolate(fused_384, size=768)
+    fused_768 = fused_768 * masks[:, None, :]
+
+    return fused_768, routes
+```
+
+## 10.5 Focused tests
+
+1. `temporal masks`、GT segments、frame indices 在 Zoom 前后 bitwise unchanged；
+2. 160/112/96 runtime grids 分别为 10/7/6；
+3. dummy full-frame route 与 dense path 在同输入下数值近似一致；
+4. horizontal flip 后 ROI x 坐标正确变换；
+5. border crop 使用 replicate，不产生黑边 shortcut；
+6. K=1/K=2 bucket scatter 正确；
+7. 96 不 padding 到112；
+8. policy 参数只接 regret/rank/choice/schedule gradient；
+9. inference graph递归拒绝 teacher、GT、ledger、dense cache；
+10. route 在相同输入/checkpoint下 deterministic；
+11. cost-table hash 与运行硬件不匹配时 fail closed；
+12. profiler stage critical path 与 total wall clock 守恒。
+
+历史 DUCA profiler 已具备 checkpoint、serial loader、CUDA event、H2D、postprocess、memory、energy 和环境 fingerprint 的基础，可作为迁移模板，但必须明确其历史提交身份。见 [`profile_duca_full_stack_cost.py:34-150`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/a5e1774b9941312569ca645341da1abad339db61/tools/bata/profile_duca_full_stack_cost.py#L34-L150) 与 [`:600-720`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/a5e1774b9941312569ca645341da1abad339db61/tools/bata/profile_duca_full_stack_cost.py#L600-L720)。
+
+---
+
+# 11. 最小论文实验矩阵与 Full-stack Cost Protocol
+
+## 11.1 主矩阵
+
+| 方法                               | 作用                                                   |
+| -------------------------------- | ---------------------------------------------------- |
+| Dense-160                        | 当前 official-derived 主基线                              |
+| Dense-224                        | S1 headroom                                          |
+| Dense-256                        | S1 headroom                                          |
+| Dense-96 full-frame heavy        | 判断 crop 是否只是低分辨率 regularization                      |
+| Scout-only                       | global branch 下界                                     |
+| Fixed-center ROI                 | 最简单空间 baseline                                       |
+| Random ROI                       | 检验 learned/saliency 是否真有信息                           |
+| Motion ROI                       | deploy-visible proposal                              |
+| Person ROI                       | 多人/人体 prior，包含 detector 成本                           |
+| Uni-AdaFocus direct spatial port | learned crop 近邻                                      |
+| AdaSpot-like                     | training-free 最强近邻                                   |
+| DART-Zoom                        | 唯一最终候选                                               |
+| exact-uniform temporal baseline  | 当前强 temporal sampling 对照                             |
+| frozen matched DUCA              | 历史 learned temporal 对照；只有重建相同 commit/protocol 后才可入主表 |
+
+## 11.2 主指标
+
+* mAP@0.3/0.4/0.5/0.6/0.7；
+  -Avg-mAP；
+  -short/medium/long；
+  -shortest-Q1 mAP@0.7；
+  -start/end boundary error；
+  -per-class AP；
+  -ROI center/scale/count distribution；
+  -accuracy–latency、accuracy–energy Pareto。
+
+三 seeds 全部报告，不只报告平均最好 checkpoint。
+
+## 11.3 组件消融
+
+1. saliency / motion / hybrid proposal；
+2. frame-wise ROI vs clip tube；
+3. K=1 vs K≤2；
+4. 96-only、112-only、dynamic 96/112；
+5. boundary risk off；
+6. Viterbi transition off；
+7. direct `grid_sample` policy gradient vs hard regret；
+8. feature-only teacher vs detector-regret teacher；
+9. one-clip regret vs schedule calibration；
+10. token/FLOPs budget vs measured cost budget；
+11. global context off；
+12. coordinate embedding off；
+13. local-only/global-only/fused；
+14. source (R_H=224/256)；
+15. CPU crop vs GPU crop backend。
+
+## 11.4 第二 detector 与第二数据集
+
+* **第二 detector：TriDet**，因为其边界建模和检测头与 ActionFormer 不同，可检验 route utility 是否只适配当前 head。([arXiv][14])
+* **第二数据集：FineAction**，其动作更细粒度、持续时间和交互模式更复杂，适合测试空间 detail headroom 是否具有一般性。([arXiv][15])
+
+在当前固定 fork 中没有把 TriDet 识别为已接入事实；这是后续 gated integration，不是现成能力。
+
+## 11.5 ROI 稳定性与 context diagnostics
+
+* center velocity；
+  -center acceleration；
+  -scale switch rate；
+  -count switch rate；
+  -candidate switch rate；
+  -边界附近与动作内部的 switch 对比；
+  -中心扰动 ±8/±16 source pixels；
+  -FOV 扰动 ±10%；
+  -遮掉 global branch；
+  -遮掉第二 ROI；
+  -内部 gate split 上建立一个小型多主体/多区域 diagnostic subset，但不将人工标注作为训练监督。
+
+## 11.6 Full-stack cost equation
+
+[
+\begin{aligned}
+T_{\mathrm{e2e}}
+={}&
+T_{\mathrm{decode}}
++
+T_{\mathrm{preprocess}}
++
+T_{\mathrm{H2D}}
++
+T_{\mathrm{global\ scout}}\
+&+
+T_{\mathrm{ROI\ policy}}
++
+T_{\mathrm{crop}}
++
+T_{\mathrm{local\ heavy}}\
+&+
+T_{\mathrm{fusion}}
++
+T_{\mathrm{detector}}
++
+T_{\mathrm{postprocess}}.
+\end{aligned}
+]
+
+这是成本责任分解。若存在重叠，**总 wall-clock 必须单独实测 critical path**，不能把重叠阶段 p50 相加后冒充端到端 latency。
+
+## 11.7 Profiling protocol
+
+### 主协议
+
+* batch=1；
+  -loader workers=0；
+  -AMP 与正式推理一致；
+  -同一 trained checkpoint；
+  -50 warm-up windows；
+  -至少 200 matched windows，最好完整 test manifest；
+  -方法运行顺序随机化；
+  -同一 source file、window 和 augmentation-free inference；
+  -GPU clocks/power policy 固定；
+  -CPU governor、thread count固定；
+  -CUDA events测 GPU stages；
+  -`perf_counter` 测 decode/CPU preprocessing/wall time；
+  -NVML 10–20 ms power sampling；
+  -报告 p50、p90、p95、mean、std；
+  -peak allocated 和 reserved memory；
+  -H2D bytes、decoded bytes；
+  -energy/window 和 average power。
+
+### 两种系统模式均报
+
+1. `serial-paper`：严格串行，便于阶段归因；
+2. `pipelined-production`：允许 decode/H2D 与 GPU overlap，报告真实 throughput 和 tail latency。
+
+### Source 条件必须登记
+
+* codec；
+  -original height/width；
+  -fps；
+  -bitrate；
+  -canonical (R_H)；
+  -CPU/GPU crop backend；
+  -decode cache cold/warm；
+  -storage type；
+  -PyTorch/CUDA/driver/GPU UUID；
+  -config、checkpoint、manifest hashes。
+
+### 成本硬门
+
+除 S2 的等成本条件外，最终论文主方法至少满足：
+
+[
+\operatorname{LCB}*{95}
+\left[
+\frac{
+T*{\mathrm{Dense160}}-T_{\mathrm{DART}}
+}{
+T_{\mathrm{Dense160}}
+}
+\right]
+\ge 0.15,
+]
+
+[
+\operatorname{UCB}_{95}
+\left[
+\Delta \operatorname{mAP}@0.7
+\right]
+\ge -1.0,
+]
+
+且 shortest-Q1 mAP@0.7 的 drop UCB 不超过 1.0 point。
+
+---
+
+# 12. Result-to-Claim Matrix
+
+| 结果状态                                      | 可以写的 claim                             | 必须降级                            | 必须删除                                                             |
+| ----------------------------------------- | -------------------------------------- | ------------------------------- | ---------------------------------------------------------------- |
+| S1 失败                                     | “在本协议下 160 已基本饱和”                      | 可做负结果分析                         | spatial headroom、Zoom efficiency、TAD-specific spatial allocation |
+| S1 通过，S2 失败                               | “dense high resolution 对当前 TAD 有益”     | ROI candidate sufficiency 仅为负结论 | selective Zoom、learned policy、equal-cost recovery                |
+| S1/S2 通过，learned policy 不胜 random/AdaSpot | “存在 oracle/heuristic spatial headroom” | 论文最多是 benchmark/analysis        | learned regret routing、policy novelty                            |
+| accuracy 提升，full cost 不降                  | “multi-resolution model 改善准确率”         | 不能称高效方法                         | speedup、energy saving、compute allocation                         |
+| full cost 降，但 mAP@0.6/0.7 或短动作明显下降        | “低成本空间压缩”                              | 只能面向低 tIoU                      | boundary-preserving、TAD-specific superiority                     |
+| THUMOS14 成功，TriDet/FineAction 失败          | “AdaTAD-THUMOS-specific”               | 泛化 claim                        | detector-agnostic、general TAD                                    |
+| DART 胜 AdaSpot，但 regret/Viterbi 消融无差别     | “强工程组合”                                | 方法创新降级                          | counterfactual regret/structured routing 是必要核心                   |
+| DART 胜全部 baseline，成本/高 tIoU/短动作/第二任务均通过   | 可写完整 thesis                            | 仍需诚实说明 decode 未减少               | 无需删除，但不得宣称普适最优                                                   |
+| 只有 theoretical token/FLOPs saving         | 仅可作附录复杂度分析                             | 所有系统 claim                      | latency、energy、部署收益                                              |
+| oracle 使用 test GT                         | 无可接受主 claim                            | 只能内部 debug                      | oracle sufficiency 和所有基于它的路线正当性                                  |
+
+---
+
+# 13. 模拟 CVPR / ICCV 审稿
+
+## Summary
+
+论文提出在离线 TAD 中保留完整时间采样，仅动态分配空间分辨率。方法使用低成本 global scout 产生候选 ROI tube，并借助训练期 dense high-resolution EMA detector 的 counterfactual segment regret，学习离散 scale/count/tube route。最终保持规则 768 点 detector grid，并报告完整 source-to-output 成本。
+
+## Strengths
+
+1. 问题来源真实：temporal frame selection 对高 tIoU 边界和 detector geometry 都有风险。
+2. 把 spatial-resolution headroom 和 ROI sufficiency 前置为可杀死 gate，而非直接堆 policy。
+3. 保持规则时间网格，不需要 GT remap 或 post-hoc true-time 修复。
+4. hard candidate regret 与最终硬 crop 执行动作一致，优于只证明 nonzero gradient。
+5. full-stack cost 包含 decode、H2D 和 crop，协议比多数动态计算工作更诚实。
+6. 明确把 AdaSpot、Uni-AdaFocus、random 和 exact-uniform 纳入强基线。
+
+## Weaknesses
+
+1. **最大问题是 novelty collision。** Dense-time low-res global + high-res ROI 已被 AdaSpot覆盖；dynamic crop 和 global/local policy 已被 AdaFocus 系列充分研究。
+2. 当前没有 S1、S2 或任何 learned model 结果，核心假设尚未建立。
+3. Counterfactual regret 可能只是昂贵的 teacher distillation，未必构成新的学习原理。
+4. one-clip regret 不一定能预测完整 route 的联合影响。
+5. THUMOS14 数据规模较小，policy 可能学到场景或 class shortcut。
+6. 两个 ROI、多个 scale 和 Viterbi 带来较强工程复杂度。
+7. source canvas H2D 和 crop kernel 可能使 theoretical token saving 无法变成 wall-clock saving。
+8. 多主体、全局场景或小物体—大主体分离动作仍可能不适合矩形 ROI。
+9. 若 detector regret 仅对 ActionFormer 有效，方法的科学尺度有限。
+
+## Questions
+
+1. Dense224/256 在完全 matched protocol 下究竟增加了多少 mAP@0.6/0.7？
+2. Oracle ROI 在 equal full cost 下能恢复多少 dense high-res headroom？
+3. AdaSpot-like、random 和 motion baselines 是否已经达到 oracle的大部分收益？
+4. 为什么 boundary risk 应控制空间 capacity，而不只是 temporal transition？
+5. policy predicted regret 与 hard route regret 的 per-window相关性是多少？
+6. candidate library 是否在 test 前冻结？
+7. teacher 是否在 test selection 中被意外使用？
+8. two-ROI 的收益是否来自额外计算而非区域覆盖？
+9. full source H2D、crop 和 scout 占 gross saving 的百分比是多少？
+10. 在 TriDet 和 FineAction 上是否保持排序？
+
+## 当前评分
+
+**Score：4/10 — Weak Reject**
+**Confidence：4/5**
+
+不是因为方向显然错误，而是因为：
+
+* 核心正证据尚不存在；
+  -与 AdaSpot/Uni-AdaFocus 的碰撞很强；
+  -系统收益完全未证明；
+  -方法复杂度已经高于当前证据规模。
+
+## 什么证据能真正把评分提高到 7/10
+
+必须同时出现：
+
+1. S1 和 S2 按预注册阈值通过；
+2. DART-Zoom 在 equal full cost 下显著优于 random、fixed、Uni-AdaFocus port 和 AdaSpot-like；
+3. mAP@0.6/0.7 和 shortest-Q1 不退化；
+4. full-stack p50 saving LCB ≥15%，p95/energy 同样有益；
+5. regret ranking、Viterbi、boundary conditioning 各自有不可替代消融；
+6. policy 不依赖 test teacher、GT 或 cache；
+7. TriDet 与 FineAction 至少不发生方向性反转；
+8. source/H2D/crop 账目可复现；
+9. 论文主张收缩为“dense-time spatial allocation for interval TAD”，不泛化到所有视频任务；
+10. 明确说明 AdaSpot 是最邻近工作，并用实验而非措辞证明剩余 delta。
+
+---
+
+# 14. 确定执行顺序
+
+1. 冻结 `fit/gate/test` manifests、三 seeds、S1/S2 阈值和统计脚本。
+2. 只增加 dense224/dense256 matched configs，不实现任何 learned ROI policy。
+3. 运行 Gate S1，并按高 tIoU、短动作、CI 和真实成本作 GO/KILL。
+4. S1 失败：关闭空间 Zoom，回到其他不破坏 dense-time geometry 的路线。
+5. S1 通过：冻结 (R_H)，建立 source-resolution、H2D、native crop 的成本 microbenchmark。
+6. 实现固定 candidate library、fixed/random/motion/person/AdaSpot baselines 和 label-free teacher oracle。
+7. 运行 Gate S2；任一 oracle、predictability 或 equal-cost 条件失败即终止。
+8. S2 通过后冻结 DART-Zoom 书面规格、candidate hash、cost-table schema 和 inference taint contract。
+9. 实现 DART-Zoom、focused tests、gradient ownership audit 和 full-stack profiler。
+10. 运行 THUMOS14 三 seed 主矩阵与全部高 tIoU/短动作/ROI 稳定性分析。
+11. 只有 THUMOS 主门通过后，接入 TriDet 和 FineAction。
+12. 最后按 Result-to-Claim matrix 写论文；没有对应证据的 claim 直接删除。
+
+[1]: https://openaccess.thecvf.com/content/CVPR2024/papers/Liu_End-to-End_Temporal_Action_Detection_with_1B_Parameters_Across_1000_Frames_CVPR_2024_paper.pdf "https://openaccess.thecvf.com/content/CVPR2024/papers/Liu_End-to-End_Temporal_Action_Detection_with_1B_Parameters_Across_1000_Frames_CVPR_2024_paper.pdf"
+[2]: https://ar5iv.org/html/2412.11228v1 "https://ar5iv.org/html/2412.11228v1"
+[3]: https://openaccess.thecvf.com/content/CVPR2026/html/Xarles_AdaSpot_Spend_Resolution_Where_It_Matters_for_Precise_Event_Spotting_CVPR_2026_paper.html "https://openaccess.thecvf.com/content/CVPR2026/html/Xarles_AdaSpot_Spend_Resolution_Where_It_Matters_for_Precise_Event_Spotting_CVPR_2026_paper.html"
+[4]: https://arxiv.org/abs/2602.22073 "https://arxiv.org/abs/2602.22073"
+[5]: https://arxiv.org/abs/2106.11297 "https://arxiv.org/abs/2106.11297"
+[6]: https://arxiv.org/abs/2105.03245?utm_source=chatgpt.com "Adaptive Focus for Efficient Video Recognition"
+[7]: https://arxiv.org/abs/2112.14238 "https://arxiv.org/abs/2112.14238"
+[8]: https://arxiv.org/abs/2209.13465 "https://arxiv.org/abs/2209.13465"
+[9]: https://arxiv.org/abs/2111.11591 "https://arxiv.org/abs/2111.11591"
+[10]: https://arxiv.org/abs/2207.09759 "https://arxiv.org/abs/2207.09759"
+[11]: https://arxiv.org/abs/2411.13626 "https://arxiv.org/abs/2411.13626"
+[12]: https://openaccess.thecvf.com/content/CVPR2024/html/Liu_End-to-End_Temporal_Action_Detection_with_1B_Parameters_Across_1000_Frames_CVPR_2024_paper.html "https://openaccess.thecvf.com/content/CVPR2024/html/Liu_End-to-End_Temporal_Action_Detection_with_1B_Parameters_Across_1000_Frames_CVPR_2024_paper.html"
+[13]: https://arxiv.org/abs/2401.04975 "https://arxiv.org/abs/2401.04975"
+[14]: https://arxiv.org/abs/2303.07347 "https://arxiv.org/abs/2303.07347"
+[15]: https://arxiv.org/abs/2105.11107 "https://arxiv.org/abs/2105.11107"

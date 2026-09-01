@@ -1,0 +1,40 @@
+{
+  "artifact": "/data/run01/sczc063/yuzibo/duca_marginal_prerun_f87555f7_20260831/counterfactual_k256.jsonl.gz",
+  "artifact_sha256": "6dc8893a41b5c8132b176f32133ffc2f48a5491146385c147b8227167608a309",
+  "checkpoint_payload_epoch": 59,
+  "collapsed_alias_count": 17,
+  "detector_frozen": true,
+  "distinct_forward_count": 703,
+  "frozen_loss_normalizers": [
+    45.0
+  ],
+  "observed_execution_slot_classes": [
+    256
+  ],
+  "padded_to_k512": false,
+  "requested_budget": 256,
+  "source": {
+    "annotation": "/data/run01/sczc063/yuzibo/thumos14/annotations/thumos_14_anno.json",
+    "annotation_sha256": "ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad",
+    "checkpoint": "/data/run01/sczc063/yuzibo/duca_h65_90_stage2_off_04c35a3b_20260823/gpu1_id0/checkpoint/epoch_59.pth",
+    "checkpoint_epoch": 59,
+    "checkpoint_sha256": "dafcfbd0b1e0a13c400789e73ee13a20cf69551813ef62fc8185fde609806a1c",
+    "checkpoint_state_key": "state_dict_ema",
+    "class_map": "/data/run01/sczc063/yuzibo/thumos14/annotations/category_idx.txt",
+    "class_map_sha256": "a158b7c4c130ce74375a9b114160e2faae7a0221e605a0464a556fe082644f31",
+    "config": "/data/run01/sczc063/yuzibo/duca_marginal_f87555f7_20260831/configs/adatad/thumos/duca_marginal_frozen_h65_probe.py",
+    "config_sha256": "02e091995124496c5c5e0011923ac12de6b8dea29679ec821e64e6e5b6271ca6",
+    "git": {
+      "branch": "HEAD",
+      "dirty": false,
+      "head": "f87555f7da362fe1a20d4ca08f7a68c975ed8280"
+    },
+    "train_data": "/data/run01/sczc063/yuzibo/thumos14/raw_data/video",
+    "videomae_pretrain": "/data/run01/sczc063/yuzibo/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+    "videomae_pretrain_sha256": "4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251"
+  },
+  "stage": "counterfactual-k256",
+  "status": "COUNTERFACTUAL_K256_COMPLETE",
+  "video_count": 200,
+  "window_count": 720
+}

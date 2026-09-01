@@ -1,0 +1,26 @@
+{
+  "created_at": "2026-08-12T22:09:19Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_REFERENCE_ADMISSION_MANIFEST_V005_FRESH_IDENTITY_BINDING",
+  "message_id": "msg-20260812T220919Z-9d4e6b8a21f0",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v004",
+    "CRITIC_DUCA_P0_E1_REFERENCE_ADMISSION_MANIFEST_V004_FOCUSED_RECHECK-v001",
+    "EVALUATOR_DUCA_P0_E1_PHASE_SPECIFIC_READONLY_PRE_RUN_ADMISSION_FACT_CHECK-v001",
+    "msg-20260812T220919Z-12f7e8a4d9c3"
+  ],
+  "payload": {
+    "fresh_reserved_execution_identity": "msg-20260812T220919Z-12f7e8a4d9c3",
+    "old_identity": "msg-20260812T214652Z-7b2c8a5e61d4",
+    "old_identity_status": "fail_closed_strict_unopened_unverifiable"
+  },
+  "priority": "high",
+  "requested_action": "Author only EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v005. Supersede v004 by substituting its sole effective QUEUE_ID literal with msg-20260812T220919Z-12f7e8a4d9c3 and state that the old identity is fail-closed/ineligible because strict unopened status cannot be certified. Preserve all frozen v003/v004 mathematics, eleven-element argv, paths, input order, denials, role order, evidence class, output discipline, first-fail contract and NOT_EXECUTED boundary exactly. Incorporate the factual outcome of the v001 read-only check without upgrading authority: facts 2 and 4 were verified; Evaluator clean binding and shared-parent/duplicate state require a later replacement read-only check after Coordinator recovery. The fresh identity is opaque, reserved_not_dispatched_payload_unread, and must not be opened, consumed, dispatched, or executed. Do not access remote, run Python, import, compile, test, read fixture content, access data/model/checkpoint/metric, use GPU/CUDA/Slurm/browser, create a receipt, or change science/protocol. Return only the authored-not-run v005 artifact.",
+  "required_gate": "P0_E1_FORMAL_PRE_RUN_ADMISSION_PENDING",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

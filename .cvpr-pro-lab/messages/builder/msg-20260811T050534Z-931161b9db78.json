@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-11T05:05:34Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "implementation-plan-and-minimal-patch",
+  "message_id": "msg-20260811T050534Z-931161b9db78",
+  "parent_artifact_ids": [
+    "art-20260811T045704Z-2d13c25e41"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Accepted Pro decision PRO_INITIAL_REVIEW-v002 requires P0/P1 only. Frozen GitHub revision 63a726a4aaf48ecbf6780bb196de43a890c6b4df. In your writable worktree, inspect the plugin registry and produce the smallest faithful implementation of DUCA_FIXEDK_BOUNDED_MONOTONE_DENSITY_ACQUISITION-v001: clean uniform control, bounded monotone inverse-CDF fixed-K sampler, external physical-selected coordinate transport before unchanged NMS, and focused property/parity tests. Preserve detector/backbone/head/loss/metric/split. Do not run local CPU tests or any experiments; all runnable checks and experiments require later remote protocol. Do not push, launch GPU, access held-out data, add generic frameworks, SHA trees, or alter the scientific route. If worktree snapshot differs from the frozen revision, stop and report. Return BUILDER_DUCA_DENSITY_P0P1-v001 with changed paths, contract mapping, unrun test plan, deviations, and blockers. Cite raw Pro file .cvpr-pro-lab/pro-reviews/runs/duca-serial-pro-5ad209b3c128fbdd4455da0a7783b203/raw-response.md.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

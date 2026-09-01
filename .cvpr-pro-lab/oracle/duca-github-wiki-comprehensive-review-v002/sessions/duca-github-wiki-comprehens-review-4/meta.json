@@ -1,0 +1,154 @@
+{
+  "id": "duca-github-wiki-comprehens-review-4",
+  "createdAt": "2026-08-31T09:45:30.695Z",
+  "status": "error",
+  "promptPreview": "Read the single supplied review task completely, then open and inspect every required public GitHub Wiki and exact code-version URL yourself. Do not treat the t",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "error",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-31T09:45:31.580Z",
+      "completedAt": "2026-08-31T09:46:31.769Z",
+      "response": {
+        "status": "error",
+        "incompleteReason": "chrome-disconnected"
+      },
+      "error": {
+        "category": "browser-automation",
+        "message": "Remote Chrome connection lost before Oracle finished.",
+        "details": {
+          "stage": "connection-lost",
+          "recoverableDisconnect": false,
+          "disconnectCause": "chrome-closed",
+          "runtime": {
+            "chromeHost": "127.0.0.1",
+            "chromePort": 15359,
+            "chromeTargetId": "7870B7A41E3ED24DE4BF2BA2821E9790",
+            "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+            "promptSubmitted": false,
+            "controllerPid": 41108
+          }
+        }
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "current",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "chromeHost": "127.0.0.1",
+      "chromePort": 15359,
+      "chromeTargetId": "7870B7A41E3ED24DE4BF2BA2821E9790",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "promptSubmitted": false,
+      "controllerPid": 41108
+    }
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Read the single supplied review task completely, then open and inspect every required public GitHub Wiki and exact code-version URL yourself. Do not treat the task file as a source bundle. Preserve nonce DUCA-GITHUB-WIKI-COMPREHENSIVE-REVIEW-v002-20260831 verbatim and end exactly with DUCA_GITHUB_WIKI_COMPREHENSIVE_REVIEW_READY.",
+    "file": [
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\prompts\\PRO_DUCA_GITHUB_WIKI_COMPREHENSIVE_REVIEW-v002.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-github-wiki-comprehens-review-4",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "current",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 10800,
+    "httpTimeoutMs": 10800000,
+    "zombieTimeoutMs": 10800000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-github-wiki-comprehensive-review-v002\\visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 41108,
+    "reattachCommand": "oracle session duca-github-wiki-comprehens-review-4"
+  },
+  "startedAt": "2026-08-31T09:45:31.576Z",
+  "completedAt": "2026-08-31T09:46:31.771Z",
+  "errorMessage": "Remote Chrome connection lost before Oracle finished.",
+  "response": {
+    "status": "error",
+    "incompleteReason": "chrome-disconnected"
+  },
+  "error": {
+    "category": "browser-automation",
+    "message": "Remote Chrome connection lost before Oracle finished.",
+    "details": {
+      "stage": "connection-lost",
+      "recoverableDisconnect": false,
+      "disconnectCause": "chrome-closed",
+      "runtime": {
+        "chromeHost": "127.0.0.1",
+        "chromePort": 15359,
+        "chromeTargetId": "7870B7A41E3ED24DE4BF2BA2821E9790",
+        "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+        "promptSubmitted": false,
+        "controllerPid": 41108
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+key	job_id	dependency	state_at_submission
+gate_all	1177687	none	PENDING_ASSOC_GRP_GRES
+protected_e2e	1177690	afterok:1177687	PENDING_DEPENDENCY
+protected_e2e_bridge025	1177691	afterok:1177687	PENDING_DEPENDENCY
+protected_e2e_uni_companion	1177692	afterok:1177687	PENDING_DEPENDENCY
+exact_uniform_replaced_attempt	1177689	afterok:1177687	CANCELLED_TO_PRIORITIZE_THREE_LEARNED_ARMS

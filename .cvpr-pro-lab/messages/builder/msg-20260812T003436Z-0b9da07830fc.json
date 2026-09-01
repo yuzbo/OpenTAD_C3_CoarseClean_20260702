@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-12T00:34:36Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "projection-policy-plan",
+  "message_id": "msg-20260812T003436Z-0b9da07830fc",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_P0_PROJECTION_POLICY-v001.md"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Return only BUILDER_DUCA_P0_PROJECTION_PLAN-v001. Map every binding clause of the accepted P0 nonconstant projection policy to an exact production file/symbol and test-only file/symbol, identify any conflict with the fixed v002 density reader/selected-axis transport, and name the smallest bounded patch surface. Do not edit, run commands, tests, data, CPU/GPU, remote, Slurm, browser, Git or launchers. The raw policy is .cvpr-pro-lab/pro-reviews/runs/duca-projection-policy-v001/raw-response.md; the accepted intake is .cvpr-pro-lab/pro-reviews/PRO_P0_PROJECTION_POLICY-v001.md.",
+  "required_gate": "PRO_P0_PROJECTION_POLICY-v001",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

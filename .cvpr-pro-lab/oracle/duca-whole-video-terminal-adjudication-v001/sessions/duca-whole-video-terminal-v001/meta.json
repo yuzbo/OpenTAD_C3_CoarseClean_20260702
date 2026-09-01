@@ -1,0 +1,166 @@
+{
+  "id": "duca-whole-video-terminal-v001",
+  "createdAt": "2026-08-31T04:23:56.694Z",
+  "status": "completed",
+  "promptPreview": "Read every provided file completely and answer the authoritative prompt as one independent scientific adjudication. Treat the repository, actual remote branch, ",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-31T04:23:57.474Z",
+      "completedAt": "2026-08-31T04:36:29.866Z",
+      "usage": {
+        "inputTokens": 13935,
+        "outputTokens": 1769,
+        "reasoningTokens": 0,
+        "totalTokens": 15704
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 15359,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "C464BB2D33D9005250F7F74F9AB244BD",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a9501ec-3cc4-83ea-ba60-b8302e6e2632",
+      "conversationId": "6a9501ec-3cc4-83ea-ba60-b8302e6e2632",
+      "promptSubmitted": true,
+      "controllerPid": 39456
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a9501ec-3cc4-83ea-ba60-b8302e6e2632"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-31T04:24:04.616Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Read every provided file completely and answer the authoritative prompt as one independent scientific adjudication. Treat the repository, actual remote branch, exact commit 33e4ed137c33eef07f0452b44506a6993bdf7535, runner, test and unchanged allocator permalinks in the prompt as the latest code truth. Do not choose among routes proposed by Codex; make the project-level decision yourself. Preserve nonce DUCA-WHOLE-VIDEO-TERMINAL-ADJUDICATION-v001-20260831 verbatim in the response.",
+    "file": [
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\prompts\\PRO_DUCA_WHOLE_VIDEO_TERMINAL_ADJUDICATION-v001.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\PAPER_PROGRESS.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\experiments\\duca-whole-video-consistent-budget-v1.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-whole-video-terminal-v001",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-whole-video-terminal-adjudication-v001\\visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 39456,
+    "reattachCommand": "oracle session duca-whole-video-terminal-v001"
+  },
+  "startedAt": "2026-08-31T04:23:57.470Z",
+  "completedAt": "2026-08-31T04:36:29.901Z",
+  "usage": {
+    "inputTokens": 13935,
+    "outputTokens": 1769,
+    "reasoningTokens": 0,
+    "totalTokens": 15704
+  },
+  "elapsedMs": 750892,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\oracle\\duca-whole-video-terminal-adjudication-v001\\sessions\\duca-whole-video-terminal-v001\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 59848,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a9501ec-3cc4-83ea-ba60-b8302e6e2632",
+      "sha256": "7ee8841b662ed369b4d6ad4c638205a37e22ad72b9142a1a9781d3d4001a61ea",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "request_type": "PROJECT_SOURCE_SYNC_REQUEST",
+  "request_id": "PROJECT_SOURCE_SYNC_REQUEST-v011",
+  "status": "TERMINAL_READONLY_RECOVERY_INDETERMINATE_PRO_BLOCKED",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "browser_profile": "61",
+  "prepared_ids": [
+    "pfile-20260823T151323Z-92fe5ad566",
+    "pfile-20260823T151323Z-61d188742b"
+  ],
+  "prepared_files": [
+    ".cvpr-pro-lab/project-files/prepared/CURRENT_RESEARCH_STATE-v015.md",
+    ".cvpr-pro-lab/project-files/prepared/DUCA_H65_60_TRUETIME_BRIDGE_PRO_ADJUDICATION-v002.md"
+  ],
+  "material_reason": "User-resumed fresh material epoch after the terminal v010 transport failure. The scientific question and evidence boundary are unchanged, but both filenames and ledger identities are new so the exact DUCA Project can receive one clean append-only source epoch without adopting or retransmitting the unknown v010 packet state.",
+  "required_before_pro": true,
+  "blocking_class": "BLOCKS_SCIENCE_DECISION",
+  "earliest_at": "2026-08-23T23:13:23+08:00",
+  "priority": "high",
+  "route_state": "H65-60 and original H65 Stage-2 running / TrueTime partial mechanism evidence / fresh Pro not yet submitted",
+  "depends_on": [
+    "RankPack/TrueTime official60 terminal predictions and evaluator replay",
+    "FZ/JT_CONTIG terminal negative evidence",
+    "H65 Stage-1 30-epoch and compressed 20-epoch results"
+  ],
+  "future_pro_operation": "FRESH_EXACT_PROJECT_PRO",
+  "future_pro_nonce": "DUCA-H65-60-TRUETIME-BRIDGE-v002-20260823",
+  "future_pro_question": "Using the confirmed v015 state and v002 TrueTime Bridge adjudication packet, act as Scientific First-Author Agent and make one unique CONTINUE/REVISE/PIVOT/STOP decision. Freeze the most informative H65-compatible route among First-Mixing SingleClock, Deterministic Support-Aware Bridge, or a staged Clock-by-Bridge factorization. Keep H65 semantic indirect K384 selection, selected RGB, 60-epoch/6000-update protocol, detector/loss/NMS/evaluator fixed; do not repeat dense/uniform/random or revive continuous cliplets. Define the exact tensor/time/support contract, smallest Builder patch, independent Critic/Evaluator gates, paired-bootstrap requirement, official THUMOS14 experiment and stop rules. Do not assume the two active H65 Stage-2 jobs have terminal mAP and do not authorize a formal new run before their completion and PRE_RUN.",
+  "supersedes": "PROJECT_SOURCE_SYNC_REQUEST-v010",
+  "dedup_key": "DUCA-H65-60-TrueTime-first-mixing-vs-support-aware-bridge-v002",
+  "single_recovery": "none under this lease; no retransmission is allowed. A separate capacity-resolution decision is required because the exact Project is already at its 40-file hard limit.",
+  "next_owner": "DUCA Coordinator / central browser dispatcher",
+  "next_action": "Hold v011 terminal. A future retry requires a new material/accounting disposition; do not retransmit, reconcile, or submit Pro from this epoch.",
+  "dependency": "The sole read-only recovery returned an unverified loading shell (title ChatGPT, zero rows), so both exact filenames remain INDETERMINATE.",
+  "expected_return_at": "terminal for v011",
+  "last_dispatch": "CENTRAL-ARIS-SOURCES-DUCA-H65-60-TRUETIME-BRIDGE-v003",
+  "last_receipt_at": "2026-08-23T23:42:22+08:00",
+  "last_transport_result": {
+    "runtime_cdp": "127.0.0.1:14106",
+    "browser_pid": 58772,
+    "project_title": "ChatGPT - DUCA",
+    "source_count_before": 38,
+    "source_count_after": null,
+    "mutation_attempt_count": 1,
+    "mutation_stage_responses": null,
+    "remote_refs": [],
+    "confirmed_ledger_ids": [],
+    "failure_class": "SOURCE_SYNC_TIMEOUT_UNKNOWN_REMOTE_STATE",
+    "raw_log": "C:/Users/skywalker/.fastctx/jobs/j-u6oluh/output.log",
+    "detail": "After capacity was authoritatively freed to 38/40, preflight verified both new filenames absent and both deleted snapshots absent. The exact two-record ledger-scoped upload invocation timed out after 375 seconds without returning a browser receipt. No retransmission or post-timeout inventory was performed."
+  }
+}

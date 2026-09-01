@@ -1,0 +1,18 @@
+\section{Discussion and Limitations}
+
+DUCA-TAD reframes the paper around an in-forward acquisition plugin rather than an
+offline ledger route. This choice makes the deployable graph stricter: the
+detector must consume hard selected observations, selection must be teacher-free
+at inference, and proposals must be remapped through original-time coordinates.
+
+Zero-shot actionness is useful but limited. A source can separate action from
+background under AUROC or AUPRC and still fail TAD if it ignores boundaries,
+short actions, or hard negatives. For that reason, coarse actionness is only the
+first evaluation gate. Sparse detector mAP, especially mAP@0.6 and mAP@0.7, is
+the final arbiter.
+
+The train-only detector utility boundary is also a risk. Dense teacher losses
+can calibrate the selector, but any teacher payload, raw prediction cache, or
+offline decision record entering validation would invalidate the deployment
+claim. The audit ledger is therefore a reproducibility artifact, not a method
+input.

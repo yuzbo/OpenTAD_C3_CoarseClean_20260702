@@ -1,0 +1,116 @@
+{
+  "id": "duca-github-wiki-comprehens-review",
+  "createdAt": "2026-08-31T09:28:33.519Z",
+  "status": "error",
+  "promptPreview": "# DUCA 完整 Wiki 与 GitHub 全版本科研路线裁决",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "running",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-31T09:28:34.429Z"
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "chromePort": 15359,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "9AA0D7EBBB701788E8DCEC5C571C5CB2",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "promptSubmitted": false,
+      "controllerPid": 58764
+    }
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "# DUCA 完整 Wiki 与 GitHub 全版本科研路线裁决",
+    "file": [],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-github-wiki-comprehens-review",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 10800,
+    "httpTimeoutMs": 10800000,
+    "zombieTimeoutMs": 10800000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-github-wiki-comprehensive-review-v002\\visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 58764,
+    "reattachCommand": "oracle session duca-github-wiki-comprehens-review"
+  },
+  "startedAt": "2026-08-31T09:28:34.422Z",
+  "completedAt": "2026-08-31T09:29:03.632Z",
+  "errorMessage": "Unable to locate the ChatGPT model selector button. If the desired model is already selected in the browser, retry with --browser-model-strategy current; otherwise retry with --browser-model-strategy ignore to skip model selection.",
+  "error": {
+    "category": "browser-automation",
+    "message": "Unable to locate the ChatGPT model selector button. If the desired model is already selected in the browser, retry with --browser-model-strategy current; otherwise retry with --browser-model-strategy ignore to skip model selection.",
+    "details": {
+      "stage": "execute-browser"
+    }
+  }
+}

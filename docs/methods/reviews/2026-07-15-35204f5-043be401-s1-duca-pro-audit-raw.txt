@@ -1,0 +1,1227 @@
+# 1. Skill Loading Certificate
+
+| Skill                         | 状态                       | 本轮处理                                                   |
+| ----------------------------- | ------------------------ | ------------------------------------------------------ |
+| `gpt-5-pro`                   | `unavailable`            | 当前运行模型为 **GPT-5.6 Pro**；不存在同名可加载 skill artifact        |
+| `research-review`             | `unavailable / emulated` | 以证据分层、claim–evidence 对齐方式执行                            |
+| `experiment-audit`            | `unavailable / emulated` | 逐项检查 split、optimizer exposure、selection、result sealing |
+| `paper-claim-audit`           | `unavailable / emulated` | 输出 result-to-claim matrix                              |
+| `oss-audit`                   | `unavailable / emulated` | 使用 GitHub App 固定 exact commit 读取                       |
+| `pytorch-training`            | `unavailable / emulated` | 审核 autograd、optimizer、scheduler、EMA、GradScaler         |
+| `mixed-precision`             | `unavailable / emulated` | 审核 AMP skip/replay、cast cache、loss normalizer          |
+| `distributed-training`        | `unavailable / emulated` | 审核 DDP graph、rendezvous、Slurm GPU 映射                   |
+| `experimental-design`         | `unavailable / emulated` | 审核 matched matrix、seed、GO/KILL gate                    |
+| `result-to-claim`             | `unavailable / emulated` | 第 14 节给出完整矩阵                                           |
+| `ccf-a-editorial-review`      | `unavailable / emulated` | 第 15 节模拟 CVPR/ICCV 审稿                                  |
+| `kill-argument`               | `unavailable / emulated` | 对 S1、DUCA 分别给出停止条件                                     |
+| `research-wiki`               | `unavailable`            | 直接读取 exact commit 中实际存在的 wiki 文件                       |
+| `analyze-results`             | `unavailable / emulated` | 审核 raw prediction→AP→bootstrap→claim 链                 |
+| `system-profile`              | `unavailable / emulated` | 逐行审核 full-stack profiler；未执行真实硬件 profiling             |
+| GitHub repository audit skill | **`loaded`**             | 已加载 `github/github` skill，使用 GitHub App 固定 SHA 取证      |
+
+当前环境没有原生多 reviewer agent 调度器。四个 reviewer 以**互相隔离的证据账本**模拟执行，而不是虚构并行 agent：
+
+1. Reviewer-A：PyTorch/DDP/AMP；
+2. Reviewer-B：OpenTAD/AdaTAD/TAD 方法与几何；
+3. Reviewer-C：实验完整性、统计、GT 与 selection leakage；
+4. Reviewer-D：系统成本、Slurm、部署口径。
+
+最后的统一裁决只采纳能够回到 exact-commit 代码、配置、测试或明确 artifact 的结论，不采用多数投票。
+
+---
+
+# 2. Repository Visibility Certificate
+
+## 2.1 Exact-commit 身份
+
+| 实验线               | 实际读取对象                                                                                                                                                                                                                                                                             | 可见性结论                                                                                        |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Spatial Zoom S1   | [commit `35204f58fd3e91d7cf8f5888928a41e9bf6c2e72`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72)；[exact tree](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72) | `compare_commits(SHA, codex/spatial-zoom-s1-formal-20260715)` 返回 identical，ahead/behind 均为 0 |
+| corrected DUCA P0 | [commit `043be401ba2b694342dc395f263e9a9858628d69`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/043be401ba2b694342dc395f263e9a9858628d69)；[exact tree](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/043be401ba2b694342dc395f263e9a9858628d69) | `compare_commits(SHA, codex/duca-transition-only-20260711)` 返回 identical，ahead/behind 均为 0   |
+
+**没有发现 Prompt 所给 commit 与对应 branch 当前 tree 不一致。**
+
+本地容器无法解析 GitHub 域名，因此没有依赖本地 clone；全部源码证据通过已连接的 GitHub App，以 exact SHA 读取。Slurm 文件系统、日志目录、checkpoint 与 result artifact 不在 GitHub tree 内，无法独立读取。
+
+## 2.2 实际读取的 S1 文件
+
+以下文件已完整读取，或对大文件通过连续行区间覆盖了本轮所有生产调用链：
+
+* 根记忆与合同：[AGENTS.md](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/AGENTS.md)、[RTK.md](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/RTK.md)、[query_pack.md](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/research-wiki/query_pack.md)、[anti_repetition.md](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/research-wiki/anti_repetition.md)、[spatial_zoom_s1_contract.md](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/docs/methods/spatial_zoom_s1_contract.md)。
+* 三份 S1 config、官方派生 dense160 config、dataset/model base config。
+* `tools/train.py`、`tools/test.py`、`train_engine.py`、`test_engine.py`。
+* Prompt 列出的全部 S1 `tools/bata/` 工具，包括 manifest、validator、precheck、training、evidence、checkpoint selection、test opening、profile、cost、analysis、run descriptor。
+* 三个 S1 Slurm launcher。
+* `tests/test_spatial_zoom_s1_infrastructure.py` 与 `tests/test_train_engine_max_train_iters.py`。
+* 为追踪生产语义，额外读取了 `vit_adapter.py` 的位置编码与 forward 路径、ActionFormer/AnchorFreeHead、checkpoint helper、seed helper。
+
+**无法访问的 S1 指定文件：**
+
+* `research-wiki/experiments/spatial-zoom-s1-infrastructure.md`：在该 exact commit 下不存在，GitHub 返回 404。不能把 Prompt 对其内容的描述当作仓库事实。
+
+## 2.3 实际读取的 DUCA 文件
+
+* 根记忆与合同：[AGENTS.md](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/AGENTS.md)、[RTK.md](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/RTK.md)、[duca_transition_only_contract.md](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/docs/methods/duca_transition_only_contract.md)。
+* `transition_only.py`、`structured_selection.py`、`counterfactual_utility.py`。
+* `acquisition.py` 与 `duca_online_frame_selector.py`：文件很大，已逐段完整追踪本轮涉及的 actionness、transition descriptor、hard/soft decode、counterfactual、schedule、target remap、inference 路径；不声称审阅了其中与本轮无关的全部历史/legacy 分支。
+* `ActionFormer` detector、`ActionFormerHead`、`AnchorFreeHead`、true-time geometry、SingleStage post-processing。
+* 四臂 config 与共同 base config。
+* canonical environment、suite preparation、DDP pilot、formal full-model gate、variant/suite/pilot validator、formal runner。
+* DUCA commit 下的 `tools/train.py`、`train_engine.py`。
+* 已知且可定位的重点测试：`test_duca_transition_only.py`、`test_duca_online_coarse_probe_actionness.py`、`test_duca_transition_only_p0_matrix.py`、`test_duca_transition_only_p0_ddp_pilot.py`。
+
+**无法访问或无法穷举的 DUCA 内容：**
+
+* `research-wiki/query_pack.md` 与 `research-wiki/anti_repetition.md` 在该 exact commit 下不存在。事实上 DUCA 的 [AGENTS.md#L7-L23](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/AGENTS.md#L7-L23) 明确要求仓库不要加入历史 `research-wiki/`。
+* GitHub connector 当前没有 recursive tree/list-directory 接口，code search 也未可靠索引该 exact branch，因此不能诚实声称已枚举“所有匹配 `tests/test_duca_transition_only*` 的文件”。已读取所有 Prompt 明确命名且能够定位的生产测试和主要调用点。
+
+## 2.4 可见性结论
+
+| 对象                                      | 是否可见                    |
+| --------------------------------------- | ----------------------- |
+| exact commit 源码                         | 是                       |
+| config 继承链                              | 是                       |
+| train/test 入口                           | 是                       |
+| detector/selector 生产调用点                 | 是                       |
+| validator、evidence、selection、profile 代码 | 是                       |
+| 重点测试                                    | 是，但 wildcard 测试目录无法保证穷举 |
+| Slurm 日志与 checkpoint                    | 否                       |
+| Job `1164289` 等运行状态                     | 否，仅用户提供                 |
+| 当前 mAP、raw predictions、profile trace    | 否                       |
+| 历史 Job artifact                         | 否                       |
+
+---
+
+# 3. 审核范围、已核验事实与未核验运行声明
+
+## 3.1 已由 exact-commit 代码核验
+
+### S1
+
+* S1 的 source config 确实禁止 ROI、teacher/oracle、新 detector 与 temporal selector；validator 对这些字段 fail-closed。[validate_spatial_zoom_s1.py#L141-L224](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/validate_spatial_zoom_s1.py#L141-L224)
+* 三臂 resolved config 在去除 `work_dir`、S1 contract 和允许变化的 resize/crop 数值后必须逐字段完全相等；dense160 还与本地 official-derived config 比较。[validate_spatial_zoom_s1.py#L103-L138](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/validate_spatial_zoom_s1.py#L103-L138) [#L237-L268](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/validate_spatial_zoom_s1.py#L237-L268)
+* 160/224/256 分别形成 10×10、14×14、16×16 patch grid；VideoMAE 原生位置编码为 14×14，运行时对非原生分辨率做 bicubic interpolation。[vit_adapter.py#L925-L974](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/opentad/models/backbones/vit_adapter.py#L925-L974)
+* full-detector precheck 对 projection 输入进行 hook，要求三臂最终均为 `[B,384,768]` 的 detector 输入，而不是只检查 config 名称。[run_spatial_zoom_s1_precheck.py#L308-L632](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/run_spatial_zoom_s1_precheck.py#L308-L632)
+* 正式训练使用同一 batch size、相同优化器、相同 60 epochs、相同 temporal grid；不存在自动降低高分辨率 batch size 的 fallback。[official-derived config#L115-L159](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py#L115-L159)
+
+### DUCA
+
+* 当前 commit 的 hard 与 relaxed path 已在真实 valid prefix 上使用相同 `effective_k` 和 max-hole feasible family，短样本先在真实长度求解，再零填充；不是在 T=768 上求解后 mask-renormalize。[acquisition.py#L1620-L1768](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/opentad/models/duca/acquisition.py#L1620-L1768)
+* exact-uniform 使用显式 rounded endpoint linspace 位置分数，不依赖全相等 logits 的 Viterbi tie-break。[structured_selection.py#L25-L96](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/opentad/models/duca/structured_selection.py#L25-L96)
+* counterfactual teacher 是 train-only、`no_grad`，冻结 `loss_normalizer`，恢复 detector buffer 与 RNG，并关闭 CUDA autocast cast cache；推理路径不运行 teacher。[actionformer.py#L292-L376](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/opentad/models/detectors/actionformer.py#L292-L376)
+* transition-only inference ranking 不接收 raw RGB mean、absolute hidden 或直接 boundary head，而使用 actionness/entropy/ASFormer hidden 的相邻变化。[transition_only.py#L85-L120](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/opentad/models/duca/transition_only.py#L85-L120) [config#L75-L88](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py#L75-L88)
+* 四臂 validator 确实逐字段冻结 detector、dataset、solver、optimizer、scheduler、workflow、evaluation、inference、NMS 与几何公共协议。[validate_duca_transition_only_p0_suite.py#L92-L122](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/tools/bata/validate_duca_transition_only_p0_suite.py#L92-L122) [#L279-L327](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/tools/bata/validate_duca_transition_only_p0_suite.py#L279-L327)
+
+## 3.2 `OPERATIONAL CLAIM / NOT INDEPENDENTLY VERIFIED`
+
+以下全部来自用户给出的外部快照，没有远端 artifact 支撑：
+
+| 声明                                                      | 审核状态                                             |
+| ------------------------------------------------------- | ------------------------------------------------ |
+| S1 Job `1164289` full precheck 完成                       | `OPERATIONAL CLAIM / NOT INDEPENDENTLY VERIFIED` |
+| S1 九个训练任务均运行、85 个 checkpoint、无 Traceback/OOM/non-finite | 同上                                               |
+| S1 pilot 已生成 epoch-1 checkpoint/sidecar                 | 同上                                               |
+| DUCA CUDA gate `1164318` 成功                             | 同上                                               |
+| DUCA 10-step DDP pilot `1164319` 成功                     | 同上                                               |
+| DUCA formal seed-0 四臂正在运行                               | 同上                                               |
+| 历史 64.352/65.696、63.18、61.02 等                          | 历史跨协议线索；不能进入 corrected matched 表                 |
+
+**当前可以回答：**源码是否符合合同、哪些验证器是真正 fail-closed、哪些证据链仍不闭合、哪些结果将能支持何种 claim。
+
+**当前不能回答：**S1 是否 GO、dense224/256 是否提高 mAP、DUCA 是否超过 exact-uniform、真实 full-stack cost、任何当前 Job 的最终有效性。
+
+---
+
+# 4. 一句话总裁决
+
+## **STOP_AND_FIX**
+
+这是**证据接受层面的 STOP_AND_FIX**，不是要求无条件取消全部正在运行的 Job：
+
+* S1 训练本身可以继续作为候选 artifact 生成，但在 P1 统计与严格确定性闭合前，**sealed test 必须保持关闭**。
+* DUCA 当前四臂最多只能保留为 seed-0 terminal-checkpoint pilot；在成功 update 数与 checkpoint/result evidence P0 修复前，**不得把其结果录入 corrected P0 matched 表**。
+
+---
+
+# 5. P0 / P1 / P2 Findings
+
+## P0-1：DUCA 正式训练没有 fail-closed 保证 13,200 个成功 optimizer updates
+
+**根因。** DUCA `train_one_epoch` 在 AMP overflow 时会跳过 `optimizer.step()`，并正确不推进 selector schedule、LR scheduler 与 EMA；但它仍然消费该 batch 并继续 epoch，不 replay，也不 fail。[train_engine.py#L37-L89](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/opentad/cores/train_engine.py#L37-L89)
+
+与此同时：
+
+* config 只把“100 steps/epoch、13,200 total steps”写成常量和环境约束，没有检查真实 `len(train_loader)==100`；[transition config#L14-L38](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py#L14-L38)
+* 合同声明 actual successful steps 必须记录；[transition config#L115-L118](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py#L115-L118)
+* 正式 runner 没有设置 `training_probe_json`，也没有在训练完成后自动构造成功/跳过计数；[runner#L131-L169](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/scripts/run_duca_transition_only_p0_variant_gpu1.sh#L131-L169)
+* suite validator 只是定义了一个要求 13,200 的 post-run JSON 合同，并能验证**外部提供**的 JSON，但没有找到生产该 JSON 的正式工具。[suite validator#L125-L136](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/tools/bata/validate_duca_transition_only_p0_suite.py#L125-L136) [#L190-L222](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/tools/bata/validate_duca_transition_only_p0_suite.py#L190-L222)
+
+**最小反例。** 任意一个 batch 发生 AMP overflow：
+
+```text
+attempted batches = 13,200
+successful optimizer updates = 13,199
+selector schedule step = 13,199
+scheduler/EMA exposures = 13,199
+epoch counter仍到132，final checkpoint仍被保存
+```
+
+四臂若 overflow 数不同，就不再是 matched optimization exposure。
+
+**影响。** 当前四臂即使“正常结束”，也不能仅凭 epoch 数证明 matched 13,200 updates。
+
+**当前 Job 是否可抢救。** 可以条件性抢救：最终 checkpoint 中 selector `_loss_weight_schedule_step` 必须精确为 13,200，scheduler state 必须对应相同 exposure，且无 non-finite collapse。任何一臂不满足即四臂 matched 表失效。
+
+---
+
+## P0-2：DUCA checkpoint criterion 与 result artifact 绑定不足，允许 post-hoc “best 或 final”
+
+post-run 合同目前写的是：
+
+```python
+"checkpoint_criterion": "same_workflow_best_or_final_declared"
+```
+
+见 [validate_duca_transition_only_p0_suite.py#L125-L136](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/tools/bata/validate_duca_transition_only_p0_suite.py#L125-L136)。
+
+但四臂从 epoch 47 开始每 5 epochs 暴露一次 validation mAP，[transition config#L281-L289](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py#L281-L289)，训练入口会实际执行这些 eval。[tools/train.py#L316-L348](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/tools/train.py#L316-L348)
+
+当前 evidence schema 没有强制绑定：
+
+* 唯一 checkpoint SHA；
+* 唯一 state key；
+* raw prediction 字节；
+* evaluator 源码/配置 SHA；
+* result JSON 字节；
+* “四臂同一 checkpoint rule”的不可变定义。
+
+**最小反例。** uniform 用 final、transition 用 best，两个 post-run JSON 都写成 “best_or_final_declared”，validator 仍可接受。
+
+**影响。** corrected P0 的核心 matched comparison 仍可能被 checkpoint selection 污染。
+
+**修复原则。** seed-0 现在必须冻结为：
+
+```text
+terminal epoch 131
+state_dict_ema
+同一 evaluator
+从 terminal checkpoint 重新生成并哈希 raw predictions
+```
+
+中间 validation 只允许作为训练健康日志，不进入正式比较。
+
+---
+
+## P1-1：S1 bootstrap 是“类支持条件化重采样”，不是其报告声称的普通 paired video-cluster bootstrap
+
+S1 会反复抽取视频簇样本，然后**拒绝**任何缺少某一 overall class 或 short-duration class 的 replicate：[analyze_spatial_zoom_s1_results.py#L506-L550](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/analyze_spatial_zoom_s1_results.py#L506-L550)。
+
+但输出 metadata 只写：
+
+```text
+unit = video_cluster
+paired = true
+hierarchical_pooling = resample seeds, then paired video clusters
+```
+
+见 [#L1001-L1017](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/analyze_spatial_zoom_s1_results.py#L1001-L1017)。
+
+这会条件化于“所有稀有类仍被抽到”，倾向于过度抽取稀有类视频，可能改变或缩窄 GO/KILL 所用 LCB。max-T 公式本身方向正确：[analyze_spatial_zoom_s1_results.py#L607-L642](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/analyze_spatial_zoom_s1_results.py#L607-L642)，问题在其输入 bootstrap distribution。
+
+**影响。** 未修复前不能用 simultaneous LCB 决定 S1 GO。
+
+**失效范围。** 不需要重训；gate/test raw predictions 可复用，只需在 sealed test 打开前冻结修正后的统计代码与 schema。
+
+---
+
+## P1-2：S1 “deterministic” 当前是 warning-only；full precheck 也没有执行 AMP replay 测试文件
+
+S1 正式入口禁止 `--disable-deterministic`，但底层调用：
+
+```python
+torch.use_deterministic_algorithms(True, warn_only=True)
+```
+
+见 [opentad/utils/misc.py#L11-L24](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/opentad/utils/misc.py#L11-L24)。
+
+因此出现 nondeterministic operator 时只警告，不会使 formal run fail。
+
+此外，full precheck launcher 只执行 `tests/test_spatial_zoom_s1_infrastructure.py`，[run_spatial_zoom_s1_precheck_slurm.sh#L49-L69](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/scripts/run_spatial_zoom_s1_precheck_slurm.sh#L49-L69)，没有执行包含 AMP skip/replay 测试的 [tests/test_train_engine_max_train_iters.py](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tests/test_train_engine_max_train_iters.py)。
+
+**影响。**
+
+* 当前 full precheck certificate 不能证明 formal AMP replay 测试已运行。
+* 当前训练可被条件性保留：必须扫描完整日志，确认没有 deterministic warning、replay exhaustion 或 overflow fail。
+
+---
+
+## P1-3：DUCA 所谓 “balanced binary actionness” 实际冻结为普通 BCE
+
+函数默认：
+
+```python
+positive_prior = 0.5
+pos_weight = max((1-prior)/prior, 1) = 1
+```
+
+见 [transition_only.py#L18-L48](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/opentad/models/duca/transition_only.py#L18-L48)。
+
+生产调用没有传入其他 prior，[acquisition.py#L2895-L2914](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/opentad/models/duca/acquisition.py#L2895-L2914)，测试还明确把该行为冻结为 unweighted posterior BCE。[tests/test_duca_transition_only.py#L55-L78](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/tests/test_duca_transition_only.py#L55-L78)
+
+这不是梯度错误，但合同和论文语言不得再称为 class-balanced BCE。
+
+**建议不是临时改权重。** 当前 P0 应保持 executable behavior 不变，改名为：
+
+```text
+fixed-prior binary BCE, prior=0.5, pos_weight=1
+```
+
+若作者原本科学意图确实要求按真实 prevalence 做 class balancing，则当前四臂全部使用了错误目标，必须取消并重跑；不能在看见结果后切换。
+
+---
+
+## P1-4：counterfactual gate 只验证 alignment 数值有限，不验证方向为正
+
+生产 loss 确实使用：
+
+```text
+student score(add) - score(remove)
+vs.
+teacher baseline detector loss - swapped detector loss
+```
+
+因此不是“仅 nonzero gradient”。[duca_online_frame_selector.py#L723-L771](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/opentad/models/selectors/duca_online_frame_selector.py#L723-L771)
+
+但 formal CUDA gate 对 alignment 只要求 finite，没有要求：
+
+```text
+Spearman > 0
+sign agreement > 0.5
+```
+
+见 [run_duca_transition_only_formal_full_model_gate.py#L294-L303](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/tools/bata/run_duca_transition_only_formal_full_model_gate.py#L294-L303)。
+
+**结论。**
+
+* 当前代码构造的是有语义的 detector-utility supervision。
+* 当前 gate pass 只能证明数值/graph 可运行。
+* 在真实 train-only 样本上获得正 alignment 证据前，禁止写“detector utility supervision directionally aligned”。
+
+---
+
+## P2-1：S1 marker 与 checkpoint-sidecar 是 fail-closed，但不是事务性原子提交
+
+* test-open 使用 `open("x")`，对同一路径并发创建是排他的；而且 marker 位于独立于 commit namespace 的 canonical study root，能阻断换 commit 重开。[spatial_zoom_s1_test_open.py#L69-L101](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/spatial_zoom_s1_test_open.py#L69-L101)
+* 但 builder 先写 marker，再写 certificate；中途崩溃会留下永久 marker 而无 certificate。[build_spatial_zoom_s1_test_open_certificate.py#L30-L52](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/build_spatial_zoom_s1_test_open_certificate.py#L30-L52)
+* profile 同样先写 `.started.json`，任何异常都会永久阻断该 ordinal 和后续 ordinal。[profile_spatial_zoom_s1.py#L63-L89](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/profile_spatial_zoom_s1.py#L63-L89) [#L92-L176](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/profile_spatial_zoom_s1.py#L92-L176)
+
+这不会制造假阳性证据，只会造成不可恢复的 operational brick，故为 P2。
+
+---
+
+## P2-2：S1 cost 是 warm serial full-stack cost，不是所有部署语义
+
+Profiler 确实测量：
+
+* `next(loader)` 的 decode/preprocessing；
+* H2D；
+* full detector；
+* per-window post-processing；
+* 最终跨窗口 result finalizer/NMS；
+* peak allocated/reserved memory；
+* GPU gross energy。
+
+完整路径见 [profile_spatial_zoom_s1.py#L730-L866](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/profile_spatial_zoom_s1.py#L730-L866)。
+
+但：
+
+1. power 没有扣除 idle baseline；
+2. final video NMS 被均摊回每个 window；
+3. 50 个 warmup 后重置 loader，可能受 OS/page cache 影响；
+4. p95 是 warm per-window throughput-normalized tail，不是冷启动或真实 per-video p95。
+
+因此可允许的表述是：
+
+```text
+same-node, same-GPU, warm serial end-to-end cost
+gross GPU energy per processed window
+```
+
+禁止表述为冷启动 latency、incremental GPU energy 或真实在线 video-level p95。
+
+---
+
+## P2-3：DUCA suite 使用固定端口，存在同节点跨 suite 冲突
+
+runner 默认 `MASTER_PORT=30471`，[runner#L34-L39](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/scripts/run_duca_transition_only_p0_variant_gpu1.sh#L34-L39)，正式启动继续使用固定 `--master_port`。[#L161-L169](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/scripts/run_duca_transition_only_p0_variant_gpu1.sh#L161-L169)
+
+单个四臂 suite 内端口不同可以工作，但不同 seed/suite 若落在同一节点，仍可能冲突。通常表现为 fail-fast，不会静默污染指标，因此列为 P2。
+
+---
+
+## P2-4：DUCA selected-axis remap 代码自洽，但 detector receptive field 不是 physical-time invariant
+
+训练 GT 通过真实 selected positions 做 piecewise-linear selected-axis remap；预测再 inverse-map 回 true time。这避免了明显的 label/query 坐标错位。[duca_online_frame_selector.py#L1695-L1790](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/opentad/models/selectors/duca_online_frame_selector.py#L1695-L1790)
+
+但是 ActionFormer projection、point generator、regression ranges 仍在**selected slot units** 上工作。learned selection 越不均匀，一个 slot 对应的物理时间跨度越不稳定。这是最危险的 mechanism residual 之一，不是当前 commit 的映射 bug。
+
+---
+
+# 6. S1 实际架构、训练、评估、test sealing 与 cost pipeline
+
+## 6.1 模型与数据流
+
+```text
+THUMOS MP4
+  │
+  ├─ DecordInit / LoadFrames
+  │    train: 768-frame random truncation
+  │    val/test: 768-frame sliding window
+  │
+  ├─ spatial-only intervention
+  │    dense160: short side 182 → RRC → 160×160
+  │    dense224: short side 255 → RRC → 224×224
+  │    dense256: short side 291 → RRC → 256×256
+  │
+  ├─ 48 clips × 16 frames
+  │
+  ├─ VideoMAE-S, patch16, tubelet2
+  │    spatial grid: 10×10 / 14×14 / 16×16
+  │    temporal tubelet positions: 48×8 = 384
+  │
+  ├─ mean over spatial tokens
+  ├─ concatenate temporal tubelets
+  ├─ interpolate temporal feature 384 → 768
+  │
+  └─ detector input [B, 384, 768]
+       → ActionFormer projection
+       → neck
+       → official-derived ActionFormerHead
+       → decode
+       → sliding-window aggregation / soft-NMS
+```
+
+基础 temporal/model 设置见 [official-derived config#L8-L113](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py#L8-L113)。三臂 spatial pipeline 的唯一允许差异由 [validator#L58-L114](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/validate_spatial_zoom_s1.py#L58-L114) 冻结。
+
+## 6.2 训练与 AMP replay
+
+```text
+one dataloader exposure
+  └─ collated data_dict
+       ├─ snapshot model buffers + CPU/CUDA RNG
+       ├─ forward/backward under AMP
+       ├─ GradScaler step
+       │
+       ├─ success
+       │    ├─ exactly one optimizer update
+       │    ├─ scheduler step once
+       │    ├─ EMA update once
+       │    └─ save/evaluate as scheduled
+       │
+       └─ overflow attempt
+            ├─ optimizer not stepped
+            ├─ scaler backoff retained
+            ├─ buffers/RNG restored
+            ├─ same already-collated batch replayed
+            └─ after retry limit: fail run
+```
+
+实现见 [S1 train_engine.py#L9-L148](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/opentad/cores/train_engine.py#L9-L148)。
+
+因此应区分：
+
+* **skipped attempt**：一次 AMP 尝试未更新；
+* **successful optimizer update**：最终同 batch 成功一次；
+* **sample exposure**：dataloader 只前进一次。
+
+合同若写“任何 skipped AMP update 都失败”，与当前实现语义不一致；更准确的是“replay exhaustion 或未能产生一次成功 update 时失败”。
+
+## 6.3 Split 与 checkpoint selection
+
+```text
+annotation bytes
+  └─ deterministic manifest
+       ├─ fit: training subset 的冻结 fit videos
+       ├─ gate: training subset 的冻结 held-out videos
+       └─ sealed test: validation subset
+```
+
+正式训练时：
+
+```text
+train loader = fit
+val loader   = gate
+test loader  = gate   # training期间不是sealed test
+```
+
+运行时会逐 ID 检查，[tools/train.py#L173-L188](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/train.py#L173-L188)。
+
+每个 eligible checkpoint 必须存在：
+
+```text
+checkpoint
+checkpoint sidecar
+raw gate predictions
+gate evidence JSON
+```
+
+选择器从 raw predictions 重算：
+
+[
+S_{\text{gate}}=\frac{\mathrm{mAP@0.6}+\mathrm{mAP@0.7}}{2}
+]
+
+exact tie 选择更早 epoch。[select_spatial_zoom_s1_checkpoint.py#L37-L154](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/select_spatial_zoom_s1_checkpoint.py#L37-L154)
+
+## 6.4 Test sealing
+
+```text
+9 frozen selections
+  └─ validate complete 3×3 matrix
+       └─ issue one global marker
+            └─ issue one certificate
+                 └─ run each selected checkpoint once on sealed test
+                      ├─ raw test prediction
+                      ├─ test evidence
+                      └─ profile eligibility
+```
+
+marker 位于固定 `sealed_study_v1/test_open/test_open_issued.json`，不是每个 commit 自己的 namespace，因此等价重跑不能通过换 commit 自动绕开。[spatial_zoom_s1_training.py#L31-L67](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/spatial_zoom_s1_training.py#L31-L67)
+
+## 6.5 Cost pipeline
+
+```text
+warmup 50 complete windows
+  ↓
+for every sealed-test window:
+  Decord/decode/preprocess
+  → H2D
+  → full detector forward
+  → per-window postprocess
+  → record continuous wall-time + CUDA stage events
+  → record peak memory + power window
+
+after all windows:
+  official gather_ddp_results
+  → cross-window aggregation/NMS
+  → total time/energy amortized over windows
+```
+
+`end_to_end_serial_ms` 的 p50/p95 来自每个完整 total sample，不是各 stage percentile 相加。[profile_spatial_zoom_s1.py#L757-L838](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/tools/bata/profile_spatial_zoom_s1.py#L757-L838)
+
+---
+
+# 7. DUCA 四臂实际数据流、梯度流与 feasible-set
+
+## 7.1 Transition-only 数据流
+
+```text
+完整离线窗口：768 RGB frames
+  │
+  ├─ low-resolution 64×64 coarse probe
+  │    └─ official ASFormer-derived binary actionness
+  │         ├─ actionness logits [B,768]
+  │         └─ ASFormer encoder hidden [B,768,96]
+  │
+  ├─ train-only GT
+  │    ├─ binary action-state target
+  │    └─ transition/boundary auxiliary targets
+  │
+  ├─ live descriptors
+  │    └─ actionness/transition auxiliary losses
+  │         → update stem + ASFormer + scorer
+  │
+  └─ detached deploy descriptors
+       ├─ Δ actionness logit, |Δ|
+       ├─ Δ binary entropy, |Δ|
+       ├─ Δ ASFormer hidden, |Δ|
+       └─ adjacent hidden cosine change
+            → transition scorer
+            → learned policy score
+```
+
+该分离由 [transition contract#L75-L109](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py#L75-L109) 与生产实现共同支持。
+
+## 7.2 Policy 与 detector
+
+```text
+uniform reference score U
+learned transition score S
+
+policy logits = (1-α)·U + α·S
+
+valid prefix length L
+Keff = min(384, L)
+
+hard DP:
+  exact Keff
+  unique positions
+  max unselected hole ≤ 15
+
+soft DP:
+  same valid prefix
+  same Keff
+  same max-hole feasible family
+
+pad:
+  inactive suffix / inactive slots = exact zero
+```
+
+然后：
+
+```text
+hard selected positions
+  → gather exactly 384 raw frames
+  → VideoMAE-S
+  → ActionFormer detector on selected axis
+  → inverse map prediction to true time
+  → official-derived decode/NMS
+```
+
+当前 commit 的 valid-prefix 修复直接见 [acquisition.py#L1679-L1755](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/opentad/models/duca/acquisition.py#L1679-L1755)。
+
+## 7.3 Exact-uniform 位置证明
+
+`exact_uniform_positions` 对 rank (i) 使用 endpoint linspace：
+
+[
+p_i=\operatorname{round}\left(\frac{i(T-1)}{K-1}\right)
+]
+
+* (T=768,K=384)：384 个唯一位置，含 0 与 767。383 个相邻 gap 总和 767，因此 382 个 gap=2、1 个 gap=3；最大未选 hole=2。
+* (T=385,K=384)：仅一个 gap=2，即遗漏一个 interior point；最大 hole=1。
+* (T\le384)：(K_{\text{eff}}=T)，所有 valid positions 都被选择；其余 detector slots 只零填充。
+
+因此 exact-uniform 不是 all-equal logits 的实现偶然性。
+
+## 7.4 Counterfactual 梯度流
+
+```text
+current hard policy P
+  └─ build ≤4 feasible one-swap candidates
+       ├─ add high-score unselected position
+       └─ remove low-score selected position
+
+train-only no-grad detector teacher
+  ├─ loss(P)
+  └─ loss(P swap add/remove)
+
+utility = loss(P) - loss(P_swap)
+
+student pair score =
+  scorer(add) - scorer(remove)
+
+cross-entropy distillation
+  → gradient only to deploy-time selector/scorer
+  → no direct gradient through teacher detector evaluation
+```
+
+生产 teacher 明确标记 `direct_detector_gradient=False`，[counterfactual_utility.py#L74-L127](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/opentad/models/duca/counterfactual_utility.py#L74-L127)。
+
+## 7.5 四臂唯一差异
+
+| Arm                       | 实际含义                                | 关键差异                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| exact-uniform             | matched fixed-K coverage baseline   | transition stack仍训练，但 train/infer `policy_alpha=0`；无 CF；detector bridge=0。[config](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/configs/adatad/thumos/duca_exact_uniform_fixed384_official_adatad_backend_full_train.py#L6-L39)                                                                 |
+| direct-a5                 | 显式 direct-boundary comparator       | start/end/context/direct utility heads，explicit boundary supervision，detector gradient ramp 到 1；不是 transition-only 单因素消融。[config#L27-L95](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/configs/adatad/thumos/duca_direct_boundary_fixed384_13200_official_adatad_backend_full_train.py#L27-L95) |
+| transition β=0            | corrected transition-only mechanism | α 从 0→1；无 direct detector bridge；无 counterfactual loss                                                                                                                                                                                                                                                                                                    |
+| transition counterfactual | β=0 + train-only one-swap utility   | λ=0.25、max 4 candidates、teacher required。[config#L156-L207](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py#L156-L207)                                                                                   |
+
+---
+
+# 8. Official AdaTAD/OpenTAD 一致性差异表
+
+| 项目               | S1                                                                                                                                                                                                                                                                                                                                                                                             | DUCA                                                                                                                                                                                                                                                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base config      | dense160 本地 config 与固定上游 config 是同一 Git blob；[local](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/35204f58fd3e91d7cf8f5888928a41e9bf6c2e72/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py) / [upstream](https://github.com/sming256/OpenTAD/blob/1aa8ca4ac5e846b1e8ff69298dd6607121a01589/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py) | config 合同明确写 `official_components_with_duca_wrapper_not_source_identical`。[config#L55-L69](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/043be401ba2b694342dc395f263e9a9858628d69/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py#L55-L69) |
+| Detector source  | 本地 ActionFormer 含扩展接口；S1 未配置 selector，扩展分支不活跃                                                                                                                                                                                                                                                                                                                                                  | 本地 ActionFormer 新增 selector、CF teacher、true-time metadata；不是上游 source-identical                                                                                                                                                                                                                      |
+| Head config      | 与 official-derived ActionFormerHead config 相同                                                                                                                                                                                                                                                                                                                                                  | head config、cls/reg loss、decode/NMS 保持；source 增加 frozen normalizer/geometry helper                                                                                                                                                                                                                   |
+| 输入 temporal grid | dense 768                                                                                                                                                                                                                                                                                                                                                                                      | 先选 384，再在 selected axis 检测                                                                                                                                                                                                                                                                           |
+| VideoMAE         | 768 frames→384 tubelet positions→插值768                                                                                                                                                                                                                                                                                                                                                         | 384 selected frames→192 tubelet positions→插值384                                                                                                                                                                                                                                                      |
+| 数据 split         | formal fit/gate/sealed-test，不是上游默认全 training→validation                                                                                                                                                                                                                                                                                                                                        | 共同 THUMOS loader，但额外 train-only GT 给 coarse/transition/teacher                                                                                                                                                                                                                                       |
+| DDP/AMP          | world-size 1、static graph、with_cp、same-batch AMP replay                                                                                                                                                                                                                                                                                                                                        | dynamic graph、`with_cp=False`、`static_graph=False`、`find_unused_parameters=True`；无 same-batch replay                                                                                                                                                                                                 |
+| 坐标               | 原 dense time                                                                                                                                                                                                                                                                                                                                                                                   | selected-axis train/decode，再 inverse-map true time                                                                                                                                                                                                                                                   |
+| NMS              | official-derived路径                                                                                                                                                                                                                                                                                                                                                                             | inverse-map 后走相同 official-derived NMS                                                                                                                                                                                                                                                                |
+| 可宣称程度            | official-derived dense-resolution experiment                                                                                                                                                                                                                                                                                                                                                   | official components + DUCA wrapper；不能称“官方源码未改”                                                                                                                                                                                                                                                       |
+
+**重要限定。** S1 dense160 是 official-derived **模型/config baseline**，但其 formal split、AMP replay、evidence sealing 与上游默认运行协议不同；不能直接把上游论文数字或历史 Job 数字搬入当前 matched 表。
+
+---
+
+# 9. 实验完整性审计
+
+| 维度                   | S1                                           | DUCA                                                                                                       |
+| -------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Train GT             | fit GT 正常用于 detector 训练                      | train GT 用于 detector、binary state、transition aux、CF teacher                                                |
+| Gate GT              | 只用于 checkpoint selection/statistics          | 当前 validation 每 5 epochs 暴露；需冻结 terminal criterion                                                         |
+| Sealed test GT       | formal test-open 前代码不允许使用                    | 没有同等级 sealed-test infrastructure                                                                           |
+| Inference GT         | 无                                            | 无；forward_test 拒绝 privileged targets                                                                       |
+| Teacher              | 无                                            | 仅 train-only、no-grad；推理 0 次                                                                                |
+| Raw prediction cache | config 明确禁止从 raw cache 加载                    | selector config 与 forward 路径禁止 raw prediction cache                                                        |
+| Ledger/oracle        | 无                                            | transition-only 明确 `forbid_ledger=True`                                                                    |
+| Result existence     | 必须有 raw predictions/evidence；当前 artifact 未核验 | post-run result producer 与 result bytes 绑定未闭合                                                              |
+| Checkpoint selection | gate metric固定、tie earliest                   | “best or final declared”未冻结，P0                                                                             |
+| Dead code/辅助 helper  | 未发现影响 S1 forward 的 ROI/policy dead branch    | `detached_hard_one_swap_utilities` helper 不是 integrated teacher 的生产调用证据；应以 ActionFormer integrated path 为准 |
+| Scope                | 仅 dense resolution headroom                  | 离线 full-window TAD，不是 Online/Streaming                                                                     |
+
+S1 的 formal scripts 能防止**无意或协议内**泄漏，但不是针对拥有文件系统权限的恶意操作者的安全沙箱：完整 annotation 文件本身包含 test GT。正式 claim 仍依赖研究者遵守“不在 formal tooling 外检查 sealed test”的治理规则。
+
+---
+
+# 10. 当前现象的证据分层与机制诊断
+
+## 10.1 证据分层
+
+### A. 已由代码证实
+
+* S1 三臂 config intervention 是 spatial-only。
+* S1 无 ROI/scout/selector/new detector。
+* DUCA hard/soft feasible family 已修正。
+* exact-uniform 是显式 endpoint positions。
+* CF teacher train-only、detached、无推理泄漏。
+* DUCA 当前 actionness loss 实际为 unweighted BCE。
+* DUCA formal completion 尚未自动证明 13,200 successful updates。
+* S1 bootstrap 存在 class-support conditioning。
+
+### B. 只有历史跨协议数字支持
+
+* “learned sampling 约 63、uniform 约 65”。
+* “旧 joint training 比 separated lattice/PAction 更差”。
+* “旧 homotopy 或 β=0.25 导致下降”。
+
+这些数字的 detector、loader、geometry、optimizer exposure 或代码 commit 不完全匹配，不能进入 corrected P0 因果判断。
+
+### C. 当前完全未知
+
+* corrected transition β=0 是否超过 matched exact-uniform。
+* CF 是否优于 β=0。
+* direct-a5 是否优于 transition-only。
+* dense224/256 是否提高高 tIoU 或 short-action mAP。
+* S1 full-stack latency、energy 与 memory。
+* 当前 Job 是否真的没有 AMP skip、determinism warning、artifact corruption。
+
+## 10.2 为什么旧 63 vs 65 不能证明“联合训练失败”
+
+该比较同时可能混入：
+
+```text
+uniform定义差异
+selected-axis/physical-time差异
+loader与window差异
+optimizer parameter exposure差异
+successful update数差异
+homotopy起点差异
+detector/backbone commit差异
+checkpoint selection差异
+```
+
+因此它最多证明“若干旧系统实例的最终数值不同”，不能识别“联合训练”这一单一原因。
+
+## 10.3 机制—预测—诊断—反证
+
+| 机制                            | 可观测预测                                                                    | 最小诊断                                                       | 反证条件                            |
+| ----------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------- | ------------------------------- |
+| AMP skip 导致 exposure mismatch | final selector schedule step <13,200；scheduler exposure不同                | 读取 terminal checkpoint buffer、scheduler state、完整 log       | 四臂均精确13,200且0 skip              |
+| Coarse state signal不足         | actionness AUPRC/transition ranking弱；learned policy接近噪声                  | 仅 train/gate split输出 AUROC/AUPRC、transition AP、calibration | 信号强且稳定但 mAP仍差                   |
+| “balanced BCE”实际未平衡           | 正类 recall低或背景/动作概率重叠                                                     | train-only prevalence、per-class/length recall              | unweighted BCE仍得到稳定强信号          |
+| CF 方向不一致                      | candidate utility与pair score Spearman≤0、sign≤0.5                         | train-only real-batch paired alignment bootstrap           | 一侧95% LCB：Spearman>0、sign>0.5   |
+| selected-axis 几何扭曲            | 错误随 local selected gap/Jacobian 增大而增加                                    | 按 endpoint 附近真实 gap 分桶 mAP/boundary error                  | 控制语义分数后误差与 gap 无关               |
+| CF candidates太局部              | 当前4个候选 alignment高，但策略/mAP无改善                                             | 仅诊断性增加候选覆盖，不改训练主矩阵                                         | 4候选已覆盖主要正 utility mass          |
+| S1 真有空间 headroom              | 224/256在0.6/0.7和short Q1稳定增益                                             | corrected paired hierarchical analysis                     | 所有高 tIoU/short gate失败           |
+| S1 gain 只是算力购买                | mAP升但成本增幅巨大，ROI稀疏化无法回收                                                   | 分解 decode/H2D/backbone/head，做后续 oracle ROI sufficiency     | 少量高分辨率 ROI 可保留收益且总成本低于 dense160 |
+| S1 假阴性来自协议错误                  | high-res出现 OOM、少 updates、load mismatch、nondeterministic warning或collapse | precheck、checkpoint metadata、完整训练健康曲线                      | 所有协议/健康 gate 均通过后仍无增益           |
+
+**删除的故事性解释：**
+
+* “高分辨率一定更好”；
+* “联合训练天然破坏 selector”；
+* “nonzero gradient 说明 detector utility 学到了”；
+* “CF teacher存在就能解决 uniform gap”；
+* “旧 63/65 足以证明 transition-only 无效”。
+
+它们均不能被当前代码或现有 artifact 独立识别。
+
+---
+
+# 11. 对现有下一步计划的逐项裁决
+
+| 原计划                                        | 裁决                    | 修订                                                                                                        |
+| ------------------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------- |
+| 1. 完成 S1 3×3 训练                            | **KEEP，条件化**          | 不因 bootstrap/profile P1 取消训练。若任一日志出现 deterministic warning、replay exhaustion、OOM、协议漂移，则只取消该 affected cell |
+| 2. gate-only checkpoint selection          | **MODIFY**            | 先核验所有 eligible raw predictions、sidecar、成功 update 与无 warning；选择规则本身保留                                      |
+| 3. 九个 selection 后一次打开 sealed test          | **MODIFY**            | 在打开前先冻结严格 determinism、修正 bootstrap、升级 analysis schema；test-open 仍必须一次性                                    |
+| 4. 测试和 full-stack profile                  | **KEEP**              | test evidence 先生成；profile 因代码依赖 test evidence 必须后运行。profile 保持冻结 9-cell 顺序                                |
+| 5. paired/hierarchical stats + cost freeze | **MODIFY**            | video bootstrap 改为无拒绝的 Bayesian cluster bootstrap或其他预注册等价方法；cost 仅用于 passing resolution 的冻结               |
+| 6. S1 GO→S2 oracle ROI；KILL→停止             | **KEEP**              | S1 GO 只授权 **oracle ROI sufficiency**，不授权 learned policy，也不等于 Zoom 已成功                                     |
+| 7. DUCA four-arm P0                        | **MODIFY**            | terminal epoch 固定；成功 updates fail-closed；result bytes/seal闭合；seed-0仅决定是否追加 seeds                          |
+| 在现有训练结束前停止某些 Job                           | **不做 blanket DELETE** | S1继续。DUCA只能保留为 terminal pilot；若当前 checkpoint无法证明 exact update exposure，则正式表失效并重跑                          |
+| 追加 DUCA cost/第二 detector                   | **DELETE，当前阶段**       | 必须等3-seed matched transition结果成立后再考虑                                                                      |
+| S1 与 DUCA 合并叙事                             | **DELETE**            | 两条路线必须独立表、独立停止条件、独立 claim                                                                                 |
+
+### Test-open 与 profile 顺序
+
+当前顺序不会因 cost 造成 checkpoint selection bias，因为 checkpoint 已在 gate split 冻结。真正必须避免的是：
+
+```text
+看 test mAP
+→ 修改 analysis gate
+→ 再解释 profile/cost
+```
+
+所以 analysis code、统计方法、profile order 与 claim matrix 必须在 test-open 前全部哈希冻结。
+
+### Seed 数
+
+* S1 三训练 seed 可作为 falsification gate，但对 between-seed uncertainty 仍偏弱；不能包装成大规模稳健性研究。
+* DUCA seed-0 只能是决定性 pilot。它不能成为论文主表，也不能支持“系统性超过 uniform”。
+
+---
+
+# 12. P0/P1 最小 Patch、测试与重跑影响
+
+以下 patch 均不改变预注册科学问题，只把已有合同变成可执行、可拒绝的证据条件。
+
+## 12.1 DUCA：AMP skip fail-closed，并冻结真实 iterations
+
+```diff
+diff --git a/opentad/cores/train_engine.py b/opentad/cores/train_engine.py
+@@
+ def train_one_epoch(
+@@
+     collect_training_probe=False,
++    fail_on_skipped_optimizer_step=False,
+ ):
+@@
+         if use_amp:
+             scale_before_step = scaler.get_scale()
+             scaler.step(optimizer)
+             scaler.update()
+             optimizer_step_ran = scaler.get_scale() >= scale_before_step
+@@
++        if not optimizer_step_ran and fail_on_skipped_optimizer_step:
++            raise FloatingPointError(
++                "formal DUCA run skipped an AMP optimizer update; "
++                "successful-update exposure would no longer be matched"
++            )
++
+         if optimizer_step_ran:
+             _call_after_optimizer_step(model)
+             scheduler.step()
+             if model_ema is not None:
+                 model_ema.update(model)
+```
+
+```diff
+diff --git a/tools/train.py b/tools/train.py
+@@
+     train_loader = build_dataloader(...)
++    expected_iters = cfg.workflow.get("expected_train_iters_per_epoch", None)
++    if expected_iters is not None and len(train_loader) != int(expected_iters):
++        raise RuntimeError(
++            f"formal train-loader exposure changed: "
++            f"expected {expected_iters}, got {len(train_loader)}"
++        )
+@@
+         training_probe = train_one_epoch(
+@@
+             collect_training_probe=bool(training_probe_json),
++            fail_on_skipped_optimizer_step=bool(
++                cfg.workflow.get("fail_on_skipped_optimizer_step", False)
++            ),
+         )
+```
+
+四臂共同 base config 增加：
+
+```diff
+ workflow = dict(
++    expected_train_iters_per_epoch=100,
++    fail_on_skipped_optimizer_step=True,
+     ...
+ )
+```
+
+### 测试
+
+1. fake scaler 强制 scale decrease，断言 formal 模式立即失败；
+2. `len(train_loader)=99/101` 均失败；
+3. 100×132 success 后 selector schedule buffer 精确 13,200；
+4. scheduler `last_epoch`、EMA exposure 与 schedule step 相等；
+5. 远端 10-step CUDA/DDP pilot 再跑一次。
+
+### 重跑影响
+
+* 新 commit 下的 formal Job 必须重跑。
+* 当前旧 commit Job 只有在 terminal checkpoint 能独立证明 13,200 success 且所有四臂一致时，才可迁移为 seed-0 pilot；否则四臂全部失效。
+
+---
+
+## 12.2 DUCA：冻结 terminal checkpoint，并绑定 result bytes
+
+```diff
+diff --git a/tools/bata/validate_duca_transition_only_p0_suite.py b/tools/bata/validate_duca_transition_only_p0_suite.py
+@@
+ def _post_run_contract(protocol_sha256, bindings):
+     return {
+-        "schema_version": "duca_p0_post_run_evidence_v1",
++        "schema_version": "duca_p0_post_run_evidence_v2",
+@@
+-        "checkpoint_criterion": "same_workflow_best_or_final_declared",
++        "checkpoint_criterion": "terminal_epoch_131_state_dict_ema",
++        "checkpoint_epoch": 131,
++        "checkpoint_state_key": "state_dict_ema",
+         "non_finite_collapse": False,
+         **bindings,
+     }
+@@
+ def validate_post_run_evidence(...):
+@@
++    for prefix in ("checkpoint", "raw_prediction", "evaluation_result"):
++        artifact_path = Path(str(payload.get(f"{prefix}_path", ""))).resolve()
++        _require(artifact_path.is_file(), f"{variant}: missing {prefix}")
++        _require(
++            payload.get(f"{prefix}_sha256") == _sha256(artifact_path),
++            f"{variant}: {prefix} hash mismatch",
++        )
++
++    evaluator_path = (
++        Path(repo_root) / "opentad/evaluations/mAP.py"
++    ).resolve()
++    _require(
++        payload.get("evaluator_source_sha256") == _sha256(evaluator_path),
++        f"{variant}: evaluator source mismatch",
++    )
+```
+
+正式 evaluator 必须从 terminal checkpoint 重新导出 raw predictions；中间 epoch 的日志不进入 matched 表。
+
+### 测试
+
+* best checkpoint 被拒绝；
+* epoch 130/132 被拒绝；
+* `state_dict` 替代 EMA 被拒绝；
+* prediction/result 文件覆盖一个字节即失败；
+* evaluator SHA 不一致即失败；
+* 四臂任一缺 artifact，suite 不生成 formal table。
+
+### 重跑影响
+
+* 若当前 terminal checkpoint 可用，训练可能无需重跑，只需重新执行 terminal evaluation 并生成 v2 evidence。
+* 若只有日志 mAP、没有 raw predictions，则日志数字不能作为 formal result。
+
+---
+
+## 12.3 S1：formal 路径使用 strict deterministic，precheck 覆盖 replay tests
+
+```diff
+diff --git a/opentad/utils/misc.py b/opentad/utils/misc.py
+@@
+-def set_seed(seed, disable_deterministic=False):
++def set_seed(seed, disable_deterministic=False, *, deterministic_warn_only=True):
+@@
+-        torch.use_deterministic_algorithms(True, warn_only=True)
++        torch.use_deterministic_algorithms(
++            True, warn_only=bool(deterministic_warn_only)
++        )
+```
+
+```diff
+diff --git a/tools/train.py b/tools/train.py
+@@
+-    set_seed(args.seed, args.disable_deterministic)
++    set_seed(
++        args.seed,
++        args.disable_deterministic,
++        deterministic_warn_only=(s1_binding is None),
++    )
+```
+
+formal test/profile 入口同样传 `deterministic_warn_only=False`。
+
+```diff
+diff --git a/scripts/run_spatial_zoom_s1_precheck_slurm.sh b/scripts/run_spatial_zoom_s1_precheck_slurm.sh
+@@
+-python -m pytest -p no:cacheprovider tests/test_spatial_zoom_s1_infrastructure.py -q
++python -m pytest -p no:cacheprovider \
++  tests/test_spatial_zoom_s1_infrastructure.py \
++  tests/test_train_engine_max_train_iters.py \
++  -q
+```
+
+### 测试
+
+* monkeypatch `torch.use_deterministic_algorithms`，断言 formal S1 传 `warn_only=False`；
+* legacy/nonformal 入口保持原行为；
+* replay 成功只推进 scheduler/EMA 一次；
+* replay exhaustion fail；
+* full CUDA detector one-batch smoke。
+
+### 重跑影响
+
+* full precheck schema/hash必须升级，旧 precheck certificate 不能继续签发新的 formal run。
+* 当前训练若日志中没有 deterministic warning，可作为旧 commit 诊断或经 migration certificate 保留；出现 warning 的 cell 必须重跑。
+
+---
+
+## 12.4 S1：移除 class-support rejection，改为 paired Bayesian video-cluster bootstrap
+
+核心函数级改法：
+
+```diff
+diff --git a/tools/bata/analyze_spatial_zoom_s1_results.py b/tools/bata/analyze_spatial_zoom_s1_results.py
+@@
+ def _class_ap(
+@@
+     video_sample: Sequence[str],
++    video_weights: Mapping[str, float] | None = None,
+@@
+-    predictions: list[tuple[float, int, Segment]] = []
++    predictions: list[tuple[float, int, Segment, float]] = []
++    cluster_weights: dict[int, float] = {}
+     for cluster_id, video_id in enumerate(video_sample):
++        weight = (
++            1.0 if video_weights is None
++            else float(video_weights[str(video_id)])
++        )
++        if not np.isfinite(weight) or weight <= 0.0:
++            raise ValueError("Bayesian cluster weights must be finite and positive")
++        cluster_weights[cluster_id] = weight
+@@
+-            predictions.append((float(score), cluster_id, (...)))
+-    npos = sum(len(segments) for segments in gt_by_cluster.values())
++            predictions.append((float(score), cluster_id, (...), weight))
++    npos = sum(
++        cluster_weights[cid] * len(segments)
++        for cid, segments in gt_by_cluster.items()
++    )
+@@
+-    for prediction_index, (_, cluster_id, segment) in enumerate(predictions):
++    for prediction_index, (_, cluster_id, segment, weight) in enumerate(predictions):
+@@
+-            false_positive[:, prediction_index] = 1.0
++            false_positive[:, prediction_index] = weight
+@@
+-                    true_positive[threshold_index, prediction_index] = 1.0
++                    true_positive[threshold_index, prediction_index] = weight
+@@
+-                false_positive[threshold_index, prediction_index] = 1.0
++                false_positive[threshold_index, prediction_index] = weight
+```
+
+替换 `_paired_samples`：
+
+```python
+def _paired_bayesian_weights(
+    corpus: DetectionCorpus,
+    *,
+    replicates: int,
+    seed: int,
+) -> list[dict[str, float]]:
+    rng = np.random.default_rng(int(seed))
+    ids = tuple(corpus.video_ids)
+    rows: list[dict[str, float]] = []
+    for _ in range(int(replicates)):
+        raw = rng.exponential(scale=1.0, size=len(ids))
+        raw /= raw.mean()
+        rows.append({video_id: float(weight) for video_id, weight in zip(ids, raw)})
+    return rows
+```
+
+baseline 与 224/256 对同一 replicate 必须共享同一 weight map。metadata 改为：
+
+```text
+unit = paired_bayesian_video_cluster
+support_rejection = false
+```
+
+### 测试
+
+1. all-one weights 与当前 official AP 完全一致；
+2. integer weights 与显式重复相同 video cluster 的 AP 一致；
+3. 只有一个稀有类视频时，10,000 replicates 全部 finite，无 rejection；
+4. baseline/candidate 使用不同 weight map 时 validator 必须失败；
+5. max-T synthetic coverage smoke。
+
+### 重跑影响
+
+* 不需重训；
+* 不需重新推理；
+* 只需重新运行统计分析；
+* result schema 从 `spatial_zoom_s1_result_gate_v2` 升级。
+
+---
+
+## 12.5 DUCA：纠正 actionness 名称与增加真实 alignment evidence
+
+文档与 config contract 最小修改：
+
+```diff
+- coarse probe uses balanced binary actionness BCE
++ coarse probe uses fixed-prior binary BCE;
++ P0 freezes positive_prior=0.5, therefore pos_weight=1.0
+```
+
+并在 variant contract 中显式写：
+
+```python
+actionness_loss_kind="fixed_prior_binary_bce"
+actionness_positive_prior=0.5
+actionness_class_reweighting=False
+```
+
+这不改变数值，不需要重训，但会阻止错误 claim。
+
+对 CF mechanism claim，新增独立 train-only alignment artifact：
+
+```text
+unit: video/window cluster
+candidate_count > 0
+one-sided 95% LCB(Spearman) > 0
+one-sided 95% LCB(sign agreement) > 0.5
+no validation/test GT
+checkpoint_sha256 bound
+```
+
+失败时：
+
+* CF arm仍可作为完整模型性能 arm；
+* 禁止声称 counterfactual supervision 在方向上与 detector utility 对齐；
+* 不允许为 CF 单独追加 seeds。
+
+---
+
+# 13. 最小执行 DAG 与 GPU 成本优先级
+
+远端 wall-clock 未可见，因此不伪造小时数。下面给出精确 workload 与可计算公式。
+
+| 节点                               | 输入                                | 输出                                   | Pass                                                     | Fail 后唯一动作                             | GPU 成本                            |
+| -------------------------------- | --------------------------------- | ------------------------------------ | -------------------------------------------------------- | -------------------------------------- | --------------------------------- |
+| S0：冻结修复                          | exact commits + 本审核               | 新 commit、schema、tests                | 全部 CPU tests pass                                        | 不打开 test                               | 0 GPU                             |
+| S1：S1 full precheck v2           | manifest、checkpoint、3 configs     | 新 precheck cert                      | strict deterministic、三分辨率 full forward、replay tests pass | 修代码；禁止训练/测试新 run                       | 1 GPU job；设 planning cap ≤2 GPU-h |
+| S2：S1 current-run health closure | 9 workdirs/logs/checkpoints       | 9 health certificates                | 无 warning/OOM/nonfinite；sidecar/evidence完整               | 仅 affected cell 重跑                     | 已发生；新增0                           |
+| S3：S1 gate selection             | 所有 eligible gate raw predictions  | 9 frozen selections                  | exact rule、tie earliest、hash完整                           | affected cell eval/rerun               | 主要为已有 eval；补算按窗口数                 |
+| S4：S1 test-open                  | 9 selections + frozen code hashes | marker + certificate                 | 单次原子签发                                                   | 若签发前失败，保持关闭；修复后再发                      | 0 GPU                             |
+| S5：S1 sealed test                | 9 checkpoint                      | 9 raw predictions/evidence           | 全部存在且字节绑定                                                | affected inference 重跑；不得重新选 checkpoint | 9 单GPU inference                  |
+| S6：S1 profile                    | 9 test evidence                   | 9 profile traces                     | 同节点/GPU/order、完整 loader                                  | affected ordinal按授权恢复协议重跑              | 9 单GPU serial profiles            |
+| S7：S1 analysis                   | 9 predictions + profiles          | GO/KILL report                       | corrected Bayesian bootstrap + cost schema               | 无补 loss/policy；协议错误才重跑                 | 0 GPU                             |
+| S8：S2 authorization              | S1 report                         | oracle ROI sufficiency contract或KILL | 只有S1 GO才存在                                               | S1 KILL→路线结束                           | 当前0                               |
+| D0：DUCA protocol fix             | exact commit + suite schema       | 新 commit                             | tests/validators pass                                    | 不接受 current formal table               | 0 GPU                             |
+| D1：DUCA CUDA/DDP gate            | core gate + 4-arm 10-step pilot   | gate/pilot artifacts                 | 0 skip、全参数组、mixed/full/short pass                        | 修代码，不开 formal                          | 1 GPU；4 arms×10 steps             |
+| D2：DUCA seed-0                   | 4 arms                            | terminal checkpoints                 | 每臂13,200 success，terminal EMA                            | 任一失败→四臂 matched set重跑                  | 4×132 epoch single-GPU            |
+| D3：terminal result seal          | 4 terminal checkpoints            | raw predictions + v2 evidence        | 同 checkpoint/evaluator/result bytes                      | 只重跑 evaluation；checkpoint坏则重训          | 4 inference runs                  |
+| D4：seed-0 kill gate              | sealed seed-0 table               | STOP或授权 seeds1-2                     | 至少一 transition arm在高tIoU胜 uniform且Avg无实质回退               | 否则停止 DUCA                              | 0 GPU                             |
+| D5：3-seed confirmation           | seeds1-2                          | 12-run matched table                 | predeclared paired/hierarchical gate                     | 失败即KILL；禁止第二 detector                  | 新增8×132 epoch                     |
+| D6：cost/第二 detector              | 仅3-seed PASS                      | supporting evidence                  | 真实成本且跨 detector复现                                        | claim降级                                | 之后才预算                             |
+
+计算公式：
+
+[
+\text{remaining S1 GPU-h}
+=\sum_{9\ cells}\text{remaining epochs}\times\text{measured epoch time}
+]
+
+[
+\text{DUCA seed extension cost}
+=8\times132\times\text{measured GPU-h per epoch}
+]
+
+在 seed-0 gate 前支付 D5 的成本没有合理性。
+
+---
+
+# 14. Result-to-Claim Matrix
+
+## 14.1 S1
+
+| 结果                                                   | 允许 claim                                                  | 禁止 claim                          | 决策                            |
+| ---------------------------------------------------- | --------------------------------------------------------- | --------------------------------- | ----------------------------- |
+| 任一 protocol/P1 gate 未闭合                              | 工程 artifact 存在                                            | 任何 headroom、Zoom、efficiency claim | HOLD                          |
+| 224/256 无高tIoU与short gain，且全部 validity gates通过       | “在该 official-derived matched protocol 下未发现空间分辨率 headroom” | 继续增加 policy/loss 寻找 S2            | **KILL S2**                   |
+| 只提高低tIoU或长动作                                         | resolution sensitivity                                    | Zoom 对精确边界有效                      | KILL                          |
+| point estimate提高但 simultaneous LCB≤0                 | exploratory trend                                         | 可信 headroom                       | KILL/HOLD，不授权S2               |
+| 高tIoU、short、seed consistency全部通过，但 cost缺失            | spatial information headroom                              | efficient Zoom、部署收益               | HOLD                          |
+| accuracy gate通过且完整成本可比                               | “空间 headroom 存在；冻结候选分辨率”                                  | Zoom模型成功                          | 只授权 S2 oracle ROI sufficiency |
+| dense高分辨率收益存在，但 source decode本身已使任何稀疏ROI无法低于dense160 | spatial headroom                                          | 可实现的 cost-saving Zoom             | KILL部署路线                      |
+| 后续 oracle ROI sufficiency也通过                         | sparse spatial allocation有可实现上界                           | learned routing已解决                | 才可设计 S2 policy                |
+
+## 14.2 DUCA
+
+| 结果                        | 允许 claim                                       | 禁止 claim                       | 决策                    |
+| ------------------------- | ---------------------------------------------- | ------------------------------ | --------------------- |
+| 仅10-step pilot pass       | graph、optimizer、teacher numerically executable | empirically supported          | 继续 seed-0             |
+| seed-0 transition胜uniform | promising matched pilot                        | 系统性优于uniform                   | 可授权 seeds1-2          |
+| seed-0不胜uniform           | 当前 transition-only无继续证据                        | “再调loss可能好”                    | **STOP DUCA**         |
+| 3-seed β=0胜uniform        | deploy-visible transition ranking有效            | CF mechanism有效                 | transition claim      |
+| CF胜β=0且alignment LCB通过    | detached hard-swap supervision有增量价值            | direct detector gradient       | CF mechanism claim    |
+| CF胜但alignment失败           | full arm性能可能更好                                 | 归因于 detector utility alignment | 归因降级                  |
+| direct arm胜，transition均不胜 | direct boundary comparator有效                   | transition-only成功              | KILL transition route |
+| mAP胜但无真实成本                | accuracy claim                                 | 高效、部署收益                        | 不做 efficiency claim   |
+| 第二 detector未运行            | single-detector evidence                       | detector-agnostic              | 禁止泛化 claim            |
+
+---
+
+# 15. 模拟 CVPR/ICCV 审稿
+
+## Summary
+
+该工作包含两条互相独立的离线 TAD 实验线。Spatial Zoom S1 是一个严格限制为 dense spatial-resolution headroom 的 falsification gate；corrected DUCA P0 比较 exact-uniform、direct boundary、transition-only 与 counterfactual transition selector。代码在 config matching、split sealing、hard/soft feasible-set、counterfactual teacher 隔离方面投入了异常充分的工程工作。
+
+但当前没有 independently verified 的 S1 或 DUCA 正式结果；同时存在会阻断正式 claim 的证据问题：S1 的 class-support-conditioned bootstrap 与 warning-only determinism，DUCA 的 successful-update exposure 未 fail-closed、checkpoint criterion 未固定、result bytes 未绑定。
+
+## Strengths
+
+1. S1 的 matched config validator 是真实 resolved-config 比较，不是根据文件名判断。
+2. S1 test-open 使用跨 namespace 的 canonical marker，能阻止常见的“换 commit 重开 test”。
+3. DUCA exact-uniform 与 valid-prefix hard/soft family 已经修正到相同可行域。
+4. Counterfactual teacher 对 GT、buffer、RNG、AMP cast cache、loss normalizer 的隔离设计严谨。
+5. 两条实验线的任务边界总体清楚：S1 不是 Zoom 方法，DUCA 不是 Online TAD。
+
+## Weaknesses
+
+1. 没有任何当前 matched empirical result。
+2. DUCA formal completion 目前不能自动证明四臂具有相同成功 update exposure。
+3. DUCA post-run checkpoint rule 允许 “best or final declared”，存在 post-hoc selection。
+4. S1 bootstrap 改变了其声称的 cluster-bootstrap sampling distribution。
+5. S1 determinism 是 warning-only，full precheck 未包含 AMP replay test 文件。
+6. DUCA coarse loss 被称为 balanced，但实际 `pos_weight=1`。
+7. selected-axis detector geometry 可能系统性惩罚不均匀 sampling，尚无诊断。
+8. 三 seed 只足够做 falsification gate，不足以支撑宽泛稳健性 claim。
+9. full-stack cost 的 energy/latency 语义仍需严格限定。
+
+## Questions
+
+1. 四个 DUCA terminal checkpoint 中 `_loss_weight_schedule_step` 是否都精确为 13,200？
+2. 是否保存了每个 terminal checkpoint 的 raw validation predictions，而不仅是日志 mAP？
+3. S1 当前九个日志中是否存在 PyTorch deterministic warning 或 AMP replay？
+4. class-support rejection 在 10,000 bootstrap replicate 中的实际 rejection rate 是多少？
+5. DUCA boundary error 是否随 endpoint 附近 selected-axis physical gap 单调恶化？
+6. CF 的真实 train-only candidate utility 与 student pair score 的 cluster-bootstrap LCB 是否为正？
+
+## Score
+
+**3 / 10 — Reject in current form**
+
+原因不是方法必然无效，而是目前只有“经过大量验证的实验机器”，没有可接受的正式结果；并且两处 P0 会使即将产生的 DUCA 数字无法自动进入 matched table。
+
+## Confidence
+
+**5 / 5**
+
+对源码、配置与证据协议的判断置信度高；对性能与运行状态不作判断，因为远端 artifact 不可见。
+
+---
+
+# 16. 确定执行顺序
+
+1. 立即冻结 S1/DUCA 的中间 mAP 使用权：不得据其改 gate、loss 或 checkpoint rule。
+2. 修复 S1 strict determinism、precheck 测试覆盖和 Bayesian cluster bootstrap；升级 schema。
+3. 运行新的 S1 full precheck；失败则保持 test seal 关闭。
+4. 审核九个 S1 workdir 的完整日志、checkpoint/sidecar、raw gate evidence；只重跑失效 cell。
+5. 完成九个 gate selections，并冻结 analysis/profile/test-open 全部代码哈希。
+6. 一次性签发 sealed-test certificate；依冻结顺序运行九个 test，再运行九个 profile。
+7. 用修正后的统计代码裁决 S1；KILL 即永久停止 S2，GO 只授权 oracle ROI sufficiency。
+8. 修复 DUCA fail-on-skip、真实 loader exposure、terminal checkpoint 与 result-byte evidence。
+9. 将当前 DUCA Job 只按 terminal seed-0 pilot 审核；任一臂不能证明13,200 success即四臂重跑。
+10. 从同一 terminal EMA checkpoint 重新生成四臂 raw predictions，禁止使用中间 best。
+11. seed-0 未出现 transition 对 matched uniform 的高tIoU优势即停止；通过才追加 seeds 3408/3409。
+12. 只有3-seed DUCA成立后，才允许成本测量或第二 detector；两条路线始终分开叙事。

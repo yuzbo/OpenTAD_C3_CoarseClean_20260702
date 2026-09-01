@@ -1,0 +1,10 @@
+{
+  "created_at": "2026-08-17",
+  "from_role": "coordinator",
+  "kind": "DUCA_REMOTE_DATA_RESOURCE_BINDING_NOTICE-v001",
+  "message_id": "msg-20260817Tremote-data-resource-map-builder",
+  "priority": "normal",
+  "to_role": "builder",
+  "requested_action": "No action now. On an explicit clean official-baseline binding dispatch only: use /data/run01/sczc063/yuzibo/thumos14/raw_data/video (canonical 411 only; training=200, validation=211), thumos14/annotations/thumos_14_anno.json, category_idx.txt, and pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth. Exclude video_test_0000270.mp4/video_test_0001292.mp4 and all I3D/InternVideo2/MATR/SigLIP2 substitutions. First locate the released AdaTAD-S checkpoint read-only. Future full-run config/manifest must retain at least 5-epoch .pth recovery (or untouched official interval if more frequent), three recovery points, and model/optimizer/scheduler/scaler/epoch/RNG resume state. No data, remote, link, config, or experiment action is authorized by this notice.",
+  "supporting_artifact": "research-wiki/REMOTE_DATA_RESOURCE_MAP-2026-08-17.md"
+}

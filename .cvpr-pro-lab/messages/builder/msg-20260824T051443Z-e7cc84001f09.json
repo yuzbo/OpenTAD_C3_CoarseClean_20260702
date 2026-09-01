@@ -1,0 +1,16 @@
+{
+  "created_at": "2026-08-24T05:14:43Z",
+  "deadline": "2026-08-24T23:59:00+08:00",
+  "from_role": "coordinator",
+  "kind": "SINGLECLOCK_IDENTITY_DUPLICATE_CORRECTION",
+  "message_id": "msg-20260824T051443Z-e7cc84001f09",
+  "parent_artifact_ids": [],
+  "payload": null,
+  "priority": "critical",
+  "requested_action": "Frozen e866a9ae SingleClock evidence-only correction: first return MINIMAL_CHANGE_PLAN, then implement canonical identical-tail-window accounting. Preserve physical sample_id=(video,start); identical record duplicates must increment exposure/duplicate accounting and keep one unique physical record; conflicting duplicate RGB/positions/mask/length must fail closed. Extend finalizer identity equality to require matching exposure/duplicate accounting. Add focused distinguishing tests. Do not change model computation, checkpoint, selector, RGB, physical positions, dataset, evaluator, thresholds, configs, launcher, or scientific route. Return changed files, tests, clean commit, next_owner=Critic.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

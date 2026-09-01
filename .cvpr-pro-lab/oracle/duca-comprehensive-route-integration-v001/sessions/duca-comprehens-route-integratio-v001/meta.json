@@ -1,0 +1,128 @@
+{
+  "id": "duca-comprehens-route-integratio-v001",
+  "createdAt": "2026-08-31T08:46:25.133Z",
+  "status": "running",
+  "promptPreview": "Read every supplied file completely and inspect every cited GitHub implementation at the exact commit. Act as the independent scientific head: reconcile all DUC",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "running",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-31T08:46:26.084Z"
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "chromePort": 15359,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "32577036AC234AA3542CADCCD8F2F5E9",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "promptSubmitted": false,
+      "controllerPid": 81428
+    }
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Read every supplied file completely and inspect every cited GitHub implementation at the exact commit. Act as the independent scientific head: reconcile all DUCA routes, code, results and failures; select one publishable research path and one next task without delegating route choice to Codex. Preserve nonce DUCA-COMPREHENSIVE-ROUTE-INTEGRATION-v001-20260831 verbatim and end with DUCA_COMPREHENSIVE_RESEARCH_DECISION_READY.",
+    "file": [
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\prompts\\PRO_DUCA_COMPREHENSIVE_ROUTE_INTEGRATION-v001.md",
+      "C:\\Users\\skywalker\\.fastctx\\jobs\\j-02swjq\\output.log",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\materials\\AGY_GEMINI_DUCA_ADVISORY_REVIEW-v001.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\materials\\DUCA_COMPREHENSIVE_ROUTE_EVIDENCE-v001.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-full-data-comparable-protocol-v001\\visible-report.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\PAPER_PROGRESS.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\decision_history.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\duca_final_model_contract.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\experiments\\duca-multi-budget-detector-adaptation.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\experiments\\duca-native-tubelet-coreset-fixed384.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\experiments\\phystime-g1-matched-full60.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\experiments\\duca-sparse-probe-and-coarse-backend-ablation.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\sources\\2026-08-31-duca-irregular-temporal-sampling-external-proposal.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\sources\\2026-08-31-duca-full-data-comparable-protocol-v001.md",
+      "C:\\Users\\skywalker\\.codex\\worktrees\\duca-full-data-identity-audit-v1-20260831\\OpenTAD_C3_CoarseClean_20260702\\opentad\\models\\duca\\acquisition.py",
+      "C:\\Users\\skywalker\\.codex\\worktrees\\duca-full-data-identity-audit-v1-20260831\\OpenTAD_C3_CoarseClean_20260702\\configs\\adatad\\thumos\\duca_sampling_rate_curriculum_stage1_uniform384.py",
+      "C:\\Users\\skywalker\\.codex\\worktrees\\duca-full-data-identity-audit-v1-20260831\\OpenTAD_C3_CoarseClean_20260702\\configs\\adatad\\thumos\\duca_sampling_rate_curriculum_stage2_joint384.py",
+      "E:\\DeskTop\\TAD\\OpenTAD_DUCA_TrueTimeCurriculumV2_20260822\\opentad\\models\\duca\\true_time_residual.py",
+      "C:\\Users\\skywalker\\.codex\\worktrees\\duca-whole-video-consistent-budget-falsifier-v1-20260831\\OpenTAD_C3_CoarseClean_20260702\\opentad\\models\\duca\\dynamic_budget.py",
+      "C:\\Users\\skywalker\\.codex\\worktrees\\duca-whole-video-consistent-budget-falsifier-v1-20260831\\OpenTAD_C3_CoarseClean_20260702\\tools\\bata\\run_duca_whole_video_consistent_budget_falsifier.py"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-comprehens-route-integratio-v001",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 10800,
+    "httpTimeoutMs": 10800000,
+    "zombieTimeoutMs": 10800000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-comprehensive-route-integration-v001\\visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 81428,
+    "reattachCommand": "oracle session duca-comprehens-route-integratio-v001"
+  },
+  "startedAt": "2026-08-31T08:46:26.080Z"
+}

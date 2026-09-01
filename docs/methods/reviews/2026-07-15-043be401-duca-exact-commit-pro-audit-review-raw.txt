@@ -1,0 +1,1759 @@
+# A. 可见性证书
+
+## A.1 审计对象
+
+**状态：`VISIBLE_WITH_EXTERNAL_LIMITS`，不是 `VISIBILITY_BLOCKED`。**
+
+* 仓库：`yuzbo/OpenTAD_C3_CoarseClean_20260702`
+* 指定分支：`codex/duca-transition-only-20260711`
+* 实际固定提交：`043be401ba2b694342dc395f263e9a9858628d69`
+* 提交标题：`Align DUCA soft slots with effective budget`
+* 所有代码判断均固定在该 SHA；未把旧提交的实现或结果混入当前结论。
+
+下文使用：
+
+* `[C]`：从固定提交直接核验的代码事实；
+* `[R]`：用户提供的运行信息，未读取原始 Slurm 日志；
+* `[U]`：当前证据不可证明。
+
+## A.2 实际逐行读取的文件
+
+### 主模型与完整调用链
+
+```text
+opentad/models/duca/acquisition.py
+opentad/models/duca/transition_only.py
+opentad/models/duca/structured_selection.py
+opentad/models/duca/counterfactual_utility.py
+opentad/models/duca/__init__.py
+
+opentad/models/selectors/duca_online_frame_selector.py
+
+opentad/models/detectors/actionformer.py
+opentad/models/detectors/single_stage.py
+
+opentad/models/dense_heads/actionformer_head.py
+opentad/models/dense_heads/anchor_free_head.py
+
+opentad/models/utils/truetime_geometry.py
+opentad/models/backbones/vit_adapter.py
+```
+
+### 训练、优化、checkpoint 与调度
+
+```text
+tools/train.py
+opentad/cores/train_engine.py
+opentad/cores/optimizer.py
+opentad/utils/train_schedule.py
+opentad/utils/checkpoint.py
+```
+
+### 粗模型外部后端包装
+
+```text
+tools/bata/train_lowres_action_probe.py
+```
+
+### 四个 full-train 配置与上游基线配置
+
+```text
+configs/adatad/thumos/duca_exact_uniform_fixed384_official_adatad_backend_full_train.py
+configs/adatad/thumos/duca_direct_boundary_fixed384_13200_official_adatad_backend_full_train.py
+configs/adatad/thumos/duca_transition_only_fixed384_no_detector_bridge_official_adatad_backend_full_train.py
+configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py
+
+configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py
+configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py
+configs/_base_/models/actionformer.py
+```
+
+### canonical suite、launcher、gate、validator、pilot
+
+```text
+scripts/duca_transition_only_p0_canonical_env.sh
+scripts/prepare_duca_transition_only_p0_suite.sh
+scripts/run_duca_transition_only_p0_variant_gpu1.sh
+
+tools/bata/run_duca_transition_only_formal_full_model_gate.py
+tools/bata/validate_duca_transition_only_p0_variant.py
+tools/bata/validate_duca_transition_only_p0_suite.py
+tools/bata/validate_duca_transition_only_p0_ddp_pilot.py
+
+configs/adatad/thumos/duca_exact_uniform_fixed384_p0_ddp_pilot.py
+configs/adatad/thumos/duca_direct_boundary_fixed384_p0_ddp_pilot.py
+configs/adatad/thumos/duca_transition_only_fixed384_beta0_p0_ddp_pilot.py
+configs/adatad/thumos/duca_transition_only_fixed384_counterfactual_p0_ddp_pilot.py
+```
+
+### focused tests
+
+```text
+tests/test_duca_transition_only_p0_matrix.py
+tests/test_duca_structured_selection.py
+tests/test_duca_counterfactual_utility.py
+tests/test_duca_detector_gradient_bridge.py
+tests/test_duca_exact_coverage_wiring.py
+tests/test_duca_online_coarse_probe_actionness.py
+```
+
+同时读取并逐项对照了配置固定的上游 OpenTAD commit
+`1aa8ca4ac5e846b1e8ff69298dd6607121a01589` 中的 `ActionFormer`、`ActionFormerHead` 和 `AnchorFreeHead`。
+
+## A.3 未读取或无法独立核验的内容
+
+1. 集群上的外部文件
+   `C3_OFFICIAL_ACTION_SEG_REPOS/ASFormer/model.py` 不在该 Git commit 中。仓库包装器会在运行时读取并哈希该文件，但我无法查看集群实际字节。包装器会删除外部源码中的 `eval` import 和 `Trainer` 后再 `exec`，因此它是“外部官方架构包装”，不是原文件原样 import。
+
+2. 外部 VideoMAE checkpoint
+   `ADATAD_PRETRAIN_PATH` 的实际文件、参数内容和 SHA256 未直接读取。
+
+3. Slurm 原始证据
+   Job `1164318`、`1164319`、`1164700–1164703` 的 stdout/stderr、gate JSON、pilot artifact、训练 probe JSON、checkpoint、评估 JSON 均不可见。
+
+4. 数据字节与数据集实际长度
+   无法确认每 epoch 是否恰好有 100 次成功 optimizer update；代码只是把调度合同写成 `100 × 132 = 13200`。
+
+5. 当前 mAP
+   `[R]` 当前尚无 epoch-47/52 或最终 mAP；任何当前性能结论均为 `UNPROVEN`。
+
+## A.4 是否追踪了完整调用链
+
+**是。**
+
+已追踪：
+
+```text
+Decord 解码 768 帧
+→ DucaOnlineFrameSelector
+→ 64×64 coarse spatial stem
+→ external official ASFormer wrapper
+→ transition descriptors/scorer
+→ exact-K/max-gap structured DP
+→ 真正 gather 原始 RGB 帧
+→ VideoMAE-S Adapter
+→ ActionFormer projection/FPN/head
+→ selected-axis GT assignment
+→ selected-axis proposal
+→ true-time inverse remap
+→ NMS
+→ seconds
+```
+
+外部 ASFormer 内部只能通过包装器构造参数、调用签名、输出和运行时哈希核验，不能提供其集群文件的逐行证书。
+
+---
+
+# B. 一句话总裁决
+
+**GO——四个 exact-commit formal jobs 可继续跑完，但只能作为预注册 seed-0 screening；当前代码不存在已确认的训练无效 P0，然而 C4 的 counterfactual 目标和 test-set checkpoint 协议存在 P1，论文主张仍必须 `HOLD`。**
+
+---
+
+# C. 真实模型结构与训练/推理数据流
+
+## C.1 输入与粗模型
+
+配置首先解码完整的 768 帧窗口，而不是只解码 384 帧；训练和测试 pipeline 都在 selector 之前执行 Decord 解码、resize/crop 和 tensor 化。因此当前方法只可能节省重 backbone 计算，**不节省视频解码和完整 768 帧图像预处理成本**。
+
+典型张量：
+
+```text
+输入 RGB:
+    x_dense: [B, 1, 3, 768, 160, 160]
+    mask:    [B, 768]
+
+coarse probe view:
+    [B, 768, 3, 64, 64]
+
+spatial stem:
+    [B, 96, 768]
+
+ASFormer:
+    actionness_logits a: [B, 768]
+    encoder_hidden h:    [B, 768, 96]
+```
+
+粗模型由本仓库自定义的两层卷积 spatial stem，加外部 ASFormer `MyTransformer` 组成；ASFormer 被构造为两类逐时刻输出，`actionness_logit = class_1_logit - class_0_logit`。encoder hidden 通过 forward hook 取得。
+
+## C.2 transition descriptor
+
+`H=96` 时，每个时刻的 transition descriptor 为 `2H+5=197` 维：
+
+[
+d_t =
+[
+\Delta a_t,\ |\Delta a_t|,\
+\Delta H(p_t),\ |\Delta H(p_t)|,\
+\Delta h_t,\ |\Delta h_t|,\
+1-\cos(h_t,h_{t-1})
+].
+]
+
+其中：
+
+* `a_t` 是 actionness logit；
+* `p_t = sigmoid(a_t)`；
+* `H(p_t)` 是二元熵；
+* `h_t` 是 ASFormer encoder hidden；
+* 不包含 absolute hidden；
+* 不包含 raw RGB mean；
+* 不包含直接 start/end logits。
+
+关键 stop-gradient：
+
+```text
+a_t ── detach ──→ descriptor
+h_t ────────────→ auxiliary descriptor
+descriptor ── detach ──→ policy scorer route
+descriptor live ───────→ auxiliary transition route
+```
+
+因此：
+
+* transition loss 不回传到 actionness logits；
+* transition auxiliary loss可回传到 ASFormer hidden trunk；
+  -实际选帧 policy 路径只更新 transition scorer，不通过 policy loss直接更新粗模型。
+
+## C.3 “是否只有二分类状态”裁决
+
+**不是严格意义上的“粗模型只学习二分类状态”。**
+
+代码确实没有启用 direct-a5 的 `start_logits/end_logits/context_logits`，但 transition-only 每个训练样本仍由 GT segment 的起点和终点生成固定 `σ=2、truncate_radius=4` 的 Gaussian transition density，并对 transition auxiliary score施加分布损失；同时对结构化 soft occupancy 施加 boundary-mass coverage loss。
+
+准确表述应为：
+
+> 粗 actionness head 只做动作/背景二分类；共享 ASFormer hidden 和 transition scorer 另外接受 train-only GT endpoint-density supervision，但不直接预测可部署的 start/end 坐标。
+
+不得写成：
+
+> 整个低成本模型只学习二分类状态、没有任何边界监督。
+
+后者与代码不符。
+
+## C.4 selector 实际输入与梯度
+
+| 信息                              |        selector 是否看到 | 用途                          | 梯度                                            |
+| ------------------------------- | -------------------: | --------------------------- | --------------------------------------------- |
+| `p_action`                      |                   间接 | 由 logits 构造 entropy         | action logit 在 transition descriptor 前 detach |
+| `Δ actionness logit`            |                    是 | descriptor                  | policy 路径只到 scorer；aux 路径不回 action head       |
+| `abs Δ logit`                   |                    是 | descriptor                  | 同上                                            |
+| entropy delta/abs-delta         |                    是 | descriptor                  | 同上                                            |
+| ASFormer hidden delta/abs-delta |                    是 | descriptor                  | aux transition loss可更新 ASFormer trunk         |
+| hidden cosine change            |                    是 | descriptor                  | 同上                                            |
+| absolute hidden                 |                    否 | 明确禁止                        | 无                                             |
+| raw RGB descriptor              |    transition-only 否 | 仅 coarse spatial stem读取 RGB | transition scorer 不直接读取                       |
+| GT start/end                    |    训练时通过 target 间接看到 | transition density/coverage | 不用于推理 decision                                |
+| detector one-swap utility       | counterfactual 训练臂看到 | detached distillation       | 只更新 scorer                                    |
+| teacher/oracle/cache            |                  推理否 | fail-closed                 | 无                                             |
+
+## C.5 结构化选择
+
+每个样本单独计算：
+
+```text
+V_b     = valid prefix length
+K_eff,b = min(384, V_b)
+G       = max_unselected_hole = 15
+```
+
+硬解码：
+
+[
+S_b^\star =
+\arg\max_{S\subseteq{0,\ldots,V_b-1}}
+\sum_{t\in S}\ell_t,
+\quad
+|S|=K_{\mathrm{eff},b},
+\quad
+\max \text{hole}(S)\le 15.
+]
+
+soft forward-backward 使用相同的：
+
+* `V_b`
+* `K_eff,b`
+* `G=15`
+* exact-K/max-gap feasible family。
+
+当前提交专门修复了 short-window 下 soft slots 使用 requested `K=384` 而非 `K_eff` 的问题。无效 slots 被严格清零。
+
+因此问题 5 的答案是：
+
+> **是，当前 commit 的 hard decode 与 relaxed DP 在每个样本上共享相同 valid prefix、effective K、max-hole 和 feasible family。**
+
+## C.6 exact-uniform
+
+uniform anchor 明确由：
+
+[
+u_j = \operatorname{round}
+\left(
+j\frac{V-1}{K_{\mathrm{eff}}-1}
+\right),\quad
+j=0,\ldots,K_{\mathrm{eff}}-1
+]
+
+生成，并转换为到 anchor 的 reference score；不是依赖 DP tie-break 偶然得到的“近似均匀”。`K_eff=V` 时选全部有效时刻。
+
+因此问题 6 的答案是：
+
+> **是，当前 exact-uniform 对每个有效长度对应明确的 endpoint rounded-linspace reference。**
+
+formal gate validator也明确要求 `round_linspace_endpoints`、exact equality 和 rank error 0。
+
+## C.7 `structured_zero_forward`
+
+其数学形式是：
+
+[
+x_{\text{out}}
+==============
+
+x_{\text{hard}}
++
+\beta
+\left(
+x_{\text{soft}}-
+\operatorname{sg}(x_{\text{soft}})
+\right).
+]
+
+前向值精确等于硬选帧；反向梯度按 soft slot assignment传播。
+
+但是代码本身已把它标为：
+
+> legacy local surrogate；不能作为 detector-utility evidence。
+
+正式 transition beta0 和 counterfactual 配置均令 `detector_gradient.end=0`，并使用 `st_sparse_gather`，所以 detector loss 不经过该桥更新 scorer。
+
+准确术语：
+
+* direct-a5：后期使用 local straight-through detector surrogate；
+* transition beta0：无 detector-derived selector learning；
+* transition counterfactual：**detached detector-derived one-swap utility distillation**；
+* 不能把 counterfactual 写成“detector gradient directly backpropagates into selector”。
+
+## C.8 Counterfactual teacher
+
+实际集成路径是：
+
+```text
+先完成 hard selector
+→ 构造最多 4 个可行 one-swap candidate/样本
+→ 保存 detector 非 selector buffers、CPU/CUDA RNG
+→ freeze ActionFormer loss_normalizer
+→ no_grad + AMP cache_disabled
+→ 对 baseline selection 重跑完整 detector train objective
+→ 对每个 candidate 重跑完整 detector train objective
+→ utility = baseline_cls_reg_loss - candidate_cls_reg_loss
+→ restore buffers/RNG
+→ detached utility distill 到 add_score - remove_score
+→ 再建立正常主 detector autograd 图
+```
+
+utility 符号本身正确：
+
+[
+U_m=L_{\mathrm{base}}-L_{\mathrm{swap},m}.
+]
+
+正值表示 swap 降低 detector loss。
+
+teacher objective只包含 `cls_loss + reg_loss`，不包含 selector losses。其 buffer、随机数状态、loss normalizer 和 autocast cache处理是严谨的。
+
+但蒸馏损失存在 P1，见 F/K。
+
+## C.9 真正被 detector 消费的内容
+
+是原始 RGB 的硬 gather：
+
+```text
+x_selected = gather(x_dense, selected_positions)
+```
+
+而不是缓存 backbone feature、逻辑 mask 或伪 sparse grid。选中后才进入 VideoMAE。ActionFormer 主路径为 selector→backbone→projection→neck→head。
+
+但是 detector 几何是：
+
+1. GT segment 从 dense true-time axis 映射到 compressed selected-axis；
+2. ActionFormer 卷积、attention、FPN、point assignment 和回归在单位间隔 selected-axis 上执行；
+3. proposal 在 NMS 前再线性映射回 true-time。
+
+映射代码严格检查 selected positions 单调、有效，并使用 piecewise-linear true↔selected map。
+
+所以：
+
+* target 与 prediction 坐标前后是一致的；
+* 但 detector 感受野和 assignment 的物理时间跨度会随局部采样密度变化；
+* 这不是 remap bug，而是当前方法的重要机制混杂。
+
+---
+
+# D. 监督所有权表
+
+| Loss                                       | Target 来源                              | 当前权重/臂                        | 实际更新对象                                                           | 推理可见性      |
+| ------------------------------------------ | -------------------------------------- | ----------------------------- | ---------------------------------------------------------------- | ---------- |
+| `cls_loss`                                 | ActionFormer dense GT class assignment | 四臂                            | VideoMAE adapters、projection、neck、head                           | 无 GT       |
+| `reg_loss`                                 | selected-axis GT segment regression    | 四臂                            | 同上                                                               | 无 GT       |
+| `actionness_bce_loss`                      | GT segments生成 `[start,end)` 二值状态       | transition两臂、uniform；direct也有 | spatial stem、ASFormer encoder/decoder、action output head         | target不可见  |
+| `transition_distribution_loss`             | GT endpoints equal-mass Gaussian       | transition两臂、uniform，权重0.5    | transition scorer + ASFormer hidden trunk；不更新 action logit route | target不可见  |
+| `transition_boundary_coverage_loss`        | 同一 endpoint density + soft occupancy   | transition两臂、uniform，最终0.25   | transition scorer                                                | target不可见  |
+| `start_endpoint_distribution_loss`         | GT start Gaussian                      | direct-a5                     | direct start head及共享 direct trunk                                | target不可见  |
+| `end_endpoint_distribution_loss`           | GT end Gaussian                        | direct-a5                     | direct end head及共享 direct trunk                                  | target不可见  |
+| `boundary_context_distribution_loss`       | start前/end后 context Gaussian           | direct-a5                     | direct context head                                              | target不可见  |
+| `boundary_utility_proxy_distribution_loss` | GT start/end/context proxy             | direct-a5                     | direct utility/policy分支                                          | target不可见  |
+| direct detector ST path                    | detector loss local surrogate          | direct-a5 后期                  | direct selector/scorer                                           | 推理无桥       |
+| `counterfactual_utility_distillation_loss` | train-only完整 detector one-swap loss差   | counterfactual，权重0.25         | transition scorer only                                           | teacher不可见 |
+| `budget_loss`                              | exact-K hard/ST occupancy              | 四臂中权重0                        | 无实际影响                                                            | —          |
+| `temporal_max_gap_hole_loss`               | soft occupancy window mass             | 正式 transition配置权重0            | 无实际影响                                                            | —          |
+| entropy/redundancy/radius/hole             | 内部 surrogate                           | 正式 transition配置权重0            | 无实际影响                                                            | —          |
+
+transition-only target在 selector train forward中生成；推理 forward不生成任何 GT target。训练 metadata中显式拒绝 GT-driven selection、teacher payload、oracle、prediction cache 和 ledger。
+
+`ActionFormer.forward_train` 将 selector leaf losses、正式 detector losses和 counterfactual loss各合并一次，最终直接求和；未发现重复求和或“日志有值但不进入 cost”的当前正式 loss。
+
+---
+
+# E. 梯度传播表
+
+| 反向来源                              | VideoMAE/adapter | Projection/neck/head |              Spatial stem/ASFormer |            Action head | Transition scorer |
+| --------------------------------- | ---------------: | -------------------: | ---------------------------------: | ---------------------: | ----------------: |
+| detector `cls+reg`，transition正式两臂 |                是 |                    是 |                              **否** |                      否 |             **否** |
+| counterfactual distillation       |                否 |  否；teacher `no_grad` |                              **否** |                      否 |             **是** |
+| transition distribution           |                否 |                    否 |                   是，经 hidden route | 否；action logit已 detach |                 是 |
+| transition coverage               |                否 |                    否 |        否；policy descriptor已 detach |                      否 |                 是 |
+| actionness BCE                    |                否 |                    否 |                                  是 |                      是 |                 否 |
+| direct start/end/context          |                否 |                    否 | direct共享 trunk，具体取决于 direct hidden |        相关 direct heads | direct selector分支 |
+| direct detector surrogate         |     detector正常更新 |         detector正常更新 |                 取决于 local ST graph |                      — |   direct policy分支 |
+| uniform arm detector              |                是 |                    是 |      detector 不回传；aux losses仍训练粗模型 |                      是 | aux transition仍训练 |
+
+formal gate的代码断言与用户给出的 gate 记录一致：
+
+* detector `cls+reg`：backbone/head有梯度，transition scorer/coarse probe为零；
+* counterfactual distillation：transition scorer有梯度，coarse probe为零；
+* 因此 current counterfactual 不是 direct detector gradient。
+
+训练引擎只在真正执行成功的 optimizer step 后推进 selector schedule、LR scheduler和 EMA；AMP overflow跳步不会推进。
+
+---
+
+# F. P0/P1/P2/P3 问题清单
+
+## F.1 P0
+
+**未发现已确认的 P0。**
+
+没有发现以下任一足以使四个 formal jobs立即无效的问题：
+
+* GT/teacher/oracle/cache进入验证或测试选帧；
+* exact-K 或 max-hole被违反；
+* hard/soft使用不同 feasible family；
+* uniform仍是旧 midpoint/tie-break reference；
+* detector没有真正读取选中 RGB；
+* GT/prediction缺失 inverse remap；
+* loss漏出 `cost`；
+* optimizer漏参数或重复参数；
+* formal counterfactual误称为直接 detector gradient；
+* current commit short-window soft slot仍错用 requested K。
+
+因此不建议取消当前作业。
+
+---
+
+## F.2 P1-01：官方 test split被重复用于中间评估，primary checkpoint未冻结
+
+**位置**
+
+```text
+configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py:229-249
+tools/train.py:316-348
+opentad/utils/train_schedule.py:3-18
+tools/bata/validate_duca_transition_only_p0_suite.py:123-134
+```
+
+**复现条件**
+
+* `val` 和 `test` 均读取 THUMOS test data path和同一 annotation；
+* workflow每 5 epoch进行一次 mAP eval；
+* post-run contract允许：
+  `same_workflow_best_or_final_declared`；
+* 若看到多个 test mAP 后选择最佳 checkpoint，即发生 test-set model selection。
+
+配置明确令 `val`、`test` 都使用 test data path。
+
+**影响**
+
+* 如果根据 epoch 52/57/…/132 的 test mAP选最佳 checkpoint，四臂最终数字不是严格独立测试；
+* 即使四臂采用同一规则，也不能消除 test leakage；
+* 当前代码不自动根据 mAP保存 best，但合同允许事后“best or final declared”，人为选择空间未封死。
+
+**裁决**
+
+* 当前作业无需取消；
+* 必须在首次 mAP出现前冻结：**唯一 primary result = epoch 132 的 EMA state**；
+* 所有中间 mAP只能标为 diagnostic，不得参与 checkpoint selection；
+* 推荐补丁见 K.1。
+
+---
+
+## F.3 P1-02：counterfactual 蒸馏没有 no-op baseline，丢失 utility 的正负号
+
+**位置**
+
+```text
+opentad/models/duca/counterfactual_utility.py:130-154
+opentad/models/selectors/duca_online_frame_selector.py:720-768
+```
+
+当前损失只在候选 swaps之间执行：
+
+[
+\operatorname{CE}
+\left(
+\operatorname{softmax}(U_1,\ldots,U_M),
+\operatorname{softmax}(\Delta s_1,\ldots,\Delta s_M)
+\right).
+]
+
+没有加入 `U_0=0` 的“保留 baseline、不进行 swap”类。
+
+**复现条件**
+
+例如所有候选都有害：
+
+```text
+U = [-2.0, -1.0]
+```
+
+当前 target softmax仍要求 student偏好第二个有害 swap，而不是把两个 swap都压到 baseline以下。
+
+**影响**
+
+* loss只学习“候选之间谁相对较少有害”；
+* 不学习“这个 swap是否应该相对 baseline被接受”；
+* `counterfactual detector utility` 的 signed semantics不成立；
+* 当前 C4只能解释为：
+
+> relative hard-swap ranking distillation
+
+不能解释为：
+
+> 学习 detector loss reduction 的有符号 utility。
+
+**裁决**
+
+* 当前 counterfactual作业仍是一个可解释的 ranking arm，不必取消；
+* 若 C4要成为论文主贡献，必须使用带 no-op anchor的下一提交重跑；
+* 补丁见 K.2。
+
+---
+
+## F.4 P2-01：代码与“粗模型只学习二分类状态”的叙事不一致
+
+**位置**
+
+```text
+opentad/models/selectors/duca_online_frame_selector.py:579-720
+opentad/models/duca/transition_only.py:203-365
+opentad/models/duca/acquisition.py:2853-2879
+```
+
+**复现**
+
+开启 formal transition config，即固定生成 GT endpoint Gaussian并施加 transition distribution和coverage loss。
+
+**影响**
+
+这是 claim错误而非运行错误。论文必须称为：
+
+```text
+binary action-state supervision
++ endpoint-derived transition-density supervision
+```
+
+而不是纯 binary-state-only。
+
+---
+
+## F.5 P2-02：selected-axis detector geometry是重要机制混杂
+
+**位置**
+
+```text
+opentad/models/selectors/duca_online_frame_selector.py:1698-1732
+opentad/models/utils/truetime_geometry.py:48-131
+opentad/models/dense_heads/anchor_free_head.py:209-250
+configs/.../duca_transition_only...py:166-210
+```
+
+**复现**
+
+构造局部稀疏和局部密集的 selected positions。GT被映射到 `[0,K)`，而 ActionFormer 的卷积、FPN stride和center sampling仍按 selected-axis单位执行。
+
+**影响**
+
+learned selector即使更接近真实边界，也可能因局部非均匀采样扭曲 detector receptive field和assignment，反而输给均匀采样。这可以解释 oracle–uniform–learned gap的一部分。
+
+**否证诊断**
+
+同一 selection固定不变，比较：
+
+1. selected-axis现有头；
+2. physical-time-aware point/stride head；
+3. uniform selection。
+
+若 learned selector只在 physical-time头上恢复，问题在 detector geometry，不在 selector rank本身。
+
+---
+
+## F.6 P2-03：`transition_boundary_coverage_loss` 不是精确“至少命中一个边界”的概率
+
+**位置**
+
+```text
+opentad/models/duca/transition_only.py:312-365
+opentad/models/duca/acquisition.py:2853-2879
+```
+
+实际为：
+
+[
+L_{\text{mass}}
+===============
+
+\sum_t \bar q_t
+\exp
+\left[
+-\sum_{|i-t|\le r}\pi_i
+\right].
+]
+
+这是局部 occupancy mass 的 Poisson-style surrogate，不是：
+
+[
+P(\exists i\in \mathcal N(t):i\text{ selected}).
+]
+
+**影响**
+
+* 在 `K/T≈0.5` 时容易快速饱和；
+* transition target自身截断半径4，coverage又用半径4，单个 endpoint对最远约8格的 soft occupancy产生作用；
+* 可能鼓励宽泛局部质量而非精确边界命中。
+
+当前实现可以使用，但命名和论文解释必须准确。
+
+---
+
+## F.7 P2-04：四臂训练计算量严重不等，尤其是 counterfactual 和 direct
+
+**位置**
+
+```text
+opentad/models/detectors/actionformer.py:303-376
+opentad/models/selectors/duca_online_frame_selector.py:1260-1427
+configs/.../duca_direct_boundary...py:45-59
+```
+
+### Counterfactual 上界
+
+`B=2`、每样本最多4个候选时：
+
+```text
+每样本：1 baseline + 最多4 candidate
+整个 batch：最多10个 singleton detector forward
+再加1个正常 B=2 main forward
+```
+
+按 sample-forward计：
+
+```text
+counterfactual: 最多 12 sample-forwards
+beta0:          2 sample-forwards
+上界约 6× detector training sample compute
+```
+
+这不是推理成本，但必须单列训练成本。
+
+### Direct-a5
+
+direct继承 `structured_zero_forward` 并将 detector-gradient weight从0升到1。该桥对 dense raw video做 `[B,K,T]` soft slot resampling，代码自己将复杂度记录为：
+
+```text
+O(numel(dense_raw_video) × K)
+```
+
+这显著高于 transition beta0，不能用“相同 optimizer steps”代替“相同训练计算”。
+
+---
+
+## F.8 P2-05：exact-uniform 是 matched-training control，不是纯 uniform deployment baseline
+
+**位置**
+
+```text
+configs/.../duca_exact_uniform_fixed384_official_adatad_backend_full_train.py:1-39
+opentad/cores/train_engine.py:47-61
+```
+
+uniform继承完整 transition stack：
+
+* coarse probe仍运行；
+* actionness loss仍训练；
+* transition scorer仍训练；
+* transition/coverage losses仍存在；
+* 只是 `policy_alpha=0`，使这些参数不影响 hard selection。
+
+这对识别 C3 很有价值，因为它匹配了辅助训练；但它不是部署意义上的低成本 uniform baseline。此外全模型 global grad clipping可能因这些无用 aux gradients改变 detector梯度缩放。
+
+必须同时报告：
+
+1. `matched uniform training control`：当前 arm；
+2. `bare exact-uniform deployment baseline`：不运行 probe/scorer，用于端到端成本。
+
+---
+
+## F.9 P2-06：direct-a5 不是单因素对照
+
+**位置**
+
+```text
+configs/.../duca_direct_boundary_fixed384_13200_official_adatad_backend_full_train.py:27-95
+```
+
+direct相对 transition同时改变：
+
+* selector architecture；
+* hidden种类：`pre_temporal_spatial_stem_hidden` 而非 ASFormer encoder hidden；
+* start/end/context heads；
+* GT boundary proxy；
+* loss集合和权重；
+* detector ST bridge；
+* 训练计算。
+
+因此 direct-a5只能回答：
+
+> 一个显式边界监督系统在相同 backbone/data/epoch下表现如何？
+
+不能单独证明：
+
+> indirect transition优于 direct boundary prediction。
+
+---
+
+## F.10 P2-07：配置声明了预期 ASFormer hash，但代码未 fail-closed 对照该常量
+
+**位置**
+
+```text
+configs/.../duca_transition_only...py:73
+tools/bata/train_lowres_action_probe.py:2169-2177
+tools/bata/validate_duca_transition_only_p0_variant.py:34-75
+scripts/run_duca_transition_only_p0_variant_gpu1.sh:83-95
+```
+
+运行时会：
+
+* 计算实际 external `ASFormer/model.py` hash；
+* 将该 hash绑定 gate和manifest；
+* 保证四臂使用同一实际文件。
+
+但没有把实际 normalized-LF SHA与 config中的预期常量
+`e075...c600` 做强制比较。
+
+**影响**
+
+四臂内部匹配仍可成立；但“使用了预期官方 ASFormer版本”是 `UNPROVEN`，而非 fail-closed事实。
+
+---
+
+## F.11 P2-08：所谓 DDP pilot 实际是 world size 1
+
+**位置**
+
+```text
+scripts/run_duca_transition_only_p0_variant_gpu1.sh:161-168
+tools/bata/validate_duca_transition_only_p0_ddp_pilot.py:113-169
+```
+
+launcher使用：
+
+```text
+torch.distributed.run --nproc_per_node=1
+```
+
+validator还明确要求 `world_size == 1`。
+
+它证明：
+
+* DDP wrapper兼容；
+* `find_unused_parameters=True` 下单 rank可运行；
+* mixed/full/all-short batch分支可运行。
+
+它**不证明多 rank gradient synchronization、branch divergence或collective安全性**。命名应为：
+
+```text
+one-rank DDP-wrapper pilot
+```
+
+---
+
+## F.12 P2-09：首次评估不是 epoch 47，而是 epoch 52
+
+**位置**
+
+```text
+tools/train.py:316-348
+opentad/utils/train_schedule.py:3-18
+configs/.../duca_transition_only...py:281-288
+```
+
+代码外层判断使用 zero-based：
+
+```python
+if epoch >= val_start_epoch:
+```
+
+但 `should_eval_epoch` 内部使用 one-based `epoch+1`。
+
+设：
+
+```text
+val_start_epoch = 47
+anchor = 47
+interval = 5
+```
+
+则：
+
+* one-based epoch 47：外层看到 `epoch=46 < 47`，不评估；
+* epoch 48–51：anchor模条件不满足；
+* **首次评估为 one-based epoch 52**。
+
+因此用户提供的“epoch 47首次验证”与代码不一致。该错误四臂一致，不使训练失效，但 protocol描述必须修正。
+
+---
+
+## F.13 P3
+
+### P3-01：`balanced_binary_actionness_loss` 名称误导
+
+formal配置默认 positive prior为0.5，对应 `pos_weight=1`，实质是 valid-masked普通 BCE，不是根据当前 foreground prevalence动态平衡。
+
+### P3-02：transition coverage几乎一步启用
+
+global schedule为 `warmup_steps=0, transition_steps=1`；因此 successful step 0权重0，step 1以后基本为0.25。它不是长 homotopy。
+
+### P3-03：`online` 命名不改变任务定义
+
+代码合同明确：
+
+```text
+task="offline_temporal_action_detection"
+online_tad=False
+streaming=False
+full_window_selector=True
+```
+
+因此这是离线 TAD，历史 `online` 名称不构成行为事实。
+
+### P3-04：runtime profile默认关闭且不完整
+
+canonical env设置 `DUCA_PROFILE_RUNTIME=0`；已有 profile主要覆盖 probe/selector静态估算，明确排除 detector backbone，并且解码、数据搬运、峰值显存和完整训练teacher开销未闭合。
+
+---
+
+# G. 四臂是否严格匹配及当前证据等级
+
+## G.1 配置级匹配
+
+| 项目                     | 匹配情况                                                | 裁决                                 |
+| ---------------------- | --------------------------------------------------- | ---------------------------------- |
+| Git commit             | launcher强制 HEAD和expected SHA一致                      | `[C] MATCHED`                      |
+| clean tree             | prepare/runtime均检查                                  | `[C] MATCHED`                      |
+| seed                   | suite用同一 `SEED` 生成四臂                                | `[C] MATCHED-INTENT`；实际artifact不可见 |
+| dataset/pipeline       | validator比较resolved dataset                         | `[C] MATCHED`                      |
+| detector backbone/head | 同一 VideoMAE Adapter、projection、FPN、ActionFormerHead | `[C] MATCHED`                      |
+| K/T                    | `384/768`                                           | `[C] MATCHED`                      |
+| max-hole               | 15                                                  | `[C] MATCHED`                      |
+| selected-axis remap    | 同一路径                                                | `[C] MATCHED`                      |
+| optimizer base         | 同一 AdamW及detector/backbone LR                       | `[C] MATCHED`                      |
+| selector component LR  | validator逐项比较                                       | `[C] MATCHED`                      |
+| epoch/scheduler        | 132 epochs，计划13200 steps                            | `[C] MATCHED-INTENT`               |
+| EMA/AMP/clip           | 同一配置                                                | `[C] MATCHED`                      |
+| checkpoint选择           | 未冻结为唯一 final EMA                                    | **P1 NOT MATCHED-AS-EVIDENCE**     |
+| wall-clock/GPU compute | counterfactual/direct显著更高                           | **NOT MATCHED**                    |
+| selector参数/损失          | 按实验定义不同                                             | 预期差异                               |
+| 当前 mAP                 | 无                                                   | `[U]`                              |
+
+suite validator确实比较 detector、dataset、solver、optimizer、scheduler、workflow、evaluation、inference、post-processing和几何，并对resolved config生成hash。
+
+四个 pilot config都只把 full config缩短为10 step；direct和transition pilot仅压缩schedule以跨越不同阶段，没有替换核心模型。
+
+## G.2 四臂实际差异
+
+| Arm              | Hard policy                             | 额外监督                                  | 额外参数              | 额外训练计算                              |
+| ---------------- | --------------------------------------- | ------------------------------------- | ----------------- | ----------------------------------- |
+| exact-uniform    | 永远 endpoint rounded-linspace            | actionness、transition、coverage仍训练     | 完整粗模型/scorer仍存在   | probe/scorer仍运行                     |
+| direct-a5        | direct boundary utility + structured DP | start/end/context/proxy + detector ST | direct heads      | raw-video soft resample bridge，显著增加 |
+| transition beta0 | uniform→learned alpha homotopy          | actionness+transition+coverage        | transition scorer | 无 detector teacher                  |
+| counterfactual   | 与 beta0相同 hard policy family            | 上述 + detached one-swap ranking        | **无新增可训练模块参数**    | 最多约6× detector sample-forward训练开销   |
+
+## G.3 当前运行证据等级
+
+* `[C] implemented`：完整；
+* `[C] focused-test structure`：测试覆盖配置匹配、DP brute-force、gradient route、candidate边界；
+* `[R] 122 passed, 5 skipped`：未读取原始输出；
+* `[R] exact CUDA gate成功`：与 gate代码预期一致，但artifact不可见；
+* `[R] 10-step一 rank DDP-wrapper pilot四臂完成`：artifact不可见；
+* `[R] formal jobs epoch 1，无异常`：不可独立核验；
+* `[U] mAP`：当前不存在；
+* `[U] end-to-end cost saving`：没有完整实测。
+
+## G.4 C3/C4 可识别性
+
+### C3：transition 是否优于 exact-uniform
+
+当前 `uniform vs transition_beta0` 可以识别：
+
+> 在相同粗模型辅助训练、相同 detector、相同 optimizer exposure 下，让 transition policy从 uniform变成 learned selection是否提升最终 TAD。
+
+它不能识别：
+
+* learned transition scorer是否优于简单 `abs-delta + uncertainty` proxy；
+* transition机制是否优于不运行 probe的 bare uniform；
+* 改善是否被 selected-axis geometry抵消。
+
+所以 C3 **部分可识别**。
+
+### C4：counterfactual 是否优于 beta0
+
+当前 `counterfactual vs beta0` 可以识别：
+
+> 加入最多4个 hard one-swap的相对 detector-loss ranking distillation，在相同 optimizer steps下是否提升性能。
+
+它不能严格识别：
+
+* signed detector utility是否有效；
+* equal-compute条件下是否有效；
+* 相对收益是否只是更多 detector forward/teacher exposure；
+* no-op baseline是否比当前候选间softmax更合理。
+
+所以 C4 **只能识别当前 ranking objective，不能识别更强的“detector utility learning”主张**。
+
+---
+
+# H. 对研究初心、创新性、优雅性和可发表性的评价
+
+## H.1 对研究初心的符合度
+
+| 初心要求                          | 代码事实                                          |
+| ----------------------------- | --------------------------------------------- |
+| Offline TAD                   | 符合                                            |
+| 粗模型不做 start/end坐标回归           | 符合                                            |
+| 不退化为 actionness top-k         | 符合；transition descriptor + structured DP      |
+| 推理不使用 GT/teacher/oracle/cache | 符合                                            |
+| 不是三阶段离线缓存                     | 符合；coarse与detector联合在图内训练                     |
+| detector消费真实选中帧               | 符合                                            |
+| exact K和max-hole              | 符合                                            |
+| detector loss直接进入 selector    | **不符合，正式transition臂明确没有**                     |
+| 粗模型只学二分类状态                    | **不完全符合；hidden/scorer受GT endpoint density监督** |
+| 真实端到端省算力                      | **UNPROVEN**；只确定重backbone从768降到384            |
+| official AdaTAD完全原样           | **不符合字面意义**；是官方组件+DUCA wrapper+坐标适配           |
+
+## H.2 优雅性
+
+工程完整性明显强于旧路线：
+
+* exact-commit/hash绑定；
+* hard/soft feasible family一致；
+* optimizer exact coverage；
+* AMP overflow不推进schedule；
+* teacher buffer/RNG恢复；
+* fail-closed payload检查；
+* short/mixed/all-short pilot合同；
+* 正确区分 direct gradient和detached utility。
+
+但科学结构仍不够优雅：
+
+1. “状态变化推边界”与直接 GT endpoint-density loss混在一起；
+2. 选帧策略和 compressed-axis detector geometry纠缠；
+3. coverage surrogate、transition CE、max-gap DP和counterfactual ranking多重目标共同作用；
+4. counterfactual没有 baseline anchor；
+5. matched uniform为控制变量付出了无部署意义的probe训练成本；
+6. direct-a5不是可干净解释的单因素baseline。
+
+## H.3 创新性
+
+`fixed-384 + transition descriptor + exact-K/max-gap DP + detector-derived one-swap distillation` 有潜在论文方法形态，但仅凭实现不能达到 CVPR主会贡献。
+
+在以下证据出现前，它更像：
+
+> 面向 TAD 的结构化选帧工程系统，以及对旧 DUCA失败机制的严谨修复。
+
+而不是已经成立的论文级新方法。
+
+至少必须证明：
+
+* C3显著优于 exact-uniform；
+* C4显著优于 beta0；
+* 优于简单不可学习 proxy；
+* 高 tIoU与短动作不退化；
+* 同等真实端到端成本下有收益；
+* selected-axis geometry不是主要伪影；
+* 第二检测头上方向一致。
+
+---
+
+# I. 不超过三个候选改进架构
+
+| 候选                                                 | 核心                                           |         数学合理性 |      真实成本 | 稳定性 |                        论文风险 |        |    |   |                 |
+| -------------------------------------------------- | -------------------------------------------- | ------------: | --------: | --: | --------------------------: | ------ | -- | - | --------------- |
+| **A. Baseline-anchored counterfactual transition** | 当前transition-only + no-op anchored signed CF | 最高；保留离散真实效用符号 | 训练高，推理不增加 |  中高 |                           中 |        |    |   |                 |
+| **B. Non-learned state-change proxy + exact DP**   | `                                            |            Δa |       + λ |  ΔH | + μ(1-cos)`，无transition MLP | 简单、可解释 | 最低 | 高 | 新颖性低，但关键control |
+| **C. Physical-time-aware ActionFormer**            | 保留selector，head point/stride按真实时间            |        解决几何混杂 | 推理略增，工程复杂 |  中低 |                 高；容易变成第二篇问题 |        |    |   |                 |
+
+## I.1 暂缓项
+
+以下均应暂缓：
+
+* dynamic budget；
+* X3D/SlowFast替换 probe；
+* MUST；
+* MobileNet式习惯性替换；
+* 大规模多预算curve；
+* 第二套复杂selector。
+
+它们都没有针对当前最主要的可证伪问题：C3、C4、utility sign、selected-axis geometry和真实成本。
+
+## I.2 第二检测头
+
+第二检测头不是 seed-0 screening 的前置条件，但若论文要声称：
+
+> detector-agnostic TAD acquisition
+
+则是 paper-ready前的必要项。当前只支持：
+
+> 在 AdaTAD/VideoMAE-S/ActionFormer backend上的证据。
+
+---
+
+# J. 推荐的唯一主方案及完整目标
+
+## J.1 唯一推荐
+
+**保留当前 transition-only 主体，但将 counterfactual 改为带 no-op baseline 的 signed hard-swap distillation；不恢复 direct detector ST bridge，不引入 dynamic budget。**
+
+部署 score：
+
+[
+s_t=g_\theta!\left(\operatorname{sg}(d_t)\right).
+]
+
+训练 auxiliary score：
+
+[
+\tilde s_t=g_\theta(d_t^{\text{aux}}),
+]
+
+其中 actionness logit仍 detach，ASFormer hidden可接收transition auxiliary gradient。
+
+policy homotopy：
+
+[
+\ell_t(\alpha)
+==============
+
+(1-\alpha),\operatorname{zscore}(u_t)
++
+\alpha,\operatorname{zscore}(s_t).
+]
+
+hard policy：
+
+[
+S^\star=\arg\max_{S\in\mathcal F(V,K,G)}
+\sum_{t\in S}\ell_t.
+]
+
+## J.2 当前保留的监督
+
+动作状态：
+
+[
+L_{\text{act}}
+==============
+
+\frac{1}{|\mathcal V|}
+\sum_{t\in\mathcal V}
+\operatorname{BCEWithLogits}(a_t,y_t).
+]
+
+transition distribution：
+
+[
+L_{\text{tr}}
+=============
+
+-\sum_t q_t
+\log
+\operatorname{softmax}\left(\frac{\tilde s}{\tau_{\text{tr}}}\right)_t.
+]
+
+soft occupancy coverage：
+
+[
+L_{\text{cov}}
+==============
+
+\sum_t\bar q_t
+\exp
+\left(
+-\sum_{|i-t|\le r}\pi_i
+\right).
+]
+
+## J.3 推荐的 anchored counterfactual
+
+候选 `m`：
+
+[
+U_m
+===
+
+\operatorname{sg}
+\left[
+L_{\mathrm{AF}}(S^\star)
+------------------------
+
+L_{\mathrm{AF}}(S_m)
+\right],
+]
+
+[
+\Delta s_m=s_{\mathrm{add}(m)}-s_{\mathrm{remove}(m)}.
+]
+
+加入 no-op：
+
+[
+U_0=0,\qquad \Delta s_0=0.
+]
+
+[
+L_{\text{CF}}
+=============
+
+\operatorname{CE}
+\left(
+\operatorname{softmax}\frac{[0,U_1,\ldots,U_M]}{\tau_{\text{CF}}},
+\operatorname{softmax}\frac{[0,\Delta s_1,\ldots,\Delta s_M]}{\tau_{\text{CF}}}
+\right).
+]
+
+这样：
+
+* 所有 swaps有害时，student被训练为把所有 swap score压到 no-op以下；
+* 所有 swaps有益时，student会提升有效 swap；
+* utility正负语义被保留；
+* 仍然没有 detector gradient estimator的虚假主张。
+
+总目标：
+
+[
+\boxed{
+L =
+L_{\mathrm{AF,cls}}
++
+L_{\mathrm{AF,reg}}
++
+L_{\mathrm{act}}
++
+0.5L_{\mathrm{tr}}
++
+\lambda_{\mathrm{cov}}L_{\mathrm{cov}}
++
+0.25L_{\mathrm{CF}}
+}
+]
+
+其中：
+
+* `λ_cov` 当前在第一个成功step后基本为0.25；
+* `α` 在660步 uniform warmup后，用3960步 cosine ramp到1；
+* counterfactual teacher仍只在训练时存在；
+* inference只执行 coarse probe、scorer、hard DP和一次 detector。
+
+---
+
+# K. 具体代码实现
+
+下面补丁针对下一提交。它们不能追溯修改正在运行的 exact-commit jobs。
+
+## K.1 P1-01：修复 one-based eval并冻结 final-EMA primary结果
+
+```diff
+diff --git a/opentad/utils/train_schedule.py b/opentad/utils/train_schedule.py
+index 4899d9f..new 100644
+--- a/opentad/utils/train_schedule.py
++++ b/opentad/utils/train_schedule.py
+@@ -1,18 +1,31 @@
++def has_reached_val_start(epoch, workflow):
++    """Interpret workflow epoch fields consistently as one-based epochs."""
++    one_based_epoch = int(epoch) + 1
++    return one_based_epoch >= int(workflow.get("val_start_epoch", 1))
++
++
+ def should_eval_epoch(epoch, workflow):
+     """Return True when an eval should run after the zero-based training epoch."""
++    one_based_epoch = int(epoch) + 1
++
++    explicit_epochs = {
++        int(item) for item in workflow.get("val_eval_epochs", [])
++    }
++    if explicit_epochs:
++        return one_based_epoch in explicit_epochs
++
+     val_eval_interval = workflow.val_eval_interval
+     if val_eval_interval <= 0:
+         return False
++
+     if "val_eval_epochs" not in workflow and "val_eval_interval_anchor_epoch" not in workflow:
+-        return (epoch + 1) % val_eval_interval == 0
++        return one_based_epoch % val_eval_interval == 0
+ 
+-    one_based_epoch = epoch + 1
+-    explicit_epochs = set(int(item) for item in workflow.get("val_eval_epochs", []))
+-    if one_based_epoch in explicit_epochs:
+-        return True
+     anchor_epoch = int(
+         workflow.get(
+             "val_eval_interval_anchor_epoch",
+-            workflow.get("val_start_epoch", 0),
++            workflow.get("val_start_epoch", 1),
+         )
+     )
+     if one_based_epoch < anchor_epoch:
+         return False
+     return (one_based_epoch - anchor_epoch) % val_eval_interval == 0
+diff --git a/tools/train.py b/tools/train.py
+index 9d5ca42..new 100644
+--- a/tools/train.py
++++ b/tools/train.py
+@@ -43,7 +43,10 @@ from opentad.utils.training_guard import (
+     assert_safe_entrypoint_args_for_gated_config,
+     assert_safe_cfg_options_for_gated_config,
+ )
+-from opentad.utils.train_schedule import should_eval_epoch
++from opentad.utils.train_schedule import (
++    has_reached_val_start,
++    should_eval_epoch,
++)
+ 
+@@ -313,7 +316,7 @@ def main():
+-        if epoch >= val_start_epoch:
++        if has_reached_val_start(epoch, cfg.workflow):
+             if (cfg.workflow.val_loss_interval > 0) and (
+                 (epoch + 1) % cfg.workflow.val_loss_interval == 0
+             ):
+@@ -333,7 +336,7 @@ def main():
+-        if epoch >= val_start_epoch:
++        if has_reached_val_start(epoch, cfg.workflow):
+             if should_eval_epoch(epoch, cfg.workflow):
+                 eval_one_epoch(
+                     test_loader,
+diff --git a/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py b/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py
+index 4efe1db..new 100644
+--- a/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py
++++ b/configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py
+@@ -281,10 +281,14 @@ workflow = dict(
+     logging_interval=50,
+     checkpoint_interval=5,
+     val_loss_interval=-1,
+-    val_eval_interval=5,
+-    val_eval_interval_anchor_epoch=47,
+-    val_start_epoch=47,
++    val_eval_interval=-1,
++    val_eval_epochs=[duca_end_epoch],
++    val_eval_interval_anchor_epoch=duca_end_epoch,
++    val_start_epoch=duca_end_epoch,
+     end_epoch=duca_end_epoch,
++    primary_checkpoint_policy="fixed_epoch",
++    primary_checkpoint_epoch=duca_end_epoch,
++    primary_checkpoint_state="ema",
++    intermediate_eval_role="disabled_no_test_set_model_selection",
+ )
+diff --git a/configs/adatad/thumos/duca_direct_boundary_fixed384_13200_official_adatad_backend_full_train.py b/configs/adatad/thumos/duca_direct_boundary_fixed384_13200_official_adatad_backend_full_train.py
+index 9eef64f..new 100644
+--- a/configs/adatad/thumos/duca_direct_boundary_fixed384_13200_official_adatad_backend_full_train.py
++++ b/configs/adatad/thumos/duca_direct_boundary_fixed384_13200_official_adatad_backend_full_train.py
+@@ -103,10 +103,14 @@ workflow = dict(
+     logging_interval=50,
+     checkpoint_interval=5,
+     val_loss_interval=-1,
+-    val_eval_interval=5,
+-    val_eval_interval_anchor_epoch=47,
+-    val_start_epoch=47,
++    val_eval_interval=-1,
++    val_eval_epochs=[duca_end_epoch],
++    val_eval_interval_anchor_epoch=duca_end_epoch,
++    val_start_epoch=duca_end_epoch,
+     end_epoch=duca_end_epoch,
++    primary_checkpoint_policy="fixed_epoch",
++    primary_checkpoint_epoch=duca_end_epoch,
++    primary_checkpoint_state="ema",
++    intermediate_eval_role="disabled_no_test_set_model_selection",
+ )
+diff --git a/tools/bata/validate_duca_transition_only_p0_suite.py b/tools/bata/validate_duca_transition_only_p0_suite.py
+index 4b6b629..new 100644
+--- a/tools/bata/validate_duca_transition_only_p0_suite.py
++++ b/tools/bata/validate_duca_transition_only_p0_suite.py
+@@ -126,7 +126,10 @@ def _post_run_contract(protocol_sha256, bindings):
+         "successful_optimizer_updates": EXPECTED_OPTIMIZER_UPDATES,
+         "lr_scheduler_successful_update_exposure": EXPECTED_OPTIMIZER_UPDATES,
+         "ema_successful_update_exposure": EXPECTED_OPTIMIZER_UPDATES,
+         "evaluator_identity": "mAP:validation:0.3,0.4,0.5,0.6,0.7",
+-        "checkpoint_criterion": "same_workflow_best_or_final_declared",
++        "checkpoint_criterion": "fixed_final_epoch_132_ema",
++        "primary_checkpoint_epoch": 132,
++        "primary_checkpoint_state": "ema",
++        "test_set_model_selection_forbidden": True,
+         "non_finite_collapse": False,
+         **bindings,
+     }
+diff --git a/tests/test_train_schedule.py b/tests/test_train_schedule.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_train_schedule.py
+@@ -0,0 +1,25 @@
++from mmengine.config import ConfigDict
++
++from opentad.utils.train_schedule import (
++    has_reached_val_start,
++    should_eval_epoch,
++)
++
++
++def test_val_start_is_one_based():
++    workflow = ConfigDict(
++        val_start_epoch=47,
++        val_eval_interval=5,
++        val_eval_interval_anchor_epoch=47,
++    )
++    assert not has_reached_val_start(45, workflow)  # one-based 46
++    assert has_reached_val_start(46, workflow)      # one-based 47
++    assert should_eval_epoch(46, workflow)
++
++
++def test_explicit_final_epoch_eval_ignores_disabled_interval():
++    workflow = ConfigDict(
++        val_start_epoch=132,
++        val_eval_interval=-1,
++        val_eval_epochs=[132],
++    )
++    assert not should_eval_epoch(130, workflow)
++    assert should_eval_epoch(131, workflow)
+```
+
+### 对当前运行中作业的无重启处理
+
+在第一次实际评估前，给四个 run root写入并冻结同一份外部协议：
+
+```json
+{
+  "primary_checkpoint": "checkpoint/epoch_131.pth",
+  "primary_epoch_one_based": 132,
+  "primary_state_dict": "state_dict_ema",
+  "intermediate_test_map_use": "diagnostic_only",
+  "checkpoint_selection_from_test_map": false
+}
+```
+
+并把文件 SHA256记入四臂最终 evidence bundle。这里 `epoch_131.pth` 是因为 checkpoint文件使用 zero-based epoch命名。
+
+---
+
+## K.2 P1-02：给 counterfactual 蒸馏加入 no-op baseline
+
+```diff
+diff --git a/opentad/models/duca/counterfactual_utility.py b/opentad/models/duca/counterfactual_utility.py
+index a043b4e..new 100644
+--- a/opentad/models/duca/counterfactual_utility.py
++++ b/opentad/models/duca/counterfactual_utility.py
+@@ -134,24 +134,39 @@ def counterfactual_utility_distillation_loss(
+     temperature: float = 1.0,
+ ) -> torch.Tensor:
+-    """Distill detached hard-swap utilities into deploy-time policy scores."""
++    """Distill signed hard-swap utility relative to a no-op baseline.
++
++    The extra no-op class has teacher utility 0 and student score delta 0.
++    This preserves whether every proposed swap is better or worse than
++    retaining the current hard selection.
++    """
+     if policy_scores.shape != teacher_utility.shape or policy_scores.shape != valid_mask.shape:
+         raise ValueError(
+             "policy_scores, teacher_utility and valid_mask must have identical [B,T] shapes"
+         )
+     if temperature <= 0.0:
+         raise ValueError("temperature must be positive")
++
+     valid = valid_mask.bool()
+     active = valid.any(dim=1)
+     student = policy_scores.float()
+     teacher = teacher_utility.detach().to(
+         device=policy_scores.device,
+         dtype=torch.float32,
+     )
+     if not torch.isfinite(teacher[valid]).all():
+         raise ValueError("valid counterfactual utilities must be finite")
++
++    batch = student.shape[0]
++    no_op_student = student.new_zeros((batch, 1))
++    no_op_teacher = teacher.new_zeros((batch, 1))
++    no_op_valid = torch.ones(
++        (batch, 1),
++        device=valid.device,
++        dtype=torch.bool,
++    )
++
++    student = torch.cat((no_op_student, student), dim=1)
++    teacher = torch.cat((no_op_teacher, teacher), dim=1)
++    valid = torch.cat((no_op_valid, valid), dim=1)
++
+     neg = torch.finfo(student.dtype).min
+     student_logits = (student / temperature).masked_fill(~valid, neg)
+     teacher_logits = (teacher / temperature).masked_fill(~valid, neg)
+     target = torch.softmax(teacher_logits, dim=-1)
+     per_item = -(
+         target * torch.log_softmax(student_logits, dim=-1)
+     ).sum(dim=-1)
+     active_weight = active.to(per_item.dtype)
+     return (
+         per_item * active_weight
+     ).sum() / active_weight.sum().clamp_min(1.0)
+diff --git a/tests/test_duca_counterfactual_utility.py b/tests/test_duca_counterfactual_utility.py
+index existing..new 100644
+--- a/tests/test_duca_counterfactual_utility.py
++++ b/tests/test_duca_counterfactual_utility.py
+@@ -1,5 +1,9 @@
+ import torch
+ 
++from opentad.models.duca.counterfactual_utility import (
++    counterfactual_utility_distillation_loss,
++)
++
++
++def test_counterfactual_noop_anchor_suppresses_all_harmful_swaps():
++    pair_scores = torch.zeros((1, 2), requires_grad=True)
++    utility = torch.tensor([[-2.0, -1.0]])
++    valid = torch.tensor([[True, True]])
++
++    loss = counterfactual_utility_distillation_loss(
++        pair_scores,
++        utility,
++        valid,
++        temperature=1.0,
++    )
++    loss.backward()
++
++    assert torch.isfinite(loss)
++    assert pair_scores.grad is not None
++    # Positive gradient means gradient descent lowers both swap scores
++    # relative to the fixed no-op score of zero.
++    assert torch.all(pair_scores.grad > 0)
++
++
++def test_counterfactual_noop_anchor_promotes_a_beneficial_swap():
++    pair_scores = torch.zeros((1, 2), requires_grad=True)
++    utility = torch.tensor([[2.0, -1.0]])
++    valid = torch.tensor([[True, True]])
++
++    loss = counterfactual_utility_distillation_loss(
++        pair_scores,
++        utility,
++        valid,
++        temperature=1.0,
++    )
++    loss.backward()
++
++    assert pair_scores.grad[0, 0] < 0
++    assert pair_scores.grad[0, 1] > 0
++
++
++def test_counterfactual_no_candidate_path_is_exact_zero():
++    pair_scores = torch.zeros((2, 4), requires_grad=True)
++    utility = torch.zeros_like(pair_scores)
++    valid = torch.zeros_like(pair_scores, dtype=torch.bool)
++
++    loss = counterfactual_utility_distillation_loss(
++        pair_scores,
++        utility,
++        valid,
++    )
++    assert loss.item() == 0.0
+```
+
+---
+
+# L. 必须新增的测试、CUDA gate 和 DDP pilot断言
+
+## L.1 单元测试
+
+1. **Signed utility**
+
+   * all candidates harmful；
+   * all candidates beneficial；
+   * mixed sign；
+   * zero utility；
+   * one valid candidate；
+   * no candidate；
+   * temperature极端但有限。
+
+2. **Integrated candidate vs actual removal**
+
+   * 验证 `candidate_positions/replaced_slots/candidate_selections` 三者严格一致；
+   * 验证 student pair score确实是实际 `add - removed_position`；
+   * 不应只测通用 helper中“搜索所有 removal”的另一条未集成路径。
+
+3. **Eval/checkpoint**
+
+   * epoch字段统一 one-based；
+   * explicit final epoch在 `interval=-1` 下仍执行；
+   * primary必须为 epoch132 EMA；
+   * 禁止 `best_or_final`。
+
+4. **GT target约定**
+
+   * `[start,end)` action target；
+   * fractional boundary；
+   * zero-length/reversed segment；
+   * boundary落在 valid prefix外；
+   * empty GT。
+
+5. **Geometry**
+
+   * `true→selected→true` 往返；
+   * selected positions末端缺失时虚拟 knot；
+   * short-window所有有效点选中；
+   * proposal在 NMS前完成 inverse remap。
+
+## L.2 Full-model gradient test
+
+至少断言：
+
+```text
+detector cls+reg:
+    backbone adapter grad > 0
+    projection/head grad > 0
+    transition scorer grad == 0
+    coarse probe grad == 0
+
+transition distribution:
+    transition scorer grad > 0
+    ASFormer encoder hidden trunk grad > 0
+    action output head grad == 0
+
+coverage:
+    scorer grad > 0
+    coarse probe grad == 0
+
+anchored counterfactual:
+    scorer grad > 0
+    coarse probe/backbone/head grad == 0
+```
+
+还要增加“全候选 harmful” full-model synthetic case，确保反向方向压低所有 swap pair score。
+
+## L.3 CUDA gate
+
+新增输出字段：
+
+```text
+counterfactual_utility_positive_count
+counterfactual_utility_negative_count
+counterfactual_utility_zero_count
+counterfactual_all_negative_batches
+counterfactual_noop_target_probability_mean
+counterfactual_candidate_forward_count
+counterfactual_sample_forward_multiplier
+primary_checkpoint_policy
+first_eval_epoch_one_based
+```
+
+硬断言：
+
+```text
+first_eval_epoch_one_based == 132
+primary_checkpoint_state == "ema"
+test_set_model_selection_forbidden == true
+```
+
+## L.4 DDP pilot
+
+当前一 rank pilot保留，但应新增真实两 rank pilot：
+
+```text
+world_size == 2
+```
+
+必须覆盖：
+
+* rank 0有candidate、rank 1无candidate；
+* rank 0 full window、rank 1 all-short；
+* 两 rank parameter-use graph不同；
+* 10个成功 optimizer steps；
+* 无 collective hang；
+* 每个 trainable parameter跨全pilot至少一次有梯度；
+* schedule step在两 rank完全一致；
+* EMA/scheduler update count一致；
+* DDP reducer未报告 inconsistent unused parameters。
+
+---
+
+# M. 条件化下一步：C3/C4 的 GO/KILL
+
+## M.1 当前作业
+
+**继续，不暂停、不取消。**
+
+前提：
+
+1. 立即冻结 final epoch132 EMA为唯一 primary；
+2. 不根据任何中间 test mAP选 checkpoint；
+3. current counterfactual arm只称为 relative swap-ranking distillation；
+4. 保存四臂各自：
+
+   * exact commit；
+   * resolved config SHA；
+   * external ASFormer SHA；
+   * checkpoint SHA；
+   * successful optimizer step；
+   * final EMA checkpoint；
+     -完整 cost/profile evidence。
+
+## M.2 当前四臂跑完后的 seed-0 gate
+
+以下是建议预注册的实用阈值，不是当前结果。
+
+### C3：transition beta0 − exact-uniform
+
+进入三种子正式验证需同时满足：
+
+[
+\Delta \mathrm{Avg\ mAP}\ge +0.5
+]
+
+且：
+
+[
+\Delta \mathrm{mAP@0.7}\ge 0
+]
+
+并且：
+
+* 短动作 mAP不下降超过1个百分点；
+* endpoint r1 recall不下降超过2个百分点；
+* paired-video bootstrap 中 `P(ΔAvg>0) ≥ 0.95`。
+
+若：
+
+```text
+ΔAvg <= 0 且 ΔmAP@0.7 <= 0
+```
+
+则 **KILL 当前 learned transition主路线**，不进行温度/权重/半径网格搜索。
+
+只允许一个机制诊断：
+
+```text
+non-learned abs-delta + entropy + cosine proxy
+```
+
+用来判断失败来自 scorer优化还是母假设本身。
+
+### C4：counterfactual − beta0
+
+当前 ranking arm进入下一步需：
+
+[
+\Delta \mathrm{Avg\ mAP}\ge +0.3,
+\qquad
+\Delta \mathrm{mAP@0.7}\ge 0.
+]
+
+同时要求：
+
+* utility与student pair score的 Spearman为正；
+* informative candidate比例足够；
+* candidate utility不是几乎全零；
+* wall-clock和峰值显存完整报告。
+
+若当前 C4 `≤0`：
+
+* 不扫 temperature、candidate count、weight；
+* 只运行一次 K.2 的 anchored signed-CF修正版；
+* anchored版仍 `≤0` 则 **KILL counterfactual机制**。
+
+若当前 C4为正，但 all-negative candidate batch比例高，则当前结果只能支持 ranking claim；paper-ready前仍需 anchored版复验。
+
+## M.3 三种子 gate
+
+三种子阶段必须：
+
+* 相同 fixed final EMA；
+* 报告每 seed；
+* paired bootstrap或层次 bootstrap；
+* C3/C4平均差的95% CI下界大于0；
+* 高 tIoU不退化；
+* 实测总成本而不是只报 VideoMAE FLOPs。
+
+## M.4 selected-axis 分支
+
+只有在出现以下模式时才实现 physical-time head：
+
+```text
+selector endpoint质量明显优于 uniform
+但 final TAD仍输给 uniform
+且误差随局部 sampling-gap强相关
+```
+
+否则不得借 geometry重新开启大规模方法扩展。
+
+---
+
+# N. 最终“可发表必要条件”清单
+
+| 项目                                    | 当前状态                                 | Paper-ready要求               |
+| ------------------------------------- | ------------------------------------ | --------------------------- |
+| exact commit固定                        | **implemented/tested**               | 保留                          |
+| clean-tree/hash suite                 | **implemented**                      | 绑定最终artifact                |
+| exact-K/max-hole hard DP              | **implemented/tested**               | 保留 brute-force测试            |
+| hard/soft同feasible family             | **implemented/tested**               | 保留 mixed/all-short CUDA证据   |
+| exact-uniform reference               | **implemented/tested**               | 报告 bare + matched两种uniform  |
+| no GT/teacher/cache inference         | **implemented/tested**               | 加真实eval payload audit       |
+| raw selected RGB进入backbone            | **implemented/tested**               | profile中证明                  |
+| GT/prediction coordinate remap        | **implemented/tested**               | 补 geometry stress test      |
+| detector gradient不进入transition scorer | **implemented/tested**               | 论文术语必须准确                    |
+| counterfactual detached teacher       | **implemented/tested**               | 报告训练倍率                      |
+| signed utility semantics              | **未实现**                              | 加 no-op anchor并重跑           |
+| fixed final EMA protocol              | **未冻结/P1**                           | final epoch132唯一primary     |
+| 首次评估epoch描述                           | **代码与叙述不一致**                         | 修为one-based并仅final eval     |
+| external ASFormer版本                   | **running artifact-bound，预期hash未强制** | fail-closed expected hash   |
+| optimizer参数覆盖                         | **implemented/tested**               | 保留                          |
+| AMP成功step schedule                    | **implemented/tested**               | final log核对13200            |
+| 多 rank DDP                            | **未测试**                              | 至少一次 world-size 2 pilot     |
+| current four-arm mAP                  | **running/unsupported**              | final fixed checkpoint结果    |
+| C3 transition>uniform                 | **unsupported**                      | 3 seed、CI>0                 |
+| C4 counterfactual>beta0               | **unsupported**                      | anchored signed-CF、3 seed   |
+| proxy control                         | **未实现**                              | 必须加入                        |
+| endpoint/short-action证据               | **未支持**                              | 必须报告                        |
+| selected-axis geometry归因              | **未支持**                              | 至少诊断；必要时physical-time对照     |
+| 端到端解码+probe+backbone+head latency     | **未支持**                              | 同硬件实测p50/p90                |
+| FLOPs                                 | **局部静态估计**                           | 完整组件账本                      |
+| 峰值显存                                  | **pilot用户报告、不可见**                    | 四臂正式实测                      |
+| 训练成本                                  | **未完整报告**                            | teacher forward倍率/GPU-hours |
+| 第二检测头                                 | **未实现**                              | detector-agnostic claim前必须  |
+| dynamic budget                        | **不应启动**                             | fixed-384主效应成立后再讨论          |
+| X3D/SlowFast/MUST                     | **不应启动**                             | 当前失败机制明确支持后才考虑              |
+
+**最终结论：当前 commit 在工程正确性上已经足以继续正式运行；真正阻止其成为论文主方法的，不是 crash、漏梯度或旧 uniform bug，而是尚无性能证据、counterfactual 丢失 signed no-op语义、test-set checkpoint合同未冻结、selected-axis几何混杂，以及端到端成本账目尚未闭合。**

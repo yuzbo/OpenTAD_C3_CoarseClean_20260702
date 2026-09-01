@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-12T19:55:03Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_IDENTITY_CLEAN_SNAPSHOT_PREPARATION",
+  "message_id": "msg-20260812T195503Z-8ae0e53de533",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "BUILDER_DUCA_P0_IDENTITY_EXECUTION_SNAPSHOT_PLAN-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Execute only S1-S5 of the accepted Builder snapshot plan: create one new isolated clean worktree and local execution commit from 63a726a4aaf48ecbf6780bb196de43a890c6b4df, copying only the two Critic-reviewed paths from C:/Users/skywalker/.codex/worktrees/07c1/OpenTAD_C3_CoarseClean_20260702. Verify the parent-to-child name-status diff is exactly M opentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py and A tests/test_duca_p0_projection_policy.py, then verify the new worktree is clean. Do not reset, stash, clean, alter, or commit the current Builder worktree; do not push or transport Git. Do not run Python, imports, tests, fixtures, production/reference comparison, data/model/training/metric/GPU/Slurm/browser work. Return the exact execution commit, clean worktree path, diff result, and NOT_EXECUTED attestation for C1-C3/E1-E2; otherwise return NEEDS_ATTENTION without workaround.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

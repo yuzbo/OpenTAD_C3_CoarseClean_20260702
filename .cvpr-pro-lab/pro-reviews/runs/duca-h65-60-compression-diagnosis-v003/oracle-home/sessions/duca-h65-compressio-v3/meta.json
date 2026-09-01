@@ -1,0 +1,171 @@
+{
+  "id": "duca-h65-compressio-v3",
+  "createdAt": "2026-08-24T09:07:07.672Z",
+  "status": "completed",
+  "promptPreview": "请完整阅读附加任务、冻结配置与终态收据。作为 DUCA 独立 Scientific First-Author Agent 和最严厉训练动力学审稿人，给出唯一中文终稿。Nonce: DUCA-H65-60-COMPRESSION-DIAGNOSIS-v003-20260824",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-24T09:07:08.270Z",
+      "completedAt": "2026-08-24T09:24:09.855Z",
+      "usage": {
+        "inputTokens": 8737,
+        "outputTokens": 3326,
+        "reasoningTokens": 0,
+        "totalTokens": 12063
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 14106,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "0D0937ADA5D5275200213AFCCE0B2CFE",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c09ca-0844-83ea-9d6e-ad5fe5f73a50",
+      "conversationId": "6a8c09ca-0844-83ea-9d6e-ad5fe5f73a50",
+      "promptSubmitted": true,
+      "controllerPid": 88360
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c09ca-0844-83ea-9d6e-ad5fe5f73a50"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-24T09:07:11.249Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "请完整阅读附加任务、冻结配置与终态收据。作为 DUCA 独立 Scientific First-Author Agent 和最严厉训练动力学审稿人，给出唯一中文终稿。Nonce: DUCA-H65-60-COMPRESSION-DIAGNOSIS-v003-20260824",
+    "file": [
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_H65_60_COMPRESSION_DIAGNOSIS-v003.md",
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/receipts/H65_CURRICULUM_TERMINAL_COMPARISON-v001.md",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_sampling_rate_curriculum_stage1_uniform384.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_h65_60_stage1_uniform20.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_h65_60_stage2_transition20_joint20.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_h65_60_stage2_am_rpch25.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_h65_60_stage2_longcosine_h6000.py"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-h65-compressio-v3",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": false,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7500,
+    "httpTimeoutMs": 7500000,
+    "zombieTimeoutMs": 7500000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-h65-60-compression-diagnosis-v003/PRO_DUCA_H65_60_COMPRESSION_DIAGNOSIS-v003.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 88360,
+    "reattachCommand": "oracle session duca-h65-compressio-v3"
+  },
+  "startedAt": "2026-08-24T09:07:08.266Z",
+  "completedAt": "2026-08-24T09:24:09.895Z",
+  "usage": {
+    "inputTokens": 8737,
+    "outputTokens": 3326,
+    "reasoningTokens": 0,
+    "totalTokens": 12063
+  },
+  "elapsedMs": 1021365,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-h65-60-compression-diagnosis-v003\\oracle-home\\sessions\\duca-h65-compressio-v3\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 51683,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c09ca-0844-83ea-9d6e-ad5fe5f73a50",
+      "sha256": "0bc17a0ca248f1ff0d9c629fd3f36980644cc9828f75612702894a8d4a9e1195",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

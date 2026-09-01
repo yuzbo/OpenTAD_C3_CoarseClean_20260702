@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-12T21:17:45Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_REFERENCE_ADMISSION_MANIFEST_DETERMINISTIC_CORRECTION",
+  "message_id": "msg-20260812T211745Z-12c5f7671b38",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v001",
+    "CRITIC_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_STATIC_REVIEW-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Revise only EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v001 to v002 in response to deterministic Critic findings P0-E1-MANIFEST-001 and P0-E1-MANIFEST-002. Preserve all frozen science, Q/18/9/6 order, reference method allocation, input-byte contract, independent reference ownership, E1-before-B1, one-shot/first-fail, no-hash/no-fallback, and NOT_EXECUTED/NOT_PRE_RUN_READY status. Make exactly two envelope corrections: (1) before a complete E1 receipt, fail closed if any positive result lacks exact p, feasibility, E2/E_infinity/E1/U1, interior vector, candidate-order/global-optimality evidence; additionally require complete exhaustive evidence for every positive T<=385, complete T17 15-candidate and G385-X 383-candidate witnesses/ties, independent root-optimum evidence for all T=767/768 positives, and null success-only fields for negatives; missing/malformed data becomes first E1_REFERENCE_BLOCKED failure with no second solver/recompute/tolerance/new fixture; (2) require the literal shared parent identity-gate-v001 directory to already exist and be admitted before E1, and use exclusive non-recursive creation only for the absent temporary sibling/output, failing prior to writes if parent conditions fail. Do not run/import/compile/test/materialize or read/invoke runtime reference/projector/adapter, access remote/SSH/data/model/checkpoint/metric/GPU/CUDA/Slurm/browser, or alter anything except the Evaluator-owned v002 manifest.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

@@ -1,0 +1,1093 @@
+# 最终裁决
+
+```text
+RESEARCH_VERDICT=REVISE-BEFORE-FULL-TRAIN
+
+ANCHOR_REPRESENTABILITY_FIXED=YES
+SUPPORT_QUERY_DECOUPLING_COMPLETE=NO
+
+RUNNABLE=YES
+GATE_PASSED=YES
+PILOT_SUPPORTED=ENGINEERING_ONLY
+EMPIRICALLY_SUPPORTED=NO
+PAPER_READY=NO
+
+FULL_TRAIN=BLOCKED
+NEXT_ACTION=SAME_COMMIT_MATCHED_CONTROLS_PLUS_P0_FIXES
+```
+
+**不要直接 full train 当前 `372fcbf...`。**
+
+SDPQ 确实修复了 G1a 的一个必要几何缺陷：proposal query 不再绑定在稀疏 observation timestamp 上，短 GT 即使内部没有 observation，也可以由独立物理 query 和 signed center/log-width regression 表示。但当前实现没有完成“query 与 sparse support 的统计解耦”：无覆盖 query 被当作有效 query、可能获得正标签，却只接收位置无关的 null evidence；有覆盖 query 的 overlap mass 又在注意力归一化中基本被消掉，query 位置和覆盖程度没有显式进入输出特征。因此，它修复了 **representability**，尚未修复 **evidence identifiability 与 localization-quality ranking**。
+
+GitHub 中没有 Job `1165340/1165341` 的 Slurm 日志或结果目录；以下远端数值按你提供的记录接受。代码、配置、执行路径和报告 bug 则已固定到精确 commit 审核。该 commit 本身只把 gate 的 `query_tensor_count` 从 J-token count 改为 SDPQ head 的 `valid_query_count`，没有改变模型行为。
+
+---
+
+# 一、SDPQ 是否真正修复了 G1a 核心缺陷
+
+## 1. 修复成立的部分：anchor representability
+
+`SupportDecoupledPhysicalQueryHead` 的 query 来自物理 query pyramid，而非 selected/native observation timestamps；decode 使用 query center、query scale、signed center offset 和 log-width，所以 segment 不必包含任何 observation timestamp。
+
+具体 decode 为：
+
+[
+c=c_q+s_q\Delta c,\qquad
+w=s_q\exp(\Delta \log w)
+]
+
+然后输出 `[c-w/2,c+w/2]`。这使短事件或落在采样空洞中的事件，在参数空间里不再不可表示。
+
+因此：
+
+```text
+G1a_OBSERVATION_TIMESTAMP_COUPLED_ANCHOR_DEFECT=FIXED
+```
+
+## 2. 未修复的部分：query 有坐标，但可能没有可辨识证据
+
+当前 projection 只用 query cell 与 support interval 的重叠作为 base measure。对于没有 overlap 的 query：
+
+* `keep_uncovered_queries=True` 使它仍被标记为有效；
+* feature 被替换为该层共享的同一个 `null_evidence`；
+* head assignment 仍可以把它分成正样本；
+* inference 仍会为它产生 class score 和 segment。
+
+这不是真正的 sparse-support decoupling，而是：
+
+```text
+observation-coupled anchor
+        ↓ 被移除
+position-independent null-evidence positive query
+        ↓ 被引入
+```
+
+更严重的是，query embedding 只参与 attention logits，不作为 residual 加入输出。ownership intervals 又会被裁成非重叠区间；当一个 query 只重叠一个 support token 时，归一化权重必然等于 1，输出退化为该 token 的 value projection，与 query center、query width 和 overlap 大小无关。
+
+此时：
+
+[
+h_q=W_oW_v z_k
+]
+
+同一个 support envelope 内的多个细粒度物理 query 可以得到几乎相同的证据特征。模型只剩 head 的局部卷积上下文来区分边界位置，这正是高 IoU 定位不容易提升的机制。
+
+所以更准确的结论是：
+
+```text
+PHYSICAL_QUERY_GEOMETRY=IMPLEMENTED
+SPARSE_SUPPORT_EVIDENCE_DECOUPLING=INCOMPLETE
+CORE_G1a_DEFECT=PARTIALLY_FIXED
+```
+
+---
+
+# 二、逐层代码审计
+
+## 2.1 J/K metadata rewrite：计数和形状基本正确
+
+`align_native_tubelet_geometry` 强制：
+
+* `K = J × tubelet_size`；
+* 运行时 K、J 必须分别匹配 384、192；
+* raw K positions 与 native J positions 必须保持分离；
+* raw mask 必须是 valid prefix；
+* J mask 由每个 tubelet 是否包含至少一个语义有效 raw atom 得到；
+* 不进行 temporal interpolation。
+
+因此 gate 中约 `412` 个 query/proposal **不是 J/K 混乱**。J 是 192 个 backbone native tokens，而约 412 是六层物理 query pyramid 在当前时间窗口内的 query 总数。末次 commit 正是把 gate 记录改成这个含义。
+
+未发现以下错误：
+
+```text
+J192 被冒充 K384
+K metadata 覆盖 J metadata
+post-backbone J→K interpolation
+prediction seconds 再乘 stride/fps
+```
+
+`prediction_time_unit=="seconds"` 时 post-processing 直接保留秒单位，只裁到整段视频 duration，不会再次做 frame-to-second 转换。
+
+## 2.2 Timestamp rewrite：数值链路正确，但 native timestamp 不是实际 observation
+
+J-token timestamp 被定义为两个 selected raw atoms timestamp 的均值；support 则被定义为两个 atom support 的最小左端点到最大右端点。
+
+所以一个 native token 可能对应：
+
+```text
+observed atom A ───── gap with no observation ───── observed atom B
+                        ↑
+                  token mean timestamp
+```
+
+mean timestamp 可能落在从未观测过的位置。它作为 feature 的“代表时间”可以接受，但不能被表述为实际 observation timestamp。
+
+## 2.3 Support envelope：这是一个确认的 P0 语义缺陷
+
+代码已经记录：
+
+* exact patch-input atom supports；
+* atom gap；
+* envelope inflation；
+* final feature support is exact = false；
+* final feature 的结构 receptive field 上界。
+
+但进入 projection 时，上述 atom union 被丢弃，实际使用的是连续 envelope：
+
+```python
+aligned_meta["phystime_support_intervals_sec"] = native_supports
+aligned_meta["phystime_support_provenance"] = "native_patch_embed_input_envelopes"
+aligned_meta["phystime_support_exact_for_final_feature"] = False
+```
+
+由此产生两个问题。
+
+第一，两个不连续 atom 之间的未观测 gap 被当作有 support。代码已经计算 `phystime_patch_embed_atom_gap_sec` 和 `envelope_inflation_sec`，但 projection 完全不消费它们。
+
+第二，最终 backbone feature 已经过 chunk self-attention 和多层 temporal adapter 混合。代码明确承认最终 feature support 不是两个 patch atoms 的 exact local support，却仍用 patch-input envelope 作为最终 feature 的 physical measure。这不是内存或 shape bug，而是 **support semantics 与 feature semantics 不一致**。
+
+因此：
+
+```text
+NATIVE_METADATA_SHAPE=CORRECT
+FINAL_FEATURE_PHYSICAL_SUPPORT_CLAIM=NOT_EXACT
+ENVELOPE_GAP_FILLING=CONFIRMED
+```
+
+## 2.4 Valid mask：domain validity 与 evidence validity 被错误合并
+
+Projection 内部其实计算了：
+
+* `query_mask`：query 是否位于 query pyramid 张量的有效区域；
+* `covered_mask`：query 是否获得了 support overlap；
+* `coverage_sec`：实际重叠质量。
+
+但配置启用 `keep_uncovered_queries=True` 后：
+
+```python
+output_mask = query_mask
+```
+
+随后 projection 将这个 mask 写成 level 的 `valid_mask`。
+
+Head assignment 读取的正是这个 `valid_mask`，而不是 `covered_mask` 或 coverage-aware mask。
+
+这会产生最危险的执行路径：
+
+```text
+query 在物理 domain 内
+→ 没有 sparse support overlap
+→ feature = null_evidence
+→ valid_mask=True
+→ 可以成为 reserved/local positive
+→ classification/regression/endpoint 均对同一 null token施加监督
+```
+
+Gate 只记录 `covered_query_count` 和均值 observability，没有记录：
+
+```text
+positive_uncovered_count
+GT assigned to uncovered query
+positive coverage quantiles
+per-level uncovered positives
+```
+
+这是当前最可能妨碍高 IoU 的代码路径。
+
+## 2.5 Assignment：能防单个短 GT 丢失，但不是冲突安全的 matching
+
+当前 assignment 过程是：
+
+1. 按 duration range 筛选 level；
+2. `|delta_center| <= radius` 的全部 query 都成为 local positive candidates；
+3. 每个 GT 再选一个最低 normalized cost query 作为 reserved candidate；
+4. 最终按 query 维度取最小 cost 的 GT。
+
+存在三个问题。
+
+### 问题 A：reserved assignment 不是一对一
+
+两个相邻短 GT 可以 reserve 同一个 query。最终每个 query 只能选择一个 GT，另一个 GT 仍可能丢失。gate 的单个样本上 `missing=0` 不证明全数据集无冲突。最终 debug 虽然重新统计实际 assigned GT，但没有 collision count。
+
+### 问题 B：所有 local candidates 都是正样本
+
+不是 top-k，而是 radius 范围内全部正样本。物理 level 越粗，radius 对应的秒数越大，可能产生大量低质量正样本和跨事件竞争。
+
+### 问题 C：assignment 不看 support observability
+
+cost 只有：
+
+[
+|\Delta c|+|\Delta\log w|
+]
+
+不包含 coverage、context evidence 或 support distance。因此一个完全 uncovered 的 query 可以比一个略远但有证据的 query 更优。
+
+现有测试只验证一个短 GT 能获得 assignment，没有测试：
+
+* 两个短 GT 抢一个 query；
+* overlapping GT；
+* uncovered reserved query；
+* 多 level boundary duration；
+* dataset-wide assignment completeness。
+
+## 2.6 Center/width 参数化：可表示，但初始化和 level range 不匹配
+
+当前同一个 `query_scale=cell_width` 同时用于 center normalization 和 width reference。
+
+配置中 query cell width 和 assigned duration range 实际为：
+
+| Level | Cell width | GT duration range |
+| ----- | ---------: | ----------------: |
+| 0     |      0.5 s |             0–2 s |
+| 1     |        1 s |             2–4 s |
+| 2     |        2 s |             4–8 s |
+| 3     |        4 s |            8–16 s |
+| 4     |        8 s |           16–32 s |
+| 5     |       16 s |            32 s–∞ |
+
+当 raw width output 接近 0 时，initial decoded width 等于 cell width。除 level 0 外，这都低于对应 assignment range 的最小宽度，通常低一倍。也就是说，绝大多数 level 从一个系统性偏短的 proposal initialization 开始。
+
+此外：
+
+* center shift 最大允许 ±8 cells；
+* width 允许乘以 `exp(±6)`；
+* duration range 只约束 assignment，不约束 inference decode；
+* 已计算的 `offset_target` 从未进入任何 direct center/log-width loss；
+* regression 只依赖 decoded segment 的 DIOU。
+
+这不是单位错误，但对 6-epoch 高 IoU 学习非常不友好。
+
+## 2.7 Endpoint branch：有梯度，但目前是 orphan auxiliary branch
+
+Endpoint branch 获得 BCE 监督和非零梯度，但 inference 只返回：
+
+```python
+scores = sigmoid(cls_logits)
+proposals = decoded_segments
+```
+
+endpoint probabilities 完全不参与：
+
+* boundary refinement；
+* proposal quality；
+* score calibration；
+* NMS ranking。
+
+因此“endpoint gradient 非零”只证明 auxiliary task 在训练，不证明它改善 detector。它也可能通过共享 reg tower 与 DIOU 发生梯度冲突。
+
+在 endpoint 没有接入 inference 前，继续调 `endpoint_loss_weight` 缺乏可识别性。
+
+## 2.8 Query domain 与 decode：没有双重时间换算，但存在窗口域泄漏
+
+物理 query pyramid 使用：
+
+```python
+start_index = floor(domain_start / width)
+end_index   = ceil(domain_end / width)
+```
+
+cell 随后只裁到 `[0, video_duration]`，没有裁到当前 `[domain_start, domain_end]`。所以边缘 cell 的中心或一部分 interval 可以位于当前 sliding window 外。
+
+Decode 后也没有 current-domain clamp，seconds post-processing 只裁到整段视频。
+
+这会增加：
+
+* 跨窗口重复 proposal；
+* 边缘 query 的 support fraction 异常；
+* 当前窗口外的预测；
+* cross-window Soft-NMS 压制不稳定。
+
+它不是主因，但应被诊断和配置化修复。
+
+## 2.9 Proposal filtering 与 NMS：没有发现实现崩坏，但 ranking 与高 IoU 不匹配
+
+每个窗口约有 412 queries、20 classes，即约 8240 个 query-class scores。post-processing 按 class score：
+
+1. threshold；
+2. 全部 query-class flatten；
+3. 只保留 top 2000；
+4. sliding-window 汇总后再 Soft-NMS。
+
+当前没有 localization-quality score，因此一个 segment 的 IoU 是否高不参与 top-k 或 NMS 排序。
+
+另一个容易误判的点是：配置虽然设置 `voting_thresh=0.7`，但 `multiclass=True` 时代码明确禁用 segment voting。因此不要把当前高 IoU 不升归咎于 voting，也不要浪费实验去调 `voting_thresh`。
+
+真正需要检查的是：
+
+```text
+pre-topk oracle recall
+post-topk oracle recall
+post-SoftNMS oracle recall
+class score 与 predicted IoU 的相关性
+```
+
+---
+
+# 三、为什么 gate 全通过，但 pilot mAP 没有提升
+
+## 1. Gate 证明的范围非常窄
+
+Gate 只选择一个能提供完整 768 logical window 的训练样本，并要求 K=384 全部有效。随后只执行：
+
+* 一次 forward；
+* 一次 backward；
+* 一次 optimizer step；
+* 一次 inference。
+
+它没有覆盖：
+
+* short/padded window；
+* odd valid-count tubelet；
+* window start/end edge；
+* 多个相邻短 GT；
+* overlapping GT；
+* 全数据 assignment collision；
+* uncovered-positive rate；
+* proposal-IoU 分布；
+* pre-topk/NMS recall；
+* score-IoU calibration。
+
+此外，gate 的 `required_nonzero_gradients` 实际只强制 adapter、projection、classification、regression、endpoint；null evidence 只要求参数存在且 finite，并没有要求其 gradient nonzero。你提供的远端记录显示该次 null gradient 非零，但 gate contract 本身没有把它列入 pass 条件。
+
+所以：
+
+```text
+gate_pass
+≠ localization_correct
+≠ high-IoU-improved
+≠ SDPQ hypothesis supported
+```
+
+## 2. 六个 epoch 几乎是一个 warmup pilot
+
+Pilot 只覆盖 `workflow.end_epoch=6`，但没有修改 scheduler。
+
+继承的 scheduler 是：
+
+```python
+warmup_epoch = 5
+max_epoch = 100
+```
+
+scheduler 在构建时先将 5 和 100 乘以 dataloader length，之后外层才把训练循环截为 6 epochs。
+
+因此前五个 epoch 都在 warmup，第六个 epoch 才刚到 base LR。这对一个全新 projection、全新 head、全新 width parameterization 的模型，只能证明可训练，不能证明收敛趋势。
+
+## 3. Pilot evaluation 使用 EMA，而不是普通 state_dict
+
+继承配置中 `ema=True`；EMA decay 默认是 `0.999`。
+
+评测时显式将 EMA state 装入模型。
+
+所以除非远端额外改过配置，否则你报告的 “pilot raw mAP” 是标准 raw-video detector pipeline 的 mAP，但**不是非 EMA raw weights 的 mAP**。最终 checkpoint 同时包含 `state_dict` 和 `state_dict_ema`，应先离线分别评估。
+
+## 4. 当前结果不能说明 SDPQ 比 G1a 差
+
+`10.17` 与历史 `10.26/10.56` 的差异很小，而且旧 G1a：
+
+* 不是同一精确 commit；
+* 未证明完全相同 scheduler/pilot wrapper；
+* 没有 matched seed；
+* 没有 raw-vs-EMA 对齐；
+* 没有统计不确定性。
+
+因此唯一合法表述是：
+
+```text
+CURRENT_SDPQ_PILOT_SIGNAL=NO_VISIBLE_ADVANTAGE
+CURRENT_SDPQ_REGRESSION_VS_G1a=NOT_IDENTIFIED
+```
+
+不能写成“SDPQ 已证明不如 G1a”，更不能写成 paper evidence。
+
+---
+
+# 四、最可能导致 mAP@0.7 不提升的路径
+
+按可能性和代码证据排序：
+
+## 第一位：uncovered positive + positionless null evidence
+
+```text
+keep_uncovered_queries=True
+→ uncovered query remains valid
+→ assignment ignores coverage
+→ positive may receive shared null feature
+→ no query-position residual
+→ DIOU/classification ask one null embedding to explain different segments
+```
+
+这是最直接、最强的失败路径。
+
+## 第二位：support mass 和 query geometry 在输出中被消失
+
+* overlap mass 被 attention normalization 除掉；
+* 一个 support 时权重恒为 1；
+* coverage ratio 不进入 head；
+* query embedding 不进入 output；
+* 同一 envelope 内细 query feature 近似相同。
+
+这直接损害亚秒级或高 IoU 边界区分。
+
+## 第三位：连续 envelope 和 final-feature local-support 语义不成立
+
+未观测 gap 被填满；已经全局/跨 chunk 混合的 feature 被当作局部两-atom feature。这会同时污染 support coverage、relative-time attention 和 assignment diagnosis。
+
+## 第四位：width reference、DIOU-only regression 和 class-only ranking
+
+多数 level 的初始 width 系统性低于 assignment range；direct center/width target 未使用；endpoint 不参与 inference；top-k/NMS 只看 class score。即使产生了较好 proposal，也可能没有较高 score。
+
+## 第五位：pilot 几乎全程 warmup且用 EMA
+
+这会把所有新模块的早期优化差异压缩在极低 mAP 区域，难以观察机制收益。
+
+## 第六位：窗口域外 proposal 与 pre-NMS top-k
+
+这是次级因素，应通过无训练诊断确定，不能先盲调 NMS。
+
+---
+
+# 五、是否立即 full train
+
+**否。当前 full train 必须阻塞。**
+
+```text
+FULL_TRAIN_CURRENT_372fcbf=REJECT
+REASON_1=NO_SAME_COMMIT_MATCHED_BASELINE
+REASON_2=POSITIVE_UNCOVERED_QUERY_NOT_AUDITED
+REASON_3=SUPPORT_SEMANTICS_NOT_EXACT
+REASON_4=PILOT_SCHEDULE_NOT_INFORMATIVE
+REASON_5=RESULT_MANIFEST_BROKEN
+```
+
+即使 full train 最终可能把 Avg-mAP 拉高，也无法回答：
+
+* 提升来自 SDPQ，还是训练更久；
+* 下降来自 query idea，还是 null-positive bug；
+* 高 IoU 不升来自 regression，还是 score/NMS；
+* support envelope 是帮助还是污染；
+* endpoint auxiliary 是否有益。
+
+这会得到一个昂贵但不可识别的结果。
+
+---
+
+# 六、具体代码级修改
+
+## P0-1：分离 domain、evidence 和 assignment mask
+
+在 `PhysTimeMeasureProjection.forward` 中不要只返回一个 `valid_mask`。至少增加：
+
+```python
+coverage_ratio = diagnostics["coverage_sec"] / query_geometry[
+    "widths_sec"
+].clamp_min(1.0e-8)
+
+level_info["domain_valid_mask"] = query_geometry["valid_mask"]
+level_info["evidence_mask"] = diagnostics["covered_mask"]
+level_info["coverage_ratio"] = coverage_ratio
+
+# 仍可在 inference 保留完整物理 query grid
+level_info["valid_mask"] = query_geometry["valid_mask"]
+
+# 训练 assignment 不再默认接受无证据 query
+level_info["assignment_mask"] = (
+    query_geometry["valid_mask"]
+    & (coverage_ratio >= self.min_assignment_coverage)
+)
+```
+
+Head `_prepare_targets` 改为读取 `assignment_mask`，而不是直接读取 `valid_mask`。
+
+但不能简单把所有 uncovered query 永久删除，否则会退回 observation-coupled representability。正确做法是引入 **support context interval**：
+
+```python
+context_width = query_width * self.support_context_scale
+context_interval = torch.stack(
+    (
+        query_center - 0.5 * context_width,
+        query_center + 0.5 * context_width,
+    ),
+    dim=-1,
+)
+```
+
+用 context interval 聚合附近 sparse support，而 query cell interval 仍负责物理 anchor、endpoint cell 和 decode。建议先测 `support_context_scale ∈ {2, 4}`，不要直接大范围搜索。
+
+## P0-2：把 query geometry 和 coverage 显式送入输出 feature
+
+在 `SupportIntegratedMeasureAttention` 中增加 output-side query embedding，而不是只用它算 attention logits：
+
+```python
+self.query_value_embedding = PhysicalQueryEmbedding(out_channels)
+self.coverage_embedding = nn.Sequential(
+    nn.Linear(2, out_channels),
+    nn.GELU(),
+    nn.Linear(out_channels, out_channels),
+)
+```
+
+forward 中：
+
+```python
+query_value = self.query_value_embedding(
+    query_centers, query_widths, duration
+)
+
+coverage_ratio = (coverage / query_widths.clamp_min(self.eps)).clamp(0, 1)
+coverage_feature = self.coverage_embedding(
+    torch.stack(
+        (coverage_ratio, torch.log1p(coverage_ratio)),
+        dim=-1,
+    )
+)
+
+pooled = torch.where(
+    covered_mask[..., None],
+    output,
+    null.view(1, 1, -1),
+)
+
+output = pooled + query_value + coverage_feature
+output = output * output_mask[..., None].to(output.dtype)
+```
+
+这样：
+
+* uncovered queries 不再全部相同；
+* 1% overlap 与 100% overlap 不再完全不可区分；
+* query center/scale 在只有一个 support token 时也不会被注意力归一化消除。
+
+同时必须依赖 assignment coverage policy，避免模型只凭绝对时间位置学习数据集先验。
+
+## P0-3：停止用连续 envelope 假装 atom union
+
+已有 metadata 中已经有：
+
+```text
+phystime_patch_embed_support_atoms_sec
+phystime_patch_embed_semantic_atom_mask
+phystime_patch_embed_atom_gap_sec
+```
+
+应新增 atom-union overlap：
+
+```python
+def support_atom_union_mass(atom_intervals, atom_mask, query_intervals):
+    # atom_intervals: [B, K, A, 2]
+    # atom_mask:      [B, K, A]
+    left = torch.maximum(
+        query_intervals[:, :, None, None, 0],
+        atom_intervals[:, None, :, :, 0],
+    )
+    right = torch.minimum(
+        query_intervals[:, :, None, None, 1],
+        atom_intervals[:, None, :, :, 1],
+    )
+    overlap = (right - left).clamp_min(0)
+    overlap = overlap * atom_mask[:, None].to(overlap.dtype)
+    return overlap.sum(dim=-1)  # [B, Q, K]
+```
+
+不要再把 atom A 到 atom B 之间的 gap 计入 mass。
+
+不过这仍只是 patch-input support proxy。科学上更干净的结构是：
+
+```text
+pre-temporal-mixing patch tokens
+    → exact atom-union physical pooling
+final mixed backbone tokens
+    → separate global/context branch
+    → gated fusion into physical query features
+```
+
+不应把经过全局/跨 chunk 混合的最终 feature 宣称为 exact local support feature。
+
+## P0-4：实现冲突安全的 unique reservation
+
+替换当前“每个 GT 独立 reserve、最后 query argmin”的逻辑：
+
+```python
+reserved_owner = torch.full(
+    (num_points,), -1, dtype=torch.long, device=point.device
+)
+
+# 优先处理候选少的 GT
+gt_order = torch.argsort(valid_candidates.sum(dim=0))
+
+for gt_idx in gt_order.tolist():
+    candidates = torch.nonzero(
+        valid_candidates[:, gt_idx] & (reserved_owner < 0),
+        as_tuple=False,
+    ).flatten()
+
+    if candidates.numel() == 0:
+        continue
+
+    chosen = candidates[
+        normalized_cost[candidates, gt_idx].argmin()
+    ]
+    reserved_owner[chosen] = gt_idx
+```
+
+随后：
+
+* reserved query 的 owner 不允许被后续 argmin 覆盖；
+* 其他 local positives 每个 GT 只选 cost 最低的 top-k，如 `k=3`；
+* duration ranges 使用半开区间 `[lower, upper)`，最后一层闭区间；
+* 新增 `reservation_collision_count`；
+* dataset audit 时任何 `gt_without_assigned_query>0` fail closed。
+
+Assignment cost 建议增加 support 项：
+
+[
+C=|\Delta c|+\lambda_w|\Delta\log w|
++\lambda_{\text{cov}}(1-r_{\text{coverage}})
+]
+
+但首先应保证 context support 存在，而不是让 coverage penalty 选择另一个同样没有上下文的 query。
+
+## P1-1：分离 center scale 和 width reference
+
+当前 cell width 同时作为 center 和 width reference 不合理。最小修改：
+
+```python
+center_scale = cell_width
+width_reference = 2.0 * cell_width
+```
+
+这与当前 level ranges 更匹配：
+
+* level 1–4 的 range 是 `[2×cell, 4×cell]`；
+* level 5 最小值也是 `2×cell`；
+* initial raw width≈0 时，decoded width 直接落在合理尺度。
+
+point tensor 可改为：
+
+```python
+points = torch.stack(
+    (
+        centers,
+        lower,
+        upper,
+        center_scale,
+        width_reference,
+    ),
+    dim=-1,
+)
+```
+
+decode：
+
+```python
+delta_center = self.center_limit * torch.tanh(
+    raw_center / self.center_limit
+)
+center = query_center + center_scale * delta_center
+
+log_width = raw_log_width.clamp(
+    min=self.min_log_width,
+    max=self.max_log_width,
+)
+width = width_reference * torch.exp(log_width)
+```
+
+`center_limit` 首轮建议与 assignment radius 对齐为 `2.0`，而不是 `8.0`。
+
+对 finite level，应进一步把 predicted width 限制在该 level 的 range；最后一层单独用 open-ended parameterization。至少不要让 level 0 随意预测数百秒 segment。
+
+## P1-2：真正使用已有 center/log-width targets
+
+当前 `offset_target` 已计算却没有进入 loss。增加：
+
+```python
+pred_offsets = torch.cat(raw["center_width_offsets"], dim=1)
+
+center_loss = F.smooth_l1_loss(
+    pred_offsets[positive_mask, 0],
+    offset_target[positive_mask, 0],
+    reduction="sum",
+) / normalizer
+
+width_loss = F.smooth_l1_loss(
+    pred_offsets[positive_mask, 1],
+    offset_target[positive_mask, 1],
+    reduction="sum",
+) / normalizer
+```
+
+建议初始：
+
+```text
+reg_loss = DIOU
+         + 0.25 * center_loss
+         + 0.25 * width_loss
+```
+
+这些权重必须作为固定小矩阵验证，而不是一开始进行大规模搜索。
+
+## P1-3：endpoint 要么接入 inference，要么先关闭
+
+最小可识别控制：
+
+```python
+endpoint_loss_weight = 0.0
+```
+
+与当前 `0.25` 做 matched run。
+
+若保留 endpoint，应至少把预测 proposal 的 start/end 与 endpoint map 对齐，形成 boundary quality：
+
+```python
+boundary_quality = torch.sqrt(
+    p_start_at_predicted_start
+    * p_end_at_predicted_end
+)
+final_score = cls_score * boundary_quality.pow(alpha)
+```
+
+或者用局部 endpoint distribution 对 decoded boundary 做 refinement。否则 endpoint 只是一个无法证明有用的 auxiliary branch。
+
+## P1-4：加入 localization-quality head
+
+新增一个一通道 `quality_head`，训练 target 使用 detached predicted segment 与 assigned GT 的 IoU：
+
+```python
+quality_target = segment_iou_1d(
+    predicted_segments.detach(),
+    target_segments,
+)
+
+quality_loss = F.binary_cross_entropy_with_logits(
+    quality_logits[positive_mask],
+    quality_target,
+    reduction="sum",
+) / normalizer
+```
+
+Inference：
+
+```python
+cls_prob = cls_logits.sigmoid()
+quality_prob = quality_logits.sigmoid()
+scores = torch.sqrt(cls_prob * quality_prob)
+```
+
+这比先调 Soft-NMS 更直接地解决“高 IoU proposal 得不到高 score”的问题。
+
+## P1-5：窗口域与 proposal 合法性
+
+在 query geometry 中同时保留：
+
+```text
+canonical_cell_interval
+visible_interval = canonical ∩ [domain_start, domain_end]
+```
+
+support mass 使用 visible/context interval；query center 和 decode 使用 canonical grid。
+
+Inference 至少新增可配置检查：
+
+```python
+proposal[..., 0].clamp_(domain_start, domain_end)
+proposal[..., 1].clamp_(domain_start, domain_end)
+
+valid = (
+    torch.isfinite(proposal).all(dim=-1)
+    & (proposal[..., 1] > proposal[..., 0])
+)
+```
+
+是否强制 clamp 应做一次 matched post-processing ablation，但域外 proposal 比例必须先记录。
+
+## P1-6：不要先调 voting；先暴露 pre-NMS 诊断
+
+新增保存项：
+
+```text
+raw_query_proposals
+raw_class_scores
+quality_scores
+after_threshold_indices
+after_topk_indices
+after_nms_indices
+```
+
+先比较：
+
+```text
+max-IoU recall before filtering
+max-IoU recall after top-2000
+max-IoU recall after Soft-NMS
+```
+
+若 top-2000 几乎不损失 recall，NMS 不是主因；若大量损失，再测试 `pre_nms_topk=all`。`voting_thresh` 在当前 multiclass 路径中不生效，不进入下一轮矩阵。
+
+## P0-5：修复 `PILOT_COMPLETE.json`
+
+当前脚本使用：
+
+```python
+re.findall(r"average_mAP:?\s*([0-9.]+)", text)
+```
+
+但 evaluator 实际打印的是：
+
+```text
+Average-mAP: 10.17 (%)
+```
+
+大小写、连字符都不匹配；随后脚本又无条件写 `validation_pass=True`。
+
+评测引擎已经会写结构化 `evaluation_metrics.json`。
+
+应完全删除 regex 作为主路径：
+
+```python
+metric_files = list(
+    run_dir.glob("work_dir/**/evaluation_metrics.json")
+)
+checkpoint_files = list(
+    run_dir.glob(
+        f"work_dir/**/checkpoint/epoch_{epochs - 1}.pth"
+    )
+)
+
+if len(metric_files) != 1:
+    raise SystemExit(
+        f"expected one metrics file, got {metric_files}"
+    )
+if len(checkpoint_files) != 1:
+    raise SystemExit(
+        f"expected final checkpoint, got {checkpoint_files}"
+    )
+
+metrics = json.loads(
+    metric_files[0].read_text(encoding="utf-8")
+)
+
+required = [
+    "average_mAP",
+    "mAP@0.3",
+    "mAP@0.4",
+    "mAP@0.5",
+    "mAP@0.6",
+    "mAP@0.7",
+    "evaluation_epoch",
+]
+missing = [key for key in required if key not in metrics]
+if missing:
+    raise SystemExit(f"missing metrics: {missing}")
+
+values = [float(metrics[key]) for key in required[:-1]]
+finite = all(math.isfinite(value) for value in values)
+epoch_ok = int(metrics["evaluation_epoch"]) == epochs - 1
+
+payload = {
+    "training_complete": True,
+    "checkpoint_present": True,
+    "metrics_present": True,
+    "metrics_finite": finite,
+    "evaluation_epoch": int(metrics["evaluation_epoch"]),
+    "observed_average_mAP": [
+        float(metrics["average_mAP"])
+    ],
+    "best_average_mAP": float(metrics["average_mAP"]),
+    "validation_pass": bool(finite and epoch_ok),
+}
+```
+
+同时将每个 epoch 指标写成独立文件或 JSONL，避免 `evaluation_metrics.json` 被覆盖后丢失历史。
+
+---
+
+# 七、下一轮实验 DAG
+
+## D0：零训练诊断，先使用现有 `epoch_5.pth`
+
+### D0-A：修复证据文件
+
+* 从结构化 metrics 重建正确的 `PILOT_COMPLETE.json`；
+* 校验 commit/tree/config/checkpoint；
+* 分别评估 `state_dict` 与 `state_dict_ema`；
+* 明确现有 10.17 属于哪一套权重。
+
+### D0-B：全数据 metadata/assignment audit
+
+对全部 train/validation windows 记录：
+
+```text
+K raw valid count
+J native valid count
+atom gap distribution
+envelope inflation distribution
+coverage ratio by level
+positive-uncovered count/rate
+GT assigned to uncovered query
+reservation collision count
+GT without final assignment
+positives per GT and per level
+target center/log-width distribution
+target clamp/saturation rate
+query/proposal outside-domain rate
+```
+
+硬门：
+
+```text
+GT_WITHOUT_ASSIGNMENT=0
+RESERVATION_COLLISION_AFTER_FIX=0
+POSITIVE_UNCOVERED_AFTER_FIX=0
+NONFINITE_OR_INVALID_PROPOSAL=0
+```
+
+### D0-C：高 IoU 失败分解
+
+用现有 checkpoint 计算四级 recall：
+
+1. query assignment target segment oracle；
+2. predicted proposals、oracle class/IoU ranking；
+3. predicted proposals、真实 class score、pre-topk；
+4. post-topk、post-SoftNMS。
+
+解释规则：
+
+```text
+oracle-ranked recall@0.7 高、真实 score recall 低
+→ score-quality calibration 是主因
+
+oracle-ranked recall@0.7 也低
+→ regression/support representation 是主因
+
+pre-topk 高、post-topk 明显低
+→ top-2000 是主因
+
+post-topk 高、post-NMS 低
+→ NMS 是主因
+```
+
+这一步比先调 NMS 或 loss 权重更有信息量。
+
+---
+
+## D1：同 commit、同协议、单种子 matched pilot
+
+所有 arm 必须固定：
+
+```text
+commit/tree
+raw-video checkpoint
+K=384
+J=192
+no temporal interpolation
+frame selection
+train/val/test windows
+seed
+optimizer
+batch size
+AMP
+raw/EMA evaluation
+post-processing
+```
+
+将所有 arm 的 pilot scheduler 统一改为：
+
+```text
+end_epoch=6
+warmup_epoch=1
+scheduler.max_epoch=6
+```
+
+不能只给 SDPQ 改 schedule。
+
+最小矩阵：
+
+| Arm | 作用                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------------------------- |
+| M0  | same-commit G1a physical-metric native J192，主 system control                                                                    |
+| M1  | same-commit G1a selected-axis native J192，次级 geometry control                                                                   |
+| S0  | 当前 SDPQ exact implementation，在修复后的 pilot/report protocol 下复跑                                                                    |
+| S1  | SDPQ core fix：context support + query residual + coverage feature + unique assignment + corrected width reference；endpoint 暂设 0 |
+
+G1a exact-commit 配置本身保持 K384/J192、physical seconds/no interpolation，可作为新的同提交 control；旧历史结果不能替代这次重跑。
+
+若 D0-C 显示主要是 ranking 而不是 proposal localization，再增加一个自适应 arm：
+
+| Arm | 作用                                                        |
+| --- | --------------------------------------------------------- |
+| S2  | S1 + direct center/width loss + localization-quality head |
+
+不要预先跑大量 assignment radius、NMS sigma、loss-weight 网格。
+
+建议的 pilot continuation gate：
+
+```text
+S1 或 S2 相对 M0：
+- mAP@0.5/0.6/0.7 至少两个阈值同向提高；
+- mAP@0.7 至少提高约 0.20 个百分点，
+  或 mAP@0.5 至少提高约 0.50 个百分点；
+- mAP@0.3 不下降超过 0.50 个百分点；
+- positive-uncovered=0；
+- assignment missing=0；
+- oracle-ranked recall@0.7 有明确改善。
+```
+
+该门只决定是否继续，不是论文显著性结论。
+
+---
+
+## D2：中程验证
+
+只保留 M0 与 D1 最优 SDPQ arm：
+
+```text
+epochs=12–20
+seeds=3
+matched schedule
+raw and EMA both reported
+```
+
+继续条件：
+
+* 三个 seeds 的高 IoU 差值方向基本一致；
+* paired per-video bootstrap 不显示明确负效应；
+* 改善来自 pre-NMS localization/quality，而不是单次 NMS 偶然；
+* support/assignment diagnostics 全部通过。
+
+## D3：full train
+
+只有 D2 通过后，才授权：
+
+```text
+60-epoch or frozen full schedule
+3 seeds
+same-commit matched G1a control
+```
+
+当前 exact implementation 不进入 D3。
+
+---
+
+# 八、最终状态判断
+
+| 状态                      | 判断            | 含义                                                                         |
+| ----------------------- | ------------- | -------------------------------------------------------------------------- |
+| `runnable`              | **YES**       | 模型可构建、可训练、可推理、可保存 checkpoint                                               |
+| `gate-passed`           | **YES**       | 按你提供的 Job 1165340，单样本单步数值与梯度 gate 通过                                       |
+| `pilot-supported`       | **仅工程层面 YES** | Job 1165341 证明 6 epoch 稳定运行并产出可评测模型；不支持方法收益                                |
+| `empirically-supported` | **NO**        | 没有 same-commit matched improvement；历史 G1a 不可作为严格对照                         |
+| `paper-ready`           | **NO**        | support semantics、assignment、quality ranking、result attestation 和多种子证据均未冻结 |
+
+最终应写成：
+
+```text
+SDPQ 修复了 observation-timestamp-coupled anchor 的几何不可表示性，
+但当前实现尚未证明 sparse support 能为独立 physical queries 提供
+位置可辨识、覆盖诚实且高-IoU 可排序的证据。
+
+G1b gate 与 6-epoch pilot 只支持 runnable 和工程稳定性；
+不支持 full-train authorization，不支持 empirical claim，
+更不支持 paper claim。
+```

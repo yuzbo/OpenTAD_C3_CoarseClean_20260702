@@ -1,0 +1,170 @@
+{
+  "id": "duca-h65-lr-reassessme-v2",
+  "createdAt": "2026-08-24T08:37:49.116Z",
+  "status": "completed",
+  "promptPreview": "请完整阅读附加任务和冻结配置。作为 DUCA 独立 Scientific First-Author Agent，以最严厉审稿人视角给出唯一终稿。Nonce: DUCA-H65-60-LR-SCHEDULE-REASSESS-v002-20260824",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-24T08:37:49.767Z",
+      "completedAt": "2026-08-24T08:55:04.860Z",
+      "usage": {
+        "inputTokens": 8021,
+        "outputTokens": 3522,
+        "reasoningTokens": 0,
+        "totalTokens": 11543
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 14106,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "38BDCD3D8A5BD5A7C70D1016ED1CEC77",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c0302-b5e4-83ea-b87e-3bcaa8130dde",
+      "conversationId": "6a8c0302-b5e4-83ea-b87e-3bcaa8130dde",
+      "promptSubmitted": true,
+      "controllerPid": 41040
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c0302-b5e4-83ea-b87e-3bcaa8130dde"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-24T08:38:11.735Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "请完整阅读附加任务和冻结配置。作为 DUCA 独立 Scientific First-Author Agent，以最严厉审稿人视角给出唯一终稿。Nonce: DUCA-H65-60-LR-SCHEDULE-REASSESS-v002-20260824",
+    "file": [
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_H65_60_LR_SCHEDULE_REASSESSMENT-v002.md",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_sampling_rate_curriculum_stage1_uniform384.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_h65_60_stage1_uniform20.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_h65_60_stage2_transition20_joint20.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_h65_60_stage2_am_rpch25.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_LRSchedule_20260824/configs/adatad/thumos/duca_h65_60_stage2_longcosine_h6000.py"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-h65-lr-reassessme-v2",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": false,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7500,
+    "httpTimeoutMs": 7500000,
+    "zombieTimeoutMs": 7500000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-h65-60-lr-reassessment-v002/PRO_DUCA_H65_60_LR_SCHEDULE_REASSESSMENT-v002.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 41040,
+    "reattachCommand": "oracle session duca-h65-lr-reassessme-v2"
+  },
+  "startedAt": "2026-08-24T08:37:49.763Z",
+  "completedAt": "2026-08-24T08:55:05.980Z",
+  "usage": {
+    "inputTokens": 8021,
+    "outputTokens": 3522,
+    "reasoningTokens": 0,
+    "totalTokens": 11543
+  },
+  "elapsedMs": 1034522,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-h65-60-lr-reassessment-v002\\oracle-home\\sessions\\duca-h65-lr-reassessme-v2\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 50700,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c0302-b5e4-83ea-b87e-3bcaa8130dde",
+      "sha256": "8aabef6e7b3e9bbc13786b2066a1f883208b710963eac780dafecebf652d3f39",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

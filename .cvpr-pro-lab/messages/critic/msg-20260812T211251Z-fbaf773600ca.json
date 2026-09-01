@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-12T21:12:51Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_STATIC_REVIEW",
+  "message_id": "msg-20260812T211251Z-fbaf773600ca",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_EXECUTION_PLAN-v002",
+    "EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Independently review only EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v001 against PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001 and the accepted role-separated PRE_RUN plan v002. Determine whether this is a literal, internally consistent E1 PRE_RUN/admission candidate preserving exact Q/18/9/6, exhaustive T<=385/reference-DAG allocation, input-line byte binding, reference independence, phase-relative root states, one-shot/first-fail and zero-forbidden-access boundaries, while remaining NOT_EXECUTED and not PRE_RUN_READY. Classify deterministic manifest/receipt/envelope defects as IMPLEMENTATION_CORRECTION; classify only contract-changing problems as SCIENTIFIC_AMBIGUITY. Document/static reading only: do not run/import/compile/test/materialize/access runtime projector/reference/adapter, remote/SSH/data/model/checkpoint/metric/GPU/CUDA/Slurm/browser, or modify files.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

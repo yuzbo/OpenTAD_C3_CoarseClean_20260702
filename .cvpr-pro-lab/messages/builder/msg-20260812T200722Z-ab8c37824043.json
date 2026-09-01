@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-12T20:07:22Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_REMOTE_CLEAN_FORMAL_BINDING",
+  "message_id": "msg-20260812T200722Z-ab8c37824043",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "BUILDER_DUCA_P0_IDENTITY_CLEAN_SNAPSHOT_PREPARATION-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Prepare only the formal remote clean execution binding for exact revision df8228072b871adbd8dedb480e80f1f7daaca69e. From your clean local snapshot worktree, make this exact commit available to the approved N16R4 remote Git lineage using ordinary Git transport, create one detached clean remote checkout under the registered user run boundary, and verify remotely only: exact rev-parse, direct parent, exact two-path name-status diff, and zero porcelain entries. Return the exact remote path, Git transport ref, and static verification transcript summary. Do not run Python/imports/tests/C1-C3/E1-E2, materialize/invoke any fixture, invoke production/reference/comparison, access data/model/checkpoint/metric, use GPU/CUDA/Slurm/browser, or alter scientific definitions. If any ordinary Git/remote binding condition fails, return NEEDS_ATTENTION without fallback or cleanup outside the newly created target.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

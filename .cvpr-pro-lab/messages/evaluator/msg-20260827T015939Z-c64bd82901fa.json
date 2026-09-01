@@ -1,0 +1,15 @@
+{
+  "created_at": "2026-08-27T01:59:39Z",
+  "from_role": "Coordinator",
+  "kind": "role_task",
+  "message_id": "msg-20260827T015939Z-c64bd82901fa",
+  "payload": {
+    "path": ".cvpr-pro-lab/role-messages/EVALUATOR_PJST_D1_TERMINAL_FINALIZER_ENV_RECOVERY-v005.md"
+  },
+  "priority": "high",
+  "requested_action": "Consume the one infrastructure recovery: replace only the two pre-inference failures with exact Stage-1 env bindings, then submit one afterok bundled finalizer.",
+  "required_gate": "exact checkpoint path/SHA/epoch binding and accepted clean job identities",
+  "schema_version": "1.0",
+  "status": "queued",
+  "to_role": "Evaluator"
+}

@@ -1,0 +1,29 @@
+{
+  "claim_boundary": "engineering_failure_no_model_metric",
+  "failure_signature": "native_grid_sparse_head_packed_patch_materialization_and_microconv_slowdown_v1",
+  "job_id": 1205567,
+  "model_metric_claim_allowed": false,
+  "observations": {
+    "correctness_contract_pass": true,
+    "dense_head_mean_ms": 6.240900440348519,
+    "maximum_selected_abs_error": 2.86102294921875e-06,
+    "per_round_speedups": [
+      0.4591795303477536,
+      0.45880481070709905,
+      0.45901827259100353
+    ],
+    "sparse_head_preselected_mean_ms": 12.76570972469118,
+    "sparse_head_with_selector_mean_ms": 13.61818156308598,
+    "theoretical_head_mac_fraction": 0.3359251591135649,
+    "unselected_nonzero_count": 0,
+    "wall_clock_speedup": 0.459039695340921
+  },
+  "preserved_receipts": {
+    "cuda_gate_sha256": "f4a0479b48c434832c45d84e9eccc6ebc9e56be88a03d8e8eff4fca525981113",
+    "slurm_stderr_sha256": "4c6d87aa6b85dbbe173a1eae119bac562aa43f55c6fa847b256c9c05d25c79e0",
+    "slurm_stdout_sha256": "59ba6f2e35f3ba1d07e7d25894314c2a624561e7b319becd556ca52a71010b1e"
+  },
+  "root_cause": "Packing reduced launch count and improved latency, but per-job patch materialization, concatenation, repeated dense scatter, and cuDNN Conv1d on length-three patches still dominated the saved MACs.",
+  "run_root": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_native_grid_k384_cuda_gate_20260730_v2",
+  "schema_version": "actionformer_native_grid_sparse_head_failure_analysis_v1"
+}

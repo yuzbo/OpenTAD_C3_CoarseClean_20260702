@@ -1,0 +1,2693 @@
+# DUCA 动态预算与 AdapTok：CVPR 第一作者级研究接管报告
+
+> **证据标签说明**：以下每个段落或表格行开头的标签适用于整段或整行。
+> `CODE_FACT`＝固定提交源码事实；`PAPER_FACT`＝论文正文/附录事实；`DOCUMENTED_RESULT`＝项目已记录结果；`DESIGN_PROPOSAL`＝本报告提出的设计；`THEOREM_CANDIDATE`＝可形式化证明但尚未写成论文定理；`EMPIRICAL_HYPOTHESIS`＝必须由实验验证；`PARTNER_CLAIM`＝项目方提供但尚未复现的预期；`UNRESOLVED`＝当前证据不足。
+
+---
+
+# 1. 阅读回执、未读项与证据标签
+
+## 1.1 DUCA 固定快照
+
+| 材料                         | 访问状态 | 阅读状态        | 关键结论                                                           |
+| -------------------------- | ---- | ----------- | -------------------------------------------------------------- |
+| 仓库与固定提交 `63a726a...`       | 成功   | 固定 SHA 读取   | 结论均以该 SHA 为准，不使用分支 HEAD                                        |
+| 总计 60 轮设计                  | 成功   | `READ_FULL` | 状态是 `designed / implementation_not_started`；主方案仍是固定 (K) 有界密度传输 |
+| 实验节点                       | 成功   | `READ_FULL` | 公平 60 轮正式模型尚未运行                                                |
+| `query_pack.md`            | 成功   | `READ_FULL` | 动态预算、selected-axis 语义、硬离散效用仍是开放问题                              |
+| `anti_repetition.md`       | 成功   | `READ_FULL` | 明确禁止把非零梯度、超预算结果、伪动态预算包装成论文证据                                   |
+| `single_stage.py`          | 成功   | `READ_FULL` | 当前顺序为先 NMS，后坐标转秒                                               |
+| `post_processing/utils.py` | 成功   | `READ_FULL` | 非均匀 selected-axis 到原物理时间的插值在 `convert_to_seconds` 内发生          |
+
+`CODE_FACT` 固定快照明确把方案限定为离线 TAD、严格固定帧预算和总计 60 轮；状态仍是设计完成但实现未开始。文档还把 (K=384) 的 30+60 结果明确列为超预算诊断，而非公平主结果。
+
+`CODE_FACT` 当前 `SingleStageDetector.post_processing` 先在 selected-axis 上执行 NMS，再调用 `convert_to_seconds`；而不规则帧坐标的插值发生在后者中。因此，固定提交不满足“先映回原始物理时间，再执行未修改官方 NMS”的目标合同。由于 NMS 是非线性操作，这两个顺序不能视为等价。
+
+## 1.2 AdapTok 论文与补充材料
+
+| 材料               | 访问状态        | 实际读取范围                         |
+| ---------------- | ----------- | ------------------------------ |
+| CVPR 2026 官方元数据页 | 成功          | 论文题目、作者、CVPR 页码 16163–16172、摘要 |
+| CVF 正文 PDF       | 失败：HTTP 403 | 未能进行 PDF 页面截图                  |
+| CVF 补充材料 PDF     | 失败：HTTP 403 | 未能核验补充材料的物理 PDF 页码             |
+| arXiv HTML       | 成功          | 正文第 1–5 节，附录 A–E               |
+| 图表               | 文本与图注成功     | 表 1–12、图 1–13 的标题、图注、正文分析      |
+| 图像像素级检查          | 未完成         | PDF 不可抓取，未对图中曲线像素或视觉样例逐像素核验    |
+
+`PAPER_FACT` AdapTok 是 CVPR 2026 论文，正式论文页码为 16163–16172。arXiv HTML 包含方法正文和附录 A–E，包括主要方法、训练细节、四种预算分配策略、运行时间分析和可视化说明。 ([Open Access CVF][1])
+
+`UNRESOLVED` 两个 CVF PDF 端点均返回 403，因此本报告不能声称完成了 PDF 版面和补充材料物理页码的逐页截图检查。正文、公式、表格数值、附录文本和图注已通过 arXiv HTML 完整读取；这一限制不影响方法链、代码链和实验数值的裁决，但降低了对定性图像细节的置信度。 
+
+## 1.3 AdapTok 固定代码提交的文件树分类
+
+固定代码提交为 `a72076cf6474f930a181aa78971de70d65289b49`。根目录、全部由 GitHub 索引到的 Python、YAML、Shell 和 README 文件均已分类。仓库根目录包含 `ar / cfgs / data / datasets / eval / models / scripts / trainers / utils` 等目录。 ([GitHub][2])
+
+### `READ_FULL`
+
+```text
+README.md
+models/adaptok.py
+models/mask_generator.py
+models/transformer.py
+trainers/adaptok_get_scores.py
+trainers/adaptok_trainer.py
+datasets/video_dataset.py
+eval/rfvd_evaluator.py
+cfgs/adaptok.yaml
+cfgs/adaptok_get_scores.yaml
+cfgs/adaptok_scorer.yaml
+scripts/train_adaptok.sh
+scripts/train_adaptok_scorer.sh
+```
+
+### `SCANNED`
+
+```text
+train.py
+sample.py
+models/__init__.py
+models/models.py
+models/block.py
+models/bottleneck.py
+models/embed.py
+models/norm.py
+models/loss.py
+trainers/__init__.py
+trainers/trainers.py
+trainers/base_trainer.py
+datasets/__init__.py
+datasets/datasets.py
+datasets/adap_priors.py
+eval/eval_adaptok.py
+utils/__init__.py
+utils/common.py
+utils/statistics.py
+scripts/eval_adaptok.sh
+data/README.md
+```
+
+### `NOT_RELEVANT`：与本轮“自适应 tokenizer/scorer/预算分配”机制无直接关系
+
+```text
+ar/__init__.py
+ar/generate.py
+models/gptc.py
+models/adaptok_ar.py
+trainers/adaptok_ar_trainer.py
+trainers/adaptok_fp_trainer.py
+cfgs/adaptok_ar.yaml
+cfgs/adaptok_ar_fp.yaml
+eval/calc_fvd_from_multiple_feature_stats.py
+utils/fvd/fvd.py
+utils/fid/fid.py
+utils/fid/inception.py
+data/resize_videos.py
+data/split_annotations.py
+data/k600_extractor.sh
+data/k600_downloader.sh
+scripts/eval_adaptok_ar.sh
+scripts/train_adaptok_ar.sh
+scripts/train_adaptok_ar_fp.sh
+scripts/eval_adaptok_ar_fp.sh
+scripts/prepare_annotations_for_ar.sh
+scripts/prepare_annotations_for_fp.sh
+scripts/prepare_annotations_for_fp_post_processing.sh
+```
+
+### `UNREAD`
+
+```text
+无已索引的 Python/YAML/Shell/README 文件被标为 UNREAD。
+```
+
+`UNRESOLVED` 上述枚举依赖固定提交的 GitHub 目录页和代码索引。极端情况下，完全空白且未被 GitHub 代码索引的占位文件可能不会出现在扩展名检索中；这不影响核心实现判断。Python、YAML、Shell、README 的索引结果分别来自固定提交的扩展名和目录检索。
+
+## 1.4 当前事实校正
+
+| 事实                                 | 证据等级                                                 | 裁决                            |
+| ---------------------------------- | ---------------------------------------------------- | ----------------------------- |
+| (K=384) 30+60 终端 mAP 65.385724%    | `DOCUMENTED_RESULT / PROVIDED_AFTER_PUBLIC_SNAPSHOT` | 90 轮超预算诊断，不得进入公平主结果           |
+| (K=192) 30+60 终端 mAP 57.967272%    | 同上                                                   | 缺少干净匹配均匀终端对照，不能证明 selector 有效 |
+| (K=192) 动作富集和局部边界改善                | 同上                                                   | 说明选择器学到了局部动作相关性               |
+| 宽双端支持 (-0.041925)，最大空洞 (+0.587269) | 同上                                                   | 说明现目标以牺牲全局时序覆盖换取局部富集          |
+| 贡献蒸馏量级约 5–6                        | 同上                                                   | 极可能主导检测分类/回归损失                |
+| 公平 60 轮、动态 (K)、严格免训练模式             | `CODE_FACT + UNRESOLVED`                             | 均尚未完成                         |
+| 官方 dense 约 69% 以上                  | `PARTNER_CLAIM`                                      | 必须重新复现，不能作为既定零点               |
+| 50% 均匀约 65%                        | `PARTNER_CLAIM`                                      | 必须用原生路径复现                     |
+
+---
+
+# 2. 一页式执行结论
+
+## 唯一裁决
+
+`DESIGN_PROPOSAL`
+
+**选择路线 C：统一层级模型。**
+
+外层在训练期锁定的平均端到端预算下，独立为每个视频分配 (K_v)；内层在原始物理时间上执行定位保持、严格 exact-(K_v)、嵌套的帧传输。
+
+动态 (K) 应成为论文主模型的必要组成部分，但论文创新不能写成“我们首次使用动态 (K)”或“评分器加 ILP”。真正可辩护的中心必须升级为：
+
+> **在预注册的平均端到端成本和逐视频定位风险约束下，学习嵌套的物理时间观测阶梯；以多尺度硬反事实估计新增真实帧对分类、边界回归和高 tIoU 区间的保守边际价值，并用训练期锁定的对偶价格决定每个视频何时停止观测。**
+
+我建议把胜出方法暂称为：
+
+## **DUCA-METER**
+
+### Marginal Evidence Transport with Endpoint Risk
+
+其核心不是“预测哪里密集”，而是：
+
+[
+\boxed{
+\text{hard marginal detection value}
++
+\text{paired-boundary risk}
++
+\text{physical-time transport}
++
+\text{batch-independent budget stopping}
+}
+]
+
+## 动态 (K) 的地位
+
+`DESIGN_PROPOSAL`
+
+动态 (K) 不能被预先降级为附录，也不能无条件保留。它必须通过四个停止门：
+
+1. **Oracle headroom 门**：真实 per-video 动态预算在匹配平均成本下，必须明显优于最佳固定 (K)。
+2. **边际效用可预测门**：评分器必须在多尺度硬 swap 上预测真实离散收益，而不只是相关于 actionness。
+3. **定位风险门**：动态方法必须修复宽双边界支持和最大空洞，而非进一步恶化。
+4. **真实成本门**：加入 probe、评分器、求解器、padding 和视频解码后，必须仍有端到端节省。
+
+若任一决定性门失败，正确动作不是把动态 (K) 偷偷放进附录，而是**停止“动态预算是主创新”的当前路线**。
+
+## 最终项目状态
+
+[
+\boxed{\textbf{重大重构后继续}}
+]
+
+不是“继续把当前 density transport 调好”，而是推翻当前以局部密度富集为中心的目标，重建为**风险约束的边际时序证据分配**。
+
+---
+
+# 3. 当前模型为什么还不是 CVPR 方法
+
+## 3.1 它还没有解决一个 TAD 特有的问题
+
+`DOCUMENTED_RESULT`
+
+当前选择器能提高动作内部富集和局部边界邻域命中，却降低宽范围双端支持并增大最大时间空洞。这个结果说明当前目标更接近：
+
+[
+\text{找到动作相关帧}
+]
+
+而不是：
+
+[
+\text{以有限物理观测保持完整区间的可定位性}
+]
+
+对 TAD 而言，动作内部的高 actionness 不能替代起点和终点的成对证据。一个只看到动作中段的采样器可能改善分类，却会系统性损害高 tIoU 定位。
+
+## 3.2 “密度预测 + 累积分布逆采样”不足以构成主创新
+
+`PAPER_FACT`
+
+MGSampler 已经使用运动显著性构造累积运动分布，并按该分布进行覆盖式采样；它强调 motion-sensitive 与 motion-uniform，且作为可插入现有视频模型的采样器提出。因而，神经网络输出一条密度，再通过 inverse-CDF/systematic sampling 取点，天然会被审稿人视为 MGSampler 的任务化变体。 ([Open Access CVF][3])
+
+`DESIGN_PROPOSAL`
+
+DUCA 的创新不能位于“如何把一条密度变成 (K) 个点”；必须位于：
+
+* 密度之外的**集合边际效用**；
+* 起点—终点的**互补而非独立支持**；
+* 非均匀采样下的**物理时间失真约束**；
+* 在动态预算下的**风险满足后停止**。
+
+## 3.3 动态 (K) 本身也不新
+
+`PAPER_FACT`
+
+AdaFrame 已经针对视频识别预测“继续看更多帧”的未来效用，并进行输入自适应的停止与 lookahead；AdapTok 已经预测多预算质量并在总体平均 token 预算下进行整数分配；EVATok 进一步学习最佳 token assignment 和轻量 router；A-ViT、DynamicViT 等则在网络内部进行自适应 token halting/pruning。 ([Open Access CVF][4])
+
+因此，论文绝不能声称：
+
+> “首次对视频进行动态预算。”
+
+最小可辩护命题必须是：
+
+> **首次把动态物理帧预算写成高 tIoU 定位风险下的边际证据分配，并同时解决视频级预算和帧级位置。**
+
+## 3.4 当前连续代理没有连接到真实硬收益
+
+`DOCUMENTED_RESULT`
+
+当前贡献蒸馏、ST 或软分数尚未证明能预测真实帧组被替换后的检测变化。一帧 swap 对长视频太局部，且噪声可能大于效应。没有多尺度硬反事实证据，不能使用“task-aware”“detector-utility-aligned”或“end-to-end learned sampling”作为强 claim。
+
+## 3.5 当前物理时间合同仍不完整
+
+`CODE_FACT`
+
+当前路径先在 selected-axis 上 NMS，再映回物理时间。即使修正顺序，仍有更深层问题：未修改的检测器在 selected-axis 上进行卷积、特征金字塔和边界回归，内部默认相邻位置具有近似均匀物理间隔。仅在输出端映回时间，不能自动修复内部时标扭曲。
+
+`DESIGN_PROPOSAL`
+
+因此，最大空洞、累计漂移和局部密度比必须成为硬约束。否则，“纯前置插件”与“高度非均匀采样”本身存在结构性冲突。
+
+## 3.6 当前结果不构成公平论文证据
+
+`DOCUMENTED_RESULT`
+
+现有 (K=384) 与 (K=192) 都是 90 轮课程结果；干净 dense、50%、25% 均匀零点仍未恢复；没有正式动态 (K)；没有 matched average-budget 对照；没有真实成本。现在最多能写一份有价值的负结果诊断，不能写方法主表。
+
+---
+
+# 4. AdapTok 正文、补充材料和代码的完整逆向工程
+
+## 4.1 表征结构：块因果、1D 潜在序列和随机尾部丢弃
+
+`PAPER_FACT`
+
+AdapTok 将 (16\times128\times128) 视频按 (4\times8\times8) patch 划分，形成 1024 个视频 patch，再用可学习 latent queries 把每个时间块编码为一维潜在 token 序列。编码器、解码器和评分器采用 block-causal attention：当前块可以访问当前及过去块，而不能访问未来块。 ([arXiv][5])
+
+`PAPER_FACT`
+
+训练时，每个块随机采样保留长度 (\ell_i)，只保留该块前 (\ell_i) 个 latent token，尾部全部丢弃。正式实验使用 4 个块、每块最多 512 个 token，保留长度来自截断高斯：
+
+[
+\ell_i\sim\operatorname{TruncNormal}
+(\mu=256,\sigma=128,[32,512]).
+]
+
+同一 tokenizer 因而被迫让较短前缀形成粗表示、后续 token 逐步补充细节。 ([arXiv][5])
+
+`CODE_FACT`
+
+代码中同时存在均匀采样版本 `_left_masking_by_group` 和实际启动脚本使用的截断高斯版本 `_left_masking_by_group_normal`。两者都构造严格左前缀 mask；`diff_batch=False` 时，同一个 mask 会复制给整个 batch，`diff_batch=True` 时才逐样本生成。
+
+`PAPER_FACT`
+
+附录图 7 和图 12 表明早期 token 更偏全局结构，后期 token 更偏局部细节；但这只是经验可视化，并不是“任何更长前缀必然带来更高质量”的定理。事实上，表 4 中在 1024-token 条件下，单独加入随机 mask sampler 的 rFVD 从 37.13 恶化到 38.79，只有再加自适应评分器后才改善到 36.36。 ([arXiv][5])
+
+### 对 DUCA 的含义
+
+`DESIGN_PROPOSAL`
+
+可迁移的不是“随机丢掉尾部帧”，而是：
+
+> 构造同一视频的嵌套观测阶梯，使较小预算是较大预算的严格前缀或子集，从而能定义稳定的新增证据边际值。
+
+物理帧不像 latent token。新增 latent token 主要细化表征；新增真实帧还会改变检测器输入长度、邻接关系和物理时间映射。因此，DUCA 必须显式约束时间几何，而不能机械复制 tail drop。
+
+---
+
+## 4.2 真实多预算质量标签如何生成
+
+`PAPER_FACT`
+
+AdapTok 的 scorer 并不是用重建网络的梯度或 attention 当“贡献”。它在每次训练中随机选一个目标块 (q)，复制 latent 表征，对该块施加一组不同前缀长度 mask，分别解码，并计算目标块的感知重建损失。该组真实损失形成不同 token 数的质量曲线 (s(\ell))。评分器预测整个曲线，并用 MSE 拟合。 ([arXiv][5])
+
+`CODE_FACT`
+
+`AdapTokScoreLabeler.get_scores_from_tokenizer` 遍历候选 token 数；`get_scores_by_fixed_toks` 固定前缀 mask，完整解码视频，只在对应目标时间块计算 MSE、LPIPS、PSNR、SSIM 及判别器输出。
+
+`CODE_FACT`
+
+代码支持两种 scorer 训练：
+
+* `_train_scorer_step`：从磁盘读取预生成并标准化的 score 曲线，用 MSE 训练 scorer；
+* `_train_online_scorer_step`：随机选块，将同一 latent 复制成多个候选预算，执行多次 decoder forward，在线生成感知损失标签，再拟合 scorer。
+
+实际公开启动脚本覆盖配置为 `train_online_scorer` 和 `perceptual`。
+
+### 对 DUCA 的含义
+
+`DESIGN_PROPOSAL`
+
+AdapTok 最值得迁移的原则是：
+
+> **预算评分器必须由不同硬预算下的真实任务结果监督，而不是由连续分数自我蒸馏。**
+
+但 DUCA 的标签不能是重建 LPIPS。必须是成组真实换帧后产生的：
+
+[
+\Delta L_{\mathrm{cls}},\quad
+\Delta L_{\mathrm{reg}},\quad
+\Delta \mathrm{Recall}*{\tau},\quad
+\Delta R*{\mathrm{pair}},\quad
+\Delta U_{\mathrm{high\text{-}tIoU}}.
+]
+
+---
+
+## 4.3 `TransformeScorer` 的输入输出
+
+`CODE_FACT`
+
+`TransformeScorer` 将连续 latent 与量化 latent 在通道维拼接，通过线性投影、可学习位置编码和多层 Transformer，再输出每个候选 token 长度对应的标量。输出按 `step` 下采样，因此 scorer 实际预测的是离散预算网格，而非每一个 token 数。
+
+`CODE_FACT`
+
+`AdapTok.decode_scorer` 会先按当前 latent mask 将连续和量化 latent 清零，并构造对应 attention mask，然后调用 scorer。其预测值是重建损失，数值越低越好。
+
+`DESIGN_PROPOSAL`
+
+DUCA 不应只输出单一“总检测质量”。建议输出多头曲线：
+
+[
+\widehat{\Delta U}^{\mathrm{cls}}*{v,m},\quad
+\widehat{\Delta U}^{\mathrm{reg}}*{v,m},\quad
+\widehat{\Delta U}^{\mathrm{prop}}*{v,m},\quad
+\widehat{\Delta R}^{\mathrm{pair}}*{v,m},\quad
+\widehat{\sigma}_{v,m}.
+]
+
+高 tIoU 风险应作为硬约束或风险上界，而不是被一个大权重揉进总分。
+
+---
+
+## 4.4 IPAL/ILP 的实际作用域
+
+`PAPER_FACT`
+
+论文公式在一个固定时间块内，对当前 mini-batch 的每个样本选择一个 token 数，约束所有样本 token 总数等于：
+
+[
+|\mathcal B|\times N_b.
+]
+
+因此，“global”指的是**当前块、当前 mini-batch 内跨样本联合分配**，不是跨整个测试集，也不是一次联合优化所有时间块。 ([arXiv][5])
+
+`CODE_FACT`
+
+`solve_ilp_min` 输入形状为 (N\times K) 的预测损失矩阵，为每一行建立一个 one-hot 二元选择变量，同时强制所选列索引之和等于目标预算；使用 PuLP CBC 求解。
+
+`CODE_FACT`
+
+`AdapTok.encode_eval` 依次处理每个时间块：先根据之前块的已分配长度形成 mask，再预测当前块的质量曲线，随后对当前 mini-batch 调用 `solve_ilp_min`。所以预算结果依赖当前 batch 中有哪些视频。
+
+### 直接答案
+
+[
+\boxed{
+\text{IPAL 的真实分配作用域是：固定 block }\times\text{当前 mini-batch}
+}
+]
+
+不是数据集级，不是单视频独立，也不是全视频所有块的一次性联合 ILP。
+
+---
+
+## 4.5 Fixed、BiThr、BiDelta、ILP
+
+`PAPER_FACT`
+
+* **Fixed**：所有样本和块使用相同 token 数。
+* **BiThr**：寻找绝对质量阈值，每个样本选使预测损失低于阈值的最小 token 数，再通过二分使平均预算匹配。
+* **BiDelta**：对相邻预算预测损失的差分做阈值，近似“新增 token 的边际收益”。
+* **ILP/IPAL**：直接在 batch 内求解最小总预测损失的离散分配。
+
+附录算法 2 给出了 BiThr/BiDelta，表 6 在相同平均 token 数下报告 ILP 最好，BiDelta 次之，BiThr 更差。 ([arXiv][5])
+
+`PAPER_FACT`
+
+表 6 的 rFVD 分别约为：
+
+[
+\text{Fixed}=38.79,\quad
+\text{BiThr}=42.12,\quad
+\text{BiDelta}=38.13,\quad
+\text{ILP}=36.36.
+]
+
+这说明边际差分比绝对阈值更合理，但预测全曲线后联合分配仍更强。 ([arXiv][5])
+
+### 对 DUCA 的裁决
+
+`DESIGN_PROPOSAL`
+
+“检测质量曲线 + ILP”必须作为**AdapTok-style direct transfer baseline**，不能作为 DUCA 的核心创新。
+
+DUCA 主方法必须替换其中三点：
+
+1. 标量重建质量 → 分类/回归/高 tIoU/双端风险分解；
+2. batch ILP → 训练集校准、测试逐视频独立的对偶价格；
+3. latent token 数 → 外层视频预算和内层物理帧位置的双层问题。
+
+---
+
+## 4.6 感知损失为何在 AdapTok 中合理，但不能迁移为 TAD 效用
+
+`PAPER_FACT`
+
+表 7 比较 SSIM、PSNR、MSE 和 perceptual loss。感知损失在 rFVD 和 LPIPS 上总体最好，但各指标往往在自身对应评价量上更有优势。论文并未证明感知损失是一般意义上的最优“信息价值”。 ([arXiv][5])
+
+`DESIGN_PROPOSAL`
+
+这对 DUCA 的启示不是“寻找一个更好的单一检测 loss”，而是：
+
+* 分类和边界回归贡献必须分开；
+* 非可微的高 tIoU 命中和提议召回必须通过硬反事实测量；
+* 双边界风险应优先作为可行性约束；
+* 总分只用于风险满足后的预算排序。
+
+---
+
+## 4.7 训练和推理的真实额外成本
+
+`PAPER_FACT`
+
+论文附录表 8 报告 tokenizer 为 195M 参数、训练 250 轮、32 GPU、112 小时；scorer 为 89M 参数、训练 20 轮、32 GPU、9 小时。 ([arXiv][5])
+
+`UNRESOLVED`
+
+公开 scorer 启动脚本写的是 `max_epoch 150`，而论文表 8 报告 20 轮。可能存在最佳 checkpoint、外部覆盖或最终实验脚本差异；固定代码本身没有充分信息解释这一差异。
+
+`PAPER_FACT`
+
+IPAL 的开销并非始终“可忽略”：平均 512 token 时，batch size 8 的 IPAL 时间约占总推理时间 42.2%；batch size 128 时约为 15.8%。平均 1024 token 时也呈相似趋势。 ([arXiv][5])
+
+`CODE_FACT`
+
+`decode_with_drop` 会把变长 token 序列整理并补齐到当前 batch 的最大有效长度，然后再调用 decoder。这意味着平均 token 数下降不必然带来与其成比例的实际批处理节省。
+
+`DESIGN_PROPOSAL`
+
+DUCA 必须报告：
+
+[
+C_{\mathrm{total}}=
+C_{\mathrm{decode}}
++C_{\mathrm{probe}}
++C_{\mathrm{selector}}
++C_{\mathrm{solver}}
++C_{\mathrm{backbone}}
++C_{\mathrm{detector}}
++C_{\mathrm{padding}}.
+]
+
+只报告平均 (K) 或理论 GFLOPs 不足以支持效率 claim。
+
+---
+
+## 4.8 核心代码证据账本
+
+| 文件/符号                           | `CODE_FACT` 实现事实                    | AdapTok 机制      | 可迁移抽象        | 不可迁移假设                       | DUCA 新颖性结论       |
+| ------------------------------- | ----------------------------------- | --------------- | ------------ | ---------------------------- | ---------------- |
+| `MaskSampler`                   | 根据模式生成前缀 mask                       | 多长度 tokenizer   | mixed-(K) 训练 | latent 前缀天然可解码               | 借鉴，不算创新          |
+| `_left_masking_by_group`        | 每块随机保留前 (n) 个 token                 | 随机尾部丢弃          | 嵌套预算         | 物理帧不是 latent refinement      | 必须改为嵌套帧阶梯        |
+| `_left_masking_by_group_normal` | 截断高斯采样前缀长度                          | 论文实际训练分布        | 预算随机化        | 不解决时域覆盖                      | 只能作为训练技巧         |
+| `solve_ilp_min`                 | batch 行 one-hot，精确总预算               | IPAL            | 离散资源分配       | batch composition dependency | 只能作直接迁移基线        |
+| `TransformeScorer`              | continuous+quantized latent → 多预算标量 | 质量曲线预测          | 多预算效用头       | 重建损失平滑、latent 可比较            | 必须换成硬检测效用        |
+| `decode_scorer`                 | mask 后预测 loss 曲线                    | 因果评分            | 条件效用预测       | 在线因果是生成需求                    | DUCA 离线主模型不需因果   |
+| `encode_eval`                   | 逐块 scorer + batch ILP               | 动态推理            | 先评分后分配       | 当前 batch 联合决策                | 主协议禁止照搬          |
+| `get_scores_from_tokenizer`     | 遍历预算导出真实曲线                          | 多预算 GT          | 硬预算标签        | decoder 便宜于完整检测器未必成立         | 需稀疏硬反事实          |
+| `get_scores_by_fixed_toks`      | 固定长度解码并测质量                          | 真值曲线            | 多预算真实评估      | 重建指标非检测效用                    | 换为 cls/reg/tIoU  |
+| `_train_scorer_step`            | MSE 拟合预存标准化曲线                       | 离线 scorer       | 可直接借鉴训练接口    | 标签生成成本被外置                    | 必须完整计成本          |
+| `_train_online_scorer_step`     | 多次 decoder 生成感知标签                   | 在线 scorer       | 在线硬目标        | 对 TAD 多次重骨干前向过贵              | 只能低频采样           |
+| `VideoDataset` normalization    | PSNR/SSIM 取负并做 z-score              | 统一低值为优          | 目标尺度标准化      | 单标量                          | DUCA 要多头、MAD 标准化 |
+| `RFVDEvaluator`                 | 根据 mask 统计实际 token 平均数              | 实际 token ledger | 实际帧数 ledger  | token 数不等于端到端成本              | DUCA 还需时延/能耗     |
+
+相关代码事实分别见固定提交的 mask、ILP、scorer、labeler、trainer、dataset 和 evaluator。
+
+---
+
+# 5. AdapTok 对 DUCA 的启发、竞争、不可迁移假设和新颖性红线
+
+## 5.1 迁移矩阵
+
+| AdapTok 机制    | DUCA 候选对应物                            |       可直接借鉴？ | 必须改写的原因                          | 可形成的新命题      |
+| ------------- | ------------------------------------- | -----------: | -------------------------------- | ------------ |
+| 随机尾部 token 丢弃 | mixed-(K) 训练                          |           部分 | 帧位置和坐标随 (K) 改变                   | 嵌套物理观测阶梯     |
+| 嵌套 latent 前缀  | (S_{K_1}\subset\cdots\subset S_{K_m}) |            是 | 要加入覆盖与最大空洞                       | anytime 定位保持 |
+| 重建质量曲线        | 检测边际效用曲线                              |        只能借框架 | 检测效用非平滑且非单调                      | 硬反事实检测价值     |
+| 因果 scorer     | cheap evidence scorer                 |      不必照搬因果性 | DUCA 是离线 TAD，可用全局 cheap evidence | 离线全局风险估计     |
+| IPAL/ILP      | 视频级动态预算                               | 只能作 baseline | 依赖测试 batch                       | 训练锁定对偶价格     |
+| 全局平均 token    | 平均实际帧/成本                              |            是 | 必须包含 probe、padding、I/O           | 完整端到端成本约束    |
+| 感知重建目标        | cls/reg/proposal/boundary             |            否 | 重建保真不等于区间可定位性                    | 多头效用 + 风险约束  |
+| 块级 token 分配   | 视频级预算 + 帧级位置                          |            否 | AdapTok 不选择真实时间位置                | 双层时域分配       |
+
+## 5.2 哪些机制已经被 AdapTok 占据
+
+`PAPER_FACT`
+
+AdapTok 已经占据以下抽象：
+
+[
+\text{多预算质量标签}
+\rightarrow
+\text{质量曲线评分器}
+\rightarrow
+\text{离散平均预算优化}.
+]
+
+因此，DUCA 若仅把 LPIPS 换成检测 loss，把 token 数换成帧数，再运行 ILP，审稿人完全有理由称之为**任务平移**。 ([arXiv][5])
+
+`PAPER_FACT`
+
+EVATok 又进一步占据了“估计最佳 token assignment、训练轻量 router、在生成质量和 token 成本之间分配预算”的空间；MeToM 则已占据“利用 codec metadata、免训练地进行逐帧动态 token 分配”的一部分空间。简单 router 或简单 codec-complexity 动态预算也不能成为 DUCA 的中心。 ([Open Access CVF][6])
+
+## 5.3 不可迁移的核心假设
+
+`DESIGN_PROPOSAL`
+
+以下 AdapTok 假设不能直接用于 DUCA：
+
+1. **重建质量近似随 token 数平滑改善**；检测结果可能因候选匹配和 NMS 发生离散跳变。
+2. **latent token 是可排序的粗到细表示**；真实帧的价值由其物理位置决定。
+3. **增加 token 不改变时间坐标系**；增加帧会改变 selected-axis 与物理时间映射。
+4. **单块质量可局部计算**；动作起点和终点可能跨很远时间，具有非局部互补性。
+5. **batch 内联合预算可部署**；TAD 服务不应因同批其他视频改变某个视频的 (K)。
+6. **因果 scorer 是必要属性**；DUCA 主任务是离线 TAD，强制因果反而会丢失全局 cheap evidence。
+7. **padding 到 batch 最大长度仍能带来足够收益**；重型视频骨干的真实吞吐可能严重受 padding 影响。
+
+## 5.4 新颖性红线
+
+`DESIGN_PROPOSAL`
+
+以下内容必须放入 baseline 或 related work，不能写成自己的核心创新：
+
+* mixed-(K) 或随机预算训练；
+* 多预算 scalar quality scorer；
+* BiThr/BiDelta；
+* test-batch ILP；
+* inverse-CDF/systematic sampling；
+* 单纯 motion/scene-complexity 动态预算；
+* Transformer token pruning/halting；
+* “简单视频少看、困难视频多看”。
+
+可保留为 DUCA 独占中心的只有：
+
+[
+\boxed{
+\begin{aligned}
+&\text{硬反事实的 TAD 边际证据价值}\
++&\text{起点—终点成对风险}\
++&\text{非均匀物理时间失真约束}\
++&\text{测试批次无关的动态停止}\
++&\text{外层预算与内层位置的统一层级求解}
+\end{aligned}
+}
+]
+
+## 5.5 为什么 AdapTok 能被 CVPR 2026 接收
+
+`PAPER_FACT`
+
+AdapTok 的创新密度来自一个完整闭环，而不是单独的 ILP：
+
+* 适配可变长度的 block-causal 1D tokenizer；
+* tail-drop 训练；
+* 多预算真实重建标签；
+* causal scorer；
+* IPAL；
+* reconstruction 与 AR generation 两条下游证据；
+* Fixed/BiThr/BiDelta/ILP 对照；
+* 训练和推理成本分析。
+
+它在低 token 区间的改善尤其明显；同时，表 4 也诚实展示了 tail-drop 在较高预算下单独使用可能变差。 ([arXiv][5])
+
+`UNRESOLVED`
+
+其最弱环节是 batch-dependent allocation、额外 scorer/label 成本、变长 padding 和对重建质量代理的依赖。这些弱点恰好应成为 DUCA 的设计分界，而不是被复制。
+
+---
+
+# 6. 重新定义后的论文问题与中心命题
+
+## 6.1 真正值得发表的科学问题
+
+`DESIGN_PROPOSAL`
+
+当前最强问题定义不是：
+
+> 如何从长视频中选择重要帧？
+
+而是：
+
+> **在预注册的平均端到端计算预算和逐视频最大预算下，如何估计每一组新增真实观测对时域动作检测的边际价值，并在不破坏成对边界、最大空洞和物理时间连续性的前提下，同时决定每个视频看多少帧以及看哪些帧？**
+
+这一定义包含四个 TAD 特有要素：
+
+1. **区间而非标签**：必须同时支持 start 和 end。
+2. **高 tIoU 风险**：局部动作富集不足以保证精确定位。
+3. **物理时间度量**：非均匀采样会扭曲检测器内部时标。
+4. **集合互补性**：起点帧和终点帧联合有价值，单独一个可能价值很低。
+
+## 6.2 动态 (K) 为什么不是普通超参数
+
+`DESIGN_PROPOSAL`
+
+固定 (K) 假设每个视频的边际收益曲线相同。动态 (K) 的科学问题是：
+
+[
+\Delta U_v(K)
+=============
+
+U_v(K+\Delta K)-U_v(K)
+]
+
+是否随视频内容、动作数量、动作时长、边界模糊度和背景结构显著变化。
+
+若不同视频的 (\Delta U_v(K)) 基本相同，动态 (K) 没有必要；若差异显著，固定 (K) 会把帧浪费在已经饱和的视频上，同时让高边界风险视频预算不足。
+
+因此，动态 (K) 的必要性必须由 **Oracle headroom + utility heterogeneity** 证明，而不能由直觉宣布。
+
+## 6.3 中心命题
+
+`DESIGN_PROPOSAL`
+
+> **DUCA-METER 将离线 TAD 的帧压缩重写为定位风险约束下的边际物理证据分配：模型构造可随时截断的嵌套帧阶梯，以训练视频上的多尺度硬换帧结果监督新增帧价值，并使用预先校准的对偶价格独立决定每个视频的停止预算；固定 (K)、动态 (K) 和免训练模式仅对应不同的预算制度或效用来源。**
+
+## 6.4 “纯前置插件”的严格定义
+
+`DESIGN_PROPOSAL`
+
+允许的主链为：
+
+[
+\text{raw video}
+\rightarrow
+\text{cheap evidence}
+\rightarrow
+(K_v,S_v)
+\rightarrow
+\text{unchanged backbone/detector/head}
+\rightarrow
+\text{raw selected-axis proposals}
+\rightarrow
+\text{physical-time remap}
+\rightarrow
+\text{unchanged official NMS}.
+]
+
+必须区分：
+
+* **架构兼容的 task-adapted plugin**：允许训练 selector 和重新训练检测器权重，但不改结构与损失；
+* **严格 plug-and-play**：冻结检测器，selector 不使用目标标签；
+* **非插件**：向检测器注入专用时间编码、修改 head、修改 loss 或定制 NMS。
+
+输出坐标适配是必要接口，不是后端方法创新；但只有在 selected-axis 扭曲被硬约束时，才有资格声称插件对检测器假设近似透明。
+
+---
+
+# 7. 十二条实质不同的候选模型路线
+
+## R1：边际检测效用传输
+
+`DESIGN_PROPOSAL`
+
+中心：直接预测从 (K_m) 增加到 (K_{m+1}) 的真实检测收益。
+
+[
+\widehat{\Delta U}_{v,m}
+========================
+
+g_\phi(z_v,S_v(K_m),S_v(K_{m+1})).
+]
+
+(K_v) 由 (\widehat{\Delta U}/\Delta C) 与对偶价格比较产生；位置由受约束集合求解器产生。监督来自多尺度硬 swap。固定 (K) 通过锁定预算退化得到；免训练模式可用无标签 proxy 替换 (g_\phi)。
+
+与 AdapTok 的重合在“质量曲线”，区别在真实检测反事实、物理帧和双端风险。最可能提高平均 mAP/Pareto；最可能失败于 utility rank 不可预测。最小证伪：Oracle 动态预算有头room，但 scorer rank correlation 不显著。成本中等。
+
+## R2：高 tIoU 风险约束分配
+
+`DESIGN_PROPOSAL`
+
+中心：不直接最大化平均收益，而是最小化成本，使预测失败风险低于阈值：
+
+[
+K_v^\star
+=========
+
+\min_K C_v(K)
+\quad
+\text{s.t.}\quad
+\widehat{\Pr}(\mathrm{tIoU}<\tau\mid z_v,S_v(K))
+\le\epsilon.
+]
+
+位置由降低高 tIoU 风险的内层求解器产生。监督是边界误差、提议命中和高 tIoU 失败。固定 (K) 是去掉停止规则；零样本可用几何上界，但任务风险需要监督。
+
+与 AdapTok 区分度高，TAD 特异性强。最可能改善 mAP@0.6/0.7；失败点是风险校准困难。最小证伪：预测风险 ECE 高、风险满足视频仍频繁高 tIoU 失败。成本中等。
+
+## R3：边界对覆盖模型
+
+`DESIGN_PROPOSAL`
+
+学习起点—终点联合分布：
+
+[
+\hat q_v(a,b\mid z_v),\qquad a<b,
+]
+
+并最小化：
+
+[
+R_{\mathrm{pair}}(S)
+====================
+
+\mathbb E_{(a,b)\sim\hat q_v}
+\left[
+\rho(d(a,S))+
+\rho(d(b,S))+
+\eta\rho(\max(d(a,S),d(b,S)))
+\right].
+]
+
+(K) 由尚未覆盖的边界对概率质量决定，位置由成对覆盖 DP 产生。它直接解释“动作内部富集但宽双端恶化”。失败点是 cheap evidence 无法可靠预测边界对。最小证伪：pair-risk 与真实双端支持无相关。成本中等。
+
+## R4：主动感知/信息价值停止
+
+`DESIGN_PROPOSAL`
+
+从小预算开始，逐轮揭示帧：
+
+[
+\mathrm{VOI}_{v,m}
+==================
+
+\mathbb E[
+H(p(y,\mathcal I)\mid S_m)
+--------------------------
+
+H(p(y,\mathcal I)\mid S_{m+1})
+].
+]
+
+当 VOI 低于成本且定位风险满足时停止。帧位置由最大后验信息增益选择。与 AdaFrame 的自适应 lookahead 高度相关，但目标改为区间后验。
+
+高风险在于需要多轮推理或强后验模型，真实时延可能抵消节省。最小证伪：主动多轮成本超过一次性重骨干节省。暂不作为主方法。
+
+## R5：嵌套多分辨率时间格
+
+`DESIGN_PROPOSAL`
+
+构造优先序列 (\pi_v)，使：
+
+[
+S_v(K_m)={\pi_{v,1},\ldots,\pi_{v,K_m}},
+\qquad
+S_v(K_m)\subset S_v(K_{m+1}).
+]
+
+可用 dyadic interval refinement 或 constrained insertion。动态 (K) 只截断同一阶梯，不重新替换帧。监督可来自任意 utility/risk 头。
+
+它提供 anytime、一致边际、mixed-(K) 和缓存复用，但单独不构成足够新颖的方法。最小证伪：嵌套约束显著损害同预算性能且不能换来动态稳定性。成本低，作为主方法基础设施保留。
+
+## R6：潜变量预算后验与 CVaR
+
+`DESIGN_PROPOSAL`
+
+学习：
+
+[
+q_\phi(K_v\mid z_v),
+]
+
+并最小化成本加尾部风险：
+
+[
+\mathbb E[D_v]
++
+\beta\operatorname{CVaR}_{q}
+(D_v)
++
+\lambda\mathbb E[C_v].
+]
+
+预算来自后验采样或 MAP，位置由固定内层 selector。适合表达预算不确定性，但容易退化成一般动态计算方法。最小证伪：后验熵与真实预算错误无关，CVaR 不改善长尾高 tIoU。成本中等偏高。
+
+## R7：次模集合效用与背包优化
+
+`DESIGN_PROPOSAL`
+
+定义覆盖减冗余集合函数：
+
+[
+F_v(S)=
+\sum_t \max_{s\in S}w_v(t,s)
+----------------------------
+
+\gamma\sum_{s\ne s'}\operatorname{sim}(s,s').
+]
+
+若 (F) 单调次模，可用贪心获得 (1-1/e) 近似。动态 (K) 由边际收益与价格停止。
+
+问题是成对边界具有互补性：只有同时观察 start 和 end 才产生高价值，这常违反次模的边际递减假设。最小证伪：实测大量正互补，次模不等式高频失败。作为理论对照，不作主方法。
+
+## R8：双层动态规划/最优传输
+
+`DESIGN_PROPOSAL`
+
+外层选择 (K_v)，内层在时间有序图上求：
+
+[
+S_v^\star(K)
+============
+
+\arg\max_{S\in\mathcal F_v(K)}
+M_v(S)-\alpha R_v(S).
+]
+
+内层可用 min-cost flow 或带最大间隔状态的 DP；外层使用对偶价格。它能严格实现 exact-(K)、密度上下界、累计漂移和最大间隔。
+
+若没有 TAD 特有 utility/risk，它只是通用求解器，接近 AdapTok/最优传输工程。作为胜出方法的求解骨架保留，不单独作为贡献。
+
+## R9：严格免训练风险感知动态预算
+
+`DESIGN_PROPOSAL`
+
+只使用 codec residual、motion vector、场景变化、低分辨率时序新颖度和模糊度，构造：
+
+[
+U_v^0(K,S),\quad R_v^0(S).
+]
+
+不使用目标标签、检测器教师、特征缓存或验证集调参。预算和位置仍使用同一对偶与几何求解器。
+
+MeToM 已占据 codec metadata 动态 token 分配，因此仅靠 metadata 不新；必须证明物理帧选择和双端风险对 TAD 的独特作用。最小证伪：不如匹配均匀采样。成本低，适合作为附加模式。
+
+## R10：反事实联盟价值/Shapley 近似
+
+`DESIGN_PROPOSAL`
+
+将帧组视为 coalition，估计：
+
+[
+\phi(G)=
+\mathbb E_{A}
+[D(A)-D(A\cup G)].
+]
+
+它能捕捉边界对互补，理论上比单帧梯度可靠。预算由 coalition marginal value 停止，位置由高价值 coalition 组合。
+
+最大问题是重骨干前向次数爆炸。最小证伪：低秩或 Monte Carlo 近似不能在可承受样本数下稳定排序。高风险高成本，仅用于小规模 Oracle 分析。
+
+## R11：保形风险校准停止
+
+`DESIGN_PROPOSAL`
+
+在训练校准集上为 endpoint-risk 建立 conformal upper bound：
+
+[
+\overline e_v(K)
+================
+
+\hat e_v(K)+q_{1-\delta}.
+]
+
+当该上界足以满足目标 tIoU 且新增效用低于价格时停止。它提供可解释的风险覆盖声明和 batch-independent 预算。
+
+风险是分布漂移和 action-duration 估计误差。最小证伪：校准集覆盖在测试分布严重失效。作为高风险高收益理论方向保留。
+
+## R12：最坏情况定位失真鲁棒采样
+
+`DESIGN_PROPOSAL`
+
+不预测具体动作，而对任意可能边界最小化最坏距离：
+
+[
+\min_{S:|S|=K}
+\max_{t\in[0,T_v]} d(t,S)
+-------------------------
+
+\eta M_v(S).
+]
+
+动态 (K) 取满足最大空洞或最短动作尺度要求的最小预算。它可以严格保证时间覆盖，是当前 density-collapse 的强纠偏。
+
+缺点是过于保守，可能接近均匀采样。最小证伪：风险改善但始终不能提高任务 Pareto。作为保守备选的几何底座保留。
+
+---
+
+# 8. 三轮淘汰赛与胜出方法
+
+## 8.1 评分表
+
+评分 1–5，越高越好；“风险”列越高表示研究失败风险越大。
+
+| 路线          | 问题新颖性 | AdapTok 区分度 | TAD 特异性 | 理论闭合 | 高 tIoU | 动态 K 必要性 | 纯插件 | 免训练统一 | 60轮验证 | 风险 |
+| ----------- | ----: | ----------: | ------: | ---: | -----: | -------: | --: | ----: | ----: | -: |
+| R1 边际效用     |     5 |           4 |       5 |    4 |      5 |        5 |   5 |     4 |     4 |  3 |
+| R2 风险约束     |     5 |           5 |       5 |    4 |      5 |        5 |   5 |     3 |     4 |  3 |
+| R3 边界对      |     4 |           5 |       5 |    3 |      5 |        4 |   5 |     3 |     5 |  3 |
+| R4 主动感知     |     4 |           4 |       5 |    4 |      5 |        5 |   3 |     4 |     2 |  5 |
+| R5 嵌套格      |     3 |           4 |       4 |    5 |      4 |        4 |   5 |     5 |     5 |  2 |
+| R6 后验/CVaR  |     4 |           3 |       4 |    3 |      4 |        5 |   5 |     3 |     3 |  4 |
+| R7 次模       |     3 |           4 |       4 |    4 |      3 |        3 |   5 |     4 |     3 |  4 |
+| R8 双层DP     |     3 |           3 |       4 |    5 |      4 |        5 |   5 |     4 |     4 |  3 |
+| R9 严格免训练    |     3 |           4 |       3 |    3 |      3 |        4 |   5 |     5 |     5 |  3 |
+| R10 Shapley |     5 |           5 |       5 |    3 |      5 |        4 |   4 |     3 |     1 |  5 |
+| R11 保形停止    |     5 |           5 |       5 |    5 |      5 |        5 |   5 |     3 |     3 |  4 |
+| R12 最坏失真    |     4 |           5 |       5 |    5 |      4 |        4 |   5 |     5 |     4 |  3 |
+
+## 8.2 第一轮：先验工作淘汰
+
+`DESIGN_PROPOSAL`
+
+淘汰以下独立主路线：
+
+* 纯“质量曲线 + ILP”：已被 AdapTok 占据；
+* 纯主动停止：AdaFrame 已有未来效用与自适应 lookahead；
+* 纯 inverse-CDF/motion-CDF：MGSampler 已占据；
+* 纯 token pruning/halting：DynamicViT、A-ViT 等已占据；
+* 纯 codec-complexity 免训练预算：MeToM 已占据。
+
+R4、R8、R9 可作为组件或 baseline，不能单独成为 DUCA 主创新。
+
+## 8.3 第二轮：机制淘汰
+
+`DESIGN_PROPOSAL`
+
+不能解释“局部富集但宽双边界恶化”的路线被淘汰：
+
+* R5 嵌套格单独不能解释任务错误；
+* R6 预算后验没有帧级几何；
+* R7 次模模型容易忽略边界互补；
+* R9 zero-shot proxy 未必理解边界。
+
+R1、R2、R3、R12 保留。
+
+## 8.4 第三轮：证据成本淘汰
+
+`DESIGN_PROPOSAL`
+
+* R10 Shapley 需要过多重骨干前向，只保留小规模 Oracle；
+* R4 主动多轮推理真实延迟风险太高；
+* R11 完整保形主方法需要更大规模校准，保留为高风险理论扩展。
+
+## 8.5 最终组合
+
+### 主方法
+
+[
+\boxed{
+\text{R1 + R2 + R3 + R5 + R8}
+}
+]
+
+即：
+
+> **嵌套的边际检测效用阶梯 + 双边界风险约束 + 物理时间有界传输 + 训练锁定对偶停止。**
+
+### 保守备选
+
+`DESIGN_PROPOSAL`
+
+固定 (K) 的有界物理时间传输，使用硬效用监督，但不做动态预算。
+
+### 高风险高收益理论方向
+
+`DESIGN_PROPOSAL`
+
+R11：保形校准的高 tIoU 风险停止。
+
+### 明确停止的路线
+
+`DESIGN_PROPOSAL`
+
+* 单一 actionness/density inverse-CDF；
+* test-batch scalar quality + ILP 作为主方法；
+* 未通过硬 swap 门的 ST/direct-gradient；
+* 只靠单帧贡献蒸馏；
+* 将 frozen detector 与“严格免训练”混称。
+
+---
+
+# 9. 胜出方法的完整数学定义
+
+## 9.1 基本变量
+
+`DESIGN_PROPOSAL`
+
+对视频 (v)：
+
+[
+x_v={x_v(t)}_{t\in[0,T_v]},
+]
+
+候选物理时间网格：
+
+[
+\mathcal G_v=
+{t_{v,1}<\cdots<t_{v,N_v}}.
+]
+
+cheap evidence：
+
+[
+z_v=h_\psi(x_v^{\mathrm{cheap}}).
+]
+
+候选预算集合：
+
+[
+\mathcal K=
+{K_0<K_1<\cdots<K_M}.
+]
+
+嵌套选择集合：
+
+[
+S_v(K_m)\subset\mathcal G_v,\qquad
+|S_v(K_m)|=K_m,
+]
+
+[
+S_v(K_m)\subset S_v(K_{m+1}).
+]
+
+## 9.2 成本
+
+[
+C_v(K)=
+C_v^{\mathrm{decode}}
++C_v^{\mathrm{probe}}
++C_v^{\mathrm{select}}
++C_v^{\mathrm{backbone}}(K)
++C_v^{\mathrm{detector}}(K)
++C_v^{\mathrm{padding}}(K).
+]
+
+`DESIGN_PROPOSAL`
+
+论文主协议必须以测得的 (C_v(K)) 为准，而不是假定 (C\propto K)。帧数是解释变量，真实延迟、显存和能耗是效率证据。
+
+## 9.3 任务效用
+
+令检测风险为：
+
+[
+D_v(S)=
+\widetilde L_{\mathrm{cls}}(S)
++\widetilde L_{\mathrm{reg}}(S)
++\widetilde L_{\mathrm{prop}}(S)
++\widetilde L_{\mathrm{high}}(S),
+]
+
+其中各项先按训练集 MAD 或 robust scale 标准化。
+
+定义从预算级 (m-1) 增加到 (m) 的真实硬边际效用：
+
+[
+\Delta U_{v,m}
+==============
+
+## D_v(S_v(K_{m-1}))
+
+D_v(S_v(K_m)).
+]
+
+模型预测：
+
+[
+\widehat{\Delta\mathbf U}_{v,m}
+===============================
+
+\left(
+\widehat{\Delta U}^{\mathrm{cls}},
+\widehat{\Delta U}^{\mathrm{reg}},
+\widehat{\Delta U}^{\mathrm{prop}},
+\widehat{\Delta U}^{\mathrm{high}}
+\right),
+]
+
+并预测不确定性 (\widehat\sigma_{v,m})。
+
+保守效用：
+
+[
+\underline{\Delta U}_{v,m}
+==========================
+
+\widehat{\Delta U}*{v,m}
+-\kappa\widehat\sigma*{v,m}.
+]
+
+## 9.4 几何与双边界风险
+
+定义最近观测距离：
+
+[
+d(t,S)=\min_{s\in S}|t-s|.
+]
+
+最大空洞：
+
+[
+g_{\max}(S)
+===========
+
+\max_i(s_{i+1}-s_i).
+]
+
+相对均匀量化点：
+
+[
+u_i(K)=
+\frac{i-\frac12}{K}T_v.
+]
+
+累计漂移：
+
+[
+d_{\mathrm{drift}}(S)
+=====================
+
+\max_i
+\left|
+\frac{s_i}{T_v}
+-\frac{i-\frac12}{K}
+\right|.
+]
+
+cheap evidence 预测起点—终点联合分布：
+
+[
+\widehat q_v(a,b\mid z_v),\quad a<b.
+]
+
+双边界风险：
+
+[
+R_v^{\mathrm{pair}}(S)
+======================
+
+\mathbb E_{(a,b)\sim\widehat q_v}
+\left[
+\rho!\left(\frac{d(a,S)}{b-a}\right)
++
+\rho!\left(\frac{d(b,S)}{b-a}\right)
++
+\eta
+\rho!\left(
+\frac{\max{d(a,S),d(b,S)}}{b-a}
+\right)
+\right].
+]
+
+总几何风险：
+
+[
+R_v(S)
+======
+
+R_v^{\mathrm{pair}}(S)
++\gamma_g
+\left[\frac{g_{\max}(S)}{T_v}-\bar g_K\right]*+^2
++\gamma_d d*{\mathrm{drift}}(S)^2
++\gamma_a R_v^{\mathrm{anchor}}(S).
+]
+
+## 9.5 推荐原始问题
+
+`DESIGN_PROPOSAL`
+
+相比“效用减风险罚项”，更推荐把关键几何风险写成硬约束：
+
+[
+\max_{{K_v,S_v}}
+\sum_v
+\left[
+\widehat U_v(K_v,S_v)
+-\kappa\widehat\sigma_v(K_v)
+\right]
+]
+
+满足：
+
+[
+\frac1{|\mathcal V|}
+\sum_v C_v(K_v)
+\le B,
+]
+
+[
+R_v^{\mathrm{pair}}(S_v)\le\epsilon_{\mathrm{pair}},
+]
+
+[
+g_{\max}(S_v)\le G(K_v),
+]
+
+[
+d_{\mathrm{drift}}(S_v)\le\delta(K_v),
+]
+
+[
+S_v\in\mathcal F_v(K_v),\qquad
+|S_v|=K_v,
+]
+
+[
+K_{\min}\le K_v\le K_{\max}.
+]
+
+原因是当前负结果已经证明：若几何只是一项可交易的软惩罚，优化器会用双边界覆盖换取动作内部富集。
+
+## 9.6 内层严格 (K) 传输
+
+对每个候选预算：
+
+[
+S_v^\star(K)
+============
+
+\arg\max_{S\in\mathcal F_v(K)}
+M_v(S)-\alpha R_v^{\mathrm{pair}}(S),
+]
+
+其中可行域包括：
+
+[
+\sum_{t\in\mathcal G_v}x_t=K,
+]
+
+[
+\ell_j(K)
+\le
+\sum_{t\in I_j}x_t
+\le
+u_j(K),
+]
+
+[
+g_{\min}(K)
+\le s_{i+1}-s_i
+\le g_{\max}(K),
+]
+
+[
+|s_i-u_i(K)|\le\delta_i(K),
+]
+
+以及对高置信度边界锚点的距离约束。
+
+`DESIGN_PROPOSAL`
+
+求解采用**嵌套 constrained insertion DP/min-cost flow**：
+
+1. 从最小预算的覆盖骨架开始；
+2. 每一级只添加帧，不删除已有帧；
+3. 按预测边际效用与边界风险降低选择新增帧组；
+4. 在时间有序 DAG 中满足 gap、drift、density 和 exact-(K)。
+
+## 9.7 外层对偶预算
+
+总体分布式问题写为：
+
+[
+\max_\pi
+\mathbb E_{v\sim P}
+[J_v(K_v)]
+\quad
+\text{s.t.}\quad
+\mathbb E_{v\sim P}C_v(K_v)\le B,
+]
+
+其中：
+
+[
+J_v(K)=
+\widehat U_v(K,S_v^\star(K))
+-\kappa\widehat\sigma_v(K)
+-\alpha R_v(S_v^\star(K)).
+]
+
+拉格朗日对偶：
+
+[
+\min_{\lambda\ge0}
+\left[
+\lambda B
++
+\mathbb E_v
+\max_{K\in\mathcal K}
+{J_v(K)-\lambda C_v(K)}
+\right].
+]
+
+测试时逐视频独立：
+
+[
+K_v^\star
+=========
+
+\arg\max_{K\in\mathcal K}
+\left[
+J_v(K)-\lambda^\star C_v(K)
+\right].
+]
+
+(\lambda^\star) 只在训练校准集上通过二分或一维搜索锁定。
+
+## 9.8 十个关键问题的明确答案
+
+| 问题                       | 裁决                                                        |            |                                         |
+| ------------------------ | --------------------------------------------------------- | ---------- | --------------------------------------- |
+| 1. 外层求解器                 | **训练校准的拉格朗日对偶价格 + 每视频有限预算枚举**。测试 batch ILP 仅作 baseline    |            |                                         |
+| 2. 内层约束                  | exact-(K)、多尺度密度上下界、最大间隔、累计漂移、锚点距离、双端风险                    |            |                                         |
+| 3. 是否嵌套                  | **主方法要求嵌套**；不是数学必要条件，但对边际比较、mixed-(K)、anytime 和缓存复用至关重要   |            |                                         |
+| 4. 如何预测新增真实帧收益           | 多尺度硬 group-swap、片段替换、双端配对替换；不用单帧梯度代替                      |            |                                         |
+| 5. 如何避免 batch dependency | (\lambda^\star) 在 train-calibration 锁定；测试逐视频独立 argmax     |            |                                         |
+| 6. 如何拆分贡献                | cls、reg、proposal、高 tIoU、pair-risk 多头；direct gradient 单独门控 |            |                                         |
+| 7. 高 tIoU 如何形成停止         | 风险上界满足目标 tIoU，且下一层保守边际收益低于价格，才允许停止                        |            |                                         |
+| 8. 求解成本                  | 外层 (O(                                                    | \mathcal K | ))；内层摊销 (O(K_{\max}N_vW)) 或近似流；不得多次运行骨干 |
+| 9. 如何退化固定 (K)            | 直接添加约束 (K_v=K_0)，内层完全不变                                   |            |                                         |
+| 10. 免训练能否统一              | 可以；用无标签 (U_v^0) 替换监督效用，保留同一成本、风险和解码器                      |            |                                         |
+
+---
+
+# 10. 定理、证明草图和经验假设
+
+## 命题 0：非平凡动态预算必须允许预算位于平均值两侧
+
+`THEOREM_CANDIDATE`
+
+若：
+
+[
+K_v\le \bar K\quad\forall v
+]
+
+且：
+
+[
+\mathbb E[K_v]=\bar K,
+]
+
+则：
+
+[
+K_v=\bar K\quad\text{几乎处处成立}.
+]
+
+证明：(\bar K-K_v\ge0)，但其期望为 0，因此该非负随机变量几乎处处为 0。
+
+### 直接后果
+
+若主平均预算是 384，而候选集合最大值也是 384，则所谓动态 (K) 必然退化为所有视频 (K=384)。
+
+因此建议：
+
+[
+\mathcal K_{50}
+===============
+
+{256,320,384,448,512},
+\qquad
+\mathbb E[K]=384,
+\qquad
+K_{\max}=512.
+]
+
+25% 协议可用：
+
+[
+\mathcal K_{25}
+===============
+
+{128,160,192,224,256},
+\qquad
+\mathbb E[K]=192.
+]
+
+## 命题 1：测试 batch 组成不变性
+
+`THEOREM_CANDIDATE`
+
+若 (\lambda^\star) 在测试前固定，且：
+
+[
+K_v^\star=f(z_v;\lambda^\star)
+]
+
+只依赖视频自身，则任意 batch size、batch permutation 或其他同批视频都不会改变 (K_v^\star)。
+
+证明直接来自函数的逐样本可分性。
+
+这应作为论文正式命题，用来与 AdapTok batch ILP 区分。
+
+## 命题 2：对偶价格的预算单调性
+
+`THEOREM_CANDIDATE`
+
+定义：
+
+[
+K_v(\lambda)
+============
+
+\arg\max_K[J_v(K)-\lambda C_v(K)],
+]
+
+并在并列时选择成本更低的解，则 (C_v(K_v(\lambda))) 关于 (\lambda) 单调不增。
+
+证明可由 (\lambda_1<\lambda_2) 下两组最优不等式相加得到。
+
+因此，可通过一维二分在训练校准集上寻找满足目标平均成本的 (\lambda^\star)。
+
+## 命题 3：精确任意测试集平均预算与非平凡独立决策不可兼得
+
+`THEOREM_CANDIDATE`
+
+假设对任意可能测试集合 (\mathcal T)，都要求：
+
+[
+\frac1{|\mathcal T|}
+\sum_{v\in\mathcal T}K_v=B
+]
+
+精确成立，同时 (K_v=f(v)) 独立于集合组成。取任意单元素集合 ({v})，即得：
+
+[
+f(v)=B,\quad\forall v.
+]
+
+因此，任何非平凡动态预算都不可能同时满足：
+
+1. 对每个任意测试集合精确平均；
+2. 每视频独立；
+3. 非常数预算。
+
+正式协议应要求训练校准的**期望预算**和测试实际预算容差，而不是测试 batch ILP 的精确预算。
+
+## 命题 4：物理时间映射误差上界
+
+`THEOREM_CANDIDATE`
+
+设选中时间节点 (s_i) 与相同 rank 的参考均匀节点 (u_i) 满足：
+
+[
+|s_i-u_i|\le\delta,\quad\forall i.
+]
+
+对两组节点分别构造分段线性映射 (\Phi_S) 与 (\Phi_U)，则：
+
+[
+\sup_x|\Phi_S(x)-\Phi_U(x)|\le\delta.
+]
+
+证明：每个分段内两映射之差是端点误差的凸组合。
+
+这说明累计漂移约束可以严格控制输出端坐标扭曲；但“检测器内部特征完全不受影响”仍是经验假设。
+
+## 命题 5：端点误差与 tIoU 下界
+
+`THEOREM_CANDIDATE`
+
+真实区间长度为 (L)，若预测起点、终点的绝对误差均不超过 (\varepsilon<L/2)，则一个保守下界为：
+
+[
+\mathrm{tIoU}
+\ge
+\frac{L-2\varepsilon}{L+2\varepsilon}.
+]
+
+要保证 (\mathrm{tIoU}\ge\tau)，充分条件为：
+
+[
+\varepsilon
+\le
+\frac{L(1-\tau)}{2(1+\tau)}.
+]
+
+例如：
+
+[
+\tau=0.7
+\Rightarrow
+\varepsilon/L\le0.0882.
+]
+
+因此，高 tIoU 预算停止条件可以写成：
+
+[
+\overline\varepsilon_v(K)
+\le
+0.0882,\widehat L_{\min,v}
+]
+
+并同时要求最大空洞和双端支持约束满足。
+
+## 命题 6：凹边际条件下的价格停止
+
+`THEOREM_CANDIDATE`
+
+若嵌套阶梯的保守效用增量满足边际递减：
+
+[
+\Delta J_{v,1}\ge\Delta J_{v,2}\ge\cdots,
+]
+
+且增量成本为正，则选择所有满足：
+
+[
+\frac{\Delta J_{v,m}}{\Delta C_{v,m}}\ge\lambda^\star
+]
+
+的前缀是对应拉格朗日子问题的最优解。
+
+`EMPIRICAL_HYPOTHESIS`
+
+检测效用不保证天然单调或凹。论文必须报告：
+
+* 非单调视频比例；
+* 边际递减违反率；
+* 是否需要 isotonic/concave calibration；
+* 校准前后决策变化。
+
+不能把凹性写成未经验证的事实。
+
+## 仍需实验验证的核心假设
+
+`EMPIRICAL_HYPOTHESIS`
+
+1. 多尺度硬 swap 的效用可由 cheap evidence 预测；
+2. 视频之间确实存在足够大的最优预算差异；
+3. 双边界风险头能修复宽双端支持；
+4. 嵌套约束不会牺牲过多同预算性能；
+5. bounded time warp 足以让未修改检测器适应非均匀输入；
+6. 对偶价格在训练到测试分布间保持预算校准；
+7. zero-shot proxy 与真实 TAD 效用存在稳定关系。
+
+---
+
+# 11. 总计 60 轮的训练算法与伪代码
+
+## 11.1 预算集合与训练曝光
+
+`DESIGN_PROPOSAL`
+
+统一模型支持：
+
+[
+\mathcal K=
+{128,160,192,224,256,320,384,448,512}.
+]
+
+每个 detector update 只抽取一个 (K) 运行重骨干，避免一次更新运行多个完整检测器。
+
+训练预算分布：
+
+* Epoch 1–20：在 (\mathcal K) 上近似均匀；
+* Epoch 21–45：50% 均匀，50% 集中于 192/384 附近；
+* Epoch 46–60：仍保留至少 30% 全预算覆盖，其余按部署目标分布采样。
+
+这样同一个 60 轮模型支持固定 25%、固定 50% 和动态预算，不再需要 30+60 课程。
+
+## 11.2 60 轮阶段
+
+| 阶段             | Epoch | 作用                                                     |
+| -------------- | ----: | ------------------------------------------------------ |
+| 几何暖启动          |   1–8 | uniform nested skeleton，训练 detector 对 mixed-(K) 的基本稳定性 |
+| 硬效用接入          |  9–20 | scorer 学习多尺度硬反事实，selector 不接 direct gradient           |
+| 主联合训练          | 21–48 | mixed-(K)、硬 rank、pair-risk、检测损失联合                      |
+| 冻结 selector 稳定 | 49–54 | 固定选择策略，继续训练 detector                                   |
+| 终端稳定           | 55–60 | 固定训练合同，禁止中途挑 test checkpoint                           |
+
+对偶价格 (\lambda^\star) 在 epoch 60 后，使用训练集预留 calibration split 锁定，不更新模型。
+
+## 11.3 推荐总损失
+
+不采用用户给出的全部六项。建议删除显式 `budget loss` 和 `nested loss`：
+
+* 预算由对偶价格校准，不需要反向预算损失；
+* 嵌套由结构硬保证，不需要软正则；
+* direct gradient 默认关闭。
+
+最终：
+
+[
+\mathcal L
+==========
+
+\mathcal L_{\mathrm{det}}
++
+\lambda_\Delta\mathcal L_{\mathrm{hard\text{-}utility}}
++
+\lambda_R\mathcal L_{\mathrm{pair\text{-}risk}}
++
+\lambda_C\mathcal L_{\mathrm{curve\text{-}calibration}}
++
+\mathbf 1_{G_{\mathrm{direct}}}
+\lambda_D\mathcal L_{\mathrm{direct}}.
+]
+
+其中：
+
+[
+\mathcal L_{\mathrm{hard\text{-}utility}}
+=========================================
+
+\operatorname{Huber}
+(\widehat{\Delta\mathbf U},\Delta\mathbf U)
++
+\beta
+\mathcal L_{\mathrm{pairwise\ rank}}.
+]
+
+[
+\mathcal L_{\mathrm{pair\text{-}risk}}
+======================================
+
+\operatorname{BCE/Focal}(\hat p^{s},p^{s})
++
+\operatorname{BCE/Focal}(\hat p^{e},p^{e})
++
+\operatorname{CE}(\hat q(a,b),q(a,b)).
+]
+
+[
+\mathcal L_{\mathrm{curve\text{-}calibration}}
+==============================================
+
+\operatorname{Huber}
+(\hat U(K),U(K))
++
+\operatorname{NLL}(\hat U,\hat\sigma).
+]
+
+## 11.4 量纲和梯度路由
+
+`DESIGN_PROPOSAL`
+
+* 所有硬 utility 目标按训练集 MAD 标准化；
+* cls/reg/proposal/pair-risk 分头预测，不用原始量级直接相加；
+* detector 参数只接收 (\mathcal L_{\mathrm{det}})；
+* utility/risk 头接收辅助损失；
+* selector 的 direct detector gradient 只有在 (G_{\mathrm{direct}}) 通过后开放；
+* 辅助梯度范数硬限制为 detector 主梯度范数的 25%；
+* 若 raw contribution distillation 再次达到 5–6 而检测损失约为 (O(1))，直接视为门禁失败。
+
+## 11.5 单步训练伪代码
+
+```python
+for step, batch in enumerate(train_loader):           # 总计 6000 次
+    video, gt = batch
+
+    # 1. 低成本全局证据
+    z = cheap_probe(video)
+
+    # 2. 一次构造完整嵌套阶梯
+    ladder, utility_curve, pair_risk = selector(z)
+
+    # 3. 每个 detector update 只采一个预算
+    K = sample_mixed_budget(step)
+    S = ladder[K]
+
+    # 4. 主检测前向
+    raw_proposals, det_losses = detector(video[S], gt)
+    loss_det = normalized_detection_loss(det_losses)
+
+    # 5. 低频硬反事实；主 S 的前向已可作为对照
+    loss_aux = 0
+    if step % 4 == 0:
+        S_alt = matched_group_swap(
+            S,
+            scales=[1, 2, 4, 8, 16],
+            preserve_geometry=True,
+        )
+        with no_grad():
+            alt_outputs = detector(video[S_alt], gt)
+
+        hard_target = decompose_hard_delta(
+            main=raw_proposals,
+            alternate=alt_outputs,
+            components=[
+                "classification",
+                "boundary_regression",
+                "proposal_recall",
+                "high_tiou_hit",
+                "paired_boundary_risk",
+            ],
+        )
+
+        loss_aux = utility_and_risk_loss(
+            prediction=(utility_curve, pair_risk),
+            target=hard_target,
+        )
+
+    # 6. 受保护梯度路由
+    total_loss = loss_det + projected_auxiliary_loss(
+        loss_aux,
+        max_aux_grad_ratio=0.25,
+        direct_gradient_enabled=G_direct_passed,
+    )
+
+    optimizer.zero_grad()
+    total_loss.backward()
+    optimizer.step()
+```
+
+`DESIGN_PROPOSAL`
+
+硬反事实额外前向发生在 25% 更新上，因此约增加 25% 的训练重前向成本。该成本必须在训练成本表中单列；不能像 AdapTok 一样只展示 scorer 很轻，而忽略标签生成。
+
+## 11.6 checkpoint 和评估规则
+
+`DESIGN_PROPOSAL`
+
+* 所有正式模型 60 轮、6000 次成功 detector updates；
+* 验证只在 epoch 20、40、60 运行；
+* 主结果固定使用 epoch 60 terminal checkpoint；
+* 禁止在测试集挑中间轮次；
+* 每个模型只运行一次正式 test；
+* 所有 arms 使用相同增强、优化器、学习率、更新数和评估次数；
+* 90 轮历史结果单列为 diagnostic，不进入主表。
+
+---
+
+# 12. 动态预算推理算法与伪代码
+
+## 12.1 主推理协议
+
+```python
+# 训练期已经锁定：
+# lambda_star, candidate_K, cost_table, risk_thresholds
+
+def infer_video(video):
+    # 1. 与 K 无关的低成本证据
+    z = cheap_probe(video)
+
+    # 2. 一次生成所有预算共享的嵌套阶梯和效用曲线
+    ladder = nested_selector(z)
+    utility, uncertainty = utility_head(z, ladder)
+    pair_risk = boundary_risk_head(z, ladder)
+
+    candidates = []
+
+    for K in candidate_K:
+        S = ladder[K]
+
+        feasible = (
+            pair_risk[K] <= PAIR_RISK_MAX
+            and max_gap(S) <= MAX_GAP[K]
+            and cumulative_drift(S) <= DRIFT_MAX[K]
+            and len(S) == K
+        )
+
+        if feasible:
+            robust_value = (
+                utility[K]
+                - KAPPA * uncertainty[K]
+                - lambda_star * measured_cost(K)
+            )
+            candidates.append((robust_value, K, S))
+
+    # 3. 风险全部不可行时，回退 Kmax 而不是偷偷修补
+    if not candidates:
+        K = max(candidate_K)
+        S = ladder[K]
+    else:
+        _, K, S = max(candidates, key=lambda x: x[0])
+
+    # 4. 只对 exact-K 原始帧运行重骨干与原检测器
+    raw_segments, scores, labels = detector.raw_forward(video[S])
+
+    # 5. 在 NMS 前映回原物理时间
+    physical_segments = map_selected_axis_to_physical_time(
+        raw_segments,
+        selected_times=S,
+    )
+
+    # 6. 完全未修改的官方 NMS
+    detections = official_nms(
+        physical_segments,
+        scores,
+        labels,
+    )
+
+    return detections, {
+        "K": K,
+        "selected_times": S,
+        "probe_cost": measured_probe_cost(),
+        "solver_cost": measured_solver_cost(),
+    }
+```
+
+## 12.2 复杂度
+
+`DESIGN_PROPOSAL`
+
+* cheap probe：(O(N_vd))；
+* 嵌套 selector：目标为 (O(N_vd+K_{\max}\log N_v))；
+* 有界 DP/min-cost flow：最坏 (O(K_{\max}N_vW))，其中 (W) 是最大允许前驱窗口；
+* 外层预算：(O(|\mathcal K|))；
+* 重骨干：只运行一次，输入 (K_v) 帧；
+* 不运行 test-batch ILP；
+* 不为每个候选 (K) 重跑 backbone。
+
+## 12.3 变长批处理
+
+`DESIGN_PROPOSAL`
+
+正式实现必须使用：
+
+* 按 (K) 分桶；
+* ragged batch；
+* 或将 padding 限制在小区间。
+
+应额外报告：
+
+[
+\text{padding ratio}
+====================
+
+\frac{\text{实际计算的 padded 帧总数}}
+{\sum_v K_v}.
+]
+
+若 padding ratio 高到使动态方法与 (K_{\max}) 近似等价，则动态计算 claim 失败。
+
+---
+
+# 13. 固定 (K)、动态 (K) 和免训练模式的统一关系
+
+| 模式                 | 效用来源                      | (K) 规则                        | 帧位置            | 目标标签          | 正确称谓                           |
+| ------------------ | ------------------------- | ----------------------------- | -------------- | ------------- | ------------------------------ |
+| 固定 (K)             | 可监督或无监督                   | (K_v\equiv K_0)               | 同一内层风险传输       | 可有            | 固定预算插件                         |
+| 动态 (K) 主模型         | 硬检测反事实                    | 固定 (\lambda^\star) 逐视频 argmax | 嵌套 exact-(K_v) | train GT only | task-adapted dynamic plugin    |
+| 严格零样本              | codec/通用 temporal novelty | 源域锁定价格或分析规则                   | 同一几何求解器        | 无目标标签/教师      | strict zero-shot               |
+| 无标签校准              | 目标训练视频但无标签                | 只校准成本分布和价格                    | 同一求解器          | 无标签           | unlabeled calibration          |
+| 冻结检测器、已训练 selector | 检测器教师或训练标签                | 动态                            | 同一求解器          | 有             | detector-frozen transfer，不是免训练 |
+
+## 13.1 严格零样本允许和禁止的证据
+
+`DESIGN_PROPOSAL`
+
+允许：
+
+* codec motion vector；
+* residual energy；
+* GoP packet size；
+* 场景切换；
+* 低分辨率光流或帧差；
+* 通用自监督时序新颖度；
+* 模糊度和压缩质量；
+* 纯几何风险。
+
+禁止：
+
+* 目标训练集动作标签；
+* 目标检测器中间特征教师；
+* 缓存的 detector loss；
+* GT 边界；
+* 验证集 mAP 调阈值；
+* 测试集预算统计。
+
+## 13.2 统一理论表面
+
+`DESIGN_PROPOSAL`
+
+三种模式共享：
+
+[
+\max_{K,S}
+U^{(\mathrm{mode})}_v(K,S)
+-\lambda C_v(K)
+]
+
+满足相同的：
+
+[
+R_{\mathrm{pair}},\quad
+g_{\max},\quad
+d_{\mathrm{drift}},\quad
+|S|=K.
+]
+
+差别只在 (U^{(\mathrm{mode})})：
+
+[
+U^{\mathrm{supervised}}
+=======================
+
+\text{hard TAD utility},
+]
+
+[
+U^{\mathrm{unlabeled}}
+======================
+
+\text{self-supervised novelty},
+]
+
+[
+U^{\mathrm{zero-shot}}
+======================
+
+\text{codec/motion proxy}.
+]
+
+`EMPIRICAL_HYPOTHESIS`
+
+共享数学表面不等于共享性能。严格零样本若不能超过 matched uniform，只能作为负结果或附加模式，不能列为核心贡献。
+
+---
+
+# 14. 多尺度硬反事实与 (G_{\mathrm{rank}}/G_{\mathrm{direct}}) 证明方案
+
+## 14.1 扰动尺度分布
+
+`DESIGN_PROPOSAL`
+
+建议尺度抽样概率：
+
+| (\Delta K) |   概率 |
+| ---------: | ---: |
+|          1 | 0.10 |
+|          2 | 0.10 |
+|          4 | 0.25 |
+|          8 | 0.30 |
+|         16 | 0.25 |
+
+理由：
+
+* 单帧只保留 10%，用于局部灵敏度；
+* 4–8 帧最接近可观测的结构变化；
+* 16 帧用于检测长区间覆盖变化；
+* 避免结论完全由单帧噪声支配。
+
+在每个尺度内：
+
+* 30% 独立高/低分帧交换；
+* 25% 连续短片段替换；
+* 25% 起点—终点配对替换；
+* 10% 动作内部 ↔ 背景替换；
+* 10% matched random。
+
+所有主要对比要求保持：
+
+[
+|S|,\quad
+g_{\max},\quad
+d_{\mathrm{drift}}
+]
+
+尽量匹配，从而把“任务效用”与“几何变化”分离。
+
+## 14.2 五类真实硬目标
+
+`DESIGN_PROPOSAL`
+
+1. 总检测损失变化：
+   [
+   \Delta L_{\mathrm{det}}.
+   ]
+
+2. 分类与边界回归分别变化：
+   [
+   \Delta L_{\mathrm{cls}},
+   \quad
+   \Delta L_{\mathrm{reg}}.
+   ]
+
+3. 提议和高 tIoU：
+   [
+   \Delta\mathrm{Recall}@\tau,
+   \quad \tau\in{0.5,0.6,0.7}.
+   ]
+
+4. 双端风险：
+   [
+   \Delta R_{\mathrm{pair}},
+   \quad
+   \Delta d_{\mathrm{start}},
+   \quad
+   \Delta d_{\mathrm{end}}.
+   ]
+
+5. 预算 regret：
+   [
+   \mathrm{Regret}_v(K)
+   ====================
+
+   ## U_v(K,S_v^{\mathrm{oracle}})
+
+   U_v(K,S_v^{\mathrm{pred}}).
+   ]
+
+第五类比现有贡献蒸馏更可靠，因为它直接衡量当前 selector 相对可达 hard alternative 的损失。
+
+## 14.3 视频级交叉拟合
+
+`DESIGN_PROPOSAL`
+
+训练视频划分为 5 folds：
+
+1. 在 4 folds 上训练 utility/risk scorer；
+2. 在第 5 fold 上生成硬扰动并评估 rank；
+3. 循环五次；
+4. 汇总只使用 out-of-fold prediction；
+5. validation/test 标签从不用于 utility target 或阈值校准。
+
+检测器可使用训练 split 训练，但 scorer 的相关性和校准必须在未参与 scorer 拟合的视频上计算。
+
+## 14.4 (G_{\mathrm{rank}}) 门
+
+`DESIGN_PROPOSAL`
+
+连续代理合格的最低标准：
+
+* (\Delta K=4) 和 8 上，视频级 Spearman (\rho\ge0.25)；
+* 95% bootstrap CI 下界 (>0)；
+* Kendall (\tau\ge0.15)；
+* top-decile hard utility enrichment ≥ matched random 的 1.5 倍；
+* 正负收益符号准确率 ≥60%；
+* cls、reg、pair-risk 中至少两项独立通过；
+* 不能只在总 loss 上通过、却在高 tIoU 风险上失败。
+
+若未通过：
+
+[
+\boxed{\text{删除 ST/连续贡献的 task-aware claim}}
+]
+
+然后转为硬反事实监督的 scorer + 无梯度组合求解。
+
+## 14.5 (G_{\mathrm{direct}}) 门
+
+`DESIGN_PROPOSAL`
+
+比较：
+
+* 相同 hard-rank scorer，不开 direct gradient；
+* 开启受保护 direct detection gradient；
+* 相同 6000 updates、相同预算、相同初始化。
+
+最低通过条件：
+
+* 首粒种子平均 mAP 至少额外 +0.30；
+* mAP@0.7 不下降超过 0.10；
+* 双端支持和最大空洞不恶化；
+* selector direct-gradient 与 hard utility gradient 的平均余弦为正；
+* direct auxiliary gradient 范数始终不超过 detector 主梯度的 25%。
+
+若失败：
+
+[
+\boxed{\text{永久删除 direct/ST 路径，保留硬监督 scorer}}
+]
+
+## 14.6 动态预算必要性门
+
+`DESIGN_PROPOSAL`
+
+先计算预算 Oracle：
+
+[
+K_v^{\mathrm{oracle}}
+=====================
+
+\arg\max_{K\in\mathcal K}
+U_v(K,S_v(K))
+]
+
+并在匹配总体平均预算下求最优分配。
+
+若 Oracle 动态预算相对最佳固定 (K) 的提升：
+
+* 平均 mAP < 0.5；
+* 或 mAP@0.7 < 0.3；
+* 或 utility curve 的视频间方差不显著高于测量噪声；
+
+则动态 (K) 没有足够 headroom，应停止作为主创新。
+
+---
+
+# 15. 最小决定性实验依赖图、资源优先级和停止门
+
+## 阶段 A：恢复可信测量零点
+
+| 项目                   | 科学问题               | 通过门                         | 失败动作                 |
+| -------------------- | ------------------ | --------------------------- | -------------------- |
+| 官方 dense             | 当前系统是否复现官方路径       | 配置、输入、优化器、评估完全对齐；结果稳定       | 停止所有方法实验             |
+| 原生 50% uniform       | 真实 384 帧零点         | 原生视频/特征下采样，无插件污染            | 修复基线                 |
+| 原生 25% uniform       | 真实 192 帧零点         | 同上                          | 修复基线                 |
+| clean/wrapper parity | 插件 wrapper 是否改变检测器 | uniform/no-op 下逐样本候选和最终结果一致 | 禁止 pure-plugin claim |
+| pre-NMS physical map | 坐标合同是否正确           | 先物理映射后官方 NMS                | 不进入正式实验              |
+
+`PARTNER_CLAIM`
+
+69–70 只是期望，不是门槛。阶段 A 的任务是恢复正确零点，而不是追逐某个数字。
+
+## 阶段 B：验证理论代理和动态 headroom
+
+| 实验               | 主指标                     | 通过门                   | 失败动作          |
+| ---------------- | ----------------------- | --------------------- | ------------- |
+| 多尺度 hard swap    | rank、enrichment、CI      | (G_{\mathrm{rank}})   | 删除连续代理        |
+| direct gradient  | mAP、高 tIoU、梯度路由         | (G_{\mathrm{direct}}) | 删除 ST/direct  |
+| 动态 budget Oracle | fixed vs oracle dynamic | ≥0.5 平均 mAP headroom  | 停止动态 K 核心     |
+| 几何风险修复           | 双端支持、最大空洞               | 恶化被消除                 | 重构内层          |
+| utility curve    | 单调/凹性/校准                | 可用或可校准                | 外层只做枚举，不用阈值定理 |
+
+## 阶段 C：首粒种子的公平 60 轮矩阵
+
+### 零点与主要 arms
+
+| ID | 方法                                            | 预算             |
+| -- | --------------------------------------------- | -------------- |
+| B0 | 官方 dense                                      | 768            |
+| B1 | 原生 uniform                                    | 384            |
+| B2 | 原生 uniform                                    | 192            |
+| F0 | 固定 (K) 学习式，无几何约束                              | 384            |
+| F1 | 固定 (K) 有界传输                                   | 384            |
+| D0 | **DUCA-METER 动态主模型**                          | 平均 384，cap 512 |
+| D1 | D0 去除 task utility                            | 平均 384         |
+| D2 | D0 去除 pair/geometry risk                      | 平均 384         |
+| A0 | AdapTok-style scalar quality + test-batch ILP | 平均 384         |
+| O0 | Oracle 动态预算上界                                 | 平均 384         |
+| Z0 | 严格 zero-shot 动态模式                             | 平均 384         |
+
+`DESIGN_PROPOSAL`
+
+第一阶段不需要把所有方法再完整运行在平均 192。只有 D0 在平均 384 通过首粒种子门后，才运行 25% 预算的核心 Pareto 点。
+
+### 公平合同
+
+所有正式训练 arms：
+
+* 60 轮；
+* 6000 detector updates；
+* 相同终端 checkpoint；
+* 相同验证次数；
+* 相同 test 次数；
+* 相同平均**实际帧数**；
+* 相同逐视频上限；
+* 完整报告 probe/selector/solver/padding 成本；
+* 训练辅助 hard-label 成本单独列账；
+* 不把 Oracle 视为方法。
+
+### 首粒种子通过门
+
+`DESIGN_PROPOSAL`
+
+D0 必须同时满足：
+
+1. 实际平均帧数与目标偏差 ≤1%；
+2. 相对 F1 平均 mAP ≥+0.50；
+3. mAP@0.7 ≥+0.30，或至少 95% 视频 bootstrap CI 下界 (>0)；
+4. 宽双端支持不下降；
+5. 最大空洞不恶化；
+6. batch permutation 和 batch size 不改变每视频 (K_v)；
+7. selector+solver p95 时延 ≤所节省 backbone 时延的 20%；
+8. 相对 dense 具有真实端到端加速；
+9. 相对 F1 的提升不能由更高平均帧数解释。
+
+### 首粒种子失败分级
+
+| 结果                      | 裁决                |
+| ----------------------- | ----------------- |
+| D0 比 F1 ≥0.5 且高 tIoU 改善 | 放行多种子             |
+| 提升 0.2–0.5，机制指标正确       | 允许一次预注册修订         |
+| 提升 <0.2                 | 动态 K 主 claim 失败   |
+| 平均 mAP 提升但 mAP@0.7/双端恶化 | TAD 核心失败          |
+| Oracle headroom <0.5    | 停止动态 K，不再调 scorer |
+| 实际无加速                   | 删除效率 claim        |
+| 依赖 test batch           | 主协议失败             |
+
+## 阶段 D：放行后扩展
+
+`DESIGN_PROPOSAL`
+
+额外种子使用预注册的 5801、8123。放行条件：
+
+* 3 个种子平均提升 ≥0.4；
+* 至少 2/3 种子为正；
+* pooled video bootstrap CI 下界 (>0)；
+* 无种子出现显著高 tIoU 崩溃。
+
+第二检测器只有在多种子通过后运行。推荐选择与 AdaTAD 时序头不同的 ActionFormer/TemporalMaxer 路径。ActionFormer 本身以逐时刻分类和边界回归为核心，因此是检验物理时间插件泛化的合理后端。 ([ECVA][7])
+
+## 15.1 对 69–70 目标的科学判断
+
+`PARTNER_CLAIM`
+
+若干净 dense 确实约 69，而 uniform 50% 约 65，则平均 50% 帧预算下达到 69–70 意味着几乎完全消除 50% 观测损失，甚至超过 dense。只有 Oracle 动态预算和 Oracle 位置同时显示足够 headroom 时，这一目标才合理。
+
+`DESIGN_PROPOSAL`
+
+最低成功标准不应是绝对 69，而应是：
+
+[
+\text{在相同真实成本下稳定改善 accuracy–cost Pareto}
+]
+
+并且改善集中于高 tIoU、双端支持和长尾困难视频。
+
+---
+
+# 16. CVPR 论文标题、贡献、主图、主表和叙事
+
+## 16.1 标题候选
+
+1. **METER-TAD: Risk-Calibrated Marginal Evidence Transport for Dynamic-Budget Temporal Action Detection**
+2. **Spend Frames Where Boundaries Need Them: Dynamic Physical Evidence Allocation for Temporal Action Detection**
+3. **From Frame Budgets to Localization Risk: An Anytime Pre-Backbone Sampler for Temporal Action Detection**
+
+## 16.2 一句话主张
+
+`DESIGN_PROPOSAL`
+
+> METER-TAD 在预注册的平均端到端成本下，通过硬反事实边际检测价值和成对边界风险构造嵌套物理帧阶梯，使固定预算、动态预算和严格免训练采样共享同一定位保持解码器。
+
+## 16.3 三条且仅三条核心贡献
+
+1. **问题与理论**：提出高 tIoU 定位风险下的边际物理证据分配，并给出 batch-independent 对偶预算、时间映射误差和预算单调性命题。
+2. **方法**：提出嵌套 exact-(K) 的双边界风险传输，外层动态分配视频预算，内层保持物理时间和双端覆盖。
+3. **证据**：建立多尺度硬反事实与严格 60 轮、真实成本匹配协议，区分软代理、直接梯度和真实离散收益。
+
+## 16.4 摘要骨架
+
+`DESIGN_PROPOSAL`
+
+第一段：固定帧预算浪费简单视频的观测，同时使复杂视频边界证据不足。
+
+第二段：指出 TAD 与识别/重建不同——帧价值由成对边界、物理时间扭曲和高 tIoU 风险决定。
+
+第三段：介绍 METER-TAD 的 nested ladder、hard marginal utility、pair-risk 和 frozen dual price。
+
+第四段：给出 batch-invariance、预算单调性和时间映射上界。
+
+第五段：报告 matched budget、第二检测器、真实延迟和硬反事实证据；数字只能在实验后填写。
+
+## 16.5 方法总览图
+
+主图只画五个部分：
+
+1. raw RGB 和 cheap evidence；
+2. 一条嵌套帧阶梯；
+3. 每一级的边际检测价值曲线和双边界风险曲线；
+4. 固定 (\lambda^\star) 选择 (K_v)；
+5. unchanged detector，候选先回物理时间再官方 NMS。
+
+不要画大量 loss、课程、DDP 或实现细节。
+
+## 16.6 主结果表
+
+列：
+
+```text
+Method
+Train updates
+Average actual frames
+p95 / max K
+Padding ratio
+Probe+selector+solver cost
+End-to-end p50/p95
+Energy
+mAP average
+mAP@0.5 / 0.6 / 0.7
+Paired-boundary support
+Maximum temporal gap
+```
+
+## 16.7 动态预算 Pareto 图
+
+横轴优先使用真实端到端时延或能耗，副横轴标平均帧数；纵轴使用平均 mAP，并单独画 mAP@0.7。
+
+同时显示：
+
+* dense；
+* uniform；
+* fixed learned；
+* fixed bounded；
+* AdapTok-style ILP；
+* METER dynamic；
+* Oracle。
+
+## 16.8 机制诊断图
+
+三张核心图：
+
+1. predicted marginal utility vs hard group-swap utility；
+2. (K_v) 分布与真实 Oracle (K_v) 的关系；
+3. 动作富集、双端支持、最大空洞三者的三角权衡。
+
+## 16.9 与 AdapTok 的准确表述
+
+`DESIGN_PROPOSAL`
+
+相关工作应写成：
+
+> AdapTok learns reconstruction-quality curves for variable-length latent prefixes and jointly allocates latent tokens within each mini-batch. In contrast, we allocate raw physical observations for interval localization, where frame addition changes the temporal metric and where paired boundary risk, rather than reconstruction fidelity, determines high-tIoU success. We therefore use AdapTok-style quality prediction and batch ILP as a direct-transfer baseline, while our main protocol adopts hard detection counterfactuals, localization-risk constraints, and a pre-calibrated per-video dual policy.
+
+不能写“受 AdapTok 启发所以提出 scorer+ILP”，然后把这两项列为贡献。
+
+## 16.10 结果与 claim 的绑定
+
+| 结果                         | 可保留 claim                           |
+| -------------------------- | ----------------------------------- |
+| hard utility rank 通过       | task-aware marginal evidence        |
+| D0 > F1 且高 tIoU 改善         | dynamic budget 是必要贡献                |
+| batch invariance 通过        | deployable per-video adaptation     |
+| 第二检测器通过                    | detector-agnostic/plugin-compatible |
+| frozen zero-shot > uniform | strict plug-and-play mode           |
+| 真实时延显著下降                   | computational efficiency            |
+| 只有平均帧数下降                   | 只能称 observation reduction           |
+| 高 tIoU 下降                  | 不得称 localization-preserving         |
+| 只在 AdaTAD 有效               | 删除 model-agnostic                   |
+| zero-shot 使用教师             | 删除 training-free                    |
+
+---
+
+# 17. 三名苛刻审稿人的拒稿模拟和逐项防线
+
+## 17.1 新颖性审稿人
+
+### 最可能拒稿意见
+
+> 该工作把 AdapTok 的多预算质量评分器和 ILP 从重建迁移到检测，把 MGSampler 的 cumulative sampling 换成学习密度，并重新实现了 AdaFrame 的自适应停止。方法没有新的核心机制。
+
+### 当前证据为什么不足
+
+`DOCUMENTED_RESULT`
+
+当前没有真正动态 (K)，没有 hard marginal utility，没有 batch-independent solver，也没有证明双边界风险被修复。仅有局部动作富集反而支持“普通重要性采样”的解释。
+
+### 必须加入
+
+`DESIGN_PROPOSAL`
+
+* AdapTok-style direct-transfer baseline；
+* MGSampler-like cumulative motion baseline；
+* 固定 (K) bounded transport；
+* paired-boundary risk；
+* batch-invariance 命题；
+* hard counterfactual utility；
+* outer (K) + inner positions 的层级求解。
+
+### 最强 rebuttal
+
+> 我们不把 quality scorer 或离散预算优化作为创新。贡献是物理帧的风险约束边际证据分配：新增观测由真实检测反事实监督，起点和终点通过联合风险建模，非均匀时标受到严格约束，测试决策由预校准对偶价格逐视频独立产生。
+
+若这些证据不成立，应删除“新动态预算框架”和“task-aware” claim。
+
+---
+
+## 17.2 实验公平性审稿人
+
+### 最可能拒稿意见
+
+> 动态方法让困难视频使用更多帧，训练 90 轮，而 uniform 只训练 60 轮；测试时还根据 batch 组成联合分配。所谓提升来自不公平预算、checkpoint 或测试分布。
+
+### 当前证据为什么不足
+
+`DOCUMENTED_RESULT`
+
+现有主数值均为 90 轮超预算；clean dense/50/25 未恢复；动态模型不存在；测试次数和 checkpoint 规则尚未冻结。
+
+### 必须加入
+
+`DESIGN_PROPOSAL`
+
+* 全部正式 arms 6000 updates；
+* terminal epoch 60；
+* 相同 test 次数；
+* 匹配平均实际帧、最大帧、真实成本；
+* test-batch permutation invariance；
+* 训练辅助成本 ledger；
+* 90 轮结果只放 diagnostic appendix。
+
+### 最强 rebuttal
+
+> 每个正式 detector 完成相同 6000 updates，并在同一 terminal checkpoint 测试一次。动态预算使用训练期锁定价格，任何视频的预算与同批视频无关；所有比较在实际平均帧数、逐视频 cap、padding 和端到端延迟上匹配。
+
+若无法满足，应删除“公平动态计算”和所有主性能 claim。
+
+---
+
+## 17.3 TAD 专家审稿人
+
+### 最可能拒稿意见
+
+> 选择器只学到了动作内部 actionness，破坏了 start/end；selected-axis 上的时序卷积不再对应真实时间；输出端插值不能修复内部时标。该方法不是 localization-preserving，也不是纯插件。
+
+### 当前证据为什么不足
+
+`DOCUMENTED_RESULT`
+
+宽双端支持显著下降、最大空洞增加；当前代码还先 NMS 后映射。
+
+### 必须加入
+
+`DESIGN_PROPOSAL`
+
+* paired start/end risk；
+* maximum-gap 与 drift hard constraints；
+* pre-NMS physical remap；
+* clean/wrapper parity；
+* mAP@0.6/0.7；
+* 第二检测器；
+* 时间扭曲与性能诊断。
+
+### 最强 rebuttal
+
+> 我们不把 actionness enrichment 当目标。每个候选集合都满足 exact-(K)、最大间隔、累计漂移和高置信边界对覆盖；输出 proposals 在任何 NMS 前映回原物理时间。高 tIoU 和双端支持是主门禁，不是附加指标。
+
+若高 tIoU 或双端支持仍下降，应停止当前论文路线。
+
+---
+
+## 17.4 攻击—证据—失败判据总表
+
+| 攻击             | 拒稿表述               | 必须实验                          | 最低证据                                  | 失败判据                   | 应删除 claim                  |
+| -------------- | ------------------ | ----------------------------- | ------------------------------------- | ---------------------- | -------------------------- |
+| 只是 inverse-CDF | 学习密度后做经典系统抽样       | MGSampler/systematic baseline | 主方法同成本显著更强且修复双端                       | 与 baseline 无差异         | novel sampler              |
+| 只是 AdapTok 平移  | scorer+ILP 换任务     | AdapTok-style direct baseline | pair-risk、hard utility、dual policy均必要 | 主方法不优于 direct transfer | dynamic allocation novelty |
+| 动态计算不公平        | 困难视频多算             | 匹配均值、cap、真实成本                 | 同成本 Pareto 提升                         | 成本未匹配                  | efficiency                 |
+| 软评分不代表硬收益      | ST 伪梯度             | 多尺度 group-swap                | (G_{\mathrm{rank}}) 通过                | CI 包含 0                | task-aware utility         |
+| 测试 batch 依赖    | batch size 改变 (K)  | permutation/size test         | 每视频结果完全不变                             | 任一变化                   | deployable                 |
+| padding 无节省    | 实际按 max K 计算       | ragged/bucket runtime         | p50/p95、能耗改善                          | 无真实加速                  | computation saving         |
+| 并非纯插件          | 改坐标/head/NMS       | clean/wrapper parity          | raw candidate remap 后同一 NMS           | 需要专用 head              | model-agnostic plugin      |
+| 宽双边界恶化         | 分类富集牺牲定位           | pair support/gap/high tIoU    | 全部不下降                                 | 任一显著恶化                 | localization-preserving    |
+| 只对 AdaTAD 有效   | wrapper trick      | 第二检测器                         | 第二后端非负且有收益                            | 第二后端失败                 | detector-agnostic          |
+| 免训练偷教师         | selector 用标签/cache | provenance audit              | 严格零样本证据链                              | 任一目标监督                 | training-free              |
+
+---
+
+# 18. 未来 30 天按科学优先级排序的行动清单
+
+## 第 1–4 天：恢复零点和物理时间合同
+
+`DESIGN_PROPOSAL`
+
+完成：
+
+* 官方 dense、原生 50%、原生 25%；
+* uniform/no-op clean-wrapper parity；
+* raw proposal 先物理映射、再官方 NMS；
+* 实际帧数、padding、时延 ledger。
+
+停止门：任一基线或 parity 未通过，不开始新模型训练。
+
+## 第 5–9 天：证明动态预算是否有科学 headroom
+
+`DESIGN_PROPOSAL`
+
+完成：
+
+* fixed nested ladder 下的多 (K) Oracle；
+* per-video 最优 (K) 分布；
+* dynamic Oracle vs best fixed；
+* utility heterogeneity；
+* 多尺度 hard swap 小规模证据。
+
+停止门：Oracle 动态提升不足，动态 (K) 立即停止作为主创新。
+
+## 第 10–14 天：重建内层定位保持传输
+
+`DESIGN_PROPOSAL`
+
+完成：
+
+* nested exact-(K)；
+* maximum gap；
+* cumulative drift；
+* density lower/upper bounds；
+* paired-boundary risk；
+* 固定 (K) F1 首轮验证。
+
+停止门：无法修复宽双端支持和最大空洞，则停止 current selector。
+
+## 第 15–20 天：建立 hard marginal utility 与 dual budget
+
+`DESIGN_PROPOSAL`
+
+完成：
+
+* 5-fold out-of-fold scorer；
+* cls/reg/proposal/pair-risk 多头；
+* (G_{\mathrm{rank}})；
+* train-calibration dual price；
+* batch invariance 单元实验；
+* AdapTok-style direct-transfer baseline。
+
+停止门：(G_{\mathrm{rank}}) 失败则删除 continuous/ST，改用硬监督无梯度 scorer。
+
+## 第 21–25 天：首粒种子公平 60 轮
+
+`DESIGN_PROPOSAL`
+
+只运行：
+
+* F0；
+* F1；
+* D0；
+* D1；
+* D2；
+* A0。
+
+使用终端 epoch 60，不挑 test checkpoint。
+
+## 第 26–30 天：条件扩展
+
+`DESIGN_PROPOSAL`
+
+只有 D0 通过首粒种子门：
+
+* 运行两个额外种子；
+* 运行 25% 平均预算点；
+* 运行严格 zero-shot；
+* 准备第二检测器；
+* 生成 Pareto、hard-utility、pair-risk 三张核心图。
+
+若首粒种子失败，仅允许一次由预先诊断指定的修订；不得无限调权重。
+
+---
+
+# 19. 明确的“不做清单”
+
+`DESIGN_PROPOSAL`
+
+1. 不把 90 轮结果放入公平主表。
+2. 不在 test 上挑 checkpoint。
+3. 不用 test-batch ILP 作为主协议。
+4. 不把动态 (K) 写成“首次动态视频预算”。
+5. 不把 scorer+ILP 写成自己的核心创新。
+6. 不把 inverse-CDF 或 density transport 单独包装成新算法。
+7. 不再以 actionness enrichment 作为 selector 成功证据。
+8. 不只做单帧 swap。
+9. 不在 (G_{\mathrm{rank}}) 前开放 ST/direct gradient。
+10. 不让 raw contribution loss 以 5–6 的量级压过检测损失。
+11. 不在 NMS 后才映回物理时间。
+12. 不通过修改 detector head、loss、时间编码或 NMS 制造收益。
+13. 不把 selector 训练过、但 detector 冻结的模式称为 training-free。
+14. 不只报告平均 (K)，不报告实际时延。
+15. 不在所有视频 padding 到 (K_{\max}) 后声称动态计算节省。
+16. 不因项目负责人希望 69–70 而调整 test 协议。
+17. 不在 Oracle 没有 headroom 时继续调动态 scorer。
+18. 不在第二检测器失败后继续声称 model-agnostic。
+19. 不把零样本 codec complexity 当独立创新；MeToM 已占据相邻空间。
+20. 不把动态 (K) 失败后悄悄降级为附录并继续维持原主张。
+
+---
+
+# 20. 最终 Go / Major Redesign / Stop 裁决
+
+## 最终裁决
+
+[
+\boxed{\textbf{MAJOR REDESIGN — 重大重构后继续}}
+]
+
+## 动态 (K) 的最终地位
+
+`DESIGN_PROPOSAL`
+
+**动态 (K) 应成为 DUCA 论文主模型不可缺少的结构性部分，但“动态 (K)”本身不是创新。**
+
+唯一推荐是路线 C：
+
+[
+\boxed{
+\text{外层：视频级风险校准动态预算}
++
+\text{内层：定位保持的 exact-K 物理时间传输}
+}
+]
+
+固定 (K) 是它的严格退化特例和公平对照，而不是另一套独立方法。
+
+## 为什么值得继续
+
+1. `DOCUMENTED_RESULT` 当前负结果揭示了一个真实、TAD 特有且尚未解决的矛盾：局部动作富集与全局双边界覆盖发生冲突。
+2. `PAPER_FACT` AdapTok、AdaFrame、MGSampler 等已经占据普通动态预算、未来效用和累积分布采样，但尚未解决高 tIoU、成对边界和物理时间失真。
+3. `DESIGN_PROPOSAL` 该缺口可以形成明确数学问题、可证明命题和有限实验内的停止门。
+4. `UNRESOLVED` 当前没有证据保证它会提高 mAP；因此必须先做 Oracle 和 hard-utility 门，而不是直接进入大规模训练。
+
+## 立即做
+
+[
+\boxed{
+\text{基线恢复}
+\rightarrow
+\text{pre-NMS 物理映射}
+\rightarrow
+\text{动态 Oracle}
+\rightarrow
+\text{多尺度 hard swap}
+\rightarrow
+\text{fixed-K pair-risk transport}
+}
+]
+
+## 通过门后做
+
+[
+\boxed{
+\text{nested utility curve}
+\rightarrow
+\text{frozen dual dynamic K}
+\rightarrow
+\text{60轮首粒种子}
+\rightarrow
+\text{多种子与第二检测器}
+}
+]
+
+## 暂不做
+
+[
+\boxed{
+\text{test-batch ILP}
+,\quad
+\text{完整主动感知}
+,\quad
+\text{Shapley 主训练}
+,\quad
+\text{direct ST}
+,\quad
+\text{以 zero-shot 为主故事}
+}
+]
+
+## 绝对停止条件
+
+满足任一项即停止当前动态预算主路线：
+
+1. dynamic budget Oracle 相对最佳 fixed-(K) headroom <0.5 mAP；
+2. 多尺度 hard utility 无法被显著预测；
+3. bounded inner transport 仍不能修复双端支持和最大空洞；
+4. D0 在公平 60 轮下不能超过 F1；
+5. 提升只出现在低 tIoU，mAP@0.7 下降；
+6. 实际端到端成本无节省；
+7. 方法必须依赖检测器专用时间模块才能工作；
+8. 第二检测器完全失败。
+
+在这些门通过之前，DUCA 不是一篇已经接近完成的 CVPR 方法，而是一项具有明确科学潜力、但必须重建中心命题和证据链的研究。动态 (K) 不应被保守地降级；它应被正面证明，或者被正面证伪。
+
+[1]: https://openaccess.thecvf.com/content/CVPR2026/html/Li_AdapTok_Learning_Adaptive_and_Temporally_Causal_Video_Tokenization_in_a_CVPR_2026_paper.html "https://openaccess.thecvf.com/content/CVPR2026/html/Li_AdapTok_Learning_Adaptive_and_Temporally_Causal_Video_Tokenization_in_a_CVPR_2026_paper.html"
+[2]: https://github.com/VisionXLab/AdapTok/tree/a72076cf6474f930a181aa78971de70d65289b49 "https://github.com/VisionXLab/AdapTok/tree/a72076cf6474f930a181aa78971de70d65289b49"
+[3]: https://openaccess.thecvf.com/content/ICCV2021/html/Zhi_MGSampler_An_Explainable_Sampling_Strategy_for_Video_Action_Recognition_ICCV_2021_paper.html "https://openaccess.thecvf.com/content/ICCV2021/html/Zhi_MGSampler_An_Explainable_Sampling_Strategy_for_Video_Action_Recognition_ICCV_2021_paper.html"
+[4]: https://openaccess.thecvf.com/content_CVPR_2019/html/Wu_AdaFrame_Adaptive_Frame_Selection_for_Fast_Video_Recognition_CVPR_2019_paper.html "https://openaccess.thecvf.com/content_CVPR_2019/html/Wu_AdaFrame_Adaptive_Frame_Selection_for_Fast_Video_Recognition_CVPR_2019_paper.html"
+[5]: https://arxiv.org/html/2505.17011 "https://arxiv.org/html/2505.17011"
+[6]: https://openaccess.thecvf.com/content/CVPR2026/html/Xiong_EVATok_Adaptive_Length_Video_Tokenization_for_Efficient_Visual_Autoregressive_Generation_CVPR_2026_paper.html "https://openaccess.thecvf.com/content/CVPR2026/html/Xiong_EVATok_Adaptive_Length_Video_Tokenization_for_Efficient_Visual_Autoregressive_Generation_CVPR_2026_paper.html"
+[7]: https://www.ecva.net/papers/eccv_2022/papers_ECCV/html/7278_ECCV_2022_paper.php "https://www.ecva.net/papers/eccv_2022/papers_ECCV/html/7278_ECCV_2022_paper.php"

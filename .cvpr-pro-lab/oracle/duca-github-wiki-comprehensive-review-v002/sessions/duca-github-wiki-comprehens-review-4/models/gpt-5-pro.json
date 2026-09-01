@@ -1,0 +1,30 @@
+{
+  "model": "gpt-5-pro",
+  "status": "error",
+  "log": {
+    "path": "models\\gpt-5-pro.log"
+  },
+  "startedAt": "2026-08-31T09:45:31.580Z",
+  "completedAt": "2026-08-31T09:46:31.769Z",
+  "response": {
+    "status": "error",
+    "incompleteReason": "chrome-disconnected"
+  },
+  "error": {
+    "category": "browser-automation",
+    "message": "Remote Chrome connection lost before Oracle finished.",
+    "details": {
+      "stage": "connection-lost",
+      "recoverableDisconnect": false,
+      "disconnectCause": "chrome-closed",
+      "runtime": {
+        "chromeHost": "127.0.0.1",
+        "chromePort": 15359,
+        "chromeTargetId": "7870B7A41E3ED24DE4BF2BA2821E9790",
+        "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+        "promptSubmitted": false,
+        "controllerPid": 41108
+      }
+    }
+  }
+}

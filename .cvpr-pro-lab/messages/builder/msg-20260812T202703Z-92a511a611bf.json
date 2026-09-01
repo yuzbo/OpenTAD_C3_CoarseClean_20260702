@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-12T20:27:03Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_PRE_STATIC_001_SELF_CONTAINED_GATE_INTERFACE_PLAN",
+  "message_id": "msg-20260812T202703Z-92a511a611bf",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "CRITIC_DUCA_P0_IDENTITY_PRE_RUN_STATIC_DEPENDENCY_RECHECK-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Return MINIMAL_CHANGE_PLAN only for deterministic finding P0-PRE-STATIC-001 in CRITIC_DUCA_P0_IDENTITY_PRE_RUN_STATIC_DEPENDENCY_RECHECK-v001. Preserve the frozen integer projector, fixture membership/order, independent-reference boundary, role order, claim/split/metric/budget and NOT_EXECUTED status. Plan the smallest self-contained formal production adapter/interface that consumes the sealed Evaluator JSONL directly; do not copy Evaluator-owned reference/source artifacts into the Builder snapshot, and do not use the currently non-self-contained pytest module as the formal identity-gate interface. Name exact existing paths to reuse, any unavoidable new/changed files, focused static checks, and how the subsequent clean execution revision would be rebound. Do not edit, execute/import/compile/test, access remote/data/model/checkpoint/metric, use GPU/CUDA/Slurm/browser, materialize fixtures, or invoke production/reference/comparison.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

@@ -1,0 +1,119 @@
+{
+  "id": "duca-pjst-d1-posttrain-v001",
+  "createdAt": "2026-08-27T08:12:21.260Z",
+  "status": "running",
+  "promptPreview": "Execute the complete attached DUCA scientific post-training adjudication exactly once in this fresh exact-DUCA Project conversation. The attached prompt is auth",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "running",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-27T08:12:21.827Z"
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 22579
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "chromePort": 22579,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "95D4A9BD4AF3C4B64C0C2826AA35A911",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8ff16d-6dd0-83e9-ab74-1ec5fcee29ac",
+      "conversationId": "6a8ff16d-6dd0-83e9-ab74-1ec5fcee29ac",
+      "promptSubmitted": true,
+      "controllerPid": 92616
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-27T08:12:26.256Z"
+    }
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Execute the complete attached DUCA scientific post-training adjudication exactly once in this fresh exact-DUCA Project conversation. The attached prompt is authoritative and includes nonce DUCA-PJST-D1-POSTTRAIN-ROOTCAUSE-NEXT-v001-20260827.",
+    "file": [
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_PJST_D1_POSTTRAIN_ROOTCAUSE_AND_NEXT_TASK-v001.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-pjst-d1-posttrain-v001",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 22579
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-pjst-d1-posttrain-rootcause-next-v001/PRO_DUCA_PJST_D1_POSTTRAIN_ROOTCAUSE_AND_NEXT_TASK-v001.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 92616,
+    "reattachCommand": "oracle session duca-pjst-d1-posttrain-v001"
+  },
+  "startedAt": "2026-08-27T08:12:21.823Z"
+}

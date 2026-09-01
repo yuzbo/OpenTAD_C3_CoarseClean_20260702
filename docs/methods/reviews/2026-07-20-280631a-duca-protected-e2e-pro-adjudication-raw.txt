@@ -1,0 +1,1647 @@
+## 1. `VISIBILITY_CERTIFICATE`
+
+**visibility_status:** `PASS`
+
+**仓库可见性**
+
+* 仓库 `yuzbo/OpenTAD_C3_CoarseClean_20260702` 可读取。
+* 同步分支 `codex/duca-protected-e2e-20260720` 已解析。
+* 分支当前精确指向 Prompt 提交：
+  `280631a27ffadad7d47eff4d379d6203427e013e`
+* 该提交的提交信息为 `Freeze DUCA protected E2E design adjudication`，新增内容就是本轮裁决 Prompt。
+
+**精确提交可见性**
+
+| 冻结对象                  | 实际读取 SHA                                   | 状态 |
+| --------------------- | ------------------------------------------ | -- |
+| 本轮 Prompt             | `280631a27ffadad7d47eff4d379d6203427e013e` | 可读 |
+| 最新诊断/协议               | `db11aeeab464b655104d1265e4d166bb5976c569` | 可读 |
+| Allocation-Ceiling 实现 | `8ebdd2a11ea5cc0644979324872a3b1cae5a2170` | 可读 |
+| CellCF 证据             | `4ce69c852bdbd902046b47bc6019ae11e850dbe4` | 可读 |
+| 正式 CellCF 训练代码        | `1642f265e48391418a7c8a4a087e33e2b7bf6899` | 可读 |
+
+`db11aee…` 的提交内容是最终指标口径文档修订，不是新的受保护端到端模型实现；其提交信息和差异均为诊断 Prompt 修订。
+
+**实际逐行读取文件**
+
+在 `db11aeeab464b655104d1265e4d166bb5976c569` 读取：
+
+```text
+configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py
+configs/adatad/thumos/duca_cellcf_fixed384_official_adatad_backend_full_train.py
+opentad/models/duca/acquisition.py
+opentad/models/duca/transition_only.py
+opentad/models/duca/structured_selection.py
+opentad/models/selectors/duca_online_frame_selector.py
+opentad/models/detectors/actionformer.py
+opentad/models/dense_heads/actionformer_head.py
+opentad/models/dense_heads/anchor_free_head.py
+opentad/models/projections/actionformer_proj.py
+opentad/models/utils/temporal_grid.py
+opentad/models/utils/sampling_contract.py
+tests/test_duca_transition_only.py
+tests/test_duca_cellcf_contract.py
+tests/test_duca_detector_gradient_bridge.py
+tools/bata/run_duca_official_adatad_one_step_grad_proof.py
+docs/methods/prompts/2026-07-20-duca-allocation-negative-result-detector-utility-pro-audit-prompt.md
+configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py
+configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py
+configs/_base_/models/actionformer.py
+```
+
+在 `8ebdd2a11ea5cc0644979324872a3b1cae5a2170` 读取：
+
+```text
+tools/bata/duca_allocation_families.py
+tools/bata/duca_exact_physical_solver.py
+tools/bata/evaluate_duca_allocation_candidates.py
+```
+
+在 `1642f265e48391418a7c8a4a087e33e2b7bf6899` 直接复核正式 CellCF 配置。
+
+上述文件覆盖 Prompt 强制列出的全部 19 个审计对象，并补读了继承配置、结构化选择实现和官方后端基础配置。Prompt 本身要求的仓库、提交及文件列表可核对于原文。
+
+本轮未修改仓库、未创建提交、未运行训练、CUDA、Slurm 或 official-60，也未把测试或历史指标冒充为新的受保护端到端结果。
+
+---
+
+## 2. `ONE_SENTENCE_VERDICT`
+
+**REVISE：受保护检测梯度设计可以复用现有全局结构化选择、硬前向张量桥和 physical-grid ActionFormer 实现落地，但当前正式代码的直接检测梯度为零、现有局部软桥与全局可行域不一致、selected-axis 训练坐标会混淆非均匀采样效应，因此在完成本裁决冻结的补丁并通过 P0–P3 前，禁止启动 official-60。**
+
+---
+
+## 3. `CURRENT_CODE_GRADIENT_AUDIT`
+
+### 3.1 正式 CellCF 不是直接检测梯度模型
+
+精确训练提交 `1642f265…` 中：
+
+* `hard_soft_feasible_family="one_frame_per_exact_uniform_voronoi_cell"`，只能在每个均匀小格内部换帧，不能跨区域重新分配预算；
+* `detector_gradient_bridge="disabled"`；
+* `detector_gradient_final_weight=0.0`；
+* 检测效用被定义为局部硬翻转后的监督目标，不是检测损失对选择器的直接导数。
+  `configs/.../duca_cellcf...py:33–47`。
+* 实际 `detector_gradient_mode="none"`。
+  `configs/.../duca_cellcf...py:90–99`。
+* 检测梯度调度仍是 `0.0→0.0`，且 `remap_gt_to_selected_axis=True`。
+  `configs/.../duca_cellcf...py:122–140`。
+
+因此，历史 CellCF 的 `64.0610` 不能解释为“检测损失已成功端到端优化选帧”。
+
+### 3.2 transition-only 正式配置同样没有直接检测梯度
+
+`duca_transition_only_fixed384...py:51–135` 声明：
+
+* 全局 exact-K/max-gap DP；
+* 动作损失更新粗分类干和动作头；
+* transition loss 更新粗分类干和共享 transition scorer；
+* 但旧 detector bridge 已因真实硬换帧方向门禁失败而移除；
+* `detector_gradient_final_weight=0.0`；
+* 当前使用的是 detached hard counterfactual utility distillation。
+
+虽然 selector 配置仍保存 `detector_gradient_mode="st_sparse_gather"` 这个模式名，但调度在 `duca_transition_only...py:205–210` 明确是 `start=0.0, end=0.0`，所以模式名不等于执行中存在非零检测梯度。该配置还继续启用 selected-axis GT remap。
+
+### 3.3 当前 `detach()` 所有权路径是清楚的
+
+`opentad/models/duca/transition_only.py:168–203` 的 `transition_utility_paths` 实际执行：
+
+```python
+descriptors = build_transition_descriptors(
+    actionness_logits.detach(),
+    hidden,
+    valid,
+)
+policy_scores = scorer(descriptors.detach())
+auxiliary_scores = scorer(descriptors)
+```
+
+因此：
+
+* `policy_scores` 对动作 logits 和 ASFormer hidden 都断梯度，只更新 scorer；
+* `auxiliary_scores` 对动作 logits 断梯度，但对 hidden 保留梯度，更新 ASFormer trunk 和 scorer；
+* 两条路径前向数值被强制要求完全相等。
+
+这是正确的保护基础，但当前没有独立命名的 selector adapter，检测梯度也没有被接通。
+
+### 3.4 当前 `soft_to_hard_resample` 不符合全局可行域
+
+`opentad/models/selectors/duca_online_frame_selector.py:153–196` 中，每个 hard slot 独立地以其已选位置为中心计算局部 softmax：
+
+```python
+logits = center_scores[:, None, :] - distance / sigma
+weights = softmax(logits, dim=-1)
+```
+
+该 `weights[B,K,T]` 没有共同编码：
+
+* slot 间严格单调；
+* 同一帧至多被一个 slot 占用；
+* exact-K 路径；
+* 全局物理最大间隔；
+* source-to-first 和 last-to-sink 的边缘覆盖。
+
+多个 slot 的软质量可以落到同一帧，且每个 slot 的局部邻域取决于 detached hard position。它不是 hard 全局选择问题的松弛。
+
+### 3.5 旧 `structured_zero_forward` 不能恢复
+
+同文件 `:199–262` 已把该函数明确标为 legacy local surrogate，并承认其梯度不保证与真实离散 one-swap 损失变化一致。
+
+因此，以下做法被本裁决永久禁止：
+
+```python
+detector_gradient_weight = 1.0
+detector_gradient_mode = "structured_zero_forward"
+```
+
+仅重新打开权重不会修复梯度代理。
+
+### 3.6 可复用的正确张量桥已经存在，但未接入正式路径
+
+`opentad/models/duca/acquisition.py:2119–2186` 已支持真正的全局 slot assignment：
+
+```python
+soft_gathered = torch.einsum("bkt,btd->bkd", assignment, dense)
+detector_input = hard + (soft_gathered - soft_gathered.detach()) * slot
+```
+
+它检查 assignment 形状为 `[B,K,T]`，前向使用 hard gather，反向可经 assignment 传播。
+
+`opentad/models/duca/structured_selection.py:231–360` 也已经包含 exact-K/max-hole 的 hard Viterbi 和同一状态空间上的 soft forward-backward 雏形。hard 路径回溯得到严格 K 个位置，soft 路径计算 slot marginals。
+
+缺失的不是硬前向公式，而是：
+
+1. 将可行域从候选索引 hole 扩展到真实物理时间边；
+2. 把其 `[B,K,T]` marginals 接入正式 selector；
+3. 通过 P3 证明梯度方向。
+
+### 3.7 当前“一步梯度证明”不能证明本轮所有权
+
+`run_duca_official_adatad_one_step_grad_proof.py:29–43` 用冻结的 `_ProofTemporalMeanBackbone` 替换了真实 VideoMAE 视频骨干。
+
+该脚本还会：
+
+* 缩小时间长度、预算、空间尺寸和特征维；
+* 强制旧 bridge 为 1；
+* 把 projection、neck、head 改成缩小版本；
+* 最后把真实 backbone 替换为 proof-only temporal mean。
+  `run_duca_official_adatad_one_step_grad_proof.py:120–297`。
+
+它对总 `losses["cost"]` 一次 backward，并要求 coarse probe、selector encoder 和 center head 都有梯度，恰好不能回答“仅 cls+reg 时 ASFormer trunk/action head 是否为零”。
+
+所以该脚本只能作为旧的缩放 smoke test，必须由真实 official 配置的 P2 所有权测试取代。
+
+### 3.8 官方后端调用链是真实存在的
+
+`ActionFormer.forward_train` 的实际链为：
+
+```text
+frame_selector.forward_train
+→ selector_outputs["inputs"]
+→ backbone
+→ projection
+→ neck
+→ rpn_head.forward_train
+→ cls_loss/reg_loss
+```
+
+代码位于 `opentad/models/detectors/actionformer.py:130–264`。
+
+继承基础配置真实构建：
+
+* `mmaction.Recognizer3D`；
+* `VisionTransformerAdapter`，embed 384、12 层、16-frame 输入、12 个 adapter；
+* `Conv1DTransformerProj`；
+* `FPNIdentity`；
+* `ActionFormerHead`；
+* focal classification loss 和 DIOU regression loss；
+* 官方 soft-NMS。
+
+准确表述应是：**完整官方组件栈加仓库内 selector/physical-grid 扩展**，而不是“检测器源码逐字未改”。
+
+### 3.9 当前 selected-axis 训练会扭曲非均匀选择的时间语义
+
+selector 的 `_remap_train_targets_to_selected_axis` 会把原始时间 GT 映射到选中 slot 的秩坐标。
+`duca_online_frame_selector.py:1916–1950`。
+
+这意味着两个物理间隔完全不同的相邻选帧，在检测头中都可能被当成距离 1。对要比较“跨区域预算转移”的本轮设计，这是方法变量污染，不只是输出后处理问题。
+
+仓库已有最小修复：`AnchorFreeHead` 的 `physical_grid_actionformer` 会从 metadata 读取真实 selected positions，重建各 FPN 点的物理 center/stride，并禁止 selected-axis GT remap。
+`anchor_free_head.py:31–80,106–233`。
+
+仓库的 sampling contract 也明确把 `remap_gt_to_selected_axis=True` 视为禁用条件，并要求原始位置严格递增、位于 dense valid prefix 内。
+`sampling_contract.py:6–14,171–250`。
+
+### 3.10 历史指标边界
+
+冻结事实保持不变：
+
+* exact-uniform：终点 EMA Avg-mAP `63.8594`
+* transition-beta0：`64.2755`
+* CellCF：`64.0610`
+
+这些结果来自既有协议；当前没有受保护端到端模型或结果。Allocation-Ceiling 的冻结检测损失也只是诊断，不是最终 mAP。
+
+---
+
+## 4. `DESIGN_VERDICT: REVISE`
+
+**唯一裁决：`REVISE`**
+
+不是 `GO`，因为当前代码同时存在四个正式阻断：
+
+1. 直接 detector→selector 梯度为零；
+2. 当前局部软桥与 hard 全局 exact-K/物理覆盖可行域不一致；
+3. 旧 bridge 已经失败于真实 hard-swap 方向门禁；
+4. selected-axis GT 和 proposal 语义会混入非均匀采样造成的时间扭曲。
+
+也不是 `KILL`，因为仓库已经具备全部关键基础件：
+
+* 受保护的动作 logits/hidden 梯度分流；
+* hard exact-K 结构化 DP；
+* `[B,K,T]` soft slot assignment 接口；
+* hard-forward/soft-backward `einsum` 张量桥；
+* 物理时间轴、物理 gap validator 和精确物理 DAG 求解器；
+* physical-grid ActionFormer target/decode 分支；
+* 完整官方 VideoMAE-S adapter 与 ActionFormer 检测链。
+
+因此应当只实现下一节冻结的唯一架构，不得恢复旧桥或开启替代路线。
+
+---
+
+## 5. `SINGLE_APPROVED_ARCHITECTURE`
+
+### 5.1 输入与粗分类
+
+输入：
+
+```text
+dense_video V: [B, C, L, H, W]
+valid_mask M:  [B, L]
+L ≤ 768
+K = 384
+K_eff = min(K, valid_len)
+```
+
+现有低分辨率完整时间序列分支输出：
+
+```text
+action logits a: [B, L]
+ASFormer hidden z: [B, L, 96]
+```
+
+transition descriptor 保持当前定义，维度：
+
+```text
+d: [B, L, 2*96+5] = [B, L, 197]
+```
+
+继续禁止 absolute hidden、直接 RGB descriptor 和直接 boundary head。
+
+### 5.2 将现有 scorer 显式拆成 adapter 与 score head
+
+不增加第二套策略网络；把当前 `DucaTransitionUtilityScorer.net` 重构为：
+
+```python
+selector_adapter = nn.Sequential(
+    nn.LayerNorm(197),
+    nn.Linear(197, 64),
+    nn.GELU(),
+)
+selector_score_head = nn.Linear(64, 1)
+```
+
+这与现有 `LayerNorm → Linear → GELU → Linear` 容量等价，只是建立可审计的参数所有权边界。当前 scorer 已经采用该基本结构。
+
+学习率冻结为：
+
+```text
+selector_adapter:    1.0e-4
+selector_score_head: 1.0e-4
+ASFormer trunk:      2.5e-5
+action head:         5.0e-5
+```
+
+### 5.3 三条梯度路径
+
+#### 动作二分类路径
+
+```python
+loss_action = balanced_action_bce(a, action_target)
+```
+
+更新：
+
+```text
+ASFormer spatial stem
+ASFormer temporal trunk
+action head
+```
+
+不更新 selector adapter/scorer 或检测器。
+
+#### transition auxiliary 路径
+
+```python
+d_aux = build_transition_descriptors(
+    a.detach(),
+    z,
+)
+s_aux = selector_score_head(selector_adapter(d_aux))
+```
+
+更新：
+
+```text
+ASFormer spatial stem
+ASFormer temporal trunk
+selector adapter
+selector score head
+```
+
+动作 head 不接收 transition 梯度。
+
+#### 受保护 detector policy 路径，主版本 `rho=0`
+
+```python
+a_policy = a.detach()
+z_policy = z.detach()
+d_policy = build_transition_descriptors(a_policy, z_policy)
+s = selector_score_head(selector_adapter(d_policy))
+```
+
+detector loss 只能经 `s` 更新 selector adapter/scorer，不能更新 ASFormer 或 action head。
+
+这可以诚实称为：
+
+> **检测损失端到端优化选择策略，但在粗分类器边界实施受保护的梯度截断。**
+
+不得称为“检测损失端到端联合训练粗分类器”。
+
+### 5.4 `rho` 臂只开放 ASFormer 最后一个时序块
+
+冻结：
+
+```text
+rho = 0.01
+```
+
+令 `z_prev` 为最后一个 ASFormer 时序块的输入，`z` 为正常动作/transition 前向输出。第四臂使用：
+
+```python
+z_replay = last_temporal_block(z_prev.detach())
+
+z_policy = (
+    z.detach()
+    + 0.01 * (z_replay - z_replay.detach())
+)
+```
+
+其前向数值严格等于 `z.detach()`，detector 梯度只进入共享的最后一个时序块参数，不进入更早 block。重放最后 block 时必须通过 `torch.random.fork_rng` 重用冻结 RNG 状态，不能额外推进全局 RNG。
+
+`a_policy=a.detach()` 在第四臂也不改变。
+
+### 5.5 固定覆盖分布
+
+在每个样本的有效前缀上：
+
+[
+p_t=(1-\lambda)\operatorname{softmax}(s_t/\tau)+\lambda/L_b
+]
+
+冻结：
+
+```text
+lambda = 0.10
+tau_score = 0.70
+tau_path = 1.00
+```
+
+padding 位置概率为 0。
+
+`lambda`：
+
+* 固定；
+* 不可学习；
+* 不随训练更新；
+* 不承担硬可行性保证；
+* 只保证每个有效候选具有正质量并改善 soft DP 数值条件。
+
+若令其可学习，它可能与 scorer 尺度共同漂移，破坏四臂的单因素比较。
+
+### 5.6 物理 exact-K 可行域
+
+对样本 (b)，由 dense candidate metadata 得到：
+
+```text
+candidate ordinal c_t
+decoded source frame f_t
+physical time q_t = f_t / decoder_fps
+```
+
+三种单位均记录，但**秒是规范约束单位**。
+
+先生成精确均匀位置 (U_b)，定义包括左右边缘在内的均匀参考最大物理间隔：
+
+[
+G_b=\max \left(
+q_{u_1}-q_0,;
+\max_k(q_{u_{k+1}}-q_{u_k}),;
+q_{L_b-1}-q_{u_K}
+\right).
+]
+
+合法集合：
+
+[
+\mathcal F_b =
+\left{
+i_1<\cdots<i_{K_{\mathrm{eff}}}:
+q_{i_1}-q_0\le G_b,;
+q_{i_{k+1}}-q_{i_k}\le G_b,;
+q_{L_b-1}-q_{i_K}\le G_b
+\right}.
+]
+
+因此：
+
+* exact-K：由路径层数保证；
+* 唯一：路径不能重复节点；
+* 有序：DAG 只允许前向边；
+* 最大物理间隔：由 source、内部边和 sink 边共同保证；
+* exact-uniform：按 (G_b) 的定义必为显式合法成员；
+* 跨区域预算转移：没有“一格一帧”约束，只要全局物理 cap 满足，就可在某一区域选择更密、在另一处以最大合法间隔补偿。
+
+仓库现有 Allocation-Ceiling 已经提供 `PhysicalAxis`、source-frame/seconds cap、三单位 gap report 和 exact-budget validator，应直接复用。
+
+短视频规则冻结为：
+
+```text
+valid_len >= 384: 精确选择 384 个不同位置
+valid_len < 384: 选择全部 valid frames 一次，K_eff=valid_len；
+                 其余 slot 填 -1，mask=False
+```
+
+严禁复制帧来凑 K。
+
+### 5.7 唯一批准的 hard/soft 分配：物理 exact-K DAG 的 Gibbs marginals
+
+选择 Prompt 的第二种实现：
+
+> **新建受约束软分配，但复用现有 structured-selection 张量、网格和正式检测路径。**
+
+对同一物理 DAG：
+
+[
+P(S)\propto
+\exp\left(\sum_{t\in S}\log p_t/\tau_{\text{path}}\right),
+\quad S\in\mathcal F_b.
+]
+
+hard 路径：
+
+```text
+Viterbi argmax over the physical exact-K DAG
+```
+
+soft 路径：
+
+```text
+forward-backward log-sum-exp over the same DAG
+```
+
+输出：
+
+```text
+hard_positions Hpos: [B, K]
+hard_onehot H:        [B, K, L]
+soft_assignment A:    [B, K, L]
+```
+
+其中：
+
+[
+A_{k,t}=P(i_k=t).
+]
+
+必须满足：
+
+```text
+A[b,k,:].sum() = 1              对每个 active slot
+A.sum(dim=1) <= 1 + 1e-5        每帧期望占用不超过 1
+A 对 padding/invalid 位置为 0
+E_A[i_k] < E_A[i_{k+1}]         slot 顺序严格单调
+A 的支持只来自合法 exact-K 物理路径
+```
+
+复杂度为 (O(BKE))，其中 (E) 是物理 cap 下合法 DAG 边数；不采用 (O(BKL^2)) 的全连接传输。
+
+### 5.8 hard-forward/soft-backward
+
+```python
+hard = gather_time(dense_video, hard_positions)       # [B,C,K,H,W]
+soft = constrained_resample(dense_video, A)           # [B,C,K,H,W]
+
+selected = hard + (soft.to(hard.dtype) -
+                   soft.to(hard.dtype).detach())
+```
+
+必须满足：
+
+```python
+torch.equal(selected.detach(), hard.detach()) is True
+```
+
+detector 前向只消费真实 hard 帧；反向通过 `A→log p→s` 更新 selector adapter/scorer。
+
+这直接复用 `acquisition.py` 已有的 `[B,K,T]` assignment 和 `einsum` 接口，不再调用 selector 中的旧局部 resample。
+
+### 5.9 检测器与物理时间
+
+批准调用链：
+
+```text
+低分辨率完整序列
+→ ASFormer action/hidden
+→ protected selector adapter/scorer
+→ physical exact-K hard path
+→ 真实 hard frame tensor
+→ VisionTransformerAdapter / VideoMAE-S
+→ Conv1DTransformerProj
+→ FPNIdentity
+→ ActionFormerHead physical-grid targets/decode
+→ focal cls + DIOU reg
+→ physical-coordinate proposals
+→ 官方 soft-NMS
+→ 官方 THUMOS mAP
+```
+
+配置必须设置：
+
+```python
+frame_selector.remap_gt_to_selected_axis = False
+frame_selector.selected_axis_remap_required = False
+
+model.rpn_head.physical_grid_actionformer = dict(
+    enabled=True,
+    required=True,
+    strict=True,
+)
+```
+
+GT、target assignment、regression decode、proposal、NMS 和 evaluator 全部保持 dense/native physical coordinate。禁止在 head 后再次执行 selected-axis inverse remap。
+
+projection/neck 仍在有序 sparse slot 序列上计算局部特征，这是模型语义的一部分；不得把它宣传为“projection 本身完全物理时间感知”。物理 head 修复的是 target/decode 坐标合同，不是重造检测器。
+
+### 5.10 单阶段总损失
+
+四臂共同的辅助损失权重冻结为：
+
+[
+L =
+L_{\mathrm{cls}}+
+L_{\mathrm{reg}}+
+1.0L_{\mathrm{action}}+
+0.5L_{\mathrm{transition}}+
+0.25L_{\mathrm{transition-boundary}}.
+]
+
+受保护臂中，`L_cls+L_reg` 经约束软桥更新 selector。
+
+冻结为 0：
+
+```text
+counterfactual utility teacher loss
+detector utility distillation loss
+soft max-gap penalty
+post-hoc repair loss
+entropy tuning loss
+learnable lambda
+policy homotopy/ramp
+detector-gradient warmup/ramp
+```
+
+硬覆盖由可行域保证；soft 覆盖项不承担合法性，避免再次出现“soft loss 看似通过、hard 决策非法”。
+
+---
+
+## 6. `EXACT_GRADIENT_OWNERSHIP_MATRIX`
+
+主版本为 `rho=0`。
+
+| 单独反传损失                | 冻结 VideoMAE base | VideoMAE adapters | projection / neck / ActionFormerHead | selector adapter | selector score head | ASFormer stem/trunk | action head |
+| --------------------- | ---------------: | ----------------: | -----------------------------------: | ---------------: | ------------------: | ------------------: | ----------: |
+| `cls_loss + reg_loss` |                0 |                非零 |                                   非零 |               非零 |                  非零 |               **0** |       **0** |
+| action BCE            |                0 |                 0 |                                    0 |                0 |                   0 |                  非零 |          非零 |
+| transition auxiliary  |                0 |                 0 |                                    0 |               非零 |                  非零 |                  非零 |       **0** |
+| 物理可行域验证               |                0 |                 0 |                                    0 |                0 |                   0 |                   0 |           0 |
+
+补充冻结：
+
+* VideoMAE base 延续现有配置 `lr=0`；这里表中的 detector“非零”指其可训练 adapters、projection、neck 和 head。
+* `a.detach()` 必须同时保留在 policy 和 transition auxiliary descriptor。
+* 主版本 policy 的 `z.detach()` 必须保留。
+* 当前 `descriptors.detach()` 应改为显式的 `a_policy/z_policy` 断点；这是为了能精确实现第四臂，而不是取消保护。
+* transition auxiliary 的 `z` 不 detach。
+* 不允许 detector loss 更新 action head。
+* 不允许用一次总 loss backward 后的参数梯度冒充上述来源归因。
+
+第四臂的唯一变化：
+
+| 单独反传损失              | 最后一个 ASFormer temporal block | 更早 ASFormer 层 | action head |
+| ------------------- | ---------------------------: | ------------: | ----------: |
+| detector，`rho=0.01` |                 非零，梯度系数 0.01 |             0 |           0 |
+
+---
+
+## 7. `P0_PROTOCOL_FREEZE`
+
+### 7.1 任务与数据
+
+```text
+task = 离线时序动作检测
+dataset = THUMOS14
+train = 官方训练用视频集合
+test = 官方测试视频集合
+val = 禁用
+```
+
+现有基础配置把 `val` 和 `test` 都绑定到 test data path；新协议不得继承这一行为。四臂不运行中间验证，不创建指向 test 的伪 val subset。现有配置中的重复路径可见于 dataset 定义。
+
+测试集合必须封存，直到四个终点 EMA artifact 全部产生后一次性评测。
+
+### 7.2 预算与物理约束
+
+```text
+dense window upper bound = 768
+K = 384
+K_eff = min(384, valid_len)
+normative gap unit = seconds
+gap cap = per-sample exact-uniform-reference cap
+```
+
+每个样本同时记录：
+
+```text
+max candidate-index interval
+max decoded-source-frame interval
+max seconds interval
+left-edge interval
+right-edge interval
+```
+
+任一 metadata 缺失、fps 非正、source frames 非严格递增或单位转换不一致，立即 fail closed。
+
+### 7.3 训练长度与随机性
+
+```text
+official epochs = 60
+steps per epoch = 99
+expected successful optimizer updates = 5,940
+single seed = 3407
+```
+
+现有 official 配置默认 60 epoch、99 steps/epoch。
+
+冻结规则：
+
+* AMP skipped step 不计 successful update；
+* 任何 arm 若终点不等于 5,940 successful updates，该 arm 无效；
+* scheduler、EMA、selector schedule 只随 successful update 前进；
+* 不允许通过增加 epoch 补足；
+* 四臂数据增强随机数由 `(seed, epoch, sample_id)` stateless 派生；
+* selector RNG 与 detector RNG 分离，selector 是否执行不能改变 detector dropout RNG。
+
+### 7.4 优化器
+
+共同 detector 配置：
+
+```text
+AdamW
+detector lr = 1.0e-4
+weight decay = 0.05
+VideoMAE base lr = 0
+VideoMAE adapter lr = 2.0e-4
+gradient clip norm = 1.0
+AMP = on
+EMA = on
+scheduler = 5-epoch warmup + cosine to epoch 60
+```
+
+selector 三臂共同：
+
+```text
+ASFormer trunk lr = 2.5e-5
+action head lr = 5.0e-5
+selector adapter/scorer lr = 1.0e-4
+```
+
+### 7.5 checkpoint 与主结果
+
+* 允许写周期 checkpoint 用于故障恢复；
+* 禁止根据中间 mAP、loss、boundary coverage 或 action metric选择 checkpoint；
+* 主结果只能是第 60 epoch、successful update 5,940 后的 terminal EMA；
+* raw checkpoint 仅作为审计副产物；
+* 四个 terminal EMA 全部 hash 绑定后才能解封 test。
+
+### 7.6 推理合同
+
+推理必须同时满足：
+
+```text
+teacher-free
+GT-free
+prediction-cache-free
+raw-prediction-cache-free
+ledger-free
+runtime selector only
+hard exact-K only
+rho fixed from config
+```
+
+### 7.7 成本口径
+
+每臂必须报告：
+
+1. 端到端 wall time：视频读取、解码、预处理、粗分类、DP、hard gather、检测器和 NMS；
+2. model-only latency；
+3. p50/p95 单视频及单窗口 latency；
+4. 低分辨率粗分类 FLOPs；
+5. exact-K hard/soft DP 耗时；
+6. VideoMAE/adapter FLOPs；
+7. projection、neck、head、NMS 耗时；
+8. peak GPU memory 和 peak host memory；
+9. 训练总 GPU-hours；
+10. 每个 terminal EMA 对应的硬件、驱动、CUDA、PyTorch 和代码 SHA。
+
+`exact_uniform` 不执行粗分类分支，其更低成本必须如实报告；不能为了表面成本匹配而运行无用网络。
+
+### 7.8 冻结超参数
+
+```text
+lambda = 0.10
+tau_score = 0.70
+tau_path = 1.00
+rho_main = 0.00
+rho_ablation = 0.01
+action loss weight = 1.00
+transition loss weight = 0.50
+transition-boundary weight = 0.25
+detector bridge coefficient = 1.00
+```
+
+四臂开始后禁止修改。
+
+---
+
+## 8. `P1_IMPLEMENTATION_PATCH_PLAN`
+
+### 8.1 `opentad/models/duca/transition_only.py`
+
+修改符号：
+
+```text
+DucaTransitionUtilityScorer
+transition_utility_paths
+continuous_policy_logits
+```
+
+冻结补丁：
+
+1. 把 scorer 拆成显式 `selector_adapter` 和 `selector_score_head`；
+2. 新增：
+
+```python
+build_auxiliary_route(a, z)
+build_protected_policy_route(a, z, rho)
+coverage_floor_probabilities(scores, valid_mask, lambda_=0.10, tau=0.70)
+```
+
+3. 删除 approved config 对 `continuous_policy_logits` homotopy 的调用；
+4. 保留数值等值断言：
+
+```python
+torch.equal(s_aux.detach(), s_policy.detach())
+```
+
+主版本必须仍通过当前 transition detach 单元测试所表达的所有权。
+
+### 8.2 `opentad/models/duca/structured_selection.py`
+
+新增：
+
+```python
+@dataclass
+class PhysicalExactKSelectionOutput:
+    hard_occupancy: Tensor       # [B,L]
+    hard_positions: Tensor       # [B,K]
+    soft_occupancy: Tensor       # [B,L]
+    soft_slot_assignment: Tensor # [B,K,L]
+    log_partition: Tensor        # [B]
+    edge_count: Tensor           # [B]
+```
+
+新增核心函数：
+
+```python
+physical_exact_k_viterbi(
+    node_log_probs,       # [B,L]
+    physical_seconds,     # [B,L]
+    valid_mask,           # [B,L]
+    k=384,
+    max_gap_seconds,      # [B]
+)
+
+physical_exact_k_forward_backward(...)
+physical_exact_k_select(...)
+```
+
+DAG 边：
+
+```python
+edge(i, j) iff i < j and q[j] - q[i] <= G
+source_edge(j) iff q[j] - q[0] <= G
+sink_edge(i) iff q[L-1] - q[i] <= G
+```
+
+hard 和 soft 必须使用同一个 edge table。
+
+现有 `_hard_viterbi`、`_soft_forward_backward` 的状态转移、logsumexp 和 slot marginal 代码可以复用，但不能继续只用整数 `max_unselected_hole`。
+
+### 8.3 `opentad/models/duca/acquisition.py`
+
+修改：
+
+```text
+DucaAcquisitionAdapter._decode_global_structured
+DucaAcquisitionAdapter.forward_acquire
+```
+
+冻结行为：
+
+```python
+selection = physical_exact_k_select(...)
+A = selection.soft_slot_assignment
+hard = gather_selected_observations(...)
+
+soft = einsum_over_time(A, dense_video)
+selected = hard + soft - soft.detach()
+```
+
+删除 approved route 中：
+
+```text
+posthoc hard repair
+soft max-gap penalty作为可行性机制
+候选索引 max-hole 作为规范单位
+```
+
+保留现有 `[B,K,T]` shape validation 和 `einsum` 代码。
+
+### 8.4 `opentad/models/selectors/duca_online_frame_selector.py`
+
+新增唯一模式：
+
+```text
+detector_gradient_mode="physical_exact_k_constrained_resample"
+```
+
+该模式直接使用 acquisition 返回的 `soft_slot_assignment`。
+
+approved configs 必须在初始化时拒绝：
+
+```text
+soft_to_hard_resample
+structured_zero_forward
+st_sparse_gather
+soft_context
+```
+
+旧函数可以为历史测试保留，但受保护配置一旦引用即抛错。
+
+修改 `_write_metas`：
+
+```python
+meta["irregular_selected_positions"] = hard_positions
+meta["irregular_dense_valid_len"] = dense_valid_len
+meta["irregular_selected_count"] = K_eff
+meta["irregular_native_axis"] = True
+meta["remap_gt_to_selected_axis"] = False
+meta["gt_remapped_to_selected_axis"] = False
+meta["proposal_axis"] = "dense_physical"
+```
+
+approved route 不再调用 `_remap_train_targets_to_selected_axis`。当前函数确实会把 GT 变为 selected-axis，必须绕开。
+
+### 8.5 `opentad/models/detectors/actionformer.py`
+
+修改：
+
+```text
+get_optim_groups
+forward_train 的 protected selector contract validation
+```
+
+要求：
+
+* selector adapter/scorer 参数各进入 optimizer 恰好一次；
+* ρ replay 使用的最后 block 共享参数不得重复加入 optimizer；
+* `cls_loss+reg_loss` 能单独取得，不依赖 `losses["cost"]`；
+* selector 后、detector 前冻结 detector RNG stream；
+* physical-grid 配置缺失时 fail closed；
+* `counterfactual_request` 在四臂中必须为 `None`。
+
+真实检测调用链保持不变。
+
+### 8.6 physical-grid head
+
+不新建检测器，也不改损失公式。
+
+只启用现有：
+
+```text
+AnchorFreeHead._physical_positions_from_meta
+AnchorFreeHead._build_physical_points_and_masks
+AnchorFreeHead physical target/decode
+```
+
+这些函数已经支持 physical center/stride，并会拒绝 GT remap。
+
+### 8.7 新配置文件
+
+新增共享配置：
+
+```text
+configs/adatad/thumos/
+duca_protected_e2e_fixed384_official60_base.py
+```
+
+新增四个只覆盖单臂差异的配置：
+
+```text
+duca_protected_e2e_exact_uniform_official60.py
+duca_protected_e2e_transition_no_bridge_official60.py
+duca_protected_e2e_main_official60.py
+duca_protected_e2e_rho001_official60.py
+```
+
+四个 resolved config 之间必须通过机器 diff 验证；除预注册字段外不得不同。
+
+主配置必须：
+
+```python
+remap_gt_to_selected_axis=False
+selected_axis_remap_required=False
+require_counterfactual_utility_teacher=False
+counterfactual_utility_distillation_weight=0.0
+policy_homotopy="disabled"
+detector_gradient_warmup=0
+detector_gradient_weight=1.0
+physical_grid_actionformer.enabled=True
+```
+
+### 8.8 必须新增测试
+
+```text
+tests/test_duca_protected_e2e_selection.py
+tests/test_duca_protected_e2e_gradient_ownership.py
+tests/test_duca_protected_e2e_physical_time.py
+tests/test_duca_protected_e2e_four_arm_config_diff.py
+```
+
+P1 测试至少覆盖：
+
+1. exact-K、唯一、有序；
+2. source/internal/sink 最大秒间隔；
+3. exact-uniform 是合法路径；
+4. `valid_len<K` 时选全部且无复制；
+5. `A.shape == [B,K,L]`；
+6. active row sums；
+7. column occupancy cap；
+8. 单调 slot expectation；
+9. invalid/padding 质量为 0；
+10. `torch.equal(selected, hard)`；
+11. 改动未选中帧不改变 detector hard forward；
+12. 所有 selector 参数 optimizer coverage 恰好一次；
+13. train/eval hard decoder 同构；
+14. official backbone/projection/neck/head 类型与配置 hash；
+15. dense-axis GT；
+16. physical proposal decode；
+17. NMS 输入与 evaluator GT 同轴；
+18. legacy bridge 在 protected config 中 fail closed。
+
+---
+
+## 9. `P2_GRADIENT_TESTS`
+
+### 9.1 测试环境
+
+使用：
+
+* 完整 official-60 主配置；
+* 真实 VideoMAE-S adapter；
+* 真实 projection、neck、ActionFormerHead；
+* 真实训练数据；
+* seed `3407`；
+* canonical 数据顺序中第一个完整 batch；
+* 同一个 model state、同一个 batch、同一个 RNG snapshot；
+* 每次 backward 前 `zero_grad(set_to_none=True)`；
+* 不执行 optimizer step。
+
+禁止缩小 T、K、空间尺寸、feature dim、FPN level 或替换 backbone。
+
+### 9.2 三次独立反传
+
+#### P2-A：仅 detector
+
+```python
+loss = losses["cls_loss"] + losses["reg_loss"]
+loss.backward()
+```
+
+必须：
+
+```text
+trainable VideoMAE adapters grad norm > 1e-12
+projection grad norm > 1e-12
+neck grad norm > 1e-12
+ActionFormerHead grad norm > 1e-12
+selector adapter grad norm > 1e-12
+selector score head grad norm > 1e-12
+ASFormer trunk grad norm <= 1e-12
+action head grad norm <= 1e-12
+```
+
+#### P2-B：仅动作 BCE
+
+```python
+loss = selector_losses["actionness_bce_loss"]
+loss.backward()
+```
+
+必须：
+
+```text
+ASFormer trunk > 1e-12
+action head > 1e-12
+selector adapter/scorer <= 1e-12
+全部 detector 参数 <= 1e-12
+```
+
+#### P2-C：仅 transition auxiliary
+
+```python
+loss = (
+    selector_losses["transition_loss"]
+    + selector_losses["transition_boundary_loss"]
+)
+loss.backward()
+```
+
+必须：
+
+```text
+ASFormer trunk > 1e-12
+selector adapter > 1e-12
+selector score head > 1e-12
+action head <= 1e-12
+全部 detector 参数 <= 1e-12
+```
+
+### 9.3 ρ 臂附加测试
+
+在相同 batch 上仅反传 detector loss：
+
+```text
+最后一个 ASFormer temporal block > 1e-12
+更早 ASFormer blocks <= 1e-12
+action head <= 1e-12
+selector adapter/scorer > 1e-12
+```
+
+同时断言：
+
+```python
+torch.equal(z_policy.detach(), z.detach())
+```
+
+并用 hook 验证最后 block 输入 `z_prev` 的 detector-gradient 为 0。
+
+### 9.4 detector hard-forward 证据
+
+在 backbone 前注册 hook，保存其实际输入 `x_detector`，要求：
+
+```python
+torch.equal(x_detector, gather_time(dense_video, hard_positions))
+```
+
+再对所有未选中帧加入随机扰动，保持 selector 输出和 hard positions 固定，要求 detector 前向输出逐元素不变。
+
+这证明 detector 没有通过 soft tensor偷看未选中帧；soft tensor只存在于 backward Jacobian。
+
+### 9.5 输出与停止条件
+
+P2 artifact 必须记录每个参数组：
+
+```text
+parameter count
+requires_grad count
+grad=None count
+grad L1
+grad L2
+grad max
+finite flag
+optimizer group id
+```
+
+以下任一出现即 `P2_FAIL`：
+
+* 必须非零的组为零；
+* 必须为零的组非零；
+* 参数遗漏或重复进入 optimizer；
+* 使用总 cost 代替单独损失；
+* 真实 backbone 未执行；
+* physical-grid 未执行；
+* selected-axis remap 出现；
+* 任何 NaN/Inf。
+
+当前旧 one-step proof 对总 cost backward，并检查粗分类器、encoder、center head均有梯度，不能充当本 P2。
+
+---
+
+## 10. `P3_HARD_SOFT_ALIGNMENT_GATE`
+
+### 10.1 固定审查状态
+
+P3 在 official-60 前执行，使用：
+
+```text
+代码 = 冻结实现提交
+配置 = protected_e2e 主配置
+模型 = seed 3407 的正式初始化
+VideoMAE = 正式预训练权重
+detector mode = train objective
+optimizer step = 0
+loss normalizer = 冻结
+数据 = train split only
+```
+
+不读取 val/test，不保存可被误认为训练结果的 checkpoint。
+
+### 10.2 固定窗口人口
+
+按以下规则确定 48 个训练窗口：
+
+1. 计算每个窗口最短正 GT action duration；
+2. 分为：
+
+   * short：`duration <= 16`
+   * medium：`16 < duration <= 64`
+   * long：`duration > 64`
+3. 每层按
+   `SHA256("20260720|video_id|window_start")`
+   升序选择 16 个；
+4. 同一视频最多贡献 4 个窗口；
+5. 若某层不足 16 个，`P3_FAIL`。
+
+GT 只用于 gate 分层和解释，不进入 selector 决策。
+
+### 10.3 软梯度预测
+
+对每个窗口：
+
+1. 执行正式 hard selection (S)；
+2. 计算：
+
+[
+g_t=\frac{\partial(L_{\mathrm{cls}}+L_{\mathrm{reg}})}{\partial s_t};
+]
+
+3. 枚举所有合法单帧交换：
+
+[
+S' = S-{i}+{j},
+]
+
+要求：
+
+* (i\in S)；
+* (j\notin S)；
+* exact-K；
+* 唯一、有序；
+* source/internal/sink 物理 cap 全部满足。
+
+预测方向：
+
+[
+\widehat{\Delta}_{i\rightarrow j}=g_j-g_i.
+]
+
+负值表示软梯度预测该交换降低 detector loss。
+
+### 10.4 决定性候选采样
+
+对每个窗口将所有合法交换按 (\widehat{\Delta}) 排序，从四个四分位区间各取 3 个：
+
+```text
+12 swaps / window
+48 windows
+576 preregistered swaps
+```
+
+每个区间内按
+`SHA256(video_id|window_start|i|j|20260720)`
+选取，不允许人工挑选。
+
+全零预测、实际 hard set 未变化或非法交换不能计入有效样本，但必须写入排除 ledger。
+
+### 10.5 真实 hard finite difference
+
+对每个交换：
+
+```python
+L0 = official_cls_reg_loss(hard_gather(S))
+L1 = official_cls_reg_loss(hard_gather(S_prime))
+delta_hard = L1 - L0
+```
+
+每次候选前恢复：
+
+```text
+模型参数
+所有 buffer
+loss normalizer
+CPU RNG
+CUDA RNG
+Python RNG
+NumPy RNG
+autocast 状态
+```
+
+必须确认：
+
+```text
+hard gather 已真实重新执行
+detector 输入等于 S' 的 hard tensor
+physical target/decode 已执行
+没有 soft tensor进入前向值
+```
+
+### 10.6 分层报告
+
+每个交换记录：
+
+* action duration stratum；
+* incoming `j` 到最近 GT endpoint 的距离：
+
+  * near：`<=4`
+  * mid：`5–16`
+  * far：`>16`
+* full/padded window；
+* removed/added frame；
+  -三单位物理 gap；
+* (\widehat{\Delta})；
+* (\Delta_{\mathrm{hard}})。
+
+边界距离每层至少 96 个有效交换；否则 `P3_FAIL`。
+
+### 10.7 统计方法
+
+* 有效总体样本至少 `512`；
+* 每个 action-duration 层至少 `128`；
+* 按 video 做 cluster bootstrap；
+* bootstrap `2,000` 次；
+* seed `20260720`；
+* 双侧 95% CI；
+* 相关性使用每窗口 Spearman，再对窗口中位数做 cluster bootstrap；
+* 符号一致只计算预测和实际变化均超过容差者：
+
+```text
+abs(predicted_delta) > 1e-10
+abs(actual_delta) > 1e-8
+```
+
+### 10.8 预注册通过规则
+
+必须同时满足：
+
+1. **hard-forward equality**
+   所有 48 个 base window 和所有 576 个 swapped window：
+
+   ```python
+   torch.equal(selected.detach(), hard.detach())
+   ```
+
+2. **可行域**
+   exact-K、唯一、有序和全部物理 cap 的违规数为 0。
+
+3. **有效样本数**
+   `N_effective >= 512`。
+
+4. **符号一致率**
+
+   ```text
+   point estimate >= 0.60
+   cluster-bootstrap 95% lower bound > 0.50
+   ```
+
+5. **秩相关**
+
+   ```text
+   median within-window Spearman >= 0.20
+   cluster-bootstrap 95% lower bound > 0
+   ```
+
+6. **预测改进组**
+
+   对每窗口预测最优四分位：
+
+   ```text
+   median actual delta_hard < 0
+   cluster-bootstrap 95% upper bound < 0
+   ```
+
+7. **分层不反转**
+
+   short、medium、long 三层分别：
+
+   ```text
+   sign agreement >= 0.55
+   Spearman >= 0
+   ```
+
+8. **数值与状态**
+
+   ```text
+   NaN/Inf = 0
+   model/buffer/RNG restoration mismatch = 0
+   repeated base loss max_abs_error <= 1e-6
+   ```
+
+任一条件失败：
+
+```text
+P3_FAIL
+STOP
+official-60 forbidden
+```
+
+不得降低阈值、换窗口、删除困难层或改用总 loss。
+
+### 10.9 为什么该代理比旧代理可信
+
+新代理的 hard 和 soft 路径共享：
+
+```text
+同一 node score
+同一 exact-K
+同一 physical DAG
+同一 source/sink edge
+同一合法路径集合
+```
+
+soft assignment 是合法 hard 路径分布的 slot marginal；旧局部 bridge 则是围绕 detached hard slot 独立做 softmax，既可能重复帧，也不编码全局 coverage。新代理仍不是离散决策的数学等价梯度，所以 P3 不是形式主义测试，而是必须通过的经验方向门禁。
+
+---
+
+## 11. `OFFICIAL60_FOUR_ARM_PREREGISTRATION`
+
+### 11.1 唯一四臂
+
+| Arm                    | hard selection                       |       detector→selector | ASFormer detector gradient |
+| ---------------------- | ------------------------------------ | ----------------------: | -------------------------: |
+| `exact_uniform`        | 显式精确均匀位置                             |                       无 |                          无 |
+| `transition_no_bridge` | 全局 physical exact-K transition score |                       0 |                          0 |
+| `protected_e2e`        | 同一全局 physical exact-K selector       | selector adapter/scorer |                          0 |
+| `protected_e2e_rho`    | 同一全局 physical exact-K selector       | selector adapter/scorer |           最后时序块，`rho=0.01` |
+
+### 11.2 单因素匹配
+
+所有臂共同：
+
+```text
+同一 implementation commit
+同一 protocol SHA-256
+同一 THUMOS train/test bytes
+同一 seed 3407
+同一数据顺序与数据增强
+同一 K=384
+同一 physical cap
+同一 detector initialization
+同一 VideoMAE pretrain
+同一 projection/neck/head
+同一 optimizer/scheduler
+同一 successful updates=5,940
+同一 EMA
+同一 NMS/post-processing
+同一 endpoint test invocation
+```
+
+额外要求：
+
+* arms 2–4 的 selector 初始参数必须逐字节相同；
+* arms 2–4 都计算相同的 hard decoder 和 soft assignment；
+* `transition_no_bridge` 只把 detector bridge coefficient 设为 0；
+* arms 3 和 4 除 `rho` 外 resolved config 必须相同；
+* detector 前向 RNG 每 step 独立复位，不能被 selector 分支的随机运算错位；
+* exact-uniform 的 detector 初始化与其他臂相同，但不运行无用粗分类器，其成本差异如实报告。
+
+### 11.3 测试时机
+
+1. 先完成全部四臂训练；
+2. 验证四个 terminal EMA SHA 和 successful updates；
+3. 一次性解封 test；
+4. 固定 arm 顺序：
+
+```text
+exact_uniform
+transition_no_bridge
+protected_e2e
+protected_e2e_rho
+```
+
+5. 不因前三臂结果改变第四臂执行或阈值。
+
+### 11.4 主指标
+
+唯一主结果：
+
+```text
+terminal EMA official THUMOS Avg-mAP
+mAP@0.3
+mAP@0.4
+mAP@0.5
+mAP@0.6
+mAP@0.7
+```
+
+机制指标只能解释，不能替代主结果：
+
+```text
+action AUPRC/AUROC/Brier
+boundary recall/distance
+P3 alignment
+hard gap statistics
+detector cls/reg loss
+latency/FLOPs/memory
+```
+
+### 11.5 冻结裁决规则
+
+严格执行：
+
+1. 若
+
+   ```text
+   protected_e2e <= transition_no_bridge
+   ```
+
+   则直接检测梯度假设失败。
+
+2. 若
+
+   ```text
+   transition_no_bridge < protected_e2e < exact_uniform
+   ```
+
+   则检测梯度有效，但该选择方法不具备论文竞争力。
+
+3. 只有
+
+   ```text
+   protected_e2e > transition_no_bridge
+   and
+   protected_e2e > exact_uniform
+   ```
+
+   才允许在四臂之外进入三种子、其他预算或泛化验证。
+
+4. `protected_e2e_rho` 只有同时满足以下条件才可替代主版本：
+
+   ```text
+   Avg-mAP >= protected_e2e
+   mAP@0.7 >= protected_e2e
+   固定 train-audit action AUPRC 下降不超过 0.005
+   固定 train-audit Brier 增加不超过 0.005
+   ```
+
+   否则保持 `rho=0` 为唯一主版本。
+
+历史 `63.8594 / 64.2755 / 64.0610` 只作为项目上下文，不能充当这次严格匹配 official-60 的任一 arm 结果。
+
+### 11.6 运行中 fail-closed 条件
+
+任一 arm 出现以下情况，该 arm 无效，四臂不作方法比较：
+
+* successful updates 不等于 5,940；
+* AMP skip；
+* EMA update 数不匹配；
+* NaN/Inf；
+* physical cap 违规；
+* selected-axis remap；
+* teacher/GT/cache 进入推理；
+* config SHA 不匹配；
+* optimizer 参数遗漏或重复；
+* terminal EMA 不是 epoch 60 终点；
+* test 在四个 terminal artifact 产生前被读取。
+
+---
+
+## 12. `BLOCKERS_BEFORE_IMPLEMENTATION`
+
+本轮已完成设计取舍，没有悬空的架构分支；但以下代码事实阻止把当前 `db11aee…` 直接标记为受保护端到端实现：
+
+1. **正式 detector gradient 为零**
+   transition 配置的 detector gradient schedule 是 `0→0`；CellCF 是 `mode="none"`。
+
+2. **当前局部 soft bridge 不属于 hard 全局可行域**
+   缺少单调、唯一、exact-K 和物理 gap 联合约束。
+
+3. **旧 structured bridge 已被代码和历史门禁否定**
+   不能通过改权重复活。
+
+4. **当前全局 DP 约束单位仍是候选索引 hole**
+   必须改为 source-frame timestamps 上的 physical DAG。
+
+5. **当前正式配置使用 selected-axis GT**
+   必须切换到已有 physical-grid head 和 dense/native GT。
+
+6. **当前 scorer 没有显式 adapter/head 所有权边界**
+   必须完成等容量重构并更新 optimizer group。
+
+7. **当前一步证明不使用真实完整 backbone，且只反传总 cost**
+   必须由 P2 替换。
+
+8. **现有配置重复使用 test subset 作为 val**
+   新 official-60 协议必须禁用 val。
+
+9. **当前 counterfactual teacher 会成为额外监督混杂**
+   四臂中必须完全关闭。
+
+10. **尚无 protected-e2e 配置、测试、P3 artifact schema 或四臂 config-diff validator**
+    这些不是文档声明可以替代的实现资产。
+
+---
+
+## 13. `BLOCKERS_BEFORE_TRAINING`
+
+任何 official-60 作业提交前，必须全部满足：
+
+```text
+P0 protocol manifest PASS
+P0 manifest SHA-256 frozen
+implementation commit clean and immutable
+four resolved configs hash-bound
+P1 unit/integration tests PASS
+physical-axis roundtrip PASS
+exact-K/gap validator PASS
+optimizer coverage PASS
+real official hard-forward hook PASS
+P2 detector-only gradient ownership PASS
+P2 action-only gradient ownership PASS
+P2 transition-only gradient ownership PASS
+P2 rho last-block-only ownership PASS
+P3 effective N >= 512
+P3 sign agreement PASS
+P3 Spearman PASS
+P3 predicted-improvement group PASS
+P3 all strata PASS
+legacy bridge rejection PASS
+selected-axis-remap rejection PASS
+teacher/GT/cache inference rejection PASS
+val/test separation PASS
+expected updates=5,940 frozen
+terminal EMA evaluator frozen
+full-system profiler frozen
+```
+
+以下任一项不能用“后续训练中观察”替代：
+
+* detector 是否真的更新 selector；
+* ASFormer/action head 是否被 detector 梯度污染；
+* soft gradient 是否与 hard 换帧方向一致；
+* physical gap 是否严格满足；
+* target、decode、NMS 和 mAP 是否同轴。
+
+P0–P3 是训练前门禁，不是训练后解释工具。
+
+---
+
+## 14. `FINAL_GO_NO_GO`
+
+# `REVISE`
+
+**当前允许的唯一动作：**按第 5、8 节冻结规格实现受保护 selector adapter、物理 exact-K hard/soft DAG、physical-grid 坐标合同及 P0–P3 工具。
+
+**当前禁止的动作：**直接在现有提交上打开旧 bridge 权重，或启动任一 official-60 arm。
+
+只有在同一不可变实现提交上获得：
+
+```text
+P0=PASS
+P1=PASS
+P2=PASS
+P3=PASS
+```
+
+后，才自动解除 official-60 阻断并运行第 11 节唯一四臂。任何门禁失败均为 `STOP`，不得降阈值、替换代理、恢复 selected-axis 或改用其他实验路线。

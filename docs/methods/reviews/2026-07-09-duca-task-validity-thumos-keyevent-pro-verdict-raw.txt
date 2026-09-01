@@ -1,0 +1,613 @@
+## 1. Executive Verdict：一句话结论
+
+**继续，但必须收缩和改名：DUCA-TAD 只能被定义为“efficient sparse Temporal Action Detection / detector-utility-calibrated temporal acquisition”，不能再在 THUMOS14 上声称“precise key-event localization”。**
+
+你们的新发现不是毁掉项目，而是毁掉了错误叙事。THUMOS14 的标注是动作区间，不是“脱手、起跳、击球瞬间”的事件点；因此，actionness 在 THUMOS14 上学到的是 **action-support / action-state prior**，不是 key-event prior。项目仍有研究意义，但必须把 claim 从“找到关键事件”改成“在有限观测预算下保留 TAD detector 所需的动作区间、边界和分类证据”。
+
+---
+
+## 2. What the task is really about：重新定义任务
+
+必须把两个任务彻底分开。
+
+**A. Efficient sparse Temporal Action Detection**
+
+这是你们当前 DUCA-TAD 真正应该做的任务：
+
+```text
+dense temporal observations
+→ budgeted hard selection, e.g. 768 → <=384
+→ selected original-time observations
+→ AdaTAD / ActionFormer detector
+→ temporal segments + class + score
+→ mAP at tIoU thresholds, especially 0.6 / 0.7
+```
+
+这个任务关心的是：在 detector 只看到稀疏观测的情况下，是否仍能恢复完整动作区间、起止边界、分类置信度和 ranking。它不是找一个“瞬间”。它需要覆盖动作状态、边界附近、上下文过渡区，以及 detector 对 proposal regression 有用的支撑点。
+
+**B. Precise key-event localization**
+
+这是另一个任务：
+
+```text
+video
+→ timestamp prediction
+→ release / takeoff / impact / state change / goal / foul / PNR
+→ absolute temporal error, tolerance-mAP, Recall@δ, spotting AP
+```
+
+这个任务的监督对象是点、窄窗口或状态变化时刻。SoccerNet Action Spotting 使用 temporal tolerance 下的 average-mAP，并且从 2022 起引入更紧的 [1–5] 秒 tolerance；Ego4D PNR 明确定义为估计 state change begins 的 keyframe。它们和 THUMOS14 的动作区间 TAL/TAD 不是同一个监督语义。([足球网][1])
+
+**裁决：DUCA-TAD 属于 A，不属于 B。**
+
+在 THUMOS14 上继续做可以，但必须放弃以下表述：
+
+```text
+key event localization
+关键事件定位
+找到脱手/起跳/击球瞬间
+precise event spotting
+state-change timestamp discovery
+```
+
+可以保留但要谨慎使用的表述是：
+
+```text
+boundary-aware sparse temporal acquisition
+action-support-aware acquisition
+detector-utility-calibrated selection
+sparse observations for high-IoU temporal action detection
+```
+
+---
+
+## 3. What THUMOS14 can support：THUMOS14 能支持的 claim
+
+THUMOS14 可以支持 **sparse TAD**，不能支持 **key-event spotting**。
+
+THUMOS14 被设计为 temporally untrimmed video 上的 action classification / temporal detection benchmark；其论文明确说 2014 年引入了 temporally untrimmed videos，并包含与动作视频场景相似但没有具体动作的 background videos。这个设定天然适合研究 action/background、proposal localization、temporal detection，而不是单点事件 spotting。([arXiv][2])
+
+在 THUMOS14 上，合法 claim 是：
+
+1. **预算受限 detector 输入仍能做 temporal action detection。**
+   如果 detector 只消费 selected_positions <=384，并且 mAP 保持或提升，可以说 DUCA 选择了对 TAD detector 有效的 sparse temporal observations。
+
+2. **original-time coordinate 对 sparse detector 是必要的。**
+   如果 selected-axis 会导致 boundary regression / point generation / NMS 坐标错乱，而 original-time remap 显著更稳，这是合法且重要的工程-方法贡献。
+
+3. **coarse actionness 是 action-support prior。**
+   如果 p_action 在 frame/snippet action-background 上有较高 AUROC/AUPRC，它说明模型能区分动作支持区间与背景，不说明模型找到关键事件。
+
+4. **mAP@0.7 可以证明高 IoU interval localization 被保留。**
+   如果 sparse 输入下 mAP@0.7 不崩，说明 selected observations 对区间边界和 proposal ranking 有用；但这仍然是区间定位，不是事件点定位。
+
+5. **detector-utility calibration 可以被 THUMOS14 检验。**
+   如果 DUCA-joint 明显优于 actionness-only、feature-energy、uniform-384、random-384，说明 selector 学到的不只是 foregroundness，而是对 detector 有用的采样分布。
+
+THUMOS14 的动作区间性质不是你们 sparse TAD 任务的缺陷；相反，它正是 sparse TAD 需要处理的目标。问题只在于你们不能把“覆盖动作区间”误写成“定位关键瞬间”。
+
+---
+
+## 4. What THUMOS14 cannot support：THUMOS14 不能支持的 claim
+
+THUMOS14 不能支持这些 claim：
+
+1. **不能证明 key-event localization。**
+   Shotput 的 GT 覆盖准备、蓄力、投掷、结束这一整段时，你没有 release timestamp 监督。模型选中 release 附近可能是偶然、相关或 detector utility 导致的结果，但 THUMOS14 mAP 本身不能证明它学会了 release event。
+
+2. **不能证明模型理解了动作内部细粒度阶段。**
+   THUMOS14 action class 较粗。FineAction 论文明确指出，粗粒度 TAL benchmark 容易让模型过拟合 high-level context、忽略 atomic action details，并导致 temporal boundary ambiguity；FineAction 正是为缓解这些问题而提出的。([arXiv][3])
+
+3. **不能证明 actionness 是 detector utility。**
+   p_action 高只说明 action/background prior 强，不说明该位置对 regression、IoU ranking、NMS、classification calibration 有用。
+
+4. **不能证明 online deployability。**
+   只有当 inference 决策不使用 GT、oracle、dense teacher、raw prediction cache、offline ledger，并且 detector 实际只消费 selected observations 时，才能说 online teacher-free。THUMOS14 本身不会替你证明这个 contract。
+
+5. **不能证明 raw-frame compute saving。**
+   如果你们仍在 pre-extracted feature 上选 768→384，只能 claim detector-side temporal observation reduction，不能 claim expensive video backbone FLOPs 减半。除非 selector 在 heavy backbone 前运行，并且后续 heavy reader 真的只处理 selected raw frames/snippets。
+
+---
+
+## 5. Is coarse actionness still meaningful：严厉判断
+
+结论是：
+
+**coarse actionness 仍然有意义，但必须降级为 action-support prior；它不能单独支撑 high-IoU TAD，更不能被解释为 key-event detector。**
+
+它的有效角色应该是：
+
+```text
+low-cost deploy-visible prior
+= “这里像动作支持区间”
+≠ “这里是关键事件”
+≠ “这里一定对 detector 边界回归最有用”
+```
+
+它有三类价值。
+
+第一，它可以帮助 sparse acquisition 不把预算浪费在纯背景上。THUMOS14 的 background videos 与动作视频场景相似但没有具体动作，这至少让 action/background 不是完全 trivial 的场景分类；但这不消除场景捷径风险。([arXiv][2])
+
+第二，它可以帮助覆盖完整动作区间。对 sparse TAD 来说，这是好事。你们不应该希望 p_action 只在“脱手瞬间”尖峰；如果它只选 peak，反而会破坏 proposal completeness 和 high-IoU boundary regression。
+
+第三，它可以作为 DUCA 的输入特征之一，但不能作为最终选择准则。真正的主张必须是：
+
+```text
+actionness provides action-support evidence;
+detector-utility calibration decides which support, boundary, transition, and context observations are worth keeping under budget.
+```
+
+主要风险也非常明确：
+
+1. **过采样动作内部。**
+   actionness top-k 往往选 action plateau 中间，忽略 start/end transition。结果通常是 mAP@0.5 还能看，mAP@0.7 掉。
+
+2. **场景捷径。**
+   运动场、人物姿态、器材、镜头结构可能让 p_action 很高，但它不一定理解动作阶段。FineAction 对粗 benchmark 的批评正好会被 reviewer 用来攻击你们。([arXiv][3])
+
+3. **与 detector utility 错配。**
+   detector 需要的是 proposal classification + boundary regression + IoU/ranking 支撑点，不是单纯 foreground confidence。
+
+所以正确结论不是“actionness 没意义”，而是：
+
+**actionness-only 不足；actionness + boundary/change/scaffold + detector-utility calibration 才可能成为论文方法。**
+
+---
+
+## 6. Dataset recommendation：继续 THUMOS / 加 FineAction / 加 event spotting / 换方向
+
+### 对完整动作区间 sparse TAD
+
+**主线可以继续用 THUMOS14。**
+原因很简单：它是 TAD/TAL interval localization benchmark，适合验证 768→384 sparse temporal observation 后 detector mAP 是否保留。它尤其适合你们当前关注的 mAP@0.6 / mAP@0.7，因为短动作、密集动作、多实例和边界敏感性会放大 sparse selection 的问题。
+
+**ActivityNet 可以作为 secondary generalization，但不是最优主战场。**
+ActivityNet 是大规模 activity understanding / activity detection benchmark，包含 untrimmed videos 和 temporal activity instances；经典论文中报告其覆盖 203 类、849 小时、平均每类 137 个 untrimmed videos、平均每视频 1.41 个 activity instances。它更适合验证长视频/日常活动泛化，但对你们“高 IoU、短动作、预算 384”的压力可能不如 THUMOS14。([CVF开放获取][4])
+
+**FineAction 应该作为 stress test，而不是一开始就替代 THUMOS14。**
+FineAction 有 103K temporal instances、106 类、17K untrimmed videos，并强调 fine-grained classes、dense annotations、multi-label/co-occurring actions；它非常适合检验你们的 actionness 是否只是场景捷径，还是能在细粒度、多实例、边界更难的数据上仍提供有效 acquisition prior。([arXiv][3])
+
+### 对关键事件定位
+
+如果你们真的要做 key-event localization，就应该换任务和指标：
+
+* SoccerNet Action Spotting：适合 goal/card/substitution/foul 等体育事件 timestamp spotting；官方页面列出 500 场比赛、300,000 temporal annotations、17-class action spotting，并使用 temporal tolerance 下的 mAP。([足球网][1])
+* Ego4D PNR：适合 object state change 的 point-of-no-return keyframe localization；官方定义就是估计 state change begins 的 keyframe。([EGO4D][5])
+* FineGym：适合 gymnastics 内部阶段、sub-action、细粒度 temporal structure；它有 action/sub-action 两级 temporal annotations，并明确指出 sparse sampling 对 fine-grained recognition 不足。([Sdolivia][6])
+* FineDiving：适合 procedure-aware action understanding；其 annotation 包含 action-level boundary、step-level labels、step transition frames，适合诊断 phase/transition selection。([GitHub][7])
+
+**我的建议：不要彻底转向 event spotting，除非你们愿意放弃当前 AdaTAD/ActionFormer sparse TAD 主线。**
+最合理路线是：
+
+```text
+THUMOS14 = 主线：efficient sparse TAD
+FineAction = stress test：fine-grained sparse TAL / context shortcut check
+SoccerNet/Ego4D/FineGym/FineDiving = 可选 diagnostic：key-event/phase sensitivity，不作为 THUMOS 结论的替代
+```
+
+---
+
+## 7. Minimal evidence chain：最小证据链
+
+你们需要的不是更多 slogan，而是一条能挡住 reviewer 的证据链。
+
+### 7.1 Coarse actionness eval
+
+必须报告：
+
+```text
+frame/snippet action-background AUROC
+frame/snippet action-background AUPRC
+Recall@K for action support
+Precision@K for action support
+per-class AUROC/AUPRC
+short-action vs long-action breakdown
+boundary-near vs interior breakdown
+```
+
+但解释必须严格：
+
+```text
+这些指标只证明 action-support prior；
+不证明 TAD 成功；
+不证明 boundary localization；
+不证明 key-event localization。
+```
+
+失败判据：
+
+* **AUROC 高但 sparse mAP 不升**：说明 actionness 与 detector utility 错配。
+* **AUPRC 高但 boundary coverage 差**：说明模型只会找 action plateau，不会支撑 high-IoU localization。
+* **per-class 差异极大**：说明 actionness 可能依赖类特定场景或动作时长偏置。
+
+### 7.2 Selection geometry eval
+
+必须报告 selected_positions 的几何质量，而不是只看 mAP。
+
+建议指标：
+
+```text
+budget_used: #selected <=384
+action segment touched recall:
+  每个 GT segment 是否至少有一个 selected point 落入
+
+full segment coverage:
+  将每个 GT segment 归一化为 0%-100%，统计被 selected points 覆盖的 bins 数
+
+boundary coverage:
+  start/end ±δ snippets 内是否有 selected point
+  δ 可取 1, 2, 4 snippets 或 segment length 的 5%
+
+short-action recall:
+  按 GT duration 分 quartile，单独看最短 25%
+
+max hole inside GT:
+  每个 GT 内 selected points 的最大空洞
+
+p95 hole:
+  所有 GT 内 hole 的 95 分位
+
+redundancy:
+  过密 selected points 的比例，例如 gap <=1 或落入同一局部 bin 的重复点
+
+uniform similarity / Jaccard:
+  与 uniform-384 的重叠，用来判断方法是否只是 uniform 的轻微扰动
+```
+
+失败判据：
+
+* **touched recall 高但 full coverage 低**：说明模型只碰到动作，不覆盖动作。
+* **full coverage 高但 boundary coverage 低**：说明 mAP@0.7 会危险。
+* **selection density 集中在 40%-70% middle bins**：说明 actionness-only interior bias。
+* **max hole / p95 hole 远大于 uniform**：说明 detector 的 temporal interpolation/regression 会不稳。
+* **Jaccard 与 uniform 极高但 mAP 无提升**：说明方法没有实际选择能力。
+* **Jaccard 很低但 mAP@0.7 大跌**：说明选择很“新颖”但破坏 detector geometry。
+
+### 7.3 Sparse detector eval
+
+这是最终裁决指标。必须报告：
+
+```text
+AdaTAD sparse mAP
+ActionFormer sparse mAP, 如果工程允许
+Avg mAP
+mAP@0.5
+mAP@0.6
+mAP@0.7
+per-class mAP
+short-action mAP
+long-action mAP
+latency / FLOPs / memory / number of detector-consumed observations
+```
+
+必须比较：
+
+```text
+dense detector
+uniform-384
+exact-uniform-384
+random-384, multi-seed
+feature-energy-384
+actionness-only top-k
+actionness + boundary/change heuristic
+oracle-actionness / GT-support upper bound, only as upper bound
+DUCA-online inference teacher-free
+DUCA-joint hard-forward ST
+DUCA without detector utility
+DUCA without boundary/change/scaffold
+DUCA selected-axis ablation
+DUCA original-time coordinate
+```
+
+失败判据：
+
+* **actionness-only 不能超过 uniform-384**：说明 p_action 本身不是足够 acquisition signal；项目还能继续，但主创新必须转向 detector-utility calibration。
+* **DUCA-joint 也不能超过 uniform-384**：CVPR 主线基本 HOLD/FAIL；除非有非常强的 compute/latency优势和严格部署价值。
+* **mAP@0.5 保持但 mAP@0.7 大幅下降**：说明方法只保留粗区间，不保留边界；不能 claim high-IoU sparse TAD。
+* **Avg mAP 小涨但 @0.7 掉**：对你们论文很危险，因为 reviewer 会认为 sparse acquisition 破坏 localization precision。
+* **随机种子方差大于方法收益**：结果不可信。
+* **只在 AdaTAD 有效，ActionFormer 崩**：plugin 泛化 claim 要砍掉。
+* **offline ledger > online DUCA 明显**：最终方法不是 online deployable，ledger 只能放 appendix 或 audit。
+
+### 7.4 Diagnostic visualization
+
+必须做这个图，否则 reviewer 很容易说你们只是在画 top-k foreground heatmap。
+
+对每个 GT segment 做归一化：
+
+```text
+0% = GT start
+100% = GT end
+扩展区间：
+  pre-context: -20% to 0%
+  early: 0% to 20%
+  middle: 20% to 80%
+  late: 80% to 100%
+  post-context: 100% to 120%
+```
+
+画：
+
+```text
+mean p_action curve
+selection density curve
+boundary response curve
+Δp_action curve
+DUCA utility curve
+uniform baseline density
+```
+
+你需要证明：
+
+```text
+DUCA 不只是选 actionness peak；
+DUCA 覆盖 early/mid/late；
+DUCA 在 start/end 附近有足够密度；
+DUCA 对短动作没有漏掉；
+DUCA 的 selection density 与 sparse detector mAP@0.7 正相关。
+```
+
+### 7.5 Dataset stress test
+
+最低可行组合：
+
+```text
+THUMOS14: main sparse TAD result
+FineAction subset or full: actionness + selection geometry + sparse detector if possible
+Event spotting dataset: optional diagnostic, not main claim
+```
+
+FineAction stress test 的解释应该是：
+
+```text
+如果 FineAction 上 actionness 仍有 support AP，且 DUCA geometry/mAP 不崩，
+说明 action-support prior 不只是 THUMOS scene shortcut。
+
+如果 FineAction 上 actionness 崩，
+说明 coarse actionness 不能 claim fine-grained semantic understanding；
+但 THUMOS sparse TAD claim 仍可能成立，只是范围更窄。
+```
+
+Event spotting 的解释应该是：
+
+```text
+如果 SoccerNet/Ego4D PNR 好，只能说明方法可能迁移到 event spotting；
+不能反向证明 THUMOS14 上就是 key-event localization。
+
+如果 SoccerNet/Ego4D PNR 差，不否定 sparse TAD；
+只说明 DUCA-TAD 不是 point-event method。
+```
+
+---
+
+## 8. Paper rewriting advice：论文如何重写
+
+### 标题应该偏向什么
+
+更安全的标题：
+
+```text
+DUCA-TAD: Detector-Utility-Calibrated Sparse Temporal Acquisition for Efficient Temporal Action Detection
+```
+
+或者：
+
+```text
+Sparse Temporal Acquisition with Detector-Utility Calibration for High-IoU Temporal Action Detection
+```
+
+避免：
+
+```text
+Key Event Acquisition for TAD
+Critical Moment Localization
+Precise Event Discovery in THUMOS14
+```
+
+### 摘要里应该避免什么
+
+不要写：
+
+```text
+locates key events
+discovers critical action moments
+identifies release/takeoff/impact frames
+frame-level event localization
+```
+
+应该写：
+
+```text
+selects task-informative temporal observations
+preserves action support and temporal boundaries
+maintains high-IoU temporal detection under strict observation budgets
+uses action-support priors but calibrates selection with detector utility
+```
+
+### Introduction 应该如何定义问题
+
+正确问题定义：
+
+```text
+Existing TAD detectors consume dense temporal observations.
+Under strict observation budgets, naïve uniform sampling wastes budget on redundant regions and may miss short actions or boundaries.
+We study detector-facing sparse temporal acquisition: selecting a subset of original-time observations so that an unchanged or minimally adapted TAD detector can still produce accurate temporal proposals.
+```
+
+不要把问题写成：
+
+```text
+find the key frame of each action
+spot the decisive event moment
+replace TAD with event localization
+```
+
+### Method 里应该如何描述 coarse actionness
+
+应该写成：
+
+```text
+The coarse probe estimates an action-support prior, not a detection score.
+It is deploy-visible and teacher-free at inference.
+It provides candidate support evidence, while DUCA calibrates the final hard selection using boundary/change features and train-only detector utility.
+```
+
+必须强调：
+
+```text
+actionness ≠ detector utility
+actionness ≠ boundary correctness
+actionness ≠ key-event probability
+```
+
+### 当前创新点逐项判定
+
+| 点                                             | 判定                            | 容易被攻击之处                                      | 更安全写法                                                                                          |
+| --------------------------------------------- | ----------------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 低成本粗分类 actionness 辅助 acquisition              | 弱到中等创新，单独不够                   | reviewer 会说 foreground scoring 很常见           | “deploy-visible action-support prior used as one input to detector-calibrated acquisition”     |
+| dense 768 hard select <=384                   | 本身偏工程，必须绑定真实 compute contract | 如果 detector/backbone 仍看 dense，就是假稀疏          | “strict detector-consumed observation budget”                                                  |
+| selected_positions 保留 original-time 坐标        | 重要技术点，可成为强贡献                  | 需要 selected-axis 负控证明                        | “original-time sparse grid preserving temporal geometry for regression/NMS”                    |
+| actionness + Δp + boundary + scaffold         | 如果手工权重多，容易像 heuristic         | 没有 ablation 就站不住                             | “boundary- and coverage-regularized acquisition features; each component ablated”              |
+| online plugin inference teacher-free          | 重要部署贡献                        | 任何 ledger/cache/teacher 泄漏都会致命               | “inference decisions use only deploy-visible signals”                                          |
+| train-only detector utility + hard-forward ST | 最强方法贡献                        | 必须证明 loss 梯度真回 selector/probe，且不进入 inference | “train-time utility calibration aligns selection with detector mAP rather than foregroundness” |
+| ledger 仅 audit                                | 不是创新，是合规协议                    | reviewer 不会给方法分，但会因泄漏扣分                      | “audit-only reproducibility record; never a decision source”                                   |
+
+### Experiments 应该如何设计证据链
+
+论文实验顺序应该是：
+
+```text
+1. Validate action-support prior
+2. Validate selection geometry
+3. Validate sparse detector mAP
+4. Prove original-time coordinate necessity
+5. Prove detector utility beats actionness-only
+6. Prove inference is teacher-free
+7. Stress test on FineAction or fine-grained/event data
+```
+
+不要把 p_action AUROC 放在最前面当主结果。它只能是 diagnostic。
+
+### Discussion / Limitations 必须承认什么
+
+必须写清楚：
+
+```text
+THUMOS14 annotations describe action intervals, not instantaneous key events.
+Our method is designed for sparse TAD, not event spotting.
+Coarse actionness may exploit contextual cues.
+High actionness quality does not guarantee high-IoU TAD.
+If selection is performed on pre-extracted features, compute savings are limited to detector-side temporal processing.
+Event spotting requires different datasets and timestamp-level metrics.
+```
+
+---
+
+## 9. Fatal risks：最致命风险
+
+1. **继续把 THUMOS14 写成 key-event localization。**
+   这是直接送 reviewer 抓的硬伤。你们自己的 GT 可视化已经否定了这个 claim。
+
+2. **actionness AUROC 高，但 sparse mAP 不升。**
+   这会证明 p_action 只是 foreground prior，不是 detector-useful acquisition signal。论文必须靠 DUCA-joint，而不是 actionness-only。
+
+3. **mAP@0.7 掉太多。**
+   如果 @0.5 保持、@0.7 崩，说明你们只保留动作大概位置，破坏边界。对 TAD 论文很致命。
+
+4. **uniform-384 太强。**
+   如果 uniform-384 已经接近 dense，而 DUCA 不能稳定超过它，novel acquisition 的价值很弱。你们至少需要证明在短动作、边界、困难类、动态预算或 latency 下有真实优势。
+
+5. **online claim 被 ledger/teacher/cache 污染。**
+   任何 inference-time offline ledger、GT-derived score、dense prediction cache、oracle utility 都会把“online plugin”打成不成立。
+
+6. **selected-axis 坐标污染。**
+   如果 detector 内部 point generator、regression target、NMS、postprocess 仍把 selected index 当真实时间，mAP 结果不可信。
+
+7. **compute claim 不干净。**
+   如果 heavy backbone 已经为 768 dense features 跑完，再做 384 selection，只能 claim detector compute reduction，不能 claim video backbone compute reduction。
+
+8. **dynamic budget 只是外部 sweep。**
+   如果 budget B 是 eval-time sweep，而不是模型内部 stopping/utility/marginal gain policy，那不能叫 dynamic budget 方法。
+
+9. **FineAction 或 fine-grained stress test 崩溃。**
+   这不一定杀死 THUMOS sparse TAD，但会杀死“语义理解”“细粒度动作选择”“泛化 acquisition prior”等更大 claim。
+
+---
+
+## 10. Final go/no-go decision：继续还是停止，以及条件
+
+我的判定是：
+
+```text
+HOLD → conditional GO for efficient sparse TAD.
+NO-GO for key-event localization on THUMOS14.
+```
+
+具体决策：
+
+**继续，但只继续 A：Efficient Sparse Temporal Action Detection。**
+最合理的研究问题应该改成：
+
+```text
+Can a deploy-visible, detector-utility-calibrated online acquisition plugin select a strict subset of original-time temporal observations, so that an existing TAD detector preserves high-IoU action interval localization under reduced observation budget?
+```
+
+必须砍掉这些 claim：
+
+```text
+关键事件定位
+脱手/起跳/击球瞬间发现
+THUMOS14 上证明 event spotting
+p_action 高即 TAD 成功
+offline ledger 是最终方法
+actionness-only 是主贡献
+```
+
+可以保留这些 claim，但必须用实验支撑：
+
+```text
+strict selected_positions <=384
+detector consumes only selected observations
+original-time sparse grid is necessary
+action-support prior helps but is insufficient
+DUCA-joint aligns acquisition with detector utility
+teacher-free inference
+mAP@0.6 / mAP@0.7 preserved or improved
+```
+
+能放心写成 CVPR 论文的最低结果条件是：
+
+```text
+1. DUCA-online / DUCA-joint 在同预算下稳定 ≥ uniform-384，最好 Avg 和 @0.7 都赢；
+2. 如果 Avg 只小赢，必须在 short actions / boundary coverage / latency 上有明确优势；
+3. actionness-only 作为 baseline 可以输，但 DUCA-joint 必须赢；
+4. selected-axis 负控明显差，original-time sparse grid 明显必要；
+5. inference 完全 teacher-free、ledger-free、GT-free；
+6. geometry diagnostics 证明不是只选动作内部 peak；
+7. 至少一个 FineAction 或 fine-grained stress diagnostic 支撑“不是纯 THUMOS 场景捷径”，或者在 limitation 中明确不 claim fine-grained generalization。
+```
+
+如果你们转向 key-event localization，那就是另一篇论文，应该换到 SoccerNet Action Spotting、Ego4D PNR、FineGym/FineDiving step/transition 类数据，并使用 timestamp error、tolerance-mAP、Recall@δ、PNR absolute error，而不是 THUMOS14 TAD mAP。
+
+最终建议：
+
+**不要放弃项目；放弃错误叙事。**
+DUCA-TAD 仍然有研究意义，但它的论文身份必须是：
+
+```text
+detector-facing sparse temporal acquisition for interval-level TAD
+```
+
+而不是：
+
+```text
+key-event localization from THUMOS14 actionness
+```
+
+[1]: https://www.soccer-net.org/tasks/action-spotting "SoccerNet - Action Spotting"
+[2]: https://arxiv.org/abs/1604.06182 "[1604.06182] The THUMOS Challenge on Action Recognition for Videos \"in the Wild\""
+[3]: https://arxiv.org/abs/2105.11107 "[2105.11107] FineAction: A Fine-Grained Video Dataset for Temporal Action Localization"
+[4]: https://openaccess.thecvf.com/content_cvpr_2015/html/Heilbron_ActivityNet_A_Large-Scale_2015_CVPR_paper.html?utm_source=chatgpt.com "ActivityNet - CVPR 2015 Open Access Repository"
+[5]: https://ego4d-data.org/docs/benchmarks/hands-and-objects/ "Hand & Object Interactions | Ego4D"
+[6]: https://sdolivia.github.io/FineGym/ "FineGym: A Hierarchical Video Dataset for Fine-grained Action Understanding"
+[7]: https://github.com/xujinglin/finediving "GitHub - xujinglin/FineDiving: FineDiving: A Fine-grained Dataset for Procedure-aware Action Quality Assessment · GitHub"

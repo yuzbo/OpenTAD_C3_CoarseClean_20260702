@@ -1,0 +1,167 @@
+{
+  "id": "duca-project-level-after-marginal",
+  "createdAt": "2026-08-30T23:45:36.500Z",
+  "status": "completed",
+  "promptPreview": "Read every provided file completely and answer the authoritative prompt as one independent project-level scientific adjudication. Treat the repository, actual r",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-30T23:45:37.322Z",
+      "completedAt": "2026-08-31T00:06:28.833Z",
+      "usage": {
+        "inputTokens": 16075,
+        "outputTokens": 2026,
+        "reasoningTokens": 0,
+        "totalTokens": 18101
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 15359,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "0571C4DEA34AB887E56C31B8EED4CBC6",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a94c0ae-5388-83e9-afd3-6b8f1e596e1e",
+      "conversationId": "6a94c0ae-5388-83e9-afd3-6b8f1e596e1e",
+      "promptSubmitted": true,
+      "controllerPid": 34412
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a94c0ae-5388-83e9-afd3-6b8f1e596e1e"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-30T23:45:41.381Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Read every provided file completely and answer the authoritative prompt as one independent project-level scientific adjudication. Treat the repository, actual remote branch, exact commit 46812facc8773d9b4a9c21833cbe397c8aaa5a2d, runner, allocator and test permalinks in the prompt as the latest code truth. This is a fresh scientific question, not a Marginal-v1 recovery or follow-up. Preserve nonce DUCA-PROJECT-LEVEL-AFTER-MARGINAL-STOP-v001-20260831 verbatim in the response.",
+    "file": [
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\prompts\\PRO_DUCA_PROJECT_LEVEL_AFTER_MARGINAL_STOP-v001.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\PAPER_PROGRESS.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\experiments\\duca-marginal-v1.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-marginal-cap-release-neighborhood-terminal-compact-v002\\visible-report.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-project-level-after-marginal",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-project-level-after-marginal-stop-v001\\visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 34412,
+    "reattachCommand": "oracle session duca-project-level-after-marginal"
+  },
+  "startedAt": "2026-08-30T23:45:37.318Z",
+  "completedAt": "2026-08-31T00:06:28.881Z",
+  "usage": {
+    "inputTokens": 16075,
+    "outputTokens": 2026,
+    "reasoningTokens": 0,
+    "totalTokens": 18101
+  },
+  "elapsedMs": 1250108,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\oracle\\duca-project-level-after-marginal-stop-v001\\sessions\\duca-project-level-after-marginal\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 67429,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a94c0ae-5388-83e9-afd3-6b8f1e596e1e",
+      "sha256": "efd6115bfffcae7a54c476405d96360d7567349934e8f445727b7e6efcdb5a85",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

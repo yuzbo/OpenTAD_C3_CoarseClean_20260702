@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-14T02:55:12Z",
+  "deadline": "2026-08-14T03:30:00Z",
+  "from_role": "coordinator",
+  "kind": "DUCA_UOR_SEALED_EXECUTION_SURFACE-v001-TERMINAL_REVIEW",
+  "message_id": "msg-20260814T025512Z-f89eee3c9f47",
+  "parent_artifact_ids": [
+    "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/role-returns/BUILDER_DUCA_UOR_SEALED_EXECUTION_SURFACE-v001.md"
+  ],
+  "payload": null,
+  "priority": "critical",
+  "requested_action": "Independently review only frozen commit 6515ebf501b3c49be57ad4c37fc84d2fb4ae66d7 against PRO_DUCA_UOR_TERMINAL_DISPOSITION-v001 and Builder intake BUILDER_DUCA_UOR_SEALED_EXECUTION_SURFACE-v001. Read-only terminal review: attack sealed runner argument rejection before imports, closed manifest, evaluator receipt binding, literal launcher, old generic path reachability, no-data boundary, and scope fidelity. Do not patch, clean, run data, browser, Pro, Sources, remote, GPU, Slurm, training, inference, CAL, evaluation, metric, or claim actions. Classify only terminal PASS or terminal BLOCK; there is no correction/recheck. On PASS, hand off to registered Evaluator structural intake; on any block, terminal STOP.",
+  "required_gate": "DUCA_UOR_SEALED_EXECUTION_SURFACE-v001",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-11T19:01:33Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "bounded-implementation",
+  "message_id": "msg-20260811T190133Z-0fa89f53a0a6",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_P0_ROUTE_ADJUDICATION-v002.md",
+    "C:\\Users\\skywalker\\.codex\\worktrees\\07c1\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\roles\\builder\\BUILDER_DUCA_P0_DENSITY_MINIMAL_CHANGE_PLAN-v001.md"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Implement only the accepted P0 units exactly as specified in BUILDER_DUCA_P0_DENSITY_MINIMAL_CHANGE_PLAN-v001 and PRO_P0_ROUTE_ADJUDICATION-v002: canonical integer-half-up uniform positions; exactly-once selected-q to physical-dense transport before SingleStageDetector per-sample NMS; density-only browser_memory projection, fixed-K hard decoder, and hard gather. Author the bounded patch and cited fixtures only; do not run any command, test, CPU/GPU work, data access, Slurm job, metric, Git stage/commit/push, browser, or launcher. Stop and return a blocker if any change would alter detector/head/loss/NMS/evaluator/split/class map/checkpoint policy/route, or if browser_memory/identity-grid/hard-gather prerequisites fail.",
+  "required_gate": "PRO_P0_ROUTE_ADJUDICATION-v002; builder plan v001 semantically consistent; BLOCKED_PRE_RESULT",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

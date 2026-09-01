@@ -1,0 +1,1426 @@
+VISIBILITY_CERTIFICATE
+
+**status: PASS**
+
+* `[DUCA_CODE_FACT]` DUCA 仓库及不可变提交 `63e25eb17e523d369f73434ed4d9b6446608861a` 可读，GitHub 返回的实际提交 SHA 与要求完全一致。
+* `[UPSTREAM_CODE_FACT]` Uni-AdaFocus 官方仓库及不可变提交 `8846488310fdd4a18412608006030643e794c36e` 可读，实际 SHA 与要求完全一致。
+* `[PAPER_FACT]` 已读取 arXiv 官方 PDF 的完整 23 页，并以可检索全文交叉核验。论文确为 2024 年 12 月 15 日提交的 **“Uni-AdaFocus: Spatial-temporal Dynamic Computation for Video Recognition”**；研究对象是视频识别，不是 TAD。([arXiv][1])
+* `[DUCA_CODE_FACT]` 实际读取了要求的全部 DUCA 文件，并沿继承关系额外读取了：
+
+  * `duca_two_stage_pretrained_joint_fixed384_official60.py`
+  * `duca_two_stage_joint_fixed384_official60_base.py`
+  * `duca_protected_e2e_fixed384_official60.py`
+  * `duca_transition_only_fixed384_official_adatad_backend_full_train.py`
+  * `duca_online_official_adatad_backend_full_train.py`
+  * `e2e_thumos_videomae_s_768x1_160_adapter.py`
+  * `opentad/models/utils/truetime_geometry.py`
+  * `tools/bata/train_lowres_action_probe.py`
+* `[UPSTREAM_CODE_FACT]` 实际读取了 Uni-AdaFocus 的：
+
+  * `models/uni_adafocus.py`
+  * `main.py`
+  * `opts.py`
+  * X3D 分支的 `archs/uni_adafocus_X3D.py`
+  * X3D 分支训练主程序
+* `[DUCA_CODE_FACT]` 已读取 DUCA 对外部 ASFormer 的包装、前向 hook、隐藏层捕获、兼容 shim 和记录的源文件 SHA-256；但本轮没有把外部 vendored ASFormer 仓库的全部源码字节伪装成已逐行重审。结论因此只覆盖 **DUCA 实际调用包装与梯度语义**，不对外部 ASFormer 仓库做独立复现认证。
+* `[UNPROVEN]` 无法访问 Job `1178989` 的 Slurm 目录、训练日志、checkpoint、terminal evaluator 或 CUDA gate artifact。因此本裁决接受“仍为 `experiment_running`、P0 CUDA gate 已通过”只是 Prompt 提供的状态，不把它升级为可独立核验的终点实验事实。
+* `[UNPROVEN]` 当前没有 V8 terminal EMA mAP、U/G0/G1/G2 胜者、三种子结果或论文级成本账本。
+
+---
+
+## EXECUTIVE_VERDICT
+
+# **HOLD**
+
+`[DUCA_CODE_FACT]` 当前精确提交中，coarse hidden **只参与 transition descriptor 和 selector scoring**；hard 选出的原始 RGB 随后进入 VideoMAE，检测器没有消费 coarse hidden，也没有任何 coarse/VideoMAE feature fusion。`ActionFormer.forward_train` 在 selector 后直接调用 backbone、projection、neck 和 head。
+
+`[EXPERIMENT_FACT]` Prompt 提供的匹配 V5 终点中，最佳 learned arm `direct-0.25` 比 exact-uniform 低 **0.7478 Avg-mAP**；homotopy 低 **1.3979**；uniform companion 仍低 **0.7649**。这些负结果至少说明“再加一个 detector-gradient 名称或 companion”没有自动解决根因。它们不是本轮从 artifact 独立重新计算的结果。
+
+`[INFERENCE]` 现阶段不能把“未复用 coarse feature”认定为性能落后的首要原因。更高优先级的解释是：
+
+1. hard 部署决策与训练 surrogate 不同构；
+2. irregular selected frames 被压成均匀 selected-rank 轴后进入 VideoMAE；
+3. K=384、T=768、max-hole=2 下的策略自由度有限，但仍足以造成不规则 tubelet；
+4. coarse 二分类/transition 监督与类别化 TAD cls/reg 并不等价；
+5. learned selection 改变了信息分布，却没有证明增加了 detector utility。
+
+`[PROPOSAL]` 不批准直接把 learned selector 与复杂 feature fusion 联合起来。只批准一个 **exact-uniform、P0-coarse 成本匹配、零初始化的 post-VideoMAE residual-reuse 诊断**。它先回答“coarse 表示本身对 TAD 有没有增量价值”，而不让 learned selection、hard-gradient surrogate 和 fusion 同时变化。
+
+`[PROPOSAL]` 若该诊断失败，feature-fusion 路线应 **KILL**；唯一 fallback 是不融合 coarse feature，转而启用/完善仓库已有的 physical-grid ActionFormer 合同，验证 selected-rank/physical-time 语义是否才是主要瓶颈。
+
+---
+
+## UNI_ADAFOCUS_RECONSTRUCTION
+
+### 1. 论文方法边界
+
+`[PAPER_FACT]` Uni-AdaFocus 研究的是视频级识别。其基本框架是：轻量 global encoder 先看完整帧，policy 根据 coarse global feature 选择空间区域和重点帧，高容量 local encoder 只处理选中 patch，最后分类器聚合 global/local 表示。论文进一步加入 temporal dynamic sampling 和 sample-wise conditional exit，从而统一空间、时间和样本级动态计算。([arXiv][1])
+
+`[PAPER_FACT]` 论文中的“feature reuse”不是把 global feature 塞进 local backbone，而是让 global feature 同时服务于：
+
+* policy 输入；
+* deep-feature-based policy auxiliary supervision；
+* 最终视频识别分类。
+
+论文报告在其分类实验上，复用 global feature 可带来约 0.8–2.8 个百分点增益且附加计算很低。该结果是分类结果，不是 THUMOS14 TAD mAP。([ar5iv][2])
+
+`[PAPER_FACT]` 论文明确发现 policy gradient 会干扰 global encoder，因而在 policy 输入前使用 stop-gradient；这不是偶然实现细节，而是其训练稳定性设计。([ar5iv][2])
+
+`[PAPER_FACT]` 动态帧采样的精确期望目标组合复杂度不可接受；作者将期望损失重写为可用 Monte-Carlo 估计、且对 sampling weights 可微的形式。这里的“end-to-end”是通过可微辅助期望目标训练 policy，不表示 LongTensor hard index 本身可微。([ar5iv][2])
+
+`[PAPER_FACT]` 论文自己的失败分析也显示，模型对尾部分布中的非典型动作和需要较强关系推理的视频更弱。([ar5iv][2])
+
+### 2. 官方长视频分支的张量级前向
+
+以默认参数 `T=48`、`T_g=16`、`T_l=16` 表示：
+
+```text
+images
+  [B, T×3, H, W]
+      │ view
+      ▼
+all_frames
+  [B·T, 3, H, W]
+      │ 每个 temporal segment 选一个 glance frame
+      ▼
+glance_frames
+  [B·T_g, 3, H, W]
+      │ MobileNetV2 global CNN
+      ├──────────────► global_feat_map [B·T_g, D_g, h, w]
+      └──────────────► global_feat     [B·T_g, D_g]
+```
+
+`[UPSTREAM_CODE_FACT]` 训练时 glance index 是每个分段内随机选择，推理时为确定性位置；global CNN 是 MobileNetV2，local CNN 是 ResNet-50。
+
+#### Temporal policy
+
+```text
+global_feat
+  [B·T_g, D_g]
+      │ reshape
+      ▼
+[B, T_g, D_g]
+      │ temporal Conv2d stack
+      ▼
+weights, weights_T
+  [B, T_g]
+```
+
+`[UPSTREAM_CODE_FACT]` `TemporalPolicy` 由三层 temporal Conv2d 和 softmax 构成，输出普通权重与 temperature-adjusted 权重。
+
+`[UPSTREAM_CODE_FACT]` `policy_sample_indices` 对权重做累积和，以训练随机阈值或推理区间中点进行逆 CDF 采样，随后 `floor().long()`、单调性修复和越界裁剪，最终返回扁平 LongTensor index。该 hard index 不可微。
+
+#### Spatial policy
+
+`[UPSTREAM_CODE_FACT]` global feature map 被 `detach` 后送入 3D-convolution spatial policy，输出每帧四个 sigmoid 参数；参数经时间插值扩展至全部源帧。真正从原始 RGB 取 patch 时，actions 再次被 `detach`。
+
+#### Local path
+
+```text
+focus_indices = policy_sample_indices(weights_T.detach())
+local_frames   = all_frames[focus_indices]
+patches        = grid_sample(local_frames, actions.detach())
+local_feat     = ResNet50(patches)
+```
+
+`[UPSTREAM_CODE_FACT]` 训练建立两个 local arm：一个用 learned spatial action，一个用随机/固定尺度 action；两臂共享 local CNN，用于稳定 policy 监督与对照。
+
+### 3. global/local 的真实融合
+
+`[UPSTREAM_CODE_FACT]` 在 ActivityNet/FCVID/Mini-Kinetics 分支，融合位于 `PoolingClassifier`：
+
+1. global feature、local feature 分别映射到 4096 维；
+2. 各自在时间上做累积 max-pooling；
+3. global 阶段以 global state 分类；
+4. local 阶段将当前累计 local state 与最终累计 global state 拼成 8192 维后分类；
+5. 最后一个时间步 logits 是最终预测。
+
+`[UPSTREAM_CODE_FACT]` 在 X3D 分支，真实融合却是 `global_final_logit + local_final_logit`，不是上述 feature concatenation。因此“Uni-AdaFocus 官方实现只有一个统一 feature-fusion 算子”是不成立的。
+
+### 4. hard decision 的真实梯度边界
+
+`[UPSTREAM_CODE_FACT]`
+
+* hard temporal index：`weights_T.detach()` 后生成；
+* hard spatial RGB crop：actions 被 `detach`；
+* final/local classification loss 不会穿过这些 hard decisions 回到 policy；
+* temporal policy 通过 `MCSampleFeature` 的独立辅助路径获取监督；
+* spatial policy 通过在 detached global deep feature map 上执行可微插值获取监督。
+
+`MCSampleFeature` 中，`torch.multinomial` 的 index 不可微，但未被采中的权重仍参与 weighted sum；分母被 detach。它是一个 policy surrogate，而不是 hard-index derivative。
+
+### 5. 官方 loss 聚合与参数所有权
+
+官方长视频主程序的总损失为：
+
+[
+L_{\text{Uni}}
+==============
+
+\frac{
+L_{\text{cat}}+L_{\text{global}}+L_{\text{local}}
++L_{\text{temporal}}+L_{\text{spatial}}
+}{2}
++\lambda_{\mathrm{KL}}L_{\mathrm{KL}}
++\lambda_{\mathrm{norm}}L_{\mathrm{norm}} .
+]
+
+实际代码对两个 local arms 分别计算前五项，再一次 `backward()` 和 `optimizer.step()`。
+
+| loss         | global CNN | temporal policy |           spatial policy | local CNN | pooling classifier | auxiliary head |
+| ------------ | ---------: | --------------: | -----------------------: | --------: | -----------------: | -------------: |
+| `L_cat`      |          ✓ |               — |                        — |         ✓ |                  ✓ |              — |
+| `L_global`   |          ✓ |               — |                        — |         — |                  — |              — |
+| `L_local`    |          — |               — |                        — |         ✓ |                  — |              — |
+| `L_temporal` |         ✓¹ |     ✓ surrogate |                        — |         — |                  — |              — |
+| `L_spatial`  |          — |               — | ✓ deep-feature surrogate |         — |                  — |              ✓ |
+| `L_KL`       |          — |               ✓ |                        — |         — |                  — |              — |
+| `L_norm`     |          — |               — |                        ✓ |         — |                  — |              — |
+
+¹ `[UPSTREAM_CODE_FACT]` 在长视频分支，`TemporalPolicy(global_feat)` 和 `MCSampleFeature(global_logits, …)` 没有 detach，因此 temporal auxiliary 也可更新 global path；X3D 分支则显式 detach global feature/logit。
+
+### 6. component-specific learning rates
+
+`[UPSTREAM_CODE_FACT]` 默认基准 LR 为 `0.002`，global multiplier `0.5`，spatial `0.2`，temporal `0.2`，pooling classifier `20.0`；调度器将每个 group 设置为 `base_lr × lr_mult`。
+
+### 7. 可迁移与不可迁移部分
+
+`[INFERENCE]` 可迁移到离线 TAD 的是：
+
+* 低成本全局路径与高成本局部路径的角色分工；
+* policy 输入 stop-gradient；
+* hard deployment 与独立可审计 surrogate 分离；
+* coarse feature 在完成 selection 后仍可作为辅助信息复用；
+* component-specific LR 和明确的参数所有权。
+
+`[INFERENCE]` 不可直接迁移的是：
+
+* 视频级 global/local pooling；
+* 分类 mAP 和 Top-1 结论；
+* conditional exit；
+* “看到若干判别帧即可”的分类假设；
+* 对起止边界误差不敏感的 aggregation；
+* 二分类/视频标签监督对 TAD cls/reg utility 的替代。
+
+---
+
+## DUCA_RECONSTRUCTION
+
+### 1. 当前固定协议
+
+`[DUCA_CODE_FACT]` 当前 G0/G1/G2 配置统一为：
+
+* 离线 TAD；
+* dense candidates `T=768`；
+* hard budget `K=384`；
+* `max_unselected_hole=2`；
+* candidate stride 为 4 source frames；
+* 最大相邻选中中心间隔为 3 candidate steps，即 12 source frames；
+* detector axis 为 `selected_axis_index`。
+
+`[DUCA_CODE_FACT]` G0/G1/G2 都加载 P0 coarse checkpoint 后冻结 spatial stem、ASFormer 和 action head；official-60 内只有 transition scorer 保持 selector 侧可训练，actionness loss 权重为零。
+
+`[DUCA_CODE_FACT]`
+
+* G0：无 detector feedback；
+* G1：`protected_structured_transport`，终值 0.25；
+* G2：在 G1 上加入 50% uniform companion，只有 learned rows 接收 scorer bridge gradient。
+
+### 2. 训练计算图
+
+```text
+dense RGB X
+[B, N, 3, T=768, 160, 160]
+        │
+        ├─────────────────────────────────────────────────────────────┐
+        │                                                             │
+        │ coarse prepare / resize to 64×64                            │
+        ▼                                                             │
+custom spatial stem                                                   │
+(two stride-2 Conv2d + GAP)                                           │
+        │ [B,96,T]                                                     │
+        ▼                                                             │
+official-ASFormer wrapper                                              │
+        ├──── actionness logits a [B,T]                               │
+        └──── encoder hidden h [B,T,96]                               │
+              │                                                       │
+              │ transition descriptors d [B,T,197]                    │
+              │ = Δa, |Δa|, Δentropy, |Δentropy|,                     │
+              │   Δh, |Δh|, cosine-change                            │
+              ▼                                                       │
+transition scorer q [B,T]                                             │
+              │                                                       │
+              ▼                                                       │
+policy homotopy                                                       │
+p=(1-α)·uniform_reference + α·normalize(q)                            │
+              │                                                       │
+              ├── hard Viterbi on p.detach() ──► positions [B,K]     │
+              │                                                       │
+              └── soft forward-backward on p ──► A [B,K,T]           │
+                                                                   ┌──┘
+hard gather original RGB X[:,positions]                            │
+[B,N,3,K=384,160,160]                                              │
+        │                                                          │
+        │ + zero-forward detector-gradient surrogate from A        │
+        ▼                                                          │
+24 groups × 16 selected-rank frames                                │
+        │ VideoMAE-S                                               │
+        ▼                                                          │
+backbone feature Z [B,384,K]                                       │
+        │                                                          │
+ActionFormer projection → neck → cls/reg head                      │
+        │                                                          │
+L_cls + L_reg ─────────────────────────────────────────────────────┘
+```
+
+#### coarse probe
+
+`[DUCA_CODE_FACT]` `C3CoarseProbeActionnessSource` 接受 `[B,C,T,H,W]` 或 `[B,N,C,T,H,W]`，调用 `prepare_probe_inputs`，并在 official-ASFormer 路径上禁用外层 FP16 autocast。若冻结，则整个 probe 在 `torch.no_grad()` 下执行。
+
+`[DUCA_CODE_FACT]` 实际 probe 不是“纯 ASFormer”。它包含 DUCA 自己的两层 stride-2 spatial stem、normalization、SiLU 和 global pooling，然后才调用 official `MyTransformer`。
+
+`[DUCA_CODE_FACT]` actionness 是 ASFormer 最后一阶段 class-1 logit 减 class-0 logit；encoder forward hook 捕获 hidden，并转成 `[B,T,96]`。
+
+#### transition descriptor 与 scorer
+
+`[DUCA_CODE_FACT]` descriptor 维度为：
+
+[
+2D+5 = 2\times 96+5=197.
+]
+
+它不使用绝对 hidden，只使用 logit/entropy/hidden 的变化和连续 hidden cosine change。
+
+`[DUCA_CODE_FACT]` `transition_utility_paths` 首先 detach actionness logits。当前 `policy_hidden_gradient_scale=0` 使 policy descriptor 对 coarse hidden 也完全 stop-gradient；scorer 仍可从其输出 loss 获得梯度，但 coarse probe 不会获得 detector feedback。
+
+#### hard/soft structured selection
+
+`[DUCA_CODE_FACT]` hard Viterbi 明确消费 `policy_logits.detach()`；训练时另行运行 differentiable forward-backward，形成 soft occupancy、slot assignment 以及
+
+[
+S_{\mathrm{ST}}=S_{\mathrm{hard}}+
+(S_{\mathrm{soft}}-\operatorname{sg}S_{\mathrm{soft}}).
+]
+
+因此 hard positions 本身没有梯度。
+
+`[DUCA_CODE_FACT]` exact-K/max-hole 可行条件在代码中为：
+
+[
+T-K\le (K+1)G.
+]
+
+T=768、K=384、G=2 可行，但它仍限制最多只能连续漏掉两个 candidate。
+
+#### raw-pixel bridge
+
+`[DUCA_CODE_FACT]` forward 的真实 RGB 是 hard gather 的结果。`protected_structured_transport` 只在训练时增加一个 forward 值严格为零的 surrogate；eval 中 bridge weight 被强制为零。
+
+其概念形式是：
+
+[
+\widetilde X_k
+==============
+
+X_{p_k}
++
+\beta,
+\operatorname{sg}!\left(\frac{\partial X}{\partial t}\bigg|_{p_k}\right)
+\left(
+\mathbb E_A[t_k]
+-\operatorname{sg}\mathbb E_A[t_k]
+\right).
+]
+
+`[INFERENCE]` 这让 detector loss 经 local RGB temporal slope 和 soft assignment 回到 scorer；它不是硬索引的精确导数，也不是 detector loss 对替换任意 frame 的真实反事实 utility。
+
+#### VideoMAE 真实时间语义
+
+`[DUCA_CODE_FACT]` K=384 后，配置把 selected-rank frames 分为 `384/16=24` 个 16-frame group。VideoMAE-S 使用 16-frame input，默认 tubelet size 为 2。
+
+`[INFERENCE]` 因而每个 group 先产生 8 个 temporal tubelet tokens，24 组得到 192 个 temporal outputs，再由 post-processing 插值到 K=384。虽然 head 的 GT 可以被坐标重映射，VideoMAE 的 tubelet、attention 和 adapter 仍把相邻 selected rank 当作等时间间隔；它看不到 `p_{k+1}-p_k`。
+
+### 3. 坐标链
+
+定义：
+
+* selected rank：(r\in[0,K))；
+* dense candidate index：(p_r\in[0,T))；
+* relative source-frame coordinate：`clip_start + 4·p_r`；
+* physical seconds：再除以 fps。
+
+`[DUCA_CODE_FACT]` 当前 global curriculum tests 明确断言 `detector_output_coordinate_space == "selected_axis_index"`，而不是 physical grid。
+
+训练：
+
+[
+g_{\text{dense}}
+\xrightarrow{\text{piecewise true→selected}}
+g_{\text{selected}}.
+]
+
+推理：
+
+[
+\hat g_{\text{selected}}
+\xrightarrow{\text{piecewise selected→true}}
+\hat g_{\text{dense/source}}.
+]
+
+`[DUCA_CODE_FACT]` 该映射解决的是 target/proposal 坐标合同，不会改变 backbone 内部对 selected rank 的均匀时间假设。
+
+`[DUCA_CODE_FACT]` `AnchorFreeHead` 中已经存在可选的 physical-grid 路径：它能利用 selected dense positions 把 point center、stride 和 regression range 映射回 physical axis，并要求 dense-axis GT、禁止 selected-axis GT remap；但该开关默认关闭，当前 G0/G1/G2 配置也没有启用。
+
+### 4. 当前 loss × parameter-group 梯度所有权
+
+参数组：
+
+* **C**：coarse spatial stem + ASFormer + action head；
+* **S**：transition scorer；
+* **V**：VideoMAE adapters；
+* **D**：projection + neck + ActionFormer head。
+
+| 当前 loss/path                       |                        C |           S |  V |  D |
+| ---------------------------------- | -----------------------: | ----------: | -: | -: |
+| actionness BCE                     | 配置上可更新；G0/G1/G2 中冻结且权重 0 |           — |  — |  — |
+| transition distribution            |                     冻结时无 |           ✓ |  — |  — |
+| structured boundary coverage       |                     冻结时无 |           ✓ |  — |  — |
+| detector cls/reg，G0                |                        — |           — |  ✓ |  ✓ |
+| detector cls/reg，G1                |                        — | ✓ surrogate |  ✓ |  ✓ |
+| detector cls/reg，G2 learned rows   |                        — | ✓ surrogate |  ✓ |  ✓ |
+| detector cls/reg，G2 companion rows |                        — |           — |  ✓ |  ✓ |
+| counterfactual distillation        |                当前 G 路线关闭 |   当前 G 路线关闭 |  — |  — |
+
+`[DUCA_CODE_FACT]` optimizer 为 transition scorer、coarse action head 和 coarse trunk提供了不同 LR 分支；普通非-backbone参数使用 detector base LR。
+
+`[DUCA_CODE_FACT]` VideoMAE 配置虽然写有 `freeze_backbone=False`，但 optimizer 对普通 backbone 设置 LR=0，只给 adapter 设置 `2e-4`；因此有效更新的是 adapter，而不是完整 VideoMAE base。
+
+### 5. 推理图
+
+```text
+dense RGB
+  → frozen coarse probe
+  → scorer
+  → hard exact-K Viterbi
+  → hard raw-RGB gather
+  → VideoMAE
+  → projection/neck/head
+  → selected-axis proposal
+  → true-time inverse map
+  → NMS
+```
+
+`[DUCA_CODE_FACT]` 推理不运行 soft bridge，不需要 GT、teacher 或 prediction cache；但仍运行 dense coarse probe，并且 data pipeline 已经 decode/materialize dense frames。
+
+---
+
+## CODE_AND_GRADIENT_DEFECTS
+
+### P0 — 进入新方法训练前必须关闭
+
+| 缺陷                                             | 证据与裁决                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **P0-1：“direct detector gradient”表述不成立**       | `[DUCA_CODE_FACT]` 配置声称 `detector_gradient_is_direct=True`，同时又声称只更新 transition scorer。 实现中 hard Viterbi 输入被 detach，梯度通过 soft assignment 与 detached local RGB slope 的 zero-forward surrogate。它是 **detector-loss-derived surrogate gradient**，不是穿过 deployed hard index 的 direct gradient。该字段必须改名或文档明确限定。 |
+| **P0-2：selected-axis 坐标正确不等于 backbone 时间语义正确** | `[DUCA_CODE_FACT]` GT 与 proposal 的 piecewise remap 可以自洽；但 VideoMAE 在 rank-contiguous 16-frame group 中做 tubelet/attention，看不到物理间隔。`[INFERENCE]` 这是高 tIoU 下的首要结构风险之一，不是简单 evaluator bug。                                                                                                                 |
+| **P0-3：“完整端到端计算下降”当前不可声称**                     | `[DUCA_CODE_FACT]` dataset pipeline 先 decode、resize、augment、tensorize T=768 全部帧，再进入模型 selector。 `[INFERENCE]` 当前代码明确减少的是 heavy backbone frame count；并未证明 decode、CPU preprocessing、dense H2D、coarse、DP 和 training bridge 合并后的总成本下降。                                                                     |
+| **P0-4：V8 gate 通过不能升级为方法有效**                   | `[UNPROVEN]` 当前只有 Prompt 报告的 P0 real-CUDA gate 状态；没有 terminal EMA mAP。代码存在、静态合同、一次真实梯度、完整训练、终点 mAP、论文证据必须分级。                                                                                                                                                                                           |
+
+### P1 — 方法解释与训练稳定性的高风险项
+
+| 缺陷                                                      | 证据与裁决                                                                                                                                                                |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P1-1：protected transport 的 Jacobian 假设过弱**            | `[INFERENCE]` raw RGB 局部时间差并不近似“更换一帧对深层 VideoMAE/ActionFormer loss 的变化”，尤其经过 16-frame grouping、tubelet embedding 和 nonlinear attention 后。                            |
+| **P1-2：G1/G2 的 detector feedback 无法修正 coarse evidence** | `[DUCA_CODE_FACT]` coarse frozen、action logits detached、policy hidden scale0，所以 detector loss最多改变 scorer 在固定 descriptor 上的映射。若 descriptor 本身缺失类别或持续时间信息，scorer 无法恢复。 |
+| **P1-3：static tests 不是 full-model gradient evidence**   | `[DUCA_CODE_FACT]` `tests/test_duca_global_curriculum.py` 只加载配置、比较 head config、验证 K/T/G、feedback mode 和训练协议；它不实例化真实 VideoMAE、ASFormer、head，也不执行 backward。            |
+| **P1-4：训练桥成本账本不完整**                                     | `[DUCA_CODE_FACT]` runtime profile 自己标记 bridge FLOPs 为 lower bound、memory accounting 不完整。                                                                            |
+| **P1-5：exact-uniform 成本对照必须使用同一 P0 coarse checkpoint**  | `[DUCA_CODE_FACT]` exact-uniform 仍会经过 raw actionness source；若 uniform arm 使用未加载/不同 coarse checkpoint，而融合 arm加载 P0，则计算、BN 状态和内存均不匹配。                                  |
+
+### P2 — 论文与工程表述缺陷
+
+| 缺陷                                         | 证据与裁决                                                                                                                                                                                          |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P2-1：“official ASFormer probe”容易误导**     | `[DUCA_CODE_FACT]` temporal core 来自 official ASFormer，但 spatial stem、输入归一化、逐样本调用、hidden hook 和 compatibility shim 是 DUCA 包装层。应称“custom low-resolution stem + official ASFormer temporal core”。 |
+| **P2-2：“full backbone joint training”不成立** | `[DUCA_CODE_FACT]` optimizer 对 base backbone LR=0，仅 adapter 为 `2e-4`。应称 adapter tuning。                                                                                                        |
+| **P2-3：`online` 命名不应传播到任务定义**              | `[DUCA_CODE_FACT]` 类名和历史配置仍含 `online`，但固定合同明确 `offline_temporal_action_detection`、`online_tad=False`、`streaming=False`。                                                                        |
+
+### P3 — 不阻塞运行，但限制方法边界
+
+* `[DUCA_CODE_FACT]` 当前路径是 pre-backbone **selection**，但不是 host-side predecode pruning。
+* `[INFERENCE]` 一旦 detector 消费 coarse hidden，就不能继续无条件称为“strict pre-backbone-only plugin”。
+* `[UNPROVEN]` 当前 mandatory/current routes 中未找到与下述 zero-init post-VideoMAE residual reuse 等价的实现；不能据此声称整个历史 V0–V8 仓库绝对不存在任何类似实验。
+
+---
+
+## SHOULD_FEATURES_BE_FUSED
+
+### 1. coarse 与 VideoMAE 监督是互补、冲突还是重复
+
+`[INFERENCE]` 三者同时存在：
+
+* **互补**：coarse ASFormer 在 dense 768 轴上观察全窗口，hidden 包含低频动作状态和前后文；VideoMAE 只处理 K 个高分辨率 selected frames，语义更强但已丢弃未选 RGB。
+* **部分重复**：两者都编码“是否存在动作”和局部变化。
+* **监督冲突**：coarse 是二分类 actionness/transition；TAD head 是 20 类分类与精确左右边界回归。二分类倾向保留动作内部显著帧，regression 可能更需要低显著度起止点和背景对照。
+* **容量冲突**：ASFormer hidden 是 96 维低分辨率状态，VideoMAE 是 384 维高分辨率语义；无约束相加容易让廉价分支成为 shortcut。
+
+### 2. 当前低于均匀采样的根因排序
+
+`[INFERENCE]` 按当前证据优先级：
+
+1. **hard deployment 与 training surrogate utility 不一致**；
+2. **irregular physical time 被 VideoMAE 当成 uniform selected rank**；
+3. **coarse descriptor 不足以表达 class-specific detector utility**；
+4. **global exact-K 在强 coverage 约束下只能进行有限重排，收益上限有限**；
+5. **联合优化/学习率问题**；
+6. **“没有 feature fusion”本身**。
+
+feature fusion 不是零可能性，但目前不是证据支持度最高的解释。
+
+### 3. 复用 coarse feature 的可证伪预测
+
+`[PROPOSAL]` 若 coarse hidden 确实提供了 VideoMAE 缺失的 dense context，那么在 **完全固定 exact-uniform positions** 时：
+
+* U+fusion 应先于任何 learned selection 提升 Avg-mAP；
+* 增益应主要出现在短动作、mAP@0.6/0.7 和 boundary error；
+* zero-init gate 应逐步离开零；
+* 增益不应依赖改变 selected positions。
+
+`[PROPOSAL]` 若 coarse hidden 只是低质量污染：
+
+* U+fusion 的 gate 会保持接近零，或 residual norm增长但 mAP 不涨；
+* actionness较高区域的分类置信度上升，却伴随 @0.7 或短动作下降；
+* learned+fusion 只会放大 selector shortcut。
+
+### 4. 融合后还能否称为 pre-backbone plugin
+
+`[INFERENCE]`
+
+* 当前无融合：可以称 **pre-backbone raw-RGB sparse acquisition module**。
+* post-VideoMAE feature fusion：不再是 strict pre-backbone-only；应称 **coarse-assisted sparse TAD** 或 **sparse TAD with post-backbone coarse residual reuse**。
+* 若要求“即插即用”，必须在至少两个 backbone/detector 组合上证明接口与收益，不可由一个 AdaTAD/ActionFormer 配置推断。
+
+### 5. 严格 pre-backbone-only 的替代
+
+`[INFERENCE]` 严格保持 pre-backbone-only 时，可做的只有：
+
+* 改善 hard selection utility；
+* 改善 selection geometry；
+* 改善 hard/surrogate 一致性；
+* 不把 coarse 表示送入 detector。
+
+但 V5 已对 direct、homotopy、companion 给出负证据，因此继续沿同一 loss 微调没有足够依据。更合理的非融合 fallback 是利用现有 physical-grid head 合同，先判断 rank-time 是否是主因；该 fallback 会改变 detector coordinate contract，但不复用 coarse feature。
+
+### 6. Uni-AdaFocus 分类复用为何有效，而 TAD 不可直接外推
+
+`[PAPER_FACT]` Uni-AdaFocus 的最终目标是聚合出一个视频级分类；global coarse feature 即便模糊，也可通过时序 max/average aggregation 提供上下文。([ar5iv][2])
+
+`[INFERENCE]` 高 tIoU TAD 的根本差异是：
+
+* 每个局部时间位置必须保留边界几何；
+* global pooling 的“看见动作即可”不能替代 start/end；
+* 二分类 coarse feature没有类别条件；
+* 多实例、短动作和背景运动会使 actionness 与 detector utility 分离；
+* selected-rank 轴上的一个 feature residual 若未绑定 physical coordinate，可能提高分类而恶化定位。
+
+### 融合裁决
+
+# `[INFERENCE]` **不批准立即融合；只批准一次 exact-uniform 隔离诊断。**
+
+---
+
+## DIVERGENT_CANDIDATES
+
+### Candidate A — Exact-Uniform Coarse Residual Reuse
+
+`[PROPOSAL]` **机制**：post-VideoMAE、pre-projection 的 zero-init additive residual。
+
+**假设。** dense coarse ASFormer hidden 携带 sparse VideoMAE 缺失的全窗口状态信息。
+
+**分工。**
+
+* coarse：dense temporal context；
+* VideoMAE：selected RGB 的高分辨率语义；
+* selector：第一阶段固定 exact-uniform，不参与因果判断。
+
+**对齐与公式。**
+
+[
+H_s[b,k,:]=H_c[b,p_{b,k},:]\in\mathbb R^{B\times K\times96},
+]
+
+[
+F_c=\operatorname{Conv1d}_{96\to384}
+(\operatorname{LN}(H_s)^\top),
+]
+
+[
+Z_f=Z+\gamma\odot F_c,\qquad
+\gamma\in\mathbb R^{1\times384\times1},\quad\gamma_0=0.
+]
+
+**严格退化。** `γ=0` 时与 matched uniform detector feature 完全相等。
+
+**梯度。**
+
+* `H_s.detach()`；
+* coarse 冻结；
+* detector loss 更新 fusion、VideoMAE adapter、projection/neck/head；
+* 第一阶段 scorer 无梯度。
+
+**hard feedback。** 第一阶段没有 learned hard decision；第二阶段若通过才复用现有 G1 bridge。
+
+**训练/推理。** 完全同构，推理不需要 teacher/GT/cache。
+
+**成本。**
+
+* 新增参数约 37.8k；
+* 每样本约 (384\times96\times384=14.16)M MACs；
+* coarse 已在 matched control 中执行；
+* 不新增 detector forward。
+
+**行为预测。**
+
+* 可能改善短动作和边界附近上下文；
+* 可能被背景运动或 coarse smoothing污染；
+* 多实例时，二分类 hidden 可能混合实例身份。
+
+**快速 KILL。** U+fusion 对 U-discard 的 terminal EMA Avg-mAP 未达到预注册阈值，或 @0.7下降。
+
+---
+
+### Candidate B — Physical-Grid Detector Contract，无 feature fusion
+
+`[PROPOSAL]` **机制**：保持 coarse 只做 selection，使用仓库已有 optional physical-grid ActionFormer point/stride 路径。
+
+**假设。** 主因不是缺少 coarse semantic，而是 selected-rank head/backbone 时间语义与真实间隔不符。
+
+**分工。**
+
+* coarse：选帧；
+* VideoMAE：高分辨率语义；
+* head：以 selected dense positions 构建 physical centers/strides。
+
+**对齐。**
+
+[
+r\longmapsto p(r)
+]
+
+用于 point center、stride、regression range；GT 保持 dense physical axis，不再 remap 到 selected axis。现有 head 已实现主要映射。
+
+**严格退化。** 只能通过关闭 physical-grid config 退化，当前没有 zero-init 连续退化参数；因此工程可证伪性低于 A。
+
+**梯度。** 不改变 hard selector 梯度；detector loss仍通过现有 bridge更新 scorer。
+
+**训练/推理。** 同一 physical mapping，禁止 train-only remap。
+
+**成本。** point mapping为低阶张量运算，推理成本应很小，但必须实测。
+
+**行为预测。**
+
+* 若 head geometry 是主因，应主要改善 @0.6/@0.7 和 boundary error；
+* 若 VideoMAE tubelet 内时间扭曲才是主因，改善有限。
+
+**快速 KILL。** 在同一 learned positions replay 上，physical-grid 与 selected-axis 的高 tIoU 无显著差异。
+
+---
+
+### Candidate C — Policy-Only Hard Counterfactual Utility，无 feature reuse
+
+`[PROPOSAL]` **机制**：对少量合法 hard alternatives 运行 frozen detector teacher，把真实 hard detector loss difference 蒸馏给 scorer。
+
+**假设。** coarse descriptor 足够，但 boundary proxy 与 detector utility 不一致。
+
+**位置。** 完全不融合；协作只发生于 train-only utility target。
+
+**公式。**
+
+[
+u_j =
+L_{\det}(S_{\mathrm{ref}})
+--------------------------
+
+L_{\det}(S_j),\qquad
+L_{\mathrm{cf}}=
+\operatorname{KL}
+(\operatorname{softmax}(u/\tau)\Vert
+\operatorname{softmax}(q/\tau)).
+]
+
+**退化。** teacher weight0、policy alpha0时为 uniform baseline。
+
+**梯度。** utility和teacher全部 detach；只更新 scorer。
+
+**成本。** 训练需要多个 detector forward；推理零额外成本。
+
+**失败点。** 候选集合局部、teacher噪声、训练成本高；仓库已有相近 counterfactual 设施，V5/V8 已覆盖相邻问题。
+
+**快速 KILL。** hard alternative utility rank 与 scorer rank 的 Kendall/Spearman 无显著相关，或 terminal mAP不升。
+
+**裁决。** 淘汰；不是当前最小新信息实验。
+
+---
+
+### Candidate D — Proposal/Logit-Level Coarse Prior
+
+`[PROPOSAL]` **机制**：检测 proposal 映射到 dense time 后，采样 coarse actionness/transition prior，零初始化校准 proposal score。
+
+[
+s'_c
+====
+
+s_c+\alpha A([t_s,t_e])
++\beta(B_s(t_s)+B_e(t_e)),
+\quad \alpha_0=\beta_0=0.
+]
+
+**分工。** VideoMAE负责类别和回归；coarse只提供 class-agnostic temporal prior。
+
+**梯度。** coarse frozen；detector loss更新小型校准器。
+
+**成本。** 很低；训练推理同构。
+
+**风险。**
+
+* 无法恢复已丢失的 visual evidence；
+* binary prior 对所有类别同向；
+* 容易放大 actionness shortcut；
+* 与 NMS/score calibration耦合。
+
+**快速 KILL。** exact-uniform 上 @0.7 或 calibration ECE恶化。
+
+**裁决。** 淘汰；高 tIoU 机制不足，论文创新性低。
+
+---
+
+### Candidate E — Cell-Constrained Raw Selection，无 feature fusion
+
+`[PROPOSAL]` **机制**：每个 uniform cell 内只选择一个候选，禁止跨 cell 转移预算。
+
+**假设。** global budget transfer 造成不规则时间扭曲；局部二选一可以利用 coarse evidence而保持近均匀密度。
+
+**位置。** strict pre-backbone raw selection。
+
+**退化。** `local_cell_force_exact_uniform=True` 时严格退化。
+
+**梯度。** cell softmax或局部 hard-swap utility更新 scorer。
+
+**成本。** 与 uniform/当前 selector 接近。
+
+**行为。**
+
+* 对短动作和边界可能比 global clustering稳；
+* 无法做大范围预算重分配；
+* 仍存在 selected-rank tubelet问题。
+
+**快速 KILL。** U 与 cell policy 的 matched terminal mAP对比。
+
+**裁决。** 淘汰；仓库已有 `local_cell_deformation` 等价族，且方法创新和增量信息不足。
+
+---
+
+### Candidate F — Dense Feature Completion
+
+`[PROPOSAL]` **机制**：把 K 个 VideoMAE features scatter 回 T=768，用 coarse hidden预测未选位置特征，再在 dense axis 上运行 detector。
+
+[
+\widehat Z_t=
+\begin{cases}
+Z_k,&t=p_k,\
+P(H_{c,t}),&t\notin S.
+\end{cases}
+]
+
+**假设。** 保留 dense detector grid能消除边界和物理时间问题。
+
+**风险。**
+
+* projection/head temporal cost接近翻倍；
+* 未选位置是 hallucinated feature；
+* 无法在初始化严格退化为当前 K=384 detector，因为 detector长度和 mask已改变；
+* 容易隐藏“dense cheap computation”。
+
+**快速 KILL。** 完整成本或 exact-baseline equivalence任一失败。
+
+**裁决。** 立即淘汰。
+
+---
+
+## CANDIDATE_ELIMINATION_TABLE
+
+以下分数为 `[INFERENCE]`，1 最差、5 最好，不是实验结果。
+
+| 候选                                | 原始间接边界目标 | terminal mAP潜力 | 总成本下降 | 稳定/可解释 | 可迁移性 | 创新性 | 最小可证伪 |     总分 | 裁决                 |
+| --------------------------------- | -------: | -------------: | ----: | -----: | ---: | --: | ----: | -----: | ------------------ |
+| A. exact-uniform residual reuse   |        4 |              4 |     4 |      5 |    4 |   3 |     5 | **29** | **保留，首选诊断**        |
+| B. physical-grid no fusion        |        5 |              4 |     5 |      4 |    4 |   3 |     4 | **29** | **保留，唯一 fallback** |
+| C. counterfactual policy-only     |        4 |              3 |     3 |      2 |    4 |   2 |     4 |     22 | 淘汰                 |
+| D. proposal prior                 |        3 |              2 |     5 |      4 |    3 |   2 |     5 |     24 | 淘汰                 |
+| E. cell-constrained raw selection |        4 |              2 |     5 |      4 |    5 |   1 |     5 |     26 | 淘汰                 |
+| F. dense feature completion       |        5 |              3 |     1 |      2 |    2 |   4 |     2 |     19 | 淘汰                 |
+
+`[INFERENCE]` A 与 B 总分相同，但 A 被选为首动作，因为它直接隔离回答本 Prompt 的核心问题——“coarse feature reuse 是否有 detector value”；B 只在 A 失败时用于检验 alternative root cause。
+
+---
+
+## RECOMMENDED_FINAL_ARCHITECTURE
+
+# `[PROPOSAL]` EU-CRR：Exact-Uniform Coarse Residual Reuse
+
+这不是现在就可写进论文的“最终方法”，而是下一次唯一值得实现的决定性架构。
+
+```text
+Dense RGB X [B,N,3,768,160,160]
+        │
+        ├─ frozen low-res probe ─► Hc [B,768,96]
+        │
+        └─ exact-uniform positions P [B,384]
+                   │
+          hard gather RGB
+                   ▼
+             VideoMAE-S
+                   ▼
+             Z [B,384,384]
+                   │
+          gather Hc at P
+          Hs [B,384,96]
+                   │ detach
+          LN + Conv1d 96→384
+                   ▼
+             Fc [B,384,384]
+                   │
+       Zf = Z + γ ⊙ Fc, γ0=0
+                   │
+      unchanged projection/neck/head
+```
+
+### 冻结的架构裁决
+
+* `[PROPOSAL]` fusion 只发生在 VideoMAE post-processing 后、ActionFormer projection 前。
+* `[PROPOSAL]` 不使用 cross-attention、transformer、feature KL、teacher feature alignment 或额外 decoder。
+* `[PROPOSAL]` 只 gather hard selected positions 对应的 coarse hidden；不把 dense 768 hidden全部送入 detector。
+* `[PROPOSAL]` coarse hidden必须 detach，coarse probe保持 eval/frozen。
+* `[PROPOSAL]` gate 为 channel-wise `γ∈R^{384}`，全零初始化。
+* `[PROPOSAL]` mask 为 false 的 slot必须令 residual严格为零。
+* `[PROPOSAL]` 第一轮强制 exact-uniform，彻底移除 learned selection confound。
+* `[INFERENCE]` ASFormer hidden本身已融合全窗口上下文，因此 gather selected hidden仍可能携带未选帧的廉价上下文。
+* `[INFERENCE]` 该架构若成功，应命名为 **coarse-assisted sparse TAD**，不得继续称 strict pre-backbone-only plugin。
+
+---
+
+## FINAL_TRAINING_AND_GRADIENT_CONTRACT
+
+### 1. 是否共享 encoder
+
+`[PROPOSAL]` **不共享。**
+
+* coarse stem/ASFormer/action head：冻结；
+* VideoMAE base：LR=0；
+* VideoMAE adapters：保持现有 `2e-4`；
+* fusion：新训练；
+* detector：保持现有训练；
+* learned-selection阶段的 scorer：保持 `1e-4`。
+
+这从结构上消除了 coarse actionness loss 与 detector loss 对同一 encoder 的冲突，因此不采用 PCGrad、CAGrad 或其他 gradient surgery。
+
+### 2. 总损失
+
+#### Exact-uniform fusion isolation
+
+[
+L_{\mathrm{U}}
+==============
+
+L_{\mathrm{AF-cls}}
++
+L_{\mathrm{AF-reg}}.
+]
+
+`[PROPOSAL]` 不加 actionness、transition、boundary、feature alignment、distillation 或 fusion norm loss。coarse 使用相同 P0 checkpoint，但只提供 frozen hidden。
+
+#### learned-selection + fusion，仅在 U+fusion 通过后
+
+[
+L_{\mathrm{L}}
+==============
+
+L_{\mathrm{AF-cls}}
++
+L_{\mathrm{AF-reg}}
++
+0.02L_{\mathrm{transition}}
++
+2.0L_{\mathrm{structured-boundary}}.
+]
+
+`[PROPOSAL]` 这些 selector 权重直接复用当前 two-stage frozen 合同，不重新搜索。actionness仍为 0，counterfactual distillation仍为 0。
+
+`[DUCA_CODE_FACT]` detector bridge weight不是额外 loss，而是改变 detector forward 的 surrogate backward，终值保持当前 G1 的 0.25。
+
+### 3. 6000-update schedule
+
+阶段长度复用当前 matched official-60 合同，不增加训练更新：
+
+| successful updates | uniform fusion arm                           | learned+fusion arm           |
+| ------------------ | -------------------------------------------- | ---------------------------- |
+| 0–999              | exact-uniform；fusion gate固定0；detector warmup | 同左                           |
+| 1000–2499          | exact-uniform；解冻fusion                       | policy alpha 0→1；解冻fusion    |
+| 2500–3999          | exact-uniform；fusion继续                       | policy alpha=1；bridge 0→0.25 |
+| 4000–5999          | exact-uniform；fusion继续                       | learned policy + bridge0.25  |
+
+`[PROPOSAL]` 不允许为 fusion增加 epoch、不允许额外预训练、不允许按中间 val mAP挑 checkpoint；主结果固定 terminal epoch-59 EMA。
+
+### 4. Optimizer groups
+
+| group                            |                       LR |       weight decay | 状态          |
+| -------------------------------- | -----------------------: | -----------------: | ----------- |
+| coarse stem/ASFormer/action head |                        0 |                  0 | frozen/eval |
+| transition scorer                | 0 in U；`1e-4` in learned |               现有规则 | 条件启用        |
+| fusion `Conv1d`                  |                   `1e-4` |             `0.05` | train       |
+| fusion LayerNorm/bias/gate       |                   `1e-4` |                  0 | train       |
+| VideoMAE base                    |                        0 |                  0 | 不更新         |
+| VideoMAE adapters                |                   `2e-4` |             `0.05` | 保持现有        |
+| projection/neck/head             |                   `1e-4` | `0.05`/现有 no-decay | 保持现有        |
+
+### 5. 提议路线的 loss × parameter-group 矩阵
+
+| loss/path                | coarse C |    scorer S | fusion F | VideoMAE adapter V | detector D |
+| ------------------------ | -------: | ----------: | -------: | -----------------: | ---------: |
+| detector cls/reg，U       |        — |           — |        ✓ |                  ✓ |          ✓ |
+| transition，learned       |        — |           ✓ |        — |                  — |          — |
+| boundary，learned         |        — |           ✓ |        — |                  — |          — |
+| detector cls/reg，learned |        — | ✓ surrogate |        ✓ |                  ✓ |          ✓ |
+| actionness               |        — |           — |        — |                  — |          — |
+| feature alignment        |       禁止 |          禁止 |       禁止 |                 禁止 |         禁止 |
+
+### 6. 梯度冲突裁决
+
+`[PROPOSAL]`
+
+* 不解冻 coarse，因此 actionness calibration不会被 TAD loss破坏。
+* 不让 coarse loss进入 VideoMAE，因此不会压缩 VideoMAE类别语义。
+* 不使用 teacher-student feature matching。
+* 不交替优化。
+* 不做 gradient surgery；若 scorer 的 transition 与 detector-surrogate gradient长期冲突且 terminal mAP不升，直接 KILL learned selection，而不是继续调梯度算法。
+
+### 7. 必须记录
+
+每 50 updates：
+
+* 每个 parameter group 的 grad norm；
+* scorer 上 `g_transition` 与 `g_detector-surrogate` cosine；
+* fusion gate均值、最大值、符号分布；
+* (| \gamma F_c|_2/|Z|_2)；
+* coarse hidden channel variance和时间差分方差；
+* actionness AUROC、AUPRC、ECE；
+* boundary nearest-selected distance；
+* max hole；
+* selected-vs-uniform Jaccard；
+* detector cls/reg loss；
+* AMP scale与retry次数。
+
+### 8. fail-closed 训练门禁
+
+1. **Zero-gate equivalence**：FP32、相同 RNG 下 `Z_f == Z`，最大绝对误差 ≤`1e-7`。
+2. **第一步梯度语义**：gate grad应有限且可非零；因为 `γ=0`，projector grad允许为零。
+3. **第二步梯度语义**：gate更新后 projector grad必须有限且非零。
+4. **冻结所有权**：coarse所有参数 `grad is None`；U arm scorer全部 `grad is None`。
+5. **真实模型梯度**：使用实际 VideoMAE/projection/head，不接受 toy head替代。
+6. **坐标合同**：exact-uniform positions、selected-axis GT和inverse map全部一致。
+7. **泄漏门**：eval 禁止 GT、teacher、raw-prediction cache、P0 training artifact lookup。
+8. **AMP/DDP门**：连续 full/short/mixed batches无 NaN、无失配参数、无 exhausted retry。
+9. **EMA门**：terminal EMA state必须包含 fusion gate/projector，且与 online model不同。
+10. **成本门**：完整账本不通过时，即便 mAP上升也不得宣称高效。
+
+---
+
+## CORE_IMPLEMENTATION
+
+### 1. 必须修改的文件
+
+#### `opentad/models/selectors/duca_online_frame_selector.py`
+
+修改位置：hard positions 已生成、hard raw gather 前后的 `forward/_forward_select` 区域，约 `1890–2095`。
+
+`[PROPOSAL]` 只增加 selected coarse hidden 输出：
+
+```python
+coarse_hidden = scores.get("coarse_hidden_features")
+if coarse_hidden is not None:
+    if coarse_hidden.ndim != 3:
+        raise RuntimeError("coarse hidden must be [B,T,D]")
+    gather_index = positions.clamp_min(0).unsqueeze(-1).expand(
+        -1, -1, coarse_hidden.shape[-1]
+    )
+    selected_coarse_hidden = torch.gather(
+        coarse_hidden, dim=1, index=gather_index
+    )
+    selected_coarse_hidden = selected_coarse_hidden.masked_fill(
+        ~slot_mask.unsqueeze(-1), 0.0
+    )
+    scores["selected_coarse_hidden"] = selected_coarse_hidden
+```
+
+不修改：
+
+* scorer；
+* exact-K DP；
+* hard positions；
+* raw RGB gather；
+* true-time mapping；
+* companion逻辑。
+
+#### `opentad/models/detectors/actionformer.py`
+
+修改位置：
+
+* `__init__`：约 `26–80`；
+* `forward_train`：约 `140–292`；
+* `forward_test`：backbone 后、projection 前；
+* `get_optim_groups`：约 `521–650`。
+
+保存：
+
+```python
+selector_context = selector_outputs["selector_outputs"]
+```
+
+在：
+
+```python
+x = self.backbone(inputs)
+```
+
+之后、token compressor/projection 之前调用：
+
+```python
+if self.duca_feature_fusion is not None:
+    h_sel = selector_context.get("selected_coarse_hidden")
+    if h_sel is None:
+        raise RuntimeError("DUCA fusion requires selected coarse hidden")
+    x = self.duca_feature_fusion(x, h_sel, masks)
+```
+
+`[PROPOSAL]` `get_optim_groups` 必须显式把 fusion gate放入 no-decay。否则 direct `nn.Parameter` 的名字既不是 bias/weight/scale，也不属于现有 frame-selector fallback，当前 union assertion 会失败。
+
+#### 新增最小模块
+
+`opentad/models/duca/coarse_residual_fusion.py`
+
+```python
+from __future__ import annotations
+
+import torch
+import torch.nn as nn
+
+
+class DucaCoarseResidualFusion(nn.Module):
+    """Zero-initialized residual reuse of selected coarse hidden features."""
+
+    def __init__(self, coarse_dim: int = 96, detector_dim: int = 384) -> None:
+        super().__init__()
+        if coarse_dim <= 0 or detector_dim <= 0:
+            raise ValueError("feature dimensions must be positive")
+
+        self.coarse_dim = int(coarse_dim)
+        self.detector_dim = int(detector_dim)
+
+        self.norm = nn.LayerNorm(self.coarse_dim)
+        self.proj = nn.Conv1d(
+            self.coarse_dim,
+            self.detector_dim,
+            kernel_size=1,
+            bias=True,
+        )
+        self.fusion_gate = nn.Parameter(
+            torch.zeros(1, self.detector_dim, 1)
+        )
+
+        nn.init.normal_(self.proj.weight, mean=0.0, std=0.02)
+        nn.init.zeros_(self.proj.bias)
+
+    def forward(
+        self,
+        detector_feature: torch.Tensor,
+        selected_coarse_hidden: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        if detector_feature.ndim != 3:
+            raise ValueError("detector_feature must be [B,C,K]")
+        if selected_coarse_hidden.ndim != 3:
+            raise ValueError("selected_coarse_hidden must be [B,K,D]")
+        if mask.ndim != 2:
+            raise ValueError("mask must be [B,K]")
+
+        b, c, k = detector_feature.shape
+        if c != self.detector_dim:
+            raise ValueError(
+                f"expected detector_dim={self.detector_dim}, got {c}"
+            )
+        if selected_coarse_hidden.shape != (
+            b,
+            k,
+            self.coarse_dim,
+        ):
+            raise ValueError("coarse/detector temporal shapes do not align")
+        if mask.shape != (b, k):
+            raise ValueError("mask must align with detector temporal axis")
+
+        coarse = self.norm(
+            selected_coarse_hidden.detach().float()
+        )
+        coarse = coarse.transpose(1, 2).contiguous()
+        residual = self.proj(
+            coarse.to(dtype=detector_feature.dtype)
+        )
+        residual = residual * mask[:, None].to(
+            dtype=residual.dtype
+        )
+
+        gate = self.fusion_gate.to(
+            dtype=detector_feature.dtype
+        )
+        return detector_feature + gate * residual
+```
+
+### 2. 不应触碰的代码
+
+`[PROPOSAL]` 首轮不得修改：
+
+* `structured_selection.py`
+* `vit_adapter.py`
+* `anchor_free_head.py`
+* official projection/neck/head loss
+* NMS
+* true-time geometry
+* selector scorer
+* P0 coarse checkpoint训练代码
+
+### 3. 配置
+
+新建同一 commit 下的两个配置：
+
+* `duca_eucrr_u0_discard_fixed384_official60.py`
+* `duca_eucrr_u1_fuse_fixed384_official60.py`
+
+两者必须：
+
+* 同 P0 checkpoint及 SHA；
+* 都真正执行 coarse probe；
+* exact-uniform positions；
+* 相同 dataset/optimizer/scheduler/workflow；
+* 唯一区别是 fusion module enabled。
+
+### 4. 必须增加的 tests
+
+1. `test_zero_gate_feature_equivalence`
+2. `test_selected_coarse_hidden_matches_hard_positions`
+3. `test_masked_and_short_window_residual_is_zero`
+4. `test_two_step_real_model_gradient_ownership`
+5. `test_fusion_is_identical_in_train_and_eval_forward_values`
+6. `test_no_gt_teacher_or_cache_at_inference`
+7. `test_optimizer_covers_every_fusion_parameter_once`
+8. `test_fusion_gate_has_zero_weight_decay`
+9. `test_ema_contains_fusion_state`
+10. `test_amp_ddp_mixed_window_two_consecutive_steps`
+11. `test_exact_uniform_predictions_keep_existing_true_time_contract`
+12. `test_full_cost_profiler_contains_all_required_stages`
+
+### 5. full-stack 统计入口
+
+`[PROPOSAL]` profiler 必须分别记录：
+
+```text
+decode
+CPU resize/augment
+host materialization
+H2D bytes/time
+coarse prepare
+coarse spatial stem
+ASFormer
+transition scorer
+structured DP
+hard gather
+training bridge
+VideoMAE
+fusion
+projection
+neck
+head
+prediction remap
+NMS
+```
+
+训练成本与部署成本必须分开；training-only soft DP/bridge 不得混入 inference speed，也不得从训练账本删除。
+
+---
+
+## MINIMAL_DECISIVE_EXPERIMENT_MATRIX
+
+### 1. 分阶段矩阵
+
+#### Gate F：先隔离 fusion
+
+| Arm    | positions          | coarse checkpoint | coarse hidden进入detector | updates | seed |
+| ------ | ------------------ | ----------------- | ----------------------- | ------: | ---: |
+| **U0** | exact-uniform K384 | 同一 P0             | discard                 |    6000 | 3407 |
+| **U1** | exact-uniform K384 | 同一 P0             | EU-CRR                  |    6000 | 3407 |
+
+#### Gate S：仅当 Gate F 为 GO 才运行
+
+定义 `L*` 的固定选择规则：
+
+1. 从当前 V8 的 G0/G1/G2 terminal EMA 中选 Avg-mAP最高者；
+2. 该 arm 的 @0.7 不得比 matched U 低超过0.30；
+3. 成本账本必须有效；
+4. 若无 arm满足，learned-selection 自动 KILL，不运行 Gate S。
+
+在新 fusion commit 下重新运行，不能直接拿旧 commit结果代替：
+
+| Arm    | positions    | fusion | updates | seed |
+| ------ | ------------ | ------ | ------: | ---: |
+| **L0** | 固定规则选出的 `L*` | off    |    6000 | 3407 |
+| **L1** | 同一 `L*`      | EU-CRR |    6000 | 3407 |
+
+### 2. 复现规则
+
+只有相应 gate 达到 GO 或 HOLD，才在不改任何超参数的前提下追加 seeds `3408, 3409`。不得因 seed3407不理想而修改结构后重跑。
+
+### 3. 主指标
+
+* terminal EMA Avg-mAP；
+* mAP@0.3/0.4/0.5/0.6/0.7；
+* short-action mAP：短动作阈值由 train GT duration bottom quartile预先冻结；
+* start/end boundary distance；
+* max hole；
+* selected concentration/Gini；
+* selected-vs-uniform Jaccard；
+* actionness AUROC/AUPRC/ECE；
+* p50/p90 latency；
+* joules/window；
+* peak allocated/reserved memory；
+* decode与dense H2D成本。
+
+统计采用 paired-by-video bootstrap，10,000 次重采样。
+
+### 4. GO / HOLD / KILL
+
+V5 中 uniform 与最佳 learned arm差距约0.75 Avg-mAP，因此将“至少恢复其三分之二”冻结为有意义效果，即约0.50。
+
+#### Gate F：U1 − U0
+
+**GO**
+
+* ΔAvg-mAP ≥ +0.50；
+* paired bootstrap 95% CI lower bound > 0；
+* @0.6、@0.7 均不下降；
+* short-action mAP不下降；
+* total p50 latency及joules仍显著低于 dense K768；
+* fusion相对U0附加成本 ≤`max(3%, 2×U0重复测量CV)`。
+
+**HOLD**
+
+* 0 < ΔAvg-mAP < +0.50；
+* 高 tIoU无下降；
+* CI跨零；
+* 只允许原样补齐另外两种子，不允许改架构。
+
+**KILL**
+
+* ΔAvg-mAP ≤ 0；
+* 或 @0.7下降超过0.30；
+* 或 short-action显著下降；
+* 或成本门失败；
+* 或 residual/gate发生非有限值、coarse shortcut或坐标失配。
+
+#### Gate S：L1 − U1
+
+**GO**
+
+* ΔAvg-mAP ≥ +0.50；
+* @0.7 ≥ +0.30；
+* paired bootstrap lower bound > 0；
+* same-K总成本不高于U1；
+* 三种子均值仍为正。
+
+**HOLD**
+
+* Avg-mAP为正但不足0.50，且无高 tIoU伤害；
+* 只允许固定三种子复核。
+
+**KILL**
+
+* Avg-mAP不高于U1；
+* 或 @0.7下降；
+* 或 learned policy 退化为无意义近均匀但仍增加训练复杂度；
+* 或 full-stack成本无优势。
+
+### 5. 论文实验分类
+
+**主表必需**
+
+* dense official K768；
+* U0；
+* U1；
+* L0；
+* L1；
+* 完整成本列；
+* 三种子均值与标准差。
+
+**Appendix**
+
+* gate/residual norm；
+* gradient cosine；
+* actionness calibration；
+* selected distance/hole/Jaccard；
+* one-step gradient ownership；
+* per-stage latency。
+
+**现在不应运行**
+
+* attention fusion；
+* 多层 fusion transformer；
+* coarse 全量解冻；
+* PCGrad；
+* K sweep；
+* ASFormer替换；
+* detector替换；
+  -额外预训练；
+* feature distillation；
+* dynamic budget；
+* dense feature completion。
+
+---
+
+## COST_AND_PLUGIN_CLAIM_AUDIT
+
+### 1. 完整成本公式
+
+[
+C_{\text{total}}
+================
+
+C_{\text{decode}}
++C_{\text{CPU-transform}}
++C_{\text{host-memory}}
++C_{\text{H2D-768}}
++C_{\text{coarse}}
++C_{\text{DP}}
++C_{\text{gather}}
++C_{\text{VideoMAE-384}}
++C_{\text{fusion}}
++C_{\text{projection/neck/head}}
++C_{\text{remap/NMS}}.
+]
+
+训练还要加：
+
+[
+C_{\text{train-extra}}
+======================
+
+C_{\text{soft-DP}}
++C_{\text{bridge}}
++C_{\text{backward}}
++C_{\text{EMA}}.
+]
+
+`[DUCA_CODE_FACT]` 当前 dataset pipeline 在 selector 前已经 decode 和 tensorize 768 帧。
+
+`[INFERENCE]` 因而允许的诚实表述是：
+
+> “减少 VideoMAE heavy-backbone 处理的帧数。”
+
+不能在没有完整账本时写：
+
+> “将端到端视频处理成本降低一半。”
+
+### 2. plugin claim
+
+| 主张                                   | 当前状态                       |
+| ------------------------------------ | -------------------------- |
+| pre-backbone hard raw-RGB selection  | `[DUCA_CODE_FACT]` 成立      |
+| host-side predecode pruning          | `[UNPROVEN]` 不成立/未实现       |
+| hard index end-to-end differentiable | `[UNPROVEN]` 不成立           |
+| detector-task-derived surrogate      | `[DUCA_CODE_FACT]` G1/G2成立 |
+| post-backbone coarse feature reuse   | `[DUCA_CODE_FACT]` 当前不存在   |
+| plug-and-play across detectors       | `[UNPROVEN]`               |
+| complete compute reduction           | `[UNPROVEN]`               |
+| terminal TAD improvement             | `[UNPROVEN]`               |
+
+### 3. 证据级别
+
+| 级别                              | 当前状态                             |
+| ------------------------------- | -------------------------------- |
+| 代码存在                            | 是                                |
+| 静态配置测试通过                        | 是                                |
+| 真实 full-model one-step gradient | Prompt声称P0 gate通过，但本轮未读取artifact |
+| experiment running              | Prompt报告是                        |
+| terminal EMA支持                  | 否                                |
+| 三种子统计支持                         | 否                                |
+| 论文可发表                           | 否                                |
+
+---
+
+## PAPER_CLAIM_BOUNDARY
+
+### 当前允许写
+
+* `[DUCA_CODE_FACT]` DUCA 是离线 TAD 的 dense-to-sparse raw-RGB selector。
+* `[DUCA_CODE_FACT]` hard exact-K 与 soft structured distribution使用同一 max-hole可行族。
+* `[DUCA_CODE_FACT]` G1/G2 存在 detector-loss-derived scorer surrogate。
+* `[DUCA_CODE_FACT]` G0/G1/G2冻结 coarse probe。
+* `[EXPERIMENT_FACT]` Prompt 提供的 V5 learned arms 未超过 matched uniform。
+
+### 当前禁止写
+
+* “检测梯度穿过离散硬索引”；
+* “coarse 与 VideoMAE 已融合”；
+* “Uni-AdaFocus 已证明该机制对 TAD有效”；
+* “P0 gate证明了 terminal mAP”；
+* “显著降低完整端到端成本”；
+* “即插即用”；
+* “V8胜过uniform”；
+* “论文主方法已确定”。
+
+### EU-CRR 若通过后允许写
+
+`[PROPOSAL]`
+
+* “在固定 sparse acquisition 下，复用 dense coarse temporal context 可改善 TAD。”
+* “方法包含 pre-backbone sparse acquisition 与 post-backbone coarse residual reuse。”
+* “zero-init residual严格退化到 matched sparse detector。”
+* “总成本优势由完整 decode/H2D/backbone/head/energy账本支持。”
+
+仍不能仅凭一个 detector/backbone 称“通用插件”。
+
+### 与 Uni-AdaFocus 的关系
+
+`[PAPER_FACT]` Uni-AdaFocus 已经建立了 coarse global feature复用于视频分类和 policy辅助监督的先例。([ar5iv][2])
+
+`[INFERENCE]` 因而“把 coarse feature加到 heavy feature”本身不构成足够创新。论文新颖性必须来自：
+
+* exact-K hard部署合同；
+* physical-time TAD 对齐；
+* high-tIoU boundary evidence；
+* hard/surrogate梯度审计；
+  -完整端到端成本；
+* matched uniform退化与决定性负对照。
+
+---
+
+## NEXT_BOUNDED_ACTION
+
+### 首选动作
+
+`[PROPOSAL]` **只实现并运行 U0 vs U1：同一 commit、同一 P0 checkpoint、exact-uniform K384、6000 updates、seed3407、terminal EMA；唯一变量是 zero-init post-VideoMAE coarse residual reuse。**
+
+该实验先判定 feature reuse 本身是否有价值，不允许同时打开 learned selection、解冻 coarse、增加 loss 或更换 detector。
+
+### 失败 fallback
+
+`[PROPOSAL]` 若 U1 被 KILL，永久停止 coarse/VideoMAE feature fusion；唯一 fallback 是在相同 T=768、K=384、总更新和总成本下，启用仓库已有的 strict physical-grid ActionFormer point/stride合同，做一次 no-fusion selected-axis vs physical-grid matched test。该 fallback再失败，则当前 DUCA 主路线应 KILL，而不是继续扩展融合模块。
+
+> **在严格计算账本和高 tIoU TAD 目标下，当前 DUCA 最合理的下一步方法边界，是继续把 DUCA 视为 pre-backbone raw-RGB sparse acquisition，并仅以 exact-uniform、成本匹配、零初始化的 post-VideoMAE coarse residual 做一次性诊断；因为现有证据首先指向 hard-surrogate 不一致和 irregular physical-time 语义，而不是已经证明的“coarse feature 未复用”问题。**
+
+[1]: https://arxiv.org/abs/2412.11228 "[2412.11228] Uni-AdaFocus: Spatial-temporal Dynamic Computation for Video Recognition"
+[2]: https://ar5iv.org/pdf/2412.11228 "[2412.11228] Uni-AdaFocus: Spatial-temporal Dynamic Computation for Video Recognition"

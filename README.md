@@ -1,22 +1,22 @@
-# C3 粗分类模型 + OpenTAD 纯净代码库
+# C3 / DUCA 高效时序计算研究仓库
 
-这是当前 C3 粗分类路线的纯净工作仓库，只保留 OpenTAD 代码库、当前粗分类探针、value-transport ledger 转换、C3 配置、N16R4 启动器和 focused tests。历史 `research-wiki/`、`logs/`、图表、检查点、压缩包和旧路线报告不属于本仓库。
+C3 与 DUCA 是本项目沿用的两条方法路线名称；本仓库是它们的 OpenTAD 工作仓库。仓库保留当前模型代码、实验配置、必要的训练与评测工具、聚焦测试，以及 `research-wiki/` 中不可替代的研究记忆。服务器日志、检查点、数据集、压缩包和与当前判断无关的临时产物不进入版本库。
 
 来源：2026-07-02 从 `E:\DeskTop\TAD\temrefuse-tad\OpenTAD_C3TCNCoarseProbe_Worktree_20260701` 创建；源分支为 `codex/c3-tcn-coarse-probe-20260701`，源 HEAD 为 `e9eee3b`，并包含当时本地未提交的粗分类训练器、GPU1 启动脚本和测试改动。
 
 ## 当前目标
 
-最终目标是可部署的任务感知动态时序采集系统：根据视频、窗口、动作区域和难度动态分配帧/片段/Token，减少持续时间冗余，把更关键的信息送给 TAD 检测器，并尽量保持或提升高 IoU 定位性能。
+最终目标是面向离线时序动作检测（Temporal Action Detection, TAD）的任务感知动态时序采集：根据视频、窗口、动作区域和难度分配帧、片段或时序表示的计算量，在降低真实端到端成本的同时，尽量保持或提升高时间交并比（temporal Intersection over Union, tIoU）下的边界定位性能。
 
-当前 C3 阶段是固定预算控制锚点：用低成本粗分类模型估计动作/背景概率 `p_action`，把它转换成严格的帧选择 ledger，再将 384/768 的选择输入送入 OpenTAD/AdaTAD 检测器。该阶段用于归因、安全门和失败诊断，不是最终论文贡献的全部形态。
+当前 C3 阶段是固定预算的归因基线：低成本粗分类模型估计逐时刻动作概率 `p_action`，确定性规则据此生成帧选择记录，再把 384/768 的稀疏输入送入 OpenTAD/AdaTAD 检测器。该阶段用于机制归因和失败诊断，不代表最终论文方法已经确定。
 
 ## 目录
 
-- `opentad/`：OpenTAD 主库，以及当前 C3 selector、ledger、temporal grid、ActionFormer 接入代码。
-- `configs/`：最小 OpenTAD base config 与当前 THUMOS14 C3 路线配置。
-- `tools/bata/`：粗分类训练、模型矩阵、ledger 转换和启动门验证工具。
-- `scripts/`：N16R4 GPU1 粗分类探针、ledger 导出、AdaTAD full-train 启动器。
-- `tests/`：当前 C3 路线的 focused tests。
+- `opentad/`：OpenTAD 主库，以及当前 C3 选择器、选择记录、时间坐标和 ActionFormer 接入代码。
+- `configs/`：最小 OpenTAD 基础配置与当前 THUMOS14 C3 路线配置。
+- `tools/bata/`：粗分类训练、模型矩阵、选择记录转换和运行前验证工具。
+- `scripts/`：N16R4 粗分类探针、选择记录导出和 AdaTAD 完整训练启动器。
+- `tests/`：针对当前方法关键行为的聚焦测试。
 
 ## 本地使用
 
@@ -56,10 +56,10 @@ export XDG_CONFIG_HOME="$BASE/tmp/xdg_config"
 export HF_HOME="$BASE/hf_cache"
 ```
 
-需要下载外部学术/模型资源时，在登录节点设置代理：
+需要下载已获准的外部学术或模型资源时，从个人环境加载代理配置。代理地址和凭据不得写入仓库：
 
 ```bash
-export http_proxy='http://u-MtfrT7:vH5orjDV@10.244.6.36:3128'
+export http_proxy='<authorized-proxy-url>'
 export https_proxy="$http_proxy"
 export HTTP_PROXY="$http_proxy"
 export HTTPS_PROXY="$https_proxy"
@@ -70,8 +70,8 @@ THUMOS14 默认路径：
 ```bash
 $BASE/thumos14/annotations/thumos_14_anno.json
 $BASE/thumos14/annotations/category_idx.txt
-$BASE/raw/Validation Data/validation
-$BASE/raw/Test Data/TH14_test_set_mp4
+$BASE/thumos14/raw_data/video
+$BASE/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth
 ```
 
 ## GPU 任务

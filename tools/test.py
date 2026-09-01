@@ -209,6 +209,7 @@ def main():
     )
     logger.info(f"Using DDP with total {args.world_size} GPUS...")
 
+    evaluation_epoch = None
     if (
         cfg.inference.load_from_raw_predictions
     ):  # if load with saved predictions, no need to load checkpoint
@@ -226,6 +227,7 @@ def main():
         device = f"cuda:{args.rank % torch.cuda.device_count()}"
         checkpoint = torch.load(checkpoint_path, map_location=device)
         logger.info("Checkpoint is epoch {}.".format(checkpoint["epoch"]))
+        evaluation_epoch = int(checkpoint["epoch"])
         if s1_binding is not None:
             if checkpoint.get("experiment_metadata") != sidecar["experiment_metadata"]:
                 raise ValueError(
@@ -262,7 +264,7 @@ def main():
         world_size=args.world_size,
         not_eval=args.not_eval,
         max_batches=args.max_batches,
-        epoch=None if s1_binding is None else int(checkpoint["epoch"]),
+        epoch=evaluation_epoch,
     )
     logger.info("Testing Over...\n")
 

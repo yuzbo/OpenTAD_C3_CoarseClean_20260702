@@ -1,0 +1,41 @@
+{
+  "candidate_commit": "d86a4acda21e35a1609f19f1a46bc470ee18b7e1",
+  "candidate_tree": "327c032a1ab3c14d0e34d6339df36f8a33ec6907",
+  "dense_checkpoint_epoch35_sha256": "ea3c16fcf17fd6fb8cec57829804e96736a8ab231b07d820e5939fd5db3cba00",
+  "dense_checkpoint_status": "preserved_diagnostic_only_not_reusable_by_successor",
+  "elapsed": "00:09:48",
+  "exit_code": "1:0",
+  "failure_signature": "official_actionformer_softnms_extension_abi_shadowed_by_opentad_v9arg_v1",
+  "job_id": 1205584,
+  "model_result_claim_allowed": false,
+  "paper_main_table_eligible": false,
+  "root_cause": {
+    "candidate_call_contract": "nms_1d_cpu.softnms(segs,scores,dets,iou_threshold,sigma,min_score,method)",
+    "candidate_nms_cpp_sha256": "2d1504de2ecc88b4d6292bddc70668d6c0dfd3f48a8ad546d43f29a37b46f5f3",
+    "candidate_nms_py_sha256": "b1346a66cb2e5374afcdac9c4adb4889eb1b8ea2343942c107483dadb3450068",
+    "candidate_setup_py_sha256": "aac31bd23da06e0f85ca26b1c4ee8d1e57eecbeb170f12478a3e894cb2ec2492",
+    "loaded_extension": "/data/run01/sczc063/yuzibo/conda_envs/opentad/lib/python3.10/site-packages/nms_1d_cpu.cpython-310-x86_64-linux-gnu.so",
+    "loaded_extension_contract": "softnms(segs,scores,dets,iou_threshold,sigma,min_score,method,t1,t2)",
+    "loaded_extension_sha256": "4ccea1d7bae60a3edb735280c564928f18e89bd01e160a1c9fa200625a660450",
+    "summary": "The clean candidate runtime contained no in-place official ActionFormer NMS extension. Python therefore resolved the unrelated OpenTAD site-packages module whose nine-argument Soft-NMS ABI is incompatible with the pinned official seven-argument caller."
+  },
+  "run_root": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_official_matched_pair_k384_seed1234567891_20260730_v3",
+  "schema_version": "actionformer_official_matched_pair_failure_analysis_v1",
+  "scientific_contract_changed": false,
+  "stage": "dense_saveonly_eval",
+  "status": "engineering_failure",
+  "training_observation": {
+    "dense_all_35_epochs_completed": true,
+    "dense_checkpoint_attestation_sha256": "b3b4986bc7fc2150f323efde91ed15f194eb7592cfb4855a627885e27584ad74",
+    "dense_metric_produced": false,
+    "sparse_training_started": false
+  },
+  "upstream_environment_receipt_sha256": "acc5909360970cfad1f390a4f5ab046a3876ac9378448b2f94da26ffb312ece2",
+  "upstream_failure_receipt_sha256": "1380fdc66d8a1a89eb4e14f40604d7c30683523aca5077fe75e937864b7d0023",
+  "evidence_sha256": {
+    "dense_saveonly_eval_log": "496468bf5c327ae0a31a3a581cc086fd7cfb69dd5d2b249b088acc6e8aee7338",
+    "dense_train_log": "24d1d0a313ab1ce2dcd56c78706585d81e0390f30c6f3a00eb3f9cb3c93ca9ff",
+    "runtime_and_stdout": "b3f8cca479ad22a674a433badcabb9d928b012af7b60221ec11f8e54e5bf6cc5",
+    "stderr": "fef8ce4b812cf04882328f4f12a5ddcac8c61077a1f8107c19b63e142808d74b"
+  }
+}

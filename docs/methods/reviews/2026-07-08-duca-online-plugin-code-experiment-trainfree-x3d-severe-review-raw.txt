@@ -1,0 +1,512 @@
+## 总裁决
+
+当前 DUCA online plugin **有一个真实的“detector 前 selector 骨架”**：`SingleStageDetector` 确实把 `frame_selector` 放在 backbone/projection/RPN 之前，selector 也确实会 gather 到 selected temporal observations，再把 shorter tensor 交给后端；`DucaAcquisitionAdapter`/wrapper 也有“detector receives only gathered observations”的路径。这个部分不是纯 README 叙述。([GitHub][1])
+
+但按论文主方法标准，当前版本 **不能 claim DUCA 主方法成立**。原因很硬：官方 AdaTAD full-train config 仍然用 `ZeroShotMotionActionnessSource`，不是 X3D/Kinetics；配置自己还把 `deploy_claim_allowed=False`、`metric_claim_allowed=False`、`paper_claim_allowed=False` 写死；按你给出的远端事实，`1150790 duca_off_adatad` 只过了 precheck，因未设 `FULLTRAIN_CANDIDATE=1` 未跑 full mAP；`1150809` 也只是 8+8 precheck passed。也就是说，目前只有结构闭环和 smoke/precheck，没有 official detector mAP 证据。([GitHub][2])
+
+冷酷判定：**当前版本距离“可投稿主实验”至少还差一个 P0 级代码闭环、一个无泄漏 protocol、以及一整轮 official mAP 矩阵；现在最多是可审查的工程 milestone，不是论文主方法证据。**
+
+---
+
+## A. 方法定位是否自洽
+
+### A1. 是否真的实现 detector 前 online plugin？
+
+**部分成立。**
+`opentad/models/detectors/single_stage.py` 中 `forward_train/forward_test` 会先调用 `frame_selector`，再进入 backbone/projection/RPN；`DucaOnlineFrameSelector._gather_time` 支持 3D/5D/6D temporal gather，并把 `selected_positions`、`selected_axis_to_true_time_dense_index` 等写入 metas；`DucaAcquisitionAdapter.forward_acquire` 返回 `detector_input`、`hard_detector_input`、`detector_input_mask`、`selected_positions` 和 `detector_input_length`。这说明 core skeleton 不是 offline ledger 后处理。([GitHub][1])
+
+但 **X3D train-free 路线目前不成立为 plugin**。`DucaOnlineFrameSelector` 当前支持的 actionness source 类型是 `DucaOnlineProbeActionnessSource`、`ZeroShotMotionActionnessSource`、`ZeroShotActionnessSource`，没有 `FrozenKineticsActionnessSource`；X3D 只在 `tools/bata/export_frozen_kinetics_actionness.py` 里做 JSONL export，再由 selection eval 消费。也就是说，论文里如果写“DUCA online plugin uses frozen X3D actionness inside detector forward”，当前代码不支持。([GitHub][3])
+
+### A2. official AdaTAD backend 是否真的只消费 selected positions？
+
+**precheck 级别成立，mAP 级别未证。**
+`configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py` 基于 `e2e_thumos_videomae_s_768x1_160_adapter.py`，把 `window_size` 从 dense 768 变成 budget 384，并加入 `DucaOnlineFrameSelector`；contract 里也写了 `budget_max=384`、`detector_consumed_position_unit="selected_axis_index"`、不改 head/loss/NMS。([GitHub][2])
+
+但是你给出的 job 事实里，`1150790 duca_off_adatad` 只是确认了 `budget=384, dense=768, detector_consumed_length=384, model_type=ActionFormer`，随后因为 `FULLTRAIN_CANDIDATE=1` 未设置失败；这只能证明 precheck path，不证明 full AdaTAD training/evaluation path。`opentad/models/dense_heads/duca_online_precheck_head.py` 是 tiny diagnostic head，会伪造 proposals/scores，不能替代 official ActionFormer/AdaTAD mAP。([GitHub][4])
+
+### A3. selected-axis remap 是否足够严谨？
+
+**目前不够。**
+优点是：`SingleStageDetector.post_processing` 会在 threshold/topk 后、NMS/seconds conversion 前调用 `_remap_selector_segments_for_post_processing`，把 selected-axis predictions 映射回 true-time/original-time；`truetime_geometry.py` 的 `TrueTimeMap` 要求 selected positions 严格递增，并支持 selected↔true remap。这个方向是正确的。([GitHub][1])
+
+问题是：训练端 `DucaOnlineFrameSelector._remap_train_targets_to_selected_axis` 会把 GT segment 从 true-time remap 到 selected-axis，并写 `gt_segments_original_time`、`gt_segments_selected_axis`、`gt_coordinate_space` 等 metadata。`TrueTimeMap.true_to_selected` 对超出 selected range 的 true-time 位置会 clamp 到 first/last selected position。对高 IoU TAD，这可能把未覆盖边界压缩到 selected-axis 端点，改变 assignment、regression target 和短动作宽度。这个不是小问题：mAP@0.6/@0.7 最怕这种坐标非线性压缩。([GitHub][3])
+
+更严重的是：当前 route 声称“不改 head/loss/NMS”，但 ActionFormer head 在 selected-axis 上仍会把 384 个 selected observations 当作均匀 temporal grid 处理。即使 postprocess 能 inverse map，训练时 convolution/projection/receptive field、anchor-free point assignment、regression range 仍然在 selected-axis 上发生。若 selected positions 非均匀，实际 true-time gap 信息没有进入 head，除非引入 physical-grid-aware head 或至少把 gap/density 编码给 projection/head。当前 contract 说不改 head/loss/NMS，这对“保护 high-IoU localization”是最大技术债。
+
+### A4. 是否仍残留三阶段/ledger/pipeline 味道？
+
+**是。残留很明显。**
+仓库 README 和历史结构仍以 C3/coarse classifier/ledger 路线为主；测试目录里大量 `p_action`、`gas_vt`、`ledger`、`selector ledger`、`stage2/3` 风格测试仍共存；X3D 路线也是 exporter → JSONL → selection geometry eval，而不是 official backend forward 内的 actionness source。([GitHub][5])
+
+这会被强审稿人直接攻击为：**“作者说是 online plugin，但主 evidence 仍来自 offline sidecar/actionness JSONL/ledger-like trace。”**
+你可以保留 JSONL 作 reproducibility cache，但主方法代码必须能 live compute actionness and selection inside forward，或者至少有一个严格等价的 online source replay protocol。
+
+---
+
+## B. train-free 粗动作性方法是否合理
+
+### B1. Frozen Kinetics X3D classifier confidence 作为 actionness 是否站得住？
+
+**只能 conditional 站得住，不能直接作为主创新。**
+Kinetics-pretrained X3D 的分类 confidence 可以作为 “generic motion/action prior”，但它本质是分类器分布的尖锐程度，不是 temporal actionness。背景片段也可能被高置信分类，动作边界/过渡片段也可能因为模糊而低置信。`export_frozen_kinetics_actionness.py` 的 provenance 说 `training_dataset="Kinetics"`、`thumos_trained=False`、`uses_gt=False`、`uses_teacher=False`，这可以支撑 no-THUMOS-training/no-GT 的 provenance，但不能支撑 “detector-utility-calibrated”。([GitHub][6])
+
+要把它变成 DUCA 的优雅组成部分，不能写成“X3D confidence top-k”。应该写成：**frozen generic action prior only provides deploy-visible local utility evidence，DUCA 的贡献是 budgeted original-time sparse acquisition with radius/hole/redundancy/selected-axis detector remap，并且 detector mAP 证明这种 prior 在 TAD 后端中有 utility。**
+
+### B2. `max_prob` / `inverse_entropy` / `entropy_mix` 是否合理？
+
+**作为 diagnostics 合理，作为 final method 不够。**
+代码里 `_confidence_actionness` 支持 `max_prob`、`inverse_entropy`、`entropy_mix=0.5*max_prob+0.5*(1-normalized_entropy)`。这三个 score 都只是 classifier confidence 的不同变体，没有校准到 THUMOS action/background，也没有证明与 boundary utility 相关。([GitHub][6])
+
+尤其 `entropy_mix` 的 0.5/0.5 是 arbitrary。若你用 validation selection metrics 或 detector mAP 选 score mode，就变成 THUMOS validation tuning；若不选，就需要 pre-register 一个 mode，例如固定 `inverse_entropy` 或固定 `entropy_mix`，并报告其它 mode 只作为 appendix sensitivity。
+
+### B3. X3D temporal receptive field 和成本是否破坏“低成本 pre-backbone plugin”？
+
+**很可能破坏，除非完整计入 cost ledger。**
+exporter 对每个 dense bin center 采一个 clip，`clip_frames` 可以是 4 或 13，`frame_interval` 可以是 1/2/4/12，并对每个 bin 做 classifier forward；summary 里虽然记录了 `classifier_forwards`、`clips_scored`、`raw_video_decode=True`、`detector_forward=False`，但这只是 exporter cost summary，不是 official mAP run 的 end-to-end cost table。([GitHub][6])
+
+如果 dense 768 每个位置都跑 X3D clip，实际 acquisition cost 可能远超“低成本 selector”。这不是不能做，而是必须重新定义 claim：**不是 free selector，而是 frozen auxiliary perception module + sparse detector backend**。最终 efficiency table 必须列 decode cost、X3D forwards、VideoMAE/AdaTAD forwards、wall-clock、GPU memory，否则“efficient TAD”会被直接打穿。
+
+### B4/B5. interval grid 1/2/4 是否 validation hyperparameter fishing？如果用 validation GT 选 best 是否泄漏？
+
+**是，若用 validation GT 选最佳 provider/interval，就是方法调参泄漏。**
+`run_duca_trainfree_x3d_interval_grid_gpu0.sh` 默认在 `SUBSET=validation` 上跑 `PROVIDERS="x3d_xs x3d_s"` 与 `FRAME_INTERVALS="1 2 4"`，并且 `MAX_VIDEOS=0`，也就是完整 validation grid。([GitHub][7])
+
+无偏 protocol 应该是以下之一：
+
+1. **A priori fixed protocol**：在看任何 THUMOS validation/test selection metric 和 mAP 前，固定一个 provider/interval，例如 `x3d_xs, clip_frames=4, frame_interval=4, crop=160`，理由只来自 compute budget 和 Kinetics architecture，不来自 THUMOS。
+2. **Train-only tuning**：只在 THUMOS train split 上用 train annotations 选 provider/interval，然后一次性评估 val/test。
+3. **Nested split**：把 train 再分 train-dev/dev，用 dev 选 source hyperparam，最终 official validation/test 只报一次。
+4. **Report all grid cells**：不选 best，只把 provider×interval 当 sensitivity table；主表只用 pre-registered cell。
+
+当前 queued `1150891 duca_x3d_grid` 如果跑完后拿 best cell 进主表，就是 leak/fishing。它最多能作为 diagnostic sensitivity，不能作为主方法选择依据。
+
+### B6. train-free actionness 是否应接入 `DucaOnlineFrameSelector`？
+
+**必须接入。**
+当前 X3D exporter 是 `tools/bata/export_frozen_kinetics_actionness.py`，selection eval 通过 JSONL 读 `p_action`，而 official AdaTAD config 仍是 `ZeroShotMotionActionnessSource`。这会导致论文方法和 official backend 实验脱节。([GitHub][2])
+
+下一轮必须实现 `FrozenKineticsActionnessSource`，让 `DucaOnlineFrameSelector` 能在 forward 内调用 frozen source，或者通过严格的 `ActionnessPacket` 消费已经声明 provenance/cost/hash 的 stream-side source。裸 `p_action` JSONL 不应直接进 inference decision path。
+
+### B7. JSONL exporter 是否会被批评为 offline precompute？
+
+**会。除非你严格定义 deployment protocol。**
+JSONL 可以接受，但只能作为 **audit/cache/equivalence trace**。必须满足：
+
+* JSONL 不含 GT、teacher、raw detector prediction、oracle boundary；
+* JSONL 中每个 score 都能由 deploy-time frozen source 对同一 raw video deterministically 重算；
+* detector mAP runner 使用 JSONL 时必须记录 source model hash、video path hash、clip parameters、cost ledger；
+* 主方法必须另有 live source forward code，JSONL 只是避免重复算 X3D 的 cache；
+* 论文中称 “precomputed for experimental efficiency, equivalent to online frozen source, not a training/decision ledger”。
+
+当前 exporter provenance 做了一部分 no-leak 标注，但它还输出 `raw_classifier_logit`，并且 official selector尚未消费该 source；因此还不够。([GitHub][6])
+
+---
+
+## C. 间接选帧评估是否充分
+
+### C1. AUROC/AUPRC/Recall@K 是否足够？
+
+**不够。**
+`eval_zero_shot_actionness.py` 支持 AUROC/AUPRC/Recall@K/Precision@K，并明确 `source_scoring_reads_gt=False`；这些只能说明 actionness 与 annotation overlap 的弱相关性。([GitHub][8])
+
+TAD 主目标不是 action/background classification，而是 proposal localization + classification + NMS 后 mAP。必须补：
+
+* official AdaTAD mAP@0.3/0.4/0.5/0.6/0.7；
+* mAP@0.6/@0.7 单独高亮；
+* per-class mAP，尤其短动作/边界敏感类；
+* selected-boundary recall at radius {1,2,4,8,16}；
+* action segment touched recall、short-action recall；
+* max hole / p95 hole inside action；
+* selected-axis distortion：true duration vs selected-axis duration；
+* detector error decomposition：missed actions、boundary shift、fragmentation、duplicate false positives。
+
+### C2. coverage/boundary/gap/redundancy 是否能预测 detector mAP？
+
+**不能充分预测。**
+`run_zero_shot_actionness_selection_eval.py` 确实计算 `action_touched_recall`、`boundary_radius_recall`、`short_action_recall`、`action_interior_coverage`、`max_hole`、`p95_hole`、`redundancy`、`uniform_similarity`。这些是必要的 selection diagnostics。([GitHub][9])
+
+但它们无法替代 detector mAP。因为 ActionFormer/AdaTAD 的 mAP 还取决于 backbone features、temporal conv receptive field、point assignment、regression scale、classification score calibration、post-NMS ordering。一个 boundary coverage 好的 selector 可能仍然破坏 action body context，导致 classification score 崩；一个 gap 小的 selector 也可能因 selected-axis 非均匀压缩导致 regression 偏移。
+
+### C3. oracle-actionness baseline 是否严格 diagnostic-only？
+
+**代码层面基本做了正确隔离。**
+`validate_zero_shot_selection_eval.py` 要求 oracle baseline 必须 `diagnostic_only=True` 且 `uses_gt_for_selection=True`；summary 也不能把 oracle 放入 `deployable_claim_baselines`。([GitHub][10])
+
+但论文写作必须继续严格：oracle-actionness 只能放 appendix 或 diagnostic upper bound，不能和 deployable DUCA 主表混在一起当可用 baseline。
+
+### C4. manual baseline 是否其实等同 top-k actionness？
+
+**命名有误导风险。**
+selection eval 里 `manual` 和 `motion` 都从 row 的 `p_action` 取 score，然后调用 DUCA decode；当 JSONL 来自 X3D exporter 时，`manual` 实际上就是 “external JSONL actionness”，不是人工 baseline，也不是独立方法。([GitHub][9])
+
+建议改名：
+
+* `jsonl-actionness-duca`
+* `external-actionness-duca`
+* `x3d-score-duca`
+* `x3d-topk`
+* `motion-duca`
+
+不要再叫 `manual`，否则 reviewer 会怀疑你在隐藏 source identity。
+
+### C5. selection eval 是否需要加入全套对照？
+
+**必须。**
+当前 single X3D launcher 只跑 `manual oracle-actionness`，缺少 uniform/random/stride/motion/X3D-topk/X3D-radius 的完整矩阵。([GitHub][11])
+
+最低限度：
+
+* `uniform384`
+* `stride384`
+* `random384`，至少 5 selection seeds；detector full run 至少 3 seeds 或报告 selection variance；
+* `motion384-topk`
+* `motion384-DUCA-radius`
+* `x3d384-topk`
+* `x3d384-DUCA-radius`
+* `oracle-actionness384` diagnostic only；
+* `full768` upper compute baseline；
+* `dense official AdaTAD` exact baseline。
+
+---
+
+## D. 逐文件代码实现风险
+
+### `opentad/models/duca/acquisition.py`
+
+优点：
+
+* `FORBIDDEN_DECISION_KEYS` 禁止 `teacher_utility`、`dense_teacher`、`gt_segments`、`oracle_boundary`、`prediction_cache`、`raw_predictions`、`ledger` 等进入 decision path；
+* `validate_actionness_provenance` 要求 `thumos_trained=False`、`uses_gt=False`、`uses_teacher=False`、`uses_prediction_cache=False`；
+* `SparseTemporalGrid` 与 `gather_selected_observations` 检查 selected positions、mask、budget；
+* `duca_forward_test` 会禁止 forbidden payload，并在 audit 里写 `uses_teacher=False`、`uses_ledger_for_decision=False`。([GitHub][12])
+
+P0 风险：
+
+* forbidden keys **没有覆盖裸 `p_action` / `actionness_logits` / `external_scores`**。`DucaAcquisitionAdapter.forward_scores` 可以接收 `p_action`，`ZeroShotActionnessSource.forward` 在收到 `p_action` 时仍会套用 source 自己的 clean provenance。也就是说，如果某个 runner 把 oracle/GT/cache 生成的 `p_action` 塞进 batch，provenance 可能仍显示 clean。这是 train/test leakage 的硬风险。([GitHub][12])
+
+必须改：inference 时禁止裸 `p_action`，除非它是 `ActionnessPacket(scores, provenance, source_hash, cost_ledger, online_equivalent=True)`；并且 provenance 必须与 score tensor 同源绑定，不能由 source wrapper 后补。
+
+### `opentad/models/selectors/duca_online_frame_selector.py`
+
+优点：
+
+* 支持原始输入 gather；
+* train/test 都走 `_forward_select`；
+* 写 selected-axis inverse map；
+* 会拒绝部分 forbidden meta，如 `selection_uses_gt`、`selection_uses_teacher`、`teacher_points`、`raw_predictions`、`ledger_path`；
+* 支持 `remap_gt_to_selected_axis`。([GitHub][3])
+
+P0/P1 风险：
+
+1. 没有 `FrozenKineticsActionnessSource`，X3D 不在 official plugin 内。
+2. `gt_segments_original_time` 被写进 metas。虽然这是 audit/remap 需要，但如果未来 head 的 `forward_train` 接收 metas，就可能误读 original GT。当前要加 guard：RPN/head 不允许读取 `gt_segments_original_time` 作 loss，或者只在 audit copy 中保存。
+3. selected-axis remap 对 ActionFormer assignment 的影响未验证。必须加 real assignment-level test：同一 GT 在 dense-axis、uniform384 selected-axis、nonuniform selected-axis 上的 target assignment 是否符合预期。
+4. `6D` input descriptor `_time_descriptors_btc` 直接 mean 掉某些维度，形状假设需要用实际 THUMOS raw loader/VideoMAE input 做测试，不要只靠 toy tensor。
+
+### `opentad/models/dense_heads/duca_online_precheck_head.py`
+
+这个文件只能用于 contract precheck。它会按 selected mask 生成伪 proposals 和 ones scores，不是 detector head，不证明 mAP、不证明 ActionFormer loss、不证明 NMS。任何引用它的实验都必须写成 **precheck only**。([GitHub][4])
+
+### `configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py`
+
+优点：
+
+* 基于 official-style AdaTAD/VideoMAE/ActionFormer config；
+* contract 明确 budget 384、dense 768、selected-axis output、不改 head/loss/NMS；
+* train/val/test dataset split 路径继承官方 config。([GitHub][2])
+
+P0 风险：
+
+* `actionness_source_cfg` 仍是 `ZeroShotMotionActionnessSource`，不是 X3D/Kinetics；
+* selector loss weights 全为 0，`DUCA-TaskAdapted` 还没有真正定义；
+* config 明确 `paper_claim_allowed=False`，说明当前作者自己也没有放行主表 claim；
+* 按你给出的 job 事实，official full mAP 没有跑。
+
+这个 config 只能叫 `DUCA-ZS-motion official backend candidate`，不能叫 final DUCA main config。
+
+### `tools/bata/export_frozen_kinetics_actionness.py`
+
+优点：
+
+* provenance 比较完整，标明 Kinetics、no THUMOS train、no GT、no teacher；
+* 支持 provider allowlist，禁止部分 heavy provider；
+* 记录 classifier forwards、clips scored、raw decode 等 cost fields；
+* bin center mapping 用 `(idx+0.5)/dense_window_size*duration`，比左边界采样合理。([GitHub][6])
+
+P0/P1 风险：
+
+1. **silent CPU fallback**：`--device cuda` 但 CUDA 不可用时会落到 CPU。正式实验必须 fail-closed，否则 smoke 参数/CPU 慢跑可能混入正式结果。([GitHub][6])
+2. **video indexing by stem**：`_build_video_index` 用 `path.stem` 且 `setdefault`，同名文件第一个 wins。THUMOS train/test/validation root 混放时有找错视频风险。([GitHub][6])
+3. **raw logits 输出**：`raw_classifier_logit` 写入 JSONL。虽然不是 detector prediction，但主方法不需要暴露 raw logits；建议只保留 score/provenance 或把 raw logits 放 audit-only 文件。([GitHub][6])
+4. **没有真实模型/layout 测试**：现有测试只覆盖 provider set、provenance、bin center、stem index，不证明 PyTorchVideo/torchvision X3D 输入 layout、normalize、输出 shape 在真实模型上可靠。([GitHub][13])
+5. **成本 claim 未闭环**：exporter 记录 source cost，但 official mAP runner 没把 source cost + detector cost合并成 end-to-end efficiency table。
+
+### `scripts/run_duca_trainfree_x3d_actionness_selection_gpu0.sh`
+
+问题：
+
+* 默认 `VIDEO_ROOTS="${THUMOS14_ROOT}/raw_data/video:${THUMOS14_ROOT}/test:${THUMOS14_ROOT}/train"`，与很多 THUMOS raw layout 不一致；结合 stem matching，风险更大。([GitHub][11])
+* 只跑 `manual oracle-actionness` baselines，缺少 uniform/random/stride/motion/X3D-topk 完整对照。([GitHub][11])
+* 这是 selection geometry eval，不是 official mAP eval。不能作为 detector evidence。
+
+### `scripts/run_duca_trainfree_x3d_interval_grid_gpu0.sh`
+
+问题：
+
+* 默认 `x3d_xs x3d_s` × `frame_interval 1/2/4` × validation 全集。这个脚本本身不是错，但如果拿 best cell 做主表，就是 validation fishing。([GitHub][7])
+* `x3d_xs` 用 `clip_frames=4`，`x3d_s` 用 `clip_frames=13`，同时比较 provider 和 interval，会把 source capacity、temporal context、成本混在一起；必须在 cost table 里分开报。([GitHub][7])
+
+### `tools/bata/run_zero_shot_actionness_selection_eval.py`
+
+优点：
+
+* 有 uniform/random/motion/manual/oracle-actionness 框架；
+* 有 geometry metrics；
+* oracle 被标记 diagnostic；
+* summary 排除 oracle deploy claim。([GitHub][9])
+
+硬问题：
+
+* `_duca_budgeted_decode` 在 native DUCA decode 不可用时 fallback 到 top-k；`validate_sparse_temporal_grid_row` 在 native import 不可用或异常时也会 pass。这是典型 fail-open。selection eval 可以这么做 exploratory，但 official validator 必须 fail-closed。([GitHub][9])
+* `manual` 命名误导，实际是外部 `p_action` score source。
+* 该 eval 没有 detector forward，不能回答 mAP 问题。
+
+### validators 和 tests
+
+好的部分：
+
+* `validate_zero_shot_actionness_eval.py` 会检查 JSONL row/provenance/no GT/no teacher/no prediction cache；
+* `validate_zero_shot_selection_eval.py` 会检查 selected positions 排序、unique、budget、oracle diagnostic-only。([GitHub][14])
+
+不足：
+
+* `test_x3d_interval_grid_launcher.py` 基本是字符串测试，不验证真实 launcher 行为、GPU、文件路径、输出完整性。([GitHub][15])
+* `test_frozen_kinetics_actionness_export.py` 不跑真实 X3D forward，不验证 decord 解码、normalize、layout、模型输出 shape。([GitHub][13])
+* `test_duca_online_adatad_wrapper_precheck.py` 证明 `detector_input_length=384`，但仍是 precheck，不是 ActionFormer/AdaTAD full training。([GitHub][16])
+* `test_duca_online_frame_selector_integration.py` 用 precheck head + toy detector 证明 gradient/shape，不证明 official head/loss/NMS 正确。([GitHub][17])
+
+---
+
+## E. 实验排布：必须启动 / 暂停 / 修改
+
+### 先处理你给出的当前 job
+
+* `1150891 duca_x3d_grid PENDING`：可以继续跑，但必须标记为 **diagnostic sensitivity only**。不能用它的 validation best provider/interval 进入主表。若资源紧张，应该取消或改成 `MAX_VIDEOS` 小样本 smoke。
+* `1150809 duca_pre_gpu0seq COMPLETED`：只能写 precheck passed，不能写 evidence。
+* `1150790 duca_off_adatad FAILED`：这不是 mAP run；只能说明 FULLTRAIN gate 没打开。
+* `1150818 duca_trainfree CANCELLED`、`1150791 duca_uniform384 CANCELLED`：保留 cancelled，不要复活旧 weak/motion-only 表。
+* `1150841-1150844 adapter bridge/densepass/gridaware`、`1150701-1150703 adapter sparse bridge`：若它们不是 final DUCA online plugin official backend，降级为 appendix/diagnostic。
+* `1149604/1149322 old ontad_p1full`：若占资源且不服务 DUCA 主表，应停或降优先级。
+
+### 必须启动的最小 official mAP 矩阵
+
+第一组：**same backend baselines**
+
+1. `AdaTAD-full768`：official dense 768，作为 compute upper baseline。
+2. `uniform384`：同 backend，同 selected-axis remap，同 training schedule。
+3. `stride384`：deterministic stride/even positions。
+4. `random384`：至少 3 detector seeds；selection-only最好 5 seeds。
+
+第二组：**train-free DUCA-ZS**
+
+5. `motion384-topk` 与 `motion384-DUCA-radius`：因为当前 official config 用 motion source，必须作为 weak baseline跑完。([GitHub][2])
+6. `FrozenKinetics-X3D-topk384`：固定 provider/interval，不从 validation grid 选。
+7. `FrozenKinetics-X3D-DUCA-radius384`：同一 source，只改变 decode/DUCA acquisition。
+
+第三组：**task-adapted DUCA**
+
+8. `DUCA-TaskAdapted384`：训练 selector，但 inference no teacher/no GT/no ledger。训练可以用 detector loss/ST path，但不能用 validation GT 选 source hyperparam。
+9. `DUCA-TaskAdapted384 no-X3D-prior`：证明不是 X3D confidence top-k。
+10. `DUCA-TaskAdapted384 + frozen X3D prior`：证明 DUCA calibration 是否真的利用 generic prior。
+
+第四组：**budget curve**
+
+11. `{192,256,384,512,768}`，至少对 `uniform`、`X3D-topk`、`DUCA-ZS`、`DUCA-TaskAdapted` 跑。
+    如果资源有限，先跑 `{256,384,512}`，但主表必须有 384 与 full768。
+
+第五组：**ablation**
+
+12. no radius
+13. no redundancy
+14. no hole / no max-gap guard
+15. no boundary / no boundary utility
+16. no ST detector loss
+17. no X3D prior
+18. top-k only vs DUCA decode
+
+第六组：**plug-and-play**
+
+19. ActionFormer backend with no physical-grid change。
+20. 若时间允许，第二 dataset；若不做第二 dataset，论文 claim 必须降为 THUMOS-specific plugin study。
+
+### multi-seed 策略
+
+* Main table：至少 3 seeds，报告 mean±std。
+* Random baseline：至少 5 selection seeds；如果 detector training 很贵，至少固定 detector checkpoint，跑 5 random selection eval + 3 full training seeds。
+* X3D train-free：source deterministic，但 provider/interval不能 validation 选 best；只做 pre-registered cell。
+
+### efficiency table protocol
+
+必须同时统计：
+
+* raw decode time；
+* actionness source forward count；
+* X3D clip_frames × frame_interval × dense positions；
+* selector compute；
+* detector backbone consumed frames/observations；
+* detector forward time；
+* post-processing time；
+* peak GPU memory；
+* wall-clock video throughput；
+* 是否使用 precomputed JSONL cache；
+* cache 生成成本是否摊销。
+
+否则“efficient temporal acquisition”不能成立。
+
+---
+
+## F. 最终裁决清单
+
+### P0 blockers：不修不能写主方法
+
+1. **没有 official DUCA full mAP。**
+   `1150790` 没跑 full training；`1150809` 是 precheck；official config 还写 `paper_claim_allowed=False`。([GitHub][2])
+
+2. **X3D/Kinetics train-free source 没接入 official selector forward。**
+   当前 X3D 是 exporter + JSONL + geometry eval，official config 仍是 motion source。([GitHub][2])
+
+3. **裸 `p_action` / external score provenance 没有 fail-closed。**
+   `FORBIDDEN_DECISION_KEYS` 禁了很多高危键，但没有从根上禁止 inference 裸 actionness score；必须引入 provenance-bound `ActionnessPacket`。([GitHub][12])
+
+4. **selected-axis training remap 对高 IoU localization 未验证。**
+   `TrueTimeMap` 插值/clamp 会改变 GT axis；ActionFormer head 仍在 selected-axis uniform assumption 下训练。([GitHub][3])
+
+5. **validation provider/interval grid 存在 hyperparameter fishing 风险。**
+   `1150891` 对 validation 全集跑 X3D provider×interval grid；不能用 best cell 进主表。([GitHub][7])
+
+6. **efficiency claim 未闭环。**
+   X3D exporter 每 dense bin 做 clip classifier；若不把 source decode/forward 计入总成本，低成本 claim 不成立。([GitHub][6])
+
+### P1 required fixes：不修会被强审稿人攻击
+
+1. exporter 请求 CUDA 时不得 silent CPU fallback。([GitHub][6])
+2. video indexing 不能只靠 stem + `setdefault`；必须 annotation video_id → exact path，重复时报错。([GitHub][6])
+3. `manual` baseline 改名为 `external-actionness` / `x3d-score-duca`。([GitHub][9])
+4. selection eval 里 native DUCA import fail 时不能 pass/top-k fallback 进入 official result。([GitHub][9])
+5. X3D tests 必须真实跑一次模型 forward 或至少 mock exact 5D layout/shape，而不是字符串和 provenance only。([GitHub][13])
+6. official configs 必须分清 `DUCA-ZS`、`DUCA-X3D-ZS`、`DUCA-TaskAdapted`，不能混名。
+7. `gt_segments_original_time` audit metadata 不能被 downstream head/loss 读取；要加防护测试。
+8. 所有 precheck/smoke 输出必须带 `not_mAP_evidence=True` 或等价 manifest。
+
+### P2 cleanup：提高优雅性和可读性
+
+1. README 从 C3/PAction/GAS-VT ledger 叙事改成 DUCA online plugin 主叙事，旧路线放 appendix/legacy。([GitHub][5])
+2. 把 `tools/bata` 里的 exporter/eval 分成 `online_sources/`、`audit/`、`diagnostics/`，避免 pipeline 味道。
+3. 统一 metadata schema：`selected_positions`、`selected_axis_to_true_time_dense_index`、`source_provenance`、`cost_ledger`。
+4. 每个 official run 输出 manifest：commit、config、source hash、budget、forbidden key scan、cost summary、mAP table。
+5. 清理/标注 legacy tests：C3/PAction/GAS/ledger 不应看起来像 DUCA 主方法必经路径。([GitHub][18])
+
+---
+
+## 三个核心 YES/NO 裁决
+
+**当前 train-free X3D actionness 是否足够合理？**
+**CONDITIONAL。** 作为 frozen generic prior / diagnostic source 合理；作为主创新或主 claim 不够。若只是 “Kinetics X3D confidence + top-k/radius”，创新性不足，且成本可能很高。必须接入 online selector、锁定 no-leak protocol、跑 official mAP 和完整 cost ledger。
+
+**当前间接选帧是否足够优雅？**
+**NO for main method，CONDITIONAL for diagnostics。** selection geometry eval 有用，但 JSONL exporter + manual baseline + oracle diagnostic 仍像 offline pipeline。DUCA 的优雅版本必须是：online source → budgeted acquisition → selected-only detector forward → audit ledger。
+
+**当前实验排布是否足以支撑论文？**
+**NO。** 当前只有 precheck/smoke/selection geometry 和 pending X3D grid，没有 official mAP 主证据、没有 same-backend baseline、没有 budget curve、没有 cost table、没有 no-leak hyperparam protocol。
+
+---
+
+## 下一轮必须实现的最小代码改动
+
+1. 新增 `FrozenKineticsActionnessSource`，接入 `DucaOnlineFrameSelector`，支持 frozen X3D live scoring或 verified source packet replay。
+2. 引入 `ActionnessPacket`：`scores + provenance + source_hash + clip_params + cost_ledger + online_equivalent`；禁止 inference 裸 `p_action`。
+3. exporter 改为 audit/cache tool：CUDA fail-closed、video_id exact mapping、重复 stem error、source hash、no raw logits in deploy JSONL。
+4. official config 增加：
+
+   * `duca_online_official_adatad_full768_baseline.py`
+   * `duca_online_official_adatad_uniform384.py`
+   * `duca_online_official_adatad_random384.py`
+   * `duca_online_official_adatad_x3d_topk384.py`
+   * `duca_online_official_adatad_x3d_duca384.py`
+   * `duca_online_official_adatad_taskadapted384.py`
+5. tests 增加：
+
+   * inference 裸 `p_action` 必须 fail；
+   * real/mock X3D 5D input layout test；
+   * selected positions 与 detector consumed tensor length/indices exact match；
+   * GT selected-axis remap round-trip and clamp behavior test；
+   * official ActionFormer mini-forward，不再只用 precheck head；
+   * native DUCA decode unavailable 时 official eval must fail, not fallback。
+
+---
+
+## 下一轮必须排队的最小实验集合
+
+按优先级：
+
+1. `AdaTAD-full768` official baseline。
+2. `uniform384 / stride384 / random384` same backend。
+3. `DUCA-ZS-motion384` current config full mAP，作为 weak train-free baseline。
+4. `FrozenKinetics-X3D-topk384`，pre-registered provider/interval。
+5. `FrozenKinetics-X3D-DUCA-radius384`，同 source 同 budget。
+6. `DUCA-TaskAdapted384`，detector-loss/ST 训练，inference no teacher/no GT/no ledger。
+7. budget curve `{256,384,512}`，通过后扩到 `{192,256,384,512,768}`。
+8. efficiency table run：live source vs JSONL cache，两者都报成本。
+
+---
+
+## 哪些旧实验应降级为 diagnostic/appendix
+
+* C3/PAction/GAS-VT/lattice/offline ledger 全部降级为 historical diagnostic。
+* `oracle-actionness` 只能 appendix diagnostic upper bound。
+* `1150809` precheck、X3D smoke `video_count=1, dense_window_size=4,row_count=4` 不能进入 evidence。
+* `1150891` X3D interval grid 若用于看趋势，只能 sensitivity；不能选 best 作为主方法。
+* adapter bridge/densepass/gridaware baselines 若不走 final DUCA online plugin contract，只能 appendix。
+* old OnTAD P1 full jobs 与当前 DUCA official AdaTAD plugin 无关，不能混入主表。
+
+---
+
+## 最终论文主表应该长什么样
+
+主表必须是 **same backend / same training schedule / same budget / same evaluation**：
+
+| Method              | Source                        |   Train? | Inference GT/teacher/ledger? | Budget | Backend changes          | mAP@0.3 | @0.4 | @0.5 | @0.6 | @0.7 |      Avg | E2E cost |
+| ------------------- | ----------------------------- | -------: | ---------------------------: | -----: | ------------------------ | ------: | ---: | ---: | ---: | ---: | -------: | -------: |
+| AdaTAD full768      | dense                         |      yes |                           no |    768 | none                     |         |      |      |      |      |          |          |
+| Uniform384          | fixed                         |      yes |                           no |    384 | selected-axis remap only |         |      |      |      |      |          |          |
+| Stride384           | fixed                         |      yes |                           no |    384 | same                     |         |      |      |      |      |          |          |
+| Random384           | random                        |      yes |                           no |    384 | same                     |         |      |      |      |      | mean±std |          |
+| Motion-DUCA384      | zero-shot motion              | optional |                           no |    384 | same                     |         |      |      |      |      |          |          |
+| X3D-topk384         | frozen Kinetics               |       no |                           no |    384 | same                     |         |      |      |      |      |          |          |
+| X3D-DUCA384         | frozen Kinetics + DUCA decode |       no |                           no |    384 | same                     |         |      |      |      |      |          |          |
+| DUCA-TaskAdapted384 | detector loss/ST              |      yes |                           no |    384 | same                     |         |      |      |      |      |          |          |
+
+第二张表做 ablation：radius、redundancy、hole/gap、boundary utility、ST detector loss、X3D prior。
+第三张表做 budget curve。
+第四张表做 efficiency：decode、source forward、detector forward、wall-clock、GPU memory、cache/no-cache。
+
+**最终一句话：当前版本已经从 offline ledger 往 online plugin 方向迈了一步，但还没有跨过论文主方法门槛；现在不能写“DUCA-TAD works”，只能写“DUCA online plugin scaffold passes precheck”。**
+
+[1]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/opentad/models/detectors/single_stage.py "raw.githubusercontent.com"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/raw/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/configs/adatad/thumos/duca_online_official_adatad_backend_full_train.py "raw.githubusercontent.com"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/raw/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/opentad/models/selectors/duca_online_frame_selector.py "raw.githubusercontent.com"
+[4]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/opentad/models/dense_heads/duca_online_precheck_head.py "raw.githubusercontent.com"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/gas-vt-stage23-detector-aware-20260706 "GitHub - yuzbo/OpenTAD_C3_CoarseClean_20260702 at codex/gas-vt-stage23-detector-aware-20260706 · GitHub"
+[6]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/export_frozen_kinetics_actionness.py "raw.githubusercontent.com"
+[7]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/scripts/run_duca_trainfree_x3d_interval_grid_gpu0.sh "raw.githubusercontent.com"
+[8]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/eval_zero_shot_actionness.py "raw.githubusercontent.com"
+[9]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/run_zero_shot_actionness_selection_eval.py "raw.githubusercontent.com"
+[10]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/validate_zero_shot_selection_eval.py "raw.githubusercontent.com"
+[11]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/scripts/run_duca_trainfree_x3d_actionness_selection_gpu0.sh "raw.githubusercontent.com"
+[12]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/raw/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/opentad/models/duca/acquisition.py "raw.githubusercontent.com"
+[13]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tests/test_frozen_kinetics_actionness_export.py "raw.githubusercontent.com"
+[14]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/validate_zero_shot_actionness_eval.py "raw.githubusercontent.com"
+[15]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tests/test_x3d_interval_grid_launcher.py "raw.githubusercontent.com"
+[16]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tests/test_duca_online_adatad_wrapper_precheck.py "raw.githubusercontent.com"
+[17]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/refs/heads/codex/gas-vt-stage23-detector-aware-20260706/tests/test_duca_online_frame_selector_integration.py "raw.githubusercontent.com"
+[18]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/gas-vt-stage23-detector-aware-20260706/tests "OpenTAD_C3_CoarseClean_20260702/tests at codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-12T20:52:19Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_ROLE_SEPARATED_PRE_RUN_PLAN_STATIC_REVIEW",
+  "message_id": "msg-20260812T205219Z-42871ab0b652",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_EXECUTION_PLAN-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Independently perform a static contract review only of EVALUATOR_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_EXECUTION_PLAN-v001 against accepted PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001, corrected Builder binding v002, and sealed Evaluator materialization v001. Determine whether the plan preserves frozen mathematics, Q/18/9/6 ordering, independent reference and role separation, exact one-shot/fail-close boundaries, and a minimal viable path to PRE_RUN_READY without prematurely authorizing E1/B1/E2. Identify any internally inconsistent input/role/output obligation, excess requirement that alters the gate, deterministic implementation correction, or scientific ambiguity. Do not execute/run/import/compile/test/materialize or read runtime projector/reference/adapter surfaces; do not access remote/data/model/checkpoint/metric/GPU/CUDA/Slurm/browser or modify files. Return PASS or precise IMPLEMENTATION_CORRECTION/SCIENTIFIC_AMBIGUITY.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

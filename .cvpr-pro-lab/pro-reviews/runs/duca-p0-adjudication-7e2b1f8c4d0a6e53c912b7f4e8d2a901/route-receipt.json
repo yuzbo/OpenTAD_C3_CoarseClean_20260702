@@ -1,0 +1,22 @@
+{
+  "dispatch_id": "CENTRAL-PRO-DUCA-P0-v001",
+  "project": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PRO_REVIEW",
+  "request_id": "PRO_REVIEW_REQUEST-v001",
+  "nonce": "7e2b1f8c4d0a6e53c912b7f4e8d2a901",
+  "runtime_cdp": "127.0.0.1:47785",
+  "requested_model": "gpt-5.5-pro",
+  "submitted_at": null,
+  "completed_at": "2026-08-11T12:01:49Z",
+  "turn_id": null,
+  "stream_state": "NOT_STARTED",
+  "hard_timeout_at": null,
+  "outcome": "NEEDS_ATTENTION:ORACLE_ATTACH_METADATA_MISMATCH",
+  "actual_attempt_count": 3,
+  "actual_attempt_increased": false,
+  "evidence": "Oracle 0.17.1 attached with --remote-chrome 127.0.0.1:47785 after /json/version was verified, then returned 'No running browser with attach metadata matched 127.0.0.1:47785'.",
+  "project_ui_touched": false,
+  "project_message_sent": false,
+  "project_source_mutation": false,
+  "retry": "forbidden without a new central recovery decision"
+}

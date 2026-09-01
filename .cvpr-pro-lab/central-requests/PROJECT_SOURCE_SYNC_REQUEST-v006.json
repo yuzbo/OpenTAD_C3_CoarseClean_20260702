@@ -1,0 +1,49 @@
+{
+  "request_type": "PROJECT_SOURCE_SYNC_REQUEST",
+  "request_id": "PROJECT_SOURCE_SYNC_REQUEST-v006",
+  "status": "CONFIRMED",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "prepared_ids": [
+    "pfile-20260814T011812Z-f16c332d1a",
+    "pfile-20260814T011812Z-66c3c96f5b"
+  ],
+  "prepared_files": [
+    ".cvpr-pro-lab/project-files/prepared/CURRENT_RESEARCH_STATE-v010.md",
+    ".cvpr-pro-lab/project-files/prepared/DUCA_DENSITY_UOR_TERMINAL_FAILURE-v001.md"
+  ],
+  "material_reason": "The only permitted U/O/R focused correction loop terminated after an equivalent second deterministic --cfg-options launch-bypass defect. These two files provide the current pre-result state and terminal failure packet for one narrow fresh Project Pro STOP-versus-simplified-replacement disposition; they do not approve a replacement or execution.",
+  "required_before_pro": true,
+  "blocking_class": "BLOCKS_EXPERIMENT",
+  "earliest_at": "2026-08-14T09:18:18+08:00",
+  "priority": "high",
+  "route_state": "REACHABILITY_PRE_RUN_BLOCKED / second equivalent deterministic implementation defect / one-correction loop terminated / BLOCKED_PRE_RESULT / no efficacy / no execution",
+  "depends_on": [
+    "PRO_DUCA_DENSITY_UOR_IMPLEMENTATION-v001",
+    "CRITIC_DUCA_DENSITY_UOR_FOCUSED_IMPLEMENTATION_RECHECK-v001"
+  ],
+  "future_pro_operation": "FRESH_EXACT_PROJECT_PRO",
+  "future_pro_question": "Using only the two confirmed material files and their fixed pre-result boundary, choose exactly one outcome: (1) STOP the DUCA density U/O/R route; or (2) explicitly authorize one genuinely simplified replacement implementation/protocol, naming the minimal bounded Builder → independent Critic → existing Evaluator sequence and preserving the training-population-only FIT/CAL and official-validation firewall. Do not treat the Critic's proposed rejection of --cfg-options as already authorized, do not extend the terminated correction loop, do not open a theory round, do not promote prototype evidence, and do not grant experiment authority.",
+  "supersedes": "PROJECT_SOURCE_SYNC_REQUEST-v005",
+  "dedup_key": "DUCA-UOR-stop-vs-simplified-replacement-after-second-equivalent-defect-v001",
+  "single_recovery": "None: both exact files were confirmed through the one v002 mutation. The dependent Pro requires a separate lease after PT1M; a read-only inventory is only required if a future authorized mutation becomes unknown.",
+  "last_dispatch": "CENTRAL-ARIS-SOURCES-DUCA-UOR-TERMINAL-v002",
+  "last_receipt_at": "2026-08-14T01:33:33Z",
+  "last_transport_result": {
+    "lease_expires_at": "2026-08-14T01:36:40Z",
+    "mutation_attempt_count": 1,
+    "remote_state": "CONFIRMED",
+    "runtime_cdp": "127.0.0.1:18164",
+    "sync_invocation_count": 1,
+    "confirmed_ledger_ids": [
+      "pfile-20260814T013333Z-628c2a3394",
+      "pfile-20260814T013333Z-3defd047f1"
+    ],
+    "remote_refs": [
+      "chatgpt-project-source:CURRENT_RESEARCH_STATE-v010.md",
+      "chatgpt-project-source:DUCA_DENSITY_UOR_TERMINAL_FAILURE-v001.md"
+    ],
+    "source_count_before": 33,
+    "source_count_after": 35
+  }
+}

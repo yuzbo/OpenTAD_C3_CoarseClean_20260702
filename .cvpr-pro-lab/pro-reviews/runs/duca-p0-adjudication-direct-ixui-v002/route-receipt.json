@@ -1,0 +1,30 @@
+{
+  "dispatch_id": "CENTRAL-PRO-DUCA-P0-v002",
+  "project": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PRO_REVIEW",
+  "request_id": "PRO_REVIEW_REQUEST-v001",
+  "approved_backend": "direct-ixbrowser-project-ui",
+  "nonce": null,
+  "runtime_cdp": "127.0.0.1:47785",
+  "submitted_at": null,
+  "completed_at": "2026-08-11T12:07:50Z",
+  "turn_id": null,
+  "conversation_id": null,
+  "selected_model": null,
+  "selected_effort": null,
+  "last_output_at": null,
+  "stream_state": "NOT_STARTED",
+  "hard_timeout_at": null,
+  "outcome": "NEEDS_ATTENTION:DIRECT_IXBROWSER_UI_BINDING_UNAVAILABLE",
+  "actual_attempt_count": 3,
+  "actual_attempt_increased": false,
+  "evidence": {
+    "profile_61_local_api": "profile_id=61; pid=80396; debugging_address=127.0.0.1:47785; CDP WebSocket was reported by the official local API.",
+    "available_ui_binding": "The supported browser controller exposed only Edge extension profile '用户配置 1' with Bing/new-tab pages; its open-tab list contained no ChatGPT Project page and no evidence that it was iXBrowser profile 61.",
+    "safety_decision": "No fresh conversation or nonce was created because the exact Project, Project Sources, and Pro model/effort could not be proven on profile 61."
+  },
+  "project_ui_touched": false,
+  "project_message_sent": false,
+  "project_source_mutation": false,
+  "retry": "forbidden without a new central recovery decision that provides a verified controllable UI binding for iXBrowser profile 61"
+}

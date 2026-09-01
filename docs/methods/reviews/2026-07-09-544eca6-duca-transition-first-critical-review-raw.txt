@@ -1,0 +1,778 @@
+## 0. 审查范围说明
+
+我按你指定的分支与提交审查：GitHub commit 页面确认当前对象是 `544eca6`，标题为 **“Make DUCA selector transition-first”**，本轮改动覆盖 config、`opentad/models/duca/acquisition.py`、`opentad/models/selectors/duca_online_frame_selector.py`、validator 和 DUCA tests。([GitHub][1])
+
+容器内无法解析 GitHub 域名，因此我没有本地 `pytest`、没有 full train、没有复现实验 mAP；下面是基于 GitHub commit/blob 原始代码视图的代码合同审计和方法审稿结论，不是运行结果复现。
+
+---
+
+# 1. 总裁决：**部分符合，但不能宣称完全符合**
+
+当前实现已经从“PAction/GAS-VT/ledger heuristic”明显转向 **DUCA online pre-backbone selector plugin**，并且在 config、validator、tests 中加入了很多正确的 fail-closed 合同：禁止 ledger、禁止 external actionness、使用 trainable coarse probe、transition/boundary/utility-first、fixed-384 与 dynamic MUST 共用 adapter、官方 backend 不改 head/loss/NMS 等。固定配置中也明确把 actionness 设为辅助项，要求 transition/boundary/utility 权重大于 actionness，并把 `detector_utility_target_kind` 标为 `gt_boundary_utility_proxy` 而非真实 detector-derived utility。([GitHub][2])
+
+但是，作为论文主方法，它仍然只能判为 **MAJOR REVISION / HOLD**，原因很硬：
+
+第一，selector 目前主要看到的是低成本 descriptor 与 actionness 派生曲线，而不是 coarse classifier 的 hidden temporal features。`C3CoarseProbeActionnessSource.forward` 返回 `p_action`、`logits/actionness_logits`、`uncertainty`、`entropy`、`delta_p_action`、`abs_delta_p_action`、`uncertainty_peak`、`transition_score` 和 stacked scalar `features`，但没有返回 `[B,T,D]` 的 `coarse_hidden_features`。([GitHub][3]) selector 的 `_forward_select` 也只是构造 `_time_descriptors_btc(inputs)`，取得 online actionness，然后把 `descriptors/actionness_logits/p_action/valid_mask/budget` 送进 adapter，并没有把 coarse hidden state 送入 selection policy。([GitHub][4]) 这削弱了“粗分类模型 + 间接 selector 协同学习边界”的创新性，容易退化成“p_action 曲线工程特征 + MLP scorer”。
+
+第二，`soft_to_hard_resample / ST bridge` 证明了有梯度旁路，但还不能严格证明 detector loss 真实地优化了 hard selected positions。代码里 hard gather 后再加 soft-to-hard resample gradient path，本质是 `hard + (soft - soft.detach())` 形式的 surrogate；hard index/top-k 本身仍不可微。([GitHub][4]) 这可以作为 ST 估计器，但论文不能写成“detector loss directly optimizes discrete acquisition decisions”。更严重的是 one-step grad proof 使用的是 `DucaOnlinePrecheckHead`，不是官方 AdaTAD/ActionFormer detector head，因此它只能证明 coarse probe、selector encoder、budget controller 在 toy/precheck loss 下有梯度，不能替代 official backend detector-loss proof。([GitHub][5])
+
+第三，当前 `boundary_utility_proxy` 的诚实性有所改进，但 API 和 loss 命名仍有潜在误导。`forward_train` 里构造的是 `boundary_utility_proxy_target`，但又塞进 `detector_utility_target` 字段，并传入 `duca_losses(detector_utility_target=boundary_utility_proxy_target)`；虽然 metadata 写了 `detector_utility_target_kind="gt_boundary_utility_proxy"`，但函数名和变量名仍会让 reviewer 追问：这到底是不是 detector-derived utility？([GitHub][4]) 论文必须完全避开“detector-aware utility target”这种说法，除非你真的用 detector loss / detector sensitivity / mAP delta 构造 target。
+
+第四，当前没有看到显式 max-gap 约束。对 selector 文件搜索 `max_gap` 没有命中；主 config/test 也断言 hole loss 为 0。([GitHub][4]) 因此“放宽最大选帧间隔到 10/15”现在不是一个已经实现的 method knob，而是需要新增的 decoder/regularizer/ablation。
+
+所以最终裁决是：
+
+**当前实现部分吸收了设计初心，但还没有达到可以在论文中无保留宣称“transition-first, jointly trained, detector-loss-calibrated, dynamic online acquisition plugin”的程度。它更准确的状态是：online trainable transition-prior selector skeleton + proxy-supervised boundary/utility loss + ST surrogate bridge + official-backend config contract。**
+
+---
+
+# 2. 已吸收的经验教训
+
+## 2.1 吸收较好的部分
+
+**1. 已经明显脱离 offline ledger 主线。**
+主 config 和 validator 都要求 no ledger、no external actionness、no raw prediction cache，并且 `DucaOnlineFrameSelector` 初始化里有 `no_ledger_decision=True`、`forbid_ledger=True`、`forbid_raw_prediction_cache=True`、`forbid_external_actionness` 这类 fail-closed 合同。([GitHub][4]) 这比早期 lattice / JSONL / value-transport pipeline 更像真正的 online plugin。
+
+**2. 已经把 actionness 从主导信号降级为辅助信号。**
+固定与 dynamic config/test 要求 `actionness_role="auxiliary_only"`，`selector_score_priority="transition_boundary_utility_first"`，并检查 actionness 权重小于 transition/boundary 权重。([GitHub][2]) 这吸收了“actionness coverage 会聚到动作内部、损害边界定位”的教训。
+
+**3. 已经显式引入 transition profile。**
+`acquisition.py` 中 actionness payload 包含 `delta_p_action`、`abs_delta_p_action`、`uncertainty_peak`、`transition_score`；`transition_score = abs_delta + uncertainty_peak`。([GitHub][3]) 这是对“delta_p_action / 状态转换点比动作覆盖更接近 boundary demand”的正确吸收。
+
+**4. 已经修正 ASFormer 私有实现问题。**
+config/test 明确禁止 `asformer_lite`，并使用 `official-action-seg / official_asformer` coarse probe；validator/test 也检查 trainable official action segmentation source。([GitHub][2]) 这比继续写私有 asformer_lite 更安全。
+
+**5. dynamic MUST 不再只是 forced budget curve。**
+dynamic config/validator 要求 `budget_mode="dynamic_must"`、`budget_policy="prefix_marginal_utility_stop"`、`allow_external_budget_override=False`、`forced_budget_curve=False`，并且 `DucaAcquisitionAdapter` 在 dynamic mode 下构造 `PrefixMarginalUtilityBudgetController`。([GitHub][6]) 这比“外部 sweep B=64/128/256/384”更接近模型内部预算策略。
+
+**6. official backend 的合同意识明显增强。**
+validator 检查不改 detector head、不改 loss assignment、不引入 physical-grid head，并要求 official backend rpn head 与 base config 匹配；tests 也检查 `model.rpn_head == official.model.rpn_head`。([GitHub][7]) 这吸收了之前 SparseHead/irregular head 路线中“魔改 head 导致几何崩溃”的教训。
+
+**7. coarse probe、selector、budget controller 的梯度 proof 有了雏形。**
+`test_duca_jct_one_step_grad_proof.py` 检查 one-step proof JSON，要求 fixed/MUST optimizer step 执行，`coarse_probe_grad_sum > 0`、`selector_encoder_grad_sum > 0`，dynamic 还要求 `budget_controller_grad_sum > 0`。([GitHub][8]) 这比只证明 selector 有输出强很多。
+
+## 2.2 只部分吸收的部分
+
+**1. “detector-derived utility”教训只吸收了一半。**
+优点是 config/test/validator 已经承认 `detector_utility_target_kind="gt_boundary_utility_proxy"` 且 `detector_utility_target_is_true_detector_derived=False`。([GitHub][2]) 问题是代码 API 仍叫 `detector_utility_target`，并把 GT proxy 塞进 detector utility loss。([GitHub][4]) 这在论文和 rebuttal 中会被抓住。
+
+**2. “必须接入 official AdaTAD full train path”只在 config/validator 层面成立。**
+配置确实是 official backend full-train path，并且 validator 检查 head/loss 不改。([GitHub][7]) 但梯度 proof 用的是 `DucaOnlinePrecheckHead`，不是 official AdaTAD detector head。([GitHub][5]) 因此目前证据链仍是“官方路径配置存在 + precheck 证明梯度”，不是“官方 detector loss 已实证反向影响 selector”。
+
+**3. “transition-first”已经写进 score/loss 合同，但仍可能退化。**
+当前 actionness scalar features 仍进入 selector，`p_action` 仍在 input profile 内，utility target 也不是纯 detector-derived，而是 GT boundary/action proxy。([GitHub][3]) 如果没有 score component normalization、early schedule、防止 actionness logit scale 主导的测试，transition-first 仍可能只是 config 宣称。
+
+**4. X3D 被排除出主 config，但历史代码路径/叙述边界必须更硬。**
+validator summary 已经要求 `train_free_x3d_is_main_method=False`。([GitHub][7]) 但如果论文图或方法章节还把 X3D train-free dense export 写成 deployable actionness source，就会直接被拒。
+
+---
+
+# 3. 未吸收或逻辑矛盾：对应文件与函数
+
+## P0-1：selector 没有看到 coarse hidden features
+
+**文件/函数：**
+`opentad/models/duca/acquisition.py`
+`C3CoarseProbeActionnessSource.forward`
+
+当前返回 actionness scalar profile 和 stacked `features`，但没有返回 `coarse_hidden_features`。([GitHub][3])
+
+**文件/函数：**
+`opentad/models/selectors/duca_online_frame_selector.py`
+`DucaOnlineFrameSelector._forward_select`
+
+当前 `_forward_select` 构造 `descriptors = _time_descriptors_btc(inputs)`，取得 online actionness，然后调用 `self.adapter.acquire(descriptors=..., actionness_logits=..., p_action=...)`；没有把 coarse probe hidden state 送入 acquisition adapter。([GitHub][4])
+
+**审稿结论：**
+这不是致命工程 bug，但会削弱论文方法性。你现在的方法更像“低维曲线特征 selector”，而不是“coarse temporal encoder 与 acquisition policy 联合学习”。如果主张是 joint coarse-probe/selector，hidden features 应该进入 selector。
+
+---
+
+## P0-2：`detector_utility_target` 命名仍有误导
+
+**文件/函数：**
+`opentad/models/selectors/duca_online_frame_selector.py`
+`forward_train` / target construction
+
+代码把 `boundary_utility_proxy_target` 存成 `detector_utility_target`，并标记 `detector_utility_target_kind="gt_boundary_utility_proxy"`。([GitHub][4])
+
+**审稿结论：**
+这比之前诚实，但还不够。论文中绝不能把它称为 detector-derived utility。代码层面也应该改名，否则 reviewer 会认为你用 GT boundary proxy 伪装 detector utility。正确命名应是：
+
+```text
+boundary_utility_proxy_target
+transition_boundary_proxy_target
+gt_boundary_proxy_target
+```
+
+`detector_utility_target` 这个接口只应保留给真正由 detector loss sensitivity / proposal IoU gain / mAP delta / NMS survival 生成的 utility。
+
+---
+
+## P0-3：ST bridge 不是 hard selection 的真实可微优化
+
+**文件/函数：**
+`opentad/models/selectors/duca_online_frame_selector.py`
+hard gather / `_add_soft_to_hard_resample_gradient_path`
+
+当前 forward 先 hard selected，再用 soft-to-hard resample 或 ST weights 注入 surrogate gradient。([GitHub][4]) 这是合理工程做法，但必须诚实表述为 surrogate estimator。
+
+**审稿结论：**
+不能写成“detector loss differentiably optimizes selected positions”。更准确是：
+
+> Detector loss is propagated to the acquisition scorer through a straight-through soft-to-hard resampling surrogate while inference uses strict hard original-time positions.
+
+如果没有 full official detector loss grad proof，论文主张还要再降一级。
+
+---
+
+## P0-4：one-step grad proof 不是 official AdaTAD detector proof
+
+**文件/函数：**
+`tools/bata/run_duca_jct_one_step_grad_proof.py`
+
+grad proof 构造的是 `DucaOnlinePrecheckHead`，不是 official AdaTAD/ActionFormer head。([GitHub][5]) test 只检查 JSON 中 coarse probe、selector encoder、budget controller 梯度大于 0。([GitHub][8])
+
+**审稿结论：**
+这个测试有价值，但不能支撑“official AdaTAD detector loss 反向影响 selector”的最终论文 claim。必须新增一个官方 backend 的 minimal one-step grad test。
+
+---
+
+## P1-1：dynamic MUST 仍可能只是“cap-length detector”而不是真 variable-length compute
+
+**文件/配置：**
+`configs/adatad/thumos/duca_must_dynamic_official_adatad_backend_full_train.py`
+
+dynamic config 明确写了 dynamic budget controller、budget max/target/min/multiple、forced budget curve false。([GitHub][6]) 但 config 也声明 `actual_variable_length_detector=False`，即 detector 可能仍消费 cap-length/padded representation，而不是实际按每视频 variable K 减少计算。([GitHub][6])
+
+**审稿结论：**
+方法上可以先这样做，但论文不能把 dynamic MUST 夸成已经实现真实 per-video variable compute saving。必须报告：policy chooses variable K, but backend may use padded cap for batching unless runtime kernel/path supports variable length.
+
+---
+
+## P1-2：没有显式 max-gap 机制
+
+**文件/函数：**
+`opentad/models/selectors/duca_online_frame_selector.py`
+
+对 selector 代码搜索 `max_gap` 没有命中。([GitHub][4]) 当前 config/test 还检查 hole loss 为 0。([GitHub][2])
+
+**审稿结论：**
+你现在没有真正实现“max gap 10/15”这个方法维度。`max_radius=16` 不是 max gap；radius decode 控制局部扩展，不等价于全局选帧间隔约束。
+
+---
+
+## P1-3：utility target 仍可能拉向动作内部
+
+**文件/函数：**
+`opentad/models/selectors/duca_online_frame_selector.py`
+`_boundary_utility_proxy_target_from_gt_segments` / target construction
+
+当前 train target 里同时构造 action target、boundary target、boundary utility proxy target，并把 GT proxy 用于 detector utility distribution loss。([GitHub][9]) 如果 proxy 内部区域权重仍不低，utility head 可能学习 actionness coverage，而不是 boundary utility。
+
+**审稿结论：**
+这不是小问题。你的核心论文故事是 boundary/state-transition-first。如果 utility proxy 对动作内部仍给较高 reward，那么 selector 会自然选择动作 plateau，而不是 start/end transition。
+
+---
+
+## P1-4：external/cached path 虽被主 config 禁止，但代码仍保留
+
+**文件/函数：**
+`opentad/models/duca/acquisition.py`
+`ExternalActionnessSource` / cached profile
+
+external cached source 的 provenance 仍有 `source_kind="external_cached_prior"`、`cache_lookup_or_interpolation=True`、`online_backbone_flops_included=False`。([GitHub][3])
+
+**审稿结论：**
+代码保留诊断路径可以，但主方法必须 fail-closed。validator 已经做了一部分；论文实验表必须把 cached/X3D/ledger 统一放 appendix/diagnostic，不能混进 main。
+
+---
+
+# 4. 最危险的 5 个风险点
+
+## 1. P0：论文 claim 超过代码证据
+
+如果论文写“detector-derived utility”或“detector loss directly calibrates hard selection”，当前代码证据不足。实际是 GT boundary proxy + ST surrogate bridge + precheck grad proof。
+
+**修复标准：**
+新增 official AdaTAD one-step detector-loss grad proof；将 proxy target 全面改名；在论文中写 surrogate 而非 direct differentiability。
+
+---
+
+## 2. P0：selector curve-only，创新性不够强
+
+当前 selector 主要看 `p_action/delta/uncertainty/transition_score` 这些 scalar 曲线，加低成本 descriptor。它没有看到 coarse temporal encoder 的 hidden features。([GitHub][3])
+
+**风险：**
+reviewer 会说这是 actionness curve post-processing，不是 joint coarse-probe acquisition model。
+
+**修复标准：**
+coarse probe 输出 `coarse_hidden_features [B,T,D]`；selector 使用 bottleneck hidden features；做 hidden-vs-curve-only ablation。
+
+---
+
+## 3. P0/P1：transition-first 可能只是权重配置，而不是行为事实
+
+虽然 actionness weight 小，但 actionness scalar profile 和 utility proxy 仍可能使 score 学成 actionness top-k。([GitHub][3])
+
+**修复标准：**
+必须记录 score component attribution：actionness component、transition component、boundary head、utility head 对 final selected positions 的贡献；必须做 actionness-first vs transition-first ablation；必须统计 selected-to-boundary distance 和 selected-in-action-interior ratio。
+
+---
+
+## 4. P1：dynamic MUST 可能没有真实计算节省
+
+dynamic policy 存在，但如果 detector 仍以 cap-length padded 方式运行，runtime/FLOPs saving 不能按实际 K 宣称。([GitHub][6])
+
+**修复标准：**
+报告两套数：policy selected K 和 actual detector-consumed observations；若 batching pad 到 384，就不能把 dynamic K=220 写成 detector FLOPs 约 220/768。
+
+---
+
+## 5. P1：缺失 max-gap/gap regularization，聚集偏移会被放大
+
+当前没有显式 `max_gap`。([GitHub][4]) 如果直接放宽到 15，而中心本身有偏移，selector 可能更集中在错误 cluster，边界 miss 更严重。
+
+**修复标准：**
+加 soft gap regularizer + hard gap repair decoder，并做 max_gap 8/10/12/15 ablation，特别看 mAP@0.6/0.7。
+
+---
+
+# 5. X3D 是否可作为主方法：**No**
+
+X3D 不适合作为 DUCA pre-backbone selector 的主 actionness source。
+
+原因很直接：
+
+1. DUCA 的计算动机是 **在昂贵 detector/backbone 前用低成本 online selector 减少观测**。如果 X3D dense inference 要先完整扫全视频，它已经消耗了一个重视频 backbone 的成本，可能比省下的 AdaTAD/VideoMAE compute 更贵。
+
+2. dense X3D export 不是“pre-backbone low-cost probe”，而是另一个 video backbone。即使它 train-free，也不是 free。reviewer 会问：你省了 detector 的 FLOPs，却额外跑了 X3D 全视频，净成本是多少？
+
+3. 当前代码合同也已经把 train-free X3D 排除为主方法；validator summary 要求 `train_free_x3d_is_main_method=False`。([GitHub][7])
+
+X3D 合理位置只有四种：
+
+* oracle-ish upper bound baseline；
+* appendix diagnostic；
+* sparse teacher initialization；
+* offline analysis tool。
+
+论文表述应该是：
+
+> X3D-based actionness is reported only as an offline diagnostic / upper-bound reference. It is not part of the deployable DUCA policy, and its cost is excluded from main efficiency claims only because it is not used by the main method. All main DUCA results use the online low-cost coarse probe and include its compute.
+
+更好的主方法 actionness source 应该是：
+
+* tiny MobileNetV3 / low-res frame classifier；
+* official ASFormer-style lightweight temporal coarse probe；
+* temporal TCN coarse actionness probe；
+* sparse X3D only on candidate windows，而不是 dense all-frame X3D；
+* cached feature 只作为 ablation，不写成 deployable main method。
+
+---
+
+# 6. selector 是否应该看到 coarse hidden features：**Yes**
+
+必须加。
+
+当前 curve-only 设计的问题是：`p_action`、`delta_p_action`、`uncertainty`、`transition_score` 只能描述“概率曲线形状”，不能描述“为什么这里像边界”。如果 coarse probe 的 hidden feature 里已经编码了局部运动、appearance transition、temporal context，而 selector 看不到它，selector 就只能在标量曲线上做二次工程。
+
+推荐最终主方法应改成：
+
+```text
+coarse_probe(video)
+  -> p_action
+  -> actionness_logits
+  -> coarse_hidden_features [B,T,Dc]
+
+selector(
+  low_cost_descriptor,
+  p_action_profile,
+  coarse_hidden_features
+)
+  -> center_score
+  -> radius
+  -> utility
+  -> budget / stop
+
+hard selected original-time frames
+  -> official AdaTAD / ActionFormer detector
+  -> TAD loss
+  -> ST surrogate gradient to selector and coarse probe
+```
+
+为了避免 hidden features 把 selector 变成另一个重 backbone，应加硬约束：
+
+* hidden dim 用 bottleneck，例如 16/32/64；
+* coarse probe 使用低分辨率输入；
+* hidden projection FLOPs 必须计入；
+* 不允许用 detector dense features 反哺 selector；
+* 做 hidden-detached ablation；
+* 做 curve-only vs curve+hidden ablation；
+* 做 hidden dim sweep；
+* 保证 inference 仍只使用 deploy-visible online probe。
+
+这是论文方法性上最值得补的一刀。没有 hidden features，DUCA 很容易被审成“actionness derivative heuristic”。
+
+---
+
+# 7. max gap 10/15 如何设计
+
+## 当前状态
+
+当前 selector 代码里没有显式 `max_gap`。([GitHub][4]) 现有 `max_radius=16` 不是 max-gap；它控制 center-radius decode 的局部扩展，不保证任意两个 selected positions 之间的最大间隔。主 test/config 还检查 hole loss 为 0。([GitHub][2])
+
+## 推荐
+
+主实验先用 **max_gap = 10**，不是 15。
+
+理由：
+
+* 10 比较像“防止大洞”的安全约束；
+* 15 会更省计算/更自由，但在当前存在 cluster 偏移风险时，容易放大边界 miss；
+* TAD 高 IoU 对 boundary 更敏感，max_gap 过大通常先伤 mAP@0.6/0.7；
+* 如果 selector 已经有偏移，放宽 gap 不会修正偏移，只会让错误 cluster 更稀疏、更难覆盖真实边界。
+
+## 具体实现
+
+训练时加 soft gap regularization：
+
+```text
+soft_selection_prob: [B,T]
+
+for every temporal window W of length max_gap + 1:
+    coverage_W = sum soft_selection_prob over W
+    gap_loss = mean relu(min_coverage - coverage_W)
+```
+
+或者用 max 版本：
+
+```text
+gap_loss = mean relu(tau - max soft_selection_prob inside W)
+```
+
+推荐先用 sum coverage，因为更稳定。
+
+推理时加 hard gap repair decoder：
+
+1. 初始按 transition/boundary/utility score 选出 K；
+2. 找 selected positions 中超过 `max_gap` 的大洞；
+3. 在大洞内部按 transition_score / boundary_score / utility_score 插入点；
+4. 若超预算，删除最低 marginal utility 且不破坏 max-gap 的冗余点；
+5. fixed-384 和 dynamic MUST 共用同一 repair 函数。
+
+dynamic MUST 中，max-gap 不应替代 marginal stop policy。正确关系是：
+
+```text
+marginal utility stop 决定预算倾向
+max-gap constraint 保证最小可观测性
+hard budget cap 保证预算不超
+```
+
+推荐 ablation：
+
+```text
+max_gap = 8, 10, 12, 15, None
+```
+
+主看：
+
+* Avg mAP；
+* mAP@0.6；
+* mAP@0.7；
+* selected-to-boundary distance；
+* largest unobserved gap；
+* selected budget K；
+* runtime/FLOPs。
+
+---
+
+# 8. move25 / move50 / dilation 聚集但偏移的最可能原因
+
+## 第一名：actionness binary label 太粗
+
+粗 actionness BCE 鼓励动作内部全高分，不鼓励 start/end boundary 尖峰。于是 p_action plateau 的中心可能在动作内部，delta peak 也可能受到 smoothing/temporal context 影响而偏移。
+
+**验证方式：**
+
+* 统计 p_action peak 到最近 GT boundary 的距离；
+* 统计 abs_delta peak 到最近 GT boundary 的 signed offset；
+* 分 start boundary 和 end boundary 分开看；
+* 按动作持续时间分桶：短动作、中动作、长动作；
+* 画 selected positions 在 GT segment 内部的相对位置分布。
+
+如果大量 selected centers 落在 segment 30%–70% 内部，而不是 0%/100% 附近，就是 actionness supervision 诱导了内部覆盖。
+
+---
+
+## 第二名：coarse probe 的 temporal calibration / stride / smoothing 造成延迟
+
+official ASFormer/TCN/temporal smoothing 很可能把状态转换点向后或向内平滑。特别是 end boundary，p_action 下降常常滞后；start boundary，p_action 上升也可能延迟。
+
+**验证方式：**
+
+* 对每个 GT start/end 计算最近 delta peak 的 signed offset；
+* 看 offset 是否系统性正偏或负偏；
+* 用 synthetic step signal 或手工 segment label 检查 mapping；
+* 对不同 temporal stride、feature_stride、sample_stride 做对齐检查；
+* 对 logits before sigmoid 和 p_action after sigmoid 分别测 offset，判断是不是 sigmoid plateau 导致。
+
+---
+
+## 第三名：selector loss 与 hard decode 不一致
+
+训练中 soft surrogate、boundary proxy、utility distribution loss 可能鼓励 soft coverage，但 eval 用 hard top-k / center-radius decode。soft peak 和 hard selected center 不一致时，会出现“看起来聚集，但中心偏”。
+
+**验证方式：**
+
+* 记录 soft selection distribution peak 与 hard selected centers 的距离；
+* 记录 hard selected center 到 boundary 的距离；
+* 比较训练期 score top-k 与 eval decode top-k；
+* 做 no-ST、ST、soft-to-hard-resample 三种 bridge 对比；
+* 对候选 center 做 detector-loss finite-difference：把 center 从当前位置移到最近 GT boundary，看 detector loss 是否下降。
+
+重要的第四名是 coordinate mismatch / off-by-one。虽然我不把它列前三，但必须做单元测试：GT segment 秒/帧/snippet index 到 selected original-time coordinate 的映射，尤其是 THUMOS 的 inclusive/exclusive end、feature_stride、sample_stride、window offset。
+
+---
+
+# 9. 必须修改的代码点
+
+## 9.1 `opentad/models/duca/acquisition.py`
+
+### 修改 1：让 coarse probe 返回 hidden features
+
+在 `C3CoarseProbeActionnessSource.forward` 中返回：
+
+```python
+return {
+    ...
+    "coarse_hidden_features": hidden,  # [B,T,Dc]
+    "coarse_hidden_dim": hidden.shape[-1],
+}
+```
+
+official ASFormer wrapper 必须暴露最后一层 temporal hidden state；MobileNet/TCN probe 也要暴露低维 temporal embedding。
+
+### 修改 2：adapter 接收并投影 hidden features
+
+`DucaAcquisitionAdapter.__init__` 增加：
+
+```python
+coarse_hidden_dim: int = 0
+coarse_hidden_proj_dim: int = 32
+use_coarse_hidden_features: bool = True
+```
+
+`acquire()` 增加：
+
+```python
+coarse_hidden_features: Optional[Tensor] = None
+```
+
+然后做：
+
+```python
+hidden_proj = self.hidden_proj(coarse_hidden_features)
+selector_input = concat([
+    low_cost_descriptor,
+    actionness_profile_features,
+    hidden_proj,
+])
+```
+
+必须记录 FLOPs，并加入 ablation switch。
+
+---
+
+## 9.2 `opentad/models/selectors/duca_online_frame_selector.py`
+
+### 修改 1：`_forward_select` 传递 hidden features
+
+当前 `_forward_select` 只把 descriptors/actionness logits/p_action 送入 adapter。([GitHub][4]) 应改成：
+
+```python
+online_actionness = self.raw_actionness_source(...)
+coarse_hidden = online_actionness.get("coarse_hidden_features")
+
+acquisition = self.adapter.acquire(
+    descriptors=descriptors,
+    actionness_logits=online_actionness["actionness_logits"],
+    p_action=online_actionness["p_action"],
+    coarse_hidden_features=coarse_hidden,
+    valid_mask=masks,
+    ...
+)
+```
+
+并在 main config 中 assert `use_coarse_hidden_features=True`。
+
+### 修改 2：重命名 detector utility proxy
+
+把：
+
+```python
+detector_utility_target = boundary_utility_proxy_target
+detector_utility_target_kind = "gt_boundary_utility_proxy"
+```
+
+改成：
+
+```python
+boundary_utility_proxy_target = ...
+utility_proxy_target_kind = "gt_boundary_utility_proxy"
+```
+
+`duca_losses` 的参数也改名。只有真正 detector-derived target 才能叫 `detector_utility_target`。
+
+### 修改 3：修正 boundary utility proxy 的内部动作偏置
+
+如果当前 proxy 同时 reward 动作内部和 boundary，必须改成 boundary/transition 优先：
+
+```text
+target = boundary_gaussian(start/end)
+       + lambda_transition * abs label transition
+       + small inside_action_floor
+```
+
+inside action floor 必须小，例如 0.05–0.10，不能主导 utility。
+
+### 修改 4：新增 max-gap regularizer 和 decoder repair
+
+添加参数：
+
+```python
+max_gap: Optional[int] = 10
+gap_loss_weight: float = 0.05
+gap_repair: bool = True
+```
+
+训练 loss 加：
+
+```python
+loss_gap = soft_gap_loss(selection_prob, valid_mask, max_gap)
+```
+
+eval decode 加：
+
+```python
+selected_positions = repair_large_gaps(
+    selected_positions,
+    score=transition_boundary_utility_score,
+    max_gap=max_gap,
+    budget=budget,
+)
+```
+
+### 修改 5：score component logging
+
+必须输出：
+
+```python
+score_components = {
+    "actionness": ...,
+    "transition": ...,
+    "uncertainty": ...,
+    "boundary": ...,
+    "utility": ...,
+}
+```
+
+并记录 selected positions 中每个 component 的平均贡献。否则 transition-first 只是宣称。
+
+---
+
+## 9.3 `tools/bata/run_duca_jct_one_step_grad_proof.py`
+
+当前使用 `DucaOnlinePrecheckHead`。([GitHub][5]) 必须新增 official backend 版本：
+
+```text
+run_duca_official_adatad_one_step_grad_proof.py
+```
+
+要求：
+
+* 使用 official AdaTAD/ActionFormer rpn_head；
+* 使用真实 detector loss；
+* batch=1、T 小、budget 小也可以；
+* 检查：
+
+  * coarse probe grad > 0；
+  * selector encoder grad > 0；
+  * score heads grad > 0；
+  * dynamic budget controller grad > 0；
+  * detector head grad > 0；
+  * no ledger/no cache/no GT at inference。
+
+---
+
+## 9.4 Validators
+
+### `tools/bata/validate_duca_official_adatad_backend.py`
+
+新增检查：
+
+* `use_coarse_hidden_features=True`；
+* `coarse_hidden_proj_dim <= 64`；
+* `score_component_logging=True`；
+* `gap_loss_weight > 0` if `max_gap` enabled；
+* `detector_utility_target` 这个名字不能出现在 proxy path；
+* main config 不允许 external cached actionness source。
+
+### `tools/bata/validate_duca_must_dynamic_official_adatad_backend.py`
+
+新增检查：
+
+* dynamic MUST 与 fixed-384 使用同一 adapter class；
+* dynamic 的 stop score 来自 marginal utility，不来自 externally forced budget；
+* gap repair 不突破 budget cap；
+* 报告 actual detector consumed length，而不是只报告 selected K。
+
+---
+
+## 9.5 Tests
+
+必须新增：
+
+1. `test_duca_coarse_hidden_feature_contract.py`
+   检查 coarse probe 返回 `[B,T,D]` hidden，selector 使用 hidden，hidden 有梯度。
+
+2. `test_duca_score_component_dominance.py`
+   构造 actionness 高但 transition 低、transition 高但 actionness 低的 toy case，要求 selector 更偏向 transition。
+
+3. `test_duca_max_gap_contract.py`
+   检查 hard decode 后任意相邻 selected positions gap ≤ max_gap，且不超预算。
+
+4. `test_duca_official_detector_grad_bridge.py`
+   使用 official backend head，而不是 precheck head。
+
+5. `test_duca_coordinate_mapping_no_off_by_one.py`
+   检查 GT segment 到 original-time selected positions 的映射。
+
+6. `test_duca_dynamic_fixed_unified_policy.py`
+   dynamic budget cap=target=384 时，应退化到 fixed-384 同一 acquisition policy，而不是走完全不同逻辑。
+
+---
+
+# 10. 必须补的实验
+
+## Main paper 必须有
+
+1. **Fixed-384 DUCA main result**
+   对比 uniform stride-2 / exact-uniform / random-fixed / actionness top-k / transition-only。
+
+2. **Dynamic MUST main result**
+   报告 mAP、mAP@0.7、平均 K、actual detector-consumed observations、runtime/FLOPs。
+
+3. **Official AdaTAD backend**
+   detector head/loss/NMS 不改，只插 DUCA selector。
+
+4. **至少一个第二 backend**
+   ActionFormer 或另一个 OpenTAD detector。否则“plugin”泛化性不足。
+
+5. **成本表**
+   必须包含：
+
+   * coarse probe FLOPs；
+   * selector FLOPs；
+   * detector/backbone FLOPs；
+   * total FLOPs；
+   * wall-clock；
+   * memory；
+   * selected K。
+
+6. **边界覆盖指标**
+   不只 mAP：
+
+   * selected-to-nearest-boundary distance；
+   * boundary recall within ±r；
+   * selected-in-action-interior ratio；
+   * largest unobserved gap；
+   * high-IoU mAP@0.6/0.7。
+
+## Ablation 必须有
+
+1. curve-only vs curve+coarse-hidden；
+2. actionness-first vs transition-first；
+3. boundary proxy vs detector-derived utility / detector-gradient-only；
+4. ST mode ablation：hard only / ST sparse gather / soft-to-hard resample；
+5. max_gap 8/10/12/15/None；
+6. dynamic budget target/min/max ablation；
+7. utility proxy inside-action weight ablation；
+8. official ASFormer vs MobileNet/TCN coarse probe；
+9. frozen coarse probe vs jointly trainable coarse probe；
+10. hidden dim 16/32/64 ablation。
+
+## Appendix / diagnostic
+
+1. X3D train-free dense export；
+2. cached actionness / ledger replay；
+3. oracle boundary utility；
+4. move25/move50/dilation visualization；
+5. failure cases：clustered but shifted, long actions, short actions, dense action sequences。
+
+X3D 绝不能放 main method 表里作为 deployable DUCA。
+
+---
+
+# 11. 最终论文方法应该如何表述，避免被审稿人攻击
+
+## 应该这样写
+
+> DUCA is an online pre-backbone temporal acquisition plugin. A lightweight coarse actionness probe produces deploy-visible per-frame actionness logits and low-dimensional temporal hidden features. The acquisition policy uses transition, uncertainty, boundary-proxy, and marginal-utility signals to select strict original-time observations under a hard budget. The selected observations are passed to an unmodified TAD detector. During training, detector loss is propagated to the acquisition policy through a straight-through soft-to-hard surrogate, while inference uses hard selected positions only.
+
+## 不要这样写
+
+不要写：
+
+* “detector-derived utility target”，除非 target 真的来自 detector sensitivity；
+* “fully differentiable hard selection”；
+* “X3D train-free is our main low-cost selector”；
+* “dynamic budget reduces detector compute to average K”，除非 backend 真按 variable K 执行；
+* “boundary-first 已被证明”，除非有 selected-to-boundary metrics 和 transition-first ablation；
+* “official AdaTAD fully joint training proof”，除非有 official backend detector-loss grad proof。
+
+## 推荐最终命名
+
+把当前 proxy 路径命名为：
+
+```text
+Transition-Boundary Utility Proxy
+```
+
+或：
+
+```text
+Boundary-Utility Proxy Supervision
+```
+
+把真正 detector loss 影响称为：
+
+```text
+Detector-loss ST feedback
+```
+
+不要把二者混成：
+
+```text
+Detector-derived utility target
+```
+
+最终 claim 应该压实为：
+
+> DUCA improves sparse temporal acquisition for TAD by prioritizing state transitions and boundary-sensitive observations rather than actionness coverage. It is trained with boundary-utility proxy supervision and detector-loss straight-through feedback, and it plugs into an unmodified detector backend.
+
+---
+
+## 最终一句话裁决
+
+**544eca6 是正确方向的一次明显进步，但还不是论文级闭环。它已经“看起来 transition-first”，也有 online/trainable/official-backend 合同；但 selector 输入仍偏 curve-only，utility target 仍是 GT boundary proxy 而非 detector-derived，ST bridge 仍是 surrogate，official detector-loss grad proof 不足，max-gap 机制缺失。若不补 hidden features、official detector grad proof、gap regularization、score attribution 和严谨 ablation，reviewer 仍会把它打成 actionness-derivative selector + proxy-loss engineering，而不是一个足够强的 DUCA online acquisition method。**
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/544eca6?utm_source=chatgpt.com "Make DUCA selector transition-first · yuzbo/OpenTAD_C3_CoarseClean_20260702@544eca6 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/tests/test_duca_online_precheck_config.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/tests/test_duca_online_precheck_config.py"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/opentad/models/duca/acquisition.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/opentad/models/duca/acquisition.py"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/opentad/models/selectors/duca_online_frame_selector.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/opentad/models/selectors/duca_online_frame_selector.py"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/tools/bata/run_duca_jct_one_step_grad_proof.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/tools/bata/run_duca_jct_one_step_grad_proof.py"
+[6]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/544eca6/configs/adatad/thumos/duca_must_dynamic_official_adatad_backend_full_train.py "https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/544eca6/configs/adatad/thumos/duca_must_dynamic_official_adatad_backend_full_train.py"
+[7]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/tools/bata/validate_duca_official_adatad_backend.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/tools/bata/validate_duca_official_adatad_backend.py"
+[8]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/tests/test_duca_jct_one_step_grad_proof.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/tests/test_duca_jct_one_step_grad_proof.py"
+[9]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/tests/test_duca_joint_training_contract.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/544eca6/tests/test_duca_joint_training_contract.py"

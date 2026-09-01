@@ -1,0 +1,32 @@
+# STREAMING_RECEIPT
+
+- dispatch_id: `CENTRAL-ARIS-PRO-DUCA-SPARSE-PHYSICAL-TOKEN-TRANSFER-v001`
+- request_id: `PRO_REQUEST_DUCA_SPARSE_TOKEN_PHYSICAL_TIME_TRANSFER-v001`
+- invocation_job: `j-ftr1d9`
+- oracle_session: `duca-sparse-physical-time-v1`
+- exact_project_id: `g-p-6a796fef9a00819194024cf1de3bd697`
+- exact_project_url: `https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project`
+- fresh_conversation_id: `6a8d270f-95d4-83ea-b884-32236300a290`
+- fresh_conversation_url: `https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8d270f-95d4-83ea-b884-32236300a290`
+- nonce: `DUCA-H65-SPARSE-PHYSICAL-TOKEN-TRANSFER-v001-20260825`
+- browser_profile: `61`
+- runtime_cdp: `127.0.0.1:14106`
+- requested_model: `gpt-5.6-sol`
+- resolved_model: `GPT-5.6 Sol`
+- picker_evidence: `chatgpt-model-picker / already-selected / verified=true`
+- effort_evidence: `MAX_EFFORT_NOT_SEPARATELY_EXPOSED`
+- prompt_submitted: `true`
+- submitted_at: `2026-08-25T13:24:22+08:00`
+- last_output_at: `2026-08-25T13:24:22+08:00` (submission; no assistant text yet)
+- stream_state: `submitted / running`
+- hard_timeout_at: `2026-08-25T15:24:22+08:00`
+- actual_attempt_count: `1`
+- prompt_path: `E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_SPARSE_TOKEN_PHYSICAL_TIME_TRANSFER-v001.md`
+- raw_log: `C:/Users/skywalker/.fastctx/jobs/j-ftr1d9/output.log`
+- oracle_meta: `C:/Users/skywalker/.codex/oracle/duca-sparse-token-physical-time-v001/sessions/duca-sparse-physical-time-v1/meta.json`
+- visible_report_target: `E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-sparse-token-physical-time-v001/PRO_DUCA_SPARSE_TOKEN_PHYSICAL_TIME_TRANSFER-v001.md`
+- next_owner: `same Oracle invocation`
+- next_action: `event-wait to one final or needs-attention receipt; no follow-up or resubmission`
+- dependency: `GPT-5.6 Sol terminal response in the same fresh exact-Project conversation`
+- expected_return_at: `no later than hard_timeout_at`
+- single_recovery: `one read-only same-session liveness inspection only after 30 minutes without output`

@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "dispatch_id": "CENTRAL-PRO-DUCA-ORACLE-P0-20260811-v003",
+  "request_id": "PRO_REVIEW_REQUEST-v001",
+  "project": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PRO_REVIEW_ORACLE_PROJECT",
+  "runtime_cdp": "127.0.0.1:4334",
+  "submitted_at": "2026-08-11T15:18:21.050Z",
+  "oracle_session": "duca-p0-oracle-v003",
+  "fresh_turn_id": "duca-p0-oracle-20260811-8b12d6f4a90c4b9a",
+  "nonce": "8b12d6f4a90c4b9aa602f1d9b3e75c18",
+  "conversation_id": "6a7b3d3e-f050-83ea-b3db-9ad3b96d55c3",
+  "browser_model_route": {
+    "requested": "gpt-5.5-pro",
+    "resolved_label": "Pro",
+    "strategy": "select",
+    "status": "already-selected",
+    "verified": true,
+    "source": "chatgpt-model-picker"
+  },
+  "effort": "MAX_EFFORT_NOT_SEPARATELY_EXPOSED",
+  "stream_state": "ACTIVE",
+  "last_output_at": null,
+  "hard_timeout_at": "2026-08-11T17:17:04Z",
+  "raw_response_path": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-p0-oracle-formal-v003/raw-response.md",
+  "outcome": "SUBMITTED_STREAMING"
+}

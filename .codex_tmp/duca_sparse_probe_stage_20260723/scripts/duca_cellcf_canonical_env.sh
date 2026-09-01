@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+
+[[ -n "${BASE:-}" ]] || {
+  echo "[DUCA_CELLCF_ENV][FAIL] BASE must be set before sourcing" >&2
+  return 1 2>/dev/null || exit 1
+}
+
+duca_cellcf_fail_source() {
+  echo "[DUCA_CELLCF_ENV][FAIL] $*" >&2
+  return 1 2>/dev/null || exit 1
+}
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  DUCA_CELLCF_IGNORED_PYTHON_SOURCES="$(
+    git ls-files --others --ignored --exclude-standard -- \
+      '*.py' '*.pth' 'sitecustomize.py' 'usercustomize.py'
+  )"
+  [[ -z "${DUCA_CELLCF_IGNORED_PYTHON_SOURCES}" ]] || \
+    duca_cellcf_fail_source \
+      "ignored Python source files could shadow the exact commit"
+  unset DUCA_CELLCF_IGNORED_PYTHON_SOURCES
+fi
+
+export BASE
+unset PYTHONHOME
+unset PYTHONPATH
+export PYTHONNOUSERSITE=1
+export PYTHON="${BASE}/conda_envs/opentad/bin/python"
+export ADATAD_PRETRAIN_PATH="${BASE}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth"
+export YUZIBO_ROOT="${BASE}"
+export C3_OFFICIAL_ACTION_SEG_REPOS="${BASE}/projects/external_official_action_segmentation_repos_20260702"
+export THUMOS14_ANNOTATION_PATH="${BASE}/thumos14/annotations/thumos_14_anno.json"
+export THUMOS14_CLASS_MAP="${BASE}/thumos14/annotations/category_idx.txt"
+export THUMOS14_TRAIN_DATA_PATH="${BASE}/thumos14/train"
+export THUMOS14_TEST_DATA_PATH="${BASE}/thumos14/test"
+
+export DUCA_CELLCF_TRAINING_PROFILE="${DUCA_CELLCF_TRAINING_PROFILE:-exposure132}"
+case "${DUCA_CELLCF_TRAINING_PROFILE}" in
+  exposure132)
+    DUCA_CELLCF_END_EPOCH=132
+    DUCA_CELLCF_EXPECTED_UPDATES=13200
+    DUCA_CELLCF_TERMINAL_EPOCH=131
+    ;;
+  official60)
+    DUCA_CELLCF_END_EPOCH=60
+    DUCA_CELLCF_EXPECTED_UPDATES=6000
+    DUCA_CELLCF_TERMINAL_EPOCH=59
+    ;;
+  *)
+    echo "[DUCA_CELLCF_ENV][FAIL] unknown training profile: ${DUCA_CELLCF_TRAINING_PROFILE}" >&2
+    return 1 2>/dev/null || exit 1
+    ;;
+esac
+export DUCA_CELLCF_END_EPOCH
+export DUCA_CELLCF_EXPECTED_UPDATES
+export DUCA_CELLCF_TERMINAL_EPOCH
+export DUCA_CELLCF_TERMINAL_STATE_KEY=state_dict_ema
+export DUCA_CELLCF_CHECKPOINT_CRITERION="terminal_epoch_${DUCA_CELLCF_TERMINAL_EPOCH}_state_dict_ema"
+
+export DUCA_ONLINE_BUDGET=384
+export DUCA_OFFICIAL_ADATAD_BUDGET=384
+export DUCA_ONLINE_DENSE_WINDOW_SIZE=768
+export DUCA_STRICT_CLAIM_MAX_BUDGET=384
+export DUCA_VALIDATOR_MAX_BUDGET=384
+export DUCA_BUDGET_CURVE_MODE=0
+export DUCA_OFFICIAL_ADATAD_END_EPOCH="${DUCA_CELLCF_END_EPOCH}"
+export DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH=100
+export DUCA_LOSS_SCHEDULE_TOTAL_STEPS="${DUCA_CELLCF_EXPECTED_UPDATES}"
+export DUCA_OFFICIAL_ADATAD_CHECKPOINT_INTERVAL=5
+export DUCA_OFFICIAL_ADATAD_VAL_INTERVAL=-1
+export DUCA_OFFICIAL_ADATAD_VAL_START_EPOCH=9999
+export DUCA_PROFILE_RUNTIME=0
+export DUCA_PROFILE_SYNC_CUDA=1
+
+DUCA_CELLCF_CANONICAL_ENV_KEYS=(
+  ADATAD_PRETRAIN_PATH
+  BASE
+  C3_OFFICIAL_ACTION_SEG_REPOS
+  DUCA_BUDGET_CURVE_MODE
+  DUCA_CELLCF_CHECKPOINT_CRITERION
+  DUCA_CELLCF_END_EPOCH
+  DUCA_CELLCF_EXPECTED_UPDATES
+  DUCA_CELLCF_TERMINAL_EPOCH
+  DUCA_CELLCF_TERMINAL_STATE_KEY
+  DUCA_CELLCF_TRAINING_PROFILE
+  DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH
+  DUCA_LOSS_SCHEDULE_TOTAL_STEPS
+  DUCA_OFFICIAL_ADATAD_BUDGET
+  DUCA_OFFICIAL_ADATAD_CHECKPOINT_INTERVAL
+  DUCA_OFFICIAL_ADATAD_END_EPOCH
+  DUCA_OFFICIAL_ADATAD_VAL_INTERVAL
+  DUCA_OFFICIAL_ADATAD_VAL_START_EPOCH
+  DUCA_ONLINE_BUDGET
+  DUCA_ONLINE_DENSE_WINDOW_SIZE
+  DUCA_PROFILE_RUNTIME
+  DUCA_PROFILE_SYNC_CUDA
+  DUCA_STRICT_CLAIM_MAX_BUDGET
+  DUCA_VALIDATOR_MAX_BUDGET
+  PYTHON
+  PYTHONNOUSERSITE
+  THUMOS14_ANNOTATION_PATH
+  THUMOS14_CLASS_MAP
+  THUMOS14_TEST_DATA_PATH
+  THUMOS14_TRAIN_DATA_PATH
+  YUZIBO_ROOT
+)
+
+duca_cellcf_canonical_env_payload() {
+  local key
+  for key in "${DUCA_CELLCF_CANONICAL_ENV_KEYS[@]}"; do
+    printf '%s=%s\n' "${key}" "${!key}"
+  done
+}

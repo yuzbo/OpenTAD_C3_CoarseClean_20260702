@@ -1,0 +1,23 @@
+{
+  "created_at": "2026-08-12T22:21:28Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_FORMAL_PRE_RUN_ADMISSION_STATIC_ACCEPTANCE",
+  "message_id": "msg-20260812T222128Z-b1f5c8d2a469",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v005",
+    "CRITIC_DUCA_P0_E1_REFERENCE_ADMISSION_MANIFEST_V005_FOCUSED_RECHECK-v001",
+    "EVALUATOR_DUCA_P0_E1_REPLACEMENT_READONLY_PRE_RUN_ADMISSION_FACT_RECHECK-v001",
+    "DUCA_P0_E1_FORMAL_PRE_RUN_ADMISSION-v001",
+    "msg-20260812T220919Z-12f7e8a4d9c3"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Independently perform one static acceptance review only of DUCA_P0_E1_FORMAL_PRE_RUN_ADMISSION-v001 under PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001. Verify: (1) it cites the v005 envelope, Critic v005 PASS, and Evaluator replacement fact PASS without reinterpreting facts 2 or 4; (2) it binds the fresh identity only as an opaque literal and preserves UNREAD, UNOPENED, NOT_CONSUMED, NOT_DISPATCHED, and NOT_EXECUTED, while the old identity remains permanently fail-closed; (3) it does not grant, infer, or exercise E1 execution authority and instead requires a separate post-acceptance determination directly from the Pro decision; (4) no frozen mechanism, fixture domain, split, metric, budget, claim, role order, or evidence class changes; and (5) the record leaves all commands/results/runtime accesses unissued. Do not open, read, parse, consume, dispatch, or execute the fresh identity. Do not run Python, import, compile, test, inspect fixture/reference/projector/adapter content, access remote/SSH/data/model/checkpoint/metric/GPU/CUDA/Slurm/browser, or modify files. Return PASS or exact IMPLEMENTATION_CORRECTION/SCIENTIFIC_AMBIGUITY.",
+  "required_gate": "P0_E1_FORMAL_PRE_RUN_ADMISSION_PENDING",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

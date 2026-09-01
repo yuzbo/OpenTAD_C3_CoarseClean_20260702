@@ -1,0 +1,18 @@
+{
+  "artifact_id": "art-20260811T195756Z-d26416663c",
+  "config_id": null,
+  "created_at": "2026-08-11T19:57:56Z",
+  "created_by_role": "critic",
+  "data_split_id": null,
+  "file_count": 1,
+  "git_revision": "63a726a4aaf48ecbf6780bb196de43a890c6b4df",
+  "kind": "critic-p0-static-patch-review",
+  "parent_ids": [
+    "PRO_P0_ROUTE_ADJUDICATION-v002",
+    "BUILDER_DUCA_P0_BOUNDED_PATCH_RETURN-v001"
+  ],
+  "path": ".cvpr-pro-lab/critic-returns/CRITIC_DUCA_P0_STATIC_PATCH_REVIEW-v001.md",
+  "schema_version": "1.0",
+  "size": 7795,
+  "status": "sealed"
+}

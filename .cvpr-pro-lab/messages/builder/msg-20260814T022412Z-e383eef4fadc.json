@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-14T02:24:12Z",
+  "deadline": "2026-08-14T03:30:00Z",
+  "from_role": "coordinator",
+  "kind": "DUCA_UOR_SEALED_EXECUTION_SURFACE-v001",
+  "message_id": "msg-20260814T022412Z-e383eef4fadc",
+  "parent_artifact_ids": [
+    "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/PRO_DUCA_UOR_TERMINAL_DISPOSITION-v001.md"
+  ],
+  "payload": null,
+  "priority": "critical",
+  "requested_action": "Execute exactly the Pro-authorized additive sealed execution surface on clean commit 6576789468c1a7692d49b2ba94a638e01e7970f4. Scope is one dedicated sealed runner, canonical closed manifest guard, sealed evaluator, fixed literal Slurm launcher, focused static no-data tests, and one tracked commit. Do not modify old 657678 package or access data, validation, GPU, Slurm, remote, training, inference, CAL, evaluation, metrics, or claims. Any scope deviation is terminal STOP; on terminal Builder receipt hand off to the registered independent Critic only.",
+  "required_gate": "PRO_DUCA_UOR_TERMINAL_DISPOSITION-v001",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

@@ -1,0 +1,170 @@
+{
+  "id": "duca-singlecloc-gate-op-v1",
+  "createdAt": "2026-08-24T09:29:09.175Z",
+  "status": "completed",
+  "promptPreview": "请完整阅读已接受 Pro 原文、当前终结器和统计代码。本轮只操作化 Unit-1 终态门，不重开路线。Nonce: DUCA-H65-SINGLECLOCK-UNIT1-GATE-OP-v001-20260824",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-24T09:29:09.765Z",
+      "completedAt": "2026-08-24T09:50:15.236Z",
+      "usage": {
+        "inputTokens": 32860,
+        "outputTokens": 5994,
+        "reasoningTokens": 0,
+        "totalTokens": 38854
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 14106,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "696C5361BB718F340BC789550FACF838",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c0f1c-cdc0-83ea-915e-2af71e390288",
+      "conversationId": "6a8c0f1c-cdc0-83ea-915e-2af71e390288",
+      "promptSubmitted": true,
+      "controllerPid": 68300
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c0f1c-cdc0-83ea-915e-2af71e390288"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-24T09:29:13.704Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "请完整阅读已接受 Pro 原文、当前终结器和统计代码。本轮只操作化 Unit-1 终态门，不重开路线。Nonce: DUCA-H65-SINGLECLOCK-UNIT1-GATE-OP-v001-20260824",
+    "file": [
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_H65_SINGLECLOCK_UNIT1_GATE_OPERATIONALIZATION-v001.md",
+      "C:/Users/skywalker/.codex/oracle/duca-h65-truetime-pro-20260822-v002/final.md",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_FirstMixSingleClock_20260824/tools/bata/finalize_duca_h65_singleclock_terminal.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_FirstMixSingleClock_20260824/tools/bata/analyze_duca_h65_singleclock_strata.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_FirstMixSingleClock_20260824/tools/bata/bootstrap_duca_h65_official_map.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_FirstMixSingleClock_20260824/tests/test_duca_h65_singleclock_finalizer.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65_FirstMixSingleClock_20260824/tests/test_duca_h65_singleclock_strata.py"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-singlecloc-gate-op-v1",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": false,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7500,
+    "httpTimeoutMs": 7500000,
+    "zombieTimeoutMs": 7500000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-h65-singleclock-unit1-gate-op-v001/PRO_DUCA_H65_SINGLECLOCK_UNIT1_GATE_OPERATIONALIZATION-v001.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 68300,
+    "reattachCommand": "oracle session duca-singlecloc-gate-op-v1"
+  },
+  "startedAt": "2026-08-24T09:29:09.761Z",
+  "completedAt": "2026-08-24T09:50:15.277Z",
+  "usage": {
+    "inputTokens": 32860,
+    "outputTokens": 5994,
+    "reasoningTokens": 0,
+    "totalTokens": 38854
+  },
+  "elapsedMs": 1265198,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-h65-singleclock-unit1-gate-op-v001\\oracle-home\\sessions\\duca-singlecloc-gate-op-v1\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 158232,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c0f1c-cdc0-83ea-915e-2af71e390288",
+      "sha256": "9fa639eaa61ea6f8230b323a1dcb6730e2dc154eb3fe40efd214d8b7052ee369",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

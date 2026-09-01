@@ -1,0 +1,548 @@
+审阅对象：你上传的 7 页 DUCA-TAD 草稿。
+
+# A. Overall Verdict
+
+**当前 CVPR 倾向：Reject，接近 Borderline，但不是因为 mAP 表格为空。**
+
+这篇草稿目前已经把最危险的几个边界写对了：它明确说 DUCA-TAD 不是新 detector、不是 offline ledger pipeline；主合同是 dense window `T=768` 到 hard-selected `K<=384`；inference 禁止 teacher、GT、raw prediction cache、offline decision ledger；zero-shot actionness 被定位为 deploy-visible prior / diagnostic，而不是 TAD 成功证据。摘要、Introduction、Figure 1、Problem Formulation 和实验三道 gate 都在反复强调这些边界。
+
+但以 CVPR 成稿标准看，它仍然更像 **method contract + protocol draft**，还不像一篇已经能被 reviewer 信任的完整 method paper。核心问题不是“没有数字”，而是三个主张还没有被文本形式证明清楚：
+
+1. **“Online”到底是什么意思**：当前公式 `Aθ(x1:T)` 看完整窗口，不是经典 causal / streaming online；如果不澄清，title 会被直接攻击。
+2. **Detector loss 如何真正给 selector 梯度**：4.5 写了 hard-forward ST，但按当前文字，hard `gather(V,S)` 后 `Ldet` 对 TopK logits 没有真实梯度路径；`mST` 和 `Lsurrogate` 还不足以支撑“detector loss updates selector”的强 claim。
+3. **Sparse grid 如何改 AdaTAD / ActionFormer 的 assignment、decode、NMS**：文中说 remap through sparse grid，但没有把 offset 单位、support cell、point generator、regression range、NMS 坐标彻底钉死。
+
+当前论文类型判断：**needs method reframing + writing-level contract tightening + experimental completion**。不是 innovation not credible；也不是单纯 writing-only revision。它的定位方向是对的，但现在的 Method 还留下足够多的实现歧义，会让严厉 reviewer 怀疑：这是不是只是把一个 offline selector 包装成 online plugin，或者把一个 selected-axis hack 包装成 original-time TAD。
+
+# B. Top Critical Issues
+
+## 1. Severity: Critical
+
+**Location:** Title, Abstract, Sec. 1, Sec. 3.1, Eq. (2)
+**Problem:** “Online”语义不够安全。当前方法在公式上是 `S = Aθ(x1:T)`，即 selector 看完整 dense candidate window 后一次性 TopK。这个可以是 **in-forward / no-ledger / window-online acquisition**，但不是通常意义上的 streaming causal online detection。
+**Why CVPR reviewers will care:** TAD 领域里 “online” 很容易被理解为不能看未来帧、逐时间 emission、no revision。你的草稿实际想表达的是“inference 时在线生成 selection，不读预计算 ledger”，不是严格 causal On-TAL。这个词如果不限定，会被 reviewer 当成 overclaim。
+**Concrete fix:** 在 Abstract 和 Sec. 3.1 加一句硬定义：
+
+> We use “online acquisition” to mean that selected positions are computed on the fly from the current detector window during the forward pass, rather than loaded from an offline ledger. It does not imply streaming emission or causal no-future detection unless explicitly stated.
+
+更保守的标题可以改成：
+
+> **DUCA-TAD: Detector-Utility-Calibrated In-Forward Temporal Acquisition for Efficient Temporal Action Detection**
+
+或者保留 online，但变成：
+
+> **DUCA-TAD: Window-Online Detector-Utility-Calibrated Temporal Acquisition for Efficient TAD**
+
+## 2. Severity: Critical
+
+**Location:** Sec. 4.5, Eq. (9), Eq. (10), Algorithm 1
+**Problem:** hard-forward ST 的梯度合同没有讲通。Algorithm 1 是 `S <- HardTopK` 然后 `Y <- Dψ(VS, GS)`；如果 `VS` 是通过 hard index gather 得到的 packed subset，`Ldet` 对 `S`、TopK、`g` 都不可导。当前 `mST = stopgrad(1[t in S]-πt)+πt` 没有出现在 detector input 里，只出现在 surrogate loss 里；这意味着 detector loss 本身未必能 update selector。
+**Why CVPR reviewers will care:** 这是 “detector-utility-calibrated” 的方法核心。若梯度路径不成立，DUCA-Joint 就退化成 warm-up + auxiliary proxy，而不是 detector-loss-driven acquisition。
+**Concrete fix:** 二选一，必须写死：
+
+**方案 A：承认 Ldet 不直接穿过 hard gather，改 claim。**
+
+> During hard-forward fine-tuning, detector loss updates the detector parameters, while selector parameters are updated by detector-utility surrogate losses computed on the same hard-selected forward. We do not claim exact gradients through TopK.
+
+**方案 B：实现并描述真正的 custom ST estimator。**
+
+写明 backward 如何把 selected-token detector gradient scatter 回 dense positions，例如：
+
+> In forward, we gather `V_S`. In backward, a custom autograd operator scatters `∂Ldet/∂V_S` to selected dense positions and uses the inner product with candidate descriptors to estimate `∂Ldet/∂g_t`; unselected positions receive gradients only through coverage and budget surrogates.
+
+如果没有 custom autograd 或 differentiable relaxation，就不要写 “detector loss update the selector”。
+
+## 3. Severity: Critical
+
+**Location:** Sec. 3.4, Sec. 4.6, Fig. 1
+**Problem:** original-time sparse grid 是对的，但还只是口号级。`GS={(i, si, τsi, ℓi, ri)}` 没有定义 `ℓi, ri` 如何计算；也没说 detector head 的 offsets 是 selected-index units 还是 original-time units；NMS 是在 selected axis 还是 original time；assignment 的 center sampling、regression range、mask 如何改。
+**Why CVPR reviewers will care:** 你的高-IoU credibility 全靠这个。selected-rank time 一旦混进 assignment/decode/NMS，mAP@0.7 会被几何错误污染。
+**Concrete fix:** 在 Method 加一个明确公式块：
+
+> For selected coordinates `τ_i = s_i`, we define cell boundaries
+> `ℓ_i = (τ_{i-1}+τ_i)/2`, `r_i = (τ_i+τ_{i+1})/2`, clipped to valid window bounds.
+> The detector point center is `c_i=τ_i`. Regression targets and decoded segments are measured in original dense-time units:
+> `y_i^left = c_i - t_start`, `y_i^right = t_end - c_i`,
+> `pred_start = c_i - δ_i^left`, `pred_end = c_i + δ_i^right`.
+> Assignment, regression ranges, score filtering, and NMS all operate after converting to original-time coordinates.
+
+同时加一个 negative-control ablation：**selected-axis decode vs original-time decode**，并把它放进主表或补充主表，不只是文字里一笔带过。
+
+## 4. Severity: Major
+
+**Location:** Sec. 4.1, Related Work, Fig. 1 detector box
+**Problem:** “detector architecture is reused”容易被误读为完全 unchanged detector。实际上 sparse grid 要求 detector 的 point generator、decode、possibly assignment、postprocess 接口改变。
+**Why CVPR reviewers will care:** Reviewer 会问：你到底是 plug-in，还是修改 detector？如果你说 detector unchanged，但又传 `GS` 并 remap predictions，那就是术语不诚实。
+**Concrete fix:** 用更准确的句子替换：
+
+> We reuse the detector’s backbone/head modules and training losses where possible, but introduce an explicit sparse-coordinate interface for point generation, assignment, decoding, and post-processing.
+
+不要写 “unchanged architecture”。写 “detector-compatible sparse interface”。
+
+## 5. Severity: Major
+
+**Location:** Abstract, Table captions, Appendix B
+**Problem:** “Quantitative mAP cells are intentionally left locked...” 和 Appendix B 的 “remaining integration work...” 是内部 draft 语言，不是 CVPR submission 语言。摘要目前明确说结果没跑完。
+**Why CVPR reviewers will care:** 这会让论文读起来像 proposal / progress report，而不是 submission。用户要求本次不把空表当主要问题，但从写作标准看，这些 meta 句子必须移出正式稿。
+**Concrete fix:** 在当前内部 review 版可以保留；正式论文必须改成：
+
+> We evaluate DUCA-TAD through three gates: deploy-visible actionness diagnostics, selection-geometry metrics, and sparse-detector mAP under matched budgets.
+
+Appendix B 的“remaining integration work”应移到项目 TODO，不要出现在 paper camera-ready 语境里。
+
+## 6. Severity: Major
+
+**Location:** Sec. 4.2, Table 1
+**Problem:** zero-shot actionness 的边界总体写得好，但 “Zero-shot with class names / names only” 很危险。THUMOS class names 不是 GT labels，但它是 benchmark taxonomy prior；不能和 generic zero-shot 混成同一 deploy-free claim。
+**Why CVPR reviewers will care:** 这类 prompt provenance 很容易被认为是 benchmark-specific tuning。
+**Concrete fix:** 把 Table 1 分成三类：
+
+| Category                | Source                            | Claim allowed                      |
+| ----------------------- | --------------------------------- | ---------------------------------- |
+| Label-free deploy prior | generic action/background prompts | zero-shot deploy-visible           |
+| Dataset-taxonomy prior  | THUMOS class-name prompts         | dataset-aware zero-shot diagnostic |
+| Trained selector        | C3/PAction/DUCA-adapted           | supervised / adapted baseline      |
+
+正文明确：class-name prompt 不支撑 “generic zero-shot” claim。
+
+## 7. Severity: Major
+
+**Location:** Sec. 3.1, Sec. 4.2, Sec. 5.3
+**Problem:** observation unit 和 compute contract 不够硬。`V={vt}` 可以是 raw frames、snippets、precomputed features 或 detector tokens。若 dense candidate descriptors 已经来自昂贵 backbone，那么 “efficient” 和 “detector consumes only selected observations” 的 compute claim 会被削弱。
+**Why CVPR reviewers will care:** Efficient TAD 的核心是节省什么成本。若 selector 先计算了全 dense features，再选 384，可能只是 temporal head sparse，不是 pre-backbone saving。
+**Concrete fix:** 加一个 subsection “Observation and compute boundary”：
+
+> `V` denotes the temporal observations at the acquisition boundary. In the pre-backbone setting, DUCA selects raw/snippet inputs before the expensive detector backbone; in the feature-stream setting, it only reduces detector-head cost and is reported separately. All compute tables report selector cost, low-cost descriptor cost, detector backbone cost on selected observations, temporal-head cost, memory, and latency.
+
+## 8. Severity: Major
+
+**Location:** Related Work
+**Problem:** Related Work 太短，当前只覆盖 TAD、efficient TAD、video reasoning frame selection、zero-shot actionness、provenance。缺少至少四块：differentiable top-k / subset selection / ST estimators；adaptive token/frame pruning in video; online/streaming temporal action localization; sparse/irregular temporal grids or non-uniform sampling geometry。
+**Why CVPR reviewers will care:** 你的 novelty 在“detector-aware acquisition + original-time sparse grid + no-leak online contract”，Related Work 必须证明这些组合不是已有工作的直接改名。
+**Concrete fix:** 增加一个 taxonomy paragraph：
+
+> Existing efficiency methods reduce backbone, prune blocks/tokens, or select frames for recognition/video reasoning; DUCA differs because TAD requires proposal assignment, regression, and NMS in original time under a hard selected-observation budget.
+
+## 9. Severity: Major
+
+**Location:** Sec. 5.3, Table 3
+**Problem:** final sparse detector mAP protocol方向正确，但公平性细节不足。需要写清楚 detector 是 frozen dense detector、fine-tuned sparse detector、还是 DUCA-Joint detector；uniform/random 是否同等 fine-tune；每个 policy 是否共享 detector weights；是否使用官方 OpenTAD evaluation。
+**Why CVPR reviewers will care:** selector paper 最常见的实验漏洞是：某个 selector 顺带 fine-tune detector，而 uniform baseline 没有同等待遇。
+**Concrete fix:** Table 3 增加 columns：`Detector training`, `Selector training`, `Coordinate mode`, `Seeds`, `Eval config`。至少设置：
+
+* Uniform-384 + same sparse fine-tuning
+* Random-384 + same sparse fine-tuning
+* Actionness-topK + same sparse fine-tuning
+* DUCA-warmup + same sparse fine-tuning
+* DUCA-joint
+* Dense detector reference
+
+## 10. Severity: Minor/Major depending on final version
+
+**Location:** Appendix A/B, Table 4
+**Problem:** Appendix A 只有标题，Table 4 跑到第 7 页；Appendix B 是 internal status note。Table 4 内容本身很好，但当前排版和正文连接弱。
+**Why CVPR reviewers will care:** Audit 是你论文的可信度资产，不能像临时附录。
+**Concrete fix:** 把 Table 4 移到 Appendix A 下，并加 1 段 validator pseudocode。Appendix B 改名为 “Implementation Contract” 或删除内部进度描述。
+
+# C. Claim and Scope Audit
+
+| Claim in paper                               |                                                                                        Is it supported by current text/protocol? |                                                                      Is it overclaimed? | Evidence eventually needed                                                                                                                       |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------: | --------------------------------------------------------------------------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| DUCA is an online acquisition plugin         |                                                          **Partially.** Text repeatedly says online/in-forward/no-ledger plugin. | **Yes, unless “online” is defined.** Current formula sees `x1:T`, so not causal online. | Runtime proof that selection is generated during each forward, no precomputed ledger read; clarify non-causal window-online vs streaming online. |
+| Hard selected positions `K<=384`             |                                                **Mostly supported.** Eq. (2), Eq. (7), Algorithm 1 state hard TopK and `K<=384`. |                           Not overclaimed if code enforces detector consumes only `VS`. | Assertions on selected_count, tensor shapes, detector input length, no dense bypass; logs in audit records.                                      |
+| Detector consumes only selected observations |                                **Textually supported.** Problem Formulation says detector receives only `VS`, not full sequence. |                             Potentially overclaimed unless compute boundary is defined. | Forward hooks proving no full dense tensor enters detector; memory/FLOP logs; selected-only backbone/head accounting.                            |
+| Detector-utility calibration                 |                                        **Partially.** Eq. (4) defines train-only utility from detector responsibility/loss/risk. |             **Yes.** It is a target definition, not yet a proven calibration mechanism. | Warm-up ablations; utility-target quality; DUCA vs actionness-only; teacher-free validation; detector mAP gains.                                 |
+| Hard-forward ST joint fine-tuning            |            **Under-supported.** Eq. (9)-(10) introduces ST mask, but the detector uses packed `VS`; gradient route is ambiguous. |     **Yes. Critical.** “Detector loss updates selector” is not yet textually justified. | Nonzero gradient tests on selector logits from `Ldet`; custom autograd or differentiable relaxation; ablation removing ST.                       |
+| Original-time sparse grid protects high IoU  |                                                 **Conceptually supported.** Eq. (5) and Sec. 4.6 state remapping before NMS/mAP. | Mildly overclaimed. “Key object for high-IoU credibility” is necessary, not sufficient. | Unit tests for assignment/decode/NMS; selected-axis negative control; mAP@0.6/0.7 improvements; boundary error histograms.                       |
+| Teacher-free inference                       |            **Strongly supported.** Sec. 3.2 and Sec. 4.7 explicitly forbid GT, teacher, raw predictions, caches, offline ledger. |                                                    Not overclaimed if validators exist. | Static code scan, recursive runtime validators, audit flags false on val/test, provenance hashes.                                                |
+| Zero-shot actionness role                    |  **Well supported.** Related Work and experiments say zero-shot actionness is a deploy-visible prior/diagnostic, not TAD result. |                                       Mostly not overclaimed. Risk: class-name prompts. | AUROC/AUPRC/R@K reported separately; prompt/checkpoint hashes; generic vs class-name prompt split.                                               |
+| Audit ledger only                            | **Strongly supported.** Text says written after selection and never read as decision source; Table 4 fields enforce false flags. |                                              Not overclaimed if implementation matches. | Code path proof: ledger writer after selector; no ledger loader in inference; fail-closed validators.                                            |
+| Efficient TAD                                |                                                                                  **Partially.** Table 3 promises cost reporting. |            **Potentially overclaimed** unless descriptor/backbone boundary is explicit. | End-to-end latency, memory, FLOPs, selector cost, descriptor cost, dense reference, selected-only detector cost.                                 |
+
+# D. Section-by-Section Review
+
+## 1. Title
+
+**Current title:** “DUCA-TAD: Detector-Utility-Calibrated Online Temporal Acquisition for Efficient Temporal Action Detection”
+
+**Clear?** Mostly clear.
+**CVPR fit?** Strong acronym/title structure.
+**Main risk:** “Online” and “Efficient” are both claim-heavy. “Online” may imply causal streaming; “Efficient” requires complete cost accounting.
+**Fix direction:** Use one of these:
+
+1. **Most honest:**
+   “DUCA-TAD: Detector-Utility-Calibrated In-Forward Temporal Acquisition for Efficient Temporal Action Detection”
+
+2. **If keeping online:**
+   “DUCA-TAD: Window-Online Detector-Utility-Calibrated Temporal Acquisition for Efficient Temporal Action Detection”
+
+3. **If sparse grid is the main novelty:**
+   “DUCA-TAD: Detector-Utility-Calibrated Sparse Temporal Acquisition with Original-Time Decoding”
+
+## 2. Abstract
+
+**Strength:** The abstract does a good job separating DUCA from offline subsampling, stating `K<=384`, teacher-free inference, audit ledger only, and zero-shot diagnostics.
+**Problem:** It contains internal-draft language: “Quantitative mAP cells are intentionally left locked...” That cannot appear in a real submission abstract.
+**Problem:** “Training uses dense detector utility only as supervision” is too absolute. If joint fine-tuning uses `Ldet`, then detector loss is also part of training.
+**Problem:** “hard-forward ST stage lets detector loss update the selector” is currently overconfident unless the gradient path is fixed.
+
+**Suggested rewrite of the last half:**
+
+> DUCA-TAD learns a selector from train-only detector-utility targets, including boundary support, proposal responsibility, and hard-negative risk. We then fine-tune with a hard sparse forward pass and explicitly defined straight-through or surrogate selector gradients. At inference, selection is computed from deploy-visible inputs only; no teacher, ground truth, raw detector prediction cache, or offline decision ledger is read. The selector emits original-time selected positions and a sparse temporal grid used for assignment, decoding, and post-processing. We evaluate deploy-visible actionness, selection geometry, no-leak provenance, compute, and sparse-detector mAP under matched budgets.
+
+## 3. Introduction / Contributions
+
+**Clear?** The problem motivation is strong: uniform sampling wastes budget; actionness top-K overselects interiors; high-tIoU localization needs boundary/transition coverage. This is the correct story.
+**Logical jump:** The introduction moves from “actionness top-K fails boundaries” to “detector-utility-calibrated acquisition” without giving a crisp example of detector utility. Add one concrete example:
+
+> A low-confidence boundary cell may have low actionness but high detector utility because it anchors regression and suppresses adjacent hard negatives.
+
+**Contribution bullets:** Good, but contribution 4 is mostly protocol/audit. CVPR reviewers prefer method contributions first, protocol second. Suggested order:
+
+1. Formal hard-budget in-forward acquisition contract.
+2. Detector-utility selector with train-only utility and teacher-free inference.
+3. Original-time sparse grid interface for assignment/decode/NMS.
+4. Evaluation and audit protocol, including zero-shot diagnostics and no-leak provenance.
+
+**Terminology issue:** Use exactly one term: “selected observations,” “selected positions,” or “selected temporal observations.” Do not alternate with “frames” unless the acquisition boundary is raw frames.
+
+## 4. Related Work
+
+**Current quality:** Adequate but too thin. It correctly positions DUCA as not replacing ActionFormer/AdaTAD and states zero-shot actionness is not a TAD result.
+**Missing pieces:**
+
+* Differentiable subset selection, TopK, Gumbel/ST, hard attention.
+* Efficient video token pruning / frame pruning beyond video-language reasoning.
+* Online/streaming TAD if “online” remains in title.
+* Sparse/non-uniform temporal grids and irregular sampling geometry.
+* Active acquisition / detector-aware sampling.
+* Official implementation/evaluation fairness issues in OpenTAD-like systems.
+
+**Concrete addition:** Add one paragraph called “Hard subset selection and sparse coordinates.” This paragraph should say your novelty is not TopK itself; it is detector-utility calibration plus original-time detector interface under no-leak inference.
+
+## 5. Problem Formulation
+
+**Strength:** Sec. 3 is the best part of the paper. It defines `V`, `S`, `K<=Kmain`, teacher-free inference boundary, train-only utility, and sparse grid.
+**Critical fixes:**
+
+1. Define whether `V` is raw frames, snippets, precomputed features, or detector tokens.
+2. Define “online” explicitly.
+3. Fix Eq. (4) syntax: `u*_t = norm(α y^bnd_t + β y^act_t + γ d_t)`.
+4. Explain normalization: per-video? per-window? dataset-level? clipped? stopgrad?
+5. Hard-negative risk should include negatives, not only `p in P+`. Current text says each positive point has hard-negative weight `rp`, which is conceptually odd. Better:
+
+> Dense detector points are split into positive proposal-support points `P+` and high-scoring negative points `P-`. Positive points contribute boundary/proposal responsibility; negative points contribute risk suppression.
+
+## 6. Method
+
+**Current quality:** Good skeleton, not yet enough as method.
+**Main problems:**
+
+* Sec. 4.2 allows many deploy-visible sources but does not define the selector architecture enough: temporal encoder type, causal/non-causal receptive field, output shape, masks, valid prefix.
+* Sec. 4.3 TopK is fine, but “gap guards repair pathological holes” needs deterministic algorithm and budget preservation.
+* Sec. 4.5 is currently the weakest section because the gradient path is not technically convincing.
+* Sec. 4.6 must become implementation-grade.
+
+**Concrete rewrite direction for 4.5:** Rename it to one of:
+
+* “Hard-Forward Surrogate Fine-Tuning” if no true gradient through TopK.
+* “Hard-Forward Straight-Through TopK with Custom Backward” if implemented.
+
+Do not leave it halfway.
+
+## 7. Figure 1
+
+Detailed review is in Section E below. In short: conceptually good, visually useful, but arrows blur train-only utility, detector loss, and audit record. It should be redrawn as a two-lane graph with a clear firewall.
+
+## 8. Experiments Protocol
+
+**Strength:** The three gates are exactly the right philosophy: coarse actionness → selection geometry → sparse detector mAP. The draft explicitly says sparse detector mAP is the final test and zero-shot AUROC is only a first gate.
+**Main gaps:** fairness details, detector fine-tuning parity, official eval config, compute boundary, and prompt taxonomy.
+
+## 9. Discussion / Limitations
+
+**Strength:** Honest and aligned with the method boundary. It explicitly says zero-shot actionness can fail TAD despite AUROC/AUPRC, and sparse detector mAP at high tIoU is final arbiter.
+**Missing limitation:** Add:
+
+> DUCA-TAD is not a streaming online detector unless run with a causal descriptor and prefix-only selection. The main setting is window-online acquisition: selection is generated at inference for the current detector window and not loaded from an offline ledger.
+
+Also add a compute limitation:
+
+> If DUCA is applied after dense feature extraction, it reduces detector-head temporal cost but does not claim full video-backbone savings.
+
+## 10. Appendix / Audit Schema
+
+**Table 4 is good.** It has exactly the fields reviewers need: selected positions, sparse grid, selected count, valid/dense length, provenance, diagnostics, false flags for GT/teacher/raw prediction/cache/offline ledger.
+**But Appendix A/B currently looks unfinished.** Appendix A has only a title; Appendix B contains internal implementation status. For final paper, this must become:
+
+* Appendix A: Audit schema + validator pseudocode.
+* Appendix B: Sparse grid decode derivation.
+* Appendix C: Implementation checks and no-leak tests.
+
+# E. Figure 1 Review
+
+**Current Figure 1 strengths:**
+
+* It is immediately clear that the top lane is inference and the bottom lane is training-only calibration.
+* It shows dense candidate window → deploy-visible sources → DUCA hard selector → sparse grid → detector.
+* It explicitly labels audit as “record only” and inference forbids GT/teacher/cache/offline ledger.
+
+**Problems:**
+
+1. **“Teacher-free online inference” label is too close to the top-left and visually weak.** It should span the entire top lane as a header.
+2. **The dashed arrows from training boxes to DUCA selector are ambiguous.** They imply teacher utility may enter the selector directly at inference unless the firewall is drawn more strongly.
+3. **The hard-forward ST box says “detector loss gradient” but does not show the detector loss source.** It points to selector, but the detector box is in the inference lane. Reviewer will ask: where is the training detector forward? Is it the same path? Does detector loss update selector or only detector?
+4. **Audit record arrow direction is ambiguous.** The audit record appears connected to sparse grid and then to “Inference forbids...” which can look like a runtime control module. It should be a sidecar written after selection/detection, with no arrow back.
+5. **The detector box says “AdaTAD / ActionFormer detect and remap to original time.”** This hides the key method: remap is not just a detector box label; it is a sparse-grid adapter before assignment/decode/NMS.
+6. **No visual “no dense bypass” guarantee.** A hostile reviewer wants to see that full `V` cannot bypass selector into detector.
+
+**Concrete redraw:**
+
+Use three horizontal lanes:
+
+### Lane 1: Inference graph, solid arrows only
+
+`Dense candidate window V_t`
+→ `Low-cost deploy-visible descriptors z_t`
+→ `DUCAθ hard TopK`
+→ `selected_positions S, K<=384`
+→ `Gather V_S`
+→ `SparseGrid G_S: original coordinates + support cells`
+→ `Detector Dψ(V_S, G_S)`
+→ `Predictions in original time`
+
+Add a red crossed-out bypass arrow from `V_1:T` to detector: **“forbidden dense bypass.”**
+
+### Lane 2: Training-only supervision, dashed arrows
+
+`Dense teacher / detector utility on train split`
+→ `u*_t: boundary + responsibility + hard-negative risk`
+→ `warm-up loss / surrogate loss`
+→ `DUCAθ`
+
+Put a vertical red firewall between this lane and inference:
+
+**“Removed before validation/test/deployment.”**
+
+### Lane 3: Audit sidecar
+
+From `selected_positions S` and `SparseGrid G_S`, arrow down to:
+
+`Post-decision audit record: hashes, selected count, no-leak flags, cost`
+
+Add: **“No arrow from audit to selector.”**
+
+# F. Method Logic Stress Test
+
+## Q1. ST hard-forward 是否讲清楚？
+
+**No. 当前没有讲清楚。**
+你写了 `mST`，但 detector forward 用的是 `Dψ(VS,GS)`，不是 `Dψ(mST ⊙ V, GS)`。如果 `VS` 是 hard gather，标准 autograd 不会让 `Ldet` 回到 `g_t`。因此 “hard-forward straight-through stage lets detector loss update the selector” 目前是最危险的句子。
+
+**最低修复标准：** 加一个 paragraph 明确 forward/backward implementation。只写公式不够。
+
+## Q2. detector loss 如何给 selector 非零梯度？
+
+**当前文本没有证明。**
+`Lsurrogate(mST,u*)` 给 selector 梯度，但那是 surrogate utility target，不是 detector loss 的真实梯度。若你希望 `Ldet` 参与 selector 更新，需要说明：
+
+* `∂Ldet/∂g_t` 如何估计；
+* unselected positions 是否有梯度；
+* selected positions 的 detector gradient 如何 scatter；
+* 是否使用 soft relaxation during backward；
+* 是否有 gradient check。
+
+**建议在 Method 加一个 implementation note：**
+
+> We report a gradient-path unit test: after one sparse detector forward, `||∂Ldet/∂θ_selector||` is nonzero when ST is enabled and zero when the ST bridge is disabled.
+
+## Q3. selected-axis proposal 如何 remap original-time？
+
+**Concept yes, implementation no.**
+文中说 selected rank is not physical time，这句话非常正确。 但 reviewer 需要知道：
+
+* selected point center 是 `τ_i` 还是 `i`;
+* offsets 的单位是什么；
+* multi-level FPN stride 怎么定义；
+* support cell `ℓ_i,r_i` 如何处理 endpoints；
+* NMS 输入是否全是 original-time segment；
+* assignment 是否也用 original-time IoU/center sampling。
+
+## Q4. hard select 是否真的让 detector 只消费 selected observations？
+
+**Text says yes, but final paper needs proof.**
+Problem Formulation 和 Algorithm 1 都写 detector receives `VS`, not full sequence。 但论文还需要一个 audit/implementation check：
+
+> For every validation sample, we log detector input temporal length, selected_count, dense_len, and a boolean `dense_bypass=false`.
+
+如果是 precomputed features，必须说清楚节省的是 detector temporal cost，不是 raw video backbone cost。
+
+## Q5. train-only teacher utility 是否可能泄漏？
+
+**Text boundary is strong.**
+Sec. 3.2、4.7、Table 4 都明确禁止 GT、teacher、raw predictions、cache、offline ledger。
+**But** 还需要写明 source provenance validator 是 fail-closed，不是只记录。比如：
+
+> Validation/test inference aborts if any audit field indicates teacher/GT/cache/offline-ledger access.
+
+## Q6. zero-shot branch provenance 是否足够？
+
+**Mostly yes.**
+Prompt text/hash、checkpoint hash、class-name usage、frozen/adapted status、score cost都写到了。
+**Risk:** THUMOS class-name prompts需要降级为 “dataset-taxonomy prompt diagnostic”，不能和 generic prompt 混成纯 zero-shot deploy claim。
+
+# G. Language and Wording Audit
+
+下面这些句子容易被攻击，建议直接替换。
+
+| Original                                                                     | Problem                                       | Suggested rewrite                                                                                                                                                                                      |
+| ---------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| “Online Temporal Acquisition”                                                | 可能被理解为 causal streaming online。               | “In-forward / window-online temporal acquisition.” 或首次出现时定义 online means on-the-fly per detector window, not offline ledger.                                                                           |
+| “We study a stricter problem than offline frame subsampling”                 | “stricter”可保留，但需要说明 strict 在哪里。               | “We study a deployment stricter than offline subsampling: selected positions must be generated during the detector forward from deploy-visible inputs and cannot be loaded from a precomputed ledger.” |
+| “DUCA-TAD uses deploy-visible signals...”                                    | “deploy-visible”重复多，但定义不够正式。                  | “At inference, the selection function is restricted to deploy-visible descriptors: ...”                                                                                                                |
+| “Training uses dense detector utility only as supervision”                   | “only”不准确；joint fine-tuning还涉及 detector loss。 | “Training may use dense detector utility as train-only supervision; inference never reads this utility.”                                                                                               |
+| “hard-forward straight-through stage lets detector loss update the selector” | 当前梯度合同未证明。                                    | “a hard-forward fine-tuning stage uses an explicit ST/surrogate gradient path to update the selector; we verify nonzero selector gradients from the sparse detector objective.”                        |
+| “detector architecture is reused”                                            | 容易被读成 detector unchanged。                     | “detector modules are reused, while the input and coordinate interface is made sparse-grid aware.”                                                                                                     |
+| “The sparse temporal grid is the key object for high-IoU credibility”        | 语气像宣传，且 necessary not sufficient。             | “The sparse temporal grid is necessary for high-tIoU evaluation because selected-rank time is not a metric time axis.”                                                                                 |
+| “Optional center-radius or gap guards repair pathological holes”             | “repair”听起来像 heuristic post hoc patch。        | “Budget-preserving deterministic guards fill large online-score holes and are ablated separately.”                                                                                                     |
+| “Zero-shot with class names”                                                 | 容易被认为偷用 benchmark taxonomy。                   | “Dataset-taxonomy zero-shot prompts; reported separately from generic prompts.”                                                                                                                        |
+| “Quantitative mAP cells are intentionally left locked...”                    | CVPR submission 不应出现内部状态。                     | 删除。内部 draft 可保留在 cover note，不放 paper。                                                                                                                                                                  |
+| “The current implementation direction exposes...”                            | Appendix B 像项目报告。                             | “Implementation contract.” 然后写 invariant checks，不写 remaining work。                                                                                                                                     |
+| “Sparse detector mAP ... is the final arbiter”                               | 可以保留，但略口语。                                    | “Sparse-detector mAP, especially at high tIoU thresholds, is the decisive evaluation metric.”                                                                                                          |
+| “not a TAD result”                                                           | 方向对，但可更正式。                                    | “does not by itself establish temporal action detection performance.”                                                                                                                                  |
+| “teacher-free inference boundary”                                            | 好，但建议定义一次。                                    | “Teacher-free inference means the selection graph contains no GT, teacher utility, raw detector predictions, cached proposals, or offline decision records.”                                           |
+
+# H. Experiment Protocol Audit
+
+## 1. Coarse zero-shot actionness eval 是否与 TAD mAP 分开？
+
+**Yes, 方向正确。**
+草稿明确把 zero-shot actionness 放在 Gate 1，并说 AUROC/AUPRC 只是 coarse action/background separation，不等同于 TAD result。
+
+**Fix:** Table 1 需要拆分 generic prompts、class-name prompts、learned sources。尤其 “Zero-shot with class names” 不能和 generic zero-shot 使用同一 claim。
+
+## 2. Selection geometry metrics 是否完整？
+
+**基本完整，但需要更 TAD-specific。**
+已有 touched recall、boundary coverage、short-action recall、max hole、p95 hole、redundancy、uniform similarity。
+
+建议增加：
+
+* Start boundary recall / end boundary recall 分开；
+* boundary radius: ±1, ±2, ±4, ±8 dense positions；
+* duration-stratified recall: short / medium / long；
+* action interior over-selection ratio；
+* largest uncovered GT action fraction；
+* selected-count drift；
+* per-window max gap inside action vs background；
+* duplicate/near-duplicate selection rate；
+* selected-position entropy / density profile。
+
+## 3. Sparse detector mAP eval 是否是最终裁决？
+
+**Yes。**
+Sec. 5.3 明确 final test 是 sparse detector accuracy，detector consumes only selected observations，dense input only for high-cost reference。
+
+**Fix:** 必须写清楚所有 methods 的 detector training parity：
+
+* Dense detector 768: reference only.
+* Uniform-384: same sparse detector adaptation/fine-tuning budget as DUCA.
+* Random-384: multiple seeds, same detector adaptation.
+* Actionness-topK: same detector adaptation.
+* DUCA-warmup: same detector adaptation.
+* DUCA-joint: selector+detector joint.
+
+否则 reviewer 会说 DUCA 只是多训练了 detector。
+
+## 4. Baselines 是否公平？
+
+**当前 baseline list 合理，但还不够完整。**
+
+必须保留：
+
+* Dense-768 high-cost reference；
+* exact uniform-384；
+* random-384，多 seed；
+* motion/energy-384；
+* zero-shot actionness topK；
+* C3/PAction learned baseline；
+* oracle diagnostic，单独隔离；
+* selected-axis decode negative control；
+* original-time sparse-grid decode；
+* dynamic-K matched-average fixed-budget control。
+
+建议 Table 3 加上 `same detector adaptation?` 和 `coordinate mode` 两列。
+
+## 5. Oracle variant 是否只作为 diagnostic？
+
+**Yes，文本写得比较安全。**
+Sec. 5.1 明确 oracle actionness 是 diagnostic upper bound，不是 deployable method。
+
+**Fix:** 不要把 oracle 放在主方法对比表中紧邻 DUCA-Joint；最好放到 separate diagnostic table，避免 reviewer 误读。
+
+## 6. Dynamic K 是否没有替代 fixed 384 主实验？
+
+**Yes。**
+Sec. 4.3 和 5.3 都说 dynamic K 是 ablation，不能替代 fixed-budget main result，并要 matched-average fixed controls。
+
+**Fix:** 在 abstract / contribution 中也不要强调 dynamic K。主 paper claim 固定为 `K<=384` hard budget。
+
+## 7. no-leak / provenance / compute accounting 是否充分？
+
+**No-leak provenance: good skeleton.**
+Audit fields和 validators 已经覆盖 GT、teacher、raw prediction、cache、offline ledger。
+
+**Compute accounting: still insufficient.**
+Table 3 只有 “Cost” 一列，正文列了 selected count、score-generation cost、backbone FLOPs、memory、latency。 但必须拆分：
+
+* low-cost descriptor cost；
+* zero-shot scorer cost；
+* selector temporal encoder cost；
+* expensive video backbone cost；
+* detector head cost；
+* postprocess/NMS cost；
+* wall-clock latency；
+* peak memory；
+* whether dense features were precomputed.
+
+否则 “efficient” claim 会被打穿。
+
+# I. Final Action List
+
+## Must fix before next Pro review
+
+1. **定义 online。** 明确是 window-online / in-forward / no-ledger acquisition，不是 causal streaming On-TAL，除非你真的做 prefix-only causal selection。
+2. **重写 title 或加限定。** 避免 “online” 被误解。
+3. **删除 Abstract 中 “result cells locked” 的正式论文语气。** 这可以在内部 draft note 保留，不应在 submission abstract。
+4. **重写 Sec. 4.5。** 要么实现 custom ST gradient 并写清 backward；要么把 claim 降级为 hard-forward surrogate fine-tuning。
+5. **形式化 sparse grid decode。** 定义 `ℓ_i,r_i`、center、offset单位、assignment、regression range、NMS坐标。
+6. **改掉 “detector architecture reused” 的绝对含义。** 写成 detector modules reused + sparse-coordinate interface modified。
+7. **补 observation / compute boundary。** 说明 raw/snippet/feature acquisition 到底节省什么成本。
+8. **重画 Figure 1。** 三泳道：inference、training-only、audit sidecar；加 no dense bypass；audit no arrow back。
+9. **拆分 zero-shot prompt taxonomy。** generic zero-shot、class-name zero-shot、learned supervised source 分开。
+10. **删除或改写 Appendix B 的 internal progress note。** 变成 implementation contract / invariant checks。
+
+## Should fix before full experiment results
+
+1. 加 Related Work：hard subset selection/ST、efficient video pruning、online TAD、sparse/irregular temporal geometry。
+2. 在 Table 3 加 detector training parity、coordinate mode、seeds、eval config。
+3. 把 selected-axis decode negative control 放进主实验协议，不只放 ablation 文本。
+4. 给 uniform/random/actionness baselines 同等 detector adaptation。
+5. 加 runtime audit：detector input length、selected_count、dense_bypass=false、ledger_read=false。
+6. 给 zero-shot score generation 写 prompt/checkpoint/source hash schema。
+7. 给 geometry metrics 增加 boundary radius、duration stratification、start/end split。
+8. 写一个 “No-leak validation protocol” algorithm。
+9. 写一个 “Compute accounting protocol” table，拆 selector/scorer/backbone/head/postprocess。
+10. 明确官方 OpenTAD/AdaTAD/ActionFormer evaluator、thresholds、NMS设置、feature_stride/sample_stride。
+
+## Nice to improve for camera-ready polish
+
+1. 统一术语：selected observations / selected positions / temporal observations，不要混用 frame/snippet/token。
+2. 加 notation table：`V, T, K, S, τ, G_S, ℓ_i, r_i, u*_t, p_zs`。
+3. 把 audit Table 4 移到 Appendix A 正下方，不要单独漂到最后一页。
+4. Figure 1 用颜色区分 inference solid arrows、training dashed arrows、forbidden red arrows、audit gray sidecar。
+5. Related Work 最后一段写成 “what DUCA is not”：not a detector, not offline ledger, not zero-shot TAD, not causal streaming unless stated。
+6. Discussion 增加 “failure cases”：boundary-poor actionness、short actions、selector cost too high、post-feature-only setting。
+7. Contribution bullets 减少 protocol 口吻，突出 method object：hard-budget contract、detector utility, original-time sparse grid, no-leak audit/eval.
+
+最终判断：**方向正确，边界意识明显强于一般 sparse sampling paper；但当前写法还没把“detector-utility-calibrated”和“original-time sparse detector interface”讲到可审计、可实现、不可误解的程度。下一版的重点不是塞结果，而是把 4.5 梯度合同、4.6 sparse grid 几何、online 语义和 compute boundary 钉死。**

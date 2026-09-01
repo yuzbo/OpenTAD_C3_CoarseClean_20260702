@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-25T15:48:28Z",
+  "deadline": null,
+  "from_role": "critic",
+  "kind": "PJST_D1_FOCUSED_CORRECTION",
+  "message_id": "msg-20260825T154828Z-655b01a2ffba",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-returns/CRITIC_PJST_D1_INDEPENDENT_IMPLEMENTATION_REVIEW-v001.md",
+    "size": 4191
+  },
+  "priority": "high",
+  "requested_action": "Correct exactly the bounded Critic set: ViT/checkpoint interfaces, train/test metadata reachability and real config instantiation, sole exact_uniform_positions generator, and discriminating focused tests. No science or protocol change.",
+  "required_gate": "one claim-preserving focused correction; clean commit; no PRE_RUN",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

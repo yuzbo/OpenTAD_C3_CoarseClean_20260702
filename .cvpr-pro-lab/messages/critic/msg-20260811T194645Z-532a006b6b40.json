@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-11T19:46:45Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "static-patch-review",
+  "message_id": "msg-20260811T194645Z-532a006b6b40",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_P0_ROUTE_ADJUDICATION-v002.md",
+    ".cvpr-pro-lab/role-returns/BUILDER_DUCA_P0_BOUNDED_PATCH_RETURN-v001.md"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Review the isolated Builder snapshot named in BUILDER_DUCA_P0_BOUNDED_PATCH_RETURN-v001.md. Inspect the ten-path authored P0 patch only; do not edit, test, execute, access data, use browser/remote resources, or inspect Builder hidden dialogue. Attack density-input independence, decoder constraints/fail-closed behavior, exact-uniform parity, hard gather, and pre-NMS exactly-once transport. Return P0_STATIC_PASS or P0_BLOCKED. Classify each issue as IMPLEMENTATION_CORRECTION if it preserves the accepted decision and as SCIENTIFIC_AMBIGUITY only if it changes the scientific contract; include the smallest counterexample for blockers.",
+  "required_gate": "PRO_P0_ROUTE_ADJUDICATION-v002; authored_not_executed Builder snapshot",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

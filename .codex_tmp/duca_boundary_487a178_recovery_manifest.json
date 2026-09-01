@@ -1,0 +1,35 @@
+{
+  "schema": "duca_r2_r3_gatefix_recovery_v1",
+  "task": "offline_temporal_action_detection",
+  "status": "experiment_running",
+  "source_commit": "9f97f2c7f081b10fbf1f63d0602a621c6b43a780",
+  "recovery_commit": "487a1784554b8c07cbaf8e3948c5aea785a2d8e1",
+  "recovery_branch": "codex/duca-boundary-burst-gatefix-20260723",
+  "snapshot": "/data/run01/sczc063/yuzibo/projects/opentad_duca_boundary_da4adf4_20260723",
+  "run_root": "/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_boundary_487a178_recovery_20260723_034220",
+  "failure_classification": "post_p0_gate_contract_bug_not_model_performance",
+  "completed_p0_optimizer_updates_per_arm": 6000,
+  "jobs": [
+    {
+      "job_id": 1180671,
+      "variant": "boundary_burst_r2q3_soft_detached_g0",
+      "p0_sha256": "d331107fdd344918669c89e283981eec8f52cb2b1279e94da2b4429044f4b02b"
+    },
+    {
+      "job_id": 1180672,
+      "variant": "boundary_burst_r2q3_hard_detached_g0",
+      "p0_sha256": "b45be54ca04f3fbf081df84ec30adf88bd97c2b19efb530858f3d881befa7df4"
+    },
+    {
+      "job_id": 1180673,
+      "variant": "boundary_burst_r2q3_soft_adapted_g0",
+      "p0_sha256": "75b2e526ba492fff08ba38a5012dd2da5860698da2fdd0ffb724f1fd3cf6aa21"
+    },
+    {
+      "job_id": 1180674,
+      "variant": "boundary_burst_r4q5_g0",
+      "p0_sha256": "fcb53cf050b608a9185916e63043bcc8411d5d20c815a3a60902f3f8c153b988"
+    }
+  ],
+  "acceptance": "each job must pass the real full-model gate before official-60 training and terminal EMA evaluation"
+}

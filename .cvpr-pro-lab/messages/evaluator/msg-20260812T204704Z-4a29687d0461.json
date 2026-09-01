@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-12T20:47:04Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_IDENTITY_ROLE_SEPARATED_EXECUTION_PRE_RUN_PLAN",
+  "message_id": "msg-20260812T204704Z-4a29687d0461",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "BUILDER_DUCA_P0_CORRECTED_REMOTE_CLEAN_BINDING-v002",
+    "EVALUATOR_DUCA_P0_SEALED_FIXTURE_REFERENCE_MATERIALIZATION-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Author only the next NOT_EXECUTED P0 role-separated execution/PRE_RUN plan under PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001. Bind the corrected clean Builder remote snapshot 402e582c4092275877828fd36b5b97a8c1213011 at /data/run01/sczc063/yuzibo/projects/opentad_duca_p0_identity_402e582c_20260813 and sealed Evaluator root /data/run01/sczc063/yuzibo/cvpr-pro-lab/g-p-6a796fef9a00819194024cf1de3bd697/p0/evaluator/fixture-reference-v001. Specify, without executing, exact role order, immutable input/output roots, allowed production-call/reference/comparison envelopes, input and receipt schema expectations, stop-on-first-discrepancy, zero-forbidden-access attestations, and the remaining admission conditions before any command may issue. Preserve Q, 18/9/6 matrix/order, projector/reference independence, objective/candidate order, typed failures, scientific route and NOT_EXECUTED status. Do not run/import/compile/test/materialize, read or invoke projector/reference/adapter, compute expectations, access data/model/checkpoint/metric, use SSH/GPU/CUDA/Slurm/browser, or alter any file outside an Evaluator-owned durable plan.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

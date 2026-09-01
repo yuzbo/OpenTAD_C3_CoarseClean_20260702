@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-14T21:02:14Z",
+  "deadline": "2026-08-15T12:00:00+08:00",
+  "from_role": "coordinator",
+  "kind": "BUILDER_DUCA_DYNAMIC_B_MINIMAL_PACKAGE-v001",
+  "message_id": "msg-20260814T210214Z-d96eb2d1a433",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_DUCA_DYNAMIC_INNER_FINAL_ADJUDICATION-v004.md"
+  ],
+  "payload": null,
+  "priority": "critical",
+  "requested_action": "Coordinator accepted the minimal plan. Implement exactly the frozen B route/F1/F2/six-arm packet on the clean worktree, commit the bounded patch, and return static-only evidence. No route/protocol changes, data or held-out access, local efficacy, remote/GPU/Slurm/training/evaluation/metrics/browser/Pro/Sources. The existing PC-OT-MRAS controller is an interface only, not evidence or the B mechanism.",
+  "required_gate": "G5_IMPL_CHECK",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

@@ -1,0 +1,40 @@
+{
+  "created_at": "2026-08-11T05:12:46Z",
+  "deadline": null,
+  "from_role": "evaluator",
+  "kind": "evaluator-evidence-return",
+  "message_id": "msg-20260811T051246Z-c7c415c8b2f1",
+  "parent_artifact_ids": [
+    "art-20260811T045704Z-2d13c25e41"
+  ],
+  "parent_message_ids": [
+    "msg-20260811T050602Z-5ea4bb06fd29"
+  ],
+  "payload": {
+    "artifact_name": "EVALUATOR_DUCA_DENSITY_P0P1-v001",
+    "artifact_path": ".cvpr-pro-lab/evaluator-returns/EVALUATOR_DUCA_DENSITY_P0P1-v001.md",
+    "artifact_sha256": "b6f0772444a5bea2d4e03e27051cb91f940e80f3ff0f6e0f4bf17dd3b9c7f320",
+    "evaluator_decision": "PREREGISTRATION_COMPLETE_GATES_UNPASSED",
+    "p0_status": "blocked",
+    "p1_status": "not_run",
+    "p2_pre_run_ready": "blocked",
+    "scientific_evidence_status": "BLOCKED_PRE_RESULT",
+    "extra_processes": [],
+    "attestations": {
+      "local_cpu_test_or_model_execution": false,
+      "remote_or_slurm_execution": false,
+      "gpu_execution": false,
+      "held_out_access": false,
+      "metric_access": false,
+      "training_code_or_config_mutation": false,
+      "git_push_or_route_change": false,
+      "subagent_or_probe_use": false
+    }
+  },
+  "priority": "high",
+  "requested_action": "Ingest the versioned Evaluator preregistration, preserve its P0 blockers and fresh-Pro questions, and do not authorize P2 until a later concrete Pro instruction, human authority, complete PRE_RUN_READY record, and passed P0/P1 receipts exist.",
+  "required_gate": "fresh-pro-decision-before-p2",
+  "schema_version": "1.0",
+  "status": "queued",
+  "to_role": "coordinator"
+}

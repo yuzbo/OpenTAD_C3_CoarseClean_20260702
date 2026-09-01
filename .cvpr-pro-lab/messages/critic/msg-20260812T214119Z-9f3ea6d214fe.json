@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-12T21:41:19Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_REFERENCE_ADMISSION_MANIFEST_V003_FOCUSED_RECHECK",
+  "message_id": "msg-20260812T214119Z-9f3ea6d214fe",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v003",
+    "CRITIC_DUCA_P0_E1_REFERENCE_ADMISSION_MANIFEST_V002_FOCUSED_RECHECK-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Independently perform one focused static recheck only of EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v003 against PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001 and the sole correction P0-E1-MANIFEST-001R. Verify that v003 directly recomputes stride/displacement from returned p and sealed u and enforces equality plus the frozen 1/4/16 limits; requires exactly the frozen ascending candidate-order declaration; validates every exhaustive tie as a length-K integer witness member with equal objective prefix and the frozen T17/G385 alternatives; and requires a defined nonempty root certificate internally consistent with root/result. Verify shared-parent P0-E1-MANIFEST-002 remains closed; frozen science, reference independence, sealed input bytes, one-shot/first-fail and NOT_EXECUTED/NOT_PRE_RUN_READY remain preserved. Do not run/import/compile/test/materialize/read runtime reference/projector/adapter or access remote/SSH/data/model/checkpoint/metric/GPU/CUDA/Slurm/browser, and do not modify files. Return PASS or exact IMPLEMENTATION_CORRECTION/SCIENTIFIC_AMBIGUITY.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

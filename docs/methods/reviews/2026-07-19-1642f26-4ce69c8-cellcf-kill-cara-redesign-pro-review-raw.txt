@@ -1,0 +1,1602 @@
+# 1. `VISIBILITY_CERTIFICATE`
+
+```text
+visibility_pass=true
+repository=yuzbo/OpenTAD_C3_CoarseClean_20260702
+model_training_commit=1642f265e48391418a7c8a4a087e33e2b7bf6899
+evidence_cost_commit=4ce69c852bdbd902046b47bc6019ae11e850dbe4
+model_source_of_truth=1642f265e48391418a7c8a4a087e33e2b7bf6899
+cost_evidence_source_of_truth=4ce69c852bdbd902046b47bc6019ae11e850dbe4
+```
+
+[CODE_FACT] GitHub commit object 将模型快照精确解析为 `1642f265e48391418a7c8a4a087e33e2b7bf6899`。
+
+[CODE_FACT] 成本证据快照精确解析为 `4ce69c852bdbd902046b47bc6019ae11e850dbe4`；该提交的实际 message 是 `Align DUCA profiler diagnostic sample schema`，改动集中在 profiler 样本验证和 CPU enqueue 诊断字段，不是重新训练模型。
+
+[CODE_FACT] 已实际读取并核验以下模型与选择核心：
+
+| 文件                                                       | 实际核验的关键路径                                                                                                                       |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `opentad/models/duca/structured_selection.py`            | `exact_uniform_positions`、`exact_uniform_cell_bounds`、`local_cell_deformation`、全局 exact-K/max-gap Viterbi、soft forward-backward |
+| `opentad/models/duca/acquisition.py`                     | coarse actionness/uncertainty/transition 特征、local-cell 解码、detector grid 元数据、max-gap scaffold/repair                             |
+| `opentad/models/duca/transition_only.py`                 | ASFormer hidden 类型、transition descriptor、policy/auxiliary 两条梯度路径                                                                |
+| `opentad/models/duca/counterfactual_utility.py`          | cell 内候选、detached hard-swap utility、signed logistic 目标                                                                          |
+| `opentad/models/selectors/duca_online_frame_selector.py` | 训练/推理选择、GT target、counterfactual request、实际采集坐标与 detector 坐标写入                                                                  |
+| `tools/bata/duca_cellcf_training.py`                     | formal protocol、commit/config/artifact binding、禁止运行时语义漂移                                                                        |
+
+[CODE_FACT] `local_cell_deformation` 的合同逐字是“每个 exact-uniform cell 选择恰好一帧”；hard 和 relaxed 路径使用同一组 cell 内 categorical 分布，不存在跨 cell 配额。
+
+[CODE_FACT] 已读取并核验以下 detector 与配置：
+
+* `configs/adatad/thumos/duca_cellcf_fixed384_official_adatad_backend_full_train.py`
+* `duca_cellcf_transition_beta0_fixed384_official_adatad_backend_full_train.py`
+* `duca_cellcf_exact_uniform_fixed384_official_adatad_backend_full_train.py`
+* `duca_transition_only_fixed384_official_adatad_backend_full_train.py`
+* `opentad/models/detectors/actionformer.py`
+* `opentad/models/detectors/single_stage.py`
+* `opentad/models/dense_heads/actionformer_head.py`
+* `opentad/models/dense_heads/anchor_free_head.py`
+* `configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py`
+
+[CODE_FACT] CellCF 配置明确声明：offline full-window、one-frame-per-cell、`detector_gradient_mode="none"`、detached local hard flip、`remap_gt_to_selected_axis=True`、detector 输出位于 selected-axis。
+
+[CODE_FACT] 已核验仓库已有而当前 CellCF 未启用的 physical-grid ActionFormer：它从 `irregular_selected_positions` 读取真实时间位置，禁止 selected-axis GT remap，并把 prior center、stride、regression range 映射到物理时间。
+
+[CODE_FACT] 仓库已有正式 physical-grid 配置，将 `remap_gt_to_selected_axis=False`，并开启 `physical_grid_actionformer.enabled/required/strict=True`；因此本审查后续方案不需要重写 ActionFormer head。
+
+[CODE_FACT] 已读取并核验以下诊断与对应测试：
+
+* `diagnose_duca_feasible_set_ceiling.py`
+* `diagnose_duca_coarse_boundary_ceiling.py`
+* `diagnose_duca_selection_decomposition.py`
+* `export_duca_selection_quality.py`
+* `analyze_duca_selection_quality.py`
+* `duca_ceiling_utils.py`
+* `tests/test_duca_feasible_set_ceiling.py`
+* `tests/test_duca_coarse_boundary_ceiling.py`
+* `tests/test_duca_selection_decomposition.py`
+* `tests/test_duca_local_cell_selection.py`
+* `tests/test_duca_local_cell_counterfactual.py`
+* `tests/test_duca_cellcf_contract.py`
+* `tests/test_duca_cellcf_training_contract.py`
+
+[CODE_FACT] 现有 `diagnose_duca_feasible_set_ceiling.py` 只会在调用者提供的有限候选中选 detector loss 最低者，其输出合同明确写成 `not_upper_bound`；现有 selection decomposition 中的 GT 路径也明确是 heuristic 而不是 optimized oracle。
+
+[CODE_FACT] 已按 `4ce69c8` 读取成本工具与测试：
+
+* `duca_full_stack_cost.py`
+* `profile_duca_full_stack_cost.py`
+* `summarize_duca_cellcf_cost.py`
+* `tests/test_duca_full_stack_cost.py`
+* `tests/test_profile_duca_full_stack_cost_cli.py`
+
+[CODE_FACT] 当前成本协议包含 input pipeline、H2D、model forward、postprocess、selector、coarse probe、heavy backbone、projection、neck、head、内存与可选能耗；但 `decode` 与 `resize/preprocess` 仍被合并在 `input_pipeline_serial_ms` 中，schema 明确写着 `decoder_and_preprocess_separated=False`。
+
+[CODE_FACT] 正式成本汇总要求至少三次 fresh-process repeat、每次至少 500 个真实窗口、clean tree、terminal EMA、唯一 raw-sample multiset 和交替测量顺序。
+
+---
+
+# 2. `SEVERE_VERDICT`
+
+```text
+CURRENT_CELLCF_VERDICT=KILL
+DUCA_PROGRAM_VERDICT=REDESIGN
+DYNAMIC_MUST=FROZEN
+CURRENT_CELLCF_RETAINED_ROLE=DIAGNOSTIC_PHASE_CORRECTION_CONTROL_ONLY
+```
+
+[MATHEMATICAL_CONSEQUENCE] 当前 CellCF **不能实现 boundary-adaptive budget allocation**。它只能在每个 exact-uniform Voronoi cell 内替换均匀 anchor 所对应的视觉帧，不允许任何 cell 放弃名额，也不允许高 transition cell 获得第二个名额。
+
+[MATHEMATICAL_CONSEQUENCE] 在 `T=768,K=384` 下，它不是“从背景抽走大量预算并在边界增加密度”的方法，而是一个严格受限的 **uniform phase/content correction**。
+
+[CODE_FACT] counterfactual teacher 在 `torch.no_grad()` 中评估 hard alternatives，将 utility `detach()` 后交给 selector；配置同时把 direct detector-gradient bridge 设为零。
+
+[EXPERIMENT_FACT] 用户给定的同协议单种子事实中，CellCF 为 `64.0610`，低于 transition-beta0 的 `64.2755`；因此当前证据既不支持 CellCF 优于 transition-only，也不支持 detached counterfactual utility 带来总体增益。
+
+[EXPERIMENT_FACT] CellCF 的 `@0.7=43.8241` 虽高于 transition-beta0 的 `43.1336`，但只有一个种子，且同时存在采集时间与 detector 时间不一致的混杂，不能解释为边界机制成立。
+
+[INFERENCE] DUCA 的研究目标仍有价值，但当前 CellCF 这个可行集合必须终止。下一条主线应改为 **coverage skeleton + adaptive residual allocation + actual-position physical-grid detector**。
+
+---
+
+# 3. `CODE_AUDIT_FINDINGS`
+
+## P0：足以终止当前 CellCF 主方法的事实
+
+### P0-1：可行集合没有跨区域预算转移能力
+
+[CODE_FACT] exact-uniform anchor 为
+
+[
+a_j=\operatorname{round}!\left(\frac{j(T-1)}{K-1}\right),\qquad j=0,\dots,K-1.
+]
+
+Cell 边界使用相邻 anchor 中点，并把正好处于中点的帧归给更早的 cell。
+
+[MATHEMATICAL_CONSEQUENCE] 对 `T=768,K=384`：
+
+* anchor 相邻间隔有 382 个为 2，只有 `382→385` 的一个间隔为 3；
+* 382 个 cell 长度为 2；
+* 1 个中央 cell 长度为 3；
+* 最后 1 个 cell 长度为 1；
+* 任意选中位置相对本 cell anchor 的最大位移是 1 帧；
+* 绝大多数二帧 cell 的 anchor 位于 cell 左端，因此实际只能保持 anchor 或向右移动 1 帧；只有中央三帧 cell 能左右各移动 1 帧。
+
+[MATHEMATICAL_CONSEQUENCE] 当前可行集合可写为
+
+[
+\mathcal F_{\text{cell}}
+========================
+
+\left{
+S:\ |S\cap C_j|=1,\ \forall j=0,\dots,K-1
+\right}.
+]
+
+对任何由完整 cells 构成的区域 (R=\bigcup_{j\in J}C_j)，恒有
+
+[
+|S\cap R|=|J|,
+]
+
+与 selector score 完全无关。因此稳定背景中的完整 cell **永远不能释放预算**，边界区域中的完整 cell **永远不能获得第二个名额**。
+
+[MATHEMATICAL_CONSEQUENCE] 以整数边界 (b) 的局部窗口 (W_r(b)=[b-r,b+r]) 计，当前 CellCF 可实现的最大局部样本数为：
+
+|   半径 | 窗口宽度 | exact-uniform 最大数 | CellCF 最大数 | 新 residual family 可达数 |
+| ---: | ---: | ----------------: | ---------: | --------------------: |
+| `r0` |    1 |        1，但某些位置为 0 |          1 |                     1 |
+| `r1` |    3 |                 2 |          2 |                     3 |
+| `r2` |    5 |                 3 |          3 |                     5 |
+| `r4` |    9 |                 5 |          5 |                     9 |
+
+[MATHEMATICAL_CONSEQUENCE] CellCF 可以改变“边界附近哪一帧被看见”，但不能提高局部采样率的上限；在 `r4` 内仍最多 5 帧，与 stride≈2 的 uniform 最大密度相同。
+
+[CODE_FACT] 当前 family 的理论最大未选洞为 3；对应测试明确检查 `T=768,K=384` 下该上限可达到。
+
+[MATHEMATICAL_CONSEQUENCE] exact-uniform 本身最大未选洞为 2，而 CellCF 为获得一帧局部位移，反而允许最大洞扩大到 3。
+
+### P0-2：实际采集时间和 detector 时间不是同一坐标
+
+[CODE_FACT] selector 实际从 `positions` 采集原始帧，但 local-cell 模式另行生成 `detector_grid_positions=anchor_positions`。在 counterfactual teacher 中：
+
+* `selected_inputs` 由实际候选 `positions` gather；
+* `selected_axis_to_true_time_dense_index` 写入的是 `detector_positions`；
+* GT remap 也使用该 `detector_positions`；
+* 候选 flip 改变实际帧，却保持 detector anchor grid 不变。
+
+[CODE_FACT] 推理后处理若 detector 输出为 selected-axis，会再次使用 `selected_axis_to_true_time_dense_index` 进行逆映射。
+
+[MATHEMATICAL_CONSEQUENCE] 当前实际执行的是：
+
+[
+\text{visual content at }p_j
+\quad\longrightarrow\quad
+\text{detector label/time at }a_j,
+]
+
+其中 (|p_j-a_j|\le1)。
+
+[SEVERE_VERDICT] 这不是随机实现错误，而是被测试固定的设计合同；但它意味着 CellCF 的科学语义是 **在固定 uniform 时间网格上替换视觉内容**，不是在真实 observation time 上重新分配时序采样。
+
+[INFERENCE] 因此当前 @0.7 略高可能来自四种互相混杂的来源：
+
+| 来源                                     | 能否由当前结果区分               |
+| -------------------------------------- | ----------------------- |
+| 实际选择了更有边界信息的相邻帧                        | 不能；缺当前 checkpoint 的选帧审计 |
+| 将相邻视觉帧标成 uniform anchor 的坐标替换效应        | 不能；这是现行合同               |
+| 视觉内容变化导致分类排序、proposal score 或 NMS 顺序变化 | 不能                      |
+| 单种子随机波动                                | 不能                      |
+
+[PROPOSAL] 决定性检查必须使用同一 one-per-cell selector，分别在 `anchor-grid` 和 `actual-position physical-grid` 下运行；正式新方法不得再把 actual acquisition position 替换成 anchor time。
+
+### P0-3：CellCF 没有 direct detector gradient
+
+[CODE_FACT] 配置明确为：
+
+```text
+detector_gradient_mode="none"
+detector_gradient_final_weight=0
+detector_utility_is_direct_gradient=False
+```
+
+并将 detector utility 描述为 detached local hard flip。
+
+[CODE_FACT] teacher 先恢复模型 buffer/RNG，在 `torch.no_grad()` 中计算 baseline 与 candidate 的 ActionFormer cls+reg loss，再把 utility detach 后送入 signed logistic selector loss。
+
+[MATHEMATICAL_CONSEQUENCE] detector loss 不可能通过 hard frame gather 直接改变选择位置；它只产生一个训练期排序标签。
+
+[SEVERE_VERDICT] “detector loss 直接穿过 hard selection 改善 selector”这一论文口径在当前代码上是错误的。
+
+### P0-4：当前结果不支持 CellCF
+
+[EXPERIMENT_FACT] 单种子差值：
+
+[
+\Delta_{\text{transition-uniform}}=+0.4161,
+]
+
+[
+\Delta_{\text{CellCF-transition}}=-0.2145.
+]
+
+[EXPERIMENT_FACT] CellCF 仅在 `@0.7` 单点高于 transition-beta0，`@0.4` 也略高，但 `Avg-mAP`、`@0.5`、`@0.6` 均不支持其整体优越性。
+
+[SEVERE_VERDICT] 当前 CellCF 不得称为“优于 transition-only”，也不得将 @0.7 单点事后解释成 boundary benefit。
+
+[EXPERIMENT_FACT] 132 epochs / 13,200 successful updates 是专门延长的暴露协议；官方基线配置的正式 workflow 为 60 epochs。仓库现有 physical-grid full-train 配置同样固定为 60 epochs。
+
+### P0-5：现有 ceiling 工具不能直接回答可行集合上限
+
+[CODE_FACT] 现有 feasible-set 工具只验证 supplied candidates 是否满足 exact-K/max-hole，再从其中取最小 detector loss；测试明确要求输出角色为“best of supplied candidates, not upper bound”。
+
+[CODE_FACT] 现有 GT-informed selection 是“先选 GT boundary，再用 uniform 补足”的 heuristic，测试明确断言 `is_optimized_oracle=False`。
+
+[SEVERE_VERDICT] 在没有新增 family-constrained optimizer 前，任何把这些脚本输出称为 “CellCF oracle ceiling” 的口径都必须拒绝。
+
+---
+
+## P1：必须在重构中修正的问题
+
+### P1-1：selector 确实读取真实 ASFormer temporal hidden，但不是 absolute hidden
+
+[CODE_FACT] 配置要求 `coarse_hidden_kind="official_asformer_encoder_hidden"`、hidden dim 96，并要求 hidden 必须返回。
+
+[CODE_FACT] transition descriptor 为：
+
+[
+[
+\Delta \ell_t,\ |\Delta \ell_t|,
+\Delta H(p_t),\ |\Delta H(p_t)|,
+\Delta h_t,\ |\Delta h_t|,
+1-\cos(h_t,h_{t-1})
+],
+]
+
+维度为 (2D+5=197)。它使用 ASFormer encoder hidden 的差分和相邻 cosine change，但不暴露 absolute hidden。
+
+[CODE_FACT] 现行梯度所有权是：
+
+* actionness logits 在构造 descriptor 前 detach；
+* policy scorer 使用 `descriptors.detach()`，因此 policy/CF 只更新 scorer；
+* auxiliary transition scorer 使用未 detach descriptor，因此 transition auxiliary 可以更新 ASFormer hidden。
+
+[INFERENCE] 当前模型不是“只看 `p_action` 和差分曲线”；它看到了真正的 ASFormer temporal hidden 关系特征。但 detector utility 并不会更新这些 hidden。
+
+### P1-2：当前 detector 不是未经修改的官方 AdaTAD
+
+[CODE_FACT] 被复用的主体包括 VideoMAE-S adapter backbone、projection、neck、ActionFormer cls/reg loss 与 NMS 配置；CellCF 配置也声明 detector loss/head/NMS 本身未换成另一套算法。
+
+[CODE_FACT] 实际源码层面有以下 wrapper/extension：
+
+1. `ActionFormer` 在 backbone 前调用 frame selector；
+2. 集成 no-grad counterfactual teacher；
+3. 训练时允许 selector remap GT；
+4. 推理时执行 selected-axis inverse map；
+5. `AnchorFreeHead` 增加 physical-grid 分支；
+6. 当前 CellCF 关闭 physical-grid，仍走 selected-axis anchor map。
+
+[SEVERE_VERDICT] 正确论文表述应是“复用官方 AdaTAD/ActionFormer 组件和 loss/NMS，外加 DUCA pre-backbone wrapper 与时序坐标扩展”，不能写成“源码完全等同官方 AdaTAD”。
+
+### P1-3：仓库已有 physical-grid 路径，应直接复用
+
+[CODE_FACT] physical-grid head：
+
+* 读取实际 `irregular_selected_positions`；
+* 拒绝 selected-axis GT remap；
+* 将 FPN prior center 映射到真实 dense time；
+* 使用相邻 physical positions 计算 physical stride；
+* 按 stride 重缩放 regression range。
+
+[CODE_FACT] 仓库甚至已有 fixed384/dense768、max-gap=3、uniform scaffold + actionness/uncertainty 的 physical-grid 配置。
+
+[PROPOSAL] 新 DUCA 只应复用其 physical-time detector contract 和相关测试，不应复用其中的固定 actionness quota 或 straight-through detector bridge。
+
+### P1-4：当前成本协议尚不足以满足最终论文表格
+
+[CODE_FACT] 当前 profiler 的 full-stack 父级时间是：
+
+[
+t_{\text{e2e}}
+==============
+
+t_{\text{input-pipeline}}
++t_{\text{H2D}}
++t_{\text{model-forward}}
++t_{\text{postprocess}}.
+]
+
+并对 selector、coarse、heavy、projection、neck、head 做嵌套计时。
+
+[CODE_FACT] 当前 `input_pipeline_serial_ms` 把 dataset read、decode、transforms 和 collate 合并，无法分别回答 decode 与 resize/preprocess 的成本。
+
+[CODE_FACT] `4ce69c8` 修复的是 CPU enqueue diagnostic 字段与逐样本校验，不是新的模型或数值成本结果。
+
+[SEVERE_VERDICT] 本次读取到的指定文件不能证明 CellCF 或新 DUCA 已通过真实成本 gate；在正式 profile 完成前只能说成本协议存在，不能说 Pareto 已成立。
+
+---
+
+## P2：次要但应修正的合同问题
+
+[CODE_FACT] 类名 `DucaOnlineFrameSelector` 与当前 full-window offline 行为不一致；配置已明确 `online_tad=False`、`streaming=False`。
+
+[CODE_FACT] 当前所谓 `balanced_binary_actionness_loss` 在默认 `positive_prior=0.5` 下得到 `pos_weight=1`，实际是 valid-frame 上的普通 BCE，不是按样本流行率动态平衡。
+
+[CODE_FACT] 现有 `_max_gap_scaffold_positions` 会无条件补最后位置；对 `T=768,G=3` 不影响 192 个 scaffold 的结果，但对部分短窗口不是最小 scaffold，会无谓减少 residual budget。
+
+[CODE_FACT] 当前 counterfactual 每个样本最多四个 cell 内候选；即使 utility 标签方向正确，也只能学习极窄的相邻替换空间。
+
+[INFERENCE] 对短窗口必须分别记录 `unique_selected_K` 与 `heavy_executed_slots`；若固定 VideoMAE wrapper 仍处理 384 个 padded slots，就不能把 `K_eff<384` 冒充成实际 backbone 计算减少。
+
+---
+
+# 4. `FEASIBLE_SET_CEILING_EXPERIMENT`
+
+## 4.1 统一记号
+
+[PROPOSAL] 对每个有效窗口定义：
+
+[
+V_L={0,\dots,L-1},\qquad K_L=\min(384,L).
+]
+
+对升序选择 (S={s_1<\cdots<s_m})，定义最大未选洞：
+
+[
+g(S)=
+\max
+\left(
+s_1,,
+L-1-s_m,,
+\max_i(s_{i+1}-s_i-1)
+\right).
+]
+
+[PROPOSAL] A–D 的统一 hard coverage 合同使用 (G=3)，因为这是当前 CellCF 的理论最大洞；E 作为 unrestricted privileged reference 不要求 (G)。
+
+## 4.2 五个可行集合
+
+### A. Exact-uniform
+
+[
+\mathcal F_A={U_L},
+\quad
+U_L=
+\left{
+\operatorname{round}\frac{j(L-1)}{K_L-1}
+\right}_{j=0}^{K_L-1}.
+]
+
+[MATHEMATICAL_CONSEQUENCE] `L=768` 时 exact-K=384，最大未选洞为 2，没有自适应自由度。
+
+### B. 当前 one-per-cell CellCF oracle
+
+[
+\mathcal F_B=
+\left{
+S:\ |S\cap C_j|=1,\ \forall j
+\right}.
+]
+
+[MATHEMATICAL_CONSEQUENCE] exact-K=384，最大未选洞≤3，单 cell 最大 quota=1，最大 anchor 位移=1。
+
+[MATHEMATICAL_CONSEQUENCE] 它能够优化 r0 phase hit，但不能在 `r4` 窗口中超过 5 帧，也不能从完整背景 cell 释放预算。
+
+### C. Coverage skeleton + adaptive residual budget
+
+[PROPOSAL] 先构造满足 (g(C_G)\le G) 的最小 deterministic skeleton。最小数量为
+
+[
+M_G(L)=
+\max\left(
+1,,
+\left\lceil\frac{L-G}{G+1}\right\rceil
+\right).
+]
+
+对 `L=768,G=3`：
+
+[
+M_G=192,\qquad R=K-M_G=192.
+]
+
+可行集合为
+
+[
+\mathcal F_C=
+\left{
+C_G\cup A:
+A\subseteq V_L\setminus C_G,\ |A|=R
+\right}.
+]
+
+[MATHEMATICAL_CONSEQUENCE] skeleton 单独保证 (g(S)\le3)，因此任意 residual 替换都不会破坏 coverage。
+
+[MATHEMATICAL_CONSEQUENCE] `r4` 的九帧窗口可以被完整选中；稳定背景理论上最多可释放 192 个 residual 名额。
+
+### D. Variable-quota / exact-K max-gap allocation
+
+[PROPOSAL] 以宽约 4 的 macro cells (D_j) 定义整数 quota
+
+[
+q_j=\sum_{t\in D_j}x_t,
+\quad
+0\le q_j\le |D_j|,
+\quad
+\sum_jq_j=K_L,
+]
+
+并强制
+
+[
+\sum_{t=i}^{i+G}x_t\ge1,
+\qquad
+i=0,\dots,L-G-1.
+]
+
+等价全局可行集合为
+
+[
+\mathcal F_D=
+\left{
+S:\ |S|=K_L,\ g(S)\le3
+\right}.
+]
+
+[CODE_FACT] 仓库已有 `global_structured_topk` 的 exact-K/max-gap hard Viterbi 和 soft forward-backward，可直接作为 D 的 decoder 基础。
+
+[MATHEMATICAL_CONSEQUENCE] D 是 C 的超集：coverage 位置本身也能随 evidence 移动，但 candidate swap 和训练归因更困难。
+
+### E. Unrestricted GT oracle
+
+[
+\mathcal F_E=
+\left{
+S:\ |S|=K_L
+\right}.
+]
+
+[PROPOSAL] E 只作为 privileged reference，同时额外报告一个 `E-G3`，用于区分“去掉 max-gap 约束”与“仅扩大配额自由度”的收益。
+
+[SEVERE_VERDICT] 历史 76.67 不能直接填入本表；应在同一 physical-time detector、同一 evaluator、同一 dense coordinate 下重新生成，或者仅列为“历史不可比参考”。
+
+## 4.3 精确几何 oracle
+
+[PROPOSAL] 新增 `tools/bata/diagnose_duca_allocation_ceiling.py`，使用二进制变量 (x_t) 和 endpoint coverage 变量：
+
+[
+y_{b,r}
+=======
+
+\mathbf 1
+\left[
+\sum_{|t-b|\le r}x_t\ge1
+\right],
+]
+
+[
+z_{a,r}=y_{s_a,r}\land y_{e_a,r}.
+]
+
+[PROPOSAL] 每个 family 应产生两类结果：
+
+1. **Metric-wise capacity envelope**：分别最大化 boundary recall@r0/r1/r2/r4、both-endpoint recall、short-action coverage 和局部样本数；
+2. **Canonical oracle selection**：按冻结的 lexicographic 顺序求一个唯一选择，用于 detector 诊断。
+
+[PROPOSAL] canonical 顺序预注册为：
+
+1. 最大化 short-action both-endpoint recall@r1；
+2. 最大化全部 action both-endpoint recall@r1；
+3. 最大化 boundary recall@r0；
+4. 依次最大化 recall@r1、r2、r4；
+5. 最大化每个 boundary 的 `r4` 实际样本数；
+6. 最小化 selected-to-boundary distance；
+7. 最后以较早时间位置作确定性 tie-break。
+
+[PROPOSAL] 可使用诊断专用 CP-SAT；只有 solver 返回 `OPTIMAL` 且 optimality gap 为 0 时，输出才允许标记为 `geometry_oracle=true`。没有 exact solver 时必须 fail closed，不得退化成 greedy 后继续叫 ceiling。
+
+## 4.4 Frozen-detector secondary diagnostic
+
+[PROPOSAL] 对每个 canonical GT oracle selection：
+
+* gather 实际选中帧；
+* 将实际位置写入 `irregular_selected_positions`；
+* 使用 physical-grid ActionFormer；
+* GT 保持 dense physical axis；
+* 固定同一个 matched detector checkpoint；
+* 运行 cls+reg loss 和完整 mAP evaluator。
+
+[INFERENCE] 这仍不是“可学习 selector 的性能上限”，因为 detector 没有针对每个 oracle family 重训；它是一个成本很低的 necessary-condition diagnostic。
+
+[PROPOSAL] 现有 `diagnose_duca_feasible_set_ceiling.py` 只保留为 candidate detector-loss validator；新脚本负责生成 family、证明约束和求解 oracle。
+
+## 4.5 必须输出的指标
+
+[PROPOSAL] 每个 family、每个原始视频输出：
+
+* boundary recall@r0/r1/r2/r4；
+* both-endpoint recall@r0/r1/r2/r4；
+* short/medium/long action 的 any-frame 与 both-endpoint coverage；
+* selected-to-boundary mean/median/p95 distance；
+* boundary-local sampling enrichment；
+* 每个 boundary 的 `r0/r1/r2/r4` 选帧数；
+* stable-background budget release；
+* max-gap p50/p95/max；
+* unique selected K；
+* heavy executed slots；
+* clustering coefficient；
+* privileged detector cls/reg loss；
+* privileged Avg-mAP 与各 tIoU；
+* 相对 exact-uniform 的 paired delta。
+
+[PROPOSAL] `stable background` 固定定义为距任意 GT segment 及其端点超过 8 个 dense frames 的位置；不得事后调整半径。
+
+[PROPOSAL] 重叠窗口先按原始视频合并，同一个原始 endpoint 在一个视频内只计一次；bootstrap 单位必须是原始 video。
+
+## 4.6 伪代码
+
+```python
+for video in videos:
+    L = video.valid_len
+    K = min(384, L)
+
+    families = {
+        "uniform": build_uniform_family(L, K),
+        "cellcf": build_one_per_cell_family(L, K),
+        "cover_residual": build_skeleton_residual_family(L, K, max_gap=3),
+        "variable_quota": build_exact_k_max_gap_family(L, K, max_gap=3),
+        "unrestricted": build_exact_k_family(L, K),
+    }
+
+    for name, family in families.items():
+        envelope = {}
+        for metric in PRE_REGISTERED_CAPACITY_METRICS:
+            solution = solve_binary_program(
+                family=family,
+                gt_segments=video.gt_segments,
+                objective=metric,
+            )
+            assert solution.status == "OPTIMAL"
+            envelope[metric] = evaluate_selection(solution.positions)
+
+        canonical = solve_lexicographic_oracle(
+            family=family,
+            gt_segments=video.gt_segments,
+            objective_order=FROZEN_OBJECTIVE_ORDER,
+        )
+        assert canonical.status == "OPTIMAL"
+        assert len(canonical.positions) == K
+        assert max_unselected_hole(L, canonical.positions) <= family.max_gap
+
+        write_geometry_and_detector_record(
+            family=name,
+            envelope=envelope,
+            canonical=canonical,
+            provenance=hash_bound_provenance,
+        )
+```
+
+## 4.7 停止规则
+
+[PROPOSAL] **当前 CellCF 不再获得长训练预算。** 即使 B 的 r0 oracle 有改善，它也只能保留为 phase-correction control，不能恢复为 adaptive-allocation 主方法。
+
+[PROPOSAL] 若 B 相对 A 的 privileged detector oracle同时满足：
+
+[
+\Delta\text{Avg-mAP}<0.5,\qquad
+\Delta @0.7<1.0,
+]
+
+则 CellCF 连 phase-correction 支线也停止，只保留历史结果。
+
+[PROPOSAL] C 或 D 只有同时满足以下条件才进入 60-epoch 训练：
+
+1. exact-K 和 max-gap 合规率 100%；
+2. boundary recall@r0 相对 A 至少提高 10 个百分点；
+3. `r4` 每边界平均多分配至少 1.5 帧；
+4. stable-background 释放预算平均至少 `0.10K`；
+5. short-action any-frame coverage 不低于 A；
+6. privileged detector oracle 的 `ΔAvg-mAP≥0.75` 或 `Δ@0.7≥1.0`；
+7. 上述 detector delta 的 video-cluster 95% CI 下界大于 0。
+
+[PROPOSAL] 若 D 相对 C 的 oracle 优势小于 `+0.5 Avg-mAP` 且小于 `+1.0 @0.7`，固定选择 C；复杂度更高的 D 不进入主线。
+
+---
+
+# 5. `CANDIDATE_ARCHITECTURES`
+
+| 项目        | Coverage skeleton + residual                                                         | Variable-quota / global max-gap                              | Dense-light / sparse-heavy refresh                                                    |              |   |                 |                                                           |
+| --------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------------------------- | ------------ | - | --------------- | --------------------------------------------------------- |
+| 决策变量      | [PROPOSAL] 固定 scaffold (c_t) 加 residual (z_t)                                        | [PROPOSAL] 全局 (x_t) 或 macro-cell quota (q_j)                 | [PROPOSAL] 每时刻 light state，加 heavy-refresh 指示 (r_t)                                   |              |   |                 |                                                           |
+| 可行集合      | [PROPOSAL] (S=C_G\cup A,\                                                            | A                                                            | =K-M)                                                                                 | [PROPOSAL] ( | S | =K,\ g(S)\le G) | [PROPOSAL] 全时刻保留 light state，只在 (r_t=1) 处计算 heavy feature |
+| 解码        | [PROPOSAL] deterministic scaffold + residual top-R                                   | [CODE_FACT] 可复用仓库 hard Viterbi                               | [PROPOSAL] refresh decoder + feature transport/reconstruction                         |              |   |                 |                                                           |
+| 复杂度       | [MATHEMATICAL_CONSEQUENCE] `O(T log R)`，GPU top-k 可近似 `O(T)`                         | [MATHEMATICAL_CONSEQUENCE] `O(TKG)`，本设置约 118 万个 DP states/样本 | [INFERENCE] selector 不难，但 dense reconstruction 与 detector 数据流成本高                      |              |   |                 |                                                           |
+| 真正边界聚集    | [MATHEMATICAL_CONSEQUENCE] 是，r4 最多 9 帧                                               | [MATHEMATICAL_CONSEQUENCE] 是，r4 最多 9 帧                       | [MATHEMATICAL_CONSEQUENCE] heavy refresh 可聚集，但 detector 最终是否获得真实边界信息取决于重建             |              |   |                 |                                                           |
+| 全局覆盖      | [MATHEMATICAL_CONSEQUENCE] scaffold hard guarantee                                   | [MATHEMATICAL_CONSEQUENCE] DP hard guarantee                 | [PROPOSAL] 由 refresh max-gap 或 dense light path保证                                     |              |   |                 |                                                           |
+| 插件性质      | [PROPOSAL] 强；只改 selector 和已有 physical metadata                                       | [PROPOSAL] 强，但 decoder/candidate 更复杂                         | [INFERENCE] 弱；会侵入 backbone→projection 表示                                              |              |   |                 |                                                           |
+| AdaTAD 修改 | [PROPOSAL] 不重写；启用已有 physical-grid head                                               | [PROPOSAL] 同左                                                | [INFERENCE] 需要加入 transport/reconstruction 或新的 dense physical feature adapter          |              |   |                 |                                                           |
+| 训练/推理同构   | [PROPOSAL] hard top-R 在两阶段完全相同                                                       | [PROPOSAL] hard DP 完全相同；禁止 detector 使用 soft occupancy        | [INFERENCE] 容易出现训练 transport 与部署 cache/refresh 不同构                                    |              |   |                 |                                                           |
+| 推理成本      | [INFERENCE] dense coarse T + heavy K；比 bare uniform384 多 frontend，比 dense768 少 heavy | [INFERENCE] 与左近似，DP selector 略贵                              | [INFERENCE] dense light + heavy K + reconstruction，成本不确定                              |              |   |                 |                                                           |
+| 最大风险      | [INFERENCE] G=3 skeleton 占 192 个名额，learned evidence 仍可能弱                             | [INFERENCE] 配额/位置联合 credit assignment 难，hard candidate 可行性复杂 | [INFERENCE] feature transport 可能抹平边界，且论文归因从 sampling 变为 representation reconstruction |              |   |                 |                                                           |
+
+[SEVERE_VERDICT] **唯一主方案：Coverage skeleton + adaptive residual budget。**
+
+[SEVERE_VERDICT] **唯一备用方案：global exact-K/max-gap variable-quota DP。**
+
+[SEVERE_VERDICT] Dense-light / sparse-heavy refresh 本轮不进入实现；它改变 detector 表示层过多，不能作为修复当前 selector 可行集合的最小因果方案。
+
+[CODE_FACT] 仓库现有 physical-grid/scaffold 路径可复用，但其固定 `uniform/actionness/uncertainty` quota 与 straight-through 训练不等于本方案；不能简单改类名后声称完成。
+
+---
+
+# 6. `FINAL_METHOD_SPECIFICATION`
+
+## 6.1 方法名称与核心合同
+
+```text
+Method: DUCA-CARA
+Expansion: Coverage-Anchored Residual Allocation
+Task: Offline TAD
+Dense window: T=768
+Heavy budget: K=384
+Coverage max hole: G=3
+Skeleton count at L=768: M=192
+Adaptive residual count: R=192
+Detector coordinate: true_time_dense_index
+Detector bridge: hard counterfactual distillation, no direct gradient
+Dynamic budget: disabled
+```
+
+## 6.2 网络与张量流
+
+[PROPOSAL] 输入 dense offline window：
+
+[
+X\in\mathbb R^{B\times3\times T\times H\times W},
+\qquad
+m\in{0,1}^{B\times T}.
+]
+
+[PROPOSAL] 所有 T 帧先缩放到 64×64，送入现有 binary actionness probe：
+
+[
+\ell,\ h
+========
+
+f_{\text{coarse}}(X_{64}),
+]
+
+其中
+
+[
+\ell\in\mathbb R^{B\times T},\qquad
+h\in\mathbb R^{B\times T\times96}.
+]
+
+[PROPOSAL] action probability 和 uncertainty：
+
+[
+p_t=\sigma(\ell_t),
+]
+
+[
+H_t=-p_t\log p_t-(1-p_t)\log(1-p_t),
+]
+
+[
+u^{\text{unc}}_t=1-|2p_t-1|.
+]
+
+[PROPOSAL] transition descriptor 直接复用现有形式：
+
+[
+d_t=
+[
+\Delta\ell_t,,
+|\Delta\ell_t|,,
+\Delta H_t,,
+|\Delta H_t|,,
+\Delta h_t,,
+|\Delta h_t|,,
+1-\cos(h_t,h_{t-1})
+]
+\in\mathbb R^{197}.
+]
+
+[PROPOSAL] scorer：
+
+[
+s_t=f_{\text{transition}}(\operatorname{stopgrad}(d_t)).
+]
+
+[SEVERE_VERDICT] 新主方案中，所有 selector loss 都不得更新 coarse stem、ASFormer 或 binary action head；粗模型参数只归 binary action/background BCE 所有。这样边界监督只能训练 transition-derived scorer，不会把 coarse model 偷换成 start/end predictor。
+
+## 6.3 Coarse action/background BCE
+
+[PROPOSAL] 对训练 GT segment ([s_n,e_n))：
+
+[
+y_t=
+\mathbf1
+\left[
+\exists n:\ s_n\le t<e_n
+\right].
+]
+
+使用 proper unweighted BCE：
+
+[
+L_{\text{act}}
+==============
+
+\frac{
+\sum_{b,t}m_{b,t},
+\operatorname{BCEWithLogits}(\ell_{b,t},y_{b,t})
+}{
+\sum_{b,t}m_{b,t}
+}.
+]
+
+[PROPOSAL] 不使用 batch-dependent `pos_weight`，避免把输出概率变成不可解释的重加权 posterior；类不平衡通过 AUPRC 和 train-only calibration audit处理。
+
+[PROPOSAL] 若进行 temperature calibration，只能在冻结的 train-video calibration split 上拟合一个 scalar temperature/bias，并在 validation/test 前冻结；不得读取 validation/test GT 调整。
+
+## 6.4 Hard coverage 与 exact budget
+
+[PROPOSAL] 对每个有效长度 L：
+
+1. (K_L=\min(384,L))；
+2. 构造最小 (G=3) scaffold，大小 (M_G(L))；
+3. 在非 scaffold 的有效位置上按 (s_t) 取 top (R=K_L-M_G(L))；
+4. 合并并排序；
+5. 断言 exact-K 与 max-gap；
+6. 将实际 positions 原样写入 physical-grid metadata。
+
+[MATHEMATICAL_CONSEQUENCE] coverage、diversity 和 budget 不再作为可被权重抵消的 soft loss：
+
+* exact-K 是 hard constraint；
+* max-gap 是 hard constraint；
+* scaffold 提供全局 diversity；
+* residual 被允许有意聚集，不添加会抵消边界聚集的 redundancy penalty。
+
+## 6.5 Transition-derived boundary supervision
+
+[PROPOSAL] 仅训练 transition scorer 的 train-only target：
+
+[
+q_t
+\propto
+\sum_n
+\left[
+\exp\left(-\frac{(t-s_n)^2}{2\sigma^2}\right)
++
+\exp\left(-\frac{(t-e_n)^2}{2\sigma^2}\right)
+\right],
+]
+
+其中 (\sigma=2)，截断半径 4。
+
+[PROPOSAL] listwise loss：
+
+[
+L_{\text{transition}}
+=====================
+
+-\sum_t q_t
+\log
+\frac{\exp(s_t/\tau)}
+{\sum_{j:m_j=1}\exp(s_j/\tau)},
+\qquad \tau=0.7.
+]
+
+[MATHEMATICAL_CONSEQUENCE] 该目标直接训练 hard top-R 所需的全局排序，但不会把 soft occupancy 喂给 detector，因此没有 soft-forward/hard-inference detector mismatch。
+
+## 6.6 Detector-aware hard counterfactual distillation
+
+[PROPOSAL] 主 hard selection 为
+
+[
+S=C_G\cup A.
+]
+
+只允许从 adaptive residual (A) 中移除位置 (r)，再从未选位置加入 (a)：
+
+[
+S'=S\setminus{r}\cup{a}.
+]
+
+[MATHEMATICAL_CONSEQUENCE] 因为 skeleton 不动，任何 swap 自动保持 exact-K 和 max-gap≤3；不需要事后 repair。
+
+[PROPOSAL] 使用当前 detector 参数，在 `no_grad` 下计算：
+
+[
+U_{a,r}
+=======
+
+## L_{\text{det}}(S)
+
+L_{\text{det}}(S').
+]
+
+正值表示加入 (a)、移除 (r) 改善 detector。
+
+[PROPOSAL] selector pairwise loss：
+
+[
+\Delta s=s_a-s_r,
+]
+
+[
+L_{\text{CF}}
+=============
+
+\frac1N
+\sum
+w(U)
+\operatorname{softplus}
+\left(
+-\operatorname{sign}(U)
+\frac{\Delta s}{\tau_{\text{CF}}}
+\right).
+]
+
+[PROPOSAL] `U` 必须 detach；`L_CF` 只更新 transition scorer。
+
+[MATHEMATICAL_CONSEQUENCE] 该梯度方向与真实 hard inference utility 对齐：若某次 hard swap 降低 detector loss，则训练要求加入位置得分高于被移除位置；它不是“nonzero gradient 即正确”，而是显式有符号排序。
+
+[PROPOSAL] 每 8 个 successful updates 执行一次 counterfactual step，每次最多 4 个候选；前 600 successful updates 不启用 CF。平均额外 detector forward-equivalent 约为：
+
+[
+\frac{1+4}{8}=0.625
+]
+
+次/更新，外加正常主 forward。
+
+## 6.7 总损失与梯度所有权
+
+[
+L
+=
+
+L_{\text{det}}
++
+\lambda_aL_{\text{act}}
++
+\lambda_tL_{\text{transition}}
++
+\lambda_{\text{CF}}L_{\text{CF}}.
+]
+
+[PROPOSAL] 初始固定权重：
+
+[
+\lambda_a=1,\qquad
+\lambda_t=0.5,\qquad
+\lambda_{\text{CF}}=0.25.
+]
+
+| Loss                    | 更新对象                                                          | 禁止更新对象                                          |
+| ----------------------- | ------------------------------------------------------------- | ----------------------------------------------- |
+| (L_{\text{act}})        | [PROPOSAL] low-res stem、ASFormer、binary head                  | transition scorer、heavy detector                |
+| (L_{\text{transition}}) | [PROPOSAL] transition scorer                                  | coarse stem/ASFormer/action head、heavy detector |
+| (L_{\text{CF}})         | [PROPOSAL] transition scorer                                  | coarse model、heavy detector                     |
+| (L_{\text{det}})        | [PROPOSAL] VideoMAE adapter、projection、neck、ActionFormer head | coarse model、transition scorer                  |
+
+[SEVERE_VERDICT] 不使用 direct ST pixel bridge，不使用 soft frame mixture，不让 detector loss 破坏 actionness calibration。
+
+## 6.8 Physical-time detector
+
+[PROPOSAL] 对实际选择
+
+[
+P=(p_1<\cdots<p_K)
+]
+
+写入：
+
+```text
+irregular_selected_positions=P
+selected_dense_indices=P
+detector_output_coordinate_space=true_time_dense_index
+irregular_native_axis=true
+remap_gt_to_selected_axis=false
+```
+
+[PROPOSAL] GT segments 始终保留 dense physical time，不再做 selected-axis remap。
+
+[CODE_FACT] 已有 physical-grid head会根据实际 positions 将 nominal center 映射到 physical center，并以相邻 physical positions 推导 physical stride 和 regression range。
+
+[MATHEMATICAL_CONSEQUENCE] acquisition time、GT time、head prior time 和 prediction time成为同一个坐标系，消除当前 CellCF 的 observation-time substitution。
+
+## 6.9 AMP、successful update 与 EMA
+
+[PROPOSAL] 延续现有 fail-closed 语义：
+
+* counterfactual teacher 在主 detector graph 建立前运行；
+* no-grad autocast 禁止复用 detached FP16 parameter cache；
+* 每个候选前恢复 detector buffers、PyTorch/CUDA/Python/NumPy RNG；
+* AMP overflow 时重放同一 batch/RNG；
+* optimizer、LR schedule、CF schedule、EMA 和 `after_optimizer_step` 仅在 successful update 后前进；
+* terminal checkpoint 只评估 `state_dict_ema`。
+
+[CODE_FACT] 现有 teacher 已实现 buffer/RNG 保存恢复、frozen loss normalizer 和 no-grad utility detach，可直接修改候选集合与坐标，而无需重写整个 teacher。
+
+## 6.10 短窗口
+
+[PROPOSAL] 选择语义使用：
+
+[
+K_{\text{eff}}=\min(384,L).
+]
+
+若 (L\le384)，选择全部有效帧。
+
+[PROPOSAL] 第一版保持当前固定 VideoMAE wrapper 时，必须同时报告：
+
+```text
+unique_selected_K=K_eff
+heavy_executed_slots=384
+```
+
+[SEVERE_VERDICT] 只要 heavy backbone 仍计算 padded 384 slots，就不得把 `K_eff` 作为成本节省。Dynamic MUST 仍然冻结。
+
+## 6.11 训练和推理同构
+
+[PROPOSAL] 训练 detector forward 和正式推理都只使用 hard set `S`。
+
+[PROPOSAL] 推理路径严格为：
+
+```text
+dense decoded window
+→ low-res binary action-state model
+→ transition descriptors
+→ transition scorer
+→ fixed scaffold + hard residual top-R
+→ gather actual K frames
+→ heavy VideoMAE/AdaTAD detector on physical grid
+→ NMS/postprocess
+```
+
+[SEVERE_VERDICT] 推理时不得读取 GT、teacher、oracle selection、JSONL、ledger、detector cache 或 train-time utility。
+
+## 6.12 成本语义与 break-even
+
+[MATHEMATICAL_CONSEQUENCE] 相对 bare exact-uniform384，新方法具有相同 heavy K，却多出 dense coarse probe 和 selector，因此通常不会更便宜；它必须用更高定位精度证明自己是新的 Pareto 点。
+
+[MATHEMATICAL_CONSEQUENCE] 相对 dense AdaTAD768，新方法可能通过减少 heavy backbone 帧数节省成本，但必须计入 dense decode、resize、coarse probe、selector 和 physical-grid overhead。
+
+[PROPOSAL] 训练能耗 break-even 相对 dense 定义为：
+
+[
+N_{\text{BE}}
+=============
+
+\frac{
+E_{\text{train,new}}-E_{\text{train,uniform}}
+}{
+E_{\text{infer,dense}}-E_{\text{infer,new}}
+}.
+]
+
+只有分母为正时才报告有限 break-even。
+
+[SEVERE_VERDICT] 相对 bare uniform384，若 (E_{\text{infer,new}}>E_{\text{infer,uniform}})，不存在成本 break-even；不得伪造一个正数。
+
+---
+
+# 7. `MINIMAL_DECISIVE_EXPERIMENT_MATRIX`
+
+## 7.1 正式六臂
+
+[PROPOSAL] 所有 sparse 正式臂统一使用 **actual-position physical-grid ActionFormer**。历史 anchor-grid CellCF 结果保留为旧证据，不混入新的因果矩阵。
+
+| 臂             | 唯一变化                                                                                  | 唯一回答的问题                                                  |
+| ------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `U-PG`        | exact-uniform K384，physical grid，无 coarse selector                                    | [PROPOSAL] matched uniform 基线                            |
+| `Cell-PG`     | 当前 one-per-cell family + learned transition + local CF，但修正为 actual physical positions | [PROPOSAL] 去掉坐标混杂后，phase correction/CellCF 本身是否有价值       |
+| `CAR-Proxy`   | coverage skeleton + residual，score=`abs_delta + uncertainty_peak`                     | [PROPOSAL] 新可行集合配合已有手工证据是否已经足够                           |
+| `CAR-Learned` | 同一新 family，learned transition scorer，无 detector utility                               | [PROPOSAL] learned hidden-transition scorer 是否优于手工 proxy |
+| `CAR-CF`      | 同 `CAR-Learned`，加 hard detector-aware CF                                              | [PROPOSAL] detector utility 是否产生独立增益                     |
+| `Dense-PG`    | dense768；identity physical positions                                                  | [PROPOSAL] 性能与真实成本参考，不是 matched-K baseline               |
+
+[MATHEMATICAL_CONSEQUENCE] 所需核心因果对比只有：
+
+[
+\text{Cell-PG}-\text{U-PG},
+]
+
+[
+\text{CAR-Learned}-\text{CAR-Proxy},
+]
+
+[
+\text{CAR-CF}-\text{CAR-Learned},
+]
+
+[
+\text{CAR-CF}-\text{U-PG},
+]
+
+[
+\text{CAR-CF}-\text{Dense-PG}.
+]
+
+[SEVERE_VERDICT] 不增加“若干不同 loss 权重”“若干不同高斯宽度”“若干不同候选数”作为正式臂；它们不能回答新的因果问题。
+
+## 7.2 训练合同
+
+[PROPOSAL] 所有学习臂：
+
+* 同一个新 implementation commit；
+* 同一 detector architecture 和 physical coordinate contract；
+* 同一预训练初始化；
+* 同一 train/val/test window manifest；
+* 同一随机种子集合 `{0,1,2}`；
+* 同一每种子数据顺序；
+* 同一 successful optimizer update 数；
+* 同一 successful-update LR 进度；
+* 同一 AMP replay 语义；
+* 同一 EMA；
+* 同一 terminal checkpoint 规则；
+* sparse arms 全部 `K=384`；
+* Dynamic MUST 保持关闭。
+
+[PROPOSAL] 正式训练使用官方 60 epochs；若沿用当前每 epoch 100 successful updates 的 formal loader，则总数固定为 6,000 successful updates。
+
+[PROPOSAL] 只评估 terminal `epoch_59.pth/state_dict_ema`。Epoch 20、40 checkpoint 只用于预注册的 loss/calibration/selection 收敛图，不参与模型选择。
+
+## 7.3 检测指标
+
+[PROPOSAL] 主指标：
+
+[
+\text{Avg-mAP}_{0.3:0.7}.
+]
+
+[PROPOSAL] key secondary：
+
+* mAP@0.6；
+* mAP@0.7；
+* mAP@0.3/0.4/0.5 完整报告；
+* short/medium/long action 分层 mAP。
+
+[PROPOSAL] action 长度分层阈值由训练集 duration tertiles 预先冻结；不得根据测试集调阈值。
+
+## 7.4 选择质量
+
+[PROPOSAL] 所有坐标都在 original dense physical time 上计算：
+
+* boundary recall@r0/r1/r2/r4；
+* both-endpoint recall；
+* boundary-local sampling enrichment；
+* 每边界实际分配帧数；
+* selected-to-boundary distance；
+* background budget release；
+* max-gap p50/p95/max；
+* selected clustering；
+* unique K 与 heavy executed slots；
+* scaffold/residual 各自贡献；
+* short-action any-frame 与 endpoint coverage。
+
+## 7.5 Coarse 与 utility 质量
+
+[PROPOSAL] 每种子报告：
+
+* AUROC；
+* AUPRC 与 prevalence lift；
+* Brier；
+* ECE；
+* action/background probability distributions；
+* `abs(delta p_action)`；
+* `abs_delta + uncertainty_peak`；
+* learned scorer；
+* held-out hard-swap utility 的 Spearman、Kendall、pairwise accuracy。
+
+[PROPOSAL] hard-swap utility audit 使用独立 train-video audit split；不得以 validation/test utility 反向调整 selector。
+
+## 7.6 成本合同
+
+[PROPOSAL] 在现有 profiler 上新增独立阶段：
+
+```text
+decode_ms
+resize_preprocess_ms
+collate_ms
+h2d_ms
+coarse_probe_ms
+selector_policy_ms
+heavy_backbone_ms
+projection_ms
+neck_ms
+head_ms
+nms_ms
+postprocess_other_ms
+end_to_end_serial_ms
+```
+
+并报告：
+
+* sample-level p50/p95；
+* video-cluster CI；
+* peak GPU memory；
+* GPU energy；
+* training GPU-hours；
+* CF 额外 detector forward 数；
+* inference energy；
+* dense-relative break-even；
+* bare-uniform overhead。
+
+[PROPOSAL] 沿用现有正式成本 gate：
+
+* p50 end-to-end saving ≥15%；
+* p95 saving ≥15%；
+* heavy backbone saving >0；
+* frontend ≤ heavy-backbone saving 的 40%。
+
+## 7.7 统计单位
+
+[PROPOSAL] detection、selection 和 coarse metric 均使用两层 paired bootstrap：
+
+1. 外层重采样三个训练种子；
+2. 内层重采样原始视频；
+3. 每次重新合并该视频的全部重叠窗口与 predictions；
+4. 绝不把窗口当独立样本。
+
+[PROPOSAL] 预注册的正式 contrasts 只有：
+
+* `CAR-CF` vs `U-PG`；
+* `CAR-CF` vs `CAR-Learned`；
+* `CAR-Learned` vs `CAR-Proxy`。
+
+其余比较为描述性结果。
+
+---
+
+# 8. `IMPLEMENTATION_BLUEPRINT`
+
+## 8.1 直接复用
+
+[PROPOSAL] 原样复用：
+
+* `C3CoarseProbeActionnessSource`
+* official ASFormer binary probe
+* `DucaTransitionUtilityScorer`
+* transition descriptor 生成
+* ActionFormer cls/reg loss
+* VideoMAE-S adapter、projection、neck、NMS
+* `AnchorFreeHead.physical_grid_actionformer`
+* AMP counterfactual state restore
+* `export_duca_selection_quality.py`
+* `analyze_duca_selection_quality.py`
+* `duca_ceiling_utils.py`
+* `duca_full_stack_cost.py` 的 provenance、raw-sample reconstruction 和 comparability 检查
+
+## 8.2 修改文件
+
+| 文件                                                       | 修改                                                                                |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `opentad/models/duca/structured_selection.py`            | [PROPOSAL] 新增 minimal balanced-gap scaffold 与 coverage-residual decoder           |
+| `opentad/models/duca/acquisition.py`                     | [PROPOSAL] 新增 `coverage_residual` policy；detector positions 必须等于 actual positions |
+| `opentad/models/selectors/duca_online_frame_selector.py` | [PROPOSAL] 新增 residual-only counterfactual candidates；禁止 anchor grid              |
+| `opentad/models/duca/counterfactual_utility.py`          | [PROPOSAL] 从 cell-slot swap 改为 residual remove/add pair                           |
+| `opentad/models/detectors/actionformer.py`               | [PROPOSAL] CF candidate 使用各自 actual physical positions；不 remap GT                 |
+| `opentad/models/duca/transition_only.py`                 | [PROPOSAL] 增加明确的 `detach_coarse_for_all_selector_losses=True`                     |
+| `tools/bata/duca_full_stack_cost.py`                     | [PROPOSAL] 拆分 decode/preprocess/collate/NMS                                       |
+| `profile_duca_full_stack_cost.py`                        | [PROPOSAL] 添加 transform 和 NMS instrumentation                                     |
+| `summarize_duca_cellcf_cost.py`                          | [PROPOSAL] 扩展为通用 DUCA-CARA cost pair                                              |
+
+## 8.3 新增文件
+
+```text
+tools/bata/diagnose_duca_allocation_ceiling.py
+tests/test_duca_coverage_residual_selection.py
+tests/test_duca_coverage_residual_counterfactual.py
+tests/test_duca_actual_position_physical_grid.py
+tests/test_duca_gradient_ownership_cara.py
+tests/test_duca_allocation_ceiling.py
+configs/adatad/thumos/duca_cara_proxy_fixed384_physical_grid_full_train.py
+configs/adatad/thumos/duca_cara_learned_fixed384_physical_grid_full_train.py
+configs/adatad/thumos/duca_cara_cf_fixed384_physical_grid_full_train.py
+configs/adatad/thumos/duca_cellcf_fixed384_physical_grid_control.py
+configs/adatad/thumos/duca_exact_uniform_fixed384_physical_grid_control.py
+```
+
+## 8.4 核心 decoder 补丁
+
+```python
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+import torch
+
+
+@dataclass
+class CoverageResidualSelection:
+    hard_occupancy: torch.Tensor          # [B, T]
+    selected_positions: torch.Tensor      # [B, K_max], padded with -1
+    selected_valid: torch.Tensor          # [B, K_max]
+    scaffold_occupancy: torch.Tensor      # [B, T]
+    residual_occupancy: torch.Tensor      # [B, T]
+    effective_k: torch.Tensor             # [B]
+    scaffold_count: torch.Tensor          # [B]
+    max_unselected_hole: int
+
+
+def minimal_balanced_scaffold(
+    valid_len: int,
+    max_unselected_hole: int,
+    *,
+    device: torch.device,
+) -> torch.Tensor:
+    """Minimum-cardinality deterministic set with max hole <= G."""
+
+    L = int(valid_len)
+    G = int(max_unselected_hole)
+    if L <= 0:
+        return torch.empty(0, dtype=torch.long, device=device)
+    if G < 0:
+        raise ValueError("max_unselected_hole must be non-negative")
+
+    count = max(1, math.ceil((L - G) / (G + 1)))
+    count = min(count, L)
+
+    # Distribute L-count unselected frames over count+1 holes.
+    unselected = L - count
+    base, extra = divmod(unselected, count + 1)
+    holes = [base + 1] * extra + [base] * (count + 1 - extra)
+
+    if max(holes, default=0) > G:
+        raise RuntimeError("balanced scaffold construction violated max hole")
+
+    positions: list[int] = []
+    cursor = holes[0]
+    for index in range(count):
+        positions.append(cursor)
+        cursor += 1 + holes[index + 1]
+
+    result = torch.tensor(positions, dtype=torch.long, device=device)
+    if result.numel() != count:
+        raise RuntimeError("scaffold count mismatch")
+    return result
+
+
+def coverage_residual_topk(
+    policy_scores: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    k: int,
+    max_unselected_hole: int,
+) -> CoverageResidualSelection:
+    """Hard-identical training/inference selection.
+
+    Coverage is guaranteed by a fixed minimum scaffold. All remaining budget
+    is allocated globally by learned or hand-written transition evidence.
+    """
+
+    if policy_scores.ndim != 2:
+        raise ValueError("policy_scores must be [B,T]")
+    valid = valid_mask.to(device=policy_scores.device, dtype=torch.bool)
+    if valid.shape != policy_scores.shape:
+        raise ValueError("valid_mask must align with policy_scores")
+
+    batch, temporal_len = policy_scores.shape
+    hard = torch.zeros_like(policy_scores)
+    scaffold_mask = torch.zeros_like(policy_scores)
+    residual_mask = torch.zeros_like(policy_scores)
+
+    rows: list[torch.Tensor] = []
+    effective_k: list[int] = []
+    scaffold_counts: list[int] = []
+
+    for batch_idx in range(batch):
+        valid_positions = torch.nonzero(
+            valid[batch_idx], as_tuple=False
+        ).flatten()
+        L = int(valid_positions.numel())
+        K = min(int(k), L)
+        effective_k.append(K)
+
+        if K == 0:
+            rows.append(torch.empty(0, dtype=torch.long,
+                                    device=policy_scores.device))
+            scaffold_counts.append(0)
+            continue
+
+        local_scaffold = minimal_balanced_scaffold(
+            L,
+            max_unselected_hole,
+            device=policy_scores.device,
+        )
+        if local_scaffold.numel() > K:
+            raise ValueError(
+                f"coverage scaffold requires {local_scaffold.numel()} "
+                f"positions but budget is {K}"
+            )
+
+        scaffold = valid_positions[local_scaffold]
+        scaffold_mask[batch_idx, scaffold] = 1.0
+        scaffold_counts.append(int(scaffold.numel()))
+
+        residual_count = K - int(scaffold.numel())
+        allowed = valid[batch_idx].clone()
+        allowed[scaffold] = False
+
+        if residual_count > 0:
+            candidate_positions = torch.nonzero(
+                allowed, as_tuple=False
+            ).flatten()
+
+            # Stable sort makes equal-score ties deterministic by time index.
+            candidate_scores = policy_scores[
+                batch_idx, candidate_positions
+            ].detach()
+            order = torch.argsort(
+                candidate_scores,
+                descending=True,
+                stable=True,
+            )
+            residual = candidate_positions[order[:residual_count]]
+            residual_mask[batch_idx, residual] = 1.0
+            selected = torch.cat((scaffold, residual)).sort().values
+        else:
+            selected = scaffold.sort().values
+
+        if selected.numel() != K:
+            raise RuntimeError("coverage-residual decoder violated exact K")
+
+        hard[batch_idx, selected] = 1.0
+        rows.append(selected)
+
+    max_k = max(effective_k, default=0)
+    padded = torch.full(
+        (batch, max_k),
+        -1,
+        dtype=torch.long,
+        device=policy_scores.device,
+    )
+    selected_valid = torch.zeros(
+        (batch, max_k),
+        dtype=torch.bool,
+        device=policy_scores.device,
+    )
+    for batch_idx, row in enumerate(rows):
+        padded[batch_idx, : row.numel()] = row
+        selected_valid[batch_idx, : row.numel()] = True
+
+    return CoverageResidualSelection(
+        hard_occupancy=hard,
+        selected_positions=padded,
+        selected_valid=selected_valid,
+        scaffold_occupancy=scaffold_mask,
+        residual_occupancy=residual_mask,
+        effective_k=torch.tensor(
+            effective_k, device=policy_scores.device
+        ),
+        scaffold_count=torch.tensor(
+            scaffold_counts, device=policy_scores.device
+        ),
+        max_unselected_hole=int(max_unselected_hole),
+    )
+```
+
+## 8.5 Hard utility 排序损失
+
+```python
+import torch
+import torch.nn.functional as F
+
+
+def hard_swap_utility_ranking_loss(
+    policy_scores: torch.Tensor,       # [B,T]
+    add_positions: torch.Tensor,       # [B,M]
+    remove_positions: torch.Tensor,    # [B,M]
+    detector_utility: torch.Tensor,    # [B,M], detached
+    candidate_valid: torch.Tensor,     # [B,M]
+    *,
+    temperature: float = 0.7,
+    utility_epsilon: float = 1.0e-6,
+    max_weight: float = 4.0,
+) -> torch.Tensor:
+    valid = (
+        candidate_valid.bool()
+        & torch.isfinite(detector_utility)
+        & (detector_utility.abs() > utility_epsilon)
+    )
+    if not valid.any():
+        return policy_scores.sum() * 0.0
+
+    add_score = policy_scores.gather(
+        1, add_positions.clamp_min(0)
+    )
+    remove_score = policy_scores.gather(
+        1, remove_positions.clamp_min(0)
+    )
+    score_delta = (add_score - remove_score) / temperature
+
+    utility = detector_utility.detach()
+    direction = utility.sign()
+
+    scale = utility.abs()[valid].median().clamp_min(
+        utility_epsilon
+    )
+    weight = (utility.abs() / scale).clamp(max=max_weight)
+
+    per_pair = weight * F.softplus(-direction * score_delta)
+    return per_pair[valid].mean()
+```
+
+## 8.6 Counterfactual coordinate 修复
+
+```python
+def evaluate_one(
+    batch_index: int,
+    actual_positions: torch.Tensor,
+) -> torch.Tensor:
+    actual_positions = actual_positions.reshape(1, -1)
+    selected_inputs = self._duca_gather_raw(
+        raw_inputs[batch_index:batch_index + 1],
+        actual_positions,
+    )
+    selected_masks = actual_positions >= 0
+
+    active_positions = actual_positions[0, selected_masks[0]]
+    meta = dict(raw_metas[batch_index])
+
+    # One coordinate source of truth.
+    physical_positions = [
+        int(value)
+        for value in active_positions.detach().cpu().tolist()
+    ]
+    meta["irregular_selected_positions"] = physical_positions
+    meta["selected_dense_indices"] = physical_positions
+    meta["irregular_selected_count"] = len(physical_positions)
+    meta["irregular_dense_valid_len"] = int(
+        raw_masks[batch_index].sum().item()
+    )
+    meta["irregular_native_axis"] = True
+    meta["detector_output_coordinate_space"] = (
+        "true_time_dense_index"
+    )
+    meta["detector_prediction_inverse_map_required"] = False
+    meta["remap_gt_to_selected_axis"] = False
+
+    # Dense-axis GT is passed unchanged.
+    candidate_losses = self.forward_train(
+        selected_inputs,
+        selected_masks,
+        [meta],
+        [raw_segments[batch_index]],
+        [raw_labels[batch_index]],
+        _duca_skip_frame_selector=True,
+        _duca_counterfactual_eval=True,
+    )
+    return self._duca_detector_objective(candidate_losses)
+```
+
+## 8.7 配置核心
+
+```python
+model = dict(
+    frame_selector=dict(
+        type="DucaOnlineFrameSelector",
+        dense_window_size=768,
+        budget=384,
+        budget_mode="fixed",
+        acquisition_policy="coverage_residual",
+        coverage_max_unselected_hole=3,
+        selector_variant="transition_only",
+        coarse_hidden_dim=96,
+        use_coarse_hidden_features=True,
+        require_coarse_hidden_features=True,
+
+        # Hard-only detector path.
+        detector_gradient_mode="none",
+        detach_coarse_for_all_selector_losses=True,
+
+        transition_target_sigma=2.0,
+        transition_target_radius=4,
+        transition_distribution_temperature=0.7,
+
+        counterfactual_objective=(
+            "coverage_residual_signed_logistic"
+        ),
+        counterfactual_utility_distillation_weight=0.25,
+        counterfactual_utility_temperature=0.7,
+        counterfactual_max_candidates=4,
+        counterfactual_interval_successful_updates=8,
+        counterfactual_start_successful_update=600,
+
+        remap_gt_to_selected_axis=False,
+        selected_axis_remap_required=False,
+        detector_output_coordinate_space=(
+            "true_time_dense_index"
+        ),
+        selected_positions_unit="original_time_index",
+
+        loss_weights=dict(
+            actionness=1.0,
+            transition=0.5,
+            transition_boundary=0.0,
+            detector=1.0,
+            detector_utility=0.0,
+            boundary=0.0,
+            hole=0.0,
+            redundancy=0.0,
+            budget=0.0,
+            entropy=0.0,
+        ),
+    ),
+    rpn_head=dict(
+        type="ActionFormerHead",
+        physical_grid_actionformer=dict(
+            enabled=True,
+            required=True,
+            strict=True,
+            eps=1.0e-6,
+        ),
+    ),
+)
+
+workflow = dict(
+    end_epoch=60,
+    checkpoint_interval=20,
+    formal_protocol="duca_cara_fixed384_v1",
+)
+```
+
+## 8.8 必须新增的测试
+
+[PROPOSAL] 单元测试必须至少覆盖：
+
+1. 所有 `1≤L≤768` 的 exact-K；
+2. 所有 `1≤L≤768` 的 max-gap≤3；
+3. `L=768` scaffold 恰好 192、residual 恰好 192；
+4. `r4` 窗口可分配 9 帧；
+5. 完整背景 region 可释放 residual quota；
+6. scorer 平分时 deterministic；
+7. residual swap 不移除 scaffold；
+8. 每个 CF candidate exact-K/max-gap；
+9. acquisition position 等于 physical detector position；
+10. physical-grid 模式拒绝 GT remap；
+11. (L_{\text{act}}) 只更新 coarse；
+12. (L_{\text{transition}}) 和 (L_{\text{CF}}) 只更新 scorer；
+13. (L_{\text{det}}) 不更新 selector；
+14. train hard forward 与 inference hard forward bitwise equal；
+15. AMP overflow 时 scheduler、EMA、CF interval 不前进；
+16. profiler 可重建 decode/preprocess/NMS 分项。
+
+---
+
+# 9. `CLAIM_AND_KILL_TABLE`
+
+| Claim                                       | 支持条件                                                                                                           | Kill / 降级条件                                                                          |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 当前 CellCF 是 boundary-adaptive allocation    | [SEVERE_VERDICT] 不可能由当前可行集合支持                                                                                  | [MATHEMATICAL_CONSEQUENCE] 已永久 KILL；one-per-cell 不允许跨 cell quota                     |
+| 当前 CellCF 是有价值的 uniform phase correction    | [PROPOSAL] `Cell-PG` 三种子相对 `U-PG` 的 Avg 95% CI>0                                                               | [PROPOSAL] `ΔAvg<0.5` 且 `Δ@0.7<1.0`，停止该支线                                            |
+| 新 family 真正增加边界密度                           | [PROPOSAL] r4 每边界至少多 1.5 帧、背景释放≥0.10K、max-gap 100% 合规                                                          | [PROPOSAL] 任一结构性 gate 失败，不进入训练                                                       |
+| 粗动作状态间接支持边界定位                               | [PROPOSAL] BCE calibration 合格，transition scorer 在 held-out utility/boundary ranking 上优于随机                      | [PROPOSAL] AUPRC 无 lift、ECE严重且 transition ranking≈随机，终止 learned selector             |
+| learned hidden-transition scorer 优于手工 proxy | [PROPOSAL] `CAR-Learned` 相对 `CAR-Proxy` 的预注册 contrast CI>0                                                     | [PROPOSAL] 不优于 proxy，则 learned scorer 从主 claim 删除；保留 proxy 或终止                       |
+| detector-aware training 有独立贡献               | [PROPOSAL] `CAR-CF` 相对 `CAR-Learned` mean `ΔAvg≥0.2` 或 `Δ@0.7≥0.5`，且 Kendall≥0.10、pair accuracy≥0.55，CI 均越过无效值 | [PROPOSAL] D≤L 或 utility ranking 方向不稳定，永久删除 CF                                       |
+| 新 DUCA 优于 matched uniform                   | [PROPOSAL] 三种子 mean `ΔAvg≥0.5` 且两层 bootstrap 95% CI>0                                                          | [PROPOSAL] 未通过则不得作为论文主方法                                                             |
+| 新 DUCA 改善高 tIoU                             | [PROPOSAL] mean `Δ@0.7≥0.75` 且 CI>0；@0.6 同方向                                                                   | [PROPOSAL] 只有单种子或单阈值高，不允许该 claim                                                     |
+| 新 DUCA 对短动作安全                               | [PROPOSAL] short-action mAP、any coverage 和 both-endpoint coverage均无显著下降                                        | [PROPOSAL] short mAP 下降>0.5 或 coverage CI<0，停止主方案                                    |
+| 新 DUCA 是真实效率方法                              | [PROPOSAL] full-stack p50/p95 相对 dense≥15% savings，frontend≤40% heavy saving，energy 同方向                        | [PROPOSAL] 只剩 FLOPs 或 heavy-only savings，撤销效率 claim                                  |
+| 新 DUCA 支配 uniform384                        | [MATHEMATICAL_CONSEQUENCE] 只有在精度更高且 full-stack 成本不高于 uniform 时才能称 dominance                                    | [SEVERE_VERDICT] 若 coarse frontend 使成本更高，只能称 Pareto frontier candidate，不能称 dominance |
+| Dynamic MUST 应解锁                            | [PROPOSAL] fixed-K `CAR-CF` 同时通过精度、选择质量和成本 gates 后才能讨论                                                         | [SEVERE_VERDICT] fixed-K 未成立时继续冻结                                                    |
+| DUCA 应保留为论文主线                               | [PROPOSAL] `CAR-CF` 同时通过 ceiling、三种子检测和真实成本 gate                                                               | [PROPOSAL] 任一核心 gate 失败，将 DUCA 降级为负结果/诊断工具，不再追加 selector loss                        |
+
+---
+
+# 10. `FINAL_RECOMMENDATION`
+
+1. [SEVERE_VERDICT] 立即 KILL 当前 one-per-cell CellCF 作为论文主方法，因为它在数学上只能做 uniform phase/content correction，不能做边界自适应预算分配。
+2. [PROPOSAL] 第一项工作不是训练，而是实现 A–E 的 exact family-constrained ceiling，先量化当前 CellCF 和新 family 的真实几何自由度。
+3. [PROPOSAL] 唯一应进入实现的主方案是 `G=3` 的 192-frame coverage skeleton 加 192-frame global residual allocation。
+4. [PROPOSAL] 所有实际选择位置必须直接送入仓库已有 physical-grid ActionFormer，GT 不再 remap 到 selected-axis。
+5. [PROPOSAL] coarse stem、ASFormer 和 binary head只由 action/background BCE训练，transition 与 detector utility只训练 scorer。
+6. [PROPOSAL] detector feedback 使用 residual-only hard counterfactual signed ranking，不使用 straight-through soft detector bridge。
+7. [PROPOSAL] ceiling 通过后只运行六臂、三种子、官方 60-epoch、terminal-EMA 的决定性矩阵。
+8. [PROPOSAL] 成本 profiler 必须先拆分 decode、resize/preprocess 与 NMS，并同时比较 bare uniform384 和 dense768。
+9. [SEVERE_VERDICT] 若 `CAR-CF` 不能稳定超过 matched uniform，或 full-stack savings 不成立，DUCA 应从论文主线终止，Dynamic MUST 继续冻结。

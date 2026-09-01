@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "dispatch_id": "CENTRAL-RECOVERY-DUCA-PROJECTCHAT-20260811-v011",
+  "project": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PROJECT_CHAT_READONLY_RECOVERY",
+  "runtime_cdp": "http://127.0.0.1:4334",
+  "completed_at": "2026-08-11T15:00:44.261Z",
+  "projectChatControlFound": true,
+  "projectBoundFreshComposer": true,
+  "before_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "after_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "before_title": "ChatGPT",
+  "after_title": "ChatGPT - DUCA",
+  "title_warning": "document.title did not expose the expected Project title",
+  "project_context_evidence": "project-scoped-url",
+  "dom_candidates": [
+    {
+      "index": 0,
+      "role": "button",
+      "text": "Chat",
+      "aria": "",
+      "href": "",
+      "testid": "",
+      "chatLike": true,
+      "targetProjectScoped": false,
+      "projectMarker": false,
+      "safe": true
+    }
+  ],
+  "fresh_conversation_id": null,
+  "outcome": "PASS_PROJECT_BOUND_FRESH_COMPOSER",
+  "actual_attempt_increased": false
+}

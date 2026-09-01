@@ -1,0 +1,29 @@
+{
+  "created_at": "2026-08-12T21:51:30Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_PHASE_SPECIFIC_READONLY_PRE_RUN_ADMISSION_FACT_CHECK",
+  "message_id": "msg-20260812T215130Z-7a4c8fd1e602",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_EXECUTION_PLAN-v002",
+    "EVALUATOR_DUCA_P0_SEALED_FIXTURE_REFERENCE_MATERIALIZATION-v001",
+    "BUILDER_DUCA_P0_CORRECTED_REMOTE_CLEAN_BINDING-v002",
+    "EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v004",
+    "CRITIC_DUCA_P0_E1_REFERENCE_ADMISSION_MANIFEST_V004_FOCUSED_RECHECK-v001",
+    "DUCA_P0_E1_PRE_RUN_ADMISSION_CANDIDATE-v001",
+    "msg-20260812T214652Z-7b2c8a5e61d4"
+  ],
+  "payload": {
+    "reserved_execution_queue_id": "msg-20260812T214652Z-7b2c8a5e61d4",
+    "reserved_execution_queue_state": "reserved_not_dispatched",
+    "phase": "E1_INDEPENDENT_REFERENCE_FREEZE"
+  },
+  "priority": "high",
+  "requested_action": "Perform one bounded, read-only E1 PRE_RUN admission fact check only. Use the registered Evaluator frozen binding and the existing registered N16R4 transport; do not create, modify, delete, rename, seal, materialize, import, compile, test, invoke Python, or issue the candidate argv. Verify and report each fact separately: (1) the phase-specific Evaluator binding is clean and exactly at frozen revision 63a726a4aaf48ecbf6780bb196de43a890c6b4df, with no foreign/Builder mutation; (2) the literal Evaluator root and four source/input paths have the required project-local regular/non-writable metadata, and the existing sealed-materialization receipt still supplies the exact frozen 18/9/6 membership/order provenance; (3) the admitted shared parent exists while evaluator-reference, evaluator-reference.partial, builder-production, evaluator-comparison, and the E1 receipt are absent, and the reserved execution identity remains unopened/not-consumed/not-dispatched with no prior or active E1/B1/E2 receipt; (4) the registered N16R4 remote CPU transport, literal interpreter and literal working directory are available. Remote shell access is limited to non-mutating metadata/path/interpreter availability checks; do not read fixture contents or invoke the interpreter. Any uncertain or failed fact is PRE_RUN_BLOCKED. Return one durable fact-check record with exact evidence commands/results, per-fact VERIFIED/UNVERIFIED/BLOCKED status, and aggregate PRE_RUN_READY only if every literal fact is verified. The reserved E1 identity must remain inert and no execution authority is granted.",
+  "required_gate": "P0_E1_V004_STATIC_RECHECK_PASS",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

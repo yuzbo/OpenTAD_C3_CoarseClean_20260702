@@ -1,0 +1,219 @@
+{
+  "schema_version": "duca-p0-identity-fixture-matrix-v001",
+  "status": "FROZEN_NOT_EXECUTED",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "queue_message_id": "msg-20260812T185607Z-f6cc921b7d40",
+  "parent_decision": "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+  "fixed_commit": "63a726a4aaf48ecbf6780bb196de43a890c6b4df",
+  "Q": 1048576,
+  "matrix_closed": true,
+  "post_freeze_addition": "FORBIDDEN",
+  "materialization": {
+    "status": "NOT_EXECUTED",
+    "rule": "Before a separately authorized gate, materialize each recipe into one canonical UTF-8 JSON object with fields T,K,Q,u,a and full integer arrays. Production and reference consume those identical sealed bytes.",
+    "half_up": "H(n,d)=floor((2*n+d)/(2*d)) for n>=0,d>0",
+    "uniform": "u[j]=H(j*(T-1),K-1)",
+    "omit": "p^(-m) is ascending [0,T-1] with the one interior integer m omitted",
+    "quarter_grid": "a[j]=(Q/4)*v[j]"
+  },
+  "positive": [
+    {
+      "id": "G16-U",
+      "T": 16,
+      "K": 16,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "Q_times_u"},
+      "solver_witness": "exact_dp_singleton",
+      "expected": {"status": "PASS", "p": {"recipe": "integers_0_through_15"}, "feasible_count": "1"}
+    },
+    {
+      "id": "G17-E2",
+      "T": 17,
+      "K": 16,
+      "u": {"recipe": "canonical_uniform_equals_p_omit_8"},
+      "a": {"recipe": "Q_times_u"},
+      "solver_witness": "exhaustive_ascending_15_sequences",
+      "expected": {"status": "PASS", "p": {"recipe": "p_omit_8"}, "winner_term": "E2", "feasible_count": "15"}
+    },
+    {
+      "id": "G17-EINF",
+      "T": 17,
+      "K": 16,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "quarter_grid_v", "v": [0,1,6,17,18,23,24,28,36,37,42,52,53,54,57,64]},
+      "solver_witness": "exhaustive_ascending_15_sequences",
+      "expected": {"status": "PASS", "p": {"recipe": "p_omit_3"}, "E2_tie": ["p_omit_3","p_omit_8"], "winner_term": "E_infinity", "feasible_count": "15"}
+    },
+    {
+      "id": "G17-E1",
+      "T": 17,
+      "K": 16,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "quarter_grid_v", "v": [0,7,15,16,18,19,21,35,36,37,43,49,50,52,55,64]},
+      "solver_witness": "exhaustive_ascending_15_sequences",
+      "expected": {"status": "PASS", "p": {"recipe": "p_omit_1"}, "scalar_tie_through": "E_infinity", "tied_candidates": ["p_omit_1","p_omit_7"], "winner_term": "E1", "feasible_count": "15"}
+    },
+    {
+      "id": "G17-U1",
+      "T": 17,
+      "K": 16,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "quarter_grid_v", "v": [0,5,7,17,18,19,29,30,39,40,44,53,54,55,60,64]},
+      "solver_witness": "exhaustive_ascending_15_sequences",
+      "expected": {"status": "PASS", "p": {"recipe": "p_omit_6"}, "scalar_tie_through": "E1", "tied_candidates": ["p_omit_6","p_omit_3"], "winner_term": "U1", "feasible_count": "15"}
+    },
+    {
+      "id": "G17-PLEX",
+      "T": 17,
+      "K": 16,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "quarter_grid_v", "v": [0,1,12,13,14,18,28,29,34,37,47,48,49,59,63,64]},
+      "solver_witness": "exhaustive_ascending_15_sequences",
+      "expected": {"status": "PASS", "p": {"recipe": "p_omit_10"}, "scalar_tie_through": "U1", "tied_candidates": ["p_omit_10","p_omit_6"], "winner_term": "interior_position_vector", "feasible_count": "15"}
+    },
+    {
+      "id": "G31-U",
+      "T": 31,
+      "K": 16,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "Q_times_u"},
+      "solver_witness": "independent_exact_dp",
+      "expected": {"status": "PASS", "p": {"recipe": "canonical_uniform"}}
+    },
+    {
+      "id": "G32-U",
+      "T": 32,
+      "K": 32,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "Q_times_u"},
+      "solver_witness": "exact_dp_singleton",
+      "expected": {"status": "PASS", "p": {"recipe": "canonical_uniform"}, "feasible_count": "1"}
+    },
+    {
+      "id": "G383-U",
+      "T": 383,
+      "K": 368,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "Q_times_u"},
+      "solver_witness": "independent_exact_dp",
+      "expected": {"status": "PASS", "p": {"recipe": "canonical_uniform"}}
+    },
+    {
+      "id": "G384-U",
+      "T": 384,
+      "K": 384,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "Q_times_u"},
+      "solver_witness": "exact_dp_singleton",
+      "expected": {"status": "PASS", "p": {"recipe": "canonical_uniform"}, "feasible_count": "1"}
+    },
+    {
+      "id": "G385-X",
+      "T": 385,
+      "K": 384,
+      "u": {"recipe": "canonical_uniform_equals_p_omit_192"},
+      "a": {"recipe": "piecewise", "pieces": ["Q*j for j<191", "Q*191+3*Q/4 for j=191", "Q*192+Q/4 for j=192", "Q*(j+1) for j>192"]},
+      "solver_witness": "exhaustive_ascending_383_sequences",
+      "expected": {
+        "status": "PASS",
+        "p": {"recipe": "p_omit_193"},
+        "scalar_tie_candidates": ["p_omit_191","p_omit_193"],
+        "E2": "687194767360",
+        "E_infinity": "786432",
+        "E1": "1048576",
+        "U1": "1",
+        "winner_term": "interior_position_vector",
+        "feasible_count": "383"
+      }
+    },
+    {
+      "id": "G767-U",
+      "T": 767,
+      "K": 384,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "Q_times_u"},
+      "solver_witness": "independent_exact_dp",
+      "expected": {"status": "PASS", "p": {"recipe": "canonical_uniform"}}
+    },
+    {
+      "id": "F768-U",
+      "T": 768,
+      "K": 384,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "Q_times_u"},
+      "solver_witness": "independent_exact_dp",
+      "expected": {"status": "PASS", "p": {"recipe": "canonical_uniform"}, "last": 767}
+    },
+    {
+      "id": "F768-PERIODIC",
+      "T": 768,
+      "K": 384,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "Q_times_p_star", "p_star": "cumulative gaps g[i]=1 for even i<382, 3 for odd i<382, and g[382]=3"},
+      "solver_witness": "independent_exact_dp",
+      "expected": {"status": "PASS", "p": {"recipe": "same_p_star"}, "E2": "0", "E_infinity": "0", "E1": "0"}
+    },
+    {
+      "id": "F768-DISP16",
+      "T": 768,
+      "K": 384,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "Q_times_p_star", "p_star": "canonical uniform gaps; add 1 to gaps 32..47 and subtract 1 from gaps 300..315; cumulative from 0"},
+      "solver_witness": "independent_exact_dp",
+      "expected": {"status": "PASS", "p": {"recipe": "same_p_star"}, "E2": "0", "E_infinity": "0", "E1": "0", "maximum_uniform_displacement": 16}
+    },
+    {
+      "id": "F768-CONVEX",
+      "T": 768,
+      "K": 384,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "a[j]=floor((2*Q*767*j*j+383*383)/(2*383*383))"},
+      "solver_witness": "independent_exact_dp",
+      "expected": {"status": "FROZEN_BY_REFERENCE_BEFORE_PRODUCTION_COMPARISON", "p": null}
+    },
+    {
+      "id": "F768-CONCAVE",
+      "T": 768,
+      "K": 384,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "a[j]=Q*767-a_CONVEX[383-j]"},
+      "solver_witness": "independent_exact_dp",
+      "expected": {"status": "FROZEN_BY_REFERENCE_BEFORE_PRODUCTION_COMPARISON", "p": null}
+    },
+    {
+      "id": "F768-ALT",
+      "T": 768,
+      "K": 384,
+      "u": {"recipe": "canonical_uniform"},
+      "a": {"recipe": "b[j]=floor((2*Q*767*j+383)/(2*383)); endpoints unchanged; internal a[j]=b[j]+Q/2 for even j and b[j]-Q/2 for odd j"},
+      "solver_witness": "independent_exact_dp",
+      "expected": {"status": "FROZEN_BY_REFERENCE_BEFORE_PRODUCTION_COMPARISON", "p": null}
+    }
+  ],
+  "negative": [
+    {"id":"N-T15","base":"literal","mutation":"T=15,K=0,u=[],a=[]","required_code":"INVALID_T_LT_16"},
+    {"id":"N-K","base":"G17-E2","mutation":"set K=17; materialize otherwise well-formed arrays for K=17","required_code":"K_EFF_MISMATCH"},
+    {"id":"N-U-LEN","base":"G17-E2","mutation":"remove final u element","required_code":"U_LENGTH_MISMATCH"},
+    {"id":"N-A-LEN","base":"G17-E2","mutation":"remove final a element","required_code":"A_LENGTH_MISMATCH"},
+    {"id":"N-U-CANON","base":"G17-E2","mutation":"set u[7]=8, preserving monotonicity but violating canonical u","required_code":"U_CANONICAL_MISMATCH"},
+    {"id":"N-A-END","base":"G17-E2","mutation":"set a[0]=1","required_code":"A_ENDPOINT_MISMATCH"},
+    {"id":"N-A-ORDER","base":"G17-E2","mutation":"swap a[7] and a[8]","required_code":"A_ORDER_MISMATCH"},
+    {"id":"N-INFEASIBLE","base":"literal","mutation":"T=1534,K=384,canonical u,a=Q*u; endpoint span 1533 exceeds 383*4","required_code":"INFEASIBLE"},
+    {"id":"N-ARITH","base":"F768-U","mutation":"set a[1]=2^127 before all other semantic validation","required_code":"INTEGER_RANGE_OR_OVERFLOW"}
+  ],
+  "certificate_mutations": [
+    {"id":"M-DUPLICATE","base":"G17-E2 valid certificate","mutation":"duplicate one interior p position","required_code":"CERTIFICATE_REJECTED"},
+    {"id":"M-STRIDE5","base":"G17-E2 valid certificate","mutation":"create one stride of 5","required_code":"CERTIFICATE_REJECTED"},
+    {"id":"M-DISP17","base":"F768-DISP16 valid certificate","mutation":"change one interior position to reach displacement 17 while keeping the recorded certificate otherwise unchanged","required_code":"CERTIFICATE_REJECTED"},
+    {"id":"M-OBJECTIVE","base":"G17-E2 valid certificate","mutation":"increment E2 by 1","required_code":"CERTIFICATE_REJECTED"},
+    {"id":"M-SCALAR-TIE-LOSER","base":"G17-PLEX valid certificate","mutation":"replace winner p_omit_10 with scalar-tied lexicographic loser p_omit_6","required_code":"CERTIFICATE_REJECTED"},
+    {"id":"M-CANDIDATE-ORDER","base":"G17-E2 valid certificate","mutation":"reverse one recorded candidate expansion","required_code":"CANDIDATE_ORDER_VIOLATION"}
+  ],
+  "execution": {
+    "status": "NOT_EXECUTED",
+    "materialized_fixture_bytes": "NOT_CREATED",
+    "expected_reference_outputs_for_unresolved_fullscale_cases": "NOT_COMPUTED",
+    "production_outputs": "NOT_ACCESSED",
+    "comparison": "NOT_EXECUTED"
+  }
+}

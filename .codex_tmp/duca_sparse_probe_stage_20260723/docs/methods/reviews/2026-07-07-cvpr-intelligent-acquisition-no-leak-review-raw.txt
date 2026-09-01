@@ -1,0 +1,2156 @@
+## 总体判决：当前实现工程防线明显增强，但还不是可发 CVPR 的“智能 acquisition”
+
+我先给结论：**这个 commit 的 no-leak / provenance / strict ledger 防线比前几轮成熟很多，但核心方法仍没有证明“学习到了 detector-friendly sparse acquisition”。** 当前最主要的风险不是单一 bug，而是三类错位叠加：
+
+1. **selector 学到的是 actionness / proposal-score proxy，不是 high-IoU TAD utility。**
+   PAction learned 59.10 说明 `p_action / delta / uncertainty` 里确实有 boundary proxy；但 global top-k 会把分数集中到动作内部或高置信段，缺少高 IoU 定位所需的左右边界、背景、上下文。
+
+2. **GAS-VT 名义上 gap-aware / sequential，但代码上仍更像“静态特征 + 全局 hard top-k + 软 gap loss”。**
+   它没有真正把 selected-so-far 状态滚动更新到解码过程；CVaR/max-hole 也不是作用在最终 hard selected positions 的真实物理间隔上，所以 p95 hole 大并不意外。
+
+3. **AdaTAD 接口仍很可能把非均匀采样强行变成 selected-axis uniform sequence。**
+   `LoadFrames` 使用 ledger 选帧后，配置中仍有 `remap_gt_to_selected_axis=True`，并且模型侧把特征插值到 `window_size`。这会让 detector 在“选中序列坐标”上做回归，而不是在真实物理时间轴上回归。低 IoU 可能还能靠 action coverage 扛住，高 IoU 很容易崩。
+
+所以我对当前状态的 verdict 是：
+
+| 项目                        |                        判定 | 说明                                                                                                                          |
+| ------------------------- | ------------------------: | --------------------------------------------------------------------------------------------------------------------------- |
+| 工程 no-leak 防线             |          **PASS- / WARN** | 多处 provenance、strict source、strip payload、deploy ledger 检查是好的，但需要把部分 validator threshold 从 optional 变成 mandatory。           |
+| PAction learned fixed_384 |                  **WARN** | 59.10 证明 proxy 有价值，但 global top-k 不是 detector-aware acquisition。                                                            |
+| GAS-VT fixed_384          | **FAIL for method claim** | 代码与“gap-aware sequential acquisition”主张不完全一致；loss 与 hard decode 不匹配。                                                        |
+| Stage2 teacher utility    |                  **HOLD** | 当前 exporter 更接近 train-only teacher proposal-score points，不是完整 point responsibility / cls-reg loss / counterfactual utility。 |
+| Stage3 joint training     |                  **HOLD** | precheck 不能支撑 full 384 / 768 mAP claim；尚未证明 detector gradient 有效进入 selector。                                                |
+| CVPR 方法故事                 |                  **当前不够** | 如果最终只是“uniform scaffold + local replacement”，容易被认为是 heuristic；应升级为 trainable monotonic / detector-utility sparse sampler。   |
+
+以下审查基于公开 GitHub 静态阅读；我没有在本地实际跑 full training 或单元测试。仓库 README 明确当前项目目标是 fixed-budget C3 sparse acquisition、由 `p_action` 生成 strict ledger 并接 OpenTAD/AdaTAD，这与用户描述一致。([GitHub][1]) 当前 commit `2a5dfac` 的主题是加入 dense teacher utility forward exporter，并新增 exporter 测试/manifest 检查。([GitHub][2])
+
+---
+
+# A. 严厉代码与逻辑审查
+
+## A1. `tools/bata/paction_acquisition_policy.py`
+
+### 1. `constrained_topk`：不是真正 learned interval acquisition
+
+`constrained_topk` 的主体逻辑是：按 score 排序，取预算内 top-k；只有提供 `max_unselected_hole` 时才进行后处理式 repair。代码里先 `order = sorted(valid_positions, key=lambda idx: (-score, idx))`，然后截断到 budget；如果没有 `max_unselected_hole`，直接返回 selected。([GitHub][3])
+
+**问题：WARN / 方法 claim 风险。**
+
+这意味着 PAction learned fixed_384 的核心 decode 仍是 **global score top-k**。它不是在学习 interval distribution，也不是在学习 boundary bracket，也不是 detector-aware。`max_unselected_hole` repair 即使有效，也属于 decode-time rule，不能被说成 selector 自己学会了采样间隔。
+
+**修复建议：**
+
+把策略名字强制区分为：
+
+```text
+paction_global_topk_384
+paction_global_topk_384_with_hole_repair
+paction_monotonic_sampler_384
+paction_detector_utility_sampler_384
+```
+
+不要把 repair 版和非 repair 版混在 “PAction learned” 里。所有 mAP 表必须单独列：
+
+| method                     | learned score | learned interval |   post-hoc repair | uniform scaffold | detector utility |
+| -------------------------- | ------------: | ---------------: | ----------------: | ---------------: | ---------------: |
+| PAction global top-k       |           yes |               no |                no |               no |               no |
+| PAction + hole repair      |           yes |               no |               yes |               no |               no |
+| Proposed monotonic sampler |           yes |              yes | no/only collision |               no |              yes |
+
+### 2. gap loss 作用在 soft probability window，不作用在最终 hard gaps
+
+`temporal_gap_hole_loss_from_probabilities` 是用概率 `p_i` 的局部窗口 mass 来惩罚 holes；`paction_gap_loss_training_objective` 文档也说明它不使用 uniform scaffold/fill，而是通过 local-window selected mass 约束大洞。([GitHub][3])
+
+**问题：FAIL for “max-gap controlled” claim。**
+
+这个 loss 只是在训练时让局部窗口概率不要全低。最终 hard top-k 后，真实 selected indices 的最大间隔可能仍然很大。原因是：
+
+* soft probability mass 高不等于 hard top-k 一定选中；
+* local window 约束不等于 sorted selected positions 的 global max-gap；
+* top-k 离散化会放大局部 score 排序差；
+* `budget_loss` 只管数量，不管分布；
+* hole loss 与 actionness BCE 冲突时，actionness 往往赢。
+
+**修复建议：**
+
+新增一个作用在 **soft sorted positions / continuous τ** 上的 interval loss，而不是在 dense probability map 上做局部 avg-pool。见后文 Route 3 与代码。
+
+### 3. `add_policy_decision_to_sample_row`：budget 处理基本正确，但短视频和 dynamic 比较要单独 gate
+
+`add_policy_decision_to_sample_row` 对 `valid_len / dense_len` 做了检查，fixed budget 下会记录 short-valid 情况；fixed 和 dynamic 分支都通过 `constrained_topk` 生成 selected positions。([GitHub][3]) metadata 里还显式记录 `uses_uniform_scaffold=False`、`uses_uniform_fill=False`。([GitHub][3])
+
+**问题：PASS- / WARN。**
+
+固定 384 分支基本可审计；但 dynamic 如果默认 target len 或 max budget 不是 384，就不能和 fixed_384 / uniform_384 直接比。
+
+**修复建议：**
+
+在每个 ledger row 加硬约束：
+
+```python
+assert row["selected_count"] <= 384
+assert row["target_len"] <= 384
+assert max(row["selected_positions"]) < row["valid_len"]
+```
+
+并在 summary 里加：
+
+```json
+"paper_budget_cap": 384,
+"all_rows_budget_cap_passed": true,
+"dynamic_max_selected_count": ...
+```
+
+---
+
+## A2. `tools/bata/apply_paction_acquisition_policy.py`
+
+这个脚本有几个好的工程点：
+
+* checkpoint schema 必须是 READY；
+* 默认 `fixed_budget=384`；
+* strict deploy source 下会 reject forbidden source；
+* 可 strip payload；
+* summary 记录 strict/source/checkpoint/max-hole/uses-uniform flags。([GitHub][4])
+
+**判定：PASS-。**
+
+但这里仍有一个科学风险：它可以调用 `max_unselected_hole` 后处理。这个后处理本身不是坏事，但如果你把它作为主结果，需要承认它是 **decoder-side repair**，不是 learned acquisition。
+
+**修复建议：**
+
+输出策略名必须自动带上 repair 标签：
+
+```python
+if max_unselected_hole is None:
+    strategy_name = "paction_learned_global_topk_fixed_384"
+else:
+    strategy_name = f"paction_learned_global_topk_fixed_384_hole_repair{max_unselected_hole}"
+```
+
+并在 validator 强制表格中报告：
+
+```text
+uses_hole_repair
+max_unselected_hole_requested
+max_unselected_hole_actual
+num_repair_insertions
+num_repair_evictions
+mean_evicted_score_rank
+```
+
+---
+
+## A3. `tools/bata/run_paction_learned_policy_ledger_pipeline.py`
+
+pipeline 默认 fixed budgets 包括 `(384, 768)`，dynamic target len 默认是 768；fixed budgets 通过 apply + convert + validate，dynamic 分支 `require_selected_count=None`。([GitHub][5])
+
+**问题：FAIL for fair 384 comparison unless separated。**
+
+你当前论文目标是 **最多 384 frames**。那么：
+
+* fixed_768 只能是 diagnostic，不可放入主表和 384 方法比较；
+* dynamic target_len=768 也不能说 dynamic≤384；
+* dynamic 如果没有 `require_selected_count`，必须另有 `max_selected_count<=384` gate。
+
+**修复建议：**
+
+新增一个专门脚本：
+
+```bash
+scripts/run_c3_paction_learned_policy_ledger_pipeline_budget384_only.sh
+```
+
+默认只允许：
+
+```python
+fixed_budgets=(384,)
+dynamic_target_len=384
+dynamic_max_budget=384
+require_all_selected_count_leq=384
+```
+
+如果任何 ledger selected_count >384，summary 直接 `FAIL_BUDGET_CAP`。
+
+---
+
+## A4. `tools/bata/gas_vt_paction_policy.py`
+
+GAS-VT 的设计目标看上去更像“真正 sequential”：feature 里有 local_density、distance_to_last_selection、remaining_budget、remaining_time、budget_pressure、gap_urgency 等。([GitHub][6]) 但实际实现存在根本问题。
+
+### 1. “sequential state” 没有真正闭环更新
+
+`build_gap_aware_feature_matrix` 可以接收 `selected_so_far`，但训练准备阶段通常是一次性构建 feature matrix；`GapAwareSequentialAcquisitionPolicy` forward 后仍然是概率/硬 top-k。([GitHub][6])
+
+**问题：FAIL。**
+
+这不是严格意义上的 autoregressive selection policy。真正 sequential acquisition 应该是：
+
+```text
+for step k in 1..K:
+    observe state(selected_so_far, last_selected, remaining_budget, gaps)
+    score candidates
+    choose next position
+    update selected_so_far
+```
+
+当前 GAS-VT 更像：
+
+```text
+compute static candidate features once
+conv score all candidates
+global hard top-k
+```
+
+所以它无法学会“我已经选了这里，下一帧应该补哪里”的 interval policy。
+
+### 2. action interior loss 可能直接伤害 high-IoU boundary
+
+GAS objective 包含 action BCE、boundary coverage、boundary bracket、action interior bin、CVaR max-hole、budget、paction dependence。([GitHub][6]) 其中 `action_interior_bin` 会鼓励覆盖动作内部区间；这对低 IoU/action coverage 有帮助，但可能把预算从边界两侧和背景上下文拿走。
+
+**问题：WARN / 高 IoU 风险。**
+
+你的 GAS 结果 @0.7 只有 26.92，远低于 PAction learned 39.51。这个现象与“GAS 更偏 action interior，边界 bracket 不够强”一致。
+
+**修复建议：**
+
+临时 ablation：
+
+```text
+GAS-no-interior
+GAS-boundary-bracket-x4
+GAS-CVaR-on-hard-gaps
+GAS-true-sequential-decoder
+```
+
+如果 no-interior 或 bracket-x4 明显提升 @0.6/@0.7，说明原 objective 方向错了。
+
+### 3. CVaR max-hole 不是 hard max-gap 控制
+
+GAS 的 CVaR max-hole 也使用概率窗口，`window=min(8,T)`，取 top quarter hole mass。([GitHub][6])
+
+**问题：FAIL for p95 hole guarantee。**
+
+这不能保证最终 hard selected positions 的 p95 unselected hole。你看到 `p95_unselected_hole` 过大，是这个 loss 形式的直接后果。
+
+**修复建议：**
+
+把 gap loss 改到 sorted hard/ST positions 或 monotonic τ 上：
+
+```python
+gaps = selected_tau[:, 1:] - selected_tau[:, :-1]
+loss_cvar = gaps.topk(q, dim=-1).values.mean()
+loss_barrier = F.relu(gaps - max_gap_norm).pow(2).mean()
+```
+
+而不是在 dense probability 上 avg-pool。
+
+---
+
+## A5. `tools/bata/apply_gap_aware_acquisition_policy.py`
+
+`add_gas_vt_decision_to_sample_row` 最终仍调用 hard gap-aware top-k，并写 metadata `uses_uniform_fill=False`、`uses_uniform_scaffold=False`。([GitHub][6])
+
+**判定：WARN。**
+
+工程上它没有显式 uniform scaffold，这是好事；但方法上它也没有证明学会 gap-aware。因为最终 decode 仍可退化成全局 top-k + repair。
+
+**修复建议：**
+
+新增 decode diagnostic：
+
+```json
+"decode_type": "global_topk" | "global_topk_repair" | "autoregressive" | "monotonic_tau",
+"learned_gap_control": true/false,
+"posthoc_gap_control": true/false
+```
+
+否则 reviewer 会问：GAS-VT 的 sequential/gap-aware 到底体现在什么地方？
+
+---
+
+## A6. `tools/bata/train_gap_aware_acquisition_policy.py`
+
+训练脚本会校验 split/source，也有 `allow_gt_diagnostics` 逻辑；如果是 expected training，会 patch `uses_gt_for_diagnostics=False`。([GitHub][7]) `_prepared_rows` 会取 p_action、valid_len、action_target、boundary targets、dynamic budget target，构建 GAS feature matrix。([GitHub][7]) batch padding 和 loss/backward 基本规范。([GitHub][7])
+
+**判定：PASS- / WARN。**
+
+训练只用 train split 的 GT target 可以接受；问题是论文主张不能把这个叫 deploy signal。deploy selector 只能用 p_action/proxy features，不能说“学习到边界”时暗示 test-time boundary target 可见。
+
+**修复建议：**
+
+在 checkpoint metadata 强制写入：
+
+```json
+"train_supervision": ["train_gt_action_mask", "train_gt_boundary_mask"],
+"deploy_inputs": ["p_action", "delta", "uncertainty"],
+"deploy_gt_visible": false
+```
+
+并在 apply 脚本加载 checkpoint 时检查 deploy inputs 不包含 GT/teacher。
+
+---
+
+## A7. `tools/bata/detector_aware_acquisition_policy.py`
+
+detector-aware policy 的 metadata 很谨慎：`end_to_end=False`、`deploy_claim_allowed=False`、`paper_claim_allowed=False`、`map_claim_allowed=False`、`runtime_flops_claim_allowed=False`。([GitHub][8]) 这说明代码作者知道当前 Stage2 还只是 offline selector，不能 claim deploy/paper/runtime。
+
+**判定：工程诚实 PASS，方法语义 HOLD。**
+
+训练 objective 使用 signed utility、gain/risk BCE、selected utility coverage、CVaR、budget。([GitHub][8]) 形式上对，但关键在于：**teacher utility 到底是什么？**
+
+如果 teacher utility 只是 dense detector proposal score 映射到 frame，那么它仍然是 actionness/proposal confidence，不是 detector marginal utility。
+
+---
+
+## A8. `tools/bata/train_detector_aware_acquisition_policy.py`
+
+训练端对 teacher utility 有比较严格的 guard：必须 `split_scope == train_only`，拒绝 deprecated marginal gain field，要求 signed utility 长度与 p_action 对齐。([GitHub][9]) `_prepared_rows` 也会验证 source、提取 p_action、valid_len、utility/gain/risk，然后构建 feature matrix。([GitHub][9])
+
+**判定：PASS-。**
+
+no-leak 防线值得保留。但这仍是 offline distillation，不是 end-to-end detector-aware。
+
+**修复建议：**
+
+把 utility provenance 从粗粒度 `train_only` 扩展成：
+
+```json
+"utility_type": "proposal_score" | "point_responsibility" | "cls_loss" | "reg_loss" | "grad_x_input" | "counterfactual_drop",
+"teacher_checkpoint_epoch": 59,
+"teacher_mAP_train_proxy": ...,
+"uses_gt_for_assignment": true/false,
+"uses_gt_for_loss": true/false,
+"visible_at_deploy": false
+```
+
+注意：train-only teacher 使用 GT loss/assignment 是允许的，但必须只用于 train split selector pretraining，不能进入 val/test deploy ledger。
+
+---
+
+## A9. `tools/bata/apply_detector_aware_acquisition_policy.py`
+
+apply 端 strict source 会 reject detector payload 和 forbidden flags；summary 记录 `teacher_payload_visible_to_deploy=False`、`end_to_end=False`、`uses_uniform_fill=False`。([GitHub][10])
+
+**判定：PASS-。**
+
+主要风险还是默认 fixed budgets 包含 384/768，dynamic 也可能超过论文 budget。([GitHub][10])
+
+**修复建议：**
+
+同 PAction pipeline，新增 budget384-only apply mode。主结果一律：
+
+```text
+--fixed-budgets 384
+--dynamic-max-budget 384
+--fail-if-selected-count-gt 384
+```
+
+---
+
+## A10. `tools/bata/export_dense_adatad_teacher_points.py`
+
+这个 commit 新增的 exporter 是 Stage2 的核心。它从 dense AdaTAD checkpoint/config/source JSONL 出发，构造 dataloader/model，关闭 raw prediction cache/load/save，然后在 `torch.no_grad()` 下调用 `model.forward_test`，把 predictions 转成 dense teacher points。([GitHub][11]) 输出 provenance 写了 `split_scope="train_only"`、`uses_evaluator_outputs=false`、`uses_raw_prediction=false`、`uses_prediction_cache=false`。([GitHub][11])
+
+**no-leak 判定：PASS-。**
+
+但方法上有严重不足：
+
+`actionformer_predictions_to_dense_points` 的文档说明它把 proposal center 映射到 local dense frame index，并且只保留 score-derived utility；不使用 GT、cached test prediction 或 evaluator。([GitHub][12]) 后续 `map_dense_points_to_frame_utility` 也是用 proposal score 做 max/spread/normalize；signed utility 如果没有显式 signed 字段，就退化成 score-derived positive utility。([GitHub][12]) 搜索不到 point responsibility 或 counterfactual 相关实现。([GitHub][12])
+
+**问题：FAIL for “dense teacher utility” claim。**
+
+当前 exporter 更准确的名字是：
+
+```text
+export_dense_teacher_proposal_score_points.py
+```
+
+不是：
+
+```text
+export_dense_adatad_teacher_utility.py
+```
+
+它没有导出：
+
+* point assignment responsibility；
+* per-point cls/reg loss；
+* boundary responsibility；
+* gradient saliency；
+* leave-one-out / counterfactual utility；
+* high-IoU sensitivity。
+
+**修复建议：**
+
+新增真正的 utility exporter：
+
+```text
+tools/bata/export_dense_adatad_teacher_utility.py
+```
+
+至少支持四种 utility：
+
+```text
+proposal_score         # 当前已有，作为弱 baseline
+assigned_point_loss    # dense head train forward 中 per-point cls/reg loss
+boundary_responsibility
+grad_x_feature_saliency
+counterfactual_drop    # 可先近似，后做完整
+```
+
+---
+
+## A11. `validate_paction_learned_policy_ledger.py`
+
+validator 会检查 selected positions < valid_len、target_len、expected selected_count、policy metadata、uniform fill/scaffold flags，并输出 max gap、p95 gap、max/p95 unselected hole、boundary support、action coverage、p_action rank/top-k overlap、uniform similarity 等指标。([GitHub][13])
+
+**判定：PASS，但阈值策略要变严。**
+
+现在很多 gate 是可选 threshold。如果论文主实验要可信，必须把这些 threshold 写进固定 manifest，而不是每次手工传。
+
+**修复建议：**
+
+新增：
+
+```json
+"mandatory_gates": {
+  "selected_count_leq": 384,
+  "target_len_leq": 384,
+  "forbid_uniform_fill": true,
+  "forbid_teacher_payload_in_deploy": true,
+  "max_p95_unselected_hole": ...,
+  "max_uniform_similarity_for_learned_nonuniform_claim": ...,
+  "min_boundary_support_radius2": ...
+}
+```
+
+如果 claim 是 “not uniform scaffold”，那 uniform similarity=1.0 必须 fail。
+
+---
+
+## A12. `convert_lowres_probe_samples_to_value_transport_ledger.py`
+
+转换脚本在 deploy ledger 下禁止 `fill_to_target_count`，并声明 gap control 必须来自 learned policy/loss，而不是 uniform fill。它还检查 forbidden flags、selected positions、required count、dedup conflict，并把 source/provenance/checkpoint 写入 ledger。([GitHub][14])
+
+**判定：PASS-。**
+
+这是当前最强的工程防线之一。但它只能保证“ledger 没有明显填充/泄漏”，不能保证“selector 是好方法”。
+
+**修复建议：**
+
+加入 physical-time audit：
+
+```python
+selected = np.array(row["selected_positions"])
+assert np.all(np.diff(selected) > 0)
+physical_gap = np.diff(selected)
+row["gap_stats_physical"] = ...
+row["selected_axis_to_physical_map_sha256"] = ...
+```
+
+并在后续 AdaTAD output 里保存 inverse mapping，用于检查 prediction seconds 是否经过真实时间轴转换。
+
+---
+
+## A13. `configs/adatad/thumos/*c3*`
+
+### 1. PAction learned ledger AdaTAD config
+
+PAction config 定义了 learned_fixed_384、learned_fixed_768、learned_dynamic；dynamic target_len=768 且不要求 selected_count。默认 variant 是 learned_fixed_384。([GitHub][15])
+
+`LoadFrames` 使用 `bata_value_transport_ledger_subsample`，`target_len=window_size`，`remap_gt_to_selected_axis=True`，并要求 deployable ledger。([GitHub][15]) 模型侧 `backbone total_frames=window_size`，projection/interpolate 也围绕 selected `window_size`。([GitHub][15])
+
+**问题：最大高 IoU 风险。**
+
+`remap_gt_to_selected_axis=True` 代表 GT 被映射到 selected 序列轴。对于等间隔 uniform，这近似成立；对于 irregular top-k，它会扭曲真实时间几何。例如：
+
+```text
+physical time:  10, 11, 12, 90, 91, 92
+selected axis:   0,  1,  2,  3,  4,  5
+```
+
+detector 在 selected axis 上认为 12 到 90 只差 1 个 step。高 IoU regression 必然受伤。
+
+**修复建议：**
+
+至少做一个受控实验：
+
+```text
+same ledger + selected-axis remap
+same ledger + true-time physical remap / irregular point generator
+same ledger + dense-grid interpolation to physical 768 grid with selected mask
+```
+
+如果 true-time 版本 @0.6/@0.7 明显提高，根因就是 detector-interface，而不是 selector score。
+
+### 2. detector-aware config
+
+detector-aware config 也有 fixed_384/fixed_768/dynamic=768；Stage2 full train gate 里明确 `paper_claim_allowed=False`、`metric_claim_allowed=False`、`deploy_claim_allowed=False`。([GitHub][16])
+
+**判定：HOLD。**
+
+代码自己已经承认不能 claim。你不能把这个 run 的 mAP 当 CVPR 主结果，除非重新通过 train-only utility export、precheck、full run 和 no-leak validator。
+
+### 3. Stage3 true-time joint config
+
+Stage3 precheck manifest 明确限制：tiny synthetic real ActionFormer loss-path precheck only；没有 384/768 训练证据；没有 mAP/paper/runtime/deploy claim。precheck 只用 selected_count=4、dense_len=8。([GitHub][17])
+
+**判定：不能支撑 full Stage3 claim。**
+
+它只能说明代码路径可能通了，不能说明 selector 收到了有效 detector gradient，更不能说明 joint training 不 collapse。
+
+---
+
+## A14. `scripts/run_*c3*`
+
+scripts 目录确实包含 PAction、GAS-VT、dense teacher、detector-aware、Stage3/Stage4 precheck 等 launcher。([GitHub][18])
+
+**问题：WARN。**
+
+当前脚本族太多，容易出现“不同 commit / 不同 config / 不同 budget / 不同 source ledger”的实验混杂。
+
+**修复建议：**
+
+新增一个主控 manifest runner：
+
+```text
+scripts/run_c3_budget384_comparison_matrix_gpu.sh
+```
+
+它只做：
+
+```text
+same repo commit
+same AdaTAD config base
+same pretrain
+same THUMOS split
+same target_len=384
+same selected_count<=384
+same eval/NMS
+same seed list
+same ledger validator
+```
+
+输出一个不可手改的 `comparison_manifest.json`。
+
+---
+
+# B. 核心科学问题回答
+
+## B1. 为什么当前 selector 总需要 uniform scaffold 才稳定？
+
+不是因为“智能选帧必然需要 uniform scaffold”，而是因为当前系统里 **detector、loss、decode 三者都偏向 uniform lattice**：
+
+1. **AdaTAD / ActionFormer 类 dense temporal head 默认时间轴近似均匀。**
+   它的 FPN、point generator、regression range、NMS、seconds conversion 都隐含规则时间步。把 irregular selected frames 压成 selected axis，会破坏回归几何。
+
+2. **global top-k 会天然集中到高 actionness 内部。**
+   动作内部 score 高，边界和背景 score 低；但 TAD high-IoU 需要左右边界、上下文和 negative/background contrast。
+
+3. **uniform scaffold 提供了 detector 需要的“时间坐标先验”。**
+   它保证最大 gap、小尺度局部上下文、背景覆盖、NMS spacing、regression stride 大致稳定。
+
+4. **当前 gap loss 不直接约束最终 hard selected gaps。**
+   所以模型看起来需要 scaffold/repair 来兜底。
+
+结论：uniform scaffold 稳定不是因为它科学上优雅，而是因为它补上了当前方法没有学到、detector 也没有适配的时间几何。
+
+---
+
+## B2. 是监督信号不对、模型没收敛，还是 detector 不适配？
+
+三者都有，但优先级是：
+
+### 第一优先：detector-interface 不适配
+
+`remap_gt_to_selected_axis=True` 对 irregular sparse input 是高 IoU 毒药。只要 detector 在 selected axis 上回归，selector 再聪明也可能被几何扭曲拖垮。
+
+### 第二优先：supervision 不对
+
+`p_action`、proposal score、actionness BCE 都不是 detector utility。它们更像“这里像动作”，不是“这里对最终 proposal boundary/regression/NMS 有价值”。
+
+### 第三优先：selector architecture/loss 不对
+
+PAction learned score 有用，但 decode 是 global top-k；GAS-VT 看似复杂，但不是严格 sequential，也没有 hard-gap-aware differentiable objective。
+
+所以不要把失败简单归因于“没训够”。如果 architecture 和 detector coordinate contract 错，训更久只会收敛到错误 proxy。
+
+---
+
+## B3. max-gap / p95-hole / CVaR gap loss 为什么没控制最大采样间隔？
+
+因为当前 loss 与最终指标不一致：
+
+```text
+训练 loss：soft probability local window hole mass
+最终指标：hard selected positions 的真实最大 gap / p95 unselected hole
+```
+
+这两者之间有 top-k 离散化鸿沟。更具体：
+
+* soft probability 不是 hard selection；
+* 局部 window mass 不是 sorted selected gaps；
+* CVaR top-quarter hole mass 不是 max gap guarantee；
+* actionness/interior loss 会与 gap loss 冲突；
+* hard decode 后没有 differentiable feedback；
+* repair 如果存在，也是在训练图外面。
+
+正确做法是让 loss 直接作用在 selected positions：
+
+```text
+selected τ_1 < τ_2 < ... < τ_K
+gap_k = τ_{k+1} - τ_k
+L_gap = CVaR_topρ(gap) + ReLU(gap - threshold)^2
+```
+
+---
+
+## B4. 完全依赖 learned selector，能否通过 differentiable loss 学出良好采样间隔？
+
+可以，但不建议直接从 discrete top-k 开始。更稳的方式是：
+
+1. **先学 continuous monotonic sampling map**
+   直接输出 `τ_1 < ... < τ_K`，天然有序、可微、预算固定。
+
+2. **用 differentiable interpolation 采样 proxy/features**
+   训练时 detector loss 可以回传到 `τ`。
+
+3. **在 `τ` 上施加 interval regularization**
+   用真实连续 gap，而不是 probability window。
+
+4. **最后 harden 成 384 个整数 positions**
+   deploy 时 `round + unique repair + cap`，这个 repair 只处理碰撞，不负责方法性能。
+
+这比“global top-k + repair”更像 CVPR 方法。
+
+---
+
+## B5. PAction learned 为什么比 GAS-VT 更好？
+
+我认为主要原因不是 PAction 几何更好，而是：
+
+1. **PAction score proxy 更干净。**
+   它直接利用 coarse actionness / delta / uncertainty，少引入错误 objective。
+
+2. **GAS-VT 增加了 action interior 和软 gap，但没有真正改善 hard geometry。**
+   复杂 loss 反而把优化目标拉向动作内部覆盖。
+
+3. **GAS-VT sequential state 不够真实。**
+   如果 selected-so-far 没有在 decode 中逐步更新，remaining budget / gap urgency 只是静态特征，不能形成真正策略。
+
+4. **GAS-VT 的 boundary bracket 太局部且非物理时间。**
+   ±1 selected/dense index 的 bracket 不足以表达真实边界敏感性。
+
+结论：PAction 59.10 说明 proxy 有价值；GAS 44.90 说明“复杂 objective + 不匹配 decode”会比简单 score 更糟。
+
+---
+
+## B6. dense AdaTAD teacher utility 应该是什么？
+
+按优先级排序：
+
+### 最合理：counterfactual detector utility
+
+定义：
+
+```text
+u_i = L_det(video with frame i masked/interpolated) - L_det(full video)
+```
+
+如果去掉 frame i 让 detector loss 上升，说明该 frame 有正 utility。它最接近“这个 observation 对 detector 有多重要”。
+
+缺点是贵，可以用局部窗口/group drop 近似。
+
+### 第二合理：gradient × feature saliency
+
+```text
+u_i = - <∂L_det/∂f_i, f_i>
+```
+
+或者针对 high-IoU / boundary regression loss 加权：
+
+```text
+u_i = - <∂(L_cls + λ_reg L_reg + λ_b L_boundary)/∂f_i, f_i>
+```
+
+比 proposal score 更能反映 detector sensitivity。
+
+### 第三合理：point responsibility / boundary responsibility
+
+从 dense detector train forward 的 assignment 中拿：
+
+* 哪些 points 负责 GT；
+* 哪些 points 靠近 GT start/end；
+* 哪些 points 的 regression target 对 high-IoU 敏感；
+* 哪些 points 处于 ambiguous boundary/context。
+
+这比单纯 proposal score 强很多。
+
+### 最弱：proposal score / actionness score
+
+当前 exporter 接近这一类。它 train-only、no-cache 是好的，但语义上仍是 teacher confidence，不是 utility。
+
+---
+
+## B7. 不用预训练 dense teacher，能否 selector + AdaTAD 同图协同优化？
+
+可以，但高风险。需要几个稳定器：
+
+1. **detector warm start**：先用 uniform_384 或 dense/uniform AdaTAD 训练 detector，不能从随机 detector + 随机 selector 开始。
+2. **selector warm start**：用 PAction 或 teacher utility 预训练 selector。
+3. **冻结 curriculum**：先 freeze detector 训练 selector，再 unfreeze detector head，最后小 LR 联合微调。
+4. **强 interval/boundary regularization**：避免 selector collapse 到少数动作内部。
+5. **budget dropout / entropy / repulsion**：防止所有 videos 学同一种模式。
+6. **gradient verification**：每次 joint run 必须记录 selector 参数的 grad norm、selected positions 变化、gap entropy。
+7. **collapse gate**：如果 selected positions 的 unique ratio、p95 hole、boundary support 低于阈值，自动停止。
+
+---
+
+# C. 更优雅、更像 CVPR 的方法设计
+
+我的推荐排序如下。
+
+## Route 1：Detector-utility teacher pretraining，短期最可能提升
+
+**定位：最务实，最可能在 7-14 天内验证是否能超过 uniform_384。**
+
+流程：
+
+```text
+dense / uniform AdaTAD teacher
+→ train-only utility export
+→ utility-aware selector pretraining
+→ fixed_384 strict ledger
+→ same AdaTAD sparse full run
+```
+
+关键不是“teacher proposal score”，而是要导出真正 utility：
+
+```text
+point responsibility
+boundary responsibility
+per-point cls/reg loss
+gradient saliency
+counterfactual drop utility
+```
+
+优点：
+
+* 容易复用当前 `tools/bata` pipeline；
+* no-leak 可控；
+* 与现有 PAction learned 兼容；
+* 适合做强 ablation。
+
+缺点：
+
+* 单独作为论文主创新不够；
+* 如果 teacher utility 只是 proposal score，会退化成 actionness top-k。
+
+**推荐用途：作为 Route 3 / Route 2 的预训练和诊断，不作为最终唯一方法。**
+
+---
+
+## Route 2：End-to-end ST/Gumbel/SoftSort selector + AdaTAD，中风险高价值
+
+**定位：科学上干净，但训练风险最大。**
+
+selector 输出 logits：
+
+```text
+s_i = fθ(proxy_i)
+z = ST-TopK(s, K)
+selected features = gather(x, z)
+AdaTAD loss → ST gradient → selector
+```
+
+可以使用 Gumbel-Softmax、NeuralSort、SoftSort 这类 differentiable relaxation。Gumbel-Softmax 提供 categorical sample 的可微近似；NeuralSort/SoftSort 则提供 sorting/top-k 的连续松弛，适合 rank/top-k 问题。([arXiv][19])
+
+优点：
+
+* 容易讲“detector loss tells selector what matters”；
+* 不依赖 dense teacher；
+* 可端到端。
+
+缺点：
+
+* 容易 collapse；
+* hard gather 对 OpenTAD batch/temporal geometry 改动大；
+* 如果仍用 selected-axis remap，高 IoU 不一定救得回来。
+
+**推荐用途：第二阶段 joint fine-tune，不建议从零训练。**
+
+---
+
+## Route 3：Continuous monotonic sampling map / Neural temporal sampler，最推荐作为最终 CVPR 主线
+
+**定位：最优雅，最能摆脱“uniform scaffold + repair”的质疑。**
+
+不要让 selector 直接 top-k。让它输出一个有序采样时间表：
+
+```text
+τ_1 < τ_2 < ... < τ_K,   K ≤ 384
+```
+
+实现方式：
+
+```text
+network outputs positive intervals δ_k > 0
+τ_k = cumulative_sum(δ) normalized to [0, T_valid - 1]
+```
+
+训练时通过 differentiable interpolation 采样：
+
+```text
+y_k = Σ_i w(i, τ_k) x_i
+```
+
+detector loss、utility loss、gap loss 都能回传到 `τ_k`。
+
+优点：
+
+* 天然避免乱序；
+* interval loss 可直接作用在真实 gap；
+* 不需要 uniform scaffold；
+* deploy 时 harden 成 384 positions；
+* 论文故事比 rule repair 强很多。
+
+缺点：
+
+* 需要适配 AdaTAD 的 true-time coordinate；
+* 如果 raw frames interpolation 太贵，可先在 proxy/features 上训练，再 hard export ledger。
+
+**我建议最终主方法叫：**
+
+```text
+DUCA-Mono: Detector-Utility-Calibrated Monotonic Temporal Acquisition
+```
+
+或：
+
+```text
+DUMA-TAD: Detector-Utility Monotonic Acquisition for Sparse Temporal Action Detection
+```
+
+---
+
+## Route 4：True-time irregular detector adapter，必须并行做
+
+无论 selector 多好，如果 detector 仍把 irregular frames 当 selected-axis uniform frames，高 IoU 都会受伤。因此需要一个 adapter：
+
+```text
+selected_positions physical time
+→ irregular point generator / true-time regression decode
+→ predictions converted by physical time, not selected axis
+```
+
+或者折中：
+
+```text
+sparse selected features
+→ differentiable interpolation back to dense physical grid
+→ selected mask / visibility mask
+→ AdaTAD head sees physical grid
+```
+
+这条路线可能不是论文主创新，但它是高 IoU 成败关键。
+
+---
+
+## 外部建议的 “uniform scaffold + local replacement” 怎么处理？
+
+我建议把它作为 **strong engineering baseline**，不要作为最终主方法。
+
+如果它很强，可以升级为：
+
+```text
+learned lattice offset sampler
+```
+
+即：
+
+```text
+base lattice q_k = uniform positions
+learned offset Δ_k = gθ(proxy, q_k)
+τ_k = q_k + Δ_k
+```
+
+并用 differentiable loss 训练 offset。这样它不再是手工 replacement，而是 **monotonic lattice deformation**。这比“保留 uniform scaffold + rule-based local 搬移”更像论文方法。
+
+---
+
+# D. 关键数学定义
+
+设一个视频或窗口有 `T` 个 dense candidate frames/snippets，valid mask 为 `m_i ∈ {0,1}`，预算 `K ≤ 384`。
+
+## D1. selector 输出形式
+
+### score selector
+
+```text
+s_i = f_θ(x_i, p_i, Δp_i, uncertainty_i)
+p_i^sel = sigmoid(s_i)
+```
+
+hard set：
+
+```text
+S = TopK({s_i | m_i=1}, K_v),   K_v = min(K, Σ_i m_i)
+z_i = 1[i ∈ S]
+```
+
+### monotonic sampler
+
+网络输出正 interval：
+
+```text
+a_k = softplus(r_k) + ε,   k=1..K_v
+τ_k = (T_v - 1) * (Σ_{j≤k} a_j) / (Σ_{j≤K_v} a_j)
+```
+
+其中：
+
+```text
+0 ≤ τ_1 ≤ τ_2 ≤ ... ≤ τ_K ≤ T_v - 1
+```
+
+训练时用 soft interpolation：
+
+```text
+w_{k,i} = exp(-(i - τ_k)^2 / σ^2) / Σ_j exp(-(j - τ_k)^2 / σ^2)
+y_k = Σ_i w_{k,i} x_i
+```
+
+deploy 时：
+
+```text
+idx_k = round(τ_k)
+S = unique_sort(idx_1, ..., idx_K)
+```
+
+碰撞只做局部 repair，不允许超过 384。
+
+---
+
+## D2. interval / gap regularization
+
+归一化位置：
+
+```text
+u_k = τ_k / (T_v - 1)
+```
+
+包含边界 gap：
+
+```text
+g_0 = u_1
+g_k = u_{k+1} - u_k
+g_K = 1 - u_K
+```
+
+gap loss：
+
+```text
+L_gap =
+λ_max * mean_k ReLU(g_k - γ)^2
++ λ_cvar * CVaR_ρ({g_k})
++ λ_min * mean_k ReLU(δ_min - g_k)^2
+```
+
+其中：
+
+```text
+CVaR_ρ({g}) = mean(top ρ fraction of gaps)
+```
+
+这才是真正约束最大采样间隔的 loss。
+
+---
+
+## D3. boundary bracket objective
+
+给定 train-only boundary target `b`，半径 `r`：
+
+```text
+P_left(b)  = Σ_i q_i · 1[b-r ≤ t_i < b]
+P_right(b) = Σ_i q_i · 1[b < t_i ≤ b+r]
+```
+
+其中 `q_i` 可以是 selected probability 或 interpolation mass。
+
+```text
+L_bracket = - Σ_b [log(P_left(b)+ε) + log(P_right(b)+ε)]
+```
+
+这鼓励边界左右都至少有观测，而不是只选动作内部。
+
+---
+
+## D4. detector-aware utility loss
+
+teacher utility：
+
+```text
+u_i ∈ [-1, 1]
+g_i = max(u_i, 0)      # positive utility
+h_i = max(-u_i, 0)     # risk / negative utility
+```
+
+selector probability `p_i`：
+
+```text
+L_util =
+BCE(p_i, normalize(g_i))
++ β · BCE(1 - p_i, h_i)
++ η · [1 - (Σ_i z_i g_i) / (Σ_i g_i + ε)]
+```
+
+最后一项是 selected utility coverage。
+
+---
+
+## D5. counterfactual utility
+
+最直接定义：
+
+```text
+u_i^cf = L_det(x with frame i removed/masked) - L_det(x full)
+```
+
+如果移除第 i 帧让 detector loss 上升，则 `u_i^cf > 0`。
+
+高效近似：
+
+```text
+u_i^grad = - <∂L_det/∂f_i, f_i>
+```
+
+也可以按 detector loss 组成加权：
+
+```text
+L_det^weighted = L_cls + λ_reg L_reg + λ_iou L_highIoU + λ_b L_boundary
+```
+
+---
+
+## D6. end-to-end detector loss 回传
+
+soft sampler：
+
+```text
+Y(τ) = sample(X, τ)
+L = L_AdaTAD(Y(τ), GT, physical_time=τ)
+  + λ_gap L_gap
+  + λ_bracket L_bracket
+  + λ_util L_util
+```
+
+因为 `Y` 对 `τ` 可微，detector loss 可以回传到 sampler。
+
+ST hard top-k：
+
+```text
+z_soft = RelaxedTopK(s)
+z_hard = HardTopK(s)
+z_st = z_hard + z_soft - stopgrad(z_soft)
+```
+
+forward 用 hard，backward 用 soft。
+
+---
+
+## D7. 避免 selected positions collapse 到动作内部
+
+必须组合以下机制：
+
+```text
+L = L_det
+  + λ_gap L_gap
+  + λ_bracket L_bracket
+  + λ_bg L_background_context
+  + λ_rep L_repulsion
+  + λ_ent L_entropy
+  + λ_budget L_budget
+```
+
+其中：
+
+* `L_gap` 防大洞；
+* `L_bracket` 防只选内部；
+* `L_background_context` 保留边界外背景；
+* `L_repulsion` 防重复/扎堆；
+* `L_entropy` 防所有视频同一模板；
+* budget dropout 让 selector 对不同 K 稳定。
+
+---
+
+## D8. 最多 384 帧与 variable length
+
+每个视频/window：
+
+```text
+K_v = min(384, T_valid)
+```
+
+输出固定 padded tensor：
+
+```text
+selected_positions: [384]
+selected_mask: [384]
+selected_count: K_v
+```
+
+短视频只选 `T_valid` 个，剩余 pad，mask 为 false。所有 detector loss、NMS、postprocess 都必须用 `selected_mask` 和 physical time。
+
+---
+
+# E. 关键代码框架
+
+下面是核心骨架，目的是给出可落地补丁方向；具体 OpenTAD batch key 需要按你们现有 `LoadFrames` / AdaTAD API 对齐。
+
+## E1. 新增文件建议
+
+```text
+opentad/models/selectors/monotonic_temporal_sampler.py
+tools/bata/export_dense_adatad_teacher_utility.py
+tools/bata/train_monotonic_detector_utility_selector.py
+tools/bata/apply_monotonic_selector_to_ledger.py
+tools/bata/validate_budget384_no_leak_ledger.py
+opentad/datasets/transforms/bata_true_time_sparse_adapter.py
+configs/adatad/thumos/c3_monotonic_utility_ledger_adatad_full_train.py
+configs/adatad/thumos/c3_truetime_monotonic_joint_adatad.py
+scripts/run_c3_budget384_comparison_matrix_gpu.sh
+```
+
+---
+
+## E2. PyTorch monotonic selector module
+
+```python
+# opentad/models/selectors/monotonic_temporal_sampler.py
+from __future__ import annotations
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+def masked_mean(x: torch.Tensor, mask: torch.Tensor, dim: int = 1, eps: float = 1e-6):
+    mask_f = mask.to(dtype=x.dtype).unsqueeze(-1)
+    return (x * mask_f).sum(dim=dim) / mask_f.sum(dim=dim).clamp_min(eps)
+
+
+class MonotonicTemporalSampler(nn.Module):
+    """
+    Input:
+        proxy: [B, T, C] cheap p_action/proxy features
+        valid: [B, T] bool
+        dense_features: optional [B, T, D]
+    Output:
+        tau: [B, K] continuous physical dense-frame positions
+        weights: [B, K, T] differentiable interpolation weights
+        sampled: [B, K, D] if dense_features is not None
+        selected_mask: [B, K]
+    """
+    def __init__(
+        self,
+        in_dim: int,
+        budget: int = 384,
+        hidden_dim: int = 128,
+        sigma: float = 1.5,
+        min_delta: float = 1e-4,
+    ):
+        super().__init__()
+        self.budget = int(budget)
+        self.sigma = float(sigma)
+        self.min_delta = float(min_delta)
+
+        self.encoder = nn.Sequential(
+            nn.Conv1d(in_dim, hidden_dim, kernel_size=5, padding=2),
+            nn.GELU(),
+            nn.Conv1d(hidden_dim, hidden_dim, kernel_size=5, padding=2),
+            nn.GELU(),
+        )
+        self.delta_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, self.budget),
+        )
+        self.score_head = nn.Conv1d(hidden_dim, 1, kernel_size=1)
+
+    def forward(
+        self,
+        proxy: torch.Tensor,
+        valid: torch.Tensor,
+        dense_features: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        if proxy.ndim != 3:
+            raise ValueError(f"proxy must be [B,T,C], got {tuple(proxy.shape)}")
+        if valid.ndim != 2:
+            raise ValueError(f"valid must be [B,T], got {tuple(valid.shape)}")
+
+        B, T, _ = proxy.shape
+        K = self.budget
+        device = proxy.device
+        dtype = proxy.dtype
+
+        h = self.encoder(proxy.transpose(1, 2)).transpose(1, 2)  # [B,T,H]
+        pooled = masked_mean(h, valid, dim=1)                    # [B,H]
+
+        delta_logits = self.delta_head(pooled)                   # [B,K]
+        deltas = F.softplus(delta_logits) + self.min_delta
+        cdf = torch.cumsum(deltas, dim=-1) / deltas.sum(dim=-1, keepdim=True).clamp_min(1e-6)
+
+        valid_len = valid.sum(dim=1).clamp_min(1).to(dtype=dtype) # [B]
+        tau = cdf * (valid_len[:, None] - 1.0).clamp_min(0.0)     # [B,K]
+
+        # selected slot mask for short videos
+        k_ids = torch.arange(K, device=device)[None, :]
+        selected_count = torch.minimum(valid.sum(dim=1), torch.full_like(valid.sum(dim=1), K))
+        selected_mask = k_ids < selected_count[:, None]
+
+        frame_ids = torch.arange(T, device=device, dtype=dtype)[None, None, :]  # [1,1,T]
+        dist2 = (frame_ids - tau[:, :, None]).pow(2)
+        weights = torch.exp(-dist2 / (2.0 * self.sigma * self.sigma))
+        weights = weights * valid[:, None, :].to(dtype=dtype)
+        weights = weights / weights.sum(dim=-1, keepdim=True).clamp_min(1e-6)
+        weights = weights * selected_mask[:, :, None].to(dtype=dtype)
+
+        out = {
+            "tau": tau,
+            "weights": weights,
+            "selected_mask": selected_mask,
+            "score_logits": self.score_head(h.transpose(1, 2)).squeeze(1),
+            "valid_len": valid_len,
+        }
+
+        if dense_features is not None:
+            out["sampled"] = torch.einsum("bkt,btd->bkd", weights, dense_features)
+
+        return out
+```
+
+---
+
+## E3. ST top-k baseline
+
+```python
+def straight_through_topk(
+    logits: torch.Tensor,
+    valid: torch.Tensor,
+    k: int,
+    temperature: float = 1.0,
+    add_gumbel: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Simple ST top-k baseline.
+    For paper-grade relaxation, replace soft branch with SoftSort/NeuralSort.
+    """
+    if logits.ndim != 2:
+        raise ValueError("logits must be [B,T]")
+
+    masked_logits = logits.masked_fill(~valid, -1e9)
+
+    if add_gumbel and logits.requires_grad:
+        u = torch.rand_like(masked_logits).clamp_(1e-6, 1 - 1e-6)
+        g = -torch.log(-torch.log(u))
+        masked_logits = masked_logits + g
+
+    k_eff = min(k, logits.shape[1])
+    topk = masked_logits.topk(k_eff, dim=-1).indices
+
+    hard = torch.zeros_like(logits)
+    hard.scatter_(1, topk, 1.0)
+    hard = hard * valid.to(dtype=hard.dtype)
+
+    soft = torch.softmax(masked_logits / temperature, dim=-1) * float(k_eff)
+    soft = soft.clamp(0.0, 1.0) * valid.to(dtype=soft.dtype)
+
+    z = hard + soft - soft.detach()
+    return z, topk
+```
+
+---
+
+## E4. interval regularization loss
+
+```python
+def interval_regularization_loss(
+    tau: torch.Tensor,
+    selected_mask: torch.Tensor,
+    valid_len: torch.Tensor,
+    max_gap_factor: float = 2.5,
+    cvar_ratio: float = 0.10,
+    min_gap_norm: float = 0.0,
+) -> dict[str, torch.Tensor]:
+    """
+    tau: [B,K] continuous positions
+    selected_mask: [B,K] bool
+    valid_len: [B]
+    """
+    B, K = tau.shape
+    device = tau.device
+    dtype = tau.dtype
+
+    denom = (valid_len.to(dtype=dtype) - 1.0).clamp_min(1.0)
+    u = tau / denom[:, None]
+
+    # For fixed K_v close to K. For short videos, padded slots are masked.
+    # Simpler first implementation: assume selected slots are prefix.
+    gaps = []
+    for b in range(B):
+        kb = int(selected_mask[b].sum().item())
+        if kb <= 0:
+            continue
+        ub = u[b, :kb]
+        gb = torch.cat([
+            ub[:1],
+            ub[1:] - ub[:-1],
+            1.0 - ub[-1:],
+        ])
+        gaps.append(gb)
+
+    if not gaps:
+        zero = tau.sum() * 0.0
+        return {"gap_loss": zero, "gap_cvar": zero, "gap_max": zero}
+
+    all_losses = []
+    all_cvars = []
+    all_max = []
+
+    for gb in gaps:
+        ideal = 1.0 / max(float(gb.numel()), 1.0)
+        gamma = max_gap_factor * ideal
+
+        max_gap_loss = F.relu(gb - gamma).pow(2).mean()
+        min_gap_loss = F.relu(min_gap_norm - gb).pow(2).mean() if min_gap_norm > 0 else gb.sum() * 0.0
+
+        q = max(1, int(round(cvar_ratio * gb.numel())))
+        cvar = gb.topk(q).values.mean()
+
+        all_losses.append(max_gap_loss + min_gap_loss)
+        all_cvars.append(cvar)
+        all_max.append(gb.max())
+
+    return {
+        "gap_loss": torch.stack(all_losses).mean(),
+        "gap_cvar": torch.stack(all_cvars).mean(),
+        "gap_max": torch.stack(all_max).mean(),
+    }
+```
+
+---
+
+## E5. boundary bracket loss
+
+```python
+def boundary_bracket_loss(
+    frame_mass: torch.Tensor,
+    boundary_indices: torch.Tensor,
+    boundary_mask: torch.Tensor,
+    radius: int = 3,
+    eps: float = 1e-6,
+) -> torch.Tensor:
+    """
+    frame_mass: [B,T], selector probability or summed interpolation mass
+    boundary_indices: [B,M], train-only GT/teacher boundary dense indices
+    boundary_mask: [B,M] bool
+    """
+    B, T = frame_mass.shape
+    losses = []
+
+    for b in range(B):
+        for j in range(boundary_indices.shape[1]):
+            if not bool(boundary_mask[b, j]):
+                continue
+            idx = int(boundary_indices[b, j].item())
+            l0 = max(0, idx - radius)
+            l1 = max(0, idx)
+            r0 = min(T, idx + 1)
+            r1 = min(T, idx + radius + 1)
+
+            left = frame_mass[b, l0:l1].sum()
+            right = frame_mass[b, r0:r1].sum()
+
+            losses.append(-torch.log(left + eps) - torch.log(right + eps))
+
+    if not losses:
+        return frame_mass.sum() * 0.0
+    return torch.stack(losses).mean()
+```
+
+---
+
+## E6. 真正 teacher utility export 骨架
+
+当前 exporter 使用 `forward_test` proposal score。你需要新增 train-forward utility export：
+
+```python
+# tools/bata/export_dense_adatad_teacher_utility.py
+import torch
+
+
+def export_train_utility_for_batch(model, batch, loss_weights):
+    """
+    Requires small modifications in AdaTAD/ActionFormer head:
+        return_dense_aux=True should return:
+        - dense_features or backbone features
+        - per_point_cls_loss [B,L]
+        - per_point_reg_loss [B,L]
+        - assigned_gt_start/end or boundary responsibility [B,L]
+    """
+    inputs = batch["inputs"]
+    masks = batch["masks"]
+    metas = batch["metas"]
+
+    with torch.enable_grad():
+        inputs = inputs.detach().requires_grad_(True)
+
+        losses, aux = model.forward_train(
+            inputs,
+            masks,
+            metas,
+            return_dense_aux=True,
+            return_per_point_loss=True,
+        )
+
+        det_loss = (
+            loss_weights["cls"] * aux["per_point_cls_loss"].mean()
+            + loss_weights["reg"] * aux["per_point_reg_loss"].mean()
+        )
+
+        grad = torch.autograd.grad(
+            det_loss,
+            aux["dense_features"],
+            retain_graph=False,
+            create_graph=False,
+            allow_unused=False,
+        )[0]
+
+        saliency = -(grad * aux["dense_features"]).sum(dim=1)  # [B,T] if dense_features [B,C,T]
+        saliency = saliency.detach()
+
+    cls_loss = aux["per_point_cls_loss"].detach()
+    reg_loss = aux["per_point_reg_loss"].detach()
+    boundary_resp = aux["boundary_responsibility"].detach()
+
+    utility = (
+        0.30 * normalize_per_video(saliency)
+        + 0.25 * normalize_per_video(reg_loss)
+        + 0.25 * normalize_per_video(boundary_resp)
+        + 0.20 * normalize_per_video(cls_loss)
+    )
+
+    signed_utility = 2.0 * normalize_per_video(utility) - 1.0
+    return signed_utility.clamp(-1.0, 1.0)
+```
+
+关键要求：
+
+```text
+train split only
+teacher checkpoint fixed
+no val/test source
+no evaluator AP/NMS result as utility
+no raw prediction cache
+utility JSONL never copied into deploy ledger
+```
+
+---
+
+## E7. joint training loop 骨架
+
+```python
+def train_joint_selector_adatad(
+    selector,
+    detector,
+    dataloader,
+    optimizer_selector,
+    optimizer_detector,
+    cfg,
+):
+    selector.train()
+    detector.train()
+
+    for batch in dataloader:
+        proxy = batch["proxy_features"]      # [B,T,C], p_action/delta/uncertainty/low-cost features
+        valid = batch["valid_mask"]          # [B,T]
+        dense = batch["dense_features"]      # or cheap frame features during precheck
+
+        sel = selector(proxy, valid, dense_features=dense)
+
+        adapted = build_adatad_sparse_batch(
+            batch=batch,
+            sampled_features=sel["sampled"],
+            tau=sel["tau"],
+            selected_mask=sel["selected_mask"],
+            use_true_time=True,
+        )
+
+        det_losses = detector.forward_train(
+            adapted["inputs"],
+            adapted["masks"],
+            adapted["metas"],
+        )
+
+        det_loss = sum(v for k, v in det_losses.items() if "loss" in k)
+
+        frame_mass = sel["weights"].sum(dim=1)  # [B,T]
+        gap_terms = interval_regularization_loss(
+            tau=sel["tau"],
+            selected_mask=sel["selected_mask"],
+            valid_len=sel["valid_len"],
+            max_gap_factor=cfg.max_gap_factor,
+            cvar_ratio=cfg.cvar_ratio,
+        )
+
+        b_loss = boundary_bracket_loss(
+            frame_mass=frame_mass,
+            boundary_indices=batch["train_boundary_indices"],
+            boundary_mask=batch["train_boundary_mask"],
+            radius=cfg.boundary_radius,
+        )
+
+        loss = (
+            det_loss
+            + cfg.lambda_gap * gap_terms["gap_loss"]
+            + cfg.lambda_cvar * gap_terms["gap_cvar"]
+            + cfg.lambda_boundary * b_loss
+        )
+
+        optimizer_selector.zero_grad(set_to_none=True)
+        optimizer_detector.zero_grad(set_to_none=True)
+        loss.backward()
+
+        selector_grad_norm = grad_norm(selector.parameters())
+        if selector_grad_norm <= cfg.min_selector_grad_norm:
+            raise RuntimeError("Selector receives no effective detector gradient")
+
+        optimizer_selector.step()
+        optimizer_detector.step()
+```
+
+---
+
+## E8. OpenTAD/AdaTAD integration adapter
+
+```python
+def build_adatad_sparse_batch(batch, sampled_features, tau, selected_mask, use_true_time: bool):
+    metas = []
+    for meta, tau_i, mask_i in zip(batch["metas"], tau, selected_mask):
+        new_meta = dict(meta)
+        new_meta["irregular_selected_positions"] = tau_i.detach().cpu().tolist()
+        new_meta["irregular_selected_mask"] = mask_i.detach().cpu().tolist()
+        new_meta["irregular_dense_valid_len"] = int(meta["valid_len"])
+        new_meta["coordinate_space"] = "true_time_dense_index" if use_true_time else "selected_axis"
+        metas.append(new_meta)
+
+    return {
+        "inputs": sampled_features,
+        "masks": selected_mask,
+        "metas": metas,
+    }
+```
+
+最终路线必须避免：
+
+```python
+remap_gt_to_selected_axis=True
+```
+
+或者至少将它改成：
+
+```python
+remap_gt_to_selected_axis=False
+use_true_time_regression=True
+```
+
+---
+
+## E9. deploy-time hard selection export
+
+```python
+def harden_tau_to_positions(tau, valid_len, budget=384):
+    positions = []
+    used = set()
+
+    for x in tau[:budget].detach().cpu().tolist():
+        idx = int(round(x))
+        idx = max(0, min(idx, valid_len - 1))
+
+        # local collision repair only
+        if idx in used:
+            found = None
+            for r in range(1, 8):
+                for cand in (idx - r, idx + r):
+                    if 0 <= cand < valid_len and cand not in used:
+                        found = cand
+                        break
+                if found is not None:
+                    break
+            if found is None:
+                continue
+            idx = found
+
+        used.add(idx)
+        positions.append(idx)
+
+    positions = sorted(positions)[: min(budget, valid_len)]
+    return positions
+```
+
+---
+
+## E10. no-leak validator 核心
+
+```python
+FORBIDDEN_TRUE_FLAGS = [
+    "uses_gt_at_deploy",
+    "uses_val_gt",
+    "uses_test_gt",
+    "uses_oracle",
+    "uses_prediction_cache",
+    "uses_raw_prediction_cache",
+    "teacher_payload_visible_to_deploy",
+    "uses_uniform_fill",
+]
+
+FORBIDDEN_DEPLOY_KEYS = [
+    "teacher_dense_points",
+    "teacher_frame_utility",
+    "signed_frame_utility",
+    "gt_segments",
+    "gt_labels",
+    "raw_predictions",
+    "nms_predictions",
+]
+
+
+def validate_budget384_no_leak(row):
+    if row["selected_count"] > 384:
+        raise ValueError("selected_count exceeds 384")
+    if row.get("target_len", 384) > 384:
+        raise ValueError("target_len exceeds 384")
+
+    for flag in FORBIDDEN_TRUE_FLAGS:
+        if bool(row.get(flag, False)):
+            raise ValueError(f"forbidden deploy flag is true: {flag}")
+
+    for key in FORBIDDEN_DEPLOY_KEYS:
+        if key in row:
+            raise ValueError(f"forbidden deploy key exists: {key}")
+
+    pos = row["selected_positions"]
+    if len(pos) != row["selected_count"]:
+        raise ValueError("selected_count mismatch")
+    if pos != sorted(set(pos)):
+        raise ValueError("selected_positions must be sorted unique")
+    if len(pos) and max(pos) >= row["valid_len"]:
+        raise ValueError("selected position exceeds valid_len")
+
+    return True
+```
+
+---
+
+# F. 完整实验计划
+
+官方 OpenTAD/AdaTAD 是必须对齐的外部基准。OpenTAD 官方说明其是 PyTorch TAD toolbox，并发布了 AdaTAD 官方实现/权重；AdaTAD 官方结果在 THUMOS14 上可达到 77.07 Avg-mAP。([GitHub][20]) AdaTAD 的原始动机之一是 end-to-end TAD 里的 memory bottleneck，因此 pre-backbone sparse acquisition 的论文问题是成立的，但必须严格证明省的是 backbone 前计算，而不是 detector 后剪枝。([arXiv][21])
+
+## Stage 0：official AdaTAD reproduction / sanity
+
+### 要跑
+
+```text
+0.1 official OpenTAD AdaTAD dense reproduction
+0.2 official/equivalent uniform_384 reproduction
+0.3 same data split / same THUMOS 211 test videos / same NMS / same pretrain audit
+0.4 config diff: official vs c3 ledger AdaTAD
+```
+
+### 成功标准
+
+```text
+dense official result within acceptable tolerance
+uniform_384 ≈ historical 65 Avg-mAP
+mAP@0.7 close to historical baseline
+```
+
+### 失败诊断
+
+* dense 复现低：pretrain、data split、eval/NMS、window overlap、EMA、batch size、frame stride 错。
+* uniform_384 低：ledger loader / remap / adapter 有 bug。
+* dense 正常但 uniform_384 异常：C3 LoadFrames 或 selected-axis remap 有问题。
+
+---
+
+## Stage 1：current baselines under one matrix
+
+### 要跑
+
+```text
+1. uniform_384
+2. raw p_action top-k_384
+3. PAction learned global_topk_384
+4. PAction learned global_topk_384 + no repair
+5. PAction learned global_topk_384 + hole repair
+6. GAS-VT fixed_384
+7. GAS-no-interior fixed_384
+8. GAS-boundary-heavy fixed_384
+```
+
+所有 run 必须：
+
+```text
+same commit
+same source JSONL
+same AdaTAD config base
+same pretrain
+same selected_count<=384
+same target_len=384
+same eval/NMS
+same validator thresholds
+```
+
+### 成功标准
+
+* 复现 PAction learned 59.10；
+* 复现 GAS 44.90 左右；
+* uniform_384 稳定在约 65；
+* 输出 gap/boundary/action/uniform similarity 诊断。
+
+### 失败后的判断
+
+| 现象                                          | 判断                               |
+| ------------------------------------------- | -------------------------------- |
+| PAction no-repair gap 很大，repair 提升明显        | score 有效，interval decoder 错      |
+| repair 提升 @0.7 但 Avg 不过 65                  | geometry 是主要瓶颈                   |
+| GAS-no-interior 提升高 IoU                     | GAS objective 偏动作内部              |
+| 所有 learned 都不如 uniform 且 boundary support 低 | supervision/proxy 不足             |
+| boundary support 高但 @0.7 仍低                 | detector selected-axis remap 有问题 |
+
+---
+
+## Stage 2：teacher utility selector
+
+### 要跑
+
+先完成 dense teacher checkpoint 和 train-only utility export。当前 exporter 的 score-only points 保留为 baseline，但必须新增更强 utility：
+
+```text
+2.1 teacher proposal score utility
+2.2 point assignment responsibility
+2.3 cls loss utility
+2.4 reg loss utility
+2.5 boundary responsibility
+2.6 gradient × feature saliency
+2.7 approximate counterfactual group-drop utility
+2.8 mixture utility
+```
+
+每种 utility 训练同一个 selector architecture，导出 fixed_384 ledger，接同一个 AdaTAD sparse full run。
+
+### 成功标准
+
+```text
+utility predictor val/train split diagnostic 不泄漏
+selected utility coverage > PAction
+boundary bracket support > PAction
+p95 hole 不恶化
+detector mAP ≥ uniform_384
+mAP@0.6/@0.7 不崩
+```
+
+### 失败诊断
+
+| 现象                                | 根因                                     |
+| --------------------------------- | -------------------------------------- |
+| utility NDCG 高，但 mAP 低            | detector interface / remap 错           |
+| utility NDCG 低                    | teacher utility 定义错或 proxy features 不足 |
+| train selector 好，val selector 差   | overfit 或 train utility 不泛化            |
+| proposal score utility 接近 PAction | teacher 退化为 actionness                 |
+| boundary utility 提升 @0.7          | 说明主线应转 boundary utility                |
+
+---
+
+## Stage 3：joint end-to-end selector + AdaTAD
+
+### 要跑
+
+```text
+3.1 ST hard top-k selector precheck, K=384
+3.2 monotonic sampler precheck, K=384
+3.3 teacher-pretrained selector + frozen detector
+3.4 unfreeze detector head only
+3.5 unfreeze adapter/head, low LR joint fine-tune
+3.6 full sparse AdaTAD run
+```
+
+### 必须记录
+
+```text
+selector grad norm
+detector grad norm
+selected positions entropy
+unique selected ratio
+p95 unselected hole
+boundary support
+score-rank overlap with p_action
+per-epoch mAP
+collapse flags
+```
+
+### 成功标准
+
+```text
+selector grad norm consistently > threshold
+selected positions change during training
+no collapse to action interiors
+mAP improves over teacher-pretrained frozen version
+```
+
+### 失败处理
+
+* grad norm 为 0：ST/gather 或 adapter 断图。
+* positions 不变：temperature 太低、hard path 太强。
+* positions collapse：加 interval/boundary/entropy，降低 selector LR。
+* detector loss 降但 mAP 降：selected-axis geometry 或 NMS/postprocess 错。
+
+---
+
+## Stage 4：CVPR-grade ablations
+
+### 必跑 ablation
+
+```text
+no boundary utility
+no detector utility
+no interval regularization
+no p_action proxy
+no uncertainty/delta
+shuffled utility target
+shuffled selected positions
+rule-only uniform scaffold replacement
+PAction score + learned monotonic sampler
+PAction score + post-hoc repair
+budgets 128 / 256 / 384
+dynamic <=384
+true-time adapter vs selected-axis remap
+speed / FLOPs / memory
+mAP@0.3/0.4/0.5/0.6/0.7
+qualitative selected-frame visualization
+```
+
+### 成功标准
+
+最理想：
+
+```text
+Avg-mAP > uniform_384
+mAP@0.6/@0.7 ≥ uniform_384
+compute/backbone frames ≤384
+no val/test GT/cache/oracle
+```
+
+次优但仍可讲：
+
+```text
+Avg-mAP 与 uniform 接近
+mAP@0.7 明显提升
+compute 明显下降
+跨 budget Pareto 更好
+```
+
+如果只比 uniform 高 0.2-0.5 且无统计重复、无 compute 优势、无高 IoU 提升，CVPR 主会很弱。
+
+---
+
+## 最小 GPU 调度顺序
+
+```text
+GPU0:
+  Stage0 official/uniform reproduction
+  then best Stage1 AdaTAD full runs
+
+GPU1:
+  finish dense teacher epoch59
+  export utility
+  train selectors
+  launch Stage2 best sparse AdaTAD runs
+
+CPU / low GPU:
+  validators, ledger conversion, gap/boundary diagnostics
+
+After Stage2 stable:
+  one GPU for Stage3 joint precheck and short run
+```
+
+不要同时开太多 full run。先用 validator 和 short run 淘汰明显错的 ledger。
+
+---
+
+# G. 论文故事
+
+## G1. 方法解决什么问题？
+
+**问题：dense video TAD 的 backbone 前计算代价高，而现有 uniform sparse sampling 虽稳但内容无关；actionness top-k 虽内容相关但破坏边界和时间几何。**
+
+你的论文可以讲：
+
+```text
+Given a fixed pre-backbone budget, how can a model acquire sparse frames that are not merely action-covered, but detector-utility and boundary-geometry preserving?
+```
+
+---
+
+## G2. 为什么 uniform / actionness top-k / post-hoc repair 不够？
+
+* uniform：稳定，但不看视频内容；预算浪费在冗余静态段。
+* actionness top-k：容易选动作内部，漏边界和背景。
+* post-hoc repair：能补洞，但是手工规则，不能说明 detector utility。
+* teacher proposal score：强化 teacher confidence，不等于 marginal contribution。
+* selected-axis remap：可能让 irregular sampling 的高 IoU 定位失真。
+
+---
+
+## G3. 核心创新应该是什么？
+
+建议主张三点：
+
+1. **Detector-utility supervision**
+   从 dense AdaTAD train graph 导出 point/boundary/counterfactual utility，而不是 actionness。
+
+2. **Monotonic temporal acquisition**
+   selector 学有序采样时间表和 interval distribution，而不是 global top-k。
+
+3. **True-time sparse detector interface**
+   detector 在真实物理时间轴上解码 sparse observations，避免 selected-axis geometry distortion。
+
+这三点合起来才像 CVPR 方法。单独任何一点都不够强。
+
+---
+
+## G4. 为什么是 pre-backbone selector，不是 detector 内部 pruning？
+
+因为 detector 内部 pruning 已经付出了 backbone 计算成本。pre-backbone selector 的目标是：
+
+```text
+decode/read fewer frames
+run expensive VideoMAE/TIA backbone on fewer frames
+then feed sparse observations to TAD detector
+```
+
+这直接对应 AdaTAD/VideoMAE 类 end-to-end TAD 的 memory/compute bottleneck。
+
+---
+
+## G5. p_action proxy 与 detector-aware utility 的关系
+
+可以这样讲：
+
+```text
+p_action is a cheap observation prior.
+detector utility is a task-value target.
+The selector learns to transform cheap proxy signals into detector-useful acquisitions.
+```
+
+也就是说，`p_action` 不是最终监督；它是 deploy-time 可见的低成本输入。teacher utility 是 train-time task signal。
+
+---
+
+## G6. 如何避免被认为是 engineering heuristic？
+
+必须做到：
+
+* 不把 uniform scaffold 当 final method；
+* interval/boundary/gap 是 differentiable loss，不是纯后处理；
+* deploy 不用 GT/teacher/cache；
+* rule-only replacement 是 baseline；
+* shuffled utility / shuffled score 会显著变差；
+* true-time adapter ablation 证明不是 config trick；
+* 多预算 128/256/384 都有效；
+* qualitative 图显示选中的是边界、上下文、困难段，而非动作内部扎堆。
+
+---
+
+## G7. 如果最终只超过 uniform 一点点，论文是否成立？
+
+如果只是：
+
+```text
+65.0 → 65.3
+```
+
+且只有 THUMOS14、没有统计重复、没有 high-IoU/compute/latency 优势，CVPR 很危险。
+
+如果是：
+
+```text
+Avg +0.5~1.0
+mAP@0.7 +2~4
+backbone frames -50%
+多个 seed 稳定
+qualitative 清楚
+```
+
+则仍有论文空间。
+
+---
+
+## G8. 如果只 high-IoU 提升，Avg-mAP 不大提升，如何调整故事？
+
+把论文定位成：
+
+```text
+Boundary-preserving sparse acquisition for high-IoU temporal localization
+```
+
+强调：
+
+* mAP@0.6/@0.7；
+* boundary error；
+* start/end localization error；
+* high-IoU proposal recall；
+* calibration / NMS stability；
+* compute-saving 下不牺牲 localization。
+
+但低 IoU/Avg 不能明显掉，否则 reviewer 会认为牺牲 coverage 换 boundary。
+
+---
+
+# H. 7 天优先执行清单
+
+## Day 1：冻结审计基线
+
+* 固定 commit `2a5dfac4f8b566703f589e50716dddde25b41f0f`、环境、pretrain、dataset path。
+* 跑 config diff：official OpenTAD AdaTAD vs C3 AdaTAD。
+* 把 budget gate 写死：`selected_count<=384`、`target_len<=384`。
+* 把 validator threshold 从 optional 变成 manifest mandatory。
+* 输出 `stage0_reproduction_manifest.json`。
+
+## Day 2：统一 Stage1 baseline matrix
+
+* 同一 source / config / budget 跑：
+
+  * uniform_384；
+  * raw p_action top-k；
+  * PAction learned no repair；
+  * PAction learned with repair；
+  * GAS fixed_384；
+  * GAS-no-interior；
+  * GAS-boundary-heavy。
+* 每个 ledger 输出 gap、p95 hole、boundary support、uniform similarity。
+* 不合格 ledger 不允许进入 AdaTAD full train。
+
+## Day 3：完成 dense teacher 与当前 score-only utility
+
+* 等 dense teacher epoch59。
+* 跑当前 `export_dense_adatad_teacher_points.py`，但命名为 score-only utility baseline。
+* 检查 manifest：
+
+  * train split only；
+  * no val/test sample id；
+  * no prediction cache；
+  * no evaluator outputs；
+  * no deploy payload。
+* 训练 detector-aware score-only selector，作为 Stage2 baseline。
+
+## Day 4：实现真正 utility exporter
+
+* 加 `export_dense_adatad_teacher_utility.py`。
+* 至少导出：
+
+  * boundary responsibility；
+  * per-point cls/reg loss；
+  * gradient × feature saliency。
+* 如果 full counterfactual 太贵，先做 group-drop approximate counterfactual。
+* 对 utility 做诊断：
+
+  * 与 GT boundary 距离；
+  * 与 PAction score overlap；
+  * 与 high-IoU proposal recall 的相关性。
+
+## Day 5：Stage2 full sparse detector runs
+
+* 选择 2-3 个最好的 utility selector：
+
+  * score-only；
+  * boundary+reg；
+  * gradient/counterfactual mixture。
+* 导出 fixed_384 strict ledger。
+* 跑 AdaTAD full 或至少长程 run。
+* 与 uniform_384 / PAction 59.10 / GAS 44.90 对齐比较。
+* 如果 boundary support 高但 @0.7 仍低，立刻转查 selected-axis remap。
+
+## Day 6：monotonic sampler / joint precheck
+
+* 实现 `MonotonicTemporalSampler`。
+* 先在 feature/proxy 层训练，不直接大改 raw frame pipeline。
+* 跑 joint precheck：
+
+  * selector grad norm；
+  * selected τ 分布；
+  * gap entropy；
+  * boundary bracket；
+  * collapse gate。
+* 从 teacher-pretrained selector 初始化，不从随机开始。
+
+## Day 7：路线决策
+
+根据结果做硬决策：
+
+### 情况 A：teacher utility fixed_384 超过 uniform 或接近且 high-IoU 提升
+
+继续 Route 1 + Route 3，准备 full ablation。
+
+### 情况 B：只有 repair/scaffold 版本强
+
+不要把它作为 final。改成 differentiable lattice deformation：
+
+```text
+τ_k = uniform_k + learned_offset_k
+```
+
+然后训练 offset，而不是 rule replacement。
+
+### 情况 C：所有 learned selector 都低于 uniform，且 gap/boundary 指标差
+
+supervision / selector loss 错。优先修 utility 和 monotonic interval loss。
+
+### 情况 D：gap/boundary 指标好，但 mAP@0.7 仍低
+
+detector-interface 错。优先做 true-time adapter，停止继续堆 selector trick。
+
+---
+
+# 最后给一个最短执行优先级
+
+1. **先把所有 384 对比变成 hard gate。** dynamic 768、fixed 768 全部移出主表。
+2. **把当前 dense teacher exporter 降级命名为 proposal-score utility baseline。** 不要过度 claim。
+3. **马上做 true-time vs selected-axis remap 对照。** 这是高 IoU 崩不崩的关键。
+4. **GAS-VT 暂停作为主线，只保留 ablation。** 它当前不是严格 sequential acquisition。
+5. **PAction learned 不放弃，但不要再 global top-k 作为最终方法。** 用它做 proxy backbone / initialization。
+6. **最终主线转为 detector-utility monotonic sampler。** uniform scaffold 只做 initialization/baseline，不做 final crutch。
+7. **7 天内的成败标准很简单：** 如果 utility/monotonic/true-time 任一路线不能把 fixed_384 推到接近或超过 uniform_384，同时 @0.7 不崩，就不要继续写 CVPR 主故事，先回到 detector-interface 与 utility 定义。
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/gas-vt-stage23-detector-aware-20260706 "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/gas-vt-stage23-detector-aware-20260706"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/2a5dfac4f8b566703f589e50716dddde25b41f0f "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/2a5dfac4f8b566703f589e50716dddde25b41f0f"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/paction_acquisition_policy.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/paction_acquisition_policy.py"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/apply_paction_acquisition_policy.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/apply_paction_acquisition_policy.py"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/run_paction_learned_policy_ledger_pipeline.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/run_paction_learned_policy_ledger_pipeline.py"
+[6]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/gas_vt_paction_policy.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/gas_vt_paction_policy.py"
+[7]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/train_gap_aware_acquisition_policy.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/train_gap_aware_acquisition_policy.py"
+[8]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/detector_aware_acquisition_policy.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/detector_aware_acquisition_policy.py"
+[9]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/train_detector_aware_acquisition_policy.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/train_detector_aware_acquisition_policy.py"
+[10]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/apply_detector_aware_acquisition_policy.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/apply_detector_aware_acquisition_policy.py"
+[11]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/export_dense_adatad_teacher_points.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/export_dense_adatad_teacher_points.py"
+[12]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/detector_teacher_utility.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/detector_teacher_utility.py"
+[13]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/validate_paction_learned_policy_ledger.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/validate_paction_learned_policy_ledger.py"
+[14]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/convert_lowres_probe_samples_to_value_transport_ledger.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/tools/bata/convert_lowres_probe_samples_to_value_transport_ledger.py"
+[15]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/configs/adatad/thumos/c3_paction_learned_ledger_adatad_full_train.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/configs/adatad/thumos/c3_paction_learned_ledger_adatad_full_train.py"
+[16]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/configs/adatad/thumos/c3_detector_aware_ledger_adatad_full_train.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/configs/adatad/thumos/c3_detector_aware_ledger_adatad_full_train.py"
+[17]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/configs/adatad/thumos/c3_truetime_joint_selector_adatad_precheck.py "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/2a5dfac4f8b566703f589e50716dddde25b41f0f/configs/adatad/thumos/c3_truetime_joint_selector_adatad_precheck.py"
+[18]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/2a5dfac4f8b566703f589e50716dddde25b41f0f/scripts "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/2a5dfac4f8b566703f589e50716dddde25b41f0f/scripts"
+[19]: https://arxiv.org/abs/1611.01144 "https://arxiv.org/abs/1611.01144"
+[20]: https://github.com/sming256/OpenTAD "https://github.com/sming256/OpenTAD"
+[21]: https://arxiv.org/abs/2311.17241 "https://arxiv.org/abs/2311.17241"

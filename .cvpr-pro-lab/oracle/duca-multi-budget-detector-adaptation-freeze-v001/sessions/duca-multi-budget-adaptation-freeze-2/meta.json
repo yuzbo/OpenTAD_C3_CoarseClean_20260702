@@ -1,0 +1,168 @@
+{
+  "id": "duca-multi-budget-adaptation-freeze-2",
+  "createdAt": "2026-08-31T06:40:17.250Z",
+  "status": "completed",
+  "promptPreview": "Read every provided file completely and independently adjudicate the one new detector-adaptation question. Preserve the old stopped-route boundary, make every s",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-31T06:40:18.246Z",
+      "completedAt": "2026-08-31T07:01:45.758Z",
+      "usage": {
+        "inputTokens": 17316,
+        "outputTokens": 3831,
+        "reasoningTokens": 0,
+        "totalTokens": 21147
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 15359,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "D38CF9543E1A12D32EB3F0C03CF12EA1",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a9521de-d020-83e9-a0b9-19045c8d5390",
+      "conversationId": "6a9521de-d020-83e9-a0b9-19045c8d5390",
+      "promptSubmitted": true,
+      "controllerPid": 85376
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a9521de-d020-83e9-a0b9-19045c8d5390"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-31T06:40:23.410Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Read every provided file completely and independently adjudicate the one new detector-adaptation question. Preserve the old stopped-route boundary, make every scientific choice yourself, and freeze the two missing execution decisions. Preserve nonce DUCA-MULTI-BUDGET-DETECTOR-ADAPTATION-FREEZE-v001-20260831 verbatim in the response.",
+    "file": [
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\prompts\\PRO_DUCA_MULTI_BUDGET_DETECTOR_ADAPTATION_FREEZE-v001.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\PAPER_PROGRESS.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\experiments\\duca-whole-video-consistent-budget-v1.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\experiments\\duca-multi-budget-detector-adaptation.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\sources\\2026-08-31-duca-multi-budget-detector-adaptation-revise.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-multi-budget-adaptation-freeze-2",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-multi-budget-detector-adaptation-freeze-v001\\visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 85376,
+    "reattachCommand": "oracle session duca-multi-budget-adaptation-freeze-2"
+  },
+  "startedAt": "2026-08-31T06:40:18.241Z",
+  "completedAt": "2026-08-31T07:01:45.801Z",
+  "usage": {
+    "inputTokens": 17316,
+    "outputTokens": 3831,
+    "reasoningTokens": 0,
+    "totalTokens": 21147
+  },
+  "elapsedMs": 1285324,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\oracle\\duca-multi-budget-detector-adaptation-freeze-v001\\sessions\\duca-multi-budget-adaptation-freeze-2\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 82570,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a9521de-d020-83e9-a0b9-19045c8d5390",
+      "sha256": "97273c28b983d5d0a4e8a812945d5e52edafec614fd1e6720030a6a55e0d8069",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

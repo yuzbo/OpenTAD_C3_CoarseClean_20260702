@@ -1,0 +1,11 @@
+{
+  "claim_boundary": "submitted_engineering_gate_no_model_metric",
+  "deployment_identity_sha256": "8a48710bd02274ab7a6be7fd6e84ec29116c62e9633cc1bae6369e2883392179",
+  "formal_slurm_job_id": 1205569,
+  "launcher_sha256": "fb924a2aad2e9475d3a6e133819f405d39dc624fd29166682d8bfcce04d4e3db",
+  "schema_version": "actionformer_native_grid_k384_submission_receipt_v1",
+  "source_diff_attestation_sha256": "3ef485f82678453538aef6f58ba81d548149394ef93356a811593e67cdf22e9d",
+  "source_diff_provenance_sha256": "780c0aa5a8a00ba9180974d4bee001782e83d747d492589a2a2da4b5bc40e2d6",
+  "test_only_is_not_a_job": true,
+  "test_only_output": ""
+}

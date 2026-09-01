@@ -2,7 +2,10 @@
 # https://github.com/open-mmlab/mmcv/blob/master/mmcv/ops/nms.py
 import torch
 
-import nms_1d_cpu
+try:
+    import nms_1d_cpu
+except ImportError:
+    nms_1d_cpu = None
 
 
 class NMSop(torch.autograd.Function):
@@ -118,6 +121,7 @@ def batched_nms(
     # make sure the inputs are float
     segs = segs.float()
     scores = scores.float()
+    cls_idxs = cls_idxs.long()
 
     # Based on Detectron2 implementation,
     num_segs = segs.shape[0]

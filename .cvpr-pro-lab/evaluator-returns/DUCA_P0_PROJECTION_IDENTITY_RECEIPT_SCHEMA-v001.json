@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "DUCA_P0_PROJECTION_IDENTITY_RECEIPT_SCHEMA-v001",
+  "title": "DUCA P0 projection identity receipt — authored not run",
+  "description": "No-execution schema under PRO_P0_PROJECTION_POLICY-v001. A later execution authorization must supersede this version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_status",
+    "authority",
+    "execution",
+    "fixture_contract",
+    "certificate_state",
+    "gate_state"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "duca-p0-projection-identity-receipt-v001"
+    },
+    "artifact_status": {
+      "const": "AUTHORED_NOT_RUN"
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "queue_message_id",
+        "parent_decision",
+        "fixed_commit",
+        "evidence_class"
+      ],
+      "properties": {
+        "project_id": {
+          "const": "g-p-6a796fef9a00819194024cf1de3bd697"
+        },
+        "queue_message_id": {
+          "const": "msg-20260812T003436Z-eb863ea3b862"
+        },
+        "parent_decision": {
+          "const": "PRO_P0_PROJECTION_POLICY-v001"
+        },
+        "fixed_commit": {
+          "const": "63a726a4aaf48ecbf6780bb196de43a890c6b4df"
+        },
+        "evidence_class": {
+          "const": "preparatory_projection_protocol"
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorization",
+        "command",
+        "working_directory",
+        "environment",
+        "host",
+        "local_cpu",
+        "remote_cpu",
+        "gpu",
+        "slurm",
+        "tests",
+        "data",
+        "checkpoints",
+        "metrics",
+        "browser",
+        "git",
+        "launchers",
+        "started_at",
+        "completed_at",
+        "exit_status",
+        "output_path"
+      ],
+      "properties": {
+        "authorization": {"const": "NOT_AUTHORIZED"},
+        "command": {"const": "NOT_AUTHORIZED"},
+        "working_directory": {"const": "NOT_AUTHORIZED"},
+        "environment": {"const": "NOT_AUTHORIZED"},
+        "host": {"const": "NOT_AUTHORIZED"},
+        "local_cpu": {"const": "NOT_AUTHORIZED"},
+        "remote_cpu": {"const": "NOT_AUTHORIZED"},
+        "gpu": {"const": "NOT_AUTHORIZED"},
+        "slurm": {"const": "NOT_AUTHORIZED"},
+        "tests": {"const": "NOT_AUTHORIZED"},
+        "data": {"const": "NOT_AUTHORIZED"},
+        "checkpoints": {"const": "NOT_AUTHORIZED"},
+        "metrics": {"const": "NOT_AUTHORIZED"},
+        "browser": {"const": "NOT_AUTHORIZED"},
+        "git": {"const": "NOT_AUTHORIZED"},
+        "launchers": {"const": "NOT_AUTHORIZED"},
+        "started_at": {"const": "NOT_AUTHORIZED"},
+        "completed_at": {"const": "NOT_AUTHORIZED"},
+        "exit_status": {"const": "NOT_AUTHORIZED"},
+        "output_path": {"const": "NOT_AUTHORIZED"}
+      }
+    },
+    "fixture_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "tuple_fields",
+        "Q",
+        "required_fixture_ids"
+      ],
+      "properties": {
+        "status": {"const": "AUTHORED_NOT_RUN"},
+        "tuple_fields": {
+          "const": ["T", "K", "u", "a"]
+        },
+        "Q": {"const": 1048576},
+        "required_fixture_ids": {
+          "const": [
+            "t385_exact_s37",
+            "t385_full_key_tie",
+            "t768_smooth_monotone",
+            "t768_alternating",
+            "t768_single_boundary",
+            "t768_dual_boundary",
+            "t768_constraint_saturating",
+            "t768_fixed_point_half_up"
+          ]
+        }
+      }
+    },
+    "certificate_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "production_certificates",
+        "reference_certificates",
+        "identity_comparisons",
+        "exhaustive_witnesses",
+        "critic_independence_audit"
+      ],
+      "properties": {
+        "status": {"const": "NOT_RUN"},
+        "production_certificates": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "reference_certificates": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "identity_comparisons": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "exhaustive_witnesses": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "critic_independence_audit": {
+          "const": "NOT_RUN"
+        }
+      }
+    },
+    "gate_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projection_identity",
+        "P0",
+        "P1",
+        "PRE_RUN",
+        "scientific_evidence"
+      ],
+      "properties": {
+        "projection_identity": {"const": "PENDING_NOT_RUN"},
+        "P0": {"const": "BLOCKED_PRE_RESULT"},
+        "P1": {"const": "BLOCKED_NOT_AUTHORIZED"},
+        "PRE_RUN": {"const": "BLOCKED"},
+        "scientific_evidence": {"const": "BLOCKED_PRE_RESULT"}
+      }
+    }
+  },
+  "$defs": {
+    "decimal_integer": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "fixture_tuple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixture_id", "T", "K", "Q", "u", "a"],
+      "properties": {
+        "fixture_id": {"type": "string", "minLength": 1},
+        "T": {"type": "integer", "minimum": 16},
+        "K": {"type": "integer", "minimum": 16, "maximum": 384},
+        "Q": {"const": 1048576},
+        "u": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 0}
+        },
+        "a": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "feasibility_certificate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "length",
+        "first_position",
+        "last_position",
+        "strides",
+        "minimum_stride",
+        "maximum_stride",
+        "maximum_uniform_displacement",
+        "uniform_witness_feasible",
+        "all_constraints_pass"
+      ],
+      "properties": {
+        "length": {"type": "integer", "minimum": 16, "maximum": 384},
+        "first_position": {"type": "integer", "minimum": 0},
+        "last_position": {"type": "integer", "minimum": 0},
+        "strides": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 1, "maximum": 4}
+        },
+        "minimum_stride": {"type": "integer", "minimum": 1, "maximum": 4},
+        "maximum_stride": {"type": "integer", "minimum": 1, "maximum": 4},
+        "maximum_uniform_displacement": {"type": "integer", "minimum": 0, "maximum": 16},
+        "uniform_witness_feasible": {"type": "boolean"},
+        "all_constraints_pass": {"type": "boolean"}
+      }
+    },
+    "objective_certificate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "E2_decimal",
+        "E_infinity_decimal",
+        "E1_decimal",
+        "U1_decimal",
+        "internal_position_vector",
+        "exact_recomputation_pass"
+      ],
+      "properties": {
+        "E2_decimal": {"$ref": "#/$defs/decimal_integer"},
+        "E_infinity_decimal": {"$ref": "#/$defs/decimal_integer"},
+        "E1_decimal": {"$ref": "#/$defs/decimal_integer"},
+        "U1_decimal": {"$ref": "#/$defs/decimal_integer"},
+        "internal_position_vector": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "exact_recomputation_pass": {"type": "boolean"}
+      }
+    },
+    "implementation_certificate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixture_id",
+        "implementation",
+        "status",
+        "p",
+        "feasibility",
+        "objective",
+        "typed_failure",
+        "deviation"
+      ],
+      "properties": {
+        "fixture_id": {"type": "string", "minLength": 1},
+        "implementation": {"enum": ["production", "independent_reference"]},
+        "status": {"enum": ["PASS", "BLOCKED"]},
+        "p": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 0}
+        },
+        "feasibility": {"$ref": "#/$defs/feasibility_certificate"},
+        "objective": {"$ref": "#/$defs/objective_certificate"},
+        "typed_failure": {"type": ["string", "null"]},
+        "deviation": {"type": "string"}
+      }
+    },
+    "identity_comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixture_id",
+        "p_identical",
+        "E2_identical",
+        "E_infinity_identical",
+        "E1_identical",
+        "U1_identical",
+        "internal_position_vector_identical",
+        "feasibility_certificate_identical",
+        "overall_status",
+        "first_mismatch"
+      ],
+      "properties": {
+        "fixture_id": {"type": "string", "minLength": 1},
+        "p_identical": {"type": "boolean"},
+        "E2_identical": {"type": "boolean"},
+        "E_infinity_identical": {"type": "boolean"},
+        "E1_identical": {"type": "boolean"},
+        "U1_identical": {"type": "boolean"},
+        "internal_position_vector_identical": {"type": "boolean"},
+        "feasibility_certificate_identical": {"type": "boolean"},
+        "overall_status": {"enum": ["PASS", "P0_BLOCKED"]},
+        "first_mismatch": {"type": ["string", "null"]}
+      }
+    },
+    "exhaustive_certificate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixture_id",
+        "T",
+        "K",
+        "feasible_sequence_count_decimal",
+        "minimizer_count_decimal",
+        "selected_long_stride_index",
+        "winner_p",
+        "winner_objective",
+        "every_loser_first_difference",
+        "status"
+      ],
+      "properties": {
+        "fixture_id": {"enum": ["t385_exact_s37", "t385_full_key_tie"]},
+        "T": {"const": 385},
+        "K": {"const": 384},
+        "feasible_sequence_count_decimal": {"const": "383"},
+        "minimizer_count_decimal": {"const": "1"},
+        "selected_long_stride_index": {"type": "integer", "minimum": 0, "maximum": 382},
+        "winner_p": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 0, "maximum": 384},
+          "minItems": 384,
+          "maxItems": 384
+        },
+        "winner_objective": {"$ref": "#/$defs/objective_certificate"},
+        "every_loser_first_difference": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["long_stride_index", "first_key_field"],
+            "properties": {
+              "long_stride_index": {"type": "integer", "minimum": 0, "maximum": 382},
+              "first_key_field": {
+                "enum": ["E2", "E_infinity", "E1", "U1", "position_vector"]
+              }
+            }
+          },
+          "minItems": 382,
+          "maxItems": 382
+        },
+        "status": {"enum": ["PASS", "P0_BLOCKED"]}
+      }
+    }
+  }
+}

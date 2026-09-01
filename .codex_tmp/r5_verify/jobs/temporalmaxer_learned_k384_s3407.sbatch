@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+#SBATCH --job-name=r5-te-l-k384-s3407
+#SBATCH --clusters=n16r4
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gpus=1
+#SBATCH --time=7-00:00:00
+#SBATCH --output=E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.codex_tmp/r5_verify/logs/r5-te-l-k384-s3407-%j.out
+#SBATCH --error=E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.codex_tmp/r5_verify/logs/r5-te-l-k384-s3407-%j.err
+
+set -euo pipefail
+: "${DUCA_REPO_ROOT:?set DUCA_REPO_ROOT}"
+: "${DUCA_EXPECTED_COMMIT:?set DUCA_EXPECTED_COMMIT}"
+: "${ADATAD_PRETRAIN_PATH:?set ADATAD_PRETRAIN_PATH}"
+: "${ADATAD_PRETRAIN_SHA256:?set ADATAD_PRETRAIN_SHA256}"
+cd "${DUCA_REPO_ROOT}"
+source scripts/duca_cellcf_canonical_env.sh
+[[ "$(git rev-parse HEAD)" == "${DUCA_EXPECTED_COMMIT}" ]]
+[[ "$(sha256sum "${ADATAD_PRETRAIN_PATH}" | awk '{print $1}')" == "${ADATAD_PRETRAIN_SHA256}" ]]
+mkdir -p 'E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.codex_tmp/r5_verify/logs'
+: "${DUCA_FRONTEND_CHECKPOINT:?set DUCA_FRONTEND_CHECKPOINT}"
+: "${DUCA_FRONTEND_CHECKPOINT_SHA256:?set DUCA_FRONTEND_CHECKPOINT_SHA256}"
+: "${DUCA_FRONTEND_CHECKPOINT_EPOCH:?set DUCA_FRONTEND_CHECKPOINT_EPOCH}"
+"${PYTHON}" -m torch.distributed.run \
+  --nproc_per_node=1 \
+  --rdzv_backend=c10d \
+  --rdzv_endpoint=localhost:0 \
+  --rdzv_id="r5-${SLURM_JOB_ID}-r5-te-l-k384-s3407" \
+  tools/train.py 'E:\DeskTop\TAD\OpenTAD_C3_CoarseClean_20260702\.codex_tmp\r5_verify\configs\temporalmaxer_learned_k384_s3407.py' \
+  --id 0 --seed 3407 \
+  --cfg-options "model.backbone.custom.pretrain=${ADATAD_PRETRAIN_PATH}"

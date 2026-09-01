@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-25T16:25:52Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "implementation",
+  "message_id": "msg-20260825T162552Z-8428ac5112d2",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-messages/BUILDER_PJST_D1_CYCLE3-v001.md",
+    "size": 6721
+  },
+  "priority": "critical",
+  "requested_action": "Implement PJST-D1 cycle3 from clean base after durable minimal plan; do not reuse failed patches.",
+  "required_gate": "BLOCKED_PRE_RUN",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

@@ -1,0 +1,8 @@
+{
+  "model": "gpt-5-pro",
+  "status": "running",
+  "log": {
+    "path": "models\\gpt-5-pro.log"
+  },
+  "startedAt": "2026-08-27T08:12:21.827Z"
+}

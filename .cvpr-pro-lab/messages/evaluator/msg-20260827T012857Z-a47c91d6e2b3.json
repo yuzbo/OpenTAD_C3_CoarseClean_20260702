@@ -1,0 +1,22 @@
+{
+  "created_at": "2026-08-27T01:28:57Z",
+  "deadline": "2026-08-27T10:00:00Z",
+  "from_role": "coordinator",
+  "kind": "pjst-d1-terminal-prediction-and-paired-bootstrap-finalizer",
+  "message_id": "msg-20260827T012857Z-a47c91d6e2b3",
+  "parent_artifact_ids": [
+    "EVALUATOR_PJST_D1_CYCLE4_C73E8418_PRERUN_AND_LAUNCH-v001"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-messages/EVALUATOR_PJST_D1_CYCLE4_TERMINAL_FINALIZER-v001.md"
+  },
+  "priority": "critical",
+  "requested_action": "Reuse the completed c73e8418 OFF/ON epoch-59 EMA checkpoints; serialize frozen per-video predictions, run the official evaluator and exact 10,000-draw paired whole-video bootstrap, then issue the preregistered terminal gate.",
+  "required_gate": "RESULT_FINALIZATION",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [
+    "analyze-results"
+  ],
+  "to_role": "evaluator"
+}

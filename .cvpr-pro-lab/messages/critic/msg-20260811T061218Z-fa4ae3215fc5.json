@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-11T06:12:18Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "static-p0-closure-review",
+  "message_id": "msg-20260811T061218Z-fa4ae3215fc5",
+  "parent_artifact_ids": [
+    "PRO_P0_BLOCKER_DECISION-v001"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/roles/critic/CRITIC_DUCA_P0_CLOSURE-v001.md",
+    "size": 913
+  },
+  "priority": "high",
+  "requested_action": "Dependency-blocked: do not start until the coordinator provides the complete Builder diff and receipt. Then do the read-only no-execution P0 closure review in the payload.",
+  "required_gate": "BUILDER_DUCA_P0_CANONICAL_TRANSPORT_COMPLETE",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

@@ -1,0 +1,43 @@
+{
+  "evidence_class": "EXPERIMENTAL_PARALLEL_ROUTING_EVIDENCE",
+  "coordinator_thread_id": "019fa3db-42bf-7f30-a0ab-2b8171ab33ed",
+  "expected_project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "expected_project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "expected_github_commit": "63a726a4aaf48ecbf6780bb196de43a890c6b4df",
+  "expected_sources": [
+    "PROJECT_CHARTER-v001.md",
+    "LITERATURE_AND_GAP-v001.md",
+    "ROUTE_DECISION-v001.md",
+    "EXPERIMENT_PLAN-v001.md",
+    "IMPLEMENTATION_STATUS-v001.md",
+    "RESULTS-v001.md",
+    "RESULT_ANALYSIS-v001.md",
+    "FAILURES_AND_PIVOTS-v001.md",
+    "CLAIM_MAP-v001.md",
+    "PAPER_DRAFT-v001.md",
+    "CURRENT_RESEARCH_STATE-v001.md",
+    "MODEL_EXPERIMENT_HISTORY-v001.md"
+  ],
+  "source_count_confirmed": 12,
+  "cdp_endpoint": "127.0.0.1:59064",
+  "browser_profile_id": "61",
+  "expected_model": "GPT-5.6 Pro via current UI Pro selector",
+  "expected_effort": "Pro Extended / unified GPT-5.6 Pro highest effort",
+  "oracle_home_dir": "C:/Users/skywalker/.codex/oracle-projects/duca-g-p-6a796fef9a00819194024cf1de3bd697-parallel-stress-20260811",
+  "turn_nonce": "bed5d343023bcce60a35a9233e18f7aa",
+  "marker": "PARALLEL-PRO-STRESS-20260811::019fa3db-42bf-7f30-a0ab-2b8171ab33ed::g-p-6a796fef9a00819194024cf1de3bd697::bed5d343023bcce60a35a9233e18f7aa",
+  "preflight_recorded_at_utc": "2026-08-10T17:32:54Z",
+  "sources_mutation_closed": true,
+  "same_project_active_turn_before_submit": false,
+  "cross_project_concurrency_authorized_once": true,
+  "forbidden": [
+    "followup",
+    "recall",
+    "conversation reuse",
+    "Project Sources mutation during the turn",
+    "GPU or remote experiment",
+    "held-out access",
+    "Git push",
+    "scientific dispatch or result promotion"
+  ]
+}

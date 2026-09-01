@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-12T20:06:40Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_SEALED_FIXTURE_REFERENCE_MATERIALIZATION",
+  "message_id": "msg-20260812T200640Z-304f13e14329",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_IDENTITY_AUTHORING-v001",
+    "BUILDER_DUCA_P0_IDENTITY_CLEAN_SNAPSHOT_PREPARATION-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "On the registered remote N16R4 environment only, materialize the already frozen fixture recipes into a sealed ordered canonical UTF-8 JSONL/JSON artifact with full integer T,K,Q,u,a arrays, and copy the already-authored independent reference source unchanged into the same evaluator-owned remote P0 artifact root. Use a standalone fixture materializer that imports neither production nor reference; do not invoke either implementation, calculate reference expectations, compare outputs, read data/model/checkpoint, compute metrics, use GPU/CUDA/Slurm/browser, or edit scientific definitions. Preserve one exact materializer command, artifact paths, ordering/count, zero-forbidden-access attestation, and first-failure fail-close behavior in a durable return. If remote access, clean artifact root, or recipe materialization is unavailable, return NEEDS_ATTENTION without a workaround.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

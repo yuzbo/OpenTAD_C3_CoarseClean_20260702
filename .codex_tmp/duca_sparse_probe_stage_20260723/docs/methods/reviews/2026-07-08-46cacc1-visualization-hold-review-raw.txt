@@ -1,0 +1,762 @@
+## Verdict: **HOLD**
+
+我检查到的公开分支 HEAD 是：
+
+`46cacc113042fcf0931c70774491d44665246e32`
+
+GitHub commit history 显示该分支最新提交为 **“Fix lattice provenance inference for source exports”**，短 SHA 为 `46cacc1`；点击该提交后解析到完整 SHA `46cacc113042fcf0931c70774491d44665246e32`。([GitHub][1])
+
+阻塞原因很明确：你要求逐行审查的 paper-facing visualization / geometry analysis suite 在这个公开 HEAD 中不可见。`tools/bata/` 目录列出的文件包括 `summarize_sparse_selector_evidence.py`、`paction_lattice_replacement_policy.py`、`validate_paction_lattice_replacement_ledger.py` 等，但没有 `analyze_selector_geometry.py`、`plot_selector_paper_summary.py`、`plot_selector_timeline.py`、`generate_selector_failure_gallery.py` 等目标脚本。([GitHub][2]) 测试目录同样没有 `test_analyze_selector_geometry.py`、`test_plot_selector_geometry.py`、`test_plot_selector_paper_summary.py` 等目标测试。([GitHub][3]) 直接访问 `tools/bata/plot_selector_paper_summary.py` 与 `tests/test_plot_selector_paper_summary.py` 在该 SHA 下均为 404。
+
+所以当前公开 HEAD 不能给 PASS，也不能声称已经具备 paper-level visualization suite。最多可以说：**研究方向与证据需求清楚，但 paper-facing 分析/绘图代码没有被推送到本分支 HEAD；现阶段应判 HOLD。**
+
+---
+
+## 1. 当前 metrics 是否足以解释 PAction fixed384 强于 GAS-VT fixed384？
+
+**不够，只能构成强相关诊断，不足以构成决定性解释。**
+
+你现在的锚点已经很有用：
+
+| method                   | Avg mAP | both endpoint coverage @ r16 | boundary recall @ r1 | p95 unselected hole |
+| ------------------------ | ------: | ---------------------------: | -------------------: | ------------------: |
+| GAS-VT fixed384          |   44.90 |                      0.17164 |              0.22794 |               92.54 |
+| PAction learned fixed384 |   59.10 |                      0.26471 |              0.42148 |                2.18 |
+| lattice move50           | pending |                      0.26520 |              0.42895 |                2.00 |
+| lattice move75           | pending |                      0.26520 |              0.42727 |                2.00 |
+
+这组数字非常清楚地说明：GAS-VT 的失败和“大洞 + 边界覆盖不足”高度一致；PAction learned fixed384 的提升和“边界 recall 更高 + p95 hole 大幅缩小”高度一致。但它还没有证明：
+
+1. 是 **hole** 导致检测失败，还是 hole 只是另一个 selector 崩坏症状；
+2. 是 **endpoint coverage** 驱动高 IoU 定位，还是 action interior / score calibration / postprocess 差异驱动；
+3. lattice move50/move75 的 geometry 接近 PAction，但 detector mAP pending，因此当前还不能证明 geometry 指标足以预测 mAP；
+4. 没有 per-instance matched accounting：某个动作实例如果 endpoint miss / large hole，是否真的更容易成为 FN 或低 tIoU TP；
+5. 没有 counterfactual repair：只修补 GAS-VT 的 hole 或 endpoint 后，mAP 是否回升。
+
+决定性诊断应是：
+
+**matched instance-level causal accounting**：对每个 GT action instance 记录 selector 几何、detector 最佳 proposal tIoU、TP/FN 状态、start/end error，然后画出 “coverage geometry → proposal quality → mAP@high IoU” 的链条。
+
+---
+
+## 2. 当前 geometry metrics 是否合适？还缺什么？
+
+`p95_unselected_hole`、`both endpoint coverage`、`boundary recall @ r1/r16`、region share 是正确方向，但还不够 paper-level。
+
+### 应保留的指标
+
+`p95_unselected_hole` 很关键，因为 TAD detector 的 temporal regression 需要局部连续证据。GAS-VT 的 p95 hole 为 92.54，而 PAction/lattice 约 2，这个差异巨大，应该作为 paper-facing 主指标之一。
+
+`both endpoint coverage` 比单边 boundary recall 更接近高 IoU 定位目标。只覆盖 start 或 end 不够，mAP@0.6/0.7 需要两端同时对齐。
+
+`boundary recall @ r1/r16` 应保留，但必须解释 r 的单位：是 768 AdaTAD grid index，还是原视频帧/秒。当前 paper story 若声称 pre-backbone，单位必须严谨。
+
+`region share` 可以作为辅助，但不应放主图。它容易变成“动作覆盖”而不是“边界定位”证据。
+
+### 必须新增的指标
+
+**A. Endpoint nearest distance**
+
+对每个 GT action 的 start/end，记录到最近 selected position 的距离：
+
+```text
+start_nearest_dist_grid
+end_nearest_dist_grid
+start_nearest_dist_norm = dist / action_length_grid
+end_nearest_dist_norm = dist / action_length_grid
+max_endpoint_dist_norm = max(start_norm, end_norm)
+```
+
+比 recall@r 更连续、更可解释。
+
+**B. Bracketed endpoint coverage**
+
+仅“附近有点”还不够，边界最好被前后两侧观测 bracket：
+
+```text
+start_bracketed_r = exists selected in [s-r, s] and exists selected in [s, s+r]
+end_bracketed_r   = exists selected in [e-r, e] and exists selected in [e, e+r]
+both_bracketed_r  = start_bracketed_r and end_bracketed_r
+```
+
+这比 endpoint recall 更贴近 boundary regression。
+
+**C. Action-interior max hole**
+
+全视频 p95 hole 会被背景长段主导。应导出：
+
+```text
+max_unselected_hole_inside_action
+p95_unselected_hole_inside_action
+max_unselected_hole_near_boundary_band
+```
+
+否则短动作和长背景视频会混淆。
+
+**D. Length-stratified geometry**
+
+必须按 action duration 分桶：
+
+```text
+short / medium / long
+或者 duration quantile: Q1/Q2/Q3/Q4
+```
+
+高 IoU 下降通常先发生在短动作上。只给全局平均会掩盖最关键失败。
+
+**E. Per-class geometry**
+
+THUMOS14 类别差异明显。必须导出 per-class endpoint coverage、hole、mAP@0.7，否则不能证明不是某几个类别偶然驱动。
+
+**F. Detector-coupled proposal quality**
+
+这是当前最缺的 decisive diagnostic：
+
+```text
+best_proposal_tIoU_per_gt
+best_proposal_score_per_gt
+matched_tp_at_0.5 / 0.6 / 0.7
+start_error_sec
+end_error_sec
+center_error_sec
+duration_error_ratio
+```
+
+几何指标必须和 detector output 接起来，否则仍是 selector-side proxy。
+
+**G. Compute/latency contract**
+
+如果论文 claim 是 acquisition，需要导出：
+
+```text
+selected_count
+effective_budget
+backbone_positions_processed
+selector_cost
+detector_cost
+total_latency_proxy
+FLOPs_proxy
+memory_proxy
+```
+
+否则“384 observations”只是 budget story，不是 deployable story。
+
+---
+
+## 3. 当前代码审查：目标脚本逐项状态
+
+由于目标脚本在公开 HEAD 缺失，下面是实际可审查结论，而不是假装逐行读了不存在的文件。
+
+| 文件                                                 | 公开 HEAD 状态                     | 审查结论                                                                                                        |
+| -------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `tools/bata/analyze_selector_geometry.py`          | 不在 `tools/bata/` tree；find 无匹配 | **Blocking missing**。无法验证 selected positions 单位、GT boundary 对齐、aggregation、short-video filtering、r1/r16 定义。 |
+| `tools/bata/export_selector_paper_tables.py`       | 不在 tree                        | **Blocking missing**。无法验证 mAP NA 是否被误置 0、lattice pending 是否与 trained methods 混表。                            |
+| `tools/bata/plot_selector_geometry.py`             | 不在 tree                        | **Blocking missing**。无法验证 stacked bars / coverage curves 是否存在误导 normalization。                              |
+| `tools/bata/plot_selector_paper_summary.py`        | 直接 404                         | **Blocking missing**。用户给出的新 direct paper plot command 在该 commit 不可运行。                                       |
+| `tools/bata/plot_selector_timeline.py`             | 不在 tree                        | **Blocking missing**。无法验证 per-video timeline 是否按客观准则采样，是否 anecdotal cherry-pick。                            |
+| `tools/bata/plot_selector_dashboard.py`            | 不在 tree                        | **Blocking missing**。无法验证 dashboard 是否混合 diagnostic/main methods。                                           |
+| `tools/bata/generate_selector_failure_gallery.py`  | 不在 tree                        | **Blocking missing**。无法验证 failure gallery 选择规则。                                                             |
+| `tools/bata/validate_selector_geometry_metrics.py` | 不在 tree                        | **Blocking missing**。没有 metric schema validator，paper figures 风险很高。                                         |
+| `tests/test_analyze_selector_geometry.py`          | 不在 tests tree                  | **Blocking missing**。没有 synthetic GT/selection 几何单测。                                                        |
+| `tests/test_selector_geometry_outputs.py`          | 不在 tests tree                  | **Blocking missing**。没有 CSV/JSON schema test。                                                               |
+| `tests/test_plot_selector_geometry.py`             | 不在 tests tree                  | **Blocking missing**。没有 plot smoke / NA handling test。                                                      |
+| `tests/test_plot_selector_paper_summary.py`        | 直接 404                         | **Blocking missing**。新 paper summary script 无公开测试。                                                          |
+
+唯一相近的公开文件是 `tools/bata/summarize_sparse_selector_evidence.py`。这个文件自身在 summary payload 中把 `claim_status` 标为 `"diagnostic_only_no_causal_claim"`，并把 required next step 写成 matched same-commit ablations，包括 GAS-VT current fixed384、PAction without/with repair、raw p_action top-k under identical AdaTAD settings。([GitHub][4]) 这反而支持我的 HOLD 判定：公开代码当前仍把证据定位为 diagnostic，而不是 paper-level causal evidence。
+
+---
+
+## 4. 当前 plots 的主要误导风险
+
+即使你本地已经有这些脚本，paper-facing plots 必须防止以下问题。
+
+### P0 风险：missing mAP 被画成 0 或参与 heatmap normalization
+
+lattice move50/move75 目前 detector mAP pending。主图中可以显示 geometry，但不能把 missing mAP 当作 0，也不能在 heatmap 里用 0 参与 min-max normalization。正确做法：
+
+```text
+mAP = NA
+plot marker = hollow / gray outline
+legend = geometry-only diagnostic, detector mAP pending
+```
+
+### P0 风险：diagnostic methods 与 paper-main methods 混在同一 ranking
+
+lattice move50/move75 是 diagnostic route，不是 final method。Stage2/Stage3 也还不是 completed mAP evidence。主表应该分区：
+
+```text
+Completed detector mAP:
+- dense AdaTAD
+- uniform_384
+- random_384
+- GAS-VT fixed384
+- PAction learned fixed384
+- p_action top-k fixed384, if run
+
+Geometry-only diagnostic:
+- lattice move50
+- lattice move75
+
+In-progress:
+- Stage2 detector-aware
+- Stage3 joint
+```
+
+### P0 风险：768-grid selection 被写成 raw-frame pre-backbone
+
+当前 README 本身说 C3 阶段是在 384/768 selection ledger 上接 OpenTAD/AdaTAD，且该阶段是 fixed-budget control anchor，不是最终论文贡献全部形态。([GitHub][5]) 如果论文说“pre-backbone raw-frame acquisition”，当前证据不足；更准确的表述应是：
+
+> pre-detector / pre-AdaTAD temporal-grid acquisition on the 768 AdaTAD temporal grid.
+
+要把它升级成真正 pre-backbone paper claim，需要 raw-frame 或 pre-feature evidence，见最后一节。
+
+### P1 风险：全视频 p95 hole 混淆背景长段和 action-local holes
+
+TAD localization 应关心 action boundary 附近和 action interior。如果 p95 hole 是全视频 unselected runs，长背景会支配指标。必须同时导出 action-local hole。
+
+### P1 风险：短视频 / 短 window 权重过高
+
+如果按 window row 平均，而不是按 GT instance 或 video 加权，短视频、多 window 视频、无动作背景窗口都会改变统计。应明确：
+
+```text
+aggregation_level = action_instance / video / window / row
+```
+
+主论文建议以 action instance 为主，video-level bootstrap CI 为可信区间。
+
+### P1 风险：heatmap normalization 隐藏绝对量级
+
+`p95 hole: 92.54 vs 2.18` 是绝对差异，不能只用 min-max heatmap。scorecard heatmap 必须同时写 raw value，最好按“higher better / lower better”分区，而不是全部归一化到一个颜色方向。
+
+---
+
+## 5. CVPR-style figure plan
+
+### Main paper figures
+
+| Fig ID | Claim supported                                                                                 | Data source                                           | Plot type                                                                                                              | Required additional code                            | Main/Appendix                    |
+| ------ | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | -------------------------------- |
+| Fig. 1 | Task definition：low-cost selector 在 AdaTAD 768 grid 上选 ≤384 observations；当前不是 raw-frame claim   | method config + ledger schema                         | Pipeline schematic + time-axis diagram                                                                                 | architecture drawing script or manual vector figure | Main                             |
+| Fig. 2 | PAction beats GAS-VT because it avoids large observation holes and covers both endpoints better | selector geometry CSV + mAP table                     | 2D scatter: x=p95 hole lower better, y=both endpoint coverage higher better, label=mAP; hollow markers for pending mAP | `plot_gap_boundary_quadrant.py` with NA-safe labels | Main                             |
+| Fig. 3 | High-IoU localization preservation, not just Avg-mAP                                            | detector eval JSON for all methods                    | mAP vs tIoU line plot, plus delta bars at 0.6/0.7                                                                      | export per-method mAP@0.3...0.7                     | Main                             |
+| Fig. 4 | Selector behavior is boundary-aware across dataset, not anecdotal                               | per-action selected positions aligned to GT           | Normalized action-time density map over [-0.25, 1.25], stratified by short/medium/long actions                         | `export_normalized_action_density.py`               | Main                             |
+| Fig. 5 | Geometry predicts detector failures                                                             | per-GT matched detector proposals + selector geometry | Binned plot: endpoint distance / hole bin vs best proposal tIoU and FN@0.7                                             | `match_gt_to_best_proposal.py`                      | Main                             |
+| Fig. 6 | Compute-quality tradeoff                                                                        | mAP + selected count + cost proxy                     | Pareto plot: Avg-mAP / mAP@0.7 vs backbone positions or FLOPs                                                          | `export_compute_tradeoff.py`                        | Main or Appendix depending space |
+
+### Appendix figures
+
+| Fig ID | Claim supported                         | Data source                 | Plot type                                     | Required additional code                     | Main/Appendix |
+| ------ | --------------------------------------- | --------------------------- | --------------------------------------------- | -------------------------------------------- | ------------- |
+| App. A | Metric scorecard transparent raw values | selector summary CSV        | Raw-value heatmap with NA masks               | heatmap with raw labels and direction arrows | Appendix      |
+| App. B | Delta vs GAS-VT diagnostic              | geometry + mAP table        | grouped delta bar, NA-safe                    | `plot_delta_vs_baseline.py`                  | Appendix      |
+| App. C | Per-class robustness                    | per-class mAP + geometry    | class-wise bars / dot plot                    | class breakdown exporter                     | Appendix      |
+| App. D | Action-length sensitivity               | action instance CSV         | short/medium/long grouped bars                | length bin exporter                          | Appendix      |
+| App. E | Failure gallery                         | objective selected examples | timeline gallery                              | deterministic failure sampler                | Appendix      |
+| App. F | Method taxonomy                         | method metadata JSON        | table separating final/diagnostic/in-progress | method registry                              | Appendix      |
+| App. G | Region share sanity                     | region share CSV            | stacked bars                                  | existing dashboard-style plot                | Appendix      |
+
+---
+
+## 6. Per-video selection behavior：如何避免 anecdotal？
+
+不要只放 3 个“好看”的 timeline。应该做三层：
+
+### 第一层：dataset-level density map
+
+把每个 GT action 归一化到 `[0,1]`，并扩展上下文到 `[-0.25,1.25]`。统计 selected positions 的密度：
+
+```text
+x = (selected_grid_pos - gt_start) / (gt_end - gt_start)
+```
+
+按 method、action length bin、class 聚合。这个图能直接显示 selector 是否围绕 start/end 聚集，是否在 action interior 留洞。
+
+### 第二层：objective representative timelines
+
+timeline gallery 的样本选择必须可复现：
+
+```text
+best_case: PAction TP@0.7 and GAS-VT FN, largest endpoint coverage gap
+failure_case: PAction FN@0.7 despite good geometry
+hole_case: GAS-VT p95 action-local hole top-k
+short_action_case: duration in bottom quartile
+```
+
+每张 timeline 标出：
+
+```text
+GT action segments
+selected positions
+unselected holes
+nearest selected to start/end
+detector proposals
+emission/mAP status if online is later claimed
+```
+
+### 第三层：failure gallery as audit, not proof
+
+Failure gallery 放 appendix。主论文只用一张 representative timeline 作为可读性辅助；真正证据来自 density map 和 matched failure accounting。
+
+---
+
+## 7. 高 IoU localization preservation 必须怎么画？
+
+主论文必须有以下三类 evidence。
+
+### A. mAP@tIoU decomposition
+
+不能只报 Avg-mAP。至少画：
+
+```text
+mAP@0.3, 0.4, 0.5, 0.6, 0.7
+```
+
+重点标出：
+
+```text
+PAction - GAS-VT at 0.6/0.7
+PAction - uniform_384 at 0.6/0.7
+PAction - dense AdaTAD at 0.6/0.7
+```
+
+### B. Boundary error distribution
+
+对 matched TP 或 best proposal per GT 导出：
+
+```text
+abs_start_error_sec
+abs_end_error_sec
+normalized_start_error = abs_start_error / action_duration
+normalized_end_error = abs_end_error / action_duration
+```
+
+画 CDF 或 violin。高 IoU claim 需要证明 start/end error 不是只在低阈值改善。
+
+### C. Proposal-quality curve
+
+对每个 GT 找 best proposal tIoU，画 CDF：
+
+```text
+P(best_tIoU >= threshold)
+```
+
+这个图比 mAP 更能解释 detector-side localization upper bound。若 PAction 的 best-proposal tIoU CDF 明显右移，而 GAS-VT 左移，就能支撑“selection geometry affects localization quality”。
+
+---
+
+## 8. Baseline / diagnostic / in-progress 如何不混淆？
+
+建议建立一个 `method_registry.json`，每个方法必须声明：
+
+```json
+{
+  "method_id": "paction_learned_fixed384",
+  "display_name": "PAction learned fixed384",
+  "category": "completed_detector_method",
+  "budget": 384,
+  "grid_size": 768,
+  "selection_stage": "adatad_temporal_grid",
+  "uses_gt_at_test": false,
+  "uses_teacher_at_test": false,
+  "has_detector_map": true,
+  "has_geometry": true,
+  "paper_role": "main_candidate"
+}
+```
+
+分类规则：
+
+**Main completed methods**
+
+```text
+dense AdaTAD teacher/checkpoint anchor
+uniform_384
+random_384
+p_action top-k fixed384
+GAS-VT fixed384
+PAction learned fixed384
+```
+
+**Diagnostic-only**
+
+```text
+lattice move50
+lattice move75
+oracle / manual slots / GT-derived variants
+```
+
+**In-progress / not paper evidence yet**
+
+```text
+Stage2 detector-aware responsibility route
+Stage3 joint selector + detector precheck
+```
+
+主表不要把 Stage2/Stage3 与 completed mAP methods 放在同一个 leaderboard 里。可以用 “future route / ongoing” 小表说明状态。
+
+---
+
+## 9. 建议新增 CSV/JSON schema
+
+### `selector_geometry_per_instance.csv`
+
+每行一个 GT action instance：
+
+```csv
+video_id,window_id,method_id,split,grid_size,budget,selected_count,
+class_id,class_name,gt_start_grid,gt_end_grid,gt_duration_grid,
+gt_start_sec,gt_end_sec,gt_duration_sec,
+start_nearest_selected_grid,end_nearest_selected_grid,
+start_nearest_dist_grid,end_nearest_dist_grid,
+start_nearest_dist_norm,end_nearest_dist_norm,max_endpoint_dist_norm,
+start_covered_r1,end_covered_r1,both_covered_r1,
+start_covered_r16,end_covered_r16,both_covered_r16,
+start_bracketed_r1,end_bracketed_r1,both_bracketed_r1,
+start_bracketed_r16,end_bracketed_r16,both_bracketed_r16,
+max_hole_inside_action,p95_hole_inside_action,
+max_hole_boundary_band,p95_hole_boundary_band,
+selected_density_pre_start,selected_density_start_band,
+selected_density_interior,selected_density_end_band,selected_density_post_end
+```
+
+### `detector_match_per_instance.csv`
+
+每行一个 GT action instance + method：
+
+```csv
+video_id,method_id,class_id,class_name,
+gt_start_sec,gt_end_sec,gt_duration_sec,
+best_proposal_start_sec,best_proposal_end_sec,best_proposal_score,
+best_tiou,start_error_sec,end_error_sec,
+start_error_norm,end_error_norm,duration_error_ratio,
+tp_at_05,tp_at_06,tp_at_07,fn_at_07,
+matched_prediction_rank
+```
+
+### `method_summary.csv`
+
+每行一个 method：
+
+```csv
+method_id,display_name,category,paper_role,
+grid_size,budget,mean_selected_count,min_selected_count,max_selected_count,
+selection_stage,uses_gt_at_test,uses_teacher_at_test,uses_oracle,
+average_mAP,map_03,map_04,map_05,map_06,map_07,
+both_endpoint_r1,both_endpoint_r16,
+boundary_recall_r1,boundary_recall_r16,
+p95_unselected_hole,p95_hole_inside_action,
+selector_cost_proxy,backbone_cost_proxy,total_cost_proxy,
+has_detector_map,has_geometry
+```
+
+### `normalized_action_density.parquet/csv`
+
+```csv
+method_id,video_id,action_instance_id,class_id,length_bin,
+relative_time_bin,selected_count,total_possible_count,selected_density
+```
+
+### `plot_manifest.json`
+
+```json
+{
+  "schema_version": "selector_paper_figures_v1",
+  "commit_sha": "46cacc113042fcf0931c70774491d44665246e32",
+  "analysis_root": "...",
+  "methods": ["gas_vt_fixed384", "paction_learned_fixed384"],
+  "grid_size_contract": 768,
+  "budget_contract": 384,
+  "aggregation_level": "gt_action_instance",
+  "missing_map_policy": "NA_masked_not_zero",
+  "diagnostic_methods_excluded_from_leaderboard": true
+}
+```
+
+---
+
+## 10. Pseudocode for missing analyses
+
+### A. Per-instance geometry exporter
+
+```python
+def nearest_distance(selected: np.ndarray, x: int) -> tuple[int | None, float]:
+    if selected.size == 0:
+        return None, float("inf")
+    idx = int(np.argmin(np.abs(selected - x)))
+    return int(selected[idx]), float(abs(selected[idx] - x))
+
+def is_bracketed(selected: np.ndarray, x: int, r: int) -> bool:
+    left = np.any((selected >= x - r) & (selected <= x))
+    right = np.any((selected >= x) & (selected <= x + r))
+    return bool(left and right)
+
+def max_hole_in_interval(selected: np.ndarray, lo: int, hi: int) -> int:
+    lo, hi = int(lo), int(hi)
+    if hi < lo:
+        return 0
+    mask = selected[(selected >= lo) & (selected <= hi)]
+    observed = np.concatenate([[lo - 1], np.sort(mask), [hi + 1]])
+    gaps = observed[1:] - observed[:-1] - 1
+    return int(np.max(gaps)) if gaps.size else 0
+
+def export_geometry_per_instance(method_rows, gt_instances, out_csv):
+    rows = []
+    for method_id, video_id, selected in method_rows:
+        selected = np.asarray(sorted(set(map(int, selected))), dtype=np.int64)
+        for gt in gt_instances[video_id]:
+            s, e = int(round(gt.start_grid)), int(round(gt.end_grid))
+            dur = max(1, e - s + 1)
+
+            s_near, s_dist = nearest_distance(selected, s)
+            e_near, e_dist = nearest_distance(selected, e)
+
+            row = {
+                "method_id": method_id,
+                "video_id": video_id,
+                "class_id": gt.class_id,
+                "gt_start_grid": s,
+                "gt_end_grid": e,
+                "gt_duration_grid": dur,
+                "start_nearest_selected_grid": s_near,
+                "end_nearest_selected_grid": e_near,
+                "start_nearest_dist_grid": s_dist,
+                "end_nearest_dist_grid": e_dist,
+                "start_nearest_dist_norm": s_dist / dur,
+                "end_nearest_dist_norm": e_dist / dur,
+                "max_endpoint_dist_norm": max(s_dist, e_dist) / dur,
+                "max_hole_inside_action": max_hole_in_interval(selected, s, e),
+            }
+
+            for r in (1, 4, 8, 16):
+                row[f"start_covered_r{r}"] = s_dist <= r
+                row[f"end_covered_r{r}"] = e_dist <= r
+                row[f"both_covered_r{r}"] = row[f"start_covered_r{r}"] and row[f"end_covered_r{r}"]
+                row[f"start_bracketed_r{r}"] = is_bracketed(selected, s, r)
+                row[f"end_bracketed_r{r}"] = is_bracketed(selected, e, r)
+                row[f"both_bracketed_r{r}"] = row[f"start_bracketed_r{r}"] and row[f"end_bracketed_r{r}"]
+
+            rows.append(row)
+
+    pd.DataFrame(rows).to_csv(out_csv, index=False)
+```
+
+### B. Detector matched proposal exporter
+
+```python
+def tiou(a_start, a_end, b_start, b_end):
+    inter = max(0.0, min(a_end, b_end) - max(a_start, b_start))
+    union = max(a_end, b_end) - min(a_start, b_start)
+    return 0.0 if union <= 0 else inter / union
+
+def export_detector_matches(gt_by_video, pred_by_video, out_csv):
+    rows = []
+    for video_id, gt_list in gt_by_video.items():
+        preds = pred_by_video.get(video_id, [])
+        for gt in gt_list:
+            same_cls = [p for p in preds if p.label == gt.label]
+            best = None
+            best_iou = -1.0
+            for p in same_cls:
+                val = tiou(gt.start, gt.end, p.start, p.end)
+                if val > best_iou:
+                    best_iou = val
+                    best = p
+
+            dur = max(1e-6, gt.end - gt.start)
+            rows.append({
+                "video_id": video_id,
+                "class_id": gt.label,
+                "gt_start_sec": gt.start,
+                "gt_end_sec": gt.end,
+                "gt_duration_sec": dur,
+                "best_tiou": best_iou,
+                "best_proposal_score": None if best is None else best.score,
+                "start_error_sec": None if best is None else abs(best.start - gt.start),
+                "end_error_sec": None if best is None else abs(best.end - gt.end),
+                "start_error_norm": None if best is None else abs(best.start - gt.start) / dur,
+                "end_error_norm": None if best is None else abs(best.end - gt.end) / dur,
+                "tp_at_05": best_iou >= 0.5,
+                "tp_at_06": best_iou >= 0.6,
+                "tp_at_07": best_iou >= 0.7,
+                "fn_at_07": best_iou < 0.7,
+            })
+    pd.DataFrame(rows).to_csv(out_csv, index=False)
+```
+
+### C. NA-safe paper summary plot
+
+```python
+def plot_gap_boundary_quadrant(summary_df, out_path):
+    df = summary_df.copy()
+
+    completed = df[df["has_detector_map"] == True]
+    diagnostic = df[df["has_detector_map"] == False]
+
+    fig, ax = plt.subplots(figsize=(5.2, 4.0))
+
+    ax.scatter(
+        completed["p95_unselected_hole"],
+        completed["both_endpoint_r16"],
+        s=80,
+        marker="o",
+    )
+
+    ax.scatter(
+        diagnostic["p95_unselected_hole"],
+        diagnostic["both_endpoint_r16"],
+        s=80,
+        marker="o",
+        facecolors="none",
+    )
+
+    for _, row in df.iterrows():
+        label = row["display_name"]
+        if pd.notna(row.get("average_mAP")):
+            label += f"\n{row['average_mAP']:.1f}"
+        else:
+            label += "\nmAP pending"
+        ax.annotate(label, (row["p95_unselected_hole"], row["both_endpoint_r16"]))
+
+    ax.set_xlabel("p95 unselected hole on 768 grid ↓")
+    ax.set_ylabel("Both-endpoint coverage @ r16 ↑")
+    ax.set_title("Boundary coverage and observation holes explain sparse TAD failure modes")
+    ax.grid(True, alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(out_path)
+```
+
+---
+
+## 11. Revised experimental evidence plan
+
+### Stage A: make the visualization suite auditable
+
+Before more Slurm runs, push the missing files and add fail-closed tests:
+
+```text
+tools/bata/analyze_selector_geometry.py
+tools/bata/export_selector_paper_tables.py
+tools/bata/plot_selector_paper_summary.py
+tools/bata/plot_selector_timeline.py
+tools/bata/generate_selector_failure_gallery.py
+tools/bata/validate_selector_geometry_metrics.py
+tests/test_analyze_selector_geometry.py
+tests/test_selector_geometry_outputs.py
+tests/test_plot_selector_paper_summary.py
+```
+
+Required tests:
+
+```text
+- missing mAP remains NA, never 0
+- diagnostic methods excluded from leaderboard
+- fixed384/dynamic/768-grid contracts cannot mix silently
+- r1/r16 unit recorded
+- action-local hole differs from whole-video hole
+- short videos / no-action rows do not dominate action-instance metrics
+```
+
+### Stage B: run matched detector baselines under identical settings
+
+Minimum completed mAP table:
+
+```text
+dense AdaTAD teacher/checkpoint anchor
+uniform_384
+random_384, preferably multiple seeds
+GAS-VT fixed384
+PAction learned fixed384
+raw p_action top-k fixed384
+lattice move50/move75 detector mAP, if you want to use them beyond diagnostic
+```
+
+Stage2/Stage3 should remain “not completed” until full mAP exists.
+
+### Stage C: add detector-coupled diagnostics
+
+Export:
+
+```text
+per-instance geometry
+per-instance best proposal tIoU
+boundary error
+length-stratified mAP
+class-stratified mAP
+compute/speed proxy
+```
+
+Then produce:
+
+```text
+mAP@tIoU line plot
+proposal tIoU CDF
+boundary error CDF
+normalized action-time selection density
+geometry-to-FN binned plot
+```
+
+### Stage D: counterfactual repair ablations
+
+To claim “PAction wins because it fixes boundary holes,” run:
+
+```text
+GAS-VT original
+GAS-VT + uniform hole repair only
+GAS-VT + endpoint repair only
+GAS-VT + both repair
+PAction learned original
+PAction learned with boundary candidates removed
+PAction learned with max-hole guard disabled
+```
+
+This is the cleanest causal evidence short of end-to-end Stage2/Stage3.
+
+---
+
+## 12. Is 768-grid selection enough for a pre-backbone paper claim?
+
+**Frank assessment: not enough for a strong “pre-backbone raw-frame acquisition” claim.**
+
+It is acceptable for a paper if you frame it precisely as:
+
+> sparse temporal acquisition on the AdaTAD/OpenTAD temporal grid before the expensive detector head / temporal detector processing.
+
+It is weaker, and reviewers may call it secondary processing, if the video has already gone through the same feature/snippet extraction pipeline as dense AdaTAD. The project README itself frames the current C3 stage as fixed-budget control using `p_action` converted to a 384/768 ledger and then fed to AdaTAD/OpenTAD, while also saying this stage is not the whole final contribution.([GitHub][5])
+
+To claim **pre-backbone** convincingly, you need at least one of these:
+
+1. **Raw-frame route evidence**: selector runs before expensive frame/video encoder; selected raw frames/snippets are the only ones encoded.
+2. **Feature-computation accounting**: show dense AdaTAD encodes 768 units, while your method encodes ≤384 units, with FLOPs/latency reduction measured or credibly proxied.
+3. **No dense feature dependency at test time**: selector cannot use features that require the expensive backbone over all 768 positions.
+4. **Matched raw/pre-feature baseline**: uniform_384, random_384, PAction_384, GAS-VT_384 all operate before feature extraction, not after dense feature generation.
+5. **End-to-end deployment diagram**: raw video → low-cost selector → expensive backbone on selected units only → detector.
+
+Without that, the safest title/claim is not “pre-backbone sparse frame acquisition,” but:
+
+> task-aware sparse temporal-grid acquisition for AdaTAD/OpenTAD.
+
+That can still be publishable if the detector mAP story is strong, especially if you prove high-IoU preservation and show the selector is low-cost and deployable. But for a top-tier “pre-backbone computation reduction” claim, raw-frame or pre-feature evidence is required.
+
+---
+
+## Minimum before paper-level contribution claim
+
+当前最小追加集合：
+
+1. Push and audit the missing paper visualization suite at a fixed SHA.
+2. Complete detector mAP for uniform_384, random_384, GAS-VT, PAction, p_action top-k, dense AdaTAD under identical config.
+3. Run lattice detector mAP or explicitly mark lattice as geometry-only diagnostic.
+4. Add per-GT geometry + detector proposal match exports.
+5. Add mAP@0.5/0.6/0.7, boundary error, proposal tIoU CDF.
+6. Add action-length and per-class breakdown.
+7. Add compute/latency/backbone-position accounting.
+8. Add raw-frame or pre-feature route evidence before using the phrase “pre-backbone” as a main claim.
+
+**Final decision:** `HOLD_CURRENT_VISUALIZATION_SUITE_NOT_PUBLIC_AT_INSPECTED_HEAD`
+The research direction is viable, but the public HEAD does not contain the requested analysis/plot code, and the current known metrics are diagnostic rather than decisive paper evidence.
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commits/codex/gas-vt-stage23-detector-aware-20260706/ "Commits · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/46cacc113042fcf0931c70774491d44665246e32/tools/bata "OpenTAD_C3_CoarseClean_20260702/tools/bata at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/46cacc113042fcf0931c70774491d44665246e32/tests "OpenTAD_C3_CoarseClean_20260702/tests at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/tools/bata/summarize_sparse_selector_evidence.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/summarize_sparse_selector_evidence.py at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/gas-vt-stage23-detector-aware-20260706 "GitHub - yuzbo/OpenTAD_C3_CoarseClean_20260702 at codex/gas-vt-stage23-detector-aware-20260706 · GitHub"

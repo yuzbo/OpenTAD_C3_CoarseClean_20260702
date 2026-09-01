@@ -572,6 +572,10 @@ class LoadFrames:
 
             frame_idxs = dense_window[keep_positions]
             self._set_irregular_axis_meta(results, keep_positions, valid_len)
+            results["irregular_sampling_strategy"] = "random_fixed_subsample"
+            results["irregular_sampling_scope"] = "within_accepted_window"
+            results["irregular_window_crop_uses_gt"] = self.method_base == "random_trunc"
+            results["irregular_subsample_uses_gt"] = False
 
             if gt_segments is not None and gt_labels is not None:
                 if self.remap_gt_to_selected_axis:
@@ -730,6 +734,12 @@ class LoadFrames:
         frame_idxs = np.clip(frame_idxs, 0, total_frames - 1).round()
 
         assert frame_idxs.shape[0] == frame_num, "snippet center number should be equal to snippet number"
+
+        if "selected_dense_indices" in results:
+            selected_count = int(torch.as_tensor(masks, dtype=torch.bool).sum().item())
+            if selected_count <= 0 or selected_count > frame_idxs.shape[0]:
+                raise ValueError("irregular sampling must expose a non-empty valid raw-frame prefix")
+            results["selected_raw_frame_indices"] = frame_idxs[:selected_count].astype(np.int64).tolist()
 
         results["frame_inds"] = frame_idxs.astype(int)
         results["num_clips"] = self.num_clips

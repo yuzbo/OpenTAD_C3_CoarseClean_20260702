@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "operation": "PRO_REVIEW",
+  "status": "PRE_SUBMISSION_FAILED",
+  "expectedProjectId": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "expectedProjectUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "expectedCommit": "63a726a4aaf48ecbf6780bb196de43a890c6b4df",
+  "expectedSources": [
+    "CURRENT_RESEARCH_STATE-v005(1).md",
+    "MODEL_EXPERIMENT_HISTORY-v005.md"
+  ],
+  "turnId": "duca-p0-direct-cdp-c3d46a18bf652a70",
+  "nonce": "c3d46a18bf652a70a4e3d90c6b7f5e21",
+  "requestedPromptPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-p0-direct-cdp-prepared/prompt.md",
+  "finalTextPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-p0-direct-cdp-prepared/raw-response-v006.md",
+  "runtimeCdp": "http://127.0.0.1:47785",
+  "playwrightModule": "C:\\Users\\skywalker\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\node_modules\\playwright\\index.js",
+  "submitted_at": null,
+  "last_output_at": null,
+  "stream_state": "NOT_SUBMITTED",
+  "hard_timeout_at": null,
+  "error": "The Project UI exposed no identifiable model picker."
+}

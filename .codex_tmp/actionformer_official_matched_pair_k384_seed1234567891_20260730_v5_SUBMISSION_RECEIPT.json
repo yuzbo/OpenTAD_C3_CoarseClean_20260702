@@ -1,0 +1,17 @@
+{
+  "deployment_identity_sha256": "250068a1de36c00fabe37596e302dc9e3fd22249be09b267fc4e9762e6f4ce46",
+  "environment_receipt_sha256": "13d57c1161905f059204f7101f26029503a03da7f5eb44b81c418a0b97999f24",
+  "formal_job_id": 1205599,
+  "full_content_preflight_sha256": "19230f06e0eda57c34607db250dba9ebc1f0d6365e5ab33c339dffe0468ddd86",
+  "launcher_sha256": "8edc66295ecbc5591ab7fafe5cef81ad4d51a694bd8a9aa14b713778f70a8c4d",
+  "live_feature_rehash_receipt_sha256": "73a2f714c100f541306d7d7f9c32e36481574d2ac6c5e78925ee4ee1dcca96b3",
+  "nms_extension_sha256": "b67e0e41f9f55cd69e8b90cfc75a1947214365857d851a510047838ad49ed98d",
+  "paper_main_table_eligible": false,
+  "run_root": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_official_matched_pair_k384_seed1234567891_20260730_v5",
+  "schema_version": "actionformer_official_matched_pair_submission_receipt_v3",
+  "single_formal_submission": true,
+  "submit_script_sha256": "7b409094710080f7309152f8d6c70de9af00e49438812d72e73a715851607dc4",
+  "test_only_is_not_a_job": true,
+  "test_only_output": "sbatch: Job 1205598 to start at 2031-09-06T12:02:39 using 8 processors on nodes g0030 in partition gpu",
+  "test_only_output_sha256": "3ec483611d92f98f6c7d3de6a08d363be03f56c989c0bf379a78c24f4bd37803"
+}

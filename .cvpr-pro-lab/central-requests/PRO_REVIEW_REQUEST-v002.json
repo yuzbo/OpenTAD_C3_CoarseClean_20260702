@@ -1,0 +1,30 @@
+{
+  "request_type": "PRO_REVIEW_REQUEST",
+  "status": "QUEUED",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "trigger_class": "P0_E1_EXECUTION_AUTHORITY_AMBIGUITY",
+  "evidence_epoch": "P0-E1-formal-pre-run-static-acceptance-v001",
+  "evidence_versions": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v005",
+    "CRITIC_DUCA_P0_E1_REFERENCE_ADMISSION_MANIFEST_V005_FOCUSED_RECHECK-v001",
+    "EVALUATOR_DUCA_P0_E1_REPLACEMENT_READONLY_PRE_RUN_ADMISSION_FACT_RECHECK-v001",
+    "DUCA_P0_E1_FORMAL_PRE_RUN_ADMISSION-v001",
+    "codex-thread:019ff6bb-fad5-7900-b395-a1991348a083/turn:019ff811-c774-7e92-be14-0b7552fe1f89/PASS",
+    "CURRENT_RESEARCH_STATE-v005|chatgpt-project-source:CURRENT_RESEARCH_STATE-v005(1).md",
+    "MODEL_EXPERIMENT_HISTORY-v005|chatgpt-project-source:MODEL_EXPERIMENT_HISTORY-v005.md"
+  ],
+  "merged_questions": [
+    "All four frozen E1 PRE_RUN admission facts and the independent static acceptance now pass. The accepted P0 decision authorizes the finite identity/optimality gate, but its role-order text explicitly grants Builder's later one-shot production execution and Evaluator's later comparison without explicitly stating whether the preliminary E1 independent-reference phase itself may execute once PRE_RUN is accepted. As acting Scientific First-Author and Primary Research Owner, make one explicit choice: authorize exactly one E1 independent-reference execution under the already-frozen argv, reserved identity, first-fail stop rule and receipt contract; or defer/deny E1 execution. Do not change the frozen mechanism, fixture domain, detector, loss, NMS, split, metric, budget, roles, or any performance experiment."
+  ],
+  "earliest_at": "2026-08-12T22:25:23Z",
+  "priority": "high",
+  "route_state": "CONTINUE / E1 formal PRE_RUN facts and static acceptance pass / BLOCKED_PRE_RESULT pending explicit Pro E1 execution authority",
+  "required_before_pro": [
+    "CURRENT_RESEARCH_STATE-v005 confirmed",
+    "MODEL_EXPERIMENT_HISTORY-v005 confirmed",
+    "PROJECT_SOURCE_SYNC_REQUEST-v004 confirmed"
+  ],
+  "supersedes": null
+}

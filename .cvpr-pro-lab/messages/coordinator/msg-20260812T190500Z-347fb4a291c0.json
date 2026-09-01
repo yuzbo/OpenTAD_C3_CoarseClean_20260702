@@ -1,0 +1,41 @@
+{
+  "created_at": "2026-08-12T19:05:00Z",
+  "deadline": null,
+  "from_role": "evaluator",
+  "kind": "identity-package-authoring-return",
+  "message_id": "msg-20260812T190500Z-347fb4a291c0",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001"
+  ],
+  "parent_message_ids": [
+    "msg-20260812T185607Z-f6cc921b7d40"
+  ],
+  "payload": {
+    "normative_spec_path": ".cvpr-pro-lab/evaluator-returns/DUCA_P0_PROJECTOR_NORMATIVE_SPEC-v001.json",
+    "fixture_matrix_path": ".cvpr-pro-lab/evaluator-returns/DUCA_P0_IDENTITY_FIXTURE_MATRIX-v001.json",
+    "reference_projector_path": ".cvpr-pro-lab/evaluator-returns/DUCA_P0_REFERENCE_PROJECTOR-v001.py",
+    "authoring_receipt_path": ".cvpr-pro-lab/evaluator-returns/EVALUATOR_DUCA_P0_IDENTITY_AUTHORING-v001.md",
+    "evaluator_decision": "IDENTITY_PACKAGE_FROZEN_NOT_EXECUTED",
+    "execution_status": "NOT_EXECUTED",
+    "p0_status": "BLOCKED_PRE_RESULT",
+    "p1_status": "BLOCKED",
+    "pre_run_status": "BLOCKED",
+    "scope_deviation": "none",
+    "extra_processes": [],
+    "attestations": {
+      "production_implementation_or_output_access": false,
+      "fixture_materialization_or_reference_execution": false,
+      "test_validator_data_checkpoint_or_model_access": false,
+      "local_remote_cpu_gpu_cuda_slurm_execution": false,
+      "browser_network_git_launcher_or_experiment": false,
+      "metric_result_claim_or_gate_progression": false,
+      "subagent_or_probe_use": false
+    }
+  },
+  "priority": "high",
+  "requested_action": "Freeze this exact Evaluator-owned authoring package before any Builder production execution. Do not alter reference expectations after production observation; dispatch execution only through a new exact durable queue.",
+  "required_gate": "EVALUATOR_PACKAGE_FROZEN_BEFORE_SINGLE_IDENTITY_EXECUTION",
+  "schema_version": "1.0",
+  "status": "queued",
+  "to_role": "coordinator"
+}

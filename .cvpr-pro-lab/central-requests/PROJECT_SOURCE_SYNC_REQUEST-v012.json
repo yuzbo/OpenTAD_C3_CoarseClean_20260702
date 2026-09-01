@@ -1,0 +1,40 @@
+{
+  "request_type": "PROJECT_SOURCE_SYNC_REQUEST",
+  "request_id": "PROJECT_SOURCE_SYNC_REQUEST-v012",
+  "status": "TERMINAL_INVENTORY_INDETERMINATE_PARTIAL_RENDER",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "browser_profile": "61",
+  "prepared_ids": [
+    "pfile-20260823T151323Z-92fe5ad566",
+    "pfile-20260823T151323Z-61d188742b"
+  ],
+  "prepared_files": [
+    ".cvpr-pro-lab/project-files/prepared/CURRENT_RESEARCH_STATE-v015.md",
+    ".cvpr-pro-lab/project-files/prepared/DUCA_H65_60_TRUETIME_BRIDGE_PRO_ADJUDICATION-v002.md"
+  ],
+  "operation_order": [
+    "READ_ONLY_EXACT_PROJECT_SOURCES_INVENTORY",
+    "UPLOAD_ONLY_AUTHORITATIVELY_ABSENT_FILES_IF_SEPARATELY_LEASED",
+    "FRESH_EXACT_PROJECT_PRO_AFTER_CONFIRMATION_PLUS_PT1M"
+  ],
+  "material_reason": "User explicitly resumed the terminal v011 accounting problem and requested authoritative exact-filename verification before any supplementary upload or Pro submission. The two local prepared records and scientific question are unchanged.",
+  "required_before_pro": true,
+  "blocking_class": "BLOCKS_SCIENCE_DECISION",
+  "earliest_at": "2026-08-23T23:46:00+08:00",
+  "priority": "high",
+  "future_pro_operation": "FRESH_EXACT_PROJECT_PRO",
+  "future_pro_nonce": "DUCA-H65-60-TRUETIME-BRIDGE-v003-20260823",
+  "supersedes": "PROJECT_SOURCE_SYNC_REQUEST-v011",
+  "dedup_key": "DUCA-H65-60-TrueTime-first-mixing-vs-support-aware-bridge-accounting-v003",
+  "inventory_scope": [
+    "CURRENT_RESEARCH_STATE-v015.md",
+    "DUCA_H65_60_TRUETIME_BRIDGE_PRO_ADJUDICATION-v002.md"
+  ],
+  "inventory_disposition": "PRESENT files may be locally confirmed only under a separate accounting disposition; ABSENT files may be uploaded only under a separate bounded mutation lease; INDETERMINATE stops the chain.",
+  "next_owner": "Central browser dispatcher → DUCA Coordinator",
+  "next_action": "Hold v012. The verified page exposed only three virtualized visible rows rather than the total Sources collection, so both target filenames remain INDETERMINATE; do not supplement or submit Pro from this receipt.",
+  "dependency": "A full authoritative Sources inventory was not exposed by the rendered virtualized list.",
+  "expected_return_at": "terminal for v012",
+  "single_recovery": "consumed by the corrected dedicated-tab invocation"
+}

@@ -1,0 +1,19 @@
+{
+  "status": "NEEDS_ATTENTION",
+  "model": "gemini-3.7-flash",
+  "approval_mode": "plan",
+  "prompt_path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\prompts\\GEMINI_DUCA_COMPREHENSIVE_ANALYSIS-v001.md",
+  "report_path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\gemini-duca-comprehensive-analysis-v001\\gemini-advisory.md",
+  "raw_log": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\gemini-duca-comprehensive-analysis-v001\\gemini-cli.log",
+  "include_directories": [
+    "C:\\Users\\skywalker\\.codex\\worktrees\\duca-full-data-identity-audit-v1-20260831\\OpenTAD_C3_CoarseClean_20260702",
+    "C:\\Users\\skywalker\\.codex\\worktrees\\duca-whole-video-consistent-budget-falsifier-v1-20260831\\OpenTAD_C3_CoarseClean_20260702",
+    "E:\\DeskTop\\TAD\\OpenTAD_DUCA_TrueTimeCurriculumV2_20260822"
+  ],
+  "started_at": "2026-08-31T08:26:57Z",
+  "return_code": 1,
+  "completed_at": "2026-08-31T08:27:05Z",
+  "report_exists": false,
+  "report_bytes": 0,
+  "terminator_bound": false
+}

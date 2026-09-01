@@ -24,7 +24,7 @@ class ConvModule(nn.Module):
         self.with_norm = norm_cfg is not None
 
         # conv config
-        conv_cfg_base = dict(
+        conv_kwargs = dict(
             in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=kernel_size,
@@ -33,14 +33,21 @@ class ConvModule(nn.Module):
         )
 
         if self.with_norm:
-            conv_cfg_base["bias"] = False  # bias is not necessary with a normalization layer
+            conv_kwargs["bias"] = False  # bias is not necessary with a normalization layer
 
         assert conv_cfg is None or isinstance(conv_cfg, dict)
-        if conv_cfg is not None:  # update conv_cfg_base
-            conv_cfg_base.update(conv_cfg)
+        cfg_type = None
+        if conv_cfg is not None:
+            cfg = copy.copy(conv_cfg)
+            cfg_type = cfg.pop("type", None)
+            conv_kwargs.update(cfg)
 
         # build conv layer
-        self.conv = nn.Conv1d(**conv_cfg_base)
+        if cfg_type == "ContinuousTimeScaleAdaptiveConv1d":
+            from .scale_adaptive_conv1d import ContinuousTimeScaleAdaptiveConv1d
+            self.conv = ContinuousTimeScaleAdaptiveConv1d(**conv_kwargs)
+        else:
+            self.conv = nn.Conv1d(**conv_kwargs)
 
         # build norm layer
         if self.with_norm:
@@ -84,8 +91,11 @@ class ConvModule(nn.Module):
             nn.init.constant_(module.weight, 1.0)
             nn.init.constant_(module.bias, 0.0)
 
-    def forward(self, x, mask=None):
-        x = self.conv(x)
+    def forward(self, x, mask=None, delta_t=None, temporal_positions=None):
+        if hasattr(self.conv, "enable_learned_modulation"):
+            x = self.conv(x, delta_t=delta_t, temporal_positions=temporal_positions, mask=mask)
+        else:
+            x = self.conv(x)
 
         if mask is not None:  # masking before the norm
             if mask.shape[-1] != x.shape[-1]:

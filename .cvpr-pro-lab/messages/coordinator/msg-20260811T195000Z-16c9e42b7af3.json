@@ -1,0 +1,40 @@
+{
+  "created_at": "2026-08-11T19:50:00Z",
+  "deadline": null,
+  "from_role": "evaluator",
+  "kind": "no-execution-protocol-amendment-return",
+  "message_id": "msg-20260811T195000Z-16c9e42b7af3",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_P0_ROUTE_ADJUDICATION-v002.md",
+    ".cvpr-pro-lab/role-returns/BUILDER_DUCA_P0_BOUNDED_PATCH_RETURN-v001.md"
+  ],
+  "parent_message_ids": [
+    "msg-20260811T194655Z-955f276dfb30"
+  ],
+  "payload": {
+    "artifact_name": "EVALUATOR_DUCA_P0P1_PROTOCOL_AMENDMENT-v002",
+    "artifact_path": ".cvpr-pro-lab/evaluator-returns/EVALUATOR_DUCA_P0P1_PROTOCOL_AMENDMENT-v002.md",
+    "evaluator_decision": "PROTOCOL_AMENDED_PRE_RUN_BLOCKED",
+    "p0_status": "authored_not_executed_pending_critic",
+    "p1_status": "blocked_not_authorized",
+    "pre_run_status": "blocked",
+    "scientific_evidence_status": "BLOCKED_PRE_RESULT",
+    "protocol_ambiguity": "Nonconstant constrained integer projection objective, candidate ordering, and tie rule are not frozen; Pro must define canonical semantics or explicitly accept property-and-repeatability-only verification before P1.",
+    "extra_processes": [],
+    "attestations": {
+      "implementation_or_fixture_access": false,
+      "data_checkpoint_or_model_forward_access": false,
+      "test_validator_or_cpu_execution": false,
+      "remote_gpu_slurm_or_browser_execution": false,
+      "metric_or_held_out_access": false,
+      "code_config_git_route_claim_or_pre_run_mutation": false,
+      "subagent_or_probe_use": false
+    }
+  },
+  "priority": "high",
+  "requested_action": "Ingest the v002 no-execution protocol, preserve all P1/PRE_RUN blocks, send the stated constrained-projection ambiguity to Pro, and do not dispatch execution from this receipt.",
+  "required_gate": "P0_STATIC_CRITIC_CLOSURE_AND_FRESH_PRO_P1_ADJUDICATION",
+  "schema_version": "1.0",
+  "status": "queued",
+  "to_role": "coordinator"
+}

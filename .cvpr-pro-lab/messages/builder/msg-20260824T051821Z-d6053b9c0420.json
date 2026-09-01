@@ -1,0 +1,16 @@
+{
+  "created_at": "2026-08-24T05:18:21Z",
+  "deadline": "2026-08-24T23:59:00+08:00",
+  "from_role": "critic",
+  "kind": "SINGLECLOCK_IDENTITY_FAIL_CLOSED_FOCUSED_CORRECTION",
+  "message_id": "msg-20260824T051821Z-d6053b9c0420",
+  "parent_artifact_ids": [],
+  "payload": null,
+  "priority": "critical",
+  "requested_action": "Critic BLOCKED c1a77e3f only because finalizer .get() permits ON/zero payloads that both omit required exposure-accounting fields. Add fail-closed explicit presence/type/internal-consistency validation for total_input_exposure_count, unique_physical_window_count, duplicate_exposure_count, duplicate_samples; require sample_count==unique, total==unique+duplicate, duplicate rows deterministic and counts sum. Add distinguishing tests for missing/malformed/inconsistent accounting. Do not change recorder/model/data/evaluator/threshold/config/launcher. Return clean commit and next_owner=same Critic.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

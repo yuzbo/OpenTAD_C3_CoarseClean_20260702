@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-12T22:09:19Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_REFERENCE_EXECUTION_IDENTITY_RESERVED_REPLACEMENT",
+  "message_id": "msg-20260812T220919Z-12f7e8a4d9c3",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_E1_PHASE_SPECIFIC_READONLY_PRE_RUN_ADMISSION_FACT_CHECK-v001",
+    "CRITIC_DUCA_P0_E1_REFERENCE_ADMISSION_MANIFEST_V004_FOCUSED_RECHECK-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "NONE. This is an opaque replacement identity only. Its payload must remain unread, unconsumed, and undispatched until a later passing formal admission explicitly changes the state. It does not authorize a command, SSH operation, fixture read, import, test, data/model/metric access, GPU/CUDA/Slurm, browser, or result production.",
+  "required_gate": "P0_E1_FORMAL_PRE_RUN_ADMISSION_PENDING",
+  "schema_version": "1.0",
+  "status": "reserved_not_dispatched_payload_unread",
+  "supersedes": "msg-20260812T214652Z-7b2c8a5e61d4",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

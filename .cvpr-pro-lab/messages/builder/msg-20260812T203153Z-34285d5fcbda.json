@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-12T20:31:53Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_PRE_STATIC_001_SELF_CONTAINED_GATE_INTERFACE_IMPLEMENTATION",
+  "message_id": "msg-20260812T203153Z-34285d5fcbda",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "CRITIC_DUCA_P0_IDENTITY_PRE_RUN_STATIC_DEPENDENCY_RECHECK-v001",
+    "BUILDER_DUCA_P0_P0_PRE_STATIC_001_MINIMAL_CHANGE_PLAN-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Implement exactly the accepted MINIMAL_CHANGE_PLAN in response to deterministic P0-PRE-STATIC-001. Preserve frozen projector mathematics, typed codes, fixture membership/order 18/9/6, independent Evaluator ownership, role order, claim/split/metric/budget, and NOT_EXECUTED status. Make only these two repository changes: (1) remove tests/test_duca_p0_projection_policy.py from the formal execution snapshot; (2) add tools/bata/run_duca_p0_projection_production.py as the sole production JSONL adapter. It must accept only --input-jsonl/--output-jsonl; consume only ordered T,K,Q,u,a records with Q=1048576; invoke project_duca_fixed_targets_v001 once per row; preserve DUCAProjectionError.code for negatives; atomically publish only Builder-owned output; never read or alter Evaluator index/mutations/root, import pytest/Evaluator/reference/fixture/model/data/comparison code, or add wrapper/launcher/framework/second projector. Do not run Python, compile, tests, import, adapter, production/reference/comparison/P0, fixture materialization, remote/SSH, data/model/checkpoint/metric, GPU/CUDA/Slurm/browser actions. Make a child commit and return exact paths, commit/parent, zero-execution attestation, and a focused static diff summary for independent Critic recheck.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

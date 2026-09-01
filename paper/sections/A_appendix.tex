@@ -1,0 +1,35 @@
+\section{Audit Record Schema}
+
+\begin{table*}[t]
+\centering
+\caption{Core fields in the post-decision DUCA audit record. The record is not a decision source.}
+\label{tab:ledger_schema}
+\small
+\begin{tabularx}{\textwidth}{p{0.27\textwidth}X}
+\toprule
+Field & Meaning \\
+\midrule
+\texttt{sample\_id} & Unique video-window identifier. \\
+\texttt{selected\_positions} & Sorted original dense-time indices emitted during the detector forward path. \\
+\texttt{sparse\_grid} & Selected-axis index, dense coordinate, and support-cell metadata. \\
+\texttt{target\_len} & Main requested budget, e.g., 384. \\
+\texttt{selected\_count} & Actual number of selected valid positions. \\
+\texttt{valid\_len}, \texttt{dense\_len} & Valid prefix length and dense candidate length. \\
+\texttt{source\_provenance} & Prompt hash, checkpoint hash, frozen/adapted status, and score cost. \\
+\texttt{diagnostics} & Gap, hole, boundary support, count drift, redundancy, and uniform similarity. \\
+\texttt{uses\_gt}, \texttt{uses\_teacher} & Must be false for validation/test audit records. \\
+\texttt{uses\_raw\_prediction}, \texttt{uses\_cache} & Must be false for validation/test audit records. \\
+\texttt{uses\_offline\_ledger} & Must be false; the selector decides online. \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\section{Implementation Contract Checks}
+
+Before a run is used in the paper, the implementation should satisfy three
+checks. First, the detector input tensor must have at most 384 selected temporal
+positions in the main setting, with no dense bypass into the detector head.
+Second, assignment, regression targets, decoded proposals, and NMS must consume
+the original-time sparse grid. Third, validation/test audit records must fail
+closed if they contain GT fields, teacher payloads, raw predictions, prediction
+caches, offline decision sources, or mismatched prompt/checkpoint provenance.

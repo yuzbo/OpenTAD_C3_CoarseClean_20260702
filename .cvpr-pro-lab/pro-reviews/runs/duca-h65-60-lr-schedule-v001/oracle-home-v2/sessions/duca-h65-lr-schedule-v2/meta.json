@@ -1,0 +1,176 @@
+{
+  "id": "duca-h65-lr-schedule-v2",
+  "createdAt": "2026-08-24T02:09:53.589Z",
+  "status": "completed",
+  "promptPreview": "请完整读取附加的裁决任务与四个冻结配置，作为 DUCA Scientific First-Author Agent 输出终稿。Nonce: DUCA-H65-60-LR-SCHEDULE-v001-20260824",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-24T02:09:54.204Z",
+      "completedAt": "2026-08-24T02:32:13.455Z",
+      "usage": {
+        "inputTokens": 6668,
+        "outputTokens": 4755,
+        "reasoningTokens": 0,
+        "totalTokens": 11423
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "timeoutMs": 7200000,
+      "autoReattachDelayMs": 30000,
+      "autoReattachIntervalMs": 60000,
+      "autoReattachTimeoutMs": 300000,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 14106,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "0516EEEDC38B75E1511553E054159CC1",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8ba7fe-82cc-83ea-bf10-1e0b5e4edfda",
+      "conversationId": "6a8ba7fe-82cc-83ea-bf10-1e0b5e4edfda",
+      "promptSubmitted": true,
+      "controllerPid": 95732
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8ba7fe-82cc-83ea-bf10-1e0b5e4edfda"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-24T02:09:57.952Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "请完整读取附加的裁决任务与四个冻结配置，作为 DUCA Scientific First-Author Agent 输出终稿。Nonce: DUCA-H65-60-LR-SCHEDULE-v001-20260824",
+    "file": [
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_H65_60_LR_SCHEDULE_ADJUDICATION-v001.md",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65First_MatchedCycle6_20260822/configs/adatad/thumos/duca_sampling_rate_curriculum_stage1_uniform384.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65First_MatchedCycle6_20260822/configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65First_MatchedCycle6_20260822/configs/adatad/thumos/duca_h65_60_stage1_uniform20.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65First_MatchedCycle6_20260822/configs/adatad/thumos/duca_h65_60_stage2_transition20_joint20.py"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-h65-lr-schedule-v2",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "timeoutMs": 7200000,
+      "autoReattachDelayMs": 30000,
+      "autoReattachIntervalMs": 60000,
+      "autoReattachTimeoutMs": 300000,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": false,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7500,
+    "httpTimeoutMs": 7500000,
+    "zombieTimeoutMs": 7500000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-h65-60-lr-schedule-v001/PRO_DUCA_H65_60_LR_SCHEDULE_ADJUDICATION-v001.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 95732,
+    "reattachCommand": "oracle session duca-h65-lr-schedule-v2"
+  },
+  "startedAt": "2026-08-24T02:09:54.199Z",
+  "completedAt": "2026-08-24T02:32:13.510Z",
+  "usage": {
+    "inputTokens": 6668,
+    "outputTokens": 4755,
+    "reasoningTokens": 0,
+    "totalTokens": 11423
+  },
+  "elapsedMs": 1339045,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-h65-60-lr-schedule-v001\\oracle-home-v2\\sessions\\duca-h65-lr-schedule-v2\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 50409,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8ba7fe-82cc-83ea-bf10-1e0b5e4edfda",
+      "sha256": "41beebc1cbd3d54f42eb9c0b824a7b8ec51ecee00be67362857a578b2b8b655d",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

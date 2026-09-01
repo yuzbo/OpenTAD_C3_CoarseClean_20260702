@@ -1,0 +1,18 @@
+{
+  "request_type": "PROJECT_SOURCE_SYNC_REQUEST",
+  "status": "COMPLETE_CONFIRMED",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "prepared_ids": [
+    "pfile-20260812T003408Z-9960627409",
+    "pfile-20260812T003409Z-fb0620469a",
+    "pfile-20260812T003409Z-1395d2beb6"
+  ],
+  "material_reason": "Accepted fresh Pro P0 projection-policy decision freezes the previously unresolved nonconstant decoder and materially updates current state/history; it must be available before the next Pro decision.",
+  "required_before_pro": true,
+  "earliest_at": "2026-08-12T00:34:09Z",
+  "priority": "high",
+  "route_state": "CONTINUE / BLOCKED_PRE_RESULT / P0 projection policy frozen; no execution authorized",
+  "depends_on": "CENTRAL-PRO-DUCA-PROJECTION-POLICY-v001 accepted outcome",
+  "browser_operation": "Completed under CENTRAL-SOURCES-DUCA-PROJECTION-DECISION-v003 using runtime CDP 127.0.0.1:4334. PRO_P0_PROJECTION_POLICY-v001.md, CURRENT_RESEARCH_STATE-v007.md and MODEL_EXPERIMENT_HISTORY-v007.md were confirmed remotely at 2026-08-12T00:50:06Z-00:50:07Z."
+}

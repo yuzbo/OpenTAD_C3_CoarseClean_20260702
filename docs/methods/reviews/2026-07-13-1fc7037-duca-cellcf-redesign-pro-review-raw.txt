@@ -1,0 +1,1827 @@
+# 1. 可见性证书
+
+## 固定版本
+
+* 仓库：`yuzbo/OpenTAD_C3_CoarseClean_20260702`
+* 实际读取提交：`1fc7037358e1141f7555ad87d1edd9128ce2e6a5`
+* 连接器返回的提交标题：`Add DUCA selection quality diagnostics`。
+* 用户指定分支：`codex/duca-transition-only-20260711`
+* **限制**：GitHub 连接器可以按固定 SHA 读取全部目标文件，但分支搜索没有独立返回该分支指针。因此我确认的是**固定提交内容**，不声称独立确认该分支当前 HEAD 仍指向此 SHA。
+
+## 实际读取的必查文件
+
+| 类别               | 文件与重点行                                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| 规则与口径            | `AGENTS.md` 全文；`RTK.md` 全文；`docs/methods/duca_transition_only_contract.md:7-100`                         |
+| 主选择器             | `duca_online_frame_selector.py:79-217, 524-636, 760-810, 833-953, 1000-1160, 1559-1658`                  |
+| Acquisition      | `acquisition.py:130-260, 1380-1845, 2470-2820`                                                           |
+| Transition       | `transition_only.py:1-277`                                                                               |
+| Structured DP    | `structured_selection.py:1-218`                                                                          |
+| Detector         | `actionformer.py:100-430`；`single_stage.py:50-360`；`actionformer_head.py` 全文                             |
+| 三个正式配置           | 主 transition、no-bridge、exact-uniform 全文                                                                  |
+| Gate / validator | `run_duca_transition_only_formal_full_model_gate.py` 全文；`validate_duca_transition_only_p0_variant.py` 全文 |
+| 质量分析             | exporter、analyzer、测试、诊断文档全文                                                                              |
+| 历史审查             | `2026-07-12...pro-audit-prompt.md:1-359`；`2026-07-10...structural-audit.md` 全文                           |
+
+另外读取了：
+
+* `anchor_free_head.py:1-497`
+* `truetime_geometry.py:1-208`
+* `opentad/cores/optimizer.py`
+* `opentad/cores/train_engine.py`
+* `tools/train.py`
+* `tools/bata/train_lowres_action_probe.py:1-300, 2040-2380`
+* 与 transition-only、P0 matrix、official backend 相关的测试文件
+* 官方 AdaTAD 基础配置 `e2e_thumos_videomae_s_768x1_160_adapter.py`
+
+## 不可见项
+
+1. 外置的 official ASFormer `ASFormer/model.py` 不在该固定仓库中；仓库只记录其来源哈希并通过运行时路径加载。当前可审计的是 wrapper、构造参数、hook 和 SHA，不是外部 ASFormer 源码正文。
+2. N16R4、AutoDL 的原始 Slurm/stdout 不在 GitHub 提交内。本文接受你提供的 `1001959` 原始账目证书，但不能通过 GitHub 连接器再次登录远端核验。
+3. `77.62`、`77.18` 的 AutoDL 原始日志本轮不可见，继续保持 `PARTIAL`。
+4. 质量分析的原始 JSONL、CSV、PDF/PNG 明确未提交，只能审计 exporter、analyzer、报告及其测试。报告也明确说明这些原始产物未入库。
+5. 没有在仓库运行环境中执行 pytest、CUDA gate 或训练。作为额外数学检查，我独立重建了 structured DP，并对若干 `T≤8` 的可行状态穷举比较 MAP、logZ、slot marginal 和 occupancy，未发现递推差异；这不是仓库运行证据。
+
+---
+
+# 2. 总裁决
+
+## **REDESIGN**
+
+当前 `transition_only + global_structured_topk + G=15 + structured_zero_forward` **不应继续作为 CVPR/ICCV/NeurIPS 主方法直接训练**。
+
+研究问题——“低成本粗状态证据能否在重 backbone 前做 TAD 任务感知去冗余”——仍值得一次有界实验机会；但当前实现的可行集、概率语义、监督目标和 detector bridge 都没有形成可信的 hard decision utility 学习机制。继续调权重或重跑 corrected homotopy，最多能验证现有实现，不足以修复其科学核心。
+
+---
+
+# 3. 三数字协议表
+
+| 数字                           | 真实来源与协议                                                                                                                                                       | 证据等级                                        | 是否可与另外两项直接比较                                                                |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------- |
+| **GT-boundary oracle 76.67** | 你提供的 N16R4 Job `1001959` 原始 sacct/stdout；历史 Adapter/ActionFormer；`T=768,K=384,radius=2`；train/val/test 均直接读取 GT boundaries 决策；60 epochs；无最终 checkpoint/多 seed | `VERIFIED`，但由用户提供的远端原始日志证书支持，不在该 GitHub 提交内 | **否**。这是 privileged-information mechanism diagnostic，不是 deployable selector |
+| 历史 oracle 77.62 / 77.18      | 相同机制的 AutoDL 记录，但本轮没有重读原始 stdout                                                                                                                              | `PARTIAL`                                   | 否                                                                           |
+| **历史 exact-uniform 65.696**  | Job `1150842`，grid-aware detector，历史提交和训练协议                                                                                                                   | 有日志锚点                                       | 否；不是当前 fixed commit / 13200-step matrix                                     |
+| 历史 exact-uniform 64.352      | Job `1150701`，native stride-2 geometry                                                                                                                        | 有日志锚点                                       | 否；detector geometry 不同                                                      |
+| **当前提交 exact-uniform**       | 当前代码的 transition alpha=0 已使用 `round(linspace(0,T-1,K))`，正式配置固定 alpha=0、bridge=0                                                                               | **代码合同已修复；没有 replacement full-train 结果**    | 尚无数字可比较                                                                     |
+| **learned beta=0，64.34**     | 旧 `8bfc0e5` Job `1159416`；错误 alpha=0 起点；epoch-89 selector diagnostic                                                                                          | 失效协议下的 learned-policy diagnostic            | 不能用于 learned-vs-uniform 结论                                                  |
+| **learned beta=.25，63.55**   | 旧 `8bfc0e5` Job `1159417`；同样错误 homotopy 起点                                                                                                                    | 失效协议下的 bridge diagnostic                    | 只能说明该旧 curriculum 下 beta=.25 arm 未获益                                        |
+| 历史 separated 63.18           | 跨协议历史参考                                                                                                                                                       | 背景证据                                        | 否                                                                           |
+
+固定提交中的正式 exact-uniform 配置确实将 policy alpha 和 detector gradient 都固定为 0；no-bridge 只关闭 detector bridge；主方法则最终使用 alpha=1、beta=.25。
+
+旧 diagnostic 文档本身也明确将 `65.696/64.352/64.34/63.55` 标成不同协议锚点，并禁止进行因果差分。
+
+---
+
+# 4. 差距分解
+
+## 4.1 当前不能做的算术
+
+当前不存在共同协议 (P)，因此不能写：
+
+[
+76.67-63.55=(76.67-65.696)+(65.696-63.55).
+]
+
+更准确的记法是：
+
+[
+P_{\mathrm{GT\ oracle}}^{\text{historical Adapter, 60ep, GT test}}
+------------------------------------------------------------------
+
+P_{\mathrm{learned}}^{\text{old invalid homotopy, 132ep}}
+]
+
+以及：
+
+[
+P_{\mathrm{uniform}}^{\text{historical grid-aware}}
+---------------------------------------------------
+
+P_{\mathrm{learned}}^{\text{old selected-axis matrix}}.
+]
+
+这两个差都混合了：
+
+* privileged GT；
+* commit；
+* detector geometry；
+* total steps / LR schedule；
+* checkpoint policy；
+* coarse representation；
+* selector curriculum；
+* evaluator与窗口暴露。
+
+## 4.2 当前唯一合法的数值比较
+
+旧 beta=.25 相比旧 beta=0 低 0.79 Avg-mAP，能够支持的最强表述是：
+
+> 在同一个已经作废的 uniform-to-learned curriculum 下，加入该版本 `structured_zero_forward` bridge 没有改善 Avg-mAP。
+
+它**不能**证明 corrected homotopy 下 bridge 必然有害，但也绝不能被解释为 bridge 有效。
+
+同一 epoch-89 checkpoint 上的 selector-only learned/uniform 比较是合法的选择质量诊断：learned 获得少量 exact-r0 hits，却显著损失 r1、双端点覆盖和 hole control；它不等于 full-detector mAP 因果实验。
+
+## 4.3 四种 oracle 必须分开
+
+1. **GT-boundary/actionness oracle**
+   当前 76.67 属于这一类。它直接知道 validation/test 的真实起止点。
+
+2. **Dense detector-loss / teacher-utility oracle**
+   在训练时逐位置或逐交换测量 dense detector utility。当前没有该结果。
+
+3. **Best-of-candidate counterfactual oracle**
+   在一个受限、deployable feasible set 内，事后选择 detector loss 最优候选。当前没有该结果。
+
+4. **同可见输入下的 Bayes oracle**
+   只允许观察 low-cost coarse state，问最优可学习策略能达到什么。当前完全未知。
+
+因此 76.67 只证明：
+
+> 在该历史 backend 中，若选择器被直接告知真实边界，50% budget 可以被高效利用。
+
+它不证明：
+
+* low-resolution RGB 能识别这些边界；
+* 当前 ASFormer hidden 包含足够信息；
+* GT oracle 的多帧边界集中策略能由 deploy-visible evidence 预测；
+* 11–13 点全部属于可学习 headroom。
+
+粗状态 AUROC 0.6214、ECE 0.1710 和 learned selection 的 r1 退化说明当前实现**尚未展示**大规模逼近 GT oracle 的能力，但还不能量化“不可学习比例”。
+
+---
+
+# 5. P0 / P1 / P2 代码 findings
+
+## P0-1：exact-uniform 修复没有统一覆盖 legacy/direct stable route
+
+**位置**
+
+* `transition_only.py:173-222`
+* `acquisition.py:1580-1593`
+* `duca_online_frame_selector.py:764-779`
+* `duca_direct_boundary_fixed384_13200...py:27-53`
+
+**当前实际行为**
+
+Transition-only alpha=0 已正确使用 rounded endpoint linspace。
+
+但非-transition 的 `stable_selection` 仍构造：
+
+[
+c_j=(j+0.5)\frac{T}{K}-0.5.
+]
+
+在 `T=768,K=384` 时，中心为 `0.5,2.5,...`，每个整数位置到最近中心的距离均为 0.5，reference logits 再次全部相同。
+
+Direct route 在 schedule 早期或交替期间会进入这条 stable path。
+
+**影响**
+
+* Transition-only 当前主配置不经过此分支。
+* 但 direct matched control、legacy route 仍可能复现 tie-break 路径。
+* “exact uniform helper 已在所有 routes 统一”是错误结论。
+
+**分类**
+
+确定性 bug + protocol contamination。
+
+**最小修复**
+
+建立唯一的：
+
+```python
+exact_uniform_reference_scores(valid_len, k)
+```
+
+transition、direct、analyzer、gate、validator 全部调用同一实现；删除 midpoint 公式。
+
+**直接失败测试**
+
+对 `T=768,K=384`、`T=401,K=384`、`T=17,K=8`，分别经过 transition/direct/stable/analysis route，decoded positions 必须逐点等于 `round(linspace(0,T-1,K))`。
+
+---
+
+## P0-2：balanced BCE 输出不能被解释为校准的 `p_action`
+
+**位置**
+
+* `transition_only.py:16-40`
+* `acquisition.py:172-203`
+
+**当前实际行为**
+
+Actionness loss 为带**每 batch 动态 `pos_weight`**的 BCE，正类权重被截断在 `[1,8]`。
+
+随后代码直接将 sigmoid 输出称为 `p_action`，并据此计算：
+
+* entropy；
+* `1-|2p-1|` uncertainty；
+* uncertainty peak；
+* transition proxy。
+
+加权 BCE 的最优 sigmoid 输出通常是 cost-sensitive score，而不是原始 posterior probability；每 batch 权重变化使单一 logit correction 也不成立。
+
+**影响**
+
+这与诊断中：
+
+* 真实 action prevalence 32.50%；
+* 预测 action 比例 53.62%；
+* ECE 0.1710；
+
+高度一致。当前 entropy/uncertainty 的概率语义不可信。
+
+**分类**
+
+确定性概率语义错误；也是 coarse calibration 失败的高概率原因。
+
+**最小修复**
+
+* 使用固定 train-set prior，而不是 batch-varying `pos_weight`；
+* 或使用 class-balanced sampler + unweighted BCE；
+* 在训练集内部划出 fit/cal split，用 temperature / bias calibration；
+* selector 的 transition baseline 使用明确标记的 calibrated posterior。
+
+**直接失败测试**
+
+同一个样本分别置于不同 batch 正负比例中，当前 action logit optimum 会变化。修复后同一样本 posterior 应基本不受 batch composition 影响；train-only calibration ECE 目标 ≤0.10。
+
+---
+
+## P0-3：`local_boundary_coverage_loss` 不是合法的 coverage probability
+
+**位置**
+
+* `transition_only.py:250-277`
+* `acquisition.py:2715-2731`
+* 主配置 `transition_boundary=0.25`
+
+**当前实际行为**
+
+代码先对半径 (r) 内 occupancy 求**和**：
+
+[
+m_b=\sum_{t\in N(b)}o_t,
+]
+
+然后优化：
+
+[
+-\log m_b.
+]
+
+局部质量可大于 1；代码只做 `clamp_min`，不做概率化或上界截断。
+
+例如半径 4 的九个位置 occupancy 都较大时，loss 可以为负，并继续奖励在同一个边界邻域堆入更多 slot，而不是在“至少覆盖一次”后饱和。
+
+**影响**
+
+* 直接鼓励多 slot 聚集在少量边界附近；
+* 与 learned r0 小幅提高、r1 和 hole 明显恶化的现象方向一致；
+* fixed-K 下这些额外局部质量必然从其他时间区域拿走。
+
+**分类**
+
+确定性目标函数 bug。
+
+**最小修复**
+
+若保留 coverage loss，应使用“至少一个选择”的概率：
+
+[
+P_{\text{cover}}(b)
+===================
+
+1-\prod_{t\in N(b)}(1-o_t),
+\qquad
+L_{\text{cover}}
+================
+
+-\sum_b y_b\log P_{\text{cover}}(b).
+]
+
+最终推荐架构中 coverage 由可行集保证，直接删除该 loss。
+
+**直接失败测试**
+
+* loss 必须非负；
+* 单个位置 occupancy 从 0.99 增至 1 后近似饱和；
+* 在已高覆盖邻域添加第二、第三个选择，不得持续产生大幅奖励。
+
+---
+
+## P0-4：“raw `abs(delta p_action)`”诊断标签与真实代码不一致
+
+**位置**
+
+* `acquisition.py:171-203`
+* `export_duca_selection_quality.py:90-135`
+* `analyze_duca_selection_quality.py:325-365`
+* 诊断报告 `:58-70`
+
+**当前实际行为**
+
+`transition_score` 实际定义为：
+
+[
+|\Delta p_{\text{action}}|+\text{uncertainty_peak}.
+]
+
+Exporter 同时保存：
+
+* `raw_transition_scores = transition_score`
+* `abs_delta_p_action = abs_delta_p_action`
+
+但 analyzer 读取的是前者，报告却称其为 raw actionness change，并最终写成 `abs(delta p_action)`。
+
+**影响**
+
+当前有代码支持的结论是：
+
+> learned scorer 弱于手工构造的 `abs_delta + uncertainty_peak` proxy。
+
+尚未支持：
+
+> learned scorer 弱于纯 `abs(delta p_action)`。
+
+报告第 70 行的精确结论过强。
+
+**分类**
+
+确定性分析/报告 bug。
+
+**最小修复**
+
+分别报告：
+
+* pure `abs_delta_p_action`
+* `abs_delta_p_action + uncertainty_peak`
+* learned scorer
+
+不得混名。
+
+**直接失败测试**
+
+Exporter 中 `raw_abs_delta_scores` 必须逐元素等于 `abs_delta_p_action`；compound proxy 使用独立 key。
+
+---
+
+## P0-5：当前 detector bridge 只证明可微连通，不证明 hard utility 对齐
+
+**位置**
+
+* `structured_selection.py:160-200`
+* `duca_online_frame_selector.py:190-217, 1125-1145`
+* `run_duca_transition_only_formal_full_model_gate.py:219-279`
+
+**当前实际行为**
+
+Structured DP 的 hard MAP 和 soft marginal 来自同一 exact-K/max-hole feasible family，这一点代码基本正确。
+
+但 `structured_zero_forward` 将每个 slot 的 marginal 独立用于 RGB 加权平均：
+
+[
+\tilde x_j=\sum_t p(s_j=t)x_t,
+]
+
+然后构造：
+
+[
+x^{ST}_j=x^{hard}_j+\beta(\tilde x_j-\mathrm{sg}(\tilde x_j)).
+]
+
+Forward 数值仍是 hard frames；backward Jacobian 却来自 detector 对 soft RGB mixtures 的响应。K 个 marginal expectation 的联合输入通常不对应任何一条可行 hard path。
+
+Formal gate 只验证：
+
+* real detector `cls_loss+reg_loss` 给 scorer 非零梯度；
+* coarse probe 梯度为 0；
+* exact K/max gap；
+* optimizer 参数覆盖。
+
+它没有执行 optimizer step，也没有比较任何 one-swap detector loss 差。
+
+**影响**
+
+不能从非零梯度推出：
+
+[
+\operatorname{sign}
+\frac{\partial L_{\text{soft}}}
+{\partial(z_t-z_s)}
+===================
+
+\operatorname{sign}
+\left[
+L(S-s+t)-L(S)
+\right].
+]
+
+非线性 VideoMAE、projection、neck 和 ActionFormerHead 使二者没有一般等价关系。
+
+**分类**
+
+核心科学 claim blocker + surrogate target mismatch，不是单纯测试缺失。
+
+**最小修复**
+
+主路线删除 direct detector bridge，改成 train-only hard counterfactual utility distillation。
+
+**直接失败测试**
+
+对可行交换 `(s→t)`：
+
+* 真实差值：`ΔL=L(S-s+t)-L(S)`
+* surrogate preference：`-∂Lsoft/∂(z_t-z_s)`
+
+统计 sign accuracy、Spearman、cluster CI。没有正相关就禁止声称 task-adapted hard acquisition。
+
+---
+
+## P1-1：`G=15` 的 feasible set 对 50% budget 过松，structured decoder 行为上近似 global top-k
+
+**位置**
+
+* `structured_selection.py:25-45, 48-94`
+* `acquisition.py:1560-1610`
+* 主配置 `max_unselected_hole=15`
+
+代码只保证 exact K 和 leading/interior/trailing hole ≤15。
+
+在 `K=384,T=768` 时，uniform 的 unselected hole 主要为 1，只有极少数为 2；允许 15 并没有形成强 coverage prior。
+
+实际诊断：
+
+* learned decoder 与 unconstrained top-k 平均重合 99.80%；
+* 264/487 窗口完全一致；
+* learned mean max hole 11.86；
+* exact uniform 1.83。
+
+**分类**
+
+确定性 inductive-bias failure，不是 DP recurrence bug。
+
+**修复**
+
+用“一 temporal cell 必选一个点”的可行集，从定义上保证 coverage，而不是 top-k 后加宽松 hole constraint。
+
+---
+
+## P1-2：当前 scorer 优化的是 GT transition proxy，不是 detector utility
+
+Transition target 是所有 GT start/end 的 fixed-(\sigma=2)、truncated-radius=4、equal-mass Gaussian。
+
+主配置实际非零 selector losses 是：
+
+* actionness 1.0
+* transition distribution 0.5
+* transition boundary coverage 0.25
+
+teacher utility 和 detector utility target 均为 0。
+
+因此 beta=0 scorer 学的是：
+
+> GT endpoint neighborhood ranking。
+
+它没有被训练成：
+
+> 哪个 hard observation 能降低最终 detector loss。
+
+GT boundary oracle 和 detector utility oracle不是同一个目标。
+
+**分类**
+
+目标错配。
+
+**修复**
+
+以受限 cell 内 hard alternative detector loss 差作为 utility target；transition supervision只作为表示先验。
+
+---
+
+## P1-3：coarse probe 是 official temporal ASFormer + 自定义随机 spatial stem，而非 official pretrained raw-video ASFormer
+
+Wrapper 使用两层随机初始化的 Conv2d/BN/SiLU spatial stem，再将输出送入 external official ASFormer temporal module；固定配置的 `checkpoint_path=""` 且 `require_checkpoint=False`。
+
+这不是造假，配置也诚实写了 wrapper/not source-identical；但论文不能把整个 coarse module称为“official pretrained ASFormer”。
+
+**影响**
+
+在 joint detector curriculum 内同时从零学习 64×64 spatial representation、action state、transition utility，AUROC 仅约 0.62 并不意外。
+
+**修复**
+
+保留当前模块，但在同一个训练运行前 10%–15% optimizer steps 固定 exact-uniform，专门稳定 coarse state；不先引入 MobileNet 或新 checkpoint。
+
+---
+
+## P1-4：standalone 与 joint coarse target 定义不一致
+
+Standalone：
+
+* temporal center 为 `frame_idx + 0.5`
+* 条件为 `start <= center <= end`
+
+Joint：
+
+* temporal center 为整数 `frame_idx`
+* 条件为 `start <= center < end`
+
+因此 standalone AP/AUROC 与 joint coarse 指标不是严格 matched control，尤其在 fractional endpoints 和短动作上。
+
+**修复**
+
+抽出唯一 `build_action_targets()`，standalone、joint、exporter、测试共用。
+
+---
+
+## P1-5：主方法仍在 selected-axis 上运行 detector geometry
+
+当前配置明确：
+
+* detector output：`selected_axis_index`
+* train GT：remap 到 selected axis
+* test output：post-hoc true-time remap
+
+GT remap 使用实际 selected positions 构建 piecewise-linear true↔selected map。
+
+ActionFormerHead 的 Conv1d kernel=3、projection/neck 和 point prior 仍沿 slot ordinal 传播；在主配置中并不读取 original-time spacing。
+
+推理时预测会在 NMS **之前**映回 true time，这部分是正确的。
+
+仓库已有 physical-grid head，可以修正 point center、stride、regression range，但它仍不能改变前面卷积沿 slot adjacency 传播的事实。
+
+**分类**
+
+确定性 geometry mismatch；性能影响需要 matched control。
+
+---
+
+## P1-6：detector gradient 被刻意限制为只更新 scorer
+
+`transition_utility_paths` 中：
+
+* actionness logits 先 detach；
+* policy descriptors 再 detach；
+* detector/coverage 只能更新 scorer；
+* transition auxiliary route可以更新 coarse hidden。
+
+这是清晰的梯度所有权，不是实现遗漏；但它意味着“detector-aware acquisition”只适用于一个浅层打分头，而不会使 coarse representation 变得 detector-useful。
+
+**分类**
+
+设计限制。
+
+**裁决**
+
+不应简单开放 detector gradient 回流整个 coarse trunk；当前 bridge 方向尚未验证。最终路线应让 hard counterfactual utility 更新 scorer，而 coarse trunk继续由 state/transition监督保护。
+
+---
+
+## P1-7：`structured_zero_forward` 训练成本异常大
+
+Soft slot assignment 形状为 `[B,K,T]`，随后与 dense RGB 做 einsum。对于 `T=768,K=384`，其训练期 surrogate 复杂度包含 (K\times T) 的全时域 RGB 混合。
+
+它在 eval 被关闭，因此不影响 inference forward 数值，但会显著增加训练显存、带宽和计算，并没有换来已验证的 utility alignment。
+
+---
+
+## P2-1：Structured DP 本身暂未发现递推 bug，但测试不足
+
+代码的 hard Viterbi、soft forward-backward、slot marginal 和 log-partition 在定义上共享 exact-K/max-hole automaton。
+
+我的小状态穷举未发现差异；因此不应把当前失败归因于 DP 公式本身。
+
+缺失的是仓库级 exhaustive test：
+
+* brute-force MAP；
+* exact logZ；
+* per-slot marginal；
+* occupancy sum = K；
+* occupancy ≤1；
+* autograd 与 finite difference。
+
+---
+
+## P2-2：分析统计是 window-weighted、video-cluster resampling，不是 equal-video macro
+
+Exporter 的 `sample_id` 依赖 `window_start_frame`，缺失时回退 0；分析按视频 cluster bootstrap，但每个视频中的所有窗口都会进入统计，因此长视频仍占更多 point-estimate 权重。
+
+这不使结果无效，但报告应明确：
+
+* pooled-frame；
+* macro-window；
+* equal-video macro；
+
+是三个不同 estimand。
+
+还应对重复 `sample_id` fail closed。
+
+---
+
+## 已排除的疑点
+
+### Optimizer 参数遗漏或重复：当前未发现
+
+ActionFormer 对所有非-backbone `requires_grad` 参数做 decay/no-decay 完整性检查，并为 transition scorer、coarse trunk、action heads 分配独立 LR。
+
+### Leaf loss 重复聚合：当前未发现
+
+Selector leaf losses先合并，detector `cls_loss/reg_loss` 后合并，最终 `cost=sum(losses)` 一次；aggregate alias 被禁止。
+
+### 推理 GT/teacher 决策泄漏：主路径未发现
+
+训练 target 在选择之外构造；`_forward_select` 不接收 GT；测试路径只接收 inputs/masks/metas。Exporter 也是先 `forward_test`，再使用 GT 评估。
+
+---
+
+# 6. 根因排序
+
+以下概率针对：
+
+> 为什么当前旧 checkpoint 的 realized learned selector 明显弱于 regular uniform coverage。
+
+它们不用于解释不存在的严格 `76.67–65–63` 数值分解。
+
+| 排名 | 根因                                                                     |      概率 | 支持证据                                                                 | 最小证伪实验                                                 |
+| -: | ---------------------------------------------------------------------- | ------: | -------------------------------------------------------------------- | ------------------------------------------------------ |
+|  1 | global utility concentration + `G=15` 太松 + decoder近似 top-k             | **28%** | 99.80% top-k overlap；mean hole 11.86；r1 -15.55pp                     | 相同 scores，仅替换 cell-wise coverage policy                |
+|  2 | coarse probability语义和表示质量不足                                            | **22%** | 动态 weighted BCE；AUROC .6214；ECE .171；预测 action 53.62%                | 共用 target、相同 exposure 的 calibrated standalone-vs-joint |
+|  3 | transition/boundary proxy 与 detector utility 不一致，且 coverage loss 有数学错误 | **19%** | learned transition弱于手工 compound proxy；GT Gaussian不是 detector utility | hard cell swap detector loss distillation              |
+|  4 | 旧 invalid homotopy/curriculum 损坏了当前 diagnostic checkpoint              | **13%** | 起点不是 exact uniform；旧结果已明确作废                                          | corrected same-commit full train                       |
+|  5 | soft RGB bridge 与 hard one-swap utility 不对齐                            | **10%** | 只有非零梯度证明；beta=.25 旧 run 未改善                                          | hard-swap finite difference vs surrogate sign          |
+|  6 | selected-axis physical-time distortion                                 |  **8%** | GT/offset/conv均在 slot axis；irregular gaps被压缩                         | same-selected-frames geometry control                  |
+
+额外结论：
+
+* 候选根因 10——invalid homotopy——是**已确认协议问题**。
+* 候选根因 14——三组数字不 matched——是**100% 确认的比较问题**，但它不是 learned selector 内部机制的概率根因。
+* “窗口裁剪制造伪边界”在 selector target 代码中没有区分 natural endpoint 与 crop-induced endpoint；但必查文件不足以确认 dataset transform 是否把截断边界作为 GT endpoint，因此目前只能列为较低概率待验证项，不能伪装成确定 bug。
+
+---
+
+# 7. 为什么 uniform 强、learned 弱
+
+## 7.1 `K/T≈1/2` 让 exact uniform 天然接近“保险策略”
+
+`round(linspace(0,767,384))` 的 383 个间隔中：
+
+* 382 个 gap 为 2；
+* 1 个 gap 为 3。
+
+对整数 endpoint，最近采样点几乎总在 ±1 内；对 fractional endpoint，也只有极少数落在唯一的 gap-3 中部时超过 1。诊断得到 r1 recall 0.9991、双端点 r1 0.9982，与该几何完全一致。
+
+因此 50% budget 下，selector 的收益空间不是“从完全看不到边界到看到边界”，而更多是：
+
+* 在边界哪一侧保留帧；
+* 是否保留足够两侧上下文；
+* 是否保留短动作内部动态；
+* 是否把有限冗余转移到 detector 更敏感的位置。
+
+而造洞的下行风险非常大。
+
+## 7.2 Uniform 同时提供三种先验
+
+### Coverage prior
+
+任何长区间都被稳定覆盖，短动作不容易完全落入 hole。
+
+### Detector geometry prior
+
+VideoMAE chunk、projection、neck、Conv1d head、prior stride 都把相邻 slot 当作稳定时间步。Uniform 使 slot adjacency 与 original-time adjacency近似固定。
+
+Irregular top-k 则可能让两个相邻 slot：
+
+* 在原时间只差 1；
+* 或差 15–16。
+
+同一个 kernel、dilation、regression stride 的 physical-time含义随位置变化。
+
+### Anti-jitter / regular-sampling prior
+
+严格说，uniform subsampling **不是一个真正的 anti-alias filter**，因为代码没有显式低通预滤波；但它避免了非均匀 sampling jitter 和 variable-rate temporal warping。称其为“规则采样先验”比“抗混叠滤波器”更准确。
+
+## 7.3 当前 learned policy 为什么只获少量 exact hits，却丢掉大量 r1 coverage
+
+1. Scorer 通过 GT Gaussian 更偏好少量高分边界点。
+2. 错误的 local coverage loss继续奖励一个边界邻域中的多重 occupancy。
+3. `G=15` 对 50% budget 几乎不约束整体布局。
+4. DP 最终与 unconstrained top-k 99.80% 重合。
+5. 少数 boundary exact hit增加，但其他边界和上下文被大 hole 牺牲。
+6. Detector 仍把这些不规则位置压缩成等间隔 selected-axis。
+
+这不是“structured DP 没执行”；恰恰是它执行了一个**过宽的 feasible set**。
+
+## 7.4 当前代码是否违背初心
+
+结论需要分层：
+
+* **没有**退化为 inference GT selector。
+* **没有**使用 absolute ASFormer hidden、raw RGB mean 或 direct start/end heads；transition-only 的 scorer输入确实是状态变化。
+* GT endpoint Gaussian 属于 train-only间接监督，不等于推理泄漏。
+* 它也不是 post-hoc hand gap repair；max-gap在 DP 内编码。
+* 但**行为上**已退化为 loose-feasible-set global utility top-k。
+* detector bridge 只更新 scorer，尚不能称为可靠的 hard detector-utility joint learning。
+* selected-axis detector geometry使“选择更好”与“几何被破坏”混在一起。
+
+---
+
+# 8. 唯一推荐的最终架构
+
+## **路线 D：DUCA-CellCF**
+
+**Coverage-Preserving Cell Deformation with Counterfactual Detector-Utility Distillation**
+
+它不是同时推荐 A/B/C，而是一条统一路线：
+
+* 用 coverage-preserving deformable cells定义可行集；
+* 用 train-only hard counterfactual detector utility训练 cell 内选择；
+* 删除 global top-k、`G=15` 和 direct detector bridge。
+
+## 8.1 模块与形状
+
+| 模块                                                 | 输入                                       | 输出                                                  |
+| -------------------------------------------------- | ---------------------------------------- | --------------------------------------------------- |
+| Low-cost spatial stem + official ASFormer temporal | `[B,N,3,T,64,64]`                        | action logits `[B,T]`，hidden `[B,T,96]`             |
+| Transition descriptor                              | logits/hidden temporal differences       | `[B,T,197]`，即 `2D+5`，再加入 pure `abs_delta_p` 后为 198  |
+| Residual transition/utility scorer                 | descriptor                               | dense utility `[B,T]`                               |
+| Fixed-K cell decoder                               | utility + valid mask                     | candidate logits `[B,K,M≤3]`；hard positions `[B,K]` |
+| Heavy detector                                     | selected full-res frames `[B,N,3,K,H,W]` | 官方 AdaTAD/ActionFormerHead                          |
+| Train-only CF teacher                              | 少量 cell hard alternatives                | alternative detector costs `[B,J,M]`                |
+
+## 8.2 Fixed-384 可行集
+
+对每个 valid window，令 (n) 为有效长度，(k=\min(384,n))。
+
+先定义 exact-uniform anchors：
+
+[
+u_j=
+\operatorname{round}
+\left(
+j\frac{n-1}{k-1}
+\right),
+\quad j=0,\ldots,k-1.
+]
+
+再以相邻 anchor 中点划分不重叠、保序 temporal cells：
+
+[
+C_j=[l_j,r_j],
+]
+
+其中：
+
+[
+l_0=0,\quad
+l_j=\left\lfloor\frac{u_{j-1}+u_j}{2}\right\rfloor+1,
+]
+
+[
+r_{k-1}=n-1,\quad
+r_j=\left\lfloor\frac{u_j+u_{j+1}}{2}\right\rfloor.
+]
+
+每个 cell **必须且只能选择一个**：
+
+[
+s_j\in C_j.
+]
+
+因此：
+
+* exact K；
+* 严格单调；
+* exact uniform (S_u={u_j}) 属于可行集；
+* `T=768,K=384` 时 cell 宽度最多 3；
+* 不可能形成当前 15-frame hole；
+* 无需 soft/hard max-gap loss或repair。
+
+## 8.3 Detector 坐标不再跟随 learned positions 扭曲
+
+必须分开两个概念：
+
+1. **Acquisition position**
+   实际送入 heavy backbone 的帧：(s_j)。
+
+2. **Detector grid position**
+   固定为 exact-uniform anchor：(u_j)。
+
+Heavy detector 的第 (j) 个 slot 始终代表第 (j) 个固定 temporal cell。GT remap 和预测 inverse map均使用 (u_j)，而不是 learned (s_j)。
+
+这相当于 temporal deformable sampling：
+
+* observation 在 cell 内移动；
+* detector feature grid保持规则；
+* 官方 ActionFormerHead 的 slot geometry不随策略变化；
+* train/inference同构。
+
+## 8.4 Coarse 模块
+
+保留当前：
+
+* 两层低分辨率 spatial stem；
+* official ASFormer temporal module；
+* binary action-state head。
+
+但第一阶段必须在**同一个训练运行**中固定 exact-uniform，使 coarse state先稳定。当前不引入 MobileNet、ASFormer-lite 或第三方 frozen feature JSONL。
+
+## 8.5 Scorer 可见信息
+
+允许：
+
+* pure `abs(delta p_action)`；
+* signed/absolute delta action logit；
+* delta entropy；
+* delta hidden；
+* absolute delta hidden；
+* consecutive hidden cosine change；
+* cell 内相对 anchor offset。
+
+禁止：
+
+* GT；
+* dense detector predictions；
+* teacher utility at inference；
+* absolute hidden shortcut；
+* raw high-resolution RGB descriptors；
+* ledger/cache；
+* validation/test calibration。
+
+Dense score采用 residual form：
+
+[
+z_t
+===
+
+\gamma,|\Delta p_t|
++
+f_\theta(d_t),
+]
+
+最后一层 residual zero-init，使初始策略至少不会抹掉 raw transition signal。
+
+## 8.6 Forward 与反向梯度
+
+### Forward train
+
+1. coarse stem/ASFormer产生 action state。
+2. 构造 transition descriptors。
+3. 每个 cell 内 hard argmax选择一帧。
+4. 只将 hard frames送入 heavy detector。
+5. 每隔固定步数，对少量 cell 构造 hard alternatives。
+6. EMA detector在 `no_grad` 下测量 alternative loss。
+7. 用 alternative cost分布监督 scorer。
+8. detector loss不直接穿过 selector。
+
+### 梯度所有权
+
+| Loss           | 更新模块                                                           |
+| -------------- | -------------------------------------------------------------- |
+| `L_state`      | spatial stem、ASFormer、action head                              |
+| `L_transition` | spatial stem、ASFormer、shared scorer                            |
+| `L_cf`         | scorer；不更新 coarse、heavy detector                               |
+| `L_detector`   | VideoMAE adapter、projection、neck、ActionFormerHead；不更新 selector |
+| 任何 GT/teacher  | 训练期 target only                                                |
+
+这样避免 detector loss摧毁 coarse state，也不再用不可信的 soft RGB surrogate。
+
+## 8.7 为什么理论上保住 uniform 并逼近一部分 oracle
+
+* 可行集包含 exact uniform。
+* alpha=0 时逐点等于当前 exact-uniform。
+* learned choice只能在局部 cell 内移动，不会制造大 hole。
+* detector grid与 uniform完全相同。
+* utility target是真实 hard alternative detector loss，而不是 boundary proxy。
+* 它可以学到“边界左侧还是右侧”“该 cell 内哪一帧对 detector 更有用”。
+
+它**不能也不应声称**逼近完整 GT oracle：GT oracle可以跨 cell集中多帧并使用不可见真实边界。CellCF只尝试提取其中可由 deploy-visible evidence 学习、且不破坏 coverage 的部分。
+
+---
+
+# 9. 数学目标
+
+## 9.1 Coarse state
+
+使用固定 train-set prior或 balanced sampling后的 BCE：
+
+[
+L_{\text{state}}
+================
+
+-\frac1{|\mathcal V|}
+\sum_{t\in\mathcal V}
+\left[
+y_t\log p_t+(1-y_t)\log(1-p_t)
+\right].
+]
+
+不再使用 batch-varying `pos_weight`。
+
+## 9.2 Transition representation
+
+保留 endpoint Gaussian 作为辅助表示目标：
+
+[
+q_t
+===
+
+\frac{
+\sum_{b\in\mathcal B}
+\exp[-(t-b)^2/(2\sigma^2)]
+\mathbf 1(|t-b|\le R)
+}{
+\sum_u(\cdot)
+},
+]
+
+[
+L_{\text{transition}}
+=====================
+
+-\sum_t q_t
+\log\operatorname{softmax}(z_t/\tau).
+]
+
+它只是一项 representation prior，不再被称为 detector utility。
+
+## 9.3 Cell policy
+
+对 cell (C_j)：
+
+[
+\pi_\theta(t\mid C_j)
+=====================
+
+\operatorname{softmax}*{t\in C_j}
+\left(
+\frac{
+(1-\alpha)r*{j,t}+\alpha z_t
+}{\tau}
+\right),
+]
+
+其中 uniform reference：
+
+[
+r_{j,t}=-|t-u_j|.
+]
+
+Hard choice：
+
+[
+s_j=\arg\max_{t\in C_j}
+\left[(1-\alpha)r_{j,t}+\alpha z_t\right].
+]
+
+Soft 与 hard来自同一个 cell categorical family，但**soft distribution不进入 detector RGB forward/backward**。
+
+## 9.4 Counterfactual detector utility
+
+对抽样 cell (j) 的候选 (t\in C_j)，固定其他 cells：
+
+[
+S_{j\rightarrow t}
+==================
+
+(S\setminus{s_j})\cup{t}.
+]
+
+EMA detector teacher给出：
+
+[
+c_{j,t}
+=======
+
+\operatorname{stopgrad}
+L_{\text{det}}\left(S_{j\rightarrow t}\right).
+]
+
+构造 teacher preference：
+
+[
+q^*_{j,t}
+=========
+
+\operatorname{softmax}*{t\in C_j}
+(-c*{j,t}/\tau_u).
+]
+
+Utility distillation：
+
+[
+L_{\text{cf}}
+=============
+
+-\frac1{|\mathcal J|}
+\sum_{j\in\mathcal J}
+\sum_{t\in C_j}
+q^**{j,t}\log\pi*\theta(t\mid C_j).
+]
+
+## 9.5 Detector
+
+保持官方：
+
+[
+L_{\text{det}}
+==============
+
+L_{\text{cls}}+L_{\text{reg}}.
+]
+
+## 9.6 总目标与梯度路由
+
+数值上：
+
+[
+L
+=
+
+L_{\text{det}}
++
+1.0L_{\text{state}}
++
+0.25L_{\text{transition}}
++
+1.0L_{\text{cf}}.
+]
+
+但通过 stop-gradient/param ownership分离：
+
+[
+\nabla_{\theta_{\text{coarse}}}L
+================================
+
+\nabla(L_{\text{state}}+0.25L_{\text{transition}}),
+]
+
+[
+\nabla_{\theta_{\text{scorer}}}L
+================================
+
+\nabla(0.25L_{\text{transition}}+L_{\text{cf}}),
+]
+
+[
+\nabla_{\theta_{\text{detector}}}L
+==================================
+
+\nabla L_{\text{det}}.
+]
+
+不需要 PCGrad 或 GradNorm 起步，因为三组主梯度大部分已显式解耦。
+
+## 9.7 单一运行 schedule
+
+* 0–10% successful steps：`alpha=0`，exact uniform；训练 coarse + detector。
+* 10–25%：仍以 uniform作为 hard policy；开始每 16 steps 采样 4 个 cell做 CF distillation。
+* 25–60%：alpha 从 0 平滑升至 1，只发生 cell 内局部翻转。
+* 60–100%：alpha=1；继续 sparse CF更新。
+* EMA、scheduler只在 successful optimizer step后推进。
+
+---
+
+# 10. 核心代码 patch
+
+以下代码是可落地的核心实现，不声称已在该仓库环境执行；需要按现有 import 和返回字典做机械接线。
+
+## 10.1 统一 exact-uniform，并加入 coverage-preserving decoder
+
+```python
+# opentad/models/duca/structured_selection.py
+
+from dataclasses import dataclass
+import torch
+
+
+def exact_uniform_positions(
+    valid_len: int,
+    k: int,
+    *,
+    device: torch.device,
+) -> torch.Tensor:
+    valid_len = int(valid_len)
+    k = min(int(k), valid_len)
+    if valid_len <= 0 or k <= 0:
+        return torch.empty(0, dtype=torch.long, device=device)
+    if k == 1:
+        return torch.zeros(1, dtype=torch.long, device=device)
+    return torch.linspace(
+        0,
+        valid_len - 1,
+        steps=k,
+        device=device,
+        dtype=torch.float32,
+    ).round().long()
+
+
+@dataclass(frozen=True)
+class CellSelectionOutput:
+    selected_positions: torch.Tensor       # [B,K], -1 padded
+    hard_occupancy: torch.Tensor           # [B,T]
+    candidate_positions: torch.Tensor      # [B,K,M], -1 padded
+    candidate_mask: torch.Tensor           # [B,K,M]
+    candidate_logits: torch.Tensor         # [B,K,M]
+    candidate_probs: torch.Tensor          # [B,K,M]
+    hard_choices: torch.Tensor             # [B,K]
+    uniform_positions: torch.Tensor        # [B,K], -1 padded
+
+
+def _anchor_cells(
+    valid_len: int,
+    k: int,
+    *,
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    anchors = exact_uniform_positions(valid_len, k, device=device)
+    if anchors.numel() == 1:
+        return (
+            anchors,
+            anchors.new_zeros(1),
+            anchors.new_full((1,), valid_len - 1),
+        )
+
+    midpoint = torch.div(
+        anchors[:-1] + anchors[1:],
+        2,
+        rounding_mode="floor",
+    )
+    left = torch.cat((anchors.new_zeros(1), midpoint + 1))
+    right = torch.cat((midpoint, anchors.new_full((1,), valid_len - 1)))
+
+    if not bool(((left <= anchors) & (anchors <= right)).all()):
+        raise RuntimeError("uniform anchor escaped its coverage cell")
+    if not bool((left[1:] == right[:-1] + 1).all()):
+        raise RuntimeError("coverage cells must partition the valid prefix")
+    return anchors, left, right
+
+
+def coverage_preserving_cell_select(
+    policy_logits: torch.Tensor,
+    valid_mask: torch.Tensor,
+    *,
+    k: int,
+    alpha: float,
+    temperature: float = 0.7,
+) -> CellSelectionOutput:
+    if policy_logits.ndim != 2:
+        raise ValueError("policy_logits must be [B,T]")
+    valid = valid_mask.to(device=policy_logits.device, dtype=torch.bool)
+    if valid.shape != policy_logits.shape:
+        raise ValueError("valid_mask must match policy_logits")
+
+    batch, temporal_len = policy_logits.shape
+    specs = []
+    max_width = 1
+    for b in range(batch):
+        valid_positions = torch.nonzero(valid[b], as_tuple=False).flatten()
+        n = int(valid_positions.numel())
+        if not torch.equal(
+            valid_positions,
+            torch.arange(n, device=valid.device),
+        ):
+            raise ValueError("cell policy requires a contiguous valid prefix")
+        kb = min(int(k), n)
+        anchors, left, right = _anchor_cells(n, kb, device=valid.device)
+        max_width = max(max_width, int((right - left + 1).max().item()))
+        specs.append((n, kb, anchors, left, right))
+
+    candidate_positions = torch.full(
+        (batch, int(k), max_width),
+        -1,
+        dtype=torch.long,
+        device=policy_logits.device,
+    )
+    candidate_mask = torch.zeros_like(candidate_positions, dtype=torch.bool)
+    uniform_positions = torch.full(
+        (batch, int(k)),
+        -1,
+        dtype=torch.long,
+        device=policy_logits.device,
+    )
+
+    for b, (_, kb, anchors, left, right) in enumerate(specs):
+        uniform_positions[b, :kb] = anchors
+        for j in range(kb):
+            row = torch.arange(
+                int(left[j].item()),
+                int(right[j].item()) + 1,
+                device=policy_logits.device,
+            )
+            candidate_positions[b, j, : row.numel()] = row
+            candidate_mask[b, j, : row.numel()] = True
+
+    safe = candidate_positions.clamp_min(0)
+    dense = policy_logits[:, None, :].expand(-1, int(k), -1)
+    learned = torch.gather(dense, 2, safe)
+
+    count = candidate_mask.sum(-1, keepdim=True).clamp_min(1)
+    masked = learned.masked_fill(~candidate_mask, 0.0)
+    mean = masked.sum(-1, keepdim=True) / count
+    centered = (learned - mean).masked_fill(~candidate_mask, 0.0)
+    var = centered.square().sum(-1, keepdim=True) / count
+    learned = centered / var.clamp_min(1.0e-6).sqrt()
+
+    reference = -(
+        candidate_positions - uniform_positions[:, :, None]
+    ).abs().to(policy_logits.dtype)
+    mixed = (1.0 - float(alpha)) * reference + float(alpha) * learned
+    mixed = mixed.masked_fill(~candidate_mask, -1.0e4)
+
+    probs = torch.softmax(mixed / float(temperature), dim=-1)
+    choices = mixed.argmax(dim=-1)
+    selected = torch.gather(
+        candidate_positions,
+        2,
+        choices[:, :, None],
+    ).squeeze(-1)
+
+    slot_valid = uniform_positions >= 0
+    selected = selected.masked_fill(~slot_valid, -1)
+    hard = policy_logits.new_zeros(batch, temporal_len)
+    hard.scatter_(
+        1,
+        selected.clamp_min(0),
+        slot_valid.to(policy_logits.dtype),
+    )
+
+    if float(alpha) == 0.0 and not torch.equal(
+        selected[slot_valid],
+        uniform_positions[slot_valid],
+    ):
+        raise RuntimeError("alpha=0 must be exact uniform")
+
+    return CellSelectionOutput(
+        selected_positions=selected,
+        hard_occupancy=hard,
+        candidate_positions=candidate_positions,
+        candidate_mask=candidate_mask,
+        candidate_logits=mixed,
+        candidate_probs=probs,
+        hard_choices=choices,
+        uniform_positions=uniform_positions,
+    )
+```
+
+所有旧 midpoint reference 必须删除并调用 `exact_uniform_positions()`。
+
+## 10.2 修正 coverage 和 diagnostic score
+
+```python
+# opentad/models/duca/transition_only.py
+
+def local_boundary_coverage_loss(
+    soft_occupancy,
+    boundary_target,
+    valid_mask,
+    *,
+    radius: int,
+):
+    valid = valid_mask.to(dtype=torch.bool, device=soft_occupancy.device)
+    with torch.cuda.amp.autocast(enabled=False):
+        occupancy = soft_occupancy.float().clamp(0.0, 1.0 - 1.0e-6)
+        occupancy = occupancy.masked_fill(~valid, 0.0)
+
+        # log probability that no position in the neighborhood is selected.
+        log_not_selected = torch.log1p(-occupancy)
+        kernel = occupancy.new_ones((1, 1, 2 * int(radius) + 1))
+        log_none_local = torch.nn.functional.conv1d(
+            log_not_selected[:, None, :],
+            kernel,
+            padding=int(radius),
+        ).squeeze(1)
+
+        p_cover = (-torch.expm1(log_none_local)).clamp(1.0e-8, 1.0)
+        target = boundary_target.float().masked_fill(~valid, 0.0)
+        target_mass = target.sum(1, keepdim=True)
+        target = torch.where(
+            target_mass > 0,
+            target / target_mass.clamp_min(1.0e-8),
+            target,
+        )
+        active = target_mass.squeeze(1) > 0
+        if not bool(active.any()):
+            return soft_occupancy.sum() * 0.0
+        return (-(target * torch.log(p_cover)).sum(1)[active].mean()).to(
+            soft_occupancy.dtype
+        )
+```
+
+```python
+# tools/bata/export_duca_selection_quality.py
+
+"raw_abs_delta_scores": _strict_float_row(
+    scores.get("abs_delta_p_action"), idx, valid_len
+),
+"hand_transition_scores": _strict_float_row(
+    scores.get("transition_score"), idx, valid_len
+),
+```
+
+Analyzer 分别读两个 key，禁止再将 compound proxy标为 pure delta。
+
+## 10.3 Counterfactual utility loss
+
+```python
+# opentad/models/duca/counterfactual_utility.py
+
+import torch
+import torch.nn.functional as F
+
+
+def counterfactual_choice_distillation_loss(
+    candidate_logits: torch.Tensor,   # [B,K,M]
+    teacher_costs: torch.Tensor,      # [B,K,M], inf for unevaluated
+    candidate_mask: torch.Tensor,     # [B,K,M]
+    sampled_cell_mask: torch.Tensor,  # [B,K]
+    *,
+    utility_temperature: float = 0.25,
+) -> torch.Tensor:
+    valid = (
+        candidate_mask
+        & torch.isfinite(teacher_costs)
+        & sampled_cell_mask[:, :, None]
+    )
+    active = valid.sum(dim=-1) >= 2
+    if not bool(active.any()):
+        return candidate_logits.sum() * 0.0
+
+    costs = teacher_costs.detach().float()
+    teacher_logits = (-costs / float(utility_temperature)).masked_fill(
+        ~valid, -1.0e4
+    )
+    teacher_prob = torch.softmax(teacher_logits, dim=-1)
+
+    student_log_prob = F.log_softmax(
+        candidate_logits.float().masked_fill(~valid, -1.0e4),
+        dim=-1,
+    )
+    per_cell = -(teacher_prob * student_log_prob).sum(dim=-1)
+    return per_cell[active].mean().to(candidate_logits.dtype)
+```
+
+## 10.4 Integration 合同
+
+`DucaOnlineFrameSelector.forward_train()` 应返回：
+
+```python
+{
+    "inputs": hard_selected_frames,
+    "masks": selected_masks,
+    "metas": detector_grid_metas,
+    "gt_segments": gt_on_fixed_uniform_grid,
+    "gt_labels": gt_labels,
+    "losses": {
+        "actionness_bce_loss": ...,
+        "transition_distribution_loss": ...,
+        "counterfactual_utility_loss": ...,
+    },
+    "selector_outputs": {
+        "acquisition_positions": cell_out.selected_positions,
+        "detector_grid_positions": cell_out.uniform_positions,
+        "candidate_positions": cell_out.candidate_positions,
+        "candidate_logits": cell_out.candidate_logits,
+        "candidate_mask": cell_out.candidate_mask,
+    },
+}
+```
+
+Metadata 必须区分：
+
+```python
+meta["duca_acquisition_positions_original_time"] = actual_positions
+meta["selected_axis_to_true_time_dense_index"] = uniform_anchor_positions
+meta["detector_grid_kind"] = "fixed_exact_uniform_cells"
+```
+
+主配置改为：
+
+```python
+model = dict(
+    frame_selector=dict(
+        acquisition_policy="coverage_preserving_cell_offset",
+        detector_gradient_mode="none",
+        inference_policy_alpha=1.0,
+        soft_max_gap_loss_enabled=False,
+        remap_gt_to_selected_axis=True,  # 但使用 fixed detector grid anchors
+        loss_weights=dict(
+            actionness=1.0,
+            transition=0.25,
+            transition_boundary=0.0,
+            counterfactual_utility=1.0,
+        ),
+    )
+)
+```
+
+## 10.5 Optimizer groups
+
+在现有 `parameter_lr()` 中新增 scorer prefix即可；当前 exact coverage机制可以保留：
+
+```python
+if name.startswith(
+    "frame_selector.adapter.cell_utility_scorer."
+):
+    return 1.0e-4
+```
+
+建议保留：
+
+* coarse trunk：`2.5e-5`
+* action head：`5e-5`
+* cell utility scorer：`1e-4`
+* detector：现有 `1e-4`
+* VideoMAE adapter：现有 `2e-4`
+* clip grad：1.0
+
+## 10.6 必须新增的测试
+
+```python
+def test_cell_policy_alpha_zero_is_exact_uniform():
+    out = coverage_preserving_cell_select(
+        torch.randn(2, 768),
+        torch.ones(2, 768, dtype=torch.bool),
+        k=384,
+        alpha=0.0,
+    )
+    expected = torch.linspace(0, 767, 384).round().long()
+    assert torch.equal(out.selected_positions[0].cpu(), expected)
+
+
+def test_cell_policy_has_no_large_hole():
+    logits = torch.randn(1, 768) * 100.0
+    out = coverage_preserving_cell_select(
+        logits,
+        torch.ones_like(logits, dtype=torch.bool),
+        k=384,
+        alpha=1.0,
+    )
+    p = out.selected_positions[0]
+    holes = torch.cat(
+        (
+            p[:1],
+            p[1:] - p[:-1] - 1,
+            p.new_tensor([767]) - p[-1:],
+        )
+    )
+    assert int(holes.max()) <= 3
+
+
+def test_detector_grid_is_independent_of_cell_offsets():
+    left = coverage_preserving_cell_select(
+        left_biased_logits, valid, k=384, alpha=1.0
+    )
+    right = coverage_preserving_cell_select(
+        right_biased_logits, valid, k=384, alpha=1.0
+    )
+    assert not torch.equal(
+        left.selected_positions,
+        right.selected_positions,
+    )
+    assert torch.equal(
+        left.uniform_positions,
+        right.uniform_positions,
+    )
+
+
+def test_counterfactual_loss_updates_only_scorer():
+    loss = counterfactual_choice_distillation_loss(...)
+    loss.backward()
+    assert grad_sum(model.frame_selector.cell_utility_scorer) > 0
+    assert grad_sum(model.frame_selector.raw_actionness_source) == 0
+    assert grad_sum(model.backbone) == 0
+    assert grad_sum(model.rpn_head) == 0
+
+
+def test_local_boundary_coverage_is_nonnegative_and_saturating():
+    one = ...
+    many = ...
+    assert local_boundary_coverage_loss(one, target, valid, radius=4) >= 0
+    assert local_boundary_coverage_loss(many, target, valid, radius=4) >= 0
+
+
+def test_reported_raw_delta_is_exact_abs_delta():
+    payload = _actionness_transition_payload(p_action, valid)
+    exported = make_record(payload)
+    assert exported["raw_abs_delta_scores"] == pytest.approx(
+        payload["abs_delta_p_action"].tolist()
+    )
+```
+
+Formal real-model test还必须增加：
+
+* baseline hard set；
+* 可行 cell alternative；
+* real `cls_loss+reg_loss`；
+* utility preference；
+* scorer gradient；
+* optimizer step；
+* step 后 preference loss下降。
+
+---
+
+# 11. 不超过 8 个决定性实验
+
+## Gate 1：当前 bridge 的 hard one-swap alignment
+
+**因果假设**
+`structured_zero_forward` 的梯度方向与真实 hard replacement utility正相关。
+
+**固定项**
+固定 checkpoint、detector、窗口、K、GT；只比较真实 hard swap 与 surrogate。
+
+**变量**
+current bridge vs CellCF utility scorer。
+
+**统计单位**
+cell nested in window nested in original video；video-cluster bootstrap。
+
+**指标与通过阈值**
+
+* Spearman ≥0.25，95% CI lower >0.10；
+* sign accuracy ≥60%，CI lower >55%。
+
+**失败动作**
+当前 bridge立刻退出主方法；不允许再仅凭非零梯度运行 beta矩阵。
+
+---
+
+## Gate 2：pure raw delta vs compound proxy vs learned scorer
+
+**因果假设**
+ASFormer hidden 和 learned residual增加了 deploy-visible transition information。
+
+**固定项**
+同一 checkpoint、同一 records、同一 GT后验评估。
+
+**变量**
+
+* pure `abs(delta p_action)`
+* `abs_delta + uncertainty_peak`
+* learned scorer
+* zero-init residual CellCF scorer
+
+**指标**
+
+* boundary AP/AUROC r1、r4；
+* cell hard-utility Spearman。
+
+**通过阈值**
+
+Learned必须同时超过 pure和compound proxy：
+
+* AP r1/r4 relative gain ≥5%；
+* cluster CI lower >0；
+* utility Spearman ≥0.20。
+
+**失败动作**
+删除 learned transition MLP，退回 raw residual baseline；不再声称 hidden带来增益。
+
+---
+
+## Gate 3：matched standalone-vs-joint coarse quality
+
+**因果假设**
+joint training没有破坏 coarse action state。
+
+**固定项**
+
+* 统一 target helper；
+* 相同窗口、augmentation、steps、LR、checkpoint criterion；
+* 相同 spatial stem与ASFormer。
+
+**变量**
+
+* standalone coarse；
+* uniform-phase joint coarse；
+* full CellCF joint coarse。
+
+**指标**
+
+AUROC、AUPRC、Brier、ECE；original-video cluster。
+
+**通过阈值**
+
+* joint AUROC ≥ standalone −0.01；
+* joint AUPRC ≥ standalone −0.01；
+* train-only calibrated ECE ≤0.10。
+
+**失败动作**
+不提交任何 learned full train；延长/修正 coarse warmup。若仍失败，KILL粗状态路线。
+
+---
+
+## Gate 4：coverage-preserving policy vs global top-k
+
+**因果假设**
+当前主要失败来自可行集，而不是 score本身。
+
+**固定项**
+同一 dense utility scores，不重训 scorer。
+
+**变量**
+
+* current global structured G15；
+* exact uniform；
+* CellCF one-per-cell。
+
+**指标**
+
+r0/r1、双端点 r1、endpoint distance、max hole、shortest-duration quartile coverage。
+
+**通过阈值**
+
+* CellCF max hole ≤3；
+* r1 recall ≥ uniform −0.5pp；
+* endpoint distance ≤ uniform +0.03；
+* exact-r0 不要求超过 global top-k。
+
+**失败动作**
+若连 selector-only coverage都不能保住，停止架构实现并修复 decoder。
+
+---
+
+## Gate 5：same-selected-frames geometry control
+
+**因果假设**
+current selected-axis geometry是高 tIoU损失来源之一。
+
+**固定项**
+完全相同 selected frames和模型初始化。
+
+**变量**
+
+1. current actual-selected-axis remap；
+2. fixed uniform-cell detector grid；
+3. repository physical-grid head diagnostic。
+
+**指标**
+
+Avg-mAP、mAP@0.7、short-action mAP@0.7。
+
+**通过阈值**
+
+推荐 fixed-cell grid相对三者最佳值：
+
+* Avg drop ≤0.2；
+* @0.7 drop ≤0.2。
+
+若 current selected-axis 比 fixed-cell低 ≥0.5 @0.7，则确认 geometry blocker。
+
+**失败动作**
+若 fixed-cell明显更差，禁止将其进入完整训练，转用 physical-grid，但仍保留 one-per-cell selection。
+
+---
+
+## Gate 6：same-commit exact-uniform vs corrected learned fixed-384
+
+**因果假设**
+在 coverage和geometry均匹配时，deploy-visible learned offsets能优于 uniform。
+
+**固定项**
+
+* commit；
+* split；
+* K/effective-K；
+* detector；
+* fixed detector grid；
+* epochs/optimizer steps；
+* LR；
+* EMA；
+* checkpoint criterion；
+* evaluator；
+* seeds。
+
+**变量**
+
+* exact uniform；
+* CellCF learned。
+
+**指标**
+
+三 seed，重算 dataset mAP 的 original-video bootstrap。
+
+**通过阈值**
+
+* mean Avg-mAP gain ≥+0.50；
+* paired CI lower >0；
+* mAP@0.7 drop UCB ≤0.30；
+* shortest quartile @0.7 drop UCB ≤0.30。
+
+先运行一 seed kill pilot；若 gain <+0.3，停止另外两 seed。
+
+**失败动作**
+
+Fixed-384 learned不再是主方法；dynamic MUST永久锁定。
+
+---
+
+## Gate 7：matched GT-boundary oracle diagnostic
+
+**因果假设**
+历史约 11点 oracle gap主要不是 backend/protocol差异。
+
+**固定项**
+
+与 Gate 6 完全相同，只将 selector替换为明确标注的 test-GT boundary diagnostic。
+
+**指标**
+
+oracle−uniform Avg-mAP、@0.7、short-action，至少两个 seed。
+
+**解释阈值**
+
+* matched gap <3：历史约 11点主要由 protocol/backend差异放大；
+* matched gap ≥8且稳定：GT boundary allocation在当前 backend仍有较大 privileged headroom；
+* 该实验无论结果如何都不能证明可学习性。
+
+**失败动作**
+
+不存在“方法失败”；它只裁定 oracle upper bound的当前有效性。不得进入 deployable主表。
+
+---
+
+## Gate 8：trained-checkpoint full-stack accuracy-cost
+
+**因果假设**
+learned selector的精度收益足以抵消 full dense coarse probe开销。
+
+**固定项**
+
+同硬件、batch=1、相同解码/NMS、预热、测量顺序和视频 manifest。
+
+**比较**
+
+* dense 768；
+* exact-uniform 384；
+* CellCF 384。
+
+**指标**
+
+* end-to-end p50/p95 latency；
+* throughput；
+* peak memory；
+* energy/video；
+* Avg-mAP、@0.7；
+* selector overhead；
+* total-cost Pareto。
+
+**通过阈值**
+
+* Gate 6 精度门先通过；
+* 相对 dense：p50 saving ≥20%，p95 saving ≥15%；
+* energy saving ≥15%；
+* selector overhead ≤ gross heavy-compute saving 的30%；
+* CellCF不得被 exact-uniform在 accuracy与total latency上同时支配。
+
+**失败动作**
+
+降级为 accuracy-only sampling diagnostic，禁止“高效 TAD”主张。
+
+---
+
+# 12. 论文口径
+
+## 现在可以说
+
+1. 当前代码实现的是**离线、完整窗口可见、pre-backbone fixed-K temporal acquisition**，不是 Online TAD。
+2. Transition-only scorer没有使用 absolute hidden、raw high-resolution RGB descriptor或 inference GT。
+3. 当前 structured DP在代码层面共享 hard/soft exact-K/max-hole feasible family。
+4. 当前 train/test coordinate metadata和 post-NMS前 true-time inverse map存在明确合同。
+5. 历史 GT-boundary oracle约 76–77 是有机制级复现实证支持的 privileged upper-bound。
+6. 当前旧 learned checkpoint 的 selection quality不优：它获得少量 exact hits，但大幅损失 r1 coverage。
+7. 当前代码并未证明 learned fixed-384超过 same-commit exact uniform。
+
+## 现在不能说
+
+1. “Learned 比 oracle严格低 13点。”
+2. “Oracle headroom全部可由 low-cost coarse state学习。”
+3. “Detector bridge有效。”
+4. “非零 detector gradient说明 hard utility对齐。”
+5. “Learned transition scorer弱于 pure `abs(delta p_action)`。”当前代码只支持弱于 compound proxy。
+6. “Official ASFormer end-to-end raw-video model。”实际是 official temporal module + custom spatial stem。
+7. “Official AdaTAD源码完全不变。”ActionFormer/SingleStage/AnchorFreeHead等已扩展；只能说核心 head config和未激活分支下的主要损失/NMS语义保持。
+8. “Fixed-K learned selector是 efficiency Pareto。”它比 uniform多一个 dense coarse probe，必须有真实 accuracy gain和full-stack成本证据。
+
+## 若结果不翻转
+
+若 CellCF 在 matched fixed-384 下仍不能超过 exact uniform：
+
+* DUCA 不应继续作为主方法；
+* dynamic MUST、X3D/SlowFast、多 detector 泛化全部停止；
+* GT oracle仅保留 appendix privileged diagnostic；
+* exact uniform保留为强 baseline；
+* 当前工作最多降级为：
+
+  * 负结果/机制审计；
+  * irregular pre-backbone sampling failure analysis；
+  * coverage-preserving sampling baseline；
+  * 不应包装成 learned task-aware acquisition 主贡献。
+
+---
+
+> **在现有证据下，最可信裁决是：这三个数字目前不能作严格数值比较。**
+
+能够推翻这一裁决的最小实验是：在 `1fc7037358e1141f7555ad87d1edd9128ce2e6a5` 的同一 backend、split、`T=768/K=384`、effective-K、detector grid、13200 successful steps、LR、EMA、checkpoint policy和 evaluator 下，运行 **exact-uniform、corrected learned、diagnostic-only GT-boundary oracle** 三个 matched arms；只有该三方控制产生稳定的多 seed差距后，才允许进行严格数值分解。

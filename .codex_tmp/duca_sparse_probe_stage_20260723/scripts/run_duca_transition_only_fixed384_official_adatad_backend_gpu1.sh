@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  echo "[DUCA_TRANSITION_ONLY][FAIL] $*" >&2
+  exit 1
+}
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${REPO_ROOT}"
+
+BASE="${BASE:-/data/run01/sczc063/yuzibo}"
+PRECHECK_ONLY="${PRECHECK_ONLY:-1}"
+FULLTRAIN_CANDIDATE="${FULLTRAIN_CANDIDATE:-0}"
+CONFIG="${CONFIG:-configs/adatad/thumos/duca_transition_only_fixed384_official_adatad_backend_full_train.py}"
+VALIDATOR="${VALIDATOR:-tools/bata/validate_duca_transition_only_fixed384_official_adatad_backend.py}"
+PROOF="${PROOF:-tools/bata/run_duca_transition_only_official_adatad_one_step_grad_proof.py}"
+COST_PROFILER="${COST_PROFILER:-tools/bata/profile_duca_transition_only_cost.py}"
+FORMAL_GATE="${FORMAL_GATE:-tools/bata/run_duca_transition_only_formal_full_model_gate.py}"
+DUCA_RUN_FORMAL_FULL_MODEL_GATE="${DUCA_RUN_FORMAL_FULL_MODEL_GATE:-0}"
+RUN_TAG="${RUN_TAG:-duca_transition_only_fixed384_$(date +%Y%m%d_%H%M%S_%z)}"
+RUN_ID="${RUN_ID:-0}"
+SEED="${SEED:-0}"
+PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
+ADATAD_PRETRAIN_PATH="${ADATAD_PRETRAIN_PATH:-${BASE}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
+export C3_OFFICIAL_ACTION_SEG_REPOS="${C3_OFFICIAL_ACTION_SEG_REPOS:-${BASE}/projects/external_official_action_segmentation_repos_20260702}"
+
+export DUCA_ONLINE_BUDGET=384
+export DUCA_OFFICIAL_ADATAD_BUDGET=384
+export DUCA_ONLINE_DENSE_WINDOW_SIZE=768
+export DUCA_VALIDATOR_MAX_BUDGET=384
+export DUCA_BUDGET_CURVE_MODE=0
+export DUCA_OFFICIAL_ADATAD_END_EPOCH=132
+export DUCA_LOSS_SCHEDULE_STEPS_PER_EPOCH=100
+export DUCA_LOSS_SCHEDULE_TOTAL_STEPS=13200
+export DUCA_PROFILE_RUNTIME="${DUCA_PROFILE_RUNTIME:-0}"
+export YUZIBO_ROOT="${YUZIBO_ROOT:-${BASE}}"
+export HOME="${HOME:-${BASE}/tmp/home}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${BASE}/tmp/xdg_cache}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${BASE}/tmp/xdg_config}"
+
+mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" logs
+
+if [[ "${DUCA_RUN_FORMAL_FULL_MODEL_GATE}" == "1" || "${PRECHECK_ONLY}" != "1" ]]; then
+  [[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal CUDA work must run inside Slurm"
+  [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]] || fail "Slurm did not expose an allocated GPU"
+fi
+
+[[ -x "${PYTHON}" ]] || fail "Python environment missing: ${PYTHON}"
+[[ -f "${CONFIG}" ]] || fail "config missing: ${CONFIG}"
+[[ -f "${VALIDATOR}" ]] || fail "validator missing: ${VALIDATOR}"
+[[ -f "${PROOF}" ]] || fail "one-step proof missing: ${PROOF}"
+[[ -f "${COST_PROFILER}" ]] || fail "cost profiler missing: ${COST_PROFILER}"
+[[ -f "${FORMAL_GATE}" ]] || fail "formal full-model gate missing: ${FORMAL_GATE}"
+[[ -f "${C3_OFFICIAL_ACTION_SEG_REPOS}/ASFormer/model.py" ]] \
+  || fail "official ASFormer source missing under ${C3_OFFICIAL_ACTION_SEG_REPOS}"
+SOURCE_PATH="${C3_OFFICIAL_ACTION_SEG_REPOS}/ASFormer/model.py"
+CURRENT_HEAD="$(git rev-parse HEAD 2>/dev/null)" || fail "cannot resolve current git HEAD"
+if [[ "${DUCA_RUN_FORMAL_FULL_MODEL_GATE}" == "1" || "${PRECHECK_ONLY}" != "1" ]]; then
+  GIT_STATUS="$(git status --porcelain --untracked-files=normal)" || fail "cannot inspect git tree"
+  [[ -z "${GIT_STATUS}" ]] || fail "formal gate/full train requires a clean git tree"
+  [[ -f "${ADATAD_PRETRAIN_PATH}" ]] || fail "AdaTAD pretrain missing: ${ADATAD_PRETRAIN_PATH}"
+fi
+
+module load cuda/11.8 >/dev/null 2>&1 || true
+module load miniforge3/24.11 >/dev/null 2>&1 || true
+
+RUN_DIR="${RUN_DIR:-logs/${RUN_TAG}}"
+WORK_DIR="${WORK_DIR:-exps/thumos/adatad/duca_transition_only_fixed384/${RUN_TAG}}"
+mkdir -p "${RUN_DIR}" "${WORK_DIR}"
+
+echo "[DUCA_TRANSITION_ONLY] repo=${REPO_ROOT}"
+echo "[DUCA_TRANSITION_ONLY] head=$(git rev-parse HEAD 2>/dev/null || echo nogit)"
+echo "[DUCA_TRANSITION_ONLY] task=offline_tad selector=transition_only dense=768 budget=384 max_hole=15"
+echo "[DUCA_TRANSITION_ONLY] official_asformer_root=${C3_OFFICIAL_ACTION_SEG_REPOS}"
+echo "[DUCA_TRANSITION_ONLY] precheck_only=${PRECHECK_ONLY} fulltrain_candidate=${FULLTRAIN_CANDIDATE}"
+
+bash -n "${BASH_SOURCE[0]}"
+"${PYTHON}" -m py_compile \
+  "${CONFIG}" \
+  "${VALIDATOR}" \
+  "${PROOF}" \
+  "${COST_PROFILER}" \
+  "${FORMAL_GATE}" \
+  opentad/models/duca/transition_only.py \
+  opentad/models/duca/acquisition.py \
+  opentad/models/selectors/duca_online_frame_selector.py \
+  tools/bata/train_lowres_action_probe.py
+"${PYTHON}" "${VALIDATOR}" --config "${CONFIG}" --output-json "${RUN_DIR}/contract_validation.json"
+"${PYTHON}" -m pytest \
+  tests/test_duca_transition_only.py \
+  tests/test_duca_counterfactual_utility.py \
+  tests/test_duca_online_coarse_probe_actionness.py \
+  tests/test_duca_official_asformer_hidden.py \
+  tests/test_duca_optimizer_exact_coverage.py \
+  tests/test_duca_transition_only_fixed384_official_adatad_backend.py \
+  tests/test_duca_transition_only_optimizer_groups.py \
+  tests/test_duca_transition_only_p0_matrix.py \
+  tests/test_duca_transition_only_cost_profile.py \
+  -q
+
+PROOF_DEVICE=cpu
+if "${PYTHON}" -c 'import torch; raise SystemExit(0 if torch.cuda.is_available() else 1)'; then
+  PROOF_DEVICE=cuda
+fi
+"${PYTHON}" "${PROOF}" \
+  --config "${CONFIG}" \
+  --device "${PROOF_DEVICE}" \
+  --output-json "${RUN_DIR}/one_step_grad_proof.json"
+"${PYTHON}" "${COST_PROFILER}" \
+  --config "${CONFIG}" \
+  --official-repos-root "${C3_OFFICIAL_ACTION_SEG_REPOS}" \
+  --device "${PROOF_DEVICE}" \
+  --temporal-len 16 \
+  --budget 8 \
+  --height 16 \
+  --width 16 \
+  --probe-spatial-size 16 \
+  --warmup 1 \
+  --repeats 2 \
+  --output "${RUN_DIR}/cost_profile_smoke.json"
+
+if [[ "${DUCA_RUN_FORMAL_FULL_MODEL_GATE}" == "1" ]]; then
+  "${PYTHON}" "${FORMAL_GATE}" \
+    --config "${CONFIG}" \
+    --checkpoint "${ADATAD_PRETRAIN_PATH}" \
+    --official-repos-root "${C3_OFFICIAL_ACTION_SEG_REPOS}" \
+    --device cuda \
+    --output-json "${RUN_DIR}/formal_full_model_gate.json"
+fi
+
+if [[ "${PRECHECK_ONLY}" == "1" ]]; then
+  echo "[DUCA_TRANSITION_ONLY] PRECHECK_ONLY complete"
+  exit 0
+fi
+
+[[ "${FULLTRAIN_CANDIDATE}" == "1" ]] || fail "FULLTRAIN_CANDIDATE=1 is required beyond precheck"
+fail "single-route full training is retired; use prepare/submit_duca_transition_only_p0_suite.sh"

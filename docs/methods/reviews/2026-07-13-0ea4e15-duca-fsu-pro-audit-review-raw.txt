@@ -1,0 +1,1660 @@
+# 1. 可见性证书
+
+## 1.1 固定审计对象
+
+* **仓库**：`yuzbo/OpenTAD_C3_CoarseClean_20260702`
+* **目标分支**：`codex/duca-transition-only-20260711`
+* **唯一代码审计提交**：`0ea4e15d08f2c4f92e4b927ea356f24f0a0b477d`
+* **提交信息**：`Fix exact-uniform policy reference`
+* **缺陷比较范围**：`8bfc0e549434591b9bf1a9cd5563deb0da388f92...0ea4e15d08f2c4f92e4b927ea356f24f0a0b477d`
+* **分支状态**：审计时该分支比 `0ea4e15` 领先 2 个提交；因此以下所有代码事实均严格绑定到 `0ea4e15`，不把分支 HEAD 当作审计版本。
+* **修复差异事实**：`0ea4e15` 只改动 6 个文件，核心代码修改只有 `transition_only.py` 中 uniform reference，其他改动是 gate、validator 和测试强化。
+
+## 1.2 实际读取的指定文件与关键位置
+
+行号均指 `0ea4e15` 文件行号。
+
+| 文件                                                       | 实际核验的关键函数/区段                                                                                                                                                                                                                          |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `opentad/models/duca/transition_only.py`                 | `balanced_binary_actionness_loss` 16–40；`build_transition_descriptors` 60–106；`DucaTransitionUtilityScorer` 109–131；`transition_utility_paths` 134–159；score normalization/uniform/homotopy 162–222；transition/coverage loss 225–277。 |
+| `opentad/models/duca/structured_selection.py`            | contract 25–45；hard Viterbi 48–94；soft forward-backward 97–173；`global_structured_topk` 176–218。                                                                                                                                      |
+| `opentad/models/duca/acquisition.py`                     | coarse-probe wrapper/profile 616–约 905；transition scoring 1387–1545；structured decode 1547–1647；acquisition 1648–1844；loss assembly 2517–2794。特别检查了 legacy stable reference 1584–1592。                                                |
+| `opentad/models/selectors/duca_online_frame_selector.py` | structured bridge 190–217；构造/adapter 约 220–522；`forward_train` 524–637；schedule 约 684–816；GT targets 834–954；test/select 990–1230；GT remap/metas 1540–1658。                                                                           |
+| `tools/bata/train_lowres_action_probe.py`                | `C3OfficialActionSegmentationProbe` 2045–约 2290；自定义 spatial stem 2092–2101；官方 ASFormer 构造 2124–2137；encoder hook/forward 2214–约 2290；输入缩放约 2600–2640。                                                                                 |
+| `opentad/models/detectors/actionformer.py`               | selector→backbone→projection→head train route 128–227；optimizer groups 约 280–378；component LR routing 约 330–367。                                                                                                                      |
+| `opentad/cores/optimizer.py`                             | pre-DDP freeze、parameter group build、missing/frozen/stale/duplicate 参数覆盖检查，全文读取。                                                                                                                                                      |
+| `tools/train.py`                                         | freeze、DDP、optimizer build、train engine 入口，全文读取。                                                                                                                                                                                      |
+| 5 个正式/对照配置                                               | 全文读取。正式配置明确固定 `T=768,K=384,G=15`、13200 预期 step、各 LR、loss 与 schedule。                                                                                                                                                                  |
+| formal gate、P0 validator、3 个测试文件                         | 全文读取；检查 exact-uniform、真实 VideoMAE/ActionFormer gradient gate、commit/config/source hash、schedule 和梯度所有权断言。                                                                                                                             |
+
+还读取了以下必要支撑文件：
+
+* `opentad/models/utils/truetime_geometry.py`
+* `opentad/models/dense_heads/actionformer_head.py`
+* `opentad/models/dense_heads/anchor_free_head.py`
+* `opentad/cores/train_engine.py`
+* AdaTAD 原始 base config
+* 上游 OpenTAD `ActionFormerHead`、`AnchorFreeHead`
+* 上游 ASFormer `model.py`。
+
+## 1.3 审计边界
+
+我能够进行 exact-commit 代码事实判断，也对小规模 `T/K/G` 情形独立枚举核验了 hard MAP、partition、slot marginal 和 occupancy 的一致性。
+
+我**没有**：
+
+* 访问或重跑用户集群上的 Job `1159395/1159414–1159417`；
+* 取得这些作业的 checkpoint 和原始训练日志；
+* 在当前提交上运行 CUDA formal full-model gate；
+* 运行 corrected replacement full training。
+
+因此，作业数字在下文标为“用户提供的实验事实”，而不是我独立复算的结果。
+
+---
+
+# 2. 一句话总裁决
+
+## **HOLD**
+
+**粗状态变化驱动的 pre-backbone 离线 TAD 去冗余假设仍值得一次严格受控的 P0 验证，但 `0ea4e15` 仍存在 direct-route 同类 uniform 残留、未经反事实验证的 detector surrogate、selected-axis 时间几何和全栈成本缺口，当前不能进入论文主实验或形成正面 claim。**
+
+---
+
+# 3. 当前实现事实图
+
+## 3.1 Forward 事实
+
+```text
+完整离线 RGB 窗口
+x_hi: [B, 1, 3, 768, 160, 160]
+        │
+        ├─ 当前系统中已完成 dense decode / 160×160 resize / 通常已 H2D
+        │
+        ▼
+缩放至 64×64
+x_lo: [B, 768, 3, 64, 64]
+        │
+        ▼
+自定义 Spatial Stem
+Conv 3→96, stride 2
+Conv 96→96, stride 2
+Global Average Pool
+        │
+        ▼
+f_spatial: [B, 96, 768]
+        │
+        ▼
+官方 ASFormer MyTransformer temporal module
+1 encoder + 1 decoder
+每个 encoder/decoder 各 num_layers=2
+        ├─ action logits: a ∈ R[B,768]
+        └─ forward hook 捕获 encoder hidden:
+           h ∈ R[B,768,96]
+        │
+        ▼
+Transition descriptor
+d_t = [
+  Δa, |Δa|,
+  Δentropy(a), |Δentropy(a)|,
+  Δh, |Δh|,
+  1-cos(h_t,h_{t-1})
+]
+d ∈ R[B,768,197]
+        │
+        ├─ auxiliary route: scorer(d), d 中 hidden 保持梯度
+        └─ policy route: scorer(stopgrad(d))
+        │
+        ▼
+u ∈ R[B,768]
+        │
+        ▼
+z_alpha =
+(1-alpha) normalize(z_uniform)
++ alpha normalize(u)
+        │
+        ▼
+Exact-K / max-unselected-hole DP
+K=384, G=15
+hard MAP positions: [B,384]
+soft slot marginal: [B,384,768]
+        │
+        ├─ hard gather，forward 真值
+        └─ training-only raw-pixel zero-forward bridge
+           hard + beta(soft_RGB - stopgrad(soft_RGB))
+        │
+        ▼
+VideoMAE-S Adapter, total_frames=384
+        ▼
+OpenTAD projection / neck / ActionFormerHead
+        ▼
+selected-axis prediction
+        ▼
+piecewise-linear inverse remap
+        ▼
+original-time prediction + NMS
+```
+
+### Coarse probe 的准确命名
+
+代码只复用了**官方 ASFormer temporal module**。RGB spatial stem、二分类输入/输出适配、单 decoder 配置、逐样本循环和 encoder forward hook 都是本仓库实现。官方 ASFormer 原本接收时序特征，并通过 encoder 与多个 decoder refinement 进行 action segmentation；当前构造为一个 decoder、每部分两层。
+
+因此诚实名称应为：
+
+> **custom low-resolution spatial stem + official ASFormer temporal module adapted for binary actionness**
+
+不能把整个模块称作“official ASFormer coarse probe”。ASFormer 论文的原始任务是动作分割而不是 raw-RGB TAD pre-backbone selection。([arXiv][1])
+
+## 3.2 Loss 与梯度所有权
+
+| Loss                                      |             更新 scorer | 更新 spatial stem | 更新 ASFormer encoder |   更新 decoder/action head |    更新 detector |
+| ----------------------------------------- | --------------------: | --------------: | ------------------: | -----------------------: | -------------: |
+| `actionness BCE`                          |                     否 |               是 |                   是 |                        是 |              否 |
+| `transition distribution`                 |                     是 |               是 |                   是 | 否；action logits 已 detach |              否 |
+| `local transition coverage`               |                     是 |               否 |                   否 |                        否 |              否 |
+| detector loss 经 `structured_zero_forward` |                     是 |               否 |                   否 |                        否 | detector 自身也更新 |
+| ActionFormer `cls/reg`                    | 仅通过 bridge 间接到 scorer |               否 |                   否 |                        否 |              是 |
+
+`transition_utility_paths()` 的代码事实是：
+
+```python
+descriptors = build_transition_descriptors(actionness_logits.detach(), hidden, valid)
+policy_scores = scorer(descriptors.detach())
+auxiliary_scores = scorer(descriptors)
+```
+
+所以：
+
+* transition auxiliary route 可更新 scorer、ASFormer encoder 和 spatial stem；
+* detector/policy route只更新 scorer；
+* action head不会被 transition 或 detector route 更新。
+
+### 是否可称为“联合协同训练”
+
+可以称：
+
+> **single-checkpoint joint multi-loss training with protected gradient routing**
+
+不能称：
+
+> **fully end-to-end detector–coarse representation co-adaptation**
+
+因为 detector signal 不会改变 coarse representation，只会改变最后的 utility scorer。它是“task-adapted acquisition score”，不是“detector-adapted coarse representation”。
+
+## 3.3 Detector loss 是否漏加或重复加
+
+没有发现实际 `cls_loss/reg_loss` 漏加或重复加。
+
+* selector 中名为 `detector_loss` 的项是零值占位；
+* 真实 detector losses 在 `ActionFormer.forward_train()` 中由 RPN head 返回；
+* selector losses 与 RPN losses 合并；
+* 最终 `cost` 对所有 leaf losses 求和。
+
+但零占位及配置中的 `loss_weights.detector=1.0` 容易制造审计歧义。应删除占位，或重命名为明确的 `selector_detector_bridge_regularizer`。
+
+## 3.4 优化器事实
+
+优化器覆盖逻辑是当前实现中相对可靠的一部分：
+
+* 所有 `requires_grad=True` 参数必须且只能出现一次；
+* missing、frozen、stale、duplicate 参数会 fail closed；
+* scorer、coarse trunk、action head 的 component LR 按参数名前缀真实分组；
+* 当前配置对应：
+
+  * scorer：`1e-4`
+  * action heads：`5e-5`
+  * coarse trunk：`2.5e-5`
+  * detector non-backbone：`1e-4`
+  * VideoMAE adapters：`2e-4`
+  * 其余 backbone 参数冻结。
+
+AMP overflow 时，selector schedule、LR scheduler 和 EMA 不推进；“successful optimizer step 后推进”的代码合同成立。
+
+## 3.5 坐标事实
+
+当前有三个轴：
+
+1. **dense/original axis**：`t∈[0,767]`
+2. **selected axis**：第 `k` 个选中帧，`k∈[0,K-1]`
+3. **seconds axis**：最终视频时间
+
+训练时：
+
+```text
+GT original axis
+  -> piecewise inverse map
+  -> selected-axis GT
+  -> ActionFormer loss
+```
+
+推理时：
+
+```text
+ActionFormer selected-axis predictions
+  -> piecewise forward map
+  -> original axis
+  -> seconds
+```
+
+映射函数本身是单调且可逆的 piecewise-linear coordinate adapter。
+
+但 **ActionFormer 内部的卷积、局部 receptive field、feature pyramid point stride、regression range 和 center sampling 仍把 selected rank 当等间隔时间**。后处理反变换不能撤销这种内部几何失真。
+
+## 3.6 成本事实
+
+当前方法是在模型图上 pre-backbone，但不是 pre-decode/pre-resize/pre-H2D：
+
+* 数据管线先解码 768 帧并缩放为 160×160；
+* selector 收到完整高分辨率 tensor 后，才在模型内缩到 64×64。
+
+因此它目前只明确减少 **VideoMAE heavy backbone compute**，不自动节省：
+
+* 全帧视频解码；
+* 160×160 dense augmentation/resize；
+* dense CPU memory traffic；
+* 通常也不节省 768 帧 H2D。
+
+---
+
+# 4. 逐行代码问题表
+
+这里的 P0 表示“在重跑昂贵正式实验前必须处理”，不一定意味着程序会崩溃。
+
+| 级别     | 文件:行号                                             | 性质        | 问题与后果                                                                                                                                                        | 必须修复                                                                                                               | 回归测试                                                                                           |
+| ------ | ------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| **P0** | `acquisition.py:1584–1592`                        | 代码事实      | legacy/direct `stable_selection` 仍使用 `(i+0.5)N/K-0.5` midpoint reference。transition-only 修好了，但 direct route 的 warmup 仍有同类退化风险。                               | 抽出唯一公共 `rounded_endpoint_reference_scores()`；所有 uniform、stable、control route 只能调用它。                                | direct-a5 在 `T=768,K=384` 的 warmup decoded positions 必须逐点等于 rounded linspace。                  |
+| **P0** | `selector.py:190–217`                             | 代码事实 + 推断 | raw-pixel soft-slot bridge 前向为 hard，反向却对应“对所有 slot 的像素凸组合做无穷小扰动”，不是 hard one-swap replacement。数值连通不等于 utility 对齐。                                            | 在 finite-difference correlation 通过前，禁止把 beta>0 当主方法。推荐替换为 hard feasible-swap utility distillation。                 | 真实 detector loss one-swap gain vs surrogate gradient：Spearman、sign agreement、top-swap recall。  |
+| **P0** | `transition_only.py:162–222`                      | 代码事实 + 推断 | learned/reference 均逐窗 z-normalize。对 `alpha=1` 的 hard MAP，正仿射缩放不改变 argmax；但在 homotopy 和 soft DP 中，它让任意微小随机波动以单位方差与 uniform prior 竞争，完全没有“score confidence”概念。 | 删除 score-level homotopy；改为 hard-path exposure mixture。增加 constant/noise scorer controls。                           | `u=constant+εnoise` 不得被误解释为已学 utility；记录 path Hamming、score margin。                            |
+| **P0** | selector GT remap + `truetime_geometry.py` + head | 代码事实 + 推断 | selected-axis 内部把非均匀物理间隔压成等间距。它很可能是高 tIoU 上限之一。                                                                                                              | 用同一组选中帧比较 selected-axis、physical-grid 和 physical-time uniform reconstruction。最终主方法不能只靠 post-hoc inverse map。       | same-selected-frames 三路 detector 测试；严格复用相同 checkpoint 和 selected positions。                    |
+| **P0** | `_gather_time`、`ActionFormer.forward_train`       | 代码事实      | 短窗口 `effectiveK<384` 时，后部用零帧补至 384；mask 只在 backbone 后生效，VideoMAE 调用本身没有 mask。最后一个部分有效的 16-frame chunk 会混入零帧。                                                 | fixed-compute 模式应将有效 knots 重建/重采样成 384 个 detector slots，而不是黑帧 padding；或者实现真正 variable-K backbone。                  | `V=322/353` 时 no-black-frame、无 NaN、前后坐标一致、cost 明确记录 `unique observations` 与 `processed slots`。 |
+| **P0** | base pipeline + selector input                    | 代码事实 + 推断 | 当前 selector 看到的是已经 dense decode、160×160 resize、通常已上 GPU 的 768 帧；不能宣称端到端 50% 输入成本下降。                                                                          | 将论文 claim 限定为 backbone compute，或实现 dual-resolution decode/gather-before-H2D deploy path。                           | profiler 必须分解 decode、resize、H2D、probe、DP、gather、backbone、head。                                 |
+| **P1** | `train_lowres_action_probe.py:2092–2101`          | 代码事实      | 第二个 `96→96` 3×3 Conv2d 在 768 帧上极重。B=2、64×64 时 spatial stem 约 **36.69 GMAC/batch**，还没算 ASFormer。                                                              | 换成 depthwise-separable spatial stem；明确它是 custom stem。                                                              | fvcore/torch profiler 与手工 MAC 对齐，误差≤5%。                                                        |
+| **P1** | `acquisition.py` probe profile                    | 代码事实      | analytic profile 将 `temporal_layers=num_layers`，但当前 `MyTransformer` 有 2 层 encoder 加 2 层 decoder；temporal estimate 至少漏算 decoder route。                        | profiler 作为主成本，解析式仅作 sanity check。                                                                                 | 与 operator profiler 对齐；profile 中显式列 encoder/decoder。                                           |
+| **P1** | `continuous_policy_logits`                        | 代码事实      | “score 连续”不保证 Viterbi path 连续；hard path 会在超平面 crossing 时离散跳变。当前测试只验证 logits midpoint，不验证 path stability。                                                     | 改用 per-batch hard-policy exposure，或至少做 structured-margin continuation。                                             | 扫描 alpha，记录相邻 policy 的 Hamming/Jaccard 和 detector-loss jump。                                   |
+| **P1** | `structured_selection.py:97–173`                  | 代码事实      | soft DP 使用 `-1e9` sentinel，之后对每个 slot 重新归一化。正常分数下正确，但归一化可能掩盖 underflow 或 marginal mass bug。                                                                  | 加 exhaustive oracle 和 mass-error fail-closed；DP 全程 float32。                                                        | 小 `T/K/G` 穷举比较 MAP、logZ、slot marginal、occupancy。                                               |
+| **P1** | uniform config                                    | 代码事实      | exact-uniform accuracy control 仍执行并训练完整 probe，只是 policy alpha=0。作为 matched-training control 合理，但作为部署成本 baseline 不公平。                                         | 同时保留：① matched-stack uniform；② deploy uniform-no-probe。                                                            | 两种 baseline 的 mAP 应近似一致，但总 latency 明确不同。                                                       |
+| **P1** | formal gate                                       | 代码事实      | gate 明确记录 `optimizer_step_ran=False`。它证明 full-model backward connectivity，不证明一次真实 step、utility 方向、mAP 或成本。                                                   | 增加真实 one-step optimizer test，并单独保留 gradient-only gate。                                                             | 参数 delta、schedule step、EMA、AMP overflow retry 全部断言。                                            |
+| **P1** | `duca_losses`                                     | 代码事实      | selector 中保留零 `detector_loss` 占位，配置中又有 detector weight，容易被误判为 detector loss 已在 selector 内计算。                                                                 | 删除零占位或明确改名。                                                                                                        | selector loss key 不得出现 aggregate/placeholder detector loss。                                    |
+| **P1** | schedule config                                   | 代码事实      | 配置假定 100 successful steps/epoch，但只要求记录，未从 dataloader/world size 强制证明。                                                                                        | manifest 注册实际 optimizer-step count；resume 后恢复 selector schedule buffer。                                            | 单卡/多卡/resume 后相同成功 step 对应相同 alpha/beta。                                                       |
+| **P1** | `ActionFormerHead`/base head                      | 代码事实      | `ActionFormerHead` 文件 blob 与上游相同，但它继承的 `AnchorFreeHead` 已扩展 physical-grid 行为。当前配置关闭该分支，因此活动语义接近上游；不能说 detector 源码完全未修改。                                      | 论文写成 “official-derived components with DUCA integration and extended base head, inactive in selected-axis config”。 | source hash + active config test。                                                              |
+| **P2** | optional `teacher_utility` API                    | 代码事实      | 当前主配置权重为零，且 ActionFormer 不传入；不是当前泄漏。但主方法 API 仍允许 train-only teacher utility。                                                                                 | transition-only final class 中 fail closed 拒绝非空 `teacher_utility`，除非明确实验变体。                                         | main config 传 teacher 时必须报错。                                                                   |
+| **P2** | 命名                                                | 代码事实      | 类名 `Online` 容易被误解为 causal/streaming。配置合同已写明 offline，但类名仍传播歧义。                                                                                                | 论文和新配置改成 `DucaOfflineFrameSelector` alias；保留旧注册名兼容。                                                                | contract 测试必须断言 `online_tad=False, streaming=False`。                                           |
+
+---
+
+# 5. Uniform 缺陷复核
+
+## 5.1 `transition_only` 修复本身成立
+
+新实现使用：
+
+```python
+targets = torch.linspace(0, valid_count - 1, steps=effective_k).round()
+values = -distance_to_nearest_target
+```
+
+在 `T=768,K=384` 且 target positions 唯一时，正好有 384 个最高分位置；exact-K MAP 被迫选择全部 rounded endpoint linspace positions。formal gate 与 unit test 也新增了逐点相等和 `max_rank_error==0`。
+
+所以：
+
+* `transition_only._uniform_reference_scores()` 的原 midpoint bug 已修；
+* transition-only alpha=0 endpoint 的合同是正确的；
+* old `1159414` 不再代表新实现。
+
+## 5.2 修复**不完整覆盖整个仓库**
+
+发现同类残留：
+
+```python
+# acquisition.py legacy/direct stable_selection
+targets = (
+    (torch.arange(effective_k) + 0.5)
+    * valid_count / effective_k
+    - 0.5
+)
+```
+
+它位于 `acquisition.py:1584–1592`。
+
+而 direct/non-transition route 在：
+
+* warmup `progress<=0` 时必走 `stable_selection`；
+* transition 阶段按 step/modulo 交替使用 stable path。
+
+因此：
+
+> `direct-a5` 确实“不调用 transition-only 的旧函数”，但它调用了另一个同类 midpoint implementation。
+
+这意味着 `1159415` 不能被视为已证明干净的 matched direct control。它仍可作为旧代码行为诊断，但 corrected matrix 必须连 direct route 一起修复和重跑。
+
+## 5.3 仍需补的 uniform tests
+
+必须增加：
+
+1. transition alpha=0，`T=768,K=384`
+2. direct stable warmup，`T=768,K=384`
+3. short prefix，`T=401,K=384`
+4. `effectiveK=valid_count<K`
+5. AMP 下输入 logits 为 fp16/bf16，但 reference 内部 float32
+6. repo-wide 禁止 midpoint reference 的静态测试
+7. random tie-breaking 不得影响 exact rounded positions
+8. common helper 的 source hash 必须写入 gate manifest
+
+`26 passed, 2 skipped` 只能证明已有合同；它不能替代 corrected CUDA gate，更不能替代 full train。
+
+---
+
+# 6. 实验结果合法性表
+
+以下数值均是**用户提供的实验事实**，我未独立读取集群日志。
+
+| 作业/证据                             | 可保留的事实                                                | 不可使用的结论                                           | 当前法律地位                                           |
+| --------------------------------- | ----------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| `1159414`，55.67                   | 旧 midpoint/tie-break DP 可以训练完并得到该结果                   | exact-uniform 性能、transition 优于 uniform            | **协议失效；仅 tie-break diagnostic**                  |
+| `1159415` direct-a5，57.71         | 旧 direct route 行为和训练稳定性                               | clean matched direct control                      | **诊断性**；本审计发现其 stable warmup 也残留 midpoint        |
+| `1159416` transition beta=0，64.34 | 旧 learned transition policy 在错误 homotopy 起点下可达到 64.34 | 优于 corrected uniform；transition hypothesis 已成立    | **有价值但非决定性的 learned-policy diagnostic**          |
+| `1159417` beta=0.25，63.55         | bridge 可训练完，无显式 runtime failure                       | detector gradient 有效；beta>0 优于 beta=0             | **负面诊断**；现有证据反而不支持 bridge                        |
+| beta=0 IoU-wise                   | 79.92/75.18/67.83/56.81/41.97                         | matched SOTA 或 uniform gain                       | 仅旧协议 checkpoint 描述                               |
+| beta=0.25 IoU-wise                | 79.17/74.37/66.17/55.75/42.28                         | bridge 提升 high-tIoU                               | best @0.7 的 +0.31 不足以抵消 Avg −0.79，final @0.7 又下降 |
+| `1150701`，64.352                  | 历史 native stride-2 uniform 的真实上下文参考                   | 当前 same-commit uniform                            | **跨协议 historical reference**                     |
+| `1150842`，65.696                  | 历史 grid-aware detector 的真实上下文参考                       | 当前 matched grid-aware baseline                    | **跨协议 historical reference**                     |
+| remote `26 passed,2 skipped`      | CPU/可用环境合同通过                                          | CUDA gate、真实 optimizer step、utility alignment、mAP | **代码合同证据**                                       |
+| old formal gate `1159395`         | 旧提交 gradient connectivity                             | `0ea4e15` 的正式 gate                                | **stale evidence，必须撤回**                          |
+| corrected same-commit uniform     | 尚无                                                    | 任何新性能结论                                           | **缺失**                                           |
+| corrected same-commit direct      | 尚无，且仍需再修 residual midpoint                            | 任何 matched direct 结论                              | **缺失**                                           |
+
+当前唯一诚实的性能总结是：
+
+> transition beta=0 在失效 homotopy 协议中接近历史强 uniform 水平，但 corrected same-commit uniform 尚未运行；beta=0.25 尚未提供 detector-gradient benefit 的证据。
+
+---
+
+# 7. 性能低于强 uniform 的根因排序
+
+这些概率是审计后的工程先验，不是统计 posterior。
+
+| 排名 | 根因                                                                  |      概率 | 依据                                                                                      | 最小证伪实验                                                                                    |
+| -: | ------------------------------------------------------------------- | ------: | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+|  1 | transition/coarse utility 较弱，hard policy主要由弱波动与 max-gap scaffold 决定 | **27%** | raw transition CE 约 6.3，接近 uniform prediction 的 `log(768)=6.64`；逐窗归一化没有 confidence gate | 固定 checkpoint，比较 learned、随机高斯 score、置乱 score、uniform；看 mAP、path Jaccard、boundary distance |
+|  2 | selected-axis 时间几何破坏 high-tIoU                                      | **24%** | head 内部仍按 rank 等间距建模；历史 grid-aware 数字更高但非 matched                                       | 同一组选中帧并行跑 selected-axis、physical-grid、physical-time reconstruction                        |
+|  3 | raw-pixel surrogate 与 hard one-swap utility 错向                      | **19%** | bridge 只证明非零梯度；beta=0.25 未提高 Avg；slot expectation 不是 joint feasible path                | 500+ windows 的 finite-difference one-swap vs surrogate score-gradient correlation         |
+|  4 | 随机 spatial stem + ASFormer + 多目标联合优化导致 coarse state 未充分学习           | **14%** | 无 checkpoint；低 LR；stem 很重；action BCE 本身无法判断 AUROC/AUPRC                                 | 独立 held-out train split 测 AUROC/AUPRC/ECE；冻结强 probe replay 与随机 probe 对照                   |
+|  5 | sparse detector distribution shift、短窗口黑帧 padding、chunk 边界           | **10%** | VideoMAE 只见 K slots；短窗口最后有效 chunk 混入零帧                                                  | same frames：zero-pad、repeat-last、physical reconstruction；测末尾 action recall                |
+|  6 | schedule/LR/exposure 及其他实现细节                                        |  **6%** | optimizer coverage本身正确，但 hard path shock、13200 step 假设和 direct residual仍有影响             | 记录每 step path Hamming、gradient norms、真实 step count；修复后 deterministic replay               |
+
+几个重要诊断解释：
+
+* balanced BCE 约 0.93–0.96 **不能**说明 actionness 好或坏，因为动态 `pos_weight` 改变了 loss 尺度；
+* transition CE 接近 `log(T)` 是强烈警告，但还不是完整证据，因为 target 是多峰分布；
+* max-gap=15 不会强制全局 uniform，但在弱 utility 时会成为主要结构性 scaffold；
+* beta>0 不提升并不自动证明所有 detector-aware learning 不可行，它首先否定的是当前 raw-pixel surrogate。
+
+---
+
+# 8. 三个互斥方案
+
+## 8.1 路线 A：最小修复 Shared-ASFormer Transition-Only
+
+### 定义
+
+* 输入：`x:[B,1,3,768,160,160]`
+* coarse：当前 stem + official ASFormer
+* descriptor：`[B,768,197]`
+* utility：当前单 scalar scorer
+* policy：当前 exact-K/G DP
+* detector：AdaTAD/ActionFormer
+* 保留 soft DP 与 zero-forward bridge
+
+### 必改
+
+* 修复所有 midpoint reference；
+* score-level alpha interpolation 改成 batch-level hard path exposure；
+* DP 全程 float32；
+* 增加 confidence/margin logging；
+* 启用 physical-grid detector 或 physical-time reconstruction；
+* beta>0 仅在 one-swap correlation 通过后解锁。
+
+### 梯度
+
+```text
+L_action -> full coarse probe
+L_transition -> coarse encoder + scorer
+L_detector through soft RGB -> scorer only
+L_detector -> detector
+```
+
+### 目标
+
+[
+L=L_D+L_{\text{act}}+0.5L_{\text{tr}}+0.25L_{\text{cov}}.
+]
+
+beta 不再先验固定为 0.25；根据 scorer 上 detector-gradient 与 transition-gradient EMA norm 做 cap：
+
+[
+\beta_s=
+\operatorname{clip}\left(
+\rho\frac{\bar g_{\mathrm{tr}}}{\bar g_D+\epsilon},
+0,0.25
+\right),\qquad \rho=0.5.
+]
+
+### Train/eval
+
+* 训练 detector 输入仍为 hard selected RGB；
+* soft RGB 只提供 backward；
+* 推理完全 hard。
+
+### 预期成本
+
+* 推理与当前相近；
+* training bridge 在正式形状下极重；
+* 仍需要完整 dense input 常驻 GPU。
+
+### 最大风险
+
+即使数值更稳定，soft RGB derivative 仍可能与 hard replacement utility 无关。
+
+### 一周 kill test
+
+* one-swap Spearman LCB 必须大于 0；
+* beta>0 对 beta=0 的短跑增益必须方向一致；
+* 否则路线 A 立即终止。
+
+### 与已有工作的关系
+
+Perturb-and-MAP 能将离散 optimizer 平滑化并复用原求解器；SoftSort/Gumbel 类方法则提供排序或离散变量松弛。它们解决“如何产生梯度”，并不自动证明梯度对应 TAD hard replacement utility。([arXiv][2])
+
+**评价：最省代码，但科学风险最高，不推荐作为最终 DUCA。**
+
+---
+
+## 8.2 路线 B：DUCA-FSU——Transition-Prior Feasible-Swap Utility Distillation
+
+这是我的唯一推荐路线。
+
+### 精确输入输出
+
+* dense low-resolution probe input：`[B,T,3,64,64]`
+* high-resolution candidate frames：`[B,3,T,160,160]`
+* `T=768`
+* ASFormer hidden：`[B,T,96]`
+* transition descriptor：`[B,T,197]`
+* utility：`u∈R[B,T]`
+* hard positions：`S∈N[B,K]`
+* `K=384,G=15`
+* physical-time reconstructed detector input：`[B,3,K,160,160]`
+
+### 核心机制
+
+不对 detector loss 通过软像素反传，而是在训练时构造真实 hard feasible swap：
+
+[
+S' = S-{s_j}+{t}, \qquad S,S'\in\mathcal F_{K,G}.
+]
+
+计算真实 detector loss gain：
+
+[
+\Delta^{D}_{j,t}
+================
+
+\operatorname{stopgrad}
+\left[
+\ell_D(S)-\ell_D(S')
+\right].
+]
+
+由于 additive policy objective 的 swap gain 恰为：
+
+[
+\Delta^{u}*{j,t}=u_t-u*{s_j},
+]
+
+直接训练二者方向一致：
+
+[
+L_{\mathrm{swap}}
+=================
+
+\sum_{(j,t)}
+w_{j,t}
+\operatorname{softplus}
+\left(
+-\operatorname{sign}(\Delta^{D}*{j,t})
+\frac{u_t-u*{s_j}}{\tau_{\mathrm{swap}}}
+\right).
+]
+
+这不是用“非零梯度”代理 utility，而是用实际 hard replacement 结果监督 utility difference。
+
+### 删除
+
+* `structured_zero_forward`
+* soft raw-pixel mixture
+* beta schedule
+* detector gradient 进入 coarse trunk 的所有路径
+* score-level alpha homotopy
+* selected-axis GT remap作为主路径
+* `local_boundary_coverage_loss` 主损失
+* selector 内零 detector-loss 占位
+
+### 复用
+
+* official ASFormer temporal module
+* transition descriptors
+* single utility scorer
+* hard exact-K/max-gap DP
+* OpenTAD/AdaTAD detector
+* existing optimizer coverage和测试基础设施
+
+### 梯度
+
+```text
+L_action:
+  spatial stem + ASFormer encoder/decoder + action head
+
+L_transition:
+  spatial stem + ASFormer encoder + utility scorer
+  action logits stop-gradient
+
+L_swap:
+  utility scorer only
+  coarse hidden stop-gradient
+  detector stop-gradient
+
+L_detector:
+  AdaTAD/ActionFormer only
+```
+
+这是有意的保护性设计：
+
+> coarse representation 负责学习动作/背景及转换语义；detector task signal 负责学习“在这些语义变化中哪些对 detector 真有用”。
+
+不需要 PCGrad，因为 detector utility 与 semantic losses 不共享 coarse trunk。GradNorm只能调节梯度大小，不能解决错误 surrogate 的方向问题；PCGrad只有在任务确实共享参数且存在冲突时才有意义。([arXiv][3])
+
+### Train/eval 同构
+
+* 主 detector 每次只看到 hard policy 产生的真实/确定性重建输入；
+* counterfactual branches 只是 train-only target；
+* test 不执行 counterfactual；
+* 没有 soft/hard detector input mismatch。
+
+### 推理可见信息
+
+仅：
+
+* 当前完整离线窗口的低分辨率 RGB；
+* coarse action logits/hidden；
+* selector parameters；
+* hard DP；
+* 选中高分辨率帧。
+
+不读取：
+
+* GT；
+* teacher；
+* oracle；
+* ledger；
+* prediction cache；
+* JSONL；
+* test-time calibration labels。
+
+### 预期成本
+
+* 推理删除昂贵 bridge；
+* proposed depthwise stem 将 spatial MAC 从约 36.69 降至约 2.68 GMAC/B=2；
+* one-swap 只增加训练成本；
+* 每 16 个成功 step 评估 4 个 no-grad swaps，粗略增加 25%–50% detector forward compute，必须实测。
+
+### 最大失败风险
+
+Detector loss 可能高度非加性，单帧 one-swap gain 不可由 `u_t-u_s` 预测。如果发生，这不是调参问题，而是 additive per-frame utility 假设失败。
+
+### 一周决定性实验
+
+在固定 detector checkpoint 上：
+
+* 每窗口 4–8 个 feasible swaps；
+* ≥500 个窗口；
+* scorer difference vs detector gain：
+
+  * window-cluster bootstrap Spearman LCB > 0；
+  * sign agreement ≥60%；
+  * top-quartile gain recall ≥50%。
+
+未达到即停止该路线。
+
+### 与近期工作的区别
+
+自适应视频采样已有明显拥挤：
+
+* AdaFrame 学习 recognition 场景的 sequential frame utility；
+* SCSampler 学习长视频 salient clips；
+* MGSampler 依据 motion distribution 做可解释采样。([arXiv][4])
+* 2024 年工作已研究为固定视频分类器独立估计 per-frame value；
+* 2026 年 PEEK 也已将强 teacher 的 frame relevance ranking 蒸馏到轻量模型。([arXiv][5])
+
+所以可发表的新意不能写成“轻量模型预测 frame importance”，而必须是：
+
+> **在 exact-K/max-gap TAD policy 中，以真实 feasible hard swap 的 detector localization loss 为训练合同，使 additive utility difference 与 counterfactual detector gain 一致，并保持物理时间 detector 几何。**
+
+---
+
+## 8.3 路线 C：假设失败后的 Residual-Innovation Multigrid
+
+### 输入输出
+
+* low-res frames：`[B,T,3,32,32]`
+* tiny spatial features：`[B,T,32]`
+* interval residual/curvature：`r∈R[B,T]`
+* hierarchical knots：`[B,K]`
+
+### 删除
+
+* actionness BCE
+* ASFormer
+* GT transition Gaussian
+* transition scorer
+* detector-gradient bridge
+* semantic boundary claim
+
+### 方法
+
+对低分辨率特征构造时间插值残差：
+
+[
+r_t=\left|f_t-\operatorname{Interp}(f_l,f_r;t)\right|_2^2.
+]
+
+从全区间开始，反复切分 residual 最大的区间，直到获得 K 个 knots；或者把 interval risk 转化为 exact-K DP utility。
+
+### 梯度
+
+* self-supervised reconstruction/innovation loss 更新 tiny encoder；
+* detector loss不穿过离散 selection；
+* detector独立训练。
+
+### Train/eval
+
+完全同构；推理只使用视觉 innovation，不使用 GT 语义。
+
+### 成本
+
+通常远低于 ASFormer probe，约 `O(TD+K log T)`；没有 soft bridge。
+
+### 最大风险
+
+相机运动、cut、背景变化可能比动作边界产生更强 residual；它可能只是 motion sampler。
+
+### 一周 kill test
+
+固定 detector、固定 K、physical-time geometry：
+
+* uniform
+* cumulative motion
+* residual multigrid
+* transition-only
+
+比较 boundary recall、short-action recall、mAP@0.7。若 residual 方法只提高 motion-rich 类而不提高整体定位，应放弃。
+
+### 与已有工作的区别
+
+MGSampler 已经用 motion saliency 和 cumulative motion distribution进行 sampling；因此路线 C 只有在“多尺度重建风险/物理时间 mesh”而非普通 motion magnitude 上表现出不可替代性时才有论文价值。([arXiv][6])
+
+---
+
+# 9. 唯一推荐最终模型：DUCA-FSU-384
+
+## 9.1 文字框图
+
+```text
+Dense low-res RGB, T=768
+        │
+Depthwise-separable spatial stem
+        │
+Official ASFormer temporal module
+        ├── binary action logits
+        └── encoder hidden
+        │
+Transition-only descriptors
+        │
+Shared utility scorer
+        │
+Hard exact-K/max-gap DP
+        │
+Selected high-res temporal knots, K=384
+        │
+Physical-time uniform reconstruction, length=384
+        │
+Official AdaTAD / ActionFormer active detector path
+        │
+Original-time predictions
+
+Train only:
+feasible hard one-swap detector loss
+        └── supervises utility-score differences
+```
+
+## 9.2 Coarse spatial stem
+
+替换当前第二个 full Conv：
+
+```text
+Conv2d 3→32, 3×3, stride 2
+BN + SiLU
+Depthwise Conv2d 32→32, 3×3, stride 2
+BN + SiLU
+Pointwise Conv2d 32→96, 1×1
+BN + SiLU
+AdaptiveAvgPool2d(1)
+```
+
+输出仍是 `[B,T,96]`，官方 ASFormer temporal module完全复用。
+
+对 `B=2,T=768,S=64`：
+
+* 当前 stem：约 36.69 GMAC/batch；
+* 建议 stem：约 2.68 GMAC/batch；
+* spatial MAC 降约 92.7%。
+
+这只是解析估计，论文必须用 operator profiler 和真实 latency 复核。
+
+## 9.3 Descriptor 与 utility
+
+[
+d_t\in\mathbb R^{197}
+]
+
+保持当前定义，不加入：
+
+* absolute hidden；
+* absolute actionness；
+* RGB mean；
+* direct start/end/context heads。
+
+Scorer继续使用当前：
+
+```text
+LayerNorm(197)
+Linear(197,64)
+GELU
+Linear(64,1)
+```
+
+不再逐窗 z-normalize后与 uniform score混合。hard policy直接使用 float32 utility logits。
+
+## 9.4 Feasible family
+
+对于有效前缀长度 (V)：
+
+[
+\mathcal F_{K,G}(V)=
+\left{
+y\in{0,1}^{V}:
+\sum_t y_t=\min(K,V),
+\ \text{任意连续未选中区间长度}\le G
+\right}.
+]
+
+主实验固定：
+
+* `T=768`
+* `K=384`
+* `G=15`
+
+不在 fixed-384 通过前改 dynamic budget。
+
+## 9.5 Physical-time uniform reconstruction
+
+给定选中位置：
+
+[
+s_1<\cdots<s_{K'}
+]
+
+和 detector uniform grid：
+
+[
+q_j=\frac{j(V-1)}{K-1},\quad j=0,\dots,K-1,
+]
+
+找相邻 knots (s_l\le q_j\le s_r)，构造：
+
+[
+\tilde x_j
+==========
+
+(1-\lambda)x_{s_l}
++
+\lambda x_{s_r},
+\qquad
+\lambda=\frac{q_j-s_l}{s_r-s_l}.
+]
+
+边界外采用 nearest hold。
+
+结果：
+
+```text
+selected observations: K' ≤ K
+detector processed slots: exactly K
+detector temporal axis: uniform in original physical time
+```
+
+GT 只需线性变换：
+
+[
+g^{det}=\frac{K-1}{V-1}g^{orig}.
+]
+
+预测反变换：
+
+[
+\hat g^{orig}=\frac{V-1}{K-1}\hat g^{det}.
+]
+
+这样：
+
+* VideoMAE、projection、ActionFormer internal geometry都重新变成等物理时间；
+* 不再对不规则 selected rank 做 GT remap；
+* `ActionFormerHead` active semantics可保持官方路径；
+* short windows不再用黑帧 padding。
+
+## 9.6 Loss
+
+### Actionness
+
+[
+L_{\mathrm{act}}
+================
+
+\frac{1}{|M|}
+\sum_{t\in M}
+\operatorname{BCEWithLogits}
+(a_t,r_t;w_+).
+]
+
+保留动态 positive weight，但同时报告无权重 AUROC/AUPRC/ECE。
+
+### Transition prior
+
+[
+q_t
+===
+
+\frac{1}{2N_{\mathrm{inst}}}
+\sum_i
+\left[
+\mathcal G_\sigma(t-s_i)
++
+\mathcal G_\sigma(t-e_i)
+\right],
+]
+
+保持当前 equal-mass、fixed-sigma、truncated Gaussian。
+
+[
+L_{\mathrm{tr}}
+===============
+
+-\sum_t q_t
+\log\operatorname{softmax}(u^{aux}/\tau_{\mathrm{tr}})_t.
+]
+
+### Feasible-swap utility
+
+[
+L_{\mathrm{swap}}
+=================
+
+\frac{\sum_{(j,t)}w_{j,t}
+\operatorname{softplus}
+\left[
+-\operatorname{sign}(\Delta^D_{j,t})
+(u_t-u_{s_j})/\tau_{\mathrm{swap}}
+\right]}
+{\sum w_{j,t}+\epsilon}.
+]
+
+其中：
+
+[
+w_{j,t}
+=======
+
+\min\left(
+2,\frac{|\Delta^D_{j,t}|}
+{\operatorname{MAD}(\Delta^D)+\epsilon}
+\right).
+]
+
+忽略低于数值噪声阈值的 swap。
+
+### Detector
+
+保持官方 `cls_loss + reg_loss` 和 NMS。
+
+### 总目标
+
+普通 step：
+
+[
+L_{\mathrm{normal}}
+===================
+
+L_D+L_{\mathrm{act}}+\lambda_{\mathrm{tr}}L_{\mathrm{tr}}.
+]
+
+counterfactual step：
+
+[
+L_{\mathrm{cf}}
+===============
+
+L_D+L_{\mathrm{act}}+\lambda_{\mathrm{tr}}L_{\mathrm{tr}}
++\lambda_{\mathrm{swap}}L_{\mathrm{swap}}.
+]
+
+权重不使用任意 beta。每 64 个成功 step，以 EMA gradient norm 更新：
+
+[
+\lambda_{\mathrm{tr}}
+=====================
+
+\operatorname{clip}
+\left(
+0.5
+\frac{\bar g_{\mathrm{act,enc}}}
+{\bar g_{\mathrm{tr,enc}}+\epsilon},
+0.1,1.0
+\right),
+]
+
+[
+\lambda_{\mathrm{swap}}
+=======================
+
+\operatorname{clip}
+\left(
+\frac{\bar g_{\mathrm{tr,scorer}}}
+{\bar g_{\mathrm{swap,scorer}}+\epsilon},
+0.25,2.0
+\right).
+]
+
+## 9.7 梯度归属
+
+| 参数组                              | Action | Transition | Swap | Detector |
+| -------------------------------- | -----: | ---------: | ---: | -------: |
+| spatial stem                     |      ✓ |          ✓ | stop |        ✗ |
+| ASFormer encoder                 |      ✓ |          ✓ | stop |        ✗ |
+| ASFormer decoder/action head     |      ✓ |          ✗ |    ✗ |        ✗ |
+| utility scorer                   |      ✗ |          ✓ |    ✓ |        ✗ |
+| VideoMAE adapter/projection/head |      ✗ |          ✗ | stop |        ✓ |
+
+这里不需要 PCGrad。真正共享 coarse trunk 的只有 action 与 transition，它们都服务于 coarse state semantics；detector utility通过 hard counterfactual target训练 scorer。
+
+## 9.8 单一训练 schedule
+
+按**成功 optimizer step**计：
+
+### Step 0–660：semantic warmup
+
+* detector 输入 exact-uniform hard policy；
+* 训练 actionness、transition scorer、detector；
+* 不运行 one-swap；
+* 不使用 learned policy。
+
+### Step 661–4620：hard exposure continuation
+
+每个样本根据固定 hash 决定使用 uniform 还是 learned hard policy：
+
+[
+p_{\mathrm{learned}}(s)
+=======================
+
+\frac12-
+\frac12\cos
+\left(
+\pi\frac{s-660}{3960}
+\right).
+]
+
+不是混合 score，也不是混合 RGB；每个样本始终走一个真实 hard path。
+
+从 step 660 起，每 16 个成功 step构造 4 个 feasible swaps。
+
+### Step 4621–13200：learned hard policy
+
+* 所有主样本使用 learned hard DP；
+* 每 16 step 持续 one-swap supervision；
+* 无 beta；
+* inference policy与该阶段完全一致。
+
+## 9.9 Optimizer groups
+
+保留 AdamW、clip norm 1.0：
+
+| 参数                                |       LR |   WD |
+| --------------------------------- | -------: | ---: |
+| VideoMAE adapters                 |   `2e-4` | 0.05 |
+| projection/neck/ActionFormer head |   `1e-4` | 0.05 |
+| utility scorer                    |   `1e-4` | 0.05 |
+| ASFormer encoder/decoder          | `2.5e-5` | 0.05 |
+| action `conv_out` heads           |   `5e-5` | 0.05 |
+| depthwise spatial stem            |   `3e-5` | 0.05 |
+| bias/norm                         |    相同 LR |    0 |
+
+其余 VideoMAE 参数冻结。
+
+## 9.10 必须修改的文件
+
+1. `transition_only.py`
+
+   * 删除 policy z-normalization/homotopy 主路径；
+   * 新增 feasible-swap ranking loss；
+   * 保留 transition descriptors/scorer。
+
+2. `structured_selection.py`
+
+   * hard Viterbi保留；
+   * soft DP仅用于诊断，不进入 detector；
+   * 加 brute-force oracle tests。
+
+3. `acquisition.py`
+
+   * 所有 uniform reference改为唯一 helper；
+   * 输出 raw utility；
+   * 删除 legacy midpoint。
+
+4. `duca_online_frame_selector.py`
+
+   * 删除 `structured_zero_forward` 主路径；
+   * 增加 hard policy exposure；
+   * 增加 feasible swap pair generation；
+   * 增加 physical-time reconstruction；
+   * 主路径不再 selected-axis GT remap。
+
+5. `train_lowres_action_probe.py`
+
+   * depthwise stem；
+   * provenance 改为 custom stem + official ASFormer temporal module。
+
+6. `actionformer.py`
+
+   * 新增 `forward_detector_from_selected_inputs()`；
+   * counterfactual no-grad detector loss helper；
+   * 保证 official detector loss只计算一次进入主 cost。
+
+7. gate/tests
+
+   * common uniform；
+   * real optimizer step；
+   * swap utility；
+   * physical-time geometry；
+   * no GT inference；
+   * cost allocation。
+
+---
+
+# 10. 核心代码
+
+## 10.1 唯一 uniform reference
+
+```python
+from __future__ import annotations
+
+import torch
+
+
+def rounded_endpoint_reference_scores(
+    *,
+    valid_count: int,
+    k: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Return [valid_count] logits whose exact-K MAP is round(linspace)."""
+    valid_count = int(valid_count)
+    effective_k = min(max(int(k), 0), valid_count)
+
+    if valid_count < 0:
+        raise ValueError("valid_count must be non-negative")
+    if effective_k == 0:
+        return torch.zeros(valid_count, device=device, dtype=dtype)
+
+    positions = torch.arange(valid_count, device=device, dtype=torch.float32)
+    if effective_k == 1:
+        targets = positions.new_zeros(1)
+    else:
+        targets = torch.linspace(
+            0.0,
+            float(valid_count - 1),
+            steps=effective_k,
+            device=device,
+            dtype=torch.float32,
+        ).round()
+
+    if torch.unique(targets).numel() != effective_k:
+        raise RuntimeError("rounded endpoint reference contains duplicate targets")
+
+    scores = -(positions[:, None] - targets[None, :]).abs().amin(dim=1)
+    return scores.to(dtype=dtype)
+```
+
+该 helper 必须同时替换 transition 和 direct stable route。
+
+## 10.2 Physical-time reconstruction
+
+```python
+import torch
+import torch.nn.functional as F
+
+
+def reconstruct_uniform_time_grid(
+    dense_frames: torch.Tensor,      # [B,C,T,H,W]
+    selected_positions: torch.Tensor,  # [B,Kmax], -1 padded
+    valid_lengths: torch.Tensor,     # [B]
+    output_len: int,
+) -> torch.Tensor:
+    """Piecewise-linear reconstruction using selected observations only."""
+    if dense_frames.ndim != 5:
+        raise ValueError("dense_frames must be [B,C,T,H,W]")
+    if selected_positions.ndim != 2:
+        raise ValueError("selected_positions must be [B,Kmax]")
+
+    batch, channels, temporal_len, height, width = dense_frames.shape
+    output_rows = []
+
+    for b in range(batch):
+        valid_len = int(valid_lengths[b].item())
+        if not 1 <= valid_len <= temporal_len:
+            raise ValueError(f"invalid valid_len={valid_len}")
+
+        pos = selected_positions[b]
+        pos = pos[(pos >= 0) & (pos < valid_len)].long()
+        if pos.numel() == 0:
+            raise RuntimeError("at least one selected observation is required")
+        if pos.numel() > 1 and not torch.all(pos[1:] > pos[:-1]):
+            raise RuntimeError("selected positions must be strictly increasing")
+
+        query = torch.linspace(
+            0.0,
+            float(valid_len - 1),
+            steps=int(output_len),
+            device=dense_frames.device,
+            dtype=torch.float32,
+        )
+
+        pos_f = pos.float()
+        right = torch.searchsorted(pos_f, query, right=False)
+        right = right.clamp(0, pos.numel() - 1)
+        left = (right - 1).clamp(0, pos.numel() - 1)
+
+        left_pos = pos_f[left]
+        right_pos = pos_f[right]
+        denom = (right_pos - left_pos).clamp_min(1.0)
+        weight = ((query - left_pos) / denom).clamp(0.0, 1.0)
+
+        x_left = dense_frames[b, :, pos[left], :, :]
+        x_right = dense_frames[b, :, pos[right], :, :]
+        reconstructed = (
+            x_left * (1.0 - weight)[None, :, None, None]
+            + x_right * weight[None, :, None, None]
+        )
+        output_rows.append(reconstructed)
+
+    return torch.stack(output_rows, dim=0)  # [B,C,K,H,W]
+```
+
+## 10.3 Feasible-swap loss
+
+```python
+def feasible_swap_rank_loss(
+    utility: torch.Tensor,          # [B,T]
+    selected_positions: torch.Tensor,  # [B,K]
+    swap_pairs: torch.Tensor,       # [B,M,2]: (selected_slot, candidate_time)
+    detector_gain: torch.Tensor,    # [B,M], positive means swap improves detector
+    *,
+    temperature: float = 0.5,
+    min_gain: float = 1e-4,
+) -> torch.Tensor:
+    if utility.ndim != 2:
+        raise ValueError("utility must be [B,T]")
+    if swap_pairs.ndim != 3 or swap_pairs.shape[-1] != 2:
+        raise ValueError("swap_pairs must be [B,M,2]")
+    if detector_gain.shape != swap_pairs.shape[:2]:
+        raise ValueError("detector_gain must align with swap_pairs")
+
+    selected_slot = swap_pairs[..., 0].long()
+    candidate_time = swap_pairs[..., 1].long()
+
+    selected_time = selected_positions.gather(1, selected_slot)
+    selected_u = utility.gather(1, selected_time)
+    candidate_u = utility.gather(1, candidate_time)
+    predicted_gain = candidate_u - selected_u
+
+    target_sign = detector_gain.detach().sign()
+    active = detector_gain.detach().abs() > float(min_gain)
+    if not active.any():
+        return utility.sum() * 0.0
+
+    active_gain = detector_gain.detach().abs()[active]
+    mad = (active_gain - active_gain.median()).abs().median().clamp_min(1e-6)
+    weight = (detector_gain.detach().abs() / mad).clamp(max=2.0)
+
+    loss = F.softplus(
+        -target_sign * predicted_gain / float(temperature)
+    )
+    return (loss * weight)[active].mean()
+```
+
+## 10.4 Hard exposure，而不是 score interpolation
+
+```python
+import math
+import hashlib
+
+
+def learned_policy_probability(step: int) -> float:
+    if step <= 660:
+        return 0.0
+    if step >= 4620:
+        return 1.0
+    progress = (step - 660) / 3960.0
+    return 0.5 - 0.5 * math.cos(math.pi * progress)
+
+
+def deterministic_use_learned(
+    *,
+    step: int,
+    sample_uid: str,
+    seed: int,
+) -> bool:
+    probability = learned_policy_probability(step)
+    payload = f"{seed}:{step}:{sample_uid}".encode("utf-8")
+    value = int.from_bytes(hashlib.sha256(payload).digest()[:8], "big")
+    uniform01 = value / float(2**64 - 1)
+    return uniform01 < probability
+```
+
+每个 sample 只走：
+
+```python
+policy_logits = learned_utility if use_learned else exact_uniform_logits
+positions = hard_structured_map(policy_logits)
+```
+
+不存在 `(1-alpha)score_uniform + alpha score_learned`。
+
+---
+
+# 11. 决定性实验矩阵与运行顺序
+
+## 11.1 立即运行：不需要 full train
+
+| ID   | Claim                         | 配置/控制                                                                  | 指标                                                | 判别与失败结论                                           |
+| ---- | ----------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------- |
+| P0-1 | 所有 uniform route 已干净          | transition、direct stable、legacy control调用同一 helper                     | decoded positions、max rank error                  | 任一路非 exact，禁止提交任何 full job                        |
+| P0-2 | DP hard/soft 一致               | 小规模穷举所有 feasible sets                                                  | MAP、logZ、slot marginal、occupancy error            | error>1e-5 则先修 DP                                 |
+| P0-3 | coarse state 有信息              | 从旧/新 checkpoint 在 train-held-out split 评估                              | AUROC、AUPRC、ECE、class prevalence                  | AUPRC lift<1.5× 或 ECE>0.15，先停 selector full train |
+| P0-4 | transition score不是随机 scaffold | learned、score shuffle、Gaussian score、constant score；同 G15              | peak recall、selected-boundary distance、mAP replay | learned 与 random 无显著差异，transition hypothesis未成立   |
+| P0-5 | 当前 surrogate方向正确              | 同一 hard set做 one-swap finite difference                                | window Spearman、sign、top gain recall              | LCB≤0，beta>0永久取消                                  |
+| P0-6 | geometry 是/不是主要瓶颈             | 同一 selected frames：selected-axis、physical-grid、physical reconstruction | Avg、@0.7、short-Q1 mAP                             | physical route显著胜出则 selected-axis主路线终止            |
+| P0-7 | 当前 cost 可接受                   | trained checkpoint batch1 profiler                                     | 各组件 p50/p95、energy、H2D bytes                      | probe+IO吃掉 gross saving的大部分则不允许 efficiency claim  |
+
+## 11.2 P0 通过后：fixed-384 正式矩阵
+
+| ID   | 变体                          | 唯一差异                                    | 核心指标                         | 失败结论                                    |
+| ---- | --------------------------- | --------------------------------------- | ---------------------------- | --------------------------------------- |
+| F-0  | Dense-768                   | 无 selector                              | Avg、@0.7、short-Q1、total cost | 上界与成本参照                                 |
+| F-1a | Exact uniform matched-stack | probe执行但policy忽略                        | accuracy control             | 与 learned 比较优化协议                        |
+| F-1b | Exact uniform deploy        | 无 probe                                 | total-cost Pareto            | 与 DUCA 比较真实部署成本                         |
+| F-2  | Random K384                 | 相同 G 或 stratified random                | mAP/variance                 | 检测 selector 是否只靠 coverage               |
+| F-3  | Periodic/stride K384        | 确定性 periodic                            | mAP/cost                     | 强简单基线                                   |
+| F-4  | corrected direct-a5         | 修复 common uniform                       | Avg、@0.7                     | 检验 transition-only 是否优于 direct boundary |
+| F-5  | transition beta=0           | corrected hard policy，无 detector bridge | 主 transition prior           | 必须先超过 corrected uniform                 |
+| F-6  | current beta>0              | 仅当 P0-5 correlation 通过                  | beta0 delta                  | 不提升则撤回 differentiable bridge            |
+| F-7  | **DUCA-FSU**                | hard feasible-swap utility，无 bridge     | 主推荐                          | 必须超过 beta0 与 uniform                    |
+| F-8  | no hidden                   | descriptor删除 hidden delta/cosine        | mAP、transition recall        | 判断 ASFormer hidden贡献                    |
+| F-9  | no action-logit deltas      | 仅 hidden changes                        | 同上                           | 判断 actionness曲线贡献                       |
+| F-10 | no transition supervision   | 只用 swap utility                         | 同上                           | 判断“粗状态转换”是否必要                           |
+| F-11 | no swap utility             | 只用 transition prior                     | 同上                           | 量化 detector task alignment              |
+| F-12 | G=7/15/31                   | 仅 gap prior                             | Avg、@0.7、coverage            | 判断 G15 是否工程偶然                           |
+
+## 11.3 统计协议
+
+所有主变体：
+
+* 至少 3 seeds；
+* 相同 train window manifests；
+* 相同初始化 checkpoint；
+* 相同 optimizer step 数；
+* 相同 eval epochs；
+* 视频/窗口级 paired bootstrap；
+* 主指标：
+
+  * Avg mAP
+  * mAP@0.7
+  * shortest-duration-quartile mAP@0.7
+  * selected-to-boundary distance
+  * boundary recall within ±2/±4/±8
+  * unique selected observations
+  * full-stack latency/energy。
+
+建议 fixed-384 通过门：
+
+[
+\Delta\text{Avg}_{\mathrm{FSU-uniform}}\ge 0.5
+]
+
+且 paired CI lower bound > 0，同时：
+
+[
+\Delta \text{mAP@0.7}\ge 0,
+]
+
+short-Q1 drop 不得超过 1.0 absolute。
+
+只有满足后才解锁：
+
+1. `K=256`
+2. `K=128`
+3. dynamic budget
+4. 第二 detector。
+
+---
+
+# 12. 真实成本核算模板与 break-even
+
+## 12.1 当前 bridge 的解析下界
+
+正式 shape：
+
+```text
+B=2, N=1, C=3, T=768, H=W=160, K=384
+```
+
+soft-slot RGB einsum：
+
+[
+BNC,T,HW,K
+==========
+
+45.30\text{ GMAC/batch}
+]
+
+约：
+
+[
+90.60\text{ GFLOP/batch}
+]
+
+仅 soft output：
+
+```text
+[B,1,3,384,160,160]
+```
+
+float32 约 **225 MiB**。
+
+如果 dense input 仍是 uint8 并因 bridge 转为 float32，额外 dense copy 约 **450 MiB**。slot assignment 本身约 2.25 MiB；尚未包括 autograd saved tensors、temporary buffers和 allocator fragmentation。代码自己的 profile 也明确把这个数标成 lower bound，而非完整 memory accounting。
+
+这足以说明：
+
+> `structured_zero_forward` 可以作为研究诊断，但不适合在没有 utility-correlation 证据时长期占用正式训练预算。
+
+## 12.2 全栈计时组件
+
+每个方法必须报告：
+
+[
+L_{\mathrm{total}}=
+L_{\mathrm{decode}}
++L_{\mathrm{resize}}
++L_{\mathrm{H2D}}
++L_{\mathrm{probe}}
++L_{\mathrm{DP}}
++L_{\mathrm{gather}}
++L_{\mathrm{reconstruct}}
++L_{\mathrm{backbone}}
++L_{\mathrm{projection}}
++L_{\mathrm{head}}
++L_{\mathrm{NMS}}.
+]
+
+至少报告：
+
+* batch=1 p50/p95；
+* batch=2 throughput；
+* windows/s；
+* video minutes/s；
+* peak allocated/reserved GPU memory；
+* CPU peak RSS；
+* bytes transferred H2D；
+* joules/window；
+* detector-only 与 full-stack 两套数字；
+* 200 warmup + ≥2000 matched windows；
+* 固定 GPU clocks/power limit；
+* CUDA synchronize；
+* matched precision、NMS、data workers。
+
+## 12.3 Dense break-even
+
+相对于 dense-768：
+
+[
+C_{\mathrm{probe}}
++C_{\mathrm{select}}
++C_{\mathrm{reconstruct}}
++C_{\mathrm{IO,DUCA}}
++C_D(384)
+<
+C_{\mathrm{IO,dense}}
++C_D(768).
+]
+
+gross detector saving：
+
+[
+S_{\mathrm{gross}}
+==================
+
+C_D(768)-C_D(384).
+]
+
+建议要求：
+
+[
+C_{\mathrm{probe}}+C_{\mathrm{select}}+C_{\mathrm{reconstruct}}
+\le 0.4S_{\mathrm{gross}}.
+]
+
+且 full-stack：
+
+* p50 saving ≥20%
+* p95 saving ≥15%
+* energy saving ≥15%。
+
+## 12.4 Uniform break-even
+
+在相同 `K=384` 下：
+
+[
+C_{\mathrm{DUCA}}(384)
+======================
+
+C_{\mathrm{uniform}}(384)
++
+C_{\mathrm{probe}}
++
+C_{\mathrm{select}}
++
+C_{\mathrm{reconstruct}}.
+]
+
+因此 DUCA 在同 K 下**不可能比 no-probe uniform 更便宜**。它必须做到：
+
+* 同 K 精度显著更高；或
+* 在较小 K 达到 cost-matched uniform 较大 K 的精度。
+
+真实 Pareto 比较应是：
+
+```text
+uniform K=128/256/384/512
+vs
+DUCA K=128/256/384
+```
+
+按实测 total latency 对齐，而不是只按帧数对齐。
+
+---
+
+# 13. 论文可发表性裁决
+
+## 13.1 当前 `0ea4e15` 能 claim 什么
+
+可以：
+
+1. 提出了一个 offline、full-window、fixed-budget 的 transition-only acquisition candidate；
+2. selector 输入限定为 actionness/entropy/hidden 的相邻变化；
+3. train-only GT endpoint Gaussian 用于 transition supervision；
+4. inference 主配置禁止 GT、teacher、ledger、prediction cache；
+5. exact-K/max-gap hard/soft DP 在正常数值范围内共享同一 feasible family；
+6. optimizer coverage、AMP successful-step schedule 有较强 fail-closed 合同；
+7. `ActionFormerHead` 文件与固定上游版本相同，但 wrapper/base code 已扩展。
+
+## 13.2 当前不能 claim 什么
+
+不能：
+
+* 优于 exact uniform；
+* detector gradient 提高了 utility；
+* beta=0.25 有效；
+* high-tIoU 被保护；
+* full-stack 加速或节能；
+* dynamic budget；
+* detector-agnostic plugin；
+* 整个 coarse probe 是 official ASFormer；
+* detector 源码完全未改；
+* causal/online TAD；
+* score-continuous 等于 policy-continuous；
+* 测试通过等于方法成立。
+
+## 13.3 当前组合的创新性
+
+当前形式：
+
+```text
+custom low-res probe
++ ASFormer temporal module
++ transition descriptors
++ exact-K structured top-k
++ ST raw-pixel bridge
++ ActionFormer wrapper
+```
+
+更接近**有工程强度的组合式系统**，不足以单独形成稳固的 CVPR 方法贡献。
+
+原因是：
+
+* 自适应 frame/clip selection 在 recognition 中已有 AdaFrame、SCSampler、MGSampler 等成熟先例；([arXiv][4])
+* differentiable discrete optimization 已有 Gumbel、SoftSort、perturbed optimizer 和 Fenchel–Young 框架；([arXiv][7])
+* ActionFormer 本身按多尺度时序特征分类 moment 并回归边界，非均匀 selected rank 会直接影响其时间几何；([arXiv][8])
+* AdaTAD 的核心是通过 temporal-informative adapters 扩展长视频 end-to-end TAD；DUCA若要成立，必须证明采样收益，而不能只依赖 AdaTAD 强后端。([arXiv][9])
+* OpenTAD 强调统一协议和公平比较；当前 corrected same-commit baseline 缺失正是论文证据链中的核心缺口。([arXiv][10])
+
+## 13.4 推荐路线的论文价值
+
+DUCA-FSU 只有在以下三项同时成立时，才有潜在 CVPR 主会价值：
+
+1. **科学机制成立**
+   feasible one-swap detector gain 可被 transition-derived utility difference 预测。
+
+2. **定位性能成立**
+   在 exact same protocol 下显著优于 uniform、periodic、random 和 direct boundary，尤其是 @0.7 与短动作。
+
+3. **系统价值成立**
+   把 probe、decode、H2D、reconstruction 全部计入后仍形成 accuracy–total-cost Pareto。
+
+此时论文中心应是：
+
+> **Detector counterfactual consistency for constrained physical-time video acquisition**
+
+而不是：
+
+> “ASFormer 预测 transition，然后 structured top-k 选帧。”
+
+前者是可证伪的学习原则；后者容易被视为模块组合。
+
+---
+
+# 14. 停止条件
+
+以下任一硬条件出现，都不应继续堆 loss 或扩大网格。
+
+## 14.1 立即终止当前 raw-pixel bridge
+
+* one-swap gain 与 surrogate gradient 的 cluster-bootstrap Spearman LCB ≤ 0；
+* sign agreement ≤55%；
+* beta>0 三个 seed 平均不优于 beta=0；
+* bridge overhead超过训练时间的 25%，但没有稳定增益。
+
+## 14.2 终止 transition-only semantic hypothesis
+
+* coarse actionness AUPRC 相对 prevalence lift <1.5×；
+* transition peak recall 不高于随机/运动 baseline；
+* learned utility 与 score-shuffle/random-G15 的选帧质量无显著差异；
+* no-transition-supervision ablation 与完整方法相同或更好；
+* corrected three-seed transition beta=0 不能超过 exact uniform。
+
+## 14.3 终止 additive utility / DUCA-FSU
+
+* feasible-swap score difference 对 detector gain 的 median Spearman <0.2；
+* pooled/window-cluster bootstrap LCB ≤0；
+* gain sign agreement <60%；
+* FSU 不优于 transition-only scorer；
+* 大量 detector gain 只能由成对或高阶 frame interactions解释，单帧 swap不可预测。
+
+此时应直接转向路线 C 或其他非加性 interval/chunk utility，而不是增加更多 per-frame heads。
+
+## 14.4 终止论文效率 claim
+
+* full-stack p50 saving 相对 dense <15%；
+* p95 saving <10%；
+* probe/select/reconstruction overhead > gross heavy saving 的 50%；
+* dense decode/H2D 无法从部署路径移除；
+* 同成本下 uniform Pareto 不劣于 DUCA；
+* energy 无节省或峰值显存更高。
+
+## 14.5 终止 fixed-384 后续扩展
+
+若 fixed-384 未同时满足：
+
+* three-seed Avg mAP gain ≥0.5；
+* paired CI lower >0；
+* mAP@0.7 不下降；
+* short-Q1 drop ≤1.0；
+* total-cost Pareto成立；
+
+则禁止继续：
+
+* K=256/128；
+* dynamic budget；
+* 第二 detector；
+* 更复杂 probe；
+* 新的 selector loss；
+* 大规模 hyperparameter search。
+
+**最终裁决：保留研究问题，冻结当前论文主张；先修复 repo-wide uniform 残留，并用 one-swap、same-selected-frames geometry 和 corrected exact-uniform 三个决定性实验裁决。若继续，唯一值得实现的最终模型是 DUCA-FSU，而不是继续调 `structured_zero_forward beta`。**
+
+[1]: https://arxiv.org/abs/2110.08568?utm_source=chatgpt.com "ASFormer: Transformer for Action Segmentation"
+[2]: https://arxiv.org/abs/2002.08676 "https://arxiv.org/abs/2002.08676"
+[3]: https://arxiv.org/abs/1711.02257 "https://arxiv.org/abs/1711.02257"
+[4]: https://arxiv.org/abs/1811.12432 "https://arxiv.org/abs/1811.12432"
+[5]: https://arxiv.org/abs/2409.05260 "https://arxiv.org/abs/2409.05260"
+[6]: https://arxiv.org/abs/2104.09952 "https://arxiv.org/abs/2104.09952"
+[7]: https://arxiv.org/abs/2006.16038 "https://arxiv.org/abs/2006.16038"
+[8]: https://arxiv.org/abs/2202.07925?utm_source=chatgpt.com "ActionFormer: Localizing Moments of Actions with Transformers"
+[9]: https://arxiv.org/abs/2311.17241?utm_source=chatgpt.com "End-to-End Temporal Action Detection with 1B Parameters Across 1000 Frames"
+[10]: https://arxiv.org/abs/2502.20361?utm_source=chatgpt.com "OpenTAD: A Unified Framework and Comprehensive Study of Temporal Action Detection"

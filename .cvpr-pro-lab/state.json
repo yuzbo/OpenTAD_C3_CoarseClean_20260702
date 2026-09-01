@@ -1,0 +1,377 @@
+{
+  "active_item": {
+    "current_scientific_question": "Under the same fixed K=384 high-resolution budget, does H65-derived task-state native-tubelet coreset selection preserve THUMOS14 boundary, short-action and high-tIoU localization better than matched native-tubelet uniform selection when both use the same low-resolution context recycling and physical-time reconstruction?",
+    "dependency": "Fresh Pro adjudication of the completed fixed-K point estimates and the shared evidence-packaging failure. Both arms completed training and official evaluation, but metrics_epoch59_ema.json was not written because predictions were not saved.",
+    "expected_return_at": "after one fresh Pro scientific adjudication of the neutral terminal packet",
+    "next_action": "Prepare a neutral Pro packet containing the matched log point estimates, per-tIoU deltas, exact shared packaging defect, absent paired interval and absent measured-compute evidence. Pro must decide whether to authorize evaluation-only sealing, revise the selector, enter the dynamic-budget stage, or stop this candidate.",
+    "next_owner": "DUCA Coordinator -> fresh Pro scientific adjudication",
+    "role_message_id": null,
+    "single_recovery": "none under the closed implementation cycle; do not retrain or rerun evaluation before Pro disposition"
+  },
+  "active_pro_turn": {
+    "actual_attempt_count": 1,
+    "completed_at": "2026-08-25T15:25:36.609Z",
+    "conversation_id": "6a8dace6-e798-83ea-b112-d5636c54fb62",
+    "conversation_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8dace6-e798-83ea-b112-d5636c54fb62",
+    "decision": "REVISE: freeze PJST-D1 derivative-only first-mixing transform and fixed-selector representation attribution with matched OFF/ON.",
+    "dispatch_id": "CENTRAL-ARIS-PRO-DUCA-PJST-DERIVATIVE-CAUSAL-FREEZE-v002",
+    "hard_timeout_at": "2026-08-26T00:55:23+08:00",
+    "job_id": "j-7rkw7z",
+    "model": "gpt-5.5-pro",
+    "model_route": "Fresh Browser Pro conversation in the exact DUCA Project; saved metadata and current URL bind the exact Project and nonce.",
+    "nonce": "DUCA-PJST-DERIVATIVE-CAUSAL-FREEZE-v002-20260825",
+    "raw_artifact_dir": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-pjst-derivative-causal-freeze-v002",
+    "raw_response": "C:/Users/skywalker/.fastctx/jobs/j-7rkw7z/output.log",
+    "runtime_cdp": "127.0.0.1:14106",
+    "stream_state": "final_received",
+    "submitted_at": "2026-08-25T14:55:22.291Z"
+  },
+  "actual_attempt_count": 7,
+  "aris_continuation": {
+    "builder_message_id": "msg-20260814T022412Z-e383eef4fadc",
+    "evidence_class": "STATIC_SYNTHETIC_NO_DATA_SEALED_SURFACE_VALIDATION",
+    "job_id": "j-vckhty",
+    "log_path": "C:/Users/skywalker/.fastctx/jobs/j-vckhty/output.log",
+    "model": "deepseek-v4-pro",
+    "package_commit": "6515ebf501b3c49be57ad4c37fc84d2fb4ae66d7",
+    "permission_flags": [
+      "--permission-mode danger-full-access",
+      "--dangerously-skip-permissions"
+    ],
+    "receipt_commit": "c028a0da410eb9ad6a740f85a7cf9c950c1168d5",
+    "started_at": "2026-08-14T02:24:26Z",
+    "status": "COMPLETED_MATERIAL_READY",
+    "terminal_critic_receipt": "CRITIC_DUCA_UOR_SEALED_EXECUTION_SURFACE_TERMINAL_REVIEW-v001"
+  },
+  "aris_cpr": {
+    "cli_executable": "E:/DeskTop/TAD/健身/third_party/aris-code/dist/windows-x64/aris.exe",
+    "completed_at": "2026-08-14T07:45:00Z",
+    "cwd": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702",
+    "git_common_dir": ".git",
+    "git_head_non_duca_base": "a6bdc084cc145c80b6b2c68d0a38f0deea3e8518 (SparseHead base; explicitly not DUCA evidence)",
+    "job_id": "j-ble6ep",
+    "log_path": "C:/Users/skywalker/.fastctx/jobs/j-ble6ep/output.log",
+    "model": "deepseek-v4-pro",
+    "permission_flags": [
+      "--permission-mode danger-full-access",
+      "--dangerously-skip-permissions"
+    ],
+    "root_dirty_boundary": "pre-existing dirty DUCA working-tree surfaces are the evidence boundary; ARIS planning changes must be separately identified",
+    "stage": "C/P/R_MATERIAL_PREPARATION",
+    "started_at": "2026-08-14T07:23:00Z",
+    "status": "COMPLETED_MATERIAL_READY",
+    "transport_correction": "j-c1wd5v stopped before a route decision because its prompt incorrectly treated the SparseHead base SHA as a DUCA anchor; j-ble6ep is the sole active replacement."
+  },
+  "aris_inner_mechanism_material": {
+    "cwd": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702",
+    "durable_artifact": ".cvpr-pro-lab/role-returns/BUILDER_DUCA_DYNAMIC_INNER_MECHANISM_MINIMAL_CHANGE_PLAN-v001.md",
+    "job_id": "j-57p4sz",
+    "material_epoch": "LOCAL_ONLY-v013-20260814T172500+0800",
+    "model": "deepseek-v4-pro",
+    "raw_log_path": "C:/Users/skywalker/.fastctx/jobs/j-57p4sz/output.log",
+    "replacement_used": false,
+    "status": "TERMINAL_RUNTIME_CONTEXT_OVERFLOW_AFTER_DURABLE_MATERIAL_WRITE",
+    "terminal_cause": "DeepSeek API 400: requested 1049041 tokens exceeds the 1048576-token context limit after two network retries; this is transport/runtime failure, not scientific failure."
+  },
+  "browser_request": "PREPARED_NOT_SUBMITTED — .cvpr-pro-lab/central-requests/PRO_REQUEST_DUCA_NATIVE_TUBELET_CORESET_TERMINAL_ADJUDICATION-v001.json; one fresh exact-Project Pro adjudication is required, but no browser invocation is authorized by this heartbeat.",
+  "central_dispatch_execution_mode": "FIXED_BUDGET_ATTRIBUTION_TERMINAL_RESULT_PENDING_PRO",
+  "central_dispatch_id": "CENTRAL-ARIS-PRO-DUCA-V013-v004",
+  "central_dispatch_status": "SHARED_OFFICIAL_BASELINE_NON_DUPLICATION_AND_DUCA_METHOD_WORK_AUTHORIZED",
+  "duca_tas_fixed_mechanism_terminal": {
+    "completed_at": "2026-08-24T03:24:19+08:00",
+    "evidence_class": "REAL_50SALADS_OFFICIAL_FIVE_FOLD / SINGLE_TRAINING_SEED / TERMINAL_EPOCH_199_EMA",
+    "jobs": {
+      "h65_fixed384": "1252221 COMPLETED 0:0",
+      "uniform_2x": "1252219 COMPLETED 0:0",
+      "uniform_4x": "1252220 COMPLETED 0:0"
+    },
+    "mean_average_map_percent": {
+      "h65_fixed384": 83.192,
+      "uniform_2x": 82.138,
+      "uniform_4x": 78.434
+    },
+    "mean_map_at_0_7_percent": {
+      "h65_fixed384": 74.678,
+      "uniform_2x": 74.07,
+      "uniform_4x": 68.744
+    },
+    "result_to_claim": "PARTIAL: fixed-K semantic indirect sampling shows a +1.054 pp Avg-mAP and +0.608 pp mAP@0.7 mean improvement over matched Uniform-2x, but does not establish statistical robustness, dynamic-budget benefit, full-stack cost advantage, TAD transfer, or generality.",
+    "revision": "b0103cea4f3b4aff68463c3f28a1b9f4213c2df6",
+    "run_root": "/data/run01/sczc063/yuzibo/duca_tas_h65_truetime_3eb2fbf_full_20260823T130335Z",
+    "status": "TESTED_PARTIALLY_SUPPORTED / DYNAMIC_ARMS_NOT_STARTED"
+  },
+  "epoch": 7,
+  "execution_state": "FORMAL_TRAINING_AND_OFFICIAL_EVALUATION_COMPLETED / STRUCTURED_EVIDENCE_PACKAGING_FAILED / DIAGNOSTIC_NEGATIVE_POINT_ESTIMATE",
+  "final_dynamic_pro_adjudication": {
+    "ambiguities": [
+      "F1 midpoint-CDF/lexicographic transport versus canonical-uniform identity at T_v=768,K=384",
+      "F2 K-shuffle nonce/seed, canonical row order, and permutation algorithm"
+    ],
+    "blocking_class": "BLOCKS_EXPERIMENT",
+    "evidence_boundary": "STATIC_PLAN_REVIEW_ONLY / NOT_EXECUTED; no Route-B code, PRE_RUN, data, pilot, training, metric, cost, or claim.",
+    "prepared_files": [
+      "CURRENT_RESEARCH_STATE-v012.md",
+      "DUCA_DYNAMIC_FINAL_PRO_ADJUDICATION-v001.md"
+    ],
+    "prepared_ids": [
+      "pfile-20260814T092348Z-a7e5c908d1",
+      "pfile-20260814T092348Z-c42b9f6e30"
+    ],
+    "pro_required_disposition": "Superseded without reliance by the distinct v013 local epoch after v008's unknown remote state; fixed K cannot be final.",
+    "request_id": "PROJECT_SOURCE_SYNC_REQUEST-v008.json",
+    "scientific_round": "3_of_3",
+    "status": "QUARANTINED_UNKNOWN_REMOTE_STATE"
+  },
+  "final_inner_mechanism_pro_adjudication": {
+    "blocking_class": "BLOCKS_EXPERIMENT",
+    "confirmed_at": "2026-08-14T14:42:48Z",
+    "confirmed_ledger_ids": [
+      "pfile-20260814T144247Z-2d9b3938a7",
+      "pfile-20260814T144248Z-4da7324f7a"
+    ],
+    "evidence_boundary": "STATIC_PLAN_ONLY / NOT_EXECUTED; no code, PRE_RUN, data, pilot, training, metric, cost, or claim.",
+    "material_epoch": "LOCAL_ONLY-v013-20260814T172500+0800",
+    "prepared_files": [
+      "CURRENT_RESEARCH_STATE-v013.md",
+      "DUCA_DYNAMIC_INNER_MECHANISM_FINAL_PRO_ADJUDICATION-v001.md"
+    ],
+    "prepared_ids": [
+      "pfile-20260814T140807Z-9ca0f4d1ea",
+      "pfile-20260814T140807Z-d3e6c5b482"
+    ],
+    "pro_required_disposition": "Completed by v004: REVISE freezes B as sole claim-bearing route, F1/F2 and the six-arm prospective protocol; A is a timestamp-aware enhanced-integration ceiling and no automatic fallback.",
+    "remote_refs": [
+      "chatgpt-project-source:CURRENT_RESEARCH_STATE-v013.md",
+      "chatgpt-project-source:DUCA_DYNAMIC_INNER_MECHANISM_FINAL_PRO_ADJUDICATION-v001.md"
+    ],
+    "request_id": "PROJECT_SOURCE_SYNC_REQUEST-v009.json",
+    "scientific_round": "3_of_3",
+    "status": "SOURCES_CONFIRMED_FINAL_PRO_RECEIVED"
+  },
+  "final_inner_mechanism_pro_preflight": {
+    "checked_at": "2026-08-14T14:47:57Z",
+    "dependency": "Verified profile61 Local API response with a fresh debugging_address.",
+    "detail": "ixbrowser_runtime.py profile-list failed at 127.0.0.1:53200 (client socket disconnected during TLS setup); discovered 127.0.0.1:34506 returned non-JSON. The prior 127.0.0.1:18164 endpoint was not reused.",
+    "dispatch_id": "CENTRAL-ARIS-PRO-DUCA-V013-v002",
+    "next_action": "No third browser transport replacement, old-chat reuse, or retry. Await external runtime restoration and explicit new authority if the final scientific turn remains required.",
+    "next_owner": "Coordinator terminal hold",
+    "pro_submission_count": 0,
+    "runtime_cdp": null,
+    "single_recovery": "none; v002 consumed the sole replacement",
+    "status": "TERMINAL_SECOND_PRE_SUBMISSION_CONTROL_PLANE_FAILURE_ATTEMPT0"
+  },
+  "final_inner_mechanism_pro_v003_expiry": {
+    "actual_pro_attempt_count": 0,
+    "dependency": "new bounded lease",
+    "dispatch_id": "CENTRAL-ARIS-PRO-DUCA-V013-v003",
+    "next_action": "Grant a new fresh-Pro lease if the final adjudication remains required; never resume this session.",
+    "next_owner": "Central browser dispatcher",
+    "nonce": "DUCA-DYNAMIC-INNER-FINAL-v003-20260814T202600Z",
+    "oracle_job_id": "j-sxf5to",
+    "oracle_session": "duca-inner-final-v003",
+    "raw_log_path": "C:/Users/skywalker/.fastctx/jobs/j-sxf5to/output.log",
+    "runtime_cdp": "127.0.0.1:18164",
+    "single_recovery": "none under v003",
+    "status": "LEASE_EXPIRED_PRE_SUBMISSION_ATTEMPT0",
+    "submission_evidence": "none; log reached only browser launch, selected GPT-5.6 Sol target, and browser-slot acquisition"
+  },
+  "h65_curriculum_terminal": {
+    "completed_at": "2026-08-24T06:15:13+08:00",
+    "compressed_ema_average_map": 0.6246477160866716,
+    "compressed_job": "1251622 COMPLETED 0:0",
+    "compressed_result": "/data/run01/sczc063/yuzibo/duca_h65_60_stage2_transition20_joint20_87ff0883_20260823/gpu1_id0/intermediate_validation/epoch_040_ema.json",
+    "delta_average_map_pp": -2.6609,
+    "evaluator_sha256": "e855e70d41d087d039a90ecdb8f3cc3efece209130417320edf35062b8503fd4",
+    "original_ema_average_map": 0.6512571989650765,
+    "original_job": "1251782 COMPLETED 0:0",
+    "original_result": "/data/run01/sczc063/yuzibo/duca_h65_90_stage2_off_04c35a3b_20260823/gpu1_id0/intermediate_validation/epoch_060_ema.json",
+    "status": "COMPRESSED_20_PLUS_40_NEGATIVE_VS_ORIGINAL_30_PLUS_60 / SINGLE_SEED_DIAGNOSTIC"
+  },
+  "last_attempt_at": "2026-08-12T00:12:47.192Z",
+  "last_pro_review_at": "2026-08-25T15:25:36.609Z",
+  "last_pro_turn": {
+    "actual_attempt_count": 1,
+    "completed_at": "2026-08-14T01:48:17Z",
+    "conversation_id": "not_returned",
+    "hard_timeout_at": "2026-08-14T03:39:28Z",
+    "job_id": "j-aiatnz",
+    "model": "gpt-5.5-pro",
+    "model_route": "Browser Pro / fresh Project-bound conversation / picker verified",
+    "nonce": "DUCA-UOR-TERMINAL-v001-20260814T013510Z",
+    "raw_response": "C:/Users/skywalker/.fastctx/jobs/j-aiatnz/output.log",
+    "runtime_cdp": "127.0.0.1:18164",
+    "stream_state": "final_received",
+    "submitted_at": "2026-08-14T01:39:28Z"
+  },
+  "leased_sources_sync": {
+    "completed_at": "2026-08-14T08:21:02Z",
+    "confirmed_ledger_ids": [
+      "pfile-20260814T082102Z-d9386bc752",
+      "pfile-20260814T082102Z-c53c4b1cd9"
+    ],
+    "dispatch_id": "CENTRAL-ARIS-SOURCES-DUCA-DYNAMIC-v001",
+    "earliest_at": "2026-08-14T08:19:20Z",
+    "job_id": "j-cmn1qe",
+    "lease_expires_at": "2026-08-14T08:24:20Z",
+    "log_path": "C:/Users/skywalker/.fastctx/jobs/j-cmn1qe/output.log",
+    "mutation_attempt_count": 1,
+    "operation": "PROJECT_SOURCE_SYNC",
+    "prepared_ids": [
+      "pfile-20260814T074259Z-ce8b4937ad",
+      "pfile-20260814T074259Z-8b3c4183df"
+    ],
+    "project_title": "ChatGPT - DUCA",
+    "remote_refs": [
+      "chatgpt-project-source:CURRENT_RESEARCH_STATE-v011.md",
+      "chatgpt-project-source:DUCA_DYNAMIC_ROUTE_AND_REAL_VIDEO_EXPERIMENT-v001.md"
+    ],
+    "runtime_cdp": "127.0.0.1:18164",
+    "source_count": {
+      "after": 37,
+      "before": 35
+    },
+    "status": "CONFIRMED"
+  },
+  "latest_pro_transport": {
+    "request_id": "PRO_REQUEST_DUCA_DYNAMIC_BUDGET_WINDOW_CONTRACT_CORRECTION-v005",
+    "oracle_job": "j-e598la",
+    "conversation_id": "6a91a32f-ea68-83e9-965e-a58c3060c365",
+    "nonce": "DUCA-DYNAMIC-BUDGET-WINDOW-CONTRACT-CORRECTION-v005-20260828",
+    "submitted_at": "2026-08-28T23:03:09+08:00",
+    "hard_timeout_at": "2026-08-29T01:03:05+08:00",
+    "reconciled_at": "2026-08-29T07:28:00+08:00",
+    "status": "NEEDS_ATTENTION_PRO_CAPTURE_UNREACHABLE_AFTER_HARD_TIMEOUT",
+    "scientific_decision": "NONE",
+    "terminal_receipt": ".cvpr-pro-lab/receipts/PRO_DUCA_DYNAMIC_BUDGET_WINDOW_CONTRACT_CORRECTION-v005-NEEDS_ATTENTION.md"
+  },
+  "native_tubelet_attribution": {
+    "branch": "codex/duca-native-tubelet-coreset-20260828",
+    "revision": "b33391126eac05e3353d322b973dda91741f0732",
+    "run_root": "/data/run01/sczc063/yuzibo/duca_native_tubelet_b3339112_20260829",
+    "pre_run_jobs": {
+      "uniform": "1260182 COMPLETED",
+      "coreset": "1260183 COMPLETED"
+    },
+    "formal_jobs": {
+      "uniform": "1260184 FAILED 1:0 after official metric computation",
+      "coreset": "1260185 FAILED 1:0 after official metric computation"
+    },
+    "last_read_only_accounting_check": "2026-08-29T09:00:16+08:00",
+    "expected_terminal_artifacts": {
+      "checkpoint_per_arm": "<arm_run_root>/work/gpu1_id0/checkpoint/epoch_59.pth",
+      "official_metrics_per_arm": "<arm_run_root>/metrics_epoch59_ema.json",
+      "completion_condition": "Slurm job exits successfully after the launcher verifies epoch=59, successful_optimizer_updates=6000 and state_dict_ema, then writes the official metrics JSON"
+    },
+    "terminal_collection": {
+      "status": "EVENT_DRIVEN_ONLY",
+      "detail": "No native-tubelet-specific finalizer exists in frozen revision b333911. A minimal CPU-only Slurm afterany finalizer was syntax-checked but not submitted because the cluster GPU partition requires one GPU even for that collector; allocating a GPU only to wait and collect was rejected as wasteful.",
+      "submitted_job": null,
+      "receipt": ".cvpr-pro-lab/receipts/DUCA_NATIVE_TUBELET_TERMINAL_COLLECTION-v001-NEEDS_ATTENTION.md"
+    },
+    "cost_evidence": "No cost producer or matched realized-compute artifact exists in the frozen launcher. Equal configured heavy input supports selection-location attribution only, not a measured cost or end-to-end efficiency claim.",
+    "terminal_point_estimates": {
+      "uniform_average_map_percent": 64.13,
+      "uniform_map_at_0_7_percent": 42.45,
+      "coreset_average_map_percent": 62.81,
+      "coreset_map_at_0_7_percent": 40.56,
+      "coreset_minus_uniform_average_map_pp": -1.32,
+      "coreset_minus_uniform_map_at_0_3_to_0_7_pp": [-0.35, -0.80, -1.54, -2.03, -1.89]
+    },
+    "terminal_failure": "Both arms completed 60 epochs, wrote epoch_59.pth and completed the official 211-video/422000-prediction evaluation. Both then failed because post_processing.save_dict=False left no saved predictions for the structured metrics writer; metrics_epoch59_ema.json and paired uncertainty are absent.",
+    "evidence_boundary": "The official evaluator logs provide diagnostic point estimates that are unfavorable to coreset selection, especially at high tIoU. The structured terminal evidence, paired interval and matched realized-compute artifact are absent, so no final population-effect or efficiency claim is admissible.",
+    "next_phase_if_not_killed": "Only Pro may decide whether the diagnostic negative warrants evaluation-only sealing, selector revision, transition to a true dynamic-budget model, or stopping this candidate. Fixed K remains an attribution control only."
+  },
+  "new_evidence_since_pro": true,
+  "next_pro_review_due_at": "as soon as one fresh exact-Project Pro invocation is separately authorized and profile61 can be bound without closing or restarting it",
+  "next_retry_at": null,
+  "pause_reason": "H65C Unit-1 candidate 87d9a1ae uses a clip-local canonical grid instead of the frozen global K384 clock, and the exact H65 Stage-1 EMA/replay assets are missing. No efficacy experiment occurred.",
+  "pending_pro_review": true,
+  "research_stage": "NATIVE_TUBELET_FIXED384_TERMINAL_ADJUDICATION",
+  "roles": {
+    "builder": {
+      "access": "writable",
+      "process_id": "aris-duca-pjst-d1-cycle4-runtime-20260826",
+      "process_kind": "aris-client",
+      "registered_at": "2026-08-26T04:44:59Z",
+      "workspace": "C:\\Users\\skywalker\\.codex\\worktrees\\duca-pjst-cycle4-builder-20260826"
+    },
+    "coordinator": {
+      "access": "state-only",
+      "process_id": "019fa3db-42bf-7f30-a0ab-2b8171ab33ed",
+      "process_kind": "codex-thread",
+      "registered_at": "2026-08-11T07:43:24Z",
+      "workspace": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702"
+    },
+    "critic": {
+      "access": "read-only",
+      "process_id": "codex-critic-pjst-d1-cycle4-runtime-v001",
+      "process_kind": "codex-agent",
+      "registered_at": "2026-08-26T04:53:09Z",
+      "workspace": "C:\\Users\\skywalker\\.codex\\worktrees\\duca-pjst-cycle4-critic-20260826"
+    },
+    "evaluator": {
+      "access": "evaluation-only",
+      "process_id": "codex-evaluator-pjst-d1-cycle4-slurm-submit-v005",
+      "process_kind": "codex-agent",
+      "registered_at": "2026-08-26T05:20:19Z",
+      "workspace": "C:\\Users\\skywalker\\.codex\\worktrees\\duca-pjst-cycle4-evaluator-20260826"
+    }
+  },
+  "schema_version": "1.0",
+  "source_sync_last_receipt": {
+    "completed_at": "2026-08-14T14:42:48Z",
+    "confirmed_ledger_ids": [
+      "pfile-20260814T144247Z-2d9b3938a7",
+      "pfile-20260814T144248Z-4da7324f7a"
+    ],
+    "dispatch_id": "CENTRAL-ARIS-SOURCES-DUCA-V013-v001",
+    "exact_project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+    "exact_project_title": "ChatGPT - DUCA",
+    "mutation_attempt_count": 1,
+    "remote_refs": [
+      "chatgpt-project-source:CURRENT_RESEARCH_STATE-v013.md",
+      "chatgpt-project-source:DUCA_DYNAMIC_INNER_MECHANISM_FINAL_PRO_ADJUDICATION-v001.md"
+    ],
+    "requested_ids": [
+      "pfile-20260814T140807Z-9ca0f4d1ea",
+      "pfile-20260814T140807Z-d3e6c5b482"
+    ],
+    "runtime_cdp": "127.0.0.1:18164",
+    "source_count": {
+      "after": 39,
+      "before": 37
+    },
+    "status": "CONFIRMED",
+    "sync_invocation_count": 1
+  },
+  "sources_transport_needs_attention": {
+    "attempt_count": 0,
+    "checked_at": "2026-08-14T09:37:27Z",
+    "dependency": "A verified profile-61 Local API returning a runtime debugging_address.",
+    "detail": "No verified Local API endpoint for profile 61: 127.0.0.1:53200 disconnected during TLS setup; discovered 127.0.0.1:34506 returned non-JSON to profile-list.",
+    "dispatch_id": "CENTRAL-ARIS-SOURCES-DUCA-FINAL-DEFINITIONS-v001",
+    "expected_return_at": "upon a separately granted recovery lease",
+    "next_action": "If still needed, issue a separately bounded non-equivalent control-plane recovery lease; do not retransmit under this closed lease.",
+    "next_owner": "Central browser dispatcher",
+    "project_contacted": false,
+    "runtime_cdp": null,
+    "single_recovery": "none under this lease",
+    "status": "PRE_MUTATION_CONTROL_PLANE_FAILURE"
+  },
+  "stage": "TERMINAL_RESULT_PENDING_PRO",
+  "status": "NATIVE_TUBELET_CORESET_DIAGNOSTIC_NEGATIVE / STRUCTURED_EVIDENCE_PACKAGING_FAILED / NO_COST_RESULT",
+  "terminal_route_b_plan_review": {
+    "completed_at": "2026-08-14T08:56:46Z",
+    "evidence_class": "STATIC_PLAN_REVIEW_ONLY / NOT_EXECUTED",
+    "findings": [
+      "F1: midpoint-CDF-plus-lexicographic decoder specification yields (0,2,...,766) for T_v=768,K=384 while its asserted canonical-uniform specialization requires (1,3,...,767).",
+      "F2: K-shuffle lacks a frozen nonce/seed, canonical row ordering, and permutation algorithm."
+    ],
+    "receipt": ".cvpr-pro-lab/critic-returns/CRITIC_DUCA_DYNAMIC_ROUTE_B_PLAN_STATIC_REVIEW-v001.md",
+    "status": "DYNAMIC_ROUTE_B_PLAN_BLOCKED",
+    "terminal_disposition": "The role correction loop is closed. Its two deterministic findings are preserved as scientific ambiguity for one final fresh Project Pro disposition; no correction, recheck, Evaluator intake, PRE_RUN, or execution is authorized."
+  },
+  "updated_at": "2026-08-29T01:29:08Z",
+  "wait_reason": "The fixed-budget pair is terminal. A neutral result packet must return to Pro because Codex cannot choose between evaluation-only sealing, selector revision, dynamic-budget continuation or stopping the candidate.",
+  "wait_state": "WAITING_FRESH_PRO_SCIENTIFIC_ADJUDICATION"
+}

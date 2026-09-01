@@ -37,3 +37,14 @@ expected K 不等于执行 K；clamp/binary jump；budget loss 与 detector util
 ## Connections
 
 由 `research-wiki/graph/edges.jsonl` 维护。
+
+## 2026-07-27 dynamic-K candidate clarification
+
+新登记的 `idea:duca-rime` 不会抹去本节点的 `paused/negative` 结论。旧 MUST 的
+prefix controller、expected-K calibration、跳变和 selected-axis 结果仍是高价值负
+证据，不能改名后复用为新方法的支持。
+
+RIME 只有在以下新门全部独立通过后才可能恢复动态预算主线：clean native uniform 与
+wrapper parity、dynamic Oracle headroom、independent/nested regret、train-only
+hard utility、paired-boundary risk、realized-K bucket execution 和完整成本。当前状态
+仍是 `new_candidate_discussed / old_must_not_revived / no_training_authorized`。

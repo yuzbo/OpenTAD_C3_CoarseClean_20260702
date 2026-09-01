@@ -1,0 +1,29 @@
+{
+  "claim_boundary": "engineering_failure_no_model_metric",
+  "failure_signature": "native_grid_sparse_head_microkernel_launch_and_scatter_slowdown_v1",
+  "job_id": 1205541,
+  "model_metric_claim_allowed": false,
+  "observations": {
+    "correctness_contract_pass": true,
+    "dense_head_mean_ms": 6.191821147998174,
+    "maximum_selected_abs_error": 4.0531158447265625e-06,
+    "per_round_speedups": [
+      0.3006317611423626,
+      0.3008472558206754,
+      0.30038258566799714
+    ],
+    "sparse_head_preselected_mean_ms": 19.65075126952595,
+    "sparse_head_with_selector_mean_ms": 20.504609247048695,
+    "theoretical_head_mac_fraction": 0.3359251591135649,
+    "unselected_nonzero_count": 0,
+    "wall_clock_speedup": 0.30091287378297016
+  },
+  "preserved_receipts": {
+    "cuda_gate_sha256": "8aeb2cdbf02da0f8ad675b2f5a33d3ef6d89198ac7e216511ffde45d66f505a3",
+    "slurm_stderr_sha256": "4c6d87aa6b85dbbe173a1eae119bac562aa43f55c6fa847b256c9c05d25c79e0",
+    "slurm_stdout_sha256": "f2b4d2bc32790b43cd5448752f1c251320520df5dc5fb6c9976847d70987d91b"
+  },
+  "root_cause": "The exact sparse path launched tiny Conv1d kernels separately for each sample and FPN level and repeatedly allocated/scattered dense workspaces; launch and memory overhead dominated the saved MACs.",
+  "run_root": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_native_grid_k384_cuda_gate_20260730_v1",
+  "schema_version": "actionformer_native_grid_sparse_head_failure_analysis_v1"
+}

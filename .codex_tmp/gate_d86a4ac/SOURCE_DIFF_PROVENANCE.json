@@ -1,0 +1,21 @@
+{
+  "attestation_execution_host": "local_windows_clean_exact_commit",
+  "attestation_sha256": "68d2cf726cc8523094847337eb5ebe604ca5ad46cbe99d2a5fba2b78f45e67db",
+  "audit_builder": {
+    "commit": "14bd14f9b6a087dc2ec623fc4238c89e0cb86960",
+    "tree": "b782404ddef9a65f19fea70fbf993a3a9d6e0420"
+  },
+  "candidate": {
+    "commit": "d86a4acda21e35a1609f19f1a46bc470ee18b7e1",
+    "local_clean": true,
+    "remote_runtime": "/data/run01/sczc063/yuzibo/projects/actionformer_sparsehead_official_matched_20260730_v7",
+    "remote_runtime_clean": true,
+    "tree": "327c032a1ab3c14d0e34d6339df36f8a33ec6907"
+  },
+  "claim_boundary": "engineering_gate_source_diff_transport_recovery_only",
+  "paper_main_table_seal_allowed": false,
+  "reason": "The exact source-diff builder was run against live official and candidate GitHub refs from a clean local exact-commit clone because the N16R4 login host previously failed GitHub DNS resolution. This receipt may authorize only the isolated engineering gate.",
+  "remote_failure_signature": "github_remote_ref_dns_timeout_during_source_diff_v1",
+  "remote_live_recomputation_required_before_paper": true,
+  "schema_version": "actionformer_source_diff_provenance_v1"
+}

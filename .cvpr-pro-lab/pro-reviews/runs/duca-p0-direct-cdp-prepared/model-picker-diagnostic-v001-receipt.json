@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "dispatch_id": "CENTRAL-DIAG-DUCA-MODEL-PICKER-v001",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PRO_ROUTE_READONLY_DIAGNOSTIC",
+  "runtime_cdp": "http://127.0.0.1:47785",
+  "completed_at": "2026-08-11T12:28:30Z",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "project_title": "ChatGPT - DUCA",
+  "read_only_actions": [
+    "Connected to the profile-61 runtime CDP.",
+    "Opened a dedicated exact-Project page and enumerated visible button/menu/combobox metadata.",
+    "Closed the dedicated page without input, click, message, Source action, or conversation creation."
+  ],
+  "dom_summary": {
+    "visible_button_menu_combobox_count": 74,
+    "model_control_candidates": 0,
+    "model_label_candidates": 0,
+    "combobox_candidates": 0,
+    "observed_control_categories": [
+      "account/profile menu",
+      "project icon/color menu",
+      "project and conversation sidebar controls"
+    ]
+  },
+  "outcome": "MODEL_CONTROL_UNRESOLVED",
+  "actual_attempt_increased": false,
+  "minimal_runner_guidance": "Do not broaden the current generic picker scan from this evidence. The Project root has no verifiable model control before fresh-conversation setup. A future centrally leased submission route must explicitly establish the fresh, unsent Project conversation state and then inspect only composer-adjacent model/effort controls before any prompt input or send action.",
+  "safety_note": "The account-level sidebar contains unrelated conversation labels. They were neither retained in this receipt nor used as DUCA context."
+}

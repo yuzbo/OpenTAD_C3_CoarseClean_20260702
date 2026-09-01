@@ -1,0 +1,1227 @@
+## 固定版本与总判定
+
+我实际看到的目标分支当前固定 SHA 是：
+
+`46cacc113042fcf0931c70774491d44665246e32`
+
+目标仓库和目标分支可见；GitHub commit 列表显示该分支顶部提交为 `46cacc1`，提交页对应完整 SHA 为 `46cacc113042fcf0931c70774491d44665246e32`，提交信息是 “Fix lattice provenance inference for source exports”。([GitHub][1])
+
+**总判定：HOLD。**
+
+理由很直接：当前仓库已经有一些 ledger validation、summary、诊断统计能力，但**不足以支撑“选帧集中在动作边界附近”这个强 claim**，更不足以解释“为什么 PAction learned 比 GAS-VT 好”或证明 Stage2/Stage3 已经真正 detector-aware。当前最严重缺口是：**缺少统一的 selector geometry 分析表、缺少 per-video timeline/dashboard 绘图、缺少 boundary distance 分布、缺少 normalized action-time density、缺少跨方法 matched-budget 可视化与失败样本 gallery**。
+
+---
+
+## 1. 当前代码已有分析能力清单
+
+### 1.1 GitHub 可见性：PASS，但完整性不足
+
+在固定 SHA 上，`tools/bata/`、`tests/`、`docs/methods/` 都可见。`tools/bata/` 下可见大量 `validate_*.py`、`export_*.py`、`run_*.py`、`summarize_*.py` 文件，但只看到一个明确的 `analyze_*.py`，没有看到成体系的 `plot_*.py` 或 `generate_*.py` 可视化入口。`tests/` 下有大量 policy、ledger、leakage、Stage2/Stage3、TrueTime、full-train config 相关测试，但没有看到专门覆盖 boundary distance、timeline raster、model comparison dashboard、plot reproduction 的测试。`docs/methods/` 下有方法记录和证据笔记，但不是一个完整的 selector-analysis reproducibility runbook。([GitHub][2])
+
+### 1.2 已有的 analyzer：只能做粗诊断，不足以做论文级几何分析
+
+`tools/bata/analyze_pc_ot_mras_selector_posttrain_diagnostics.py` 已经有一些关键函数，例如 `_boundary_diagnostics`、`_is_inside_any_segment`、`_is_boundary_near`、packet role 统计等。它能够统计 selected frame 是否接近 boundary、是否落在 action 内部、是否属于 interior/background 角色，并能汇总 boundary/support/near-selected/action/interior 等粗粒度字段。([GitHub][3])
+
+但这个 analyzer 的能力仍然偏弱：我没有看到 timeline、matplotlib、plot raster、CDF、heatmap、dashboard 相关实现；也就是说，它更像 JSON/数值诊断脚本，而不是可复现可视化工具。([GitHub][3])
+
+### 1.3 已有的 validator：比 analyzer 更实用，但仍不能替代 geometry analysis
+
+`tools/bata/validate_paction_learned_policy_ledger.py` 是目前最接近“可复现统计接口”的脚本。它有明确 CLI 参数，包括 `--sample-jsonl`、`--ledger-jsonl`、`--strategy`、`--metric-sample-jsonl`、`--expected-target-len`、`--require-selected-count`、`--boundary-radii`、`--summary-json`、`--max-hole-top10-csv` 等。它会检查 selected positions、selected count、gap/hole、uniform similarity、boundary support、多半径 boundary support、action coverage、p_action Spearman、p_action top-k Jaccard/overlap 等。([GitHub][4])
+
+这部分是当前仓库里最有价值的分析基础。它已经能回答一些 “ledger 是否像 uniform”“selected count 是否一致”“p_action top-k 与 policy 选点重合多少”“boundary recall@r 是否存在” 的问题。但是它还不能回答：
+
+* 选中的帧到最近 boundary 的完整距离分布是什么；
+* selected frames 有多少比例在 boundary band/action interior/background；
+* 每个 GT action 的 start/end 是否分别被覆盖；
+* 不同方法在同一个视频上到底选在哪里；
+* Stage2/Stage3 与 p_action-only 的差异是否来自 detector utility；
+* p_action 分数高的位置到底更靠近 boundary，还是只是动作内部高分。
+
+### 1.4 当前 docs 已经承认：因果解释尚未成立
+
+`docs/methods/2026-07-07-gasvt-paction-diagnosis-evidence.md` 已经比较诚实地写了：当前诊断不是最终因果证明；需要 matched reruns、formal ledger statistics、top-k overlap、selected-count histograms、matched ablations 等。该文档还记录了 PAction 与 GAS-VT 在 boundary support、hole、uniform similarity 等指标上的早期差异，但明确说这些还不能构成最终 causal proof。([GitHub][5])
+
+这点很重要：仓库自己的文档已经支持我给出 **HOLD**，而不是 PASS。
+
+---
+
+## 2. 当前缺失或不足的分析能力清单
+
+### 2.1 对 “是否集中在动作边界附近” 的证据不足
+
+当前 validator 的 `boundary_support@r` 是有用的，但它只是 **boundary recall**，不是 **selected-frame concentration**。换句话说：
+
+* `boundary_support@r` 高，只说明很多 boundary 附近至少有一个 selected frame；
+* 它不能说明 selected frames 的主体是否集中在 boundary；
+* 它不能区分 “少量点命中 boundary，但大部分点仍在 action interior” 和 “整体分布确实向 boundary 聚集”。
+
+因此，当前代码还缺少以下核心指标：
+
+1. **selected frame 到最近 GT boundary 的距离分布**
+   需要 frame、second、normalized action length 三个单位。
+
+2. **selected-frame region share**
+   每个方法的 selected frames 有多少比例落在：
+
+   * boundary band；
+   * action interior；
+   * background；
+   * padding/invalid，理论上应为 0。
+
+3. **per-action endpoint coverage**
+   对每个 GT action，分别统计：
+
+   * start covered@r；
+   * end covered@r；
+   * both start/end covered@r；
+   * neither covered@r。
+
+4. **region-specific holes**
+   当前 hole/gap 更多是全局统计；需要分别统计：
+
+   * whole video；
+   * action interior；
+   * boundary band；
+   * background；
+   * long action；
+   * short action。
+
+5. **normalized action-time density**
+   需要把每个 action 归一化成 `[0,1]`，并额外保留 pre-start 和 post-end 区间，看 selected density 是否在 0 和 1 附近升高。
+
+6. **score calibration**
+   需要证明高 `p_action`、高 uncertainty、high change、teacher utility score 到底对应 boundary、interior 还是 background。
+
+### 2.2 对 “PAction learned 为什么比 GAS-VT 更好” 的证据不足
+
+当前文档显示 PAction learned 在一些 boundary/hole 指标上强于 GAS-VT，但仓库还没有一个统一分析接口，把下面这些因素拆开：
+
+* p_action score 本身；
+* decoder；
+* budget allocation；
+* gap repair；
+* uniform scaffold/fill；
+* lattice replacement；
+* AdaTAD detector setting；
+* matched train/test split；
+* matched budget；
+* matched selected-count policy；
+* matched short-video handling。
+
+因此，现在不能严肃声称：
+
+> PAction learned 比 GAS-VT 好，是因为它更 boundary-aware。
+
+最多只能说：
+
+> 在已有 ledger summary 里，PAction learned 显示出更好的若干 boundary/hole 诊断指标；原因仍需 matched ablation 和可视化确认。
+
+### 2.3 Stage2/Stage3 detector-aware claim 暂时 HOLD
+
+当前分支有 Stage2/Stage3 相关 validation 和 config gate，但缺少能够直观看出 “detector utility 改变了选帧位置” 的 dashboard。已有 full-train config validator 会检查 variants、ledger subsample method、selected count、GT remap、forbidden flags 等，这对工程防漏是有价值的，但不等价于证明 Stage2/Stage3 学到了 detector-aware selection。([GitHub][6])
+
+Stage2/Stage3 至少还需要：
+
+* 与 p_action-only 的 per-video side-by-side timeline；
+* 与 teacher utility high-score regions 的 overlap；
+* detector loss/utility rank vs selected probability calibration；
+* high-IoU improvement 与 endpoint coverage improvement 的相关性；
+* matched-budget mAP + geometry 双表。
+
+---
+
+## 3. 关键代码正确性风险
+
+### 3.1 坐标轴 contract 不够强
+
+当前 validator 能检查 selected positions 的排序、唯一性、非负、in-range、expected count、target length 等，这是好的。([GitHub][4])
+
+但 boundary analysis 仍然默认 `selected_positions`、`gt_segments`、`action_target`、`p_action` 在同一个 dense axis 上。这个假设必须被写进 schema，并在脚本里强制校验：
+
+```json
+{
+  "coordinate_system": "dense_frame_index",
+  "axis": "pre_backbone_dense_768",
+  "fps": 30.0,
+  "frame_stride": 1,
+  "valid_len": 768,
+  "selected_positions_are_centers": true,
+  "gt_segment_convention": "half_open_[start,end)"
+}
+```
+
+没有这个 contract，最容易出现 frame index、feature index、timestamp、clip index 混用，最后把 interior coverage 误判成 boundary coverage。
+
+### 3.2 off-by-one 风险：segment end inclusive
+
+`_is_inside_any_segment` 当前使用类似 `start <= position <= end` 的 inclusive 判断。([GitHub][3])
+
+这在 TAD 里必须显式定义。如果 GT segment 是 `[start, end)` 半开区间，那么 inclusive end 会把 action 后一个边界点算进 action 内部；如果 GT segment 是连续时间秒数，转成 frame index 后也必须说明 boundary frame 是 floor、round、ceil 还是 frame center。否则 boundary band、interior、background 三分区会有系统性偏差。
+
+建议统一为：
+
+* 内部离散帧轴：`[start_idx, end_idx)`；
+* start boundary：`start_idx`；
+* end boundary：`end_idx - 1` 或连续时间 `end_time`，二者必须分别命名；
+* 所有 radius 使用 “frame center distance”。
+
+### 3.3 boundary support 不是 selected concentration
+
+当前 validator 计算 boundary hits/support，这是 boundary recall 口径；它不能证明 selected frames 主体靠近 boundary。([GitHub][4])
+
+必须新增 selected-centric 指标：
+
+```text
+P(selected frame within r of nearest GT boundary)
+median / p75 / p90 / p95 distance_to_boundary
+selected density near start/end vs interior
+```
+
+否则论文里写 “concentrates around boundaries” 会被审稿人抓住。
+
+### 3.4 bracket support 的定义需要修正或文档化
+
+当前 validator 里 boundary bracket support 使用 “boundary 左右各有点” 的逻辑；如果 selected frame 正好等于 boundary，它可能不被当作 left/right bracketing。([GitHub][4])
+
+这不一定是 bug，但必须拆成两个指标：
+
+* `boundary_hit@r`: radius 内至少一个点；
+* `boundary_bracket@r`: boundary 两侧各至少一个点；
+* `boundary_exact_hit`: selected position 正好落在 boundary center。
+
+否则 exact boundary 命中反而可能在 bracket 指标上吃亏。
+
+### 3.5 action coverage 容易被误读
+
+当前 `action_positive_coverage` 更像 action-positive frame coverage，不是 per-action instance coverage。([GitHub][4])
+
+论文里不能把它写成 “每个动作都被覆盖”。必须新增：
+
+```text
+per_action_any_selected
+per_action_start_hit@r
+per_action_end_hit@r
+per_action_both_endpoints_hit@r
+per_action_interior_selected_count
+```
+
+### 3.6 图像复现链路缺失
+
+当前仓库没有成体系 `plot_*.py` 入口；这意味着即使有 notebook 或聊天记录里的图，固定 commit 也无法复现。这个问题对论文非常严重。([GitHub][2])
+
+---
+
+## 4. 必须新增的分析脚本设计
+
+### 4.1 `tools/bata/analyze_selector_geometry.py`
+
+**目标**：把不同 selector 的 ledger 统一转成 frame-level、video-level、action-level、method-level 统计表。
+
+**CLI 示例：**
+
+```bash
+python tools/bata/analyze_selector_geometry.py \
+  --run-tag 46cacc1_val_geometry_v1 \
+  --split val \
+  --annotation-json data/thumos14/annotations/thumos14_val.json \
+  --video-meta-json data/thumos14/meta/video_meta.json \
+  --selector-ledger uniform_384=outputs/ledgers/uniform_384.val.jsonl \
+  --selector-ledger paction_learned_fixed_384=outputs/ledgers/paction_learned_fixed_384.val.jsonl \
+  --selector-ledger gas_vt_fixed_384=outputs/ledgers/gas_vt_fixed_384.val.jsonl \
+  --selector-ledger stage2_detector_aware=outputs/ledgers/stage2.val.jsonl \
+  --selector-ledger stage3_joint=outputs/ledgers/stage3.val.jsonl \
+  --score-jsonl p_action=outputs/scores/paction_val_samples.jsonl \
+  --score-field p_action \
+  --coordinate-system dense_frame_index \
+  --gt-convention half_open \
+  --radii-frames 1 2 4 8 16 \
+  --radii-seconds 0.04 0.08 0.16 0.32 0.64 \
+  --boundary-band-radius 4 \
+  --out-dir outputs/analysis/46cacc1_val_geometry_v1
+```
+
+**输入：**
+
+* annotation JSON；
+* video meta JSON：fps、duration、dense_len、valid_len；
+* 多个 method ledger JSONL；
+* optional p_action / uncertainty / change / utility score JSONL；
+* coordinate contract。
+
+**输出：**
+
+```text
+outputs/analysis/46cacc1_val_geometry_v1/
+  manifest.json
+  schema.lock.json
+  frame_metrics.parquet
+  selected_frame_metrics.parquet
+  video_summary.csv
+  action_summary.csv
+  method_summary.csv
+  boundary_recall_by_radius.csv
+  selected_distance_quantiles.csv
+  paction_calibration.csv
+  region_share.csv
+  holes_by_region.csv
+  failures.jsonl
+```
+
+### 4.2 `tools/bata/export_selector_paper_tables.py`
+
+**目标**：从 geometry analysis 输出论文表格。
+
+**CLI 示例：**
+
+```bash
+python tools/bata/export_selector_paper_tables.py \
+  --geometry-dir outputs/analysis/46cacc1_val_geometry_v1 \
+  --map-results-json outputs/results/matched_map_results.json \
+  --out-dir outputs/analysis/46cacc1_val_geometry_v1/paper_tables
+```
+
+**输出：**
+
+```text
+paper_tables/
+  table1_map_vs_geometry.csv
+  table2_boundary_recall.csv
+  table3_region_share.csv
+  table4_ablation_decoder_budget_repair.csv
+  table5_stage2_stage3_detector_aware.csv
+```
+
+### 4.3 `tools/bata/validate_selector_geometry_metrics.py`
+
+**目标**：用 toy cases 防止 off-by-one、padding、coordinate 混用、boundary/interior 混淆。
+
+**CLI 示例：**
+
+```bash
+python tools/bata/validate_selector_geometry_metrics.py \
+  --geometry-dir outputs/analysis/46cacc1_val_geometry_v1 \
+  --require-no-padding-selected \
+  --require-coordinate-contract \
+  --require-selected-count-field \
+  --radii-frames 1 2 4 8 16
+```
+
+**必须覆盖的测试 case：**
+
+* selected frame 正好在 start boundary；
+* selected frame 正好在 end boundary；
+* selected frame 在 action interior；
+* selected frame 在 background；
+* short video selected count；
+* padded positions；
+* overlapping actions；
+* action length = 1；
+* no-GT video；
+* timestamp-to-frame conversion。
+
+---
+
+## 5. 必须新增的绘图脚本设计
+
+### 5.1 `tools/bata/plot_selector_geometry.py`
+
+**目标**：生成全局统计图。
+
+**CLI 示例：**
+
+```bash
+python tools/bata/plot_selector_geometry.py \
+  --geometry-dir outputs/analysis/46cacc1_val_geometry_v1 \
+  --methods uniform_384 gas_vt_fixed_384 paction_learned_fixed_384 stage2_detector_aware stage3_joint \
+  --out-dir outputs/analysis/46cacc1_val_geometry_v1/figures/global
+```
+
+**输出图：**
+
+```text
+figures/global/
+  boundary_distance_cdf.pdf
+  boundary_distance_histogram.pdf
+  region_share_stacked_bar.pdf
+  boundary_recall_by_radius.pdf
+  endpoint_coverage_by_radius.pdf
+  holes_by_region_boxplot.pdf
+  paction_score_calibration.pdf
+  normalized_action_time_density.pdf
+  per_class_boundary_coverage_heatmap.pdf
+```
+
+### 5.2 `tools/bata/plot_selector_timeline.py`
+
+**目标**：单视频 timeline raster。
+
+**CLI 示例：**
+
+```bash
+python tools/bata/plot_selector_timeline.py \
+  --geometry-dir outputs/analysis/46cacc1_val_geometry_v1 \
+  --video-id video_validation_0000051 \
+  --methods uniform_384 gas_vt_fixed_384 paction_learned_fixed_384 stage2_detector_aware stage3_joint \
+  --score-field p_action \
+  --show-boundary-band \
+  --out outputs/analysis/46cacc1_val_geometry_v1/figures/timeline/video_validation_0000051.pdf
+```
+
+**图中必须有：**
+
+* GT action segments；
+* start/end boundary bands；
+* 每个方法的 selected vertical ticks；
+* p_action score 曲线；
+* uncertainty/change/utility 可选曲线；
+* invalid/padding 区间阴影；
+* selected count、max gap、boundary recall@4、region share 小表。
+
+### 5.3 `tools/bata/plot_selector_dashboard.py`
+
+**目标**：同一视频内多方法横向比较。
+
+**CLI 示例：**
+
+```bash
+python tools/bata/plot_selector_dashboard.py \
+  --geometry-dir outputs/analysis/46cacc1_val_geometry_v1 \
+  --video-id video_validation_0000051 \
+  --methods uniform_384 gas_vt_fixed_384 paction_learned_fixed_384 stage2_detector_aware stage3_joint \
+  --out outputs/analysis/46cacc1_val_geometry_v1/figures/dashboard/video_validation_0000051.pdf
+```
+
+### 5.4 `tools/bata/generate_selector_failure_gallery.py`
+
+**目标**：自动挑选代表失败样本。
+
+**CLI 示例：**
+
+```bash
+python tools/bata/generate_selector_failure_gallery.py \
+  --geometry-dir outputs/analysis/46cacc1_val_geometry_v1 \
+  --map-results-json outputs/results/per_video_map_proxy.json \
+  --criteria \
+    gas_vt_low_boundary_paction_high_boundary \
+    paction_low_boundary_uniform_high \
+    stage2_differs_from_paction \
+    long_background_hole \
+    missed_end_boundary \
+  --top-k 20 \
+  --out-dir outputs/analysis/46cacc1_val_geometry_v1/figures/failure_gallery
+```
+
+---
+
+## 6. 推荐图表目录结构
+
+```text
+outputs/
+  analysis/
+    46cacc113042fcf0931c70774491d44665246e32/
+      RUN_TAG/
+        manifest.json
+        inputs.lock.json
+        schema.lock.json
+
+        tables/
+          frame_metrics.parquet
+          selected_frame_metrics.parquet
+          video_summary.csv
+          action_summary.csv
+          method_summary.csv
+          boundary_recall_by_radius.csv
+          endpoint_coverage_by_radius.csv
+          region_share.csv
+          holes_by_region.csv
+          paction_calibration.csv
+          method_pair_overlap.csv
+          failure_cases.csv
+
+        figures/
+          global/
+            boundary_distance_cdf.pdf
+            boundary_distance_histogram.pdf
+            region_share_stacked_bar.pdf
+            boundary_recall_by_radius.pdf
+            endpoint_coverage_by_radius.pdf
+            normalized_action_time_density.pdf
+            per_class_boundary_coverage_heatmap.pdf
+            paction_score_calibration.pdf
+          timeline/
+            video_validation_*.pdf
+          dashboard/
+            video_validation_*.pdf
+          failure_gallery/
+            gas_vt_fail_paction_success/
+            paction_fail_uniform_success/
+            stage2_differs_from_paction/
+            missed_end_boundary/
+            long_background_hole/
+
+        paper/
+          fig1_method_overview_timeline.pdf
+          fig2_boundary_distance_cdf.pdf
+          fig3_region_share_and_density.pdf
+          fig4_failure_gallery.pdf
+          table1_map_geometry.csv
+          table2_ablation_decoder_budget_repair.csv
+          table3_stage2_stage3_detector_aware.csv
+```
+
+---
+
+## 7. 关键实现代码框架
+
+下面代码是应该进入仓库的核心实现骨架。重点是先把 geometry statistics 做对，再谈论文 claim。
+
+### 7.1 boundary distance、region label、coverage@r
+
+```python
+# tools/bata/selector_geometry_core.py
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable, Mapping, Sequence
+
+import math
+import numpy as np
+import pandas as pd
+
+
+@dataclass(frozen=True)
+class Segment:
+    video_id: str
+    start: int          # dense frame index, inclusive
+    end: int            # dense frame index, exclusive
+    label: str | None = None
+    instance_id: str | None = None
+
+    @property
+    def length(self) -> int:
+        return max(0, self.end - self.start)
+
+    def contains(self, frame_idx: int) -> bool:
+        return self.start <= frame_idx < self.end
+
+
+def _require_sorted_unique_nonnegative(values: Sequence[int], name: str) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.int64)
+    if arr.ndim != 1:
+        raise ValueError(f"{name} must be 1D, got shape={arr.shape}")
+    if len(arr) and int(arr.min()) < 0:
+        raise ValueError(f"{name} contains negative positions")
+    if len(arr) and np.any(arr[1:] <= arr[:-1]):
+        raise ValueError(f"{name} must be strictly sorted and unique")
+    return arr
+
+
+def boundary_points(segments: Sequence[Segment]) -> list[dict]:
+    """Return start/end boundary points on the same dense frame axis.
+
+    Convention:
+      - segment interval is half-open [start, end)
+      - start boundary point is start
+      - end boundary point is end - 1 for discrete frame-center analysis
+    """
+    out: list[dict] = []
+    for k, seg in enumerate(segments):
+        if seg.length <= 0:
+            continue
+        instance_id = seg.instance_id or f"{seg.video_id}:{k}"
+        out.append({
+            "video_id": seg.video_id,
+            "instance_id": instance_id,
+            "label": seg.label,
+            "boundary_type": "start",
+            "boundary_frame": int(seg.start),
+            "action_start": int(seg.start),
+            "action_end": int(seg.end),
+            "action_len": int(seg.length),
+        })
+        out.append({
+            "video_id": seg.video_id,
+            "instance_id": instance_id,
+            "label": seg.label,
+            "boundary_type": "end",
+            "boundary_frame": int(seg.end - 1),
+            "action_start": int(seg.start),
+            "action_end": int(seg.end),
+            "action_len": int(seg.length),
+        })
+    return out
+
+
+def nearest_boundary_rows(
+    *,
+    video_id: str,
+    method: str,
+    selected_positions: Sequence[int],
+    segments: Sequence[Segment],
+    frame_stride_seconds: float,
+) -> pd.DataFrame:
+    selected = _require_sorted_unique_nonnegative(selected_positions, "selected_positions")
+    b_rows = boundary_points(segments)
+
+    if not len(selected):
+        return pd.DataFrame()
+
+    if not b_rows:
+        return pd.DataFrame({
+            "video_id": video_id,
+            "method": method,
+            "selected_frame": selected,
+            "nearest_boundary_frame": np.nan,
+            "nearest_boundary_distance_frame": np.nan,
+            "nearest_boundary_distance_seconds": np.nan,
+            "nearest_boundary_distance_norm_action": np.nan,
+            "nearest_boundary_type": None,
+            "nearest_instance_id": None,
+            "nearest_label": None,
+        })
+
+    b_frames = np.asarray([r["boundary_frame"] for r in b_rows], dtype=np.int64)
+
+    rows = []
+    for f in selected:
+        d = np.abs(b_frames - int(f))
+        j = int(np.argmin(d))
+        br = b_rows[j]
+        dist_frame = int(d[j])
+        action_len = max(1, int(br["action_len"]))
+        rows.append({
+            "video_id": video_id,
+            "method": method,
+            "selected_frame": int(f),
+            "nearest_boundary_frame": int(br["boundary_frame"]),
+            "nearest_boundary_distance_frame": dist_frame,
+            "nearest_boundary_distance_seconds": float(dist_frame * frame_stride_seconds),
+            "nearest_boundary_distance_norm_action": float(dist_frame / action_len),
+            "nearest_boundary_type": br["boundary_type"],
+            "nearest_instance_id": br["instance_id"],
+            "nearest_label": br["label"],
+        })
+
+    return pd.DataFrame(rows)
+
+
+def label_selected_regions(
+    *,
+    selected_positions: Sequence[int],
+    segments: Sequence[Segment],
+    boundary_radius: int,
+) -> pd.Series:
+    """Priority: boundary_band > action_interior > background."""
+    selected = _require_sorted_unique_nonnegative(selected_positions, "selected_positions")
+    b_frames = np.asarray([r["boundary_frame"] for r in boundary_points(segments)], dtype=np.int64)
+
+    labels: list[str] = []
+    for f in selected:
+        near_boundary = bool(len(b_frames) and np.min(np.abs(b_frames - int(f))) <= boundary_radius)
+        inside_action = any(seg.contains(int(f)) for seg in segments)
+
+        if near_boundary:
+            labels.append("boundary_band")
+        elif inside_action:
+            labels.append("action_interior")
+        else:
+            labels.append("background")
+
+    return pd.Series(labels, name="selected_region")
+
+
+def boundary_recall_at_r(
+    *,
+    selected_positions: Sequence[int],
+    segments: Sequence[Segment],
+    radii: Sequence[int],
+) -> pd.DataFrame:
+    selected = _require_sorted_unique_nonnegative(selected_positions, "selected_positions")
+    b_rows = boundary_points(segments)
+
+    rows = []
+    for r in radii:
+        hit = 0
+        total = 0
+        start_hit = 0
+        start_total = 0
+        end_hit = 0
+        end_total = 0
+
+        for br in b_rows:
+            total += 1
+            covered = bool(len(selected) and np.min(np.abs(selected - br["boundary_frame"])) <= r)
+            hit += int(covered)
+
+            if br["boundary_type"] == "start":
+                start_total += 1
+                start_hit += int(covered)
+            else:
+                end_total += 1
+                end_hit += int(covered)
+
+        rows.append({
+            "radius_frame": int(r),
+            "boundary_total": int(total),
+            "boundary_hit": int(hit),
+            "boundary_recall": float(hit / total) if total else math.nan,
+            "start_total": int(start_total),
+            "start_hit": int(start_hit),
+            "start_recall": float(start_hit / start_total) if start_total else math.nan,
+            "end_total": int(end_total),
+            "end_hit": int(end_hit),
+            "end_recall": float(end_hit / end_total) if end_total else math.nan,
+        })
+
+    return pd.DataFrame(rows)
+
+
+def per_action_endpoint_coverage(
+    *,
+    video_id: str,
+    method: str,
+    selected_positions: Sequence[int],
+    segments: Sequence[Segment],
+    radii: Sequence[int],
+) -> pd.DataFrame:
+    selected = _require_sorted_unique_nonnegative(selected_positions, "selected_positions")
+    rows = []
+
+    for k, seg in enumerate(segments):
+        if seg.length <= 0:
+            continue
+
+        instance_id = seg.instance_id or f"{video_id}:{k}"
+        start_b = int(seg.start)
+        end_b = int(seg.end - 1)
+
+        for r in radii:
+            start_hit = bool(len(selected) and np.min(np.abs(selected - start_b)) <= r)
+            end_hit = bool(len(selected) and np.min(np.abs(selected - end_b)) <= r)
+            any_inside = bool(np.any((selected >= seg.start) & (selected < seg.end)))
+
+            rows.append({
+                "video_id": video_id,
+                "method": method,
+                "instance_id": instance_id,
+                "label": seg.label,
+                "action_start": int(seg.start),
+                "action_end": int(seg.end),
+                "action_len": int(seg.length),
+                "radius_frame": int(r),
+                "start_hit": int(start_hit),
+                "end_hit": int(end_hit),
+                "both_endpoint_hit": int(start_hit and end_hit),
+                "any_endpoint_hit": int(start_hit or end_hit),
+                "any_selected_inside_action": int(any_inside),
+            })
+
+    return pd.DataFrame(rows)
+
+
+def unselected_holes_by_mask(
+    *,
+    valid_len: int,
+    selected_positions: Sequence[int],
+    mask: np.ndarray,
+) -> list[int]:
+    """Lengths of consecutive unselected valid positions inside a boolean mask."""
+    selected = set(int(x) for x in selected_positions)
+    if mask.shape != (valid_len,):
+        raise ValueError(f"mask shape {mask.shape} != valid_len {valid_len}")
+
+    holes: list[int] = []
+    run = 0
+
+    for i in range(valid_len):
+        if not bool(mask[i]):
+            if run:
+                holes.append(run)
+                run = 0
+            continue
+
+        if i in selected:
+            if run:
+                holes.append(run)
+                run = 0
+        else:
+            run += 1
+
+    if run:
+        holes.append(run)
+
+    return holes
+
+
+def region_masks(valid_len: int, segments: Sequence[Segment], boundary_radius: int) -> dict[str, np.ndarray]:
+    action = np.zeros(valid_len, dtype=bool)
+    boundary = np.zeros(valid_len, dtype=bool)
+
+    for seg in segments:
+        s = max(0, int(seg.start))
+        e = min(valid_len, int(seg.end))
+        if e > s:
+            action[s:e] = True
+
+    for br in boundary_points(segments):
+        b = int(br["boundary_frame"])
+        lo = max(0, b - boundary_radius)
+        hi = min(valid_len, b + boundary_radius + 1)
+        boundary[lo:hi] = True
+
+    interior = action & ~boundary
+    background = ~action & ~boundary
+
+    return {
+        "whole_video": np.ones(valid_len, dtype=bool),
+        "boundary_band": boundary,
+        "action_interior": interior,
+        "background": background,
+    }
+
+
+def summarize_holes_by_region(
+    *,
+    valid_len: int,
+    selected_positions: Sequence[int],
+    segments: Sequence[Segment],
+    boundary_radius: int,
+) -> pd.DataFrame:
+    masks = region_masks(valid_len, segments, boundary_radius)
+    rows = []
+
+    for region, mask in masks.items():
+        holes = unselected_holes_by_mask(
+            valid_len=valid_len,
+            selected_positions=selected_positions,
+            mask=mask,
+        )
+        rows.append({
+            "region": region,
+            "num_holes": len(holes),
+            "max_unselected_hole": int(max(holes)) if holes else 0,
+            "p95_unselected_hole": float(np.percentile(holes, 95)) if holes else 0.0,
+            "mean_unselected_hole": float(np.mean(holes)) if holes else 0.0,
+        })
+
+    return pd.DataFrame(rows)
+```
+
+### 7.2 p_action calibration：高分是否靠近 boundary
+
+```python
+def paction_boundary_calibration(
+    *,
+    video_id: str,
+    p_action: Sequence[float],
+    segments: Sequence[Segment],
+    frame_stride_seconds: float,
+    quantiles: Sequence[float] = (0.5, 0.7, 0.8, 0.9, 0.95),
+) -> pd.DataFrame:
+    scores = np.asarray(p_action, dtype=np.float64)
+    if scores.ndim != 1:
+        raise ValueError("p_action must be 1D")
+
+    valid_len = len(scores)
+    all_positions = np.arange(valid_len, dtype=np.int64)
+    dist_df = nearest_boundary_rows(
+        video_id=video_id,
+        method="p_action_all_positions",
+        selected_positions=all_positions,
+        segments=segments,
+        frame_stride_seconds=frame_stride_seconds,
+    )
+
+    rows = []
+    for q in quantiles:
+        threshold = float(np.quantile(scores, q))
+        keep = scores >= threshold
+        kept_positions = all_positions[keep]
+        kept_dist = dist_df.loc[keep, "nearest_boundary_distance_frame"].dropna().to_numpy()
+
+        rows.append({
+            "video_id": video_id,
+            "score_quantile": float(q),
+            "threshold": threshold,
+            "num_positions": int(keep.sum()),
+            "mean_distance_frame": float(np.mean(kept_dist)) if len(kept_dist) else np.nan,
+            "median_distance_frame": float(np.median(kept_dist)) if len(kept_dist) else np.nan,
+            "p90_distance_frame": float(np.percentile(kept_dist, 90)) if len(kept_dist) else np.nan,
+            "frac_within_4_frames": float(np.mean(kept_dist <= 4)) if len(kept_dist) else np.nan,
+            "frac_within_8_frames": float(np.mean(kept_dist <= 8)) if len(kept_dist) else np.nan,
+        })
+
+    return pd.DataFrame(rows)
+```
+
+### 7.3 per-video timeline raster
+
+```python
+# tools/bata/plot_selector_timeline.py
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Mapping, Sequence
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def plot_timeline_raster(
+    *,
+    video_id: str,
+    valid_len: int,
+    segments: Sequence[Segment],
+    selected_by_method: Mapping[str, Sequence[int]],
+    p_action: Sequence[float] | None,
+    boundary_radius: int,
+    out_path: str | Path,
+) -> None:
+    methods = list(selected_by_method.keys())
+    height = 1.8 + 0.45 * len(methods)
+    fig, ax = plt.subplots(figsize=(14, height))
+
+    # GT action segments
+    gt_y = len(methods) + 0.7
+    for seg in segments:
+        if seg.length <= 0:
+            continue
+        ax.broken_barh(
+            [(seg.start, seg.length)],
+            (gt_y, 0.25),
+            alpha=0.35,
+        )
+        ax.text(seg.start, gt_y + 0.30, seg.label or "action", fontsize=7, rotation=0)
+
+        # boundary bands
+        for b in (seg.start, seg.end - 1):
+            lo = max(0, b - boundary_radius)
+            width = min(valid_len, b + boundary_radius + 1) - lo
+            ax.broken_barh([(lo, width)], (gt_y - 0.12, 0.08), alpha=0.25)
+
+    # selected ticks per method
+    for row, method in enumerate(methods):
+        y = row
+        selected = np.asarray(selected_by_method[method], dtype=np.int64)
+        ax.vlines(selected, y, y + 0.35, linewidth=0.6)
+        ax.text(-0.01 * valid_len, y + 0.12, method, ha="right", va="center", fontsize=8)
+
+    # p_action curve
+    if p_action is not None:
+        scores = np.asarray(p_action, dtype=np.float64)
+        if len(scores) != valid_len:
+            raise ValueError(f"p_action length {len(scores)} != valid_len {valid_len}")
+        s_min = float(np.min(scores))
+        s_max = float(np.max(scores))
+        denom = max(1e-12, s_max - s_min)
+        scaled = (scores - s_min) / denom
+        curve_y = len(methods) + 0.05 + 0.45 * scaled
+        ax.plot(np.arange(valid_len), curve_y, linewidth=0.8)
+        ax.text(-0.01 * valid_len, len(methods) + 0.25, "p_action", ha="right", va="center", fontsize=8)
+
+    ax.set_xlim(0, valid_len - 1)
+    ax.set_ylim(-0.2, len(methods) + 1.4)
+    ax.set_xlabel("dense frame index")
+    ax.set_title(f"Selector timeline raster: {video_id}")
+    ax.set_yticks([])
+    ax.grid(axis="x", alpha=0.2)
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_path)
+    plt.close(fig)
+```
+
+### 7.4 model comparison dashboard
+
+```python
+# tools/bata/plot_selector_dashboard.py
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Mapping, Sequence
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+def plot_model_comparison_dashboard(
+    *,
+    video_id: str,
+    valid_len: int,
+    segments: Sequence[Segment],
+    selected_by_method: Mapping[str, Sequence[int]],
+    video_summary: pd.DataFrame,
+    boundary_radius: int,
+    out_path: str | Path,
+) -> None:
+    methods = list(selected_by_method.keys())
+    fig, axes = plt.subplots(
+        nrows=len(methods) + 1,
+        ncols=1,
+        figsize=(14, 1.2 + 0.65 * len(methods)),
+        sharex=True,
+    )
+
+    # Top row: GT
+    ax0 = axes[0]
+    for seg in segments:
+        ax0.broken_barh([(seg.start, seg.length)], (0.2, 0.35), alpha=0.35)
+        for b in (seg.start, seg.end - 1):
+            lo = max(0, b - boundary_radius)
+            width = min(valid_len, b + boundary_radius + 1) - lo
+            ax0.broken_barh([(lo, width)], (0.05, 0.10), alpha=0.25)
+    ax0.set_ylabel("GT", rotation=0, labelpad=25)
+    ax0.set_yticks([])
+
+    for i, method in enumerate(methods, start=1):
+        ax = axes[i]
+        selected = np.asarray(selected_by_method[method], dtype=np.int64)
+        ax.vlines(selected, 0.1, 0.65, linewidth=0.6)
+
+        row = video_summary[
+            (video_summary["video_id"] == video_id) &
+            (video_summary["method"] == method)
+        ]
+
+        if len(row):
+            r = row.iloc[0]
+            label = (
+                f"{method}\n"
+                f"n={int(r.get('selected_count', len(selected)))} "
+                f"br@4={float(r.get('boundary_recall_r4', np.nan)):.2f} "
+                f"p95gap={float(r.get('p95_gap', np.nan)):.1f}"
+            )
+        else:
+            label = f"{method}\nn={len(selected)}"
+
+        ax.set_ylabel(label, rotation=0, labelpad=70, fontsize=8)
+        ax.set_yticks([])
+        ax.grid(axis="x", alpha=0.15)
+
+    axes[-1].set_xlim(0, valid_len - 1)
+    axes[-1].set_xlabel("dense frame index")
+    fig.suptitle(f"Model comparison dashboard: {video_id}", y=1.02)
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+```
+
+---
+
+## 8. 最终应如何变成论文 Figure / Table / Ablation
+
+### Figure 1：方法对比 timeline
+
+选择 3–5 个代表视频：
+
+* PAction 成功、GAS-VT 失败；
+* GAS-VT 成功、PAction 失败；
+* uniform 很强；
+* Stage2/Stage3 明显改变选点；
+* 长动作、多动作、短动作各一例。
+
+图中同屏展示：
+
+```text
+GT segments
+boundary bands
+uniform_384
+p_action_topk_384
+PAction learned_fixed_384
+GAS-VT fixed_384
+Stage2 detector-aware
+Stage3 joint
+p_action / uncertainty / detector utility curve
+```
+
+### Figure 2：boundary distance CDF
+
+横轴：selected frame 到最近 GT boundary 的距离。
+纵轴：CDF。
+方法：uniform、p_action top-k、PAction learned、GAS-VT、Stage2、Stage3。
+
+这张图是支撑 “boundary concentration” 的主图。如果 PAction 的 CDF 没有显著左移，就不能声称它 boundary-focused。
+
+### Figure 3：boundary/interior/background stacked bar
+
+每个方法一个 bar：
+
+```text
+boundary_band selected ratio
+action_interior selected ratio
+background selected ratio
+invalid/padding selected ratio
+```
+
+这张图可以直接揭示 GAS-VT 是否其实偏向 action interior，而不是 boundary。
+
+### Figure 4：normalized action-time selected density
+
+把每个 GT action 对齐成：
+
+```text
+[-0.25, 0) pre-start context
+[0, 1] action duration
+(1, 1.25] post-end context
+```
+
+统计 selected density。如果方法真是 boundary-aware，应在 0 和 1 附近出现峰值，而不是在 0.5 action interior 最高。
+
+### Figure 5：per-class boundary coverage heatmap
+
+行：class。
+列：method 或 radius。
+值：start/end/both endpoint coverage。
+
+这能回答：方法是否只对某些类有效，是否对长动作/短动作有偏差。
+
+### Table 1：mAP + geometry summary
+
+每个方法列出：
+
+```text
+Avg mAP
+mAP@0.7
+selected count mean/std
+boundary recall@4/@8
+endpoint both coverage@4/@8
+median boundary distance
+selected boundary-band ratio
+selected interior ratio
+selected background ratio
+p95 hole action
+p95 hole boundary
+p_action top-k Jaccard
+```
+
+### Table 2：PAction learned 消融
+
+必须拆：
+
+```text
+p_action top-k only
+p_action top-k + gap repair
+PAction decoder no repair
+PAction decoder + repair
+PAction decoder fixed budget
+PAction decoder dynamic budget
+PAction decoder with/without lattice replacement
+```
+
+### Table 3：GAS-VT 消融
+
+必须拆：
+
+```text
+GAS-VT current
+GAS-VT budget-conditioned apply
+GAS-VT no uniform scaffold
+GAS-VT no repair
+GAS-VT no CVaR/change/uncertainty term
+GAS-VT same decoder as PAction
+```
+
+### Table 4：Stage2/Stage3 detector-aware 证据
+
+必须证明 detector-aware 不是换了一个 p_action heuristic：
+
+```text
+p_action-only
+teacher-utility-only
+p_action + teacher utility
+Stage2 frozen teacher utility selector
+Stage3 joint selector
+Stage3 stop-gradient detector utility
+Stage3 shuffled teacher utility negative control
+```
+
+如果 shuffled teacher utility 与真实 teacher utility 差不多，Stage2/Stage3 detector-aware claim 直接失败。
+
+---
+
+## 9. 当前路线偏移点与修正路线
+
+### 偏移点
+
+当前分支的工程重点已经大量转向：
+
+* ledger pipeline；
+* provenance inference；
+* fail-closed gate；
+* config validation；
+* full-train variants；
+* no-leakage checks；
+* selected count / gap / hole validation。
+
+这些是必要工程基础，但它们**不是**最终研究问题本身。你的研究目标是证明：
+
+> indirect selector 是否真的把有限预算放在对 TAD 定位最有价值的位置，尤其是动作边界、状态转换、不确定性、detector utility 高的位置。
+
+当前仓库还没有把这个问题变成一个完整、可复现、可视化、可审计的 geometry analysis suite。仓库文档自己也承认当前 PAction/GAS-VT 解释还不是最终因果证明。([GitHub][5])
+
+### 修正路线
+
+第一步，不再继续只加训练 variant。先冻结一个 analysis contract：
+
+```text
+ledger JSONL schema
+sample JSONL schema
+annotation schema
+coordinate convention
+valid_len / padded_len convention
+selected_positions convention
+score axis convention
+```
+
+第二步，新增 `analyze_selector_geometry.py`，把所有方法统一导出到同一套 frame/action/video/method 表。
+
+第三步，新增 `plot_selector_geometry.py`、`plot_selector_timeline.py`、`plot_selector_dashboard.py`、`generate_selector_failure_gallery.py`，让任何人可以从 fixed commit + ledger paths 一键复现所有图。
+
+第四步，做 matched-budget ablation。不要再用不同 repair、不同 short-video count、不同 lattice、不同 config 混着比较 PAction 和 GAS-VT。
+
+第五步，只有在 geometry 指标与 mAP 指标同时支持时，才允许写强 claim：
+
+```text
+PAction learned improves high-IoU TAD because it increases endpoint coverage and reduces boundary-region holes under matched sparse budget.
+```
+
+如果 geometry 指标不支持，只能写弱 claim：
+
+```text
+PAction learned is a stronger empirical selector than GAS-VT under this implementation, but its advantage is not yet proven to arise from boundary concentration.
+```
+
+---
+
+## 最终审查结论
+
+**A. GitHub 可见性和复现性：WARN/PARTIAL PASS**
+代码可见，commit 固定成功；validator 有 CLI 和 summary 输出；但缺少完整绘图入口、统一 geometry schema、固定 RUN_TAG 图表复现 runbook。
+
+**B. “选帧是否集中在动作边界附近”：HOLD**
+当前 `boundary_support@r` 不足以支撑 concentration claim。必须新增 selected-distance distribution、region share、endpoint coverage、normalized action density。
+
+**C. PAction/GAS-VT/Stage2/Stage3 差异分析：HOLD**
+已有 ledger summary 能做初步对比，但没有统一 dashboard、matched-budget geometry matrix、score calibration、failure gallery，不能解释因果机制。
+
+**D. 代码正确性：WARN**
+最大风险是 coordinate convention、inclusive/exclusive boundary、boundary recall 被误读成 selected concentration、action coverage 被误读成 per-action coverage、short-video selected count 与 “fixed 384” claim 混淆。
+
+**E. 论文 claim 支撑：HOLD**
+当前仓库可以支持 “我们有严格 ledger validation 和初步诊断统计”，但还不能支持 “方法真正集中在动作边界附近” 或 “Stage2/Stage3 已 detector-aware”。需要先补齐 selector geometry analysis suite。
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commits/codex/gas-vt-stage23-detector-aware-20260706 "Commits · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/46cacc113042fcf0931c70774491d44665246e32/tools/bata "OpenTAD_C3_CoarseClean_20260702/tools/bata at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/tools/bata/analyze_pc_ot_mras_selector_posttrain_diagnostics.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/analyze_pc_ot_mras_selector_posttrain_diagnostics.py at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/tools/bata/validate_paction_learned_policy_ledger.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/validate_paction_learned_policy_ledger.py at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/docs/methods/2026-07-07-gasvt-paction-diagnosis-evidence.md "OpenTAD_C3_CoarseClean_20260702/docs/methods/2026-07-07-gasvt-paction-diagnosis-evidence.md at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[6]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/46cacc113042fcf0931c70774491d44665246e32/tools/bata/validate_c3_paction_learned_adatad_full_train.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/validate_c3_paction_learned_adatad_full_train.py at 46cacc113042fcf0931c70774491d44665246e32 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"

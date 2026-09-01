@@ -1,0 +1,1023 @@
+Reviewed the fixed commit `603ed0203ef2ebf631523ca42d9061b5ee877de9` through the GitHub-rendered source. I did **not** rerun your remote tests; I treated `33 passed` and the runtime validator output as smoke evidence only. My verdict is severe:
+
+**Commit `603ed02` is not CVPR-ready and not yet a credible full experimental prototype. It is a useful engineering scaffold / integration precheck.** The most important progress is real: the `frame_selector` path is registry-buildable, `SingleStageDetector` can call it, and selected inputs/masks are passed downstream. But the implementation still does **not** solve the central TAD method problem: correct sparse-time training/evaluation with real AdaTAD/ActionFormer heads, no-leak fail-closed acquisition provenance, and meaningful detector-loss-aware selector learning.
+
+---
+
+## A. Line-by-line code correctness review
+
+### What is actually supported by the code
+
+The commit really adds a `DucaOnlineFrameSelector` and wires it into `SingleStageDetector`: during train, the detector calls `frame_selector.forward_train(...)`, replaces `inputs`, `masks`, `metas`, `gt_segments`, and `gt_labels`, then forwards the selected tensors through backbone/projection/neck/head; during test it similarly calls `frame_selector.forward_test(...)` before the detector stack. This is a real integration path, not just a standalone ledger script. ([GitHub][1])
+
+The selector also really performs hard temporal gathering: it obtains `grid.selected_positions`, creates `slot_mask = positions >= 0`, gathers `inputs` at those positions, applies gathered ST weights, and returns `selected_masks = slot_mask`. So the detector path can consume selected observations rather than dense observations. ([GitHub][2])
+
+However, almost every paper-level claim beyond “a smoke plugin exists” is still blocked.
+
+---
+
+# P0 issues
+
+## P0-1 — “AdaTAD precheck” is not real AdaTAD, and the current configs are explicitly smoke/toy configs
+
+**Files / functions**
+
+* `configs/adatad/thumos/duca_online_adatad_precheck.py`
+* `configs/adatad/thumos/duca_online_zeroshot_actionness_precheck.py`
+* `opentad/models/dense_heads/duca_online_precheck_head.py`
+* `tools/bata/run_duca_online_adatad_wrapper_precheck.py`
+
+**Evidence**
+
+The precheck config uses `DucaOnlinePrecheckHead`, toy dataset classes, one train iteration, and explicit flags saying deploy / metric / paper / runtime-FLOPs claims are not allowed. The zero-shot precheck config has the same structure: `SingleStageDetector` plus `DucaOnlineFrameSelector` plus `DucaOnlinePrecheckHead`, `ToyDucaOnlinePrecheckDataset`, and `max_train_iters=1`. ([GitHub][3])
+
+`DucaOnlinePrecheckHead` is documented as a “Tiny registry-built head for DUCA online selector integration checks.” Its train loss is an artificial target over the selected temporal axis, and its test proposals are dummy `[start, start + 1]` selected-rank intervals with score one. It is not AdaTAD, ActionFormer, or a real TAD head. ([GitHub][4])
+
+The wrapper precheck uses `_FakeAdaTADSparseDetector`, whose loss is essentially based on selected observation magnitude, not a TAD detection loss. ([GitHub][5])
+
+**Why this is wrong / risky**
+
+The runtime validator field `real_detector_loss_selector_grad_nonzero=true` is misleading. The gradient is from a smoke head / fake detector-shaped object, not real AdaTAD or ActionFormer detection loss. This can prove “PyTorch graph connected,” but it cannot prove “detector-loss-aware acquisition works.”
+
+**Failure caused**
+
+A reviewer will reject any claim that this commit demonstrates real detector integration, real detector mAP, detector-loss-aware acquisition, or high-IoU localization.
+
+**Affected claims**
+
+* mAP validity: **blocked**
+* online-plugin validity: **partially only**
+* detector-loss-aware acquisition: **blocked**
+* CVPR method claim: **blocked**
+
+**Exact fix**
+
+Create a separate real config, not named `precheck`, using actual AdaTAD/OpenTAD dataset, actual AdaTAD head, real THUMOS annotations, real training/eval, and no toy dataset. Keep the current configs under a `smoke/` or `precheck/` namespace. The real config must produce THUMOS mAP with selected observations and must fail if any smoke head is used.
+
+---
+
+## P0-2 — Training-time GT coordinate contract is wrong or at least unproven: sparse selected-axis inputs are passed to the detector while GT segments are returned unchanged
+
+**Files / functions**
+
+* `opentad/models/selectors/duca_online_frame_selector.py`
+
+  * `forward_train`
+* `opentad/models/detectors/single_stage.py`
+
+  * `forward_train`
+* `opentad/models/duca/acquisition.py`
+
+  * `SparseTemporalGrid`, `TrueTimeMap` helpers
+
+**Evidence**
+
+`DucaOnlineFrameSelector.forward_train` returns `gt_segments` and `gt_labels` unchanged after selecting inputs. ([GitHub][2])
+
+`SingleStageDetector.forward_train` then forwards the selected `inputs`/`masks` and those returned `gt_segments`/`gt_labels` into the RPN head. ([GitHub][1])
+
+The selector metadata includes selected-to-original and original-to-selected maps, but the selector does not actually remap GT segments before returning them. ([GitHub][2])
+
+The true-time remap utilities support selected-axis ↔ true-time segment remapping, but this is used in post-processing for predictions, not shown as applied to training GT before the head’s assignment/regression loss. ([GitHub][6])
+
+**Why this is wrong / risky**
+
+Most TAD heads assign GT to temporal points/proposals in the detector’s input temporal axis. If the detector sees a sequence of length `K=384` but GT segments remain in dense-time coordinates `0..767`, then point assignment, center sampling, regression targets, and range constraints are inconsistent. This is exactly the type of geometry bug that destroys high-IoU mAP while smoke tests still pass.
+
+**Failure caused**
+
+Real training can silently learn wrong localization, especially at mAP@0.6/0.7. You can get a nonzero loss and nonzero gradients while optimizing a geometrically invalid task.
+
+**Affected claims**
+
+* mAP validity: **P0 blocker**
+* high-IoU TAD validity: **P0 blocker**
+* online-plugin validity: **P0 blocker for real detector**
+* detector-loss-aware acquisition: **P0 blocker**
+
+**Exact fix**
+
+Pick one coordinate contract and enforce it end-to-end.
+
+The safer final route is:
+
+1. The sparse detector head operates in **true original-time units**, not selected-rank units.
+2. Each selected observation carries `true_time`, `left_gap`, `right_gap`, local support interval, and valid mask.
+3. Point generation / assignment / regression targets use true-time coordinates.
+4. Predictions are decoded directly in true-time.
+5. GT stays original-time, but the head is made irregular-grid-aware.
+
+The minimal interim route is:
+
+1. Before detector training, remap GT true-time segments into selected-axis coordinates with `TrueTimeMap.true_to_selected`.
+2. Train the existing head in selected-axis coordinates.
+3. Remap predictions back to true-time before evaluation.
+4. Store both original GT and remapped GT in `metas` for audit.
+5. Add tests that compare dense uniform remap against identity behavior.
+
+Do not keep `remap_gt_to_selected_axis=True` as a config flag unless it actually remaps GT.
+
+---
+
+## P0-3 — Prediction remap is insufficient for high-IoU sparse TAD
+
+**Files / functions**
+
+* `opentad/models/detectors/single_stage.py`
+
+  * `_remap_selector_segments_for_post_processing`
+* `opentad/models/utils/true_time.py`
+
+  * `selected_to_true`, `true_to_selected`, `remap_segments`
+* `opentad/models/dense_heads/duca_online_precheck_head.py`
+
+  * `forward_test`
+
+**Evidence**
+
+The detector post-processing remaps selected-axis proposal segments back to true-time using metadata. ([GitHub][1])
+
+The remapping utility performs piecewise linear interpolation between selected positions. ([GitHub][6])
+
+The precheck head emits dummy selected-axis unit proposals, not real boundary predictions. ([GitHub][4])
+
+**Why this is wrong / risky**
+
+A selected-rank segment `[i, j]` is not a real temporal interval unless the head understands the actual gaps between selected observations. Interpolation is acceptable as a temporary bridge, but it does not solve high-IoU localization. If selected observations skip across an action boundary, no linear remap can recover the missing boundary.
+
+**Failure caused**
+
+The model may appear to support “original-time decode,” but high-IoU mAP can be invalid or systematically capped by sparse holes. This is especially dangerous because mAP@0.3/0.4 may look acceptable while mAP@0.7 collapses.
+
+**Affected claims**
+
+* high-IoU localization: **blocked**
+* original-time selected decode: **partial**
+* selected-axis remap validity: **partial**
+* ActionFormer compatibility: **unsupported**
+
+**Exact fix**
+
+Implement an irregular temporal grid head:
+
+* Point generator emits points at selected true-time positions, not dense selected ranks.
+* Each point has support interval `[mid(prev, cur), mid(cur, next)]`.
+* Regression predicts true-time left/right offsets.
+* Loss and IoU are computed in original-time / seconds.
+* Post-processing no longer needs rank-to-time interpolation except for visualization.
+
+For AdaTAD, add a sparse grid adapter that injects selected true-time positions and local density into the detection head. For ActionFormer, modify the point generator and regression target builder.
+
+---
+
+## P0-4 — “Original-time positions” currently mean dense feature-grid indices, not raw-frame time; the raw-frame / pre-backbone claim is not yet valid
+
+**Files / functions**
+
+* `opentad/models/selectors/duca_online_frame_selector.py`
+
+  * `__init__`, `_write_metas`
+* `opentad/models/duca/acquisition.py`
+
+  * `budgeted_center_radius_decode`
+
+**Evidence**
+
+The selector enforces `selected_positions_unit == "original_time_index"` and writes selected positions into metadata. ([GitHub][2])
+
+But the decoder requires `dense_positions` to be a contiguous arange of original-time indices. This is an index contract over the current input temporal grid, not necessarily raw video frame indices or seconds. ([GitHub][7])
+
+The config uses `dense_window_size=768`, `window_size=384`, and the detector inputs are temporal observations in the OpenTAD/AdaTAD feature-grid sense. ([GitHub][8])
+
+**Why this is wrong / risky**
+
+The paper motivation says “pre-backbone sparse temporal acquisition,” but this commit operates on whatever tensor arrives as `inputs`. In OpenTAD/AdaTAD, that is often already a feature/snippet grid, not raw video frames before the expensive backbone. Calling those positions “original time” can be acceptable only if the paper defines original dense-time as the detector’s dense temporal observation grid. It is not evidence of raw-frame compute reduction.
+
+**Failure caused**
+
+Efficiency claims become invalid: the expensive backbone may already have been run before selection. A reviewer will attack this immediately.
+
+**Affected claims**
+
+* pre-backbone sparse temporal observation selection: **partially supported only for feature-grid selection**
+* compute efficiency: **unsupported**
+* raw-frame acquisition: **unsupported**
+
+**Exact fix**
+
+Introduce an explicit coordinate object:
+
+```text
+raw_frame_index
+video_time_sec
+snippet_index
+adatad_feature_index
+selected_axis_index
+```
+
+Every config must declare the acquisition point:
+
+* raw frames before VideoMAE / SlowFast;
+* snippet features before AdaTAD head;
+* feature tokens after backbone.
+
+Budget must be reported in the correct unit. If selection is after feature extraction, do not claim backbone FLOPs savings.
+
+---
+
+## P0-5 — Detector-loss-aware gradient is not meaningful enough yet
+
+**Files / functions**
+
+* `opentad/models/selectors/duca_online_frame_selector.py`
+
+  * `_forward_select`
+* `opentad/models/duca/acquisition.py`
+
+  * `forward_acquire`, `duca_losses`
+
+**Evidence**
+
+The selector gathers hard-selected inputs, then multiplies them by gathered `selected_mask_st`. ([GitHub][2])
+
+The acquisition code builds `selection_st = hard_union + soft_coverage - soft_coverage.detach()`. This is a straight-through mask over dense positions, then it is gathered only at already selected positions. ([GitHub][7])
+
+**Why this is wrong / risky**
+
+This proves a gradient path exists, but not that detector loss can teach the selector to choose better alternative positions. Because the forward gather indices are hard and non-differentiable, detector loss gradients mostly affect soft coverage values at already selected positions. They do not naturally give credit to unselected alternatives unless the soft relaxation is designed to do so.
+
+**Failure caused**
+
+The selector may not become detector-loss-aware in the scientific sense. It can collapse to actionness top-k, uniform-with-repair, or radius-fill heuristics while passing gradient smoke tests.
+
+**Affected claims**
+
+* detector-loss-aware acquisition: **unsupported beyond graph connectivity**
+* final method novelty: **blocked**
+* hard-forward ST fine-tuning: **incomplete**
+
+**Exact fix**
+
+Add a real differentiable budgeted selection estimator:
+
+* Gumbel-TopK / perturb-and-MAP TopK;
+* NeuralSort / SoftSort relaxation;
+* Sinkhorn top-K assignment;
+* REINFORCE with detector-loss reward and variance baseline;
+* or a two-stream hard-forward / soft-backward estimator where the soft path computes a weighted feature mixture over all candidate positions, not only gathered selected slots.
+
+Then add tests that show changing detector loss changes unselected-position logits, not merely selected-slot amplitudes.
+
+---
+
+## P0-6 — Train-time no-leak auditing is incomplete; `p_action` / `actionness_logits` can enter selection without robust provenance
+
+**Files / functions**
+
+* `opentad/models/selectors/duca_online_frame_selector.py`
+
+  * `forward_train`, `_reject_train_decision_payload`
+* `opentad/models/duca/acquisition.py`
+
+  * `duca_forward_train`, `DucaOnlineAcquisitionAdapter.forward_acquire`
+* `tools/bata/eval_zero_shot_actionness.py`
+
+**Evidence**
+
+`forward_train` calls `_reject_train_decision_payload(metas)` but does not recursively audit all train `kwargs` before selection. ([GitHub][2])
+
+The generic DUCA wrapper can pull `actionness_logits` or `p_action` from the batch and feed them to acquisition. ([GitHub][7])
+
+The zero-shot actionness evaluator has a much stronger leakage scanner, but that safety is tool-local and does not automatically protect the selector’s training path. ([GitHub][9])
+
+**Why this is wrong / risky**
+
+A THUMOS-trained coarse classifier, a teacher cache, a prediction cache, or an oracle-like `p_action` tensor could enter the selector under a generic key. The current tests may catch obvious forbidden metadata keys, but they do not establish source-provenance fail-closed behavior for every score tensor used by the selector.
+
+**Failure caused**
+
+No-leak claims become invalid. A reviewer can say the method may be using hidden target-trained priors.
+
+**Affected claims**
+
+* no-leak teacher-free inference: **partial**
+* no-target-label actionness: **blocked**
+* fair zero-shot comparison: **blocked**
+
+**Exact fix**
+
+Create a required `ActionnessSourceProvenance` object attached to every score tensor:
+
+```python
+{
+  "source_family": "...",
+  "checkpoint_id": "...",
+  "training_data": "...",
+  "uses_target_dataset_labels": False,
+  "uses_gt_segments": False,
+  "uses_teacher_predictions": False,
+  "uses_detection_cache": False,
+  "calibration_split": "train/val/none",
+  "inference_cost_ms_per_video": ...
+}
+```
+
+The selector must reject any external `p_action` / `actionness_logits` whose provenance is absent or unknown. Train and test should use the same fail-closed audit.
+
+---
+
+## P0-7 — The strict `<=384` budget claim can be bypassed by a runtime budget override
+
+**Files / functions**
+
+* `opentad/models/duca/acquisition.py`
+
+  * `DucaOnlineAcquisitionAdapter.acquire`
+* `opentad/models/selectors/duca_online_frame_selector.py`
+
+  * `_forward_select`
+
+**Evidence**
+
+The acquisition adapter uses a passed `budget` when provided; the grid stores `requested_budget` and `effective_budget`, with `budget=int(budgets.max().item())`. ([GitHub][7])
+
+The selector default budget is 384 through config, but `_forward_select` accepts `budget` from forward kwargs and passes it into the adapter. ([GitHub][2])
+
+**Why this is wrong / risky**
+
+A config or caller can request `budget=512` and still pass many smoke validations unless there is an external contract check. A paper claim of strict `<=384` must be enforced inside the selector, not merely configured.
+
+**Failure caused**
+
+Budget violation under alternate launch paths; unfair mAP comparisons.
+
+**Affected claims**
+
+* strict selected observations: **partially supported**
+* compute fairness: **blocked unless fixed**
+
+**Exact fix**
+
+Inside the selector:
+
+```python
+if budget is not None and torch.any(budget > self.budget):
+    raise ValueError("DUCA budget override exceeds hard cap")
+budget = torch.minimum(requested_budget, hard_cap)
+```
+
+Also log both requested and effective budgets, and add tests that `budget=385` fails.
+
+---
+
+## P0-8 — Metadata validators can be fooled; `DucaOnlinePrecheckHead` only checks presence, not consistency
+
+**Files / functions**
+
+* `opentad/models/selectors/duca_online_frame_selector.py`
+
+  * `_write_metas`
+* `opentad/models/dense_heads/duca_online_precheck_head.py`
+
+  * `_validate_metas`
+* `tools/bata/validate_duca_online_adatad_precheck.py`
+
+**Evidence**
+
+`_write_metas` creates remap fields and selected-position fields, but for custom metadata keys it uses `setdefault`, so stale or fake metadata can survive if present under custom names. ([GitHub][2])
+
+`DucaOnlinePrecheckHead._validate_metas` checks that required keys exist, that the unit equals `original_time_index`, and that remap metadata exists. It does not verify that metadata matches the actual gathered inputs or masks. ([GitHub][4])
+
+**Why this is wrong / risky**
+
+A validator can pass even when metadata is synthetic or stale. That means the current validator is not a proof of original-time correctness.
+
+**Failure caused**
+
+False confidence in remap, mask, no-leak, and selected-position claims.
+
+**Affected claims**
+
+* original-time position validity: **partial**
+* no-leak audit: **partial**
+* tests/validator reliability: **blocked**
+
+**Exact fix**
+
+Validators must recompute:
+
+```text
+selected_inputs == gather(dense_inputs, selected_positions)
+selected_masks.sum == len(valid selected_positions)
+selected_positions sorted/unique/in range
+selected_to_original and original_to_selected are inverse where defined
+postprocessed predictions are true-time coordinates
+padded slots never influence loss/proposals
+```
+
+Also overwrite reserved metadata keys rather than using `setdefault`.
+
+---
+
+# P1 issues
+
+## P1-1 — `selected_mask_st` is aligned in value, but weak as a selector-gradient estimator
+
+The gathered ST mask is aligned with the consumed selected positions in the forward pass. However, because it is gathered only at already selected positions, it is not a strong estimator for “which unselected positions would have reduced detector loss.” This is acceptable as a smoke mechanism, not as the final detector-aware method. ([GitHub][2])
+
+**Fix:** add a soft all-candidate path or perturb-and-MAP / Gumbel-TopK estimator, then audit gradients on unselected logits.
+
+---
+
+## P1-2 — Config says `remap_gt_to_selected_axis=True`, but the selector does not remap GT
+
+The selector enforces `remap_gt_to_selected_axis` in configuration, but returns GT unchanged. ([GitHub][2])
+
+**Fix:** either implement remap or rename the flag to `require_prediction_remap_metadata`.
+
+---
+
+## P1-3 — Residual fill can collapse center-radius selection into score top-k
+
+The decoder first creates a center-radius union, then if the selected set is smaller than budget it fills remaining slots by descending score. ([GitHub][7])
+
+**Risk:** The method may become actionness top-k plus radius repair, not a genuinely learned acquisition policy.
+
+**Fix:** expose fill ratio in metadata, report it, and ablate no-radius / fixed-radius / learned-radius / no-fill / gap-constrained fill.
+
+---
+
+## P1-4 — Metadata selected mask is not the same as full padded slot mask
+
+The actual detector mask is `slot_mask`, which is good. But the metadata selected mask written per sample is `[True] * len(positions)`, not a full length-`K` mask with padded false slots. ([GitHub][2])
+
+**Risk:** Audit tools can miss padded-slot consumption.
+
+**Fix:** write both:
+
+```text
+duca_online_selected_slot_mask: length K, includes false pads
+duca_online_selected_valid_positions: compact list
+```
+
+---
+
+## P1-5 — Zero-shot/manual provenance is not fail-closed enough
+
+Manual JSONL starts with `thumos_trained=None`, and the validator accepts provenance values where `thumos_trained` is `None`. ([GitHub][9])
+
+**Risk:** Unknown provenance can be presented as no-target-label / no-THUMOS evidence.
+
+**Fix:** unknown provenance should fail for paper experiments. Only internal smoke tests may allow `None`.
+
+---
+
+## P1-6 — `video_text_mock` is not zero-shot foundation-model evidence
+
+The evaluator reserves external provider names such as X-CLIP, ActionCLIP, SlowFast, and VideoMAE, and refuses to download or silently use them. That is good. But the mock source is just a scoring stub and cannot support claims about X-CLIP / ActionCLIP / foundation-model actionness. ([GitHub][9])
+
+**Fix:** use real frozen models with locked checkpoints, logged preprocessing, logged cost, and no THUMOS fine-tuning.
+
+---
+
+## P1-7 — Selection evaluation catches native sparse validation failure too softly
+
+The selection evaluation includes a path where native sparse validation exceptions can be converted into `"pass"` metadata. ([GitHub][10])
+
+**Risk:** A broken sparse grid can pass a selection-eval artifact.
+
+**Fix:** validation failure must fail the run unless explicitly marked `diagnostic_failed_native_validation`.
+
+---
+
+## P1-8 — Selection geometry metrics are useful, but they do not prove detector usefulness
+
+The selection evaluator reports action touched recall, boundary radius recall, short-action recall, max hole, p95 hole, redundancy, uniform similarity, and budget violation. These are good diagnostics. ([GitHub][10])
+
+**But:** they do not measure TAD mAP. They can only support “the selector covers certain temporal regions,” not “DUCA improves detection.”
+
+**Fix:** never present these as main results; use them to explain mAP changes.
+
+---
+
+## P1-9 — Real ActionFormer compatibility is unsupported
+
+The current `SingleStageDetector` generic hook can call a selector, but ActionFormer requires correct point generation, regression ranges, decoding, and NMS under irregular time. The current commit does not show a true ActionFormer sparse point generator.
+
+**Fix:** implement `SparsePointGenerator` with true-time coordinates and rerun dense/uniform/sparse parity tests.
+
+---
+
+# P2 issues
+
+1. Registry files are fine, but only prove import/build plumbing. They do not prove method validity. `DucaOnlineFrameSelector` and `DucaOnlinePrecheckHead` are registered. ([GitHub][11])
+
+2. `extra_config = dict(kwargs)` style patterns in smoke heads/selectors can hide misspelled config keys. Prefer fail-closed config schemas.
+
+3. `last_forward_summary`-style debug fields should be batch-complete or explicitly first-sample-only.
+
+4. Config names under `configs/adatad/thumos/` are misleading because the current files are toy prechecks. Rename to `configs/duca_precheck/...` or make the filename scream `smoke`.
+
+5. Launchers are acceptable for smoke prechecks only. They should emit a warning artifact: `NOT_A_TAD_METRIC_RUN=true`.
+
+---
+
+## B. Zero-shot actionness review
+
+### What is good
+
+The zero-shot evaluator makes a serious attempt to separate score generation from evaluation labels. It defines forbidden leakage keys such as GT segments, labels, oracle fields, teacher fields, prediction caches, and raw predictions, and recursively rejects them. ([GitHub][9])
+
+For built-in motion / feature-energy scoring, labels are used only after scoring to compute metrics. The output rows include `gt_action` for evaluation, while source provenance says scoring does not read GT or teacher. ([GitHub][9])
+
+AUROC, AUPRC, Recall@K, and Precision@K are computed from rows with `gt_action` labels and `p_action` scores. The AUROC implementation handles ties by pairwise ranking, and AUPRC is threshold-free over sorted predictions. ([GitHub][9])
+
+The selection evaluator also marks oracle baselines as diagnostic-only and records whether a baseline uses GT for selection. ([GitHub][10])
+
+### What is not sufficient
+
+**Zero-shot actionness is not yet evidence that frozen/no-target-label actionness can replace a THUMOS-trained coarse classifier.** At this commit, the implemented sources are motion/feature-energy/manual/precomputed/mock scaffolds. Real X-CLIP, ActionCLIP, SlowFast, and VideoMAE sources are reserved names that intentionally fail unless local scores are provided. ([GitHub][9])
+
+Manual/precomputed provenance is not strict enough. `thumos_trained=None` is allowed, so an unknown source can be reported without proving it is no-THUMOS. For a paper, unknown provenance must be a hard fail. ([GitHub][9])
+
+The metrics are actionness metrics, not detection metrics. AUROC/AUPRC/Recall@K can show coarse temporal correlation with action interior, but they do not prove boundary coverage, high-IoU localization, or detector mAP improvement.
+
+Selection evaluation is better because it includes geometry metrics such as boundary recall, short-action recall, holes, redundancy, and uniform similarity. But those still remain diagnostic until connected to real detector mAP. ([GitHub][10])
+
+### Required fixes before making a zero-shot claim
+
+For every zero-shot source, require:
+
+```text
+source_family
+checkpoint_name
+checkpoint_hash
+training_dataset
+target_dataset_labels_used=false
+target_dataset_videos_used=false/true with explanation
+calibration_split
+score_generation_code_hash
+per-video inference cost
+per-video feature cost
+```
+
+Then report separate tables:
+
+1. actionness quality: AUROC/AUPRC/Recall@K;
+2. selection geometry: boundary support, short-action recall, holes, uniform similarity;
+3. detector outcome: mAP@0.5/0.6/0.7 and average mAP;
+4. cost: zero-shot model cost plus detector cost.
+
+Do not claim “zero-shot replaces THUMOS coarse classifier” until real frozen X-CLIP / ActionCLIP / SlowFast / VideoMAE sources beat or match p_action top-K under the same budget and cost accounting.
+
+---
+
+## C. Research-method judgment
+
+### Direct classification
+
+| Level                            | Verdict                                                                                  |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| Useful engineering precheck      | **Yes**                                                                                  |
+| Credible experimental prototype  | **Only partially** — selector plumbing exists, but real detector geometry/mAP is missing |
+| CVPR-level method implementation | **No**                                                                                   |
+
+The current commit is a good milestone because it moves from offline ledgers toward an OpenTAD `frame_selector` path. But it is not yet the final DUCA method. It is still a scaffold for future real sparse detector integration.
+
+### Claim-by-claim status
+
+| Claim                                                               | Status                            | Reason                                                                                                                                                                   |
+| ------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| “Online temporal acquisition plugin”                                | **Partially supported**           | Train/test `SingleStageDetector` hooks exist and hard selection is used. But the demonstrated configs are smoke/toy, not real online streaming evaluation. ([GitHub][1]) |
+| “Pre-backbone sparse temporal observation selection”                | **Partially supported**           | It selects before the detector stack in `SingleStageDetector`, but not necessarily before the expensive video backbone/raw-frame feature extractor.                      |
+| “Strict `<=384` detector-consumed observations”                     | **Partially supported**           | Default config uses 384 and masks are selected, but runtime budget override must be hard-capped. ([GitHub][7])                                                           |
+| “No-leak teacher-free inference”                                    | **Partially supported**           | Test path rejects obvious forbidden payloads, and zero-shot tools scan leakage. Train/actionness provenance is not fail-closed enough. ([GitHub][2])                     |
+| “Detector-loss-aware acquisition”                                   | **Unsupported as a method claim** | Nonzero gradient through a smoke/fake head is not meaningful detector feedback.                                                                                          |
+| “Zero-shot actionness can replace THUMOS-trained coarse classifier” | **Unsupported**                   | Tools exist; real frozen source evidence does not.                                                                                                                       |
+| “DUCA improves high-IoU TAD localization”                           | **Unsupported**                   | No real mAP; sparse-time GT/prediction geometry unresolved.                                                                                                              |
+| “Works beyond AdaTAD, e.g. ActionFormer”                            | **Unsupported**                   | No ActionFormer sparse point generator / regression / decode proof.                                                                                                      |
+| “Not merely actionness top-k or uniform sampling with repair”       | **Unsupported**                   | Current center-radius residual fill can degenerate to score top-k.                                                                                                       |
+| “Compute-efficient and fair against dense detector baselines”       | **Unsupported**                   | No full latency/FLOPs/cost table; possible selection after feature extraction.                                                                                           |
+
+---
+
+## D. More intelligent final selection designs
+
+The current center/radius/actionness-source plugin is still too heuristic. A final paper method should be less like “top-k with repairs” and more like “detector-loss-aware sparse temporal grid learning.”
+
+## Recommended method 1 — DUCA-STG: detector-loss-aware sparse temporal grid with hard-forward / soft-backward TopK
+
+### Model definition
+
+For each dense temporal observation `x_t`, compute:
+
+```text
+h_t = temporal_encoder(x_t, motion_t, zero_shot_actionness_t, position_t)
+logit_t = acquisition_score_head(h_t)
+radius_t = learned_radius_head(h_t) in [0, 16]
+boundary_t = boundary_uncertainty_head(h_t)
+utility_t = detector_responsibility_head(h_t)
+```
+
+The selector samples or ranks a strict set:
+
+```text
+S = TopK(logit_t + utility_t + boundary_t, K <= 384)
+```
+
+Then it expands only through a budgeted sparse-grid allocator:
+
+```text
+selected = budgeted_union(centers=S, radius=radius_t, hard_cap=384)
+```
+
+### Strict budget
+
+Budget is enforced inside the allocator, not config-only:
+
+```text
+len(selected) <= 384 always
+budget violation = hard error
+```
+
+### Train forward
+
+* Forward path uses hard selected observations only.
+* Detector consumes `gather(x, selected)`.
+* Backward path uses differentiable TopK relaxation:
+
+  * Gumbel-TopK,
+  * perturb-and-MAP,
+  * SoftSort/NeuralSort,
+  * or sparsemax/entmax budget relaxation.
+* Detector loss backpropagates through the relaxation.
+
+### Test forward
+
+* No teacher.
+* No GT.
+* No caches.
+* Deterministic hard TopK / budgeted allocator.
+* Sorted original-time positions.
+
+### Loss
+
+```text
+L = L_detector
+  + λ_budget * max(0, K - 384)
+  + λ_entropy * collapse_regularizer
+  + λ_hole * action-local hole penalty from no-leak proxy
+  + λ_radius * radius sparsity
+```
+
+Detector feedback comes from real AdaTAD/ActionFormer classification/regression/IoU losses.
+
+### Leakage avoidance
+
+Teacher utility, if used, is train-only and stored under audited provenance. Inference rejects teacher/cache/oracle payloads.
+
+### Code modules to change
+
+* `opentad/models/selectors/duca_online_frame_selector.py`
+* `opentad/models/duca/acquisition.py`
+* real AdaTAD sparse head / adapter
+* ActionFormer point generator / target assigner
+* no-leak provenance validator
+
+---
+
+## Recommended method 2 — DUCA-Responsibility: learn acquisition from detector responsibility, not actionness
+
+### Model definition
+
+Use a dense teacher detector only during training to compute a temporal responsibility signal:
+
+```text
+R_t = gradient/proposal responsibility of dense detector loss with respect to temporal observation t
+```
+
+The selector learns:
+
+```text
+q_t = selector(x_t, motion_t, frozen_actionness_t)
+q_t ≈ R_t
+```
+
+Then final fine-tuning uses real sparse detector loss.
+
+### Why this is better
+
+It avoids the “actionness interior over-selection” failure. The selector learns which observations affect detection and localization, not merely which frames look like actions.
+
+### Strict budget
+
+Hard TopK or dynamic-K capped at 384.
+
+### Train/test
+
+* Train stage 1: dense teacher generates responsibility targets on train split.
+* Train stage 2: hard-forward sparse detector fine-tuning.
+* Test: selector only; no teacher.
+
+### Leakage control
+
+Teacher can be used to train the selector, but not at inference. Teacher targets must be generated only on training videos and logged as train-only distillation artifacts.
+
+### Code changes
+
+* add dense teacher responsibility extraction;
+* add selector responsibility loss;
+* add audit artifact proving no teacher payload in test;
+* add ablation: with/without teacher warm-up.
+
+---
+
+## Recommended method 3 — Irregular-time ActionFormer-compatible sparse grid
+
+### Model definition
+
+Do not pretend selected positions are uniformly spaced. Each selected point `s_i` carries:
+
+```text
+true_time_i
+left_support_i = true_time_i - midpoint(prev, current)
+right_support_i = midpoint(current, next) - true_time_i
+local_density_i
+gap_left_i
+gap_right_i
+```
+
+The head predicts:
+
+```text
+class_i
+left_offset_i in true-time units
+right_offset_i in true-time units
+```
+
+### Strict budget
+
+The point set is the selected set, capped at 384.
+
+### Train/test
+
+* Train assignment uses true-time GT.
+* Test decode outputs true-time intervals directly.
+* No selected-rank remap needed except visualization.
+
+### Detector feedback
+
+Real ActionFormer classification/regression losses backpropagate to selector through ST selection.
+
+### Leakage avoidance
+
+No GT used in selection. GT only used by detector loss.
+
+### Code changes
+
+* `PointGenerator` replacement;
+* ActionFormer head target builder;
+* sparse NMS coordinate audit;
+* selected-time metadata schema.
+
+---
+
+## Recommended method 4 — Dynamic-K DUCA with matched-average budget reporting
+
+### Model definition
+
+Selector predicts an acquire/skip probability and stop probability:
+
+```text
+a_t ~ Bernoulli(p_t)
+K = sum_t a_t
+```
+
+Training uses a Lagrangian:
+
+```text
+L = L_detector + λ * max(0, E[K] - K_target) + μ * budget_violation
+```
+
+### Strict budget
+
+At inference:
+
+```text
+K <= 384 by hard cap
+```
+
+Dynamic-K must be compared against fixed-K methods with the same average selected count.
+
+### Why it is publishable
+
+Dynamic acquisition is a stronger claim than fixed 384. But reviewers will only accept it if matched-average fixed-K baselines are present.
+
+---
+
+## E. CVPR paper potential
+
+### Does the project have CVPR potential?
+
+**Yes, but not from this commit alone.** The project has CVPR potential if the final claim becomes:
+
+> A detector-loss-aware online sparse temporal acquisition plugin that selects a strict budget of temporal observations in original time, trains through real TAD loss, preserves high-IoU localization, and fairly reduces compute against dense AdaTAD/ActionFormer baselines.
+
+The current commit only proves early plumbing.
+
+### Strongest possible title / claim
+
+A strong title would be:
+
+**DUCA: Detector-Utility-Calibrated Online Temporal Acquisition for Efficient Action Detection**
+
+A stronger but riskier title:
+
+**Learning Where to Observe: Detector-Loss-Aware Sparse Temporal Acquisition for High-IoU Action Detection**
+
+The second title is only valid if you actually show detector-loss-aware gains over uniform, actionness top-k, p_action top-k, and zero-shot top-k under matched budget.
+
+---
+
+## Mandatory result matrix
+
+You need this table before submission:
+
+| Family                  | Required entries                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Dense baselines         | Dense AdaTAD; Dense ActionFormer                                                                              |
+| Budget baselines        | Uniform fixed 384; Random fixed 384 multi-seed                                                                |
+| Actionness baselines    | p_action top-K; zero-shot X-CLIP / ActionCLIP actionness top-K; Kinetics SlowFast / VideoMAE actionness top-K |
+| Prior project baselines | C3; GAS-VT; lattice relocation / repair baselines                                                             |
+| DUCA variants           | DUCA-Frozen; DUCA-Adapted without teacher warm-up; DUCA-Adapted with teacher warm-up                          |
+| Online plugin variants  | plugin without joint fine-tune; plugin with hard-forward ST fine-tune                                         |
+| Design ablations        | center-only; center-radius; no radius; fixed radius; learned radius                                           |
+| Loss ablations          | no boundary loss; no hole loss; no teacher utility; no actionness input                                       |
+| Coordinate ablations    | selected-rank decode vs original-time decode                                                                  |
+| Detector transfer       | AdaTAD vs ActionFormer                                                                                        |
+| Budget mode             | dynamic K vs matched-average fixed K                                                                          |
+
+---
+
+## Mandatory metrics
+
+Report all of these:
+
+```text
+Average mAP
+mAP@0.5 / 0.6 / 0.7
+high-IoU drop/gain vs uniform
+selected count
+budget violation rate
+selector latency
+gather latency
+backbone latency
+detector latency
+NMS latency
+total latency
+training cost
+teacher warm-up cost
+zero-shot source cost
+boundary support
+short-action recall
+action-local max hole
+action-local p95 hole
+uniform similarity
+actionness-interior over-selection
+selector entropy / collapse diagnostics
+no-leak audit pass/fail
+```
+
+Without latency and source-cost accounting, the efficiency claim will not survive review.
+
+---
+
+## Which current experiments are only scaffolding
+
+Do **not** sell these as main method results:
+
+* `DucaOnlinePrecheckHead` train/test;
+* toy precheck configs;
+* fake AdaTAD sparse wrapper;
+* `real_detector_loss_selector_grad_nonzero` from smoke/fake detector;
+* motion/feature-energy zero-shot actionness as evidence for foundation-model actionness;
+* geometry-only selection metrics as evidence for detector mAP.
+
+They are useful engineering gates, not paper evidence.
+
+---
+
+## What reviewers will attack first
+
+1. **“This is actionness top-k with radius repair.”**
+   You need detector-loss-aware ablations proving otherwise.
+
+2. **“You select feature-grid observations, not raw frames before the expensive backbone.”**
+   You need clear budget units and compute accounting.
+
+3. **“GT and predictions live on different temporal axes.”**
+   You need irregular-grid training/eval or correct selected-axis GT remap.
+
+4. **“Zero-shot actionness source cost is hidden.”**
+   You need source-cost reporting.
+
+5. **“No-leak is not fail-closed.”**
+   Unknown provenance must fail.
+
+6. **“ActionFormer compatibility is asserted, not shown.”**
+   You need real sparse ActionFormer point generation and mAP.
+
+---
+
+# Final requested lists
+
+## 1. P0 fix list
+
+1. Replace smoke `DucaOnlinePrecheckHead` evidence with real AdaTAD training/eval.
+2. Implement correct GT coordinate handling for sparse selected axes.
+3. Implement true-time sparse prediction/loss or rigorous selected-axis remap.
+4. Define raw-frame / snippet / feature-grid coordinate units explicitly.
+5. Replace graph-connectivity ST with a meaningful differentiable budgeted selection estimator.
+6. Make actionness / p_action provenance fail-closed in train and test.
+7. Enforce hard budget `<=384` inside selector regardless of runtime override.
+8. Strengthen metadata validators so they verify actual gather/mask/remap consistency.
+
+## 2. P1 fix list
+
+1. Expose full padded slot masks in metadata.
+2. Rename or implement `remap_gt_to_selected_axis`.
+3. Report center-radius residual fill ratio.
+4. Make manual/precomputed zero-shot provenance fail-closed.
+5. Remove any paper interpretation of `video_text_mock`.
+6. Make native sparse validation failure a hard failure.
+7. Add multi-seed random fixed-384.
+8. Add ActionFormer irregular-grid implementation rather than generic hook claims.
+
+## 3. Recommended final method design
+
+Use **DUCA-STG**:
+
+```text
+hard-forward sparse TopK selection
++ differentiable soft-backward budgeted relaxation
++ learned radius/context
++ detector-responsibility or detector-loss feedback
++ true-time irregular sparse grid head
++ fail-closed no-leak provenance
++ strict K <= 384
+```
+
+The detector must consume only selected observations. Training must use real detector loss. Inference must use no teacher, no GT, no cache, and no offline ledger.
+
+## 4. Minimal code-change plan
+
+1. Add hard budget cap and provenance validator now.
+2. Add metadata consistency validator that recomputes gather/mask/remap.
+3. Implement GT true-time ↔ selected-axis remap for the interim AdaTAD path.
+4. Add real AdaTAD sparse config and full THUMOS eval.
+5. Replace `DucaOnlinePrecheckHead` with real head in any metric run.
+6. Add ST TopK / Gumbel-TopK selector and verify unselected-logit gradients.
+7. Implement ActionFormer sparse true-time point generator.
+8. Add latency/cost logging.
+
+## 5. Paper-level experiment plan
+
+Run:
+
+* Dense AdaTAD and Dense ActionFormer;
+* Uniform fixed 384;
+* Random fixed 384, at least 5 seeds;
+* p_action top-K;
+* zero-shot X-CLIP / ActionCLIP / SlowFast / VideoMAE top-K;
+* C3 / GAS-VT / lattice baselines;
+* DUCA-Frozen;
+* DUCA-Adapted without teacher warm-up;
+* DUCA-Adapted with teacher warm-up;
+* DUCA online plugin without joint fine-tune;
+* DUCA online plugin with hard-forward ST fine-tune;
+* AdaTAD and ActionFormer versions;
+* dynamic-K and matched-average fixed-K.
+
+Report mAP, high-IoU, budget, holes, boundary support, latency, training cost, zero-shot source cost, and no-leak audit.
+
+## 6. Final verdict on commit `603ed02`
+
+**CVPR-ready? No.**
+
+**CVPR-promising? Yes, as a direction.**
+
+**Current commit status? Engineering scaffold / integration precheck.**
+
+The commit is valuable because it creates the right architectural seam: an OpenTAD-buildable online selector that can sit in front of a detector and pass selected tensors downstream. But the real scientific method is not implemented yet. The next decisive milestone is not more smoke tests; it is a real AdaTAD/ActionFormer sparse-time training/evaluation path with correct temporal geometry and detector-loss-aware selection that beats uniform fixed 384 under fair cost accounting.
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/603ed0203ef2ebf631523ca42d9061b5ee877de9/opentad/models/detectors/single_stage.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/detectors/single_stage.py at 603ed0203ef2ebf631523ca42d9061b5ee877de9 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/603ed0203ef2ebf631523ca42d9061b5ee877de9/opentad/models/selectors/duca_online_frame_selector.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/selectors/duca_online_frame_selector.py at 603ed0203ef2ebf631523ca42d9061b5ee877de9 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/603ed0203ef2ebf631523ca42d9061b5ee877de9 "Implement DUCA online selector prechecks · yuzbo/OpenTAD_C3_CoarseClean_20260702@603ed02 · GitHub"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/603ed0203ef2ebf631523ca42d9061b5ee877de9/opentad/models/dense_heads/duca_online_precheck_head.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/dense_heads/duca_online_precheck_head.py at 603ed0203ef2ebf631523ca42d9061b5ee877de9 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/603ed0203ef2ebf631523ca42d9061b5ee877de9/tools/bata/run_duca_online_adatad_wrapper_precheck.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/run_duca_online_adatad_wrapper_precheck.py at 603ed0203ef2ebf631523ca42d9061b5ee877de9 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[6]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/603ed0203ef2ebf631523ca42d9061b5ee877de9/opentad/models/utils/truetime_geometry.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/utils/truetime_geometry.py at 603ed0203ef2ebf631523ca42d9061b5ee877de9 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[7]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/603ed0203ef2ebf631523ca42d9061b5ee877de9/opentad/models/duca/acquisition.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/duca/acquisition.py at 603ed0203ef2ebf631523ca42d9061b5ee877de9 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[8]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/603ed0203ef2ebf631523ca42d9061b5ee877de9/configs/adatad/thumos/duca_online_zeroshot_actionness_precheck.py "OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/duca_online_zeroshot_actionness_precheck.py at 603ed0203ef2ebf631523ca42d9061b5ee877de9 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[9]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/603ed0203ef2ebf631523ca42d9061b5ee877de9/tools/bata/eval_zero_shot_actionness.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/eval_zero_shot_actionness.py at 603ed0203ef2ebf631523ca42d9061b5ee877de9 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[10]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/603ed0203ef2ebf631523ca42d9061b5ee877de9/tools/bata/run_zero_shot_actionness_selection_eval.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/run_zero_shot_actionness_selection_eval.py at 603ed0203ef2ebf631523ca42d9061b5ee877de9 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[11]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/603ed0203ef2ebf631523ca42d9061b5ee877de9/opentad/models/selectors/__init__.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/selectors/__init__.py at 603ed0203ef2ebf631523ca42d9061b5ee877de9 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"

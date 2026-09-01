@@ -1,0 +1,26 @@
+{
+  "annotation_file_read": true,
+  "artifacts": {
+    "checkpoint_dynamics": {
+      "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_negative_diagnostics_20260730_v3/analysis/DCSR_CHECKPOINT_DYNAMICS.json",
+      "sha256": "c596bc942d2617e3824d21c96d0289316be4ee1ad465f23dc507b2d90466e006",
+      "size_bytes": 189632
+    },
+    "focused_tests": {
+      "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_negative_diagnostics_20260730_v3/analysis/focused_tests.log",
+      "sha256": "dbad7210e7c85acc8df7653887ca684b0233ad01533bcfa644e95f8c09e19e02",
+      "size_bytes": 1752
+    },
+    "prediction_diagnostics": {
+      "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_negative_diagnostics_20260730_v3/analysis/DCSR_NEGATIVE_DIAGNOSTICS.json",
+      "sha256": "47dcca7e179544e348966bf92cf92cddeff19a1fdc8cfea100150dc1bc580a36",
+      "size_bytes": 295818
+    }
+  },
+  "diagnostic_only": true,
+  "paper_performance_row_allowed": false,
+  "schema_version": "actionformer_dcsr_negative_diagnostics_complete_v1",
+  "test_subset_used": false,
+  "training_performed": false,
+  "validation_pass": true
+}

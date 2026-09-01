@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-25T17:14:37Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "focused-checkpoint-binding-recheck",
+  "message_id": "msg-20260825T171437Z-730b6c3ab349",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-messages/CRITIC_PJST_D1_CYCLE3_CHECKPOINT_BINDING_RECHECK-v001.md",
+    "size": 2384
+  },
+  "priority": "critical",
+  "requested_action": "Recheck only the checkpoint fail-closed correction at cbefa515 and return static PASS or BLOCKED_PRE_RUN.",
+  "required_gate": "REVISE",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

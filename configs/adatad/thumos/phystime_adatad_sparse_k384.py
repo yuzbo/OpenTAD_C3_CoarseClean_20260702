@@ -1,0 +1,165 @@
+_base_ = ["./physical_grid_adatad_sparse_k384.py"]
+
+dataset = dict(
+    train=dict(
+        pipeline=[
+            dict(type="PrepareVideoInfo", format="mp4"),
+            dict(type="mmaction.DecordInit", num_threads=4),
+            dict(
+                type="LoadFrames",
+                num_clips=1,
+                method="random_fixed_subsample",
+                method_base="random_trunc",
+                keep_ratio=0.5,
+                target_len=384,
+                source_len=768,
+                trunc_thresh=0.75,
+                crop_ratio=[0.9, 1.0],
+                scale_factor=1,
+                remap_gt_to_selected_axis=False,
+            ),
+            dict(type="BuildPhysTimeRawFrameGeometry", convert_gt_to_seconds=True),
+            dict(type="mmaction.DecordDecode"),
+            dict(type="mmaction.Resize", scale=(-1, 182)),
+            dict(type="mmaction.RandomResizedCrop"),
+            dict(type="mmaction.Resize", scale=(160, 160), keep_ratio=False),
+            dict(type="mmaction.Flip", flip_ratio=0.5),
+            dict(type="mmaction.ImgAug", transforms="default"),
+            dict(type="mmaction.ColorJitter"),
+            dict(type="mmaction.FormatShape", input_format="NCTHW"),
+            dict(type="ConvertToTensor", keys=["imgs", "gt_segments", "gt_labels"]),
+            dict(type="Collect", inputs="imgs", keys=["masks", "gt_segments", "gt_labels"]),
+        ]
+    ),
+    val=dict(
+        pipeline=[
+            dict(type="PrepareVideoInfo", format="mp4"),
+            dict(type="mmaction.DecordInit", num_threads=4),
+            dict(
+                type="LoadFrames",
+                num_clips=1,
+                method="random_fixed_subsample",
+                method_base="sliding_window",
+                keep_ratio=0.5,
+                target_len=384,
+                source_len=768,
+                scale_factor=1,
+                remap_gt_to_selected_axis=False,
+            ),
+            dict(type="BuildPhysTimeRawFrameGeometry", convert_gt_to_seconds=True),
+            dict(type="mmaction.DecordDecode"),
+            dict(type="mmaction.Resize", scale=(-1, 160)),
+            dict(type="mmaction.CenterCrop", crop_size=160),
+            dict(type="mmaction.FormatShape", input_format="NCTHW"),
+            dict(type="ConvertToTensor", keys=["imgs", "gt_segments", "gt_labels"]),
+            dict(type="Collect", inputs="imgs", keys=["masks", "gt_segments", "gt_labels"]),
+        ]
+    ),
+    test=dict(
+        pipeline=[
+            dict(type="PrepareVideoInfo", format="mp4"),
+            dict(type="mmaction.DecordInit", num_threads=4),
+            dict(
+                type="LoadFrames",
+                num_clips=1,
+                method="random_fixed_subsample",
+                method_base="sliding_window",
+                keep_ratio=0.5,
+                target_len=384,
+                source_len=768,
+                scale_factor=1,
+                remap_gt_to_selected_axis=False,
+            ),
+            dict(type="BuildPhysTimeRawFrameGeometry", convert_gt_to_seconds=False),
+            dict(type="mmaction.DecordDecode"),
+            dict(type="mmaction.Resize", scale=(-1, 160)),
+            dict(type="mmaction.CenterCrop", crop_size=160),
+            dict(type="mmaction.FormatShape", input_format="NCTHW"),
+            dict(type="ConvertToTensor", keys=["imgs"]),
+            dict(type="Collect", inputs="imgs", keys=["masks"]),
+        ]
+    ),
+)
+
+model = dict(
+    _delete_=True,
+    type="PhysTimeTAD",
+    discretization_loss_weight=0.0,
+    backbone=dict(
+        type="mmaction.Recognizer3D",
+        backbone=dict(
+            type="VisionTransformerAdapter",
+            img_size=224,
+            patch_size=16,
+            embed_dims=384,
+            depth=12,
+            num_heads=6,
+            mlp_ratio=4,
+            qkv_bias=True,
+            num_frames=16,
+            drop_path_rate=0.1,
+            norm_cfg=dict(type="LN", eps=1e-6),
+            return_feat_map=True,
+            with_cp=True,
+            total_frames=384,
+            adapter_index=list(range(12)),
+        ),
+        data_preprocessor=dict(
+            type="mmaction.ActionDataPreprocessor",
+            mean=[123.675, 116.28, 103.53],
+            std=[58.395, 57.12, 57.375],
+            format_shape="NCTHW",
+        ),
+        custom=dict(
+            pretrain="pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+            pre_processing_pipeline=[
+                dict(
+                    type="Rearrange",
+                    keys=["frames"],
+                    ops="b n c (t1 t) h w -> (b t1) n c t h w",
+                    t1=24,
+                )
+            ],
+            post_processing_pipeline=[
+                dict(type="Reduce", keys=["feats"], ops="b n c t h w -> b c t", reduction="mean"),
+                dict(type="Rearrange", keys=["feats"], ops="(b t1) c t -> b c (t1 t)", t1=24),
+                dict(type="Interpolate", keys=["feats"], size=384),
+            ],
+            norm_eval=False,
+            freeze_backbone=False,
+        ),
+    ),
+    projection=dict(
+        type="PhysTimeMeasureProjection",
+        in_channels=384,
+        out_channels=512,
+        attention_channels=128,
+        observation_measure="support_overlap",
+        base_spacing_sec=0.5,
+        num_levels=6,
+        dropout=0.1,
+    ),
+    rpn_head=dict(
+        type="PhysTimeHead",
+        num_classes=20,
+        in_channels=512,
+        feat_channels=512,
+        num_convs=2,
+        regression_ranges_sec=[
+            (0.0, 2.0),
+            (2.0, 4.0),
+            (4.0, 8.0),
+            (8.0, 16.0),
+            (16.0, 32.0),
+            (32.0, 1.0e8),
+        ],
+        loss_normalizer=100,
+        loss_normalizer_momentum=0.9,
+        center_sample_radius=1.5,
+        cls_prior_prob=0.01,
+        endpoint_loss_weight=0.25,
+        loss=dict(cls_loss=dict(type="FocalLoss"), reg_loss=dict(type="DIOULoss")),
+    ),
+)
+
+work_dir = "exps/thumos/adatad/phystime_adatad_sparse_k384"

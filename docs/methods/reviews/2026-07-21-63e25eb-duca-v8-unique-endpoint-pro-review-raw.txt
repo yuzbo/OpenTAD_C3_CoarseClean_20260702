@@ -1,0 +1,1126 @@
+# 1. `VISIBILITY_CERTIFICATE`
+
+```text
+VISIBILITY_CERTIFICATE
+status: PASS
+
+repository:
+  yuzbo/OpenTAD_C3_CoarseClean_20260702
+
+requested_commit:
+  63e25eb17e523d369f73434ed4d9b6446608861a
+
+actually_read_commit:
+  63e25eb17e523d369f73434ed4d9b6446608861a
+
+commit_message:
+  Fix DUCA P0 EMA group audit
+
+branch_checked:
+  codex/duca-global-curriculum-20260721
+
+branch_vs_commit:
+  status=identical
+  ahead_by=0
+  behind_by=0
+
+audit_mode:
+  read-only static GitHub connector audit
+  immutable ref used for every file read
+```
+
+[CODE_FACT] GitHub 返回的实际提交 SHA 为 `63e25eb17e523d369f73434ed4d9b6446608861a`，提交标题为 `Fix DUCA P0 EMA group audit`。
+
+[CODE_FACT] 我实际读取了用户要求的全部核心文件：
+
+* `opentad/models/duca/{acquisition,transition_only,structured_selection,hard_soft_alignment}.py`
+* P0 base、三组 LR config、official-60 base、U/G0/G1/G2 config
+* `run_duca_frontend_p0_real_gate.py`
+* `aggregate_duca_frontend_candidates.py`
+* `select_duca_frontend_checkpoint.py`
+* `duca_frontend_initialization.py`
+* 两个串行/提交脚本
+* 五个指定测试文件
+
+此外沿真实调用链读取了：
+
+* `opentad/models/selectors/duca_online_frame_selector.py`
+* `opentad/models/detectors/{actionformer,single_stage,base}.py`
+* `opentad/models/dense_heads/{actionformer_head,anchor_free_head}.py`
+* `opentad/models/utils/truetime_geometry.py`
+* `opentad/cores/{optimizer,train_engine}.py`
+* `tools/train.py`
+* `tools/bata/duca_selected_axis_training.py`
+* `run_duca_protected_e2e_exact_full_model_gate.py`
+* counterfactual、hard/soft alignment、transition-only 相关测试与基础配置。
+
+**不可见范围：**
+
+[CODE_FACT] 本地容器无法解析 `github.com`，因此没有执行 clone、pytest、CUDA、训练或真实性能 profiling；静态代码读取通过 GitHub 连接器完成。
+
+[EXPERIMENT_FACT] Job `1178989`、当前 epoch/loss、CUDA gate artifact、V5 数值均来自用户提供的实验记录，本轮没有独立读取其 Slurm 日志、checkpoint、数据集字节或结果 JSON。以下实验结论会明确区分“用户提供事实”和“代码可推导事实”。
+
+---
+
+# 2. 最终裁决
+
+## **HOLD**
+
+更精确地说：
+
+> **HOLD 当前 V8 learned official-60 执行许可；不 KILL 全局 exact-(K) 路线，但禁止用当前 P0 winner 直接解锁 G0/G1/G2。**
+
+裁决边界如下。
+
+[CODE_FACT] hard Viterbi、soft forward-backward 和 ordered slot marginals 使用同一个 exact-(K)、max-hole 状态机；当前没有 post-hoc repair 掩盖可行集不一致。因此，**结构化解码器本身不是主要失败点**。
+
+[CODE_FACT] 当前最严重问题是：V8 把一个半径 4 的 Gaussian transition target 同时当作 transition 分布目标和 boundary target，再用“邻域期望 occupancy mass”而不是“至少命中一次的事件概率”训练。这个目标会继续奖励同一边界附近的第二、第三个 slot，且有效奖励带可扩展到真实端点约 ±8。
+
+[INFERENCE] 该代码事实与“相邻选择从约 4.4% 上升至约 35%、但 radius-1 端点召回下降 9–10 点”的现象方向完全一致。V8 目前学到的是“往宽边界带堆 occupancy mass”，不是“每个真实端点至少分配一个有用观测”。
+
+[CODE_FACT] G1/G2 的 detector feedback 是 hard-forward、soft-backward 的局部 Taylor transport surrogate；源码自己明确称其仍是 surrogate，并要求在 full training 前通过 hard-swap alignment gate。当前串行 gate 没有生成该真实 alignment 证据，却把 `formal_training_unlocked=True` 写入 gate suite。
+
+[PROPOSAL] 当前 P0 作业可以跑完，结果只能作为 V8 负面诊断；不得把其 winner 当作 G0/G1/G2 的科学解锁。U 臂可以先完成，用于复现当前 matched baseline。之后只允许一次有界修订：**Unique-Endpoint Event Objective**，见第 8 节。
+
+[PROPOSAL] 若该修订后的 G0 仍不能超过 U，且 scorer 仍不能至少追平 `abs(delta p)`，则应 **KILL 在 (T=768,K=384,G=2) 下的全局 learned selection 主线**，停止继续调 scorer、bridge 或 curriculum。
+
+---
+
+# 3. 当前真实模型图
+
+## 3.1 前向张量图
+
+```text
+dense raw video
+X: [B,C,T=768,H,W] 或 [B,N,C,T=768,H,W]
+│
+├── C3 coarse probe，输入降到 64×64
+│   ├── spatial stem: Conv3→96, stride 2
+│   ├── spatial stem: Conv96→96, stride 2
+│   ├── official ASFormer temporal trunk, 2 layers
+│   ├── action logits z: [B,768]
+│   └── encoder hidden h: [B,768,96]
+│
+├── actionness BCE
+│   └── P0: 更新 spatial stem + ASFormer + action heads
+│
+└── transition descriptors
+    d_t = [
+      Δz_t, |Δz_t|,
+      Δentropy_t, |Δentropy_t|,
+      Δh_t[96], |Δh_t|[96],
+      1-cos(h_t,h_{t-1})
+    ]
+    d: [B,768,197]
+    │
+    └── scorer:
+        LayerNorm(197)
+        Linear(197→64)
+        GELU
+        Linear(64→1)
+        scores s: [B,768]
+```
+
+[CODE_FACT] scorer 不是“六个标量参数”，而是六个 parameter tensors、共 **13,131 个标量**：LayerNorm weight/bias、两层 Linear weight/bias。它真正使用 hidden delta、hidden absolute delta、logit delta、entropy delta 和 cosine change；没有使用 absolute hidden，也不是 actionness top-k。
+
+[CODE_FACT] actionness logits 在 transition 路径中无条件 `detach()`；hidden 路径则由 `policy_hidden_gradient_scale` 和 `auxiliary_hidden_gradient_scale` 控制。当前 P0 两者均使 transition/boundary 梯度不能进入 coarse，只有 actionness BCE 更新 coarse。
+
+## 3.2 结构化 hard/soft 路径
+
+```text
+learned scorer scores s[B,T]
+       │
+       ├── normalize learned scores
+       ├── normalize exact-uniform reference
+       └── l(alpha) = (1-alpha)*uniform_reference + alpha*learned
+                         │
+                         ├── hard Viterbi exact K=384, G=2
+                         │     hard positions: [B,384]
+                         │     hard occupancy: [B,768]
+                         │
+                         └── soft forward-backward, same K/G family
+                               soft occupancy: [B,768]
+                               ordered slot assignment: [B,384,768]
+```
+
+[CODE_FACT] hard path 和 surrogate path 都调用 `continuous_policy_logits`，然后以相同 `effective_k`、`max_hole`、temperature 进入 `global_structured_topk`。hard path用于真实 gather，soft path只用于训练梯度。`max_gap_repair.enabled=False`。
+
+```text
+hard positions [B,384]
+      │
+      └── gather dense raw video along temporal axis
+          X_sparse: temporal length 384
+                  │
+                  ├── VideoMAE-S backbone
+                  ├── projection / neck
+                  └── official ActionFormerHead
+                      cls loss + reg loss
+```
+
+## 3.3 detector bridge
+
+G1/G2 的实际桥为：
+
+[
+\tilde x_k =
+x_{t_k}^{\text{hard}}
++
+\lambda,
+\operatorname{stopgrad}!\left(
+\frac{x_{t_k+1}-x_{t_k-1}}{2}
+\right)
+\left(
+\mathbb E_q[t_k]-\operatorname{stopgrad}(\mathbb E_q[t_k])
+\right).
+]
+
+[CODE_FACT] 前向值严格等于 hard gather；反向把 detector loss 对 raw input 的梯度乘局部时间斜率，再传到 ordered slot 的期望位置和 scorer。它不是 hard index 的直接导数。
+
+## 3.4 U/G0/G1/G2 实际解析结果
+
+| 臂  |       P0 初始化 | alpha | coarse | transition auxiliary |        detector→scorer |             companion |
+| -- | -----------: | ----: | ------ | -------------------: | ---------------------: | --------------------: |
+| U  |            无 |  始终 0 | 不用于训练  |                    0 |                      0 |                     无 |
+| G0 | EMA selector |   0→1 | 冻结     |          `.02 / 2.0` |                      0 |                     无 |
+| G1 |         同 G0 |   0→1 | 冻结     |          `.02 / 2.0` |        0→.25 surrogate |                     无 |
+| G2 |         同 G1 |   0→1 | 冻结     |          `.02 / 2.0` | learned rows，乘 (B/n_L) | 50% hard uniform rows |
+
+[CODE_FACT] U 是同一 DUCA wrapper、同一 K=384、同一 selected-axis/remap 路径中的 exact-uniform control，不是“不带 selector 的原生官方 AdaTAD”。它适合作为 learned-policy matched baseline，但不能证明与历史 65.696 的协议等价。
+
+[CODE_FACT] G2 的 companion 是**替换 batch 中约一半行的 hard positions 和 ordered slot assignment**，只进行一次 detector forward；不是再跑一份 companion detector。
+
+[CODE_FACT] G2 没有替换 `soft_coverage` 或 transition auxiliary scores。因此 uniform companion 行仍用 learned policy 接收全部 GT transition/boundary 辅助梯度；只有 detector-bridge 梯度被置零，learned 行乘 (B/n_L)。这意味着 G2 的精确语义是：
+
+> detector 输入 companion + scorer detector-gradient subsampling，**不是**完整 selector-training companion。
+
+---
+
+# 4. 逐行问题表
+
+| 严重级别        | 文件:行号                                                                                | 代码事实                                                                                                       | 影响                                                       | 必须修复                                                            |
+| ----------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------- |
+| **BLOCKER** | `duca_online_frame_selector.py:1001-1008`；`acquisition.py:3099-3117`                 | Gaussian `transition_target` 被直接复用于 boundary coverage；active loss 调用的是 `local_boundary_mass_coverage_loss` | target 语义重复计数，不能表达“至少覆盖一次”                               | 分离 transition event masks；改用 exact structured event probability |
+| **BLOCKER** | `transition_only.py:471-505`                                                         | `exp(-neighborhood_mass)` 对 mass=1、2、3 均继续下降                                                               | 直接奖励同一边界带内多 slot 聚集                                      | 用 (-\log P(S\cap E_i\neq\varnothing)) 替代                        |
+| **HIGH**    | `transition_only.py:421-470`                                                         | 仓库其实已有 exact structured coverage 实现，但 V8 未使用                                                               | 当前负结果不能归咎于 exact-K 不可微；是接错 objective                     | 复用并改造成 unique-event API                                         |
+| **HIGH**    | `hard_soft_alignment.py:326-349`；`run_duca_two_stage_curriculum_gate_gpu1.sh:72-118` | 预注册要求 24 swaps/4 batches/置信下界，但串行 gate 未执行真实 swap alignment 就解锁 formal training                            | G1/G2 的优化方向没有证据                                          | 把真实 current-bridge alignment 纳入 fail-closed gate                |
+| **HIGH**    | `duca_protected_e2e_fixed384_official60.py:59-65`                                    | metadata 写 `detector_gradient_is_direct=True`                                                              | 与实现和论文边界矛盾，容易形成错误主张                                      | 改为 `False`，新增 `detector_gradient_is_surrogate=True`             |
+| **HIGH**    | `duca_online_frame_selector.py:1442-1451`                                            | interpolation 使用 `step <= warmup`，而 step 是已完成成功更新数                                                         | 实际为 1001/1499，而非 1000/1500；bridge 同理为 2501/1499          | 采用明确的 completed-update phase 公式                                 |
+| **HIGH**    | `select_duca_frontend_checkpoint.py:178-265`                                         | 七门通过后主要按 radius-0 point estimate 排序，无 paired CI                                                            | 可选择代理好但 terminal mAP 差的 checkpoint                       | 把 winner 改称 licensed checkpoint；用 video-cluster bootstrap 非劣门   |
+| **MEDIUM**  | `duca_online_frame_selector.py:1688-1771`                                            | G2 hard companion 不替换 soft coverage/aux scores                                                             | G2 的 scorer 梯度并非“只见 learned rows”；实验解释容易错                | 明示 companion scope 并增加测试/ledger                                 |
+| **MEDIUM**  | `acquisition.py:1744-1827`                                                           | hard policy logits 来自 detached route；可微 surrogate logits 没有作为独立输出暴露                                        | 修 exact coverage 时若误用 `decode_policy_logits` 会再次断梯度      | 返回 `structured_policy_logits`，明确其可微 provenance                  |
+| **MEDIUM**  | `transition_only.py:114-167`                                                         | scorer 输入含多种 transition descriptor，但 coarse 只由 action BCE 塑形                                               | hidden 未被 transition objective 校准，scorer 只能适配弱表示         | 先修 objective；仍失败时才考虑 residual anchor/有限解冻                       |
+| **MEDIUM**  | `truetime_geometry.py:84-126`；`single_stage.py:198-207`                              | true→selected、selected→true 数学对称，但 detector loss 在 ordinal selected axis 上计算                               | irregular spacing 改变单位回归误差的物理含义，U 较接近 affine，learned 更扭曲 | 增加 round-trip/high-IoU synthetic audit；暂不称代码 bug                |
+| **MEDIUM**  | `duca_online_frame_selector.py:1811-1863`                                            | alpha=0 的 U 仍先执行 coarse probe 和 scorer                                                                     | U 是 compute-matched control，不是最低成本均匀部署基线                 | 成本报告另加 `U-bypass` 推理测量，不能改 matched mAP 表                        |
+| **MEDIUM**  | `acquisition.py`、P0 config                                                           | 没有 per-loss scorer gradient norm/cosine gate，且无 grad clipping                                              | 不能仅凭 `.10/16` 或 weighted scalar 判定梯度平衡                   | 记录 `g_transition`、`g_coverage` 范数与 cosine                       |
+| **MEDIUM**  | `acquisition.py:_estimate_probe_profile`；selector profile                            | profile 明示排除 detector/backbone，且内存 accounting 不完整                                                          | selector FLOPs 不能代表总成本                                   | 做 decode/H2D/probe/DP/backbone/head/NMS 分项实测                    |
+| **LOW**     | current tests                                                                        | 现有测试证明梯度存在、hard-forward 相等，却没有证明当前 bridge 对真实 hard swaps 的效用符号一致                                           | “测试通过”只能证明 plumbing                                      | 新增真实 ActionFormer swap gate，不扩写单元测试结论                           |
+
+[CODE_FACT] 当前 hard/soft 可行集没有发现必须修复的错位；这一项应从主要嫌疑中移除。
+
+---
+
+# 5. 梯度归属矩阵
+
+其中 “AdaTAD” 包括 sparse VideoMAE backbone、projection、neck 和 ActionFormerHead。
+
+| loss / 阶段                              | coarse trunk | action head |                           scorer |    AdaTAD |
+| -------------------------------------- | -----------: | ----------: | -------------------------------: | --------: |
+| P0 `actionness_bce_loss`               |            ✓ |           ✓ |                                — |         — |
+| P0 `transition_distribution_loss`      |            — |           — |                                ✓ |         — |
+| P0 `transition_boundary_coverage_loss` |            — |           — |                                ✓ |         — |
+| P0 其余 16 个 graph-free zero             |            — |           — |                                — |         — |
+| U detector cls/reg                     |            — |           — |                                — |         ✓ |
+| G0 transition/boundary auxiliary       |       frozen |      frozen |                                ✓ |         — |
+| G0 detector cls/reg                    |            — |           — |                                — |         ✓ |
+| G1 transition/boundary auxiliary       |       frozen |      frozen |                                ✓ |         — |
+| G1 detector cls/reg                    |            — |           — |                  **✓ surrogate** |         ✓ |
+| G2 transition/boundary auxiliary       |       frozen |      frozen |                  ✓，所有 batch rows |         — |
+| G2 detector cls/reg                    |            — |           — | learned rows × (B/n_L)，surrogate | ✓，所有 rows |
+
+[CODE_FACT] P0 的 ActionFormer constructor 在 selector-only 模式冻结所有非-selector 参数；`selector_train_only_skip_detector=True` 时，在 selector losses 形成后直接返回，不执行 backbone、projection、neck 或 head。
+
+[CODE_FACT] optimizer 对所有 trainable 参数执行 exact coverage assertion；不同 LR 由参数名精确分到 coarse trunk、ASFormer action head 和 scorer。
+
+[CODE_FACT] G1/G2 的 `.25` 不缩放 detector 参数自身梯度。它只缩放嵌入 raw input 的 zero-forward surrogate，因此：
+
+* detector 参数仍从真实 hard-selected input 上正常更新；
+* scorer 获得乘 `.25` 的近似梯度；
+* 不存在第二份 detector loss 被重复加到 `cost`；
+* 但该 scorer 梯度是否方向正确尚未被证明。
+
+[CODE_FACT] G2 的 (B/n_L) 归一化在随机 companion rows 下，使 detector→scorer 梯度的期望尺度近似恢复到全 learned batch；GT transition/boundary 梯度本来就覆盖所有 rows，因此没有相同归一化。
+
+---
+
+# 6. 实验与数值解释
+
+## 6.1 已有 terminal 结果
+
+[EXPERIMENT_FACT，用户提供]
+
+| V5 臂                 | epoch-59 EMA |
+| -------------------- | -----------: |
+| U                    |  **64.4580** |
+| direct-0.25          |      63.7102 |
+| homotopy-0.25        |      63.0601 |
+| homotopy + companion |      63.6931 |
+
+[EXPERIMENT_FACT] companion 相对 homotopy 恢复 `+0.6330`，但仍低于 U `-0.7649`。
+
+[INFERENCE] 这说明 companion 对 detector 输入分布稳定性确有帮助，但不足以克服 policy 本身选错位置。它不支持“只需更多 companion 即可成功”。
+
+## 6.2 当前 P0 loss 不能按表面大小解释
+
+[EXPERIMENT_FACT，用户提供] 当前日志：
+
+```text
+weighted actionness                = 0.6855
+weighted transition               = 0.6396
+weighted transition-boundary      = 0.1415
+total                              ≈ 1.4665
+```
+
+按配置权重还原：
+
+[
+L_{\text{action,raw}}=0.6855,
+]
+
+[
+L_{\text{transition,raw}}
+=\frac{0.6396}{0.10}=6.396,
+]
+
+[
+L_{\text{boundary,raw}}
+=\frac{0.1415}{16}=0.00884375.
+]
+
+### Actionness BCE
+
+[CODE_FACT] 当前是 `class_balanced_mean`：正、负样本 BCE 分别求均值，再按固定 prior 0.5 合并。因此零 logit 基线约为：
+
+[
+-\log(0.5)=0.6931,
+]
+
+不受动作帧实际 prevalence 直接控制。
+
+[INFERENCE] `0.6855` 仅比随机零 logit 好约 `0.0076`，说明 logit margin/calibration 仍弱；但不能单凭该值断言标签错。用户提供的 AUROC `0.6161` 说明已有弱排序信号。
+
+必须补的诊断是：
+
+* 正、负样本 mean/std logit；
+* 分别的 positive BCE、negative BCE；
+* Brier score、ECE；
+* train/holdout AUROC 曲线；
+* spatial stem、ASFormer、action head 的独立 gradient norm；
+* mask 内外 target 数量与非零率。
+
+若 shuffled-label 与真实标签得到近似 AUROC，才支持标签或 mask bug；目前静态代码没有该证据。
+
+### Transition loss
+
+对于满长 (T=768) 的均匀 categorical 分布：
+
+[
+\log 768=6.6438.
+]
+
+[INFERENCE] 当前 raw transition CE `6.396` 只比均匀好约 `0.248` nats。结合 scorer AUROC `0.527–0.530 < abs(delta p) 0.611–0.618`，说明 scorer 并未有效利用 197 维描述符。
+
+但根因更可能是**训练 target 与评测 target 不一致**：训练 target 是 sigma=2、radius=4 的宽 Gaussian，诊断却关心精确端点/radius-0 或 radius-1。
+
+### Boundary loss
+
+[INFERENCE] raw boundary mass loss `0.00884` 很小不代表“真实端点覆盖已好”。它只说明宽邻域中的 expected occupancy mass 已经很高。由于损失是 `exp(-mass)`，mass 从 1 增至 2 仍会使损失从 `0.368` 降至 `0.135`，继续鼓励重复 slot。
+
+## 6.3 为什么 learned < uniform
+
+按证据强度排序：
+
+1. [CODE_FACT] **监督语义错误**：Gaussian support radius 4 再加 coverage radius 4，形成约 ±8 的奖励带；同一事件重复计数并持续奖励多 slot。
+2. [EXPERIMENT_FACT] **scorer 确实学错**：AUROC 明显低于无参数的 `abs(delta p)`。
+3. [EXPERIMENT_FACT] **错误行为已显现**：相邻选择约 35%，同时 radius-1 recall 下降。
+4. [EXPERIMENT_FACT] **uniform 对 radius-1 已饱和**：约 0.9998，边界覆盖代理几乎没有正 headroom，只能防止退化。
+5. [INFERENCE] **selected-axis 几何更偏爱 uniform**：U 的 true↔selected map 接近 affine；learned irregular map 让一个 selected-axis offset 对应可变真实时长。
+6. [CODE_FACT] **detector surrogate 尚未验证**：能够反传不等于与 hard swap loss reduction 同向。
+7. [INFERENCE] **hard-set curriculum 不连续**：alpha 连续不保证 Viterbi argmax 集合连续。
+8. [EXPERIMENT_FACT] V5 已表明 detector feedback 和 companion 均未恢复到 U，不能再把负结果解释成“仅训练不够”。
+
+## 6.4 selected-axis 审计
+
+[CODE_FACT] 训练时 GT 从 true dense axis 通过同一个 `TrueTimeMap.true_to_selected` 映射到 selected axis；推理时 proposals 在 NMS/秒转换前通过 `selected_to_true` 逆映射。映射为严格单调的 piecewise-linear 插值。
+
+[CODE_FACT] 未发现以下直接错误：
+
+* 训练 remap 后忘记 inverse-map；
+* inference 在 selected coordinate 直接转秒；
+* selected positions 非严格递增；
+* missing inverse metadata 静默通过。
+
+[INFERENCE] 但该合同仍有方法风险：ActionFormer 的 regression range、center sampling 和 offset loss 都在 selected ordinal axis 上定义。对 learned irregular sampling：
+
+[
+1\text{ selected-axis unit}
+\neq
+1\text{ fixed true-time unit}.
+]
+
+因此同样的真实边界误差，在不同局部采样密度下会对应不同训练损失。这个风险应通过 synthetic parity test 和 matched U 复现证伪，而不能仅凭“inverse-map 存在”宣称无影响。
+
+## 6.5 64.458 与历史 65.696
+
+[EXPERIMENT_FACT] `65.696` 是用户明确标记的协议不匹配背景锚点。
+
+[INFERENCE] 差异最可能来自以下组合，而不是 learned selector：
+
+* K=384 sparse backbone 路径与历史协议不同；
+* selected-axis GT remap 与 inverse-map；
+* DUCA wrapper 及 dense-selector 前向；
+* pretrained checkpoint、optimizer、scheduler、seed 或 data order；
+* terminal EMA/evaluation aggregation差异；
+* 训练窗口或正式 protocol 差异。
+
+[CODE_FACT] U 与 G0/G1/G2 共享当前 wrapper 和 detector 路径，因此 `learned < U` 是可信的 matched 结论；`U=64.458 < 65.696` 不能用于判断 learned policy 本身。
+
+## 6.6 端到端成本
+
+当前真实推理成本口径是：
+
+[
+C_{\text{total}}=
+C_{\text{decode-768}}
++C_{\text{H2D-768}}
++C_{\text{coarse-768}}
++C_{\text{selector/DP}}
++C_{\text{gather}}
++C_{\text{VideoMAE-384}}
++C_{\text{projection/neck/head-384}}
++C_{\text{inverse-map/NMS}}.
+]
+
+[CODE_FACT] 数据在 selector 前已经是 dense (T=768) raw video，因此当前路线不节省 dense decode 或 dense H2D。
+
+[CODE_FACT] 仓库自己的 analytic estimator 对 `64×64`、hidden=96、两层 ASFormer、(T=768)、单样本给出的粗前端下界为：
+
+* spatial conv1：约 `2.038 GMAC`
+* spatial conv2：约 `16.307 GMAC`
+* temporal linear approximation：约 `0.142 GMAC`
+* sliding attention approximation：约 `0.075 GMAC`
+* 总计约 **18.563 GMAC = 37.126 GFLOP/样本**
+
+这些仍不是 operator profiler 实测。计算公式和“architecture analytic estimate”语义由代码明确记录。
+
+[CODE_FACT] `[B,K,T]` ordered assignment 在单 row 下有：
+
+[
+384\times768=147{,}456
+]
+
+个 fp32 元素，裸 tensor 约 `0.5625 MiB/row`；soft DP 的 forward/backward autograd 中间状态远大于这一数值。
+
+[CODE_FACT] G1/G2 inference 不执行 bridge；G2 inference 不执行 companion。G2 训练也只有一次 detector forward，不是 1.5 倍 detector batch。
+
+[PROPOSAL] 最终成本 ledger 必须在同一 GPU、同一 batch、固定 warmup 后分别记录 median/p95：
+
+```text
+dataset decode/augmentation
+host→device
+coarse resize+stem
+ASFormer
+descriptor+scorer
+hard DP
+soft DP（训练单列）
+gather
+VideoMAE sparse backbone
+projection+neck+head
+inverse-map+NMS
+end-to-end throughput
+peak allocated/reserved memory
+```
+
+必须同时报告：
+
+* native/full detector；
+* matched U；
+* `U-bypass`，即不执行 coarse 的部署均匀采样；
+* G0/G1/G2 inference；
+* P0 和 G2 的训练成本。
+
+当前不能声称“总成本已下降”。
+
+---
+
+# 7. 根因排序与证伪检查
+
+|      排名 | 根因                                            | 当前证据                                                     | 决定性证伪检查                                                                   |
+| ------: | --------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------- |
+|   **1** | scorer target/objective 语义错误                  | Gaussian×mass coverage、35% adjacency、scorer低于 delta      | unique-event objective 后 scorer AUROC、adjacency、endpoint recall 是否同时恢复    |
+|   **2** | coarse evidence 弱或未校准                         | AUROC 0.6161；BCE 接近 ln2；entropy descriptor 基于未校准 sigmoid | positive/negative logit、ECE/Brier；固定 `abs(delta p)` policy 是否显著优于 learned |
+|   **3** | detector surrogate 与 hard utility 不对齐         | 源码自称 surrogate；未执行真实 alignment；V5 feedback 未救回           | 4 real batches、≥24 legal swaps 的 preregistered gate                       |
+|   **4** | selected-axis irregular geometry 不利于 detector | 映射对称但 regression loss 在 ordinal axis                     | exact-uniform analytic parity、round-trip、高 IoU synthetic boundary tests   |
+|   **5** | curriculum 的 hard-set 分布突变                    | alpha 连续但 Viterbi argmax 离散；没有 set-distance ledger       | 固定 64 windows 上逐 alpha 的 set Jaccard、slot displacement、detector loss jump |
+|   **6** | detector/protocol 本身未匹配历史基线                   | U=64.458 与 65.696 非同协议                                   | 原生 exact-uniform gather 与 DUCA-U backbone input/remap bitwise parity；U复现  |
+| **低概率** | hard/soft exact-K 可行集不一致                      | 两者共享 K/G DP，无 repair                                     | brute-force 小 T/K/G 已足够；不应继续把它列为主因                                        |
+
+### headroom 裁决
+
+[INFERENCE] 在 (T=768,K=384,G=2) 下，全局可行集并非退化为每 cell 一帧。令 (g_j\in{0,1,2}) 表示相邻选择之间或边缘的未选择数量，则：
+
+[
+\sum_j g_j=T-K=384.
+]
+
+每增加一个 `g=2` 的较大空洞，必须由额外的 `g=0` 邻接选择补偿。因此该 family 确实能大规模聚集和跨区域转移预算。
+
+但已有事实说明：
+
+* 几何自由度存在；
+* **可靠 detector-utility headroom 尚未建立**；
+* radius-1 coverage 本身几乎无 headroom；
+* 当前自由度被 objective 用来制造错误聚集。
+
+因此目前是 **有可行集自由度、无已证实任务效用 headroom**，只值得一次 objective 修复，不值得继续无界调参。
+
+---
+
+# 8. 首选优化方案
+
+## **Unique-Endpoint Event Objective，唯一首选**
+
+该方案不更换 coarse probe、scorer、DP、detector wrapper、K、G、预算、selected-axis 或 VideoMAE。只修正 scorer 学习目标和两个确定性合同错误。
+
+## 8.1 数学定义
+
+对每个训练窗口的每个 GT start/end (b_i)，先定义确定性中心：
+
+[
+c_i=
+\operatorname{clamp}
+\left(
+\left\lfloor b_i+0.5\right\rfloor,
+0,V-1
+\right),
+]
+
+其中 (V) 为 valid dense length。
+
+定义唯一端点事件：
+
+[
+E_i={t: |t-c_i|\le1,;t<V}.
+]
+
+完全相同的 event mask 去重；start/end 过近时允许一个观测同时覆盖两者，这与 radius-1 endpoint metric 一致。
+
+### Scorer event-distribution loss
+
+[
+p_\theta(t)=
+\operatorname{softmax}\left(s_t/0.7\right),
+]
+
+[
+L_{\text{event}}
+================
+
+-\frac1N\sum_i
+\log\left(
+\sum_{t\in E_i}p_\theta(t)+10^{-8}
+\right).
+]
+
+这取代 Gaussian `transition_distribution_loss`。
+
+### Exact structured coverage loss
+
+令：
+
+[
+P_\theta(S)
+\propto
+\exp\left(
+\sum_{t\in S}\ell_t/\tau
+\right)
+\mathbf 1[
+|S|=384,;\operatorname{maxhole}(S)\le2
+].
+]
+
+对每个端点：
+
+[
+q_i=P_\theta(S\cap E_i\neq\varnothing),
+]
+
+[
+L_{\text{exact-cover}}
+======================
+
+-\frac1N\sum_i\log(q_i+10^{-12}).
+]
+
+该概率由同一个 exact-(K)/G partition 计算，而不是 occupancy mass 近似。
+
+总 P0 loss 冻结为：
+
+[
+L_{\text{P0}}=
+1.0L_{\text{action}}
++0.10L_{\text{event}}
++16.0L_{\text{exact-cover}}.
+]
+
+[PROPOSAL] 首轮保持原权重，确保唯一科学变量是 target/objective 语义。不得同时搜索权重。
+
+## 8.2 核心实现
+
+### `duca_online_frame_selector.py`
+
+新增：
+
+```python
+def _transition_event_masks_from_gt_segments(
+    gt_segments,
+    valid_mask: torch.Tensor,
+    *,
+    radius: int = 1,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Returns:
+        event_masks: [B, N_max, T] bool
+        event_valid: [B, N_max] bool
+    """
+```
+
+要求：
+
+* 使用原始 dense-axis train GT；
+* `floor(b + 0.5)`，不用 Python banker rounding；
+* clamp 到 `[0, valid_len-1]`；
+* 去重完全相同的 masks；
+* padding events 全 False；
+* 仅 `forward_train` 生成；
+* 不写入 inference metas、checkpoint decision payload 或 prediction cache。
+
+删除 active loss 对 Gaussian `transition_target` 的复用：
+
+```python
+transition_event_masks, transition_event_valid = (
+    _transition_event_masks_from_gt_segments(
+        gt_segments,
+        valid_mask,
+        radius=1,
+    )
+)
+```
+
+### `acquisition.py::_decode_global_structured`
+
+当前 `decode_policy_logits` 来自 detached hard route，不能用于新 loss。增加：
+
+```python
+structured_policy_rows.append(
+    F.pad(surrogate_policy[0], (0, temporal_len - valid_count))
+)
+```
+
+并返回：
+
+```python
+"structured_policy_logits": torch.stack(
+    structured_policy_rows, dim=0
+),
+"structured_temperature": float(self.structured_temperature),
+"structured_k": effective,
+"structured_max_unselected_hole": max_hole_rows,
+```
+
+必须断言：
+
+```python
+torch.testing.assert_close(
+    structured_policy_logits.detach(),
+    decode_policy_logits,
+    atol=1e-6,
+    rtol=1e-6,
+)
+```
+
+### `transition_only.py`
+
+新增：
+
+```python
+def transition_event_distribution_loss(
+    transition_scores,
+    event_masks,
+    event_valid,
+    valid_mask,
+    *,
+    temperature=0.7,
+):
+    logits = transition_scores.float() / float(temperature)
+    logits = logits.masked_fill(~valid_mask, -1.0e4)
+    log_p = logits.log_softmax(dim=-1)
+
+    event_log_mass = torch.logsumexp(
+        log_p[:, None, :].masked_fill(~event_masks, -1.0e4),
+        dim=-1,
+    )
+    return -event_log_mass[event_valid].mean()
+```
+
+把现有 `structured_local_coverage_probability` 改造成 event-mask 直接接口，并允许传入已计算的 `log_partition`，避免重复计算 baseline partition。
+
+事件维度按固定 chunk size `4` 向量化，禁止逐 endpoint Python 启动一次完整 detector graph。
+
+### `acquisition.py::duca_losses`
+
+```python
+losses["transition_distribution_loss"] = (
+    transition_event_distribution_loss(...)
+    * weights["transition"]
+)
+
+prob = structured_event_coverage_probability(
+    scores["structured_policy_logits"],
+    transition_event_masks,
+    event_valid,
+    k=...,
+    max_unselected_hole=2,
+    temperature=scores["structured_temperature"],
+    event_chunk_size=4,
+)
+
+losses["transition_boundary_coverage_loss"] = (
+    -torch.log(prob.clamp_min(1e-12))[event_valid].mean()
+    * weights["transition_boundary"]
+)
+```
+
+旧 Gaussian target 可保留为 diagnostics，但不能再进入 active scorer loss。
+
+## 8.3 梯度归属
+
+保持：
+
+```text
+action BCE            → coarse trunk + action heads
+event distribution    → scorer only
+exact event coverage  → scorer only
+detector feedback     → scorer only（G1/G2）
+```
+
+P0 不开放 hidden gradient；P1 coarse 继续冻结。这样此次实验不会同时修改表示学习边界。
+
+## 8.4 日程确定性修复
+
+当前公式必须改成以“当前 forward 是第几个成功 update”定义：
+
+```python
+def progress_for_next_successful_update(
+    completed_updates: int,
+    *,
+    warmup: int,
+    transition: int,
+) -> float:
+    if completed_updates < warmup:
+        return 0.0
+    if transition <= 0:
+        return 1.0
+    return min(
+        1.0,
+        float(completed_updates - warmup + 1) / float(transition),
+    )
+```
+
+由此：
+
+* updates 1–1000：alpha=0；
+* updates 1001–2500：alpha 从 (1/1500) 到 1；
+* updates 1–2500：bridge=0；
+* updates 2501–4000：bridge 从 (0.25/1500) 到 0.25；
+* update 4001 起：bridge=0.25。
+
+这属于合同修复，不是可调变量。
+
+## 8.5 P0 配置
+
+只跑一组：
+
+```text
+coarse trunk LR       = 5e-5
+action head LR        = 1e-4
+transition scorer LR  = 2.5e-5
+epochs                = 20
+seed                  = 3407
+candidate epochs      = 5,10,15,20
+AMP                   = current formal setting
+loss weights          = 1.0 / 0.10 / 16.0
+```
+
+选择 moderate coarse-first 的理由：
+
+[INFERENCE] 已知 coarse 仅中等强、scorer 又显著弱于无参数 delta。相较 control，它提高 coarse/action 学习速度并降低 scorer LR；相较 strong，它避免把 scorer LR 再翻倍。这里只固定一个理论上匹配现象的配置，不继续搜索三组 LR。
+
+## 8.6 更可信的 train-only checkpoint license
+
+使用固定 train-side holdout，按 video cluster 做 `10,000` 次 bootstrap，seed `3407`。
+
+候选必须同时满足：
+
+```text
+LCB95(coarse AUROC) >= 0.55
+LCB95(AUPRC / prevalence) > 1.0
+LCB95(policy AUROC_r0 - abs_delta AUROC_r0) >= -0.005
+LCB95(learned r0 recall - uniform r0 recall) >= 0
+LCB95(short both-endpoint r0 - uniform) >= 0
+UCB95(learned mean endpoint distance - uniform) <= 0
+UCB95(learned adjacency - uniform adjacency) <= 0.05
+hard K == 384 on every full row
+hard max-hole <= 2 on every row
+```
+
+选择规则：
+
+> 选择最早满足全部门的 epoch；不存在符合项则 `HOLD_FRONTEND_MECHANISM_FAILED`。
+
+不再按 radius-0 point estimate 排 winner，也不消费 validation/test mAP。
+
+## 8.7 必须新增的测试
+
+1. 一个 GT endpoint 只产生一个 event，不产生 9 个 Gaussian-positive“边界”。
+2. endpoint 在 `valid_len` 时正确 clamp 到 `valid_len-1`。
+3. 重复 start/end mask 去重。
+4. brute-force 小 (T,K,G) 下 exact coverage probability 与枚举一致。
+5. 当 exact-K/G 强制事件必被覆盖时，loss=0、gradient=0。
+6. 在已必覆盖事件内增加第二个高分 slot，不应继续获得 coverage 奖励。
+7. hard 和 differentiable policy logits 数值相等。
+8. P0 event losses 只更新 scorer。
+9. schedule 精确产生 1000/1500/1500 update counts。
+10. G2 companion scope 明确为 `detector_input_and_bridge_only`，auxiliary 仍覆盖所有 rows。
+11. FP16 外层 autocast 下 exact event DP 保持 FP64 partition、梯度 finite。
+12. current bridge 的真实 hard-swap gate。
+
+## 8.8 额外成本与 KILL 条件
+
+[PROPOSAL] 该 objective 仅增加训练时 exact event partition，不增加 inference 成本。
+
+实现 gate：
+
+```text
+median P0 step latency <= 2.0 × current V8 P0
+peak allocated memory <= 90% of physical GPU memory
+no non-finite partition or gradient
+```
+
+任一失败则该 exact objective 工程实现 `HOLD`，不能静默退回 mass surrogate。
+
+科学 KILL 条件：
+
+* 没有任何 checkpoint 通过上述 train-only license；
+* scorer AUROC 仍显著低于 `abs(delta p)`；
+* adjacency 仍高于 U 超过 5 个百分点；
+* corrected G0 terminal EMA 仍不超过 U；
+* best learned arm terminal EMA 不超过 U。
+
+---
+
+# 9. 两个备选及拒绝理由
+
+## 备选一：`abs(delta p)` anchored residual scorer
+
+数学形式：
+
+[
+s_t =
+\operatorname{zscore}(|p_t-p_{t-1}|)
++0.25,r_\theta(d_t),
+]
+
+其中 residual output layer 零初始化。
+
+修改：
+
+* `transition_only.py::DucaTransitionUtilityScorer`
+* `acquisition.py` scorer output
+* config 增加固定 `delta_anchor_weight=1.0`、`residual_scale=0.25`
+
+梯度：
+
+* anchor 无参数；
+* residual 只更新 scorer；
+* coarse 仍由 action BCE 更新；
+* inference 只增加逐点 delta 和加法，成本可忽略。
+
+测试：
+
+* 初始化时 policy scores 精确等于 normalized `abs(delta p)`；
+* residual zero-init；
+* hard K/G 不变；
+* residual 梯度仅到 scorer。
+
+唯一实验：
+
+* 在 unique-event objective 已通过但 scorer 仍低于 delta 时，跑一个 anchored G0。
+
+KILL：
+
+* residual policy AUROC 不超过纯 delta；
+* adjacency 或 endpoint distance恶化；
+* terminal EMA 不超过 corrected unanchored G0。
+
+**不作为首选的理由：**
+
+[INFERENCE] 当前 target 本身错误。先加 anchor 会掩盖 target bug，可能只是把错误 objective 的破坏限制住，而不是证明 learned scorer 有增量价值。
+
+## 备选二：detached hard one-swap detector utility distillation
+
+使用仓库已有 legal hard-swap candidate 和 signed proximal machinery。
+
+对每个 learned selection 生成最多 4 个满足 K/G 的 hard swaps：
+
+[
+u_j =
+L_{\text{det}}(S)
+-----------------
+
+L_{\text{det}}(S_j).
+]
+
+`u_j` 全部 detach，训练 scorer 预测 swap 排序/符号；禁止直接从 candidate detector graph 回传到 scorer。
+
+配置：
+
+```text
+candidates/window = 4
+utility temperature = 1.0
+teacher phase = update 2501–4000
+coarse frozen
+direct surrogate bridge = 0
+```
+
+梯度：
+
+* baseline/candidate detector 只产生 detached utility；
+* distillation loss 只更新 scorer；
+* detector 主 forward 正常更新 detector 参数。
+
+成本：
+
+* 最坏约 baseline + 4 candidate detector evaluations；
+* inference 无额外成本；
+* 训练成本明显高于 G1/G2。
+
+KILL：
+
+```text
+informative nonzero swaps < 24
+distinct real batches < 4
+sign agreement < 0.70
+cluster-bootstrap lower <= 0.50
+Spearman < 0.20
+Spearman bootstrap lower <= 0
+utility variance近零
+terminal EMA不超过G0
+```
+
+**不作为首选的理由：**
+
+当前 scorer target 尚未修正，而且 V5 detector feedback 已是负结果。先支付 4 倍级 teacher 成本不符合最小有界改进原则。
+
+---
+
+# 10. 最小 matched 实验矩阵
+
+所有正式臂必须在**同一个新 immutable commit**、同一数据、seed、pretrain、6000 successful updates、terminal epoch-59 EMA 上完成。不得根据中间 mAP 选 checkpoint。
+
+## 10.1 执行顺序
+
+### U — exact-uniform
+
+```text
+policy alpha      = 0 for all 6000 updates
+P0 initialization = none
+selector losses   = 0
+bridge             = 0
+companion          = 0
+```
+
+停止条件：
+
+* non-finite、OOM、AMP replay exhaustion、K/G/remap contract 失败；
+* terminal U 不在 `64.458 ± 0.20`，则判为协议漂移，停止 learned matrix。
+
+终点：
+
+```text
+epoch_59 state_dict_ema
+official Avg-mAP@0.3:0.7
+mAP@0.6 and mAP@0.7 secondary
+```
+
+### G0 — corrected event objective，无 feedback
+
+前置条件：
+
+* corrected P0 train-only license PASS；
+* P0 real-CUDA isolation gate PASS；
+* schedule count tests PASS。
+
+```text
+coarse frozen
+alpha schedule 1000/1500
+event auxiliary .02 / 2.0
+bridge 0
+companion 0
+```
+
+运行后不按中间结果 early-stop；必须得到 terminal EMA。
+
+### G1 — G0 + protected feedback
+
+前置条件除 G0 外，必须通过 current bridge 的真实 hard-swap gate：
+
+```text
+informative swaps >= 24
+real batches >= 4
+global sign agreement >= 0.70
+batch-mean sign agreement >= 0.70
+cluster-bootstrap lower > 0.50
+Spearman >= 0.20
+Spearman bootstrap lower > 0
+```
+
+这些正是代码中预注册的阈值。
+
+若 gate 失败：
+
+```text
+STOP_G1_G2
+do_not_claim_detector_aligned_gradient
+```
+
+### G2 — G1 + 50% detector-input companion
+
+```text
+uniform companion fraction = 0.5
+single detector forward
+bridge scorer gradient:
+  uniform rows = 0
+  learned rows = B / n_learned
+transition/event auxiliary:
+  all rows
+inference companion = none
+```
+
+前置条件与 G1 相同。
+
+## 10.2 结果裁决
+
+令：
+
+[
+M_U=\text{U terminal EMA Avg-mAP},
+]
+
+[
+M_*=\max(M_{G0},M_{G1},M_{G2}).
+]
+
+### GO
+
+必须同时满足：
+
+[
+M_*\ge65.00,
+]
+
+[
+M_*-M_U\ge0.20,
+]
+
+且：
+
+```text
+mAP@0.6 >= U@0.6 - 0.20
+mAP@0.7 >= U@0.7 - 0.20
+end-to-end inference cost lower than native full route
+```
+
+之后只复现 U 与 best learned arm，seeds `3408/3409`；不再搜索其他配置。paper-ready 要求 paired multi-seed lower CI 支持 learned > U。
+
+### HOLD
+
+```text
+M_* > M_U
+但 M_* < 65.00
+```
+
+说明 policy 可能有增量，但未达到当前项目目标。
+
+### KILL
+
+满足任一：
+
+```text
+best learned <= U
+corrected scorer仍显著低于abs(delta p)
+corrected G0仍表现错误聚集
+G1/G2 hard-swap gate失败
+成本节省被dense decode/H2D/coarse probe抵消
+```
+
+特别是：
+
+> 若 corrected G0 ≤ U，且 G1/G2 又没有通过真实 alignment gate，则不允许继续增加 feedback、companion 比例、LR 或训练轮数；直接 KILL global learned selector at K=384,G=2。
+
+---
+
+# 11. 论文主张边界
+
+## 现在可以说
+
+[CODE_FACT]
+
+* 这是 offline、full-window、pre-backbone、exact-(K=384) 的结构化采样路线。
+* hard 和 soft 路径共享 exact-K/max-hole feasible family。
+* inference hard path不使用 GT、teacher 或 prediction cache。
+* P0 能在代码上隔离 detector。
+* P1 能冻结 coarse，并把 detector surrogate 限制到 scorer。
+* selected-axis GT remap 和 prediction inverse-map 在代码中成对存在。
+* V5 所有 learned 臂均低于 matched U。
+* companion 能部分恢复 homotopy 退化，但未超过 U。
+* 当前 scorer 的 transition discrimination 低于 `abs(delta p)`，并产生错误聚集。
+
+## 现在不能说
+
+[CODE_FACT/EXPERIMENT_FACT]
+
+* 不能说 V8 已经改善 mAP。
+* 不能说 detector loss“直接穿过 hard index”。
+* 不能说 protected transport 已与 hard detector utility 对齐。
+* 不能说 P0 gate PASS 证明方法有效。
+* 不能说 boundary proxy 提升会导致 terminal mAP 提升。
+* 不能说 U 等价于原生官方 AdaTAD。
+* 不能把历史 65.696 填入当前 matched 主表。
+* 不能说当前路线已降低总推理成本。
+* 不能说当前 V8 有 winner；Job `1178989` 尚无 P0 winner 或 terminal mAP。
+* 不能把 tests passing、hard K、max-hole 或梯度存在性写成科学效果证据。
+
+## paper-ready 的必要证据
+
+1. unique-endpoint objective 修订及与旧 Gaussian-mass objective 的单变量对照；
+2. current bridge 的真实 hard-swap alignment PASS；
+3. terminal EMA learned > matched U 且 ≥65；
+4. high-IoU mAP 不被牺牲；
+5. U/best learned 多 seed 复现与 paired CI；
+6. true↔selected round-trip、边缘、padding、短动作 synthetic audit；
+7. native/U/U-bypass/G 的完整端到端成本 ledger；
+8. checkpoint selection 全程不消费 validation/test mAP；
+9. 明确把 protected transport称为 surrogate，而非 direct hard-index gradient；
+10. 若 best learned 不超过 U，论文结论必须是负面或诊断性结论，而不是继续包装代理指标。
+
+**最终冻结裁决：`HOLD`。当前 V8 的 exact-(K) 结构可以保留，但现行 Gaussian-mass 监督和未过 alignment gate 的 G1/G2 不具备正式训练许可。唯一值得实施的下一步是 unique-endpoint event objective；该次修订失败后，应 KILL 全局 learned selection 主线。**

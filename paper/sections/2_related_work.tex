@@ -1,0 +1,19 @@
+\section{Related Work}
+
+\paragraph{Temporal action detection.}
+TAD methods have progressed from proposal generation to dense one-stage localization. BMN models boundary matching for proposals \citep{lin2019bmn}, G-TAD propagates context over temporal graphs \citep{xu2020gtad}, ActionFormer uses anchor-free transformer heads over temporal feature pyramids \citep{zhang2022actionformer}, and TriDet emphasizes relative boundary modeling \citep{shi2023tridet}. OpenTAD highlights how much standardized implementation details affect fair TAD comparisons \citep{liu2025opentad}. DUCA-TAD does not replace these detectors. It addresses the preceding acquisition question: which observations should a detector receive under a strict budget?
+
+\paragraph{End-to-end and efficient TAD.}
+Frozen-feature pipelines hide video-backbone cost in preprocessing, while end-to-end detectors expose that cost during training and inference. VideoMAE-style representations strengthen video backbones \citep{tong2022videomae}, and AdaTAD adapts large backbones for long-window TAD \citep{liu2024adatad}. Efficiency-oriented TAD has studied sampling-aware end-to-end training \citep{liu2023etad} and detector compression by progressive block dropping \citep{chen2025progressiveblockdrop}. DUCA-TAD is complementary: it keeps the detector architecture reusable but makes sparse input coordinates and metadata explicit.
+
+\paragraph{Frame selection and online video reasoning.}
+Video reasoning systems often select frames to fit long videos into a bounded context. Flexible Frame Selection learns frame policies for video-language reasoning \citep{buch2025flexible}, and reinforcement-learning selectors optimize long-video frame choices \citep{qin2026efficientframe}. These tasks usually ask for answers over a visual context, not boundary-accurate temporal segments. TAD acquisition must preserve original-time geometry because selected-rank time can corrupt assignment, regression, and NMS.
+
+\paragraph{Hard subset selection.}
+Top-$K$ frame selection creates a discrete interface between the acquisition policy and the downstream model. For TAD, this interface is stricter than attention or soft token weighting because the detector must actually run on the selected observations. DUCA-TAD therefore treats straight-through estimators as an implementation option that must be verified, and its main method uses hard sparse forwards with explicit surrogate utility, boundary, and coverage losses for selector training.
+
+\paragraph{Zero-shot actionness.}
+Vision-language models such as CLIP support zero-shot recognition through natural-language prompts \citep{radford2021learning}. DUCA-TAD uses this capability only as a deploy-visible actionness prior or baseline. Zero-shot action/background separation is not a TAD result: it must be evaluated first as coarse actionness, then as selection geometry, and only finally by sparse detector mAP.
+
+\paragraph{Detector utility and provenance.}
+Actionness is a useful cue, but detector utility also depends on boundary support, proposal ranking, localization loss, and hard-negative suppression. A deployable selector must not read validation labels, teacher utilities, raw detector predictions, cached proposals, or an offline oracle ledger. DUCA-TAD therefore treats the ledger as a post-decision audit record and makes the inference graph teacher-free.

@@ -1,0 +1,37 @@
+% Minimal CVPR-like style for local drafting.
+% This is not an official submission style file; replace with the official
+% CVPR kit before submission.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{cvpr}[2026/07/07 local CVPR-like draft style]
+
+\RequirePackage[margin=0.75in]{geometry}
+\RequirePackage{times}
+\RequirePackage{caption}
+\RequirePackage{xcolor}
+\RequirePackage{titlesec}
+\RequirePackage{fancyhdr}
+\RequirePackage{lastpage}
+
+\newif\ifcvprfinal
+\cvprfinalfalse
+\newcommand{\cvprfinalcopy}{\cvprfinaltrue}
+\newcommand{\httilde}{\mbox{\tt\raisebox{-.5ex}{\symbol{126}}}}
+
+\DeclareOption{review}{}
+\DeclareOption{final}{\cvprfinaltrue}
+\ProcessOptions\relax
+
+\setlength{\columnsep}{0.32in}
+\setlength{\parindent}{1em}
+\setlength{\parskip}{0pt}
+\captionsetup{font=small,labelfont=bf}
+
+\titleformat{\section}{\large\bfseries}{\thesection}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{\thesubsubsection}{0.5em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "dispatch_id": "CENTRAL-PRO-DUCA-ORACLE-P0-20260811-v002",
+  "request_id": "PRO_REVIEW_REQUEST-v001",
+  "project": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PRO_REVIEW_ORACLE_PROJECT",
+  "runtime_cdp": "127.0.0.1:4334",
+  "oracle_version": "0.17.1",
+  "oracle_session_slug": "duca-p0-oracle-adjudication",
+  "submitted_at": null,
+  "completed_at": "2026-08-11T15:14:31Z",
+  "outcome": "PRE_SUBMISSION_FAILED_ATTACH_METADATA",
+  "error": "No running browser with attach metadata matched 127.0.0.1:4334. Enable remote debugging in chrome://inspect/#remote-debugging first.",
+  "actual_attempt_increased": false,
+  "side_effects": [
+    "No ChatGPT Project message submitted.",
+    "No Project Source mutation.",
+    "No model selection or browser composer interaction by Oracle."
+  ],
+  "next_state": "Keep PRO_REVIEW_REQUEST-v001 queued pending a centrally approved Oracle transport recovery."
+}

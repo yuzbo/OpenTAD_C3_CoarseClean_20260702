@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-12T00:34:36Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "projection-identity-protocol",
+  "message_id": "msg-20260812T003436Z-eb863ea3b862",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_P0_PROJECTION_POLICY-v001.md"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Prepare only EVALUATOR_DUCA_P0_PROJECTION_PROTOCOL-v001.md and DUCA_P0_PROJECTION_IDENTITY_RECEIPT_SCHEMA-v001.json. Define canonical serialized (T,K,u,a) fixtures, exact certificate fields, the T=385,K=384 exhaustive-witness contract, and T=768,K=384 fixture matrix. Mark every execution field NOT_AUTHORIZED. Do not execute tests, data access, CPU/GPU, remote, Slurm, browser, Git or launchers. Use the accepted intake and raw transcript as the policy authority.",
+  "required_gate": "PRO_P0_PROJECTION_POLICY-v001",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

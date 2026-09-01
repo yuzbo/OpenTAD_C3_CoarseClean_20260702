@@ -1,0 +1,136 @@
+\section{Method}
+
+\subsection{Overview}
+
+DUCA-TAD is an in-forward acquisition plugin placed before a reusable TAD detector.
+It has five parts: deploy-visible actionness sources, a temporal utility
+selector, hard top-$K$ acquisition, an original-time sparse grid, and an audit
+record. The detector architecture is reused, while sparse input coordinates and
+metadata are made explicit.
+
+\subsection{Deploy-Visible Acquisition Sources}
+
+The selector receives cheap per-position descriptors. The zero-shot branch
+computes $\pzs(t)$ from generic action/background prompts and a frozen
+vision-language checkpoint. Prompt text, prompt hash, checkpoint hash, whether
+THUMOS class names are used, and score-generation cost are recorded. The branch
+is deploy-visible if it uses generic prompts and no target split labels. Other
+branches may include motion magnitude, feature energy, low-resolution temporal
+change, or a learned C3/PAction source. Learned C3/PAction scores are baselines
+or ablations, not part of the zero-shot claim.
+
+For an actionness-like source, the descriptor is
+\begin{equation}
+\begin{split}
+    x_t = [&\pzs(t),\ \Delta \pzs(t),\ |\Delta \pzs(t)|,\
+           \mathcal{H}(\pzs(t)),\\
+           &\mathrm{motion}(t),\ \mathrm{energy}(t),\
+           t/(\Tdense-1),\ \Mmask_t],
+\end{split}
+    \label{eq:source_features}
+\end{equation}
+where $\Mmask_t$ is the valid-position mask. A compact temporal encoder maps
+$x_{1:\Tdense}$ to utility logits $g_t$, boundary logits $b_t$, risk logits
+$r_t$, redundancy logits $\rho_t$, and optional budget logits.
+
+\subsection{Hard In-Forward Selection}
+
+The main contract fixes the requested budget to $\Kmain=384$. DUCA ranks valid
+positions by detector-utility logits and hard-selects
+\begin{equation}
+    \Ssel = \mathrm{TopK}(g,\Kmain,\Mmask),
+    \qquad |\Ssel|\le384.
+    \label{eq:hard_topk}
+\end{equation}
+Optional center-radius or gap guards repair pathological holes using the same
+in-forward scores. Dynamic $K$ is an ablation: it cannot replace the fixed-budget
+main result, and every dynamic run is paired with a fixed run matched by average
+selected count.
+
+\begin{algorithm}[t]
+\caption{DUCA in-forward acquisition for one detector forward}
+\label{alg:duca_online}
+\begin{algorithmic}[1]
+\Require Dense candidate window $\VideoWin$, valid mask $\Mmask$, budget $\Kmain$
+\State compute deploy-visible descriptors $x_{1:\Tdense}$
+\State $(g,b,r,\rho) \gets \mathrm{DUCA}_{\thet}(x,\Mmask)$
+\State $\Ssel \gets \mathrm{HardTopK}(g,\Kmain,\Mmask)$
+\State $\Grid_{\Ssel} \gets \mathrm{BuildSparseGrid}(\Ssel,\Tdense,\Mmask)$
+\State $Y \gets \Detector_\psi(\VideoWin_{\Ssel},\Grid_{\Ssel})$
+\State write audit record $(\Ssel,\Grid_{\Ssel},\mathrm{source\ hashes},\mathrm{flags})$
+\State \Return detector predictions $Y$ in original time
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Detector-Utility Warm-Up}
+
+The warm-up stage uses \cref{eq:utility_target} to initialize the selector.
+Dense detector responsibility, teacher losses, boundary targets, and
+hard-negative signals are available only on the training split. The warm-up loss
+is
+\begin{align}
+    \mathcal{L}_{\mathrm{warm}}
+    =&\ \lambda_u \mathrm{BCE}(g_t,u^{\star}_t)
+      + \lambda_b \mathcal{L}_{\mathrm{bnd}}
+      + \lambda_h \mathcal{L}_{\mathrm{hole}} \notag\\
+     &+ \lambda_r \mathcal{L}_{\mathrm{red}}
+      + \lambda_k \mathcal{L}_{\mathrm{budget}} .
+    \label{eq:warmup_loss}
+\end{align}
+This stage teaches the selector that useful observations include boundaries,
+hard negatives, and proposal-support regions, not only high-actionness interiors.
+
+\subsection{Hard-Forward Surrogate Fine-Tuning}
+
+Warm-up alone would leave the selector calibrated to a dense teacher but not to
+the sparse detector regime. DUCA therefore fine-tunes with a hard sparse forward
+pass: the detector consumes only $\VideoWin_{\Ssel}$, while the selector is
+updated by explicit surrogate losses computed from train-only utility,
+boundary, hole, and coverage targets on the same windows. Let $\pi_t=\sigma(g_t)$ and
+\begin{equation}
+    q_t
+    =
+    \mathrm{stopgrad}(\mathbf{1}[t\in\Ssel])
+    + \pi_t - \mathrm{stopgrad}(\pi_t) .
+    \label{eq:surrogate_mask}
+\end{equation}
+The packed hard subset is the only detector input. The detector loss trains the
+detector under sparse observations, and the selector loss aligns the selected
+set with detector-utility targets without assuming differentiability through
+Top-$K$:
+\begin{align}
+    \mathcal{L}_{\mathrm{joint}}
+    &=
+    \mathcal{L}_{\mathrm{det}}
+    \bigl(\Detector_\psi(\VideoWin_{\Ssel},\Grid_{\Ssel})\bigr)
+    \notag\\
+    &\quad
+    + \lambda_s \mathcal{L}_{\mathrm{surrogate}}(q,u^\star)
+    + \lambda_c \mathcal{L}_{\mathrm{cover}}(q).
+    \label{eq:joint_loss}
+\end{align}
+The forward computation remains within the selected-observation budget. The
+surrogate terms prevent the selector from learning only high-actionness
+interiors. A custom straight-through bridge can be enabled as an implementation
+variant only after a gradient test shows nonzero detector-loss gradients on the
+selector parameters; without that proof, direct detector-loss-to-selector
+gradient is not part of the main claim.
+
+\subsection{Original-Time Sparse Grid}
+
+The sparse grid in \cref{eq:sparse_grid,eq:grid_cells,eq:original_time_decode}
+maps selected-axis predictions back to original time. If a head predicts offsets
+around selected index $i$, the support cell $(\ell_i,r_i)$ and dense coordinate
+$s_i$ define assignment, regression ranges, remapping, NMS, and mAP. This step
+is mandatory for high-IoU evaluation because selected rank is not a metric time
+axis.
+
+\subsection{Teacher-Free Inference and Audit Ledger}
+
+At inference, deploy-visible sources feed the DUCA selector, the selector emits
+hard selected observations, and the detector predicts from that sparse input.
+The audit ledger is written after selection and contains selected positions,
+sparse-grid metadata, prompt/checkpoint hashes, source costs, and no-leak flags.
+It is never read as a decision source. Recursive validators reject GT fields,
+teacher payloads, raw detector predictions, prediction caches, oracle boundary
+scores, and policy/checkpoint mismatches.

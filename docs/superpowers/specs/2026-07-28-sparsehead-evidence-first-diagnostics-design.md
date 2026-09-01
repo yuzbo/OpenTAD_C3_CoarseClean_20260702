@@ -1,7 +1,7 @@
 # SparseHead Evidence-First Diagnostics Design
 
 **Date:** 2026-07-28  
-**Status:** approved design; implementation not yet started  
+**Status:** implemented and Linux CPU tested; four-condition CUDA gate pending
 **Canonical repository:** `OpenTAD_C3_CoarseClean_20260702`  
 **Historical source:** `codex/phystime-performance-diagnosis-20260712@e05f623133128c9a4cd56be4656c8fb5099426ac`
 
@@ -9,10 +9,12 @@
 
 Implement the approved **Approach A: minimal evidence-first chain**.
 
-The implementation will recover the strict-source-dtype frozen decode replay
-and the existing PhysTime geometry/prediction diagnostics. It will not change
-training, NMS, evaluation, the physical-metric model, or SDPQ. It will not
-restore the historical owner/scheduler/submission-state framework.
+The implementation recovers the strict-source-dtype frozen decode replay and
+the existing PhysTime geometry/prediction diagnostics. It does not change
+training, the NMS algorithm, evaluation, SDPQ, or checkpoint semantics. It
+restores the already established P0 full-precision pre/post-NMS controls and
+the explicit physical-second grid contract required for native replay parity.
+It does not restore the historical owner/scheduler/submission-state framework.
 
 This phase answers two questions before any SDPQ v2 design:
 
@@ -240,3 +242,31 @@ If diagnostics show that current SDPQ failure is dominated by classification
 or support evidence rather than assignment, the subsequent Pro design must
 target that mechanism. No full60 or SDPQ v2 training is authorized by this
 design.
+
+## 9. Implementation status on 2026-07-28
+
+The evidence-first surface is now `tested` at the Linux CPU level:
+
+- source `cls_scores` retain their ordering-sensitive dtype through capture,
+  NPZ storage, sort, and top-k;
+- capture is opt-in and refuses unconsumed-state overwrite;
+- the evidence suite accepts only explicit preflight, gate, P0, four-condition
+  completion, and log paths; it does not inspect owner, `jobs.tsv`, scheduler,
+  or submission-attempt state;
+- production and replay share the exact configurable physical-second grid
+  mapping and domain clamp used by the historical P0 evidence;
+- legacy pre-cross rounding remains the default; P0/full-precision configs
+  disable it explicitly;
+- geometry, prediction, selected-axis post-processing, TrueTime dependency,
+  full-precision NMS, and decode-replay focused tests are present.
+
+The final isolated N16R4 CPU package had SHA-256
+`e4814e3544784b3608c007a11946464b4f597e0fbf9a23a5910e3b0171bef388`
+and ran from
+`/data/run01/sczc063/yuzibo/sparsehead_remote_cpu_a6bdc084_20260728_07`.
+Three configs resolved, the import closure passed, Python compilation and
+three launcher syntax checks passed, and the focused suite reported
+`59 passed in 64.69s`.
+
+This does not satisfy acceptance items 4--5. No CUDA forward, four-condition
+gate, formal replay, new mAP, or empirical SparseHead/SDPQ claim exists yet.

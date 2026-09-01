@@ -1,0 +1,886 @@
+### 1. 阅读确认与事实校正
+
+#### 1.1 实际读取范围
+
+我实际读取并核对了以下对象：
+
+| 对象                | 读取结果                                                       | 关键发现                                                                                             |
+| ----------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 完整设计规范            | 已完整读取固定提交中的正文                                              | 状态明确为 `user_approved / designed / implementation_not_started`；任务是离线 TAD；既有 30+60 轮实验被排除在公平主结果之外。 |
+| 对应实验节点            | 已完整读取                                                      | 只冻结了科学问题、实验臂和准入门；实现状态为 `not_started`。                                                            |
+| Draft PR #3       | 已读取 PR 正文、元数据、变更规模、评论及 review/thread 状态                    | PR 为 open、draft、未合并；正文称“Documentation only”，但 PR 相对当前 base 实际包含 28 个提交、133 个文件、27,627 行新增。       |
+| 上游 AdaTAD/OpenTAD | 已读取官方结果表和对应 VideoMAE-S 配置                                  | 官方 THUMOS14 VideoMAE-S 768 帧结果确为 69.03；各阈值为 83.90/79.01/72.38/61.57/48.27。                       |
+| 固定提交内的 DUCA 研究记忆  | 已读取 query pack、anti-repetition、fixed-384、成本和 train-free 节点 | 仓库自身已承认 matched uniform/dense、selected-axis 几何、真实成本和第二检测器尚未闭环。                                   |
+
+PR 目前没有公开评论；连接器返回的 review submission 和行内 review thread 也均为空。因此，PR 只是**待独立审阅的载体**，不是已经通过第三方审查的证据。
+
+另一个必须修复的问题是：固定提交本身的目标是增加两份 DUCA 文档，但 PR 相对其选择的 base 汇集了大量 ChronoTransport、Spatial-Zoom、训练引擎、测试及 wiki 变更。故 PR 正文中的“Documentation only”对**该提交意图**可能成立，但对**当前 PR diff**不成立。合并或正式审阅前，应重定 base、rebase 或重新创建只包含两份文档的 PR。
+
+#### 1.2 事实分级
+
+以下使用三种标签：
+
+* **文件事实**：可由指定固定提交或上游官方仓库核实；
+* **用户提供事实**：本次提示词提供，但我没有在该固定快照中找到完整原始日志或结果产物；
+* **审稿推断**：由上述证据推出的科学判断。
+
+| 陈述                                   | 判定                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------- |
+| 官方 AdaTAD VideoMAE-S dense 为 69.03   | **文件事实，已核实。** 官方配置同时使用 EMA，60 轮结束，从第 40 轮开始每两轮验证。                               |
+| 当前最终 CVPR 模型尚未实现                     | **文件事实。** 两份文档均标为 designed/not started。                                         |
+| K=384 的 65.385724 是 90 轮超预算诊断        | **文件事实，但只在固定文档中登记；本轮未审计其原始 checkpoint/log。**                                    |
+| 本地 dense 约 68.29                     | **用户提供事实，固定审阅材料中未独立验证。** 在权重、数据版本、EMA、checkpoint 选择和评测脚本完全对齐前，不能解释其与 69.03 的差距。 |
+| 50% wrapper uniform 约 64.49          | **用户提供事实，未在固定快照中找到可复核终点。** 仓库旧记录也承认 matched uniform 尚缺。                         |
+| 65.650497 对应约 80 轮总成本                | **用户提供事实，固定提交中未独立验证。** 只能暂列诊断表。                                                 |
+| K=192 第 50/55 轮为 58.383005/58.082562 | **用户提供事实，未发现原始结果节点。** 且没有干净 K=192 均匀终点，不能作相对判断。                                 |
+| 贡献损失约 5–6，检测损失约 0.2                  | **用户提供事实。** 数值尺度不能推出优化支配；该判断本身科学上正确，但需要共享 selector 参数上的梯度统计。                    |
+| 真正冻结 selector 和发布检测器的免训练模式尚未验证       | **文件事实。** 已有 X3D/SlowFast 仅是成本不完整的诊断，且密集 X3D 被判定不适合作为低成本主模块。                    |
+| 当前问题足以直接形成 CVPR 方法论文                 | **不能成立。** 目前只能说研究问题值得继续；模型定义、贡献新颖性和决定性证据均未闭环。                                   |
+
+---
+
+### 2. 总体裁决
+
+## **大修后重审**
+
+研究问题值得继续，“严格帧预算下的任务感知前置选帧”具备方法论文潜力；但当前规范尚未完整定义密度可行域、连续代理、整数 exact-K 解码、坐标契约和贡献目标，A0–A4 也不能完成所声称的独立归因。逆 CDF 固定分位本身缺乏新颖性，干净均匀、硬收益对齐和真实成本均未闭环。应先形式化并执行最小门禁，不能批准现规范直接进入完整长训练。
+
+---
+
+### 3. 当前进度审计
+
+证据等级定义：
+
+* **A**：上游发布结果、固定配置或完整原始产物可复核；
+* **B**：固定提交中有明确结果和 provenance，但本轮未读取原始 checkpoint/log；
+* **C**：部分诊断、接口测试或历史版本证据；
+* **D**：仅设计、计划、用户口述或尚无实验。
+
+| 项目           | 真实状态                                               |       证据等级 | 审稿结论                               |
+| ------------ | -------------------------------------------------- | ---------: | ---------------------------------- |
+| 官方 dense 基线  | 上游报告 69.03；本地复现尚未证明完全同口径                           | A（官方）；本地 C | 69.03 可作外部参考线，不能把本地 68.29 自动视为复现成功 |
+| 干净 50% 均匀基线  | 尚未建立；64.49 是 wrapper 路径结果                          |          D | **主实验第一阻塞项**                       |
+| 干净 25% 均匀基线  | 尚未建立                                               |          D | K=192 的所有相对性能目前不可解释                |
+| K=384 超预算诊断  | 65.385724，被规范登记为 30+60、共 90 轮                      |          B | 只能进诊断附表，不能进入公平主表                   |
+| K=192 超预算诊断  | 中间结果存在用户记录，但无干净均匀终点                                |          D | 不能判断 learned selection 是否有效        |
+| 公平总计 60 轮主实验 | 未实现、未运行                                            |          D | 当前没有任何最终论文主结果                      |
+| 连续代理与离散收益对齐  | 四类扰动已设计，尚未执行                                       |          D | A4 尚未获得科学准入                        |
+| 贡献监督         | 有历史实现和损失现象；无排名保真度、共享梯度审计                           |         C− | 不能证明教师有效，也不能证明损失支配                 |
+| 真正免训练模式      | 历史 frozen prior 诊断不完整；冻结发布 detector+selector 模式未验证 |        C/D | 不得声称通用即插即用                         |
+| 第二检测器        | 缺失正式结果                                             |          D | 当前最多是 AdaTAD-derived 假设            |
+| CVPR 最终模型    | 设计阶段，未实现                                           |          D | 当前不能开始论文结果叙事                       |
+
+固定 wiki 已明确指出，旧 fixed-384 训练当时仍缺 matched uniform/dense，而且曾出现 effective K 低于 requested K 的审计问题。 成本节点也只证明链路可运行；random-init、两样本和 dirty scratch 的成本数字明确不能进入论文。
+
+---
+
+### 4. 致命问题、主要问题和次要问题
+
+## 4.1 致命问题
+
+| 编号 | 问题与科学问题                                                                                                     | 排除的替代解释                             | 可能结论                                                        | 失败后的处置                                                     |
+| -- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
+| F1 | **核心算子本身缺乏已证明的新颖性。** 正密度、累计分布、固定分位和逆 CDF 采样，与系统概率比例抽样高度同构；MGSampler 也已使用累计运动分布进行视频采样。([[CVF Open Access](https://openaccess.thecvf.com/content/ICCV2021/html/Zhi_MGSampler_An_Explainable_Sampling_Strategy_for_Video_Action_Recognition_ICCV_2021_paper.html)][1]) | 排除“换一个 transport 名称就形成新理论”的包装解释     | 新意只能来自有证明的 TAD 几何约束、任务效用学习和硬策略验证                            | 若最终只剩 inverse-CDF+网络打分，应降级为工程增量，不作为 CVPR 核心模型              |
+| F2 | **数学定义不完整。** 当前规范没有给出 (\rho) 的离散定义、正性实现、界限数值、连续代理、整数冲突处理、边缘间隔、tie-break 和不可行时行为                             | 排除不同实现都可声称“符合规范”的事后自由度              | 必须形成唯一可测试的映射 (e\to p\to F\to y\to S)                        | 若不能冻结唯一解码器，否决“有界理论模型”声明                                    |
+| F3 | **非均匀序列的时间语义尚未解决。** 检测器把 K 个槽当作等间隔槽；只限制扭曲幅度不能自动使其与原时间一致                                                     | 排除增益或退化其实来自 selected-axis 坐标错误      | 主模型必须明确在插件接口中采用 (q=F(t)) 的 warped-time 标签和预测逆映射             | 若性能仅在 detector 内部注入真实时间后提升，纯前置插件主张失败                       |
+| F4 | **没有干净 A0。** 当前 64.49 经过 DUCA wrapper，无法排除包装器、标签变换或逆映射损失                                                    | 排除所谓 learned gain 实际来自不同数据路径或不同后端设置 | clean uniform 与 wrapper uniform 应在相同帧、权重下近乎等价               | parity 不通过时，停止所有 learned-selection 解释                      |
+| F5 | **贡献教师与直接梯度共用同一未经验证的连续信号，却只为 A4 设置门。** 如果排名本身不能预测硬收益，detached ranking 也不能因“更稳定”而自动保留                        | 排除“直接梯度失败只是优化问题，而教师仍天然正确”的无证据解释     | 必须拆成 `G_rank` 和 `G_direct` 两道门                              | `G_rank` 失败：删除贡献蒸馏；`G_direct` 失败但 `G_rank` 通过：保留排名蒸馏，删除 A4 |
+| F6 | **50% 达到 69–70 没有信息上界依据。** 当前甚至不知道 clean uniform 与 dense 的公平差距                                              | 排除以目标值倒推设计、不断增添模块                   | 69–70 只能是 stretch goal；主成功标准应是相对均匀的稳定增益和 dense-gap recovery | 若以 69 为硬门，将诱发不公平训练、checkpoint 或后端增强，应删除该硬门                 |
+
+AdaFrame、SCSampler 等已经建立了可学习帧/片段选择先例，因此“学习选帧”本身也不是贡献。([[CVF Open Access](https://openaccess.thecvf.com/content_CVPR_2019/html/Wu_AdaFrame_Adaptive_Frame_Selection_for_Fast_Video_Recognition_CVPR_2019_paper.html)][2])
+
+## 4.2 主要问题
+
+1. **“低成本证据”没有计算合同。**
+   科学问题是：节省来自少处理重型 backbone，还是被低分辨率 probe、解码和 selector 抵消？应固定证据输入分辨率、访问帧数和部署路径，并要求 probe+selector 不超过被节省 backbone 成本的 15%。失败后保留方法正确性研究，但删除效率主张。
+
+2. **P1/P2 全通过后才允许实施 P3，过度串行。**
+   P1 的 wrapper parity 与 exact-K/坐标测试确实是长训练依赖；但 P2 的直接梯度准入只应阻塞 A4，不应阻塞有界解码器、A1/A2 或排名教师的独立实现。当前顺序会把科学依赖误写成项目管理依赖。
+
+3. **“第一粒种子提高 0.5 后才继续”会产生赢家偏差。**
+   单一随机种子既用于选路线又进入最终均值，会高估结果。应把该运行定义为 development screening seed，明确排除出论文最终统计；冻结方法后使用三枚预登记新种子。
+
+4. **A4 门既可能过松，也可能过严。**
+   “置信区间下界大于 0”允许极小而无意义的相关；同时五个条件全部并列，可能因一个低功效子指标误杀。需要一个预登记主终点和若干安全终点。
+
+5. **64 个视频、128 个窗口不是天然充分。**
+   同一窗口产生几十个 perturbation，它们不是独立样本。统计单位应是视频；先做 cluster-level power simulation，再确定样本量。候选数增加不能替代独立视频数。
+
+6. **A0–A4 当前不能独立回答四个问题。**
+   A1/A2 的 selector 基础学习目标未定义；A2→A3 同时改变监督和可能的尺度归一化；A3 第一粒种子为正后才补 cls/reg 单独臂会造成选择性归因。
+
+7. **checkpoint 规则仍有选择成本不一致风险。**
+   相同评估频率并不意味着相同过拟合机会，尤其 learned selector 的方差更高。最终主表最好统一使用“正好 6000 次成功更新后的 EMA”，而不是各臂挑最佳中间点。官方配置本身也以 EMA 和固定 60 轮终点为核心。
+
+8. **“不改后端”的边界不够精确。**
+   允许：插件在进入 detector 前把 GT 从原时间映到 warped time，输出后再逆映射；标签分配器、检测头和损失代码本身保持不变。
+   不允许：改变标签匹配规则、回归参数化、时域位置编码或 NMS。
+   长度相关的张量尺寸从 768 改为 K 是接口适配，不是方法贡献，但必须让 A0–A4 完全一致。
+
+9. **决定性诊断尚缺。**
+   必须包括：mAP@0.7、短动作、起止边界误差、选帧密度熵、最大洞、CDF 偏移、动作内/边界/背景采样比例、不同种子选帧 Jaccard、round-trip 坐标误差。TAD 对缺帧和时序扰动的定位误差具有明显敏感性，因此只看平均 mAP 不足。([[CVF Open Access](https://openaccess.thecvf.com/content/CVPR2024/html/Zeng_Benchmarking_the_Robustness_of_Temporal_Action_Detection_Models_Against_Temporal_CVPR_2024_paper.html)][3])
+
+10. **PR 不是可审阅的纯文档 PR。**
+    133 文件的 aggregate diff 会掩盖规范修改。失败后不是否决方法，而是拒绝对该 PR 给出“通过书面规范”的工程结论。
+
+## 4.3 次要问题
+
+* “轮”与“成功 optimizer update”混用；所有课程、门和预算应以 6000 次成功更新定义。
+* 未定义首尾未覆盖区间是否计入最大间隔。
+* 未定义多个整数解等价时的确定性 tie-break。
+* “累计坐标偏移”应直接写为相对 canonical uniform anchor 的前缀偏移，而不是仅用自然语言。
+* “分类与回归至少一项分别显示正对齐”语义矛盾，应改为两者各自达到安全门，或明确哪一个是主任务。
+* 0.1/0.25/0.5 三个梯度比例仍有开发自由度；建议只保留一个基于梯度范数自动归一的固定目标比例。
+* “质量传输”没有数学定义；应删除该模糊术语，改为 rank-normalized distribution distillation。
+* 69% 应从成功门改为 stretch goal。
+
+---
+
+### 5. 推荐的唯一主模型
+
+## 5.1 模型名称与核心
+
+推荐唯一主模型为：
+
+> **有界效用校准单调时间扭曲**：用低成本证据预测一个受局部伸缩和累计偏移双重约束的时间密度，以固定分位生成连续采样位置，再由确定性动态规划解码严格 K 个整数帧；selector 主要通过经硬换帧验证的分类/回归效用排名学习。
+
+主模型不包含直接检测梯度。直接梯度只作为一个通过额外门禁后的增强臂。
+
+这使论文只有一个核心因果链：
+
+[
+\text{经验证的任务效用排序}
+\rightarrow
+\text{受约束时间密度}
+\rightarrow
+\text{有界单调时间扭曲}
+\rightarrow
+\text{exact-K 硬选帧}
+\rightarrow
+\text{不变的 TAD detector}.
+]
+
+## 5.2 正密度与可行域
+
+候选时间格点为 (i=0,\ldots,T-1)，对应单元
+
+[
+I_i=[i/T,(i+1)/T).
+]
+
+低成本证据为 (e_{1:T})，selector 输出 logits：
+
+[
+a_i=h_\theta(e_{1:T})_i,\qquad
+\bar p_i=\operatorname{softmax}(a)_i.
+]
+
+将 (\bar p) 投影到预登记的凸可行域：
+
+[
+p_\theta
+========
+
+\arg\min_{p\in\mathcal P_{T,K}}
+\operatorname{KL}(p|\bar p),
+]
+
+其中
+
+[
+\mathcal P_{T,K}=
+\left{
+p:
+\sum_i p_i=1,\quad
+\frac{1}{2T}\le p_i\le\frac{2}{T},\quad
+\left|
+\sum_{r=0}^{i-1}p_r-\frac{i}{T}
+\right|
+\le \delta_K
+\right},
+]
+
+固定
+
+[
+\delta_K=\frac{4}{K}.
+]
+
+定义分段常数正密度：
+
+[
+\rho_\theta(t)=T p_i,\qquad t\in I_i.
+]
+
+因此
+
+[
+\frac12\le\rho_\theta(t)\le2.
+]
+
+该定义具有三个优点：
+
+1. 正性由构造保证；
+2. 局部采样密度最多是均匀的 2 倍、最少是 1/2；
+3. CDF 与恒等时间的累计偏离显式受限，而不是依赖损失惩罚“希望它别塌缩”。
+
+这些常数必须在规范中固定。允许以后通过训练侧开发集做一次替换，但不得在主结果后回调。
+
+## 5.3 累积分布和连续位置
+
+[
+F_\theta(t)=\int_0^t\rho_\theta(u),du,
+\qquad
+q_j=\frac{j+1/2}{K},
+\qquad
+y_j=F_\theta^{-1}(q_j).
+]
+
+连续代理使用线性插值：
+
+[
+\tilde x_j=\operatorname{Interp}(x_{1:T},y_j).
+]
+
+若启用硬前向、软反向诊断：
+
+[
+x_j^{ST}
+========
+
+x_{s_j}
++
+\tilde x_j
+----------
+
+\operatorname{sg}(\tilde x_j).
+]
+
+其前向严格等于真实离散帧 (x_{s_j})，软项只提供代理梯度。
+
+## 5.4 整数 exact-K 解码
+
+令格点中心
+
+[
+c_i=\frac{i+1/2}{T}.
+]
+
+使用确定性动态规划：
+
+[
+S^\star
+=======
+
+\arg\min_{0\le s_0<\cdots<s_{K-1}<T}
+\sum_{j=0}^{K-1}
+\left(c_{s_j}-y_j\right)^2,
+]
+
+约束：
+
+[
+1\le s_{j+1}-s_j\le G_K,
+]
+
+[
+s_0\le G_K-1,\qquad
+T-1-s_{K-1}\le G_K-1,
+]
+
+[
+|s_j-u_j|\le D_K,
+]
+
+其中
+
+[
+G_K=\left\lceil\frac{2T}{K}\right\rceil,\qquad
+D_K=\left\lceil\frac{4T}{K}\right\rceil,
+]
+
+(u_j) 是同一解码器在常数密度下产生的 canonical uniform 序列。所有代价相同时采用字典序最小解。
+
+由此得到：
+
+* 严格 K；
+* 唯一、递增；
+* 首尾及内部最大未覆盖洞受限；
+* 每个位置相对均匀 anchor 的累计偏移受限；
+* 同一输入必得同一输出；
+* 常数 logits 严格退化为 A0 使用的 exact-uniform。
+
+不要再在解码后增加 hard repair。任何 repair 都说明可行域或解码器定义失败。
+
+## 5.5 插件侧最小时间修正
+
+非均匀采样后，检测器的 K 个槽应解释为均匀的 **warped time** (q)，而不是原始物理时间 (t)。
+
+训练时：
+
+[
+q_{\text{gt,start}}=F_\theta(t_{\text{gt,start}}),\qquad
+q_{\text{gt,end}}=F_\theta(t_{\text{gt,end}}).
+]
+
+将这两个值作为插件输出交给原封不动的标签分配器和检测损失。该 GT 映射使用 hard/de­tached (F_\theta)，不得让 selector 从 GT 坐标变换中获得隐蔽梯度。
+
+推理时：
+
+[
+\hat t_{\text{start}}=F_\theta^{-1}(\hat q_{\text{start}}),\qquad
+\hat t_{\text{end}}=F_\theta^{-1}(\hat q_{\text{end}}).
+]
+
+这属于插件 I/O 坐标适配，不属于 detector 内部真实时间注入。检测头、标签分配规则、损失和 NMS 全部不改。
+
+**只有“限制扭曲”而没有这套 (t\leftrightarrow q) 对称映射是不够的。**
+
+## 5.6 可证明命题
+
+可以提出真实但克制的几何命题，不能声称它保证 mAP。
+
+**命题：有界时间扭曲。**
+设
+
+[
+0<m\le\rho(t)\le M,\qquad
+|F-I|_\infty\le\delta,\qquad
+G=F^{-1}.
+]
+
+则对任意 (q,q_1,q_2\in[0,1])：
+
+[
+|G(q)-q|\le\delta,
+]
+
+[
+\frac{|q_2-q_1|}{M}
+\le
+|G(q_2)-G(q_1)|
+\le
+\frac{|q_2-q_1|}{m},
+]
+
+并且
+
+[
+\left|
+\big(G(q_2)-G(q_1)\big)-(q_2-q_1)
+\right|
+\le2\delta.
+]
+
+若整数解码中心相对连续分位的最大误差为
+
+[
+r=\max_j|c_{s_j}-y_j|,
+]
+
+则
+
+[
+|c_{s_j}-q_j|\le\delta+r,
+]
+
+[
+c_{s_{j+1}}-c_{s_j}
+\le
+\frac{1}{Km}+2r.
+]
+
+若 detector 在 warped time 上的边界误差为
+(|\hat q-q|)，则映回原时间后的误差满足
+
+[
+|\hat t-t|
+\le
+\frac{|\hat q-q|}{m}+r_{\text{map}}.
+]
+
+这证明的是：
+
+* 局部伸缩上界；
+* 累计时间偏移上界；
+* 区间长度扭曲上界；
+* warped-time 边界误差映回原时间时不会无限放大。
+
+它**不证明**检测性能提高，也不证明相同语义在 warp 后完全不变。后者仍需实验。
+
+## 5.7 贡献监督选择
+
+| 目标               | 优点         | 致命缺点                                             | 裁决                           |
+| ---------------- | ---------- | ------------------------------------------------ | ---------------------------- |
+| 原始幅值拟合           | 简单         | cls/reg 尺度不同，重尾、随 checkpoint 变化；5–6 对 0.2 没有直接含义 | 删除主路线                        |
+| Listwise ranking | 抗尺度，直接关心排序 | 不能直接规定应分配多少密度质量                                  | 可作中间表示                       |
+| 分布蒸馏             | 与密度输出天然一致  | 温度和绝对幅值可能成为调参自由度                                 | 适合，但需 rank-normalized target |
+| 最优传输             | 可表达质量移动和距离 | 解码器本身已经是 1D 单调传输；再加 OT 会重复机制并引入正则系数              | 不推荐为主目标                      |
+
+推荐唯一主要目标为 **rank-normalized distribution distillation**。
+
+连续代理分别产生分类和回归的边际效用：
+
+[
+g_i^{h}
+=======
+
+-\frac{\partial L_h}{\partial a_i},
+\qquad
+h\in{\mathrm{cls},\mathrm{reg}}.
+]
+
+对每个窗口内部排序，高效用 rank 为 (T)，最低为 1：
+
+[
+q_i^h
+=====
+
+\frac{2,\operatorname{rank}(g_i^h)}
+{T(T+1)}.
+]
+
+主 selector 损失：
+
+[
+L_{\mathrm{RDD}}
+================
+
+\frac12\operatorname{KL}(q^{\mathrm{cls}}|p_\theta)
++
+\frac12\operatorname{KL}(q^{\mathrm{reg}}|p_\theta).
+]
+
+教师 rank 完全 stop-gradient，不求二阶梯度。其合法性由硬换帧的 `G_rank` 验证。
+
+这同时保留：
+
+* listwise 的尺度稳健性；
+* distribution target 与密度输出的匹配；
+* cls/reg 分开审计；
+* 无温度、无原始幅值拟合；
+* 无第二个 OT 模块。
+
+## 5.8 训练课程
+
+推荐一个主课程和一个必要对照：
+
+### 主课程
+
+总计 6000 次成功 optimizer update：
+
+[
+p^{(\alpha)}
+============
+
+(1-\alpha)\frac{\mathbf1}{T}
++
+\alpha p_\theta.
+]
+
+* update 0–999：(\alpha=0)，严格均匀硬前向；selector 可学习 RDD，但不改变选帧；
+* update 1000–1499：(\alpha) 从 0 线性升到 1；
+* update 1500–5999：(\alpha=1)。
+
+这是一个单次联合训练，不是 30+60 两阶段训练。
+
+### 必要对照
+
+从 update 0 起 (\alpha=1)，其余完全相同。
+
+因此能回答：均匀稳定期是否是必要优化机制，而不是比较两套不同训练预算。
+
+### 参数梯度
+
+* detector 参数只接受原官方 (L_{\mathrm{cls}}+L_{\mathrm{reg}})；
+* selector 主模型只接受 (L_{\mathrm{RDD}})；
+* 不因关闭 selector 梯度而关闭 detector 学习；
+* 最终 checkpoint 统一为第 6000 次成功更新后的 EMA。
+
+### 唯一允许的增强版
+
+只有 `G_direct` 通过时，增加：
+
+[
+L_{\mathrm{sel}}
+================
+
+L_{\mathrm{RDD}}
++
+\lambda_{\mathrm{dir}}L_{\mathrm{det}}^{ST}.
+]
+
+固定梯度范数目标比例为 0.25：
+
+[
+\lambda_{\mathrm{dir}}
+======================
+
+\operatorname{clip}
+\left(
+0.25
+\frac{|\nabla_\theta L_{\mathrm{RDD}}|}
+{|\nabla_\theta L_{\mathrm{det}}^{ST}|+\epsilon},
+\lambda_{\min},
+\lambda_{\max}
+\right).
+]
+
+不再枚举 0.1/0.25/0.5 后按性能选一个。
+
+## 5.9 真正的新意边界
+
+逆 CDF、累计质量和固定系统点并不是新理论；系统 PPS 抽样和已有视频采样方法已包含相近思想。([[Taylor & Francis Online](https://www.tandfonline.com/doi/abs/10.1080/01621459.1966.10480902)][4])
+
+允许声称的新意只能是：
+
+1. **带统一恒等路径、局部伸缩和累计偏移证书的 exact-K TAD 时间扭曲；**
+2. **用真实硬换帧验证后才允许进入模型的任务效用 rank-to-density 学习；**
+3. **不修改 detector 内部结构的 warped-time I/O 契约，以及高 IoU、短动作和真实系统成本证据。**
+
+若这三点没有同时成立，不应使用“理论传输模型”作为主要叙事。
+
+---
+
+### 6. 对规范的逐项修订
+
+| 原规范部分       | 裁决       | 必须修改的内容                                                                  |
+| ----------- | -------- | ------------------------------------------------------------------------ |
+| 文档状态        | 保留并加强    | 增加 `scientific_review: major_revision_required`；不得因 user-approved 自动进入实现 |
+| 论文方法边界      | 保留       | 明确长度参数 K 的接口适配、GT warped-time 映射和预测逆映射属于插件；映射对 selector stop-gradient    |
+| 两种均匀语义      | 保留       | 新增 local reproduced dense；明确 wrapper uniform 只作 parity，不作主要基线            |
+| 有界单调密度      | 大幅重写     | 写入 (\mathcal P_{T,K})、KL 投影、(\rho/F/F^{-1})、DP、(G_K,D_K)、边缘间隔、tie-break  |
+| 连续代理与硬收益    | 保留但拆门    | 拆为 `G_rank` 和 `G_direct`；教师与直接梯度不能共用一个模糊门                                |
+| 贡献监督        | 删除原始幅值主臂 | 主目标改为 rank-normalized distribution distillation；OT 仅可作附录，不作为主模型          |
+| A0–A4       | 重构       | 原五臂不能完成独立归因，应改为下述矩阵                                                      |
+| checkpoint  | 修改       | 最终主结果统一使用 6000-update final EMA；开发集只用于冻结模型设计                             |
+| P1/P2/P3 顺序 | 修改       | P1 parity 和 decoder contract 阻塞长训练；G_rank 只阻塞 RDD；G_direct 只阻塞 A4        |
+| 第一粒种子门      | 修改       | 定义为 development screening，排除出最终统计                                        |
+| 69% 成功标准    | 降级       | 改为 stretch goal；主门采用相对 uniform 增益和 dense-gap recovery                    |
+| 最小实现范围      | 保留       | 删除新编排平台、版本治理和非必要日志；加入 geometry property tests 和预注册 manifest              |
+| PR          | 必须修复     | 将 133-file PR 重建为只含两份文档的审阅 PR                                            |
+
+#### 6.1 可直接写回规范的模型定义
+
+> 主 selector 输出候选时间质量 (p)，并通过 KL 投影落入固定可行域 (\mathcal P_{T,K})。该可行域同时约束单格密度、CDF 相对恒等映射的累计偏移以及总质量。连续位置由固定分位 (F^{-1}((j+1/2)/K)) 得到，整数位置由带最大间隔、首尾覆盖和 canonical-uniform 偏移约束的确定性动态规划解码。任何解码后 repair 均视为实现失败。
+
+#### 6.2 可直接写回规范的双门定义
+
+> `G_rank` 判断 detached 分类/回归贡献排名是否能预测真实硬换帧收益；只有 `G_rank` 通过，贡献 rank-distillation 才可进入主模型。
+> `G_direct` 在 `G_rank` 之上进一步判断连续梯度的多尺度可组合性、共享参数梯度稳定性以及短程配对训练收益；只有 `G_direct` 通过，直接检测梯度才可进入增强臂。
+> `G_rank` 失败时，不得保留贡献教师；`G_direct` 失败但 `G_rank` 通过时，删除直接梯度，保留 detached ranking。
+
+#### 6.3 推荐主实验臂
+
+| 臂  | 定义                                   | 唯一问题             |
+| -- | ------------------------------------ | ---------------- |
+| A0 | clean exact-uniform                  | 公平基线             |
+| A1 | 无累计/局部界的 monotone density + RDD，从零释放 | 学习密度本身是否有价值      |
+| A2 | 有界 density + RDD，从零释放                | 几何约束是否有价值        |
+| A3 | A2 + 1000-update uniform warmup      | **推荐主模型；课程是否必要** |
+| A4 | A3 + 通过 G_direct 的直接检测梯度             | 直接梯度是否有额外价值      |
+
+贡献监督是否必要，不应通过条件性长训练补臂，而应增加固定的机制控制：
+
+* `A3-shuffled-RDD`：视频内打乱教师 rank；
+* `A3-motion-prior`：使用简单部署可见运动先验替代任务贡献；
+* 或在短程开发实验中使用 `A3-no-RDD`。
+
+如果真实 RDD 不优于 shuffled/motion control，则删除贡献故事。
+
+#### 6.4 可直接写回规范的依赖规则
+
+> P1 基线恢复、P2 统计门和有界解码器实现可以并行。任何 learned-selector 长训练前只强制要求：clean/wrapper parity 通过、exact-K/坐标契约测试通过、A0 配置冻结。`G_rank` 仅阻塞 RDD 臂；`G_direct` 仅阻塞直接梯度臂。不得用“P2 尚未全部完成”阻塞与其无关的 A1/A2 实现。
+
+#### 6.5 可直接写回规范的种子规则
+
+> 第一枚运行固定为 development screening seed，仅用于决定是否冻结当前结构，不能进入论文均值、标准差或置信区间。设计冻结后，使用三枚事先登记且未用于开发的种子运行最终 A0 与主模型；不得按第一枚最终种子表现决定是否补齐其余种子。
+
+#### 6.6 可直接写回规范的 checkpoint 规则
+
+> 最终主表中所有训练臂统一使用正好 6000 次成功 optimizer update 后的 EMA checkpoint。训练侧留出集合用于冻结结构、门槛和超参数，不用于为每个最终臂单独挑最佳 epoch。官方测试只在模型和 checkpoint 规则冻结后评估一次。中间最佳 checkpoint 仅进入训练诊断图。
+
+---
+
+### 7. 最小决定性实验
+
+## 7.1 立即必做
+
+| 实验                      | 科学问题                    | 实验臂与唯一变量                                                             | 固定项                           | 指标与 checkpoint                                             | 通过/失败标准                                                                                         | 后续动作                                 |
+| ----------------------- | ----------------------- | -------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------ |
+| E0 官方复现口径               | 本地 pipeline 是否能重现发布结果   | 官方发布 checkpoint 经官方路径与本地路径评测；变量仅评测环境                                 | 数据版本、权重、NMS、窗口、预处理            | Avg-mAP、五个 tIoU；发布 checkpoint                              | Avg 差≤0.10 pp、各阈值差≤0.15 pp                                                                      | 失败：69.03 只作外部参考，先修复评测，禁止解释 68.29     |
+| E1 clean/wrapper parity | 64.49 是否被 wrapper 损伤    | 同一权重、同一 uniform indices，clean path 对 wrapper path                    | 所有 tensor、AMP、NMS             | RGB/mask/GT map、raw prediction、最终 mAP                      | 输入逐元素一致；raw prediction 误差≤(10^{-5})；mAP 差≤0.02 pp                                               | 失败：阻塞所有 DUCA 长训练，修 wrapper           |
+| E2 解码与坐标合同              | 模型是否真满足 exact-K、界限和恒等路径 | 10 万组随机 logits、边界极端 logits、常数 logits                                 | T/K 和固定常数                     | K、unique、顺序、最大洞、偏移、round-trip                              | 零违反；constant logits 与 A0 indices 完全一致；round-trip≤1 原帧                                           | 失败：修改解码器，不运行模型                       |
+| E3 干净预算基线               | 50%/25% 的真实性能底线是什么      | dense、clean uniform K384/K192、stratified random、简单 cumulative-motion | detector、总更新、checkpoint 规则    | Avg、@0.6/@0.7、短动作、成本                                       | 所有臂完整、可复现；不是性能门                                                                                 | 未闭环前不得解释任何 learned gain              |
+| E4 硬收益排名门               | 连续贡献 rank 是否预测硬选帧收益     | 单帧、1/5/10%、连续片段、全局步进；真实 proxy、随机、打乱、反向                               | 冻结 detector/selector、候选数、位移分布 | 每视频 Spearman/Kendall、方向率、top-decile gain、cluster bootstrap | 主终点：5% swap Spearman 95% LCB>0.10；回归方向率 LCB>0.52；top-decile 优于 matched random；10%/global 无稳定负相关 | 失败 G_rank：删除 RDD；仅 G_direct 失败：删除 A4 |
+| E5 共享梯度审计               | 贡献项是否优化支配或冲突            | RDD、cls、reg、可选 direct gradient                                       | 相同 batch/checkpoint           | (|g|)、cosine、方差、clip 比例、NaN/Inf                            | RDD 梯度有限稳定；cls/reg 与总方向不持续强负；direct 目标比例可控                                                      | 失败：重新定义或删除对应监督，不按 loss scalar 调权重    |
+
+E4 的统计单位必须是视频。每个窗口可以生成固定数量，例如每种尺度 32 个合法候选，但不能把这些候选当成 32 个独立视频。规范中的“至少 64 个视频、128 个窗口”只能作为下限，还需根据 cluster-level 方差做预先功效模拟。
+
+## 7.2 条件通过后做
+
+| 实验                  | 科学问题                        | 实验臂与唯一变量                                        | 固定项                                 | 通过/失败标准                                                              | 后续动作                                                            |                     |
+| ------------------- | --------------------------- | ----------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------- |
+| E6 K384 开发筛选        | 有界 RDD 模型是否产生最小真实增益         | A0–A3；每次只增加一项                                   | 6000 updates、final EMA、同一 dev split | A3−A0 ≥0.5 pp dev Avg；@0.7 不低于 −0.2 pp；短动作不低于 −0.5 pp                | A1≤A0：密度假设失败；A2≤A1：删除 bounds 故事；A3≤A2：删除 warmup                 |                     |
+| E7 A4 短程配对试验        | direct gradient 是否超越稳定排名教师  | 从同一 A3 checkpoint 分叉，direct on/off 1000 updates | batch 顺序、LR、数据完全一致                  | A4−A3 ≥0.3 pp dev，且高 IoU/短动作不下降；梯度稳定                                 | 失败：永久删除 A4，不再调门                                                 |                     |
+| E8 冻结结构后的 K384 最终实验 | 主模型是否稳定优于 uniform           | 三个未参与开发的预登记种子；A0 与 A3                           | final EMA、测试一次                      | mean gain≥1.0 pp，视频配对 95% CI>0；dense-gap recovery≥40%；@0.7 与短动作无系统退化 | 未达到：不进入完整论文矩阵                                                   |                     |
+| E9 K192             | 机制是否在更强预算压力下成立              | clean uniform vs A3，三种子                         | 同 K192 后端合同                         | mean gain≥1.0 pp，@0.7/短动作安全                                          | 失败：主张收缩为 moderate-budget 方法                                     |                     |
+| E10 第二检测器           | 是否是 selector，而非 AdaTAD 专属配方 | 相同 selector/解码器接第二 TAD detector                 | 不改第二 detector 内部                    | gain≥0.5 pp，方向一致                                                     | 失败：论文必须明确称 AdaTAD-specific                                      |                     |
+| E11 真实成本            | 50% 帧是否产生真实效率收益             | dense、uniform、A3                                | 同硬件、trained checkpoint、完整数据路径       | p50/p95 latency、能耗、峰值显存、selector overhead                            | 端到端 latency/energy 至少下降30%；selector overhead<被节省 backbone 成本15% | 失败：删除效率主张，仅保留采样质量研究 |
+
+## 7.3 延期
+
+1. **真正免训练模式。**
+   主模型通过后，再用同一可行域、解码器和坐标适配器，将 (h_\theta) 替换为冻结通用证据源。科学问题是跨任务零适配能力，不应与任务适配主模型争夺主叙事。
+
+2. **detector 内部真实时间注入。**
+   只作为 same-selected-frames 上限诊断，用于估计纯插件因忽略真实时间产生的剩余差距。即使有效，也不得进入纯前置主声明。
+
+3. **更多预算、动态 K、更多数据集。**
+   K384/K192 和第二检测器尚未通过前，增加预算矩阵只会扩大未解释结果。
+
+4. **整视频 1/2、1/4 降帧率的完整多种子。**
+   先做一遍确认语义和历史结果；除非它成为强竞争基线，否则不需要优先补完整矩阵。
+
+## 7.4 删除
+
+* 原始贡献幅值拟合主臂；
+* 第二套 OT 损失；
+* 解码后 gap repair、uniform scaffold 或膨胀；
+* A3 第一种子为正后才决定是否报告 cls/reg 分臂；
+* 未通过 `G_direct` 后降低阈值继续运行 A4；
+* 把 30+60、约 80 轮或 K192 中间 checkpoint 放入公平主表；
+* 用官方测试选择梯度比例、课程长度、密度界限或 checkpoint；
+* 新通用调度平台、复杂日志系统和版本治理型“贡献”。
+
+---
+
+### 8. 公平主结果表
+
+## 8.1 主表行
+
+最终主表至少应包含：
+
+| 分组              | 必须出现的行                                            |
+| --------------- | ------------------------------------------------- |
+| Dense reference | 上游发布 AdaTAD VideoMAE-S dense 69.03；本地严格复现 dense   |
+| 固定预算基础线         | clean exact-uniform K384；clean exact-uniform K192 |
+| 非学习强基线          | stratified random；简单累计运动分布采样                      |
+| 方法归因            | 无界 density+RDD；有界 density+RDD；有界+RDD+warmup       |
+| 可选增强            | 有界+RDD+warmup+direct gradient，仅在 G_direct 通过时     |
+| 泛化              | 第二检测器上的 uniform 与主模型                              |
+| 单独语义表           | 整视频 1/2 与 1/4 降帧率，不与固定 768 范围压缩混表                 |
+
+官方 69.03 是发布参考值，不应与本地训练均值混为同一统计来源。
+
+## 8.2 必报列
+
+| 类别    | 列                                                                |
+| ----- | ---------------------------------------------------------------- |
+| 方法合同  | detector、selector、证据源、原始 T、K、候选时间范围、是否 task-adapted              |
+| 检测性能  | Avg-mAP、mAP@0.6、mAP@0.7、短动作 mAP                                  |
+| 定位质量  | start/end boundary MAE、区间长度误差、短动作召回                              |
+| 选帧几何  | exact-K 违反率、最大洞、CDF 最大偏移、密度熵、动作边界/动作内部/背景采样比例                    |
+| 统计    | 三种子 mean±std、视频级 paired bootstrap 95% CI                         |
+| 真实成本  | backbone GFLOPs、probe+selector GFLOPs、完整 p50/p95 latency、能耗、峰值显存 |
+| 训练公平性 | 成功 updates、总 GPU-hours、checkpoint 规则、测试次数                        |
+
+短动作分桶应在训练侧按归一化持续时间的固定分位数预先定义，不能根据测试结果修改。
+
+## 8.3 只能进入诊断表的现有数值
+
+以下数值不得进入公平主表：
+
+* 65.385724：90 轮 K384 超预算诊断；
+* 65.650497：约 80 轮诊断；
+* 64.49：DUCA-wrapper uniform，直到 clean/wrapper parity 闭环前仅是路径诊断；
+* 58.383005/58.082562：K192 中间 checkpoint；
+* 68.29：本地 dense，直到官方评测和 checkpoint 口径闭环；
+* random-init、两样本或 dirty scratch 成本数字；
+* 任何旧 commit、effective K 不确定或缺失 checkpoint 的结果。
+
+---
+
+### 9. 下一步计划
+
+## 9.1 未来 72 小时：2026 年 7 月 27 日至 7 月 30 日
+
+三个工作流可以并行。
+
+### 工作流 A：基线与 PR 真实性
+
+1. 将 PR #3 重建为只包含两份 DUCA 文档的审阅 PR。
+2. 冻结官方 dense manifest：仓库 SHA、配置、权重 hash、数据版本、EMA/checkpoint、NMS 和评测命令。
+3. 完成 E0 官方发布 checkpoint 的本地评测。
+4. 实现 clean exact-uniform K384/K192。
+5. 完成 E1 clean/wrapper tensor parity。
+
+**72 小时交付物：**官方口径证书、clean uniform 配置、wrapper parity 报告。
+
+### 工作流 B：唯一数学模型
+
+1. 将第 5 节的 (\mathcal P_{T,K})、KL 投影、CDF、DP 和 warped-time adapter 写回规范。
+2. 实现只含纯函数的 density projection 和 exact-K decoder。
+3. 完成常数密度恒等、极端密度、首尾覆盖、tie-break、round-trip property tests。
+4. 不连接长训练，不增加新框架。
+
+**72 小时交付物：**正式数学定义、focused tests、零 repair 解码器。
+
+### 工作流 C：统计门
+
+1. 固定训练侧 calibration/gate/checkpoint 三个视频级互斥集合，或采用预登记 cross-fitting。
+2. 固定每个窗口、每个尺度的候选生成数和 matched-random 规则。
+3. 运行 cluster-level power simulation。
+4. 冻结 `G_rank` 和 `G_direct` 的主终点与安全终点。
+5. 实现共享参数梯度范数、夹角和稳定性审计。
+
+**72 小时交付物：**不可事后修改的 gate manifest。
+
+### 真正依赖
+
+* E1 parity 和 E2 decoder contract 是任何 learned-selector 长训练的硬依赖；
+* `G_rank` 只阻塞 RDD；
+* `G_direct` 只阻塞 A4；
+* 官方 dense 复现不应阻塞解码器和统计门实现；
+* 不应等待 P2 全部结束才编写 P3 核心代码。
+
+## 9.2 随后两周：2026 年 7 月 31 日至 8 月 10 日
+
+### 第 4–6 天
+
+* 跑完 clean K384/K192 uniform、stratified random、累计运动基线；
+* 执行 E4 多尺度硬换帧门；
+* 完成共享梯度审计；
+* 裁决 RDD 是否允许存在。
+
+### 第 7–9 天
+
+在 `G_rank` 通过后：
+
+* 运行 K384 development screening：A0、A1、A2、A3；
+* 所有臂 6000 updates、final EMA；
+* development seed 不进入最终统计；
+* 依据预注册逻辑删除失败机制，而不是重新增加模块。
+
+### 第 10–11 天
+
+* 只有 `G_direct` 通过才运行 A4 配对短程试验；
+* 使用 trained checkpoint 做完整成本 profiling；
+* 冻结最终主模型、损失、课程和所有阈值。
+
+### 第 12–14 天
+
+* 使用三枚新种子运行最终 K384 A0 与主模型；
+* K384 达到门槛后并行启动 K192 和第二检测器；
+* 真正免训练模式仍排在主模型证据之后；
+* 若 K384 未达到门槛，停止扩大实验矩阵，直接按失败模式重定义路线。
+
+---
+
+### 10. CVPR 论文判断
+
+## 10.1 一句话论文命题
+
+> 在不修改时域动作检测器内部结构的条件下，一个由真实硬选帧效用校准、具有 exact-K 与可证明时间扭曲上界的前置单调采样插件，能够以显著降低的真实视频主干计算稳定保护高 IoU 和短动作定位性能。
+
+## 10.2 允许的三个核心贡献
+
+1. **有界 exact-K 时间扭曲模型**
+   常数密度为均匀恒等路径，具有局部伸缩、累计偏移、最大洞和整数解码证书。
+
+2. **硬策略验证的效用学习**
+   分类和回归的连续边际贡献必须先通过真实硬换帧 rank gate，再以 scale-free rank distribution 训练 selector。
+
+3. **严格纯插件证据**
+   warped-time I/O adapter、clean uniform parity、第二检测器、高 IoU/短动作和完整端到端成本共同证明收益不是 wrapper、后端修改或 FLOPs 幻觉。
+
+不要再增加第四、第五个“贡献”。课程训练、DP 实现、日志、Slurm 和 checkpoint 治理都不是论文贡献。
+
+## 10.3 五个最可能的审稿攻击点及所需证据
+
+| 攻击                                    | 审稿人会如何质疑                             | 必须给出的证据                                                              |
+| ------------------------------------- | ------------------------------------ | -------------------------------------------------------------------- |
+| 1. 只是 inverse-CDF/systematic sampling | “这是经典概率比例抽样加网络打分”                    | 与系统抽样、MGSampler-like baseline 的明确关系；真正的有界命题和消融                       |
+| 2. 并非纯前置插件                            | “你改了标签、时间坐标和后端”                      | clean/wrapper parity；清晰的 (t\leftrightarrow q) I/O 合同；detector 源码差异清单 |
+| 3. 软梯度不代表硬收益                          | “ST 只是伪梯度”                           | 多尺度硬 swap、matched random、视频级 CI、G_rank/G_direct                      |
+| 4. 增益来自不公平训练                          | “uniform 少训练、checkpoint 不同或测试调参”     | 全部 6000 updates、final EMA、同测试次数、超预算结果单列                              |
+| 5. 只对 AdaTAD 有效且成本不真实                 | “这是 AdaTAD wrapper trick，probe 吞掉节省” | 第二检测器、trained full-stack p50/p95、能耗、峰值显存和 overhead                   |
+
+## 10.4 达到什么结果可以投稿
+
+69–70% 不是必须门槛，也没有当前证据支持它是合理信息上界。建议投稿门槛为：
+
+1. K=384 主模型相对 clean uniform：
+
+   * 三种子平均至少 **+1.0 pp**；
+   * 视频级配对 95% CI 下界大于 0；
+   * 恢复至少 **40% 的 uniform→dense 性能差距**，或距离本地严格复现 dense 不超过约 2 pp；
+   * mAP@0.7 不系统下降；
+   * 短动作不系统下降。
+
+2. K=192：
+
+   * 相对 clean uniform 至少 +1.0 pp；
+   * 高 IoU 和短动作方向一致。
+
+3. 第二检测器：
+
+   * 至少 +0.5 pp，且不依赖修改 detector 内部时间表示。
+
+4. 效率：
+
+   * 完整端到端 latency 或能耗至少降低 30%；
+   * probe+selector 开销小于被节省 backbone 成本的 15%。
+
+若最终达到 69% 左右，那将是很强的结果；但在 clean K384 uniform 未知时，不应以此反向设计实验。
+
+## 10.5 什么结果意味着停止或重新定义路线
+
+出现任一情况，应停止当前论文主张：
+
+* clean/wrapper parity 长期无法达到近似等价；
+* `G_rank` 失败，即贡献排序不能预测硬收益；
+* K384 主模型相对 clean uniform 小于 +0.5 pp；
+* 增益只在 detector 内部真实时间注入后存在；
+* mAP@0.7 或短动作持续下降；
+* 第二检测器上增益消失或反向；
+* selector/probe 吞掉大部分 backbone 节省；
+* 主要提升依赖超预算训练、最佳测试 checkpoint 或事后放宽门槛。
+
+对应的重定义方式应是：
+
+* 若效用 rank 失败：删除贡献蒸馏和 direct gradient，降级为有界采样基线；
+* 若 warp 几何失败：放弃“纯前置且后端无感”，转为明确的 time-aware detector 方法；
+* 若跨 detector 失败：诚实收缩为 AdaTAD-specific 方法；
+* 若性能提升不足但成本极强：改写为系统效率论文，而不是 CVPR 方法论文；
+* 若性能与成本都不足：停止 DUCA 主路线，不再通过增加损失和模块维持。
+
+## 10.6 真正免训练模式的统一方式
+
+免训练模式不应成为第二套方法。它应与任务适配主模型共用：
+
+[
+\mathcal P_{T,K},
+\quad F,
+\quad F^{-1},
+\quad \text{exact-K DP},
+\quad t\leftrightarrow q\text{ adapter}.
+]
+
+唯一变化是证据映射：
+
+* 任务适配模式：(a=h_\theta(e))，在目标 TAD 训练集上学习；
+* 免训练模式：(a=h_\phi(e))，(\phi) 完全冻结，且不使用目标域优化、教师、缓存或 GT。
+
+这样它们共享同一理论和解码器，但承担不同声明：
+
+* task-adapted 模式证明最佳任务效用；
+* train-free 模式证明迁移和部署便利性；
+* 二者不能混在同一主结果中，也不能用 train-free 弱结果反过来否定 task-adapted 模型。
+
+**最终执行授权：立即允许实施 PR 清理、P1 基线/parity、形式化有界解码器、坐标测试和双门统计工具；不允许按当前规范直接投递 A3/A4 长训练。A3 必须等待 clean A0、exact-K/坐标合同和 `G_rank` 闭环；A4 必须额外等待 `G_direct`。**
+
+[1]: https://openaccess.thecvf.com/content/ICCV2021/html/Zhi_MGSampler_An_Explainable_Sampling_Strategy_for_Video_Action_Recognition_ICCV_2021_paper.html "https://openaccess.thecvf.com/content/ICCV2021/html/Zhi_MGSampler_An_Explainable_Sampling_Strategy_for_Video_Action_Recognition_ICCV_2021_paper.html"
+[2]: https://openaccess.thecvf.com/content_CVPR_2019/html/Wu_AdaFrame_Adaptive_Frame_Selection_for_Fast_Video_Recognition_CVPR_2019_paper.html "https://openaccess.thecvf.com/content_CVPR_2019/html/Wu_AdaFrame_Adaptive_Frame_Selection_for_Fast_Video_Recognition_CVPR_2019_paper.html"
+[3]: https://openaccess.thecvf.com/content/CVPR2024/html/Zeng_Benchmarking_the_Robustness_of_Temporal_Action_Detection_Models_Against_Temporal_CVPR_2024_paper.html "https://openaccess.thecvf.com/content/CVPR2024/html/Zeng_Benchmarking_the_Robustness_of_Temporal_Action_Detection_Models_Against_Temporal_CVPR_2024_paper.html"
+[4]: https://www.tandfonline.com/doi/abs/10.1080/01621459.1966.10480902 "https://www.tandfonline.com/doi/abs/10.1080/01621459.1966.10480902"

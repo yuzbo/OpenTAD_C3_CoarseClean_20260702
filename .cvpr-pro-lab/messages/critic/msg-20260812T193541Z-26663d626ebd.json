@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-12T19:35:41Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "focused-implementation-recheck",
+  "message_id": "msg-20260812T193541Z-26663d626ebd",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-briefs/CRITIC_DUCA_P0_TYPED_FAILURE_INTERFACE_FOCUSED_RECHECK-v001.md",
+    "size": 1745
+  },
+  "priority": "high",
+  "requested_action": "Independently review the completed bounded typed-failure interface correction; static/read-only only.",
+  "required_gate": "P0_TYPED_FAILURE_INTERFACE_CORRECTION_RECHECK",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

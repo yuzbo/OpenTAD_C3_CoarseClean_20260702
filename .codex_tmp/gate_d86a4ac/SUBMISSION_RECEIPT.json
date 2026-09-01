@@ -1,0 +1,12 @@
+{
+  "claim_boundary": "submitted_engineering_gate_no_model_metric",
+  "deployment_identity_sha256": "f070f46f023be6152faf1818342633a8d6f713fb55e37fa5c79fc2a43434f140",
+  "formal_slurm_job_id": 1205571,
+  "full_content_preflight_sha256": "08b05123edbaccd10d5b43031a43ebac11a3616ceb454bfbd588d4d7395a6a95",
+  "launcher_sha256": "fb924a2aad2e9475d3a6e133819f405d39dc624fd29166682d8bfcce04d4e3db",
+  "schema_version": "actionformer_native_grid_k384_submission_receipt_v1",
+  "source_diff_attestation_sha256": "68d2cf726cc8523094847337eb5ebe604ca5ad46cbe99d2a5fba2b78f45e67db",
+  "source_diff_provenance_sha256": "e57fc3d618f86faacbd79cb77121796a18fed5fafdc0fe80506e40f9aba6237c",
+  "test_only_is_not_a_job": true,
+  "test_only_output": "sbatch test-only identifier 1205570; not a submitted allocation"
+}

@@ -1,0 +1,1556 @@
+{
+  "fit_video_count": 160,
+  "fit_window_count": 596,
+  "fixed_arm_name": "Fixed-H65-384",
+  "fixed_h65_384": {
+    "average_mAP": 0.8813119705666871,
+    "mAP@0.3": 0.9583379279516155,
+    "mAP@0.4": 0.936845289659517,
+    "mAP@0.5": 0.8958122338381976,
+    "mAP@0.6": 0.8528585697798222,
+    "mAP@0.7": 0.7627058316042832
+  },
+  "holdout_video_count": 40,
+  "holdout_window_count": 124,
+  "implementation_gate": {
+    "detector_frozen": true,
+    "k384_prediction_exact_all_windows": true,
+    "k384_selection_bit_exact_all_windows": true,
+    "observed_distinct_execution_slot_classes": [
+      256,
+      400,
+      448,
+      464,
+      480,
+      496,
+      512
+    ],
+    "padded_to_upper_budget": false,
+    "scout_frozen": true,
+    "utility_targets_detached": true
+  },
+  "method": "DUCA-Marginal-v1",
+  "official_test_consumed": false,
+  "oracle_allocation": {
+    "video_validation_0000055": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1152,
+      "window_count": 3
+    },
+    "video_validation_0000059": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        256,
+        512,
+        384
+      ],
+      "budgets": [
+        384,
+        256,
+        512,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        256,
+        512,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.1640600860118866,
+      "requested_budgets": [
+        384,
+        256,
+        512,
+        384
+      ],
+      "target_actual_cost": 1536,
+      "window_count": 4
+    },
+    "video_validation_0000158": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        512,
+        256,
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        512,
+        256,
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        512,
+        256,
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.06998297572135925,
+      "requested_budgets": [
+        512,
+        256,
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1920,
+      "window_count": 5
+    },
+    "video_validation_0000164": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1152,
+      "window_count": 3
+    },
+    "video_validation_0000172": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384
+      ],
+      "target_actual_cost": 768,
+      "window_count": 2
+    },
+    "video_validation_0000173": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        256,
+        512
+      ],
+      "budgets": [
+        384,
+        384,
+        256,
+        512
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        256,
+        512
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.1362585425376892,
+      "requested_budgets": [
+        384,
+        384,
+        256,
+        512
+      ],
+      "target_actual_cost": 1536,
+      "window_count": 4
+    },
+    "video_validation_0000181": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384
+      ],
+      "target_actual_cost": 768,
+      "window_count": 2
+    },
+    "video_validation_0000186": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384
+      ],
+      "budgets": [
+        384
+      ],
+      "collapsed_to_k384": [
+        false
+      ],
+      "execution_slots": [
+        384
+      ],
+      "padding_slots": [
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384
+      ],
+      "target_actual_cost": 384,
+      "window_count": 1
+    },
+    "video_validation_0000206": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1152,
+      "window_count": 3
+    },
+    "video_validation_0000207": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1152,
+      "window_count": 3
+    },
+    "video_validation_0000266": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1152,
+      "window_count": 3
+    },
+    "video_validation_0000267": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        512,
+        384,
+        256,
+        384,
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        512,
+        384,
+        256,
+        384,
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        512,
+        384,
+        256,
+        384,
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.10147061944007874,
+      "requested_budgets": [
+        512,
+        384,
+        256,
+        384,
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 2688,
+      "window_count": 7
+    },
+    "video_validation_0000282": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        288
+      ],
+      "budgets": [
+        384
+      ],
+      "collapsed_to_k384": [
+        false
+      ],
+      "execution_slots": [
+        384
+      ],
+      "padding_slots": [
+        96
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384
+      ],
+      "target_actual_cost": 288,
+      "window_count": 1
+    },
+    "video_validation_0000283": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384
+      ],
+      "budgets": [
+        384
+      ],
+      "collapsed_to_k384": [
+        false
+      ],
+      "execution_slots": [
+        384
+      ],
+      "padding_slots": [
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384
+      ],
+      "target_actual_cost": 384,
+      "window_count": 1
+    },
+    "video_validation_0000285": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384
+      ],
+      "target_actual_cost": 768,
+      "window_count": 2
+    },
+    "video_validation_0000367": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384
+      ],
+      "target_actual_cost": 768,
+      "window_count": 2
+    },
+    "video_validation_0000417": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        256,
+        512,
+        384,
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        256,
+        512,
+        384,
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        256,
+        512,
+        384,
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.019536063075065613,
+      "requested_budgets": [
+        256,
+        512,
+        384,
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 2304,
+      "window_count": 6
+    },
+    "video_validation_0000419": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384,
+        256,
+        384,
+        384,
+        384,
+        384,
+        384,
+        512,
+        256,
+        256,
+        512,
+        512
+      ],
+      "budgets": [
+        384,
+        384,
+        384,
+        256,
+        384,
+        384,
+        384,
+        384,
+        384,
+        512,
+        256,
+        256,
+        512,
+        512
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384,
+        256,
+        384,
+        384,
+        384,
+        384,
+        384,
+        512,
+        256,
+        256,
+        512,
+        512
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.10009123384952545,
+      "requested_budgets": [
+        384,
+        384,
+        384,
+        256,
+        384,
+        384,
+        384,
+        384,
+        384,
+        512,
+        256,
+        256,
+        512,
+        512
+      ],
+      "target_actual_cost": 5376,
+      "window_count": 14
+    },
+    "video_validation_0000483": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384
+      ],
+      "target_actual_cost": 768,
+      "window_count": 2
+    },
+    "video_validation_0000489": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1152,
+      "window_count": 3
+    },
+    "video_validation_0000490": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        512,
+        256,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        512,
+        256,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        512,
+        256,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.13576892018318176,
+      "requested_budgets": [
+        384,
+        384,
+        512,
+        256,
+        384,
+        384
+      ],
+      "target_actual_cost": 2304,
+      "window_count": 6
+    },
+    "video_validation_0000664": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        256,
+        384,
+        384,
+        512
+      ],
+      "budgets": [
+        256,
+        384,
+        384,
+        512
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        256,
+        384,
+        384,
+        512
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.009859195910394192,
+      "requested_budgets": [
+        256,
+        384,
+        384,
+        512
+      ],
+      "target_actual_cost": 1536,
+      "window_count": 4
+    },
+    "video_validation_0000681": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384
+      ],
+      "budgets": [
+        384
+      ],
+      "collapsed_to_k384": [
+        false
+      ],
+      "execution_slots": [
+        384
+      ],
+      "padding_slots": [
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384
+      ],
+      "target_actual_cost": 384,
+      "window_count": 1
+    },
+    "video_validation_0000683": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        285
+      ],
+      "budgets": [
+        384
+      ],
+      "collapsed_to_k384": [
+        false
+      ],
+      "execution_slots": [
+        384
+      ],
+      "padding_slots": [
+        99
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384
+      ],
+      "target_actual_cost": 285,
+      "window_count": 1
+    },
+    "video_validation_0000690": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        256,
+        384,
+        512,
+        384
+      ],
+      "budgets": [
+        384,
+        256,
+        384,
+        512,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        256,
+        384,
+        512,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.004800617229193449,
+      "requested_budgets": [
+        384,
+        256,
+        384,
+        512,
+        384
+      ],
+      "target_actual_cost": 1920,
+      "window_count": 5
+    },
+    "video_validation_0000783": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1152,
+      "window_count": 3
+    },
+    "video_validation_0000851": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        233
+      ],
+      "budgets": [
+        384
+      ],
+      "collapsed_to_k384": [
+        false
+      ],
+      "execution_slots": [
+        384
+      ],
+      "padding_slots": [
+        151
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384
+      ],
+      "target_actual_cost": 233,
+      "window_count": 1
+    },
+    "video_validation_0000852": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1536,
+      "window_count": 4
+    },
+    "video_validation_0000858": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384
+      ],
+      "target_actual_cost": 768,
+      "window_count": 2
+    },
+    "video_validation_0000905": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1152,
+      "window_count": 3
+    },
+    "video_validation_0000908": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1920,
+      "window_count": 5
+    },
+    "video_validation_0000909": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1152,
+      "window_count": 3
+    },
+    "video_validation_0000937": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384
+      ],
+      "budgets": [
+        384
+      ],
+      "collapsed_to_k384": [
+        false
+      ],
+      "execution_slots": [
+        384
+      ],
+      "padding_slots": [
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384
+      ],
+      "target_actual_cost": 384,
+      "window_count": 1
+    },
+    "video_validation_0000938": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        260
+      ],
+      "budgets": [
+        384
+      ],
+      "collapsed_to_k384": [
+        false
+      ],
+      "execution_slots": [
+        384
+      ],
+      "padding_slots": [
+        124
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384
+      ],
+      "target_actual_cost": 260,
+      "window_count": 1
+    },
+    "video_validation_0000943": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384
+      ],
+      "target_actual_cost": 768,
+      "window_count": 2
+    },
+    "video_validation_0000944": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1152,
+      "window_count": 3
+    },
+    "video_validation_0000945": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384,
+        384
+      ],
+      "target_actual_cost": 1152,
+      "window_count": 3
+    },
+    "video_validation_0000984": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        348
+      ],
+      "budgets": [
+        384
+      ],
+      "collapsed_to_k384": [
+        false
+      ],
+      "execution_slots": [
+        384
+      ],
+      "padding_slots": [
+        36
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384
+      ],
+      "target_actual_cost": 348,
+      "window_count": 1
+    },
+    "video_validation_0000988": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384
+      ],
+      "target_actual_cost": 768,
+      "window_count": 2
+    },
+    "video_validation_0000990": {
+      "actual_budget_error": 0,
+      "actual_cost": [
+        384,
+        384
+      ],
+      "budgets": [
+        384,
+        384
+      ],
+      "collapsed_to_k384": [
+        false,
+        false
+      ],
+      "execution_slots": [
+        384,
+        384
+      ],
+      "padding_slots": [
+        0,
+        0
+      ],
+      "predicted_total_utility": 0.0,
+      "requested_budgets": [
+        384,
+        384
+      ],
+      "target_actual_cost": 768,
+      "window_count": 2
+    }
+  },
+  "oracle_headroom": {
+    "delta_average_mAP_pp": 0.725589312687891,
+    "delta_mAP_at_0.7_pp": 0.7290037014890505,
+    "gray_zone_requires_pro": true,
+    "no_headroom_boundary": false,
+    "strong_gate_pass": false
+  },
+  "oracle_reallocate_384": {
+    "average_mAP": 0.888567863693566,
+    "mAP@0.3": 0.960349418437806,
+    "mAP@0.4": 0.9399008234073724,
+    "mAP@0.5": 0.9104458544593358,
+    "mAP@0.6": 0.8621473535441421,
+    "mAP@0.7": 0.7699958686191737
+  },
+  "paper_claim_allowed": false,
+  "schema": "duca_marginal_frozen_h65_probe_result_v1",
+  "secondary_mean_k320": {
+    "reason": "K in {256,384} cannot guarantee exact mean K=320 for videos with an odd number of windows without an additional frozen rule",
+    "status": "NOT_RUN_UNRESOLVED_EXACT_VIDEO_BUDGET"
+  },
+  "source": {
+    "annotation": "/data/run01/sczc063/yuzibo/thumos14/annotations/thumos_14_anno.json",
+    "annotation_sha256": "ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad",
+    "checkpoint": "/data/run01/sczc063/yuzibo/duca_h65_90_stage2_off_04c35a3b_20260823/gpu1_id0/checkpoint/epoch_59.pth",
+    "checkpoint_epoch": 59,
+    "checkpoint_sha256": "dafcfbd0b1e0a13c400789e73ee13a20cf69551813ef62fc8185fde609806a1c",
+    "checkpoint_state_key": "state_dict_ema",
+    "class_map": "/data/run01/sczc063/yuzibo/thumos14/annotations/category_idx.txt",
+    "class_map_sha256": "a158b7c4c130ce74375a9b114160e2faae7a0221e605a0464a556fe082644f31",
+    "config": "/data/run01/sczc063/yuzibo/duca_marginal_f67d96fd_20260831/configs/adatad/thumos/duca_marginal_frozen_h65_probe.py",
+    "config_sha256": "02e091995124496c5c5e0011923ac12de6b8dea29679ec821e64e6e5b6271ca6",
+    "git": {
+      "branch": "feature/duca-marginal-budget-v1-20260830",
+      "dirty": false,
+      "head": "f67d96fdf68a295eaa7f678f3dfc125530828889"
+    },
+    "train_data": "/data/run01/sczc063/yuzibo/thumos14/raw_data/video",
+    "videomae_pretrain": "/data/run01/sczc063/yuzibo/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+    "videomae_pretrain_sha256": "4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251"
+  },
+  "stage_artifacts": {
+    "k256": {
+      "path": "/data/run01/sczc063/yuzibo/duca_marginal_summary_f67d96fd_20260831/counterfactual_k256.jsonl.gz",
+      "sha256": "6dc8893a41b5c8132b176f32133ffc2f48a5491146385c147b8227167608a309"
+    },
+    "k512": {
+      "path": "/data/run01/sczc063/yuzibo/duca_marginal_summary_f67d96fd_20260831/counterfactual_k512.jsonl.gz",
+      "sha256": "c7fa06258c07163d0906b512a78e367c27607c64fc41b28bce9fe51fbd0815d7"
+    },
+    "selection": {
+      "path": "/data/run01/sczc063/yuzibo/duca_marginal_summary_f67d96fd_20260831/selection_k384.jsonl.gz",
+      "sha256": "1d668d4e5eb4b5ef3c1057c97ec63cc2c1eed3c0e62297290520063b4e1ec38f"
+    }
+  },
+  "status": "ORACLE_HEADROOM_GRAY_ZONE_RETURN_TO_PRO"
+}

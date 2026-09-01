@@ -1,0 +1,22 @@
+{
+  "request_id": "PROJECT_SOURCE_SYNC_REQUEST-v007.json",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PROJECT_SOURCE_SYNC",
+  "status": "PREPARED_LOCAL_ONLY",
+  "blocking_class": "BLOCKS_FRESH_PRO",
+  "earliest_at": null,
+  "requires_central_browser_lease": true,
+  "items": [
+    {
+      "prepared_id": "pfile-20260814T074259Z-ce8b4937ad",
+      "filename": "CURRENT_RESEARCH_STATE-v011.md",
+      "path": ".cvpr-pro-lab/project-files/prepared/CURRENT_RESEARCH_STATE-v011.md"
+    },
+    {
+      "prepared_id": "pfile-20260814T074259Z-8b3c4183df",
+      "filename": "DUCA_DYNAMIC_ROUTE_AND_REAL_VIDEO_EXPERIMENT-v001.md",
+      "path": ".cvpr-pro-lab/project-files/prepared/DUCA_DYNAMIC_ROUTE_AND_REAL_VIDEO_EXPERIMENT-v001.md"
+    }
+  ],
+  "dependent_pro_question": "For the ARIS Route-B hierarchical Dynamic DUCA proposal, authorize only the bounded Builder -> independent Critic -> existing Evaluator PRE_RUN authoring sequence, or STOP/REVISE?"
+}

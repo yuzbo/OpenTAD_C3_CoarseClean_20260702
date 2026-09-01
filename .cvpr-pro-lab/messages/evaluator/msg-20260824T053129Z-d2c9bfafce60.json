@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-24T05:31:29Z",
+  "deadline": "2026-08-24T23:59:00+08:00",
+  "from_role": "critic",
+  "kind": "SINGLECLOCK_TERMINAL_EVALUATION_PRE_RUN",
+  "message_id": "msg-20260824T053129Z-d2c9bfafce60",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-returns/CRITIC_DUCA_H65_SINGLECLOCK_IDENTITY_TERMINAL_PASS-v001.md",
+    "size": 1506
+  },
+  "priority": "critical",
+  "requested_action": "At exact clean b2ccfcca, run N16R4 PRE_RUN only: remote clean revision binding, canonical THUMOS14/annotation/category/pretrain presence and 411 canonical videos, three checkpoint readability+SHA, py_compile, focused SingleClock/finalizer/bootstrap/strata tests, clock/H65-off checkpoint audits. No held-out opening beyond the frozen official validation evaluator. If and only if PRE_RUN passes, immediately submit scripts/run_duca_h65_singleclock_terminal_eval_n16r4.sbatch with the frozen checkpoints, seed=3407, six families, 10k paired bootstrap and training-only strata. Return PRE_RUN receipt and formal Slurm job ID/output root; do not interpret partial metrics.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}
