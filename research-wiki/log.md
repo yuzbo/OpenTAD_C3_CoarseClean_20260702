@@ -7446,3 +7446,12 @@ admissible replacement full-ASFormer gradient gate, bound to the full commit.
 - 可保留的核心建议是“先检验多预算训练后 K=384 是否保持 H65，再判断混合预算是否建立等成本 headroom”；当前三种子完整实验和盲评协议原样保持。
 - Gemini 对若干历史失败的根因、当前 PASS/FAIL 可证明的范围、种子噪声以及后续控制器 held-out 使用做了过强推断。审计已明确降格，并指出同一 211-video 评估集不能在当前开封后又用于后续控制器设计和最终宣称。
 - 本轮没有修改模型、配置、数据、作业或评价协议，没有读取中间或 held-out 性能，也没有授权教师约束、预算归一化、控制器或新路线；所有下一项科学选择仍需 Pro 在当前正式终态后独立裁决。
+
+## 2026-09-01 — seed 3408 两臂完成，seed 3409 自动启动
+
+- Control `1262745` 与 Candidate `1262746` 均 `COMPLETED 0:0`。两臂各完成 6,000 次成功 optimizer、scheduler、
+  EMA 与 DUCA schedule 更新，并各自生成 epoch-59 checkpoint。
+- Control 的 8 次 AMP skip 和 Candidate 的 9 次 AMP skip 均由冻结重放合同恢复；没有重放耗尽或非有限损失，成功更新
+  预算保持匹配。
+- 严格依赖链已启动 seed-3409 Jobs `1262747/1262748`。没有读取训练中或 held-out mAP；九份 prediction/cost 封存与
+  一次性官方评估仍被最后一种子阻断。

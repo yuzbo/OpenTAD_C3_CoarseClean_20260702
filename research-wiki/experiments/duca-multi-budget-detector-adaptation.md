@@ -243,3 +243,13 @@ schedule update；两臂均生成 `work/gpu1_id0/checkpoint/epoch_59.pth`。依�
 AGY CLI 使用 Gemini 3.7 Flash High 对 H65 与当前 exact 实现进行了只读咨询。其可用建议与本实验的预注册目的一致：初始 K=384 一致不能代替训练后能力保持检验，应先完成当前固定 K=384 控制与系统多预算暴露的三种子完整比较；只有 K=384 安全且混合预算建立有效等成本性能空间后，才值得讨论可部署控制器。
 
 咨询没有授权任何变更。Gemini 关于历史根因、PASS/FAIL 机制证明、教师约束、预算归一化、控制器阈值和种子波动的表述均为外部假说，其中部分已在项目审计中降格。完整原文见 `research-wiki/sources/2026-09-01-agy-gemini-h65-performance-preserving-optimization-v001.md`，审计见 `research-wiki/sources/2026-09-01-agy-gemini-h65-preservation-review-audit-v001.md`。当前代码、作业、held-out 边界和 Pro 科学所有权保持不变。
+
+## seed 3408 训练终态
+
+Control Job `1262745` 与 Candidate Job `1262746` 分别以 `COMPLETED 0:0` 完成 60 轮。两臂的终态
+`update_audit.json` 均记录 6,000 次成功 optimizer、scheduler、EMA 与 DUCA schedule 更新，并均生成
+`work/gpu1_id0/checkpoint/epoch_59.pth`。Control 发生 8 次 AMP skip 并完成 8 次重放；Candidate 发生 9 次 AMP skip，
+最大单批重试为 2 次，且没有重放耗尽或非有限损失。上述差异由既有成功更新合同吸收，两臂的成功更新预算保持一致。
+
+严格依赖链已自动启动 seed-3409 Jobs `1262747/1262748`。没有读取训练中或 held-out mAP，也没有生成 prediction、
+置信区间或成本结论；在 seed 3409 与九份 prediction/cost 全部封存前，一次性 held-out 评价继续保持关闭。

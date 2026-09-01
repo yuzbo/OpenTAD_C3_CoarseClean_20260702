@@ -5132,3 +5132,12 @@ project decision.
   dependency-blocked.
 - No intermediate or held-out metric has been read. Predictions and one-time evaluation remain blocked until all three seeds finish
   and every terminal identity is validated.
+
+### 2026-09-01 — Seed 3408 matched training is complete; seed 3409 starts blind
+
+- Control `1262745` and Candidate `1262746` both completed `0:0`. Each terminal audit records 6,000 successful optimizer,
+  scheduler, EMA and DUCA schedule updates, and each run has an epoch-59 checkpoint.
+- Control recorded 8 recovered AMP skips. Candidate recorded 9 recovered AMP skips, with at most two retries for one batch. Neither
+  arm exhausted replay or encountered a non-finite loss, so the matched successful-update budget remains intact.
+- The dependency chain automatically started seed-3409 Jobs `1262747/1262748`. No intermediate or held-out metric has been read;
+  predictions and the one-time evaluator remain blocked until this final seed and every terminal identity pass.
