@@ -5,6 +5,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.checkpoint as cp
 from torch import Tensor
 from mmcv.cnn import build_norm_layer
 from mmcv.cnn.bricks import DropPath
@@ -17,47 +18,58 @@ from mmaction.models.backbones.vit_mae import get_sinusoid_encoding
 from .vit_adapter import Adapter
 
 
-class TaylorJacobianApproximator(BaseModule):
-    """Lightweight 1st-Order Taylor Residual Jacobian Approximator.
+class TemporalLowRankJVP(BaseModule):
+    """Strictly linear Temporal Low-Rank Jacobian-Vector Product Operator.
     
-    Approximates J_{F^l}(h_a) * (h_i - h_a) via a depth-wise linear operator.
-    Parameter cost: < 0.05% of a Transformer Block.
+    Operates along the temporal axis T across tubelets with channel bottleneck rank r.
+    Strictly satisfies:
+    1. J(0) = 0
+    2. J(a + b) = J(a) + J(b)
+    3. J(c * a) = c * J(a)
     """
-    def __init__(self, embed_dims: int = 384, kernel_size: int = 3):
+    def __init__(self, embed_dims: int = 384, rank: int = 64, kernel_size: int = 3):
         super().__init__()
         self.embed_dims = embed_dims
-        self.dwconv = nn.Conv1d(
-            embed_dims,
-            embed_dims,
+        self.rank = rank
+        self.down = nn.Linear(embed_dims, rank, bias=False)
+        self.temporal = nn.Conv1d(
+            rank,
+            rank,
             kernel_size=kernel_size,
             padding=kernel_size // 2,
-            groups=embed_dims,
-            bias=True,
+            groups=rank,
+            bias=False,
         )
-        self.gain = nn.Parameter(torch.ones(embed_dims))
-        self.bias = nn.Parameter(torch.zeros(embed_dims))
-        
-        # Initialize dwconv with identity-centered weights
-        nn.init.zeros_(self.dwconv.weight)
+        self.up = nn.Linear(rank, embed_dims, bias=False)
+
+        # Initialize with identity-preserving scaling
+        nn.init.orthogonal_(self.down.weight)
+        nn.init.zeros_(self.temporal.weight)
         if kernel_size >= 3:
             mid = kernel_size // 2
-            self.dwconv.weight.data[:, 0, mid] = 1.0
-        nn.init.zeros_(self.dwconv.bias)
+            self.temporal.weight.data[:, 0, mid] = 1.0
+        nn.init.orthogonal_(self.up.weight)
 
     def forward(self, delta_h: Tensor) -> Tensor:
         """
         Args:
-            delta_h: (B, N, C) hidden state difference from nearest anchor
+            delta_h: (B, T, S, C) tensor of hidden state differences from nearest anchor
         Returns:
-            J * delta_h approximation of shape (B, N, C)
+            J * delta_h: (B, T, S, C) strictly linear temporal JVP approximation
         """
-        B, N, C = delta_h.shape
-        # Permute to (B, C, N) for 1D convolution along token sequence
-        conv_out = self.dwconv(delta_h.transpose(1, 2)).transpose(1, 2)
-        return conv_out * self.gain + self.bias
+        b, t, s, c = delta_h.shape
+        # Channel reduction to rank r
+        z = self.down(delta_h)  # (B, T, S, R)
+        # Permute to (B*S, R, T) for temporal 1D convolution along time axis T
+        z = z.permute(0, 2, 3, 1).reshape(b * s, self.rank, t)
+        z = self.temporal(z)
+        # Permute back to (B, T, S, R) and project up to C
+        z = z.reshape(b, s, self.rank, t).permute(0, 3, 1, 2)  # (B, T, S, R)
+        return self.up(z)  # (B, T, S, C)
 
 
 class TaylorAttention(BaseModule):
+    """Multi-Head Self-Attention supporting Selected-Q Full-KV Context."""
     def __init__(
         self,
         embed_dims: int = 384,
@@ -73,34 +85,56 @@ class TaylorAttention(BaseModule):
         head_dims = embed_dims // num_heads
         self.scale = qk_scale or head_dims**-0.5
 
-        self.qkv = nn.Linear(embed_dims, embed_dims * 3, bias=qkv_bias)
+        self.q_proj = nn.Linear(embed_dims, embed_dims, bias=qkv_bias)
+        self.k_proj = nn.Linear(embed_dims, embed_dims, bias=qkv_bias)
+        self.v_proj = nn.Linear(embed_dims, embed_dims, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop_rate)
         self.proj = nn.Linear(embed_dims, embed_dims)
         self.proj_drop = nn.Dropout(drop_rate)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, query_x: Optional[Tensor] = None) -> Tensor:
+        """
+        Args:
+            x: (B, N, C) full sequence providing Key and Value context
+            query_x: Optional (B, M, C) subset of tokens for Query (e.g. Anchor tokens).
+                     If None, performs standard full sequence MHA.
+        Returns:
+            out: (B, M, C) if query_x is provided, else (B, N, C)
+        """
         B, N, C = x.shape
-        qkv = (
-            self.qkv(x)
-            .reshape(B, N, 3, self.num_heads, C // self.num_heads)
-            .permute(2, 0, 3, 1, 4)
+        q_src = query_x if query_x is not None else x
+        M = q_src.shape[1]
+
+        q = (
+            self.q_proj(q_src)
+            .reshape(B, M, self.num_heads, C // self.num_heads)
+            .permute(0, 2, 1, 3)
         )
-        q, k, v = qkv[0], qkv[1], qkv[2]
+        k = (
+            self.k_proj(x)
+            .reshape(B, N, self.num_heads, C // self.num_heads)
+            .permute(0, 2, 1, 3)
+        )
+        v = (
+            self.v_proj(x)
+            .reshape(B, N, self.num_heads, C // self.num_heads)
+            .permute(0, 2, 1, 3)
+        )
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
-        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
+        out = (attn @ v).transpose(1, 2).reshape(B, M, C)
+        out = self.proj(out)
+        out = self.proj_drop(out)
+        return out
 
 
 class TaylorResidualBlock(BaseModule):
     """Transformer Block with Event-Triggered Local Taylor Residual Correction (ET-TRC).
     
-    Anchor frames (T_A): compute full MHA + MLP -> Delta_a = F(h_a)
+    Anchor frames (T_A): compute full Selected-Q / Full-KV MHA + MLP -> Delta_a = F(h_a)
     Non-Anchor frames (T_NA): approximate Delta_i = Delta_a + J_{approx} * (h_i - h_a)
     100% Dense temporal state is preserved (State Multiplicity).
     """
@@ -120,6 +154,7 @@ class TaylorResidualBlock(BaseModule):
         adapter_cfg: Optional[dict] = None,
         stride_k: int = 4,
         enable_taylor: bool = True,
+        jacobian_rank: int = 64,
     ):
         super().__init__()
         self.with_cp = with_cp
@@ -143,11 +178,16 @@ class TaylorResidualBlock(BaseModule):
             feedforward_channels=int(embed_dims * mlp_ratio),
             num_fwd_lateral=0,
             act_cfg=act_cfg,
-            dropout=drop_rate,
+            ffn_drop=drop_rate,
+            add_identity=False,
         )
         
-        # 1st-Order Taylor Residual Jacobian Approximator
-        self.jacobian_approx = TaylorJacobianApproximator(embed_dims=embed_dims)
+        # 1st-Order Temporal Low-Rank Jacobian Approximator
+        self.jacobian_approx = TemporalLowRankJVP(
+            embed_dims=embed_dims,
+            rank=jacobian_rank,
+            kernel_size=3,
+        )
         
         # Optional Temporal Adapter (TIA)
         self.adapter = None
@@ -160,8 +200,8 @@ class TaylorResidualBlock(BaseModule):
                 temporal_size=adapter_cfg.get("temporal_size", 384),
             )
 
-    def _full_block_forward(self, x: Tensor) -> Tensor:
-        """Standard full Transformer Block residual: F(x) = MHA(LN(x)) + MLP(LN(x + MHA))"""
+    def _full_block_residual(self, x: Tensor) -> Tensor:
+        """Standard full Transformer Block residual: F(x) = MHA(LN(x)) + MLP(LN(x + MHA(LN(x))))"""
         attn_out = self.drop_path(self.attn(self.norm1(x)))
         mid = x + attn_out
         mlp_out = self.drop_path(self.mlp(self.norm2(mid)))
@@ -181,8 +221,8 @@ class TaylorResidualBlock(BaseModule):
         tubelet_count = N // spatial_tokens if spatial_tokens > 0 else 1
         
         if not self.enable_taylor or tubelet_count <= 1 or self.stride_k <= 1:
-            # Fallback to standard full computation
-            delta = self._full_block_forward(x)
+            # Full dense execution with exact numerical parity
+            delta = self._full_block_residual(x)
             x_out = x + delta
             if self.adapter is not None:
                 x_out = self.adapter(x_out, h, w)
@@ -191,38 +231,44 @@ class TaylorResidualBlock(BaseModule):
         # Reshape to (B, T, S, C)
         x_reshaped = x.view(B, tubelet_count, spatial_tokens, C)
         
-        # Select Anchor tubelets (e.g. stride k)
+        # Anchor tubelet indices
         anchor_indices = list(range(0, tubelet_count, self.stride_k))
         if (tubelet_count - 1) not in anchor_indices:
             anchor_indices.append(tubelet_count - 1)
+        num_anchors = len(anchor_indices)
+
+        # Full context attention for Anchor queries: Q from anchors, KV from full sequence x
+        x_norm1 = self.norm1(x)
+        x_norm1_reshaped = x_norm1.view(B, tubelet_count, spatial_tokens, C)
+        q_anchors = x_norm1_reshaped[:, anchor_indices].reshape(B, num_anchors * spatial_tokens, C)
         
-        # Full GEMM for Anchor frames
-        x_anchors = x_reshaped[:, anchor_indices].reshape(B, len(anchor_indices) * spatial_tokens, C)
-        delta_anchors = self._full_block_forward(x_anchors)
-        delta_anchors = delta_anchors.view(B, len(anchor_indices), spatial_tokens, C)
+        # Selected-Q full-KV attention preserving full sequence context
+        attn_anchors = self.drop_path(self.attn(x_norm1, query_x=q_anchors))
         
-        # Map each tubelet to its nearest anchor
-        delta_all = torch.zeros_like(x_reshaped)
-        anchor_map = {}
-        for t in range(tubelet_count):
-            nearest_a_idx = min(range(len(anchor_indices)), key=lambda i: abs(anchor_indices[i] - t))
-            anchor_map[t] = nearest_a_idx
+        # MLP for anchors
+        x_anchors_raw = x_reshaped[:, anchor_indices].reshape(B, num_anchors * spatial_tokens, C)
+        mid_anchors = x_anchors_raw + attn_anchors
+        mlp_anchors = self.drop_path(self.mlp(self.norm2(mid_anchors)))
+        delta_anchors = (attn_anchors + mlp_anchors).view(B, num_anchors, spatial_tokens, C)
+
+        # Build vectorized mapping for nearest anchor
+        anchor_map = [
+            min(range(num_anchors), key=lambda i: abs(anchor_indices[i] - t))
+            for t in range(tubelet_count)
+        ]
         
-        # Compute 1st-Order Taylor correction for non-anchor frames
-        for t in range(tubelet_count):
-            a_idx = anchor_map[t]
-            a_orig_idx = anchor_indices[a_idx]
-            if t == a_orig_idx:
-                delta_all[:, t] = delta_anchors[:, a_idx]
-            else:
-                # delta_h = h_i - h_a
-                delta_h = x_reshaped[:, t] - x_reshaped[:, a_orig_idx]  # (B, S, C)
-                # J_approx * delta_h
-                taylor_correction = self.jacobian_approx(delta_h)
-                # Delta_i = Delta_a + J_approx * (h_i - h_a)
-                delta_all[:, t] = delta_anchors[:, a_idx] + taylor_correction
+        # Vectorized expansion of anchor residuals and anchor hidden states
+        delta_expanded = torch.stack([delta_anchors[:, anchor_map[t]] for t in range(tubelet_count)], dim=1)  # (B, T, S, C)
+        x_anchor_expanded = torch.stack([x_reshaped[:, anchor_indices[anchor_map[t]]] for t in range(tubelet_count)], dim=1)  # (B, T, S, C)
         
-        # 100% Dense State Update (State Multiplicity)
+        # Difference from nearest anchor: delta_h = h_i - h_{a(i)}
+        delta_h = x_reshaped - x_anchor_expanded  # (B, T, S, C)
+        
+        # Vectorized 1st-Order Temporal Low-Rank JVP approximation
+        taylor_correction = self.jacobian_approx(delta_h)  # (B, T, S, C)
+        
+        # 100% Dense Residual Update
+        delta_all = delta_expanded + taylor_correction
         x_out = x + delta_all.view(B, N, C)
         
         # Pass through AdaTAD Temporal Adapter
@@ -258,10 +304,11 @@ class ETTRCVisionTransformerAdapter(BaseModule):
         total_frames: int = 768,
         num_frames: int = 16,
         tubelet_size: int = 2,
-        adapter_index: list = list(range(12)),
-        adapter_cfg: dict = dict(mlp_ratio=0.25, kernel_size=3, dilation=1),
+        adapter_index: Optional[List[int]] = None,
+        adapter_cfg: Optional[dict] = None,
         stride_k: int = 4,
         enable_taylor: bool = True,
+        jacobian_rank: int = 64,
         return_feat_map: bool = True,
     ):
         super().__init__()
@@ -275,6 +322,13 @@ class ETTRCVisionTransformerAdapter(BaseModule):
         self.return_feat_map = return_feat_map
         self.stride_k = stride_k
         self.enable_taylor = enable_taylor
+        self.with_cp = with_cp
+
+        if adapter_index is None:
+            adapter_index = list(range(12))
+        if adapter_cfg is None:
+            adapter_cfg = dict(mlp_ratio=0.25, kernel_size=3, dilation=1)
+        adapter_cfg = dict(adapter_cfg)
 
         self.temporal_size = total_frames // tubelet_size  # 384
         adapter_cfg["temporal_size"] = self.temporal_size
@@ -313,6 +367,7 @@ class ETTRCVisionTransformerAdapter(BaseModule):
                 adapter_cfg=adapter_cfg if i in adapter_index else None,
                 stride_k=stride_k,
                 enable_taylor=enable_taylor,
+                jacobian_rank=jacobian_rank,
             )
             for i in range(depth)
         ])
@@ -323,7 +378,7 @@ class ETTRCVisionTransformerAdapter(BaseModule):
         Args:
             x: (B, C, T, H, W) raw input video clips
         Returns:
-            features: (B, T_tokens, C) or feature map
+            features: (B, C, T_tubelets, H, W) if return_feat_map else (B, N, C)
         """
         B, C, T, H, W = x.shape
         x = self.patch_embed(x)[0]  # (B, N, C)
@@ -333,7 +388,23 @@ class ETTRCVisionTransformerAdapter(BaseModule):
         w = W // self.patch_size
 
         for block in self.blocks:
-            x = block(x, h=h, w=w, num_frames=self.num_frames)
+            if self.with_cp and x.requires_grad:
+                x = cp.checkpoint(
+                    block,
+                    x,
+                    h,
+                    w,
+                    self.num_frames,
+                    use_reentrant=False,
+                )
+            else:
+                x = block(x, h=h, w=w, num_frames=self.num_frames)
 
         x = self.norm(x)
+
+        if self.return_feat_map:
+            tubelets = T // self.tubelet_size
+            x = x.reshape(B, tubelets, h, w, self.embed_dims)
+            x = x.permute(0, 4, 1, 2, 3).contiguous()  # [B, C, T_tubelets, H, W]
+
         return x

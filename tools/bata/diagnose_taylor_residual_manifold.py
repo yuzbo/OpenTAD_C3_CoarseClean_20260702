@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from mmengine.config import Config
 
 root_dir = Path(__file__).resolve().parents[2]
@@ -19,7 +20,7 @@ if str(root_dir) not in sys.path:
 
 from opentad.datasets import build_dataloader, build_dataset
 from opentad.models import build_detector
-from opentad.models.backbones.et_trc_videomae import TaylorJacobianApproximator
+from opentad.models.backbones.et_trc_videomae import TemporalLowRankJVP
 from opentad.utils import setup_logger
 
 
@@ -62,7 +63,7 @@ def run_diagnostic(args) -> Dict[str, Any]:
     if backbone is None:
         raise RuntimeError("Detector does not contain a backbone")
     
-    # We analyze the 12 Transformer Blocks in VideoMAE
+    # Analyze the Transformer Blocks in VideoMAE
     blocks = getattr(backbone, "blocks", None)
     if blocks is None and hasattr(backbone, "backbone"):
         blocks = getattr(backbone.backbone, "blocks", None)
@@ -74,10 +75,13 @@ def run_diagnostic(args) -> Dict[str, Any]:
     layer_cosine_taylor = [[] for _ in range(num_layers)]
     
     k = args.stride_k
-    jacobian_approximators = [
-        TaylorJacobianApproximator(embed_dims=384).to(device)
-        for _ in range(num_layers)
-    ]
+    # Use the model's own jacobian_approx if present, else create TemporalLowRankJVP
+    jvp_operators = []
+    for l_idx in range(num_layers):
+        if blocks is not None and hasattr(blocks[l_idx], "jacobian_approx"):
+            jvp_operators.append(blocks[l_idx].jacobian_approx.to(device))
+        else:
+            jvp_operators.append(TemporalLowRankJVP(embed_dims=384, rank=64).to(device))
     
     logger.info(f"Evaluating Taylor vs 0-Order Residual approximations over {args.max_batches} batches (k={k})...")
     
@@ -129,20 +133,21 @@ def run_diagnostic(args) -> Dict[str, Any]:
                 anchor_indices = list(range(0, tubelet_count, k))
                 if (tubelet_count - 1) not in anchor_indices:
                     anchor_indices.append(tubelet_count - 1)
-                    
-                delta_0order = torch.zeros_like(delta_gt_reshaped)
-                delta_taylor = torch.zeros_like(delta_gt_reshaped)
+                num_anchors = len(anchor_indices)
                 
-                for t in range(tubelet_count):
-                    # Find nearest anchor
-                    nearest_a = min(anchor_indices, key=lambda a: abs(a - t))
-                    # 0-order: direct carryover
-                    delta_0order[:, t] = delta_gt_reshaped[:, nearest_a]
-                    
-                    # 1-order Taylor: Delta_a + J*(h_i - h_a)
-                    delta_h = x_reshaped[:, t] - x_reshaped[:, nearest_a]
-                    j_delta = jacobian_approximators[l_idx](delta_h)
-                    delta_taylor[:, t] = delta_gt_reshaped[:, nearest_a] + j_delta
+                anchor_map = [
+                    min(range(num_anchors), key=lambda i: abs(anchor_indices[i] - t))
+                    for t in range(tubelet_count)
+                ]
+                
+                # 0-Order direct carryover
+                delta_0order = torch.stack([delta_gt_reshaped[:, anchor_indices[anchor_map[t]]] for t in range(tubelet_count)], dim=1)
+                x_anchor_expanded = torch.stack([x_reshaped[:, anchor_indices[anchor_map[t]]] for t in range(tubelet_count)], dim=1)
+                
+                # 1-Order Taylor: Delta_a + J*(h_i - h_a)
+                delta_h = x_reshaped - x_anchor_expanded  # (B, T, S, C)
+                j_delta = jvp_operators[l_idx](delta_h)
+                delta_taylor = delta_0order + j_delta
                 
                 # Compute relative Frobenius norm error
                 norm_gt = torch.norm(delta_gt_reshaped, p="fro").item() + 1e-6

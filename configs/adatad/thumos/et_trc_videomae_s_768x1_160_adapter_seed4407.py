@@ -22,7 +22,24 @@ model = dict(
             adapter_cfg=dict(mlp_ratio=0.25, kernel_size=3, dilation=1),
             stride_k=4,
             enable_taylor=True,
+            jacobian_rank=64,
         ),
+    ),
+)
+
+optimizer = dict(
+    type="AdamW",
+    lr=1e-4,
+    weight_decay=0.05,
+    paramwise=True,
+    backbone=dict(
+        lr=0,
+        weight_decay=0,
+        custom=[
+            dict(name="adapter", lr=2e-4, weight_decay=0.05),
+            dict(name="jacobian_approx", lr=2e-4, weight_decay=0.05),
+        ],
+        exclude=["backbone"],
     ),
 )
 
