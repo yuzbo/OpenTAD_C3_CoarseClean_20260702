@@ -6,8 +6,13 @@ import hashlib
 import json
 import os
 import random
+import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+
+root_dir = Path(__file__).resolve().parents[2]
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
 
 import numpy as np
 
@@ -416,7 +421,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from torch.distributed.algorithms.ddp_comm_hooks import default as comm_hooks
     from torch.nn.parallel import DistributedDataParallel
 
-    from opentad.cores import build_optimizer, build_scheduler, train_one_epoch
+    from opentad.cores import build_optimizer, build_scheduler, train_one_epoch, eval_one_epoch
     from opentad.datasets import build_dataloader, build_dataset
     from opentad.models import build_detector
     from opentad.utils import ModelEma, create_folder, save_config, set_seed, setup_logger
@@ -441,6 +446,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         cfg.dataset.train.ann_file = manifest["training"]["training_only_annotation"]
         cfg.dataset.train.class_map = manifest["class_map"]["path"]
         cfg.dataset.train.data_path = manifest["media"]["root"]
+        cfg.dataset.val.ann_file = manifest["evaluation"]["heldout_inference_annotation"]
+        cfg.dataset.val.class_map = manifest["class_map"]["path"]
+        cfg.dataset.val.data_path = manifest["media"]["root"]
         cfg.work_dir = str(args.work_dir.resolve())
         set_seed(args.seed, False, deterministic_warn_only=True)
         if args.resume is None and args.work_dir.exists():
@@ -452,6 +460,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger = setup_logger("S2V3Full200Train", save_dir=cfg.work_dir, distributed_rank=rank)
 
         train_dataset = build_dataset(cfg.dataset.train, default_args=dict(logger=logger))
+        val_dataset = build_dataset(cfg.dataset.val, default_args=dict(logger=logger))
         dataset_identities = tuple(str(row[0]) for row in train_dataset.data_list)
         expected_identities = tuple(map(str, manifest["training"]["identity_order"]))
         if (
@@ -471,10 +480,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             generator=dataloader_generator,
             **cfg.solver.train,
         )
+        val_loader = build_dataloader(
+            val_dataset,
+            rank=rank,
+            world_size=world_size,
+            shuffle=False,
+            drop_last=False,
+            **cfg.solver.val,
+        )
         if len(train_loader) != EXPECTED_UPDATES_PER_EPOCH:
             raise RuntimeError("formal cell does not have exactly 100 rank-local batches")
-
         model = build_detector(cfg.model).to(local_rank)
+        raw_model = model
+        trainable_params = [p for p in raw_model.parameters() if p.requires_grad]
+        total_trainable = sum(p.numel() for p in trainable_params)
+        backbone_module = getattr(raw_model, "backbone", None)
+        projection_module = getattr(raw_model, "projection", None)
+        
+        runtime_identity_receipt = {
+            "model_class": raw_model.__class__.__name__,
+            "total_trainable_parameters": total_trainable,
+            "backbone_class": backbone_module.__class__.__name__ if backbone_module else None,
+            "projection_class": projection_module.__class__.__name__ if projection_module else None,
+        }
+        
+        if hasattr(backbone_module, "fusion"):
+            fusion_params = sum(p.numel() for p in backbone_module.fusion.parameters())
+            runtime_identity_receipt["fusion_parameters"] = fusion_params
+            runtime_identity_receipt["fusion_mode"] = getattr(backbone_module, "fusion_mode", None)
+            if fusion_params != 0:
+                raise RuntimeError(f"Audit failure: fusion has {fusion_params} parameters, expected 0")
+            if getattr(backbone_module, "fusion_mode", None) != "fixed_mean":
+                raise RuntimeError(f"Audit failure: fusion_mode is {backbone_module.fusion_mode}, expected fixed_mean")
+
+        if rank == 0:
+            logger.info(f"[RUNTIME_IDENTITY_AUDIT] {runtime_identity_receipt}")
+
         model = DistributedDataParallel(
             model,
             device_ids=[local_rank],
@@ -544,6 +585,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             torch.cuda.empty_cache()
 
         def publish_recovery(next_epoch: int) -> None:
+            optimizer.zero_grad(set_to_none=True)
             next_sampler = build_epoch_sampler_state(train_dataset, epoch=next_epoch)
             next_order = validate_epoch_sampler_state(
                 next_sampler, expected_identities=dataset_identities
@@ -628,6 +670,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             if successful_updates % 500 == 0:
                 publish_recovery(epoch + 1)
 
+            eval_interval = int(cfg.workflow.get("val_eval_interval", cfg.workflow.get("eval_interval", 5)))
+            if (epoch + 1) % eval_interval == 0 or epoch == EXPECTED_EPOCHS - 1:
+                if rank == 0:
+                    logger.info(f"[ONLINE_EVAL] Starting online validation evaluation at epoch {epoch}...")
+                eval_one_epoch(
+                    val_loader,
+                    model,
+                    cfg,
+                    logger,
+                    rank,
+                    model_ema=model_ema,
+                    use_amp=bool(cfg.solver.amp),
+                    world_size=world_size,
+                    epoch=epoch,
+                )
+                model.train()
+
         if successful_updates != EXPECTED_TOTAL_UPDATES or ema_update_counter != EXPECTED_TOTAL_UPDATES:
             raise RuntimeError("formal training did not complete exactly 6000 successful updates")
         if rank == 0:
@@ -661,6 +720,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "checkpoint_sha256": sha256_file(final_path),
                 "checkpoint_state": "epoch_59_state_dict_ema_update_6000",
                 "sample_order_trace_sha256": canonical_sha256(completed_orders),
+                "runtime_identity": runtime_identity_receipt,
                 "update_audit": update_audit,
                 "complete": True,
             }

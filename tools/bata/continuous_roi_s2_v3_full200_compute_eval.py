@@ -5,10 +5,15 @@ import hashlib
 import json
 import math
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import median
 from typing import Any, Iterable, Mapping, Sequence
+
+root_dir = Path(__file__).resolve().parents[2]
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
 
 from tools.bata.continuous_roi_s2_v3_full200_compute import (
     ARMS,

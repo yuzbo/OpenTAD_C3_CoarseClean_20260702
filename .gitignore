@@ -1,16 +1,21 @@
-# ignore folder
+# ignore folders
 .vscode
 .idea
 dataset
+pretrained
 /pretrained/
+work_dirs/
+infer_work_dirs/
+manifest/
+control/
+recovery/
+predictions/
+evaluation/
+profile/
 /logs/
 /exps/
 /trash/
-
-# ignore annotation
-!/data/
-/data/*
-!/data/*.sh
+projects/
 
 dcgm
 log
