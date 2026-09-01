@@ -1,6 +1,12 @@
 _base_ = ["./continuous_roi_s2_v3_d160_seed4407.py"]
 
 seed = 4407
+solver = dict(
+    train=dict(batch_size=2, num_workers=2),
+    val=dict(batch_size=2, num_workers=2),
+    test=dict(batch_size=2, num_workers=2),
+)
+
 
 train_pipeline = [
     dict(type="PrepareVideoInfo", format="mp4"),

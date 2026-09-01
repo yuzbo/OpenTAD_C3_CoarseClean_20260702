@@ -1,6 +1,8 @@
 # Copyright (c) OpenTAD. All rights reserved.
 from pathlib import Path
 
+from mmengine.config import Config
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "configs" / "adatad" / "thumos"
@@ -34,6 +36,16 @@ def test_bafdr_generator_cannot_reintroduce_collect_extra_keys():
     assert 'type="Collect", inputs="bafdr_inputs"' in text
 
 
+def test_bafdr_configs_bind_world2_global_batch_contract():
+    config_paths = sorted(CONFIG_DIR.glob("bafdr_k16_*.py"))
+    assert len(config_paths) == 21
+    for path in config_paths:
+        cfg = Config.fromfile(str(path))
+        assert cfg.solver.train.batch_size == 2
+        assert cfg.solver.val.batch_size == 2
+        assert cfg.solver.test.batch_size == 2
+
+
 def test_bafdr_wrapper_exposes_mask_and_keeps_source_uint8_contract():
     text = read(ROOT / "opentad" / "models" / "backbones" / "bafdr_wrapper.py")
     assert "source_tensor.dtype != torch.uint8" in text
@@ -63,6 +75,8 @@ def test_train_driver_is_fail_closed_and_ddp_aware():
     assert "DistributedDataParallel" in text
     assert "init_process_group" in text
     assert "EXPECTED_WORLD_SIZE = 2" in text
+    assert "EXPECTED_GLOBAL_BATCH_SIZE = 2" in text
+    assert "validate_loader_batch_contract" in text
     assert "--prediction-only" in text
     assert "--open-metrics" in text
     assert 'receipt_name="train_receipt.json"' in text
@@ -97,6 +111,7 @@ def test_slurm_scripts_use_world2_dag_not_single_gpu_array():
     assert "--open-metrics" in run_text
     assert "#SBATCH --gres" not in submit_text
     assert "gpu:2" in submit_text
+    assert "seed_list=(4407 4408 4409)" in submit_text
     assert "--array=0-20" not in submit_text
     assert "BAFDR-K16-FULL" in submit_text
     assert "afterok:${train_jobs[\"D160:${seed}\"]}" in submit_text

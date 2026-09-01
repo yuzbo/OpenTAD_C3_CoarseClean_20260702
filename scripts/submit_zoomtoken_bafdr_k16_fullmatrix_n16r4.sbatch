@@ -48,7 +48,7 @@ elif [[ -n "${SEEDS:-}" ]]; then
   # shellcheck disable=SC2206
   seed_list=(${SEEDS})
 else
-  seed_list=(4407)
+  seed_list=(4407 4408 4409)
 fi
 arm_list=(
   "D160"
@@ -143,7 +143,7 @@ done
 
 joined_eval_deps="$(IFS=:; echo "${all_terminal_deps[*]}")"
 c_exec_job="$(submit_job "zt-bafdr-cexec" "afterok:${joined_eval_deps}" "none" 1 "02:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh c_exec")"
-metrics_job="$(submit_job "zt-bafdr-metrics" "afterok:${joined_eval_deps}:${c_exec_job}" "none" 1 "08:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh metrics")"
+metrics_job="$(submit_job "zt-bafdr-metrics" "afterok:${joined_eval_deps}:${c_exec_job}" "gpu:2" 8 "24:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh metrics")"
 summary_job="$(submit_job "zt-bafdr-summary" "afterok:${metrics_job}" "none" 1 "02:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh summary-strict")"
 
 train_jobs_tsv="${MANIFEST_DIR}/slurm_train_jobs.tsv"

@@ -6,11 +6,19 @@ def generate_configs():
     configs_dir = Path("configs/adatad/thumos")
     configs_dir.mkdir(parents=True, exist_ok=True)
 
+    bafdr_solver_str = '''dict(
+    train=dict(batch_size=2, num_workers=2),
+    val=dict(batch_size=2, num_workers=2),
+    test=dict(batch_size=2, num_workers=2),
+)'''
+
     # 1. D160
     for s in seeds:
         content = f'''_base_ = ["./continuous_roi_s2_v3_d160_seed{s}.py"]
 
 seed = {s}
+solver = {bafdr_solver_str}
+
 bafdr_protocol = dict(
     protocol="ZOOMTOKEN-BA-FDR-K16-FULLMATRIX-v001",
     arm="D160",
@@ -25,6 +33,8 @@ work_dir = f"exps/thumos/adatad/bafdr_k16_d160_seed{s}"
         content = f'''_base_ = ["./continuous_roi_s2_v3_g96_seed{s}.py"]
 
 seed = {s}
+solver = {bafdr_solver_str}
+
 bafdr_protocol = dict(
     protocol="ZOOMTOKEN-BA-FDR-K16-FULLMATRIX-v001",
     arm="G96",
@@ -39,6 +49,8 @@ work_dir = f"exps/thumos/adatad/bafdr_k16_g96_seed{s}"
         content = f'''_base_ = ["./continuous_roi_s2_v3_u128_a0_seed{s}.py"]
 
 seed = {s}
+solver = {bafdr_solver_str}
+
 bafdr_protocol = dict(
     protocol="ZOOMTOKEN-BA-FDR-K16-FULLMATRIX-v001",
     arm="U128-ALL48-A0",
@@ -95,6 +107,7 @@ work_dir = f"exps/thumos/adatad/bafdr_k16_u128_all48_a0_seed{s}"
         content = f'''_base_ = ["./continuous_roi_s2_v3_d160_seed{s}.py"]
 
 seed = {s}
+solver = {bafdr_solver_str}
 
 train_pipeline = {bafdr_pipeline_str(True)}
 evaluation_pipeline = {bafdr_pipeline_str(False)}
@@ -154,6 +167,7 @@ work_dir = f"exps/thumos/adatad/bafdr_k16_u16_uniform_a0_seed{s}"
         content = f'''_base_ = ["./continuous_roi_s2_v3_d160_seed{s}.py"]
 
 seed = {s}
+solver = {bafdr_solver_str}
 
 train_pipeline = {bafdr_pipeline_str(True)}
 evaluation_pipeline = {bafdr_pipeline_str(False)}
@@ -213,6 +227,7 @@ work_dir = f"exps/thumos/adatad/bafdr_k16_late_seed{s}"
         content = f'''_base_ = ["./continuous_roi_s2_v3_d160_seed{s}.py"]
 
 seed = {s}
+solver = {bafdr_solver_str}
 
 train_pipeline = {bafdr_pipeline_str(True)}
 evaluation_pipeline = {bafdr_pipeline_str(False)}
@@ -272,6 +287,7 @@ work_dir = f"exps/thumos/adatad/bafdr_k16_nokd_seed{s}"
         content = f'''_base_ = ["./continuous_roi_s2_v3_d160_seed{s}.py"]
 
 seed = {s}
+solver = {bafdr_solver_str}
 
 train_pipeline = {bafdr_pipeline_str(True)}
 evaluation_pipeline = {bafdr_pipeline_str(False)}

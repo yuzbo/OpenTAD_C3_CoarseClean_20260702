@@ -115,11 +115,9 @@ case "${mode}" in
     for idx in $(seq 0 20); do
       config="$(python tools/bata/bafdr_k16_fullmatrix.py --repo-root "${ROOT}" --array-idx "${idx}")"
       work_dir="$(cell_work_dir "${config}")"
-      python tools/bata/bafdr_k16_fullmatrix_train.py "${config}" \
-        --work-dir "${work_dir}" \
+      run_torch_cell "${config}" \
         --eval-only \
         --open-metrics \
-        --allow-single-process \
         --checkpoint "${work_dir}/checkpoint/epoch_59.pth"
     done
     ;;
