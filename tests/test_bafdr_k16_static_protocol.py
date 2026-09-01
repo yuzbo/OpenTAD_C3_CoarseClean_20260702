@@ -110,10 +110,14 @@ def test_slurm_scripts_use_world2_arm_batch_dag():
     assert "--prediction-only" in run_text
     assert "--seal-predictions" in run_text
     assert "--open-metrics" in run_text
+    assert 'if [[ -n "${PROJECT_DIR:-}" ]]' in run_text
+    assert 'SLURM_SUBMIT_DIR' in run_text
     assert "#SBATCH --gpus=1" in submit_text
     assert "arm_list=(D160 G96 U128-ALL48-A0 U16-UNIFORM-A0 BAFDR-K16-LATE BAFDR-K16-NOKD BAFDR-K16-FULL)" in submit_text
     assert "run_zoomtoken_bafdr_k16_arm_batch.sh" in submit_text
     assert "--array=0-20" not in submit_text
+    assert 'if [[ -n "${PROJECT_DIR:-}" ]]' in submit_text
+    assert 'SLURM_SUBMIT_DIR' in submit_text
     assert "afterok:${joined_train_deps}" in submit_text
     assert '--gpus="${gpus}"' in submit_text
     assert '"168:00:00"' in submit_text
