@@ -25,8 +25,7 @@ if str(root_dir) not in sys.path:
 
 from opentad.datasets import build_dataloader, build_dataset
 from opentad.models import build_detector
-from opentad.models.utils.misc import ModelEMA
-from opentad.utils import setup_logger
+from opentad.utils import ModelEma, setup_logger
 
 from tools.bata.bafdr_k16_fullmatrix import (
     EXPECTED_EPOCHS,
