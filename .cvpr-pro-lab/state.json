@@ -130,6 +130,8 @@
     ],
     "branch": "codex/zoomtoken-continuous-roi-s2-v3-fresh-3x3-v001",
     "builder_candidate_due_beijing": "2026-09-02T06:00:00+08:00",
+    "builder_plan": "docs/aris/ZOOMTOKEN_CONTINUOUS_ROI_S2_V3_FRESH_3X3_BUILDER_PLAN-2026-09-01.md",
+    "builder_plan_completed_at_beijing": "2026-09-01T09:08:00+08:00",
     "builder_plan_due_beijing": "2026-09-01T12:00:00+08:00",
     "cost_policy": "One matched same-physical-GPU full-stack cost job is conditional on valid S_CR=true and H=true; exhaustive reference-search cost is separate from deployable-policy cost.",
     "critic_due_beijing": "2026-09-02T09:00:00+08:00",
@@ -184,7 +186,7 @@
     "pro_conversation_id": "6a961c52-1b5c-83e9-b04c-6b0bda18892f",
     "pro_decision": "PIVOT",
     "role_contract": "KEEP",
-    "status": "TASK_FROZEN_BUILDER_PLAN_DUE",
+    "status": "BUILDER_PLAN_COMPLETE_CANDIDATE_IN_PROGRESS",
     "stop_rules": {
       "F_false": "STOP_EFFICIENCY_CONTINUATION",
       "H_false": "STOP_VARIABLE_SIZE_AND_S3",
@@ -1314,7 +1316,7 @@
     "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_CPTC_TAR32_TERMINAL_RESULT_ADJUDICATION_TERMINAL_RECEIPT-ATTEMPT2-v001.json",
     "terminal_scientific_decision": "STOP_R1_TAR32_FKV_EXACT_COMPOSITION"
   },
-  "updated_at": "2026-09-01T00:56:52Z",
+  "updated_at": "2026-09-01T01:08:00Z",
   "v003_terminal": {
     "cost_rows_present": false,
     "durable_receipt": "docs/aris/ZOOMTOKEN_BPNS_R1_IDENTITY_GATED_FULL_STACK_REPLAY_V003_TERMINAL_RECEIPT-2026-08-28.md",
