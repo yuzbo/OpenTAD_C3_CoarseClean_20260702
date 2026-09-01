@@ -92,22 +92,43 @@ class ActionFormer(SingleStageDetector):
         self.max_div_factor = max_div_factor
 
     def pad_data(self, inputs, masks):
-        feat_len = inputs.shape[-1]
-        if feat_len == self.max_seq_len:
-            return inputs, masks
-        elif feat_len < self.max_seq_len:
-            max_len = self.max_seq_len
-        else:  # feat_len > self.max_seq_len
-            max_len = feat_len
-            # pad the input to the next divisible size
-            stride = self.max_div_factor
-            max_len = (max_len + (stride - 1)) // stride * stride
+        if isinstance(inputs, (dict, Mapping)):
+            ref_feat = inputs.get("feats", inputs.get("fused_features", next(iter(inputs.values()))))
+            feat_len = ref_feat.shape[-1]
+            batch_size = ref_feat.shape[0]
+            if feat_len == self.max_seq_len:
+                return inputs, masks
+            elif feat_len < self.max_seq_len:
+                max_len = self.max_seq_len
+            else:
+                stride = self.max_div_factor
+                max_len = (feat_len + (stride - 1)) // stride * stride
 
-        padding_size = [0, max_len - feat_len]
-        inputs = torch.nn.functional.pad(inputs, padding_size, value=0)
-        pad_masks = torch.zeros((inputs.shape[0], max_len), device=masks.device).bool()
-        pad_masks[:, :feat_len] = masks
-        return inputs, pad_masks
+            padding_size = [0, max_len - feat_len]
+            padded_inputs = dict(inputs)
+            for k, v in padded_inputs.items():
+                if isinstance(v, torch.Tensor) and v.ndim >= 3 and v.shape[-1] == feat_len:
+                    padded_inputs[k] = torch.nn.functional.pad(v, padding_size, value=0)
+            pad_masks = torch.zeros((batch_size, max_len), device=masks.device).bool()
+            pad_masks[:, :feat_len] = masks
+            return padded_inputs, pad_masks
+        else:
+            feat_len = inputs.shape[-1]
+            if feat_len == self.max_seq_len:
+                return inputs, masks
+            elif feat_len < self.max_seq_len:
+                max_len = self.max_seq_len
+            else:  # feat_len > self.max_seq_len
+                max_len = feat_len
+                # pad the input to the next divisible size
+                stride = self.max_div_factor
+                max_len = (max_len + (stride - 1)) // stride * stride
+
+            padding_size = [0, max_len - feat_len]
+            inputs = torch.nn.functional.pad(inputs, padding_size, value=0)
+            pad_masks = torch.zeros((inputs.shape[0], max_len), device=masks.device).bool()
+            pad_masks[:, :feat_len] = masks
+            return inputs, pad_masks
 
     def train(self, mode=True):
         super().train(mode)
@@ -409,10 +430,15 @@ class ActionFormer(SingleStageDetector):
 
     @staticmethod
     def _assert_feature_mask_temporal_match(features, masks, stage):
-        if features.shape[-1] != masks.shape[-1]:
+        if isinstance(features, (dict, Mapping)):
+            ref_feat = features.get("feats", features.get("fused_features", next(iter(features.values()))))
+            feat_len = ref_feat.shape[-1]
+        else:
+            feat_len = features.shape[-1]
+        if feat_len != masks.shape[-1]:
             raise RuntimeError(
                 f"feature/mask temporal length mismatch {stage}: "
-                f"features={features.shape[-1]}, masks={masks.shape[-1]}"
+                f"features={feat_len}, masks={masks.shape[-1]}"
             )
 
     def _inject_pc_ot_mras_reader_outputs(self, feat_list, mask_list, metas):

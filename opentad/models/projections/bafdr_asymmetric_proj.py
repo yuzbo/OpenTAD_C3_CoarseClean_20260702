@@ -51,9 +51,9 @@ class BAFDRAsymmetricProjection(Conv1DTransformerProj):
             input_pdrop=input_pdrop,
         )
 
-        # Lightweight residual injectors for L0 and L1
-        self.q0_inj = nn.Conv1d(out_channels, out_channels, kernel_size=1)
-        self.q1_inj = nn.Conv1d(out_channels, out_channels, kernel_size=3, stride=2, padding=1)
+        # Lightweight residual injectors for L0 and L1 (in_channels -> out_channels)
+        self.q0_inj = nn.Conv1d(in_channels, out_channels, kernel_size=1)
+        self.q1_inj = nn.Conv1d(in_channels, out_channels, kernel_size=3, stride=2, padding=1)
 
         # Zero-initialize residual injectors so initial model is exactly G-equivalent
         nn.init.zeros_(self.q0_inj.weight)

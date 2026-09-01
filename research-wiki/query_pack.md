@@ -1564,6 +1564,21 @@ max_chars: 8000
   implement true L0/L1 residual-only injection with L2-L5 invariance. The one-command
   script must not be run as written in this project state.
 
+- **BA-FDR-K16 implementation audit intake (2026-09-01).** Branch
+  `codex/zoomtoken-ba-fdr-k16-fullmatrix-v001` contains new BA-FDR wrapper,
+  asymmetric projection, transform, 21 configs, protocol JSON, tests and Slurm
+  scripts. Static checks passed for Python compilation and the current orchestrator
+  can find all 21 configs after arm-name-to-config-slug mapping. This is still not a
+  complete executable experiment implementation: ActionFormer currently receives a
+  dict bundle from the BA-FDR backbone before its feature/mask padding path expects a
+  tensor, BA-FDR configs project to 384 channels while the inherited ActionFormer
+  neck/head expect 512 channels, `bafdr_k16_fullmatrix_train.py` builds/logs but does
+  not run a train/eval loop or call router/KD losses, and the full-matrix launcher only
+  validates config presence rather than scheduling 21 training/eval/profile cells.
+  Therefore the branch is an implementation draft/protocol artifact, not a valid
+  formal BA-FDR receipt or evidence source, and it still requires fresh exact-Project
+  Pro authorization before formal submission.
+
 ## Pointers
 
 - GeoRoute implementation and gates:

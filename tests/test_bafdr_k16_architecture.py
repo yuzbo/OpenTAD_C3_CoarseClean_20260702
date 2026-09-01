@@ -147,3 +147,48 @@ def test_bafdr_late_projection_propagates_residual_to_all_levels():
     # In Late projection, all levels receive the altered fused features
     for lvl in range(6):
         assert not torch.allclose(out1[lvl], out2[lvl], atol=1e-4), f"Late projection Level L{lvl} should change with R"
+
+
+def test_bafdr_asymmetric_projection_in384_out512():
+    B, C_in, C_out, T = 2, 384, 512, 768
+    G = torch.randn(B, C_in, T)
+    R = torch.randn(B, C_in, T)
+    mask = torch.ones(B, T, dtype=torch.bool)
+
+    proj = BAFDRAsymmetricProjection(
+        in_channels=C_in,
+        out_channels=C_out,
+        arch=(2, 2, 5),
+        conv_cfg=dict(kernel_size=3, proj_pdrop=0.0),
+        norm_cfg=dict(type="LN"),
+        attn_cfg=dict(n_head=4, n_mha_win_size=-1),
+        use_abs_pe=False,
+    )
+    proj.eval()
+
+    bundle = dict(global_features=G, residual_features=R)
+    with torch.no_grad():
+        out_feats, out_masks = proj(bundle, mask)
+
+    assert len(out_feats) == 6
+    assert out_feats[0].shape == (B, C_out, T)
+    assert out_feats[1].shape == (B, C_out, T // 2)
+    assert out_feats[2].shape == (B, C_out, T // 4)
+
+
+def test_bafdr_detector_actionformer_bundle_smoke():
+    from mmengine.config import Config
+    from opentad.models import build_detector
+
+    cfg_path = "configs/adatad/thumos/bafdr_k16_full_seed4407.py"
+    cfg = Config.fromfile(cfg_path)
+    # Fast mock of backbone to return dummy bundle for fast CPU smoke test
+    detector = build_detector(cfg.model)
+    detector.eval()
+
+    # Verify model building with 384 in / 512 out projection and ActionFormer head (512)
+    assert hasattr(detector, "projection")
+    assert hasattr(detector, "rpn_head")
+    assert detector.projection.out_channels == 512
+    assert detector.neck.in_channels == 512
+    assert detector.rpn_head.in_channels == 512

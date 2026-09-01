@@ -105,7 +105,7 @@ model = dict(
     projection=dict(
         type="BAFDRAsymmetricProjection",
         in_channels=384,
-        out_channels=384,
+        out_channels=512,
         arch=(2, 2, 5),
         conv_cfg=dict(kernel_size=3, proj_pdrop=0.0),
         norm_cfg=dict(type="LN"),
@@ -162,7 +162,7 @@ model = dict(
     projection=dict(
         type="BAFDRLateProjection",
         in_channels=384,
-        out_channels=384,
+        out_channels=512,
         arch=(2, 2, 5),
         conv_cfg=dict(kernel_size=3, proj_pdrop=0.0),
         norm_cfg=dict(type="LN"),
@@ -219,7 +219,7 @@ model = dict(
     projection=dict(
         type="BAFDRAsymmetricProjection",
         in_channels=384,
-        out_channels=384,
+        out_channels=512,
         arch=(2, 2, 5),
         conv_cfg=dict(kernel_size=3, proj_pdrop=0.0),
         norm_cfg=dict(type="LN"),
@@ -276,7 +276,7 @@ model = dict(
     projection=dict(
         type="BAFDRAsymmetricProjection",
         in_channels=384,
-        out_channels=384,
+        out_channels=512,
         arch=(2, 2, 5),
         conv_cfg=dict(kernel_size=3, proj_pdrop=0.0),
         norm_cfg=dict(type="LN"),
