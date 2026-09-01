@@ -480,13 +480,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             generator=dataloader_generator,
             **cfg.solver.train,
         )
+        val_solver_cfg = dict(copy.deepcopy(cfg.solver.val))
+        val_solver_cfg["batch_size"] = world_size
         val_loader = build_dataloader(
             val_dataset,
             rank=rank,
             world_size=world_size,
             shuffle=False,
             drop_last=False,
-            **cfg.solver.val,
+            **val_solver_cfg,
         )
         if len(train_loader) != EXPECTED_UPDATES_PER_EPOCH:
             raise RuntimeError("formal cell does not have exactly 100 rank-local batches")

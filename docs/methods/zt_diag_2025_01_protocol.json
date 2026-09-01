@@ -1,0 +1,15 @@
+{
+  "protocol_id": "ZT-DIAG-2025-01-TAYLOR-RESIDUAL-MANIFOLD-v001",
+  "task_id": "ZT-DIAG-2025-01",
+  "scientific_question": "在完全冻结的 VideoMAE-S 视频 Transformer 中，各 Block 的残差更新量 Delta^l 在时间维度上是否满足一阶 Taylor 局部展开连续性？一阶 Taylor 残差近似引入的重建误差，传递至 AdaTAD Head 后，对最终 mAP@0.5:0.95 的破坏上限是多少？",
+  "hypothesis": "在动作内部区域，Transformer Block 的残差更新量满足 Delta_i^l ≈ Delta_a^l + J^l (h_i^l - h_a^l)；在保持每 4 帧仅计算 1 帧全量 GEMM 的情况下，使用一阶 Taylor 校正恢复其余 3 帧的隐藏状态，THUMOS14 上的 mAP@0.50 下降量将不超过 0.5%。",
+  "sampling_steps": [2, 4, 8],
+  "acceptance_condition": {
+    "k4_avg_map_drop_max": 0.5,
+    "k4_taylor_vs_0order_advantage_min": 2.0
+  },
+  "rejection_stop_condition": {
+    "k4_avg_map_drop_limit": 2.5,
+    "insignificant_gain_threshold": 0.3
+  }
+}
