@@ -629,7 +629,8 @@ class Attention(BaseModule):
             attn_chunk = torch.matmul(q_chunk, k.transpose(-2, -1))  # [B, H, C_q, N_k]
             if token_mask is not None:
                 allowed_keys = token_mask[:, None, None, :].expand_as(attn_chunk)
-                attn_chunk = attn_chunk.masked_fill(~allowed_keys, -1e9)
+                mask_val = -10000.0 if attn_chunk.dtype == torch.float16 else -1e9
+                attn_chunk = attn_chunk.masked_fill(~allowed_keys, mask_val)
             attn_chunk = F.softmax(attn_chunk, dim=-1)
 
             # Accumulate column sum across query dimension, zeroing invalid queries
