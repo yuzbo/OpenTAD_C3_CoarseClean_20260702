@@ -102,7 +102,7 @@ def test_matrix_orchestrator_validates_semantic_contracts():
     assert "PREDICTIONS_SEALED_NO_METRICS_OPENED" in text
 
 
-def test_slurm_scripts_use_world2_dag_not_single_gpu_array():
+def test_slurm_scripts_use_world2_arm_batch_dag():
     run_text = read(ROOT / "scripts" / "run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh")
     submit_text = read(ROOT / "scripts" / "submit_zoomtoken_bafdr_k16_fullmatrix_n16r4.sbatch")
     assert "torchrun --standalone --nproc_per_node" in run_text
@@ -110,16 +110,17 @@ def test_slurm_scripts_use_world2_dag_not_single_gpu_array():
     assert "--prediction-only" in run_text
     assert "--seal-predictions" in run_text
     assert "--open-metrics" in run_text
-    assert "#SBATCH --gres" not in submit_text
-    assert "--array=0-20" in submit_text
-    assert "local array_spec" in submit_text
-    assert "gpu:2" in submit_text
-    assert "seed_list=(4407 4408 4409)" in submit_text
-    assert "run_zoomtoken_bafdr_k16_array_task.sh" in submit_text
+    assert "#SBATCH --gpus=1" in submit_text
+    assert "arm_list=(D160 G96 U128-ALL48-A0 U16-UNIFORM-A0 BAFDR-K16-LATE BAFDR-K16-NOKD BAFDR-K16-FULL)" in submit_text
+    assert "run_zoomtoken_bafdr_k16_arm_batch.sh" in submit_text
+    assert "--array=0-20" not in submit_text
+    assert "afterok:${joined_train_deps}" in submit_text
+    assert '--gpus="${gpus}"' in submit_text
+    assert '"168:00:00"' in submit_text
     assert "zt-bafdr-metrics" in submit_text
-    array_task_text = read(ROOT / "scripts" / "run_zoomtoken_bafdr_k16_array_task.sh")
-    assert '"${arm}" == "BAFDR-K16-FULL"' in array_task_text
-    assert "d160_seed${seed}/checkpoint/epoch_59.pth" in array_task_text
+    batch_task_text = read(ROOT / "scripts" / "run_zoomtoken_bafdr_k16_arm_batch.sh")
+    assert "BAFDR-K16-FULL" in batch_task_text
+    assert "SEEDS=(4407 4408 4409)" in batch_task_text
 
 
 def test_raw_prediction_cache_is_window_level_for_sliding_window_eval():

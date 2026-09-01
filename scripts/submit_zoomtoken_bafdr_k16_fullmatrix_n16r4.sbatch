@@ -13,36 +13,29 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${PROJECT_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
-if [[ -n "${YUZIBO_ROOT:-}" ]]; then
-  BASE="${YUZIBO_ROOT}"
-elif [[ -d "/data/run01/sczc063/yuzibo" ]]; then
-  BASE="/data/run01/sczc063/yuzibo"
-else
-  BASE="${PROJECT_DIR}/tmp/bafdr_local"
-fi
+BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 RUN_ROOT="${ZOOMTOKEN_RUN_ROOT:-${BASE}/projects/bafdr_k16_fullmatrix_compute}"
 export ZOOMTOKEN_RUN_ROOT="${RUN_ROOT}"
 LOG_DIR="${BASE}/slurm_logs"
 MANIFEST_DIR="${RUN_ROOT}/manifest"
 mkdir -p "${LOG_DIR}" "${MANIFEST_DIR}"
-
 cd "${PROJECT_DIR}"
 
 if command -v module >/dev/null 2>&1; then
   module load cuda/11.8 || true
   module load miniforge3/24.11 || true
 fi
-
 CONDA_ENV="${BASE}/conda_envs/opentad/bin/activate"
 if [[ -f "${CONDA_ENV}" ]]; then
   # shellcheck disable=SC1091
   source "${CONDA_ENV}"
 fi
-
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 export BAFDR_ALLOW_DIRTY="${BAFDR_ALLOW_DIRTY:-0}"
 
 bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh validate
+
+RELEASE_TAG="$(git rev-parse --short HEAD)"
 
 if [[ $# -ge 1 && -n "$1" ]]; then
   seed_list=("$@")
@@ -60,56 +53,53 @@ fi
 submit_job() {
   local name="$1"
   local dependency="$2"
-  local gres="$3"
+  local gpus="$3"
   local cpus="$4"
   local time_limit="$5"
   local command="$6"
-  local array_spec="${7:-}"
   local dep_args=()
-  local gres_args=()
-  local array_args=()
-  if [[ -n "${dependency}" ]]; then
-    dep_args=(--dependency="${dependency}")
-  fi
-  if [[ -n "${gres}" && "${gres}" != "none" ]]; then
-    if [[ "${gres}" == *"2"* ]]; then
-      gres_args=(--gpus=2)
-    else
-      gres_args=(--gpus=1)
-    fi
-  else
-    # N16R4 rejects jobs without an explicit GPU request, even for ledger-only stages.
-    gres_args=(--gpus=1)
-  fi
-  if [[ -n "${array_spec}" ]]; then
-    array_args=("${array_spec}")
-  fi
+  [[ -n "${dependency}" ]] && dep_args=(--dependency="${dependency}")
   sbatch --parsable \
     --partition=gpu \
     --nodes=1 \
     --ntasks=1 \
-    "${gres_args[@]}" \
+    --gpus="${gpus}" \
     --cpus-per-task="${cpus}" \
     --time="${time_limit}" \
     --job-name="${name}" \
     --output="${LOG_DIR}/%x_%j.out" \
     --error="${LOG_DIR}/%x_%j.err" \
     "${dep_args[@]}" \
-    "${array_args[@]}" \
-    --wrap "cd '${PROJECT_DIR}' && ${command}"
+    --wrap "cd '${PROJECT_DIR}' && export ZOOMTOKEN_RUN_ROOT='${RUN_ROOT}' && ${command}"
 }
+
+declare -A train_jobs
+arm_list=(D160 G96 U128-ALL48-A0 U16-UNIFORM-A0 BAFDR-K16-LATE BAFDR-K16-NOKD BAFDR-K16-FULL)
+for arm in "${arm_list[@]}"; do
+  dep=""
+  [[ "${arm}" == "BAFDR-K16-FULL" ]] && dep="afterok:${train_jobs[D160]}"
+  safe_arm="${arm//_/-}"
+  train_jobs["${arm}"]="$(submit_job "zt-bafdr-train-${safe_arm}-${RELEASE_TAG}" "${dep}" 2 8 "168:00:00" \
+    "bash scripts/run_zoomtoken_bafdr_k16_arm_batch.sh '${arm}' train")"
+done
+
+train_deps=()
+for arm in "${arm_list[@]}"; do train_deps+=("${train_jobs[${arm}]}"); done
+joined_train_deps="$(IFS=:; echo "${train_deps[*]}")"
+eval_job="$(submit_job "zt-bafdr-eval-all-${RELEASE_TAG}" "afterok:${joined_train_deps}" 2 8 "168:00:00" \
+  "bash scripts/run_zoomtoken_bafdr_k16_arm_batch.sh ALL eval-all")"
+c_exec_job="$(submit_job "zt-bafdr-cexec-${RELEASE_TAG}" "afterok:${eval_job}" 1 1 "02:00:00" \
+  "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh c_exec")"
+metrics_job="$(submit_job "zt-bafdr-metrics-${RELEASE_TAG}" "afterok:${eval_job}:${c_exec_job}" 2 8 "168:00:00" \
+  "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh metrics")"
+summary_job="$(submit_job "zt-bafdr-summary-${RELEASE_TAG}" "afterok:${metrics_job}" 1 1 "02:00:00" \
+  "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh summary-strict")"
 
 train_jobs_tsv="${MANIFEST_DIR}/slurm_train_jobs.tsv"
 eval_jobs_tsv="${MANIFEST_DIR}/slurm_eval_jobs.tsv"
-train_job="$(submit_job "zt-bafdr-train-e60b4399" "" "gpu:2" 8 "72:00:00" \
-  "bash scripts/run_zoomtoken_bafdr_k16_array_task.sh train \"\${SLURM_ARRAY_TASK_ID}\"" --array=0-20)"
-eval_job="$(submit_job "zt-bafdr-eval-e60b4399" "afterok:${train_job}" "gpu:2" 8 "24:00:00" \
-  "bash scripts/run_zoomtoken_bafdr_k16_array_task.sh eval \"\${SLURM_ARRAY_TASK_ID}\"" --array=0-20)"
-c_exec_job="$(submit_job "zt-bafdr-cexec" "afterok:${eval_job}" "none" 1 "02:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh c_exec")"
-metrics_job="$(submit_job "zt-bafdr-metrics" "afterok:${eval_job}:${c_exec_job}" "gpu:2" 8 "24:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh metrics")"
-summary_job="$(submit_job "zt-bafdr-summary" "afterok:${metrics_job}" "none" 1 "02:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh summary-strict")"
-
-printf 'all\t%s\n' "${train_job}" > "${train_jobs_tsv}"
+{
+  for arm in "${arm_list[@]}"; do printf '%s\t%s\n' "${arm}" "${train_jobs[${arm}]}"; done
+} > "${train_jobs_tsv}"
 printf 'all\t%s\n' "${eval_job}" > "${eval_jobs_tsv}"
 
 python - <<PY
@@ -118,21 +108,16 @@ import time
 from pathlib import Path
 
 def read_tsv(path):
-    data = {}
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
-        key, value = line.split("\t", 1)
-        data[key] = value
-    return dict(sorted(data.items()))
+    return dict(sorted(line.split("\t", 1) for line in Path(path).read_text().splitlines()))
 
 receipt = {
-    "schema_version": "ZOOMTOKEN-BA-FDR-K16-SLURM-DAG-v001",
+    "schema_version": "ZOOMTOKEN-BA-FDR-K16-SLURM-DAG-v002",
     "protocol_id": "ZOOMTOKEN-BA-FDR-K16-FULLMATRIX-v001",
     "project_dir": ${PROJECT_DIR@Q},
     "run_root": ${RUN_ROOT@Q},
-    "train_array_job": ${train_job@Q},
-    "eval_array_job": ${eval_job@Q},
     "train_jobs": read_tsv(${train_jobs_tsv@Q}),
     "eval_jobs": read_tsv(${eval_jobs_tsv@Q}),
+    "eval_job": ${eval_job@Q},
     "c_exec_job": ${c_exec_job@Q},
     "metrics_job": ${metrics_job@Q},
     "summary_job": ${summary_job@Q},
@@ -141,5 +126,4 @@ receipt = {
 path = Path(${MANIFEST_DIR@Q}) / "slurm_dag_receipt.json"
 path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 print(f"[BA-FDR] Slurm DAG receipt written to {path}")
-print("::bafdr-slurm-dag{submission_receipt=\"" + str(path) + "\", summary_job=\"" + ${summary_job@Q} + "\"}")
 PY
