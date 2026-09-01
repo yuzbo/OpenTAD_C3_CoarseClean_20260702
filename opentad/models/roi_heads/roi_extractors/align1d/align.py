@@ -3,7 +3,10 @@ import torch
 from torch import nn
 from torch.autograd import Function
 from torch.autograd.function import once_differentiable
-import Align1D as _align_1d
+try:
+    import Align1D as _align_1d
+except ImportError:
+    _align_1d = None
 
 
 class _Align1D(Function):

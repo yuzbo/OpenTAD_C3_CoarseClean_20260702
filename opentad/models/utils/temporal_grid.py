@@ -805,3 +805,45 @@ def prepare_area_targets(area_grid, gt_segments, gt_labels, num_classes, boundar
         "start_offset_weight": start_offset_weight.clamp(0.0, 1.0),
         "end_offset_weight": end_offset_weight.clamp(0.0, 1.0),
     }
+
+
+def linear_interpolate_features(source_feat, source_grid, target_grid):
+    """Interpolate feature values between two strict temporal grids."""
+
+    _validate_temporal_grid(source_grid, context="source_grid")
+    _validate_temporal_grid(target_grid, context="target_grid")
+    source_center = source_grid["center"]
+    source_valid = source_grid["valid_mask"]
+    target_center = target_grid["center"]
+    target_valid = target_grid["valid_mask"]
+
+    batch, channels, _ = source_feat.shape
+    if source_center.shape[0] != batch or target_center.shape[0] != batch:
+        raise ValueError("source_feat, source_grid, and target_grid batch sizes must match.")
+    out = source_feat.new_zeros(batch, channels, target_center.shape[1])
+
+    for batch_idx in range(batch):
+        src_mask = source_valid[batch_idx]
+        tgt_mask = target_valid[batch_idx]
+        if not src_mask.any().item() or not tgt_mask.any().item():
+            continue
+
+        src_x = source_center[batch_idx, src_mask]
+        src_y = source_feat[batch_idx, :, src_mask]
+        tgt_x = target_center[batch_idx, tgt_mask]
+        if src_x.numel() == 1:
+            out[batch_idx, :, tgt_mask] = src_y[:, :1].expand(-1, tgt_x.numel())
+            continue
+
+        right_idx = torch.searchsorted(src_x, tgt_x, right=True)
+        right_idx = right_idx.clamp(max=src_x.numel() - 1)
+        left_idx = (right_idx - 1).clamp(min=0)
+        x0 = src_x[left_idx]
+        x1 = src_x[right_idx]
+        same = (right_idx == left_idx) | ((x1 - x0).abs() < 1e-6)
+        alpha = torch.where(same, torch.zeros_like(tgt_x), (tgt_x - x0) / (x1 - x0).clamp_min(1e-6))
+        y0 = src_y[:, left_idx]
+        y1 = src_y[:, right_idx]
+        out[batch_idx, :, tgt_mask] = y0 * (1.0 - alpha.unsqueeze(0)) + y1 * alpha.unsqueeze(0)
+
+    return out * target_valid.unsqueeze(1).to(out.dtype)

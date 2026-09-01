@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "dispatch_id": "CENTRAL-RECOVERY-DUCA-PROJECTCHAT-20260811-v004",
+  "project": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PROJECT_CHAT_READONLY_RECOVERY",
+  "runtime_cdp": "http://127.0.0.1:4334",
+  "completed_at": "2026-08-11T14:44:41.685Z",
+  "projectChatControlFound": false,
+  "projectBoundFreshComposer": false,
+  "before_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "after_url": null,
+  "fresh_conversation_id": null,
+  "outcome": "QUARANTINED_CROSS_PROJECT_UI_EXPOSURE",
+  "minimal_dom_finding": {
+    "project_scoped_chat_candidate_found": false,
+    "only_safe_candidate_class_observed": "global New chat route",
+    "global_route_accepted": false
+  },
+  "cross_project_isolation": {
+    "triggered": true,
+    "action": "Raw sidebar-derived DOM labels were not retained in this project record and were not used for routing or science."
+  },
+  "prohibited_actions_not_taken": [
+    "No Chat or New chat click.",
+    "No composer or fresh conversation creation.",
+    "No prompt/model/effort/send action.",
+    "No Source action."
+  ],
+  "actual_attempt_increased": false
+}

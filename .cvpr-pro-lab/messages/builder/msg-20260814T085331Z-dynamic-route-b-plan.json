@@ -1,0 +1,45 @@
+{
+  "message_id": "msg-20260814T085331Z-dynamic-route-b-plan",
+  "dispatch_id": "DUCA-ARIS-R-DYNAMIC-PLAN-v001",
+  "role": "Builder",
+  "current_scientific_question": "Can the plan-only Route-B package make the paired-boundary/high-IoU dynamic-budget mechanism falsifiable without importing legacy A, prototype fixed-K, or terminal U/O/R semantics?",
+  "binding": {
+    "workspace": "C:/Users/skywalker/.codex/worktrees/8712/OpenTAD_C3_CoarseClean_20260702",
+    "head": "402e582c4092275877828fd36b5b97a8c1213011",
+    "common_dir": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.git",
+    "clean_at_dispatch": true,
+    "scientific_identity_warning": "This isolated clean worktree is a transport container only. Its ancestry and the dirty root's a6bdc084 SparseHead base are contamination, never DUCA scientific identity."
+  },
+  "authoritative_inputs": [
+    "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/AGENTS.md",
+    "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/RTK.md",
+    "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/research-wiki/query_pack.md",
+    "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/research-wiki/anti_repetition.md",
+    "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/project-files/prepared/CURRENT_RESEARCH_STATE-v011.md",
+    "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/project-files/prepared/DUCA_DYNAMIC_ROUTE_AND_REAL_VIDEO_EXPERIMENT-v001.md",
+    "C:/Users/skywalker/.fastctx/jobs/j-n1xm7e/output.log"
+  ],
+  "accepted_decision": {
+    "verdict": "REVISE",
+    "route": "DUCA_HIERARCHICAL_DYNAMIC_PHYSICAL_ACQUISITION-v001",
+    "route_boundary": "Dynamic K is the required core. Fixed K is baseline/attribution/fallback only. A prefix-marginal route is not final; C realized-cost Lagrangian is not an automatic fallback."
+  },
+  "required_sequence": [
+    "First publish MINIMAL_CHANGE_PLAN: a no-code, additive file/symbol plan with the smallest necessary surfaces and explicit forbidden dependencies.",
+    "Then author the immutable plan package: provenance census; exact Route-B API/tensor contract; pseudocode for the outer dynamic-K utility/risk/cost policy and K-independent physical exact-K transport; six-arm config schema; O1-O4 tool specifications; FIT/CAL/HOLD manifest algorithm; full-stack cost ledger; and literal future N16R4 Slurm argv.",
+    "Return one durable terminal material receipt naming the documents, evidence class DESIGNED_ONLY / NOT_EXECUTED, and next_owner=Critic."
+  ],
+  "forbidden": [
+    "No source implementation, patch, config mutation, test, import, interpreter invocation, dataset listing/access, checkpoint/model access, data mount, official validation/test access, GPU/CUDA, Slurm, remote action, training, inference, evaluation, metrics, cost measurement, browser, Sources, Pro, or Git action.",
+    "Do not copy, import, repair, or depend on legacy A implementation semantics, the prototype fixed-K density decoder, any terminal U/O/R or sealed-replacement surface, SparseHead Route-T, or pc_ot_mras_*.",
+    "No correction loop and no role dispatch."
+  ],
+  "output_contract": {
+    "minimum_plan": "MINIMAL_CHANGE_PLAN",
+    "terminal_verdict": "BUILDER_DYNAMIC_ROUTE_B_PLAN_MATERIAL_READY or NEEDS_ATTENTION",
+    "next_owner": "independent Critic",
+    "next_action": "one terminal static plan review returning DYNAMIC_ROUTE_B_PLAN_STATIC_PASS or DYNAMIC_ROUTE_B_PLAN_BLOCKED",
+    "dependency": "complete plan-only material with contamination and forbidden-dependency classifications",
+    "single_recovery": "none"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "general": {
+    "defaultApprovalMode": "plan",
+    "plan": {
+      "modelRouting": false
+    }
+  },
+  "modelConfigs": {
+    "customAliases": {
+      "gemini-3.7-flash": {
+        "extends": "chat-base-3",
+        "modelConfig": {
+          "model": "gemini-3.7-flash",
+          "generateContentConfig": {
+            "thinkingConfig": {
+              "thinkingLevel": "HIGH"
+            }
+          }
+        }
+      }
+    }
+  }
+}

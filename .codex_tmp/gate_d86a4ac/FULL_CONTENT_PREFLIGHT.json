@@ -1,0 +1,27 @@
+{
+  "audit": {
+    "clean": true,
+    "commit": "14bd14f9b6a087dc2ec623fc4238c89e0cb86960",
+    "fsck_strict_pass": true,
+    "tests_passed": 18,
+    "tree": "b782404ddef9a65f19fea70fbf993a3a9d6e0420"
+  },
+  "candidate": {
+    "clean": true,
+    "commit": "d86a4acda21e35a1609f19f1a46bc470ee18b7e1",
+    "fsck_strict_pass": true,
+    "tests_passed": 14,
+    "tree": "327c032a1ab3c14d0e34d6339df36f8a33ec6907"
+  },
+  "claim_boundary": "engineering_preflight_only_no_model_metric",
+  "receipts": {
+    "audit_tests_sha256": "91350e0f8a830f60fd4422aad2b6c61892edf27af7d07e72dbb71dfe730e8161",
+    "candidate_tests_sha256": "a37306193b20198a4bb8745aad7e70923d1c62089ec75a69462b55108a2279f3",
+    "deployment_identity_sha256": "f070f46f023be6152faf1818342633a8d6f713fb55e37fa5c79fc2a43434f140",
+    "official_checkpoint_sha256": "003b90506d549c01dd249344d782d45ef5379d977fd54eb0712f4d40640ff8d8",
+    "source_diff_attestation_sha256": "68d2cf726cc8523094847337eb5ebe604ca5ad46cbe99d2a5fba2b78f45e67db",
+    "source_diff_provenance_sha256": "e57fc3d618f86faacbd79cb77121796a18fed5fafdc0fe80506e40f9aba6237c"
+  },
+  "schema_version": "actionformer_native_grid_k384_full_content_preflight_v1",
+  "validation_pass": true
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "dispatch_id": "CENTRAL-DIAG-DUCA-POSTRENDER-CONTROLS-20260811-v009",
+  "project": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PROJECT_UI_POSTRENDER_CONTROL_DIAGNOSTIC",
+  "runtime_cdp": "http://127.0.0.1:4334",
+  "completed_at": "2026-08-11T14:57:41.169Z",
+  "final_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "render_ready": true,
+  "candidates": [
+    {
+      "role": "radio",
+      "text": "Chat",
+      "aria_label": "",
+      "href": "",
+      "data_testid": "",
+      "parent_text": "Chat"
+    },
+    {
+      "role": "button",
+      "text": "Pro",
+      "aria_label": "",
+      "href": "",
+      "data_testid": "",
+      "parent_text": "Pro"
+    },
+    {
+      "role": "tab",
+      "text": "Chats",
+      "aria_label": "",
+      "href": "",
+      "data_testid": "",
+      "parent_text": "Chats Sources"
+    },
+    {
+      "role": "tab",
+      "text": "Sources",
+      "aria_label": "",
+      "href": "",
+      "data_testid": "",
+      "parent_text": "Chats Sources"
+    }
+  ],
+  "outcome": "PASS_READONLY_POSTRENDER_CONTROL_DIAGNOSTIC",
+  "actual_attempt_increased": false
+}

@@ -1,0 +1,255 @@
+{
+  "schema_version": "1.0",
+  "status": "COMPLETED_PENDING_AUDIT",
+  "queue_message_id": "msg-20260810T185405Z-ad987978f297",
+  "human_gate": "HUMAN_AUTHORIZATION_FRESH_SERIAL_PRO_AFTER_FAIL_CLOSE",
+  "turn_id": "duca-serial-pro-5ad209b3c128fbdd4455da0a7783b203",
+  "marker": "DUCA-FRESH-SERIAL-PRO-20260811::019fa3db-42bf-7f30-a0ab-2b8171ab33ed::g-p-6a796fef9a00819194024cf1de3bd697::5ad209b3c128fbdd4455da0a7783b203",
+  "nonce": "5ad209b3c128fbdd4455da0a7783b203",
+  "expected_project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "expected_project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "expected_commit": "63a726a4aaf48ecbf6780bb196de43a890c6b4df",
+  "expected_sources": [
+    "PROJECT_CHARTER-v001.md",
+    "LITERATURE_AND_GAP-v001.md",
+    "ROUTE_DECISION-v001.md",
+    "EXPERIMENT_PLAN-v001.md",
+    "IMPLEMENTATION_STATUS-v001.md",
+    "RESULTS-v001.md",
+    "RESULT_ANALYSIS-v001.md",
+    "FAILURES_AND_PIVOTS-v001.md",
+    "CLAIM_MAP-v001.md",
+    "PAPER_DRAFT-v001.md",
+    "CURRENT_RESEARCH_STATE-v001.md",
+    "MODEL_EXPERIMENT_HISTORY-v001.md"
+  ],
+  "requested_model": "gpt-5-pro",
+  "requested_route": "ChatGPT Project browser target=Pro (highest verified Pro picker; no separate effort control on this route)",
+  "cdp": "127.0.0.1:59064",
+  "cdp_browser": "Chrome/148.0.7778.167",
+  "cdp_protocol": "1.3",
+  "locks": [
+    "C:\\Users\\skywalker\\.codex\\browser-broker-locks\\browser-127.0.0.1-59064.lock",
+    "C:\\Users\\skywalker\\.codex\\browser-broker-locks\\project-g-p-6a796fef9a00819194024cf1de3bd697.lock",
+    "C:\\Users\\skywalker\\.codex\\browser-broker-locks\\pro-turn-duca-serial-pro-5ad209b3c128fbdd4455da0a7783b203.lock"
+  ],
+  "oracle_home_dir": "C:\\Users\\skywalker\\.codex\\private\\cvpr-pro-lab\\g-p-6a796fef9a00819194024cf1de3bd697\\oracle",
+  "prompt_path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-serial-pro-5ad209b3c128fbdd4455da0a7783b203\\prompt.md",
+  "response_path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-serial-pro-5ad209b3c128fbdd4455da0a7783b203\\raw-response.md",
+  "started_at": "2026-08-11T04:29:30Z",
+  "targets_before": [
+    {
+      "id": "8EB20B8CF4789105767E9F07040DF12E",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project"
+    },
+    {
+      "id": "81952819D2837A00A385E44A6FA529FF",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project"
+    },
+    {
+      "id": "37EFD9724068D22A698C0603AEB32A78",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project?tab=sources"
+    },
+    {
+      "id": "27EF40DAA0548BC232C95977B23AAD3A",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project?tab=sources"
+    },
+    {
+      "id": "397D54BAE958C47BC2E024EF69D79FF7",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project?tab=sources"
+    },
+    {
+      "id": "44BBD6181A861EAC8238F0546F1FE52F",
+      "type": "page",
+      "title": "ChatGPT - DUCA",
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project"
+    },
+    {
+      "id": "6EA9E04F16C9E14A059072EBDDD63327",
+      "type": "page",
+      "title": "ChatGPT - STAD",
+      "url": "https://chatgpt.com/g/g-p-6a796080cf2c81919ef7c219f95c3e5e/project?tab=sources"
+    },
+    {
+      "id": "CFC6B2C13933C33EADCB99E728F5BF41",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project"
+    },
+    {
+      "id": "4F71FE642E89F10A990E4985C29E3F43",
+      "type": "page",
+      "title": "ChatGPT - sparseTAD",
+      "url": "https://chatgpt.com/g/g-p-6a7972193b3081918ed4f3ec2095177d/project"
+    },
+    {
+      "id": "FF86D4D66354A8FEAE659FBCE788A8E5",
+      "type": "page",
+      "title": "ChatGPT - zoomtoken",
+      "url": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b/project?tab=sources"
+    },
+    {
+      "id": "C792DE8516C4A636E351E9624347AEE0",
+      "type": "page",
+      "title": "ChatGPT - STAD",
+      "url": "https://chatgpt.com/g/g-p-6a796080cf2c81919ef7c219f95c3e5e/project"
+    },
+    {
+      "id": "59A1BD02B7307666C6B170DBACD4021F",
+      "type": "page",
+      "title": "ChatGPT - zoomtoken",
+      "url": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b/project?tab=sources"
+    },
+    {
+      "id": "9A3AC1ECA43019EC282C2A5AD2F32E15",
+      "type": "page",
+      "title": "STAD - Routing Handshake JSON",
+      "url": "https://chatgpt.com/g/g-p-6a796080cf2c81919ef7c219f95c3e5e/c/6a798eb1-ea20-83ea-abdc-e0d2f14eeb8d"
+    },
+    {
+      "id": "0B340B0A2981047D371847454DD5AAA4",
+      "type": "page",
+      "title": "STAD - Routing Handshake JSON Request",
+      "url": "https://chatgpt.com/g/g-p-6a796080cf2c81919ef7c219f95c3e5e/c/6a796ade-f364-83ea-9ffc-ce3ea493f2bc?messageId=finalAgentTurnStart"
+    },
+    {
+      "id": "4E8A1E2057B86F449E6C2C907A749570",
+      "type": "page",
+      "title": "DUCA - Project Routing Handshake",
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a7989f1-6a18-83ea-b573-1ab6fa9881a9"
+    },
+    {
+      "id": "86911F93749BE8A7FBCC6C53D6A049DE",
+      "type": "page",
+      "title": "ChatGPT - sparseTAD",
+      "url": "https://chatgpt.com/g/g-p-6a7972193b3081918ed4f3ec2095177d/project?tab=sources"
+    }
+  ],
+  "return_code": 0,
+  "response_exists": true,
+  "response_size": 70066,
+  "ended_at": "2026-08-11T04:52:46Z",
+  "targets_after": [
+    {
+      "id": "8EB20B8CF4789105767E9F07040DF12E",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project"
+    },
+    {
+      "id": "44BBD6181A861EAC8238F0546F1FE52F",
+      "type": "page",
+      "title": "ChatGPT - DUCA",
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project"
+    },
+    {
+      "id": "397D54BAE958C47BC2E024EF69D79FF7",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project?tab=sources"
+    },
+    {
+      "id": "27EF40DAA0548BC232C95977B23AAD3A",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project?tab=sources"
+    },
+    {
+      "id": "37EFD9724068D22A698C0603AEB32A78",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project?tab=sources"
+    },
+    {
+      "id": "81952819D2837A00A385E44A6FA529FF",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project"
+    },
+    {
+      "id": "6EA9E04F16C9E14A059072EBDDD63327",
+      "type": "page",
+      "title": "ChatGPT - STAD",
+      "url": "https://chatgpt.com/g/g-p-6a796080cf2c81919ef7c219f95c3e5e/project?tab=sources"
+    },
+    {
+      "id": "CFC6B2C13933C33EADCB99E728F5BF41",
+      "type": "page",
+      "title": "ChatGPT - 层次视频理解",
+      "url": "https://chatgpt.com/g/g-p-6a797182bca48191b5c3e457934f0008/project"
+    },
+    {
+      "id": "4F71FE642E89F10A990E4985C29E3F43",
+      "type": "page",
+      "title": "ChatGPT - sparseTAD",
+      "url": "https://chatgpt.com/g/g-p-6a7972193b3081918ed4f3ec2095177d/project"
+    },
+    {
+      "id": "FF86D4D66354A8FEAE659FBCE788A8E5",
+      "type": "page",
+      "title": "ChatGPT - zoomtoken",
+      "url": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b/project?tab=sources"
+    },
+    {
+      "id": "C792DE8516C4A636E351E9624347AEE0",
+      "type": "page",
+      "title": "ChatGPT - STAD",
+      "url": "https://chatgpt.com/g/g-p-6a796080cf2c81919ef7c219f95c3e5e/project"
+    },
+    {
+      "id": "59A1BD02B7307666C6B170DBACD4021F",
+      "type": "page",
+      "title": "ChatGPT - zoomtoken",
+      "url": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b/project?tab=sources"
+    },
+    {
+      "id": "9A3AC1ECA43019EC282C2A5AD2F32E15",
+      "type": "page",
+      "title": "STAD - Routing Handshake JSON",
+      "url": "https://chatgpt.com/g/g-p-6a796080cf2c81919ef7c219f95c3e5e/c/6a798eb1-ea20-83ea-abdc-e0d2f14eeb8d"
+    },
+    {
+      "id": "0B340B0A2981047D371847454DD5AAA4",
+      "type": "page",
+      "title": "STAD - Routing Handshake JSON Request",
+      "url": "https://chatgpt.com/g/g-p-6a796080cf2c81919ef7c219f95c3e5e/c/6a796ade-f364-83ea-9ffc-ce3ea493f2bc?messageId=finalAgentTurnStart"
+    },
+    {
+      "id": "4E8A1E2057B86F449E6C2C907A749570",
+      "type": "page",
+      "title": "DUCA - Project Routing Handshake",
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a7989f1-6a18-83ea-b573-1ab6fa9881a9"
+    },
+    {
+      "id": "86911F93749BE8A7FBCC6C53D6A049DE",
+      "type": "page",
+      "title": "ChatGPT - sparseTAD",
+      "url": "https://chatgpt.com/g/g-p-6a7972193b3081918ed4f3ec2095177d/project?tab=sources"
+    }
+  ],
+  "new_targets": [],
+  "actual_project_candidates": [
+    {
+      "id": "44BBD6181A861EAC8238F0546F1FE52F",
+      "type": "page",
+      "title": "ChatGPT - DUCA",
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project"
+    },
+    {
+      "id": "4E8A1E2057B86F449E6C2C907A749570",
+      "type": "page",
+      "title": "DUCA - Project Routing Handshake",
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a7989f1-6a18-83ea-b573-1ab6fa9881a9"
+    }
+  ]
+}

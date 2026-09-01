@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-14T00:45:25Z",
+  "deadline": "2026-08-14T11:00:00+08:00",
+  "from_role": "coordinator",
+  "kind": "UOR_FOCUSED_IMPLEMENTATION_CORRECTION_V001",
+  "message_id": "msg-20260814T004525Z-3e02701138a3",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/critic-returns/CRITIC_DUCA_DENSITY_UOR_IMPLEMENTATION_INDEPENDENT_PRE_RUN_REVIEW-v001.md"
+  ],
+  "payload": null,
+  "priority": "critical",
+  "requested_action": "Single deterministic focused correction on clean writable binding at 7f07e4545fafda5ca9b86ead14a089b3515a06d0. First read AGENTS.md, RTK.md, research-wiki/query_pack.md, research-wiki/anti_repetition.md, PRO_DUCA_DENSITY_UOR_IMPLEMENTATION-v001, DUCA_DENSITY_REACHABILITY_PROTOCOL-v001, and the parent Critic review. Merge only these three corrections: (1) validation-firewall loaders: FIT entrypoints construct only FIT loaders and bind every loader root+annotation; CAL val/test explicitly bind CAL root+annotation; add resolved-config/entrypoint no-validation-loader coverage. (2) launcher/gate/artifact wiring: supported single-process distributed argv; bind exact actual workdir/checkpoint/pred roots; nonempty resolved-config identity; gate equality checks phase argv/env/path/arm/cwd/Slurm before loader/checkpoint/output. (3) output sealing/evaluator binding: immutable sealed arm roots+completion receipt; evaluator verifies exact receipt-named artifacts/root and rejects writable/mismatch; seal/atomically publish dedicated final root with focused substitutions/unsealed-final tests. No new route/theory, no data or dataset/root listing, no official validation, browser, Sources, Pro, remote, GPU, Slurm, train, inference, evaluation, metric, or claim. Make one minimal tracked corrective commit; run only focused CPU synthetic/no-data tests. Return durable BUILDER_FOCUSED_CORRECTION receipt with changed paths, commit, tests, no-execution boundary, and next_owner=Critic. This is the sole deterministic recovery: do not self-dispatch Critic.",
+  "required_gate": "PRO_DUCA_DENSITY_UOR_IMPLEMENTATION-v001",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

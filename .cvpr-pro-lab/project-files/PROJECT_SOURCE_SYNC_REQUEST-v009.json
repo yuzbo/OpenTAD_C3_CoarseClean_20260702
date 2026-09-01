@@ -1,0 +1,26 @@
+{
+  "request_id": "PROJECT_SOURCE_SYNC_REQUEST-v009.json",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PROJECT_SOURCE_SYNC",
+  "status": "PREPARED_LOCAL_ONLY",
+  "blocking_class": "BLOCKS_EXPERIMENT",
+  "earliest_at": null,
+  "requires_central_browser_lease": true,
+  "material_epoch": "LOCAL_ONLY-v013-20260814T172500+0800",
+  "quarantines": [
+    "PROJECT_SOURCE_SYNC_REQUEST-v008.json: UNKNOWN_REMOTE_STATE; never retransmit or rely on its records"
+  ],
+  "items": [
+    {
+      "prepared_id": "pfile-20260814T140807Z-9ca0f4d1ea",
+      "filename": "CURRENT_RESEARCH_STATE-v013.md",
+      "path": ".cvpr-pro-lab/project-files/prepared/CURRENT_RESEARCH_STATE-v013.md"
+    },
+    {
+      "prepared_id": "pfile-20260814T140807Z-d3e6c5b482",
+      "filename": "DUCA_DYNAMIC_INNER_MECHANISM_FINAL_PRO_ADJUDICATION-v001.md",
+      "path": ".cvpr-pro-lab/project-files/prepared/DUCA_DYNAMIC_INNER_MECHANISM_FINAL_PRO_ADJUDICATION-v001.md"
+    }
+  ],
+  "dependent_pro_question": "Final third-round exact-Project Pro adjudication: freeze F1/F2 and decide A (outer dynamic K plus arbitrary non-contiguous selection with exact timestamp remap) versus B (outer dynamic K plus monotone/local physical exact-K transport), or REVISE/PIVOT/STOP. Dynamic budget remains core; fixed K may only be baseline/control/fallback. No implementation or experiment authority is requested."
+}

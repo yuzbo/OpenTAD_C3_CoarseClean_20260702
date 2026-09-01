@@ -1,0 +1,54 @@
+\begin{figure*}[t]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[
+    font=\small,
+    node distance=0.55cm and 0.70cm,
+    source/.style={draw, rounded corners=2pt, align=center, minimum height=0.82cm, text width=2.15cm, fill=blue!5},
+    plugin/.style={draw, rounded corners=2pt, align=center, minimum height=0.82cm, text width=2.20cm, fill=green!8},
+    det/.style={draw, rounded corners=2pt, align=center, minimum height=0.82cm, text width=2.30cm, fill=violet!7},
+    train/.style={draw, rounded corners=2pt, align=center, minimum height=0.74cm, text width=2.45cm, fill=orange!10},
+    audit/.style={draw, rounded corners=2pt, align=center, minimum height=0.74cm, text width=2.65cm, fill=gray!8},
+    arrow/.style={-Latex, thick},
+    dashedarrow/.style={-Latex, thick, dashed},
+    stoparrow/.style={-Latex, thick, dashed, red!65!black},
+    note/.style={align=center, font=\scriptsize}
+]
+
+\node[note, anchor=west] at (-6.95,2.65) {\textbf{Teacher-free in-forward inference}};
+\node[source] (dense) at (-5.95,1.55) {Dense candidate\\window\\$T=768$};
+\node[source] (src) at (-3.25,1.55) {Deploy-visible\\descriptors\\zero-shot / motion};
+\node[plugin] (selector) at (-0.55,1.55) {DUCA hard\\selector\\$\Ksel\le384$};
+\node[plugin] (gather) at (2.15,1.55) {Gather\\selected\\observations};
+\node[plugin] (grid) at (4.85,1.55) {Sparse grid\\original-time\\cells};
+\node[det] (detector) at (7.55,1.55) {Detector modules\\sparse interface\\original-time output};
+
+\draw[arrow] (dense) -- (src);
+\draw[arrow] (src) -- (selector);
+\draw[arrow] (selector) -- (gather);
+\draw[arrow] (gather) -- (grid);
+\draw[arrow] (grid) -- (detector);
+\node[note, text=red!65!black] at (7.25,0.35) {no dense bypass to detector};
+
+\node[note, anchor=west] at (-6.95,-0.45) {\textbf{Post-decision audit sidecar}};
+\node[audit] (auditin) at (2.15,-1.20) {selected positions\\and sparse grid};
+\node[audit] (audit) at (4.85,-1.20) {Audit record only\\hashes, costs,\\no-leak flags};
+\node[audit] (validator) at (7.55,-1.20) {Validator\\rejects GT/cache\\ledger decisions};
+\draw[dashedarrow] (grid.south) -- (audit.north);
+\draw[dashedarrow] (auditin) -- (audit);
+\draw[dashedarrow] (audit) -- (validator);
+
+\node[note, anchor=west] at (-6.95,-2.35) {\textbf{Training-only supervision}};
+\node[train] (teacher) at (-5.55,-3.20) {Dense teacher\\utility\\train split only};
+\node[train] (warm) at (-2.45,-3.20) {Utility warm-up\\boundary and\\proposal support};
+\node[train] (surrogate) at (0.65,-3.20) {Hard-forward\\surrogate losses\\coverage and holes};
+\node[train] (forbid) at (3.75,-3.20) {Removed for\\val/test\\no teacher or GT};
+
+\draw[dashedarrow] (teacher) -- (warm);
+\draw[dashedarrow] (warm) -- (surrogate);
+\draw[dashedarrow] (surrogate.north) -- ++(0,0.75) -| (selector.south);
+
+\end{tikzpicture}}
+\caption{\textbf{DUCA-TAD in-forward acquisition plugin.} During inference, deploy-visible descriptors feed a hard selector that chooses at most 384 original-time observations for the detector forward path. The detector consumes the gathered sparse observations, while a sparse grid carries original-time cells for assignment, decoding, NMS, and evaluation. Training-only teacher utility supervises warm-up and surrogate coverage losses, but teacher payloads, ground truth, caches, and offline ledger decisions are absent from validation and deployment. The audit sidecar is written after selection and has no arrow back into the decision graph.}
+\label{fig:architecture}
+\end{figure*}

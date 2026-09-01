@@ -1,0 +1,2001 @@
+# 1. `VISIBILITY_CERTIFICATE`
+
+**certificate_status: `PASS_EXACT_COMMIT_READABLE`**
+
+**Repository**
+
+* 实际解析仓库：`yuzbo/OpenTAD_C3_CoarseClean_20260702`
+* 本轮代码事实 SHA：[`4ce69c852bdbd902046b47bc6019ae11e850dbe4`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/4ce69c852bdbd902046b47bc6019ae11e850dbe4)
+* 冻结模型 SHA：[`1642f265e48391418a7c8a4a087e33e2b7bf6899`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/1642f265e48391418a7c8a4a087e33e2b7bf6899)
+* 连接器比较结果：`1642f26` 是 merge base，`4ce69c8` 相对其 `ahead_by=12, behind_by=0`。比较入口：[compare `1642f26...4ce69c8`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/compare/1642f265e48391418a7c8a4a087e33e2b7bf6899...4ce69c852bdbd902046b47bc6019ae11e850dbe4)
+
+**实际完整阅读的文件**
+
+以下大文件均通过多个不重叠/有重叠的精确行区间读取至 EOF；没有仅凭文件名或摘要判断。
+
+* 选择与训练：`structured_selection.py`、`acquisition.py`、`transition_only.py`、`counterfactual_utility.py`、`duca_online_frame_selector.py`、`actionformer.py`、`single_stage.py`、`actionformer_head.py`、`anchor_free_head.py`。
+* 配置：用户列出的四个 DUCA/CellCF 配置，以及 `e2e_thumos_videomae_s_768x1_160_adapter.py`。
+* 诊断与成本：用户列出的九个 `tools/bata/` 文件。
+* 测试：用户列出的八个重点测试。
+* 为追踪坐标额外读取：`configs/_base_/datasets/thumos-14/e2e_train_trunc_test_sw_256x224x224.py`、`opentad/datasets/transforms/end_to_end.py`、`loading.py`、`opentad/datasets/base/sliding_dataset.py`、`padding_dataset.py`、`opentad/datasets/thumos.py`、`opentad/models/utils/truetime_geometry.py`、`opentad/models/utils/post_processing/utils.py`。
+
+**无法独立读取或重建的对象**
+
+* `[UNKNOWN]` GitHub tree 中未发现用户表格所列三个 Avg-mAP 精确数值字符串；没有读取到相应远端 terminal-EMA checkpoint、Slurm stdout、预测 JSON 或 sealed evaluation artifact。因此这些数值只能标记为 `[USER_SUPPLIED_EXPERIMENT_FACT]`。
+* `[UNKNOWN]` 没有读取实际 THUMOS14 视频字节、annotation JSON 内容、每个视频的 Decord 实际时间戳或远端 GPU profiler 原始 artifact。
+* `[UNKNOWN]` 代码使用 annotation 中的 `frame/duration` 作为 FPS，同时解码器还会产生自身 `avg_fps`/`frame_inds`；当前 ceiling 数据契约没有把两者逐样本绑定并证明完全一致。
+* 本地 shell clone 因运行环境 DNS 不可用而失败，但 GitHub 连接器可按完整 SHA 读取精确文件，因此不构成 `VISIBILITY_BLOCKED`。
+
+**代码表面可见性**
+
+| 表面                                        | 是否看到 |
+| ----------------------------------------- | ---: |
+| 模型与 selector                              |    是 |
+| 正式 CellCF 配置                              |    是 |
+| 数据 dense/original-frame/seconds 换算        |    是 |
+| short-window padding 与 valid prefix       |    是 |
+| physical-grid ActionFormer                |    是 |
+| ceiling/selection 诊断                      |    是 |
+| 重点测试                                      |    是 |
+| profiler producer/consumer 与 cost summary |    是 |
+| 远端模型权重、原始结果和真实 profile artifact           |    否 |
+
+**Prompt 与代码的主要不一致/需收窄之处**
+
+1. `[CODE_FACT]` 精确提交 `4ce69c8` 本身确实是 profiler sample schema/validation 修复，改动集中于 CPU enqueue diagnostic 字段、sample validator、producer 与测试；没有新模型训练或权重。但从 `1642f26` 到 `4ce69c8` 是 12 个提交，不应把整个范围描述成“只有一行 schema 修复”。相关现行代码见 [`duca_full_stack_cost.py:L40-L67`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tools/bata/duca_full_stack_cost.py#L40-L67) 与 [`duca_full_stack_cost.py:L331-L349`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tools/bata/duca_full_stack_cost.py#L331-L349)。
+2. `[CODE_FACT]` 正式 CellCF 并未配置 `max_unselected_hole=3`；它配置的是 `None`，`3` 是 one-per-cell family 的推导上界。[`duca_cellcf_fixed...py:L60-L102`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/configs/adatad/thumos/duca_cellcf_fixed384_official_adatad_backend_full_train.py#L60-L102)
+3. `[MATHEMATICAL_CONSEQUENCE]` 代码中的 dense-grid `G=15` 不是“15 个原始视频帧”。在正式配置中一个 dense index 对应 4 个原始帧；`G=15` 允许相邻选择中心相差至多 `G+1=16` 个 dense steps，即最多 **64 原始帧**。
+4. `[CODE_FACT]` 当前 formal cost summary 只比较 CellCF frontend 与 bare exact-uniform frontend lower bound，并明确声明没有 dense full-stack baseline。[`summarize_duca_cellcf_cost.py:L443-L454`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tools/bata/summarize_duca_cellcf_cost.py#L443-L454)
+
+---
+
+# 2. `EXECUTIVE_VERDICT`
+
+## **`HOLD_AND_REVISE_FAMILY`**
+
+当前不应开始 DUCA-CARA full training，也不应把 `G=3, 192 scaffold + 192 residual` 固化进模型。
+
+决定性理由是：
+
+1. `[MATHEMATICAL_CONSEQUENCE]` 当前 CellCF 的 regional quota vector 永远是
+   [
+   q_j=1,\qquad j=1,\ldots,K.
+   ]
+   它可以在 cell 内纠正采样 phase/content，但不能把一个背景 cell 的 quota 转移到边界 cell。它不是 adaptive allocation family。
+
+2. `[CODE_FACT]` 当前 CellCF 对实际输入内容使用 acquisition positions gather，但 detector 的几何 prior、GT remap 和 prediction inverse map使用 uniform anchors。它测量的是：
+
+   > **nonuniform content substitution under uniform detector geometry**
+
+   而不是 physical-time boundary-adaptive sampling。
+
+3. `[MATHEMATICAL_CONSEQUENCE]` “原始帧最大间隔≤10”与“exact uniform 必须可行”矛盾。Canonical uniform 本身存在一次 3-dense-index 间隔，即 12 原始帧。
+
+4. `[MATHEMATICAL_CONSEQUENCE]` 若物理约束是“相邻选中中心及端点距离≤15 原始帧”，由于合法位置每 4 帧一个，实际有效上限是 12 帧。此时：
+
+   * 任意位置上的最小固定 scaffold 需要 **255** 点；
+   * 若还要求 scaffold 是 exact-uniform anchor 子集，以便 exact uniform 可复现，则最少需要 **382** 点；
+   * 只剩 **2** 个 residual，不再是有意义的 192+192 adaptive allocation。
+
+5. `[INFERENCE]` 因此固定 mandatory scaffold 的 C family 不是本轮最干净的 ceiling。应以 **D：global exact-K + physical max-interval** 为真正的 allocation-family ceiling，并把“scaffold + residual”仅作为一个对 D 解的 canonical decomposition，而不是固定可行集约束。
+
+当前也不应直接 `KILL_DUCA_SELECTOR_ROUTE`：仓库已经有可复用的 physical-grid ActionFormer，而且尚未运行真正的 D/E exact ceiling。现有负面证据足以杀死 **current CellCF interpretation**，不足以杀死所有 literal pre-backbone selectors。
+
+---
+
+# 3. `VERIFIED_CODE_FACTS`
+
+## 3.1 当前 CellCF 可行集
+
+* `[CODE_FACT]` Canonical exact uniform 使用 endpoint-inclusive、round-half-to-even 的整数构造。[`structured_selection.py:L43-L62`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/duca/structured_selection.py#L43-L62)
+* `[CODE_FACT]` Voronoi cell 由相邻 anchor 中点切分，中点 tie 归前一个 cell；每个 anchor 位于唯一非空 cell。[`structured_selection.py:L94-L121`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/duca/structured_selection.py#L94-L121)
+* `[CODE_FACT]` `local_cell_deformation` 明确“每个 exact-uniform cell 选择且只选择一帧”；hard 与 relaxed path 属于同一 product-of-categorical family。[`structured_selection.py:L146-L228`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/duca/structured_selection.py#L146-L228)
+* `[CODE_FACT]` selector 的 local decoder 对每个样本取 `K_eff=min(requested_budget, valid_count)`，要求 valid mask 是 contiguous prefix，随后逐 cell 调用 `local_cell_deformation`。[`acquisition.py:L1789-L1888`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/duca/acquisition.py#L1789-L1888)
+* `[CODE_FACT]` 测试明确验证 `T=768,K=384` 的 local-cell theoretical max hole 是 3，而且可达到。[`test_duca_local_cell_selection.py:L86-L105`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tests/test_duca_local_cell_selection.py#L86-L105)
+* `[CODE_FACT]` local counterfactual 候选只替换同一 cell 内的一帧，并要求候选来自不同 cell；不存在 quota 跨 cell 转移。[`counterfactual_utility.py:L75-L156`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/duca/counterfactual_utility.py#L75-L156)
+
+## 3.2 坐标与实际 gather
+
+* `[CODE_FACT]` 实际原始输入由 `grid.selected_positions` gather。[`duca_online_frame_selector.py:L90-L111`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/selectors/duca_online_frame_selector.py#L90-L111)
+* `[CODE_FACT]` local-cell acquisition 返回时，把 `detector_grid_positions` 设为 `local_cell_anchor_positions`，而不是实际 selected positions。[`acquisition.py:L2092-L2101`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/duca/acquisition.py#L2092-L2101)
+* `[CODE_FACT]` selector 随后同时持有 acquisition positions 和 detector-grid positions；hard gather 使用前者。[`duca_online_frame_selector.py:L1441-L1480`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/selectors/duca_online_frame_selector.py#L1441-L1480)
+* `[CODE_FACT]` metadata 中：
+
+  * `duca_acquisition_positions` 是实际 gather 位置；
+  * `duca_detector_grid_positions` 是 detector prior；
+  * `selected_axis_to_true_time_dense_index` 被写为 detector positions。[`duca_online_frame_selector.py:L1954-L2031`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/selectors/duca_online_frame_selector.py#L1954-L2031)
+* `[CODE_FACT]` GT remap 读取 `selected_axis_to_true_time_dense_index`，把 dense physical GT 映到 selected axis。[`duca_online_frame_selector.py:L1918-L1952`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/selectors/duca_online_frame_selector.py#L1918-L1952)
+* `[CODE_FACT]` 正式 CellCF 配置同时设置 `detector_output_coordinate_space="selected_axis_index"` 与 `remap_gt_to_selected_axis=True`。[`duca_cellcf_fixed...py:L95-L139`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/configs/adatad/thumos/duca_cellcf_fixed384_official_adatad_backend_full_train.py#L95-L139)
+* `[CODE_FACT]` post-processing 在转秒之前先执行 selector segment remap。[`single_stage.py:L123-L208`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/detectors/single_stage.py#L123-L208)
+
+因此四个时间量是：
+
+| 时间量                      | 当前 CellCF 使用的坐标                                 |
+| ------------------------ | ----------------------------------------------- |
+| observation/content time | 实际 acquisition positions                        |
+| detector prior time      | uniform anchor positions                        |
+| train GT time            | 经 anchor map remap 后的 selected axis             |
+| prediction physical time | selected axis 经 anchor inverse map 回 dense time |
+
+`[MATHEMATICAL_CONSEQUENCE]` 这四者不是同一个几何。当前结果不能解释成“detector 在真实 nonuniform observation time 上学习了物理边界”。
+
+## 3.3 Physical-grid ActionFormer
+
+* `[CODE_FACT]` physical-grid 路径读取 `irregular_selected_positions`，缺失时读取 `selected_dense_indices`。[`anchor_free_head.py:L106-L128`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/dense_heads/anchor_free_head.py#L106-L128)
+* `[CODE_FACT]` train path要求 `irregular_native_axis=True`，并显式拒绝 selected-axis GT remap。[`anchor_free_head.py:L65-L80`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/dense_heads/anchor_free_head.py#L65-L80)
+* `[CODE_FACT]` point center、stride 与 regression range 均被映射至物理 dense axis。[`anchor_free_head.py:L143-L214`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/dense_heads/anchor_free_head.py#L143-L214)
+* `[CODE_FACT]` train/test 都在生成 prior 后应用 physical point/mask rewrite；proposal decode 使用 physical center 和 stride。[`anchor_free_head.py:L288-L362`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/dense_heads/anchor_free_head.py#L288-L362)
+* `[CODE_FACT]` round-trip 测试验证 physical GT assignment、selected-axis remap fail-closed，以及 physical proposal 到 seconds 的一致换算。[`test_c3_physical_grid_round_trip.py:L137-L239`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tests/test_c3_physical_grid_round_trip.py#L137-L239)
+
+结论：可以复用现有 physical-grid ActionFormer，不应新写另一个 detector。它是仓库内修改后的 physical-grid path，不能描述为“未经修改的官方 AdaTAD”。
+
+## 3.4 梯度语义
+
+* `[CODE_FACT]` 正式 CellCF 设置 `detector_gradient_mode="none"`，schedule 中 detector gradient 始终为 0。[`duca_cellcf_fixed...py:L90-L135`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/configs/adatad/thumos/duca_cellcf_fixed384_official_adatad_backend_full_train.py#L90-L135)
+* `[CODE_FACT]` counterfactual teacher 在 `torch.no_grad()` 中运行 official ActionFormer cls+reg objective，并在返回 selector loss 前 detach utility 与 detector losses。[`actionformer.py:L311-L425`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/detectors/actionformer.py#L311-L425)
+* `[CODE_FACT]` 通用 hard-one-swap utility helper 同样明确声明其不是 detector-gradient estimator，并返回 `direct_detector_gradient=False`。[`counterfactual_utility.py:L159-L212`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/duca/counterfactual_utility.py#L159-L212)
+
+结论：这是 **detector-derived detached supervision**，不是 direct detector-loss backpropagation。
+
+## 3.5 现有 ceiling 与成本工具
+
+* `[CODE_FACT]` `diagnose_duca_feasible_set_ceiling.py` 只遍历调用者给出的 candidates，按 detector loss 选最好者。[`diagnose_duca_feasible_set_ceiling.py:L16-L70`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tools/bata/diagnose_duca_feasible_set_ceiling.py#L16-L70)
+* `[CODE_FACT]` 其 artifact 明确写为 `evaluation_only_best_of_supplied_candidates_not_upper_bound`，并声明 `candidate_search_exhaustive=False`。[`diagnose_duca_feasible_set_ceiling.py:L73-L90`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tools/bata/diagnose_duca_feasible_set_ceiling.py#L73-L90)
+* `[CODE_FACT]` selection decomposition 的 GT 方法只是：rounded GT boundaries → uniform fill → earliest fill。[`diagnose_duca_selection_decomposition.py:L21-L43`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tools/bata/diagnose_duca_selection_decomposition.py#L21-L43)
+* `[CODE_FACT]` 其 contract 明确 `is_optimized_oracle=False`。[`diagnose_duca_selection_decomposition.py:L106-L114`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tools/bata/diagnose_duca_selection_decomposition.py#L106-L114)
+* `[CODE_FACT]` full-stack profiler 包含 decode/preprocess，但没有把两者分离。[`duca_full_stack_cost.py:L385-L408`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tools/bata/duca_full_stack_cost.py#L385-L408)
+* `[CODE_FACT]` 当前 CellCF cost summary 明确没有 dense full-stack baseline。[`summarize_duca_cellcf_cost.py:L443-L454`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tools/bata/summarize_duca_cellcf_cost.py#L443-L454)
+
+---
+
+# 4. `CORRECTIONS_TO_PROMPT_ASSUMPTIONS`
+
+| Prompt 叙述                                      | 审核结果                                                              |
+| ---------------------------------------------- | ----------------------------------------------------------------- |
+| 382 个长度2、一个长度3、一个长度1                           | `[MATHEMATICAL_CONSEQUENCE]` **确认**                               |
+| 每个 anchor 最多移动1个 dense index                   | `[MATHEMATICAL_CONSEQUENCE]` **确认**                               |
+| uniform max hole=2                             | `[MATHEMATICAL_CONSEQUENCE]` **确认**                               |
+| CellCF theoretical max hole=3                  | `[MATHEMATICAL_CONSEQUENCE]` **确认**                               |
+| CellCF 不能跨区域分配 quota                           | `[MATHEMATICAL_CONSEQUENCE]` **确认**                               |
+| 当前 CellCF 是 physical boundary selection        | `[CODE_FACT]` **否定**；实际是 acquisition content 与 anchor geometry 分离 |
+| physical-grid ActionFormer 可复用                 | `[CODE_FACT]` **确认**，但必须关闭 GT remap                               |
+| detached CF utility 是 direct detector gradient | `[CODE_FACT]` **否定**                                              |
+| 当前 finite-candidate best 是 ceiling             | `[CODE_FACT]` **否定**                                              |
+| 当前 GT decomposition 是 optimized oracle         | `[CODE_FACT]` **否定**                                              |
+| `G=3,192+192` 可直接代表15原始帧约束                     | `[MATHEMATICAL_CONSEQUENCE]` **否定**                               |
+| 物理最大间隔10帧仍可包含 uniform                          | `[MATHEMATICAL_CONSEQUENCE]` **否定**                               |
+| 当前 cost 已有论文级 dense full-stack control         | `[CODE_FACT]` **否定**                                              |
+| `4ce69c8` 是新训练模型                               | `[CODE_FACT]` **否定**                                              |
+
+---
+
+# 5. `CELL_FAMILY_MATHEMATICAL_AUDIT`
+
+设：
+
+[
+L=768,\quad K=384,\quad
+u_j=\operatorname{round_even}!\left(\frac{j(L-1)}{K-1}\right).
+]
+
+由代码的 midpoint rule 得到 cell：
+
+[
+C_j=[s_j,e_j),\qquad
+s_j=\left\lfloor\frac{u_{j-1}+u_j}{2}\right\rfloor+1.
+]
+
+精确重建结果：
+
+[
+{|C_j|}=
+\underbrace{2,\ldots,2}_{382\text{ cells}},
+3,1.
+]
+
+唯一长度 3 的 cell 是 anchor index 192 对应的 `[384,387)`，最后一个 cell `[767,768)` 长度 1。
+
+## 5.1 Current CellCF 的自由度
+
+[
+\mathcal B=
+\left{
+X\subseteq{0,\ldots,L-1}:
+|X\cap C_j|=1,\ \forall j
+\right}.
+]
+
+其集合大小：
+
+[
+|\mathcal B|
+=\prod_j|C_j|
+=3\cdot 2^{382}.
+]
+
+这看似很大，但它的 **regional allocation vector** 是固定的：
+
+[
+(|X\cap C_1|,\ldots,|X\cap C_K|)
+=(1,\ldots,1).
+]
+
+`[MATHEMATICAL_CONSEQUENCE]` 因此 CellCF 有大量“cell 内内容自由度”，但没有“跨 region 的预算自由度”。它只能做：
+
+* local phase correction；
+* local content substitution；
+* local within-cell utility choice。
+
+它不能做：
+
+* 背景 cell 释放 quota；
+* 一个边界邻域获得多个额外 quota；
+* short action 周围聚集多个 residual；
+* global boundary-adaptive allocation。
+
+## 5.2 `G=3,192+192` 的严格审计
+
+若 `G` 指代码语义：最大连续未选 dense indices 数，则最小 scaffold cardinality 满足：
+
+[
+L-q \le (q+1)G,
+]
+
+因此
+
+[
+q_{\min}
+=\left\lceil\frac{L-G}{G+1}\right\rceil.
+]
+
+对 `L=768,G=3`：
+
+[
+q_{\min}
+=\left\lceil\frac{765}{4}\right\rceil
+=192.
+]
+
+所以：
+
+* `[MATHEMATICAL_CONSEQUENCE]` **在 dense-hole `G=3` 已经冻结的前提下，192 不是任意值，而是最小值。**
+* `[MATHEMATICAL_CONSEQUENCE]` 但 `G=3` 本身若只是为了匹配 CellCF worst-hole，则是任意的研究选择，不是物理成本/覆盖要求推导出的值。
+
+一个常见错误是直接取 every-other uniform anchor。由于 canonical uniform 有唯一一次 anchor gap 3，简单奇偶子集会跨越一个 5-index gap，导致 hole 4，违反 `G=3`。
+
+存在一个满足 `G=3` 的 192-anchor 子集，但必须在特殊 gap 处切换 parity：
+
+[
+S=
+{u_1,u_3,\ldots,u_{191},u_{192},u_{194},\ldots,u_{382}}.
+]
+
+它的最大 dense hole 是 3，且 `S⊂U`，因此 `U=S∪(U\setminus S)` 可以精确复现。
+
+## 5.3 为什么该 192 scaffold 不满足“15 原始帧”
+
+正式数据配置中：
+
+[
+\texttt{snippet_stride}
+=\texttt{feature_stride}\times\texttt{sample_stride}
+=4\times1=4.
+]
+
+所以 dense hole `G=3` 允许相邻 selected indices 相差 4：
+
+[
+4\text{ dense steps}\times4
+=16\text{ original frames}.
+]
+
+它不是 15 帧约束。
+
+## 5.4 物理 15 帧约束下的固定 scaffold 反例
+
+冻结以下物理语义：
+
+* 第一选择与窗口首个合法 frame 的距离 ≤15；
+* 任意相邻选择中心的 original-frame distance ≤15；
+* 最后选择与窗口最后合法 frame 的距离 ≤15。
+
+合法 frame 坐标是 `0,4,8,...`，所以 ≤15 实际等价于 ≤12，允许最多 3 个 dense steps。
+
+此时：
+
+* 任意位置可用的最小 scaffold cardinality：**255**；
+* 若 scaffold 必须是 canonical uniform 的子集：**382**。
+
+后者的证明很直接：
+
+* 相邻 uniform anchors 的 dense gap 是 2，只有一次是 3；
+* 删除任意内部 anchor 后，两侧 retained-anchor gap 至少 `2+2=4` dense steps；
+* 即至少 16 原始帧，违反 ≤15；
+* 只能删除首尾两个 anchor，因此最小是 `384-2=382`。
+
+`[MATHEMATICAL_CONSEQUENCE]` 固定 scaffold 同时满足：
+
+1. scaffold 本身保证物理 ≤15；
+2. scaffold 是 uniform 子集；
+3. 留出大量 residual；
+
+这三者在当前离散网格下不可兼得。
+
+## 5.5 最小替代 family
+
+`[PROPOSAL]` 不再把某个固定 `S` 设为 mandatory。采用：
+
+[
+\mathcal D_\Delta=
+\left{
+X:\ |X|=K_{\rm eff},
+\ H_{\rm physical}(X)\le\Delta
+\right}.
+]
+
+然后对每个已选 `X`，通过 canonical minimum-path decomposition 得到：
+
+[
+X=S(X)\cup R(X),
+]
+
+其中 `S(X)` 是从 `X` 内抽出的最小 coverage scaffold，`R(X)=X\setminus S(X)`。
+
+这样：
+
+* 可行集仍是 global exact-K/max-gap；
+* “scaffold + residual”语义仍可报告；
+* scaffold 不是预先固定的；
+* exact uniform 只要满足物理 cap 就天然包含；
+* 不会为了形式上的 scaffold 消耗 382 个 mandatory slots。
+
+---
+
+# 6. `PHYSICAL_COORDINATE_CONTRACT`
+
+## 6.1 当前数据管线的换算
+
+* `[CODE_FACT]` 基础 THUMOS config 设置 `feature_stride=4, sample_stride=1`。[`e2e_train_trunc...py:L19-L21`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/configs/_base_/datasets/thumos-14/e2e_train_trunc_test_sw_256x224x224.py#L19-L21)
+* `[CODE_FACT]` sliding dataset 计算 `snippet_stride=feature_stride*sample_stride`。[`sliding_dataset.py:L49-L54`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/datasets/base/sliding_dataset.py#L49-L54)
+* `[CODE_FACT]` 正式模型 config 把 window 覆盖为 768，`scale_factor=1`。[`e2e_thumos_videomae_s_768x1_160_adapter.py:L8-L24`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py#L8-L24)
+* `[CODE_FACT]` `LoadFrames` 对 random/sliding path 使用
+  `frame_stride=snippet_stride//scale_factor`，然后 `np.arange(0,total_frames,frame_stride)`。[`end_to_end.py:L668-L717`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/datasets/transforms/end_to_end.py#L668-L717)
+* `[CODE_FACT]` short window 通过重复最后 frame 进行 tail padding，并生成前缀真、后缀假的 mask。[`end_to_end.py:L688-L717`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/datasets/transforms/end_to_end.py#L688-L717)
+* `[CODE_FACT]` GT 从原始 frame 坐标减 window start 后除以 snippet stride，进入 dense grid。[`thumos.py:L33-L57`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/datasets/thumos.py#L33-L57)
+* `[CODE_FACT]` 最终秒坐标为
+  [
+  \frac{\text{dense}\times\text{snippet_stride}
+  +\text{window_start_frame}
+  +\text{offset_frames}}{\text{fps}}.
+  ]
+  [`post_processing/utils.py:L111-L124`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/opentad/models/utils/post_processing/utils.py#L111-L124)
+
+所以对本正式配置的合法前缀：
+
+[
+\text{original frame}(t)
+=\text{window start frame}+4t,
+]
+
+[
+\text{seconds}(t)
+=\frac{\text{window start frame}+4t+\text{offset}}{\text{fps}}.
+]
+
+## 6.2 三种不能混写的 gap
+
+必须同时记录：
+
+1. **Dense hole**
+   [
+   H_{\rm index}
+   =\max{x_1,\ x_{j+1}-x_j-1,\ L-1-x_K}.
+   ]
+
+2. **Original-frame interval**
+   [
+   H_{\rm frame}
+   =\max{
+   f(x_1)-f(0),
+   f(x_{j+1})-f(x_j),
+   f(L-1)-f(x_K)
+   }.
+   ]
+
+3. **Seconds interval**
+   [
+   H_{\rm sec}
+   =\max{
+   \tau(x_1)-\tau(0),
+   \tau(x_{j+1})-\tau(x_j),
+   \tau(L-1)-\tau(x_K)
+   }.
+   ]
+
+代码中的 `max_unselected_hole=G` 只对应第 1 个。
+
+## 6.3 必须冻结的硬合同
+
+`[PROPOSAL]`
+
+* 硬约束主坐标：`original_frame_number`。
+* 请求 cap：`max_original_frame_interval=15`。
+* 实际离散可达 cap：12 帧，由 artifact 自动报告，不手写为另一超参。
+* 同时报告 dense hole 和 seconds interval。
+* `10` 帧 cap 判为与 uniform inclusion 不相容，直接 `INFEASIBLE_CONTRACT`。
+* `K_eff=min(384,L)`。
+* solver 只接收 valid prefix 的前 `L` 个物理坐标；padding 不得进入合法集合。
+
+## 6.4 当前缺失的最小 metadata 修复
+
+`[UNKNOWN]` 当前可从 `window_start_frame/snippet_stride/fps` 重建 intended frame/time 坐标，但 ceiling artifact 没有绑定实际 decode 后的每个合法 frame index。
+
+`[PROPOSAL]` 在 exporter 中显式写入：
+
+```text
+dense_original_frame_indices_valid
+dense_timestamps_seconds_valid
+decoder_total_frames
+annotation_frame_count
+annotation_fps
+decoder_avg_fps
+frame_index_mapping_sha256
+```
+
+若 `annotation_fps` 与 `decoder_avg_fps` 超出预注册容差，或 actual decoded indices 与重建公式不一致，fail closed。
+
+---
+
+# 7. `FAMILY_A_TO_E_SPECIFICATION`
+
+| Family                            | 精确定义                 | 是否含 exact uniform |                  跨区域 quota | worst physical gap   | 精确优化             |          |                                                      |
+| --------------------------------- | -------------------- | ----------------: | -------------------------: | -------------------- | ---------------- | -------- | ---------------------------------------------------- |
+| **A Exact uniform**               | `X=U(L,K_eff)`       |             是，唯一解 |                          否 | 本配置最大12原始帧           | 直接构造             |          |                                                      |
+| **B Current CellCF**              | `∑_{t∈C_j}x_t=1, ∀j` |                 是 |                          否 | dense hole≤3；最坏16原始帧 | 每 cell 独立 argmax |          |                                                      |
+| **C Fixed scaffold + residual**   | `S⊆X,                |                 X |       =K_eff`；`S` 单独满足 cap | 当且仅当 `S⊆U`           | residual 可跨区域    | 由 `S` 保证 | additive score 只需 global top residual；GT 多指标可 CP-SAT |
+| **D Global exact-K physical cap** | `                    |                 X |      =K_eff, H_frame(X)≤Δ` | 当 `Δ≥H_frame(U)`     | 是                | 硬等于 Δ    | DAG/DP；GT lex oracle 可 CP-SAT                        |
+| **E Privileged unrestricted GT**  | `                    |                 X | =K_eff`，GT objective，无 gap | 是                    | 是                | 无保证      | CP-SAT/专项算法；diagnostic only                          |
+
+## A
+
+`[PROPOSAL]`
+
+[
+\mathcal A={U(L,K_{\rm eff})}.
+]
+
+自由度为 0。
+
+## B
+
+`[CODE_FACT]`
+
+[
+\mathcal B={X:\ |X\cap C_j|=1\ \forall j}.
+]
+
+不会释放任何 cell quota。
+
+## C
+
+`[PROPOSAL]`
+
+[
+\mathcal C(S)=
+{X:\ S\subseteq X,\ |X|=K_{\rm eff}}.
+]
+
+因为增加点不会恶化 coverage，只要 `S` 已满足 gap，所有 supersets 都满足。
+
+但在本 physical-15 合同下，`S⊆U` 的最小 cardinality 是 382，因此 C 不适合作为主 ceiling。
+
+## D
+
+`[PROPOSAL]`
+
+使用实际 original-frame coordinates 定义有向 DAG：
+
+* source → `j`：左端点距离≤Δ；
+* `i` → `j`：`i<j` 且 `frame[j]-frame[i]≤Δ`；
+* `j` → sink：右端点距离≤Δ；
+* 路径必须包含恰好 `K_eff` 个位置。
+
+这就是最干净的 variable-quota family。
+
+## E
+
+`[PROPOSAL]`
+
+E 必须满足：
+
+* GT 始终在 dense physical axis；
+* 不执行 selected-axis GT remap；
+* 不把 GT 写入部署 metadata；
+* 仅在 design/diagnostic runner 中创建；
+* 输出单独标记 `privileged=true, deployable=false`。
+
+历史 label-dependent Oracle 的精确实现未在本轮指定表面中完整审计，不能默认等同于 E。E 的定义特意排除了“通过 selected-axis remap 把标签编码进 detector geometry”。
+
+---
+
+# 8. `SET_INCLUSION_AND_FREEDOM_PROOFS`
+
+## 8.1 Dense-hole `G=3` 语义下
+
+[
+\mathcal A \subsetneq \mathcal B \subsetneq \mathcal D_{\text{index},3}
+\subsetneq \mathcal E.
+]
+
+* `A⊂B`：每个 uniform anchor 位于自己的 cell。
+* `B⊂D_index,3`：one-per-cell 的理论 max hole 是3。
+* 严格性反例：从 uniform 中删除某 cell 的 anchor，把该 quota 放到相邻 cell 的未选位置；可保持 hole≤3，但违反 one-per-cell。
+* `D⊂E`：E 没有 gap 约束。
+
+若 `S` 满足 cap：
+
+[
+\mathcal C(S)\subsetneq\mathcal D.
+]
+
+D 中存在不含某个 `s∈S` 的可行解，因此严格包含。
+
+## 8.2 Physical-15 语义下
+
+[
+\mathcal A\subsetneq\mathcal D_{\rm frame,15}
+\subsetneq\mathcal E.
+]
+
+但：
+
+[
+\mathcal B\nsubseteq\mathcal D_{\rm frame,15}.
+]
+
+原因是 B 的 worst case 有 4-dense-step interval，即16原始帧。
+
+## 8.3 B 与 C 一般不可比较
+
+* B 可选择不包含 mandatory scaffold `S` 的解，所以 `B⊄C`。
+* C 可在一个 cell 放多个 residual、另一个 non-scaffold cell 为0，所以 `C⊄B`。
+
+## 8.4 Family freedom
+
+* A：
+  [
+  |\mathcal A|=1.
+  ]
+
+* B：
+  [
+  |\mathcal B|=3\cdot2^{382},
+  \quad
+  \log_2|\mathcal B|\approx383.585.
+  ]
+  但 quota-vector freedom 是0。
+
+* 固定 C：
+  [
+  |\mathcal C(S)|
+  ={L-|S|\choose K-|S|}.
+  ]
+  对 physical-15、`|S|=382`：
+  [
+  |\mathcal C|={386\choose2},
+  ]
+  residual freedom 很小。
+
+* D：由 path-count DP 精确计算，不应只报组合近似。
+
+* E：
+  [
+  |\mathcal E|={L\choose K}.
+  ]
+
+`[PROPOSAL]` artifact 同时报告：
+
+```text
+log2_selection_count
+regional_quota_entropy
+max_quota_per_uniform_cell
+zero_quota_cell_count
+multi_quota_cell_count
+```
+
+避免用巨大集合 cardinality 掩盖 B 的零 allocation freedom。
+
+---
+
+# 9. `EXACT_OPTIMIZATION_DESIGN`
+
+## 9.1 哪些可以精确优化
+
+### 几何/additive score
+
+以下可由 DAG/DP 精确解：
+
+* exact-K；
+* original-frame max interval；
+* additive coarse/transition score；
+* background additive penalty；
+* reference overlap；
+* deterministic tie-break。
+
+对当前 `L≤768,K≤384`，不需要 CP-SAT。
+
+### GT 多指标 ceiling
+
+以下更适合 CP-SAT：
+
+* endpoint hit indicator；
+* both-endpoint AND；
+* overlapping GT；
+* short-action minimum support；
+* background count；
+* 多级 lexicographic objective；
+* mandatory scaffold/one-per-cell 等组合约束。
+
+### 不可宣称精确优化的内容
+
+`[MATHEMATICAL_CONSEQUENCE]` detector mAP 依赖：
+
+* backbone nonlinear features；
+* detector classification/regression；
+* NMS；
+* overlapping windows；
+* video-level aggregation。
+
+因此不能把 sample-wise position solver 称为“全局 detector-mAP oracle”。
+
+## 9.2 四种必须分开的输出
+
+1. **Metric-wise upper envelope**
+   每个 metric 单独求一个 `OPTIMAL` 解。不同 metric 的解可以不同。
+
+2. **Canonical lexicographic oracle**
+   一套预注册优先级，只输出一个可复现 selection。
+
+3. **Frozen-detector finite-candidate diagnostic**
+   把预先列明的少量 exact solutions 输入 frozen physical-grid detector。
+
+4. **Detector mAP**
+   只称 secondary empirical diagnostic，不称 exact upper bound。
+
+## 9.3 Canonical oracle 词典序
+
+`[PROPOSAL]` 对每样本依次求解并锁定最优值：
+
+1. maximize both-endpoint coverage at `r=0,1,2,4`；
+2. maximize distinct endpoint hit at `r=0,1,2,4`；
+3. minimize GT endpoint → nearest selected position total physical distance；
+4. maximize short-action minimum support；
+5. minimize background selected count；
+6. maximize overlap with exact uniform；
+7. lexicographically smallest selected-position tuple。
+
+为什么 uniform overlap 放在最后：
+
+* 不干扰 GT ceiling；
+* empty-GT 样本会 canonical 地返回 exact uniform；
+* 避免 equal-objective 时产生无意义的极端 clustering。
+
+## 9.4 Radius 定义
+
+为与现有 diagnostics 对齐，保留 dense radii `0/1/2/4`：
+
+[
+N_r(b)={t:|t-b|\le r}.
+]
+
+同时报告：
+
+[
+r_{\rm frame}=4r,\qquad
+r_{\rm sec}=\frac{4r}{fps}.
+]
+
+对 fractional GT boundary，`r=0` 可能没有合法 grid point；artifact 必须另报 `boundary_on_grid_fraction`。
+
+## 9.5 Solver status
+
+| 状态           |         exact ceiling 可否使用 |
+| ------------ | -------------------------: |
+| `OPTIMAL`    |                          是 |
+| `FEASIBLE`   | 否，只是 lower-bound candidate |
+| `TIMEOUT`    |                          否 |
+| `INFEASIBLE` |                  可作为合法合同结论 |
+| `UNKNOWN`    |                fail closed |
+
+CP-SAT 固定：
+
+```text
+num_search_workers=1
+random_seed=0
+solver_version=<hash-bound>
+all objective coefficients integer-scaled
+```
+
+## 9.6 Split 与冻结
+
+* `[CODE_FACT]` 本仓库的 `val` 和 `test` 都使用 THUMOS `validation` subset，只是 overlap protocol 不同。[`e2e_train_trunc...py:L43-L92`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/configs/_base_/datasets/thumos-14/e2e_train_trunc_test_sw_256x224x224.py#L43-L92)
+* `[PROPOSAL]` family、physical cap、objective order 和 gates 只用 training subset 冻结。
+* 然后创建 preregistration hash。
+* validation subset 只运行一次 sealed ceiling。
+* 若未来另有真正 test GT，只有在 prereg hash 已冻结、`tuning=false` 时允许读取。
+
+---
+
+# 10. `METRICS_AND_PREREGISTERED_GATES`
+
+## 10.1 最小指标集
+
+### 合同
+
+* exact-K compliance；
+* physical max-interval compliance；
+* valid-prefix compliance；
+* solver `OPTIMAL` fraction；
+* exact-uniform inclusion。
+
+这些必须是 **100%**，不是统计阈值。
+
+### 边界
+
+* endpoint hit/density，`r=0/1/2/4`；
+* any-endpoint coverage；
+* both-endpoint coverage；
+* endpoint→nearest-selected distance；
+* selected→nearest-boundary distance；
+* on-grid boundary fraction。
+
+### Allocation
+
+* background quota；
+* background quota release vs uniform；
+* 每个边界附近的 selected count；
+* extra allocation vs uniform；
+* zero-/one-/multi-quota uniform-cell counts；
+* family log-cardinality；
+* canonical scaffold cardinality与 residual cardinality。
+
+### Action strata
+
+short/medium/long 不手写阈值。
+
+`[PROPOSAL]` 使用 training split 的 physical-duration tertiles，冻结并哈希：
+
+```text
+short <= q33(train duration)
+medium q33...q67
+long > q67
+```
+
+### Frozen detector
+
+* official cls+reg loss；
+* video-level Avg-mAP 与各 tIoU；
+* physical-grid metadata compliance；
+* candidate list count和身份。
+
+### 成本
+
+最小 profile matrix：
+
+1. dense768 full stack；
+2. bare exact-uniform384 predecode；
+3. D/CARA candidate：decode768 → coarse → select384 → heavy；
+4. 当前 CellCF，可选作历史 reference。
+
+报告：
+
+* input/decode/preprocess；
+* coarse/frontend；
+* heavy backbone；
+* projection/neck/head；
+* NMS；
+* E2E p50/p95；
+* memory；
+* energy；
+* break-even。
+
+## 10.2 统计单位
+
+* primary bootstrap unit：**video cluster**；
+* 不得把 overlapping windows 当独立样本；
+* 每次重采样整视频及其全部 windows；
+* 同一视频的 uniform/D/C/E 必须 paired；
+* video-level mAP 在每个 bootstrap replicate 内重新聚合。
+
+现有 analyzer 已使用 validation video cluster bootstrap，而不是 window bootstrap。[`analyze_duca_selection_quality.py:L618-L640`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/4ce69c852bdbd902046b47bc6019ae11e850dbe4/tools/bata/analyze_duca_selection_quality.py#L618-L640)
+
+## 10.3 不任意发明数值阈值
+
+不采用固定 `+0.5 mAP`、`+10pp r0` 或“恢复20% headroom”作为通用门槛。
+
+定义：
+
+[
+\Delta_m
+=m(\text{candidate})-m(\text{uniform}),
+]
+
+[
+H_m
+=m(\text{D-GT canonical})-m(\text{uniform}),
+]
+
+[
+\rho_m
+=\frac{\Delta_m}{H_m},
+\quad H_m>0.
+]
+
+从 paired video-cluster bootstrap 得到 `SE`，并针对计划的显著性与 power 计算：
+
+[
+MDE_m=
+(z_{1-\alpha/2}+z_{1-\beta})SE_m.
+]
+
+未来训练所需 seed 数：
+
+[
+n_{\rm required}
+================
+
+\left\lceil
+\frac{
+2(z_{1-\alpha/2}+z_{1-\beta})^2\sigma_{\rm seed}^2
+}{
+\Delta_{\rm expected}^2
+}
+\right\rceil.
+]
+
+当前只有 seed-0 结果，`σ_seed` 不可估。因此任何固定 mAP 门槛都会是假精确。
+
+## 10.4 GO 条件
+
+`GO_TO_CARA_IMPLEMENTATION` 只在以下全部成立时触发：
+
+1. exact-K、physical gap、uniform inclusion、metadata、hash、solver status 全部通过；
+2. D physical family 的 canonical GT oracle 在预注册 lex vector 上相对 uniform 有正的 simultaneous lower confidence bound，且效应不小于 validation-derived MDE；
+3. deploy-visible coarse/transition score 经同一 D-DP 解码后，相对 uniform 的关键差值 lower CI >0；
+4. frozen physical-grid detector 的预注册 candidate 对 uniform 的 cls+reg loss改善或 video-level mAP改善 lower CI >0；
+5. dense-to-candidate E2E saving 的 lower CI >0；
+6. frontend overhead 的 upper CI 小于 heavy-backbone saving 的 lower CI；
+7. 按可获得的 seed variance 推算，所需训练 seeds 不超过冻结计算预算。
+
+## 10.5 HOLD 条件
+
+任一以下情况触发 `HOLD_AND_REVISE_FAMILY`：
+
+* physical cap 仍以 dense `G` 模糊表达；
+* exact uniform inclusion 未证明；
+* fixed scaffold 消耗过多 quota；
+* solver 只有 `FEASIBLE/TIMEOUT`；
+* actual decoded frame/time metadata 缺失；
+* D oracle 有 headroom，但 coarse-visible score无法恢复；
+* frozen detector diagnostic不确定；
+* dense full-stack profile缺失；
+* seed variance/MDE 无法建立。
+
+## 10.6 KILL 条件
+
+`KILL_DUCA_SELECTOR_ROUTE` 在以下任一决定性条件成立时触发：
+
+1. unrestricted E 与 gap-matched D 的 privileged physical oracle，对 uniform 的所有预注册边界/physical-grid detector效果 upper CI 都不超过 MDE；
+2. D 有 GT headroom，但在充分 powered 的 held-out diagnostic 中，当前允许的 `p_action`、transition 与 temporal hidden 信息对该 headroom的可恢复量 upper CI≤0；
+3. formal dense profile中，即使忽略精度，net E2E saving upper CI≤0；
+4. 为检测预计效应所需 seed 数超过预注册算力预算；
+5. physical correctness 与 uniform inclusion只能通过标签依赖或 selected-axis GT encoding 实现。
+
+---
+
+# 11. `IMPLEMENTATION_BLUEPRINT`
+
+## 11.1 文件级方案
+
+### 新增，不修改旧 finite-candidate 工具
+
+`[PROPOSAL]`
+
+```text
+tools/bata/duca_allocation_families.py
+tools/bata/duca_exact_physical_solver.py
+tools/bata/export_duca_allocation_ceiling_inputs.py
+tools/bata/diagnose_duca_allocation_family_ceiling.py
+tools/bata/validate_duca_allocation_ceiling_artifact.py
+tests/test_duca_allocation_families.py
+tests/test_duca_exact_physical_solver.py
+tests/test_duca_allocation_ceiling_contract.py
+```
+
+保留 `diagnose_duca_feasible_set_ceiling.py` 不变，因为它的现有语义是 finite supplied-candidate diagnostic。
+
+## 11.2 统一接口
+
+```python
+FamilyName = {
+    "exact_uniform",
+    "one_per_uniform_cell",
+    "fixed_coverage_residual",
+    "global_exact_k_physical_gap",
+    "privileged_unrestricted_gt",
+}
+
+SolveRequest = {
+    sample_id,
+    video_id,
+    split,
+    valid_mask,
+    K_eff,
+    physical_axis,
+    family_spec,
+    score_vector | None,
+    gt_segments | None,
+    objective_spec,
+}
+
+SolveResult = {
+    status,
+    exact_claim,
+    selected_positions,
+    scaffold_positions,
+    residual_positions,
+    objective_vector,
+    geometry_report,
+    metrics,
+    solver_proof,
+}
+```
+
+## 11.3 物理 metadata
+
+每样本 solver 输入必须带：
+
+```text
+valid_L
+dense_indices
+original_frame_indices
+timestamps_seconds
+fps
+snippet_stride
+window_start_frame
+offset_frames
+padding_count
+```
+
+不允许只传 `G=15`。
+
+## 11.4 JSON/JSONL schema
+
+### `run_manifest.json`
+
+```json
+{
+  "schema_version": "duca_allocation_ceiling_v1",
+  "repository": "yuzbo/OpenTAD_C3_CoarseClean_20260702",
+  "evidence_commit": "4ce69c...",
+  "frozen_model_commit": "1642f26...",
+  "resolved_config_sha256": "...",
+  "dataset_manifest_sha256": "...",
+  "split_manifest_sha256": "...",
+  "family_spec_sha256": "...",
+  "physical_contract_sha256": "...",
+  "objective_spec_sha256": "...",
+  "preregistration_sha256": "...",
+  "solver": {
+    "name": "ortools-cp-sat / physical-dag-dp",
+    "version": "...",
+    "parameters_sha256": "..."
+  }
+}
+```
+
+### 每样本 JSONL
+
+```json
+{
+  "sample_id": "...",
+  "video_id": "...",
+  "window_start_frame": 0,
+  "valid_L": 768,
+  "K_eff": 384,
+  "coordinate_sha256": "...",
+  "gt_sha256": "...",
+  "family": "global_exact_k_physical_gap",
+  "status": "OPTIMAL",
+  "selected_positions": [],
+  "scaffold_positions": [],
+  "residual_positions": [],
+  "objective_vector": {},
+  "geometry": {},
+  "metrics": {},
+  "solver_wall_time_ms": 0.0,
+  "best_bound": null,
+  "exact_claim": true
+}
+```
+
+## 11.5 Hash binding
+
+所有 hash 使用 canonical JSON：
+
+```text
+sort_keys=True
+separators=(",", ":")
+UTF-8
+no NaN/Infinity
+```
+
+artifact chain 至少绑定：
+
+* exact commit；
+* frozen checkpoint SHA256；
+* resolved config；
+* split/video list；
+* family；
+* physical cap；
+* GT objective；
+* solver version；
+* input JSONL；
+* output JSONL。
+
+## 11.6 Fail closed
+
+以下任一情况不得写 `exact_ceiling=true`：
+
+* dirty/unbound code；
+* non-contiguous valid mask；
+* missing actual physical coordinate；
+* duplicate/out-of-range selection；
+* `K != K_eff`；
+* physical gap violation；
+* uniform不属于声称包含它的 family；
+* CP-SAT 非 `OPTIMAL`；
+* test GT在 preregistration前读取；
+* deployment score path接收到 GT；
+* artifact已存在；
+* hash mismatch；
+* config启用 selected-axis GT remap却声称 physical-grid detector。
+
+## 11.7 Physical-grid detector复用
+
+`[PROPOSAL]`
+
+Secondary detector config 只做以下必要切换：
+
+```python
+frame_selector.remap_gt_to_selected_axis = False
+frame_selector.selected_axis_remap_required = False
+rpn_head.physical_grid_actionformer = dict(
+    enabled=True,
+    required=True,
+    strict=True,
+)
+```
+
+输入 metas 使用真实 acquisition positions。
+
+## 11.8 应保持不动的代码
+
+当前 ceiling 阶段不修改：
+
+* `DucaOnlineFrameSelector` 的正式训练逻辑；
+* 已完成三个 CellCF arm 配置与 work_dir；
+* frozen checkpoint；
+* Dynamic MUST；
+* backbone、projection、neck、ActionFormer loss/NMS；
+* 现有 finite-candidate diagnostic；
+* 现有结果命名。
+
+---
+
+# 12. `CORE_CODE`
+
+以下均为 `[PROPOSAL]`，不是当前仓库事实。
+
+## 12.1 Family、physical validator 与 exact DP
+
+```python
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from hashlib import sha256
+import json
+import math
+from typing import Any, Iterable, Mapping, Sequence
+
+try:
+    import torch
+except Exception:  # diagnostic module may be inspected without torch
+    torch = None
+
+
+class ContractError(ValueError):
+    pass
+
+
+class SolveStatus(str, Enum):
+    OPTIMAL = "OPTIMAL"
+    FEASIBLE = "FEASIBLE"
+    TIMEOUT = "TIMEOUT"
+    INFEASIBLE = "INFEASIBLE"
+    UNKNOWN = "UNKNOWN"
+
+
+def _tolist(value: Any) -> list[Any]:
+    """Accept CPU/GPU tensors, numpy arrays and Python sequences."""
+    if torch is not None and torch.is_tensor(value):
+        value = value.detach().cpu().reshape(-1).tolist()
+    elif hasattr(value, "tolist"):
+        value = value.tolist()
+    return list(value)
+
+
+def valid_prefix_length(mask: Any) -> int:
+    values = _tolist(mask)
+    bits: list[bool] = []
+    for value in values:
+        if isinstance(value, bool):
+            bits.append(value)
+        elif value in (0, 1):
+            bits.append(bool(value))
+        else:
+            raise ContractError("valid_mask must contain booleans only")
+
+    length = sum(bits)
+    expected = [True] * length + [False] * (len(bits) - length)
+    if bits != expected:
+        raise ContractError("valid_mask must be one contiguous prefix")
+    return length
+
+
+def exact_uniform(L: int, K: int) -> tuple[int, ...]:
+    L, K = int(L), int(K)
+    if not (1 <= L <= 768 and 0 <= K <= min(384, L)):
+        raise ContractError("require 1<=L<=768 and 0<=K<=min(384,L)")
+    if K == 0:
+        return ()
+    if K == 1:
+        return (0,)
+
+    denominator = K - 1
+    anchors = []
+    for index in range(K):
+        quotient, remainder = divmod(index * (L - 1), denominator)
+        if (
+            2 * remainder > denominator
+            or (2 * remainder == denominator and quotient % 2 == 1)
+        ):
+            quotient += 1
+        anchors.append(quotient)
+
+    if len(set(anchors)) != K:
+        raise ContractError("exact-uniform anchors are not unique")
+    return tuple(anchors)
+
+
+def uniform_cells(L: int, K: int) -> tuple[tuple[int, ...], ...]:
+    anchors = exact_uniform(L, K)
+    if not anchors:
+        return ()
+
+    starts = [0] * K
+    ends = [L] * K
+    for j in range(1, K):
+        starts[j] = (anchors[j - 1] + anchors[j]) // 2 + 1
+        ends[j - 1] = starts[j]
+
+    cells = tuple(
+        tuple(range(starts[j], ends[j]))
+        for j in range(K)
+    )
+    if any(anchors[j] not in cells[j] for j in range(K)):
+        raise ContractError("anchor escaped its Voronoi cell")
+    return cells
+
+
+@dataclass(frozen=True)
+class PhysicalAxis:
+    original_frames: tuple[float, ...]
+    seconds: tuple[float, ...]
+
+    @classmethod
+    def build(
+        cls,
+        original_frames: Any,
+        seconds: Any,
+        valid_mask: Any,
+    ) -> "PhysicalAxis":
+        L = valid_prefix_length(valid_mask)
+        frames = tuple(float(v) for v in _tolist(original_frames)[:L])
+        times = tuple(float(v) for v in _tolist(seconds)[:L])
+
+        if L < 1 or len(frames) != L or len(times) != L:
+            raise ContractError("coordinates must cover the valid prefix")
+
+        for name, values in (("frames", frames), ("seconds", times)):
+            if not all(math.isfinite(v) for v in values):
+                raise ContractError(f"{name} must be finite")
+            if any(b <= a for a, b in zip(values, values[1:])):
+                raise ContractError(f"{name} must be strictly increasing")
+
+        return cls(frames, times)
+
+    @property
+    def L(self) -> int:
+        return len(self.original_frames)
+
+
+def _selection(
+    selected: Any,
+    L: int,
+    K: int,
+) -> tuple[int, ...]:
+    values = tuple(sorted(int(v) for v in _tolist(selected)))
+    if len(values) != K or len(set(values)) != K:
+        raise ContractError("selection must contain exactly K unique positions")
+    if any(v < 0 or v >= L for v in values):
+        raise ContractError("selection escaped the valid prefix")
+    return values
+
+
+def physical_gap_report(
+    selected: Any,
+    axis: PhysicalAxis,
+    K: int,
+) -> dict[str, Any]:
+    selected = _selection(selected, axis.L, K)
+
+    if K == 0:
+        return {
+            "coverage_defined": False,
+            "max_unselected_index_hole": axis.L,
+            "max_original_frame_interval": None,
+            "max_seconds_interval": None,
+        }
+
+    left_hole = selected[0]
+    right_hole = axis.L - 1 - selected[-1]
+    interior_holes = [
+        right - left - 1
+        for left, right in zip(selected, selected[1:])
+    ]
+
+    frame_intervals = [
+        axis.original_frames[selected[0]] - axis.original_frames[0],
+        *(
+            axis.original_frames[right] - axis.original_frames[left]
+            for left, right in zip(selected, selected[1:])
+        ),
+        axis.original_frames[-1] - axis.original_frames[selected[-1]],
+    ]
+
+    second_intervals = [
+        axis.seconds[selected[0]] - axis.seconds[0],
+        *(
+            axis.seconds[right] - axis.seconds[left]
+            for left, right in zip(selected, selected[1:])
+        ),
+        axis.seconds[-1] - axis.seconds[selected[-1]],
+    ]
+
+    return {
+        "coverage_defined": True,
+        "left_index_hole": left_hole,
+        "interior_max_index_hole": max(interior_holes, default=0),
+        "right_index_hole": right_hole,
+        "max_unselected_index_hole": max(
+            [left_hole, right_hole, *interior_holes]
+        ),
+        "max_original_frame_interval": max(frame_intervals),
+        "max_seconds_interval": max(second_intervals),
+    }
+
+
+def validate_physical_cap(
+    selected: Any,
+    axis: PhysicalAxis,
+    K: int,
+    *,
+    max_original_frame_interval: float,
+) -> dict[str, Any]:
+    report = physical_gap_report(selected, axis, K)
+    if not report["coverage_defined"]:
+        raise ContractError("finite physical cap is infeasible for K=0")
+
+    observed = float(report["max_original_frame_interval"])
+    if observed > float(max_original_frame_interval) + 1e-9:
+        raise ContractError(
+            f"physical gap violation: observed={observed}, "
+            f"cap={max_original_frame_interval}"
+        )
+    return report
+
+
+def solve_one_per_cell(
+    scores: Any,
+    L: int,
+    K: int,
+) -> tuple[int, ...]:
+    values = [float(v) for v in _tolist(scores)[:L]]
+    if len(values) != L or not all(math.isfinite(v) for v in values):
+        raise ContractError("scores must be finite and length L")
+
+    anchors = exact_uniform(L, K)
+    selected = []
+    for anchor, cell in zip(anchors, uniform_cells(L, K)):
+        selected.append(
+            min(
+                cell,
+                key=lambda t: (
+                    -values[t],
+                    abs(t - anchor),
+                    t,
+                ),
+            )
+        )
+    return tuple(selected)
+
+
+def minimum_scaffold(
+    candidates: Iterable[int],
+    axis: PhysicalAxis,
+    *,
+    max_original_frame_interval: float,
+) -> tuple[int, ...]:
+    """Exact minimum-cardinality source-to-sink path; lexicographic tie."""
+    candidates = sorted(set(int(v) for v in candidates))
+    if (
+        not candidates
+        or any(v < 0 or v >= axis.L for v in candidates)
+    ):
+        raise ContractError("invalid scaffold candidates")
+
+    cap = float(max_original_frame_interval)
+    best: list[tuple[int, tuple[int, ...]] | None] = [
+        None
+    ] * len(candidates)
+
+    for j, position in enumerate(candidates):
+        options: list[tuple[int, tuple[int, ...]]] = []
+
+        if (
+            axis.original_frames[position]
+            - axis.original_frames[0]
+            <= cap + 1e-9
+        ):
+            options.append((1, (position,)))
+
+        for i in range(j):
+            if (
+                best[i] is not None
+                and axis.original_frames[position]
+                - axis.original_frames[candidates[i]]
+                <= cap + 1e-9
+            ):
+                count, path = best[i]
+                options.append((count + 1, path + (position,)))
+
+        if options:
+            best[j] = min(options, key=lambda item: (item[0], item[1]))
+
+    terminal = [
+        best[j]
+        for j, position in enumerate(candidates)
+        if (
+            best[j] is not None
+            and axis.original_frames[-1]
+            - axis.original_frames[position]
+            <= cap + 1e-9
+        )
+    ]
+
+    if not terminal:
+        raise ContractError("no scaffold satisfies the physical cap")
+
+    return min(terminal, key=lambda item: (item[0], item[1]))[1]
+
+
+def solve_coverage_residual(
+    scores: Any,
+    axis: PhysicalAxis,
+    K: int,
+    scaffold: Sequence[int],
+    *,
+    max_original_frame_interval: float,
+) -> tuple[int, ...]:
+    scaffold = _selection(scaffold, axis.L, len(scaffold))
+    validate_physical_cap(
+        scaffold,
+        axis,
+        len(scaffold),
+        max_original_frame_interval=max_original_frame_interval,
+    )
+    if len(scaffold) > K:
+        raise ContractError("scaffold exceeds K")
+
+    values = [float(v) for v in _tolist(scores)[:axis.L]]
+    scaffold_set = set(scaffold)
+    remaining = [
+        t for t in range(axis.L)
+        if t not in scaffold_set
+    ]
+
+    # Deterministic: larger score first, then smaller dense index.
+    residual = sorted(
+        remaining,
+        key=lambda t: (-values[t], t),
+    )[:K - len(scaffold)]
+
+    selected = tuple(sorted((*scaffold, *residual)))
+    validate_physical_cap(
+        selected,
+        axis,
+        K,
+        max_original_frame_interval=max_original_frame_interval,
+    )
+    return selected
+
+
+def solve_global_exact_k(
+    scores: Any,
+    axis: PhysicalAxis,
+    K: int,
+    *,
+    max_original_frame_interval: float,
+    score_scale: int = 1_000_000,
+) -> tuple[int, ...]:
+    """Exact additive-score DAG DP with deterministic lexicographic ties."""
+    L = axis.L
+    cap = float(max_original_frame_interval)
+
+    if not 0 <= K <= min(384, L):
+        raise ContractError("invalid K")
+    if K == 0:
+        raise ContractError("finite physical cap is infeasible for K=0")
+
+    raw_scores = [float(v) for v in _tolist(scores)[:L]]
+    if (
+        len(raw_scores) != L
+        or not all(math.isfinite(v) for v in raw_scores)
+    ):
+        raise ContractError("scores must be finite and length L")
+
+    integer_scores = [
+        int(round(value * score_scale))
+        for value in raw_scores
+    ]
+
+    neg_inf = -(10**100)
+    prev_score = [neg_inf] * L
+    prev_rank = [10**18] * L
+    parents = [[-1] * L for _ in range(K + 1)]
+
+    first_layer = []
+    for j in range(L):
+        if (
+            axis.original_frames[j]
+            - axis.original_frames[0]
+            <= cap + 1e-9
+        ):
+            prev_score[j] = integer_scores[j]
+            first_layer.append(j)
+
+    for rank, j in enumerate(first_layer):
+        prev_rank[j] = rank
+
+    for count in range(2, K + 1):
+        current_score = [neg_inf] * L
+        current_parent = [-1] * L
+
+        for j in range(L):
+            best_score = neg_inf
+            best_parent_rank = 10**18
+            best_parent = -1
+
+            # Coordinates are sorted, so break once the cap is exceeded.
+            for i in range(j - 1, -1, -1):
+                if (
+                    axis.original_frames[j]
+                    - axis.original_frames[i]
+                    > cap + 1e-9
+                ):
+                    break
+                if prev_score[i] == neg_inf:
+                    continue
+
+                candidate_score = (
+                    prev_score[i] + integer_scores[j]
+                )
+                if (
+                    candidate_score > best_score
+                    or (
+                        candidate_score == best_score
+                        and prev_rank[i] < best_parent_rank
+                    )
+                ):
+                    best_score = candidate_score
+                    best_parent_rank = prev_rank[i]
+                    best_parent = i
+
+            if best_parent >= 0:
+                current_score[j] = best_score
+                current_parent[j] = best_parent
+
+        parents[count] = current_parent
+
+        reachable = [
+            j for j in range(L)
+            if current_parent[j] >= 0
+        ]
+        current_rank = [10**18] * L
+        for rank, j in enumerate(
+            sorted(
+                reachable,
+                key=lambda j: (
+                    prev_rank[current_parent[j]],
+                    j,
+                ),
+            )
+        ):
+            current_rank[j] = rank
+
+        prev_score = current_score
+        prev_rank = current_rank
+
+    terminal = [
+        j
+        for j in range(L)
+        if (
+            prev_score[j] != neg_inf
+            and axis.original_frames[-1]
+            - axis.original_frames[j]
+            <= cap + 1e-9
+        )
+    ]
+    if not terminal:
+        raise ContractError(
+            "global exact-K/max-interval family is infeasible"
+        )
+
+    end = min(
+        terminal,
+        key=lambda j: (
+            -prev_score[j],
+            prev_rank[j],
+        ),
+    )
+
+    path = [end]
+    for count in range(K, 1, -1):
+        end = parents[count][end]
+        path.append(end)
+
+    selected = tuple(reversed(path))
+    validate_physical_cap(
+        selected,
+        axis,
+        K,
+        max_original_frame_interval=cap,
+    )
+    return selected
+
+
+def require_exact_status(
+    status: SolveStatus,
+    *,
+    exact_claim: bool,
+) -> None:
+    if exact_claim and status is not SolveStatus.OPTIMAL:
+        raise ContractError(
+            f"exact claim requires OPTIMAL; got {status.value}"
+        )
+
+
+def canonical_sha256(payload: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    )
+    return sha256(encoded.encode("utf-8")).hexdigest()
+```
+
+## 12.2 CP-SAT path model 与 canonical pinning
+
+```python
+from ortools.sat.python import cp_model
+
+
+def build_physical_path_model(
+    axis: PhysicalAxis,
+    K: int,
+    cap_frames: int,
+):
+    if K <= 0:
+        raise ContractError("finite-cap CP-SAT path requires K>0")
+
+    model = cp_model.CpModel()
+    x = [
+        model.NewBoolVar(f"x_{t}")
+        for t in range(axis.L)
+    ]
+
+    source = {}
+    sink = {}
+    between = {}
+
+    for j in range(axis.L):
+        if (
+            axis.original_frames[j]
+            - axis.original_frames[0]
+            <= cap_frames
+        ):
+            source[j] = model.NewBoolVar(f"a_src_{j}")
+
+        if (
+            axis.original_frames[-1]
+            - axis.original_frames[j]
+            <= cap_frames
+        ):
+            sink[j] = model.NewBoolVar(f"a_{j}_sink")
+
+    for i in range(axis.L):
+        for j in range(i + 1, axis.L):
+            delta = (
+                axis.original_frames[j]
+                - axis.original_frames[i]
+            )
+            if delta > cap_frames:
+                break
+            between[i, j] = model.NewBoolVar(
+                f"a_{i}_{j}"
+            )
+
+    model.Add(sum(source.values()) == 1)
+    model.Add(sum(sink.values()) == 1)
+    model.Add(sum(x) == K)
+
+    for j in range(axis.L):
+        incoming = []
+        outgoing = []
+
+        if j in source:
+            incoming.append(source[j])
+        if j in sink:
+            outgoing.append(sink[j])
+
+        incoming.extend(
+            arc for (i, k), arc in between.items()
+            if k == j
+        )
+        outgoing.extend(
+            arc for (i, k), arc in between.items()
+            if i == j
+        )
+
+        model.Add(sum(incoming) == x[j])
+        model.Add(sum(outgoing) == x[j])
+
+    return model, x
+
+
+def solve_and_pin(
+    model: cp_model.CpModel,
+    solver: cp_model.CpSolver,
+    expression,
+    *,
+    maximize: bool,
+) -> int:
+    if maximize:
+        model.Maximize(expression)
+    else:
+        model.Minimize(expression)
+
+    status = solver.Solve(model)
+    if status != cp_model.OPTIMAL:
+        raise ContractError(
+            f"canonical oracle requires OPTIMAL; "
+            f"status={solver.StatusName(status)}"
+        )
+
+    optimum = int(round(solver.ObjectiveValue()))
+    model.Add(expression == optimum)
+    model.ClearObjective()
+    return optimum
+
+
+def endpoint_hit_var(
+    model: cp_model.CpModel,
+    x,
+    positions: Sequence[int],
+    name: str,
+):
+    hit = model.NewBoolVar(name)
+    if not positions:
+        model.Add(hit == 0)
+        return hit
+
+    mass = sum(x[t] for t in positions)
+    model.Add(mass >= hit)
+    model.Add(mass <= len(positions) * hit)
+    return hit
+
+
+def canonical_gt_oracle(
+    axis: PhysicalAxis,
+    K: int,
+    cap_frames: int,
+    gt_segments: Sequence[tuple[float, float]],
+    exact_uniform_positions: Sequence[int],
+):
+    model, x = build_physical_path_model(
+        axis,
+        K,
+        cap_frames,
+    )
+
+    solver = cp_model.CpSolver()
+    solver.parameters.num_search_workers = 1
+    solver.parameters.random_seed = 0
+
+    both_by_radius = {}
+    any_by_radius = {}
+
+    for radius in (0, 1, 2, 4):
+        endpoint_hits = []
+        both_hits = []
+
+        for index, (start, end) in enumerate(gt_segments):
+            start_positions = [
+                t for t in range(axis.L)
+                if abs(t - start) <= radius
+            ]
+            end_positions = [
+                t for t in range(axis.L)
+                if abs(t - min(axis.L - 1, end)) <= radius
+            ]
+
+            start_hit = endpoint_hit_var(
+                model,
+                x,
+                start_positions,
+                f"start_{index}_r{radius}",
+            )
+            end_hit = endpoint_hit_var(
+                model,
+                x,
+                end_positions,
+                f"end_{index}_r{radius}",
+            )
+
+            both = model.NewBoolVar(
+                f"both_{index}_r{radius}"
+            )
+            model.Add(both <= start_hit)
+            model.Add(both <= end_hit)
+            model.Add(
+                both >= start_hit + end_hit - 1
+            )
+
+            endpoint_hits.extend([start_hit, end_hit])
+            both_hits.append(both)
+
+        both_by_radius[radius] = sum(both_hits)
+        any_by_radius[radius] = sum(endpoint_hits)
+
+    # Strict-to-loose canonical order.
+    objective_vector = {}
+    for radius in (0, 1, 2, 4):
+        objective_vector[f"both_r{radius}"] = solve_and_pin(
+            model,
+            solver,
+            both_by_radius[radius],
+            maximize=True,
+        )
+
+    for radius in (0, 1, 2, 4):
+        objective_vector[f"endpoint_r{radius}"] = solve_and_pin(
+            model,
+            solver,
+            any_by_radius[radius],
+            maximize=True,
+        )
+
+    # Empty-GT/equal-objective fallback: preserve uniform when feasible.
+    uniform_overlap = sum(
+        x[t] for t in exact_uniform_positions
+    )
+    objective_vector["uniform_overlap"] = solve_and_pin(
+        model,
+        solver,
+        uniform_overlap,
+        maximize=True,
+    )
+
+    # Exact lexicographically smallest selected tuple:
+    # prefer x[0]=1, then x[1]=1, ...
+    for t in range(axis.L):
+        solve_and_pin(
+            model,
+            solver,
+            x[t],
+            maximize=True,
+        )
+
+    status = solver.Solve(model)
+    if status != cp_model.OPTIMAL:
+        raise ContractError("final pinned solve is not OPTIMAL")
+
+    selected = tuple(
+        t for t in range(axis.L)
+        if solver.Value(x[t])
+    )
+    return {
+        "status": "OPTIMAL",
+        "selected_positions": selected,
+        "objective_vector": objective_vector,
+    }
+```
+
+生产版本还应在 uniform-overlap 之前加入：
+
+* endpoint-nearest-selected distance；
+* short-action support；
+* background count。
+
+这些应使用整数 frame distances，不使用浮点 objective。
+
+## 12.3 GT 泄漏保护
+
+```python
+def authorize_gt_access(
+    *,
+    mode: str,
+    split: str,
+    preregistration_sha256: str | None,
+    tuning: bool,
+) -> None:
+    if mode == "deployment":
+        raise ContractError(
+            "deployment selector must never receive GT"
+        )
+
+    if split == "test":
+        if mode != "frozen_evaluation":
+            raise ContractError(
+                "test GT requires frozen_evaluation mode"
+            )
+        if not preregistration_sha256:
+            raise ContractError(
+                "test GT requires preregistration hash"
+            )
+        if tuning:
+            raise ContractError(
+                "test GT may not be used for tuning"
+            )
+```
+
+---
+
+# 13. `TEST_MATRIX`
+
+至少应实现以下 22 个 tests。
+
+|  # | 测试                                                    | 必须断言                          |
+| -: | ----------------------------------------------------- | ----------------------------- |
+|  1 | `test_exact_uniform_768_384_round_even`               | 首0、尾767、unique K              |
+|  2 | `test_uniform_cell_length_multiset`                   | `382×2,1×3,1×1`               |
+|  3 | `test_uniform_max_hole_two`                           | exact uniform hole=2          |
+|  4 | `test_cellcf_max_hole_three_attainable`               | worst B hole=3                |
+|  5 | `test_cellcf_one_quota_per_cell`                      | 每 cell count=1                |
+|  6 | `test_cellcf_cannot_transfer_quota`                   | 一个 cell 0、相邻2时拒绝 B            |
+|  7 | `test_g3_minimum_scaffold_is_192`                     | index-hole G3 的 qmin=192      |
+|  8 | `test_naive_even_anchor_scaffold_fails_g3`            | max hole=4                    |
+|  9 | `test_phase_switch_anchor_scaffold_passes_g3`         | 192点、hole=3、subset U          |
+| 10 | `test_uniform_violates_physical_cap_10`               | uniform max frame interval=12 |
+| 11 | `test_uniform_passes_physical_cap_15`                 | observed=12≤15                |
+| 12 | `test_physical_15_min_scaffold_all_positions_255`     | exact min=255                 |
+| 13 | `test_physical_15_min_uniform_subset_scaffold_382`    | exact min=382                 |
+| 14 | `test_c_contains_uniform_iff_scaffold_subset_uniform` | 双向判断                          |
+| 15 | `test_d_strictly_contains_fixed_c`                    | 构造不含 mandatory S 的 D 解        |
+| 16 | `test_b_not_subset_physical_d15`                      | 构造16帧 CellCF gap              |
+| 17 | `test_short_L_uses_K_eff_min`                         | `L<384` 时 K=L                 |
+| 18 | `test_L1_K0_and_K1`                                   | 空解/单点语义明确                     |
+| 19 | `test_noncontiguous_valid_mask_rejected`              | `[1,0,1]` fail closed         |
+| 20 | `test_equal_scores_are_deterministic`                 | 多次 DP 完全相同                    |
+| 21 | `test_infeasible_physical_gap_status`                 | 返回 INFEASIBLE，不修补             |
+| 22 | `test_cpu_gpu_tensor_inputs_identical`                | CUDA/CPU坐标与 selection一致       |
+| 23 | `test_padding_never_enters_selection`                 | selected `<L`                 |
+| 24 | `test_empty_gt_canonical_returns_uniform`             | uniform-overlap tie           |
+| 25 | `test_overlapping_gt_supported`                       | 不重复/不丢 boundary vars          |
+| 26 | `test_extremely_short_gt_supported`                   | start≈end 不崩溃                 |
+| 27 | `test_window_endpoint_gt_supported`                   | 0 与 L-1 coverage              |
+| 28 | `test_cp_sat_feasible_not_accepted_as_exact`          | exact claim拒绝 FEASIBLE        |
+| 29 | `test_cp_sat_timeout_not_accepted_as_exact`           | timeout fail closed           |
+| 30 | `test_test_gt_requires_preregistration`               | 无 hash 拒绝                     |
+| 31 | `test_deployment_gt_rejected`                         | 所有 split 拒绝                   |
+| 32 | `test_manifest_hash_detects_tamper`                   | 任意字段改动 hash不同                 |
+| 33 | `test_physical_grid_rejects_selected_axis_gt`         | head fail closed              |
+| 34 | `test_actual_frame_and_seconds_gap_report`            | frame/sec/index 三种 gap 同时报    |
+
+四个决定性 fixture 应固定为：
+
+```python
+def formal_axis(fps=25.0):
+    frames = [4 * t for t in range(768)]
+    seconds = [frame / fps for frame in frames]
+    mask = [True] * 768
+    return PhysicalAxis.build(frames, seconds, mask)
+
+
+def test_physical_counterexamples():
+    axis = formal_axis()
+    uniform = exact_uniform(768, 384)
+
+    assert physical_gap_report(
+        uniform, axis, 384
+    )["max_original_frame_interval"] == 12
+
+    with pytest.raises(ContractError):
+        validate_physical_cap(
+            uniform,
+            axis,
+            384,
+            max_original_frame_interval=10,
+        )
+
+    all_position_scaffold = minimum_scaffold(
+        range(768),
+        axis,
+        max_original_frame_interval=15,
+    )
+    uniform_subset_scaffold = minimum_scaffold(
+        uniform,
+        axis,
+        max_original_frame_interval=15,
+    )
+
+    assert len(all_position_scaffold) == 255
+    assert len(uniform_subset_scaffold) == 382
+```
+
+---
+
+# 14. `GO_HOLD_KILL_TABLE`
+
+| 审核项                   | GO                                         | HOLD                           | KILL                        | 当前               |
+| --------------------- | ------------------------------------------ | ------------------------------ | --------------------------- | ---------------- |
+| Family 定义             | D physical exact-K 已冻结并含 U                 | physical cap/固定 S 未冻结          | 无可行 nontrivial family       | **HOLD**         |
+| Current CellCF        | 不作为 allocation 主证据                         | 仅保留历史/local-content ablation   | 若仍声称 global allocation则路线错误 | **HOLD/降级**      |
+| 坐标                    | actual acquisition=detector physical prior | metadata尚未绑定 actual frame/time | 只能靠 GT remap工作              | **HOLD**         |
+| Exact ceiling         | D/E OPTIMAL artifact存在                     | 尚未运行或 timeout                  | upper envelope无 headroom    | **HOLD**         |
+| Coarse recoverability | held-out lower CI>0且≥MDE                   | 不确定                            | powered upper CI≤0          | **UNKNOWN/HOLD** |
+| Frozen detector       | physical-grid paired benefit               | 不确定                            | D/E upper CI≤MDE            | **UNKNOWN/HOLD** |
+| Cost                  | dense E2E saving lower CI>0                | dense baseline缺失               | saving upper CI≤0           | **HOLD**         |
+| Seed/power            | required seeds≤预算                          | `σ_seed`未知                     | required seeds>预算           | **HOLD**         |
+| Full training         | 所有前置 gate通过                                | 任一前置缺失                         | ceiling/cost已否定             | **禁止开始**         |
+
+**当前总裁决：`HOLD_AND_REVISE_FAMILY`。**
+
+---
+
+# 15. `FINAL_NEXT_ACTION`
+
+唯一允许的下一步不是 CARA 模型训练，而是提交并运行一个只读/冻结模型的 **allocation-family ceiling package**：
+
+1. 冻结 physical contract：`max_original_frame_interval=15`，同时报告 effective discrete cap=12、dense hole和seconds gap；
+2. 实现 A、B、C、D、E 的统一 exact diagnostic，但以 **D physical exact-K** 为主 ceiling；
+3. 证明并记录 C 在该物理合同下的 `255 / 382` scaffold 反例，不把 192+192写入模型；
+4. 用 training-only 冻结 family/objective/prereg hash；
+5. 在 sealed validation videos 上运行 metric-wise envelopes、canonical D/E oracle、coarse-visible D-DP、frozen physical-grid detector和 formal dense cost profile；
+6. 只有 GO gates 全部通过，才允许实现 variable-scaffold/global-D 版 CARA；当前三个 CellCF arms保持原名、原权重和历史解释，不重新训练。
+
+> **最终一句话：当前不应开始实现并训练固定 `192+192` 的 DUCA-CARA，也不应立即终止所有 literal pre-backbone selector；应先把可行集修订为 physical-coordinate global exact-K/max-gap family，完成 exact ceiling、physical-grid detector与dense full-stack break-even 后再裁决。**

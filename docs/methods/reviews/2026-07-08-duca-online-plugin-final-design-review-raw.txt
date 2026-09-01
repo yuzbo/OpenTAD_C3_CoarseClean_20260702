@@ -1,0 +1,1916 @@
+# 一、最终裁决：论文最终到底应该交付什么
+
+**最终论文不应该交付一个完整新 TAD detector。** 最终应该交付的是一个 **detector 前的 online temporal acquisition plugin**：它插在 AdaTAD / ActionFormer 的输入侧，在线输出 original-time `selected_positions`，然后 detector 只对这些位置做一次 forward。
+
+这个 plugin 必须达到以下程度才算真正插件：它有明确的 `forward_acquire()` 接口；推理时不读 GT、不读 teacher utility、不读 prediction cache；输出的 `selected_positions` 是 detector 实际 gather 和消费的位置；预算单位是 detector-consumed temporal observations；同一个接口能接 AdaTAD 和 ActionFormer，而不是只适配一个配置。
+
+**最终主方法必须插进 detector forward，而不是 offline ledger。** ledger 可以保留，但只能作为 audit / reproducibility artifact。只要论文主叙事仍然是 “export ledger → train AdaTAD”，严厉 reviewer 会把它判成工程 pipeline，不会承认它是 online acquisition plugin。
+
+最终训练不应该从第一步就纯端到端随机探索。最合理的最终训练是：**teacher utility warm-up + hard-forward straight-through joint fine-tune**。warm-up 让 selector 不从噪声开始；joint fine-tune 让 detector loss 真正影响 selector；forward 永远 hard select ≤384，避免 soft/hard mismatch。
+
+免训练 actionness source 不应该成为主方法。它应该扮演三个角色：**DUCA-Frozen 的 frozen input branch、actionness top-K baseline、DUCA-Adapted 的 auxiliary input / warm-start**。如果你把 X-CLIP / ActionCLIP / InternVideo actionness 当主方法，会被批评成 “用了更大的 foundation model 做采样器”。
+
+C3 / p_action / GAS-VT / lattice / heuristic radius 都不能作为最终主方法。它们只能作为 baseline、ablation、failure analysis、初始化或 auxiliary signal。heuristic radius / gap repair 尤其危险：如果它们贡献最大，论文主 claim 必须降级为 decoder heuristic，而不是 learned acquisition。
+
+strict ledger 在最终论文中只应承担三件事：**记录 plugin 输出、证明 no-leak、证明 budget contract**。它不能参与决策，不能替代 online forward，也不能成为方法本体。
+
+足以说服严厉 reviewer 的最终闭环是：**online plugin forward hard-selects original-time positions ≤384 → detector consumes exactly those positions once → detector loss 通过 ST / joint fine-tune 影响 selector → val/test no-leak validator pass → AdaTAD 和 ActionFormer 都有效 → high-IoU 提升能被 boundary support / hole diagnostics 解释。**
+
+---
+
+# 二、最终主方法设计
+
+## 1. 方法名称
+
+**DUCA-TAD**
+**Detector-Utility-Calibrated Online Acquisition for Sparse Temporal Action Detection**
+
+更具体的模块名：
+
+**DUCA-CR Adapter**
+**Detector-Utility-Calibrated Center-Radius Acquisition Adapter**
+
+---
+
+## 2. 一句话定义
+
+**DUCA-TAD 是一个插在 TAD detector 前的 online acquisition plugin，它从 768 个 original-time temporal observations 中预测 center、radius 和 detector utility，并在 strict budget 下输出 ≤384 个被 detector 真正消费的 selected positions。**
+
+---
+
+## 3. 模型输入
+
+DUCA Adapter 的输入分两层。
+
+### 推理时允许输入
+
+```text
+video observations or low-cost clip features
+valid_mask
+original_time_indices
+zero-shot / frozen actionness p_action
+uncertainty / entropy
+delta actionness
+motion energy
+optional low-cost browser features
+```
+
+### 训练时额外允许输入
+
+```text
+train-only detector utility target
+train-only boundary/context target
+train-only GT-derived detector loss target
+```
+
+训练时额外输入只能参与 loss，不能进入 selector inference branch。
+
+---
+
+## 4. 模型输出
+
+主输出只有一个：
+
+```python
+selected_positions: Tensor[B, K]  # original-time indices, K <= 384
+```
+
+辅助输出：
+
+```python
+selected_mask
+selected_centers
+context_radius
+center_scores
+utility_pred
+boundary_pred
+audit_record
+```
+
+严厉规定：`selected_centers` 和 `radius` 是 metadata / intermediate decision，不是 detector 输入的预算单位。detector 消费的只能是 `selected_positions`。
+
+---
+
+## 5. 关键模块
+
+```text
+ZeroShotActionnessSource
+  └── DUCA-Frozen actionness / motion / entropy branch
+
+DucaAcquisitionAdapter
+  ├── low-cost temporal encoder
+  ├── center score head
+  ├── radius head
+  ├── boundary/context head
+  ├── utility prediction head
+  └── anti-collapse / entropy control
+
+BudgetedCenterRadiusDecoder
+  ├── hard center top-k candidate selection
+  ├── radius interval expansion
+  ├── overlap-aware marginal gain
+  ├── global budget <=384
+  └── original-time selected_positions
+
+SparseTemporalGrid
+  ├── selected original-time coordinates
+  ├── selected mask
+  ├── inverse mapping
+  └── metadata for detector decode
+
+Detector Bridge
+  ├── gather selected observations
+  ├── pass SparseTemporalGrid to AdaTAD / ActionFormer
+  └── decode in original time
+```
+
+---
+
+## 6. Final forward 流程
+
+```text
+Input 768 temporal observations
+  ↓
+ZeroShotActionnessSource / low-cost browser
+  ↓
+DUCA Adapter temporal encoder
+  ↓
+center_scores, radius, boundary_score, utility_pred
+  ↓
+hard budgeted center-radius decode
+  ↓
+SparseTemporalGrid(selected_positions <=384, original-time)
+  ↓
+gather selected observations
+  ↓
+AdaTAD / ActionFormer forward once
+  ↓
+loss / predictions decoded in original time
+```
+
+---
+
+## 7. Hard selection / decoder 设计
+
+最终 forward 必须 hard select。不能训练时 soft 看 768，测试时 hard 看 384。推荐 decoder：
+
+```text
+1. 预测 center_scores[t] 和 radius[t]
+2. 先取 candidate centers，数量可大于最终 center count，例如 top 2K
+3. 每个 center 形成 interval [t-r, t+r]
+4. 按 utility-per-marginal-cost 排序
+5. 贪心加入 interval union
+6. 如果超预算，缩半径或跳过
+7. 如果不足预算，用 learned residual fill，不用 uniform fill 作为默认
+8. 输出 final selected_positions，严格 <=384
+```
+
+decoder 是 deterministic，不含 GT，不含 teacher。
+
+---
+
+## 8. original-time sparse grid 设计
+
+主方法必须保留 original-time 坐标：
+
+```python
+selected_positions = [0, 3, 4, 9, 11, ...]  # dense-grid original indices
+```
+
+detector 内部可以有 selected-rank tensor，但 decode / assignment / NMS 必须知道每个 rank 对应 original-time index：
+
+```python
+selected_rank: 0, 1, 2, 3
+original_time: 0, 3, 4, 9
+```
+
+如果只用 selected-rank time 做主结果，high-IoU localization claim 不成立。selected-rank decode 只能作为 ablation。
+
+---
+
+## 9. detector 接口
+
+最终接口应该是：
+
+```python
+sparse = adapter.acquire(batch)
+x_sparse = gather_selected_observations(batch["observations"], sparse.selected_positions)
+pred = detector.forward_sparse(x_sparse, sparse_grid=sparse)
+```
+
+AdaTAD 和 ActionFormer 都通过这个接口接入。ActionFormer 本身是 single-stage anchor-free TAL detector，以 temporal points 进行分类和边界回归；它非常适合作为 cross-detector transfer test。([欧洲计算机视觉协会][1]) OpenTAD 的价值在于统一 TAD 组件和公平比较，因此你的 plugin 应该利用统一接口，而不是写 AdaTAD-only hack。([GitHub][2])
+
+---
+
+## 10. inference 流程
+
+```python
+with torch.no_grad():
+    sparse_grid = adapter.acquire(
+        observations=low_cost_inputs,
+        valid_mask=valid_mask,
+        budget=384,
+        mode="hard",
+    )
+    selected_x = gather_selected_observations(video_or_features, sparse_grid.selected_positions)
+    outputs = detector.forward_sparse(selected_x, sparse_grid=sparse_grid)
+```
+
+推理时禁止：
+
+```text
+GT
+teacher utility
+dense detector prediction
+raw prediction cache
+validation-set detector responsibility
+oracle boundary
+post-hoc detector-score reranking
+```
+
+---
+
+## 11. ledger / audit role
+
+ledger 只记录：
+
+```text
+adapter input hash
+adapter checkpoint hash
+selected_positions
+budget
+no-leak flags
+detector consumed proof
+latency / count diagnostics
+```
+
+ledger 不参与 forward 决策。论文里应该写：
+
+> We materialize acquisition outputs as audit ledgers only for reproducibility and leakage validation; the method itself is an online adapter executed inside detector forward.
+
+---
+
+## 12. 论文创新 vs 工程实现
+
+### 论文创新
+
+```text
+1. Strict-budget original-time temporal acquisition for TAD
+2. Detector-utility calibrated center-radius acquisition
+3. Hard-forward ST joint fine-tuning under budget
+4. SparseTemporalGrid interface shared by AdaTAD and ActionFormer
+5. No-leak audit contract for train-only utility supervision
+```
+
+### 工程实现
+
+```text
+ledger writer
+validator
+config switch
+JSONL manifest
+run scripts
+baseline export
+```
+
+不要把工程实现写成贡献。
+
+---
+
+# 三、免训练粗二分类 / actionness source 设计
+
+## 1. 六类 source 的严厉比较
+
+| Source                              | 适合作为 DUCA-Frozen 主信号 | 适合作为轻量 source |  只能 teacher / upper bound | 风险                                                  |
+| ----------------------------------- | -------------------: | ------------: | ------------------------: | --------------------------------------------------- |
+| X-CLIP zero-shot prompt             |                    是 |             否 |                         否 | 成本高，可能太强也太重                                         |
+| ActionCLIP zero-shot prompt         |                    是 |             否 |                         否 | 成本高，prompt 敏感                                       |
+| SlowFast Kinetics proxy             |                    否 |            中等 |                         否 | closed-set Kinetics label 映射到 THUMOS actionness 不干净 |
+| VideoMAE Kinetics proxy             |                    否 |            中等 | 可作为 strong frozen feature | 成本接近 detector backbone                              |
+| InternVideo / foundation model      |                    否 |             否 |                         是 | 太大，必须算 teacher/upper-bound 成本                       |
+| motion / frame difference / entropy |                    否 |             是 |                         否 | 弱，但最公平、最轻                                           |
+
+X-CLIP 是基于 CLIP 扩展到视频识别的模型，包含 cross-frame attention 和 video-specific prompting，目标正是把 image-language pretraining 迁移到 video recognition。([arXiv][3]) ActionCLIP 把 action recognition 建模为 video-text matching，并强调 zero-shot / few-shot transfer；这使它适合作为 zero-shot actionness source，但不适合作为轻量 compute baseline。([arXiv][4]) SlowFast 通过低帧率 Slow pathway 和高帧率 Fast pathway分别建模语义与运动，适合做 Kinetics-pretrained actionness proxy，但它不是无成本 browser。([CVF开放获取][5]) VideoMAE 是强视频预训练 backbone，作为 frozen feature 很强，但把它放进 selector 可能削弱“低成本 acquisition”的说服力。([arXiv][6]) InternVideo2 这类 video foundation model 在多种 video recognition / video-text任务上很强，但参数和训练规模使它更像 upper-bound teacher，而不是公平的低成本 selector。([arXiv][7])
+
+---
+
+## 2. 最终选择
+
+### DUCA-Frozen 主信号
+
+**X-CLIP / ActionCLIP zero-shot prompt actionness 二选一，推荐 X-CLIP。**
+
+理由：X-CLIP explicitly models cross-frame information；ActionCLIP 也可做，但更像 action-recognition classifier。Frozen branch 的目标不是最轻，而是证明 “不用 THUMOS detection labels 也能产生可用 actionness”。
+
+### 最轻量 actionness source
+
+**motion energy + frame difference + entropy heuristic。**
+
+理由：成本低，能作为真正 browser overhead lower-bound。
+
+### 只能 teacher / upper bound
+
+**InternVideo / large VideoMAE / large foundation video model。**
+
+理由：如果它的成本接近或超过 detector backbone，就不能作为 efficient plugin 的主 source。
+
+---
+
+## 3. prompt 设计
+
+不要用 THUMOS 类名做唯一 prompt，否则会被批评成 class-specific zero-shot detector。用 action/background 二分类 prompt bank：
+
+### Action prompts
+
+```text
+"a video clip of a person performing an action"
+"a video clip showing a human activity"
+"a video clip with a salient temporal action"
+"a video clip where something is happening"
+"a video clip containing a sports or human action"
+```
+
+### Background prompts
+
+```text
+"a video clip of background"
+"a video clip where no action is happening"
+"a video clip of a person standing still"
+"a video clip with irrelevant context"
+"a video clip without a salient action"
+```
+
+可选 class-aware prompts 只能做 ablation：
+
+```text
+"a video clip of {class_name}"
+```
+
+主 DUCA-Frozen 不应依赖 test class names。
+
+---
+
+## 4. action/background 二分类分数
+
+对每个 temporal window / clip：
+
+```python
+sim_action = mean cosine(video_embed, action_prompt_embeds)
+sim_bg = mean cosine(video_embed, background_prompt_embeds)
+p_action = sigmoid((sim_action - sim_bg) / temperature)
+```
+
+如果是 Kinetics logits：
+
+```python
+p_action = 1 - P(background_like_kinetics_classes)
+```
+
+但 Kinetics 没有干净 background 类，所以更稳的是：
+
+```python
+p_action = entropy_adjusted_confidence
+         = max_softmax_prob * (1 - normalized_entropy)
+```
+
+这不是严格 action/background，只是 saliency/action-confidence proxy。论文必须如实写 proxy，不要写 detector actionness。
+
+---
+
+## 5. 不使用 THUMOS labels 的校准
+
+禁止用 THUMOS labels 做 Platt scaling / temperature tuning。允许：
+
+```text
+fixed temperature from pretraining paper / validation-free choice
+prompt-pair normalization
+within-video percentile normalization
+median/MAD robust normalization
+temporal smoothing with fixed kernel
+```
+
+不允许：
+
+```text
+THUMOS train labels fit temperature
+THUMOS GT fit threshold
+val mAP tune prompt
+test-time detector output calibrate p_action
+```
+
+---
+
+## 6. 证明没有 THUMOS 训练
+
+必须报告：
+
+```text
+model checkpoint source
+pretraining dataset
+no THUMOS fine-tune flag
+prompt list frozen before experiments
+temperature fixed before THUMOS evaluation
+hash of prompt list
+hash of checkpoint
+no THUMOS labels accessed by ZeroShotActionnessSource
+```
+
+---
+
+## 7. 避免 “用了更大 foundation model” 批评
+
+做三件事：
+
+1. **单独成本表**：zero-shot source FLOPs / latency / GPU memory；
+2. **轻量 source 对照**：motion-only DUCA-Frozen；
+3. **upper-bound 标注**：InternVideo / large VideoMAE 只作为 upper-bound，不进主 efficiency claim。
+
+---
+
+## 8. PyTorch 风格伪代码：window-level zero-shot actionness
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class ZeroShotActionnessSource(nn.Module):
+    """
+    No-THUMOS-training actionness source.
+
+    This module must be frozen. It can use X-CLIP / ActionCLIP / CLIP-like
+    video-text encoders, but it must not be calibrated with THUMOS labels.
+    """
+
+    def __init__(
+        self,
+        video_text_model: nn.Module,
+        tokenizer,
+        action_prompts=None,
+        background_prompts=None,
+        temperature: float = 0.07,
+        normalize_within_video: bool = True,
+        freeze: bool = True,
+    ):
+        super().__init__()
+        self.model = video_text_model
+        self.tokenizer = tokenizer
+        self.temperature = float(temperature)
+        self.normalize_within_video = bool(normalize_within_video)
+
+        self.action_prompts = action_prompts or [
+            "a video clip of a person performing an action",
+            "a video clip showing a human activity",
+            "a video clip with a salient temporal action",
+            "a video clip where something is happening",
+        ]
+        self.background_prompts = background_prompts or [
+            "a video clip of background",
+            "a video clip where no action is happening",
+            "a video clip of irrelevant context",
+            "a video clip without a salient action",
+        ]
+
+        if freeze:
+            for p in self.model.parameters():
+                p.requires_grad_(False)
+            self.model.eval()
+
+        self.register_buffer("_dummy", torch.empty(0), persistent=False)
+
+    @torch.no_grad()
+    def encode_prompts(self, device):
+        action_tokens = self.tokenizer(self.action_prompts).to(device)
+        bg_tokens = self.tokenizer(self.background_prompts).to(device)
+        action_text = self.model.encode_text(action_tokens)
+        bg_text = self.model.encode_text(bg_tokens)
+        action_text = F.normalize(action_text.float(), dim=-1)
+        bg_text = F.normalize(bg_text.float(), dim=-1)
+        return action_text, bg_text
+
+    @torch.no_grad()
+    def forward(self, video_windows: torch.Tensor, valid_mask: torch.Tensor | None = None):
+        """
+        video_windows:
+            [B, T, C, F, H, W] or model-specific window batch.
+            T is temporal observation/window index.
+        returns:
+            p_action [B, T]
+        """
+        bsz, length = video_windows.shape[:2]
+        flat = video_windows.reshape(bsz * length, *video_windows.shape[2:])
+
+        video_feat = self.model.encode_video(flat)
+        video_feat = F.normalize(video_feat.float(), dim=-1)
+
+        action_text, bg_text = self.encode_prompts(video_feat.device)
+        sim_action = video_feat @ action_text.t()
+        sim_bg = video_feat @ bg_text.t()
+
+        action_score = sim_action.mean(dim=-1)
+        bg_score = sim_bg.mean(dim=-1)
+        logit = (action_score - bg_score) / max(self.temperature, 1e-6)
+        p_action = torch.sigmoid(logit).reshape(bsz, length)
+
+        if self.normalize_within_video:
+            median = p_action.median(dim=1, keepdim=True).values
+            mad = (p_action - median).abs().median(dim=1, keepdim=True).values.clamp_min(1e-6)
+            z = (p_action - median) / mad
+            p_action = torch.sigmoid(z)
+
+        if valid_mask is not None:
+            p_action = p_action.masked_fill(~valid_mask.bool(), 0.0)
+
+        return {
+            "p_action": p_action,
+            "source": "zero_shot_video_text_prompt_actionness",
+            "uses_thumos_labels": False,
+            "requires_grad": False,
+        }
+```
+
+---
+
+# 四、最终训练方法设计
+
+## 1. 主训练到底是什么？
+
+最终主训练应是：
+
+> **train-only teacher utility warm-up + hard-forward ST joint fine-tune**
+
+不是纯 offline ledger，不是纯 soft top-K，不是 REINFORCE。
+
+最终 paper 可以这样写：
+
+```text
+We first warm-start the acquisition adapter with train-only detector utility to avoid degenerate exploration. We then insert the adapter into detector training and fine-tune it with hard forward selection and straight-through gradients, so the detector is trained only on the selected observations used at inference.
+```
+
+---
+
+## 2. 每个 batch 的 forward
+
+```text
+batch observations: [B, 768, ...]
+  ↓
+ZeroShotActionnessSource or low-cost browser → p_action
+  ↓
+DUCA Adapter → scores/radius/utility
+  ↓
+hard budgeted decode → selected_positions <=384
+  ↓
+gather selected observations
+  ↓
+detector forward_sparse once
+  ↓
+detector loss
+  ↓
+selector losses
+  ↓
+total loss backward
+```
+
+---
+
+## 3. detector loss 如何影响 selector？
+
+通过 ST surrogate：
+
+```python
+hard_mask = hard_selection(...)
+soft_mask = sigmoid(scores)
+st_mask = hard_mask + soft_mask - soft_mask.detach()
+```
+
+forward gather 使用 hard selected positions；backward 用 surrogate loss 对 scores 提供梯度。严格说，PyTorch 的硬 index gather 本身不能把 detector loss 直接传到未选位置分数，所以要加一个 **selection-weighted feature surrogate** 或 **detector-loss-weighted policy surrogate**：
+
+```text
+hard forward path: detector consumes selected observations
+backward path: selected observation features are multiplied by st weights
+auxiliary utility coverage loss supplies gradient to non-selected candidates
+```
+
+不能谎称 hard index 本身自然可导到 top-K 排序。
+
+---
+
+## 4. 训练时是否 hard select <=384？
+
+**必须。**
+训练 forward 和推理 forward 都必须 hard select ≤384。否则 soft/hard mismatch 会被打穿。
+
+允许的 surrogate 只影响 backward，不允许让 detector 在 forward 看到 768 个 observations。
+
+---
+
+## 5. ST forward / backward
+
+```python
+def hard_topk_st(scores, k, valid_mask):
+    masked = scores.masked_fill(~valid_mask, -1e9)
+    idx = masked.topk(k=min(k, masked.shape[-1]), dim=-1).indices
+    hard = torch.zeros_like(scores).scatter(-1, idx, 1.0)
+    soft = torch.sigmoid(scores).masked_fill(~valid_mask, 0.0)
+    st = hard + soft - soft.detach()
+    return hard, st, idx
+```
+
+forward index uses `idx`; losses use `st`.
+
+---
+
+## 6. 如果用 alternating，为什么不是三阶段工程拼盘？
+
+alternating 只有在它是 **同一个 online adapter 的训练算法** 时才成立：
+
+```text
+same adapter
+same forward
+same hard budget
+same detector interface
+same no-leak rule
+```
+
+不成立的是：
+
+```text
+train unrelated coarse classifier → export ledger → train detector
+```
+
+成立的是：
+
+```text
+update adapter with train-only utility
+insert same adapter into detector forward
+joint fine-tune detector and adapter
+```
+
+---
+
+## 7. teacher utility 的角色
+
+teacher utility 只能是：
+
+```text
+warm-up / auxiliary distillation target
+```
+
+不能是：
+
+```text
+val/test input
+inference input
+ledger generation signal for evaluation
+oracle selector
+main source of selected_positions at test time
+```
+
+---
+
+## 8. losses
+
+最终 loss：
+
+```text
+L_total =
+  L_det
++ λ_budget L_budget
++ λ_boundary L_boundary_coverage
++ λ_hole L_action_local_hole
++ λ_redund L_redundancy
++ λ_radius L_radius_cost
++ λ_entropy L_entropy
++ λ_utility L_utility_distill
++ λ_action L_action_aux
+```
+
+其中：
+
+* `L_det`: AdaTAD / ActionFormer 原 detector loss；
+* `L_budget`: selected count 不超过 384，训练 forward 已 hard enforce，loss 只是稳定；
+* `L_boundary`: 覆盖 train-only boundary / utility transitions；
+* `L_hole`: action-local holes 不可过大；
+* `L_redundancy`: 不要都选相邻 interior；
+* `L_radius`: 半径有成本；
+* `L_entropy`: 防 collapse；
+* `L_utility`: train-only teacher utility distillation；
+* `L_action`: frozen actionness / coarse actionness auxiliary，不是主监督。
+
+---
+
+## 9. 避免 collapse
+
+必须设计反 collapse：
+
+```text
+uniform similarity penalty
+actionness-interior over-selection penalty
+radius cost
+redundancy penalty
+hole penalty
+utility-shuffled negative control
+video-id shuffled negative control
+class-held-out diagnostic
+```
+
+如果 selector 输出接近 uniform，你的方法不是 detector-aware。
+如果 selector 输出接近 p_action top-K，你的方法只是 actionness sampler。
+如果 selector 输出固定边界 prior，它不是 video-conditioned acquisition。
+
+---
+
+## 10. DUCA-Frozen / DUCA-Adapted
+
+### DUCA-Frozen
+
+```text
+ZeroShotActionnessSource frozen
+DUCA decoder frozen or parameter-free
+no THUMOS detection labels
+no teacher utility
+serves as plug-in zero-shot setting
+```
+
+### DUCA-Adapted
+
+```text
+adapter trained on train split
+optional teacher utility warm-up
+hard-forward ST joint fine-tune
+val/test no teacher
+main method
+```
+
+不要把 Frozen 说成一定强。它的作用是证明接口可插拔和 no-THUMOS-training baseline。
+
+---
+
+# 五、最终 method contract
+
+以下可以直接写进 method section。
+
+## Contract 1：Budget unit
+
+The acquisition budget is measured in **detector-consumed temporal observations**, not centers, radius intervals, snippets, tokens, or raw frames unless explicitly stated. For the main setting, each video window contains 768 candidate observations and DUCA outputs at most 384 consumed observations.
+
+---
+
+## Contract 2：selected_positions
+
+`selected_positions` is a sorted unique list of original dense-time indices. It is the only set of temporal positions gathered and consumed by the detector.
+
+```text
+len(selected_positions) <= budget
+selected_positions[i] ∈ [0, valid_len)
+selected_positions is original-time, not selected-rank time
+```
+
+---
+
+## Contract 3：centers / radius
+
+`selected_centers` and `context_radius` are decision metadata. They are not the budget unit. They are valid only if their interval union equals or is contained in `selected_positions`.
+
+---
+
+## Contract 4：detector consumption
+
+The detector must consume exactly `selected_positions`.
+
+```text
+gathered_positions == selected_positions
+detector_input_length == len(selected_positions)
+```
+
+No hidden dense fallback is allowed.
+
+---
+
+## Contract 5：original-time coordinate
+
+All assignment, decode, and NMS must either operate in original time or receive a valid mapping from selected rank to original time.
+
+Selected-rank decode is not the main method; it is an ablation.
+
+---
+
+## Contract 6：dynamic K
+
+Dynamic K is allowed only if:
+
+```text
+K_video <= K_max = 384 for every video
+matched-average-K fixed control is reported
+selected_count histogram is reported
+budget violation rate = 0
+```
+
+---
+
+## Contract 7：short-window behavior
+
+If `valid_len < budget`, then:
+
+```text
+selected_count <= valid_len
+no duplicate positions
+no padding counted as observation
+```
+
+---
+
+## Contract 8：no-leak fields
+
+Every audit record must include:
+
+```json
+{
+  "uses_gt": false,
+  "uses_teacher": false,
+  "uses_oracle": false,
+  "uses_raw_prediction": false,
+  "uses_prediction_cache": false,
+  "detector_consumes_selected_positions": true,
+  "budget_unit": "detector_consumed_temporal_observation"
+}
+```
+
+---
+
+## Contract 9：teacher utility scope
+
+Teacher utility can only appear in training loss for train split:
+
+```text
+teacher_utility_scope = train_only
+teacher_utility_in_forward = false
+teacher_utility_in_val_test = false
+```
+
+---
+
+## Contract 10：frozen source scope
+
+Frozen source must declare:
+
+```text
+checkpoint
+pretraining dataset
+prompt list
+temperature
+no THUMOS fine-tune
+no THUMOS calibration
+```
+
+---
+
+## Contract 11：detector modification boundary
+
+Main method may modify acquisition and sparse-grid metadata. It must not silently modify detector head, assignment, decode, or NMS. If those are changed, matching uniform/random baselines with the same detector modifications are mandatory.
+
+---
+
+## Contract 12：cross-detector API
+
+The adapter must expose:
+
+```python
+SparseTemporalGrid = adapter.acquire(...)
+detector.forward_sparse(x_selected, sparse_grid)
+```
+
+This must work for AdaTAD and ActionFormer.
+
+---
+
+## Contract 13：fail-closed validator
+
+Any missing or inconsistent contract field fails. No fallback to dense, no fallback to uniform, no silent short-count repair, no teacher key in val/test.
+
+---
+
+# 六、关键代码骨架
+
+下面代码是最终架构骨架，不是 demo pipeline。重点体现 hard forward、ST backward、original-time positions、teacher train-only、ledger 仅 audit。
+
+```python
+from __future__ import annotations
+
+from dataclasses import dataclass, asdict
+from typing import Any, Optional, Dict, Tuple
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+@dataclass
+class SparseTemporalGrid:
+    selected_positions: torch.Tensor      # [B, Kmax], original-time indices
+    selected_mask: torch.Tensor           # [B, Kmax], bool
+    original_length: int
+    budget: int
+    budget_unit: str = "detector_consumed_temporal_observation"
+    coordinate: str = "original_dense_time"
+    detector_consumes_selected_positions: bool = True
+    selected_centers: Optional[torch.Tensor] = None
+    context_radius: Optional[torch.Tensor] = None
+
+    def validate(self):
+        if self.budget_unit != "detector_consumed_temporal_observation":
+            raise ValueError("invalid budget unit")
+        if self.coordinate != "original_dense_time":
+            raise ValueError("selected positions must be original-time")
+        if self.detector_consumes_selected_positions is not True:
+            raise ValueError("detector must consume selected_positions")
+        if self.selected_positions.ndim != 2:
+            raise ValueError("selected_positions must be [B,K]")
+        if self.selected_mask.shape != self.selected_positions.shape:
+            raise ValueError("selected_mask shape mismatch")
+        count = self.selected_mask.sum(dim=1)
+        if torch.any(count > self.budget):
+            raise ValueError("budget violation")
+        if torch.any(self.selected_positions[self.selected_mask] < 0):
+            raise ValueError("negative selected position")
+        if torch.any(self.selected_positions[self.selected_mask] >= self.original_length):
+            raise ValueError("selected position out of range")
+
+
+class ZeroShotActionnessSource(nn.Module):
+    def __init__(self, video_text_model=None, tokenizer=None, temperature: float = 0.07):
+        super().__init__()
+        self.video_text_model = video_text_model
+        self.tokenizer = tokenizer
+        self.temperature = float(temperature)
+        self.action_prompts = [
+            "a video clip of a person performing an action",
+            "a video clip showing a human activity",
+            "a video clip with a salient temporal action",
+            "a video clip where something is happening",
+        ]
+        self.background_prompts = [
+            "a video clip of background",
+            "a video clip where no action is happening",
+            "a video clip without a salient action",
+            "a video clip of irrelevant context",
+        ]
+        if self.video_text_model is not None:
+            for p in self.video_text_model.parameters():
+                p.requires_grad_(False)
+            self.video_text_model.eval()
+
+    @torch.no_grad()
+    def forward(self, video_windows: torch.Tensor, valid_mask: torch.Tensor):
+        """
+        video_windows: [B, T, ...]
+        returns p_action [B,T].
+        If no video_text_model is provided, fallback to motion proxy must be passed separately.
+        """
+        if self.video_text_model is None:
+            raise RuntimeError("video_text_model is required for zero-shot actionness")
+
+        bsz, length = video_windows.shape[:2]
+        flat = video_windows.reshape(bsz * length, *video_windows.shape[2:])
+        video_feat = F.normalize(self.video_text_model.encode_video(flat).float(), dim=-1)
+
+        action_tokens = self.tokenizer(self.action_prompts).to(video_feat.device)
+        bg_tokens = self.tokenizer(self.background_prompts).to(video_feat.device)
+        action_txt = F.normalize(self.video_text_model.encode_text(action_tokens).float(), dim=-1)
+        bg_txt = F.normalize(self.video_text_model.encode_text(bg_tokens).float(), dim=-1)
+
+        sim_action = (video_feat @ action_txt.t()).mean(dim=-1)
+        sim_bg = (video_feat @ bg_txt.t()).mean(dim=-1)
+        p = torch.sigmoid((sim_action - sim_bg) / max(self.temperature, 1e-6))
+        p = p.reshape(bsz, length)
+        p = p.masked_fill(~valid_mask.bool(), 0.0)
+
+        return {
+            "p_action": p,
+            "uses_thumos_labels": False,
+            "uses_teacher": False,
+            "source": "zero_shot_prompt_actionness",
+        }
+
+
+def hard_topk_st(scores: torch.Tensor, k: int, valid_mask: torch.Tensor):
+    """
+    Returns hard mask for forward and ST mask for differentiable regularizers.
+    Hard index selection itself is not differentiable; use st_mask in losses.
+    """
+    scores = scores.masked_fill(~valid_mask.bool(), -1e9)
+    k_eff = min(int(k), scores.shape[-1])
+    idx = torch.topk(scores, k=k_eff, dim=-1).indices
+    hard = torch.zeros_like(scores).scatter(-1, idx, 1.0)
+    soft = torch.sigmoid(scores).masked_fill(~valid_mask.bool(), 0.0)
+    st = hard + soft - soft.detach()
+    return hard, st, idx
+
+
+def budgeted_center_radius_decode(
+    center_scores: torch.Tensor,
+    radius: torch.Tensor,
+    budget: int,
+    valid_mask: torch.Tensor,
+    utility_scores: Optional[torch.Tensor] = None,
+    boundary_scores: Optional[torch.Tensor] = None,
+    candidate_multiplier: int = 2,
+) -> SparseTemporalGrid:
+    """
+    Deterministic hard decoder.
+    Forward output is original-time selected_positions with count <= budget.
+    """
+    bsz, length = center_scores.shape
+    device = center_scores.device
+    budget = min(int(budget), int(length))
+
+    selected_positions = torch.zeros((bsz, budget), dtype=torch.long, device=device)
+    selected_mask = torch.zeros((bsz, budget), dtype=torch.bool, device=device)
+    selected_centers = torch.zeros((bsz, budget), dtype=torch.long, device=device)
+    selected_radius = torch.zeros((bsz, budget), dtype=torch.float32, device=device)
+
+    for b in range(bsz):
+        valid_len = int(valid_mask[b].sum().item())
+        if valid_len <= 0:
+            continue
+
+        score = center_scores[b, :valid_len].detach().float()
+        rad = radius[b, :valid_len].detach().float().clamp(min=0.0)
+        if utility_scores is not None:
+            score = score + 0.25 * utility_scores[b, :valid_len].detach().float()
+        if boundary_scores is not None:
+            score = score + 0.25 * boundary_scores[b, :valid_len].detach().float()
+
+        cand_k = min(valid_len, budget * int(candidate_multiplier))
+        cand = torch.topk(score, k=cand_k).indices.tolist()
+
+        used = set()
+        centers = []
+        radii = []
+
+        for c in cand:
+            r = int(torch.round(rad[c]).item())
+            start = max(0, int(c) - r)
+            end = min(valid_len - 1, int(c) + r)
+            interval = set(range(start, end + 1))
+            marginal = interval - used
+
+            if not marginal:
+                continue
+
+            remaining = budget - len(used)
+            if remaining <= 0:
+                break
+
+            if len(marginal) > remaining:
+                # shrink around center to satisfy hard budget
+                shrink = []
+                for d in range(r + 1):
+                    for p in (int(c) - d, int(c) + d):
+                        if 0 <= p < valid_len and p not in used and p not in shrink:
+                            shrink.append(p)
+                        if len(shrink) >= remaining:
+                            break
+                    if len(shrink) >= remaining:
+                        break
+                marginal = set(shrink)
+
+            used.update(marginal)
+            centers.append(int(c))
+            radii.append(float(r))
+
+            if len(used) >= budget:
+                break
+
+        # learned residual fill by center score, not uniform fill
+        if len(used) < min(budget, valid_len):
+            ranked = torch.argsort(score, descending=True).tolist()
+            for p in ranked:
+                if len(used) >= min(budget, valid_len):
+                    break
+                used.add(int(p))
+
+        pos = sorted(used)
+        k = min(len(pos), budget)
+        selected_positions[b, :k] = torch.tensor(pos[:k], dtype=torch.long, device=device)
+        selected_mask[b, :k] = True
+
+        c_num = min(len(centers), budget)
+        if c_num > 0:
+            selected_centers[b, :c_num] = torch.tensor(centers[:c_num], dtype=torch.long, device=device)
+            selected_radius[b, :c_num] = torch.tensor(radii[:c_num], dtype=torch.float32, device=device)
+
+    grid = SparseTemporalGrid(
+        selected_positions=selected_positions,
+        selected_mask=selected_mask,
+        original_length=length,
+        budget=budget,
+        selected_centers=selected_centers,
+        context_radius=selected_radius,
+    )
+    grid.validate()
+    return grid
+
+
+def gather_selected_observations(x: torch.Tensor, selected_positions: torch.Tensor, selected_mask: torch.Tensor):
+    """
+    x: [B, T, ...]
+    selected_positions: [B, K]
+    returns [B, K, ...]
+    """
+    bsz, length = x.shape[:2]
+    k = selected_positions.shape[1]
+    batch_idx = torch.arange(bsz, device=x.device)[:, None].expand(bsz, k)
+    gathered = x[batch_idx, selected_positions.clamp(0, length - 1)]
+    # zero-out padded entries
+    view_shape = [bsz, k] + [1] * (gathered.ndim - 2)
+    gathered = gathered * selected_mask.view(*view_shape).to(gathered.dtype)
+    return gathered
+
+
+class DucaAcquisitionAdapter(nn.Module):
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int = 128,
+        max_radius: int = 16,
+        budget: int = 384,
+    ):
+        super().__init__()
+        self.budget = int(budget)
+        self.max_radius = int(max_radius)
+
+        self.encoder = nn.Sequential(
+            nn.Conv1d(input_dim, hidden_dim, 3, padding=1),
+            nn.SiLU(),
+            nn.Conv1d(hidden_dim, hidden_dim, 3, padding=1),
+            nn.SiLU(),
+            nn.Conv1d(hidden_dim, hidden_dim, 3, padding=1),
+            nn.SiLU(),
+        )
+        self.center_head = nn.Conv1d(hidden_dim, 1, 1)
+        self.radius_head = nn.Conv1d(hidden_dim, 1, 1)
+        self.boundary_head = nn.Conv1d(hidden_dim, 1, 1)
+        self.utility_head = nn.Conv1d(hidden_dim, 1, 1)
+
+    def forward_scores(self, low_cost_features: torch.Tensor, valid_mask: torch.Tensor):
+        """
+        low_cost_features: [B,T,C]
+        """
+        h = self.encoder(low_cost_features.float().transpose(1, 2))
+        center_scores = self.center_head(h).squeeze(1)
+        radius = self.max_radius * torch.sigmoid(self.radius_head(h).squeeze(1))
+        boundary = self.boundary_head(h).squeeze(1)
+        utility = self.utility_head(h).squeeze(1)
+
+        center_scores = center_scores.masked_fill(~valid_mask.bool(), -1e9)
+        radius = radius.masked_fill(~valid_mask.bool(), 0.0)
+        boundary = boundary.masked_fill(~valid_mask.bool(), -1e9)
+        utility = utility.masked_fill(~valid_mask.bool(), 0.0)
+
+        return {
+            "center_scores": center_scores,
+            "radius": radius,
+            "boundary_scores": boundary,
+            "utility_scores": utility,
+        }
+
+    def acquire(self, low_cost_features: torch.Tensor, valid_mask: torch.Tensor):
+        scores = self.forward_scores(low_cost_features, valid_mask)
+        grid = budgeted_center_radius_decode(
+            center_scores=scores["center_scores"],
+            radius=scores["radius"],
+            budget=self.budget,
+            valid_mask=valid_mask,
+            utility_scores=torch.tanh(scores["utility_scores"]),
+            boundary_scores=torch.sigmoid(scores["boundary_scores"]),
+        )
+        return grid, scores
+
+
+def soft_coverage_from_scores(center_scores, radius, valid_mask, sharpness: float = 2.0):
+    prob = torch.sigmoid(center_scores).masked_fill(~valid_mask.bool(), 0.0)
+    bsz, length = prob.shape
+    t = torch.arange(length, device=prob.device, dtype=torch.float32)
+    dist = torch.abs(t[None, :, None] - t[None, None, :])
+    gate = torch.sigmoid((radius[:, :, None] - dist) * sharpness)
+    coverage = (prob[:, :, None] * gate).amax(dim=1)
+    return coverage.masked_fill(~valid_mask.bool(), 0.0)
+
+
+def duca_losses(
+    scores: Dict[str, torch.Tensor],
+    grid: SparseTemporalGrid,
+    valid_mask: torch.Tensor,
+    detector_loss: torch.Tensor,
+    teacher_utility: Optional[torch.Tensor] = None,
+    actionness: Optional[torch.Tensor] = None,
+    weights: Optional[Dict[str, float]] = None,
+):
+    w = {
+        "budget": 0.1,
+        "boundary": 0.5,
+        "hole": 0.2,
+        "redundancy": 0.1,
+        "radius": 0.05,
+        "entropy": 0.02,
+        "utility": 0.5,
+        "action": 0.05,
+    }
+    if weights:
+        w.update(weights)
+
+    center_scores = scores["center_scores"]
+    radius = scores["radius"]
+    utility_pred = torch.tanh(scores["utility_scores"])
+    boundary_logits = scores["boundary_scores"]
+
+    valid = valid_mask.bool()
+    prob = torch.sigmoid(center_scores).masked_fill(~valid, 0.0)
+    coverage = soft_coverage_from_scores(center_scores, radius, valid)
+
+    selected_count = grid.selected_mask.sum(dim=1).float()
+    budget_loss = F.relu(selected_count - grid.budget).pow(2).mean()
+
+    if teacher_utility is not None:
+        # teacher_utility is train-only target. Never pass it to acquire().
+        util = teacher_utility.float().masked_fill(~valid, 0.0)
+        pos_util = util.clamp_min(0.0)
+        util_total = pos_util.sum(dim=1).clamp_min(1e-6)
+        coverage_loss = 1.0 - ((coverage * pos_util).sum(dim=1) / util_total)
+        boundary_target = torch.zeros_like(util)
+        boundary_target[:, 1:] = torch.abs(util[:, 1:] - util[:, :-1]).clamp(0, 1)
+        utility_loss = F.mse_loss(utility_pred[valid], util[valid])
+    else:
+        coverage_loss = torch.zeros((), device=center_scores.device)
+        boundary_target = torch.zeros_like(center_scores)
+        utility_loss = torch.zeros((), device=center_scores.device)
+
+    boundary_loss = F.binary_cross_entropy_with_logits(
+        boundary_logits[valid],
+        boundary_target[valid].detach(),
+    )
+
+    # approximate action-local holes: penalize low coverage where actionness is high
+    if actionness is not None:
+        action = actionness.float().clamp(0, 1).masked_fill(~valid, 0.0)
+        hole_loss = (action * (1.0 - coverage)).sum(dim=1) / action.sum(dim=1).clamp_min(1e-6)
+        action_loss = F.binary_cross_entropy_with_logits(center_scores[valid], action[valid])
+    else:
+        hole_loss = torch.zeros((), device=center_scores.device)
+        action_loss = torch.zeros((), device=center_scores.device)
+
+    redundancy_loss = F.relu(coverage - 1.0).pow(2).mean()
+    radius_loss = (prob * radius).sum(dim=1).div(float(grid.budget)).mean()
+
+    p = prob[valid].clamp(1e-6, 1 - 1e-6)
+    entropy = -(p * p.log() + (1 - p) * (1 - p).log()).mean()
+    entropy_loss = -entropy  # maximize entropy early / prevent collapse
+
+    total = (
+        detector_loss
+        + w["budget"] * budget_loss
+        + w["boundary"] * boundary_loss
+        + w["hole"] * hole_loss.mean()
+        + w["redundancy"] * redundancy_loss
+        + w["radius"] * radius_loss
+        + w["entropy"] * entropy_loss
+        + w["utility"] * utility_loss
+        + w["action"] * action_loss
+    )
+
+    return {
+        "loss": total,
+        "detector_loss": detector_loss.detach(),
+        "budget_loss": budget_loss,
+        "boundary_loss": boundary_loss,
+        "hole_loss": hole_loss.mean() if torch.is_tensor(hole_loss) else hole_loss,
+        "redundancy_loss": redundancy_loss,
+        "radius_loss": radius_loss,
+        "entropy_loss": entropy_loss,
+        "utility_loss": utility_loss,
+        "action_loss": action_loss,
+    }
+
+
+def build_low_cost_features(batch: Dict[str, torch.Tensor], actionness_out: Optional[Dict[str, torch.Tensor]]):
+    """
+    Example feature construction. In implementation, include:
+    p_action, uncertainty, delta, motion, time coordinate, valid.
+    """
+    valid = batch["valid_mask"].bool()
+    p = actionness_out["p_action"] if actionness_out is not None else batch["p_action"]
+    entropy = -(p.clamp(1e-6, 1-1e-6) * p.clamp(1e-6, 1-1e-6).log()
+                + (1-p).clamp(1e-6, 1).log() * (1-p).clamp(1e-6, 1))
+    delta = torch.zeros_like(p)
+    delta[:, 1:] = torch.abs(p[:, 1:] - p[:, :-1])
+    t = torch.linspace(0, 1, p.shape[1], device=p.device)[None, :].expand_as(p)
+    motion = batch.get("motion_energy", torch.zeros_like(p))
+    feats = torch.stack([p, entropy, delta, motion, t, valid.float()], dim=-1)
+    return feats
+
+
+def duca_forward_train(
+    detector: nn.Module,
+    adapter: DucaAcquisitionAdapter,
+    batch: Dict[str, torch.Tensor],
+    actionness_source: Optional[nn.Module] = None,
+    teacher_utility: Optional[torch.Tensor] = None,
+):
+    valid = batch["valid_mask"].bool()
+
+    if actionness_source is not None:
+        with torch.no_grad():
+            actionness_out = actionness_source(batch["video_windows"], valid)
+    else:
+        actionness_out = {"p_action": batch["p_action"]}
+
+    low_cost = build_low_cost_features(batch, actionness_out)
+    sparse_grid, scores = adapter.acquire(low_cost, valid)
+
+    x_selected = gather_selected_observations(
+        batch["observations"],
+        sparse_grid.selected_positions,
+        sparse_grid.selected_mask,
+    )
+
+    # Detector must support sparse_grid and original-time decode.
+    det_out = detector.forward_sparse(
+        x_selected,
+        sparse_grid=sparse_grid,
+        targets=batch.get("targets"),
+    )
+    detector_loss = det_out["loss"]
+
+    losses = duca_losses(
+        scores=scores,
+        grid=sparse_grid,
+        valid_mask=valid,
+        detector_loss=detector_loss,
+        teacher_utility=teacher_utility,
+        actionness=actionness_out["p_action"],
+    )
+    return {
+        "losses": losses,
+        "detector_outputs": det_out,
+        "sparse_grid": sparse_grid,
+        "audit": make_audit_record(sparse_grid, uses_teacher=False, mode="train_forward"),
+    }
+
+
+@torch.no_grad()
+def duca_forward_test(
+    detector: nn.Module,
+    adapter: DucaAcquisitionAdapter,
+    batch: Dict[str, torch.Tensor],
+    actionness_source: Optional[nn.Module] = None,
+):
+    valid = batch["valid_mask"].bool()
+
+    if actionness_source is not None:
+        actionness_out = actionness_source(batch["video_windows"], valid)
+    else:
+        actionness_out = {"p_action": batch["p_action"]}
+
+    low_cost = build_low_cost_features(batch, actionness_out)
+    sparse_grid, scores = adapter.acquire(low_cost, valid)
+
+    x_selected = gather_selected_observations(
+        batch["observations"],
+        sparse_grid.selected_positions,
+        sparse_grid.selected_mask,
+    )
+    pred = detector.forward_sparse(x_selected, sparse_grid=sparse_grid)
+
+    return {
+        "predictions": pred,
+        "sparse_grid": sparse_grid,
+        "audit": make_audit_record(sparse_grid, uses_teacher=False, mode="test"),
+    }
+
+
+def make_audit_record(grid: SparseTemporalGrid, uses_teacher: bool, mode: str):
+    grid.validate()
+    return {
+        "mode": mode,
+        "budget": int(grid.budget),
+        "budget_unit": grid.budget_unit,
+        "coordinate": grid.coordinate,
+        "detector_consumes_selected_positions": True,
+        "selected_count": grid.selected_mask.sum(dim=1).detach().cpu().tolist(),
+        "uses_gt": False,
+        "uses_teacher": bool(uses_teacher),
+        "uses_oracle": False,
+        "uses_raw_prediction": False,
+        "uses_prediction_cache": False,
+    }
+```
+
+---
+
+# 七、最终实验矩阵：必要终局验证
+
+## 1. 主性能表
+
+```text
+Dense AdaTAD
+Dense ActionFormer
+Uniform fixed 384
+Random fixed 384, 5 seeds
+p_action top-K
+delta-p_action / boundary proxy top-K
+zero-shot X-CLIP actionness top-K
+zero-shot ActionCLIP actionness top-K
+Kinetics SlowFast actionness top-K
+Kinetics VideoMAE actionness top-K
+C3
+GAS-VT
+lattice best
+DUCA-Frozen
+DUCA-Adapted without teacher warm-up
+DUCA-Adapted with teacher warm-up
+DUCA online plugin without joint fine-tune
+DUCA online plugin with hard-forward ST fine-tune
+```
+
+---
+
+## 2. Ablation 表
+
+```text
+center-only
+center-radius
+no radius
+fixed radius
+learned radius
+no boundary loss
+no hole loss
+no teacher utility
+no actionness input
+motion-only actionness
+zero-shot actionness input
+heuristic radius vs learned radius
+gap repair off/on
+selected-rank decode
+original-time decode
+```
+
+---
+
+## 3. Cross-detector / transfer
+
+```text
+AdaTAD main
+ActionFormer main
+DUCA trained with AdaTAD utility → ActionFormer
+DUCA trained with ActionFormer utility → AdaTAD
+DUCA-Frozen transfer
+DUCA-Adapted transfer
+```
+
+---
+
+## 4. Dynamic K fairness
+
+```text
+DUCA dynamic K, max 384
+matched-average fixed K
+matched-latency fixed K
+selected_count histogram
+budget violation rate
+```
+
+---
+
+## 5. 指标
+
+必须报告：
+
+```text
+average mAP
+mAP@0.5 / @0.6 / @0.7
+high-IoU drop/gain relative to dense
+selected count
+budget violation rate
+browser/selector overhead
+gather overhead
+backbone cost
+detector/NMS cost
+total inference latency
+training cost
+teacher warm-up cost
+zero-shot source cost
+boundary support
+short-action recall
+action-local max hole / p95 hole
+uniform similarity
+actionness-interior over-selection
+selector entropy / collapse diagnostics
+no-leak audit pass/fail
+```
+
+如果没有 latency / compute 表，任何 efficiency claim 都不成立。
+
+---
+
+# 八、20 条最狠 reviewer attacks 与防线
+
+## 1. “这只是 actionness top-K。”
+
+成立原因：如果 DUCA 与 p_action top-K 选择高度重合，方法没有新意。
+缩小 claim：只能说 actionness acquisition baseline。
+方法修改：加入 detector utility、boundary/hole objective、anti-interior penalty。
+实验防线：p_action top-K、delta-p_action、utility-shuffled、overlap/Jaccard 统计。
+
+---
+
+## 2. “免训练 actionness 用了大 foundation model，不公平。”
+
+成立原因：X-CLIP / InternVideo 成本可能接近 detector。
+缩小 claim：Frozen branch 只是 upper-bound / zero-shot diagnostic。
+方法修改：主 efficiency claim 使用 light browser 或报告成本。
+实验防线：zero-shot source cost 表；motion-only source 对照。
+
+---
+
+## 3. “C3 仍然在 THUMOS 上训练。”
+
+成立原因：C3 coarse classifier 是 dataset-adapted。
+缩小 claim：不能叫 frozen plug-and-play。
+方法修改：C3 只作 DUCA-Adapted input / baseline。
+实验防线：DUCA-Frozen without THUMOS labels 单独报告。
+
+---
+
+## 4. “不是 plugin。”
+
+成立原因：如果只能 export ledger，不能 forward acquire，就不是 plugin。
+缩小 claim：offline audited sparse acquisition。
+方法修改：实现 `adapter.acquire()` 和 `detector.forward_sparse()`。
+实验防线：在线 forward latency、detector 单次 forward 证明。
+
+---
+
+## 5. “online plugin 其实还是 ledger pipeline。”
+
+成立原因：如果实验依赖预生成 positions 而不是模型 forward。
+缩小 claim：reproducible offline deployment protocol。
+方法修改：训练和测试都走 adapter forward，ledger 只记录 output。
+实验防线：禁用 ledger 输入重跑，输出一致性 hash。
+
+---
+
+## 6. “多阶段 training 不优雅。”
+
+成立原因：teacher → selector → ledger → detector 像拼盘。
+缩小 claim：engineering pipeline。
+方法修改：teacher only warm-up；最终 hard-forward joint fine-tune。
+实验防线：无 joint vs joint 表，证明 detector loss 改变 selector。
+
+---
+
+## 7. “teacher utility 是 leakage。”
+
+成立原因：val/test selector 若含 teacher utility 就是作弊。
+缩小 claim：train-only distillation。
+方法修改：teacher utility 不进入 forward，只进 train loss。
+实验防线：recursive no-leak validator，val/test source whitelist。
+
+---
+
+## 8. “soft/hard mismatch。”
+
+成立原因：训练 soft 看 768，测试 hard 看 384。
+缩小 claim：soft reweighting method, not sparse acquisition。
+方法修改：forward always hard select。
+实验防线：train-time selected_count、hard-only ablation。
+
+---
+
+## 9. “strict budget 训练时不成立。”
+
+成立原因：如果训练用了 dense features 计算 detector loss。
+缩小 claim：training regularized sparsity，不是 hard sparse。
+方法修改：train forward gather only selected positions。
+实验防线：per-batch budget validator。
+
+---
+
+## 10. “selected_positions 没被 detector 真消费。”
+
+成立原因：ledger 写了字段，但 loader 仍用 centers 或 dense。
+缩小 claim：annotation-only radius。
+方法修改：detector input gather assert equals selected_positions。
+实验防线：unit test + runtime audit。
+
+---
+
+## 11. “selected-rank time 破坏 localization。”
+
+成立原因：irregular positions 被压缩成连续 rank，边界时间错。
+缩小 claim：sparse sequence classification, not TAL.
+方法修改：SparseTemporalGrid original-time decode。
+实验防线：selected-rank vs original-time ablation。
+
+---
+
+## 12. “dynamic K 不公平。”
+
+成立原因：平均 K 低但个别视频超预算。
+缩小 claim：adaptive compute without strict bound。
+方法修改：hard max K per video。
+实验防线：matched-average fixed K、histogram、violation rate。
+
+---
+
+## 13. “只在 AdaTAD 上有效。”
+
+成立原因：方法可能依赖 AdaTAD config。
+缩小 claim：AdaTAD-specific acquisition。
+方法修改：cross-detector API。
+实验防线：ActionFormer results。
+
+---
+
+## 14. “detector head 被改了。”
+
+成立原因：gain 可能来自 head / NMS / assignment 修改。
+缩小 claim：sparse detector redesign。
+方法修改：主实验不改 head；若改，所有 baselines 同改。
+实验防线：same detector config manifest。
+
+---
+
+## 15. “heuristic radius / gap repair 才有效。”
+
+成立原因：learning ablation 去掉后不掉点。
+缩小 claim：budgeted decoder heuristic。
+方法修改：learned radius 与 heuristic radius 分开。
+实验防线：no radius / fixed radius / heuristic radius / learned radius 表。
+
+---
+
+## 16. “high-IoU 没有提升。”
+
+成立原因：TAD acquisition 的核心是 localization，不是分类 AP。
+缩小 claim：sparse action recognition support。
+方法修改：增加 boundary utility / original-time decode / hole loss。
+实验防线：mAP@0.6/@0.7、boundary support、short-action recall。
+
+---
+
+## 17. “训练成本没算。”
+
+成立原因：dense teacher 和 zero-shot model 成本被隐藏。
+缩小 claim：inference-only efficiency。
+方法修改：训练成本单独报告。
+实验防线：GPUh、FLOPs、latency 表。
+
+---
+
+## 18. “selector 学 THUMOS prior。”
+
+成立原因：固定位置/长度先验可能足够强。
+缩小 claim：dataset-specific sampler。
+方法修改：video-conditioned inputs、prior negative controls。
+实验防线：video-shuffled、length-only、class-held-out diagnostics。
+
+---
+
+## 19. “Frozen branch 太弱。”
+
+成立原因：zero-shot actionness 可能打不过 uniform。
+缩小 claim：frozen diagnostic only。
+方法修改：Frozen 作为 lower-bound / no-label setting，主方法 Adapted。
+实验防线：Frozen vs Adapted 诚实报告。
+
+---
+
+## 20. “Task-adapted branch 不能叫 plug-and-play。”
+
+成立原因：每个数据集都要训练 selector。
+缩小 claim：task-adapted plugin。
+方法修改：不要写 dataset-agnostic。
+实验防线：Frozen branch + cross-detector transfer。
+
+---
+
+## 21. “raw-frame compute 没省。”
+
+成立原因：如果先算 dense VideoMAE feature 再选，就没省 backbone。
+缩小 claim：temporal observation sparsification, not raw-frame compute reduction。
+方法修改：selector 在 expensive backbone 前运行。
+实验防线：backbone cost table；raw selected-only path。
+
+---
+
+## 22. “method contract 不清楚。”
+
+成立原因：budget、coordinate、teacher scope 混乱。
+缩小 claim：不可投稿。
+方法修改：写 contract，fail-closed validator。
+实验防线：audit pass/fail 表。
+
+---
+
+# 九、最终输出条目
+
+## 1. 最终目标，一句话
+
+**交付一个插在 AdaTAD / ActionFormer 前的 online DUCA acquisition plugin，在 original-time 768-grid 中 hard-select ≤384 个 detector-consumed temporal observations，并提升 sparse TAD 尤其是 high-IoU localization。**
+
+---
+
+## 2. 最终主方法，三句话
+
+**主方法是 DUCA-TAD / DUCA-CR Adapter，不是 C3、GAS-VT、lattice 或 ledger。**
+它在线预测 center、radius、boundary importance 和 detector utility，通过 budgeted original-time decoder 输出真实被 detector 消费的 `selected_positions`。
+它提供 DUCA-Frozen 和 DUCA-Adapted 两种设置：Frozen 使用 no-THUMOS-training actionness source；Adapted 使用 train-only detector utility warm-up + hard-forward ST joint fine-tune。
+
+---
+
+## 3. 最终模型结构
+
+```text
+ZeroShotActionnessSource / low-cost browser
+→ DucaAcquisitionAdapter temporal encoder
+→ center / radius / boundary / utility heads
+→ BudgetedCenterRadiusDecoder
+→ SparseTemporalGrid
+→ gather selected observations
+→ AdaTAD / ActionFormer forward_sparse
+```
+
+---
+
+## 4. 最终训练 recipe
+
+```text
+Train-only dense detector utility warm-up
+→ train DUCA adapter with utility / boundary / hole / budget losses
+→ insert adapter into detector forward
+→ hard-forward selected_positions <=384
+→ ST / surrogate losses update selector
+→ detector loss jointly fine-tunes adapter and detector
+```
+
+Teacher utility 是 warm-up / auxiliary distillation，不是 inference input。
+
+---
+
+## 5. 免训练 actionness branch 设计
+
+DUCA-Frozen 主信号用 X-CLIP 或 ActionCLIP zero-shot prompt actionness；轻量分支用 motion / frame-difference / entropy；InternVideo / large VideoMAE 只能作为 teacher / upper-bound。Frozen branch 必须报告 checkpoint、prompt、temperature、pretraining source、no THUMOS calibration 和 inference cost。
+
+---
+
+## 6. 关键代码骨架
+
+上面的代码必须落成以下真实 API：
+
+```python
+class ZeroShotActionnessSource(nn.Module): ...
+class DucaAcquisitionAdapter(nn.Module): ...
+def hard_topk_st(...): ...
+def budgeted_center_radius_decode(...): ...
+@dataclass
+class SparseTemporalGrid: ...
+def gather_selected_observations(...): ...
+def duca_forward_train(...): ...
+def duca_forward_test(...): ...
+def duca_losses(...): ...
+```
+
+如果你的代码没有 `detector.forward_sparse(x_selected, sparse_grid)`，就还不是最终主方法。
+
+---
+
+## 7. method contract
+
+```text
+budget unit = detector-consumed temporal observations
+selected_positions = original-time sorted unique indices
+selected_positions consumed by detector exactly
+selected_centers/radius = metadata/intermediate
+K <=384 per video/window
+valid_len < K 时不重复、不 padding 计数
+val/test/inference no GT/teacher/raw prediction/cache
+teacher utility train-only loss only
+frozen source no THUMOS labels/calibration
+detector head/assignment/NMS 不偷偷改
+AdaTAD and ActionFormer share same SparseTemporalGrid API
+ledger only audit, fail-closed
+```
+
+---
+
+## 8. 必要实验矩阵
+
+```text
+Dense AdaTAD
+Dense ActionFormer
+Uniform384
+Random384 multi-seed
+p_action top-K
+delta-p_action top-K
+X-CLIP / ActionCLIP actionness top-K
+SlowFast / VideoMAE actionness top-K
+C3 / GAS-VT / lattice
+DUCA-Frozen
+DUCA-Adapted no teacher
+DUCA-Adapted teacher warm-up
+DUCA online no joint
+DUCA online ST joint
+center-only / center-radius
+no radius / no boundary / no hole / no teacher
+selected-rank vs original-time decode
+AdaTAD vs ActionFormer
+dynamic K vs matched-average fixed K
+```
+
+指标必须覆盖 mAP、@0.5/@0.6/@0.7、成本、latency、boundary support、holes、collapse、no-leak。
+
+---
+
+## 9. 必须停止投入的旧路线
+
+停止把以下路线当主线：
+
+```text
+C3 p_action top-K 微调
+GAS-VT 变体
+move25/move50/move75 lattice 搜索
+heuristic radius/gap repair 堆规则
+expanded fields 写 ledger 但 detector 不消费
+offline ledger pipeline 伪装 plugin
+selected-rank decode 主结果
+```
+
+---
+
+## 10. 如果只能做到 offline ledger，论文 claim 上限
+
+只能声称：
+
+> audited offline sparse temporal acquisition protocol for TAD.
+
+不能声称：
+
+```text
+online plugin
+end-to-end acquisition
+plug-and-play detector adapter
+runtime sparse inference
+detector-loss-optimized selector
+```
+
+---
+
+## 11. 如果做到 online plugin 但不能 end-to-end，论文 claim 上限
+
+可以声称：
+
+> task-adapted online acquisition plugin with strict-budget original-time sparse detector interface.
+
+不能声称：
+
+```text
+detector loss directly optimizes acquisition
+end-to-end selector-detector learning
+fully joint sparse TAD
+```
+
+但如果 results 强、cross-detector 成立、no-leak 完整，仍然可能是可投主方法。
+
+---
+
+## 12. 如果做到 online hard-budget joint training，论文标题、摘要和贡献
+
+### 标题
+
+**DUCA-TAD: Hard-Budget Online Temporal Acquisition for High-IoU Sparse Action Detection**
+
+### 摘要 claim
+
+> We propose DUCA-TAD, an online acquisition adapter for temporal action detection that hard-selects original-time temporal observations under a strict budget and feeds them to a detector in a single forward pass. Unlike actionness top-K sampling, DUCA learns center-radius acquisition from detector utility and is fine-tuned with hard-forward straight-through training, preserving high-IoU localization under sparse observations. The same SparseTemporalGrid interface supports AdaTAD and ActionFormer, with no teacher, ground truth, or prediction cache at inference.
+
+### 贡献
+
+```text
+1. Online hard-budget original-time acquisition interface for TAD
+2. Detector-utility calibrated center-radius adapter
+3. Hard-forward ST joint training without soft dense forward mismatch
+4. No-leak audit protocol for train-only utility
+5. AdaTAD + ActionFormer evidence with high-IoU and cost diagnostics
+```
+
+最终严厉裁决：**你要交付的是 DUCA online acquisition adapter，不是 ledger，不是 p_action，不是 GAS-VT，不是 lattice。只要 selected_positions 没有在 detector forward 中被真实消费，或者训练 forward 不是 hard-budget sparse，论文主 claim 就不成立。**
+
+[1]: https://www.ecva.net/papers/eccv_2022/papers_ECCV/papers/136640485.pdf?utm_source=chatgpt.com "ActionFormer: Localizing Moments of Actions with ..."
+[2]: https://github.com/sming256/OpenTAD?utm_source=chatgpt.com "OpenTAD is an open-source temporal action detection ..."
+[3]: https://arxiv.org/abs/2208.02816?utm_source=chatgpt.com "Expanding Language-Image Pretrained Models for General Video Recognition"
+[4]: https://arxiv.org/abs/2109.08472?utm_source=chatgpt.com "ActionCLIP: A New Paradigm for Video Action Recognition"
+[5]: https://openaccess.thecvf.com/content_ICCV_2019/papers/Feichtenhofer_SlowFast_Networks_for_Video_Recognition_ICCV_2019_paper.pdf?utm_source=chatgpt.com "SlowFast Networks for Video Recognition"
+[6]: https://arxiv.org/abs/2203.12602?utm_source=chatgpt.com "VideoMAE: Masked Autoencoders are Data-Efficient Learners for Self-Supervised Video Pre-Training"
+[7]: https://arxiv.org/abs/2403.15377?utm_source=chatgpt.com "InternVideo2: Scaling Foundation Models for Multimodal Video Understanding"

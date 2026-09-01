@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-25T16:15:10Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "focused-correction-recovery",
+  "message_id": "msg-20260825T161510Z-794918125184",
+  "parent_artifact_ids": [
+    "CRITIC_PJST_D1_CYCLE2-v001"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-messages/BUILDER_PJST_D1_CYCLE2_FOCUSED_CORRECTION-v001.md",
+    "size": 2549
+  },
+  "priority": "critical",
+  "requested_action": "Operational replacement: implement and commit the focused correction; a read-only restatement is not a valid return.",
+  "required_gate": "BLOCKED_PRE_RUN",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

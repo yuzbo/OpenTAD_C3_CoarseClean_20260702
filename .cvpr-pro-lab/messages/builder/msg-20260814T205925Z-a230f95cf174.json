@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-14T20:59:25Z",
+  "deadline": "2026-08-15T12:00:00+08:00",
+  "from_role": "coordinator",
+  "kind": "DUCA_DYNAMIC_B_MINIMAL_CHANGE_PLAN",
+  "message_id": "msg-20260814T205925Z-a230f95cf174",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_DUCA_DYNAMIC_INNER_FINAL_ADJUDICATION-v004.md"
+  ],
+  "payload": null,
+  "priority": "critical",
+  "requested_action": "Author MINIMAL_CHANGE_PLAN only for frozen DUCA_HIERARCHICAL_DYNAMIC_PHYSICAL_ACQUISITION_B-v001. Parent=63a726a4; implementation worktree is clean and isolated. Do not edit, test, import data, open held-out data, run GPU/Slurm/remote, or alter route/F1/F2/six-arm protocol. Return exact existing surfaces to reuse, minimal modifications/new files, contract mapping, no-data static checks, rejected infrastructure, and implementation handoff.",
+  "required_gate": "G5_IMPL_CHECK",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

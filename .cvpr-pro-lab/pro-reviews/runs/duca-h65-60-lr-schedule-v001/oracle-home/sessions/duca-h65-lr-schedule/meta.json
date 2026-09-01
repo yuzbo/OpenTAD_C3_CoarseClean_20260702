@@ -1,0 +1,122 @@
+{
+  "id": "duca-h65-lr-schedule",
+  "createdAt": "2026-08-24T02:09:26.273Z",
+  "status": "error",
+  "promptPreview": "请完整读取附加的裁决任务与四个冻结配置，作为 DUCA Scientific First-Author Agent 输出终稿。Nonce: DUCA-H65-60-LR-SCHEDULE-v001-20260824",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "running",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-24T02:09:26.889Z"
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": true,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "timeoutMs": 7200000,
+      "autoReattachDelayMs": 30000,
+      "autoReattachIntervalMs": 60000,
+      "autoReattachTimeoutMs": 300000,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    }
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "请完整读取附加的裁决任务与四个冻结配置，作为 DUCA Scientific First-Author Agent 输出终稿。Nonce: DUCA-H65-60-LR-SCHEDULE-v001-20260824",
+    "file": [
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_H65_60_LR_SCHEDULE_ADJUDICATION-v001.md",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65First_MatchedCycle6_20260822/configs/adatad/thumos/duca_sampling_rate_curriculum_stage1_uniform384.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65First_MatchedCycle6_20260822/configs/adatad/thumos/duca_sampling_rate_curriculum_stage2_joint384.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65First_MatchedCycle6_20260822/configs/adatad/thumos/duca_h65_60_stage1_uniform20.py",
+      "E:/DeskTop/TAD/OpenTAD_DUCA_H65First_MatchedCycle6_20260822/configs/adatad/thumos/duca_h65_60_stage2_transition20_joint20.py"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-h65-lr-schedule",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": true,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "timeoutMs": 7200000,
+      "autoReattachDelayMs": 30000,
+      "autoReattachIntervalMs": 60000,
+      "autoReattachTimeoutMs": 300000,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": false,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7500,
+    "httpTimeoutMs": 7500000,
+    "zombieTimeoutMs": 7500000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-h65-60-lr-schedule-v001/PRO_DUCA_H65_60_LR_SCHEDULE_ADJUDICATION-v001.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 37548,
+    "reattachCommand": "oracle session duca-h65-lr-schedule"
+  },
+  "startedAt": "2026-08-24T02:09:26.885Z",
+  "completedAt": "2026-08-24T02:09:33.831Z",
+  "errorMessage": "No running browser with attach metadata matched 127.0.0.1:14106. Enable remote debugging in chrome://inspect/#remote-debugging first.",
+  "error": {
+    "category": "browser-automation",
+    "message": "No running browser with attach metadata matched 127.0.0.1:14106. Enable remote debugging in chrome://inspect/#remote-debugging first.",
+    "details": {
+      "stage": "execute-browser"
+    }
+  }
+}

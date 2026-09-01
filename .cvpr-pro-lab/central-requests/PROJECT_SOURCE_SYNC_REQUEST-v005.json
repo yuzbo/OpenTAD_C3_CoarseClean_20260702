@@ -1,0 +1,48 @@
+{
+  "request_type": "PROJECT_SOURCE_SYNC_REQUEST",
+  "request_id": "PROJECT_SOURCE_SYNC_REQUEST-v005",
+  "status": "CONFIRMED",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "prepared_ids": [
+    "pfile-20260813T224832Z-d56d315736",
+    "pfile-20260813T224903Z-3cbbe3673b"
+  ],
+  "prepared_files": [
+    ".cvpr-pro-lab/project-files/prepared/CURRENT_RESEARCH_STATE-v009.md",
+    ".cvpr-pro-lab/project-files/prepared/DUCA_DENSITY_REACHABILITY_PROTOCOL-v001.md"
+  ],
+  "confirmed_at": "2026-08-13T23:23:17Z",
+  "runtime_cdp": "127.0.0.1:18164",
+  "confirmed_submissions": [
+    {
+      "prepared_id": "pfile-20260813T224832Z-d56d315736",
+      "confirmed_id": "pfile-20260813T232316Z-32704f46db",
+      "remote_ref": "chatgpt-project-source:CURRENT_RESEARCH_STATE-v009.md"
+    },
+    {
+      "prepared_id": "pfile-20260813T224903Z-3cbbe3673b",
+      "confirmed_id": "pfile-20260813T232317Z-5fd62dc7da",
+      "remote_ref": "chatgpt-project-source:DUCA_DENSITY_REACHABILITY_PROTOCOL-v001.md"
+    }
+  ],
+  "source_count_delta": {
+    "before": 31,
+    "after": 33
+  },
+  "material_reason": "The accepted local REVISE decision and its completed author-only Evaluator protocol freeze materially replace the former P0-only state. The exact two-file batch is required before a fresh Project Pro implementation-disposition decision; it preserves the held-out firewall and does not promote prototype evidence.",
+  "required_before_pro": true,
+  "blocking_class": "BLOCKS_EXPERIMENT",
+  "earliest_at": "2026-08-13T22:49:03Z",
+  "priority": "high",
+  "route_state": "REVISE / training-population-only FIT-CAL U-O-R protocol frozen author-only / NOT_EXECUTED / PRE_RUN_NOT_READY / official validation forbidden",
+  "depends_on": [
+    "PRO_DUCA_DENSITY_REACHABILITY_DECISION-v001",
+    "DUCA_DENSITY_REACHABILITY_PROTOCOL-v001"
+  ],
+  "future_pro_operation": "FRESH_EXACT_PROJECT_PRO",
+  "future_pro_question": "Using the two confirmed material files and the fixed evidence boundary, decide one of exactly two outcomes: (1) specify the smallest bounded tracked Builder production patch, followed by one independent Critic PRE_RUN review and the already frozen Evaluator U/O/R protocol; or (2) STOP/REVISE the route. Do not open another theory round, alter the FIT/CAL or official-validation firewall, promote the untracked prototype, or infer execution authority. Require exact production/evaluator/launcher wiring and PRE_RUN evidence before any launch.",
+  "supersedes": "PROJECT_SOURCE_SYNC_REQUEST-v004",
+  "dedup_key": "DUCA-density-reachability-sources-before-fresh-Pro-v001",
+  "single_recovery": "If a future Source mutation is unknown or fails, central performs one exact-Project read-only inventory; no automatic retransmission."
+}

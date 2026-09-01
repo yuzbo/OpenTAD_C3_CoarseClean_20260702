@@ -1,0 +1,211 @@
+DSH_ACCEPTANCE_JSON {"dshVersionExpected":"0.1.0-rc.6","sessionId":"session-d8ea0e9b-07ae-4858-94be-5398f2487234","preset":"anchored-standard","cwd":"C:/Users/skywalker/.codex/worktrees/duca-indirect-dynamic-20260817","firstRequestHeader":{"config":{"provider":"deepseek-official","model":"deepseek-v4-pro","reasoningEffort":"max","maxTokens":256000},"adapterDefaults":{"maxTokens":true},"system":"You are a helpful software engineer assistant.","tools":["bash","str_replace_editor"]},"uniqueFingerprint":"/^We need\\b/","firstReasoningLine":"Let me start by exploring the repository at the given path. I need to be read-only, no modifications. Need to do a thorough Chinese code review. Let me inspect the worktree and commit.","weNeedFingerprint":false,"turnEnd":{"kind":"completed"},"reportPresent":true,"accepted":false}
+DSH_FINAL_VISIBLE_REPORT_BEGIN
+总体结论：**FAIL**
+
+本报告对 `C:/Users/skywalker/.codex/worktrees/duca-indirect-dynamic-20260817` 在 `90748a1e46efbed760401edf80cec7c5816af0b4`（base `6125654b946cc30c614428ce1141f1903b015867`）进行了只读代码审查。审查范围为本次 diff（6 个文件）及其依赖的训练、选择器、检测器、后处理、checkpoint、启动器和 focused tests。结论按证据等级给出，并逐项给出 `file:line` 证据。
+
+---
+
+## 0. 审查范围与证据等级
+
+### 0.1 工作树状态
+- `git rev-parse HEAD` = `90748a1e46efbed760401edf80cec7c5816af0b4`，base = `6125654b`，tracked 文件无未提交修改。
+- 但工作树并非“干净”：`git status --porcelain=v1` 显示未跟踪目录 `docs/dsh/`，其中两个文件均为 0 字节空日志（`dsh-round2-retry1.stdout.txt`、`dsh-round2-retry1.stderr.txt`）。因此“干净工作树”的前提不成立，这两个空日志也不构成任何真实实验证据。
+
+### 0.2 证据等级定义
+- **设计**：`MINIMAL_CHANGE_PLAN.md`、config 中的声明字段与注释、launcher 注释。
+- **静态实现**：逐行代码阅读、依赖关系追踪；本机以 `PYTHONDONTWRITEBYTECODE=1` 执行了只读 `Config.fromfile` 解析和只读 validator 调用。
+- **静态测试**：`tests/` 下的 focused test 文件及其覆盖内容。本机尝试 `pytest` 收集 `tests/test_duca_round2_contracts.py` 失败：`torch` 加载 `c10.dll` 报 `OSError: WinError 1114`（与 `RTK.md` 已知本机问题一致），因此**不能声称该测试已通过**，只能审查其代码内容。
+- **真实实验**：无。仓库内无检查点（无 `.pth/.pt/.ckpt`），`docs/dsh` 日志为空，未发现任何指标、成本或训练产物。
+
+---
+
+## 1. Dynamic K receipt：requested/effective/executed 是否逐视频封存
+
+### 1.1 设计声明
+`MINIMAL_CHANGE_PLAN.md:3-6` 要求 `_semantic_budget_from_predictions` 输出“immutable per-video receipt records（requested/effective/executed K plus policy factors）”。
+
+### 1.2 静态实现（部分存在）
+- 预算计算与 receipt 构造在 `opentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py:1315-1345`：
+  - `requested_k` 按 `active` 计数分桶（`1319-1322`）；
+  - `effective_k = min(requested, valid_len)`（`1323`）；
+  - receipt 逐样本生成，含 `requested_k/effective_k/executed_k/active_count/valid_len/threshold/min_k/max_k/step_k`（`1326-1343`）。
+- receipt 挂到 meta：`3537-3553`。
+- 可选 JSONL 落盘：`3655-3659` 只有在环境变量 `PC_OT_MRAS_PREBACKBONE_SELECTOR_METADATA_JSONL` 或 `C3_SELECTOR_METADATA_JSONL` 存在时才写；写入行为在 `3720-3723`，JSONL 行包含 `pc_ot_mras_prebackbone_dynamic_budget`（`3713`）。
+
+### 1.3 问题（FAIL）
+1. **executed_k 是赋值而非实测**：`executed_k` 直接等于 `effective_k`（`1333`）。但实际 heavy computation 并未按 effective K 执行（见第 2 节），因此该字段语义不真实。
+2. **未“封存”**：
+   - receipt 是普通可变 `dict`，无哈希、签名、只读映射或 seal 机制（`1328-1343`）；
+   - 写入 meta 时只是浅拷贝 `dict(dynamic_budget_meta[idx])`（`3538`）；
+   - 默认不落盘，落盘依赖调用方设置环境变量，而新 launcher `scripts/run_duca_semantic_round2_n16r4.sh:14-18` 未设置任何相关变量；
+   - receipt 本身不含 `video_name/sample_id`（`1328-1343`）；视频名只在 JSONL 行其他字段中（`3671`），不构成自包含的 per-video receipt。
+3. **测试覆盖极弱**：`tests/test_duca_round2_contracts.py:8-19` 只断言 B=2 时 `metadata` 长度与键存在，且该测试中的两行 `requested_k` 都是 2，未测试 requested 分桶、`effective<requested`、封存、持久化或 executed 真实性；本机收集失败，未取得通过证据。
+4. **并非逐视频粒度**：滑动窗推理时，一个视频产生多个窗口样本，现有 sample id 是 `video|window_start_frame`（`_metadata_dump_sample_id`，`3738-3746`），因此落盘粒度是“窗口/样本”，不是聚合到视频的封存记录。
+
+**判定：FAIL。** requested/effective 的计算实现可读，但“executed 实测 + 逐视频封存”合同未实现。
+
+---
+
+## 2. VideoMAE heavy computation：是否真减少，还是形式稀疏
+
+### 2.1 静态实现证据
+- semantic_indirect 计划把每个样本选出的 K 写入 `[B, target_len]` 张量，未选槽位保持 0（`1629-1636`），返回给 `_apply_sparse_transport`。
+- `_apply_sparse_transport` 明确要求并输出 `[B, target_len, ...]`（`3396-3402`）；mask 只是额外生成的 bool 矩阵（`1403-1404`），不改变张量长度。
+- ActionFormer 调用 backbone 时**不传 mask**：训练 `opentad/models/detectors/actionformer.py:145-146`，测试 `actionformer.py:228-229`。
+- `BackboneWrapper.forward` 先把全部 frames flatten 并送进 `self.model.backbone`（`opentad/models/backbones/backbone_wrapper.py:86-110`）；mask 只在 backbone 之后把输出特征置零（`118-120`）。因此 K=192 与 K=384 的样本都执行 384 行 temporal input 的 VideoMAE 前向。
+- 新增的 `pack_variable_temporal_batch`（`selector.py:16-27`）和 `temporal_work_units`（`30-34`）**没有任何非测试调用点**（`git grep` 仅见定义和 `tests/test_duca_round2_contracts.py`）。`MINIMAL_CHANGE_PLAN.md:7-9` 声称要在 selector/backbone 边界 fail-closed 并加入 work counter，但：
+  - 本次 diff 未改任何 backbone 文件；
+  - 计划中引用的 `opentad/models/backbones/actionformer.py` 实际不存在；
+  - 没有 fail-closed 检查，也没有 work counter。
+- `tests/test_duca_round2_contracts.py:22-27` 只测试了未集成的 helper 能切分长度，不能证明主路径减少计算。
+
+**判定：FAIL。** 当前 dynamic-K 只对 padded/repeated 的 selected tensor 做形式稀疏：输入永远恢复为 `target_len=384`，VideoMAE 对所有行执行。`executed_k` 声称等于 effective K 与实际执行不符。
+
+---
+
+## 3. threshold/top-k/NMS 前是否先做 physical-time map
+
+### 3.1 静态实现证据
+- `opentad/models/detectors/single_stage.py:109-114` 现在在每个视频进入分数过滤前调用 `convert_to_seconds`；随后多分类路径才做 `pre_nms_thresh`、top-k、NMS（`119-144`），单分类路径也在 NMS 前完成转换。
+- `convert_to_seconds`（`opentad/models/utils/post_processing/utils.py:109-123`）先经 `_selected_axis_segments_to_dense_axis`（`73-106`）把 irregular selected-axis 坐标映射到 dense 物理位置，再乘 `snippet_stride`、加 `window_start_frame/offset` 并除以 `fps`。
+- 当 `physical_grid_actionformer` 开启时，head 已在解码前把 selected-slot 坐标映射到 dense 坐标（`opentad/models/dense_heads/anchor_free_head.py:127-139`），并把 `meta["irregular_native_axis"]=True`（`176`），避免 post-processing 再次映射，整体是 selected→dense→seconds 的单一链路。
+- 本项是本次 diff 中唯一真正落地的行为修正，静态顺序正确。
+
+### 3.2 缺口
+- `MINIMAL_CHANGE_PLAN.md:11` 要求“add ordering test”，但 `tests/test_duca_round2_contracts.py` 没有后处理顺序测试；仓库现有测试只覆盖 `convert_to_seconds` 工具函数（`tests/test_bata_post_processing_selected_axis.py:28`、`tests/test_c3_physical_grid_round_trip.py:230-236`），没有测试 `SingleStageDetector.post_processing` 中 threshold/top-k/NMS 与物理映射的先后顺序。
+
+**判定：静态实现 PASS；静态测试缺失。** 在代码层面，threshold/top-k/NMS 之前确实先做 physical-time map；但该合同没有 focused regression test。
+
+---
+
+## 4. 六个公平实验臂是否真正共享官方组件与成本定义
+
+### 4.1 设计声明
+`configs/adatad/thumos/duca_semantic_indirect_six_arm_n16r4.py:6-14` 用字符串声明了六个臂和 `COMMON`（data/detector/loss/nms/evaluator/optimizer/lr_schedule/seeds/update_unit/firewall）。
+
+### 4.2 静态实现证据：协议不可执行、未被消费
+- 本地只读 `Config.fromfile` 解析成功，但解析结果显示：
+  - `cfg.workflow = {disable_checkpoint: True, checkpoint_interval: 999, ...}`，继承自 `input_random_fixed_50pct_c3_physical_grid_actionformer_precheck.py:152-155`；
+  - `cfg.model` 没有 `frame_selector`；训练管线仍是 `random_fixed_subsample, keep_ratio=0.5`（precheck config `52-64`），不是 dense 768；
+  - `cfg.dataset.train.ann_file` 等仍是 `/root/autodl-tmp/...`（precheck config `7-10`），而新 config 的 `DATA` 字段（`3`）是 `/data/run01/...`，二者不一致；
+  - `cfg.model.rpn_head.physical_grid_actionformer.required=True`（precheck config `137-147`）。
+- 全仓库 grep 显示 `arms`、`PRE_RUN`、`COMMON` 没有任何训练/测试/validator 消费路径；唯一读取 `arms` 的是旧 validator `tools/bata/validate_duca_semantic_indirect_n16r4.py:13-15`，它仍要求旧臂名（`dense_placeholder`、`actionness_boundary_dynamic_k_headline` 等）。本机只读执行该 validator 返回 `exit=1, "invalid six-arm semantic config"`。
+- 新 launcher `scripts/run_duca_semantic_round2_n16r4.sh:14-18` 的 PRE_RUN 只做 `py_compile` + echo，不校验 arms、data、split、recovery；实际执行分支把 `tools/train.py` 原样指向该 config，训练器不会读取 `arms`，只会训练继承的 precheck 配置（随机 50% 采样、无 selector、错误路径）。
+- 因此所谓六臂目前只是 config 文件顶层的元数据字典，不是六个可实例化的实验配置。
+
+### 4.3 具体逐臂问题
+- **official dense**：`dense` 臂只写 `mode/target_len/transport`（config `8`），没有把 dataset 改为 dense 768 或移除 50% 随机下采样；解析后的模型仍无 selector，且数据仍是 random-fixed-50%（precheck `52-64`）。
+- **native uniform fixed-K**：`transport="native_selector"`、`coarse_scout_transport=False`（config `9`）不是 selector 参数；selector 允许的策略白名单为 `slot_transport/frame_score_topk/frame_score_global_rank_st/interval_boundary_packet/coarse_actionness_uncertainty/semantic_indirect`（`selector.py:1166-1173`），没有 `"uniform"`。
+- **actionness-only 与 actionness+boundary 两个固定 K 臂完全相同**：config `10-11` 的 selector dict 完全一致；而实现中预算信号恒为 `max(actionness, boundary)`（`selector.py:1318`），分配恒为 boundary 优先再 actionness（`1604-1617`）。没有开关能关闭 boundary 信号，所以这两个臂即使被消费也会跑同一模型。
+- **fixed_k 未实现**：selector 构造器参数（`selector.py:1009-1072`）没有 `fixed_k`；config 中 `fixed_k=384` 位于 selector dict 之外（config `10-11, 13`），不会影响预算。
+- **dynamic outer-K**：`dynamic_k_min/max/step/threshold` 参数存在且会被构造器消费（`selector.py:1068-1071`），但整个臂未接入模型配置，且计算并未真正变 K（见第 2 节）。
+- **direct-selection ablation**：`frame_score_topk` 策略存在（`selector.py:1168`），但同样未接入。
+- **共享组件**：`COMMON` 中的 detector/loss/nms/evaluator/optimizer/lr_schedule 是字符串，不是配置对象，不与继承的实际 `cfg.model/loss/nms/evaluation/optimizer/scheduler` 做任何相等性校验。
+- **seeds**：`COMMON.seeds=(0,1,2,3)`（config `6`）没有任何 runner 消费；launcher 未传 `--seed`，`tools/train.py` 默认 seed=42（`tools/train.py:47`）。
+- **updates**：`update_unit="optimizer_step"` 只是字符串；训练器确实按 optimizer step 调 `scheduler.step()`（`opentad/cores/train_engine.py:151`），但没有跨臂更新数绑定或审计。
+- **完整成本定义缺失**：round2 相关文件（config/script/test/plan）中 grep 不到任何 `cost/latency/energy/memory/flops/p50/p95` 字段；DUCA 六臂没有接入任何 full-stack cost profiler。
+
+**判定：FAIL。** 六个公平实验臂既不共享也不绑定任何可执行组件，且两臂重复、固定 K 无实现、seeds/cost 未消费；当前只能算“声明式设计”。
+
+---
+
+## 5. FIT/CAL/HOLD firewall
+
+### 5.1 设计声明
+config `6` 声明 `firewall=dict(FIT="train", CAL="validation", HOLD="test", selection_uses_holdout=False)`；`16` 声明 `PRE_RUN.fit_cal_hold_firewall=True`。
+
+### 5.2 静态实现证据（FAIL）
+- 实际继承并解析后的 dataset：train `subset_name="training"`（`configs/_base_/datasets/thumos-14/e2e_train_trunc_test_sw_256x224x224.py:9-15`），val `subset_name="validation"`（`41-53`），test `subset_name="validation"`（`66-79`）。即 **CAL 与 HOLD 是同一 validation 视频集**，仅 window overlap（0.25 vs 0.5）不同。
+- `evaluation.subset` 也为 `"validation"`（base config `95-99`）。
+- `tools/train.py:140-183` 唯一的运行时 split 一致性检查只在 `s1_binding is not None`（S1 专属）时执行；本 config 无 S1 contract，因此没有任何防火墙检查。
+- 新 config 的 `DATA` 路径与解析后的 `dataset` 路径不一致（config `3` vs precheck `7-10`），所以声明中的 data 绑定也不成立。
+- `selection_uses_holdout=False` 无代码消费，无校准阶段/阈值冻结实现。
+
+**判定：FAIL。** 声明与实际配置互相矛盾，fit/cal/hold 隔离没有静态或运行时实现。
+
+---
+
+## 6. Launcher 与 checkpoint resume
+
+### 6.1 设计声明
+config `15` 声明：每 5 epoch、保留最近 3 个恢复点、恢复 `model/optimizer/scheduler/amp_scaler/epoch/update/python_rng/numpy_rng/torch_rng/cuda_rng/dataloader`、`final/final-EMA fixed selection`。
+
+### 6.2 静态实现证据（FAIL）
+
+**Checkpoint 实际保存内容**（`opentad/utils/checkpoint.py:34-42`）只有：
+`epoch`、`state_dict`、`optimizer`、`scheduler`、可选 `state_dict_ema`、可选 `experiment_metadata`。
+没有 scaler、update 计数、任何 RNG state、dataloader state。
+
+**Resume 实际加载**（`tools/train.py:234-247`）只加载 `state_dict/optimizer/scheduler/state_dict_ema`；随后：
+- AMP scaler 在 `tools/train.py:218-222` 新建，不恢复；
+- `successful_updates` 从 0 重新计数（`256`）；
+- `set_seed` 只设置 `random/numpy/torch.manual_seed`（`opentad/utils/misc.py:9-13`），checkpoint 不保存 RNG，恢复不加载 RNG。
+
+**每 5 epoch**：
+- 实际保存条件在 `tools/train.py:284-313`，间隔来自 `cfg.workflow.checkpoint_interval`；
+- 解析后的 workflow 继承 precheck 的 `disable_checkpoint=True, checkpoint_interval=999`（`input_random_fixed_50pct_c3_physical_grid_actionformer_precheck.py:152-155`）。**该配置实际训练时一个 checkpoint 都不会保存**，与 `interval_epochs=5` 矛盾。
+
+**最近 3 个恢复点**：
+- `save_checkpoint` 只追加写 `epoch_{epoch}.pth`（`checkpoint.py:49,89`），全仓库无删除/轮换/保留逻辑；`retention=3`（config `15`）无消费者。
+
+**final/final-EMA**：
+- 没有 `final.pth` 或 `final-EMA.pth` 规则；最终 epoch 会保存为 `epoch_59.pth`（若启用 checkpoint）。
+- `best.pth` 只在 val loss 触发时保存（`tools/train.py:317-337`），而继承 workflow 的 `val_loss_interval=-1`（`e2e_thumos_videomae_s_768x1_160_adapter.py:153`），所以 `best.pth` 通常也不会产生。
+- 测试入口默认找 `checkpoint/best.pth`（`tools/test.py:216-224`），EMA 选择逻辑只是 `solver.ema` 为真时加载 `state_dict_ema`（`239-243`），并非 config 声称的固定 final/final-EMA 规则。
+
+**Launcher**：
+- PRE_RUN 只 `py_compile` config 并 echo（`scripts/run_duca_semantic_round2_n16r4.sh:14-18`），不验证 recovery/arms/firewall，且 `py_compile` 会写 `__pycache__`，破坏只读/干净树。
+- 真实执行分支参数非法：`tools/train.py` 的 argparse 只有 `--seed/--id/--resume/--not_eval/--disable_deterministic/--cfg-options`（`tools/train.py:44-63`），而 launcher 传 `--launcher slurm --work-dir ...` 与 `--resume-from`（script `23-24`）；实际运行会在 argparse 阶段失败。
+- 即使参数修正，script 没有设置 `RANK/WORLD_SIZE/LOCAL_RANK` 或使用 `torchrun`，而训练入口直接读取这些环境变量并初始化 NCCL（`tools/train.py:110-119`）。对比仓库内成熟启动器使用 `torchrun --nproc_per_node=1 ...`（`scripts/run_pc_ot_mras_prebackbone_c3_physical_grid_actionformer_full_train_n16r4.sbatch:375-376`）。
+
+**判定：FAIL。** checkpoint 内容、恢复字段、保存间隔、保留策略、final/final-EMA 选择、launcher 参数与环境均未实现或与声明冲突。
+
+---
+
+## 7. 证据等级汇总
+
+| 项目 | 设计 | 静态实现 | 静态测试 | 真实实验 |
+|---|---|---|---|---|
+| K receipt | 要求逐视频封存（plan `3-6`） | 部分实现，executed=effective，无 seal，默认不落盘 | 弱测试，且本机收集失败 | 无 |
+| VideoMAE 计算减少 | 要求 fail-closed/work counter（plan `7-9`） | 未实现，padded 384 全量执行 | helper-only 测试 | 无 |
+| physical-time map 顺序 | 要求 exactly once（plan `10-11`） | 已正确前移 | 无顺序测试 | 无 |
+| 六臂公平性 | 字符串声明 | 不可执行、无消费、两臂相同 | 无 | 无 |
+| FIT/CAL/HOLD | 声明 firewall | 无实现且 CAL=HOLD | 无 | 无 |
+| Launcher/checkpoint | 声明 recovery 合同 | 保存/恢复字段缺失、workflow 冲突、CLI 非法 | 无 | 无 |
+
+---
+
+## 8. 阻断问题、后果、最小修复与验证
+
+| # | 严重度 | 问题 | 后果 | 最小修复 | 验证 |
+|---|---|---|---|---|---|
+| B1 | 阻断 | 六臂协议只是顶层元数据，训练器/validator/launcher 均不消费；实际解析配置是 random-50% precheck、无 selector、`/root/autodl-tmp` 路径；actionness-only 与 actionness+boundary 完全相同 | 任何尝试运行都会训练错误的单模型；六臂公平比较与决定性裁决无法产生 | 把六臂落地为六个继承同一 shared base 的可实例化 config（或矩阵 runner），绑定真实 `model.frame_selector/dataset/workflow/seed`；新增 actionness-only 显式路径和可消费的 fixed-K 参数；修正数据路径 | Linux 环境 `Config.fromfile` + `build_detector/build_dataset` 逐臂 smoke；validator 断言六臂共享字段一致且两固定臂不同；launcher PRECHECK 通过 |
+| B2 | 阻断 | dynamic-K 输出恒为 `[B,384,...]`，backbone 不接收 mask 且全量执行；`executed_k` 虚报为 effective | 成本收益主张无依据，receipt 不可审计 | 实现真实 variable-K/bucketed heavy path 并使用 `pack_variable_temporal_batch`；在 backbone 前 fail-closed；用真实 temporal work counter 填 `executed_k`；否则显式关闭 dynamic 主张 | 集成静态测试断言 backbone 实际处理行数=Σ lengths、counter=receipt.executed_k，且不存在 padding 行 |
+| B3 | 阻断 | checkpoint 不保存 scaler/RNG/update/dataloader，resume 不恢复；workflow `disable_checkpoint=True, interval=999`；无 retention-3；无 final/final-EMA 文件规则 | 无法可复现恢复，没有声明中的恢复点与最终选择规则 | 扩展 `save_checkpoint`/resume schema；在 config 中覆盖 `workflow.disable_checkpoint=False, checkpoint_interval=5`；实现保留最近 3 个 epoch checkpoint 的轮换；定义并实现 `final.pth/final-EMA.pth` 选择 | checkpoint 保存/加载 roundtrip 单测覆盖全部声明字段；保留策略单测；final 命名与 tools/test.py 选择单测 |
+| B4 | 阻断 | 解析后 CAL 与 HOLD 都是 `subset_name="validation"`；无任何非 S1 的 split 防火墙；`DATA` 未绑定 dataset | calibration/holdout 泄漏风险，评估结论不可信 | 定义并绑定真正不相交的 FIT/CAL/HOLD 视频集；在训练/评估入口加运行时视频 ID 重叠检查；明确并文档化官方 THUMOS holdout 语义 | 静态 config 断言三集两两不相交；运行时 guard 单测（注入重叠时拒绝） |
+| B5 | 严重 | receipt 无 seal、默认不落盘；focused tests 不覆盖顺序和持久化；旧 validator 与旧 sbatch 仍引用旧臂名 | K receipt 合同不能闭合，PRE_RUN 无法作为有效门禁 | 在 launcher 中设置 receipt JSONL 路径并写含 sample id 的 hash/seal 行；补充 `SingleStageDetector` 顺序测试与 B>1 集成测试；同步 validator 到新臂名并由新 launcher 调用 | `pytest tests/test_duca_round2_contracts.py tests/test_bata_post_processing_selected_axis.py` 及新增顺序测试通过（Linux 环境） |
+| B6 | 轻 | `docs/dsh/` 两个空未跟踪日志；计划引用不存在的 `opentad/models/backbones/actionformer.py`；PRE_RUN 使用 `py_compile` 会写 `__pycache__` | 工作树不干净、文档误导、预检有副作用 | 删除或提交/忽略空日志；修正计划文件名引用；PRE_RUN 改用无写盘语法检查或显式说明产物 | `git status --porcelain` 干净；`PRECHECK_ONLY=1` 后无新增文件 |
+
+---
+
+## 9. 未覆盖或无法从代码证明的事项
+
+1. **官方组件等价性**：`COMMON` 中的 `official-derived` 字符串不能证明 detector/loss/NMS/evaluator 与官方 AdaTAD/ActionFormer 一致；本提交没有上游 diff、hash 或逐项绑定校验。
+2. **真实成本**：没有 DUCA 六臂的 full-stack cost 定义或测量（decode/preprocess/H2D/probe/selector/backbone/head/postprocess/memory/energy/p50/p95）；S1/ChronoTransport 的 profiler 未接入本协议。
+3. **实验结果**：仓库内无 checkpoint、无训练日志、无指标文件；两个未跟踪日志为空。**本次审查不声称任何实验成功，也不推断任何 mAP 或成本收益。**
+4. **focused tests 的执行结果**：本机 pytest 因 `torch c10.dll` 无法收集，未取得通过证据；未在远端执行（遵守只读与禁止远端约束）。
+5. **split 实际视频 ID**：本地无 THUMOS 标注文件，只能证明 config 中 CAL/HOLD subset 名相同，不能枚举实际重叠视频。
+6. **`uses_gt/uses_teacher/uses_raw_prediction_cache=False`**：这是 receipt 中的声明字段，代码只保证选择信号来自运行时预测；没有独立运行时审计证明所有输入均无这些泄漏。
+7. **`selection_uses_holdout=False`**：无校准流程与阈值冻结实现，无法从代码证明该声明成立。
+
+---
+
+## 10. 最终结论
+
+**FAIL**
+
+- 第 3 项（threshold/top-k/NMS 前先做 physical-time map）在 `single_stage.py` 中已正确静态实现，是本次提交中唯一可静态确认的正向修改。
+- 其余五项核心合同均失败或不可执行：K receipt 未封存且 executed 虚报；VideoMAE 计算未减少、仅 padded 形式稀疏；六臂协议未被消费且不可执行；fit/cal/hold 声明与配置相矛盾；launcher CLI 非法且 checkpoint/resume 合同未实现。
+- 没有任何真实实验证据，因此不能以本提交为依据发布公平性、成本或精度结论。
+DSH_FINAL_VISIBLE_REPORT_END

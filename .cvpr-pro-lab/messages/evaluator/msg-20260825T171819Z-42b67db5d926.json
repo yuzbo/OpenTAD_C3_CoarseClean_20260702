@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-25T17:18:19Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "n16r4-linux-prerun-and-admission",
+  "message_id": "msg-20260825T171819Z-42b67db5d926",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-messages/EVALUATOR_PJST_D1_CYCLE3_N16R4_PRERUN-v001.md",
+    "size": 6624
+  },
+  "priority": "critical",
+  "requested_action": "Consume static-passed cbefa515, run exact Linux/N16R4 focused tests and PRE_RUN; submit matched OFF/ON only if every gate passes.",
+  "required_gate": "REVISE",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

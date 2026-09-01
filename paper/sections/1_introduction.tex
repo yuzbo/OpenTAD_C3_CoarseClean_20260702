@@ -1,0 +1,22 @@
+\section{Introduction}
+
+Temporal action detection (TAD) asks a model to classify action instances and localize their temporal boundaries in long, untrimmed videos. Recent detectors improve this task with stronger temporal heads, boundary modeling, and large video backbones \citep{zhang2022actionformer,shi2023tridet,liu2024adatad}. The cost of this progress is direct: the detector must process dense temporal evidence even though many observations are background, repeated action interiors, or low-value context.
+
+Efficient TAD cannot be reduced to generic frame sampling. Uniform sampling is simple, but it allocates the same budget to empty windows and boundary-dense windows. Actionness top-$K$ is more task-aware, but it tends to keep confident action interiors and can discard the low-confidence transitions that determine high-tIoU localization. The target problem is therefore \emph{in-forward detector acquisition}: for each detector window, choose which original-time observations the detector should actually consume under a hard budget.
+
+We propose \textbf{DUCA-TAD}, a detector-utility-calibrated in-forward temporal acquisition plugin. DUCA-TAD is not a new TAD detector and not an offline ledger pipeline. It is a selector/adapter inserted before AdaTAD-, ActionFormer-, or similar TAD detectors. Given a dense candidate window, typically $T=768$, DUCA hard-selects at most $\Kmain=384$ original-time positions. The detector consumes only those selected observations, while sparse coordinate metadata maps selected-axis predictions back to original video time. We use \emph{in-forward} and \emph{window-online} to mean that the selector runs on the current detector window during the forward path; the paper does not claim prefix-causal streaming or delayed online emission.
+
+The plugin separates three information regimes. During training, dense detector responsibility, boundary support, localization loss, and hard-negative risk may supervise the acquisition module. During hard-forward fine-tuning, the detector still receives a packed sparse subset, while the selector is updated by explicit utility, boundary, hole, and coverage losses computed on the same training windows. During validation and deployment, selection uses only deploy-visible inputs such as zero-shot actionness, motion or feature energy, and optional learned probes. No teacher utility, ground truth, detector raw prediction, prediction cache, or offline decision ledger is read at inference.
+
+\input{figures/fig_architecture_tikz}
+
+\cref{fig:architecture} shows the resulting contract. The selector emits hard \texttt{selected\_positions}; the sparse temporal grid carries their original dense indices and support cells; the audit ledger is written after the in-forward decision for reproducibility and leakage checks. This distinction matters because a precomputed ledger can hide oracle information, and selected-rank time can distort boundaries even when recognition remains strong.
+
+This paper makes four contributions.
+
+\begin{itemize}
+    \item We formulate in-forward sparse acquisition for TAD as a hard-budget plugin contract: the detector consumes $\Ksel\le384$ selected observations, and all proposals are decoded in original time.
+    \item We introduce DUCA-TAD, an acquisition module trained by detector-utility warm-up and hard-forward surrogate fine-tuning, while remaining teacher-free at inference.
+    \item We incorporate zero-shot actionness as a deploy-visible branch and evaluation target, separating coarse action/background quality from selection geometry and final detector mAP.
+    \item We define an audit and evaluation protocol covering no-leak provenance, compute accounting, boundary diagnostics, matched-budget baselines, and high-tIoU sparse detector performance.
+\end{itemize}

@@ -1,0 +1,1 @@
+{"project_id":"g-p-6a796fef9a00819194024cf1de3bd697","nonce":"122c44f96c0c4397a394a6738c0a2259","project_title":"DUCA","project_source_count":10,"model_route":"GPT-5.6 Pro","evidence_basis":"coordinator read-only CDP evidence corroborated by prior same-conversation handshake fields","handshake_status":"PASS"}

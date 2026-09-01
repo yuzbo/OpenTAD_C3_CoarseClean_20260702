@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-11T05:05:49Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "frozen-route-attack",
+  "message_id": "msg-20260811T050549Z-b54624740c6c",
+  "parent_artifact_ids": [
+    "art-20260811T045704Z-2d13c25e41"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Accepted Pro decision PRO_INITIAL_REVIEW-v002 requires an independent read-only P0/P1 attack of DUCA_FIXEDK_BOUNDED_MONOTONE_DENSITY_ACQUISITION-v001 at frozen GitHub revision 63a726a4aaf48ecbf6780bb196de43a890c6b4df. Inspect frozen code and decision only. Attack novelty versus content-adaptive sampling and AdapTok, acquisition-versus-detector-axis confounding, global_structured_topk leakage risk, exact uniform equality, raw proposal inverse-map-before-NMS correctness, short-window behavior, no GT/teacher leakage, fair fixed-K cost, and overengineering. Give file/symbol references and cheapest falsifiers. Do not edit code, run experiments, use local CPU execution, start remote/GPU, access held-out data, push, or select a new route. Return CRITIC_DUCA_DENSITY_P0P1-v001 with pass/fail conditions, risks, and questions that must return to fresh Pro. Cite raw Pro file .cvpr-pro-lab/pro-reviews/runs/duca-serial-pro-5ad209b3c128fbdd4455da0a7783b203/raw-response.md.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

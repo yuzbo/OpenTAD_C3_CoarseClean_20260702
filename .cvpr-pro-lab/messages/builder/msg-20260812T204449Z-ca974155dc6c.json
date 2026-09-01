@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-12T20:44:49Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_CORRECTED_REMOTE_CLEAN_FORMAL_BINDING_RECOVERY",
+  "message_id": "msg-20260812T204449Z-ca974155dc6c",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "BUILDER_DUCA_P0_CORRECTED_REMOTE_CLEAN_BINDING-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "One bounded recovery for coordinator queue contract mismatch in BUILDER_DUCA_P0_CORRECTED_REMOTE_CLEAN_BINDING-v001. Reuse the already-published remote Git ref refs/heads/codex/duca-p0-identity-execution-v002 resolving to 402e582c4092275877828fd36b5b97a8c1213011; do not publish/rewrite/delete any ref and do not touch the existing df822807 checkout. Create the intended fresh detached checkout only at the previously verified-absent target /data/run01/sczc063/yuzibo/projects/opentad_duca_p0_identity_402e582c_20260813. Verify remotely only: HEAD=402e582c4092275877828fd36b5b97a8c1213011; parent=df8228072b871adbd8dedb480e80f1f7daaca69e; direct-parent name-status exactly D tests/test_duca_p0_projection_policy.py and A tools/bata/run_duca_p0_projection_production.py; net name-status against base 63a726a4aaf48ecbf6780bb196de43a890c6b4df exactly M opentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py and A tools/bata/run_duca_p0_projection_production.py; porcelain zero. This corrects only the erroneous base-diff cardinality requirement. Do not run Python/import/compile/test/adapter/P0, access fixtures/reference/comparison/data/model/checkpoint/metric, use GPU/CUDA/Slurm/browser, or alter science. If this recovery fails, return NEEDS_ATTENTION without further retry or cleanup.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

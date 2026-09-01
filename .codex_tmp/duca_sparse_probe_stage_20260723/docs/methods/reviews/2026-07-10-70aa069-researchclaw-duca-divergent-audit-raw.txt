@@ -1,0 +1,2836 @@
+# External Skill Loading Certificate
+
+**固定版本**：`MikaelCool/My-Own-PhD-Students@e146de166d95475a41d9216bbd605cec8fcb330a`。该提交的核心改动是把 evidence-contract executor 接入主流程。
+
+**证书等级**：**关键研究路径已核验；完整仓库逐字加载未完成，因此不声称“完整 Skill 已加载”。**
+
+## 实际读取并核验的内容
+
+已读取：
+
+* `.claude/skills/researchclaw/SKILL.md`
+* `README.md`
+* `README_USAGE_CN.md`
+* `prompts.default.yaml`
+* `prompts.high_impact_baseline.yaml`
+* `researchclaw/pipeline/executor.py`
+* `researchclaw/pipeline/runner.py`
+* `researchclaw/pipeline/stages.py`
+* `researchclaw/pipeline/contracts.py`
+* `researchclaw/pipeline/control_state.py`
+* `researchclaw/pipeline/research_governor.py`
+* `researchclaw/pipeline/_domain.py`
+* `researchclaw/pipeline/_helpers.py`
+* `researchclaw/pipeline/stage_impls/_topic.py`
+* `researchclaw/pipeline/stage_impls/_literature.py`
+* `researchclaw/pipeline/stage_impls/_synthesis.py`
+* `researchclaw/pipeline/stage_impls/_evidence_contracts.py`
+* `researchclaw/pipeline/stage_impls/_experiment_design.py`
+* `researchclaw/pipeline/stage_impls/_code_generation.py`
+* `researchclaw/pipeline/stage_impls/_execution.py`
+* `researchclaw/pipeline/stage_impls/_analysis.py`
+* `researchclaw/pipeline/stage_impls/_paper_writing.py`
+* `researchclaw/pipeline/stage_impls/_review_publish.py`
+* `docs/AUTOMATION_PROCESS_CN.md`
+* `docs/BASELINE_WORKFLOW_CN.md`
+
+固定实现确实定义了 23-stage 流程，并把 problem decomposition、literature、hypothesis、experiment、result analysis、research decision、peer review、quality gate、citation verification 接入统一状态机。
+
+## 本报告采用的 ResearchClaw 原则
+
+1. **先冻结问题锚点，再评价方法**：不能因为已经写了代码就反向定义研究问题。
+2. **Claim–Evidence–Experiment 三方绑定**：每项 claim 必须有对应实验和可追溯证据。
+3. **强 baseline 优先于新模块扩展**：若简单 baseline 未被排除，不允许继续堆叠方法。
+4. **可证伪假设与停止条件**：失败要触发 `REFINE`、`PIVOT` 或 `STOP`，而不是换叙事。
+5. **直接系统指标优先**：FLOPs、参数量不能替代 latency、energy、memory、decode 和 transfer。
+6. **审稿回滚分流**：区分“补实验”“重做创新”“仅修论文”，弱创新不能靠补表格解决。
+7. **真实实验数据约束写作**：论文数字只能来自实际实验记录，模拟结果不得混入。
+
+## 未能完整验证的内容
+
+* GitHub connector 无法递归枚举固定提交的整个目录树，本地 `git clone` 又因执行环境 DNS 无法解析 GitHub 失败。
+* 因此，`pipeline/**` 中可能存在但未由 `executor.py` 导入、且未被上述文件列表覆盖的辅助模块，属于 **UNVERIFIED**。
+* `_helpers.py`、`_code_generation.py`、`control_state.py` 等大文件虽读取了关键段和主体逻辑，但并非每个字节都完成逐字审计。
+* `docs/` 下除上述两份文档外的所有潜在相关文档未完成全量目录核验。
+
+因此，下文使用其**证据契约、回滚和审稿原则**，但不把 ResearchClaw 的自动评分或通用阈值当作领域科学结论。
+
+---
+
+# 总裁决
+
+> **当前 DUCA 应停止作为主论文方法，冻结为 baseline、negative control 和工程审计对象。**
+
+这不是“小修后继续”，也不是“再加一轮 loss”。继续重大重构后，方法的核心若变成 time×layer routing、physical-time dense computation 或 codec partial decode，它已经不再是当前 DUCA。
+
+最致命的问题不是 actionness 不够强，而是：
+
+> **方法的决策、训练代理、TAD 几何和真实系统成本处在四个不同的坐标系。**
+
+* 系统在 dense raw-video 上完成 decode、resize/crop、tensorization，并把完整窗口交给 selector。
+* selector 用 full-window probe 决定 K 帧。
+* detector 在均匀的 selected-axis 上卷积和回归。
+* 最后才用 piecewise-linear map 把结果映回 physical time。
+* detector 梯度通过 dense raw-pixel soft mixture 近似 hard frame replacement。
+* profiler 却把当前主 bridge 的计算记为 0。
+
+因此，当前代码同时存在：
+
+1. **明确的 compute-accounting code error**；
+2. **未验证的 hard/soft surrogate 假设**；
+3. **selected-axis 几何失真**；
+4. **GT boundary proxy 被命名成 detector utility 的历史遗留**；
+5. **极强 novelty collision**；
+6. **没有排除 exact-uniform、periodic、codec motion 等简单方案**。
+
+推荐主方向是：
+
+> **Counterfactual Value-of-Compute Routing for Dense Physical-Time TAD**：不再删除输入时间位置，而是在 backbone 的 `time × layer` 网格上选择 `FULL / LITE / HOLD`，使用真实 detector counterfactual loss change 监督，采用可打包的硬路由，并始终输出 dense physical-time features。
+
+保守备线是 **Boundary-Certified Feature Transport**；高风险备线是 **GOP-aware Partial Decode TAD**。
+
+---
+
+# 一、原始代码事实
+
+## 1.1 当前任务的正确名称
+
+当前任务是：
+
+> **offline full-window runtime pre-backbone temporal selection**
+
+不是 Online TAD，也不是 causal/streaming detection。
+
+固定配置已经明确写出：
+
+* `online_acquisition=False`
+* `streaming_inference=False`
+* `causal_prefix_decision=False`
+* `full_window_selection=True`
+* `runtime_generated=True`
+* `cache_free=True`
+
+这与用户的事实纠正一致。
+
+`runtime-generated` 只表示推理时动态生成选择结果；它不意味着：
+
+* causal；
+* streaming；
+* prefix-observed；
+* 不看未来；
+* 不允许 revision；
+* 在线 TAD。
+
+## 1.2 实际调用链
+
+固定提交 `70aa069b895322c2307ffbb13dfdef9fac0d1305` 的主链是：
+
+```text
+768-frame full window
+  └─ full decode / resize / crop / tensor conversion
+       └─ DucaOnlineFrameSelector.forward_train/test
+            ├─ full-window RGB descriptors
+            ├─ full-window low-resolution ASFormer probe
+            ├─ utility / boundary / transition / uncertainty heads
+            ├─ exact-K + max-hole structured DP
+            ├─ hard gather K=384
+            └─ training-only structured_zero_forward raw-pixel bridge
+                 └─ VideoMAE-S backbone on K selected positions
+                      └─ temporal projection / FPN / ActionFormerHead on selected axis
+                           └─ post-hoc piecewise-linear selected→physical-time remap
+```
+
+基础数据流水线在进入模型之前已经对 768 帧执行解码和空间变换；训练、验证和测试都不是先在压缩域或 CPU 端选择再解码。
+
+selector 在完整输入上构造 descriptor；若没有外部缓存，它再把完整输入交给 raw actionness source。之后才执行 hard gather。
+
+ActionFormer 的实际训练链是 selector → backbone → projection → neck → `ActionFormerHead`；测试链相同。
+
+## 1.3 真实成本方程
+
+当前推理成本应写成：
+
+[
+\begin{aligned}
+C_{\text{DUCA}}
+=&\ C_{\text{decode}}(T)
+
+* C_{\text{preprocess}}(T)
+* C_{\text{H2D}}(T)\
+  &+ C_{\text{probe}}(T)
+* C_{\text{selector}}(T,K,G)\
+  &+ C_{\text{VideoMAE}}(K)
+* C_{\text{head}}(K)
+* C_{\text{remap}},
+  \end{aligned}
+  ]
+
+其中 (T=768,K=384)。
+
+与 dense baseline 相比，它可能节省的是：
+
+* VideoMAE 重 backbone 的后续计算；
+* temporal projection/FPN/head 在 K 轴上的部分计算；
+* 相应 activation memory。
+
+当前实现**不会**节省：
+
+* 视频 bitstream 读取；
+* 768 帧 decode；
+* 768 帧 resize/crop；
+* full-window tensorization；
+* selector 前的数据传输；
+* full-window probe。
+
+H2D 的具体 transfer hook 未在本次逐行审计范围内完全展开，因此“完整 H2D 一定发生在 selector 前”属于高置信 inference；但 selector 本身在模型内接收完整 device tensor，当前架构显然没有 CPU/codec-side selected-only transfer 路径。
+
+## 1.4 Structured DP 做了什么
+
+`global_structured_topk`：
+
+* hard path 使用动态规划求精确 K 个位置；
+* 约束最大未选择 hole；
+* soft path 在同一可行集合上计算 differentiable marginals；
+* hard forward 与 soft backward 通过 ST 组合；
+* 推理仅使用 hard path。
+
+单测证明：
+
+* toy case 的 hard MAP 与 brute force 一致；
+* soft occupancy 总和等于 K；
+* hard forward detach 后等于 hard occupancy；
+* full-window 选择不是 prefix invariant。
+
+这些测试证明了**组合优化器的局部正确性**，但不证明：
+
+* score 是 detector-useful 的；
+* DP 优于 uniform；
+* soft marginal 是 hard swap 的合理梯度；
+* 系统 latency 改善；
+* 高 tIoU 不受损。
+
+## 1.5 明确的 compute-profile 错误
+
+训练时 `structured_zero_forward` 对完整原始视频执行：
+
+```python
+soft_selected = einsum(soft_slot_assignment, dense_inputs.float())
+hard + weight * (soft_selected - soft_selected.detach())
+```
+
+即复杂度实际是：
+
+[
+O(B \times N \times C \times H \times W \times K \times T).
+]
+
+该运算不是在 3 维 descriptor 上，而是在完整 raw-video tensor 上。
+
+但 profiler：
+
+* 把 `feature_dim` 传成 descriptor 的 `3`；
+* 只在模式为 `soft_to_hard_resample` 时记账；
+* 当前主模式 `structured_zero_forward` 被记为 `enabled=False`、0 MACs。
+
+按正式配置：
+
+* `B=2`
+* `N=1`
+* `C=3`
+* `T=768`
+* `K=384`
+* `H=W=160`
+
+仅该 einsum 约为：
+
+* **45.30G MACs / batch**
+* **90.60G FLOPs / batch**
+* uint8 dense input：约 112.5 MiB
+* `.float()` dense copy：约 450 MiB
+* soft selected output：约 225 MiB
+* slot assignment：约 2.25 MiB
+
+这是训练期成本，不是推理期成本；但它直接推翻“当前 joint-training bridge 计算轻量且已完整记账”的表述。
+
+## 1.6 detector gradient 证明了什么
+
+当前测试：
+
+```python
+out["inputs"].square().mean().backward()
+assert center_head_grad > 0
+```
+
+证明的是 surrogate path 存在、dtype 可用、梯度非零。
+
+它没有比较：
+
+[
+\nabla_{\theta}^{\text{surrogate}} L
+]
+
+与真实离散替换：
+
+[
+\Delta_i^{\text{swap}}
+======================
+
+L(S-{j}+{i})-L(S)
+]
+
+之间的：
+
+* rank correlation；
+* sign agreement；
+* cosine similarity；
+* top-m overlap；
+* 对下一步 hard policy 的实际改进。
+
+one-step proof 还把正式 VideoMAE backbone 替换成冻结的 temporal-mean Conv1d proof backbone；因此它是 graph-connectivity proof，不是正式端到端 detector validity proof。
+
+## 1.7 当前 “utility” 的真实含义
+
+训练时 target 来自 GT segment 的：
+
+* action body；
+* start endpoint；
+* end endpoint；
+* boundary context。
+
+测试明确把它命名为：
+
+```text
+instance_normalized_start_end_context_proxy
+deprecated_alias_to_gt_boundary_utility_proxy
+```
+
+并记录训练 provenance 使用了 labels 和 GT segments。
+
+因此当前 utility 是：
+
+> **GT boundary-utility proxy**
+
+不是：
+
+* detector loss reduction；
+* detector confidence gain；
+* counterfactual mAP gain；
+* gradient influence；
+* marginal value of compute。
+
+endpoint/utility heads 有直接 leaf-loss 梯度，也只证明这些 head 在学习 GT proxy。
+
+## 1.8 selected-axis 与 physical-time
+
+`TrueTimeMap` 验证 selected positions 严格递增，并通过 piecewise-linear interpolation 将 selected-axis 坐标映射回原 dense time。
+
+但是 ActionFormer 的卷积、FPN stride、local receptive field 和 boundary regression 已经在 selected-axis 上完成。post-processing 只在检测结果产生后执行逆映射。
+
+因此它能修复：
+
+* 输出单位；
+* proposal endpoint 的坐标表达。
+
+它不能修复：
+
+* 内部卷积对不等 physical gap 的等距处理；
+* stride 1/2/4 对应的真实时间跨度变化；
+* receptive field 的真实秒数漂移；
+* selected-axis regression range 与 physical duration 的不一致；
+* 两个相邻 selected token 之间可能隔 1 帧或 15 帧这一事实。
+
+---
+
+# 二、错误 online 表述与无歧义重命名
+
+以下是本次所审文件中的已核验项。由于未能执行固定提交的全仓递归 grep，仓库级绝对完整清单标为 **UNVERIFIED**。
+
+| 当前表述                                                | 问题                           | 建议重命名                                                              |
+| --------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
+| `duca_online_official_adatad_backend_full_train.py` | 文件名错误暗示 Online TAD           | `duca_offline_fullwindow_runtime_prebackbone_adatad_full_train.py` |
+| `DucaOnlineFrameSelector`                           | 不是 causal/streaming selector | `DucaFullWindowTemporalSelector`                                   |
+| `DucaOnline...Wrapper`                              | 错误任务语义                       | `DucaRuntimeSparseDetectorWrapper`                                 |
+| `duca_online_main_contract`                         | 合同名误导                        | `duca_fullwindow_runtime_contract`                                 |
+| `online_acquisition`                                | 布尔语义含混                       | 删除；改为 `selection_scope="offline_full_window"`                      |
+| `DUCA_ONLINE_*` 环境变量                                | 历史命名                         | `DUCA_FULLWINDOW_*`                                                |
+| `online_c3_official_asformer_*`                     | 不是 online probe              | `runtime_fullwindow_asformer_probe_*`                              |
+| `online_actionness` 局部变量                            | 只是 runtime-computed          | `runtime_actionness`                                               |
+| `online_actionness_source`                          | 同上                           | `runtime_actionness_source`                                        |
+| `online_actionness_provenance`                      | 同上                           | `runtime_actionness_provenance`                                    |
+| `online_backbone_flops_included`                    | 不是在线 backbone                | `runtime_probe_flops_included`                                     |
+| `duca_online_selected_count`                        | metadata 误导                  | `duca_runtime_selected_count`                                      |
+| `duca_online_selected_positions`                    | metadata 误导                  | `duca_runtime_selected_positions`                                  |
+| `duca_online_*` work dir                            | 实验目录误导                       | `duca_fullwindow_runtime_*`                                        |
+| docstring “Online DUCA acquisition adapter”         | 任务定义错误                       | “Full-window runtime temporal-selection adapter”                   |
+| error strings “online DUCA...”                      | 错误任务定义                       | “runtime full-window DUCA...”                                      |
+| proof/test 中 `online_c3_*`                          | 测试名传播错误术语                    | 与正式命名同步                                                            |
+
+类和测试仍直接导入 `DucaOnlineFrameSelector`，source name 也仍是 `online_c3_official_asformer_coarse_actionness`。
+
+建议合同字段固定为：
+
+```python
+selection_scope = "offline_full_window"
+runtime_generated = True
+cache_free = True
+causal = False
+streaming = False
+prefix_observed = False
+revision_policy = "full_window_single_pass"
+decision_stage = "after_full_decode_and_preprocess"
+detector_input_axis = "selected_axis"
+output_remap_axis = "dense_physical_time"
+```
+
+`runtime-generated`、`cache-free`、`offline`、`precomputed-ledger-free` 必须分别报告，不能再用一个 “online” 词覆盖。
+
+---
+
+# 三、当前 DUCA 的 14 项严厉审查
+
+Severity：
+
+* **P0**：主 claim 或数据流失效，投稿前必须解决。
+* **P1**：重大证据或设计缺口。
+* **P2**：术语、复现或次要工程问题。
+* **A**：可接受局限，但必须如实写入。
+
+## 1. 全候选帧 probe 后再选帧：compute circularity
+
+**Severity**：P0
+**类型**：研究假设缺陷 + 证据缺口
+
+**Observation**
+
+* 768 帧先完成 decode、resize/crop 和 tensorization。
+* descriptor 和 ASFormer probe 都扫描完整窗口。
+* hard gather 在这些步骤之后发生。
+
+**Inference**
+
+这不是“完全没有节省”，因为低分辨率 ASFormer 可能远便宜于 VideoMAE-S；但它构成典型 compute circularity：
+
+> 先支付 dense observation cost，才能决定是否节省后段 compute。
+
+**Consequence**
+
+论文只能声称减少 **post-selection heavy detector compute**，不能声称减少完整视频处理成本。
+
+**Required Fix**
+
+* 完整报告 decode、preprocess、H2D、probe、selector、backbone、head、postprocess 分项。
+* 与 exact-uniform、periodic 和 codec-side selection 比较。
+* 若 selector 前成本超过 dense baseline 总时间的 20%–30%，pre-backbone 路线的系统价值会显著下降。
+
+---
+
+## 2. 到底节省了什么
+
+**Severity**：P0
+**类型**：证据缺口
+
+| 阶段                  |            当前是否减少 | 判断                    |
+| ------------------- | ----------------: | --------------------- |
+| bitstream read      |                 否 | 完整视频仍被读取              |
+| decode              |                 否 | 768 帧完整 decode        |
+| resize/crop         |                 否 | full-window transform |
+| tensorization       |                 否 | full-window           |
+| H2D                 |             未证明减少 | selector 在模型内接收完整输入   |
+| probe               |                新增 | 全窗口低分辨率 ASFormer      |
+| selector/DP         |                新增 | exact-K structured DP |
+| VideoMAE            |                 是 | 768→384 输入            |
+| projection/FPN/head | 是，但 selected-axis | 时间长度降低                |
+| NMS/remap           |             基本不重要 | remap 反而新增            |
+
+**Required Fix**
+
+论文表格必须使用阶段分解，而不是只报 backbone GFLOPs。
+
+---
+
+## 3. exact-K/max-gap DP 是否优于 uniform
+
+**Severity**：P1
+**类型**：证据缺口
+
+**Evidence**
+
+DP 在 toy 组合问题上正确，但当前没有正式证据证明：
+
+* structured score 比 exact-uniform 更有 detector utility；
+* max-hole 约束比周期骨架更有效；
+* 在相同 K、相同 physical gap 分布下有提升。
+
+K=384/T=768 时，均匀采样天然有极小 hole；`max_unselected_hole=15` 主要只阻止极端长洞，不提供明显的边界保护。
+
+**Required Fix**
+
+至少比较：
+
+1. exact-uniform；
+2. random stratified；
+3. uniform skeleton + learned residual swaps；
+4. periodic refresh；
+5. transition score without DP；
+6. DP with random/constant scores；
+7. learned scores without gap constraint；
+8. same physical-gap histogram matching。
+
+若 structured DP 在三种强 baseline 上平均提升不足 0.3 mAP，且 latency 更高，应从主方法移除。
+
+---
+
+## 4. hard decision、soft DP、ST 与 detector consumption 是否同构
+
+**Severity**：P0
+**类型**：研究假设缺陷
+
+**Observation**
+
+* hard path选择具体帧。
+* backward path把完整原始帧进行 dense soft mixture。
+* VideoMAE 是高度非线性网络。
+* hard Viterbi 和 soft marginal共享可行集合，但不是相同函数。
+
+**Inference**
+
+surrogate gradient对应的是“对混合像素的微分”，不等价于“把离散帧 j 换成 i 的 detector loss 差”。
+
+**Required Fix**
+
+实施 one-swap finite-difference audit：
+
+[
+\rho=
+\operatorname{Spearman}
+\left(
+-\frac{\partial L}{\partial s_i},
+-\Delta_i^{swap}
+\right).
+]
+
+最低通过标准：
+
+* median Spearman (>0.3)；
+* sign agreement (>60%)；
+* top-10 overlap 显著优于 random；
+* 用 surrogate 做一步更新后，hard selection 的真实 detector loss 有统计显著改善。
+
+否则停止 ST bridge。
+
+---
+
+## 5. detector loss 是否有意义地优化 selector
+
+**Severity**：P0
+**类型**：证据缺口
+
+当前证据只证明 nonzero gradient，不证明 useful gradient。测试甚至使用 `square().mean()`，而非真实 ActionFormer detection loss。正式 proof 又替换了 VideoMAE。
+
+**Required Fix**
+
+* real VideoMAE-S + real ActionFormer loss；
+* finite-difference alignment；
+* detector-only gradient vs auxiliary-only gradient cosine；
+* hard policy update before/after loss；
+* seed-level selector stability；
+* random-label negative control。
+
+---
+
+## 6. ASFormer、selector、VideoMAE 联训的目标冲突
+
+**Severity**：P1
+**类型**：研究假设缺陷
+
+当前同时优化：
+
+* coarse actionness；
+* start endpoint；
+* end endpoint；
+* context；
+* boundary utility proxy；
+* detector loss surrogate；
+* gap/hole；
+* entropy；
+* budget；
+* 其他 regularizer。
+
+Actionness probe 既提供 selector 输入，又接受辅助监督和 detector surrogate 影响，存在三条捷径：
+
+1. probe 只编码 GT boundary proxy，不学一般 actionness；
+2. selector score head 用 hidden feature直接拟合训练集边界；
+3. detector适应 selector 的系统性偏差，而不是 selector 学习通用 utility。
+
+**Required Fix**
+
+采用分阶段可归因设计：
+
+* 固定 probe，仅训练 selector；
+* 固定 detector，仅训练 utility estimator；
+* 全联合；
+* detector-only target；
+* GT-proxy-only target；
+* random frozen probe。
+
+若联合训练优势不能超过最强单阶段方案，取消联合训练 claim。
+
+---
+
+## 7. module/loss soup
+
+**Severity**：P1
+**类型**：审稿风险 + 可归因性缺陷
+
+actionness、transition、uncertainty、start、end、context、utility、gap、budget、entropy 等多头共同生成 score。配置中 actionness 权重较低，但 score 和辅助 loss 的组合仍缺乏单一主假设。
+
+**Required Fix**
+
+主方法最多保留：
+
+* 一个 deploy-visible descriptor；
+* 一个 value predictor；
+* 一个结构约束；
+* 一个直接成本项。
+
+其余全部作为候选消融，不应默认进入最终模型。
+
+---
+
+## 8. GT boundary proxy 会不会学成边界监督器
+
+**Severity**：P0
+**类型**：研究假设缺陷
+
+答案是：**很可能会，而且当前代码就是这样监督的。**
+
+target 被设计成 endpoint-normalized start/end/context 分布，动作内部中心接近零。
+
+这会奖励：
+
+* GT 边界附近高分；
+* 动作主体相对低分；
+* 与实际 detector 对某一帧的 marginal utility 不同。
+
+**Required Fix**
+
+使用真实 counterfactual target：
+
+[
+u_i =
+L_{\mathrm{det}}(S\setminus{i})
+-------------------------------
+
+L_{\mathrm{det}}(S),
+]
+
+或 swap gain：
+
+[
+u_{i\leftarrow j}
+=================
+
+## L_{\mathrm{det}}(S)
+
+L_{\mathrm{det}}(S-{j}+{i}).
+]
+
+GT boundary proxy只能作为一个 baseline 或先验，不能再称 detector utility。
+
+---
+
+## 9. selected-axis ActionFormer 是否破坏物理时间
+
+**Severity**：P0
+**类型**：模型几何缺陷
+
+是。
+
+piecewise-linear post-hoc remap只能恢复输出坐标，不能恢复内部 operator 的物理时间含义。当前配置还明确没有要求 physical-grid ActionFormer。
+
+**Required Fix**
+
+三选一：
+
+1. scatter/transport 回 dense physical grid 后再进 head；
+2. 使用 gap-aware/continuous-time temporal operator；
+3. 给所有卷积、attention、point generator、regression range 显式传入时间戳。
+
+最便宜的判定实验是：**固定相同 selected frames，只改变 selected-axis 与 physical-grid head**。
+
+---
+
+## 10. provenance 是否正确
+
+**Severity**：P1
+**类型**：provenance 缺陷
+
+当前代码已经比旧版本好：source provenance 与 training provenance有所区分；测试确认训练阶段实际使用 labels 和 GT segments。
+
+但配置中的 actionness source仍声明：
+
+* `thumos_trained=False`
+* `uses_labels=False`
+* `uses_gt=False`
+
+与此同时 source 是 trainable、并在 THUMOS detector 联训中更新。这些字段如果被当成最终模型 provenance，会误导读者。
+
+**Required Fix**
+
+拆成四张 ledger：
+
+1. **Initialization provenance**：预训练数据、checkpoint hash；
+2. **Optimization provenance**：哪些参数在当前训练更新；
+3. **Supervision provenance**：每个 loss 使用哪些标签；
+4. **Inference provenance**：推理输入、缓存、teacher、GT。
+
+“初始化时未在 THUMOS 训练”不等于“最终模型未在 THUMOS 训练”。
+
+---
+
+## 11. fixed/dynamic budget 是否转化为真实 kernel 变化
+
+**Severity**：P1
+**类型**：证据缺口
+
+* fixed-384 确实让 backbone/head 输入长度变短，可能产生真实 kernel 变化。
+* MUST dynamic 若 padding 到 batch max、静态图或固定 K kernel，则 expected budget变化不代表真实 latency变化。
+* 当前 cost ledger 自身承认 dynamic compute 未被证明。
+
+**Required Fix**
+
+按每个实际 K 报告：
+
+* kernel launch 数；
+* CUDA time；
+* memory allocated/peak；
+* p50/p95 latency；
+* joules/video；
+* batch=1 与 batch>1；
+* compile/static graph 与 eager。
+
+dynamic budget必须以实际执行 token 数和 measured latency为横轴，而不是 expected budget。
+
+---
+
+## 12. 为什么简单 baseline 不能达到相同结果
+
+**Severity**：P0
+**类型**：证据缺口
+
+当前没有证据说明它们不能。
+
+审稿默认立场应是：
+
+> exact-uniform、periodic skeleton、codec motion 和简单 residual refinement 可能达到相同或更好的 Pareto 点，直到作者实验证伪。
+
+特别是 exact-uniform 已天然保护 coverage 和 max gap，不需要 ASFormer、多个 score head、soft DP 和 surrogate bridge。
+
+---
+
+## 13. 跨 detector、跨数据集泛化
+
+**Severity**：P1
+**类型**：证据缺口
+
+当前正式链是 VideoMAE-S/AdaTAD 配置加 `ActionFormerHead`。`SingleStageDetector` 接口有一定通用性，但：
+
+* TriDet 的 SGP/Trident head 未接入；
+* TemporalMaxer 未接入；
+* feature-based ActionFormer 与 end-to-end AdaTAD 的成本边界不同；
+* ActivityNet/HACS 的长动作分布与 THUMOS 短动作分布不同；
+* 物理时间扭曲对不同 head 的影响不同。
+
+**Required Fix**
+
+至少：
+
+* AdaTAD/ActionFormerHead；
+* feature-based ActionFormer；
+* TriDet 或 TemporalMaxer；
+* THUMOS14 + ActivityNet-v1.3 + HACS。
+
+若每个 detector 都需要重新设计 selector/权重，则不能称 detector-independent plugin。
+
+---
+
+## 14. 当前最大风险
+
+### 三项科学风险
+
+1. **surrogate–decision mismatch**：soft raw-pixel mixture梯度不代表 hard swap utility。
+2. **proxy–utility mismatch**：GT boundary proxy不等于 detector value of computation。
+3. **coordinate mismatch**：selected-axis operator破坏 physical-time TAD geometry。
+
+### 三项工程风险
+
+1. **compute profiler 明确漏记主 bridge**。
+2. **完整 decode/preprocess/H2D 隐藏成本**。
+3. **DDP/static curriculum 与 variable routing 易产生未使用参数、shape 和性能问题**。
+
+### 三项审稿风险
+
+1. **novelty collision**：SCSampler/LiteEval/AdaFocus + DynamicViT/ATS + TAD boundary head 的组合。
+2. **baseline fairness**：未排除 exact-uniform、periodic、codec motion。
+3. **module/loss soup**：难以把性能归因于一个清晰研究假设。
+
+---
+
+# 四、提交差异的真实含义
+
+## `1684f6b → c26b349`
+
+只修改：
+
+* 状态文档；
+* `duca_online_frame_selector.py`；
+* `test_duca_joint_training_contract.py`。
+
+核心修复是 raw uint8 输入在 structured bridge 中转换为可微 float，并增加 nonzero-gradient 测试。它修复 dtype/graph break，不证明 surrogate 正确。固定提交文档本身仍把 one-swap audit 列为未解决。
+
+## `c26b349 → 70aa069`
+
+只修改：
+
+* 状态文档；
+* `acquisition.py`；
+* joint-training test。
+
+核心是 stable curriculum 阶段保留对 learned score 的零值依赖，使 DDP graph静态；测试预期 warm-up gradient存在但总和为零。
+
+这不是：
+
+* detector utility validation；
+* hard/soft alignment；
+* latency proof；
+* energy proof；
+* mAP proof。
+
+因此这两个 commit 是**工程连通性修复**，不是科学闭环。
+
+---
+
+# 五、第一性原理问题地图
+
+真正的问题不应先写成“如何选 384 帧”，而应写成：
+
+> 在保证高 tIoU、短动作和边界风险可控的前提下，视频检测系统应在哪个计算阶段、以什么粒度、根据什么可部署证据，决定是否继续计算、复用、传输、合并或提高分辨率？
+
+## 5.1 五层计算位置
+
+```text
+Compressed bytes / GOP
+    ↓
+Decode — preprocess — H2D
+    ↓
+Patch/tubelet embedding / cheap stem
+    ↓
+Backbone time × layer computation
+    ↓
+Dense physical-time temporal head
+    ↓
+Postprocess / global video scheduling
+```
+
+当前 DUCA只作用于第二层之后、第三层之前，却把完整 observation pipeline 已经支付的成本排除在主要叙事之外。
+
+## 5.2 未解决问题表
+
+| 问题                           | Observation                  | Inference                              | 可证伪 Hypothesis                             |
+| ---------------------------- | ---------------------------- | -------------------------------------- | ------------------------------------------ |
+| frame/clip acquisition       | 低成本浏览本身可能扫描全视频               | 不一定是最佳控制点                              | codec-side或post-stem控制可获得更好端到端 Pareto      |
+| token pruning/merging        | 分类中成熟，TAD边界风险未充分研究           | 不能直接迁移 classification token importance | boundary-aware dense-grid pruning在高 tIoU更优 |
+| layer skipping/MoD           | 不删除时间位置即可省深层计算               | 更适合保护物理时间                              | time×layer value高度稀疏                       |
+| temporal/spatial resolution  | 动作主体、边界所需分辨率不同               | 单一 frame budget过粗                      | 联合 temporal×spatial allocation优于单轴选择       |
+| feature reuse/transport      | 视频特征跨时间冗余明显                  | 重算未必必要                                 | transport+风险证书优于删除 observation             |
+| codec/GOP                    | decode成本常被忽略                 | pre-backbone论文若不触及 codec，系统 claim有限    | GOP-aware partial decode能显著移动 Pareto       |
+| irregular/continuous time    | selected-axis扭曲物理时间          | post-hoc remap不足                       | timestamp-aware head可恢复短动作和高 tIoU          |
+| boundary uncertainty         | 边界不是确定点                      | 固定 max-gap不是风险控制                       | calibrated risk应直接决定计算                     |
+| short actions                | 平均预算可能牺牲少数短动作                | 平均 mAP掩盖风险                             | reserve/insurance budget可保护短动作             |
+| task-conditioned compute     | actionness不等于 detector value | 应用 counterfactual loss change          | detector counterfactual value可预测计算收益       |
+| cross-video redundancy       | 大量背景和动作模式重复                  | 可复用 prototype/cache                    | retrieval可减少重复 backbone计算                  |
+| long-video global allocation | 窗口独立预算可能重复计算                 | offline任务可全局优化                         | video-level budget优于每窗固定 K                 |
+| domain shift/calibration     | selector常在单数据集训练             | dynamic policies容易失配                   | conformal/risk calibration能约束退化            |
+| detector-independent机制       | selected-axis通常侵入 head       | dense physical interface更通用            | 保留 dense grid的routing更易跨 head              |
+| latency/energy               | FLOPs与实际速度脱钩                 | irregular kernels可能无收益                 | block packing和实测成本必须进入目标                   |
+| CPU/GPU overlap              | probe可能串行增加 critical path    | stage overlap决定真实速度                    | asynchronous CPU codec scan可隐藏部分开销         |
+
+---
+
+# 六、文献版图
+
+下面列出 **52 篇直接相关工作**和 **8 篇基础/跨任务工作**。只列一手论文页面或官方项目；无法确认正式 venue 或官方代码时明确标注。
+
+缩写：
+
+* **R**：peer-reviewed。
+* **P**：preprint 或正式 venue 未核验。
+* **Code —**：未确认官方代码，不代表一定不存在。
+
+## 6.1 TAD/TAL 与高效端到端检测：20 篇
+
+|  # | 工作                                            | 年份/状态              | 代码                                                                   | 与本项目关系                                                              |
+| -: | --------------------------------------------- | ------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------- |
+|  1 | Structured Segment Networks                   | ICCV 2017, R       | [code](https://github.com/yjxiong/action-detection)                  | segment-level TAD基础；强调上下文与阶段结构。([arXiv][1])                         |
+|  2 | BSN                                           | ECCV 2018, R       | [code](https://github.com/wzmsltw/BSN-boundary-sensitive-network)    | boundary probability与proposal组合；GT边界监督近邻。([arXiv][2])               |
+|  3 | BMN                                           | ICCV 2019, R       | [code](https://github.com/JJBOY/BMN-Boundary-Matching-Network)       | dense boundary-pair matching；说明边界信息不等于计算utility。([arXiv][3])        |
+|  4 | P-GCN                                         | ICCV 2019, R       | [code](https://github.com/Alvin-Zeng/PGCN)                           | proposal关系建模。([arXiv][4])                                           |
+|  5 | G-TAD                                         | CVPR 2020, R       | [code](https://github.com/frostinassiky/gtad)                        | snippet graph/context建模。([arXiv][5])                                |
+|  6 | TCANet                                        | CVPR 2021, R       | Code —                                                               | 多尺度上下文和边界 refinement。([arXiv][6])                                   |
+|  7 | AFSD                                          | CVPR 2021, R       | [code](https://github.com/TencentYoutuResearch/ActionDetection-AFSD) | anchor-free、边界 refinement；短动作基线。([arXiv][7])                        |
+|  8 | TadTR                                         | arXiv 2021；发表状态未复核 | [code](https://github.com/xlliu7/TadTR)                              | deformable sparse attention和query式TAD。([arXiv][8])                  |
+|  9 | An Empirical Study of End-to-End TAD          | 2022，R/venue未复核    | [code](https://github.com/xlliu7/E2E-TAD)                            | 直接研究输入分辨率、backbone与速度；重要系统基线。([arXiv][9])                           |
+| 10 | ActionFormer                                  | ECCV 2022, R       | [code](https://github.com/happyharrycn/actionformer_release)         | 当前 selected-axis head 的直接基础。([arXiv][10])                           |
+| 11 | BasicTAD / PlusTAD                            | ECCV 2022, R       | [code](https://github.com/MCG-NJU/BasicTAD)                          | 强调简单端到端 baseline 与真实效率；DUCA必须比较。([arXiv][11])                       |
+| 12 | ReAct                                         | ECCV 2022, R       | [code](https://github.com/sssste/React)                              | relational queries和quality score。([arXiv][12])                      |
+| 13 | TriDet                                        | CVPR 2023, R       | [code](https://github.com/sssste/TriDet)                             | relative boundary distribution与SGP；高 tIoU近邻。([arXiv][13])           |
+| 14 | TemporalMaxer                                 | CVPR 2023, R       | [code](https://github.com/TuanTNG/TemporalMaxer)                     | 极简 temporal operator；反对不必要复杂模块。([arXiv][14])                        |
+| 15 | AdaTAD                                        | CVPR 2024, R       | [code](https://github.com/sming256/AdaTAD)                           | 当前VideoMAE/AdaTAD基础；以adapter降低训练内存，不是输入删帧。([arXiv][15])             |
+| 16 | DyFADet                                       | ECCV 2024, R       | [code](https://github.com/yangle15/DyFADet-pytorch)                  | 动态 receptive field和head参数，不是动态计算；命名碰撞需区分。([arXiv][16])              |
+| 17 | Boundary-Recovering Network                   | 2024；venue未复核      | Code —                                                               | 研究feature pyramid中的 vanishing boundary。([arXiv][17])                |
+| 18 | RCL: Recurrent Continuous Localization        | 2022；venue未复核      | Code —                                                               | 连续锚点表示，是physical/continuous-time方向近邻。([arXiv][18])                  |
+| 19 | Efficient Spatio-Temporal Pyramid Transformer | 2022；venue未复核      | Code —                                                               | 用分层局部/全局attention降低action detection成本。([arXiv][19])                 |
+| 20 | EVAD                                          | 2023，R             | [code](https://github.com/MCG-NJU/EVAD)                              | keyframe-centric token dropout与实际速度，是post-token动态计算近邻。([arXiv][20]) |
+
+## 6.2 动态视频采样与多分辨率：12 篇
+
+|  # | 工作                        | 年份/状态           | 代码                                                    | 关系                                                                   |
+| -: | ------------------------- | --------------- | ----------------------------------------------------- | -------------------------------------------------------------------- |
+| 21 | SCSampler                 | ICCV 2019, R    | Code —                                                | 轻量模型浏览长视频后选择 salient clips；DUCA最直接问题碰撞之一。([arXiv][21])               |
+| 22 | LiteEval                  | NeurIPS 2019, R | Code —                                                | coarse-to-fine full-video scan；compute circularity直接近邻。([arXiv][22]) |
+| 23 | AR-Net                    | ECCV 2020, R    | [project](https://mengyuest.github.io/AR-Net)         | 每帧动态分辨率；说明预算不应仅是帧数。([arXiv][23])                                     |
+| 24 | Dynamic Sampling Networks | ECCV 2020, R    | Code —                                                | RL选择clips；与learned selection直接碰撞。([arXiv][24])                       |
+| 25 | FrameExit                 | CVPR 2021, R    | Code —                                                | 简单采样加conditional exit；早退常比复杂selector更强。([arXiv][25])                 |
+| 26 | AdaFocus                  | ICCV 2021, R    | [code](https://github.com/blackfeather-wang/AdaFocus) | 轻网络扫描全视频、重网络处理patch；结构上与DUCA高度相似。([arXiv][26])                       |
+| 27 | AdaFocus V2               | CVPR 2022, R    | [code](https://github.com/LeapLabTHU/AdaFocusV2)      | differentiable selection和单阶段训练；ST路径近邻。([arXiv][27])                  |
+| 28 | AdaFuse                   | ICLR 2021, R    | [project](https://mengyuest.github.io/AdaFuse/)       | channel skip与历史feature reuse。([arXiv][28])                           |
+| 29 | SMART                     | AAAI 2021, R    | Code —                                                | 帧选择和长视频高效识别近邻。([arXiv][29])                                          |
+| 30 | A3D                       | 2021；venue未复核   | Code —                                                | 动态神经网络用于视频计算分配。([arXiv][30])                                         |
+| 31 | HaltingVT                 | 2024，P/venue未复核 | [code](https://github.com/dun-research/HaltingVT)     | 视频token逐层halting；time×layer routing近邻。([arXiv][31])                  |
+| 32 | STTS                      | 2026 preprint   | Code —                                                | ViT与LLM统一时空token pruning及packing；最新硬件可执行近邻。([arXiv][32])             |
+
+## 6.3 Token pruning、merging 与 depth routing：12 篇
+
+|  # | 工作                | 年份/状态           | 代码                                                                                        | 关系                                                                                |
+| -: | ----------------- | --------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| 33 | TokenLearner      | NeurIPS 2021, R | [code](https://github.com/google-research/scenic/tree/main/scenic/projects/token_learner) | 学习少量adaptive tokens；需警惕破坏TAD物理时间。([arXiv][33])                                    |
+| 34 | DynamicViT        | NeurIPS 2021, R | [code](https://github.com/raoyongming/DynamicViT)                                         | 多层动态token sparsification和实际throughput。([arXiv][34])                               |
+| 35 | ATS               | ECCV 2022, R    | Code —                                                                                    | parameter-free adaptive token sampling，可插入视频ViT。([arXiv][35])                     |
+| 36 | EViT              | ICLR 2022, R    | [code](https://github.com/youweiliang/evit)                                               | 保留重要token、融合非重要token。([arXiv][36])                                                |
+| 37 | A-ViT             | CVPR 2022, R    | [project](https://a-vit.github.io/)                                                       | token-level adaptive computation time。([arXiv][37])                               |
+| 38 | ToMe              | ICLR 2023, R    | [code](https://github.com/facebookresearch/ToMe)                                          | training-free token merging，已验证视频throughput。([arXiv][38])                         |
+| 39 | DiffRate          | ICCV 2023, R    | [code](https://github.com/OpenGVLab/DiffRate)                                             | 学习层级compression rate，直接碰撞dynamic budget。([arXiv][39])                             |
+| 40 | HeatViT           | 2023，R          | Code —                                                                                    | latency-aware pruning与硬件实现；说明FLOPs不足。([arXiv][40])                                |
+| 41 | ForestPrune       | 2026 preprint   | Code —                                                                                    | training-free视频token forest和全局剪枝。([arXiv][41])                                    |
+| 42 | V-CAST            | 2026 preprint   | Code —                                                                                    | curvature-guided temporal allocation并保留原坐标；与boundary allocation高度接近。([arXiv][42]) |
+| 43 | SkipNet           | ECCV 2018, R    | Code —                                                                                    | learned layer skipping的经典工作。([arXiv][43])                                         |
+| 44 | Mixture-of-Depths | 2024 preprint   | Code —                                                                                    | 固定compute capacity下token routing；time×layer路线的重要碰撞。([arXiv][44])                  |
+
+## 6.4 Feature reuse、transport 与 compressed video：8 篇
+
+|  # | 工作                              | 年份/状态         | 代码                                                                  | 关系                                                     |
+| -: | ------------------------------- | ------------- | ------------------------------------------------------------------- | ------------------------------------------------------ |
+| 45 | Deep Feature Flow               | CVPR 2017, R  | [code](https://github.com/msracver/Deep-Feature-Flow)               | 稀疏keyframe重算、其余feature warp；BCFT主要近邻。([arXiv][45])     |
+| 46 | Flow-Guided Feature Aggregation | ICCV 2017, R  | [code](https://github.com/msracver/Flow-Guided-Feature-Aggregation) | flow-aligned邻帧feature aggregation。([arXiv][46])        |
+| 47 | Impression Network              | CVPR 2018, R  | Code —                                                              | 稀疏keyframe feature和长程memory。([arXiv][47])              |
+| 48 | Accel                           | CVPR 2019, R  | Code —                                                              | keyframe warp + corrective update branch。([arXiv][48]) |
+| 49 | DMC-Net                         | CVPR 2019, R  | Code —                                                              | motion vector/residual替代昂贵flow。([arXiv][49])           |
+| 50 | Refined Motion Vector           | 2019 preprint | Code —                                                              | 清理codec MV噪声。([arXiv][50])                             |
+| 51 | MEACI-Net                       | 2022；venue未复核 | Code —                                                              | RGB、MV、residual跨模态融合。([arXiv][51])                     |
+| 52 | AV1 Motion Vector Fidelity      | 2025 preprint | Code —                                                              | 实证codec MV可加速flow；支持codec-aware路线。([arXiv][52])        |
+
+## 6.5 基础与跨任务迁移：8 篇
+
+|  # | 工作               | 年份/状态           | 关系                                              |
+| -: | ---------------- | --------------- | ----------------------------------------------- |
+| 53 | Neural ODE       | NeurIPS 2018, R | continuous-depth与自适应求解基础。([arXiv][53])          |
+| 54 | Latent ODE       | NeurIPS 2019, R | irregularly sampled time series基础。([arXiv][54]) |
+| 55 | MS-TCN           | CVPR 2019, R    | TAS dense temporal输出和过分割风险。([arXiv][55])        |
+| 56 | ASFormer         | BMVC 2021, R    | 当前coarse probe来源，也是跨TAS控制器基线。([arXiv][56])      |
+| 57 | FineDiving       | CVPR 2022, R    | procedure-aware AQA与阶段边界。([arXiv][57])          |
+| 58 | USDL             | CVPR 2020, R    | AQA score uncertainty建模。([arXiv][58])           |
+| 59 | NetAdapt         | ECCV 2018, R    | 直接测量latency/energy而非MACs。([arXiv][59])          |
+| 60 | MLPerf Inference | MLSys 2020, R   | 系统测量、可比性和复现协议。([arXiv][60])                     |
+
+## 文献碰撞结论
+
+当前 DUCA 并不存在“完全相同”的单篇论文，但它处于三个成熟方向的交叉处：
+
+1. **廉价浏览 → 重模型选择性计算**：SCSampler、LiteEval、AdaFocus；
+2. **动态 token/深度/预算**：DynamicViT、ATS、A-ViT、DiffRate、Mixture-of-Depths；
+3. **TAD boundary-aware建模**：BSN、BMN、TriDet、BRN。
+
+如果核心贡献仍是：
+
+```text
+low-cost probe
++ learned score heads
++ differentiable top-K
++ boundary proxy
++ selected sparse detector
+```
+
+审稿人很容易将其判定为**已有动态视频识别机制迁移到TAD，并加入边界loss**。
+
+要跨过 novelty bar，必须至少同时具备：
+
+* TAD特有且非GT-proxy的 value-of-computation；
+* physical-time preserving computation；
+* measured system benefit；
+* 强 baseline排除；
+* 跨detector或跨任务证据。
+
+---
+
+# 七、24 个发散候选 Idea
+
+## 家族 A：codec 与 observation acquisition
+
+### I1. Deterministic Codec Skeleton
+
+**Problem**：DUCA是否真的优于无需学习的系统先验。
+**假设**：I-frame、MV、residual energy和严格周期骨架已能覆盖绝大多数有价值时间点。
+**决策变量**：GOP内保留位置集合 (S)。
+**机制**：exact-uniform skeleton + residual/MV change-point补点，无learned selector。
+**目标**：
+
+[
+\min_S C_{\text{decode}}(S)+C_{\text{backbone}}(S)
+\quad
+s.t.\ |S|=K,\ \max gap\le G.
+]
+
+**监督/训练**：无训练。
+**推理**：CPU解析codec metadata，确定S后partial/full decode。
+**真实成本**：metadata scan、dependency closure、decode、H2D。
+**最近邻**：CoViAR、DMC-Net、SCSampler。
+**差异**：不是分类compressed representation，而是TAD高tIoU coverage optimizer。
+**OpenTAD落点**：dataset pipeline、decoder，不进 `frame_selector`。
+**最小实验**：THUMOS 100个窗口，same-K对DUCA。
+**强baseline**：exact-uniform、MV top-K、random stratified。
+**预期形态**：若DUCA只是复杂启发式，I1会落在同一Pareto附近。
+**失败/Kill**：比exact-uniform低超过1 mAP且无系统速度优势。
+**最强拒稿意见**：只是engineering baseline；因此它更适合作为决定DUCA生死的强负控，而非主论文。
+
+### I2. CoDeTAD：GOP-Dependency-Aware Partial Decode
+
+**Problem**：当前方法不节省decode、preprocess和H2D。
+**假设**：TAD可以直接在codec dependency graph上优化观察成本。
+**决策变量**：被解码帧/参考帧closure、anchor密度。
+**机制**：GOP DAG cost + MV/residual transition risk + exact global optimizer；选择后只解码dependency closure。
+**目标**：
+
+[
+\min_S C_{\text{parse}}+C_{\text{decode}}(\operatorname{closure}(S))
++C_{\text{H2D}}(S)+C_{\text{det}}(S)
+]
+
+并约束short-action coverage和physical gap。
+**监督**：主选择器无训练；feature transport可用full-model蒸馏。
+**推理**：bitstream index → optimize → partial decode → dense feature reconstruction → physical head。
+**真实成本**：CPU seek、dependency decode、MV extraction、GPU compute。
+**最近邻**：CoViAR、DMC-Net、Refined MV、MEACI。
+**实质差异**：首次把GOP依赖闭包和TAD边界风险共同纳入优化，而非仅用compressed modalities分类。
+**OpenTAD**：重写Decode pipeline与数据容器。
+**MVP**：H.264固定GOP 12/24。
+**Kill**：partial decode因依赖和seek导致p50速度提升<10%。
+**拒稿意见**：CoViAR迁移；必须以真实partial decode、边界风险和physical dense reconstruction证明不同。
+
+### I3. Boundary-Triggered Decode Refinement
+
+**Problem**：完全partial decode可能错过细边界。
+**假设**：codec metadata足以定位少量高风险区，再局部高质量解码。
+**变量**：粗scan后需要RGB refinement的时间区间。
+**机制**：MV/residual change points构造风险区，非风险区仅I-frame/低分辨率，风险区完整decode。
+**目标**：rate–boundary-distortion Lagrangian。
+**监督**：可无学习；或用GT boundary仅校准阈值。
+**成本**：局部decode和双分辨率预处理。
+**最近邻**：AR-Net、DMC-Net、V-CAST。
+**差异**：优化的是TAD boundary error，不是分类accuracy。
+**Kill**：边界风险区覆盖率低于95%，或高tIoU显著下降。
+
+---
+
+## 家族 B：time × layer routing
+
+### I4. CVCR-TAD：Counterfactual Value-of-Compute Routing
+
+**Problem**：frame selection把物理时间删除，而且utility不是detector-derived。
+**假设**：不同 `time chunk × layer` 的真实重算价值高度不均匀，并可由早期features预测。
+**变量**：每个chunk、每个层组的 `FULL / LITE / HOLD`。
+**机制**：完整early stem；counterfactual detector loss生成价值target；硬capacity routing和contiguous packing；dense time输出。
+**目标**：
+
+[
+L=L_{\det}+\alpha L_{\text{distill}}
++\beta L_{\text{value-rank}}
++\lambda(C-B).
+]
+
+**监督**：full-model counterfactual loss change。
+**训练**：交替生成target、训练router、hard-route finetune。
+**推理**：无teacher，按块打包执行。
+**真实成本**：full decode/stem；减少后续backbone层计算。
+**最近邻**：DynamicViT、A-ViT、HaltingVT、MoD。
+**差异**：TAD detector counterfactual value、time×layer动作、physical dense输出。
+**OpenTAD**：VideoMAE block forward和新router。
+**MVP**：只控制4个层组、固定每层capacity。
+**Kill**：oracle value不集中，或50%深层compute削减导致高tIoU下降>1 mAP。
+**拒稿意见**：MoD用于TAD；防守必须依赖counterfactual utility、physical-time和短动作证据。
+
+### I5. Packed Time-Layer Mixture-of-Depths
+
+与I4类似，但不学习continuous value，直接使用每层固定capacity top-K router和auxiliary balance loss。
+**创新更弱**，实现更快；主要作为I4强baseline。
+**Kill**：无法获得实际kernel speedup或表现与random router相同。
+
+### I6. Monotone Anytime Depth Ladder
+
+**Problem**：不同视频需要不同总深度。
+**机制**：多个深度出口产生TAD结果，置信度和边界稳定度决定停止；输出必须满足随深度增加不任意撤销的monotone refinement。
+**目标**：expected detection loss + latency。
+**最近邻**：FrameExit、A-ViT。
+**差异**：输出为完整TAD实例集，不是单标签。
+**风险**：TAD置信度不易校准；可能只是early-exit迁移。
+**Kill**：简单视频/复杂视频的oracle最佳深度无显著差异。
+
+---
+
+## 家族 C：feature reuse / transport
+
+### I7. BCFT：Boundary-Certified Feature Transport
+
+**Problem**：相邻时间chunk重复重算。
+**假设**：大部分deep features可从少量anchors双向transport；错误主要集中于边界和剧烈状态变化处。
+**变量**：`RECOMPUTE / TRANSPORT / HOLD`。
+**机制**：full early stem，稀疏重算deep blocks；用motion/deformable field双向transport；risk predictor估计对detector loss的上界。
+**目标**：
+
+[
+L_{\det}
++\lambda C
++\mu [\hat q_{\alpha}(\Delta L)-\epsilon]_+.
+]
+
+**监督**：full-feature和counterfactual detector teacher。
+**训练**：transport/corrector、risk predictor、hard refresh optimizer分离训练。
+**推理**：离线全窗，可使用左右anchor。
+**真实成本**：full stem、sparse deep backbone、transport、dense head。
+**最近邻**：DFF、FGFA、Impression、Accel、AdaFuse。
+**差异**：TAD boundary-risk certificate、layer×time refresh、offline bidirectional transport。
+**Kill**：transport误差与detector loss弱相关，或刷新率低于50%时高tIoU崩溃。
+
+### I8. Codec-MV Residual Refresh Transport
+
+用codec MV warp deep feature，再以cheap residual corrector修复；比I7更系统化、模型更少。
+**近邻**：DMC-Net、Accel。
+**创新负担**：必须证明MV不是只作为廉价flow替换，而是进入TAD refresh决策。
+**Kill**：MV对复杂摄像机运动失效且corrector成本接近重算。
+
+### I9. Cross-Video Prototype Feature Cache
+
+检索训练集/历史视频中的背景、场景或动作phase prototype，复用中层feature。
+**潜在价值**：跨视频冗余。
+**风险**：隐私、domain leakage、检索成本、类别记忆捷径。
+**Kill**：leave-one-domain-out下收益消失；不推荐作为首选。
+
+---
+
+## 家族 D：physical / continuous time
+
+### I10. Continuous-Time Physical-Grid TAD Head
+
+**Problem**：任何非均匀采样或transport都会破坏selected-axis等距假设。
+**变量**：每个feature的真实时间戳 (\tau_i)。
+**机制**：timestamp-conditioned convolution/attention、continuous point generator、physical regression range。
+**目标**：正常TAD loss + time-warp consistency。
+**监督**：GT segments。
+**推理**：任意irregular grid。
+**真实成本**：head略增，backbone策略独立。
+**最近邻**：RCL、Neural ODE、Latent ODE、ActionFormer。
+**差异**：不是只对proposal连续化，而是整个head operator显式使用physical gaps。
+**OpenTAD**：projection、neck、point generator、head。
+**Kill**：在合成irregular sampling上不优于简单scatter/interpolation。
+
+### I11. Gap-Aware Temporal Convolution
+
+把普通kernel (w_{\Delta i}) 改成：
+
+[
+y_i=\sum_j k_\theta(\tau_j-\tau_i)x_j.
+]
+
+实现比完整continuous head简单，可作为I10 baseline。
+**创新较弱**，但极适合验证当前selected-axis缺陷。
+
+### I12. Time-Warp Consistency Training
+
+对同一视频随机生成多种非均匀时间重参数化，要求映回physical time后的预测一致。
+**目标**：
+
+[
+L_{\text{warp}}=
+d(\mathcal M_{\tau_1}(f(x_{\tau_1})),
+\mathcal M_{\tau_2}(f(x_{\tau_2}))).
+]
+
+可跨任意selector使用。
+**风险**：仅regularization可能不够CVPR主贡献。
+
+---
+
+## 家族 E：temporal × spatial multi-resolution
+
+### I13. Joint Spatio-Temporal Compute Allocation
+
+在cheap stem后，给每个chunk选择：
+
+```text
+low spatial / high spatial
+shallow / deep
+coarse temporal / fine temporal
+```
+
+目标为离散rate-distortion优化。
+**最近邻**：AR-Net、AdaFocus、MoD。
+**差异**：TAD边界驱动的二维预算。
+**Kill**：Pareto不优于单独temporal或spatial adaptation。
+
+### I14. Boundary-Only High-Resolution Zoom
+
+动作主体使用低分辨率，预测边界附近重新计算高分辨率局部clip。
+**优势**：与高tIoU直接相关、结构简单。
+**风险**：依赖第一阶段边界，容易confirmation bias。
+**Kill**：oracle boundary zoom headroom不足。
+
+### I15. Short-Action Insurance Budget
+
+把总预算分为：
+
+* global scaffold；
+* short-action reserve；
+* adaptive residual。
+
+通过多尺度change-point和uncertainty触发reserve。
+**目标**：minimize CVaR of short-action miss，而非平均loss。
+**最近邻**：TriDet、BRN、V-CAST。
+**差异**：把少数高风险短动作作为显式风险约束。
+**Kill**：short-action recall提升以长动作大幅退化为代价。
+
+---
+
+## 家族 F：真实 utility 与 rate-distortion
+
+### I16. One-Swap Detector Utility Distillation
+
+**Problem**：直接替换DUCA的GT proxy。
+**机制**：从uniform或当前selection出发，抽样交换位置，测真实detector loss change，训练value predictor。
+**目标**：pairwise ranking + calibrated gain regression。
+**推理**：预测value后使用简单exact-K optimizer。
+**真实成本**：训练target昂贵，推理便宜。
+**最近邻**：SCSampler、DynamicViT、influence methods。
+**实质差异**：标签是detector marginal gain。
+**Kill**：value predictor跨checkpoint/数据集相关性低于0.3。
+**拒稿意见**：昂贵teacher distillation；需证明target可稀疏采样、跨detector迁移。
+
+### I17. High-tIoU Risk–Rate Distortion
+
+定义任务失真：
+
+[
+D =
+\sum_{\theta\in{0.5,\dots,0.95}}
+w_\theta(1-\operatorname{mAP}*\theta)
++\eta E*{\text{boundary}}
++\zeta R_{\text{short-miss}}.
+]
+
+控制器最小化 (D+\lambda C)。
+**价值**：把平均mAP无法表达的边界风险纳入计算分配。
+**风险**：mAP不可微；需surrogate和offline policy optimization。
+
+### I18. Compute Attribution and Identifiability Audit
+
+核心不是benchmark，而是估计：
+
+* one-drop；
+* one-swap；
+* layer ablation；
+* Shapley approximation；
+* gradient attribution；
+
+并建立 selector score 与真实 value 的identifiability约束。
+**输出**：可直接训练I4/I16，也可否定DUCA。
+**审稿风险**：若只做分析会被认为benchmark；必须提出可复用估计器和训练正则。
+
+---
+
+## 家族 G：跨 TAD/TAS/AQA
+
+### I19. Unified Temporal Compute Controller
+
+共享controller输入：
+
+* temporal change；
+* uncertainty；
+* physical gap；
+* cache age；
+* task token。
+
+输出统一的recompute/transport/depth动作，分别接TAD、TAS、AQA heads。
+**核心假设**：计算价值由状态变化和证据不足决定，而非task-specific actionness。
+**风险**：多任务范围过大。
+**Kill**：共享controller不优于各任务独立controller。
+
+### I20. Procedure-State-Aware Compute Allocation
+
+针对TAS/AQA，把计算集中在phase transition、错误动作、评分关键步骤。
+**最近邻**：ASFormer、FineDiving。
+**差异**：控制对象是compute，不只是procedure segmentation。
+**风险**：需要跨任务标签映射。
+
+### I21. Dense Physical Compute Plugin API
+
+定义统一接口：
+
+```python
+features, timestamps, validity, compute_state, cost_ledger
+```
+
+任何selector/router/transport模块都必须输出dense physical grid或显式timestamp。
+**价值**：跨ActionFormer、TriDet、TemporalMaxer。
+**拒稿风险**：API本身不是论文；只能作为主方法基础设施。
+
+---
+
+## 家族 H：系统、风险与全局优化
+
+### I22. End-to-End Video Compute Ledger and Measured-Cost Optimizer
+
+不仅建benchmark，还学习平台成本函数：
+
+[
+\hat C(a,x;h)
+]
+
+并在训练/推理中使用 measured latency/energy surrogate，而非FLOPs。
+覆盖decode、CPU、H2D、probe、GPU、postprocess、overlap。
+**最近邻**：NetAdapt、TVM、MLPerf、BasicTAD。
+**创新**：视频TAD stage-level rate-distortion contract。
+**Kill**：cost model跨batch和视频shape预测误差>10%。
+
+### I23. Distribution-Shift Calibrated Compute Risk
+
+使用held-out calibration split或conformal quantile，对“跳算导致detector loss超过ε”的风险给出经验覆盖。
+**变量**：是否允许skip/reuse。
+**目标**：在风险约束下最小成本。
+**风险**：exchangeability在视频domain shift下不成立。
+**Kill**：跨数据集coverage严重失效。
+
+### I24. Offline Global Video Budget Allocation
+
+offline full-video允许先在window level估计复杂度，再全局分配预算：
+
+[
+\min_{{b_w}}
+\sum_w \hat D_w(b_w)
+\quad s.t.\quad \sum_w C_w(b_w)\le B_{\text{video}}.
+]
+
+可避免每窗固定384及重叠窗口重复计算。
+**最近邻**：long-video sampling、knapsack allocation。
+**差异**：优化完整视频而非独立窗口。
+**风险**：需要可靠window distortion curve；可能更偏系统。
+
+---
+
+# 八、Novelty Collision Matrix
+
+符号：
+
+* `✓`：高度相同；
+* `△`：部分相同；
+* `×`：核心不同。
+
+| Idea | 最近邻 3–5 项                              | 同问题 | 同决策变量 | 同监督 | 同目标 | 同计算位置 | 只是迁移到TAD？ | 必须提供的非自然小改证据                                         |
+| ---- | -------------------------------------- | --: | ----: | --: | --: | ----: | --------: | ---------------------------------------------------- |
+| I1   | CoViAR/DMC/SCSampler/Uniform           |   △ |     △ |   × |   △ |     △ |         △ | partial/system cost或作为负控                             |
+| I2   | CoViAR/DMC/MEACI/AV1-MV                |   △ |     △ |   × |   × |     × |         否 | GOP closure、真实partial decode、boundary risk           |
+| I3   | AR-Net/V-CAST/DMC                      |   △ |     △ |   △ |   △ |     × |         △ | codec metadata到高tIoU refinement闭环                    |
+| I4   | DynamicViT/A-ViT/HaltingVT/MoD/AdaTAD  |   △ |     △ |   × |   △ |     △ |       高风险 | counterfactual detector value、physical dense、packing |
+| I5   | MoD/DynamicViT                         |   ✓ |     ✓ |   △ |   ✓ |     ✓ |         是 | 很难；适合baseline                                        |
+| I6   | FrameExit/A-ViT                        |   ✓ |     △ |   △ |   ✓ |     △ |         是 | TAD set-valued monotone refinement                   |
+| I7   | DFF/FGFA/Impression/Accel/AdaFuse      |   △ |     △ |   × |   △ |     △ |         △ | boundary-risk certificate、layer×time refresh         |
+| I8   | DMC/Accel/Refined-MV                   |   △ |     △ |   △ |   △ |     △ |         △ | detector-aware refresh而非motion replacement           |
+| I9   | feature cache/retrieval methods        |   △ |     △ |   △ |   △ |     △ |         否 | leakage-safe跨域收益                                     |
+| I10  | RCL/Neural ODE/Latent ODE/ActionFormer |   △ |     △ |   ✓ |   △ |     △ |         △ | operator-level physical-time而非proposal remap         |
+| I11  | continuous conv/irregular TS           |   ✓ |     ✓ |   ✓ |   ✓ |     ✓ |         是 | 强TAD边界收益，否则仅应用                                       |
+| I12  | consistency regularization             |   ✓ |     △ |   ✓ |   ✓ |     △ |         是 | 与compute policy联合才够强                                 |
+| I13  | AR-Net/AdaFocus/MoD                    |   ✓ |     △ |   △ |   ✓ |     △ |       高风险 | joint temporal×spatial Pareto及boundary evidence      |
+| I14  | AdaFocus/coarse-to-fine TAD            |   ✓ |     △ |   ✓ |   ✓ |     △ |         是 | oracle边界zoom显著headroom                               |
+| I15  | TriDet/BRN/V-CAST                      |   △ |     × |   △ |   × |     △ |         否 | CVaR/short-action risk而非新loss名字                      |
+| I16  | SCSampler/DynamicViT/influence         |   △ |     △ |   × |   △ |     △ |         否 | true one-swap targets与跨detector预测                    |
+| I17  | rate-distortion/risk methods           |   △ |     △ |   △ |   × |     △ |         否 | high-tIoU/short-action cost frontier                 |
+| I18  | attribution/Shapley/pruning audits     |   ✓ |     △ |   △ |   △ |     × |         △ | estimator进入训练并改变policy                               |
+| I19  | multi-task routing                     |   △ |     △ |   △ |   △ |     △ |         否 | 一个controller跨TAD/TAS/AQA成立                           |
+| I20  | ASFormer/FineDiving                    |   △ |     × |   △ |   × |     △ |         否 | procedure state→compute因果链                           |
+| I21  | OpenTAD/plugin APIs                    |   ✓ |     △ |   × |   × |     × |         否 | 不能单独投稿，只做基础设施                                        |
+| I22  | NetAdapt/TVM/MLPerf                    |   △ |     △ |   × |   △ |     × |         否 | 视频stage ledger进入优化，不只是测表                             |
+| I23  | conformal/calibration methods          |   △ |     △ |   △ |   △ |     △ |         否 | skip-risk coverage与实际compute联动                       |
+| I24  | global budget/knapsack                 |   △ |     △ |   △ |   ✓ |     × |         否 | overlapping-window reuse与video-level Pareto          |
+
+---
+
+# 九、评分与淘汰
+
+分数均为 10 分制。`D` 为 Reviewer Defensibility。
+
+| Idea    | Novelty | Importance | Elegance | Feasibility | Measurability | CVPR Fit |       D | 裁决                     |
+| ------- | ------: | ---------: | -------: | ----------: | ------------: | -------: | ------: | ---------------------- |
+| I1      |     7.0 |        8.5 |      9.0 |         9.0 |           9.5 |      7.0 |     8.5 | 必做负控                   |
+| **I2**  | **9.1** |    **9.3** |  **8.7** |     **7.0** |       **9.3** |  **9.2** | **8.2** | **Top-5 / Top-3**      |
+| I3      |     8.0 |        8.5 |      7.5 |         6.5 |           8.5 |      8.0 |     7.0 | 合并入I2                  |
+| **I4**  | **8.7** |    **9.2** |  **8.3** |     **7.4** |       **9.2** |  **9.1** | **8.2** | **Top-5 / Top-3 / 主线** |
+| I5      |     7.8 |        8.7 |      8.0 |         7.5 |           8.7 |      8.4 |     7.5 | I4 baseline            |
+| I6      |     6.8 |        7.8 |      8.0 |         8.4 |           8.8 |      7.2 |     7.6 | 淘汰主线                   |
+| **I7**  | **8.4** |    **9.0** |  **8.4** |     **7.1** |       **8.8** |  **8.9** | **8.0** | **Top-5 / Top-3**      |
+| I8      |     7.8 |        8.7 |      7.6 |         6.8 |           8.6 |      8.1 |     7.3 | I7 codec变体             |
+| I9      |     8.2 |        8.0 |      7.0 |         5.5 |           7.2 |      7.5 |     6.4 | 暂停                     |
+| **I10** | **8.0** |    **8.8** |  **8.8** |     **8.0** |       **9.0** |  **8.6** | **8.0** | **Top-5 / 基础设施**       |
+| I11     |     6.9 |        8.2 |      8.1 |         8.5 |           9.0 |      7.7 |     7.7 | I10 baseline           |
+| I12     |     7.5 |        8.3 |      8.4 |         8.0 |           8.5 |      8.0 |     7.8 | I10 regularizer        |
+| I13     |     7.7 |        8.8 |      7.8 |         7.1 |           8.7 |      8.4 |     7.4 | 二级路线                   |
+| I14     |     7.0 |        8.5 |      8.0 |         8.2 |           9.0 |      7.9 |     7.8 | 可做baseline             |
+| I15     |     7.2 |        8.7 |      8.2 |         8.4 |           9.1 |      8.1 |     8.2 | 并入I4/I7                |
+| I16     |     7.9 |        8.8 |      8.1 |         8.0 |           9.4 |      8.4 |     7.9 | I4 target builder      |
+| I17     |     8.1 |        9.0 |      8.3 |         7.1 |           8.8 |      8.8 |     7.9 | 作为统一目标                 |
+| I18     |     7.8 |        8.2 |      8.5 |         8.8 |           9.5 |      7.8 |     8.4 | 必做审计，不单独主投             |
+| I19     |     8.2 |        9.0 |      7.3 |         6.2 |           8.2 |      8.7 |     7.0 | 三个月后扩展                 |
+| I20     |     7.7 |        8.3 |      7.8 |         6.8 |           8.0 |      8.0 |     7.1 | 暂停                     |
+| I21     |     6.8 |        8.0 |      8.6 |         8.7 |           8.8 |      7.4 |     8.0 | 基础设施                   |
+| **I22** | **8.0** |    **9.1** |  **8.7** |     **8.3** |       **9.6** |  **8.3** | **8.7** | **Top-5 / 所有路线强制层**    |
+| I23     |     8.5 |        9.0 |      8.1 |         6.7 |           8.6 |      8.8 |     8.0 | 后续增强                   |
+| I24     |     8.0 |        8.5 |      7.5 |         6.0 |           8.0 |      8.1 |     7.1 | 高风险后续                  |
+
+## Top-5
+
+1. **I4 CVCR-TAD**
+2. **I2 CoDeTAD**
+3. **I7 BCFT**
+4. **I10 Continuous-Time Physical Head**
+5. **I22 End-to-End Compute Ledger**
+
+I10 和 I22 是前三条方法共同依赖的基础设施；Top-3方法按机制互补性选择 I4、I7、I2。
+
+---
+
+# 十、Top-1：CVCR-TAD
+
+## 10.1 一句话 thesis
+
+> 对TAD而言，真正稀疏的是 `time × layer` 的重算价值，而不是物理时间本身；用detector counterfactual value监督硬件可打包的层时路由，可在保持dense physical-time输出的同时降低真实backbone成本。
+
+## 10.2 输入输出与张量形状
+
+正式例子：
+
+```text
+input video:
+X ∈ uint8/float [B, 1, 3, 768, 160, 160]
+
+VideoMAE-S tubelet embedding:
+temporal stride s_t = 2
+patch size = 16×16
+M = 768 / 2 = 384 temporal tubelets
+P = 10×10 = 100 spatial tokens
+D = 384
+
+Z0 ∈ R[B, 384, 100, 384]
+
+routing temporal block width:
+w = 8 tubelets
+U = 384 / 8 = 48 routing units
+
+router logits at controlled layer group l:
+R_l ∈ R[B, 48, 3]
+actions = {FULL, LITE, HOLD}
+
+final dense temporal feature:
+F ∈ R[B, 384, 384]
+
+timestamps:
+τ ∈ R[B, 384], physical frame coordinates
+
+head output:
+segments ∈ R[B, N_pred, 2] in physical-frame coordinates
+scores ∈ R[B, N_pred, C]
+```
+
+实际 temporal stride、patch size应从VideoMAE实现读取，不允许硬编码；上述是首版固定合同。
+
+## 10.3 模块图
+
+```text
+Full decoded window X
+       │
+       ▼
+Tubelet Embed + first L0 dense blocks
+       │       Z0 [B,M,P,D]
+       ├───────────────┐
+       ▼               ▼
+routing descriptors   task / cost state
+[B,U,Dr]               [B,U,Dc]
+       └──────┬────────┘
+              ▼
+Counterfactual Value Router
+π[l,u] → FULL / LITE / HOLD
+              │
+       contiguous block packing
+              │
+     ┌────────┼──────────┐
+     ▼        ▼          ▼
+   FULL      LITE       HOLD
+heavy block  low-rank   identity/cheap transport
+     └────────┼──────────┘
+              ▼
+dense scatter to original physical tubelet grid
+              ▼
+spatial pooling + physical-time temporal projection
+              ▼
+ActionFormer/TriDet/TemporalMaxer head
+              ▼
+physical-time segments
+```
+
+## 10.4 核心公式
+
+对层组 (l)、时间块 (u)、动作 (a)：
+
+[
+v_{l,u,a}
+=========
+
+## L_{\det}(z^{\text{cheap}}_{l,u})
+
+L_{\det}(do(a_{l,u}=a)).
+]
+
+router预测：
+
+[
+\hat v_{l,u,a}=g_\phi(h_{l,u},c_l,\tau_u).
+]
+
+硬容量选择：
+
+[
+a^*
+===
+
+\arg\max_{a}
+\sum_{l,u}\hat v_{l,u,a}
+\quad
+s.t.
+\quad
+\sum_{l,u} C_{l,u,a}\le B,
+]
+
+并要求每层active blocks为固定倍数，便于packing。
+
+训练目标：
+
+[
+\begin{aligned}
+L=&L_{\det}^{student}
++\alpha L_{\mathrm{KD}}
++\beta L_{\mathrm{rank}}(\hat v,v)\
+&+\gamma L_{\mathrm{cal}}
++\lambda\left(\sum C(a)-B\right).
+\end{aligned}
+]
+
+高tIoU风险版本：
+
+[
+v =
+w_1\Delta L_{\mathrm{cls}}
++w_2\Delta L_{\mathrm{reg}}
++w_3\Delta L_{\mathrm{boundary}}
++w_4\Delta L_{\mathrm{short}}.
+]
+
+## 10.5 Counterfactual target 生成
+
+不能对每个位置、每层都完整重跑。采用稀疏target builder：
+
+1. 每个batch中的20%样本运行full teacher。
+2. 每个样本抽取 (J=8) 个 `(layer group, time block)`。
+3. 对每个位置抽取 `LITE`、`HOLD` 干预。
+4. 从干预层开始复用下游activation checkpoint。
+5. 分别记录：
+
+   * detector total loss change；
+   * classification loss change；
+   * regression/boundary loss change；
+   * proposal recall change；
+   * feature error。
+6. 存入短期rolling target buffer，不在推理使用。
+
+不得用GT boundary heatmap替代该target。
+
+## 10.6 为什么选交替训练
+
+不建议直接用raw-pixel ST联合训练。
+
+选择：
+
+```text
+Phase A: full dense detector warm start
+Phase B: generate sparse counterfactual targets
+Phase C: train value router/ranker
+Phase D: freeze router, hard-route student fine-tune
+Phase E: periodically refresh target buffer
+```
+
+理由：
+
+* 避免surrogate–hard mismatch；
+* 每个阶段可归因；
+* router可以用监督ranking loss；
+* hard execution与推理同构；
+* target质量可独立审计。
+
+## 10.7 训练伪代码
+
+```python
+for step, batch in enumerate(loader):
+    x, masks, metas, gt = batch
+
+    # 1. Dense early stem is always executed.
+    z0, timestamps = model.backbone.forward_stem(x, masks)
+
+    # 2. Periodically create detector-counterfactual targets.
+    if step % target_refresh_interval == 0:
+        with torch.no_grad():
+            full_states, full_pred = teacher.forward_from_stem(
+                z0, timestamps, route="FULL"
+            )
+            full_loss = detection_loss(full_pred, gt)
+
+            target_rows = []
+            interventions = sample_interventions(
+                num_time_blocks=U,
+                layer_groups=controlled_groups,
+                samples_per_video=8,
+                actions=("LITE", "HOLD"),
+            )
+            for intervention in interventions:
+                cf_pred = teacher.forward_intervention(
+                    z0,
+                    timestamps,
+                    full_states=full_states,
+                    intervention=intervention,
+                )
+                cf_loss = detection_loss(cf_pred, gt)
+                target_rows.append(
+                    make_value_target(intervention, cf_loss - full_loss)
+                )
+            target_buffer.add(target_rows)
+
+    # 3. Train value predictor from true loss deltas.
+    value_batch = target_buffer.sample()
+    pred_value = model.router.predict_value(value_batch.descriptors)
+    value_loss = pairwise_rank_loss(pred_value, value_batch.delta_loss)
+    value_loss += calibration_loss(pred_value, value_batch.delta_loss)
+
+    # 4. Hard hardware-aligned route.
+    route = model.router.hard_route(
+        z0,
+        timestamps,
+        capacity=capacity_schedule[step],
+        block_multiple=8,
+    )
+
+    # 5. Packed execution and dense scatter.
+    z = model.backbone.forward_routed(z0, route)
+    pred = model.head(z, timestamps, masks)
+
+    det_loss = detection_loss(pred, gt)
+    kd_loss = prediction_distillation(pred, full_pred.detach())
+    cost_loss = lagrangian_cost(route.measured_cost, target_budget)
+
+    loss = det_loss + alpha * kd_loss + beta * value_loss + cost_loss
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    optimizer.step()
+```
+
+## 10.8 推理伪代码
+
+```python
+with torch.no_grad():
+    z0, timestamps = model.backbone.forward_stem(x, masks)
+    route = model.router.hard_route(
+        z0, timestamps,
+        latency_budget=budget_ms,
+        block_multiple=8,
+    )
+    z = model.backbone.forward_routed(z0, route)
+    proposals, scores = model.head(z, timestamps, masks)
+```
+
+无teacher、无GT、无prediction cache。
+
+## 10.9 OpenTAD修改
+
+新增：
+
+```text
+opentad/models/routers/counterfactual_voc_router.py
+opentad/models/backbones/routed_videomae.py
+opentad/models/utils/packed_temporal_blocks.py
+opentad/models/utils/compute_ledger.py
+opentad/models/losses/value_ranking_loss.py
+tools/analysis/build_counterfactual_value_buffer.py
+tests/test_routed_videomae_hard_equivalence.py
+tests/test_counterfactual_value_alignment.py
+tests/test_routed_latency_accounting.py
+```
+
+修改：
+
+```text
+opentad/models/detectors/actionformer.py
+opentad/models/detectors/single_stage.py
+opentad/models/utils/truetime_geometry.py
+configs/adatad/thumos/...
+```
+
+核心接口：
+
+```python
+@dataclass
+class RoutePlan:
+    actions: torch.Tensor          # [B, Lg, U], int8
+    active_indices: list[Tensor]
+    estimated_cost_ms: Tensor      # [B]
+    physical_timestamps: Tensor    # [B, M]
+
+class RoutedVideoMAE(nn.Module):
+    def forward_stem(self, x, masks):
+        ...
+
+    def forward_routed(
+        self,
+        z0: Tensor,
+        route: RoutePlan,
+    ) -> Tensor:
+        # Returns dense [B, M, P, D], never selected-axis compressed.
+        ...
+```
+
+## 10.10 成本账目
+
+| 阶段                      | CVCR                 |
+| ----------------------- | -------------------- |
+| decode                  | full T；不声称节省         |
+| preprocess              | full T               |
+| H2D                     | full T               |
+| early stem              | full T               |
+| router                  | full U，轻量            |
+| deep backbone           | 按route减少             |
+| packing/scatter         | 新增                   |
+| temporal head           | dense M              |
+| postprocess             | normal physical-time |
+| training counterfactual | 显著增加，仅训练             |
+
+论文主claim必须是：
+
+> **deep-backbone measured latency/energy reduction under dense physical-time output**
+
+而不是完整video pipeline reduction，除非后续与CoDeTAD合并。
+
+## 10.11 实验矩阵
+
+| 任务  | 数据集                  | 主指标                      |
+| --- | -------------------- | ------------------------ |
+| TAD | THUMOS14             | mAP@0.3:0.7、特别@0.7       |
+| TAD | ActivityNet-v1.3     | average mAP、长动作          |
+| TAD | HACS Segments        | average mAP、scale分层      |
+| TAS | 50Salads / Breakfast | F1@10/25/50、Edit、Acc     |
+| AQA | FineDiving           | Spearman、MSE、phase error |
+
+Backbone/head：
+
+* AdaTAD VideoMAE-S + ActionFormerHead；
+* feature-based ActionFormer；
+* TriDet；
+* TemporalMaxer；
+* TAS：ASFormer；
+* AQA：FineDiving procedure-aware head。
+
+## 10.12 公平 baseline
+
+* dense full compute；
+* exact-uniform frame reduction；
+* random/stratified；
+* DUCA fixed-384；
+* DynamicViT-style token pruning；
+* A-ViT/Halting；
+* fixed layer skipping；
+* Mixture-of-Depths；
+* feature transport；
+* oracle counterfactual route；
+* random route with same per-layer capacity。
+
+## 10.13 指标
+
+除常规mAP：
+
+* short-action mAP by duration quartile；
+* boundary MAE in frames/seconds；
+* start/end error分别统计；
+* mAP@0.7；
+* proposal recall@fixed count；
+* p50/p95 end-to-end latency；
+* deep-backbone latency；
+* energy/video；
+* peak memory；
+* actual executed tokens；
+* kernel utilization；
+* router target Spearman；
+* oracle gap。
+
+## 10.14 消融与统计
+
+* FULL/HOLD vs FULL/LITE/HOLD；
+* layer-only vs time-only vs time×layer；
+* GT boundary proxy vs feature drift vs counterfactual utility；
+* soft ST vs alternate hard training；
+* block width 4/8/16；
+* capacity schedule；
+* physical dense head vs selected axis；
+* prediction KD；
+* three seeds；
+* bootstrap 95% CI；
+* paired per-video latency和accuracy；
+* Pareto hypervolume。
+
+## 10.15 Claims–Evidence–Experiment Matrix
+
+| Claim             | 必须证据                          | 决定性实验                               |
+| ----------------- | ----------------------------- | ----------------------------------- |
+| value高度不均匀        | oracle value concentration    | cumulative value vs compute curve   |
+| router预测真实utility | held-out Spearman/calibration | one-intervention targets            |
+| routing保护高tIoU    | same latency优于baselines       | THUMOS@0.7、short quartiles          |
+| 有真实速度             | measured GPU trace            | p50/p95/energy                      |
+| physical grid必要   | selected-axis对照               | same route, different head geometry |
+| 跨detector         | ≥3 heads                      | frozen router transfer或轻量finetune   |
+
+## 10.16 项目阶段
+
+### 两周 proof
+
+* 在100–200个THUMOS窗口构建layer×time counterfactual oracle map。
+* 只控制两个后半层组。
+* 验证value是否集中、是否可由early feature预测。
+* 实现fixed capacity packed prototype。
+* 不做完整训练。
+
+### 一个月 MVP
+
+* 4个层组；
+* hard routed training；
+* ActionFormerHead；
+* exact-uniform、fixed-depth、MoD、DUCA对照；
+* latency trace；
+* THUMOS三种预算。
+
+### 三个月闭环
+
+* THUMOS/ActivityNet/HACS；
+* TriDet/TemporalMaxer；
+* TAS或AQA迁移；
+* energy、p95、CI；
+* paper claims matrix和失败分析。
+
+## 10.17 停止条件
+
+立即停止主线，若满足任一：
+
+1. oracle top-50% compute仅覆盖不足65%的detector value；
+2. router held-out Spearman <0.3；
+3. 40%理论deep compute削减对应实际latency改善<8%；
+4. same latency下mAP@0.7比dense下降>1.0；
+5. short-action最短四分位mAP下降>1.5；
+6. random/fixed layer route与learned route无显著差异；
+7. packing/scatter开销超过节省的30%。
+
+## 10.18 最强拒稿意见与防守
+
+**拒稿意见**
+
+> 本文只是将Mixture-of-Depths和DynamicViT迁移到TAD。所谓counterfactual value需要昂贵的full teacher和多次干预，训练成本极高；推理仍完整decode和执行early stem。作者没有证明这种复杂路由优于简单固定层跳过，也没有说明为什么TAD需要新方法。physical-time输出只是保留dense tensor，并不构成创新。系统结果可能来自特定kernel实现而非算法。
+
+**防守**
+
+* 核心target不是attention/actionness，而是真实TAD detector loss intervention。
+* 用oracle concentration证明任务结构存在。
+* 同一packed kernel比较random、feature drift、MoD和counterfactual。
+* 单独报告训练成本，不掩盖teacher开销。
+* 在三种head和三数据集验证。
+* 通过selected-axis/physical-grid对照证明高tIoU差异。
+* 贡献限定为deep-backbone computation，不虚假声称decode savings。
+
+---
+
+# 十一、Top-2：BCFT
+
+## 11.1 一句话 thesis
+
+> TAD不必在时间上删除observations；多数深层特征可以从少量anchor双向transport，只有被校准为边界高风险的chunk才需要真实重算。
+
+## 11.2 输入输出
+
+沿用：
+
+```text
+X: [B,1,3,768,160,160]
+Z_stem: [B,384,100,384]
+U=48 temporal blocks
+actions: [B,Lg,U] ∈ {RECOMPUTE, TRANSPORT, HOLD}
+dense output: [B,384,384]
+timestamps: [B,384]
+```
+
+额外：
+
+```text
+transport field:
+W_l ∈ R[B,U,w,P,2] or deformable offsets
+
+risk prediction:
+μ_l, σ_l ∈ R[B,U]
+
+anchor mask:
+A_l ∈ Bool[B,U]
+```
+
+## 11.3 数据流
+
+```text
+full window
+   ↓
+cheap dense stem + motion descriptors
+   ↓
+refresh optimizer
+   ├─ RECOMPUTE: run heavy block
+   ├─ TRANSPORT: warp/interpolate nearest left/right anchor feature
+   └─ HOLD: identity/cache
+   ↓
+residual corrector
+   ↓
+risk certificate
+   ├─ risk too high → force recompute
+   └─ risk low → accept transport
+   ↓
+dense physical grid
+   ↓
+TAD/TAS/AQA head
+```
+
+由于任务离线，可同时使用左右anchor，这与流式DFF不同。
+
+## 11.4 核心目标
+
+Transport feature：
+
+[
+\tilde z_{l,t}
+==============
+
+\alpha_t,\mathcal W(z_{l,a_L},m_{a_L\rightarrow t})
++
+(1-\alpha_t),\mathcal W(z_{l,a_R},m_{a_R\rightarrow t})
++
+r_\psi(h_t).
+]
+
+真实风险target：
+
+[
+\Delta_{l,t}
+============
+
+## L_{\det}(\tilde z_{l,t})
+
+L_{\det}(z^{full}_{l,t}).
+]
+
+risk predictor输出上分位数：
+
+[
+\hat q_\alpha(\Delta_{l,t}\mid h_t,\text{age},m_t).
+]
+
+决策：
+
+[
+\min_A C_{\text{recompute}}(A)+C_{\text{transport}}
+\quad
+s.t.
+\quad
+\hat q_\alpha(\Delta_{l,t})\le\epsilon,\ \forall t.
+]
+
+## 11.5 Target生成
+
+* full teacher产生每层dense features；
+* 随机anchor mask；
+* transport其余features；
+* 记录feature L2、cosine、head logit change、boundary loss change；
+* risk target使用detector loss increase，而不是feature error本身；
+* calibration split估计quantile correction。
+
+## 11.6 训练选择
+
+三阶段：
+
+1. 固定teacher，训练transport + residual corrector；
+2. 固定transport，训练risk predictor；
+3. hard refresh optimizer下fine-tune detector。
+
+不建议router、transport、detector从随机初始化全联合，否则会出现“detector适应错误transport”的捷径。
+
+## 11.7 训练伪代码
+
+```python
+z_stem = backbone.forward_stem(x)
+with torch.no_grad():
+    full_states = teacher.forward_all_layers(z_stem)
+
+anchor_mask = sample_anchor_masks(
+    rates=(0.25, 0.5, 0.75),
+    contiguous=True,
+)
+
+transported = transport_model(
+    anchor_features=full_states,
+    anchor_mask=anchor_mask,
+    motion=motion_descriptors,
+    timestamps=timestamps,
+)
+
+cf_pred = detector.forward_from_features(transported)
+full_pred = detector.forward_from_features(full_states)
+
+delta = per_video_detection_loss(cf_pred, gt) \
+      - per_video_detection_loss(full_pred, gt)
+
+transport_loss = feature_distill_loss(transported, full_states)
+risk_pred = risk_head(transported.context)
+risk_loss = quantile_loss(risk_pred, delta.detach())
+
+loss = transport_loss + risk_loss
+```
+
+Hard-route fine-tune：
+
+```python
+risk = risk_head(context)
+anchor_mask = refresh_dp(
+    risk_upper_bound=risk,
+    max_gap=max_gap,
+    budget=budget,
+)
+dense_features = backbone.forward_recompute_transport(
+    z_stem, anchor_mask, motion
+)
+pred = head(dense_features, timestamps)
+loss = detection_loss(pred, gt)
+```
+
+## 11.8 推理
+
+```python
+z_stem, motion, timestamps = stem(x)
+risk = risk_head.predict_precompute_risk(z_stem, motion)
+anchors = refresh_dp(risk, latency_budget, max_gap)
+z_dense = recompute_and_transport(z_stem, anchors, motion)
+pred = head(z_dense, timestamps)
+```
+
+## 11.9 OpenTAD修改
+
+```text
+opentad/models/transport/bidirectional_feature_transport.py
+opentad/models/transport/residual_corrector.py
+opentad/models/routers/risk_refresh_optimizer.py
+opentad/models/calibration/transport_risk_calibrator.py
+opentad/models/backbones/transport_videomae.py
+tests/test_transport_full_anchor_equivalence.py
+tests/test_transport_risk_coverage.py
+```
+
+关键合同：
+
+```python
+assert output.shape == dense_reference.shape
+assert timestamps unchanged
+assert full_anchor_mode exactly_matches_dense_backbone
+```
+
+## 11.10 成本
+
+| 阶段                    | BCFT     |
+| --------------------- | -------- |
+| decode/preprocess/H2D | 首版full   |
+| dense stem            | full     |
+| heavy backbone        | 仅anchors |
+| transport             | dense但轻量 |
+| residual corrector    | dense轻量  |
+| head                  | dense    |
+| risk optimizer        | 小        |
+| calibration           | 离线训练     |
+
+不能把feature warp FLOPs忽略；必须测：
+
+* warp kernel；
+* random memory access；
+* anchor gather；
+* scatter；
+* cache miss；
+* CPU/GPU overlap。
+
+## 11.11 实验
+
+TAD：THUMOS、ActivityNet、HACS。
+TAS：50Salads，测试过分割和transition。
+AQA：FineDiving，测试phase transition和评分相关性。
+
+Baseline：
+
+* periodic refresh；
+* motion-threshold refresh；
+* HOLD-only；
+* DFF-style one-sided transport；
+* nearest-anchor copy；
+* linear interpolation；
+* DUCA；
+* CVCR；
+* dense full。
+
+## 11.12 特殊指标
+
+* feature transport error vs physical age；
+* detector loss increase calibration；
+* empirical risk coverage；
+* forced-refresh rate；
+* boundary-neighborhood refresh ratio；
+* short-action recall；
+* p95 latency；
+* calibration under camera motion/domain shift。
+
+## 11.13 Claims–Evidence
+
+| Claim            | 证据                                             |
+| ---------------- | ---------------------------------------------- |
+| feature可复用       | full vs transport feature/detector error curve |
+| 风险集中在边界          | risk by distance-to-GT-boundary；仅作分析，不作推理输入    |
+| risk predictor有效 | held-out coverage和AUROC                        |
+| 比periodic优       | same measured latency Pareto                   |
+| 跨任务              | TAS/AQA transfer                               |
+| 不破坏physical time | dense timestamps不变                             |
+
+## 11.14 项目阶段
+
+**两周 proof**
+
+* full teacher features；
+* nearest-anchor copy、linear transport；
+* 100个窗口；
+* 绘制refresh rate–mAP oracle曲线；
+* 验证boundary附近是否确有更高风险。
+
+**一个月 MVP**
+
+* 单层组transport；
+* learned corrector；
+* deterministic risk threshold；
+* THUMOS same-latency periodic baseline。
+
+**三个月闭环**
+
+* 多层组；
+* conformal/risk calibration；
+* 三数据集；
+* TAS；
+* codec MV变体；
+* energy和domain shift。
+
+## 11.15 停止条件
+
+1. 50% refresh时oracle transport使mAP@0.7下降>2；
+2. risk predictor AUROC <0.7；
+3. calibration coverage误差>10个百分点；
+4. transport kernel耗时超过被省heavy block的40%；
+5. periodic refresh在same latency下无显著劣势；
+6. camera-motion子集严重崩溃且MV/corrector无法修复。
+
+## 11.16 最强拒稿意见与防守
+
+**拒稿意见**
+
+> Feature transport在视频检测中已有DFF、FGFA、Impression和Accel。本文只是把这些思想应用到TAD，并加入一个不可靠的risk head。所谓boundary certification依赖训练分布，无法在domain shift下保证。作者仍完整decode和执行dense stem，系统节省有限。双向transport仅因为任务offline，并非算法创新。
+
+**防守**
+
+* 明确不宣称decode节省。
+* 主差异是layer×time refresh和detector-loss risk，而非feature similarity。
+* 同时比较DFF式固定keyframe、periodic、motion threshold。
+* 报告有限样本经验coverage，不声称无分布保证。
+* 对camera motion、short actions、cross-dataset做stress test。
+* dense physical-time输出是定位质量的核心，而不是附加选项。
+
+---
+
+# 十二、Top-3：CoDeTAD
+
+## 12.1 一句话 thesis
+
+> 高效TAD的第一决策点应在compressed bitstream而不是decoded tensor：通过GOP依赖感知的partial decode和physical-time feature reconstruction，可以同时减少decode、H2D和backbone成本。
+
+## 12.2 输入输出
+
+输入不再首先是RGB tensor，而是：
+
+```text
+CompressedVideo:
+  packets
+  frame_type[T]        # I/P/B
+  pts[T]
+  dependency_graph
+  byte_offset[T]
+  packet_size[T]
+
+Codec descriptors:
+  MV      [T, Hmv, Wmv, 2]
+  residual[T, Hr, Wr, 1]
+  qp      [T]
+  frame_type[T]
+```
+
+optimizer输出：
+
+```text
+selected display frames S
+decode dependency closure D(S)
+physical timestamps τ_S
+```
+
+partial decoder输出：
+
+```text
+RGB_selected [B,K,3,160,160]
+MV_dense     [B,T,Hmv,Wmv,2]
+residual_dense
+```
+
+backbone输出：
+
+```text
+anchor_features [B,K,D]
+transported_dense_features [B,M,D]
+head outputs in physical time
+```
+
+## 12.3 GOP依赖优化
+
+对每个候选frame (i)，真实decode成本不是独立 (c_i)，而是依赖闭包：
+
+[
+C_{\text{decode}}(S)
+====================
+
+\sum_{j\in \operatorname{closure}(S)} c_j.
+]
+
+风险描述：
+
+[
+r_i=
+\alpha|\mathrm{MV}*i-\mathrm{MV}*{i-1}|
++\beta|\mathrm{residual}_i|
++\gamma,\mathbf 1[\text{scene/GOP transition}].
+]
+
+首版无learned selector：
+
+[
+\max_S
+\sum_{i\in S}r_i
+-\lambda C_{\text{decode}}(S)
+]
+
+subject to：
+
+* (|S|\le K)；
+* physical max gap；
+* 每GOP至少一个anchor；
+* change-point邻域coverage；
+* dependency closure预算；
+* selected positions严格递增。
+
+正式版加入训练得到的boundary-risk，但不能以其取代 deterministic baseline。
+
+## 12.4 数据流
+
+```text
+compressed video
+    ↓
+packet/GOP index scan on CPU
+    ↓
+MV/residual/PTS descriptors
+    ↓
+dependency-aware exact optimizer
+    ↓
+partial decoder: closure(S) only
+    ↓
+selected RGB → VideoMAE
+    ↓
+MV/residual transport to dense physical grid
+    ↓
+physical-time head
+```
+
+## 12.5 训练
+
+选择器主版无训练。训练对象：
+
+1. selected RGB backbone；
+2. MV/residual transport；
+3. residual corrector；
+4. physical-time head。
+
+Teacher为完整decode/full backbone，仅用于训练distillation。
+
+目标：
+
+[
+L =
+L_{\det}
++\alpha L_{\text{feature-KD}}
++\beta L_{\text{prediction-KD}}
++\gamma L_{\text{boundary-consistency}}.
+]
+
+## 12.6 训练伪代码
+
+```python
+codec_index = codec_reader.scan(video_path)
+selected, closure = gop_optimizer.solve(
+    codec_index,
+    max_decoded_bytes=budget_bytes,
+    max_physical_gap=max_gap,
+    change_coverage_radius=radius,
+)
+
+rgb = partial_decoder.decode(video_path, closure, return_frames=selected)
+anchor_feat = backbone(rgb)
+
+dense_feat = codec_transport(
+    anchor_feat=anchor_feat,
+    selected_pts=codec_index.pts[selected],
+    dense_pts=codec_index.pts,
+    motion_vectors=codec_index.motion_vectors,
+    residuals=codec_index.residuals,
+)
+
+pred = physical_head(dense_feat, codec_index.pts)
+
+with torch.no_grad():
+    teacher_pred, teacher_feat = full_teacher(full_decoded_video)
+
+loss = detection_loss(pred, gt)
+loss += feature_kd(dense_feat, teacher_feat)
+loss += prediction_kd(pred, teacher_pred)
+loss.backward()
+```
+
+## 12.7 推理伪代码
+
+```python
+index = scan_packets(path)
+S, closure = optimizer.solve(index, latency_budget_ms)
+frames = decode_partial(path, closure, output_indices=S)
+anchor_feat = backbone(frames)
+dense_feat = transport(anchor_feat, index.mv, index.residual, index.pts)
+segments, scores = head(dense_feat, index.pts)
+```
+
+## 12.8 OpenTAD修改
+
+现有 `DecordInit/DecordDecode` 路径不能满足。
+
+新增：
+
+```text
+opentad/datasets/transforms/codec_index.py
+opentad/datasets/transforms/gop_partial_decode.py
+opentad/datasets/structures/compressed_video_sample.py
+opentad/models/codec/gop_budget_optimizer.py
+opentad/models/codec/mv_feature_transport.py
+opentad/models/utils/physical_timestamp_grid.py
+tools/profile/profile_decode_h2d_overlap.py
+```
+
+核心接口：
+
+```python
+@dataclass
+class CodecIndex:
+    pts: np.ndarray
+    frame_type: np.ndarray
+    dependencies: list[list[int]]
+    packet_bytes: np.ndarray
+    motion_vectors: Any
+    residual_energy: np.ndarray
+
+class GOPBudgetOptimizer:
+    def solve(
+        self,
+        index: CodecIndex,
+        max_decoded_bytes: int,
+        max_physical_gap: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return display-frame selection and full decode closure."""
+```
+
+必须验证 decoder真的不解码closure外帧，不能只在全解码后丢弃。
+
+## 12.9 成本账目
+
+| 阶段                | CoDeTAD                                  |
+| ----------------- | ---------------------------------------- |
+| bitstream scan    | 新增，CPU低成本                                |
+| full RGB decode   | 减少                                       |
+| dependency decode | 必须计入                                     |
+| resize/preprocess | selected RGB                             |
+| H2D               | selected RGB + compact codec descriptors |
+| backbone          | selected anchors                         |
+| transport         | dense轻量                                  |
+| head              | dense                                    |
+| seek/GOP overhead | 必须实测                                     |
+| CPU/GPU overlap   | 必须报告                                     |
+
+测量工具：
+
+* FFmpeg/PyAV/自定义decoder内部 decoded-frame counter；
+* CPU wall time；
+* bytes read；
+* GPU event；
+* NVML energy；
+* batch=1；
+* cold/warm cache；
+* local SSD和网络存储分开。
+
+## 12.10 实验矩阵
+
+### Codec条件
+
+* H.264 GOP 12、24、48；
+* H.265至少一个配置；
+* fixed bitrate与constant quality分别测试；
+* I/P-only和含B-frame；
+* controlled re-encoding保证公平。
+
+### 数据集
+
+* THUMOS14；
+* ActivityNet-v1.3；
+* HACS；
+* 50Salads或Breakfast；
+* FineDiving重编码版本。
+
+### Baselines
+
+* full decode dense；
+* full decode exact-uniform；
+* keyframe-only；
+* periodic GOP anchors；
+* MV top-K；
+* residual top-K；
+* CoViAR-style compressed modalities；
+* DMC-style refined motion；
+* DUCA；
+* BCFT；
+* oracle boundary decode。
+
+## 12.11 指标
+
+* decoded frame count；
+* decoded bytes；
+* CPU decode p50/p95；
+* end-to-end p50/p95；
+* H2D bytes；
+* GPU energy；
+* mAP@0.7；
+* short-action recall；
+* boundary MAE；
+* codec configuration robustness；
+* seek/cache sensitivity。
+
+## 12.12 Claims–Evidence
+
+| Claim                   | 证据                                  |
+| ----------------------- | ----------------------------------- |
+| 真正减少decode              | decoder internal counters和wall time |
+| GOP optimizer优于periodic | same decoded closure cost           |
+| codec descriptors保护边界   | change-point coverage与高tIoU         |
+| dense reconstruction必要  | selected-axis对照                     |
+| codec泛化                 | H.264/H.265、多个GOP                   |
+| 不依赖learned selector     | deterministic主结果                    |
+
+## 12.13 项目阶段
+
+**两周 proof**
+
+* 只做H.264；
+* 解析I/P/B、PTS、dependency；
+* 对100个THUMOS窗口做partial decode microbenchmark；
+* exact-uniform、I-frame、MV/residual skeleton；
+* 不训练模型。
+
+**一个月 MVP**
+
+* selected RGB backbone；
+* nearest-anchor/MV transport；
+* ActionFormer physical head；
+* 三GOP配置；
+* decode/H2D/GPU完整trace。
+
+**三个月闭环**
+
+* H.265；
+* HACS/ActivityNet；
+* TAS或AQA迁移；
+* robust re-encoding；
+* codec-domain shift；
+* energy和开源decoder patch。
+
+## 12.14 停止条件
+
+1. dependency closure导致实际解码帧数>选择帧数的1.8倍；
+2. p50 decode改善<10%；
+3. end-to-end latency改善<8%；
+4. mAP@0.7下降>1.5；
+5. codec配置改变后性能方差>2 mAP；
+6. periodic I-frame+uniform在same cost下等价；
+7. transport成本抵消decode/backbone收益。
+
+## 12.15 最强拒稿意见与防守
+
+**拒稿意见**
+
+> 本文是CoViAR/DMC-Net在TAD上的直接应用。GOP partial decode是工程实现，依赖特定codec和decoder，缺乏通用视觉算法贡献。MV/residual变化并不等于动作边界；重编码设置还可能人为有利于方法。若最终仍需要dense feature transport和完整head，系统复杂度过高，且实际部署可能因seek和B-frame依赖没有速度收益。
+
+**防守**
+
+* 核心不是用compressed modalities分类，而是GOP dependency-aware cost optimization。
+* 所有方法在相同重编码和相同closure成本下比较。
+* 报告多个codec/GOP和cold-cache。
+* 选择器主结果完全无学习，避免dataset overfit。
+* physical dense reconstruction和高tIoU是TAD特有技术问题。
+* 明确以系统算法联合贡献定位，不包装成纯新network block。
+
+---
+
+# 十三、最便宜的三个决定性实验
+
+这三项应先于任何完整长训练。
+
+## 实验 1：完整成本 trace
+
+条件：
+
+* dense 768；
+* exact-uniform 384；
+* periodic 384；
+* DUCA 384。
+
+相同模型、相同batch=1、相同视频、相同warm-up。
+
+测：
+
+```text
+decode
+resize/crop
+tensorization
+H2D
+probe
+selector/DP
+backbone
+head
+postprocess
+p50/p95
+energy
+peak memory
+```
+
+**立即证伪DUCA的结果**
+
+* DUCA end-to-end latency不优于exact-uniform；
+* selector+probe吞掉超过70%的backbone节省；
+* p95显著恶化；
+* energy无改善。
+
+## 实验 2：one-swap真实utility vs surrogate gradient
+
+100–200个窗口，每窗随机100个候选swap。
+
+比较：
+
+* ST gradient；
+* GT boundary proxy；
+* actionness；
+* transition；
+* feature drift；
+* random。
+
+指标：
+
+* Spearman；
+* sign agreement；
+* top-10 precision；
+* 用预测value执行一步swap后的真实loss change。
+
+**立即证伪**
+
+ST或GT proxy不优于feature drift/random，或Spearman接近0。
+
+## 实验 3：相同selected frames的几何对照
+
+固定完全相同的384位置：
+
+A. 当前selected-axis ActionFormer；
+B. scatter/interpolate到dense physical grid后使用同head；
+C. timestamp/gap-aware head。
+
+按动作时长四分位、gap、mAP@0.7、boundary error分层。
+
+**立即证伪当前selected-axis架构**
+
+若B/C在same selected frames下显著提升高tIoU或短动作，则当前问题主要是几何，不是selector score。
+
+---
+
+# 十四、最终八问
+
+## 1. 当前 DUCA 应继续、降级、重大重构还是停止
+
+**停止作为主方法。**
+
+保留为：
+
+* offline full-window runtime pre-backbone selection baseline；
+* learned-selector baseline；
+* surrogate-gradient negative control；
+* cost-accounting反例；
+* 与新路线比较的历史方法。
+
+不再围绕其增加head、loss或动态budget。
+
+## 2. pre-backbone选帧最致命的问题
+
+> **它在支付完整decode/preprocess/full-window probe之后才决定删帧，同时把不等距物理时间压成等距selected-axis。**
+
+前者削弱系统价值，后者直接伤害TAD最核心的边界几何。
+
+## 3. 只能保留一个现有模块
+
+保留：
+
+> **`TrueTimeMap`及其严格坐标/provenance合同。**
+
+但要把它从“post-hoc remap工具”升级为整个网络中的physical-time基础设施。
+
+不保留：
+
+* GT utility proxy；
+* raw-pixel structured bridge；
+* 多head score soup；
+* `online`命名。
+
+## 4. 只能开展一个全新方向
+
+选择：
+
+> **CVCR-TAD：Counterfactual Value-of-Compute Routing on a Dense Physical-Time Grid。**
+
+## 5. 为什么更可能形成CVPR贡献
+
+因为它把贡献集中在一个尚未被当前TAD方法直接解决的交叉问题上：
+
+1. TAD detector真正的counterfactual compute value；
+2. time×layer而非单一frame的重要性；
+3. 硬件可打包的实际动态执行；
+4. dense physical-time边界保护；
+5. high-tIoU和short-action风险；
+6. 跨ActionFormer/TriDet/TemporalMaxer接口。
+
+它不需要声称减少decode，也不会通过删除时间位置破坏检测几何。
+
+## 6. 最便宜的三个决定性实验
+
+1. DUCA vs exact-uniform完整阶段成本trace；
+2. ST/GT proxy vs one-swap真实utility相关性；
+3. same selected frames下selected-axis vs physical-grid head。
+
+## 7. 哪些结果立即证伪推荐路线
+
+对CVCR：
+
+* oracle layer×time value分布不集中；
+* early feature无法预测value，Spearman <0.3；
+* packed execution没有实际速度；
+* random route与learned route无显著差异；
+* 高tIoU/短动作损失超过停止阈值；
+* route收益只存在于一个head或一个数据集。
+
+对BCFT：
+
+* 低refresh率下transport oracle本身无headroom；
+* risk predictor无法预测detector loss；
+* periodic refresh等价。
+
+对CoDeTAD：
+
+* dependency closure和seek使partial decode无实际收益；
+* codec配置变化导致严重不稳定；
+* periodic keyframe skeleton已达到相同Pareto。
+
+## 8. 主路线、保守备线、高风险备线
+
+### 主路线
+
+**CVCR-TAD**
+
+```text
+dense early evidence
+→ counterfactual value
+→ time×layer FULL/LITE/HOLD
+→ packed hard execution
+→ dense physical-time TAD
+```
+
+### 保守备线
+
+**BCFT**
+
+```text
+dense stem
+→ sparse deep refresh
+→ bidirectional feature transport
+→ boundary-risk certificate
+→ dense physical-time head
+```
+
+### 高风险备线
+
+**CoDeTAD**
+
+```text
+compressed bitstream
+→ GOP dependency optimizer
+→ true partial decode
+→ codec-aware transport
+→ dense physical-time TAD
+```
+
+---
+
+# 最终判词
+
+DUCA在固定提交上已经从“离线ledger启发式”前进到可运行的runtime selection graph，但这只证明工程路径存在。它尚未证明：
+
+* 选择比uniform有价值；
+* detector gradient与hard decision对齐；
+* GT boundary proxy是detector utility；
+* selected-axis保留TAD几何；
+* 动态预算产生真实kernel收益；
+* end-to-end latency和energy改善；
+* 方法具备跨detector的新颖性。
+
+更严重的是，当前 profiler 对正式 `structured_zero_forward` 主路径存在明确漏记，训练bridge在正式尺寸下本身就是巨量raw-pixel dense运算。
+
+因此，不应继续把研究资源投入“再修一个DUCA最终版”。正确做法是：
+
+1. 固定 `70aa069` 为可复现baseline；
+2. 立即执行三个决定性实验；
+3. 把physical-time和完整成本ledger变成所有新路线的强制合同；
+4. 主攻CVCR；
+5. 用BCFT做保守替代；
+6. 以CoDeTAD追求真正跨越decode—GPU边界的高风险系统贡献。
+
+这不是折中裁决：**DUCA主线停止。**
+
+[1]: https://arxiv.org/abs/1704.06228 "https://arxiv.org/abs/1704.06228"
+[2]: https://arxiv.org/abs/1806.02964 "https://arxiv.org/abs/1806.02964"
+[3]: https://arxiv.org/abs/1907.09702 "https://arxiv.org/abs/1907.09702"
+[4]: https://arxiv.org/abs/1909.03252 "https://arxiv.org/abs/1909.03252"
+[5]: https://arxiv.org/abs/1911.11462 "https://arxiv.org/abs/1911.11462"
+[6]: https://arxiv.org/abs/2103.13141 "https://arxiv.org/abs/2103.13141"
+[7]: https://arxiv.org/abs/2103.13137 "https://arxiv.org/abs/2103.13137"
+[8]: https://arxiv.org/abs/2106.10271 "https://arxiv.org/abs/2106.10271"
+[9]: https://arxiv.org/abs/2204.02932 "https://arxiv.org/abs/2204.02932"
+[10]: https://arxiv.org/abs/2202.07925 "https://arxiv.org/abs/2202.07925"
+[11]: https://arxiv.org/abs/2205.02717 "https://arxiv.org/abs/2205.02717"
+[12]: https://arxiv.org/abs/2207.07097 "https://arxiv.org/abs/2207.07097"
+[13]: https://arxiv.org/abs/2303.07347 "https://arxiv.org/abs/2303.07347"
+[14]: https://arxiv.org/abs/2303.09055 "https://arxiv.org/abs/2303.09055"
+[15]: https://arxiv.org/abs/2311.17241 "https://arxiv.org/abs/2311.17241"
+[16]: https://arxiv.org/abs/2407.03197 "https://arxiv.org/abs/2407.03197"
+[17]: https://arxiv.org/abs/2408.09354 "https://arxiv.org/abs/2408.09354"
+[18]: https://arxiv.org/abs/2203.07112 "https://arxiv.org/abs/2203.07112"
+[19]: https://arxiv.org/abs/2207.10448 "https://arxiv.org/abs/2207.10448"
+[20]: https://arxiv.org/abs/2304.08451 "https://arxiv.org/abs/2304.08451"
+[21]: https://arxiv.org/abs/1904.04289 "https://arxiv.org/abs/1904.04289"
+[22]: https://arxiv.org/abs/1912.01601 "https://arxiv.org/abs/1912.01601"
+[23]: https://arxiv.org/abs/2007.15796 "https://arxiv.org/abs/2007.15796"
+[24]: https://arxiv.org/abs/2006.15560 "https://arxiv.org/abs/2006.15560"
+[25]: https://arxiv.org/abs/2104.13400 "https://arxiv.org/abs/2104.13400"
+[26]: https://arxiv.org/abs/2105.03245 "https://arxiv.org/abs/2105.03245"
+[27]: https://arxiv.org/abs/2112.14238 "https://arxiv.org/abs/2112.14238"
+[28]: https://arxiv.org/abs/2102.05775 "https://arxiv.org/abs/2102.05775"
+[29]: https://arxiv.org/abs/2012.10671 "https://arxiv.org/abs/2012.10671"
+[30]: https://arxiv.org/abs/2011.12384 "https://arxiv.org/abs/2011.12384"
+[31]: https://arxiv.org/abs/2401.04975 "https://arxiv.org/abs/2401.04975"
+[32]: https://arxiv.org/abs/2603.18004 "https://arxiv.org/abs/2603.18004"
+[33]: https://arxiv.org/abs/2106.11297 "https://arxiv.org/abs/2106.11297"
+[34]: https://arxiv.org/abs/2106.02034 "https://arxiv.org/abs/2106.02034"
+[35]: https://arxiv.org/abs/2111.15667 "https://arxiv.org/abs/2111.15667"
+[36]: https://arxiv.org/abs/2202.07800 "https://arxiv.org/abs/2202.07800"
+[37]: https://arxiv.org/abs/2112.07658 "https://arxiv.org/abs/2112.07658"
+[38]: https://arxiv.org/abs/2210.09461 "https://arxiv.org/abs/2210.09461"
+[39]: https://arxiv.org/abs/2305.17997 "https://arxiv.org/abs/2305.17997"
+[40]: https://arxiv.org/abs/2211.08110 "https://arxiv.org/abs/2211.08110"
+[41]: https://arxiv.org/abs/2603.22911 "https://arxiv.org/abs/2603.22911"
+[42]: https://arxiv.org/abs/2603.27650 "https://arxiv.org/abs/2603.27650"
+[43]: https://arxiv.org/abs/1711.09485 "https://arxiv.org/abs/1711.09485"
+[44]: https://arxiv.org/abs/2404.02258 "https://arxiv.org/abs/2404.02258"
+[45]: https://arxiv.org/abs/1611.07715 "https://arxiv.org/abs/1611.07715"
+[46]: https://arxiv.org/abs/1703.10025 "https://arxiv.org/abs/1703.10025"
+[47]: https://arxiv.org/abs/1712.05896 "https://arxiv.org/abs/1712.05896"
+[48]: https://arxiv.org/abs/1807.06667 "https://arxiv.org/abs/1807.06667"
+[49]: https://arxiv.org/abs/1901.03460 "https://arxiv.org/abs/1901.03460"
+[50]: https://arxiv.org/abs/1910.02533 "https://arxiv.org/abs/1910.02533"
+[51]: https://arxiv.org/abs/2205.03569 "https://arxiv.org/abs/2205.03569"
+[52]: https://arxiv.org/abs/2510.17427 "https://arxiv.org/abs/2510.17427"
+[53]: https://arxiv.org/abs/1806.07366 "https://arxiv.org/abs/1806.07366"
+[54]: https://arxiv.org/abs/1907.03907 "https://arxiv.org/abs/1907.03907"
+[55]: https://arxiv.org/abs/1903.01945 "https://arxiv.org/abs/1903.01945"
+[56]: https://arxiv.org/abs/2110.08568 "https://arxiv.org/abs/2110.08568"
+[57]: https://arxiv.org/abs/2204.03646 "https://arxiv.org/abs/2204.03646"
+[58]: https://arxiv.org/abs/2006.07665 "https://arxiv.org/abs/2006.07665"
+[59]: https://arxiv.org/abs/1804.03230 "https://arxiv.org/abs/1804.03230"
+[60]: https://arxiv.org/abs/1911.02549 "https://arxiv.org/abs/1911.02549"

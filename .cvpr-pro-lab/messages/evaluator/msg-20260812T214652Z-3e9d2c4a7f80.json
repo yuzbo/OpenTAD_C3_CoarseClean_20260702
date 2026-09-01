@@ -1,0 +1,26 @@
+{
+  "created_at": "2026-08-12T21:46:52Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_REFERENCE_EXECUTION_ENVELOPE_BINDING_V004",
+  "message_id": "msg-20260812T214652Z-3e9d2c4a7f80",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v003",
+    "CRITIC_DUCA_P0_E1_REFERENCE_ADMISSION_MANIFEST_V003_FOCUSED_RECHECK-v001",
+    "DUCA_P0_E1_PRE_RUN_ADMISSION_CANDIDATE-v001",
+    "msg-20260812T214652Z-7b2c8a5e61d4"
+  ],
+  "payload": {
+    "reserved_execution_queue_id": "msg-20260812T214652Z-7b2c8a5e61d4",
+    "execution_state": "NOT_EXECUTED",
+    "pre_run_state": "NOT_READY"
+  },
+  "priority": "high",
+  "requested_action": "Author only EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v004. Preserve v003 mathematics, fixtures, paths, eleven-element argv, inline program, output discipline, counts, source ordering, role separation, and all denials exactly. Replace only the deliberate FUTURE_EXACT_E1_EXECUTION_QUEUE_REQUIRED token (and its corresponding explanatory state) with literal reserved identifier msg-20260812T214652Z-7b2c8a5e61d4, and make v004 state that this queue is reserved_not_dispatched and not executable. Add a compact literal admission checklist that keeps each fact UNVERIFIED until a later authorized read-only PRE_RUN: phase-specific clean evaluator binding at the frozen revision; exact sealed 18/9/6 input/root state; absent E1/B1/E2 output roots and no prior/active receipt; and registered remote CPU-service availability. The candidate must explicitly forbid execution until all facts are independently verified and an admission record changes the state. Do not invoke the argv, connect remotely, read or materialize fixtures, import/compile/test, access data/model/checkpoint/metric, use GPU/CUDA/Slurm/browser, create an execution receipt, or change science/protocol. Return a durable authored-not-run v004 only.",
+  "required_gate": "P0_E1_FORMAL_PRE_RUN_ADMISSION_PENDING",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

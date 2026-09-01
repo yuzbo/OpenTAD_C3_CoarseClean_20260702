@@ -1,0 +1,46 @@
+{
+  "schema": "duca_uni_companion_deployment_manifest_v1",
+  "ok": true,
+  "paper_claim_allowed": false,
+  "task": "offline_temporal_action_detection",
+  "git_branch": "codex/duca-uni-companion-20260721",
+  "git_commit": "d748684bc6a3da5b5cbbb0b78a64b71ef1cdd1dc",
+  "git_tree": "50e43e7a91dc529b11d660f21e6fef46e4340601",
+  "remote_snapshot": "/data/run01/sczc063/yuzibo/projects/opentad_duca_uni_d748684_20260721",
+  "protocol_manifest": "/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_uni_d748684_p0_20260721_0320/protocol_manifest.json",
+  "protocol_manifest_sha256": "e4fc629305fbb41ca5915ad71f866041340cf7e5b1c61d960ea647c74f6d2538",
+  "protocol_manifest_content_sha256": "301366e963caa45da8ead59a3c63561a21b0d226b570611181d29ed840dd8e82",
+  "linux_focused_tests": {
+    "passed": 66,
+    "failed": 0,
+    "elapsed_seconds": 58.34
+  },
+  "gate": {
+    "job_id": 1177687,
+    "run_root": "/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_uni_d748684_gate_20260721_0325",
+    "status_at_submission": "PENDING_ASSOC_GRP_GRES"
+  },
+  "official60": {
+    "run_root": "/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_uni_d748684_official60_20260721_0330",
+    "dependency": "afterok:1177687",
+    "jobs": {
+      "protected_e2e": 1177690,
+      "protected_e2e_bridge025": 1177691,
+      "protected_e2e_uni_companion": 1177692
+    },
+    "exact_uniform": {
+      "implementation_ready": true,
+      "protocol_frozen": true,
+      "queued": false,
+      "replaced_attempt_job_id": 1177689,
+      "reason": "AssocMaxSubmitJobLimit; gate plus three learned arms consume all four submission slots",
+      "next_action": "submit immediately after gate releases one slot"
+    }
+  },
+  "claims": {
+    "three_learned_versions_implemented": true,
+    "three_learned_versions_deployed": true,
+    "empirically_supported": false,
+    "strictly_above_65": null
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-12T21:30:26Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_REFERENCE_ADMISSION_MANIFEST_V003_DETERMINISTIC_EVIDENCE_VALIDATION_CORRECTION",
+  "message_id": "msg-20260812T213026Z-2c2fa1e59073",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v002",
+    "CRITIC_DUCA_P0_E1_REFERENCE_ADMISSION_MANIFEST_V002_FOCUSED_RECHECK-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Revise only EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v002 to v003, implementing exactly Critic finding P0-E1-MANIFEST-001R. Preserve frozen science: Q=1048576; ordered 18/9/6 fixture IDs; independent Evaluator reference; input-byte binding; phase roots; one-shot/first-fail; no hash, tolerance, fallback, second solver, objective recomputation, fixture change, or route expansion; remain AUTHORED_NOT_EXECUTED and NOT_PRE_RUN_READY. Add only direct schema/consistency validation: (1) recompute minimum/maximum stride and maximum uniform displacement from returned p and sealed u; require equality and frozen bounds minimum_stride>=1, maximum_stride<=4, maximum_uniform_displacement<=16; (2) require candidate-order evidence in its declared ascending form, not merely nonempty; (3) for every exhaustive tie, require a length-K integer vector, membership in the complete witness, equal objective prefix, and the frozen T17 15-candidate / G385-X 383-candidate tied alternatives; (4) require a defined nonempty root-certificate structure with required fields internally consistent with root/result. Fail at the first missing, malformed, or inconsistent field. Do not run/import/compile/test/materialize, access runtime reference/projector/adapter, remote/SSH/data/model/checkpoint/metric/GPU/CUDA/Slurm/browser, or alter files beyond the Evaluator-owned v003 manifest.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

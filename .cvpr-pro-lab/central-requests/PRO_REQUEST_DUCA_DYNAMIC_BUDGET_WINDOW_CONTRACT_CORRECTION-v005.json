@@ -1,0 +1,30 @@
+{
+  "request_id": "PRO_REQUEST_DUCA_DYNAMIC_BUDGET_WINDOW_CONTRACT_CORRECTION-v005",
+  "status": "NEEDS_ATTENTION_PRO_CAPTURE_UNREACHABLE_AFTER_HARD_TIMEOUT",
+  "operation": "FRESH_EXACT_PROJECT_PRO",
+  "exact_project_id": "g-p-6a91061f789881918ccd8357ca3d6c92",
+  "exact_project_url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+  "profile": 61,
+  "nonce": "DUCA-DYNAMIC-BUDGET-WINDOW-CONTRACT-CORRECTION-v005-20260828",
+  "model": "gpt-5-pro",
+  "prompt_files": [
+    "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_DYNAMIC_BUDGET_WINDOW_CONTRACT_CORRECTION-v005.md",
+    "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_DYNAMIC_BUDGET_WINDOW_CONTRACT_CORRECTION-v001.md"
+  ],
+  "source_policy": "INLINE_LOCAL_FILES_NO_PROJECT_SOURCE_MUTATION",
+  "blocking_class": "BLOCKS_IMPLEMENTATION_AND_EXPERIMENT",
+  "dependency": "same submitted Oracle invocation j-e598la must reach terminal state",
+  "next_action": "event-driven terminal intake of session duca-dynamic-window-correction-v2; never resubmit",
+  "substantive_attempt_count": 1,
+  "conversation_id": "6a91a32f-ea68-83e9-965e-a58c3060c365",
+  "oracle_job": "j-e598la",
+  "submitted_at": "2026-08-28T23:03:09+08:00",
+  "hard_timeout_at": "2026-08-29T01:03:05+08:00",
+  "reconciled_at": "2026-08-29T07:28:00+08:00",
+  "runtime_reconciliation": "127.0.0.1:25759 connection refused; local Oracle/FastCtx running state is stale",
+  "visible_report": null,
+  "scientific_decision": "NONE",
+  "implementation_authority": "NONE",
+  "experiment_authority": "NONE",
+  "terminal_receipt": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/receipts/PRO_DUCA_DYNAMIC_BUDGET_WINDOW_CONTRACT_CORRECTION-v005-NEEDS_ATTENTION.md"
+}

@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-12T20:55:55Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_PRE_RUN_PLAN_DETERMINISTIC_CORRECTION",
+  "message_id": "msg-20260812T205555Z-7f66dacd9f70",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_EXECUTION_PLAN-v001",
+    "CRITIC_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_PLAN_STATIC_REVIEW-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Revise only the authored PRE_RUN plan in response to deterministic Critic findings P0-PRE-PLAN-001..004 from CRITIC_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_PLAN_STATIC_REVIEW-v001. Preserve the Pro-authorized mathematics, fixture set/order/count 18/9/6, Q, objective/candidate order, typed failures, reference independence, scientific route, and NOT_EXECUTED status. Make exactly these document-contract corrections: (1) designate the bound production JSONL adapter as the sole B1 implementation exception while forbidding all other adapter/validator/detector/model/decoder paths; (2) make output-root absence/presence checks phase-relative E1→B1→E2→C1 without deletion/reuse/retry; (3) require exhaustive ascending enumeration for every applicable positive T<=385 fixture and independently structured exact DAG/shortest-path only for full-scale T=767/768 fixtures; (4) require E1/B1 receipts to preserve exact LF-stripped UTF-8 JSON line text plus source line and require E2 byte-for-byte comparison / first-discrepancy binding, without hashes. Produce v002 durable plan only. Do not execute/run/import/compile/test/materialize/read runtime projector/reference/adapter, access remote/data/model/checkpoint/metric/GPU/CUDA/Slurm/browser, or change any artifact outside the Evaluator plan.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

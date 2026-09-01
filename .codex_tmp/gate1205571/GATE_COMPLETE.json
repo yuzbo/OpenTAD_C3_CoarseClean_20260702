@@ -1,0 +1,25 @@
+{
+  "audit": {
+    "branch": "codex/sparsehead-diagnostic-closure-20260729",
+    "clean": true,
+    "commit": "14bd14f9b6a087dc2ec623fc4238c89e0cb86960",
+    "tree": "b782404ddef9a65f19fea70fbf993a3a9d6e0420"
+  },
+  "candidate": {
+    "branch": "codex/actionformer-sparsehead-official-matched-20260730",
+    "clean": true,
+    "commit": "d86a4acda21e35a1609f19f1a46bc470ee18b7e1",
+    "tree": "327c032a1ab3c14d0e34d6339df36f8a33ec6907"
+  },
+  "claim_boundary": "isolated_head_cuda_gate_only",
+  "end_to_end_wall_clock_claim_allowed": false,
+  "gate_pass": true,
+  "paper_metric_claim_allowed": false,
+  "receipts": {
+    "cuda_gate_sha256": "cddfb80af237a41d3c3e1121e39cbc5114ad8abc472c56f6daf519a50cf95988",
+    "runtime_log_sha256_before_completion": "851ff813305ad1d964deae1fb312da696864d0f8cb297ddab0ed4e2d757f521f",
+    "source_diff_attestation_sha256": "68d2cf726cc8523094847337eb5ebe604ca5ad46cbe99d2a5fba2b78f45e67db"
+  },
+  "schema_version": "actionformer_native_grid_sparse_head_gate_completion_v1",
+  "validation_pass": true
+}

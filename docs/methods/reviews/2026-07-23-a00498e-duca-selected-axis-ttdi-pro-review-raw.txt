@@ -1,0 +1,1705 @@
+# 1. `VISIBILITY_CERTIFICATE`
+
+```text
+VISIBILITY_CERTIFICATE
+[CODE_FACT] repository=yuzbo/OpenTAD_C3_CoarseClean_20260702
+[CODE_FACT] branch=codex/duca-boundary-burst-20260722
+[CODE_FACT] exact_commit=a00498e15d69294f78d0abeadfb47bc456db0b0e
+[CODE_FACT] branch_exact_match=true
+[CODE_FACT] branch_ahead_or_behind_exact_commit=0/0
+
+[CODE_FACT] files_actually_read=
+  model/selector:
+    opentad/models/selectors/duca_online_frame_selector.py
+    opentad/models/duca/acquisition.py
+    opentad/models/duca/structured_selection.py
+    opentad/models/duca/transition_only.py
+    opentad/models/duca/hard_soft_alignment.py
+    opentad/models/utils/truetime_geometry.py
+  coarse-probe:
+    tools/bata/train_lowres_action_probe.py
+  backbone/detector:
+    opentad/models/backbones/vit_adapter.py
+    opentad/models/detectors/base.py
+    opentad/models/detectors/single_stage.py
+    opentad/models/detectors/actionformer.py
+    opentad/models/detectors/temporalmaxer.py
+    opentad/models/dense_heads/anchor_free_head.py
+    opentad/models/dense_heads/actionformer_head.py
+    opentad/models/dense_heads/temporalmaxer_head.py
+    opentad/models/projections/actionformer_proj.py
+    opentad/models/projections/temporalmaxer_proj.py
+    opentad/cores/optimizer.py
+  official-comparison:
+    sming256/OpenTAD@1aa8ca4.../opentad/models/detectors/actionformer.py
+    sming256/OpenTAD@1aa8ca4.../opentad/models/detectors/temporalmaxer.py
+    sming256/OpenTAD@1aa8ca4.../opentad/models/dense_heads/actionformer_head.py
+    sming256/OpenTAD@1aa8ca4.../opentad/models/dense_heads/temporalmaxer_head.py
+    sming256/OpenTAD@1aa8ca4.../opentad/models/projections/actionformer_proj.py
+    sming256/OpenTAD@1aa8ca4.../opentad/models/projections/temporalmaxer_proj.py
+  configs:
+    duca_transition_only_fixed384_official_adatad_backend_full_train.py
+    duca_protected_e2e_fixed384_official60.py
+    duca_frontend_pretrain_fixed384_base.py
+    duca_boundary_burst_frontend_pretrain_fixed384.py
+    duca_boundary_burst_g0_no_feedback_fixed384_official60.py
+    duca_boundary_burst_g1_protected_fixed384_official60.py
+    duca_boundary_burst_g2_uni_companion_fixed384_official60.py
+    duca_boundary_burst_r4q5_frontend_pretrain_fixed384.py
+    duca_boundary_burst_r4q5_g0_no_feedback_fixed384_official60.py
+    duca_boundary_burst_r4q5_g1_protected_fixed384_official60.py
+    duca_boundary_burst_r4q5_g2_uni_companion_fixed384_official60.py
+    duca_two_stage_joint_fixed384_official60_base.py
+    duca_two_stage_pretrained_joint_fixed384_official60.py
+    duca_two_stage_pretrained_frozen_fixed384_official60.py
+    duca_global_curriculum_g0_no_feedback_fixed384_official60.py
+    e2e_thumos_videomae_s_768x1_160_adapter.py
+  training/evaluation/cost:
+    tools/bata/duca_selected_axis_training.py
+    tools/bata/run_duca_temporalmaxer_one_step.py
+    tools/bata/build_duca_r0_boundary_burst_oracles.py
+    tools/bata/finalize_duca_r0_boundary_burst.py
+    tools/bata/duca_p0_training.py
+    tools/bata/select_duca_boundary_burst_candidates.py
+    tools/bata/duca_boundary_burst_hard_swap_alignment.py
+    tools/bata/duca_r5_paper_matrix.py
+    tools/bata/aggregate_duca_r5_paper_matrix.py
+    tools/bata/aggregate_duca_budget_curve.py
+    tools/bata/export_duca_selection_quality.py
+    tools/bata/analyze_duca_selection_quality.py
+    tools/bata/analyze_duca_budget_selection_curve.py
+    tools/bata/profile_duca_full_stack_cost.py
+    tools/bata/plot_duca_r5_performance_cost.py
+  focused-tests:
+    tests/test_duca_boundary_burst_selection.py
+    tests/test_duca_boundary_burst_configs.py
+    tests/test_duca_boundary_burst_full_model_gate.py
+    tests/test_duca_boundary_burst_hard_swap_alignment.py
+    tests/test_duca_detector_gradient_bridge.py
+    tests/test_duca_structured_selection.py
+    tests/test_duca_official_asformer_hidden.py
+    tests/test_duca_r5_paper_matrix.py
+    tests/test_duca_budget_curve.py
+    tests/test_duca_selection_quality_analysis.py
+    tests/test_duca_full_stack_cost.py
+
+[UNKNOWN] unreadable_dependencies=
+  runtime external ASFormer checkout bytes under the configured external-repository root;
+  THUMOS14 videos and runtime annotation files;
+  VideoMAE pretrained checkpoint and selected P0 checkpoints;
+  generated resolved configs, checkpoint sidecars and raw predictions;
+  Slurm stdout/stderr and live scheduler state;
+  CUDA/package/hardware runtime;
+  actual raw losses, weighted losses, parameter-group gradient norms and terminal mAP.
+```
+
+[CODE_FACT] GitHub 连接器确认分支与精确提交一致。`a00498e` 相对旧 R5 模型提交只扩展预算矩阵、聚合与测试工具，没有改动 selector、VideoMAE、detector 或训练配置的模型语义。因此旧 K384/K256 与新增 K320/K192/K128 的**模型代码**可以视为同源；但当前聚合器本身没有验证这种同源性，见后文 High 问题。
+
+---
+
+# 2. `EXECUTIVE_VERDICT`
+
+| 审查面     | 裁决                    | 核心原因                                                                                                                                                     |
+| ------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 代码正确性   | **HOLD_FIX_REQUIRED** | [CODE_FACT] official mAP 训练链可执行且 fail-closed，但新增三档预算的成本 profiler 仍只接受 K384/K256；mandatory set 也没有预先验证 exact-K/max-hole 可补全性。                             |
+| 模型机理    | **HOLD_FIX_REQUIRED** | [CODE_FACT] selector 确实形成非均匀微簇，但 VideoMAE、projection 和 head 仍把 selected rank 当等物理时间；这是对 learned policy 特有、对 uniform 较轻的结构性偏置。                            |
+| 当前实验有效性 | **HOLD_FIX_REQUIRED** | [CODE_FACT] 60-cell official mAP cell 是当前模型的有效试验；[EXPERIMENT_FACT] 但尚无 terminal epoch-59 EMA 结果，状态只能是 `experiment_running`。新增 K 的正式成本结果在修复 profiler 前无效。 |
+| 论文可发表性  | **HOLD_FIX_REQUIRED** | [INFERENCE] 只有在 matched uniform 上取得多种子、高 tIoU 和真实端到端成本 Pareto 优势后，才能形成论文主张。当前没有这一证据。                                                                     |
+
+### 三个直接答案
+
+1. **当前 `a00498e` 是否已经正确实现一个可训练、可迁移、真正 detector-aware 的 pre-backbone TAD 智能采样插件？**
+
+   [CODE_FACT] **只实现了前两项的一部分，不是完整的“是”。**
+   它确实是离线、全窗口、heavy backbone 之前的可训练 RGB 采样器；推理不需要 GT、teacher、cache 或 ledger。类名 `DucaOnlineFrameSelector` 是历史命名，其 docstring 明确写的是离线 full-window selector。
+   [INFERENCE] 但它目前只能称为“具有 detector-loss surrogate 的 detector-aware selector”，不能称为真正与离散换帧效用或 mAP 对齐；迁移到第二后端需要 detector wrapper、坐标元数据和后处理配合，也不是纯粹只换一个 config。
+
+2. **最可能卡在哪里？**
+
+   [INFERENCE] **首要瓶颈是 selected-axis 时间轴表示；第二是 soft burst／detached mandatory set／hard DP 的不连续对齐；第三是 detector surrogate 的有偏梯度。**
+   不是首先卡在 coarse actionness，也没有代码证据支持先换更大 coarse backbone。
+
+3. **下一版只能做一次主要结构修改，应改什么？**
+
+   [PROPOSAL] **加入一个统一的 True-Time-Aware Detector Interface，简称 TTDI：在 VideoMAE 特征进入 projection 前注入真实时间坐标与间隔编码，并让 head 的 prior center/stride/regression range 使用真实 dense-time 坐标。**
+   这比继续改 burst loss 更有机会超过 uniform，因为它直接移除 learned sampling 独有的“越不均匀、时间扭曲越严重”惩罚，同时不改变 selector、预算、raw-RGB gather 或 official detector loss。
+
+---
+
+# 3. `ACTUAL_MODEL_GRAPH`
+
+## 3.1 真实前向数据流
+
+```text
+离线完整窗口 RGB
+[B, 1, 3, 768, 160, 160]
+        │
+        ├──低分辨率完整时间观察──> [B,768,3,64,64]
+        │                           │
+        │                           ├──spatial stem──> [B,96,768]
+        │                           └──official ASFormer──>
+        │                                  action logits [B,768]
+        │                                  encoder hidden [B,768,96]
+        │
+        │   Δlogit / |Δlogit| / Δentropy / |Δentropy|
+        │   / Δhidden / |Δhidden| / cosine change
+        │                           │
+        │                           └──descriptor [B,768,197]
+        │                                  │
+        │                                  ├──center score [B,768]
+        │                                  └──offset logits
+        │                                      R2: [B,768,5]
+        │                                      R4: [B,768,9]
+        │
+        │                     boundary-burst utility + context reference
+        │                                  │
+        │                    detached mandatory bilateral group union
+        │                                  │
+        │                    exact-K / max-unselected-hole DP
+        │                     hard positions [B,K]
+        │                     soft slots [B,K,768]（训练专用）
+        │                                  │
+        └──────── original-time gather ────┘
+                     selected RGB [B,1,3,K,160,160]
+                                  │
+                      按 16 个 selected ranks 分块
+                     [B·K/16,1,3,16,160,160]
+                                  │
+                           VideoMAE-S adapter
+                                  │
+                     concat/interpolate -> [B,384,K]
+                                  │
+          ActionFormerProj / TemporalMaxerProj（selected-rank grid）
+                                  │
+                        detector pyramid [B,512,K/2^l]
+                                  │
+                 official-derived TAD cls/reg head
+                                  │
+                  selected-axis proposal [start,end]
+                                  │
+               piecewise-linear inverse true-time map
+                                  │
+                         official NMS/evaluator
+```
+
+## 3.2 Tensor、坐标与梯度重建
+
+| Tensor                  |                      实际 shape | 坐标单位                                              | detach／训练专用                                               | 更新来源                                             |
+| ----------------------- | ----------------------------: | ------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------ |
+| Dense RGB               |         `[B,1,3,768,160,160]` | dense candidate index；R5 合同声明每格对应 4 source frames | 否                                                         | detector loss 可更新 VideoMAE adapter；raw input 无参数 |
+| Low-res RGB             |             `[B,768,3,64,64]` | 同一 dense candidate axis                           | 否                                                         | coarse losses                                    |
+| Spatial stem output     |                  `[B,96,768]` | dense candidate                                   | 否                                                         | actionness；P0 中受限 transition/burst               |
+| ASFormer action logit   |                     `[B,768]` | dense candidate                                   | transition descriptor 内显式 `detach()`                      | actionness loss                                  |
+| ASFormer encoder hidden |                  `[B,768,96]` | dense candidate                                   | policy route 只重放最后一个 encoder layer；前向数值与完整 hidden 相同      | actionness；P0 transition/burst 的缩放梯度             |
+| Transition descriptor   |                 `[B,768,197]` | dense candidate                                   | `2×96+5`；不含 absolute hidden                               | transition/burst                                 |
+| Center score            |                     `[B,768]` | dense candidate                                   | hard decode 使用 detached score；soft DP 使用可微 score          | transition/burst；G1/G2 detector bridge           |
+| Offset logits           | R2 `[B,768,5]`；R4 `[B,768,9]` | 相对 dense offset                                   | hard offset membership 是 ST；mandatory membership detached | burst；G1/G2 bridge                               |
+| Mandatory mask          |                `[B,768]` bool | dense candidate                                   | 完全 detached，训练与推理均可存在                                     | 无直接梯度                                            |
+| Hard positions          |                       `[B,K]` | dense candidate index                             | 离散                                                        | 无                                                |
+| Soft slot assignment    |                   `[B,K,768]` | selected slot × dense time                        | 仅训练                                                       | detector bridge、soft coverage                    |
+| Selected RGB            |           `[B,1,3,K,160,160]` | 内容来自真实 dense time；排列轴是 selected rank              | hard forward；G1/G2 有 surrogate backward                   | detector loss                                    |
+| VideoMAE feature        |                   `[B,384,K]` | **selected rank，不是真实时间**                          | 否                                                         | detector loss                                    |
+| Detector pyramid        |               `[B,512,K/2^l]` | **selected-rank stride**                          | 否                                                         | detector loss                                    |
+| Train GT                |    true dense → selected rank | piecewise linear                                  | 仅训练                                                       | cls/reg assignment                               |
+| Prediction              |    selected rank → true dense | piecewise linear                                  | 推理                                                        | 无                                                |
+
+[CODE_FACT] merged 基础配置的 coarse hidden 是 **96**，不是 64；64 是 transition scorer 的内部 MLP hidden。descriptor 因而是 `2×96+5=197`。配置也明确声明 ranking 不使用 absolute hidden 或 raw-RGB mean。
+
+[CODE_FACT] descriptor 的构造是 `Δlogit, |Δlogit|, Δentropy, |Δentropy|, Δhidden, |Δhidden|, cosine change`；`DucaTransitionUtilityScorer.input_dim=2H+5`。
+
+[CODE_FACT] actionness logits 在 transition 路径中被显式 detach；hidden 梯度则通过 numerically-equal 的 policy/auxiliary route 按 `policy_hidden_gradient_scale` 和 `auxiliary_hidden_gradient_scale` 缩放。
+
+## 3.3 训练与推理同构性
+
+[CODE_FACT] RGB 选择、hard DP、VideoMAE、projection、head 和 true-time remap 在训练与推理中均存在。训练专用部分只有 GT actionness/transition/burst target、soft DP、surrogate detector gradient、uniform companion 和 optimizer/EMA。
+
+[CODE_FACT] validation/test 通过配置和 wrapper 禁止 GT、teacher、外部 actionness、raw prediction cache、ledger value target；当前 R5 没有依赖预导出的 actionness JSONL。基础配置明确把 task 设为 offline、full-window、non-streaming，并声明 selected-axis remap。
+
+## 3.4 是否是可迁移插件
+
+[CODE_FACT] selector 本身通过 `frame_selector.forward_train/test` 放在 VideoMAE 前，原始 gather 逻辑对 detector 不敏感。
+
+[INFERENCE] 但当前完整插件接口与以下 ActionFormer/TemporalMaxer 扩展耦合：
+
+* selected-axis GT remap；
+* inverse-map metadata；
+* detector wrapper 的 selector loss 合并；
+* optimizer 对 selector 参数的特殊 LR 分组；
+* G1/G2 detector gradient bridge；
+* terminal checkpoint 审计字段。
+
+因此其迁移性是“**selector core 可迁移，完整训练接口需适配**”，不能称为无修改 plug-and-play。
+
+---
+
+# 4. `LOSS_AND_GRADIENT_OWNERSHIP`
+
+符号：`✓` 全梯度；`L` 仅 ASFormer 最后 encoder layer 的缩放梯度；`S` surrogate 梯度；`—` 无梯度。
+
+| Loss                                              | Spatial stem | ASFormer early |            ASFormer last | Action head |        Center scorer | Offset head | VideoMAE adapter | Projection | TAD head |
+| ------------------------------------------------- | -----------: | -------------: | -----------------------: | ----------: | -------------------: | ----------: | ---------------: | ---------: | -------: |
+| [CODE_FACT] P0 actionness BCE                     |            ✓ |              ✓ |                        ✓ |           ✓ |                    — |           — |                — |          — |        — |
+| [CODE_FACT] P0 transition distribution            |            — |              — | `L×0.25` auxiliary route |           — |                    ✓ |           — |                — |          — |        — |
+| [CODE_FACT] P0 burst coverage                     |            — |              — | `L×0.25` auxiliary route |           — |                    ✓ |           ✓ |                — |          — |        — |
+| [CODE_FACT] Hard detector cls/reg，G0              |            — |              — |                        — |           — |                    — |           — |                ✓ |          ✓ |        ✓ |
+| [CODE_FACT] Hard detector cls/reg，G1              |            — |              — |                        — |           — |                    S |           S |                ✓ |          ✓ |        ✓ |
+| [CODE_FACT] Hard detector cls/reg，G2 learned rows |            — |              — |                        — |           — | S，按 `B/n_learned` 归一 |           S |                ✓ |          ✓ |        ✓ |
+| [CODE_FACT] G2 uniform rows                       |            — |              — |                        — |           — |                    — |           — |                ✓ |          ✓ |        ✓ |
+| [PROPOSAL] TTDI detector loss                     |            — |              — |                        — |           — |                 可选关闭 |        可选关闭 |                ✓ |          ✓ |        ✓ |
+| [PROPOSAL] Sparse hard-swap ranking               |            — |              — |                        — |           — |                    ✓ |           ✓ |                — |          — |        — |
+
+### 当前 merged 梯度事实
+
+[CODE_FACT] P0 最终权重不是父配置中的 `transition_boundary=16.0`，而是子配置覆盖后的：
+
+```text
+actionness = 1.0
+transition = 0.10
+transition_boundary / burst = 2.0
+```
+
+前 100 successful updates 做 transition/burst ramp；coarse stem LR `5e-5`，action head 和 scorer LR `1e-4`。 父配置中的 16.0 被覆盖，不能作为实际 P0 权重。
+
+[CODE_FACT] official-60 的 G0/G1/G2 均继承 frozen coarse 配置：spatial stem、official ASFormer 和 action head 在 6000 次更新中全部冻结，只有 transition scorer 仍是可训练 selector 组件。
+
+[CODE_FACT] official-60 schedule 是：
+
+* updates `0–999`：exact-uniform；
+
+* updates `1000–2499`：policy alpha 由 0→1；
+
+* updates `2500–3999`：detector gradient 由 0→0.25；
+
+* updates `4000–5999`：full learned policy 和 full bridge。
+
+[UNKNOWN] GitHub 代码里没有本轮实际运行的 raw loss、weighted loss 或各参数组梯度范数。因此不能根据 `1.0/0.1/2.0` 数字断言量纲平衡。必须从训练日志实际导出：
+
+```text
+raw_loss
+weighted_loss
+grad_norm_before_clip
+grad_norm_after_clip
+parameter_update_norm / parameter_norm
+```
+
+至少分 coarse stem、ASFormer last layer、action head、center scorer、offset head、VideoMAE adapters、projection、head。
+
+---
+
+# 5. `LINE_BY_LINE_FINDINGS`
+
+## Critical-1：非均匀 selected frames 被重解释为等间隔时间
+
+**位置与调用链**
+
+[CODE_FACT]
+
+```text
+duca_r5_paper_matrix.py:124–268
+  detector_axis="selected_axis_index"
+  frame_selector budget/G override
+  selected RGB 按 16 个 selected ranks 切块
+
+DucaOnlineFrameSelector
+  -> original-time hard gather
+  -> VideoMAE-S
+  -> Conv1DTransformerProj / TemporalMaxerProj
+  -> AnchorFreeHead
+  -> selected-axis GT / proposal
+  -> TrueTimeMap inverse
+```
+
+R5 生成器明确把 detector axis 冻结为 `selected_axis_index`。
+
+VideoMAE 使用 temporal tubelet kernel/stride 2、基于 `num_frames=16` 的 sinusoidal positional embedding，adapter 的 temporal size 也由 packed 序列长度决定；它没有接收 original timestamps。
+
+ActionFormer projection 的 Conv1d、TransformerBlock 和 stride-2 branch 同样只读取 rank-index sequence。
+
+**触发条件**
+
+[CODE_FACT] learned selection 出现不等间距，例如：
+
+```text
+selected true positions = [100,101,102,130,160,...]
+selected ranks          = [  0,  1,  2,  3,  4,...]
+```
+
+模型会把 `102→130` 和 `100→101` 都当作一个 rank step，甚至可能把来自远距离真实时间的相邻 selected frames 放进同一 tubelet。
+
+**影响**
+
+[INFERENCE]
+
+* 边界微簇内部被时间拉伸；
+* 微簇到上下文之间的大间隔被时间压缩；
+* projection receptive field 与 head regression distance 不再对应真实时间；
+* 高 tIoU 边界回归首当其冲；
+* exact-uniform 因真实间隔近似常数，天然受害较小。
+
+**为什么 posthoc remap 不足**
+
+[CODE_FACT] `TrueTimeMap` 是严格单调的 piecewise-linear 映射，能把最终 proposal 坐标映回真实 dense time。
+[INFERENCE] 但它只能修复输出坐标，无法恢复 VideoMAE tubelet、attention、Conv1d、pooling 和 assignment 已经在错误时间度量下产生的特征。
+
+**最小修复**
+
+[PROPOSAL] 加入 TTDI：真实时间 embedding 加到 VideoMAE 后的 `[B,384,K]` 特征，并把 detector prior center/stride/regression range 改成 dense-time 单位。
+
+**验证**
+
+[PROPOSAL] K384／ActionFormer／seed3407 三臂：
+
+```text
+U: exact-uniform current axis
+L: current learned selected-rank
+T: same learned selector + TTDI
+```
+
+只重训 T；要求 T 同时超过 U 和 L，且 `mAP@0.6/0.7` 不退化。
+
+---
+
+## High-1：mandatory “group”进入 DP 后只剩位置并集，不再是 group-aware 约束
+
+**位置**
+
+[CODE_FACT] `build_mandatory_bilateral_set`：
+
+* `center_scores.detach()` 排序；
+
+* `offset_inclusion.detach()>0.5` 决定组成员；
+
+* 近于 radius 的中心被 suppress；
+
+* group 合并为一个 bool union；
+
+* 只返回 union mask、retained-center mask 和 group count。
+
+`_decode_global_structured` 将同一个 required mask 交给 hard Viterbi 和 soft forward-backward。
+
+**触发条件**
+
+[CODE_FACT] 多个边界靠近、组重叠、总 mandatory budget 不足，或 `policy_alpha` ramp 导致 `floor(K·0.25·alpha)` 阶梯变化。
+
+**影响**
+
+[INFERENCE]
+
+* DP 不知道哪个位置属于哪个边界；
+* 无法硬保证每边界公平配额；
+* 重叠去重后，某边界的实际 quota 可改变；
+* 较弱中心可能因 radius suppression 或 reserved budget 被排除；
+* 当前 forward 内无法对“某个组被加入／排除”求导。
+
+**最小修复**
+
+[PROPOSAL] mandatory builder 保留 `group_id → position set`，按整个 group 做 completeability 检查与接纳；任何组要么整体保留，要么整体拒绝并记录原因。
+
+**验证**
+
+[PROPOSAL] exhaustive small-T test：枚举 `T≤16` 的中心、组重叠和 required masks，验证 exact-K、G、bilateral、whole-group、determinism。
+
+---
+
+## High-2：mandatory set 未先验证能否被 max-hole DP 补全
+
+**位置**
+
+[CODE_FACT] `_required_selection_mask` 只检查 `required_count≤K`，不检查 required positions 是否存在满足 G 的 exact-K completion。
+
+[CODE_FACT] 真正不可补全时，Viterbi 在 terminal state 非有限后才抛出运行时错误。
+
+**反例**
+
+[CODE_FACT] `T=8,K=3,G=2`：
+
+```text
+无 mandatory 时，可行选择 {1,4,7}
+mandatory group = {0,1,2}
+```
+
+三格预算已耗尽，尾部 `3…7` 形成长度 5 的未选 hole，违反 G=2。builder 只看组大小合法，随后 DP 失败。
+
+**影响**
+
+[INFERENCE] 当前 mAP 不会被静默算错，因为代码 fail-closed；但低 K 或 R4Q5 可能在训练中直接中断，也可能因作者为避免失败而误解为优化不稳定。
+
+**最小修复**
+
+[PROPOSAL] 在接纳每个组前调用一个 scores-free boolean completion DP；不可补全时拒绝整个组并记录：
+
+```text
+group_rejected_reason=max_gap_incompletion
+group_center
+group_positions
+remaining_budget
+```
+
+---
+
+## High-3：G1 的 detector gradient 是局部 raw-RGB 时间斜率，不是离散换帧梯度
+
+**位置**
+
+[CODE_FACT] `_add_protected_structured_transport_gradient_path` 的 hard forward 精确等于 hard gathered RGB；backward 使用：
+
+[
+\hat t_k=\sum_t q_{kt}t,\qquad
+\Delta x_k=
+\operatorname{stopgrad}!\left(
+\frac{x_{s_k+1}-x_{s_k-1}}{2}
+\right)
+(\hat t_k-\operatorname{stopgrad}(\hat t_k)).
+]
+
+对应实现是 local left/right gather、detached slope 和 expected-position displacement。
+
+**它遗漏的真实离散效应**
+
+[INFERENCE]
+
+* frame replacement 后 tubelet 的重新组合；
+* VideoMAE 全局 attention；
+* projection 的非线性与 downsampling；
+* head assignment 变化；
+* required group 和 max-hole 可行域变化；
+* NMS 和 mAP。
+
+**影响**
+
+[INFERENCE] 它可以产生稳定非零梯度，但方向可能与合法 one-swap 的真实 detector loss change 相反。测试通过只能证明“梯度存在”，不能证明“梯度正确”。
+
+**最小修复**
+
+[PROPOSAL] 不再把 bridge 当核心 detector utility。用低频、detached 的真实 legal hard-swap detector-loss gain 监督 scorer 的 pairwise utility ranking，见第 9、11 节。
+
+**验证**
+
+[PROPOSAL] production distribution 上要求：
+
+```text
+hard-swap sign agreement > 55%
+Spearman > 0
+95% cluster-bootstrap lower bound > 0
+```
+
+不通过即关闭 detector feedback，而不是降低阈值。
+
+---
+
+## High-4：新增 K320/K192/K128 的正式成本任务会被 profiler 参数验证拒绝
+
+**位置**
+
+[CODE_FACT] R5 matrix 已定义五个预算：
+
+```text
+(384,320,256,192,128)
+G=(2,2,3,4,6)
+```
+
+但 `profile_duca_full_stack_cost.py` 仍只接受：
+
+```text
+R5_MAX_UNSELECTED_HOLES = {384:2,256:3}
+budget regex = 384|256
+```
+
+任何 `actionformer_*_k320_*`、`k192` 或 `k128` 都会被判定为 matrix 外方法并抛错。
+
+**影响**
+
+[CODE_FACT] 36 个新增 official mAP cells 不受影响；新增三档的 formal cost cells 无法形成有效结果。
+
+**最小修复**
+
+[PROPOSAL] 从 `duca_r5_paper_matrix.py` 导入唯一的 `BUDGETS/MAX_UNSELECTED_HOLES`，删除 profiler 内重复常量；补五档参数化测试。
+
+---
+
+## High-5：五点 aggregate 允许跨 commit 合并，但不验证模型语义等价
+
+**位置**
+
+[CODE_FACT] `aggregate_duca_budget_curve.py` 记录各 source 的 `git_commit`，但 key 只有：
+
+```text
+backend, arm, K, seed
+```
+
+它不检查各 source 的 model/config contract hash 相同。
+
+**当前具体影响**
+
+[CODE_FACT] 本轮连接器比较显示 `cd68d89…→a00498e…` 没有模型/config 语义改动，所以当前旧 K384/K256 与新三档大概率可合并。
+
+[INFERENCE] 但聚合器没有证明这一事实；未来只要两个 commit 中 selector 或 detector 变化，仍会生成看似完整的五点曲线。
+
+**最小修复**
+
+[PROPOSAL] 每个 aggregate 写入并校验：
+
+```text
+model_contract_sha256
+selector_source_tree_sha256
+backend_source_tree_sha256
+base_config_semantic_sha256
+```
+
+跨 commit 仅在这些 hash 相同或存在显式 source-equivalence receipt 时允许合并。
+
+---
+
+## Medium-1：G2 是 mixed-policy batch，不是真正 paired counterfactual
+
+[CODE_FACT] G2 在一次 detector forward 中把 50% rows 设为 exact-uniform，并把 learned-row selector 梯度按 `B/n_learned` 归一；推理只走 learned。
+
+[INFERENCE] 它解决了批内参照、训练成本和 learned-row 梯度尺度问题，但每个视频没有同时运行 learned 与 uniform，因此不是 per-sample paired counterfactual；detector 参数同时被两种轴分布更新。
+
+---
+
+## Medium-2：official detector 语义应精确表述为“官方组件 + 扩展 wrapper”
+
+[CODE_FACT] 本仓库与官方提交的 `ActionFormerHead.py` blob SHA 完全相同。
+
+[CODE_FACT] `ActionFormerProj` 也保持官方 rank-grid 实现；但 detector wrapper 被扩展，`AnchorFreeHead` 还增加了可选 physical-grid 路径。当前 R5 未开启 physical-grid，因此普通 cls/reg/loss 路径保持官方语义。
+
+[INFERENCE] 论文应写“official-derived detector head/loss/NMS”，不能写“整个 detector 源码逐字未改”。
+
+---
+
+## Medium-3：focused tests 缺少最关键的模型行为测试
+
+[CODE_FACT] 现有测试主要覆盖配置、shape、provenance、hard-forward equality、非零梯度、矩阵完整性和 artifact identity。
+
+[INFERENCE] 缺失：
+
+1. 同一 RGB 内容、不同 timestamps 是否得到不同 detector representation；
+2. exact-uniform timestamps 下新旧路径是否严格等价；
+3. 低 K mandatory groups 是否总可补全；
+4. protected gradient 是否在真实 batch 上与 legal swap 同号；
+5. VideoMAE tubelet 对不规则 gap 的敏感性；
+6. 两个后端是否使用同一 physical-time 语义。
+
+---
+
+## Low-1：`DucaOnlineFrameSelector` 是命名误导，不是运行语义错误
+
+[CODE_FACT] 类实际运行在完整离线窗口上，docstring 也明确写了 offline TAD。
+
+[PROPOSAL] 不需要为本轮性能改名；后续可提供 registry alias `DucaFullWindowFrameSelector`，保留旧名兼容 checkpoint。
+
+---
+
+# 6. `ORIGINAL_INTENT_COMPLIANCE`
+
+## 6.1 符合与偏离
+
+| 原始原则                         | 裁决                                                                                                        |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 低成本完整低分辨率时间观察                | [CODE_FACT] **符合。** Dense low-res branch 在 heavy VideoMAE 前运行。                                            |
+| 主任务是动作／背景二分类                 | [CODE_FACT] **基本符合。** action logits 只被 actionness BCE 更新；transition descriptor 使用 detached action logits。 |
+| 利用状态变化而非 actionness top-k    | [CODE_FACT] **符合。** scorer 输入没有 absolute hidden、absolute actionness 或 RGB mean。                           |
+| Oracle 式双侧微簇                 | [CODE_FACT] **局部实现符合，整体只部分符合。** 可行时硬选 center+best-left+best-right；全局 DP 只看其位置并集。                          |
+| 全局 exact-K/max-hole          | [CODE_FACT] **符合。** hard 与 soft 使用同一 DP family 和同一 required mask。                                         |
+| 预算可跨区域转移                     | [CODE_FACT] **符合。** 不是 one-frame-per-cell。                                                                |
+| 多边界公平、重叠去重、有限配额              | [CODE_FACT] **soft loss 有，hard decoder 不完整。** Hard union 不保留边界身份。                                         |
+| original-time gather 的真实 RGB | [CODE_FACT] **符合。**                                                                                       |
+| heavy backbone 前插件           | [CODE_FACT] **符合。**                                                                                       |
+| detector-aware               | [INFERENCE] **部分符合。** 有 detector-loss surrogate，但不是可验证的离散 utility。                                        |
+| 推理无 GT/teacher/cache/ledger  | [CODE_FACT] **符合。**                                                                                       |
+| 不声称 K-only decode/I/O saving | [CODE_FACT] **当前合同符合。** 只能主张 post-decode heavy-backbone processed-frame reduction。                        |
+
+## 6.2 Coarse probe 是否被拉成隐式边界预测器
+
+[CODE_FACT] actionness logits 在 transition descriptor 中 detach，因此 transition/burst loss不会更新 action head，也不会通过 logits 修改二分类 posterior。
+
+[CODE_FACT] P0 仍允许 transition/burst 通过 restricted replay 更新 ASFormer 最后一个 encoder layer；配置为 `auxiliary_hidden_gradient_scale=0.25`、`policy_hidden_gradient_scale=0.05`。
+
+[INFERENCE] 因而最准确的表述是：
+
+> action head 仍是纯二分类；ASFormer 最后层是“二分类主任务 + 弱边界适配”的共享表示。
+
+这不是严重违背初心，但不能称整个 coarse representation 只受二分类监督。
+
+## 6.3 R2Q3／R4Q5 的真实算法
+
+[CODE_FACT] 对 center score (c_t)：
+
+[
+p_t=\operatorname{softmax}(c_t/\tau_c),\qquad
+N_c=\max(K\rho/Q,1),
+]
+
+其中 (\rho=0.25)，R2Q3 的 (Q=3)，R4Q5 的 (Q=5)。
+
+对每个中心，offset logits 形成半径内分布。双侧可行时：
+
+* 强制 center；
+* 左侧选一个；
+* 右侧选一个；
+* 剩余 quota 由剩余 offset score 分配。
+
+硬 inclusion 与 soft inclusion 用 ST 组合。边界处双侧不可行时退化为 center + 可行一侧，而不是伪造另一侧。
+
+[CODE_FACT] burst mass 经 `1-exp(-mass)` 饱和，再加权 `0.05×exact-uniform reference` 作为 context fill。
+
+[CODE_FACT] hard mandatory centers按 detached score 排序，并禁止中心间距离 `≤radius`；重叠位置按 union 去重。
+
+### `boundary_burst_require_bilateral_offsets`
+
+[CODE_FACT] 它同时影响：
+
+1. offset inclusion 的 hard ST 构造；
+2. soft bilateral mass；
+3. 后续 mandatory group 的成员。
+
+它不是纯 soft utility。但边界一侧不可行时会 one-sided fallback。
+
+### `boundary_burst_require_global_mandatory_groups`
+
+[CODE_FACT] 它确实进入 DP 的 required mask，hard 和 soft DP 都不能跳过 required positions。
+
+[INFERENCE] 但它没有硬保证“每个真实边界一个组”。它保证的是“若干最高分预测中心对应的组并集”。
+
+## 6.4 exact-K/max-hole 对微簇的理论限制
+
+base feasibility 条件是：
+
+[
+T-K\le (K+1)G
+\quad\Longleftrightarrow\quad
+K\ge \left\lceil\frac{T-G}{G+1}\right\rceil .
+]
+
+代码显式检查该条件。
+
+对 (T=768)：
+
+| K/G     | 最少可行 K | 超出最小覆盖骨架的 slot 数 | R2Q3 target groups | R4Q5 target groups |
+| ------- | -----: | ---------------: | -----------------: | -----------------: |
+| 384 / 2 |    256 |              128 |                 32 |                 19 |
+| 320 / 2 |    256 |               64 |                 26 |                 16 |
+| 256 / 3 |    192 |               64 |                 21 |                 12 |
+| 192 / 4 |    153 |               39 |                 16 |                  9 |
+| 128 / 6 |    109 |               19 |                 10 |                  6 |
+
+[CODE_FACT] DP 允许相邻选择，因此不存在“不能形成连续 3–5 帧簇”的硬禁令。
+
+[INFERENCE] 但把一个覆盖骨架 anchor 扩成 R2Q3 约消耗两个额外 slot，扩成 R4Q5 约消耗四个。以最紧覆盖骨架估计：
+
+* K128/G6 只有 19 个额外 slot；
+* 最多约容纳 9 个互不重叠 R2Q3 或 4 个 R4Q5；
+* 配置目标却是 10 个 R2Q3 或 6 个 R4Q5 group。
+
+这不是严格的所有序列上界，但证明低预算时配置目标与最坏布局之间存在实质张力。
+
+## 6.5 max-hole 的单位
+
+[CODE_FACT] R5 中 G 的单位是 **dense candidate index**，不是 source-frame 或 seconds。生成器还声明每个 dense candidate 对应 4 source frames。
+
+因此最大相邻 selected position 的 source-frame 间隔为：
+
+| K/G   | 最大 selected interval |
+| ----- | -------------------: |
+| 384/2 |     12 source frames |
+| 320/2 |     12 source frames |
+| 256/3 |     16 source frames |
+| 192/4 |     20 source frames |
+| 128/6 |     28 source frames |
+
+[PROPOSAL] 论文应统一写：
+
+```text
+max_unselected_hole = G dense candidates
+max_selected_interval = (G+1) × 4 source frames
+```
+
+不能直接写“G frames”。
+
+## 6.6 三个反例
+
+### 反例 A：组合法但全局不可补全
+
+[CODE_FACT]
+
+```text
+T=8, K=3, G=2
+mandatory={0,1,2}
+```
+
+组大小合法、center/bilateral 可合法，但无 exact-K completion，DP 终止失败。
+
+### 反例 B：两个真实边界只保留一个预测组
+
+[CODE_FACT]
+
+```text
+radius=2
+predicted centers=100,102
+```
+
+第二个中心因与已选中心距离 `≤2` 被 suppress。即使它对应另一个真实动作边界，hard mandatory 也没有 GT-aware fairness。
+
+### 反例 C：重叠去重改变每边界 quota
+
+[CODE_FACT]
+
+```text
+group A={98,100,102}
+group B={102,104,106}
+union={98,100,102,104,106}
+```
+
+两个 Q3 group 只占 5 个 slot。DP 看到 5 个 required positions，不知道位置 102 同时服务两个边界，也不会把节省的第六个 slot公平分给哪一个边界。
+
+---
+
+# 7. `WHY_LEARNED_LAGS_UNIFORM`
+
+[EXPERIMENT_FACT] 用户提供的历史 V5 matched 结果中，exact-uniform `64.4580`，direct `63.7102`，homotopy `63.0601`，companion `63.6931`；CellCF 也没有超过 transition-beta0。这个跨多种 selector 目标反复出现的模式，更像结构性 mismatch，而不是某一个 loss weight 失误。
+
+## 7.1 根因排序与最快证伪实验
+
+| 排名 | 候选原因                                        | 当前证据判断                                                                                                           | 最快证伪实验                                                                                    |
+| -: | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+|  1 | selected-axis／VideoMAE 时间扭曲                 | [INFERENCE] **最高。** learned 越聚簇，rank-time mismatch 越大；uniform 近似等间隔。                                             | 同一 selector、同一 hard positions，只切换 TTDI，K384 AF seed0 official。                            |
+|  2 | soft burst 与 detached mandatory／hard DP 不对齐 | [CODE_FACT] hard group membership 不可微，DP 丢失 group identity。                                                      | 导出 soft mass、mandatory union、hard selected 的 per-boundary quota；做 legal whole-group swap。 |
+|  3 | detector surrogate 与真实 hard swap 不一致        | [CODE_FACT] bridge 是局部 RGB slope。                                                                                | production hard-swap sign/Spearman gate。                                                  |
+|  4 | 边界聚集牺牲动作内部和背景上下文                            | [INFERENCE] burst 只有 0.05 uniform context reference；强簇会移走内部帧。                                                    | 对 matched samples 分析 action interior、pre/post background、long-action coverage 与 mAP@0.7。  |
+|  5 | boundary proxy 与高 tIoU mAP 弱相关              | [INFERENCE] R0 高内部数值不能证明 full-val detector utility。                                                              | video-level proxy delta 对 official `mAP@0.7` contribution 的相关性分析。                         |
+|  6 | max-hole 可行域使低 K 近似覆盖骨架                     | [CODE_FACT] K128 仅比最小可行 K 多 19。                                                                                  | selected gap histogram、与 exact-uniform Jaccard、mandatory utilization 随 K 曲线。              |
+|  7 | scorer 没把状态变化变成正确微簇                         | [INFERENCE] 可能，但必须在 coarse evidence 好时才成立。                                                                       | 固定 coarse checkpoint，比较 scorer center error、bilateral coverage、hard selected coverage。    |
+|  8 | coarse actionness 或 transition center 系统偏移  | [UNKNOWN] 没有当前运行数值。                                                                                              | 完整 val-free train holdout 上 actionness AP/AUC、start/end signed error、按动作长度分层。             |
+|  9 | P0→official-60 detector adaptation lag      | [INFERENCE] uniform 先学 1000 更新，随后轴分布改变；可能产生迟滞。                                                                   | 固定 selector，比较 uniform-only detector、从零 learned-axis detector、uniform→learned curriculum。 |
+| 10 | augmentation/random truncation 监督错位         | [CODE_FACT] 已有 `gt_boundary_validity` 防止截断边缘伪标签，风险降低但未消失。                                                        | 合成截断单元测试；统计 invalid boundary 被监督率必须为 0。                                                   |
+| 11 | detector feedback 污染 coarse 二分类             | [CODE_FACT] official-60 coarse 全冻结，G1/G2 detector gradient 只到 scorer，因此当前风险低。                                    | 检查 frozen parameter hash 前后完全相同。                                                          |
+| 12 | optimizer、EMA 或更新数导致模块欠训练                   | [CODE_FACT] optimizer 参数覆盖和 6000 successful update/EMA/scheduler binding 是 fail-closed；除非运行 artifact 违规，否则最低优先级。 | 读取 terminal audit 与每组 update norm；不先改模型。                                                  |
+
+## 7.2 最可能根因树
+
+```text
+A. coarse actionness/transition center 明显差
+   ├─ actionness 也差
+   │    -> 只修 coarse evidence；不碰 detector/time adapter
+   └─ actionness 好、center 差
+        -> 修 transition scorer/监督
+
+B. center 与 bilateral coverage 好，但 hard selected 没改善
+   ├─ soft 好、mandatory/hard 差
+   │    -> 修 group-aware feasibility/alignment
+   └─ max-hole/Jaccard 显示接近 uniform
+        -> 可行域/上下文预算问题
+
+C. hard selection quality 明显优于 uniform，但 official mAP 不优
+   ├─ mAP@0.6/0.7 特别差
+   │    -> 首先做 TTDI
+   ├─ hard-swap alignment 差
+   │    -> 关闭当前 bridge，做真实 sparse swap ranking
+   └─ TTDI 仍无改善
+        -> 检查边界 proxy 与 detector utility、上下文损失
+
+D. selection、TTDI、swap alignment 都通过，但训练后期仍落后
+   -> 才审 curriculum/adaptation lag
+
+任何节点只改一个变量，不允许同时改 coarse、allocator、bridge、axis 和 curriculum。
+```
+
+---
+
+# 8. `MODEL_OPTIONS`
+
+## Option 1：最小修正版——Group-Completable Mandatory Decoder
+
+### 数学与模块
+
+[PROPOSAL] 保留当前 (c_t,o_{t,\delta}) 和 DP。对候选组 (G_j) 按 center score 排序，但只有当：
+
+[
+\exists S:\quad G_{\le j}\subseteq S,\quad |S|=K,\quad
+\max\operatorname{hole}(S)\le G
+]
+
+时才接纳整个组。
+
+### Oracle 微簇与上下文
+
+[PROPOSAL] 组仍是 center+left+right；剩余预算继续由当前 `burst utility + 0.05 uniform context` 填充。
+
+### 梯度
+
+[PROPOSAL] 不改变 loss。组接纳仍不可微，但不会产生不可补全 mandatory mask，并保留 group identity 供审计。
+
+### 成本
+
+[PROPOSAL] 推理增加若干 scores-free boolean DP。可缓存前缀状态，CPU 增量预计小于当前完整 score DP 的数倍；无新增 VideoMAE FLOPs、显存或训练 forward。
+
+### 失败方式
+
+[INFERENCE] 它修复 correctness 和 hard/soft语义，但若主要问题是 selected-axis，mAP 可能几乎不变。
+
+### 修改文件
+
+```text
+opentad/models/duca/transition_only.py
+opentad/models/duca/structured_selection.py
+opentad/models/duca/acquisition.py
+tests/test_duca_boundary_burst_selection.py
+tests/test_duca_structured_selection.py
+```
+
+---
+
+## Option 2：监督／优化修正版——Sparse Legal-Swap Utility Ranking
+
+### 数学
+
+对当前 hard set (S) 枚举合法 group-preserving swap (S')，用 detached detector objective：
+
+[
+u(S!\to!S')=
+L_{\rm det}(S)-L_{\rm det}(S').
+]
+
+selector 预测 utility difference：
+
+[
+\Delta_\theta =
+U_\theta(S')-U_\theta(S).
+]
+
+训练：
+
+[
+L_{\rm swap}=
+w(u),
+\operatorname{softplus}
+\left(
+-\frac{\operatorname{sign}(u)\Delta_\theta}{\tau}
+\right),
+\quad
+w(u)=\min(|u|/u_0,1).
+]
+
+### 梯度
+
+[PROPOSAL] detector evaluation 完全 no-grad；target detach；梯度只到 center scorer 和 offset head。Coarse ASFormer、action head 和 detector 不被这个 loss 更新。
+
+### 训练／推理
+
+[PROPOSAL] 每 4 个 successful updates，仅对一半 learned rows 评估一个合法 swap；推理无额外成本。
+
+### 成本
+
+[PROPOSAL] 约增加 `0.125–0.25×` heavy training forward 成本，视采样比例而定；推理 FLOPs、显存和 latency 不变。
+
+### 失败方式
+
+[INFERENCE] detector train loss 仍不是 mAP；局部 swap 也可能无法学习长距离预算重分配。
+
+### 修改文件
+
+```text
+opentad/models/duca/hard_soft_alignment.py
+opentad/models/selectors/duca_online_frame_selector.py
+opentad/models/detectors/actionformer.py
+opentad/models/detectors/temporalmaxer.py
+```
+
+---
+
+## Option 3：时间语义修正版——True-Time-Aware Detector Interface，**主推荐**
+
+### 数学
+
+对 selected true positions (s_k) 和 valid dense length (L)：
+
+[
+\tau_k=\frac{s_k}{L-1},
+\quad
+\Delta_k^-=\frac{s_k-s_{k-1}}{L-1},
+\quad
+\Delta_k^+=\frac{s_{k+1}-s_k}{L-1}.
+]
+
+构造：
+
+[
+\phi_k =
+[\sin(2^m\pi\tau_k),\cos(2^m\pi\tau_k)]_{m=0}^{M-1}
+\oplus
+[\log(\Delta_k^-+\epsilon),
+\log(\Delta_k^++\epsilon),
+\log(\Delta_k^-+\Delta_k^++\epsilon)].
+]
+
+对 VideoMAE feature (z_k)：
+
+[
+z'_k=z_k+
+\tanh(g),W_2,\sigma(W_1\operatorname{LN}(\phi_k)),
+\qquad g_0=0.
+]
+
+`g=0` 保证初始化时与当前模型严格相同。
+
+同时在每个 pyramid level，用 selected-rank point 通过 piecewise-linear map 得到真实：
+
+[
+p_l^{\rm true},\quad
+d_l^{\rm true}
+=\frac{p_{l,+}^{\rm true}-p_{l,-}^{\rm true}}{2}.
+]
+
+head 的 center、stride、regression range 全部改为 dense-time 单位；GT 保持 dense-time，不再先 remap 到 selected axis。
+
+### Oracle 微簇与上下文
+
+[PROPOSAL] selector 和 R2Q3 完全不变；TTDI只保证 detector 正确理解微簇与稀疏上下文之间的真实间隔。
+
+### hard exact-K/max-hole
+
+[PROPOSAL] 不变。TTDI 不参与选择，不可能破坏预算或 G。
+
+### 梯度
+
+[PROPOSAL] detector loss 更新 TTDI、VideoMAE adapters、projection、head。默认不让 TTDI 梯度反传到 selected integer positions；selector feedback继续用单独的 sparse swap target。
+
+### 成本
+
+[PROPOSAL]
+
+* 参数约 `O((2M+3)·64+64·384)`，远小于 VideoMAE；
+* feature residual 为 `O(BKC)`；
+* 推理 FLOPs 和显存预计小于 detector projection 的 1%；
+* 不增加 heavy processed frames；
+* 不增加 decode/I/O。
+
+### 失败方式
+
+[INFERENCE] VideoMAE tubelet 内的 rank-time mismatch发生在 TTDI之前，后置 embedding不能完全恢复。如果 TTDI无增益，才考虑把 timestamp embedding注入 patch tokens；不能一开始就改 VideoMAE blocks。
+
+### 修改文件
+
+```text
+new: opentad/models/duca/true_time_detector_interface.py
+opentad/models/detectors/actionformer.py
+opentad/models/detectors/temporalmaxer.py
+opentad/models/dense_heads/anchor_free_head.py
+opentad/models/projections/actionformer_proj.py
+opentad/models/projections/temporalmaxer_proj.py
+opentad/models/utils/truetime_geometry.py
+```
+
+---
+
+## Option 4：更大胆但有界——Coverage-Skeleton + Group Residual Allocation
+
+### 数学
+
+先取满足 G 的最小覆盖骨架：
+
+[
+K_{\min}=\left\lceil\frac{T-G}{G+1}\right\rceil .
+]
+
+剩余：
+
+[
+R=K-K_{\min}
+]
+
+只用于边界 group 与局部上下文。优化：
+
+[
+\max_{S,C}
+\sum_t u_t S_t
++\lambda_g\sum_j v_j C_j
+]
+
+满足：
+
+[
+|S|=K,\quad \max\operatorname{hole}(S)\le G,\quad
+C_j=1\Rightarrow G_j\subseteq S,
+]
+
+并对每个 group 设置有限配额和 overlap credit。
+
+### 成本
+
+[PROPOSAL] 需要 group-knapsack/DP，推理 CPU 成本高于当前 DP；训练 soft relaxation 更复杂。
+
+### 失败方式
+
+[INFERENCE] K128 下 residual 只有19，模型可能过度接近覆盖骨架；group objective 仍不保证 detector utility。
+
+### 裁决
+
+[PROPOSAL] 不作为下一次唯一修改。只有 TTDI 后 selection quality 仍无法转成 mAP，且 hard allocation 被证实是主因时才进入。
+
+---
+
+# 9. `FINAL_RECOMMENDED_MODEL`
+
+## 名称
+
+[PROPOSAL] **DUCA-TTDI：State-Transition Boundary Burst with True-Time-Aware Detector Interface**
+
+## 唯一推荐结构
+
+```text
+Dense low-res RGB
+  -> official ASFormer binary actionness
+  -> transition-only descriptors
+  -> R2Q3 center/offset scorer
+  -> group-completable exact-K/max-hole DP
+  -> hard RGB gather
+  -> VideoMAE-S
+  -> TTDI feature coordinate residual
+  -> physical-coordinate ActionFormer/TemporalMaxer head
+  -> dense-time proposals
+```
+
+## 冻结裁决
+
+| 问题                           | 唯一裁决                                                                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 是否继续 official ASFormer       | [PROPOSAL] **继续。** 当前没有证据表明换 coarse backbone 是首要变量。                                                                       |
+| actionness head 后期策略         | [PROPOSAL] **P0 后完全冻结。**                                                                                                  |
+| ASFormer 后期策略                | [PROPOSAL] **P0 后完全冻结。** 不接受 detector feedback。                                                                           |
+| selector 是否看 absolute hidden | [PROPOSAL] **不看。** 保留纯状态变化 descriptor。                                                                                    |
+| detector feedback            | [PROPOSAL] **低频 detached legal-swap ranking；不再把 local RGB slope 当最终 utility。**                                            |
+| 是否需要 true-time adapter       | [PROPOSAL] **需要，是下一版唯一主要结构修改。**                                                                                           |
+| R2Q3 是否保留                    | [PROPOSAL] **保留。** R4Q5 仅作为后续簇宽消融。                                                                                        |
+| 五个 K 是否共享权重                  | [PROPOSAL] **本次主验证不共享 official-60 detector/selector fine-tune 权重。** 先保持每 K 独立以隔离 TTDI 因果；共享 K-conditioned selector 放在 P2。 |
+| 如何避免退化成 uniform              | [PROPOSAL] 不加任意 anti-uniform loss；通过 boundary group utilization、selected-gap entropy、与 uniform Jaccard 做审计。               |
+| 如何避免 actionness top-k        | [PROPOSAL] scorer 输入继续不含 absolute actionness；actionness只通过差分、熵变化和 hidden change进入。                                        |
+
+## 为什么它优于其余方案
+
+[INFERENCE] 当前结构存在一个对 learned policy 单向不利的机制：
+
+```text
+learned 越成功形成微簇
+    -> selected gaps 越不均匀
+    -> rank-time mismatch 越严重
+    -> detector 越难利用这些微簇
+```
+
+TTDI直接切断这条负反馈。继续增加 burst loss或改 actionness不能消除它。
+
+[CODE_FACT] 仓库已经有 `physical_grid_actionformer` 的部分基础设施，可用真实 selected positions生成 physical center、stride和regression range。
+[PROPOSAL] 下一版应抽取为后端共享 utility，而不是再写一套 ActionFormer-only 特例。
+
+---
+
+# 10. `EXACT_TRAINING_RECIPE`
+
+采用两个正式阶段；Stage B 内部有 curriculum subphase，但不创建第三套 checkpoint-selection 阶段。
+
+## Stage A：coarse／transition／burst 预训练，2000 successful updates
+
+|  Updates | 可训练模块                                                    | Loss 权重                                             |
+| -------: | -------------------------------------------------------- | --------------------------------------------------- |
+|    0–399 | coarse stem、全部 ASFormer、action head、center/offset scorer | actionness `1.0`；transition `0→0.10`；burst `0→0.50` |
+|  400–799 | 同上                                                       | actionness `1.0`；transition `0.10`；burst `0.50→2.0` |
+| 800–1999 | 同上                                                       | actionness `1.0`；transition `0.10`；burst `2.0`      |
+
+[PROPOSAL] 梯度归属保持当前保护：
+
+* actionness：coarse stem、ASFormer encoder/decoder、action head；
+* transition/burst：scorer/offset + ASFormer last encoder layer；
+* transition descriptor 内 action logits detach；
+* `policy_hidden_gradient_scale=0.05`；
+* `auxiliary_hidden_gradient_scale=0.25`。
+
+### Stage A optimizer
+
+| 参数组                         |                     LR |     WD |
+| --------------------------- | ---------------------: | -----: |
+| spatial stem                |                 `5e-5` | `0.05` |
+| ASFormer early layers       | `2.5e-5`，只接 actionness | `0.05` |
+| ASFormer last encoder layer |                 `5e-5` | `0.05` |
+| action head                 |                 `1e-4` | `0.05` |
+| center/offset scorer        |                 `1e-4` | `0.05` |
+| norm/bias                   |                  对应 LR |    `0` |
+
+[PROPOSAL] Stage A 不运行 detector，不看 validation mAP，不用 R0 absolute mAP 选 checkpoint。使用固定 train-only holdout，只允许用以下机制门排除失败模型：
+
+```text
+finite losses
+exact-K/max-hole pass
+actionness balanced BCE 不劣于 actionness-only 最优值的 2%
+bilateral feasible centers 满足率 = 100%
+mandatory completion failure rate = 0
+ASFormer last-layer / scorer 梯度均非零
+```
+
+terminal update 1999 checkpoint 是唯一 Stage B 初始化，不按 R0 93–94 数值挑最优 epoch。
+
+## Stage B：TTDI + detector official-60，6000 successful updates
+
+|   Updates | Policy rows                         | 模块状态                                                     | Loss                                                        |
+| --------: | ----------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------- |
+|     0–999 | 100% exact-uniform                  | coarse/scorer冻结；TTDI、VideoMAE adapters、projection、head训练 | detector `1.0`                                              |
+| 1000–2499 | learned fraction `0→1`              | coarse冻结；scorer/offset解冻；TTDI/detector训练                 | detector `1.0`；transition `0→0.02`；burst `0→0.50`           |
+| 2500–3499 | 50% learned / 50% uniform companion | 同上                                                       | detector `1.0`；transition `0.02`；burst `0.50`；swap `0→0.20` |
+| 3500–4499 | 50% learned / 50% companion         | 同上                                                       | detector `1.0`；transition `0.02`；burst `0.50`；swap `0.20`   |
+| 4500–5499 | learned `50→75%`，companion `50→25%` | 同上                                                       | 同上                                                          |
+| 5500–5999 | 100% learned                        | 同上                                                       | 同上；不再改变 policy mixture                                      |
+
+### Stage B optimizer
+
+| 参数组                                  |     LR |
+| ------------------------------------ | -----: |
+| coarse stem / ASFormer / action head |    `0` |
+| center/offset scorer                 | `5e-5` |
+| TTDI                                 | `1e-4` |
+| VideoMAE adapters                    | `5e-5` |
+| projection                           | `1e-4` |
+| TAD head                             | `1e-4` |
+
+其余：
+
+```text
+AdamW
+weight_decay=0.05
+norm/bias/gate weight_decay=0
+gradient_clip_norm=1.0
+EMA decay=0.999
+structured_temperature: 0.70 -> 0.50 over updates 1000–3500
+offset_temperature: 1.00 -> 0.70 over updates 1000–3500
+AMP: heavy detector path enabled
+ASFormer/scorer utility target calculation: FP32
+DDP find_unused_parameters=True
+scheduler/EMA/selector schedule only advance on successful optimizer update
+max AMP retries per batch=8
+terminal checkpoint=update 6000 / epoch-59 EMA only
+```
+
+## Sparse swap schedule
+
+[PROPOSAL]
+
+```text
+enabled updates: 2500–5499
+frequency: every 4 successful updates
+rows: 50% of learned rows
+candidates: exactly 1 legal whole-group-preserving swap per selected row
+teacher: no_grad official cls+reg objective
+detector state/RNG/loss normalizer restored exactly
+gradient owners: center/offset scorer only
+```
+
+## 停止／回滚条件
+
+1. [PROPOSAL] 任意 exact-K、G、GT-free 或 whole-group contract 失败：立即停止，结果无效。
+2. [PROPOSAL] mandatory completion rejection rate 超过 5% samples：不进入 official mAP，先修 allocator。
+3. [PROPOSAL] hard-swap sign agreement `≤55%` 或 Spearman `≤0`：关闭 swap feedback，不能降低 gate。
+4. [PROPOSAL] K384 seed3407 TTDI 不超过 matched uniform，或 `mAP@0.7` 比 uniform 低 `>0.2` point：不扩展到三种子和第二后端。
+5. [PROPOSAL] 前端 + DP + materialization 成本吞没 VideoMAE 节省：终止效率主张。
+6. [PROPOSAL] terminal 只评 update6000 EMA；不以中间 mAP cherry-pick。
+
+---
+
+# 11. `PATCH_PLAN_AND_CORE_CODE`
+
+## 11.1 P0：立即修，不影响正在运行的 mAP cells
+
+### Patch A：五预算成本 parser
+
+```python
+# profile_duca_full_stack_cost.py
+from tools.bata.duca_r5_paper_matrix import (
+    BUDGETS,
+    MAX_UNSELECTED_HOLES,
+    SEEDS,
+)
+
+_budget_pattern = "|".join(str(k) for k in BUDGETS)
+R5_METHOD_PATTERN = re.compile(
+    rf"^(?P<backend>actionformer|temporalmaxer)_"
+    rf"(?P<arm>uniform|learned)_k(?P<budget>{_budget_pattern})_"
+    rf"s(?P<seed>{'|'.join(map(str, SEEDS))})$"
+)
+R5_MAX_UNSELECTED_HOLES = dict(MAX_UNSELECTED_HOLES)
+```
+
+测试：
+
+```python
+@pytest.mark.parametrize("k,g", [(384,2),(320,2),(256,3),(192,4),(128,6)])
+def test_r5_cost_method_supports_every_budget(k, g):
+    cell = parse_r5_method_name(f"actionformer_learned_k{k}_s3407")
+    assert cell["budget"] == k
+    assert R5_MAX_UNSELECTED_HOLES[k] == g
+```
+
+### Patch B：aggregate source-equivalence
+
+[PROPOSAL] 每个 aggregate 加：
+
+```python
+model_contract_sha256
+selector_tree_sha256
+backend_tree_sha256
+semantic_config_sha256
+```
+
+`build_budget_curve` 在合并前要求全部一致；不同 commit 只有提交了显式 equivalence receipt 才允许。
+
+### Patch C：mandatory completeability
+
+```python
+def required_mask_is_completable(
+    required_mask: torch.Tensor,
+    *,
+    k: int,
+    max_hole: int,
+) -> bool:
+    # 使用全零 logits；只判断是否存在合法 exact-K path。
+    logits = torch.zeros(
+        1, required_mask.numel(),
+        device=required_mask.device,
+        dtype=torch.float32,
+    )
+    try:
+        _hard_viterbi(
+            logits,
+            k=k,
+            max_hole=max_hole,
+            required_mask=required_mask[None],
+        )
+    except RuntimeError:
+        return False
+    return True
+```
+
+组接纳：
+
+```python
+for group in ranked_groups:
+    proposed = current | group.mask
+    if proposed.sum() > max_mandatory:
+        reject(group, "mandatory_budget")
+        continue
+    if not required_mask_is_completable(
+        proposed, k=effective_k, max_hole=max_hole
+    ):
+        reject(group, "max_gap_incompletion")
+        continue
+    current = proposed
+    retained_groups.append(group)
+```
+
+## 11.2 P1 主结构：TTDI
+
+```python
+# opentad/models/duca/true_time_detector_interface.py
+from __future__ import annotations
+
+import math
+import torch
+import torch.nn as nn
+
+
+class TrueTimeFeatureAdapter(nn.Module):
+    """Zero-initialized true-time residual for [B,C,K] detector features."""
+
+    def __init__(
+        self,
+        channels: int,
+        num_frequencies: int = 8,
+        hidden_dim: int = 64,
+        eps: float = 1e-6,
+    ) -> None:
+        super().__init__()
+        self.channels = int(channels)
+        self.num_frequencies = int(num_frequencies)
+        self.eps = float(eps)
+
+        geometry_dim = 2 * self.num_frequencies + 3
+        self.norm = nn.LayerNorm(geometry_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(geometry_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, self.channels),
+        )
+        self.gate = nn.Parameter(torch.zeros(()))
+
+    def forward(
+        self,
+        features: torch.Tensor,       # [B,C,K]
+        positions: torch.Tensor,      # [B,K], dense-time indices
+        valid_lengths: torch.Tensor,  # [B]
+        mask: torch.Tensor,           # [B,K]
+    ) -> torch.Tensor:
+        if features.ndim != 3:
+            raise ValueError("features must be [B,C,K]")
+        if positions.shape != mask.shape:
+            raise ValueError("positions and mask must be [B,K]")
+        if features.shape[0] != positions.shape[0] or features.shape[-1] != positions.shape[1]:
+            raise ValueError("feature and timestamp axes disagree")
+
+        pos = positions.to(device=features.device, dtype=torch.float32)
+        valid = valid_lengths.to(device=features.device, dtype=torch.float32)
+        denom = (valid - 1.0).clamp_min(1.0)[:, None]
+
+        tau = (pos / denom).clamp(0.0, 1.0)
+
+        left_gap = torch.cat(
+            [pos[:, :1], pos[:, 1:] - pos[:, :-1]], dim=1
+        ) / denom
+        right_gap = torch.cat(
+            [pos[:, 1:] - pos[:, :-1], valid[:, None] - 1.0 - pos[:, -1:]],
+            dim=1,
+        ) / denom
+
+        left_gap = left_gap.clamp_min(self.eps)
+        right_gap = right_gap.clamp_min(self.eps)
+
+        frequencies = (
+            math.pi
+            * (2.0 ** torch.arange(
+                self.num_frequencies,
+                device=features.device,
+                dtype=torch.float32,
+            ))
+        )
+        phase = tau[..., None] * frequencies
+
+        geometry = torch.cat(
+            [
+                torch.sin(phase),
+                torch.cos(phase),
+                torch.log(left_gap)[..., None],
+                torch.log(right_gap)[..., None],
+                torch.log(left_gap + right_gap)[..., None],
+            ],
+            dim=-1,
+        )
+
+        residual = self.mlp(self.norm(geometry)).transpose(1, 2)
+        residual = residual.to(dtype=features.dtype)
+        residual = residual * mask[:, None, :].to(dtype=features.dtype)
+
+        return features + torch.tanh(self.gate) * residual
+```
+
+关键测试：
+
+```python
+def test_ttfa_zero_gate_is_exact_identity():
+    out = module(x, positions, valid_lengths, mask)
+    torch.testing.assert_close(out, x, rtol=0, atol=0)
+
+def test_ttfa_uses_timestamp_not_rank():
+    module.gate.data.fill_(1.0)
+    out_uniform = module(x, uniform_positions, lengths, mask)
+    out_burst = module(x, burst_positions, lengths, mask)
+    assert not torch.allclose(out_uniform, out_burst)
+
+def test_ttfa_equal_spacing_is_backend_stable():
+    # fixed timestamps, train/eval, both backends
+    ...
+```
+
+## 11.3 Physical-coordinate head utility
+
+[PROPOSAL] 从 `AnchorFreeHead._selected_axis_to_physical_axis` 抽到：
+
+```text
+opentad/models/utils/physical_time_pyramid.py
+```
+
+统一返回每一层：
+
+```python
+PhysicalLevel(
+    centers_dense: Tensor[B,T_l],
+    strides_dense: Tensor[B,T_l],
+    regression_ranges_dense: Tensor[B,T_l,2],
+    mask: Tensor[B,T_l],
+)
+```
+
+ActionFormer 和 TemporalMaxer均消费同一对象。训练 GT 保持 dense axis；预测已经是 dense axis，不再做 selected→true inverse。
+
+## 11.4 Sparse legal-swap ranking
+
+```python
+def legal_swap_ranking_loss(
+    predicted_gain: torch.Tensor,
+    observed_gain: torch.Tensor,
+    valid: torch.Tensor,
+    *,
+    temperature: float = 0.25,
+    gain_scale: float = 0.05,
+) -> torch.Tensor:
+    target = observed_gain.detach()
+    sign = torch.sign(target)
+    weight = (target.abs() / gain_scale).clamp(max=1.0)
+    per_swap = weight * torch.nn.functional.softplus(
+        -sign * predicted_gain / temperature
+    )
+    active = valid & (target.abs() > 1e-8)
+    if not active.any():
+        return predicted_gain.sum() * 0.0
+    return per_swap[active].mean()
+```
+
+## 11.5 必增模型级测试
+
+1. [PROPOSAL] `test_duca_true_time_adapter_identity.py`
+2. [PROPOSAL] `test_duca_true_time_irregular_sensitivity.py`
+3. [PROPOSAL] `test_duca_physical_head_dense_gt.py`
+4. [PROPOSAL] `test_duca_temporalmaxer_physical_grid.py`
+5. [PROPOSAL] `test_duca_mandatory_completion_exhaustive.py`
+6. [PROPOSAL] `test_duca_group_overlap_quota.py`
+7. [PROPOSAL] `test_duca_cost_all_budgets.py`
+8. [PROPOSAL] `test_duca_budget_curve_source_equivalence.py`
+9. [PROPOSAL] production hard-swap sign/Spearman gate
+10. [PROPOSAL] uniform timestamps下 current axis 与 TTDI numerical identity gate
+
+---
+
+# 12. `BOUNDED_EXPERIMENT_PLAN`
+
+## 当前 60-cell 结果出来前
+
+[PROPOSAL] 不取消、不重复提交、不修改当前 mAP jobs。它们回答的是：
+
+> 当前 selected-rank R2Q3 是否能在不同 K 和后端上超过 exact-uniform？
+
+立即只修：
+
+* 新 K cost parser；
+* aggregate source-equivalence；
+* mandatory completion unit test与日志。
+
+这些修复不改变已运行的 official mAP cell。
+
+## 结果到达后的固定决策顺序
+
+### Step 1：只读 matched official 主结果
+
+[PROPOSAL] 对 terminal epoch-59 EMA 报告：
+
+```text
+backend × K × arm × seed
+Avg-mAP
+mAP@0.3/0.4/0.5/0.6/0.7
+three-seed mean/std
+learned - matched uniform
+```
+
+禁止使用中间 epoch、最佳 val checkpoint或 R0替代。
+
+### Step 2：同一 cell 定位机制
+
+[PROPOSAL] 同时报告：
+
+* actionness AP/AUC；
+* signed transition-center error；
+* boundary recall@0/1/2；
+* bilateral coverage；
+* per-boundary quota；
+* mandatory accepted/rejected groups；
+* max-hole；
+* selected-gap mean/std/max；
+* selected-position entropy；
+* Jaccard with uniform；
+* action interior coverage；
+* pre/post background coverage。
+
+### Step 3：只允许一个结构修正
+
+[PROPOSAL] 只做 K384／ActionFormer／seed3407：
+
+```text
+U = matched exact-uniform
+L = current learned R2Q3
+T = learned R2Q3 + TTDI
+```
+
+当前 U/L 的 terminal artifacts在协议完全一致时复用，只训练 T。
+
+### Step 4：扩展门
+
+[PROPOSAL] 仅当：
+
+```text
+T Avg-mAP > U
+T mAP@0.6 >= U
+T mAP@0.7 >= U - 0.2
+```
+
+才扩展到：
+
+1. K384 三种子；
+2. K256、K128 三种子；
+3. TemporalMaxer；
+4. 真实 full-stack cost。
+
+### Step 5：第二结构变量禁止提前进入
+
+[PROPOSAL] group-aware allocator、shared K policy、R4Q5、patch-token timestamp injection、PCGrad均不得与 TTDI 同时引入。
+
+## P0／P1／P2 分类
+
+### 立即 P0
+
+* [PROPOSAL] 修 cost parser；
+* [PROPOSAL] 加 mandatory completeability；
+* [PROPOSAL] 加 source-equivalence receipt；
+* [PROPOSAL] 不使当前 mAP jobs 失效。
+
+### 结果后 P1
+
+* [PROPOSAL] 唯一主修正 TTDI；
+* [PROPOSAL] 仅在 hard-swap gate通过时启用 sparse swap feedback。
+
+### 主结果通过后 P2
+
+* [PROPOSAL] R2Q3 vs R4Q5；
+* [PROPOSAL] current bridge vs sparse swap；
+* [PROPOSAL] shared K-conditioned selector；
+* [PROPOSAL] feature-level TTDI vs patch-token timestamp injection；
+* [PROPOSAL] context reserve消融；
+* [PROPOSAL] complete cost breakdown。
+
+### 不再投入的历史路线
+
+[PROPOSAL]
+
+```text
+direct actionness selection
+local-cell deformation
+CellCF
+单纯 homotopy 权重搜索
+actionness top-k
+dynamic MUST
+X3D/SlowFast 替换
+增加更多训练阶段
+```
+
+## 核心 KILL 条件
+
+1. [PROPOSAL] 多个 K、两个后端、三种子均不能稳定超过 matched uniform。
+2. [PROPOSAL] TTDI 后 selection quality更好但 official mAP仍不优。
+3. [PROPOSAL] learned只在单一 seed或单一 tIoU上获益。
+4. [PROPOSAL] 前端、DP、materialization和transfer成本吞没 heavy-backbone节省。
+5. [PROPOSAL] hard-swap utility与 surrogate无正相关。
+6. [PROPOSAL] 只有 detector-seen training-internal R0获益，full validation无获益。
+
+---
+
+# 13. `PUBLISHABILITY_AND_CLAIMS`
+
+## 13.1 当前可写与不可写
+
+### 可写
+
+[CODE_FACT]
+
+* 离线 full-window pre-backbone sampling；
+* dense low-resolution evidence；
+* indirect state-transition descriptor；
+* bilateral boundary-burst；
+* exact-K/max-hole DP；
+* original-time RGB gather；
+* post-decode heavy-backbone processed-frame reduction；
+* ActionFormer和TemporalMaxer上的matched protocol设计；
+* current experiments仍在运行。
+
+### 当前不可写
+
+[CODE_FACT]/[UNKNOWN]
+
+* “learned sampling提高了official mAP”；
+* “paper ready”；
+* “K-only decode”或视频I/O下降；
+* “protected gradient等价于离散换帧梯度”；
+* “R0 93–94是正式mAP或Oracle上界”；
+* “完整 detector源码与官方完全相同”；
+* “TemporalMaxer已有paired dense cost saving”；
+* “五点成本曲线已完成”。
+
+## 13.2 最可防守的 novelty
+
+[INFERENCE] 单独任何组件都不够强：
+
+* state transition sampling：直觉自然；
+* bilateral burst：类似边界启发式；
+* exact-K/max-hole：结构化约束本身不新；
+* protected feedback：当前还是有偏 surrogate。
+
+[PROPOSAL] 最能防守的是组合：
+
+> **Binary actionness辅助的状态转变证据 → Oracle-calibrated bilateral boundary micro-bursts → exact-K/global-coverage decoding → true-time-aware detector interface → matched official TAD utility。**
+
+其中 TTDI不是装饰，而是使“不规则采样”与现有 VideoMAE/TAD detector兼容的必要接口。
+
+## 13.3 审稿人最可能攻击的五点
+
+| 攻击                             | 必须回答的证据                                                             |
+| ------------------------------ | ------------------------------------------------------------------- |
+| 1. 为什么不如 uniform，是否只是复杂启发式？    | 五K、两后端、三种子 matched表；TTDI消融。                                         |
+| 2. 非均匀采样破坏 VideoMAE 时间语义       | selected-rank vs TTDI vs physical-head表；gap-stratified mAP。         |
+| 3. proxy／R0 与最终 mAP 无关         | official tri-arm；proxy-vs-mAP相关图；R0只进附录。                            |
+| 4. 所谓效率遗漏 decode/H2D/front-end | 同会话 full-stack stage ledger和峰值显存。                                   |
+| 5. detector-aware是否只是有偏梯度      | legal hard-swap sign/Spearman；bridge vs no-feedback vs sparse-swap。 |
+
+## 13.4 三种结果场景
+
+### 只与 uniform 持平但成本更高
+
+[PROPOSAL] **KILL。**
+不能以机制新颖或选帧图好看继续主张高效智能采样。
+
+### 只在 K128/K192 优于 uniform
+
+[PROPOSAL] 论文主张必须收缩为：
+
+> severe-budget offline TAD 下的 boundary-aware allocation。
+
+不得声称全预算优于 uniform；K256/320/384是负面或中性结果，必须公开。
+
+### K384 超过 65 但仍低于 dense 68.29
+
+[INFERENCE] 仍可能有发表价值，但必须同时满足：
+
+* matched uniform显著更低；
+* 三种子稳定；
+  -高 tIoU不退化；
+* end-to-end latency或energy形成Pareto优势；
+* dense仅作为精度上限，不宣称取代dense。
+
+如果只减少 heavy frames但总成本不降，最多是采样机理论文，不能以高效TAD为主标题。
+
+---
+
+# 14. `TOP_10_ACTIONS`
+
+1. **[EXPERIMENT_FACT] 等待并完整读取当前60-cell terminal epoch-59 EMA结果；不取消、不重复提交。**
+2. **[PROPOSAL] 首先判定“hard selection quality是否提高但mAP不提高”；这是是否进入TTDI的最高信息增益分叉。**
+3. **[PROPOSAL] 修复K320/K192/K128成本parser；否则五点成本结论必然残缺。**
+4. **[PROPOSAL] 为mandatory groups增加exact-K/max-hole completeability检查和whole-group rejection日志。**
+5. **[PROPOSAL] 为旧/新aggregate增加model-contract source-equivalence receipt。**
+6. **[PROPOSAL] 只做K384／ActionFormer／seed3407的U-L-TTDI三臂决定性实验。**
+7. **[PROPOSAL] 在production batch上执行真实legal hard-swap alignment；不过门则关闭detector feedback。**
+8. **[PROPOSAL] TTDI超过matched uniform后，才扩展K384三种子和K256/K128。**
+9. **[PROPOSAL] 第一后端通过后，才迁移同一个TTDI接口到TemporalMaxer，禁止写另一套selector。**
+10. **[PROPOSAL] 最后才做full-stack同会话成本、R4Q5、共享K policy和论文消融。**
+
+### 最终三问终裁
+
+**1. 当前 `a00498e` 是否已经是完整、可迁移、真正 detector-aware 的插件？**
+[CODE_FACT]/[INFERENCE] **否。** 它已经是正确的离线 pre-backbone hard-RGB sampler，并具有真实 detector loss 可达的 surrogate；但时间轴接口仍把不规则采样伪装成等间隔，detector awareness也尚未证明与离散utility或mAP同向。
+
+**2. 当前最可能的首要瓶颈是什么？**
+[INFERENCE] **selected-axis时间语义表示。** 其次是mandatory group与hard DP的不连续对齐，再其次是protected bridge的梯度估计偏差。
+
+**3. 下一版只改一处，究竟改什么？**
+[PROPOSAL] **改 detector 的时间接口：加入零初始化TTDI真实时间特征编码，并让head在dense physical time上做assignment和regression。** 保留official ASFormer、R2Q3和exact-K/max-hole；不要先换coarse模型、扩大burst、堆loss或增加训练阶段。

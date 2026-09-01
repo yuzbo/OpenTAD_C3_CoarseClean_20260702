@@ -1,0 +1,17 @@
+name: duca_mstcn2_official_9d31fb3
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.8
+  - numpy=1.23.5
+  - pytorch=1.13.1
+  - pytorch-cuda=11.7
+  - loguru
+
+# Reproduction note:
+# The MS-TCN++ repository specifies only "Python3, pytorch" and does not publish
+# an exact package lock. This environment is therefore a declared compatibility
+# environment for official revision 9d31fb3c23467b9ce3030d43b6d33a96869b6422,
+# not a claim that it reconstructs the authors' unpublished original environment.

@@ -1,0 +1,17 @@
+{
+  "artifact_id": "art-20260811T045704Z-2d13c25e41",
+  "config_id": null,
+  "created_at": "2026-08-11T04:57:04Z",
+  "created_by_role": "pro",
+  "data_split_id": null,
+  "file_count": 1,
+  "git_revision": "63a726a4aaf48ecbf6780bb196de43a890c6b4df",
+  "kind": "pro-scientific-decision",
+  "parent_ids": [
+    "msg-20260810T185405Z-ad987978f297"
+  ],
+  "path": ".cvpr-pro-lab/project-files/prepared/PRO_INITIAL_REVIEW-v002.md",
+  "schema_version": "1.0",
+  "size": 70382,
+  "status": "sealed"
+}

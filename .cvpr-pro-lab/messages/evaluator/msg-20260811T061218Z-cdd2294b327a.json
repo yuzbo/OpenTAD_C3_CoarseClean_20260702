@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-11T06:12:18Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "p0p1-protocol-amendment",
+  "message_id": "msg-20260811T061218Z-cdd2294b327a",
+  "parent_artifact_ids": [
+    "PRO_P0_BLOCKER_DECISION-v001"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/roles/evaluator/EVALUATOR_DUCA_P0P1_AMENDMENT-v001.md",
+    "size": 993
+  },
+  "priority": "high",
+  "requested_action": "Prepare only the bounded no-execution P0/P1 protocol amendment described in the payload. Keep PRE_RUN blocked and return a durable receipt; do not execute or authorize commands.",
+  "required_gate": "P0_PROTOCOL_NO_EXECUTION",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

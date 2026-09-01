@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-24T05:20:23Z",
+  "deadline": "2026-08-24T23:59:00+08:00",
+  "from_role": "builder",
+  "kind": "SINGLECLOCK_IDENTITY_FOCUSED_RECHECK",
+  "message_id": "msg-20260824T052023Z-d890b7413371",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-returns/BUILDER_DUCA_H65_SINGLECLOCK_IDENTITY_FAIL_CLOSED_FIX-v001.md",
+    "size": 1210
+  },
+  "priority": "critical",
+  "requested_action": "Recheck exact clean 27e593a after the sole fail-closed accounting correction. Verify all required accounting fields are explicit, typed and internally consistent; duplicate rows are deterministic; ON/gate-zero comparison cannot accept omitted or malformed accounting; existing record identity comparison and physical sample ID remain sound; no model/data/evaluator/threshold drift. Inspect tests including whether sample_count/records consistency is adequately fail-closed. Return PASS to Evaluator or terminal BLOCKED with exact deterministic defect. Do not edit.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

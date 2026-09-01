@@ -1,0 +1,467 @@
+我审阅的是你上传的 6 页 PDF 草稿《DUCA-TAD: Dynamic Utility-Calibrated Acquisition for Temporal Action Detection》。源文件：
+我不会把“实验结果尚未填入”作为拒稿理由；下面只审 Title、Abstract、Introduction、Related Work、Problem Formulation、Method、Figure 1 和实验设计骨架。
+
+## 1. Overall Verdict on Completed Sections
+
+**等级：Needs major rewrite.**
+
+当前前半部分**不是 CVPR submission-ready**。它比普通 proposal 更接近论文雏形，因为任务领域、部署约束、稀疏 ledger、original-time decoding 这些核心概念已经出现；但它仍然明显像“系统路线说明 + 实验计划”，还不像一篇可信的 CVPR 方法论文。Abstract 直接写 “Experiments will evaluate ...”，Method 大量使用 “can / may / optionally / current implementation family”，Related Work 只有少量代表性 TAD 引用，关键术语如 **utility-calibrated / value-transport / TrueTime / detector utility / risk / redundancy** 没有被严格定义为可复现算法对象。稿件目前把很多尚未锁死或尚未验证的路线同时写进论文，导致 reviewer 会怀疑：这到底是一个具体方法，还是一个研究框架清单。
+
+最严重的问题不是缺结果，而是**方法主张和实现合同没有收敛**。你声称 DUCA-TAD 是 dynamic、utility-calibrated、detector-aware、TrueTime、value-transport、deployable，但目前每个词都只有方向性描述，没有足够的数学定义、训练目标、推理算法、接口约束和不可变实验协议来防止 reviewer 把它看成“actionness top-k + gap repair + metadata bookkeeping”的包装。Problem Formulation 和 Method 已经列出 selector、动态预算、ledger、TrueTime grid 等对象，但公式和算法仍是占位型，尚不足以支撑 CVPR 方法章节的可复现性。
+
+我的判断：**概念方向可以保留，但必须大改叙事和方法收敛方式；不能直接给外部 reviewer。**
+
+---
+
+## 2. Top 10 Critical Issues
+
+### 1. Severity: Critical
+
+**Location:** Abstract, last sentence.
+**Problem:** “Experiments will evaluate whether ...” 是典型 proposal 语气，不是论文语气。它承认核心主张尚未被验证，而且 abstract 前面已经使用了 “learns”, “utility-calibrated”, “preserves” 等偏完成式 claim。
+**Why it hurts CVPR review:** Reviewer 会立即把稿件定位成未完成研究，而不是未填结果的完整论文草稿。即使你要求不因实验空缺拒稿，正式 CVPR 写作中这句话也会严重伤害可信度。
+**Concrete fix:** 改成方法性摘要，不用未来时。结果未完成时可以写成“we evaluate using a protocol that ...”，最终版必须替换成真实数字。当前可改为：
+“DUCA-TAD is evaluated under fixed- and dynamic-budget acquisition protocols that report high-tIoU mAP, selected-frame compute, browser overhead, and leakage diagnostics.”
+
+---
+
+### 2. Severity: Critical
+
+**Location:** Method 4.2–4.4.
+**Problem:** 方法没有收敛到一个唯一实现。文本同时允许 low-resolution pixels、compressed descriptors、motion deltas、coarse actionness probe；utility target 又可以是 coverage、boundary proximity、detector responsibility、classification loss、regression loss、counterfactual utility；dynamic budget 可以是 bucket、threshold 或 constrained count。
+**Why it hurts CVPR review:** Reviewer 无法判断你到底实现了什么，也无法复现。CVPR 方法可以有 variants，但主方法必须是一个明确算法，variants 应放到 ablation，而不是 Method 主体里用 “can / may” 描述。
+**Concrete fix:** 固定主线。例如：
+“Primary DUCA uses a low-cost p-action TCN browser with inputs ([p, \Delta p, |\Delta p|, H(p), u(p), t/T, m]), predicts value (g_t), boundary (b_t), redundancy (r_t), and budget bucket (K), and decodes (S) by gap-constrained top-K. Other descriptor sources are ablations.”
+把 “can add / may combine / optionally” 全部降级为 appendix 或 ablation。
+
+---
+
+### 3. Severity: Critical
+
+**Location:** Method 4.5–4.6 and Figure 1.
+**Problem:** “TrueTime interface” 与 “unchanged detector” 存在逻辑冲突。4.5 写 TrueTime grid 被 assignment、feature downsampling、area-time heads、decoding、NMS 使用；4.6 又写 AdaTAD instantiation leaves VideoMAE adapter, projection, and ActionFormer-style head unchanged，Figure 1 也写 “unchanged detector”。
+**Why it hurts CVPR review:** 这是方法正确性红线。如果 detector 真不读 irregular metadata，那 TrueTime 只是记录而不是方法；如果 assignment/decode/NMS 读 metadata，那 detector/head/postprocess 就不是 unchanged。这个矛盾会让 reviewer 怀疑实验协议和代码合同。
+**Concrete fix:** 二选一，不能两边都要：
+
+* 若使用原生 TrueTime head：写成 “we keep the detector architecture but replace temporal coordinate operators with ledger-aware original-time assignment, decoding, and NMS.”
+* 若使用 unchanged dense head：不要声称 TrueTime assignment；写成 “selected-axis training with final dense-time remapping”，并把 TrueTime 作为 future/variant。
+  建议用前者，但必须给出 decode 公式、NMS 坐标轴和 assignment target 的具体定义。
+
+---
+
+### 4. Severity: Critical
+
+**Location:** Problem Formulation Eq. 2 and Method 4.4.
+**Problem:** “value-transport” 没有被定义为 transport。Eq. 2 中 (m_t) 被称为 transport mass，但没有 source slots、target frames、cost matrix、mass conservation、transport plan 或 optimization；Method 实际写的是 score ranking + gap constraints。
+**Why it hurts CVPR review:** “Value-transport” 听起来像 optimal transport 或 structured allocation，但正文只实现 constrained top-K。术语过强会被认为是营销。
+**Concrete fix:** 如果你没有真正的 transport problem，把名字改成 **constrained utility ledger decoding**。如果保留 value-transport，必须定义：
+[
+P^*=\arg\min_{P\in\Pi(a,b)} \sum_{u,t} P_{u,t} C(u,t)-\alpha P_{u,t} q_t
+]
+其中 (u) 是 budget slot，(t) 是 dense time，(\Pi) 是单调/覆盖约束；然后 (m_t=\sum_u P^*_{u,t})。否则 (m_t) 不应出现在主公式里。
+
+---
+
+### 5. Severity: Critical
+
+**Location:** Method 4.3.
+**Problem:** “detector utility” 是整篇论文最核心的 claim，但目前只是列举可能来源：classification loss、regression loss、responsibility、counterfactual frame utility 等。没有说明 utility target (y_t) 如何计算、是否需要 dense teacher、是否离线、是否 per-frame、是否对 train/val split 安全。
+**Why it hurts CVPR review:** 如果 detector utility 不清楚，DUCA-TAD 就退化成 actionness / boundary heuristic。Reviewer 会问：utility-calibrated 到底 calibration 了什么？与 detector loss 的关系在哪里？
+**Concrete fix:** 在 Method 中加入一个严格小节：
+“Training-time utility target construction.”
+至少定义一种主 target，例如：
+[
+y_t = \max_j \exp(-d(t,\partial b_j)/\sigma_b) + \gamma \cdot \mathrm{resp}*t^{cls/reg}
+]
+或
+[
+y_t = \Delta \mathcal{L}*{det}(V\setminus t)-\mathcal{L}_{det}(V)
+]
+如果 counterfactual 太贵，就不要写成主方法。并明确：utility targets are computed only on training videos by a frozen dense teacher and are never computed for validation/test ledgers.
+
+---
+
+### 6. Severity: Major
+
+**Location:** Introduction contribution list.
+**Problem:** Contribution 1–4 目前像“框架组件清单”，不是可验证贡献。尤其 “we specify an evaluation protocol” 作为第四贡献偏弱，容易被 reviewer 认为主要贡献是工程审计而非方法。
+**Why it hurts CVPR review:** CVPR 贡献需要回答“新算法是什么、为什么新、验证什么”。当前贡献没有突出核心技术差异：TAD-specific utility、boundary-sensitive acquisition、original-time sparse detection。
+**Concrete fix:** 重写贡献为三条：
+
+1. Problem: deployable sparse acquisition for TAD under original-time localization.
+2. Method: utility-supervised low-cost browser + constrained ledger decoder.
+3. Detector interface/evaluation: original-time sparse-grid detector integration and leakage-safe protocol.
+   不要把 “evaluation protocol” 单独当主贡献，除非你的论文是 benchmark/protocol paper。
+
+---
+
+### 7. Severity: Major
+
+**Location:** Related Work.
+**Problem:** Related Work 太薄，且过于服务自身叙事。当前主要覆盖 BMN、G-TAD、ActionFormer、TriDet、VideoMAE、AdaTAD，只引用 6 篇文献。对于 2026 CVPR 草稿，这是远远不够的。
+**Why it hurts CVPR review:** Reviewer 会认为你没有定位到最近的 efficient TAD、adaptive video computation、long-video frame selection、model compression / token pruning、OpenTAD benchmarking 语境。OpenTAD 本身已经强调 TAD 需要统一框架和公平比较，并整合了 16 种 TAD 方法与 9 个数据集；这与你的“同 detector 配置下公平比较 acquisition policy”直接相关。([arXiv][1])
+**Concrete fix:** Related Work 至少扩成五类：
+TAD detectors；end-to-end/large-backbone TAD；efficient TAD/model compression；adaptive frame/keyframe selection for video understanding；sparse/irregular temporal geometry and evaluation leakage. 同时明确最近 long-video frame selection 方法多面向 QA/reasoning/classification，通常不需要维护 TAD 的 metric temporal coordinate system；例如 FFS/AKS 等工作强调减少输入帧或选择关键信息帧，但输出不是 temporal segment regression。([CVF开放获取][2])
+
+---
+
+### 8. Severity: Major
+
+**Location:** Experiments skeleton 5.1–5.4.
+**Problem:** 实验框架方向正确，但 baseline list 不足，5.2 基本为空，compute 只说 selected frame count、FLOPs、memory、latency，没有强制包括 browser cost、ledger generation cost、retraining cost、per-window dynamic-K distribution。
+**Why it hurts CVPR review:** 动态 acquisition 很容易靠“平均多看帧”或“离线额外算力”取得伪提升。没有 matched-average-K、matched-latency、same-detector-training、multi-seed random、stratified random、oracle upper bound，未来结果即使好也不容易被信任。
+**Concrete fix:** Baselines 必须包括：dense AdaTAD；exact uniform fixed K；random fixed K with 5 seeds；stratified/coverage random；actionness top-K；delta-actionness top-K；boundary proxy top-K；uniform + same gap constraints；DUCA fixed K；DUCA dynamic K；dynamic matched-average-K fixed control；selected-rank decode ablation；oracle boundary upper bound only as ceiling, not fair baseline。Compute 表必须报告 total inference cost = browser + gather + backbone + detector + NMS。
+
+---
+
+### 9. Severity: Major
+
+**Location:** Introduction and Method 4.7.
+**Problem:** “Why actionness alone is insufficient” 目前是直觉描述，没有变成论文级论证。你写 high actionness 可能集中在 long action interior，low actionness near transition 可能对 boundary regression valuable；但没有形式化或图示证据。
+**Why it hurts CVPR review:** 这是区分 DUCA-TAD 与普通 actionness top-K 的关键。如果只停留在直觉，novelty 会被打穿。
+**Concrete fix:** 在 Introduction 加一个明确 failure mode：
+“Actionness ranks semantic confidence; TAD utility is boundary-sensitive and non-monotonic in actionness.”
+Figure 1 或 Figure 2 加一条 timeline：uniform、actionness top-K、DUCA 的 selected positions 对比，标出 action interior、boundary、short action、uncertainty peak。实验 skeleton 加 “actionness-interior redundancy diagnostic” 和 “boundary support vs mAP@0.7 correlation”。
+
+---
+
+### 10. Severity: Major
+
+**Location:** Problem Formulation 3.2 and Experiments 5.4.
+**Problem:** 动态预算 (K=B_\eta(\cdot)) 只被描述为 per-window budget，没有定义目标约束。你说 dynamic budget must be auditable，但没有定义 global budget、expected budget、latency bound、max K、min K、short-window behavior、matched controls。
+**Why it hurts CVPR review:** “Dynamic” 很容易被认为是不公平使用更多帧。Reviewer 会要求证明提升来自更好分配，而不是更多计算。
+**Concrete fix:** 在 Problem Formulation 加：
+[
+\max_{\theta,\eta} \mathrm{mAP}*{0.3:0.7}(D(A*{\theta,\eta}(V)))
+\quad \text{s.t.}\quad
+\mathbb{E}[K]\le \bar K,; K\in[K_{\min},K_{\max}],; C_{total}\le C_0.
+]
+实验必须有 “DUCA dynamic vs DUCA fixed at same mean K” 和 “DUCA dynamic vs uniform fixed at same total latency”。
+
+---
+
+## 3. Claim Calibration Audit
+
+| Original wording                                                                                              | Risk                                                          | Safer CVPR-style wording                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| “learns which temporal observations should be delivered to a TAD detector”                                    | “should” 暗示已学到真实 detector-optimal utility。                    | “predicts deployable acquisition scores for selecting detector inputs under a fixed or dynamic budget.”                                                                    |
+| “dynamic utility-calibrated acquisition framework”                                                            | “calibrated” 未定义 calibration metric；“dynamic” 未证明公平。          | “a utility-supervised sparse acquisition framework with fixed- and budget-predicted variants.”                                                                             |
+| “estimate actionness, boundary, uncertainty, risk, and redundancy signals”                                    | risk/redundancy 未定义，像术语堆叠。                                    | “predicts actionness-derived value, temporal-change, boundary-proximity, uncertainty, and redundancy-proxy scores.”                                                        |
+| “value-transport module”                                                                                      | 没有 transport optimization，会被认为过度命名。                           | “a constrained utility decoder” 或正式定义 transport plan 后保留。                                                                                                                  |
+| “TrueTime interface that preserves the original dense temporal coordinates for assignment, decoding, and NMS” | 如果 detector/head 不实际读 metadata，这是错误 claim。                    | “passes original dense coordinates to ledger-aware assignment and decoding modules.”                                                                                       |
+| “otherwise standard TAD detector” / “unchanged detector”                                                      | 与 TrueTime grid 修改 assignment/decode/NMS 冲突。                  | “keeps the detector backbone/head architecture but replaces temporal-coordinate handling with ledger-aware operators.”                                                     |
+| “removes redundant observations while preserving the time geometry”                                           | “removes” 是结果 claim。                                          | “is designed to reduce redundant observations while retaining original-time metadata.”                                                                                     |
+| “detector-agnostic at the interface level”                                                                    | 只展示 AdaTAD/ActionFormer-style，未证明广泛 detector-agnostic。        | “implemented for AdaTAD/ActionFormer-style anchor-free detectors; the ledger abstraction can be extended to other TAD heads.”                                              |
+| “train-only detector utility can supervise the browser”                                                       | “can” 太弱，也没有说明 teacher/loss安全边界。                              | “During acquisition training on the training split, frozen-detector utility targets supervise the browser; these targets are not serialized into validation/test ledgers.” |
+| “The experimental section is structured so that results can be inserted without changing the method claims.”  | 这句话像内部计划，不应出现在论文正文。                                           | 删除。若保留 draft note，放作者备忘，不放 submission PDF。                                                                                                                                 |
+| “Actionness alone is insufficient”                                                                            | 直觉成立但正文未提供证明。                                                 | “We hypothesize and evaluate that actionness-only selection over-samples action interiors and under-supports boundaries.”                                                  |
+| “no-leakage validation as first-class metrics”                                                                | “metric” 不准确；no-leakage 是 protocol/audit，不是 detection metric。 | “leakage audits are reported alongside detection and compute metrics.”                                                                                                     |
+
+---
+
+## 4. Section-by-Section Review
+
+### Title
+
+**是否达到 CVPR 标准：** 不完全达到。
+当前标题清楚指向 TAD，但 “Dynamic Utility-Calibrated Acquisition” 三个抽象词叠在一起，信息密度高却不够可解释。最大风险是：如果动态预算或 detector utility 最终结果不强，标题会过度承诺。
+
+**最大逻辑问题：** “Utility-Calibrated” 不是常规术语，正文没有定义 calibration。
+**最大写作问题：** 标题像项目名，缺少具体方法锚点。
+**需要怎么改：** 标题应突出“deployable sparse acquisition / true-time localization / detector-utility-guided”中的一个核心卖点，不要同时塞满所有概念。
+
+---
+
+### Abstract
+
+**是否达到 CVPR 标准：** 不达标，需要重写。
+Abstract 结构完整，但像方法计划。它没有给出结果，也没有给出最小可复现主方法。最坏句子是 “Experiments will evaluate whether ...”。
+
+**最大逻辑问题：** claim 过多：dynamic、utility-calibrated、low-cost browser、value-transport、TrueTime、no-leakage 全部出现在摘要，但没有说明哪一个是核心技术贡献。
+**最大写作问题：** future tense 和术语堆叠。
+**需要怎么改：** Abstract 只保留三层：问题、方法、协议/结果。术语最多保留两个：**utility-guided acquisition** 和 **original-time sparse grid**。其余放正文。
+
+---
+
+### Introduction
+
+**是否达到 CVPR 标准：** 接近但未达标。
+前两段的任务动机是合理的：TAD 同时需要 recognition evidence 和 boundary evidence；uniform sampling 不 task-aware；TAD 不同于 classification because predictions must remain in original temporal coordinates。这个逻辑是稿件目前最好的部分。
+
+**最大逻辑问题：** 你提出“detector-specific question”，但没有立即给出 detector utility 的可操作定义。读者会问：这个 detector-specific signal 是从哪里来的？
+**最大写作问题：** 第四、第五段开始堆术语，贡献列表像系统设计文档。
+**需要怎么改：** Introduction 应该用一个更尖锐的 thesis 组织全文：
+“Efficient TAD is not frame sampling; it is budgeted acquisition under boundary-sensitive utility and original-time coordinate preservation.”
+然后用三条约束展开：deploy-visible selection、boundary-sensitive detector utility、true-time decoding。
+
+---
+
+### Related Work
+
+**是否达到 CVPR 标准：** 不达标。
+当前 Related Work 是一个基础 TAD 背景段落，而不是 CVPR 级定位。只覆盖少数 detector 和 backbone 引用，缺少最近 efficient TAD、adaptive frame selection、video token/frame selection、model compression、benchmark standardization。
+
+**最大逻辑问题：** 没有明确最近邻方法。Reviewer 会问：DUCA-TAD 与 efficient TAD compression、adaptive video sampling、long-video keyframe selection、token pruning 的差异是什么？
+**最大写作问题：** 每段结尾都在说 “DUCA-TAD is complementary / differs because ...”，但没有具体对照表或明确 failure mode。
+**需要怎么改：** 至少加入：
+
+* Efficient TAD / model compression：例如 recent TAD compression work frames compute as a deployment bottleneck and reduces model depth rather than pre-backbone observations；Progressive Block Drop reports that feature extraction dominates computation and targets lossless compression via block removal.
+* OpenTAD / fair evaluation：OpenTAD argues that inconsistent settings hinder fair TAD comparison and consolidates many methods/datasets, which supports your need for same-detector acquisition comparison.([arXiv][1])
+* Adaptive frame selection for long-video understanding：FFS/AKS/RL frame selection target QA/reasoning or VLM input budgets, not temporal segment boundary regression.([CVF开放获取][3])
+  然后明确：DUCA-TAD 的独特约束是 **TAD detector utility + high-tIoU boundary + original-time geometry + no-leakage ledger**。
+
+---
+
+### Problem Formulation
+
+**是否达到 CVPR 标准：** 部分达到。
+3.1 的 sparse acquisition definition 是有用的；3.3 的 ledger constraint 是本文最有论文价值的部分之一。
+
+**最大逻辑问题：** Eq. 2 和 Eq. 4 过于任意。(u_t, r_t, \rho_t, m_t, b_t) 没有可测定义，权重也没有来源。
+**最大写作问题：** 公式看似正式，但其实没有增加可复现性。
+**需要怎么改：** 将 formulation 改成 optimization contract：
+
+* input/output：dense window (V), selected set (S), original coordinates (\tau_S)；
+* objective：maximize detector mAP proxy / minimize detector loss under compute budget；
+* constraints：deploy-visible, no teacher/test prediction, original-time decode；
+* then define (q_t) as learned score, not手工线性组合。
+  如果保留线性组合，所有 term 必须在 Method 中逐一定义。
+
+---
+
+### Method
+
+**是否达到 CVPR 标准：** 不达标，是当前最大短板。
+方法结构有四个组件：low-cost browser、utility calibration、dynamic ledger decoding、TrueTime detector integration。这个结构合理，但每个组件都写得太泛。
+
+**最大逻辑问题：** 主方法没有唯一 implementation path。尤其 TrueTime 与 unchanged detector 冲突，utility target 未定义，value-transport 未定义。
+**最大写作问题：** “can / may / optionally / current implementation family / richer browser can add” 使 Method 像 design space，不像 method。
+**需要怎么改：** Method 应重排为：
+
+1. Browser input and architecture。
+2. Training utility target construction。
+3. Acquisition loss。
+4. Deterministic ledger decoding algorithm。
+5. Original-time sparse detector interface。
+6. Training/evaluation protocol and leakage guard。
+   每节给一个不可变默认版本；variants 全放 ablation。
+
+---
+
+### Figure 1 / architecture diagram
+
+**是否达到 CVPR 标准：** 目前是合格的内部路线图，不是强 CVPR 主图。
+图中有 browser、deploy-visible heads、dynamic budget、value-transport、ledger、TrueTime grid、detector、train-only utility，信息完整；但太小、太线性、文字太密，而且没有展示 sparse selection 对 boundary 的直观作用。
+
+**最大逻辑问题：** 图中写 “AdaTAD / ActionFormer unchanged detector”，但正文又说 TrueTime grid participates in assignment/downsampling/decode/NMS。
+**最大写作问题：** caption 基本复述 pipeline，没有解释训练和部署两条流的分离，也没有说明 selected rank is not time 为什么重要。
+**需要怎么改：** 改成两栏主图：
+
+* 左栏：时间轴示意，dense frames、action interval、boundary、uniform selection、actionness top-K、DUCA selection 对比。
+* 右栏：pipeline，solid arrows 表示 deployment，dashed grey arrows 表示 train-only utility。
+  在图上明确：ledger contains only selected dense indices at val/test；teacher/loss only supervises browser during training。
+
+---
+
+### Experiments skeleton
+
+**是否达到 CVPR 标准：** 框架方向正确，但不够完整。
+你已经把高 tIoU、compute、diagnostics、leakage audit 放进 skeleton，这是对的。
+
+**最大逻辑问题：** 5.2 Baselines 是空壳；没有明确 matched compute 和 same-training protocol。
+**最大写作问题：** “This draft leaves quantitative results open ...” 这类内部说明不应出现在最终论文正文。
+**需要怎么改：** 即使结果为空，也要把 baseline matrix 和 ablation matrix 写完整。每个 baseline 要说明：是否固定 K、是否动态 K、是否 retrain detector、是否 same backbone、是否 same postprocess、是否 included browser cost。
+
+---
+
+## 5. Language and Style Surgery
+
+下面是需要直接替换的句子或表达。
+
+1. **Original:** “Experiments will evaluate whether utility-calibrated sparse acquisition reduces redundant temporal computation...”
+   **Replace:** “We evaluate sparse acquisition under fixed- and dynamic-budget protocols that jointly report detection accuracy, high-tIoU localization, selected-frame compute, browser overhead, and leakage diagnostics.”
+
+2. **Original:** “learns which temporal observations should be delivered”
+   **Replace:** “predicts deployable acquisition scores for candidate temporal observations.”
+
+3. **Original:** “The core idea is to train a low-cost browser to estimate deployable acquisition value and then transport that value...”
+   **Replace:** “DUCA-TAD uses a low-cost temporal browser to score candidate observations and a constrained decoder to convert these scores into an auditable sparse ledger.”
+
+4. **Original:** “value-transport module”
+   **Replace:** “constrained utility decoder” unless you formally define transport.
+
+5. **Original:** “current implementation family”
+   **Replace:** “In our implementation” or delete variants.
+
+6. **Original:** “A richer browser can add start, end, boundary, risk, uncertainty, redundancy, and role heads.”
+   **Replace:** “The browser predicts value, boundary, uncertainty, and redundancy-proxy heads; ablations remove each head.”
+
+7. **Original:** “Their purpose is not to solve TAD, but to estimate which observations are worth delivering to the detector.”
+   **Replace:** “These heads are trained to predict detector-relevant acquisition value, not final action categories or segments.”
+
+8. **Original:** “DUCA-TAD uses train-only utility to teach the browser what matters for TAD.”
+   **Replace:** “During acquisition training, frozen-detector utility targets computed on the training split supervise the browser.”
+
+9. **Original:** “A practical training objective is...”
+   **Replace:** “We optimize the acquisition objective...”
+   If it is only one possible objective, it should not be in the main paper as the method.
+
+10. **Original:** “optionally repairs large holes using learned scores rather than uniform fill.”
+    **Replace:** “The decoder enforces a maximum-gap constraint by adding the highest-scoring candidate inside each violating interval.”
+
+11. **Original:** “The detector therefore sees a normal tensor length...”
+    **Replace:** “The detector receives a compact tensor, while all temporal operators consume the original dense coordinates stored in metadata.”
+
+12. **Original:** “detector-agnostic at the interface level”
+    **Replace:** “The ledger abstraction is independent of the acquisition policy; this paper instantiates it with AdaTAD/ActionFormer-style detectors.”
+
+13. **Original:** “easy to overlook”
+    **Replace:** “required for valid evaluation.”
+
+14. **Original:** “not simply top-K actionness selection”
+    **Replace:** “unlike actionness top-K, which ranks semantic confidence, DUCA-TAD estimates boundary-sensitive detector utility under a temporal coverage constraint.”
+
+15. **Original:** “This draft leaves quantitative results open...”
+    **Replace:** Delete from final paper. Keep only in author notes.
+
+---
+
+## 6. Novelty and Positioning Risk
+
+当前前半部分**还不足以让 reviewer 确信这不是普通 adaptive frame sampling**。它有潜力，但还没有把差异钉死。
+
+Reviewer 最可能的攻击是：
+
+“Isn’t this just a cheap actionness model selecting top-K frames before AdaTAD, with some bookkeeping to avoid leakage?”
+
+要反驳这个攻击，你必须在文本里强化四个不可替代点：
+
+1. **TAD-specific utility is not actionness.**
+   Actionness 表示“像不像动作”，但 TAD utility 还包括 boundary、short action、ranking suppression、duplicate avoidance。你现在写了这个观点，但没有 formal target 和 diagnostics。
+
+2. **TAD sparse acquisition must preserve metric temporal geometry.**
+   Classification/VideoQA frame selection可以把时间当集合；TAD 必须输出 start/end time。你已经写了这个差异，这是最强叙事点之一，但 Method 必须证明 detector 真的在 original-time axis 上 assignment/decode/NMS。
+
+3. **Deploy-visible selection is part of the method, not implementation hygiene.**
+   No GT/no teacher/no raw prediction/no cache ledger 是强点。它能区分你的方法和 oracle/teacher-guided evaluation leakage，但要写成 formal protocol + validator，而不是只写 flags。
+
+4. **Dynamic budget must be calibrated, not just variable K.**
+   如果动态 K 没有 global compute constraint 和 matched-average-K control，它不是创新，只是不公平多看。你已经意识到 dynamic budget can hide compute changes，但 skeleton 还没把控制实验写完整。
+
+与 ActionFormer/AdaTAD 的关系也必须更准确：
+你不是替代 ActionFormer/AdaTAD；你是在它们之前加入 deployable acquisition，并在 detector 端加入 original-time sparse coordinate interface。AdaTAD/OpenTAD 代表的是强 dense/end-to-end TAD stack，而你解决的是 expensive dense evidence delivery。OpenTAD 作为统一框架和公平比较背景也应被纳入 Related Work，而不是只作为隐含代码基座。([arXiv][1])
+
+与 adaptive video computation 的区别：
+最近 long-video frame selection work 通常解决 QA/reasoning/VLM token budget，目标是选出回答问题所需 key frames，而不是回归 action segment 边界。FFS 和 AKS 这类工作可以作为对比：它们证明 frame selection 是活跃方向，但也凸显你的 TAD 版本必须处理 temporal metric geometry。([CVF开放获取][2])
+
+---
+
+## 7. Figure Review
+
+**Figure 1 当前不像强 CVPR 主图。** 它像 pipeline slide，信息完整但不够有辨识度。
+
+具体问题：
+
+1. **文字过密。** 许多 box 里的文字在双栏缩放后不可读，例如 deploy-visible heads、utility calibration losses、no validation/test payload。
+2. **没有视觉解释“为什么 TAD 不是普通 sampling”。** 图没有展示 boundary support、short action、actionness interior redundancy。
+3. **训练流和部署流不够清楚。** Train-only detector utility 的箭头是虚线，但 caption 没有明确说明 train-only targets 不进入 validation/test ledger。
+4. **“unchanged detector” 会误导。** 如果 TrueTime grid 修改 assignment/decode/NMS，就不能写 unchanged detector。
+5. **caption 不够 self-contained。** Caption 说 TrueTime lets detector consume sparse observations，但没有解释 selected rank is not time 的具体风险。
+
+建议改图：
+
+* **Panel A: Failure mode timeline.**
+  展示 dense video window、GT action、start/end boundaries、uniform sampling、actionness top-K、DUCA selection。标注：actionness top-K oversamples interior; DUCA allocates boundary/uncertainty/gap support.
+
+* **Panel B: Method pipeline.**
+  Solid path: low-cost browser → utility scores → constrained ledger decoder → sparse gather → original-time sparse grid → detector → original-time segments.
+  Dashed grey path: frozen detector / train-only utility → acquisition supervision.
+  红色 cross：No GT / teacher / raw prediction / cache in val/test ledger.
+
+* **Panel C: Ledger contract mini-table.**
+  selected dense indices, valid length, K requested/effective, policy hash, no-leakage flags.
+
+这样 reviewer 第一眼会懂：你的 novelty 不是“选帧”，而是 **boundary-sensitive deployable acquisition + original-time detector interface**。
+
+---
+
+## 8. Rewrite Priorities
+
+### Must fix before showing to reviewers
+
+1. 删除或改写所有 proposal-like future tense，尤其 Abstract 和 Experiments opening。
+2. 固定主方法，不再用 “can/may/optionally/current implementation family” 描述主线。
+3. 解决 “TrueTime interface” 与 “unchanged detector” 的矛盾。
+4. 正式定义 detector utility target；如果还没有可靠实现，不要把 detector-utility calibration 写成核心已完成 claim。
+5. 正式定义或重命名 value-transport。没有 transport optimization 就不要叫 transport。
+6. 重写 contribution list，使其变成可验证贡献，而不是组件清单。
+7. Related Work 扩充到 efficient TAD、OpenTAD benchmarking、adaptive frame selection、video token selection、model compression。
+8. 完整写出 baseline matrix 和 matched-compute protocol。
+
+### Should fix before full experiment results
+
+1. 加一个术语表：dynamic, utility, calibrated, deploy-visible, ledger, TrueTime, risk, redundancy。
+2. 把 dynamic budget 写成 constrained optimization，而不是仅 (K=B_\eta(\cdot))。
+3. 加 “same detector training protocol”：每个 policy 是重新训练 detector、finetune detector，还是 same detector test-only？必须明确。
+4. 加 browser overhead 和 total latency accounting。
+5. 加 seed variance 和 random baseline 多次运行。
+6. 加 oracle upper bound 但明确不是 fair baseline，只是 ceiling diagnostic。
+7. 加 selected-rank vs original-time decode 的 sanity ablation。
+
+### Nice to polish later
+
+1. Figure 1 视觉重画。
+2. Title 缩短。
+3. Appendix ledger schema 可以保留，但正文只放最关键字段。
+4. 统一 “actionness / p_action / pact” 命名。
+5. 避免 “TrueTime” 这种像产品名的术语，除非正文定义非常严谨。
+
+---
+
+## 9. Optional Direct Edits
+
+### 9.1 Title 的 3 个更强版本
+
+1. **Detector-Utility-Guided Sparse Acquisition for Temporal Action Detection**
+   最稳，直接打核心，不夸 dynamic。
+
+2. **True-Time Sparse Video Acquisition for Efficient Temporal Action Detection**
+   如果你最终能证明 original-time detector interface 是核心贡献，用这个。
+
+3. **DUCA-TAD: Deployable Utility-Guided Temporal Acquisition for Action Detection**
+   保留 DUCA，但把 “Calibrated” 降为 “Guided”，降低 claim 风险。
+
+---
+
+### 9.2 Abstract 的 CVPR 风格改写版本
+
+Temporal action detection requires not only recognizing actions in long untrimmed videos, but also preserving temporal evidence needed for accurate start and end localization. Uniformly reducing the input length lowers computation, yet it allocates the same budget to background, action interiors, short actions, and boundary regions, and it can silently change the temporal coordinate system seen by the detector. We introduce DUCA-TAD, a deployable sparse acquisition framework for budgeted temporal action detection. A low-cost temporal browser predicts acquisition scores from deploy-visible signals such as actionness, temporal change, boundary proximity, uncertainty, and redundancy proxies. A constrained ledger decoder converts these scores into an ordered set of selected dense-time positions under fixed or dynamic budget constraints. The selected observations are passed to an AdaTAD/ActionFormer-style detector through an original-time sparse grid, so assignment, decoding, and post-processing remain expressed in the dense video time axis rather than selected-frame rank. During training, detector-derived utility targets can supervise the browser, while validation and test ledgers contain only selected indices, budget metadata, provenance hashes, and no-leakage flags. We evaluate DUCA-TAD with matched-budget sparse acquisition baselines, high-tIoU localization metrics, compute accounting, and ledger diagnostics that separate actionness selection, boundary-sensitive utility, dynamic budgeting, and temporal-coordinate preservation.
+
+最终版有真实结果后，最后一句必须换成定量句，例如：
+“On THUMOS14, DUCA-TAD reduces backbone observations by X% while matching/improving dense/uniform AdaTAD by Y average mAP and Z mAP@0.7.”
+
+---
+
+### 9.3 Introduction 最后一段贡献列表改写版本
+
+This work makes three contributions.
+
+1. **We formulate deployable sparse acquisition for TAD.** Unlike video classification or QA frame selection, the selector must operate before the expensive detector, use only deployment-visible signals at validation and test time, and preserve original temporal coordinates for segment localization.
+
+2. **We propose DUCA-TAD, a detector-utility-guided acquisition method.** A lightweight temporal browser predicts boundary-sensitive acquisition value from cheap temporal signals, and a constrained decoder produces an auditable sparse ledger under fixed or dynamic budget constraints.
+
+3. **We introduce an original-time sparse detector interface and evaluation protocol.** The ledger stores selected dense indices and provenance metadata, enabling AdaTAD/ActionFormer-style detectors to consume sparse observations while decoding predictions in the original time axis. The evaluation separates uniform, random, actionness-only, boundary-aware, utility-guided, and dynamic-budget policies under matched compute and no-leakage audits.
+
+---
+
+### 9.4 Method opening paragraph 改写版本
+
+DUCA-TAD consists of four deterministic stages at inference time and one training-only supervision path. Given a dense candidate window, a lightweight temporal browser computes deploy-visible descriptors and predicts per-position acquisition scores. A constrained ledger decoder selects an ordered subset of dense-time indices under a fixed or budget-predicted count while enforcing validity, duplicate, and maximum-gap constraints. The detector loader gathers only the selected observations, but attaches their original dense coordinates and support cells as a sparse temporal grid. Ledger-aware detector operators then perform assignment, decoding, and post-processing in the original time axis. During acquisition training, detector-derived utility targets supervise the browser on the training split; these targets, teacher outputs, raw detector predictions, and caches are never serialized into validation or test ledgers.
+
+---
+
+最终建议很直接：**不要再扩展术语和路线；先收缩成一个可复现、可审计、可 ablate 的主方法。** 这篇稿子的前半部分有一个值得写的论文问题，但现在还没有达到 CVPR 论文叙事成熟度。
+
+[1]: https://arxiv.org/html/2502.20361v1 "OpenTAD: A Unified Framework and Comprehensive Study of Temporal Action Detection"
+[2]: https://openaccess.thecvf.com/content/CVPR2025/papers/Buch_Flexible_Frame_Selection_for_Efficient_Video_Reasoning_CVPR_2025_paper.pdf "Flexible Frame Selection for Efficient Video Reasoning"
+[3]: https://openaccess.thecvf.com/content/CVPR2026/papers/Qin_Efficient_Frame_Selection_for_Long_Video_Understanding_via_Reinforcement_Learning_CVPR_2026_paper.pdf "Efficient Frame Selection for Long Video Understanding via Reinforcement Learning"

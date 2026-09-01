@@ -1,0 +1,29 @@
+{
+  "schema_version": "duca_p0_primary_result_protocol_v1",
+  "declared_at_utc": "2026-07-15T12:16:50Z",
+  "declaration_precedes_first_test_evaluation": true,
+  "task": "offline_temporal_action_detection",
+  "git_commit": "043be401ba2b694342dc395f263e9a9858628d69",
+  "formal_run_root": "/data/run01/sczc063/yuzibo/projects/c3_lowres_action_probe/duca_043be40_p0_formal_seed0_20260715_1647",
+  "jobs": {
+    "uniform": 1164700,
+    "direct": 1164701,
+    "transition_beta0": 1164702,
+    "transition_counterfactual": 1164703
+  },
+  "primary_checkpoint_policy": "fixed_final_epoch",
+  "primary_epoch_one_based": 132,
+  "primary_checkpoint_filename": "epoch_131.pth",
+  "primary_state_dict": "state_dict_ema",
+  "intermediate_test_map_use": "diagnostic_only",
+  "checkpoint_selection_from_test_map": false,
+  "first_eval_epoch_one_based_by_current_code": 52,
+  "applies_to_variants": [
+    "uniform",
+    "direct",
+    "transition_beta0",
+    "transition_counterfactual"
+  ],
+  "counterfactual_claim_scope": "relative_hard_one_swap_ranking_distillation",
+  "source_review_sha256": "1D395844396D644295BF83BF08753C14B2E638295B8C37D15048924B0F415FC9"
+}

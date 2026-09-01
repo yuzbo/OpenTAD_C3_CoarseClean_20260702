@@ -1,0 +1,74 @@
+{
+  "date": "2026-07-30",
+  "audit_status": "tested",
+  "overall_verdict": "warn",
+  "scientific_integrity": "pass",
+  "official_paper_comparability": "fail",
+  "warning_reason": "G1 is a valid preregistered validation-only method-kill experiment, but it is not an official test result, has no complete cost evidence, and configured external cross-model reviewers were unavailable.",
+  "checks": {
+    "preregistration_and_stop_rule": {
+      "status": "pass",
+      "details": "Three paired seeds and frozen Avg/high-IoU gates were applied without rescue tuning; G1 failed and the route stops."
+    },
+    "data_and_leakage": {
+      "status": "pass",
+      "details": "The manifest selects only a 160/40 partition of official validation; test subset, GT, AP, predictions and teacher signals were not used."
+    },
+    "pairing_and_checkpoint": {
+      "status": "pass",
+      "details": "Dense and DCSR arms share seed, data, schedule, terminal epoch-35 EMA, evaluator and environment."
+    },
+    "metric_normalization": {
+      "status": "pass",
+      "details": "AP is independently recomputed from raw predictions using dataset-GT denominators and raw score ordering."
+    },
+    "result_existence": {
+      "status": "pass",
+      "details": "All three paired tasks and the diagnostic aggregate are terminal COMPLETED 0:0 with receipt-bound artifacts."
+    },
+    "official_comparability": {
+      "status": "fail",
+      "details": "G1 is a validation-holdout method gate, not full-validation training to official-test evaluation, and paper performance rows are explicitly forbidden."
+    },
+    "cost_and_efficiency": {
+      "status": "fail",
+      "details": "No complete synchronized feature-to-final-detection cost or uncertainty result exists."
+    },
+    "mechanistic_inference": {
+      "status": "pass_with_qualifiers",
+      "details": "Counterfactuals rank scaffold/decomposition first and K384 support second, but do not uniquely identify representation versus optimization or pre-NMS causality."
+    },
+    "external_review": {
+      "status": "warn",
+      "details": "Local independent reviews completed; configured external Claude, Gemini, GPT-4o and MiniMax routes were unavailable because credentials were missing or revoked."
+    }
+  },
+  "artifacts": {
+    "g1_aggregate_sha256": "b98d59468ef39aa6fe6de387adfd6f872c848ab8f63b26c3bf1bf6161f5f7939",
+    "diagnostic_completion_sha256": "954d7944428fcf0d26dd917ff9562a9c3e7a53de71c09e9a382aaf49f5bd4a53",
+    "prediction_diagnostics_sha256": "47dcca7e179544e348966bf92cf92cddeff19a1fdc8cfea100150dc1bc580a36",
+    "checkpoint_dynamics_sha256": "c596bc942d2617e3824d21c96d0289316be4ee1ad465f23dc507b2d90466e006"
+  },
+  "claims": [
+    {
+      "id": "exact_dcsr_g1_internal_gate_failed",
+      "impact": "empirically_supported"
+    },
+    {
+      "id": "scaffold_decomposition_is_dominant_observed_factor",
+      "impact": "supported_as_qualified_diagnostic_attribution"
+    },
+    {
+      "id": "official_test_performance",
+      "impact": "unsupported"
+    },
+    {
+      "id": "positive_efficiency",
+      "impact": "unsupported"
+    },
+    {
+      "id": "all_sparse_heads_fail",
+      "impact": "unsupported"
+    }
+  ]
+}

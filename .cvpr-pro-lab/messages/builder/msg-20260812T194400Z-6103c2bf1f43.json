@@ -1,0 +1,22 @@
+{
+  "created_at": "2026-08-12T19:44:00Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "identity-gate-execution-snapshot-plan",
+  "message_id": "msg-20260812T194400Z-6103c2bf1f43",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "CRITIC_DUCA_P0_TYPED_FAILURE_INTERFACE_FOCUSED_RECHECK-v001"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-briefs/BUILDER_DUCA_P0_IDENTITY_EXECUTION_SNAPSHOT_PLAN-v001.md",
+    "size": 2303
+  },
+  "priority": "high",
+  "requested_action": "Produce only the bounded P0 clean execution-snapshot MINIMAL_CHANGE_PLAN; do not edit, test, execute, or access data/browser.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

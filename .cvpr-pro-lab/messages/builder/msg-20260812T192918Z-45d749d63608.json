@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-12T19:29:18Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "implementation-correction",
+  "message_id": "msg-20260812T192918Z-45d749d63608",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-briefs/BUILDER_DUCA_P0_TYPED_FAILURE_INTERFACE_CORRECTION-v001.md",
+    "size": 2123
+  },
+  "priority": "high",
+  "requested_action": "Implement the bounded typed-failure-code interface correction required by the authorized P0 identity gate. Do not execute tests or the gate.",
+  "required_gate": "P0_TYPED_FAILURE_INTERFACE_CORRECTION_ONLY",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-14T21:05:22Z",
+  "deadline": "2026-08-15T12:00:00+08:00",
+  "from_role": "coordinator",
+  "kind": "BUILDER_DUCA_DYNAMIC_B_PACKAGE_COMPLETION-v001",
+  "message_id": "msg-20260814T210522Z-e4e1d30ae5d9",
+  "parent_artifact_ids": [
+    "29c1464b2e0fba9922ce41d87e52b863037a7bde"
+  ],
+  "payload": null,
+  "priority": "critical",
+  "requested_action": "Complete the already accepted Builder package before first Critic: the clean 29c1464b static-primitives commit omitted its planned integration into the existing selector/controller and the frozen official six-arm config plus one future N16R4 PRE_RUN-only launcher. This is scope completion, not a route revision or a Critic correction. Add only the smallest integrated surfaces and static no-data tests, then one clean commit; no data/held-out/GPU/Slurm/remote/evaluation/metrics/browser.",
+  "required_gate": "G5_IMPL_CHECK",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

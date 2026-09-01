@@ -1,0 +1,35 @@
+{
+  "created_at": "2026-08-12T22:17:12Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_REPLACEMENT_READONLY_PRE_RUN_ADMISSION_FACT_RECHECK",
+  "message_id": "msg-20260812T221712Z-c7b2f9d3e5a4",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_E1_PHASE_SPECIFIC_READONLY_PRE_RUN_ADMISSION_FACT_CHECK-v001",
+    "DUCA_P0_E1_SHARED_PARENT_ADMISSION-v001",
+    "BUILDER_DUCA_P0_CORRECTED_REMOTE_CLEAN_BINDING-v002",
+    "EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v005",
+    "CRITIC_DUCA_P0_E1_REFERENCE_ADMISSION_MANIFEST_V005_FOCUSED_RECHECK-v001",
+    "msg-20260812T220919Z-12f7e8a4d9c3"
+  ],
+  "payload": {
+    "fresh_reserved_execution_identity": "msg-20260812T220919Z-12f7e8a4d9c3",
+    "old_execution_identity": "msg-20260812T214652Z-7b2c8a5e61d4",
+    "facts_to_recheck": [
+      "1_phase_specific_clean_evaluator_binding",
+      "3_shared_parent_output_duplicate_identity_state"
+    ],
+    "facts_to_reuse_without_recheck": [
+      "2_exact_sealed_18_9_6_input_root_state",
+      "4_registered_n16r4_cpu_transport_interpreter_cwd_availability"
+    ]
+  },
+  "priority": "high",
+  "requested_action": "Perform one bounded read-only recheck of only formal admission facts 1 and 3 for E1. Fact 1: verify the exact registered Evaluator workspace is at frozen revision 63a726a4aaf48ecbf6780bb196de43a890c6b4df, has zero porcelain entries, and has no foreign or Builder mutation. Fact 3: verify the pre-admitted literal shared parent exists as a real directory; all E1/B1/E2 output, partial, comparison, and E1-receipt paths remain absent; no active E1/B1/E2 phase process or prior phase receipt exists; the old identity msg-20260812T214652Z-7b2c8a5e61d4 remains permanently fail-closed; and the fresh identity msg-20260812T220919Z-12f7e8a4d9c3 remains opaque, unread, unopened, unconsumed, undispatched, and unexecuted. Do not open, read, parse, consume, dispatch, or execute the fresh identity; use only the cited v005 manifest and Critic v005 receipt for its disposition. Reuse facts 2 and 4 solely as VERIFIED_BY_V001 evidence; do not repeat their checks. Do not invoke Python, import, compile, test, read fixture/reference/projector/adapter content, access data/model/checkpoint/metric, create outputs, or use GPU/CUDA/Slurm/browser. Do not run E1/B1/E2/C1/P0. Return per-fact verdicts and aggregate PRE_RUN verdict; a PASS must still state that no command is admitted absent a later Coordinator admission record.",
+  "required_gate": "P0_E1_FORMAL_PRE_RUN_ADMISSION_PENDING",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

@@ -1,0 +1,163 @@
+{
+  "id": "duca-full-data-identity-admission",
+  "createdAt": "2026-08-31T11:29:12.741Z",
+  "status": "completed",
+  "promptPreview": "Read the supplied prompt completely and open every exact GitHub link needed to verify the evidence. Act as DUCA's independent scientific head: admit or block th",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-31T11:29:13.681Z",
+      "completedAt": "2026-08-31T11:44:50.810Z",
+      "usage": {
+        "inputTokens": 2593,
+        "outputTokens": 2567,
+        "reasoningTokens": 0,
+        "totalTokens": 5160
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 15359,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "58A45A2C0ADDE78EE343CA6B0DAC9CEA",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a956592-da38-83e9-b50c-fd3906c0ec41",
+      "conversationId": "6a956592-da38-83e9-b50c-fd3906c0ec41",
+      "promptSubmitted": true,
+      "controllerPid": 83516
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a956592-da38-83e9-b50c-fd3906c0ec41"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-31T11:29:20.595Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Read the supplied prompt completely and open every exact GitHub link needed to verify the evidence. Act as DUCA's independent scientific head: admit or block the full-data identity evidence, resolve the seed-order conflict, and issue at most one current task without delegating scientific choice to Codex. Preserve nonce DUCA-FULL-DATA-IDENTITY-ADMISSION-v001-20260831 verbatim and end with DUCA_FULL_DATA_IDENTITY_ADMISSION_READY.",
+    "file": [
+      "C:\\Users\\skywalker\\.codex\\worktrees\\duca-wiki-complete-sync-20260831\\OpenTAD_C3_CoarseClean_20260702\\docs\\pro-packets\\DUCA_FULL_DATA_IDENTITY_ADMISSION-v001\\00_PROMPT.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-full-data-identity-admission",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 10800,
+    "httpTimeoutMs": 10800000,
+    "zombieTimeoutMs": 10800000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-full-data-identity-admission-v001\\visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 83516,
+    "reattachCommand": "oracle session duca-full-data-identity-admission"
+  },
+  "startedAt": "2026-08-31T11:29:13.676Z",
+  "completedAt": "2026-08-31T11:44:50.857Z",
+  "usage": {
+    "inputTokens": 2593,
+    "outputTokens": 2567,
+    "reasoningTokens": 0,
+    "totalTokens": 5160
+  },
+  "elapsedMs": 934983,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\oracle\\duca-full-data-identity-admission-v001\\sessions\\duca-full-data-identity-admission\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 26489,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a956592-da38-83e9-b50c-fd3906c0ec41",
+      "sha256": "2fcfcf68df2b97341bb5224d2cc077918ad860e3999413eeb50212a7ba249793",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

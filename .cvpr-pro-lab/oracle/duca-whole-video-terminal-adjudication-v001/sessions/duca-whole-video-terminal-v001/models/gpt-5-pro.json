@@ -1,0 +1,15 @@
+{
+  "model": "gpt-5-pro",
+  "status": "completed",
+  "log": {
+    "path": "models\\gpt-5-pro.log"
+  },
+  "startedAt": "2026-08-31T04:23:57.474Z",
+  "completedAt": "2026-08-31T04:36:29.866Z",
+  "usage": {
+    "inputTokens": 13935,
+    "outputTokens": 1769,
+    "reasoningTokens": 0,
+    "totalTokens": 15704
+  }
+}

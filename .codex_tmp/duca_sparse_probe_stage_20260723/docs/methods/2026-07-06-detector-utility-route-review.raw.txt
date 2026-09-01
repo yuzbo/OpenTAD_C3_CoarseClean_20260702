@@ -1,0 +1,183 @@
+我**基本同意**你的判断，而且我会把它再说得更尖锐一点：
+
+> GAS-VT / `p_action` strict ledger 是必要的工程护城河，但不是最终论文主菜。真正有 A 会潜力的主线应当是：**用 dense detector 的定位效用来监督 pre-backbone temporal acquisition，而不是用 actionness 或 p_action 变化来间接猜测哪些帧重要。**
+
+这和 AdaTAD/OpenTAD 的公开路线也一致：AdaTAD 的核心问题就是 end-to-end TAD 有收益但受内存/长视频成本限制；OpenTAD 又提供了模块化、可复现实验框架，适合作为 detector-side teacher/student 和公平对照平台。([arXiv][1])
+
+## 我同意的部分
+
+你的 Stage1/2/3/4 分层是对的：
+
+**Stage1 GAS-VT ledger → AdaTAD mAP**
+必须保留。它证明 strict ledger、AdaTAD loader、selected/native 时间轴、budget、no-leakage 这套工程合同能跑通。没有这个，后面 detector-aware selector 的 mAP 结果也无法归因。
+
+**Stage2 dense AdaTAD teacher utility**
+这是主攻方向。ActionFormer/AdaTAD 这类 anchor-free dense head 本质上是在每个时间点做分类与边界回归；所以“哪些时间点对分类分数、边界 offset、高 IoU proposal/NMS 最关键”才是 selector 应学的目标，而不是单纯学 `p_action` 高低或 `Δp_action`。ActionFormer 本身就是对每个 moment 做类别预测和动作边界估计的 single-shot 设计，这决定了 selected points 对监督、decode 和高 IoU 定位会非常敏感。([arXiv][2])
+
+**Stage3/4 不应过早全端到端**
+我也同意。ST hard selection + detector loss 一开始直接联训，最容易 collapse：selector 学会保守 uniform、学会 exploit detector shortcut、或者破坏 detector 的时间坐标合同。先 teacher utility pretrain，再 sparse detector distill，再 partial joint，是更稳的 curriculum。
+
+## 我会修正的关键点
+
+第一，**teacher utility 不能被讲成 ground truth，只能讲成 dense detector critic / value oracle**。Dense AdaTAD 也会错，它的 saliency/gradient/attention 不是天然真理。论文里更稳的说法是：
+
+> We distill the dense detector’s marginal value-of-observation into a deployable low-cost acquisition policy.
+
+也就是：teacher 只在训练阶段提供“观测价值标签”；测试阶段 selector 只能看低成本 scout 特征、`p_action`、motion/edge/entropy 等，不允许看 dense backbone feature、teacher proposal 或 cache。
+
+第二，**counterfactual utility 不建议逐帧 brute-force mask/drop**。那会非常慢，也容易产生不稳定噪声。更合理的是 interval/group-level counterfactual：按 proposal support、boundary neighborhood、uncertainty peak、process segment 做遮挡，估计局部 utility，再回填到帧级或 snippet 级。
+
+第三，**utility 应该是 signed utility，而不只是 positive action utility**。TAD 里有些背景帧不是“没用”，而是用于 suppress false positive、修正边界、支持 NMS 排序。只学 foreground / boundary 高分，可能会把背景抑制证据删掉，导致 proposal 爆炸或高 IoU 下降。
+
+## 我认为更强的 story
+
+我会把论文故事从：
+
+> detector-utility-guided temporal acquisition
+
+进一步升级成：
+
+> **Boundary-sensitive value-of-observation learning for sparse temporal action detection.**
+
+核心论点是：
+
+Dense TAD 很贵；uniform/random sparse sampling 虽然省算力，但不知道哪些观测对 detector 的高 IoU 定位最有价值；`p_action`/actionness 只能告诉我们哪里像动作，不能告诉我们哪些帧对分类、边界回归、proposal ranking、false-positive suppression 最关键。因此，我们用 dense detector teacher 估计每个时间区域的 **marginal detector utility**，再训练一个只依赖低成本观测的 acquisition policy，在严格预算下保留 boundary bracket、动作内部证据和必要背景证据，最后用 sparse-aware detector 在真实非均匀时间轴上做定位。
+
+这个故事比“p_action 选帧器”强很多，也比普通 token pruning 更贴 TAD。已有动作检测/token pruning工作已经证明视频 token 冗余很高、减少 token 可以带来效率收益；例如 EVAD 在 spatiotemporal action detection 中用 token dropout 输出约 34% 原 token，报告 GFLOPs 降低 43%、吞吐提升 40%。但你的差异点应是：**不是一般视频 token pruning，而是 temporal boundary-sensitive acquisition for TAD high-IoU localization**。([CVF开放获取][3])
+
+## 更具体的方法版本
+
+我建议 Stage2 命名为：
+
+**DUCA-TAD: Detector-Utility-Calibrated Acquisition for Temporal Action Detection**
+
+核心模块如下。
+
+### 1. Dense teacher utility export
+
+从 dense AdaTAD / ActionFormer teacher 导出 dense-axis utility：
+
+[
+U(t)=
+\lambda_c U_{cls}(t)
++\lambda_r U_{reg}(t)
++\lambda_b U_{boundary}(t)
++\lambda_q U_{proposal_quality}(t)
++\lambda_{cf} U_{counterfactual}(t)
++\lambda_{bg} U_{background_suppression}(t)
+-\lambda_{red} U_{redundancy}(t)
+]
+
+其中最重要的不是单项 saliency，而是组合：
+
+`U_cls`：该时间点对类别置信度的贡献。
+`U_reg`：该时间点对 start/end offset 或 IoU 的贡献。
+`U_boundary`：边界前后 bracket responsibility。
+`U_counterfactual`：mask/drop 某个局部 interval 后 proposal score / IoU / ranking 的下降。
+`U_background_suppression`：保留能压低 false positive 的背景证据。
+`U_redundancy`：局部相似帧惩罚，避免 selector 全挤在同一个 peak。
+
+### 2. Low-cost utility browser
+
+训练一个低成本 selector，不直接看 dense teacher feature。输入可以是：
+
+`p_action`、`Δp_action`、motion energy、frame difference、edge/entropy、temporal position、local uncertainty、coarse process state、previous selected mask、gap metadata。
+
+输出两个头：
+
+`rank_score(t)`：固定预算 top-K 用。
+`calibrated_gain(t)`：dynamic budget 用，必须跨视频可比较。
+
+这点很关键：**ranking 可以解决 fixed 384/768，但 dynamic budget 需要 calibrated marginal gain**。否则 dynamic budget 会变成不可解释的 per-video top-k。
+
+### 3. Budgeted hard selector
+
+训练时可以用 Gumbel/ST/top-k relaxation；测试时必须 hard deterministic：
+
+[
+\max_z \sum_t z_t \hat U(t)
+
+* \eta \text{Redundancy}(z)
+* \rho \text{CVaRGapUtility}(z)
+  \quad s.t.\quad \sum_t z_t \le K
+  ]
+
+这里 `CVaRGapUtility` 比普通 max gap 更好：它不是手工补帧规则，而是惩罚“高 utility 区域出现长空洞”的 tail risk。
+
+### 4. Sparse-aware detector student
+
+不要只训练 selector 后直接喂原 AdaTAD。Sparse detector 必须知道：
+
+`selected_positions`、真实时间坐标、cell width、gap、visibility、native/dense axis 映射。
+
+同时用两种监督：
+
+`L_detector`：真实 TAD 检测损失。
+`L_distill`：sparse detector proposal/logit/boundary distribution 逼近 dense teacher。
+
+否则 selector 学到了 utility，但 detector 不会解释非均匀时间轴，最后高 IoU 仍可能崩。
+
+## 我会采用的 loss
+
+你的 loss 结构已经合理，我只会改两点：加入 **signed utility calibration** 和 **sparse detector distillation** 的优先级。
+
+最终可以是：
+
+[
+L =
+L_{rank}
+
+* L_{gain_calib}
+* L_{budget}
+* L_{boundary_bracket}
+* L_{interior}
+* L_{cvar_utility_gap}
+* L_{sparse_distill}
+* \mathbf{1}*{stage3} L*{detector}
+  ]
+
+其中：
+
+`L_rank` 保证高 utility 帧排前。
+`L_gain_calib` 保证 dynamic budget 可比较。
+`L_boundary_bracket` 要求边界两侧有证据，不要求选中边界单点。
+`L_interior` 保留动作内部分类支撑。
+`L_cvar_utility_gap` 控制高价值区域空洞。
+`L_sparse_distill` 让 sparse detector 学 dense teacher 的 proposal/logit/boundary 分布。
+`L_detector` 只在 Stage3/4 加入，不要一开始加。
+
+## 最重要的实验补充
+
+你列的对照是对的。我会额外强制加三个 ablation：
+
+1. **teacher utility upper bound / non-deployable oracle**
+   直接用 dense teacher utility top-k 选帧，标明 non-deployable。它回答“utility 信号本身有没有价值”。
+
+2. **observable selector vs teacher-feature selector**
+   一个 selector 只能看 low-cost features；另一个可看 dense feature。两者差距就是 observability gap。如果 gap 太大，说明部署 selector 学不到 teacher utility。
+
+3. **positive-only utility vs signed utility**
+   如果 signed utility 明显更稳，论文故事会更强：TAD sparse acquisition 不只是找动作，还要保留边界与背景抑制证据。
+
+## 最终判断
+
+我同意你的主判断，并建议你把路线正式定成：
+
+**Stage1：GAS-VT strict ledger baseline，保工程与归因。**
+**Stage2：Detector utility export + low-cost utility selector，这是主创新。**
+**Stage3：Sparse-aware detector distillation，不急着全端到端。**
+**Stage4：ST hard selector partial joint fine-tune，只在 Stage2/3 明确超过 GAS-VT 后推进。**
+
+最有潜力的论文 claim 不是：
+
+> 我们提出了一个 p_action 选帧器。
+
+而是：
+
+> 我们提出一种 detector-utility-calibrated pre-backbone temporal acquisition 方法，将 dense TAD detector 的分类、边界回归、proposal ranking 与背景抑制价值蒸馏到低成本 selector，在严格预算和真实非均匀时间轴下保护高 IoU temporal localization。
+
+这条 story 更干净，也更能抵抗审稿人的核心追问：**为什么你选的帧真的对 TAD 有用，而不只是看起来像动作？**
+
+[1]: https://arxiv.org/html/2311.17241v2?utm_source=chatgpt.com "End-to-End Temporal Action Detection with 1B Parameters ..."
+[2]: https://arxiv.org/abs/2202.07925 "[2202.07925] ActionFormer: Localizing Moments of Actions with Transformers"
+[3]: https://openaccess.thecvf.com/content/ICCV2023/papers/Chen_Efficient_Video_Action_Detection_with_Token_Dropout_and_Context_Refinement_ICCV_2023_paper.pdf "Efficient Video Action Detection with Token Dropout and Context Refinement"

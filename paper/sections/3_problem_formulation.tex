@@ -1,0 +1,132 @@
+\section{Problem Formulation}
+
+\subsection{In-Forward Window Acquisition Contract}
+
+Let a dense candidate window be
+$\VideoWin=\{v_t\}_{t=1}^{\Tdense}$ with original dense-time coordinate
+$\taucoord_t=t$. The main budget setting uses $\Tdense=768$ and
+$\Kmain=384$. DUCA inserts an acquisition plugin in the detector forward path:
+\begin{align}
+    x_t &= \philo(v_t), \\
+    \Ssel &= \Acquirer_{\thet}(x_{1:\Tdense})
+          = \{s_1 < \cdots < s_{\Ksel}\}, \qquad
+          \Ksel \le \Kmain .
+    \label{eq:online_policy}
+\end{align}
+The detector receives only $\VideoWin_{\Ssel}$, not the full sequence. The
+selected set stores original dense indices, so $\taucoord_{s_i}$ remains the
+coordinate used for assignment, decoding, and evaluation. We call this setting
+\emph{in-forward} or \emph{window-online}: the selection is computed from the
+current detector window during the forward path and is not loaded from an
+offline decision record. The setting does not require causal streaming or
+prefix-only outputs.
+
+\subsection{Observation and Compute Boundary}
+
+The object selected by DUCA depends on where the plugin is inserted. In a
+pre-backbone setting, $v_t$ is a raw clip or frame group and acquisition reduces
+the cost of both the backbone and detector head. In a feature-stream setting,
+$v_t$ is a precomputed temporal descriptor and acquisition reduces the cost of
+the detector head and subsequent temporal processing. We therefore report
+compute with separate terms for descriptor extraction, zero-shot scoring,
+selector inference, backbone processing, detector head, and post-processing:
+\begin{align}
+    C_{\mathrm{total}}
+    &=
+    C_{\mathrm{desc}} + C_{\mathrm{score}} + C_{\mathrm{sel}}
+    \notag\\
+    &\quad
+    + C_{\mathrm{backbone}}(\Ksel)
+    + C_{\mathrm{head}}(\Ksel)
+    + C_{\mathrm{post}} .
+    \label{eq:compute_boundary}
+\end{align}
+This boundary prevents a frozen-feature experiment from being presented as a
+full video-backbone saving.
+
+\subsection{Teacher-Free Inference Boundary}
+
+At validation and deployment, $x_t$ may contain only deploy-visible information:
+zero-shot actionness, motion or feature energy, low-resolution descriptors, and
+optional learned probes. The online decision cannot use ground truth, oracle
+boundaries, teacher utility, detector raw predictions, prediction caches, or a
+precomputed decision ledger. We write this as
+\begin{align}
+    z^{\mathrm{deploy}}_t
+    &=
+    (\pzs(t), e^{\mathrm{mot}}_t, e^{\mathrm{feat}}_t, p^{\mathrm{probe}}_t),
+    \notag\\
+    \Ssel
+    &=
+    \Acquirer_{\thet}(z^{\mathrm{deploy}}_{1:\Tdense}).
+    \label{eq:deploy_boundary}
+\end{align}
+An audit ledger may record the decision after it is made, but it is not an
+input to \cref{eq:online_policy}.
+
+\subsection{Detector-Utility Target}
+
+The selector should predict detector utility rather than actionness alone. For
+training windows, a dense detector or frozen teacher defines positive detector
+points $\mathcal{P}^{+}$. Each point $p$ has classification loss
+$\ell^{\mathrm{cls}}_p$, localization loss $\ell^{\mathrm{loc}}_p$, ranking or
+hard-negative weight $r_p$, and temporal responsibility kernel $a_{p,t}$. A
+train-only utility target is
+\begin{align}
+    d_t &=
+      \sum_{p\in\mathcal{P}^{+}}
+      a_{p,t}
+      (\ell^{\mathrm{cls}}_p+\ell^{\mathrm{loc}}_p+r_p),
+      \notag\\
+    u^{\star}_t &=
+    \mathrm{norm}\!\left(
+      \alpha y^{\mathrm{bnd}}_t
+      + \beta y^{\mathrm{act}}_t
+      + \gamma d_t
+    \right).
+    \label{eq:utility_target}
+\end{align}
+The target supervises acquisition on the training split only. It is discarded
+before validation and deployment.
+
+\subsection{Sparse Temporal Grid}
+
+Hard selection creates a selected axis $i=1,\ldots,\Ksel$, but selected rank is
+not physical time. DUCA therefore passes the detector a sparse temporal grid
+\begin{equation}
+    \Grid_{\Ssel}
+    =
+    \{(i, s_i, \taucoord_{s_i}, \ell_i, r_i)\}_{i=1}^{\Ksel},
+    \label{eq:sparse_grid}
+\end{equation}
+where $\ell_i$ and $r_i$ are the left and right original-time support bounds of
+the selected cell. With $T_{\mathrm{valid}}$ denoting the valid prefix length,
+we use midpoint cells
+\begin{align}
+    \ell_i &=
+    \begin{cases}
+    1, & i=1,\\
+    \frac{1}{2}(\taucoord_{s_{i-1}}+\taucoord_{s_i}), & i>1,
+    \end{cases}
+    \notag\\
+    r_i &=
+    \begin{cases}
+    T_{\mathrm{valid}}, & i=\Ksel,\\
+    \frac{1}{2}(\taucoord_{s_i}+\taucoord_{s_{i+1}}), & i<\Ksel.
+    \end{cases}
+    \label{eq:grid_cells}
+\end{align}
+Detector point assignment, regression range checks, offset targets, decoded
+segments, and NMS are all expressed in original-time units. For a ground-truth
+segment $(b^s,b^e)$ assigned to selected point $i$ with center
+$c_i=\taucoord_{s_i}$, the offset target is
+\begin{equation}
+    \delta_i^\star=(c_i-b^s,\ b^e-c_i),
+    \qquad
+    \hat b^s=c_i-\hat\delta_i^L,\quad
+    \hat b^e=c_i+\hat\delta_i^R .
+    \label{eq:original_time_decode}
+\end{equation}
+If the detector predicts on the selected axis, the proposal must be remapped
+through $\Grid_{\Ssel}$ before mAP is computed. This grid is the key object for
+high-IoU credibility.

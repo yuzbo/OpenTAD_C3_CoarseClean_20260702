@@ -1,0 +1,650 @@
+你的补充证据明显改变了诊断重心。现在我会把结论推进一步：
+
+**GAS-VT 不是简单因为“过于 uniform”失败；当前证据更像是：GAS-VT 选到了较多 action interior / action-positive 区域，但没有稳定提供 AdaTAD 高 IoU 定位真正需要的边界邻域、边界 bracket 和连续局部几何。PAction learned fixed_384 反而更好，是因为它虽然不更接近 raw p_action top-k，却学出了更适合 detector 的选择几何：更强 boundary r1、更小 p95 hole、更好的边界附近局部密度。**
+
+所以，下一步不应该继续把 GAS-VT 包装成主方法，而应该把它降级为 Stage1 engineered baseline。主线应转向：
+
+> **Detector-utility-calibrated pre-backbone acquisition**：让 selector 学“哪些低成本可见片段对 AdaTAD 的分类、边界回归、高 IoU 匹配最有价值”，而不是继续手工组合 p_action、gap、coverage、CVaR 和 hard repair。
+
+---
+
+## 1. 现在这批证据真正说明了什么？
+
+你给出的曲线里，GAS-VT fixed_384 在 logged epoch 6 已经到 Avg 40.96，之后最高也只是 46.55，最后回到 44.90。PAction learned fixed_384 在 logged epoch 19 已经到 Avg 60.41，mAP@0.7 到 39.08，远高于 GAS-VT final 的 26.92。
+
+如果只看 action coverage，会得出错误结论：GAS-VT val/test action coverage 是 0.5445 / 0.5388，反而高于 PAction 的 0.5272 / 0.5273。也就是说，**GAS-VT 并不是没看到动作区域，它看到的 action-positive 还更多。**
+
+真正关键的差异是另外两个指标：
+
+| 指标                   |   GAS fixed_384 | PAction fixed_384 | 含义                                         |
+| -------------------- | --------------: | ----------------: | ------------------------------------------ |
+| boundary r1          | 0.1426 / 0.1433 |   0.2361 / 0.2371 | PAction 更常在边界半径 1 附近保留证据                   |
+| p95 hole             |            96.0 |               2.0 | GAS 大多数样本存在严重未观测洞；PAction 大多数样本几乎没有大洞      |
+| action coverage      |              更高 |                更低 | action interior coverage 不是 TAD 高 IoU 的主瓶颈 |
+| top-k action Jaccard |          GAS 更高 |        PAction 更低 | PAction 不是单纯抄 raw p_action top-k           |
+
+这组结果的最强解释是：
+
+**GAS-VT 更偏向“动作内部覆盖 + 一些 handcrafted coverage/gap 规则”；PAction learned 更偏向“边界邻域 + 局部连续几何 + gap-loss 后的高密度支撑”。**
+
+这和 mAP 曲线吻合。GAS-VT 早期能靠 action coverage 做粗检测，所以 mAP@0.3/0.4/0.5 很快上升；但 mAP@0.6/0.7 受边界几何限制，后面就卡住。PAction 的优势主要体现在高 IoU，说明它提供的不是更多 action-positive，而是更好的 localization evidence。
+
+---
+
+## 2. 为什么 GAS-VT 前期快、后期卡？
+
+### 2.1 fixed_384 本身就足以让 AdaTAD 学会粗检测
+
+768 window 里选 384，大约半密度输入。即便 selector 不聪明，只要 p_action 信号不坏，AdaTAD 都能很快学到：
+
+1. 这个 window 是否有动作；
+2. 动作大致在哪一段；
+3. 低 IoU 下的粗 segment。
+
+所以 GAS-VT epoch 6 到 40 左右，不是强证据表明 GAS-VT 结构有效。它更像是 **半密度输入 + p_action 粗筛选 + AdaTAD 自身学习能力** 的自然结果。
+
+### 2.2 GAS-VT 的目标和 TAD 高 IoU 目标错位
+
+GAS-VT 默认 loss 里有 `value_bce`、`boundary_coverage`、`boundary_bracket`、`action_interior_bin`、`cvar_max_hole`、`budget`、`paction_dependence`。这些项看起来完整，但它们优化的是 surrogate coverage，不是 detector utility。代码里这些默认权重明确存在，包括 `boundary_coverage=2.0`、`action_interior_bin=1.0`、`cvar_max_hole=1.5` 等。([GitHub][1])
+
+问题在于：TAD 高 IoU 不需要“更多 action interior”，而需要 **start/end 两侧的可回归证据**。你现在的统计已经证明了这一点：GAS action coverage 更高但 mAP 更低；PAction action coverage 更低但 boundary r1 和 high-IoU mAP 更高。
+
+换句话说，GAS-VT 可能在优化：
+
+> 尽量覆盖动作区域、减少大洞、覆盖 interior bin。
+
+但 AdaTAD 真正需要的是：
+
+> 在动作起点/终点附近保留足够密、足够稳定、足够成对的证据，使 regression head 能把边界推准。
+
+这两个目标不等价。
+
+### 2.3 当前 GAS-VT 并不是真正 sequential value transport
+
+`build_gap_aware_feature_matrix` 有 `selected_so_far`、`remaining_budget`、`remaining_time`、`budget_pressure`、`gap_urgency` 等状态式特征，说明设计上想模拟 sequential acquisition。([GitHub][1])
+
+但真正写入 ledger 时，`add_gas_vt_decision_to_sample_row` 对 fixed/dynamic 策略都调用 `hard_gap_aware_topk`，而 `hard_gap_aware_topk` 本质上调用的是 PAction 里的 `constrained_topk`。([GitHub][1])
+
+这意味着当前 GAS-VT 的实际形态是：
+
+> 一次性打分 → top-k → hard max-hole repair
+
+而不是：
+
+> 选一个点 → 更新 gap/state/value transport → 再选下一个点
+
+因此它的“gap-aware sequential”更像特征名字和 loss 设计，不是实际 selection dynamics。它能改善一些 coverage，但很难突破到 detector-aware acquisition。
+
+### 2.4 训练/部署 budget conditioning mismatch 仍然是 P0 风险
+
+GAS-VT 训练时，模型 forward 明确传入 `target_budget=tensors["budget_targets"]`，并且 loss 也用 `target_budget`。([GitHub][2])
+
+但 apply checkpoint 时，`checkpoint_policy_scores` 构造特征只调用：
+
+```python
+features = gas_vt.build_gap_aware_feature_matrix(p_action, valid=valid)
+```
+
+没有传 `target_budget`。([GitHub][3])
+
+而 `build_gap_aware_feature_matrix` 内部在没有 `target_budget` 时，会把 `budget` 设为 `len(valid_indices)`。([GitHub][1])
+
+这会直接污染这些特征的语义：
+
+* `remaining_budget`
+* `remaining_time`
+* `budget_pressure`
+* `gap_urgency` 的相对权重
+* policy 对“固定 384 预算”的理解
+
+所以即便 GAS-VT 学到了某种 budget-aware 排序，部署时也可能不按训练时的预算语义工作。这是必须先修的代码问题。
+
+### 2.5 “uniform collapse”不是这批证据的主因，但 hard repair 仍要警惕
+
+你现在给的 sampled overlap 里，GAS uniform Jaccard mean/max 是 0.3326 / 0.3446，PAction 是 0.3350 / 0.3711；validation summary 里 max uniform sim 也只有约 0.52/0.54。这说明这批结果不能简单解释为“GAS 完全 uniform collapse”。
+
+但 hard repair 仍是风险。因为 metadata 写 `uses_uniform_fill=False`、`uses_uniform_scaffold=False`，并不能证明没有 uniform-like repair；GAS ledger metadata 确实记录这两个 flag 为 false，但 decode 仍然经过 `max_unselected_hole` 控制的 hard top-k/repair 逻辑。([GitHub][1])
+
+所以更准确的说法是：
+
+**当前这批 GAS plateau 主要不是全局 uniform collapse，而是 action/interior/coverage 目标没有转化成边界定位 utility；hard repair 是潜在混杂，需要用 repair count、gap CV、phase-shift uniformity 进一步排除。**
+
+---
+
+## 3. 为什么 PAction learned fixed_384 能明显更好？
+
+### 3.1 PAction 的特征更直接命中边界信号
+
+PAction 的输入特征包括 `p_action`、`delta_p_action`、`abs_delta_p_action`、`entropy`、`uncertainty`、`time`、`valid`。([GitHub][4])
+
+这组特征虽然简单，但对 TAD 很有效，因为动作边界常常对应：
+
+* `p_action` 上升/下降；
+* `abs_delta_p_action` 峰值；
+* action/non-action 不确定区域；
+* 低置信但变化剧烈的 transition area。
+
+你给出的 Jaccard 结果反而支持这一点：PAction 与 raw top-k action 的重合比 GAS 更低，但边界 r1 更高。这说明它不是只选最高 action probability，而是在学习一种更适合 boundary support 的排序。
+
+### 3.2 PAction 的训练目标更贴近“边界附近必须有点”
+
+PAction 默认 loss 包括 `boundary_miss=2.0`、`large_gap=1.5`、`temporal_hole=1.0`、`budget=1.0`。([GitHub][4])
+
+它的 `boundary_miss_loss_from_probabilities` 是围绕 boundary 半径内是否有 selection probability mass 来惩罚，`temporal_gap_hole_loss_from_probabilities` 则鼓励每个局部 window 有选择质量。([GitHub][4])
+
+这解释了为什么 PAction 可以做到 p95 hole = 2：它不一定全局没有最坏大洞，但大多数样本的局部选择非常密。这对 AdaTAD 高 IoU 很关键，因为 detector 在大多数动作边界附近都能看到连续的局部证据。
+
+### 3.3 PAction 比 GAS 少了“动作内部覆盖”的副作用
+
+GAS 的 `action_interior_bin` 会奖励动作内部 bin coverage。这个目标看似合理，但对 fixed_384 来说可能反而浪费预算：动作内部已经很容易被看到，真正稀缺的是起止边界、短动作、模糊 transition、低置信边界附近的局部 bracket。
+
+你给出的统计正好说明：GAS action coverage 高，但 boundary r1 低。也就是说，GAS 可能把预算更多花在“动作内部看得更完整”，而不是“边界看得更准”。
+
+### 3.4 PAction 的优势不是“更强模型”，而是“更少错误结构假设”
+
+PAction learned 本身也还不是最终方法。它仍然依赖 train-split GT-derived surrogate，比如 action target / boundary target。它只是作为 Stage1 baseline 更强，因为它的结构假设更少，训练和应用更直接，较少被 budget-pressure、CVaR、interior-bin、hard repair 这些中间 proxy 干扰。
+
+所以我会这样定性：
+
+> PAction learned fixed_384 是当前最强 Stage1 p_action-supervised baseline。
+> GAS-VT 是 engineered gap/coverage baseline。
+> 两者都不是最终 paper method。
+
+---
+
+## 4. 当前代码暴露出的核心路线问题
+
+### 问题不是“选帧模型不够复杂”，而是“优化目标不对”
+
+当前 GAS-VT 的失败说明：给 selector 加更多 handcrafted prior，不一定更好。TAD pre-backbone selector 的目标不应是：
+
+```text
+多看 action 区域 + 不要大洞 + 覆盖动作内部 + 边界附近有点
+```
+
+而应是：
+
+```text
+在预算 K 下，最大化后续 AdaTAD detector 的分类置信、边界回归精度、高 IoU 匹配质量、以及 false positive 抑制。
+```
+
+也就是：
+
+[
+S^*=\arg\max_{|S|\le K} U_{\text{detector}}(S)
+]
+
+其中 (U_{\text{detector}}) 不能只用 action coverage 近似，必须包含 detector 后验、边界误差、IoU-sensitive utility、匹配质量和 false-positive risk。
+
+### 当前 Stage2/3 方向是对的，但实现还没闭环
+
+Stage2 detector-aware policy 的 feature builder 直接复用 GAS-VT 的 gap-aware feature matrix。`build_detector_aware_feature_matrix` 实际上只是调用 `gas_vt.build_gap_aware_feature_matrix`。([GitHub][5])
+
+更严重的是，Stage2 训练同样传入 `target_budget=dynamic_budget_target`，而 detector-aware apply 的 `checkpoint_policy_scores` 又是不带 target budget 调用 `build_detector_aware_feature_matrix(p_action, valid=valid)`。([GitHub][6])
+
+这说明如果你不修 GAS 的预算语义，Stage2 会继承同一类 train/apply mismatch。
+
+Stage3 TrueTime selector 的方向更接近最终目标：代码里有 top-k 选择、straight-through mask、soft surrogate features、ST sparse gather path，并且 forward_train 通过 selected inputs 返回给 detector。([GitHub][7]) 但当前 selector 自身 loss 基本是零权重诊断项，是否真的能由 detector loss 稳定训练，还需要 gradient proof 和 mAP proof。([GitHub][7])
+
+---
+
+## 5. 更好、更优雅的 pre-backbone TAD 选帧模块应该怎么做？
+
+我建议把主线明确重命名为：
+
+> **DUCA-TAD: Detector-Utility-Calibrated Acquisition for Temporal Action Detection**
+
+不要再把 GAS-VT 作为主叙事。GAS-VT 保留为 Stage1 engineered baseline。
+
+### 5.1 模块目标
+
+最终模块应满足四个条件：
+
+1. **pre-backbone deployable**：测试时不能用 GT、dense teacher、detector prediction cache、raw prediction cache。
+2. **低成本 scout**：selector 只能看低成本信号，例如 low-res frames、p_action、delta、uncertainty、轻量 temporal conv。
+3. **detector-aware training**：训练时可以用 dense AdaTAD teacher 或 detector loss 教 selector 什么对 mAP 有用。
+4. **true-time geometry**：selector 输出必须保留 original dense local index / true-time metadata，不能只把不规则时间压成 selected-rank axis。
+
+---
+
+## 6. 推荐的模型设计：Boundary-Utility-Calibrated Selector
+
+### 6.1 输入
+
+每个 dense local index (t) 有低成本特征：
+
+```text
+x_t = [
+  p_action_t,
+  delta_p_action_t,
+  abs_delta_p_action_t,
+  entropy_t,
+  uncertainty_t,
+  lowres_motion_t,
+  local_density_t,
+  local_change_t,
+  normalized_time_t,
+  valid_t
+]
+```
+
+可以先用你现在 PAction 的特征作为 V0，因为 PAction 已经证明这些信号足够强。PAction 代码已有 `p_action/delta/entropy/uncertainty/time/valid` 基础特征。([GitHub][4])
+
+### 6.2 输出
+
+不要只输出一个 frame value。建议输出四个头：
+
+```text
+u_cls_t       = 对动作分类有用的 utility
+u_start_t     = 对 start boundary 有用的 utility
+u_end_t       = 对 end boundary 有用的 utility
+u_risk_t      = 可能造成 FP 或误定位的 risk
+```
+
+最终 acquisition score：
+
+[
+score_t = u_{\text{cls},t}
+
+* \lambda_s u_{\text{start},t}
+* \lambda_e u_{\text{end},t}
+* \lambda_u uncertainty_t
+
+- \lambda_r u_{\text{risk},t}
+- \lambda_d redundancy_t
+  ]
+
+关键是：**boundary utility 必须独立建模**。不要再把 boundary coverage 混在一个 value BCE 里。
+
+### 6.3 解码器
+
+不要再用不可解释的 hard gap repair 作为主机制。建议用显式 budget decomposition：
+
+```text
+K = K_boundary + K_context + K_uncertainty + K_safety
+```
+
+例如 fixed_384：
+
+* 40% 给 boundary utility；
+* 30% 给 action/context utility；
+* 20% 给 uncertainty/transition；
+* 10% 给 safety coverage，但必须显式标记，不允许伪装成 learned selection。
+
+这比 GAS-VT 的“top-k 后 hard repair”更优雅，因为每一类预算都有语义，消融也清楚。
+
+最小 decoder：
+
+```python
+def decode_boundary_utility_selector(
+    scores_cls,
+    scores_start,
+    scores_end,
+    scores_unc,
+    *,
+    valid,
+    budget: int,
+    boundary_ratio: float = 0.40,
+    uncertainty_ratio: float = 0.20,
+    safety_ratio: float = 0.10,
+):
+    valid_indices = [i for i, v in enumerate(valid) if v]
+    k_boundary = int(round(budget * boundary_ratio))
+    k_unc = int(round(budget * uncertainty_ratio))
+    k_safety = int(round(budget * safety_ratio))
+    k_context = max(0, budget - k_boundary - k_unc - k_safety)
+
+    boundary_score = [
+        max(float(scores_start[i]), float(scores_end[i]))
+        for i in range(len(valid))
+    ]
+
+    selected = set()
+    selected |= topk_valid(boundary_score, valid, k_boundary)
+
+    # boundary bracket: for every selected boundary candidate, add nearest left/right support if budget allows
+    selected = add_boundary_brackets(selected, boundary_score, valid, max_extra=k_boundary // 2)
+
+    selected |= topk_valid(scores_unc, valid, k_unc, forbidden=selected)
+    selected |= topk_valid(scores_cls, valid, k_context, forbidden=selected)
+
+    # safety coverage is explicit, measured, and ablated
+    selected |= sparse_safety_coverage(valid_indices, selected, k_safety)
+
+    return sorted(selected)[:budget]
+```
+
+这里的重点不是这段代码本身，而是设计原则：
+
+**coverage 可以有，但必须变成显式 safety role；不能让 hard repair 在背后把 learned selector 变成 uniform-like，却仍然宣称 learned acquisition。**
+
+---
+
+## 7. Stage2：用 dense AdaTAD teacher utility 训练 selector
+
+这是最值得做的下一阶段。
+
+### 7.1 不要用 action label 当最终 selector 目标
+
+PAction 的结果已经说明 action label 有用，但不足以成为主论文创新。真正要训练的是 detector utility。
+
+你需要构建 train split 上的 per-position utility target：
+
+```text
+utility_t =
+  positive_observation_gain_t
+  + boundary_regression_gain_t
+  + high_iou_match_gain_t
+  - false_positive_risk_t
+```
+
+可能的 utility 生成方式：
+
+1. **teacher gradient utility**
+   在 dense AdaTAD teacher 上计算 detector loss 或 matched prediction quality 对 dense feature/snippet 的敏感度，例如 (|\partial L / \partial f_t|)。这比逐帧 leave-one-out 便宜。
+
+2. **masked perturbation utility**
+   对候选片段做局部 mask/drop，观察 matched prediction IoU、classification score、boundary regression error 的变化。这个更贵，但可以作为小规模 gold utility。
+
+3. **boundary error decomposition**
+   对 matched GT/prediction 分解 start error 和 end error，把能减少边界误差的时间位置赋予更高 utility。
+
+4. **risk target**
+   对 dense teacher 产生 FP 的区域标记 risk，避免 selector 总是选高 p_action 但易误检的位置。
+
+Stage2 的训练 loss 应该包含：
+
+```python
+loss = (
+    bce(pred_utility, teacher_utility)
+    + pairwise_rank_loss(pred_utility, teacher_utility)
+    + boundary_pair_loss(pred_start, pred_end, teacher_boundary_utility)
+    + budget_loss(selected_mass, target_budget)
+    + diversity_loss(selected_positions)
+    + small_weight_coverage_loss(...)
+)
+```
+
+其中 pairwise rank loss 比 BCE 更关键，因为 selector 最终做 top-k，排序质量比绝对概率更重要。
+
+### 7.2 Stage2 必须严格 train-only teacher
+
+训练时可以用 dense teacher utility；val/test ledger 只能用 selector 根据 deploy-visible input 生成，不能写 teacher utility payload。当前 detector-aware apply 已经有 strip forbidden payload 的意图，但预算 conditioning mismatch 必须先修。([GitHub][8])
+
+### 7.3 Stage2 的关键评价不是 mAP 一个数
+
+必须同时报告：
+
+* detector utility NDCG@K；
+* top-k utility recall；
+* boundary r1/r2/r4；
+* start/end 分开 coverage；
+* p95/p99 hole；
+* selected-count histogram；
+* length bucket：short / medium / long action 的 mAP；
+* high IoU mAP@0.6/0.7；
+* 与 PAction learned fixed_384 同预算比较。
+
+如果 Stage2 只比 PAction 高 0.2 Avg-mAP，但 mAP@0.7 无提升，就不值得作为主方法。
+
+---
+
+## 8. Stage3：真正端到端 joint selector
+
+Stage3 的目标不是再生成 offline ledger，而是证明：
+
+> detector loss 可以在一个训练图里影响 selector 参数，并提升 TAD mAP。
+
+当前 TrueTime selector 已经有一个正确方向：它用 top-k 选 `selected_indices`，构造 hard mask、relaxed mask、straight-through mask，并通过 `_selected_inputs_for_detector` 做 hard selected + soft selected - detach 的 ST sparse gather。([GitHub][7])
+
+但当前还不能直接宣称端到端成功，因为 selector 自身 loss 现在基本是诊断占位，真正 detector loss 是否稳定驱动 selector 还没有被 mAP/gradient gate 证明。([GitHub][7])
+
+Stage3 最小实现路线：
+
+1. 用 Stage2 selector 初始化。
+2. 先 freeze AdaTAD，只训练 selector 对齐 teacher utility。
+3. 再 freeze selector，训练 AdaTAD sparse detector。
+4. 最后 joint fine-tune，selector LR 比 detector 小 10x 到 100x。
+5. 加 trust-region：selector 不允许快速偏离 Stage2 分布。
+6. 加 anti-collapse：entropy、selected-count、duplicate、max-hole、boundary support gate。
+7. 每轮记录 `selector_grad_norm_from_detector_loss`。
+
+最关键的测试：
+
+```python
+loss_detector.backward()
+assert selector_grad_norm > 0
+assert selector_param_delta_after_step > 0
+```
+
+如果这个不成立，Stage3 只是“selector 插在 graph 里”，不是 detector-aware joint training。
+
+---
+
+## 9. Detector 侧也要改：只 remap 到 selected axis 可能限制高 IoU
+
+当前 PAction/GAS AdaTAD config 都使用 `bata_value_transport_ledger_subsample`，并且 `remap_gt_to_selected_axis=True`。([GitHub][9])
+
+这对工程一致性是好事，但对不规则时间选择的最终论文方法可能不够优雅。因为 selected axis 会把真实时间间隔压缩成 rank axis。fixed_384 如果选择近似连续还好；dynamic / irregular / boundary-heavy selector 会让时间间隔不均匀，高 IoU 边界回归更容易出现几何偏差。
+
+最终更优雅的 detector interface 应该是：
+
+```text
+selected_features: [B, C, K]
+selected_time:     [B, K]      # original dense local index or seconds
+cell_width:        [B, K]      # local temporal support / Voronoi interval width
+valid_mask:        [B, K]
+```
+
+检测头预测的是 true-time start/end，而不是 selected-rank start/end：
+
+[
+\hat{s}, \hat{e} \in \text{original dense local time}
+]
+
+这会让你的论文故事从“我把 OpenTAD 输入变短”升级为：
+
+> detector understands sparse non-uniform temporal observations.
+
+这才是真正 pre-backbone sparse acquisition 论文该有的形式。
+
+---
+
+## 10. 立即应该做的代码修复
+
+### 10.1 修 GAS-VT apply-time target budget
+
+现在 checkpoint apply 没传 target budget。应改成按 fixed/dynamic 分别构造 feature。
+
+最小修法：
+
+```python
+def checkpoint_policy_scores_for_budget(
+    model,
+    p_action,
+    *,
+    valid,
+    target_budget: int,
+    device: str = "cuda",
+):
+    import torch
+    from tools.bata import gas_vt_paction_policy as gas_vt
+
+    features = gas_vt.build_gap_aware_feature_matrix(
+        p_action,
+        valid=valid,
+        target_budget=int(target_budget),
+    )
+
+    with torch.no_grad():
+        feature_tensor = torch.tensor([features], dtype=torch.float32, device=device)
+        valid_tensor = torch.tensor([list(valid)], dtype=torch.bool, device=device)
+        budget_tensor = torch.tensor([int(target_budget)], dtype=torch.long, device=device)
+        outputs = model(feature_tensor, valid_tensor, target_budget=budget_tensor)
+
+    frame_values = outputs["frame_value"][0].detach().cpu().tolist()
+    budget_scores = outputs["budget_logits"][0].detach().cpu().tolist()
+    return [float(x) for x in frame_values], [float(x) for x in budget_scores]
+```
+
+fixed_384 用 384；fixed_768 用 768；dynamic 应先解 budget，再用 decoded budget 重算 frame scores。
+
+### 10.2 修 Stage2 detector-aware 同类问题
+
+detector-aware apply 也不应裸调用：
+
+```python
+features = detector_policy.build_detector_aware_feature_matrix(p_action, valid=valid)
+```
+
+因为 detector-aware feature builder 只是包了一层 GAS-VT feature builder。([GitHub][5])
+
+应该同样传入 target budget。
+
+### 10.3 validator 加正式统计
+
+你现在的远端 sampled analysis 非常有价值，应合入 validator，至少包括：
+
+```python
+def selected_count_histogram(rows, strategy):
+    hist = {}
+    for row in rows:
+        k = len(row["strategy_selected_positions"][strategy])
+        hist[k] = hist.get(k, 0) + 1
+    return hist
+
+
+def boundary_distance_stats(selected, boundaries):
+    selected = sorted(set(selected))
+    out = []
+    for b in boundaries:
+        if not selected:
+            continue
+        out.append(min(abs(int(s) - int(round(b))) for s in selected))
+    return {
+        "mean": mean(out),
+        "p50": percentile(out, 50),
+        "p90": percentile(out, 90),
+        "p95": percentile(out, 95),
+        "r1": sum(d <= 1 for d in out) / max(1, len(out)),
+        "r2": sum(d <= 2 for d in out) / max(1, len(out)),
+        "r4": sum(d <= 4 for d in out) / max(1, len(out)),
+    }
+
+
+def topk_overlap_stats(selected, scores, k):
+    topk = set(sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:k])
+    selected = set(selected)
+    return len(selected & topk) / max(1, len(selected | topk))
+```
+
+此外必须加入：
+
+* gap CV；
+* phase-shift uniformity；
+* CDF/KS distance to uniform；
+* repair inserted count；
+* repair replaced count；
+* pre-repair / post-repair max hole；
+* start boundary r1 与 end boundary r1 分开统计。
+
+---
+
+## 11. 最小实验矩阵
+
+现在最重要的不是继续长跑，而是把因果切开。
+
+### 第一组：解释 PAction 为什么强
+
+| 实验                                    | 目的                         |
+| ------------------------------------- | -------------------------- |
+| raw p_action top-k fixed_384          | 判断 PAction 是否超过原始 p_action |
+| PAction learned no boundary loss      | 判断 boundary loss 是否是主因     |
+| PAction learned no temporal hole loss | 判断 p95 hole 是否是主因          |
+| PAction learned no hard repair        | 判断是否靠 repair               |
+| PAction learned same max-hole as GAS  | 公平比较 repair effect         |
+
+如果去掉 boundary loss 后 mAP@0.7 大跌，就说明 PAction 的核心收益来自 boundary supervision。
+如果去掉 temporal hole loss 后 p95 hole 变大且 mAP@0.7 跌，就说明局部连续支撑是关键。
+
+### 第二组：解释 GAS 为什么卡
+
+| 实验                         | 目的                      |
+| -------------------------- | ----------------------- |
+| GAS current fixed_384      | 复现基线                    |
+| GAS apply budget fix       | 验证 train/apply mismatch |
+| GAS no CVaR max-hole loss  | 验证是否过度 coverage         |
+| GAS no action_interior_bin | 验证是否浪费预算在 interior      |
+| GAS no hard repair         | 验证 repair 是否伤害边界峰       |
+| GAS true sequential decode | 验证“VT”是否真的需要 sequential |
+
+如果 `no action_interior_bin` 反而涨，说明 GAS 的动作内部覆盖目标有害。
+如果 budget fix 涨幅明显，说明之前的 plateau 部分是代码语义 bug。
+如果 true sequential decode 仍不涨，说明 handcrafted GAS 思路本身不够。
+
+### 第三组：进入主方法
+
+| 实验                                        | 目标                          |
+| ----------------------------------------- | --------------------------- |
+| Stage2 teacher utility selector fixed_384 | 是否超过 PAction                |
+| Stage2 teacher utility + boundary utility | 是否提升 mAP@0.7                |
+| Stage2 utility rank loss vs BCE           | 判断排序学习是否关键                  |
+| Stage3 ST selector gradient smoke         | 证明 detector loss 到 selector |
+| Stage3 joint fine-tune mAP                | 证明端到端有效                     |
+
+---
+
+## 12. 论文故事应该如何重构？
+
+不要这样讲：
+
+> 我们提出 GAS-VT，用 gap-aware CVaR 和 boundary bracket 选择帧，提升 TAD。
+
+这个故事现在不稳，因为 GAS-VT 的结构没有转化成更好 mAP。
+
+应该这样讲：
+
+> Sparse TAD 的核心不是 action coverage，而是 detector utility under partial observation。传统 uniform / p_action / coverage-guided selector 会保留大量 action interior，却丢失高 IoU 定位所需的 boundary-discriminative evidence。我们提出一个 detector-utility-calibrated pre-backbone acquisition 模块，通过 dense detector teacher 和后续 joint detector loss 学习在预算约束下选择对 AdaTAD 分类、边界回归和高 IoU 匹配最有价值的 observations，并用 true-time sparse geometry 接入检测头。
+
+这条故事的创新点是：
+
+1. **问题定义创新**：pre-backbone sparse acquisition for TAD，不是分类选帧。
+2. **诊断创新**：证明 action coverage 不等于 high-IoU detector utility。
+3. **方法创新**：detector-utility-calibrated selector，而不是 p_action-only / coverage-only。
+4. **几何创新**：true-time sparse observation interface，让检测头理解非均匀采样。
+5. **训练创新**：Stage2 teacher utility distillation + Stage3 detector-loss joint fine-tuning。
+6. **实验创新**：用 mAP@0.6/0.7、boundary support、hole distribution、utility recall 共同评价 selector。
+
+---
+
+## 13. 当前决策
+
+我的严格判断：
+
+```text
+GAS-VT_AS_MAIN_METHOD: NO
+GAS-VT_AS_STAGE1_ENGINEERED_BASELINE: YES
+PACTION_LEARNED_AS_STAGE1_STRONG_BASELINE: YES
+PACTION_LEARNED_AS_FINAL_METHOD: NO
+NEXT_MAIN_ROUTE: DETECTOR_UTILITY_CALIBRATED_ACQUISITION
+IMMEDIATE_PATCH_PRIORITY:
+  1. GAS/Stage2 apply-time target_budget conditioning
+  2. validator top-k overlap + boundary distance + selected-count histogram
+  3. repair statistics and richer uniformity metrics
+  4. PAction/GAS matched ablations
+  5. Stage2 dense teacher utility selector
+```
+
+一句话总结：
+
+**GAS-VT 早期到 40，是因为半密度输入足以支持粗检测；后期卡住，是因为它优化的 action/interior/coverage surrogate 没有变成 AdaTAD 高 IoU 边界定位 utility。PAction learned fixed_384 更好，不是因为它更像 raw p_action top-k，而是因为它在当前 evidence 下更好地保留了边界邻域和局部连续支撑。下一步真正优雅的路线不是继续堆 GAS handcrafted priors，而是把 selector 的训练目标改成 detector utility，并让检测头显式理解 true-time sparse geometry。**
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/gas_vt_paction_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/gas_vt_paction_policy.py at codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/train_gap_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/train_gap_aware_acquisition_policy.py at codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/apply_gap_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/apply_gap_aware_acquisition_policy.py at codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/paction_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/paction_acquisition_policy.py at codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/detector_aware_acquisition_policy.py at codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[6]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/train_detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/train_detector_aware_acquisition_policy.py at codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[7]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/opentad/models/selectors/truetime_joint_selector.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/selectors/truetime_joint_selector.py at codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[8]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/tools/bata/apply_detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/apply_detector_aware_acquisition_policy.py at codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[9]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/codex/gas-vt-stage23-detector-aware-20260706/configs/adatad/thumos/c3_paction_learned_ledger_adatad_full_train.py "OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/c3_paction_learned_ledger_adatad_full_train.py at codex/gas-vt-stage23-detector-aware-20260706 · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"

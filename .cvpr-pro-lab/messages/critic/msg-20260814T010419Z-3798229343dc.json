@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-14T01:04:19Z",
+  "deadline": "2026-08-14T11:30:00+08:00",
+  "from_role": "coordinator",
+  "kind": "UOR_FOCUSED_IMPLEMENTATION_RECHECK_V001",
+  "message_id": "msg-20260814T010419Z-3798229343dc",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/role-returns/BUILDER_FOCUSED_CORRECTION_DUCA_DENSITY_UOR-v001.md"
+  ],
+  "payload": null,
+  "priority": "critical",
+  "requested_action": "Unique focused recheck after the one permitted deterministic Builder correction. Review frozen, clean, read-only commit 6576789468c1a7692d49b2ba94a638e01e7970f4 against the parent Builder receipt and your own prior findings DUCA-REACH-IMP-001/002/003 only. Before review read AGENTS.md, RTK.md, research-wiki/query_pack.md, research-wiki/anti_repetition.md, PRO_DUCA_DENSITY_UOR_IMPLEMENTATION-v001, DUCA_DENSITY_REACHABILITY_PROTOCOL-v001, the prior independent Critic receipt, and the Builder focused-correction receipt. Independently inspect only the declared changed surfaces and run only bounded CPU/no-data contract checks if useful. Return exactly FOCUSED_RECHECK_PASS or REACHABILITY_PRE_RUN_BLOCKED; classify any issue. If an equivalent second deterministic defect in these three correction areas remains, terminate the loop as NEEDS_ATTENTION with a minimal simplification proposal; do not propose another correction cycle. No browser, Pro, Sources, data or dataset/root access/listing, official validation, remote, GPU, Slurm, train, inference, evaluator execution, metrics, or claim/route change. Return durable receipt with frozen commit, attacks, commands/results, execution/evidence boundary, next_owner, and explicit dependency.",
+  "required_gate": "PRO_DUCA_DENSITY_UOR_IMPLEMENTATION-v001",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

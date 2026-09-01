@@ -1,0 +1,15 @@
+{
+  "created_at": "2026-08-27T01:53:35Z",
+  "from_role": "Coordinator",
+  "kind": "role_task",
+  "message_id": "msg-20260827T015335Z-9db4062e73a1",
+  "payload": {
+    "path": ".cvpr-pro-lab/role-messages/EVALUATOR_PJST_D1_TERMINAL_BOOTSTRAP_BUNDLE_SUBMIT-v003.md"
+  },
+  "priority": "high",
+  "requested_action": "Submit exactly one bundled paired-bootstrap/finalizer job after accepted OFF/ON terminal re-inference, then monitor the exact DAG to terminal.",
+  "required_gate": "Critic static PASS on clean commit 4204937a",
+  "schema_version": "1.0",
+  "status": "queued",
+  "to_role": "Evaluator"
+}

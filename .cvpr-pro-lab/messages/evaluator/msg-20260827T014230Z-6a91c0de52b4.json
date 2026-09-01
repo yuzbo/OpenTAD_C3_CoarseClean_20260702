@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-08-27T01:42:30Z",
+  "deadline": "2026-08-27T10:00:00Z",
+  "from_role": "coordinator",
+  "kind": "pjst-d1-terminal-finalizer-submit",
+  "message_id": "msg-20260827T014230Z-6a91c0de52b4",
+  "parent_artifact_ids": [
+    "BUILDER_PJST_D1_TERMINAL_FINALIZER_WIRING-v001",
+    "CRITIC_PJST_D1_TERMINAL_FINALIZER_REVIEW-v001"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-messages/EVALUATOR_PJST_D1_TERMINAL_FINALIZER_SUBMIT-v002.md"
+  },
+  "priority": "critical",
+  "requested_action": "Deploy clean 45496b8a and submit the static-passed OFF/ON terminal prediction plus exact 10000-draw paired-bootstrap DAG; return START immediately, then monitor terminal artifacts.",
+  "required_gate": "PJST_D1_TERMINAL_FINALIZER_STATIC_PASS",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [
+    "analyze-results",
+    "monitor-experiment"
+  ],
+  "to_role": "evaluator"
+}

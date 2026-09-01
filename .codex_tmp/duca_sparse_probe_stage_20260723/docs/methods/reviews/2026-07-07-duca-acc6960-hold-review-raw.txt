@@ -1,0 +1,665 @@
+## 总 verdict：**HOLD**
+
+固定 commit `acc696039d53458cbe36d65b72a84bb55fdafe6f` 是公开可见的；commit 标题是 **“Fix DUCA stage3 precheck contracts”**，本次 diff 只改了 6 个文件，核心集中在 Stage3 precheck 合同、Stage3 full-run wrapper、Stage2 trainer 的 signed utility 约束和相关测试。也就是说，这个 commit **不是一次完整方法实现提交**，而是一次 gate/precheck 修复提交。([GitHub][1])
+
+我的结论是：当前工程方向总体仍对齐 DUCA-TAD 的目标，但**论文级 claim 仍必须 HOLD**。原因很简单：你自己的严格 claim gate 已经写得很清楚——无 detector mAP、无 matched-budget baseline、无 train-only dense teacher provenance、无真实 detector loss 到 selector 的 full training 证据，就不能 claim sparse acquisition superiority、detector-aware 或 end-to-end。当前文档也明确 Stage2 还缺真实 dense teacher 与 train-only utility export，Stage3 只是 precheck/full-train candidate。
+
+---
+
+## 1. 我实际检查到的材料
+
+我检查了固定 commit diff，以及这些关键路径的网页源码/配置/测试：
+
+* `tools/bata/gas_vt_paction_policy.py`
+* `tools/bata/train_gap_aware_acquisition_policy.py`
+* `tools/bata/detector_teacher_utility.py`
+* `tools/bata/detector_aware_acquisition_policy.py`
+* `tools/bata/train_detector_aware_acquisition_policy.py`
+* `opentad/models/selectors/truetime_joint_selector.py`
+* `opentad/models/detectors/single_stage.py`
+* `opentad/models/dense_heads/anchor_free_head.py`
+* `opentad/models/utils/truetime_geometry.py`
+* `tools/bata/run_truetime_joint_selector_precheck.py`
+* `tools/bata/validate_truetime_joint_selector_precheck.py`
+* `configs/adatad/thumos/c3_truetime_joint_selector_adatad_precheck.py`
+* `configs/adatad/thumos/c3_truetime_joint_selector_c3_adatad_smoke.py`
+* `scripts/run_duca_stage3_truetime_precheck_gpu1.sh`
+* `tools/bata/validate_stage4_detector_aware_truetime_curriculum.py`
+* 官方 OpenTAD / AdaTAD 相关配置与 ActionFormer reference。
+
+没有本地 clone、没有运行 pytest、没有跑训练。因此下面是**静态代码审查 + 公开 GitHub 可见性审查**，不是 runtime 复现实验报告。
+
+---
+
+## 2. P0 / P1 / P2 问题
+
+### P0-1：当前不支持任何 performance/superiority claim
+
+Stage0/1、PAction、GAS-VT、Stage2、Stage3 现在都还没有形成完整的 matched-budget mAP matrix。你文档里提到的 GAS-VT `fixed_384` 训练中间 mAP snapshot ≈45.87，不能作为结论；它既没有收敛，也没有完整对照，也没有多 seed/high-IoU 统计。
+
+**判定：HOLD。**
+
+必须补齐：
+
+* dense AdaTAD official-like teacher / baseline；
+* uniform 384/768；
+* random 384/768；
+* p_action-only 384/768/dynamic；
+* GAS-VT 384/768/dynamic；
+* Stage2 detector-aware 384/768/dynamic；
+* Stage3 end-to-end sparse selector；
+* mAP@0.3/0.4/0.5/0.6/0.7；
+* wall-clock、memory、selected count、max gap、p95 gap、boundary bracket coverage。
+
+---
+
+### P0-2：Stage2 “detector-aware utility”还不是强意义 detector utility
+
+`detector_teacher_utility.py` 已经做了很好的 fail-closed 设计：要求 `signed_detector_utility_v1`、train-only split、teacher checkpoint/config hash、禁止 GT/cache/raw prediction 等字段，并输出 `signed_frame_utility`、positive gain、negative risk 等。([GitHub][2])
+
+但核心问题是：当前 utility 更像**dense teacher proposal/score 中心 saliency**。代码将 ActionFormer predictions 映射到 dense points，中心点由 proposal start/end 的中心取整得到；`map_dense_points_to_signed_frame_utility()` 再把点 utility 扩散到 frame utility。文件中没有真正 counterfactual utility 逻辑。([GitHub][2])
+
+这意味着 Stage2 目前最多可以 claim：
+
+> offline teacher-score-supervised sparse selector candidate
+
+不能 claim：
+
+> AdaTAD detector loss / detector responsibility / counterfactual detector utility teaches selector what observations matter.
+
+**判定：P0 scientific blocker。**
+
+必须加入至少一种更强 teacher utility：
+
+* per-point positive assignment responsibility；
+* per-point cls/reg loss contribution；
+* proposal-level NMS-sensitive responsibility；
+* leave-span-out / mask-span-out counterfactual ΔmAP proxy；
+* signed harmful-observation utility，而不是只把高 score 区域当正价值。
+
+---
+
+### P0-3：Stage3 证明了“梯度通路候选”，没有证明“端到端方法”
+
+Stage3 当前比旧 smoke 强很多。`TrueTimeRelaxedHardTopKSelector` 里有 ST mask：hard top-k mask + relaxed mask surrogate；`_selected_inputs_for_detector()` 用 `hard_selected + soft_selected - soft_selected.detach()` 让 selector 有梯度路径。metadata 里也写入 `truetime_selected_positions`、`selected_axis_to_true_time_dense_index`、`irregular_selected_positions` 等 true-time 信息。([GitHub][3])
+
+`SingleStageDetector.forward_train()` 已经能接 `frame_selector`，再进入 backbone/projection/neck/rpn_head，并把 selector loss 与 detector loss 合并进 `cost`。`AnchorFreeHead` 也增加了 `physical_grid_actionformer` 路径：训练和测试都会构建 physical points，让 GT 与预测处于 true-time dense axis。([GitHub][4])
+
+Stage3 precheck 也不是纯 fake head；它构建 synthetic ActionFormer path，执行 `detector.forward_train`，对 `losses["cost"]` backward，并记录 `real_detector_proof_source = "opentad_actionformer_forward_train_cost_backward"`。validator 要求 geometry roundtrip、inverse map、selected-input ST grad、detector loss selector grad、`cls_loss/reg_loss` 存在、physical-grid precheck 为真，并禁止 mAP/tIoU 出现在 precheck metrics 中。([GitHub][5])
+
+这说明当前 Stage3 可 claim：
+
+> real ActionFormer synthetic precheck shows detector-loss gradient can reach selector parameters.
+
+但不能 claim：
+
+> end-to-end selector + AdaTAD has been implemented and validated on THUMOS.
+
+因为：
+
+* precheck 是 tiny synthetic，不是 THUMOS full train；
+* selector regularizer 目前基本是零损失占位；
+* 没有 sparse AdaTAD full mAP；
+* full-run gate 仍依赖 PASS summary，缺少严格 config/proof hash binding；
+* 没有 collapse diagnostics。
+
+**判定：Stage3 = WARN/HOLD，不是 PASS。**
+
+---
+
+## 3. P1 问题
+
+### P1-1：GAS-VT 可能仍主要是 p_action + gap/coverage prior
+
+`build_gap_aware_feature_matrix()` 明确把 p_action、局部密度、变化量、距上次选择距离、remaining budget、budget pressure、gap urgency 等拼成特征；`hard_gap_aware_topk()` 最终委托到 constrained top-k，带 max unselected hole 约束。([GitHub][6])
+
+训练目标包含 action target、boundary target、action interior、CVaR/budget/p_action gain 等。([GitHub][6])
+
+这不是坏事，但必须承认：当前 GAS-VT 不是一个纯粹从 detector utility 学来的策略，而是一个**p_action + 手工 gap/coverage/boundary prior 的 learned ledger policy**。
+
+必须做 ablation：
+
+* 去掉 gap urgency；
+* 去掉 hard max-hole repair；
+* 去掉 boundary bracket loss；
+* 去掉 action interior loss；
+* 只保留 p_action；
+* random with same max-hole；
+* uniform with same K；
+* matched selected count / wall-clock。
+
+否则 reviewer 会认为提升来自规则修补，而不是 acquisition learning。
+
+---
+
+### P1-2：dynamic budget calibration 过弱
+
+Stage2 policy 里已经有 dynamic budget calibration metadata，并且 `_has_dynamic_gain_calibration_evidence()` 会检查 `fit_split=train`、`semantics=calibrated_marginal_gain`、`scope=cross_video_comparable`、`target_source=positive_observation_gain_from_signed_detector_utility` 等字段。([GitHub][7])
+
+但训练脚本里的 `_fit_dynamic_gain_calibration()` 本质上是从 positive gain 里取一个全局 median threshold，再把超过 threshold 的帧数映射到 budget bucket。([GitHub][8])
+
+这对工程 precheck 够用，但对论文 claim 不够。dynamic budget 应该证明：
+
+* train split 上拟合 marginal gain vs cost 曲线；
+* threshold 冻结；
+* val/test 不再重新调；
+* average K matched；
+* dynamic 的 gain 不只是 rank-derived；
+* 给出 per-video selected count 分布和 collapse 诊断。
+
+---
+
+### P1-3：full-run gate 需要绑定 exact proof hash
+
+当前 Stage3 wrapper 已修复一个重要问题：full-run mode 不再 fallback 到旧 smoke launcher，而是在 gate 通过后直接调用 `tools/train.py`。commit diff 也显示 `precheck_only_default=True` 与 `current_run_precheck_only` 已分离。([GitHub][1])
+
+但正式 full training gate 仍应更严：
+
+* PASS summary 必须包含 commit SHA；
+* config SHA；
+* precheck proof JSON SHA；
+* dataset manifest SHA；
+* physical-grid flag；
+* selector class；
+* selected_count/dense_len；
+* exact script SHA；
+* proof produced by same commit + same config。
+
+否则 reviewer 会说：你只是检查了一个旧 PASS 文件，不能证明当前 full run 合法。
+
+---
+
+### P1-4：true-time geometry 实现方向正确，但高 IoU 仍未被证明
+
+`TrueTimeMap` 对 selected positions 做严格检查：非空、1D、范围合法、strictly increasing；`selected_to_true()` 和 `true_to_selected()` 做 piecewise interpolation；`remap_selected_axis_segments_to_true_time()` 根据 metadata 把 selected-axis segment remap 到 true-time。([GitHub][9])
+
+`SingleStageDetector.post_processing()` 在 NMS 前调用 true-time remap，这一点是正确方向。([GitHub][4])
+
+但高 IoU claim 还缺：
+
+* real THUMOS sliding-window duration/fps/window_offset 单测；
+* multilevel FPN stride 下的 physical-grid 回归一致性测试；
+* mAP@0.6/0.7；
+* boundary bracket coverage 与 high-IoU 相关性；
+* selected-axis postprocess fail-closed 测试。
+
+---
+
+## 4. P2 问题
+
+### P2-1：Stage4 目前只是 evidence gate，不是 curriculum
+
+`validate_stage4_detector_aware_truetime_curriculum.py` 是一个 validator/gate 文件，不是训练实现。([GitHub][10])
+
+所以 Stage4 只能写成：
+
+> curriculum / bilevel evidence protocol
+
+不能写成：
+
+> implemented curriculum training method.
+
+---
+
+### P2-2：需要真实 artifact 的 recursive no-leakage scanner
+
+目前很多 metadata 字段已经写得很好：`teacher_target_scope=train_only`、`teacher_target_used_at_deployment=False`、`selection_uses_teacher=False`、`selection_uses_gt=False`、`uses_uniform_fill=False`、`uses_uniform_scaffold=False`、`end_to_end=False`、`map_claim_allowed=False`。([GitHub][7])
+
+但真实风险在 JSONL/NPZ/PT artifact 的嵌套 payload。建议加入递归扫描器，禁止任何 val/test/deploy artifact 出现：
+
+* `gt`
+* `ground_truth`
+* `teacher`
+* `oracle`
+* `prediction_cache`
+* `raw_prediction`
+* `proposal_cache`
+* `dense_teacher`
+* `marginal_gain_frame_utility`
+* `frame_utility` without signed semantics
+
+---
+
+## 5. Claim support 表
+
+| Claim                                                  |                 当前判定 | 依据                                                                    |
+| ------------------------------------------------------ | -------------------: | --------------------------------------------------------------------- |
+| commit 可见、可审查                                          |                 PASS | 固定 commit 页面公开可见，diff 可读。([GitHub][1])                                |
+| sparse acquisition improves TAD mAP                    |                 HOLD | 没有完整 matched-budget detector mAP matrix。                              |
+| GAS-VT 优于 p_action-only                                |                 HOLD | 需要收敛 mAP + ablation；目前可能混入 gap/coverage prior。                        |
+| detector-aware acquisition improves over p_action-only |                 HOLD | Stage2 代码有，但 dense teacher/export/mAP matrix 未完成。                     |
+| dynamic budget is calibrated                           |            WARN/HOLD | 有 metadata gate，但 median positive-gain threshold 太弱。                  |
+| end-to-end selector + AdaTAD implemented               |            WARN/HOLD | 有真实 ActionFormer synthetic gradient precheck；无 THUMOS full train/mAP。 |
+| high-IoU localization protected                        |                 HOLD | true-time geometry 有实现，但缺 mAP@0.6/0.7 证据。                             |
+| no teacher/GT leakage                                  |                 WARN | 代码层 flags/gates 较好；还需真实 artifact recursive scanner。                   |
+| Stage4 curriculum implemented                          | FAIL as method claim | 目前是 evidence gate，不是 curriculum trainer。                              |
+
+---
+
+## 6. 修正后的实验路线图
+
+### Phase A：先锁 dense official-like baseline
+
+必须先完成：
+
+1. dense AdaTAD official-like full training；
+2. checkpoint hash；
+3. config hash；
+4. mAP@0.3/0.4/0.5/0.6/0.7；
+5. 与官方 OpenTAD/AdaTAD 数值对齐。官方 AdaTAD/OpenTAD 已发布 THUMOS14 相关配置与 checkpoints，AdaTAD paper/repo 报告 THUMOS14 Avg mAP 约 77.07，所以你的 dense teacher 不能偏离太远，否则 Stage2 teacher utility 失去可信度。([GitHub][11])
+
+### Phase B：完成 Stage0/1 sparse ledger baseline
+
+跑：
+
+* uniform 384 / 768；
+* random 384 / 768；
+* p_action fixed 384 / 768 / dynamic；
+* GAS-VT fixed 384 / 768 / dynamic。
+
+同时记录：
+
+* selected count；
+* max gap；
+* p95 gap；
+* CVaR hole；
+* boundary bracket coverage；
+* action interior coverage；
+* high-IoU mAP。
+
+### Phase C：Stage2 detector-aware offline selector
+
+先不要 claim end-to-end。只回答：
+
+> dense AdaTAD teacher utility 是否能训练出比 p_action/GAS-VT 更好的 offline acquisition policy？
+
+必须增加：
+
+* true signed cls/reg utility；
+* train-only export；
+* val/test/deploy no-teacher validator；
+* matched-budget detector mAP。
+
+### Phase D：Stage3 online dense-sparse co-training
+
+目标是第一个真正 end-to-end 候选：
+
+* dense branch / EMA teacher branch；
+* sparse ST selector branch；
+* sparse AdaTAD detector loss；
+* dense-to-sparse distillation；
+* budget loss；
+* max-hole/CVaR loss；
+* boundary bracket loss；
+* collapse diagnostics；
+* inference 只保留 selector + sparse detector。
+
+### Phase E：Stage4 curriculum
+
+Stage4 不应再只是 validator，应实现：
+
+1. dense warmup；
+2. selector pretraining；
+3. frozen selector sparse detector training；
+4. partial unfreeze；
+5. joint ST fine-tuning；
+6. dynamic budget calibration；
+7. collapse diagnostics；
+8. final matched compute table。
+
+---
+
+## 7. 关键 patch sketches
+
+### 7.1 online dense-sparse co-training forward
+
+```python
+class DucaDenseSparseTrainer(nn.Module):
+    def __init__(self, dense_detector, sparse_detector, selector, ema_teacher=None):
+        super().__init__()
+        self.dense_detector = dense_detector
+        self.sparse_detector = sparse_detector
+        self.selector = selector
+        self.ema_teacher = ema_teacher
+
+    def forward_train(self, frames, masks, gt_segments, gt_labels, metas):
+        # 1. dense / EMA branch: train-only critic
+        with torch.no_grad():
+            teacher = self.ema_teacher or self.dense_detector
+            dense_out = teacher.forward_train(
+                frames, masks, gt_segments, gt_labels, metas,
+                return_point_diagnostics=True,
+            )
+            utility = extract_signed_detector_utility(dense_out, metas)
+
+        # 2. selector branch
+        sel = self.selector.forward_train(
+            frames,
+            masks,
+            metas=metas,
+            train_teacher_utility=utility.detach(),
+        )
+
+        sparse_frames = sel["selected_inputs"]
+        sparse_masks = sel["selected_masks"]
+        sparse_metas = sel["metas"]
+
+        # 3. sparse detector branch: real detector loss must hit selector
+        sparse_loss = self.sparse_detector.forward_train(
+            sparse_frames,
+            sparse_masks,
+            gt_segments,
+            gt_labels,
+            sparse_metas,
+        )
+
+        # 4. auxiliary selector losses
+        loss_budget = budget_loss(sel["selected_count"], target_budget=sel["target_budget"])
+        loss_gap = cvar_max_hole_loss(sel["selected_positions"], metas)
+        loss_bracket = boundary_bracket_loss(sel["selected_positions"], gt_segments, metas)
+        loss_distill = sparse_dense_distill_loss(sparse_loss, dense_out)
+
+        total = (
+            sparse_loss["cost"]
+            + 0.1 * loss_budget
+            + 0.1 * loss_gap
+            + 0.1 * loss_bracket
+            + 0.5 * loss_distill
+        )
+
+        return {
+            "cost": total,
+            **{f"sparse_{k}": v for k, v in sparse_loss.items()},
+            "loss_budget": loss_budget,
+            "loss_gap": loss_gap,
+            "loss_bracket": loss_bracket,
+            "loss_distill": loss_distill,
+            "selector_entropy": sel["entropy"].detach(),
+        }
+```
+
+核心要求：dense branch 只能 train-time 用；inference 只能走 selector + sparse detector。
+
+---
+
+### 7.2 ST / Gumbel hard top-k selector
+
+```python
+def st_gumbel_topk(logits, k, tau=1.0, training=True):
+    if training:
+        g = -torch.empty_like(logits).exponential_().log()
+        noisy = (logits + g) / tau
+    else:
+        noisy = logits
+
+    _, idx = torch.topk(noisy, k=k, dim=-1)
+    hard = torch.zeros_like(logits).scatter_(-1, idx, 1.0)
+
+    soft = torch.softmax(noisy, dim=-1) * float(k)
+    soft = soft.clamp(0.0, 1.0)
+
+    # straight-through
+    mask = hard + soft - soft.detach()
+    return mask, idx
+```
+
+---
+
+### 7.3 selected-axis 到 true-time remap
+
+```python
+def remap_segments_selected_to_true_time(segments, selected_positions):
+    """
+    segments: [N, 2] in selected-axis coordinates.
+    selected_positions: [K] dense-time physical indices, strictly increasing.
+    """
+    assert selected_positions.ndim == 1
+    assert torch.all(selected_positions[1:] > selected_positions[:-1])
+
+    k = selected_positions.numel()
+    x = torch.arange(k, device=segments.device, dtype=segments.dtype)
+    y = selected_positions.to(device=segments.device, dtype=segments.dtype)
+
+    def interp(v):
+        v = v.clamp(0, k - 1)
+        lo = torch.floor(v).long()
+        hi = torch.ceil(v).long()
+        alpha = v - lo.to(v.dtype)
+        return y[lo] * (1 - alpha) + y[hi] * alpha
+
+    out = torch.stack([interp(segments[:, 0]), interp(segments[:, 1])], dim=-1)
+    return out
+```
+
+你仓库里已经有更完整的 `TrueTimeMap` 和 `remap_selected_axis_segments_to_true_time()`，这个 patch 的重点是：**所有 NMS 与 seconds conversion 前必须先 remap 到 physical time**。
+
+---
+
+### 7.4 更强 detector utility extraction
+
+```python
+def extract_signed_detector_utility(head_debug, gt_segments, gt_labels):
+    """
+    Required head_debug fields:
+      - points: [L, T, 4]
+      - cls_logits
+      - reg_preds
+      - assigned_gt_idx
+      - cls_loss_per_point
+      - reg_loss_per_point
+      - proposal_scores_after_nms_optional
+    """
+    assigned = head_debug["assigned_gt_idx"] >= 0
+
+    cls_gain = -head_debug["cls_loss_per_point"].detach()
+    reg_gain = -head_debug["reg_loss_per_point"].detach()
+
+    pos_resp = assigned.float()
+    signed = pos_resp * (cls_gain + reg_gain)
+
+    # harmful confident false positives should become negative utility
+    fp_conf = head_debug["cls_logits"].sigmoid().max(dim=-1).values
+    signed = torch.where(assigned, signed, -fp_conf.detach())
+
+    return signed
+```
+
+这比当前 proposal-center score utility 更接近“detector utility”。
+
+---
+
+### 7.5 dynamic budget calibration
+
+```python
+def fit_budget_calibrator(train_rows, budget_buckets=(384, 512, 768), target_avg_k=512):
+    gains = []
+    for row in train_rows:
+        signed = torch.tensor(row["signed_frame_utility"])
+        cost = torch.ones_like(signed)
+        marginal = signed / cost
+        gains.append(marginal)
+
+    all_gain = torch.cat(gains)
+    thresholds = torch.quantile(all_gain, torch.linspace(0.05, 0.95, 91))
+
+    best = None
+    for th in thresholds:
+        ks = []
+        for g in gains:
+            raw_k = int((g >= th).sum().item())
+            bucket = min(budget_buckets, key=lambda b: abs(b - raw_k))
+            ks.append(bucket)
+        avg_k = sum(ks) / len(ks)
+        err = abs(avg_k - target_avg_k)
+        if best is None or err < best["err"]:
+            best = {"threshold": float(th), "avg_k": avg_k, "err": err}
+
+    return {
+        "calibration_fitted": True,
+        "fit_split": "train",
+        "semantics": "calibrated_marginal_gain",
+        "scope": "cross_video_comparable",
+        "target_source": "positive_observation_gain_from_signed_detector_utility",
+        "threshold": best["threshold"],
+        "target_avg_k": target_avg_k,
+        "fit_avg_k": best["avg_k"],
+        "budget_buckets": list(budget_buckets),
+    }
+```
+
+正式版还要加 bootstrap CI 和 frozen JSON hash。
+
+---
+
+### 7.6 recursive no-leakage validator
+
+```python
+FORBIDDEN_KEYS = {
+    "gt", "ground_truth", "teacher", "oracle",
+    "raw_prediction", "prediction_cache", "proposal_cache",
+    "dense_teacher", "evaluator_output",
+    "marginal_gain_frame_utility",
+}
+
+def scan_no_leakage(obj, path="", split="val"):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            lk = str(k).lower()
+            if split != "train":
+                for bad in FORBIDDEN_KEYS:
+                    if bad in lk:
+                        raise ValueError(f"Leakage key `{k}` at {path}")
+            scan_no_leakage(v, f"{path}.{k}", split=split)
+
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            scan_no_leakage(v, f"{path}[{i}]", split=split)
+
+    elif isinstance(obj, str):
+        lv = obj.lower()
+        if split != "train":
+            for bad in FORBIDDEN_KEYS:
+                if bad in lv:
+                    raise ValueError(f"Leakage value `{obj}` at {path}")
+```
+
+---
+
+### 7.7 selector gradient proof with hash binding
+
+```python
+def prove_selector_gradient(model, batch, proof_meta):
+    loss_dict = model.forward_train(**batch)
+    loss = loss_dict["cost"]
+    loss.backward()
+
+    grad_norm = 0.0
+    for name, p in model.named_parameters():
+        if "selector" in name and p.grad is not None:
+            grad_norm += float(p.grad.detach().abs().sum().item())
+
+    assert grad_norm > 1e-8, "No selector gradient from detector loss"
+
+    return {
+        "decision": "PASS",
+        "selector_grad_norm": grad_norm,
+        "loss_keys": sorted(loss_dict.keys()),
+        "commit": proof_meta["commit"],
+        "config_sha256": proof_meta["config_sha256"],
+        "dataset_manifest_sha256": proof_meta["dataset_manifest_sha256"],
+        "script_sha256": proof_meta["script_sha256"],
+        "proof_scope": "real_actionformer_forward_train_cost_backward",
+    }
+```
+
+---
+
+### 7.8 Stage3 full-run gate hash binding
+
+```python
+def validate_fullrun_gate(summary, expected):
+    required = [
+        "decision",
+        "commit",
+        "config_sha256",
+        "script_sha256",
+        "proof_json_sha256",
+        "selector_grad_norm",
+        "proof_scope",
+    ]
+    for k in required:
+        if k not in summary:
+            raise ValueError(f"Missing precheck field: {k}")
+
+    if summary["decision"] != "PASS":
+        raise ValueError("Precheck did not PASS")
+
+    for k, v in expected.items():
+        if summary.get(k) != v:
+            raise ValueError(f"Precheck mismatch: {k}: {summary.get(k)} != {v}")
+
+    if summary["selector_grad_norm"] <= 1e-8:
+        raise ValueError("Selector gradient proof too weak")
+
+    if summary["proof_scope"] != "real_actionformer_forward_train_cost_backward":
+        raise ValueError("Invalid proof scope")
+```
+
+---
+
+## 8. 论文故事建议
+
+当前最稳的 CVPR-style story 不应该写成“我们已经实现 detector-aware end-to-end sparse TAD”。现在证据还不够。
+
+更稳的故事是：
+
+> Temporal Action Detection 的高成本来自密集 temporal observation。简单 uniform/random/p_action selection 会保住低 IoU recall，但容易破坏高 IoU boundary localization。我们提出 DUCA-TAD：一个 detector-utility-calibrated temporal acquisition framework，通过 true-time sparse sampling、gap-aware value transport、train-only detector utility、以及 ST hard selector，把 observation acquisition 变成 detector-aware optimization 问题。核心不是学 actionness，而是学哪些 observations 对 detector 的定位损失和高 IoU proposal 质量有边际价值。
+
+需要证明的 evidence tree：
+
+1. **Uniform/random 不够**：同 K 下高 IoU 掉点、boundary gap 上升。
+2. **p_action 不够**：actionness 只覆盖 interior，不能稳定保护 boundary。
+3. **GAS-VT 有用但有限**：gap/boundary priors 改善 ledger metrics 和部分 mAP。
+4. **Detector utility 更强**：Stage2 utility-supervised selector 超过 p_action/GAS-VT。
+5. **True-time 必要**：selected-axis naive head vs true-time physical-grid head，高 IoU 差异显著。
+6. **End-to-end 更强**：Stage3 joint training 进一步提升或在相同 mAP 下更省 compute。
+7. **Dynamic budget 有意义**：相同 average K 下，dynamic > fixed，且不是 rank trick。
+8. **Deploy path clean**：val/test/deploy 不含 teacher/GT/cache。
+
+---
+
+## 最终裁决
+
+**HOLD，允许继续工程推进，但禁止论文 claim 解锁。**
+
+当前 commit 的正面点：
+
+* 固定 commit 可见；
+* Stage3 wrapper/precheck 合同有实质修复；
+* ST selector + true-time metadata + physical-grid ActionFormer 路径已经比旧 smoke 更接近真实端到端；
+* Stage2 signed utility 与 train-only provenance gate 明显更严；
+* 多处 claim locks 写得诚实。
+
+当前 blocking 点：
+
+* 没有完整 detector mAP matrix；
+* Stage2 teacher utility 还不够“detector utility”；
+* dense teacher/export 未完成；
+* Stage3 只是 synthetic real-ActionFormer gradient precheck，不是 THUMOS end-to-end result；
+* dynamic budget calibration 仍弱；
+* Stage4 只是 gate，不是 curriculum implementation；
+* high-IoU localization 还没有被实验证明。
+
+**Accepted decision：`HOLD_FOR_MORE_EVIDENCE`**
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/acc696039d53458cbe36d65b72a84bb55fdafe6f "Fix DUCA stage3 precheck contracts · yuzbo/OpenTAD_C3_CoarseClean_20260702@acc6960 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/acc696039d53458cbe36d65b72a84bb55fdafe6f/tools/bata/detector_teacher_utility.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/detector_teacher_utility.py at acc696039d53458cbe36d65b72a84bb55fdafe6f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/acc696039d53458cbe36d65b72a84bb55fdafe6f/opentad/models/selectors/truetime_joint_selector.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/selectors/truetime_joint_selector.py at acc696039d53458cbe36d65b72a84bb55fdafe6f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/acc696039d53458cbe36d65b72a84bb55fdafe6f/opentad/models/detectors/single_stage.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/detectors/single_stage.py at acc696039d53458cbe36d65b72a84bb55fdafe6f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/acc696039d53458cbe36d65b72a84bb55fdafe6f/tools/bata/run_truetime_joint_selector_precheck.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/run_truetime_joint_selector_precheck.py at acc696039d53458cbe36d65b72a84bb55fdafe6f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[6]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/acc696039d53458cbe36d65b72a84bb55fdafe6f/tools/bata/gas_vt_paction_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/gas_vt_paction_policy.py at acc696039d53458cbe36d65b72a84bb55fdafe6f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[7]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/acc696039d53458cbe36d65b72a84bb55fdafe6f/tools/bata/detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/detector_aware_acquisition_policy.py at acc696039d53458cbe36d65b72a84bb55fdafe6f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[8]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/acc696039d53458cbe36d65b72a84bb55fdafe6f/tools/bata/train_detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/train_detector_aware_acquisition_policy.py at acc696039d53458cbe36d65b72a84bb55fdafe6f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[9]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/acc696039d53458cbe36d65b72a84bb55fdafe6f/opentad/models/utils/truetime_geometry.py "OpenTAD_C3_CoarseClean_20260702/opentad/models/utils/truetime_geometry.py at acc696039d53458cbe36d65b72a84bb55fdafe6f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[10]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/acc696039d53458cbe36d65b72a84bb55fdafe6f/tools/bata/validate_stage4_detector_aware_truetime_curriculum.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/validate_stage4_detector_aware_truetime_curriculum.py at acc696039d53458cbe36d65b72a84bb55fdafe6f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[11]: https://github.com/sming256/AdaTAD?utm_source=chatgpt.com "sming256/AdaTAD: [CVPR2024] The official ..."

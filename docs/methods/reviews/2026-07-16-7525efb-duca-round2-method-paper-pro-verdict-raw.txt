@@ -1,0 +1,128 @@
+## 1. `HANDOFF_PACKET` 摘要与证据边界
+
+已读取上一轮实际交接包：commit 一致，`VISIBLE`，`GO_TO_REAL_GATE`，无 P0；`direct_detector_gradient=false`；signed proximal 数学通过；utility 是“含 selected-axis 几何的选择策略效用”；AMP/DDP 未经 exact-commit 真实运行；真实 loader gate 不存在。formal gate 明示 `real_dataset_loader_executed=False`，故无真实 CUDA、mAP 或成本证据。
+
+`TAPS` 无唯一可核验展开；按既有语境采用 Temporal Action Parsing/TAPOS，其研究 sub-action 结构，非 acquisition。([arXiv][1])
+
+## 2. 一句话总裁决
+
+# `REDESIGN`
+
+**唯一选择路线 3：以 exact-uniform 为锚的 coverage-preserving local-cell deformation；保留 binary-state→transition evidence 与 train-only detached detector utility，删除全局自由选帧、全局 homotopy 和 Gram-whitened proximal。**
+
+## 3. 最强失败反例
+
+长动作 A/C 的低分辨率转变清晰，6–8 帧短动作 B 被 probe 平滑为背景。全局 exact-K/max-hole=15 可在 A/C 边界堆帧、在 B 周围留洞；selected-axis 又把不规则间隔近似当作等距 token。teacher 可能因 point reassignment/坐标压缩继续偏好 A/C，signed proximal 会**正确追随这个错误但真实的当前-detector utility**。于是合同全通过，uniform 仍凭密集覆盖和稳定几何取胜。hard/soft DP未保留 uniform 的局部覆盖不变量。
+
+## 4. 唯一最终架构
+
+**[PROPOSAL] Local-cell DUCA。** 对有效长度 (L)，令 (k=\min(384,L))，锚点
+
+[
+q_j=\mathrm{round}!\left(j{L-1\over k-1}\right).
+]
+
+以相邻锚点中点构造互不重叠的 (C_j)，每格恰选一帧：
+
+[
+z_j=\arg\max_{t\in C_j}s_t,\qquad
+\pi_{jt}=\operatorname{softmax}_{t\in C_j}(s_t/\tau_c).
+]
+
+(L\le384) 时选全部。对 768→384，cell 宽度至多 3，任意合法选择 `max_unselected_hole≤3`；hard/soft 使用同一 cell family，禁止 repair。scorer 末层零初始化，tie-break 取 (q_j)，step 0 即 exact-uniform，无需 α-homotopy。
+
+| 模块                  | 推理/输入                                     | 训练监督与梯度                                                             | stop-grad / 成本                                                              |
+| ------------------- | ----------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 64×64 stem+ASFormer | 是；全窗 RGB                                  | binary BCE→stem/encoder/decoder/action head；transition→stem/encoder | action logits进 transition 前 detach；(O(T64^2))                               |
+| transition scorer   | 是；Δlogit/entropy/hidden、|Δ|、cosine change | transition→encoder+scorer；coverage→scorer                           | policy descriptor detach；禁 absolute hidden、raw-RGB mean、位置、直接 endpoint head |
+| local-cell selector | 是；scores                                  | hard argmax+cell softmax                                            | 无参数，(O(T))，exact-K/max-gap by construction                                  |
+| local teacher       | 否；≤4个不同 cell flip                         | detached `cls+reg`→scorer                                           | baseline+≤4 heavy passes；恢复 normalizer/RNG/buffer                           |
+| AdaTAD heavy stack  | 是；384 RGB                                 | 官方 `cls+reg`→Adapter/projection/head                                | 对 selector stop-grad；inverse-map 后 NMS                                      |
+
+ASFormer encoder**允许** transition loss 更新：binary BCE锁定粗状态语义，action head只收 binary loss，boundary GT仅经状态差分进入 encoder/scorer。现实现已有这些 stop-grad 边界。
+
+全局 selected-axis 不足；local-cell 将变形限制在 uniform 邻域后可接受。若此时 @0.7 仍因几何下降，本轮不准用 physical-grid 救火，直接失败。
+
+## 5. 唯一目标、公式与梯度路由
+
+**[PROPOSAL]** 不同 cell 的 flip 定义：
+
+[
+u_m=L_{\rm det}(S)-L_{\rm det}(S_m),\quad r_m=s(a_m)-s(z_m),
+]
+
+[
+\tilde u_m=\tanh!\frac{u_m}{\operatorname{mean}|u|+\epsilon},\quad
+L_u={\sum|\tilde u_m|\operatorname{softplus}[-\operatorname{sign}(\tilde u_m)r_m/\tau_u]\over\sum|\tilde u_m|+\epsilon}.
+]
+
+候选 cell 不重复，因此 incidence 行不相交、(AA^\top=2I)，每个非零 (u_m) 的 projected descent 必然同号；无需 Gram solve、condition gate 或 forward 内 `autograd.grad`。signed regression依赖 noisy 幅值；当前 proximal是在补救全局 shared-remove 冲突；logistic只学习“flip优/劣”。
+
+[
+L=L_{\rm det}+1.0L_{\rm action}+0.5L_{\rm trans}+0.25L_{\rm cov}+\lambda_uL_u,
+\quad\lambda_u^{\max}=0.25.
+]
+
+路由：`action→stem/ASFormer全体`；`transition→stem/encoder/scorer`；`coverage、utility→scorer only`；`cls/reg→heavy stack only`。teacher 永远 detached，并保留现有 normalizer、RNG、模式与 buffer 恢复。
+
+**[PROPOSAL] 训练合同：** heavy VideoMAE-S各臂使用同一 Kinetics 预训练；其余官方初始化，stem/ASFormer/scorer从零训练。一次联合训练。前20%成功更新关闭 teacher，随后10%升至0.25；teacher每4个成功更新执行。132 epoch=13,200次成功 optimizer/scheduler/EMA/selector 更新；world-size=1 DDP，`with_cp=False/static_graph=False/find_unused=True`；AMP skip重放原 batch/RNG/state；EMA=0.999；主 checkpoint 为 epoch-131 `state_dict_ema`；禁止用中间 THUMOS test mAP 选模。现事务只在成功 step 后推进各状态，应保留。
+
+## 6. 相对 `7525efb` 的最小实现变更
+
+1. **[PROPOSAL/P0]** 全局 DP/homotopy替换为 anchor-cell hard/soft selector。
+2. **[PROPOSAL/P0]** swap builder改为不同 cell 内的最佳替代，保证 (AA^\top=2I)。
+3. **[PROPOSAL/P0]** proximal改 weighted logistic；训练 forward删除 alignment/Gram solve。
+4. **[PROPOSAL/P1]** 字段改名 `selection_policy_utility_including_selected_axis_geometry`。
+5. **[PROPOSAL/P0]** 增加 cell 穷举、uniform tie-init、full/mixed/all-short、logistic sign、坐标 round-trip、optimizer ownership 测试。现有 GT remap及“inverse-map后NMS”不改。
+
+## 7. [PROPOSAL] 执行 DAG 与实验臂
+
+```text
+P0 redesign/tests → exact-commit synthetic gate
+→ real THUMOS loader CUDA gate（真实GT；full/mixed/all-short）
+→ forced-overflow + world-size=1 DDP mixed-batch pilot
+→ matched seed-0 → result-to-claim → 仅通过项增至3 seeds
+→ 真实成本 → 才允许其他预算/检测头
+```
+
+臂裁决：`bare-uniform cost` **保留，仅C7**；`matched exact-uniform` **保留，C3基准**；`transition beta=0` **保留，C3/C4**；`transition+local utility` **保留，最终模型**；`direct-boundary attribution` **删除**，因其不决定 C3/C4/C7。训练臂同 commit、seed、data order、成功更新数、EMA、evaluator和 terminal checkpoint。
+
+## 8. [PROPOSAL] C3/C4/C7 result-to-claim
+
+| Claim         | 最小证据                                                                                      | GO                                                                | HOLD / KILL                                                    |
+| ------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------- |
+| C3：T0>uniform | seed-0后共3 seeds；Avg-mAP、@0.6/@0.7、最短时长四分位、boundary recall@1/2、endpoint distance、max-hole  | ΔAvg≥+0.30，paired-video 95% LCB>0；Δ@0.7、Δshort≥0；recall@1下降≤0.5pp | seed-0 `ΔAvg≤0`：永久 KILL；均值>0但CI跨0：HOLD且不扩展                     |
+| C4：TU>T0      | 同3 seeds；预注册 train-diagnostic 子集报 utility sign accuracy、Spearman及CI                       | ΔAvg≥+0.20且LCB>0；Δ@0.7≥0；sign LCB>0.5、Spearman LCB>0              | seed-0 `ΔAvg≤0` 或3-seed均值≤0：KILL final；mAP增而utility指标失败：不得声称机制 |
+| C7：真实节省       | 一个冻结 seed-0；3次独立进程重启，每次≥500真实窗口；含decode/probe/selector/gather/heavy；报p50/p95、吞吐、显存、NVML能耗 | 对dense：p50≥20%、p95≥15%、能耗≥15%、显存≥20%；保留bare-uniform节省≥70%         | 仅FLOPs/仅p50：HOLD；p95或能耗改善<10%：KILL效率主张                         |
+
+历史数值仅作不匹配背景/privileged ceiling。
+
+## 9. 真实成本与新颖性裁决
+
+额外训练 passes 可接受但须报告 GPU-hours；teacher 推理删除不等于效率成立。probe扫描768帧、解码和GPU利用率可能吞掉heavy-frame减半收益，故C7只能靠真实端到端测量。
+
+| 工作                          | 作用                                 | DUCA剩余差异                                                  |
+| --------------------------- | ---------------------------------- | --------------------------------------------------------- |
+| AdaFrame                    | 分类中的轻量全局记忆、策略梯度选帧                  | 非TAD、无固定覆盖/边界几何。([arXiv][2])                              |
+| Action Sensitivity Learning | 学帧 sensitivity，重加权定位训练             | 不做RGB hard acquisition或真实节省。([arXiv][3])                  |
+| AdaTAD                      | TIA/adapter降低大backbone训练内存         | 不选帧；是heavy backend。([arXiv][4])                           |
+| TE-TAD                      | actual timeline坐标、adaptive queries | 构成geometry attack；不做pre-backbone acquisition。([arXiv][5]) |
+| TAPOS                       | sub-action结构解析                     | 非计算分配。([arXiv][1])                                        |
+| Progressive Block Drop      | 保宽度、删深度压缩TAD                       | 与时间观测选择正交。([arXiv][6])                                    |
+| Uni-AdaFocus                | 轻量编码器驱动时空/样本动态计算                   | 证明通用“轻看全、重看少”已拥挤。([arXiv][7])                             |
+
+最强 novelty attack：AdaFrame/Uni-AdaFocus式轻重网络、ASL式帧价值和AdaTAD backend的工程组合。methodology attack：detached utility依赖当前 detector及selected-axis，非因果帧效用。efficiency attack：50%帧数不等于wall-clock节省。
+
+CVPR/CCF-A最低门槛：C3/C4/C7全 GO，TU 对 uniform 的3-seed ΔAvg约≥+0.5、@0.7正增，并在第二个TAD数据集复现。否则最多是受控工程/负结果，不是主会方法。
+
+## 10. 最终结论
+
+再次训练前必须完成 local-cell/logistic P0、exact-commit synthetic gate、真实 loader CUDA gate和 forced-overflow DDP pilot。**永久停止 DUCA**：registered seed-0 最终模型 Avg-mAP 不严格高于 matched exact-uniform；或 C4 seed-0 不优于 beta=0；或 C7 无真实 p95/能耗节省。届时不得以 dynamic budget、第二头或 physical-grid 延寿。
+
+[1]: https://arxiv.org/abs/2005.10229 "https://arxiv.org/abs/2005.10229"
+[2]: https://arxiv.org/abs/1811.12432 "https://arxiv.org/abs/1811.12432"
+[3]: https://arxiv.org/abs/2305.15701 "https://arxiv.org/abs/2305.15701"
+[4]: https://arxiv.org/abs/2311.17241 "https://arxiv.org/abs/2311.17241"
+[5]: https://arxiv.org/abs/2404.02405 "https://arxiv.org/abs/2404.02405"
+[6]: https://arxiv.org/abs/2503.16916 "https://arxiv.org/abs/2503.16916"
+[7]: https://arxiv.org/abs/2412.11228 "https://arxiv.org/abs/2412.11228"

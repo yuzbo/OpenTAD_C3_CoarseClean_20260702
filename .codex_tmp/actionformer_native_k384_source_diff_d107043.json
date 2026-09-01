@@ -1,0 +1,191 @@
+{
+  "base": {
+    "commit": "61ea7eb9308a568b0cf45e3804830836e30061de",
+    "config_blob_sha256": "c0ac0df560cd564941b56cd9391ad0bd5cea386d2e4b6cf9fc8ffcab821955cd",
+    "config_path": "configs/thumos_i3d.yaml",
+    "config_tree_entry": {
+      "mode": "100644",
+      "object_id": "9f97bc32de17303ca4f240d31a2183c17f8661dd",
+      "object_type": "blob"
+    },
+    "effective_config_sha256": "835cf30fbcfd27bd6af8885fff002813c8596e2948fce3adf29e3716f316dde4",
+    "remote": "upstream",
+    "remote_ref": "refs/heads/main",
+    "remote_ref_commit": "61ea7eb9308a568b0cf45e3804830836e30061de",
+    "repository_url": "https://github.com/happyharrycn/actionformer_release",
+    "tree": "7b06c5261ba244788c942a0d73e304581bc35154"
+  },
+  "candidate": {
+    "clean": true,
+    "commit": "d10704365674e81af9bcbcd2a0dfe6da7743c5ee",
+    "config_blob_sha256": "a3f1eb804292635361b0916b1b7ac3c9d56f78ce00abbd48d47249961e50478c",
+    "config_path": "configs/thumos_i3d_sparsehead_k384_uniform.yaml",
+    "config_tree_entry": {
+      "mode": "100644",
+      "object_id": "a48cbeef6514c722dd804b0833b23fa55f83a4e8",
+      "object_type": "blob"
+    },
+    "effective_config_sha256": "61f8baf2cb202a89833b0f747b2eaee489ac3e8da5f5a4f834bbc6a6ee8e52f2",
+    "head_matches_candidate_commit": true,
+    "remote": "origin",
+    "remote_ref": "refs/heads/codex/actionformer-sparsehead-official-matched-20260730",
+    "remote_ref_commit": "d10704365674e81af9bcbcd2a0dfe6da7743c5ee",
+    "remote_ref_matches_candidate_commit": true,
+    "repository_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702.git",
+    "tree": "792bf773dead9716a87ee6cd39d844c9e1f0673b"
+  },
+  "diff": {
+    "binary_sha256": "9e1f684829d5d79b851d64d4994cef6169aa45a33a0f1cec2220da91f8f7ce37",
+    "changed_paths": [
+      "configs/thumos_i3d_sparsehead_k384_hash.yaml",
+      "configs/thumos_i3d_sparsehead_k384_uniform.yaml",
+      "libs/modeling/meta_archs.py",
+      "libs/modeling/sparse_heads.py",
+      "tests/test_native_grid_sparse_heads.py",
+      "tests/test_sparsehead_official_config.py"
+    ],
+    "entries": [
+      {
+        "base_blob_sha256": null,
+        "base_tree_entry": null,
+        "candidate_blob_sha256": "595cfbc0df4160df7080d6422345f02a54e07de001464fbe136d8938ae921bed",
+        "candidate_tree_entry": {
+          "mode": "100644",
+          "object_id": "42796e3e0602743cd48c116e9e7a82a6407b2374",
+          "object_type": "blob"
+        },
+        "path": "configs/thumos_i3d_sparsehead_k384_hash.yaml",
+        "status": "A"
+      },
+      {
+        "base_blob_sha256": null,
+        "base_tree_entry": null,
+        "candidate_blob_sha256": "a3f1eb804292635361b0916b1b7ac3c9d56f78ce00abbd48d47249961e50478c",
+        "candidate_tree_entry": {
+          "mode": "100644",
+          "object_id": "a48cbeef6514c722dd804b0833b23fa55f83a4e8",
+          "object_type": "blob"
+        },
+        "path": "configs/thumos_i3d_sparsehead_k384_uniform.yaml",
+        "status": "A"
+      },
+      {
+        "base_blob_sha256": "e6a1b714c9098b20c1ca4841026530fb081594b0f6200f257c6c412b9382bb48",
+        "base_tree_entry": {
+          "mode": "100644",
+          "object_id": "fa6e93f7b453c3588c0e6e7ea91d7abe1c78220d",
+          "object_type": "blob"
+        },
+        "candidate_blob_sha256": "acbc167bf2fdf0a01aaa5b6d12d2f2feb5bf1f8b48dc051e4edd43a9e2b3c0d7",
+        "candidate_tree_entry": {
+          "mode": "100644",
+          "object_id": "5f33a8b5e43b2f5afd11a8075c28526c7781ba78",
+          "object_type": "blob"
+        },
+        "path": "libs/modeling/meta_archs.py",
+        "status": "M"
+      },
+      {
+        "base_blob_sha256": null,
+        "base_tree_entry": null,
+        "candidate_blob_sha256": "0eef17c7d30e8f0163fc5d1d7b10d3c5be6927d5565753cd2760473b3e73ca54",
+        "candidate_tree_entry": {
+          "mode": "100644",
+          "object_id": "9ec62bb59cc1b0799204c25feaea140a536fea01",
+          "object_type": "blob"
+        },
+        "path": "libs/modeling/sparse_heads.py",
+        "status": "A"
+      },
+      {
+        "base_blob_sha256": null,
+        "base_tree_entry": null,
+        "candidate_blob_sha256": "b4437e5e3ccc913d71039fc29842ce67efb490a3f40d9a8119eae88b88956ce8",
+        "candidate_tree_entry": {
+          "mode": "100644",
+          "object_id": "2e60db9cafe880b6cb4251da52b938672dc969e8",
+          "object_type": "blob"
+        },
+        "path": "tests/test_native_grid_sparse_heads.py",
+        "status": "A"
+      },
+      {
+        "base_blob_sha256": null,
+        "base_tree_entry": null,
+        "candidate_blob_sha256": "c010b948dbee05beaf56816ee3559e24c0908a18502e655e43e76d26d340a421",
+        "candidate_tree_entry": {
+          "mode": "100644",
+          "object_id": "cabcd1a8dd4fe65627a8147082ea7b325a3b0d0c",
+          "object_type": "blob"
+        },
+        "path": "tests/test_sparsehead_official_config.py",
+        "status": "A"
+      }
+    ],
+    "name_status_sha256": "d3e894137dac00746123f4613342f23176f9b6d602b98183d4d7653452246d88"
+  },
+  "effective_config": {
+    "allowed_changed_paths": [
+      "model.sparse_head.budget",
+      "model.sparse_head.enabled",
+      "model.sparse_head.hash_seed",
+      "model.sparse_head.policy"
+    ],
+    "base_loader_blob_sha256": "014f1000ac09eb1687d2e6b59bdf9f0afa1dc0a2daed909ee988808929723bc8",
+    "base_loader_tree_entry": {
+      "mode": "100644",
+      "object_id": "425a07f5b7a822b7e83d0dc790f3b783b4c1c0df",
+      "object_type": "blob"
+    },
+    "base_sha256": "835cf30fbcfd27bd6af8885fff002813c8596e2948fce3adf29e3716f316dde4",
+    "candidate_loader_blob_sha256": "014f1000ac09eb1687d2e6b59bdf9f0afa1dc0a2daed909ee988808929723bc8",
+    "candidate_loader_tree_entry": {
+      "mode": "100644",
+      "object_id": "425a07f5b7a822b7e83d0dc790f3b783b4c1c0df",
+      "object_type": "blob"
+    },
+    "candidate_sha256": "61f8baf2cb202a89833b0f747b2eaee489ac3e8da5f5a4f834bbc6a6ee8e52f2",
+    "changed_paths": [
+      "model.sparse_head.budget",
+      "model.sparse_head.enabled",
+      "model.sparse_head.hash_seed",
+      "model.sparse_head.policy"
+    ],
+    "loader_path": "libs/core/config.py",
+    "protected_sha256": "93088ee6fd6ca01abc0168bb2e1b54981e80f726b5a160fe331a1faef9c5975e"
+  },
+  "intervention": "native_grid_sparse_head_k384",
+  "issues": [],
+  "policy": {
+    "allowed_effective_config_paths": [
+      "model.sparse_head.budget",
+      "model.sparse_head.enabled",
+      "model.sparse_head.hash_seed",
+      "model.sparse_head.policy"
+    ],
+    "allowed_paths": [
+      "configs/thumos_i3d_sparsehead_k384_hash.yaml",
+      "configs/thumos_i3d_sparsehead_k384_uniform.yaml",
+      "libs/modeling/meta_archs.py",
+      "libs/modeling/sparse_heads.py",
+      "tests/test_native_grid_sparse_heads.py",
+      "tests/test_sparsehead_official_config.py"
+    ],
+    "allowed_statuses": [
+      "A",
+      "M"
+    ],
+    "forbidden_prefixes": [
+      ".github/",
+      "eval.py",
+      "train.py",
+      "README.md",
+      "libs/core/",
+      "libs/utils/"
+    ],
+    "rename_copy_delete_allowed": false
+  },
+  "repository_root": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\ActionFormer_SparseHead_OfficialMatched_20260730",
+  "schema_version": "actionformer_source_diff_attestation_v1",
+  "validation_pass": true
+}

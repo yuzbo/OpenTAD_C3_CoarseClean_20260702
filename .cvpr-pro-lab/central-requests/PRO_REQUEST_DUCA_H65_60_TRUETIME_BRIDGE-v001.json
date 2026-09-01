@@ -1,0 +1,27 @@
+{
+  "request_type": "FRESH_EXACT_PROJECT_PRO_REQUEST",
+  "request_id": "PRO_REQUEST_DUCA_H65_60_TRUETIME_BRIDGE-v001",
+  "status": "QUEUED_USER_AUTHORIZED_NO_NEW_SOURCE_ROUTE",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "browser_profile": "61",
+  "nonce": "DUCA-H65-60-TRUETIME-BRIDGE-DIRECT-v001-20260823",
+  "fresh_conversation": true,
+  "requested_model": "highest browser-verifiable Pro tier",
+  "requested_effort": "maximum exposed effort",
+  "source_policy": "NO_NEW_SOURCE_USER_AUTHORIZED",
+  "source_warning": "CURRENT_RESEARCH_STATE-v015.md and DUCA_H65_60_TRUETIME_BRIDGE_PRO_ADJUDICATION-v002.md are not authoritatively confirmed as Project Sources. The Oracle invocation must embed their complete local content inline and must not rely on stale Project Sources.",
+  "inline_materials": [
+    ".cvpr-pro-lab/project-files/prepared/CURRENT_RESEARCH_STATE-v015.md",
+    ".cvpr-pro-lab/project-files/prepared/DUCA_H65_60_TRUETIME_BRIDGE_PRO_ADJUDICATION-v002.md"
+  ],
+  "github_repo": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
+  "github_revision": "04c35a3b76897e6c1569eeede41ed3aecaf7f854",
+  "decision_contract": "Return exactly one CONTINUE/REVISE/PIVOT/STOP decision; freeze the H65-compatible TrueTime tensor/support contract, minimal implementation, falsifier, Critic/Evaluator gates, and official THUMOS14 experiment without repeating dense/uniform/random or inferring nonterminal Jobs 1251622/1251782.",
+  "blocking_class": "BLOCKS_SCIENCE_DECISION",
+  "next_owner": "Central browser dispatcher → DUCA Coordinator",
+  "next_action": "Grant one fresh exact-Project Pro lease and execute one Oracle browser invocation with complete inline materials.",
+  "dependency": "Shared profile61 serialization only; user explicitly authorized the no-new-Source route.",
+  "expected_return_at": "immediate streaming receipt after submission, then one final/needs-attention receipt",
+  "single_recovery": "one read-only same-session liveness path only if submission state becomes unknown"
+}

@@ -15,6 +15,8 @@ from .tadtr import TadTR
 from .vsgn import VSGN
 from .mamba import VideoMambaSuite
 from .dyfadet import DyFADet
+from .irregular_actionformer import IrregularActionFormer
+from .phystime_tad import PhysTimeTAD
 
 __all__ = [
     "BaseDetector",
@@ -31,6 +33,8 @@ __all__ = [
     "TemporalMaxer",
     "VideoMambaSuite",
     "DyFADet",
+    "IrregularActionFormer",
+    "PhysTimeTAD",
     "DETR",
     "DeformableDETR",
     "TadTR",

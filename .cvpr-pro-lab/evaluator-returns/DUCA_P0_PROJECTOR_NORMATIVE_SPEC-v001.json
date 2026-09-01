@@ -1,0 +1,165 @@
+{
+  "schema_version": "duca-p0-projector-normative-spec-v001",
+  "status": "FROZEN_NOT_EXECUTED",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "queue_message_id": "msg-20260812T185607Z-f6cc921b7d40",
+  "parent_decision": "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+  "fixed_commit": "63a726a4aaf48ecbf6780bb196de43a890c6b4df",
+  "scope": "integer_projector_after_fixed_point_conversion_only",
+  "serialization": {
+    "format": "RFC8259_JSON_UTF8",
+    "canonical_input_fields_in_order": ["T", "K", "Q", "u", "a"],
+    "integer_fields_only": true,
+    "production_and_reference_receive_identical_bytes": true,
+    "floating_tolerance": "FORBIDDEN"
+  },
+  "domain": {
+    "Q": 1048576,
+    "effective_k": "min(384,16*floor(T/16))",
+    "invalid_t_lt_16": "INVALID_T_LT_16",
+    "uniform": "u[j]=floor((2*j*(T-1)+(K-1))/(2*(K-1)))",
+    "a_first": 0,
+    "a_last": "Q*(T-1)",
+    "a_order": "nondecreasing",
+    "integer_model": "checked_signed_128_or_exact_arbitrary_precision",
+    "input_precedence": [
+      "integer_range",
+      "T",
+      "K",
+      "u_length",
+      "a_length",
+      "canonical_u",
+      "a_endpoints",
+      "a_order",
+      "feasibility"
+    ]
+  },
+  "feasible_output": {
+    "length": "K",
+    "first": 0,
+    "last": "T-1",
+    "allowed_strides": [1, 2, 3, 4],
+    "maximum_absolute_uniform_displacement": 16,
+    "all_values_checked_integers": true
+  },
+  "objective": {
+    "internal_indices": "1..K-2",
+    "error": "e[j]=Q*p[j]-a[j]",
+    "E2": "sum(e[j]^2)",
+    "E_infinity": "max(abs(e[j]))",
+    "E1": "sum(abs(e[j]))",
+    "U1": "sum(abs(p[j]-u[j]))",
+    "exact_lexicographic_key": [
+      "E2",
+      "E_infinity",
+      "E1",
+      "U1",
+      "p[1]",
+      "...",
+      "p[K-2]"
+    ],
+    "unique_minimizer_required": true
+  },
+  "candidate_order": {
+    "within_expansion": "strictly_ascending_physical_position",
+    "exhaustive_sequence_order": "lexicographically_ascending",
+    "incumbent_replacement": "strictly_smaller_complete_exact_key_only",
+    "unordered_parallel_reduction": "FORBIDDEN"
+  },
+  "reference_independence": {
+    "owner": "evaluator",
+    "shared_inputs_only": [
+      "DUCA_P0_PROJECTOR_NORMATIVE_SPEC-v001.json",
+      "DUCA_P0_IDENTITY_FIXTURE_MATRIX-v001.json"
+    ],
+    "production_imports": "FORBIDDEN",
+    "production_calls": "FORBIDDEN",
+    "exhaustive_fixture_ids": [
+      "G17-E2",
+      "G17-EINF",
+      "G17-E1",
+      "G17-U1",
+      "G17-PLEX",
+      "G385-X"
+    ],
+    "exact_dp_other_positive_fixtures": true
+  },
+  "typed_failures": {
+    "INVALID_T_LT_16": "T is below 16",
+    "K_EFF_MISMATCH": "K differs from the frozen effective-K rule",
+    "U_LENGTH_MISMATCH": "u length differs from K",
+    "A_LENGTH_MISMATCH": "a length differs from K",
+    "U_CANONICAL_MISMATCH": "u differs from the canonical half-up vector",
+    "A_ENDPOINT_MISMATCH": "a endpoints differ from 0 and Q*(T-1)",
+    "A_ORDER_MISMATCH": "a is not nondecreasing",
+    "INFEASIBLE": "the frozen feasible set is empty",
+    "INTEGER_RANGE_OR_OVERFLOW": "input or objective arithmetic exceeds the admitted exact integer model",
+    "CERTIFICATE_REJECTED": "a feasibility or objective certificate is invalid",
+    "CANDIDATE_ORDER_VIOLATION": "a recorded candidate expansion is not strictly ascending",
+    "REFERENCE_MISMATCH": "production and independent reference semantic outputs differ"
+  },
+  "forbidden_operations": [
+    "tolerance",
+    "clipping",
+    "deduplication",
+    "heuristic_solver",
+    "uniform_fallback",
+    "second_decoder",
+    "legacy_selector",
+    "detector_import",
+    "dataset_import_or_access",
+    "density_reader_import",
+    "torch_or_cuda_import",
+    "metric_or_evaluator_import",
+    "network_access",
+    "training_environment",
+    "fixture_addition_or_deletion_after_freeze",
+    "expected_output_revision_after_production_observation"
+  ],
+  "certificate_semantics": {
+    "required_equal_fields": [
+      "typed_status",
+      "p",
+      "length",
+      "endpoints",
+      "minimum_stride",
+      "maximum_stride",
+      "maximum_uniform_displacement",
+      "E2",
+      "E_infinity",
+      "E1",
+      "U1",
+      "interior_position_vector",
+      "global_optimality"
+    ],
+    "first_discrepancy_status": "P0_IDENTITY_GATE_BLOCKED",
+    "scope_deviation_required_value": "none"
+  },
+  "execution": {
+    "status": "NOT_EXECUTED",
+    "tests": "NOT_EXECUTED",
+    "local_cpu": "NOT_EXECUTED",
+    "remote_cpu": "NOT_EXECUTED",
+    "gpu": "NOT_EXECUTED",
+    "slurm": "NOT_EXECUTED",
+    "data": "NOT_ACCESSED",
+    "browser": "NOT_EXECUTED",
+    "git": "NOT_EXECUTED"
+  },
+  "claim_boundary": {
+    "possible_future_pass": "bounded projector conformance on the closed fixture matrix only",
+    "does_not_establish": [
+      "density_quality",
+      "learnability",
+      "gradient_validity",
+      "detector_correctness",
+      "accuracy",
+      "efficiency",
+      "latency",
+      "cost",
+      "P1_admission",
+      "PRE_RUN_readiness",
+      "paper_claim"
+    ]
+  }
+}

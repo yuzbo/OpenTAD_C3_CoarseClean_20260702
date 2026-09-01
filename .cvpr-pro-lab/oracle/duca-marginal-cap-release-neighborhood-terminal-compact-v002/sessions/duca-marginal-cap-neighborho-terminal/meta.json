@@ -1,0 +1,164 @@
+{
+  "id": "duca-marginal-cap-neighborho-terminal",
+  "createdAt": "2026-08-30T23:24:20.744Z",
+  "status": "completed",
+  "promptPreview": "Read every attached file completely and answer the authoritative prompt as one independent scientific adjudication. Treat the GitHub repository, branch, exact c",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-30T23:24:21.539Z",
+      "completedAt": "2026-08-30T23:35:02.846Z",
+      "usage": {
+        "inputTokens": 3277,
+        "outputTokens": 1661,
+        "reasoningTokens": 0,
+        "totalTokens": 4938
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 15359,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "D75B88E092B240AF29F98B61A12EF99B",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a94bbaf-b2f8-83ea-81bc-5c0b6b23bdb5",
+      "conversationId": "6a94bbaf-b2f8-83ea-81bc-5c0b6b23bdb5",
+      "promptSubmitted": true,
+      "controllerPid": 83852
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a94bbaf-b2f8-83ea-81bc-5c0b6b23bdb5"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-30T23:24:26.212Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Read every attached file completely and answer the authoritative prompt as one independent scientific adjudication. Treat the GitHub repository, branch, exact commit 46812facc8773d9b4a9c21833cbe397c8aaa5a2d, runner, allocator and test permalinks in the prompt as the latest code truth. Preserve nonce DUCA-MARGINAL-CAP-RELEASE-NEIGHBORHOOD-TERMINAL-ADJUDICATION-v001-20260831 verbatim in the response.",
+    "file": [
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\prompts\\PRO_DUCA_MARGINAL_CAP_RELEASE_NEIGHBORHOOD_TERMINAL_ADJUDICATION-v001.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-marginal-cap-neighborho-terminal",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-marginal-cap-release-neighborhood-terminal-compact-v002\\visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 83852,
+    "reattachCommand": "oracle session duca-marginal-cap-neighborho-terminal"
+  },
+  "startedAt": "2026-08-30T23:24:21.535Z",
+  "completedAt": "2026-08-30T23:35:02.881Z",
+  "usage": {
+    "inputTokens": 3277,
+    "outputTokens": 1661,
+    "reasoningTokens": 0,
+    "totalTokens": 4938
+  },
+  "elapsedMs": 640076,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\oracle\\duca-marginal-cap-release-neighborhood-terminal-compact-v002\\sessions\\duca-marginal-cap-neighborho-terminal\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 23448,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a94bbaf-b2f8-83ea-81bc-5c0b6b23bdb5",
+      "sha256": "e44fa13aad0cc98c36705c73d92456c20424f85c179202bd310b56ea64c55637",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

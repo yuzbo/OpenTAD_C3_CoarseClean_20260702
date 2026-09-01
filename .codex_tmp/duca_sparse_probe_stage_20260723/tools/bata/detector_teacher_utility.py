@@ -1,0 +1,993 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import subprocess
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
+
+
+ROW_SCHEMA_VERSION = "c3_detector_teacher_utility_row_v1"
+SUMMARY_SCHEMA_VERSION = "c3_detector_teacher_utility_export_v1"
+GENERATOR_MANIFEST_SCHEMA_VERSION = "c3_detector_teacher_utility_generator_manifest_v1"
+GENERATOR_MANIFEST_READY = "C3_DETECTOR_TEACHER_UTILITY_GENERATOR_MANIFEST_READY"
+READY = "C3_DETECTOR_TEACHER_UTILITY_EXPORT_READY"
+STAGE_LABEL = "Stage-2 detector-aware offline selector"
+UTILITY_SEMANTICS = "signed_detector_utility_v1"
+TEACHER_SIGNAL_SOURCE = "adatad_dense_teacher"
+TEACHER_UTILITY_SOURCE_KIND = "dense_detector_forward_test_proposal_score_surrogate_v1"
+TEACHER_UTILITY_SOURCE_CLAIM = "proposal_score_surrogate_not_counterfactual"
+TEACHER_UTILITY_GENERATOR_SOURCE = "dense_detector_forward_test_proposal_score_surrogate"
+FORBIDDEN_TRUE_FLAGS = (
+    "uses_gt",
+    "uses_gt_for_selection",
+    "uses_val_gt",
+    "uses_test_gt",
+    "uses_oracle",
+    "uses_cache",
+    "uses_prediction_cache",
+    "uses_raw_prediction",
+    "prediction_uses_gt",
+    "uses_evaluator_outputs",
+    "load_from_raw_predictions",
+)
+SPLIT_ALIASES = {
+    "training": {"train", "training"},
+    "train": {"train", "training"},
+    "validation": {"val", "valid", "validation"},
+    "val": {"val", "valid", "validation"},
+    "test": {"test", "testing"},
+}
+
+
+JSONL_SCHEMA = {
+    "schema_version": ROW_SCHEMA_VERSION,
+    "required_keys": [
+        "sample_id",
+        "split",
+        "dense_len",
+        "valid_len",
+        "frame_utility",
+        "signed_frame_utility",
+        "teacher_utility_source_kind",
+        "teacher_utility_source_claim",
+        "proposal_score_surrogate_utility",
+        "counterfactual_utility",
+        "point_responsibility_utility",
+        "teacher_utility_provenance",
+    ],
+    "frame_utility": "float list on local dense frame axis; padded positions >= valid_len are zero",
+    "signed_frame_utility": "float list in [-1, 1]; negative values encode detector background-suppression/ranking utility",
+    "positive_observation_gain": "float list in [0, 1] equal to max(0, signed_frame_utility)",
+    "negative_observation_risk": "float list in [0, 1] equal to max(0, -signed_frame_utility)",
+    "npz": "arrays sample_ids(str), splits(str), dense_lens(int64), valid_lens(int64), frame_utility(float32 padded)",
+}
+
+
+PROVENANCE_LOOKUP_CONTAINERS = ("teacher_utility_provenance", "teacher_provenance", "provenance", "meta")
+SOURCE_PROVENANCE_ALIASES = {
+    "teacher_signal_source": ("teacher_signal_source",),
+    "teacher_axis": ("teacher_axis", "axis", "coordinate_axis", "dense_axis", "frame_axis"),
+    "fps": ("fps", "source_fps", "video_fps"),
+    "snippet_stride": ("snippet_stride", "feature_stride", "sample_stride", "stride"),
+    "window_start_frame": ("window_start_frame", "window_start", "window_index", "window"),
+}
+
+
+def _teacher_utility_source_manifest_fields() -> dict[str, Any]:
+    return {
+        "teacher_utility_source_kind": TEACHER_UTILITY_SOURCE_KIND,
+        "teacher_utility_source_claim": TEACHER_UTILITY_SOURCE_CLAIM,
+        "proposal_score_surrogate_utility": True,
+        "counterfactual_utility": False,
+        "point_responsibility_utility": False,
+    }
+
+
+def _summary_teacher_utility_source_manifest_fields() -> dict[str, Any]:
+    return {
+        "teacher_utility_source_kind": TEACHER_UTILITY_SOURCE_KIND,
+        "teacher_utility_source_claim": TEACHER_UTILITY_SOURCE_CLAIM,
+        "proposal_score_surrogate_utility": True,
+        "counterfactual_utility_supported": False,
+        "point_responsibility_utility_supported": False,
+    }
+
+
+def _generator_optional_teacher_utility_source_manifest_fields() -> dict[str, Any]:
+    fields = _teacher_utility_source_manifest_fields()
+    fields["counterfactual_utility_supported"] = False
+    fields["point_responsibility_utility_supported"] = False
+    return fields
+
+
+def _require_exact_manifest_fields(
+    payload: Mapping[str, Any],
+    expected_fields: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    for key, expected in expected_fields.items():
+        actual = payload.get(key)
+        if isinstance(expected, bool):
+            if actual is not expected:
+                raise ValueError(f"{context} requires {key}={expected!r}")
+        elif actual != expected:
+            raise ValueError(f"{context} requires {key}={expected!r}")
+
+
+def _validate_optional_manifest_fields(
+    payload: Mapping[str, Any],
+    expected_fields: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    for key, expected in expected_fields.items():
+        if key not in payload:
+            continue
+        actual = payload.get(key)
+        if isinstance(expected, bool):
+            if actual is not expected:
+                raise ValueError(f"{context} {key} must be {expected!r}")
+        elif actual != expected:
+            raise ValueError(f"{context} {key} must be {expected!r}")
+
+
+def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with Path(path).expanduser().open("r", encoding="utf-8-sig") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            text = line.strip()
+            if not text:
+                continue
+            row = json.loads(text)
+            if not isinstance(row, dict):
+                raise ValueError(f"{path}:{line_no}: row must be a JSON object")
+            rows.append(row)
+    if not rows:
+        raise ValueError(f"JSONL has no rows: {path}")
+    return rows
+
+
+def _write_jsonl(path: str | Path, rows: Sequence[Mapping[str, Any]]) -> None:
+    out_path = Path(path).expanduser()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(dict(row), sort_keys=True) + "\n")
+
+
+def _write_json(path: str | Path, payload: Mapping[str, Any]) -> None:
+    out_path = Path(path).expanduser()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(dict(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _sha256_file(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).expanduser().open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _require_file_sha256(path: str | Path | None, *, path_key: str, sha_key: str) -> tuple[str, str]:
+    if path is None:
+        raise ValueError(f"{path_key} is required for detector teacher utility export")
+    resolved = Path(path).expanduser()
+    if not resolved.is_file():
+        raise ValueError(f"{path_key} missing: {resolved}")
+    sha256 = _sha256_file(resolved)
+    if not sha256:
+        raise ValueError(f"{sha_key} is required for detector teacher utility export")
+    return str(path), sha256
+
+
+def _git_sha() -> str | None:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception:
+        return None
+
+
+def _is_true(value: Any) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes"}
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    return False
+
+
+def _split(row: Mapping[str, Any]) -> str | None:
+    for key in ("split", "subset", "subset_name"):
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+    return None
+
+
+def _split_matches(actual: str | None, expected: str | None) -> bool:
+    if expected is None:
+        return True
+    expected_key = str(expected).strip().lower()
+    return actual in SPLIT_ALIASES.get(expected_key, {expected_key})
+
+
+def _finite01(value: Any) -> float:
+    if value is None or isinstance(value, bool):
+        return 0.0
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(out):
+        return 0.0
+    return max(0.0, min(1.0, out))
+
+
+def _finite_signed(value: Any) -> float:
+    if value is None or isinstance(value, bool):
+        return 0.0
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(out):
+        return 0.0
+    return max(-1.0, min(1.0, out))
+
+
+def _lookup_provenance_value(row: Mapping[str, Any], aliases: Sequence[str]) -> Any:
+    for key in aliases:
+        if key in row and row[key] is not None:
+            return row[key]
+    for container_key in PROVENANCE_LOOKUP_CONTAINERS:
+        container = row.get(container_key)
+        if not isinstance(container, Mapping):
+            continue
+        for key in aliases:
+            if key in container and container[key] is not None:
+                return container[key]
+    return None
+
+
+def _require_source_provenance(row: Mapping[str, Any], *, line_no: int) -> dict[str, Any]:
+    provenance: dict[str, Any] = {
+        "dense_len": int(row.get("dense_len") or row.get("valid_len") or 0),
+        "valid_len": int(row.get("valid_len") or row.get("dense_len") or 0),
+    }
+    for canonical, aliases in SOURCE_PROVENANCE_ALIASES.items():
+        value = _lookup_provenance_value(row, aliases)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            raise ValueError(f"line {line_no}: {canonical} provenance is required")
+        provenance[canonical] = value
+    if str(provenance["teacher_signal_source"]) != TEACHER_SIGNAL_SOURCE:
+        raise ValueError(f"line {line_no}: teacher_signal_source must be {TEACHER_SIGNAL_SOURCE}")
+    if provenance["dense_len"] <= 0:
+        raise ValueError(f"line {line_no}: dense_len provenance is required")
+    try:
+        fps = float(provenance["fps"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"line {line_no}: fps provenance must be numeric") from exc
+    if not math.isfinite(fps) or fps <= 0.0:
+        raise ValueError(f"line {line_no}: fps provenance must be positive")
+    try:
+        stride = float(provenance["snippet_stride"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"line {line_no}: snippet_stride provenance must be numeric") from exc
+    if not math.isfinite(stride) or stride <= 0.0:
+        raise ValueError(f"line {line_no}: snippet_stride provenance must be positive")
+    window_size = _lookup_provenance_value(row, ("window_size", "dense_window_size", "source_window_size"))
+    if window_size is not None:
+        provenance["window_size"] = window_size
+    return provenance
+
+
+def _point_index(point: Mapping[str, Any]) -> int | None:
+    for key in ("point_index", "frame_index", "dense_index", "t"):
+        if key in point:
+            try:
+                return int(round(float(point[key])))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _point_utility(point: Mapping[str, Any]) -> float:
+    if "utility" in point:
+        return _finite01(point["utility"])
+    if "proposal_score" in point:
+        return _finite01(point["proposal_score"])
+    cls = _finite01(point.get("classification_score", point.get("score", 0.0)))
+    loc = _finite01(point.get("localization_quality", point.get("regression_quality", 1.0)))
+    ctr = _finite01(point.get("centerness", 1.0))
+    return cls * loc * ctr
+
+
+def _point_signed_utility(point: Mapping[str, Any]) -> float:
+    for key in ("signed_utility", "utility_signed", "detector_utility_signed", "signed_detector_utility"):
+        if key in point:
+            return _finite_signed(point[key])
+    for key in ("negative_utility", "background_suppression_utility", "false_positive_suppression_utility"):
+        if key in point:
+            return -_finite01(point[key])
+    return _point_utility(point)
+
+
+def _score_value(score: Any) -> float:
+    if isinstance(score, Mapping):
+        for key in ("score", "proposal_score", "classification_score"):
+            if key in score:
+                return _finite01(score[key])
+        values = [_finite01(value) for value in score.values()]
+        return max(values) if values else 0.0
+    if isinstance(score, Sequence) and not isinstance(score, (str, bytes, bytearray)):
+        values = [_finite01(value) for value in score]
+        return max(values) if values else 0.0
+    return _finite01(score)
+
+
+def actionformer_predictions_to_dense_points(
+    proposals: Sequence[Any],
+    scores: Sequence[Any],
+    *,
+    dense_len: int,
+    valid_len: int | None = None,
+    topk: int | None = None,
+) -> list[dict[str, Any]]:
+    """Convert ActionFormer proposal/score outputs to dense teacher points.
+
+    This is an online train-split teacher-export adapter, not a deploy-time
+    selector. It maps each proposal center back to a local dense frame index and
+    keeps only score-derived utility. It intentionally does not consume GT,
+    cached test predictions, or evaluator outputs.
+    """
+    dense_len = int(dense_len)
+    valid_len = dense_len if valid_len is None else min(int(valid_len), dense_len)
+    if dense_len <= 0 or valid_len <= 0:
+        raise ValueError("dense_len/valid_len must be positive")
+    if len(proposals) != len(scores):
+        raise ValueError("ActionFormer proposals and scores must have the same length")
+    dense_points: list[dict[str, Any]] = []
+    for proposal, score in zip(proposals, scores):
+        if not isinstance(proposal, Sequence) or isinstance(proposal, (str, bytes, bytearray)) or len(proposal) < 2:
+            continue
+        try:
+            start = float(proposal[0])
+            end = float(proposal[1])
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(start) or not math.isfinite(end):
+            continue
+        center = int(round((start + end) * 0.5))
+        if center < 0 or center >= valid_len:
+            continue
+        proposal_score = _score_value(score)
+        dense_points.append(
+            {
+                "point_index": center,
+                "proposal_score": proposal_score,
+                "classification_score": proposal_score,
+                "segment_start": start,
+                "segment_end": end,
+                "teacher_signal_source": "adatad_dense_teacher_actionformer_prediction",
+            }
+        )
+    dense_points.sort(key=lambda item: float(item["proposal_score"]), reverse=True)
+    if topk is not None:
+        topk = int(topk)
+        if topk <= 0:
+            raise ValueError("topk must be positive when provided")
+        dense_points = dense_points[:topk]
+    return dense_points
+
+
+def _normalize(values: Sequence[float], *, valid_len: int) -> list[float]:
+    out = [float(item) for item in values]
+    valid = out[: max(0, int(valid_len))]
+    max_value = max(valid) if valid else 0.0
+    if max_value > 0.0:
+        out = [value / max_value for value in out]
+    for idx in range(max(0, int(valid_len)), len(out)):
+        out[idx] = 0.0
+    return [max(0.0, min(1.0, float(item))) for item in out]
+
+
+def _normalize_signed(values: Sequence[float], *, valid_len: int) -> list[float]:
+    out = [float(item) for item in values]
+    valid = out[: max(0, int(valid_len))]
+    max_abs = max((abs(value) for value in valid), default=0.0)
+    if max_abs > 0.0:
+        out = [value / max_abs for value in out]
+    for idx in range(max(0, int(valid_len)), len(out)):
+        out[idx] = 0.0
+    return [max(-1.0, min(1.0, float(item))) for item in out]
+
+
+def map_dense_points_to_frame_utility(
+    dense_points: Sequence[Mapping[str, Any]],
+    *,
+    dense_len: int,
+    valid_len: int | None = None,
+    spread_radius: int = 0,
+) -> list[float]:
+    """Map AdaTAD dense point/proposal signals to a dense-frame utility target.
+
+    The mapping is train-only target construction. It consumes dense teacher outputs
+    such as point classification score, localization/regression quality, centerness,
+    or proposal_score, and never consumes validation/test GT.
+    """
+    dense_len = max(0, int(dense_len))
+    valid_len = dense_len if valid_len is None else max(0, min(int(valid_len), dense_len))
+    values = [0.0 for _ in range(dense_len)]
+    radius = max(0, int(spread_radius))
+    for point in dense_points:
+        if not isinstance(point, Mapping):
+            continue
+        center = _point_index(point)
+        if center is None or center < 0 or center >= valid_len:
+            continue
+        utility = _point_utility(point)
+        for pos in range(max(0, center - radius), min(valid_len, center + radius + 1)):
+            distance = abs(pos - center)
+            weight = 1.0 if radius <= 0 else max(0.0, 1.0 - (0.5 * distance / float(radius + 1)))
+            values[pos] = max(values[pos], utility * weight)
+    return _normalize(values, valid_len=valid_len)
+
+
+def map_dense_points_to_signed_frame_utility(
+    dense_points: Sequence[Mapping[str, Any]],
+    *,
+    dense_len: int,
+    valid_len: int | None = None,
+    spread_radius: int = 0,
+) -> list[float]:
+    """Map dense teacher signals to signed detector utility.
+
+    Positive values encode foreground/localization support; negative values encode
+    detector utility for suppressing false positives or stabilizing ranking/NMS.
+    """
+    dense_len = max(0, int(dense_len))
+    valid_len = dense_len if valid_len is None else max(0, min(int(valid_len), dense_len))
+    values = [0.0 for _ in range(dense_len)]
+    radius = max(0, int(spread_radius))
+    for point in dense_points:
+        if not isinstance(point, Mapping):
+            continue
+        center = _point_index(point)
+        if center is None or center < 0 or center >= valid_len:
+            continue
+        utility = _point_signed_utility(point)
+        for pos in range(max(0, center - radius), min(valid_len, center + radius + 1)):
+            distance = abs(pos - center)
+            weight = 1.0 if radius <= 0 else max(0.0, 1.0 - (0.5 * distance / float(radius + 1)))
+            signed_value = utility * weight
+            if abs(signed_value) > abs(values[pos]):
+                values[pos] = signed_value
+    return _normalize_signed(values, valid_len=valid_len)
+
+
+def _dense_points(row: Mapping[str, Any], *, line_no: int) -> list[Mapping[str, Any]]:
+    for key in ("teacher_dense_points", "dense_teacher_points", "dense_points", "teacher_points"):
+        value = row.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, Mapping)]
+    proposals = row.get("teacher_proposals", row.get("actionformer_proposals"))
+    scores = row.get("teacher_scores", row.get("actionformer_scores"))
+    if isinstance(proposals, list) and isinstance(scores, list):
+        dense_len = int(row.get("dense_len") or row.get("valid_len") or 0)
+        valid_len = int(row.get("valid_len") or dense_len)
+        topk = row.get("teacher_topk_points")
+        return actionformer_predictions_to_dense_points(
+            proposals,
+            scores,
+            dense_len=dense_len,
+            valid_len=valid_len,
+            topk=None if topk is None else int(topk),
+        )
+    raise ValueError(f"line {line_no}: teacher_dense_points are required")
+
+
+def _validate_source_row(row: Mapping[str, Any], *, line_no: int, expected_split: str | None) -> None:
+    actual = _split(row)
+    if expected_split is not None and not _split_matches(actual, expected_split):
+        raise ValueError(f"line {line_no}: expected split {expected_split}, got {actual or '<missing>'}")
+    for key in FORBIDDEN_TRUE_FLAGS:
+        if _is_true(row.get(key, False)):
+            raise ValueError(f"line {line_no}: forbidden teacher source flag {key}=true")
+
+
+def teacher_utility_row_from_dense_teacher(
+    row: Mapping[str, Any],
+    *,
+    line_no: int = 1,
+    expected_split: str | None = "training",
+    spread_radius: int = 1,
+) -> dict[str, Any]:
+    _validate_source_row(row, line_no=line_no, expected_split=expected_split)
+    source_provenance = _require_source_provenance(row, line_no=line_no)
+    sample_id = row.get("sample_id")
+    if not isinstance(sample_id, str) or not sample_id:
+        raise ValueError(f"line {line_no}: sample_id is required")
+    dense_len = int(row.get("dense_len") or row.get("valid_len") or 0)
+    valid_len = int(row.get("valid_len") or dense_len)
+    if dense_len <= 0 or valid_len <= 0 or valid_len > dense_len:
+        raise ValueError(f"line {line_no}: dense_len/valid_len must be positive and consistent")
+    dense_points = _dense_points(row, line_no=line_no)
+    frame_utility = map_dense_points_to_frame_utility(
+        dense_points,
+        dense_len=dense_len,
+        valid_len=valid_len,
+        spread_radius=spread_radius,
+    )
+    signed_frame_utility = map_dense_points_to_signed_frame_utility(
+        dense_points,
+        dense_len=dense_len,
+        valid_len=valid_len,
+        spread_radius=spread_radius,
+    )
+    positive_observation_gain = [max(0.0, float(item)) for item in signed_frame_utility]
+    negative_observation_risk = [max(0.0, -float(item)) for item in signed_frame_utility]
+    source_manifest = _teacher_utility_source_manifest_fields()
+    return {
+        "schema_version": ROW_SCHEMA_VERSION,
+        "stage_label": STAGE_LABEL,
+        "sample_id": sample_id,
+        "split": _split(row) or "training",
+        "dense_len": int(dense_len),
+        "valid_len": int(valid_len),
+        "frame_utility": frame_utility,
+        "signed_frame_utility": signed_frame_utility,
+        "positive_observation_gain": positive_observation_gain,
+        "negative_observation_risk": negative_observation_risk,
+        **source_manifest,
+        "teacher_utility": {
+            "utility_semantics": UTILITY_SEMANTICS,
+            "frame_utility": frame_utility,
+            "signed_frame_utility": signed_frame_utility,
+            "positive_observation_gain": positive_observation_gain,
+            "negative_observation_risk": negative_observation_risk,
+            "marginal_gain_frame_utility_diagnostic": positive_observation_gain,
+            "marginal_gain_frame_utility_diagnostic_semantics": "diagnostic_alias_of_positive_observation_gain_not_abs_signed",
+            **source_manifest,
+        },
+        "teacher_utility_provenance": {
+            **source_provenance,
+            "teacher_checkpoint_path": row.get("teacher_checkpoint_path"),
+            "teacher_checkpoint_sha256": row.get("teacher_checkpoint_sha256"),
+            "split_scope": "train_only",
+            "uses_val_or_test_gt_for_selection": False,
+            "uses_gt_for_selection": False,
+            "export_schema": ROW_SCHEMA_VERSION,
+            **source_manifest,
+        },
+        "uses_gt": False,
+        "uses_teacher": True,
+        "uses_oracle": False,
+        "uses_cache": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "prediction_uses_gt": False,
+        "training_only": True,
+        "end_to_end": False,
+    }
+
+
+def _sample_map(rows: Sequence[Mapping[str, Any]], *, source_name: str) -> dict[str, Mapping[str, Any]]:
+    out: dict[str, Mapping[str, Any]] = {}
+    for line_no, row in enumerate(rows, start=1):
+        sample_id = row.get("sample_id")
+        if not isinstance(sample_id, str) or not sample_id:
+            raise ValueError(f"{source_name}:{line_no}: sample_id is required")
+        if sample_id in out:
+            raise ValueError(f"{source_name}:{line_no}: duplicate sample_id {sample_id}")
+        out[sample_id] = row
+    return out
+
+
+def _has_paction(row: Mapping[str, Any]) -> bool:
+    frame_signals = row.get("frame_signals")
+    return (
+        isinstance(frame_signals, Mapping)
+        and isinstance(frame_signals.get("p_action"), list)
+        or isinstance(row.get("p_action"), list)
+    )
+
+
+def _merge_teacher_utility_into_base(
+    *,
+    utility_rows: Sequence[Mapping[str, Any]],
+    base_samples_jsonl: str | Path,
+    expected_split: str | None,
+) -> list[dict[str, Any]]:
+    utility_by_id = _sample_map(utility_rows, source_name="teacher_utility_rows")
+    merged_rows: list[dict[str, Any]] = []
+    for line_no, base in enumerate(_read_jsonl(base_samples_jsonl), start=1):
+        _validate_source_row(base, line_no=line_no, expected_split=expected_split)
+        sample_id = str(base["sample_id"])
+        if sample_id not in utility_by_id:
+            raise ValueError(f"{base_samples_jsonl}:{line_no}: missing teacher utility for sample_id {sample_id}")
+        utility = utility_by_id[sample_id]
+        base_dense_len = int(base.get("dense_len") or base.get("valid_len") or 0)
+        base_valid_len = int(base.get("valid_len") or base_dense_len)
+        if int(utility["dense_len"]) != base_dense_len or int(utility["valid_len"]) != base_valid_len:
+            raise ValueError(f"{base_samples_jsonl}:{line_no}: dense_len/valid_len mismatch for sample_id {sample_id}")
+        if not _has_paction(base):
+            raise ValueError(f"{base_samples_jsonl}:{line_no}: base sample must include p_action for selector training")
+        merged = dict(base)
+        merged["schema_version"] = ROW_SCHEMA_VERSION
+        merged["stage_label"] = STAGE_LABEL
+        merged["frame_utility"] = list(utility["frame_utility"])
+        merged["signed_frame_utility"] = list(utility["signed_frame_utility"])
+        merged["positive_observation_gain"] = list(utility["positive_observation_gain"])
+        merged["negative_observation_risk"] = list(utility["negative_observation_risk"])
+        merged["teacher_utility"] = dict(utility["teacher_utility"])
+        merged["teacher_utility_provenance"] = dict(utility["teacher_utility_provenance"])
+        merged.update(_teacher_utility_source_manifest_fields())
+        merged["uses_teacher"] = True
+        merged["training_only"] = True
+        merged["end_to_end"] = False
+        merged_rows.append(merged)
+    if set(utility_by_id) != {str(row["sample_id"]) for row in merged_rows}:
+        extra = sorted(set(utility_by_id) - {str(row["sample_id"]) for row in merged_rows})
+        if extra:
+            raise ValueError(f"teacher utility rows have no matching base sample: {extra[:3]}")
+    return merged_rows
+
+
+def _write_npz(path: str | Path, rows: Sequence[Mapping[str, Any]]) -> None:
+    import numpy as np
+
+    out_path = Path(path).expanduser()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    max_len = max(int(row["dense_len"]) for row in rows)
+    utility = np.zeros((len(rows), max_len), dtype=np.float32)
+    signed_utility = np.zeros((len(rows), max_len), dtype=np.float32)
+    positive_gain = np.zeros((len(rows), max_len), dtype=np.float32)
+    negative_risk = np.zeros((len(rows), max_len), dtype=np.float32)
+    for row_idx, row in enumerate(rows):
+        values = [float(item) for item in row["frame_utility"]]
+        utility[row_idx, : len(values)] = np.asarray(values, dtype=np.float32)
+        signed_values = [float(item) for item in row.get("signed_frame_utility", values)]
+        signed_utility[row_idx, : len(signed_values)] = np.asarray(signed_values, dtype=np.float32)
+        gain_values = [float(item) for item in row.get("positive_observation_gain", [max(0.0, value) for value in signed_values])]
+        risk_values = [float(item) for item in row.get("negative_observation_risk", [max(0.0, -value) for value in signed_values])]
+        positive_gain[row_idx, : len(gain_values)] = np.asarray(gain_values, dtype=np.float32)
+        negative_risk[row_idx, : len(risk_values)] = np.asarray(risk_values, dtype=np.float32)
+    np.savez_compressed(
+        out_path,
+        sample_ids=np.asarray([str(row["sample_id"]) for row in rows]),
+        splits=np.asarray([str(row["split"]) for row in rows]),
+        dense_lens=np.asarray([int(row["dense_len"]) for row in rows], dtype=np.int64),
+        valid_lens=np.asarray([int(row["valid_len"]) for row in rows], dtype=np.int64),
+        frame_utility=utility,
+        signed_frame_utility=signed_utility,
+        positive_observation_gain=positive_gain,
+        negative_observation_risk=negative_risk,
+        schema_version=np.asarray([ROW_SCHEMA_VERSION]),
+    )
+
+
+def _attach_export_artifact_evidence(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    teacher_checkpoint_path: str,
+    teacher_checkpoint_sha256: str,
+    teacher_config_path: str,
+    teacher_config_sha256: str,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        provenance = dict(item.get("teacher_utility_provenance") or {})
+        provenance.update(
+            {
+                "teacher_checkpoint_path": teacher_checkpoint_path,
+                "teacher_checkpoint_sha256": teacher_checkpoint_sha256,
+                "teacher_config_path": teacher_config_path,
+                "teacher_config_sha256": teacher_config_sha256,
+            }
+        )
+        item["teacher_utility_provenance"] = provenance
+        out.append(item)
+    return out
+
+
+def run_export(
+    input_jsonl: str | Path,
+    output_jsonl: str | Path,
+    *,
+    summary_json: str | Path | None = None,
+    output_npz: str | Path | None = None,
+    base_samples_jsonl: str | Path | None = None,
+    teacher_checkpoint_path: str | Path | None = None,
+    teacher_config_path: str | Path | None = None,
+    generator_manifest_json: str | Path | None = None,
+    expected_split: str | None = "training",
+    spread_radius: int = 1,
+) -> dict[str, Any]:
+    generator_manifest = None if generator_manifest_json is None else validate_generator_manifest(generator_manifest_json)
+    checkpoint_path_text, checkpoint_sha256 = _require_file_sha256(
+        teacher_checkpoint_path,
+        path_key="teacher_checkpoint_path",
+        sha_key="teacher_checkpoint_sha256",
+    )
+    config_path_text, config_sha256 = _require_file_sha256(
+        teacher_config_path,
+        path_key="teacher_config_path",
+        sha_key="teacher_config_sha256",
+    )
+    source_rows = _read_jsonl(input_jsonl)
+    out_rows = [
+        teacher_utility_row_from_dense_teacher(
+            row,
+            line_no=line_no,
+            expected_split=expected_split,
+            spread_radius=int(spread_radius),
+        )
+        for line_no, row in enumerate(source_rows, start=1)
+    ]
+    out_rows = _attach_export_artifact_evidence(
+        out_rows,
+        teacher_checkpoint_path=checkpoint_path_text,
+        teacher_checkpoint_sha256=checkpoint_sha256,
+        teacher_config_path=config_path_text,
+        teacher_config_sha256=config_sha256,
+    )
+    if base_samples_jsonl is not None:
+        out_rows = _merge_teacher_utility_into_base(
+            utility_rows=out_rows,
+            base_samples_jsonl=base_samples_jsonl,
+            expected_split=expected_split,
+        )
+    _write_jsonl(output_jsonl, out_rows)
+    if output_npz is not None:
+        _write_npz(output_npz, out_rows)
+    summary = {
+        "schema_version": SUMMARY_SCHEMA_VERSION,
+        "decision": READY,
+        "stage_label": STAGE_LABEL,
+        "route_label": "DIVERGENT_INNOVATION_DETECTOR_AWARE_UTILITY_DO_NOT_MERGE_WITH_C3",
+        "teacher_signal_source": TEACHER_SIGNAL_SOURCE,
+        "split_scope": "train_only",
+        "teacher_checkpoint_path": checkpoint_path_text,
+        "teacher_checkpoint_sha256": checkpoint_sha256,
+        "teacher_config_path": config_path_text,
+        "teacher_config_sha256": config_sha256,
+        "generator_manifest_json": None if generator_manifest is None else generator_manifest["generator_manifest_json"],
+        "generator_manifest_sha256": None if generator_manifest is None else generator_manifest["generator_manifest_sha256"],
+        "generator_manifest_schema_version": None if generator_manifest is None else generator_manifest["schema_version"],
+        "generator_source": None if generator_manifest is None else generator_manifest["generator_source"],
+        "input_jsonl": str(input_jsonl),
+        "base_samples_jsonl": None if base_samples_jsonl is None else str(base_samples_jsonl),
+        "output_jsonl": str(output_jsonl),
+        "output_npz": None if output_npz is None else str(output_npz),
+        "row_count": len(out_rows),
+        "jsonl_row_schema": JSONL_SCHEMA,
+        "utility_semantics": UTILITY_SEMANTICS,
+        "signed_utility_supported": True,
+        **_summary_teacher_utility_source_manifest_fields(),
+        "expected_split": expected_split,
+        "uses_val_or_test_gt_for_selection": False,
+        "uses_gt_for_selection": False,
+        "uses_prediction_cache": False,
+        "uses_raw_prediction": False,
+        "load_from_raw_predictions": False,
+        "end_to_end": False,
+        "input_jsonl_sha256": _sha256_file(input_jsonl),
+        "base_samples_jsonl_sha256": None if base_samples_jsonl is None else _sha256_file(base_samples_jsonl),
+        "output_jsonl_sha256": _sha256_file(output_jsonl),
+        "git_sha": _git_sha(),
+    }
+    if summary_json is not None:
+        _write_json(summary_json, summary)
+    return summary
+
+
+def _read_json(path: str | Path) -> dict[str, Any]:
+    payload = json.loads(Path(path).expanduser().read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"summary must be a JSON object: {path}")
+    return payload
+
+
+def validate_generator_manifest(manifest_json: str | Path) -> dict[str, Any]:
+    path = Path(manifest_json).expanduser()
+    if not path.is_file():
+        raise ValueError(f"generator_manifest_json missing: {path}")
+    payload = _read_json(path)
+    if payload.get("schema_version") != GENERATOR_MANIFEST_SCHEMA_VERSION:
+        raise ValueError("generator_manifest schema_version mismatch")
+    if payload.get("decision") != GENERATOR_MANIFEST_READY:
+        raise ValueError("generator_manifest decision is not ready")
+    if payload.get("teacher_signal_source") != TEACHER_SIGNAL_SOURCE:
+        raise ValueError(f"generator_manifest teacher_signal_source must be {TEACHER_SIGNAL_SOURCE}")
+    if payload.get("generator_source") != TEACHER_UTILITY_GENERATOR_SOURCE:
+        raise ValueError(f"generator_manifest generator_source must be {TEACHER_UTILITY_GENERATOR_SOURCE}")
+    if payload.get("split_scope") != "train_only":
+        raise ValueError("generator_manifest split_scope must be train_only")
+    if str(payload.get("input_split", "")).strip().lower() not in {"train", "training"}:
+        raise ValueError("generator_manifest input_split must be training")
+    for key in (
+        "uses_evaluator_outputs",
+        "uses_raw_prediction",
+        "uses_prediction_cache",
+        "load_from_raw_predictions",
+        "uses_val_or_test_gt_for_selection",
+        "uses_gt_for_selection",
+    ):
+        if _is_true(payload.get(key, False)):
+            raise ValueError(f"generator_manifest forbidden flag {key}=true")
+    _validate_optional_manifest_fields(
+        payload,
+        _generator_optional_teacher_utility_source_manifest_fields(),
+        context="generator_manifest",
+    )
+    out = dict(payload)
+    out["generator_manifest_json"] = str(path)
+    out["generator_manifest_sha256"] = _sha256_file(path)
+    return out
+
+
+def validate_teacher_utility_export_evidence(
+    summary_json: str | Path,
+    *,
+    output_jsonl: str | Path | None = None,
+    require_paction: bool = False,
+    require_generator_manifest: bool = False,
+) -> dict[str, Any]:
+    summary = _read_json(summary_json)
+    if summary.get("schema_version") != SUMMARY_SCHEMA_VERSION:
+        raise ValueError("teacher utility evidence schema_version mismatch")
+    if summary.get("decision") != READY:
+        raise ValueError("teacher utility export decision is not ready")
+    if summary.get("teacher_signal_source") != TEACHER_SIGNAL_SOURCE:
+        raise ValueError(f"teacher_signal_source must be {TEACHER_SIGNAL_SOURCE}")
+    if summary.get("split_scope") != "train_only":
+        raise ValueError("split_scope must be train_only")
+    if summary.get("utility_semantics") != UTILITY_SEMANTICS:
+        raise ValueError(f"teacher utility evidence must use {UTILITY_SEMANTICS}")
+    if summary.get("signed_utility_supported") is not True:
+        raise ValueError("teacher utility evidence must support signed utility")
+    _require_exact_manifest_fields(
+        summary,
+        _summary_teacher_utility_source_manifest_fields(),
+        context="teacher utility evidence summary",
+    )
+    for key in ("uses_val_or_test_gt_for_selection", "uses_gt_for_selection", "uses_prediction_cache", "uses_raw_prediction", "load_from_raw_predictions", "end_to_end"):
+        if summary.get(key) is not False:
+            raise ValueError(f"teacher utility evidence must set {key}=false")
+    for key in ("teacher_checkpoint_path", "teacher_checkpoint_sha256", "teacher_config_path", "teacher_config_sha256"):
+        if not isinstance(summary.get(key), str) or not summary[key]:
+            raise ValueError(f"teacher utility evidence requires {key}")
+    if require_generator_manifest or summary.get("generator_manifest_json") is not None:
+        if not isinstance(summary.get("generator_manifest_json"), str) or not summary["generator_manifest_json"]:
+            raise ValueError("teacher utility evidence requires generator_manifest_json")
+        if not isinstance(summary.get("generator_manifest_sha256"), str) or not summary["generator_manifest_sha256"]:
+            raise ValueError("teacher utility evidence requires generator_manifest_sha256")
+        manifest = validate_generator_manifest(summary["generator_manifest_json"])
+        if manifest["generator_manifest_sha256"] != summary.get("generator_manifest_sha256"):
+            raise ValueError("generator_manifest_sha256 mismatch")
+    output_path = Path(output_jsonl or summary.get("output_jsonl", "")).expanduser()
+    if not output_path.is_file():
+        raise ValueError(f"teacher utility output_jsonl missing: {output_path}")
+    actual_output_sha = _sha256_file(output_path)
+    if summary.get("output_jsonl_sha256") != actual_output_sha:
+        raise ValueError("output_jsonl_sha256 mismatch")
+    rows = _read_jsonl(output_path)
+    if int(summary.get("row_count", -1)) != len(rows):
+        raise ValueError("teacher utility row_count mismatch")
+    for line_no, row in enumerate(rows, start=1):
+        if row.get("schema_version") != ROW_SCHEMA_VERSION:
+            raise ValueError(f"{output_path}:{line_no}: teacher utility row schema mismatch")
+        if not _split_matches(_split(row), "training"):
+            raise ValueError(f"{output_path}:{line_no}: teacher utility rows must be training split")
+        _require_exact_manifest_fields(
+            row,
+            _teacher_utility_source_manifest_fields(),
+            context=f"{output_path}:{line_no}: teacher utility row",
+        )
+        provenance = row.get("teacher_utility_provenance")
+        if not isinstance(provenance, Mapping):
+            raise ValueError(f"{output_path}:{line_no}: missing teacher_utility_provenance")
+        if provenance.get("teacher_signal_source") != TEACHER_SIGNAL_SOURCE:
+            raise ValueError(f"{output_path}:{line_no}: teacher_signal_source must be {TEACHER_SIGNAL_SOURCE}")
+        if provenance.get("split_scope") != "train_only":
+            raise ValueError(f"{output_path}:{line_no}: split_scope must be train_only")
+        for key in (
+            "dense_len",
+            "teacher_axis",
+            "fps",
+            "snippet_stride",
+            "window_start_frame",
+            "teacher_checkpoint_path",
+            "teacher_checkpoint_sha256",
+            "teacher_config_path",
+            "teacher_config_sha256",
+        ):
+            if provenance.get(key) is None or (isinstance(provenance.get(key), str) and not provenance.get(key)):
+                raise ValueError(f"{output_path}:{line_no}: teacher_utility_provenance requires {key}")
+        _require_exact_manifest_fields(
+            provenance,
+            _teacher_utility_source_manifest_fields(),
+            context=f"{output_path}:{line_no}: teacher_utility_provenance",
+        )
+        if row.get("uses_teacher") is not True or row.get("training_only") is not True:
+            raise ValueError(f"{output_path}:{line_no}: teacher utility rows must be training_only teacher artifacts")
+        teacher_payload = row.get("teacher_utility")
+        if not isinstance(teacher_payload, Mapping):
+            raise ValueError(f"{output_path}:{line_no}: missing teacher_utility payload")
+        if teacher_payload.get("utility_semantics") != UTILITY_SEMANTICS:
+            raise ValueError(f"{output_path}:{line_no}: teacher utility semantics mismatch")
+        _require_exact_manifest_fields(
+            teacher_payload,
+            _teacher_utility_source_manifest_fields(),
+            context=f"{output_path}:{line_no}: teacher_utility payload",
+        )
+        signed = teacher_payload.get("signed_frame_utility", row.get("signed_frame_utility"))
+        if not isinstance(signed, list) or len(signed) != int(row.get("dense_len", 0)):
+            raise ValueError(f"{output_path}:{line_no}: signed_frame_utility is required")
+        gain = teacher_payload.get("positive_observation_gain", row.get("positive_observation_gain"))
+        risk = teacher_payload.get("negative_observation_risk", row.get("negative_observation_risk"))
+        if not isinstance(gain, list) or len(gain) != len(signed):
+            raise ValueError(f"{output_path}:{line_no}: positive_observation_gain is required")
+        if not isinstance(risk, list) or len(risk) != len(signed):
+            raise ValueError(f"{output_path}:{line_no}: negative_observation_risk is required")
+        for idx, (signed_value, gain_value, risk_value) in enumerate(zip(signed, gain, risk)):
+            expected_gain = max(0.0, float(signed_value))
+            expected_risk = max(0.0, -float(signed_value))
+            if abs(float(gain_value) - expected_gain) > 1e-6:
+                raise ValueError(f"{output_path}:{line_no}: positive_observation_gain mismatch at index {idx}")
+            if abs(float(risk_value) - expected_risk) > 1e-6:
+                raise ValueError(f"{output_path}:{line_no}: negative_observation_risk mismatch at index {idx}")
+        if "marginal_gain_frame_utility" in teacher_payload:
+            raise ValueError(f"{output_path}:{line_no}: marginal_gain_frame_utility is deprecated; use positive_observation_gain")
+        for key in FORBIDDEN_TRUE_FLAGS:
+            if _is_true(row.get(key, False)):
+                raise ValueError(f"{output_path}:{line_no}: forbidden teacher utility row flag {key}=true")
+        if require_paction and not _has_paction(row):
+            raise ValueError(f"{output_path}:{line_no}: p_action is required for selector training evidence")
+    evidence = dict(summary)
+    evidence["decision"] = "C3_DETECTOR_TEACHER_UTILITY_EVIDENCE_PASS"
+    evidence["summary_json"] = str(summary_json)
+    evidence["validated_output_jsonl"] = str(output_path)
+    evidence["validated_output_jsonl_sha256"] = actual_output_sha
+    return evidence
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Export train-only AdaTAD dense teacher utility to JSONL/NPZ.")
+    parser.add_argument("--input-jsonl", required=True)
+    parser.add_argument("--output-jsonl", required=True)
+    parser.add_argument("--summary-json")
+    parser.add_argument("--output-npz")
+    parser.add_argument("--base-samples-jsonl")
+    parser.add_argument("--teacher-checkpoint-path")
+    parser.add_argument("--teacher-config-path")
+    parser.add_argument("--generator-manifest-json")
+    parser.add_argument("--expected-split", default="training")
+    parser.add_argument("--spread-radius", type=int, default=1)
+    args = parser.parse_args(argv)
+    summary = run_export(
+        args.input_jsonl,
+        args.output_jsonl,
+        summary_json=args.summary_json,
+        output_npz=args.output_npz,
+        base_samples_jsonl=args.base_samples_jsonl,
+        teacher_checkpoint_path=args.teacher_checkpoint_path,
+        teacher_config_path=args.teacher_config_path,
+        generator_manifest_json=args.generator_manifest_json,
+        expected_split=args.expected_split,
+        spread_radius=int(args.spread_radius),
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

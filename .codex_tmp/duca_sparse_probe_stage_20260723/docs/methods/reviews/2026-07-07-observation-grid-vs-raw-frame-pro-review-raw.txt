@@ -1,0 +1,1012 @@
+## 0. 总判定
+
+**当前从 768 个 AdaTAD temporal grid positions 中选择 ≤384 个 observation，这个设定可以做成论文，但必须改掉“raw-frame selection / 384 frames”这种不严谨表述。**
+
+我会给一个很硬的判断：
+
+> **不必强行改成原始视频逐帧 raw-frame acquisition；但必须把论文主语改成 detector-compatible sparse temporal observation / snippet-grid acquisition，并补全 observation-to-raw-frame cost accounting、geometry round-trip test、raw-level oracle/diagnostic。**
+
+当前路线最安全、最可发表的定位不是 “intelligent frame selection”，而是：
+
+> **Detector-aware sparse temporal observation acquisition before expensive video backbone computation.**
+
+这仍然是 pre-backbone，因为选择发生在 `DecordDecode` / VideoMAE backbone 之前，而不是在 dense backbone feature 之后做 proposal pruning。官方 OpenTAD/AdaTAD 的 THUMOS 配置本身也先定义 temporal sampling lattice：base dataset 中 THUMOS 使用 `feature_stride=4`、`sample_stride=1`，即 1 个 temporal sample 对应约 4 个 raw-video frames；AdaTAD e2e config 使用 `window_size=768`，并把 768 个 temporal samples 分成 48 个 16-frame VideoMAE chunks。([GitHub][1])
+
+但是你们当前代码中 `window_size=target_len`，`dense_window_size=768`，`target_len=384` 时模型侧 `total_frames=384`、`chunk_num=384//16=24`。这说明当前实现更准确地说是 **从 768 个 detector-compatible temporal samples 中保留 384 个 backbone input samples，然后 VideoMAE 按 16 个 sample 一组处理**，不应写成“从原视频直接选择 384 raw frames”，也不应轻率写成“384 independent 16-frame clips”。([GitHub][2])
+
+---
+
+# 一、关于“是否必须从原始视频帧出发”
+
+## 1. 当前 4× snippet grid 选择是否不够优雅？
+
+**不是不优雅，但表述不优雅。**
+
+TAD detector 天然不是按原始帧逐帧建模。官方 THUMOS dataloader 已经把 raw video timeline 映射到 temporal sampling lattice：`feature_stride=4, sample_stride=1`。AdaTAD 的 dense setting 是 768 个 temporal samples，而不是所有 raw frames。([GitHub][1])
+
+所以你们从 768 个 dense temporal observations 中选择 384 个，本质上是在问：
+
+> 在 detector-compatible temporal observation lattice 上，哪些 observation 值得送入昂贵 video backbone？
+
+这个问题是成立的。真正不优雅的是把它讲成 “raw-frame selection”。审稿人会立刻抓住：你的 384 不是 384 raw frames，而是 384 detector-grid temporal samples / decoded backbone input samples。
+
+## 2. 会不会被认为是“官方 AdaTAD 已经采样后又二次加工”？
+
+会，被攻击概率很高，尤其如果论文写作不严谨。
+
+攻击会长这样：
+
+> “The method does not select frames from raw video. It first accepts AdaTAD’s pre-defined temporal grid and only sub-samples that grid. This is closer to grid thinning than frame acquisition.”
+
+这个攻击不一定致命，因为很多高效视频方法的单位本来就是 clip / snippet / token / temporal observation。但你必须主动承认：
+
+* 我们不是从 continuous raw-time 任意选择；
+* 我们选择的是 **detector-compatible temporal observation lattice**；
+* 该 lattice 的每个 position 对应 raw video 中的 sample / snippet center；
+* 被丢弃的 positions 不进入 VideoMAE / AdaTAD backbone，因此仍是 pre-backbone sparse acquisition。
+
+当前 loader 的 `bata_value_transport_ledger_subsample` 确实是在 `DecordDecode` 之前用 ledger positions 生成 `frame_idxs = dense_window[keep_positions]`，所以它不是在 dense VideoMAE feature 之后做二次筛选。([GitHub][3])
+
+## 3. 是否应该改成直接 raw-frame timeline 选择？
+
+**不建议现在主线全改。**
+
+raw-frame-level acquisition 看起来更“根本”，但会把你们的研究从 TAD detector-aware acquisition 变成一个很重的 video sampling system engineering 问题。你们目前最大的科学问题还没有解决：**selector 如何选择对 AdaTAD 定位有用的 observation**。如果现在切 raw-frame，你会同时引入 clip alignment、tubelet、frame interval、GT remap、native-time head、runtime profiling、VideoMAE chunk packing 等一堆新变量。这样短期更容易把 59 mAP 再打崩，而不是冲到 65。
+
+更合理的是：**主线保持 detector-grid acquisition；补一个 raw-aware front-end / oracle diagnostic，堵住审稿人攻击。**
+
+## 4. 从 raw frame 出发会不会更干净？代价是什么？
+
+概念上更干净，工程上更脏。
+
+raw-frame route 的代价包括：
+
+1. **clip_len=16 alignment**：如果 selector 选 raw frame `t`，VideoMAE 到底吃 `[t-7, ..., t+8]`，还是 `[t, t+15]`？边界附近 padding 怎么处理？
+2. **frame_interval / tubelet**：VideoMAE 预训练配置与采样间隔绑定，随意改变 raw-frame spacing 会引入 domain shift。
+3. **chunk packing**：当前 AdaTAD config 是把 768 temporal samples 按 16 个一组送入 VideoMAE；如果变成每个 selected center 一个 16-frame clip，计算图和 cost accounting 都变了。官方 config 中 `chunk_num=window_size//16`，`num_frames=16`，说明 dense 768 实际被组织为 48 个 16-frame chunks。([GitHub][4])
+4. **GT remap / postprocess**：raw timestamp、selected observation index、detector feature index、seconds conversion 必须一致。
+5. **FLOPs 统计**：384 selected centers 如果每个 center 解码 16-frame clip，可能不是 384 samples 的成本，而是最多 6144 raw-frame accesses，且 clip overlap 后 unique raw frames 又不同。
+
+raw route 的论文价值只有在你能证明：**raw-level acquisition 相比 grid-level acquisition 有额外 headroom**。否则它只是把问题复杂化。
+
+## 5. 如果继续 snippet/grid observation，论文应该怎么讲？
+
+推荐术语：
+
+> **temporal observation**：一个 detector-compatible temporal sample / snippet center / backbone input sample。
+> **sparse observation acquisition**：从 dense AdaTAD temporal lattice 中选择 sparse subset，并只对该 subset 执行 video decoding/backbone computation。
+> **pre-backbone**：选择发生在 expensive VideoMAE/AdaTAD backbone 之前，而不是在 dense backbone features 或 proposals 之后。
+
+不要写：
+
+* “we select 384 raw frames”；
+* “we process only 384 frames”；
+* “frame-level acquisition from raw video”；
+* “end-to-end raw video frame selector”，除非代码真的这么做。
+
+可以写：
+
+* “we select up to 384 temporal observations from a 768-position detector-compatible input lattice”；
+* “each selected observation is mapped back to raw-video indices before decoding”；
+* “our cost is reported in observations, decoded raw frames, unique raw frames, VideoMAE chunks, and measured runtime.”
+
+---
+
+# 二、三条路线的严厉比较
+
+## 路线 A：继续当前 768→384 snippet-grid acquisition
+
+**结论：主线可以保留，但必须改 claim 和补 cost/geometry。**
+
+优点：
+
+1. 与 AdaTAD temporal contract 对齐。官方 detector、assignment、postprocess 的时间尺度不用全重写。
+2. 工程风险最低。当前 loader 已经能从 ledger `keep_positions` 映射到 `dense_window` 再生成 `frame_idxs`，并在需要时 remap GT 到 selected axis。([GitHub][3])
+3. 对 compute reduction 真实有效：如果只解码/处理 384 temporal samples，VideoMAE chunks 从 dense 768 的 48 个降到 24 个，至少 backbone temporal input 大约减半。这个说法需要实测 FLOPs/runtime 支撑。
+4. 便于把 detector utility / point responsibility 蒸馏给 selector，因为 teacher 和 selector 都在同一 detector-compatible grid 上。
+
+缺点：
+
+1. 不是 raw-frame-level acquisition。
+2. selected-axis remap 会扭曲真实时间，如果高 IoU mAP 要作为主 claim，必须做 native-time geometry 或至少做 round-trip correctness test。
+3. 审稿人会问：uniform stride-2 384 是否已经足够？你们必须超过或解释 uniform 384。
+
+**适合最终主线。**
+
+但名称必须从 frame selection 改为：
+
+> **sparse temporal observation acquisition**
+> 或
+> **detector-grid temporal acquisition**
+
+## 路线 B：直接 raw-frame-level acquisition
+
+**结论：不建议作为当前主线；只建议做最小 raw oracle / raw-aware scout。**
+
+理论优点：
+
+1. 论文听起来更根本；
+2. 可以声称从 raw video timeline 做 acquisition；
+3. 有机会处理非均匀 raw timestamps 和 true-time detection。
+
+实际问题：
+
+1. 你要重新定义 VideoMAE input：是 384 raw frames？384 clip centers？384 clips？这些不是同一个 cost。
+2. 如果每个 selected raw timestamp 生成一个 16-frame clip，则 VideoMAE forward 数可能从 24 chunks 变成 384 clips，反而更贵。
+3. 如果只是从 raw frames 中抽 384 帧再按 16 个一组送 VideoMAE，那么它和当前 grid route 很接近，只是把 grid 从 stride-4 改成 raw stride-1，未必带来 mAP headroom。
+4. AdaTAD 的 GT、proposal、NMS、seconds conversion 都需要 true-time irregular axis，否则高 IoU 结果很容易假坏或假好。
+5. 你们现在 PAction learned 384 只有 59.10，GAS-VT 44.90。此时优先解决 utility alignment，而不是扩展 raw-frame自由度。
+
+**路线 B 的最小可行版本** 应该只做 diagnostic：
+
+* raw-level oracle 选择 384 raw centers；
+* raw-grid oracle 选择 384 grid centers；
+* 比较两者在同一 detector 或 true-time head 下的 upper bound；
+* 如果 raw oracle 明显高于 grid oracle，再考虑主线升级。
+
+没有这个 headroom 证据，不要大改。
+
+## 路线 C：两级 hybrid acquisition
+
+**结论：最优雅，最适合作为最终论文叙事。**
+
+路线 C 可以这样定义：
+
+1. **Raw/video-aware scout**：用很低成本的 raw scan 或 compressed-resolution signal 估计 p_action、motion、uncertainty、state transition；
+2. **Detector-compatible acquisition**：把 scout signal 投影到 AdaTAD 768-position observation lattice；
+3. **Detector-aware utility calibration**：用 dense AdaTAD teacher 的 train-only point responsibility 监督 selector；
+4. **Sparse pre-backbone input**：测试时 selector 输出 ≤384 observation indices，只 decode / process selected observations；
+5. **Optional joint fine-tuning**：后续再让 detector loss 通过 ST/Gumbel selector 回传。
+
+这条路线解决了两个矛盾：
+
+* 对外可以说 “raw-video-aware”，因为 scout 来自 raw/video low-cost observation；
+* 对内保持 detector-grid-compatible，避免 raw-frame route 把所有工程合同打碎。
+
+推荐最终主线就是 C，但第一篇论文的实现可以主要落在 A+Stage2 上，C 的 raw scout 作为 clean extension。
+
+---
+
+# 三、claim 安全性表
+
+| Claim                                             |                     当前是否安全 | 严厉判断                                                                    |
+| ------------------------------------------------- | -------------------------: | ----------------------------------------------------------------------- |
+| raw frame selection                               |                        不安全 | 当前不应说。你们选的是 768 grid 上的 local dense indices，不是 continuous raw timeline。 |
+| sparse frame selection                            |                        高风险 | 除非明确定义 frame=decoded temporal sample；否则审稿人会理解为 raw frames。              |
+| sparse snippet selection                          |                       相对安全 | 但要说明 snippet/observation 对应 detector-compatible grid position。          |
+| temporal observation acquisition                  |                        最安全 | 推荐主术语。                                                                  |
+| pre-backbone acquisition                          |                         安全 | 选择发生在 DecordDecode / VideoMAE backbone 前即可，不要求 raw-frame-level。         |
+| detector-aware temporal acquisition               | 现在只能作为目标/方法设计；Stage2 成功后安全 | 需要 point responsibility utility full-run 结果支撑。                          |
+| end-to-end selector-detector optimization         |                      当前不安全 | 只有 detector loss 对 selector logits 有非零梯度后才可说。                           |
+| efficient TAD via sparse pre-backbone observation |                       条件安全 | 必须报告 VideoMAE chunks、FLOPs、runtime、memory，而不只是 selected count。          |
+
+---
+
+# 四、推荐论文标题、方法名和 abstract 级表述
+
+## 推荐标题
+
+最稳：
+
+> **DUCA-TAD: Detector-Utility-Calibrated Temporal Observation Acquisition for Efficient Temporal Action Detection**
+
+更短：
+
+> **Sparse Temporal Observation Acquisition for Detector-Aware Temporal Action Detection**
+
+不推荐：
+
+> Intelligent Frame Selection for TAD
+
+因为 “frame selection” 会引出 raw-frame 争议。
+
+## 推荐方法名
+
+* **DUCA-TAD**：Detector-Utility-Calibrated Acquisition for TAD；
+* 或 **DUTO-TAD**：Detector-Utility Temporal Observation Acquisition；
+* 或 **SOA-TAD**：Sparse Observation Acquisition for TAD。
+
+我建议保留 DUCA-TAD，但把全称改成：
+
+> **Detector-Utility-Calibrated Observation Acquisition for Temporal Action Detection**
+
+不要在方法名里放 “frame”。
+
+## 最安全 abstract 级表述
+
+可以这样写：
+
+> Temporal action detection with video backbones is computationally expensive because dense detector-compatible temporal observations are processed by the backbone. We study sparse pre-backbone temporal observation acquisition: given a dense AdaTAD input lattice of 768 temporal observations, a lightweight selector acquires at most 384 observations before VideoMAE computation. To align acquisition with localization rather than actionness alone, we distill train-only detector utility from a dense AdaTAD teacher into the selector. At test time, no teacher, ground-truth, or prediction cache is used; only the selected observations are decoded and processed by the detector. We evaluate mAP, high-tIoU localization, boundary coverage, observation cost, decoded raw-frame cost, VideoMAE chunks, and runtime under matched detector protocols.
+
+这个表述不会把 384 observations 偷换成 384 raw frames。
+
+---
+
+# 五、最终可发表目标应该是什么
+
+我推荐最终产出形式：
+
+> **一个 detector-aware sparse temporal observation acquisition framework，可插入 AdaTAD/OpenTAD 风格 TAD detector，包含 train-only dense teacher utility、strict pre-backbone sparse input、可选 joint fine-tuning。**
+
+不要定位为完整新 TAD model。那会逼你重新和所有 TAD methods 比 SOTA。你们真正的问题不是 “我提出了新 detector”，而是 “我能让现有 detector 少看一半 observation 仍保持定位性能”。
+
+也不要定位为任意 detector plug-in。现在最强证据仍围绕 AdaTAD/OpenTAD；没有 ActionFormer、TriDet、TemporalMaxer、多数据集验证前，说 arbitrary plug-in 会过度。
+
+最合理的 paper contribution 是三点：
+
+1. **Problem formulation**：pre-backbone sparse temporal observation acquisition for TAD，不同于 post-backbone pruning；
+2. **Detector-utility calibration**：dense AdaTAD teacher 的 point responsibility 教 selector，而不是只靠 actionness / boundary heuristic；
+3. **Strict accounting and geometry**：记录 selected observation 到 raw frame / VideoMAE chunk / true-time prediction 的映射，证明 efficiency 和 high-IoU localization 没有被坐标轴污染。
+
+---
+
+# 六、实验设计
+
+## 1. 证明 768→384 是否真的节省 backbone 计算
+
+必须报告四类 cost，而不是只说 “384 frames”：
+
+| Cost metric                    | Dense 768 | Sparse 384 | 说明                                            |
+| ------------------------------ | --------: | ---------: | --------------------------------------------- |
+| selected temporal observations |       768 |        384 | detector-compatible lattice samples           |
+| decoded raw frame indices      |   768 或更多 |    384 或更多 | 取决于 loader 是 sample mode 还是 clip-center mode  |
+| unique raw frames touched      |       需实测 |        需实测 | clip overlap 时关键                              |
+| VideoMAE chunks                |        48 |         24 | 当前 config 的 `chunk_num=window_size//16` 逻辑下成立 |
+| VideoMAE temporal tokens       |     公式/实测 |      公式/实测 | 和 tubelet size、spatial patch 有关               |
+| runtime / memory               |        实测 |         实测 | 必须用同一 GPU、batch size、AMP 设置                   |
+
+官方 dense AdaTAD config 中 `window_size=768`、`chunk_num=768//16=48`，VideoMAE backbone `num_frames=16`；当前 sparse config 把 `window_size` 改成 selected target length，因此 384 时 `chunk_num=24`。([GitHub][4])
+
+## 2. 公平对比表
+
+主表必须包含：
+
+1. Dense AdaTAD 768；
+2. Uniform 384；
+3. Random fixed 384；
+4. PAction top-k 384；
+5. PAction learned fixed384；
+6. GAS-VT fixed384；
+7. lattice move50/move75，标 diagnostic；
+8. Stage2 proposal-score utility，标 surrogate；
+9. Stage2 point-responsibility utility，主方法候选；
+10. Stage3 joint，只有真实梯度和 full mAP 后才放主表。
+
+所有方法必须固定：
+
+* same dense window definition；
+* same train/eval split；
+* same detector config；
+* same selected budget；
+* same fine-tuning schedule；
+* same postprocess；
+* same no-teacher-at-test policy；
+* same cost accounting.
+
+## 3. 回答“不从 raw frame 出发是否影响说服力”
+
+需要三个实验堵住这个问题：
+
+**实验 A：grid-resolution sufficiency diagnostic**
+比较 dense 768、uniform 384、oracle-grid 384。如果 oracle-grid 384 可以接近或超过 65，说明 grid-level acquisition 有足够 headroom。
+
+**实验 B：raw oracle vs grid oracle**
+构造 raw-frame-level oracle 和 grid-level oracle，比较 upper bound。如果 raw oracle 只比 grid oracle 高很少，主线保持 grid 是合理的；如果 raw oracle 高很多，再考虑 raw route。
+
+**实验 C：raw-aware scout ablation**
+selector 输入从 grid p_action 扩展到 low-res raw scan signal，输出仍在 detector grid 上。若提升明显，说明 C 路线比纯 A 更有价值。
+
+## 4. 如果从 raw frame 出发，应补哪些实验
+
+必须补：
+
+1. raw-frame uniform；
+2. raw-frame learned selector；
+3. raw-frame oracle；
+4. clip-center vs sequence-sample cost；
+5. unique raw frames touched；
+6. VideoMAE chunks/clips；
+7. true-time head vs selected-axis head；
+8. high-IoU boundary error decomposition。
+
+否则 raw route 只会让审稿人更容易攻击。
+
+## 5. 必须画的图
+
+1. selected observation timeline，x 轴同时标 dense-grid index 和 raw timestamp；
+2. selected observation 到 raw-frame clip/tubelet 的映射图；
+3. boundary recall@raw-frame radius 和 @grid-radius；
+4. p95/max hole on grid axis；
+5. raw-time hole distribution；
+6. teacher utility vs selected probability；
+7. mAP vs budget；
+8. mAP vs VideoMAE FLOPs；
+9. high-IoU failure cases：预测边界如何从 selected grid 映射回 seconds。
+
+---
+
+# 七、关键代码建议
+
+下面的代码是框架级别，不依赖你们具体目录名，但应当落成实际 tools / tests。
+
+## 1. 严谨记录 selected observation 到 raw frame / clip 的映射
+
+当前必须在 ledger 或 manifest 中新增 `observation_mapping`，不能只存 `selected_positions`。
+
+```python
+from dataclasses import dataclass, asdict
+from typing import List, Dict, Any
+import numpy as np
+
+@dataclass
+class ObservationMapping:
+    sample_id: str
+    video_name: str
+
+    # Detector-grid coordinate.
+    selected_position_unit: str          # "local_dense_index"
+    dense_window_size: int               # e.g. 768
+    selected_dense_index: int            # e.g. 0..767
+
+    # Raw-video coordinate.
+    fps: float
+    raw_center_frame: int
+    timestamp_sec: float
+
+    # Decode/backbone coordinate.
+    decode_mode: str                     # "sequence_sample" or "clip_center"
+    clip_len: int                        # e.g. 16
+    frame_interval: int                  # raw-frame interval inside clip, if clip_center
+    raw_clip_frames: List[int]
+
+    # Cost accounting.
+    contributes_to_videomae_chunk: int
+    contributes_to_detector_position: int
+
+def build_dense_window_raw_indices(
+    *,
+    total_frames: int,
+    snippet_stride: int,
+    scale_factor: int,
+    feature_start_idx: int,
+    feature_end_idx: int,
+) -> np.ndarray:
+    """
+    Mirrors current LoadFrames logic:
+      frame_stride = snippet_stride // scale_factor
+      dense_frame_idxs = arange(0, total_frames, frame_stride)
+      dense_window = dense_frame_idxs[start_idx:end_idx]
+    """
+    assert snippet_stride >= scale_factor
+    assert snippet_stride % scale_factor == 0
+
+    frame_stride = snippet_stride // scale_factor
+    dense_frame_idxs = np.arange(0, total_frames, frame_stride, dtype=np.int64)
+
+    start_idx = min(feature_start_idx * scale_factor, len(dense_frame_idxs))
+    end_idx = min((feature_end_idx + 1) * scale_factor, len(dense_frame_idxs))
+    return dense_frame_idxs[start_idx:end_idx]
+
+def clip_frames_around_center(
+    center: int,
+    *,
+    total_frames: int,
+    clip_len: int = 16,
+    frame_interval: int = 1,
+    mode: str = "centered",
+) -> List[int]:
+    if mode == "centered":
+        half = clip_len // 2
+        offsets = [(i - half) * frame_interval for i in range(clip_len)]
+    elif mode == "forward":
+        offsets = [i * frame_interval for i in range(clip_len)]
+    else:
+        raise ValueError(f"unknown clip mode: {mode}")
+
+    frames = [int(np.clip(center + off, 0, total_frames - 1)) for off in offsets]
+    return frames
+
+def make_observation_mappings(
+    *,
+    sample_id: str,
+    video_name: str,
+    fps: float,
+    total_frames: int,
+    snippet_stride: int,
+    scale_factor: int,
+    feature_start_idx: int,
+    feature_end_idx: int,
+    selected_positions: List[int],
+    decode_mode: str,
+    clip_len: int = 16,
+    frame_interval: int = 1,
+) -> List[Dict[str, Any]]:
+    dense_window = build_dense_window_raw_indices(
+        total_frames=total_frames,
+        snippet_stride=snippet_stride,
+        scale_factor=scale_factor,
+        feature_start_idx=feature_start_idx,
+        feature_end_idx=feature_end_idx,
+    )
+
+    mappings = []
+    for out_i, p in enumerate(selected_positions):
+        p = int(p)
+        if p < 0 or p >= len(dense_window):
+            raise ValueError(f"selected position {p} outside dense window len={len(dense_window)}")
+
+        center = int(dense_window[p])
+        if decode_mode == "sequence_sample":
+            # Current AdaTAD-style sequence mode: one decoded temporal sample.
+            raw_clip = [center]
+            chunk_id = out_i // clip_len
+        elif decode_mode == "clip_center":
+            # Alternative raw-frame-level/clip-center mode.
+            raw_clip = clip_frames_around_center(
+                center,
+                total_frames=total_frames,
+                clip_len=clip_len,
+                frame_interval=frame_interval,
+                mode="centered",
+            )
+            chunk_id = out_i
+        else:
+            raise ValueError(f"unknown decode_mode={decode_mode}")
+
+        m = ObservationMapping(
+            sample_id=sample_id,
+            video_name=video_name,
+            selected_position_unit="local_dense_index",
+            dense_window_size=len(dense_window),
+            selected_dense_index=p,
+            fps=float(fps),
+            raw_center_frame=center,
+            timestamp_sec=float(center) / float(fps),
+            decode_mode=decode_mode,
+            clip_len=clip_len,
+            frame_interval=frame_interval,
+            raw_clip_frames=raw_clip,
+            contributes_to_videomae_chunk=chunk_id,
+            contributes_to_detector_position=out_i,
+        )
+        mappings.append(asdict(m))
+
+    return mappings
+```
+
+这个 mapping 应该随 ledger 保存，至少保存到 sidecar JSONL：
+
+```json
+{
+  "sample_id": "...",
+  "selected_positions_unit": "local_dense_index",
+  "decode_mode": "sequence_sample",
+  "dense_window_size": 768,
+  "selected_observation_count": 384,
+  "observation_mappings": [...]
+}
+```
+
+## 2. 计算真实 observation cost
+
+```python
+import math
+from typing import Dict, List, Any
+
+def compute_observation_cost(
+    mappings: List[Dict[str, Any]],
+    *,
+    clip_len: int = 16,
+    tubelet_size: int = 2,
+    image_size: int = 160,
+    patch_size: int = 16,
+    decode_mode: str,
+) -> Dict[str, Any]:
+    selected_obs = len(mappings)
+
+    raw_frames_all = []
+    for m in mappings:
+        raw_frames_all.extend([int(x) for x in m["raw_clip_frames"]])
+
+    unique_raw_frames = sorted(set(raw_frames_all))
+
+    if decode_mode == "sequence_sample":
+        videomae_units = math.ceil(selected_obs / clip_len)
+    elif decode_mode == "clip_center":
+        videomae_units = selected_obs
+    else:
+        raise ValueError(decode_mode)
+
+    temporal_tokens_per_unit = math.ceil(clip_len / tubelet_size)
+    spatial_tokens_per_frame = (image_size // patch_size) * (image_size // patch_size)
+    tokens_per_unit = temporal_tokens_per_unit * spatial_tokens_per_frame
+
+    return {
+        "selected_temporal_observations": selected_obs,
+        "decoded_raw_frame_accesses": len(raw_frames_all),
+        "unique_raw_frames_touched": len(unique_raw_frames),
+        "videomae_units": videomae_units,
+        "clip_len": clip_len,
+        "tubelet_size": tubelet_size,
+        "image_size": image_size,
+        "patch_size": patch_size,
+        "tokens_per_videomae_unit_est": tokens_per_unit,
+        "total_videomae_tokens_est": videomae_units * tokens_per_unit,
+        "decode_mode": decode_mode,
+    }
+```
+
+论文表里必须同时报：
+
+* selected temporal observations；
+* decoded raw frame accesses；
+* unique raw frames touched；
+* VideoMAE units/chunks；
+* estimated tokens；
+* measured latency。
+
+不要只报 “frames used=384”。
+
+## 3. Validator：禁止把 384 observations 误写成 384 raw frames
+
+```python
+FORBIDDEN_CLAIMS = [
+    "384 raw frames",
+    "select 384 frames from raw video",
+    "raw-frame selection",
+    "frame-level selector",
+]
+
+ALLOWED_TERMS = [
+    "temporal observations",
+    "detector-compatible observations",
+    "snippet-grid observations",
+    "backbone input samples",
+]
+
+def validate_manifest_claims(manifest: Dict[str, Any]) -> None:
+    claim_text = " ".join([
+        str(manifest.get("paper_claim", "")),
+        str(manifest.get("method_summary", "")),
+        str(manifest.get("table_caption", "")),
+    ]).lower()
+
+    for bad in FORBIDDEN_CLAIMS:
+        if bad.lower() in claim_text:
+            raise AssertionError(
+                f"Unsafe claim found: {bad}. "
+                "Use 'temporal observations' unless raw-frame acquisition is implemented."
+            )
+
+    unit = manifest.get("selected_positions_unit")
+    if unit != "local_dense_index":
+        raise AssertionError(f"Expected selected_positions_unit='local_dense_index', got {unit}")
+
+    if manifest.get("reports_raw_frame_cost") is not True:
+        raise AssertionError("Manifest must report raw-frame cost separately from observation count.")
+
+    if manifest.get("selected_observation_count") == manifest.get("raw_frames_selected"):
+        if manifest.get("decode_mode") != "sequence_sample":
+            raise AssertionError(
+                "Do not equate selected observations with raw frames unless decode_mode explicitly justifies it."
+            )
+
+def validate_cost_row(cost: Dict[str, Any]) -> None:
+    required = [
+        "selected_temporal_observations",
+        "decoded_raw_frame_accesses",
+        "unique_raw_frames_touched",
+        "videomae_units",
+        "decode_mode",
+    ]
+    for k in required:
+        if k not in cost:
+            raise AssertionError(f"Missing cost metric: {k}")
+
+    if cost["selected_temporal_observations"] <= 0:
+        raise AssertionError("selected_temporal_observations must be positive")
+
+    if cost["unique_raw_frames_touched"] > cost["decoded_raw_frame_accesses"]:
+        raise AssertionError("unique raw frames cannot exceed raw frame accesses")
+```
+
+## 4. 如果切 raw-frame-level acquisition，dataset loader 应该怎么设计
+
+raw route 不应复用当前 `selected_positions=local_dense_index` 语义。要新增 schema：
+
+```json
+{
+  "schema_version": "raw_time_acquisition_v1",
+  "selected_positions_unit": "raw_frame_index",
+  "selected_raw_centers": [123, 141, 162],
+  "clip_len": 16,
+  "frame_interval": 2,
+  "clip_alignment": "centered",
+  "detector_axis": "selected_observation_index",
+  "time_axis_for_decode": "raw_frame_index",
+  "requires_true_time_postprocess": true
+}
+```
+
+loader skeleton：
+
+```python
+class RawFrameAcquisitionLoadFrames:
+    def __init__(
+        self,
+        ledger_path: str,
+        clip_len: int = 16,
+        frame_interval: int = 1,
+        target_observations: int = 384,
+        axis_mode: str = "native_true_time",
+    ):
+        self.ledger = load_jsonl_by_sample_id(ledger_path)
+        self.clip_len = clip_len
+        self.frame_interval = frame_interval
+        self.target_observations = target_observations
+        self.axis_mode = axis_mode
+
+    def __call__(self, results):
+        row = self.ledger[make_sample_id(results)]
+        centers = np.asarray(row["selected_raw_centers"], dtype=np.int64)
+
+        if len(centers) > self.target_observations:
+            raise ValueError("selected raw centers exceed budget")
+
+        all_frame_indices = []
+        observation_to_raw_clip = []
+        for center in centers:
+            clip = clip_frames_around_center(
+                int(center),
+                total_frames=int(results["total_frames"]),
+                clip_len=self.clip_len,
+                frame_interval=self.frame_interval,
+            )
+            observation_to_raw_clip.append(clip)
+            all_frame_indices.extend(clip)
+
+        results["frame_inds"] = np.asarray(all_frame_indices, dtype=np.int64)
+        results["selected_raw_centers"] = centers
+        results["observation_to_raw_clip"] = observation_to_raw_clip
+        results["selected_timestamps_sec"] = centers.astype(np.float32) / float(results["fps"])
+
+        if self.axis_mode == "native_true_time":
+            # Keep GT in raw-frame/time coordinates.
+            results["gt_time_axis"] = "raw_frame"
+            results["gt_segments_raw_frame"] = seconds_to_raw_frames(results["gt_segments"], results["fps"])
+        else:
+            # Selected-axis remap; lower recommended for high-IoU claims.
+            results["gt_segments"] = remap_raw_gt_to_selected_axis(
+                results["gt_segments"],
+                centers,
+                fps=results["fps"],
+            )
+
+        return results
+```
+
+但我再次强调：这不是你们当前最短主线。
+
+## 5. 如果继续 snippet-grid acquisition，clean manifest 应该长这样
+
+```json
+{
+  "method_name": "DUCA-TAD",
+  "acquisition_unit": "detector_compatible_temporal_observation",
+  "selected_positions_unit": "local_dense_index",
+  "dense_observation_lattice": {
+    "dense_window_size": 768,
+    "feature_stride": 4,
+    "sample_stride": 1,
+    "raw_frame_step_per_observation": 4
+  },
+  "sparse_budget": {
+    "max_selected_observations": 384,
+    "dynamic_budget": false
+  },
+  "decode_and_backbone": {
+    "decode_mode": "sequence_sample",
+    "videomae_num_frames": 16,
+    "dense_videomae_chunks": 48,
+    "sparse_videomae_chunks": 24
+  },
+  "claim_guard": {
+    "raw_frame_selection_claim_allowed": false,
+    "temporal_observation_acquisition_claim_allowed": true,
+    "pre_backbone_claim_allowed": true,
+    "end_to_end_claim_allowed": false
+  },
+  "cost_metrics_required": [
+    "selected_temporal_observations",
+    "decoded_raw_frame_accesses",
+    "unique_raw_frames_touched",
+    "videomae_units",
+    "runtime_ms",
+    "gpu_memory_mb"
+  ],
+  "leakage_guard": {
+    "uses_gt_at_eval_selection": false,
+    "uses_teacher_at_eval": false,
+    "uses_prediction_cache_at_eval": false
+  }
+}
+```
+
+## 6. Synthetic geometry round-trip test
+
+这个测试必须补。它防止 selected grid、raw time、GT、prediction postprocess 之间的坐标轴错位污染 high-IoU mAP。
+
+```python
+import numpy as np
+
+def grid_to_raw_frame(local_dense_idx, *, window_start_raw, raw_step):
+    return window_start_raw + np.asarray(local_dense_idx, dtype=np.float32) * raw_step
+
+def raw_frame_to_seconds(raw_frame, fps):
+    return np.asarray(raw_frame, dtype=np.float32) / float(fps)
+
+def selected_axis_to_dense_time(x_sel, selected_positions):
+    """
+    Inverse of GT remap: selected-axis coordinate -> dense-grid coordinate.
+    """
+    selected_positions = np.asarray(selected_positions, dtype=np.float32)
+    xp = np.concatenate([
+        np.arange(len(selected_positions), dtype=np.float32),
+        np.array([float(len(selected_positions))], dtype=np.float32)
+    ])
+    fp = np.concatenate([
+        selected_positions,
+        np.array([selected_positions[-1] + 1.0], dtype=np.float32)
+    ])
+    return np.interp(x_sel, xp, fp)
+
+def dense_time_to_selected_axis(x_dense, selected_positions, valid_len):
+    selected_positions = np.asarray(selected_positions, dtype=np.float32)
+    xp = np.concatenate([
+        selected_positions,
+        np.array([float(valid_len)], dtype=np.float32)
+    ])
+    fp = np.concatenate([
+        np.arange(len(selected_positions), dtype=np.float32),
+        np.array([float(len(selected_positions))], dtype=np.float32)
+    ])
+    return np.interp(np.clip(x_dense, 0.0, float(valid_len)), xp, fp)
+
+def tiou(seg_a, seg_b):
+    a0, a1 = seg_a
+    b0, b1 = seg_b
+    inter = max(0.0, min(a1, b1) - max(a0, b0))
+    union = max(a1, b1) - min(a0, b0)
+    return inter / max(union, 1e-6)
+
+def test_selected_grid_raw_time_roundtrip():
+    fps = 30.0
+    raw_step = 4
+    window_start_raw = 1000
+    valid_len = 768
+
+    # Deliberately non-uniform sparse grid.
+    selected = np.array([0, 1, 2, 8, 16, 17, 40, 80, 160, 300, 500, 767], dtype=np.float32)
+
+    # GT in dense-grid coordinates.
+    gt_dense = np.array([80.0, 160.0], dtype=np.float32)
+
+    # Remap GT to selected-axis.
+    gt_sel = np.array([
+        dense_time_to_selected_axis(gt_dense[0], selected, valid_len),
+        dense_time_to_selected_axis(gt_dense[1], selected, valid_len),
+    ])
+
+    # Suppose detector predicts exactly the remapped GT.
+    pred_sel = gt_sel.copy()
+
+    # Convert prediction back to dense-grid coordinates.
+    pred_dense = np.array([
+        selected_axis_to_dense_time(pred_sel[0], selected),
+        selected_axis_to_dense_time(pred_sel[1], selected),
+    ])
+
+    assert abs(tiou(gt_dense, pred_dense) - 1.0) < 1e-5
+
+    # Convert both to raw-frame and seconds.
+    gt_raw = grid_to_raw_frame(gt_dense, window_start_raw=window_start_raw, raw_step=raw_step)
+    pred_raw = grid_to_raw_frame(pred_dense, window_start_raw=window_start_raw, raw_step=raw_step)
+
+    gt_sec = raw_frame_to_seconds(gt_raw, fps)
+    pred_sec = raw_frame_to_seconds(pred_raw, fps)
+
+    assert abs(tiou(gt_sec, pred_sec) - 1.0) < 1e-5
+```
+
+再加一个 failure test：如果 selected-axis prediction 被错误当成 dense-grid prediction，tIoU 应该明显下降。这样 validator 能抓住坐标轴污染。
+
+---
+
+# 八、严厉最终判断
+
+## 1. 当前“在 4× 下采样后的 AdaTAD snippet grid 上做选择”是否足够优雅？
+
+**足够做论文，但不是最优雅表述。**
+
+它的优雅版本是：
+
+> detector-compatible temporal observation acquisition.
+
+它的不优雅版本是：
+
+> raw-frame intelligent selection.
+
+不要用后者。
+
+## 2. 是否存在“二次加工”嫌疑？
+
+**有。**
+
+尤其当你写 “frame selection” 时，审稿人会认为你只是把官方 AdaTAD 的 768 temporal grid 再抽一半。防御方式不是否认，而是转移问题定义：
+
+> TAD detectors already operate on detector-compatible temporal observation lattices. Our contribution is to learn which observations should be acquired before expensive backbone computation, not to redefine raw video decoding.
+
+同时必须证明 selected observations 真的少进 backbone，而不是 dense backbone 后剪枝。当前 loader 在 `DecordDecode` 前生成 sparse `frame_idxs`，这是你们的防线。([GitHub][3])
+
+## 3. 是否必须改为原始视频帧级选择？
+
+**不必须。现在改主线不划算。**
+
+raw-frame route 只有在 raw oracle 显示明显 headroom 时才值得投入。否则你会用巨大的工程复杂度换一个未必有 mAP 收益的 claim。
+
+## 4. 如果不改，论文怎么讲才不会被攻击？
+
+核心四句话：
+
+1. 我们研究的是 **temporal observation acquisition**，不是 raw-frame selection；
+2. observation 是 detector-compatible temporal lattice 上的 backbone input sample；
+3. acquisition 发生在 VideoMAE/AdaTAD backbone 之前，被丢弃 observation 不会被 backbone 处理；
+4. 我们报告 observation count、raw-frame accesses、unique raw frames、VideoMAE chunks、FLOPs、latency，避免把 384 observations 偷换成 384 raw frames。
+
+## 5. 如果要改，最小可行 raw-frame-level 版本是什么？
+
+不要全量重写 detector。做最小 diagnostic：
+
+1. raw low-res scout 读取低成本 frames；
+2. 输出 raw timestamp utility；
+3. 把 raw utility 投影回 768 detector grid；
+4. 仍选择 ≤384 detector-grid observations；
+5. 额外跑 raw oracle vs grid oracle；
+6. 如果 raw oracle 明显更高，再做 native true-time head。
+
+这其实就是路线 C，而不是纯路线 B。
+
+---
+
+# 九、最终推荐路线
+
+## 推荐路线
+
+**路线 C：raw-video-aware scout + detector-grid-compatible detector-aware acquisition。**
+
+第一阶段落地方式：
+
+* 保持当前 768→384 detector-grid acquisition；
+* 改论文术语为 temporal observation acquisition；
+* Stage2 用 train-only dense AdaTAD point responsibility 训练 selector；
+* 补 cost accounting；
+* 补 geometry round-trip；
+* 补 raw/grid oracle diagnostic。
+
+第二阶段，如果 Stage2 达到 62–65：
+
+* 加 native true-time irregular head；
+* 加 optional ST/Gumbel joint fine-tuning；
+* 再考虑 raw-level scout 作为增强。
+
+## 不推荐路线
+
+**不推荐纯路线 B raw-frame-level acquisition 作为当前主线。**
+
+原因：
+
+* 工程复杂度暴涨；
+* mAP headroom 未证明；
+* VideoMAE chunk/cost 语义会变；
+* 更容易引入 alignment 和 high-IoU 坐标错误；
+* 当前真正短板是 detector utility alignment，不是 raw timeline freedom。
+
+**不推荐 lattice replacement 作为主方法。**
+
+它可以诊断 “PAction + hole control” 是否有效，但 uniform scaffold 会削弱智能 acquisition 故事。
+
+---
+
+# 十、必须补的实验
+
+最短路径必须补：
+
+1. **Matched baseline pack**：dense 768、uniform 384、random 384、PAction top-k 384、PAction learned384、GAS-VT384，完全同 detector protocol。
+2. **Stage2 point-responsibility 384 full run**：不是 proposal-score surrogate，而是真 train-only point responsibility。
+3. **Cost table**：selected observations、decoded raw frames、unique raw frames、VideoMAE chunks、FLOPs、runtime、memory。
+4. **Geometry round-trip tests**：selected grid ↔ raw frame ↔ seconds ↔ mAP postprocess。
+5. **Raw/grid oracle diagnostic**：证明不做 raw-frame selection仍有足够 headroom，或证明 raw route值得升级。
+6. **mAP vs budget**：256/320/384/512，主 claim 锁定 ≤384。
+7. **teacher utility calibration plot**：teacher utility 与 selected probability 的相关性。
+8. **boundary/high-IoU diagnostics**：boundary recall、endpoint error、mAP@0.7 failure cases。
+
+---
+
+# 十一、必须补的代码
+
+1. `observation_mapping` sidecar：每个 selected position 映射到 raw center frame、timestamp、clip/chunk id。
+2. `compute_observation_cost.py`：输出 selected observations、raw accesses、unique raw frames、VideoMAE chunks、tokens、runtime CSV。
+3. `validate_paper_claim_units.py`：禁止把 local_dense_index 写成 raw frame。
+4. `test_geometry_roundtrip.py`：selected-axis / dense-grid / raw-time / seconds conversion synthetic tests。
+5. `manifest.schema.json`：强制记录 acquisition unit、decode mode、selected positions unit、raw-frame cost、VideoMAE cost。
+6. `raw_grid_oracle_diagnostic.py`：比较 raw oracle 与 grid oracle headroom。
+7. Stage2 selector 输出 manifest：明确 `uses_teacher_train_only=true`、`uses_teacher_at_eval=false`、`selected_positions_unit=local_dense_index`。
+
+---
+
+# 十二、最安全论文 claim
+
+最安全主 claim 是：
+
+> We propose detector-utility-calibrated sparse temporal observation acquisition for TAD. Given a dense detector-compatible temporal input lattice, our selector acquires at most 384 observations before VideoMAE/AdaTAD backbone computation. The selector is trained with train-only dense-detector point responsibility and uses no teacher, ground truth, or prediction cache at evaluation. Under matched AdaTAD protocols, it improves over uniform and actionness-based sparse acquisition while reducing backbone observation cost.
+
+这句话有几个条件：
+
+* “improves over uniform and actionness-based” 只有 Stage2 结果出来后才能写；
+* “reducing cost” 必须有 measured cost；
+* “observation” 不能替换成 raw frame。
+
+---
+
+# 十三、最容易被审稿人攻击的点
+
+第一攻击点：
+
+> “This is not raw frame selection; it only subsamples AdaTAD’s temporal grid.”
+
+防御：承认并重定义为 detector-compatible temporal observation acquisition。
+
+第二攻击点：
+
+> “Uniform 384 may be as good; where is the learning?”
+
+防御：matched uniform/PAction/Stage2 full results + calibration/diagnostics。
+
+第三攻击点：
+
+> “Teacher utility leaks detector predictions or GT into test-time selection.”
+
+防御：train-only utility schema、val/test stripped source、manifest hashes、validator。
+
+第四攻击点：
+
+> “High-IoU gains may be coordinate remapping artifacts.”
+
+防御：geometry round-trip synthetic tests + native-time diagnostics。
+
+第五攻击点：
+
+> “Efficiency is overstated because 384 observations are not 384 raw frames.”
+
+防御：report raw accesses、unique raw frames、VideoMAE chunks、FLOPs、runtime。
+
+---
+
+# 十四、真正达到论文级贡献的最短路径
+
+最短路径不是 raw-frame重写，而是：
+
+1. **改名与 claim**：从 frame selection 改成 temporal observation acquisition；
+2. **补 cost/geometry/accounting**：让审稿人无处攻击单位偷换；
+3. **Stage2 point-responsibility selector 跑通并超过 PAction learned / uniform 384**；
+4. **用 raw/grid oracle 证明 grid acquisition 有 headroom**；
+5. **如果 mAP 到 62–65，再做 native true-time head 或 joint fine-tune 冲高 IoU。**
+
+一句话最终建议：
+
+> **保留当前 detector-grid acquisition 主线，升级为 raw-video-aware but detector-grid-compatible DUCA-TAD；不要现在全量改 raw-frame-level acquisition；先用 detector point responsibility、严格 cost accounting 和 geometry tests 把 “pre-backbone sparse temporal observation acquisition” 做成可信论文。**
+
+[1]: https://github.com/sming256/OpenTAD/blob/main/configs/_base_/datasets/thumos-14/e2e_train_trunc_test_sw_256x224x224.py "OpenTAD/configs/_base_/datasets/thumos-14/e2e_train_trunc_test_sw_256x224x224.py at main · sming256/OpenTAD · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/raw/e5d6b78eafab16ceb8286c7c3f0e93dd983d8bcd/configs/adatad/thumos/c3_paction_learned_ledger_adatad_full_train.py "raw.githubusercontent.com"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/e5d6b78eafab16ceb8286c7c3f0e93dd983d8bcd/opentad/datasets/transforms/end_to_end.py "OpenTAD_C3_CoarseClean_20260702/opentad/datasets/transforms/end_to_end.py at e5d6b78eafab16ceb8286c7c3f0e93dd983d8bcd · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[4]: https://github.com/sming256/OpenTAD/blob/main/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py "OpenTAD/configs/adatad/thumos/e2e_thumos_videomae_s_768x1_160_adapter.py at main · sming256/OpenTAD · GitHub"

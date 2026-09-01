@@ -1,0 +1,230 @@
+## 1. 可见性证书
+
+**[CODE_FACT] `VISIBLE`。** GitHub 连接器已将仓库中的精确对象解析为提交 `7525efb2e07214615a59c482443246174a6adaf1`，提交信息为 `Align DUCA counterfactual utility in score space`，未以移动分支替代。
+
+**[CODE_FACT] 实际打开的本提交文件与范围：**
+
+* `opentad/models/duca/counterfactual_utility.py:1-484`
+* `opentad/models/selectors/duca_online_frame_selector.py:1-1950`
+* `opentad/models/detectors/actionformer.py:1-1100`
+* `opentad/models/detectors/single_stage.py:1-344`
+* `opentad/models/duca/structured_selection.py:1-560`
+* `opentad/models/duca/transition_only.py:1-242`
+* `opentad/models/duca/acquisition.py:1-3200`
+* `opentad/models/utils/truetime_geometry.py:1-208`
+* `opentad/cores/train_engine.py:1-540`
+* `opentad/cores/optimizer.py:1-223`
+* `tools/train.py:1-620`
+* `tools/bata/duca_p0_training.py:1-400`
+* 两层 DUCA config 与 formal gate 全文。
+
+**[REPO_ARTIFACT] 实际打开的对应测试：** counterfactual、structured-selection、coarse-probe FP32/all-short、optimizer/formal-config、P0 training contract 等测试文件；CUDA proof 测试本身受环境变量和 CUDA 条件控制，仓库存在不等于本提交已执行。
+
+**[CODE_FACT] 上游锚点也已读取：** `sming256/OpenTAD@1aa8ca4...` 的 AdaTAD base config、head、single-stage post-processing，以及 `ChinaYi/ASFormer@e1bbe4f.../model.py`。
+
+---
+
+## 2. 实现裁决
+
+# `GO_TO_REAL_GATE`
+
+**[CODE_FACT] 裁决含义：** 未发现必须先改模型目标、梯度路由或训练事务的 P0 静态实现错误。当前提交实现了一个可被真实 THUMOS CUDA gate 证伪的 fixed-384 候选。
+
+**[REPO_ARTIFACT] 这不是 `GATE_PASSED`，更不是训练授权。** 当前 formal gate 使用合成 RGB 与合成 GT，并明确写出：
+
+```text
+input_provenance=deterministic_synthetic_contract_probe
+real_dataset_loader_executed=False
+```
+
+因此它最多证明单个合成 full-window 上的构建、前后向、梯度归属、exact-K/max-gap 和一次 AMP optimizer step。
+
+**[USER_REPORTED_UNVERIFIED]** `160 passed, 7 skipped` 未由本审计重新执行；此前失败/取消 Job 也不构成本提交的 CUDA 证据。
+
+---
+
+## 3. 调用图与梯度所有权
+
+### 训练调用图
+
+**[CODE_FACT]**
+
+```text
+真实 RGB T=768
+  → 64×64 spatial stem
+  → 官方 ASFormer encoder → encoder hidden
+                         └→ decoder/action head → binary actionness logits
+  → Δlogit/Δentropy/Δhidden/cosine-change
+  → shared transition scorer
+  → α-homotopy policy logits
+  → exact-K=384、max-hole=15 hard Viterbi
+     + 同一可行族的 soft forward-backward
+  → hard RGB gather
+  ├→ no_grad baseline/≤4 swaps → frozen-normalizer cls+reg utility
+  └→ VideoMAE-S Adapter → projection → ActionFormerHead
+```
+
+训练 selector 后、正式 detector 图建立前执行 no-grad teacher；随后才建立主 detector 图。
+
+### 推理调用图
+
+**[CODE_FACT]**
+
+```text
+RGB → 同一 coarse probe/scorer → α=1 hard structured selection
+    → hard gather → VideoMAE/ActionFormer
+    → selected-axis proposal 映射回 true time
+    → true-time NMS → seconds
+```
+
+映射发生在 NMS **之前**，避免在非线性 selected-axis 上做最终 NMS。
+
+### 模块 × loss 矩阵
+
+`直`＝直接 autograd；`代理`＝detached teacher 的监督；`SG`＝stop-grad；`—`＝无路径。
+
+| 模块                           | binary actionness | transition distribution | soft boundary coverage |     signed utility | 主 cls/reg |
+| ---------------------------- | ----------------: | ----------------------: | ---------------------: | -----------------: | --------: |
+| spatial stem                 |                 直 |              直，经 hidden |                     SG |                 SG |         — |
+| ASFormer encoder             |                 直 |              直，经 hidden |                     SG |                 SG |         — |
+| ASFormer decoder/action head |                 直 |                       — |                      — |                  — |         — |
+| transition scorer            |                 — |                       直 |                      直 |                 代理 |        SG |
+| structured selector          |       无参数；hard SG |                 soft DP |                soft DP |          `A` 仅定义约束 |   hard SG |
+| VideoMAE Adapter             |                 — |                       — |                      — | teacher 中 detached |         直 |
+| projection                   |                 — |                       — |                      — | teacher 中 detached |         直 |
+| ActionFormerHead             |                 — |                       — |                      — | teacher 中 detached |         直 |
+
+**[CODE_FACT]** actionness logits 在 transition descriptor 中被 detach，但 encoder hidden 未 detach；policy route 的整个 descriptor 被 detach。因此 transition distribution 可更新 stem/encoder/scorer，而 counterfactual proximal 只更新 scorer。
+
+**[CODE_FACT]** transition-only 没有活动的直接 start/end heads；所谓 endpoint 监督是由 GT 两端构造的 transition target。其 distribution 分支进入共享 encoder，structured coverage 分支只进入 scorer。
+
+**[CODE_FACT]** 主 detector loss 无法影响 hard selection：最终 config 的 detector-gradient schedule 始终为零，hard gather 索引不可导。
+
+**[CODE_FACT]** 推理路径拒绝 GT、teacher、ledger、外部 actionness 和 prediction cache；teacher 只产生训练损失，不参与选择。
+
+**[CODE_FACT]** 因早期训练采用 `α:0→1` homotopy，而推理固定 `α=1`，严格意义上的 train/inference isomorphism 是 **conditional**：相同 α 下 hard value path 同构，完整训练过程并非逐步同构。
+
+---
+
+## 4. Signed score-space proximal 推导
+
+对一个有 (m) 个有效 swap 的样本：
+
+[
+d=As,\quad G=AA^\top,\quad v=G^{-1}\tilde u,
+]
+
+[
+d^*=\operatorname{sg}(d)+\eta v,\qquad
+L_b={1\over2m}|d-d^*|^2.
+]
+
+由于当前点上 (d-\operatorname{sg}(d)-\eta v=-\eta v)：
+
+[
+\nabla_sL_b=-{\eta\over m}A^\top v,
+]
+
+所以
+
+[
+A(-\nabla_sL_b)
+={\eta\over m}AA^\top G^{-1}\tilde u
+={\eta\over m}\tilde u.
+]
+
+加入正外部权重 (\lambda)、(N) 个 active batch 的 mean、正 GradScaler 比例及 DDP world-average，只增加正比例因子：
+
+[
+A(-\nabla_sL)={\lambda\eta\over Nm}\tilde u.
+]
+
+**[CODE_FACT] `signed_proximal_math=pass`，但仅限该 loss 分量相对于显式 score tensor 的局部下降方向。** signed loss 强制 FP32 并关闭 autocast。
+
+**[CODE_FACT] 不可扩大为参数更新保证。** 共享参数下实际一步近似包含 (AJ P J^\top A^\top v)、其他 losses、AdamW 预条件、动量和 weight decay，故不能声称每个 swap 在一次 optimizer step 后仍逐项改善。
+
+**[CODE_FACT] 边界情形：**
+
+* all-positive、all-negative、mixed 均保号；all-zero 给零梯度。
+* 不同候选数只改变正尺度 (1/m)。
+* all-short 选择全部有效帧，不生成 swap，proximal 为图连接的零。
+* masked/非法 add/remove 会 fail closed。
+* generic 重复 swap 会使 Gram 奇异并触发 rank 检查；集成 builder 不生成重复 add。
+* shared-remove 情况不是偶然：每行是 (e_{add}-e_{remove})，add 唯一且与 remove 集合不交；同一 remove 的块为 (I+\mathbf1\mathbf1^\top)。最大 4 个候选时
+  (\operatorname{cond}(G)\le M+1\le5)。因此 `≤5` 对当前 builder 是可证明上界，不是某次 gate 的经验数。
+
+**[CODE_FACT]** `score_space_utility_alignment()` 对同一个 loss、同一个 (A) 和同一个 utility 调用 `autograd.grad`，能发现 wiring/mask/scale 错误，但属于代数自检，不能独立证明 teacher 正确、总梯度正确或参数更新正确。它不会写 parameter `.grad`，但会增加一次反向遍历、保留图和 GPU 同步。
+
+---
+
+## 5. P0 / P1 / P2
+
+| 级别                     | file:line                                                    | 影响                                                                  | 最小修复                                                                          |
+| ---------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **[CODE_FACT] P0**     | —                                                            | 未发现阻止进入真实 gate 的模型实现错误                                              | 无模型 patch                                                                     |
+| **[REPO_ARTIFACT] P1** | `run_duca_transition_only_formal_full_model_gate.py:238-596` | 当前 gate 未执行真实 loader、DDP、train engine、replay、EMA 或 schedule         | 新增真实-loader gate，不修改模型目标                                                      |
+| **[CODE_FACT] P1**     | `counterfactual_utility.py:347-484`; gate `:367-427`         | all-zero/单值 utility 可得到无信息的“完美”方向统计，形成 gate 假阳性                     | 输出 `informative_utility_count/distinct_count`；要求非零且至少两个不同值后才检查 rank           |
+| **[CODE_FACT] P1**     | `actionformer.py:330-405`; `truetime_geometry.py:48-126`     | utility 包含 selected-axis GT 几何和 point assignment 的变化，不是纯 RGB 内容边际效用 | 将名称冻结为 `selection_policy_utility_including_selected_axis_geometry`；禁止“纯帧效用”表述 |
+| **[REPO_ARTIFACT] P1** | `tools/train.py:33-40,117-127`; config `:251-279`            | world-size=1 DDP 代码合同存在，但 exact-commit CUDA reducer 行为尚无证据          | real gate 必须实际包装 world-size=1 DDP 并走 `train_one_epoch`                        |
+| **[CODE_FACT] P2**     | `counterfactual_utility.py:347-484`                          | 每步 alignment 的额外反向、retain-graph 和 condition-number 同步增加显存/延迟        | gate/debug 模式保留；正式训练只记录低频抽样诊断                                                 |
+| **[REPO_ARTIFACT] P2** | 上游 `ASFormer/model.py:68-75`                                 | 当前 wrapper 继承上游 sliding-window mask 行为，并非 DUCA 修正版                  | 固定 source hash并如实披露，不在本轮改算法                                                   |
+
+---
+
+## 6. AdaTAD 与坐标差异
+
+| 项目                              | 审计结果                                                                                                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **[CODE_FACT] 官方复用**            | upstream base config blob 相同；VideoMAE Adapter、ActionFormerHead 配置和 NMS 参数复用。整体不是 source-identical，因为 detector/single-stage/AnchorFree wrapper 有扩展。 |
+| **[CODE_FACT] 输入/运行差异**         | 上游为 T=768、`with_cp=True`、projection 768、static graph；DUCA 为 selected K=384、`with_cp=False`、projection 384、dynamic graph。上游设置见官方 config。            |
+| **[CODE_FACT] assignment/loss** | cls/reg、point assignment 公式保持；坐标系改为 selected axis。每个 baseline/swap 都用各自 `TrueTimeMap` 重映射 GT，再由同一 head 重新 assignment。                              |
+| **[CODE_FACT] normalizer**      | teacher 对 baseline/candidate 冻结同一 loss normalizer，并恢复所有非-selector buffers、Python/NumPy/Torch CPU/CUDA RNG 和训练模式；故不是 normalizer 漂移造成的差值。            |
+| **[CODE_FACT] utility 解释**      | `L_baseline-L_swap` 是可比较的端到端**选择策略效用**；它必然混合帧内容与坐标几何，不可解释为纯内容效用。                                                                                   |
+| **[CODE_FACT] decode/NMS**      | selected-axis proposal 先逆映射到 true time，再做 NMS；该顺序正确。                                                                                               |
+
+---
+
+## 7. 最小真实 THUMOS loader CUDA gate patch/test
+
+1. **[PROPOSAL]** 新增独立 `run_duca_transition_only_real_loader_cuda_gate.py`，直接复用 `build_dataset/build_dataloader`、真实 config、checkpoint、ASFormer source；记录 commit、dirty-tree、config/data/checkpoint/source SHA，并输出 `real_dataset_loader_executed=true`。
+
+2. **[PROPOSAL]** 从真实 loader fail-closed 地取得三个 strata：`full`、同 batch 的 `mixed full+short`、`all-short`。找不到任一 strata 即失败；模型、decode 或数据异常立即失败，不跳过样本、不降低阈值。
+
+3. **[PROPOSAL]** 实际构建 world-size=1 DDP、optimizer、scheduler、GradScaler、ModelEma，使用 `train_one_epoch` 执行三个成功更新；其中一次通过现有 hook 强制 AMP overflow，要求同一 batch replay，且：
+   `successful=scheduler=EMA=selector_schedule=3`、`skipped=1`、`replay_exhaustions=0`。训练事务代码已将这些更新放在成功 step 后。
+
+4. **[PROPOSAL]** 每个真实 batch 检查：真实 GT 非空/合法、full exact-384、short select-all、max-hole≤15、GT remap 与 prediction inverse-map round-trip、所有 loss/grad finite，以及 proximal→scorer、action/transition→coarse、cls/reg→Adapter/projection/head 的所有权。
+
+5. **[PROPOSAL]** 增加五个 gate tests：`real_loader_provenance`、`full_mixed_all_short`、`amp_replay_state_equivalence`、`real_gt_coordinate_roundtrip`、`real_batch_gradient_ownership`。任何失败均阻止 pilot/full train。
+
+```yaml
+HANDOFF_PACKET:
+  audit_commit: 7525efb2e07214615a59c482443246174a6adaf1
+  visibility: VISIBLE
+  implementation_verdict: GO_TO_REAL_GATE
+  actual_method_one_sentence: "离线全窗低分辨率官方ASFormer生成状态转移分数，经exact-K/max-gap结构化选择采集384帧，并以detached官方ActionFormer单交换策略效用监督scorer后送入AdaTAD检测器。"
+  direct_detector_gradient: false
+  train_inference_isomorphic: conditional
+  official_adatad_fidelity: official_components_with_wrapper
+  signed_proximal_math: pass
+  coordinate_utility_validity: pass
+  amp_ddp_contract: unresolved
+  real_loader_gate_exists: false
+  p0_blockers: []
+  p1_risks:
+    - "tools/bata/run_duca_transition_only_formal_full_model_gate.py:238-596 - synthetic-only，未执行真实loader/DDP/train-engine"
+    - "opentad/models/duca/counterfactual_utility.py:347-484 - all-zero或单值utility可形成无信息alignment"
+    - "opentad/models/detectors/actionformer.py:330-405 - utility包含selected-axis几何效应，不是纯帧内容效用"
+  required_minimal_patches:
+    - "新增fail-closed真实THUMOS loader CUDA gate"
+    - "gate要求非零且至少两个不同的utility值后再接受alignment"
+    - "将teacher语义固定为selection-policy utility including selected-axis geometry"
+  forbidden_claims:
+    - "7525efb已经通过CUDA或真实loader gate"
+    - "detector cls/reg直接反传到hard selector"
+    - "one-swap teacher测得纯帧内容边际效用"
+    - "实现与官方AdaTAD source-identical"
+    - "AMP/DDP/replay已被exact-commit运行证实"
+    - "任何mAP、成本或训练稳定性结论"
+  allowed_next_step: "仅实现并运行exact-commit真实THUMOS loader CUDA gate；通过前禁止pilot、full train和性能主张。"
+```

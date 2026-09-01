@@ -1,0 +1,4571 @@
+{
+  "diagnostic_only": true,
+  "identifiability_limits": [
+    "five_epoch_checkpoint_spacing_does_not_measure_first_step_gradients",
+    "parameter_update_norms_do_not_prove_causal_optimization_failure",
+    "gradient_norms_were_not_logged_during_the_completed_run"
+  ],
+  "paper_performance_row_allowed": false,
+  "predictions_or_metrics_read": false,
+  "schema_version": "actionformer_dcsr_checkpoint_dynamics_v1",
+  "seeds": [
+    {
+      "checkpoints": [
+        {
+          "epoch_field": 5,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.00019788454668417637,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.051048636003165906,
+                "max_abs": 0.0017430034931749105,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0010188828938669132,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.2679398302068236,
+                "max_abs": 0.012443162500858307,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.000836701758727601,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.22064295240701223,
+                "max_abs": 0.011140141636133194,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 4.322210536503434
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013401748771908181,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.95652585108546,
+                "max_abs": 1.0007094144821167,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013443676180684466,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.98492238304781,
+                "max_abs": 1.0042731761932373,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0010267367715700874,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 1.7438985140192,
+                "max_abs": 0.011343833990395069,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.04718783689371006
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 7.287950629084999e-05,
+                "exact_zero_fraction": 0.007482108002602472,
+                "l2_norm": 0.005683611860244735,
+                "max_abs": 0.0005962313152849674,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.000638934438282799,
+                "exact_zero_fraction": 0.007482108002602472,
+                "l2_norm": 0.050634646282432416,
+                "max_abs": 0.00518764415755868,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005774877776294324,
+                "exact_zero_fraction": 0.007482108002602472,
+                "l2_norm": 0.04589163345451821,
+                "max_abs": 0.004591412842273712,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 8.074378508412453
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013395839167864156,
+                "exact_zero_fraction": 3.8097221569630926e-06,
+                "l2_norm": 37.03042396335063,
+                "max_abs": 1.0008701086044312,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013447405068215736,
+                "exact_zero_fraction": 3.8097221569630926e-06,
+                "l2_norm": 37.06253181245151,
+                "max_abs": 1.0093653202056885,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0011576819789148817,
+                "exact_zero_fraction": 8.88935169958055e-06,
+                "l2_norm": 1.952644907051558,
+                "max_abs": 0.01178702712059021,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.05273082773732511
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015683859761225067,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.710200299151364,
+                "max_abs": 4.5951104164123535,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015677115664361124,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.709965369721935,
+                "max_abs": 4.595545768737793,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006303614893747602,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.1476373662836737,
+                "max_abs": 0.005532771814614534,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.007128727107951891
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.01448193332809704,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.579610476076391,
+                "max_abs": 1.0009709596633911,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.01460599931824027,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.585561579850887,
+                "max_abs": 1.0075111389160156,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008879918614160511,
+                "exact_zero_fraction": 0.0003246753246753247,
+                "l2_norm": 0.07093578070957679,
+                "max_abs": 0.007187673822045326,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.027498640344130833
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073001/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073001_dcsr/epoch_005.pth.tar",
+          "sha256": "e30499b557ea4eb5cac6fcc00a0f174fc7bd511c46aed5762981daaf9e1f0823"
+        },
+        {
+          "epoch_field": 10,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0004673629045948779,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.12352402322996298,
+                "max_abs": 0.005906322039663792,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0011443228171211252,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.30385694497437166,
+                "max_abs": 0.014725170098245144,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007143749406612154,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.18950497965361418,
+                "max_abs": 0.009039066731929779,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 1.534154852621788
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.000549753527453917,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.1472843235176183,
+                "max_abs": 0.007865199819207191,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.5496917849202527
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013405944059004339,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.94488928478213,
+                "max_abs": 1.002152919769287,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013464787813028114,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.95494047024216,
+                "max_abs": 1.006763219833374,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0009757060836266389,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 1.8739269449575655,
+                "max_abs": 0.01920865848660469,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.05072222386465372
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0007196408847668747,
+                "exact_zero_fraction": 3.68274544863459e-05,
+                "l2_norm": 1.5032091470633533,
+                "max_abs": 0.015380005352199078,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.040643836736895665
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0003146140976098241,
+                "exact_zero_fraction": 0.005530253741054001,
+                "l2_norm": 0.024689753793958512,
+                "max_abs": 0.002380821853876114,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0010590705119719317,
+                "exact_zero_fraction": 0.005530253741054001,
+                "l2_norm": 0.08219259843594054,
+                "max_abs": 0.00729588745161891,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007754163860974933,
+                "exact_zero_fraction": 0.005530253741054001,
+                "l2_norm": 0.05972714942073153,
+                "max_abs": 0.004915065597742796,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 2.419106724156421
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0006839529832791132,
+                "exact_zero_fraction": 0.005530253741054001,
+                "l2_norm": 0.051648542362365185,
+                "max_abs": 0.005191178061068058,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 1.0200237614829462
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013404325771181978,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.01966864510346,
+                "max_abs": 1.0040115118026733,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013512121554106696,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.077599057457384,
+                "max_abs": 1.0119000673294067,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.001374377256627166,
+                "exact_zero_fraction": 6.984490621099003e-06,
+                "l2_norm": 2.4074370595025334,
+                "max_abs": 0.018410425633192062,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.06503129681094436
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0012973940388029395,
+                "exact_zero_fraction": 4.4446758497902746e-05,
+                "l2_norm": 2.337389200025448,
+                "max_abs": 0.0192263126373291,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.06306609628973539
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015668383308564522,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.70998772652565,
+                "max_abs": 4.595305919647217,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015641995630406993,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.711018392720742,
+                "max_abs": 4.596164703369141,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008029671248942905,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.19632695210563983,
+                "max_abs": 0.007064171601086855,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.00947981981921609
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0007254929998592657,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.1775555130664172,
+                "max_abs": 0.005973582621663809,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.008573433605350407
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.01448389232962229,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5809039941791716,
+                "max_abs": 1.0054811239242554,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014507412840612233,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5856265619287577,
+                "max_abs": 1.020184874534607,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.001319987757899496,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.10328952047840773,
+                "max_abs": 0.014703750610351562,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.040020675201929715
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0011637757656651295,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.08924263709006244,
+                "max_abs": 0.012673735618591309,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.03451576546678466
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073001/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073001_dcsr/epoch_010.pth.tar",
+          "sha256": "34db0288df4aadfc981f72dc6f330986688c53d688f22e7d08c1b30803ccbe65"
+        },
+        {
+          "epoch_field": 15,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0006752316300559088,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.18116958235013653,
+                "max_abs": 0.00906075444072485,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0012310152083257226,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.3301218231214879,
+                "max_abs": 0.01737271249294281,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006307158401483159,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.16668169262729116,
+                "max_abs": 0.008977081626653671,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.9200313345380163
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005273202833493538,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.13395025027609778,
+                "max_abs": 0.006505781318992376,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.44083326871925077
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013415614070462533,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.9282190125582,
+                "max_abs": 1.0039973258972168,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013492279344470566,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.93972140576415,
+                "max_abs": 1.009056806564331,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0009786537926187206,
+                "exact_zero_fraction": 1.9048683355006502e-06,
+                "l2_norm": 1.9173424294415666,
+                "max_abs": 0.022180737927556038,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.051920793385392745
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0007348093580487439,
+                "exact_zero_fraction": 2.92079811443433e-05,
+                "l2_norm": 1.4118877702908121,
+                "max_abs": 0.016499698162078857,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.03820565673560562
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0005861444236398535,
+                "exact_zero_fraction": 0.005530253741054001,
+                "l2_norm": 0.045130125495915406,
+                "max_abs": 0.003956925589591265,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0012978449036688308,
+                "exact_zero_fraction": 0.005530253741054001,
+                "l2_norm": 0.09814609852080111,
+                "max_abs": 0.008651520125567913,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.000743684699260051,
+                "exact_zero_fraction": 0.005530253741054001,
+                "l2_norm": 0.05560321097551863,
+                "max_abs": 0.005834409035742283,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 1.23206417807438
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0004893965522968317,
+                "exact_zero_fraction": 0.005530253741054001,
+                "l2_norm": 0.03882126731656436,
+                "max_abs": 0.004503621719777584,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.4723207205429935
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013426507644609727,
+                "exact_zero_fraction": 2.5398147713087284e-06,
+                "l2_norm": 37.017403468282026,
+                "max_abs": 1.0069983005523682,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013568408895386543,
+                "exact_zero_fraction": 2.5398147713087284e-06,
+                "l2_norm": 37.10680906441596,
+                "max_abs": 1.0128905773162842,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0013882835780531103,
+                "exact_zero_fraction": 6.349536928271821e-06,
+                "l2_norm": 2.4274481846740423,
+                "max_abs": 0.019807208329439163,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.06557586316809
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0011112999598789349,
+                "exact_zero_fraction": 4.6351619576384295e-05,
+                "l2_norm": 1.9787669415472242,
+                "max_abs": 0.015132613480091095,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.05336825986172469
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015644714563949277,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71001799221169,
+                "max_abs": 4.595621585845947,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015612258365112383,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.711804625418864,
+                "max_abs": 4.596325874328613,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007652628941433571,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.18697954864111802,
+                "max_abs": 0.006284797564148903,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.009028459014928642
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005729974673487726,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.13857515223083394,
+                "max_abs": 0.004629473201930523,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.006690890307911593
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014462034604754056,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.582433744281299,
+                "max_abs": 1.012357234954834,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.01446818003170918,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5886347568581587,
+                "max_abs": 1.0313901901245117,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0012049911802259649,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.09513394368212205,
+                "max_abs": 0.019032955169677734,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.03683887104278766
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0007151657242975017,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.055066719343573135,
+                "max_abs": 0.011205315589904785,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.02129724383032943
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073001/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073001_dcsr/epoch_015.pth.tar",
+          "sha256": "f0382eba6b031af5f7e7e4b3074461985c66d6bba551da52624a70f4c1635608"
+        },
+        {
+          "epoch_field": 20,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0008661327159054039,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.23227563408524077,
+                "max_abs": 0.011788615956902504,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0013915646302579826,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.3674025777792943,
+                "max_abs": 0.01881142519414425,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.000611962192472514,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.15961267890228908,
+                "max_abs": 0.011771970428526402,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.6871692742585055
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00046296879661583966,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.12173916781627245,
+                "max_abs": 0.014019550755620003,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.3687704334877349
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013430393449610925,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.9179184196075,
+                "max_abs": 1.0058650970458984,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013504442146731606,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.94365316183611,
+                "max_abs": 1.0112669467926025,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.000905003447554308,
+                "exact_zero_fraction": 1.2699122236671002e-06,
+                "l2_norm": 1.7124707505256835,
+                "max_abs": 0.018560096621513367,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.04638589670906721
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0006545792700399152,
+                "exact_zero_fraction": 2.8573025032509752e-05,
+                "l2_norm": 1.1875518422874523,
+                "max_abs": 0.011787757277488708,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.032148370293397614
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0008436864762096323,
+                "exact_zero_fraction": 0.004879635653871178,
+                "l2_norm": 0.06398664604429477,
+                "max_abs": 0.005185146350413561,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0015136642744276907,
+                "exact_zero_fraction": 0.004879635653871178,
+                "l2_norm": 0.11314007869840495,
+                "max_abs": 0.010299202986061573,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007197871157325678,
+                "exact_zero_fraction": 0.004879635653871178,
+                "l2_norm": 0.05417614241898411,
+                "max_abs": 0.00554621173068881,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.8466788895526836
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005055730386263592,
+                "exact_zero_fraction": 0.004879635653871178,
+                "l2_norm": 0.03855890303891672,
+                "max_abs": 0.004527614451944828,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.3928724994681733
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013458297904075751,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 37.02679772978596,
+                "max_abs": 1.008675217628479,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013620832858755764,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 37.1456265154595,
+                "max_abs": 1.0146278142929077,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0014367340559279143,
+                "exact_zero_fraction": 4.444675849790275e-06,
+                "l2_norm": 2.4218766183506233,
+                "max_abs": 0.017949679866433144,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.0654087516837126
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.001134019728706103,
+                "exact_zero_fraction": 3.365254571984065e-05,
+                "l2_norm": 1.9177367335629731,
+                "max_abs": 0.012125339359045029,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.05168153182435756
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015629238607670938,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71056965113111,
+                "max_abs": 4.5959601402282715,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015622831802517079,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.713059117028916,
+                "max_abs": 4.596706390380859,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006535435002115382,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.15872336899638192,
+                "max_abs": 0.005558705888688564,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0076638823397942235
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00040703306899259983,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.09828504413285272,
+                "max_abs": 0.003997650928795338,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0047453636180128395
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014435218821594178,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.58418665878833,
+                "max_abs": 1.0201494693756104,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.01443278259271151,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.590132411578248,
+                "max_abs": 1.038932204246521,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0009804944466956734,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.07665408621861407,
+                "max_abs": 0.018782734870910645,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.029662751317877142
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0004963310299344458,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.038495250968883774,
+                "max_abs": 0.007542014122009277,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.01487087000856223
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073001/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073001_dcsr/epoch_020.pth.tar",
+          "sha256": "b82770cdced9bfe46ae45e6c688f06d0fef00b18dff6a536ef7b05569a1b63eb"
+        },
+        {
+          "epoch_field": 25,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0010507230396354032,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.27873775392301287,
+                "max_abs": 0.014048260636627674,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0015534971475906587,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.4029731863697439,
+                "max_abs": 0.018687257543206215,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005767389713855013,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.14697649667863602,
+                "max_abs": 0.008816159330308437,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.5272931083430873
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00036972263075348304,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.09239953765927464,
+                "max_abs": 0.004323191475123167,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.2514939830247484
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.01344576267851335,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.9169139826978,
+                "max_abs": 1.0076199769973755,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013508236578913037,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.95386358585864,
+                "max_abs": 1.011112928390503,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008224821039976586,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 1.4720165525131015,
+                "max_abs": 0.01612566038966179,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.039873770413285506
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005771207224245526,
+                "exact_zero_fraction": 2.2858420026007804e-05,
+                "l2_norm": 1.0003468056662093,
+                "max_abs": 0.00878328736871481,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.027077636347549873
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0010684866202794769,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.08061696077193618,
+                "max_abs": 0.006949915550649166,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.001630451142949718,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.12250253530859735,
+                "max_abs": 0.01141146756708622,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006168073302865743,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.0474849366685798,
+                "max_abs": 0.004729670472443104,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.589019186705807
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00039576541609842776,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.028872932113772527,
+                "max_abs": 0.00259223161265254,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.2551963234066548
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013495606880807066,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 37.047838585304774,
+                "max_abs": 1.0096243619918823,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013637553939646345,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 37.16596952674728,
+                "max_abs": 1.0156751871109009,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00121587477905377,
+                "exact_zero_fraction": 5.079629542617457e-06,
+                "l2_norm": 2.0183572931139544,
+                "max_abs": 0.013970891013741493,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.054479758339115274
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0007914426294857969,
+                "exact_zero_fraction": 2.9207869870050377e-05,
+                "l2_norm": 1.3099704943326833,
+                "max_abs": 0.008677464909851551,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.03526580696619807
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015623265640566547,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.711472005433027,
+                "max_abs": 4.596198558807373,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015631491190129156,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71406184531196,
+                "max_abs": 4.5968146324157715,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005251164861367597,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.12642656631230922,
+                "max_abs": 0.004694369155913591,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.006104180633763986
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0002628716696526373,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.06392192202440865,
+                "max_abs": 0.0022577722556889057,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0030860686325109867
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.01443121181619535,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5863275198217868,
+                "max_abs": 1.0271047353744507,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014481593546149163,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.592915928819773,
+                "max_abs": 1.0432966947555542,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007785150120579094,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.06042511846572345,
+                "max_abs": 0.016191959381103516,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.02336328945294875
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00031889968652991797,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.024029544187444064,
+                "max_abs": 0.004364490509033203,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.009277341992258272
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073001/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073001_dcsr/epoch_025.pth.tar",
+          "sha256": "5dfdfde887390970898d6a31be7867e8a970ea87c12f1be6b4ca44db9a915773"
+        },
+        {
+          "epoch_field": 30,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0012247622700222685,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.320385466899074,
+                "max_abs": 0.015725726261734962,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0016484090966271284,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.42127686465633846,
+                "max_abs": 0.01921968162059784,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0004906804882845537,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.12214897238474909,
+                "max_abs": 0.006318435072898865,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.3812562834606595
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0002444030903567601,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.05941823118259898,
+                "max_abs": 0.004442583303898573,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.1474495901771499
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013458995728610297,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.922709258534965,
+                "max_abs": 1.0087944269180298,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.01350621919384437,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.960877687947296,
+                "max_abs": 1.0111819505691528,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006819765889391628,
+                "exact_zero_fraction": 6.349561118335501e-07,
+                "l2_norm": 1.19702674933907,
+                "max_abs": 0.013071581721305847,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.032419797284035115
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00035886227429746944,
+                "exact_zero_fraction": 1.9048683355006504e-05,
+                "l2_norm": 0.6383022493848831,
+                "max_abs": 0.004858959466218948,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.017272950307397523
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0012500285408404313,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.09416951594657527,
+                "max_abs": 0.008499170653522015,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0016705731276149159,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.12563807601607893,
+                "max_abs": 0.011847313493490219,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00048315823453220006,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.03680584805602421,
+                "max_abs": 0.0036644143983721733,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.3908467372488682
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00021792823063080438,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.016395303729972378,
+                "max_abs": 0.0021233404986560345,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.13383644419007987
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013531009201415143,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 37.07484767882217,
+                "max_abs": 1.0115830898284912,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013641367634290724,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 37.172517702960235,
+                "max_abs": 1.0154988765716553,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0009121619597364793,
+                "exact_zero_fraction": 5.079629542617457e-06,
+                "l2_norm": 1.4981798437117202,
+                "max_abs": 0.009605828672647476,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.040409602129464935
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00041073689125895854,
+                "exact_zero_fraction": 2.6033101405914468e-05,
+                "l2_norm": 0.663231753296126,
+                "max_abs": 0.004246300086379051,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.017845135260599543
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015626074667479516,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.7124664997021,
+                "max_abs": 4.596389293670654,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015646001931204762,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.714772540277053,
+                "max_abs": 4.596931457519531,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0003942986161350506,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.09462273745158961,
+                "max_abs": 0.0036192790139466524,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.004568395437257583
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00012661371435836763,
+                "exact_zero_fraction": 3.2530904359141185e-05,
+                "l2_norm": 0.030651256499121902,
+                "max_abs": 0.0012864433228969574,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0014797318231459728
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014447652114337527,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5886855723046898,
+                "max_abs": 1.0329101085662842,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014514783874166185,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5948009152307376,
+                "max_abs": 1.04564368724823,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005762592698114791,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.04452480906218287,
+                "max_abs": 0.0127335786819458,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.01719977487360225
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0001730570779030828,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.013081220640999397,
+                "max_abs": 0.0023469924926757812,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.005044984488545921
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073001/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073001_dcsr/epoch_030.pth.tar",
+          "sha256": "22a5a8561c33198eee8286a022df90bf5d4e68a3ed5b08d3c052f942681c1a4d"
+        },
+        {
+          "epoch_field": 35,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0013630087581319552,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.3528457974648405,
+                "max_abs": 0.016908882185816765,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0016636866559295701,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.42432462739948634,
+                "max_abs": 0.019329622387886047,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0003437060686603925,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.08529073787865525,
+                "max_abs": 0.004224441014230251,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.24172241384610535
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 4.841790491534505e-05,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.01155694229075302,
+                "max_abs": 0.0005042506381869316,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.027433128330416934
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013470292988441272,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.93117562931629,
+                "max_abs": 1.0095696449279785,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013505328366013973,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.96180760329837,
+                "max_abs": 1.011375904083252,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0004762572710422293,
+                "exact_zero_fraction": 4.44469278283485e-06,
+                "l2_norm": 0.8346480363805617,
+                "max_abs": 0.009023703634738922,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.02260009388160421
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 7.19907901187512e-05,
+                "exact_zero_fraction": 2.222346391417425e-05,
+                "l2_norm": 0.1220188523210241,
+                "max_abs": 0.0007622037082910538,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.0033012974786801033
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0013851652927493717,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.10430750497166798,
+                "max_abs": 0.009610099717974663,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0016770732704610319,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.12629561969633513,
+                "max_abs": 0.011869910173118114,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0003331003116560055,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.0254106187146076,
+                "max_abs": 0.0025045881047844887,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.24361256384676863
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 5.427402184322787e-05,
+                "exact_zero_fraction": 0.004229017566688354,
+                "l2_norm": 0.0038539672569290868,
+                "max_abs": 0.0003194725140929222,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.03067515341794842
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013561014972995018,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 37.100536532651674,
+                "max_abs": 1.0128936767578125,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013640937308055488,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 37.17290506358439,
+                "max_abs": 1.015559434890747,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006202676294662757,
+                "exact_zero_fraction": 4.444675849790275e-06,
+                "l2_norm": 1.0171976931531599,
+                "max_abs": 0.006420005112886429,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.027417331074388592
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 7.657915662202545e-05,
+                "exact_zero_fraction": 2.666805509874165e-05,
+                "l2_norm": 0.12191725128013446,
+                "max_abs": 0.0005610045045614243,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.0032797684637439982
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.01563210968235986,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.713225789035985,
+                "max_abs": 4.596637725830078,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015649309077663088,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.714923706706045,
+                "max_abs": 4.596966743469238,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0002722730400815131,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.06517912049698976,
+                "max_abs": 0.0024805795401334763,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0031467392457765154
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 2.8947197390440306e-05,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.006697806997277841,
+                "max_abs": 0.00024333037436008453,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0003233348077684593
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014469490891969581,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.590695574575658,
+                "max_abs": 1.0371925830841064,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014521797807953719,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5951034731599267,
+                "max_abs": 1.045982003211975,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00039389451675407296,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.030423171087526065,
+                "max_abs": 0.008789420127868652,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.011743244318664966
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 3.675816107432467e-05,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.002678137151441395,
+                "max_abs": 0.0003383159637451172,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.0010321166204780867
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073001/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073001_dcsr/epoch_035.pth.tar",
+          "sha256": "db44a338970fd0e74b9e2eeaa671fea1d01ec891283f0b5272f584f315cea4e7"
+        }
+      ],
+      "seed": 2026073001,
+      "train_log": {
+        "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073001/dcsr/train.log",
+        "sha256": "c85fec28a6b42021ab47eb744dc0269be59bb0eb6b1dc5fa60043914317452ed"
+      }
+    },
+    {
+      "checkpoints": [
+        {
+          "epoch_field": 5,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.00018741165217125476,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.0483813720967842,
+                "max_abs": 0.0018901790026575327,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0009656835891543926,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.25190415728734455,
+                "max_abs": 0.01226794347167015,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007910249299123137,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.20677928087341346,
+                "max_abs": 0.01087433286011219,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 4.273944121712034
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013390514295683898,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.95031323592342,
+                "max_abs": 1.0007567405700684,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013426731979471095,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.96816547752421,
+                "max_abs": 1.0040738582611084,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0009445947143358211,
+                "exact_zero_fraction": 6.349561118335501e-07,
+                "l2_norm": 1.6463508915981118,
+                "max_abs": 0.011478625237941742,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.044555803386194706
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 9.185606811062913e-05,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.006845864819439061,
+                "max_abs": 0.0005404293187893927,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.00077862875164305,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.058810411172867956,
+                "max_abs": 0.00467920396476984,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006958050558377008,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.05270510432061579,
+                "max_abs": 0.004151483066380024,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 7.698823408104391
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013396246241232737,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.03059788793945,
+                "max_abs": 1.001060962677002,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.01345033328870146,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.07488360178634,
+                "max_abs": 1.0111145973205566,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0012023896471495767,
+                "exact_zero_fraction": 8.88935169958055e-06,
+                "l2_norm": 2.015445376416183,
+                "max_abs": 0.012531934306025505,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.05442648759048517
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015786622543186045,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71227561400937,
+                "max_abs": 4.595102787017822,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015780758780167332,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.712062464106,
+                "max_abs": 4.595407485961914,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006090569356547289,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.14239576368518392,
+                "max_abs": 0.004169301129877567,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0068749453869216695
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014830319060581736,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.585268832186958,
+                "max_abs": 1.0012426376342773,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014908623437596752,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.58990072116897,
+                "max_abs": 1.0098457336425781,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008643706645151334,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.07204712276616486,
+                "max_abs": 0.009217186830937862,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.027868329153691144
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073002/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073002_dcsr/epoch_005.pth.tar",
+          "sha256": "13be66799b7371da891bfc49966e434b9bbf488383d2c34602566f9b66b17aba"
+        },
+        {
+          "epoch_field": 10,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.00045711091727444937,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.12241048470854171,
+                "max_abs": 0.0058046067133545876,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0011299377606930811,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.3112668566805202,
+                "max_abs": 0.018563834950327873,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007410099847447042,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.20232341734847864,
+                "max_abs": 0.013210121542215347,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 1.6528275157982497
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0006721725241416216,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.1763206039945085,
+                "max_abs": 0.0144730843603611,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.6999511476635987
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013393849912414421,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.93437634149926,
+                "max_abs": 1.0021390914916992,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013458386899487713,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.93548019097799,
+                "max_abs": 1.0061734914779663,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.001029937849502698,
+                "exact_zero_fraction": 1.2699122236671002e-06,
+                "l2_norm": 2.0019583336977536,
+                "max_abs": 0.01884026639163494,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.05420311731237666
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0008683279769417015,
+                "exact_zero_fraction": 2.6668156697009104e-05,
+                "l2_norm": 1.7630676735052515,
+                "max_abs": 0.019266173243522644,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.04769151108072041
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0003617173661313504,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.027334609927318985,
+                "max_abs": 0.0025383501779288054,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.00116411188609623,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.08832670382028665,
+                "max_abs": 0.007573746610432863,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008373602643586628,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.06360091865938806,
+                "max_abs": 0.0050353966653347015,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 2.3267542075229506
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0007230699592616553,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.05498904346022392,
+                "max_abs": 0.005135521292686462,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.935022258194872
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013404003835202924,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.02465421549827,
+                "max_abs": 1.005052089691162,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013508277589247492,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.09653072086634,
+                "max_abs": 1.0142042636871338,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0013950693303485975,
+                "exact_zero_fraction": 8.254398006753368e-06,
+                "l2_norm": 2.4119315487028703,
+                "max_abs": 0.015181221067905426,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.06514393178838256
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0012320971892627662,
+                "exact_zero_fraction": 3.809722156963093e-05,
+                "l2_norm": 2.20721128411635,
+                "max_abs": 0.014400827698409557,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.0595338695550214
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015765841253872575,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.712018825487824,
+                "max_abs": 4.595237731933594,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015724015840866693,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.712936310670532,
+                "max_abs": 4.595861911773682,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008297901147359675,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.202101331672039,
+                "max_abs": 0.006914339493960142,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.009757683853750504
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0007849518168492215,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.19091288649079363,
+                "max_abs": 0.006727073807269335,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.009217473480569383
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014827503453692204,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.586469354335106,
+                "max_abs": 1.0063198804855347,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.01483503706698826,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5912421589614287,
+                "max_abs": 1.021176815032959,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0012736884149867895,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.10237943388681957,
+                "max_abs": 0.014856934547424316,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.0395826974385853
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0010696160859525107,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.08337603446125615,
+                "max_abs": 0.01133108139038086,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.03219275309658348
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073002/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073002_dcsr/epoch_010.pth.tar",
+          "sha256": "a82636848f57c7667e4faade88cba6a3f0008b2963f07799316285db2b18a26f"
+        },
+        {
+          "epoch_field": 15,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0006833573943276683,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.18764320148616553,
+                "max_abs": 0.01020729448646307,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0012618461531685712,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.3521843294545571,
+                "max_abs": 0.021103385835886,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006517364101656503,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.17988863454423484,
+                "max_abs": 0.01343739964067936,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.9586738721120018
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005571614827890441,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.13819289656285455,
+                "max_abs": 0.00815084483474493,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.4439691974809054
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013403061797676767,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.91518768778591,
+                "max_abs": 1.0037031173706055,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013478539164480238,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.92205968562245,
+                "max_abs": 1.0087813138961792,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0010075863448570522,
+                "exact_zero_fraction": 6.349561118335501e-07,
+                "l2_norm": 1.940528674986334,
+                "max_abs": 0.020124848932027817,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.0525672168159772
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.000705777731158205,
+                "exact_zero_fraction": 2.4763288361508452e-05,
+                "l2_norm": 1.2934228576151436,
+                "max_abs": 0.011934401467442513,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.035018438935337855
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0006257860044553838,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.04809693535184182,
+                "max_abs": 0.004496539477258921,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.001294690225555585,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.09954999846490319,
+                "max_abs": 0.00905884150415659,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007023056266729696,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.0541850229714992,
+                "max_abs": 0.004612662363797426,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 1.1265795330850377
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0004381840453191103,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.03461064984903762,
+                "max_abs": 0.004580901004374027,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.39184808616268474
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013424088185867506,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.02527635047374,
+                "max_abs": 1.0083684921264648,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013556996425481145,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.10983914580072,
+                "max_abs": 1.015984296798706,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0013576955320266939,
+                "exact_zero_fraction": 7.619444313926185e-06,
+                "l2_norm": 2.3614244395677075,
+                "max_abs": 0.01720619574189186,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.06377871206726302
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0010099073293110346,
+                "exact_zero_fraction": 4.190694372659402e-05,
+                "l2_norm": 1.7808127772176143,
+                "max_abs": 0.013001812621951103,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.0480048334065894
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.01573848885689452,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.7121355594488,
+                "max_abs": 4.595573902130127,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015703287912640543,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.713839033788503,
+                "max_abs": 4.596129894256592,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007567576952545225,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.18410768566509236,
+                "max_abs": 0.006394216790795326,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.008888879909879844
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005410585453080604,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.1328381427473525,
+                "max_abs": 0.004848460666835308,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.006413293641950671
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014794999935215205,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5874442831047255,
+                "max_abs": 1.0127544403076172,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.01475488447891125,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5922536352590835,
+                "max_abs": 1.0294533967971802,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.001225147327081627,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.09684795848738612,
+                "max_abs": 0.01669895648956299,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.03742996868368363
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.000715275886151093,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.05555920766643814,
+                "max_abs": 0.008276581764221191,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.02144114839838292
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073002/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073002_dcsr/epoch_015.pth.tar",
+          "sha256": "35559e9c14c88b90161f1641438953b32695129f1dd349a4ba4964a43ba34f7d"
+        },
+        {
+          "epoch_field": 20,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0008736294000145962,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.24258840855619873,
+                "max_abs": 0.013145728968083858,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0013766748467114892,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.37997559878666315,
+                "max_abs": 0.01974375732243061,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005879172242883406,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.1572573200103495,
+                "max_abs": 0.009151645004749298,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.6482474613947551
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0004827694734709947,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.11350654591771439,
+                "max_abs": 0.009105900302529335,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.3222930051814254
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013417359377747712,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.90296217801514,
+                "max_abs": 1.0056843757629395,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013488351709620545,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.921953112655665,
+                "max_abs": 1.0109177827835083,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008817732250723644,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 1.654438142576097,
+                "max_abs": 0.015585781075060368,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.044832123085277016
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0006028086623577801,
+                "exact_zero_fraction": 2.3493376137841353e-05,
+                "l2_norm": 1.0620108778034916,
+                "max_abs": 0.011493248865008354,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.028763587049208998
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0008419206598451695,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.06480866374838055,
+                "max_abs": 0.00616100337356329,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0014211361481081648,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.10836995327789781,
+                "max_abs": 0.010357644408941269,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006327772148315708,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.047890861635127825,
+                "max_abs": 0.004375611897557974,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.7389577082018532
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0004411689932967846,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.03344132594647947,
+                "max_abs": 0.0040552495047450066,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.33592492679213215
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013453155229404826,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.03268343948966,
+                "max_abs": 1.0107115507125854,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013588726125386268,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.12533103522045,
+                "max_abs": 1.0150136947631836,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0012724099224590494,
+                "exact_zero_fraction": 8.254398006753368e-06,
+                "l2_norm": 2.170823487626086,
+                "max_abs": 0.01703054830431938,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.05861912467599464
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0009648084470422155,
+                "exact_zero_fraction": 3.682731418397656e-05,
+                "l2_norm": 1.626378571138691,
+                "max_abs": 0.011251593008637428,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.04382607439360806
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.0157208603391728,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71268053177573,
+                "max_abs": 4.595876693725586,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.01571013153413712,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.715015690489363,
+                "max_abs": 4.596573352813721,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.000666251861979299,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.16075171215349196,
+                "max_abs": 0.006035288795828819,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.007761028897581826
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00042535244216372923,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.10251214445508577,
+                "max_abs": 0.004128195345401764,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.004948968865108372
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014763570327142423,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5889195668447567,
+                "max_abs": 1.0195595026016235,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014729483138056254,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5938701143371254,
+                "max_abs": 1.0359798669815063,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0009839292963386163,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.07647625225233501,
+                "max_abs": 0.016420364379882812,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.02953983323071731
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.000451549066173203,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.034820298596435546,
+                "max_abs": 0.006526470184326172,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.013432442768261534
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073002/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073002_dcsr/epoch_020.pth.tar",
+          "sha256": "e74cf42c3efdce7ec8616d2a98c0aa08ad736b4a4c21f404c2139b919def6294"
+        },
+        {
+          "epoch_field": 25,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0010493806127347318,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.28904644880443947,
+                "max_abs": 0.015319879166781902,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0015190988292501937,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.406140621489409,
+                "max_abs": 0.019799012690782547,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005513279381127533,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.14078715344489148,
+                "max_abs": 0.007533899508416653,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.48707449625213706
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00035379284869506227,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.0875366494889408,
+                "max_abs": 0.0038626082241535187,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.23037439711513724
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.01343295699050099,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.90119728354445,
+                "max_abs": 1.00724458694458,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013495692840551169,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.934875195204256,
+                "max_abs": 1.0124906301498413,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007974545619954925,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 1.4382513473735807,
+                "max_abs": 0.015265638008713722,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.0389757366494704
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005644097528473374,
+                "exact_zero_fraction": 2.15885078023407e-05,
+                "l2_norm": 0.982039370425346,
+                "max_abs": 0.009296123869717121,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.026597709157718807
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0010567873923470635,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.080926044391946,
+                "max_abs": 0.007687335833907127,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0016046280830605629,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.12155758369753589,
+                "max_abs": 0.011410817503929138,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005923493054986882,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.04543605898616272,
+                "max_abs": 0.004786098841577768,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.5614516232389167
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0003743318140968164,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.02903532551146829,
+                "max_abs": 0.0036926858592778444,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.2679278216260898
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013484713468246819,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.04896471920971,
+                "max_abs": 1.0119107961654663,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013609020551959393,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.14866166765436,
+                "max_abs": 1.016746997833252,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0011478158876523587,
+                "exact_zero_fraction": 7.619444313926185e-06,
+                "l2_norm": 1.9118702643669816,
+                "max_abs": 0.013490954414010048,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.05160387824212767
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0008529933182950286,
+                "exact_zero_fraction": 3.55574067983222e-05,
+                "l2_norm": 1.4043572422233428,
+                "max_abs": 0.008627133443951607,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.037827467205370974
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.01571568778837821,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.713497986402555,
+                "max_abs": 4.596156597137451,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015726435704128884,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.716174545284172,
+                "max_abs": 4.596773624420166,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005400451965431308,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.13011846864302487,
+                "max_abs": 0.005565498024225235,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.006281820131415832
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00027156035932691047,
+                "exact_zero_fraction": 3.2530904359141185e-05,
+                "l2_norm": 0.06538737267482066,
+                "max_abs": 0.002416132017970085,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0031565205477899387
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014745668683944923,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5907311536822375,
+                "max_abs": 1.0258066654205322,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.01474144436848386,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.596024189815967,
+                "max_abs": 1.0403411388397217,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007528556139259781,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.05855731645913388,
+                "max_abs": 0.014534473419189453,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.022602621802692905
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00030880815269389224,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.02424053709637391,
+                "max_abs": 0.004361271858215332,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.009345316468387887
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073002/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073002_dcsr/epoch_025.pth.tar",
+          "sha256": "a0940bc7288ac9579f746a26e1591e23f39586419a4cc9dc96eccef42ce61cf8"
+        },
+        {
+          "epoch_field": 30,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0012115465135967374,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.3280831976301318,
+                "max_abs": 0.017034431919455528,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0016135169078020904,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.42378447994687507,
+                "max_abs": 0.02076132781803608,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00047150757754549973,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.117893843918882,
+                "max_abs": 0.006245201453566551,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.35934130357931626
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0002207137483263615,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.05434070895683318,
+                "max_abs": 0.002193717285990715,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.1337977687569236
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013446558355665626,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.90651029352633,
+                "max_abs": 1.0082011222839355,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013495093367836997,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.94409706738687,
+                "max_abs": 1.014718770980835,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006841280900598328,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 1.2061715838576434,
+                "max_abs": 0.013903636485338211,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.032681810722950275
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0003854501203888399,
+                "exact_zero_fraction": 2.222346391417425e-05,
+                "l2_norm": 0.6915383923976074,
+                "max_abs": 0.007112881168723106,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.018723182053351002
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0012446510780080226,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.0948307580720262,
+                "max_abs": 0.009133068844676018,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0016681813471632475,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.12720785421022499,
+                "max_abs": 0.012425852008163929,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0004734952102477978,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.03710915367801673,
+                "max_abs": 0.0038312003016471863,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.39131980416977635
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0002372899064917642,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.01783520593122384,
+                "max_abs": 0.0018235309980809689,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.14672228082126135
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013514560056559379,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.07097543572988,
+                "max_abs": 1.0130622386932373,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013610385936462514,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 37.15502492604136,
+                "max_abs": 1.01585853099823,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008799873825689482,
+                "exact_zero_fraction": 7.619444313926185e-06,
+                "l2_norm": 1.447937893387583,
+                "max_abs": 0.009379906579852104,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.039058532352294846
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0004601123967800948,
+                "exact_zero_fraction": 3.365254571984065e-05,
+                "l2_norm": 0.748927694692553,
+                "max_abs": 0.004250742495059967,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.02016028737166191
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015719520355403308,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.714463678074697,
+                "max_abs": 4.596347332000732,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015742018878964068,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.716884062964688,
+                "max_abs": 4.596822261810303,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00040056482102860085,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.09683230516593945,
+                "max_abs": 0.0045908913016319275,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.004674622846664959
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0001253708353582418,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.03019792827999862,
+                "max_abs": 0.0014358758926391602,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0014576981002929845
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014741709490167582,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5926074007860076,
+                "max_abs": 1.030994176864624,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014758416083066833,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5974025639367753,
+                "max_abs": 1.0422621965408325,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005497026281029155,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.04247909211785177,
+                "max_abs": 0.011268019676208496,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.016384699089022608
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00016895169596332912,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.012642865093867897,
+                "max_abs": 0.0019210577011108398,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.004870087552906876
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073002/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073002_dcsr/epoch_030.pth.tar",
+          "sha256": "fae28b2883284b8cc4dd08ce5f8a64449c6fc773d8a17026ab061673725383e6"
+        },
+        {
+          "epoch_field": 35,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0013432393328904155,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.3588857784525521,
+                "max_abs": 0.01826360449194908,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0016324861813760765,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.42710786578023274,
+                "max_abs": 0.020772961899638176,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0003335625316345399,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.0827169160712424,
+                "max_abs": 0.004115598276257515,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.23048256865430045
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 4.9038682215215086e-05,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.011569423169718719,
+                "max_abs": 0.0004434967413544655,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.027300252173390216
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013458119242610131,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.914701804260424,
+                "max_abs": 1.009823203086853,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013494147884716087,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.945363707447314,
+                "max_abs": 1.0149216651916504,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00048515608288064325,
+                "exact_zero_fraction": 1.2699122236671002e-06,
+                "l2_norm": 0.8521883901066837,
+                "max_abs": 0.009489580988883972,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.02308533859017467
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 8.405700364625911e-05,
+                "exact_zero_fraction": 2.7303112808842653e-05,
+                "l2_norm": 0.14648011327342542,
+                "max_abs": 0.0009930767118930817,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.003964912527331291
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0013829557253587105,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.10521583010307001,
+                "max_abs": 0.010177592746913433,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0016786492130568852,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.1277261337597648,
+                "max_abs": 0.012298044748604298,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00032982364247756646,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.02574265232933877,
+                "max_abs": 0.0026957299560308456,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.2446652020339632
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 6.550158894055498e-05,
+                "exact_zero_fraction": 0.004554326610279766,
+                "l2_norm": 0.004733308123491955,
+                "max_abs": 0.00040632381569594145,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.037209244294535794
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013540071091545324,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 37.09256156293825,
+                "max_abs": 1.0139912366867065,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013609703371847227,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 37.15537608855357,
+                "max_abs": 1.0158681869506836,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.000601035564861094,
+                "exact_zero_fraction": 5.079629542617457e-06,
+                "l2_norm": 0.9872570887060867,
+                "max_abs": 0.006351562216877937,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.026616039634548287
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 8.544186733162292e-05,
+                "exact_zero_fraction": 3.2382638334186286e-05,
+                "l2_norm": 0.1347229554249242,
+                "max_abs": 0.0006212424486875534,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.003625968646047094
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015726721372089372,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.715295851793318,
+                "max_abs": 4.596531391143799,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015746899060638368,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.717039679219944,
+                "max_abs": 4.596836566925049,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00027627716920712434,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.06679524603493424,
+                "max_abs": 0.003185056149959564,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.003224440843752265
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 2.5255335331273374e-05,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.006196131260510812,
+                "max_abs": 0.0002614259719848633,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.00029908606147907915
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014746155783794094,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5941904569527177,
+                "max_abs": 1.0348327159881592,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014764302171307144,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5976831081377343,
+                "max_abs": 1.0427013635635376,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0003771195021101165,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.029170028954732693,
+                "max_abs": 0.007868647575378418,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.011244366764419237
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 3.9388385961170904e-05,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.0030171758922639133,
+                "max_abs": 0.0004391670227050781,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.0011616127334882218
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073002/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073002_dcsr/epoch_035.pth.tar",
+          "sha256": "cc7c95e086f0119332ecefafa84e7ea44000726d87ff96ead7c1d47377a99264"
+        }
+      ],
+      "seed": 2026073002,
+      "train_log": {
+        "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073002/dcsr/train.log",
+        "sha256": "9f47b5f6e8ee13a8abfaf9d27d24092f460353c84a5759d55978f20787138f09"
+      }
+    },
+    {
+      "checkpoints": [
+        {
+          "epoch_field": 5,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.00017520939776684215,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.0454681685319362,
+                "max_abs": 0.0016374766128137708,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0008979963747058584,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.23628504943431905,
+                "max_abs": 0.01213456317782402,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007371151578814402,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.19405587711958017,
+                "max_abs": 0.010777624323964119,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 4.267950159093786
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013382340842432072,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.94785211435538,
+                "max_abs": 1.0007925033569336,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013420701066882233,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.96849961781955,
+                "max_abs": 1.004032015800476,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0010115976570799622,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 1.730356318600028,
+                "max_abs": 0.011049283668398857,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.04683239267182547
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 7.065176657354368e-05,
+                "exact_zero_fraction": 0.0032530904359141183,
+                "l2_norm": 0.005539238395468477,
+                "max_abs": 0.000521683890838176,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0006584156247772484,
+                "exact_zero_fraction": 0.0032530904359141183,
+                "l2_norm": 0.05400411228278559,
+                "max_abs": 0.005585215054452419,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005974838168162001,
+                "exact_zero_fraction": 0.0032530904359141183,
+                "l2_norm": 0.049244451137682575,
+                "max_abs": 0.005171626340597868,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 8.890112254054335
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.01339817825271564,
+                "exact_zero_fraction": 6.349536928271821e-07,
+                "l2_norm": 37.032779029316934,
+                "max_abs": 1.0007197856903076,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013435385850890403,
+                "exact_zero_fraction": 6.349536928271821e-07,
+                "l2_norm": 37.0605919830578,
+                "max_abs": 1.008809208869934,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0010401481639133285,
+                "exact_zero_fraction": 3.1747684641359107e-06,
+                "l2_norm": 1.7702630350987327,
+                "max_abs": 0.011633283458650112,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.047802597631069144
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.01575976355012237,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71215921465803,
+                "max_abs": 4.5951247215271,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.01575252828306398,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71202665304942,
+                "max_abs": 4.595634460449219,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006467900031095367,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.15168321568527984,
+                "max_abs": 0.005030279513448477,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0073233898075645044
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014721292476457024,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5826853426663106,
+                "max_abs": 1.0011377334594727,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014842259293261844,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5892073693678546,
+                "max_abs": 1.008934497833252,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008498541363696386,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.06951955076133051,
+                "max_abs": 0.010373055934906006,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.026917545708282052
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073003/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073003_dcsr/epoch_005.pth.tar",
+          "sha256": "3eaa6754c19436359b980382b7328b2411d98b5bbab4a7893ef8d5a01838c156"
+        },
+        {
+          "epoch_field": 10,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.00040690424461547884,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.10878064503115528,
+                "max_abs": 0.005536761600524187,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0009592070121247813,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.25933172348759176,
+                "max_abs": 0.019268115982413292,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006038096805649071,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.16182247915526593,
+                "max_abs": 0.013731354847550392,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 1.487603599968719
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005478087088114976,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.14169080949520477,
+                "max_abs": 0.0092796441167593,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.5996604941126038
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013385900577052795,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.9317714255616,
+                "max_abs": 1.00218665599823,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013445876817870218,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.9348142805357,
+                "max_abs": 1.0075387954711914,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0009734876859513497,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 1.9179222918275969,
+                "max_abs": 0.022116711363196373,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.051931500109419194
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.000741385953635297,
+                "exact_zero_fraction": 3.55575422626788e-05,
+                "l2_norm": 1.65489224373267,
+                "max_abs": 0.02183021605014801,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.04476492854297444
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.00035983141279037406,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.028597923262106938,
+                "max_abs": 0.0028359992429614067,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.001230801676142332,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.09658007596936918,
+                "max_abs": 0.010629286989569664,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008939018671056371,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.0696127870873391,
+                "max_abs": 0.007793287746608257,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 2.434190288900384
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0007869616885287487,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.06018868940039699,
+                "max_abs": 0.006156830582767725,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 1.1145204847591357
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013406816762571381,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.026851191858675,
+                "max_abs": 1.0046974420547485,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013536461472182635,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.116510087849136,
+                "max_abs": 1.0149863958358765,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0015296916670018105,
+                "exact_zero_fraction": 1.2699073856543642e-06,
+                "l2_norm": 2.642708775970775,
+                "max_abs": 0.017472093924880028,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.07137276573363721
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0015513315649270897,
+                "exact_zero_fraction": 3.746226787680374e-05,
+                "l2_norm": 2.6889392040786695,
+                "max_abs": 0.017761103808879852,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.07255521458771934
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.01573891971665074,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71191481072671,
+                "max_abs": 4.595407962799072,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.01569934638972087,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71318019608775,
+                "max_abs": 4.596338272094727,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008260480909279282,
+                "exact_zero_fraction": 3.2530904359141185e-05,
+                "l2_norm": 0.1974628505828898,
+                "max_abs": 0.007322413846850395,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.00953378055034408
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0007486457551696817,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.17961210206278178,
+                "max_abs": 0.00700586661696434,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.008671874803537758
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.01473126138035849,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5845008939610694,
+                "max_abs": 1.0060791969299316,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.01473606496039391,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5896806283536056,
+                "max_abs": 1.021436095237732,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0013004573783988447,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.10427919711059597,
+                "max_abs": 0.015356898307800293,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.04034790522001914
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.001156456567167135,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.09036752300178026,
+                "max_abs": 0.01250159740447998,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.03490161663793007
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073003/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073003_dcsr/epoch_010.pth.tar",
+          "sha256": "5f16c9941d4675adbe4301800674cd61323a3281c4ba4cfb2a85ea4b13391a49"
+        },
+        {
+          "epoch_field": 15,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0005828954617080213,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.1572552956091254,
+                "max_abs": 0.00939204078167677,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0010643534647408696,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.2873273262658564,
+                "max_abs": 0.016329629346728325,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005506059846240317,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.1461897619436523,
+                "max_abs": 0.008908964693546295,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.9296333161779323
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0004384340870175353,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.11111404731330593,
+                "max_abs": 0.006612714380025864,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.42846299642404684
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013394116303861996,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.914442350807384,
+                "max_abs": 1.0043623447418213,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013448874768172784,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.91360775172022,
+                "max_abs": 1.0114171504974365,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008452647296635807,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 1.678468165830574,
+                "max_abs": 0.01819872111082077,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.04546914592071206
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005380449257423933,
+                "exact_zero_fraction": 2.7938068920676203e-05,
+                "l2_norm": 1.044953729478763,
+                "max_abs": 0.014997223392128944,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.028291836572992973
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0006337630807774452,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.050853182581182814,
+                "max_abs": 0.005725769326090813,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0012761881114023077,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.10033749903320166,
+                "max_abs": 0.010315777733922005,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007094837056437147,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.05361099112488645,
+                "max_abs": 0.004801975563168526,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 1.0542307954728503
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0004985325892082317,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.03786284294015824,
+                "max_abs": 0.004178323317319155,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.39203575437408655
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013431172178188766,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.02856740746448,
+                "max_abs": 1.0080033540725708,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013588578524869497,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.128421049557254,
+                "max_abs": 1.0138258934020996,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0014707488620413637,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 2.5480256514176207,
+                "max_abs": 0.02006484940648079,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.06881242861434525
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0011337141345223625,
+                "exact_zero_fraction": 3.936712895528529e-05,
+                "l2_norm": 2.0225233667876266,
+                "max_abs": 0.014653835445642471,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.05449120518067623
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015714698002256194,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.712152492207156,
+                "max_abs": 4.595742702484131,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.01568062210827581,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.7142067325195,
+                "max_abs": 4.596722602844238,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008071313372818618,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.19337732991979859,
+                "max_abs": 0.0076933130621910095,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.009336418800149132
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005789736919614039,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.14138038233455447,
+                "max_abs": 0.004521953873336315,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.006825624119335282
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014704290793546439,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5856807048804984,
+                "max_abs": 1.012917160987854,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014669542794732692,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.590045141206229,
+                "max_abs": 1.0299948453903198,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0012142330017273447,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.0945977578823422,
+                "max_abs": 0.01707768440246582,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.03658524337664275
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.000705986271359861,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.05409567850472005,
+                "max_abs": 0.00855875015258789,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.020888938161888897
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073003/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073003_dcsr/epoch_015.pth.tar",
+          "sha256": "54743a5f71e7edbdada7efc4efacae33f2cdc1e1b630db0d3b3dc5a00c27fdf6"
+        },
+        {
+          "epoch_field": 20,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0007391027172011849,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.2001069115625153,
+                "max_abs": 0.011240856721997261,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0011806251275763352,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.3150084812948255,
+                "max_abs": 0.01783149503171444,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.000526948648907254,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.13590256371126364,
+                "max_abs": 0.007909380830824375,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.6791497737388564
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0003926194578932723,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.09576836631432213,
+                "max_abs": 0.0040137432515621185,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.33330754703682514
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.01340401461023216,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.901929660517325,
+                "max_abs": 1.007041096687317,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013460109159112721,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.91262176002712,
+                "max_abs": 1.013182282447815,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008137276476313891,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 1.5558852469183453,
+                "max_abs": 0.018976112827658653,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.04216270697039027
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0006046695711550766,
+                "exact_zero_fraction": 2.0953551690507152e-05,
+                "l2_norm": 1.106608607904533,
+                "max_abs": 0.013636439107358456,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.02997833794376177
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0008666148565578709,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.06938491536685615,
+                "max_abs": 0.007952569983899593,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0014688951038416456,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.1163607628903313,
+                "max_abs": 0.012662520632147789,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006604764075450194,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.05166124976561736,
+                "max_abs": 0.004709950648248196,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.7445602476052735
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005197718114032856,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.04030909062791561,
+                "max_abs": 0.0037795782554894686,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.4017350543546769
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013465324112437787,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.03851554382363,
+                "max_abs": 1.0102460384368896,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013624215720290893,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.15231413978441,
+                "max_abs": 1.0162352323532104,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0013823117429529164,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 2.3406529644938012,
+                "max_abs": 0.018836136907339096,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.06319510731266652
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0010595243197852227,
+                "exact_zero_fraction": 3.4922453105495014e-05,
+                "l2_norm": 1.8012318163451138,
+                "max_abs": 0.011131450533866882,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.04851355822379075
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.015700393507987864,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.7129594239671,
+                "max_abs": 4.596076011657715,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.01569944144691363,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.7156774276505,
+                "max_abs": 4.596729278564453,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006884845263320437,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.16356473670228136,
+                "max_abs": 0.005330092739313841,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.007896734278976067
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0004003190497880488,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.09687793755110567,
+                "max_abs": 0.004452607128769159,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.004676883783293315
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014670230518548762,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.586927279762023,
+                "max_abs": 1.0200190544128418,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014650031559126959,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.591680518037038,
+                "max_abs": 1.036957025527954,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0010195940055630424,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.07805172068491036,
+                "max_abs": 0.016937971115112305,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.03017159442227943
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005097059812699142,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.038013100801098175,
+                "max_abs": 0.006962180137634277,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.014676617096872225
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073003/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073003_dcsr/epoch_020.pth.tar",
+          "sha256": "46c78a4511d356099fbfce05672ef0c66ecd8cbff6934238fca66d4550635364"
+        },
+        {
+          "epoch_field": 25,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.000888835986628983,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.23851050868601592,
+                "max_abs": 0.012655625119805336,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0013153285217436883,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.3440768715302205,
+                "max_abs": 0.016869202256202698,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005077408315376339,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.12828477840711047,
+                "max_abs": 0.006862897425889969,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.5378579715998565
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0003275036280196119,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.08125245966536081,
+                "max_abs": 0.004141832701861858,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.257937371499894
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013415069273816511,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.89766985159314,
+                "max_abs": 1.0091217756271362,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.01346423503006772,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.92182022280525,
+                "max_abs": 1.0145796537399292,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007561352640231139,
+                "exact_zero_fraction": 6.349561118335501e-07,
+                "l2_norm": 1.3767946224556995,
+                "max_abs": 0.01826983317732811,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.03731386366654948
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0005192044716937254,
+                "exact_zero_fraction": 2.15885078023407e-05,
+                "l2_norm": 0.9171248810313569,
+                "max_abs": 0.009615495800971985,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.02484583422423049
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0010815851786719222,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.08562491878090678,
+                "max_abs": 0.009362885728478432,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0016183872050619349,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.1259146969622588,
+                "max_abs": 0.012286687269806862,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.000580081105150892,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.044659640500694306,
+                "max_abs": 0.005312060937285423,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.521572938538691
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00029776665184987836,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.023048905306871783,
+                "max_abs": 0.004225622396916151,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.19808142138596252
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.013502032270279032,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.05966990034196,
+                "max_abs": 1.0118392705917358,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013640361575322769,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.17273226330749,
+                "max_abs": 1.0163301229476929,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0011923393590513756,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 1.968858632369867,
+                "max_abs": 0.01389644667506218,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.05312671801082879
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0008017969023396148,
+                "exact_zero_fraction": 3.365254571984065e-05,
+                "l2_norm": 1.3246228910156428,
+                "max_abs": 0.0073118326254189014,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.03565384611122179
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.01569559051374685,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.713858577947153,
+                "max_abs": 4.5963006019592285,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015705853464080672,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.716693712842396,
+                "max_abs": 4.597018718719482,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005574813661593931,
+                "exact_zero_fraction": 3.2530904359141185e-05,
+                "l2_norm": 0.13140747091727184,
+                "max_abs": 0.00472298264503479,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.006343939755250321
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0002641830804213038,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.06262365464099405,
+                "max_abs": 0.0022255894728004932,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.003023007809409427
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014656994436178114,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.588587348906507,
+                "max_abs": 1.0264060497283936,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014667384432743654,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.593616491177614,
+                "max_abs": 1.0410747528076172,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0007808340228065945,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.059587357073458525,
+                "max_abs": 0.014668703079223633,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.02301925685398637
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00030342494046871923,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.02318922026083607,
+                "max_abs": 0.004117727279663086,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.008947561282900638
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073003/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073003_dcsr/epoch_025.pth.tar",
+          "sha256": "98fd1f0dae4e59f12a634444dc7d6a12127d3e286543d10207f4d04cff46531d"
+        },
+        {
+          "epoch_field": 30,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.0010391523959763498,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.27442247171188305,
+                "max_abs": 0.014095500111579895,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0014263427339157328,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.36567947887734265,
+                "max_abs": 0.018156282603740692,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00044673550286237573,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.1098388337192517,
+                "max_abs": 0.006005274131894112,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.40025451645436605
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0002074470057618176,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.04995986539727659,
+                "max_abs": 0.0020813150331377983,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.14519971997852982
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.01342470725024572,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.900412093103704,
+                "max_abs": 1.0104378461837769,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.013463065001054791,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.93096605760988,
+                "max_abs": 1.014298677444458,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006546274885395663,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 1.1488644682448108,
+                "max_abs": 0.015061214566230774,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.03113419073332033
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0003666730116503189,
+                "exact_zero_fraction": 1.7143815019505852e-05,
+                "l2_norm": 0.6483561121261504,
+                "max_abs": 0.005624264944344759,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.017560242377370243
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.0012572673608402909,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.09874779739908641,
+                "max_abs": 0.010318467393517494,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.001660824218719759,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.12881913946323068,
+                "max_abs": 0.012230288237333298,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0004538861953464192,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.0350824557313511,
+                "max_abs": 0.004444059915840626,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.35527329880145436
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0002378684198509577,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.017205108106130722,
+                "max_abs": 0.0014808012638241053,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.13664098410440298
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.01353636726877867,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.0852882647242,
+                "max_abs": 1.012988805770874,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013642001200617943,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.17731216766211,
+                "max_abs": 1.0167583227157593,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0008835643423922637,
+                "exact_zero_fraction": 1.2699073856543642e-06,
+                "l2_norm": 1.4462438451273294,
+                "max_abs": 0.009690985083580017,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.038997778170245675
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.0004005551687383666,
+                "exact_zero_fraction": 3.301759202701347e-05,
+                "l2_norm": 0.6447772875553793,
+                "max_abs": 0.003305349498987198,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.01734543705284282
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.0156991207840075,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.714816610457717,
+                "max_abs": 4.5966033935546875,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.015721518541980114,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71739500744411,
+                "max_abs": 4.597051620483398,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00041219795688686233,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.09746698030352202,
+                "max_abs": 0.003735800739377737,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.004705181906091148
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00012537775368526063,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.030142978997131156,
+                "max_abs": 0.0012270500883460045,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0014550091542090693
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014662178156764379,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.5904584766732532,
+                "max_abs": 1.031690239906311,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014702250032123275,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.595533439999179,
+                "max_abs": 1.043257236480713,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0005720998769453667,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.04342498456316197,
+                "max_abs": 0.011566996574401855,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.01676343587600357
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 0.00017862929327582772,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.013337892215181326,
+                "max_abs": 0.002182483673095703,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.00514258459589195
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073003/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073003_dcsr/epoch_030.pth.tar",
+          "sha256": "2ba65274aaf505f21bdfa8a11dd670e71c5c71e80bc0b31baa74e3b616a664eb"
+        },
+        {
+          "epoch_field": 35,
+          "groups": {
+            "residual_classification_final": {
+              "ema": {
+                "abs_mean": 0.001166154506265458,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.30393868096408855,
+                "max_abs": 0.015089312568306923,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0014460257793217413,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.36937017000134265,
+                "max_abs": 0.018283884972333908,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0003171588794483392,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.07765819071931267,
+                "max_abs": 0.004123636521399021,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.2555061121966515
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 5.3041327293527786e-05,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.012556599759778601,
+                "max_abs": 0.00039162905886769295,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.034337720558802194
+              }
+            },
+            "residual_classification_hidden": {
+              "ema": {
+                "abs_mean": 0.013433423839065626,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.90681539224685,
+                "max_abs": 1.0114004611968994,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model": {
+                "abs_mean": 0.01346258709254258,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 36.93258195680242,
+                "max_abs": 1.0141689777374268,
+                "numel": 1574912,
+                "parameter_tensor_count": 6
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00046436231710444845,
+                "exact_zero_fraction": 1.2699122236671002e-06,
+                "l2_norm": 0.8123751759392878,
+                "max_abs": 0.010455571115016937,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.02201152191825108
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 8.815087511471226e-05,
+                "exact_zero_fraction": 1.841372724317295e-05,
+                "l2_norm": 0.14838591405968504,
+                "max_abs": 0.0009392146021127701,
+                "numel": 1574912,
+                "parameter_tensor_count": 6,
+                "relative_l2_to_reference": 0.004017926685920232
+              }
+            },
+            "residual_regression_final": {
+              "ema": {
+                "abs_mean": 0.001388666663421427,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.10846921252799938,
+                "max_abs": 0.010951308533549309,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.0016682315782349066,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.1294728503126984,
+                "max_abs": 0.012222187593579292,
+                "numel": 3074,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00031486009412718405,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.024435680123980622,
+                "max_abs": 0.0030917651019990444,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.22527756544441577
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 5.006541734282291e-05,
+                "exact_zero_fraction": 0.0013012361743656475,
+                "l2_norm": 0.0036214925072830997,
+                "max_abs": 0.00025616539642214775,
+                "numel": 3074,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.02811300030704518
+              }
+            },
+            "residual_regression_hidden": {
+              "ema": {
+                "abs_mean": 0.01356518016620415,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.10953122338552,
+                "max_abs": 1.0139591693878174,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model": {
+                "abs_mean": 0.013641292563687148,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 37.17765391708453,
+                "max_abs": 1.0168107748031616,
+                "numel": 1574918,
+                "parameter_tensor_count": 12
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0006029739395160562,
+                "exact_zero_fraction": 1.9048610784815463e-06,
+                "l2_norm": 0.9846850814869943,
+                "max_abs": 0.006540164351463318,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.02653455996411159
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 8.191933856835988e-05,
+                "exact_zero_fraction": 3.619236049114938e-05,
+                "l2_norm": 0.13065442234163485,
+                "max_abs": 0.0006198515184223652,
+                "numel": 1574918,
+                "parameter_tensor_count": 12,
+                "relative_l2_to_reference": 0.0035143590196195468
+              }
+            },
+            "scaffold_classification": {
+              "ema": {
+                "abs_mean": 0.01570605425068366,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71571025154686,
+                "max_abs": 4.596794128417969,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model": {
+                "abs_mean": 0.01572508802643517,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 20.71753840981835,
+                "max_abs": 4.597055912017822,
+                "numel": 30740,
+                "parameter_tensor_count": 2
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.0002834898818989582,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.06704605516926529,
+                "max_abs": 0.0025522042997181416,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.003236483536173176
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 2.7177137217897056e-05,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.006335866703805234,
+                "max_abs": 0.00026118848472833633,
+                "numel": 30740,
+                "parameter_tensor_count": 2,
+                "relative_l2_to_reference": 0.0003058235218051618
+              }
+            },
+            "scaffold_regression": {
+              "ema": {
+                "abs_mean": 0.014675116943280128,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.592148230863834,
+                "max_abs": 1.0355925559997559,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model": {
+                "abs_mean": 0.014709578236782705,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 2.595879993892429,
+                "max_abs": 1.0435645580291748,
+                "numel": 3080,
+                "parameter_tensor_count": 8
+              },
+              "model_minus_ema": {
+                "abs_mean": 0.00039005826919811306,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.02958835527795518,
+                "max_abs": 0.007972002029418945,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.01141460774721778
+              },
+              "model_minus_previous_checkpoint": {
+                "abs_mean": 4.126813917348234e-05,
+                "exact_zero_fraction": 0.0,
+                "l2_norm": 0.0030223342768152255,
+                "max_abs": 0.00030732154846191406,
+                "numel": 3080,
+                "parameter_tensor_count": 8,
+                "relative_l2_to_reference": 0.0011644366550007468
+              }
+            }
+          },
+          "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073003/work/ckpt/thumos_i3d_dcsr_dev_g1_uniform_dcsr_dev_2026073003_dcsr/epoch_035.pth.tar",
+          "sha256": "1a90c541635f6786353b9fe744acef1f1d7aa7a4caa3cba7e3f6bfff66b7c6aa"
+        }
+      ],
+      "seed": 2026073003,
+      "train_log": {
+        "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/seed_2026073003/dcsr/train.log",
+        "sha256": "cdc3f462fe576397581fd0517577c71708577c0faafe9049a7a027f6ca7c5b00"
+      }
+    }
+  ],
+  "source_g1_aggregate": {
+    "g1_gate_pass": false,
+    "path": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_dcsr_g0_g1_internal_20260730_v5/DCSR_G1_AGGREGATE.json",
+    "sha256": "b98d59468ef39aa6fe6de387adfd6f872c848ab8f63b26c3bf1bf6161f5f7939"
+  },
+  "source_training_commit": "bf0df83d7400c89fc61f38d169d68085420a2263",
+  "source_training_tree": "2f9346fcfd2bfb7fc5a76a86ef65545030a67469",
+  "test_data_read": false,
+  "training_performed": false,
+  "validation_pass": true
+}

@@ -1,0 +1,237 @@
+## Verdict: HOLD
+
+**HOLD for research/paper claims; PASS only as engineering scaffolding.** The fixed commit is visible, but the commit itself is documentation-only: GitHub shows commit `09b0d31` as one changed file, `docs/methods/2026-07-06-current-experiment-map-and-gpt-review-prompt.md`, with 443 added lines. I therefore reviewed the code present at that SHA plus the in-repo review map, but I did **not** run training/evaluation or reproduce mAP. ([GitHub][1])
+
+The repo is directionally honest: the review map explicitly says no sparse-acquisition claim before detector mAP, no detector-aware claim before beating p_action/GAS-VT matched controls, no end-to-end claim before detector loss demonstrably backpropagates into selector parameters, and dynamic-budget claims require train-calibrated frozen budget evidence. The current implementation mostly satisfies those **claim locks**, but it does **not yet satisfy the project objective** as a publishable DUCA-TAD method. ([GitHub][2])
+
+---
+
+## P0 issues
+
+### P0-1 — “Detector-aware” is currently mostly offline teacher-target supervision, not a proven detector-aware deployable acquisition method.
+
+`tools/bata/detector_aware_acquisition_policy.py` sets `DETECTOR_AWARE_FEATURE_NAMES = gas_vt.GAS_VT_FEATURE_NAMES` and builds detector-aware features by calling the GAS-VT p_action/gap feature builder. The learned policy is therefore detector-aware mainly through its **training target**, not through deploy-time detector state or a real AdaTAD loss signal. Its metadata also marks the selector as an offline policy with `end_to_end=False` and paper/mAP/deploy claims disabled. ([GitHub][3]) ([GitHub][3])
+
+`tools/bata/train_detector_aware_acquisition_policy.py` prepares rows from p_action plus teacher utility, trains with `detector_aware_training_objective`, and saves a checkpoint marked `policy_family=detector_aware_offline_selector`, `teacher_target_scope=train_only`, and `end_to_end=False`. That is a valid offline distillation baseline, but not the claimed future objective: “AdaTAD detector loss teaches selector what observations matter.” ([GitHub][4]) ([GitHub][4]) ([GitHub][4])
+
+### P0-2 — No publishable detector mAP evidence yet.
+
+The repo’s own guide says Stage-1/GAS-VT is still an offline ledger route and Stage-2 is detector-aware only in supervision, not end-to-end. It also lists the required experiment matrix: official dense teacher, Stage-2 fixed/dynamic detector mAP, matched PAction/GAS-VT controls, and Stage-3 online dense-sparse training. The guide records only intermediate remote status, including a GAS-VT fixed-384 run around 43–44 Avg-mAP, not a completed matched evidence table supporting the paper claims. ([GitHub][2])
+
+### P0-3 — Teacher utility semantics are too weak for a strong “detector utility” claim.
+
+`detector_teacher_utility.py` maps teacher proposals to frame utility mainly by using proposal center and score-like fields; if richer fields are absent, utility degenerates into classification/localization/centerness-style score products. This is not yet the same as true AdaTAD detector responsibility, per-point assignment loss, boundary localization sensitivity, or counterfactual mAP/loss delta. ([GitHub][5]) ([GitHub][5])
+
+A specific bug-risk: the export payload records `marginal_gain_frame_utility` as `abs(signed_frame_utility)`. Training later clamps positive gain separately, which partially avoids the issue, but the serialized field can still convert a negative “avoid/background suppression” signal into a positive “sample me” magnitude if reused downstream. ([GitHub][5]) ([GitHub][4])
+
+### P0-4 — End-to-end selector + AdaTAD exists as a smoke/prototype path, not as a validated production experiment.
+
+There is meaningful Stage-3 infrastructure: `SingleStageDetector` now accepts `frame_selector`, calls it before the backbone, merges selector losses, and remaps selected-axis proposals back to true-time coordinates in post-processing. `TrueTimeRelaxedHardTopKSelector` implements straight-through hard top-k with selected-axis metadata and leakage checks. ([GitHub][6]) ([GitHub][7])
+
+But the config `c3_truetime_joint_selector_c3_adatad_smoke.py` explicitly marks the route as `stage3_4_experimental_smoke`, `smoke_only=True`, `max_train_iters=2`, `paper_claim_allowed=False`, `metric_claim_allowed=False`, and `end_to_end_claim_allowed=False`. So the correct verdict is: **E2E skeleton exists; E2E AdaTAD result does not.** ([GitHub][8])
+
+### P0-5 — High-IoU localization is not yet protected by evidence.
+
+The repo has true-time remapping utilities and selected-axis metadata checks, which is good engineering. But high-IoU protection requires measured mAP@0.6/0.7, boundary localization ablations, true-time roundtrip tests on real detections, and comparison against uniform/random/PAction/GAS-VT at matched budgets. The current guide itself lists high-IoU and detector mAP evidence as still required. ([GitHub][9]) ([GitHub][2])
+
+---
+
+## P1 issues
+
+1. **Dynamic budget calibration is weak.** The current calibration fits a global threshold from positive teacher utility on the training set, then maps counts to budget buckets. That is not yet calibrated to detector mAP, high-IoU error, or marginal detector-loss response. ([GitHub][4])
+
+2. **Policy architecture is still GAS-VT-like.** `DetectorAwareSequentialAcquisitionPolicy` wraps the GAS-VT sequential policy and reuses the same feature path; the novelty is in supervision/metadata, not yet in an intrinsically detector-aware acquisition model. ([GitHub][3]) ([GitHub][3])
+
+3. **Bootstrap policy must remain test-only.** `apply_detector_aware_acquisition_policy.py` contains a hand-engineered bootstrap score from p_action, local density/change, entropy, and gap urgency. It is useful for CI, but any result using it should be excluded from paper claims. ([GitHub][10])
+
+4. **Export validation is better than export construction.** The evidence validator requires teacher checkpoint/config hashes and strict train-only provenance, but the export path itself can be configured before those evidences are present. The pipeline should fail earlier, not merely at a later validator. ([GitHub][5]) ([GitHub][5])
+
+---
+
+## P2 issues
+
+* Route names such as `DIVERGENT_INNOVATION_*_DO_NOT_MERGE_WITH_C3` are useful internally but paper-hostile. Rename to stable experimental labels before a public artifact.
+* Add seed variance, wall-clock/FLOPs accounting, and exact checkpoint/data manifests before any claim about efficiency.
+* Add a no-gap-repair/no-hard-hole-guard ablation, because gap-aware top-k repair can mask whether the learned selector itself is doing useful work.
+
+---
+
+## Claim support matrix
+
+| Claim                                                  |                       Verdict | Reason                                                                                                                                                                                                              |
+| ------------------------------------------------------ | ----------------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sparse acquisition improves TAD mAP                    |                      **HOLD** | The repo’s own map forbids this claim until detector mAP is measured; current guide only reports incomplete/intermediate runs, not a completed matched table. ([GitHub][2])                                         |
+| Detector-aware acquisition improves over p_action-only |         **HOLD/FAIL for now** | Stage-2 trains on detector-derived teacher targets, but deploy-time features are still p_action/GAS-VT-style and the required matched PAction/GAS-VT comparisons are not complete. ([GitHub][3]) ([GitHub][2])      |
+| Dynamic budget is calibrated                           |                 **WARN/HOLD** | There is train-split threshold fitting, but it is positive-teacher-score calibration, not detector-mAP or high-IoU utility calibration. ([GitHub][4])                                                               |
+| End-to-end selector + AdaTAD is implemented            |     **Partial skeleton only** | `SingleStageDetector` and `TrueTimeRelaxedHardTopKSelector` provide a plausible E2E path, but the shipped config is explicitly smoke-only with metric/paper/end-to-end claims disabled. ([GitHub][6]) ([GitHub][8]) |
+| High-IoU localization is protected                     | **HOLD/FAIL for paper claim** | True-time remapping exists, but no completed mAP@0.6/0.7 evidence or boundary-specific ablation is shown. ([GitHub][9]) ([GitHub][2])                                                                               |
+
+---
+
+## Corrected experiment roadmap
+
+**Stage A — Freeze trustworthy detector baselines.**
+Run official dense AdaTAD/OpenTAD THUMOS baseline, exact-uniform fixed budgets, random-fixed budgets, PAction-only, GAS-VT fixed/dynamic, and detector-aware Stage-2 fixed/dynamic under identical training schedules, seeds, window sizes, and post-processing. Report Avg-mAP plus mAP@0.6/0.7, not only Avg-mAP.
+
+**Stage B — Replace score-center “teacher utility” with real detector utility.**
+Export from dense AdaTAD train forward: point assignment, cls loss, reg loss, IoU/quality, boundary responsibility, and optional counterfactual loss delta after masking snippets. Do not call this “detector utility” if it is only proposal center score spreading.
+
+**Stage C — Fix signed utility semantics.**
+Keep positive observation gain and negative/background risk as separate fields. Never serialize `abs(signed_utility)` as marginal gain.
+
+**Stage D — Validate Stage-2 offline detector-aware acquisition.**
+Train selector only on train-split teacher utility. Freeze it. Apply to train/val/test using only deploy-visible p_action/proxy signals. Train AdaTAD on resulting sparse ledgers. Compare against PAction/GAS-VT/random/uniform at identical budgets.
+
+**Stage E — Promote Stage-3 from smoke to real E2E.**
+Use `frame_selector` inside `SingleStageDetector` for real AdaTAD training beyond 2 smoke iterations. Add a mandatory gradient proof: detector loss must produce non-zero gradients on selector parameters. Evaluation must run the sparse selector path only, with no dense teacher, no GT selection, no cache replay.
+
+**Stage F — High-IoU localization audit.**
+Add true-time roundtrip tests on known irregular selected positions; add mAP@0.6/0.7 tables; add boundary error histograms; add failure cases for short actions and sparse boundary gaps.
+
+---
+
+## Critical patch sketches
+
+### 1. Fix signed utility payload
+
+```python
+def build_signed_utility_payload(signed_frame_utility):
+    signed = [float(x) for x in signed_frame_utility]
+    positive_gain = [max(0.0, x) for x in signed]
+    negative_risk = [max(0.0, -x) for x in signed]
+
+    return {
+        "utility_semantics": "signed_detector_utility_v2",
+        "signed_frame_utility": signed,
+        "positive_observation_gain": positive_gain,
+        "negative_observation_risk": negative_risk,
+        # Diagnostic only; forbidden as a training target.
+        "abs_signed_utility_diagnostic": [abs(x) for x in signed],
+    }
+```
+
+### 2. Export real detector utility from dense AdaTAD train forward
+
+```python
+@torch.no_grad()
+def export_dense_detector_utility(model, batch, split: str):
+    assert split == "training"
+
+    outputs = model.forward_train(
+        batch["inputs"],
+        batch["masks"],
+        batch["metas"],
+        batch["gt_segments"],
+        batch["gt_labels"],
+        return_point_diagnostics=True,
+    )
+
+    utility = build_frame_utility_from_detector_terms(
+        point_cls_loss=outputs["point_cls_loss"].detach(),
+        point_reg_loss=outputs["point_reg_loss"].detach(),
+        point_assignment=outputs["point_gt_assignment"].detach(),
+        pred_quality=outputs["pred_quality"].detach(),
+        true_time_grid=outputs["true_time_grid"],
+        selected_axis=None,
+    )
+
+    return {
+        "split_scope": "train_only",
+        "teacher_signal_source": "dense_detector_forward_train",
+        "uses_gt_for_selection": False,
+        "uses_teacher": True,
+        "end_to_end": False,
+        "utility": utility,
+    }
+```
+
+### 3. Hard fail if Stage-2 export lacks teacher evidence
+
+```python
+def require_teacher_evidence(summary):
+    required = [
+        "teacher_checkpoint_path",
+        "teacher_checkpoint_sha256",
+        "teacher_config_path",
+        "teacher_config_sha256",
+        "teacher_signal_source",
+    ]
+    missing = [k for k in required if not summary.get(k)]
+    if missing:
+        raise RuntimeError(f"detector-aware export missing teacher evidence: {missing}")
+
+    if summary["teacher_signal_source"] != "dense_detector_forward_train":
+        raise RuntimeError("teacher utility must come from dense detector train forward")
+```
+
+### 4. E2E selector-gradient proof
+
+```python
+def assert_detector_loss_reaches_selector(model, batch):
+    model.train()
+    losses = model.forward_train(
+        batch["inputs"],
+        batch["masks"],
+        batch["metas"],
+        batch["gt_segments"],
+        batch["gt_labels"],
+    )
+    loss = losses["cost"]
+    loss.backward()
+
+    selector_grads = [
+        p.grad.detach().abs().sum().item()
+        for p in model.frame_selector.parameters()
+        if p.grad is not None
+    ]
+    if not selector_grads or sum(selector_grads) <= 0:
+        raise RuntimeError("detector loss did not backpropagate into selector parameters")
+```
+
+### 5. True-time selected-axis decoding
+
+```python
+def decode_selected_axis_to_true_time(segments_selected_axis, meta):
+    selected_positions = torch.as_tensor(
+        meta["selected_axis_to_true_time_dense_index"],
+        dtype=torch.float32,
+        device=segments_selected_axis.device,
+    )
+
+    left = segments_selected_axis[..., 0]
+    right = segments_selected_axis[..., 1]
+
+    def interp(x):
+        x = x.clamp(0, selected_positions.numel() - 1)
+        lo = torch.floor(x).long()
+        hi = torch.clamp(lo + 1, max=selected_positions.numel() - 1)
+        frac = x - lo.float()
+        return selected_positions[lo] * (1 - frac) + selected_positions[hi] * frac
+
+    return torch.stack([interp(left), interp(right)], dim=-1)
+```
+
+---
+
+## Concise paper story
+
+**Problem.** Dense TAD backbones waste compute on redundant temporal observations, while naïve sparse sampling often destroys high-IoU boundary localization.
+
+**Insight.** The important frames for TAD are not simply high-actionness frames. They are frames with high detector utility: boundary-resolving frames, ambiguous proposal-responsibility frames, hard negatives, and snippets whose absence changes detector loss or high-IoU localization.
+
+**Method.** DUCA-TAD should be framed as detector-utility-calibrated temporal acquisition: a cheap pre-backbone selector predicts signed detector utility and a calibrated budget, selects sparse snippets, preserves true-time geometry, and trains first from dense AdaTAD teacher utility, then with end-to-end straight-through sparse detector loss.
+
+**Novelty.** The publishable novelty is not “p_action selection” or “gap-aware top-k.” The novelty must be: detector-utility supervision, signed positive/risk acquisition, true-time sparse detector geometry, calibrated dynamic budget, and verified detector-loss-to-selector training.
+
+**Evidence required.** The paper needs matched-budget mAP tables, high-IoU mAP@0.6/0.7 gains, FLOPs/runtime savings, leakage-proof train/val/test protocol, seed variance, p_action/GAS-VT/uniform/random ablations, and a real gradient proof that AdaTAD detector loss updates the selector.
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/09b0d312cdb54c590fd4c25b78aeac373d92a10c "docs: map DUCA experiments and review prompt · yuzbo/OpenTAD_C3_CoarseClean_20260702@09b0d31 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/09b0d312cdb54c590fd4c25b78aeac373d92a10c/docs/methods/2026-07-06-current-experiment-map-and-gpt-review-prompt.md "OpenTAD_C3_CoarseClean_20260702/docs/methods/2026-07-06-current-experiment-map-and-gpt-review-prompt.md at 09b0d312cdb54c590fd4c25b78aeac373d92a10c · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/09b0d312cdb54c590fd4c25b78aeac373d92a10c/tools/bata/detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/detector_aware_acquisition_policy.py at 09b0d312cdb54c590fd4c25b78aeac373d92a10c · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/09b0d312cdb54c590fd4c25b78aeac373d92a10c/tools/bata/train_detector_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/train_detector_aware_acquisition_policy.py at 09b0d312cdb54c590fd4c25b78aeac373d92a10c · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[5]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/09b0d312cdb54c590fd4c25b78aeac373d92a10c/tools/bata/detector_teacher_utility.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/detector_teacher_utility.py at 09b0d312cdb54c590fd4c25b78aeac373d92a10c · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[6]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/09b0d312cdb54c590fd4c25b78aeac373d92a10c/opentad/models/detectors/single_stage.py "raw.githubusercontent.com"
+[7]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/09b0d312cdb54c590fd4c25b78aeac373d92a10c/opentad/models/selectors/truetime_joint_selector.py "raw.githubusercontent.com"
+[8]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/09b0d312cdb54c590fd4c25b78aeac373d92a10c/configs/adatad/thumos/c3_truetime_joint_selector_c3_adatad_smoke.py "raw.githubusercontent.com"
+[9]: https://raw.githubusercontent.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/09b0d312cdb54c590fd4c25b78aeac373d92a10c/opentad/models/utils/truetime_geometry.py "raw.githubusercontent.com"
+[10]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/09b0d312cdb54c590fd4c25b78aeac373d92a10c/tools/bata/apply_detector_aware_acquisition_policy.py?plain=1 "OpenTAD_C3_CoarseClean_20260702/tools/bata/apply_detector_aware_acquisition_policy.py at 09b0d312cdb54c590fd4c25b78aeac373d92a10c · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"

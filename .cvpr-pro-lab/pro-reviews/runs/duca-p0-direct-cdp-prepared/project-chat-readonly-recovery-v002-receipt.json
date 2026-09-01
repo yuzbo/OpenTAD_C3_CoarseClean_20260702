@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "dispatch_id": "CENTRAL-RECOVERY-DUCA-PROJECTCHAT-20260811-v002",
+  "project": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PROJECT_CHAT_READONLY_RECOVERY",
+  "runtime_cdp": "http://127.0.0.1:4334",
+  "completed_at": "2026-08-11T14:41:14.130Z",
+  "projectChatControlFound": false,
+  "projectBoundFreshComposer": false,
+  "before_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "after_url": null,
+  "fresh_conversation_id": null,
+  "outcome": "QUARANTINED_PRECHECK_FAILED",
+  "actual_attempt_increased": false,
+  "error": "The opened page did not prove the exact DUCA Project URL and title."
+}

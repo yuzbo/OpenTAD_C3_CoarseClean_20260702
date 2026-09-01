@@ -1,7 +1,10 @@
 import torch.nn as nn
 from torch.autograd import Function
 
-import boundary_max_pooling_cuda
+try:
+    import boundary_max_pooling_cuda
+except ImportError:
+    boundary_max_pooling_cuda = None
 
 
 class BoundaryMaxPoolingFunction(Function):

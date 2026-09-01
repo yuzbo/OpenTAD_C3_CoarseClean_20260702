@@ -1,0 +1,45 @@
+{
+  "request_type": "PRO_REVIEW_REQUEST",
+  "status": "COMPLETED_ACCEPTED",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "trigger_class": "SCIENTIFIC_AMBIGUITY",
+  "evidence_epoch": "P0-role-closure-v002",
+  "evidence_versions": [
+    "PRO_P0_ROUTE_ADJUDICATION-v002",
+    "CURRENT_RESEARCH_STATE-v005",
+    "MODEL_EXPERIMENT_HISTORY-v005",
+    "BUILDER_DUCA_P0_BOUNDED_PATCH_RETURN-v001",
+    "CRITIC_DUCA_P0_STATIC_PATCH_REVIEW-v001",
+    "EVALUATOR_DUCA_P0P1_PROTOCOL_AMENDMENT-v002",
+    "msg-20260811T233627Z-673d6302750e"
+  ],
+  "merged_questions": [
+    "Within the already selected DUCA fixed-K bounded-density route, freeze the nonconstant constrained integer-projection objective, candidate ordering, and deterministic tie-resolution. State whether the evaluation obligation is cross-implementation identity or properties/repeatability only, and the required behavior if a tie remains unresolved. Do not select a new model route or alter the claim, split, metric, threshold, budget, or evaluator."
+  ],
+  "earliest_at": "2026-08-12T00:08:22Z",
+  "priority": "high",
+  "route_state": "CONTINUE / nonconstant projection policy frozen / P0 remains BLOCKED_PRE_RESULT pending authored-not-run implementation package",
+  "required_before_pro": [
+    "CURRENT_RESEARCH_STATE-v005 confirmed as chatgpt-project-source:CURRENT_RESEARCH_STATE-v005(1).md",
+    "MODEL_EXPERIMENT_HISTORY-v005 confirmed as chatgpt-project-source:MODEL_EXPERIMENT_HISTORY-v005.md"
+  ],
+  "transport_preflight": {
+    "request_id": "PROJECT_CHAT_READONLY_RECOVERY-v006",
+    "operation": "PROJECT_CHAT_READONLY_RECOVERY",
+    "trigger_class": "IMPLEMENTATION_CORRECTION",
+    "earliest_at": "2026-08-11T14:57:41Z",
+    "priority": "high",
+    "minimal_change": "After the exact Project main surface renders DUCA, Chats, and Sources, identify the single main-surface role=radio, text=Chat Project mode control. document.title and global sidebar labels remain excluded from routing identity.",
+    "success_condition": "Click only that rendered Project Chat mode control under a new central lease. One fresh blank composer must then prove the exact project_id through its URL or Project-scoped navigation evidence, without prompt/model/Source activity.",
+    "failure_stop": "No Project-scoped candidate, ambiguous candidate, or loss of Project binding stops immediately with a single final receipt."
+    ,
+    "status": "VERIFIED",
+    "verified_at": "2026-08-11T15:00:44.261Z",
+    "verification_receipt": ".cvpr-pro-lab/pro-reviews/runs/duca-p0-direct-cdp-prepared/project-chat-readonly-recovery-v011-receipt.json",
+    "verified_primitive": "After DUCA/Chats/Sources render, the unique header role=radio text=Chat control creates an empty composer while the exact /g/g-p-6a796fef9a00819194024cf1de3bd697/project URL remains visible."
+  },
+  "resolved_by": "PRO_P0_PROJECTION_POLICY-v001",
+  "resolved_at": "2026-08-12T00:24:53.692Z",
+  "resolution": "CONTINUE; exact lexicographic constrained projection and cross-implementation identity obligation accepted; no execution authorized."
+}

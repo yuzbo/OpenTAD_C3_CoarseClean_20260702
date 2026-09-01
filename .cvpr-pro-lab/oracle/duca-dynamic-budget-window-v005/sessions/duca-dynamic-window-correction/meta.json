@@ -1,0 +1,109 @@
+{
+  "id": "duca-dynamic-window-correction",
+  "createdAt": "2026-08-28T15:02:12.137Z",
+  "status": "error",
+  "promptPreview": "Read both attached files completely. The first is the fresh exact-DUCA scientific request and the second is its authoritative evidence packet. Follow the reques",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "running",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-28T15:02:13.050Z"
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": true,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 25759
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    }
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Read both attached files completely. The first is the fresh exact-DUCA scientific request and the second is its authoritative evidence packet. Follow the request exactly; the nonce in the first file must remain verbatim. Return one independent scientific decision and one frozen executable task.",
+    "file": [
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_DYNAMIC_BUDGET_WINDOW_CONTRACT_CORRECTION-v005.md",
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_DYNAMIC_BUDGET_WINDOW_CONTRACT_CORRECTION-v001.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-dynamic-window-correction",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": true,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 25759
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": false,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-dynamic-budget-window-v005/visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 91204,
+    "reattachCommand": "oracle session duca-dynamic-window-correction"
+  },
+  "startedAt": "2026-08-28T15:02:13.046Z",
+  "completedAt": "2026-08-28T15:02:32.214Z",
+  "errorMessage": "No running browser with attach metadata matched 127.0.0.1:25759. Enable remote debugging in chrome://inspect/#remote-debugging first.",
+  "error": {
+    "category": "browser-automation",
+    "message": "No running browser with attach metadata matched 127.0.0.1:25759. Enable remote debugging in chrome://inspect/#remote-debugging first.",
+    "details": {
+      "stage": "execute-browser"
+    }
+  }
+}

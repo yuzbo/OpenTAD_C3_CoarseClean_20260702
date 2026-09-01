@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "dispatch_id": "CENTRAL-RECOVERY-DUCA-IXRUNTIME-PROJECTCHAT-20260811-v001",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "IXBROWSER_RUNTIME_RECOVERY_AND_PROJECT_FRESH_COMPOSER_READONLY",
+  "request_id": "GLOBAL-PRO-HOLD-RECOVERY-v001",
+  "browser_profile": "61",
+  "runtime_cdp": null,
+  "completed_at": "2026-08-11T13:41:28Z",
+  "service_recovery": {
+    "official_client_path": "C:/Program Files/iXBrowser/iXBrowser.exe",
+    "action": "Started hidden after confirming no existing iXBrowser process.",
+    "result": "iXBrowser processes became present, but the official Local API remained unavailable."
+  },
+  "projectChatControlFound": null,
+  "projectBindingRetained": null,
+  "before_url": null,
+  "after_url": null,
+  "outcome": "QUARANTINED_LOCAL_API_UNAVAILABLE_AFTER_SERVICE_START",
+  "preflight": {
+    "official_local_api_endpoint": "http://127.0.0.1:50325/api/v2/native-client-profile-opened-list",
+    "result": "connection refused after official client start",
+    "reason": "Profile 61 could not be opened or mapped to a current debugging_address. A stale CDP endpoint was not used."
+  },
+  "prohibited_actions_not_taken": [
+    "No CDP connection.",
+    "No Project page navigation.",
+    "No Project Chat or global New chat interaction.",
+    "No prompt/model/effort/send action.",
+    "No Source action.",
+    "No second API or route probe."
+  ],
+  "actual_attempt_increased": false,
+  "next_recovery_requirement": "Restore the official iXBrowser Local API for profile 61 so it returns a current debugging_address under a new central lease."
+}

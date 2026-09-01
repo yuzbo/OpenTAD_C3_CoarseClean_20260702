@@ -1,0 +1,162 @@
+{
+  "id": "duca-all-matrix-budget-v1",
+  "createdAt": "2026-08-24T15:47:57.701Z",
+  "status": "completed",
+  "promptPreview": "请完整阅读内联材料，以 DUCA 独立科学第一作者和最严厉审稿人的标准，完成唯一一次全矩阵、同训练资源裁决。Nonce: DUCA-ALL-MATRIX-SAME-BUDGET-v001-20260824",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-24T15:47:58.340Z",
+      "completedAt": "2026-08-24T16:18:03.543Z",
+      "usage": {
+        "inputTokens": 6261,
+        "outputTokens": 5986,
+        "reasoningTokens": 0,
+        "totalTokens": 12247
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 14106,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "45958E7BE4D4A0262C40A2044AA01B3D",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c67bb-5ea4-83ea-a99d-590b3a0a744c",
+      "conversationId": "6a8c67bb-5ea4-83ea-a99d-590b3a0a744c",
+      "promptSubmitted": true,
+      "controllerPid": 19328
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c67bb-5ea4-83ea-a99d-590b3a0a744c"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-24T15:48:02.582Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "请完整阅读内联材料，以 DUCA 独立科学第一作者和最严厉审稿人的标准，完成唯一一次全矩阵、同训练资源裁决。Nonce: DUCA-ALL-MATRIX-SAME-BUDGET-v001-20260824",
+    "file": [
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_ALL_MATRIX_SAME_BUDGET_ADJUDICATION-v001.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-all-matrix-budget-v1",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": false,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7500,
+    "httpTimeoutMs": 7500000,
+    "zombieTimeoutMs": 7500000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-all-matrix-same-budget-v001/PRO_DUCA_ALL_MATRIX_SAME_BUDGET_ADJUDICATION-v001.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 19328,
+    "reattachCommand": "oracle session duca-all-matrix-budget-v1"
+  },
+  "startedAt": "2026-08-24T15:47:58.335Z",
+  "completedAt": "2026-08-24T16:18:03.576Z",
+  "usage": {
+    "inputTokens": 6261,
+    "outputTokens": 5986,
+    "reasoningTokens": 0,
+    "totalTokens": 12247
+  },
+  "elapsedMs": 1804939,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-all-matrix-same-budget-v001\\oracle-home\\sessions\\duca-all-matrix-budget-v1\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 52939,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8c67bb-5ea4-83ea-a99d-590b3a0a744c",
+      "sha256": "62458f883bdb58cab626383111b7cd3e1bfefb44597689ba1db60cd27fd3d12d",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

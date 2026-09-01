@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-11T07:19:40Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "minimal-change-plan",
+  "message_id": "msg-20260811T071940Z-da7b2b836f9c",
+  "parent_artifact_ids": [
+    "PRO_P0_BLOCKER_DECISION-v001"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/roles/builder/BUILDER_DUCA_P0_MINIMAL_CHANGE_PLAN-v002.md",
+    "size": 1861
+  },
+  "priority": "high",
+  "requested_action": "Recover only the Builder role binding. After exact-commit binding verification, produce the referenced P0 minimal change plan v002 and no patch. The accepted Pro decision remains authoritative; no execution or prior unbound work may be used.",
+  "required_gate": "P0_PLAN_ONLY_NO_EXECUTION",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

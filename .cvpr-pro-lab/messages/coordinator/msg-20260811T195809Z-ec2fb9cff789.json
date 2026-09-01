@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-11T19:58:09Z",
+  "deadline": null,
+  "from_role": "critic",
+  "kind": "critic-p0-static-patch-review-return",
+  "message_id": "msg-20260811T195809Z-ec2fb9cff789",
+  "parent_artifact_ids": [
+    "art-20260811T195756Z-d26416663c"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Return for msg-20260811T194645Z-532a006b6b40: P0_BLOCKED. Two IMPLEMENTATION_CORRECTION blockers: the DUCA config inherits the detector/loss-changing physical-grid ActionFormer stack while remap_gt_to_selected_axis=False bypasses the required selected-q-to-dense adapter; and the route invokes full legacy PCOTMRASReader policy/soft-transport/pair branches instead of a dedicated density-only reader. Decoder constraints, canonical constant parity, hard gather, and local pre-NMS call order are statically correct. Evidence art-20260811T195756Z-d26416663c; parent decision PRO_P0_ROUTE_ADJUDICATION-v002. No execution.",
+  "required_gate": "BUILDER_IMPLEMENTATION_CORRECTION_RETURN; P0 remains BLOCKED_PRE_RESULT",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "coordinator"
+}

@@ -1,0 +1,33 @@
+{
+  "failure_class": "engineering_runtime_import_order",
+  "failure_signature": "official_environment_probe_nms_import_order_v1",
+  "job_id": 1205594,
+  "model_result_claim_allowed": false,
+  "paper_main_table_eligible": false,
+  "recurrence_analysis": {
+    "deeper_root_cause": "the new ABI/path regression asserted the seven-argument call and exact extension provenance but did not assert that torch loads libc10 before importing the separately compiled extension",
+    "known_prior": "Job1205409 exposed the same dynamic-loader precondition on an earlier official-anchor probe",
+    "original_submission_must_not_be_repeated": true
+  },
+  "root_cause": "the launcher Python probe imported nms_1d_cpu before torch, so the dynamic loader could not resolve libc10.so",
+  "run_root": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_official_matched_pair_k384_seed1234567891_20260730_v4",
+  "schema_version": "actionformer_official_matched_pair_failure_analysis_v1",
+  "stage": "python_environment",
+  "training_started": false,
+  "evidence": {
+    "deployment_identity_sha256": "b8d4079c9ddc8faa7a0a575dbe63f700c2448409df5dbccf972101cc0e4a282b",
+    "failure_receipt_sha256": "68d2ec8ddd1d2a69c1181d532325368975c95a306a2c7d368226905044ee321f",
+    "runtime_log_sha256": "5988ed65e4ebbd8dde6a334ffe7f2ae3c8825fbd5e61d1c6198388c0284443fb",
+    "slurm_stderr_sha256": "4c6d87aa6b85dbbe173a1eae119bac562aa43f55c6fa847b256c9c05d25c79e0",
+    "slurm_stdout_sha256": "5988ed65e4ebbd8dde6a334ffe7f2ae3c8825fbd5e61d1c6198388c0284443fb",
+    "submission_receipt_sha256": "2a31a1d01056f39159d17d99fb9047f5bd6946b68475c1eae31008659df07a08"
+  },
+  "repair_contract": {
+    "add_focused_regression_for_torch_before_nms_import": true,
+    "change_model_or_scientific_protocol": false,
+    "freeze_new_clean_exact_commit_runtime": true,
+    "preserve_failed_root": true,
+    "submit_one_fresh_successor": true
+  },
+  "validation_pass": true
+}

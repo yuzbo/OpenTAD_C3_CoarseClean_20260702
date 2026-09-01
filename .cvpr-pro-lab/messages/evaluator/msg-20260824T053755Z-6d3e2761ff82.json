@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-24T05:37:55Z",
+  "deadline": "2026-08-24T23:59:00+08:00",
+  "from_role": "coordinator",
+  "kind": "SINGLECLOCK_TERMINAL_EVALUATION_PRE_RUN_TRANSPORT_RECOVERY",
+  "message_id": "msg-20260824T053755Z-6d3e2761ff82",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-returns/EVALUATOR_DUCA_H65_SINGLECLOCK_PRE_RUN_TRANSPORT_BLOCKED-v001.md",
+    "size": 1174
+  },
+  "priority": "critical",
+  "requested_action": "Transport-only blocker is resolved: remote project repo is now clean detached at exact b2ccfcca via verified Git bundle. Rerun the identical N16R4 PRE_RUN once; on PASS submit the frozen six-family terminal evaluator. No code/protocol/threshold change.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

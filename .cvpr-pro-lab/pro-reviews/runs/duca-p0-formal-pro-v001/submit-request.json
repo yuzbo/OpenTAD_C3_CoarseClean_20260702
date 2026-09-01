@@ -1,0 +1,19 @@
+{
+  "dispatchId": "CENTRAL-PRO-DUCA-P0-20260811-v001",
+  "requestId": "PRO_REVIEW_REQUEST-v001",
+  "cdpUrl": "127.0.0.1:4334",
+  "projectId": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "projectUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "turnId": "duca-p0-formal-20260811-619ba6f1a0844bd5",
+  "nonce": "619ba6f1a0844bd58ce10f7dca8e294e",
+  "expectedCommit": "63a726a4aaf48ecbf6780bb196de43a890c6b4df",
+  "expectedSources": [
+    "CURRENT_RESEARCH_STATE-v005(1).md",
+    "MODEL_EXPERIMENT_HISTORY-v005.md"
+  ],
+  "promptPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-p0-formal-pro-v001/prompt.md",
+  "receiptPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-p0-formal-pro-v001/submission-receipt.json",
+  "rawResponsePath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-p0-formal-pro-v001/raw-response.md",
+  "hardTimeoutAt": "2026-08-11T17:02:02Z",
+  "monitorIntervalMs": 5000
+}

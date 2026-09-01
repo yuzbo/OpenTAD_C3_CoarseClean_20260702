@@ -1,0 +1,15 @@
+{
+  "backend": "oracle-project",
+  "browser_profile": "61",
+  "browser_route": "remote-cdp",
+  "cdp": "127.0.0.1:25759",
+  "created_at": "2026-08-10T06:42:08Z",
+  "project_id": "g-p-6a91061f789881918ccd8357ca3d6c92",
+  "project_root": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "project_url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+  "review_interval_hours": 12,
+  "review_mode": "event-or-12h",
+  "schema_version": "1.0",
+  "title": "DUCA-RIME: Dynamic-Budget Task-Aware Temporal Acquisition for Offline TAD",
+  "venue": "CVPR 2027"
+}

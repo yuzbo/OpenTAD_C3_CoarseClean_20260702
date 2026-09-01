@@ -1,0 +1,205 @@
+{
+  "schema_version": "1.0",
+  "dispatch_id": "CENTRAL-DIAG-DUCA-PROJECTLOAD-20260811-v008",
+  "project": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PROJECT_LOAD_READONLY_DIAGNOSTIC",
+  "runtime_cdp": "http://127.0.0.1:4334",
+  "completed_at": "2026-08-11T14:55:33.736Z",
+  "final_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "ready_state": "complete",
+  "main_text_length": 1208,
+  "main_text_prefix": "DUCA\nShare\n\nPro\nChats\nSources\nScientific Decision Request\n\\--- turn\\_id: duca-p0-blocker-51c88fd75537120ce96a417beb7e81dd nonce: 51c88fd75537120ce96a417beb7e81dd project\\_id: g-p-6a796fef9a00819194024",
+  "relevant_responses": [
+    {
+      "path": "/backend-api/accounts/check/v4-2023-04-27",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/accounts/optimized/check",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/aip/connectors/asdk_app_69a1d78e929881919bba0dbda1f6436d",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/aip/connectors/connector_5f3c8c41a1e54ad7a76272c89e2554fa",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/aip/connectors/links/list_accessible",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/aip/connectors/list_accessible",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/aip/first-party/eligibility",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/amphora/notifications",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/apps/sources_dropdown",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/ca/v2/user/connection_status",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/calpico/chatgpt/rooms/summary",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/celsius/ws/user",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/checkout_pricing_config/configs/US",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/client/strings",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/conversation/init",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/conversations",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/gizmos/bootstrap",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/gizmos/g-p-6a796fef9a00819194024cf1de3bd697",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/gizmos/g-p-6a796fef9a00819194024cf1de3bd697/conversations",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/gizmos/snorlax/sidebar",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/hazelnuts",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/me",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/models",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/pins",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/projects/g-p-6a796fef9a00819194024cf1de3bd697/connector_scopes",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/sentinel/chat-requirements/finalize",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/sentinel/chat-requirements/prepare",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/settings/is_adult",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/settings/user",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/settings/voices",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/subscriptions",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/system_hints",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/tasks",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/tpp/models/",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/user_granular_consent",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/backend-api/user_surveys/active",
+      "status": 200,
+      "resource_type": "fetch"
+    },
+    {
+      "path": "/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "status": 200,
+      "resource_type": "document"
+    }
+  ],
+  "error_types": [],
+  "http_error_statuses": [],
+  "spinner_visible": false,
+  "modal_visible": false,
+  "outcome": "PASS_READONLY_PROJECT_LOAD_DIAGNOSTIC",
+  "actual_attempt_increased": false
+}

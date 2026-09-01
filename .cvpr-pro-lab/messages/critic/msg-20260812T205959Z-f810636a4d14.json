@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-12T20:59:59Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_ROLE_SEPARATED_PRE_RUN_PLAN_V002_FOCUSED_RECHECK",
+  "message_id": "msg-20260812T205959Z-f810636a4d14",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_EXECUTION_PLAN-v002",
+    "CRITIC_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_PLAN_STATIC_REVIEW-v001"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Independently perform one focused static recheck only of EVALUATOR_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_EXECUTION_PLAN-v002 against PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001 and the four precise deterministic findings in CRITIC_DUCA_P0_IDENTITY_ROLE_SEPARATED_PRE_RUN_PLAN_STATIC_REVIEW-v001. Verify only that: the bound production adapter is the sole B1 exception; output-root conditions are phase-relative; every applicable positive T<=385 fixture is exhaustively enumerated while exact DAG/shortest-path is reserved for T=767/768; and E1/B1/E2 receipt obligations bind the exact LF-stripped UTF-8 input line byte-for-byte without hashes. Verify the plan preserves all frozen math, fixture/reference independence, one-shot/fail-close boundaries and remains NOT_EXECUTED. Do not run/import/compile/test/materialize or read runtime projector/reference/adapter surfaces; do not access remote/data/model/checkpoint/metric/GPU/CUDA/Slurm/browser or modify files. Return PASS or exact IMPLEMENTATION_CORRECTION/SCIENTIFIC_AMBIGUITY.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

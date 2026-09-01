@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-24T05:26:13Z",
+  "deadline": "2026-08-24T23:59:00+08:00",
+  "from_role": "critic",
+  "kind": "SINGLECLOCK_PHYSICAL_POSITION_RANGE_FINAL_CORRECTION",
+  "message_id": "msg-20260824T052613Z-def5762504a9",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-returns/CRITIC_DUCA_H65_SINGLECLOCK_IDENTITY_RECORDS_FINAL_RECHECK-v001.md",
+    "size": 1217
+  },
+  "priority": "critical",
+  "requested_action": "Third and final focused correction at f3e89b05: enforce selected physical positions 0 <= p < dense_valid_len and strictly increasing in ActionFormer _single_clock_metadata before they enter the backbone; enforce the same upper bound in finalizer record validation. Add distinguishing model-contract and finalizer tests for negative, duplicate/descending, and p==dense_len, plus valid last index dense_len-1. Do not change tensors, selection, checkpoint, data/evaluator/config/launcher/threshold. Return clean commit for terminal Critic recheck; no further correction allowed.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

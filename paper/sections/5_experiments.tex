@@ -1,0 +1,128 @@
+\section{Experiments}
+
+The experiments are organized as three gates. Coarse actionness asks whether a
+deploy-visible source separates action from background. Selection geometry asks
+whether that source chooses useful original-time positions under $\Ksel\le384$.
+Sparse detector evaluation asks whether the selected observations preserve TAD
+mAP, especially at high tIoU.
+
+\subsection{Gate 1: Zero-Shot Actionness Evaluation}
+
+Zero-shot actionness is evaluated before it is used for detection. Scores are
+generated without THUMOS training labels. Ground truth is used only after score
+generation to compute AUROC, AUPRC, Recall@K, Precision@K, and class balance.
+Prompt text, prompt hash, checkpoint hash, whether THUMOS class names are used,
+frozen/adapted status, and score-generation cost are reported.
+
+\begin{table}[t]
+\centering
+\caption{Coarse actionness protocol. Scores are generated before labels are
+used for evaluation; ``names only'' variants are reported separately from
+generic zero-shot prompts.}
+\label{tab:zs_actionness}
+\setlength{\tabcolsep}{2pt}
+\small
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+Source & THUMOS cls. & Train labels & Frozen & AUROC & R@384 \\
+\midrule
+Uniform score & no & no & -- & -- & -- \\
+Motion / energy & no & no & yes & -- & -- \\
+ZS generic action/background & no & no & yes & -- & -- \\
+ZS with THUMOS class names & yes & no & yes & -- & -- \\
+C3/PAction learned source & yes & yes & no & -- & -- \\
+Oracle actionness & GT & GT & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+Oracle actionness is a diagnostic upper bound, not a deployable method. C3 and
+PAction sources are learned baselines and cannot be mixed into the zero-shot
+claim.
+
+\subsection{Gate 2: Selection Geometry}
+
+Each source produces hard selected positions with $\Ksel\le384$ from a dense
+candidate window. Geometry diagnostics measure whether selected positions touch
+action segments and boundaries before detector mAP is interpreted.
+
+\begin{table}[t]
+\centering
+\caption{Selection-geometry diagnostics for hard selected positions.}
+\label{tab:selection_geometry}
+\setlength{\tabcolsep}{2pt}
+\small
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+Policy & Touch & Bound. & Short & p95 hole & Uniform sim. \\
+\midrule
+Uniform-384 & -- & -- & -- & -- & -- \\
+Random-384 & -- & -- & -- & -- & -- \\
+Motion/energy-384 & -- & -- & -- & -- & -- \\
+Zero-shot actionness-384 & -- & -- & -- & -- & -- \\
+DUCA-Frozen-ZS & -- & -- & -- & -- & -- \\
+DUCA-Adapted & -- & -- & -- & -- & -- \\
+DUCA-Joint & -- & -- & -- & -- & -- \\
+Oracle diagnostic & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+The required diagnostics are action-segment touched recall, boundary coverage,
+short-action recall, action-interior coverage, max hole, p95 hole, redundancy,
+and uniform similarity. A strong coarse AUROC but poor boundary coverage is a
+failure for TAD acquisition.
+
+\subsection{Gate 3: Sparse Detector mAP}
+
+The final test is sparse detector accuracy. The detector consumes only selected
+observations; dense input is used only for the high-cost reference run.
+
+\begin{table}[t]
+\centering
+\caption{Sparse detector protocol. All sparse policies must use the same
+detector training recipe, selected-count budget, and original-time decoding
+unless an ablation explicitly changes one factor.}
+\label{tab:sparse_detector}
+\setlength{\tabcolsep}{2pt}
+\small
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lcccccc}
+\toprule
+Policy & K & Det. train & Coord. & Avg & @0.6 & @0.7 \\
+\midrule
+Dense detector & 768 & dense & original & -- & -- & -- \\
+Uniform-384 & 384 & matched & original & -- & -- & -- \\
+Random-384 & 384 & matched & original & -- & -- & -- \\
+Motion/energy-384 & 384 & matched & original & -- & -- & -- \\
+Zero-shot actionness-384 & 384 & matched & original & -- & -- & -- \\
+DUCA-Frozen-ZS & 384 & matched & original & -- & -- & -- \\
+DUCA-Adapted & 384 & matched & original & -- & -- & -- \\
+DUCA-Joint & 384 & matched & original & -- & -- & -- \\
+C3/PAction learned baseline & 384 & matched & original & -- & -- & -- \\
+Selected-axis decode control & 384 & matched & selected & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+The key detector metrics are Avg mAP over standard THUMOS tIoU thresholds and
+mAP@0.6/0.7. Compute is reported as selected count, descriptor extraction,
+zero-shot score generation, selector FLOPs, backbone FLOPs, detector-head cost,
+memory, and latency. Dynamic-$K$ policies are reported only with
+matched-average fixed-budget controls. The selected-axis decode control is a
+negative control: if it matches original-time decoding at high tIoU, the sparse
+coordinate implementation should be re-audited.
+
+\subsection{Ablations and Audits}
+
+Ablations test deploy-visible source, detector-utility warm-up, hard-forward
+surrogate fine-tuning, gap guard, dynamic budget, selected-axis decoding versus
+original-time remapping, and frozen zero-shot versus adapted selectors. Audit
+checks recursively reject GT fields, teacher utility, oracle boundaries, raw
+predictions, prediction caches, offline decision ledgers, prompt/checkpoint
+mismatches, and selected positions outside the valid prefix.

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-11T19:46:55Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "no-execution-protocol-amendment",
+  "message_id": "msg-20260811T194655Z-955f276dfb30",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_P0_ROUTE_ADJUDICATION-v002.md",
+    ".cvpr-pro-lab/role-returns/BUILDER_DUCA_P0_BOUNDED_PATCH_RETURN-v001.md"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Prepare only the no-execution P0/P1 protocol amendment cited by PRO_P0_ROUTE_ADJUDICATION-v002, against the Builder patch return. Freeze the fixed-K=384 decoder properties, accepted deterministic parity/coordinate-transport receipt obligations, evidence classification, and explicit P1/PRE_RUN blocks. Do not edit implementation, test, execute, access data, run CPU/GPU/remote work, calculate metrics, use a browser, or select/alter a scientific route. Return the durable protocol-artifact path and any protocol ambiguity requiring Pro.",
+  "required_gate": "PRO_P0_ROUTE_ADJUDICATION-v002; P0 authored-not-executed state",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

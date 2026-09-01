@@ -1,0 +1,33 @@
+{
+  "model": "gpt-5-pro",
+  "status": "error",
+  "log": {
+    "path": "models\\gpt-5-pro.log"
+  },
+  "startedAt": "2026-08-28T00:58:05.739Z",
+  "completedAt": "2026-08-28T01:38:26.020Z",
+  "response": {
+    "status": "incomplete",
+    "incompleteReason": "incomplete-capture"
+  },
+  "error": {
+    "category": "browser-automation",
+    "message": "Assistant response timed out before completion; reattach later to capture the answer.",
+    "details": {
+      "stage": "assistant-timeout",
+      "runtime": {
+        "chromePort": 25759,
+        "chromeHost": "127.0.0.1",
+        "chromeTargetId": "207FFB56D7305528C408CDC8DD3C9ACB",
+        "tabUrl": "https://chatgpt.com/c/6a90dd2f-0ad4-83ea-9982-2371117c44c2",
+        "conversationId": "6a90dd2f-0ad4-83ea-9982-2371117c44c2",
+        "promptSubmitted": true,
+        "controllerPid": 50208
+      },
+      "diagnostics": {
+        "domPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-route-code-organization-v001-r1\\sessions\\duca-route-code-organizati-v001\\artifacts\\assistant-timeout-2026-08-28T01-38-25-823Z.dom.json",
+        "screenshotPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-route-code-organization-v001-r1\\sessions\\duca-route-code-organizati-v001\\artifacts\\assistant-timeout-2026-08-28T01-38-25-823Z.png"
+      }
+    }
+  }
+}

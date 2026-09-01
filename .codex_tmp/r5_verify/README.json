@@ -1,0 +1,24 @@
+{
+  "output_dir": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_verify",
+  "cell_count": 24,
+  "seeds": [
+    3407,
+    5801,
+    8123
+  ],
+  "budgets": [
+    384,
+    256
+  ],
+  "arms": [
+    "uniform",
+    "learned"
+  ],
+  "backends": [
+    "actionformer",
+    "temporalmaxer"
+  ],
+  "gate_config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_verify\\configs\\temporalmaxer_learned_k384_s3407.py",
+  "gate_sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_verify\\jobs\\temporalmaxer_one_step.sbatch",
+  "cells_tsv": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_verify\\cells.tsv"
+}

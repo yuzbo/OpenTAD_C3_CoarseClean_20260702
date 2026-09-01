@@ -1,4 +1,5 @@
 from .lowcost_acquisition_browser import LowCostAcquisitionBrowser
+from .duca_online_frame_selector import DucaOnlineFrameSelector
 from .pc_ot_mras_dynamic_budget_controller import PCOTMRASDynamicBudgetController, ValueToBudgetPCOTMRASController
 from .pc_ot_mras_prebackbone_frame_selector import (
     PCOTMRASBoundaryDifficultyTemporalFrameScout,
@@ -6,9 +7,12 @@ from .pc_ot_mras_prebackbone_frame_selector import (
     PCOTMRASPreBackboneFrameSelector,
 )
 from .pc_ot_mras_reader import PCOTMRASReader, ProcessConditionedOrderedTransportMRASReader
+from .dual_phase_frame_selector import DualPhaseFrameSelector
+from .submodular_coverage_frame_selector import SubmodularCoverageFrameSelector
 
 __all__ = [
     "LowCostAcquisitionBrowser",
+    "DucaOnlineFrameSelector",
     "PCOTMRASDynamicBudgetController",
     "PCOTMRASBoundaryDifficultyTemporalFrameScout",
     "PCOTMRASCoarseActionnessFrameScout",
@@ -16,4 +20,7 @@ __all__ = [
     "ValueToBudgetPCOTMRASController",
     "PCOTMRASReader",
     "ProcessConditionedOrderedTransportMRASReader",
+    "DualPhaseFrameSelector",
+    "SubmodularCoverageFrameSelector",
 ]
+

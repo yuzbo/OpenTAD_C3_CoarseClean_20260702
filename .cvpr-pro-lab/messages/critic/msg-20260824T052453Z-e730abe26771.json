@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-24T05:24:53Z",
+  "deadline": "2026-08-24T23:59:00+08:00",
+  "from_role": "builder",
+  "kind": "SINGLECLOCK_IDENTITY_RECORDS_FINAL_RECHECK",
+  "message_id": "msg-20260824T052453Z-e730abe26771",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-returns/BUILDER_DUCA_H65_SINGLECLOCK_IDENTITY_RECORDS_FIX-v001.md",
+    "size": 1171
+  },
+  "priority": "critical",
+  "requested_action": "Final independent recheck of exact clean f3e89b05. Verify prior record-structure blocker is closed: records count/nonempty, complete types, physical sample ID equality/uniqueness/order, selected positions validity relative to selected and dense lengths, duplicate membership, exact ON/gate-zero comparison, and no model/data/evaluator/config/launcher/threshold drift. Run focused tests. PASS routes to Evaluator; any equivalent deterministic defect is terminal for this correction cycle.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

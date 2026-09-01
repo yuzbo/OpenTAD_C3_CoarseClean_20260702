@@ -1,0 +1,29 @@
+{
+  "claim_boundary": "engineering_failure_no_model_metric",
+  "failure_signature": "native_grid_sparse_head_packed_gather_scatter_overhead_v1",
+  "job_id": 1205569,
+  "model_metric_claim_allowed": false,
+  "observations": {
+    "correctness_contract_pass": true,
+    "dense_head_mean_ms": 6.193412674797906,
+    "maximum_selected_abs_error": 4.5299530029296875e-06,
+    "per_round_speedups": [
+      0.4572780587808398,
+      0.45790033150168835,
+      0.457233614030093
+    ],
+    "sparse_head_preselected_mean_ms": 12.764605465862486,
+    "sparse_head_with_selector_mean_ms": 13.546889026959738,
+    "theoretical_head_mac_fraction": 0.3359251591135649,
+    "unselected_nonzero_count": 0,
+    "wall_clock_speedup": 0.4576558396044027
+  },
+  "preserved_receipts": {
+    "cuda_gate_sha256": "7e91345babcce40bb9a157d2b29fbc718fe7f0e2a059bdc02e2edff386709197",
+    "slurm_stderr_sha256": "4c6d87aa6b85dbbe173a1eae119bac562aa43f55c6fa847b256c9c05d25c79e0",
+    "slurm_stdout_sha256": "fb3abb66cf7690fd7965165d409039ea1701ac3ab0c4027e4f94652863373afa"
+  },
+  "root_cause": "Replacing the packed length-three Conv1d microkernel with an algebraically equivalent flattened GEMM left latency unchanged relative to Job1205567. The remaining dominant costs are per-job patch materialization, concatenation, repeated dense scatter between hidden layers, and duplicated classification/regression planning rather than convolution arithmetic.",
+  "run_root": "/data/run01/sczc063/yuzibo/projects/phystime_tad/runs/actionformer_native_grid_k384_cuda_gate_20260730_v3",
+  "schema_version": "actionformer_native_grid_sparse_head_failure_analysis_v1"
+}

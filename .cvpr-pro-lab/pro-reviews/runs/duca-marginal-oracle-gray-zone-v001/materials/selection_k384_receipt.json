@@ -1,0 +1,36 @@
+{
+  "artifact": "/data/run01/sczc063/yuzibo/duca_marginal_prerun_f87555f7_20260831/selection_k384.jsonl.gz",
+  "artifact_sha256": "1d668d4e5eb4b5ef3c1057c97ec63cc2c1eed3c0e62297290520063b4e1ec38f",
+  "checkpoint_payload_epoch": 59,
+  "detector_frozen": true,
+  "fit_video_count": 160,
+  "frozen_loss_normalizer": 45.0,
+  "holdout_video_count": 40,
+  "k384_prediction_exact_all_windows": true,
+  "k384_selection_bit_exact_all_windows": true,
+  "scout_frozen": true,
+  "source": {
+    "annotation": "/data/run01/sczc063/yuzibo/thumos14/annotations/thumos_14_anno.json",
+    "annotation_sha256": "ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad",
+    "checkpoint": "/data/run01/sczc063/yuzibo/duca_h65_90_stage2_off_04c35a3b_20260823/gpu1_id0/checkpoint/epoch_59.pth",
+    "checkpoint_epoch": 59,
+    "checkpoint_sha256": "dafcfbd0b1e0a13c400789e73ee13a20cf69551813ef62fc8185fde609806a1c",
+    "checkpoint_state_key": "state_dict_ema",
+    "class_map": "/data/run01/sczc063/yuzibo/thumos14/annotations/category_idx.txt",
+    "class_map_sha256": "a158b7c4c130ce74375a9b114160e2faae7a0221e605a0464a556fe082644f31",
+    "config": "/data/run01/sczc063/yuzibo/duca_marginal_f87555f7_20260831/configs/adatad/thumos/duca_marginal_frozen_h65_probe.py",
+    "config_sha256": "02e091995124496c5c5e0011923ac12de6b8dea29679ec821e64e6e5b6271ca6",
+    "git": {
+      "branch": "HEAD",
+      "dirty": false,
+      "head": "f87555f7da362fe1a20d4ca08f7a68c975ed8280"
+    },
+    "train_data": "/data/run01/sczc063/yuzibo/thumos14/raw_data/video",
+    "videomae_pretrain": "/data/run01/sczc063/yuzibo/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+    "videomae_pretrain_sha256": "4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251"
+  },
+  "stage": "select-k384",
+  "status": "SELECTION_K384_COMPLETE",
+  "video_count": 200,
+  "window_count": 720
+}

@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "dispatch_id": "CENTRAL-DIAG-DUCA-PROJECTCHAT-20260811-v007",
+  "project": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PROJECT_UI_READONLY_DIAGNOSTIC",
+  "runtime_cdp": "http://127.0.0.1:4334",
+  "completed_at": "2026-08-11T14:52:23.640Z",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "page_title": "ChatGPT",
+  "screenshot_path": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-p0-direct-cdp-prepared/project-ui-diagnostic-v007.png",
+  "login_state": "no_login_control_visible",
+  "project_load_state": "exact_project_main_visible",
+  "controls": [
+    {
+      "role": "button",
+      "text": "",
+      "aria_label": "Temporary chat",
+      "href": "",
+      "data_testid": "",
+      "aria_selected": ""
+    }
+  ],
+  "chat_work_mode_controls": [
+    {
+      "role": "button",
+      "text": "",
+      "aria_label": "Temporary chat",
+      "href": "",
+      "data_testid": "",
+      "aria_selected": ""
+    }
+  ],
+  "outcome": "PASS_READONLY_PROJECT_UI_DIAGNOSTIC",
+  "actual_attempt_increased": false
+}

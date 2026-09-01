@@ -1,0 +1,165 @@
+{
+  "id": "duca-route-code-organizati-v001",
+  "createdAt": "2026-08-28T00:58:04.840Z",
+  "status": "error",
+  "promptPreview": "Nonce: DUCA-ROUTE-CODE-ORGANIZATION-v001-20260828. Read and execute the complete attached prompt as the sole authoritative instruction for this fresh turn. Do n",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "error",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-28T00:58:05.739Z",
+      "completedAt": "2026-08-28T01:38:26.020Z",
+      "response": {
+        "status": "incomplete",
+        "incompleteReason": "incomplete-capture"
+      },
+      "error": {
+        "category": "browser-automation",
+        "message": "Assistant response timed out before completion; reattach later to capture the answer.",
+        "details": {
+          "stage": "assistant-timeout",
+          "runtime": {
+            "chromePort": 25759,
+            "chromeHost": "127.0.0.1",
+            "chromeTargetId": "207FFB56D7305528C408CDC8DD3C9ACB",
+            "tabUrl": "https://chatgpt.com/c/6a90dd2f-0ad4-83ea-9982-2371117c44c2",
+            "conversationId": "6a90dd2f-0ad4-83ea-9982-2371117c44c2",
+            "promptSubmitted": true,
+            "controllerPid": 50208
+          },
+          "diagnostics": {
+            "domPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-route-code-organization-v001-r1\\sessions\\duca-route-code-organizati-v001\\artifacts\\assistant-timeout-2026-08-28T01-38-25-823Z.dom.json",
+            "screenshotPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-route-code-organization-v001-r1\\sessions\\duca-route-code-organizati-v001\\artifacts\\assistant-timeout-2026-08-28T01-38-25-823Z.png"
+          }
+        }
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a9061a41bbc819190f4cde94a6c733c/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 25759
+      },
+      "researchMode": "off"
+    },
+    "runtime": {
+      "chromePort": 25759,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "207FFB56D7305528C408CDC8DD3C9ACB",
+      "tabUrl": "https://chatgpt.com/c/6a90dd2f-0ad4-83ea-9982-2371117c44c2",
+      "conversationId": "6a90dd2f-0ad4-83ea-9982-2371117c44c2",
+      "promptSubmitted": true,
+      "controllerPid": 50208
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-28T00:58:10.250Z"
+    }
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Nonce: DUCA-ROUTE-CODE-ORGANIZATION-v001-20260828. Read and execute the complete attached prompt as the sole authoritative instruction for this fresh turn. Do not rely on prior conversations or Project Sources.",
+    "file": [
+      "C:/Users/skywalker/.codex/worktrees/duca-research-sync-20260828/OpenTAD_C3_CoarseClean_20260702/docs/pro-packets/DUCA_PROGRESS_SYNC_AND_ROUTE_DECISION-v001/00_PROMPT.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-route-code-organizati-v001",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a9061a41bbc819190f4cde94a6c733c/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 25759
+      },
+      "researchMode": "off"
+    },
+    "verbose": false,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 50208,
+    "reattachCommand": "oracle session duca-route-code-organizati-v001"
+  },
+  "startedAt": "2026-08-28T00:58:05.735Z",
+  "completedAt": "2026-08-28T01:38:26.021Z",
+  "errorMessage": "Assistant response timed out before completion; reattach later to capture the answer.",
+  "response": {
+    "status": "incomplete",
+    "incompleteReason": "incomplete-capture"
+  },
+  "error": {
+    "category": "browser-automation",
+    "message": "Assistant response timed out before completion; reattach later to capture the answer.",
+    "details": {
+      "stage": "assistant-timeout",
+      "runtime": {
+        "chromePort": 25759,
+        "chromeHost": "127.0.0.1",
+        "chromeTargetId": "207FFB56D7305528C408CDC8DD3C9ACB",
+        "tabUrl": "https://chatgpt.com/c/6a90dd2f-0ad4-83ea-9982-2371117c44c2",
+        "conversationId": "6a90dd2f-0ad4-83ea-9982-2371117c44c2",
+        "promptSubmitted": true,
+        "controllerPid": 50208
+      },
+      "diagnostics": {
+        "domPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-route-code-organization-v001-r1\\sessions\\duca-route-code-organizati-v001\\artifacts\\assistant-timeout-2026-08-28T01-38-25-823Z.dom.json",
+        "screenshotPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-route-code-organization-v001-r1\\sessions\\duca-route-code-organizati-v001\\artifacts\\assistant-timeout-2026-08-28T01-38-25-823Z.png"
+      }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "created_at": "2026-08-12T00:40:00Z",
+  "deadline": null,
+  "from_role": "evaluator",
+  "kind": "projection-identity-protocol-return",
+  "message_id": "msg-20260812T004000Z-4f2ab0c176e9",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_P0_PROJECTION_POLICY-v001.md"
+  ],
+  "parent_message_ids": [
+    "msg-20260812T003436Z-eb863ea3b862"
+  ],
+  "payload": {
+    "protocol_path": ".cvpr-pro-lab/evaluator-returns/EVALUATOR_DUCA_P0_PROJECTION_PROTOCOL-v001.md",
+    "receipt_schema_path": ".cvpr-pro-lab/evaluator-returns/DUCA_P0_PROJECTION_IDENTITY_RECEIPT_SCHEMA-v001.json",
+    "evaluator_decision": "PROJECTION_PROTOCOL_AUTHORED_NOT_RUN",
+    "execution": "NOT_AUTHORIZED",
+    "projection_identity": "PENDING_NOT_RUN",
+    "p0_status": "BLOCKED_PRE_RESULT",
+    "p1_status": "BLOCKED_NOT_AUTHORIZED",
+    "pre_run_status": "BLOCKED",
+    "scientific_evidence_status": "BLOCKED_PRE_RESULT",
+    "protocol_ambiguity": null,
+    "extra_processes": [],
+    "attestations": {
+      "implementation_fixture_test_or_validator_access": false,
+      "data_checkpoint_or_model_forward_access": false,
+      "local_remote_cpu_gpu_slurm_execution": false,
+      "metric_browser_git_or_launcher_execution": false,
+      "route_claim_or_gate_mutation": false,
+      "subagent_or_probe_use": false
+    }
+  },
+  "priority": "high",
+  "requested_action": "Ingest only the authored-not-run projection protocol and receipt schema. Return them to fresh Pro with the Builder and Critic artifacts before considering any bounded execution authorization.",
+  "required_gate": "FRESH_PRO_DECISION_BEFORE_PROJECTION_IDENTITY_EXECUTION",
+  "schema_version": "1.0",
+  "status": "queued",
+  "to_role": "coordinator"
+}

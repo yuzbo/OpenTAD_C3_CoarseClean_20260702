@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-25T17:32:21Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "n16r4-prerun-recheck-and-admission",
+  "message_id": "msg-20260825T173221Z-92bfed3438e5",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-messages/EVALUATOR_PJST_D1_CYCLE3_N16R4_PRERUN_RECHECK-v001.md",
+    "size": 2576
+  },
+  "priority": "critical",
+  "requested_action": "Rerun Linux focused tests at a16a67c4, then complete all remaining PRE_RUN gates and submit matched OFF/ON only on full PASS.",
+  "required_gate": "REVISE",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

@@ -1,0 +1,46 @@
+{
+  "created_at": "2026-08-12T20:12:35Z",
+  "deadline": null,
+  "from_role": "builder",
+  "kind": "p0-remote-clean-formal-binding-return",
+  "message_id": "msg-20260812T201235Z-duca-p0-binding-v001",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "BUILDER_DUCA_P0_IDENTITY_CLEAN_SNAPSHOT_PREPARATION-v001"
+  ],
+  "parent_message_ids": [
+    "msg-20260812T200722Z-ab8c37824043"
+  ],
+  "payload": {
+    "binding_receipt_path": ".cvpr-pro-lab/role-returns/BUILDER_DUCA_P0_REMOTE_CLEAN_BINDING-v001.md",
+    "binding_status": "PASS_REMOTE_CLEAN_BINDING",
+    "execution_status": "NOT_EXECUTED",
+    "frozen_revision": "df8228072b871adbd8dedb480e80f1f7daaca69e",
+    "direct_parent": "63a726a4aaf48ecbf6780bb196de43a890c6b4df",
+    "git_transport_ref": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702.git refs/heads/codex/duca-p0-identity-execution-v001",
+    "remote_path": "/data/run01/sczc063/yuzibo/projects/opentad_duca_p0_identity_df822807_20260813",
+    "remote_head": "df8228072b871adbd8dedb480e80f1f7daaca69e",
+    "remote_parent": "63a726a4aaf48ecbf6780bb196de43a890c6b4df",
+    "remote_diff_name_status": [
+      "M\topentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py",
+      "A\ttests/test_duca_p0_projection_policy.py"
+    ],
+    "remote_porcelain_entry_count": 0,
+    "scope_deviation": "none",
+    "attestations": {
+      "python_import_test_or_identity_gate_execution": false,
+      "fixture_materialization_or_invocation": false,
+      "production_reference_or_comparison_execution": false,
+      "data_model_checkpoint_or_metric_access": false,
+      "gpu_cuda_slurm_or_browser_operation": false,
+      "scientific_definition_or_gate_mutation": false
+    },
+    "warning": "labctl verify-binding was not invoked because the queue explicitly prohibited Python; Coordinator canonical-state ingestion remains pending"
+  },
+  "priority": "high",
+  "requested_action": "Ingest this clean remote binding receipt only. Preserve NOT_EXECUTED and do not infer P0, PRE_RUN, or scientific gate progression.",
+  "required_gate": "P0_IDENTITY_GATE_STATIC_DEPENDENCIES_CLOSED",
+  "schema_version": "1.0",
+  "status": "queued",
+  "to_role": "coordinator"
+}

@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-27T01:39:21Z",
+  "deadline": "2026-08-27T03:30:00Z",
+  "from_role": "coordinator",
+  "kind": "pjst-d1-terminal-finalizer-static-review",
+  "message_id": "msg-20260827T013921Z-760dc21be843",
+  "parent_artifact_ids": [
+    "BUILDER_PJST_D1_TERMINAL_FINALIZER_WIRING-v001"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-messages/CRITIC_PJST_D1_TERMINAL_FINALIZER_REVIEW-v001.md"
+  },
+  "priority": "critical",
+  "requested_action": "Independently review clean 45496b8a for exact frozen checkpoint, official evaluator, serialized prediction, 10000-draw bootstrap and Slurm dependency correctness.",
+  "required_gate": "STATIC_PASS",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

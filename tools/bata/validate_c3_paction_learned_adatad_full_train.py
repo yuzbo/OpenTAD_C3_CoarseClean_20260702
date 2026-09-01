@@ -133,11 +133,10 @@ def _validate_model_and_train(cfg: Config) -> None:
     )
     _require(int(cfg.workflow.end_epoch) == 60, "formal full train must run 60 epochs")
     _require(cfg.workflow.get("max_train_iters", None) is None, "full train must not cap train iterations")
-    _require(int(cfg.workflow.val_eval_interval) == 5, "validation interval must be 5")
-    explicit_eval_epochs = list(cfg.workflow.get("val_eval_epochs", []))
-    _require(2 in explicit_eval_epochs, "first scheduled validation must include epoch 2")
-    _require(60 in explicit_eval_epochs, "final scheduled validation must include epoch 60")
-    _require(int(cfg.workflow.get("val_eval_interval_anchor_epoch", 0)) == 2, "validation anchor must be epoch 2")
+    _require(int(cfg.workflow.val_eval_interval) == 10, "validation interval must be 10")
+    _require("val_eval_epochs" not in cfg.workflow, "validation must use interval scheduling, not explicit epochs")
+    _require(int(cfg.workflow.get("val_eval_interval_anchor_epoch", 0)) == 10, "validation anchor must be epoch 10")
+    _require(int(cfg.workflow.val_start_epoch) == 9, "validation must start from zero-based epoch 9")
     _require(not _as_bool(cfg.solver.get("ema", True)), "EMA should be off for this diagnostic comparison")
 
 

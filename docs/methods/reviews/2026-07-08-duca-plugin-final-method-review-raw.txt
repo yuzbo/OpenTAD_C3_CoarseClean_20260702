@@ -1,0 +1,1100 @@
+## 一、最终裁决
+
+1. **最终目标应该是：**
+   **在严格预算下学习一个 detector-utility-calibrated temporal acquisition plugin，使 TAD detector 在只消费 ≤384 个 original-time temporal observations 时，仍能保护高 tIoU 边界定位。**
+   这句话可以写进标题或摘要，但前提是 `selected_positions` 真的被 detector 消费，而不是解释性 center。
+
+2. **C3 / p_action / GAS-VT / lattice 的定位必须降级。**
+   `p_action top-K`、C3 coarse classifier、GAS-VT、lattice replacement、heuristic radius、gap repair 都不能作为主方法。它们只能作为 **baseline、diagnostic ablation、初始化信号或辅助输入**。继续把它们包装成主方法，会被 reviewer 直接归类为 actionness sampler + bookkeeping。
+
+3. **“多阶段训练 + ledger 导出 + AdaTAD full train”不应该作为最终论文主方法的叙事核心。**
+   它可以作为工程实现形态和实验协议，但论文方法不能写成“先训练一个粗分类器、再导 ledger、再训 detector”。这看起来像 dataset-specific pipeline，而不是一个可泛化的 acquisition algorithm。真正的主方法必须定义为 **selector-detector interface + utility-supervised acquisition objective + strict deployment contract**。
+
+4. **端到端 selector-detector 更优雅，但不应作为第一版主实现。**
+   它最大的工程风险是 hard top-K / radius / original-time sparse gather 不稳定，detector loss 通过离散选择回传很容易 collapse；最大论文风险是你可能最后靠 heuristic gap repair 或 dense fallback 才有效，反而把 end-to-end claim 打穿。ActionFormer 这类 detector 本身是 single-stage anchor-free temporal localization model，AdaTAD 又涉及 end-to-end video adaptation和内存约束，直接把 hard acquisition 插进训练图会放大不稳定性。([arXiv][1])
+
+5. **真正不会被严厉批评的主方法必须满足六个不可变条件：**
+   `selected_positions` 是 detector 真实消费的位置；预算单位是 detector-consumed temporal observations；坐标保持 original-time；val/test selector 不读 GT、teacher utility、raw prediction、cache；detector 单次前向；并且高 IoU 提升能由 boundary support、short-action recall、hole 统计解释，而不是只看 average mAP。
+
+我的主裁决是：**最终主方法应该是方案 B 的强化版：Task-adapted detector-utility plug-in selector；工程上可先用 strict deploy ledger 实现，论文上不要把 ledger pipeline 当方法本体。端到端方案 C 作为第二阶段增强，不作为第一篇论文的必要条件。**
+
+---
+
+# 二、四种候选主方法比较
+
+| 方案                               | 创新性 | 优雅性 | 可复现性 | 审稿风险 | 判决                 |
+| -------------------------------- | --: | --: | ---: | ---: | ------------------ |
+| A. Frozen plug-and-play selector |   6 |   8 |    8 |    7 | 好看但很难赢             |
+| B. Task-adapted plug-in selector |   8 |   7 |    8 |    5 | **最适合主方法**         |
+| C. End-to-end selector-detector  |   9 |   9 |    4 |    8 | 强但高风险              |
+| D. Offline learned ledger        |   5 |   4 |    9 |    8 | 只能作为实现/协议，不宜作为方法叙事 |
+
+---
+
+## 方案 A：Frozen plug-and-play selector
+
+**定义：** selector 不用 THUMOS detection label 训练，只用通用低成本信号、自监督特征、motion/uncertainty/actionness prior，直接插到 AdaTAD / ActionFormer 前。
+
+**评分：**
+
+```text
+创新性：6/10
+优雅性：8/10
+可复现性：8/10
+审稿风险：7/10
+```
+
+**致命 reviewer attack：**
+“这不是 TAD 方法，只是通用 sampling heuristic。你没有证明它理解 TAD boundary localization，也没有理由说明它会保护 mAP@0.6/0.7。”
+
+**要变成论文主方法必须补：**
+
+1. frozen selector 在 THUMOS / ActivityNet / HACS / FineAction 等至少两个数据集上不训练直接有效；
+2. 插到 AdaTAD 和 ActionFormer 都有效；
+3. 明确 browser cost 远低于 backbone cost；
+4. high-IoU 不掉，最好提升；
+5. 证明它不是 uniform similarity 很高的伪 uniform sampler。
+
+**严厉判断：**
+A 可以作为强 supplementary 或 “zero-shot plugin” setting，但不适合做你当前论文主方法。它太难打赢 strong uniform 384，而且难以解释为什么对 TAD 边界定位有效。
+
+---
+
+## 方案 B：Task-adapted plug-in selector
+
+**定义：** selector 在 THUMOS train split 上训练或微调，训练时可以使用 train-only detector utility / responsibility，但推理、val、test 只用低成本可见信号，不读 GT、teacher、dense prediction cache。
+
+**评分：**
+
+```text
+创新性：8/10
+优雅性：7/10
+可复现性：8/10
+审稿风险：5/10
+```
+
+**致命 reviewer attack：**
+“你说 plug-in，但每个数据集都要训练 selector，这不是真 plug-and-play。”
+
+**挡法：**
+不要声称 universal frozen plug-and-play。写成：
+
+```text
+task-adapted acquisition plugin
+```
+
+类比 detection 里的 task-adapted proposal generator / region proposal module。它不是 zero-shot sampler，而是 **低成本、部署时 teacher-free、detector-facing acquisition module**。训练 selector 并不丢人，overclaim 才丢人。
+
+**要变成论文主方法必须补：**
+
+1. train-only utility manifest；
+2. val/test no-leak validator；
+3. selected_positions 真消费；
+4. strict ≤384 budget；
+5. cross-detector transfer：同一个 selector 或同一训练协议插 AdaTAD 和 ActionFormer；
+6. frozen plugin vs task-adapted plugin 对照，证明 task adaptation 带来 detector-localization gain。
+
+**严厉判断：**
+这是最适合你的主方案。它足够创新，也足够可复现，工程难度可控，能把 p_action / utility / radius / strict ledger 全部收敛到一个清晰框架里。
+
+---
+
+## 方案 C：End-to-end selector-detector
+
+**定义：** selector 插入 detector forward，用 soft top-K、Gumbel top-K、straight-through estimator 或 differentiable relaxation，让 detector loss 影响 selector；推理 hard selection，detector 单次前向。
+
+**评分：**
+
+```text
+创新性：9/10
+优雅性：9/10
+可复现性：4/10
+审稿风险：8/10
+```
+
+**致命 reviewer attack：**
+“你的 end-to-end relaxation 与真实 hard selected_positions 不一致。训练时 soft mask 看了所有帧，推理时 hard top-K 只看一半，这不是同一个问题。”
+
+**要变成论文主方法必须补：**
+
+1. training-time soft access 不允许读取超预算 observation；
+2. hard selection 和 soft relaxation 的 gap ablation；
+3. detector loss 确认反传到 selector 参数；
+4. strict budget 在每个 forward 成立；
+5. no dense fallback；
+6. selected-rank decode vs original-time decode 证明；
+7. 多 seed 稳定性。
+
+**严厉判断：**
+C 是最优雅但不适合你现在直接押注。它可以作为第二阶段：当 B 已经超过 63.18 并接近 uniform/dense anchor，再做 alternating 或 ST fine-tune。第一篇主方法不应依赖 C 成功。
+
+---
+
+## 方案 D：Offline learned ledger
+
+**定义：** 先训练 selector，导出 strict deploy ledger，再用 ledger 训练 AdaTAD。当前 C3/GAS-VT/DUCA-CR-v1 工程形态基本属于 D。
+
+**评分：**
+
+```text
+创新性：5/10
+优雅性：4/10
+可复现性：9/10
+审稿风险：8/10
+```
+
+**致命 reviewer attack：**
+“这只是离线生成训练列表，不是一个模型模块。你没有给出可插拔 forward interface，也没有说明 selector 如何和 detector 共同工作。”
+
+**要变成论文主方法必须补：**
+
+1. 把 ledger 改写成 deploy interface，而不是方法本体；
+2. 提供 online/inference API：`selector(x_lowcost) -> selected_positions`；
+3. ledger 只作为 reproducibility artifact；
+4. 同一 selector checkpoint 可复现生成 train/val/test ledgers；
+5. selected_positions 原始时间坐标保留；
+6. detector 单次前向。
+
+**严厉判断：**
+D 不能作为论文主方法，只能作为 **实验实现协议**。你可以用 ledger 跑主实验，但论文方法必须描述成 plugin policy，而不是 ledger pipeline。
+
+---
+
+# 三、强制选择一个主方法
+
+## 推荐主方法
+
+**DUCA-TAD：Detector-Utility-Calibrated Temporal Acquisition Plugin**
+
+更精确一点：
+
+> **DUCA-CR：Detector-Utility-Calibrated Center-Radius Acquisition for Sparse Temporal Action Detection**
+
+它是 **方案 B 为主、D 为实现、C 为可选增强** 的融合方案。
+
+---
+
+## 核心 idea
+
+普通 actionness top-K 选择的是“像动作”的位置，但 TAD high-IoU localization 需要的是“能确定边界和回归尺度”的位置。DUCA-CR 不直接最大化 actionness，而是学习 detector utility：哪些 temporal observations 对分类、边界回归、高 IoU proposal 贡献最大。每个 candidate temporal observation 输出：
+
+```text
+selection_logit
+context_radius
+boundary_importance
+detector_utility_prediction
+```
+
+然后通过 strict budget decoder 生成最终 `selected_positions`：
+
+```text
+selected_positions = union(center_i ± radius_i)
+len(selected_positions) <= 384
+```
+
+最关键：**`selected_positions` 是 AdaTAD / ActionFormer 真正消费的 original-time positions，不是 metadata。**
+
+---
+
+## 模型结构
+
+```text
+Low-cost browser / selector input
+  ├── p_action
+  ├── uncertainty / entropy
+  ├── temporal derivative Δp_action
+  ├── optional low-cost feature stem
+  └── valid mask / temporal coordinate
+
+DUCA selector
+  ├── temporal encoder, lightweight TCN/Transformer
+  ├── selection head
+  ├── radius head
+  ├── boundary/context head
+  └── detector utility prediction head
+
+Budgeted original-time decoder
+  ├── center-radius interval proposal
+  ├── utility-per-cost selection
+  ├── overlap-aware union
+  └── strict <=384 selected_positions
+
+TAD detector
+  ├── consumes selected_positions once
+  ├── original-time metadata preserved
+  ├── no selected-rank-only decode as main
+  └── normal NMS/postprocess unless explicitly ablated
+```
+
+---
+
+## 训练目标
+
+主训练目标：
+
+```text
+L = L_utility_pred
+  + λ1 L_positive_utility_coverage
+  + λ2 L_boundary_support
+  + λ3 L_budget
+  + λ4 L_radius_cost
+  + λ5 L_hole
+  + λ6 L_action_aux
+```
+
+解释：
+
+```text
+L_utility_pred:
+  selector 预测 train-only dense detector utility
+
+L_positive_utility_coverage:
+  被 selected_positions 覆盖的位置应覆盖 detector-positive responsibility
+
+L_boundary_support:
+  boundary neighborhood 要有足够支持
+
+L_budget:
+  consumed selected_positions <=384
+
+L_radius_cost:
+  防止半径无限扩大
+
+L_hole:
+  动作局部最大空洞 / p95 hole 不可过大
+
+L_action_aux:
+  p_action 只是辅助，不是主监督
+```
+
+---
+
+## 推理流程
+
+```text
+Input video window with 768 dense temporal observations
+  ↓
+low-cost browser computes p_action / uncertainty / feature
+  ↓
+DUCA selector outputs selection logits and radius
+  ↓
+budgeted decoder returns selected_positions in original-time coordinates
+  ↓
+AdaTAD / ActionFormer gathers only selected_positions
+  ↓
+detector forward once
+  ↓
+decode in original-time coordinates
+```
+
+推理禁止：
+
+```text
+GT
+teacher utility
+dense detector prediction cache
+raw prediction cache
+oracle boundary
+post-hoc selecting by detector output
+```
+
+---
+
+## Ledger / interface contract
+
+不要让 ledger 成为方法本体。ledger 是 reproducibility artifact。主接口应该是：
+
+```python
+selected = selector.select(
+    low_cost_inputs,
+    budget=384,
+    coordinate_space="original_dense_time",
+)
+
+detector.forward(
+    frames_or_features=gather(video, selected.positions),
+    selected_positions=selected.positions,
+    original_time_index=selected.positions,
+    valid_mask=selected.valid_mask,
+)
+```
+
+ledger 行只记录：
+
+```json
+{
+  "selected_positions": [original_time_indices],
+  "selected_count": 384,
+  "budget_unit": "detector_consumed_temporal_observation",
+  "selected_centers": "metadata only",
+  "context_radius": "metadata only",
+  "detector_consumes_selected_positions": true,
+  "uses_gt": false,
+  "uses_teacher": false,
+  "uses_raw_prediction": false,
+  "uses_prediction_cache": false
+}
+```
+
+---
+
+# 四、优雅训练方法
+
+## 1. selector 是否应该在 THUMOS 上训练？
+
+**应该，但不能声称 frozen plug-and-play。**
+
+正确写法：
+
+```text
+DUCA is a task-adapted acquisition plugin trained on the training split of each TAD dataset, analogous to training a proposal module or detector head. At inference, it uses only low-cost observable signals and produces a strict sparse observation set without teacher or ground-truth access.
+```
+
+错误写法：
+
+```text
+Our selector is plug-and-play and dataset-agnostic.
+```
+
+除非你真的 zero-shot 插到多个数据集和多个 detector 都有效，否则不要写 dataset-agnostic。
+
+---
+
+## 2. 是否需要 dense AdaTAD teacher utility？
+
+**需要，但只能作为 train-only supervision。**
+
+没有 detector utility，你的方法会退化成 actionness / boundary heuristic。TAD 的核心不是“动作覆盖”，而是“边界定位价值”。train-only dense detector utility 是合理的，因为 detection 领域大量方法使用 teacher / distillation / pseudo-label，但你必须报告成本，并证明 val/test 不用 teacher。
+
+必须做三层防线：
+
+```text
+1. utility_export_train_only.json
+   只含 train video ids
+
+2. deploy_ledger_no_leak_scan.json
+   val/test 递归扫描无 teacher / gt / prediction cache
+
+3. selector_inference_manifest.json
+   输入字段白名单：p_action, uncertainty, delta, lowcost features, valid mask
+```
+
+不能让 val/test ledger 含：
+
+```text
+teacher_utility
+signed_frame_utility
+dense_prediction
+raw_prediction
+gt_segments
+oracle_boundary
+```
+
+---
+
+## 3. 是否应该做 end-to-end？
+
+**不作为第一主线。**
+
+我的选择顺序：
+
+```text
+第一阶段：offline utility-supervised plugin + strict deploy ledger
+第二阶段：alternating training
+第三阶段：ST estimator fine-tune
+最后才考虑 Gumbel top-K / soft top-K
+```
+
+原因：
+
+* **soft top-K**：训练时通常仍对所有 positions 计算 soft weights，容易被批评不是真 sparse compute。
+* **Gumbel top-K**：随机性大，mAP 方差大，TAD full train 成本高。
+* **ST estimator**：最接近 hard selection，但梯度偏差大，容易 collapse。
+* **REINFORCE**：方差太大，不适合你现在的 AdaTAD full train 预算。
+* **alternating training**：最稳，审计清楚，最适合第一篇。
+
+推荐训练路线：
+
+```text
+Stage 1:
+  dense AdaTAD on train split → export train-only utility
+
+Stage 2:
+  train DUCA selector with utility / boundary / budget / hole losses
+
+Stage 3:
+  freeze selector → generate train/val/test deploy selected_positions
+
+Stage 4:
+  train AdaTAD / ActionFormer on selected_positions
+
+Stage 5:
+  optional alternating:
+    re-export train-only utility from sparse-trained detector
+    update selector
+    regenerate ledgers
+    fine-tune detector
+```
+
+---
+
+## 4. 如果不做 end-to-end，怎样让 offline plugin 仍然优雅？
+
+论文中不要说：
+
+```text
+we generate ledgers offline
+```
+
+作为方法主语。
+
+应该说：
+
+```text
+DUCA defines a deterministic acquisition policy πφ(x_low) that maps low-cost observations to selected original-time positions. We materialize its outputs as ledgers only to ensure reproducibility, no-leak auditing, and exact budget validation.
+```
+
+也就是说：**ledger 是审计工具，不是算法。**
+
+---
+
+## 5. 是否提供 frozen zero-shot plugin + task-adapted plugin 两种设置？
+
+**应该。**
+
+这能显著降低审稿风险。主表里放：
+
+```text
+DUCA-Frozen:
+  no THUMOS detection-label training; uses generic browser / self-supervised signals
+
+DUCA-Adapted:
+  train split utility supervised; main result
+```
+
+这能挡住两个批评：
+
+1. “不是 plug-and-play”
+   回答：我们报告 frozen setting，证明接口可插拔。
+
+2. “训练 selector 是 dataset-specific”
+   回答：主结果是 task-adapted plugin，和 detector training 一样遵循 train/val/test split；我们不声称 zero-shot universal。
+
+---
+
+## 6. 训练成本、teacher 成本、selector 成本如何公平报告？
+
+必须报告四种成本：
+
+```text
+Training-time dense teacher export cost
+Selector training cost
+Inference-time browser/selector cost
+Inference-time detector cost
+```
+
+主张 compute saving 时，只允许用 **inference-time** 成本，不允许把 training teacher 成本混进 inference speedup。训练成本单独放表：
+
+| Method | Teacher needed | Selector train GPUh | Detector train GPUh | Inference browser cost | Inference detector cost |
+| ------ | -------------: | ------------------: | ------------------: | ---------------------: | ----------------------: |
+
+如果 teacher export 很重，也不是致命问题，但必须诚实报告。
+
+---
+
+## 7. 如何避免 selector 只是学习 THUMOS 边界分布先验？
+
+必须做五个诊断：
+
+1. **video-level shuffled prior test**
+   打乱 p_action / feature 与视频对应关系，如果 mAP 仍高，说明学的是数据集先验，失败。
+
+2. **class-held-out diagnostic**
+   在部分 class 上训练 selector，在未见 class 上测 acquisition diagnostics。
+
+3. **length-controlled baseline**
+   只根据动作长度 / video length prior 生成 positions，对照 DUCA。
+
+4. **cross-detector transfer**
+   同一 selector 插 AdaTAD 和 ActionFormer。
+
+5. **boundary support vs mAP correlation**
+   证明 selected boundary support 提升与 @0.6/@0.7 提升相关。
+
+---
+
+# 五、不可变 method contract
+
+这是你论文和代码都必须遵守的合同。
+
+## 1. Input signals contract
+
+允许：
+
+```text
+low-cost p_action
+entropy / uncertainty
+delta p_action
+low-cost visual feature
+temporal coordinate
+valid mask
+```
+
+训练阶段允许：
+
+```text
+train-only dense detector utility
+train-only GT-derived utility target
+```
+
+推理 / val / test 禁止：
+
+```text
+GT
+teacher utility
+dense detector output
+raw prediction
+prediction cache
+oracle boundary
+post-hoc detector score
+```
+
+---
+
+## 2. Output contract
+
+主输出只有一个：
+
+```text
+selected_positions: List[int]
+```
+
+它必须是：
+
+```text
+original dense-time coordinates
+sorted unique
+detector truly consumed
+len(selected_positions) <= budget
+```
+
+`selected_centers`、`radius`、`selected_observations` 只能是 metadata。它们不能替代 `selected_positions`。
+
+---
+
+## 3. Budget contract
+
+预算单位必须写清楚：
+
+```text
+detector-consumed temporal observations
+```
+
+不要混用：
+
+```text
+center count
+expanded count
+raw frame count
+snippet count
+token count
+```
+
+如果论文说 `<=384 observations`，那么 detector 实际 gather 的 positions 必须 `<=384`。
+
+---
+
+## 4. Coordinate contract
+
+主结果必须使用：
+
+```text
+original-time sparse grid
+```
+
+也就是 decode / GT remap / NMS 必须知道真实 temporal coordinates。
+
+`selected-rank time` 只能做 ablation，不能做主结果。否则 high-IoU localization 会被 reviewer 质疑为时间轴被压缩。
+
+---
+
+## 5. Detector modification contract
+
+主方法优先不改 detector head：
+
+```text
+same AdaTAD / ActionFormer head
+same assignment or explicitly reported
+same decode / NMS or explicitly reported
+only input acquisition changes
+```
+
+如果你改 detector head，就必须单独做：
+
+```text
+uniform384 + modified detector
+DUCA384 + modified detector
+```
+
+否则 gain 不知道来自 acquisition 还是 detector。
+
+OpenTAD 作为 TAD toolbox 的意义正是提供统一 detector framework；你应该利用这一点做公平对照，而不是把 acquisition 和 detector 改造混在一起。([GitHub][2])
+
+---
+
+## 6. No-leakage contract
+
+每个 ledger / selector output 都要有 flags：
+
+```json
+{
+  "uses_gt": false,
+  "uses_teacher": false,
+  "uses_oracle": false,
+  "uses_cache": false,
+  "uses_prediction_cache": false,
+  "uses_raw_prediction": false,
+  "deploy_selection_ledger": true,
+  "detector_consumes_selected_positions": true
+}
+```
+
+validator 必须 fail-closed：
+
+```text
+缺字段 → fail
+字段不一致 → fail
+selected_count > budget → fail
+val/test 出现 teacher/GT key → fail
+selected_positions 不是 sorted unique → fail
+坐标越界 → fail
+```
+
+---
+
+## 7. Dynamic K contract
+
+dynamic K 可以做，但必须有：
+
+```text
+global max K <=384
+matched-average-K fixed control
+per-video selected_count distribution
+latency distribution
+```
+
+不能只说 dynamic K 平均 320，然后某些视频用 512。这会被认为不公平。
+
+---
+
+## 8. Short-window behavior
+
+对于 valid_len <384：
+
+```text
+selected_count <= valid_len
+不允许 padding 伪造 observation
+不允许重复采样算作新 observation
+mAP 统计中标注 short-valid-ratio
+```
+
+---
+
+## 9. Selected-rank vs original-time decode ablation
+
+必须有：
+
+```text
+DUCA selected-rank decode
+DUCA original-time decode
+uniform selected-rank decode
+uniform original-time decode
+```
+
+如果 original-time decode 不提升，高 IoU claim 站不住。
+
+---
+
+# 六、主实验矩阵
+
+## 1. 主 mAP 表
+
+| Group          | Method                          |  K / Budget | Selector training        | Detector     |      Avg mAP | @0.6 | @0.7 |
+| -------------- | ------------------------------- | ----------: | ------------------------ | ------------ | -----------: | ---: | ---: |
+| Anchor         | Dense AdaTAD                    |         768 | n/a                      | AdaTAD       | 68.29 anchor |      |      |
+| Anchor         | Dense ActionFormer              |         768 | n/a                      | ActionFormer |              |      |      |
+| Sparse control | Uniform fixed K                 |         384 | none                     | AdaTAD       |              |      |      |
+| Sparse control | Random fixed K                  |         384 | none, 5 seeds            | AdaTAD       |              |      |      |
+| Actionness     | p_action top-K                  |         384 | C3 coarse                | AdaTAD       |  59.10 known |      |      |
+| Boundary proxy | delta-p_action top-K            |         384 | C3 coarse                | AdaTAD       |              |      |      |
+| Current        | GAS-VT fixed384                 |         384 | offline                  | AdaTAD       |  44.90 known |      |      |
+| Current        | lattice best                    |         384 | heuristic                | AdaTAD       |  63.18 known |      |      |
+| Main           | DUCA-Frozen                     |         384 | no TAD labels            | AdaTAD       |              |      |      |
+| Main           | DUCA-Adapted fixed K            |         384 | train utility            | AdaTAD       |              |      |      |
+| Main           | DUCA-Adapted dynamic K          |     max 384 | train utility            | AdaTAD       |              |      |      |
+| Fairness       | Dynamic matched-average-K fixed | avg matched | none / DUCA score sorted | AdaTAD       |              |      |      |
+
+---
+
+## 2. Decode fairness table
+
+| Method     | Coordinate    | Avg mAP | @0.6 | @0.7 | Comment              |
+| ---------- | ------------- | ------: | ---: | ---: | -------------------- |
+| Uniform384 | selected-rank |         |      |      | bad geometry control |
+| Uniform384 | original-time |         |      |      | fair sparse time     |
+| DUCA384    | selected-rank |         |      |      | ablation only        |
+| DUCA384    | original-time |         |      |      | main                 |
+
+---
+
+## 3. Cross-detector transfer
+
+| Selector             | Trained with              | Tested on AdaTAD | Tested on ActionFormer | Transfer gap |
+| -------------------- | ------------------------- | ---------------: | ---------------------: | -----------: |
+| Uniform              | none                      |                  |                        |              |
+| p_action             | coarse                    |                  |                        |              |
+| DUCA-Ada utility     | AdaTAD train utility      |                  |                        |              |
+| DUCA generic utility | detector-agnostic utility |                  |                        |              |
+
+ActionFormer is an appropriate transfer target because it is a strong single-stage anchor-free temporal action localization detector with moment-wise classification and boundary regression.([arXiv][1])
+
+---
+
+## 4. Cross-dataset / migration diagnostic
+
+最小可行：
+
+```text
+Train selector on THUMOS train → test acquisition diagnostics on another dataset
+or
+Train DUCA-Frozen no detection labels → evaluate on THUMOS and one additional dataset
+```
+
+如果 full mAP cross-dataset 成本太高，至少做：
+
+```text
+boundary support
+selected_count
+hole statistics
+uniform similarity
+short-action recall proxy
+```
+
+---
+
+## 5. 必须报告的指标
+
+主指标：
+
+```text
+Average mAP
+mAP@0.6
+mAP@0.7
+```
+
+预算和成本：
+
+```text
+selected count
+effective budget
+browser overhead
+gather overhead
+backbone cost
+detector/NMS cost
+total latency
+```
+
+行为诊断：
+
+```text
+boundary support ±1/±2/±4
+short-action recall
+action-local max hole
+action-local p95 hole
+uniform similarity
+radius distribution
+center_count vs selected_count
+```
+
+安全审计：
+
+```text
+leakage validator pass/fail
+train/val/test split disjoint
+teacher utility train-only manifest
+```
+
+---
+
+# 七、reviewer 最可能的 10 个攻击点
+
+## 1. “这只是 actionness top-K 加 bookkeeping。”
+
+**攻击会很狠：**
+你只是用 p_action 排序，然后写了一堆 ledger 字段。没有证明 selector 学到 detector localization utility。
+
+**挡法：**
+
+* p_action top-K、delta-p_action、GAS-VT、lattice 全部放 baseline；
+* DUCA 必须有 detector utility supervision；
+* 做 ablation：无 utility、无 boundary、无 radius；
+* 报告 high-IoU 与 boundary support 的关联。
+
+---
+
+## 2. “这不是 plug-and-play，因为你在 THUMOS 上训练了 selector。”
+
+**攻击：**
+你声称 plug-and-play，但 selector 是 THUMOS-specific。
+
+**挡法：**
+
+* 主文改成 **task-adapted plugin**；
+* 提供 DUCA-Frozen 作为 zero-shot plugin setting；
+* cross-detector transfer；
+* 不声称 dataset-agnostic。
+
+---
+
+## 3. “teacher utility 是 leakage。”
+
+**攻击：**
+你用 dense detector teacher 生成 utility，val/test selection 可能偷看 teacher prediction。
+
+**挡法：**
+
+* train-only utility export；
+* val/test source whitelist；
+* no-leak recursive validator；
+* manifest 中列出 sample ids；
+* val/test ledger 不含任何 teacher key；
+* 论文中明确 teacher 只用于 training supervision。
+
+---
+
+## 4. “多阶段 pipeline 不优雅。”
+
+**攻击：**
+先训 coarse model，再导 ledger，再训 detector，这不是一个方法，而是工程流水线。
+
+**挡法：**
+
+* 论文方法写 policy interface，不写 ledger pipeline；
+* ledger 作为 reproducibility artifact；
+* 提供 selector API；
+* 给出 single-pass inference graph；
+* optional alternating fine-tune 放 appendix。
+
+---
+
+## 5. “没有真正节省 raw-frame/backbone compute。”
+
+**攻击：**
+你在 AdaTAD temporal grid 上选，不是 raw-frame pre-backbone acquisition。
+
+**挡法：**
+
+* 不声称 raw-frame compute saving；
+* 论文题目用 sparse temporal observation acquisition；
+* 报告 budget unit 是 temporal observation；
+* 单独报告 raw-frame accesses / backbone chunks；
+* 若要 claim pre-backbone，必须实现 detector 前 gather。
+
+---
+
+## 6. “dynamic K 不公平。”
+
+**攻击：**
+你的 dynamic K 平均看似低，但困难视频用了更多预算。
+
+**挡法：**
+
+* hard max K ≤384；
+* matched-average-K fixed control；
+* selected_count histogram；
+* per-video latency p50/p95；
+* budget violation zero tolerance。
+
+---
+
+## 7. “selected-rank time 破坏 TAD localization。”
+
+**攻击：**
+你把 irregular sampled positions 当连续 rank 轴，边界时间被压缩，高 IoU 不可信。
+
+**挡法：**
+
+* 主结果必须 original-time decode；
+* selected-rank decode 只做 ablation；
+* NMS 用 original time；
+* GT remap 保留 sparse coordinate metadata；
+* 提供 round-trip test。
+
+---
+
+## 8. “只在 AdaTAD 上有效。”
+
+**攻击：**
+这可能只是 AdaTAD config hack。
+
+**挡法：**
+
+* ActionFormer transfer；
+* uniform / p_action / DUCA 在两个 detector 上都跑；
+* 不改 detector head；
+* same selected_positions interface。
+
+---
+
+## 9. “训练成本没算。”
+
+**攻击：**
+你为了省 inference compute，花了一个 dense teacher 和额外 selector 训练，成本不公平。
+
+**挡法：**
+
+* inference cost 和 training cost 分开报告；
+* teacher export cost 单列；
+* selector training GPUh 单列；
+* 主 claim 限定为 inference sparse observation efficiency；
+* 不说 training cheaper。
+
+---
+
+## 10. “heuristic gap/radius repair 才是有效部分，不是 learning。”
+
+**攻击：**
+如果去掉 gap repair / fixed radius，learning 没提升，那方法是假学习。
+
+**挡法：**
+
+* no repair / fixed repair / learned radius ablation；
+* radius randomized control；
+* utility shuffled control；
+* learned score + fixed radius vs heuristic score + learned radius；
+* 如果 heuristic 占主要收益，论文 claim 必须缩成 “boundary-preserving decoder”，不能叫 learned detector-aware acquisition。
+
+---
+
+# 八、最后清晰建议
+
+## 1. 最推荐的最终目标，一句话
+
+**学习一个 task-adapted、teacher-free-at-inference 的 detector-utility temporal acquisition plugin，在 original-time 768-grid 中严格选择 ≤384 个 detector-consumed observations，以提升 sparse TAD，尤其保护 mAP@0.6/@0.7 边界定位。**
+
+---
+
+## 2. 最推荐的主方法，三句话
+
+**主方法叫 DUCA-CR / DUCA-TAD，不是 C3、不是 GAS-VT、不是 lattice。**
+它用 train-only detector utility 学习 selection logit、context radius、boundary importance 和 utility prediction，并通过 budgeted original-time decoder 输出真正被 AdaTAD / ActionFormer 消费的 `selected_positions`。
+p_action 只作为低成本输入和 auxiliary loss，不再作为方法本体。
+
+---
+
+## 3. 最推荐的训练方式，五句话
+
+第一阶段训练 dense AdaTAD teacher，只在 train split 导出 detector utility。
+第二阶段训练 DUCA selector，目标是 utility coverage、boundary support、budget、hole、radius cost，而不是单纯 actionness。
+第三阶段冻结 selector，生成 no-leak train/val/test deploy selected_positions，并用 strict validator 保证预算和 split 合同。
+第四阶段用这些 selected_positions 训练 AdaTAD / ActionFormer，detector 单次前向，decode 保持 original-time。
+只有当这个 offline plugin 超过 63.18 并在 @0.6/@0.7 不退化时，才做 alternating 或 ST end-to-end fine-tune。
+
+---
+
+## 4. 不应该再继续投入的路线
+
+停止把这些作为主线继续扩展：
+
+```text
+GAS-VT fixed384
+p_action top-K 的小变体
+move25 / move50 / move75 lattice 搜索
+heuristic radius 写入 ledger 但 detector 不消费
+gap repair 规则堆叠
+384 centers + extra expanded positions 的伪预算
+selected-rank decode 主结果
+```
+
+这些可以保留为 baseline，但不应再消耗主研发时间。
+
+---
+
+## 5. 第一周应该实现的最小闭环
+
+第一周只做一个闭环：
+
+```text
+DUCA selector checkpoint
+→ no-leak deploy selected_positions ledger
+→ AdaTAD consumes selected_positions
+→ full train/eval
+→ mAP + high-IoU + boundary diagnostics
+```
+
+最小 gate：
+
+```text
+selected_positions 真消费
+selected_count <=384
+val/test no teacher / GT / raw prediction / cache
+original-time decode
+超过 PAction fixed384 59.10
+最好超过 lattice best 63.18
+```
+
+不满足这些，不进入 end-to-end。
+
+---
+
+## 6. 如果第一周失败，如何缩小 claim
+
+如果 DUCA-CR 没超过 59.10：
+
+```text
+claim 缩成 detector-utility acquisition diagnosis
+主贡献变成 no-leak sparse acquisition benchmark + failure analysis
+停止声称 learned acquisition 有效
+```
+
+如果超过 59.10 但没超过 63.18：
+
+```text
+claim 缩成 task-adapted selector improves over actionness but not strong lattice/uniform
+继续做 utility target 和 original-time geometry 修复
+```
+
+如果超过 63.18 但没接近 68.29：
+
+```text
+claim 是 sparse detector-aware acquisition beats learned/heuristic sparse baselines
+不要声称超过 dense / uniform upper anchor
+```
+
+---
+
+## 7. 如果结果成功，论文标题、abstract claim 和 main contribution
+
+### Title
+
+**DUCA-TAD: Detector-Utility-Calibrated Temporal Acquisition for Sparse Temporal Action Detection**
+
+或更具体：
+
+**Learning Center-Radius Temporal Acquisition for High-IoU Sparse Action Detection**
+
+### Abstract claim
+
+> We study strict-budget temporal observation acquisition for temporal action detection. Instead of selecting high-actionness snippets, DUCA-TAD learns a task-adapted acquisition plugin from train-only detector utility and outputs original-time selected positions that are truly consumed by the detector under a hard budget. The learned center-radius policy improves sparse AdaTAD and transfers to ActionFormer, with gains concentrated at high tIoU and explained by better boundary support and reduced action-local holes.
+
+### Main contributions
+
+1. **Problem formulation:** strict-budget original-time temporal observation acquisition for TAD.
+2. **Method:** detector-utility-calibrated center-radius selector with budgeted decoder.
+3. **Protocol:** no-leak train-only utility supervision and fail-closed selected_positions contract.
+4. **Evidence:** improved sparse mAP, high-IoU localization, boundary support, short-action recall, cross-detector transfer.
+
+最后一句严厉裁决：**不要再试图把现有 C3/GAS-VT/lattice 包装成最终论文方法。它们是必要的失败与对照。真正值得收敛的是 DUCA-style task-adapted acquisition plugin；但只有在 strict budget、original-time consumption、no-leak、high-IoU 证据全部闭合后，它才配写进 CVPR 主方法。**
+
+[1]: https://arxiv.org/abs/2202.07925?utm_source=chatgpt.com "ActionFormer: Localizing Moments of Actions with Transformers"
+[2]: https://github.com/sming256/OpenTAD?utm_source=chatgpt.com "OpenTAD is an open-source temporal action detection ..."

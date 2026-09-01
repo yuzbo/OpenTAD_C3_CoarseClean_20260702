@@ -1,0 +1,321 @@
+{
+  "output_dir": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410",
+  "cell_count": 24,
+  "seeds": [
+    3407,
+    5801,
+    8123
+  ],
+  "budgets": [
+    384,
+    256
+  ],
+  "arms": [
+    "uniform",
+    "learned"
+  ],
+  "backends": [
+    "actionformer",
+    "temporalmaxer"
+  ],
+  "learned_variant": "boundary_burst_r2q3_g1",
+  "learned_source": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\OpenTAD_DUCA_GlobalCurriculum_20260721\\configs\\adatad\\thumos\\duca_boundary_burst_g1_protected_fixed384_official60.py",
+  "gate_config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_learned_k384_s3407.py",
+  "gate_sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_one_step.sbatch",
+  "cells_tsv": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\cells.tsv",
+  "cells": [
+    {
+      "id": "actionformer_uniform_k384_s3407",
+      "backend": "actionformer",
+      "arm": "uniform",
+      "budget": 384,
+      "seed": 3407,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_uniform_k384_s3407.py",
+      "config_sha256": "023939d4bd514be2cb2699d34611f02ae7eb92362bebdfe2c4f8005af9c4b413",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_uniform_k384_s3407.sbatch",
+      "sbatch_sha256": "bcf1db4b526c231abe520cde19e8ce340dc5609c41b00162e6fd31105beccf71"
+    },
+    {
+      "id": "actionformer_uniform_k384_s5801",
+      "backend": "actionformer",
+      "arm": "uniform",
+      "budget": 384,
+      "seed": 5801,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_uniform_k384_s5801.py",
+      "config_sha256": "4aeec060d3f97fd78eba616008136fdae38c9f362c6b85add21e9e6b8f38a406",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_uniform_k384_s5801.sbatch",
+      "sbatch_sha256": "e098c0915b61fd0677df6e86d7602aa80246ac0f86d118685d56f07ae381c144"
+    },
+    {
+      "id": "actionformer_uniform_k384_s8123",
+      "backend": "actionformer",
+      "arm": "uniform",
+      "budget": 384,
+      "seed": 8123,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_uniform_k384_s8123.py",
+      "config_sha256": "0aafffa5e2cbedd67e64d45d9c1914e69eff164eadbca6cc8f50df617c5ee59a",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_uniform_k384_s8123.sbatch",
+      "sbatch_sha256": "1ad8de92b80e3a8335353cd0aae5ab1d1ab9b9bb9fb3d657f04e9bdeda798f5a"
+    },
+    {
+      "id": "actionformer_uniform_k256_s3407",
+      "backend": "actionformer",
+      "arm": "uniform",
+      "budget": 256,
+      "seed": 3407,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_uniform_k256_s3407.py",
+      "config_sha256": "8a3f03efd1e5f467ba8870435aba75600afcb56e1cf18eadd6eb2322a1d3f1f4",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_uniform_k256_s3407.sbatch",
+      "sbatch_sha256": "2a982e54d3c722ebee3b11b68bc8172fe9b59fbe44ff184dfea8e5cb0a88a05b"
+    },
+    {
+      "id": "actionformer_uniform_k256_s5801",
+      "backend": "actionformer",
+      "arm": "uniform",
+      "budget": 256,
+      "seed": 5801,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_uniform_k256_s5801.py",
+      "config_sha256": "dc9e35b33abfb5b2718044a4c0a1e5567c4323c3e58b7815cd0997ac8b472624",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_uniform_k256_s5801.sbatch",
+      "sbatch_sha256": "de07a8da01543d6cb44df3b08191ee1ceb6f35131077187c9ba0d08b8a613e98"
+    },
+    {
+      "id": "actionformer_uniform_k256_s8123",
+      "backend": "actionformer",
+      "arm": "uniform",
+      "budget": 256,
+      "seed": 8123,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_uniform_k256_s8123.py",
+      "config_sha256": "c558f92f5b1de23809bb4b4ad5184a1a0275a989c4e6c686155896a8c28b2c3a",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_uniform_k256_s8123.sbatch",
+      "sbatch_sha256": "6762e6c92831612ed48c2f8f0a7b10b352e519f2c9d96f7def4f90e6590a4387"
+    },
+    {
+      "id": "actionformer_learned_k384_s3407",
+      "backend": "actionformer",
+      "arm": "learned",
+      "budget": 384,
+      "seed": 3407,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_learned_k384_s3407.py",
+      "config_sha256": "dcb925a4a4411cd65dd5f857ef24000995c62aa251a4ed857e1c569201c5089d",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_learned_k384_s3407.sbatch",
+      "sbatch_sha256": "b304e4e00e5b1ddbec7f9168776a955e4cf93983a452ceec9f3be3fc72e495f7"
+    },
+    {
+      "id": "actionformer_learned_k384_s5801",
+      "backend": "actionformer",
+      "arm": "learned",
+      "budget": 384,
+      "seed": 5801,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_learned_k384_s5801.py",
+      "config_sha256": "4abe7af7c5d806d620adc18cda30d258757f7832be7db7584fce4ad580f3cb35",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_learned_k384_s5801.sbatch",
+      "sbatch_sha256": "3349562f46dc62a951966f32d1d41cf4a8e24f7214d5edbfd736cd99eb44d148"
+    },
+    {
+      "id": "actionformer_learned_k384_s8123",
+      "backend": "actionformer",
+      "arm": "learned",
+      "budget": 384,
+      "seed": 8123,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_learned_k384_s8123.py",
+      "config_sha256": "384fbfb06dfdc8eb887b13909b11b811bf31b5811877931495ace3baa082abb3",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_learned_k384_s8123.sbatch",
+      "sbatch_sha256": "887e99f8a4218d13cc14e548233ddc8ae5bbad90aefa2747dc9e9e374d2812bf"
+    },
+    {
+      "id": "actionformer_learned_k256_s3407",
+      "backend": "actionformer",
+      "arm": "learned",
+      "budget": 256,
+      "seed": 3407,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_learned_k256_s3407.py",
+      "config_sha256": "4eeabeab87c02d4e838490789942b8b2910f60654e915b8be6eec7b272a8424a",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_learned_k256_s3407.sbatch",
+      "sbatch_sha256": "59427c67ceb829daf2321e3016d2791f18ef6d89c627c9e5228a036b03b6ab99"
+    },
+    {
+      "id": "actionformer_learned_k256_s5801",
+      "backend": "actionformer",
+      "arm": "learned",
+      "budget": 256,
+      "seed": 5801,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_learned_k256_s5801.py",
+      "config_sha256": "f09a4c558f43348beffaa677c4d0b095d42d6b6b22f1ba98a270a63751e1dbab",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_learned_k256_s5801.sbatch",
+      "sbatch_sha256": "a1bfda4fbd3c666111f9a705ce041c3216d768c0156191734531539d4ccaef11"
+    },
+    {
+      "id": "actionformer_learned_k256_s8123",
+      "backend": "actionformer",
+      "arm": "learned",
+      "budget": 256,
+      "seed": 8123,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\actionformer_learned_k256_s8123.py",
+      "config_sha256": "60dde2d6826a866b703cf0aa2db030779476b56b44adfafc39d7a0f82ab0969e",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\actionformer_learned_k256_s8123.sbatch",
+      "sbatch_sha256": "ff1690e86d4ad8912195d7b4a20082799dcfa0b179b8302ea9e4028c88f2519e"
+    },
+    {
+      "id": "temporalmaxer_uniform_k384_s3407",
+      "backend": "temporalmaxer",
+      "arm": "uniform",
+      "budget": 384,
+      "seed": 3407,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_uniform_k384_s3407.py",
+      "config_sha256": "843c1ea77515d58e45deea7d08fa488159fd5119642cff66b84fc185b476b73d",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_uniform_k384_s3407.sbatch",
+      "sbatch_sha256": "ac0290c6ec4763ace3b74dd54692caed7af3a9976c412a8bef58f7f027879183"
+    },
+    {
+      "id": "temporalmaxer_uniform_k384_s5801",
+      "backend": "temporalmaxer",
+      "arm": "uniform",
+      "budget": 384,
+      "seed": 5801,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_uniform_k384_s5801.py",
+      "config_sha256": "d3cf44af37c9cb2144de2ae445754bbb1e2eaeff16a8dd6dfe351b395802fa75",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_uniform_k384_s5801.sbatch",
+      "sbatch_sha256": "7ba22919ebb4e8f219ab5fcb0f88d78055ffa893d9347abee404d558ba64c74f"
+    },
+    {
+      "id": "temporalmaxer_uniform_k384_s8123",
+      "backend": "temporalmaxer",
+      "arm": "uniform",
+      "budget": 384,
+      "seed": 8123,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_uniform_k384_s8123.py",
+      "config_sha256": "092c69c3f2d4abd209cde0383921c3b365561480c44d4bae8fe1835841084c99",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_uniform_k384_s8123.sbatch",
+      "sbatch_sha256": "d8e320e95a8a6475142ba641173a3b347418edd82545b2d0e41a6295f738f0a7"
+    },
+    {
+      "id": "temporalmaxer_uniform_k256_s3407",
+      "backend": "temporalmaxer",
+      "arm": "uniform",
+      "budget": 256,
+      "seed": 3407,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_uniform_k256_s3407.py",
+      "config_sha256": "3af59cd1d07775079bbca39df5c9cef0a7a53e62c698fd24cb56b5ede9aa4ce8",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_uniform_k256_s3407.sbatch",
+      "sbatch_sha256": "7d69432041202240c1d8d5d7af6d65f977e908ddab1385b18a41532978cd865f"
+    },
+    {
+      "id": "temporalmaxer_uniform_k256_s5801",
+      "backend": "temporalmaxer",
+      "arm": "uniform",
+      "budget": 256,
+      "seed": 5801,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_uniform_k256_s5801.py",
+      "config_sha256": "8a1734a4566333768f2e1e3bbcede6bc2bb0740eff79e70b21da6584112f6ee1",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_uniform_k256_s5801.sbatch",
+      "sbatch_sha256": "9f07f0505a79293e35546c8cde61f38c12d195fe3631f25a7a3edd2838c9df1e"
+    },
+    {
+      "id": "temporalmaxer_uniform_k256_s8123",
+      "backend": "temporalmaxer",
+      "arm": "uniform",
+      "budget": 256,
+      "seed": 8123,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_uniform_k256_s8123.py",
+      "config_sha256": "e6fac504de1354bb0e4cdf4d97534b4fce482b4e53851666e9dfbdf910822f8c",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_uniform_k256_s8123.sbatch",
+      "sbatch_sha256": "61e6bcbe3321bd8c33b74a74efd5c2b5dce270c2472591cb12221d33b4478800"
+    },
+    {
+      "id": "temporalmaxer_learned_k384_s3407",
+      "backend": "temporalmaxer",
+      "arm": "learned",
+      "budget": 384,
+      "seed": 3407,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_learned_k384_s3407.py",
+      "config_sha256": "ba67bf447243947bdb834b937e8942ff50295ca5ebb90422a6cd571b8ac3d8b3",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_learned_k384_s3407.sbatch",
+      "sbatch_sha256": "f517f5fbd697c29943fdade5bbe9fde533159bc36cd2de1d695e7660ae5d8227"
+    },
+    {
+      "id": "temporalmaxer_learned_k384_s5801",
+      "backend": "temporalmaxer",
+      "arm": "learned",
+      "budget": 384,
+      "seed": 5801,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_learned_k384_s5801.py",
+      "config_sha256": "e1a1bdfe09049258245e67d6a308fab8ebcd15602bc0dca9576441deb1224d75",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_learned_k384_s5801.sbatch",
+      "sbatch_sha256": "f68f745ed650abef22f41db5861701409389b8b346c9d291b02d85825514d53f"
+    },
+    {
+      "id": "temporalmaxer_learned_k384_s8123",
+      "backend": "temporalmaxer",
+      "arm": "learned",
+      "budget": 384,
+      "seed": 8123,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_learned_k384_s8123.py",
+      "config_sha256": "f14db9138107e8e93b59dbff083e2e620ef6a01e22dfac04fde99290e77de496",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_learned_k384_s8123.sbatch",
+      "sbatch_sha256": "29234ab3782fe59d6c780cdad62bc5e2b579444288a2b2eba47d0aa32db3bc62"
+    },
+    {
+      "id": "temporalmaxer_learned_k256_s3407",
+      "backend": "temporalmaxer",
+      "arm": "learned",
+      "budget": 256,
+      "seed": 3407,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_learned_k256_s3407.py",
+      "config_sha256": "377507e7562466679233de89cce28207f8fc28ff8e352aca8d819fa93520f298",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_learned_k256_s3407.sbatch",
+      "sbatch_sha256": "fe892f11c693c96008de3bfdd807d9077cf1464cabb0877837497c4dfec4e0c7"
+    },
+    {
+      "id": "temporalmaxer_learned_k256_s5801",
+      "backend": "temporalmaxer",
+      "arm": "learned",
+      "budget": 256,
+      "seed": 5801,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_learned_k256_s5801.py",
+      "config_sha256": "3235d2ca5b729dc2cb97425b35d3b0967db7fc1ec941e32c5e4a31f175639512",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_learned_k256_s5801.sbatch",
+      "sbatch_sha256": "9f9c67370da1b9cb8c5bfa8b2fc58db3ab51d9588afb88dfb751214820f26b99"
+    },
+    {
+      "id": "temporalmaxer_learned_k256_s8123",
+      "backend": "temporalmaxer",
+      "arm": "learned",
+      "budget": 256,
+      "seed": 8123,
+      "config": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\configs\\temporalmaxer_learned_k256_s8123.py",
+      "config_sha256": "dab2887e5a258bb42cd944034ebcbe90204626cbdaa1670c4f076ddf43c4b8c7",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\temporalmaxer_learned_k256_s8123.sbatch",
+      "sbatch_sha256": "d173227cc54906ad7ff9049582cfe92f5d18c3a2986143907916c3d7b1e1a483"
+    }
+  ],
+  "cost_count": 4,
+  "costs_tsv": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\costs.tsv",
+  "costs": [
+    {
+      "id": "cost_actionformer_uniform_k384_s3407",
+      "source_cell": "actionformer_uniform_k384_s3407",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\cost_actionformer_uniform_k384_s3407.sbatch",
+      "summary": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\cost\\actionformer_uniform_k384_s3407.summary.json"
+    },
+    {
+      "id": "cost_actionformer_learned_k384_s3407",
+      "source_cell": "actionformer_learned_k384_s3407",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\cost_actionformer_learned_k384_s3407.sbatch",
+      "summary": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\cost\\actionformer_learned_k384_s3407.summary.json"
+    },
+    {
+      "id": "cost_temporalmaxer_uniform_k384_s3407",
+      "source_cell": "temporalmaxer_uniform_k384_s3407",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\cost_temporalmaxer_uniform_k384_s3407.sbatch",
+      "summary": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\cost\\temporalmaxer_uniform_k384_s3407.summary.json"
+    },
+    {
+      "id": "cost_temporalmaxer_learned_k384_s3407",
+      "source_cell": "temporalmaxer_learned_k384_s3407",
+      "sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\cost_temporalmaxer_learned_k384_s3407.sbatch",
+      "summary": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\cost\\temporalmaxer_learned_k384_s3407.summary.json"
+    }
+  ],
+  "aggregate_sbatch": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\r5_gen_final_check_20260722_1410\\jobs\\aggregate.sbatch"
+}

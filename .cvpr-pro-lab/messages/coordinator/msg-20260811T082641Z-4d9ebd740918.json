@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-11T08:26:41Z",
+  "deadline": null,
+  "from_role": "critic",
+  "kind": "critic-plan-ambiguity-classification-return",
+  "message_id": "msg-20260811T082641Z-4d9ebd740918",
+  "parent_artifact_ids": [
+    "art-20260811T082618Z-9a6e428149"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/critic-returns/CRITIC_DUCA_P0_PLAN_AMBIGUITY_CLASSIFICATION-v001.md",
+    "size": 6324
+  },
+  "priority": "high",
+  "requested_action": "Return for msg-20260811T081502Z-754207b3e3fc: primary classification SCIENTIFIC_AMBIGUITY. Canonical-uniform and pre-NMS transport are deterministic implementation corrections, but the frozen tree has no faithful density hard-decoder attachment point; P0 patch remains BLOCKED_PRE_RESULT pending fresh Pro. Artifact art-20260811T082618Z-9a6e428149; parent decision PRO_P0_BLOCKER_DECISION-v001.",
+  "required_gate": "FRESH_PRO_SCIENTIFIC_AMBIGUITY_ADJUDICATION",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "coordinator"
+}

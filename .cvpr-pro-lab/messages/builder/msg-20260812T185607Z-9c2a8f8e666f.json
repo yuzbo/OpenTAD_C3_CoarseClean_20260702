@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-12T18:56:07Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "production-interface-plan",
+  "message_id": "msg-20260812T185607Z-9c2a8f8e666f",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-briefs/BUILDER_DUCA_P0_IDENTITY_PRODUCTION_PLAN-v001.md",
+    "size": 1084
+  },
+  "priority": "high",
+  "requested_action": "Map the frozen production projector to the P0 identity-gate interface; plan only, no edit or execution.",
+  "required_gate": "P0_IDENTITY_GATE_AUTHORING_ONLY",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

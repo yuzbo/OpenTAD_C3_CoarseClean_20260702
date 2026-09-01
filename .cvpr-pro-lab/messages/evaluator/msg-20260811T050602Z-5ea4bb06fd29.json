@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-08-11T05:06:02Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "preregistration-and-evidence-contract",
+  "message_id": "msg-20260811T050602Z-5ea4bb06fd29",
+  "parent_artifact_ids": [
+    "art-20260811T045704Z-2d13c25e41"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Accepted Pro decision PRO_INITIAL_REVIEW-v002 requires a P0/P1 evaluation preregistration at frozen GitHub revision 63a726a4aaf48ecbf6780bb196de43a890c6b4df. Define the smallest property and parity witnesses for clean uniform identity, sampler endpoints/order/uniqueness/max span/max CDF displacement, physical-selected coordinate roundtrip, and raw proposal inverse mapping before unchanged NMS. State evidence classes and exact future PRE_RUN_READY fields for P2 only; identify remote-only future executable checks. Do not mutate training code, run local CPU tests or experiments, launch remote/GPU, access held-out data, change protocol, read metrics, push, or promote results. Return EVALUATOR_DUCA_DENSITY_P0P1-v001 including falsification thresholds, required artifacts, and fresh-Pro questions. Cite raw Pro file .cvpr-pro-lab/pro-reviews/runs/duca-serial-pro-5ad209b3c128fbdd4455da0a7783b203/raw-response.md.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

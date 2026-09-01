@@ -1,0 +1,42 @@
+{
+  "base_environment": {
+    "conda_environment": "/data/run01/sczc063/yuzibo/conda_envs/opentad",
+    "cuda": "11.8",
+    "include_system_site_packages": true,
+    "numpy": "1.23.5",
+    "python": "3.10.20",
+    "torch": "2.0.1"
+  },
+  "candidate_commit": "d86a4acda21e35a1609f19f1a46bc470ee18b7e1",
+  "candidate_tree": "327c032a1ab3c14d0e34d6339df36f8a33ec6907",
+  "environment_path": "/data/run01/sczc063/yuzibo/projects/python_envs/actionformer_official_runtime_20260730_v2",
+  "failure_repaired": "official_actionformer_softnms_extension_abi_shadowed_by_opentad_v9arg_v1",
+  "installed_layers": {
+    "absl_py": "2.5.0",
+    "grpcio": "1.83.0",
+    "tensorboard": "2.20.0",
+    "tensorboard_data_server": "0.7.2",
+    "werkzeug": "3.1.8"
+  },
+  "logs": {
+    "nms_build_sha256": "a2868a1145c2ef780934af17cea15d66616019bfcde71ce3e62654f002cd5987",
+    "pip_freeze_sha256": "ea6ae6df0e5a38c059162efbf19fe797706c11c0542d5ef73292e5426a7666e4",
+    "pip_install_sha256": "7e7bec1835743b380b0091e333d427106b33048da9029883a910a010f2b7b778",
+    "runtime_probe_sha256": "4736b43a23ef99c7daf053f3f27dc7de567a291d57ebe42fd795a4bf4cfe7ecc"
+  },
+  "nms_extension": {
+    "module_path": "/data/run01/sczc063/yuzibo/projects/python_envs/actionformer_official_runtime_20260730_v2/lib/python3.10/site-packages/nms_1d_cpu.cpython-310-x86_64-linux-gnu.so",
+    "module_sha256": "b67e0e41f9f55cd69e8b90cfc75a1947214365857d851a510047838ad49ed98d",
+    "resolved_inside_environment": true,
+    "softnms_7arg_probe": true,
+    "source": {
+      "nms_cpp_sha256": "2d1504de2ecc88b4d6292bddc70668d6c0dfd3f48a8ad546d43f29a37b46f5f3",
+      "nms_py_sha256": "b1346a66cb2e5374afcdac9c4adb4889eb1b8ea2343942c107483dadb3450068",
+      "setup_py_sha256": "aac31bd23da06e0f85ca26b1c4ee8d1e57eecbeb170f12478a3e894cb2ec2492"
+    }
+  },
+  "paper_protocol_effect": "environment_and_official_extension_provenance_only",
+  "scientific_contract_changed": false,
+  "schema_version": "actionformer_official_runtime_environment_receipt_v2",
+  "validation_pass": true
+}

@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-25T15:45:52Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "PJST_D1_INDEPENDENT_IMPLEMENTATION_REVIEW",
+  "message_id": "msg-20260825T154552Z-931698552d97",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/pro-reviews/runs/duca-pjst-derivative-causal-freeze-v002/PRO_DUCA_PJST_DERIVATIVE_CAUSAL_FREEZE-v002.md",
+    "size": 29013
+  },
+  "priority": "high",
+  "requested_action": "Independently review frozen commit 877d893f against the complete PJST-D1 Pro contract. Read code and tests directly; return PASS or one bounded deterministic implementation defect set. No edits, no execution beyond read-only focused checks.",
+  "required_gate": "same frozen commit; no scientific route change; no PRE_RUN",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "critic"
+}

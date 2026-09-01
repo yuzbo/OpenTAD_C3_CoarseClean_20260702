@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "LOCAL_TRANSPORT_IMPLEMENTATION_AUDIT",
+  "completed_at": "2026-08-11T12:35:38Z",
+  "scope": "Static inspection only; no CDP, browser UI, Project Source, or Pro operation was performed.",
+  "outcome": "BLOCKED_TRANSPORT_IMPLEMENTATION",
+  "oracle_findings": [
+    {
+      "path": "C:/Users/skywalker/AppData/Roaming/npm/node_modules/@steipete/oracle/dist/src/browser/config.js",
+      "symbols": ["resolveBrowserConfig"],
+      "lines": "60-83",
+      "finding": "--chatgpt-url is normalized as a navigation URL; no Project-bound fresh-conversation constructor is defined."
+    },
+    {
+      "path": "C:/Users/skywalker/AppData/Roaming/npm/node_modules/@steipete/oracle/dist/src/browser/reattachability.js",
+      "symbols": ["isRecoverableChatGptConversationUrl"],
+      "lines": "3-21",
+      "finding": "Only a stable /c/<id> URL is recoverable; a Project shell is explicitly rejected."
+    },
+    {
+      "path": "C:/Users/skywalker/AppData/Roaming/npm/node_modules/@steipete/oracle/dist/src/browser/reattach.js",
+      "symbols": ["ensureConversationOpen", "resumeBrowserSessionViaNewChrome"],
+      "lines": "73-107, 209-240",
+      "finding": "Project navigation is followed by reopening a prior conversation from the sidebar; it does not create a fresh conversation retained by that Project."
+    },
+    {
+      "path": "C:/Users/skywalker/AppData/Roaming/npm/node_modules/@steipete/oracle/dist/src/browser/reattachHelpers.js",
+      "symbols": ["openConversationFromSidebar"],
+      "lines": "67-179",
+      "finding": "preferProjects only locates and opens an existing sidebar conversation, with a /c/ URL fallback."
+    },
+    {
+      "path": "C:/Users/skywalker/AppData/Roaming/npm/node_modules/@steipete/oracle/dist/src/browser/attachRunning.js",
+      "symbols": ["resolveAttachRunningConnection"],
+      "lines": "11-24",
+      "finding": "Oracle's attach-running route requires DevToolsActivePort attach metadata; that condition cannot be bypassed through its supported entry point."
+    },
+    {
+      "path": "C:/Users/skywalker/AppData/Roaming/npm/node_modules/@steipete/oracle/dist/src/browser/constants.js",
+      "symbols": ["MODEL_BUTTON_SELECTOR", "COMPOSER_MODEL_SIGNAL_SELECTOR"],
+      "lines": "84-85",
+      "finding": "The supported model selector is composer-scoped, so it provides no route for creating the missing Project-bound composer."
+    }
+  ],
+  "project_bound_invariant": "A valid transport must create a fresh, unsent composer while the browser still proves the exact /g/g-p-6a796fef9a00819194024cf1de3bd697/project association, before model/effort selection or prompt entry.",
+  "runner_change": "None. The installed Oracle source does not supply a Project-preserving fresh-conversation strategy. Deriving one from the global New chat route would violate the exact-Project invariant.",
+  "tests": {
+    "static_source_inspection": "passed",
+    "runner_static_or_fixture_test": "not applicable; no valid implementation change was derivable"
+  },
+  "next_recovery_requirement": "Provide a verified Project-bound fresh-conversation transport primitive or an authenticated browser route that demonstrates the invariant. Do not retry the current runner or use the global New chat control."
+}

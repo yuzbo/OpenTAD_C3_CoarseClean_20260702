@@ -1,0 +1,25 @@
+{
+  "database": {
+    "video_test_0000001": {
+      "annotations": [
+        {
+          "label": "ActionA",
+          "segment": [
+            0.48,
+            0.64
+          ]
+        },
+        {
+          "label": "ActionB",
+          "segment": [
+            1.12,
+            1.28
+          ]
+        }
+      ],
+      "duration": 4.0,
+      "frame": 100,
+      "subset": "training"
+    }
+  }
+}

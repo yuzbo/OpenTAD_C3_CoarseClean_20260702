@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-12T01:16:00Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "projection-policy-authored-patch",
+  "message_id": "msg-20260812T011600Z-09af7d46526c",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_P0_PROJECTION_POLICY-v001.md",
+    "C:/Users/skywalker/.codex/worktrees/07c1/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/roles/builder/BUILDER_DUCA_P0_PROJECTION_PLAN-v001.md",
+    ".cvpr-pro-lab/evaluator-returns/EVALUATOR_DUCA_P0_PROJECTION_PROTOCOL-v001.md",
+    ".cvpr-pro-lab/evaluator-returns/DUCA_P0_PROJECTION_IDENTITY_RECEIPT_SCHEMA-v001.json"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Consume only this bounded authored-not-run patch queue. Under accepted PRO_P0_PROJECTION_POLICY-v001 and Builder plan v001, author the exact five-file surface: (1) the existing selector projector module, plus (2) normative JSON spec, (3) independent standard-library reference, (4) explicit fixture JSON, and (5) one focused test module. Preserve every v002 reader/selected-axis transport surface and do not modify config, dataset, launcher, detector, loss, NMS, evaluator, split, metric, checkpoint rule, or claims. Implement only the frozen exact fixed-point conversion, feasible-set candidate bounds, lexicographic objective, deterministic solver, typed fail-close, certificates, independent reference, and authored fixture/test contracts. No commands, tests, Python execution, CPU/GPU, data, remote, Slurm, browser, Git, staging, commit, push, or launcher activity. Return one durable full-diff receipt with changed paths, exact policy clauses implemented, untouched-v002 attestation, and no-execution attestation. If literal conformance would require expanding scope or changing a frozen surface, stop before that expansion and return NEEDS_ATTENTION.",
+  "required_gate": "PRO_P0_PROJECTION_POLICY-v001",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

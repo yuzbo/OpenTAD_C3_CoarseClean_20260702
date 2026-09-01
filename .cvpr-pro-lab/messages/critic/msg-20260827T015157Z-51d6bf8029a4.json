@@ -1,0 +1,15 @@
+{
+  "created_at": "2026-08-27T01:51:57Z",
+  "from_role": "Coordinator",
+  "kind": "role_task",
+  "message_id": "msg-20260827T015157Z-51d6bf8029a4",
+  "payload": {
+    "path": ".cvpr-pro-lab/role-messages/CRITIC_PJST_D1_TERMINAL_BOOTSTRAP_BUNDLE_REVIEW-v002.md"
+  },
+  "priority": "high",
+  "requested_action": "Focused independent static review of exact bundled-bootstrap scheduler transport commit 4204937a; no execution or edits.",
+  "required_gate": "PJST_D1_TERMINAL_BOOTSTRAP_BUNDLE_STATIC_PASS before Evaluator submission",
+  "schema_version": "1.0",
+  "status": "queued",
+  "to_role": "Critic"
+}

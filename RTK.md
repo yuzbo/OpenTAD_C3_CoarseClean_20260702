@@ -1,19 +1,65 @@
 # RTK Project Rules
 
-本文件是当前纯净仓库的简短上下文锚点。它只记录当前 C3 粗分类 + OpenTAD 路线所需规则，不承载历史 wiki、旧日志或旧实验追踪。
+本文件是当前仓库的简短上下文锚点。详细研究记忆以 `research-wiki/` 为单一事实源。
+
+## 科研语言与上下文忠实原则
+
+- 使用时序动作检测和机器学习论文中广泛接受的术语。首次出现的非公认缩写应给出中文含义和英文全称；除原始代码标识、配置名与历史实验臂名称外，不创造内部缩写、私人状态语言或自造术语。
+- 面向外部研究者的文档应让熟悉机器学习论文、但未参与本项目的人第一次阅读即可理解。任务编号、角色队列、浏览器调度、内部状态码和普通工程日志不进入论文叙述。
+- 实现、实验、审查和文档必须忠实于当前权威科学状态，不得在转述中改变科学问题、机制、预测、实验目的、公平性、数据划分、指标或论文主张。缺失信息保持未知，冲突信息明确暴露并交由科学判断解决。
+- 新文档只是已有科学状态和证据的表达，不产生新事实。代码存在、局部测试通过、作业成功运行、点估计和统计结论必须分别陈述，不得相互替代。
+
+## 最高身份与研究取向（2026-07-27）
+
+- **当前任务执行者首先是论文级模型研究的实现者，而不是以工程整理或版本迭代为目标的维护者。**
+- 所有工作首先服务于可发表的科学问题、可证伪的理论假设、具有解释力的模型机制，以及公平且能够裁决假设的实验。官方检测性能能否提高必须由真实实验回答，不能在实验前写成既定结果。
+- 代码、配置、版本控制、启动器、日志和审计只是承载模型与证据的最低限度工具，不得成为研究主线或独立目标。除非工程问题会改变模型行为、破坏实验可比性、引入泄漏或阻止真实训练评测，否则不得让它挤占模型分析、优化和实验时间。
+- 每轮工作开始前都要先回答：当前动作检验了什么模型假设，会产生什么新的性能或机理信息，如何推进一篇可在顶级计算机视觉会议发表的论文。无法回答时，应停止无信息增益的工程工作，回到模型问题本身。
+- DUCA 的优先事项依次是：恢复可信的官方基线；形成统一而纯粹的前置智能选帧理论模型；在公平训练预算下优化官方平均精度和高重叠阈值定位；通过关键消融解释增益来源；验证跨检测器可插拔性与免训练运行方式。版本整理和工程完备度不得替代这些目标。
+
+## DUCA 总计 60 轮论文合同（2026-07-27）
+
+- 公平论文主臂最多使用 6,000 次成功 detector update。K=384 的 `65.385724%` 与
+  K=192 的 `57.967272%` 均是 30+60、共 90 轮的历史诊断，不是最终主结果。
+- 任何 learned-selector 长训练前，必须先建立 released-weight dense、clean native
+  K=384/K=192 uniform 与 clean/wrapper parity，并冻结唯一的
+  `e -> p -> F -> y -> S` exact-K 有界时间重参数化合同。
+- 纯 pre-backbone 路径在插件接口把 GT 从物理时间映到 warped time；推理时把 detector
+  raw proposals 在 NMS 前逆映射回物理时间，再运行算法和参数不变的官方 NMS。不得把
+  detector 内部真实时间改造混入纯插件主结果。
+- 贡献排序教师和直接检测梯度分别受 `G_rank` 与 `G_direct` 约束。前者失败时删除当前
+  连续梯度贡献教师，后者失败时仅删除 direct-gradient 臂；不得通过降低门槛或更换
+  test 集补救。
+- 第一枚种子只用于 development screening，不进入最终统计。结构冻结后使用未参与开发的
+  预登记种子。没有严格训练侧留出集合时统一使用第 6,000 次更新的 terminal EMA；
+  有留出集合时所有臂必须共享同一选择规则，official test 不得选择 epoch。
+- reviewer 给出的密度界、DP 常数、RDD 公式、性能增益和成本阈值是待验证设计提案，不是
+  自动冻结的项目事实。inverse-CDF、DP、课程、日志和版本治理本身都不是论文创新。
+- 真正 frozen-detector 的免训练模式与 task-adapted 主模型共用解码器和坐标合同，但分开
+  声明；共享合同通过后可并行建立最小基线，不得被遗忘或混入主结果。
 
 ## 当前目标
 
-最终研究目标是任务感知动态时序采集：根据视频、窗口、动作区域和难度动态分配帧/片段/Token，减少持续时序冗余，把更有用的信息送入 TAD 检测器，并保护高 IoU 定位性能。
+最终研究目标是面向离线时序动作检测（Temporal Action Detection, TAD）的任务感知动态时序采集：根据视频、窗口、动作区域和难度动态分配帧、片段或时序表示的计算量，减少持续时间冗余，并保护高时间交并比（temporal Intersection over Union, tIoU）下的边界定位性能。
 
-当前仓库的阶段性目标是固定预算 C3 控制锚点：
+当前研究执行状态：
 
-- 用低成本粗分类模型估计动作/背景概率 `p_action`；
-- 将 `p_action` 转换为严格的 value-transport 帧选择 ledger；
-- 将 384/768 选择输入接入 OpenTAD/AdaTAD；
-- 验证输入侧粗分类采集是否能在无测试 GT、无测试 teacher、无 raw-prediction shortcut 的协议下支撑检测。
+- C3、PAction、GAS-VT 和 lattice 保留为固定预算、无数据泄漏的归因与失败诊断基线；
+- DUCA 是离线全窗口、在模型前向过程中即时生成选择的待裁决候选，不是流式在线时序动作检测；
+- `70aa069` 和 `a5e1774` 是历史固定 K=384 训练与成本审计锚点，不再代表当前代码身份；当前实现与实验身份必须从对应实验页和原始回执读取；
+- DUCA 的长期问题是依据低成本动作性与边界证据分配逐视频或逐窗口动态预算；当前固定 K=384 实验只隔离间接非均匀选帧与物理时间表示，不是最终论文主张；
+- 在匹配基线、选择效用、物理时间坐标和端到端成本形成闭环前，不得把 DUCA 称为论文最终方法；
+- ChronoTransport 与 PhysTime 是独立并行假设，不得混用 DUCA 结果。
 
 固定 384/768 或 50% 输入只是归因、安全门和失败诊断锚点，不是最终动态采集目标。
+
+## 共享官方 AdaTAD 基线与 DUCA 并行合同（2026-08-17）
+
+- 原始、未修改的 AdaTAD THUMOS14 复现是所有相关时序动作检测项目共享的一次性基线，DUCA 不得重复评测或训练同一官方模型。
+- 共享基线作业 `1245842` 已使用官方 revision `01c58b9f...`、seed 42、60 个训练轮次和官方评估器完成，最终平均检测精度（Avg-mAP）为 `68.73`，比论文公开锚点 `69.03` 低 `0.30` 个百分点。DUCA 只读引用该结果；历史 65.xx 或 66.xx 结果不得冒充官方 dense 基线。
+- 正式比较还必须绑定该共享结果的原始配置、THUMOS14 规范 411 视频入口、预训练权重、非极大值抑制（Non-Maximum Suppression, NMS）、最终模型或指数移动平均模型的选择规则、运行环境和结果目录。缺少其中任何身份时，只能把 `68.73` 作为共享参考，不能据此计算方法增益。
+- DUCA 当前科学合同是：低成本侦察模型学习逐时刻二元动作性与边界重要性，再由确定性采集规则导出帧重要性和物理位置；长期论文问题进一步要求依据聚合语义证据确定逐视频或逐窗口动态预算。小模型直接预测帧索引只能作为消融，固定 K 只能作为归因、对照或回退。
+- 所有未来 DUCA 完整训练至少每 5 个训练轮次保存一次可恢复的 PyTorch `.pth` 检查点；若未修改的官方配置保存更频繁，则保留官方间隔。恢复点不改变预先登记的最终模型或最终指数移动平均模型选择规则，并应保存模型、优化器、学习率调度器、混合精度缩放器、训练轮次或更新计数及随机状态；至少保留最近三个有效恢复点和预定义里程碑与最终检查点。
 
 ## 仓库范围
 
@@ -22,26 +68,123 @@
 - `opentad/` OpenTAD 主库与当前 C3 接入代码；
 - `configs/` 中当前 C3 路线所需配置与最小 base config；
 - `tools/bata/` 中当前 coarse probe、model matrix、ledger conversion、validator；
-- `scripts/` 中当前 N16R4 GPU1 启动器/ watcher；
+- `scripts/` 中当前 N16R4 Slurm GPU 启动器/ watcher；
 - focused `tests/`；
+- `research-wiki/` 当前研究记忆；
 - `README.md`、`AGENTS.md`、本 `RTK.md`。
 
-不要加入历史 `research-wiki/`、旧 tracker、旧 server logs、生成图、检查点、数据集、压缩包、bundle、临时 worktree 或旧路线报告。
+不要加入旧 tracker、旧 server logs、生成图、检查点、数据集、压缩包、bundle、临时 worktree 或旧路线报告。
 
 ## 协议规则
 
+- 开始工作前必须读 `research-wiki/query_pack.md` 与 `research-wiki/anti_repetition.md`。
+- 新决策、否定路线、实验结果和 claim 变化必须同步更新 wiki 与 append-only `research-wiki/log.md`。
 - 不允许 validation/test GT 参与测试时选择。
 - 不允许 validation/test teacher leakage。
 - 不允许 hidden raw-prediction cache shortcut。
 - ledger 若用于 deployable selection，必须记录 no-GT/no-teacher/no-oracle/no-raw-prediction/no-checkpoint flags。
-- C3 主线优化默认使用物理 GPU1；GPU0 保留给发散创新实验，除非用户同轮明确覆盖。
+- GPU 任务必须使用 Slurm 正常分配的设备；不得固定物理索引或覆盖 Slurm 的 `CUDA_VISIBLE_DEVICES`。单卡任务在进程内使用 `cuda:0`。
+- 历史文件名中残留的 `gpu0`/`gpu1` 只代表旧协议，不得直接复用；再次运行前必须改成正常 Slurm 映射并重新门禁。
 - 不在 N16R4 登录节点直接训练；正式训练使用 Slurm 或已授权保护分配。
-- 发起 Pro 讨论时，默认共享本机 Chrome `--remote-debugging-port=9223` 实例；Chrome 只开一个，例如 `chrome.exe --remote-debugging-port=9223 --user-data-dir=<shared-profile>`。共享端口的核心是共享 DevTools 入口，但不共享同时控制权。
-- 共享 Chrome 9223 时必须加全局调度锁，默认锁文件为当前仓库 `.codex/chrome-9223.lock`；同一时间只允许一个 agent 操作页面。
-- agent 操作前先抢锁；拿到锁后调用 `http://127.0.0.1:9223/json/list` 找到或新建自己的页面，并在锁内容中记录 `owner`、`pid`、`targetId`、`pageId`、`webSocketDebuggerUrl`、`url`、`startedAt`、`expiresAt`。
-- agent 只操作锁中绑定的 Chrome DevTools `targetId`/`pageId`，不要临时切到“当前激活页”或其他未绑定页面。
-- 操作完成后必须释放锁；若 agent 崩溃，锁必须有 TTL/heartbeat，过期后允许下一个 agent 清理并重新抢锁。
-- 共享端口与共享 profile 仍不如独立端口和独立 profile 稳定；需要并行、高可靠或隔离状态时，优先为每个 agent 使用独立 Chrome 端口和独立 `--user-data-dir`。
+- 使用网页端外部科学评审时，必须通过当前分配的浏览器配置和运行端点进入指定项目，并在提交前后核对项目、会话和问题文本。不得依赖历史固定端口、当前聚焦标签页或其他项目的会话。
+- 浏览器端口、租约、队列、会话标识和路由故障只记录在运行回执中，不写入论文进展或科学结论；外部评审意见也必须经过本地代码与原始证据核验后才能改变项目判断。
+
+### 浏览器配置串行与长时 Pro 存活检查（2026-08-28）
+
+- **当前唯一权威 DUCA ChatGPT Project** 为 `g-p-6a91061f789881918ccd8357ca3d6c92`，入口为 `https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats`。此前使用过的 DUCA Project 仅作历史回执，不得回退或作为本轮科学上下文。
+- profile61 已由人类重新登录。任何自动流程均不得关闭其窗口、关闭或重启浏览器、重启 profile、替换当前网页，或用 `CloseMainWindow`、强制终止进程等方式恢复控制平面。只能绑定当前已登录的运行端点；若无法可靠绑定，应返回客观阻塞并保持浏览器原状。
+
+- 同一个 iXBrowser 配置在任一时刻只允许一个浏览器操作。Source 上传、Pro 提交、生成等待和结果回取必须共用一个按稳定 profile ID 命名的独占锁；不同标签页不构成隔离。
+- computer-use 只负责创建或进入正确 Project、上传 Source 并确认远端文件名。完成后关闭自己创建的标签页并释放锁，不创建科研对话、不选择模型、不提交科研提示词。
+- Oracle 只负责在精确 Project URL 中创建全新对话、选择最高可验证的 Pro 模型、提交一次提示词并保存完整回复。每轮使用独立 `ORACLE_HOME_DIR`、唯一 nonce、Oracle session 与 conversation URL；不得依赖当前聚焦标签页、标签页序号、旧对话或 follow-up。
+- Oracle 从提交前路由核验开始一直持有 profile 锁，直到完整回复、session 元数据、conversation URL 和终态报告均已保存。其他进程发现锁存在时只能等待，不得打开标签页、进行浏览器预检查或触碰同一 profile。
+- Pro 深度思考超过一小时本身不是失败。Oracle 提交并保存精确 Project、conversation、nonce 与 session 身份后，Codex 应结束主动推理阶段，不得用周期性工具调用陪同生成。原 Oracle invocation 与 profile 锁继续由机器侧进程持有。
+- 只有收到终态或外部信号、用户重新进入任务，或需要恢复一个失联的原会话时，才允许当前锁持有者对该精确 conversation 做一次只读状态检查。若页面仍在思考，保留原 invocation 并再次退出主动推理；若已经完成，使用原 session 和 conversation 回取；若出现错误或 Project、nonce、conversation 任一绑定无法确认，返回客观阻塞并停止。不得切换 Project、点击提前回答、发送 follow-up、重新提交，或按内容相似性猜测归属。
+- 只有使用不同 iXBrowser profile、独立运行端点和独立 `ORACLE_HOME_DIR` 时才允许并行 Pro 讨论；共享同一 profile 的多个项目必须严格串行。
+
+## 执行优先级与防延误合同（2026-07-22）
+
+本节用于防止 DUCA/R 系列再次因重复审计、重复记录和过度门禁而延误。根因不是算力，也不是
+`monitor-experiment`、`run-experiment` 等执行型 skill；根因是曾把几乎每个小补丁都升级为
+“关键版本”，反复执行全量测试、独立 MAX 审核和部署暂停。
+
+以下 R0--R5、U/G、MAX、PASS 和 KILL 是 2026-07-22 历史执行合同中的原始标识，用于追溯当时的任务与证据，不是领域通用术语，也不自动代表当前路线。当前对外文档应改用完整的自然语言说明实验、通过条件和停止条件。
+
+- **性能证据优先。** 用户要求用 mAP 回答核心问题时，关键路径依次是：检查现有作业与可恢复
+  产物、提交所有依赖安全的实验、监控、解析原始 mAP、再做非阻塞文档整理。不得让开放式讨论、
+  重复可见性认证或无变化状态汇报排在可运行实验之前。
+- **实现可并行，运行才受门禁约束。** R0/R1/R2/R3/R4/R5 中彼此不写同一代码面的实现、配置、
+  成本统计和测试应提前并行完成；上游证据只通过 `afterok`、fail-closed consumer 或结果校验约束
+  下游实际运行，不得用“尚未解锁运行”作为不准备代码的理由。
+- **真正关键版本只有三类。** 独立 MAX 审核只在以下版本完整形成后各执行一次：
+  1. R0 Oracle/冻结检测器 mAP 实现；
+  2. R2/R3 最终可训练模型与 matched U/G0 主实验实现；
+  3. R4 合法 hard-swap 对齐与 G1/G2 实现。
+  split 字段、哈希路径、journal、aggregate、文档、启动器等小修默认只做相关 focused test，
+  除非它们改变模型行为、数据协议或证据真实性，否则不得单独升级为新一轮完整审计门禁。
+- **一次集中修复，一次集中复审。** 独立审核返回多个有界 blocker 时，应一次性登记并并行关闭，
+  合并成一个候选版本后只复审一次；禁止形成“修一项 -> 新提交 -> 新 MAX -> 再发现一项”的串行循环。
+- **Skill 是工具，不是自动工作流。** 性能关键路径默认只按需使用 `run-experiment`、
+  `monitor-experiment`、`analyze-results`、`experiment-queue`。`auto-review-loop`、
+  `research-review`、`kill-argument`、开放式 Pro 讨论和重复独立 MAX 不得自动成为每个提交的前置步骤。
+- **Wiki 只在证据变化时更新。** 仅在出现新设计决策、新代码提交、新 Job、真实失败、新 mAP、
+  新成本结果或 claim 裁决时，同轮更新 Wiki 与 `research-wiki/log.md`。状态无变化时不得反复写长记录；
+  Wiki 维护不得阻塞提交、监控或结果解析。
+- **禁止重复造轮子。** 修改前先查 `research-wiki/duca_model_version_registry.md`、当前 tree 和历史实现；
+  已有 selector、decoder、梯度桥、成本统计或启动器能够复用时不得另建同义版本、worktree 或实验套件。
+- **模型实现优先于启动工程。** 启动器只保留直接运行、依赖与结果路径所需的最小逻辑；禁止扩张
+  通用编排、复杂 schema/journal/router 或形式化框架。时间首先投入会改变 mAP 的粗分类证据、
+  边界微簇选择、真实硬选帧、检测梯度回传与真实检测后端。
+- **显式截止时间采用时间盒。** 当用户给出四小时等硬截止时间时，前 15 分钟内必须完成作业/产物盘点，
+  前 30 分钟内提交所有依赖安全的关键实验或明确唯一物理阻塞；审计与文档并行进行。截止时先提交
+  可核验的原始 mAP 表，并明确区分 terminal、diagnostic 和仍在运行的结果，不得用代理损失冒充 mAP，
+  也不得因等待非关键审计而空耗 GPU 时间。
+- **相同授权与可见性不重复认证。** 用户已授权且仓库、远端身份、分支和路径未变化时，不得再次发起
+  同类许可确认或仓库可见性认证；只有访问事实发生变化或真实权限失败时才重新核验。
+
+### 历史 R0–R5 合同
+
+R0–R5、固定 MAX 审查和四小时生产 DAG 属于旧路线的历史执行合同，只在
+`research-wiki/decision_history.md` 与对应实验记录中用于追溯，不再作为当前 DUCA
+实验的活跃门禁。当前只保留三条通用要求：真实性能证据优先；冻结科学快照接受一次独立审查；
+不改变科学合同的普通修复不得阻断实验。
+
+## 模型算法优先原则（2026-07-22）
+
+- **第一要务始终是模型性能与算法创新。** 本仓库是研究模型的实验载体，不是需要不断扩张的通用工程平台。时间优先投入到更有解释力的模型假设、能提高官方指标的结构与监督、关键消融及真实成本收益。
+- **先做最短的模型闭环。** 模型假设明确后，优先完成“最小端到端实现 -> matched baseline -> 官方 mAP/高 tIoU/真实成本 -> 机理诊断”；不得用长期协议雕琢、框架抽象或辅助工具建设代替模型训练和性能裁决。
+- **工程只做到实验正确可运行。** 启动器、manifest、日志、验证器、统计和可视化只保留支撑正确训练、公平测评、基本复现与论文声明所必需的最小功能；优先复用官方组件和已有实现，禁止为形式完整另建同义框架。
+- **仅四类工程问题可以阻塞模型实验。** 会改变模型行为、造成数据/GT 泄漏、破坏指标或成本真实性、或使训练评测无法运行的问题必须修复；代码风格、通用抽象、额外 schema、日志美化、重复审计和非必要完备性不得阻塞模型优化与 Slurm 投递。
+- **评价工作价值以模型信息增益为准。** 优先回答“性能是否提高、为什么提高、创新点是否成立、成本是否真实下降”；仅增加工程完整度而不产生新模型假设、有效实验、官方指标、机制结论或明确 KILL 决策的工作应停止。
+
+## 论文实验优先与 Pro 科研闭环（2026-08-27）
+
+- **任务必须面向论文问题和决定性实验。** 路线探索、模型代码、完整训练、官方评测与结果归因是主线；不得把复杂合同、通用框架、防御性工具、版图整理或重复审计扩张为研究目标。
+- **工程只走最短必要路径。** 只有会改变模型行为、破坏数据合法性/公平比较/指标真实性，或确实阻止训练评测的问题才可阻塞实验；其余工程问题记录后并行处理，不得终止科学路线。
+- **实现失败不等于科学失败。** 启动器、环境、收据、封存或实现包缺陷只能触发有界的最小修复；只有真实科学证据和明确的 Pro 科学裁决可以停止或切换路线。路线转换前必须完成失败根因、混杂因素和可证伪结论的闭环分析。
+- **高能力外部科学评审模型（下称 Pro）负责前后两端的科研裁决。** 实现前，Pro 明确当前科学问题、最小改动、决定性实验与截止时间；正式代码实现和完整训练或评测后，Pro 再审阅实现忠实度、成功或失败根因、论文可发表性、是否达到当前问题的结论及下一路线。每次讨论都必须同步原始证据与未知项，并在同轮把科学裁决和证据边界写回研究记忆。
+- **每次 Pro 讨论必须绑定最新公开实现。** 提交前先确认当前权威实现已经推送到 GitHub；提示词必须同时给出仓库 URL、分支 URL、精确提交 URL，以及足以定位本轮机制与实验入口的关键文件 URL。不得只给本地路径、未推送提交、过时快照或笼统仓库首页；若代码尚未推送，则先完成同步再发起讨论。
+- 分角色职责和最小同步格式见 `research-wiki/PRO_RESEARCH_ROLE_RULES.md`；具体角色任务与验收顺序可由 Pro 在每轮规划中直接指定，但不得演化为新的工程门禁系统。
+- 每一轮具有科学意义的 Pro 讨论、冻结任务、模型实现、独立审查、正式实验和结果解释，都必须在同轮更新对应的 `research-wiki/` 页面与 `research-wiki/log.md`。记录当前问题、权威输入、Pro 决定、代码与配置身份、原始证据位置、有效性与不确定性边界，以及下一项科学问题；普通调试和协调信息不写入科研记录。
+
+## 同一科学任务内的默认恢复
+
+对不改变科学问题、机制、数据划分、指标、基线、成本口径、预先固定阈值、最终权重规则或论文主张的确定性代码、路径、配置和环境错误，当前执行角色应定位首个因果错误，完成最小修复和聚焦核验，并继续同一科学任务。只有修复需要改变上述科学语义、同一首因在修复后再次出现，或缺少权限、凭据和资源时，才返回 Pro 或人类。能够从既有密封产物原样补齐的预登记统计属于同一实验恢复，不另开路线。
+
+## 一轮研究的完成条件
+
+一轮研究只有在冻结任务、最小实现、独立审查、运行前核验、正式决策性实验或预登记统计、结果与失败归因、完整证据返回 Pro 全部完成时结束。代码存在、局部测试、作业提交、进程退出、基础设施回执或只有点估计，均不得单独结束一轮。
+
+仅当科学问题、权威代码身份、正式作业、原始结果、证据有效性、论文主张或下一任务发生变化时更新研究 Wiki 和 `research-wiki/log.md`。普通调试、等待、重连和不改变科学合同的重试只进入运行回执，不得阻塞实验。
+
+## 长时间计算与主动推理分离（2026-08-28）
+
+- 下载、传输、Slurm 作业、完整训练或 Pro 生成一旦成功提交，并记录作业或会话身份、冻结代码与配置、预期终态产物和恢复规则，就不再属于 Codex 的主动推理工作。
+- 当前任务需要确定性终态记录时，优先使用已有服务，或为该项实验增加最小的 Slurm `afterany` 收尾作业。不得为了等待建设通用 scheduler、状态机或新的工作流平台。
+- 提交确认后，Codex 必须退出主动执行阶段。禁止仅为确认“仍在运行”而反复调用 `squeue`、`sacct`、`tail`、`ps`、`stat`、会话状态或等价工具。
+- 机器可以按固定间隔写进度或 heartbeat，但 Codex 不定期消费。只有终态信号、外部通知、用户重新进入任务，或具体故障诊断会改变下一动作时才读取。
+- 恢复时先做一次终态查询或读取机器侧终态文件，再收集结果或诊断首个真实失败。运行中、排队中和存活本身不是科研证据，也不进入 `PAPER_PROGRESS.md`。
+- 长任务处于后台计算期间，不得因 `/goal` 或心跳而持续占用模型推理；长期目标用于防止遗忘，不用于让 Codex 陪同 GPU 或网页生成等待。
 
 ## N16R4 环境
 
@@ -66,10 +209,19 @@ export XDG_CONFIG_HOME="$BASE/tmp/xdg_config"
 export HF_HOME="$BASE/hf_cache"
 ```
 
-需要下载外部资源时使用登录节点代理：
+### Slurm shell bootstrap
+
+- A standalone Slurm script must execute `source /etc/profile` **before**
+  `set -u` and before every `module load`. Slurm batch shells are
+  non-interactive and do not otherwise define `module`.
+- A failure at this point is a zero-update launch-environment error. Repair
+  the one wrapper line and resubmit the exact same model commit; do not create
+  a new model revision, new gate, or a performance conclusion.
+
+需要下载已获准的外部资源时，从个人环境加载代理配置。代理地址和凭据不得写入仓库：
 
 ```bash
-export http_proxy='http://u-MtfrT7:vH5orjDV@10.244.6.36:3128'
+export http_proxy='<authorized-proxy-url>'
 export https_proxy="$http_proxy"
 export HTTP_PROXY="$http_proxy"
 export HTTPS_PROXY="$https_proxy"
@@ -80,8 +232,8 @@ THUMOS14 默认路径：
 ```bash
 $BASE/thumos14/annotations/thumos_14_anno.json
 $BASE/thumos14/annotations/category_idx.txt
-$BASE/raw/Validation Data/validation
-$BASE/raw/Test Data/TH14_test_set_mp4
+$BASE/thumos14/raw_data/video
+$BASE/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth
 ```
 
 ## 常用检查
@@ -100,3 +252,9 @@ PRECHECK_ONLY=1 bash scripts/run_c3_asformer_delta_ledger_adatad_full_train_gpu1
 ```
 
 当前本机 Windows Python 的 user-site `torch` 可能加载 `c10.dll` 失败；完整 Torch 相关测试优先在 N16R4 OpenTAD 环境中验证。
+
+## ChronoTransport 动态特征刷新并行路线
+
+ChronoTransport 与 C3/DUCA 并行存在，不做 pre-backbone 删帧。v1 在 48 个 16-frame clip × layer-group 上调度 VideoMAE heavy attention/MLP，保持 patch embedding、AdaTAD temporal adapter、384→768 后处理和 detector head dense。TRANSPORT 必须从 latest cache 递推；正式 learned scheduler 必须使用按硬件、精度、batch、schedule 形状与 selected rows 实测的 p50/p95 cost lookup。
+
+Stage A/B 的 dense reference 与 counterfactual branch 必须同 batch、同增广、同 RNG；ledger 只能保存 compact signal、schedule、cost 与 regret label，不能在推理时查询。所有 deploy、metric、latency 与 paper claim 默认关闭，直到三种子 kill gate 通过。

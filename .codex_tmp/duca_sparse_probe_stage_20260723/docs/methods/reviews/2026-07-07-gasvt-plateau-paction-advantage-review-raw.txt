@@ -1,0 +1,213 @@
+这里的“Js vt”我按你前文的 **GAS-VT** 理解。
+
+核心结论：**GAS-VT 前 5 个 epoch 到 40 左右并不奇怪；后面不涨，说明它已经把“粗检测/动作存在性”吃完了，但没有提供更好的高 IoU 边界定位信息。PAction learned 更好，也不一定说明它更高级，反而很可能是因为它更直接、更少约束、更贴近 `p_action` 峰值，而且 fixed_384 本身预算很高。**
+
+## 一、为什么 GAS-VT 前几个 epoch 就能到 40 左右？
+
+因为 `gas_vt_fixed_384` 本质上不是极稀疏输入。它在 768 window 上选 384，相当于看了一半时间位置。只要 `p_action` 有基本动作/非动作区分能力，AdaTAD 很快就能学到：
+
+1. 哪些 window 里有动作；
+2. 动作大致在哪个区间；
+3. 低 IoU 下的粗定位。
+
+所以前几个 epoch 到 40 左右，更多说明 **384/768 的输入密度 + p_action 粗排序已经足够支持粗检测**，不是说明 GAS-VT 的 gap-aware / value-transport 机制真正发挥了作用。
+
+更直接地说：**40 mAP 这一级别可能是“半密度覆盖 + 粗动作信号”的自然下限，而不是 GAS-VT 的结构创新带来的上限突破。**
+
+## 二、为什么后续很多 epoch 没有有效进展？
+
+主要原因有 5 个。
+
+### 1. GAS-VT 当前并不是真正的 sequential value transport
+
+代码里 `GAS_VT_FEATURE_NAMES` 确实加入了 `distance_to_last_selection`、`remaining_budget`、`remaining_time`、`budget_pressure`、`gap_urgency` 这些看起来像 sequential / gap-aware 的特征。([GitHub][1])
+
+但真正 decode 时，`hard_gap_aware_topk` 直接调用的是 PAction 里的 `base_policy.constrained_topk`，也就是一次性按分数 top-k，再做硬 gap 约束，而不是“选一个点 → 更新 state/gap → 再选下一个点”的自回归 acquisition。([GitHub][1])
+
+这意味着当前 GAS-VT 更像：
+
+> `p_action` 特征 + 一些 handcrafted gap/coverage 特征 + constrained top-k repair
+
+而不是：
+
+> 真正的 gap-aware sequential value-transport selector
+
+所以它前期可以靠 p_action 粗排序涨到 40，但后期没有新的机制去优化高 IoU 边界定位。
+
+### 2. GAS-VT 存在训练/部署特征分布不一致
+
+这是我认为最严重的代码级解释。
+
+训练时，GAS-VT 的 feature matrix 是带 `target_budget=dynamic_budget_target` 构造的。([GitHub][2])
+但是 apply checkpoint 时，`checkpoint_policy_scores` 调用的是：
+
+```python
+features = gas_vt.build_gap_aware_feature_matrix(p_action, valid=valid)
+```
+
+没有传入 `target_budget`。([GitHub][3])
+
+而 `build_gap_aware_feature_matrix` 内部在没有 `target_budget` 时会把 budget 默认成 `len(valid_indices)`，也就是接近全长。([GitHub][1])
+
+这会改变至少这些特征的数值语义：
+
+* `remaining_budget`
+* `remaining_time`
+* `budget_pressure`
+* `gap_urgency` 的相对作用
+* 可能还有模型对“还剩多少预算”的理解
+
+结果就是：**训练时模型学的是“我要在 384/动态预算下分配选择”，部署时却看到近似“预算等于全长”的特征状态。** 这会让 policy score 排序变形，特别容易导致后期 detector mAP 卡住。
+
+### 3. GAS-VT 的损失太多，可能过度正则化
+
+GAS-VT 默认损失包括：
+
+* `value_bce`
+* `boundary_coverage`
+* `boundary_bracket`
+* `action_interior_bin`
+* `cvar_max_hole`
+* `budget`
+* `paction_dependence`
+
+其中 `boundary_coverage`、`boundary_bracket`、`action_interior_bin`、`cvar_max_hole`、`budget` 都会把选择往“覆盖、均匀、不要大洞、动作内部也要照顾”的方向推。([GitHub][1])
+
+这对避免漏看很有帮助，但对 TAD 高 IoU 不一定有帮助。高 IoU 需要的是：
+
+> 在动作起止边界附近保留足够高分辨率、足够可辨别的证据。
+
+而 GAS-VT 当前的多项约束可能会把预算分散到：
+
+* 动作内部；
+* coverage gap repair；
+* 均匀补洞；
+* 低价值但能降低 hole loss 的位置。
+
+这会削弱真正高价值 `p_action` 峰、delta 峰、边界突变点的优先级。因此它能快速做粗检测，但无法继续提升边界定位。
+
+### 4. hard gap repair 可能把选择推向 uniform-like
+
+GAS-VT metadata 里写了 `uses_uniform_fill=False` 和 `uses_uniform_scaffold=False`。([GitHub][1])
+
+但这不等于没有 uniform-like 行为。因为 `hard_gap_aware_topk` 最终还是调用 `constrained_topk(..., max_unselected_hole=...)`。([GitHub][1]) 如果 max-hole 约束很强，repair 过程可以把选择强行补成类似“每隔几个点选一个”的格子。
+
+所以 `uniform similarity above threshold: 1.0` 的含义很可能是：
+
+> 某些 ledger 行的 selected positions 与 uniform reference 完全重合，或者 hard repair 后变成了完全 uniform-like 网格。
+
+这不一定说明模型全局崩了，但说明当前 GAS-VT 的约束可能已经强到压过 learned value score。
+
+### 5. AdaTAD 后期真正需要的是边界几何，而不是更多 coverage
+
+前 5 个 epoch 到 40，说明 detector 能利用稀疏输入完成粗检测。但 40 之后要涨，尤其是 mAP@0.6 / mAP@0.7，要解决的是：
+
+* selected positions 是否精确覆盖动作 start/end；
+* selected-axis 与 original dense local index 是否严格一致；
+* GT remap 是否正确；
+* detector regression head 是否理解 true-time / irregular interval；
+* 高 IoU NMS/postprocess 是否没有坐标偏差；
+* 选帧是否真的优先保留 boundary-discriminative evidence。
+
+GAS-VT 当前主要优化的是“不要漏、不要大洞、覆盖边界附近”，但这和“保留对 AdaTAD regression 最有用的位置”不是同一个目标。所以 plateau 是合理的。
+
+## 三、为什么 PAction learned 反而可能达到更好性能？
+
+### 1. PAction learned 更直接，优化更容易
+
+PAction learned 的核心更接近：
+
+> 用 `p_action` 及其派生特征预测每个位置的 frame value，然后 top-k 选分数最高的位置。
+
+它的训练目标里有 action BCE 和 boundary miss 等直接监督项，代码中 `paction_gap_loss_training_objective` 对 `action_target` 做 BCE，并在有 `boundary_target` 时加入 boundary loss。([GitHub][4])
+
+这比 GAS-VT 的多目标结构更简单。简单并不是坏事。当前阶段里，简单模型更可能稳定地保留高 `p_action` 点和边界附近突变点。
+
+### 2. PAction learned 可能更少被 coverage/gap 约束拖累
+
+PAction learned 也可以走 constrained top-k，但它没有 GAS-VT 那么多额外 gap-aware feature 和多项结构损失。PAction 的 decode 也是对 frame value 做 constrained top-k。([GitHub][4])
+
+如果 `p_action` 本身已经和动作边界/动作区间有较强相关性，那么 PAction learned 会更直接地选择：
+
+* 高 `p_action` 区域；
+* `p_action` 上升/下降附近；
+* uncertainty / delta 更强的位置；
+* boundary loss 提示过的位置。
+
+GAS-VT 则可能因为 CVaR max-hole、action interior、budget、bracket 等项把预算分散。
+
+### 3. fixed_384 本身就天然有小 hole 和较好 boundary coverage
+
+这是最容易被误读的一点。
+
+`fixed_384` 在 768 window 上选一半。即便不是很聪明，只要不是特别差，p95 unselected hole 也不会太大。边界 coverage 强，也可能来自：
+
+* 预算密度；
+* p_action 与动作区域相关；
+* 训练时 boundary target；
+* top-k 倾向选择高变化区域；
+* 不是模型真的学会了 detector utility。
+
+所以 PAction learned fixed_384 更好，不应直接解释为：
+
+> 它学到了真正 deployable detector-aware acquisition。
+
+更稳妥的解释是：
+
+> 它是当前更强、更稳定的 Stage1 p_action-supervised selector baseline。
+
+### 4. PAction 没有 GAS-VT 那个明显的 target-budget feature mismatch
+
+从当前代码看，GAS-VT 的 budget-conditioned feature 在训练和 apply 之间不一致，这是一个实质性 bug/风险。PAction learned 的 feature/score 路线更直接，较少依赖 `remaining_budget`、`budget_pressure` 这类在部署时容易错位的特征。因此 PAction 可能不是因为更“高级”，而是因为更不容易被错误特征污染。
+
+## 四、最可能的真实排序
+
+我会把原因优先级排成这样：
+
+1. **GAS-VT 训练/部署 budget-conditioned feature mismatch**：高优先级、必须修。
+2. **GAS-VT 不是实际 sequential VT，而是 constrained top-k baseline**：方法名和实现不一致。
+3. **GAS-VT 多损失过度正则化，压制高价值 p_action/boundary peak**。
+4. **hard gap repair 让选择 uniform-like，导致 `uniform_similarity=1.0` 或高 similarity**。
+5. **fixed_384 密度很高，PAction 更容易凭 p_action 排序吃到大部分收益**。
+6. **AdaTAD 后期瓶颈在高 IoU 边界几何，GAS-VT coverage 型目标无法继续提供增益。**
+
+## 五、这对路线判断意味着什么？
+
+我的判断是：
+
+**GAS-VT 不应继续作为主方法叙事。**
+它可以保留，但应该降级为：
+
+> Stage1 engineered p_action/gap-constrained strong baseline。
+
+**PAction learned 可以作为当前更强 Stage1 baseline。**
+但也不能把它包装成最终方法，因为它仍然主要是：
+
+> train-split GT-derived surrogate supervision + p_action ranking + 高预算 fixed selection。
+
+真正值得推进的主线应该是：
+
+1. Stage1：把 PAction/GAS-VT 都作为严格 ledger baseline。
+2. Stage2：用 dense AdaTAD teacher utility 训练 detector-aware selector。
+3. Stage3：让 AdaTAD detector loss 真正反传到 selector。
+4. Stage4：解决 selector collapse、uniform-like selection、高 IoU 退化。
+
+## 六、下一步最关键实验
+
+不要再只看 GAS-VT final mAP。你需要做 6 个最小诊断：
+
+1. **GAS-VT 修复 target_budget apply 后重跑 fixed_384。**
+2. **GAS-VT 去掉 `cvar_max_hole` / hard repair 重跑。**
+3. **PAction learned fixed_384 vs 纯 p_action top-k fixed_384。**
+4. **PAction learned 去掉 boundary loss，看是否仍然强。**
+5. **统一 max-hole 约束：PAction 和 GAS-VT 同时有/无 repair。**
+6. **报告 mAP@0.6/@0.7、boundary support、uniform similarity、gap CV，而不只报 Average-mAP。**
+
+一句话总结：
+
+**GAS-VT 前期快，是因为半密度输入和 p_action 粗信号足够让 AdaTAD 学会粗检测；后期不涨，是因为当前 GAS-VT 没有真正提供 detector-aware 的边界价值信息，反而可能被 gap/coverage/repair 约束推向 uniform-like。PAction learned 更好，很可能是因为它更直接地保留了高 p_action 和边界相关位置，而不是因为它已经解决了最终的 TAD acquisition 问题。**
+
+[1]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/c69c1a01cbb86cdce1ceba13b3a491d0b489f76f/tools/bata/gas_vt_paction_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/gas_vt_paction_policy.py at c69c1a01cbb86cdce1ceba13b3a491d0b489f76f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[2]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/c69c1a01cbb86cdce1ceba13b3a491d0b489f76f/tools/bata/train_gap_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/train_gap_aware_acquisition_policy.py at c69c1a01cbb86cdce1ceba13b3a491d0b489f76f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[3]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/c69c1a01cbb86cdce1ceba13b3a491d0b489f76f/tools/bata/apply_gap_aware_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/apply_gap_aware_acquisition_policy.py at c69c1a01cbb86cdce1ceba13b3a491d0b489f76f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"
+[4]: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/c69c1a01cbb86cdce1ceba13b3a491d0b489f76f/tools/bata/paction_acquisition_policy.py "OpenTAD_C3_CoarseClean_20260702/tools/bata/paction_acquisition_policy.py at c69c1a01cbb86cdce1ceba13b3a491d0b489f76f · yuzbo/OpenTAD_C3_CoarseClean_20260702 · GitHub"

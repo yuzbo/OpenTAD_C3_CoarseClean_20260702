@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-10T18:54:05Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "fresh_serial_scientific_decision_request",
+  "message_id": "msg-20260810T185405Z-ad987978f297",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/prompts/PRO_SCIENTIFIC_TAKEOVER-v003-serial-pending.md"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/pro-reviews/prompts/PRO_SERIAL_DECISION_DELTA-v001.md",
+    "size": 5655
+  },
+  "priority": "high",
+  "requested_action": "After explicit human release of the parallel-test fail-close, open exactly one fresh cross-Project-serialized Pro conversation in the exact DUCA Project. Use a new nonce, the pinned GitHub revision, all 12 confirmed Sources, highest verified Pro/max effort, and return a complete versioned scientific decision. Do not execute this queue item before the required human gate.",
+  "required_gate": "HUMAN_AUTHORIZATION_FRESH_SERIAL_PRO_AFTER_FAIL_CLOSE",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "pro"
+}

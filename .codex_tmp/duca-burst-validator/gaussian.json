@@ -1,0 +1,54 @@
+{
+  "actionness_loss_mode": "class_balanced_mean",
+  "active_losses": [
+    "actionness",
+    "transition",
+    "transition_boundary"
+  ],
+  "auxiliary_hidden_gradient_scale": 0.0,
+  "boundary_burst": null,
+  "component_lrs": {
+    "action_head": 0.0001,
+    "coarse_trunk": 5e-05,
+    "transition_scorer": 0.0001
+  },
+  "config_path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.codex_tmp\\OpenTAD_DUCA_GlobalCurriculum_20260721\\configs\\adatad\\thumos\\duca_gaussian_frontend_pretrain_matched_fixed384.py",
+  "config_sha256": "d084b81524a88ae03a7c83492ac842041b4976f9c2409ebdeba559076001ffb0",
+  "detector_executed": false,
+  "detector_trained": false,
+  "git_commit": "63e25eb17e523d369f73434ed4d9b6446608861a",
+  "loss_weights": {
+    "actionness": 1.0,
+    "boundary": 0.0,
+    "budget": 0.0,
+    "context": 0.0,
+    "detector": 0.0,
+    "detector_utility": 0.0,
+    "end": 0.0,
+    "entropy": 0.0,
+    "hard_budget_cap": 0.0,
+    "hole": 0.0,
+    "lagrangian_budget": 0.0,
+    "marginal_monotonic": 0.0,
+    "max_gap_hole": 0.0,
+    "radius": 0.0,
+    "redundancy": 0.0,
+    "start": 0.0,
+    "teacher": 0.0,
+    "transition": 0.1,
+    "transition_boundary": 2.0
+  },
+  "ok": true,
+  "optimizer": {
+    "contains_backbone_group": false,
+    "global_gradient_clipping_enabled": false,
+    "paramwise": true,
+    "type": "AdamW"
+  },
+  "schema_version": "duca_frontend_p0_contract_v1",
+  "spatial_norm": "groupnorm",
+  "status": "frontend_p0_contract_passed",
+  "task": "offline_temporal_action_detection",
+  "test_subset_consumed": false,
+  "transition_objective": "gaussian_mass"
+}

@@ -1,0 +1,16 @@
+{
+  "access_status": "accessible",
+  "branch": "codex/duca-h65-60-curriculum-20260823",
+  "github_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702.git",
+  "key_paths": [
+    "opentad/models/selectors/pc_ot_mras_prebackbone_frame_selector.py",
+    "opentad/models/backbones/physical_time.py",
+    "opentad/models/utils/truetime_geometry.py",
+    "opentad/models/detectors/single_stage.py"
+  ],
+  "note": "Clean remote H65-60 head. TrueTime comparison source 11126684af779aa2916a68ecf617c4f14c805478 is also remote-accessible on codex/duca-truetime-curriculum-v3-20260822; H65-60 Stage-2 source is parent 87ff0883651a631d48468ab4f9d6392f587c15e4.",
+  "pr_urls": [],
+  "recorded_at": "2026-08-23T14:40:23Z",
+  "revision": "04c35a3b76897e6c1569eeede41ed3aecaf7f854",
+  "schema_version": "1.0"
+}

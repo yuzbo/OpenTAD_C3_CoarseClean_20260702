@@ -1,0 +1,169 @@
+{
+  "id": "duca-full-data-comparable-protocol",
+  "createdAt": "2026-08-31T07:15:08.002Z",
+  "status": "completed",
+  "promptPreview": "Read every provided file completely. Independently reconcile the verified prior Pro freeze with the later human requirement for complete matched training and co",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-31T07:15:08.823Z",
+      "completedAt": "2026-08-31T07:45:32.946Z",
+      "usage": {
+        "inputTokens": 23811,
+        "outputTokens": 5045,
+        "reasoningTokens": 0,
+        "totalTokens": 28856
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 15359,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "27FD5672061C55E88E63EF1DAE190CAE",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/c/6a952a19-9294-83ea-b09f-5524e7825316",
+      "conversationId": "6a952a19-9294-83ea-b09f-5524e7825316",
+      "promptSubmitted": true,
+      "controllerPid": 37008
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/c/6a952a19-9294-83ea-b09f-5524e7825316"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-31T07:15:14.031Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Read every provided file completely. Independently reconcile the verified prior Pro freeze with the later human requirement for complete matched training and complete official held-out evaluation. Freeze exact data identities, the no-leakage sequence, and one executable current task without delegating scientific choices to Codex. Preserve nonce DUCA-FULL-DATA-COMPARABLE-PROTOCOL-v001-20260831 verbatim in the response.",
+    "file": [
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\prompts\\PRO_DUCA_FULL_DATA_COMPARABLE_PROTOCOL-v001.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-multi-budget-detector-adaptation-freeze-v001\\visible-report.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\sources\\2026-08-31-duca-full-train-official-test-human-constraint.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\sources\\2026-08-31-duca-multi-budget-pro-freeze-v001.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\research-wiki\\experiments\\duca-multi-budget-detector-adaptation.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\PAPER_PROGRESS.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-full-data-comparable-protocol",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-full-data-comparable-protocol-v001\\visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 37008,
+    "reattachCommand": "oracle session duca-full-data-comparable-protocol"
+  },
+  "startedAt": "2026-08-31T07:15:08.819Z",
+  "completedAt": "2026-08-31T07:45:32.996Z",
+  "usage": {
+    "inputTokens": 23811,
+    "outputTokens": 5045,
+    "reasoningTokens": 0,
+    "totalTokens": 28856
+  },
+  "elapsedMs": 1822210,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\oracle\\duca-full-data-comparable-protocol-v001\\sessions\\duca-full-data-comparable-protocol\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 112190,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/c/6a952a19-9294-83ea-b09f-5524e7825316",
+      "sha256": "99f21fad3bd4cc2df998f5adf1f74b938e1d69b840222cb697b32c57614cfde0",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

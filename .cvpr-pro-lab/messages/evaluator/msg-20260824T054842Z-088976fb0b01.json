@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-24T05:48:42Z",
+  "deadline": "2026-08-24T23:59:00+08:00",
+  "from_role": "coordinator",
+  "kind": "SINGLECLOCK_FORMAL_LAUNCH_PATH_RECOVERY",
+  "message_id": "msg-20260824T054842Z-088976fb0b01",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-returns/EVALUATOR_DUCA_H65_SINGLECLOCK_FORMAL_LAUNCH_PATH_BLOCKED-v001.md",
+    "size": 1270
+  },
+  "priority": "critical",
+  "requested_action": "PRE_RUN remains valid. Formal Job1253017 failed before execution because Slurm logs pre-created DUCA_EVAL_OUTPUT_ROOT. Submit the identical b2ccfcca launcher once with stdout/stderr in a separate log directory and a new absent result root; verify it survives the output-root guard. No code/protocol/checkpoint/threshold change and no partial metric interpretation.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

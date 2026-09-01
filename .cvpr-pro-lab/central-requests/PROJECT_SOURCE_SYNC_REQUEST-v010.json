@@ -1,0 +1,59 @@
+{
+  "request_type": "PROJECT_SOURCE_SYNC_REQUEST",
+  "request_id": "PROJECT_SOURCE_SYNC_REQUEST-v010",
+  "status": "BLOCKED_PROJECT_SYNC_TERMINAL_SOURCE_RECOVERY_FAILED",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "browser_profile": "61",
+  "prepared_ids": [
+    "pfile-20260823T144023Z-7fc2da7c2d",
+    "pfile-20260823T144023Z-ffad0b7e1a"
+  ],
+  "prepared_files": [
+    ".cvpr-pro-lab/project-files/prepared/CURRENT_RESEARCH_STATE-v014.md",
+    ".cvpr-pro-lab/project-files/prepared/DUCA_H65_60_TRUETIME_BRIDGE_PRO_ADJUDICATION-v001.md"
+  ],
+  "material_reason": "The user requests one complete scientific adjudication for adding TrueTime-aware representation and/or a support-aware detector bridge to the total-60 H65 candidate. Existing RankPack/TrueTime gives partial high-IoU support, continuous cliplets are terminal negative, and the two H65 Stage-2 jobs remain active. These exact two records are required to prevent a fresh Pro turn from using stale v013 state or repeating dense/uniform/random controls.",
+  "required_before_pro": true,
+  "blocking_class": "BLOCKS_SCIENCE_DECISION",
+  "earliest_at": "2026-08-23T22:40:23+08:00",
+  "priority": "high",
+  "route_state": "H65-60 and original H65 Stage-2 running / TrueTime partial mechanism evidence / no new implementation or experiment authorized",
+  "depends_on": [
+    "RankPack/TrueTime official60 terminal predictions and evaluator replay",
+    "FZ/JT_CONTIG terminal negative evidence",
+    "H65 Stage-1 30-epoch and compressed 20-epoch results"
+  ],
+  "future_pro_operation": "FRESH_EXACT_PROJECT_PRO",
+  "future_pro_nonce": "DUCA-H65-60-TRUETIME-BRIDGE-v001-20260823",
+  "future_pro_question": "Using the confirmed v014 state and TrueTime Bridge adjudication packet, act as Scientific First-Author Agent and make one unique CONTINUE/REVISE/PIVOT/STOP decision. Freeze the most informative H65-compatible route among First-Mixing SingleClock, Deterministic Support-Aware Bridge, or a staged Clock-by-Bridge factorization. Keep H65 semantic indirect K384 selection, selected RGB, 60-epoch/6000-update protocol, detector/loss/NMS/evaluator fixed; do not repeat dense/uniform/random or revive continuous cliplets. Define the exact tensor/time/support contract, smallest Builder patch, independent Critic/Evaluator gates, paired-bootstrap requirement, official THUMOS14 experiment and stop rules. Do not assume the two active H65 Stage-2 jobs have terminal mAP and do not authorize a formal new run before their completion and PRE_RUN.",
+  "supersedes": null,
+  "dedup_key": "DUCA-H65-60-TrueTime-first-mixing-vs-support-aware-bridge-v001",
+  "single_recovery": "Consumed. Central terminal disposition closes this material epoch after two total mutation attempts. No third upload, list, adoption, reconciliation, inline attachment bypass, Pro call, follow-up, old-conversation reuse, implementation, or new experiment is authorized under this request.",
+  "last_dispatch": "CENTRAL-ARIS-SOURCES-DUCA-H65-60-TRUETIME-BRIDGE-v001",
+  "last_receipt_at": "2026-08-23T22:54:30+08:00",
+  "last_transport_result": {
+    "runtime_cdp": "127.0.0.1:14106",
+    "source_count_before": 39,
+    "source_count_after": 40,
+    "mutation_attempt_count": 2,
+    "remote_state": "CURRENT_STATE_PRESENT_CONFIRMED_PACKET_RECOVERY_FAILED_NO_POST_ATTEMPT_INVENTORY",
+    "confirmed_ledger_ids": [
+      "pfile-20260823T144940Z-c2b9645a90"
+    ],
+    "remote_refs": [],
+    "failure_class": "SOURCE_UPLOAD_PERSISTENCE_TIMEOUT_ZERO_OBSERVED_MUTATION_RESPONSES",
+    "raw_error": "Sole missing-file recovery started 2026-08-23T22:51:24+08:00 and ended 2026-08-23T22:54:30+08:00: Upload did not reach persistent Project attachment before timeout; fileCreate2xx=0, rawUpload2xx=0, processUpload2xx=0, projectAttach2xx=0, failures=[]. No post-attempt list was performed."
+  },
+  "terminal_disposition": {
+    "profile_61": "released",
+    "confirmed_source": "CURRENT_RESEARCH_STATE-v014.md / pfile-20260823T144940Z-c2b9645a90",
+    "unconfirmed_source": "DUCA_H65_60_TRUETIME_BRIDGE_PRO_ADJUDICATION-v001.md / pfile-20260823T144023Z-ffad0b7e1a",
+    "dependent_pro_nonce": "DUCA-H65-60-TRUETIME-BRIDGE-v001-20260823",
+    "dependent_pro_status": "NOT_SUBMITTED / NOT_AUTHORIZED",
+    "science_decision": "NONE",
+    "browser_conversation": "NONE",
+    "parent_epoch_mutation_attempts": 2,
+    "future_attempt_requirement": "separately prepared material epoch plus new central request and authorization"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "created_at": "2026-08-12T21:46:52Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "P0_E1_REFERENCE_EXECUTION_QUEUE_RESERVED",
+  "message_id": "msg-20260812T214652Z-7b2c8a5e61d4",
+  "parent_artifact_ids": [
+    "PRO_P0_IDENTITY_GATE_AUTHORIZATION-v001",
+    "EVALUATOR_DUCA_P0_E1_REFERENCE_PRE_RUN_ADMISSION_MANIFEST_CANDIDATE-v003",
+    "CRITIC_DUCA_P0_E1_REFERENCE_ADMISSION_MANIFEST_V003_FOCUSED_RECHECK-v001",
+    "DUCA_P0_E1_PRE_RUN_ADMISSION_CANDIDATE-v001"
+  ],
+  "payload": {
+    "execution_state": "NOT_EXECUTED",
+    "execution_authority": "NOT_GRANTED",
+    "dispatch_prohibited": true,
+    "purpose": "FAIL_CLOSED: a later broad control-plane search makes strict payload-unopened status unverifiable. This identity remains not consumed, not dispatched, and not executed, but is permanently ineligible for E1 admission."
+  },
+  "priority": "high",
+  "requested_action": "NONE. This record reserves the exact future E1 queue identity only; it authorizes no command, remote access, fixture read, import, test, data/model/metric access, GPU/CUDA/Slurm, browser, or result production.",
+  "required_gate": "P0_E1_FORMAL_PRE_RUN_ADMISSION_NOT_YET_SATISFIED",
+  "schema_version": "1.0",
+  "status": "fail_closed_strict_unopened_unverifiable",
+  "superseded_by": "msg-20260812T220919Z-12f7e8a4d9c3",
+  "supporting_skills": [],
+  "to_role": "evaluator"
+}

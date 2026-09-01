@@ -1,0 +1,120 @@
+{
+  "id": "duca-pjst-d1-posttrain-v001",
+  "createdAt": "2026-08-27T08:12:59.465Z",
+  "status": "running",
+  "promptPreview": "Execute the complete attached DUCA scientific post-training adjudication exactly once in this fresh exact-DUCA Project conversation. The attached prompt is auth",
+  "model": "gpt-5.6-sol",
+  "models": [
+    {
+      "model": "gpt-5.6-sol",
+      "status": "running",
+      "log": {
+        "path": "models\\gpt-5.6-sol.log"
+      },
+      "startedAt": "2026-08-27T08:12:59.485Z"
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "GPT-5.6 Sol",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 22579
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "chromePort": 22579,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "1B1B6B48ED1F142FAF874AD8F506A319",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8ff193-31c0-83ea-84b2-56742551fb9b",
+      "conversationId": "6a8ff193-31c0-83ea-84b2-56742551fb9b",
+      "promptSubmitted": true,
+      "controllerPid": 91092
+    },
+    "modelSelection": {
+      "requestedModel": "GPT-5.6 Sol",
+      "resolvedLabel": "GPT-5.6 Sol",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-27T08:13:03.758Z"
+    }
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Execute the complete attached DUCA scientific post-training adjudication exactly once in this fresh exact-DUCA Project conversation. The attached prompt is authoritative and includes nonce DUCA-PJST-D1-POSTTRAIN-ROOTCAUSE-NEXT-v001-20260827.",
+    "file": [
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_PJST_D1_POSTTRAIN_ROOTCAUSE_AND_NEXT_TASK-v001.md"
+    ],
+    "model": "gpt-5.6-sol",
+    "models": [
+      "gpt-5.6-sol"
+    ],
+    "effectiveModelId": "gpt-5.6-sol",
+    "filesReport": false,
+    "slug": "duca-pjst-d1-posttrain-v001",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "GPT-5.6 Sol",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 22579
+      },
+      "thinkingTime": "extra-high",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-pjst-d1-posttrain-rootcause-next-v001/PRO_DUCA_PJST_D1_POSTTRAIN_ROOTCAUSE_AND_NEXT_TASK-v001.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "foreground",
+    "attached": true,
+    "detached": false,
+    "reattachCommand": "oracle session duca-pjst-d1-posttrain-v001"
+  },
+  "startedAt": "2026-08-27T08:12:59.483Z"
+}

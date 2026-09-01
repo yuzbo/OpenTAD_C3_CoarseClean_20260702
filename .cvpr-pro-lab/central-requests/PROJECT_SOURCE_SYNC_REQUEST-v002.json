@@ -1,0 +1,18 @@
+{
+  "request_type": "PROJECT_SOURCE_SYNC_REQUEST",
+  "status": "COMPLETE_CONFIRMED",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "project_url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+  "prepared_ids": [
+    "pfile-20260811T153446Z-9763874a43",
+    "pfile-20260811T153536Z-edc7319c9c",
+    "pfile-20260811T153542Z-c43d207bb0"
+  ],
+  "material_reason": "Fresh accepted Pro P0 route adjudication supersedes the ambiguous density definition and updates the active state/history.",
+  "required_before_pro": true,
+  "earliest_at": "2026-08-11T15:35:57Z",
+  "priority": "high",
+  "route_state": "REVISE / BLOCKED_PRE_RESULT / P0 density route specified",
+  "depends_on": "CENTRAL-PRO-DUCA-ORACLE-P0-20260811-v003 accepted outcome",
+  "browser_operation": "Completed under CENTRAL-SOURCES-DUCA-P0-DECISION-v001 at runtime CDP 127.0.0.1:4334; all three prepared materials were confirmed remotely on 2026-08-11T15:45:58Z."
+}

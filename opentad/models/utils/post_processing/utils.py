@@ -70,6 +70,120 @@ def _flag_is_true(value):
     return False
 
 
+def _validate_selected_axis_meta(coords, meta, positions, valid_len):
+    if _flag_is_true(meta.get("irregular_native_axis", False)):
+        raise ValueError(
+            "strict selected-axis conversion received irregular_native_axis=True metadata."
+        )
+    if positions.numel() == 0:
+        raise ValueError(
+            "strict selected-axis conversion requires non-empty irregular_selected_positions."
+        )
+    if not torch.isfinite(positions).all():
+        raise ValueError(
+            "strict selected-axis conversion requires finite irregular_selected_positions."
+        )
+    valid_len_tensor = torch.as_tensor(
+        valid_len,
+        dtype=coords.dtype,
+        device=coords.device,
+    )
+    if valid_len_tensor.numel() != 1 or not torch.isfinite(valid_len_tensor).all():
+        raise ValueError(
+            "strict selected-axis conversion requires finite irregular_selected_valid_len."
+        )
+    valid_len_value = float(valid_len_tensor.item())
+    if valid_len_value <= 0:
+        raise ValueError(
+            "strict selected-axis conversion requires positive irregular_selected_valid_len."
+        )
+    if positions.numel() > 1 and not (positions[1:] > positions[:-1]).all():
+        raise ValueError(
+            "strict selected-axis conversion requires monotonic increasing "
+            "irregular_selected_positions."
+        )
+    if (
+        float(positions[0].item()) < 0.0
+        or float(positions[-1].item()) > valid_len_value
+    ):
+        raise ValueError(
+            "strict selected-axis conversion requires irregular_selected_positions "
+            "within irregular_selected_valid_len."
+        )
+    if not torch.isfinite(coords).all():
+        raise ValueError(
+            "strict selected-axis conversion requires finite coordinates."
+        )
+
+
+def selected_axis_to_dense_axis(coords, meta, strict=False):
+    """Interpolate selected-axis coordinates onto the native dense axis."""
+
+    if meta is None:
+        if strict:
+            raise ValueError(
+                "strict selected-axis conversion requires selected-axis metadata."
+            )
+        return coords
+
+    positions = meta.get("irregular_selected_positions", None)
+    valid_len = meta.get("irregular_selected_valid_len", None)
+    if (
+        positions is None
+        or valid_len is None
+        or _flag_is_true(meta.get("irregular_native_axis", False))
+    ):
+        if strict:
+            raise ValueError(
+                "strict selected-axis conversion requires irregular_selected_positions, "
+                "irregular_selected_valid_len, and selected-axis metadata."
+            )
+        return coords
+
+    positions = torch.as_tensor(
+        positions,
+        dtype=coords.dtype,
+        device=coords.device,
+    ).reshape(-1)
+    if strict:
+        _validate_selected_axis_meta(coords, meta, positions, valid_len)
+    if positions.numel() == 0:
+        return coords
+
+    valid_len_value = torch.as_tensor(
+        valid_len,
+        dtype=coords.dtype,
+        device=coords.device,
+    ).reshape(-1)[0]
+    xp = torch.arange(
+        positions.numel(),
+        dtype=coords.dtype,
+        device=coords.device,
+    )
+    xp = torch.cat(
+        [xp, xp.new_tensor([float(positions.numel())])],
+        dim=0,
+    )
+    fp = torch.cat([positions, valid_len_value.reshape(1)], dim=0)
+
+    coord_shape = coords.shape
+    coord_flat = coords.reshape(-1).clamp(
+        min=0.0,
+        max=float(positions.numel()),
+    )
+    right_idx = torch.searchsorted(xp, coord_flat, right=True).clamp(
+        min=1,
+        max=xp.numel() - 1,
+    )
+    left_idx = right_idx - 1
+    x0 = xp[left_idx]
+    x1 = xp[right_idx]
+    y0 = fp[left_idx]
+    y1 = fp[right_idx]
+    weight = (coord_flat - x0) / (x1 - x0).clamp(min=1.0e-6)
+    return (y0 + weight * (y1 - y0)).reshape(coord_shape)
+
+
 def _selected_axis_segments_to_dense_axis(segments, meta):
     if _flag_is_true(meta.get("irregular_native_axis", True)):
         return segments
@@ -106,11 +220,49 @@ def _selected_axis_segments_to_dense_axis(segments, meta):
     return target_positions[left] * (1.0 - frac) + target_positions[right] * frac
 
 
-def convert_to_seconds(segments, meta):
+def convert_to_seconds(
+    segments,
+    meta,
+    source_axis="auto",
+    strict=False,
+    allow_auto_axis=True,
+):
+    if source_axis not in {"auto", "selected", "native"}:
+        raise ValueError(
+            f"Unsupported source_axis for convert_to_seconds: {source_axis}"
+        )
+
+    explicitly_converted = source_axis in {"selected", "native"}
+    if source_axis == "selected":
+        selected_meta = dict(meta or {})
+        selected_meta["irregular_native_axis"] = False
+        segments = selected_axis_to_dense_axis(
+            segments,
+            selected_meta,
+            strict=True,
+        )
+    elif source_axis == "auto" and strict:
+        has_selected_axis_meta = (
+            meta is not None
+            and meta.get("irregular_selected_positions", None) is not None
+            and meta.get("irregular_selected_valid_len", None) is not None
+            and not _flag_is_true(meta.get("irregular_native_axis", False))
+        )
+        if has_selected_axis_meta and not allow_auto_axis:
+            raise ValueError(
+                "strict auto-axis conversion is ambiguous for irregular "
+                "selected-axis metadata; pass source_axis='selected' or 'native'."
+            )
+
+    if meta.get("prediction_time_unit") == "seconds":
+        if segments.shape[0] > 0:
+            segments.clamp_(min=0.0, max=float(meta["duration"]))
+        return segments
     if meta["fps"] == -1:  # resize setting, like in anet / hacs
         segments = segments / meta["resize_length"] * meta["duration"]
     else:  # sliding window / padding setting, like in thumos / ego4d
-        segments = _selected_axis_segments_to_dense_axis(segments, meta)
+        if not explicitly_converted:
+            segments = _selected_axis_segments_to_dense_axis(segments, meta)
         snippet_stride = meta["snippet_stride"]
         offset_frames = meta["offset_frames"]
         window_start_frame = meta["window_start_frame"] if "window_start_frame" in meta.keys() else 0

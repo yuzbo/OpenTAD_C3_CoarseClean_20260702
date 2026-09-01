@@ -1,0 +1,1671 @@
+# DUCA 两阶段课程训练路线代码审计与下一版裁决
+
+## VISIBILITY_CERTIFICATE
+
+```text
+status: VISIBLE
+repository: yuzbo/OpenTAD_C3_CoarseClean_20260702
+requested_branch: codex/duca-two-stage-curriculum-20260721
+requested_commit: 6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9
+actual_commit_read: 6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9
+commit_title: Fix frontend-only optimizer contract
+commit_time: 2026-07-21T04:05:01Z
+access_mode: GitHub connector, every file fetched with ref=exact commit SHA
+branch_HEAD_used_as_source: false
+local_worktree_used_as_source: false
+runtime_training_or_CUDA_executed: false
+verdict_basis: immutable source audit; supplied job evidence is separately labeled
+visibility_result: PASS
+```
+
+该提交实际只修改了三处：P0 配置删除继承的 backbone optimizer group；串行 launcher 导出两份 split block-list 并增加配置预检；测试增加 optimizer 类型和无 backbone group 断言。它修复的是一个局部 optimizer 配置错误，**没有证明三损失合同、前端冻结合同或四臂同构合同成立**。
+
+### 关键读取索引
+
+| 文件                              | 实际审计区间                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENTS.md`                     | [L5–L23](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/AGENTS.md#L5-L23)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `RTK.md`                        | [L7–L18](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/RTK.md#L7-L18)、[L33–L40](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/RTK.md#L33-L40)                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `actionformer.py`               | [L24–L78](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/models/detectors/actionformer.py#L24-L78)、[L138–L201](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/models/detectors/actionformer.py#L138-L201)、[L292–L299](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/models/detectors/actionformer.py#L292-L299)、[L519–L648](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/models/detectors/actionformer.py#L519-L648) |
+| `duca_online_frame_selector.py` | [L300–L430](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/models/selectors/duca_online_frame_selector.py#L300-L430)、[L1660–L2055](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/models/selectors/duca_online_frame_selector.py#L1660-L2055)、[L2260–L2495](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/models/selectors/duca_online_frame_selector.py#L2260-L2495)                                                                                                                  |
+| `acquisition.py`                | [L2953–L3167](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/models/duca/acquisition.py#L2953-L3167)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `transition_only.py`            | [L16–L317](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/models/duca/transition_only.py#L16-L317)、[L320–L463](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/models/duca/transition_only.py#L320-L463)                                                                                                                                                                                                                                                                                                                                                 |
+| `structured_selection.py`       | [L832–L1060](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/models/duca/structured_selection.py#L832-L1060)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `train_engine.py`               | [L143–L270](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/opentad/cores/train_engine.py#L143-L270)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `tools/train.py`                | [L250–L389](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/tools/train.py#L250-L389)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| P0 基配置                          | [L20–L126](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/configs/adatad/thumos/duca_frontend_pretrain_fixed384_base.py#L20-L126)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Official-60 基配置                 | [L4–L100](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/configs/adatad/thumos/duca_two_stage_joint_fixed384_official60_base.py#L4-L100)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| split/init/select               | [split L34–L99](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/tools/bata/create_duca_frontend_split.py#L34-L99)、[init L35–L170](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/tools/bata/duca_frontend_initialization.py#L35-L170)、[select L93–L243](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/tools/bata/select_duca_frontend_checkpoint.py#L93-L243)                                                                                                                                                   |
+| CUDA gate / 新测试                 | [gate L331–L397](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/tools/bata/run_duca_protected_e2e_exact_full_model_gate.py#L331-L397)、[curriculum test L28–L232](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/tests/test_duca_two_stage_curriculum.py#L28-L232)、[selection test L60–L104](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/blob/6f2ed48d8cb31fe984b8a20223a0624fcf95d4b9/tests/test_duca_frontend_checkpoint_selection.py#L60-L104)                                                                                                           |
+
+---
+
+## 总裁决
+
+```text
+CURRENT_IMPLEMENTATION: HOLD
+OFFICIAL60_AS_IS: NO_GO
+P0_THREE_LOSS_CONTRACT: FALSE
+UNIFORM_WARMUP_FRONTEND_FROZEN: FALSE
+PROTECTED_E2E_CLAIM: FALSE
+CURRENT_P0_QUALITY: UNKNOWN
+CURRENT_TERMINAL_MMAP: UNKNOWN
+METHOD_FAMILY: ALLOW_ONE_BOUNDED_REPAIR
+UNIQUE_RECOMMENDATION: C — exact-uniform cell + immutable pure-delta anchor
+                       + bounded residual utility + isolated dual optimizer
+```
+
+**当前提交不得直接重启 Official-60。** 继续排队只会得到一个无法归因的结果：即便最终 mAP 低，也无法区分是方法失败、隐式损失、粗分类语义污染、AdamW warmup 漂移、BN buffer 漂移，还是 hard/soft 代理方向错误。
+
+这不是对 DUCA 家族的结构性 KILL。已有严格 CellCF 结果中 transition-beta0 曾略高于 uniform，说明“低成本状态变化包含可用信息”尚未被否定；但当前全局重排与受保护训练实现不具备继续消耗 Official-60 资源的条件。
+
+---
+
+# 一、十四项强制问题逐项裁决
+
+## 1. P0 的 cost 是否真的只有三项目标？——**P0 阻断：否**
+
+### 代码事实
+
+P0 配置使用 `_delete_=True`，只写入：
+
+```python
+actionness=1.0
+transition=0.10
+transition_boundary=16.0
+```
+
+但 `duca_losses()` 随后先建立一组带非零默认值的完整权重，再用三项配置执行 `weights.update()`。被遗漏的非零默认项包括：
+
+```text
+budget       0.05
+boundary     0.25
+hole         0.25
+redundancy   0.05
+radius       0.02
+entropy      0.01
+teacher      0.50
+```
+
+`ActionFormer._selector_only_losses()` 没有三项白名单，而是把 selector 返回的**全部 loss key 求和**。所以日志中的 `boundary_coverage_loss`、`action_local_hole_loss`、`redundancy_loss`、`entropy_anti_collapse_loss` 不是纯诊断值，而是进入 `cost` 的优化目标。
+
+更严重的是：
+
+```python
+entropy_anti_collapse_loss = -entropy.mean() * 0.01
+```
+
+最小化该项等价于**提高二元熵，把 `p_action` 推向 0.5**，它直接对抗动作/背景判别。
+
+### 梯度接收模块
+
+| 损失                                  | 实际接收梯度                                                              |
+| ----------------------------------- | ------------------------------------------------------------------- |
+| `actionness_bce_loss`               | spatial stem、ASFormer encoder/decoder、action output head            |
+| `transition_distribution_loss`      | transition scorer，且通过未 detach 的 hidden 更新 spatial stem 与 ASFormer   |
+| `transition_boundary_coverage_loss` | transition scorer；主路线 `policy_hidden_gradient_scale=0` 时不进 ASFormer |
+| `boundary_coverage_loss`            | 通过 ST selection 进入 scorer                                           |
+| `action_local_hole_loss`            | 通过 ST selection 进入 scorer                                           |
+| `redundancy_loss`                   | 通过 ST selection 进入 scorer                                           |
+| `entropy_anti_collapse_loss`        | 通过 `p_action` 进入完整粗分类分支                                             |
+| `budget/radius/teacher`             | 依具体张量可能数值为零，但仍属于错误的隐式 inventory                                     |
+
+### 最小修复
+
+严格路线必须：
+
+1. 所有 loss key 显式列全；
+2. 未声明 key 直接抛错；
+3. 权重为零的损失不得构图；
+4. P0 `cost` 的 key 集必须逐 batch 断言为精确三项。
+
+当前 P0 三损失合同为 **FALSE**。
+
+---
+
+## 2. 三组权重是否合理？——**P1：不能由当前证据裁决，现有设计不合理**
+
+### 代码事实
+
+用户提供的 raw scale 为：
+
+| 变体          | transition 加权贡献 | boundary 加权贡献 |
+| ----------- | --------------: | ------------: |
+| A：0.05 / 8  |     0.318–0.335 |   0.056–0.296 |
+| B：0.10 / 16 |     0.635–0.669 |   0.112–0.592 |
+| C：0.20 / 32 |     1.270–1.338 |   0.224–1.184 |
+
+`transition_distribution_loss` 是全时间轴 softmax 交叉熵；随机或近均匀预测的自然基线约为 `log(T)`，`log(768)=6.644`。因此 raw loss 约 6.7 **不等价于梯度异常巨大，也不能单独证明“没有学习”**。其梯度量级由 `softmax−target`、temperature、有效长度和 scorer Jacobian 决定。
+
+所谓 `balanced_binary_actionness_loss` 也没有根据当前 batch 正负比例平衡类别：默认 `positive_prior=0.5` 导出 `pos_weight=1`，实质仍是普通 BCE。函数命名与实际优化不一致。
+
+当前代码不记录：
+
+```text
+每个未加权损失 → 每个接收模块的梯度范数
+每个加权损失 → 每个接收模块的梯度范数
+梯度夹角
+裁剪前/后范数
+```
+
+所以**实际梯度范数未知**。仅按标量“看起来平衡”选择 B 没有科学依据。
+
+### 额外错配
+
+训练 boundary target 使用 `radius=4`，P0 核心门禁却要求 `r1` 不退化。一个模型可以优化宽半径覆盖，同时在精确高 IoU 需要的 r1 上变差。当前旧结果正符合这种症状。
+
+### 最小修复
+
+不再搜索 A/B/C。固定归一化目标：
+
+```text
+L_action       = 正样本均值 BCE 与负样本均值 BCE 各 0.5
+L_transition   = local-cell CE / log(cell_size)
+L_boundary     = r1 soft coverage
+总损失         = 1.0 L_action + 0.5 L_transition + 2.0 L_boundary
+```
+
+并记录以下量：
+
+```python
+g[loss_name][module_name] =
+    sqrt(sum((d loss / d parameter) ** 2))
+```
+
+在前 32 次成功更新逐步记录，之后每 100 次记录。修复后 transition/boundary 不再更新粗 trunk，因此无需把 scorer 梯度和 coarse 梯度人为配成相同标量。
+
+---
+
+## 3. transition/boundary 是否偷偷训练 ASFormer trunk？——**P0 阻断：transition 会**
+
+### 代码事实
+
+`transition_utility_paths()` 只 detach 了 actionness logits：
+
+```python
+build_transition_descriptors(
+    actionness_logits.detach(),
+    hidden,                       # 未 detach
+    ...
+)
+```
+
+随后 auxiliary transition score 由同一个 scorer 对 live hidden descriptor 计算。`transition_distribution_loss` 因而沿：
+
+```text
+transition CE
+→ auxiliary_scores
+→ transition scorer
+→ delta_hidden / cosine_hidden
+→ ASFormer hidden
+→ ASFormer encoder
+→ spatial stem
+```
+
+反向传播。
+
+policy 路径则通过：
+
+```python
+policy_descriptors = source.detach() +
+    scale * (source - source.detach())
+```
+
+在 `scale=0` 时阻断 hidden 梯度。所以：
+
+* `transition_distribution_loss`：会污染 ASFormer；
+* `transition_boundary_coverage_loss`：主路线只更新 scorer；
+* 隐式 `entropy_anti_collapse_loss`：再次更新粗分类分支。
+
+正式 full-model gate 甚至把“transition supervision 必须命中 ASFormer”写成通过条件，因此这不是偶然 bug，而是当前实现合同。
+
+### 推断
+
+当前模型不是“粗分类器只学习动作/背景，选择器间接读取其状态变化”，而是：
+
+> 动作 BCE 与边界 transition CE 共同塑造同一 ASFormer representation。
+
+这会把低 AUROC 的粗模型变成一个混合边界编码器，破坏原始方法可解释性。
+
+### 最小修复
+
+```python
+transition_descriptors = build_transition_descriptors(
+    actionness_logits.detach(),
+    hidden.detach(),
+    valid_mask,
+)
+```
+
+并增加反向断言：
+
+```text
+backward(action_loss):
+  coarse grads > 0
+  scorer grads == None
+  detector grads == None
+
+backward(transition_loss or boundary_loss):
+  scorer grads > 0
+  every coarse grad is None
+  detector grads == None
+
+backward(detector_loss):
+  scorer grads > 0 only after bridge starts
+  every coarse grad is None
+```
+
+注意断言必须是 `grad is None`，不能只检查数值等于零。
+
+---
+
+## 4. selector 实际看到了什么？——**P1：信号结构偏离“纯 delta 锚点”**
+
+### 代码事实
+
+scorer descriptor 包含：
+
+```text
+delta_actionness_logit                  1
+abs(delta_actionness_logit)             1
+delta_binary_entropy                    1
+abs(delta_binary_entropy)               1
+delta_hidden                           96
+abs(delta_hidden)                      96
+consecutive_hidden_cosine_change        1
+合计                                  197
+```
+
+其中 **192/197 个维度来自 hidden 差分**。纯 `abs(delta p_action)` 只在 holdout 诊断中作为比较项，并不是 policy 的固定组成部分。
+
+learned score 和 exact-uniform reference 都会先在每个有效时间轴上做零均值、单位方差归一化，再线性混合。即使 learned scorer 只有微弱噪声，归一化也会把噪声放大到单位方差后参与排序。
+
+低分辨率 stem 含两个 `BatchNorm2d`；所有 `B×T` 帧先通过 stem，随后才用 valid mask 清零。因此 padding 帧可以在训练态污染 BN running mean/variance。
+
+### 推断
+
+旧现象“learned transition AUROC 低于 pure delta、明显聚集但位置错误”最可能不是 transition 信号完全不存在，而是：
+
+1. pure delta 没有作为不可退化锚点；
+2. 192 维 hidden change 允许 MLP 覆盖 5 维低阶状态变化；
+3. 全轴 z-normalization 放大 learned noise；
+4. ASFormer hidden 本身又被 transition CE 改写；
+5. padding-BN 使边缘/短窗口统计不稳定。
+
+实际 scorer 权重分布与各 descriptor 的贡献度在当前证据中**未知**。
+
+### 最小修复
+
+* pure `abs(delta p_action)` 固定为 base score；
+* learned scorer 只输出有界 residual；
+  -所有 scorer 输入 `detach()`；
+* spatial stem 的 BatchNorm 改为 GroupNorm，或严格按有效帧构建 stem batch；
+* 增加 padding metamorphic test。
+
+---
+
+## 5. P0 是否仍构建和维护完整 VideoMAE/AdaTAD/EMA？——**P1：是**
+
+### 代码事实
+
+`ActionFormer.__init__()` 先通过父类构建 backbone、projection、neck、head，之后才构建 selector 并冻结非 selector 参数。`selector_train_only_skip_detector` 只跳过 `forward_train()` 中的 detector path。
+
+`tools/train.py` 随后仍然：
+
+1. 把整个模型搬到 GPU；
+2. 对整个模型包装 DDP；
+3. 用 `ModelEma` 深拷贝整个模型；
+4. 保存包含完整 detector 的 checkpoint。
+
+P0 launcher 仍显式传入 AdaTAD 预训练权重路径。
+
+### 推断
+
+P0 节省了重型前向 FLOPs，但没有消除：
+
+* VideoMAE/AdaTAD 参数显存；
+* DDP 参数注册；
+* 完整 EMA shadow；
+* 大 checkpoint；
+* 不必要的预训练权重加载和磁盘占用。
+
+它不会更新 detector 参数，但会显著恶化当前磁盘配额和 P0 工件大小。真实 P0 显存和写盘量未提供，数值**未知**。
+
+### 最小修复
+
+新增专用 `tools/bata/train_duca_frontend.py`：
+
+```text
+只 build_selector
+只把 selector 放 GPU
+只建立 selector EMA
+checkpoint 仍按 frame_selector.* 前缀封装
+不构建 ActionFormer、VideoMAE、projection、neck、head
+```
+
+---
+
+## 6. train/holdout block-list 语义是否正确？——**P0：排除方向正确，数据数量合同不闭合**
+
+### 代码事实
+
+split 脚本：
+
+* `frontend_train_block_list.txt` 写入 holdout 视频，用于训练时排除；
+* `frontend_holdout_block_list.txt` 写入 train 视频，用于 holdout 时排除。
+
+该方向正确，且 split 只读取 `subset=="training"`。
+
+但 split 是在原始 annotation 视频集合上完成；`PaddingDataset` 构建时还会再次删除 `get_gt()==None` 的视频。
+
+训练 loader 固定 `drop_last=True`。P0 的 `formal_protocol=""`，因此 `tools/train.py` 不会检查 loader 实际 batch 数是否等于期望值。
+
+### 推断
+
+例如名义 160 个 train 视频中若 1 个在 Dataset 构建后被过滤：
+
+```text
+159 / batch_size 2 + drop_last=True = 79 steps
+```
+
+而不是期望的 80。是否实际发生 79 步在当前仓库证据中**未知**，但代码允许静默发生。
+
+还缺少以下合同：
+
+* 12 个 candidate 是否导出了完全相同的 holdout sample IDs；
+* 每个 candidate 的视频/窗口数是否一致；
+* train/holdout 在 Dataset 过滤后是否仍严格不交叉；
+* loader 每轮实际长度是否固定。
+
+### 最小修复
+
+先按真实 Dataset eligibility 生成 eligible IDs，再划分 80/20；manifest 必须记录：
+
+```text
+eligible_video_ids
+train_video_ids
+holdout_video_ids
+excluded_video_ids + 原因
+train_dataset_len
+holdout_dataset_len
+train_loader_len
+holdout_loader_len
+canonical_sample_id_sha256
+```
+
+任一 candidate 的 sample ID hash 不同即 fail。
+
+---
+
+## 7. P0 checkpoint 是否只加载 selector 并重置 schedule？——**PASS，P2 加固**
+
+### 代码事实
+
+初始化代码：
+
+* 只抽取 `frame_selector.*`；
+* 校验 checkpoint SHA-256；
+* 明确选择 `state_dict` 或 `state_dict_ema`；
+* 校验 epoch；
+* 严格匹配 selector 的参数和 buffer；
+* 只允许重置 `_loss_weight_schedule_step`；
+* 不加载 detector、optimizer 或 scheduler。
+
+四臂配置中 pretrained-joint 和 pretrained-frozen 均使用 `state_dict_ema`，并只重置 schedule buffer。
+
+### 限制
+
+严格加载也意味着 P0 中被 padding 污染的 BN running buffers 会原样带入 Official-60。这不是初始化函数的错误，而是 P0 表征合同的错误。
+
+### 最小加固
+
+receipt 增加：
+
+```text
+selector_parameter_sha256_before/after
+selector_buffer_sha256_before/after
+detector_parameter_sha256_before/after
+reset_key_old/new
+```
+
+现有初始化实现应保留。
+
+---
+
+## 8. 前 1000 步 `frontend_updates=False` 是否成立？——**P0 阻断：不成立**
+
+存在三条独立更新路径。
+
+### 路径一：隐式损失
+
+Official-60 基配置与 P0 一样用 `_delete_=True` 只列三项，遗漏项被 `duca_losses()` 的默认非零权重重新启用。
+
+### 路径二：AdamW weight decay
+
+即便把所有 frontend loss 权重真正设为零，只要执行：
+
+```python
+loss = 0.0 * frontend_connected_tensor
+loss.backward()
+```
+
+相关参数就可能得到一个数值为零但非 `None` 的 `.grad`。PyTorch optimizer 对零梯度与 `grad is None` 的行为不同：前者仍执行 optimizer step，后者跳过；AdamW 因而仍可施加 decoupled weight decay。([PyTorch Documentation][1])
+
+当前所有前端和 detector 参数处在同一个 AdamW 中；参数组只改变 LR，不提供 phase isolation。
+
+### 路径三：BatchNorm buffer
+
+即便参数完全不在 optimizer，`model.train()` 仍让粗分支 spatial stem 的 BatchNorm 更新 running buffers。前 1000 步 selector 仍会前向执行，因此 buffer 会漂移。
+
+### 为什么现有 gate 没抓到
+
+full-model gate 在 warmup 审核中：
+
+* 只检查三项 schedule weight；
+* 使用 `torch.no_grad()`；
+* 只求和三项 loss；
+* 没有执行 warmup optimizer step；
+* 随后直接把 schedule 跳到 bridge endpoint 执行真正更新。
+
+所以它不能证明 step 0–999 的参数和 buffer 不变。
+
+### 最小修复
+
+step 0–999 必须：
+
+```text
+完全不调用粗分支
+直接生成 canonical exact-uniform positions
+frontend 参数不在 active optimizer 中
+frontend 模块保持 eval
+frontend 参数和 buffer 的 SHA 在 step0/999 前后逐位相同
+```
+
+“loss 权重为零”不能再作为冻结机制。
+
+---
+
+## 9. 四臂是否真正同构？——**P0：声明接近同构，执行不构成同构**
+
+### 正确部分
+
+launcher 对四臂使用：
+
+* 同一个 commit；
+* seed 3407；
+* 同一个 AdaTAD pretrain；
+* 6000 successful updates；
+* terminal epoch-59 `state_dict_ema`。
+
+配置层面的预期差异是：
+
+| 臂                 | 声明差异                 |
+| ----------------- | -------------------- |
+| exact-uniform     | policy/bridge 永远为零   |
+| scratch           | selector 随机初始化       |
+| pretrained-joint  | 加载 P0 EMA，coarse 可训练 |
+| pretrained-frozen | 加载 P0 EMA，coarse 冻结  |
+
+### 执行混杂
+
+1. exact-uniform 仍运行粗分支；
+2. exact-uniform 仍继承隐式 boundary/hole/redundancy/entropy；
+3. warmup 仍可能发生 AdamW 和 BN 漂移；
+4. joint 与 frozen 的 optimizer group 和 buffer 行为不同，但 launch manifest 没有记录 group hash；
+5. 没有证明四臂 step-0 detector state SHA 完全相同；
+6. 没有证明四臂 batch ID 顺序和数据增强 RNG 完全相同；
+7. selector forward 消耗 RNG 是否会影响 detector 随机性，仅依赖代码中的 RNG 保护逻辑，launch receipt 没有逐臂复核。
+
+### 最小修复
+
+每臂 step 0 生成并比较：
+
+```text
+detector_state_sha256
+detector_optimizer_group_manifest_sha256
+detector_scheduler_state_sha256
+train_sample_order_sha256
+augmentation_rng_trace_sha256
+AdaTAD_pretrain_sha256
+resolved_config_without_declared_arm_fields_sha256
+```
+
+exact-uniform 必须成为真正 detector-only 路径，不构建 selector optimizer、不执行 coarse forward。
+
+---
+
+## 10. 检测损失是否通过 bridge 更新 scorer？——**P0：有路径，但有效方向未经证明**
+
+### 当前 autograd 路径
+
+```text
+ActionFormer cls/reg loss
+→ ActionFormerHead / projection / VideoMAE
+→ 选中 RGB 的 hard-forward / soft-backward bridge
+→ structured soft assignment / expected position surrogate
+→ continuous policy logits
+→ transition scorer parameters
+```
+
+`policy_hidden_gradient_scale=0` 时，该路径止于 scorer，不进入 ASFormer。full-model gate 能证明 detector loss 对 scorer 梯度非零，并证明 hard detector input 等于真实 hard gather。
+
+### 关键缺口
+
+**梯度非零不等于梯度方向正确。**
+
+现有 production gate 没有比较：
+
+```text
+代理梯度建议增加某个合法换帧
+vs.
+实际执行该 hard swap 后 detector cls+reg loss 是否下降
+```
+
+仓库存在 hard/soft alignment 工具，但 launcher 只运行合成单测，真实 full-model gate 没调用真实 swap alignment。当前证据只证明“有梯度”，不能证明“梯度代表 TAD utility”。
+
+### 最小修复
+
+主路线改为 local-cell 的直接 RGB soft gather：
+
+[
+x^{st}_j
+========
+
+x^{hard}*j+
+\beta\left(
+\sum*{t\in C_j}\pi_{j,t}x_t-
+\operatorname{sg}\left[\sum_{t\in C_j}\pi_{j,t}x_t\right]
+\right)
+]
+
+前向严格为真实 hard frame；反向通过 cell 内 soft RGB mixture 进入 scorer，不再用全局 expected-position/local-slope 近似。
+
+长训前必须在真实模型上完成至少 128 个合法 cell swap：
+
+```text
+gradient-vs-hard-loss Spearman rho >= 0.20
+sign agreement 的 video-cluster 95% CI lower >= 0.55
+hard forward 与真实 gather bitwise equal
+```
+
+任一失败，bridge 固定为零并终止“受保护端到端”路线。
+
+---
+
+## 11. selected-axis GT remap 与官方 backend 语义——**P1：映射实现闭合，但检测问题已改变**
+
+### 代码事实
+
+`TrueTimeMap`：
+
+* 要求 selected positions 严格递增且位于 valid range；
+* 用 piecewise-linear 方式完成 true-time↔selected-axis 映射；
+* 缺少 required metadata 时 fail closed；
+* 推理结果在最终输出前逆映射回 true time。
+
+配置也明确承认：
+
+```text
+official detector source identical = false
+detector coordinate adapter =
+    selected axis with posthoc true-time remap
+```
+
+### 推断
+
+代码的坐标来回映射是自洽的，但 ActionFormer head 在训练时看到的是：
+
+```text
+384 个单位间距 selected-axis slots
+```
+
+而不是原始物理时间网格。于是：
+
+* prior stride；
+* receptive field；
+* regression target width；
+* 相邻 token 的物理时间跨度；
+
+都随 selection 变化。
+
+因此它不能被表述为“未改变的官方 AdaTAD 检测问题”。
+
+### 诚实术语
+
+允许：
+
+> 使用官方 VideoMAE/AdaTAD backbone 与 ActionFormerHead 组件、加 DUCA selected-axis coordinate adapter 的离线 TAD。
+
+禁止：
+
+> source-identical official AdaTAD backend；
+> 未改变检测语义的输入删帧。
+
+---
+
+## 12. K=384、G=2 的可行集合是否合理？——**P1：uniform 很强，但 global family 仍过宽**
+
+全局 gap 可行条件为：
+
+[
+T-K \le (K+1)G
+]
+
+代入 (T=768,K=384,G=2)：
+
+[
+384 \le 770
+]
+
+满足得非常宽松。满足 G=2 所需的最低预算为：
+
+[
+K_{\min} =
+\left\lceil\frac{T-G}{G+1}\right\rceil
+======================================
+
+\left\lceil\frac{766}{3}\right\rceil
+=256
+]
+
+当前 K=384 比最低覆盖预算多 128 个选择自由度。因此：
+
+* exact-uniform 在 r1 上天然极强；
+* G=2 并没有把 learned policy 限制为 uniform 附近的小扰动；
+* global policy 仍可在部分区域成对聚集，再依靠其他选择补 gap；
+* 这与旧实验“聚集明显但位置错误、r1 下降”相符。
+
+现有 `structured_selection.py` 已包含 exact-uniform cell 与 one-per-cell deformation 基础设施，因此无需新检测器或新路线。
+
+### 最小修复
+
+主方法从 global exact-K 重排降为：
+
+```text
+384 个 exact-uniform cells
+每个 cell 精确选 1 帧
+cell 内由 pure-delta + bounded residual 决定
+```
+
+这保留 exact K、保护覆盖，同时允许有限合法换帧。
+
+---
+
+## 13. P0 门禁是否合理？——**P1：方向正确，统计执行有偏**
+
+### 正确点
+
+* 只使用 training subset 内 holdout；
+* 不使用 test mAP；
+* 所有六项机制门必须同时通过；
+* 无通过者则停止。
+
+### 代码问题
+
+1. 选择脚本使用 pooled point estimates，不用 bootstrap CI；
+2. `max_unselected_hole` 检查的是**均值≤2**，不是每个样本实际最大值≤2；
+3. 同一 holdout 上比较 3×4=12 个 candidate；
+4. 通过者再按 point gain 排名，产生 winner’s curse；
+5. 分析脚本虽然计算 video-cluster bootstrap，但 selector 脚本未消费 CI；
+6. 没有校验 12 个 candidate 的 sample ID 集合完全相同。
+
+### 修复后的冻结规则
+
+取消三权重搜索，仅保留一个固定 P0 配置和四个 checkpoint look。
+
+对四个 checkpoint × 六个门共 24 个比较，使用 video-cluster bootstrap p-value，并做 Holm–Bonferroni FWER=0.05 校正。
+
+checkpoint 合格需同时满足：
+
+```text
+action AUROC > 0.55
+transition AUROC - pure-delta AUROC >= 0
+r1 recall learned - uniform >= 0
+endpoint distance learned - uniform <= 0
+short both-endpoint r1 learned - uniform >= 0
+每个 sample 的 actual max hole <= 2
+```
+
+选择**最早**通过的 checkpoint；不再在通过者中最大化 point metric。没有通过者立即停止。
+
+---
+
+## 14. 当前能否称为“受保护端到端”？——**P1：不能**
+
+当前实现的真实描述是：
+
+> P0 粗分类与边界代理联合预训练；Official-60 中检测器通过连续代理，仅更新 transition scorer，粗分类分支同时继续接受 action 与 transition auxiliary supervision。
+
+它不是严格的“受保护端到端”，原因是：
+
+1. coarse semantics 已在 P0 被 transition CE 改写；
+2. warmup 前端并未真正冻结；
+3. detector gradient 只到 scorer，不到 coarse；
+4. hard/soft utility alignment 未获真实模型证明；
+5. selected-axis adapter 改变了 detector 时间几何。
+
+### 论文允许术语
+
+当前修复前：
+
+> 两阶段粗分类预训练与局部代理梯度选择器适配。
+
+推荐修复后：
+
+> Pure-delta-anchored local residual frame selection with protected detector-to-scorer surrogate gradients。
+
+中文：
+
+> 纯状态变化锚定的局部残差选帧，以及仅作用于残差 scorer 的受保护检测代理梯度。
+
+---
+
+# 二、候选优化路线排序
+
+|    排名 | 方案                                                                     | 裁决                       |
+| ----: | ---------------------------------------------------------------------- | ------------------------ |
+| **1** | **C：pure delta / exact-uniform coverage 不可退化，只学习 local-cell residual** | **唯一推荐主方案**              |
+|     2 | B：两个 optimizer 或交替更新，保留当前 global selector                              | 可作为工程隔离方案，但不能解决全局重排和代理失配 |
+|     3 | A：保留当前严格两阶段，仅修正 loss、detach、冻结和 schedule                               | 只适合最小修补，不足以解释旧 r1 退化     |
+
+## A. 严格两阶段最小修补
+
+修复隐式 loss、detach hidden、真正冻结 warmup、增加梯度范数。优点是代码改动最小。
+
+失败点仍然存在：
+
+* learned score 从头接管全局排序；
+* pure delta 只是诊断，不是安全锚；
+* K384/G2 global family 仍允许错误聚集；
+* current bridge 仍是全局连续代理。
+
+**不推荐作为下一版主模型。**
+
+## B. 双 optimizer／交替更新
+
+分别建立：
+
+```text
+optimizer_detector
+optimizer_frontend
+```
+
+前 1000 步只 step detector；随后分别 unscale、clip、step。它能解决：
+
+* AdamW warmup 漂移；
+* global clipping 混合；
+* AMP step 不一致；
+* scheduler/weight decay 隔离。
+
+但它只修复训练系统，不能修复：
+
+* pure-delta 不可退化缺失；
+* global 重排自由度过大；
+* r1 目标与 radius4 loss 错配；
+* hard/soft utility 方向不可信。
+
+**作为 C 的训练基础保留，不单独作为主方法。**
+
+## C. exact-uniform cell + pure-delta anchor + bounded residual
+
+这是唯一同时处理结构、优化和可证伪性的方案，而且可以直接复用现有 local-cell decoder、ActionFormer backend 和 true-time map。
+
+---
+
+# 三、唯一推荐架构
+
+## 3.1 完整数据流
+
+设 dense 轴 (T=768)，预算 (K=384)。
+
+### 粗动作状态
+
+[
+l_t,h_t = \mathrm{ASFormer}(\mathrm{Stem}(x_t)),
+\qquad
+p_t=\sigma(l_t)
+]
+
+只允许动作 BCE 更新 stem、ASFormer 和 action head。
+
+### 不可学习 base utility
+
+[
+d_t = |p_t-p_{t-1}|
+]
+
+在每个 exact-uniform cell (C_j) 内归一化：
+
+[
+b_{j,t}
+=======
+
+\frac{d_t-\mu_{C_j}}
+{\sqrt{\sigma^2_{C_j}+10^{-4}}}
+]
+
+若 cell 内 (d_t) 完全相同，固定 exact-uniform anchor 获得 tie priority。
+
+### detached residual
+
+[
+\phi_t=
+[\Delta l_t,|\Delta l_t|,
+\Delta H(p_t),|\Delta H(p_t)|,
+\Delta h_t,|\Delta h_t|,
+1-\cos(h_t,h_{t-1})]
+]
+
+[
+r_t=\tanh f_\theta(\operatorname{sg}(\phi_t))
+]
+
+[
+u_t=b_t+0.25,r_t
+]
+
+`0.25` 是冻结 residual 幅度，不允许搜索。
+
+### one-per-cell hard selection
+
+每个 (C_j) 精确选一帧：
+
+[
+t_j^*=\arg\max_{t\in C_j}u_t
+]
+
+总数严格 K=384。该家族不允许把一个 cell 的预算搬到另一个 cell。
+
+### soft backward
+
+[
+\pi_{j,t}
+=========
+
+\operatorname{softmax}(u_t/0.7),\quad t\in C_j
+]
+
+[
+\tilde{x}*j=\sum*{t\in C_j}\pi_{j,t}x_t
+]
+
+[
+x^{st}*j=x*{t_j^*}
++\beta(\tilde{x}_j-\operatorname{sg}[\tilde{x}_j])
+]
+
+### 重型检测
+
+```text
+384 真实 hard frames
+→ 官方 VideoMAE-S/AdaTAD adapter
+→ 官方 ActionFormerHead cls/reg
+→ selected-axis prediction
+→ TrueTimeMap inverse mapping
+→ 官方 aggregation / soft-NMS
+```
+
+---
+
+## 3.2 梯度所有权
+
+| 目标                        | stem/ASFormer/action head | residual scorer | VideoMAE/AdaTAD/head |
+| ------------------------- | ------------------------: | --------------: | -------------------: |
+| action BCE                |                         是 |               否 |                    否 |
+| local transition CE       |                         否 |               是 |                    否 |
+| r1 boundary coverage      |                         否 |               是 |                    否 |
+| detector cls/reg，bridge=0 |                         否 |               否 |                    是 |
+| detector cls/reg，bridge>0 |                         否 |               是 |                    是 |
+
+Official-60 中 coarse 分支始终冻结并保持 `eval()`；不再用 action loss 或 transition loss修改它。
+
+---
+
+# 四、冻结训练协议
+
+## 4.1 修复后的 P0
+
+不再以“20 个 epoch”作为决定合同，改为 **1600 次成功 optimizer update**，从而不受 79/80 loader 步数影响。
+
+### 阶段与权重
+
+|     成功更新 | action | transition | boundary | residual scale |
+| -------: | -----: | ---------: | -------: | -------------: |
+|    0–199 |    1.0 |   0→0.5 线性 | 0→2.0 线性 |         0→0.25 |
+| 200–1599 |    1.0 |        0.5 |      2.0 |           0.25 |
+
+checkpoint：
+
+```text
+400、800、1200、1600 successful updates
+```
+
+### 精确损失
+
+[
+L_{\text{action}}
+=================
+
+\frac12\operatorname{mean}*{y=1}\mathrm{BCE}
++
+\frac12\operatorname{mean}*{y=0}\mathrm{BCE}
+]
+
+[
+L_{\text{cell}}
+===============
+
+\operatorname{CE}(q_j,\operatorname{softmax}(u_j/0.7))
++
+0.01\operatorname{mean}_{j\notin \text{boundary cells}}r_j^2
+]
+
+边界 cell 的 target 只使用 r1；没有 r1 边界的 cell 以 pure-delta base 为 teacher，不引入 detector teacher。
+
+[
+L_{\text{P0}}
+=============
+
+1.0L_{\text{action}}
++
+0.5L_{\text{cell}}
++
+2.0L_{\text{boundary-r1}}
+]
+
+### 两个 optimizer
+
+```text
+optimizer_coarse:
+  spatial stem + ASFormer trunk: lr 2.5e-5
+  action output heads:           lr 5.0e-5
+  matrix/conv weight_decay:      0.01
+  bias/norm weight_decay:        0
+  grad clip:                     1.0
+
+optimizer_scorer:
+  residual adapter/head:         lr 1.0e-4
+  matrix weight_decay:           0.01
+  bias/norm weight_decay:        0
+  grad clip:                     0.25
+```
+
+scheduler：200-update linear warmup 后 cosine 到各自初始 LR 的 0.1 倍，终点 update 1600。
+
+### checkpoint 选择
+
+* split seed 固定 3407；
+* 四个 checkpoint；
+* video-cluster bootstrap 2000 次；
+* 24 项 Holm–Bonferroni；
+* 选择最早通过者；
+* 无通过者：`HOLD_FRONTEND_MECHANISM_FAILED`，停止全部 learned Official-60。
+
+---
+
+## 4.2 修复后的 Official-60
+
+总数仍严格为 6000 successful updates。
+
+|      成功更新 | 输入策略                         | coarse      |     scorer LR | auxiliary                           | bridge |
+| --------: | ---------------------------- | ----------- | ------------: | ----------------------------------- | -----: |
+|     0–999 | canonical exact-uniform      | 不执行         | optimizer 不激活 | 全零                                  |      0 |
+| 1000–2499 | anchor→local residual cosine | frozen/eval |          1e-4 | transition .05，boundary 1.0         |      0 |
+| 2500–3999 | local residual               | frozen/eval |          5e-5 | transition .05→.02；boundary 1.0→.25 |  0→.25 |
+| 4000–5999 | local residual               | frozen/eval |        2.5e-5 | transition .02，boundary .25         |    .25 |
+
+backend optimizer 保持现有 official 配置：
+
+```text
+non-backbone detector: lr 1e-4, wd 0.05
+VideoMAE adapter:      lr 2e-4, wd 0.05
+backbone others:       frozen
+grad clip:             1.0
+AMP + EMA:             enabled
+```
+
+现有官方配置确实使用这些数值。
+
+### Atomic dual-optimizer 合同
+
+每个 batch 必须：
+
+1. 同一 scaled total loss backward；
+2. 同时 unscale detector/scorer；
+3. 分别裁剪；
+4. 任一 optimizer 参数出现 non-finite，两个 optimizer 都不得 step；
+5. 只有两个都成功时才推进：
+
+   * detector scheduler；
+   * selector scheduler；
+   * selector curriculum；
+   * EMA；
+   * successful-update counter。
+
+不能分别调用两个独立 `GradScaler.step()` 后允许一个成功、一个跳过。
+
+---
+
+# 五、关键 unified-diff 级伪补丁
+
+以下均为 `[PROPOSAL]`，不是该 commit 已实现事实。
+
+## 5.1 严格 loss inventory
+
+```diff
+--- a/opentad/models/duca/acquisition.py
++++ b/opentad/models/duca/acquisition.py
+@@
++DUCA_LOSS_KEYS = (
++    "detector", "actionness", "transition", "transition_boundary",
++    "budget", "boundary", "hole", "max_gap_hole", "redundancy",
++    "radius", "entropy", "teacher", "detector_utility",
++    "start", "end", "context", "lagrangian_budget",
++    "marginal_monotonic", "hard_budget_cap",
++)
+
+ def duca_losses(...,
+                 loss_weights=None,
++                strict_loss_inventory=False,
+                 ...):
+-    weights = {
+-        "budget": 0.05,
+-        "boundary": 0.25,
+-        "hole": 0.25,
+-        "redundancy": 0.05,
+-        "radius": 0.02,
+-        "entropy": 0.01,
+-        ...
+-    }
+-    weights.update(loss_weights or {})
++    if strict_loss_inventory:
++        supplied = set(loss_weights or {})
++        expected = set(DUCA_LOSS_KEYS)
++        if supplied != expected:
++            raise RuntimeError(
++                f"strict DUCA loss inventory mismatch: "
++                f"missing={sorted(expected-supplied)}, "
++                f"unexpected={sorted(supplied-expected)}"
++            )
++        weights = {key: float(loss_weights[key]) for key in DUCA_LOSS_KEYS}
++    else:
++        weights = _legacy_duca_loss_weights(loss_weights)
+
+@@
+-    losses["redundancy_loss"] = raw_redundancy * weights["redundancy"]
++    if weights["redundancy"] != 0.0:
++        losses["redundancy_loss"] = raw_redundancy * weights["redundancy"]
++    else:
++        losses["redundancy_loss"] = center_scores.detach().new_zeros(())
+
+@@
+-    losses["entropy_anti_collapse_loss"] = -entropy.mean() * weights["entropy"]
++    if weights["entropy"] != 0.0:
++        losses["entropy_anti_collapse_loss"] = (
++            -entropy.mean() * weights["entropy"]
++        )
++    else:
++        losses["entropy_anti_collapse_loss"] = (
++            center_scores.detach().new_zeros(())
++        )
+```
+
+同样对 boundary、hole、transition、teacher 等所有项做零权重不构图处理。
+
+---
+
+## 5.2 保护 coarse semantics，加入 pure-delta residual
+
+```diff
+--- a/opentad/models/duca/transition_only.py
++++ b/opentad/models/duca/transition_only.py
+@@
+ def transition_utility_paths(...):
+     descriptors = build_transition_descriptors(
+         actionness_logits.detach(),
+-        hidden,
++        hidden.detach(),
+         valid,
+         ...
+     )
+-    policy_scores = scorer(descriptors.detach())
++    residual = torch.tanh(scorer(descriptors.detach()))
++    p = calibrated_actionness_probability(actionness_logits.detach(), ...)
++    pure_delta = torch.diff(p, dim=1, prepend=p[:, :1]).abs()
++    base = normalize_within_exact_uniform_cells(
++        pure_delta, valid, k=k
++    )
++    policy_scores = base + 0.25 * residual
+     return {
++        "pure_delta_base_scores": base,
++        "bounded_residual_scores": residual,
+         "policy_scores": policy_scores,
+         ...
+     }
+```
+
+同时把当前伪“balanced” BCE 替换为正负类分别求均值的确定公式。
+
+---
+
+## 5.3 exact-uniform warmup 真正跳过 coarse
+
+```diff
+--- a/opentad/models/selectors/duca_online_frame_selector.py
++++ b/opentad/models/selectors/duca_online_frame_selector.py
+@@
+ def forward_train(...):
+     state = self._loss_schedule_state()
+
++    if (
++        state["policy_alpha"] == 0.0
++        and state["detector_gradient_weight"] == 0.0
++        and self.exact_uniform_bypass_enabled
++    ):
++        return self._forward_exact_uniform_without_coarse(
++            inputs=inputs,
++            masks=masks,
++            metas=metas,
++            gt_segments=gt_segments,
++            gt_labels=gt_labels,
++        )
++
+     coarse = self.raw_actionness_source(...)
+```
+
+`_forward_exact_uniform_without_coarse()` 不允许访问 stem、ASFormer、scorer，也不返回任何 frontend-connected zero loss。
+
+---
+
+## 5.4 local-cell direct soft gather
+
+```diff
+--- a/opentad/models/selectors/duca_online_frame_selector.py
++++ b/opentad/models/selectors/duca_online_frame_selector.py
+@@
+- grid = global_structured_topk(
+-     mixed_policy_logits,
+-     k=self.budget,
+-     max_unselected_hole=self.max_unselected_hole,
+- )
++ grid = local_cell_structured_topk(
++     policy_logits,
++     valid_mask=masks,
++     k=self.budget,
++     anchor="exact_uniform",
++     one_per_cell=True,
++ )
+
+ hard_inputs = gather_time(inputs, grid.selected_positions)
+
++ soft_inputs = soft_gather_within_cells(
++     inputs,
++     grid.cell_probabilities,
++     grid.cell_bounds,
++ )
++ bridge = state["detector_gradient_weight"]
++ selected_inputs = (
++     hard_inputs
++     + bridge * (soft_inputs - soft_inputs.detach())
++ )
+```
+
+---
+
+## 5.5 selector-only loss 白名单
+
+```diff
+--- a/opentad/models/detectors/actionformer.py
++++ b/opentad/models/detectors/actionformer.py
+@@
+ def _selector_only_losses(self, losses, selector_loss_keys):
++    expected = {
++        "actionness_bce_loss",
++        "transition_distribution_loss",
++        "transition_boundary_coverage_loss",
++    }
++    observed = set(selector_loss_keys)
++    if observed != expected:
++        raise RuntimeError(
++            f"frontend-only loss inventory drift: "
++            f"expected={sorted(expected)}, observed={sorted(observed)}"
++        )
+     selector_losses = ...
+```
+
+修复后的 residual 路线可把 key 名改成 `local_cell_transition_loss` 和 `r1_boundary_coverage_loss`，但仍需精确白名单。
+
+---
+
+## 5.6 两个 optimizer 与原子 AMP step
+
+```diff
+--- a/opentad/cores/train_engine.py
++++ b/opentad/cores/train_engine.py
+@@
+-def train_one_epoch(..., optimizer, scheduler, ...):
++def train_one_epoch(...,
++                    detector_optimizer,
++                    selector_optimizer,
++                    detector_scheduler,
++                    selector_scheduler,
++                    ...):
+@@
+-    optimizer.zero_grad()
++    detector_optimizer.zero_grad(set_to_none=True)
++    if selector_active:
++        selector_optimizer.zero_grad(set_to_none=True)
+
+     scaler.scale(losses["cost"]).backward()
+
+-    scaler.unscale_(optimizer)
+-    clip_grad_norm_(model.parameters(), clip_grad_l2norm)
+-    scaler.step(optimizer)
++    scaler.unscale_(detector_optimizer)
++    if selector_active:
++        scaler.unscale_(selector_optimizer)
++
++    clip_grad_norm_(detector_parameters, 1.0)
++    if selector_active:
++        clip_grad_norm_(selector_parameters, 0.25)
++
++    all_finite = gradients_are_finite(
++        detector_parameters,
++        selector_parameters if selector_active else (),
++    )
++    if all_finite:
++        detector_optimizer.step()
++        if selector_active:
++            selector_optimizer.step()
++        detector_scheduler.step()
++        if selector_active:
++            selector_scheduler.step()
++        call_after_successful_optimizer_step(model)
++        model_ema.update(model)
++    else:
++        restore_rng_and_buffers()
+```
+
+还需断言两个 optimizer 参数 ID 集合不交叉。
+
+---
+
+## 5.7 配置显式列全
+
+```diff
+ model = dict(
+     frame_selector=dict(
+-        acquisition_policy="global_structured_topk",
++        acquisition_policy="local_cell_deformation",
++        strict_loss_inventory=True,
++        exact_uniform_bypass_enabled=True,
++        residual_scale=0.25,
++        transition_target_radius=1,
++        transition_boundary_radius=1,
+         loss_weights=dict(
+             _delete_=True,
+             actionness=0.0,
+-            transition=0.02,
+-            transition_boundary=2.0,
++            transition=0.05,
++            transition_boundary=1.0,
++            detector=0.0,
++            budget=0.0,
++            boundary=0.0,
++            hole=0.0,
++            max_gap_hole=0.0,
++            redundancy=0.0,
++            radius=0.0,
++            entropy=0.0,
++            teacher=0.0,
++            detector_utility=0.0,
++            start=0.0,
++            end=0.0,
++            context=0.0,
++            lagrangian_budget=0.0,
++            marginal_monotonic=0.0,
++            hard_budget_cap=0.0,
+         ),
+     ),
+ )
+```
+
+---
+
+# 六、必须新增的测试与运行门
+
+| 测试 / gate                                     | 必须断言                                                                   |
+| --------------------------------------------- | ---------------------------------------------------------------------- |
+| `test_duca_strict_loss_inventory.py`          | 缺任一 key、额外 key、隐式非零默认均 fail                                            |
+| `test_duca_frontend_cost_exact_keys.py`       | P0 `cost` 只由三个冻结 key 构成                                                |
+| `test_duca_gradient_ownership.py`             | action、transition、boundary、detector 四次独立 backward 的 `grad is None` 所有权 |
+| `test_duca_zero_weight_grad_is_none.py`       | 权重零时参数 `.grad is None`，不是零 tensor                                      |
+| `test_duca_padding_metamorphic.py`            | 增加 masked padding 不改变有效位置 logits/hidden/selection                      |
+| `test_duca_frontend_split_loader_contract.py` | eligibility 后 split 不交叉；实际 loader 长度与 manifest 一致                      |
+| `test_duca_candidate_sample_identity.py`      | 四 checkpoint 或所有 candidate 的 sample ID SHA 完全一致                        |
+| `test_duca_checkpoint_selection_all_fail.py`  | 任一门失败时不得选“最不差”                                                         |
+| `test_duca_checkpoint_selection_holm.py`      | 24 项多重比较校正固定                                                           |
+| `test_duca_selector_init_full_buffers.py`     | EMA 参数和 buffer 严格加载，detector 完全不变                                      |
+| `test_duca_four_arm_detector_identity.py`     | 四臂 step-0 detector state SHA 相同                                        |
+| `test_duca_local_cell_exact_k_gap.py`         | 每 cell 一帧、K=384、每样本 actual max hole≤2                                  |
+| `test_duca_true_time_roundtrip.py`            | GT remap 与 prediction inverse map 的 round-trip 误差                      |
+| `test_duca_atomic_dual_optimizer_amp.py`      | overflow 时两个 optimizer、两个 scheduler、EMA、curriculum 全不推进                |
+
+## 真实一步 CUDA gate
+
+必须在真实 THUMOS batch、真实 VideoMAE/AdaTAD/ActionFormerHead 上模拟以下 schedule 点：
+
+```text
+step 0
+step 999
+step 1000
+step 2499
+step 2500
+step 3999
+step 4000
+step 5999
+```
+
+关键断言：
+
+* step 0/999 coarse forward call count=0；
+* step 0/999 frontend 参数与 buffer bitwise 不变；
+* step 0/999 exact-uniform hard input精确相等；
+* step 1000 policy 只在 cell 内开始偏移；
+* step 2499 alpha=1；
+* step 2500 bridge=0；
+* step 3999 bridge=0.25；
+* detector loss只在 bridge>0 时命中 scorer；
+* detector loss永不命中 coarse；
+* AMP overflow 时两个 optimizer 原子跳过；
+* successful-update counter 每次只推进一次；
+* EMA schedule buffer 与模型一致。
+
+现有新测试用 fake selector 手工只返回两个 loss，因此不可能发现 `duca_losses()` 的隐式默认项；它只能证明 detector skip 分支存在。
+
+---
+
+# 七、最小而充分的实验矩阵
+
+前提：修复后的 P0 与真实 CUDA gate 全部通过。否则 learned arms 不启动。
+
+## 第一阶段：seed 3407，五臂
+
+| 臂     | 初始化    | coarse 在 Official-60 | policy                        |    bridge |
+| ----- | ------ | -------------------- | ----------------------------- | --------: |
+| U     | 无      | 不执行                  | exact-uniform                 |         0 |
+| S     | random | joint                | 修复后的 global policy            |     0→.25 |
+| PJ    | P0 EMA | joint                | 修复后的 global policy            |     0→.25 |
+| PF    | P0 EMA | frozen               | 修复后的 global policy            |     0→.25 |
+| **R** | P0 EMA | **frozen**           | **pure-delta local residual** | **0→.25** |
+
+五臂统一：
+
+```text
+K=384
+同一 AdaTAD pretrain SHA
+同一 detector step-0 state SHA
+同一 train sample order与增强 RNG
+6000 successful updates
+相同 backend optimizer/scheduler
+terminal epoch-59 state_dict_ema
+无中途 test mAP 选 checkpoint
+```
+
+## 第二阶段：条件复制
+
+只有 R 在 seed 3407 满足继续阈值时，追加：
+
+```text
+U 与 R，seed 3408
+U 与 R，seed 3409
+```
+
+R 每个 seed 使用同 seed 重新训练并通过门禁的 P0 checkpoint。原四臂不做三 seed 扩展，因为它们只负责定位“预训练/冻结是否解释差异”，不是最终论文主方法。
+
+总 Official-60 数量最多：
+
+```text
+5 + 2 + 2 = 9 runs
+```
+
+不再添加其他结构臂。
+
+---
+
+# 八、最终指标与 GO / HOLD / KILL
+
+## 8.1 统计指标
+
+主指标：
+
+```text
+terminal Avg-mAP
+mAP@0.6
+mAP@0.7
+```
+
+机制指标：
+
+```text
+short-action both-endpoint recall r1
+mean endpoint distance
+每样本 actual max hole
+boundary recall r0/r1
+```
+
+成本必须是完整 decode-to-output：
+
+```text
+视频 decode
+resize/crop
+H2D
+低分辨率 stem
+ASFormer
+selector + DP
+hard gather
+VideoMAE/AdaTAD
+projection/head
+inverse map
+aggregation/NMS
+```
+
+报告 batch=1 下全测试集 p50、p95、均值和 peak GPU memory；所有 CUDA 段同步计时。
+
+## 8.2 seed-3407 继续阈值
+
+只有同时满足才追加两 seed：
+
+```text
+R - U Avg-mAP       >= +0.30
+R - U mAP@0.6       >= -0.20
+R - U mAP@0.7       >= -0.20
+short both-r1 delta >= -0.005
+endpoint distance   <= 1.02 × U
+R total cost        <= 0.75 × matched dense
+R total cost        <= 1.10 × U
+```
+
+## 8.3 三 seed 最终 GO
+
+```text
+mean(R-U Avg-mAP) >= +0.50
+paired 95% CI lower bound of Avg-mAP delta > 0
+
+mean mAP@0.6 delta >= 0
+mean mAP@0.7 delta >= 0
+任一 seed 的 mAP@0.6/0.7 不低于 U 超过 0.30
+
+mean short-action both-r1 delta >= 0
+其 95% CI lower >= -0.005
+
+mean endpoint distance <= U
+每个样本 max hole <= 2
+
+每个 seed：
+  total cost <= 0.75 × matched dense
+  total cost <= 1.10 × matched U
+```
+
+## 8.4 HOLD
+
+```text
+0 < mean Avg-mAP delta < +0.50
+或 paired CI 跨 0
+但 high-IoU、短动作与成本合同均未失败
+```
+
+HOLD 只能报告“证据不足”，不能继续增加模块或超参数搜索。
+
+## 8.5 KILL
+
+满足任一项即 KILL 当前 learned route：
+
+```text
+任何 GT/test leakage、K/G、remap、successful-step、AMP atomicity 合同失败
+真实 hard-swap alignment gate 失败
+mean Avg-mAP delta <= 0
+mean mAP@0.7 delta < -0.30
+short-action both-r1 下降超过 1 个百分点
+endpoint distance 恶化超过 5%
+decode-to-output 成本降幅不足 25%
+```
+
+历史 65.696、68.97、76.67 只能放在背景说明，不得与新矩阵同表作 matched 因果比较。
+
+---
+
+# 九、证据边界
+
+以下内容在该不可变 commit 中没有可复核 artifact，因此结论均为**未知或用户提供**：
+
+* Jobs 1177779–1177782 的完整 Slurm 日志和 disk-quota terminal；
+* Job 1178487 的正式 completion、梯度范数和 P0 holdout 质量；
+* 当前 `/data` 使用量；
+* 当前 P0 任何 checkpoint 的 AUROC、r1、短动作结果；
+* terminal Avg-mAP、mAP@0.6/0.7；
+* 完整 decode-to-output 成本；
+* 外部 ASFormer `model.py` 的具体实现字节。仓库 wrapper 会在运行时记录其 hash，但该外部源码不属于本 commit。
+
+因此：
+
+* 旧四臂因 disk quota 中断不能被判为方法失败；
+* Job 1178487 可以支持“detector forward 被跳过”这一运行描述，但不能支持 P0 门禁已通过；
+* 当前训练 loss 不能代替 terminal mAP。
+
+---
+
+# 十、最终直接回答
+
+## 当前实现是否值得继续？
+
+**当前实现本身不值得直接继续 Official-60，裁决为 HOLD。**
+
+DUCA 方法家族允许一次严格受限修复。修复后仍失败则停止，不再回到全局 weight-grid 和模块堆叠。
+
+## 最可能阻止其超过 65 的前三个根因
+
+1. **目标与策略家族错配**
+   radius4/global distribution 训练、global exact-K 重排，与 r1/high-IoU 需求不一致；pure delta 没有成为不可退化锚点。
+
+2. **粗分类语义被污染**
+   transition CE 通过 live hidden 更新 ASFormer，隐式 entropy 又把 `p_action` 推向 0.5；所谓 balanced BCE 实际没有类别平衡，padding 还可污染 BN。
+
+3. **“受保护”执行合同不真实**
+   warmup 仍有隐式 loss、AdamW decay、BN buffer 和全局 clipping；检测梯度只证明非零，未证明与真实 hard swap utility 同向。
+
+## 下一版唯一推荐架构
+
+```text
+低分辨率 RGB
+→ 纯动作/背景 ASFormer
+→ immutable abs(delta p_action) base
+→ detached hidden-change bounded residual scorer
+→ exact-uniform one-per-cell K384 selection
+→ hard RGB forward / local-cell soft RGB backward
+→ 官方 VideoMAE/AdaTAD/ActionFormerHead
+→ true-time inverse mapping
+```
+
+Official-60 中 coarse 全程 frozen/eval，检测梯度只允许更新 residual scorer。
+
+## 必须修改的精确文件
+
+核心实现：
+
+```text
+opentad/models/duca/acquisition.py
+opentad/models/duca/transition_only.py
+opentad/models/duca/structured_selection.py
+opentad/models/selectors/duca_online_frame_selector.py
+opentad/models/detectors/actionformer.py
+opentad/cores/train_engine.py
+opentad/cores/optimizer.py
+tools/train.py
+tools/bata/train_lowres_action_probe.py
+```
+
+协议与配置：
+
+```text
+configs/adatad/thumos/duca_frontend_pretrain_fixed384_base.py
+三个 duca_frontend_pretrain_a1_* 配置
+configs/adatad/thumos/duca_frontend_holdout_quality_fixed384.py
+configs/adatad/thumos/duca_two_stage_joint_fixed384_official60_base.py
+四个 duca_two_stage_*_official60.py
+新增 duca_two_stage_residual_cell_fixed384_official60.py
+```
+
+证据链：
+
+```text
+tools/bata/create_duca_frontend_split.py
+tools/bata/select_duca_frontend_checkpoint.py
+tools/bata/aggregate_duca_frontend_candidates.py
+tools/bata/export_duca_selection_quality.py
+tools/bata/validate_duca_protected_e2e_official60.py
+tools/bata/run_duca_protected_e2e_exact_full_model_gate.py
+相关 launcher 与 tests
+```
+
+## 应保留
+
+```text
+精确 commit / clean-tree / SHA 绑定
+training-only holdout 与 no-test 纪律
+exact-uniform reference
+exact-K / max-gap structured decoder
+现有 local-cell 基础设施
+严格 selector-only checkpoint 初始化
+successful-update、AMP replay、EMA 一次推进合同
+TrueTimeMap 与 fail-closed inverse mapping
+terminal epoch-59 EMA 评测
+```
+
+## 应删除或正式禁用
+
+```text
+严格路线中的隐式非零 loss defaults
+P0 对完整 VideoMAE/AdaTAD 的构建与完整 EMA
+以“loss weight=0”冒充 frontend frozen
+前 1000 步执行粗分支
+A/B/C 标量权重网格作为正式 checkpoint 选择协议
+global learned reorder 作为下一版主模型
+未在真实模型执行的 hard/soft alignment PASS
+```
+
+## 应降级为诊断
+
+```text
+当前 global structured-topk policy
+当前 expected-position/local-slope bridge
+A/B/C 三权重结果
+训练 loss 曲线
+旧 epoch-4 机制结果
+历史 65.696 / 68.97 / 76.67
+旧 disk-quota 中断作业
+```
+
+**最终裁决：`HOLD_CURRENT_CODE / GO_ONE_REPAIR_C / KILL_IF_REPAIR_FAILS`。**
+
+[1]: https://docs.pytorch.org/docs/stable/generated/torch.optim.adamw.AdamW_class.html "https://docs.pytorch.org/docs/stable/generated/torch.optim.adamw.AdamW_class.html"

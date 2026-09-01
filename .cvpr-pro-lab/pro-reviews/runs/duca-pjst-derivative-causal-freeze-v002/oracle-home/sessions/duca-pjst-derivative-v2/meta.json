@@ -1,0 +1,164 @@
+{
+  "id": "duca-pjst-derivative-v2",
+  "createdAt": "2026-08-25T14:55:21.705Z",
+  "status": "completed",
+  "promptPreview": "Execute the complete attached DUCA scientific adjudication exactly once. The attached prompt is authoritative and includes nonce DUCA-PJST-DERIVATIVE-CAUSAL-FRE",
+  "model": "gpt-5.5-pro",
+  "models": [
+    {
+      "model": "gpt-5.5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5.5-pro.log"
+      },
+      "startedAt": "2026-08-25T14:55:22.291Z",
+      "completedAt": "2026-08-25T15:25:35.454Z",
+      "usage": {
+        "inputTokens": 2401,
+        "outputTokens": 5249,
+        "reasoningTokens": 0,
+        "totalTokens": 7650
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "browserTabRef": "C53713E502A9BF4D845D207E43B0AFE4",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 14106,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "C53713E502A9BF4D845D207E43B0AFE4",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8dace6-e798-83ea-b112-d5636c54fb62",
+      "conversationId": "6a8dace6-e798-83ea-b112-d5636c54fb62",
+      "promptSubmitted": true,
+      "controllerPid": 89448
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8dace6-e798-83ea-b112-d5636c54fb62"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-25T14:55:23.822Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Execute the complete attached DUCA scientific adjudication exactly once. The attached prompt is authoritative and includes nonce DUCA-PJST-DERIVATIVE-CAUSAL-FREEZE-v002-20260825.",
+    "file": [
+      "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/prompts/PRO_DUCA_PJST_DERIVATIVE_CAUSAL_FREEZE-v002.md"
+    ],
+    "model": "gpt-5.5-pro",
+    "models": [
+      "gpt-5.5-pro"
+    ],
+    "effectiveModelId": "gpt-5.5-pro",
+    "filesReport": false,
+    "slug": "duca-pjst-derivative-v2",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697/project",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 14106
+      },
+      "browserTabRef": "C53713E502A9BF4D845D207E43B0AFE4",
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": false,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/.cvpr-pro-lab/pro-reviews/runs/duca-pjst-derivative-causal-freeze-v002/PRO_DUCA_PJST_DERIVATIVE_CAUSAL_FREEZE-v002.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 89448,
+    "reattachCommand": "oracle session duca-pjst-derivative-v2"
+  },
+  "startedAt": "2026-08-25T14:55:22.287Z",
+  "completedAt": "2026-08-25T15:25:36.609Z",
+  "usage": {
+    "inputTokens": 2401,
+    "outputTokens": 5249,
+    "reasoningTokens": 0,
+    "totalTokens": 7650
+  },
+  "elapsedMs": 1813013,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-pjst-derivative-causal-freeze-v002\\oracle-home\\sessions\\duca-pjst-derivative-v2\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 36909,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a796fef9a00819194024cf1de3bd697-duca/c/6a8dace6-e798-83ea-b112-d5636c54fb62",
+      "sha256": "7b9e2f3de5f0732596989bb16930dd81ff378be5f8c431a1c9d7ae689a97e1e0",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

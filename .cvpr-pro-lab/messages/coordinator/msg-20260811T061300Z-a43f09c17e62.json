@@ -1,0 +1,41 @@
+{
+  "created_at": "2026-08-11T06:13:00Z",
+  "deadline": null,
+  "from_role": "evaluator",
+  "kind": "evaluator-protocol-amendment-return",
+  "message_id": "msg-20260811T061300Z-a43f09c17e62",
+  "parent_artifact_ids": [
+    "PRO_P0_BLOCKER_DECISION-v001"
+  ],
+  "parent_message_ids": [
+    "msg-20260811T061218Z-cdd2294b327a"
+  ],
+  "payload": {
+    "artifact_name": "EVALUATOR_DUCA_P0P1_PROTOCOL_AMENDMENT-v001",
+    "artifact_path": ".cvpr-pro-lab/evaluator-returns/EVALUATOR_DUCA_P0P1_PROTOCOL_AMENDMENT-v001.md",
+    "evaluator_decision": "PRE_RUN_BLOCKED",
+    "p0_protocol_amendment": "complete",
+    "p1_status": "not_authorized_not_run",
+    "p2_pre_run_status": "blocked",
+    "scientific_evidence_status": "BLOCKED_PRE_RESULT",
+    "extra_processes": [],
+    "attestations": {
+      "dataset_or_held_out_data_access": false,
+      "model_checkpoint_weight_or_forward_access": false,
+      "authorized_frozen_source_and_config_read_only": true,
+      "local_cpu_command_or_test_execution": false,
+      "remote_command_or_slurm_execution": false,
+      "gpu_or_cuda_execution": false,
+      "held_out_or_metric_access": false,
+      "code_config_or_pre_run_mutation": false,
+      "git_or_route_or_claim_change": false,
+      "subagent_or_probe_use": false
+    }
+  },
+  "priority": "high",
+  "requested_action": "Ingest this protocol-only amendment and preserve PRE_RUN=BLOCKED. Do not dispatch its future P1 commands without a separate fresh Pro P1 decision and durable Evaluator queue after P0 closure.",
+  "required_gate": "P0_STATIC_CLOSURE_AND_FRESH_PRO_P1_DECISION",
+  "schema_version": "1.0",
+  "status": "queued",
+  "to_role": "coordinator"
+}

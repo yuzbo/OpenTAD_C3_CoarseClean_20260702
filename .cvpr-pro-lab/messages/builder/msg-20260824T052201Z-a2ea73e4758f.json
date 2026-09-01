@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-08-24T05:22:01Z",
+  "deadline": "2026-08-24T23:59:00+08:00",
+  "from_role": "critic",
+  "kind": "SINGLECLOCK_IDENTITY_RECORDS_FOCUSED_CORRECTION",
+  "message_id": "msg-20260824T052201Z-a2ea73e4758f",
+  "parent_artifact_ids": [],
+  "payload": {
+    "path": ".cvpr-pro-lab/role-returns/CRITIC_DUCA_H65_SINGLECLOCK_IDENTITY_FOCUSED_RECHECK-v001.md",
+    "size": 1380
+  },
+  "priority": "critical",
+  "requested_action": "Second bounded focused correction at 27e593a: finalizer must fail closed unless records is a deterministic sorted unique list whose length equals sample_count. Require all producer identity fields and sane types; sample_id must equal video_name|window_start_frame=..., selected_positions length equals selected_valid_len, physical IDs unique and sorted, duplicate_samples refer to existing physical IDs. Update invalid fixture and add missing/empty/duplicate/unsorted/inconsistent record tests plus valid duplicate payload. Do not change producer/model/data/evaluator/config/launcher/threshold. Return clean commit to same Critic; if next recheck finds equivalent defect, terminate.",
+  "required_gate": null,
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

@@ -1,0 +1,170 @@
+{
+  "id": "duca-marginal-gray-zone-v001",
+  "createdAt": "2026-08-30T21:21:36.308Z",
+  "status": "completed",
+  "promptPreview": "Read every attached file completely and answer the authoritative prompt as one independent scientific adjudication. Treat the GitHub repository, branch, exact c",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "completed",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-30T21:21:37.122Z",
+      "completedAt": "2026-08-30T21:36:23.712Z",
+      "usage": {
+        "inputTokens": 25873,
+        "outputTokens": 2296,
+        "reasoningTokens": 0,
+        "totalTokens": 28169
+      }
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "browserTransport": "cdp",
+      "chromePort": 15359,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "D7281FC3E6BDBF2FC60CAFE09CAA23C2",
+      "tabUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a949f18-f568-83ea-9871-70c012a75b2b",
+      "conversationId": "6a949f18-f568-83ea-9871-70c012a75b2b",
+      "promptSubmitted": true,
+      "controllerPid": 8380
+    },
+    "archive": {
+      "mode": "never",
+      "attempted": false,
+      "archived": false,
+      "reason": "disabled",
+      "conversationUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a949f18-f568-83ea-9871-70c012a75b2b"
+    },
+    "modelSelection": {
+      "requestedModel": "Pro",
+      "resolvedLabel": "Pro",
+      "strategy": "select",
+      "status": "already-selected",
+      "verified": true,
+      "source": "chatgpt-model-picker",
+      "capturedAt": "2026-08-30T21:21:41.375Z"
+    },
+    "warnings": []
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Read every attached file completely and answer the authoritative prompt as one independent scientific adjudication. Treat the GitHub repository, branch, exact commit f67d96fdf68a295eaa7f678f3dfc125530828889, and key-file URLs in the prompt as the latest code truth. Preserve nonce DUCA-MARGINAL-ORACLE-GRAY-ZONE-ADJUDICATION-v001-20260831 verbatim in the response.",
+    "file": [
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\prompts\\PRO_DUCA_MARGINAL_ORACLE_GRAY_ZONE_ADJUDICATION-v001.md",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-marginal-oracle-gray-zone-v001\\materials\\pre_run_receipt.json",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-marginal-oracle-gray-zone-v001\\materials\\probe_result.json",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-marginal-oracle-gray-zone-v001\\materials\\selection_k384_receipt.json",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-marginal-oracle-gray-zone-v001\\materials\\counterfactual_k256_receipt.json",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-marginal-oracle-gray-zone-v001\\materials\\counterfactual_k512_receipt.json",
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-marginal-oracle-gray-zone-v001\\materials\\job1262077_failure_all.json"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-marginal-gray-zone-v001",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 15359
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-marginal-oracle-gray-zone-v001\\visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 8380,
+    "reattachCommand": "oracle session duca-marginal-gray-zone-v001"
+  },
+  "startedAt": "2026-08-30T21:21:37.118Z",
+  "completedAt": "2026-08-30T21:36:23.746Z",
+  "usage": {
+    "inputTokens": 25873,
+    "outputTokens": 2296,
+    "reasoningTokens": 0,
+    "totalTokens": 28169
+  },
+  "elapsedMs": 885365,
+  "artifacts": [
+    {
+      "kind": "transcript",
+      "path": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\oracle\\duca-marginal-oracle-gray-zone-v001\\sessions\\duca-marginal-gray-zone-v001\\artifacts\\transcript.md",
+      "label": "Browser transcript",
+      "mimeType": "text/markdown",
+      "sizeBytes": 92628,
+      "sourceUrl": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92-duca/c/6a949f18-f568-83ea-9871-70c012a75b2b",
+      "sha256": "4c48541aca476c0581de2dbfb0c6f056748ba1c943139b142e67a87d6942fc3c",
+      "validation": {
+        "type": "generic",
+        "ok": true
+      },
+      "transfer": {
+        "status": "not-needed"
+      },
+      "origin": {
+        "mode": "local"
+      }
+    }
+  ]
+}

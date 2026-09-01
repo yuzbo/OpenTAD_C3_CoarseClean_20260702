@@ -1,0 +1,117 @@
+{
+  "id": "duca-native-tubelet-terminal-v001",
+  "createdAt": "2026-08-29T05:55:00.974Z",
+  "status": "error",
+  "promptPreview": "Read the attached authoritative prompt completely. Submit one independent scientific decision for nonce DUCA-NATIVE-TUBELET-CORESET-TERMINAL-v001-20260829; do n",
+  "model": "gpt-5-pro",
+  "models": [
+    {
+      "model": "gpt-5-pro",
+      "status": "running",
+      "log": {
+        "path": "models\\gpt-5-pro.log"
+      },
+      "startedAt": "2026-08-29T05:55:01.897Z"
+    }
+  ],
+  "cwd": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702",
+  "mode": "browser",
+  "browser": {
+    "config": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 39567
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "runtime": {
+      "chromePort": 39567,
+      "chromeHost": "127.0.0.1",
+      "chromeTargetId": "982025B3FCC389F1D654EF01487B9B43",
+      "promptSubmitted": false,
+      "controllerPid": 86572
+    }
+  },
+  "notifications": {
+    "enabled": true,
+    "sound": false
+  },
+  "options": {
+    "prompt": "Read the attached authoritative prompt completely. Submit one independent scientific decision for nonce DUCA-NATIVE-TUBELET-CORESET-TERMINAL-v001-20260829; do not rely on old chats and do not delegate route choice.",
+    "file": [
+      "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\prompts\\PRO_DUCA_NATIVE_TUBELET_CORESET_TERMINAL_ADJUDICATION-v001.md"
+    ],
+    "model": "gpt-5-pro",
+    "models": [
+      "gpt-5-pro"
+    ],
+    "effectiveModelId": "gpt-5-pro",
+    "filesReport": false,
+    "slug": "duca-native-tubelet-terminal-v001",
+    "mode": "browser",
+    "browserConfig": {
+      "chromeProfile": "Default",
+      "chromePath": null,
+      "chromeCookiePath": null,
+      "attachRunning": false,
+      "url": "https://chatgpt.com/g/g-p-6a91061f789881918ccd8357ca3d6c92/project?tab=chats",
+      "debugPort": null,
+      "inlineCookiesSource": null,
+      "desiredModel": "Pro",
+      "modelStrategy": "select",
+      "debug": true,
+      "allowCookieErrors": true,
+      "remoteChrome": {
+        "host": "127.0.0.1",
+        "port": 39567
+      },
+      "researchMode": "off",
+      "archiveConversations": "never"
+    },
+    "verbose": true,
+    "heartbeatIntervalMs": 30000,
+    "browserAttachments": "never",
+    "browserInlineFiles": false,
+    "browserBundleFiles": false,
+    "browserBundleFormat": "auto",
+    "provider": "auto",
+    "timeoutSeconds": 7200,
+    "httpTimeoutMs": 7200000,
+    "zombieTimeoutMs": 7200000,
+    "zombieUseLastActivity": false,
+    "writeOutputPath": "E:\\DeskTop\\TAD\\OpenTAD_C3_CoarseClean_20260702\\.cvpr-pro-lab\\pro-reviews\\runs\\duca-native-tubelet-terminal-adjudication-v001\\visible-report.md",
+    "waitPreference": true,
+    "browserFollowUps": [],
+    "geminiShowThoughts": false
+  },
+  "lifecycle": {
+    "engine": "browser",
+    "execution": "background",
+    "attached": false,
+    "detached": true,
+    "workerPid": 86572,
+    "reattachCommand": "oracle session duca-native-tubelet-terminal-v001"
+  },
+  "startedAt": "2026-08-29T05:55:01.892Z",
+  "completedAt": "2026-08-29T05:55:34.848Z",
+  "errorMessage": "ChatGPT session not detected. Login button detected on page. The remote Chrome session is not signed into ChatGPT. Sign in there, then rerun.",
+  "error": {
+    "category": "browser-automation",
+    "message": "ChatGPT session not detected. Login button detected on page. The remote Chrome session is not signed into ChatGPT. Sign in there, then rerun.",
+    "details": {
+      "stage": "execute-browser"
+    }
+  }
+}

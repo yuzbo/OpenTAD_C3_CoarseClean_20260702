@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-08-11T15:34:23Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "implementation-plan",
+  "message_id": "msg-20260811T153423Z-dc11a535fee3",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_P0_ROUTE_ADJUDICATION-v002.md"
+  ],
+  "payload": {
+    "path": ".cvpr-pro-lab/roles/builder/BUILDER_DUCA_P0_DENSITY_MINIMAL_CHANGE_PLAN-v001.md",
+    "size": 1759
+  },
+  "priority": "high",
+  "requested_action": "Produce the current P0 density-route minimal change plan only; no edits or execution.",
+  "required_gate": "PRO_P0_ROUTE_ADJUDICATION-v002 accepted; plan-only boundary",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

@@ -1,0 +1,42 @@
+{
+  "audit": {
+    "branch": "codex/sparsehead-diagnostic-closure-20260729",
+    "clean": true,
+    "commit": "aab72e484538931a565930b99d1beb71f47b9ceb",
+    "root": "/data/run01/sczc063/yuzibo/projects/opentad_sparsehead_diagnostic_closure_20260730_v21",
+    "tree": "25e7e0eb3b8cd5edfb48eac594eda6b89edffa36"
+  },
+  "candidate": {
+    "branch": "codex/actionformer-sparsehead-official-matched-20260730",
+    "clean": true,
+    "commit": "31e6112ea28747098cfe5412c097d737731bfaa1",
+    "root": "/data/run01/sczc063/yuzibo/projects/actionformer_sparsehead_official_matched_20260730_v6",
+    "tree": "d2619cd075c4e7192ca060f34d811ac3fe5768f8"
+  },
+  "claim_boundary": "deployment_identity_only_no_model_metric",
+  "method_contract": {
+    "input_observation_budget": null,
+    "input_selection_policy": "dense_all_i3d_features",
+    "model_query_budget": 384,
+    "model_query_geometry": "original_full_video_fpn_physical_indices",
+    "model_query_selection_policy": "stratified_uniform",
+    "training_loss_support": "selected_native_grid_queries"
+  },
+  "official": {
+    "checkpoint": "/data/run01/sczc063/yuzibo/projects/actionformer_official_61ea7eb_20260729_v1/pretrained/thumos_i3d_reproduce/epoch_034.pth.tar",
+    "checkpoint_sha256": "003b90506d549c01dd249344d782d45ef5379d977fd54eb0712f4d40640ff8d8",
+    "source_commit": "61ea7eb9308a568b0cf45e3804830836e30061de",
+    "source_tree": "7b06c5261ba244788c942a0d73e304581bc35154"
+  },
+  "paper_metric_claim_allowed": false,
+  "receipts": {
+    "audit_tests_sha256": "3fca634c71542df49a3827ac856e7bffd5076aedb7432b72b8a4906e62a4b9b6",
+    "candidate_bundle_sha256": "c50bea0b79e242bb4c96cf11fb35a3ef095a8b9c3bc4a13fc56abca02be4ec49",
+    "candidate_tests_sha256": "254b8483a514ba794656771a23da351d7e04fc8dcde350dc2df47a07393851d0",
+    "launcher_sha256": "fb924a2aad2e9475d3a6e133819f405d39dc624fd29166682d8bfcce04d4e3db",
+    "launcher_tests_sha256": "976ea3fe6dfa65b827ec05fc16bf49cec94d3fda3b2d6ad4719708e74a38b32d",
+    "source_diff_attestation_sha256": "3ef485f82678453538aef6f58ba81d548149394ef93356a811593e67cdf22e9d",
+    "source_diff_provenance_sha256": "780c0aa5a8a00ba9180974d4bee001782e83d747d492589a2a2da4b5bc40e2d6"
+  },
+  "schema_version": "actionformer_native_grid_k384_deployment_identity_v1"
+}

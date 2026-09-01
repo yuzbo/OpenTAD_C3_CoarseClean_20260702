@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-08-11T23:36:27Z",
+  "deadline": null,
+  "from_role": "coordinator",
+  "kind": "implementation-correction",
+  "message_id": "msg-20260811T233627Z-673d6302750e",
+  "parent_artifact_ids": [
+    ".cvpr-pro-lab/pro-reviews/PRO_P0_ROUTE_ADJUDICATION-v002.md",
+    ".cvpr-pro-lab/critic-returns/CRITIC_DUCA_P0_STATIC_PATCH_REVIEW-v001.md",
+    ".cvpr-pro-lab/evaluator-returns/EVALUATOR_DUCA_P0P1_PROTOCOL_AMENDMENT-v002.md"
+  ],
+  "payload": null,
+  "priority": "high",
+  "requested_action": "Close only the Critic IMPLEMENTATION_CORRECTION items: (1) replace the inherited physical-grid/head/loss-changing config base with the unchanged detector/head/loss stack and keep selected-axis coordinates active so pre-NMS selected-q-to-physical-dense transport is actually exercised; (2) replace full PCOTMRASReader execution in the DUCA path with the Pro-selected density-only browser-memory route, omitting legacy action/boundary/slot/gates/allocation/soft-transport/pair-policy branches. Do not edit or select a nonconstant decoder projection objective, candidate ordering, or tie rule; those remain pending Pro adjudication. Author only the minimal patch and focused static fixtures; do not run commands, tests, CPU/GPU/data/Slurm, metrics, Git, browser, or launchers. Stop with SCIENTIFIC_AMBIGUITY if the density-only route needs a semantic choice beyond the cited Pro decision.",
+  "required_gate": "PRO_P0_ROUTE_ADJUDICATION-v002; CRITIC_DUCA_P0_STATIC_PATCH_REVIEW-v001 sections 2.1-2.2; no-execution boundary",
+  "schema_version": "1.0",
+  "status": "queued",
+  "supporting_skills": [],
+  "to_role": "builder"
+}

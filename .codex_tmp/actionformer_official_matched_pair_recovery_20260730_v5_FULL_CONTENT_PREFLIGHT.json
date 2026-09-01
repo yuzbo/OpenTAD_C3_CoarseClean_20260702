@@ -1,0 +1,92 @@
+{
+  "audit": {
+    "bundle_sha256": "713a1d839e8e8ea50f141df9dba1feb44dc43c91dffbd4dd85bf8910bbdf9e24",
+    "clean": true,
+    "commit": "98f5b875315b4a2b5c6829f5d74ccce68f478e47",
+    "focused_tests": {
+      "passed": 5,
+      "sha256": "d14f97df2e52d4704acddb6a2f896d90d868e9d77ccc27e24b2ed3ccb7e349cc"
+    },
+    "full_content_manifest_sha256": "9d16bf54a937e48631dae9fb5250a639867ba6905fd112a7a6bdc3d42a162edb",
+    "root": "/data/run01/sczc063/yuzibo/projects/opentad_sparsehead_diagnostic_closure_20260730_v28",
+    "tree": "2e6b4bba6868c323d70c97140f7cbed044eb1a7b"
+  },
+  "candidate": {
+    "clean": true,
+    "commit": "d86a4acda21e35a1609f19f1a46bc470ee18b7e1",
+    "focused_tests": {
+      "passed": 14,
+      "sha256": "1c2508394c210adca15c54acded1d470a1328253b4f9377d5255614e36dd40f4"
+    },
+    "full_content_manifest_sha256": "d0bc583e149e973792bbf8a2ddc56e57492ed013306f77977cf28fb16c7976eb",
+    "root": "/data/run01/sczc063/yuzibo/projects/actionformer_sparsehead_official_matched_20260730_v7",
+    "tree": "327c032a1ab3c14d0e34d6339df36f8a33ec6907"
+  },
+  "environment": {
+    "cuda": "11.8",
+    "numpy": "1.23.5",
+    "python": "3.10.20",
+    "receipt_path": "/data/run01/sczc063/yuzibo/projects/preflight/actionformer_official_runtime_environment_20260730_v2/ENVIRONMENT_RECEIPT.json",
+    "receipt_sha256": "13d57c1161905f059204f7101f26029503a03da7f5eb44b81c418a0b97999f24",
+    "root": "/data/run01/sczc063/yuzibo/projects/python_envs/actionformer_official_runtime_20260730_v2",
+    "same_for_both_arms": true,
+    "tensorboard": "2.20.0",
+    "torch": "2.0.1"
+  },
+  "failure_class": "engineering_runtime_import_order",
+  "failure_signature": "official_environment_probe_nms_import_order_v1",
+  "fix": "load PyTorch and libc10 before importing the receipt-bound official NMS extension, with a focused source-order regression and a real remote ordered-import seven-argument probe",
+  "issues": [],
+  "launcher": {
+    "path": "/data/run01/sczc063/yuzibo/projects/opentad_sparsehead_diagnostic_closure_20260730_v28/scripts/run_actionformer_official_matched_pair_n16r4.sbatch",
+    "sha256": "8edc66295ecbc5591ab7fafe5cef81ad4d51a694bd8a9aa14b713778f70a8c4d"
+  },
+  "matched_contract_unchanged": true,
+  "model_or_config_changed": false,
+  "nms_extension": {
+    "module_path": "/data/run01/sczc063/yuzibo/projects/python_envs/actionformer_official_runtime_20260730_v2/lib/python3.10/site-packages/nms_1d_cpu.cpython-310-x86_64-linux-gnu.so",
+    "module_sha256": "b67e0e41f9f55cd69e8b90cfc75a1947214365857d851a510047838ad49ed98d",
+    "resolved_inside_pinned_environment": true,
+    "softnms_7arg_probe": true,
+    "torch_import_precedes_extension": true,
+    "torch_before_nms_probe_log_sha256": "7d79381ed64b27059aa6f4204bbfce3f606fc1e81e0a7962e4e1d1c7413a0488"
+  },
+  "official_comparability": {
+    "candidate_dense_config_byte_identical_to_official": true,
+    "candidate_dense_config_sha256": "c0ac0df560cd564941b56cd9391ad0bd5cea386d2e4b6cf9fc8ffcab821955cd",
+    "evaluated_weights": "terminal_epoch_35_state_dict_ema",
+    "live_feature_ids_content_shape_dtype_exact": true,
+    "official_dense_config_sha256": "c0ac0df560cd564941b56cd9391ad0bd5cea386d2e4b6cf9fc8ffcab821955cd",
+    "official_eval_split": "test",
+    "official_train_split": "validation",
+    "same_annotation": true,
+    "same_evaluator": true,
+    "same_seed": true,
+    "same_training_schedule": true,
+    "screening_protocol_official_comparable": true
+  },
+  "official_data": {
+    "annotation_sha256": "3b025685a07fb98fc58d2399fb5fa9493c2168632d8ae1a8c3f4689897d2fbb2",
+    "data_manifest_sha256": "7ae43a960702cbc6cb2d56f69913257b9553fdf4a43b1fd3a91699da1411e9fe",
+    "evaluator_manifest_sha256": "0e406ea34e96a1b9cf603d407417c76075de62ff4367a7ce156b1ad6b48bc7a9",
+    "feature_manifest_sha256": "cda269dace393b9af1f6fcb87a9a531beed69e3c71279ba3ca2cee76e198d59a",
+    "live_feature_rehash_log_sha256": "b7df6b49f0d9145f8239480a1790cf69747c71782b5577151453272484780535",
+    "live_feature_rehash_receipt_sha256": "73a2f714c100f541306d7d7f9c32e36481574d2ac6c5e78925ee4ee1dcca96b3"
+  },
+  "official_source": {
+    "clean": true,
+    "commit": "61ea7eb9308a568b0cf45e3804830836e30061de",
+    "full_content_manifest_sha256": "990533cbcc19b53c2d8d2d376a67dac87f4f1d8753884e258be565a245b08969",
+    "root": "/data/run01/sczc063/yuzibo/projects/actionformer_official_61ea7eb_20260729_v1",
+    "tree": "7b06c5261ba244788c942a0d73e304581bc35154"
+  },
+  "paper_main_table_eligible": false,
+  "parent_failure_analysis_sha256": "06bbc29e5f57b3b9a12f421f5ddd814487bf01733d0f0e5bbcc4c0551c877a41",
+  "parent_job": 1205594,
+  "parent_training_started": false,
+  "reason_not_main_table": "preregistered_single_seed_screening_precedes_five_seed_paired_accuracy_and_detector_pipeline_cost_study",
+  "scientific_contract_changed": false,
+  "schema_version": "actionformer_official_matched_pair_recovery_preflight_v3",
+  "source_diff_attestation_sha256": "a07d038d87632d1f8cc984ba24af44ca7ce9a9902e30e501f5de80a32265d46b",
+  "validation_pass": true
+}

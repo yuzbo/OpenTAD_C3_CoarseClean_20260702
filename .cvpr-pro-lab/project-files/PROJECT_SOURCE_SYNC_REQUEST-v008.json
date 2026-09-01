@@ -1,0 +1,22 @@
+{
+  "request_id": "PROJECT_SOURCE_SYNC_REQUEST-v008.json",
+  "project_id": "g-p-6a796fef9a00819194024cf1de3bd697",
+  "operation": "PROJECT_SOURCE_SYNC",
+  "status": "PREPARED_LOCAL_ONLY",
+  "blocking_class": "BLOCKS_EXPERIMENT",
+  "earliest_at": null,
+  "requires_central_browser_lease": true,
+  "items": [
+    {
+      "prepared_id": "pfile-20260814T092348Z-a7e5c908d1",
+      "filename": "CURRENT_RESEARCH_STATE-v012.md",
+      "path": ".cvpr-pro-lab/project-files/prepared/CURRENT_RESEARCH_STATE-v012.md"
+    },
+    {
+      "prepared_id": "pfile-20260814T092348Z-c42b9f6e30",
+      "filename": "DUCA_DYNAMIC_FINAL_PRO_ADJUDICATION-v001.md",
+      "path": ".cvpr-pro-lab/project-files/prepared/DUCA_DYNAMIC_FINAL_PRO_ADJUDICATION-v001.md"
+    }
+  ],
+  "dependent_pro_question": "Final third-round exact-Project adjudication: freeze a single canonical constant-density/uniform decoder identity and a reproducible K-shuffle mapping for hierarchical Dynamic DUCA, or REVISE/PIVOT/STOP. Fixed K may only remain baseline/control/fallback. No code or experiment authority is requested."
+}

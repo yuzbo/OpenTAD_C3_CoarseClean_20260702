@@ -1,0 +1,141 @@
+在成稿之前,先对两个可即时核验、且直接影响"审阅是否完整"结论的事实做最后复查:PR #2(G0 治理门)是否已开出、README 中的凭据段是否已清理。复查完成:截至本报告时点,仓库仍只有 PR #1,**G0(DUCA 分支的 read-surface Draft PR #2)未完成**,凭据清理亦未获得确认。以下报告基于这一最新事实成稿。
+
+---
+
+# OpenTAD_C3 / DUCA 项目多轮联合审阅综合报告
+
+**报告日期:** 2026-07-26 | **覆盖轮次:** Round 1(ChronoTransport 审查)→ Round 1.5(合伙人目标纠正与 DUCA 答复)→ Round 2(修订执行合同)| **报告性质:** 面向作者的裁决综合,非新一轮审查
+
+## 执行摘要:五个问题的直接回答
+
+| 问题 | 结论 | 一句话依据 |
+|---|---|---|
+| 审阅是否完整全面 | **深度足够,覆盖不完整** | 方法/协议/实验设计维度已到位;但当前主线 DUCA 的代码对讨论通道零可见,全部技术事实为转述 |
+| 实现是否完整正确 | **不能认定** | ChronoTransport 被自家审计判 FAIL 已停放;DUCA 无法认证,唯一已知 Stage-2 运行事实是一次数值失败,修复闭环待 D0 |
+| 能否进行下一步实验 | **可以,仅限有界诊断** | D0/D0-ext + D1-A/B/C/H 双方一致放行;D2 与完整训练被门禁阻塞 |
+| 路线是否可行、可发表 | **有条件成立;未被否证,也未被证实** | 三承重前提待 D1 裁决;创新内核可辩护但须过 novelty 定位关;发表门槛已被明确定义 |
+| 完整实验计划 | **见第 6 节六阶段计划 v1.0** | 治理 → 数值门 → 机制门 → 单 seed 矩阵 → 三 seed 主表+预算曲线 → 泛化 → 论文组装 |
+
+---
+
+## 1. 多轮审阅历程与双方立场
+
+### 1.1 时间线
+
+| 轮次 | 审查者 | 实际对象 | 核心产出 |
+|---|---|---|---|
+| R1 | 本席 | ChronoTransport r2(PR #1,当时唯一可读主线) | 裁决 `INSUFFICIENT_EVIDENCE`;确认仓库自审 FAIL、零正式结果、r1 Stage-B 负门、A3/A4 未决;提出"承重前提先行"原则与 E1/E2 |
+| R1.5 | 合伙人 Agent | DUCA 分支 `codex/duca-density-transport-20260723` @ `4c1f538` | 目标纠正;重建 budget-calibrated sampling rate 方法;提出 D0/D1/D2 三级实验与 kill 表;裁决 `SCIENTIFICALLY_UNPROVEN_BUT_WORTH_CONTINUING` |
+| R2 | 本席 | 合伙人答复本身 + 可核验通道复查 | 接受目标纠正(带核验债);D0/D1 加修订放行;新增 D1-H、同成本列、交叉配对、novelty 定位等十条;设立治理门 G0 |
+
+### 1.2 双方共识(已冻结,任何一方再推翻需新证据)
+
+承重假设的证据必须先于大规模工程与训练投入;任何 learned 增益必须对照最强简单基线(exact-uniform、stratified random、启发式、matched curriculum);流程/协议机器冻结增长;推理侧严格 teacher-free / GT-free;kill 条款预注册且不得事后调阈值;方法身份冻结为 **budget-calibrated sampling rate**(预算校准时序保留率);ChronoTransport 的代码结论不迁移到 DUCA;DUCA 目前没有任何可用于论文主张的正结果(`paper_claim_allowed=False` 双方确认);论文 v1 不做 online/streaming 主张。
+
+### 1.3 我方提出、待作者/合伙人回应的新增项(R2)
+
+D1-H oracle headroom 前置(K=384≈stride-2、VideoMAE tubelet≈2 叠加使同预算增益空间可能天然狭小,须先测上界再谈机制);hard one-swap 教师自身的三缺陷(assignment 混杂、策略依赖、loss≠mAP)及对应门禁硬化(双 checkpoint、Δassignment 偏相关、|ΔL|>2σ_noise);同成本列 uniform@K_eq(同 K 下 DUCA 端到端必然慢于 uniform,公平性须成本匹配);零训练交叉配对四格(区分"更好的帧" vs "detector 共适应");temporal-zoom / FPN level-assignment 位移作为增益机制候选并纳入 D1-C 统计;Contribution 1 的经典抽样理论(systematic πps / Madow)诚实定位;D0 覆盖率修正(300 步仅跨 ramp 约 43%,新增 D0-ext);G0 治理门。
+
+### 1.4 合伙人提出、我方修订后采纳的项
+
+U-Curriculum-Matched 对照(FATAL FOR CLAIM,全盘采纳并补两个混杂);grad×input 教师先校准后信任(采纳,但其"插值平滑"论证在 K=384 权重错置——stride-2 下插值只填距离 1 的空位,该问题在 K≤256 才是一阶);ST hard-swap gate 先于训练(采纳并硬化:同代码路径断言、确定性评测);coverage floor → max-gap 上界与 γ(K,G)=T/(K(G+1)) 合同(**数学已独立验算通过**,附表达力代价条款:max r = 1−γ(1−K/T));有序组件裁决而非 factorial 全跑;速度/学习收益分账。
+
+### 1.5 未决分歧(留待 Round 3 与实验数据裁决)
+
+D1-H 判读线(0.5/1.0/1.5 mAP)松紧;同成本列是主判据还是报告项;交叉配对四格对 plug-and-play 的解释力(作者最强反驳:"learned 选择喂 uniform detector 本就该分布错配");tubelet 大小实证(影响 headroom 论证强度);D1-A 阈值(24/0.70/0.20)是否真实存在于仓库现有 gate 代码。
+
+---
+
+## 2. 问题一:当前审阅是否完整全面?
+
+**结论:不完整,且不完整的方向很明确——深度有余、覆盖有缺。** 覆盖矩阵如下:
+
+| 审查对象 | 故事/任务/协议 | 实验设计 | 文档与审计产物 | 源码行级 | 正式实验结果 |
+|---|---|---|---|---|---|
+| ChronoTransport r2 | 深(R1 全维度) | 深 | 深(自审 FAIL 全文、.aris traces) | **仅转述**(行号出自仓库内审计,非讨论者亲读) | 不存在(唯一事实:r1 Stage-B 负门) |
+| C3 coarse ledger(base) | 中(README/AGENTS/RTK) | 浅 | 中 | 未读 | 未读(wiki 中五个 DUCA/相关实验记录不可读) |
+| **DUCA(宣称主线)** | 中(仅合伙人重建) | 深(D0/D1/D2 已双方打磨) | **零** | **零** | **零**(仅知一次 NaN 中断) |
+| 外部文献定位 | 中 | — | — | — | 引用 [1] 已核验为真;[2][3] 与既有知识一致未逐字复核 |
+
+三个具体缺口:第一,**G0 未闭环**——截至本报告最后一次复查,仓库仍只有 PR #1,`codex/duca-density-transport-20260723` 分支的存在与内容对全部讨论 Agent 仍然只有合伙人一家之言(`PARTNER_CLAIM` 级)。第二,审阅流程本身的独立性受限:仓库自己的审计文件承认"无法证明审阅者来自不同模型家族",且没有任何审阅者实际执行过代码。第三,Round-1 的 Q1(全分支枚举 + 各 HEAD SHA)至今未被回答,我们甚至不能排除还存在第四条未被讨论的活跃分支。
+
+因此,对"审阅是否全面"的诚实回答是:**在可以不读代码就完成的维度上,审阅已经超出一般 CVPR 评审强度;在必须读代码才能完成的维度上,当前主线的审阅覆盖率是零。** 补齐方式只有一个,即完成 G0(开 read-surface Draft PR #2)后由 Round 3 Agent 做一次 DUCA 源码级复核——这是所有后续裁决的可信度地基。
+
+## 3. 问题二:当前实现是否完整正确?
+
+**结论:不能认定完整,也不能认定正确;同时没有已证实的、针对 DUCA 的正确性否决。** 分对象说明:
+
+**ChronoTransport(已停放):** 由仓库内 2026-07-15 独立审计给出明确答案——`overall_verdict: fail`,正式 Stage-C/matched-dense/Gate-4 的 runner/launcher/validator 缺失,A3/A4 训练语义合同未冻结,`core_speed_accuracy_claim: unsupported`。按其自身标准,实现**不完整**;正确性只在"防造假代码不变量"层面获得两个 bounded 认证。该路线现状为 PARKED,其完整性问题不再阻塞主线,但其停放条款仍未书面化(route_arbitration.md 缺失)。
+
+**DUCA(宣称主线):** 全部实现事实为转述。转述内容内部自洽且质量较高(exact-K 无重复解码、constant-sum tangent 梯度、γ 下界的 max-gap 可证性),若属实,解码器内核是本项目迄今最干净的一段算法。但三件事阻止"完整正确"的认定:其一,唯一已知的真实运行事实是 Stage-2 在 epoch 9 因 FP16 mask 溢出中断(job 1190528),HEAD 修复未经 D0 的 300-update 门与"原始失败 batch 回放"闭环;其二,ST 桥由代码自认是未过门的 surrogate,contribution 教师未做过任何保真度校准——即按项目自己的定义,**两条训练信号中的两条都处于"未验证"状态**;其三,bisection 归一的 backward 处理、hard-soft gate 阈值的真实存在与位置,均待源码核验。另有三项已证实的仓库级问题独立于算法正确性:AGENTS.md 目标描述滞后于实际主线(合伙人自证)、公开仓库凭据泄露未确认清理(三轮催办)、主线更替无仲裁记录。
+
+**判定语:当前实现状态 = "无已证实的致命缺陷,但正确性认证被 G0(可见性)与 D0(数值门)双重阻塞";在这两道门通过前,任何"实现已就绪"的表述都不成立。**
+
+## 4. 问题三:当前是否可以进行下一步实验和改进?
+
+**可以,且这是三轮讨论中双方收敛度最高的结论——但许可范围有严格边界。**
+
+**已放行(立即可执行):** D0 数值与恢复门(固定 HEAD `4c1f538`、CUDA FP16 回归、从 sealed epoch-9 checkpoint 连续 300 个成功 optimizer updates、全套有限性/计数一致性断言、若可定位则回放 job 1190528 的首个 nonfinite batch);D1-A ST hard-swap 对齐门(硬化版:同代码路径断言、确定性评测、informative=|ΔL|>2σ_noise);D1-B contribution 教师保真门(硬化版:双 checkpoint、Δassignment 偏相关、cls/reg/合并三列);D1-C 采样几何与退化诊断(增补 token-length 与 FPN level 位移、rate 轨迹熵、相对极化指标);**D1-H oracle headroom**(冻结 checkpoint 上 GT-density / boundary / greedy-swap 三类 oracle,K∈{384,256,192})。以及三项零 GPU 成本的治理改进:G0、route_arbitration.md、凭据轮换。
+
+**被阻塞(任何 gate 通过前禁止):** full Stage-2 跑到 epoch 59;任何三 seed;任何 D2 训练臂;新增任何模块(decoder/教师/正则/协议层);阈值事后调整;bridge weight 失败后重调重考;online/streaming 表述;在 D1-H 出结果前争论 K=384 的论文数字。**D2 的额外解锁条件:** D0-ext(同健康门连续跑到 schedule step ≥3200,跨完全部 ramp)。
+
+**"改进"的许可边界需要单独强调:** 当前唯一允许的改进类型是修复 gate 暴露的根因(例如 D0 失败后的数值根因修复、D1-B 失败后按预案把主教师换成硬反事实教师)。不允许的改进类型是任何"性能不佳→加模块/调权重"的正向堆叠——这一条是三轮讨论共同的最高纪律。
+
+## 5. 问题四:当前路线是否还具有可行性和论文可发表性?
+
+**结论:有条件成立。当前证据既不足以宣布可行,也没有任何一条证据宣判死刑;三道机制门 + 一道上界门就是可行性问题本身,它们已经被设计成两周内可裁决的形式。**
+
+**可行性取决于三条承重前提,现状全部未证:** P1' 在某个预算点上存在真实 headroom(uniform 开始丢信息而学习选择能补回)——由 D1-H 裁决,且我方论证提示 K=384 处 headroom 可能天然狭小,主战场或在 K∈{128,192,256};P2' 存在与检测效用对齐的可学习价值信号——由 D1-A/B 裁决,两个候选教师各有已知缺陷,且存在预注册的替换路径(硬反事实教师);P3' 强非均匀采样不摧毁高 IoU 定位——由 D1-C 与 D2 的 gap-分层 AP@0.7 裁决,γ(K,G) 覆盖合同是已备好的缓解手段。
+
+**有利因素(诚实记账):** 方法内核在选帧文献中确有可辩护的差异点——exact-K、无重复、hard-forward 与部署一致、可证明的最大时间孔洞上界、固定预算切空间梯度,这个组合在 TAD 场景没有直接先例;项目的证伪纪律(预注册 gate、kill 表、teacher-free 边界、负结果留档)在 rebuttal 阶段是罕见的加分资产;外部趋势有利——已核验的 CVPR 2026 工作证实"relevance≠utility、需组合级下游效用"正是社区当前关注点,而 DUCA 的 detector-utility 校准恰好站在这条线上,且 MLLM 系选帧工作全部不处理 TAD 的精确定位几何,差异化空间真实存在。
+
+**不利因素(同样诚实记账):** 项目历史存在两次正式负信号(ChronoTransport r1 Stage-B 负门、DUCA Stage-2 数值中断)与两周内 ≥6 条路线更替的漂移记录——单看每一条都可解释,叠加起来说明本项目最大的风险不是想法而是执行纪律,冻结计划是唯一解药;novelty 有一处必须主动排雷——解码器核心与经典固定样本量系统 πps 抽样(Madow 一系)同构,不做诚实定位会被一段话拒稿;竞争拥挤——"learnable frame selector 有效"本身已不新,论文必须完全押注在 TAD 特异性(精确预算、定位几何、detector utility、覆盖保证)上。
+
+**可发表判据(已冻结,达标即写、不达标即停):** 路径 A——K=384 相对 U-Curriculum-Matched 提升 ≥0.7–1.0 avg-mAP、三 seed paired CI 下界 >0、AP@0.7 不降、short-action 或 boundary error 至少一项显著改善、同成本列不翻车;或路径 B——K≤320 匹配 uniform-384,或多预算 Pareto 在同成本口径下整体支配 uniform/random。任一路径达标后还需泛化证据(第二 detector 或第二数据集,以及一次 frozen-detector transfer 以裁决 plug-and-play vs co-trained 口径)。**若 D1-H 显示全预算段 oracle 无 headroom,或 D2 中 learned 全面 ≤ matched-uniform,则路线按预注册条款终止——这不是审阅的威胁,是项目自己设计并被双方确认的合同。**
+
+## 6. 问题五:完整实验计划 v1.0(合并冻结版)
+
+以下是三轮讨论收敛后的完整计划。除标注"待 Round 3 裁决"的参数外,全部条款视为预注册;修改任何 pass/kill 线需新开讨论轮并留档。
+
+### Phase 0 — 治理与可见性(零 GPU,阻塞后续裁决而非执行)
+G0:从 DUCA 分支开 read-surface Draft PR #2;提交 route_arbitration.md(主线=DUCA;ChronoTransport=PARKED,重启条件=路径 A/B 双 kill;C3=归因基线);更新 AGENTS.md 方法合同(HEAD、唯一主配置、废弃路线、paper-claim 状态);凭据轮换+清史确认;方法冻结文本加入 systematic πps 定位段;冻结 D1 全部阈值的代码路径+行号+哈希。
+
+### Phase 1 — D0 数值门(单卡,小时级)
+内容与判据如第 4 节;通过仅解锁 Phase 2。**D0-ext**(跑完全部 ramp 至 step≥3200,同健康门)单列为 Phase 3 的解锁条件。失败动作:`STOP_AND_RETURN_ROOT_CAUSE`,禁止换 checkpoint/跳 batch/调权重。
+
+### Phase 2 — D1 机制与上界门(单卡,天级,四门并行)
+
+| 门 | 内容 | PASS | KILL/降级 |
+|---|---|---|---|
+| D1-H | 冻结 ckpt(Stage-1 terminal 与 Stage-2 ep-9 各一)上三类 oracle,K∈{384,256,192},官方 mAP 对照同 K uniform | @384≥1.5 或 @192≥3.0 | @384<0.5 且 @256<1.0 → kill 同预算故事,主操作点转低 K,D2 矩阵重排 |
+| D1-A | 32 batch × 4 swap,ST 预测方向 vs 真实 ΔL,同代码路径,确定性评测 | 现有 gate 阈值(24/0.70/0.20/CI) | `KILL_ST_COMPONENT`(不 kill DUCA) |
+| D1-B | 同 swap 集,grad×input 预测 vs 真实 ΔL,双 checkpoint,Δassignment 偏相关,cls/reg 分列 | 双点过线且偏相关后 sign≥0.55 | 教师降级为 warm-start,主教师换硬反事实 |
+| D1-C | 几何/退化全套统计 + token-length、FPN-level 位移、rate 轨迹熵、相对极化 | 无退化判定触发 | rates≈K/T 或与 uniform 高重合 → kill 自适应故事 |
+
+**产出 artifact:** numeric_gate.json、st_alignment.json、teacher_fidelity.json、selection_geometry.json、headroom.json,各带 commit/环境指纹/checkpoint SHA。
+
+### Phase 3 — D2-I 单 seed 决策矩阵(seed 3407;前置:D0-ext + D1 全过或按 kill 预案降级后的残余方法)
+八臂:U-Standard / U-Curriculum-Matched / Rate-Random(新增控制)/ Rate-AuxOnly / Rate+Contribution / Rate+ST(仅 D1-A 过)/ Full / Full+TrueTime(仅时间几何诊断触发)。同一 Stage-1 初始化、同 6000 步 Stage-2 合同、同验证频率;附带**零训练交叉配对四格**评测。禁止同轮调 coverage floor、温度、平滑核与四组 loss 权重。
+
+### Phase 4 — D2-II 主表与曲线(3 seeds:3407/5801/8123)
+只保留 U-Curriculum-Matched、最佳 learned 臂、至多一个关键消融。预算曲线 K∈{192,256,320,384,512,768}(若 D1-H 触发低 K 转向,则加 128 并以低 K 为主表),每 K 含 dense / exact-uniform / stratified-random / transition-heuristic / learned / train-only oracle;coverage floor 按 γ(K,G=15) 自动生成。完整成本账(解码/低清 ASFormer/selector/gather/H2D/backbone/head/NMS/显存/吞吐/延迟)并标定 K_eq,主表加同成本列。指标全集:avg-mAP 与逐 IoU 档、动作长度分层、边界误差、gap 分位、极化、Pareto AUC、3-seed paired CI + per-video bootstrap。
+
+### Phase 5 — 泛化(仅当 Phase 4 达到路径 A 或 B)
+第二后端(如 TemporalMaxer)或第二数据集(ActivityNet,注意其预算语义需单独定标)二选一起步;一次 frozen-detector transfer 裁决 Q10 口径(plug-and-play vs detector-co-trained acquisition,论文措辞随结果二选一,不得混用)。
+
+### Phase 6 — 论文组装(claim→evidence 硬映射)
+
+| 论文 claim | 唯一允许的证据来源 |
+|---|---|
+| exact-K 有界保留率解码器(可微系统 πps + 覆盖保证) | 解码器单测 + γ(K,G) 边界穷举测试 + 定位段引文 |
+| detector-utility 校准的学习 | D1-A/B artifacts + D2 消融列 |
+| 同预算增益 / 低预算匹配 | Phase 4 主表(含同成本列)+ CI |
+| 时间几何保护 | gap 分层 AP@0.7 + level-位移分析(+TrueTime 三臂,仅当启用) |
+| 效率 | 完整成本账,禁止只报 backbone FLOPs |
+
+### 统一决策表(kill 条款合并,预注册)
+D0 复现 pre-AMP nonfinite → 修数值;D1-A 败 → 删 ST;D1-B 败 → 换教师;D1-H 全段无 headroom → kill 同预算故事转低 K,低 K 亦无 → `RETHINK_CORE_METHOD`;learned≈uniform 几何 → kill 自适应叙事;learned ≤ matched-uniform(CI 内)→ kill 当前学习机制;同成本列不占优 → 效率叙事降级;仅共训有效 → 改口径为 co-trained;高 IoU 随 gap 显著恶化 → 启用 TrueTime 修订;G0 下轮前未完成 → 冻结一切科学裁决,只留 D0/D1 执行。
+
+## 7. 立即行动清单(本周,按序)
+
+1(零成本,今日):开 Draft PR #2、提交 route_arbitration.md、轮换凭据——三件事合计不超过一小时,却解除本项目最大的裁决阻塞。2:执行 D0(含失败 batch 回放),产出 numeric_gate.json。3:并行执行 D1-H 与 D1-A/B/C,产出四份 artifact。4:携全部 artifacts + PR #2 进入 Round 3,由下一位 Agent 按既定格式独立复核 Round 2 的十条新增批评并更新执行许可。到那一刻,本项目将第一次拥有"可被任何人复核的代码 + 可被数据裁决的前提"这两样东西——路线的生死从此由 headroom.json 和四份门禁文件说了算,不再由任何一位讨论者的措辞说了算。
