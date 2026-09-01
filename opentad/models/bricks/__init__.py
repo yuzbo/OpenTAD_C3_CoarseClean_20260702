@@ -5,6 +5,7 @@ from .misc import Scale
 from .transformer import TransformerBlock, AffineDropPath
 from .bottleneck import ConvNeXtV1Block, ConvNeXtV2Block, ConvFormerBlock
 from .sgp import SGPBlock
+from .time_aligned_rope import TimeAlignedRoPE, TimeSpacingPositionalEncoding
 
 __all__ = [
     "ConvModule",
@@ -17,4 +18,7 @@ __all__ = [
     "ConvNeXtV1Block",
     "ConvNeXtV2Block",
     "ConvFormerBlock",
+    "TimeAlignedRoPE",
+    "TimeSpacingPositionalEncoding",
 ]
+
