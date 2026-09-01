@@ -405,8 +405,20 @@ class ActionFormer(SingleStageDetector):
         # see https://github.com/karpathy/minGPT/blob/master/mingpt/model.py#L134
         decay = set()
         no_decay = set()
-        whitelist_weight_modules = (nn.Linear, nn.Conv1d)
-        blacklist_weight_modules = (nn.LayerNorm, nn.GroupNorm)
+        whitelist_weight_modules = (
+            nn.Linear,
+            nn.Conv1d,
+            nn.Conv2d,
+            nn.Conv3d,
+        )
+        blacklist_weight_modules = (
+            nn.LayerNorm,
+            nn.GroupNorm,
+            nn.BatchNorm1d,
+            nn.BatchNorm2d,
+            nn.BatchNorm3d,
+            nn.Embedding,
+        )
 
         # loop over all modules / params
         for mn, m in self.named_modules():
@@ -427,6 +439,12 @@ class ActionFormer(SingleStageDetector):
                     decay.add(fpn)
                 elif pn.endswith("weight") and isinstance(m, blacklist_weight_modules):
                     # weights of blacklist modules will NOT be weight decayed
+                    no_decay.add(fpn)
+                elif pn.endswith("weight") and p.dim() >= 2:
+                    # weights of custom conv/linear/adaptive modules (e.g. ContinuousTimeScaleAdaptiveConv1d)
+                    decay.add(fpn)
+                elif pn.endswith("weight") and p.dim() < 2:
+                    # 1D weight tensors (e.g. custom norm/scale layers)
                     no_decay.add(fpn)
                 elif pn.endswith("scale") and isinstance(m, (Scale, AffineDropPath)):
                     # corner case of our scale layer

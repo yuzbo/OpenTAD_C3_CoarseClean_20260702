@@ -5,6 +5,15 @@ append_only: true
 
 # Research Wiki Log
 
+- 2026-09-01：CT-DP-BAMoD 架构完成独立代码复审与完整数学几何/工程接口修正（8 项严格测试全数通过）：
+  1. 修复 CT-Conv1d 坐标名义索引对齐：修正 torchvision `deform_conv2d` nominal coordinate slot 偏移（原 taps 直接作为 offset 导致 +half_k*dilation 偏差），建立 `slot = 0..K-1` 与 `nominal = j*stride - padding + slot*dilation`，中心物理点为 `center = j*stride - padding + half_k*dilation`。在均匀时间戳下，CT-Conv 与标准 `nn.Conv1d` 达成 `< 1e-6` 的精确逐元素数值 Parity；
+  2. 修复 `inverse_piecewise_linear_1d` 连续线性边界外推：针对端点外目标时间显式采用首/末段斜率外推，使越界分数索引直接映射至 torchvision 零填充域，消除了边界由于硬截断导致的采样失真；
+  3. 修复 6D NCTHW 接口与 Scout 预处理：`DualPhaseFrameSelector` 全面支持 6D 张量 `[B, 1, 3, T, H, W]`（在时序维度 dim=3 进行 gather 并在返回时保持 6D 维度），修正 `original_window_size` 时序长度提取；Scout 分支建立独立的 Float32 与 VideoMAE 均值/标准差归一化视图；
+  4. 修复短视频时序单调性与 Delta_t：消除 `total_budget > valid_len` 时的 `-1` 填充污染，建立自末尾有效位置严格递增的单调时间戳扩展，确保 `searchsorted` 在短视频场景下始终满足有序数学前提；
+  5. 修复配置与 ViT-Adapter temporal_size 崩溃隐患：`configs/adatad/thumos/duca_ct_dual_phase_bamod_thumos.py` 修正 `total_frames=16`，`vit_adapter.py` Block 统一使用 `temporal_size = num_frames // tubelet_size`，消除 384 vs 8 tubelet 重整维度不兼容的必现崩溃；
+  6. 修复 `ActionFormer.get_optim_groups` 优化器参数白名单：将 `ContinuousTimeScaleAdaptiveConv1d`、`DeformConv1d` 及多维权重纳入 `decay` 组，1D 偏置/归一化纳入 `no_decay` 组，通过 100% 参数覆盖且无交集断言；
+  7. 全面重构 `tests/test_ct_dual_phase_bamod.py`：新增 CT-Conv Parity 数值等价测试、非均匀脉冲坐标测试、B-AMoD 未选 Token 严格恒等断言、优化器参数分组测试及 6D 端到端反向传播梯度有限性测试。
+
 - 2026-09-01：面向高精度时序动作检测的连续时空自适应与双相 B-AMoD 计算体系（CT-DP-BAMoD）完成首轮系统实现。包含三大核心组件：
   1. `opentad/models/duca/acquisition.py` 中的 `dual_phase_orthogonal_budget_positions`：实现全局稳态骨架（$K_{\text{scaffold}}=128$ 均匀覆盖）与相变微簇（$K_{\text{burst}}=256$ 边界偶极微簇）的双相正交解耦，兼顾底线召回与高 tIoU 边界聚集；
   2. `opentad/models/backbones/vit_adapter.py` 中的零参数边界偏置 A-MoD（B-AMoD）：复用自注意力列均值并与 Scout 边界先验调制（$r_{\text{fused}} = r \cdot (1 + \alpha p_{\text{boundary}})$），在 12 层 VideoMAE 实现 6 层 Dense 与 6 层 A-MoD 奇偶交替调度（未选 Token 恒等残差旁路），等效 9 层计算，算力降低 25%~35%；

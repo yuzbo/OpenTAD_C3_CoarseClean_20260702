@@ -35,7 +35,7 @@ model = dict(
             norm_cfg=dict(type="LN", eps=1e-6),
             return_feat_map=True,
             with_cp=True,
-            total_frames=selected_budget,
+            total_frames=16,
             adapter_index=list(range(12)),
             # B-AMoD (Boundary-Biased Attention routing for Mixture-of-Depths)
             amod_config=dict(

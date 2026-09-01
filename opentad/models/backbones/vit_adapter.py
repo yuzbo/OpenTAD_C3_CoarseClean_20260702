@@ -1058,7 +1058,7 @@ class VisionTransformerAdapter(BaseModule):
                     init_cfg=init_cfg,
                     use_adapter=i in adapter_index,
                     adapter_mlp_ratio=adapter_mlp_ratio,
-                    temporal_size=total_frames // tubelet_size,
+                    temporal_size=num_frames // tubelet_size,
                 )
                 for i in range(depth)
             ]

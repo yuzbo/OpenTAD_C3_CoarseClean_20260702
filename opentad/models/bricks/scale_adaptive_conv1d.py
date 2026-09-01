@@ -12,7 +12,15 @@ def inverse_piecewise_linear_1d(
     timestamps: Tensor,  # [B, T_in] non-decreasing
     target_times: Tensor,  # [B, K, T_out]
 ) -> Tensor:  # Returns fractional token indices [B, K, T_out]
+    """Maps physical target timestamps to continuous fractional token coordinates via piecewise linear interpolation.
+
+    Boundary handling:
+    Targets beyond the first/last endpoint are linearly extrapolated along the first/last interval rate,
+    producing fractional coordinates (<0 or >T_in-1) that cleanly map into torchvision deform_conv2d zero-padding domain.
+    """
     B, T_in = timestamps.shape
+    if T_in < 2:
+        raise ValueError(f"timestamps must have at least 2 points along temporal dimension, got {T_in}")
     device = timestamps.device
     dtype = timestamps.dtype
 
@@ -40,9 +48,13 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
 
     Maintains constant physical temporal receptive field across non-uniformly sampled frames.
     Given discrete feature points with physical timestamps, calculates exact fractional offset:
-        offset_{j,k} = u_{j,k}^fractional - u_{j,k}^nominal
-    where u_{j,k}^fractional is the inverse piecewise linear mapping of target physical timestamp:
-        tau_target(j,k) = tau(j * stride - padding) + k * dilation * ref_delta_t.
+        offset_{j,i} = u_{j,i}^fractional - u_{j,i}^nominal
+    where torchvision kernel slot i in {0, ..., K-1} has nominal input position:
+        u_{j,i}^nominal = j * stride - padding + i * dilation
+    and physical center corresponds to slot i = half_k:
+        center(j) = j * stride - padding + half_k * dilation
+    with relative tap offset tap_i = i - half_k in {-half_k, ..., +half_k}:
+        tau_target(j, i) = tau(center(j)) + tap_i * dilation * ref_delta_t.
     """
 
     def __init__(
@@ -128,30 +140,38 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
         dtype = x.dtype
 
         half_k = self.kernel_size // 2
-        taps = torch.arange(-half_k, half_k + 1, device=device, dtype=dtype)  # [K]
+        slots = torch.arange(self.kernel_size, device=device, dtype=dtype)  # [K]: 0, 1, ..., K-1
+        taps = slots - half_k  # [K]: -half_k, ..., +half_k
         out_indices = torch.arange(T_out, device=device, dtype=dtype)  # [T_out]
 
-        # Base nominal input index for each tap at each output step: u_{j,k} = j * stride - padding + k * dilation
-        base_indices = (out_indices[None, None, :] * float(self.stride) - float(self.padding) +
-                        taps[None, :, None] * float(self.dilation))  # [1, K, T_out]
+        # Nominal input index for torchvision deform_conv2d kernel slot i: j * stride - padding + i * dilation
+        nominal_indices = (
+            out_indices[None, None, :] * float(self.stride)
+            - float(self.padding)
+            + slots[None, :, None] * float(self.dilation)
+        )  # [1, K, T_out]
+
+        # Center input index for each output step j (corresponding to slot i = half_k)
+        center_input_idx = (
+            out_indices * float(self.stride)
+            - float(self.padding)
+            + float(half_k * self.dilation)
+        ).clamp(0, T_in - 1).long()  # [T_out]
 
         if temporal_positions is not None:
-            # Center input index for each output step j: j * stride - padding
-            center_input_idx = (out_indices * float(self.stride) - float(self.padding)).clamp(0, T_in - 1).long()  # [T_out]
             # Center physical timestamp for each output step: [B, 1, T_out]
             center_tau = torch.gather(temporal_positions, 1, center_input_idx.unsqueeze(0).expand(B, -1)).unsqueeze(1)
-            # Target physical timestamp for tap k: tau_target(j, k) = center_tau(j) + k * dilation * ref_delta_t
+            # Target physical timestamp for tap i: tau_target(j, i) = center_tau(j) + tap_i * dilation * ref_delta_t
             target_tau = center_tau + taps[None, :, None] * float(self.dilation) * self.ref_delta_t  # [B, K, T_out]
 
             # Fractional input token index from inverse piecewise linear mapping
             fractional_idx = inverse_piecewise_linear_1d(temporal_positions, target_tau)  # [B, K, T_out]
-            geom_offset = fractional_idx - base_indices  # [B, K, T_out]
+            geom_offset = fractional_idx - nominal_indices  # [B, K, T_out]
         else:
             if delta_t is None:
                 delta_t = torch.full((B, T_in), self.ref_delta_t, device=device, dtype=dtype)
 
             # Sample delta_t at output step centers
-            center_input_idx = (out_indices * float(self.stride) - float(self.padding)).clamp(0, T_in - 1).long()
             delta_t_out = torch.gather(delta_t, 1, center_input_idx.unsqueeze(0).expand(B, -1))  # [B, T_out]
 
             # Scale factor = ref_delta_t / delta_t

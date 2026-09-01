@@ -37,6 +37,10 @@ class DualPhaseFrameSelector(nn.Module):
         self.burst_budget = int(burst_budget)
         self.burst_radius = int(burst_radius)
 
+        # VideoMAE normalization constants for scout branch
+        self.register_buffer("scout_mean", torch.tensor([123.675, 116.28, 103.53]).view(1, 3, 1, 1, 1))
+        self.register_buffer("scout_std", torch.tensor([58.395, 57.12, 57.375]).view(1, 3, 1, 1, 1))
+
         # Lightweight 1D temporal scout to compute priority from downsampled frame features
         self.scout_proj = nn.Sequential(
             nn.AdaptiveAvgPool3d((None, 4, 4)),  # spatial pool to [B, C, T, 4, 4]
@@ -49,10 +53,15 @@ class DualPhaseFrameSelector(nn.Module):
             nn.Sigmoid(),
         )
 
-    def _compute_priority(self, inputs: torch.Tensor, masks: torch.Tensor) -> torch.Tensor:
+    def _compute_priority(self, inputs_5d: torch.Tensor, masks: torch.Tensor) -> torch.Tensor:
         """Compute frame selection priority from video inputs [B, 3, T, H, W]."""
-        B, C, T, H, W = inputs.shape
-        pooled = self.scout_proj(inputs).permute(0, 1, 3, 2).reshape(B, C * 16, T)  # [B, 48, T]
+        B, C, T, H, W = inputs_5d.shape
+        # Ensure float32 and VideoMAE normalization for the scout branch
+        scout_in = inputs_5d.float()
+        if scout_in.max() > 1.0:
+            scout_in = (scout_in - self.scout_mean) / self.scout_std
+
+        pooled = self.scout_proj(scout_in).permute(0, 1, 3, 2).reshape(B, C * 16, T)  # [B, 48, T]
         priority = self.scout_head(pooled).squeeze(1)  # [B, T]
         priority = priority * masks.float()
         return priority
@@ -64,12 +73,19 @@ class DualPhaseFrameSelector(nn.Module):
         selected_masks: torch.Tensor,
     ) -> torch.Tensor:
         """Gather selected frames along temporal dimension and zero-out invalid frames."""
-        B, C, T_in, H, W = inputs.shape
         K = selected_positions.shape[1]
-        clamped_pos = selected_positions.clamp(0, T_in - 1)
-        idx = clamped_pos[:, None, :, None, None].expand(B, C, K, H, W)
-        gathered = torch.gather(inputs, 2, idx)
-        gathered = gathered * selected_masks[:, None, :, None, None].to(dtype=gathered.dtype)
+        if inputs.ndim == 6:
+            B, N, C, T_in, H, W = inputs.shape
+            clamped_pos = selected_positions.clamp(0, T_in - 1)
+            idx = clamped_pos[:, None, None, :, None, None].expand(B, N, C, K, H, W)
+            gathered = torch.gather(inputs, 3, idx)
+            gathered = gathered * selected_masks[:, None, None, :, None, None].to(dtype=gathered.dtype)
+        else:
+            B, C, T_in, H, W = inputs.shape
+            clamped_pos = selected_positions.clamp(0, T_in - 1)
+            idx = clamped_pos[:, None, :, None, None].expand(B, C, K, H, W)
+            gathered = torch.gather(inputs, 2, idx)
+            gathered = gathered * selected_masks[:, None, :, None, None].to(dtype=gathered.dtype)
         return gathered
 
     def _gather_masks(self, masks: torch.Tensor, selected_positions: torch.Tensor) -> torch.Tensor:
@@ -111,8 +127,19 @@ class DualPhaseFrameSelector(nn.Module):
         gt_labels: Optional[Any] = None,
         training: bool = True,
     ) -> Dict[str, Any]:
-        B = inputs.shape[0]
-        priority = self._compute_priority(inputs, masks)
+        if inputs.ndim == 6:
+            B, N, C, T_raw, H, W = inputs.shape
+            assert N == 1, f"Expected N=1 for single-clip video inputs, got N={N}"
+            inputs_5d = inputs[:, 0]
+            orig_window_size = T_raw
+        elif inputs.ndim == 5:
+            B, C, T_raw, H, W = inputs.shape
+            inputs_5d = inputs
+            orig_window_size = T_raw
+        else:
+            raise ValueError(f"Expected 5D [B,C,T,H,W] or 6D [B,N,C,T,H,W] inputs, got {inputs.shape}")
+
+        priority = self._compute_priority(inputs_5d, masks)
 
         selection: DualPhaseBudgetSelection = dual_phase_orthogonal_budget_positions(
             h65_priority=priority,
@@ -126,11 +153,23 @@ class DualPhaseFrameSelector(nn.Module):
         selected_positions = selection.selected_positions  # [B, K]
         selected_masks = self._gather_masks(masks, selected_positions)
         selected_inputs = self._gather_frames(inputs, selected_positions, selected_masks)
-        temporal_positions = selected_positions.float()
 
-        # Compute delta_t from consecutive selected positions
-        diff = torch.zeros_like(selected_positions, dtype=torch.float32)
-        diff[:, :-1] = (selected_positions[:, 1:] - selected_positions[:, :-1]).float()
+        # Generate strictly monotonic temporal positions without -1 padding
+        valid_pos_mask = selected_positions >= 0
+        temporal_positions = selected_positions.float().clone()
+        for b in range(B):
+            valid_idx = torch.nonzero(valid_pos_mask[b], as_tuple=False).flatten()
+            if len(valid_idx) == 0:
+                temporal_positions[b] = torch.arange(self.total_budget, device=inputs.device, dtype=torch.float32)
+            elif len(valid_idx) < self.total_budget:
+                last_val = selected_positions[b, valid_idx[-1]].float()
+                num_pad = self.total_budget - len(valid_idx)
+                pad_vals = last_val + torch.arange(1, num_pad + 1, device=inputs.device, dtype=torch.float32)
+                temporal_positions[b, len(valid_idx):] = pad_vals
+
+        # Compute delta_t from consecutive monotonic positions
+        diff = torch.zeros_like(temporal_positions, dtype=torch.float32)
+        diff[:, :-1] = temporal_positions[:, 1:] - temporal_positions[:, :-1]
         diff[:, -1] = diff[:, -2] if self.total_budget > 1 else 1.0
         delta_t = diff.clamp_min(1.0)
 
@@ -143,7 +182,7 @@ class DualPhaseFrameSelector(nn.Module):
             metas[i]["temporal_positions"] = temporal_positions[i].detach()
             metas[i]["delta_t"] = delta_t[i].detach()
             metas[i]["boundary_prior"] = boundary_prior[i].detach()
-            metas[i]["original_window_size"] = inputs.shape[2]
+            metas[i]["original_window_size"] = orig_window_size
             metas[i]["selected_window_size"] = self.total_budget
 
         outputs = {
