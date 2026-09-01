@@ -1,0 +1,19 @@
+﻿{
+  "protocol_id": "ZOOMTOKEN-PATAD-FULL200-COMPUTE-PARETO-3X3-v001",
+  "phase": 3,
+  "description": "Pyramid-Aware Asymmetric TAD (PA-TAD) on THUMOS14 full200 training and 211 evaluation population.",
+  "arms": ["D160", "G96", "PATAD-U128-B128"],
+  "seeds": [4407, 4408, 4409],
+  "asymmetric_split_level": 2,
+  "burst_chunks": 16,
+  "total_chunks": 48,
+  "target_c_exec_ratio": 0.48,
+  "schedule": {
+    "epochs": 60,
+    "updates_per_epoch": 100,
+    "total_updates": 6000,
+    "checkpoint_policy": "final_only",
+    "batch_size": 2,
+    "world_size": 2
+  }
+}
