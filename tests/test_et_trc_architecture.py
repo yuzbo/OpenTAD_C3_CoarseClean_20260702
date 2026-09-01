@@ -1,11 +1,23 @@
+from types import SimpleNamespace
+
 import torch
 import torch.nn as nn
 import pytest
+from mmaction.registry import MODELS as MMACTION_MODELS
 from opentad.models.backbones.et_trc_videomae import (
     TemporalLowRankJVP,
     TaylorResidualBlock,
     ETTRCVisionTransformerAdapter,
 )
+from tools.bata.diagnose_taylor_residual_manifold import (
+    _add_production_pos_embed,
+    _infer_patch_geometry,
+    _resolve_jvp_operators,
+)
+
+
+def test_et_trc_backbone_registered_for_mmaction_recognizer():
+    assert MMACTION_MODELS.get("ETTRCVisionTransformerAdapter") is ETTRCVisionTransformerAdapter
 
 
 def test_temporal_low_rank_jvp_linearity():
@@ -73,3 +85,24 @@ def test_et_trc_videomae_return_feat_map():
     # T_tubelets = 16 // 2 = 8, H_patches = 160 // 16 = 10, W_patches = 160 // 16 = 10
     assert feats.shape == (B, 384, 8, 10, 10), f"Expected (B, 384, 8, 10, 10) but got {feats.shape}"
     assert not torch.isnan(feats).any()
+
+
+def test_taylor_diagnostic_infers_production_chunk_geometry():
+    inner = SimpleNamespace(patch_size=16, tubelet_size=2)
+    frames = torch.zeros(48, 3, 16, 160, 160)
+    tokens = torch.zeros(48, 800, 384)
+
+    assert _infer_patch_geometry(inner, frames, tokens) == (10, 10, 100, 8)
+
+
+def test_taylor_diagnostic_rejects_full_window_pos_embed_mismatch():
+    inner = SimpleNamespace(pos_embed=torch.zeros(1, 800, 384))
+    full_window_tokens = torch.zeros(1, 38400, 384)
+
+    with pytest.raises(RuntimeError, match="pos_embed shape mismatch"):
+        _add_production_pos_embed(inner, full_window_tokens)
+
+
+def test_taylor_diagnostic_requires_in_model_jvp():
+    with pytest.raises(RuntimeError, match="missing layers \\[0\\]"):
+        _resolve_jvp_operators(nn.ModuleList([nn.Identity()]), torch.device("cpu"))

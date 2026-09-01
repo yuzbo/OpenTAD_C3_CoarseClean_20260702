@@ -10,9 +10,9 @@ from torch import Tensor
 from mmcv.cnn import build_norm_layer
 from mmcv.cnn.bricks import DropPath
 from mmcv.cnn.bricks.transformer import FFN, PatchEmbed
-from mmengine.registry import MODELS
 from mmengine.model import BaseModule, ModuleList
 from mmengine.model.weight_init import constant_init, trunc_normal_init
+from mmaction.registry import MODELS
 from mmaction.models.backbones.vit_mae import get_sinusoid_encoding
 
 from .vit_adapter import Adapter
