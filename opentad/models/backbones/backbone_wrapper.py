@@ -121,34 +121,39 @@ class BackboneWrapper(nn.Module):
                 features = self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions, **kwargs)
 
 
-        self.latest_support_metadata = getattr(self.model.backbone, "latest_support_metadata", None)
-        if self.latest_support_metadata is not None:
-            unflattened_meta = {}
-            for k, v in self.latest_support_metadata.items():
-                if v is not None and v.ndim >= 2:
-                    if v.ndim == 2:
-                        unflattened_meta[k] = v.view(batches, -1)
-                    elif v.ndim == 3:
-                        unflattened_meta[k] = v.view(batches, -1, v.shape[-1])
-            self.latest_support_metadata = unflattened_meta
-
         # unflatten and pool the features
         if isinstance(features, (tuple, list)):
             features = torch.cat([self.unflatten_and_pool_features(f, batches, num_segs) for f in features], dim=1)
         else:
             features = self.unflatten_and_pool_features(features, batches, num_segs)
 
+        B_feat = features.shape[0]
+        self.latest_support_metadata = getattr(self.model.backbone, "latest_support_metadata", None)
+        if self.latest_support_metadata is not None:
+            unflattened_meta = {}
+            for k, v in self.latest_support_metadata.items():
+                if v is not None and v.ndim >= 2:
+                    if v.ndim == 2:
+                        unflattened_meta[k] = v.view(B_feat, -1)
+                    elif v.ndim == 3:
+                        unflattened_meta[k] = v.view(B_feat, -1, v.shape[-1])
+            self.latest_support_metadata = unflattened_meta
+
         # apply mask
         if masks is not None and features.dim() == 3:
             # If features temporal dimension was reduced by Token Merging, adjust masks to match features length
-            if masks.shape[1] != features.shape[-1]:
-                ratio = float(features.shape[-1]) / float(masks.shape[1])
-                valid_lens = (masks.long().sum(dim=-1).float() * ratio).round().long()
-                new_masks = torch.zeros((batches, features.shape[-1]), dtype=masks.dtype, device=masks.device)
-                for b in range(batches):
-                    new_masks[b, :min(features.shape[-1], valid_lens[b].item())] = True
-                masks = new_masks
+            if masks.shape[1] != features.shape[-1] or masks.shape[0] != B_feat:
+                if masks.shape[0] == B_feat:
+                    ratio = float(features.shape[-1]) / float(masks.shape[1])
+                    valid_lens = (masks.long().sum(dim=-1).float() * ratio).round().long()
+                    new_masks = torch.zeros((B_feat, features.shape[-1]), dtype=masks.dtype, device=masks.device)
+                    for b_idx in range(B_feat):
+                        new_masks[b_idx, :min(features.shape[-1], valid_lens[b_idx].item())] = True
+                    masks = new_masks
+                else:
+                    masks = torch.ones((B_feat, features.shape[-1]), dtype=masks.dtype, device=masks.device)
             features = features * masks.unsqueeze(1).detach().float()
+
 
         # make sure detector has the float32 input
         features = features.to(torch.float32)

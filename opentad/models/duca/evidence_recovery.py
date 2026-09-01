@@ -553,8 +553,7 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
         use_time_conditioning: bool = True,
         use_temporal_merge: bool = True,
         use_dense_recovery: bool = True,
-        use_robust_training: bool = True,
-        use_h65_selection: bool = False,
+        tubelet_size: int = 2,
         max_hole: int = 16,
         h65_position_keys: Optional[Tuple[str, ...]] = None,
         loss_weights: Optional[Dict[str, float]] = None,
@@ -563,6 +562,7 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
         super().__init__(init_cfg=init_cfg)
         self.budget = int(budget)
         self.window_size = int(window_size)
+        self.tubelet_size = int(tubelet_size)
         self.use_coverage = bool(use_coverage)
         self.use_time_conditioning = bool(use_time_conditioning)
         self.use_temporal_merge = bool(use_temporal_merge)
@@ -571,6 +571,7 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
         self.use_h65_selection = bool(use_h65_selection)
         self.max_hole = int(max_hole)
         self.h65_position_keys = tuple(h65_position_keys or H65_POSITION_META_KEYS)
+
 
         # Standard detector compatibility attributes
         self.require_counterfactual_utility_teacher = False
