@@ -2,6 +2,7 @@ import sys
 import os
 
 from mmengine.config import Config
+import opentad.datasets
 from opentad.models import build_detector
 
 cfgs = [
