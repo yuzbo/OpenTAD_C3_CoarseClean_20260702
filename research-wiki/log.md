@@ -5,6 +5,18 @@ append_only: true
 
 # Research Wiki Log
 
+- 2026-09-01：CT-DP-TAD 进阶连续物理机制完整实现并完成远端单种子三实验消融部署：
+  1. **CT-Tubelet 3D 卷积物理速度归一化**（`VisionTransformerAdapter`）：将 VideoMAE 3D Patch 嵌入卷积核在 $T=2$ 维度精确正交分解为稳态均值分量 $W_{\text{mean}} = \frac{1}{2}(W_0+W_1)$ 与动态差分分量 $W_{\text{diff}} = \frac{1}{2}(W_1-W_0)$，动态分量显式按物理时序步长 $\frac{\Delta t_{\text{ref}}}{\delta_j}$ 进行尺度归一化，从底层彻底消除非均匀选帧引起的动态速度畸变。在均匀时间戳下与标准 3D Conv 达成 bit-exact 精确等价；
+  2. **连续物理时间 GIoU 损失**（`ContinuousPhysicalGIoULoss`）：统一以连续物理秒为坐标度量空间，精确优化时序交并比与中心点惩罚，原生适配非均匀与连续时间预测；
+  3. **Sinkhorn 最优传输选帧损失**（`SinkhornOptimalTransportLoss`）：在 1D 时序网格上基于 Sinkhorn-Knopp 熵正则算法，为 Scout 侦察器的选帧概率分布提供全局连续的最优传输解析梯度；
+  4. **测试验证与跨平台准入**：本地 Windows 与远端 Linux（N16R4）测试集 12 项测试全部通过（`test_ct_advanced_mechanisms.py` + `test_ct_dual_phase_bamod.py`）；
+  5. **单种子三臂正式消融矩阵部署**：已修复分布式单卡启动器（`torch.distributed.run`），并在 N16R4 集群成功提交 3 项正交消融 Slurm 任务：
+     - Arm 1（主方法，Job `1263598`）：Full CT-DP-BAMoD (`duca_ct_dual_phase_bamod_thumos.py`)；
+     - Arm 2（消融 CT-Conv，Job `1263599`）：DP-BAMoD with Standard Conv1d (`duca_dual_phase_bamod_thumos.py`)；
+     - Arm 3（消融 B-AMoD，Job `1263600`）：CT-DP with Dense ViT-Adapter (`duca_ct_dual_phase_densevit_thumos.py`)；
+     - Baseline（历史基线）：Dense 768 / Uniform 384 基线（历史已锁定，不重复提交）。
+  6. **建立实验全景追踪登记册**：创建 [`docs/experiments_registry.md`](file:///E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/docs/experiments_registry.md)，登记全部本地/远端路径、GitHub 链接、Slurm 作业句柄与指标更新协议。
+
 - 2026-09-01：CT-DP-BAMoD 架构完成独立代码复审与完整数学几何/工程接口修正（8 项严格测试全数通过）：
   1. 修复 CT-Conv1d 坐标名义索引对齐：修正 torchvision `deform_conv2d` nominal coordinate slot 偏移（原 taps 直接作为 offset 导致 +half_k*dilation 偏差），建立 `slot = 0..K-1` 与 `nominal = j*stride - padding + slot*dilation`，中心物理点为 `center = j*stride - padding + half_k*dilation`。在均匀时间戳下，CT-Conv 与标准 `nn.Conv1d` 达成 `< 1e-6` 的精确逐元素数值 Parity；
   2. 修复 `inverse_piecewise_linear_1d` 连续线性边界外推：针对端点外目标时间显式采用首/末段斜率外推，使越界分数索引直接映射至 torchvision 零填充域，消除了边界由于硬截断导致的采样失真；
