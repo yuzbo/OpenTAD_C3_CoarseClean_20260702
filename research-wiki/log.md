@@ -5,6 +5,20 @@ append_only: true
 
 # Research Wiki Log
 
+- 2026-09-01：DUCA/CT-DP 几何解耦与严谨性全量修正（Commit `93b32e1a`）：
+  1. **物理时间双链严格解耦**：
+     - 将 CT-Tubelet 的原始帧对时间步长 $\Delta t^{\text{pair}}_j = t_{2j+1} - t_{2j}$ (`[B, 192]`) 与检测特征网格的插值步长 $\Delta t^{\text{detector}}_i$ (`[B, 384]`) 彻底解耦；
+     - `BackboneWrapper` 直接接收 `tubelet_delta_t` 传递给 VideoMAE 速度归一化，消除了上采样插值对帧对速度的严重扭曲；
+  2. **SubmodularCoverageFrameSelector 几何与先验对齐**：
+     - 将 1D 插值统一为 `align_corners=False`，严格对齐 VideoMAE 骨干网络特征插值坐标；
+     - 修复 `boundary_prior` 维度：在所选 384 帧网格上 gather 运动先验（每 Chunk 恰好 8 个 Tubelet 先验，每先验覆盖 100 个空间 Token，彻底消除空间 Token 被两半错分赋予不同先验的问题）；
+     - 增加 `_compute_motion_energy` 显式 `.float()` 转换与短视频唯一索引保证；
+  3. **ConvModule 初始化严格对齐与数值加固**：
+     - `ContinuousTimeScaleAdaptiveConv1d` 偏置初始化统一设为零（`nn.init.constant_(self.bias, 0.0)`），与标准 `nn.Conv1d` 达成随机数序列完全对齐；
+     - `VisionTransformerAdapter` 快速注意力在 `eval()` 下显式禁用 dropout（`dropout_p = self.attn_drop.p if self.training else 0.0`），B-AMoD 路由分数掩码统一使用 FP16 安全值 `-10000.0`；
+  4. **全套单测 20/20 100% 通过**：覆盖解耦路由断言、坐标对齐、空间先验与梯度链。
+
+
 - 2026-09-01：CT-DP-TAD 架构深度重构与完备 2×2 消融矩阵升级：
   1. **坐标系与 Tubelet 闭环重构**：
      - 在 `DualPhaseFrameSelector` 中实现 Tubelet 物理中点与 1D 线性插值同步（$\tau_{\text{tubelet}} = \frac{1}{2}(t_{2j}+t_{2j+1})$），确保 384 个插值特征与 384 个连续时间戳一一对齐；
