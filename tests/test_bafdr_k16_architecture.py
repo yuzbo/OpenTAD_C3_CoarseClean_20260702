@@ -190,5 +190,22 @@ def test_bafdr_detector_actionformer_bundle_smoke():
     assert hasattr(detector, "projection")
     assert hasattr(detector, "rpn_head")
     assert detector.projection.out_channels == 512
-    assert detector.neck.in_channels == 512
+    assert detector.neck.in_channels == [512] * 6
     assert detector.rpn_head.in_channels == 512
+
+    # Forward test on synthetic bundle
+    B, T = 1, 768
+    dummy_bundle = {
+        "feats": torch.randn(B, 384, T),
+        "global_features": torch.randn(B, 384, T),
+        "residual_features": torch.randn(B, 384, T),
+        "fused_features": torch.randn(B, 384, T),
+    }
+    dummy_mask = torch.ones(B, T, dtype=torch.bool)
+    with torch.no_grad():
+        x, pad_masks = detector.pad_data(dummy_bundle, dummy_mask)
+        x, pad_masks = detector.projection(x, pad_masks)
+        x, pad_masks, _ = detector._call_neck_forward(x, pad_masks)
+        proposals, scores = detector._call_rpn_head_forward_test(x, pad_masks)
+    assert proposals is not None
+    assert scores is not None
