@@ -22,6 +22,8 @@
     "prompt_submitted": false,
     "request_id": "PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION-v001",
     "request_path": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION_REQUEST-v001.md",
+    "terminal_evidence_commit": "078633518439a8c0fcbfbf7ed4791d30feaad8f2",
+    "terminal_evidence_commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/078633518439a8c0fcbfbf7ed4791d30feaad8f2",
     "response_path": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION_RESPONSE-v001.md",
     "response_saved": false,
     "role_contract": null,
