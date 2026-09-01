@@ -2,35 +2,41 @@
   "active_job": null,
   "active_jobs": [],
   "browser_request": {
-    "actual_submission_count": 0,
-    "attachment_count": null,
-    "attachments_uploaded": false,
+    "actual_submission_count": 1,
+    "attachment_count": 13,
+    "attachments_uploaded": true,
     "blocker": null,
     "browser_inline_files": false,
-    "conversation_created": false,
-    "conversation_id": null,
-    "conversation_url": null,
-    "decision": null,
+    "completed_at": "2026-09-01T00:47:07.753Z",
+    "conversation_created": true,
+    "conversation_id": "6a961c52-1b5c-83e9-b04c-6b0bda18892f",
+    "conversation_url": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b-zoomtoken/c/6a961c52-1b5c-83e9-b04c-6b0bda18892f",
+    "decision": "PIVOT",
     "follow_up_count": 0,
     "model_picker": "highest-browser-verifiable-Pro",
+    "model_picker_verified": true,
     "nonce": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V2.2-EXACT-BYTE-TERMINAL-PRO-v001-20260901T075800+0800",
-    "observed_model_label": null,
-    "oracle_session": null,
+    "observed_model_label": "GPT-5.6 Pro",
+    "oracle_session": "zoomtoken-continuous-roi-v22-exact",
     "precontact_parser_failure_consumed_scientific_turn": false,
     "profile_id": "61",
     "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
-    "prompt_submitted": false,
+    "project_sources_confirmed": [
+      "CURRENT_RESEARCH_STATE-v019.md",
+      "MODEL_EXPERIMENT_HISTORY-v014.md"
+    ],
+    "prompt_submitted": true,
     "request_id": "PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION-v001",
     "request_path": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION_REQUEST-v001.md",
+    "response_path": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION_RESPONSE-v001.md",
+    "response_saved": true,
+    "role_contract": "KEEP",
+    "selected_task": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FRESH-3X3-MATCHED-TRAIN-REFERENCE-AND-COST-FALSIFIER-v001",
+    "status": "COMPLETED_AUDITED",
     "terminal_evidence_commit": "078633518439a8c0fcbfbf7ed4791d30feaad8f2",
     "terminal_evidence_commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/078633518439a8c0fcbfbf7ed4791d30feaad8f2",
-    "response_path": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION_RESPONSE-v001.md",
-    "response_saved": false,
-    "role_contract": null,
-    "selected_task": null,
-    "status": "PREPARED_REQUIRED_PROJECT_SOURCES_PENDING",
-    "terminal_receipt": null,
-    "transcript_path": null,
+    "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION_TERMINAL_RECEIPT-v001.json",
+    "transcript_path": ".cvpr-pro-lab/reviews/runs/zoomtoken-continuous-roi-v22-exact-byte-terminal-pro-v001/oracle-home/sessions/zoomtoken-continuous-roi-v22-exact/artifacts/transcript.md",
     "transport": "attachment-only"
   },
   "continuous_roi_s2_v2_2_exact_byte_recovery": {
@@ -76,7 +82,14 @@
       "terminal_classification": "STOP_CONTINUOUS_ROI_S2_HISTORICAL_REFERENCE_ROUTE_ARTIFACTS_UNRECOVERABLE",
       "training_run": false
     },
-    "fresh_pro_required": true,
+    "fresh_pro_required": false,
+    "fresh_pro_review": {
+      "conversation_id": "6a961c52-1b5c-83e9-b04c-6b0bda18892f",
+      "decision": "PIVOT",
+      "durable_receipt": "docs/aris/ZOOMTOKEN_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_TERMINAL_PRO_REVIEW_RECEIPT-2026-09-01.md",
+      "historical_exact_nine_route_status": "PERMANENTLY_CLOSED",
+      "role_contract": "KEEP"
+    },
     "github_branch_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-continuous-roi-s2-v2-2-exact-byte-recovery-v001",
     "github_commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/058095cc763756dd941f6f113fca90f4fd54123c",
     "github_repository_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
@@ -86,8 +99,8 @@
     "raw_inventory": ".cvpr-pro-lab/evidence/continuous-roi-v22-exact-byte-058095cc/recovery_inventory.json",
     "raw_terminal_receipt": ".cvpr-pro-lab/evidence/continuous-roi-v22-exact-byte-058095cc/terminal_receipt.json",
     "role_contract": "KEEP",
-    "status": "TERMINAL_STOP_PENDING_FRESH_PRO",
-    "successor_authorized": false,
+    "status": "TERMINAL_STOP_ACCEPTED_BY_FRESH_PRO",
+    "successor_authorized": true,
     "task_id": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V2.2-EXACT-BYTE-PROVENANCE-CENSUS-AND-ALL-OR-NONE-RECOVERY-CLOSURE-v001",
     "verification": {
       "critic": "PASS",
@@ -95,6 +108,91 @@
       "local_focused": "23 passed, 3 skipped",
       "n16r4_focused": "26 passed"
     }
+  },
+  "continuous_roi_s2_v3_fresh_3x3": {
+    "acceptance_gate": "S_CR=true AND H=true AND F=true AND all_three_seeds_complete AND all_identity_no_leak_population_evidence_gates_pass",
+    "allowed_paths": [
+      "docs/methods/continuous_roi_s2_v3_fresh_3x3_protocol.json",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/d160_seed4407.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/d160_seed4408.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/d160_seed4409.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/g96_seed4407.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/g96_seed4408.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/g96_seed4409.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/u128_seed4407.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/u128_seed4408.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/u128_seed4409.py",
+      "tools/bata/run_continuous_roi_s2_v3_fresh_3x3.py",
+      "tools/bata/evaluate_continuous_roi_s2_v3_reference.py",
+      "tools/bata/profile_continuous_roi_s2_v3_cost.py",
+      "scripts/run_continuous_roi_s2_v3_fresh_3x3_n16r4.sh",
+      "tests/test_continuous_roi_s2_v3_fresh_3x3.py"
+    ],
+    "branch": "codex/zoomtoken-continuous-roi-s2-v3-fresh-3x3-v001",
+    "builder_candidate_due_beijing": "2026-09-02T06:00:00+08:00",
+    "builder_plan_due_beijing": "2026-09-01T12:00:00+08:00",
+    "cost_policy": "One matched same-physical-GPU full-stack cost job is conditional on valid S_CR=true and H=true; exhaustive reference-search cost is separate from deployable-policy cost.",
+    "critic_due_beijing": "2026-09-02T09:00:00+08:00",
+    "data_protocol": {
+      "development_fit_gate": "160/40",
+      "official_test_opened": false,
+      "reference_candidate_count": 17,
+      "reference_population": "129 sanitized ordered windows",
+      "sobol_dimension": 48,
+      "sobol_scramble": true,
+      "sobol_seed": 20260720,
+      "tubelets_per_candidate": 48
+    },
+    "evaluator_due_beijing": "2026-09-02T12:00:00+08:00",
+    "execution_base": "10aed28659a08fa703def278fc0f5f1422dcad89",
+    "formal_action_due_beijing": "2026-09-02T14:00:00+08:00",
+    "formal_campaign_limit": {
+      "conditional_cost_jobs": 1,
+      "privileged_join_reference_finalizers": 1,
+      "raw_reference_jobs": 3,
+      "replacement_allowed": false,
+      "scheduler_submissions_max": 15,
+      "second_campaign_allowed": false,
+      "training_cells": 9,
+      "training_finalizers": 1
+    },
+    "fresh_post_result_pro_due_beijing": "2026-09-06T16:00:00+08:00",
+    "matrix": {
+      "arms": [
+        "D160-V3",
+        "G96-V3",
+        "U128-V3"
+      ],
+      "seeds": [
+        4407,
+        4408,
+        4409
+      ]
+    },
+    "per_cell_training": {
+      "epochs": 60,
+      "retained_artifacts": [
+        "epoch_59.pth",
+        "state_dict_ema",
+        "metadata_sidecar",
+        "rendered_config",
+        "completion_receipt"
+      ],
+      "successful_updates": 4800,
+      "successful_updates_per_epoch": 80
+    },
+    "pro_conversation_id": "6a961c52-1b5c-83e9-b04c-6b0bda18892f",
+    "pro_decision": "PIVOT",
+    "role_contract": "KEEP",
+    "status": "TASK_FROZEN_BUILDER_PLAN_DUE",
+    "stop_rules": {
+      "F_false": "STOP_EFFICIENCY_CONTINUATION",
+      "H_false": "STOP_VARIABLE_SIZE_AND_S3",
+      "S_CR_false": "STOP_EXACT_S2_V3_REPRESENTATION_NO_S3",
+      "incomplete_evidence": "NO_DECISION_INVALID_EVIDENCE"
+    },
+    "task_id": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FRESH-3X3-MATCHED-TRAIN-REFERENCE-AND-COST-FALSIFIER-v001",
+    "terminal_evidence_due_beijing": "within_4h_of_last_authorized_terminal_not_later_than_2026-09-06T12:00:00+08:00"
   },
   "continuous_roi_s2_v2_2_protocol": {
     "acceptance_status": "STOP_CONTINUOUS_ROI_S2_REFERENCE_ROUTE_BEFORE_INFERENCE",
@@ -148,8 +246,8 @@
     "stop_status": "STOP_CONTINUOUS_ROI_S2_REFERENCE_ROUTE_BEFORE_INFERENCE",
     "training_authorized": false
   },
-  "epoch": 41,
-  "execution_state": "NEEDS_SCIENTIFIC_DECISION",
+  "epoch": 42,
+  "execution_state": "READY",
   "gridfuse32_l6_gated": {
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",
     "branch": "codex/zoomtoken-gridfuse32-l6-v001",
@@ -472,7 +570,7 @@
       "n16r4_focused": "14 passed in 42.77s"
     }
   },
-  "last_pro_review_at": "2026-08-31T21:42:07.375Z",
+  "last_pro_review_at": "2026-09-01T00:47:07.753Z",
   "machine_terminal_wait": {
     "ended_at_beijing": "2026-08-31T02:56:30+08:00",
     "expected_resume_at_beijing": "2026-08-31T03:04:00+08:00",
@@ -501,8 +599,8 @@
     "required_at_beijing": "2026-08-28T12:00:00+08:00",
     "status": "DELIVERED"
   },
-  "new_evidence_since_pro": true,
-  "next_pro_review_due_at": "2026-08-31T23:57:52Z",
+  "new_evidence_since_pro": false,
+  "next_pro_review_due_at": "2026-09-06T08:00:00Z",
   "ordered_video_decode_reuse_r1_k100": {
     "allowed_paths": [
       "tools/bata/profile_zoomtoken_ordered_video_reuse_r1_k100_cost.py",
@@ -1099,7 +1197,7 @@
     "slurm_authorized_for_frozen_microbenchmark": true,
     "source": "C:/Users/skywalker/.codex/attachments/557675fe-15b5-4574-9d1f-b374016b9278/pasted-text.txt"
   },
-  "research_stage": "ANALYSIS",
+  "research_stage": "G4_DESIGN_FROZEN",
   "roles": {
     "builder": {
       "access": "writable",
@@ -1131,8 +1229,8 @@
     }
   },
   "schema_version": "1.0",
-  "stage": "ANALYSIS",
-  "status": "EXACT_BYTE_TERMINAL_STOP_PENDING_FRESH_PRO",
+  "stage": "G4_DESIGN_FROZEN",
+  "status": "CONTINUOUS_ROI_S2_V3_FRESH_3X3_TASK_FROZEN",
   "tar32_eval_blocker_review": {
     "actual_submission_count": 1,
     "attachment_count": 9,
@@ -1216,7 +1314,7 @@
     "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_CPTC_TAR32_TERMINAL_RESULT_ADJUDICATION_TERMINAL_RECEIPT-ATTEMPT2-v001.json",
     "terminal_scientific_decision": "STOP_R1_TAR32_FKV_EXACT_COMPOSITION"
   },
-  "updated_at": "2026-09-01T00:02:22Z",
+  "updated_at": "2026-09-01T00:56:52Z",
   "v003_terminal": {
     "cost_rows_present": false,
     "durable_receipt": "docs/aris/ZOOMTOKEN_BPNS_R1_IDENTITY_GATED_FULL_STACK_REPLAY_V003_TERMINAL_RECEIPT-2026-08-28.md",

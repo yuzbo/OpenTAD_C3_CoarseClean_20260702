@@ -1601,6 +1601,23 @@ max_chars: 8000
   an artifact-retention/protocol result, not model-performance or crop-family
   evidence. One fresh exact-Project Pro must independently select the next task;
   no successor is authorized beforehand.
+- Fresh exact-Project conversation `6a961c52-1b5c-83e9-b04c-6b0bda18892f`
+  completed with browser-visible `GPT-5.6 Pro`, thirteen attachment-only logical
+  files, one scientific submission and zero follow-ups. Pro returned `PIVOT / KEEP`,
+  accepted the exact-byte terminal as written, and permanently closed the historical
+  exact-nine route while preserving the no-model-result claim boundary.
+- The sole current task is
+  `ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FRESH-3X3-MATCHED-TRAIN-REFERENCE-AND-COST-FALSIFIER-v001`.
+  It is a fresh identity on base `10aed28659a08fa703def278fc0f5f1422dcad89`,
+  branch `codex/zoomtoken-continuous-roi-s2-v3-fresh-3x3-v001`, with a complete
+  D160-V3/G96-V3/U128-V3 × seeds 4407/4408/4409 matrix. Every cell must complete
+  60 epochs, 80 successful updates per epoch and 4,800 successful updates, retaining
+  final EMA, sidecar, rendered config and completion receipt. Only after all nine
+  cells strict-finalize may the frozen 129-window, 17-candidate, shared-center,
+  raw-no-GT plus privileged-join reference protocol execute. A single matched full-
+  stack cost job is conditional on valid `S_CR=true && H=true`; continuation requires
+  `S_CR && H && F`. Official test, old-artifact reuse, new model/loss/head, sweeps,
+  replacement, rescue, second campaign and partial-result interpretation are forbidden.
 
 ## Pointers
 

@@ -5014,3 +5014,11 @@ append_only: true
   终态 `STOP_CONTINUOUS_ROI_S2_HISTORICAL_REFERENCE_ROUTE_ARTIFACTS_UNRECOVERABLE` 永久关闭历史 exact-nine
   reference route，但不是 Continuous-RoI 或 crop 性能负结果。下一动作仅为一次绑定最新 GitHub 三链接与完整终态的
   fresh exact-Project Pro；前轮 terminal 与 Pro 截止已超时，实际时间如实披露，不追溯改写期限。
+
+- 2026-09-01：fresh exact-Project conversation `6a961c52-1b5c-83e9-b04c-6b0bda18892f` 以 browser-visible
+  `GPT-5.6 Pro`、13 个 attachment-only logical files、submission `1`、follow-up `0` 完成。Pro 返回
+  `PIVOT / KEEP`，接受 exact-byte terminal 和历史 exact-nine route 的永久关闭，同时维持
+  `NO_MODEL_SCIENTIFIC_RESULT / NO_METHOD_OR_PERFORMANCE_CLAIM`。唯一下一任务是 fresh S2-v3 D160/G96/U128 ×
+  seeds 4407/4408/4409 完整 3×3 matched training/reference/cost falsifier；九单元全部完整训练并 strict-finalize 后才可
+  reference，且只有 `S_CR && H` 才可成本，`S_CR && H && F` 才可提交 fresh Pro 考虑 S3。正式 campaign 仅一次，
+  最多 15 次 scheduler submission，零 replacement、零 second campaign。

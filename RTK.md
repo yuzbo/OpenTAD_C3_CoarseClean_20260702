@@ -51,7 +51,9 @@ ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务�
 - BPNS-R1 在完整同硬件回放中只有能耗/显存改善，v004 与 ordered-video closure 的 p50 主门均失败；其当前 standalone single-GPU efficiency 路线已经 fresh Pro 接受停止，不得再用 K/depth/worker/prefetch/kernel/seed rescue；
 - Continuous-RoI S2 v2.2 的四文件协议闭合已完成，但 exact-nine 历史 D160/G96/U128 × seeds 3407/3408/3409 的 9 个 `epoch_59.pth` 与 9 个 sidecar 均缺失。fresh exact-Project Pro 只授权一次有限、只读、全有或全无的 exact-byte provenance census；
 - 该唯一 CPU-only scan 已在 clean/pushed commit `058095cc763756dd941f6f113fca90f4fd54123c` 上完成。冻结来源中 checkpoint/sidecar 匹配均为 `0/9`，18 个 artifact 全部 `MISSING_EXACT_BYTES`，原 campaign root 未修改、未重建、未发布 quarantine；终态为 `STOP_CONTINUOUS_ROI_S2_HISTORICAL_REFERENCE_ROUTE_ARTIFACTS_UNRECOVERABLE`；
-- 该终态只永久关闭历史 exact-nine reference route，是协议/留存结论，不是 Continuous-RoI、crop sufficiency、准确率、效率或家族级科学负结果。当前唯一动作是把完整终态与最新 GitHub 链接提交一次 fresh exact-Project Pro，由 Pro 独立决定唯一下一任务；裁决前不得实验；
+- fresh exact-Project conversation `6a961c52-1b5c-83e9-b04c-6b0bda18892f` 已裁决 `PIVOT / KEEP`，接受上述终态并永久关闭历史 exact-nine route；该结论仍只是协议/留存结论，不是 Continuous-RoI、crop sufficiency、准确率、效率或家族级科学负结果；
+- 当前唯一任务为 `ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FRESH-3X3-MATCHED-TRAIN-REFERENCE-AND-COST-FALSIFIER-v001`：从 `10aed28659a08fa703def278fc0f5f1422dcad89` 建立全新身份的 D160/G96/U128 × seeds 4407/4408/4409 完整九单元矩阵，每单元必须完成 60 epochs、80 successful updates/epoch、4,800 successful updates并保留 final EMA/sidecar/config/receipt；official test 保持关闭；
+- 九单元全部 strict-finalize 后，才允许在冻结 fit160/gate40、129 ordered windows、17 Sobol candidates、48 tubelets、shared physical centers、raw no-GT seal 与独立 privileged join 协议下做 reference。只有有效 `S_CR=true && H=true` 才允许一次同物理 GPU 的完整 decode-to-Soft-NMS 成本作业；最终继续门为 `S_CR && H && F`。一个 formal campaign、最多 15 次 scheduler submission、零 replacement、零 second campaign；任何完整终态或客观 blocker 都必须 fresh Pro；
 - ChronoTransport 与 PhysTime 是独立并行假设，不得与 BPNS-R1、Continuous-RoI 历史 reference 或 DUCA 证据混用。
 
 固定 384/768 或 50% 输入只是归因、安全门和失败诊断锚点，不是最终动态采集目标。

@@ -1633,3 +1633,17 @@ N16R4 `26 passed`、fresh re-Critic `PASS` 与 result-blind Evaluator `PRE_RUN_R
 route 永久关闭，不得重扫、扩 root、重建、重训、部分恢复、推理或用 catalog/receipt 代替 payload。该决定是留存/协议
 终态，不否定 Continuous-RoI、fixed/variable crop、准确率或效率家族；唯一下一动作是一次 fresh exact-Project Pro，
 由其独立选择一个新的论文任务。
+
+## 134. fresh Pro 永久关闭历史 exact-nine，并冻结 S2-v3 fresh 3×3 falsifier（2026-09-01）
+
+exact ZoomToken Project conversation `6a961c52-1b5c-83e9-b04c-6b0bda18892f` 以 browser-visible
+`GPT-5.6 Pro`、13 个 attachment-only logical files、一次科研提交、零 follow-up 完整返回。裁决为
+`PIVOT / KEEP`：接受 exact-byte terminal、确认历史 exact-nine route 在冻结项目协议内永久关闭，并把该证据限定为
+artifact-retention/protocol conclusion；没有 Continuous-RoI、crop sufficiency、accuracy、cost 或 family-level 正负结果。
+
+唯一任务冻结为
+`ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FRESH-3X3-MATCHED-TRAIN-REFERENCE-AND-COST-FALSIFIER-v001`。
+从 `10aed28659a08fa703def278fc0f5f1422dcad89` 建立 D160/G96/U128 × seeds 4407/4408/4409 的全新
+完整训练身份。所有九单元 strict-finalize 后才允许冻结 129-window reference；只有 `S_CR=true && H=true` 才允许一次
+matched full-stack cost，继续条件为 `S_CR && H && F`。正式 campaign `1`、scheduler submissions 最多 `15`、
+replacement `0`、second campaign `false`。任一完整终态或客观 blocker 必须返回 fresh Pro。

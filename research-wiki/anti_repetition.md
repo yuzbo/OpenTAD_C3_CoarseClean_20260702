@@ -1450,3 +1450,10 @@ updated: 2026-08-31
     reference route；不得把它写成 Continuous-RoI/crop sufficiency/accuracy/efficiency 的科学失败，不得自行新训练、
     替代 reference、启动 S3 或 successor。唯一下一动作是一次携带最新 repository/branch/exact commit 链接及完整
     终态证据的 fresh exact-Project Pro。
+59. fresh exact-Project conversation `6a961c52-1b5c-83e9-b04c-6b0bda18892f` 已裁决 `PIVOT / KEEP`，
+    接受 `STOP_CONTINUOUS_ROI_S2_HISTORICAL_REFERENCE_ROUTE_ARTIFACTS_UNRECOVERABLE` 并永久关闭历史
+    exact-nine route。不得第二次 census、扩 root、重建、重训旧身份、使用 3407/3408/3409、把 fresh training
+    称为恢复，或把 0/18 写成模型负结果。唯一任务改为全新 `S2-v3 fresh 3x3`：D160/G96/U128 ×
+    4407/4408/4409 九个完整 60-epoch cell；九单元未全 strict-finalize 前不得 reference，`S_CR && H` 未有效
+    成立前不得成本，`S_CR && H && F` 未全通过不得考虑 S3。不得 official test、teacher/distillation/new loss/head、
+    model-source 修改、candidate/seed/crop/threshold sweep、partial interpretation、replacement、rescue 或第二 campaign。
