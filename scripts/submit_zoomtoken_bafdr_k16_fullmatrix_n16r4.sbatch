@@ -42,7 +42,14 @@ export BAFDR_ALLOW_DIRTY="${BAFDR_ALLOW_DIRTY:-0}"
 
 bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh validate
 
-seed_list=(4407 4408 4409)
+if [[ $# -ge 1 && -n "$1" ]]; then
+  seed_list=("$@")
+elif [[ -n "${SEEDS:-}" ]]; then
+  # shellcheck disable=SC2206
+  seed_list=(${SEEDS})
+else
+  seed_list=(4407)
+fi
 arm_list=(
   "D160"
   "G96"
