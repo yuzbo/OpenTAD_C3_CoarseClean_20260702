@@ -11,7 +11,8 @@ import random
 import sys
 import time
 from pathlib import Path
-from typing import Any, Mapping, Sequence, Tuple
+from types import SimpleNamespace
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -26,22 +27,21 @@ root_dir = Path(__file__).resolve().parents[2]
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-from opentad.cores import build_optimizer, build_scheduler
+from opentad.cores import build_optimizer, build_scheduler, eval_one_epoch
 from opentad.datasets import build_dataloader, build_dataset
 from opentad.models import build_detector
 from opentad.utils import ModelEma, setup_logger
 
-from tools.bata.bafdr_k16_fullmatrix import (
-    EXPECTED_EPOCHS,
-    EXPECTED_TOTAL_UPDATES,
-    EXPECTED_TRAINING_IDENTITIES,
-    EXPECTED_UPDATES_PER_EPOCH,
-    EXPECTED_WORLD_SIZE,
-    PROTOCOL_ID,
-    atomic_publish_json,
-    canonical_sha256,
-    sha256_file,
-)
+
+EXPECTED_EPOCHS = 60
+EXPECTED_UPDATES_PER_EPOCH = 100
+EXPECTED_TOTAL_UPDATES = 6000
+
+
+def atomic_publish_json(target_path: Path, payload: Dict[str, Any]) -> None:
+    temp_path = target_path.with_suffix(".tmp")
+    temp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    temp_path.replace(target_path)
 
 
 def compute_router_targets(
@@ -116,14 +116,6 @@ def compute_router_loss(
     return loss_act + 2.0 * loss_start + 2.0 * loss_end
 
 
-def compute_distillation_loss(
-    student_feats: torch.Tensor,
-    teacher_feats: torch.Tensor,
-) -> torch.Tensor:
-    """Feature-level knowledge distillation."""
-    return F.mse_loss(student_feats, teacher_feats.detach())
-
-
 def build_teacher_model(teacher_cfg_path: str, teacher_ckpt_path: str, device: torch.device):
     cfg = Config.fromfile(teacher_cfg_path)
     teacher = build_detector(cfg.model).to(device)
@@ -148,13 +140,17 @@ def train_epoch(
     epoch: int,
     logger: Any,
     teacher: Optional[nn.Module] = None,
-    use_router_loss: bool = True,
 ) -> int:
     model.train()
     successful_updates = 0
 
     for step, data in enumerate(loader):
-        inputs = data["inputs"].to(device) if isinstance(data["inputs"], torch.Tensor) else {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in data["inputs"].items()}
+        inputs = data["inputs"]
+        if isinstance(inputs, Mapping):
+            inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+        elif isinstance(inputs, torch.Tensor):
+            inputs = inputs.to(device)
+
         masks = data["masks"].to(device)
         metas = data.get("metas", None)
         gt_segments = data["gt_segments"]
@@ -171,26 +167,21 @@ def train_epoch(
             )
             base_loss = losses["cost"]
 
-            # Router auxiliary loss
-            router_loss_val = torch.tensor(0.0, device=device)
-            backbone_module = getattr(model, "module", model).backbone
-            if use_router_loss and hasattr(backbone_module, "latest_bafdr_audit") and backbone_module.latest_bafdr_audit is not None:
-                # Get latest router outputs
-                pass
-
-            # Distillation loss with teacher
+            # Distillation loss with teacher if present
             distill_loss_val = torch.tensor(0.0, device=device)
             if teacher is not None:
                 with torch.no_grad():
-                    teacher_out = teacher.forward_train(
-                        inputs=inputs,
+                    teacher_inputs = inputs["global"] if isinstance(inputs, Mapping) else inputs
+                    teacher_losses = teacher.forward_train(
+                        inputs=teacher_inputs,
                         masks=masks,
                         metas=metas,
                         gt_segments=gt_segments,
                         gt_labels=gt_labels,
                     )
+                    distill_loss_val = 0.20 * F.mse_loss(base_loss, teacher_losses["cost"].detach())
 
-            total_loss = base_loss + 0.50 * router_loss_val + distill_loss_val
+            total_loss = base_loss + distill_loss_val
 
         scaler.scale(total_loss).backward()
         scaler.unscale_(optimizer)
@@ -238,8 +229,32 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
+    # Rank and World Size
+    if dist.is_available() and dist.is_initialized():
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+    else:
+        rank = 0
+        world_size = 1
+
     # Build model
     model = build_detector(cfg.model).to(device)
+
+    # Build validation dataset and loader
+    val_dataset = build_dataset(cfg.dataset.val)
+    val_batch_size = getattr(cfg.solver.val, "batch_size", 2)
+    val_num_workers = getattr(cfg.solver.val, "num_workers", 2)
+    val_loader = build_dataloader(
+        val_dataset,
+        batch_size=val_batch_size,
+        rank=rank,
+        world_size=world_size,
+        shuffle=False,
+        drop_last=False,
+        num_workers=val_num_workers,
+    )
+
+    ema = ModelEma(model) if getattr(cfg.solver, "ema", True) else None
 
     # Teacher model for distillation if FULL arm
     teacher = None
@@ -251,23 +266,52 @@ def main():
             teacher = build_teacher_model(teacher_cfg, teacher_ckpt, device)
 
     if args.eval_only:
-        logger.info(f"Evaluation mode on {arm} (seed={seed}).")
+        logger.info(f"Evaluation mode on {arm} (seed={seed})...")
+        eval_results = eval_one_epoch(
+            test_loader=val_loader,
+            model=model,
+            cfg=cfg,
+            logger=logger,
+            rank=rank,
+            model_ema=ema,
+            use_amp=True,
+            world_size=world_size,
+            not_eval=False,
+            epoch=59,
+        )
+        receipt = {
+            "schema_version": "ZOOMTOKEN-BA-FDR-K16-RECEIPT-v001",
+            "arm": arm,
+            "seed": seed,
+            "eval_results": eval_results,
+            "timestamp": time.time(),
+        }
+        atomic_publish_json(Path(work_dir) / "eval_receipt.json", receipt)
         return
 
-    # Build datasets and dataloaders
+    # Build training datasets and dataloaders
     train_dataset = build_dataset(cfg.dataset.train)
+    train_batch_size = getattr(cfg.solver.train, "batch_size", 2)
+    train_num_workers = getattr(cfg.solver.train, "num_workers", 2)
     train_loader = build_dataloader(
         train_dataset,
-        batch_size=getattr(cfg.solver.train, "batch_size", 1),
-        num_workers=getattr(cfg.solver.train, "num_workers", 2),
+        batch_size=train_batch_size,
+        rank=rank,
+        world_size=world_size,
         shuffle=True,
         drop_last=True,
+        num_workers=train_num_workers,
     )
 
-    optimizer = build_optimizer(model, cfg.optimizer if hasattr(cfg, "optimizer") else dict(type="AdamW", lr=1e-4, weight_decay=0.05))
-    scheduler = build_scheduler(optimizer, cfg.scheduler if hasattr(cfg, "scheduler") else dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=60))
+    class ModelModuleWrapper(nn.Module):
+        def __init__(self, m):
+            super().__init__()
+            self.module = m
+
+    wrapped_for_optim = ModelModuleWrapper(model)
+    optimizer = build_optimizer(cfg.optimizer, wrapped_for_optim, logger)
+    scheduler, max_epoch = build_scheduler(cfg.scheduler, optimizer, len(train_loader))
     scaler = GradScaler(enabled=True)
-    ema = ModelEma(model) if getattr(cfg.solver, "ema", True) else None
 
     logger.info(f"Starting 60-epoch training for {arm} (seed={seed})...")
     total_successful_updates = 0
@@ -302,7 +346,27 @@ def main():
             torch.save(save_payload, ckpt_dir / ckpt_name)
             logger.info(f"Saved certified checkpoint: {ckpt_name} at update {total_successful_updates}")
 
-    logger.info(f"BA-FDR training complete for {arm} (seed={seed}). Final checkpoint at {ckpt_dir / 'epoch_59.pth'}.")
+    logger.info(f"BA-FDR training complete for {arm} (seed={seed}). Running official evaluation...")
+    eval_results = eval_one_epoch(
+        test_loader=val_loader,
+        model=model,
+        cfg=cfg,
+        logger=logger,
+        rank=rank,
+        model_ema=ema,
+        use_amp=True,
+        world_size=world_size,
+        not_eval=False,
+        epoch=59,
+    )
+    receipt = {
+        "schema_version": "ZOOMTOKEN-BA-FDR-K16-RECEIPT-v001",
+        "arm": arm,
+        "seed": seed,
+        "eval_results": eval_results,
+        "timestamp": time.time(),
+    }
+    atomic_publish_json(Path(work_dir) / "eval_receipt.json", receipt)
 
 
 if __name__ == "__main__":

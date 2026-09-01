@@ -1433,8 +1433,10 @@ updated: 2026-09-01
     residual injection。若要推进 BA-FDR，必须先由 fresh exact-Project Pro 重新冻结 latest base、完整官方数据身份、
     selection/test boundary、是否允许 teacher/KD、新 21-cell 或更小准入设计，以及唯一 `C_exec` 门。
 56. `codex/zoomtoken-ba-fdr-k16-fullmatrix-v001` 上的 BA-FDR-K16 文件存在且可通过静态配置检查，但不得把它称为
-    已完成、可直接 Slurm 正式训练或已有实验 receipt。当前实现仍有硬阻塞：ActionFormer 在 projection 之前按 tensor
-    处理 backbone 输出而 BA-FDR 返回 dict bundle；BA-FDR projection 输出 384 通道但继承的 ActionFormer neck/head
-    仍为 512 通道；`bafdr_k16_fullmatrix_train.py` 没有真实训练/评测循环且未调用 router/KD loss；full-matrix
-    orchestrator/launcher 只验证 21 个 config 是否存在，不执行 21-cell train/eval/profile/bootstrap，也不产生
-    `C_exec` 或准确率证据。修复前不得提交为正式 BA-FDR 实验，不得用静态 receipt 或单测替代完整官方 population 证据。
+    已完成、可直接 Slurm 正式训练或已有实验 receipt。2026-09-02 复核时 ActionFormer dict-bundle 与 384->512
+    projection 合约已有部分修复；当前硬阻塞变为：BA-FDR local K16 分支把 16 帧 chunk 继续送进继承的 `t1=48`
+    pre-processing rearrange；custom train driver 调用 dataloader/optimizer/scheduler 的参数顺序/数量不符合现有 API；
+    router loss 仍是 `pass`，teacher 输出没有进入 KD loss，`--eval-only` 直接返回；full-matrix orchestrator/launcher
+    只验证 21 个 config 是否存在，不执行 21-cell train/eval/profile/bootstrap；`C_exec` 是独立 token-ratio 计算器而非
+    协议定义的 measured full-operator cost。修复前不得提交为正式 BA-FDR 实验，不得用静态 receipt 或单测替代完整官方
+    population 证据。

@@ -3,24 +3,26 @@
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:2
-#SBATCH --cpus-per-task=8
-#SBATCH --output=/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_compute/slurm_%j.log
-#SBATCH --error=/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_compute/slurm_%j.err
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=4
+#SBATCH --output=/data/run01/sczc063/yuzibo/slurm_logs/%x_%j.out
+#SBATCH --error=/data/run01/sczc063/yuzibo/slurm_logs/%x_%j.err
 
 set -euo pipefail
 
-RUN_ROOT="/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_compute"
-mkdir -p "${RUN_ROOT}"
+BASE="/data/run01/sczc063/yuzibo"
+mkdir -p "${BASE}/slurm_logs"
 
-cd /data/run01/sczc063/yuzibo/projects/zoomtoken_s2_v3_rpl1_2c8f25fe_src
+PROJECT_DIR="${BASE}/projects/zoomtoken_et_trc_v001"
+cd "${PROJECT_DIR}"
 
 if command -v module >/dev/null 2>&1; then
   module load cuda/11.8 || true
   module load miniforge3/24.11 || true
 fi
 
-source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
+source "${BASE}/conda_envs/opentad/bin/activate"
 
-echo "[SLURM] Launching BA-FDR K16 Full-Matrix Orchestration..."
-bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh
+CONFIG="${1:-configs/adatad/thumos/bafdr_k16_full_seed4407.py}"
+echo "[SLURM] Executing BA-FDR K16 cell: ${CONFIG} on job ${SLURM_JOB_ID:-interactive}"
+bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh "${CONFIG}"

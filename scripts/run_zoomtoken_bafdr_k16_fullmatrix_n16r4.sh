@@ -29,9 +29,14 @@ fi
 export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
 export OMP_NUM_THREADS=4
 
-echo "[BA-FDR K16] Validating master protocol and 21 cell configs..."
-python tools/bata/bafdr_k16_fullmatrix.py \
-    --repo-root "${ROOT}" \
-    --output "${MANIFEST_DIR}/submission_receipt.json"
-
-echo "[BA-FDR K16] Validation successful. Master receipt at ${MANIFEST_DIR}/submission_receipt.json"
+if [[ $# -ge 1 ]]; then
+  CONFIG="$1"
+  echo "[BA-FDR K16] Executing cell: ${CONFIG}"
+  python tools/bata/bafdr_k16_fullmatrix_train.py "${CONFIG}"
+else
+  echo "[BA-FDR K16] Validating master protocol and 21 cell configs..."
+  python tools/bata/bafdr_k16_fullmatrix.py \
+      --repo-root "${ROOT}" \
+      --output "${MANIFEST_DIR}/submission_receipt.json"
+  echo "[BA-FDR K16] Validation successful. Master receipt at ${MANIFEST_DIR}/submission_receipt.json"
+fi

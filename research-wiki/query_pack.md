@@ -1564,20 +1564,22 @@ max_chars: 8000
   implement true L0/L1 residual-only injection with L2-L5 invariance. The one-command
   script must not be run as written in this project state.
 
-- **BA-FDR-K16 implementation audit intake (2026-09-01).** Branch
+- **BA-FDR-K16 implementation audit intake (updated 2026-09-02).** Branch
   `codex/zoomtoken-ba-fdr-k16-fullmatrix-v001` contains new BA-FDR wrapper,
   asymmetric projection, transform, 21 configs, protocol JSON, tests and Slurm
-  scripts. Static checks passed for Python compilation and the current orchestrator
-  can find all 21 configs after arm-name-to-config-slug mapping. This is still not a
-  complete executable experiment implementation: ActionFormer currently receives a
-  dict bundle from the BA-FDR backbone before its feature/mask padding path expects a
-  tensor, BA-FDR configs project to 384 channels while the inherited ActionFormer
-  neck/head expect 512 channels, `bafdr_k16_fullmatrix_train.py` builds/logs but does
-  not run a train/eval loop or call router/KD losses, and the full-matrix launcher only
-  validates config presence rather than scheduling 21 training/eval/profile cells.
-  Therefore the branch is an implementation draft/protocol artifact, not a valid
-  formal BA-FDR receipt or evidence source, and it still requires fresh exact-Project
-  Pro authorization before formal submission.
+  scripts. Static checks passed for Python compilation, the current orchestrator can
+  find all 21 configs, and the ActionFormer dict-bundle/channel contract has been
+  partially repaired. This is still not a complete executable experiment
+  implementation: the BA-FDR local K16 path feeds 16-frame chunks through the inherited
+  `t1=48` pre-processing rearrange and should fail on real source-view forward; the
+  custom training driver calls existing dataloader/optimizer/scheduler APIs with wrong
+  arity/order, keeps router loss as `pass`, computes teacher outputs without a KD loss,
+  and makes `--eval-only` a no-op; the Slurm/full-matrix launcher still validates config
+  presence rather than scheduling 21 train/eval/profile/bootstrap cells; `C_exec` is a
+  detached token-ratio calculator, not the protocol's measured full-operator cost. The
+  branch remains an implementation draft/protocol artifact, not a valid formal BA-FDR
+  receipt or evidence source, and it still requires fresh exact-Project Pro
+  authorization before formal submission.
 
 ## Pointers
 

@@ -86,8 +86,10 @@ class BAFDRBackboneWrapper(BackboneWrapper):
         self.uniform_mode = bool(getattr(custom_cfg, "bafdr_uniform_mode", False))
         self.return_bundle = bool(getattr(custom_cfg, "bafdr_return_bundle", True))
 
-        # Center crop canonical box for 180x320 source: [x0, y0, x1, y1] = [96, 26, 224, 154]
-        self.crop_box = [96, 26, 224, 154]
+        # Center crop canonical box for local_size (dynamically computed)
+        y0 = max(0, (180 - self.local_size) // 2)
+        x0 = max(0, (320 - self.local_size) // 2)
+        self.crop_box = [x0, y0, x0 + self.local_size, y0 + self.local_size]
 
         super().__init__(cfg)
 
@@ -251,9 +253,7 @@ class BAFDRBackboneWrapper(BackboneWrapper):
             data_samples=None,
             training=False,
         )
-        if self.pre_processing_pipeline is not None:
-            frames = self.pre_processing_pipeline(dict(frames=frames))["frames"]
-
+        # Note: Do NOT apply 48-chunk rearrange pipeline because local_tensor is ALREADY individual 16-frame chunks
         flattened_batches, num_segs = frames.shape[:2]  # [B*K, 1]
         features = self._run_shared_backbone(frames.flatten(0, 1).contiguous())  # [B*K, C, 8, 8, 8]
         features = features.unflatten(0, sizes=(flattened_batches, num_segs))
@@ -288,13 +288,16 @@ class BAFDRBackboneWrapper(BackboneWrapper):
 
         # 2. Router selection (K=16 chunks)
         selected_indices, router_outputs = self._route_chunks(G_chunk)
+        self._latest_router_outputs = router_outputs
 
         # 3. True Physical Skip: U128 Local Refresh (ONLY 16 chunks executed)
         if source_view is not None:
             L_sel = self._encode_selected_local_chunks(source_view, selected_indices)
-        else:
-            # Fallback for test / feature-only input: gather from G
+        elif self.uniform_mode:
+            # Fallback only for synthetic testing
             L_sel = torch.zeros(B, C, self.k_chunks * self.tubelets_per_chunk, device=G.device, dtype=G.dtype)
+        else:
+            raise ValueError("BA-FDR Backbone requires 'source' view tensor in inputs dict during E2E execution.")
 
         # 4. Gather global tubelets corresponding to selected chunks
         # selected_indices: [B, 16], each chunk has 8 tubelets -> [B, 128] tubelet indices
@@ -365,3 +368,12 @@ class BAFDRBackboneWrapper(BackboneWrapper):
                 "unselected_local_chunks": B * (self.chunk_num - self.k_chunks),
             }
         return Z_768.to(torch.float32)
+
+    def consume_training_auxiliary_losses(self, masks=None, gt_segments=None, gt_labels=None):
+        """Compute boundary-aware multi-task router auxiliary loss during training."""
+        if not hasattr(self, "_latest_router_outputs") or self._latest_router_outputs is None or gt_segments is None:
+            return {}
+        from tools.bata.bafdr_k16_fullmatrix_train import compute_router_loss
+        device = self._latest_router_outputs["actionness_logits"].device
+        loss_router = compute_router_loss(self._latest_router_outputs, gt_segments, device=device)
+        return {"loss_router": 0.50 * loss_router}

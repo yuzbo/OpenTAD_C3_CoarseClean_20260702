@@ -209,3 +209,43 @@ def test_bafdr_detector_actionformer_bundle_smoke():
         proposals, scores = detector._call_rpn_head_forward_test(x, pad_masks, metas=None)
     assert proposals is not None
     assert scores is not None
+
+
+def test_bafdr_detector_real_dual_view_forward_train_and_test():
+    from mmengine.config import Config
+    from opentad.models import build_detector
+
+    cfg_path = "configs/adatad/thumos/bafdr_k16_full_seed4407.py"
+    cfg = Config.fromfile(cfg_path)
+    detector = build_detector(cfg.model)
+
+    # 1. Forward Train with genuine uint8 source view and float32 global view
+    detector.train()
+    B, T = 1, 768
+    inputs = {
+        "global": torch.randn(B, 1, 3, T, 96, 96, dtype=torch.float32),
+        "source": torch.randint(0, 255, (B, 1, 3, T, 180, 320), dtype=torch.uint8),
+    }
+    masks = torch.ones(B, T, dtype=torch.bool)
+    gt_segments = [torch.tensor([[10.0, 50.0], [100.0, 200.0]], dtype=torch.float32)]
+    gt_labels = [torch.tensor([0, 1], dtype=torch.long)]
+
+    losses = detector.forward_train(
+        inputs=inputs,
+        masks=masks,
+        metas=None,
+        gt_segments=gt_segments,
+        gt_labels=gt_labels,
+    )
+
+    assert "loss_cls" in losses
+    assert "loss_reg" in losses
+    assert "loss_router" in losses
+    assert "cost" in losses
+    assert losses["cost"].requires_grad
+
+    # 2. Forward Test with dual view
+    detector.eval()
+    with torch.no_grad():
+        predictions = detector.forward_test(inputs=inputs, masks=masks)
+    assert len(predictions) == 2  # (proposals, scores)
