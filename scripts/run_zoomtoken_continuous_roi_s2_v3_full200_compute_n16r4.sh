@@ -73,7 +73,7 @@ if [[ "${PRECHECK_ONLY}" == "1" ]]; then
   python tools/bata/continuous_roi_s2_v3_full200_compute.py --root "${ROOT}"
 
   printf '[S2_V3_FULL200_COMPUTE][PRECHECK] Running test suite...\n'
-  pytest tests/test_continuous_roi_s2_v3_full200_compute.py \
+  python -m pytest tests/test_continuous_roi_s2_v3_full200_compute.py \
          tests/test_continuous_roi_s2_v3_full200_compute_recovery.py \
          tests/test_continuous_roi_s2_v3_full200_compute_statistics.py -v
 
