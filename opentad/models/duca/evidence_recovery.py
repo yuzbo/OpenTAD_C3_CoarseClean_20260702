@@ -219,7 +219,43 @@ class ASFormerDenseSemanticScout(BaseModule):
         }
 
 
+def compute_distillation_loss(
+    student_logits: torch.Tensor,
+    teacher_logits: torch.Tensor,
+    temperature: float = 2.0,
+    valid_mask: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Compute temperature-scaled KL divergence distillation loss with valid mask."""
+    p_s = F.log_softmax(student_logits / temperature, dim=-1)
+    p_t = F.softmax(teacher_logits / temperature, dim=-1)
+    kl = F.kl_div(p_s, p_t, reduction="none").sum(dim=-1) * (temperature**2)
+    if valid_mask is not None:
+        mask_f = valid_mask.float()
+        return (kl * mask_f).sum() / mask_f.sum().clamp_min(1.0)
+    return kl.mean()
+
+
+def compute_two_view_consistency_loss(
+    view1_logits: torch.Tensor,
+    view2_logits: torch.Tensor,
+    valid_mask: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Compute two-view consistency loss using symmetric KL divergence with valid mask."""
+    p1 = F.log_softmax(view1_logits, dim=-1)
+    p2 = F.log_softmax(view2_logits, dim=-1)
+    q1 = F.softmax(view1_logits, dim=-1)
+    q2 = F.softmax(view2_logits, dim=-1)
+    kl_12 = F.kl_div(p1, q2, reduction="none").sum(dim=-1)
+    kl_21 = F.kl_div(p2, q1, reduction="none").sum(dim=-1)
+    sym_kl = 0.5 * (kl_12 + kl_21)
+    if valid_mask is not None:
+        mask_f = valid_mask.float()
+        return (sym_kl * mask_f).sum() / mask_f.sum().clamp_min(1.0)
+    return sym_kl.mean()
+
+
 def partition_semantic_segments(
+
     change_score: torch.Tensor,
     valid_len: int,
     min_seg_len: int = 8,

@@ -18,9 +18,11 @@ from .evidence_recovery import (
     ASFormerDenseSemanticScout,
     EvidenceRecoverySelector,
     DucaEvidenceRecoveryModule,
+    DucaEvidenceRecoveryFrameSelector,
     compute_distillation_loss,
     compute_two_view_consistency_loss,
 )
+
 
 from .counterfactual_utility import (
     build_local_cell_hard_flip_candidates,
