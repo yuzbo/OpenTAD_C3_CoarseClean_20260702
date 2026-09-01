@@ -29,14 +29,11 @@ CONFIG_PATHS = [
 def test_detector_forward_train_and_test(cfg_path):
     """Verify that every arm config builds cleanly and executes forward_train and forward_test."""
     cfg = Config.fromfile(cfg_path)
-    if hasattr(cfg.model, "backbone") and isinstance(cfg.model.backbone, dict):
-        cfg.model.backbone["pretrained"] = None
-    elif hasattr(cfg.model, "backbone") and hasattr(cfg.model.backbone, "pretrained"):
-        cfg.model.backbone.pretrained = None
     
     # Build detector
     detector = build_detector(cfg.model)
     detector.eval()
+
 
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
