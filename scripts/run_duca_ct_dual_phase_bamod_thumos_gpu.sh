@@ -6,18 +6,19 @@ fail() {
   exit 1
 }
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BASE="${BASE:-/data/run01/sczc063/yuzibo}"
+REPO_ROOT="${REPO_ROOT:-${BASE}/projects/opentad_duca_ct_dp_bamod_d9bdb3f_20260901}"
 cd "${REPO_ROOT}"
 
 CONFIG="${1:-configs/adatad/thumos/duca_ct_dual_phase_bamod_thumos.py}"
 SEED="${SEED:-3407}"
 EXP_ID="${EXP_ID:-0}"
 
-BASE="${BASE:-/data/run01/sczc063/yuzibo}"
 export HOME="${BASE}/tmp/home"
 export XDG_CACHE_HOME="${BASE}/tmp/xdg_cache"
 export XDG_CONFIG_HOME="${BASE}/tmp/xdg_config"
 mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${REPO_ROOT}/logs" "${BASE}/slurm_logs"
+
 
 
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
