@@ -43,6 +43,13 @@ else
   CONFIG="${2:-}"
 fi
 
+if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
+  mode="precheck"
+  if [[ -z "${CONFIG}" ]]; then
+    CONFIG="${PRECHECK_CONFIG:-configs/adatad/thumos/bafdr_k16_d160_seed4407.py}"
+  fi
+fi
+
 allow_dirty_flag=()
 if [[ "${BAFDR_ALLOW_DIRTY:-0}" == "1" ]]; then
   allow_dirty_flag=(--allow-dirty)

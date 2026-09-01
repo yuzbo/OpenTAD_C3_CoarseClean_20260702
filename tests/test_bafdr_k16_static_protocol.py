@@ -106,6 +106,7 @@ def test_slurm_scripts_use_world2_dag_not_single_gpu_array():
     run_text = read(ROOT / "scripts" / "run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh")
     submit_text = read(ROOT / "scripts" / "submit_zoomtoken_bafdr_k16_fullmatrix_n16r4.sbatch")
     assert "torchrun --standalone --nproc_per_node" in run_text
+    assert "PRECHECK_ONLY" in run_text
     assert "--prediction-only" in run_text
     assert "--seal-predictions" in run_text
     assert "--open-metrics" in run_text
