@@ -1,14 +1,24 @@
 import ast
+import json
 from pathlib import Path
 
+import pytest
 from mmengine.config import Config
 
 from tools.bata.continuous_roi_s2_v3_full200_compute import (
     ARMS,
     SEEDS,
+    build_full_data_bundle,
     config_path,
     validate_matrix,
     validate_parameter_fairness,
+)
+from tools.bata.continuous_roi_s2_v3_full200_compute_profile import (
+    FullOperatorLedger,
+    batched_matmul_fma2,
+    compare_c_exec_receipts,
+    convolution_fma2,
+    linear_fma2,
 )
 
 
@@ -73,3 +83,117 @@ def test_u128_a0_fusion_has_no_parameters():
         and target.value.id == "self"
     }
     assert assigned_attributes == {"mode"}
+
+
+def test_full_data_bundle_is_complete_label_free_and_deterministic(tmp_path):
+    database = {}
+    media_root = tmp_path / "video"
+    for index in range(200):
+        video_id = f"train_{index:03d}"
+        database[video_id] = {
+            "subset": "training",
+            "frame": 768,
+            "duration": 100.0,
+            "annotations": [
+                {"label": "Action", "segment": [0.0, float(index + 1)]}
+            ],
+        }
+        path = media_root / "training" / f"{video_id}.mp4"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"")
+    for index in range(211):
+        video_id = f"validation_{index:03d}"
+        snippet_count = 1536 if index < 159 else 1152
+        database[video_id] = {
+            "subset": "validation",
+            "frame": (snippet_count - 1) * 4 + 1,
+            "duration": 100.0,
+            "annotations": [
+                {"label": "Action", "segment": [10.0, 20.0]}
+            ],
+        }
+        path = media_root / "validation" / f"{video_id}.mp4"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"")
+    annotation = tmp_path / "annotation.json"
+    annotation.write_text(json.dumps({"database": database}), encoding="utf-8")
+    class_map = tmp_path / "class_map.txt"
+    class_map.write_text("Action\n", encoding="utf-8")
+
+    manifest = build_full_data_bundle(
+        annotation, class_map, media_root, tmp_path / "manifest"
+    )
+    assert manifest["training"]["identity_count"] == 200
+    assert manifest["evaluation"]["video_count"] == 211
+    assert manifest["evaluation"]["ordered_window_count"] == 792
+    assert manifest["media"]["count"] == 411
+    assert manifest["short_q1"]["q1_float64_hex"] == float(50.75).hex()
+    heldout = json.loads(
+        (tmp_path / "manifest" / "heldout_inference_annotation.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert all(
+        set(row) == {"subset", "frame", "duration"}
+        for row in heldout["database"].values()
+    )
+
+
+def test_full_operator_ledger_is_integer_complete_and_never_uses_latency():
+    assert linear_fma2(batch=2, positions=3, inputs=4, outputs=5) == 240
+    assert convolution_fma2(
+        batch=1,
+        output_positions=8,
+        output_channels=4,
+        input_channels_per_group=3,
+        kernel_elements=3,
+    ) == 576
+    assert batched_matmul_fma2(batches=2, m=3, n=4, k=5) == 240
+
+    identity = {
+        "candidate_commit": "a" * 40,
+        "protocol_sha256": "b" * 64,
+        "evaluation_manifest_sha256": "c" * 64,
+        "checkpoint_policy": "epoch_59_state_dict_ema",
+        "dtype": "float16",
+        "batch_size": 1,
+        "ordered_window_count": 792,
+    }
+    boundary = {
+        "start": "first_arm_dependent_decoded_rgb_transform",
+        "end": "pre_nms_raw_detections",
+        "nms_called": False,
+        "evaluator_called": False,
+    }
+    counts = {"D160": 1000, "G96": 800, "U128-A0": 900}
+    receipts = {}
+    for arm, count in counts.items():
+        ledger = FullOperatorLedger(arm=arm)
+        ledger.add_automatic(
+            event_id=f"{arm}/backbone/mm",
+            operator="aten.mm",
+            integer_operations=count,
+        )
+        receipts[arm] = ledger.receipt(
+            execution_identity=identity,
+            boundary_trace=boundary,
+        )
+    comparison = compare_c_exec_receipts(receipts)
+    assert comparison["primary_exact_10u_le_9d"]
+    assert comparison["g96_not_more_than_u128_a0"]
+    assert comparison["gate_uses_latency_or_memory"] is False
+
+
+def test_full_operator_ledger_fails_closed_on_unknown_or_duplicate_operator():
+    ledger = FullOperatorLedger(arm="D160")
+    ledger.mark_unsupported("aten.some_new_fused_op")
+    with pytest.raises(RuntimeError, match="FAILED_C_EXEC_INCOMPLETE"):
+        ledger.receipt(
+            execution_identity={},
+            boundary_trace={
+                "start": "first_arm_dependent_decoded_rgb_transform",
+                "end": "pre_nms_raw_detections",
+                "nms_called": False,
+                "evaluator_called": False,
+            },
+        )
