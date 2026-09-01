@@ -176,7 +176,6 @@ class TaylorResidualBlock(BaseModule):
         self.mlp = FFN(
             embed_dims=embed_dims,
             feedforward_channels=int(embed_dims * mlp_ratio),
-            num_fwd_lateral=0,
             act_cfg=act_cfg,
             ffn_drop=drop_rate,
             add_identity=False,
