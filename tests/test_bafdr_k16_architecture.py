@@ -94,6 +94,9 @@ def test_bafdr_asymmetric_projection_l2_l5_residual_invariance():
         attn_cfg=dict(n_head=4, n_mha_win_size=-1),
         use_abs_pe=False,
     )
+    # Give non-zero weights to residual injectors for testing propagation
+    nn.init.normal_(proj.q0_inj.weight, std=0.02)
+    nn.init.normal_(proj.q1_inj.weight, std=0.02)
     proj.eval()
     
     bundle1 = dict(global_features=G, residual_features=R1)
