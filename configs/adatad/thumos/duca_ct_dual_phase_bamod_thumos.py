@@ -75,3 +75,13 @@ model = dict(
 )
 
 work_dir = "exps/thumos/adatad/duca_ct_dual_phase_bamod_seed3407"
+
+workflow = dict(
+    logging_interval=50,
+    checkpoint_interval=2,
+    val_loss_interval=-1,
+    val_eval_interval=2,
+    val_start_epoch=1,
+    end_epoch=60,
+)
+

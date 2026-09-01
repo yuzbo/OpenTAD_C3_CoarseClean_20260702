@@ -5,6 +5,11 @@ append_only: true
 
 # Research Wiki Log
 
+- 2026-09-01：根据实验指令全面确立“边训边测”（Online Evaluation）机制标准：
+  1. **配置全面升级**：更新 `configs/adatad/thumos/duca_ct_dual_phase_bamod_thumos.py` 及全部派生消融配置，显式设定 `workflow = dict(val_start_epoch=1, val_eval_interval=2, end_epoch=60)`；
+  2. **评估时序规范**：废止延迟至第 40 轮的旧评估策略，所有后续模型自第 1 轮起即在官方验证集上同步计算 mAP@0.3~0.7 及 Avg-mAP，确保整个训练收敛轨迹具备完备的时间序列评测证据；
+  3. **防重入规范写入**：在 `research-wiki/anti_repetition.md` 写入边训边测防退化守则。
+
 - 2026-09-01：CT-DP-TAD 进阶连续物理机制完整实现并完成远端单种子三实验消融部署：
   1. **CT-Tubelet 3D 卷积物理速度归一化**（`VisionTransformerAdapter`）：将 VideoMAE 3D Patch 嵌入卷积核在 $T=2$ 维度精确正交分解为稳态均值分量 $W_{\text{mean}} = \frac{1}{2}(W_0+W_1)$ 与动态差分分量 $W_{\text{diff}} = \frac{1}{2}(W_1-W_0)$，动态分量显式按物理时序步长 $\frac{\Delta t_{\text{ref}}}{\delta_j}$ 进行尺度归一化，从底层彻底消除非均匀选帧引起的动态速度畸变。在均匀时间戳下与标准 3D Conv 达成 bit-exact 精确等价；
   2. **连续物理时间 GIoU 损失**（`ContinuousPhysicalGIoULoss`）：统一以连续物理秒为坐标度量空间，精确优化时序交并比与中心点惩罚，原生适配非均匀与连续时间预测；

@@ -1,5 +1,10 @@
 ---
 
+## 2026-09-01 边训边测全周期评估执行铁律 (Online Validation Evaluation Guardrail)
+
+- **严格执行边训边测**：后续所有训练与消融实验配置必须显式设定 `workflow.val_start_epoch=1` 与 `workflow.val_eval_interval=2`（或 1），严禁将验证集评估推迟至末尾轮次（如 `val_start_epoch=40`）。
+- **全生命周期监控**：必须在训练初期（Epoch 1 起）即持续产出并在日志中记录官方验证集的定位指标（mAP@0.3~0.7 及 Avg-mAP），以便实时诊断特征表征与边界定位演化曲线。
+
 ## 2026-07-28 SparseHead consolidation guardrails
 
 - `OpenTAD_C3_CoarseClean_20260702` 是唯一可写 SparseHead/PhysTime 研究面；
