@@ -39,7 +39,7 @@ PROFILE_DIR="${RUN_ROOT}/profile"
 ANNOTATION="${THUMOS_ANNOTATION:-${BASE}/thumos14/annotations/thumos_14_anno.json}"
 CLASS_MAP="${THUMOS_CLASS_MAP:-${BASE}/thumos14/annotations/category_idx.txt}"
 MEDIA_ROOT="${THUMOS_MEDIA_ROOT:-${BASE}/thumos14/raw_data/video}"
-PRETRAINED="${VIDEOMAE_PRETRAINED:-${BASE}/pretrained/videomae_s_768x1_160_adapter.pth}"
+PRETRAINED="${VIDEOMAE_PRETRAINED:-${BASE}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 EXPECTED_COMMIT="${ZOOMTOKEN_EXPECTED_COMMIT:-$(git -C "${ROOT}" rev-parse HEAD)}"
 PRECHECK_ONLY="${PRECHECK_ONLY:-0}"
 
