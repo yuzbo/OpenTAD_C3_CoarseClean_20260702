@@ -240,7 +240,7 @@ def test_bafdr_detector_real_dual_view_forward_train_and_test():
 
     assert "loss_cls" in losses
     assert "loss_reg" in losses
-    assert "loss_router" in losses
+    assert "router_loss" in losses
     assert "cost" in losses
     assert losses["cost"].requires_grad
 

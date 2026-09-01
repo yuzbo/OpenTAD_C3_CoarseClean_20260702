@@ -376,4 +376,4 @@ class BAFDRBackboneWrapper(BackboneWrapper):
         from tools.bata.bafdr_k16_fullmatrix_train import compute_router_loss
         device = self._latest_router_outputs["actionness_logits"].device
         loss_router = compute_router_loss(self._latest_router_outputs, gt_segments, device=device)
-        return {"loss_router": 0.50 * loss_router}
+        return {"router_loss": 0.50 * loss_router}
