@@ -3,40 +3,40 @@
   "active_jobs": [],
   "browser_request": {
     "actual_submission_count": 1,
-    "attachment_count": 13,
+    "attachment_count": 1,
     "attachments_uploaded": true,
     "blocker": null,
     "browser_inline_files": false,
-    "completed_at": "2026-09-01T00:47:07.753Z",
+    "completed_at": "2026-09-01T03:39:28.821Z",
     "conversation_created": true,
-    "conversation_id": "6a961c52-1b5c-83e9-b04c-6b0bda18892f",
-    "conversation_url": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b-zoomtoken/c/6a961c52-1b5c-83e9-b04c-6b0bda18892f",
-    "decision": "PIVOT",
+    "conversation_id": "6a9641aa-a8f8-83ea-a5e7-b64da4daffc2",
+    "conversation_url": "https://chatgpt.com/g/g-p-6a79701398bc8191a9ef61db6302b24b-zoomtoken/c/6a9641aa-a8f8-83ea-a5e7-b64da4daffc2",
+    "decision": "REVISE",
     "follow_up_count": 0,
-    "model_picker": "highest-browser-verifiable-Pro",
+    "model_picker": "Pro",
     "model_picker_verified": true,
-    "nonce": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V2.2-EXACT-BYTE-TERMINAL-PRO-v001-20260901T075800+0800",
-    "observed_model_label": "GPT-5.6 Pro",
-    "oracle_session": "zoomtoken-continuous-roi-v22-exact",
+    "nonce": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FULL-DATA-SINGLE-AXIS-PRO-v002-20260901T102034+0800",
+    "observed_model_label": "Pro",
+    "oracle_session": "zoomtoken-continuous-roi-s2-v3",
     "precontact_parser_failure_consumed_scientific_turn": false,
     "profile_id": "61",
     "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
     "project_sources_confirmed": [
-      "CURRENT_RESEARCH_STATE-v019.md",
-      "MODEL_EXPERIMENT_HISTORY-v014.md"
+      "CURRENT_RESEARCH_STATE-v021.md",
+      "MODEL_EXPERIMENT_HISTORY-v016.md"
     ],
     "prompt_submitted": true,
-    "request_id": "PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION-v001",
-    "request_path": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION_REQUEST-v001.md",
-    "response_path": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION_RESPONSE-v001.md",
+    "request_id": "PRO_CONTINUOUS_ROI_S2_V3_FULL_DATA_SINGLE_AXIS_OBJECTIVE_ADJUDICATION-v002",
+    "request_path": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V3_FULL_DATA_SINGLE_AXIS_OBJECTIVE_ADJUDICATION_REQUEST-v002.md",
+    "response_path": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V3_FULL_DATA_SINGLE_AXIS_OBJECTIVE_ADJUDICATION_RESPONSE-v002.md",
     "response_saved": true,
     "role_contract": "KEEP",
-    "selected_task": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FRESH-3X3-MATCHED-TRAIN-REFERENCE-AND-COST-FALSIFIER-v001",
+    "selected_task": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FULL200-COMPUTE-PARETO-3X3-v001",
     "status": "COMPLETED_AUDITED",
-    "terminal_evidence_commit": "078633518439a8c0fcbfbf7ed4791d30feaad8f2",
-    "terminal_evidence_commit_url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/078633518439a8c0fcbfbf7ed4791d30feaad8f2",
-    "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V2_2_EXACT_BYTE_RECOVERY_TERMINAL_ADJUDICATION_TERMINAL_RECEIPT-v001.json",
-    "transcript_path": ".cvpr-pro-lab/reviews/runs/zoomtoken-continuous-roi-v22-exact-byte-terminal-pro-v001/oracle-home/sessions/zoomtoken-continuous-roi-v22-exact/artifacts/transcript.md",
+    "terminal_evidence_commit": null,
+    "terminal_evidence_commit_url": null,
+    "terminal_receipt": "docs/aris/ZOOMTOKEN_CONTINUOUS_ROI_S2_V3_FULL_DATA_SINGLE_AXIS_PRO_REVIEW_RECEIPT-2026-09-01.md",
+    "transcript_path": ".cvpr-pro-lab/reviews/runs/zoomtoken-continuous-roi-s2-v3-full-data-single-axis-pro-v002-tc1/oracle-home/sessions/zoomtoken-continuous-roi-s2-v3/artifacts/transcript.md",
     "transport": "attachment-only"
   },
   "continuous_roi_s2_v2_2_exact_byte_recovery": {
@@ -109,93 +109,6 @@
       "n16r4_focused": "26 passed"
     }
   },
-  "continuous_roi_s2_v3_fresh_3x3": {
-    "acceptance_gate": "S_CR=true AND H=true AND F=true AND all_three_seeds_complete AND all_identity_no_leak_population_evidence_gates_pass",
-    "allowed_paths": [
-      "docs/methods/continuous_roi_s2_v3_fresh_3x3_protocol.json",
-      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/d160_seed4407.py",
-      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/d160_seed4408.py",
-      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/d160_seed4409.py",
-      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/g96_seed4407.py",
-      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/g96_seed4408.py",
-      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/g96_seed4409.py",
-      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/u128_seed4407.py",
-      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/u128_seed4408.py",
-      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/u128_seed4409.py",
-      "tools/bata/run_continuous_roi_s2_v3_fresh_3x3.py",
-      "tools/bata/evaluate_continuous_roi_s2_v3_reference.py",
-      "tools/bata/profile_continuous_roi_s2_v3_cost.py",
-      "scripts/run_continuous_roi_s2_v3_fresh_3x3_n16r4.sh",
-      "tests/test_continuous_roi_s2_v3_fresh_3x3.py"
-    ],
-    "branch": "codex/zoomtoken-continuous-roi-s2-v3-fresh-3x3-v001",
-    "builder_candidate_due_beijing": "2026-09-02T06:00:00+08:00",
-    "builder_plan": "docs/aris/ZOOMTOKEN_CONTINUOUS_ROI_S2_V3_FRESH_3X3_BUILDER_PLAN-2026-09-01.md",
-    "builder_plan_completed_at_beijing": "2026-09-01T09:08:00+08:00",
-    "builder_plan_due_beijing": "2026-09-01T12:00:00+08:00",
-    "cost_policy": "One matched same-physical-GPU full-stack cost job is conditional on valid S_CR=true and H=true; exhaustive reference-search cost is separate from deployable-policy cost.",
-    "critic_due_beijing": "2026-09-02T09:00:00+08:00",
-    "data_protocol": {
-      "development_fit_gate": "160/40",
-      "official_test_opened": false,
-      "reference_candidate_count": 17,
-      "reference_population": "129 sanitized ordered windows",
-      "sobol_dimension": 48,
-      "sobol_scramble": true,
-      "sobol_seed": 20260720,
-      "tubelets_per_candidate": 48
-    },
-    "evaluator_due_beijing": "2026-09-02T12:00:00+08:00",
-    "execution_base": "10aed28659a08fa703def278fc0f5f1422dcad89",
-    "formal_action_due_beijing": "2026-09-02T14:00:00+08:00",
-    "formal_campaign_limit": {
-      "conditional_cost_jobs": 1,
-      "privileged_join_reference_finalizers": 1,
-      "raw_reference_jobs": 3,
-      "replacement_allowed": false,
-      "scheduler_submissions_max": 15,
-      "second_campaign_allowed": false,
-      "training_cells": 9,
-      "training_finalizers": 1
-    },
-    "fresh_post_result_pro_due_beijing": "2026-09-06T16:00:00+08:00",
-    "matrix": {
-      "arms": [
-        "D160-V3",
-        "G96-V3",
-        "U128-V3"
-      ],
-      "seeds": [
-        4407,
-        4408,
-        4409
-      ]
-    },
-    "per_cell_training": {
-      "epochs": 60,
-      "retained_artifacts": [
-        "epoch_59.pth",
-        "state_dict_ema",
-        "metadata_sidecar",
-        "rendered_config",
-        "completion_receipt"
-      ],
-      "successful_updates": 4800,
-      "successful_updates_per_epoch": 80
-    },
-    "pro_conversation_id": "6a961c52-1b5c-83e9-b04c-6b0bda18892f",
-    "pro_decision": "PIVOT",
-    "role_contract": "KEEP",
-    "status": "BUILDER_PLAN_COMPLETE_CANDIDATE_IN_PROGRESS",
-    "stop_rules": {
-      "F_false": "STOP_EFFICIENCY_CONTINUATION",
-      "H_false": "STOP_VARIABLE_SIZE_AND_S3",
-      "S_CR_false": "STOP_EXACT_S2_V3_REPRESENTATION_NO_S3",
-      "incomplete_evidence": "NO_DECISION_INVALID_EVIDENCE"
-    },
-    "task_id": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FRESH-3X3-MATCHED-TRAIN-REFERENCE-AND-COST-FALSIFIER-v001",
-    "terminal_evidence_due_beijing": "within_4h_of_last_authorized_terminal_not_later_than_2026-09-06T12:00:00+08:00"
-  },
   "continuous_roi_s2_v2_2_protocol": {
     "acceptance_status": "STOP_CONTINUOUS_ROI_S2_REFERENCE_ROUTE_BEFORE_INFERENCE",
     "allowed_paths": [
@@ -248,8 +161,143 @@
     "stop_status": "STOP_CONTINUOUS_ROI_S2_REFERENCE_ROUTE_BEFORE_INFERENCE",
     "training_authorized": false
   },
+  "continuous_roi_s2_v3_fresh_3x3": {
+    "acceptance_gate": "S_CR=true AND H=true AND F=true AND all_three_seeds_complete AND all_identity_no_leak_population_evidence_gates_pass",
+    "allowed_paths": [
+      "docs/methods/continuous_roi_s2_v3_fresh_3x3_protocol.json",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/d160_seed4407.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/d160_seed4408.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/d160_seed4409.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/g96_seed4407.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/g96_seed4408.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/g96_seed4409.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/u128_seed4407.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/u128_seed4408.py",
+      "configs/adatad/thumos/continuous_roi_s2_v3_fresh/u128_seed4409.py",
+      "tools/bata/run_continuous_roi_s2_v3_fresh_3x3.py",
+      "tools/bata/evaluate_continuous_roi_s2_v3_reference.py",
+      "tools/bata/profile_continuous_roi_s2_v3_cost.py",
+      "scripts/run_continuous_roi_s2_v3_fresh_3x3_n16r4.sh",
+      "tests/test_continuous_roi_s2_v3_fresh_3x3.py"
+    ],
+    "branch": "codex/zoomtoken-continuous-roi-s2-v3-fresh-3x3-v001",
+    "builder_candidate_due_beijing": "2026-09-02T06:00:00+08:00",
+    "builder_plan": "docs/aris/ZOOMTOKEN_CONTINUOUS_ROI_S2_V3_FRESH_3X3_BUILDER_PLAN-2026-09-01.md",
+    "builder_plan_completed_at_beijing": "2026-09-01T09:08:00+08:00",
+    "builder_plan_due_beijing": "2026-09-01T12:00:00+08:00",
+    "cost_policy": "One matched same-physical-GPU full-stack cost job is conditional on valid S_CR=true and H=true; exhaustive reference-search cost is separate from deployable-policy cost.",
+    "critic_due_beijing": "2026-09-02T09:00:00+08:00",
+    "data_protocol": {
+      "deployment_status": "SUPERSEDED_BY_HUMAN_FULL_DATA_REQUIREMENT_PENDING_FRESH_PRO",
+      "development_fit_gate": "160/40",
+      "official_test_opened": false,
+      "reference_candidate_count": 17,
+      "reference_population": "129 sanitized ordered windows",
+      "sobol_dimension": 48,
+      "sobol_scramble": true,
+      "sobol_seed": 20260720,
+      "tubelets_per_candidate": 48
+    },
+    "evaluator_due_beijing": "2026-09-02T12:00:00+08:00",
+    "execution_base": "10aed28659a08fa703def278fc0f5f1422dcad89",
+    "formal_action_due_beijing": "2026-09-02T14:00:00+08:00",
+    "formal_campaign_limit": {
+      "conditional_cost_jobs": 1,
+      "privileged_join_reference_finalizers": 1,
+      "raw_reference_jobs": 3,
+      "replacement_allowed": false,
+      "scheduler_submissions_max": 15,
+      "second_campaign_allowed": false,
+      "training_cells": 9,
+      "training_finalizers": 1
+    },
+    "fresh_post_result_pro_due_beijing": "2026-09-06T16:00:00+08:00",
+    "matrix": {
+      "arms": [
+        "D160-V3",
+        "G96-V3",
+        "U128-V3"
+      ],
+      "seeds": [
+        4407,
+        4408,
+        4409
+      ]
+    },
+    "per_cell_training": {
+      "epochs": 60,
+      "retained_artifacts": [
+        "epoch_59.pth",
+        "state_dict_ema",
+        "metadata_sidecar",
+        "rendered_config",
+        "completion_receipt"
+      ],
+      "successful_updates": 4800,
+      "successful_updates_per_epoch": 80
+    },
+    "pro_conversation_id": "6a961c52-1b5c-83e9-b04c-6b0bda18892f",
+    "pro_decision": "PIVOT",
+    "role_contract": "KEEP",
+    "status": "HELD_BY_HUMAN_FULL_DATA_REQUIREMENT_PENDING_FRESH_PRO",
+    "stop_rules": {
+      "F_false": "STOP_EFFICIENCY_CONTINUATION",
+      "H_false": "STOP_VARIABLE_SIZE_AND_S3",
+      "S_CR_false": "STOP_EXACT_S2_V3_REPRESENTATION_NO_S3",
+      "incomplete_evidence": "NO_DECISION_INVALID_EVIDENCE"
+    },
+    "task_id": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FRESH-3X3-MATCHED-TRAIN-REFERENCE-AND-COST-FALSIFIER-v001",
+    "terminal_evidence_due_beijing": "within_4h_of_last_authorized_terminal_not_later_than_2026-09-06T12:00:00+08:00"
+  },
+  "continuous_roi_s2_v3_full200_compute_pareto": {
+    "acceptance_rule": "All preregistered performance/stability gates pass; aggregate C_exec(U128-A0)/C_exec(D160) <= 0.90; evidence protocol valid; G96 does not strictly dominate U128-A0.",
+    "arms": [
+      "D160",
+      "G96",
+      "U128-A0"
+    ],
+    "branch": "codex/zoomtoken-continuous-roi-s2-v3-full200-compute-v001",
+    "builder_candidate_due_beijing": "2026-09-02T20:00:00+08:00",
+    "builder_plan": "docs/aris/ZOOMTOKEN_CONTINUOUS_ROI_S2_V3_FRESH_3X3_BUILDER_PLAN-2026-09-01.md",
+    "builder_plan_due_beijing": "2026-09-01T14:00:00+08:00",
+    "compute_gate": "aggregate full-operator C_exec(U128-A0)/C_exec(D160) <= 0.90 over three seeds and complete 792-window population",
+    "critic_due_beijing": "2026-09-03T08:00:00+08:00",
+    "diagnostic_only": [
+      "full-stack p50/p95",
+      "throughput",
+      "peak allocated/reserved memory",
+      "gross energy",
+      "power and component timings"
+    ],
+    "durable_pro_receipt": "docs/aris/ZOOMTOKEN_CONTINUOUS_ROI_S2_V3_FULL_DATA_SINGLE_AXIS_PRO_REVIEW_RECEIPT-2026-09-01.md",
+    "evaluation_population": "complete ordered 211-video/792-window canonical validation population; one label-free inference plus one metric-bearing GT opening",
+    "evaluator_due_beijing": "2026-09-03T14:00:00+08:00",
+    "execution_base": "10aed28659a08fa703def278fc0f5f1422dcad89",
+    "formal_start_due_beijing": "2026-09-03T18:00:00+08:00",
+    "per_cell_training": {
+      "epochs": 60,
+      "final_checkpoint": "epoch_59 state_dict_ema after successful update 6000",
+      "successful_updates": 6000,
+      "successful_updates_per_epoch": 100,
+      "training_identities_per_epoch": 200
+    },
+    "primary_resource_axis": "EXECUTED_INFERENCE_COMPUTATION",
+    "pro_conversation_id": "6a9641aa-a8f8-83ea-a5e7-b64da4daffc2",
+    "pro_decision": "REVISE",
+    "pro_request_id": "PRO_CONTINUOUS_ROI_S2_V3_FULL_DATA_SINGLE_AXIS_OBJECTIVE_ADJUDICATION-v002",
+    "role_contract": "KEEP",
+    "scientific_return_due_beijing": "2026-09-09T02:00:00+08:00",
+    "seeds": [
+      4407,
+      4408,
+      4409
+    ],
+    "status": "BUILDER_IN_PROGRESS",
+    "task_id": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FULL200-COMPUTE-PARETO-3X3-v001",
+    "terminal_evidence_due_beijing": "2026-09-08T23:00:00+08:00"
+  },
   "epoch": 42,
-  "execution_state": "READY",
+  "execution_state": "BUILDER_IN_PROGRESS",
   "gridfuse32_l6_gated": {
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",
     "branch": "codex/zoomtoken-gridfuse32-l6-v001",
@@ -476,6 +524,15 @@
       "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_GRIDFUSE32_L6_PRODUCTION_FULLWINDOW_ATOMIC_G0_TERMINAL_NEGATIVE_ADJUDICATION_TERMINAL_RECEIPT-v001.json"
     }
   },
+  "human_full_data_requirement": {
+    "effective_at": "2026-09-01T10:13:01+08:00",
+    "formal_test_population": "COMPLETE_OFFICIAL_TEST_POPULATION_UNDER_ONE_SHOT_NO_LEAK_PREREGISTERED_OPENING",
+    "formal_training_population": "COMPLETE_OFFICIAL_TRAINING_POPULATION_AND_FULL_SCHEDULE",
+    "formal_validation_population": "COMPLETE_OFFICIAL_VALIDATION_OR_EVALUATION_POPULATION_MATCHED_ACROSS_ALL_ARMS",
+    "partial_population_results_allowed_as_paper_evidence": false,
+    "prior_s2_v3_development_protocol_status": "HELD_FOR_FRESH_PRO_PROTOCOL_REVISION",
+    "requires_fresh_pro": true
+  },
   "k100_tar50_interaction_falsifier": {
     "base_commit": "2d945e64bdccd09ae2e2916524562e3f388c5a2a",
     "branch": "codex/zoomtoken-k100-tar50-interaction-v001",
@@ -601,7 +658,7 @@
     "required_at_beijing": "2026-08-28T12:00:00+08:00",
     "status": "DELIVERED"
   },
-  "new_evidence_since_pro": false,
+  "new_evidence_since_pro": true,
   "next_pro_review_due_at": "2026-09-06T08:00:00Z",
   "ordered_video_decode_reuse_r1_k100": {
     "allowed_paths": [
@@ -819,6 +876,67 @@
     }
   },
   "pause_reason": null,
+  "pending_full_data_pro_request": {
+    "accounting_recovery_decision": "RECOVERY_A_EXPLICIT_CURRENT_INVENTORY_MODE",
+    "actual_submission_count": 0,
+    "blocker": null,
+    "broker_patch_receipt": "docs/aris/ZOOMTOKEN_PROJECT_SOURCES_EXPLICIT_CURRENT_BROKER_PATCH_RECEIPT-2026-09-01.md",
+    "broker_patch_tests": "10 passed",
+    "browser_contact_scope": "READ_ONLY_PROJECT_SOURCES_PREFLIGHT_ONLY",
+    "browser_contacted": true,
+    "central_arbiter_thread_id": "019fe9c9-0f64-7382-b1cf-f187841e5d0b",
+    "current_state_submission_id": "pfile-20260901T022347Z-0f321801fc",
+    "experiment_history_submission_id": "pfile-20260901T022353Z-6195c7b17b",
+    "explicit_current_expected_sources": [
+      "CURRENT_RESEARCH_STATE-v019.md",
+      "MODEL_EXPERIMENT_HISTORY-v014.md"
+    ],
+    "confirmed_source_ledger_ids": [
+      "pfile-20260901T025103Z-cc6e7379a1",
+      "pfile-20260901T025103Z-5cebb4b476"
+    ],
+    "ledger_confirmation_count": 2,
+    "nonce": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FULL-DATA-SINGLE-AXIS-PRO-v002-20260901T102034+0800",
+    "objective_constraint": "PRO_MUST_SELECT_EXACTLY_ONE_PRIMARY_PARETO_PLANE_PERFORMANCE_VS_COMPUTATION_OR_PERFORMANCE_VS_PEAK_MEMORY; LATENCY_DIAGNOSTIC_ONLY",
+    "pro_attempt0": {
+      "actual_submission_count": 0,
+      "attachment_count_requested": 1,
+      "attachment_registered": false,
+      "browser_inline_files": false,
+      "conversation_created": false,
+      "job_id": "j-c4xacf",
+      "meta_path": ".cvpr-pro-lab/reviews/runs/zoomtoken-continuous-roi-s2-v3-full-data-single-axis-pro-v002/oracle-home/sessions/zoomtoken-continuous-roi-s2-v3/meta.json",
+      "model_picker": "Pro",
+      "prompt_submitted": false,
+      "receipt": ".cvpr-pro-lab/reviews/PRO_CONTINUOUS_ROI_S2_V3_FULL_DATA_SINGLE_AXIS_OBJECTIVE_ADJUDICATION_PRE_SUBMIT_BLOCKER-v002.json",
+      "runtime_cdp": "127.0.0.1:15359",
+      "session": "zoomtoken-continuous-roi-s2-v3",
+      "terminal_error": "Attachments did not finish uploading before timeout"
+    },
+    "pro_transport_correction": {
+      "changed_path": "C:/Users/skywalker/AppData/Roaming/npm/node_modules/@steipete/oracle/dist/src/browser/actions/attachments.js",
+      "focused_test": ".cvpr-pro-lab/reviews/runs/zoomtoken-continuous-roi-s2-v3-full-data-single-axis-pro-v002/test_attachment_input_only_completion.mjs",
+      "receipt": "docs/aris/ZOOMTOKEN_ORACLE_ATTACHMENT_INPUT_ONLY_CORRECTION_RECEIPT-2026-09-01.md",
+      "result": "5 passed",
+      "status": "MATERIAL_READY",
+      "summary": "Stable exact-name input-only evidence accepts ready or missing; uploading, disabled and wrong-name states remain rejected"
+    },
+    "prior_sources_lease_disposition": "V002_CLOSED_ATTEMPT0_AFTER_READ_ONLY_INVENTORY_PROBE_ZERO_MUTATION",
+    "project_id": "g-p-6a79701398bc8191a9ef61db6302b24b",
+    "queued_at": "2026-09-01T02:20:34Z",
+    "remote_sources_after_recovery": {
+      "CURRENT_RESEARCH_STATE-v021.md": "PRESENT_UPLOADED",
+      "MODEL_EXPERIMENT_HISTORY-v016.md": "PRESENT"
+    },
+    "request_id": "PRO_CONTINUOUS_ROI_S2_V3_FULL_DATA_SINGLE_AXIS_OBJECTIVE_ADJUDICATION-v002",
+    "required_before_execution": true,
+    "source_mutation_count": 2,
+    "source_sync_invocation_count": 2,
+    "source_sync_partial_receipt": "docs/aris/ZOOMTOKEN_PROJECT_SOURCES_EXPLICIT_CURRENT_SYNC_NEEDS_ATTENTION-2026-09-01.md",
+    "source_sync_receipt": "docs/aris/ZOOMTOKEN_PROJECT_SOURCES_EXPLICIT_CURRENT_SYNC_FINAL_RECEIPT-2026-09-01.md",
+    "status": "MATERIAL_READY_WAITING_TRANSPORT_CORRECTED_PRO_LEASE",
+    "supersedes_request_id": "PRO_CONTINUOUS_ROI_S2_V3_FULL_DATA_PROTOCOL_AND_OBJECTIVE_ADJUDICATION-v001"
+  },
   "post_result_review": {
     "actual_submission_count": 1,
     "attachment_count": 7,
@@ -1232,7 +1350,7 @@
   },
   "schema_version": "1.0",
   "stage": "G4_DESIGN_FROZEN",
-  "status": "CONTINUOUS_ROI_S2_V3_FRESH_3X3_TASK_FROZEN",
+  "status": "CONTINUOUS_ROI_S2_V3_FULL200_COMPUTE_PARETO_BUILDER_IN_PROGRESS",
   "tar32_eval_blocker_review": {
     "actual_submission_count": 1,
     "attachment_count": 9,
@@ -1316,7 +1434,7 @@
     "terminal_receipt": ".cvpr-pro-lab/reviews/PRO_CPTC_TAR32_TERMINAL_RESULT_ADJUDICATION_TERMINAL_RECEIPT-ATTEMPT2-v001.json",
     "terminal_scientific_decision": "STOP_R1_TAR32_FKV_EXACT_COMPOSITION"
   },
-  "updated_at": "2026-09-01T01:08:00Z",
+  "updated_at": "2026-09-01T02:51:03Z",
   "v003_terminal": {
     "cost_rows_present": false,
     "durable_receipt": "docs/aris/ZOOMTOKEN_BPNS_R1_IDENTITY_GATED_FULL_STACK_REPLAY_V003_TERMINAL_RECEIPT-2026-08-28.md",

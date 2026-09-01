@@ -1,6 +1,6 @@
 ---
 type: anti_repetition
-updated: 2026-08-31
+updated: 2026-09-01
 ---
 
 ## GeoRoute deployment anti-repetition
@@ -1474,3 +1474,17 @@ updated: 2026-08-31
     `C_exec`。唯一任务是 D160/G96/U128-A0 × seeds 4407/4408/4409 的完整 200-video、60-epoch、
     211-video/792-window one-shot 3×3 campaign；不得复活 `fit160/gate40`、129-window、4,800 updates、
     Sobol/candidate search、partial metric、best checkpoint、第二 GT opening、额外 arm/seed/dataset 或旧 WIP 整体搬运。
+63. 不得把 ET-TRC 分支 `codex/zoomtoken-et-trc-taylor-manifold-v001` 的 `enable_taylor=False`
+    路径写成已经证明与标准 VideoMAE/VideoMAEAdapter checkpoint 100% 数值等价。当前
+    `TaylorAttention` 使用 split `q_proj/k_proj/v_proj` 和 trainable K bias，而标准实现使用
+    单个 `qkv` 权重与 Q/V-only bias；没有 qkv 权重映射、K-bias 约束、strict load witness 和真实
+    dense-reference parity test 前，不得作等价或继承预训练语义声明。
+64. 不得把当前 PA-TAD 实现描述为已经完成 L0/L1-only 局部突发增强与 L2-L5 宏观分流。
+    现有 `PyramidAwareAsymmetricProj` 只在 stem 后统一乘 `burst_mask` 增益，后续 branch 仍按原
+    ActionFormer stride-2 pyramid 执行，`asymmetric_split_level` 未进入 forward 逻辑。
+65. 不得把 `diagnose_taylor_residual_manifold.py` 的 receipt 当成完整 ET-TRC 误差证据。当前脚本可
+    使用随机 fallback JVP，硬编码 160/16 空间 token，且 dense residual 诊断未覆盖 Adapter/drop-path
+    与真实 block 后续状态；空诊断或 fallback 成功不构成模型机制证据。
+66. 不得声称通用训练/评测入口已经异常安全地恢复所有子模块模式和 EMA 权重。full200 专用脚本只在
+    自己的 online-eval 调用外恢复 module training flags；`eval_one_epoch` 与 `val_one_epoch` 本体仍需
+    自己的 `try/finally` 权重和模式恢复。
