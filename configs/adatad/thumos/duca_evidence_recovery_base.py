@@ -15,6 +15,14 @@ chunk_num = selected_budget * scale_factor // 16  # 384 // 16 = 24 chunks
 
 yuzibo_root = os.environ.get("YUZIBO_ROOT", os.path.expanduser("~/run/yuzibo"))
 thumos14_root = os.path.join(yuzibo_root, "thumos14")
+videomae_pretrain = os.environ.get(
+    "DUCA_VIDEOMAE_PRETRAIN",
+    os.path.join(
+        yuzibo_root,
+        "pretrained",
+        "vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+    ),
+)
 
 annotation_path = os.environ.get(
     "THUMOS14_ANNOTATION_PATH",
@@ -213,6 +221,8 @@ workflow = dict(
     expected_successful_optimizer_updates=max_updates,
     primary_checkpoint_epoch=59,
     primary_checkpoint_state_key="state_dict_ema",
+    # Stop a run before a non-finite detector loss can corrupt its checkpoint.
+    require_finite_train_loss=True,
 )
 
 # Post processing setting: ensure save_dict=True so result_path is generated for structured metrics
@@ -252,6 +262,9 @@ model = dict(
             temporal_token_merge=dict(enabled=True),
         ),
         custom=dict(
+            # Resolve the checkpoint from the experiment environment instead
+            # of relying on the current working directory of a Slurm job.
+            pretrain=videomae_pretrain,
             pre_processing_pipeline=[
                 dict(
                     type="Rearrange",
@@ -279,3 +292,12 @@ model = dict(
     projection=dict(max_seq_len=selected_budget),
 )
 
+workflow = dict(
+    logging_interval=50,
+    checkpoint_interval=2,
+    val_loss_interval=-1,
+    val_eval_interval=2,
+    val_start_epoch=40,
+    max_nonfinite_loss_retries=50,
+    max_amp_retries_per_batch=20,
+)
