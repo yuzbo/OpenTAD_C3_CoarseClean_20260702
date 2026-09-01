@@ -5,6 +5,27 @@ append_only: true
 
 # Research Wiki Log
 
+- 2026-09-01：用户明确冻结完整数据硬约束：所有后续正式 baseline/candidate 必须使用完整官方训练
+  population 与完整训练计划、同一个完整官方 validation/evaluation population，以及 fresh Pro 预注册的一次性
+  无泄漏完整 official-test opening。旧 S2-v3 的 `fit160/gate40` 与 129-window development reference 不能再部署为
+  正式论文证据。该任务在 candidate commit、Slurm、训练、验证、测试、metric 与 cost 发生前被暂停；Builder plan 和
+  本地未提交 WIP 仅保留为设计/工程记录。已准备 `CURRENT_RESEARCH_STATE-v020`、
+  `MODEL_EXPERIMENT_HISTORY-v015` 与 request
+  `PRO_CONTINUOUS_ROI_S2_V3_FULL_DATA_PROTOCOL_AND_OBJECTIVE_ADJUDICATION-v001`，等待中央 profile61 lease 完成
+  Sources 同步和恰好一次 fresh exact-Project Pro。用户提供的 I/O 主导 full-stack/Amdahl 分析只作为待 Pro 独立核验的
+  外部建议，没有被 Codex 写成阈值或路线。
+- 2026-09-01：在 v020/v015 尚未上传、浏览器尚未接触时，用户进一步要求不再联合优化/硬门检测性能、延迟与
+  显存/计算量。fresh Pro 必须只选 `性能↔计算量` 或 `性能↔峰值显存` 一个二维主问题；latency 仅披露/诊断，energy
+  默认辅助。中央 Sources lease 被 attempt-0 退回，mutation count=0；旧材料以 v021/v016 和 request-v002 合并替代，
+  不创建第二对话、不消费 Pro turn。
+- 2026-09-01：Project Sources 已确认 `CURRENT_RESEARCH_STATE-v021.md` 与
+  `MODEL_EXPERIMENT_HISTORY-v016.md`，fresh exact-Project conversation
+  `6a9641aa-a8f8-83ea-a5e7-b64da4daffc2` 以 verified Pro、attachment-only、一次科研提交、零 follow-up
+  返回 `REVISE / KEEP`。唯一主轴为 detection–executed-computation；latency、throughput、peak memory、energy
+  只披露。唯一任务是 D160/G96/U128-A0 × 4407/4408/4409 的完整 200-video、60-epoch、6,000-update/cell
+  campaign，9/9 prediction 封存后一次性开启完整 211-video/792-window evaluator；唯一资源门为完整算子
+  `C_exec(U128-A0)/C_exec(D160) <= 0.90`。旧 partial-data S2-v3 计划未产生模型结果并被正式取代。
+
 - 2026-08-24：DSR6-KV 最小实现完成于 clean/pushed
   `3260cd39154069138c6b1757326372cc3b73754e`（父 `4e940b…`，分支
   `codex/zoomtoken-dsr6-kv-v001`）。前 6 层复用 FULL64，后 6 层复用固定 K32 的 MOD32-KV，

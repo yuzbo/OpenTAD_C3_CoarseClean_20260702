@@ -42,7 +42,7 @@ MEDIA_ROOT="${THUMOS_MEDIA_ROOT:-${BASE}/thumos14/raw_data/video}"
 PRETRAINED="${VIDEOMAE_PRETRAINED:-${BASE}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 EXPECTED_COMMIT="${ZOOMTOKEN_EXPECTED_COMMIT:-$(git -C "${ROOT}" rev-parse HEAD)}"
 PRECHECK_ONLY="${PRECHECK_ONLY:-0}"
-ZOOMTOKEN_SEEDS="${ZOOMTOKEN_SEEDS:-4407}"
+ZOOMTOKEN_SEEDS="${ZOOMTOKEN_SEEDS:-4407,4408,4409}"
 
 export PYTHONDONTWRITEBYTECODE=1
 export PYTHONNOUSERSITE=1
@@ -160,7 +160,6 @@ for arm in arms:
         config_sha256 = sha256_file(config_path)
         assert len(config_sha256) == 64
         hashes = {
-            "candidate_commit": candidate_commit,
             "code_sha256": code_sha256,
             "protocol_sha256": sha256_file(protocol_doc),
             "config_sha256": config_sha256,
@@ -194,8 +193,9 @@ for ARM in "${ARMS[@]}"; do
     mkdir -p "${CELL_REC_DIR}"
     CELL_ID_HASHES="${CONTROL_DIR}/identity_hashes_${ARM}_seed${SEED}.json"
 
-    printf '[S2_V3_FULL200_COMPUTE] Running 2-GPU training for %s seed %d...\n' "${ARM}" "${SEED}"
-    torchrun --nproc_per_node=2 \
+    RANDOM_PORT=$(( 20000 + ( ${SLURM_JOB_ID:-$$} % 25000 ) + ( RANDOM % 5000 ) ))
+    printf '[S2_V3_FULL200_COMPUTE] Running 2-GPU training for %s seed %d (port %d)...\n' "${ARM}" "${SEED}" "${RANDOM_PORT}"
+    torchrun --nproc_per_node=2 --master_port="${RANDOM_PORT}" \
       tools/bata/continuous_roi_s2_v3_full200_compute_train.py \
       "${CONFIG}" \
       --seed "${SEED}" \

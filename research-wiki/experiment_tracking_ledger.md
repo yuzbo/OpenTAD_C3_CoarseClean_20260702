@@ -1,6 +1,7 @@
-﻿# ZoomToken CVPR 2027 全量实验跟踪账本 (Experiment Tracking Ledger)
+# ZoomToken CVPR 2027 全量实验跟踪账本 (Experiment Tracking Ledger)
 
-> **最后更新时间**: 2026-09-01 16:08 (UTC+8)  
+> **当前裁决状态**: `REVISE` (全量数据与准确率训练继续保留；所有 efficiency / Pareto 主张标记为 `UNVERIFIED`，待算子级对账核验)  
+> **最后更新时间**: 2026-09-01 16:32 (UTC+8)  
 > **远程集群环境**: 国家超级计算中卫节点 (BSCC-N16R4), 节点 GPU: NVIDIA GeForce RTX 4090 (24GB)  
 > **统一数据规模**: THUMOS14 完整 200 训练视频 (无截断, 60 Epochs, 100 Updates/Epoch, 6,000 Updates/Cell) + 211 验证视频 (792 顺序滑动窗口)  
 > **代码分支**: [`codex/zoomtoken-s2-v3-full200-compute-rpl1-v001`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/zoomtoken-s2-v3-full200-compute-rpl1-v001)  
@@ -10,11 +11,35 @@
 
 ## 一、 实验矩阵总览与实时状态
 
-| 序号 | 实验阶段 / 名称 | 协议 ID | 实验臂 (Arms) 与种子 (Seeds) | 核心机制与理论算力比 $\rho_C$ | Slurm Job ID | 当前状态 | 产出目录与日志 |
+```mermaid
+graph TD
+    subgraph SharedAnchor["全矩阵共享基线 (Shared Anchor Baselines)"]
+        D160["D160 (160x160 全图基线, Seeds 4407/4408/4409)"]
+        G96["G96 (96x96 下采样基线, Seeds 4407/4408/4409)"]
+    end
+
+    subgraph Phase1["Candidate 1: S2-v3 物理多视图基线 (Job 1263644)"]
+        U128A0["U128-A0 (全局96 + 局部中心128 固定无参融合)"]
+    end
+
+    subgraph Phase2["Candidate 2: D2S-TAD 动态变焦 (Job 1263645)"]
+        D2S["D2S-U128-B128: Δ(t) 动态捕获突发 Tubelets"]
+    end
+
+    subgraph Phase3["Candidate 3: PA-TAD 不对称金字塔 (HOLD / 暂缓起跑)"]
+        PATAD["PATAD-U128-B128: L0/L1 高清注入 + L2-L5 全局解耦"]
+    end
+
+    SharedAnchor -.-> Phase1
+    SharedAnchor -.-> Phase2
+    SharedAnchor -.-> Phase3
+```
+
+| 序号 | 实验阶段 / 名称 | 协议 ID | 实验臂 (Arms) 与种子 (Seeds) | 核心机制与算力状态 | Slurm Job ID | 当前状态 | 产出目录与日志 |
 | :---: | :--- | :--- | :--- | :--- | :---: | :---: | :--- |
-| **1** | **Phase 1: S2-v3 物理多视图基线矩阵** | `ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FULL200-COMPUTE-PARETO-3X3-v001` | • `D160` (4407, 4408, 4409)<br>• `G96` (4407, 4408, 4409)<br>• `U128-A0` (4407, 4408, 4409)<br>*(共 9 个 Cells)* | 全局 96 + 局部中心 128 原生源裁剪；单 VideoMAE 共享；零参数固定均值融合。<br>$\rho_C \le 0.90$ (削减 ~13%) | **`1263549`** | 🟢 **RUNNING**<br>(Node `g0052`) | `/data/run01/sczc063/yuzibo/projects/continuous_roi_s2_v3_full200_compute`<br>`slurm_1263549.log` |
-| **2** | **Phase 2: D2S-TAD 动态双速变焦矩阵** | `ZOOMTOKEN-D2S-TAD-FULL200-COMPUTE-PARETO-3X3-v001` | • `D160` (4407, 4408, 4409)<br>• `G96` (4407, 4408, 4409)<br>• `D2S-U128-B128` (4407, 4408, 4409)<br>*(共 9 个 Cells)* | 一阶时序语义变化率 $\Delta(t) = 1 - \cos(\cdot)$ 动态触发；仅激活 Top-16/48 Tubelet 高清流；无参掩码注入。<br>$\rho_C \le 0.573$ (削减 ~42.7%) | **`1263550`** | 🟢 **RUNNING**<br>(Node `g0052`) | `/data/run01/sczc063/yuzibo/projects/d2s_tad_full200_compute`<br>`slurm_1263550.log` |
-| **3** | **Phase 3: PA-TAD 不对称金字塔分发矩阵** | `ZOOMTOKEN-PATAD-FULL200-COMPUTE-PARETO-3X3-v001` | • `D160` (4407, 4408, 4409)<br>• `G96` (4407, 4408, 4409)<br>• `PATAD-U128-B128` (4407, 4408, 4409)<br>*(共 9 个 Cells)* | 低层金字塔 $L_0, L_1$ 注入高密局部突发特征；高层 $L_2 \sim L_5$ 直接由全局 96 特征下采样。<br>$\rho_C \le 0.480$ (削减 ~52.0%) | **`1263586`** | 🟡 **QUEUED**<br>(Slurm Priority) | `/data/run01/sczc063/yuzibo/projects/patad_full200_compute`<br>`slurm_1263586.log` |
+| **1** | **Phase 1: S2-v3 物理多视图基线矩阵** | `ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FULL200-COMPUTE-PARETO-3X3-v001` | • `D160` (4407, 4408, 4409)<br>• `G96` (4407, 4408, 4409)<br>• `U128-A0` (4407, 4408, 4409)<br>*(共 9 个 Cells)* | 全局 96 + 局部中心 128 原生源裁剪；单 VideoMAE 共享；零参数固定均值融合。<br>🟢 **已实装边训边测 (每5轮评估)** | **`1264254`** | 🟢 **RUNNING** | `/data/run01/sczc063/yuzibo/projects/continuous_roi_s2_v3_full200_compute`<br>`slurm_1264254.log` |
+| **2** | **Phase 2: D2S-TAD 动态双速变焦矩阵** | `ZOOMTOKEN-D2S-TAD-FULL200-COMPUTE-PARETO-3X3-v001` | • `D160` (4407, 4408, 4409)<br>• `G96` (4407, 4408, 4409)<br>• `D2S-U128-B128` (4407, 4408, 4409)<br>*(共 9 个 Cells)* | 一阶时序语义变化率 $\Delta(t)$ 动态触发（仅由全局 Scout 特征计算，严格前因果）；无参掩码注入。<br>🟢 **已实装边训边测 (每5轮评估)** | **`1264255`** | 🟢 **RUNNING** | `/data/run01/sczc063/yuzibo/projects/d2s_tad_full200_compute`<br>`slurm_1264255.log` |
+| **3** | **Phase 3: PA-TAD 不对称金字塔分发矩阵** | `ZOOMTOKEN-PATAD-FULL200-COMPUTE-PARETO-3X3-v001` | • `D160` (4407, 4408, 4409)<br>• `G96` (4407, 4408, 4409)<br>• `PATAD-U128-B128` (4407, 4408, 4409)<br>*(共 9 个 Cells)* | 低层金字塔 $L_0, L_1$ 注入高密局部突发特征；高层 $L_2 \sim L_5$ 直接由全局 96 特征下采样。<br>`ρ_C`: **UNVERIFIED** (暂缓起跑) | - | ⏸️ **HOLD**<br>(待 Phase 1/2 审查后放行) | `/data/run01/sczc063/yuzibo/projects/patad_full200_compute` |
 
 ---
 

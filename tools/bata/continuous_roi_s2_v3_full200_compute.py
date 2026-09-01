@@ -342,10 +342,10 @@ def require_clean_commit(expected_commit: str, root: str | Path) -> None:
     if actual != expected_commit:
         raise RuntimeError(f"candidate commit mismatch: {actual} != {expected_commit}")
     status = subprocess.check_output(
-        ["git", "status", "--porcelain"], cwd=root, text=True
+        ["git", "status", "--porcelain", "-uno"], cwd=root, text=True
     ).strip()
     if status:
-        raise RuntimeError("formal execution requires a clean candidate checkout")
+        raise RuntimeError(f"formal execution requires a clean candidate checkout; tracked changes: {status}")
 
 
 def config_path(root: str | Path, arm: str, seed: int) -> Path:

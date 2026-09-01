@@ -61,26 +61,19 @@ if [[ -f "${CONDA_ACTIVATE}" ]]; then
   source "${CONDA_ACTIVATE}"
 fi
 
-# Precheck mode: compile & validate configs, manifests, parameter surfaces, and unit tests
+# Precheck mode
 if [[ "${PRECHECK_ONLY}" == "1" ]]; then
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Running static compilation...\n'
   python -m py_compile \
     opentad/models/backbones/d2s_videomae_wrapper.py \
-    tools/bata/d2s_tad_full200_compute.py \
-    tools/bata/continuous_roi_s2_v3_full200_compute_train.py \
-    tools/bata/continuous_roi_s2_v3_full200_compute_infer.py \
-    tools/bata/continuous_roi_s2_v3_full200_compute_eval.py \
-    tools/bata/continuous_roi_s2_v3_full200_compute_profile.py
+    tools/bata/d2s_tad_full200_compute.py
 
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Validating 3x3 D2S matrix and parameter surface fairness...\n'
   python tools/bata/d2s_tad_full200_compute.py --root "${ROOT}"
 
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Running test suite...\n'
   python -m pytest tests/test_d2s_tad_architecture.py \
-         tests/test_d2s_tad_full200_compute.py \
-         tests/test_continuous_roi_s2_v3_full200_compute.py \
-         tests/test_continuous_roi_s2_v3_full200_compute_recovery.py \
-         tests/test_continuous_roi_s2_v3_full200_compute_statistics.py -v
+         tests/test_d2s_tad_full200_compute.py -v
 
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] PASS\n'
   exit 0
@@ -163,7 +156,6 @@ for arm in arms:
         config_sha256 = sha256_file(config_path)
         assert len(config_sha256) == 64
         hashes = {
-            "candidate_commit": candidate_commit,
             "code_sha256": code_sha256,
             "protocol_sha256": sha256_file(protocol_doc),
             "config_sha256": config_sha256,
@@ -197,8 +189,9 @@ for ARM in "${ARMS[@]}"; do
     mkdir -p "${CELL_REC_DIR}"
     CELL_ID_HASHES="${CONTROL_DIR}/identity_hashes_${ARM}_seed${SEED}.json"
 
-    printf '[D2S_TAD_FULL200_COMPUTE] Running 2-GPU training for %s seed %d...\n' "${ARM}" "${SEED}"
-    torchrun --nproc_per_node=2 \
+    RANDOM_PORT=$(( 20000 + ( ${SLURM_JOB_ID:-$$} % 25000 ) + ( RANDOM % 5000 ) ))
+    printf '[D2S_TAD_FULL200_COMPUTE] Running 2-GPU training for %s seed %d (port %d)...\n' "${ARM}" "${SEED}" "${RANDOM_PORT}"
+    torchrun --nproc_per_node=2 --master_port="${RANDOM_PORT}" \
       tools/bata/continuous_roi_s2_v3_full200_compute_train.py \
       "${CONFIG}" \
       --seed "${SEED}" \

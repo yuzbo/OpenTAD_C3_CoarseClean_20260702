@@ -142,16 +142,22 @@ class NativeCropSourceViews:
         output_key: str = "native_crop_inputs",
         allow_local_padding: bool = False,
         require_constant_geometry: bool = True,
+        required_source_height: int = 180,
+        required_source_width: int = 320,
     ):
         if min(global_size, local_size) <= 0:
             raise ValueError("global_size and local_size must be positive")
         if global_size % 16 or local_size % 16:
             raise ValueError("Native-Crop view sizes must be divisible by patch size 16")
+        if min(required_source_height, required_source_width) <= 0:
+            raise ValueError("required source geometry must be positive")
         self.global_size = int(global_size)
         self.local_size = int(local_size)
         self.output_key = str(output_key)
         self.allow_local_padding = bool(allow_local_padding)
         self.require_constant_geometry = bool(require_constant_geometry)
+        self.required_source_height = int(required_source_height)
+        self.required_source_width = int(required_source_width)
 
     def __call__(self, results):
         images = results.get("imgs")
@@ -187,6 +193,15 @@ class NativeCropSourceViews:
             raise ValueError(
                 "one decoded video window changed source geometry across frames: "
                 f"{sorted(unique_geometries)}"
+            )
+        expected_geometry = (
+            self.required_source_height,
+            self.required_source_width,
+        )
+        if unique_geometries != {expected_geometry}:
+            raise ValueError(
+                "NativeCropSourceViews is frozen to source geometry "
+                f"{expected_geometry}; got {sorted(unique_geometries)}"
             )
         if len({tuple(item["source_box_xyxy"]) for item in local_records}) != 1:
             raise ValueError("fixed center crop unexpectedly changed within one video window")

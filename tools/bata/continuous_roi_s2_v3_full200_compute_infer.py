@@ -310,6 +310,13 @@ def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
         **cfg.solver.test,
     )
     model = build_detector(cfg.model).cuda().eval()
+    backbone_module = getattr(model, "backbone", None)
+    if hasattr(backbone_module, "fusion"):
+        fusion_params = sum(p.numel() for p in backbone_module.fusion.parameters())
+        if fusion_params != 0:
+            raise RuntimeError(f"Inference audit failure: fusion has {fusion_params} parameters, expected 0")
+        if getattr(backbone_module, "fusion_mode", None) != "fixed_mean":
+            raise RuntimeError(f"Inference audit failure: fusion_mode is {backbone_module.fusion_mode}, expected fixed_mean")
     _load_ema_into_plain_model(
         model,
         cell["checkpoint_path"],

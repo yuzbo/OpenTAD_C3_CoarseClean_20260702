@@ -1647,3 +1647,39 @@ artifact-retention/protocol conclusion；没有 Continuous-RoI、crop sufficienc
 完整训练身份。所有九单元 strict-finalize 后才允许冻结 129-window reference；只有 `S_CR=true && H=true` 才允许一次
 matched full-stack cost，继续条件为 `S_CR && H && F`。正式 campaign `1`、scheduler submissions 最多 `15`、
 replacement `0`、second campaign `false`。任一完整终态或客观 blocker 必须返回 fresh Pro。
+
+## 135. 人类完整数据约束暂停旧 S2-v3 协议，返回 fresh Pro 重冻（2026-09-01）
+
+用户明确禁止部分数据集的正式训练、验证与测试。所有 formal baseline/candidate 必须使用完整官方训练 population 与完整
+训练计划、同一个完整官方 validation/evaluation population，并在预注册的一次性无泄漏协议下覆盖同一个完整 official
+test population。旧 S2-v3 虽要求每个 cell 完成 60 epoch，但其 `fit160/gate40`、129-window development reference 与
+official-test closed 语义不再满足新的正式论文证据要求。
+
+决定：旧任务转为 `HELD_FOR_FULL_DATA_PROTOCOL_REVISION`，不得按旧协议提交。该暂停发生在 candidate commit、formal
+job、训练、验证、测试、metric 或 cost 之前，所以没有模型正负结果需要解释，也不构成对 Continuous-RoI/S2-v3 的科学
+否定。Codex 只准备版本化 Project Sources 与一次 fresh exact-Project Pro request；Pro 必须独立冻结完整数据身份、无泄漏
+selection/test-opening、模型前向与 I/O-dominated full-stack 的分层成本口径、硬门/目标区间、唯一任务与北京时间期限。
+用户提供的 Amdahl/指标配比分析是外部建议，不是已接受门槛。
+
+## 136. 人类把主目标降为单资源轴二维帕累托（2026-09-01）
+
+在完整数据 Pro 材料尚未上传前，用户进一步拒绝“性能、延迟、显存/计算量”三目标联合硬门。新的不可漂移边界是：
+fresh Pro 只能选择 `检测性能↔计算量` 或 `检测性能↔峰值显存` 之一作为唯一主论文问题；latency 仅作系统披露与
+瓶颈诊断，不能一票否决模型，energy 默认辅助。Codex 不预选两个资源轴之一，也不采纳外部建议中的任何数值门槛。
+
+该变化发生在浏览器 mutation 前，故 v020/v015 Sources lease 以 attempt-0、零 mutation 退回；旧 request-v001 未提交、
+未创建对话。后继 v021/v016 与 request-v002 必须合并完整数据约束和单资源轴约束，再由 fresh Pro 独立冻结一项任务。
+
+## 137. fresh Pro 选择检测—实际执行计算量单轴并重冻完整数据 S2-v3-A0（2026-09-01）
+
+exact ZoomToken Project conversation `6a9641aa-a8f8-83ea-a5e7-b64da4daffc2` 以 browser-picker verified
+`Pro`、一个 attachment-only 请求、一次科研提交和零 follow-up 完整返回。裁决为 `REVISE / KEEP`：不批准旧
+`fit160/gate40`、129-window、4,800-update WIP 原样执行，但不切换模型家族。
+
+唯一主问题冻结为完整 population 上的 detection performance versus full-model executed inference computation。
+峰值显存不建立第二主轴，latency、throughput、memory 与 energy 只披露且无准入阈值。唯一任务是
+`ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FULL200-COMPUTE-PARETO-3X3-v001`：D160/G96/U128-A0 ×
+seeds 4407/4408/4409，每 cell 覆盖全部 200 training identities、60 epochs、6,000 successful updates；封存
+9/9 final EMA 与无标签 predictions 后，唯一 evaluator 一次性读取完整 211-video/792-window population。唯一资源门为
+aggregate full-operator `C_exec(U128-A0)/C_exec(D160) <= 0.90`。该裁决只授权 fixed-center A0 falsifier，
+不证明 learned/adaptive Continuous-RoI；任一终态或 objective blocker 后必须停止并返回 fresh Pro。

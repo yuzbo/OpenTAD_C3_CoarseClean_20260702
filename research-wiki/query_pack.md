@@ -1618,6 +1618,41 @@ max_chars: 8000
   stack cost job is conditional on valid `S_CR=true && H=true`; continuation requires
   `S_CR && H && F`. Official test, old-artifact reuse, new model/loss/head, sweeps,
   replacement, rescue, second campaign and partial-result interpretation are forbidden.
+- Human protocol override on 2026-09-01: no formal model comparison may use a
+  partial training or evaluation population. Every baseline and candidate must use
+  the complete official training population and schedule, the same complete official
+  validation/evaluation population, and a separately preregistered one-shot complete
+  official-test opening without validation/test leakage. This materially conflicts
+  with the previously frozen `fit160/gate40` and sanitized 129-window development
+  reference protocol. The old S2-v3 deployment is therefore
+  `HELD_FOR_FULL_DATA_PROTOCOL_REVISION`: it has a Builder plan and local uncommitted
+  WIP only, with no candidate commit, formal submission, training, validation, test,
+  metric, or cost result. Historical protocol decisions remain preserved as history,
+  but a fresh exact-Project Pro must independently redefine the data identities,
+  selection/test boundary, layered model-vs-system cost objectives, gates, one atomic
+  next task, and exact Beijing deadlines before implementation or formal execution resumes.
+- A second human objective constraint arrived before any Source upload or browser contact:
+  the paper must not hard-gate detection performance, latency, and compute/memory at
+  once. Fresh Pro must choose one primary two-dimensional Pareto question—detection
+  performance versus computation, or detection performance versus peak memory. Latency
+  is system disclosure and bottleneck diagnosis rather than a model-admission veto;
+  energy is auxiliary unless Pro explicitly substitutes it for the selected resource
+  axis. No threshold or preferred axis has been selected by Codex.
+- Fresh exact-Project conversation `6a9641aa-a8f8-83ea-a5e7-b64da4daffc2`
+  completed with browser-picker verified `Pro`, one attachment-only request, exactly one
+  scientific submission and zero follow-ups. Pro returned `REVISE / KEEP` and selected
+  detection performance versus full-model executed inference computation as the sole
+  resource plane. Latency, throughput, peak memory and energy are disclosure-only.
+- The sole current task is
+  `ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FULL200-COMPUTE-PARETO-3X3-v001` on base
+  `10aed28659a08fa703def278fc0f5f1422dcad89`, branch
+  `codex/zoomtoken-continuous-roi-s2-v3-full200-compute-v001`. It compares
+  D160/G96/U128-A0 at seeds 4407/4408/4409. Every cell covers all 200 training
+  identities for 60 epochs/6,000 successful updates. All 9 final EMA checkpoints and
+  label-free predictions must be sealed before one complete 211-video/792-window GT
+  opening. The sole resource gate is aggregate complete-operator
+  `C_exec(U128-A0)/C_exec(D160) <= 0.90`; incomplete compute coverage is an objective
+  blocker, not partial evidence.
 
 ## Pointers
 

@@ -1457,3 +1457,20 @@ updated: 2026-08-31
     4407/4408/4409 九个完整 60-epoch cell；九单元未全 strict-finalize 前不得 reference，`S_CR && H` 未有效
     成立前不得成本，`S_CR && H && F` 未全通过不得考虑 S3。不得 official test、teacher/distillation/new loss/head、
     model-source 修改、candidate/seed/crop/threshold sweep、partial interpretation、replacement、rescue 或第二 campaign。
+60. 用户于 2026-09-01 明确禁止部分训练和部分测试。旧 S2-v3 的 `fit160/gate40`、sanitized 129-window
+    development reference 与 official-test-closed 部署只能保留为历史协议，不能再作为新的 formal paper campaign。
+    不得把“九个 cell 各自完整 60 epoch”偷换成“完整数据协议”：baseline 与所有 candidate 还必须覆盖同一个完整官方
+    training population、完整训练计划、完整官方 validation/evaluation population，并在 fresh Pro 预注册的一次性无泄漏
+    test-opening 下覆盖同一个完整 official test population。当前 Builder plan 和本地未提交 WIP 没有产生模型结果；不得
+    push 为冻结 candidate、提交 Slurm、读取 partial 指标或自行发明 split/阈值。必须先由 fresh exact-Project Pro 独立重冻
+    数据身份、selection/test 边界、模型前向与 full-stack 的分层成本门、唯一任务和北京时间期限。
+61. 不得再次建立“准确率 AND 延迟 AND 显存/计算量”三目标联合硬门。用户要求 fresh Pro 只冻结一个主要二维问题：
+    `检测性能↔计算量` 或 `检测性能↔峰值显存`。Latency 只能作为系统披露和 bottleneck 诊断，不得一票否决模型；
+    energy 默认辅助。Codex 不得自行把外部建议中的 speedup、memory、mAP 数值写成门槛，也不得同时跑两条主路线；
+    必须由同一个 fresh Pro 在完整数据协议内选一个资源轴、一个任务和一套可证伪门。
+62. fresh exact-Project conversation `6a9641aa-a8f8-83ea-a5e7-b64da4daffc2` 已裁决
+    `REVISE / KEEP`，唯一资源轴为 full-model executed inference computation。不得把 latency、throughput、
+    peak memory 或 energy 恢复为显式/隐式准入门，也不得用 token ratio 或 attention-only FLOPs 冒充
+    `C_exec`。唯一任务是 D160/G96/U128-A0 × seeds 4407/4408/4409 的完整 200-video、60-epoch、
+    211-video/792-window one-shot 3×3 campaign；不得复活 `fit160/gate40`、129-window、4,800 updates、
+    Sobol/candidate search、partial metric、best checkpoint、第二 GT opening、额外 arm/seed/dataset 或旧 WIP 整体搬运。
