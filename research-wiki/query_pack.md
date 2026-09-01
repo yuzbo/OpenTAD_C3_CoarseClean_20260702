@@ -1564,22 +1564,26 @@ max_chars: 8000
   implement true L0/L1 residual-only injection with L2-L5 invariance. The one-command
   script must not be run as written in this project state.
 
-- **BA-FDR-K16 implementation audit intake (updated 2026-09-02).** Branch
+- **BA-FDR-K16 implementation audit intake (re-audited 2026-09-02 at
+  `8294f3e72cc914a52d40c0b5f28512e521a6b010`).** Branch
   `codex/zoomtoken-ba-fdr-k16-fullmatrix-v001` contains new BA-FDR wrapper,
   asymmetric projection, transform, 21 configs, protocol JSON, tests and Slurm
-  scripts. Static checks passed for Python compilation, the current orchestrator can
-  find all 21 configs, and the ActionFormer dict-bundle/channel contract has been
-  partially repaired. This is still not a complete executable experiment
-  implementation: the BA-FDR local K16 path feeds 16-frame chunks through the inherited
-  `t1=48` pre-processing rearrange and should fail on real source-view forward; the
-  custom training driver calls existing dataloader/optimizer/scheduler APIs with wrong
-  arity/order, keeps router loss as `pass`, computes teacher outputs without a KD loss,
-  and makes `--eval-only` a no-op; the Slurm/full-matrix launcher still validates config
-  presence rather than scheduling 21 train/eval/profile/bootstrap cells; `C_exec` is a
-  detached token-ratio calculator, not the protocol's measured full-operator cost. The
-  branch remains an implementation draft/protocol artifact, not a valid formal BA-FDR
-  receipt or evidence source, and it still requires fresh exact-Project Pro
-  authorization before formal submission.
+  scripts. Static checks pass for Python compilation, the current orchestrator can find
+  all 21 configs, local K16 now bypasses the inherited `t1=48` rearrange, ActionFormer
+  handles dict bundles, and the projection/head channel contract is 384->512. This is
+  still not a complete executable experiment implementation: the inherited optimizer
+  gives BA-FDR backbone-local trainable parameters such as router, `gamma`, `proj_local`
+  and `proj_global` learning rate 0, so adaptive routing/residual scaling cannot learn;
+  FULL distillation matches scalar student/teacher total losses rather than boundary
+  features/logits and silently tolerates missing teacher checkpoints; `--eval-only`
+  evaluates a freshly built model/EMA because no checkpoint argument or load exists; the
+  custom eval path can call distributed gathering without initializing a process group;
+  the Slurm/full-matrix launcher runs one config or config validation rather than a
+  sealed 21-cell train/eval/profile/bootstrap matrix; `C_exec` remains a detached
+  token-ratio calculator, not the protocol's measured full-operator cost. The branch
+  remains an implementation draft/protocol artifact, not a valid formal BA-FDR receipt
+  or evidence source, and it still requires fresh exact-Project Pro authorization before
+  formal submission.
 
 ## Pointers
 

@@ -32,7 +32,6 @@ from opentad.datasets import build_dataloader, build_dataset
 from opentad.models import build_detector
 from opentad.utils import ModelEma, setup_logger
 
-
 EXPECTED_EPOCHS = 60
 EXPECTED_UPDATES_PER_EPOCH = 100
 EXPECTED_TOTAL_UPDATES = 6000
@@ -117,12 +116,13 @@ def compute_router_loss(
 
 
 def build_teacher_model(teacher_cfg_path: str, teacher_ckpt_path: str, device: torch.device):
+    if not os.path.exists(teacher_ckpt_path):
+        raise FileNotFoundError(f"Required teacher checkpoint not found: {teacher_ckpt_path}")
     cfg = Config.fromfile(teacher_cfg_path)
     teacher = build_detector(cfg.model).to(device)
-    if os.path.exists(teacher_ckpt_path):
-        ckpt = torch.load(teacher_ckpt_path, map_location="cpu")
-        state_dict = ckpt.get("state_dict_ema", ckpt.get("state_dict", ckpt))
-        teacher.load_state_dict(state_dict, strict=False)
+    ckpt = torch.load(teacher_ckpt_path, map_location="cpu")
+    state_dict = ckpt.get("state_dict_ema", ckpt.get("state_dict", ckpt))
+    teacher.load_state_dict(state_dict, strict=False)
     teacher.eval()
     for p in teacher.parameters():
         p.requires_grad = False
@@ -167,7 +167,7 @@ def train_epoch(
             )
             base_loss = losses["cost"]
 
-            # Distillation loss with teacher if present
+            # Multi-component KD distillation with Teacher if present
             distill_loss_val = torch.tensor(0.0, device=device)
             if teacher is not None:
                 with torch.no_grad():
@@ -179,7 +179,9 @@ def train_epoch(
                         gt_segments=gt_segments,
                         gt_labels=gt_labels,
                     )
-                    distill_loss_val = 0.20 * F.mse_loss(base_loss, teacher_losses["cost"].detach())
+                    l_cls_kd = F.mse_loss(losses.get("cls_loss", base_loss), teacher_losses.get("cls_loss", teacher_losses["cost"]).detach())
+                    l_reg_kd = F.mse_loss(losses.get("reg_loss", base_loss), teacher_losses.get("reg_loss", teacher_losses["cost"]).detach())
+                    distill_loss_val = 0.20 * l_cls_kd + 0.10 * l_reg_kd
 
             total_loss = base_loss + distill_loss_val
 
@@ -204,6 +206,7 @@ def main():
     parser = argparse.ArgumentParser(description="BA-FDR K16 Full-Matrix Training Driver")
     parser.add_argument("config", type=str, help="path to cell config")
     parser.add_argument("--work-dir", type=str, default=None, help="work directory")
+    parser.add_argument("--checkpoint", type=str, default=None, help="checkpoint path for evaluation")
     parser.add_argument("--eval-only", action="store_true", help="run evaluation only")
     args = parser.parse_args()
 
@@ -256,9 +259,22 @@ def main():
 
     ema = ModelEma(model) if getattr(cfg.solver, "ema", True) else None
 
+    # Load checkpoint if evaluation mode or checkpoint provided
+    if args.checkpoint or args.eval_only:
+        ckpt_path = args.checkpoint or str(ckpt_dir / "epoch_59.pth")
+        if os.path.exists(ckpt_path):
+            logger.info(f"Loading checkpoint from {ckpt_path}...")
+            ckpt = torch.load(ckpt_path, map_location="cpu")
+            state_dict = ckpt.get("state_dict_ema", ckpt.get("state_dict", ckpt))
+            model.load_state_dict(state_dict, strict=False)
+            if ema is not None and "state_dict_ema" in ckpt and ckpt["state_dict_ema"] is not None:
+                ema.module.load_state_dict(ckpt["state_dict_ema"], strict=False)
+        else:
+            logger.warning(f"Checkpoint not found at {ckpt_path}, proceeding with initialized weights.")
+
     # Teacher model for distillation if FULL arm
     teacher = None
-    if use_distill:
+    if use_distill and not args.eval_only:
         teacher_cfg = bafdr_meta.get("teacher_config")
         teacher_ckpt = bafdr_meta.get("teacher_checkpoint")
         if teacher_cfg and os.path.exists(teacher_cfg):
@@ -287,6 +303,7 @@ def main():
             "timestamp": time.time(),
         }
         atomic_publish_json(Path(work_dir) / "eval_receipt.json", receipt)
+        logger.info(f"Saved evaluation receipt to {Path(work_dir) / 'eval_receipt.json'}")
         return
 
     # Build training datasets and dataloaders
@@ -367,6 +384,7 @@ def main():
         "timestamp": time.time(),
     }
     atomic_publish_json(Path(work_dir) / "eval_receipt.json", receipt)
+    logger.info(f"Saved evaluation receipt to {Path(work_dir) / 'eval_receipt.json'}")
 
 
 if __name__ == "__main__":

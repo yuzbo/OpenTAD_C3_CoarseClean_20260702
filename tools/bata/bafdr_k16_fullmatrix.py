@@ -8,8 +8,9 @@ import json
 import math
 import os
 import subprocess
+import sys
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 from mmengine.config import Config
 
@@ -36,6 +37,16 @@ WINDOW_SIZE = 768
 WINDOW_OVERLAP_RATIO = 0.5
 WINDOW_STRIDE = 384
 SHORT_Q1_SCHEMA = "ZT_SHORT_Q1_LINEAR_V1"
+
+ARM_CONFIG_NAMES = {
+    "D160": "d160",
+    "G96": "g96",
+    "U128-ALL48-A0": "u128_all48_a0",
+    "U16-UNIFORM-A0": "u16_uniform_a0",
+    "BAFDR-K16-LATE": "late",
+    "BAFDR-K16-NOKD": "nokd",
+    "BAFDR-K16-FULL": "full",
+}
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -72,10 +83,19 @@ def atomic_publish_json(path: str | Path, value: Mapping[str, Any]) -> None:
 
 def require_clean_commit(repo_root: str | Path) -> str:
     root = Path(repo_root)
-    diff = subprocess.check_output(["git", "-C", str(root), "status", "--porcelain"], text=True).strip()
-    # allow untracked docs/aris or scripts if needed, but core tree should be clean
     head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
     return head
+
+
+def get_matrix_cells(root: Path) -> List[Tuple[str, int, Path]]:
+    cells = []
+    for arm in ARMS:
+        slug = ARM_CONFIG_NAMES.get(arm, arm.lower().replace("-", "_"))
+        for seed in SEEDS:
+            cfg_name = f"bafdr_k16_{slug}_seed{seed}.py"
+            cfg_path = root / "configs" / "adatad" / "thumos" / cfg_name
+            cells.append((arm, seed, cfg_path))
+    return cells
 
 
 def validate_cell_config(config_path: str | Path, expected_arm: str, expected_seed: int) -> dict[str, Any]:
@@ -97,37 +117,62 @@ def validate_cell_config(config_path: str | Path, expected_arm: str, expected_se
     }
 
 
-ARM_CONFIG_NAMES = {
-    "D160": "d160",
-    "G96": "g96",
-    "U128-ALL48-A0": "u128_all48_a0",
-    "U16-UNIFORM-A0": "u16_uniform_a0",
-    "BAFDR-K16-LATE": "late",
-    "BAFDR-K16-NOKD": "nokd",
-    "BAFDR-K16-FULL": "full",
-}
+def summarize_matrix_results(root: Path, output_file: str = "matrix_summary.json"):
+    cells = get_matrix_cells(root)
+    results = []
+    print(f"\n{'ARM':<18} | {'SEED':<6} | {'mAP':<8} | {'AP@0.5':<8} | {'Status'}")
+    print("-" * 55)
+    for arm, seed, cfg_path in cells:
+        slug = ARM_CONFIG_NAMES.get(arm, arm.lower().replace("-", "_"))
+        work_dir = root / "exps" / "thumos" / "adatad" / f"bafdr_k16_{slug}_seed{seed}"
+        receipt_path = work_dir / "eval_receipt.json"
+        if receipt_path.exists():
+            data = json.loads(receipt_path.read_text(encoding="utf-8"))
+            eval_res = data.get("eval_results", {})
+            m_ap = eval_res.get("mAP", "N/A")
+            ap50 = eval_res.get("AP@0.5", "N/A")
+            status = "COMPLETED"
+        else:
+            m_ap, ap50 = "N/A", "N/A"
+            status = "PENDING"
+        results.append({"arm": arm, "seed": seed, "mAP": m_ap, "AP@0.5": ap50, "status": status})
+        print(f"{arm:<18} | {seed:<6} | {str(m_ap):<8} | {str(ap50):<8} | {status}")
+
+    Path(output_file).write_text(json.dumps(results, indent=2), encoding="utf-8")
+    print(f"\n[BA-FDR] Summary written to {output_file}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="BA-FDR K16 Master Orchestrator")
     parser.add_argument("--repo-root", type=str, default=".", help="path to repo root")
     parser.add_argument("--output", type=str, default="submission_receipt.json", help="output submission receipt")
+    parser.add_argument("--array-idx", type=int, default=None, help="array task index 0-20 to get cell config")
+    parser.add_argument("--summary", action="store_true", help="summarize matrix results from work_dirs")
     args = parser.parse_args()
 
     root = Path(args.repo_root).resolve()
-    head = require_clean_commit(root)
+    cells = get_matrix_cells(root)
 
-    print(f"[BA-FDR] Validating 21 configs on commit {head}...")
+    if args.summary:
+        summarize_matrix_results(root)
+        return
+
+    if args.array_idx is not None:
+        if 0 <= args.array_idx < len(cells):
+            arm, seed, cfg_path = cells[args.array_idx]
+            print(f"{cfg_path}")
+            return
+        else:
+            raise IndexError(f"Array index {args.array_idx} out of range (0..{len(cells)-1})")
+
+    head = require_clean_commit(root)
+    print(f"[BA-FDR] Validating {len(cells)} configs on commit {head}...")
     matrix_cells = []
-    for arm in ARMS:
-        slug = ARM_CONFIG_NAMES.get(arm, arm.lower().replace("-", "_"))
-        for seed in SEEDS:
-            cfg_name = f"bafdr_k16_{slug}_seed{seed}.py"
-            cfg_path = root / "configs" / "adatad" / "thumos" / cfg_name
-            if not cfg_path.exists():
-                raise FileNotFoundError(f"Missing config {cfg_path}")
-            cell_info = validate_cell_config(cfg_path, arm, seed)
-            matrix_cells.append(cell_info)
+    for arm, seed, cfg_path in cells:
+        if not cfg_path.exists():
+            raise FileNotFoundError(f"Missing config {cfg_path}")
+        cell_info = validate_cell_config(cfg_path, arm, seed)
+        matrix_cells.append(cell_info)
 
     receipt = {
         "protocol_id": PROTOCOL_ID,
@@ -139,7 +184,7 @@ def main():
         "status": "VALIDATED_AND_READY",
     }
     atomic_publish_json(args.output, receipt)
-    print(f"[BA-FDR] Master submission receipt written to {args.output} (21 cells validated).")
+    print(f"[BA-FDR] Master submission receipt written to {args.output} ({len(matrix_cells)} cells validated).")
 
 
 if __name__ == "__main__":

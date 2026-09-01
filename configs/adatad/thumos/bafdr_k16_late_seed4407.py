@@ -9,16 +9,16 @@ train_pipeline = [
     dict(type="mmaction.DecordDecode"),
     dict(type="BAFDRSourceViews", global_size=96, output_key="bafdr_inputs", required_source_height=180, required_source_width=320),
     dict(type="ConvertToTensor", keys=["gt_segments", "gt_labels"]),
-    dict(type="Collect", inputs="bafdr_inputs", keys=["masks", "gt_segments", "gt_labels"]),
+    dict(type="Collect", keys=["inputs", "masks"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries"], extra_keys=["gt_segments", "gt_labels"]),
 ]
 evaluation_pipeline = [
     dict(type="PrepareVideoInfo", format="mp4"),
     dict(type="mmaction.DecordInit", num_threads=4),
-    dict(type="LoadFrames", num_clips=1, method="sliding_window", scale_factor=1),
+    dict(type="LoadFrames", num_clips=1, method="sliding_window", window_size=768, window_overlap_ratio=0.5),
     dict(type="mmaction.DecordDecode"),
     dict(type="BAFDRSourceViews", global_size=96, output_key="bafdr_inputs", required_source_height=180, required_source_width=320),
-    dict(type="ConvertToTensor", keys=["imgs"]),
-    dict(type="Collect", inputs="bafdr_inputs", keys=["masks"]),
+    dict(type="ConvertToTensor", keys=["gt_segments", "gt_labels"]),
+    dict(type="Collect", keys=["inputs", "masks"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries"], extra_keys=["gt_segments", "gt_labels"]),
 ]
 
 dataset = dict(
@@ -53,6 +53,25 @@ model = dict(
         attn_cfg=dict(n_head=4, n_mha_win_size=-1),
         use_abs_pe=True,
         max_seq_len=2304,
+    ),
+)
+
+optimizer = dict(
+    type="AdamW",
+    lr=1e-4,
+    weight_decay=0.05,
+    paramwise=True,
+    backbone=dict(
+        lr=0,
+        weight_decay=0,
+        custom=[
+            dict(name="adapter", lr=2e-4, weight_decay=0.05),
+            dict(name="router", lr=1e-4, weight_decay=0.01),
+            dict(name="gamma", lr=1e-3, weight_decay=0.0),
+            dict(name="proj_local", lr=1e-4, weight_decay=0.01),
+            dict(name="proj_global", lr=1e-4, weight_decay=0.01),
+        ],
+        exclude=["backbone.model"],
     ),
 )
 

@@ -397,15 +397,16 @@ def eval_one_epoch(
 
 
 def gather_ddp_results(world_size, result_dict, post_cfg):
-    gather_dict_list = [None for _ in range(world_size)]
-    dist.all_gather_object(gather_dict_list, result_dict)
-    result_dict = {}
-    for i in range(world_size):  # update the result dict
-        for k, v in gather_dict_list[i].items():
-            if k in result_dict.keys():
-                result_dict[k].extend(v)
-            else:
-                result_dict[k] = v
+    if world_size > 1 and dist.is_available() and dist.is_initialized():
+        gather_dict_list = [None for _ in range(world_size)]
+        dist.all_gather_object(gather_dict_list, result_dict)
+        result_dict = {}
+        for i in range(world_size):  # update the result dict
+            for k, v in gather_dict_list[i].items():
+                if k in result_dict.keys():
+                    result_dict[k].extend(v)
+                else:
+                    result_dict[k] = v
 
     # do nms for sliding window, if needed
     if post_cfg.sliding_window == True and post_cfg.nms is not None:

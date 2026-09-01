@@ -5,8 +5,9 @@
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
-#SBATCH --output=/data/run01/sczc063/yuzibo/slurm_logs/%x_%j.out
-#SBATCH --error=/data/run01/sczc063/yuzibo/slurm_logs/%x_%j.err
+#SBATCH --array=0-20%2
+#SBATCH --output=/data/run01/sczc063/yuzibo/slurm_logs/%x_%A_%a.out
+#SBATCH --error=/data/run01/sczc063/yuzibo/slurm_logs/%x_%A_%a.err
 
 set -euo pipefail
 
@@ -23,6 +24,8 @@ fi
 
 source "${BASE}/conda_envs/opentad/bin/activate"
 
-CONFIG="${1:-configs/adatad/thumos/bafdr_k16_full_seed4407.py}"
-echo "[SLURM] Executing BA-FDR K16 cell: ${CONFIG} on job ${SLURM_JOB_ID:-interactive}"
+TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
+CONFIG=$(python tools/bata/bafdr_k16_fullmatrix.py --array-idx "${TASK_ID}")
+
+echo "[SLURM] Executing BA-FDR K16 Array Task ${TASK_ID}: ${CONFIG} on job ${SLURM_JOB_ID:-interactive}"
 bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh "${CONFIG}"

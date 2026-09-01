@@ -1433,10 +1433,13 @@ updated: 2026-09-01
     residual injection。若要推进 BA-FDR，必须先由 fresh exact-Project Pro 重新冻结 latest base、完整官方数据身份、
     selection/test boundary、是否允许 teacher/KD、新 21-cell 或更小准入设计，以及唯一 `C_exec` 门。
 56. `codex/zoomtoken-ba-fdr-k16-fullmatrix-v001` 上的 BA-FDR-K16 文件存在且可通过静态配置检查，但不得把它称为
-    已完成、可直接 Slurm 正式训练或已有实验 receipt。2026-09-02 复核时 ActionFormer dict-bundle 与 384->512
-    projection 合约已有部分修复；当前硬阻塞变为：BA-FDR local K16 分支把 16 帧 chunk 继续送进继承的 `t1=48`
-    pre-processing rearrange；custom train driver 调用 dataloader/optimizer/scheduler 的参数顺序/数量不符合现有 API；
-    router loss 仍是 `pass`，teacher 输出没有进入 KD loss，`--eval-only` 直接返回；full-matrix orchestrator/launcher
-    只验证 21 个 config 是否存在，不执行 21-cell train/eval/profile/bootstrap；`C_exec` 是独立 token-ratio 计算器而非
+    已完成、可直接 Slurm 正式训练或已有实验 receipt。2026-09-02 在 commit
+    `8294f3e72cc914a52d40c0b5f28512e521a6b010` 复核时，BA-FDR local K16 已绕过继承的
+    `t1=48` rearrange，ActionFormer dict-bundle 与 384->512 projection 合约已有部分修复。当前硬阻塞是：
+    继承 optimizer 给 router、`gamma`、`proj_local`、`proj_global` 等 BA-FDR backbone-local 新参数 lr=0，
+    adaptive routing/residual scaling 不能学习；FULL distillation 只是 student/teacher scalar total-loss
+    MSE 且容忍 teacher checkpoint 缺失；`--eval-only` 无 checkpoint 参数/加载，会评测新建模型/EMA；自定义 eval
+    可能在未初始化 process group 时调用 distributed gather；full-matrix orchestrator/launcher 只验证 21 个 config
+    或运行单个 config，不执行 sealed 21-cell train/eval/profile/bootstrap；`C_exec` 是独立 token-ratio 计算器而非
     协议定义的 measured full-operator cost。修复前不得提交为正式 BA-FDR 实验，不得用静态 receipt 或单测替代完整官方
     population 证据。
