@@ -268,5 +268,5 @@ model = dict(
         ),
     ),
     projection=dict(max_seq_len=selected_budget),
-    rpn_head=dict(max_seq_len=selected_budget),
 )
+
