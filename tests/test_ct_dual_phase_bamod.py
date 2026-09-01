@@ -74,6 +74,7 @@ def test_dual_phase_frame_selector_forward_5d_and_6d_short_video():
     assert out["inputs"].shape == (B, 1, 3, 384, H, W)
     assert out["masks"].shape == (B, 384)
     assert out["boundary_prior"].shape == (B, 384)
+    assert out["tubelet_delta_t"].shape == (B, 192)
     assert out["delta_t"].shape == (B, 384)
     assert out["temporal_positions"].shape == (B, 384)
 
@@ -82,7 +83,8 @@ def test_dual_phase_frame_selector_forward_5d_and_6d_short_video():
         pos = out["temporal_positions"][b]
         assert (pos >= 0).all(), f"Row {b} contains negative timestamps!"
         assert (pos[1:] > pos[:-1]).all(), f"Row {b} timestamps are not strictly monotonic!"
-        assert (out["delta_t"][b] >= 1.0).all(), f"Row {b} delta_t has values < 1.0!"
+        assert (out["tubelet_delta_t"][b] >= 1.0).all(), f"Row {b} tubelet_delta_t has values < 1.0!"
+        assert (out["delta_t"][b] > 0).all(), f"Row {b} delta_t has values <= 0!"
 
     assert metas[0]["original_window_size"] == T_raw
     assert metas[1]["original_window_size"] == T_raw

@@ -10,30 +10,35 @@ from ..builder import SELECTORS
 
 @SELECTORS.register_module()
 class SubmodularCoverageFrameSelector(nn.Module):
-    """Boundary-Sensitive Submodular Coverage Keyframe Selector (DUCA-Coverage).
+    """Boundary-Sensitive Coverage-Aware Frame Selector (DUCA-Coverage-v1).
 
-    Replaces rigid hard-split budget allocation with a monotone submodular coverage
-    optimization solver. Dynamically balances:
-      1. Motion Energy Quality: E(t) = 1/(C*H*W) sum |I_{t+1} - I_t|
-      2. Boundary Gradient: G(t) = |E(t+1) - E(t)| (detects action onset/offset transitions)
-      3. Saturated Temporal Coverage Gain: C(t) = 1 - exp(-min_{j in S} (t - t_j)^2 / (2*sigma^2))
-         (prevents temporal coverage holes while avoiding over-allocation to empty backgrounds)
+    This module replaces hard-split heuristic selection with a mathematically grounded
+    submodular coverage optimization framework.
 
-    Implemented via a pure GPU-vectorized incremental greedy algorithm (O(T) per step)
-    without CPU-GPU synchronization.
+    Core Formulation:
+      max_{S subset V, |S|=K} F(S) = sum_{t in S} Q(t) + beta * C(S)
+      where:
+        Q(t) = E(t) + alpha * |E(t+1) - E(t)|   (Quality: Motion Energy + Boundary Transition)
+        C(S) = sum_{t in V} (1 - exp(-min_{s in S} d(t, s)^2 / (2 * sigma^2)))  (Saturated Submodular Coverage)
+
+    Properties:
+      1. Saturated exponential decay kernel prevents redundant frame clustering near dense action peaks.
+      2. High boundary gradient alpha prioritizes sharp start/end transitions.
+      3. Fully vectorized incremental greedy selection on GPU: O(K * T) without Host-Device pipeline stalls.
+      4. Disentangles raw frame-pair intervals for CT-Tubelet speed normalization from synchronized detector coordinates.
 
     Args:
-        total_budget (int): Total number of keyframes K to select (e.g. 384).
-        alpha_boundary (float): Weight for action onset/offset boundary gradient.
-        beta_coverage (float): Weight for temporal submodular coverage gain.
-        kernel_sigma (float): Bandwidth parameter for saturated coverage kernel (in normalized [0, 1] units).
-        downsample_res (int): Spatial downsampling resolution for scout pass (default 16).
+        total_budget (int): Total target frames K to select (default: 384).
+        alpha_boundary (float): Weight for action transition boundary gradients (default: 1.5).
+        beta_coverage (float): Weight for temporal coverage gain (default: 0.8).
+        kernel_sigma (float): Bandwidth of temporal saturation Gaussian kernel (default: 0.05).
+        downsample_res (int): Spatial resolution for fast motion energy calculation (default: 16).
     """
 
     def __init__(
         self,
         total_budget: int = 384,
-        alpha_boundary: float = 1.2,
+        alpha_boundary: float = 1.5,
         beta_coverage: float = 0.8,
         kernel_sigma: float = 0.05,
         downsample_res: int = 16,
@@ -45,28 +50,13 @@ class SubmodularCoverageFrameSelector(nn.Module):
         self.kernel_sigma = float(kernel_sigma)
         self.downsample_res = int(downsample_res)
 
-        if self.total_budget <= 0:
-            raise ValueError(f"total_budget must be positive, got {total_budget}")
-        if self.kernel_sigma <= 0:
-            raise ValueError(f"kernel_sigma must be positive, got {kernel_sigma}")
-
-    def _compute_motion_energy(self, inputs: torch.Tensor, valid_len: int) -> torch.Tensor:
-        """Compute adjacent-frame pixel variation energy on low-res video tensor.
-
-        Args:
-            inputs: Tensor of shape [B, C, T, H, W] or [B, 1, C, T, H, W] or [B, num_seg, C, T, H, W].
-            valid_len: Number of unpadded frames.
-
-        Returns:
-            energy: Tensor of shape [B, T] with normalized frame-difference variation energy.
-        """
-        if inputs.dim() == 6:
-            # [B, num_segs, C, T, H, W] -> take first segment
-            x = inputs[:, 0]  # [B, C, T, H, W]
-        elif inputs.dim() == 5:
-            x = inputs  # [B, C, T, H, W]
-        else:
-            raise ValueError(f"Unsupported input dimension {inputs.dim()} for video frames")
+    def _compute_motion_energy(self, x: torch.Tensor, valid_len: int) -> torch.Tensor:
+        """Compute low-cost frame difference variation energy on downsampled spatial resolution."""
+        if x.dim() == 6:
+            # [B, S, C, T, H, W] -> take first segment S=0
+            x = x[:, 0]
+        # x is [B, C, T, H, W]
+        x = x.float()
 
         B, C, T, H, W = x.shape
         if H != self.downsample_res or W != self.downsample_res:
@@ -114,12 +104,11 @@ class SubmodularCoverageFrameSelector(nn.Module):
         t_coords = torch.linspace(0.0, 1.0, T, device=device).unsqueeze(0).expand(B, T)
 
         selected = torch.zeros((B, target_k), dtype=torch.long, device=device)
-        # Global minimum distance to the current selected set (initialized to max distance 1.0)
         cur_min_dist = torch.ones((B, T), device=device, dtype=torch.float32)
 
-        # Base quality with padding mask applied (-1e9 for invalid frames)
+        # Base quality with padding mask applied (-10000.0 for invalid frames)
         masked_quality = quality_score.clone()
-        masked_quality = masked_quality.masked_fill(~valid_masks, -1e9)
+        masked_quality = masked_quality.masked_fill(~valid_masks, -10000.0)
 
         sigma_sq_2 = 2.0 * (self.kernel_sigma**2)
 
@@ -131,7 +120,7 @@ class SubmodularCoverageFrameSelector(nn.Module):
                 coverage_gain = 1.0 - torch.exp(-(cur_min_dist**2) / sigma_sq_2)
                 obj_score = masked_quality + self.beta_coverage * coverage_gain
                 # Mask out already selected keyframes
-                obj_score.scatter_(1, selected[:, :k], -1e9)
+                obj_score.scatter_(1, selected[:, :k], -10000.0)
                 next_idx = torch.argmax(obj_score, dim=-1)  # [B]
 
             selected[:, k] = next_idx
@@ -140,6 +129,16 @@ class SubmodularCoverageFrameSelector(nn.Module):
             new_t = t_coords.gather(1, next_idx.unsqueeze(1))  # [B, 1]
             new_dist = torch.abs(t_coords - new_t)  # [B, T]
             cur_min_dist = torch.minimum(cur_min_dist, new_dist)
+
+        # Handle short videos where valid_count < target_k: avoid duplicate indices
+        for b in range(B):
+            v_cnt = int(valid_masks[b].sum().item())
+            if v_cnt < target_k:
+                unique_sel = torch.unique(selected[b, :k+1])
+                pad_len = target_k - len(unique_sel)
+                if pad_len > 0:
+                    pad_idx = torch.arange(v_cnt, v_cnt + pad_len, device=device, dtype=torch.long) % T
+                    selected[b] = torch.cat((unique_sel, pad_idx), dim=0)[:target_k]
 
         # Sort indices temporally to guarantee monotonic temporal ordering
         selected_sorted, _ = torch.sort(selected, dim=-1)
@@ -205,25 +204,31 @@ class SubmodularCoverageFrameSelector(nn.Module):
                 dim=0,
             )  # [B, C, target_k, H, W]
 
-        # 6. Physical time coordinates: Tubelet midpoints and 1D linear interpolation
+        # 6. Physical time coordinates & Tubelet midpoint synchronization
         # VideoMAE compresses target_k (384) frames with stride=2 into 192 tubelets, then interpolates back to 384.
-        # Compute 192 tubelet midpoints: tau_tubelet[j] = 0.5 * (t[2j] + t[2j+1])
-        t_even = selected_indices[:, 0::2].float()  # [B, target_k // 2]
-        t_odd = selected_indices[:, 1::2].float()   # [B, target_k // 2]
-        tubelet_midpoints = 0.5 * (t_even + t_odd)  # [B, target_k // 2]
+        tubelet_len = target_k // 2
+        t_even = selected_indices[:, 0::2].float()  # [B, tubelet_len]
+        t_odd = selected_indices[:, 1::2].float()   # [B, tubelet_len]
 
-        # Interpolate tubelet midpoints to match feature dimension (target_k = 384)
+        # Raw frame-pair physical time intervals inside each tubelet for CT-Tubelet speed normalization
+        tubelet_delta_t = (t_odd - t_even).clamp_min(1.0)  # [B, tubelet_len]
+        tubelet_midpoints = 0.5 * (t_even + t_odd)         # [B, tubelet_len]
+
+        # 1D linear interpolation matching VideoMAE feature Interpolate(size=target_k, align_corners=False)
         temporal_positions = F.interpolate(
             tubelet_midpoints.unsqueeze(1),
             size=target_k,
             mode="linear",
-            align_corners=True,
+            align_corners=False,
         ).squeeze(1)  # [B, target_k]
 
-        # 7. Sampling step delta_t for Continuous-Time Conv and CT-Tubelet speed normalization
+        # 7. Sampling step delta_t for detector feature grid CT-Conv1d
         dt_forward = torch.diff(temporal_positions, dim=-1, prepend=temporal_positions[:, :1])
         dt_backward = torch.diff(temporal_positions, dim=-1, append=temporal_positions[:, -1:])
-        delta_t = 0.5 * (dt_forward.abs() + dt_backward.abs()).clamp_min(1.0)  # [B, target_k]
+        detector_delta_t = 0.5 * (dt_forward.abs() + dt_backward.abs()).clamp_min(1e-4)  # [B, target_k]
+
+        # 8. Synchronized boundary prior for B-AMoD: gather quality score onto selected frame grid [B, target_k]
+        boundary_prior = torch.gather(quality_score, dim=1, index=selected_indices)
 
         selected_masks = torch.ones((B, target_k), device=device, dtype=torch.bool)
         for b in range(B):
@@ -232,7 +237,7 @@ class SubmodularCoverageFrameSelector(nn.Module):
                 valid_sel = (selected_indices[b] < valid_count).sum().item()
                 selected_masks[b, valid_sel:] = False
 
-        # 8. Inject Physical-Grid metadata into metas for zero-truncation GT matching & seconds conversion
+        # 9. Inject Physical-Grid metadata into metas for zero-truncation GT matching & seconds conversion
         if metas is not None:
             for b, meta in enumerate(metas):
                 if isinstance(meta, dict):
@@ -242,7 +247,9 @@ class SubmodularCoverageFrameSelector(nn.Module):
                     meta["irregular_selected_valid_len"] = float(T)
                     meta["irregular_dense_valid_len"] = float(T)
                     meta["irregular_native_axis"] = True
-                    meta["delta_t"] = delta_t[b].detach().cpu()
+                    meta["tubelet_delta_t"] = tubelet_delta_t[b].detach().cpu()
+                    meta["delta_t"] = detector_delta_t[b].detach().cpu()
+                    meta["boundary_prior"] = boundary_prior[b].detach().cpu()
                     meta["temporal_positions"] = temporal_positions[b].detach().cpu()
 
         return {
@@ -251,9 +258,10 @@ class SubmodularCoverageFrameSelector(nn.Module):
             "metas": metas,
             "gt_segments": gt_segments,
             "gt_labels": gt_labels,
-            "delta_t": delta_t,
+            "tubelet_delta_t": tubelet_delta_t,
+            "delta_t": detector_delta_t,
             "temporal_positions": temporal_positions,
-            "boundary_prior": quality_score,
+            "boundary_prior": boundary_prior,
             "selected_indices": selected_indices,
         }
 

@@ -110,9 +110,7 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
     def reset_parameters(self) -> None:
         nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         if self.bias is not None:
-            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
-            bound = 1.0 / math.sqrt(fan_in)
-            nn.init.uniform_(self.bias, -bound, bound)
+            nn.init.constant_(self.bias, 0.0)
         if self.offset_net is not None:
             nn.init.zeros_(self.offset_net[-2].weight)
             nn.init.zeros_(self.offset_net[-2].bias)

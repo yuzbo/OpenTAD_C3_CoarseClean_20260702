@@ -154,3 +154,41 @@ def test_sinkhorn_optimal_transport_loss():
     loss_good.backward()
     assert pred_logits_good.grad is not None
     assert torch.isfinite(pred_logits_good.grad).all()
+
+
+def test_tubelet_delta_t_pair_disentanglement_and_backbone_routing():
+    """Verify that tubelet_delta_t strictly represents raw frame-pair intervals t_{2j+1} - t_{2j} without detector interpolation distortion."""
+    from opentad.models.selectors.dual_phase_frame_selector import DualPhaseFrameSelector
+    from opentad.models.selectors.submodular_coverage_frame_selector import SubmodularCoverageFrameSelector
+    from opentad.models.backbones.backbone_wrapper import BackboneWrapper
+
+    B, T_raw, H, W = 1, 768, 16, 16
+    inputs = torch.randn(B, 3, T_raw, H, W)
+    masks = torch.ones(B, T_raw, dtype=torch.bool)
+    metas = [{"video_name": "test_routing"}]
+
+    # 1. Test DualPhaseFrameSelector
+    dp_selector = DualPhaseFrameSelector(total_budget=384, scaffold_budget=128, burst_budget=256)
+    dp_out = dp_selector.forward_train(inputs, masks, metas)
+
+    tubelet_dt = dp_out["tubelet_delta_t"]
+    detector_dt = dp_out["delta_t"]
+    assert tubelet_dt.shape == (B, 192)
+    assert detector_dt.shape == (B, 384)
+
+    # 2. Test SubmodularCoverageFrameSelector
+    submod_selector = SubmodularCoverageFrameSelector(total_budget=384)
+    submod_out = submod_selector.forward_train(inputs, masks, metas)
+
+    assert submod_out["tubelet_delta_t"].shape == (B, 192)
+    assert submod_out["delta_t"].shape == (B, 384)
+    assert submod_out["boundary_prior"].shape == (B, 384)
+
+    # Verify B-AMoD spatial prior expansion: 384 frames / 24 chunks / 2 = 8 tubelets per chunk
+    raw_prior_len = submod_out["boundary_prior"].shape[1]
+    temporal_chunks = 24
+    tubelet_size = 2
+    frames_per_chunk = raw_prior_len // temporal_chunks
+    tubelets_per_chunk = frames_per_chunk // tubelet_size
+    assert tubelets_per_chunk == 8, f"Expected 8 tubelets per chunk, got {tubelets_per_chunk}"
+

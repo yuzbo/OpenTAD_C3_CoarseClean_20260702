@@ -147,9 +147,15 @@ class BackboneWrapper(nn.Module):
                 temporal_chunks = max(1, batches // original_batches)
                 raw_dt_len = int(delta_t.shape[1])
                 tubelet_size = int(getattr(getattr(self.model, "backbone", self.model), "tubelet_size", 2))
-                frames_per_chunk = raw_dt_len // temporal_chunks
-                tubelets_per_chunk = max(1, frames_per_chunk // tubelet_size)
-                dt = delta_t.reshape(original_batches, temporal_chunks, tubelets_per_chunk, tubelet_size).mean(dim=-1)
+                # Check if delta_t is already tubelet-level (e.g. 192 for 24 chunks of 8 tubelets)
+                # or frame-level (e.g. 384 for 24 chunks of 16 frames)
+                if raw_dt_len % (temporal_chunks * tubelet_size) == 0 and raw_dt_len // temporal_chunks == (getattr(self.model, "backbone", self.model).num_frames if hasattr(getattr(self.model, "backbone", self.model), "num_frames") else 16):
+                    frames_per_chunk = raw_dt_len // temporal_chunks
+                    tubelets_per_chunk = max(1, frames_per_chunk // tubelet_size)
+                    dt = delta_t.reshape(original_batches, temporal_chunks, tubelets_per_chunk, tubelet_size).mean(dim=-1)
+                else:
+                    tubelets_per_chunk = max(1, raw_dt_len // temporal_chunks)
+                    dt = delta_t.reshape(original_batches, temporal_chunks, tubelets_per_chunk)
                 dt = dt.reshape(batches, tubelets_per_chunk)
                 if num_segs > 1:
                     dt = dt[:, None, :].expand(batches, num_segs, tubelets_per_chunk).reshape(batches * num_segs, tubelets_per_chunk)

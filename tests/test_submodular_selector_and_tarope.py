@@ -41,7 +41,9 @@ def test_submodular_coverage_frame_selector_exact_shape_and_monotonicity():
     assert out["inputs"].shape == (B, 1, C, target_k, H, W)
     assert out["masks"].shape == (B, target_k)
     assert out["temporal_positions"].shape == (B, target_k)
+    assert out["tubelet_delta_t"].shape == (B, target_k // 2)
     assert out["delta_t"].shape == (B, target_k)
+    assert out["boundary_prior"].shape == (B, target_k)
 
     # Check strict temporal monotonicity
     selected_idx = out["selected_indices"]
@@ -54,6 +56,7 @@ def test_submodular_coverage_frame_selector_exact_shape_and_monotonicity():
         meta = out["metas"][b]
         assert "irregular_selected_positions" in meta
         assert "selected_dense_indices" in meta
+        assert "tubelet_delta_t" in meta
         assert meta["irregular_native_axis"] is True
         assert meta["irregular_selected_valid_len"] == float(T_raw)
 

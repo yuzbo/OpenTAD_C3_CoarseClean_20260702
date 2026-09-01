@@ -176,7 +176,10 @@ class DualPhaseFrameSelector(nn.Module):
         pos_odd = raw_temporal_positions[:, 1::2]   # [B, tubelet_len]
         tubelet_midpoints = 0.5 * (pos_even + pos_odd)  # [B, tubelet_len]
 
-        # 1D linear interpolation matching VideoMAE post_processing_pipeline Interpolate(size=K)
+        # 1. Raw frame-pair physical time intervals inside each tubelet for CT-Tubelet speed normalization
+        tubelet_delta_t = (pos_odd - pos_even).clamp_min(1.0)  # [B, tubelet_len]
+
+        # 2. 1D linear interpolation matching VideoMAE post_processing_pipeline Interpolate(size=K, align_corners=False)
         synced_temporal_positions = F.interpolate(
             tubelet_midpoints.unsqueeze(1),
             size=self.total_budget,
@@ -190,11 +193,11 @@ class DualPhaseFrameSelector(nn.Module):
                 if synced_temporal_positions[b, k] <= synced_temporal_positions[b, k - 1]:
                     synced_temporal_positions[b, k] = synced_temporal_positions[b, k - 1] + 1e-4
 
-        # Compute physical delta_t per token
+        # 3. Compute physical delta_t per token on detector feature grid for CT-Conv1d
         diff = torch.zeros_like(synced_temporal_positions, dtype=torch.float32)
         diff[:, :-1] = synced_temporal_positions[:, 1:] - synced_temporal_positions[:, :-1]
         diff[:, -1] = diff[:, -2] if self.total_budget > 1 else 1.0
-        delta_t = diff.clamp_min(1.0)
+        detector_delta_t = diff.clamp_min(1e-4)
 
         # Boundary prior score for B-AMoD: burst mask indicates boundary clusters
         boundary_prior = selection.burst_mask.float()
@@ -209,7 +212,8 @@ class DualPhaseFrameSelector(nn.Module):
             metas[i]["irregular_selected_valid_len"] = float(masks[i].sum().item())
             metas[i]["irregular_dense_valid_len"] = float(masks[i].sum().item())
             metas[i]["irregular_native_axis"] = True
-            metas[i]["delta_t"] = delta_t[i].detach()
+            metas[i]["tubelet_delta_t"] = tubelet_delta_t[i].detach()
+            metas[i]["delta_t"] = detector_delta_t[i].detach()
             metas[i]["boundary_prior"] = boundary_prior[i].detach()
             metas[i]["original_window_size"] = orig_window_size
             metas[i]["selected_window_size"] = self.total_budget
@@ -221,7 +225,8 @@ class DualPhaseFrameSelector(nn.Module):
             "selected_positions": selected_positions,
             "temporal_positions": synced_temporal_positions,
             "boundary_prior": boundary_prior,
-            "delta_t": delta_t,
+            "tubelet_delta_t": tubelet_delta_t,
+            "delta_t": detector_delta_t,
         }
         if gt_segments is not None:
             outputs["gt_segments"] = gt_segments

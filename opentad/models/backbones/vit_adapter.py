@@ -573,8 +573,9 @@ class Attention(BaseModule):
         # x = (attn @ v).transpose(1, 2).reshape(B, N, -1)
 
         # fast attention
+        dropout_p = self.attn_drop.p if self.training else 0.0
         if token_mask is None:
-            x = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p)
+            x = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
         else:
             active = token_mask.any(dim=1)
             x = torch.zeros_like(q)
@@ -585,7 +586,7 @@ class Attention(BaseModule):
                     k[active],
                     v[active],
                     attn_mask=allowed_keys,
-                    dropout_p=self.attn_drop.p,
+                    dropout_p=dropout_p,
                 )
         x = x.transpose(1, 2).reshape(B, N, -1)
 
@@ -816,7 +817,8 @@ class Block(BaseModule):
         # Suppress padding tokens so they are never selected in top-k
         if temporal_token_mask is not None:
             mask_bool = temporal_token_mask.to(device=scores.device, dtype=torch.bool)
-            scores = scores.masked_fill(~mask_bool, -1e9)
+            mask_val = -10000.0 if scores.dtype == torch.float16 else -1e9
+            scores = scores.masked_fill(~mask_bool, mask_val)
 
         k_count = max(1, int(round(N * capacity)))
         topk_indices = torch.topk(scores, k=k_count, dim=1, sorted=False).indices

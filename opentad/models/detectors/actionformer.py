@@ -239,8 +239,8 @@ class ActionFormer(SingleStageDetector):
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
             gt_segments = selector_outputs["gt_segments"]
-            gt_labels = selector_outputs["gt_labels"]
             boundary_prior = selector_outputs.get("boundary_prior", None)
+            tubelet_delta_t = selector_outputs.get("tubelet_delta_t", None)
             delta_t = selector_outputs.get("delta_t", None)
             temporal_positions = selector_outputs.get("temporal_positions", None)
             losses.update(selector_outputs.get("losses", {}))
@@ -248,7 +248,12 @@ class ActionFormer(SingleStageDetector):
                 inputs = inputs.detach()
 
         if self.with_backbone:
-            x = self._call_backbone_forward(inputs, masks=masks, boundary_prior=boundary_prior, delta_t=delta_t)
+            x = self._call_backbone_forward(
+                inputs,
+                masks=masks,
+                boundary_prior=boundary_prior,
+                delta_t=tubelet_delta_t if tubelet_delta_t is not None else delta_t,
+            )
         else:
             x = inputs
 
@@ -338,12 +343,18 @@ class ActionFormer(SingleStageDetector):
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
             boundary_prior = selector_outputs.get("boundary_prior", None)
+            tubelet_delta_t = selector_outputs.get("tubelet_delta_t", None)
             delta_t = selector_outputs.get("delta_t", None)
             temporal_positions = selector_outputs.get("temporal_positions", None)
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
 
         if self.with_backbone:
-            x = self._call_backbone_forward(inputs, masks=masks, boundary_prior=boundary_prior, delta_t=delta_t)
+            x = self._call_backbone_forward(
+                inputs,
+                masks=masks,
+                boundary_prior=boundary_prior,
+                delta_t=tubelet_delta_t if tubelet_delta_t is not None else delta_t,
+            )
         else:
             x = inputs
 
