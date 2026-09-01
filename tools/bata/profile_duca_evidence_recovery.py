@@ -19,8 +19,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import opentad.datasets  # noqa: F401
+import opentad.models  # noqa: F401
 from opentad.models.builder import build_detector
 from opentad.models.duca.structured_selection import exact_uniform_positions
+
+
 
 
 def _sha256_file(path: Path) -> str:

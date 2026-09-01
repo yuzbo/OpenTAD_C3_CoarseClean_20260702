@@ -7,8 +7,11 @@ except OSError as exc:
     pytest.skip(f"torch runtime unavailable in this environment: {exc}", allow_module_level=True)
 from mmengine.config import Config
 
+import opentad.datasets  # noqa: F401
+import opentad.models  # noqa: F401
 from opentad.models.builder import build_detector
 from opentad.models.duca.structured_selection import exact_uniform_positions
+
 
 CONFIG_PATHS = [
     "configs/adatad/thumos/duca_evidence_recovery_matched_h65_60.py",
