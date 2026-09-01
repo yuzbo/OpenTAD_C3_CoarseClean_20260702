@@ -1575,6 +1575,32 @@ max_chars: 8000
   availability stop, not crop-sufficiency or performance evidence. No receipt hash may
   substitute for the missing bytes; no reconstruction, retraining, inference, metric,
   cost, S3, or official test is authorized before fresh Pro adjudication.
+- Fresh exact-Project conversation `6a960900-3f94-83e9-a3a7-e587148433c2`
+  completed with browser-visible `GPT-5.6 Pro`, eleven attachment-only inputs,
+  one scientific submission and zero follow-ups. Pro returned
+  `CONTINUE_ONCE_WITH_EXACT_BYTE_PROVENANCE_CLOSURE / KEEP`: the v2.2 protocol is
+  narrowly decision-grade, but no reference execution or scientific result is
+  admissible. The only authorized task was a single finite Linux CPU-only scan of
+  pre-frozen, preexisting provenance sources for all nine checkpoints and all nine
+  sidecars. Partial recovery, reconstruction, retraining, inference, metrics, cost,
+  root expansion and a second scan were forbidden.
+- The exact-byte implementation is clean/pushed GitHub commit
+  `058095cc763756dd941f6f113fca90f4fd54123c` on branch
+  `codex/zoomtoken-continuous-roi-s2-v2-2-exact-byte-recovery-v001`. Local review
+  recorded `23 passed, 3 skipped`; the frozen N16R4 suite recorded `26 passed`;
+  fresh re-Critic returned `PASS` and the result-blind Evaluator returned
+  `PRE_RUN_READY`. The sole formal scan covered the complete self-hashed finite
+  source manifest and found `0/9` checkpoint matches and `0/9` sidecar matches;
+  all 18 rows are `MISSING_EXACT_BYTES`, and there were no candidate payload files.
+  The original campaign root remained unchanged (`117` entries and identical
+  before/after metadata hash); no reconstruction, quarantine, model forward,
+  inference, prediction, metric, cost, GPU or official-test access occurred.
+  Terminal classification is
+  `STOP_CONTINUOUS_ROI_S2_HISTORICAL_REFERENCE_ROUTE_ARTIFACTS_UNRECOVERABLE`.
+  This permanently closes only the historical exact-nine reference route. It is
+  an artifact-retention/protocol result, not model-performance or crop-family
+  evidence. One fresh exact-Project Pro must independently select the next task;
+  no successor is authorized beforehand.
 
 ## Pointers
 

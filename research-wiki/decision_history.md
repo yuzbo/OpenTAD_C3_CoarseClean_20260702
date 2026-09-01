@@ -1608,3 +1608,28 @@ D160/G96/U128 × seeds 3407/3408/3409 的 `epoch_59.pth` 及其九个 metadata s
 不能证明当前 checkpoint bytes，因此冻结决定为 `STOP_CONTINUOUS_ROI_S2_REFERENCE_ROUTE_BEFORE_INFERENCE`。
 这是 reference-artifact availability stop，不是否定 Continuous-RoI 或 fixed/variable crop 的科学结果；fresh Pro 前不重建、
 重训、推理、测 metric/cost、开启 S3 或 official test，也不自行建立 successor。
+
+## 132. fresh Pro 只授权一次 exact-byte 全有或全无追溯（2026-09-01）
+
+exact ZoomToken Project conversation `6a960900-3f94-83e9-a3a7-e587148433c2` 以 browser-visible
+`GPT-5.6 Pro`、11 个 attachment-only 输入、一次科研提交、零 follow-up 完整返回。裁决为
+`CONTINUE_ONCE_WITH_EXACT_BYTE_PROVENANCE_CLOSURE / KEEP`：接受原 artifact-availability STOP，并确认 v2.2
+协议设计可作为狭义 decision-grade 资产，但没有 reference execution、科学结果或论文方法主张。
+
+唯一任务冻结为一次 Linux CPU-only、预冻结有限来源、scan ordinal `1/1` 的 exact-byte census。只有 9/9 checkpoint、
+9/9 sidecar 全部 provenance-valid 且逐字节 SHA 完全匹配，才允许把隔离副本带回下一轮 Pro；任何缺失、歧义、
+out-of-manifest、重建、部分恢复或证据不完整均永久关闭历史 exact-nine route。该授权不含 GPU、训练、推理、metric、
+cost、S3、official test 或新模型。
+
+## 133. exact-byte census 以 0/18 终态永久关闭历史 exact-nine reference route（2026-09-01）
+
+clean/pushed implementation `058095cc763756dd941f6f113fca90f4fd54123c` 通过 local `23 passed, 3 skipped`、
+N16R4 `26 passed`、fresh re-Critic `PASS` 与 result-blind Evaluator `PRE_RUN_READY`。唯一 formal scan 完整覆盖
+冻结 self-hashed manifest，但没有发现任何 candidate payload；9 个 checkpoint 和 9 个 sidecar 的 match count 均为零，
+全部 18 个 frozen artifact 返回 `MISSING_EXACT_BYTES`。原 campaign root 前后均为 117 entries 且 metadata hash 相同，
+没有 reconstruction 或 quarantine publication。
+
+决定：`STOP_CONTINUOUS_ROI_S2_HISTORICAL_REFERENCE_ROUTE_ARTIFACTS_UNRECOVERABLE`。历史 exact-nine reference
+route 永久关闭，不得重扫、扩 root、重建、重训、部分恢复、推理或用 catalog/receipt 代替 payload。该决定是留存/协议
+终态，不否定 Continuous-RoI、fixed/variable crop、准确率或效率家族；唯一下一动作是一次 fresh exact-Project Pro，
+由其独立选择一个新的论文任务。

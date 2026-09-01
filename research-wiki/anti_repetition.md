@@ -1438,3 +1438,15 @@ updated: 2026-08-31
     `STOP_CONTINUOUS_ROI_S2_REFERENCE_ROUTE_BEFORE_INFERENCE` 终止。不得用旧 receipt/hash 代替 checkpoint bytes，
     不得重建、重训、运行 raw reference inference/metric/cost/S3/official test，也不得把 artifact-availability stop 写成
     Continuous-RoI 科学失败；唯一下一动作是 fresh exact-Project Pro。
+57. fresh exact-Project Pro conversation `6a960900-3f94-83e9-a3a7-e587148433c2` 只授权一次
+    `ZOOMTOKEN-CONTINUOUS-ROI-S2-V2.2-EXACT-BYTE-PROVENANCE-CENSUS-AND-ALL-OR-NONE-RECOVERY-CLOSURE-v001`。
+    不得扫描结果出现后扩展 root，不得第二次 scan、重建 sidecar、重序列化 checkpoint、重训、部分恢复后推理，
+    也不得运行 GPU/model forward/prediction/metric/cost/S3/official test。只有 18/18 provenance-valid exact SHA
+    才能 PASS；其他任何情况永久停止历史 exact-nine route 并 fresh Pro。角色合同为 `KEEP`。
+58. clean/pushed candidate `058095cc…` 的唯一 formal scan 已完整覆盖冻结有限 manifest，但 checkpoint/sidecar
+    匹配为 `0/9 + 0/9`，18 个条目全部 `MISSING_EXACT_BYTES`，candidate payload 数为零。原 campaign root 的
+    117 entries 与 metadata hash 前后一致，未重建、未 quarantine、未修改原 root。终态
+    `STOP_CONTINUOUS_ROI_S2_HISTORICAL_REFERENCE_ROUTE_ARTIFACTS_UNRECOVERABLE` 永久关闭的只是历史 exact-nine
+    reference route；不得把它写成 Continuous-RoI/crop sufficiency/accuracy/efficiency 的科学失败，不得自行新训练、
+    替代 reference、启动 S3 或 successor。唯一下一动作是一次携带最新 repository/branch/exact commit 链接及完整
+    终态证据的 fresh exact-Project Pro。

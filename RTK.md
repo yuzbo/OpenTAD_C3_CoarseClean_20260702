@@ -47,12 +47,12 @@ ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务�
 
 当前科学状态：
 
-- C3/PAction/GAS-VT/lattice 保留为固定预算、no-leak、归因与失败诊断基线；
-- BPNS-R1 只用当前观测，在 VideoMAE 前选择连续 `8×8/K64` 原生支持，并让 K64 完整执行全部主干和 Adapter；它不使用历史 hidden/KV、carry 或深度跳过。其单种子准确率可行，但 v004 的真实 full-stack p50 只改善约 `1.51%`，已停止独立效率 headline；
-- 四臂只读 full-stack job `1262120` 已在完整 THUMOS14 validation 211 videos/792 ordered windows 上完成 16-pass Williams replay。相对 A/R1-FULL64，B/DSR6-KV、C/MOD32-KV、D/DROP32 的 p50 比值为 `1.112325/1.110211/1.102807`，gross-energy 比值为 `1.102719/1.099873/1.064409`；无 Pareto survivor。fresh Pro 将其裁决为窄范围 claim-grade 负系统结果，永久停止这三个固定点及同底座局部 K/depth/refresh sweep，但不外推整个动态计算家族；
-- 当前唯一任务是 `ZOOMTOKEN-ORDERED-VIDEO-DECODE-REUSE-R1-K100-FULLSTACK-VIABILITY-CLOSURE-v001`。它只在评测侧为 K100/R1 对称实现 bounded per-video rolling decode reuse，保持模型、checkpoint、数据语义和 decode-to-Soft-NMS 计时边界不变，检验去除重叠窗口重复解码后 R1 是否同时达到 wall-time/energy `<=0.95` 与 memory `<=1.05`；
-- DUCA、RC32 carry、当前 APM 载体和若干直接缓存/深度路线保留为历史候选与负证据，不得复活为当前主方法；
-- ChronoTransport 与 PhysTime 是独立并行假设，不得与 BPNS-R1 或历史 DUCA 证据混用。
+- C3/PAction/GAS-VT/lattice 保留为固定预算、no-leak、归因与失败诊断基线；DUCA、RC32 carry、当前 APM 载体及已停止的固定深度/缓存路线不得复活为当前主方法；
+- BPNS-R1 在完整同硬件回放中只有能耗/显存改善，v004 与 ordered-video closure 的 p50 主门均失败；其当前 standalone single-GPU efficiency 路线已经 fresh Pro 接受停止，不得再用 K/depth/worker/prefetch/kernel/seed rescue；
+- Continuous-RoI S2 v2.2 的四文件协议闭合已完成，但 exact-nine 历史 D160/G96/U128 × seeds 3407/3408/3409 的 9 个 `epoch_59.pth` 与 9 个 sidecar 均缺失。fresh exact-Project Pro 只授权一次有限、只读、全有或全无的 exact-byte provenance census；
+- 该唯一 CPU-only scan 已在 clean/pushed commit `058095cc763756dd941f6f113fca90f4fd54123c` 上完成。冻结来源中 checkpoint/sidecar 匹配均为 `0/9`，18 个 artifact 全部 `MISSING_EXACT_BYTES`，原 campaign root 未修改、未重建、未发布 quarantine；终态为 `STOP_CONTINUOUS_ROI_S2_HISTORICAL_REFERENCE_ROUTE_ARTIFACTS_UNRECOVERABLE`；
+- 该终态只永久关闭历史 exact-nine reference route，是协议/留存结论，不是 Continuous-RoI、crop sufficiency、准确率、效率或家族级科学负结果。当前唯一动作是把完整终态与最新 GitHub 链接提交一次 fresh exact-Project Pro，由 Pro 独立决定唯一下一任务；裁决前不得实验；
+- ChronoTransport 与 PhysTime 是独立并行假设，不得与 BPNS-R1、Continuous-RoI 历史 reference 或 DUCA 证据混用。
 
 固定 384/768 或 50% 输入只是归因、安全门和失败诊断锚点，不是最终动态采集目标。
 

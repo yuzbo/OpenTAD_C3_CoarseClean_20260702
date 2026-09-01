@@ -4997,3 +4997,20 @@ append_only: true
   和九个 metadata sidecar 均不存在，故受控返回 `STOP_CONTINUOUS_ROI_S2_REFERENCE_ROUTE_BEFORE_INFERENCE`。
   全程 training/raw inference/performance/official-test 均为 false；该 terminal 只证明 reference bytes 不可用，不形成
   crop-sufficiency 或性能结论。下一步只允许一次 fresh exact-Project Pro。
+
+- 2026-09-01：fresh exact-Project conversation `6a960900-3f94-83e9-a3a7-e587148433c2` 以 verified
+  `GPT-5.6 Pro`、11 个 attachment-only 文件、submission `1`、follow-up `0` 完成。裁决为
+  `CONTINUE_ONCE_WITH_EXACT_BYTE_PROVENANCE_CLOSURE / KEEP`：v2.2 协议设计保持狭义 decision-grade，
+  但历史 reference execution 与任何科学/论文主张均不准入。唯一任务是一次预冻结、有限、只读、全有或全无的
+  exact-byte provenance scan；禁止 root expansion、second scan、reconstruction、retraining、partial use、GPU、
+  inference、metric、cost 与 official test。
+
+- 2026-09-01：exact-byte closure clean/pushed candidate 固定为
+  `058095cc763756dd941f6f113fca90f4fd54123c`。local review 为 `23 passed, 3 skipped`，N16R4 exact suite
+  为 `26 passed`，fresh re-Critic `PASS`，result-blind Evaluator `PRE_RUN_READY`。唯一 formal scan 对冻结
+  self-hashed manifest 完整执行，checkpoint/sidecar matches 为 `0/9 + 0/9`，18 项全部
+  `MISSING_EXACT_BYTES`，candidate payload 为零；原 campaign root 的 117 entries 与 before/after metadata hash
+  完全一致，没有 reconstruction/quarantine/model forward/inference/prediction/metric/cost/GPU/official test。
+  终态 `STOP_CONTINUOUS_ROI_S2_HISTORICAL_REFERENCE_ROUTE_ARTIFACTS_UNRECOVERABLE` 永久关闭历史 exact-nine
+  reference route，但不是 Continuous-RoI 或 crop 性能负结果。下一动作仅为一次绑定最新 GitHub 三链接与完整终态的
+  fresh exact-Project Pro；前轮 terminal 与 Pro 截止已超时，实际时间如实披露，不追溯改写期限。
