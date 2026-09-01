@@ -205,7 +205,7 @@ def test_bafdr_detector_actionformer_bundle_smoke():
     with torch.no_grad():
         x, pad_masks = detector.pad_data(dummy_bundle, dummy_mask)
         x, pad_masks = detector.projection(x, pad_masks)
-        x, pad_masks, _ = detector._call_neck_forward(x, pad_masks)
-        proposals, scores = detector._call_rpn_head_forward_test(x, pad_masks)
+        x, pad_masks, _ = detector._call_neck_forward(x, pad_masks, metas=None)
+        proposals, scores = detector._call_rpn_head_forward_test(x, pad_masks, metas=None)
     assert proposals is not None
     assert scores is not None
