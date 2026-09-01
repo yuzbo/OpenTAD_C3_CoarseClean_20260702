@@ -76,7 +76,7 @@ class BackboneWrapper(nn.Module):
             self.temporal_checkpointing_chunk_num = custom_cfg.temporal_checkpointing_chunk_num
             self.temporal_checkpointing_chunk_dim = custom_cfg.temporal_checkpointing_chunk_dim
 
-    def forward(self, frames, masks=None, boundary_prior=None):
+    def forward(self, frames, masks=None, boundary_prior=None, delta_t=None, **kwargs):
         # two types: snippet or frame
 
         # snippet: 3D backbone, [bs, T, 3, clip_len, H, W]
@@ -142,6 +142,20 @@ class BackboneWrapper(nn.Module):
                 backbone_kwargs["boundary_prior"] = bp
             else:
                 backbone_kwargs["boundary_prior"] = boundary_prior
+        if delta_t is not None:
+            if delta_t.ndim == 2 and delta_t.shape[0] == original_batches:
+                temporal_chunks = max(1, batches // original_batches)
+                raw_dt_len = int(delta_t.shape[1])
+                tubelet_size = int(getattr(getattr(self.model, "backbone", self.model), "tubelet_size", 2))
+                frames_per_chunk = raw_dt_len // temporal_chunks
+                tubelets_per_chunk = max(1, frames_per_chunk // tubelet_size)
+                dt = delta_t.reshape(original_batches, temporal_chunks, tubelets_per_chunk, tubelet_size).mean(dim=-1)
+                dt = dt.reshape(batches, tubelets_per_chunk)
+                if num_segs > 1:
+                    dt = dt[:, None, :].expand(batches, num_segs, tubelets_per_chunk).reshape(batches * num_segs, tubelets_per_chunk)
+                backbone_kwargs["delta_t"] = dt
+            else:
+                backbone_kwargs["delta_t"] = delta_t
 
         # go through the video backbone
         if self.freeze_backbone:  # freeze everything even in training

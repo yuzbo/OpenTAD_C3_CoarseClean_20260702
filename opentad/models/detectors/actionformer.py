@@ -248,12 +248,7 @@ class ActionFormer(SingleStageDetector):
                 inputs = inputs.detach()
 
         if self.with_backbone:
-            if boundary_prior is not None:
-                x = self.backbone(inputs, masks=masks, boundary_prior=boundary_prior)
-            elif self.native_temporal_geometry is None:
-                x = self.backbone(inputs)
-            else:
-                x = self.backbone(inputs, masks)
+            x = self._call_backbone_forward(inputs, masks=masks, boundary_prior=boundary_prior, delta_t=delta_t)
         else:
             x = inputs
 
@@ -348,12 +343,7 @@ class ActionFormer(SingleStageDetector):
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
 
         if self.with_backbone:
-            if boundary_prior is not None:
-                x = self.backbone(inputs, masks=masks, boundary_prior=boundary_prior)
-            elif self.native_temporal_geometry is None:
-                x = self.backbone(inputs)
-            else:
-                x = self.backbone(inputs, masks)
+            x = self._call_backbone_forward(inputs, masks=masks, boundary_prior=boundary_prior, delta_t=delta_t)
         else:
             x = inputs
 
@@ -518,6 +508,23 @@ class ActionFormer(SingleStageDetector):
             feat_out, mask_out, meta_out = out
             return feat_out, mask_out, meta_out
         raise ValueError("neck forward must return (features, masks) or (features, masks, metas)")
+
+    def _call_backbone_forward(self, inputs, masks=None, boundary_prior=None, delta_t=None):
+        kwargs = {}
+        sig = inspect.signature(self.backbone.forward)
+        params = sig.parameters
+        if "masks" in params:
+            kwargs["masks"] = masks
+        if "boundary_prior" in params and boundary_prior is not None:
+            kwargs["boundary_prior"] = boundary_prior
+        if "delta_t" in params and delta_t is not None:
+            kwargs["delta_t"] = delta_t
+        elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+            if boundary_prior is not None:
+                kwargs["boundary_prior"] = boundary_prior
+            if delta_t is not None:
+                kwargs["delta_t"] = delta_t
+        return self.backbone(inputs, **kwargs)
 
     @staticmethod
     def _head_accepts_metas(fn):

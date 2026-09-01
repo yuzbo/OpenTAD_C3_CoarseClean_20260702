@@ -33,5 +33,10 @@ echo "[DUCA_CT_DP_BAMOD_TRAIN] Starting training for config=${CONFIG} with seed=
 echo "[DUCA_CT_DP_BAMOD_TRAIN] repo=${REPO_ROOT} commit=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 echo "[DUCA_CT_DP_BAMOD_TRAIN] CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-none} hostname=$(hostname)"
 
-"${PYTHON}" tools/train.py "${CONFIG}" --seed "${SEED}" --id "${EXP_ID}"
+MASTER_PORT="${MASTER_PORT:-$((29500 + RANDOM % 2000))}"
+
+"${PYTHON}" -m torch.distributed.run \
+  --nproc_per_node=1 \
+  --master_port="${MASTER_PORT}" \
+  tools/train.py "${CONFIG}" --seed "${SEED}" --id "${EXP_ID}"
 echo "[DUCA_CT_DP_BAMOD_TRAIN] Training finished successfully!"

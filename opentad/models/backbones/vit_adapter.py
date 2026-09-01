@@ -958,6 +958,7 @@ class VisionTransformerAdapter(BaseModule):
         tubelet_packed_runtime_route: Optional[Dict] = None,
         chronotransport: Optional[Dict] = None,
         amod_config: Optional[Dict] = None,
+        ct_tubelet: bool = False,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -974,6 +975,7 @@ class VisionTransformerAdapter(BaseModule):
         self.patch_size = patch_size
         self.tubelet_size = int(tubelet_size)
         self.amod_config = amod_config
+        self.ct_tubelet_enabled = bool(ct_tubelet)
         self.latest_tubelet_token_redundancy_summary = None
         self.latest_tubelet_packed_runtime_summary = None
         self.latest_temporal_padding_mask_summary = None
@@ -1107,11 +1109,58 @@ class VisionTransformerAdapter(BaseModule):
             for key in missing:
                 incompatible_keys.missing_keys.remove(key)
 
+    def _forward_ct_patch_embed(self, x: Tensor, delta_t: Optional[Tensor] = None) -> Tensor:
+        weight = self.patch_embed.projection.weight  # [C_out, C_in, 2, k_h, k_w]
+        bias = self.patch_embed.projection.bias
+
+        if delta_t is None:
+            return self.patch_embed(x)[0]
+
+        x0 = x[:, :, 0::2]  # [B, C, T//2, H, W]
+        x1 = x[:, :, 1::2]  # [B, C, T//2, H, W]
+        num_tubelets = x0.shape[2]
+
+        w0 = weight[:, :, 0, :, :]  # [C_out, C_in, k_h, k_w]
+        w1 = weight[:, :, 1, :, :]  # [C_out, C_in, k_h, k_w]
+        w_mean = 0.5 * (w0 + w1)
+        w_diff = 0.5 * (w1 - w0)
+
+        # Scale delta_t for temporal differential velocity normalization
+        if delta_t.ndim == 2:
+            if delta_t.shape[1] == num_tubelets * 2:
+                dt = delta_t[:, 0::2]
+            elif delta_t.shape[1] == num_tubelets:
+                dt = delta_t
+            else:
+                dt = torch.ones((x.shape[0], num_tubelets), device=x.device, dtype=x.dtype)
+        else:
+            dt = torch.ones((x.shape[0], num_tubelets), device=x.device, dtype=x.dtype)
+
+        scale = (1.0 / dt.clamp_min(1e-4)).clamp(0.05, 5.0).unsqueeze(1).unsqueeze(-1).unsqueeze(-1)  # [B, 1, num_tubelets, 1, 1]
+
+        x_sum = x0 + x1
+        x_diff = (x1 - x0) * scale.to(dtype=x.dtype)
+
+        B, C, T_t, H, W = x_sum.shape
+        x_sum_flat = x_sum.permute(0, 2, 1, 3, 4).reshape(B * T_t, C, H, W)
+        x_diff_flat = x_diff.permute(0, 2, 1, 3, 4).reshape(B * T_t, C, H, W)
+
+        y_mean = F.conv2d(x_sum_flat, w_mean, stride=self.patch_size)
+        y_diff = F.conv2d(x_diff_flat, w_diff, stride=self.patch_size)
+        y = y_mean + y_diff
+        if bias is not None:
+            y = y + bias.view(1, -1, 1, 1)
+
+        _, C_out, h_out, w_out = y.shape
+        y = y.view(B, T_t, C_out, h_out * w_out).permute(0, 1, 3, 2).reshape(B, T_t * h_out * w_out, C_out)
+        return y
+
     def forward(
         self,
         x: Tensor,
         temporal_mask: Optional[Tensor] = None,
         boundary_prior: Optional[Tensor] = None,
+        delta_t: Optional[Tensor] = None,
     ) -> Tensor:
         """Defines the computation performed at every call.
 
@@ -1119,6 +1168,7 @@ class VisionTransformerAdapter(BaseModule):
             x (Tensor): The input data.
             temporal_mask (Tensor, optional): Temporal validity mask.
             boundary_prior (Tensor, optional): Temporal boundary prior scores for B-AMoD routing.
+            delta_t (Tensor, optional): Physical sampling step for CT-Tubelet 3D embedding.
         Returns:
             Tensor: The feature of the input samples extracted by the backbone.
         """
@@ -1133,7 +1183,10 @@ class VisionTransformerAdapter(BaseModule):
             x = x * temporal_mask[:, None, :, None, None].to(dtype=x.dtype)
         h //= self.patch_size
         w //= self.patch_size
-        x = self.patch_embed(x)[0]
+        if self.ct_tubelet_enabled and delta_t is not None:
+            x = self._forward_ct_patch_embed(x, delta_t=delta_t)
+        else:
+            x = self.patch_embed(x)[0]
         token_mask = None
         if temporal_mask is not None:
             if temporal_length % self.tubelet_size:
