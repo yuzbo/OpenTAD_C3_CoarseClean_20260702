@@ -216,4 +216,57 @@ python tools/bata/continuous_roi_s2_v3_full200_compute_eval.py evaluate-matrix \
   --marker-path "${MARKER_PATH}" \
   --output-dir "${EVAL_DIR}"
 
+# Step 6: Generate and compare C_exec arithmetic ledgers across all arms.
+# This step produces the primary resource axis (rho_C <= 0.90 gate).
+# Diagnostic-only metrics (latency/memory/energy) are also disclosed here.
+# NOTE: this step requires that the profile tool receives pre-built event JSON
+# files produced by the actual inference runs (via --input). The launcher
+# invokes the comparison utility once all three arm ledgers are available.
+C_EXEC_D160="${PROFILE_DIR}/c_exec_d160.json"
+C_EXEC_G96="${PROFILE_DIR}/c_exec_g96.json"
+C_EXEC_U128="${PROFILE_DIR}/c_exec_u128_a0.json"
+
+# Collect per-arm C_exec ledger receipts produced during inference.
+# Each arm's infer-cell is expected to have written its event JSON to PROFILE_DIR.
+for ARM in "${ARMS[@]}"; do
+  ARM_SLUG="${ARM//-/_}"
+  ARM_SLUG="${ARM_SLUG// /_}"
+  LEDGER_INPUT="${PROFILE_DIR}/c_exec_events_${ARM_SLUG}.json"
+  [[ -f "${LEDGER_INPUT}" ]] || fail "C_exec event ledger missing for arm ${ARM}: ${LEDGER_INPUT}"
+  case "${ARM}" in
+    D160)    LEDGER_OUT="${C_EXEC_D160}" ;;
+    G96)     LEDGER_OUT="${C_EXEC_G96}" ;;
+    U128-A0) LEDGER_OUT="${C_EXEC_U128}" ;;
+  esac
+  printf '[S2_V3_FULL200_COMPUTE] Sealing C_exec ledger for %s...\n' "${ARM}"
+  python tools/bata/continuous_roi_s2_v3_full200_compute_profile.py \
+    --input "${LEDGER_INPUT}" \
+    --output "${LEDGER_OUT}"
+done
+
+printf '[S2_V3_FULL200_COMPUTE] Comparing C_exec across arms...\n'
+C_EXEC_COMPARISON="${PROFILE_DIR}/c_exec_comparison.json"
+python - "${C_EXEC_D160}" "${C_EXEC_G96}" "${C_EXEC_U128}" "${C_EXEC_COMPARISON}" <<'PYEOF'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, ".")
+from tools.bata.continuous_roi_s2_v3_full200_compute_profile import compare_c_exec_receipts
+from tools.bata.continuous_roi_s2_v3_full200_compute import atomic_publish_json
+
+receipts = {
+    "D160": json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")),
+    "G96": json.loads(Path(sys.argv[2]).read_text(encoding="utf-8")),
+    "U128-A0": json.loads(Path(sys.argv[3]).read_text(encoding="utf-8")),
+}
+result = compare_c_exec_receipts(receipts)
+atomic_publish_json(Path(sys.argv[4]), result)
+gate = result["primary_exact_10u_le_9d"]
+print(json.dumps({"status": "PASS" if gate else "GATE_FAIL_rho_C_gt_0.90",
+                  "primary_gate_10u_le_9d": gate,
+                  "ratio_u128_over_d160": result["ratio_disclosure"]["u128_a0_over_d160"]},
+                 sort_keys=True))
+if not gate:
+    raise SystemExit(2)
+PYEOF
+
 printf '[S2_V3_FULL200_COMPUTE] Complete execution finished successfully.\n'

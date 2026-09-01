@@ -390,7 +390,7 @@ def validate_cell_config(path: str | Path, *, arm: str, seed: int) -> dict[str, 
         ):
             raise ValueError("formal evaluation population geometry changed")
     if (
-        int(cfg.solver.train.batch_size) != 1
+        int(cfg.solver.train.batch_size) != 2
         or not bool(cfg.solver.ema)
         or int(cfg.workflow.max_train_iters) != EXPECTED_UPDATES_PER_EPOCH
         or int(cfg.workflow.end_epoch) != EXPECTED_EPOCHS
