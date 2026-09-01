@@ -1,6 +1,6 @@
 _base_ = ["./e2e_thumos_videomae_s_768x1_160_adapter.py"]
 
-# Continuous-Time Scale-Adaptive & Dual-Phase B-AMoD configuration for THUMOS14
+# Continuous-Time Scale-Adaptive & Dual-Phase B-AMoD configuration for THUMOS14 (Arm 1: Full Main Method)
 window_size = 768
 scale_factor = 1
 selected_budget = 384
@@ -10,7 +10,7 @@ chunk_num = selected_budget // 16  # 24 chunks of 16 frames
 
 model = dict(
     type="ActionFormer",
-    # 1. Dual-Phase Frame Selector: reduces 768 -> 384 frames before backbone
+    # 1. Dual-Phase Frame Selector: reduces 768 -> 384 frames before backbone with deterministic motion energy prior
     frame_selector=dict(
         type="DualPhaseFrameSelector",
         total_budget=selected_budget,
@@ -18,7 +18,7 @@ model = dict(
         burst_budget=burst_budget,
         burst_radius=2,
     ),
-    # 2. B-AMoD Vision Transformer Backbone (VideoMAE-S)
+    # 2. B-AMoD Vision Transformer Backbone (VideoMAE-S) with CT-Tubelet 3D speed normalization
     backbone=dict(
         type="mmaction.Recognizer3D",
         backbone=dict(
@@ -37,7 +37,8 @@ model = dict(
             with_cp=True,
             total_frames=16,
             adapter_index=list(range(12)),
-            # B-AMoD (Boundary-Biased Attention routing for Mixture-of-Depths)
+            ct_tubelet=True,  # Continuous-Time Tubelet 3D Patch Embedding speed normalization
+            # B-AMoD (Boundary-Biased Attention routing for Mixture-of-Depths: 6 Dense + 6 Sparse@0.5)
             amod_config=dict(
                 enabled=True,
                 capacity=0.5,
@@ -47,6 +48,7 @@ model = dict(
         ),
         custom=dict(
             pretrain="pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+            strict_temporal_padding_mask=True,  # Strict temporal padding mask isolation in backbone attention
             pre_processing_pipeline=[
                 dict(type="Rearrange", keys=["frames"], ops="b n c (t1 t) h w -> (b t1) n c t h w", t1=chunk_num),
             ],
@@ -66,11 +68,19 @@ model = dict(
         max_seq_len=selected_budget,
         attn_cfg=dict(n_mha_win_size=-1),
     ),
-    # 4. Continuous-Time Scale-Adaptive Convolution in Detection Head
+    # 4. Continuous-Time Scale-Adaptive Convolution & Physical Grid ActionFormer Head
     rpn_head=dict(
         in_channels=512,
         feat_channels=512,
         conv_cfg=dict(type="ContinuousTimeScaleAdaptiveConv1d"),
+        physical_grid_actionformer=dict(
+            enabled=True,
+            required=True,
+            strict=True,
+            positions_key="irregular_selected_positions",
+            selected_count_keys=("selected_valid_len",),
+            dense_valid_len_key="irregular_selected_valid_len",
+        ),
     ),
 )
 
@@ -84,4 +94,3 @@ workflow = dict(
     val_start_epoch=40,
     end_epoch=60,
 )
-

@@ -13,14 +13,16 @@ from ..duca.acquisition import dual_phase_orthogonal_budget_positions, DualPhase
 
 
 class DualPhaseFrameSelector(nn.Module):
-    """Dual-Phase Pre-Backbone Frame Selector.
+    """Dual-Phase Pre-Backbone Frame Selector with Deterministic Motion Prior and Synchronized Tubelet Grid.
 
     Decomposes acquisition budget K into:
     1. Global Scaffold (K_scaffold): uniform coverage for baseline semantic recall;
     2. Phase-Transition Bursts (K_burst): dense micro-clusters capturing action boundaries.
 
-    Reduces input from raw 768 frames down to selected 384 frames before heavy VideoMAE backbone,
-    providing boundary prior to B-AMoD and physical delta_t to CT-Conv1d.
+    Uses a deterministic parameter-free frame-difference variation energy prior,
+    eliminating uninitialized random network noise. Computes exact Tubelet physical midpoints
+    and synchronizes temporal positions with 3D VideoMAE feature downsampling and 1D interpolation.
+    Injects physical-grid ActionFormer metadata into metas for strict coordinate closure.
     """
 
     def __init__(
@@ -29,40 +31,39 @@ class DualPhaseFrameSelector(nn.Module):
         scaffold_budget: int = 128,
         burst_budget: int = 256,
         burst_radius: int = 2,
-        scout_channels: int = 16,
     ):
         super().__init__()
         self.total_budget = int(total_budget)
         self.scaffold_budget = int(scaffold_budget)
         self.burst_budget = int(burst_budget)
         self.burst_radius = int(burst_radius)
-
-        # VideoMAE normalization constants for scout branch
-        self.register_buffer("scout_mean", torch.tensor([123.675, 116.28, 103.53]).view(1, 3, 1, 1, 1))
-        self.register_buffer("scout_std", torch.tensor([58.395, 57.12, 57.375]).view(1, 3, 1, 1, 1))
-
-        # Lightweight 1D temporal scout to compute priority from downsampled frame features
-        self.scout_proj = nn.Sequential(
-            nn.AdaptiveAvgPool3d((None, 4, 4)),  # spatial pool to [B, C, T, 4, 4]
-            nn.Flatten(3),  # [B, C, T, 16]
-        )
-        self.scout_head = nn.Sequential(
-            nn.Conv1d(3 * 16, scout_channels, kernel_size=3, padding=1),
-            nn.GELU(),
-            nn.Conv1d(scout_channels, 1, kernel_size=3, padding=1),
-            nn.Sigmoid(),
-        )
+        assert self.total_budget % 2 == 0, "total_budget must be even for tubelet pairing"
 
     def _compute_priority(self, inputs_5d: torch.Tensor, masks: torch.Tensor) -> torch.Tensor:
-        """Compute frame selection priority from video inputs [B, 3, T, H, W]."""
-        B, C, T, H, W = inputs_5d.shape
-        # Ensure float32 and VideoMAE normalization for the scout branch
-        scout_in = inputs_5d.float()
-        if scout_in.max() > 1.0:
-            scout_in = (scout_in - self.scout_mean) / self.scout_std
+        """Compute frame selection priority via deterministic adjacent-frame variation energy.
 
-        pooled = self.scout_proj(scout_in).permute(0, 1, 3, 2).reshape(B, C * 16, T)  # [B, 48, T]
-        priority = self.scout_head(pooled).squeeze(1)  # [B, T]
+        Args:
+            inputs_5d: Video tensor [B, C, T, H, W] or float.
+            masks: Boolean valid frame mask [B, T].
+
+        Returns:
+            priority: Normalized motion energy priority [B, T] in [0, 1].
+        """
+        B, C, T, H, W = inputs_5d.shape
+        # Spatial average pool to 16x16 for efficient motion energy estimation
+        downsampled = F.adaptive_avg_pool3d(inputs_5d.float(), (T, 16, 16))  # [B, C, T, 16, 16]
+
+        priority = torch.zeros(B, T, device=inputs_5d.device, dtype=torch.float32)
+        if T > 1:
+            # Adjacent frame absolute difference averaged over channels and spatial grid
+            diff = torch.abs(downsampled[:, :, 1:] - downsampled[:, :, :-1]).mean(dim=(1, 3, 4))  # [B, T-1]
+            priority[:, :-1] = diff
+            priority[:, -1] = diff[:, -1]
+
+        # Per-sample min-max normalization to [0, 1]
+        p_min = priority.min(dim=1, keepdim=True)[0]
+        p_max = priority.max(dim=1, keepdim=True)[0]
+        priority = (priority - p_min) / (p_max - p_min).clamp_min(1e-6)
         priority = priority * masks.float()
         return priority
 
@@ -94,7 +95,6 @@ class DualPhaseFrameSelector(nn.Module):
         K = selected_positions.shape[1]
         clamped_pos = selected_positions.clamp(0, T_in - 1)
         gathered_masks = torch.gather(masks.bool(), 1, clamped_pos)
-        # Position is valid if original pos >= 0 and mask was True
         valid_pos = selected_positions >= 0
         return gathered_masks & valid_pos
 
@@ -156,30 +156,59 @@ class DualPhaseFrameSelector(nn.Module):
 
         # Generate strictly monotonic temporal positions without -1 padding
         valid_pos_mask = selected_positions >= 0
-        temporal_positions = selected_positions.float().clone()
+        raw_temporal_positions = selected_positions.float().clone()
         for b in range(B):
             valid_idx = torch.nonzero(valid_pos_mask[b], as_tuple=False).flatten()
             if len(valid_idx) == 0:
-                temporal_positions[b] = torch.arange(self.total_budget, device=inputs.device, dtype=torch.float32)
+                raw_temporal_positions[b] = torch.arange(self.total_budget, device=inputs.device, dtype=torch.float32)
             elif len(valid_idx) < self.total_budget:
                 last_val = selected_positions[b, valid_idx[-1]].float()
                 num_pad = self.total_budget - len(valid_idx)
                 pad_vals = last_val + torch.arange(1, num_pad + 1, device=inputs.device, dtype=torch.float32)
-                temporal_positions[b, len(valid_idx):] = pad_vals
+                raw_temporal_positions[b, len(valid_idx):] = pad_vals
 
-        # Compute delta_t from consecutive monotonic positions
-        diff = torch.zeros_like(temporal_positions, dtype=torch.float32)
-        diff[:, :-1] = temporal_positions[:, 1:] - temporal_positions[:, :-1]
+        # Compute Tubelet midpoints and synchronized feature-grid temporal coordinates
+        # VideoMAE conv3d (tubelet=2, stride=2) maps K frames -> K/2 tubelet tokens,
+        # then post_processing_pipeline 1D interpolates K/2 tokens back to K tokens.
+        # Synchronizing temporal_positions ensures exact 1-to-1 parity between features and timestamps.
+        tubelet_len = self.total_budget // 2
+        pos_even = raw_temporal_positions[:, 0::2]  # [B, tubelet_len]
+        pos_odd = raw_temporal_positions[:, 1::2]   # [B, tubelet_len]
+        tubelet_midpoints = 0.5 * (pos_even + pos_odd)  # [B, tubelet_len]
+
+        # 1D linear interpolation matching VideoMAE post_processing_pipeline Interpolate(size=K)
+        synced_temporal_positions = F.interpolate(
+            tubelet_midpoints.unsqueeze(1),
+            size=self.total_budget,
+            mode="linear",
+            align_corners=False,
+        ).squeeze(1)  # [B, K]
+
+        # Enforce strict monotonic increase to prevent zero or negative intervals
+        for b in range(B):
+            for k in range(1, self.total_budget):
+                if synced_temporal_positions[b, k] <= synced_temporal_positions[b, k - 1]:
+                    synced_temporal_positions[b, k] = synced_temporal_positions[b, k - 1] + 1e-4
+
+        # Compute physical delta_t per token
+        diff = torch.zeros_like(synced_temporal_positions, dtype=torch.float32)
+        diff[:, :-1] = synced_temporal_positions[:, 1:] - synced_temporal_positions[:, :-1]
         diff[:, -1] = diff[:, -2] if self.total_budget > 1 else 1.0
         delta_t = diff.clamp_min(1.0)
 
         # Boundary prior score for B-AMoD: burst mask indicates boundary clusters
         boundary_prior = selection.burst_mask.float()
 
-        # Update metas
+        # Update metas with complete physical-grid ActionFormer contract
         for i in range(len(metas)):
             metas[i]["selected_positions"] = selected_positions[i].detach()
-            metas[i]["temporal_positions"] = temporal_positions[i].detach()
+            metas[i]["temporal_positions"] = synced_temporal_positions[i].detach()
+            metas[i]["irregular_selected_positions"] = synced_temporal_positions[i].detach()
+            metas[i]["selected_dense_indices"] = synced_temporal_positions[i].detach()
+            metas[i]["selected_valid_len"] = int(selected_masks[i].sum().item())
+            metas[i]["irregular_selected_valid_len"] = float(masks[i].sum().item())
+            metas[i]["irregular_dense_valid_len"] = float(masks[i].sum().item())
+            metas[i]["irregular_native_axis"] = True
             metas[i]["delta_t"] = delta_t[i].detach()
             metas[i]["boundary_prior"] = boundary_prior[i].detach()
             metas[i]["original_window_size"] = orig_window_size
@@ -190,7 +219,7 @@ class DualPhaseFrameSelector(nn.Module):
             "masks": selected_masks,
             "metas": metas,
             "selected_positions": selected_positions,
-            "temporal_positions": temporal_positions,
+            "temporal_positions": synced_temporal_positions,
             "boundary_prior": boundary_prior,
             "delta_t": delta_t,
         }

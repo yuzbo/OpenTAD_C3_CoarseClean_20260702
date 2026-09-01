@@ -387,3 +387,64 @@ def test_full_actionformer_end_to_end_ct_dual_phase_bamod_6d_and_backward():
     for b in range(B):
         assert proposals[b].shape[1] == 2  # [start, end]
         assert scores[b].shape[1] == 20  # num_classes
+
+
+def test_physical_grid_actionformer_gt_assignment_and_tubelet_sync():
+    """Verify that ActionFormer with physical_grid matches [0, 768] GTs cleanly with 384 selected frames."""
+    from opentad.models.detectors.actionformer import ActionFormer
+
+    T_raw = 768
+    K_sel = 384
+    selector = DualPhaseFrameSelector(total_budget=K_sel, scaffold_budget=128, burst_budget=256)
+
+    # 1 sample with 768 frames
+    inputs = torch.randn(1, 3, T_raw, 16, 16)
+    masks = torch.ones(1, T_raw, dtype=torch.bool)
+    metas = [{"video_name": "thumos_test_001", "duration": 30.0, "fps": 25.0, "snippet_stride": 4, "offset_frames": 0}]
+    gt_segments = [torch.tensor([[100.0, 250.0], [450.0, 700.0]], dtype=torch.float32)]
+    gt_labels = [torch.tensor([3, 7])]
+
+    out = selector.forward_train(inputs, masks, metas, gt_segments, gt_labels)
+    assert out["inputs"].shape == (1, 3, K_sel, 16, 16)
+    assert out["temporal_positions"].shape == (1, K_sel)
+    # Check that temporal positions span the full [0, 768] range
+    assert out["temporal_positions"].max() > 600.0
+    # Check physical grid metadata
+    meta = out["metas"][0]
+    assert "irregular_selected_positions" in meta
+    assert meta["irregular_native_axis"] is True
+    assert meta["irregular_selected_valid_len"] == float(T_raw)
+
+
+def test_four_arms_config_resolution():
+    """Verify that all 4 configs load cleanly with exact single-variable differences."""
+    from mmengine.config import Config
+
+    cfg1 = Config.fromfile("configs/adatad/thumos/duca_ct_dual_phase_bamod_thumos.py")
+    cfg2 = Config.fromfile("configs/adatad/thumos/duca_dual_phase_bamod_thumos.py")
+    cfg3 = Config.fromfile("configs/adatad/thumos/duca_ct_dual_phase_densevit_thumos.py")
+    cfg4 = Config.fromfile("configs/adatad/thumos/duca_dual_phase_densevit_stdconv_thumos.py")
+
+    # All 4 arms must have CT-Tubelet enabled, physical-grid enabled, and val_start_epoch=40
+    for cfg in (cfg1, cfg2, cfg3, cfg4):
+        assert cfg.model.backbone.backbone.ct_tubelet is True
+        assert cfg.model.backbone.custom.strict_temporal_padding_mask is True
+        assert cfg.model.rpn_head.physical_grid_actionformer.enabled is True
+        assert cfg.workflow.val_start_epoch == 40
+
+    # Arm 1: CT-Conv ON, B-AMoD ON
+    assert cfg1.model.rpn_head.conv_cfg.type == "ContinuousTimeScaleAdaptiveConv1d"
+    assert cfg1.model.backbone.backbone.amod_config.enabled is True
+
+    # Arm 2: CT-Conv OFF, B-AMoD ON
+    assert cfg2.model.rpn_head.conv_cfg is None
+    assert cfg2.model.backbone.backbone.amod_config.enabled is True
+
+    # Arm 3: CT-Conv ON, B-AMoD OFF
+    assert cfg3.model.rpn_head.conv_cfg.type == "ContinuousTimeScaleAdaptiveConv1d"
+    assert cfg3.model.backbone.backbone.amod_config.enabled is False
+
+    # Arm 4: CT-Conv OFF, B-AMoD OFF
+    assert cfg4.model.rpn_head.conv_cfg is None
+    assert cfg4.model.backbone.backbone.amod_config.enabled is False
+

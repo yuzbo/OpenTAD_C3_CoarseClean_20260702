@@ -5,9 +5,18 @@ append_only: true
 
 # Research Wiki Log
 
-- 2026-09-01：明确验证评估轮次规范：
-  1. **配置标准固化**：所有 THUMOS-14 训练与消融配置严格保持自 **第 40 轮起评（`workflow = dict(val_start_epoch=40, val_eval_interval=2, end_epoch=60)`）** 的标准协议，禁止第 1 轮起评的冗余全量测试；
-  2. **守则固化**：在 `research-wiki/anti_repetition.md` 固化第 40 轮起评规范。
+- 2026-09-01：CT-DP-TAD 架构深度重构与完备 2×2 消融矩阵升级：
+  1. **坐标系与 Tubelet 闭环重构**：
+     - 在 `DualPhaseFrameSelector` 中实现 Tubelet 物理中点与 1D 线性插值同步（$\tau_{\text{tubelet}} = \frac{1}{2}(t_{2j}+t_{2j+1})$），确保 384 个插值特征与 384 个连续时间戳一一对齐；
+     - 显式向 `metas` 注入 `irregular_selected_positions`，并在检测头强制启用 `physical_grid_actionformer`，彻底修复 `[0, 768]` GT 坐标与 `[0, 384]` 锚点错位问题；
+     - 标记 `meta["irregular_native_axis"] = True`，解决后处理回秒时的尺度折半缺陷；
+  2. **Scout 确定性变化能量先验**：
+     - 采用参数无关的相邻帧低分辨率像素差分变化能量 $E(t) = \frac{1}{C\cdot H\cdot W} \sum |I_{t+1}-I_t|$，彻底消除未训练随机网络带来的不可控噪声；
+  3. **CT-Tubelet 显式激活**：
+     - 在全部消融配置中显式开启 `ct_tubelet=True` 与 `strict_temporal_padding_mask=True`；
+  4. **完备 2×2 正交消融矩阵建立**：
+     - 补充 Arm 4（`duca_dual_phase_densevit_stdconv_thumos.py`），形成覆盖全部 4 个角点的完整正交因子矩阵（Arm 1: Full, Arm 2: Ablate CT-Conv, Arm 3: Ablate B-AMoD, Arm 4: Dual Ablation）；
+  5. **单测全绿通过**：本地 14 项全链路测试 100% 通过（`test_ct_advanced_mechanisms.py` + `test_ct_dual_phase_bamod.py`）。
 
 - 2026-09-01：CT-DP-TAD 进阶连续物理机制完整实现并完成远端单种子三实验消融部署：
   1. **CT-Tubelet 3D 卷积物理速度归一化**（`VisionTransformerAdapter`）：将 VideoMAE 3D Patch 嵌入卷积核在 $T=2$ 维度精确正交分解为稳态均值分量 $W_{\text{mean}} = \frac{1}{2}(W_0+W_1)$ 与动态差分分量 $W_{\text{diff}} = \frac{1}{2}(W_1-W_0)$，动态分量显式按物理时序步长 $\frac{\Delta t_{\text{ref}}}{\delta_j}$ 进行尺度归一化，从底层彻底消除非均匀选帧引起的动态速度畸变。在均匀时间戳下与标准 3D Conv 达成 bit-exact 精确等价；

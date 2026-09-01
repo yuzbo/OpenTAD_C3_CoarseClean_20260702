@@ -11,8 +11,6 @@
 | **本地代码仓库根目录** | `E:\DeskTop\TAD\OpenTAD_C3_CoarseClean_20260702` |
 | **GitHub 远程仓库 URL** | [OpenTAD_C3_CoarseClean_20260702](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702.git) |
 | **当前开发分支** | `codex/duca-total60-plugin-cvpr-20260727` |
-| **当前核心提交 Commit** | `c26883e30fdfefbcdd23f7ce2e49c7bcfa93b2ef` |
-| **GitHub 提交树链接** | [Commit c26883e3 Tree](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/c26883e30fdfefbcdd23f7ce2e49c7bcfa93b2ef) |
 | **远端计算集群** | `N16R4` (`sczc063@...`) |
 | **远端独立工作区** | `/data/run01/sczc063/yuzibo/projects/opentad_duca_ct_dp_bamod_d9bdb3f_20260901` |
 | **远端 Python/PyTorch 环境** | `/data/run01/sczc063/yuzibo/conda_envs/opentad` (Python 3.10, PyTorch 2.0.1 + CUDA 11.8) |
@@ -21,16 +19,17 @@
 
 ---
 
-## 2. 单种子三实验正式消融矩阵 (Single-Seed 3407 Factorial Matrix)
+## 2. 单种子完备 2×2 正交消融矩阵 (Single-Seed 3407 Complete Factorial Matrix)
 
-为了严谨正交归因 **连续物理时间调制卷积 (Continuous-Time Conv1d)** 与 **边界调制自适应 Token 稀疏化 (B-AMoD)** 的独立与协同效能，建立以下 3 臂全训练消融对照：
+为了严谨正交归因 **连续物理时间调制卷积 (Continuous-Time Conv1d)** 与 **边界调制自适应 Token 稀疏化 (B-AMoD)** 的独立主效应与二阶交互项（$\Delta_{\text{interaction}}$），建立以下 4 臂全训练消融对照：
 
-| 实验编号 (Arm) | 实验名称与科学机制 | 本地/远端配置文件路径 | Slurm Job ID | 部署/运行状态 | 日志与产物路径 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Arm 1 (完整主方法)** | **Full CT-DP-BAMoD**<br>• 双相选帧 ($K=384, K_s=128, K_b=256$)<br>• B-AMoD ViT-Adapter (6 Dense + 6 调制层)<br>• CT-Tubelet 3D 速度归一化 Patch 嵌入<br>• CT-Conv1d 自适应连续物理卷积<br>• ActionFormer 头 | [`configs/adatad/thumos/duca_ct_dual_phase_bamod_thumos.py`](file:///E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/duca_ct_dual_phase_bamod_thumos.py) | **`1263598`** | `PENDING (Priority)` | **日志**: `/data/run01/sczc063/yuzibo/slurm_logs/ct_dp_bamod_s3407_1263598.out`<br>**输出**: `exps/thumos/adatad/duca_ct_dual_phase_bamod_thumos/` |
-| **Arm 2 (消融 CT-Conv)** | **DP-BAMoD (Standard Conv1d)**<br>• 双相选帧 ($K=384$)<br>• B-AMoD ViT-Adapter (6 Dense + 6 调制层)<br>• **消融项**：回退为标准均匀 Conv1d (无物理时空采样偏移修正) | [`configs/adatad/thumos/duca_dual_phase_bamod_thumos.py`](file:///E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/duca_dual_phase_bamod_thumos.py) | **`1263599`** | `PENDING (Priority)` | **日志**: `/data/run01/sczc063/yuzibo/slurm_logs/dp_bamod_stdconv_s3407_1263599.out`<br>**输出**: `exps/thumos/adatad/duca_dual_phase_bamod_thumos/` |
-| **Arm 3 (消融 B-AMoD)** | **CT-DP (Dense ViT-Adapter)**<br>• 双相选帧 ($K=384$)<br>• **消融项**：ViT-Adapter 全 12 层稠密计算 (无 Token 剪枝与稀疏路由)<br>• CT-Conv1d 自适应连续物理卷积 | [`configs/adatad/thumos/duca_ct_dual_phase_densevit_thumos.py`](file:///E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/duca_ct_dual_phase_densevit_thumos.py) | **`1263600`** | `PENDING (Priority)` | **日志**: `/data/run01/sczc063/yuzibo/slurm_logs/ct_dp_densevit_s3407_1263600.out`<br>**输出**: `exps/thumos/adatad/duca_ct_dual_phase_densevit_thumos/` |
-| **Baseline (历史基准)** | **Dense 768 / Uniform 384 Baseline**<br>• 稠密 768 帧输入 / 均匀 384 帧降采样基线<br>• 仅作指标基准对比，**严禁重新提交** | 历史已冻结检查点与测试记录 | N/A (历史已就绪) | `COMPLETED` | 历史评测基准数据已锁定 |
+| 实验编号 (Arm) | 实验名称与科学机制 | 本地/远端配置文件路径 | CT-Conv1d | B-AMoD | CT-Tubelet | Physical-Grid | 部署状态 | 日志与产物路径 |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Arm 1 (完整主方法)** | **Full CT-DP-BAMoD**<br>• 双相选帧 ($K=384, K_s=128, K_b=256$)<br>• B-AMoD 稀疏化 (6D+6M@0.5)<br>• CT-Tubelet 3D 速度归一化<br>• CT-Conv1d 连续时间卷积 | [`configs/adatad/thumos/duca_ct_dual_phase_bamod_thumos.py`](file:///E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/duca_ct_dual_phase_bamod_thumos.py) | ✅ | ✅ | ✅ | ✅ | 待部署 | **日志**: `slurm_logs/ct_dp_bamod_s3407.out`<br>**输出**: `exps/thumos/adatad/duca_ct_dual_phase_bamod_seed3407/gpu1_id0/` |
+| **Arm 2 (消融 CT-Conv)** | **DP-BAMoD (Standard Conv1d)**<br>• 双相选帧 + B-AMoD 稀疏化<br>• **消融项**：回退为标准均匀 Conv1d | [`configs/adatad/thumos/duca_dual_phase_bamod_thumos.py`](file:///E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/duca_dual_phase_bamod_thumos.py) | ❌ | ✅ | ✅ | ✅ | 待部署 | **日志**: `slurm_logs/dp_bamod_stdconv_s3407.out`<br>**输出**: `exps/thumos/adatad/duca_dual_phase_bamod_stdconv_seed3407/gpu1_id0/` |
+| **Arm 3 (消融 B-AMoD)** | **CT-DP (Dense ViT-Adapter)**<br>• 双相选帧 + CT-Conv1d<br>• **消融项**：ViT-Adapter 全 12 层稠密计算 | [`configs/adatad/thumos/duca_ct_dual_phase_densevit_thumos.py`](file:///E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/duca_ct_dual_phase_densevit_thumos.py) | ✅ | ❌ | ✅ | ✅ | 待部署 | **日志**: `slurm_logs/ct_dp_densevit_s3407.out`<br>**输出**: `exps/thumos/adatad/duca_ct_dual_phase_densevit_seed3407/gpu1_id0/` |
+| **Arm 4 (双消融基线对照)** | **DP-DenseViT (Standard Conv1d)**<br>• 双相选帧 + Dense ViT + Standard Conv1d<br>• **消融项**：同时关闭 CT-Conv 与 B-AMoD | [`configs/adatad/thumos/duca_dual_phase_densevit_stdconv_thumos.py`](file:///E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/configs/adatad/thumos/duca_dual_phase_densevit_stdconv_thumos.py) | ❌ | ❌ | ✅ | ✅ | 待部署 | **日志**: `slurm_logs/dp_densevit_stdconv_s3407.out`<br>**输出**: `exps/thumos/adatad/duca_dual_phase_densevit_stdconv_seed3407/gpu1_id0/` |
+| **Baseline (历史基准)** | **Dense 768 / Uniform 384 Baseline**<br>• 稠密 768 帧输入 / 均匀 384 帧降采样基线<br>• 仅作指标基准对比，**严禁重新提交** | 历史已冻结检查点与测试记录 | N/A | N/A | N/A | N/A | `COMPLETED` | 历史评测基准数据已锁定 |
 
 ---
 
@@ -38,13 +37,14 @@
 
 所有实验均在 THUMOS-14 官方 211 验证集上使用官方评估协议进行评测（mAP@0.3 ~ 0.7 及 Avg-mAP）：
 
-| 实验组别 | 选帧预算 $K$ | 骨干等效层数 | mAP@0.3 | mAP@0.4 | mAP@0.5 | mAP@0.6 | mAP@0.7 | Avg-mAP (0.3:0.7) | 相对基线收益 (Avg-mAP) | GFLOPs / 相对算力 |
+| 实验组别 | 选帧预算 $K$ | 骨干等效结构 | mAP@0.3 | mAP@0.4 | mAP@0.5 | mAP@0.6 | mAP@0.7 | Avg-mAP (0.3:0.7) | 相对基线收益 (Avg-mAP) | 相对算力 / 显存 |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Dense 768 Baseline** | 768 | 12 层 | - | - | - | - | - | 历史基准 | 基准 (0.0) | 100% |
-| **Uniform 384 Baseline** | 384 | 12 层 | - | - | - | - | - | 历史基准 | - | ~50% |
-| **Arm 1: Full CT-DP-BAMoD** (`1263598`) | 384 (128+256) | 9 层 (6D+6M) | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | **~35%** |
-| **Arm 2: DP-BAMoD (StdConv)** (`1263599`) | 384 (128+256) | 9 层 (6D+6M) | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | **~35%** |
-| **Arm 3: CT-DP (Dense ViT)** (`1263600`) | 384 (128+256) | 12 层稠密 | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | ~50% |
+| **Dense 768 Baseline** | 768 | 12 层稠密 | - | - | - | - | - | 历史基准 | 基准 (0.0) | 100% |
+| **Uniform 384 Baseline** | 384 | 12 层稠密 | - | - | - | - | - | 历史基准 | - | ~50% |
+| **Arm 1: Full CT-DP-BAMoD** | 384 (128+256) | 6 Dense + 6 Sparse@0.5 | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | **~35% / 3.78GB** |
+| **Arm 2: DP-BAMoD (StdConv)** | 384 (128+256) | 6 Dense + 6 Sparse@0.5 | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | **~35% / 3.78GB** |
+| **Arm 3: CT-DP (Dense ViT)** | 384 (128+256) | 12 层稠密 | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | ~50% / 2.52GB |
+| **Arm 4: DP-DenseViT (StdConv)** | 384 (128+256) | 12 层稠密 | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | *待回填* | ~50% / 2.52GB |
 
 ---
 
