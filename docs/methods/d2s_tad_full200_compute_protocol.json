@@ -1,0 +1,110 @@
+{
+  "protocol_id": "ZOOMTOKEN-D2S-TAD-FULL200-COMPUTE-PARETO-3X3-v001",
+  "objective": {
+    "primary_axis": "detection_performance_vs_full_model_executed_inference_computation",
+    "compute_definition": "full_operator_C_exec",
+    "fused_multiply_add_flops": 2,
+    "candidate_compute_ratio_max": 0.9,
+    "diagnostic_only": [
+      "latency",
+      "throughput",
+      "peak_allocated_memory",
+      "peak_reserved_memory",
+      "gross_energy",
+      "power"
+    ]
+  },
+  "arms": {
+    "D160": {
+      "view": "full_frame_letterbox_160x160",
+      "tokens_per_window": 38400,
+      "fusion": "none"
+    },
+    "G96": {
+      "view": "full_frame_letterbox_96x96",
+      "tokens_per_window": 13824,
+      "fusion": "none"
+    },
+    "D2S-U128-B128": {
+      "view": "global96_plus_saliency_gated_burst_local128",
+      "global_size": 96,
+      "local_size": 128,
+      "total_chunks": 48,
+      "burst_chunks": 16,
+      "saliency_alpha": 0.5,
+      "canonical_crop_xyxy": [96, 26, 224, 154],
+      "tokens_per_window": 22016,
+      "shared_backbone_instances": 1,
+      "learned_selector_parameters": 0
+    }
+  },
+  "seeds": [4407, 4408, 4409],
+  "training": {
+    "split": "training",
+    "identity_count": 200,
+    "identity_coverage_per_epoch": "exactly_once",
+    "epochs": 60,
+    "successful_updates_per_epoch": 100,
+    "successful_updates_per_cell": 6000,
+    "world_size": 2,
+    "local_batch_size": 1,
+    "global_batch_size": 2,
+    "final_checkpoint": {
+      "epoch_index": 59,
+      "state": "state_dict_ema",
+      "successful_update": 6000
+    }
+  },
+  "evaluation": {
+    "split": "validation",
+    "video_count": 211,
+    "ordered_window_count": 792,
+    "window_size": 768,
+    "window_overlap_ratio": 0.5,
+    "prediction_phase": "label_free",
+    "prediction_barrier": "seal_all_9_predictions_before_evaluator",
+    "metric_opening_count": 1,
+    "checkpoint_state": "epoch_59_state_dict_ema",
+    "metrics": [
+      "mAP@0.3",
+      "mAP@0.4",
+      "mAP@0.5",
+      "mAP@0.6",
+      "mAP@0.7",
+      "Avg-mAP",
+      "short_q1_recall_at_100_at_0.7",
+      "normalized_start_error",
+      "normalized_end_error"
+    ]
+  },
+  "fairness": {
+    "same_trainable_parameter_identity_and_count": true,
+    "same_temporal_window_and_order": true,
+    "same_annotation_evaluator_postprocess_and_nms": true,
+    "same_training_schedule": true
+  },
+  "admission": {
+    "primary_candidate": "D2S-U128-B128",
+    "primary_reference": "D160",
+    "performance_and_stability_gates": {
+      "avg_map_difference_lcb_pp_min": -1.0,
+      "map_at_0_7_difference_lcb_pp_min": -1.5,
+      "short_q1_recall_difference_lcb_min": -0.03,
+      "start_error_ratio_ucb_max": 1.15,
+      "end_error_ratio_ucb_max": 1.15,
+      "each_seed_avg_map_difference_pp_min": -3.0
+    },
+    "compute_gate": {
+      "definition": "aggregate_full_operator_C_exec_D2S_over_D160",
+      "ratio_max": 0.9,
+      "exact_integer_comparison": "10*C_D2S<=9*C_D160"
+    }
+  },
+  "bootstrap": {
+    "schema": "ZT_S2V3_HIERARCHICAL_BOOTSTRAP_V1",
+    "replicates": 20000,
+    "master_seed": 20260720,
+    "seed_order": [4407, 4408, 4409],
+    "video_cluster_count": 211
+  }
+}
