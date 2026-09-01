@@ -64,7 +64,7 @@ class BackboneWrapper(nn.Module):
             self.temporal_checkpointing_chunk_dim = custom_cfg.temporal_checkpointing_chunk_dim
 
     def forward(self, frames, masks=None, irregular_selected_positions=None,
-                irregular_dense_valid_len=None):
+                irregular_dense_valid_len=None, **kwargs):
         # two types: snippet or frame
 
         # snippet: 3D backbone, [bs, T, 3, clip_len, H, W]
@@ -103,9 +103,10 @@ class BackboneWrapper(nn.Module):
                         self.temporal_checkpointing_chunk_num,
                         self.temporal_checkpointing_chunk_dim,
                         actual_positions, canonical_positions,
+                        **kwargs,
                     )
                 else:
-                    features = self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions)
+                    features = self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions, **kwargs)
 
         else:  # let the model.train() or model.eval() decide whether to freeze
             if self.use_temporal_checkpointing:
@@ -114,9 +115,22 @@ class BackboneWrapper(nn.Module):
                     self.temporal_checkpointing_chunk_num,
                     self.temporal_checkpointing_chunk_dim,
                     actual_positions, canonical_positions,
+                    **kwargs,
                 )
             else:
-                features = self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions)
+                features = self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions, **kwargs)
+
+
+        self.latest_support_metadata = getattr(self.model.backbone, "latest_support_metadata", None)
+        if self.latest_support_metadata is not None:
+            unflattened_meta = {}
+            for k, v in self.latest_support_metadata.items():
+                if v is not None and v.ndim >= 2:
+                    if v.ndim == 2:
+                        unflattened_meta[k] = v.view(batches, -1)
+                    elif v.ndim == 3:
+                        unflattened_meta[k] = v.view(batches, -1, v.shape[-1])
+            self.latest_support_metadata = unflattened_meta
 
         # unflatten and pool the features
         if isinstance(features, (tuple, list)):
@@ -126,6 +140,14 @@ class BackboneWrapper(nn.Module):
 
         # apply mask
         if masks is not None and features.dim() == 3:
+            # If features temporal dimension was reduced by Token Merging, adjust masks to match features length
+            if masks.shape[1] != features.shape[-1]:
+                ratio = float(features.shape[-1]) / float(masks.shape[1])
+                valid_lens = (masks.long().sum(dim=-1).float() * ratio).round().long()
+                new_masks = torch.zeros((batches, features.shape[-1]), dtype=masks.dtype, device=masks.device)
+                for b in range(batches):
+                    new_masks[b, :min(features.shape[-1], valid_lens[b].item())] = True
+                masks = new_masks
             features = features * masks.unsqueeze(1).detach().float()
 
         # make sure detector has the float32 input
@@ -153,30 +175,18 @@ class BackboneWrapper(nn.Module):
                     for param in m.parameters():
                         param.requires_grad = False
 
-    def temporal_checkpointing(self, frames, chunk_num, chunk_dim, actual_positions=None, canonical_positions=None):
-        """Temporal Checkpointing for Video Backbone.
-
-        Temporal checkpointing will 1) split the video frames along the temporal dimension and sequentially forward each chunk with
-        no gradients. 2) The backward pass will recompute the intermediate activations and compute each chunk's gradient. 3) Backbone's
-        gradients will be accumulated along different chunks.
-
-        Args:
-            frames (Tensor): input frames, [B*N,3,T,H,W]
-            chunk_num (int): number of chunks to split the temporal dimension
-            chunk_dim (int): input shape is [B*N,3,T,H,W], so either dim=0 or 2 is fine
-        """
-
+    def temporal_checkpointing(self, frames, chunk_num, chunk_dim, actual_positions=None, canonical_positions=None, **kwargs):
+        """Temporal Checkpointing for Video Backbone."""
         def _inner_forward(frames, actual_positions=None, canonical_positions=None):
-            return self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions)
+            return self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions, **kwargs)
 
         video_feat = []
-        for chunk_index, mini_frames in enumerate(torch.chunk(frames, chunk_num, dim=chunk_dim)):  # B*N is chunked
+        for chunk_index, mini_frames in enumerate(torch.chunk(frames, chunk_num, dim=chunk_dim)):
             mini_actual = mini_canonical = None
             if actual_positions is not None and chunk_dim == 0:
                 start = sum(x.shape[0] for x in torch.chunk(frames, chunk_num, dim=chunk_dim)[:chunk_index])
                 mini_actual = actual_positions[start:start + mini_frames.shape[0]]
                 mini_canonical = canonical_positions[start:start + mini_frames.shape[0]]
-            # we can use torch.cp.checkpoint to implement an efficient temporal checkpointing mechanism
             mini_feat = cp.checkpoint(
                 _inner_forward,
                 mini_frames, mini_actual, mini_canonical,

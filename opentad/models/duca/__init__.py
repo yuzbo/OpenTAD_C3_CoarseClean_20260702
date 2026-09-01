@@ -14,6 +14,14 @@ from .acquisition import (
     temporal_max_gap_hole_loss,
     validate_actionness_provenance,
 )
+from .evidence_recovery import (
+    ASFormerDenseSemanticScout,
+    EvidenceRecoverySelector,
+    DucaEvidenceRecoveryModule,
+    compute_distillation_loss,
+    compute_two_view_consistency_loss,
+)
+
 from .counterfactual_utility import (
     build_local_cell_hard_flip_candidates,
     build_swap_incidence_matrix,

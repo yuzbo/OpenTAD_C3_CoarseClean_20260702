@@ -62,17 +62,19 @@ class Adapter(BaseModule):
         x = self.act(x)
 
         # temporal depth-wise convolution
-        B, N, C = x.shape  # 48, 8*10*10, 384
-        attn = x.reshape(-1, self.temporal_size, h, w, x.shape[-1])  # [b,t,h,w,c]  [1,384,10,10,384]
-        attn = attn.permute(0, 2, 3, 4, 1).flatten(0, 2)  # [b*h*w,c,t] [1*10*10,384,384]
-        attn = self.dwconv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
-        attn = self.conv(attn)  # [b*h*w,c,t] [1*10*10,384,384]
-        attn = attn.unflatten(0, (-1, h, w)).permute(0, 4, 1, 2, 3)  # [b,t,h,w,c] [1,384,10,10,384]
+        B, N, C = x.shape  # e.g. 48, 8*10*10, 384
+        temporal_size = N // (h * w) if (h * w) > 0 else self.temporal_size
+        attn = x.reshape(-1, temporal_size, h, w, x.shape[-1])  # [b,t,h,w,c]
+        attn = attn.permute(0, 2, 3, 4, 1).flatten(0, 2)  # [b*h*w,c,t]
+        attn = self.dwconv(attn)  # [b*h*w,c,t]
+        attn = self.conv(attn)  # [b*h*w,c,t]
+        attn = attn.unflatten(0, (-1, h, w)).permute(0, 4, 1, 2, 3)  # [b,t,h,w,c]
         attn = attn.reshape(B, N, C)
         x = x + attn
 
         x = self.up_proj(x)
         return x * self.gamma + inputs
+
 
 
 class PlainAdapter(BaseModule):
@@ -769,6 +771,9 @@ class VisionTransformerAdapter(BaseModule):
         adapter_index: list = [3, 5, 7, 11],
         tubelet_token_redundancy_aux: Optional[Dict] = None,
         tubelet_packed_runtime_route: Optional[Dict] = None,
+        bounded_interval_adapter: Optional[Dict] = None,
+        continuous_timestamp_conditioner: Optional[Dict] = None,
+        temporal_token_merge: Optional[Dict] = None,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -812,6 +817,26 @@ class VisionTransformerAdapter(BaseModule):
         if tubelet_packed_runtime_route is not None:
             self.tubelet_packed_runtime_route = PackedTubeletRuntimeRoute(**dict(tubelet_packed_runtime_route))
 
+        from opentad.models.bricks.bounded_interval_adapter import (
+            BoundedTubeletIntervalAdapter,
+            ContinuousTimestampConditioner,
+        )
+        from opentad.models.bricks.temporal_token_merge import BoundaryProtectedTemporalTokenMerge
+
+        self.bounded_interval_adapter = None
+        if bounded_interval_adapter is not None:
+            self.bounded_interval_adapter = BoundedTubeletIntervalAdapter(**dict(bounded_interval_adapter))
+
+        self.continuous_timestamp_conditioner = None
+        if continuous_timestamp_conditioner is not None:
+            self.continuous_timestamp_conditioner = ContinuousTimestampConditioner(
+                num_heads=num_heads, **dict(continuous_timestamp_conditioner)
+            )
+
+        self.temporal_token_merge = None
+        if temporal_token_merge is not None:
+            self.temporal_token_merge = BoundaryProtectedTemporalTokenMerge(**dict(temporal_token_merge))
+
         # stochastic depth decay rule
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
 
@@ -831,9 +856,6 @@ class VisionTransformerAdapter(BaseModule):
                     init_cfg=init_cfg,
                     use_adapter=i in adapter_index,
                     adapter_mlp_ratio=adapter_mlp_ratio,
-                    # The backbone is fed packed 16-frame clips.  Attention and
-                    # adapters therefore see 8 tubelets per clip, not the
-                    # 384-tubelet full window.
                     temporal_size=num_frames // tubelet_size,
                     use_relative_physical_time=(i == 0),
                 )
@@ -856,23 +878,60 @@ class VisionTransformerAdapter(BaseModule):
         ratio = num_adapter_param / num_vit_param * 100
         print("ViT's param: {}, Adapter's params: {}, ratio: {:2.1f}%".format(num_vit_param, num_adapter_param, ratio))
 
-    def forward(self, x: Tensor, relative_physical_time: Optional[Tensor] = None,
-                actual_positions: Optional[Tensor] = None,
-                canonical_positions: Optional[Tensor] = None) -> Tensor:
+    def forward(
+        self,
+        x: Tensor,
+        relative_physical_time: Optional[Tensor] = None,
+        actual_positions: Optional[Tensor] = None,
+        canonical_positions: Optional[Tensor] = None,
+        tubelet_z_condition: Optional[Tensor] = None,
+        tubelet_timestamps: Optional[Tensor] = None,
+        boundary_scores: Optional[Tensor] = None,
+        support_mass: Optional[Tensor] = None,
+        support_centers: Optional[Tensor] = None,
+        support_intervals: Optional[Tensor] = None,
+    ) -> Tensor:
         """Defines the computation performed at every call.
 
         Args:
             x (Tensor): The input data.
         Returns:
-            Tensor: The feature of the input
-                samples extracted by the backbone.
+            Tensor: The feature of the input samples extracted by the backbone.
         """
         self._freeze_layers()
 
         b, _, _, h, w = x.shape
         h //= self.patch_size
         w //= self.patch_size
-        x = self.patch_embed(x)[0]
+
+        # Reshape chunk metadata if passed as global [B, 192, ...] while x is [B_chunks, ...]
+        if tubelet_z_condition is not None and tubelet_z_condition.ndim == 3 and tubelet_z_condition.shape[0] != b:
+            tubelet_z_condition = tubelet_z_condition.view(b, -1, tubelet_z_condition.shape[-1])
+        if tubelet_timestamps is not None and tubelet_timestamps.ndim == 2 and tubelet_timestamps.shape[0] != b:
+            tubelet_timestamps = tubelet_timestamps.view(b, -1)
+        if boundary_scores is not None and boundary_scores.ndim == 2 and boundary_scores.shape[0] != b:
+            boundary_scores = boundary_scores.view(b, -1)
+        if support_mass is not None and support_mass.ndim == 2 and support_mass.shape[0] != b:
+            support_mass = support_mass.view(b, -1)
+        if support_centers is not None and support_centers.ndim == 2 and support_centers.shape[0] != b:
+            support_centers = support_centers.view(b, -1)
+        if support_intervals is not None and support_intervals.ndim == 3 and support_intervals.shape[0] != b:
+            support_intervals = support_intervals.view(b, -1, 2)
+
+        if self.bounded_interval_adapter is not None and tubelet_z_condition is not None:
+            x = self.bounded_interval_adapter.forward_tubelet(
+                x,
+                self.patch_embed.projection.weight,
+                self.patch_embed.projection.bias,
+                stride_spatial=self.patch_size,
+                padding_spatial=0,
+                z_condition=tubelet_z_condition,
+            )
+            B_curr, C_curr, T_curr, H_curr, W_curr = x.shape
+            x = x.permute(0, 2, 3, 4, 1).reshape(B_curr, T_curr * H_curr * W_curr, C_curr)
+        else:
+            x = self.patch_embed(x)[0]
+
         if actual_positions is not None or canonical_positions is not None:
             if actual_positions is None or canonical_positions is None:
                 raise ValueError("actual_positions and canonical_positions must be provided together")
@@ -880,6 +939,11 @@ class VisionTransformerAdapter(BaseModule):
             relative_physical_time = clip_relative_physical_time_mask(
                 actual_positions, canonical_positions, spatial_tokens=h * w
             )
+        elif self.continuous_timestamp_conditioner is not None and tubelet_timestamps is not None:
+            relative_physical_time = self.continuous_timestamp_conditioner(
+                tubelet_timestamps, spatial_tokens_per_tubelet=h * w
+            )
+
         if self.tubelet_token_redundancy_aux is not None:
             x = self.tubelet_token_redundancy_aux(x, h, w)
             self.latest_tubelet_token_redundancy_summary = self.tubelet_token_redundancy_aux.last_summary
@@ -901,13 +965,46 @@ class VisionTransformerAdapter(BaseModule):
                 raise ValueError("packed VideoMAE route does not support relative_physical_time; fail closed")
             x = self.tubelet_packed_runtime_route(x, self.blocks, h, w, training=self.training)
             self.latest_tubelet_packed_runtime_summary = self.tubelet_packed_runtime_route.last_summary
+            self.latest_support_metadata = None
         else:
             self.latest_tubelet_packed_runtime_summary = None
+            cur_mass = support_mass
+            cur_centers = support_centers
+            cur_intervals = support_intervals
+            cur_b_scores = boundary_scores
+
             for block_index, blk in enumerate(self.blocks):
                 rel = relative_physical_time if block_index == 0 else None
                 x = blk(x, h, w, relative_physical_time=rel)
 
+                if self.temporal_token_merge is not None and self.temporal_token_merge.should_merge(block_index):
+                    if cur_mass is None:
+                        B_c = x.shape[0]
+                        T_c = x.shape[1] // (h * w)
+                        cur_mass = torch.ones((B_c, T_c), dtype=torch.float32, device=x.device)
+                        cur_centers = torch.linspace(0, 1, T_c, device=x.device).unsqueeze(0).expand(B_c, -1)
+                        cur_intervals = torch.stack([cur_centers, cur_centers], dim=-1)
+                    x, cur_mass, cur_centers, cur_intervals, cur_b_scores = self.temporal_token_merge.merge_step(
+                        x,
+                        spatial_tokens=h * w,
+                        support_mass=cur_mass,
+                        support_centers=cur_centers,
+                        support_intervals=cur_intervals,
+                        boundary_scores=cur_b_scores,
+                    )
+
+
+            if cur_mass is not None:
+                self.latest_support_metadata = {
+                    "support_mass": cur_mass,
+                    "support_centers": cur_centers,
+                    "support_intervals": cur_intervals,
+                }
+            else:
+                self.latest_support_metadata = None
+
         x = self.norm(x)
+
 
         if self.return_feat_map:
             x = x.reshape(b, -1, h, w, self.embed_dims)
@@ -938,3 +1035,10 @@ class VisionTransformerAdapter(BaseModule):
             # Unit1's scalar is the sole non-adapter trainable parameter.
             if block.relative_physical_time_scale is not None:
                 block.relative_physical_time_scale.requires_grad = True
+
+        if self.bounded_interval_adapter is not None:
+            for p in self.bounded_interval_adapter.parameters():
+                p.requires_grad = True
+        if self.continuous_timestamp_conditioner is not None:
+            for p in self.continuous_timestamp_conditioner.parameters():
+                p.requires_grad = True

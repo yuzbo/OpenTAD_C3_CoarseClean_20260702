@@ -305,8 +305,21 @@ def main():
             evaluation_schema = "duca_selected_axis_terminal_evaluation_v1"
         elif r0_selected_axis_replay:
             evaluation_schema = "duca_r0_selected_axis_evaluation_v1"
+        elif formal_protocol == "duca_evidence_recovery_full_matrix_v1":
+            evaluation_schema = "duca_evidence_recovery_terminal_evaluation_v1"
         else:
             evaluation_schema = "duca_p0_terminal_evaluation_v3"
+        video_metrics = _jsonable(evaluation_summary.get("video_metrics", {}))
+        video_mAP = {
+            str(video_id): float(row["average_mAP"])
+            for video_id, row in video_metrics.items()
+            if isinstance(row, dict) and "average_mAP" in row
+        }
+        video_mAP70 = {
+            str(video_id): float(row["mAP@0.70"])
+            for video_id, row in video_metrics.items()
+            if isinstance(row, dict) and "mAP@0.70" in row
+        }
         payload = {
             "schema_version": evaluation_schema,
             "git_commit": subprocess.check_output(
@@ -324,6 +337,9 @@ def main():
             "prediction_path": os.path.abspath(result_path),
             "prediction_sha256": sha256_file(result_path),
             "metrics": _jsonable(evaluation_summary.get("metrics")),
+            "video_metrics": video_metrics,
+            "video_mAP": video_mAP,
+            "video_mAP@0.70": video_mAP70,
             "result_count": int(evaluation_summary.get("result_count", 0)),
             "video_count": int(evaluation_summary.get("video_count", 0)),
             "evaluator": evaluator_identity,

@@ -10,6 +10,7 @@ from .pc_ot_mras_prebackbone_frame_selector import (
 )
 from .pc_ot_mras_reader import PCOTMRASReader, ProcessConditionedOrderedTransportMRASReader
 from .truetime_joint_selector import TrueTimeRelaxedHardTopKSelector
+from opentad.models.duca.evidence_recovery import DucaEvidenceRecoveryFrameSelector
 
 __all__ = [
     "LowCostAcquisitionBrowser",
@@ -24,4 +25,5 @@ __all__ = [
     "PCOTMRASReader",
     "ProcessConditionedOrderedTransportMRASReader",
     "TrueTimeRelaxedHardTopKSelector",
+    "DucaEvidenceRecoveryFrameSelector",
 ]

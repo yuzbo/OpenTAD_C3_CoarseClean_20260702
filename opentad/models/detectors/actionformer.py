@@ -192,7 +192,7 @@ class ActionFormer(SingleStageDetector):
         if (
             self.frame_selector is not None
             and not skip_frame_selector
-            and self.frame_selector.require_counterfactual_utility_teacher
+            and getattr(self.frame_selector, "require_counterfactual_utility_teacher", False)
             and request is None
         ):
             raise RuntimeError("required integrated counterfactual teacher request is missing")
@@ -218,10 +218,21 @@ class ActionFormer(SingleStageDetector):
             )
 
         self._restore_protected_detector_rng(detector_rng_state)
+        backbone_kwargs = selector_outputs.get("extra_backbone_kwargs", {}) if self.frame_selector is not None else {}
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self.backbone(inputs, masks, **backbone_kwargs)
         else:
             x = inputs
+
+        if self.frame_selector is not None and hasattr(self.frame_selector, "recover_features"):
+            backbone_support_meta = getattr(self.backbone, "latest_support_metadata", None) if self.with_backbone else None
+            x, masks = self.frame_selector.recover_features(
+                x, masks, selector_outputs, backbone_support_metadata=backbone_support_meta
+            )
+            metas = selector_outputs.get("metas", metas)
+            gt_segments = selector_outputs.get("gt_segments", gt_segments)
+            gt_labels = selector_outputs.get("gt_labels", gt_labels)
+
 
         self._assert_feature_mask_temporal_match(x, masks, "before token_compressor")
         if self.token_compressor is not None:
@@ -508,10 +519,20 @@ class ActionFormer(SingleStageDetector):
             self._require_selector_remap_metadata(metas)
 
         self._restore_protected_detector_rng(detector_rng_state)
+        backbone_kwargs = selector_outputs.get("extra_backbone_kwargs", {}) if self.frame_selector is not None else {}
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self.backbone(inputs, masks, **backbone_kwargs)
         else:
             x = inputs
+
+        if self.frame_selector is not None and hasattr(self.frame_selector, "recover_features"):
+            backbone_support_meta = getattr(self.backbone, "latest_support_metadata", None) if self.with_backbone else None
+            x, masks = self.frame_selector.recover_features(
+                x, masks, selector_outputs, backbone_support_metadata=backbone_support_meta
+            )
+            metas = selector_outputs.get("metas", metas)
+            self._require_selector_remap_metadata(metas)
+
 
         self._assert_feature_mask_temporal_match(x, masks, "before token_compressor")
         if self.token_compressor is not None:

@@ -88,9 +88,19 @@ class SingleStageDetector(BaseDetector):
             selector_loss_keys = set(losses)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            backbone_kwargs = selector_outputs.get("extra_backbone_kwargs", {}) if self.with_frame_selector else {}
+            x = self.backbone(inputs, masks, **backbone_kwargs)
         else:
             x = inputs
+
+        if self.with_frame_selector and hasattr(self.frame_selector, "recover_features"):
+            backbone_support_meta = getattr(self.backbone, "latest_support_metadata", None) if self.with_backbone else None
+            x, masks = self.frame_selector.recover_features(
+                x, masks, selector_outputs, backbone_support_metadata=backbone_support_meta
+            )
+            metas = selector_outputs.get("metas", metas)
+            gt_segments = selector_outputs.get("gt_segments", gt_segments)
+            gt_labels = selector_outputs.get("gt_labels", gt_labels)
 
         if self.with_projection:
             x, masks = self.projection(x, masks)
@@ -132,12 +142,23 @@ class SingleStageDetector(BaseDetector):
             self._require_selector_remap_metadata(metas)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            backbone_kwargs = selector_outputs.get("extra_backbone_kwargs", {}) if self.with_frame_selector else {}
+            x = self.backbone(inputs, masks, **backbone_kwargs)
         else:
             x = inputs
 
+        if self.with_frame_selector and hasattr(self.frame_selector, "recover_features"):
+            backbone_support_meta = getattr(self.backbone, "latest_support_metadata", None) if self.with_backbone else None
+            x, masks = self.frame_selector.recover_features(
+                x, masks, selector_outputs, backbone_support_metadata=backbone_support_meta
+            )
+            metas = selector_outputs.get("metas", metas)
+            self._require_selector_remap_metadata(metas)
+
+
         if self.with_projection:
             x, masks = self.projection(x, masks)
+
 
         if self.with_neck:
             x, masks, metas = self._call_neck_forward(x, masks, metas=metas)
@@ -255,8 +276,8 @@ class SingleStageDetector(BaseDetector):
             **call_kwargs,
         )
 
-    def _call_rpn_head_forward_test(self, feat_list, mask_list, metas):
-        call_kwargs = {}
+    def _call_rpn_head_forward_test(self, feat_list, mask_list, metas, **kwargs):
+        call_kwargs = dict(kwargs)
         if self._callable_accepts_metas(self.rpn_head.forward_test):
             call_kwargs["metas"] = metas
         return self.rpn_head.forward_test(feat_list, mask_list, **call_kwargs)

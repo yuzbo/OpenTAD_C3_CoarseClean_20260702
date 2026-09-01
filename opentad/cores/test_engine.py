@@ -3,6 +3,7 @@ import copy
 import hashlib
 import inspect
 import json
+import numpy as np
 import tqdm
 import torch
 import torch.distributed as dist
@@ -10,6 +11,7 @@ import torch.distributed as dist
 from opentad.utils import create_folder
 from opentad.models.utils.post_processing import build_classifier, batched_nms
 from opentad.evaluations import build_evaluator
+from opentad.evaluations.mAP import compute_average_precision_detection
 from opentad.datasets.base import SlidingWindowDataset
 
 
@@ -87,12 +89,14 @@ def eval_one_epoch(
 
         metrics_dict = None
         evaluator_identity = None
+        video_metrics_dict = {}
         if not not_eval:
             # build evaluator
             evaluator = build_evaluator(dict(prediction_filename=result_eval, **cfg.evaluation))
             # evaluate and output
             logger.info("Evaluation starts...")
             metrics_dict = evaluator.evaluate()
+            video_metrics_dict = _per_video_metrics(evaluator)
             evaluator.logging(logger)
             source_path = inspect.getsourcefile(evaluator.__class__)
             evaluator_identity = {
@@ -112,6 +116,7 @@ def eval_one_epoch(
             else os.path.abspath(result_path),
             "result_count": int(sum(len(items) for items in result_dict.values())),
             "video_count": int(len(result_dict)),
+            "video_metrics": video_metrics_dict,
             "evaluator": evaluator_identity,
         }
     return None
@@ -123,6 +128,49 @@ def _sha256_file(path):
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _per_video_metrics(evaluator):
+    if not all(hasattr(evaluator, attr) for attr in ("ground_truth", "prediction", "tiou_thresholds")):
+        return {}
+    ground_truth = evaluator.ground_truth
+    prediction = evaluator.prediction
+    if "video-id" not in ground_truth or ground_truth.empty:
+        return {}
+
+    thresholds = np.asarray(evaluator.tiou_thresholds, dtype=np.float64)
+    out = {}
+    empty_prediction = prediction.iloc[0:0].reset_index(drop=True)
+    for video_id in sorted(ground_truth["video-id"].unique()):
+        gt_video = ground_truth.loc[ground_truth["video-id"] == video_id].reset_index(drop=True)
+        if prediction.empty:
+            pred_video = empty_prediction
+        else:
+            pred_video = prediction.loc[prediction["video-id"] == video_id].reset_index(drop=True)
+
+        class_maps = []
+        for label in sorted(gt_video["label"].unique()):
+            gt_label = gt_video.loc[gt_video["label"] == label].reset_index(drop=True)
+            pred_label = pred_video.loc[pred_video["label"] == label].reset_index(drop=True)
+            if pred_label.empty:
+                class_maps.append(np.zeros(len(thresholds), dtype=np.float64))
+            else:
+                class_maps.append(
+                    compute_average_precision_detection(
+                        gt_label,
+                        pred_label,
+                        tiou_thresholds=thresholds,
+                    ).astype(np.float64)
+                )
+        if not class_maps:
+            continue
+        maps = np.stack(class_maps, axis=1).mean(axis=1)
+        row = {"average_mAP": float(maps.mean())}
+        for tiou, value in zip(thresholds, maps):
+            row[f"mAP@{tiou}"] = float(value)
+            row[f"mAP@{tiou:.2f}"] = float(value)
+        out[str(video_id)] = row
+    return out
 
 
 def gather_ddp_results(world_size, result_dict, post_cfg):

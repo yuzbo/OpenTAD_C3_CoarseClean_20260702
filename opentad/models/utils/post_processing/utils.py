@@ -110,11 +110,15 @@ def convert_to_seconds(segments, meta):
     if meta["fps"] == -1:  # resize setting, like in anet / hacs
         segments = segments / meta["resize_length"] * meta["duration"]
     else:  # sliding window / padding setting, like in thumos / ego4d
-        segments = _selected_axis_segments_to_dense_axis(segments, meta)
+        if "dense_recovery_scale" in meta:
+            segments = segments * float(meta["dense_recovery_scale"])
+        else:
+            segments = _selected_axis_segments_to_dense_axis(segments, meta)
         snippet_stride = meta["snippet_stride"]
         offset_frames = meta["offset_frames"]
         window_start_frame = meta["window_start_frame"] if "window_start_frame" in meta.keys() else 0
         segments = (segments * snippet_stride + window_start_frame + offset_frames) / meta["fps"]
+
 
     # truncate all boundaries within [0, duration]
     if segments.shape[0] > 0:

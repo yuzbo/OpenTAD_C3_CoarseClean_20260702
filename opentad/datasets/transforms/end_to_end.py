@@ -215,6 +215,165 @@ class DucaExternalActionnessFromJsonl:
 
 
 @PIPELINES.register_module()
+class DucaH65PositionsFromLedger:
+    """Attach H65/value-transport positions while keeping the dense RGB window unchanged."""
+
+    def __init__(
+        self,
+        ledger_path,
+        target_len=384,
+        dense_len=768,
+        require_deployable=True,
+        require_selected_count=True,
+        allow_short_valid_ratio_count=True,
+        source="c3_official_asformer_delta_p_action",
+        config_hash="c3_official_asformer_delta_ledger_384_over_768_v1",
+        use_expanded_positions=False,
+        allow_missing=False,
+    ):
+        self.ledger_path = os.path.expandvars(os.path.expanduser(str(ledger_path)))
+        self.target_len = int(target_len)
+        self.dense_len = int(dense_len)
+        self.require_deployable = bool(require_deployable)
+        self.require_selected_count = require_selected_count
+        self.allow_short_valid_ratio_count = bool(allow_short_valid_ratio_count)
+        self.source = str(source or "")
+        self.config_hash = str(config_hash or "")
+        self.use_expanded_positions = bool(use_expanded_positions)
+        self.allow_missing = bool(allow_missing)
+        self._ledger = None
+
+    def _value_transport_ledger(self):
+        if not self.ledger_path or self.ledger_path.startswith("REPLACE_WITH_"):
+            if self.allow_missing:
+                return {}
+            raise FileNotFoundError(f"H65/value-transport ledger path is not configured: {self.ledger_path}")
+        if not os.path.isfile(self.ledger_path):
+            if self.allow_missing:
+                return {}
+            raise FileNotFoundError(f"H65/value-transport ledger not found: {self.ledger_path}")
+        if self._ledger is None:
+            self._ledger = load_value_transport_selection_ledger(
+                self.ledger_path,
+                require_deployable=self.require_deployable,
+            )
+        return self._ledger
+
+    @staticmethod
+    def _sample_id(results):
+        if "window_start_frame" not in results:
+            raise ValueError("DucaH65PositionsFromLedger requires window_start_frame in results")
+        return f"{results.get('video_name', 'unknown')}|{int(results['window_start_frame'])}"
+
+    @staticmethod
+    def _row_metadata(row, key):
+        diagnostics = row.get("diagnostics") if isinstance(row.get("diagnostics"), dict) else {}
+        return row.get(key, diagnostics.get(key))
+
+    def _required_count(self, valid_len):
+        required = self.require_selected_count
+        if required is True:
+            required = self.target_len
+        elif required in (False, None):
+            return None
+        else:
+            required = int(required)
+        return paction_budget_contract.expected_selected_count(
+            required,
+            valid_len=int(valid_len),
+            dense_len=int(self.dense_len),
+            allow_short_valid_ratio_count=self.allow_short_valid_ratio_count,
+        )
+
+    def __call__(self, results):
+        if "masks" not in results:
+            raise ValueError("DucaH65PositionsFromLedger must run after LoadFrames so masks are available")
+        if self.allow_missing and "window_start_frame" not in results:
+            return results
+        sample_id = self._sample_id(results)
+        row = self._value_transport_ledger().get(sample_id)
+        if row is None:
+            if self.allow_missing:
+                return results
+            raise KeyError(f"H65/value-transport ledger missing sample_id={sample_id}")
+
+        valid_len = int(torch.as_tensor(results["masks"]).long().sum().item())
+        row_valid_len = row.get("valid_len")
+        if row_valid_len is not None and int(row_valid_len) != valid_len:
+            raise ValueError(
+                f"H65 ledger sample_id={sample_id} valid_len={row_valid_len} "
+                f"does not match runtime valid_len={valid_len}"
+            )
+        row_dense_len = row.get("dense_len")
+        if row_dense_len is not None and int(row_dense_len) != self.dense_len:
+            raise ValueError(
+                f"H65 ledger sample_id={sample_id} dense_len={row_dense_len} "
+                f"does not match configured dense_len={self.dense_len}"
+            )
+        row_target_len = row.get("target_len")
+        if row_target_len is not None and int(row_target_len) != self.target_len:
+            raise ValueError(
+                f"H65 ledger sample_id={sample_id} target_len={row_target_len} "
+                f"does not match configured target_len={self.target_len}"
+            )
+        if self.source:
+            row_source = self._row_metadata(row, "policy_source")
+            if row_source != self.source:
+                raise ValueError(
+                    f"H65 ledger sample_id={sample_id} policy_source={row_source} "
+                    f"does not match configured source={self.source}"
+                )
+        if self.config_hash:
+            row_hash = self._row_metadata(row, "policy_checkpoint_sha256")
+            if row_hash != self.config_hash:
+                raise ValueError(f"H65 ledger sample_id={sample_id} policy_checkpoint_sha256 mismatch")
+
+        positions_key = "expanded_selected_positions" if self.use_expanded_positions else "selected_positions"
+        positions = np.asarray(row[positions_key], dtype=np.int64).reshape(-1)
+        if positions.size <= 0 or positions.size > self.target_len:
+            raise ValueError(
+                f"H65 ledger sample_id={sample_id} selects {positions.size} positions; "
+                f"expected 1..{self.target_len}"
+            )
+        if positions.tolist() != sorted(set(int(item) for item in positions.tolist())):
+            raise ValueError(f"H65 ledger sample_id={sample_id} positions must be strictly increasing")
+        if positions[0] < 0 or positions[-1] >= valid_len:
+            raise ValueError(f"H65 ledger sample_id={sample_id} positions exceed valid dense window")
+
+        expected_count = self._required_count(valid_len)
+        if expected_count is not None and int(positions.size) != int(expected_count):
+            raise ValueError(
+                f"H65 ledger sample_id={sample_id} selects {positions.size} positions; "
+                f"expected={expected_count}"
+            )
+
+        positions_float = positions.astype(np.float32)
+        results["bata_selected_dense_indices"] = positions.astype(np.int64)
+        results["irregular_selected_positions"] = positions_float
+        results["selected_dense_indices"] = positions_float
+        results["selected_valid_len"] = int(positions.size)
+        results["irregular_selected_valid_len"] = int(positions.size)
+        results["irregular_dense_valid_len"] = valid_len
+        results["duca_h65_selection_row"] = {
+            key: value
+            for key, value in dict(row).items()
+            if key
+            in {
+                "sample_id",
+                "selected_count",
+                "valid_len",
+                "dense_len",
+                "target_len",
+                "policy_source",
+                "policy_checkpoint_sha256",
+                "deploy_selection_ledger",
+                "diagnostic_only",
+            }
+        }
+        return results
+
+
+@PIPELINES.register_module()
 class LoadSnippetFrames:
     """Load the snippet frame, the output should follows the format:
     snippet_num x channel x clip_len x height x width
