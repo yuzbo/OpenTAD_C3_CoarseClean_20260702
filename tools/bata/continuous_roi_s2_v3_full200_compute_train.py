@@ -449,6 +449,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         cfg.dataset.val.ann_file = manifest["evaluation"]["heldout_inference_annotation"]
         cfg.dataset.val.class_map = manifest["class_map"]["path"]
         cfg.dataset.val.data_path = manifest["media"]["root"]
+        if hasattr(cfg, "evaluation"):
+            cfg.evaluation.ground_truth_filename = manifest["annotation"]["path"]
         cfg.work_dir = str(args.work_dir.resolve())
         set_seed(args.seed, False, deterministic_warn_only=True)
         if args.resume is None and args.work_dir.exists():
@@ -480,13 +482,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             generator=dataloader_generator,
             **cfg.solver.train,
         )
+        val_solver_cfg = dict(copy.deepcopy(cfg.solver.val))
+        val_solver_cfg["batch_size"] = world_size
         val_loader = build_dataloader(
             val_dataset,
             rank=rank,
             world_size=world_size,
             shuffle=False,
             drop_last=False,
-            **cfg.solver.val,
+            **val_solver_cfg,
         )
         if len(train_loader) != EXPECTED_UPDATES_PER_EPOCH:
             raise RuntimeError("formal cell does not have exactly 100 rank-local batches")
@@ -671,21 +675,34 @@ def main(argv: Sequence[str] | None = None) -> int:
                 publish_recovery(epoch + 1)
 
             eval_interval = int(cfg.workflow.get("val_eval_interval", cfg.workflow.get("eval_interval", 5)))
-            if (epoch + 1) % eval_interval == 0 or epoch == EXPECTED_EPOCHS - 1:
+            val_start_epoch = int(cfg.workflow.get("val_start_epoch", 1))
+
+            should_eval = False
+            if eval_interval > 0:
+                if (epoch + 1) >= val_start_epoch and (epoch + 1) % eval_interval == 0:
+                    should_eval = True
+            if epoch == EXPECTED_EPOCHS - 1:
+                should_eval = True
+
+            if should_eval:
                 if rank == 0:
                     logger.info(f"[ONLINE_EVAL] Starting online validation evaluation at epoch {epoch}...")
-                eval_one_epoch(
-                    val_loader,
-                    model,
-                    cfg,
-                    logger,
-                    rank,
-                    model_ema=model_ema,
-                    use_amp=bool(cfg.solver.amp),
-                    world_size=world_size,
-                    epoch=epoch,
-                )
-                model.train()
+                module_modes = {m: m.training for m in model.modules()}
+                try:
+                    eval_one_epoch(
+                        val_loader,
+                        model,
+                        cfg,
+                        logger,
+                        rank,
+                        model_ema=model_ema,
+                        use_amp=bool(cfg.solver.amp),
+                        world_size=world_size,
+                        epoch=epoch,
+                    )
+                finally:
+                    for m, was_training in module_modes.items():
+                        m.train(was_training)
 
         if successful_updates != EXPECTED_TOTAL_UPDATES or ema_update_counter != EXPECTED_TOTAL_UPDATES:
             raise RuntimeError("formal training did not complete exactly 6000 successful updates")

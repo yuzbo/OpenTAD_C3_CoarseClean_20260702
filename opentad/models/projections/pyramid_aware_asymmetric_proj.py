@@ -1,4 +1,5 @@
-﻿from __future__ import annotations
+# Copyright (c) OpenTAD. All rights reserved.
+from __future__ import annotations
 
 import numpy as np
 import torch
@@ -60,7 +61,7 @@ class PyramidAwareAsymmetricProj(Conv1DTransformerProj):
         Args:
             x: [B, C, T] intermediate feature tensor or fused representation.
             mask: [B, T] bool tensor indicating valid positions.
-            burst_mask: Optional [B, T] or [B, num_chunks] indicating active high-res burst chunks.
+            burst_mask: Optional [B, T] or [B, 1, T] indicating active high-res burst chunks.
         Returns:
             out_feats: tuple of tensors for levels (L0, L1, L2, L3, L4, L5)
             out_masks: tuple of boolean masks for each level
@@ -78,6 +79,18 @@ class PyramidAwareAsymmetricProj(Conv1DTransformerProj):
         # 1. Embedding network (1D Convolutions)
         for idx in range(len(self.embed)):
             x, mask = self.embed[idx](x, mask)
+
+        # Apply asymmetric burst gating to Low Pyramid Levels if burst_mask is provided
+        if burst_mask is not None:
+            if burst_mask.dim() == 2:
+                b_mask = burst_mask.unsqueeze(1).to(x.dtype)
+            else:
+                b_mask = burst_mask.to(x.dtype)
+            # Match temporal dimension if downsampled
+            if b_mask.shape[-1] != x.shape[-1]:
+                b_mask = F.interpolate(b_mask, size=x.shape[-1], mode="nearest")
+            # Enhance local burst boundary features on low levels
+            x = x * (1.0 + self.high_res_gate_weight * b_mask)
 
         # 2. Position Embeddings
         if self.use_abs_pe and self.training:
@@ -104,6 +117,7 @@ class PyramidAwareAsymmetricProj(Conv1DTransformerProj):
         curr_mask = mask
 
         for idx in range(len(self.branch)):
+            level = idx + 1
             curr_feat, curr_mask = self.branch[idx](curr_feat, curr_mask)
             out_feats.append(curr_feat)
             out_masks.append(curr_mask)
