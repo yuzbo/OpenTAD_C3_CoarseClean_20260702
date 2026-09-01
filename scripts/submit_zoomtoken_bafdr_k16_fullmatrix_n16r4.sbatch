@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=zt-bafdr-k16-dag
 #SBATCH --partition=gpu
+#SBATCH --gpus=1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
@@ -77,7 +78,8 @@ submit_job() {
       gres_args=(--gpus=1)
     fi
   else
-    gres_args=()
+    # N16R4 rejects jobs without an explicit GPU request, even for ledger-only stages.
+    gres_args=(--gpus=1)
   fi
   if [[ -n "${array_spec}" ]]; then
     array_args=("${array_spec}")
