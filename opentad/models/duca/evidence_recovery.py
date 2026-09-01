@@ -553,8 +553,11 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
         use_time_conditioning: bool = True,
         use_temporal_merge: bool = True,
         use_dense_recovery: bool = True,
+        use_robust_training: bool = True,
+        use_h65_selection: bool = False,
         tubelet_size: int = 2,
         max_hole: int = 16,
+
         h65_position_keys: Optional[Tuple[str, ...]] = None,
         loss_weights: Optional[Dict[str, float]] = None,
         init_cfg: Optional[dict] = None,
