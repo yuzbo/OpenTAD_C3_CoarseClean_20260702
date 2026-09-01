@@ -20,6 +20,7 @@ else
   BASE="${PROJECT_DIR}/tmp/bafdr_local"
 fi
 RUN_ROOT="${ZOOMTOKEN_RUN_ROOT:-${BASE}/projects/bafdr_k16_fullmatrix_compute}"
+export ZOOMTOKEN_RUN_ROOT="${RUN_ROOT}"
 LOG_DIR="${BASE}/slurm_logs"
 MANIFEST_DIR="${RUN_ROOT}/manifest"
 mkdir -p "${LOG_DIR}" "${MANIFEST_DIR}"
@@ -50,28 +51,10 @@ elif [[ -n "${SEEDS:-}" ]]; then
 else
   seed_list=(4407 4408 4409)
 fi
-arm_list=(
-  "D160"
-  "G96"
-  "U128-ALL48-A0"
-  "U16-UNIFORM-A0"
-  "BAFDR-K16-LATE"
-  "BAFDR-K16-NOKD"
-  "BAFDR-K16-FULL"
-)
-
-slug_for_arm() {
-  case "$1" in
-    D160) echo "d160" ;;
-    G96) echo "g96" ;;
-    U128-ALL48-A0) echo "u128_all48_a0" ;;
-    U16-UNIFORM-A0) echo "u16_uniform_a0" ;;
-    BAFDR-K16-LATE) echo "late" ;;
-    BAFDR-K16-NOKD) echo "nokd" ;;
-    BAFDR-K16-FULL) echo "full" ;;
-    *) echo "unknown arm: $1" >&2; exit 2 ;;
-  esac
-}
+if [[ "${seed_list[*]}" != "4407 4408 4409" ]]; then
+  echo "complete BA-FDR deployment requires seeds 4407 4408 4409" >&2
+  exit 2
+fi
 
 submit_job() {
   local name="$1"
@@ -80,13 +63,24 @@ submit_job() {
   local cpus="$4"
   local time_limit="$5"
   local command="$6"
+  local array_spec="${7:-}"
   local dep_args=()
   local gres_args=()
+  local array_args=()
   if [[ -n "${dependency}" ]]; then
     dep_args=(--dependency="${dependency}")
   fi
   if [[ -n "${gres}" && "${gres}" != "none" ]]; then
-    gres_args=(--gres="${gres}")
+    if [[ "${gres}" == *"2"* ]]; then
+      gres_args=(--gpus=2)
+    else
+      gres_args=(--gpus=1)
+    fi
+  else
+    gres_args=()
+  fi
+  if [[ -n "${array_spec}" ]]; then
+    array_args=("${array_spec}")
   fi
   sbatch --parsable \
     --partition=gpu \
@@ -99,63 +93,22 @@ submit_job() {
     --output="${LOG_DIR}/%x_%j.out" \
     --error="${LOG_DIR}/%x_%j.err" \
     "${dep_args[@]}" \
+    "${array_args[@]}" \
     --wrap "cd '${PROJECT_DIR}' && ${command}"
 }
 
-declare -A train_jobs
-declare -A eval_jobs
-all_terminal_deps=()
-
-for seed in "${seed_list[@]}"; do
-  d160_cfg="configs/adatad/thumos/bafdr_k16_d160_seed${seed}.py"
-  d160_job="$(submit_job "zt-bafdr-train-d160-${seed}" "" "gpu:2" 8 "72:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh train '${d160_cfg}'")"
-  train_jobs["D160:${seed}"]="${d160_job}"
-done
-
-for arm in "${arm_list[@]}"; do
-  for seed in "${seed_list[@]}"; do
-    if [[ "${arm}" == "D160" ]]; then
-      continue
-    fi
-    slug="$(slug_for_arm "${arm}")"
-    cfg="configs/adatad/thumos/bafdr_k16_${slug}_seed${seed}.py"
-    dep=""
-    if [[ "${arm}" == "BAFDR-K16-FULL" ]]; then
-      dep="afterok:${train_jobs["D160:${seed}"]}"
-    fi
-    safe_arm="${slug//_/-}"
-    job="$(submit_job "zt-bafdr-train-${safe_arm}-${seed}" "${dep}" "gpu:2" 8 "72:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh train '${cfg}'")"
-    train_jobs["${arm}:${seed}"]="${job}"
-  done
-done
-
-for arm in "${arm_list[@]}"; do
-  for seed in "${seed_list[@]}"; do
-    slug="$(slug_for_arm "${arm}")"
-    cfg="configs/adatad/thumos/bafdr_k16_${slug}_seed${seed}.py"
-    train_job="${train_jobs["${arm}:${seed}"]}"
-    safe_arm="${slug//_/-}"
-    eval_job="$(submit_job "zt-bafdr-eval-${safe_arm}-${seed}" "afterok:${train_job}" "gpu:2" 8 "24:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh eval '${cfg}'")"
-    eval_jobs["${arm}:${seed}"]="${eval_job}"
-    all_terminal_deps+=("${eval_job}")
-  done
-done
-
-joined_eval_deps="$(IFS=:; echo "${all_terminal_deps[*]}")"
-c_exec_job="$(submit_job "zt-bafdr-cexec" "afterok:${joined_eval_deps}" "none" 1 "02:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh c_exec")"
-metrics_job="$(submit_job "zt-bafdr-metrics" "afterok:${joined_eval_deps}:${c_exec_job}" "gpu:2" 8 "24:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh metrics")"
-summary_job="$(submit_job "zt-bafdr-summary" "afterok:${metrics_job}" "none" 1 "02:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh summary-strict")"
-
 train_jobs_tsv="${MANIFEST_DIR}/slurm_train_jobs.tsv"
 eval_jobs_tsv="${MANIFEST_DIR}/slurm_eval_jobs.tsv"
-: > "${train_jobs_tsv}"
-: > "${eval_jobs_tsv}"
-for key in "${!train_jobs[@]}"; do
-  printf '%s\t%s\n' "${key}" "${train_jobs[${key}]}" >> "${train_jobs_tsv}"
-done
-for key in "${!eval_jobs[@]}"; do
-  printf '%s\t%s\n' "${key}" "${eval_jobs[${key}]}" >> "${eval_jobs_tsv}"
-done
+train_job="$(submit_job "zt-bafdr-train-e60b4399" "" "gpu:2" 8 "72:00:00" \
+  "bash scripts/run_zoomtoken_bafdr_k16_array_task.sh train \"\${SLURM_ARRAY_TASK_ID}\"" --array=0-20)"
+eval_job="$(submit_job "zt-bafdr-eval-e60b4399" "afterok:${train_job}" "gpu:2" 8 "24:00:00" \
+  "bash scripts/run_zoomtoken_bafdr_k16_array_task.sh eval \"\${SLURM_ARRAY_TASK_ID}\"" --array=0-20)"
+c_exec_job="$(submit_job "zt-bafdr-cexec" "afterok:${eval_job}" "none" 1 "02:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh c_exec")"
+metrics_job="$(submit_job "zt-bafdr-metrics" "afterok:${eval_job}:${c_exec_job}" "gpu:2" 8 "24:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh metrics")"
+summary_job="$(submit_job "zt-bafdr-summary" "afterok:${metrics_job}" "none" 1 "02:00:00" "bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh summary-strict")"
+
+printf 'all\t%s\n' "${train_job}" > "${train_jobs_tsv}"
+printf 'all\t%s\n' "${eval_job}" > "${eval_jobs_tsv}"
 
 python - <<PY
 import json
@@ -174,6 +127,8 @@ receipt = {
     "protocol_id": "ZOOMTOKEN-BA-FDR-K16-FULLMATRIX-v001",
     "project_dir": ${PROJECT_DIR@Q},
     "run_root": ${RUN_ROOT@Q},
+    "train_array_job": ${train_job@Q},
+    "eval_array_job": ${eval_job@Q},
     "train_jobs": read_tsv(${train_jobs_tsv@Q}),
     "eval_jobs": read_tsv(${eval_jobs_tsv@Q}),
     "c_exec_job": ${c_exec_job@Q},

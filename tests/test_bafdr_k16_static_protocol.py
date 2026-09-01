@@ -111,12 +111,15 @@ def test_slurm_scripts_use_world2_dag_not_single_gpu_array():
     assert "--seal-predictions" in run_text
     assert "--open-metrics" in run_text
     assert "#SBATCH --gres" not in submit_text
+    assert "--array=0-20" in submit_text
+    assert "local array_spec" in submit_text
     assert "gpu:2" in submit_text
     assert "seed_list=(4407 4408 4409)" in submit_text
-    assert "--array=0-20" not in submit_text
-    assert "BAFDR-K16-FULL" in submit_text
-    assert "afterok:${train_jobs[\"D160:${seed}\"]}" in submit_text
+    assert "run_zoomtoken_bafdr_k16_array_task.sh" in submit_text
     assert "zt-bafdr-metrics" in submit_text
+    array_task_text = read(ROOT / "scripts" / "run_zoomtoken_bafdr_k16_array_task.sh")
+    assert '"${arm}" == "BAFDR-K16-FULL"' in array_task_text
+    assert "d160_seed${seed}/checkpoint/epoch_59.pth" in array_task_text
 
 
 def test_raw_prediction_cache_is_window_level_for_sliding_window_eval():
