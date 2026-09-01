@@ -50,7 +50,7 @@ model = dict(
         arch=(2, 2, 5),
         conv_cfg=dict(kernel_size=3, proj_pdrop=0.0),
         norm_cfg=dict(type="LN"),
-        attn_cfg=dict(n_head=4, n_mha_win_size=19),
+        attn_cfg=dict(n_head=4, n_mha_win_size=-1),
         use_abs_pe=True,
         max_seq_len=2304,
     ),

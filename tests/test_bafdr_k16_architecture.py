@@ -91,7 +91,7 @@ def test_bafdr_asymmetric_projection_l2_l5_residual_invariance():
         arch=(2, 2, 5),
         conv_cfg=dict(kernel_size=3, proj_pdrop=0.0),
         norm_cfg=dict(type="LN"),
-        attn_cfg=dict(n_head=4, n_mha_win_size=19),
+        attn_cfg=dict(n_head=4, n_mha_win_size=-1),
         use_abs_pe=False,
     )
     proj.eval()
@@ -129,7 +129,7 @@ def test_bafdr_late_projection_propagates_residual_to_all_levels():
         arch=(2, 2, 5),
         conv_cfg=dict(kernel_size=3, proj_pdrop=0.0),
         norm_cfg=dict(type="LN"),
-        attn_cfg=dict(n_head=4, n_mha_win_size=19),
+        attn_cfg=dict(n_head=4, n_mha_win_size=-1),
         use_abs_pe=False,
     )
     proj.eval()
