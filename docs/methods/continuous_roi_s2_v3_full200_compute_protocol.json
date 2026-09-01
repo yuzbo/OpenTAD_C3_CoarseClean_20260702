@@ -1,0 +1,101 @@
+{
+  "protocol_id": "ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FULL200-COMPUTE-PARETO-3X3-v001",
+  "decision_source": {
+    "request_id": "PRO_CONTINUOUS_ROI_S2_V3_FULL_DATA_SINGLE_AXIS_OBJECTIVE_ADJUDICATION-v002",
+    "conversation_id": "6a9641aa-a8f8-83ea-a5e7-b64da4daffc2",
+    "decision": "REVISE",
+    "role_contract": "KEEP",
+    "base_revision": "10aed28659a08fa703def278fc0f5f1422dcad89"
+  },
+  "objective": {
+    "primary_axis": "detection_performance_vs_full_model_executed_inference_computation",
+    "compute_definition": "full_operator_C_exec",
+    "compute_boundary_start": "first_arm_dependent_decoded_rgb_crop_resize_or_normalization",
+    "compute_boundary_end": "pre_nms_raw_detections",
+    "fused_multiply_add_flops": 2,
+    "candidate_compute_ratio_max": 0.9,
+    "diagnostic_only": [
+      "latency",
+      "throughput",
+      "peak_allocated_memory",
+      "peak_reserved_memory",
+      "gross_energy",
+      "power",
+      "component_timings"
+    ]
+  },
+  "arms": {
+    "D160": {
+      "view": "full_frame_letterbox_160x160",
+      "fusion": "none"
+    },
+    "G96": {
+      "view": "full_frame_letterbox_96x96",
+      "fusion": "none"
+    },
+    "U128-A0": {
+      "view": "global96_plus_source_native_fixed_center_local128",
+      "canonical_source_hw": [180, 320],
+      "canonical_crop_xyxy": [96, 26, 224, 154],
+      "fusion": "fixed_mean_parameter_free",
+      "shared_backbone_instances": 1,
+      "learned_selector_parameters": 0
+    }
+  },
+  "seeds": [4407, 4408, 4409],
+  "training": {
+    "split": "training",
+    "identity_count": 200,
+    "identity_coverage_per_epoch": "exactly_once",
+    "epochs": 60,
+    "successful_updates_per_epoch": 100,
+    "successful_updates_per_cell": 6000,
+    "world_size": 2,
+    "local_batch_size": 1,
+    "global_batch_size": 2,
+    "final_checkpoint": {
+      "epoch_index": 59,
+      "state": "state_dict_ema",
+      "successful_update": 6000
+    },
+    "forbidden_selection": [
+      "best_checkpoint",
+      "best_seed",
+      "early_stopping",
+      "intermediate_metric"
+    ]
+  },
+  "evaluation": {
+    "split": "validation",
+    "video_count": 211,
+    "ordered_window_count": 792,
+    "window_size": 768,
+    "window_overlap_ratio": 0.5,
+    "prediction_phase": "label_free",
+    "prediction_barrier": "seal_all_9_predictions_before_evaluator",
+    "metric_opening_count": 1,
+    "checkpoint_state": "epoch_59_state_dict_ema",
+    "metrics": ["mAP@0.3", "mAP@0.4", "mAP@0.5", "mAP@0.6", "mAP@0.7", "Avg-mAP", "short_action", "start_boundary", "end_boundary"]
+  },
+  "fairness": {
+    "same_trainable_parameter_identity_and_count": true,
+    "same_temporal_window_and_order": true,
+    "same_annotation_evaluator_postprocess_and_nms": true,
+    "same_training_schedule": true,
+    "same_prediction_and_gt_opening_protocol": true
+  },
+  "admission": {
+    "performance_and_stability_gates": "frozen_in_the_cited_pro_response",
+    "compute_gate": "aggregate_C_exec_U128_A0_over_D160_lte_0.90",
+    "g96_dominance_gate": "G96_must_not_strictly_dominate_U128_A0",
+    "unsupported_operator_policy": "explicit_operator_table_or_conservative_upper_bound",
+    "incomplete_operator_coverage": "protocol_blocker"
+  },
+  "superseded": [
+    "fit160_gate40",
+    "129_window_reference",
+    "4800_update_schedule",
+    "sobol_or_candidate_selection",
+    "joint_latency_memory_energy_admission"
+  ]
+}
