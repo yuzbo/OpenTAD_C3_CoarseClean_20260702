@@ -38,3 +38,13 @@
 | `BAFDR-K16-LATE` | `configs/adatad/thumos/bafdr_k16_late_seed{4407,4408,4409}.py` | 归因 2: 验证非对称注入价值 |
 | `BAFDR-K16-NOKD` | `configs/adatad/thumos/bafdr_k16_nokd_seed{4407,4408,4409}.py` | 归因 3: 隔离蒸馏收益 |
 | `BAFDR-K16-FULL` | `configs/adatad/thumos/bafdr_k16_full_seed{4407,4408,4409}.py` | 预注册主候选模型 |
+
+---
+
+## 3. 执行阶段契约
+
+- `tools/bata/bafdr_k16_fullmatrix_train.py` 的 `train` 阶段只训练并写出 `train_receipt.json`，不打开验证指标。
+- `--eval-only --prediction-only` 只保存窗口级 raw predictions 与 `prediction_receipt.json`，`metric_opened=false`。
+- `tools/bata/bafdr_k16_fullmatrix.py --seal-predictions` 在 21 个 cell 全部完成 prediction seal 后检查每个 cell 的 792 个窗口级 `.pkl`，失败则禁止进入 metrics 阶段。
+- `--eval-only --open-metrics` 只在 seal 通过后读取 sealed raw predictions 并写出 `eval_receipt.json`。
+- `scripts/submit_zoomtoken_bafdr_k16_fullmatrix_n16r4.sbatch` 提交 DAG：D160 先生成同 seed teacher，FULL 依赖对应 D160，所有 cell 先完成 prediction seal，再进入统一 metric-opening job。

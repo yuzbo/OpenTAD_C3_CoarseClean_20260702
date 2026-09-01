@@ -164,7 +164,8 @@ class ActionFormer(SingleStageDetector):
                 inputs = inputs.detach()
 
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self.backbone(inputs, masks=masks)
+            self._latest_backbone_output = x
         else:
             x = inputs
         if self.with_backbone and hasattr(
@@ -204,6 +205,7 @@ class ActionFormer(SingleStageDetector):
 
         if self.with_projection:
             x, masks = self.projection(x, masks)
+            self._latest_projection_output = x
 
         metas = self._inject_pc_ot_mras_reader_outputs(x, masks, metas)
         reader_extra_losses = {}
@@ -264,7 +266,8 @@ class ActionFormer(SingleStageDetector):
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
 
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self.backbone(inputs, masks=masks)
+            self._latest_backbone_output = x
         else:
             x = inputs
 
@@ -290,6 +293,7 @@ class ActionFormer(SingleStageDetector):
 
         if self.with_projection:
             x, masks = self.projection(x, masks)
+            self._latest_projection_output = x
 
         metas = self._inject_pc_ot_mras_reader_outputs(x, masks, metas)
 

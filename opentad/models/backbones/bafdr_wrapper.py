@@ -229,9 +229,34 @@ class BAFDRBackboneWrapper(BackboneWrapper):
         Returns:
             L_sel: [B, C, 16*8] local features for selected chunks
         """
-        B, _, C_in, T_total, H_src, W_src = source_tensor.shape
+        if not torch.is_tensor(source_tensor):
+            raise TypeError("BA-FDR source view must be a torch.Tensor")
+        if source_tensor.ndim != 6:
+            raise ValueError(
+                "BA-FDR source view must be [B, 1, 3, T, H, W]; "
+                f"got shape {tuple(source_tensor.shape)}"
+            )
+        if source_tensor.dtype != torch.uint8:
+            raise TypeError(
+                "BA-FDR physical-skip source view must remain CPU/GPU uint8 raw frames; "
+                f"got {source_tensor.dtype}"
+            )
+        B, num_clips, C_in, T_total, H_src, W_src = source_tensor.shape
         x0, y0, x1, y1 = self.crop_box
         K = self.k_chunks
+        if num_clips != 1:
+            raise ValueError(f"BA-FDR source view must have num_clips=1, got {num_clips}")
+        if C_in != 3:
+            raise ValueError(f"BA-FDR source view must have 3 channels, got {C_in}")
+        if T_total < self.chunk_num * 16:
+            raise ValueError(
+                f"BA-FDR source view has {T_total} frames, expected at least {self.chunk_num * 16}"
+            )
+        if x1 > W_src or y1 > H_src:
+            raise ValueError(
+                "BA-FDR local crop exceeds source dimensions: "
+                f"crop={(x0, y0, x1, y1)}, source={(H_src, W_src)}"
+            )
 
         # Gather selected 16-frame chunks and crop to [128, 128]
         # Shape per chunk: [1, 3, 16, 128, 128]
@@ -245,7 +270,7 @@ class BAFDRBackboneWrapper(BackboneWrapper):
                 local_chunk_list.append(chunk_crop)
 
         # Batch: [B*K, 1, 3, 16, 128, 128] uint8
-        local_tensor = torch.stack(local_chunk_list, dim=0)
+        local_tensor = torch.stack(local_chunk_list, dim=0).to(selected_indices.device, non_blocking=True)
 
         # Data preprocessor: normalize to float
         frames, _ = self.model.data_preprocessor.preprocess(
@@ -326,6 +351,8 @@ class BAFDRBackboneWrapper(BackboneWrapper):
         # 7. Scatter into all-zero dense residual tensor R [B, C, 384]
         R = torch.zeros_like(G)
         R.scatter_(2, selected_tubelets.unsqueeze(1).expand(-1, C, -1), R_sel)
+        selected_mask_384 = torch.zeros(B, T_tubelets, device=G.device, dtype=torch.bool)
+        selected_mask_384.scatter_(1, selected_tubelets, True)
 
         # 8. Fused dense carrier: Z = G + R
         Z = G + R
@@ -334,6 +361,7 @@ class BAFDRBackboneWrapper(BackboneWrapper):
         G_768 = deterministic_linear_2x(G)
         R_768 = deterministic_linear_2x(R)
         Z_768 = deterministic_linear_2x(Z)
+        selected_mask_768 = selected_mask_384.repeat_interleave(2, dim=1)
 
         if masks is not None:
             if masks.shape != (B, self.output_length):
@@ -342,6 +370,7 @@ class BAFDRBackboneWrapper(BackboneWrapper):
             G_768 = G_768 * m
             R_768 = R_768 * m
             Z_768 = Z_768 * m
+            selected_mask_768 = selected_mask_768 & masks.detach().bool()
 
         self.latest_bafdr_audit = {
             "schema_version": BAFDR_BACKBONE_SCHEMA,
@@ -354,6 +383,7 @@ class BAFDRBackboneWrapper(BackboneWrapper):
             "selected_indices": selected_indices.detach().cpu().tolist(),
             "gamma_value": float(self.gamma.item()),
             "output_shape": list(Z_768.shape),
+            "selected_mask_768_true": int(selected_mask_768.detach().sum().item()),
         }
 
         if self.return_bundle:
@@ -362,6 +392,7 @@ class BAFDRBackboneWrapper(BackboneWrapper):
                 "global_features": G_768.to(torch.float32),
                 "residual_features": R_768.to(torch.float32),
                 "fused_features": Z_768.to(torch.float32),
+                "selected_mask_768": selected_mask_768,
                 "router_outputs": router_outputs,
                 "selected_indices": selected_indices,
                 "executed_local_chunks": B * self.k_chunks,

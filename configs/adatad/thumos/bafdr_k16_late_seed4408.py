@@ -9,7 +9,7 @@ train_pipeline = [
     dict(type="mmaction.DecordDecode"),
     dict(type="BAFDRSourceViews", global_size=96, output_key="bafdr_inputs", required_source_height=180, required_source_width=320),
     dict(type="ConvertToTensor", keys=["gt_segments", "gt_labels"]),
-    dict(type="Collect", keys=["inputs", "masks"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries"], extra_keys=["gt_segments", "gt_labels"]),
+    dict(type="Collect", inputs="bafdr_inputs", keys=["masks", "gt_segments", "gt_labels"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries", "window_start_frame", "bafdr_geometry"]),
 ]
 evaluation_pipeline = [
     dict(type="PrepareVideoInfo", format="mp4"),
@@ -18,7 +18,7 @@ evaluation_pipeline = [
     dict(type="mmaction.DecordDecode"),
     dict(type="BAFDRSourceViews", global_size=96, output_key="bafdr_inputs", required_source_height=180, required_source_width=320),
     dict(type="ConvertToTensor", keys=["gt_segments", "gt_labels"]),
-    dict(type="Collect", keys=["inputs", "masks"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries"], extra_keys=["gt_segments", "gt_labels"]),
+    dict(type="Collect", inputs="bafdr_inputs", keys=["masks", "gt_segments", "gt_labels"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries", "window_start_frame", "bafdr_geometry"]),
 ]
 
 dataset = dict(

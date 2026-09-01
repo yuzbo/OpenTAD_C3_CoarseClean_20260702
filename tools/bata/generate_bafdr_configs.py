@@ -58,7 +58,7 @@ work_dir = f"exps/thumos/adatad/bafdr_k16_u128_all48_a0_seed{s}"
     dict(type="mmaction.DecordDecode"),
     dict(type="BAFDRSourceViews", global_size=96, output_key="bafdr_inputs", required_source_height=180, required_source_width=320),
     dict(type="ConvertToTensor", keys=["gt_segments", "gt_labels"]),
-    dict(type="Collect", keys=["inputs", "masks"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries"], extra_keys=["gt_segments", "gt_labels"]),
+    dict(type="Collect", inputs="bafdr_inputs", keys=["masks", "gt_segments", "gt_labels"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries", "window_start_frame", "bafdr_geometry"]),
 ]'''
         else:
             return '''[
@@ -68,7 +68,7 @@ work_dir = f"exps/thumos/adatad/bafdr_k16_u128_all48_a0_seed{s}"
     dict(type="mmaction.DecordDecode"),
     dict(type="BAFDRSourceViews", global_size=96, output_key="bafdr_inputs", required_source_height=180, required_source_width=320),
     dict(type="ConvertToTensor", keys=["gt_segments", "gt_labels"]),
-    dict(type="Collect", keys=["inputs", "masks"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries"], extra_keys=["gt_segments", "gt_labels"]),
+    dict(type="Collect", inputs="bafdr_inputs", keys=["masks", "gt_segments", "gt_labels"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries", "window_start_frame", "bafdr_geometry"]),
 ]'''
 
     bafdr_optimizer_str = '''dict(

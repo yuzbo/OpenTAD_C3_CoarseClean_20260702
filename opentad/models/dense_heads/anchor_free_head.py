@@ -302,6 +302,11 @@ class AnchorFreeHead(nn.Module):
         points, mask_list = self._build_physical_points_and_masks(
             points, mask_list, metas=metas, train_mode=True
         )
+        self.latest_kd_outputs = {
+            "cls_pred": tuple(cls_pred),
+            "reg_pred": tuple(reg_pred),
+            "mask_list": tuple(mask_list),
+        }
 
         losses = self.losses(cls_pred, reg_pred, mask_list, points, gt_segments, gt_labels)
         return losses

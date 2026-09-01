@@ -5,7 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT}"
 
-BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
+if [[ -n "${YUZIBO_ROOT:-}" ]]; then
+  BASE="${YUZIBO_ROOT}"
+elif [[ -d "/data/run01/sczc063/yuzibo" ]]; then
+  BASE="/data/run01/sczc063/yuzibo"
+else
+  BASE="${ROOT}/tmp/bafdr_local"
+fi
 RUN_ROOT="${ZOOMTOKEN_RUN_ROOT:-${BASE}/projects/bafdr_k16_fullmatrix_compute}"
 MANIFEST_DIR="${RUN_ROOT}/manifest"
 WORK_DIR_ROOT="${RUN_ROOT}/work_dirs"
@@ -27,16 +33,120 @@ if [[ -f "${CONDA_ENV}" ]]; then
 fi
 
 export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
-export OMP_NUM_THREADS=4
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 
-if [[ $# -ge 1 ]]; then
-  CONFIG="$1"
-  echo "[BA-FDR K16] Executing cell: ${CONFIG}"
-  python tools/bata/bafdr_k16_fullmatrix_train.py "${CONFIG}"
+mode="${1:-validate}"
+if [[ -f "${mode}" || "${mode}" == *.py ]]; then
+  CONFIG="${mode}"
+  mode="train"
 else
-  echo "[BA-FDR K16] Validating master protocol and 21 cell configs..."
-  python tools/bata/bafdr_k16_fullmatrix.py \
-      --repo-root "${ROOT}" \
-      --output "${MANIFEST_DIR}/submission_receipt.json"
-  echo "[BA-FDR K16] Validation successful. Master receipt at ${MANIFEST_DIR}/submission_receipt.json"
+  CONFIG="${2:-}"
 fi
+
+allow_dirty_flag=()
+if [[ "${BAFDR_ALLOW_DIRTY:-0}" == "1" ]]; then
+  allow_dirty_flag=(--allow-dirty)
+fi
+
+cell_work_dir() {
+  local config="$1"
+  local stem
+  stem="$(basename "${config}" .py)"
+  printf '%s/%s' "${WORK_DIR_ROOT}" "${stem}"
+}
+
+run_torch_cell() {
+  local config="$1"
+  shift
+  local work_dir
+  work_dir="$(cell_work_dir "${config}")"
+  mkdir -p "${work_dir}"
+  if [[ "${BAFDR_ALLOW_SINGLE_PROCESS:-0}" == "1" ]]; then
+    python tools/bata/bafdr_k16_fullmatrix_train.py "${config}" \
+      --work-dir "${work_dir}" \
+      --allow-single-process \
+      "$@"
+  else
+    torchrun --standalone --nproc_per_node="${BAFDR_NPROC_PER_NODE:-2}" \
+      tools/bata/bafdr_k16_fullmatrix_train.py "${config}" \
+      --work-dir "${work_dir}" \
+      "$@"
+  fi
+}
+
+case "${mode}" in
+  validate)
+    python tools/bata/bafdr_k16_fullmatrix.py \
+      --repo-root "${ROOT}" \
+      --output "${MANIFEST_DIR}/submission_receipt.json" \
+      "${allow_dirty_flag[@]}"
+    ;;
+  precheck)
+    if [[ -z "${CONFIG}" ]]; then
+      echo "precheck mode requires a config path" >&2
+      exit 2
+    fi
+    run_torch_cell "${CONFIG}" --precheck-only
+    ;;
+  train)
+    if [[ -z "${CONFIG}" ]]; then
+      echo "train mode requires a config path" >&2
+      exit 2
+    fi
+    run_torch_cell "${CONFIG}"
+    ;;
+  eval)
+    if [[ -z "${CONFIG}" ]]; then
+      echo "eval mode requires a config path" >&2
+      exit 2
+    fi
+    work_dir="$(cell_work_dir "${CONFIG}")"
+    run_torch_cell "${CONFIG}" \
+      --eval-only \
+      --prediction-only \
+      --checkpoint "${work_dir}/checkpoint/epoch_59.pth"
+    ;;
+  metrics)
+    python tools/bata/bafdr_k16_fullmatrix.py \
+      --repo-root "${ROOT}" \
+      --seal-predictions \
+      --work-dir-root "${WORK_DIR_ROOT}" \
+      --output "${MANIFEST_DIR}/prediction_seal_receipt.json"
+    for idx in $(seq 0 20); do
+      config="$(python tools/bata/bafdr_k16_fullmatrix.py --repo-root "${ROOT}" --array-idx "${idx}")"
+      work_dir="$(cell_work_dir "${config}")"
+      python tools/bata/bafdr_k16_fullmatrix_train.py "${config}" \
+        --work-dir "${work_dir}" \
+        --eval-only \
+        --open-metrics \
+        --allow-single-process \
+        --checkpoint "${work_dir}/checkpoint/epoch_59.pth"
+    done
+    ;;
+  c_exec)
+    python tools/bata/bafdr_k16_fullmatrix_c_exec.py \
+      --output "${PROFILE_DIR}/c_exec_summary.json"
+    ;;
+  summary)
+    python tools/bata/bafdr_k16_fullmatrix.py \
+      --repo-root "${ROOT}" \
+      --summary \
+      --work-dir-root "${WORK_DIR_ROOT}" \
+      --summary-output "${EVAL_DIR}/matrix_summary.json" \
+      "${allow_dirty_flag[@]}"
+    ;;
+  summary-strict)
+    python tools/bata/bafdr_k16_fullmatrix.py \
+      --repo-root "${ROOT}" \
+      --summary \
+      --work-dir-root "${WORK_DIR_ROOT}" \
+      --summary-output "${EVAL_DIR}/matrix_summary.json" \
+      --require-complete \
+      "${allow_dirty_flag[@]}"
+    ;;
+  *)
+    echo "Unknown mode: ${mode}" >&2
+    echo "Usage: $0 [validate|precheck|train|eval|metrics|c_exec|summary|summary-strict] [config.py]" >&2
+    exit 2
+    ;;
+esac
