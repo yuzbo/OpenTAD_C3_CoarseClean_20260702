@@ -7,6 +7,7 @@ from .mlp_proj import MLPPyramidProj
 from .mamba_proj import MambaProj
 from .dyne_proj import DynEProj
 from .causal_proj import CausalProj
+from .bafdr_asymmetric_proj import BAFDRAsymmetricProjection, BAFDRLateProjection
 
 __all__ = [
     "ConvSingleProj",
@@ -19,4 +20,6 @@ __all__ = [
     "MambaProj",
     "DynEProj",
     "CausalProj",
+    "BAFDRAsymmetricProjection",
+    "BAFDRLateProjection",
 ]

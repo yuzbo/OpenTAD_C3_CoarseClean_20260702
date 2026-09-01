@@ -7,6 +7,7 @@ from .native_crop import (
     GeoRouteSourceViews,
     NativeCropSourceViews,
 )
+from .bafdr import BAFDRSourceViews
 
 __all__ = [
     "LoadFeats",
@@ -25,4 +26,5 @@ __all__ = [
     "FullFrameLetterboxView",
     "GeoRouteSourceViews",
     "NativeCropSourceViews",
+    "BAFDRSourceViews",
 ]

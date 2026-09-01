@@ -4,6 +4,7 @@ from .backbones import (
     ContinuousRoiBackboneWrapper,
     GeoRouteBackboneWrapper,
     NativeCropBackboneWrapper,
+    BAFDRBackboneWrapper,
 )
 
 MODELS = Registry("models")
@@ -35,6 +36,8 @@ def build_backbone(cfg):
         if custom_cfg is not None
         else None
     )
+    if wrapper_type == "bafdr_k16_shared_videomae":
+        return BAFDRBackboneWrapper(cfg)
     if wrapper_type == "native_crop_shared_videomae":
         return NativeCropBackboneWrapper(cfg)
     if wrapper_type == "continuous_roi_common_support_u128":
