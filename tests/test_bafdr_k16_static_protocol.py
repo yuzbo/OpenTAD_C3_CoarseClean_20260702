@@ -100,6 +100,8 @@ def test_train_driver_is_fail_closed_and_ddp_aware():
     assert "logger.warning" not in text
     assert "BAFDR_PRETRAIN" in text
     assert "BAFDR pretrained checkpoint" in text
+    optimizer_text = read(ROOT / "opentad" / "cores" / "optimizer.py")
+    assert "target_model = model.module if hasattr(model, \"module\") else model" in optimizer_text
 
 
 def test_matrix_orchestrator_validates_semantic_contracts():

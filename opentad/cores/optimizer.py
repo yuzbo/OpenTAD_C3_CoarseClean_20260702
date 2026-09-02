@@ -5,19 +5,24 @@ from .layer_decay_optimizer import build_vit_optimizer
 def build_optimizer(cfg, model, logger):
     optimizer_type = cfg["type"]
     cfg.pop("type")
+    # Formal jobs wrap the detector in DDP, while the documented local
+    # smoke/precheck path intentionally runs one process.  Keep both paths on
+    # the same optimizer contract instead of dereferencing ``model.module``
+    # unconditionally.
+    target_model = model.module if hasattr(model, "module") else model
 
     if optimizer_type == "LayerDecayAdamW":
         return build_vit_optimizer(cfg, model, logger)
 
     # set the backbone's optim_groups: SHOULD ONLY CONTAIN BACKBONE PARAMS
-    if hasattr(model.module, "backbone"):  # if backbone exists
-        if model.module.backbone.freeze_backbone == False:  # not frozen
+    if hasattr(target_model, "backbone"):  # if backbone exists
+        if target_model.backbone.freeze_backbone == False:  # not frozen
             assert (
                 "backbone" in cfg.keys()
             ), "Freeze_backbone is set to False, but backbone parameters is not provided in the optimizer config."
             backbone_cfg = cfg["backbone"]
             cfg.pop("backbone")
-            backbone_optim_groups = get_backbone_optim_groups(backbone_cfg, model, logger)
+            backbone_optim_groups = get_backbone_optim_groups(backbone_cfg, target_model, logger)
 
         else:  # frozen backbone
             backbone_optim_groups = []
@@ -30,11 +35,11 @@ def build_optimizer(cfg, model, logger):
     # weight decay for a certain layer, the model should have a function called get_optim_groups
     if "paramwise" in cfg.keys() and cfg["paramwise"]:
         cfg.pop("paramwise")
-        det_optim_groups = model.module.get_optim_groups(cfg)
+        det_optim_groups = target_model.get_optim_groups(cfg)
     else:
         # optim_groups that does not contain backbone params
         detector_params = []
-        for name, param in model.module.named_parameters():
+        for name, param in target_model.named_parameters():
             # exclude the backbone
             if name.startswith("backbone"):
                 continue
@@ -84,7 +89,8 @@ def get_backbone_optim_groups(cfg, model, logger):
 
     name_list = []
     # split the backbone parameters into different groups
-    for name, param in model.module.backbone.named_parameters():
+    target_model = model.module if hasattr(model, "module") else model
+    for name, param in target_model.backbone.named_parameters():
         # loop the exclude_name_list
         is_exclude = False
         if len(exclude_name_list) > 0:
