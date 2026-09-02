@@ -84,7 +84,7 @@ submit_job() {
     --output="${LOG_DIR}/%x_%j.out" \
     --error="${LOG_DIR}/%x_%j.err" \
     "${dep_args[@]}" \
-    --wrap "cd '${PROJECT_DIR}' && export ZOOMTOKEN_RUN_ROOT='${RUN_ROOT}' && ${command}"
+    --wrap "cd '${PROJECT_DIR}' && export PROJECT_DIR='${PROJECT_DIR}' ZOOMTOKEN_RUN_ROOT='${RUN_ROOT}' && ${command}"
 }
 
 declare -A train_jobs

@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ -n "${PROJECT_DIR:-}" ]]; then
   ROOT="$(cd "${PROJECT_DIR}" && pwd)"
-elif [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "${SLURM_SUBMIT_DIR}" ]]; then
+elif [[ -n "${SLURM_SUBMIT_DIR:-}" && -f "${SLURM_SUBMIT_DIR}/tools/bata/bafdr_k16_fullmatrix_train.py" ]]; then
   ROOT="$(cd "${SLURM_SUBMIT_DIR}" && pwd)"
 else
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
