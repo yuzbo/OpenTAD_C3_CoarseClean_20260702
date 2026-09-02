@@ -21,6 +21,15 @@ The corresponding clean remote worktrees are under
 Every submission must check the full SHA, required branch name where the
 launcher requires it, and an empty `git status --porcelain`.
 
+The review-only correction branches are also pushed and are intentionally
+separate from the frozen sources: H65 signature routing
+`codex/h65-pro-admission-fix-20260902` at
+`78cde6aa5335b2e399e597ce9229d8657e6760a5`, CT-DP factorization
+`codex/duca-ctdp-admission-fix-20260902` at
+`d62cab763c8e0478e73c6c47a4c185db45164dda`, and Unified fail-closed gates
+`codex/duca-unified-admission-gates-20260902` at
+`98d559ee414504caaa480294ce4d066276cdebe6`.
+
 ## N16R4 environment
 
 Use an allocated Slurm job, never the login node for training:
