@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-02T17:41:13+00:00",
+  "last_updated_utc": "2026-09-02T17:47:52+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -157,7 +157,7 @@
   ],
   "remote_supervisor": {
     "status": "ACTIVE",
-    "checked_at": "2026-09-02T17:40:41+00:00",
+    "checked_at": "2026-09-02T17:47:45+00:00",
     "dispatcher_status": "BLOCKED",
     "entries": []
   },
@@ -185,7 +185,13 @@
       "job_ids": "1266218-1266219",
       "remote_directory": "/data/run01/sczc063/yuzibo/projects/zoomtoken_et_trc_correction_20260902_59eab0c6",
       "source_head": "be330c071638249e7c5268a5464e454c0f2a5621",
-      "reason": "晚于冻结 ET-TRC SHA，不纳入当前结果"
+      "reason": "晚于冻结 ET-TRC SHA；Slurm COMPLETED 但仅有 log/config，没有 terminal checkpoint 或 receipt，不纳入当前结果"
+    },
+    {
+      "job_ids": "1266401-1266420",
+      "remote_directory": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7",
+      "source_head": "efe69d2ea10accd01d0129dfe99cba4d1d5773cb",
+      "reason": "非当前冻结 BAFDR checkout；1266401/1266402 因 LoadFrames 不支持窗口参数失败，其他作业仍在运行或依赖等待，全部不纳入当前结果"
     },
     {
       "job_ids": "1265777-1265780",
