@@ -54,8 +54,12 @@ solver = dict(
     val=dict(batch_size=1, num_workers=2),
     test=dict(batch_size=1, num_workers=2),
     clip_grad_norm=1,
-    amp=True,
-    fp16_compress=True,
+    # ET-TRC's full VideoMAE attention path produced non-finite detector
+    # losses under FP16 on the canonical THUMOS batch stream.  The matched
+    # OFF/ON pair therefore uses explicit FP32 arithmetic; this is a stability
+    # contract, not a speed claim.
+    amp=False,
+    fp16_compress=False,
     static_graph=True,
     ema=True,
 )
@@ -73,7 +77,7 @@ workflow = dict(
     max_train_iters=100,
     require_successful_update_hook=False,
     schedule_and_ema_on_success_only=True,
-    max_amp_retries_per_batch=8,
+    max_amp_retries_per_batch=0,
     fail_on_skipped_update=True,
     fail_on_nonfinite_loss=True,
 )
