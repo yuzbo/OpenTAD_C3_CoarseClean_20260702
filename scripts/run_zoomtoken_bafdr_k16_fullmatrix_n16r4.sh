@@ -11,6 +11,10 @@ else
   ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 fi
 cd "${ROOT}"
+EXPECTED_COMMIT="${BAFDR_EXPECTED_COMMIT:?BAFDR_EXPECTED_COMMIT must be the full 40-character target SHA}"
+[[ "${EXPECTED_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "BAFDR_EXPECTED_COMMIT must be a full SHA" >&2; exit 2; }
+[[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || { echo "BAFDR checkout HEAD mismatch" >&2; exit 2; }
+[[ -z "$(git status --porcelain)" ]] || { echo "BAFDR checkout is not clean" >&2; exit 2; }
 
 if [[ -n "${YUZIBO_ROOT:-}" ]]; then
   BASE="${YUZIBO_ROOT}"
@@ -54,6 +58,26 @@ if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
     CONFIG="${PRECHECK_CONFIG:-configs/adatad/thumos/bafdr_k16_d160_seed4407.py}"
   fi
 fi
+
+case "${mode}" in
+  train|precheck|eval|metrics|summary|summary-strict)
+    if [[ "${BAFDR_REQUIRE_SCREEN_GATE:-1}" == "1" ]]; then
+      SCREEN_RECEIPT="${BAFDR_SCREEN_RECEIPT:?BAFDR_SCREEN_RECEIPT is required for the formal 21-cell matrix}"
+      [[ -f "${SCREEN_RECEIPT}" ]] || { echo "BAFDR screen receipt not found: ${SCREEN_RECEIPT}" >&2; exit 2; }
+      python - "${SCREEN_RECEIPT}" "${EXPECTED_COMMIT}" <<'PY'
+import json, sys
+path, expected = sys.argv[1:]
+with open(path, encoding="utf-8") as handle:
+    receipt = json.load(handle)
+if receipt.get("status") != "PASS":
+    raise SystemExit(f"BAFDR screen gate is not passing: {receipt.get('status')!r}")
+observed = receipt.get("commit_sha") or receipt.get("commit")
+if observed != expected:
+    raise SystemExit(f"BAFDR screen gate commit mismatch: expected {expected}, got {observed}")
+PY
+    fi
+    ;;
+esac
 
 allow_dirty_flag=()
 if [[ "${BAFDR_ALLOW_DIRTY:-0}" == "1" ]]; then

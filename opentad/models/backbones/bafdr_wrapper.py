@@ -85,6 +85,14 @@ class BAFDRBackboneWrapper(BackboneWrapper):
         self.output_length = int(getattr(custom_cfg, "bafdr_output_length", 768))
         self.uniform_mode = bool(getattr(custom_cfg, "bafdr_uniform_mode", False))
         self.return_bundle = bool(getattr(custom_cfg, "bafdr_return_bundle", True))
+        self.compute_contract = str(
+            getattr(custom_cfg, "bafdr_compute_contract", "G96 carrier + sparse K16 local refresh")
+        )
+        # A real U16 deployment must provide the raw source view.  Synthetic
+        # zero-filled local features are opt-in for isolated unit tests only.
+        self.allow_synthetic_source_fallback = bool(
+            getattr(custom_cfg, "bafdr_allow_synthetic_source_fallback", False)
+        )
 
         # Center crop canonical box for local_size (dynamically computed)
         y0 = max(0, (180 - self.local_size) // 2)
@@ -318,8 +326,8 @@ class BAFDRBackboneWrapper(BackboneWrapper):
         # 3. True Physical Skip: U128 Local Refresh (ONLY 16 chunks executed)
         if source_view is not None:
             L_sel = self._encode_selected_local_chunks(source_view, selected_indices)
-        elif self.uniform_mode:
-            # Fallback only for synthetic testing
+        elif self.allow_synthetic_source_fallback:
+            # Explicit opt-in fallback for synthetic unit tests only.
             L_sel = torch.zeros(B, C, self.k_chunks * self.tubelets_per_chunk, device=G.device, dtype=G.dtype)
         else:
             raise ValueError("BA-FDR Backbone requires 'source' view tensor in inputs dict during E2E execution.")
@@ -380,6 +388,10 @@ class BAFDRBackboneWrapper(BackboneWrapper):
             "executed_local_chunks": B * self.k_chunks,
             "unselected_local_chunks": B * (self.chunk_num - self.k_chunks),
             "uniform_mode": self.uniform_mode,
+            "compute_contract": self.compute_contract,
+            "router_selection_is_hard": True,
+            "detector_gradient_to_router": False,
+            "synthetic_source_fallback": self.allow_synthetic_source_fallback,
             "selected_indices": selected_indices.detach().cpu().tolist(),
             "gamma_value": float(self.gamma.item()),
             "output_shape": list(Z_768.shape),

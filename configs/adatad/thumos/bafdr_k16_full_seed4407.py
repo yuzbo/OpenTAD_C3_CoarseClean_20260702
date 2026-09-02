@@ -47,6 +47,7 @@ model = dict(
             bafdr_output_length=768,
             bafdr_uniform_mode=False,
             bafdr_return_bundle=True,
+            bafdr_allow_synthetic_source_fallback=False,
         )
     ),
     projection=dict(

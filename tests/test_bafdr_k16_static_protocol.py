@@ -57,6 +57,9 @@ def test_bafdr_wrapper_exposes_mask_and_keeps_source_uint8_contract():
     assert "selected_mask_384" in text
     assert "selected_mask_768" in text
     assert '"selected_mask_768": selected_mask_768' in text
+    assert "allow_synthetic_source_fallback" in text
+    assert "elif self.allow_synthetic_source_fallback" in text
+    assert "compute_contract" in text
 
 
 def test_actionformer_passes_masks_to_backbone_and_captures_kd_features():
@@ -137,3 +140,14 @@ def test_raw_prediction_cache_is_window_level_for_sliding_window_eval():
     assert "def _prediction_filename" in text
     assert "window_start_frame" in text
     assert "__window_" in text
+
+
+def test_screen_submission_does_not_prematurely_pass_gate():
+    submit = read(ROOT / "scripts" / "submit_zoomtoken_bafdr_k16_screen_n16r4.sh")
+    finalizer = read(ROOT / "tools" / "bata" / "finalize_bafdr_screen_gate.py")
+    assert '"status": "SUBMITTED"' in submit
+    assert 'promoted["status"] = "PASS"' in finalizer
+    assert "total_successful_updates" in finalizer
+    assert "teacher_identity" in finalizer
+    assert "teacher_checkpoint_sha256" in finalizer
+    assert "BAFDR screen receipt is required" not in submit

@@ -47,6 +47,7 @@ model = dict(
             bafdr_output_length=768,
             bafdr_uniform_mode=True,
             bafdr_return_bundle=True,
+            bafdr_compute_contract="G96 carrier + uniform K16 local refresh (16x16-frame chunks)",
         )
     ),
     projection=dict(

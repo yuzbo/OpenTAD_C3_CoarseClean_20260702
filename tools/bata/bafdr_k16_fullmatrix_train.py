@@ -131,17 +131,74 @@ def resolve_existing_path(path_value: str | Path, *, repo_root: Path, label: str
     return path
 
 
-def resolve_teacher_checkpoint(path_value: str | Path, *, repo_root: Path, work_dir: Path, seed: int) -> Path:
+def resolve_teacher_checkpoint(path_value: str | Path, *, repo_root: Path) -> Path:
     configured = resolve_path(path_value, repo_root=repo_root)
     if configured.exists():
         return configured
-    sibling = work_dir.parent / f"bafdr_k16_d160_seed{seed}" / "checkpoint" / "epoch_59.pth"
-    if sibling.exists():
-        return sibling
     raise FileNotFoundError(
-        "Required D160 teacher checkpoint not found. Tried configured path "
-        f"{configured} and matrix sibling {sibling}."
+        "Required D160 teacher checkpoint not found at the configured path: "
+        f"{configured}. Refusing implicit sibling-checkpoint fallback."
     )
+
+
+def validate_teacher_identity(
+    *,
+    teacher_cfg_path: Path,
+    teacher_ckpt_path: Path,
+    teacher_seed: int,
+    repo_root: Path,
+) -> Dict[str, Any]:
+    """Bind FULL KD to explicit teacher artifacts and their immutable ids."""
+    checkpoint = torch.load(teacher_ckpt_path, map_location="cpu")
+    if not isinstance(checkpoint, Mapping) or "state_dict_ema" not in checkpoint:
+        raise RuntimeError("BAFDR teacher checkpoint must contain state_dict_ema")
+    if not isinstance(checkpoint["state_dict_ema"], Mapping) or not checkpoint["state_dict_ema"]:
+        raise RuntimeError("BAFDR teacher checkpoint state_dict_ema must be a non-empty mapping")
+    checkpoint_epoch = checkpoint.get("epoch", checkpoint.get("meta", {}).get("epoch"))
+    if checkpoint_epoch not in (59, "59"):
+        raise RuntimeError(f"BAFDR teacher checkpoint must be terminal epoch 59, got {checkpoint_epoch!r}")
+    checkpoint_sha = sha256_file(teacher_ckpt_path)
+    config_sha = sha256_file(teacher_cfg_path)
+    expected_checkpoint_sha = os.environ.get("BAFDR_TEACHER_CHECKPOINT_SHA256", "").strip().lower()
+    expected_config_sha = os.environ.get("BAFDR_TEACHER_CONFIG_SHA256", "").strip().lower()
+    teacher_commit = os.environ.get("BAFDR_TEACHER_COMMIT", "").strip()
+    if not teacher_commit or len(teacher_commit) != 40 or any(c not in "0123456789abcdefABCDEF" for c in teacher_commit):
+        raise RuntimeError("BAFDR-K16-FULL requires BAFDR_TEACHER_COMMIT as a full 40-character SHA")
+    if expected_checkpoint_sha != checkpoint_sha:
+        raise RuntimeError(
+            "BAFDR teacher checkpoint SHA mismatch: "
+            f"expected {expected_checkpoint_sha or '<unset>'}, got {checkpoint_sha}"
+        )
+    if expected_config_sha != config_sha:
+        raise RuntimeError(
+            "BAFDR teacher config SHA mismatch: "
+            f"expected {expected_config_sha or '<unset>'}, got {config_sha}"
+        )
+
+    teacher_cfg = Config.fromfile(str(teacher_cfg_path))
+    cfg_seed = int(teacher_cfg.get("seed", -1))
+    if cfg_seed != int(teacher_seed):
+        raise RuntimeError(
+            f"BAFDR teacher config seed mismatch: expected {teacher_seed}, got {cfg_seed}"
+        )
+    protocol = teacher_cfg.get("bafdr_protocol", {})
+    if str(protocol.get("arm", "")) != "D160":
+        raise RuntimeError("BAFDR teacher config must declare bafdr_protocol.arm=D160")
+    if int(protocol.get("seed", -1)) != int(teacher_seed):
+        raise RuntimeError("BAFDR teacher protocol seed does not match the formal seed")
+
+    return {
+        "teacher_config": str(teacher_cfg_path),
+        "teacher_config_sha256": config_sha,
+        "teacher_checkpoint": str(teacher_ckpt_path),
+        "teacher_checkpoint_sha256": checkpoint_sha,
+        "teacher_commit": teacher_commit,
+        "teacher_seed": int(teacher_seed),
+        "teacher_model": "D160",
+        "teacher_input_contract": "source_uint8_replay_160x160",
+        "teacher_data_contract": "THUMOS14-train-validation-split",
+        "bound_repo": str(repo_root),
+    }
 
 
 def init_distributed(expected_world_size: int, allow_single_process: bool) -> tuple[torch.device, int, int, int]:
@@ -664,6 +721,7 @@ def save_training_receipt(
     receipt_name: str = "eval_receipt.json",
     phase: str = "evaluation",
     metric_opened: bool = True,
+    teacher_identity: Optional[Mapping[str, Any]] = None,
 ) -> None:
     if not is_rank0():
         return
@@ -685,6 +743,7 @@ def save_training_receipt(
         "config": str(cfg_path),
         "config_sha256": sha256_file(cfg_path),
         "commit_sha": git_head(root_dir),
+        "teacher_identity": dict(teacher_identity or {}),
         "eval_results": dict(eval_results or {}),
         "timestamp": time.time(),
     }
@@ -757,13 +816,20 @@ def main() -> None:
         load_state_dict_strict(ema.module, loaded_ckpt["state_dict_ema"], label="EMA checkpoint")
 
     teacher = None
+    teacher_identity: Dict[str, Any] = {}
     if use_distill and not args.eval_only:
-        teacher_cfg = bafdr_meta.get("teacher_config")
-        teacher_ckpt = bafdr_meta.get("teacher_checkpoint")
+        teacher_cfg = os.environ.get("BAFDR_TEACHER_CONFIG", bafdr_meta.get("teacher_config", ""))
+        teacher_ckpt = os.environ.get("BAFDR_TEACHER_CHECKPOINT", bafdr_meta.get("teacher_checkpoint", ""))
         if not teacher_cfg or not teacher_ckpt:
             raise ValueError("BAFDR-K16-FULL requires teacher_config and teacher_checkpoint")
         teacher_cfg_path = resolve_existing_path(teacher_cfg, repo_root=root_dir, label="teacher config")
-        teacher_ckpt_path = resolve_teacher_checkpoint(teacher_ckpt, repo_root=root_dir, work_dir=work_dir, seed=seed)
+        teacher_ckpt_path = resolve_teacher_checkpoint(teacher_ckpt, repo_root=root_dir)
+        teacher_identity = validate_teacher_identity(
+            teacher_cfg_path=teacher_cfg_path,
+            teacher_ckpt_path=teacher_ckpt_path,
+            teacher_seed=seed,
+            repo_root=root_dir,
+        )
         logger.info(f"Loading frozen D160 teacher: cfg={teacher_cfg_path}, ckpt={teacher_ckpt_path}")
         teacher = build_teacher_model(teacher_cfg_path, teacher_ckpt_path, device)
 
@@ -801,6 +867,7 @@ def main() -> None:
             receipt_name="prediction_receipt.json" if prediction_only else "eval_receipt.json",
             phase="prediction_seal" if prediction_only else "metric_opening",
             metric_opened=not prediction_only,
+            teacher_identity=(loaded_ckpt or {}).get("teacher_identity", {}) if isinstance(loaded_ckpt, Mapping) else {},
         )
         if dist.is_available() and dist.is_initialized():
             dist.barrier()
@@ -889,6 +956,7 @@ def main() -> None:
                     "world_size": world_size,
                     "config_sha256": sha256_file(cfg_path),
                     "commit_sha": git_head(root_dir),
+                    "teacher_identity": teacher_identity,
                 },
             )
             logger.info(f"Saved checkpoint {checkpoint_path} at update {total_successful_updates}")
@@ -911,6 +979,7 @@ def main() -> None:
         receipt_name="train_receipt.json",
         phase="training",
         metric_opened=False,
+        teacher_identity=teacher_identity,
     )
     if dist.is_available() and dist.is_initialized():
         dist.barrier()

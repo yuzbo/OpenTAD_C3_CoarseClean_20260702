@@ -13,9 +13,20 @@ while [[ $# -gt 0 ]]; do
     --teacher-checkpoint) TEACHER_CHECKPOINT="$2"; shift 2;;
     *) echo "unknown argument: $1" >&2; exit 2;;
   esac
-done
+	done
+
 cd "$PROJECT_DIR"
+EXPECTED_COMMIT="${BAFDR_EXPECTED_COMMIT:?BAFDR_EXPECTED_COMMIT must be the full 40-character target SHA}"
+[[ "${EXPECTED_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "BAFDR_EXPECTED_COMMIT must be a full SHA" >&2; exit 2; }
+[[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || { echo "BAFDR checkout HEAD mismatch" >&2; exit 2; }
+[[ -z "$(git status --porcelain)" ]] || { echo "BAFDR checkout is not clean" >&2; exit 2; }
+SCREEN_RECEIPT="${BAFDR_SCREEN_RECEIPT:-${BASE}/projects/bafdr_k16_fullmatrix_compute/manifest/screen_receipt.json}"
+TEACHER_CONFIG="${BAFDR_TEACHER_CONFIG:-configs/adatad/thumos/bafdr_k16_d160_seed${SEED}.py}"
+TEACHER_CONFIG_SHA256=""
+TEACHER_CHECKPOINT_SHA256=""
+TEACHER_COMMIT="${BAFDR_TEACHER_COMMIT:-}"
 IFS=',' read -r -a arm_list <<< "$ARMS"
+declare -a screen_job_ids=()
 for arm in "${arm_list[@]}"; do
   case "$arm" in
     U16-UNIFORM-A0) slug=u16_uniform_a0 ;;
@@ -32,6 +43,10 @@ for arm in "${arm_list[@]}"; do
       echo "BAFDR-K16-FULL blocked: provide an existing terminal D160 teacher checkpoint via --teacher-checkpoint or BAFDR_TEACHER_CHECKPOINT" >&2
       exit 2
     fi
+    [[ -f "$TEACHER_CONFIG" ]] || { echo "missing teacher config: $TEACHER_CONFIG" >&2; exit 2; }
+    [[ "$TEACHER_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "BAFDR-K16-FULL requires BAFDR_TEACHER_COMMIT (full SHA)" >&2; exit 2; }
+    TEACHER_CHECKPOINT_SHA256="$(sha256sum "$TEACHER_CHECKPOINT" | awk '{print $1}')"
+    TEACHER_CONFIG_SHA256="$(sha256sum "$TEACHER_CONFIG" | awk '{print $1}')"
     python - "$TEACHER_CHECKPOINT" <<'PY'
 import sys, torch
 path = sys.argv[1]
@@ -44,8 +59,41 @@ if epoch not in (59, "59"):
 print(f"[PRECHECK] terminal teacher={path} epoch=59 state_dict_ema=present")
 PY
   fi
-  sbatch --parsable --partition=gpu --gres=gpu:2 --cpus-per-task=8 --time=72:00:00 \
+  job_id="$(sbatch --parsable --partition=gpu --gres=gpu:2 --cpus-per-task=8 --time=72:00:00 \
     --job-name="bafdr-${slug}-s${SEED}" \
     --output="${BASE}/slurm_logs/%x_%j.out" --error="${BASE}/slurm_logs/%x_%j.err" \
-    --wrap="source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source ${BASE}/conda_envs/opentad/bin/activate; cd \"${PROJECT_DIR}\"; BAFDR_TEACHER_CHECKPOINT=\"${TEACHER_CHECKPOINT}\" bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh train \"${cfg}\""
-done
+    --wrap="source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source ${BASE}/conda_envs/opentad/bin/activate; cd \"${PROJECT_DIR}\"; BAFDR_REQUIRE_SCREEN_GATE=0 BAFDR_EXPECTED_COMMIT=${EXPECTED_COMMIT} BAFDR_SCREEN_RECEIPT=\"${SCREEN_RECEIPT}\" BAFDR_TEACHER_CHECKPOINT=\"${TEACHER_CHECKPOINT}\" BAFDR_TEACHER_CONFIG=\"${TEACHER_CONFIG}\" BAFDR_TEACHER_CHECKPOINT_SHA256=${TEACHER_CHECKPOINT_SHA256} BAFDR_TEACHER_CONFIG_SHA256=${TEACHER_CONFIG_SHA256} BAFDR_TEACHER_COMMIT=${TEACHER_COMMIT} bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh train \"${cfg}\"")"
+  screen_job_ids+=("${job_id}")
+  echo "${arm}=${job_id}"
+  done
+
+mkdir -p "$(dirname "${SCREEN_RECEIPT}")"
+job_ids_csv="$(IFS=,; printf '%s' "${screen_job_ids[*]}")"
+python - "${SCREEN_RECEIPT}" "${EXPECTED_COMMIT}" "${SEED}" "${ARMS}" "${TEACHER_CONFIG}" "${TEACHER_CONFIG_SHA256}" "${TEACHER_CHECKPOINT}" "${TEACHER_CHECKPOINT_SHA256}" "${TEACHER_COMMIT}" "${job_ids_csv}" <<'PY'
+import json
+import sys
+import time
+
+path, commit, seed, arms, teacher_cfg, teacher_cfg_sha, teacher_ckpt, teacher_ckpt_sha, teacher_commit, job_ids = sys.argv[1:]
+payload = {
+    "schema_version": "ZOOMTOKEN-BAFDR-SCREEN-RECEIPT-v001",
+    # Submission is not a scientific gate.  The finalizer promotes this
+    # receipt to PASS only after every screen arm has a valid terminal receipt.
+    "status": "SUBMITTED",
+    "commit_sha": commit,
+    "seed": int(seed),
+    "arms": [arm for arm in arms.split(",") if arm],
+    "job_ids": [job for job in job_ids.split(",") if job],
+    "teacher": {
+        "config": teacher_cfg or None,
+        "config_sha256": teacher_cfg_sha or None,
+        "checkpoint": teacher_ckpt or None,
+        "checkpoint_sha256": teacher_ckpt_sha or None,
+        "commit": teacher_commit or None,
+    },
+    "timestamp": time.time(),
+}
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, indent=2)
+    handle.write("\n")
+PY
