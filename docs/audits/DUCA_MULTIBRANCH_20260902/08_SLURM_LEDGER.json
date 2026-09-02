@@ -30,6 +30,12 @@
       "job_ids": []
     }
   ],
+  "preexisting_jobs_not_owned_by_this_audit": [
+    {"job_id": "1266325-1266330", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_6ae16954", "source_head": "6ae16954d875ce310cb0fc514ad54663be626db6", "classification": "NOT_CURRENT_FROZEN_SHA"},
+    {"job_id": "1266218-1266219", "workdir": "/data/run01/sczc063/yuzibo/projects/zoomtoken_et_trc_correction_20260902_59eab0c6", "source_head": "be330c071638249e7c5268a5464e454c0f2a5621", "classification": "LATER_THAN_FROZEN_SHA"},
+    {"job_id": "1265777-1265780", "workdir": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902", "source_head": "679b71214d05a21cd08ae1f5e5c3879e2df8fb83", "classification": "STALE_REMOTE_HEAD"},
+    {"job_id": "1265077_[3-6]", "workdir": "/data/run01/sczc063/yuzibo/projects/opentad_duca_evidence_recovery", "source_head": "647151facd36d4df3f21de6865bcb225c8ba91fc", "classification": "DIRTY_STALE_REMOTE_HEAD"}
+  ],
   "blockers": [
     "Formal multi-branch DAG submission has not yet been authorized because branch gates are incomplete.",
     "Focused CUDA receipts exist, but no formal branch admission receipt has yet passed all required scientific gates.",

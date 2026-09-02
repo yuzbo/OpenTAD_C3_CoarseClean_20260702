@@ -23,3 +23,5 @@ This record distinguishes source-document instructions from observed repository 
 All released cells must satisfy the task-book P0 contract: one physical time coordinate through CT/anchors/decode/seconds, `completed_epochs == 60` and `successful_optimizer_updates == 6000` for strict-60 cells, exact optimizer parameter coverage, diagnostic non-interference, Slurm-provided GPU visibility and collision-free rendezvous, checkpoint numel/module coverage, evaluator-rerun bootstrap, held-out discipline, and measured full end-to-end cost.
 
 No non-terminal or invalid cell has a result. In particular, no mAP, speedup, bootstrap interval, or cost claim is recorded by this audit.
+
+Remote queue inspection also found pre-existing BAFDR, ET-TRC, CT-DP and Evidence jobs. Their worktrees resolve respectively to `6ae16954`, `be330c07`, `679b7121` and dirty `647151fa`, not to the frozen SHAs audited here. They are therefore not adopted as results and were not cancelled.

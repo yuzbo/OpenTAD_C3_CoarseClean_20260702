@@ -13,7 +13,10 @@
     "train_heldout_overlap": "MUST_BE_ZERO",
     "train_video_list_sha256": null,
     "heldout_video_list_sha256": null,
-    "annotation_sha256": null
+    "annotation_sha256": {
+      "thumos_14_anno.json": "ee526d55aa4315a8adc68c501d0331f96a56ce16fa960f1d2ea182b9381ab9ad",
+      "category_idx.txt": "a158b7c4c130ce74375a9b114160e2faae7a0221e605a0464a556fe082644f31"
+    }
   },
   "geometry": {
     "input_frames": null,
@@ -27,7 +30,11 @@
     "adapter_identity": null,
     "actionformer_identity": null,
     "detector_strides_ranges_assignment_losses_decode_nms": null,
-    "checkpoint_identity_sha256": null
+    "checkpoint_identity_sha256": {
+      "path": "/data/run01/sczc063/yuzibo/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+      "sha256": "4b96b7f403f8ae0396437855b785af6a0064f11a9d76e2268e5a76a04e0de251",
+      "size_bytes": 90605819
+    }
   },
   "optimization": {
     "optimizer_parameter_groups": null,
@@ -45,7 +52,12 @@
     "evaluator_commit": null,
     "class_set_tiou_aggregation": null,
     "seconds_conversion_external_classifier": null,
-    "hardware_software_identity": null,
+    "hardware_software_identity": {
+      "observed_gpu": "NVIDIA GeForce RTX 4090",
+      "observed_torch": "2.0.1",
+      "observed_cuda": "11.8",
+      "observed_slurm_nodes": ["g0022", "g0024", "g0006"]
+    },
     "measured_cost_protocol": null
   },
   "required_before_release": [
