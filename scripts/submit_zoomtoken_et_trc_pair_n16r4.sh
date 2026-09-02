@@ -22,6 +22,9 @@ cd "$PROJECT_DIR"
 EXPECTED_COMMIT="${ETTRC_EXPECTED_COMMIT:?ETTRC_EXPECTED_COMMIT must be the full 40-character target SHA}"
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "ETTRC_EXPECTED_COMMIT must be a full SHA" >&2; exit 2; }
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || { echo "ET-TRC HEAD mismatch" >&2; exit 2; }
+SHORT_COMMIT="$(git rev-parse --short HEAD)"
+RUN_ROOT="${ETTRC_RUN_ROOT:-${BASE}/projects/zoomtoken_et_trc_fix_${SHORT_COMMIT}}"
+mkdir -p "${RUN_ROOT}"
 export ETTRC_PRETRAIN
 for mode in off on; do
   if [[ "$mode" == off ]]; then
@@ -33,5 +36,5 @@ for mode in off on; do
     sbatch --parsable --export=ALL,ETTRC_PRETRAIN="$ETTRC_PRETRAIN",ETTRC_EXPECTED_COMMIT="$EXPECTED_COMMIT" --partition=gpu --gres=gpu:2 --cpus-per-task=8 --time=72:00:00 \
     --job-name="et-trc-${mode}-s${SEED}" \
     --output="${BASE}/slurm_logs/%x_%j.out" --error="${BASE}/slurm_logs/%x_%j.err" \
-      --wrap="bash -lc 'source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source \"${BASE}/conda_envs/opentad/bin/activate\"; export ETTRC_PRETRAIN=\"${ETTRC_PRETRAIN}\" ETTRC_EXPECTED_COMMIT=\"${EXPECTED_COMMIT}\"; cd \"${PROJECT_DIR}\"; test \"\$(git rev-parse HEAD)\" = \"\${ETTRC_EXPECTED_COMMIT}\"; test -z \"\$(git status --porcelain)\"; torchrun --standalone --nproc_per_node=2 tools/train.py \"${cfg}\" --seed \"${SEED}\" --cfg-options model.backbone.backbone.stride_k=${STRIDE_K} model.backbone.custom.pretrain=\"${ETTRC_PRETRAIN}\"'"
+      --wrap="bash -lc 'source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source \"${BASE}/conda_envs/opentad/bin/activate\"; export ETTRC_PRETRAIN=\"${ETTRC_PRETRAIN}\" ETTRC_EXPECTED_COMMIT=\"${EXPECTED_COMMIT}\"; cd \"${PROJECT_DIR}\"; test \"\$(git rev-parse HEAD)\" = \"\${ETTRC_EXPECTED_COMMIT}\"; test -z \"\$(git status --porcelain)\"; torchrun --standalone --nproc_per_node=2 tools/train.py \"${cfg}\" --seed \"${SEED}\" --cfg-options model.backbone.backbone.stride_k=${STRIDE_K} model.backbone.custom.pretrain=\"${ETTRC_PRETRAIN}\" work_dir=\"${RUN_ROOT}/${mode}\"'"
 done
