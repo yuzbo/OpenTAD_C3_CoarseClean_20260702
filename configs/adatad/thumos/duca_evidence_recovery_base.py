@@ -221,9 +221,9 @@ workflow = dict(
     expected_successful_optimizer_updates=max_updates,
     primary_checkpoint_epoch=59,
     primary_checkpoint_state_key="state_dict_ema",
-    # Replay bounded numerical outliers while retaining a fail-closed finite
-    # loss guard.  Arms that disable AMP override the AMP replay count.
-    max_nonfinite_loss_retries=50,
+    # A forward loss that is already non-finite is deterministic for the same
+    # batch/state and must fail fast; only AMP backward overflows are replayed.
+    max_nonfinite_loss_retries=0,
     max_amp_retries_per_batch=20,
     # Stop a run before a non-finite detector loss can corrupt its checkpoint.
     require_finite_train_loss=True,

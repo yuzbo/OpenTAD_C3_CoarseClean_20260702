@@ -18,6 +18,7 @@ from opentad.models.bricks.dense_temporal_recovery import DenseTemporalRecovery
 from opentad.models.bricks.temporal_token_merge import BoundaryProtectedTemporalTokenMerge
 from opentad.models.duca.structured_selection import global_structured_topk
 from opentad.models.duca.transition_only import balanced_binary_actionness_loss
+from opentad.models.utils.numerics import assert_finite_tensor
 from opentad.models.utils.truetime_geometry import SELECTED_AXIS, TRUE_TIME_AXIS, TrueTimeMap
 
 
@@ -47,6 +48,7 @@ def _support_from_selected_positions(
     boundary_prob: Optional[torch.Tensor],
     window_size: int,
 ) -> Dict[str, torch.Tensor]:
+    assert_finite_tensor(selected_positions, "selection.selected_positions")
     B, K = selected_positions.shape
     if K % 2 != 0:
         raise ValueError("DUCA Evidence Recovery requires an even frame budget for tubelet pairing")
@@ -63,6 +65,9 @@ def _support_from_selected_positions(
         [torch.log(dt), 2.0 / dt, dt / max(float(window_size), 1.0)],
         dim=-1,
     )
+    assert_finite_tensor(centers, "selection.support_centers")
+    assert_finite_tensor(intervals, "selection.support_intervals")
+    assert_finite_tensor(z_cond, "selection.tubelet_z_condition")
     if boundary_prob is None:
         tubelet_b = torch.zeros((B, num_tubelets), dtype=torch.float32, device=device)
     else:
@@ -70,6 +75,7 @@ def _support_from_selected_positions(
         b_even = torch.gather(boundary_prob, 1, selected_positions[:, 0::2].clamp(0, max_idx))
         b_odd = torch.gather(boundary_prob, 1, selected_positions[:, 1::2].clamp(0, max_idx))
         tubelet_b = torch.maximum(b_even, b_odd)
+    assert_finite_tensor(tubelet_b, "selection.boundary_scores_per_tubelet")
     return {
         "tubelet_timestamps": norm_timestamps,
         "tubelet_z_condition": z_cond,
@@ -162,6 +168,8 @@ class ASFormerDenseSemanticScout(BaseModule):
         # 1. Spatial stem: [B*T, D, 1, 1] -> [B, D, T]
         stem_feats = self.spatial_stem(frames.float()).view(B, T, self.hidden_dim).permute(0, 2, 1)
 
+        assert_finite_tensor(stem_feats, "scout.stem_features")
+
         # 2. Temporal dilated convolution
         x = stem_feats
         for layer in self.temporal_layers:
@@ -169,11 +177,14 @@ class ASFormerDenseSemanticScout(BaseModule):
 
         # LayerNorm along feature dim: [B, T, D]
         hidden = self.norm(x.permute(0, 2, 1)).permute(0, 2, 1)  # [B, D, T]
+        assert_finite_tensor(hidden, "scout.hidden")
         hidden_t = hidden.permute(0, 2, 1)  # [B, T, D]
 
         # 3. Actionness & Boundary predictions
         action_logits = self.action_head(hidden_t).squeeze(-1)  # [B, T]
         boundary_logits = self.boundary_head(hidden_t).squeeze(-1)  # [B, T]
+        assert_finite_tensor(action_logits, "scout.action_logits")
+        assert_finite_tensor(boundary_logits, "scout.boundary_logits")
 
         actionness = torch.sigmoid(action_logits)  # [B, T]
         boundary_prob = torch.sigmoid(boundary_logits)  # [B, T]
@@ -204,6 +215,7 @@ class ASFormerDenseSemanticScout(BaseModule):
         base_utility = 0.5 * actionness + 0.5 * boundary_prob
         mlp_residual = self.utility_mlp(feat_stack).squeeze(-1)
         utility = torch.sigmoid(base_utility + mlp_residual)
+        assert_finite_tensor(utility, "scout.utility")
 
         return {
             "hidden": hidden,  # [B, D, T]
@@ -303,6 +315,12 @@ def largest_remainder_quota(
         rem = total_budget % num_segs
         return [base + (1 if i < rem else 0) for i in range(num_segs)]
 
+    if any(not math.isfinite(float(weight)) for weight in segment_weights):
+        raise FloatingPointError(
+            f"non-finite segment weight before quota allocation: {segment_weights!r}"
+        )
+    if any(float(weight) < 0.0 for weight in segment_weights):
+        raise ValueError(f"segment weights must be non-negative, got {segment_weights!r}")
     remaining_budget = total_budget - num_segs * min_per_seg
     total_w = sum(segment_weights) + 1e-7
 
@@ -348,11 +366,17 @@ class EvidenceRecoverySelector(BaseModule):
         valid_mask: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
         """Perform exact-K selection with optional max-hole coverage."""
+        assert_finite_tensor(utility, "selector.utility")
+        assert_finite_tensor(boundary_prob, "selector.boundary_prob")
+        assert_finite_tensor(delta_action, "selector.delta_action")
+        assert_finite_tensor(feat_residual, "selector.feature_residual")
+        assert_finite_tensor(context_novelty, "selector.context_novelty")
         B, T = utility.shape
         K = min(self.budget, T)
         device = utility.device
 
         change_score = delta_action + boundary_prob + feat_residual + context_novelty
+        assert_finite_tensor(change_score, "selector.change_score")
 
         selected_positions_list = []
         selected_valid_counts = []
@@ -377,6 +401,10 @@ class EvidenceRecoverySelector(BaseModule):
                     float(utility[b, start:end].sum().item() + 1e-4)
                     for start, end in segments
                 ]
+                if any(not math.isfinite(weight) for weight in seg_weights):
+                    raise FloatingPointError(
+                        f"non-finite segment weights at batch {b}: {seg_weights!r}"
+                    )
                 quotas = largest_remainder_quota(seg_weights, total_budget=eff_k, min_per_seg=2)
                 quota_prior = torch.zeros((valid_len,), dtype=utility.dtype, device=device)
                 for (start, end), q in zip(segments, quotas):
@@ -476,6 +504,7 @@ class DucaEvidenceRecoveryModule(BaseModule):
         lowres_rgb: torch.Tensor,
         valid_mask: Optional[torch.Tensor] = None,
         h65_positions: Optional[torch.Tensor] = None,
+        diagnostic_context: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Perform semantic evidence acquisition or pure deterministic H65 replay."""
         B = lowres_rgb.shape[0]
@@ -484,6 +513,17 @@ class DucaEvidenceRecoveryModule(BaseModule):
         if self.use_h65_selection:
             if h65_positions is None:
                 raise ValueError("DUCA H65 replay requires H65 selected positions in metas; uniform fallback is forbidden")
+            # Validate the source tensor before any float->integer conversion.  A
+            # NaN cast can otherwise become an opaque integer sentinel and hide the
+            # first invalid operation from the diagnostic.
+            assert_finite_tensor(
+                h65_positions,
+                "h65_positions",
+                **dict(diagnostic_context or {}),
+            )
+            # Preserve the historical finite-path cast exactly; the diagnostic
+            # only changes the non-finite failure from an opaque integer sentinel
+            # into an actionable exception.
             sel_pos = h65_positions.to(device=lowres_rgb.device, dtype=torch.long)
             if sel_pos.ndim != 2 or sel_pos.shape[0] != B or sel_pos.shape[1] != self.budget:
                 raise ValueError(
@@ -524,6 +564,7 @@ class DucaEvidenceRecoveryModule(BaseModule):
             }
 
         # Active semantic acquisition path
+        assert_finite_tensor(lowres_rgb, "scout.lowres_rgb", **dict(diagnostic_context or {}))
         scout_out = self.scout(lowres_rgb, valid_mask=valid_mask)
         sel_out = self.selector.select(
             utility=scout_out["utility"],
@@ -913,7 +954,15 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
             if self.use_h65_selection
             else None
         )
-        acq = self.module.acquire(lowres, valid_mask=masks, h65_positions=h65_positions)
+        diagnostic_context = {"batch_size": int(inputs.shape[0])}
+        if metas:
+            diagnostic_context["video_name"] = metas[0].get("video_name", metas[0].get("video_id", ""))
+        acq = self.module.acquire(
+            lowres,
+            valid_mask=masks,
+            h65_positions=h65_positions,
+            diagnostic_context=diagnostic_context,
+        )
         scout_out = acq["scout"]
         sel_out = acq["selection"]
 
@@ -1025,7 +1074,15 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
             if self.use_h65_selection
             else None
         )
-        acq = self.module.acquire(lowres, valid_mask=masks, h65_positions=h65_positions)
+        diagnostic_context = {"batch_size": int(inputs.shape[0])}
+        if metas:
+            diagnostic_context["video_name"] = metas[0].get("video_name", metas[0].get("video_id", ""))
+        acq = self.module.acquire(
+            lowres,
+            valid_mask=masks,
+            h65_positions=h65_positions,
+            diagnostic_context=diagnostic_context,
+        )
         sel_out = acq["selection"]
 
         sel_pos = sel_out["selected_positions"]

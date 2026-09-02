@@ -221,8 +221,30 @@ def train_one_epoch(
                 _restore_rng_state(rng_state)
             optimizer.zero_grad()
 
-            with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
-                losses = model(**data_dict, return_loss=True)
+            try:
+                with torch.cuda.amp.autocast(dtype=torch.float16, enabled=use_amp):
+                    losses = model(**data_dict, return_loss=True)
+            except FloatingPointError as exc:
+                # Preserve the original exception while attaching the execution
+                # coordinates needed to reproduce the first invalid tensor.
+                amp_scale = float(scaler.get_scale()) if scaler is not None else None
+                context = (
+                    f"; epoch={curr_epoch}; batch_index={iter_idx}; "
+                    f"amp_scale={amp_scale}; rng_initial_seed={torch.initial_seed()}"
+                )
+                _write_update_audit_snapshot(
+                    update_audit_json,
+                    curr_epoch=curr_epoch,
+                    batch_index=iter_idx,
+                    event="nonfinite_tensor",
+                    update_audit={
+                        **(update_audit or {}),
+                        "error": f"{exc}{context}",
+                        "amp_scale": amp_scale,
+                        "rng_initial_seed": int(torch.initial_seed()),
+                    },
+                )
+                raise FloatingPointError(f"{exc}{context}") from exc
             if require_finite_loss and not bool(torch.isfinite(losses["cost"]).all().item()):
                 if max_nonfinite_loss_retries <= 0:
                     raise FloatingPointError(

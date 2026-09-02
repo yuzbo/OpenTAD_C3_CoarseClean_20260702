@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmengine.model import BaseModule
+from opentad.models.utils.numerics import assert_finite_tensor
 
 
 class DenseTemporalRecovery(BaseModule):
@@ -82,6 +83,16 @@ class DenseTemporalRecovery(BaseModule):
         """
         B, C, N = feats.shape
         M = self.target_grid_size
+        for name, value in (
+            ("recovery.feats", feats),
+            ("recovery.centers", centers),
+            ("recovery.intervals", intervals),
+        ):
+            assert_finite_tensor(value, name)
+        if masses is not None:
+            assert_finite_tensor(masses, "recovery.masses")
+        if valid_mask is not None:
+            assert_finite_tensor(valid_mask, "recovery.valid_mask")
         grid = self.target_grid.view(1, 1, M)  # [1, 1, M]
 
         centers_3d = centers.unsqueeze(-1)  # [B, N, 1]
@@ -102,6 +113,8 @@ class DenseTemporalRecovery(BaseModule):
 
         # Weight sum per grid point: [B, 1, M]
         weight_sum = weights.sum(dim=1, keepdim=True)  # [B, 1, M]
+        assert_finite_tensor(weights, "recovery.weights")
+        assert_finite_tensor(weight_sum, "recovery.weight_sum")
 
         # Weighted feature sum: [B, C, M] = [B, C, N] @ [B, N, M]
         weighted_feats = torch.bmm(feats, weights)  # [B, C, M]
@@ -109,6 +122,7 @@ class DenseTemporalRecovery(BaseModule):
         # Safe normalization
         safe_mask = weight_sum > 1e-6
         interp = weighted_feats / weight_sum.clamp_min(1e-6)
+        assert_finite_tensor(interp, "recovery.interpolated")
 
         # Fallback to nearest neighbor for any unhit grid points
         if not bool(safe_mask.all().item()):
@@ -151,4 +165,5 @@ class DenseTemporalRecovery(BaseModule):
         # Stage 2: Residual refinement
         res = self.pwconv(self.act(self.dwconv(interp)))
         out = interp + self.residual_gate * res
+        assert_finite_tensor(out, "recovery.output")
         return out

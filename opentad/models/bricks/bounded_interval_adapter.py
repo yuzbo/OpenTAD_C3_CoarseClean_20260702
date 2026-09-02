@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmengine.model import BaseModule
+from opentad.models.utils.numerics import assert_finite_tensor
 
 
 class BoundedTubeletIntervalAdapter(BaseModule):
@@ -63,6 +64,7 @@ class BoundedTubeletIntervalAdapter(BaseModule):
         Returns:
             g: [B, T_tubelet, 1, 1, 1] scaling factor for W_diff * X_diff.
         """
+        assert_finite_tensor(z, "interval.z_condition")
         if not self.enabled:
             return torch.ones(
                 (*z.shape[:-1], 1, 1, 1),
@@ -71,6 +73,7 @@ class BoundedTubeletIntervalAdapter(BaseModule):
             )
         mlp_out = self.condition_mlp(z.float())  # [..., 1]
         g = 1.0 + 0.5 * torch.tanh(mlp_out)
+        assert_finite_tensor(g, "interval.condition_factor")
         return g.unsqueeze(-1).unsqueeze(-1).to(dtype=z.dtype)
 
     def forward_tubelet(
@@ -161,6 +164,7 @@ class BoundedTubeletIntervalAdapter(BaseModule):
         g = self.compute_g(z_condition)  # [B, T_tubelet, 1, 1, 1]
 
         Y = Y_mean + g * Y_diff  # [B, T_tubelet, C_out, H_out, W_out]
+        assert_finite_tensor(Y, "interval.output")
         # Transpose back to [B, C_out, T_tubelet, H_out, W_out]
         Y = Y.permute(0, 2, 1, 3, 4).contiguous()
         return Y

@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from mmengine.model import BaseModule
+from opentad.models.utils.numerics import assert_finite_tensor
 
 
 class BoundaryProtectedTemporalTokenMerge(BaseModule):
@@ -60,9 +61,17 @@ class BoundaryProtectedTemporalTokenMerge(BaseModule):
         S = spatial_tokens
         T = N_tokens // S
         device = x.device
+        for name, value in (
+            ("merge.input", x),
+            ("merge.support_mass", support_mass),
+            ("merge.support_centers", support_centers),
+            ("merge.support_intervals", support_intervals),
+        ):
+            assert_finite_tensor(value, name)
 
         if boundary_scores is None:
             boundary_scores = torch.zeros((B_chunks, T), device=device, dtype=torch.float32)
+        assert_finite_tensor(boundary_scores, "merge.boundary_scores")
 
         if not self.enabled or T <= 1:
             return x, support_mass, support_centers, support_intervals, boundary_scores
@@ -153,5 +162,14 @@ class BoundaryProtectedTemporalTokenMerge(BaseModule):
         new_c_tensor = torch.stack(new_c_list, dim=0)
         new_int_tensor = torch.stack(new_int_list, dim=0)
         new_b_tensor = torch.stack(new_b_list, dim=0)
+
+        for name, value in (
+            ("merge.output", new_x_tensor),
+            ("merge.output_mass", new_m_tensor),
+            ("merge.output_centers", new_c_tensor),
+            ("merge.output_intervals", new_int_tensor),
+            ("merge.output_boundary_scores", new_b_tensor),
+        ):
+            assert_finite_tensor(value, name)
 
         return new_x_tensor, new_m_tensor, new_c_tensor, new_int_tensor, new_b_tensor
