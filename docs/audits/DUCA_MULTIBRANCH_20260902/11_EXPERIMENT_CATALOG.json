@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-02T18:48:51+00:00",
+  "last_updated_utc": "2026-09-02T19:22:26+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -157,7 +157,7 @@
   ],
   "remote_supervisor": {
     "status": "ACTIVE",
-    "checked_at": "2026-09-02T18:48:19+00:00",
+    "checked_at": "2026-09-02T19:21:41+00:00",
     "dispatcher_status": "BLOCKED",
     "entries": []
   },
