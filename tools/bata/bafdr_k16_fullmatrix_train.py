@@ -765,6 +765,15 @@ def main() -> None:
 
     cfg_path = resolve_existing_path(args.config, repo_root=root_dir, label="config")
     cfg = Config.fromfile(str(cfg_path))
+    pretrain_override = os.environ.get("BAFDR_PRETRAIN")
+    if pretrain_override:
+        cfg.model.backbone.custom.pretrain = str(
+            resolve_existing_path(
+                pretrain_override,
+                repo_root=root_dir,
+                label="BAFDR pretrained checkpoint",
+            )
+        )
     work_dir = Path(args.work_dir or getattr(cfg, "work_dir", "exps/bafdr_tmp"))
     if not work_dir.is_absolute():
         work_dir = root_dir / work_dir

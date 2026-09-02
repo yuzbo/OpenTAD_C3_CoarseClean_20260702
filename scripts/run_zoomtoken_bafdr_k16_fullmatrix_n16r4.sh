@@ -29,6 +29,8 @@ WORK_DIR_ROOT="${RUN_ROOT}/work_dirs"
 PRED_DIR="${RUN_ROOT}/predictions"
 EVAL_DIR="${RUN_ROOT}/evaluation"
 PROFILE_DIR="${RUN_ROOT}/profile"
+BAFDR_PRETRAIN="${BAFDR_PRETRAIN:-${BASE}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
+[[ -r "${BAFDR_PRETRAIN}" ]] || { echo "BAFDR pretrained checkpoint is not readable: ${BAFDR_PRETRAIN}" >&2; exit 2; }
 
 mkdir -p "${MANIFEST_DIR}" "${WORK_DIR_ROOT}" "${PRED_DIR}" "${EVAL_DIR}" "${PROFILE_DIR}"
 
@@ -43,6 +45,7 @@ fi
 
 export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
+export BAFDR_PRETRAIN
 
 mode="${1:-validate}"
 if [[ -f "${mode}" || "${mode}" == *.py ]]; then

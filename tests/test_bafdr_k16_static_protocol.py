@@ -98,6 +98,8 @@ def test_train_driver_is_fail_closed_and_ddp_aware():
     assert "latest_kd_outputs" in text
     assert "FileNotFoundError" in text
     assert "logger.warning" not in text
+    assert "BAFDR_PRETRAIN" in text
+    assert "BAFDR pretrained checkpoint" in text
 
 
 def test_matrix_orchestrator_validates_semantic_contracts():
@@ -122,6 +124,8 @@ def test_slurm_scripts_use_world2_arm_batch_dag():
     assert "--open-metrics" in run_text
     assert 'if [[ -n "${PROJECT_DIR:-}" ]]' in run_text
     assert 'SLURM_SUBMIT_DIR' in run_text
+    assert "BAFDR_PRETRAIN" in run_text
+    assert "pretrained checkpoint is not readable" in run_text
     assert "#SBATCH --gpus=2" in submit_text
     assert "arm_list=(D160 G96 U128-ALL48-A0 U16-UNIFORM-A0 BAFDR-K16-LATE BAFDR-K16-NOKD BAFDR-K16-FULL)" in submit_text
     assert "run_zoomtoken_bafdr_k16_arm_batch.sh" in submit_text
