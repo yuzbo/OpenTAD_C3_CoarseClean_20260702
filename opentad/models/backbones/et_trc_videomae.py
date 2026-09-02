@@ -383,7 +383,8 @@ class TaylorResidualBlock(BaseModule):
 class ETTRCVisionTransformerAdapter(BaseModule):
     """VideoMAE Backbone equipped with Event-Triggered 1st-Order Taylor Residual Correction (ET-TRC).
     
-    Maintains 100% Dense Temporal Identity across all 12 layers while achieving 2x+ GEMM acceleration.
+    Maintains 100% Dense Temporal Identity across all 12 layers while reducing
+    selected-query computation; any speedup requires hardware measurement.
     """
     def __init__(
         self,

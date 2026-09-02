@@ -1,11 +1,8 @@
-import os
-
 _base_ = ["./continuous_roi_s2_v3_d160_seed4407.py"]
-_pretrain = os.environ.get(
-    "ETTRC_PRETRAIN",
-    "/data/run01/sczc063/yuzibo/pretrained/"
-    "vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
-)
+# The Slurm launcher binds the actual absolute checkpoint with
+# ``--cfg-options``.  Keeping this legacy-config value import-free preserves
+# MMEngine's non-lazy _base_ parsing for local matrix validation.
+_pretrain = "pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth"
 
 # The launcher uses torchrun world_size=2; the dataloader interprets this as
 # a global batch of two (one sample per rank).
@@ -50,6 +47,7 @@ model = dict(
             # from the stock VideoMAE checkpoint; every other backbone key must
             # load or the job fails closed.
             pretrain_allowed_missing_prefixes=("jacobian_approx", "adapter"),
+            pretrain_allowed_unexpected_prefixes=("head.", "cls_head.", "fc_cls."),
         ),
     ),
 )

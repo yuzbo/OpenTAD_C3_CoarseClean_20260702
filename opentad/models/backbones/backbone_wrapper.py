@@ -25,8 +25,17 @@ class BackboneWrapper(nn.Module):
         # custom settings: pretrained checkpoint, post_processing_pipeline, norm_eval, freeze_backbone
         # 1. load the pretrained model
         pretrain_path = getattr(custom_cfg, "pretrain", None)
-        self.pretrain_allowed_missing_prefixes = tuple(
+        def _normalize_prefixes(values):
+            return tuple(
+                prefix if str(prefix).endswith(".") else f"{prefix}."
+                for prefix in values
+            )
+
+        self.pretrain_allowed_missing_prefixes = _normalize_prefixes(
             getattr(custom_cfg, "pretrain_allowed_missing_prefixes", ("jacobian_approx", "adapter"))
+        )
+        self.pretrain_allowed_unexpected_prefixes = _normalize_prefixes(
+            getattr(custom_cfg, "pretrain_allowed_unexpected_prefixes", ())
         )
         self.pretrain_report = None
         if pretrain_path is not None:
@@ -197,12 +206,28 @@ class BackboneWrapper(nn.Module):
         undeclared_missing = [
             key
             for key in missing_keys
-            if not any(token in key for token in self.pretrain_allowed_missing_prefixes)
+            if not any(
+                key.startswith(prefix) or f".{prefix}" in key
+                for prefix in self.pretrain_allowed_missing_prefixes
+            )
         ]
         if undeclared_missing:
             raise RuntimeError(
                 "ET-TRC pretrained load has undeclared missing backbone keys: "
                 + ", ".join(undeclared_missing[:20])
+            )
+        undeclared_unexpected = [
+            key
+            for key in unexpected_keys
+            if not any(
+                key.startswith(prefix) or f".{prefix}" in key
+                for prefix in self.pretrain_allowed_unexpected_prefixes
+            )
+        ]
+        if undeclared_unexpected:
+            raise RuntimeError(
+                "ET-TRC pretrained load has undeclared unexpected checkpoint keys: "
+                + ", ".join(undeclared_unexpected[:20])
             )
         frozen = sum(1 for parameter in self.model.parameters() if not parameter.requires_grad)
         trainable = sum(1 for parameter in self.model.parameters() if parameter.requires_grad)
@@ -219,6 +244,8 @@ class BackboneWrapper(nn.Module):
             "new_random": int(len(missing_keys)),
             "randomly_initialized_keys": missing_keys,
             "undeclared_missing_keys": undeclared_missing,
+            "allowed_unexpected_prefixes": list(self.pretrain_allowed_unexpected_prefixes),
+            "undeclared_unexpected_keys": undeclared_unexpected,
             "frozen": int(frozen),
             "trainable": int(trainable),
         }

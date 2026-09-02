@@ -3,7 +3,7 @@
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=8
 #SBATCH --output=%x_%j.out
 #SBATCH --error=%x_%j.err
@@ -15,11 +15,9 @@ BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 PROJECT_DIR="${PROJECT_DIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 cd "${PROJECT_DIR}"
 
-EXPECTED_COMMIT="${ETTRC_CORRECTION_COMMIT:-}"
-if [[ -n "${EXPECTED_COMMIT}" && "$(git rev-parse HEAD)" != "${EXPECTED_COMMIT}" ]]; then
-  echo "ET-TRC checkout HEAD mismatch: expected ${EXPECTED_COMMIT}, got $(git rev-parse HEAD)" >&2
-  exit 2
-fi
+EXPECTED_COMMIT="${ETTRC_EXPECTED_COMMIT:?ETTRC_EXPECTED_COMMIT must be the full 40-character target SHA}"
+[[ "${EXPECTED_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "ETTRC_EXPECTED_COMMIT must be a full SHA" >&2; exit 2; }
+[[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || { echo "ET-TRC checkout HEAD mismatch" >&2; exit 2; }
 [[ "$(git branch --show-current)" == "codex/zoomtoken-et-trc-correction-20260902" ]] || {
   echo "ET-TRC submit requires correction branch, got $(git branch --show-current)" >&2; exit 2;
 }
@@ -42,5 +40,5 @@ bash scripts/run_zoomtoken_et_trc_diag_n16r4.sh
 
 # 2. Launch ET-TRC Training
 echo "[SLURM] Launching ET-TRC Training on THUMOS14..."
-torchrun --standalone --nproc_per_node=1 tools/train.py configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_seed4407.py \
-  --seed 4407 --cfg-options model.backbone.backbone.stride_k=4 "work_dir=${RUN_ROOT}"
+torchrun --standalone --nproc_per_node=2 tools/train.py configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_seed4407.py \
+  --seed 4407 --cfg-options model.backbone.backbone.stride_k=4 model.backbone.custom.pretrain="${ETTRC_PRETRAIN}" "work_dir=${RUN_ROOT}"

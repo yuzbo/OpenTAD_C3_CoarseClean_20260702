@@ -3,7 +3,10 @@ from pathlib import Path
 
 import pytest
 
-torch = pytest.importorskip("torch")
+try:
+    import torch
+except OSError as exc:  # pragma: no cover - Windows CI without a Torch runtime
+    pytest.skip(f"torch runtime unavailable in this environment: {exc}", allow_module_level=True)
 from opentad.models.backbones.et_trc_videomae import TaylorAttention, TaylorResidualBlock
 
 
