@@ -51,7 +51,8 @@ def test_bamod_selected_queries_use_full_kv_and_never_pad():
     block = Block(embed_dims=16, num_heads=4, mlp_ratio=2.0, use_adapter=False, temporal_size=4)
     block.eval()
     x = torch.randn(1, 8, 16)
-    scores = torch.arange(8, dtype=torch.float32).view(1, -1)
+    scores = torch.full((1, 8), -10.0)
+    scores[:, :4] = 10.0
     mask = torch.ones(1, 8, dtype=torch.bool)
     out = block.forward_amod(x, 2, 2, scores, capacity=0.5, temporal_token_mask=mask)
     assert torch.equal(out[:, 4:], x[:, 4:])
