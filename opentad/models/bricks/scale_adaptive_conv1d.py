@@ -54,7 +54,9 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
     and physical center corresponds to slot i = half_k:
         center(j) = j * stride - padding + half_k * dilation
     with relative tap offset tap_i = i - half_k in {-half_k, ..., +half_k}:
-        tau_target(j, i) = tau(center(j)) + tap_i * dilation * ref_delta_t.
+        tau_target(j, i) = tau(center(j)) + tap_i * dilation * delta_ref.
+    ``delta_ref`` is ``ref_delta_t`` in the original absolute-spacing v0
+    route, or a per-level nominal spacing in the calibrated v1 route.
     """
 
     def __init__(
