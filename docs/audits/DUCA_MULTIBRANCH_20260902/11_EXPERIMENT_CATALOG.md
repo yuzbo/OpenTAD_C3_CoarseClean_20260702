@@ -1,6 +1,6 @@
 # DUCA/ZoomToken 全部代码实验目录
 
-最后更新时间（UTC）：`2026-09-02T18:12:22+00:00`
+最后更新时间（UTC）：`2026-09-02T18:48:51+00:00`
 
 本表用完整中文描述实验目的；括号中的内部 ID 仅用于与 Slurm/manifest 对照。每一行都是独立代码身份，结果不能跨 SHA 转移。
 
@@ -17,7 +17,7 @@
 | H65 backbone 参数签名修正实验（不替代冻结 H65）（`H65_ADMISSION_FIX`） | `E:/DeskTop/TAD/_duca_fix_worktrees/h65_admission` | [`78cde6aa`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/78cde6aa5335b2e399e597ce9229d8657e6760a5) | 修正已提交并应用到远端验证 worktree；资源释放后已完成真实 CUDA P0 复验 | 修正已通过远端 P0 复验，尚未形成新冻结结果：远端修正提交 7f90a48d 的 H65 P0 测试 15 passed；仍不能晋级冻结 H65 结果 | 把修正提交重新冻结为新的 H65 SHA，再运行正式 strict-60 admission |
 | CT-DP G0/G1 因子化修正实验（不替代冻结 CT-DP）（`CTDP_ADMISSION_FIX`） | `E:/DeskTop/TAD/_duca_fix_worktrees/ctdp` | [`d62cab76`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/d62cab763c8e0478e73c6c47a4c185db45164dda) | 恢复 G0/G1 正交机制定义并通过本地因子化测试；尚未完成远端 geometry/gradient/batch admission | 无最终结果：因子化测试 1 passed；不是 CT-DP 训练或性能结果 | 远端完成 geometry、gradient、batch/DDP 后重新冻结 CT-DP SHA |
 | DUCA Unified fail-closed 准入修正实验（不替代冻结 Unified）（`UNIFIED_ADMISSION_GATES`） | `E:/DeskTop/TAD/_duca_fix_worktrees/unified` | [`98d559ee`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/98d559ee414504caaa480294ce4d066276cdebe6) | 已将 D1/F11/H0/G10/G11 和 cost 标为 BLOCKED_UNIMPLEMENTED，submitter fail-closed；未提交训练 | 无最终结果：admission gate test、generator check、Python 编译通过；机制仍未实现 | 实现 Taylor/H65 retention/cost 后再生成可提交的 41-cell manifest |
-| BAFDR 生成器、预训练路径与单进程 PRECHECK 修正实验（不替代冻结 BAFDR）（`BAFDR_ADMISSION_FIX`） | `E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_admission` | [`c750cdae`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/c750cdae1b7dce8ab1ef9b3d2fa04ebb9853926a) | 修复已推送；远端已精确同步且 clean，21-cell validator 与 D160 单进程 PRECHECK 已通过，2-GPU CUDA admission 受提交上限阻塞 | 修正尚未获得正式训练结果：修复 LoadFrames 窗口参数、canonical pretrained 绑定和单进程 optimizer；错误 Python 环境调用已记录并修复；PRECHECK 报告 train_len=200、eval_windows=792、PASS | 资源释放后运行 world-size=2 CUDA PRECHECK 与五臂 screen，再决定是否开放 21-cell |
+| BAFDR 生成器、预训练路径与单进程 PRECHECK 修正实验（不替代冻结 BAFDR）（`BAFDR_ADMISSION_FIX`） | `E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_admission` | [`c750cdae`](https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/c750cdae1b7dce8ab1ef9b3d2fa04ebb9853926a) | 修复已推送；远端 21-cell validator 与 D160 单进程 PRECHECK 已通过，2-GPU CUDA admission 受提交上限阻塞 | 修正尚未获得正式训练结果：修复 LoadFrames 窗口参数、canonical pretrained 绑定和单进程 optimizer；PRECHECK 报告 train_len=200、eval_windows=792、PASS | 资源释放后运行 world-size=2 CUDA PRECHECK 与五臂 screen，再决定是否开放 21-cell |
 
 ## 监督器与动态状态
 
