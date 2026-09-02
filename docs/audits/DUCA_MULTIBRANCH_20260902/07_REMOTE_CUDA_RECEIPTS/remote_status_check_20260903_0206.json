@@ -1,0 +1,42 @@
+{
+  "schema_version": "DUCA-REMOTE-STATUS-CHECK-v003",
+  "checked_at_utc": "2026-09-02T18:06:47Z",
+  "remote_host": "N16R4",
+  "repair_revalidation": {
+    "h65_job_id": "1266408",
+    "h65_worktree": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/h65_admission_fix",
+    "h65_commit": "7f90a48de4c349dd83896c6c8df3264278ff6555",
+    "h65_state": "COMPLETED",
+    "h65_result": "15 passed",
+    "bafdr_worktree": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/bafdr_admission_fix",
+    "bafdr_commit": "c750cdae1b7dce8ab1ef9b3d2fa04ebb9853926a",
+    "bafdr_tree": "CLEAN",
+    "bafdr_validator": "21 configs PASS",
+    "bafdr_precheck": "D160 seed 4407 PASS; world_size=1; train_len=200; eval_windows=792"
+  },
+  "current_queue": [
+    {"job_id": "1265777", "state": "RUNNING", "name": "ctdp-g0-s3407", "workdir": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902", "classification": "STALE_REMOTE_HEAD"},
+    {"job_id": "1265778", "state": "RUNNING", "name": "ctdp-g1-s3407", "workdir": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902", "classification": "STALE_REMOTE_HEAD"},
+    {"job_id": "1265779", "state": "PENDING", "reason": "Dependency", "name": "ctdp-g2-s3407", "classification": "STALE_REMOTE_HEAD"},
+    {"job_id": "1265780", "state": "PENDING", "reason": "Dependency", "name": "ctdp-g3-s3407", "classification": "STALE_REMOTE_HEAD"},
+    {"job_id": "1266397_[0-2,7]", "state": "RUNNING", "name": "duca_rec_train", "workdir": "/data/home/sczc063", "classification": "NONOWNED"},
+    {"job_id": "1266410-1266414", "state": "RUNNING", "name": "zt-bafdr-train-*", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7", "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"},
+    {"job_id": "1266415", "state": "PENDING", "reason": "AssocGrpGRES", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7", "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"},
+    {"job_id": "1266416", "state": "PENDING", "reason": "Dependency", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7", "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"},
+    {"job_id": "1266420", "state": "PENDING", "reason": "Dependency", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7", "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"}
+  ],
+  "supervisor": {
+    "pid": "2272497",
+    "status": "ACTIVE",
+    "dispatcher_status": "BLOCKED",
+    "queue_entries": 0,
+    "formal_run_root_exists": false,
+    "formal_results": "NO_VALID_RESULTS"
+  },
+  "resource_blocker": {
+    "error": "AssocMaxSubmitJobLimit",
+    "impact": "当前不能提交 ET-TRC CUDA gate 或 BAFDR world-size=2 admission",
+    "action": "不重复提交；资源释放后由监督器按精确修正 SHA 重试"
+  },
+  "action": "旧 checkout 作业仅保留为诊断材料，不取消、不采用；当前修正分支已完成可执行 PRECHECK，正式训练仍保持关闭。"
+}

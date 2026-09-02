@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-REMOTE-FAILURE-DIAGNOSIS-v001",
-  "checked_at_utc": "2026-09-02T17:42:00Z",
+  "checked_at_utc": "2026-09-02T18:05:39Z",
   "remote_host": "N16R4",
   "policy": "每个失败先读取 stderr/out，区分代码/协议/资源/调用错误；旧 checkout 只归档，不迁移为当前科学结果",
   "diagnoses": [
@@ -78,6 +78,25 @@
       "root_cause": "测试路径/调用参数错误，未执行目标测试。",
       "repair": "改用固定测试清单并在 srun 分配后重新执行；1266408 已完成修正分支复验。",
       "result": "无科学结果。"
+    },
+    {
+      "attempt_ids": ["j-k0vrhb"],
+      "route": "BAFDR exact-SHA revalidation",
+      "source_checkout": "远端修正 worktree（目标 c750cdae）",
+      "classification": "PRECHECK_PROTOCOL_FAILURE_REPAIRED",
+      "root_cause": "通过非交互 SSH 直接调用 python，未按远端规范加载 CUDA/Miniforge/opentad 环境，旧 Python 将 tools/bata/bafdr_k16_fullmatrix.py 的类型注解解析为 SyntaxError；未启动训练作业。",
+      "repair": "显式执行 module load cuda/11.8、module load miniforge3/24.11，并 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate；保留 BAFDR_ALLOW_SINGLE_PROCESS=1 仅用于 PRECHECK。",
+      "revalidation": "Python 3.10.20；c750cdae 精确 HEAD、clean worktree；21-cell validator PASS；D160 seed 4407 PRECHECK PASS（world_size=1、train_len=200、eval_windows=792）。",
+      "result": "协议失败已修复；无科学结果，尚未提交 2-GPU formal training。"
+    },
+    {
+      "attempt_ids": ["j-zckrpd"],
+      "route": "BAFDR exact-SHA repository synchronization",
+      "classification": "REPOSITORY_SYNC_FAILURE_REPAIRED",
+      "root_cause": "将本地修正 bundle fetch 到远端同名分支时触发 non-fast-forward；第一次 fetch 在仓库 rev-list 检查阶段长时间等待，未改变实验状态。",
+      "repair": "终止悬挂的同步进程后，对本审计自有分支使用强制 refspec fetch，并将远端修正 worktree reset 到 c750cdae。",
+      "revalidation": "远端 repo ref 与 worktree HEAD 均为 c750cdae1b7dce8ab1ef9b3d2fa04ebb9853926a，git status --porcelain 为空；随后 validator 与 PRECHECK 均 PASS。",
+      "result": "同步失败已修复；不产生科学结果。"
     }
   ],
   "current_resource_blocker": {

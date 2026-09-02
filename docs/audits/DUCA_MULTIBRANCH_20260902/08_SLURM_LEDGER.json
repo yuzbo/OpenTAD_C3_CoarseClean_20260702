@@ -56,6 +56,36 @@
       "status": "BLOCKED_INFRASTRUCTURE",
       "reason": "AssocMaxSubmitJobLimit",
       "job_ids": []
+    },
+    {
+      "kind": "bafdr_exact_sha_sync_initial",
+      "command": "git fetch /tmp/bafdr_admission.bundle refs/heads/codex/zoomtoken-bafdr-admission-fix-20260903",
+      "status": "FAILED_PROTOCOL",
+      "reason": "non-fast-forward; initial remote rev-list wait was terminated",
+      "job_ids": [],
+      "attempt_id": "j-zckrpd"
+    },
+    {
+      "kind": "bafdr_exact_sha_sync_retry",
+      "command": "git fetch +refs/heads/codex/zoomtoken-bafdr-admission-fix-20260903:refs/heads/codex/zoomtoken-bafdr-admission-fix-20260903; git reset --hard c750cdae...",
+      "status": "SUCCEEDED",
+      "job_ids": [],
+      "result": "remote repo ref and clean worktree HEAD c750cdae1b7dce8ab1ef9b3d2fa04ebb9853926a"
+    },
+    {
+      "kind": "bafdr_exact_sha_precheck_wrong_environment",
+      "command": "PRECHECK_ONLY=1 ... run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh bafdr_k16_d160_seed4407.py",
+      "status": "FAILED_PROTOCOL",
+      "reason": "non-interactive SSH did not load conda; old python SyntaxError at type annotation",
+      "job_ids": [],
+      "attempt_id": "j-k0vrhb"
+    },
+    {
+      "kind": "bafdr_exact_sha_precheck_retry",
+      "command": "module load cuda/11.8; module load miniforge3/24.11; source .../opentad/bin/activate; PRECHECK_ONLY=1 BAFDR_ALLOW_SINGLE_PROCESS=1 ...",
+      "status": "SUCCEEDED",
+      "job_ids": [],
+      "result": "Python 3.10.20; 21-cell validator PASS; D160 seed 4407 PRECHECK receipt PASS"
     }
   ],
   "failure_diagnoses": [
@@ -83,6 +113,12 @@
       "classification": "REPAIR_REVALIDATION_SUCCESS",
       "cause": "H65 P0 x-only backbone 收到 masks 的签名错误",
       "revalidation": "远端修正 worktree 15 passed；不产生 mAP"
+    },
+    {
+      "attempt_ids": ["j-k0vrhb"],
+      "classification": "PRECHECK_PROTOCOL_FAILURE_REPAIRED",
+      "cause": "非交互 SSH 未加载规定 Conda 环境，旧 Python 解析类型注解失败",
+      "revalidation": "显式加载环境后 c750cdae validator 与 D160 PRECHECK PASS"
     }
   ],
   "preexisting_jobs_not_owned_by_this_audit": [

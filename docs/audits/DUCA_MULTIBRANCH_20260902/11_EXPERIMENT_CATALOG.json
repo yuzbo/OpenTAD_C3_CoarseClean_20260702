@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-02T17:47:52+00:00",
+  "last_updated_utc": "2026-09-02T18:05:39+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -147,9 +147,9 @@
       "sha": "c750cdae1b7dce8ab1ef9b3d2fa04ebb9853926a",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/c750cdae1b7dce8ab1ef9b3d2fa04ebb9853926a",
       "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_admission",
-      "deployment_status": "修复已推送；远端 21-cell validator 与 D160 单进程 PRECHECK 已通过，2-GPU CUDA admission 受提交上限阻塞",
+      "deployment_status": "修复已推送；远端已精确同步 c750cdae 且 clean，21-cell validator 与 D160 单进程 PRECHECK 已通过；2-GPU CUDA admission 受提交上限阻塞",
       "result_status": "修正尚未获得正式训练结果",
-      "final_result": "修复 LoadFrames 窗口参数、canonical pretrained 绑定和单进程 optimizer；PRECHECK 报告 train_len=200、eval_windows=792、PASS",
+      "final_result": "修复 LoadFrames 窗口参数、canonical pretrained 绑定和单进程 optimizer；错误 Python 环境调用已记录并修复；精确 c750cdae PRECHECK 报告 train_len=200、eval_windows=792、PASS",
       "next_action": "资源释放后运行 world-size=2 CUDA PRECHECK 与五臂 screen，再决定是否开放 21-cell",
       "local_head": "c750cdae1b7dce8ab1ef9b3d2fa04ebb9853926a",
       "local_clean_tree": true
@@ -157,7 +157,7 @@
   ],
   "remote_supervisor": {
     "status": "ACTIVE",
-    "checked_at": "2026-09-02T17:47:45+00:00",
+      "checked_at": "2026-09-02T18:06:47+00:00",
     "dispatcher_status": "BLOCKED",
     "entries": []
   },
