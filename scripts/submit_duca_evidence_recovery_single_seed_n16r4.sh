@@ -24,6 +24,11 @@ export DUCA_H65_LEDGER_CONFIG_HASH="${DUCA_H65_LEDGER_CONFIG_HASH:-}"
 REPO_ROOT="${DUCA_REPO_ROOT:-$(pwd)}"
 cd "${REPO_ROOT}"
 
+[[ "$(git branch --show-current)" == "codex/duca-evidence-recovery-numerical-correction-20260902" ]] || {
+  echo "Evidence formal submit requires the numerical-correction branch" >&2; exit 2;
+}
+[[ -z "$(git status --porcelain)" ]] || { echo "Evidence checkout is not clean" >&2; exit 2; }
+
 if [[ ! -f "${DUCA_VIDEOMAE_PRETRAIN}" ]]; then
   echo "[ERROR] VideoMAE checkpoint not found: ${DUCA_VIDEOMAE_PRETRAIN}" >&2
   exit 2

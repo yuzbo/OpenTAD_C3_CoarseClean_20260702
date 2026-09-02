@@ -40,6 +40,9 @@ if [[ ! -f "${PRETRAIN}" ]]; then
 fi
 
 cd "${REPO_ROOT}"
+[[ "$(git branch --show-current)" == "codex/duca-evidence-recovery-numerical-correction-20260902" ]] || {
+  echo "diagnostic must run from the numerical-correction branch" >&2; exit 2;
+}
 export YUZIBO_ROOT DUCA_VIDEOMAE_PRETRAIN="${PRETRAIN}"
 export DUCA_H65_LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT:-${YUZIBO_ROOT}/projects/c3_lowres_action_probe/ledger_exports/c3_official_asformer_delta_ledgers_20260702_052357_+0800}"
 export DUCA_H65_TRAIN_LEDGER_PATH="${DUCA_H65_TRAIN_LEDGER_PATH:-${DUCA_H65_LEDGER_ROOT}/train/value_transport_ledger_delta_p_action_384.jsonl}"
