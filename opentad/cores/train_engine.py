@@ -79,6 +79,22 @@ def _inject_nonfinite_gradient(model):
     raise RuntimeError("forced AMP overflow could not find a populated gradient")
 
 
+def _gradient_finiteness(model):
+    """Return ``(all_finite, populated_count)`` without mutating gradients."""
+    parameters = getattr(model, "parameters", None)
+    if not callable(parameters):
+        return True, 0
+    populated = 0
+    finite = True
+    for parameter in parameters():
+        if not parameter.requires_grad or parameter.grad is None:
+            continue
+        populated += 1
+        if not bool(torch.isfinite(parameter.grad.detach()).all().item()):
+            finite = False
+    return finite, populated
+
+
 def _write_update_audit_snapshot(
     path,
     *,
@@ -175,6 +191,8 @@ def train_one_epoch(
             "ema_updates",
             "duca_schedule_updates",
             "forced_amp_overflow_attempts",
+            "finite_gradient_assertions",
+            "gradient_nonfinite_events",
         ):
             update_audit.setdefault(key, 0)
         update_audit.setdefault("max_amp_retries_observed", 0)
@@ -311,10 +329,56 @@ def train_one_epoch(
                 _inject_nonfinite_gradient(model)
                 update_audit["forced_amp_overflow_attempts"] += 1
 
+            if use_amp:
+                # Inspect true gradients, not loss-scaled values.
+                scaler.unscale_(optimizer)
             if clip_grad_l2norm > 0.0:
-                if use_amp:
-                    scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad_l2norm)
+            gradients_finite, populated_gradients = _gradient_finiteness(model)
+            if update_audit is not None:
+                update_audit["finite_gradient_assertions"] += 1
+                if not gradients_finite:
+                    update_audit["gradient_nonfinite_events"] += 1
+            if not gradients_finite:
+                if use_amp:
+                    # Let GradScaler lower its scale and replay the exact batch
+                    # after restoring model buffers and all RNG state below.
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer_step_ran = False
+                else:
+                    raise FloatingPointError(
+                        "non-finite gradient before optimizer step; "
+                        f"populated_gradients={populated_gradients}; epoch={curr_epoch}; "
+                        f"batch_index={iter_idx}"
+                    )
+
+            if not gradients_finite and use_amp:
+                if probe_state is not None:
+                    _record_training_probe_step(probe_state, model, False)
+                if update_audit is not None:
+                    update_audit["amp_skipped_attempts"] += 1
+                if model_buffer_state is not None:
+                    _restore_model_buffers(model, model_buffer_state)
+                if custom_replay_state is not None:
+                    _restore_custom_replay_state(model, custom_replay_state)
+                if update_audit is not None and "replay_state_restorations" in update_audit:
+                    update_audit["replay_state_restorations"] += 1
+                retry_count += 1
+                if update_audit is not None:
+                    update_audit["max_amp_retries_observed"] = max(
+                        update_audit["max_amp_retries_observed"], retry_count
+                    )
+                if retry_count > max_amp_retries_per_batch:
+                    if update_audit is not None:
+                        update_audit["replay_exhaustions"] += 1
+                    if fail_on_amp_replay_exhaustion:
+                        raise FloatingPointError(
+                            "non-finite gradient replay exhausted after "
+                            f"{max_amp_retries_per_batch} retries"
+                        )
+                    break
+                continue
 
             if probe_state is not None:
                 _record_training_probe_backward(probe_state, model, losses["cost"])

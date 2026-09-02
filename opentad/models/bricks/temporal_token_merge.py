@@ -151,11 +151,19 @@ class BoundaryProtectedTemporalTokenMerge(BaseModule):
                     b_intervals.append(support_intervals[b, t_idx])
                     b_scores.append(boundary_scores[b, t_idx])
 
-            new_x_list.append(torch.stack(b_feats, dim=0))  # [T-1, S, C]
-            new_m_list.append(torch.stack(b_masses, dim=0))  # [T-1]
-            new_c_list.append(torch.stack(b_centers, dim=0))  # [T-1]
-            new_int_list.append(torch.stack(b_intervals, dim=0))  # [T-1, 2]
-            new_b_list.append(torch.stack(b_scores, dim=0))  # [T-1]
+            # Keep all support metadata synchronized with the feature order.
+            # This also repairs callers that provide an unsorted physical axis.
+            chunk_x = torch.stack(b_feats, dim=0)
+            chunk_m = torch.stack(b_masses, dim=0)
+            chunk_c = torch.stack(b_centers, dim=0)
+            chunk_i = torch.stack(b_intervals, dim=0)
+            chunk_b = torch.stack(b_scores, dim=0)
+            order = torch.argsort(chunk_c, stable=True)
+            new_x_list.append(chunk_x[order])  # [T-1, S, C]
+            new_m_list.append(chunk_m[order])  # [T-1]
+            new_c_list.append(chunk_c[order])  # [T-1]
+            new_int_list.append(chunk_i[order])  # [T-1, 2]
+            new_b_list.append(chunk_b[order])  # [T-1]
 
         new_x_tensor = torch.stack(new_x_list, dim=0).view(B_chunks, (T - 1) * S, C)
         new_m_tensor = torch.stack(new_m_list, dim=0)

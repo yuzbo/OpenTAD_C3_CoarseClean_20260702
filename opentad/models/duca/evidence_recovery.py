@@ -310,19 +310,20 @@ def largest_remainder_quota(
     num_segs = len(segment_weights)
     if num_segs == 0:
         return []
-    if total_budget <= num_segs * min_per_seg:
-        base = total_budget // num_segs
-        rem = total_budget % num_segs
-        return [base + (1 if i < rem else 0) for i in range(num_segs)]
-
     if any(not math.isfinite(float(weight)) for weight in segment_weights):
         raise FloatingPointError(
             f"non-finite segment weight before quota allocation: {segment_weights!r}"
         )
     if any(float(weight) < 0.0 for weight in segment_weights):
         raise ValueError(f"segment weights must be non-negative, got {segment_weights!r}")
+    if total_budget <= num_segs * min_per_seg:
+        base = total_budget // num_segs
+        rem = total_budget % num_segs
+        return [base + (1 if i < rem else 0) for i in range(num_segs)]
     remaining_budget = total_budget - num_segs * min_per_seg
     total_w = sum(segment_weights) + 1e-7
+    if not math.isfinite(total_w) or total_w <= 0.0:
+        raise FloatingPointError(f"invalid total segment weight: {total_w!r}")
 
     exact_quotas = [w / total_w * remaining_budget for w in segment_weights]
     integer_parts = [int(math.floor(q)) for q in exact_quotas]
@@ -439,6 +440,14 @@ class EvidenceRecoverySelector(BaseModule):
             observed_holes.append(torch.tensor(_max_unselected_hole(sel_active, valid_len), dtype=torch.long, device=device))
 
         selected_positions = torch.stack(selected_positions_list, dim=0)
+        assert_finite_tensor(selected_positions, "selector.selected_positions")
+        for b in range(B):
+            active = int(selected_valid_counts[b].item())
+            row = selected_positions[b, :active]
+            if active and bool((row < 0).any().item() or (row >= valid_mask.shape[1]).any().item()):
+                raise ValueError("selected positions must lie inside the valid temporal domain")
+            if active > 1 and bool((row[1:] <= row[:-1]).any().item()):
+                raise ValueError("selected positions must be strictly increasing")
         support = _support_from_selected_positions(
             selected_positions,
             boundary_prob=boundary_prob,
@@ -1185,15 +1194,6 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
         else:
             support_mask = torch.ones((feats.shape[0], N_tokens), dtype=torch.bool, device=feats.device)
 
-        recovered = self.module.recovery(
-            feats=feats,
-            centers=centers,
-            intervals=intervals,
-            masses=masses,
-            valid_mask=support_mask,
-        )
-        
-        # Recovered mask has length self.budget matching target grid
         dense_valid_lens = selector_outputs.get("dense_valid_len")
         if dense_valid_lens is None:
             ratio = float(self.budget) / float(masks.shape[-1]) if masks.shape[-1] != self.budget else 1.0
@@ -1204,7 +1204,27 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
                 * float(self.budget)
                 / float(self.window_size)
             ).ceil().long()
+
+        recovered = self.module.recovery(
+            feats=feats,
+            centers=centers,
+            intervals=intervals,
+            masses=masses,
+            valid_mask=support_mask,
+            dense_valid_len=(
+                selector_outputs.get("dense_valid_len")
+                if selector_outputs.get("dense_valid_len") is not None
+                else masks.long().sum(dim=-1)
+            ),
+        )
+
+        # Recovered mask has length self.budget matching target grid
         new_masks = torch.zeros((feats.shape[0], self.budget), dtype=masks.dtype, device=masks.device)
         for b in range(feats.shape[0]):
             new_masks[b, :min(self.budget, valid_lens[b].item())] = True
+        # Recovery must never expose interpolated values beyond each sample's
+        # valid dense prefix.  Keep the mask and feature tensor in lockstep so
+        # downstream projection/FPN/head cannot consume padded tail evidence.
+        recovered = recovered * new_masks.to(device=recovered.device, dtype=recovered.dtype).unsqueeze(1)
+        assert_finite_tensor(recovered, "recovery.masked_output")
         return recovered, new_masks

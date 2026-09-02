@@ -368,6 +368,8 @@ def test_train_one_epoch_replays_amp_skip_without_advancing_state(monkeypatch):
         "ema_updates": 0,
         "duca_schedule_updates": 0,
         "forced_amp_overflow_attempts": 0,
+        "finite_gradient_assertions": 3,
+        "gradient_nonfinite_events": 0,
         "max_amp_retries_observed": 1,
     }
 

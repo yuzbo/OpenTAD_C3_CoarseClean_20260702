@@ -91,6 +91,8 @@ class DenseTemporalRecovery(BaseModule):
             assert_finite_tensor(value, name)
         if masses is not None:
             assert_finite_tensor(masses, "recovery.masses")
+            if bool((masses < 0).any().item()):
+                raise ValueError("recovery.masses must be non-negative")
         if valid_mask is not None:
             assert_finite_tensor(valid_mask, "recovery.valid_mask")
         grid = self.target_grid.view(1, 1, M)  # [1, 1, M]
@@ -126,15 +128,21 @@ class DenseTemporalRecovery(BaseModule):
 
         # Fallback to nearest neighbor for any unhit grid points
         if not bool(safe_mask.all().item()):
-            # Find nearest token index for each grid point: [B, M]
-            nearest_idx = dist.argmin(dim=1)  # [B, M]
-            # Gather nearest token features: [B, C, M]
-            nearest_feats = torch.gather(
-                feats,
-                dim=2,
-                index=nearest_idx.unsqueeze(1).expand(-1, C, -1),
-            )
+            # Use the nearest valid support token.  An all-masked sample has no
+            # evidence and therefore receives an explicit zero reconstruction.
+            nearest_feats = torch.zeros_like(interp)
+            for batch_idx in range(B):
+                if valid_mask is None:
+                    valid_idx = torch.arange(N, device=feats.device)
+                else:
+                    valid_idx = torch.nonzero(valid_mask[batch_idx].bool(), as_tuple=False).flatten()
+                if valid_idx.numel() == 0:
+                    continue
+                nearest_local = dist[batch_idx, valid_idx].argmin(dim=0)
+                nearest_idx = valid_idx[nearest_local]
+                nearest_feats[batch_idx] = feats[batch_idx, :, nearest_idx]
             interp = torch.where(safe_mask.expand(-1, C, -1), interp, nearest_feats)
+        assert_finite_tensor(interp, "recovery.interpolated_fallback")
 
         return interp
 
@@ -145,6 +153,7 @@ class DenseTemporalRecovery(BaseModule):
         intervals: torch.Tensor,
         masses: Optional[torch.Tensor] = None,
         valid_mask: Optional[torch.Tensor] = None,
+        dense_valid_len: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Forward pass reconstructing features to [B, C, 384].
 
@@ -165,5 +174,14 @@ class DenseTemporalRecovery(BaseModule):
         # Stage 2: Residual refinement
         res = self.pwconv(self.act(self.dwconv(interp)))
         out = interp + self.residual_gate * res
+        if dense_valid_len is not None:
+            valid_len = dense_valid_len.to(device=out.device).reshape(-1)
+            if valid_len.numel() != out.shape[0]:
+                raise ValueError("dense_valid_len must contain one value per sample")
+            valid_grid = torch.ceil(
+                valid_len.float() * float(self.target_grid_size) / float(self.original_window_size)
+            ).clamp(min=0, max=self.target_grid_size).long()
+            grid_mask = torch.arange(self.target_grid_size, device=out.device).view(1, -1) < valid_grid[:, None]
+            out = out * grid_mask.to(dtype=out.dtype).unsqueeze(1)
         assert_finite_tensor(out, "recovery.output")
         return out

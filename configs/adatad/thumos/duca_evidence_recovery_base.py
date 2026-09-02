@@ -6,7 +6,7 @@ import os
 # Training protocol settings
 total_epochs = 60
 max_updates = 6000
-seed = 3407
+seed = 8261
 
 window_size = 768
 selected_budget = 384
@@ -197,7 +197,9 @@ optimizer = dict(
 )
 
 solver = dict(
-    amp=True,
+    # Evidence Recovery sensitive paths run in FP32; AMP replay remains
+    # available to generic callers but is disabled for this formal protocol.
+    amp=False,
     clip_grad_norm=1.0,
 )
 
@@ -224,7 +226,7 @@ workflow = dict(
     # A forward loss that is already non-finite is deterministic for the same
     # batch/state and must fail fast; only AMP backward overflows are replayed.
     max_nonfinite_loss_retries=0,
-    max_amp_retries_per_batch=20,
+    max_amp_retries_per_batch=3,
     # Stop a run before a non-finite detector loss can corrupt its checkpoint.
     require_finite_train_loss=True,
 )
