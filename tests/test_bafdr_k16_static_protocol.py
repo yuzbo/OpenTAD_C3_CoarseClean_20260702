@@ -102,6 +102,8 @@ def test_train_driver_is_fail_closed_and_ddp_aware():
     assert "BAFDR pretrained checkpoint" in text
     optimizer_text = read(ROOT / "opentad" / "cores" / "optimizer.py")
     assert "target_model = model.module if hasattr(model, \"module\") else model" in optimizer_text
+    validator_text = read(ROOT / "tools" / "bata" / "bafdr_k16_fullmatrix.py")
+    assert "dataset.window_size must be 768" in validator_text
 
 
 def test_matrix_orchestrator_validates_semantic_contracts():

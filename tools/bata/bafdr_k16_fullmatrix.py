@@ -165,6 +165,7 @@ def validate_solver_contract(cfg: Config, *, config_path: Path) -> Dict[str, Any
 def validate_bafdr_pipeline(cfg: Config, *, config_path: Path, arm: str) -> Dict[str, Any]:
     split_info = {}
     for split in ("train", "val", "test"):
+        split_cfg = _get(_get(cfg, "dataset"), split)
         pipeline = _pipeline_for(cfg, split)
         source_steps = _find_steps(pipeline, "BAFDRSourceViews")
         if len(source_steps) != 1:
@@ -204,10 +205,17 @@ def validate_bafdr_pipeline(cfg: Config, *, config_path: Path, arm: str) -> Dict
         else:
             if _get(load, "method") != "sliding_window":
                 raise ValueError(f"{config_path}: {split} LoadFrames must use sliding_window")
-            if int(_get(load, "window_size")) != WINDOW_SIZE:
-                raise ValueError(f"{config_path}: {split} window_size must be 768")
-            if float(_get(load, "window_overlap_ratio")) != WINDOW_OVERLAP_RATIO:
-                raise ValueError(f"{config_path}: {split} overlap ratio must be 0.5")
+            # Window geometry is supplied by the dataset and injected into
+            # transform results.  LoadFrames does not accept these values in
+            # its constructor, so reject the stale form explicitly.
+            if "window_size" in load or "window_overlap_ratio" in load:
+                raise ValueError(
+                    f"{config_path}: {split} LoadFrames must not receive dataset window arguments"
+                )
+            if int(_get(split_cfg, "window_size")) != WINDOW_SIZE:
+                raise ValueError(f"{config_path}: {split} dataset.window_size must be 768")
+            if float(_get(split_cfg, "window_overlap_ratio")) != WINDOW_OVERLAP_RATIO:
+                raise ValueError(f"{config_path}: {split} dataset overlap ratio must be 0.5")
 
         split_info[split] = {
             "pipeline_len": len(pipeline),
