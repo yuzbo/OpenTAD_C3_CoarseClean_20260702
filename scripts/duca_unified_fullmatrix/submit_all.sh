@@ -102,6 +102,25 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   exit 2
 fi
 
+python - "$PROJECT_DIR/scripts/duca_unified_fullmatrix/matrix.json" <<'PY'
+import json
+import sys
+
+matrix_path = sys.argv[1]
+payload = json.load(open(matrix_path, encoding="utf-8"))
+blocked = [
+    (row["task_id"], row.get("admission_blockers", []))
+    for row in payload.get("rows", [])
+    if row.get("admission_status") != "READY_FOR_GATE"
+]
+if blocked:
+    for task_id, reasons in blocked:
+        print(f"BLOCKED_UNIMPLEMENTED {task_id}: {', '.join(reasons)}", file=sys.stderr)
+    raise SystemExit("DUCA Unified formal submission is blocked until all declared mechanisms are implemented")
+if payload.get("implementation_gate", {}).get("cost_benchmark_status") != "READY":
+    raise SystemExit("DUCA Unified cost benchmark is not implemented; refusing formal DAG submission")
+PY
+
 export PROJECT_DIR RUN_ROOT BASE
 
 SLURM_SHARED_ARGS=()

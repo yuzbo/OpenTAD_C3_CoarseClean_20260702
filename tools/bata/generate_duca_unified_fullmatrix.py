@@ -16,6 +16,25 @@ CONFIG_DIR = ROOT / "configs" / "adatad" / "thumos" / "duca_unified_fullmatrix"
 SCRIPT_DIR = ROOT / "scripts" / "duca_unified_fullmatrix"
 
 
+# These arms are represented in the scientific manifest but are not yet valid
+# executable experiments.  Keeping the block at generation/submission time
+# prevents metadata-only placeholders from reaching Slurm.
+_IMPLEMENTATION_BLOCKERS: dict[str, tuple[str, ...]] = {
+    "D1": ("signed_feature_taylor_p0_p1_runtime_not_wired",),
+    "F11": ("signed_feature_taylor_p0_p1_runtime_not_wired",),
+    "H0": ("h65_original_retention_transition_not_implemented",),
+    "G10": ("h65_original_retention_transition_not_implemented",),
+    "G11": ("h65_original_retention_transition_not_implemented",),
+}
+
+
+def _admission_for_arm(arm: dict[str, Any]) -> tuple[str, list[str]]:
+    reasons = list(_IMPLEMENTATION_BLOCKERS.get(str(arm["id"]), ()))
+    if reasons:
+        return "BLOCKED_UNIMPLEMENTED", reasons
+    return "READY_FOR_GATE", reasons
+
+
 def _load_manifest(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         manifest = yaml.safe_load(handle)
@@ -356,6 +375,7 @@ def _matrix_rows(manifest: dict[str, Any]) -> list[dict[str, Any]]:
         slug = f"{phase}_{str(arm['id']).lower()}_seed{seed}"
         config_rel = f"configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_{slug}.py"
         work_dir = f"exps/thumos/adatad/duca_unified_fullmatrix/{manifest['matrix_id']}/{slug}"
+        admission_status, admission_blockers = _admission_for_arm(arm)
         rows.append(
             {
                 "index": idx,
@@ -377,6 +397,8 @@ def _matrix_rows(manifest: dict[str, Any]) -> list[dict[str, Any]]:
                 "work_dir": work_dir,
                 "primary_candidate": str(arm["id"]) == "A11",
                 "confirmation": phase == "confirmation",
+                "admission_status": admission_status,
+                "admission_blockers": admission_blockers,
             }
         )
 
@@ -392,13 +414,22 @@ def _matrix_rows(manifest: dict[str, Any]) -> list[dict[str, Any]]:
 def _write_matrix_files(manifest: dict[str, Any], rows: list[dict[str, Any]]) -> None:
     SCRIPT_DIR.mkdir(parents=True, exist_ok=True)
     with (SCRIPT_DIR / "matrix.tsv").open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()), delimiter="\t")
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=list(rows[0].keys()),
+            delimiter="\t",
+            lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(rows)
     payload = {
         "schema_version": "duca_unified_fullmatrix_tasks_v1",
         "matrix_id": manifest["matrix_id"],
         "base_revision": manifest["integration_base"]["revision"],
+        "implementation_gate": {
+            "blocked_arm_ids": sorted(_IMPLEMENTATION_BLOCKERS),
+            "cost_benchmark_status": "BLOCKED_UNIMPLEMENTED",
+        },
         "rows": rows,
     }
     with (SCRIPT_DIR / "matrix.json").open("w", encoding="utf-8") as handle:
@@ -437,6 +468,8 @@ def _write_freeze_doc(manifest: dict[str, Any], rows: list[dict[str, Any]]) -> N
         f"- Total train/eval tasks: `{len(rows)}`",
         f"- Bootstrap shards: `{manifest['common_contract']['statistics']['bootstrap_shards']}`",
         f"- Cost arms: `{', '.join(manifest['cost_benchmark']['arm_ids'])}`",
+        "- Implementation gate: D1/F11 Taylor and H0/G10/G11 H65 retention/transition are blocked until runtime wiring is complete.",
+        "- Cost gate: real synchronized end-to-end benchmark is not implemented; cost submission remains blocked.",
         "",
         "The manifest copied into this repository is the source of truth. Historical references in that manifest are descriptive anchors only; matched conclusions must come from this 41-task matrix.",
         "",
@@ -729,6 +762,25 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   git status --short --untracked-files=no >&2
   exit 2
 fi
+
+python - "$PROJECT_DIR/scripts/duca_unified_fullmatrix/matrix.json" <<'PY'
+import json
+import sys
+
+matrix_path = sys.argv[1]
+payload = json.load(open(matrix_path, encoding="utf-8"))
+blocked = [
+    (row["task_id"], row.get("admission_blockers", []))
+    for row in payload.get("rows", [])
+    if row.get("admission_status") != "READY_FOR_GATE"
+]
+if blocked:
+    for task_id, reasons in blocked:
+        print(f"BLOCKED_UNIMPLEMENTED {{task_id}}: {{', '.join(reasons)}}", file=sys.stderr)
+    raise SystemExit("DUCA Unified formal submission is blocked until all declared mechanisms are implemented")
+if payload.get("implementation_gate", {{}}).get("cost_benchmark_status") != "READY":
+    raise SystemExit("DUCA Unified cost benchmark is not implemented; refusing formal DAG submission")
+PY
 
 export PROJECT_DIR RUN_ROOT BASE
 

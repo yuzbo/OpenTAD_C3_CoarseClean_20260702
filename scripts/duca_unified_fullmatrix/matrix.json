@@ -2,6 +2,16 @@
   "schema_version": "duca_unified_fullmatrix_tasks_v1",
   "matrix_id": "DUCA-UNIFIED-FULLMATRIX-v001-20260902",
   "base_revision": "95ca6eb4a7e0ba8259c5afd976cc30d0fea58865",
+  "implementation_gate": {
+    "blocked_arm_ids": [
+      "D1",
+      "F11",
+      "G10",
+      "G11",
+      "H0"
+    ],
+    "cost_benchmark_status": "BLOCKED_UNIMPLEMENTED"
+  },
   "rows": [
     {
       "index": 0,
@@ -22,7 +32,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_u0_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_u0_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 1,
@@ -43,7 +55,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_h0_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_h0_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "h65_original_retention_transition_not_implemented"
+      ]
     },
     {
       "index": 2,
@@ -64,7 +80,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_a00_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_a00_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 3,
@@ -85,7 +103,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_a10_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_a10_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 4,
@@ -106,7 +126,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_a01_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_a01_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 5,
@@ -127,7 +149,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_a11_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_a11_seed3407",
       "primary_candidate": true,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 6,
@@ -148,7 +172,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_b00_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_b00_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 7,
@@ -169,7 +195,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_b10_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_b10_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 8,
@@ -190,7 +218,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_b11_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_b11_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 9,
@@ -211,7 +241,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_c01_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_c01_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 10,
@@ -232,7 +264,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_c11_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_c11_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 11,
@@ -253,7 +287,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_d1_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_d1_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "signed_feature_taylor_p0_p1_runtime_not_wired"
+      ]
     },
     {
       "index": 12,
@@ -274,7 +312,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_e01_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_e01_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 13,
@@ -295,7 +335,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_e11_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_e11_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 14,
@@ -316,7 +358,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_f11_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_f11_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "signed_feature_taylor_p0_p1_runtime_not_wired"
+      ]
     },
     {
       "index": 15,
@@ -337,7 +383,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_g10_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_g10_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "h65_original_retention_transition_not_implemented"
+      ]
     },
     {
       "index": 16,
@@ -358,7 +408,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_g11_seed3407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/development_g11_seed3407",
       "primary_candidate": false,
-      "confirmation": false
+      "confirmation": false,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "h65_original_retention_transition_not_implemented"
+      ]
     },
     {
       "index": 17,
@@ -379,7 +433,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_u0_seed4407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_u0_seed4407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 18,
@@ -400,7 +456,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_h0_seed4407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_h0_seed4407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "h65_original_retention_transition_not_implemented"
+      ]
     },
     {
       "index": 19,
@@ -421,7 +481,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_a10_seed4407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_a10_seed4407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 20,
@@ -442,7 +504,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_a11_seed4407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_a11_seed4407",
       "primary_candidate": true,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 21,
@@ -463,7 +527,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_c11_seed4407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_c11_seed4407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 22,
@@ -484,7 +550,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_d1_seed4407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_d1_seed4407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "signed_feature_taylor_p0_p1_runtime_not_wired"
+      ]
     },
     {
       "index": 23,
@@ -505,7 +575,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_e01_seed4407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_e01_seed4407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 24,
@@ -526,7 +598,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_f11_seed4407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_f11_seed4407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "signed_feature_taylor_p0_p1_runtime_not_wired"
+      ]
     },
     {
       "index": 25,
@@ -547,7 +623,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_u0_seed5407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_u0_seed5407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 26,
@@ -568,7 +646,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_h0_seed5407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_h0_seed5407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "h65_original_retention_transition_not_implemented"
+      ]
     },
     {
       "index": 27,
@@ -589,7 +671,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_a10_seed5407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_a10_seed5407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 28,
@@ -610,7 +694,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_a11_seed5407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_a11_seed5407",
       "primary_candidate": true,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 29,
@@ -631,7 +717,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_c11_seed5407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_c11_seed5407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 30,
@@ -652,7 +740,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_d1_seed5407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_d1_seed5407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "signed_feature_taylor_p0_p1_runtime_not_wired"
+      ]
     },
     {
       "index": 31,
@@ -673,7 +765,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_e01_seed5407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_e01_seed5407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 32,
@@ -694,7 +788,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_f11_seed5407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_f11_seed5407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "signed_feature_taylor_p0_p1_runtime_not_wired"
+      ]
     },
     {
       "index": 33,
@@ -715,7 +813,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_u0_seed6407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_u0_seed6407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 34,
@@ -736,7 +836,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_h0_seed6407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_h0_seed6407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "h65_original_retention_transition_not_implemented"
+      ]
     },
     {
       "index": 35,
@@ -757,7 +861,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_a10_seed6407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_a10_seed6407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 36,
@@ -778,7 +884,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_a11_seed6407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_a11_seed6407",
       "primary_candidate": true,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 37,
@@ -799,7 +907,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_c11_seed6407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_c11_seed6407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 38,
@@ -820,7 +930,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_d1_seed6407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_d1_seed6407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "signed_feature_taylor_p0_p1_runtime_not_wired"
+      ]
     },
     {
       "index": 39,
@@ -841,7 +955,9 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_e01_seed6407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_e01_seed6407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "READY_FOR_GATE",
+      "admission_blockers": []
     },
     {
       "index": 40,
@@ -862,7 +978,11 @@
       "config_path": "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_confirmation_f11_seed6407.py",
       "work_dir": "exps/thumos/adatad/duca_unified_fullmatrix/DUCA-UNIFIED-FULLMATRIX-v001-20260902/confirmation_f11_seed6407",
       "primary_candidate": false,
-      "confirmation": true
+      "confirmation": true,
+      "admission_status": "BLOCKED_UNIMPLEMENTED",
+      "admission_blockers": [
+        "signed_feature_taylor_p0_p1_runtime_not_wired"
+      ]
     }
   ]
 }
