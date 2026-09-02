@@ -15,6 +15,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 cd "$PROJECT_DIR"
+[[ "$(git branch --show-current)" == "codex/zoomtoken-et-trc-correction-20260902" ]] || {
+  echo "ET-TRC pair requires correction branch" >&2; exit 2;
+}
+[[ -z "$(git status --porcelain)" ]] || { echo "ET-TRC checkout is not clean" >&2; exit 2; }
+ETTRC_CORRECTION_COMMIT="${ETTRC_CORRECTION_COMMIT:-$(git rev-parse HEAD)}"
+[[ "$(git rev-parse HEAD)" == "${ETTRC_CORRECTION_COMMIT}" ]] || { echo "ET-TRC HEAD mismatch" >&2; exit 2; }
 export ETTRC_PRETRAIN
 for mode in off on; do
   if [[ "$mode" == off ]]; then

@@ -25,6 +25,9 @@ class BackboneWrapper(nn.Module):
         # custom settings: pretrained checkpoint, post_processing_pipeline, norm_eval, freeze_backbone
         # 1. load the pretrained model
         pretrain_path = getattr(custom_cfg, "pretrain", None)
+        self.pretrain_allowed_missing_prefixes = tuple(
+            getattr(custom_cfg, "pretrain_allowed_missing_prefixes", ("jacobian_approx", "adapter"))
+        )
         self.pretrain_report = None
         if pretrain_path is not None:
             if not isinstance(pretrain_path, str) or not os.path.exists(pretrain_path):
@@ -180,26 +183,42 @@ class BackboneWrapper(nn.Module):
                 mapped[key] = value
                 consumed.add(key)
 
-        loaded = sum(
-            1
+        loaded_keys = [
+            key
             for key, value in target.items()
             if key in mapped and tuple(getattr(mapped[key], "shape", ())) == tuple(value.shape)
-        )
-        missing = sum(
-            1
+        ]
+        missing_keys = [
+            key
             for key, value in target.items()
             if key not in mapped or tuple(getattr(mapped[key], "shape", ())) != tuple(value.shape)
-        )
-        unexpected = sum(1 for key in source if key not in consumed)
+        ]
+        unexpected_keys = [key for key in source if key not in consumed]
+        undeclared_missing = [
+            key
+            for key in missing_keys
+            if not any(token in key for token in self.pretrain_allowed_missing_prefixes)
+        ]
+        if undeclared_missing:
+            raise RuntimeError(
+                "ET-TRC pretrained load has undeclared missing backbone keys: "
+                + ", ".join(undeclared_missing[:20])
+            )
         frozen = sum(1 for parameter in self.model.parameters() if not parameter.requires_grad)
         trainable = sum(1 for parameter in self.model.parameters() if parameter.requires_grad)
         self.pretrain_report = {
             "path": os.path.abspath(os.path.expanduser(str(pretrain_path))),
-            "loaded": int(loaded),
+            "loaded": int(len(loaded_keys)),
             "remapped": int(sum(bool(module.pretrained_qkv_remapped) for module in taylor_modules)),
-            "missing": int(missing),
-            "unexpected": int(unexpected),
-            "new_random": int(missing),
+            "loaded_keys": loaded_keys,
+            "remapped_keys": sorted(set(mapped).intersection(target)),
+            "missing": int(len(missing_keys)),
+            "missing_keys": missing_keys,
+            "unexpected": int(len(unexpected_keys)),
+            "unexpected_keys": unexpected_keys,
+            "new_random": int(len(missing_keys)),
+            "randomly_initialized_keys": missing_keys,
+            "undeclared_missing_keys": undeclared_missing,
             "frozen": int(frozen),
             "trainable": int(trainable),
         }

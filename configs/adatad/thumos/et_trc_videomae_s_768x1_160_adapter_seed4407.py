@@ -46,6 +46,10 @@ model = dict(
         custom=dict(
             pretrain=_pretrain,
             pretrain_required=True,
+            # These are the only intentionally new parameter families absent
+            # from the stock VideoMAE checkpoint; every other backbone key must
+            # load or the job fails closed.
+            pretrain_allowed_missing_prefixes=("jacobian_approx", "adapter"),
         ),
     ),
 )

@@ -19,13 +19,12 @@ from .vit_adapter import Adapter
 
 
 class TemporalLowRankJVP(BaseModule):
-    """Strictly linear Temporal Low-Rank Jacobian-Vector Product Operator.
-    
-    Operates along the temporal axis T across tubelets with channel bottleneck rank r.
-    Strictly satisfies:
-    1. J(0) = 0
-    2. J(a + b) = J(a) + J(b)
-    3. J(c * a) = c * J(a)
+    """Shared low-rank first-order residual approximation.
+
+    The module is linear in ``delta_h`` but is not the exact Jacobian of the
+    attention/MLP block because it has no access to the anchor state.  Keeping
+    the historical class name preserves checkpoint/config compatibility while
+    making the scientific claim explicit.
     """
     def __init__(self, embed_dims: int = 384, rank: int = 64, kernel_size: int = 3):
         super().__init__()
@@ -55,7 +54,8 @@ class TemporalLowRankJVP(BaseModule):
         Args:
             delta_h: (B, T, S, C) tensor of hidden state differences from nearest anchor
         Returns:
-            J * delta_h: (B, T, S, C) strictly linear temporal JVP approximation
+            A linear low-rank temporal residual approximation with shape
+            ``(B, T, S, C)``.
         """
         b, t, s, c = delta_h.shape
         # Channel reduction to rank r
