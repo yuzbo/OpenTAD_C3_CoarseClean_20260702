@@ -1,6 +1,11 @@
-annotation_path = "data/thumos-14/annotations/thumos_14_anno.json"
-class_map = "data/thumos-14/annotations/category_idx.txt"
-data_path = "data/thumos-14/raw_data/video"
+import os
+
+_thumos_root = os.environ.get("THUMOS14_ROOT", "/data/run01/sczc063/yuzibo/thumos14")
+if not os.path.isdir(_thumos_root):
+    _thumos_root = "data/thumos-14"
+annotation_path = os.path.join(_thumos_root, "annotations", "thumos_14_anno.json")
+class_map = os.path.join(_thumos_root, "annotations", "category_idx.txt")
+data_path = os.path.join(_thumos_root, "raw_data", "video")
 block_list = None
 
 window_size = 256
