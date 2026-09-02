@@ -55,11 +55,18 @@ class BAFDRAsymmetricProjection(Conv1DTransformerProj):
         self.q0_inj = nn.Conv1d(in_channels, out_channels, kernel_size=1)
         self.q1_inj = nn.Conv1d(in_channels, out_channels, kernel_size=3, stride=2, padding=1)
 
-        # Zero-initialize residual injectors so initial model is exactly G-equivalent
+        # Keep the fused carrier exactly G-equivalent via gamma=0, while
+        # making both residual paths live as soon as gamma moves.  q0 is an
+        # identity-like 1x1 map (truncated when channels differ); q1 is a
+        # center-tap identity-like stride-2 map.
         nn.init.zeros_(self.q0_inj.weight)
         nn.init.zeros_(self.q0_inj.bias)
         nn.init.zeros_(self.q1_inj.weight)
         nn.init.zeros_(self.q1_inj.bias)
+        diagonal = min(in_channels, out_channels)
+        self.q0_inj.weight.data[:diagonal, :diagonal, 0].fill_diagonal_(1.0)
+        center = self.q1_inj.kernel_size[0] // 2
+        self.q1_inj.weight.data[:diagonal, :diagonal, center].fill_diagonal_(1.0)
 
     def _forward_branch(self, x: torch.Tensor, mask: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         for idx in range(len(self.embed)):
