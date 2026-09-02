@@ -91,8 +91,63 @@ class TaylorAttention(BaseModule):
         self.attn_drop = nn.Dropout(attn_drop_rate)
         self.proj = nn.Linear(embed_dims, embed_dims)
         self.proj_drop = nn.Dropout(drop_rate)
+        self.pretrained_qkv_remapped = False
 
-    def forward(self, x: Tensor, query_x: Optional[Tensor] = None) -> Tensor:
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        # Official VideoMAE checkpoints store one fused ``qkv`` projection,
+        # while ET-TRC uses separate projections so Selected-Q / Full-KV can
+        # be evaluated without recomputing Q for non-anchor tokens.  Remap
+        # once at load time and keep the report on the module for parity tests.
+        fused_w = state_dict.pop(prefix + "qkv.weight", None)
+        fused_b = state_dict.pop(prefix + "qkv.bias", None)
+        if fused_w is not None:
+            if fused_w.ndim != 2 or fused_w.shape[0] != 3 * self.embed_dims:
+                error_msgs.append(
+                    f"{prefix}qkv.weight has incompatible shape {tuple(fused_w.shape)}"
+                )
+            else:
+                q_w, k_w, v_w = fused_w.chunk(3, dim=0)
+                state_dict[prefix + "q_proj.weight"] = q_w
+                state_dict[prefix + "k_proj.weight"] = k_w
+                state_dict[prefix + "v_proj.weight"] = v_w
+                self.pretrained_qkv_remapped = True
+        if fused_b is not None:
+            if fused_b.ndim != 1 or fused_b.shape[0] != 3 * self.embed_dims:
+                error_msgs.append(
+                    f"{prefix}qkv.bias has incompatible shape {tuple(fused_b.shape)}"
+                )
+            else:
+                q_b, k_b, v_b = fused_b.chunk(3, dim=0)
+                state_dict[prefix + "q_proj.bias"] = q_b
+                state_dict[prefix + "k_proj.bias"] = k_b
+                state_dict[prefix + "v_proj.bias"] = v_b
+                self.pretrained_qkv_remapped = True
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+
+    def forward(
+        self,
+        x: Tensor,
+        query_x: Optional[Tensor] = None,
+        query_segment_ids: Optional[Tensor] = None,
+        key_segment_ids: Optional[Tensor] = None,
+    ) -> Tensor:
         """
         Args:
             x: (B, N, C) full sequence providing Key and Value context
@@ -122,6 +177,13 @@ class TaylorAttention(BaseModule):
         )
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
+        if query_segment_ids is not None or key_segment_ids is not None:
+            if query_segment_ids is None or key_segment_ids is None:
+                raise ValueError("query_segment_ids and key_segment_ids must be provided together")
+            if query_segment_ids.shape != (B, M) or key_segment_ids.shape != (B, N):
+                raise ValueError("segment id tensors must match query/key token counts")
+            segment_mask = query_segment_ids[:, None, :, None] == key_segment_ids[:, None, None, :]
+            attn = attn.masked_fill(~segment_mask, torch.finfo(attn.dtype).min)
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
@@ -153,12 +215,14 @@ class TaylorResidualBlock(BaseModule):
         with_cp: bool = False,
         adapter_cfg: Optional[dict] = None,
         stride_k: int = 4,
+        segment_size: Optional[int] = None,
         enable_taylor: bool = True,
         jacobian_rank: int = 64,
     ):
         super().__init__()
         self.with_cp = with_cp
         self.stride_k = stride_k
+        self.segment_size = segment_size
         self.enable_taylor = enable_taylor
         
         _, self.norm1 = build_norm_layer(norm_cfg, embed_dims)
@@ -236,13 +300,29 @@ class TaylorResidualBlock(BaseModule):
             anchor_indices.append(tubelet_count - 1)
         num_anchors = len(anchor_indices)
 
-        # Full context attention for Anchor queries: Q from anchors, KV from full sequence x
+        # Full context attention for anchor queries.  Segment ids isolate an
+        # anchor from unrelated temporal chunks while retaining all spatial
+        # tokens and all tubelets in its own segment as KV context.
         x_norm1 = self.norm1(x)
         x_norm1_reshaped = x_norm1.view(B, tubelet_count, spatial_tokens, C)
         q_anchors = x_norm1_reshaped[:, anchor_indices].reshape(B, num_anchors * spatial_tokens, C)
         
         # Selected-Q full-KV attention preserving full sequence context
-        attn_anchors = self.drop_path(self.attn(x_norm1, query_x=q_anchors))
+        segment_size = int(self.segment_size or tubelet_count)
+        segment_size = max(1, segment_size)
+        key_segment_ids = (
+            torch.arange(tubelet_count, device=x.device).div(segment_size, rounding_mode="floor")
+            .view(tubelet_count, 1).expand(tubelet_count, spatial_tokens).reshape(-1)
+        )
+        query_segment_ids = key_segment_ids.view(tubelet_count, spatial_tokens)[anchor_indices].reshape(-1)
+        attn_anchors = self.drop_path(
+            self.attn(
+                x_norm1,
+                query_x=q_anchors,
+                query_segment_ids=query_segment_ids.unsqueeze(0).expand(B, -1),
+                key_segment_ids=key_segment_ids.unsqueeze(0).expand(B, -1),
+            )
+        )
         
         # MLP for anchors
         x_anchors_raw = x_reshaped[:, anchor_indices].reshape(B, num_anchors * spatial_tokens, C)
@@ -306,6 +386,7 @@ class ETTRCVisionTransformerAdapter(BaseModule):
         adapter_index: Optional[List[int]] = None,
         adapter_cfg: Optional[dict] = None,
         stride_k: int = 4,
+        segment_size: Optional[int] = None,
         enable_taylor: bool = True,
         jacobian_rank: int = 64,
         return_feat_map: bool = True,
@@ -320,6 +401,7 @@ class ETTRCVisionTransformerAdapter(BaseModule):
         self.tubelet_size = tubelet_size
         self.return_feat_map = return_feat_map
         self.stride_k = stride_k
+        self.segment_size = segment_size
         self.enable_taylor = enable_taylor
         self.with_cp = with_cp
 
@@ -365,6 +447,7 @@ class ETTRCVisionTransformerAdapter(BaseModule):
                 with_cp=with_cp,
                 adapter_cfg=adapter_cfg if i in adapter_index else None,
                 stride_k=stride_k,
+                segment_size=segment_size,
                 enable_taylor=enable_taylor,
                 jacobian_rank=jacobian_rank,
             )

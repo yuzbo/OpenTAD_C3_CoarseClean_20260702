@@ -21,8 +21,16 @@ model = dict(
             adapter_index=list(range(12)),
             adapter_cfg=dict(mlp_ratio=0.25, kernel_size=3, dilation=1),
             stride_k=4,
+            # The implementation is fixed-stride Taylor carryover.  It is
+            # intentionally not called event-triggered until a learned event
+            # policy is implemented and independently evaluated.
+            segment_size=8,
             enable_taylor=True,
             jacobian_rank=64,
+        ),
+        custom=dict(
+            pretrain="pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+            pretrain_required=True,
         ),
     ),
 )

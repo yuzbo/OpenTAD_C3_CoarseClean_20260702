@@ -1,4 +1,5 @@
 import copy
+import os
 import torch
 import torch.nn as nn
 from torch.nn.modules.batchnorm import _BatchNorm
@@ -23,8 +24,18 @@ class BackboneWrapper(nn.Module):
 
         # custom settings: pretrained checkpoint, post_processing_pipeline, norm_eval, freeze_backbone
         # 1. load the pretrained model
-        if hasattr(custom_cfg, "pretrain") and custom_cfg.pretrain is not None:
-            load_checkpoint(self.model, custom_cfg.pretrain, map_location="cpu")
+        pretrain_path = getattr(custom_cfg, "pretrain", None)
+        if pretrain_path is not None:
+            if not isinstance(pretrain_path, str) or not os.path.exists(pretrain_path):
+                if bool(getattr(custom_cfg, "pretrain_required", False)):
+                    raise FileNotFoundError(
+                        f"required pretrained checkpoint does not exist: {pretrain_path}"
+                    )
+                print(f"Warning: pretrained checkpoint not found, using random initialization: {pretrain_path}")
+            else:
+                load_checkpoint(self.model, pretrain_path, map_location="cpu")
+        elif bool(getattr(custom_cfg, "pretrain_required", False)):
+            raise FileNotFoundError("pretrain_required=True but custom.pretrain is missing")
         else:
             print(
                 "Warning: no pretrain path is provided, the backbone will be randomly initialized, "

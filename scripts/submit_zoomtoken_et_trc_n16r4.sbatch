@@ -9,14 +9,14 @@
 #SBATCH --error=/data/run01/sczc063/yuzibo/projects/et_trc_videomae_compute/slurm_%j.err
 
 set -euo pipefail
+source /etc/profile
 mkdir -p /data/run01/sczc063/yuzibo/projects/et_trc_videomae_compute
 
-cd /data/run01/sczc063/yuzibo/projects/zoomtoken_s2_v3_rpl1_2c8f25fe_src
+PROJECT_DIR="${PROJECT_DIR:-/data/run01/sczc063/yuzibo/projects/zoomtoken_et_trc_correction_20260902}"
+cd "${PROJECT_DIR}"
 
-if command -v module >/dev/null 2>&1; then
-  module load cuda/11.8 || true
-  module load miniforge3/24.11 || true
-fi
+module load cuda/11.8
+module load miniforge3/24.11
 
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 

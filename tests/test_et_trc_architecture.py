@@ -6,6 +6,7 @@ import pytest
 from mmaction.registry import MODELS as MMACTION_MODELS
 from opentad.models.backbones.et_trc_videomae import (
     TemporalLowRankJVP,
+    TaylorAttention,
     TaylorResidualBlock,
     ETTRCVisionTransformerAdapter,
 )
@@ -58,6 +59,40 @@ def test_taylor_residual_block_dense_parity():
     out = block(x, h=10, w=10, num_frames=16)
     assert out.shape == (B, N, C)
     assert not torch.isnan(out).any()
+
+
+def test_taylor_attention_remaps_fused_videomae_qkv():
+    attn = TaylorAttention(embed_dims=12, num_heads=3)
+    fused_w = torch.arange(36 * 12, dtype=torch.float32).reshape(36, 12)
+    fused_b = torch.arange(36, dtype=torch.float32)
+    missing, unexpected = [], []
+    attn.load_state_dict(
+        {
+            "qkv.weight": fused_w,
+            "qkv.bias": fused_b,
+            "proj.weight": attn.proj.weight.detach().clone(),
+            "proj.bias": attn.proj.bias.detach().clone(),
+        },
+        strict=False,
+    )
+    assert attn.pretrained_qkv_remapped
+    assert torch.equal(attn.q_proj.weight, fused_w[:12])
+    assert torch.equal(attn.k_proj.weight, fused_w[12:24])
+    assert torch.equal(attn.v_proj.weight, fused_w[24:])
+
+
+def test_taylor_attention_segment_isolation():
+    torch.manual_seed(7)
+    attn = TaylorAttention(embed_dims=12, num_heads=3)
+    x = torch.randn(1, 4, 12)
+    q = x[:, 2:3]
+    q_seg = torch.tensor([[1]])
+    k_seg = torch.tensor([[0, 0, 1, 1]])
+    out1 = attn(x, query_x=q, query_segment_ids=q_seg, key_segment_ids=k_seg)
+    x_changed = x.clone()
+    x_changed[:, :2] += 1000.0
+    out2 = attn(x_changed, query_x=x_changed[:, 2:3], query_segment_ids=q_seg, key_segment_ids=k_seg)
+    assert torch.allclose(out1, out2, atol=1e-5)
 
 
 def test_et_trc_videomae_return_feat_map():
