@@ -109,12 +109,18 @@ for task in "${TASKS[@]}"; do
   rc=$?
   echo "[INFO] diagnostic arm=${arm} exit_code=${rc}"
   if (( rc == 0 )); then
-    echo "[ERROR] diagnostic arm=${arm} completed without a terminal non-finite event" >&2
-    status=1
+    classification="no_terminal_nonfinite"
+    echo "[RESULT] diagnostic arm=${arm} classification=${classification}"
   elif [[ ! -f "${work_dir}/update_audit.json" ]]; then
     echo "[ERROR] diagnostic arm=${arm} failed without update_audit.json" >&2
     status=1
+    classification="unexpected_failure"
+  else
+    classification="terminal_nonfinite"
+    echo "[RESULT] diagnostic arm=${arm} classification=${classification}"
   fi
+  printf '{"arm":"%s","exit_code":%d,"classification":"%s"}\n' \
+    "${arm}" "${rc}" "${classification}" > "${work_dir}/diagnostic_result.json"
 done
 
 exit "${status}"
