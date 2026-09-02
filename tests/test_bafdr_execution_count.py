@@ -1,11 +1,13 @@
 import pytest
 
 torch = pytest.importorskip("torch")
+from torch import nn
 from opentad.models.backbones.bafdr_wrapper import BAFDRBackboneWrapper, BAFDRRouterHead
 
 
 def test_fixed_k16_execution_budget():
     wrapper = object.__new__(BAFDRBackboneWrapper)
+    nn.Module.__init__(wrapper)
     wrapper.k_chunks = 16
     wrapper.chunk_num = 48
     assert wrapper.k_chunks == 16

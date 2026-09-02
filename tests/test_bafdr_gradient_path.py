@@ -27,6 +27,12 @@ def test_gamma_and_q_paths_receive_gradients():
 
 
 def test_residual_injectors_have_nonzero_identity_like_start():
-    proj = BAFDRAsymmetricProjection(in_channels=4, out_channels=4, arch=(1, 1, 1))
+    proj = BAFDRAsymmetricProjection(
+        in_channels=4,
+        out_channels=4,
+        arch=(1, 1, 1),
+        conv_cfg=dict(kernel_size=3, proj_pdrop=0.0),
+        attn_cfg=dict(n_head=1, n_mha_win_size=1),
+    )
     assert float(proj.q0_inj.weight.abs().sum()) > 0.0
     assert float(proj.q1_inj.weight[:, :, proj.q1_inj.kernel_size[0] // 2].abs().sum()) > 0.0

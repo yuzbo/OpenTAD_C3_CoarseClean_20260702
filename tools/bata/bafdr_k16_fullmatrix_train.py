@@ -276,7 +276,9 @@ def compute_router_targets(
                         start_tgt[b, start_chunk + 1], start_tgt.new_tensor(0.5)
                     )
 
-            end_chunk = int(math.floor(e_f / chunk_len))
+            # Treat segment ends on the closed window boundary as belonging to
+            # the final chunk instead of dropping them at index num_chunks.
+            end_chunk = min(num_chunks - 1, int(math.floor(e_f / chunk_len)))
             if 0 <= end_chunk < num_chunks:
                 end_tgt[b, end_chunk] = 1.0
                 if end_chunk > 0:
