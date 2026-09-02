@@ -68,6 +68,8 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
         groups: int = 1,
         bias: bool = True,
         ref_delta_t: float = 1.0,
+        reference_spacing_mode: str = "absolute",
+        level_nominal_spacing: Optional[float] = None,
         enable_learned_modulation: bool = False,
         offset_hidden_dim: int = 16,
     ):
@@ -87,6 +89,18 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
         self.dilation = dilation
         self.groups = groups
         self.ref_delta_t = float(ref_delta_t)
+        if self.ref_delta_t <= 0:
+            raise ValueError("ref_delta_t must be positive")
+        if reference_spacing_mode not in {"absolute", "level_nominal"}:
+            raise ValueError(
+                "reference_spacing_mode must be 'absolute' (v0) or 'level_nominal' (v1)"
+            )
+        if level_nominal_spacing is not None and float(level_nominal_spacing) <= 0:
+            raise ValueError("level_nominal_spacing must be positive when provided")
+        self.reference_spacing_mode = str(reference_spacing_mode)
+        self.level_nominal_spacing = (
+            None if level_nominal_spacing is None else float(level_nominal_spacing)
+        )
         self.enable_learned_modulation = bool(enable_learned_modulation)
 
         self.weight = nn.Parameter(torch.empty(out_channels, in_channels // groups, kernel_size))
@@ -131,6 +145,8 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
             mask: Optional boolean valid mask [B, T_in].
         """
         B, C, T_in = x.shape
+        if not torch.isfinite(x).all():
+            raise FloatingPointError("ContinuousTimeScaleAdaptiveConv1d received non-finite input")
 
         # Calculate exact convolution output length
         T_out = int(math.floor((T_in + 2 * self.padding - self.dilation * (self.kernel_size - 1) - 1) / self.stride) + 1)
@@ -157,10 +173,37 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
         ).clamp(0, T_in - 1).long()  # [T_out]
 
         if temporal_positions is not None:
+            if temporal_positions.shape != (B, T_in):
+                raise ValueError("temporal_positions must match [B, T_in]")
+            if not torch.isfinite(temporal_positions).all():
+                raise FloatingPointError("temporal_positions contains non-finite values")
+            if (torch.diff(temporal_positions, dim=1) < 0).any():
+                raise ValueError("temporal_positions must be non-decreasing")
+            if self.reference_spacing_mode == "absolute":
+                reference_spacing = torch.full(
+                    (B, 1, 1), self.ref_delta_t, device=device, dtype=dtype
+                )
+            elif self.level_nominal_spacing is not None:
+                reference_spacing = torch.full(
+                    (B, 1, 1), self.level_nominal_spacing, device=device, dtype=dtype
+                )
+            else:
+                # v1 derives one nominal spacing per sample from the positive
+                # physical intervals on this feature level.  Uniform grids
+                # therefore retain exact parity with the absolute mode when
+                # the configured nominal spacing equals the grid step.
+                diffs = torch.diff(temporal_positions, dim=1)
+                positive = diffs > 1e-6
+                nominal = []
+                for b in range(B):
+                    valid = diffs[b][positive[b]]
+                    nominal.append(valid.median() if valid.numel() else diffs.new_tensor(self.ref_delta_t))
+                reference_spacing = torch.stack(nominal).to(device=device, dtype=dtype).view(B, 1, 1)
             # Center physical timestamp for each output step: [B, 1, T_out]
             center_tau = torch.gather(temporal_positions, 1, center_input_idx.unsqueeze(0).expand(B, -1)).unsqueeze(1)
-            # Target physical timestamp for tap i: tau_target(j, i) = center_tau(j) + tap_i * dilation * ref_delta_t
-            target_tau = center_tau + taps[None, :, None] * float(self.dilation) * self.ref_delta_t  # [B, K, T_out]
+            # Absolute v0 uses a fixed physical interval.  Level-nominal v1
+            # calibrates that interval from the current feature level.
+            target_tau = center_tau + taps[None, :, None] * float(self.dilation) * reference_spacing  # [B, K, T_out]
 
             # Fractional input token index from inverse piecewise linear mapping
             fractional_idx = inverse_piecewise_linear_1d(temporal_positions, target_tau)  # [B, K, T_out]
@@ -203,4 +246,6 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
                 mask_out = mask_bool
             out = out * mask_out.unsqueeze(1).to(dtype=out.dtype)
 
+        if not torch.isfinite(out).all():
+            raise FloatingPointError("ContinuousTimeScaleAdaptiveConv1d produced non-finite output")
         return out

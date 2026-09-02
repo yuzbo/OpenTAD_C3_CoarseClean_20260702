@@ -239,7 +239,9 @@ class ActionFormer(SingleStageDetector):
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
             gt_segments = selector_outputs["gt_segments"]
-            boundary_prior = selector_outputs.get("boundary_prior", None)
+            boundary_prior = selector_outputs.get(
+                "boundary_prior_tubelet", selector_outputs.get("boundary_prior", None)
+            )
             tubelet_delta_t = selector_outputs.get("tubelet_delta_t", None)
             delta_t = selector_outputs.get("delta_t", None)
             temporal_positions = selector_outputs.get("temporal_positions", None)
@@ -342,7 +344,9 @@ class ActionFormer(SingleStageDetector):
             inputs = selector_outputs["inputs"]
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
-            boundary_prior = selector_outputs.get("boundary_prior", None)
+            boundary_prior = selector_outputs.get(
+                "boundary_prior_tubelet", selector_outputs.get("boundary_prior", None)
+            )
             tubelet_delta_t = selector_outputs.get("tubelet_delta_t", None)
             delta_t = selector_outputs.get("delta_t", None)
             temporal_positions = selector_outputs.get("temporal_positions", None)

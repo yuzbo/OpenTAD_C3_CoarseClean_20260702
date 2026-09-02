@@ -199,8 +199,14 @@ class DualPhaseFrameSelector(nn.Module):
         diff[:, -1] = diff[:, -2] if self.total_budget > 1 else 1.0
         detector_delta_t = diff.clamp_min(1e-4)
 
-        # Boundary prior score for B-AMoD: burst mask indicates boundary clusters
-        boundary_prior = selection.burst_mask.float()
+        # Keep the frame-level prior for auditability, but route B-AMoD with
+        # one score per VideoMAE tubelet.  A frame-level vector is not a valid
+        # tubelet prior: expanding 384 frame scores over 192 tubelets repeats
+        # the wrong temporal support.  Max-pooling each pair preserves any
+        # boundary hit inside the tubelet and closes the token/grid contract.
+        boundary_prior_frames = selection.burst_mask.float()
+        boundary_prior = boundary_prior_frames
+        boundary_prior_tubelet = boundary_prior_frames.reshape(B, tubelet_len, 2).amax(dim=-1)
 
         # Update metas with complete physical-grid ActionFormer contract
         for i in range(len(metas)):
@@ -215,6 +221,8 @@ class DualPhaseFrameSelector(nn.Module):
             metas[i]["tubelet_delta_t"] = tubelet_delta_t[i].detach()
             metas[i]["delta_t"] = detector_delta_t[i].detach()
             metas[i]["boundary_prior"] = boundary_prior[i].detach()
+            metas[i]["boundary_prior_frames"] = boundary_prior_frames[i].detach()
+            metas[i]["boundary_prior_tubelet"] = boundary_prior_tubelet[i].detach()
             metas[i]["original_window_size"] = orig_window_size
             metas[i]["selected_window_size"] = self.total_budget
 
@@ -225,6 +233,8 @@ class DualPhaseFrameSelector(nn.Module):
             "selected_positions": selected_positions,
             "temporal_positions": synced_temporal_positions,
             "boundary_prior": boundary_prior,
+            "boundary_prior_frames": boundary_prior_frames,
+            "boundary_prior_tubelet": boundary_prior_tubelet,
             "tubelet_delta_t": tubelet_delta_t,
             "delta_t": detector_delta_t,
         }
