@@ -105,7 +105,13 @@ run_torch_cell() {
       --allow-single-process \
       "$@"
   else
+    local master_port="${BAFDR_MASTER_PORT:-}"
+    if [[ -z "${master_port}" && -n "${SLURM_JOB_ID:-}" ]]; then
+      master_port="$((29500 + (SLURM_JOB_ID % 1000)))"
+    fi
+    master_port="${master_port:-29500}"
     torchrun --standalone --nproc_per_node="${BAFDR_NPROC_PER_NODE:-2}" \
+      --master_port="${master_port}" \
       tools/bata/bafdr_k16_fullmatrix_train.py "${config}" \
       --work-dir "${work_dir}" \
       "$@"
