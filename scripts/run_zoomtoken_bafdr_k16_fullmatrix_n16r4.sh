@@ -110,8 +110,9 @@ run_torch_cell() {
       master_port="$((29500 + (SLURM_JOB_ID % 1000)))"
     fi
     master_port="${master_port:-29500}"
-    torchrun --standalone --nproc_per_node="${BAFDR_NPROC_PER_NODE:-2}" \
-      --master_port="${master_port}" \
+    torchrun --nnodes=1 --node_rank=0 \
+      --master_addr=127.0.0.1 --master_port="${master_port}" \
+      --nproc_per_node="${BAFDR_NPROC_PER_NODE:-2}" \
       tools/bata/bafdr_k16_fullmatrix_train.py "${config}" \
       --work-dir "${work_dir}" \
       "$@"
