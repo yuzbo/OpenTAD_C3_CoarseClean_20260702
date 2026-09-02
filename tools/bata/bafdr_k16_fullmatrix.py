@@ -229,9 +229,12 @@ def validate_bafdr_pipeline(cfg: Config, *, config_path: Path, arm: str) -> Dict
         else:
             if _get(load, "method") != "sliding_window":
                 raise ValueError(f"{config_path}: {split} LoadFrames must use sliding_window")
-            if int(_get(load, "window_size")) != WINDOW_SIZE:
+            # SlidingWindowDataset owns the temporal window contract.  The
+            # LoadFrames transform reads window_size/window_overlap_ratio
+            # from results and must not receive either as constructor kwargs.
+            if int(_get(split_cfg, "window_size", WINDOW_SIZE)) != WINDOW_SIZE:
                 raise ValueError(f"{config_path}: {split} window_size must be 768")
-            if float(_get(load, "window_overlap_ratio")) != WINDOW_OVERLAP_RATIO:
+            if float(_get(split_cfg, "window_overlap_ratio", WINDOW_OVERLAP_RATIO)) != WINDOW_OVERLAP_RATIO:
                 raise ValueError(f"{config_path}: {split} overlap ratio must be 0.5")
 
         split_info[split] = {

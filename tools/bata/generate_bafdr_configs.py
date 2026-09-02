@@ -76,7 +76,7 @@ work_dir = f"exps/thumos/adatad/bafdr_k16_u128_all48_a0_seed{s}"
             return '''[
     dict(type="PrepareVideoInfo", format="mp4"),
     dict(type="mmaction.DecordInit", num_threads=4),
-    dict(type="LoadFrames", num_clips=1, method="sliding_window", window_size=768, window_overlap_ratio=0.5),
+    dict(type="LoadFrames", num_clips=1, method="sliding_window", window_overlap_ratio=0.5),
     dict(type="mmaction.DecordDecode"),
     dict(type="BAFDRSourceViews", global_size=96, output_key="bafdr_inputs", required_source_height=180, required_source_width=320),
     dict(type="ConvertToTensor", keys=["gt_segments", "gt_labels"]),

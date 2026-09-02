@@ -1,7 +1,9 @@
 # Copyright (c) OpenTAD. All rights reserved.
 from pathlib import Path
+import inspect
 
 from mmengine.config import Config
+from opentad.datasets.transforms.end_to_end import LoadFrames
 
 from tools.bata.bafdr_k16_fullmatrix import (
     EXPECTED_EVALUATION_WINDOWS,
@@ -39,6 +41,19 @@ def test_bafdr_configs_use_supported_collect_contract():
         assert '"gt_segments", "gt_labels"' in text
         assert '"bafdr_geometry"' in text
         assert "extra_keys" not in text
+
+
+def test_bafdr_loadframes_kwargs_match_runtime_signature():
+    """Catch config kwargs that pass static checks but fail at dataset build."""
+    allowed = set(inspect.signature(LoadFrames.__init__).parameters) - {"self"}
+    for path in sorted(CONFIG_DIR.glob("bafdr_k16_*.py")):
+        cfg = Config.fromfile(str(path))
+        for split in ("train", "val", "test"):
+            pipeline = cfg.dataset[split].pipeline
+            load_steps = [step for step in pipeline if step.get("type") == "LoadFrames"]
+            assert len(load_steps) == 1
+            unknown = set(load_steps[0]) - allowed - {"type"}
+            assert not unknown, f"{path.name} {split} has unsupported LoadFrames kwargs: {sorted(unknown)}"
 
 
 def test_bafdr_generator_cannot_reintroduce_collect_extra_keys():
