@@ -97,6 +97,23 @@
       "repair": "终止悬挂的同步进程后，对本审计自有分支使用强制 refspec fetch，并将远端修正 worktree reset 到 c750cdae。",
       "revalidation": "远端 repo ref 与 worktree HEAD 均为 c750cdae1b7dce8ab1ef9b3d2fa04ebb9853926a，git status --porcelain 为空；随后 validator 与 PRECHECK 均 PASS。",
       "result": "同步失败已修复；不产生科学结果。"
+    },
+    {
+      "attempt_ids": ["j-uftgal"],
+      "route": "CT-DP exact-SHA protocol precheck",
+      "classification": "INVALID_INVOCATION_REPAIRED",
+      "root_cause": "预检命令引用了该 checkout 不存在的 tools/bata/generate_duca_ctdp_matrix.py，命令在 py_compile 阶段退出，未启动训练。",
+      "repair": "按精确 checkout 实际文件清单改用 scale_adaptive_conv1d.py、backbone_wrapper.py 与 run_duca_ctdp_cuda_gate_n16r4.sbatch 做协议预检。",
+      "revalidation": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc clean HEAD；规定环境下 py_compile 与 bash -n 均通过。",
+      "result": "调用错误已修复；真实 CUDA geometry/gradient gate 仍等待 Slurm 资源。"
+    },
+    {
+      "attempt_ids": ["j-euwvfx"],
+      "route": "ET-TRC exact-SHA diagnostic precheck",
+      "classification": "PRECHECK_SUCCESS_CUDA_PENDING",
+      "root_cause": "无；这是针对旧 ET 数值失败的非训练复验。",
+      "revalidation": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f clean HEAD；固定步长 Taylor 诊断 PRECHECK（py_compile）PASS。",
+      "result": "不产生科学结果；真实 CUDA checkpoint/load/finite-update gate 仍受 AssocMaxSubmitJobLimit 阻塞。"
     }
   ],
   "current_resource_blocker": {

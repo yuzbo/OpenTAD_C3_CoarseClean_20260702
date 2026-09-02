@@ -86,6 +86,26 @@
       "status": "SUCCEEDED",
       "job_ids": [],
       "result": "Python 3.10.20; 21-cell validator PASS; D160 seed 4407 PRECHECK receipt PASS"
+    },
+    {
+      "kind": "ctdp_protocol_precheck_wrong_path",
+      "command": "python -m py_compile ... tools/bata/generate_duca_ctdp_matrix.py",
+      "status": "FAILED_PROTOCOL",
+      "reason": "file does not exist in exact CT-DP checkout; no training started",
+      "attempt_id": "j-uftgal"
+    },
+    {
+      "kind": "ctdp_protocol_precheck_retry",
+      "command": "python -m py_compile scale_adaptive_conv1d.py backbone_wrapper.py; bash -n run_duca_ctdp_cuda_gate_n16r4.sbatch",
+      "status": "SUCCEEDED",
+      "result": "exact SHA clean; CTDP_PROTOCOL_PRECHECK_OK"
+    },
+    {
+      "kind": "et_trc_diagnostic_precheck",
+      "command": "PRECHECK_ONLY=1 bash run_zoomtoken_et_trc_diag_n16r4.sh",
+      "status": "SUCCEEDED",
+      "result": "exact frozen SHA py_compile diagnostic PASS; CUDA gate remains resource-blocked",
+      "attempt_id": "j-euwvfx"
     }
   ],
   "failure_diagnoses": [
@@ -119,6 +139,12 @@
       "classification": "PRECHECK_PROTOCOL_FAILURE_REPAIRED",
       "cause": "非交互 SSH 未加载规定 Conda 环境，旧 Python 解析类型注解失败",
       "revalidation": "显式加载环境后 c750cdae validator 与 D160 PRECHECK PASS"
+    },
+    {
+      "attempt_ids": ["j-uftgal"],
+      "classification": "INVALID_INVOCATION_REPAIRED",
+      "cause": "CT-DP 预检引用不存在的生成器路径",
+      "revalidation": "改用 exact checkout 实际文件后协议预检 PASS"
     }
   ],
   "preexisting_jobs_not_owned_by_this_audit": [
