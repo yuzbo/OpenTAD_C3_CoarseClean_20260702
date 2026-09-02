@@ -1,0 +1,280 @@
+#!/usr/bin/env python3
+"""Refresh the human-readable catalog for every DUCA/ZoomToken experiment."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import subprocess
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[2]
+AUDIT = ROOT / "docs" / "audits" / "DUCA_MULTIBRANCH_20260902"
+DEFAULT_JSON = AUDIT / "11_EXPERIMENT_CATALOG.json"
+DEFAULT_MD = AUDIT / "11_EXPERIMENT_CATALOG.md"
+REMOTE_ROOT = "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902"
+SSH_ARGS = [
+    "-o", "BatchMode=yes",
+    "-o", "ConnectTimeout=15",
+    "-o", "IdentitiesOnly=yes",
+    "-o", "PubkeyAcceptedAlgorithms=+ssh-rsa",
+    "-o", "HostkeyAlgorithms=+ssh-rsa",
+    "-i", "C:/Users/skywalker/.ssh/id_rsa",
+    "-p", "22",
+    "-l", "sczc063@BSCC-N16R4",
+    "ssh.cn-zhongwei-1.paracloud.com",
+]
+
+
+def utc_now() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def git_head(path: str) -> str | None:
+    try:
+        proc = subprocess.run(["git", "-C", path, "rev-parse", "HEAD"], text=True, capture_output=True, check=False)
+    except OSError:
+        return None
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def clean_tree(path: str) -> bool | None:
+    try:
+        proc = subprocess.run(["git", "-C", path, "status", "--porcelain"], text=True, capture_output=True, check=False)
+    except OSError:
+        return None
+    return proc.returncode == 0 and not proc.stdout.strip()
+
+
+def remote_receipt() -> dict[str, Any]:
+    if os.environ.get("DUCA_CATALOG_DISABLE_REMOTE") == "1":
+        return {"status": "NOT_QUERIED", "reason": "DUCA_CATALOG_DISABLE_REMOTE=1"}
+    try:
+        proc = subprocess.run(
+            ["ssh", *SSH_ARGS, "cat", f"{REMOTE_ROOT}/latest_receipt.json"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        return {"status": "UNAVAILABLE", "reason": f"ssh unavailable: {exc}"}
+    if proc.returncode != 0:
+        return {"status": "UNAVAILABLE", "reason": (proc.stderr or proc.stdout).strip()[-500:]}
+    try:
+        receipt = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {"status": "INVALID_RECEIPT", "reason": proc.stdout[-500:]}
+    return {
+        "status": "ACTIVE",
+        "checked_at": receipt.get("checked_at"),
+        "dispatcher_status": receipt.get("dispatcher", {}).get("status"),
+        "entries": receipt.get("entries", []),
+    }
+
+
+def route_entries() -> list[dict[str, Any]]:
+    return [
+        {
+            "category": "frozen_route",
+            "name": "H65-Pro 严格 60 轮全矩阵：物理时间坐标与高质量动作定位",
+            "internal_id": "H65_PRO",
+            "branch": "codex/h65-pro-fullmatrix-strict60-20260902",
+            "sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659",
+            "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/cfb7041d876f6e38e9ef6ce77cef7cee04b79659",
+            "local_directory": "E:/DeskTop/TAD/_duca_audit_worktrees/h65_pro",
+            "deployment_status": "已完成精确 SHA CUDA focused admission；P0 admission 失败，正式矩阵未提交",
+            "result_status": "无最终结果",
+            "final_result": "15 个 focused CUDA 测试通过；更深 P0 检查 14 通过、1 失败，暴露 x-only backbone 收到 masks 的签名错误",
+            "next_action": "在独立修正 SHA 完成签名路由复验，再重新冻结 H65 SHA",
+        },
+        {
+            "category": "frozen_route",
+            "name": "DUCA 统一全矩阵：Taylor 归因、H65 保留机制与真实成本",
+            "internal_id": "DUCA_UNIFIED",
+            "branch": "codex/duca-unified-fullmatrix-20260902",
+            "sha": "89b9ea3e8e018b41034917ee14de7f409354a7e9",
+            "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/89b9ea3e8e018b41034917ee14de7f409354a7e9",
+            "local_directory": "E:/DeskTop/TAD/_duca_audit_worktrees/duca_unified",
+            "deployment_status": "生成器 fail-closed；Taylor P0/P1、原始 H65 retention/transition、真实 cost 未实现，未提交训练",
+            "result_status": "无最终结果",
+            "final_result": "无合法 mAP、速度或成本结果；41 个 cell 保持关闭",
+            "next_action": "完成三个真实机制后重新运行 generator、preflight 和 exact-head admission",
+        },
+        {
+            "category": "frozen_route",
+            "name": "DUCA 证据恢复：历史 H65 证据链与 8261 单种子数值复现",
+            "internal_id": "EVIDENCE",
+            "branch": "codex/duca-evidence-recovery-numerical-correction-20260902",
+            "sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c",
+            "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/08d425a259fc468dde7c496e77b4c43e953d8d0c",
+            "local_directory": "E:/DeskTop/TAD/_duca_audit_worktrees/evidence",
+            "deployment_status": "精确 SHA CUDA focused admission 和 seed 8261 precheck 已通过；C0 parity 尚未完成，正式训练未提交",
+            "result_status": "无最终结果",
+            "final_result": "35 个 focused CUDA/证据测试通过；尚无 terminal EMA、官方评测或 mAP",
+            "next_action": "完成 indices、physical positions、features、logits、loss、decode、predictions 的 C0 精确 parity",
+        },
+        {
+            "category": "frozen_route",
+            "name": "DUCA CT-DP-BAMoD：双阶段时空几何、CT-Conv 与 B-AMoD 机制",
+            "internal_id": "CT_DP_BAMOD",
+            "branch": "codex/duca-ctdp-geometry-mechanism-correction-20260902",
+            "sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc",
+            "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc",
+            "local_directory": "E:/DeskTop/TAD/_duca_audit_worktrees/ct_dp_bamod",
+            "deployment_status": "精确 SHA geometry focused admission 已通过；冻结 SHA 的 G0/G1 因子化与声明冲突，正式矩阵未提交",
+            "result_status": "无最终结果",
+            "final_result": "7 个 focused CUDA/几何测试通过；不能据此宣称 CT-DP 机制有效",
+            "next_action": "采用独立修正分支完成 geometry、有限差分 gradient、batch/DDP 后重新冻结 SHA",
+        },
+        {
+            "category": "frozen_route",
+            "name": "ZoomToken BAFDR：基于梯度的 16 帧动态帧率与五臂筛选",
+            "internal_id": "BAFDR",
+            "branch": "codex/zoomtoken-bafdr-gradient-correction-20260902",
+            "sha": "fdeaeb98340bf7070201a02feb8093f50486aeaa",
+            "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/fdeaeb98340bf7070201a02feb8093f50486aeaa",
+            "local_directory": "E:/DeskTop/TAD/_duca_audit_worktrees/bafdr",
+            "deployment_status": "静态协议 admission 已通过；精确 SHA 五臂 screen 尚未通过，21-cell 矩阵关闭",
+            "result_status": "无最终结果",
+            "final_result": "11 个静态协议测试通过；缺少同种子 D160 epoch 59 EMA Teacher 和 selection-screen PASS",
+            "next_action": "提供并核验 terminal Teacher，再运行不依赖 held-out 的五臂 screen",
+        },
+        {
+            "category": "frozen_route",
+            "name": "ZoomToken ET-TRC：固定步长 Taylor 时序保留与双 GPU 对照训练",
+            "internal_id": "ET_TRC",
+            "branch": "codex/zoomtoken-et-trc-correction-20260902",
+            "sha": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f",
+            "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/59eab0c6aaacf5039d2ae20969a6dd5772bcb80f",
+            "local_directory": "E:/DeskTop/TAD/_duca_audit_worktrees/et_trc",
+            "deployment_status": "静态 launcher/pretrain 协议测试已通过；真实 checkpoint coverage、单卡加载和双 GPU DDP 尚未完成",
+            "result_status": "无最终结果",
+            "final_result": "10 个协议测试通过；无合法 OFF/ON terminal EMA 或评测结果",
+            "next_action": "核验 VideoMAE checkpoint 覆盖，再执行真实 global-batch=2 双 GPU OFF/ON DDP 和 resume",
+        },
+        {
+            "category": "correction_route",
+            "name": "H65 backbone 参数签名修正实验（不替代冻结 H65）",
+            "internal_id": "H65_ADMISSION_FIX",
+            "branch": "codex/h65-pro-admission-fix-20260902",
+            "sha": "78cde6aa5335b2e399e597ce9229d8657e6760a5",
+            "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/78cde6aa5335b2e399e597ce9229d8657e6760a5",
+            "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_admission",
+            "deployment_status": "修正已提交并应用到远端验证 worktree；复验受 Slurm AssocMaxSubmitJobLimit 阻塞",
+            "result_status": "修正尚未获得远端终态结果",
+            "final_result": "本地 official optimizer coverage 1 passed、2 skipped；不能晋级冻结 H65 结果",
+            "next_action": "资源释放后重跑 H65 P0 admission，并据此决定新的冻结 SHA",
+        },
+        {
+            "category": "correction_route",
+            "name": "CT-DP G0/G1 因子化修正实验（不替代冻结 CT-DP）",
+            "internal_id": "CTDP_ADMISSION_FIX",
+            "branch": "codex/duca-ctdp-admission-fix-20260902",
+            "sha": "d62cab763c8e0478e73c6c47a4c185db45164dda",
+            "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/d62cab763c8e0478e73c6c47a4c185db45164dda",
+            "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/ctdp",
+            "deployment_status": "恢复 G0/G1 正交机制定义并通过本地因子化测试；尚未完成远端 geometry/gradient/batch admission",
+            "result_status": "无最终结果",
+            "final_result": "因子化测试 1 passed；不是 CT-DP 训练或性能结果",
+            "next_action": "远端完成 geometry、gradient、batch/DDP 后重新冻结 CT-DP SHA",
+        },
+        {
+            "category": "correction_route",
+            "name": "DUCA Unified fail-closed 准入修正实验（不替代冻结 Unified）",
+            "internal_id": "UNIFIED_ADMISSION_GATES",
+            "branch": "codex/duca-unified-admission-gates-20260902",
+            "sha": "98d559ee414504caaa480294ce4d066276cdebe6",
+            "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/98d559ee414504caaa480294ce4d066276cdebe6",
+            "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/unified",
+            "deployment_status": "已将 D1/F11/H0/G10/G11 和 cost 标为 BLOCKED_UNIMPLEMENTED，submitter fail-closed；未提交训练",
+            "result_status": "无最终结果",
+            "final_result": "admission gate test、generator check、Python 编译通过；机制仍未实现",
+            "next_action": "实现 Taylor/H65 retention/cost 后再生成可提交的 41-cell manifest",
+        },
+    ]
+
+
+def catalog() -> dict[str, Any]:
+    entries = route_entries()
+    for entry in entries:
+        entry["local_head"] = git_head(entry["local_directory"])
+        entry["local_clean_tree"] = clean_tree(entry["local_directory"])
+    return {
+        "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
+        "last_updated_utc": utc_now(),
+        "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
+        "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
+        "entries": entries,
+        "remote_supervisor": remote_receipt(),
+        "result_policy": "没有 exact SHA、clean-tree、terminal EMA、官方 evaluator 和合法 aggregation receipt，不得报告为最终科学结果",
+        "excluded_remote_jobs": [
+            {"job_ids": "1266325-1266330", "remote_directory": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_6ae16954", "source_head": "6ae16954d875ce310cb0fc514ad54663be626db6", "reason": "旧 BAFDR checkout，不属于当前冻结 SHA"},
+            {"job_ids": "1266218-1266219", "remote_directory": "/data/run01/sczc063/yuzibo/projects/zoomtoken_et_trc_correction_20260902_59eab0c6", "source_head": "be330c071638249e7c5268a5464e454c0f2a5621", "reason": "晚于冻结 ET-TRC SHA，不纳入当前结果"},
+            {"job_ids": "1265777-1265780", "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902", "source_head": "679b71214d05a21cd08ae1f5e5c3879e2df8fb83", "reason": "旧 CT-DP checkout，不纳入当前结果"},
+            {"job_ids": "1265077_[3-6]", "remote_directory": "/data/run01/sczc063/yuzibo/projects/opentad_duca_evidence_recovery", "source_head": "647151facd36d4df3f21de6865bcb225c8ba91fc", "reason": "dirty 且旧 Evidence checkout，不纳入当前结果"},
+        ],
+    }
+
+
+def md_text(payload: dict[str, Any]) -> str:
+    lines = [
+        "# DUCA/ZoomToken 全部代码实验目录",
+        "",
+        f"最后更新时间（UTC）：`{payload['last_updated_utc']}`",
+        "",
+        "本表用完整中文描述实验目的；括号中的内部 ID 仅用于与 Slurm/manifest 对照。每一行都是独立代码身份，结果不能跨 SHA 转移。",
+        "",
+        "## 当前实验与修正路线",
+        "",
+        "| 实验名称（面向外部读者） | 本地目录 | GitHub 提交 | 部署状态 | 结果状态与最终结果 | 下一步 |",
+        "|---|---|---|---|---|---|",
+    ]
+    for entry in payload["entries"]:
+        name = f"{entry['name']}（`{entry['internal_id']}`）"
+        commit = f"[`{entry['sha'][:8]}`]({entry['github_commit']})"
+        result = f"{entry['result_status']}：{entry['final_result']}"
+        lines.append(f"| {name} | `{entry['local_directory']}` | {commit} | {entry['deployment_status']} | {result} | {entry['next_action']} |")
+    lines += [
+        "",
+        "## 监督器与动态状态",
+        "",
+        f"远端 N16R4 监督器：`/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902`，每 60 秒轮询；本地 heartbeat 每 30 分钟刷新本表。当前远端监督器状态：`{payload['remote_supervisor'].get('status')}`，dispatcher：`{payload['remote_supervisor'].get('dispatcher_status', '未知')}`。",
+        "",
+        "## 明确排除的旧远端作业",
+        "",
+        "这些作业可以继续作为诊断材料，但不属于当前冻结实验，不能写入最终结果：",
+        "",
+        "| 作业号 | 远端目录 | source HEAD | 排除原因 |",
+        "|---|---|---|---|",
+    ]
+    for item in payload["excluded_remote_jobs"]:
+        lines.append(f"| `{item['job_ids']}` | `{item['remote_directory']}` | `{item['source_head'][:8]}` | {item['reason']} |")
+    lines += [
+        "",
+        f"结果规则：{payload['result_policy']}。当前结果账本仍为 `NO_VALID_RESULTS`，不得从 admission 测试推导 mAP、speedup、bootstrap 或 cost。",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--json", default=str(DEFAULT_JSON))
+    parser.add_argument("--markdown", default=str(DEFAULT_MD))
+    args = parser.parse_args()
+    payload = catalog()
+    json_path = Path(args.json)
+    md_path = Path(args.markdown)
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    md_path.write_text(md_text(payload), encoding="utf-8")
+    print(json.dumps({"json": str(json_path), "markdown": str(md_path), "entries": len(payload["entries"]), "remote_supervisor": payload["remote_supervisor"].get("status")}, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
