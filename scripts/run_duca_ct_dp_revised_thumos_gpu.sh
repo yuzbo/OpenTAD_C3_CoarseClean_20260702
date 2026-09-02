@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source /etc/profile
 set -euo pipefail
 
 fail() { echo "[DUCA_CT_DP_REVISED][FAIL] $*" >&2; exit 1; }
@@ -19,7 +20,6 @@ export XDG_CONFIG_HOME="${BASE}/tmp/xdg_config"
 mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${REPO_ROOT}/logs" "${BASE}/slurm_logs"
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
-source /etc/profile
 module load cuda/11.8
 module load miniforge3/24.11
 PYTHON="${PYTHON:-${BASE}/conda_envs/opentad/bin/python}"

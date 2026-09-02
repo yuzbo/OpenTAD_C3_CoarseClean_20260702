@@ -7,8 +7,8 @@
 #SBATCH --time=00:30:00
 #SBATCH --output=/data/run01/sczc063/yuzibo/slurm_logs/%x_%j.out
 #SBATCH --error=/data/run01/sczc063/yuzibo/slurm_logs/%x_%j.err
-set -euo pipefail
 source /etc/profile
+set -euo pipefail
 BASE="/data/run01/sczc063/yuzibo"
 PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR is required}"
 cd "${PROJECT_DIR}"
