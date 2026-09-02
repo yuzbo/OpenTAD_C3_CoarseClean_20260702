@@ -1,6 +1,6 @@
 # DUCA/ZoomToken 全部代码实验目录
 
-最后更新时间（UTC）：`2026-09-02T19:22:26+00:00`
+最后更新时间（UTC）：`2026-09-02T19:56:41+00:00`
 
 本表用完整中文描述实验目的；括号中的内部 ID 仅用于与 Slurm/manifest 对照。每一行都是独立代码身份，结果不能跨 SHA 转移。
 
@@ -34,6 +34,7 @@
 | `1265704-1265705` | `/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902` | `679b7121` | 旧 CT-DP checkout；stderr 显示启动器引用不存在的 opentad_ct_dp_revised_20260902 路径，属于提交协议错误 |
 | `1266218-1266219` | `/data/run01/sczc063/yuzibo/projects/zoomtoken_et_trc_correction_20260902_59eab0c6` | `be330c07` | 晚于冻结 ET-TRC SHA；Slurm COMPLETED 但仅有 log/config，没有 terminal checkpoint 或 receipt，不纳入当前结果 |
 | `1266401-1266420` | `/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7` | `efe69d2e` | 非当前冻结 BAFDR checkout；1266401/1266402 因 LoadFrames 不支持窗口参数失败，其他作业仍在运行或依赖等待，全部不纳入当前结果 |
+| `1266475,1266479,1266480` | `/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7` | `efe69d2e` | 非当前冻结 BAFDR checkout 的下游 cexec/metrics/summary 依赖作业，全部不纳入当前结果 |
 | `1265777-1265780` | `/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902` | `679b7121` | 旧 CT-DP checkout，不纳入当前结果 |
 | `1265077_[0-2,3-7]` | `/data/run01/sczc063/yuzibo/projects/opentad_duca_evidence_recovery` | `647151fa` | dirty 且旧 Evidence checkout；失败/完成作业均不纳入当前结果，缺少 exact SHA 与终态 receipt |
 

@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-REMOTE-FAILURE-DIAGNOSIS-v001",
-  "checked_at_utc": "2026-09-02T18:12:22Z",
+  "checked_at_utc": "2026-09-02T19:54:03Z",
   "remote_host": "N16R4",
   "policy": "每个失败先读取 stderr/out，区分代码/协议/资源/调用错误；旧 checkout 只归档，不迁移为当前科学结果",
   "diagnoses": [
@@ -114,6 +114,15 @@
       "root_cause": "无；这是针对旧 ET 数值失败的非训练复验。",
       "revalidation": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f clean HEAD；固定步长 Taylor 诊断 PRECHECK（py_compile）PASS。",
       "result": "不产生科学结果；真实 CUDA checkpoint/load/finite-update gate 仍受 AssocMaxSubmitJobLimit 阻塞。"
+    },
+    {
+      "attempt_ids": ["j-7o8glv"],
+      "route": "remote status monitoring",
+      "classification": "MONITOR_PROTOCOL_FAILURE_REPAIRED",
+      "root_cause": "监控命令通过 SSH 拼接 Python 内联代码时丢失了 JSON 路径和字符串引号，导致 SyntaxError；未修改作业或实验状态。",
+      "repair": "改用直接读取 latest_receipt.json 的 sed/受控 shell 检查，并重新执行 squeue、sacct、日志与终态产物扫描。",
+      "revalidation": "监督器 PID 2272497 仍存活；latest_receipt checked_at=2026-09-02T19:54:00Z；状态、队列和终态产物扫描成功。",
+      "result": "监控协议错误已修复；不产生科学结果。"
     }
   ],
   "current_resource_blocker": {

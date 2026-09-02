@@ -106,6 +106,19 @@
       "status": "SUCCEEDED",
       "result": "exact frozen SHA py_compile diagnostic PASS; CUDA gate remains resource-blocked",
       "attempt_id": "j-euwvfx"
+    },
+    {
+      "kind": "remote_status_check_initial",
+      "command": "ssh N16R4 ... python3 -c parse latest_receipt.json ...",
+      "status": "FAILED_PROTOCOL",
+      "reason": "SSH quoting dropped JSON string literals; no experiment command was executed",
+      "attempt_id": "j-7o8glv"
+    },
+    {
+      "kind": "remote_status_check_retry",
+      "command": "ssh N16R4 sed latest_receipt.json; squeue; sacct; log/checkpoint scan",
+      "status": "SUCCEEDED",
+      "result": "supervisor alive; stale CT-DP G2/G3 running; stale BAFDR downstream pending; no owned terminal receipts"
     }
   ],
   "failure_diagnoses": [
@@ -145,12 +158,19 @@
       "classification": "INVALID_INVOCATION_REPAIRED",
       "cause": "CT-DP 预检引用不存在的生成器路径",
       "revalidation": "改用 exact checkout 实际文件后协议预检 PASS"
+    },
+    {
+      "attempt_ids": ["j-7o8glv"],
+      "classification": "MONITOR_PROTOCOL_FAILURE_REPAIRED",
+      "cause": "远端状态检查命令的 Python 内联引号错误",
+      "revalidation": "改用直接 JSON 文本读取并完成队列、日志和终态扫描"
     }
   ],
   "preexisting_jobs_not_owned_by_this_audit": [
     {"job_id": "1266325-1266330", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_6ae16954", "source_head": "6ae16954d875ce310cb0fc514ad54663be626db6", "classification": "NOT_CURRENT_FROZEN_SHA"},
     {"job_id": "1266185-1266186,1266218-1266219", "workdir": "/data/run01/sczc063/yuzibo/projects/zoomtoken_et_trc_correction_20260902_59eab0c6", "source_head": "be330c071638249e7c5268a5464e454c0f2a5621", "classification": "LATER_THAN_FROZEN_SHA"},
     {"job_id": "1266401-1266420", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7", "source_head": "efe69d2ea10accd01d0129dfe99cba4d1d5773cb", "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"},
+    {"job_id": "1266475,1266479,1266480", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7", "source_head": "efe69d2ea10accd01d0129dfe99cba4d1d5773cb", "classification": "NONOWNED_LATER_BAFDR_CHECKOUT_DOWNSTREAM_PENDING"},
     {"job_id": "1265777-1265780", "workdir": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902", "source_head": "679b71214d05a21cd08ae1f5e5c3879e2df8fb83", "classification": "STALE_REMOTE_HEAD"},
     {"job_id": "1265077_[0-2,3-7]", "workdir": "/data/run01/sczc063/yuzibo/projects/opentad_duca_evidence_recovery", "source_head": "647151facd36d4df3f21de6865bcb225c8ba91fc", "classification": "DIRTY_STALE_REMOTE_HEAD"}
   ],
