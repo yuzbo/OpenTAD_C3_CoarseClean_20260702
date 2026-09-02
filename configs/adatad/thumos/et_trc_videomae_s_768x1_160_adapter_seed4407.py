@@ -1,4 +1,11 @@
+import os
+
 _base_ = ["./continuous_roi_s2_v3_d160_seed4407.py"]
+_pretrain = os.environ.get(
+    "ETTRC_PRETRAIN",
+    "/data/run01/sczc063/yuzibo/pretrained/"
+    "vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+)
 
 model = dict(
     backbone=dict(
@@ -29,7 +36,7 @@ model = dict(
             jacobian_rank=64,
         ),
         custom=dict(
-            pretrain="pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+            pretrain=_pretrain,
             pretrain_required=True,
         ),
     ),

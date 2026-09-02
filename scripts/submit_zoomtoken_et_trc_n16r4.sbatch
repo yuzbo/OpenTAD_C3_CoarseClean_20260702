@@ -19,6 +19,8 @@ module load cuda/11.8
 module load miniforge3/24.11
 
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
+export ETTRC_PRETRAIN="${ETTRC_PRETRAIN:-/data/run01/sczc063/yuzibo/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
+[[ -f "${ETTRC_PRETRAIN}" ]] || { echo "missing ET-TRC pretrain: ${ETTRC_PRETRAIN}" >&2; exit 1; }
 
 # 1. Run Pre-flight Diagnostic ZT-DIAG-2025-01
 echo "[SLURM] Running ZT-DIAG-2025-01 pre-flight Taylor Residual Diagnostic..."
@@ -26,4 +28,5 @@ bash scripts/run_zoomtoken_et_trc_diag_n16r4.sh
 
 # 2. Launch ET-TRC Training
 echo "[SLURM] Launching ET-TRC Training on THUMOS14..."
-python tools/train.py configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_seed4407.py
+python tools/train.py configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_seed4407.py \
+  --cfg-options model.backbone.backbone.stride_k=4
