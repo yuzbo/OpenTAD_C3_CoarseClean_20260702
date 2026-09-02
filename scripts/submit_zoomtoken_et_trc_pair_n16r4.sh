@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source /etc/profile
 set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR is required}"
 BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
