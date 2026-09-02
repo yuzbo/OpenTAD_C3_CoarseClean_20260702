@@ -2381,10 +2381,26 @@ class DucaAcquisitionAdapter(nn.Module):
         derivative = torch.zeros_like(values)
         if values.shape[1] <= 1:
             return derivative
-        derivative[:, 1:-1] = 0.5 * (values[:, 2:] - values[:, :-2])
-        derivative[:, 0] = values[:, 1] - values[:, 0]
-        derivative[:, -1] = values[:, -1] - values[:, -2]
-        return derivative.masked_fill(~valid_mask, 0.0)
+        valid = valid_mask.to(device=values.device, dtype=torch.bool)
+        prev_values = torch.zeros_like(values)
+        next_values = torch.zeros_like(values)
+        prev_values[:, 1:] = values[:, :-1]
+        next_values[:, :-1] = values[:, 1:]
+
+        prev_valid = torch.zeros_like(valid)
+        next_valid = torch.zeros_like(valid)
+        prev_valid[:, 1:] = valid[:, :-1]
+        next_valid[:, :-1] = valid[:, 1:]
+
+        centered = 0.5 * (next_values - prev_values)
+        forward = next_values - values
+        backward = values - prev_values
+        derivative = torch.where(
+            prev_valid & next_valid,
+            centered,
+            torch.where(next_valid, forward, torch.where(prev_valid, backward, derivative)),
+        )
+        return derivative.masked_fill(~valid, 0.0)
 
     @staticmethod
     def _robust_q90_unit(values: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:

@@ -297,15 +297,25 @@ def ref_d768_config() -> str:
         )
         scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=60)
         workflow = dict(
+            formal_protocol="h65_pro_dense_reference_official60_v1",
+            training_profile=duca_training_protocol.name,
             logging_interval=50,
             checkpoint_interval=5,
             val_loss_interval=-1,
             val_eval_interval=-1,
+            val_eval_interval_anchor_epoch=9999,
             val_start_epoch=9999,
             end_epoch=60,
+            formal_successful_update_contract=True,
+            expected_train_batches_per_epoch=duca_training_protocol.steps_per_epoch,
+            expected_successful_optimizer_updates=duca_training_protocol.expected_successful_optimizer_updates,
+            max_amp_retries_per_batch=8,
+            fail_on_amp_replay_exhaustion=True,
+            require_finite_train_loss=True,
+            selector_schedule_required=False,
             primary_checkpoint_epoch=59,
             primary_checkpoint_state_key="state_dict_ema",
-            checkpoint_criterion="terminal_epoch_59_state_dict_ema",
+            checkpoint_criterion=duca_training_protocol.checkpoint_criterion,
         )
         work_dir = "exps/thumos/adatad/h65_pro_fullmatrix_20260902/ref_d768"
         """
@@ -360,7 +370,7 @@ def ref_u384_config() -> str:
     ).lstrip()
 
 
-def ref_motion384_config() -> str:
+def ref_mnv3fc384_config() -> str:
     return dedent(
         """
         _base_ = ["../duca_trainfree_fixed384_official60_base.py"]
@@ -371,7 +381,7 @@ def ref_motion384_config() -> str:
         seed = 3407
         total_epochs = 60
         max_updates = 6000
-        h65_pro_experiment_id = "REF-MOTION384"
+        h65_pro_experiment_id = "REF-MNV3FC384"
         h65_pro_factor_policy = dict(
             phase=False,
             ct=False,
@@ -379,7 +389,7 @@ def ref_motion384_config() -> str:
             taylor=False,
             curriculum=False,
             frames=384,
-            reference="motion_grayscale_difference_dual_phase",
+            reference="frozen_mobilenetv3_feature_change",
         )
 
         model = dict(
@@ -404,7 +414,7 @@ def ref_motion384_config() -> str:
             primary_checkpoint_state_key="state_dict_ema",
             checkpoint_criterion=duca_training_protocol.checkpoint_criterion,
         )
-        work_dir = "exps/thumos/adatad/h65_pro_fullmatrix_20260902/ref_motion384"
+        work_dir = "exps/thumos/adatad/h65_pro_fullmatrix_20260902/ref_mnv3fc384"
         """
     ).lstrip()
 
@@ -443,10 +453,10 @@ def rows() -> list[dict[str, str]]:
             }
         )
 
-    add("REF-D768", "reference", 0, 0, 0, 0, 0, 768, 3407, "configs/adatad/thumos/h65_pro/h65_pro_ref_d768.py", "none")
+    add("REF-D768", "reference", 0, 0, 0, 0, 0, 768, 3407, "configs/adatad/thumos/h65_pro/h65_pro_ref_d768.py", "h65_pro_ref_d768")
     add("REF-U384", "reference", 0, 0, 0, 0, 0, 384, 3407, "configs/adatad/thumos/h65_pro/h65_pro_ref_u384.py", "h65_pro_ref_u384")
     add(
-        "REF-MOTION384",
+        "REF-MNV3FC384",
         "reference",
         0,
         0,
@@ -455,8 +465,8 @@ def rows() -> list[dict[str, str]]:
         0,
         384,
         3407,
-        "configs/adatad/thumos/h65_pro/h65_pro_ref_motion384.py",
-        "h65_pro_ref_motion384",
+        "configs/adatad/thumos/h65_pro/h65_pro_ref_mnv3fc384.py",
+        "h65_pro_ref_mnv3fc384",
     )
     for run, phase, ct, mod, taylor, curriculum in F_MATRIX:
         config = f"configs/adatad/thumos/h65_pro/h65_pro_{run.lower()}.py"
@@ -474,7 +484,7 @@ def write_configs() -> None:
     (CONFIG_DIR / "base_h65_pro_strict60.py").write_text(base_config(), encoding="utf-8")
     (CONFIG_DIR / "h65_pro_ref_d768.py").write_text(ref_d768_config(), encoding="utf-8")
     (CONFIG_DIR / "h65_pro_ref_u384.py").write_text(ref_u384_config(), encoding="utf-8")
-    (CONFIG_DIR / "h65_pro_ref_motion384.py").write_text(ref_motion384_config(), encoding="utf-8")
+    (CONFIG_DIR / "h65_pro_ref_mnv3fc384.py").write_text(ref_mnv3fc384_config(), encoding="utf-8")
     for run, phase, ct, mod, taylor, curriculum in F_MATRIX:
         (CONFIG_DIR / f"h65_pro_{run.lower()}.py").write_text(
             factor_config(run, phase, ct, mod, taylor, curriculum),
@@ -531,16 +541,16 @@ def write_docs(matrix_rows: list[dict[str, str]]) -> None:
             """
             # Test Results
 
-            Initial local structural check:
+            Post-review local structural check:
 
             - `python tools/bata/validate_h65_pro_fullmatrix.py`: PASS, 28 unique train jobs, configs, factors, and strict60 identities.
-            - `python -m py_compile tools/train.py tools/test.py tools/bata/train_lowres_action_probe.py tools/bata/duca_selected_axis_training.py tools/bata/generate_h65_pro_fullmatrix.py tools/bata/validate_h65_pro_fullmatrix.py tools/bata/h65_pro_hard_one_swap_diagnostic.py opentad/models/bricks/scale_adaptive_conv1d.py opentad/models/bricks/conv.py opentad/models/dense_heads/anchor_free_head.py opentad/models/duca/acquisition.py opentad/models/selectors/duca_online_frame_selector.py opentad/models/backbones/vit_adapter.py opentad/models/backbones/backbone_wrapper.py opentad/models/detectors/single_stage.py`: PASS.
-            - `python -m pytest tests/test_h65_pro_fullmatrix.py -q`: PASS, 5 passed and 3 skipped because this Windows host cannot load PyTorch `c10.dll`.
+            - `python -m py_compile tools/train.py tools/test.py tools/bata/duca_p0_training.py tools/bata/duca_selected_axis_training.py tools/bata/generate_h65_pro_fullmatrix.py tools/bata/validate_h65_pro_fullmatrix.py opentad/models/detectors/actionformer.py opentad/models/dense_heads/anchor_free_head.py opentad/models/duca/acquisition.py`: PASS.
+            - `python -m pytest tests/test_h65_pro_fullmatrix.py -q`: PASS, 8 passed and 7 skipped because this Windows host cannot load PyTorch `c10.dll`.
             - `python -m pytest tests/test_c3_coarse_classifier_model_matrix.py tests/test_c3_asformer_delta_ledger_full_train.py -q`: PASS, 23 passed.
             - `bash -n tools/experiments/run_h65_pro_train.sbatch tools/experiments/run_h65_pro_eval.sbatch tools/experiments/submit_h65_pro_fullmatrix.sh`: PASS.
             - `git diff --check`: PASS.
 
-            Remote `PRECHECK_ONLY=1` and Slurm submission remain pending until the clean pushed commit is available on the N16R4/Slurm host.
+            Remote Torch regression checks, full `PRECHECK_ONLY=1`, and Slurm submission remain pending until the clean pushed fix commit is available on the N16R4/Slurm host.
             """
         ).lstrip(),
         encoding="utf-8",
@@ -557,6 +567,8 @@ def write_docs(matrix_rows: list[dict[str, str]]) -> None:
             `/data/run01/sczc063/yuzibo/h65_pro_fullmatrix_20260902_submission/<commit>/submission_registry.csv`
 
             This keeps the repository clean for `tools/train.py` and `tools/test.py` formal exact-commit checks.
+
+            One superseded trial submission from an older intermediate commit accepted `REF-D768` train/eval ids `1265842` and `1265843` before the limit fired. Those jobs were canceled and the old registry was marked `CANCELED_SUPERSEDED_COMMIT`. They must not be used for final H65-Pro results.
             """
         ).lstrip(),
         encoding="utf-8",

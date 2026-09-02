@@ -32,14 +32,24 @@ model = dict(
 )
 scheduler = dict(type="LinearWarmupCosineAnnealingLR", warmup_epoch=5, max_epoch=60)
 workflow = dict(
+    formal_protocol="h65_pro_dense_reference_official60_v1",
+    training_profile=duca_training_protocol.name,
     logging_interval=50,
     checkpoint_interval=5,
     val_loss_interval=-1,
     val_eval_interval=-1,
+    val_eval_interval_anchor_epoch=9999,
     val_start_epoch=9999,
     end_epoch=60,
+    formal_successful_update_contract=True,
+    expected_train_batches_per_epoch=duca_training_protocol.steps_per_epoch,
+    expected_successful_optimizer_updates=duca_training_protocol.expected_successful_optimizer_updates,
+    max_amp_retries_per_batch=8,
+    fail_on_amp_replay_exhaustion=True,
+    require_finite_train_loss=True,
+    selector_schedule_required=False,
     primary_checkpoint_epoch=59,
     primary_checkpoint_state_key="state_dict_ema",
-    checkpoint_criterion="terminal_epoch_59_state_dict_ema",
+    checkpoint_criterion=duca_training_protocol.checkpoint_criterion,
 )
 work_dir = "exps/thumos/adatad/h65_pro_fullmatrix_20260902/ref_d768"

@@ -4,6 +4,7 @@ import csv
 import json
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -59,6 +60,9 @@ def test_h65_pro_matrix_validator_and_smoke_subset_pass() -> None:
     rows = _rows()
     assert len(rows) == 28
     assert len({(row["experiment_id"], row["seed"], row["config"]) for row in rows}) == 28
+    by_id = {row["experiment_id"]: row for row in rows}
+    assert by_id["REF-D768"]["variant"] == "h65_pro_ref_d768"
+    assert by_id["REF-MNV3FC384"]["config"].endswith("h65_pro_ref_mnv3fc384.py")
     submitter = (ROOT / "tools/experiments/submit_h65_pro_fullmatrix.sh").read_text(encoding="utf-8")
     for experiment_id in ("REF-U384", "F01", "F02", "F03", "F05", "F09", "F13", "F16"):
         assert experiment_id in submitter
@@ -99,6 +103,137 @@ def test_h65_pro_generated_configs_encode_requested_factor_contracts() -> None:
     assert f01.model.rpn_head.conv_cfg is None
     assert f01.model.backbone.backbone.amod_config.enabled is False
     assert f01.model.frame_selector.detector_contribution_mode == "abs_grad_times_input"
+
+
+def test_h65_pro_reference_configs_encode_dense_and_mnv3fc_contracts() -> None:
+    from tools.bata.duca_selected_axis_training import formal_training_contract
+
+    ref_d768 = Config.fromfile(str(CONFIG_DIR / "h65_pro_ref_d768.py"))
+    assert ref_d768.h65_pro_experiment_id == "REF-D768"
+    assert ref_d768.model.frame_selector is None
+    assert ref_d768.model.projection.max_seq_len == 768
+    assert ref_d768.workflow.formal_protocol == "h65_pro_dense_reference_official60_v1"
+    assert ref_d768.workflow.formal_successful_update_contract is True
+    assert ref_d768.workflow.selector_schedule_required is False
+    assert ref_d768.workflow.expected_successful_optimizer_updates == 6000
+    ref_d768_contract = formal_training_contract(ref_d768)
+    assert ref_d768_contract["h65_pro_dense_reference"] is True
+    assert ref_d768_contract["selector_schedule_required"] is False
+
+    ref_mnv = Config.fromfile(str(CONFIG_DIR / "h65_pro_ref_mnv3fc384.py"))
+    assert ref_mnv.h65_pro_experiment_id == "REF-MNV3FC384"
+    assert ref_mnv.h65_pro_factor_policy.reference == "frozen_mobilenetv3_feature_change"
+    selector = ref_mnv.model.frame_selector
+    assert selector.parameter_free_selector is True
+    assert selector.actionness_source_cfg.train_free_evidence_mode == "frozen_feature_change"
+
+
+def test_actionformer_uses_meta_aware_backbone_helper_for_train_and_test() -> None:
+    torch = _require_torch()
+    from opentad.models.detectors.actionformer import ActionFormer
+
+    model = ActionFormer.__new__(ActionFormer)
+    torch.nn.Module.__init__(model)
+    model.backbone = torch.nn.Identity()
+    model.frame_selector = None
+    model.token_compressor = None
+    model.true_time_residual = None
+    model.selector_train_only_skip_detector = False
+
+    def raise_if_helper_called(self, inputs, masks, metas):
+        raise RuntimeError("helper_called")
+
+    model._call_backbone_forward = types.MethodType(raise_if_helper_called, model)
+    model._capture_protected_detector_rng = types.MethodType(lambda self, inputs: None, model)
+    model._restore_protected_detector_rng = types.MethodType(lambda self, state: None, model)
+    model._reject_pc_ot_mras_value_targets_in_forward_test = types.MethodType(lambda self, metas: None, model)
+
+    with pytest.raises(RuntimeError, match="helper_called"):
+        ActionFormer.forward_train(
+            model,
+            torch.zeros(1, 1, 4),
+            torch.ones(1, 4, dtype=torch.bool),
+            [{}],
+            [],
+            [],
+            _duca_skip_frame_selector=True,
+        )
+    with pytest.raises(RuntimeError, match="helper_called"):
+        ActionFormer.forward_test(
+            model,
+            torch.zeros(1, 1, 4),
+            torch.ones(1, 4, dtype=torch.bool),
+            [{}],
+        )
+
+
+def test_ctconv_parameters_are_covered_by_actionformer_optimizer_groups() -> None:
+    torch = _require_torch()
+    from opentad.models.bricks.scale_adaptive_conv1d import ContinuousTimeScaleAdaptiveConv1d
+    from opentad.models.detectors.actionformer import ActionFormer
+
+    model = ActionFormer.__new__(ActionFormer)
+    torch.nn.Module.__init__(model)
+    model.rpn_head = torch.nn.Module()
+    model.rpn_head.ct = ContinuousTimeScaleAdaptiveConv1d(2, 3, kernel_size=3, padding=1, bias=True)
+
+    optim_groups = ActionFormer.get_optim_groups(model, {"lr": 1.0e-3, "weight_decay": 0.05})
+    decay_param_ids = {
+        id(param)
+        for group in optim_groups
+        if group["weight_decay"] == 0.05
+        for param in group["params"]
+    }
+    no_decay_param_ids = {
+        id(param)
+        for group in optim_groups
+        if group["weight_decay"] == 0.0
+        for param in group["params"]
+    }
+    assert id(model.rpn_head.ct.weight) in decay_param_ids
+    assert id(model.rpn_head.ct.bias) in no_decay_param_ids
+    assert id(model.rpn_head.ct.eta) in no_decay_param_ids
+
+
+def test_semantic_phase_centered_derivative_respects_valid_tail_boundary() -> None:
+    torch = _require_torch()
+    from opentad.models.duca.acquisition import DucaAcquisitionAdapter
+
+    values = torch.tensor([[0.0, 10.0, 12.0, 999.0, 999.0]])
+    valid = torch.tensor([[True, True, True, False, False]])
+    derivative = DucaAcquisitionAdapter._centered_derivative(values, valid)
+    assert torch.allclose(derivative, torch.tensor([[10.0, 6.0, 2.0, 0.0, 0.0]]))
+
+
+def test_anchor_free_head_temporal_positions_are_batch_invariant_for_short_windows() -> None:
+    torch = _require_torch()
+    from opentad.models.dense_heads.anchor_free_head import AnchorFreeHead
+
+    head = AnchorFreeHead.__new__(AnchorFreeHead)
+    short_meta = {
+        "selected_axis_to_true_time_dense_index": [0, 4, 8],
+        "selected_valid_len": 3,
+    }
+    long_meta = {
+        "selected_axis_to_true_time_dense_index": [0, 5, 10, 15, 20],
+        "selected_valid_len": 5,
+    }
+
+    solo = head._temporal_positions_from_metas(
+        [short_meta],
+        torch.device("cpu"),
+        torch.float32,
+        target_len=4,
+    )
+    batched = head._temporal_positions_from_metas(
+        [short_meta, long_meta],
+        torch.device("cpu"),
+        torch.float32,
+        target_len=4,
+    )
+    assert torch.equal(solo[0], torch.tensor([0.0, 4.0, 8.0, 8.0]))
+    assert torch.equal(batched[0], solo[0])
+    assert torch.equal(batched[1], torch.tensor([0.0, 5.0, 10.0, 15.0]))
 
 
 def test_semantic_phase_sampler_returns_sorted_unique_exact_k_and_uniform_alpha_zero() -> None:
@@ -177,8 +312,8 @@ def test_signed_taylor_detector_contribution_is_detached_first_order() -> None:
     torch = _require_torch()
     from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
 
-    selected = torch.tensor([[[1.0, -2.0, 3.0]]], requires_grad=True)
-    objective = -(selected * selected).sum()
+    selected = torch.tensor([[[1.0, 2.0, 3.0]]], requires_grad=True)
+    objective = (selected * torch.tensor([[[2.0, -3.0, 4.0]]])).sum()
     signed = DucaOnlineFrameSelector._selected_detector_contribution(
         selected,
         objective,
@@ -187,14 +322,15 @@ def test_signed_taylor_detector_contribution_is_detached_first_order() -> None:
     assert signed.shape == (1, 3)
     assert signed.requires_grad is False
     assert torch.all(signed >= 0.0)
-    assert torch.allclose(signed, torch.tensor([[2.0, 8.0, 18.0]]))
+    assert torch.allclose(signed, torch.tensor([[0.0, 6.0, 0.0]]))
 
     absolute = DucaOnlineFrameSelector._selected_detector_contribution(
         selected,
         objective,
         mode="abs_grad_times_input",
     )
-    assert torch.allclose(absolute, signed)
+    assert torch.allclose(absolute, torch.tensor([[2.0, 6.0, 12.0]]))
+    assert not torch.equal(absolute, signed)
 
 
 def test_vit_adapter_source_contains_topk_mod_identity_bypass_and_successful_update_schedule() -> None:
@@ -213,6 +349,26 @@ def test_selected_axis_terminal_binding_allows_distinct_afterok_eval_job_id() ->
     slurm_check = terminal.index('if key == "slurm_job_id":')
     next_binding_check = terminal.index("if audit.get(key) != expected:", slurm_check)
     assert "continue" in terminal[slurm_check:next_binding_check]
+
+
+def test_h65_pro_slurm_contract_is_fail_closed_and_collision_resistant() -> None:
+    submitter = (ROOT / "tools/experiments/submit_h65_pro_fullmatrix.sh").read_text(encoding="utf-8")
+    train = (ROOT / "tools/experiments/run_h65_pro_train.sbatch").read_text(encoding="utf-8")
+    eval_script = (ROOT / "tools/experiments/run_h65_pro_eval.sbatch").read_text(encoding="utf-8")
+
+    assert '[[ -n "${H65_PRO_EXPECTED_COMMIT:-}" ]]' in submitter
+    assert 'COMMIT="${H65_PRO_EXPECTED_COMMIT:-$(git rev-parse HEAD)}"' not in submitter
+    assert "EVAL_SUBMIT_FAILED_TRAIN_CANCEL_REQUESTED" in submitter
+    assert 'scancel "$train_dependency"' in submitter
+    assert '[[ "${CUDA_VISIBLE_DEVICES:-}" == "1" ]]' in submitter
+
+    for script in (train, eval_script):
+        assert '[[ -n "${H65_PRO_EXPECTED_COMMIT:-}" ]]' in script
+        assert 'EXPECTED_COMMIT="${H65_PRO_EXPECTED_COMMIT:-$(git rev-parse HEAD)}"' not in script
+        assert 'slurm_job_id="${SLURM_JOB_ID:-0}"' in script
+        assert "MASTER_PORT=$((30000 + (slurm_job_id % 20000)))" in script
+        assert 'export DUCA_SELECTED_OPT_VARIANT="$VARIANT"' in script
+        assert '[[ "${CUDA_VISIBLE_DEVICES:-}" == "1" ]]' in script
 
 
 def test_h65_pro_hard_one_swap_diagnostic_summarizes_offline_records(tmp_path: Path) -> None:

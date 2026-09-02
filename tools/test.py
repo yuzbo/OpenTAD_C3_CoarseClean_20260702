@@ -310,6 +310,8 @@ def main():
             )
         elif r5_formal:
             evaluation_schema = "duca_r5_terminal_evaluation_v1"
+        elif formal_protocol == duca_selected_axis_training.H65_PRO_DENSE_REFERENCE_PROTOCOL:
+            evaluation_schema = "h65_pro_dense_reference_terminal_evaluation_v1"
         elif formal_protocol == duca_selected_axis_training.FORMAL_PROTOCOL:
             evaluation_schema = "duca_selected_axis_terminal_evaluation_v1"
         elif r0_selected_axis_replay:

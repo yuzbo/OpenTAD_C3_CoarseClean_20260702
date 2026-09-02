@@ -9,7 +9,7 @@ from collections.abc import Mapping
 
 from ..builder import DETECTORS, build_selector, build_token_compressor
 from .single_stage import SingleStageDetector
-from ..bricks import Scale, AffineDropPath
+from ..bricks import Scale, AffineDropPath, ContinuousTimeScaleAdaptiveConv1d
 from ..duca.true_time_residual import TrueTimeFeatureResidual
 
 
@@ -219,7 +219,7 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self._call_backbone_forward(inputs, masks, metas)
         else:
             x = inputs
 
@@ -509,7 +509,7 @@ class ActionFormer(SingleStageDetector):
 
         self._restore_protected_detector_rng(detector_rng_state)
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self._call_backbone_forward(inputs, masks, metas)
         else:
             x = inputs
 
@@ -556,7 +556,13 @@ class ActionFormer(SingleStageDetector):
         # see https://github.com/karpathy/minGPT/blob/master/mingpt/model.py#L134
         decay = set()
         no_decay = set()
-        whitelist_weight_modules = (nn.Linear, nn.Conv1d, nn.Conv2d, nn.Conv3d)
+        whitelist_weight_modules = (
+            nn.Linear,
+            nn.Conv1d,
+            nn.Conv2d,
+            nn.Conv3d,
+            ContinuousTimeScaleAdaptiveConv1d,
+        )
         blacklist_weight_modules = (
             nn.LayerNorm,
             nn.GroupNorm,
@@ -588,6 +594,9 @@ class ActionFormer(SingleStageDetector):
                     no_decay.add(fpn)
                 elif pn.endswith("scale") and isinstance(m, (Scale, AffineDropPath)):
                     # corner case of our scale layer
+                    no_decay.add(fpn)
+                elif pn == "eta" and isinstance(m, ContinuousTimeScaleAdaptiveConv1d):
+                    # CT residual gate starts at zero and should not be decayed.
                     no_decay.add(fpn)
                 elif pn.endswith("rel_pe"):
                     # corner case for relative position encoding

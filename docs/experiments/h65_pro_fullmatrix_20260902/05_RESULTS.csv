@@ -1,7 +1,7 @@
 experiment_id,seed,status,mAP@0.3,mAP@0.4,mAP@0.5,mAP@0.6,mAP@0.7,Avg-mAP,checkpoint_path,evaluation_json
 REF-D768,3407,PENDING,,,,,,,,
 REF-U384,3407,PENDING,,,,,,,,
-REF-MOTION384,3407,PENDING,,,,,,,,
+REF-MNV3FC384,3407,PENDING,,,,,,,,
 F01,3407,PENDING,,,,,,,,
 F02,3407,PENDING,,,,,,,,
 F03,3407,PENDING,,,,,,,,

@@ -413,11 +413,13 @@ class AnchorFreeHead(nn.Module):
             bias_value = -(math.log((1 - self.cls_prior_prob) / self.cls_prior_prob))
             nn.init.constant_(self.cls_head.bias, bias_value)
 
-    def _temporal_positions_from_metas(self, metas, device, dtype):
+    def _temporal_positions_from_metas(self, metas, device, dtype, target_len=None):
         if metas is None:
             return None
         rows = []
-        max_len = 0
+        max_len = int(target_len) if target_len is not None else 0
+        if max_len < 0:
+            return None
         for meta in metas:
             positions = None
             for key in (
@@ -438,10 +440,16 @@ class AnchorFreeHead(nn.Module):
             if row.numel() == 0:
                 return None
             rows.append(row)
-            max_len = max(max_len, int(row.numel()))
+            if target_len is None:
+                max_len = max(max_len, int(row.numel()))
+        if max_len <= 0:
+            return None
         padded = []
         for row in rows:
-            if int(row.numel()) < max_len:
+            row_len = int(row.numel())
+            if row_len > max_len:
+                row = row[:max_len]
+            elif row_len < max_len:
                 pad = row[-1:].expand(max_len - int(row.numel()))
                 row = torch.cat([row, pad], dim=0)
             padded.append(row)
@@ -484,6 +492,7 @@ class AnchorFreeHead(nn.Module):
                 metas,
                 feat_list[0].device,
                 feat_list[0].dtype,
+                target_len=int(feat_list[0].shape[-1]),
             )
 
         for l, (feat, mask) in enumerate(zip(feat_list, mask_list)):
@@ -525,6 +534,7 @@ class AnchorFreeHead(nn.Module):
                 metas,
                 feat_list[0].device,
                 feat_list[0].dtype,
+                target_len=int(feat_list[0].shape[-1]),
             )
 
         for l, (feat, mask) in enumerate(zip(feat_list, mask_list)):

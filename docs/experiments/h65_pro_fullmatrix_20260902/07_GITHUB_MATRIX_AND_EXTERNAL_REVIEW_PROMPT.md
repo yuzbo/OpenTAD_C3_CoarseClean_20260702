@@ -37,9 +37,9 @@ The review branch contains this documentation file after the follow-up documenta
 
 | ID | Category | A phase | B CT | C MoD | D Taylor | E Curriculum | Frames | Seed | Config | Variant |
 |---|---|---|---|---|---|---|---:|---:|---|---|
-| REF-D768 | reference | OFF | OFF | OFF | OFF | OFF | 768 | 3407 | `configs/adatad/thumos/h65_pro/h65_pro_ref_d768.py` | `none` |
+| REF-D768 | reference | OFF | OFF | OFF | OFF | OFF | 768 | 3407 | `configs/adatad/thumos/h65_pro/h65_pro_ref_d768.py` | `h65_pro_ref_d768` |
 | REF-U384 | reference | OFF | OFF | OFF | OFF | OFF | 384 | 3407 | `configs/adatad/thumos/h65_pro/h65_pro_ref_u384.py` | `h65_pro_ref_u384` |
-| REF-MOTION384 | reference | OFF | OFF | OFF | OFF | OFF | 384 | 3407 | `configs/adatad/thumos/h65_pro/h65_pro_ref_motion384.py` | `h65_pro_ref_motion384` |
+| REF-MNV3FC384 | reference | OFF | OFF | OFF | OFF | OFF | 384 | 3407 | `configs/adatad/thumos/h65_pro/h65_pro_ref_mnv3fc384.py` | `h65_pro_ref_mnv3fc384` |
 | F01 | resolution_v | OFF | OFF | OFF | OFF | ON | 384 | 3407 | `configs/adatad/thumos/h65_pro/h65_pro_f01.py` | `h65_pro_f01` |
 | F02 | resolution_v | OFF | OFF | OFF | ON | OFF | 384 | 3407 | `configs/adatad/thumos/h65_pro/h65_pro_f02.py` | `h65_pro_f02` |
 | F03 | resolution_v | OFF | OFF | ON | OFF | OFF | 384 | 3407 | `configs/adatad/thumos/h65_pro/h65_pro_f03.py` | `h65_pro_f03` |
@@ -112,7 +112,7 @@ Required reading order:
 4. 检查 C MoD 是否只在 mod=ON 配置启用，是否 top-K 路由、未选 token identity bypass、adapter 只散射 selected positions，并由 successful optimizer updates 控制 1.0 -> 0.5 capacity schedule。
 5. 检查 D Taylor 是否只在 taylor=ON 配置使用 signed_removal_utility，且没有错误地创建 higher-order graph 或改变原 abs 模式。
 6. 检查 E curriculum 是否严格区分 ON/OFF，ON 为 15/20/25 cosine，OFF 为 linear ramp，并且训练预算仍是 60 epochs / 6000 successful optimizer updates。
-7. 检查 REF-D768、REF-U384、REF-MOTION384 是否是合法 reference，不被错误纳入 H65-Pro selectable factor ablation。
+7. 检查 REF-D768、REF-U384、REF-MNV3FC384 是否是合法 reference，不被错误纳入 H65-Pro selectable factor ablation。
 8. 检查 canonical rows 是否允许 C0/C1/C2/C3 config 共享但 seed 后缀不同，并确认 C0 只有 5417/9173，C1 有 3407/5417/9173，C2/C3 只有 5417/9173。
 9. 检查是否存在时间错误：文档日期为 2026-09-02；strict60 表示 60 epoch，终端 checkpoint 是 epoch_59.pth EMA；不要把 PENDING 结果说成已完成结果。
 10. 检查是否存在路线错误：本实现必须从 verified H65 base commit 04c35a3b76897e6c1569eeede41ed3aecaf7f854 出发，不得混入 CT-DP-BAMoD、SparseHead、Spatial-Zoom、ChronoTransport 或旧 research-wiki 路线。

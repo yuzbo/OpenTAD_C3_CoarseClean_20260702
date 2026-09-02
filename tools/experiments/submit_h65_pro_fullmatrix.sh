@@ -28,7 +28,8 @@ for path in "$THUMOS14_ANNOTATION_PATH" "$THUMOS14_CLASS_MAP" "$THUMOS14_TRAIN_D
   [[ -r "$path" ]] || fail "canonical path is not readable: $path"
 done
 
-COMMIT="${H65_PRO_EXPECTED_COMMIT:-$(git rev-parse HEAD)}"
+[[ -n "${H65_PRO_EXPECTED_COMMIT:-}" ]] || fail "H65_PRO_EXPECTED_COMMIT is required for H65-Pro submission"
+COMMIT="$H65_PRO_EXPECTED_COMMIT"
 [[ "$(git rev-parse HEAD)" == "$COMMIT" ]] || fail "checkout commit differs from H65_PRO_EXPECTED_COMMIT"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "submission requires a clean exact-commit checkout"
 export H65_PRO_EXPECTED_COMMIT="$COMMIT"
@@ -85,21 +86,30 @@ while IFS=, read -r experiment_id category phase ct mod taylor curriculum frames
   should_submit "$experiment_id" || continue
   train_job_name="h65p-tr-${experiment_id}-${seed}"
   eval_job_name="h65p-ev-${experiment_id}-${seed}"
-  train_job_id="$(sbatch --parsable \
+  if ! train_job_id="$(sbatch --parsable \
     --job-name="$train_job_name" \
     --output="$LOG_DIR/%x-%j.out" \
     --error="$LOG_DIR/%x-%j.err" \
     --export=ALL,CUDA_VISIBLE_DEVICES=1,H65_PRO_EXPECTED_COMMIT="$COMMIT" \
-    "$TRAIN_SCRIPT" "$config" "$seed" "$experiment_id" "$variant")"
+    "$TRAIN_SCRIPT" "$config" "$seed" "$experiment_id" "$variant")"; then
+    fail "train submission failed for $experiment_id seed $seed"
+  fi
   train_dependency="${train_job_id%%;*}"
-  eval_job_id="$(sbatch --parsable \
+  eval_dependency="afterok:${train_dependency}"
+  if ! eval_job_id="$(sbatch --parsable \
     --job-name="$eval_job_name" \
     --dependency=afterok:"$train_dependency" \
     --output="$LOG_DIR/%x-%j.out" \
     --error="$LOG_DIR/%x-%j.err" \
     --export=ALL,CUDA_VISIBLE_DEVICES=1,H65_PRO_EXPECTED_COMMIT="$COMMIT" \
-    "$EVAL_SCRIPT" "$config" "$seed" "$experiment_id" "$variant")"
-  eval_dependency="afterok:${train_dependency}"
+    "$EVAL_SCRIPT" "$config" "$seed" "$experiment_id" "$variant")"; then
+    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+      "$experiment_id" "$category" "$seed" "$config" "$variant" \
+      "$train_job_id" "" "$train_dependency" "$eval_dependency" \
+      "EVAL_SUBMIT_FAILED_TRAIN_CANCEL_REQUESTED" >> "$REGISTRY"
+    scancel "$train_dependency" >/dev/null 2>&1 || true
+    fail "eval submission failed for $experiment_id seed $seed; requested cancellation for train job $train_dependency"
+  fi
   printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$experiment_id" "$category" "$seed" "$config" "$variant" \
     "$train_job_id" "$eval_job_id" "$train_dependency" "$eval_dependency" "SUBMITTED" >> "$REGISTRY"

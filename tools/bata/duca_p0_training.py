@@ -85,6 +85,9 @@ def formal_training_contract(
         "primary_checkpoint_state_key": str(workflow.primary_checkpoint_state_key),
         "checkpoint_criterion": str(workflow.checkpoint_criterion),
         "checkpoint_interval": int(workflow.checkpoint_interval),
+        "selector_schedule_required": bool(
+            workflow.get("selector_schedule_required", True)
+        ),
     }
     if contract["expected_train_batches_per_epoch"] <= 0:
         raise ValueError("formal DUCA train batches per epoch must be positive")
@@ -364,12 +367,18 @@ def validate_update_state(
     expected_ema = successful if uses_ema else 0
     if int(update_audit.get("ema_updates", -1)) != expected_ema:
         raise RuntimeError("formal DUCA EMA exposure differs from optimizer exposure")
-    if int(update_audit.get("duca_schedule_updates", -1)) != successful:
-        raise RuntimeError("formal DUCA selector schedule exposure differs from optimizer exposure")
+    selector_schedule_required = bool(contract.get("selector_schedule_required", True))
+    if selector_schedule_required:
+        if int(update_audit.get("duca_schedule_updates", -1)) != successful:
+            raise RuntimeError("formal DUCA selector schedule exposure differs from optimizer exposure")
+    elif int(update_audit.get("duca_schedule_updates", -1)) != 0:
+        raise RuntimeError("formal DUCA dense reference must not report selector schedule exposure")
     if int(scheduler_last_epoch) != successful:
         raise RuntimeError("formal DUCA scheduler state does not match successful updates")
-    if int(selector_step) != successful:
+    if selector_schedule_required and int(selector_step) != successful:
         raise RuntimeError("formal DUCA selector schedule buffer does not match successful updates")
+    if not selector_schedule_required and int(selector_step) != successful:
+        raise RuntimeError("formal DUCA dense reference virtual schedule step does not match successful updates")
     if int(update_audit.get("max_amp_retries_observed", -1)) > int(
         contract["max_amp_retries_per_batch"]
     ):
@@ -424,6 +433,9 @@ def build_training_audit(
         "update_audit": {key: int(value) for key, value in update_audit.items()},
         "scheduler_last_epoch": int(scheduler_last_epoch),
         "selector_schedule_step": int(selector_step),
+        "selector_schedule_required": bool(
+            contract.get("selector_schedule_required", True)
+        ),
         "grad_scaler_scale": None if scaler_scale is None else float(scaler_scale),
         "epoch_records": [dict(item) for item in epoch_records],
     }

@@ -60,6 +60,15 @@ def validate_config(row: dict[str, str]) -> None:
     if row["experiment_id"] == "REF-D768":
         require(cfg.model.get("frame_selector", None) is None, "REF-D768 must not use acquisition")
         require(int(cfg.model.projection.max_seq_len) == 768, "REF-D768 must keep 768 detector frames")
+        require(str(cfg.workflow.get("formal_protocol", "")) == "h65_pro_dense_reference_official60_v1", "REF-D768: formal protocol drift")
+        require(str(cfg.workflow.get("training_profile", "")) == "official60", "REF-D768: training profile drift")
+        require(bool(cfg.workflow.get("formal_successful_update_contract", False)), "REF-D768: successful-update contract missing")
+        require(int(cfg.workflow.expected_train_batches_per_epoch) == 100, "REF-D768: train batches drift")
+        require(int(cfg.workflow.expected_successful_optimizer_updates) == 6000, "REF-D768: update count drift")
+        require(int(cfg.workflow.max_amp_retries_per_batch) == 8, "REF-D768: AMP replay budget drift")
+        require(bool(cfg.workflow.fail_on_amp_replay_exhaustion), "REF-D768: AMP replay must fail closed")
+        require(bool(cfg.workflow.require_finite_train_loss), "REF-D768: finite-loss requirement missing")
+        require(bool(cfg.workflow.get("selector_schedule_required", True)) is False, "REF-D768: selector schedule must be disabled")
         return
     if row["experiment_id"] == "REF-U384":
         selector = cfg.model.frame_selector
@@ -69,13 +78,13 @@ def validate_config(row: dict[str, str]) -> None:
         require(float(selector.loss_weight_schedule.policy_alpha.start) == 0.0, "REF-U384: policy alpha must stay uniform")
         require(float(selector.loss_weight_schedule.policy_alpha.end) == 0.0, "REF-U384: policy alpha must stay uniform")
         return
-    if row["experiment_id"] == "REF-MOTION384":
+    if row["experiment_id"] == "REF-MNV3FC384":
         selector = cfg.model.frame_selector
-        require(int(selector.budget) == 384, "REF-MOTION384: K must be 384")
-        require(int(selector.dense_window_size) == 768, "REF-MOTION384: dense T must be 768")
-        require(str(selector.acquisition_policy) == "global_structured_topk", "REF-MOTION384: policy drift")
-        require(bool(selector.parameter_free_selector), "REF-MOTION384: selector must stay train-free")
-        require(str(selector.actionness_source_cfg.train_free_evidence_mode) == "frozen_feature_change", "REF-MOTION384: motion/grayscale source drift")
+        require(int(selector.budget) == 384, "REF-MNV3FC384: K must be 384")
+        require(int(selector.dense_window_size) == 768, "REF-MNV3FC384: dense T must be 768")
+        require(str(selector.acquisition_policy) == "global_structured_topk", "REF-MNV3FC384: policy drift")
+        require(bool(selector.parameter_free_selector), "REF-MNV3FC384: selector must stay train-free")
+        require(str(selector.actionness_source_cfg.train_free_evidence_mode) == "frozen_feature_change", "REF-MNV3FC384: MobileNetV3 feature-change source drift")
         return
     selector = cfg.model.frame_selector
     require(int(selector.budget) == 384, f"{row['experiment_id']}: K must be 384")

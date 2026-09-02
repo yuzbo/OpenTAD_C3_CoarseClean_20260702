@@ -20,7 +20,7 @@ SEED="${2:-}"
 EXPERIMENT_ID="${3:-}"
 VARIANT="${4:-}"
 [[ -n "$CONFIG" && -n "$SEED" && -n "$EXPERIMENT_ID" && -n "$VARIANT" ]] || \
-  fail "usage: $0 <config> <seed> <experiment_id> <variant|none>"
+  fail "usage: $0 <config> <seed> <experiment_id> <variant>"
 [[ "$SEED" =~ ^[0-9]+$ ]] || fail "seed must be numeric: $SEED"
 
 ROOT="${DUCA_REPO_ROOT:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)}}"
@@ -39,7 +39,11 @@ PYTHON="${PYTHON:-python}"
 
 export DUCA_CELLCF_TRAINING_PROFILE=official60
 export LOCAL_RANK=0 RANK=0 WORLD_SIZE=1 MASTER_ADDR="${MASTER_ADDR:-127.0.0.1}"
-MASTER_PORT="${MASTER_PORT:-29500}"
+if [[ -z "${MASTER_PORT:-}" ]]; then
+  slurm_job_id="${SLURM_JOB_ID:-0}"
+  [[ "$slurm_job_id" =~ ^[0-9]+$ ]] || slurm_job_id=0
+  MASTER_PORT=$((30000 + (slurm_job_id % 20000)))
+fi
 [[ "$MASTER_PORT" =~ ^[0-9]+$ && "$MASTER_PORT" -ge 1024 && "$MASTER_PORT" -le 65535 ]] || \
   fail "MASTER_PORT must be 1024-65535"
 export MASTER_PORT
@@ -55,15 +59,14 @@ for path in "$THUMOS14_ANNOTATION_PATH" "$THUMOS14_CLASS_MAP" "$THUMOS14_TEST_DA
   [[ -r "$path" ]] || fail "canonical path is not readable: $path"
 done
 
-EXPECTED_COMMIT="${H65_PRO_EXPECTED_COMMIT:-$(git rev-parse HEAD)}"
+[[ -n "${H65_PRO_EXPECTED_COMMIT:-}" ]] || fail "H65_PRO_EXPECTED_COMMIT is required for H65-Pro evaluation"
+EXPECTED_COMMIT="$H65_PRO_EXPECTED_COMMIT"
 OBSERVED_COMMIT="$(git rev-parse HEAD)"
 [[ "$OBSERVED_COMMIT" == "$EXPECTED_COMMIT" ]] || fail "checkout commit $OBSERVED_COMMIT differs from expected $EXPECTED_COMMIT"
 export DUCA_EXPECTED_COMMIT="$EXPECTED_COMMIT"
 export DUCA_ADATAD_PRETRAIN_PATH="$(cd "$(dirname "$ADATAD_PRETRAIN")" && pwd -P)/$(basename "$ADATAD_PRETRAIN")"
 export DUCA_ADATAD_PRETRAIN_SHA256="$(sha256sum "$ADATAD_PRETRAIN" | awk '{print tolower($1)}')"
-if [[ "$VARIANT" != "none" ]]; then
-  export DUCA_SELECTED_OPT_VARIANT="$VARIANT"
-fi
+export DUCA_SELECTED_OPT_VARIANT="$VARIANT"
 
 if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then
   "$PYTHON" tools/bata/validate_h65_pro_fullmatrix.py

@@ -6,7 +6,7 @@ duca_training_protocol = protocol_for_name("official60")
 seed = 3407
 total_epochs = 60
 max_updates = 6000
-h65_pro_experiment_id = "REF-MOTION384"
+h65_pro_experiment_id = "REF-MNV3FC384"
 h65_pro_factor_policy = dict(
     phase=False,
     ct=False,
@@ -14,7 +14,7 @@ h65_pro_factor_policy = dict(
     taylor=False,
     curriculum=False,
     frames=384,
-    reference="motion_grayscale_difference_dual_phase",
+    reference="frozen_mobilenetv3_feature_change",
 )
 
 model = dict(
@@ -39,4 +39,4 @@ workflow = dict(
     primary_checkpoint_state_key="state_dict_ema",
     checkpoint_criterion=duca_training_protocol.checkpoint_criterion,
 )
-work_dir = "exps/thumos/adatad/h65_pro_fullmatrix_20260902/ref_motion384"
+work_dir = "exps/thumos/adatad/h65_pro_fullmatrix_20260902/ref_mnv3fc384"

@@ -211,6 +211,14 @@ def _dispatch_duca_runtime_bindings(
     return duca_training.build_runtime_bindings(**kwargs)
 
 
+def _duca_schedule_step_for_audit(duca_training, model, contract, update_audit):
+    if bool(contract.get("selector_schedule_required", True)):
+        return duca_training.selector_schedule_step(model)
+    if update_audit is None:
+        raise RuntimeError("formal DUCA dense reference schedule audit requires update counters")
+    return int(update_audit.get("successful_optimizer_updates", 0))
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a Temporal Action Detector")
     parser.add_argument("config", metavar="FILE", type=str, help="path to config file")
@@ -549,7 +557,9 @@ def main():
                 train_batches_per_epoch=len(train_loader),
                 update_audit=update_audit,
                 scheduler_last_epoch=scheduler.last_epoch,
-                selector_step=duca_training.selector_schedule_step(model),
+                selector_step=_duca_schedule_step_for_audit(
+                    duca_training, model, duca_formal_contract, update_audit
+                ),
                 uses_ema=model_ema is not None,
             )
             rng_state = checkpoint.get("rng_state")
@@ -613,7 +623,9 @@ def main():
                 train_batches_per_epoch=len(train_loader),
                 update_audit=update_audit,
                 scheduler_last_epoch=scheduler.last_epoch,
-                selector_step=duca_training.selector_schedule_step(model),
+                selector_step=_duca_schedule_step_for_audit(
+                    duca_training, model, duca_formal_contract, update_audit
+                ),
                 uses_ema=model_ema is not None,
             )
             delta = {
@@ -637,7 +649,11 @@ def main():
                     "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
                     "counter_delta": delta,
                     "scheduler_last_epoch": int(scheduler.last_epoch),
-                    "selector_schedule_step": int(duca_training.selector_schedule_step(model)),
+                    "selector_schedule_step": int(
+                        _duca_schedule_step_for_audit(
+                            duca_training, model, duca_formal_contract, update_audit
+                        )
+                    ),
                     "grad_scaler_scale": (
                         None if scaler is None else float(scaler.get_scale())
                     ),
@@ -651,7 +667,9 @@ def main():
                 update_audit=update_audit,
                 epoch_records=epoch_records,
                 scheduler_last_epoch=scheduler.last_epoch,
-                selector_step=duca_training.selector_schedule_step(model),
+                selector_step=_duca_schedule_step_for_audit(
+                    duca_training, model, duca_formal_contract, update_audit
+                ),
                 scaler_scale=None if scaler is None else scaler.get_scale(),
                 uses_ema=model_ema is not None,
                 complete=epoch == max_epoch - 1,
