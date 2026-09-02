@@ -862,12 +862,22 @@ class Block(BaseModule):
                 raise ValueError(f"boundary_prior shape {bp.shape} is incompatible with batch {B} and token count {N}")
 
         # Suppress padding tokens so they are never selected in top-k
+        valid_token_counts = None
         if temporal_token_mask is not None:
             mask_bool = temporal_token_mask.to(device=scores.device, dtype=torch.bool)
+            valid_token_counts = mask_bool.sum(dim=1)
+            if bool((valid_token_counts == 0).all().item()):
+                return x
             mask_val = -10000.0 if scores.dtype == torch.float16 else -1e9
             scores = scores.masked_fill(~mask_bool, mask_val)
 
-        k_count = max(1, int(round(N * capacity)))
+        if valid_token_counts is None:
+            k_count = max(1, int(round(N * capacity)))
+        else:
+            # A fixed tensor shape is required for batched attention.  Bound K
+            # by the shortest valid row so padding can never enter top-k.
+            min_valid = max(1, int(valid_token_counts.min().item()))
+            k_count = min(N, max(1, int(round(min_valid * capacity))))
         topk_indices = torch.topk(scores, k=k_count, dim=1, sorted=False).indices
         topk_indices = torch.sort(topk_indices, dim=1).values
 
@@ -876,6 +886,8 @@ class Block(BaseModule):
 
         if temporal_token_mask is not None:
             selected_mask = torch.gather(temporal_token_mask.to(device=x.device, dtype=torch.bool), 1, topk_indices)
+            if not bool(selected_mask.all().item()):
+                raise RuntimeError("B-AMoD selected a padded temporal token")
         else:
             selected_mask = None
 
@@ -1169,7 +1181,12 @@ class VisionTransformerAdapter(BaseModule):
             for key in missing:
                 incompatible_keys.missing_keys.remove(key)
 
-    def _forward_ct_patch_embed(self, x: Tensor, delta_t: Optional[Tensor] = None) -> Tensor:
+    def _forward_ct_patch_embed(
+        self,
+        x: Tensor,
+        delta_t: Optional[Tensor] = None,
+        temporal_mask: Optional[Tensor] = None,
+    ) -> Tensor:
         weight = self.patch_embed.projection.weight  # [C_out, C_in, 2, k_h, k_w]
         bias = self.patch_embed.projection.bias
 
@@ -1213,6 +1230,10 @@ class VisionTransformerAdapter(BaseModule):
 
         _, C_out, h_out, w_out = y.shape
         y = y.view(B, T_t, C_out, h_out * w_out).permute(0, 1, 3, 2).reshape(B, T_t * h_out * w_out, C_out)
+        if temporal_mask is not None:
+            pair_mask = temporal_mask.reshape(B, -1, self.tubelet_size).any(dim=-1)
+            pair_mask = pair_mask[:, :, None].expand(-1, -1, h_out * w_out).reshape(B, -1)
+            y = y * pair_mask.unsqueeze(-1).to(dtype=y.dtype)
         return y
 
     def forward(
@@ -1244,7 +1265,7 @@ class VisionTransformerAdapter(BaseModule):
         h //= self.patch_size
         w //= self.patch_size
         if self.ct_tubelet_enabled and delta_t is not None:
-            x = self._forward_ct_patch_embed(x, delta_t=delta_t)
+            x = self._forward_ct_patch_embed(x, delta_t=delta_t, temporal_mask=temporal_mask)
         else:
             x = self.patch_embed(x)[0]
         token_mask = None

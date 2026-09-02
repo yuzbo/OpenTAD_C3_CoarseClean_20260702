@@ -234,6 +234,8 @@ class DualPhaseFrameSelector(nn.Module):
         diff[:, :-1] = synced_temporal_positions[:, 1:] - synced_temporal_positions[:, :-1]
         diff[:, -1] = diff[:, -2] if self.total_budget > 1 else 1.0
         detector_delta_t = diff.clamp_min(1e-4)
+        selected_frame_rank = torch.arange(self.total_budget, device=inputs.device).view(1, -1).expand(B, -1).clone()
+        selected_frame_rank = selected_frame_rank.masked_fill(~selected_masks, -1)
 
         # Keep the frame-level prior for auditability, but route B-AMoD with
         # one score per VideoMAE tubelet.  A frame-level vector is not a valid
@@ -247,15 +249,19 @@ class DualPhaseFrameSelector(nn.Module):
         # Update metas with complete physical-grid ActionFormer contract
         for i in range(len(metas)):
             metas[i]["selected_positions"] = selected_positions[i].detach()
+            metas[i]["raw_frame_index"] = selected_positions[i].detach()
+            metas[i]["selected_frame_rank"] = selected_frame_rank[i].detach()
             metas[i]["temporal_positions"] = synced_temporal_positions[i].detach()
             metas[i]["irregular_selected_positions"] = synced_temporal_positions[i].detach()
-            metas[i]["selected_dense_indices"] = synced_temporal_positions[i].detach()
+            metas[i]["selected_dense_indices"] = selected_positions[i].detach()
             metas[i]["selected_valid_len"] = int(selected_masks[i].sum().item())
             metas[i]["irregular_selected_valid_len"] = float(masks[i].sum().item())
             metas[i]["irregular_dense_valid_len"] = float(masks[i].sum().item())
             metas[i]["irregular_native_axis"] = True
             metas[i]["tubelet_delta_t"] = tubelet_delta_t[i].detach()
+            metas[i]["tubelet_midpoint_physical_time"] = tubelet_midpoints[i].detach()
             metas[i]["delta_t"] = detector_delta_t[i].detach()
+            metas[i]["detector_feature_physical_time"] = synced_temporal_positions[i].detach()
             metas[i]["boundary_prior"] = boundary_prior[i].detach()
             metas[i]["boundary_prior_frames"] = boundary_prior_frames[i].detach()
             metas[i]["boundary_prior_tubelet"] = boundary_prior_tubelet[i].detach()
@@ -267,7 +273,11 @@ class DualPhaseFrameSelector(nn.Module):
             "masks": selected_masks,
             "metas": metas,
             "selected_positions": selected_positions,
+            "raw_frame_index": selected_positions,
+            "selected_frame_rank": selected_frame_rank,
             "temporal_positions": synced_temporal_positions,
+            "tubelet_midpoint_physical_time": tubelet_midpoints,
+            "detector_feature_physical_time": synced_temporal_positions,
             "boundary_prior": boundary_prior,
             "boundary_prior_frames": boundary_prior_frames,
             "boundary_prior_tubelet": boundary_prior_tubelet,

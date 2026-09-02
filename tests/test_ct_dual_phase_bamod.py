@@ -419,34 +419,18 @@ def test_physical_grid_actionformer_gt_assignment_and_tubelet_sync():
 
 
 def test_four_arms_config_resolution():
-    """Verify that all 4 configs load cleanly with exact single-variable differences."""
+    """Verify the frozen G0-G3 geometry matrix and single-variable differences."""
     from mmengine.config import Config
 
-    cfg1 = Config.fromfile("configs/adatad/thumos/duca_ct_dual_phase_bamod_thumos.py")
-    cfg2 = Config.fromfile("configs/adatad/thumos/duca_dual_phase_bamod_thumos.py")
-    cfg3 = Config.fromfile("configs/adatad/thumos/duca_ct_dual_phase_densevit_thumos.py")
-    cfg4 = Config.fromfile("configs/adatad/thumos/duca_dual_phase_densevit_stdconv_thumos.py")
-
-    # All 4 arms must have CT-Tubelet enabled, physical-grid enabled, and val_start_epoch=40
-    for cfg in (cfg1, cfg2, cfg3, cfg4):
-        assert cfg.model.backbone.backbone.ct_tubelet is True
-        assert cfg.model.backbone.custom.strict_temporal_padding_mask is True
-        assert cfg.model.rpn_head.physical_grid_actionformer.enabled is True
+    cfgs = [
+        Config.fromfile(f"configs/adatad/thumos/duca_ctdp_geometry_{arm}.py")
+        for arm in ("g0", "g1", "g2", "g3")
+    ]
+    assert cfgs[0].model.frame_selector.force_uniform is True
+    assert cfgs[1].model.frame_selector.force_uniform is False
+    assert cfgs[2].model.rpn_head.physical_grid_actionformer.enabled is True
+    assert cfgs[0].model.rpn_head.physical_grid_actionformer.enabled is False
+    assert cfgs[3].model.backbone.backbone.ct_tubelet is True
+    assert cfgs[2].model.backbone.backbone.ct_tubelet is False
+    for cfg in cfgs:
         assert cfg.workflow.val_start_epoch == 40
-
-    # Arm 1: CT-Conv ON, B-AMoD ON
-    assert cfg1.model.rpn_head.conv_cfg.type == "ContinuousTimeScaleAdaptiveConv1d"
-    assert cfg1.model.backbone.backbone.amod_config.enabled is True
-
-    # Arm 2: CT-Conv OFF, B-AMoD ON
-    assert cfg2.model.rpn_head.conv_cfg is None
-    assert cfg2.model.backbone.backbone.amod_config.enabled is True
-
-    # Arm 3: CT-Conv ON, B-AMoD OFF
-    assert cfg3.model.rpn_head.conv_cfg.type == "ContinuousTimeScaleAdaptiveConv1d"
-    assert cfg3.model.backbone.backbone.amod_config.enabled is False
-
-    # Arm 4: CT-Conv OFF, B-AMoD OFF
-    assert cfg4.model.rpn_head.conv_cfg is None
-    assert cfg4.model.backbone.backbone.amod_config.enabled is False
-
