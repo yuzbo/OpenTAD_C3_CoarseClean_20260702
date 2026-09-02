@@ -17,11 +17,11 @@ ARM_CONFIGS = {
     "A6": "configs/adatad/thumos/duca_evidence_recovery_h65_selection.py",
 }
 
-FORMAL_SEEDS = [8261, 19237, 31153]
+FORMAL_SEEDS = [8261]
 
 
-def test_24_matrix_cell_uniqueness():
-    """Verify 24 task IDs map 1-to-1 to (arm_idx, seed_idx) without collision."""
+def test_8_matrix_cell_uniqueness():
+    """The formal correction round is the frozen eight-arm seed-8261 matrix."""
     task_map = {}
     arms = list(ARM_CONFIGS.keys())
     for arm_idx, arm in enumerate(arms):
@@ -30,8 +30,8 @@ def test_24_matrix_cell_uniqueness():
             assert task_id not in task_map, f"Duplicate task_id {task_id}"
             task_map[task_id] = (arm, seed)
 
-    assert len(task_map) == 24
-    assert set(task_map.keys()) == set(range(24))
+    assert len(task_map) == 8
+    assert set(task_map.keys()) == set(range(8))
 
 
 def test_all_arm_configs_exist_and_load():
@@ -90,6 +90,7 @@ def test_all_arm_configs_exist_and_load():
 
         elif arm_id == "A3":
             assert not fs.use_robust_training
+            assert fs.use_scout_supervision
 
         elif arm_id == "A4":
             assert not fs.use_temporal_merge
@@ -97,6 +98,7 @@ def test_all_arm_configs_exist_and_load():
 
         elif arm_id == "A5":
             assert not fs.use_dense_recovery
+            assert fs.no_recovery_uniform_axis
 
         elif arm_id == "A6":
             assert fs.use_h65_selection

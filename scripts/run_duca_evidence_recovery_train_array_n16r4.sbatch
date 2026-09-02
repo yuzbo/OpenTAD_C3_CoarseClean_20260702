@@ -18,14 +18,18 @@ source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 
 REPO_ROOT="${DUCA_REPO_ROOT:-$(pwd)}"
 cd "${REPO_ROOT}"
+EXPECTED_COMMIT="${DUCA_EXPECTED_COMMIT:?DUCA_EXPECTED_COMMIT is required}"
+[[ "${EXPECTED_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "DUCA_EXPECTED_COMMIT must be a full SHA" >&2; exit 2; }
+[[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || { echo "Evidence job HEAD mismatch" >&2; exit 2; }
+[[ -z "$(git status --porcelain)" ]] || { echo "Evidence checkout is not clean" >&2; exit 2; }
 YUZIBO_ROOT="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 DUCA_VIDEOMAE_PRETRAIN="${DUCA_VIDEOMAE_PRETRAIN:-${YUZIBO_ROOT}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 DUCA_H65_LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT:-${YUZIBO_ROOT}/projects/c3_lowres_action_probe/ledger_exports/c3_official_asformer_delta_ledgers_20260702_052357_+0800}"
 export DUCA_H65_TRAIN_LEDGER_PATH="${DUCA_H65_TRAIN_LEDGER_PATH:-${DUCA_H65_LEDGER_ROOT}/train/value_transport_ledger_delta_p_action_384.jsonl}"
 export DUCA_H65_VAL_LEDGER_PATH="${DUCA_H65_VAL_LEDGER_PATH:-${DUCA_H65_LEDGER_ROOT}/val/value_transport_ledger_delta_p_action_384.jsonl}"
 export DUCA_H65_TEST_LEDGER_PATH="${DUCA_H65_TEST_LEDGER_PATH:-${DUCA_H65_LEDGER_ROOT}/test/value_transport_ledger_delta_p_action_384.jsonl}"
-export DUCA_H65_LEDGER_SOURCE="${DUCA_H65_LEDGER_SOURCE:-}"
-export DUCA_H65_LEDGER_CONFIG_HASH="${DUCA_H65_LEDGER_CONFIG_HASH:-}"
+export DUCA_H65_LEDGER_SOURCE="${DUCA_H65_LEDGER_SOURCE:-c3_official_asformer_delta_p_action}"
+export DUCA_H65_LEDGER_CONFIG_HASH="${DUCA_H65_LEDGER_CONFIG_HASH:-c3_official_asformer_delta_ledger_384_over_768_v1}"
 export YUZIBO_ROOT DUCA_VIDEOMAE_PRETRAIN DUCA_H65_LEDGER_ROOT
 if [[ ! -f "${DUCA_VIDEOMAE_PRETRAIN}" ]]; then
   echo "[ERROR] VideoMAE checkpoint not found: ${DUCA_VIDEOMAE_PRETRAIN}" >&2
@@ -56,7 +60,7 @@ ARM_NAMES=("C0" "F" "A1" "A2" "A3" "A4" "A5" "A6")
 if [[ -n "${DUCA_SEEDS:-}" ]]; then
   read -r -a SEEDS <<< "${DUCA_SEEDS}"
 else
-  SEEDS=(8261 19237 31153)
+  SEEDS=(8261)
 fi
 
 NUM_SEEDS=${#SEEDS[@]}

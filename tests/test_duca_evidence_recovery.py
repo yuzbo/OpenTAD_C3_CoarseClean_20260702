@@ -58,6 +58,14 @@ def test_bounded_interval_adapter_parity():
     assert diff < 1e-5, f"Adapter at initialization must match Conv3d, max diff={diff}"
 
 
+def test_semantic_scout_context_novelty_preserves_temporal_shape():
+    scout = ASFormerDenseSemanticScout(in_channels=3, hidden_dim=16, num_layers=1, window_size=32)
+    rgb = torch.randn(2, 3, 32, 16, 16)
+    out = scout(rgb, valid_mask=torch.ones(2, 32, dtype=torch.bool))
+    assert out["context_novelty"].shape == (2, 32)
+    assert out["utility"].shape == (2, 32)
+
+
 def test_bounded_interval_adapter_range():
     """Verify g(z) is strictly bounded in [0.5, 1.5]."""
     adapter = BoundedTubeletIntervalAdapter(enabled=True)
@@ -212,6 +220,13 @@ def test_evidence_recovery_selector_exact_k():
         assert all(0 <= p < 768 for p in row)
 
 
+def test_evidence_recovery_selector_rejects_all_masked_rows():
+    selector = EvidenceRecoverySelector(budget=4, window_size=8, use_coverage=True)
+    values = torch.zeros(1, 8)
+    with pytest.raises(ValueError, match="all-masked"):
+        selector.select(values, values, values, values, values, torch.zeros(1, 8, dtype=torch.bool))
+
+
 def test_evidence_recovery_selector_enforces_max_unselected_hole():
     selector = EvidenceRecoverySelector(budget=16, window_size=64, use_coverage=True, max_hole=3)
     utility = torch.zeros(1, 64)
@@ -348,6 +363,17 @@ def test_frame_selector_forward_train_and_test():
     assert train_out["masks"].shape == (B, 384)
     assert "scout_action_loss" in train_out["losses"]
     assert "scout_boundary_loss" in train_out["losses"]
+    assert "scout_robust_consistency_loss" in train_out["losses"]
+
+    no_robust = DucaEvidenceRecoveryFrameSelector(
+        budget=16, window_size=32, use_dense_recovery=True, use_robust_training=False
+    )
+    tiny_inputs = torch.randn(1, 1, 3, 32, 16, 16)
+    tiny_masks = torch.ones(1, 32, dtype=torch.bool)
+    tiny_gt = [torch.tensor([[4.0, 12.0]])]
+    tiny_out = no_robust.forward_train(tiny_inputs, tiny_masks, [{"video_name": "tiny"}], tiny_gt, [torch.tensor([1])])
+    assert "scout_action_loss" in tiny_out["losses"]
+    assert "scout_robust_consistency_loss" not in tiny_out["losses"]
 
     # Test forward_test
     test_out = selector.forward_test(inputs, masks, metas)

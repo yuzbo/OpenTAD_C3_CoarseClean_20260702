@@ -121,7 +121,8 @@ def test_checkpoint_resume_next_update_is_identical():
         assert torch.equal(value, model.state_dict()[key])
 
 
-def test_1000_successful_updates_remain_finite():
+def test_scalar_optimizer_update_loop_remains_finite_for_1000_steps():
+    """A small optimizer sanity check; this is not a full model gate."""
     parameter = torch.nn.Parameter(torch.tensor(0.0))
     optimizer = torch.optim.SGD([parameter], lr=0.01)
     for _ in range(1000):

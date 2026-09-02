@@ -4,6 +4,7 @@ import hashlib
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 
 sys.dont_write_bytecode = True
 path = os.path.join(os.path.dirname(__file__), "..")
@@ -195,6 +196,81 @@ def _select_duca_training(formal_protocol):
     return duca_p0_training
 
 
+def _validate_evidence_ledger_coverage(dataset, split_name):
+    """Validate the complete H65 ledger contract before the first batch."""
+    transforms = list(getattr(getattr(dataset, "pipeline", None), "transforms", ()))
+    ledger_transform = next(
+        (item for item in transforms if item.__class__.__name__ == "DucaH65PositionsFromLedger"),
+        None,
+    )
+    if ledger_transform is None:
+        raise RuntimeError(f"formal Evidence {split_name} pipeline has no H65 ledger transform")
+    ledger = ledger_transform._value_transport_ledger()
+    expected_ids = set()
+    for item in getattr(dataset, "data_list", ()):
+        if not isinstance(item, (list, tuple)) or len(item) < 4:
+            raise RuntimeError(f"formal Evidence {split_name} data_list contains an invalid window record")
+        video_name, snippet_centers = str(item[0]), item[3]
+        if len(snippet_centers) <= 0:
+            raise RuntimeError(f"formal Evidence {split_name} has an empty snippet window for {video_name}")
+        expected_ids.add(f"{video_name}|{int(snippet_centers[0])}")
+    ledger_ids = set(ledger)
+    missing = sorted(expected_ids.difference(ledger_ids))
+    if missing:
+        preview = ", ".join(missing[:5])
+        raise RuntimeError(
+            f"formal Evidence {split_name} ledger is missing {len(missing)} windows; first: {preview}"
+        )
+    extra = sorted(ledger_ids.difference(expected_ids))
+    if extra:
+        preview = ", ".join(extra[:5])
+        raise RuntimeError(
+            f"formal Evidence {split_name} ledger contains {len(extra)} unexpected windows; first: {preview}"
+        )
+
+    expected_target = int(getattr(ledger_transform, "target_len", 384))
+    expected_dense = int(getattr(ledger_transform, "dense_len", 768))
+    positions_key = "expanded_selected_positions" if bool(
+        getattr(ledger_transform, "use_expanded_positions", False)
+    ) else "selected_positions"
+    for sample_id in sorted(expected_ids):
+        row = ledger[sample_id]
+        if not isinstance(row, Mapping):
+            raise RuntimeError(f"formal Evidence {split_name} ledger row {sample_id} is not a mapping")
+        valid_len = int(row.get("valid_len", -1))
+        dense_len = int(row.get("dense_len", expected_dense))
+        target_len = int(row.get("target_len", expected_target))
+        if dense_len != expected_dense or target_len != expected_target:
+            raise RuntimeError(
+                f"formal Evidence {split_name} ledger row {sample_id} has dense/target "
+                f"{dense_len}/{target_len}, expected {expected_dense}/{expected_target}"
+            )
+        if valid_len <= 0 or valid_len > expected_dense:
+            raise RuntimeError(
+                f"formal Evidence {split_name} ledger row {sample_id} has invalid valid_len={valid_len}"
+            )
+        positions = row.get(positions_key)
+        if not isinstance(positions, (list, tuple)) or not positions:
+            raise RuntimeError(f"formal Evidence {split_name} ledger row {sample_id} has no positions")
+        positions = [int(item) for item in positions]
+        if len(positions) > expected_target or positions != sorted(set(positions)):
+            raise RuntimeError(
+                f"formal Evidence {split_name} ledger row {sample_id} positions are not strictly increasing "
+                f"within K={expected_target}"
+            )
+        if positions[0] < 0 or positions[-1] >= valid_len:
+            raise RuntimeError(
+                f"formal Evidence {split_name} ledger row {sample_id} positions exceed valid_len={valid_len}"
+            )
+        required_count = ledger_transform._required_count(valid_len)
+        if required_count is not None and len(positions) != int(required_count):
+            raise RuntimeError(
+                f"formal Evidence {split_name} ledger row {sample_id} has K={len(positions)}, "
+                f"expected {int(required_count)} for valid_len={valid_len}"
+            )
+    return {"split": split_name, "sample_count": len(expected_ids), "ledger_rows": len(ledger)}
+
+
 def _dispatch_duca_runtime_bindings(
     duca_training,
     runtime_binding_kwargs,
@@ -230,10 +306,14 @@ def main():
     # load config
     cfg = Config.fromfile(args.config)
     formal_protocol = str(cfg.workflow.get("formal_protocol", ""))
+    evidence_formal = formal_protocol == "duca_evidence_recovery_full_matrix_v1"
     duca_training = _select_duca_training(formal_protocol)
     source_config_sha256 = _sha256(args.config)
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
-    duca_formal_contract = duca_training.formal_training_contract(cfg)
+    # Evidence Recovery has a separate FP32 contract.  It must not be routed
+    # through the legacy P0 AMP-replay contract, which intentionally requires
+    # a positive AMP retry budget.
+    duca_formal_contract = None if evidence_formal else duca_training.formal_training_contract(cfg)
     if duca_training is duca_cellcf_training:
         duca_cellcf_training.assert_safe_cfg_options(
             cfg, args.cfg_options, entrypoint="tools/train.py"
@@ -251,13 +331,36 @@ def main():
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/train.py")
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    # Hash the final merged runtime config, including command-line overrides.
+    source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     if duca_training is duca_cellcf_training:
         duca_formal_contract = duca_cellcf_training.formal_training_contract(cfg)
+    if evidence_formal:
+        expected_seed = int(cfg.get("seed", 8261))
+        workflow = cfg.workflow
+        if int(args.seed) != expected_seed:
+            raise RuntimeError(f"formal Evidence Recovery is frozen to seed {expected_seed}")
+        if int(workflow.get("end_epoch", -1)) != 60:
+            raise RuntimeError("formal Evidence Recovery requires exactly 60 epochs")
+        if int(workflow.get("expected_train_batches_per_epoch", -1)) != 100:
+            raise RuntimeError("formal Evidence Recovery requires exactly 100 train batches per epoch")
+        if int(workflow.get("expected_successful_optimizer_updates", -1)) != 6000:
+            raise RuntimeError("formal Evidence Recovery requires exactly 6000 successful optimizer updates")
+        if int(workflow.get("max_amp_retries_per_batch", -1)) != 0 or bool(cfg.solver.get("amp", True)):
+            raise RuntimeError("formal Evidence Recovery is FP32-only and forbids AMP replay")
+        if not bool(cfg.solver.get("ema", False)):
+            raise RuntimeError("formal Evidence Recovery requires EMA checkpoints")
+        if workflow.get("max_train_iters", None) is not None:
+            raise RuntimeError("formal Evidence Recovery cannot truncate epochs with max_train_iters")
     duca_git_commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
     ).strip()
-    if duca_formal_contract is not None:
+    if duca_formal_contract is not None or evidence_formal:
         expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
+        if not expected_commit or len(expected_commit) != 40 or any(
+            ch not in "0123456789abcdef" for ch in expected_commit.lower()
+        ):
+            raise RuntimeError("formal DUCA requires DUCA_EXPECTED_COMMIT as a full 40-character SHA")
         if expected_commit != duca_git_commit:
             raise RuntimeError("formal DUCA checkout differs from DUCA_EXPECTED_COMMIT")
         status = subprocess.check_output(
@@ -278,7 +381,7 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
-    if duca_formal_contract is not None and args.world_size != 1:
+    if (duca_formal_contract is not None or evidence_formal) and args.world_size != 1:
         raise RuntimeError("formal DUCA P0 is frozen to one Slurm GPU process")
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)
@@ -389,6 +492,12 @@ def main():
             drop_last=False,
             **cfg.solver.test,
         )
+    evidence_ledger_coverage = []
+    if evidence_formal:
+        if seal_eval_loaders:
+            raise RuntimeError("formal Evidence Recovery requires val/test ledger coverage")
+        for split_name, split_dataset in (("train", train_dataset), ("val", val_dataset), ("test", test_dataset)):
+            evidence_ledger_coverage.append(_validate_evidence_ledger_coverage(split_dataset, split_name))
     if duca_formal_contract is not None:
         bind_loader = getattr(
             duca_training, "bind_train_loader_contract", None
@@ -411,6 +520,12 @@ def main():
             raise RuntimeError(
                 f"formal DUCA loader has {len(train_loader)} batches, "
                 f"expected {expected_batches}"
+            )
+    elif evidence_formal:
+        expected_batches = int(cfg.workflow.expected_train_batches_per_epoch)
+        if len(train_loader) != expected_batches:
+            raise RuntimeError(
+                f"formal Evidence Recovery loader has {len(train_loader)} batches, expected {expected_batches}"
             )
 
     # build model
@@ -483,8 +598,12 @@ def main():
         scaler = GradScaler()
     else:
         scaler = None
-    if duca_formal_contract is not None and (not use_amp or model_ema is None):
-        raise RuntimeError("formal DUCA requires both AMP and model EMA")
+    if duca_formal_contract is not None:
+        requires_amp = bool(cfg.workflow.get("requires_amp", True))
+        if (requires_amp and not use_amp) or model_ema is None:
+            raise RuntimeError("formal DUCA requires its configured AMP policy and model EMA")
+    elif evidence_formal and model_ema is None:
+        raise RuntimeError("formal Evidence Recovery requires model EMA even in FP32 mode")
 
     # build optimizer and scheduler
     optimizer = build_optimizer(copy.deepcopy(cfg.optimizer), model, logger)
@@ -509,6 +628,7 @@ def main():
     )
     collect_update_audit = bool(
         duca_formal_contract is not None
+        or evidence_formal
         or max_amp_retries_per_batch > 0
         or max_nonfinite_loss_retries > 0
         or cfg.workflow.get("training_probe_json", None)
@@ -606,6 +726,17 @@ def main():
             update_audit_json=cfg.workflow.get("training_update_audit_json", None),
         )
         training_audit = None
+        if evidence_formal:
+            expected_batches = int(cfg.workflow.expected_train_batches_per_epoch)
+            delta = {
+                key: int(update_audit[key]) - int(audit_before_epoch[key])
+                for key in update_audit
+                if isinstance(update_audit[key], (int, float))
+            }
+            if delta.get("attempted_batches") != expected_batches or delta.get("successful_optimizer_updates") != expected_batches:
+                raise RuntimeError("formal Evidence Recovery epoch did not execute exactly 100 successful updates")
+            if delta.get("amp_skipped_attempts", 0) or delta.get("replayed_batches", 0) or delta.get("replay_exhaustions", 0):
+                raise RuntimeError("formal Evidence Recovery recorded an unexpected AMP replay")
         if duca_formal_contract is not None:
             duca_training.validate_update_state(
                 contract=duca_formal_contract,
@@ -700,11 +831,29 @@ def main():
             (epoch == max_epoch - 1) or ((epoch + 1) % cfg.workflow.checkpoint_interval == 0)
         ):
             if args.rank == 0:
-                checkpoint_metadata = (
-                    None
-                    if training_audit is None
-                    else duca_training.build_checkpoint_metadata(training_audit)
-                )
+                if evidence_formal:
+                    checkpoint_metadata = {
+                        "formal_protocol": formal_protocol,
+                        "commit_sha": duca_git_commit,
+                        "source_config_sha256": source_config_sha256,
+                        "resolved_config_sha256": source_resolved_config_sha256,
+                        "seed": int(args.seed),
+                        "epoch": int(epoch),
+                        "successful_optimizer_updates": int(update_audit["successful_optimizer_updates"]),
+                        "ledger_coverage": evidence_ledger_coverage,
+                    }
+                    checkpoint_sidecar_schema = "DUCA-EVIDENCE-RECOVERY-CHECKPOINT-v001"
+                else:
+                    checkpoint_metadata = (
+                        None
+                        if training_audit is None
+                        else duca_training.build_checkpoint_metadata(training_audit)
+                    )
+                    checkpoint_sidecar_schema = (
+                        None
+                        if checkpoint_metadata is None
+                        else duca_training.DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA
+                    )
                 save_checkpoint(
                     model,
                     model_ema,
@@ -724,11 +873,7 @@ def main():
                         else update_audit["successful_optimizer_updates"]
                     ),
                     experiment_metadata=checkpoint_metadata,
-                    experiment_sidecar_schema=(
-                        None
-                        if checkpoint_metadata is None
-                        else duca_training.DUCA_P0_CHECKPOINT_SIDECAR_SCHEMA
-                    ),
+                    experiment_sidecar_schema=checkpoint_sidecar_schema,
                 )
 
         # val for one epoch
@@ -782,6 +927,33 @@ def main():
                             )
                         ),
                     )
+    if evidence_formal:
+        expected_total = int(cfg.workflow.expected_successful_optimizer_updates)
+        observed_total = int(update_audit["successful_optimizer_updates"])
+        if observed_total != expected_total:
+            raise RuntimeError(
+                f"formal Evidence Recovery produced {observed_total} updates, expected {expected_total}"
+            )
+        if args.rank == 0:
+            audit_path = os.path.join(cfg.work_dir, "duca_evidence_training_audit.json")
+            payload = {
+                "schema_version": "duca_evidence_training_audit_v1",
+                "formal_protocol": formal_protocol,
+                "seed": int(args.seed),
+                "epochs": int(max_epoch),
+                "commit_sha": duca_git_commit,
+                "source_config_sha256": source_config_sha256,
+                "resolved_config_sha256": source_resolved_config_sha256,
+                "expected_successful_optimizer_updates": expected_total,
+                "ledger_coverage": evidence_ledger_coverage,
+                "update_audit": dict(update_audit),
+            }
+            temporary = audit_path + ".tmp"
+            with open(temporary, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2, sort_keys=True)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, audit_path)
     logger.info("Training Over...\n")
 
 

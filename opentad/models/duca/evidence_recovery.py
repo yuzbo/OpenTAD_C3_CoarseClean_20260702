@@ -200,7 +200,9 @@ class ASFormerDenseSemanticScout(BaseModule):
 
         # Context novelty: 1 - cosine(h[t], mean(h[t-w : t+w]))
         w = self.context_window
-        padded_h = F.pad(hidden_t.permute(0, 2, 1), (w, w), mode="replicate").permute(0, 2, 1)
+        # Unfold the temporal axis, not the feature axis.  The previous
+        # permutation produced [B, D-2w, T, 2w+1] and broke T=768,D=64.
+        padded_h = F.pad(hidden_t.transpose(1, 2), (w, w), mode="replicate").transpose(1, 2)
         windows = padded_h.unfold(dimension=1, size=2 * w + 1, step=1)  # [B, T, D, 2w+1]
         context_mean = windows.mean(dim=-1)  # [B, T, D]
         context_novelty = 1.0 - F.cosine_similarity(hidden_t, context_mean, dim=-1).clamp(-1.0, 1.0)
@@ -416,7 +418,7 @@ class EvidenceRecoverySelector(BaseModule):
         for b in range(B):
             valid_len = int(valid_mask[b].sum().item())
             if valid_len <= 0:
-                valid_len = T
+                raise ValueError("EvidenceRecovery selector received an all-masked sample")
             eff_k = min(K, valid_len)
 
             if not self.use_coverage:
@@ -504,6 +506,7 @@ class DucaEvidenceRecoveryModule(BaseModule):
         use_temporal_merge: bool = True,
         use_dense_recovery: bool = True,
         use_robust_training: bool = True,
+        use_scout_supervision: bool = True,
         use_h65_selection: bool = False,
         max_hole: int = 16,
         init_cfg: Optional[dict] = None,
@@ -516,6 +519,7 @@ class DucaEvidenceRecoveryModule(BaseModule):
         self.use_temporal_merge = bool(use_temporal_merge)
         self.use_dense_recovery = bool(use_dense_recovery)
         self.use_robust_training = bool(use_robust_training)
+        self.use_scout_supervision = bool(use_scout_supervision)
         self.use_h65_selection = bool(use_h65_selection)
         self.max_hole = int(max_hole)
 
@@ -547,6 +551,11 @@ class DucaEvidenceRecoveryModule(BaseModule):
         """Perform semantic evidence acquisition or pure deterministic H65 replay."""
         B = lowres_rgb.shape[0]
         T = self.window_size if lowres_rgb.ndim < 4 else (lowres_rgb.shape[2] if lowres_rgb.shape[1] == 3 else lowres_rgb.shape[1])
+        if valid_mask is not None:
+            if valid_mask.shape != (B, T):
+                raise ValueError(f"EvidenceRecovery valid_mask must be [B,T], got {tuple(valid_mask.shape)}")
+            if not bool(valid_mask.to(dtype=torch.bool).any(dim=1).all().item()):
+                raise ValueError("EvidenceRecovery received an all-masked sample")
 
         if self.use_h65_selection:
             if h65_positions is None:
@@ -633,7 +642,9 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
         use_temporal_merge: bool = True,
         use_dense_recovery: bool = True,
         use_robust_training: bool = True,
+        use_scout_supervision: bool = True,
         use_h65_selection: bool = False,
+        no_recovery_uniform_axis: bool = False,
         tubelet_size: int = 2,
         max_hole: int = 16,
 
@@ -650,8 +661,13 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
         self.use_temporal_merge = bool(use_temporal_merge)
         self.use_dense_recovery = bool(use_dense_recovery)
         self.use_robust_training = bool(use_robust_training)
+        self.use_scout_supervision = bool(use_scout_supervision)
         self.use_h65_selection = bool(use_h65_selection)
         self.max_hole = int(max_hole)
+        # A5 may disable support-aware recovery while retaining the same
+        # uniform detector coordinate axis.  Legacy selected-axis behavior is
+        # preserved unless the arm explicitly opts into this control.
+        self.no_recovery_uniform_axis = bool(no_recovery_uniform_axis)
         self.h65_position_keys = tuple(h65_position_keys or H65_POSITION_META_KEYS)
 
 
@@ -662,6 +678,7 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
         self.loss_weights = {
             "scout_action": 1.0,
             "scout_boundary": 1.0,
+            "scout_robust_consistency": 0.1,
             "recovery_cycle": 0.1,
         }
         if loss_weights is not None:
@@ -675,13 +692,23 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
             use_temporal_merge=use_temporal_merge,
             use_dense_recovery=use_dense_recovery,
             use_robust_training=use_robust_training,
+            use_scout_supervision=use_scout_supervision,
             use_h65_selection=use_h65_selection,
             max_hole=max_hole,
         )
 
     def _dense_valid_lens(self, masks: torch.Tensor) -> torch.Tensor:
         valid_lens = masks.long().sum(dim=-1).to(device=masks.device)
-        return valid_lens.clamp_min(1)
+        return valid_lens
+
+    def _uniform_detector_positions(self, batch_size: int, *, device: torch.device) -> torch.Tensor:
+        return torch.linspace(
+            0.0,
+            float(self.window_size - 1),
+            self.budget,
+            device=device,
+            dtype=torch.float32,
+        ).view(1, -1).expand(int(batch_size), -1)
 
     def _extract_h65_positions(
         self,
@@ -825,7 +852,7 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
             meta["truetime_dense_valid_len"] = dense_valid_len
             meta["irregular_dense_valid_len"] = dense_valid_len
 
-            if self.use_dense_recovery:
+            if self.use_dense_recovery or self.no_recovery_uniform_axis:
                 meta["dense_recovery_scale"] = float(self.window_size - 1) / float(self.budget - 1)
                 meta["irregular_selected_positions"] = acq_positions
                 meta["irregular_selected_count"] = acq_count
@@ -907,7 +934,7 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
         masks: torch.Tensor,
         backbone_support_metadata: Optional[Dict[str, Any]],
     ) -> None:
-        if self.use_dense_recovery:
+        if self.use_dense_recovery or self.no_recovery_uniform_axis:
             return
         metas = selector_outputs.get("metas")
         if metas is None:
@@ -1015,7 +1042,9 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
 
         # Compute selector losses (keys must end with _loss)
         losses = {}
-        if self.use_robust_training and scout_out is not None:
+        # Base action/boundary supervision is independent of robustness or KD;
+        # A3 must keep this signal while disabling only those optional terms.
+        if self.use_scout_supervision and scout_out is not None:
             B, T = masks.shape
             action_targets = torch.zeros((B, T), dtype=torch.float32, device=inputs.device)
             boundary_targets = torch.zeros((B, T), dtype=torch.float32, device=inputs.device)
@@ -1037,14 +1066,37 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
             losses["scout_action_loss"] = self.loss_weights["scout_action"] * loss_act
             losses["scout_boundary_loss"] = self.loss_weights["scout_boundary"] * loss_bnd
 
-        if self.use_dense_recovery:
-            scale = float(self.budget - 1) / float(self.window_size - 1)
-            remapped_gt_segments = [
-                segs * scale if segs is not None and len(segs) > 0 else segs
-                for segs in gt_segments
-            ]
-            detector_positions = None
-            detector_valid_counts = None
+            if self.use_robust_training:
+                # Robustness is an explicit temporal-reversal consistency
+                # term.  It is independent of the base action/boundary labels,
+                # so A3 can disable this term without making the scout
+                # unsupervised.
+                reversed_scout = self.module.scout(
+                    torch.flip(lowres, dims=[2]),
+                    valid_mask=torch.flip(masks, dims=[1]),
+                )
+                reverse_action = torch.flip(reversed_scout["action_logits"], dims=[1])
+                reverse_boundary = torch.flip(reversed_scout["boundary_logits"], dims=[1])
+                valid = masks.to(dtype=torch.float32)
+                denom = valid.sum().clamp_min(1.0)
+                consistency = (
+                    (torch.sigmoid(scout_out["action_logits"]) - torch.sigmoid(reverse_action)).square()
+                    + (torch.sigmoid(scout_out["boundary_logits"]) - torch.sigmoid(reverse_boundary)).square()
+                )
+                losses["scout_robust_consistency_loss"] = (
+                    self.loss_weights["scout_robust_consistency"]
+                    * (consistency * valid).sum()
+                    / denom
+                )
+
+        if self.use_dense_recovery or self.no_recovery_uniform_axis:
+            remapped_gt_segments = list(gt_segments)
+            detector_positions = None if self.use_dense_recovery else self._uniform_detector_positions(
+                inputs.shape[0], device=inputs.device
+            )
+            detector_valid_counts = None if self.use_dense_recovery else torch.ceil(
+                dense_valid_lens.float() * float(self.budget) / float(self.window_size)
+            ).clamp(min=0, max=self.budget).long()
         else:
             remapped_gt_segments = list(gt_segments)
             detector_positions = sel_out["support_centers"]
@@ -1058,7 +1110,7 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
             detector_positions=detector_positions,
             detector_valid_counts=detector_valid_counts,
         )
-        if not self.use_dense_recovery:
+        if not self.use_dense_recovery and not self.no_recovery_uniform_axis:
             remapped_gt_segments = self._remap_segments_to_axis(
                 remapped_gt_segments,
                 out_metas,
@@ -1132,9 +1184,13 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
             masks=masks,
         )
 
-        if self.use_dense_recovery:
-            detector_positions = None
-            detector_valid_counts = None
+        if self.use_dense_recovery or self.no_recovery_uniform_axis:
+            detector_positions = None if self.use_dense_recovery else self._uniform_detector_positions(
+                inputs.shape[0], device=inputs.device
+            )
+            detector_valid_counts = None if self.use_dense_recovery else torch.ceil(
+                dense_valid_lens.float() * float(self.budget) / float(self.window_size)
+            ).clamp(min=0, max=self.budget).long()
         else:
             detector_positions = sel_out["support_centers"]
             detector_valid_counts = sel_out["selected_valid_counts"] // max(1, self.tubelet_size)
@@ -1176,7 +1232,31 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Recover gathered and merged features back to uniform detection grid."""
         if not self.use_dense_recovery:
-            # If recovery is disabled, adjust masks length to match feats length
+            if self.no_recovery_uniform_axis:
+                # A5 disables support-aware reconstruction, not the detector
+                # coordinate system.  Use a fixed interpolation to the same
+                # uniform budget axis as FULL and keep GTs in true-time units.
+                resized = feats if feats.shape[-1] == self.budget else F.interpolate(
+                    feats, size=self.budget, mode="linear", align_corners=False
+                )
+                dense_valid_lens = selector_outputs.get("dense_valid_len")
+                if dense_valid_lens is None:
+                    dense_valid_lens = masks.long().sum(dim=-1)
+                valid_lens = torch.ceil(
+                    dense_valid_lens.to(device=resized.device).float()
+                    * float(self.budget) / float(self.window_size)
+                ).clamp(min=0, max=self.budget).long()
+                new_masks = torch.zeros(
+                    (resized.shape[0], self.budget), dtype=masks.dtype, device=resized.device
+                )
+                for b in range(resized.shape[0]):
+                    new_masks[b, : int(valid_lens[b].item())] = True
+                resized = resized * new_masks.to(dtype=resized.dtype).unsqueeze(1)
+                assert_finite_tensor(resized, "no_recovery.uniform_axis_output")
+                return resized, new_masks
+
+            # Legacy selected-axis path for callers that explicitly opt out of
+            # the uniform control-axis contract.
             N_tokens = feats.shape[-1]
             if masks.shape[-1] != N_tokens:
                 selected_valid_counts = selector_outputs.get("selected_valid_counts")
@@ -1221,7 +1301,26 @@ class DucaEvidenceRecoveryFrameSelector(BaseModule):
         if masks.shape[-1] == N_tokens:
             support_mask = masks.to(device=feats.device, dtype=torch.bool)
         else:
-            support_mask = torch.ones((feats.shape[0], N_tokens), dtype=torch.bool, device=feats.device)
+            # Token merging can shorten the support axis.  Preserve the valid
+            # prefix instead of treating padded merged tokens as observations.
+            selected_counts = selector_outputs.get("selected_valid_counts")
+            if selected_counts is None:
+                valid_counts = torch.ceil(
+                    masks.long().sum(dim=-1).float()
+                    * float(N_tokens)
+                    / float(masks.shape[-1])
+                ).long()
+            else:
+                valid_counts = torch.ceil(
+                    selected_counts.to(device=feats.device).float()
+                    * float(N_tokens)
+                    / float(masks.shape[-1])
+                ).long()
+            support_mask = torch.zeros(
+                (feats.shape[0], N_tokens), dtype=torch.bool, device=feats.device
+            )
+            for b in range(feats.shape[0]):
+                support_mask[b, : min(N_tokens, max(0, int(valid_counts[b].item())))] = True
 
         dense_valid_lens = selector_outputs.get("dense_valid_len")
         if dense_valid_lens is None:

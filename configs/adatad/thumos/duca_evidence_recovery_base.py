@@ -89,7 +89,7 @@ def _attach_h65_positions(ledger_path):
         allow_short_valid_ratio_count=True,
         source=duca_h65_ledger_source,
         config_hash=duca_h65_ledger_config_hash,
-        allow_missing=True,
+        allow_missing=False,
     )
 
 
@@ -218,7 +218,9 @@ workflow = dict(
     val_eval_interval=10,
     val_start_epoch=40,
     end_epoch=total_epochs,
-    max_train_iters=max_updates,
+    # The epoch length is defined by the real loader contract below; do not
+    # use a global smoke-iteration cap that can silently truncate an epoch.
+    max_train_iters=None,
     expected_train_batches_per_epoch=100,
     expected_successful_optimizer_updates=max_updates,
     primary_checkpoint_epoch=59,
@@ -226,7 +228,7 @@ workflow = dict(
     # A forward loss that is already non-finite is deterministic for the same
     # batch/state and must fail fast; only AMP backward overflows are replayed.
     max_nonfinite_loss_retries=0,
-    max_amp_retries_per_batch=3,
+    max_amp_retries_per_batch=0,
     # Stop a run before a non-finite detector loss can corrupt its checkpoint.
     require_finite_train_loss=True,
 )
@@ -256,6 +258,7 @@ model = dict(
         use_temporal_merge=True,
         use_dense_recovery=True,
         use_robust_training=True,
+        use_scout_supervision=True,
         use_h65_selection=False,
     ),
     backbone=dict(

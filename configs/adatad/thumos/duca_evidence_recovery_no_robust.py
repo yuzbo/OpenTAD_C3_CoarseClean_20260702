@@ -11,6 +11,7 @@ model = dict(
         use_temporal_merge=True,
         use_dense_recovery=True,
         use_robust_training=False,
+        use_scout_supervision=True,
         use_h65_selection=False,
     ),
     backbone=dict(
