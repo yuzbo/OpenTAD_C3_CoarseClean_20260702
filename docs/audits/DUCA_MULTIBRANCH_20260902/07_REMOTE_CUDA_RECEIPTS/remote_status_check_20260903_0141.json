@@ -1,0 +1,34 @@
+{
+  "schema_version": "DUCA-REMOTE-STATUS-CHECK-v002",
+  "checked_at_utc": "2026-09-02T17:41:29Z",
+  "remote_host": "N16R4",
+  "repair_revalidation": {
+    "h65_job_id": "1266408",
+    "h65_worktree": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/h65_admission_fix",
+    "h65_commit": "7f90a48de4c349dd83896c6c8df3264278ff6555",
+    "h65_state": "COMPLETED",
+    "h65_result": "15 passed"
+  },
+  "current_queue": [
+    {"job_id": "1265777", "state": "RUNNING", "name": "ctdp-g0-s3407", "workdir": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902", "classification": "STALE_REMOTE_HEAD"},
+    {"job_id": "1265778", "state": "RUNNING", "name": "ctdp-g1-s3407", "workdir": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902", "classification": "STALE_REMOTE_HEAD"},
+    {"job_id": "1265779", "state": "PENDING", "reason": "Dependency", "name": "ctdp-g2-s3407", "classification": "STALE_REMOTE_HEAD"},
+    {"job_id": "1265780", "state": "PENDING", "reason": "Dependency", "name": "ctdp-g3-s3407", "classification": "STALE_REMOTE_HEAD"},
+    {"job_id": "1266397_[0-2,7]", "state": "RUNNING", "name": "duca_rec_train", "workdir": "/data/home/sczc063", "classification": "NONOWNED"},
+    {"job_id": "1266410-1266414", "state": "RUNNING", "name": "zt-bafdr-train-*", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7", "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"},
+    {"job_id": "1266415-1266416,1266420", "state": "PENDING", "reason": "AssocGrpGRES/Dependency", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7", "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"}
+  ],
+  "completed_nonowned": [
+    {"job_id": "1266218", "state": "COMPLETED", "route": "ET-TRC OFF", "result": "epoch 59 reached in log, but no terminal checkpoint/receipt"},
+    {"job_id": "1266219", "state": "COMPLETED", "route": "ET-TRC ON", "result": "epoch 59 reached in log, but no terminal checkpoint/receipt"},
+    {"job_id": "1266403", "state": "COMPLETED", "route": "BAFDR precheck", "source_head": "efe69d2ea10accd01d0129dfe99cba4d1d5773cb", "result": "not current frozen SHA"}
+  ],
+  "supervisor": {
+    "status": "ACTIVE",
+    "dispatcher_status": "BLOCKED",
+    "queue_entries": 0,
+    "formal_run_root_exists": false,
+    "formal_results": "NO_VALID_RESULTS"
+  },
+  "action": "不取消或采用非当前 frozen SHA 作业；继续等待门禁和资源，资源释放后按修正分支重跑对应 PRECHECK。"
+}

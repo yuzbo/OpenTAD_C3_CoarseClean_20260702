@@ -28,13 +28,69 @@
       "status": "BLOCKED_INFRASTRUCTURE",
       "reason": "AssocMaxSubmitJobLimit",
       "job_ids": []
+    },
+    {
+      "kind": "h65_fix_p0_recheck",
+      "command": "srun --immediate=60 --partition=gpu --gres=gpu:1 ... pytest tests/test_duca_online_p0_contract.py tests/test_duca_h65_60_curriculum_contract.py tests/test_duca_official_optimizer_coverage.py tests/test_duca_checkpoint_resume_roundtrip.py -q",
+      "status": "SUCCEEDED",
+      "job_ids": ["1266408"],
+      "result": "15 passed on remote repair worktree 7f90a48d; frozen SHA unchanged"
+    },
+    {
+      "kind": "bafdr_repair_validator",
+      "command": "python tools/bata/bafdr_k16_fullmatrix.py --repo-root <bafdr_admission_fix>",
+      "status": "SUCCEEDED",
+      "job_ids": [],
+      "result": "21 configs validated on repair worktree"
+    },
+    {
+      "kind": "bafdr_repair_precheck",
+      "command": "PRECHECK_ONLY=1 BAFDR_ALLOW_SINGLE_PROCESS=1 ... run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh bafdr_k16_d160_seed4407.py",
+      "status": "SUCCEEDED",
+      "job_ids": [],
+      "result": "world_size=1 CPU precheck PASS; train_len=200, eval_windows=792"
+    },
+    {
+      "kind": "et_trc_cuda_gate_recheck",
+      "command": "srun --immediate=60 --partition=gpu --gres=gpu:1 ... run_zoomtoken_et_trc_cuda_gate_n16r4.sbatch",
+      "status": "BLOCKED_INFRASTRUCTURE",
+      "reason": "AssocMaxSubmitJobLimit",
+      "job_ids": []
+    }
+  ],
+  "failure_diagnoses": [
+    {
+      "job_ids": ["1266328", "1266329", "1266330", "1266402"],
+      "classification": "CODE_OR_PROTOCOL_FAILURE_NONOWNED",
+      "cause": "旧 BAFDR 配置将 window_size/window_overlap_ratio 传给不支持这些参数的 LoadFrames 构造器",
+      "repair_commit": "c750cdae1b7dce8ab1ef9b3d2fa04ebb9853926a",
+      "revalidation": "远端 21-cell validator PASS；D160 world_size=1 PRECHECK PASS"
+    },
+    {
+      "job_ids": ["1266185", "1266186"],
+      "classification": "NUMERICAL_FAILURE_NONOWNED",
+      "cause": "ET-TRC OFF S1 batch 17 cls_loss/reg_loss/cost 非有限；ON 作业随后取消",
+      "revalidation": "当前冻结 ET CUDA gate 因 AssocMaxSubmitJobLimit 未分配"
+    },
+    {
+      "job_ids": ["1265704", "1265705"],
+      "classification": "SUBMISSION_PROTOCOL_FAILURE_NONOWNED",
+      "cause": "CT-DP 旧启动器引用不存在的 opentad_ct_dp_revised_20260902 路径",
+      "revalidation": "当前 CT-DP 修正分支尚未提交正式作业"
+    },
+    {
+      "job_ids": ["1266408"],
+      "classification": "REPAIR_REVALIDATION_SUCCESS",
+      "cause": "H65 P0 x-only backbone 收到 masks 的签名错误",
+      "revalidation": "远端修正 worktree 15 passed；不产生 mAP"
     }
   ],
   "preexisting_jobs_not_owned_by_this_audit": [
     {"job_id": "1266325-1266330", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_6ae16954", "source_head": "6ae16954d875ce310cb0fc514ad54663be626db6", "classification": "NOT_CURRENT_FROZEN_SHA"},
-    {"job_id": "1266218-1266219", "workdir": "/data/run01/sczc063/yuzibo/projects/zoomtoken_et_trc_correction_20260902_59eab0c6", "source_head": "be330c071638249e7c5268a5464e454c0f2a5621", "classification": "LATER_THAN_FROZEN_SHA"},
+    {"job_id": "1266185-1266186,1266218-1266219", "workdir": "/data/run01/sczc063/yuzibo/projects/zoomtoken_et_trc_correction_20260902_59eab0c6", "source_head": "be330c071638249e7c5268a5464e454c0f2a5621", "classification": "LATER_THAN_FROZEN_SHA"},
+    {"job_id": "1266401-1266420", "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7", "source_head": "efe69d2ea10accd01d0129dfe99cba4d1d5773cb", "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"},
     {"job_id": "1265777-1265780", "workdir": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902", "source_head": "679b71214d05a21cd08ae1f5e5c3879e2df8fb83", "classification": "STALE_REMOTE_HEAD"},
-    {"job_id": "1265077_[3-6]", "workdir": "/data/run01/sczc063/yuzibo/projects/opentad_duca_evidence_recovery", "source_head": "647151facd36d4df3f21de6865bcb225c8ba91fc", "classification": "DIRTY_STALE_REMOTE_HEAD"}
+    {"job_id": "1265077_[0-2,3-7]", "workdir": "/data/run01/sczc063/yuzibo/projects/opentad_duca_evidence_recovery", "source_head": "647151facd36d4df3f21de6865bcb225c8ba91fc", "classification": "DIRTY_STALE_REMOTE_HEAD"}
   ],
   "blockers": [
     "Formal multi-branch DAG submission has not yet been authorized because branch gates are incomplete.",

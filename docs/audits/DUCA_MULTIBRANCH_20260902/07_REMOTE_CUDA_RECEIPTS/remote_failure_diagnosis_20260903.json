@@ -1,0 +1,88 @@
+{
+  "schema_version": "DUCA-REMOTE-FAILURE-DIAGNOSIS-v001",
+  "checked_at_utc": "2026-09-02T17:42:00Z",
+  "remote_host": "N16R4",
+  "policy": "每个失败先读取 stderr/out，区分代码/协议/资源/调用错误；旧 checkout 只归档，不迁移为当前科学结果",
+  "diagnoses": [
+    {
+      "job_ids": ["1266328", "1266329", "1266330", "1266402"],
+      "route": "BAFDR",
+      "source_checkout": "旧 BAFDR checkout（6ae16954 或 efe69d2）",
+      "log_files": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/zt-bafdr-train-U16-UNIFORM-A0-6ae16954_1266328.err",
+        "/data/run01/sczc063/yuzibo/slurm_logs/zt-bafdr-train-BAFDR-K16-LATE-6ae16954_1266329.err",
+        "/data/run01/sczc063/yuzibo/slurm_logs/zt-bafdr-train-BAFDR-K16-NOKD-6ae16954_1266330.err",
+        "/data/run01/sczc063/yuzibo/slurm_logs/zt-bafdr-precheck-990a7a3b-g2_1266402.err"
+      ],
+      "classification": "CODE_OR_PROTOCOL_FAILURE_NONOWNED",
+      "root_cause": "LoadFrames.__init__ 不接受 window_size/window_overlap_ratio，但旧生成配置把它们作为 transform 参数传入；失败发生在 validation loader 构建阶段，未开始科学训练。",
+      "repair": "当前修正分支移除 transform 参数，改由 dataset.window_size/window_overlap_ratio 提供；绑定 canonical BAFDR_PRETRAIN；修复单进程 precheck 的 optimizer.module 假设，并同步更新 validator。",
+      "repair_commit": "c750cdae1b7dce8ab1ef9b3d2fa04ebb9853926a",
+      "revalidation": "远端 21-cell validator PASS；D160 seed 4407 单进程 PRECHECK PASS（train_len=200，eval_windows=792，world_size=1）。",
+      "result": "旧作业不重标、不纳入结果；当前修正尚未执行 2-GPU formal training。"
+    },
+    {
+      "job_ids": ["1266185", "1266186"],
+      "route": "ET-TRC",
+      "source_checkout": "晚于冻结 SHA 的 ET checkout be330c07",
+      "log_files": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/et-trc-off-s4407_1266185.err",
+        "/data/run01/sczc063/yuzibo/slurm_logs/et-trc-on-s4407_1266186.err"
+      ],
+      "classification": "NUMERICAL_FAILURE_NONOWNED",
+      "root_cause": "OFF 作业在 S1 batch 17 报 cls_loss/reg_loss/cost 非有限，训练驱动按 fail_on_nonfinite_loss 终止；ON 作业随后被取消，未生成合法 terminal checkpoint。",
+      "repair": "当前冻结 ET-TRC 分支保留 fail-closed 非有限检查；先执行该分支真实 CUDA gate、checkpoint coverage 与小步 DDP admission，不能直接把旧作业改称成功。",
+      "revalidation": "本轮 ET CUDA gate srun 因 Slurm AssocMaxSubmitJobLimit 未分配作业（无 test step）。",
+      "result": "无合法 OFF/ON 结果；需要资源释放后在冻结 SHA 重新运行并保留失败证据。"
+    },
+    {
+      "job_ids": ["1266218", "1266219"],
+      "route": "ET-TRC",
+      "source_checkout": "晚于冻结 SHA 的 ET checkout be330c07",
+      "log_files": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/et-trc-off-s4407_1266218.out",
+        "/data/run01/sczc063/yuzibo/slurm_logs/et-trc-on-s4407_1266219.out"
+      ],
+      "classification": "NONOWNED_COMPLETED_WITHOUT_TERMINAL_RECEIPT",
+      "root_cause": "Slurm 状态为 COMPLETED，日志到达 epoch 59/Training Over，但 worktree 中只发现配置和 log.json，没有 epoch_59.pth、train_receipt 或评测 receipt。",
+      "repair": "不把无终态 receipt 的完成状态当作科学结果；当前冻结 SHA 仍须重新做 checkpoint coverage 与 DDP admission。",
+      "result": "可记录为计算完成但结果无效，未纳入 mAP/成本。"
+    },
+    {
+      "job_ids": ["1265704", "1265705"],
+      "route": "CT-DP",
+      "source_checkout": "旧 CT-DP checkout 679b7121",
+      "log_files": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g0-s3407_1265704.err",
+        "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-g1-s3407_1265705.err"
+      ],
+      "classification": "SUBMISSION_PROTOCOL_FAILURE_NONOWNED",
+      "root_cause": "启动器执行 source/module 失败后引用不存在的 /data/run01/sczc063/yuzibo/projects/opentad_ct_dp_revised_20260902，作业在训练前退出。",
+      "repair": "当前 CT-DP 修正分支使用独立 geometry/gradient/batch admission 路径；旧作业不迁移、不重标。",
+      "result": "无科学结果。"
+    },
+    {
+      "job_ids": ["1266408"],
+      "route": "H65-Pro admission fix",
+      "source_checkout": "远端修正 worktree 7f90a48d",
+      "classification": "REPAIR_REVALIDATION_SUCCESS",
+      "root_cause": "原冻结 H65 P0 测试将 masks 传入只接受 x 的 proof backbone。",
+      "repair": "SingleStageDetector 按 backbone forward 签名决定是否传 masks。",
+      "revalidation": "15 passed；H65 validator 与 smoke PRECHECK 通过。",
+      "result": "仅证明修正分支 admission，通过后仍需重新冻结 H65 SHA；不产生 mAP。"
+    },
+    {
+      "job_ids": ["1266267", "1266322"],
+      "route": "H65-Pro",
+      "classification": "INVALID_INVOCATION",
+      "root_cause": "测试路径/调用参数错误，未执行目标测试。",
+      "repair": "改用固定测试清单并在 srun 分配后重新执行；1266408 已完成修正分支复验。",
+      "result": "无科学结果。"
+    }
+  ],
+  "current_resource_blocker": {
+    "error": "AssocMaxSubmitJobLimit",
+    "affected_attempt": "ET-TRC one-GPU CUDA gate",
+    "action": "不重复提交；由远端监督器等待账户提交上限释放。"
+  }
+}
