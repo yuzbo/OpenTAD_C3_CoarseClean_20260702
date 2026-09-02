@@ -28,6 +28,9 @@ def test_bafdr_configs_use_supported_collect_contract():
         assert '"gt_segments", "gt_labels"' in text
         assert '"bafdr_geometry"' in text
         assert "extra_keys" not in text
+        # LoadFrames takes trunc_len for random windows; sliding-window length
+        # belongs to the dataset config, not the transform constructor.
+        assert 'method="sliding_window", window_size=' not in text
 
 
 def test_bafdr_generator_cannot_reintroduce_collect_extra_keys():
@@ -112,7 +115,7 @@ def test_slurm_scripts_use_world2_arm_batch_dag():
     assert "--open-metrics" in run_text
     assert 'if [[ -n "${PROJECT_DIR:-}" ]]' in run_text
     assert 'SLURM_SUBMIT_DIR' in run_text
-    assert "#SBATCH --gpus=1" in submit_text
+    assert "#SBATCH --gpus=2" in submit_text
     assert "arm_list=(D160 G96 U128-ALL48-A0 U16-UNIFORM-A0 BAFDR-K16-LATE BAFDR-K16-NOKD BAFDR-K16-FULL)" in submit_text
     assert "run_zoomtoken_bafdr_k16_arm_batch.sh" in submit_text
     assert "--array=0-20" not in submit_text
