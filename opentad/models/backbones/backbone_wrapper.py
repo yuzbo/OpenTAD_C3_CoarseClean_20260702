@@ -2,6 +2,7 @@ import copy
 import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.modules.batchnorm import _BatchNorm
 import torch.utils.checkpoint as cp
 
@@ -46,8 +47,23 @@ class BackboneWrapper(nn.Module):
                     )
                 print(f"Warning: pretrained checkpoint not found, using random initialization: {pretrain_path}")
             else:
-                checkpoint = load_checkpoint(self.model, pretrain_path, map_location="cpu")
-                self._record_taylor_pretrain_report(checkpoint, pretrain_path)
+                # ET-TRC changes the attention parameterization from the fused
+                # VideoMAE qkv projection to split q/k/v projections.  Load
+                # that checkpoint through ``load_state_dict`` so the custom
+                # remapper in TaylorAttention can run and so shape-adapted
+                # positional/norm parameters are included in the same strict
+                # coverage check.  Other backbones keep MMEngine's standard
+                # loader behavior.
+                if any(hasattr(module, "pretrained_qkv_remapped") for module in self.model.modules()):
+                    checkpoint, load_result = self._load_taylor_pretrained(pretrain_path)
+                    self._record_taylor_pretrain_report(
+                        checkpoint,
+                        pretrain_path,
+                        load_result=load_result,
+                    )
+                else:
+                    checkpoint = load_checkpoint(self.model, pretrain_path, map_location="cpu")
+                    self._record_taylor_pretrain_report(checkpoint, pretrain_path)
         elif bool(getattr(custom_cfg, "pretrain_required", False)):
             raise FileNotFoundError("pretrain_required=True but custom.pretrain is missing")
         else:
@@ -148,7 +164,108 @@ class BackboneWrapper(nn.Module):
         features = features.to(torch.float32)
         return features
 
-    def _record_taylor_pretrain_report(self, checkpoint, pretrain_path):
+    @staticmethod
+    def _infer_video_grid(num_tokens, target_temporal, target_spatial):
+        """Infer a ``(temporal, spatial)`` factorization for patch tokens."""
+        candidates = []
+        for temporal in range(1, int(num_tokens) + 1):
+            if int(num_tokens) % temporal:
+                continue
+            spatial_tokens = int(num_tokens) // temporal
+            spatial = int(round(spatial_tokens ** 0.5))
+            if spatial * spatial == spatial_tokens:
+                candidates.append((abs(temporal - target_temporal) + abs(spatial - target_spatial), temporal, spatial))
+        if not candidates:
+            raise ValueError(
+                "cannot infer a square spatial grid for video positional embedding "
+                f"with {num_tokens} tokens"
+            )
+        _, temporal, spatial = min(candidates)
+        return temporal, spatial
+
+    @classmethod
+    def _resize_video_pos_embed(cls, value, target, target_temporal, target_spatial):
+        """Resize a no-class-token VideoMAE positional embedding."""
+        if tuple(value.shape) == tuple(target.shape):
+            return value
+        if value.ndim != 3 or target.ndim != 3 or value.shape[0] != 1 or target.shape[0] != 1:
+            raise ValueError(
+                "ET-TRC positional embedding must be [1, tokens, channels], got "
+                f"source={tuple(value.shape)} target={tuple(target.shape)}"
+            )
+        if value.shape[2] != target.shape[2]:
+            raise ValueError(
+                "ET-TRC positional embedding channel mismatch: "
+                f"source={value.shape[2]} target={target.shape[2]}"
+            )
+        source_temporal, source_spatial = cls._infer_video_grid(
+            value.shape[1], target_temporal, target_spatial
+        )
+        source = value.to(dtype=torch.float32).reshape(
+            1, source_temporal, source_spatial, source_spatial, value.shape[2]
+        )
+        source = source.permute(0, 1, 4, 2, 3).reshape(
+            source_temporal, value.shape[2], source_spatial, source_spatial
+        )
+        resized = F.interpolate(
+            source,
+            size=(int(target_spatial), int(target_spatial)),
+            mode="bicubic",
+            align_corners=False,
+        )
+        if source_temporal != int(target_temporal):
+            resized = resized.reshape(
+                1, source_temporal, value.shape[2], target_spatial, target_spatial
+            ).permute(0, 2, 1, 3, 4)
+            resized = F.interpolate(
+                resized,
+                size=(int(target_temporal), int(target_spatial), int(target_spatial)),
+                mode="trilinear",
+                align_corners=False,
+            ).permute(0, 2, 1, 3, 4).reshape(
+                int(target_temporal), value.shape[2], target_spatial, target_spatial
+            )
+        return resized.permute(0, 2, 3, 1).reshape(1, -1, value.shape[2]).to(value.dtype)
+
+    def _load_taylor_pretrained(self, pretrain_path):
+        """Load an official VideoMAE checkpoint into ET-TRC exactly once."""
+        checkpoint = torch.load(pretrain_path, map_location="cpu")
+        source = checkpoint.get("state_dict", checkpoint)
+        if not isinstance(source, dict):
+            raise TypeError("ET-TRC pretrained checkpoint must contain a state_dict mapping")
+        prepared = copy.deepcopy(source)
+        target = self.model.state_dict()
+        backbone = getattr(self.model, "backbone", None)
+        target_temporal = int(getattr(backbone, "num_frames", 1)) // int(getattr(backbone, "tubelet_size", 1))
+        target_spatial = int(getattr(backbone, "img_size", 1)) // int(getattr(backbone, "patch_size", 1))
+
+        source_pos = prepared.get("backbone.pos_embed")
+        target_pos = target.get("backbone.pos_embed")
+        if source_pos is not None and target_pos is not None:
+            prepared["backbone.pos_embed"] = self._resize_video_pos_embed(
+                source_pos,
+                target_pos,
+                target_temporal,
+                target_spatial,
+            )
+
+        # The official recognizer calls its final LayerNorm ``fc_norm``;
+        # ET-TRC exposes the same operation as ``norm``.
+        for suffix in ("weight", "bias"):
+            source_key = f"backbone.fc_norm.{suffix}"
+            target_key = f"backbone.norm.{suffix}"
+            if source_key in prepared and target_key in target:
+                if tuple(prepared[source_key].shape) != tuple(target[target_key].shape):
+                    raise ValueError(
+                        f"ET-TRC final norm shape mismatch for {source_key}: "
+                        f"source={tuple(prepared[source_key].shape)} target={tuple(target[target_key].shape)}"
+                    )
+                prepared[target_key] = prepared.pop(source_key)
+
+        load_result = self.model.load_state_dict(prepared, strict=False)
+        return checkpoint, load_result
+
+    def _record_taylor_pretrain_report(self, checkpoint, pretrain_path, load_result=None):
         """Record exact load coverage for ET-TRC's split attention modules."""
         taylor_modules = [
             module
@@ -158,10 +275,13 @@ class BackboneWrapper(nn.Module):
         if not taylor_modules:
             return
 
-        source = checkpoint.get("state_dict", checkpoint)
+        source = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
         target = self.model.state_dict()
         mapped = {}
         consumed = set()
+        backbone = getattr(self.model, "backbone", None)
+        target_temporal = int(getattr(backbone, "num_frames", 1)) // int(getattr(backbone, "tubelet_size", 1))
+        target_spatial = int(getattr(backbone, "img_size", 1)) // int(getattr(backbone, "patch_size", 1))
         embed_dims = {
             name: int(module.embed_dims)
             for name, module in self.model.named_modules()
@@ -188,21 +308,37 @@ class BackboneWrapper(nn.Module):
                     else:
                         mapped[prefix + "v_proj.bias"] = value
                     consumed.add(key)
+            elif key == "backbone.pos_embed" and key in target:
+                mapped[key] = self._resize_video_pos_embed(
+                    value,
+                    target[key],
+                    target_temporal,
+                    target_spatial,
+                )
+                consumed.add(key)
+            elif key.startswith("backbone.fc_norm."):
+                mapped[key.replace("backbone.fc_norm.", "backbone.norm.", 1)] = value
+                consumed.add(key)
             else:
                 mapped[key] = value
                 consumed.add(key)
 
-        loaded_keys = [
-            key
-            for key, value in target.items()
-            if key in mapped and tuple(getattr(mapped[key], "shape", ())) == tuple(value.shape)
-        ]
-        missing_keys = [
-            key
-            for key, value in target.items()
-            if key not in mapped or tuple(getattr(mapped[key], "shape", ())) != tuple(value.shape)
-        ]
-        unexpected_keys = [key for key in source if key not in consumed]
+        if load_result is None:
+            loaded_keys = [
+                key
+                for key, value in target.items()
+                if key in mapped and tuple(getattr(mapped[key], "shape", ())) == tuple(value.shape)
+            ]
+            missing_keys = [
+                key
+                for key, value in target.items()
+                if key not in mapped or tuple(getattr(mapped[key], "shape", ())) != tuple(value.shape)
+            ]
+            unexpected_keys = [key for key in source if key not in consumed]
+        else:
+            missing_keys = list(getattr(load_result, "missing_keys", ()))
+            unexpected_keys = list(getattr(load_result, "unexpected_keys", ()))
+            loaded_keys = [key for key in target if key not in missing_keys]
         undeclared_missing = [
             key
             for key in missing_keys
