@@ -114,7 +114,61 @@ def verify_checkout(entry: dict[str, Any]) -> tuple[bool, str]:
 
 
 def parse_job_ids(output: str) -> list[str]:
-    return JOB_RE.findall(output)
+    ids: list[str] = []
+    for match in re.finditer(r"Submitted batch job (\d+(?:_\d+)?)|^\s*(\d+(?:_\d+)?)(?:;[^\s]+)?\s*$", output, flags=re.MULTILINE):
+        value = match.group(1) or match.group(2)
+        if value and value not in ids:
+            ids.append(value)
+    return ids
+
+
+def slurm_state_for(job_ids: list[str], snapshot: dict[str, Any]) -> dict[str, str]:
+    """Return the strongest observed state for each submitted job id."""
+    states: dict[str, str] = {}
+    wanted = set(job_ids)
+    for row in str(snapshot.get("squeue", {}).get("output", "")).splitlines():
+        fields = row.split("|", 3)
+        if len(fields) >= 2 and fields[0] in wanted:
+            states[fields[0]] = fields[1].split()[0].upper()
+    for row in str(snapshot.get("sacct", {}).get("output", "")).splitlines():
+        fields = row.split("|", 4)
+        if not fields:
+            continue
+        job_id = fields[0].split(".", 1)[0]
+        if job_id in wanted and len(fields) >= 2:
+            state = fields[1].split()[0].upper()
+            # sacct is authoritative for terminal jobs, while squeue is
+            # authoritative for a still-running/pending job.
+            if state:
+                states[job_id] = state
+    return states
+
+
+def update_submitted_entry(current: dict[str, Any], snapshot: dict[str, Any]) -> None:
+    job_ids = [str(value) for value in current.get("job_ids", [])]
+    if not job_ids:
+        return
+    observed = slurm_state_for(job_ids, snapshot)
+    if not observed:
+        return
+    current["job_states"] = observed
+    values = list(observed.values())
+    if any(value in {"RUNNING", "COMPLETING", "CONFIGURING", "STAGE_OUT"} for value in values):
+        current["status"] = "RUNNING"
+        return
+    if any(value in {"PENDING", "SUSPENDED"} for value in values):
+        current["status"] = "SUBMITTED"
+        return
+    if all(value in {"COMPLETED"} for value in values) and len(values) == len(job_ids):
+        current["status"] = "SUCCEEDED"
+        return
+    if any(value in {"OUT_OF_MEMORY", "NODE_FAIL", "PREEMPTED", "TIMEOUT"} for value in values):
+        current["failure_class"] = next(value for value in values if value in RETRYABLE)
+        current["status"] = "PENDING_RETRY" if int(current.get("attempts", 0)) < int(current.get("max_attempts", 3)) else "NEEDS_REPAIR"
+        return
+    if any(value in {"FAILED", "CANCELLED", "BOOT_FAIL", "DEADLINE", "INVALID_DEPEND", "NONZERO_EXIT"} for value in values):
+        current["failure_class"] = "REMOTE_JOB_FAILED"
+        current["status"] = "NEEDS_REPAIR"
 
 
 def poll_once(args: argparse.Namespace) -> int:
@@ -150,12 +204,22 @@ def poll_once(args: argparse.Namespace) -> int:
             current.setdefault("attempts", 0)
             current.setdefault("job_ids", [])
             current["route_id"] = raw.get("route_id")
+            current["max_attempts"] = int(raw.get("max_attempts", 3))
             if current.get("status") in {"SUBMITTED", "RUNNING"}:
+                update_submitted_entry(current, sched)
+                receipt["entries"].append({"id": entry_id, **current})
+                continue
+            if current.get("status") == "SUCCEEDED":
                 receipt["entries"].append({"id": entry_id, **current})
                 continue
             if current.get("status") == "NEEDS_REPAIR":
                 receipt["entries"].append({"id": entry_id, **current})
                 continue
+            if current.get("status") in {"PENDING_RETRY", "DEFERRED_RESOURCE"}:
+                retry_at = float(current.get("retry_after_epoch", 0))
+                if time.time() < retry_at:
+                    receipt["entries"].append({"id": entry_id, **current})
+                    continue
             if plan.get("status") != "READY_FOR_REMOTE_GATES":
                 current["status"] = "BLOCKED_GATE"
                 current["reason"] = "; ".join(plan.get("blocked_reasons", [])) or plan.get("terminal_reason", "dispatcher blocked")
@@ -188,8 +252,10 @@ def poll_once(args: argparse.Namespace) -> int:
                 current["failure_class"] = failure
                 if failure in RETRYABLE and current["attempts"] < max_attempts:
                     current["status"] = "PENDING_RETRY"
+                    current["retry_after_epoch"] = time.time() + int(raw.get("retry_delay_seconds", 300))
                 elif failure == "RESOURCE_DEFERRED":
                     current["status"] = "DEFERRED_RESOURCE"
+                    current["retry_after_epoch"] = time.time() + int(raw.get("resource_retry_delay_seconds", 300))
                 else:
                     current["status"] = "NEEDS_REPAIR"
             receipt["entries"].append({"id": entry_id, **current})
