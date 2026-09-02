@@ -89,6 +89,22 @@ def unwrap_model(model: nn.Module) -> nn.Module:
     return current
 
 
+def _capture_model_buffers(model: nn.Module) -> Dict[str, torch.Tensor]:
+    return {
+        name: buffer.detach().clone()
+        for name, buffer in model.named_buffers()
+        if buffer is not None
+    }
+
+
+def _restore_model_buffers(model: nn.Module, snapshot: Mapping[str, torch.Tensor]) -> None:
+    current = {name: buffer for name, buffer in model.named_buffers() if buffer is not None}
+    if set(current) != set(snapshot):
+        raise RuntimeError("BA-FDR model buffer registry changed during an AMP retry")
+    for name, saved in snapshot.items():
+        current[name].copy_(saved)
+
+
 def strip_module_prefix(state_dict: Mapping[str, Any]) -> Dict[str, Any]:
     if not state_dict:
         return dict(state_dict)
@@ -145,6 +161,11 @@ def resolve_teacher_checkpoint(path_value: str | Path, *, repo_root: Path, work_
 
 
 def init_distributed(expected_world_size: int, allow_single_process: bool) -> tuple[torch.device, int, int, int]:
+    if not allow_single_process and int(expected_world_size) != EXPECTED_WORLD_SIZE:
+        raise RuntimeError(
+            "BA-FDR formal execution fixes world_size=2; override it only for "
+            "an explicitly allowed local precheck/smoke run"
+        )
     env_has_rank = "RANK" in os.environ and "WORLD_SIZE" in os.environ
     if not env_has_rank:
         if not allow_single_process:
@@ -537,53 +558,125 @@ def train_epoch(
     logger: Any,
     teacher: Optional[nn.Module] = None,
     use_amp: bool = True,
+    max_amp_retries_per_batch: int = 0,
+    fail_on_skipped_update: bool = True,
+    schedule_and_ema_on_success_only: bool = True,
+    fail_on_nonfinite_loss: bool = True,
 ) -> int:
     model.train()
     successful_updates = 0
 
+    max_amp_retries_per_batch = int(max_amp_retries_per_batch)
+    if max_amp_retries_per_batch < 0:
+        raise ValueError("max_amp_retries_per_batch must be non-negative")
+    if max_amp_retries_per_batch > 0 and not use_amp:
+        raise ValueError("AMP retries require use_amp=True")
+
     for _, data in enumerate(loader):
         kwargs = prepare_forward_kwargs(data, device)
-        optimizer.zero_grad(set_to_none=True)
-        with autocast(enabled=use_amp):
-            losses = model(
-                inputs=kwargs["inputs"],
-                masks=kwargs["masks"],
-                metas=kwargs.get("metas", None),
-                gt_segments=kwargs["gt_segments"],
-                gt_labels=kwargs["gt_labels"],
-                return_loss=True,
-            )
-            base_loss = losses["cost"]
-            if teacher is not None:
-                if not isinstance(kwargs["inputs"], Mapping):
-                    raise TypeError("BA-FDR FULL distillation requires mapping inputs")
-                kd_losses = compute_bafdr_distillation_losses(
-                    student_model=model,
-                    teacher_model=teacher,
+        retry_count = 0
+        cpu_rng_state = torch.get_rng_state() if max_amp_retries_per_batch > 0 else None
+        cuda_rng_states = (
+            torch.cuda.get_rng_state_all()
+            if max_amp_retries_per_batch > 0 and torch.cuda.is_available()
+            else None
+        )
+        buffer_state = (
+            _capture_model_buffers(model) if max_amp_retries_per_batch > 0 else None
+        )
+
+        while True:
+            if retry_count > 0:
+                # Replaying the same sampled batch keeps a retry from changing the
+                # stochastic route or dropout mask.
+                torch.set_rng_state(cpu_rng_state)
+                if cuda_rng_states is not None:
+                    torch.cuda.set_rng_state_all(cuda_rng_states)
+                if buffer_state is not None:
+                    _restore_model_buffers(model, buffer_state)
+
+            optimizer.zero_grad(set_to_none=True)
+            with autocast(enabled=use_amp):
+                losses = model(
                     inputs=kwargs["inputs"],
                     masks=kwargs["masks"],
                     metas=kwargs.get("metas", None),
                     gt_segments=kwargs["gt_segments"],
                     gt_labels=kwargs["gt_labels"],
-                    device=device,
+                    return_loss=True,
                 )
-                distill_loss = sum(kd_losses.values())
-                losses.update(kd_losses)
-                losses["distill_loss"] = distill_loss
-                losses["cost"] = base_loss + distill_loss
+                base_loss = losses["cost"]
+                if teacher is not None:
+                    if not isinstance(kwargs["inputs"], Mapping):
+                        raise TypeError("BA-FDR FULL distillation requires mapping inputs")
+                    kd_losses = compute_bafdr_distillation_losses(
+                        student_model=model,
+                        teacher_model=teacher,
+                        inputs=kwargs["inputs"],
+                        masks=kwargs["masks"],
+                        metas=kwargs.get("metas", None),
+                        gt_segments=kwargs["gt_segments"],
+                        gt_labels=kwargs["gt_labels"],
+                        device=device,
+                    )
+                    distill_loss = sum(kd_losses.values())
+                    losses.update(kd_losses)
+                    losses["distill_loss"] = distill_loss
+                    losses["cost"] = base_loss + distill_loss
 
-        total_loss = losses["cost"]
-        scaler.scale(total_loss).backward()
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        scaler.step(optimizer)
-        scaler.update()
-        scheduler.step()
+            total_loss = losses["cost"]
+            if fail_on_nonfinite_loss and not bool(torch.isfinite(total_loss.detach()).all()):
+                raise FloatingPointError(
+                    f"BA-FDR produced a non-finite loss at epoch={epoch}, retry={retry_count}"
+                )
 
-        if ema is not None:
-            ema.update(model)
+            scaler.scale(total_loss).backward()
+            scaler.unscale_(optimizer)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            grad_norm_tensor = (
+                grad_norm
+                if torch.is_tensor(grad_norm)
+                else torch.as_tensor(grad_norm, device=total_loss.device)
+            )
+            if (
+                fail_on_nonfinite_loss
+                and not use_amp
+                and not bool(torch.isfinite(grad_norm_tensor).all())
+            ):
+                raise FloatingPointError(
+                    f"BA-FDR produced non-finite gradients at epoch={epoch}, retry={retry_count}"
+                )
 
-        successful_updates += 1
+            scale_before = float(scaler.get_scale()) if use_amp else None
+            scaler.step(optimizer)
+            scaler.update()
+            scale_after = float(scaler.get_scale()) if use_amp else None
+            # GradScaler lowers its scale when it skipped the optimizer step. A
+            # successful update must be the only event that advances the schedule.
+            update_succeeded = (not use_amp) or scale_after >= scale_before
+            if update_succeeded:
+                break
+
+            retry_count += 1
+            if retry_count > max_amp_retries_per_batch:
+                if fail_on_skipped_update:
+                    raise FloatingPointError(
+                        "BA-FDR AMP could not produce a successful optimizer update "
+                        f"after {max_amp_retries_per_batch} retries"
+                    )
+                break
+            logger.info(
+                "[Train]: AMP skipped batch; retry %d/%d with scale %.1f",
+                retry_count,
+                max_amp_retries_per_batch,
+                scale_after,
+            )
+
+        successful_updates += int(update_succeeded)
+        if update_succeeded or not schedule_and_ema_on_success_only:
+            scheduler.step()
+            if ema is not None:
+                ema.update(model)
         if successful_updates >= EXPECTED_UPDATES_PER_EPOCH:
             break
 
@@ -659,6 +752,8 @@ def save_training_receipt(
     eval_results: Optional[Mapping[str, Any]],
     rank: int,
     world_size: int,
+    train_samples: Optional[int] = None,
+    eval_windows: Optional[int] = None,
     receipt_name: str = "eval_receipt.json",
     phase: str = "evaluation",
     metric_opened: bool = True,
@@ -670,6 +765,7 @@ def save_training_receipt(
         "protocol_id": PROTOCOL_ID,
         "arm": arm,
         "seed": seed,
+        "rank_seed": seed + rank,
         "rank": rank,
         "world_size": world_size,
         "phase": phase,
@@ -677,6 +773,8 @@ def save_training_receipt(
         "expected_epochs": EXPECTED_EPOCHS,
         "expected_total_updates": EXPECTED_TOTAL_UPDATES,
         "total_successful_updates": total_updates,
+        "train_samples": None if train_samples is None else int(train_samples),
+        "eval_windows": None if eval_windows is None else int(eval_windows),
         "checkpoint": str(checkpoint_path),
         "checkpoint_sha256": sha256_file(checkpoint_path) if checkpoint_path.exists() else None,
         "raw_prediction_dir": str(work_dir / "outputs"),
@@ -741,11 +839,13 @@ def main() -> None:
         logger.info(f"Loaded checkpoint: {ckpt_path}")
 
     if world_size > 1:
+        ddp_static_graph = bool(getattr(cfg.solver, "static_graph", False))
         model = DistributedDataParallel(
             model,
             device_ids=[local_rank] if device.type == "cuda" else None,
             output_device=local_rank if device.type == "cuda" else None,
             find_unused_parameters=False,
+            static_graph=ddp_static_graph,
         )
 
     use_amp = bool(getattr(cfg.solver, "amp", True)) and device.type == "cuda"
@@ -795,6 +895,7 @@ def main() -> None:
             eval_results=eval_results,
             rank=rank,
             world_size=world_size,
+            eval_windows=len(val_dataset),
             receipt_name="prediction_receipt.json" if prediction_only else "eval_receipt.json",
             phase="prediction_seal" if prediction_only else "metric_opening",
             metric_opened=not prediction_only,
@@ -837,6 +938,7 @@ def main() -> None:
                     "protocol_id": PROTOCOL_ID,
                     "arm": arm,
                     "seed": seed,
+                    "rank_seed": seed + rank,
                     "world_size": world_size,
                     "train_len": len(train_dataset),
                     "eval_windows": len(val_dataset),
@@ -849,6 +951,13 @@ def main() -> None:
 
     logger.info(f"Starting BA-FDR formal training for {arm} seed={seed}")
     total_successful_updates = 0
+    workflow = getattr(cfg, "workflow", {})
+    max_amp_retries_per_batch = int(getattr(workflow, "max_amp_retries_per_batch", 0))
+    fail_on_skipped_update = bool(getattr(workflow, "fail_on_skipped_update", True))
+    schedule_and_ema_on_success_only = bool(
+        getattr(workflow, "schedule_and_ema_on_success_only", True)
+    )
+    fail_on_nonfinite_loss = bool(getattr(workflow, "fail_on_nonfinite_loss", True))
     for epoch in range(EXPECTED_EPOCHS):
         if hasattr(train_loader, "sampler") and hasattr(train_loader.sampler, "set_epoch"):
             train_loader.sampler.set_epoch(epoch)
@@ -864,6 +973,10 @@ def main() -> None:
             logger=logger,
             teacher=teacher,
             use_amp=use_amp,
+            max_amp_retries_per_batch=max_amp_retries_per_batch,
+            fail_on_skipped_update=fail_on_skipped_update,
+            schedule_and_ema_on_success_only=schedule_and_ema_on_success_only,
+            fail_on_nonfinite_loss=fail_on_nonfinite_loss,
         )
         total_successful_updates += epoch_updates
 
@@ -905,6 +1018,8 @@ def main() -> None:
         eval_results=None,
         rank=rank,
         world_size=world_size,
+        train_samples=len(train_dataset),
+        eval_windows=len(val_dataset),
         receipt_name="train_receipt.json",
         phase="training",
         metric_opened=False,

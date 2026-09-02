@@ -119,6 +119,23 @@ def _get(mapping: Any, key: str, default: Any = None) -> Any:
     return getattr(mapping, key, default)
 
 
+def _coerce_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _path_is_within(path_value: Any, parent: Path) -> bool:
+    if not path_value:
+        return False
+    try:
+        Path(path_value).resolve().relative_to(parent.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def _pipeline_for(cfg: Config, split: str) -> Sequence[Mapping[str, Any]]:
     dataset = _get(cfg, "dataset")
     split_cfg = _get(dataset, split)
@@ -165,6 +182,14 @@ def validate_solver_contract(cfg: Config, *, config_path: Path) -> Dict[str, Any
 def validate_bafdr_pipeline(cfg: Config, *, config_path: Path, arm: str) -> Dict[str, Any]:
     split_info = {}
     for split in ("train", "val", "test"):
+        split_cfg = _get(_get(cfg, "dataset"), split)
+        expected_subset = "training" if split == "train" else "validation"
+        if _get(split_cfg, "subset_name") != expected_subset:
+            raise ValueError(
+                f"{config_path}: {split} subset must be {expected_subset!r}"
+            )
+        if split != "train" and not bool(_get(split_cfg, "test_mode", False)):
+            raise ValueError(f"{config_path}: {split} must be test_mode=True")
         pipeline = _pipeline_for(cfg, split)
         source_steps = _find_steps(pipeline, "BAFDRSourceViews")
         if len(source_steps) != 1:
@@ -267,6 +292,104 @@ def validate_bafdr_model(cfg: Config, *, config_path: Path, arm: str) -> Dict[st
     }
 
 
+def validate_reference_pipeline(cfg: Config, *, config_path: Path, arm: str) -> Dict[str, Any]:
+    """Validate the non-BA-FDR control arms instead of checking only batch size."""
+    if arm not in {"D160", "G96", "U128-ALL48-A0"}:
+        raise ValueError(f"unsupported reference arm {arm}")
+
+    split_info = {}
+    for split in ("train", "val", "test"):
+        split_cfg = _get(_get(cfg, "dataset"), split)
+        expected_subset = "training" if split == "train" else "validation"
+        if _get(split_cfg, "subset_name") != expected_subset:
+            raise ValueError(
+                f"{config_path}: {split} subset must be {expected_subset!r}"
+            )
+        if split != "train" and not bool(_get(split_cfg, "test_mode", False)):
+            raise ValueError(f"{config_path}: {split} must be test_mode=True")
+        pipeline = _pipeline_for(cfg, split)
+        load_steps = _find_steps(pipeline, "LoadFrames")
+        if len(load_steps) != 1:
+            raise ValueError(f"{config_path}: {split} reference pipeline needs one LoadFrames")
+        load = load_steps[0]
+        if split == "train":
+            if _get(load, "method") != "random_trunc" or int(_get(load, "trunc_len")) != WINDOW_SIZE:
+                raise ValueError(f"{config_path}: {split} LoadFrames contract changed")
+        else:
+            if _get(load, "method") != "sliding_window":
+                raise ValueError(f"{config_path}: {split} LoadFrames must use sliding_window")
+            if int(_get(split_cfg, "window_size", WINDOW_SIZE)) != WINDOW_SIZE:
+                raise ValueError(f"{config_path}: {split} window_size must be 768")
+            if float(_get(split_cfg, "window_overlap_ratio", WINDOW_OVERLAP_RATIO)) != WINDOW_OVERLAP_RATIO:
+                raise ValueError(f"{config_path}: {split} overlap ratio must be 0.5")
+
+        collect_steps = _find_steps(pipeline, "Collect")
+        if len(collect_steps) != 1:
+            raise ValueError(f"{config_path}: {split} reference pipeline needs one Collect")
+        collect_inputs = _get(collect_steps[0], "inputs")
+        expected_inputs = "native_crop_inputs" if arm == "U128-ALL48-A0" else "imgs"
+        if collect_inputs != expected_inputs:
+            raise ValueError(
+                f"{config_path}: {split} Collect.inputs={collect_inputs!r}, expected {expected_inputs!r}"
+            )
+
+        if arm == "U128-ALL48-A0":
+            source_steps = _find_steps(pipeline, "NativeCropSourceViews")
+            if len(source_steps) != 1:
+                raise ValueError(f"{config_path}: {split} needs one NativeCropSourceViews")
+            source = source_steps[0]
+            expected_source = {
+                "global_size": 96,
+                "local_size": 128,
+                "output_key": "native_crop_inputs",
+                "allow_local_padding": False,
+            }
+            for key, expected in expected_source.items():
+                if _get(source, key) != expected:
+                    raise ValueError(
+                        f"{config_path}: {split} NativeCropSourceViews.{key}="
+                        f"{_get(source, key)!r}, expected {expected!r}"
+                    )
+        else:
+            source_steps = _find_steps(pipeline, "FullFrameLetterboxView")
+            if len(source_steps) != 1:
+                raise ValueError(f"{config_path}: {split} needs one FullFrameLetterboxView")
+            expected_size = 160 if arm == "D160" else 96
+            if int(_get(source_steps[0], "output_size")) != expected_size:
+                raise ValueError(
+                    f"{config_path}: {split} FullFrameLetterboxView must be {expected_size}"
+                )
+        split_info[split] = {"pipeline_len": len(pipeline), "collect_inputs": collect_inputs}
+    return split_info
+
+
+def validate_reference_model(cfg: Config, *, config_path: Path, arm: str) -> Dict[str, Any]:
+    model = _get(cfg, "model")
+    custom = _get(_get(model, "backbone"), "custom")
+    wrapper_type = _get(custom, "wrapper_type")
+    if arm in {"D160", "G96"}:
+        if wrapper_type not in (None, ""):
+            raise ValueError(f"{config_path}: {arm} must use the native dense backbone")
+    else:
+        expected = {
+            "wrapper_type": "native_crop_shared_videomae",
+            "native_crop_global_key": "global",
+            "native_crop_local_key": "local",
+            "native_crop_global_size": 96,
+            "native_crop_local_size": 128,
+            "native_crop_chunk_num": 48,
+            "native_crop_intermediate_length": 384,
+            "native_crop_output_length": WINDOW_SIZE,
+            "native_crop_fusion_mode": "fixed_mean",
+        }
+        for key, value in expected.items():
+            if _get(custom, key) != value:
+                raise ValueError(
+                    f"{config_path}: {key}={_get(custom, key)!r}, expected {value!r}"
+                )
+    return {"wrapper_type": wrapper_type or "dense_native"}
+
+
 def validate_distillation_contract(cfg: Config, *, config_path: Path, arm: str, seed: int) -> Dict[str, Any]:
     bafdr_protocol = _get(cfg, "bafdr_protocol")
     distillation = bool(_get(bafdr_protocol, "distillation", False))
@@ -306,12 +429,15 @@ def validate_cell_config(config_path: str | Path, expected_arm: str, expected_se
     if expected_arm in BAFDR_WRAPPER_ARMS:
         details["pipeline"] = validate_bafdr_pipeline(cfg, config_path=config_path, arm=expected_arm)
         details["model"] = validate_bafdr_model(cfg, config_path=config_path, arm=expected_arm)
-        details["distillation"] = validate_distillation_contract(
-            cfg,
-            config_path=config_path,
-            arm=expected_arm,
-            seed=expected_seed,
-        )
+    else:
+        details["pipeline"] = validate_reference_pipeline(cfg, config_path=config_path, arm=expected_arm)
+        details["model"] = validate_reference_model(cfg, config_path=config_path, arm=expected_arm)
+    details["distillation"] = validate_distillation_contract(
+        cfg,
+        config_path=config_path,
+        arm=expected_arm,
+        seed=expected_seed,
+    )
 
     return {
         "config_path": str(config_path),
@@ -334,6 +460,62 @@ def phase_receipt_for_cell(work_dir_root: str | Path, arm: str, seed: int, recei
     return Path(work_dir_root) / f"bafdr_k16_{slug}_seed{seed}" / receipt_name
 
 
+def receipt_is_complete(
+    data: Mapping[str, Any],
+    *,
+    cfg_path: Path,
+    arm: str,
+    seed: int,
+    work_dir: Path | None = None,
+) -> bool:
+    """Return true only for a receipt that proves this exact cell was evaluated."""
+    eval_results = data.get("eval_results", {})
+    return bool(
+        data.get("protocol_id") == PROTOCOL_ID
+        and data.get("arm") == arm
+        and _coerce_int(data.get("seed")) == seed
+        and data.get("phase") == "metric_opening"
+        and bool(data.get("metric_opened"))
+        and _coerce_int(data.get("total_successful_updates")) == EXPECTED_TOTAL_UPDATES
+        and _coerce_int(data.get("eval_windows")) == EXPECTED_EVALUATION_WINDOWS
+        and isinstance(eval_results, Mapping)
+        and bool(eval_results)
+        and data.get("config_sha256") == sha256_file(cfg_path)
+        and bool(data.get("checkpoint_sha256"))
+        and (
+            work_dir is None
+            or _path_is_within(data.get("checkpoint"), work_dir)
+        )
+    )
+
+
+def training_receipt_is_complete(
+    data: Mapping[str, Any],
+    *,
+    cfg_path: Path,
+    arm: str,
+    seed: int,
+    work_dir: Path | None = None,
+) -> bool:
+    """Return true only when the matching full training population is proven."""
+    return bool(
+        data.get("protocol_id") == PROTOCOL_ID
+        and data.get("arm") == arm
+        and _coerce_int(data.get("seed")) == seed
+        and data.get("phase") == "training"
+        and not bool(data.get("metric_opened"))
+        and _coerce_int(data.get("total_successful_updates")) == EXPECTED_TOTAL_UPDATES
+        and _coerce_int(data.get("train_samples")) == EXPECTED_TRAINING_IDENTITIES
+        and _coerce_int(data.get("eval_windows")) == EXPECTED_EVALUATION_WINDOWS
+        and data.get("config_sha256") == sha256_file(cfg_path)
+        and bool(data.get("checkpoint_sha256"))
+        and (
+            work_dir is None
+            or _path_is_within(data.get("checkpoint"), work_dir)
+        )
+    )
+
+
 def seal_prediction_receipts(root: Path, *, work_dir_root: str | Path, output_file: str | Path) -> Dict[str, Any]:
     cells = get_matrix_cells(root)
     sealed_cells = []
@@ -344,15 +526,35 @@ def seal_prediction_receipts(root: Path, *, work_dir_root: str | Path, output_fi
             failures.append(f"{arm}/seed{seed}: missing prediction receipt")
             continue
         data = json.loads(receipt_path.read_text(encoding="utf-8"))
+        cell_work_dir = Path(work_dir_root) / f"bafdr_k16_{ARM_CONFIG_NAMES[arm]}_seed{seed}"
         if data.get("protocol_id") != PROTOCOL_ID:
             failures.append(f"{arm}/seed{seed}: protocol mismatch")
+        if data.get("arm") != arm:
+            failures.append(f"{arm}/seed{seed}: receipt arm mismatch")
+        if _coerce_int(data.get("seed")) != seed:
+            failures.append(f"{arm}/seed{seed}: receipt seed mismatch")
+        expected_config_sha = sha256_file(cfg_path)
+        if data.get("config_sha256") != expected_config_sha:
+            failures.append(f"{arm}/seed{seed}: receipt config SHA mismatch")
         if data.get("phase") != "prediction_seal" or bool(data.get("metric_opened")):
             failures.append(f"{arm}/seed{seed}: prediction receipt opened metrics")
-        if int(data.get("world_size", 0)) != EXPECTED_WORLD_SIZE:
+        if _coerce_int(data.get("world_size")) != EXPECTED_WORLD_SIZE:
             failures.append(f"{arm}/seed{seed}: prediction world_size mismatch")
-        if int(data.get("total_successful_updates", 0)) != EXPECTED_TOTAL_UPDATES:
+        if _coerce_int(data.get("total_successful_updates")) != EXPECTED_TOTAL_UPDATES:
             failures.append(f"{arm}/seed{seed}: checkpoint update mismatch")
-        raw_dir = Path(data.get("raw_prediction_dir", ""))
+        if not data.get("checkpoint_sha256"):
+            failures.append(f"{arm}/seed{seed}: missing checkpoint SHA")
+        if not _path_is_within(data.get("checkpoint"), cell_work_dir):
+            failures.append(f"{arm}/seed{seed}: checkpoint path escapes cell work dir")
+        raw_dir_value = data.get("raw_prediction_dir")
+        raw_dir = Path(raw_dir_value) if raw_dir_value else Path("__missing_raw_predictions__")
+        if not raw_dir_value:
+            failures.append(f"{arm}/seed{seed}: missing raw prediction directory")
+        else:
+            try:
+                raw_dir.resolve().relative_to(cell_work_dir.resolve())
+            except (ValueError, OSError):
+                failures.append(f"{arm}/seed{seed}: raw prediction directory escapes cell work dir")
         raw_count = len(list(raw_dir.glob("*.pkl"))) if raw_dir.exists() else 0
         if raw_count != EXPECTED_EVALUATION_WINDOWS:
             failures.append(f"{arm}/seed{seed}: raw prediction file count {raw_count}, expected {EXPECTED_EVALUATION_WINDOWS}")
@@ -396,20 +598,41 @@ def summarize_matrix_results(
     missing = []
     print(f"\n{'ARM':<18} | {'SEED':<6} | {'mAP':<8} | {'AP@0.5':<8} | {'Updates':<8} | {'Status'}")
     print("-" * 78)
-    for arm, seed, _ in cells:
+    for arm, seed, cfg_path in cells:
         receipt_path = receipt_for_cell(root, arm, seed, work_dir_root=work_dir_root)
+        expected_work_dir = (
+            Path(work_dir_root) / f"bafdr_k16_{ARM_CONFIG_NAMES[arm]}_seed{seed}"
+            if work_dir_root is not None
+            else root / "exps" / "thumos" / "adatad" / f"bafdr_k16_{ARM_CONFIG_NAMES[arm]}_seed{seed}"
+        )
+        train_receipt_path = expected_work_dir / "train_receipt.json"
         if receipt_path.exists():
             data = json.loads(receipt_path.read_text(encoding="utf-8"))
             eval_res = data.get("eval_results", {})
             m_ap = eval_res.get("mAP", "N/A")
             ap50 = eval_res.get("AP@0.5", "N/A")
             updates = data.get("total_successful_updates", "N/A")
-            complete = (
-                data.get("protocol_id") == PROTOCOL_ID
-                and data.get("phase") == "metric_opening"
-                and bool(data.get("metric_opened"))
-                and int(data.get("total_successful_updates", 0)) == EXPECTED_TOTAL_UPDATES
+            complete = receipt_is_complete(
+                data,
+                cfg_path=cfg_path,
+                arm=arm,
+                seed=seed,
+                work_dir=expected_work_dir,
             )
+            if not train_receipt_path.exists():
+                complete = False
+            else:
+                train_data = json.loads(train_receipt_path.read_text(encoding="utf-8"))
+                complete = complete and training_receipt_is_complete(
+                    train_data,
+                    cfg_path=cfg_path,
+                    arm=arm,
+                    seed=seed,
+                    work_dir=expected_work_dir,
+                )
+                complete = complete and (
+                    train_data.get("checkpoint_sha256") == data.get("checkpoint_sha256")
+                )
             status = "COMPLETED" if complete else "INCOMPLETE_RECEIPT"
         else:
             m_ap, ap50, updates = "N/A", "N/A", "N/A"
@@ -425,6 +648,7 @@ def summarize_matrix_results(
             "updates": updates,
             "status": status,
             "receipt_path": str(receipt_path),
+            "train_receipt_path": str(train_receipt_path),
         }
         results.append(row)
         print(f"{arm:<18} | {seed:<6} | {str(m_ap):<8} | {str(ap50):<8} | {str(updates):<8} | {status}")

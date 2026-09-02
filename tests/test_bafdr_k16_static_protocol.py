@@ -3,6 +3,17 @@ from pathlib import Path
 
 from mmengine.config import Config
 
+from tools.bata.bafdr_k16_fullmatrix import (
+    EXPECTED_EVALUATION_WINDOWS,
+    EXPECTED_TOTAL_UPDATES,
+    PROTOCOL_ID,
+    get_matrix_cells,
+    receipt_is_complete,
+    sha256_file,
+    training_receipt_is_complete,
+    validate_cell_config,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "configs" / "adatad" / "thumos"
@@ -46,6 +57,15 @@ def test_bafdr_configs_bind_world2_global_batch_contract():
         assert cfg.solver.test.batch_size == 2
 
 
+def test_bafdr_matrix_validates_controls_and_candidates_semantically():
+    cells = get_matrix_cells(ROOT)
+    assert len(cells) == 21
+    for arm, seed, config_path in cells:
+        details = validate_cell_config(config_path, arm, seed)
+        assert details["arm"] == arm
+        assert details["seed"] == seed
+
+
 def test_bafdr_wrapper_exposes_mask_and_keeps_source_uint8_contract():
     text = read(ROOT / "opentad" / "models" / "backbones" / "bafdr_wrapper.py")
     assert "source_tensor.dtype != torch.uint8" in text
@@ -73,6 +93,7 @@ def test_anchor_free_head_captures_pre_nms_logits_for_distillation():
 def test_train_driver_is_fail_closed_and_ddp_aware():
     text = read(ROOT / "tools" / "bata" / "bafdr_k16_fullmatrix_train.py")
     assert "DistributedDataParallel" in text
+    assert "static_graph=ddp_static_graph" in text
     assert "init_process_group" in text
     assert "EXPECTED_WORLD_SIZE = 2" in text
     assert "EXPECTED_GLOBAL_BATCH_SIZE = 2" in text
@@ -86,6 +107,9 @@ def test_train_driver_is_fail_closed_and_ddp_aware():
     assert "inputs[\"global\"]" not in text
     assert "make_teacher_d160_inputs" in text
     assert "latest_kd_outputs" in text
+    assert "max_amp_retries_per_batch" in text
+    assert "update_succeeded" in text
+    assert '"eval_windows"' in text
     assert "FileNotFoundError" in text
     assert "logger.warning" not in text
 
@@ -100,6 +124,48 @@ def test_matrix_orchestrator_validates_semantic_contracts():
     assert "--require-complete" in text
     assert "--seal-predictions" in text
     assert "PREDICTIONS_SEALED_NO_METRICS_OPENED" in text
+
+
+def test_matrix_receipt_completion_is_cell_and_population_gated():
+    cfg_path = CONFIG_DIR / "bafdr_k16_d160_seed4407.py"
+    receipt = {
+        "protocol_id": PROTOCOL_ID,
+        "arm": "D160",
+        "seed": 4407,
+        "phase": "metric_opening",
+        "metric_opened": True,
+        "total_successful_updates": EXPECTED_TOTAL_UPDATES,
+        "eval_windows": EXPECTED_EVALUATION_WINDOWS,
+        "config_sha256": sha256_file(cfg_path),
+        "checkpoint_sha256": "checkpoint-sha",
+        "eval_results": {"mAP": 1.0},
+    }
+    assert receipt_is_complete(receipt, cfg_path=cfg_path, arm="D160", seed=4407)
+
+    receipt["arm"] = "G96"
+    assert not receipt_is_complete(receipt, cfg_path=cfg_path, arm="D160", seed=4407)
+    receipt["arm"] = "D160"
+    receipt["eval_windows"] = EXPECTED_EVALUATION_WINDOWS - 1
+    assert not receipt_is_complete(receipt, cfg_path=cfg_path, arm="D160", seed=4407)
+
+
+def test_training_receipt_requires_complete_training_population():
+    cfg_path = CONFIG_DIR / "bafdr_k16_d160_seed4407.py"
+    receipt = {
+        "protocol_id": PROTOCOL_ID,
+        "arm": "D160",
+        "seed": 4407,
+        "phase": "training",
+        "metric_opened": False,
+        "total_successful_updates": EXPECTED_TOTAL_UPDATES,
+        "train_samples": 200,
+        "eval_windows": EXPECTED_EVALUATION_WINDOWS,
+        "config_sha256": sha256_file(cfg_path),
+        "checkpoint_sha256": "checkpoint-sha",
+    }
+    assert training_receipt_is_complete(receipt, cfg_path=cfg_path, arm="D160", seed=4407)
+    receipt["train_samples"] = 199
+    assert not training_receipt_is_complete(receipt, cfg_path=cfg_path, arm="D160", seed=4407)
 
 
 def test_slurm_scripts_use_world2_arm_batch_dag():

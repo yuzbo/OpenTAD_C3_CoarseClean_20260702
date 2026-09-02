@@ -86,6 +86,22 @@ class BAFDRBackboneWrapper(BackboneWrapper):
         self.uniform_mode = bool(getattr(custom_cfg, "bafdr_uniform_mode", False))
         self.return_bundle = bool(getattr(custom_cfg, "bafdr_return_bundle", True))
 
+        if self.chunk_num <= 0 or self.k_chunks <= 0 or self.k_chunks > self.chunk_num:
+            raise ValueError(
+                "BA-FDR requires 0 < bafdr_k_chunks <= bafdr_chunk_num; "
+                f"got k={self.k_chunks}, chunks={self.chunk_num}"
+            )
+        if self.tubelets_per_chunk <= 0 or self.output_length != 2 * self.chunk_num * self.tubelets_per_chunk:
+            raise ValueError(
+                "BA-FDR output length must be exactly 2x the dense tubelet carrier; "
+                f"got output={self.output_length}, carrier={self.chunk_num * self.tubelets_per_chunk}"
+            )
+        if self.uniform_mode and self.chunk_num % self.k_chunks != 0:
+            raise ValueError(
+                "BA-FDR uniform routing requires chunk_num divisible by k_chunks; "
+                f"got chunks={self.chunk_num}, k={self.k_chunks}"
+            )
+
         # Center crop canonical box for local_size (dynamically computed)
         y0 = max(0, (180 - self.local_size) // 2)
         x0 = max(0, (320 - self.local_size) // 2)
@@ -159,7 +175,11 @@ class BAFDRBackboneWrapper(BackboneWrapper):
         return G, G_chunk
 
     def _route_chunks(self, G_chunk: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        """Compute boundary-aware routing scores and select top-16 chunks."""
+        """Compute boundary scores and select top-16 chunks.
+
+        Actionness is retained as an auxiliary supervised signal; start/end
+        logits and representation shift are the deterministic selection score.
+        """
         B, num_chunks, C = G_chunk.shape
         logits = self.router(G_chunk)  # [B, 4, 48]
 

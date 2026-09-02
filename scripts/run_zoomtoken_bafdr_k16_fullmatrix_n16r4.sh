@@ -27,20 +27,7 @@ PROFILE_DIR="${RUN_ROOT}/profile"
 
 mkdir -p "${MANIFEST_DIR}" "${WORK_DIR_ROOT}" "${PRED_DIR}" "${EVAL_DIR}" "${PROFILE_DIR}"
 
-if command -v module >/dev/null 2>&1; then
-  module load cuda/11.8 || true
-  module load miniforge3/24.11 || true
-fi
-
 CONDA_ENV="${BASE}/conda_envs/opentad/bin/activate"
-if [[ -f "${CONDA_ENV}" ]]; then
-  # shellcheck disable=SC1091
-  source "${CONDA_ENV}"
-fi
-
-export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
-
 mode="${1:-validate}"
 if [[ -f "${mode}" || "${mode}" == *.py ]]; then
   CONFIG="${mode}"
@@ -55,6 +42,44 @@ if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
     CONFIG="${PRECHECK_CONFIG:-configs/adatad/thumos/bafdr_k16_d160_seed4407.py}"
   fi
 fi
+
+formal_mode=0
+case "${mode}" in
+  precheck|train|eval|metrics) formal_mode=1 ;;
+esac
+if (( formal_mode )); then
+  local_single_process="${BAFDR_ALLOW_SINGLE_PROCESS:-0}"
+  if [[ "${local_single_process}" != "1" ]]; then
+    if ! command -v module >/dev/null 2>&1; then
+      echo "BA-FDR formal mode requires the cluster module command" >&2
+      exit 2
+    fi
+    module load cuda/11.8
+    module load miniforge3/24.11
+    if [[ ! -f "${CONDA_ENV}" ]]; then
+      echo "BA-FDR formal mode requires the OpenTAD conda environment: ${CONDA_ENV}" >&2
+      exit 2
+    fi
+    # shellcheck disable=SC1091
+    source "${CONDA_ENV}"
+    command -v torchrun >/dev/null 2>&1 || {
+      echo "BA-FDR formal mode requires torchrun after environment activation" >&2
+      exit 2
+    }
+    python - <<'PY'
+import torch
+if not torch.cuda.is_available():
+    raise SystemExit("BA-FDR formal mode requires CUDA after environment activation")
+PY
+  elif [[ -f "${CONDA_ENV}" ]]; then
+    # Local smoke/precheck may intentionally use the current Python environment.
+    # shellcheck disable=SC1091
+    source "${CONDA_ENV}"
+  fi
+fi
+
+export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 
 allow_dirty_flag=()
 if [[ "${BAFDR_ALLOW_DIRTY:-0}" == "1" ]]; then

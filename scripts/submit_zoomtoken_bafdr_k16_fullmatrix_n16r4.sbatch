@@ -27,15 +27,23 @@ MANIFEST_DIR="${RUN_ROOT}/manifest"
 mkdir -p "${LOG_DIR}" "${MANIFEST_DIR}"
 cd "${PROJECT_DIR}"
 
-if command -v module >/dev/null 2>&1; then
-  module load cuda/11.8 || true
-  module load miniforge3/24.11 || true
+if ! command -v module >/dev/null 2>&1; then
+  echo "BA-FDR submission requires the cluster module command" >&2
+  exit 2
 fi
+module load cuda/11.8
+module load miniforge3/24.11
 CONDA_ENV="${BASE}/conda_envs/opentad/bin/activate"
-if [[ -f "${CONDA_ENV}" ]]; then
-  # shellcheck disable=SC1091
-  source "${CONDA_ENV}"
+if [[ ! -f "${CONDA_ENV}" ]]; then
+  echo "BA-FDR submission requires the OpenTAD conda environment: ${CONDA_ENV}" >&2
+  exit 2
 fi
+# shellcheck disable=SC1091
+source "${CONDA_ENV}"
+command -v torchrun >/dev/null 2>&1 || {
+  echo "BA-FDR submission requires torchrun after environment activation" >&2
+  exit 2
+}
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 export BAFDR_ALLOW_DIRTY="${BAFDR_ALLOW_DIRTY:-0}"
 

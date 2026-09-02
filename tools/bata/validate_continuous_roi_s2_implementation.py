@@ -21,6 +21,9 @@ from tools.bata.continuous_roi_s2_contract import (
 
 
 IMPLEMENTATION_AUDIT_SCHEMA = "continuous_roi_s2_implementation_static_audit_v1"
+# This validator is the pre-training one-step implementation gate. The separate
+# FULL200 3x3 matrix is validated by continuous_roi_s2_v3_full200_compute.py;
+# the two protocols intentionally have different test-split and authorization rules.
 REFERENCE_CONFIG = (
     ROOT
     / "configs"
