@@ -39,6 +39,8 @@ EXPECTED_TOTAL_UPDATES = 6000
 EXPECTED_WORLD_SIZE = 2
 EXPECTED_TRAIN_SAMPLES = 200
 EXPECTED_EVAL_WINDOWS = 792
+EXPECTED_GLOBAL_BATCH_SIZE = 2
+EXPECTED_LOCAL_BATCH_SIZE = 1
 WINDOW_SIZE = 768
 
 
@@ -505,6 +507,24 @@ def validate_dataset_lengths(train_dataset: Any, val_dataset: Any, logger: Any) 
     logger.info(f"Protocol population check passed: train={train_len}, eval_windows={val_len}")
 
 
+def validate_loader_batch_contract(split: str, batch_size: int, world_size: int) -> None:
+    if batch_size != EXPECTED_GLOBAL_BATCH_SIZE:
+        raise RuntimeError(
+            f"BA-FDR protocol requires solver.{split}.batch_size={EXPECTED_GLOBAL_BATCH_SIZE} "
+            f"(job-global); got {batch_size}"
+        )
+    if batch_size % world_size != 0:
+        raise RuntimeError(
+            f"solver.{split}.batch_size={batch_size} must be divisible by world_size={world_size}"
+        )
+    local_batch_size = batch_size // world_size
+    if world_size == EXPECTED_WORLD_SIZE and local_batch_size != EXPECTED_LOCAL_BATCH_SIZE:
+        raise RuntimeError(
+            f"BA-FDR formal world_size={EXPECTED_WORLD_SIZE} requires local batch "
+            f"{EXPECTED_LOCAL_BATCH_SIZE}; got {local_batch_size}"
+        )
+
+
 def train_epoch(
     model: nn.Module,
     loader: Any,
@@ -578,6 +598,7 @@ def train_epoch(
 def build_eval_loader(cfg: Config, rank: int, world_size: int, logger: Any):
     val_dataset = build_dataset(cfg.dataset.val, default_args=dict(logger=logger))
     val_batch_size = int(getattr(cfg.solver.val, "batch_size", 2))
+    validate_loader_batch_contract("val", val_batch_size, world_size)
     val_num_workers = int(getattr(cfg.solver.val, "num_workers", 2))
     val_loader = build_dataloader(
         val_dataset,
@@ -785,6 +806,7 @@ def main() -> None:
     train_dataset = build_dataset(cfg.dataset.train, default_args=dict(logger=logger))
     validate_dataset_lengths(train_dataset, val_dataset, logger)
     train_batch_size = int(getattr(cfg.solver.train, "batch_size", 2))
+    validate_loader_batch_contract("train", train_batch_size, world_size)
     train_num_workers = int(getattr(cfg.solver.train, "num_workers", 2))
     train_loader = build_dataloader(
         train_dataset,

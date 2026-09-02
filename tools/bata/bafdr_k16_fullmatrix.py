@@ -30,6 +30,8 @@ EXPECTED_UPDATES_PER_EPOCH = 100
 EXPECTED_EPOCHS = 60
 EXPECTED_TOTAL_UPDATES = 6000
 EXPECTED_WORLD_SIZE = 2
+EXPECTED_GLOBAL_BATCH_SIZE = 2
+EXPECTED_LOCAL_BATCH_SIZE = 1
 WINDOW_SIZE = 768
 WINDOW_OVERLAP_RATIO = 0.5
 
@@ -128,6 +130,36 @@ def _pipeline_for(cfg: Config, split: str) -> Sequence[Mapping[str, Any]]:
 
 def _find_steps(pipeline: Sequence[Mapping[str, Any]], step_type: str) -> List[Mapping[str, Any]]:
     return [step for step in pipeline if _get(step, "type") == step_type]
+
+
+def validate_solver_contract(cfg: Config, *, config_path: Path) -> Dict[str, Any]:
+    solver = _get(cfg, "solver")
+    split_info = {}
+    for split in ("train", "val", "test"):
+        split_cfg = _get(solver, split)
+        batch_size = int(_get(split_cfg, "batch_size", -1))
+        if batch_size != EXPECTED_GLOBAL_BATCH_SIZE:
+            raise ValueError(
+                f"{config_path}: solver.{split}.batch_size must be protocol global batch "
+                f"{EXPECTED_GLOBAL_BATCH_SIZE}; got {batch_size}"
+            )
+        if batch_size % EXPECTED_WORLD_SIZE != 0:
+            raise ValueError(
+                f"{config_path}: solver.{split}.batch_size={batch_size} is not divisible "
+                f"by world_size={EXPECTED_WORLD_SIZE}"
+            )
+        local_batch_size = batch_size // EXPECTED_WORLD_SIZE
+        if local_batch_size != EXPECTED_LOCAL_BATCH_SIZE:
+            raise ValueError(
+                f"{config_path}: solver.{split} local batch must be {EXPECTED_LOCAL_BATCH_SIZE}; "
+                f"got {local_batch_size}"
+            )
+        split_info[split] = {
+            "global_batch_size": batch_size,
+            "local_batch_size": local_batch_size,
+            "num_workers": int(_get(split_cfg, "num_workers", -1)),
+        }
+    return split_info
 
 
 def validate_bafdr_pipeline(cfg: Config, *, config_path: Path, arm: str) -> Dict[str, Any]:
@@ -270,7 +302,7 @@ def validate_cell_config(config_path: str | Path, expected_arm: str, expected_se
     if int(_get(bafdr_protocol, "seed")) != int(expected_seed):
         raise ValueError(f"config seed mismatch: {_get(bafdr_protocol, 'seed')} != {expected_seed}")
 
-    details: Dict[str, Any] = {}
+    details: Dict[str, Any] = {"solver": validate_solver_contract(cfg, config_path=config_path)}
     if expected_arm in BAFDR_WRAPPER_ARMS:
         details["pipeline"] = validate_bafdr_pipeline(cfg, config_path=config_path, arm=expected_arm)
         details["model"] = validate_bafdr_model(cfg, config_path=config_path, arm=expected_arm)
@@ -468,6 +500,8 @@ def main() -> None:
         "expected_updates_per_epoch": EXPECTED_UPDATES_PER_EPOCH,
         "expected_total_updates": EXPECTED_TOTAL_UPDATES,
         "expected_world_size": EXPECTED_WORLD_SIZE,
+        "expected_global_batch_size": EXPECTED_GLOBAL_BATCH_SIZE,
+        "expected_local_batch_size": EXPECTED_LOCAL_BATCH_SIZE,
         "official_test_opened": False,
         "cells": matrix_cells,
     }

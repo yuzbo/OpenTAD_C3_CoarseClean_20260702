@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [[ -n "${PROJECT_DIR:-}" ]]; then
+  ROOT="$(cd "${PROJECT_DIR}" && pwd)"
+elif [[ -n "${SLURM_SUBMIT_DIR:-}" && -d "${SLURM_SUBMIT_DIR}" ]]; then
+  ROOT="$(cd "${SLURM_SUBMIT_DIR}" && pwd)"
+else
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
 cd "${ROOT}"
 
 # Slurm batch shells do not guarantee the module function is defined.  Load
@@ -44,6 +50,13 @@ if [[ -f "${mode}" || "${mode}" == *.py ]]; then
   mode="train"
 else
   CONFIG="${2:-}"
+fi
+
+if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
+  mode="precheck"
+  if [[ -z "${CONFIG}" ]]; then
+    CONFIG="${PRECHECK_CONFIG:-configs/adatad/thumos/bafdr_k16_d160_seed4407.py}"
+  fi
 fi
 
 allow_dirty_flag=()
@@ -118,11 +131,9 @@ case "${mode}" in
     for idx in $(seq 0 20); do
       config="$(python tools/bata/bafdr_k16_fullmatrix.py --repo-root "${ROOT}" --array-idx "${idx}")"
       work_dir="$(cell_work_dir "${config}")"
-      python tools/bata/bafdr_k16_fullmatrix_train.py "${config}" \
-        --work-dir "${work_dir}" \
+      run_torch_cell "${config}" \
         --eval-only \
         --open-metrics \
-        --allow-single-process \
         --checkpoint "${work_dir}/checkpoint/epoch_59.pth"
     done
     ;;
