@@ -61,11 +61,25 @@ class SingleStageDetector(BaseDetector):
         return hasattr(self, "rpn_head") and self.rpn_head is not None
 
     def after_optimizer_step(self):
+        summaries = []
         if self.with_frame_selector:
             hook = getattr(self.frame_selector, "after_optimizer_step", None)
             if callable(hook):
-                return hook()
-        return None
+                summaries.append(hook())
+        if self.with_backbone:
+            hook = getattr(self.backbone, "after_optimizer_step", None)
+            if callable(hook):
+                summaries.append(hook())
+        summaries = [summary for summary in summaries if summary is not None]
+        if not summaries:
+            return None
+        return {
+            "updated": any(
+                isinstance(summary, Mapping) and summary.get("updated") is True
+                for summary in summaries
+            ),
+            "summaries": summaries,
+        }
 
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
@@ -88,7 +102,7 @@ class SingleStageDetector(BaseDetector):
             selector_loss_keys = set(losses)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            x = self._call_backbone_forward(inputs, masks, metas)
         else:
             x = inputs
 
@@ -132,7 +146,7 @@ class SingleStageDetector(BaseDetector):
             self._require_selector_remap_metadata(metas)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks)
+            x = self._call_backbone_forward(inputs, masks, metas)
         else:
             x = inputs
 
@@ -243,6 +257,18 @@ class SingleStageDetector(BaseDetector):
             return feat_out, mask_out, meta_out
         raise ValueError("neck forward must return (features, masks) or (features, masks, metas)")
 
+    def _call_backbone_forward(self, inputs, masks, metas):
+        call_kwargs = {}
+        if self._callable_accepts_param(self.backbone.forward, "irregular_selected_positions"):
+            positions, dense_valid_len = self._stack_irregular_positions_from_metas(
+                metas,
+                device=inputs.device,
+            )
+            if positions is not None:
+                call_kwargs["irregular_selected_positions"] = positions
+                call_kwargs["irregular_dense_valid_len"] = dense_valid_len
+        return self.backbone(inputs, masks, **call_kwargs)
+
     def _call_rpn_head_forward_train(self, feat_list, mask_list, metas, gt_segments, gt_labels, **kwargs):
         call_kwargs = dict(kwargs)
         if self._callable_accepts_metas(self.rpn_head.forward_train):
@@ -340,3 +366,46 @@ class SingleStageDetector(BaseDetector):
             if param.name == "metas":
                 return True
         return False
+
+    @staticmethod
+    def _callable_accepts_param(fn, name):
+        signature = inspect.signature(fn)
+        for param in signature.parameters.values():
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                return True
+            if param.name == name:
+                return True
+        return False
+
+    @staticmethod
+    def _stack_irregular_positions_from_metas(metas, device):
+        if metas is None:
+            return None, None
+        holders = [metas] if isinstance(metas, Mapping) else metas
+        if not isinstance(holders, (list, tuple)) or not holders:
+            return None, None
+        rows = []
+        dense_lens = []
+        max_len = 0
+        for meta in holders:
+            if not isinstance(meta, Mapping):
+                return None, None
+            values = meta.get("irregular_selected_positions", meta.get("selected_dense_indices", None))
+            if values is None:
+                return None, None
+            row = torch.as_tensor(values, device=device, dtype=torch.long).reshape(-1)
+            count = meta.get("selected_valid_len", meta.get("irregular_selected_count", row.numel()))
+            count = max(0, min(int(count), int(row.numel())))
+            if count <= 0:
+                return None, None
+            row = row[:count]
+            rows.append(row)
+            max_len = max(max_len, int(row.numel()))
+            dense_lens.append(float(meta.get("irregular_dense_valid_len", row[-1].item() + 1)))
+        padded = []
+        for row in rows:
+            if int(row.numel()) < max_len:
+                pad = row[-1:].expand(max_len - int(row.numel()))
+                row = torch.cat([row, pad], dim=0)
+            padded.append(row)
+        return torch.stack(padded, dim=0), torch.tensor(dense_lens, device=device, dtype=torch.float32)

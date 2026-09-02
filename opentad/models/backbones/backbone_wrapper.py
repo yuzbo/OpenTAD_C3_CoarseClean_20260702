@@ -132,6 +132,12 @@ class BackboneWrapper(nn.Module):
         features = features.to(torch.float32)
         return features
 
+    def after_optimizer_step(self):
+        backbone = getattr(getattr(self.model, "backbone", None), "after_optimizer_step", None)
+        if callable(backbone):
+            return backbone()
+        return None
+
     def tensor_to_list(self, tensor):
         return [t for t in tensor]
 

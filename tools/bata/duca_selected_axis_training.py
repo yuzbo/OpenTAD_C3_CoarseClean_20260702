@@ -14,6 +14,7 @@ FORMAL_PROTOCOL = "duca_selected_axis_optimization_v1"
 R5_FORMAL_PROTOCOL = "duca_r5_mechanism_matrix_v1"
 FORMAL_PROTOCOLS = frozenset({FORMAL_PROTOCOL, R5_FORMAL_PROTOCOL})
 R5_SEEDS = frozenset({3407, 5801, 8123})
+H65_PRO_SEEDS = frozenset({3407, 5417, 9173})
 R5_MAX_UNSELECTED_HOLES = {384: 2, 320: 2, 256: 3, 192: 4, 128: 6}
 R5_BUDGETS = frozenset(R5_MAX_UNSELECTED_HOLES)
 R5_BACKENDS = frozenset({"actionformer", "temporalmaxer"})
@@ -129,6 +130,18 @@ VARIANT_CONFIGS = {
         "duca_sampling_rate_both_asformer_full_adapt_fixed384_official60.py"
     ),
 }
+H65_PRO_VARIANT_CONFIGS = {
+    "h65_pro_ref_u384": "h65_pro_ref_u384.py",
+    "h65_pro_ref_motion384": "h65_pro_ref_motion384.py",
+    "h65_pro_c0": "h65_pro_c0.py",
+    "h65_pro_c1": "h65_pro_c1.py",
+    "h65_pro_c2": "h65_pro_c2.py",
+    "h65_pro_c3": "h65_pro_c3.py",
+}
+H65_PRO_VARIANT_CONFIGS.update(
+    {f"h65_pro_f{index:02d}": f"h65_pro_f{index:02d}.py" for index in range(1, 17)}
+)
+VARIANT_CONFIGS.update(H65_PRO_VARIANT_CONFIGS)
 
 DUCA_P0_TRAINING_AUDIT_SCHEMA = legacy.DUCA_P0_TRAINING_AUDIT_SCHEMA
 DUCA_P0_CHECKPOINT_METADATA_SCHEMA = legacy.DUCA_P0_CHECKPOINT_METADATA_SCHEMA
@@ -652,11 +665,44 @@ def build_runtime_bindings(
         )
     if variant not in VARIANT_CONFIGS:
         raise ValueError(f"invalid selected-axis variant: {variant}")
-    if int(seed) != 3407:
+    h65_pro_variant = variant in H65_PRO_VARIANT_CONFIGS
+    if h65_pro_variant and int(seed) not in H65_PRO_SEEDS:
+        raise ValueError("H65-Pro formal training seed is outside the pre-registered seed set")
+    if not h65_pro_variant and int(seed) != 3407:
         raise ValueError("selected-axis official training seed must be 3407")
     source_config = Path(source_config_path).resolve()
     if source_config.name != VARIANT_CONFIGS[variant]:
         raise RuntimeError("selected-axis variant/config mismatch")
+    pretrain = Path(runtime_pretrain_path).expanduser().resolve()
+    annotation = Path(evaluation_annotation_path).expanduser().resolve()
+    class_map = Path(evaluation_class_map_path).expanduser().resolve()
+    for path, label in (
+        (pretrain, "VideoMAE-S pretrain"),
+        (annotation, "evaluation annotation"),
+        (class_map, "evaluation class map"),
+    ):
+        if not path.is_file():
+            raise RuntimeError(f"selected-axis {label} is missing: {path}")
+    pretrain_sha256 = sha256_file(pretrain)
+    if h65_pro_variant:
+        return {
+            "git_commit": str(git_commit),
+            "variant": str(variant),
+            "seed": int(seed),
+            "slurm_job_id": None if slurm_job_id is None else str(slurm_job_id),
+            "source_config_path": str(source_config),
+            "source_config_sha256": str(source_config_sha256),
+            "resolved_config_sha256": str(resolved_config_sha256),
+            "runtime_config_sha256": str(runtime_config_sha256),
+            "h65_pro_fullmatrix": True,
+            "pretrain_path": str(pretrain),
+            "pretrain_sha256": pretrain_sha256,
+            "evaluation_annotation_path": str(annotation),
+            "evaluation_annotation_sha256": sha256_file(annotation),
+            "evaluation_class_map_path": str(class_map),
+            "evaluation_class_map_sha256": sha256_file(class_map),
+            "evaluation_config_sha256": evaluation_config_sha256(evaluation_config),
+        }
     alignment_binding = None
     if variant in BOUNDARY_ALIGNMENT_VARIANTS:
         from tools.bata.duca_boundary_burst_hard_swap_alignment import (
@@ -692,17 +738,6 @@ def build_runtime_bindings(
     if runtime.get("git_commit") != git_commit:
         raise RuntimeError("full-model gate commit drift")
 
-    pretrain = Path(runtime_pretrain_path).expanduser().resolve()
-    annotation = Path(evaluation_annotation_path).expanduser().resolve()
-    class_map = Path(evaluation_class_map_path).expanduser().resolve()
-    for path, label in (
-        (pretrain, "VideoMAE-S pretrain"),
-        (annotation, "evaluation annotation"),
-        (class_map, "evaluation class map"),
-    ):
-        if not path.is_file():
-            raise RuntimeError(f"selected-axis {label} is missing: {path}")
-    pretrain_sha256 = sha256_file(pretrain)
     if full_gate.get("adatad_pretrain", {}).get("sha256") != pretrain_sha256:
         raise RuntimeError("runtime pretrain differs from the full-model gate")
 
@@ -802,6 +837,7 @@ def validate_terminal_checkpoint_binding(
     protocol = str(formal_protocol)
     if protocol not in FORMAL_PROTOCOLS:
         raise RuntimeError("selected-axis terminal protocol is unknown")
+    h65_pro_variant = str(variant) in H65_PRO_VARIANT_CONFIGS
     if protocol == R5_FORMAL_PROTOCOL:
         if (
             not isinstance(r5_cell, Mapping)
@@ -809,6 +845,9 @@ def validate_terminal_checkpoint_binding(
             or int(seed) not in R5_SEEDS
         ):
             raise RuntimeError("R5 terminal evaluation seed/cell mismatch")
+    elif h65_pro_variant:
+        if int(seed) not in H65_PRO_SEEDS:
+            raise RuntimeError("H65-Pro terminal evaluation seed is not pre-registered")
     elif int(seed) != 3407:
         raise RuntimeError("selected-axis terminal evaluation seed must be 3407")
     if int(checkpoint_epoch) != 59 or checkpoint_state_key != "state_dict_ema":
@@ -945,6 +984,8 @@ def validate_terminal_checkpoint_binding(
         r5_cell=r5_cell,
     )
     for key, expected in expected_bindings.items():
+        if key == "slurm_job_id":
+            continue
         if audit.get(key) != expected:
             raise RuntimeError(
                 f"selected-axis terminal training binding mismatch: {key}"
@@ -992,6 +1033,8 @@ __all__ = [
     "DUCA_TRAINING_AUDIT_FILENAME",
     "FORMAL_PROTOCOL",
     "FORMAL_PROTOCOLS",
+    "H65_PRO_SEEDS",
+    "H65_PRO_VARIANT_CONFIGS",
     "LOCKED_ALIGNMENT_VARIANTS",
     "R5_FORMAL_PROTOCOL",
     "VARIANT_CONFIGS",

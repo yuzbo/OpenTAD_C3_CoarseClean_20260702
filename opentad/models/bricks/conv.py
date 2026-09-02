@@ -3,6 +3,7 @@ import math
 import torch.nn.functional as F
 import torch.nn as nn
 from ..builder import MODELS
+from .scale_adaptive_conv1d import ContinuousTimeScaleAdaptiveConv1d
 
 
 @MODELS.register_module()
@@ -36,11 +37,19 @@ class ConvModule(nn.Module):
             conv_cfg_base["bias"] = False  # bias is not necessary with a normalization layer
 
         assert conv_cfg is None or isinstance(conv_cfg, dict)
+        conv_type = "Conv1d"
         if conv_cfg is not None:  # update conv_cfg_base
+            conv_cfg = copy.copy(conv_cfg)
+            conv_type = conv_cfg.pop("type", "Conv1d")
             conv_cfg_base.update(conv_cfg)
 
         # build conv layer
-        self.conv = nn.Conv1d(**conv_cfg_base)
+        if conv_type == "Conv1d":
+            self.conv = nn.Conv1d(**conv_cfg_base)
+        elif conv_type == "ContinuousTimeScaleAdaptiveConv1d":
+            self.conv = ContinuousTimeScaleAdaptiveConv1d(**conv_cfg_base)
+        else:
+            raise ValueError(f"unsupported conv type: {conv_type}")
 
         # build norm layer
         if self.with_norm:
@@ -84,8 +93,17 @@ class ConvModule(nn.Module):
             nn.init.constant_(module.weight, 1.0)
             nn.init.constant_(module.bias, 0.0)
 
-    def forward(self, x, mask=None):
-        x = self.conv(x)
+    def forward(self, x, mask=None, delta_t=None, temporal_positions=None, level_index=None):
+        if isinstance(self.conv, ContinuousTimeScaleAdaptiveConv1d):
+            x = self.conv(
+                x,
+                delta_t=delta_t,
+                temporal_positions=temporal_positions,
+                level_index=level_index,
+                mask=mask,
+            )
+        else:
+            x = self.conv(x)
 
         if mask is not None:  # masking before the norm
             if mask.shape[-1] != x.shape[-1]:

@@ -546,6 +546,36 @@ class Attention(BaseModule):
         x = self.proj_drop(x)
         return x
 
+    def forward_with_column_mean(
+        self,
+        x: Tensor,
+        relative_physical_time: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Tensor]:
+        """Dense attention plus detached mean attention received by each token."""
+
+        B, N, C = x.shape
+        if hasattr(self, "q_bias"):
+            k_bias = torch.zeros_like(self.v_bias, requires_grad=False)
+            qkv_bias = torch.cat((self.q_bias, k_bias, self.v_bias))
+            qkv = F.linear(input=x, weight=self.qkv.weight, bias=qkv_bias)
+        else:
+            qkv = self.qkv(x)
+        qkv = qkv.reshape(B, N, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+        q = q * self.scale
+        attn = q @ k.transpose(-2, -1)
+        if relative_physical_time is not None:
+            if relative_physical_time.ndim != 4 or relative_physical_time.shape[-2:] != (N, N):
+                raise ValueError("relative_physical_time must be [B,1,N,N]")
+            attn = attn + relative_physical_time.to(device=attn.device, dtype=attn.dtype)
+        attn = attn.softmax(dim=-1)
+        column_mean = attn.detach().mean(dim=1).mean(dim=1)
+        attn = self.attn_drop(attn)
+        out = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        out = self.proj(out)
+        out = self.proj_drop(out)
+        return out, column_mean
+
 
 class Block(BaseModule):
     """The basic block in the Vision Transformer.
@@ -658,6 +688,89 @@ class Block(BaseModule):
         out[dense_mask] = selected.reshape(-1, int(selected.shape[-1]))
         return out
 
+    @staticmethod
+    def _selected_relative_time(relative_physical_time: Optional[Tensor], dense_mask: Tensor) -> Optional[Tensor]:
+        if relative_physical_time is None:
+            return None
+        if relative_physical_time.ndim != 4:
+            raise ValueError("relative_physical_time must be [B,1,N,N]")
+        rows = []
+        for batch_idx in range(int(dense_mask.shape[0])):
+            idx = torch.nonzero(dense_mask[batch_idx], as_tuple=False).flatten()
+            rel = relative_physical_time[batch_idx : batch_idx + 1, :, idx, :]
+            rel = rel[:, :, :, idx]
+            rows.append(rel)
+        return torch.cat(rows, dim=0)
+
+    def forward_dense_with_score(
+        self,
+        x: Tensor,
+        h,
+        w,
+        relative_physical_time: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Tensor]:
+        def _inner_forward(x):
+            rel = None
+            if relative_physical_time is not None and self.relative_physical_time_scale is not None:
+                rel = self.relative_physical_time_scale * relative_physical_time
+            attn_out, route_scores = self.attn.forward_with_column_mean(
+                self.norm1(x),
+                relative_physical_time=rel,
+            )
+            x = x + self.drop_path(attn_out)
+            x = x + self.drop_path(self.mlp(self.norm2(x)))
+            if self.use_adapter:
+                x = self.adapter(x, h, w)
+            return x, route_scores
+
+        return _inner_forward(x)
+
+    def forward_amod(
+        self,
+        x: Tensor,
+        h,
+        w,
+        route_scores: Tensor,
+        *,
+        capacity: float,
+        block_index: int,
+        relative_physical_time: Optional[Tensor] = None,
+    ) -> Tuple[Tensor, Dict[str, object]]:
+        if route_scores.shape != x.shape[:2]:
+            raise ValueError("MoD route_scores must align with dense tokens [B,N]")
+        capacity = float(capacity)
+        if capacity <= 0.0 or capacity > 1.0:
+            raise ValueError("MoD capacity must lie in (0,1]")
+        keep_count = max(1, int(math.ceil(float(x.shape[1]) * capacity)))
+        keep_count = min(keep_count, int(x.shape[1]))
+        topk = torch.topk(route_scores, k=keep_count, dim=1, largest=True, sorted=False).indices
+        dense_mask = torch.zeros(x.shape[:2], device=x.device, dtype=torch.bool)
+        dense_mask.scatter_(1, topk, True)
+        selected = self._pack_selected_tokens(x, dense_mask)
+        selected_rel = self._selected_relative_time(relative_physical_time, dense_mask)
+        selected = selected + self.drop_path(
+            self.attn(self.norm1(selected), relative_physical_time=selected_rel)
+        )
+        selected = selected + self.drop_path(self.mlp(self.norm2(selected)))
+        out = x.clone()
+        out[dense_mask] = selected.reshape(-1, int(selected.shape[-1]))
+        if self.use_adapter:
+            adapter_out = self.adapter(out, h, w)
+            out = x.clone()
+            out[dense_mask] = adapter_out[dense_mask]
+        bypass_identity = None
+        if keep_count < int(x.shape[1]):
+            bypass_identity = bool(torch.allclose(out[~dense_mask], x[~dense_mask]))
+        summary = {
+            "block_index": int(block_index),
+            "capacity": float(capacity),
+            "selected_tokens": int(keep_count),
+            "dense_tokens": int(x.shape[1]),
+            "unselected_identity_bypass": bypass_identity,
+            "adapter_selected_only": bool(self.use_adapter),
+        }
+        return out, summary
+
     def forward(
         self,
         x: Tensor,
@@ -769,6 +882,7 @@ class VisionTransformerAdapter(BaseModule):
         adapter_index: list = [3, 5, 7, 11],
         tubelet_token_redundancy_aux: Optional[Dict] = None,
         tubelet_packed_runtime_route: Optional[Dict] = None,
+        amod_config: Optional[Dict] = None,
         init_cfg: Optional[Union[Dict, List[Dict]]] = [
             dict(type="TruncNormal", layer="Linear", std=0.02, bias=0.0),
             dict(type="Constant", layer="LayerNorm", val=1.0, bias=0.0),
@@ -785,6 +899,41 @@ class VisionTransformerAdapter(BaseModule):
         self.patch_size = patch_size
         self.latest_tubelet_token_redundancy_summary = None
         self.latest_tubelet_packed_runtime_summary = None
+        self.latest_amod_summary = None
+        self.amod_config = dict(amod_config or {})
+        self.amod_enabled = bool(self.amod_config.get("enabled", False))
+        self.amod_layers = {
+            int(layer)
+            for layer in self.amod_config.get("amod_layers", self.amod_config.get("layers", []))
+        }
+        self.amod_capacity = float(self.amod_config.get("capacity", 1.0))
+        self.amod_min_capacity = float(self.amod_config.get("min_capacity", 0.5))
+        schedule_cfg = dict(self.amod_config.get("capacity_schedule", {}))
+        self.amod_schedule_warmup_steps = int(schedule_cfg.get("warmup_steps", 1500))
+        self.amod_schedule_transition_steps = int(schedule_cfg.get("transition_steps", 2000))
+        self.amod_schedule_start_capacity = float(schedule_cfg.get("start_capacity", 1.0))
+        self.amod_schedule_end_capacity = float(schedule_cfg.get("end_capacity", self.amod_min_capacity))
+        self.register_buffer(
+            "amod_successful_optimizer_updates",
+            torch.zeros((), dtype=torch.long),
+            persistent=True,
+        )
+        if self.amod_enabled:
+            if not self.amod_layers:
+                raise ValueError("enabled MoD requires at least one amod layer")
+            if min(self.amod_layers) < 0 or max(self.amod_layers) >= int(depth):
+                raise ValueError("amod_layers must be valid transformer block indices")
+            if self.amod_capacity <= 0.0 or self.amod_capacity > 1.0:
+                raise ValueError("MoD capacity must lie in (0,1]")
+            if (
+                self.amod_min_capacity <= 0.0
+                or self.amod_min_capacity > 1.0
+                or self.amod_schedule_start_capacity <= 0.0
+                or self.amod_schedule_start_capacity > 1.0
+                or self.amod_schedule_end_capacity <= 0.0
+                or self.amod_schedule_end_capacity > 1.0
+            ):
+                raise ValueError("MoD capacity schedule values must lie in (0,1]")
 
         self.patch_embed = PatchEmbed(
             in_channels=in_channels,
@@ -856,6 +1005,36 @@ class VisionTransformerAdapter(BaseModule):
         ratio = num_adapter_param / num_vit_param * 100
         print("ViT's param: {}, Adapter's params: {}, ratio: {:2.1f}%".format(num_vit_param, num_adapter_param, ratio))
 
+    def _current_amod_capacity(self) -> float:
+        if not self.amod_enabled:
+            return 1.0
+        if "capacity_schedule" not in self.amod_config:
+            return self.amod_capacity
+        step = int(self.amod_successful_optimizer_updates.detach().item())
+        warmup = max(0, int(self.amod_schedule_warmup_steps))
+        transition = max(1, int(self.amod_schedule_transition_steps))
+        start = float(self.amod_schedule_start_capacity)
+        end = float(self.amod_schedule_end_capacity)
+        if step < warmup:
+            return start
+        progress = min(1.0, max(0.0, float(step - warmup) / float(transition)))
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return end + (start - end) * cosine
+
+    def after_optimizer_step(self) -> Dict[str, object]:
+        if not self.amod_enabled:
+            return {"updated": False, "reason": "amod_disabled"}
+        before = int(self.amod_successful_optimizer_updates.detach().item())
+        self.amod_successful_optimizer_updates.add_(1)
+        capacity = self._current_amod_capacity()
+        return {
+            "updated": True,
+            "source": "amod_successful_optimizer_step",
+            "step_before": before,
+            "step_after": int(self.amod_successful_optimizer_updates.detach().item()),
+            "capacity": float(capacity),
+        }
+
     def forward(self, x: Tensor, relative_physical_time: Optional[Tensor] = None,
                 actual_positions: Optional[Tensor] = None,
                 canonical_positions: Optional[Tensor] = None) -> Tensor:
@@ -899,13 +1078,66 @@ class VisionTransformerAdapter(BaseModule):
         if self.tubelet_packed_runtime_route is not None and self.tubelet_packed_runtime_route.enabled:
             if relative_physical_time is not None:
                 raise ValueError("packed VideoMAE route does not support relative_physical_time; fail closed")
+            if self.amod_enabled:
+                raise ValueError("packed tubelet route and MoD cannot be enabled together")
             x = self.tubelet_packed_runtime_route(x, self.blocks, h, w, training=self.training)
             self.latest_tubelet_packed_runtime_summary = self.tubelet_packed_runtime_route.last_summary
         else:
             self.latest_tubelet_packed_runtime_summary = None
-            for block_index, blk in enumerate(self.blocks):
-                rel = relative_physical_time if block_index == 0 else None
-                x = blk(x, h, w, relative_physical_time=rel)
+            if self.amod_enabled:
+                capacity = self._current_amod_capacity()
+                route_scores = None
+                layer_summaries = []
+                for block_index, blk in enumerate(self.blocks):
+                    rel = relative_physical_time if block_index == 0 else None
+                    if block_index in self.amod_layers:
+                        if route_scores is None:
+                            x, route_scores = blk.forward_dense_with_score(
+                                x,
+                                h,
+                                w,
+                                relative_physical_time=rel,
+                            )
+                        else:
+                            x, summary = blk.forward_amod(
+                                x,
+                                h,
+                                w,
+                                route_scores,
+                                capacity=capacity,
+                                block_index=block_index,
+                                relative_physical_time=rel,
+                            )
+                            layer_summaries.append(summary)
+                            route_scores = None
+                        continue
+                    need_next_route = (block_index + 1) in self.amod_layers
+                    if need_next_route:
+                        x, route_scores = blk.forward_dense_with_score(
+                            x,
+                            h,
+                            w,
+                            relative_physical_time=rel,
+                        )
+                    else:
+                        x = blk(x, h, w, relative_physical_time=rel)
+                        route_scores = None
+                self.latest_amod_summary = {
+                    "schema_version": "amod_summary_v1",
+                    "enabled": True,
+                    "name": "Mixture-of-Depths",
+                    "capacity": float(capacity),
+                    "successful_optimizer_updates": int(
+                        self.amod_successful_optimizer_updates.detach().item()
+                    ),
+                    "amod_layers": sorted(int(layer) for layer in self.amod_layers),
+                    "layer_summaries": layer_summaries,
+                }
+            else:
+                self.latest_amod_summary = None
+                for block_index, blk in enumerate(self.blocks):
+                    rel = relative_physical_time if block_index == 0 else None
+                    x = blk(x, h, w, relative_physical_time=rel)
 
         x = self.norm(x)
 

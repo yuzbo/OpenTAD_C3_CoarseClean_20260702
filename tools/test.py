@@ -132,7 +132,16 @@ def main():
                 "terminal epoch-59 EMA, and structured metrics"
             )
     if selected_axis_formal:
-        expected_seed = int(cfg.r5_cell.seed) if r5_formal else 3407
+        selected_variant = os.environ.get("DUCA_SELECTED_OPT_VARIANT", "")
+        h65_pro_variant = selected_variant in duca_selected_axis_training.H65_PRO_VARIANT_CONFIGS
+        if r5_formal:
+            expected_seed = int(cfg.r5_cell.seed)
+        elif h65_pro_variant:
+            if int(args.seed) not in duca_selected_axis_training.H65_PRO_SEEDS:
+                raise RuntimeError("formal H65-Pro evaluation seed is not pre-registered")
+            expected_seed = int(args.seed)
+        else:
+            expected_seed = 3407
         if (
             args.seed != expected_seed
             or args.expected_checkpoint_epoch != 59

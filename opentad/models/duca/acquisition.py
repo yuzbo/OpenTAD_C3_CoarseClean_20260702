@@ -21,6 +21,7 @@ from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetCo
 from .structured_selection import (
     budget_calibrated_sampling_rate,
     continuous_density_transport,
+    exact_uniform_positions,
     exact_uniform_reference_scores,
     global_structured_topk,
     local_cell_deformation,
@@ -1419,6 +1420,11 @@ class DucaAcquisitionAdapter(nn.Module):
         density_temperature: float = 0.7,
         density_coverage_floor: float = 0.05,
         density_smoothing_kernel: int = 5,
+        semantic_phase_sigma: float = 2.0,
+        semantic_phase_scaffold_budget: int = 128,
+        semantic_phase_onset_budget: int = 64,
+        semantic_phase_offset_budget: int = 64,
+        semantic_phase_core_budget: int = 128,
         sampling_rate_utility_components: str = "none",
         actionness_weight: float = 0.05,
         transition_weight: float = 1.0,
@@ -1480,17 +1486,26 @@ class DucaAcquisitionAdapter(nn.Module):
             "continuous_density_transport",
             "continuous_mixture_density_transport",
             "budget_calibrated_sampling_rate",
+            "semantic_phase_sampling",
         }:
             raise ValueError(
                 "acquisition_policy must be legacy_center_radius, global_structured_topk, "
                 "local_cell_deformation, continuous_density_transport, or "
-                "continuous_mixture_density_transport, or budget_calibrated_sampling_rate"
+                "continuous_mixture_density_transport, budget_calibrated_sampling_rate, "
+                "or semantic_phase_sampling"
             )
         self.structured_temperature = float(structured_temperature)
         self.local_cell_force_exact_uniform = bool(local_cell_force_exact_uniform)
         self.density_temperature = float(density_temperature)
         self.density_coverage_floor = float(density_coverage_floor)
         self.density_smoothing_kernel = int(density_smoothing_kernel)
+        self.semantic_phase_sigma = float(semantic_phase_sigma)
+        self.semantic_phase_budgets = {
+            "scaffold": int(semantic_phase_scaffold_budget),
+            "onset": int(semantic_phase_onset_budget),
+            "offset": int(semantic_phase_offset_budget),
+            "core": int(semantic_phase_core_budget),
+        }
         self.sampling_rate_utility_components = str(
             sampling_rate_utility_components
         ).lower()
@@ -1506,6 +1521,15 @@ class DucaAcquisitionAdapter(nn.Module):
             raise ValueError("density_coverage_floor must lie in [0,1)")
         if self.density_smoothing_kernel <= 0 or self.density_smoothing_kernel % 2 == 0:
             raise ValueError("density_smoothing_kernel must be a positive odd integer")
+        if not math.isfinite(self.semantic_phase_sigma) or self.semantic_phase_sigma <= 0.0:
+            raise ValueError("semantic_phase_sigma must be finite and positive")
+        if any(value < 0 for value in self.semantic_phase_budgets.values()):
+            raise ValueError("semantic phase budgets must be non-negative")
+        if self.acquisition_policy == "semantic_phase_sampling":
+            if self.dynamic_budget:
+                raise ValueError("semantic_phase_sampling requires a fixed exact budget")
+            if sum(self.semantic_phase_budgets.values()) != int(hard_cap):
+                raise ValueError("semantic phase budgets must sum to the fixed detector budget")
         if self.budget <= 0:
             raise ValueError("budget must be positive")
         if self.dynamic_budget:
@@ -1592,6 +1616,7 @@ class DucaAcquisitionAdapter(nn.Module):
             "continuous_density_transport",
             "continuous_mixture_density_transport",
             "budget_calibrated_sampling_rate",
+            "semantic_phase_sampling",
         } and self.hard_max_gap_repair:
             raise ValueError("structured acquisition policies encode coverage and forbid hard repair")
         self.fail_on_infeasible_max_gap = bool(fail_on_infeasible_max_gap)
@@ -1612,6 +1637,7 @@ class DucaAcquisitionAdapter(nn.Module):
                 "continuous_density_transport",
                 "continuous_mixture_density_transport",
                 "budget_calibrated_sampling_rate",
+                "semantic_phase_sampling",
             }:
                 raise ValueError("transition_only requires a structured exact-budget acquisition policy")
             if self.acquisition_policy == "global_structured_topk" and self.max_unselected_hole is None:
@@ -1620,8 +1646,9 @@ class DucaAcquisitionAdapter(nn.Module):
                 "continuous_density_transport",
                 "continuous_mixture_density_transport",
                 "budget_calibrated_sampling_rate",
+                "semantic_phase_sampling",
             } and self.dynamic_budget:
-                raise ValueError("continuous density/rate transport currently requires a fixed exact budget")
+                raise ValueError("continuous density/rate/phase transport currently requires a fixed exact budget")
             if self.coarse_hidden_dim <= 0:
                 raise ValueError("transition_only requires official ASFormer encoder hidden features")
             if int(hidden_dim) <= 0:
@@ -1652,7 +1679,7 @@ class DucaAcquisitionAdapter(nn.Module):
                     hidden_dim=self.coarse_hidden_dim,
                     scorer_hidden_dim=int(hidden_dim),
                 )
-            if self.acquisition_policy == "budget_calibrated_sampling_rate":
+            if self.acquisition_policy in {"budget_calibrated_sampling_rate", "semantic_phase_sampling"}:
                 self.sampling_rate_utility_fusion = nn.Linear(2, 1)
                 nn.init.zeros_(self.sampling_rate_utility_fusion.weight)
                 nn.init.zeros_(self.sampling_rate_utility_fusion.bias)
@@ -2151,7 +2178,10 @@ class DucaAcquisitionAdapter(nn.Module):
                     hidden=mixture_hidden,
                     valid_mask=valid,
                 )
-            if self.acquisition_policy == "budget_calibrated_sampling_rate":
+            if self.acquisition_policy in {
+                "budget_calibrated_sampling_rate",
+                "semantic_phase_sampling",
+            }:
                 if self.sampling_rate_utility_fusion is None:
                     raise RuntimeError("sampling-rate acquisition requires its utility fusion head")
                 # A rate-only control must be a real ablation: do not merely
@@ -2334,6 +2364,400 @@ class DucaAcquisitionAdapter(nn.Module):
                 }
             )
         return output
+
+    def _masked_gaussian_smooth(self, values: torch.Tensor, valid_mask: torch.Tensor) -> torch.Tensor:
+        sigma = float(self.semantic_phase_sigma)
+        radius = max(1, int(math.ceil(3.0 * sigma)))
+        offsets = torch.arange(-radius, radius + 1, device=values.device, dtype=values.dtype)
+        kernel = torch.exp(-0.5 * (offsets / sigma).pow(2))
+        kernel = (kernel / kernel.sum().clamp_min(torch.finfo(values.dtype).eps)).view(1, 1, -1)
+        valid = valid_mask.to(device=values.device, dtype=values.dtype)
+        numer = F.conv1d(values.masked_fill(~valid_mask, 0.0)[:, None], kernel, padding=radius).squeeze(1)
+        denom = F.conv1d(valid[:, None], kernel, padding=radius).squeeze(1).clamp_min(torch.finfo(values.dtype).eps)
+        return (numer / denom).masked_fill(~valid_mask, 0.0)
+
+    @staticmethod
+    def _centered_derivative(values: torch.Tensor, valid_mask: torch.Tensor) -> torch.Tensor:
+        derivative = torch.zeros_like(values)
+        if values.shape[1] <= 1:
+            return derivative
+        derivative[:, 1:-1] = 0.5 * (values[:, 2:] - values[:, :-2])
+        derivative[:, 0] = values[:, 1] - values[:, 0]
+        derivative[:, -1] = values[:, -1] - values[:, -2]
+        return derivative.masked_fill(~valid_mask, 0.0)
+
+    @staticmethod
+    def _robust_q90_unit(values: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+        if int(valid.sum().item()) == 0:
+            return values * 0.0
+        active = values[valid]
+        scale = torch.quantile(active.detach().abs().float(), 0.9).to(
+            device=values.device,
+            dtype=values.dtype,
+        )
+        scale = scale.clamp_min(torch.finfo(values.dtype).eps)
+        return (values / scale).masked_fill(~valid, 0.0)
+
+    @staticmethod
+    def _ranked_pick_excluding(
+        scores: torch.Tensor,
+        *,
+        valid_count: int,
+        quota: int,
+        selected: set[int],
+    ) -> List[int]:
+        if quota <= 0 or valid_count <= 0:
+            return []
+        positions = torch.arange(valid_count, device=scores.device, dtype=scores.dtype)
+        tie_break = positions * scores.new_tensor(1.0e-7)
+        order = torch.argsort(scores[:valid_count] - tie_break, descending=True)
+        picked: List[int] = []
+        for index in order.detach().cpu().tolist():
+            index = int(index)
+            if index in selected:
+                continue
+            selected.add(index)
+            picked.append(index)
+            if len(picked) >= quota:
+                break
+        return picked
+
+    def _phase_reference_scores(self, values: torch.Tensor, valid_count: int, effective_k: int) -> torch.Tensor:
+        if valid_count <= 0:
+            return values * 0.0
+        if effective_k <= 0:
+            return values.new_zeros(valid_count)
+        anchors = exact_uniform_positions(valid_count, effective_k, device=values.device).to(dtype=values.dtype)
+        positions = torch.arange(valid_count, device=values.device, dtype=values.dtype)
+        distance = (positions[:, None] - anchors[None, :]).abs().min(dim=1).values
+        return -distance
+
+    def _phase_scores_with_reference(
+        self,
+        learned: torch.Tensor,
+        *,
+        valid_count: int,
+        effective_k: int,
+        alpha: float,
+    ) -> torch.Tensor:
+        learned = learned[:valid_count]
+        if alpha <= 0.0:
+            return self._phase_reference_scores(learned, valid_count, effective_k)
+        if alpha >= 1.0:
+            return learned
+        reference = self._phase_reference_scores(learned, valid_count, effective_k)
+        return reference * float(1.0 - alpha) + learned * float(alpha)
+
+    def _phase_soft_mass(
+        self,
+        component: torch.Tensor,
+        *,
+        valid_count: int,
+        quota: int,
+        alpha: float,
+        effective_k: int,
+    ) -> torch.Tensor:
+        soft = component.new_zeros(component.shape[0])
+        if quota <= 0 or valid_count <= 0:
+            return soft
+        logits = self._phase_scores_with_reference(
+            component,
+            valid_count=valid_count,
+            effective_k=effective_k,
+            alpha=alpha,
+        )
+        probs = F.softmax(logits / float(self.structured_temperature), dim=0) * float(quota)
+        soft[:valid_count] = probs
+        return soft
+
+    def _phase_slot_assignment(
+        self,
+        aggregate_scores: torch.Tensor,
+        selected_positions: torch.Tensor,
+        *,
+        valid_count: int,
+        effective_k: int,
+        temporal_len: int,
+    ) -> torch.Tensor:
+        slots = aggregate_scores.new_zeros((int(self.budget), temporal_len))
+        if effective_k <= 0 or valid_count <= 0:
+            return slots
+        positions = torch.arange(valid_count, device=aggregate_scores.device, dtype=aggregate_scores.dtype)
+        anchors = selected_positions[:effective_k].to(device=aggregate_scores.device, dtype=aggregate_scores.dtype)
+        local_logits = aggregate_scores[:valid_count][None, :] - (
+            positions[None, :] - anchors[:, None]
+        ).abs() / float(self.structured_temperature)
+        slots[:effective_k, :valid_count] = F.softmax(local_logits, dim=1)
+        return slots
+
+    def _decode_semantic_phase_sampling(
+        self,
+        actionness_logits: Optional[torch.Tensor],
+        p_action: Optional[torch.Tensor],
+        valid_mask: torch.Tensor,
+        budgets: torch.Tensor,
+        *,
+        stable_selection: bool,
+        policy_mix_alpha: float,
+    ) -> Dict[str, Any]:
+        if torch.any(budgets != int(self.budget)):
+            raise ValueError("semantic_phase_sampling requires the configured fixed budget")
+        if actionness_logits is None:
+            if p_action is None:
+                raise ValueError("semantic_phase_sampling requires ASFormer logits or p_action")
+            eps = 1.0e-4
+            actionness_logits = torch.logit(p_action.clamp(eps, 1.0 - eps))
+        logits = actionness_logits.to(dtype=torch.float32).masked_fill(~valid_mask, 0.0)
+        smooth = self._masked_gaussian_smooth(logits, valid_mask)
+        derivative = self._centered_derivative(smooth, valid_mask)
+        core = torch.sigmoid(smooth).masked_fill(~valid_mask, 0.0)
+        onset = F.relu(derivative).masked_fill(~valid_mask, 0.0)
+        offset = F.relu(-derivative).masked_fill(~valid_mask, 0.0)
+
+        batch, temporal_len = logits.shape
+        max_slots = int(self.budget)
+        alpha = 0.0 if stable_selection else float(policy_mix_alpha)
+        alpha = max(0.0, min(1.0, alpha))
+        position_rows = []
+        dense_masks = []
+        selection_st_rows = []
+        soft_rows = []
+        slot_rows = []
+        effective_rows = []
+        policy_rows = []
+        diagnostics = []
+
+        for batch_idx in range(batch):
+            valid_positions = torch.nonzero(valid_mask[batch_idx], as_tuple=False).flatten()
+            valid_count = int(valid_positions.numel())
+            expected = torch.arange(valid_count, device=valid_positions.device, dtype=valid_positions.dtype)
+            if not torch.equal(valid_positions, expected):
+                raise ValueError("semantic_phase_sampling requires a contiguous valid prefix")
+            effective_k = min(int(budgets[batch_idx].item()), valid_count)
+            row = torch.full((max_slots,), -1, dtype=torch.long, device=logits.device)
+            dense_mask = torch.zeros(temporal_len, dtype=torch.bool, device=logits.device)
+            if effective_k <= 0:
+                position_rows.append(row)
+                dense_masks.append(dense_mask)
+                selection_st_rows.append(logits.new_zeros(temporal_len))
+                soft_rows.append(logits.new_zeros(temporal_len))
+                slot_rows.append(logits.new_zeros((max_slots, temporal_len)))
+                effective_rows.append(effective_k)
+                policy_rows.append(logits.new_zeros(temporal_len))
+                diagnostics.append({"effective_k": 0, "backfill_count": 0})
+                continue
+
+            if alpha <= 0.0 or stable_selection:
+                selected_tensor = exact_uniform_positions(
+                    valid_count,
+                    effective_k,
+                    device=logits.device,
+                )
+                row[:effective_k] = selected_tensor
+                dense_mask[selected_tensor] = True
+                policy_row = logits.new_zeros(temporal_len)
+                policy_row[:valid_count] = self._phase_reference_scores(
+                    logits[batch_idx, :valid_count],
+                    valid_count,
+                    effective_k,
+                )
+                slots = logits.new_zeros((max_slots, temporal_len))
+                if effective_k > 0:
+                    slot_ids = torch.arange(effective_k, device=logits.device)
+                    slots[slot_ids, selected_tensor] = 1.0
+                soft = dense_mask.to(dtype=logits.dtype)
+                gaps = selected_tensor[1:] - selected_tensor[:-1] if effective_k > 1 else selected_tensor.new_zeros(1)
+                diagnostics.append(
+                    {
+                        "effective_k": int(effective_k),
+                        "valid_count": int(valid_count),
+                        "budget_scaffold": 0,
+                        "budget_onset": 0,
+                        "budget_offset": 0,
+                        "budget_core": 0,
+                        "backfill_count": 0,
+                        "selected_unique_count": int(effective_k),
+                        "uniform_reference": True,
+                        "gap_mean": float(gaps.float().mean().detach().cpu().item()),
+                        "gap_p95": float(torch.quantile(gaps.float(), 0.95).detach().cpu().item()),
+                        "gap_max": int(gaps.max().detach().cpu().item()),
+                    }
+                )
+                position_rows.append(row)
+                dense_masks.append(dense_mask)
+                selection_st_rows.append(soft)
+                soft_rows.append(soft)
+                slot_rows.append(slots)
+                effective_rows.append(effective_k)
+                policy_rows.append(policy_row)
+                continue
+
+            component_valid = torch.ones(valid_count, device=logits.device, dtype=torch.bool)
+            core_row = self._robust_q90_unit(core[batch_idx, :valid_count], component_valid)
+            onset_row = self._robust_q90_unit(onset[batch_idx, :valid_count], component_valid)
+            offset_row = self._robust_q90_unit(offset[batch_idx, :valid_count], component_valid)
+
+            quotas = {
+                "scaffold": min(self.semantic_phase_budgets["scaffold"], effective_k),
+                "onset": self.semantic_phase_budgets["onset"],
+                "offset": self.semantic_phase_budgets["offset"],
+                "core": self.semantic_phase_budgets["core"],
+            }
+            selected: set[int] = set()
+            selected_by_group = {"scaffold": [], "onset": [], "offset": [], "core": [], "backfill": []}
+            scaffold = exact_uniform_positions(
+                valid_count,
+                quotas["scaffold"],
+                device=logits.device,
+            ).detach().cpu().tolist()
+            for index in scaffold:
+                index = int(index)
+                if index not in selected:
+                    selected.add(index)
+                    selected_by_group["scaffold"].append(index)
+            remaining = effective_k - len(selected)
+            for group_name, group_scores in (
+                ("onset", onset_row),
+                ("offset", offset_row),
+                ("core", core_row),
+            ):
+                quota = min(int(quotas[group_name]), remaining)
+                ranked = self._phase_scores_with_reference(
+                    group_scores,
+                    valid_count=valid_count,
+                    effective_k=effective_k,
+                    alpha=alpha,
+                )
+                picked = self._ranked_pick_excluding(
+                    ranked,
+                    valid_count=valid_count,
+                    quota=quota,
+                    selected=selected,
+                )
+                selected_by_group[group_name].extend(picked)
+                remaining = effective_k - len(selected)
+                if remaining <= 0:
+                    break
+            if remaining > 0:
+                backfill_candidates = exact_uniform_positions(
+                    valid_count,
+                    effective_k,
+                    device=logits.device,
+                ).detach().cpu().tolist()
+                backfill_candidates.extend(range(valid_count))
+                for index in backfill_candidates:
+                    index = int(index)
+                    if index in selected:
+                        continue
+                    selected.add(index)
+                    selected_by_group["backfill"].append(index)
+                    if len(selected) >= effective_k:
+                        break
+            selected_sorted = sorted(selected)
+            if len(selected_sorted) != effective_k:
+                raise ValueError("semantic_phase_sampling failed to produce exact unique K")
+            selected_tensor = torch.tensor(selected_sorted, device=logits.device, dtype=torch.long)
+            row[:effective_k] = selected_tensor
+            dense_mask[selected_tensor] = True
+
+            aggregate = core_row + onset_row + offset_row
+            policy_row = logits.new_zeros(temporal_len)
+            policy_row[:valid_count] = self._phase_scores_with_reference(
+                aggregate,
+                valid_count=valid_count,
+                effective_k=effective_k,
+                alpha=alpha,
+            )
+            scaffold_soft = logits.new_zeros(temporal_len)
+            if selected_by_group["scaffold"]:
+                scaffold_idx = torch.tensor(selected_by_group["scaffold"], device=logits.device, dtype=torch.long)
+                scaffold_soft[scaffold_idx] = 1.0
+            soft = scaffold_soft
+            soft[:valid_count] = soft[:valid_count] + self._phase_soft_mass(
+                onset_row,
+                valid_count=valid_count,
+                quota=min(self.semantic_phase_budgets["onset"], effective_k),
+                alpha=alpha,
+                effective_k=effective_k,
+            )
+            soft[:valid_count] = soft[:valid_count] + self._phase_soft_mass(
+                offset_row,
+                valid_count=valid_count,
+                quota=min(self.semantic_phase_budgets["offset"], effective_k),
+                alpha=alpha,
+                effective_k=effective_k,
+            )
+            soft[:valid_count] = soft[:valid_count] + self._phase_soft_mass(
+                core_row,
+                valid_count=valid_count,
+                quota=min(self.semantic_phase_budgets["core"], effective_k),
+                alpha=alpha,
+                effective_k=effective_k,
+            )
+            soft = soft.clamp(max=1.0).masked_fill(~valid_mask[batch_idx], 0.0)
+            selection_st = dense_mask.to(dtype=soft.dtype) + soft - soft.detach()
+            slots = self._phase_slot_assignment(
+                policy_row,
+                selected_tensor,
+                valid_count=valid_count,
+                effective_k=effective_k,
+                temporal_len=temporal_len,
+            )
+
+            gaps = selected_tensor[1:] - selected_tensor[:-1] if effective_k > 1 else selected_tensor.new_zeros(1)
+            diagnostics.append(
+                {
+                    "effective_k": int(effective_k),
+                    "valid_count": int(valid_count),
+                    "budget_scaffold": int(len(selected_by_group["scaffold"])),
+                    "budget_onset": int(len(selected_by_group["onset"])),
+                    "budget_offset": int(len(selected_by_group["offset"])),
+                    "budget_core": int(len(selected_by_group["core"])),
+                    "backfill_count": int(len(selected_by_group["backfill"])),
+                    "selected_by_group": {
+                        name: list(indices)
+                        for name, indices in selected_by_group.items()
+                    },
+                    "selected_unique_count": int(len(selected_sorted)),
+                    "gap_mean": float(gaps.float().mean().detach().cpu().item()),
+                    "gap_p95": float(torch.quantile(gaps.float(), 0.95).detach().cpu().item()),
+                    "gap_max": int(gaps.max().detach().cpu().item()),
+                }
+            )
+            position_rows.append(row)
+            dense_masks.append(dense_mask)
+            selection_st_rows.append(selection_st)
+            soft_rows.append(soft)
+            slot_rows.append(slots)
+            effective_rows.append(effective_k)
+            policy_rows.append(policy_row)
+
+        effective = torch.tensor(effective_rows, dtype=torch.long, device=logits.device)
+        return {
+            "selected_positions": torch.stack(position_rows, dim=0),
+            "selected_mask": torch.stack(dense_masks, dim=0),
+            "selection_st": torch.stack(selection_st_rows, dim=0),
+            "soft_coverage": torch.stack(soft_rows, dim=0).to(dtype=actionness_logits.dtype),
+            "soft_slot_assignment": torch.stack(slot_rows, dim=0).to(dtype=actionness_logits.dtype),
+            "effective_budget": effective,
+            "detector_input_length": effective.clone(),
+            "selected_centers": [[] for _ in range(batch)],
+            "selected_radius": [[] for _ in range(batch)],
+            "fill_strategy": ["semantic_phase_fixed_quota" for _ in range(batch)],
+            "max_gap_repair": [{"enabled": False, "encoded_in_policy": False} for _ in range(batch)],
+            "selection_path": (
+                "semantic_phase_exact_uniform_reference"
+                if bool(stable_selection or alpha <= 0.0)
+                else "semantic_phase_fixed_budget_logits"
+            ),
+            "decode_policy_logits": torch.stack(policy_rows, dim=0).to(dtype=actionness_logits.dtype),
+            "policy_mix_alpha": alpha,
+            "semantic_phase_diagnostics": diagnostics,
+            "semantic_phase_smoothed_logits": smooth.to(dtype=actionness_logits.dtype),
+            "semantic_phase_onset_scores": onset.to(dtype=actionness_logits.dtype),
+            "semantic_phase_offset_scores": offset.to(dtype=actionness_logits.dtype),
+            "semantic_phase_core_scores": core.to(dtype=actionness_logits.dtype),
+        }
 
     def _decode_global_structured(
         self,
@@ -2888,6 +3312,15 @@ class DucaAcquisitionAdapter(nn.Module):
                 stable_selection=bool(stable_selection),
                 policy_mix_alpha=float(policy_mix_alpha),
             )
+        elif self.acquisition_policy == "semantic_phase_sampling":
+            decoded = self._decode_semantic_phase_sampling(
+                scores.get("actionness_logits"),
+                scores.get("p_action"),
+                scores["valid_mask"],
+                budgets,
+                stable_selection=bool(stable_selection),
+                policy_mix_alpha=float(policy_mix_alpha),
+            )
         elif self.acquisition_policy == "local_cell_deformation":
             decoded = self._decode_local_cell(
                 scores["center_scores"],
@@ -3018,6 +3451,19 @@ class DucaAcquisitionAdapter(nn.Module):
                     .cpu()
                     .tolist()
                 ),
+                "semantic_phase_diagnostics": decoded.get(
+                    "semantic_phase_diagnostics"
+                ),
+                "semantic_phase_budgets": (
+                    dict(self.semantic_phase_budgets)
+                    if self.acquisition_policy == "semantic_phase_sampling"
+                    else None
+                ),
+                "semantic_phase_sigma": (
+                    float(self.semantic_phase_sigma)
+                    if self.acquisition_policy == "semantic_phase_sampling"
+                    else None
+                ),
                 "cost_ledger": cost_ledger,
             },
         ).validate()
@@ -3030,6 +3476,7 @@ class DucaAcquisitionAdapter(nn.Module):
             "continuous_density_transport",
             "continuous_mixture_density_transport",
             "budget_calibrated_sampling_rate",
+            "semantic_phase_sampling",
         }:
             soft_coverage = decoded["soft_coverage"]
             selection_st = decoded["selection_st"]
@@ -3111,6 +3558,21 @@ class DucaAcquisitionAdapter(nn.Module):
                 "sampling_calibration_residual": decoded.get("sampling_calibration_residual"),
                 "sampling_observed_max_unselected_hole": decoded.get(
                     "sampling_observed_max_unselected_hole"
+                ),
+                "semantic_phase_diagnostics": decoded.get(
+                    "semantic_phase_diagnostics"
+                ),
+                "semantic_phase_smoothed_logits": decoded.get(
+                    "semantic_phase_smoothed_logits"
+                ),
+                "semantic_phase_onset_scores": decoded.get(
+                    "semantic_phase_onset_scores"
+                ),
+                "semantic_phase_offset_scores": decoded.get(
+                    "semantic_phase_offset_scores"
+                ),
+                "semantic_phase_core_scores": decoded.get(
+                    "semantic_phase_core_scores"
                 ),
                 "detector_grid_positions": decoded.get(
                     "local_cell_anchor_positions",

@@ -27,6 +27,7 @@ class AnchorFreeHead(nn.Module):
         filter_similar_gt=True,
         assignment_debug=None,
         physical_grid_actionformer=None,
+        conv_cfg=None,
     ):
         super(AnchorFreeHead, self).__init__()
 
@@ -38,6 +39,7 @@ class AnchorFreeHead(nn.Module):
         self.label_smoothing = label_smoothing
         self.filter_similar_gt = filter_similar_gt
         self.assignment_debug = assignment_debug or {}
+        self.conv_cfg = None if conv_cfg is None else dict(conv_cfg)
         self.assignment_debug_enabled = bool(self.assignment_debug.get("enabled", False))
         self.physical_grid_cfg = {} if physical_grid_actionformer is None else dict(physical_grid_actionformer)
         self.physical_grid_enabled = bool(self.physical_grid_cfg.get("enabled", False))
@@ -376,6 +378,7 @@ class AnchorFreeHead(nn.Module):
                     kernel_size=3,
                     stride=1,
                     padding=1,
+                    conv_cfg=self.conv_cfg,
                     norm_cfg=dict(type="LN"),
                     act_cfg=dict(type="relu"),
                 )
@@ -392,6 +395,7 @@ class AnchorFreeHead(nn.Module):
                     kernel_size=3,
                     stride=1,
                     padding=1,
+                    conv_cfg=self.conv_cfg,
                     norm_cfg=dict(type="LN"),
                     act_cfg=dict(type="relu"),
                 )
@@ -409,17 +413,97 @@ class AnchorFreeHead(nn.Module):
             bias_value = -(math.log((1 - self.cls_prior_prob) / self.cls_prior_prob))
             nn.init.constant_(self.cls_head.bias, bias_value)
 
+    def _temporal_positions_from_metas(self, metas, device, dtype):
+        if metas is None:
+            return None
+        rows = []
+        max_len = 0
+        for meta in metas:
+            positions = None
+            for key in (
+                "temporal_positions",
+                "irregular_selected_positions",
+                "selected_axis_to_true_time_dense_index",
+                "selected_dense_indices",
+            ):
+                if key in meta and meta[key] is not None:
+                    positions = meta[key]
+                    break
+            if positions is None:
+                return None
+            row = torch.as_tensor(positions, device=device, dtype=dtype).reshape(-1)
+            count = meta.get("selected_valid_len", meta.get("irregular_selected_count", row.numel()))
+            count = max(0, min(int(count), int(row.numel())))
+            row = row[:count]
+            if row.numel() == 0:
+                return None
+            rows.append(row)
+            max_len = max(max_len, int(row.numel()))
+        padded = []
+        for row in rows:
+            if int(row.numel()) < max_len:
+                pad = row[-1:].expand(max_len - int(row.numel()))
+                row = torch.cat([row, pad], dim=0)
+            padded.append(row)
+        return torch.stack(padded, dim=0)
+
+    @staticmethod
+    def _resize_temporal_positions(temporal_positions, size, device, dtype):
+        if temporal_positions is None:
+            return None
+        positions = temporal_positions.to(device=device, dtype=dtype)
+        if positions.ndim == 1:
+            positions = positions[None, :]
+        if int(positions.shape[-1]) == int(size):
+            return positions
+        if int(size) <= 0:
+            return None
+        if int(size) == 1:
+            return positions[:, :1]
+        return F.interpolate(
+            positions[:, None].float(),
+            size=int(size),
+            mode="linear",
+            align_corners=True,
+        ).squeeze(1).to(dtype=dtype)
+
+    def _level_temporal_positions(self, feat, source_positions):
+        return self._resize_temporal_positions(
+            source_positions,
+            int(feat.shape[-1]),
+            feat.device,
+            feat.dtype,
+        )
+
     def forward_train(self, feat_list, mask_list, gt_segments, gt_labels, metas=None, **kwargs):
         cls_pred = []
         reg_pred = []
+        temporal_positions = kwargs.get("temporal_positions")
+        if temporal_positions is None:
+            temporal_positions = self._temporal_positions_from_metas(
+                metas,
+                feat_list[0].device,
+                feat_list[0].dtype,
+            )
 
         for l, (feat, mask) in enumerate(zip(feat_list, mask_list)):
             cls_feat = feat
             reg_feat = feat
+            level_temporal_positions = self._level_temporal_positions(feat, temporal_positions)
 
             for i in range(self.num_convs):
-                cls_feat, mask = self.cls_convs[i](cls_feat, mask)
-                reg_feat, mask = self.reg_convs[i](reg_feat, mask)
+                cls_feat, mask = self.cls_convs[i](
+                    cls_feat,
+                    mask,
+                    temporal_positions=level_temporal_positions,
+                    level_index=l,
+                )
+                reg_feat, mask = self.reg_convs[i](
+                    reg_feat,
+                    mask,
+                    temporal_positions=level_temporal_positions,
+                    level_index=l,
+                )
 
             cls_pred.append(self.cls_head(cls_feat))
             reg_pred.append(F.relu(self.scale[l](self.reg_head(reg_feat))))
@@ -435,14 +519,32 @@ class AnchorFreeHead(nn.Module):
     def forward_test(self, feat_list, mask_list, metas=None, **kwargs):
         cls_pred = []
         reg_pred = []
+        temporal_positions = kwargs.get("temporal_positions")
+        if temporal_positions is None:
+            temporal_positions = self._temporal_positions_from_metas(
+                metas,
+                feat_list[0].device,
+                feat_list[0].dtype,
+            )
 
         for l, (feat, mask) in enumerate(zip(feat_list, mask_list)):
             cls_feat = feat
             reg_feat = feat
+            level_temporal_positions = self._level_temporal_positions(feat, temporal_positions)
 
             for i in range(self.num_convs):
-                cls_feat, mask = self.cls_convs[i](cls_feat, mask)
-                reg_feat, mask = self.reg_convs[i](reg_feat, mask)
+                cls_feat, mask = self.cls_convs[i](
+                    cls_feat,
+                    mask,
+                    temporal_positions=level_temporal_positions,
+                    level_index=l,
+                )
+                reg_feat, mask = self.reg_convs[i](
+                    reg_feat,
+                    mask,
+                    temporal_positions=level_temporal_positions,
+                    level_index=l,
+                )
 
             cls_pred.append(self.cls_head(cls_feat))
             reg_pred.append(F.relu(self.scale[l](self.reg_head(reg_feat))))
