@@ -134,8 +134,27 @@ class BackboneWrapper(nn.Module):
                 raw_prior_len = int(boundary_prior.shape[1])
                 tubelet_size = int(getattr(getattr(self.model, "backbone", self.model), "tubelet_size", 2))
                 frames_per_chunk = raw_prior_len // temporal_chunks
-                tubelets_per_chunk = max(1, frames_per_chunk // tubelet_size)
-                bp = boundary_prior.reshape(original_batches, temporal_chunks, tubelets_per_chunk, tubelet_size).amax(dim=-1)
+                backbone_num_frames = int(
+                    getattr(getattr(self.model, "backbone", self.model), "num_frames", 16)
+                )
+                # Selectors may provide either frame-level scores
+                # (chunks*frames) or already tubelet-level scores
+                # (chunks*tubelets).  Do not pair tubelet scores a second
+                # time; that silently halves the boundary map.
+                tubelet_count = max(1, backbone_num_frames // tubelet_size)
+                if frames_per_chunk == tubelet_count:
+                    tubelets_per_chunk = tubelet_count
+                    bp = boundary_prior.reshape(original_batches, temporal_chunks, tubelets_per_chunk)
+                elif frames_per_chunk == backbone_num_frames:
+                    tubelets_per_chunk = tubelet_count
+                    bp = boundary_prior.reshape(
+                        original_batches, temporal_chunks, tubelets_per_chunk, tubelet_size
+                    ).amax(dim=-1)
+                else:
+                    raise ValueError(
+                        "boundary_prior length must be frame- or tubelet-level per chunk; "
+                        f"got {frames_per_chunk}, expected {backbone_num_frames} or {tubelet_count}"
+                    )
                 bp = bp.reshape(batches, tubelets_per_chunk)
                 if num_segs > 1:
                     bp = bp[:, None, :].expand(batches, num_segs, tubelets_per_chunk).reshape(batches * num_segs, tubelets_per_chunk)
