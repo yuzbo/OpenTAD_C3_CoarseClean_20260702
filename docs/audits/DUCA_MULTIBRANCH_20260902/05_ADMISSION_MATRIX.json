@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-02",
+  "default_terminal_states": ["PENDING", "RUNNING", "SUCCEEDED", "FAILED", "BLOCKED_GATE", "BLOCKED_UNIMPLEMENTED", "INVALID"],
+  "branches": [
+    {"id": "H65_PRO", "sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659", "status": "CONDITIONAL", "allowed_now": ["cuda_precheck", "physical_coordinate_reduction", "strict60_counter_dry_run", "slurm_port_smoke", "cost_preflight"], "release_predicate": "all H65 P0 gates PASS at exact SHA", "formal_matrix": "BLOCKED_GATE"},
+    {"id": "DUCA_UNIFIED", "sha": "89b9ea3e8e018b41034917ee14de7f409354a7e9", "status": "BLOCKED_UNIMPLEMENTED", "blocked_arms": ["D1", "F11", "H0", "G10", "G11"], "blocked_reasons": ["signed_feature_taylor_p0_p1_runtime_not_wired", "h65_original_retention_transition_not_implemented", "measured_cost_not_implemented"], "formal_matrix": "BLOCKED_UNIMPLEMENTED"},
+    {"id": "EVIDENCE", "sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c", "status": "PARITY_ONLY", "allowed_now": ["C0_exact_parity", "cuda_forward_backward", "mask_edges", "resume"], "release_predicate": "C0 terminal PASS plus CUDA admission", "formal_matrix": "BLOCKED_GATE"},
+    {"id": "CT_DP_BAMOD", "sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc", "status": "GEOMETRY_ONLY", "allowed_now": ["geometry_receipts", "uniform_reduction", "finite_difference_gradients", "batch_ddp_admission"], "release_predicate": "geometry/gradient/batch admission PASS on corrected exact-SHA source", "formal_matrix": "BLOCKED_GATE", "correction_commit": "d62cab763c8e0478e73c6c47a4c185db45164dda"},
+    {"id": "BAFDR", "sha": "fdeaeb98340bf7070201a02feb8093f50486aeaa", "status": "SCREEN_ONLY", "allowed_now": ["teacher_identity", "teacher_freeze_gradient", "selection_split_screen"], "release_predicate": "terminal screen PASS on disjoint selection split", "formal_matrix": "BLOCKED_GATE"},
+    {"id": "ET_TRC", "sha": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f", "status": "CHECKPOINT_DDP_ONLY", "allowed_now": ["checkpoint_numel_coverage", "one_gpu_cuda_load", "two_gpu_ddp_global_batch_2", "ddp_resume"], "release_predicate": "checkpoint and two-GPU DDP admissions PASS", "formal_matrix": "BLOCKED_GATE"}
+  ],
+  "result_policy": "No result is valid without exact source SHA, clean-tree receipt, terminal EMA checkpoint, complete official evaluator output, and valid aggregation receipt."
+}

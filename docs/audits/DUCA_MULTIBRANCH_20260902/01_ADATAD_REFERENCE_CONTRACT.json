@@ -1,0 +1,57 @@
+{
+  "status": "INCOMPLETE_FOR_FORMAL_ADMISSION",
+  "purpose": "Reference contract skeleton; formal training is blocked until every identity is resolved and hashed.",
+  "repository": {
+    "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
+    "reference_commit": null,
+    "config_inheritance_chain": null
+  },
+  "data": {
+    "dataset": "THUMOS14",
+    "training_video_count": 200,
+    "official_heldout_video_count": 211,
+    "train_heldout_overlap": "MUST_BE_ZERO",
+    "train_video_list_sha256": null,
+    "heldout_video_list_sha256": null,
+    "annotation_sha256": null
+  },
+  "geometry": {
+    "input_frames": null,
+    "selected_frames": null,
+    "window_tubelet_stride_crop_overlap": null,
+    "mask_semantics": null,
+    "physical_coordinate_unit": null
+  },
+  "model": {
+    "videomae_identity": null,
+    "adapter_identity": null,
+    "actionformer_identity": null,
+    "detector_strides_ranges_assignment_losses_decode_nms": null,
+    "checkpoint_identity_sha256": null
+  },
+  "optimization": {
+    "optimizer_parameter_groups": null,
+    "lr_weight_decay_warmup_scheduler": null,
+    "global_batch": null,
+    "per_rank_batch": null,
+    "world_size": null,
+    "gradient_accumulation": null,
+    "examples_per_update": null,
+    "strict_epochs": 60,
+    "strict_successful_updates": 6000,
+    "amp_clip_ema_seed": null
+  },
+  "evaluation_and_cost": {
+    "evaluator_commit": null,
+    "class_set_tiou_aggregation": null,
+    "seconds_conversion_external_classifier": null,
+    "hardware_software_identity": null,
+    "measured_cost_protocol": null
+  },
+  "required_before_release": [
+    "Resolve the clean AdaTAD/H65 reference commit and inheritance chain.",
+    "Hash train/held-out lists, annotations, every external checkpoint and evaluator identity.",
+    "Generate ADATAD_PARITY_<CELL>.json for each released cell; only declared variables may differ.",
+    "Archive checkpoint coverage by parameter numel and required module/block."
+  ]
+}

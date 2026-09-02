@@ -1,0 +1,114 @@
+{
+  "blocked_reasons": [
+    "DUCA_UNIFIED: BLOCKED_UNIMPLEMENTED",
+    "stage S60_IMPLEMENTATION: BLOCKED_UNIMPLEMENTED"
+  ],
+  "job_ids": [],
+  "manifest_id": "DUCA-MULTIBRANCH-FULL-DAG-20260902-v001",
+  "mode": "plan",
+  "stages": [
+    {
+      "id": "S00_IDENTITY",
+      "status": "SUCCEEDED_LOCAL",
+      "tasks": [
+        "identity_static_audit",
+        "code_tree_equivalence"
+      ]
+    },
+    {
+      "id": "S01_REFERENCE",
+      "status": "BLOCKED_GATE",
+      "tasks": [
+        "resolve_adatad_reference_contract",
+        "hash_data_and_checkpoint_identities",
+        "generate_cell_parity_receipts"
+      ]
+    },
+    {
+      "id": "S10_H65_ADMISSION",
+      "status": "PENDING_REMOTE",
+      "tasks": [
+        "H65_CUDA_REDUCTION",
+        "H65_OPTIMIZER_COVERAGE",
+        "H65_STRICT60_RESUME",
+        "H65_SLURM_PORT_SMOKE",
+        "H65_COST_PREFLIGHT"
+      ]
+    },
+    {
+      "id": "S20_EVIDENCE_ADMISSION",
+      "status": "PENDING_REMOTE",
+      "tasks": [
+        "EVIDENCE_C0_EXACT_PARITY",
+        "EVIDENCE_CUDA_MASK_RESUME"
+      ]
+    },
+    {
+      "id": "S30_CTDP_ADMISSION",
+      "status": "PENDING_REMOTE",
+      "tasks": [
+        "CTDP_GEOMETRY_RECEIPTS",
+        "CTDP_UNIFORM_REDUCTION",
+        "CTDP_CT_ETA_GRADIENT",
+        "CTDP_BAMOD_BATCH_DDP"
+      ]
+    },
+    {
+      "id": "S40_BAFDR_SCREEN",
+      "status": "PENDING_REMOTE",
+      "tasks": [
+        "BAFDR_TEACHER_COVERAGE_FREEZE",
+        "BAFDR_SELECTION_SCREEN"
+      ]
+    },
+    {
+      "id": "S50_ETTRC_ADMISSION",
+      "status": "PENDING_REMOTE",
+      "tasks": [
+        "ET_CHECKPOINT_COVERAGE",
+        "ET_ONE_GPU_CUDA",
+        "ET_TWO_GPU_DDP",
+        "ET_DDP_RESUME"
+      ]
+    },
+    {
+      "id": "S60_IMPLEMENTATION",
+      "status": "BLOCKED_UNIMPLEMENTED",
+      "tasks": [
+        "UNIFIED_TAYLOR_P0_P1",
+        "UNIFIED_H65_RETENTION_TRANSITION",
+        "UNIFIED_COST_RUNTIME"
+      ]
+    },
+    {
+      "id": "S70_FORMAL_TRAIN",
+      "status": "BLOCKED_GATE",
+      "tasks": [
+        "H65_28_CELL_MATRIX",
+        "EVIDENCE_DOWNSTREAM_CELLS",
+        "CTDP_G0_G3_M00_M11",
+        "BAFDR_21_CELL_MATRIX",
+        "ET_OFF_ON_TRAINING",
+        "UNIFIED_41_CELL_MATRIX"
+      ]
+    },
+    {
+      "id": "S80_EVALUATE",
+      "status": "BLOCKED_GATE",
+      "tasks": [
+        "terminal_ema_evaluation",
+        "official_evaluator"
+      ]
+    },
+    {
+      "id": "S90_ANALYZE",
+      "status": "BLOCKED_GATE",
+      "tasks": [
+        "full_cost_benchmark",
+        "paired_dataset_bootstrap",
+        "result_manifest_finalize"
+      ]
+    }
+  ],
+  "status": "BLOCKED"
+}

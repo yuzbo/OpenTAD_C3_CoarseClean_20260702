@@ -1,0 +1,11 @@
+{
+  "status": "NO_VALID_RESULTS",
+  "generated_at": "2026-09-02",
+  "results": [],
+  "policy": {
+    "mAP": "invalid unless exact SHA, clean-tree receipt, terminal EMA checkpoint, complete official evaluator output and valid aggregation receipt are all present",
+    "cost": "invalid until synchronized end-to-end measurement with hardware/software identity is present",
+    "bootstrap": "invalid until paired video/seed resamples rerun the dataset-level evaluator and indices are archived",
+    "blocked_or_nonterminal_cells": "must not be rewritten as zero or successful results"
+  }
+}

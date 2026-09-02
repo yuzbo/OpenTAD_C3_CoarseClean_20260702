@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "manifest_id": "DUCA-MULTIBRANCH-FULL-DAG-20260902-v001",
+  "immutable_after_submission": true,
+  "created_at": "2026-09-02",
+  "run_root_template": "/data/run01/sczc063/yuzibo/runs/duca_multibranch_20260902/{branch_id}/{cell_id}/{sha}/{seed}",
+  "scheduler_policy": {
+    "submission": "bounded_dependency_aware",
+    "max_in_flight_submissions": 8,
+    "scientific_choice_by_human": false,
+    "downstream_dependency": "afterok",
+    "afterany": "audit_only",
+    "on_submission_failure": "cancel_submitted_descendants_and_emit_terminal_receipt",
+    "cuda_visible_devices": "preserve Slurm allocation; never overwrite with literal 1",
+    "master_port": "derive from SLURM_JOB_ID and ARRAY_TASK_ID and record in receipt"
+  },
+  "stages": [
+    {"id": "S00_IDENTITY", "status": "SUCCEEDED_LOCAL", "tasks": ["identity_static_audit", "code_tree_equivalence"]},
+    {"id": "S01_REFERENCE", "status": "BLOCKED_GATE", "tasks": ["resolve_adatad_reference_contract", "hash_data_and_checkpoint_identities", "generate_cell_parity_receipts"]},
+    {"id": "S10_H65_ADMISSION", "status": "PENDING_REMOTE", "tasks": ["H65_CUDA_REDUCTION", "H65_OPTIMIZER_COVERAGE", "H65_STRICT60_RESUME", "H65_SLURM_PORT_SMOKE", "H65_COST_PREFLIGHT"]},
+    {"id": "S20_EVIDENCE_ADMISSION", "status": "PENDING_REMOTE", "tasks": ["EVIDENCE_C0_EXACT_PARITY", "EVIDENCE_CUDA_MASK_RESUME"]},
+    {"id": "S30_CTDP_ADMISSION", "status": "PENDING_REMOTE", "tasks": ["CTDP_GEOMETRY_RECEIPTS", "CTDP_UNIFORM_REDUCTION", "CTDP_CT_ETA_GRADIENT", "CTDP_BAMOD_BATCH_DDP"]},
+    {"id": "S40_BAFDR_SCREEN", "status": "PENDING_REMOTE", "tasks": ["BAFDR_TEACHER_COVERAGE_FREEZE", "BAFDR_SELECTION_SCREEN"]},
+    {"id": "S50_ETTRC_ADMISSION", "status": "PENDING_REMOTE", "tasks": ["ET_CHECKPOINT_COVERAGE", "ET_ONE_GPU_CUDA", "ET_TWO_GPU_DDP", "ET_DDP_RESUME"]},
+    {"id": "S60_IMPLEMENTATION", "status": "BLOCKED_UNIMPLEMENTED", "tasks": ["UNIFIED_TAYLOR_P0_P1", "UNIFIED_H65_RETENTION_TRANSITION", "UNIFIED_COST_RUNTIME"]},
+    {"id": "S70_FORMAL_TRAIN", "status": "BLOCKED_GATE", "tasks": ["H65_28_CELL_MATRIX", "EVIDENCE_DOWNSTREAM_CELLS", "CTDP_G0_G3_M00_M11", "BAFDR_21_CELL_MATRIX", "ET_OFF_ON_TRAINING", "UNIFIED_41_CELL_MATRIX"]},
+    {"id": "S80_EVALUATE", "status": "BLOCKED_GATE", "tasks": ["terminal_ema_evaluation", "official_evaluator"]},
+    {"id": "S90_ANALYZE", "status": "BLOCKED_GATE", "tasks": ["full_cost_benchmark", "paired_dataset_bootstrap", "result_manifest_finalize"]}
+  ],
+  "task_groups": [
+    {"group": "H65_28_CELL_MATRIX", "source_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659", "count": 28, "depends_on": ["S10_H65_ADMISSION"], "release": "all H65 admission receipts terminal PASS", "state": "BLOCKED_GATE"},
+    {"group": "EVIDENCE_DOWNSTREAM_CELLS", "source_sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c", "count": null, "depends_on": ["S20_EVIDENCE_ADMISSION"], "release": "C0 and CUDA admission terminal PASS", "state": "BLOCKED_GATE"},
+    {"group": "CTDP_G0_G3_M00_M11", "source_sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc", "count": 16, "depends_on": ["S30_CTDP_ADMISSION"], "release": "corrected factorization, geometry, gradient and batch receipts PASS", "state": "BLOCKED_GATE"},
+    {"group": "BAFDR_21_CELL_MATRIX", "source_sha": "fdeaeb98340bf7070201a02feb8093f50486aeaa", "count": 21, "depends_on": ["S40_BAFDR_SCREEN"], "release": "screen PASS on disjoint selection split; never held-out-driven", "state": "BLOCKED_GATE"},
+    {"group": "ET_OFF_ON_TRAINING", "source_sha": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f", "count": 2, "depends_on": ["S50_ETTRC_ADMISSION"], "release": "checkpoint and two-GPU DDP admissions PASS", "state": "BLOCKED_GATE"},
+    {"group": "UNIFIED_41_CELL_MATRIX", "source_sha": "89b9ea3e8e018b41034917ee14de7f409354a7e9", "count": 41, "depends_on": ["S60_IMPLEMENTATION"], "release": "all three implementation blockers cleared and generator says READY", "state": "BLOCKED_UNIMPLEMENTED"}
+  ],
+  "per_task_required_fields": [
+    "task_id", "cell_id", "source_sha", "clean_tree", "config_hash", "data_manifest_hash", "checkpoint_hashes", "declared_changed_variables", "adatad_parity_receipt", "resource_class", "world_size", "global_batch", "update_target", "dependencies", "release_predicate", "run_root", "terminal_state"
+  ]
+}

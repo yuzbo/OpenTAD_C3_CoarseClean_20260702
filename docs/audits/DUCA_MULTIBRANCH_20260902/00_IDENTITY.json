@@ -1,0 +1,94 @@
+{
+  "audit_nonce": "DUCA-MULTIBRANCH-LINE-AUDIT-AND-GATED-DEPLOY-v001-20260902",
+  "generated_at": "2026-09-02",
+  "repository": {
+    "url": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
+    "local_root": "E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702",
+    "coordination_branch": "codex/duca-multibranch-audit-20260902",
+    "coordination_commit_before_audit": "b0ee867db1d1e4ae51ed728500b982c74e9386dd"
+  },
+  "source_documents": [
+    "E:/下载/DUCA_MULTIBRANCH_AUDIT_AND_AGENT_TASK_20260902.md",
+    "E:/下载/DUCA_EXACT_SHA_LOCAL_VALIDATION_20260902.md",
+    "E:/下载/DUCA_MULTI_BRANCH_AUDIT_EVIDENCE_20260902.json",
+    "C:/Users/skywalker/.codex/attachments/16c2284b-d64e-4757-b769-b04427d64d88/pasted-text.txt"
+  ],
+  "implementation_baselines": {
+    "H65_PRO": "b419f2b026a44dd71230768531d35981f79dd456",
+    "DUCA_UNIFIED": "1c4baebe50a3d36267105e7cc69cc88769e42126"
+  },
+  "targets": [
+    {
+      "id": "H65_PRO",
+      "branch": "codex/h65-pro-fullmatrix-strict60-20260902",
+      "sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/cfb7041d876f6e38e9ef6ce77cef7cee04b79659",
+      "audit_worktree": "E:/DeskTop/TAD/_duca_audit_worktrees/h65_pro",
+      "code_tree_equivalence_to_baseline": "PASS_EMPTY_DIFF",
+      "static_validation": "PASS",
+      "admission": "CONDITIONAL",
+      "release_scope": "H65 CUDA, physical-coordinate reduction, strict60/6000, Slurm smoke, cost preflight"
+    },
+    {
+      "id": "DUCA_UNIFIED",
+      "branch": "codex/duca-unified-fullmatrix-20260902",
+      "sha": "89b9ea3e8e018b41034917ee14de7f409354a7e9",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/89b9ea3e8e018b41034917ee14de7f409354a7e9",
+      "audit_worktree": "E:/DeskTop/TAD/_duca_audit_worktrees/duca_unified",
+      "code_tree_equivalence_to_baseline": "FAIL_NON_EMPTY_DIFF",
+      "code_diff": "tools/bata/write_duca_review_bundle.py differs from 1c4baebe; earlier receipts are not inherited",
+      "static_validation": "PASS_WITH_WINDOWS_TORCH_LIMIT",
+      "admission": "BLOCKED_UNIMPLEMENTED",
+      "release_scope": "Taylor P0/P1 objective, original H65 retention/transition, measured cost"
+    },
+    {
+      "id": "EVIDENCE",
+      "branch": "codex/duca-evidence-recovery-numerical-correction-20260902",
+      "sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/08d425a259fc468dde7c496e77b4c43e953d8d0c",
+      "audit_worktree": "E:/DeskTop/TAD/_duca_audit_worktrees/evidence",
+      "code_tree_equivalence_to_baseline": "NOT_DECLARED",
+      "static_validation": "PASS_WITH_WINDOWS_TORCH_LIMIT",
+      "admission": "PARITY_ONLY",
+      "release_scope": "C0 exact numerical parity, CUDA forward/backward, all-mask/mixed-mask/resume"
+    },
+    {
+      "id": "CT_DP_BAMOD",
+      "branch": "codex/duca-ctdp-geometry-mechanism-correction-20260902",
+      "sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc",
+      "audit_worktree": "E:/DeskTop/TAD/_duca_audit_worktrees/ct_dp_bamod",
+      "code_tree_equivalence_to_baseline": "NOT_DECLARED",
+      "static_validation": "PASS_WITH_WINDOWS_TORCH_LIMIT",
+      "admission": "GEOMETRY_ONLY",
+      "release_scope": "geometry receipt, uniform reduction, gradient, batch/DDP admission"
+    },
+    {
+      "id": "BAFDR",
+      "branch": "codex/zoomtoken-bafdr-gradient-correction-20260902",
+      "sha": "fdeaeb98340bf7070201a02feb8093f50486aeaa",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/fdeaeb98340bf7070201a02feb8093f50486aeaa",
+      "audit_worktree": "E:/DeskTop/TAD/_duca_audit_worktrees/bafdr",
+      "code_tree_equivalence_to_baseline": "NOT_DECLARED",
+      "static_validation": "PASS",
+      "admission": "SCREEN_ONLY",
+      "release_scope": "frozen screen on disjoint selection split, then 21-cell matrix"
+    },
+    {
+      "id": "ET_TRC",
+      "branch": "codex/zoomtoken-et-trc-correction-20260902",
+      "sha": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/59eab0c6aaacf5039d2ae20969a6dd5772bcb80f",
+      "audit_worktree": "E:/DeskTop/TAD/_duca_audit_worktrees/et_trc",
+      "code_tree_equivalence_to_baseline": "NOT_DECLARED",
+      "static_validation": "PASS",
+      "admission": "CHECKPOINT_DDP_ONLY",
+      "release_scope": "VideoMAE checkpoint coverage, real two-GPU global-batch-2 DDP"
+    }
+  ],
+  "environment_limits": [
+    "The supplied Linux bootstrap could not clone GitHub because github.com DNS/network resolution failed.",
+    "The local Windows host cannot load torch (WinError 1114/access-violation), so skipped CUDA tests are not admission passes.",
+    "No N16R4 SSH/Slurm job IDs or remote CUDA receipts are available in this session."
+  ]
+}

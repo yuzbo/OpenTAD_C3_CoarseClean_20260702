@@ -1,0 +1,28 @@
+{
+  "status": "NOT_SUBMITTED",
+  "generated_at": "2026-09-02",
+  "remote_host": "N16R4",
+  "jobs": [],
+  "submission_attempts": [
+    {
+      "kind": "local_dag_plan",
+      "command": "python tools/bata/dispatch_duca_multibranch.py --mode plan --json",
+      "status": "BLOCKED",
+      "returncode": 3,
+      "reason": "DUCA_UNIFIED and S60_IMPLEMENTATION are BLOCKED_UNIMPLEMENTED",
+      "job_ids": []
+    }
+  ],
+  "blockers": [
+    "No reachable N16R4 SSH/Slurm endpoint is available in this session.",
+    "No valid remote CUDA receipts exist.",
+    "The local Windows Torch DLL failure cannot be promoted to a CUDA pass."
+  ],
+  "required_dispatch_behavior": {
+    "bounded_submission": true,
+    "dependency_type_for_science": "afterok",
+    "record_master_addr_port_visible_devices_ranks": true,
+    "cancel_descendants_on_submission_failure": true,
+    "preserve_scheduler_cuda_visible_devices": true
+  }
+}
