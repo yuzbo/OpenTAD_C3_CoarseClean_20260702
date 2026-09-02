@@ -8,8 +8,8 @@
 #SBATCH --output=/data/run01/sczc063/yuzibo/projects/et_trc_videomae_compute/slurm_%j.log
 #SBATCH --error=/data/run01/sczc063/yuzibo/projects/et_trc_videomae_compute/slurm_%j.err
 
-set -euo pipefail
 source /etc/profile
+set -euo pipefail
 mkdir -p /data/run01/sczc063/yuzibo/projects/et_trc_videomae_compute
 
 PROJECT_DIR="${PROJECT_DIR:-/data/run01/sczc063/yuzibo/projects/zoomtoken_et_trc_correction_20260902}"

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
+source /etc/profile
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${ETTRC_REPO_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 cd "${ROOT}"
-source /etc/profile
 module load cuda/11.8
 module load miniforge3/24.11
 
