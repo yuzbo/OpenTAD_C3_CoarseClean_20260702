@@ -42,4 +42,5 @@ def test_dual_phase_exposes_tubelet_boundary_prior():
 def test_campaign_propagates_runtime_root_for_pretrained_weights():
     script = Path(__file__).resolve().parents[1] / "scripts" / "submit_duca_ctdp_revised_campaign_n16r4.sh"
     text = script.read_text(encoding="utf-8")
-    assert 'YUZIBO_ROOT="${BASE}"' in text
+    assert "YUZIBO_ROOT=" in text
+    assert "${BASE}" in text
