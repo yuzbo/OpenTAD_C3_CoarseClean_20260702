@@ -53,6 +53,10 @@ export PYTHONNOUSERSITE=1
 
 IFS=',' read -r -a TASKS <<< "${TARGET_TASKS}"
 status=0
+# Each diagnostic arm is expected to stop via a captured non-zero return when
+# a finite assertion fires. Keep errexit disabled around both invocations so a
+# completed first arm cannot prevent the second arm from running.
+set +e
 for task in "${TASKS[@]}"; do
   case "${task}" in
     1) arm="F"; cfg="configs/adatad/thumos/duca_evidence_recovery_full.py" ;;
@@ -69,11 +73,12 @@ for task in "${TASKS[@]}"; do
       resume_args=(--resume "${resume}")
     fi
   fi
-  # max_train_iters is per epoch in this training engine.  Bound the replay
-  # to one diagnostic epoch: epoch 10 for the resumed F checkpoint, epoch 0
-  # for a fresh A6 run.
+  # max_train_iters is per epoch in this training engine. Bound the replay to
+  # one diagnostic epoch: epoch 10 for the resumed F checkpoint, epoch 0 for a
+  # fresh A6 run. The loop uses range(resume_epoch + 1, end_epoch), hence the
+  # resumed epoch must use end_epoch=11.
   if [[ "${arm}" == "F" && -n "${resume_args[*]}" ]]; then
-    end_epoch=10
+    end_epoch=11
   else
     end_epoch=1
   fi
@@ -81,7 +86,6 @@ for task in "${TASKS[@]}"; do
   echo "[INFO] diagnostic arm=${arm} config=${cfg} resume=${resume_args[*]:-none} work_dir=${work_dir}"
   # The historical F/A6 run predates deploy-ledger provenance fields. D0
   # replays its fixed positions only; formal runs keep strict checks.
-  set +e
   torchrun --nproc_per_node=1 tools/train.py "${cfg}" \
     --seed 8261 \
     "${resume_args[@]}" \
@@ -103,7 +107,6 @@ for task in "${TASKS[@]}"; do
       "workflow.training_update_audit_json=${work_dir}/update_audit.json" \
       "work_dir=${work_dir}"
   rc=$?
-  set -e
   echo "[INFO] diagnostic arm=${arm} exit_code=${rc}"
   if (( rc == 0 )); then
     echo "[ERROR] diagnostic arm=${arm} completed without a terminal non-finite event" >&2
