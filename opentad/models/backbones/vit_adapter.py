@@ -596,6 +596,53 @@ class Attention(BaseModule):
             x = x * token_mask.unsqueeze(-1).to(dtype=x.dtype)
         return x
 
+    def forward_selected_query_full_kv(
+        self,
+        query_x: Tensor,
+        kv_x: Tensor,
+        key_mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        """Run attention for selected queries against the full KV sequence.
+
+        A-MoD saves the MLP/output work for unselected tokens, but its selected
+        queries must still read the complete temporal context.  Keeping this
+        path explicit prevents accidentally turning the route into selected-Q
+        / selected-KV attention when the gather/scatter code changes.
+        """
+        B, M, C = query_x.shape
+        B_kv, N, C_kv = kv_x.shape
+        if B != B_kv or C != C_kv:
+            raise ValueError("query and KV tensors must share batch and embed dimensions")
+        if key_mask is not None and key_mask.shape != (B, N):
+            raise ValueError("full-KV key mask must match [B,N]")
+
+        if hasattr(self, "q_bias"):
+            k_bias = torch.zeros_like(self.v_bias, requires_grad=False)
+            q = F.linear(query_x, self.qkv.weight[:C], self.q_bias)
+            k = F.linear(kv_x, self.qkv.weight[C : 2 * C], k_bias)
+            v = F.linear(kv_x, self.qkv.weight[2 * C :], self.v_bias)
+        else:
+            q = F.linear(query_x, self.qkv.weight[:C])
+            k = F.linear(kv_x, self.qkv.weight[C : 2 * C])
+            v = F.linear(kv_x, self.qkv.weight[2 * C :])
+
+        q = q.reshape(B, M, self.num_heads, -1).permute(0, 2, 1, 3)
+        k = k.reshape(B, N, self.num_heads, -1).permute(0, 2, 1, 3)
+        v = v.reshape(B, N, self.num_heads, -1).permute(0, 2, 1, 3)
+        attn_mask = None
+        if key_mask is not None:
+            key_mask = key_mask.to(device=kv_x.device, dtype=torch.bool)
+            attn_mask = key_mask[:, None, None, :]
+        out = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=attn_mask,
+            dropout_p=self.attn_drop.p if self.training else 0.0,
+        )
+        out = out.transpose(1, 2).reshape(B, M, C)
+        return self.proj_drop(self.proj(out))
+
     def forward_with_column_mean(
         self,
         x: Tensor,
@@ -832,7 +879,17 @@ class Block(BaseModule):
         else:
             selected_mask = None
 
-        selected_x = selected_x + self.drop_path(self.attn(self.norm1(selected_x), token_mask=selected_mask))
+        # Selected-Q / Full-KV: selected tokens receive context from all
+        # tokens, while only the selected outputs are scattered back.
+        normed_full = self.norm1(x)
+        normed_selected = torch.gather(normed_full, 1, topk_indices.unsqueeze(-1).expand(-1, -1, C))
+        selected_x = selected_x + self.drop_path(
+            self.attn.forward_selected_query_full_kv(
+                normed_selected,
+                normed_full,
+                key_mask=temporal_token_mask,
+            )
+        )
         selected_x = selected_x + self.drop_path(self.mlp(self.norm2(selected_x)))
 
         out = x.clone()
