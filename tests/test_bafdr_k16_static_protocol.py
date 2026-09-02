@@ -31,6 +31,7 @@ def test_bafdr_configs_use_supported_collect_contract():
         # LoadFrames takes trunc_len for random windows; sliding-window length
         # belongs to the dataset config, not the transform constructor.
         assert 'method="sliding_window", window_size=' not in text
+        assert 'method="sliding_window", window_overlap_ratio=' not in text
 
 
 def test_bafdr_generator_cannot_reintroduce_collect_extra_keys():
