@@ -1,0 +1,39 @@
+{
+  "schema_version": "DUCA-REMOTE-STATUS-CHECK-v001",
+  "checked_at_utc": "2026-09-02T16:54:16Z",
+  "remote_host": "N16R4",
+  "supervisor": {
+    "pid": "2272497",
+    "status": "ACTIVE",
+    "latest_receipt_checked_at": "2026-09-02T16:54:16+00:00",
+    "dispatcher_status": "BLOCKED",
+    "queue_entries": 0
+  },
+  "exact_sha_admission_jobs": [
+    {"job_id": "1266242", "state": "COMPLETED", "kind": "generic CUDA probe"},
+    {"job_id": "1266268", "state": "COMPLETED", "source_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659", "kind": "H65 focused CUDA tests"},
+    {"job_id": "1266269", "state": "COMPLETED", "source_sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c", "kind": "Evidence focused CUDA tests"},
+    {"job_id": "1266271", "state": "COMPLETED", "source_sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc", "kind": "CT-DP focused CUDA tests"},
+    {"job_id": "1266317", "state": "COMPLETED", "source_sha": "fdeaeb98,59eab0c6", "kind": "BAFDR/ET protocol tests"},
+    {"job_id": "1266323", "state": "FAILED", "source_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659", "kind": "H65 P0 admission", "reason": "x-only backbone received masks"},
+    {"job_id": "1266267", "state": "FAILED", "kind": "invalid H65 test invocation"},
+    {"job_id": "1266322", "state": "FAILED", "kind": "invalid H65 test invocation"}
+  ],
+  "preexisting_jobs_not_owned_by_audit": [
+    {"job_ids": "1266325-1266327", "state": "RUNNING", "source_head": "6ae16954d875ce310cb0fc514ad54663be626db6", "route": "old BAFDR"},
+    {"job_ids": "1266328-1266330", "state": "FAILED", "source_head": "6ae16954d875ce310cb0fc514ad54663be626db6", "route": "old BAFDR"},
+    {"job_ids": "1266351,1266359-1266362", "state": "PENDING", "source_head": "6ae16954d875ce310cb0fc514ad54663be626db6", "route": "old BAFDR dependency chain"},
+    {"job_ids": "1266218-1266219", "state": "RUNNING", "source_head": "be330c071638249e7c5268a5464e454c0f2a5621", "route": "later ET-TRC checkout"},
+    {"job_ids": "1265777-1265778", "state": "RUNNING", "source_head": "679b71214d05a21cd08ae1f5e5c3879e2df8fb83", "route": "stale CT-DP checkout"},
+    {"job_ids": "1265779-1265780", "state": "PENDING", "source_head": "679b71214d05a21cd08ae1f5e5c3879e2df8fb83", "route": "stale CT-DP dependency chain"},
+    {"job_ids": "1265077_[3-6]", "state": "COMPLETED", "source_head": "647151facd36d4df3f21de6865bcb225c8ba91fc", "route": "dirty stale Evidence checkout"}
+  ],
+  "formal_results": {
+    "run_root": "/data/run01/sczc063/yuzibo/runs/duca_multibranch_20260902",
+    "run_root_exists": false,
+    "terminal_ema_receipts": false,
+    "official_evaluator_outputs": false,
+    "status": "NO_VALID_RESULTS"
+  },
+  "action": "Do not adopt, cancel, or relabel preexisting jobs; keep formal submission queue closed until all gates pass."
+}
