@@ -2,13 +2,17 @@
   "schema_version": "DUCA-REMOTE-SUPERVISOR-v001",
   "status": "ACTIVE_FAIL_CLOSED",
   "installed_at_utc": "2026-09-02T15:33:23Z",
+  "last_restart_at_utc": "2026-09-02T15:36:35Z",
   "remote_host": "N16R4",
   "ssh_target": "sczc063@BSCC-N16R4@ssh.cn-zhongwei-1.paracloud.com",
   "root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902",
-  "pid": "2259360",
+  "pid": "2272497",
   "poll_interval_seconds": 60,
   "process_command": "python3 /data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/duca_remote_supervisor.py --root /data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902 --queue /data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/duca_remote_supervisor_queue.json --dispatcher /data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/dispatcher.py --manifest /data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/manifest.json --admission /data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/admission.json --interval 60",
-  "source_coordination_commit": "935cc6d7",
+  "source_coordination_commit": "0ef4d81f",
+  "restart_history": [
+    {"pid": "2259360", "source_coordination_commit": "935cc6d7", "stopped_at_utc": "2026-09-02T15:36:32Z"}
+  ],
   "initial_receipt": {
     "dispatcher_status": "BLOCKED",
     "submitted_job_ids": [],
