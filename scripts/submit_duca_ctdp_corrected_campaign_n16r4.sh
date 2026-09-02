@@ -19,13 +19,40 @@ done
 [[ "$MAX_CONCURRENT" =~ ^[1-9][0-9]*$ ]] || { echo "--max-concurrent must be positive" >&2; exit 2; }
 cd "$PROJECT_DIR"
 
+EXPECTED_COMMIT="${CTDP_EXPECTED_COMMIT:?CTDP_EXPECTED_COMMIT must be the full 40-character target SHA}"
+[[ "${EXPECTED_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "CTDP_EXPECTED_COMMIT must be a full SHA" >&2; exit 2; }
+[[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || {
+  echo "CT-DP checkout HEAD mismatch: expected ${EXPECTED_COMMIT}, got $(git rev-parse HEAD)" >&2; exit 2;
+}
+[[ -z "$(git status --porcelain)" ]] || { echo "CT-DP checkout is not clean" >&2; exit 2; }
+
+if [[ "$STAGE" == "mechanism" ]]; then
+  GEOMETRY_RECEIPT="${CTDP_GEOMETRY_RECEIPT:?mechanism stage requires CTDP_GEOMETRY_RECEIPT from the passed G2 geometry gate}"
+  [[ -f "${GEOMETRY_RECEIPT}" ]] || { echo "geometry gate receipt not found: ${GEOMETRY_RECEIPT}" >&2; exit 2; }
+  python - "${GEOMETRY_RECEIPT}" "${EXPECTED_COMMIT}" <<'PY'
+import json, sys
+path, expected = sys.argv[1:]
+with open(path, encoding="utf-8") as handle:
+    receipt = json.load(handle)
+observed = receipt.get("commit") or receipt.get("commit_sha") or receipt.get("git_commit")
+if observed != expected:
+    raise SystemExit(f"geometry gate commit mismatch: expected {expected}, got {observed}")
+status = receipt.get("status") or receipt.get("gate_status")
+if status not in ("PASS", "passed", "complete"):
+    raise SystemExit(f"geometry gate is not passing: {status!r}")
+arm = str(receipt.get("arm") or receipt.get("geometry_arm") or "").lower()
+if arm and arm not in ("g2", "geometry_g2", "m00"):
+    raise SystemExit(f"mechanism stage requires the G2/M00 geometry receipt, got {arm!r}")
+PY
+fi
+
 submit() {
   local name="$1" cfg="$2" dep="$3" dep_arg=()
   [[ -n "$dep" ]] && dep_arg=(--dependency="afterok:${dep}")
   sbatch --parsable --partition=gpu --gres=gpu:1 --cpus-per-task=4 --time=7-00:00:00 \
     --job-name="$name" --output="${BASE}/slurm_logs/%x_%j.out" --error="${BASE}/slurm_logs/%x_%j.err" \
-    "${dep_arg[@]}" --export=ALL,YUZIBO_ROOT="${BASE}",PROJECT_DIR="${PROJECT_DIR}",SEED="${SEED}" \
-    --wrap="source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source ${BASE}/conda_envs/opentad/bin/activate; cd ${PROJECT_DIR}; YUZIBO_ROOT=${BASE} bash scripts/run_duca_ct_dp_revised_thumos_gpu.sh configs/adatad/thumos/${cfg}.py"
+    "${dep_arg[@]}" --export=ALL,YUZIBO_ROOT="${BASE}",PROJECT_DIR="${PROJECT_DIR}",REPO_ROOT="${PROJECT_DIR}",SEED="${SEED}",CTDP_STAGE="${STAGE}",CTDP_EXPECTED_COMMIT="${EXPECTED_COMMIT}",CTDP_GEOMETRY_RECEIPT="${CTDP_GEOMETRY_RECEIPT:-}" \
+    --wrap="source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source ${BASE}/conda_envs/opentad/bin/activate; cd ${PROJECT_DIR}; REPO_ROOT=${PROJECT_DIR} YUZIBO_ROOT=${BASE} CTDP_STAGE=${STAGE} CTDP_EXPECTED_COMMIT=${EXPECTED_COMMIT} CTDP_GEOMETRY_RECEIPT=${CTDP_GEOMETRY_RECEIPT:-} bash scripts/run_duca_ct_dp_revised_thumos_gpu.sh configs/adatad/thumos/${cfg}.py"
 }
 
 if [[ "$STAGE" == geometry ]]; then

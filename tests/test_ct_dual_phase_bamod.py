@@ -1,8 +1,11 @@
 import math
 import pytest
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+except OSError as exc:  # pragma: no cover - Windows CI without a Torch runtime
+    pytest.skip(f"torch runtime unavailable in this environment: {exc}", allow_module_level=True)
 
 from opentad.models.duca.acquisition import (
     DualPhaseBudgetSelection,
@@ -19,6 +22,13 @@ from opentad.models.bricks.scale_adaptive_conv1d import (
     ContinuousTimeScaleAdaptiveConv1d,
     inverse_piecewise_linear_1d,
 )
+
+
+def test_dual_phase_selector_rejects_all_masked_sample():
+    selector = DualPhaseFrameSelector(total_budget=8, scaffold_budget=4, burst_budget=4)
+    inputs = torch.randn(1, 3, 8, 16, 16)
+    with pytest.raises(ValueError, match="all-masked"):
+        selector.forward_train(inputs, torch.zeros(1, 8, dtype=torch.bool), [{"video_name": "masked"}])
 from opentad.models.bricks.conv import ConvModule
 
 
@@ -78,11 +88,16 @@ def test_dual_phase_frame_selector_forward_5d_and_6d_short_video():
     assert out["delta_t"].shape == (B, 384)
     assert out["temporal_positions"].shape == (B, 384)
 
-    # Assert temporal_positions is strictly monotonic and has NO -1 values
+    # Valid coordinates are strictly monotonic; padded coordinates repeat
+    # the final valid time and are excluded by the mask.
     for b in range(B):
         pos = out["temporal_positions"][b]
-        assert (pos >= 0).all(), f"Row {b} contains negative timestamps!"
-        assert (pos[1:] > pos[:-1]).all(), f"Row {b} timestamps are not strictly monotonic!"
+        valid_count = int(out["masks"][b].sum().item())
+        assert (pos[:valid_count] >= 0).all(), f"Row {b} contains negative timestamps!"
+        if valid_count > 1:
+            assert (pos[1:valid_count] > pos[:valid_count - 1]).all()
+        if valid_count < pos.numel():
+            assert torch.equal(pos[valid_count:], pos[valid_count - 1].expand_as(pos[valid_count:]))
         assert (out["tubelet_delta_t"][b] >= 1.0).all(), f"Row {b} tubelet_delta_t has values < 1.0!"
         assert (out["delta_t"][b] > 0).all(), f"Row {b} delta_t has values <= 0!"
 
@@ -434,3 +449,34 @@ def test_four_arms_config_resolution():
     assert cfgs[2].model.backbone.backbone.ct_tubelet is False
     for cfg in cfgs:
         assert cfg.workflow.val_start_epoch == 40
+
+
+def test_frozen_geometry_and_mechanism_matrix_resolution():
+    from mmengine.config import Config
+
+    root = "configs/adatad/thumos"
+    expected_geometry = {
+        "g0": (True, False, False, "Conv", False),
+        "g1": (False, False, False, "Conv", False),
+        "g2": (False, False, False, "Conv", True),
+        "g3": (False, True, False, "Conv", True),
+    }
+    for arm, (uniform, ct_tubelet, amod, conv_type, physical) in expected_geometry.items():
+        cfg = Config.fromfile(f"{root}/duca_ctdp_geometry_{arm}.py")
+        assert bool(cfg.model.frame_selector.get("force_uniform", False)) is uniform
+        assert bool(cfg.model.backbone.backbone.ct_tubelet) is ct_tubelet
+        assert bool(cfg.model.backbone.backbone.amod_config.enabled) is amod
+        assert cfg.model.rpn_head.conv_cfg.type == conv_type
+        assert bool(cfg.model.rpn_head.physical_grid_actionformer.enabled) is physical
+
+    expected_mechanism = {
+        "m00": (False, False, "Conv"),
+        "m10": (False, False, "ContinuousTimeScaleAdaptiveConv1d"),
+        "m01": (False, True, "Conv"),
+        "m11": (False, True, "ContinuousTimeScaleAdaptiveConv1d"),
+    }
+    for arm, (ct_tubelet, amod, conv_type) in expected_mechanism.items():
+        cfg = Config.fromfile(f"{root}/duca_ctdp_mechanism_{arm}.py")
+        assert bool(cfg.model.backbone.backbone.ct_tubelet) is ct_tubelet
+        assert bool(cfg.model.backbone.backbone.amod_config.enabled) is amod
+        assert cfg.model.rpn_head.conv_cfg.type == conv_type

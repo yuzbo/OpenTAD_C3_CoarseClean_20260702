@@ -874,10 +874,15 @@ class Block(BaseModule):
         if valid_token_counts is None:
             k_count = max(1, int(round(N * capacity)))
         else:
-            # A fixed tensor shape is required for batched attention.  Bound K
-            # by the shortest valid row so padding can never enter top-k.
-            min_valid = max(1, int(valid_token_counts.min().item()))
-            k_count = min(N, max(1, int(round(min_valid * capacity))))
+            # Batched selected-Q execution has one K for every sample.  Do not
+            # silently shrink long samples to the shortest row: formal batches
+            # must expose the same valid-token contract or fail closed.
+            if not torch.equal(valid_token_counts, valid_token_counts[:1].expand_as(valid_token_counts)):
+                raise ValueError(
+                    "B-AMoD requires equal valid-token counts across the batch"
+                )
+            valid_count = max(1, int(valid_token_counts[0].item()))
+            k_count = min(N, max(1, int(round(valid_count * capacity))))
         topk_indices = torch.topk(scores, k=k_count, dim=1, sorted=False).indices
         topk_indices = torch.sort(topk_indices, dim=1).values
 

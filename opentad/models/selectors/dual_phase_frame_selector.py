@@ -141,6 +141,11 @@ class DualPhaseFrameSelector(nn.Module):
         else:
             raise ValueError(f"Expected 5D [B,C,T,H,W] or 6D [B,N,C,T,H,W] inputs, got {inputs.shape}")
 
+        if masks.shape != (B, T_raw):
+            raise ValueError(f"DualPhaseFrameSelector masks must be [B,T], got {tuple(masks.shape)}")
+        if not bool(masks.to(dtype=torch.bool).any(dim=1).all().item()):
+            raise ValueError("DualPhaseFrameSelector received an all-masked sample")
+
         priority = self._compute_priority(inputs_5d, masks)
 
         if self.force_uniform:
@@ -190,18 +195,18 @@ class DualPhaseFrameSelector(nn.Module):
         selected_masks = self._gather_masks(masks, selected_positions)
         selected_inputs = self._gather_frames(inputs, selected_positions, selected_masks)
 
-        # Generate strictly monotonic temporal positions without -1 padding
+        # Keep padding at the final valid physical time.  Padding is masked
+        # downstream; inventing +1,+2,... timestamps lets invalid frames leak
+        # into CT-Tubelet/CT-Conv offsets if a consumer misses the mask.
         valid_pos_mask = selected_positions >= 0
         raw_temporal_positions = selected_positions.float().clone()
         for b in range(B):
             valid_idx = torch.nonzero(valid_pos_mask[b], as_tuple=False).flatten()
             if len(valid_idx) == 0:
-                raw_temporal_positions[b] = torch.arange(self.total_budget, device=inputs.device, dtype=torch.float32)
+                raw_temporal_positions[b].zero_()
             elif len(valid_idx) < self.total_budget:
                 last_val = selected_positions[b, valid_idx[-1]].float()
-                num_pad = self.total_budget - len(valid_idx)
-                pad_vals = last_val + torch.arange(1, num_pad + 1, device=inputs.device, dtype=torch.float32)
-                raw_temporal_positions[b, len(valid_idx):] = pad_vals
+                raw_temporal_positions[b, len(valid_idx):] = last_val
 
         # Compute Tubelet midpoints and synchronized feature-grid temporal coordinates
         # VideoMAE conv3d (tubelet=2, stride=2) maps K frames -> K/2 tubelet tokens,
@@ -223,9 +228,11 @@ class DualPhaseFrameSelector(nn.Module):
             align_corners=False,
         ).squeeze(1)  # [B, K]
 
-        # Enforce strict monotonic increase to prevent zero or negative intervals
+        # Enforce monotonicity only on the valid prefix.  Repeated padded
+        # coordinates are intentional and remain invalid via selected_masks.
         for b in range(B):
-            for k in range(1, self.total_budget):
+            valid_count = int(selected_masks[b].sum().item())
+            for k in range(1, valid_count):
                 if synced_temporal_positions[b, k] <= synced_temporal_positions[b, k - 1]:
                     synced_temporal_positions[b, k] = synced_temporal_positions[b, k - 1] + 1e-4
 
@@ -262,6 +269,7 @@ class DualPhaseFrameSelector(nn.Module):
             metas[i]["tubelet_midpoint_physical_time"] = tubelet_midpoints[i].detach()
             metas[i]["delta_t"] = detector_delta_t[i].detach()
             metas[i]["detector_feature_physical_time"] = synced_temporal_positions[i].detach()
+            metas[i]["temporal_position_unit"] = "raw_frame_index"
             metas[i]["boundary_prior"] = boundary_prior[i].detach()
             metas[i]["boundary_prior_frames"] = boundary_prior_frames[i].detach()
             metas[i]["boundary_prior_tubelet"] = boundary_prior_tubelet[i].detach()
