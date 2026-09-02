@@ -1,9 +1,9 @@
 {
-  "status": "IMPLEMENTED_NOT_DEPLOYED",
+  "status": "BLOCKED",
   "matrix_id": "DUCA-UNIFIED-FULLMATRIX-v001-20260902",
   "integration_base": "95ca6eb4a7e0ba8259c5afd976cc30d0fea58865",
   "branch": "codex/duca-unified-fullmatrix-20260902",
-  "final_commit": "90b81a6b09388b11e67c9d62a070a9285b4cc3b7",
+  "final_commit": "1c4baebe50a3d36267105e7cc69cc88769e42126",
   "matrix_counts": {
     "development": 17,
     "confirmation": 24,
@@ -51,7 +51,10 @@
     "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_g11_seed3407.py",
     "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_h0_seed3407.py",
     "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_u0_seed3407.py",
+    "docs/experiments/DUCA_UNIFIED_FULLMATRIX_EXTERNAL_REVIEW_PROMPT.md",
     "docs/experiments/DUCA_UNIFIED_FULLMATRIX_FREEZE.md",
+    "docs/experiments/DUCA_UNIFIED_FULLMATRIX_GITHUB_MATRIX_RECORD.md",
+    "docs/experiments/DUCA_UNIFIED_FULLMATRIX_LOCAL_IMPLEMENTATION_REPORT.json",
     "docs/experiments/DUCA_UNIFIED_FULLMATRIX_README.md",
     "docs/experiments/DUCA_UNIFIED_FULLMATRIX_SHA256SUMS",
     "docs/experiments/DUCA_UNIFIED_FULL_MATRIX_AGENT_COMMAND.md",
@@ -83,22 +86,27 @@
     "tests/test_duca_unified_phase.py",
     "tests/test_duca_unified_physical_time.py",
     "tools/bata/aggregate_duca_unified_fullmatrix.py",
+    "tools/bata/audit_duca_unified_fullmatrix_slurm.py",
     "tools/bata/bootstrap_duca_unified_fullmatrix.py",
-    "tools/bata/generate_duca_unified_fullmatrix.py"
+    "tools/bata/duca_runtime_contract.py",
+    "tools/bata/generate_duca_unified_fullmatrix.py",
+    "tools/bata/write_duca_review_bundle.py",
+    "tools/test.py",
+    "tools/train.py"
   ],
   "tests": {
     "status": "PASS_LOCAL_WITH_ENV_NOTE",
-    "summary": "Attachment SHA256 verification passed. Matrix generation check passed. py_compile passed for edited training/model/tool files and all generated configs. New DUCA unified tests passed under conda env open_mmlab: 17 passed. Required repository checks passed under conda env open_mmlab: 20 passed. submit_all.sh dry-submit with a fake sbatch produced six job ids and required local submission artifacts without launching real Slurm jobs."
+    "summary": "Post-review focused checks passed under conda env open_mmlab: 22 passed. Matrix generation and --check passed. py_compile passed for edited training/model/tool files. bash -n passed for generated Slurm scripts. git diff --check passed. Base Python on this Windows host still fails to import torch with WinError 1114, so OpenTAD tests were run in open_mmlab."
   },
   "critic": {
-    "verdict": "Local implementation and route-contract checks pass after aligning submit_all.sh with the attached entrypoint contract. External review prompt has been prepared for stricter line-by-line audit.",
+    "verdict": "Several review findings were confirmed and corrected: physical-time GT axis, temporal_positions propagation, successful-update stopping, RUN_ROOT isolation, bootstrap/aggregate fail-closed behavior, afterany sacct audit, and DEPLOYED schema constraints. Taylor P0/P1 integration, true H65 original retention/transition, and real cost benchmarking remain formal blockers.",
     "report_path": "docs/experiments/DUCA_UNIFIED_FULLMATRIX_EXTERNAL_REVIEW_PROMPT.md"
   },
   "evaluator": {
     "verdict": "Remote evaluator has not run because no real Slurm deployment has been executed in this local turn. Aggregation and bootstrap tools remain fail-closed until completed result files exist.",
     "report_path": "scripts/duca_unified_fullmatrix/matrix.json"
   },
-  "run_root": "/data/run01/sczc063/yuzibo/experiments/duca_unified_fullmatrix_90b81a6b0938_<timestamp>",
+  "run_root": "/data/run01/sczc063/yuzibo/experiments/duca_unified_fullmatrix_1c4baebe50a3_<timestamp>",
   "slurm": {
     "preflight_job_id": null,
     "train_eval_array_job_id": null,
@@ -106,7 +114,7 @@
     "bootstrap_array_job_id": null,
     "finalizer_job_id": null,
     "audit_afterany_job_id": null,
-    "submission_argv": "FINAL_SHA=90b81a6b09388b11e67c9d62a070a9285b4cc3b7\nbash scripts/duca_unified_fullmatrix/submit_all.sh \\\n  --repo-root \"/data/run01/sczc063/yuzibo/projects/opentad_duca_unified_90b81a6b0938\" \\\n  --revision \"$FINAL_SHA\" \\\n  --run-root \"/data/run01/sczc063/yuzibo/experiments/duca_unified_fullmatrix_90b81a6b0938_$(date +%Y%m%d_%H%M%S)\" \\\n  --base \"/data/run01/sczc063/yuzibo\" \\\n  --account sczc063 \\\n  --partition gpu \\\n  --qos normal \\\n  --max-concurrent \"${DUCA_MATRIX_MAX_CONCURRENT:-8}\""
+    "submission_argv": "FINAL_SHA=1c4baebe50a3d36267105e7cc69cc88769e42126\nbash scripts/duca_unified_fullmatrix/submit_all.sh \\\n  --repo-root \"/data/run01/sczc063/yuzibo/projects/opentad_duca_unified_1c4baebe50a3\" \\\n  --revision \"$FINAL_SHA\" \\\n  --run-root \"/data/run01/sczc063/yuzibo/experiments/duca_unified_fullmatrix_1c4baebe50a3_$(date +%Y%m%d_%H%M%S)\" \\\n  --base \"/data/run01/sczc063/yuzibo\" \\\n  --account sczc063 \\\n  --partition gpu \\\n  --qos normal \\\n  --max-concurrent \"${DUCA_MATRIX_MAX_CONCURRENT:-8}\""
   },
   "artifacts": [
     "docs/experiments/DUCA_UNIFIED_FULLMATRIX_GITHUB_MATRIX_RECORD.md",
@@ -118,9 +126,12 @@
     "scripts/duca_unified_fullmatrix/submit_all.sh",
     "configs/adatad/thumos/duca_unified_fullmatrix/",
     "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/duca-unified-fullmatrix-20260902",
-    "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/90b81a6b09388b11e67c9d62a070a9285b4cc3b7"
+    "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/1c4baebe50a3d36267105e7cc69cc88769e42126"
   ],
   "blockers": [
+    "Formal deployment remains blocked for D1/F11 until signed feature Taylor supervision is connected to the real ActionFormer P0/P1 detector objective instead of the existing helper/proxy path.",
+    "Formal H0/G10 claims remain blocked until h65_original_retention_transition is implemented as the intended H65 route rather than a legacy_dual_phase surrogate.",
+    "Cost benchmarking is fail-closed and intentionally incomplete until real N16R4 runtime/cost counters are collected.",
     "No real remote Slurm job IDs exist yet; GitHub push and local documentation are separate from N16R4 train/eval deployment.",
     "Empirical THUMOS14 metrics, cost measurements, and bootstrap statistics cannot be claimed before the Slurm DAG finishes and aggregation/bootstrap artifacts pass."
   ],

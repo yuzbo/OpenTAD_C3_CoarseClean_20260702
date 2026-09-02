@@ -193,6 +193,8 @@ def _review_prompt(rows: list[dict[str, str]], repo_web: str, branch: str, commi
    - tools/bata/generate_duca_unified_fullmatrix.py
    - tools/bata/aggregate_duca_unified_fullmatrix.py
    - tools/bata/bootstrap_duca_unified_fullmatrix.py
+   - tools/bata/audit_duca_unified_fullmatrix_slurm.py
+   - tools/bata/duca_runtime_contract.py
 5. Tests:
    - tests/test_duca_unified_phase.py
    - tests/test_duca_unified_physical_time.py
@@ -259,7 +261,7 @@ Expected common contract: T=768 input frames, K=384 selected frames, exact-K uni
 def _implementation_report(repo_web: str, branch: str, commit: str) -> dict[str, object]:
     changed = _git(["diff", "--name-only", BASE_REVISION, commit]).splitlines()
     return {
-        "status": "IMPLEMENTED_NOT_DEPLOYED",
+        "status": "BLOCKED",
         "matrix_id": MATRIX_ID,
         "integration_base": BASE_REVISION,
         "branch": branch,
@@ -268,10 +270,10 @@ def _implementation_report(repo_web: str, branch: str, commit: str) -> dict[str,
         "modified_files": changed,
         "tests": {
             "status": "PASS_LOCAL_WITH_ENV_NOTE",
-            "summary": "Attachment SHA256 verification passed. Matrix generation check passed. py_compile passed for edited training/model/tool files and all generated configs. New DUCA unified tests passed under conda env open_mmlab: 17 passed. Required repository checks passed under conda env open_mmlab: 20 passed. submit_all.sh dry-submit with a fake sbatch produced six job ids and required local submission artifacts without launching real Slurm jobs.",
+            "summary": "Post-review focused checks passed under conda env open_mmlab: 22 passed. Matrix generation and --check passed. py_compile passed for edited training/model/tool files. bash -n passed for generated Slurm scripts. git diff --check passed. Base Python on this Windows host still fails to import torch with WinError 1114, so OpenTAD tests were run in open_mmlab.",
         },
         "critic": {
-            "verdict": "Local implementation and route-contract checks pass after aligning submit_all.sh with the attached entrypoint contract. External review prompt has been prepared for stricter line-by-line audit.",
+            "verdict": "Several review findings were confirmed and corrected: physical-time GT axis, temporal_positions propagation, successful-update stopping, RUN_ROOT isolation, bootstrap/aggregate fail-closed behavior, afterany sacct audit, and DEPLOYED schema constraints. Taylor P0/P1 integration, true H65 original retention/transition, and real cost benchmarking remain formal blockers.",
             "report_path": "docs/experiments/DUCA_UNIFIED_FULLMATRIX_EXTERNAL_REVIEW_PROMPT.md",
         },
         "evaluator": {
@@ -301,6 +303,9 @@ def _implementation_report(repo_web: str, branch: str, commit: str) -> dict[str,
             f"{repo_web}/commit/{commit}",
         ],
         "blockers": [
+            "Formal deployment remains blocked for D1/F11 until signed feature Taylor supervision is connected to the real ActionFormer P0/P1 detector objective instead of the existing helper/proxy path.",
+            "Formal H0/G10 claims remain blocked until h65_original_retention_transition is implemented as the intended H65 route rather than a legacy_dual_phase surrogate.",
+            "Cost benchmarking is fail-closed and intentionally incomplete until real N16R4 runtime/cost counters are collected.",
             "No real remote Slurm job IDs exist yet; GitHub push and local documentation are separate from N16R4 train/eval deployment.",
             "Empirical THUMOS14 metrics, cost measurements, and bootstrap statistics cannot be claimed before the Slurm DAG finishes and aggregation/bootstrap artifacts pass.",
         ],
