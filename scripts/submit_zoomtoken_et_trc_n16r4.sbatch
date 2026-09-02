@@ -42,5 +42,5 @@ bash scripts/run_zoomtoken_et_trc_diag_n16r4.sh
 
 # 2. Launch ET-TRC Training
 echo "[SLURM] Launching ET-TRC Training on THUMOS14..."
-python tools/train.py configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_seed4407.py \
+torchrun --standalone --nproc_per_node=1 tools/train.py configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_seed4407.py \
   --seed 4407 --cfg-options model.backbone.backbone.stride_k=4 "work_dir=${RUN_ROOT}"
