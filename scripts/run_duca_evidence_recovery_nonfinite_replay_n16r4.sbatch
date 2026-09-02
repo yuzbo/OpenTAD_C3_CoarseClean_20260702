@@ -71,6 +71,8 @@ for task in "${TASKS[@]}"; do
   fi
 
   echo "[INFO] diagnostic arm=${arm} config=${cfg} resume=${resume_args[*]:-none} work_dir=${work_dir}"
+  # The historical F/A6 run predates deploy-ledger provenance fields. D0
+  # replays its fixed positions only; formal runs keep strict checks.
   set +e
   torchrun --nproc_per_node=1 tools/train.py "${cfg}" \
     --seed 8261 \
@@ -80,6 +82,15 @@ for task in "${TASKS[@]}"; do
       workflow.max_nonfinite_loss_retries=0 \
       workflow.max_amp_retries_per_batch=0 \
       workflow.require_finite_train_loss=True \
+      dataset.train.pipeline.3.require_deployable=False \
+      dataset.train.pipeline.3.source='' \
+      dataset.train.pipeline.3.config_hash='' \
+      dataset.val.pipeline.3.require_deployable=False \
+      dataset.val.pipeline.3.source='' \
+      dataset.val.pipeline.3.config_hash='' \
+      dataset.test.pipeline.3.require_deployable=False \
+      dataset.test.pipeline.3.source='' \
+      dataset.test.pipeline.3.config_hash='' \
       "workflow.training_update_audit_json=${work_dir}/update_audit.json" \
       "work_dir=${work_dir}"
   rc=$?
