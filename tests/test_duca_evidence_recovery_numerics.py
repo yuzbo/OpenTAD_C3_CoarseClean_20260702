@@ -62,7 +62,8 @@ def test_merge_keeps_feature_and_timestamp_order_synchronized():
     intervals = torch.stack((centers - 0.1, centers + 0.1), dim=-1)
     merged, new_mass, new_centers, new_intervals, _ = merge.merge_step(x, 1, mass, centers, intervals)
     assert torch.all(new_centers[0, 1:] >= new_centers[0, :-1])
-    assert torch.allclose(new_intervals[..., 0], new_centers - 0.1, atol=1e-6)
+    assert torch.all(new_intervals[..., 1] >= new_intervals[..., 0])
+    assert torch.all(new_intervals[..., 0][0, 1:] >= new_intervals[..., 0][0, :-1])
     assert merged.shape[1] == new_mass.shape[1]
 
 

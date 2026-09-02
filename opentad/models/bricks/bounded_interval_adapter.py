@@ -162,6 +162,18 @@ class BoundedTubeletIntervalAdapter(BaseModule):
 
         # Compute condition g(z): [B, T_tubelet, 1, 1, 1]
         g = self.compute_g(z_condition)  # [B, T_tubelet, 1, 1, 1]
+        if torch.equal(g, torch.ones_like(g)):
+            # Preserve exact stock-Conv3d parity at the zero-initialized point;
+            # the algebraic path is intentionally used once conditioning moves.
+            out = F.conv3d(
+                x,
+                weight_3d,
+                bias=bias_3d,
+                stride=(self.tubelet_size, stride_spatial, stride_spatial),
+                padding=(0, padding_spatial, padding_spatial),
+            )
+            assert_finite_tensor(out, "interval.output")
+            return out
 
         Y = Y_mean + g * Y_diff  # [B, T_tubelet, C_out, H_out, W_out]
         assert_finite_tensor(Y, "interval.output")

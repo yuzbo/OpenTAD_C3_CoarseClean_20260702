@@ -251,8 +251,22 @@ def compute_two_view_consistency_loss(
     view1_logits: torch.Tensor,
     view2_logits: torch.Tensor,
     valid_mask: Optional[torch.Tensor] = None,
+    view1_reg: Optional[torch.Tensor] = None,
+    view2_reg: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Compute two-view consistency loss using symmetric KL divergence with valid mask."""
+    # Backward-compatible positional form used by the original detector:
+    # ``(cls1, cls2, reg1, reg2)``.
+    if (
+        view2_reg is None
+        and view1_reg is not None
+        and torch.is_tensor(valid_mask)
+        and valid_mask.dtype != torch.bool
+        and tuple(valid_mask.shape) == tuple(view1_reg.shape)
+    ):
+        view1_reg, view2_reg, valid_mask = valid_mask, view1_reg, None
+    assert_finite_tensor(view1_logits, "loss.consistency.view1_logits")
+    assert_finite_tensor(view2_logits, "loss.consistency.view2_logits")
     p1 = F.log_softmax(view1_logits, dim=-1)
     p2 = F.log_softmax(view2_logits, dim=-1)
     q1 = F.softmax(view1_logits, dim=-1)
@@ -262,8 +276,23 @@ def compute_two_view_consistency_loss(
     sym_kl = 0.5 * (kl_12 + kl_21)
     if valid_mask is not None:
         mask_f = valid_mask.float()
-        return (sym_kl * mask_f).sum() / mask_f.sum().clamp_min(1.0)
-    return sym_kl.mean()
+        loss = (sym_kl * mask_f).sum() / mask_f.sum().clamp_min(1.0)
+    else:
+        loss = sym_kl.mean()
+    if view1_reg is not None or view2_reg is not None:
+        if view1_reg is None or view2_reg is None:
+            raise ValueError("view1_reg and view2_reg must be provided together")
+        assert_finite_tensor(view1_reg, "loss.consistency.view1_reg")
+        assert_finite_tensor(view2_reg, "loss.consistency.view2_reg")
+        reg = (view1_reg - view2_reg).square().mean(dim=-1)
+        if valid_mask is not None:
+            mask_f = valid_mask.to(dtype=reg.dtype)
+            reg = (reg * mask_f).sum() / mask_f.sum().clamp_min(1.0)
+        else:
+            reg = reg.mean()
+        loss = loss + reg
+    assert_finite_tensor(loss, "loss.consistency.total")
+    return loss
 
 
 def partition_semantic_segments(
