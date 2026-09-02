@@ -46,10 +46,9 @@ FORBIDDEN_DECISION_KEYS = {
 }
 
 _PROVENANCE_FALSE_KEYS = (
-    "thumos_trained",
-    "uses_labels",
-    "uses_teacher",
-    "uses_gt",
+    "uses_labels_at_inference",
+    "uses_gt_at_inference",
+    "uses_teacher_at_inference",
     "uses_prediction_cache",
 )
 
@@ -467,6 +466,9 @@ class ZeroShotActionnessSource(nn.Module):
             "prompt_hash": self._provenance_override["prompt_hash"],
             "uses_gt": self._provenance_override["uses_gt"],
             "uses_prediction_cache": self._provenance_override["uses_prediction_cache"],
+            "uses_labels_at_inference": False,
+            "uses_gt_at_inference": False,
+            "uses_teacher_at_inference": False,
             "temperature": self.temperature,
             "action_prompts": list(self.action_prompts),
             "background_prompts": list(self.background_prompts),
@@ -940,6 +942,9 @@ class DucaAcquisitionAdapter(nn.Module):
         phase_use_curvature: bool = False,
         phase_temporal_nms_radius: int = 1,
         phase_curvature_weight: float = 0.05,
+        phase_fixed_quota: Optional[Mapping[str, int]] = None,
+        phase_adaptive_minima: Optional[Mapping[str, int]] = None,
+        phase_adaptive_caps: Optional[Mapping[str, int]] = None,
         legacy_scaffold_budget: int = 128,
         legacy_burst_budget: int = 256,
         legacy_burst_radius: int = 2,
@@ -1016,6 +1021,19 @@ class DucaAcquisitionAdapter(nn.Module):
         self.phase_use_curvature = bool(phase_use_curvature)
         self.phase_temporal_nms_radius = int(phase_temporal_nms_radius)
         self.phase_curvature_weight = float(phase_curvature_weight)
+        self.phase_fixed_quota = (
+            None if phase_fixed_quota is None else {str(key): int(value) for key, value in phase_fixed_quota.items()}
+        )
+        self.phase_adaptive_minima = (
+            None
+            if phase_adaptive_minima is None
+            else {str(key): int(value) for key, value in phase_adaptive_minima.items()}
+        )
+        self.phase_adaptive_caps = (
+            None
+            if phase_adaptive_caps is None
+            else {str(key): int(value) for key, value in phase_adaptive_caps.items()}
+        )
         self.legacy_scaffold_budget = int(legacy_scaffold_budget)
         self.legacy_burst_budget = int(legacy_burst_budget)
         self.legacy_burst_radius = int(legacy_burst_radius)
@@ -1503,6 +1521,9 @@ class DucaAcquisitionAdapter(nn.Module):
                 fields,
                 total_budget=int(self.budget),
                 quota_mode=self.phase_quota_mode,
+                fixed_quota=self.phase_fixed_quota,
+                adaptive_minima=self.phase_adaptive_minima,
+                adaptive_caps=self.phase_adaptive_caps,
                 temporal_nms_radius=self.phase_temporal_nms_radius,
                 use_curvature=self.phase_use_curvature,
                 curvature_weight=self.phase_curvature_weight,

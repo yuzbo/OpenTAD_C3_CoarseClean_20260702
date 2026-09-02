@@ -100,5 +100,33 @@
       "items": {"type": "string"}
     },
     "claim_boundary": {"type": "string"}
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {"const": "DEPLOYED"}
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "remote_snapshot": {"type": "string", "minLength": 1},
+          "run_root": {"type": "string", "minLength": 1},
+          "slurm": {
+            "properties": {
+              "preflight_job_id": {"type": "string", "minLength": 1},
+              "train_eval_array_job_id": {"type": "string", "minLength": 1},
+              "cost_array_job_id": {"type": "string", "minLength": 1},
+              "bootstrap_array_job_id": {"type": "string", "minLength": 1},
+              "finalizer_job_id": {"type": "string", "minLength": 1},
+              "audit_afterany_job_id": {"type": "string", "minLength": 1},
+              "submission_argv": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "required": ["remote_snapshot", "run_root", "slurm"]
+      }
+    }
+  ]
 }

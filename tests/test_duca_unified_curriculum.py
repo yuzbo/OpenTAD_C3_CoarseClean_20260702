@@ -4,6 +4,7 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
 import torch
 import torch.nn as nn
 from mmengine.config import Config
@@ -11,6 +12,8 @@ from mmengine.config import Config
 sys.modules.setdefault("tqdm", types.SimpleNamespace(tqdm=lambda iterable, **_: iterable))
 
 from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
+from tools.bata.aggregate_duca_unified_fullmatrix import build_summary
+from tools.bata.duca_runtime_contract import resolve_effective_seed
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +66,8 @@ def test_generated_primary_and_mod_configs_preserve_successful_update_contract()
     assert primary.model.frame_selector.phase_use_curvature is False
     assert primary.workflow.end_epoch == 60
     assert primary.workflow.max_train_iters == 100
+    assert primary.workflow.max_amp_retries_per_batch == 8
+    assert primary.max_successful_updates == 6000
     assert primary.workflow.val_eval_interval == 0
     assert primary.terminal_state_key == "state_dict_ema"
     assert primary.inference.load_from_raw_predictions is False
@@ -93,6 +98,89 @@ def test_after_optimizer_step_helper_unwraps_ddp_like_module():
     train_engine = _load_train_engine()
     assert train_engine._call_after_optimizer_step(Wrapped(runtime)) == {"count": 1}
     assert runtime.count == 1
+
+
+def test_train_script_resolves_seed_from_config_and_rejects_cli_conflict():
+    cfg = Config(dict(seed=3407))
+
+    assert resolve_effective_seed(cfg, None) == 3407
+    assert resolve_effective_seed(cfg, 3407) == 3407
+    with pytest.raises(ValueError, match="conflicts with config seed"):
+        resolve_effective_seed(cfg, 42)
+
+
+def test_train_one_epoch_stops_on_successful_update_target():
+    class Runtime(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = nn.Parameter(torch.tensor(1.0))
+            self.step_count = 0
+
+        def forward(self, **kwargs):
+            return {"cost": self.weight * 1.0}
+
+        def after_optimizer_step(self):
+            self.step_count += 1
+
+    class Wrapped(nn.Module):
+        def __init__(self, module):
+            super().__init__()
+            self.module = module
+
+        def forward(self, **kwargs):
+            return self.module(**kwargs)
+
+    class Logger:
+        def info(self, *args, **kwargs):
+            pass
+
+    runtime = Runtime()
+    model = Wrapped(runtime)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda _: 1.0)
+    train_engine = _load_train_engine()
+    train_engine.reduce_loss = lambda losses: losses
+
+    updates = train_engine.train_one_epoch(
+        [{} for _ in range(5)],
+        model,
+        optimizer,
+        scheduler,
+        curr_epoch=0,
+        logger=Logger(),
+        logging_interval=1000,
+        max_train_iters=5,
+        max_successful_updates=2,
+        successful_updates_start=0,
+    )
+
+    assert updates == 2
+    assert runtime.step_count == 2
+
+
+def test_aggregate_requires_cost_and_bootstrap_before_complete(tmp_path):
+    project = tmp_path / "project"
+    matrix_path = project / "scripts" / "duca_unified_fullmatrix" / "matrix.json"
+    matrix_path.parent.mkdir(parents=True)
+    matrix_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "duca_unified_fullmatrix_tasks_v1",
+                "matrix_id": "DUCA-UNIFIED-FULLMATRIX-v001-20260902",
+                "base_revision": "base",
+                "rows": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = build_summary(matrix_path, run_root=tmp_path / "run")
+    cost = build_summary(matrix_path, run_root=tmp_path / "run", cost_index=0)
+
+    assert summary["status"] == "INCOMPLETE"
+    assert summary["bootstrap"]["complete"] is False
+    assert summary["cost"]["complete"] is False
+    assert cost["status"] == "INCOMPLETE"
 
 
 def test_selector_loss_schedule_advances_only_after_pending_successful_step():

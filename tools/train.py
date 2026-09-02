@@ -1,5 +1,8 @@
 import copy
+import hashlib
+import json
 import os
+import subprocess
 import sys
 
 sys.dont_write_bytecode = True
@@ -39,12 +42,13 @@ from opentad.utils.training_guard import (
     assert_safe_cfg_options_for_gated_config,
 )
 from opentad.utils.train_schedule import should_eval_epoch
+from tools.bata.duca_runtime_contract import resolve_effective_seed
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a Temporal Action Detector")
     parser.add_argument("config", metavar="FILE", type=str, help="path to config file")
-    parser.add_argument("--seed", type=int, default=42, help="random seed")
+    parser.add_argument("--seed", type=int, default=None, help="random seed")
     parser.add_argument("--id", type=int, default=0, help="repeat experiment id")
     parser.add_argument(
         "--resume", type=str, default=None, help="resume from a checkpoint"
@@ -64,6 +68,83 @@ def parse_args():
     return args
 
 
+DUCA_UNIFIED_CHECKPOINT_SIDECAR_SCHEMA = "duca_unified_checkpoint_metadata_v1"
+
+
+def _resolve_effective_seed(cfg, args):
+    return resolve_effective_seed(cfg, args.seed)
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _git_head_commit():
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return None
+
+
+def _write_json(path, payload):
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    os.replace(tmp_path, path)
+
+
+def _build_duca_unified_checkpoint_metadata(
+    cfg,
+    args,
+    epoch,
+    successful_updates,
+    train_batches_per_epoch,
+    update_audit,
+):
+    config_path = os.path.abspath(args.config)
+    metadata = {
+        "schema": DUCA_UNIFIED_CHECKPOINT_SIDECAR_SCHEMA,
+        "code_commit": _git_head_commit(),
+        "config_path": config_path,
+        "config_sha256": _sha256_file(config_path),
+        "matrix_id": cfg.get("matrix_id", None),
+        "matrix_index": cfg.get("matrix_index", None),
+        "phase": cfg.get("matrix_phase", cfg.get("phase", None)),
+        "task_id": cfg.get("task_id", None),
+        "arm_id": cfg.get("arm_id", None),
+        "seed": int(args.seed),
+        "epoch": int(epoch),
+        "terminal_epoch_zero_based": int(cfg.get("terminal_epoch_zero_based", epoch)),
+        "successful_updates": int(successful_updates),
+        "max_successful_updates": int(cfg.get("max_successful_updates", 0)),
+        "train_batches_per_epoch": int(train_batches_per_epoch),
+        "terminal_state_key": cfg.get("terminal_state_key", None),
+        "amp_skipped_attempts": int(update_audit.get("amp_skipped_attempts", 0)),
+        "optimizer_attempts": int(update_audit.get("optimizer_attempts", 0)),
+        "max_amp_retries_observed": int(
+            update_audit.get("max_amp_retries_observed", 0)
+        ),
+        "artifact_contract": cfg.get("duca_unified_contract", {}),
+    }
+    return metadata
+
+
+def _is_duca_unified_cfg(cfg):
+    return "duca_unified_contract" in cfg or str(cfg.get("matrix_id", "")).startswith(
+        "DUCA_UNIFIED_FULLMATRIX"
+    )
+
+
 def main():
     args = parse_args()
 
@@ -74,6 +155,7 @@ def main():
     )
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    args.seed = _resolve_effective_seed(cfg, args)
     s1_binding = None
     s1_checkpoint_sidecar_schema = None
     if "spatial_zoom_s1_contract" in cfg:
@@ -254,12 +336,21 @@ def main():
     val_start_epoch = cfg.workflow.get("val_start_epoch", 0)
     disable_checkpoint = cfg.workflow.get("disable_checkpoint", False)
     successful_updates = 0
+    max_successful_updates = cfg.get("max_successful_updates", None)
+    if max_successful_updates is not None:
+        max_successful_updates = int(max_successful_updates)
+        if max_successful_updates <= 0:
+            raise ValueError("max_successful_updates must be positive when configured")
+    formal_update_target = max_successful_updates is not None
     update_audit = {
         "optimizer_attempts": 0,
         "amp_skipped_attempts": 0,
         "max_amp_retries_observed": 0,
     }
-    s1_amp_retry_limit = 8 if s1_binding is not None else 0
+    configured_amp_retry_limit = int(cfg.workflow.get("max_amp_retries_per_batch", 8))
+    amp_retry_limit = configured_amp_retry_limit if (
+        use_amp and (s1_binding is not None or formal_update_target)
+    ) else 0
     for epoch in range(resume_epoch + 1, max_epoch):
         train_loader.sampler.set_epoch(epoch)
 
@@ -276,9 +367,13 @@ def main():
             logging_interval=cfg.workflow.logging_interval,
             scaler=scaler,
             max_train_iters=cfg.workflow.get("max_train_iters", None),
-            fail_on_skipped_update=s1_binding is not None,
-            max_amp_retries_per_batch=s1_amp_retry_limit,
-            update_audit=update_audit if s1_binding is not None else None,
+            fail_on_skipped_update=s1_binding is not None or formal_update_target,
+            max_amp_retries_per_batch=amp_retry_limit,
+            max_successful_updates=max_successful_updates,
+            successful_updates_start=successful_updates,
+            update_audit=(
+                update_audit if (s1_binding is not None or formal_update_target) else None
+            ),
         )
 
         # save checkpoint
@@ -288,6 +383,7 @@ def main():
         ):
             if args.rank == 0:
                 checkpoint_metadata = None
+                checkpoint_sidecar_schema = s1_checkpoint_sidecar_schema
                 if s1_binding is not None:
                     checkpoint_metadata = build_s1_checkpoint_metadata(
                         cfg,
@@ -296,10 +392,34 @@ def main():
                         successful_updates=successful_updates,
                         train_batches_per_epoch=len(train_loader),
                         amp_skipped_attempts=update_audit["amp_skipped_attempts"],
-                        max_amp_retries_per_batch=s1_amp_retry_limit,
+                        max_amp_retries_per_batch=amp_retry_limit,
                         max_amp_retries_observed=update_audit[
                             "max_amp_retries_observed"
                         ],
+                    )
+                elif _is_duca_unified_cfg(cfg):
+                    if (
+                        epoch == int(cfg.get("terminal_epoch_zero_based", epoch))
+                        and max_successful_updates is not None
+                        and successful_updates != max_successful_updates
+                    ):
+                        raise RuntimeError(
+                            "DUCA Unified terminal checkpoint requires exactly "
+                            f"{max_successful_updates} successful updates; got "
+                            f"{successful_updates}"
+                        )
+                    checkpoint_metadata = _build_duca_unified_checkpoint_metadata(
+                        cfg,
+                        args,
+                        epoch=epoch,
+                        successful_updates=successful_updates,
+                        train_batches_per_epoch=len(train_loader),
+                        update_audit=update_audit,
+                    )
+                    checkpoint_sidecar_schema = DUCA_UNIFIED_CHECKPOINT_SIDECAR_SCHEMA
+                    _write_json(
+                        os.path.join(cfg.work_dir, "duca_unified_runtime_identity.json"),
+                        checkpoint_metadata,
                     )
                 save_checkpoint(
                     model,
@@ -309,7 +429,7 @@ def main():
                     epoch,
                     work_dir=cfg.work_dir,
                     experiment_metadata=checkpoint_metadata,
-                    experiment_sidecar_schema=s1_checkpoint_sidecar_schema,
+                    experiment_sidecar_schema=checkpoint_sidecar_schema,
                 )
 
         # val for one epoch
@@ -351,6 +471,17 @@ def main():
                     not_eval=args.not_eval,
                     epoch=epoch,
                 )
+        if max_successful_updates is not None and successful_updates >= max_successful_updates:
+            logger.info(
+                "[Train]: stopping after %d successful optimizer updates.",
+                successful_updates,
+            )
+            break
+    if max_successful_updates is not None and successful_updates != max_successful_updates:
+        raise RuntimeError(
+            "training ended before reaching the configured successful update target: "
+            f"{successful_updates}/{max_successful_updates}"
+        )
     logger.info("Training Over...\n")
 
 

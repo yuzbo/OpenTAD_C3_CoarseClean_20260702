@@ -112,6 +112,11 @@ phase_field_contract:
       offset: 32
       core: 64
     remaining_budget: 160
+    caps:
+      scaffold: 160
+      onset: 96
+      offset: 96
+      core: 192
     allocation: deterministic_evidence_mass_with_caps_and_largest_remainder_rounding
   invariants:
     - phase-exclusive sequential masking

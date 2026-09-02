@@ -1410,10 +1410,11 @@ class VisionTransformerAdapter(BaseModule):
                 and successful_update > 0
                 and successful_update % dense_companion_period == 0
             )
+            dense_companion_input = x.detach() if dense_companion_run else None
             last_score = None
             amod_summaries = []
             for idx, blk in enumerate(self.blocks):
-                if idx in amod_layers and last_score is not None and not dense_companion_run:
+                if idx in amod_layers and last_score is not None:
                     if self.with_cp and x.requires_grad:
                         x = cp.checkpoint(
                             blk.forward_amod,
@@ -1457,6 +1458,32 @@ class VisionTransformerAdapter(BaseModule):
                         x, last_score = blk.forward_dense_with_score(
                             x, h, w, temporal_token_mask=token_mask
                         )
+            dense_companion_summary = None
+            if dense_companion_run and dense_companion_input is not None:
+                cpu_rng_state = torch.get_rng_state()
+                cuda_rng_states = (
+                    torch.cuda.get_rng_state_all()
+                    if dense_companion_input.is_cuda
+                    else None
+                )
+                try:
+                    with torch.no_grad():
+                        dense_x = dense_companion_input
+                        for blk in self.blocks:
+                            dense_x, _ = blk.forward_dense_with_score(
+                                dense_x, h, w, temporal_token_mask=token_mask
+                            )
+                        drift = (x.detach() - dense_x).abs()
+                        dense_companion_summary = {
+                            "parallel_diagnostic": True,
+                            "changes_training_forward": False,
+                            "mean_abs_drift": float(drift.mean().detach().cpu().item()),
+                            "max_abs_drift": float(drift.max().detach().cpu().item()),
+                        }
+                finally:
+                    torch.set_rng_state(cpu_rng_state)
+                    if cuda_rng_states is not None:
+                        torch.cuda.set_rng_state_all(cuda_rng_states)
             self.latest_mixture_of_depths_summary = {
                 "schema_version": "adaptive_mixture_of_depths_v1",
                 "enabled": True,
@@ -1469,6 +1496,7 @@ class VisionTransformerAdapter(BaseModule):
                 "amod_layers": sorted(int(v) for v in amod_layers),
                 "dense_companion_period_successful_steps": dense_companion_period,
                 "dense_companion_run": dense_companion_run,
+                "dense_companion": dense_companion_summary,
                 "amod_forward_count": len(amod_summaries),
                 "padding_selected_count": int(
                     sum(int(s.get("padding_selected_count", 0)) for s in amod_summaries)

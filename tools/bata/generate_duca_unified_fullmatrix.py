@@ -104,6 +104,7 @@ def _selector_config(manifest: dict[str, Any], arm: dict[str, Any]) -> dict[str,
     dense = int(manifest["common_contract"]["input_frames"])
     warmup_steps, transition_steps = _schedule_steps(manifest, str(arm["schedule"]))
     semantic = str(arm["prior"]) == "semantic"
+    physical_time = bool(arm["physical_time"])
     return {
         "type": "DucaOnlineFrameSelector",
         "in_channels": 3,
@@ -124,6 +125,9 @@ def _selector_config(manifest: dict[str, Any], arm: dict[str, Any]) -> dict[str,
         "phase_use_curvature": bool(arm["curvature"]),
         "phase_temporal_nms_radius": 1,
         "phase_curvature_weight": 0.05,
+        "phase_fixed_quota": dict(manifest["phase_field_contract"]["fixed_quota"]),
+        "phase_adaptive_minima": dict(manifest["phase_field_contract"]["adaptive_quota"]["minima"]),
+        "phase_adaptive_caps": dict(manifest["phase_field_contract"]["adaptive_quota"]["caps"]),
         "legacy_scaffold_budget": int(manifest["phase_field_contract"]["fixed_quota"]["scaffold"]),
         "legacy_burst_budget": selected - int(manifest["phase_field_contract"]["fixed_quota"]["scaffold"]),
         "legacy_burst_radius": 2,
@@ -154,8 +158,8 @@ def _selector_config(manifest: dict[str, Any], arm: dict[str, Any]) -> dict[str,
             "actionness": {"start": 0.10 if semantic else 0.0, "end": 0.05 if semantic else 0.0},
         },
         "no_ledger_decision": True,
-        "remap_gt_to_selected_axis": True,
-        "selected_axis_remap_required": True,
+        "remap_gt_to_selected_axis": not physical_time,
+        "selected_axis_remap_required": not physical_time,
         "forbid_ledger": True,
         "forbid_raw_prediction_cache": True,
         "forbid_external_actionness": True,
@@ -263,6 +267,7 @@ def _config_text(
         "matrix_id": manifest["matrix_id"],
         "matrix_index": matrix_index,
         "matrix_phase": phase,
+        "task_id": f"{phase}_{str(arm['id']).lower()}_seed{seed}",
         "arm_id": arm["id"],
         "seed": int(seed),
         "window_size": dense,
@@ -316,6 +321,7 @@ def _config_text(
             "val_start_epoch": 60,
             "end_epoch": 60,
             "max_train_iters": 100,
+            "max_amp_retries_per_batch": 8,
         },
         "inference": {"load_from_raw_predictions": False, "save_raw_prediction": True},
         "post_processing": {
@@ -453,21 +459,21 @@ def _write_slurm_scripts(manifest: dict[str, Any], rows: list[dict[str, Any]]) -
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH -t 02:00:00
-#SBATCH -o /data/run01/sczc063/yuzibo/slurm_logs/%x_%j.out
-#SBATCH -e /data/run01/sczc063/yuzibo/slurm_logs/%x_%j.err
 
 set -euo pipefail
 
 PROJECT_DIR="${{PROJECT_DIR:?PROJECT_DIR is required}}"
-RUN_ROOT="${{RUN_ROOT:-/data/run01/sczc063/yuzibo/runs/{matrix_id}}}"
-mkdir -p "${{RUN_ROOT}}" /data/run01/sczc063/yuzibo/slurm_logs
+BASE="${{BASE:-/data/run01/sczc063/yuzibo}}"
+RUN_ROOT="${{RUN_ROOT:-${{BASE}}/runs/{matrix_id}}}"
+mkdir -p "${{RUN_ROOT}}" "${{BASE}}/slurm_logs"
 cd "${{PROJECT_DIR}}"
 
+source /etc/profile >/dev/null 2>&1 || true
 module load cuda/11.8
 module load miniforge3/24.11
-source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
+source "${{BASE}}/conda_envs/opentad/bin/activate"
 
-python -m py_compile tools/train.py tools/test.py tools/bata/generate_duca_unified_fullmatrix.py tools/bata/aggregate_duca_unified_fullmatrix.py tools/bata/bootstrap_duca_unified_fullmatrix.py
+python -m py_compile tools/train.py tools/test.py tools/bata/duca_runtime_contract.py tools/bata/generate_duca_unified_fullmatrix.py tools/bata/aggregate_duca_unified_fullmatrix.py tools/bata/bootstrap_duca_unified_fullmatrix.py tools/bata/audit_duca_unified_fullmatrix_slurm.py
 python tools/bata/generate_duca_unified_fullmatrix.py --check
 python -m pytest tests/test_duca_unified_phase.py tests/test_duca_unified_physical_time.py tests/test_duca_unified_attribution.py tests/test_duca_unified_mod.py tests/test_duca_unified_curriculum.py -q
 """,
@@ -482,20 +488,20 @@ python -m pytest tests/test_duca_unified_phase.py tests/test_duca_unified_physic
 #SBATCH --cpus-per-task=4
 #SBATCH --array=0-{train_count - 1}%{manifest['deployment']['default_max_concurrent_gpu_tasks']}
 #SBATCH -t 7-00:00:00
-#SBATCH -o /data/run01/sczc063/yuzibo/slurm_logs/%x_%A_%a.out
-#SBATCH -e /data/run01/sczc063/yuzibo/slurm_logs/%x_%A_%a.err
 
 set -euo pipefail
 
 PROJECT_DIR="${{PROJECT_DIR:?PROJECT_DIR is required}}"
-RUN_ROOT="${{RUN_ROOT:-/data/run01/sczc063/yuzibo/runs/{matrix_id}}}"
+BASE="${{BASE:-/data/run01/sczc063/yuzibo}}"
+RUN_ROOT="${{RUN_ROOT:-${{BASE}}/runs/{matrix_id}}}"
 MATRIX_JSON="${{PROJECT_DIR}}/scripts/duca_unified_fullmatrix/matrix.json"
-mkdir -p "${{RUN_ROOT}}/train_eval" /data/run01/sczc063/yuzibo/slurm_logs
+mkdir -p "${{RUN_ROOT}}/train_eval" "${{RUN_ROOT}}/runs" "${{BASE}}/slurm_logs"
 cd "${{PROJECT_DIR}}"
 
+source /etc/profile >/dev/null 2>&1 || true
 module load cuda/11.8
 module load miniforge3/24.11
-source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
+source "${{BASE}}/conda_envs/opentad/bin/activate"
 
 read -r CONFIG SEED TASK_ID WORK_DIR <<EOF_ROW
 $(python - "$MATRIX_JSON" "$SLURM_ARRAY_TASK_ID" <<'PY'
@@ -508,8 +514,14 @@ PY
 EOF_ROW
 
 echo "DUCA train/eval task=${{TASK_ID}} seed=${{SEED}} config=${{CONFIG}}"
-torchrun --standalone --nnodes=1 --nproc_per_node=1 tools/train.py "${{CONFIG}}" --seed "${{SEED}}" --id 0
-python tools/test.py "${{CONFIG}}" --seed "${{SEED}}" --id 0 --checkpoint "${{WORK_DIR}}/gpu1_id0/checkpoint/epoch_59.pth" --cfg-options inference.load_from_raw_predictions=False inference.save_raw_prediction=True > "${{RUN_ROOT}}/train_eval/${{TASK_ID}}.test.log" 2>&1
+TASK_WORK_DIR="${{RUN_ROOT}}/runs/${{TASK_ID}}"
+if [[ -e "${{TASK_WORK_DIR}}" ]] && [[ -n "$(find "${{TASK_WORK_DIR}}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+  echo "refusing to reuse non-empty DUCA task work_dir: ${{TASK_WORK_DIR}}" >&2
+  exit 2
+fi
+mkdir -p "${{TASK_WORK_DIR}}"
+torchrun --standalone --nnodes=1 --nproc_per_node=1 tools/train.py "${{CONFIG}}" --seed "${{SEED}}" --id 0 --cfg-options work_dir="${{TASK_WORK_DIR}}"
+python tools/test.py "${{CONFIG}}" --seed "${{SEED}}" --id 0 --checkpoint "${{TASK_WORK_DIR}}/gpu1_id0/checkpoint/epoch_59.pth" --cfg-options work_dir="${{TASK_WORK_DIR}}" inference.load_from_raw_predictions=False inference.save_raw_prediction=True > "${{RUN_ROOT}}/train_eval/${{TASK_ID}}.test.log" 2>&1
 """,
         encoding="utf-8",
     )
@@ -522,20 +534,20 @@ python tools/test.py "${{CONFIG}}" --seed "${{SEED}}" --id 0 --checkpoint "${{WO
 #SBATCH --cpus-per-task=4
 #SBATCH --array=0-{cost_count - 1}
 #SBATCH -t 04:00:00
-#SBATCH -o /data/run01/sczc063/yuzibo/slurm_logs/%x_%A_%a.out
-#SBATCH -e /data/run01/sczc063/yuzibo/slurm_logs/%x_%A_%a.err
 
 set -euo pipefail
 
 PROJECT_DIR="${{PROJECT_DIR:?PROJECT_DIR is required}}"
-RUN_ROOT="${{RUN_ROOT:-/data/run01/sczc063/yuzibo/runs/{matrix_id}}}"
+BASE="${{BASE:-/data/run01/sczc063/yuzibo}}"
+RUN_ROOT="${{RUN_ROOT:-${{BASE}}/runs/{matrix_id}}}"
 MATRIX_JSON="${{PROJECT_DIR}}/scripts/duca_unified_fullmatrix/matrix.json"
-mkdir -p "${{RUN_ROOT}}/cost" /data/run01/sczc063/yuzibo/slurm_logs
+mkdir -p "${{RUN_ROOT}}/cost" "${{BASE}}/slurm_logs"
 cd "${{PROJECT_DIR}}"
 
+source /etc/profile >/dev/null 2>&1 || true
 module load cuda/11.8
 module load miniforge3/24.11
-source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
+source "${{BASE}}/conda_envs/opentad/bin/activate"
 
 python tools/bata/aggregate_duca_unified_fullmatrix.py --matrix "$MATRIX_JSON" --run-root "$RUN_ROOT" --cost-index "$SLURM_ARRAY_TASK_ID" --output "${{RUN_ROOT}}/cost/cost_${{SLURM_ARRAY_TASK_ID}}.json"
 """,
@@ -549,18 +561,18 @@ python tools/bata/aggregate_duca_unified_fullmatrix.py --matrix "$MATRIX_JSON" -
 #SBATCH --cpus-per-task=2
 #SBATCH --array=0-{bootstrap_shards - 1}
 #SBATCH -t 02:00:00
-#SBATCH -o /data/run01/sczc063/yuzibo/slurm_logs/%x_%A_%a.out
-#SBATCH -e /data/run01/sczc063/yuzibo/slurm_logs/%x_%A_%a.err
 
 set -euo pipefail
 
 PROJECT_DIR="${{PROJECT_DIR:?PROJECT_DIR is required}}"
-RUN_ROOT="${{RUN_ROOT:-/data/run01/sczc063/yuzibo/runs/{matrix_id}}}"
-mkdir -p "${{RUN_ROOT}}/bootstrap" /data/run01/sczc063/yuzibo/slurm_logs
+BASE="${{BASE:-/data/run01/sczc063/yuzibo}}"
+RUN_ROOT="${{RUN_ROOT:-${{BASE}}/runs/{matrix_id}}}"
+mkdir -p "${{RUN_ROOT}}/bootstrap" "${{BASE}}/slurm_logs"
 cd "${{PROJECT_DIR}}"
 
+source /etc/profile >/dev/null 2>&1 || true
 module load miniforge3/24.11
-source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
+source "${{BASE}}/conda_envs/opentad/bin/activate"
 
 python tools/bata/bootstrap_duca_unified_fullmatrix.py --matrix scripts/duca_unified_fullmatrix/matrix.json --run-root "$RUN_ROOT" --shard "$SLURM_ARRAY_TASK_ID" --num-shards {bootstrap_shards} --draws {manifest['common_contract']['statistics']['video_cluster_bootstrap_draws']} --output "${{RUN_ROOT}}/bootstrap/bootstrap_${{SLURM_ARRAY_TASK_ID}}.json"
 """,
@@ -573,17 +585,17 @@ python tools/bata/bootstrap_duca_unified_fullmatrix.py --matrix scripts/duca_uni
 #SBATCH -p cpu
 #SBATCH --cpus-per-task=2
 #SBATCH -t 02:00:00
-#SBATCH -o /data/run01/sczc063/yuzibo/slurm_logs/%x_%j.out
-#SBATCH -e /data/run01/sczc063/yuzibo/slurm_logs/%x_%j.err
 
 set -euo pipefail
 
 PROJECT_DIR="${{PROJECT_DIR:?PROJECT_DIR is required}}"
-RUN_ROOT="${{RUN_ROOT:-/data/run01/sczc063/yuzibo/runs/{matrix_id}}}"
+BASE="${{BASE:-/data/run01/sczc063/yuzibo}}"
+RUN_ROOT="${{RUN_ROOT:-${{BASE}}/runs/{matrix_id}}}"
 cd "${{PROJECT_DIR}}"
 
+source /etc/profile >/dev/null 2>&1 || true
 module load miniforge3/24.11
-source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
+source "${{BASE}}/conda_envs/opentad/bin/activate"
 
 python tools/bata/aggregate_duca_unified_fullmatrix.py --matrix scripts/duca_unified_fullmatrix/matrix.json --run-root "$RUN_ROOT" --bootstrap-dir "${{RUN_ROOT}}/bootstrap" --output "${{RUN_ROOT}}/duca_unified_fullmatrix_summary.json"
 """,
@@ -596,19 +608,19 @@ python tools/bata/aggregate_duca_unified_fullmatrix.py --matrix scripts/duca_uni
 #SBATCH -p cpu
 #SBATCH --cpus-per-task=1
 #SBATCH -t 00:30:00
-#SBATCH -o /data/run01/sczc063/yuzibo/slurm_logs/%x_%j.out
-#SBATCH -e /data/run01/sczc063/yuzibo/slurm_logs/%x_%j.err
 
 set -euo pipefail
 
 PROJECT_DIR="${{PROJECT_DIR:?PROJECT_DIR is required}}"
-RUN_ROOT="${{RUN_ROOT:-/data/run01/sczc063/yuzibo/runs/{matrix_id}}}"
+BASE="${{BASE:-/data/run01/sczc063/yuzibo}}"
+RUN_ROOT="${{RUN_ROOT:-${{BASE}}/runs/{matrix_id}}}"
 cd "${{PROJECT_DIR}}"
 
+source /etc/profile >/dev/null 2>&1 || true
 module load miniforge3/24.11
-source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
+source "${{BASE}}/conda_envs/opentad/bin/activate"
 
-python tools/bata/aggregate_duca_unified_fullmatrix.py --matrix scripts/duca_unified_fullmatrix/matrix.json --run-root "$RUN_ROOT" --audit-only --output "${{RUN_ROOT}}/duca_unified_fullmatrix_audit.json"
+python tools/bata/audit_duca_unified_fullmatrix_slurm.py --matrix scripts/duca_unified_fullmatrix/matrix.json --run-root "$RUN_ROOT" --output "${{RUN_ROOT}}/duca_unified_fullmatrix_audit.json"
 """,
         encoding="utf-8",
     )
@@ -718,7 +730,7 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   exit 2
 fi
 
-export PROJECT_DIR RUN_ROOT
+export PROJECT_DIR RUN_ROOT BASE
 
 SLURM_SHARED_ARGS=()
 if [[ -n "$ACCOUNT" ]]; then
@@ -732,12 +744,13 @@ if [[ -n "$PARTITION" ]]; then
   SLURM_GPU_ARGS+=("--partition=$PARTITION")
 fi
 
-preflight=$(sbatch --parsable "${{SLURM_GPU_ARGS[@]}}" scripts/duca_unified_fullmatrix/preflight.sbatch)
-train=$(sbatch --parsable "${{SLURM_GPU_ARGS[@]}}" --dependency=afterok:$preflight --array=0-{train_count - 1}%$MAX_CONCURRENT scripts/duca_unified_fullmatrix/train_eval_array.sbatch)
-cost=$(sbatch --parsable "${{SLURM_GPU_ARGS[@]}}" --dependency=afterok:$train scripts/duca_unified_fullmatrix/cost_array.sbatch)
-boot=$(sbatch --parsable "${{SLURM_SHARED_ARGS[@]}}" --dependency=afterok:$train scripts/duca_unified_fullmatrix/bootstrap_array.sbatch)
-finalize=$(sbatch --parsable "${{SLURM_SHARED_ARGS[@]}}" --dependency=afterok:$train:$cost:$boot scripts/duca_unified_fullmatrix/finalize.sbatch)
-audit=$(sbatch --parsable "${{SLURM_SHARED_ARGS[@]}}" --dependency=afterany:$train:$cost:$boot:$finalize scripts/duca_unified_fullmatrix/audit_afterany.sbatch)
+LOG_DIR="${{BASE}}/slurm_logs"
+preflight=$(sbatch --parsable "${{SLURM_GPU_ARGS[@]}}" --output="${{LOG_DIR}}/duca_preflight_%j.out" --error="${{LOG_DIR}}/duca_preflight_%j.err" scripts/duca_unified_fullmatrix/preflight.sbatch)
+train=$(sbatch --parsable "${{SLURM_GPU_ARGS[@]}}" --dependency=afterok:$preflight --array=0-{train_count - 1}%$MAX_CONCURRENT --output="${{LOG_DIR}}/duca_train_eval_%A_%a.out" --error="${{LOG_DIR}}/duca_train_eval_%A_%a.err" scripts/duca_unified_fullmatrix/train_eval_array.sbatch)
+cost=$(sbatch --parsable "${{SLURM_GPU_ARGS[@]}}" --dependency=afterok:$train --output="${{LOG_DIR}}/duca_cost_%A_%a.out" --error="${{LOG_DIR}}/duca_cost_%A_%a.err" scripts/duca_unified_fullmatrix/cost_array.sbatch)
+boot=$(sbatch --parsable "${{SLURM_SHARED_ARGS[@]}}" --dependency=afterok:$train --output="${{LOG_DIR}}/duca_bootstrap_%A_%a.out" --error="${{LOG_DIR}}/duca_bootstrap_%A_%a.err" scripts/duca_unified_fullmatrix/bootstrap_array.sbatch)
+finalize=$(sbatch --parsable "${{SLURM_SHARED_ARGS[@]}}" --dependency=afterok:$train:$cost:$boot --output="${{LOG_DIR}}/duca_finalize_%j.out" --error="${{LOG_DIR}}/duca_finalize_%j.err" scripts/duca_unified_fullmatrix/finalize.sbatch)
+audit=$(sbatch --parsable "${{SLURM_SHARED_ARGS[@]}}" --dependency=afterany:$train:$cost:$boot:$finalize --output="${{LOG_DIR}}/duca_audit_%j.out" --error="${{LOG_DIR}}/duca_audit_%j.err" scripts/duca_unified_fullmatrix/audit_afterany.sbatch)
 
 printf -v SUBMISSION_ARGV '%q ' "${{ORIGINAL_ARGV[@]}}"
 SUBMISSION_ARGV="${{SUBMISSION_ARGV%% }}"

@@ -205,6 +205,9 @@ class DucaOnlineFrameSelector(nn.Module):
         phase_use_curvature: bool = False,
         phase_temporal_nms_radius: int = 1,
         phase_curvature_weight: float = 0.05,
+        phase_fixed_quota: Optional[Mapping[str, int]] = None,
+        phase_adaptive_minima: Optional[Mapping[str, int]] = None,
+        phase_adaptive_caps: Optional[Mapping[str, int]] = None,
         legacy_scaffold_budget: int = 128,
         legacy_burst_budget: int = 256,
         legacy_burst_radius: int = 2,
@@ -277,6 +280,19 @@ class DucaOnlineFrameSelector(nn.Module):
         self.phase_use_curvature = bool(phase_use_curvature)
         self.phase_temporal_nms_radius = int(phase_temporal_nms_radius)
         self.phase_curvature_weight = float(phase_curvature_weight)
+        self.phase_fixed_quota = (
+            None if phase_fixed_quota is None else {str(key): int(value) for key, value in phase_fixed_quota.items()}
+        )
+        self.phase_adaptive_minima = (
+            None
+            if phase_adaptive_minima is None
+            else {str(key): int(value) for key, value in phase_adaptive_minima.items()}
+        )
+        self.phase_adaptive_caps = (
+            None
+            if phase_adaptive_caps is None
+            else {str(key): int(value) for key, value in phase_adaptive_caps.items()}
+        )
         self.legacy_scaffold_budget = int(legacy_scaffold_budget)
         self.legacy_burst_budget = int(legacy_burst_budget)
         self.legacy_burst_radius = int(legacy_burst_radius)
@@ -344,7 +360,11 @@ class DucaOnlineFrameSelector(nn.Module):
             raise ValueError("dense_window_size must be positive")
         if not self.no_ledger_decision:
             raise ValueError("DUCA online selector requires no_ledger_decision=True")
-        if self.detector_output_coordinate_space == SELECTED_AXIS and not self.remap_gt_to_selected_axis:
+        if (
+            self.detector_output_coordinate_space == SELECTED_AXIS
+            and self.selected_axis_remap_required
+            and not self.remap_gt_to_selected_axis
+        ):
             raise ValueError("selected-axis detector output requires remap_gt_to_selected_axis=True")
         if self.forbid_external_actionness and (
             self.external_actionness_meta_key
@@ -404,6 +424,9 @@ class DucaOnlineFrameSelector(nn.Module):
             phase_use_curvature=self.phase_use_curvature,
             phase_temporal_nms_radius=self.phase_temporal_nms_radius,
             phase_curvature_weight=self.phase_curvature_weight,
+            phase_fixed_quota=self.phase_fixed_quota,
+            phase_adaptive_minima=self.phase_adaptive_minima,
+            phase_adaptive_caps=self.phase_adaptive_caps,
             legacy_scaffold_budget=self.legacy_scaffold_budget,
             legacy_burst_budget=self.legacy_burst_budget,
             legacy_burst_radius=self.legacy_burst_radius,
@@ -473,6 +496,7 @@ class DucaOnlineFrameSelector(nn.Module):
         return {
             "inputs": outputs["inputs"],
             "masks": outputs["masks"],
+            "temporal_positions": outputs["temporal_positions"],
             "metas": metas,
             "gt_segments": gt_segments,
             "gt_labels": gt_labels,
@@ -723,6 +747,7 @@ class DucaOnlineFrameSelector(nn.Module):
         return {
             "inputs": outputs["inputs"],
             "masks": outputs["masks"],
+            "temporal_positions": outputs["temporal_positions"],
             "metas": outputs["metas"],
             "selector_outputs": outputs["selector_outputs"],
         }
@@ -866,6 +891,9 @@ class DucaOnlineFrameSelector(nn.Module):
         )
         scores["compute_profile"] = compute_profile
         selected_masks = slot_mask.to(device=inputs.device, dtype=torch.bool)
+        temporal_positions = positions.to(dtype=inputs.dtype).masked_fill(
+            ~selected_masks, 0.0
+        )
         scores["grid"] = grid
         scores["hard_selected_inputs"] = hard_selected
         scores["selected_input_st_gradient_path"] = self.detector_gradient_mode
@@ -900,6 +928,7 @@ class DucaOnlineFrameSelector(nn.Module):
         return {
             "inputs": selected_inputs,
             "masks": selected_masks,
+            "temporal_positions": temporal_positions,
             "metas": self._write_metas(
                 metas,
                 grid,
@@ -1302,6 +1331,7 @@ class DucaOnlineFrameSelector(nn.Module):
             meta["truetime_dense_len"] = int(grid.original_length)
             meta["truetime_dense_valid_len"] = dense_valid_len
             meta["irregular_selected_positions"] = positions
+            meta["temporal_positions"] = positions
             meta["irregular_native_axis"] = True
             meta["irregular_selected_count"] = len(positions)
             meta["irregular_dense_valid_len"] = dense_valid_len

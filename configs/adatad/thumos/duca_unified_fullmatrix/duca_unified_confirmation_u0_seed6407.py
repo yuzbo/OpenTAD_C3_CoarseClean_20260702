@@ -10,6 +10,8 @@ matrix_index = 33
 
 matrix_phase = 'confirmation'
 
+task_id = 'confirmation_u0_seed6407'
+
 arm_id = 'U0'
 
 seed = 6407
@@ -87,6 +89,9 @@ model = {'type': 'ActionFormer',
                     'phase_use_curvature': False,
                     'phase_temporal_nms_radius': 1,
                     'phase_curvature_weight': 0.05,
+                    'phase_fixed_quota': {'scaffold': 128, 'onset': 64, 'offset': 64, 'core': 128},
+                    'phase_adaptive_minima': {'scaffold': 96, 'onset': 32, 'offset': 32, 'core': 64},
+                    'phase_adaptive_caps': {'scaffold': 160, 'onset': 96, 'offset': 96, 'core': 192},
                     'legacy_scaffold_budget': 128,
                     'legacy_burst_budget': 256,
                     'legacy_burst_radius': 2,
@@ -205,7 +210,8 @@ workflow = {'logging_interval': 50,
  'val_eval_interval': 0,
  'val_start_epoch': 60,
  'end_epoch': 60,
- 'max_train_iters': 100}
+ 'max_train_iters': 100,
+ 'max_amp_retries_per_batch': 8}
 
 inference = {'load_from_raw_predictions': False, 'save_raw_prediction': True}
 

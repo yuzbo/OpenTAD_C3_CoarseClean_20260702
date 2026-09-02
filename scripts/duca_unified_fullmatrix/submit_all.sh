@@ -102,7 +102,7 @@ if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   exit 2
 fi
 
-export PROJECT_DIR RUN_ROOT
+export PROJECT_DIR RUN_ROOT BASE
 
 SLURM_SHARED_ARGS=()
 if [[ -n "$ACCOUNT" ]]; then
@@ -116,12 +116,13 @@ if [[ -n "$PARTITION" ]]; then
   SLURM_GPU_ARGS+=("--partition=$PARTITION")
 fi
 
-preflight=$(sbatch --parsable "${SLURM_GPU_ARGS[@]}" scripts/duca_unified_fullmatrix/preflight.sbatch)
-train=$(sbatch --parsable "${SLURM_GPU_ARGS[@]}" --dependency=afterok:$preflight --array=0-40%$MAX_CONCURRENT scripts/duca_unified_fullmatrix/train_eval_array.sbatch)
-cost=$(sbatch --parsable "${SLURM_GPU_ARGS[@]}" --dependency=afterok:$train scripts/duca_unified_fullmatrix/cost_array.sbatch)
-boot=$(sbatch --parsable "${SLURM_SHARED_ARGS[@]}" --dependency=afterok:$train scripts/duca_unified_fullmatrix/bootstrap_array.sbatch)
-finalize=$(sbatch --parsable "${SLURM_SHARED_ARGS[@]}" --dependency=afterok:$train:$cost:$boot scripts/duca_unified_fullmatrix/finalize.sbatch)
-audit=$(sbatch --parsable "${SLURM_SHARED_ARGS[@]}" --dependency=afterany:$train:$cost:$boot:$finalize scripts/duca_unified_fullmatrix/audit_afterany.sbatch)
+LOG_DIR="${BASE}/slurm_logs"
+preflight=$(sbatch --parsable "${SLURM_GPU_ARGS[@]}" --output="${LOG_DIR}/duca_preflight_%j.out" --error="${LOG_DIR}/duca_preflight_%j.err" scripts/duca_unified_fullmatrix/preflight.sbatch)
+train=$(sbatch --parsable "${SLURM_GPU_ARGS[@]}" --dependency=afterok:$preflight --array=0-40%$MAX_CONCURRENT --output="${LOG_DIR}/duca_train_eval_%A_%a.out" --error="${LOG_DIR}/duca_train_eval_%A_%a.err" scripts/duca_unified_fullmatrix/train_eval_array.sbatch)
+cost=$(sbatch --parsable "${SLURM_GPU_ARGS[@]}" --dependency=afterok:$train --output="${LOG_DIR}/duca_cost_%A_%a.out" --error="${LOG_DIR}/duca_cost_%A_%a.err" scripts/duca_unified_fullmatrix/cost_array.sbatch)
+boot=$(sbatch --parsable "${SLURM_SHARED_ARGS[@]}" --dependency=afterok:$train --output="${LOG_DIR}/duca_bootstrap_%A_%a.out" --error="${LOG_DIR}/duca_bootstrap_%A_%a.err" scripts/duca_unified_fullmatrix/bootstrap_array.sbatch)
+finalize=$(sbatch --parsable "${SLURM_SHARED_ARGS[@]}" --dependency=afterok:$train:$cost:$boot --output="${LOG_DIR}/duca_finalize_%j.out" --error="${LOG_DIR}/duca_finalize_%j.err" scripts/duca_unified_fullmatrix/finalize.sbatch)
+audit=$(sbatch --parsable "${SLURM_SHARED_ARGS[@]}" --dependency=afterany:$train:$cost:$boot:$finalize --output="${LOG_DIR}/duca_audit_%j.out" --error="${LOG_DIR}/duca_audit_%j.err" scripts/duca_unified_fullmatrix/audit_afterany.sbatch)
 
 printf -v SUBMISSION_ARGV '%q ' "${ORIGINAL_ARGV[@]}"
 SUBMISSION_ARGV="${SUBMISSION_ARGV%% }"

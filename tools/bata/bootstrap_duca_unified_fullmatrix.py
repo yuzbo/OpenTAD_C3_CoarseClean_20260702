@@ -17,6 +17,8 @@ from opentad.evaluations.mAP import compute_average_precision_detection
 
 PRIMARY_CANDIDATE = "A11"
 PRIMARY_CONTROL = "A10"
+EXPECTED_CONFIRMATION_SEEDS = (4407, 5407, 6407)
+EXPECTED_VALIDATION_VIDEOS = 211
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -31,11 +33,8 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
-def _work_dir(row: dict[str, Any], project_dir: Path) -> Path:
-    work = Path(str(row["work_dir"]))
-    if not work.is_absolute():
-        work = project_dir / work
-    return work / "gpu1_id0"
+def _work_dir(row: dict[str, Any], run_root: Path) -> Path:
+    return run_root / "runs" / str(row["task_id"]) / "gpu1_id0"
 
 
 def _config_path(row: dict[str, Any], project_dir: Path) -> Path:
@@ -76,8 +75,7 @@ def _ground_truth_by_video(
                     "label": int(activity_index[ann["label"]]),
                 }
             )
-        if rows:
-            out[str(video_id)] = rows
+        out[str(video_id)] = rows
     return out
 
 
@@ -85,13 +83,27 @@ def _predictions_by_video(
     pred_payload: dict[str, Any],
     *,
     activity_index: dict[str, int],
+    expected_video_ids: set[str],
 ) -> dict[str, list[dict[str, Any]]]:
     out: dict[str, list[dict[str, Any]]] = {}
-    for video_id, preds in pred_payload.get("results", {}).items():
+    results = pred_payload.get("results", {})
+    if not isinstance(results, dict):
+        raise ValueError("result_detection payload must contain a mapping under 'results'")
+    actual_video_ids = {str(video_id) for video_id in results}
+    missing = sorted(expected_video_ids - actual_video_ids)
+    extra = sorted(actual_video_ids - expected_video_ids)
+    if missing or extra:
+        raise ValueError(
+            "prediction video identity mismatch: "
+            f"missing={missing[:5]} extra={extra[:5]}"
+        )
+    for video_id, preds in results.items():
         rows = []
         for pred in preds:
             label = pred.get("label")
-            label_idx = activity_index.get(label, len(activity_index))
+            if label not in activity_index:
+                raise ValueError(f"unknown prediction label {label!r} for video {video_id}")
+            label_idx = activity_index[label]
             rows.append(
                 {
                     "t-start": float(pred["segment"][0]),
@@ -159,8 +171,8 @@ def _row_for(matrix: dict[str, Any], arm_id: str, seed: int) -> dict[str, Any] |
     return None
 
 
-def _load_result(row: dict[str, Any], project_dir: Path) -> dict[str, Any] | None:
-    path = _work_dir(row, project_dir) / "result_detection.json"
+def _load_result_from_run(row: dict[str, Any], run_root: Path) -> dict[str, Any] | None:
+    path = _work_dir(row, run_root) / "result_detection.json"
     if not path.is_file():
         return None
     return _read_json(path)
@@ -188,6 +200,11 @@ def build_bootstrap(
     video_ids = sorted(gt_by_video)
     if not video_ids:
         raise ValueError("no validation videos found for bootstrap")
+    if len(video_ids) != EXPECTED_VALIDATION_VIDEOS:
+        raise ValueError(
+            f"expected {EXPECTED_VALIDATION_VIDEOS} validation videos, got {len(video_ids)}"
+        )
+    expected_video_ids = set(video_ids)
 
     confirmation_seeds = sorted(
         {
@@ -196,6 +213,11 @@ def build_bootstrap(
             if row["phase"] == "confirmation" and row["arm_id"] in {PRIMARY_CANDIDATE, PRIMARY_CONTROL}
         }
     )
+    if confirmation_seeds != list(EXPECTED_CONFIRMATION_SEEDS):
+        raise ValueError(
+            "confirmation seed identity mismatch: "
+            f"expected={list(EXPECTED_CONFIRMATION_SEEDS)} got={confirmation_seeds}"
+        )
     required_results = {}
     missing = []
     for seed in confirmation_seeds:
@@ -204,11 +226,18 @@ def build_bootstrap(
             if row is None:
                 missing.append(f"{arm_id}/seed{seed}:matrix_row")
                 continue
-            payload = _load_result(row, project_dir)
+            payload = _load_result_from_run(row, run_root)
             if payload is None:
                 missing.append(f"{arm_id}/seed{seed}:result_detection")
                 continue
-            required_results[(arm_id, seed)] = _predictions_by_video(payload, activity_index=activity_index)
+            try:
+                required_results[(arm_id, seed)] = _predictions_by_video(
+                    payload,
+                    activity_index=activity_index,
+                    expected_video_ids=expected_video_ids,
+                )
+            except ValueError as exc:
+                missing.append(f"{arm_id}/seed{seed}:{exc}")
     if missing:
         return {
             "schema_version": "duca_unified_primary_bootstrap_shard_v1",
@@ -227,9 +256,13 @@ def build_bootstrap(
     deltas = []
     class_count = len(activity_index)
     for draw_idx in range(start, end):
-        sampled = [video_ids[int(idx)] for idx in rng.integers(0, len(video_ids), size=len(video_ids))]
+        sampled_seeds = [
+            confirmation_seeds[int(idx)]
+            for idx in rng.integers(0, len(confirmation_seeds), size=len(confirmation_seeds))
+        ]
         seed_deltas = []
-        for seed in confirmation_seeds:
+        for seed in sampled_seeds:
+            sampled = [video_ids[int(idx)] for idx in rng.integers(0, len(video_ids), size=len(video_ids))]
             candidate = _evaluate_average_map(
                 sampled,
                 gt_by_video,
@@ -251,6 +284,7 @@ def build_bootstrap(
                 "mean_delta_average_mAP": float(sum(seed_deltas) / len(seed_deltas)),
                 "mean_delta_average_mAP_pp": float(100.0 * sum(seed_deltas) / len(seed_deltas)),
                 "seed_deltas": seed_deltas,
+                "sampled_seeds": sampled_seeds,
             }
         )
     return {
@@ -267,6 +301,8 @@ def build_bootstrap(
         "contrast": f"{PRIMARY_CANDIDATE}-{PRIMARY_CONTROL}",
         "confirmation_seeds": confirmation_seeds,
         "video_cluster_count": len(video_ids),
+        "expected_video_cluster_count": EXPECTED_VALIDATION_VIDEOS,
+        "resampling": "hierarchical_seed_then_video_with_replacement",
         "tiou_thresholds": tiou_thresholds,
         "deltas": deltas,
     }
@@ -290,6 +326,8 @@ def main() -> None:
     )
     _write_json(args.output, payload)
     print(json.dumps(payload, indent=2, sort_keys=True))
+    if not payload.get("complete", False):
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

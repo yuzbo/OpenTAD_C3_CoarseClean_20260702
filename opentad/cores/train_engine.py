@@ -44,6 +44,8 @@ def train_one_epoch(
     max_train_iters=None,
     fail_on_skipped_update=False,
     max_amp_retries_per_batch=0,
+    max_successful_updates=None,
+    successful_updates_start=0,
     update_audit=None,
 ):
     """Training the model for one epoch"""
@@ -61,6 +63,18 @@ def train_one_epoch(
         raise ValueError("max_amp_retries_per_batch must be non-negative")
     if max_amp_retries_per_batch > 0 and scaler is None:
         raise ValueError("AMP retries require a GradScaler")
+    if max_successful_updates is not None:
+        max_successful_updates = int(max_successful_updates)
+        successful_updates_start = int(successful_updates_start)
+        if max_successful_updates <= 0:
+            raise ValueError("max_successful_updates must be positive when provided")
+        if successful_updates_start >= max_successful_updates:
+            logger.info(
+                "[Train]: max_successful_updates=%d already reached before epoch %d.",
+                max_successful_updates,
+                curr_epoch,
+            )
+            return 0
     if update_audit is not None:
         update_audit.setdefault("optimizer_attempts", 0)
         update_audit.setdefault("amp_skipped_attempts", 0)
@@ -70,6 +84,18 @@ def train_one_epoch(
     model.train()
     successful_updates = 0
     for iter_idx, data_dict in enumerate(train_loader):
+        if (
+            max_successful_updates is not None
+            and successful_updates_start + successful_updates >= max_successful_updates
+        ):
+            logger.info(
+                "[Train]: max_successful_updates=%d reached at epoch %d iter %d.",
+                max_successful_updates,
+                curr_epoch,
+                iter_idx,
+            )
+            break
+
         # current learning rate
         curr_backbone_lr = None
         if hasattr(model.module, "backbone"):  # if backbone exists
@@ -161,6 +187,18 @@ def train_one_epoch(
             # update ema
             if model_ema is not None:
                 model_ema.update(model)
+
+            if (
+                max_successful_updates is not None
+                and successful_updates_start + successful_updates >= max_successful_updates
+            ):
+                logger.info(
+                    "[Train]: max_successful_updates=%d reached at epoch %d iter %d.",
+                    max_successful_updates,
+                    curr_epoch,
+                    iter_idx,
+                )
+                break
 
         # track all losses
         losses = reduce_loss(losses)  # only for log

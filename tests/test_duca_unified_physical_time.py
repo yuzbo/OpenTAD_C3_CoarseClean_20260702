@@ -1,8 +1,14 @@
 import pytest
 import torch
 import torch.nn as nn
+from mmengine.config import Config
+from pathlib import Path
 
 from opentad.models.bricks.scale_adaptive_conv1d import ContinuousTimeScaleAdaptiveConv1d
+from opentad.models.selectors.duca_online_frame_selector import DucaOnlineFrameSelector
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_continuous_time_conv_rejects_duplicate_timestamps():
@@ -43,3 +49,51 @@ def test_continuous_time_conv_rejects_nonpositive_delta_t():
 
     with pytest.raises(ValueError, match="strictly positive"):
         conv(x, delta_t=delta_t)
+
+
+def test_physical_time_matrix_config_keeps_gt_on_native_axis():
+    cfg = Config.fromfile(
+        str(
+            ROOT
+            / "configs/adatad/thumos/duca_unified_fullmatrix/duca_unified_development_c11_seed3407.py"
+        )
+    )
+
+    selector_cfg = cfg.model.frame_selector
+    assert selector_cfg.remap_gt_to_selected_axis is False
+    assert selector_cfg.selected_axis_remap_required is False
+    assert cfg.model.rpn_head.physical_grid_actionformer.enabled is True
+
+
+def test_selector_outputs_temporal_positions_for_physical_grid():
+    selector = DucaOnlineFrameSelector(
+        in_channels=3,
+        budget=4,
+        dense_window_size=8,
+        selector_hidden_channels=0,
+        acquisition_policy="exact_uniform",
+        remap_gt_to_selected_axis=False,
+        selected_axis_remap_required=False,
+        actionness_source_cfg={
+            "type": "ZeroShotMotionActionnessSource",
+            "mode": "motion",
+            "source_name": "unit_motion",
+            "thumos_trained": False,
+            "uses_labels": False,
+            "uses_teacher": False,
+            "uses_gt": False,
+            "uses_prediction_cache": False,
+            "calibration_split": "none",
+        },
+    )
+    inputs = torch.randn(1, 3, 8)
+    masks = torch.ones(1, 8, dtype=torch.bool)
+
+    outputs = selector.forward_test(inputs, masks, metas=[{}])
+
+    assert outputs["temporal_positions"].shape == (1, 4)
+    assert outputs["temporal_positions"].dtype == inputs.dtype
+    values = outputs["temporal_positions"][0].tolist()
+    assert values == sorted(values)
+    assert outputs["metas"][0]["irregular_native_axis"] is True
+    assert outputs["metas"][0]["temporal_positions"] == [int(value) for value in values]

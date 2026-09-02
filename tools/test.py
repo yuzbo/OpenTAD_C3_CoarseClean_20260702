@@ -23,6 +23,7 @@ from opentad.utils.training_guard import (
     assert_detector_training_allowed,
     assert_safe_cfg_options_for_gated_config,
 )
+from tools.bata.duca_runtime_contract import resolve_effective_seed
 
 
 def parse_args():
@@ -31,7 +32,7 @@ def parse_args():
     parser.add_argument(
         "--checkpoint", type=str, default="none", help="the checkpoint path"
     )
-    parser.add_argument("--seed", type=int, default=42, help="random seed")
+    parser.add_argument("--seed", type=int, default=None, help="random seed")
     parser.add_argument("--id", type=int, default=0, help="repeat experiment id")
     parser.add_argument(
         "--not_eval",
@@ -57,6 +58,10 @@ def parse_args():
     return args
 
 
+def _resolve_effective_seed(cfg, args):
+    return resolve_effective_seed(cfg, args.seed)
+
+
 def main():
     args = parse_args()
 
@@ -67,6 +72,7 @@ def main():
     )
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
+    args.seed = _resolve_effective_seed(cfg, args)
     s1_binding = None
     s1_bound_cfg = None
     if "spatial_zoom_s1_contract" in cfg:
