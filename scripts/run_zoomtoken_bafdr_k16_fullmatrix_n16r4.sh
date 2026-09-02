@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+source /etc/profile
 set -euo pipefail
 
 if [[ -n "${PROJECT_DIR:-}" ]]; then
@@ -10,11 +11,6 @@ else
   ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 fi
 cd "${ROOT}"
-
-# Slurm batch shells do not guarantee the module function is defined.  Load
-# the site profile before resolving CUDA/Conda so the selected environment is
-# identical between precheck and training.
-source /etc/profile
 
 if [[ -n "${YUZIBO_ROOT:-}" ]]; then
   BASE="${YUZIBO_ROOT}"
