@@ -1,0 +1,66 @@
+{
+  "schema_version": "DUCA-REMOTE-STATUS-CHECK-v004",
+  "checked_at_utc": "2026-09-02T22:42:07Z",
+  "remote_host": "N16R4",
+  "supervisor": {
+    "pid": "2272497",
+    "status": "ACTIVE",
+    "latest_receipt_checked_at": "2026-09-02T22:41:53+00:00",
+    "dispatcher_status": "BLOCKED",
+    "blocked_reasons": [
+      "DUCA_UNIFIED: BLOCKED_UNIMPLEMENTED",
+      "stage S60_IMPLEMENTATION: BLOCKED_UNIMPLEMENTED"
+    ],
+    "queue_entries": 0,
+    "formal_results": "NO_VALID_RESULTS"
+  },
+  "current_queue": [
+    {
+      "job_id": "1265779,1265780",
+      "state": "RUNNING",
+      "name": "ctdp-g2-s3407, ctdp-g3-s3407",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902",
+      "classification": "STALE_REMOTE_HEAD",
+      "progress": "G2/G3 logs reached epoch 25/26 with finite cls/reg losses; no traceback, nonfinite loss or OOM observed"
+    },
+    {
+      "job_id": "1266410-1266414",
+      "state": "RUNNING",
+      "name": "zt-bafdr-train-*",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7",
+      "classification": "NONOWNED_LATER_BAFDR_CHECKOUT",
+      "progress": "D160/G96/U128/U16/LATE each have epoch_59.pth and train_receipt.json with 6000 updates; metric_opened=false and eval_results empty"
+    },
+    {
+      "job_id": "1266415",
+      "state": "PENDING",
+      "reason": "AssocGrpGRES",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7",
+      "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"
+    },
+    {
+      "job_id": "1266416,1266420,1266475,1266479,1266480",
+      "state": "PENDING",
+      "reason": "Dependency",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7",
+      "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"
+    },
+    {
+      "job_id": "1266397_[0,2,7]",
+      "state": "RUNNING",
+      "name": "duca_rec_train",
+      "workdir": "/data/home/sczc063",
+      "classification": "NONOWNED"
+    }
+  ],
+  "terminal_artifact_scan": {
+    "owned_audit_worktrees": "no epoch_59.pth/train_receipt/eval_receipt/prediction_receipt found outside .cvpr-pro-lab",
+    "stale_ctdp_worktree": "legacy G0/G1 epoch_59.pth and mAP log exist; G2/G3 still running; no current exact SHA or audit-owned terminal receipt",
+    "stale_bafdr_worktree": "five later-checkout epoch_59.pth/train_receipt files exist, but no evaluator or aggregation receipt"
+  },
+  "error_scan": {
+    "ctdp_g2_g3": "no Traceback/ERROR/nonfinite/OOM in current out/err tails",
+    "bafdr_later_checkout": "no Traceback/ERROR/nonfinite/OOM in current out/err scan"
+  },
+  "action": "无新的代码、协议或运行失败；不取消或采用旧 checkout，继续等待 dispatcher gates、账户资源和非拥有作业终态，正式结果账本保持 NO_VALID_RESULTS。"
+}
