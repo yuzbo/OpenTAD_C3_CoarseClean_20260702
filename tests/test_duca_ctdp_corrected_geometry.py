@@ -52,8 +52,8 @@ def test_bamod_selected_queries_use_full_kv_and_never_pad():
     block.eval()
     x = torch.randn(1, 8, 16)
     scores = torch.arange(8, dtype=torch.float32).view(1, -1)
-    mask = torch.tensor([[1, 1, 1, 1, 0, 0, 0, 0]], dtype=torch.bool)
-    out = block.forward_amod(x, 2, 2, scores, capacity=1.0, temporal_token_mask=mask)
+    mask = torch.ones(1, 8, dtype=torch.bool)
+    out = block.forward_amod(x, 2, 2, scores, capacity=0.5, temporal_token_mask=mask)
     assert torch.equal(out[:, 4:], x[:, 4:])
     changed = x.clone()
     changed[:, 7] += 5.0

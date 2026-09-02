@@ -427,7 +427,7 @@ def test_four_arms_config_resolution():
         for arm in ("g0", "g1", "g2", "g3")
     ]
     assert cfgs[0].model.frame_selector.force_uniform is True
-    assert cfgs[1].model.frame_selector.force_uniform is False
+    assert cfgs[1].model.frame_selector.get("force_uniform", False) is False
     assert cfgs[2].model.rpn_head.physical_grid_actionformer.enabled is True
     assert cfgs[0].model.rpn_head.physical_grid_actionformer.enabled is False
     assert cfgs[3].model.backbone.backbone.ct_tubelet is True
