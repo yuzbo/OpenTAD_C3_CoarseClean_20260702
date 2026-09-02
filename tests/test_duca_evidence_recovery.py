@@ -86,6 +86,18 @@ def test_continuous_timestamp_conditioner_zero_init():
     assert torch.max(torch.abs(bias)).item() == 0.0, "Initial timestamp attention bias must be exactly zero"
 
 
+def test_continuous_timestamp_conditioner_is_finite_and_bounded_after_growth():
+    """Non-uniform replay timestamps must not produce an unbounded attention mask."""
+    conditioner = ContinuousTimestampConditioner(num_heads=6, enabled=True)
+    with torch.no_grad():
+        conditioner.bias_mlp[-1].weight.fill_(1000.0)
+        conditioner.bias_mlp[-1].bias.fill_(1000.0)
+    timestamps = torch.tensor([[0.0, 1.0, 0.125, 0.875]])
+    bias = conditioner(timestamps, spatial_tokens_per_tubelet=4)
+    assert torch.isfinite(bias).all()
+    assert torch.max(torch.abs(bias)).item() <= 4.0
+
+
 def test_temporal_token_merge_schedule_and_mass_conservation():
     """Verify BoundaryProtectedTemporalTokenMerge reduces tokens exactly 8 -> 7 -> 6 -> 5 and preserves mass."""
     merger = BoundaryProtectedTemporalTokenMerge(enabled=True, protected_boundary_tubelets=2)

@@ -16,6 +16,22 @@ module load cuda/11.8
 module load miniforge3/24.11
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 
+REPO_ROOT="${DUCA_REPO_ROOT:-$(pwd)}"
+cd "${REPO_ROOT}"
+YUZIBO_ROOT="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
+DUCA_VIDEOMAE_PRETRAIN="${DUCA_VIDEOMAE_PRETRAIN:-${YUZIBO_ROOT}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
+DUCA_H65_LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT:-${YUZIBO_ROOT}/projects/c3_lowres_action_probe/ledger_exports/c3_official_asformer_delta_ledgers_20260702_052357_+0800}"
+export DUCA_H65_TRAIN_LEDGER_PATH="${DUCA_H65_TRAIN_LEDGER_PATH:-${DUCA_H65_LEDGER_ROOT}/train/value_transport_ledger_delta_p_action_384.jsonl}"
+export DUCA_H65_VAL_LEDGER_PATH="${DUCA_H65_VAL_LEDGER_PATH:-${DUCA_H65_LEDGER_ROOT}/val/value_transport_ledger_delta_p_action_384.jsonl}"
+export DUCA_H65_TEST_LEDGER_PATH="${DUCA_H65_TEST_LEDGER_PATH:-${DUCA_H65_LEDGER_ROOT}/test/value_transport_ledger_delta_p_action_384.jsonl}"
+export DUCA_H65_LEDGER_SOURCE="${DUCA_H65_LEDGER_SOURCE:-}"
+export DUCA_H65_LEDGER_CONFIG_HASH="${DUCA_H65_LEDGER_CONFIG_HASH:-}"
+export YUZIBO_ROOT DUCA_VIDEOMAE_PRETRAIN DUCA_H65_LEDGER_ROOT
+if [[ ! -f "${DUCA_VIDEOMAE_PRETRAIN}" ]]; then
+  echo "[ERROR] VideoMAE checkpoint not found: ${DUCA_VIDEOMAE_PRETRAIN}" >&2
+  exit 2
+fi
+
 export HOME=/data/run01/sczc063/yuzibo/tmp/home
 export XDG_CACHE_HOME=/data/run01/sczc063/yuzibo/tmp/xdg_cache
 export XDG_CONFIG_HOME=/data/run01/sczc063/yuzibo/tmp/xdg_config

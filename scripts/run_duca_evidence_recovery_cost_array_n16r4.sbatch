@@ -16,6 +16,16 @@ module load cuda/11.8
 module load miniforge3/24.11
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 
+REPO_ROOT="${DUCA_REPO_ROOT:-$(pwd)}"
+cd "${REPO_ROOT}"
+YUZIBO_ROOT="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
+DUCA_VIDEOMAE_PRETRAIN="${DUCA_VIDEOMAE_PRETRAIN:-${YUZIBO_ROOT}/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
+export YUZIBO_ROOT DUCA_VIDEOMAE_PRETRAIN
+if [[ ! -f "${DUCA_VIDEOMAE_PRETRAIN}" ]]; then
+  echo "[ERROR] VideoMAE checkpoint not found: ${DUCA_VIDEOMAE_PRETRAIN}" >&2
+  exit 2
+fi
+
 RUN_ROOT="${DUCA_RUN_ROOT:?DUCA_RUN_ROOT is required}"
 OUTPUT_DIR="${RUN_ROOT}/cost_profile"
 mkdir -p "${OUTPUT_DIR}"
@@ -41,7 +51,7 @@ for entry in "${COST_ARMS[@]}"; do
     --output "${out_path}" \
     --warmup 50 \
     --iterations 200 \
-    --device cuda:0
+    --device "${DUCA_PROFILE_DEVICE:-cuda:0}"
 done
 
 echo "[DONE] Completed cost profiling for all designated arms."

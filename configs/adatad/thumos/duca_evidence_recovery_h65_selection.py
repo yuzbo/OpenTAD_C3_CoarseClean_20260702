@@ -22,4 +22,10 @@ model = dict(
     ),
 )
 
+# H65's irregular physical-time path is numerically unstable in fp16 even
+# with bounded attention bias. Keep this selection counterfactual fail-closed
+# in float32; the other arms retain the shared AMP protocol.
+solver = dict(amp=False, clip_grad_norm=1.0)
+workflow = dict(max_amp_retries_per_batch=0)
+
 work_dir = "exps/thumos/adatad/duca_evidence_recovery_a6_h65_selection"

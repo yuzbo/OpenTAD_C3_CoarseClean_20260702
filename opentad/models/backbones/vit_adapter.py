@@ -682,7 +682,16 @@ class Block(BaseModule):
             if packed_dense_mask is None:
                 rel = None
                 if relative_physical_time is not None and self.relative_physical_time_scale is not None:
-                    rel = self.relative_physical_time_scale * relative_physical_time
+                    # Physical coordinates are expressed in dense-frame units
+                    # (up to the 768-frame window).  Bound the learned gain so
+                    # an H65 non-uniform clip cannot overflow an AMP attention
+                    # mask after a few optimizer updates; tanh(0) preserves the
+                    # exact zero-initialized identity path.
+                    rel = torch.tanh(self.relative_physical_time_scale) * relative_physical_time
+                    # H65 coordinates can leave large holes in a 16-frame clip.
+                    # Keep the additive SDPA bias finite and bounded in fp16 while
+                    # preserving the zero-initialized identity path and ordering.
+                    rel = rel.clamp(min=-8.0, max=8.0)
                 x = x + self.drop_path(self.attn(self.norm1(x), relative_physical_time=rel))
                 x = x + self.drop_path(self.mlp(self.norm2(x)))
             else:

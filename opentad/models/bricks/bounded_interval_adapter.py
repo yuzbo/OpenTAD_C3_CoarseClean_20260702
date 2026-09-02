@@ -221,15 +221,21 @@ class ContinuousTimestampConditioner(BaseModule):
             return None
 
         B, T = tubelet_timestamps.shape
-        # delta_tau: [B, T, T]
-        delta_tau = tubelet_timestamps.unsqueeze(-1) - tubelet_timestamps.unsqueeze(-2)
 
-        # Fourier expansion: [B, T, T, num_fourier_bands * 2]
-        angles = delta_tau.unsqueeze(-1) * self.freqs.view(1, 1, 1, -1)
-        fourier_feat = torch.cat([torch.sin(angles), torch.cos(angles)], dim=-1)
+        # Keep the conditioning path in float32 under AMP.  H65 replay can
+        # contain highly non-uniform timestamps; allowing the learned bias to
+        # grow in fp16 can overflow before the detector's finite-loss check.
+        with torch.autocast(device_type=tubelet_timestamps.device.type, enabled=False):
+            timestamps_f32 = tubelet_timestamps.float()
+            delta_tau = timestamps_f32.unsqueeze(-1) - timestamps_f32.unsqueeze(-2)
+            # Fourier expansion: [B, T, T, num_fourier_bands * 2]
+            angles = delta_tau.unsqueeze(-1) * self.freqs.float().view(1, 1, 1, -1)
+            fourier_feat = torch.cat([torch.sin(angles), torch.cos(angles)], dim=-1)
 
-        # MLP projection: [B, T, T, num_heads] -> [B, num_heads, T, T]
-        tubelet_bias = self.bias_mlp(fourier_feat).permute(0, 3, 1, 2)
+            # Bound the learned additive attention bias to a numerically safe
+            # range while preserving the exact zero-initialized behavior.
+            tubelet_bias = 4.0 * torch.tanh(self.bias_mlp(fourier_feat))
+            tubelet_bias = tubelet_bias.permute(0, 3, 1, 2)
 
         # Expand across spatial tokens: each tubelet expands to S tokens
         S = spatial_tokens_per_tubelet

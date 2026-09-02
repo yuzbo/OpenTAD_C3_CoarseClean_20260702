@@ -22,4 +22,12 @@ model = dict(
     ),
 )
 
+# The no-robust counterfactual removes the selector-side stabilizing losses;
+# keep its detector path in full precision so the ablation remains runnable.
+solver = dict(amp=False, clip_grad_norm=1.0)
+
+# AMP replay is undefined without a GradScaler; keep the non-finite-loss
+# replay/finite guard from the base workflow but disable AMP-only retries.
+workflow = dict(max_amp_retries_per_batch=0)
+
 work_dir = "exps/thumos/adatad/duca_evidence_recovery_a3_no_robust"

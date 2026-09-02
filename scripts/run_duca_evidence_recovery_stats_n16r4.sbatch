@@ -14,6 +14,9 @@ set -euo pipefail
 module load miniforge3/24.11
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 
+REPO_ROOT="${DUCA_REPO_ROOT:-$(pwd)}"
+cd "${REPO_ROOT}"
+
 RUN_ROOT="${DUCA_RUN_ROOT:?DUCA_RUN_ROOT is required}"
 OUTPUT_PATH="${RUN_ROOT}/statistical_analysis.json"
 
