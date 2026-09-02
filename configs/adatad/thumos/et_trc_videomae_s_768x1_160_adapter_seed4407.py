@@ -7,6 +7,14 @@ _pretrain = os.environ.get(
     "vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
 )
 
+# The launcher uses torchrun world_size=2; the dataloader interprets this as
+# a global batch of two (one sample per rank).
+solver = dict(
+    train=dict(batch_size=2, num_workers=2),
+    val=dict(batch_size=2, num_workers=2),
+    test=dict(batch_size=2, num_workers=2),
+)
+
 model = dict(
     backbone=dict(
         type="mmaction.Recognizer3D",
