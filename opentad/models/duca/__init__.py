@@ -23,6 +23,26 @@ from .density_decode import (
     decode_duca_density_positions_v001,
     project_duca_density_positions,
 )
+from .feature_attribution import (
+    listwise_distribution_loss,
+    merge_p0_p1_feature_tokens,
+    pairwise_ranking_loss,
+    should_refresh_taylor_target,
+    signed_feature_taylor_target,
+    signed_feature_taylor_target_from_levels,
+    taylor_attribution_contract,
+    update_ema_target,
+)
+from .phase_fields import (
+    PhaseFieldResult,
+    adaptive_phase_quotas,
+    compute_phase_fields,
+    gaussian_derivative_kernels,
+    masked_gaussian_smooth,
+    robust_normalize,
+    select_exact_uniform_positions,
+    select_phase_positions,
+)
 
 __all__ = [
     "DucaAcquisitionAdapter",
@@ -47,4 +67,20 @@ __all__ = [
     "canonical_uniform_positions",
     "decode_duca_density_positions_v001",
     "project_duca_density_positions",
+    "PhaseFieldResult",
+    "adaptive_phase_quotas",
+    "compute_phase_fields",
+    "gaussian_derivative_kernels",
+    "listwise_distribution_loss",
+    "masked_gaussian_smooth",
+    "merge_p0_p1_feature_tokens",
+    "pairwise_ranking_loss",
+    "robust_normalize",
+    "select_exact_uniform_positions",
+    "select_phase_positions",
+    "should_refresh_taylor_target",
+    "signed_feature_taylor_target",
+    "signed_feature_taylor_target_from_levels",
+    "taylor_attribution_contract",
+    "update_ema_target",
 ]

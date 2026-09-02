@@ -22,6 +22,14 @@ def _restore_model_buffers(model, snapshot):
         current[name].copy_(saved)
 
 
+def _call_after_optimizer_step(model):
+    module = getattr(model, "module", model)
+    hook = getattr(module, "after_optimizer_step", None)
+    if hook is None:
+        return None
+    return hook()
+
+
 def train_one_epoch(
     train_loader,
     model,
@@ -143,14 +151,16 @@ def train_one_epoch(
                 scale_after,
             )
 
-        successful_updates += int(update_succeeded)
+        if update_succeeded:
+            _call_after_optimizer_step(model)
+            successful_updates += 1
 
-        # update scheduler
-        scheduler.step()
+            # update scheduler
+            scheduler.step()
 
-        # update ema
-        if model_ema is not None:
-            model_ema.update(model)
+            # update ema
+            if model_ema is not None:
+                model_ema.update(model)
 
         # track all losses
         losses = reduce_loss(losses)  # only for log

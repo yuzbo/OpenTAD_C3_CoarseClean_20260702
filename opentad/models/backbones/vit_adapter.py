@@ -18,6 +18,58 @@ from mmaction.models.backbones.vit_mae import get_sinusoid_encoding
 from ..chronotransport import ChronoTransportRuntime
 
 
+def mixture_of_depths_capacity_for_successful_update(
+    successful_update: int,
+    schedule: Optional[List[Union[Dict, Tuple[int, float], List[float]]]] = None,
+    default_capacity: float = 0.5,
+) -> float:
+    capacity = float(default_capacity)
+    if schedule is None:
+        return capacity
+
+    for entry in schedule:
+        if isinstance(entry, dict):
+            if "capacity" in entry:
+                step = int(
+                    entry.get(
+                        "step",
+                        entry.get("successful_update", entry.get("successful_updates", 0)),
+                    )
+                )
+                entry_capacity = float(entry["capacity"])
+                if int(successful_update) >= step:
+                    capacity = entry_capacity
+                continue
+            if {"start", "end", "start_value", "end_value"}.issubset(entry):
+                start = int(entry["start"])
+                end = int(entry["end"])
+                if end < start:
+                    raise ValueError(f"invalid MoD capacity segment: {entry}")
+                start_value = float(entry["start_value"])
+                end_value = float(entry["end_value"])
+                if int(successful_update) < start:
+                    continue
+                if int(successful_update) >= end or end == start:
+                    capacity = end_value
+                    continue
+                progress = float(int(successful_update) - start) / float(end - start)
+                if entry.get("interpolation", "constant") == "cosine":
+                    progress = 0.5 - 0.5 * math.cos(math.pi * progress)
+                capacity = start_value + (end_value - start_value) * progress
+                continue
+            raise ValueError(f"invalid MoD capacity schedule entry: {entry}")
+        elif isinstance(entry, (tuple, list)) and len(entry) >= 2:
+            step = int(entry[0])
+            entry_capacity = float(entry[1])
+        else:
+            raise ValueError(f"invalid MoD capacity schedule entry: {entry}")
+        if int(successful_update) >= step:
+            capacity = entry_capacity
+    if capacity <= 0.0 or capacity > 1.0:
+        raise ValueError("MoD capacity must lie in (0, 1]")
+    return capacity
+
+
 class Adapter(BaseModule):
     def __init__(
         self,
@@ -707,6 +759,8 @@ class Block(BaseModule):
 
         self.with_cp = with_cp
         self.use_adapter = use_adapter
+        self.last_amod_summary = None
+        self._last_amod_dense_mask = None
 
         self.norm1 = build_norm_layer(norm_cfg, embed_dims)[1]
         self.attn = Attention(
@@ -795,9 +849,18 @@ class Block(BaseModule):
         boundary_prior: Optional[Tensor] = None,
         boundary_prior_scale: float = 0.25,
         temporal_token_mask: Optional[Tensor] = None,
+        route_temperature: float = 1.0,
     ) -> Tensor:
         """A-MoD execution: Top-K tokens execute MHSA+MLP, unselected tokens execute identity bypass."""
         B, N, C = x.shape
+        if route_scores.shape != (B, N):
+            raise ValueError("A-MoD route_scores must have shape [B,N]")
+        capacity = float(capacity)
+        if capacity <= 0.0 or capacity > 1.0:
+            raise ValueError("A-MoD capacity must lie in (0, 1]")
+        route_temperature = float(route_temperature)
+        if route_temperature <= 0.0:
+            raise ValueError("A-MoD route_temperature must be positive")
         scores = route_scores.clone()
         if boundary_prior is not None:
             bp = boundary_prior.to(device=scores.device, dtype=scores.dtype)
@@ -813,36 +876,111 @@ class Block(BaseModule):
                     raise ValueError(f"boundary_prior tubelet count {t_count} does not divide token count {N}")
             else:
                 raise ValueError(f"boundary_prior shape {bp.shape} is incompatible with batch {B} and token count {N}")
+        scores = scores / route_temperature
 
         # Suppress padding tokens so they are never selected in top-k
         if temporal_token_mask is not None:
             mask_bool = temporal_token_mask.to(device=scores.device, dtype=torch.bool)
+            if mask_bool.shape != (B, N):
+                raise ValueError("temporal_token_mask must have shape [B,N]")
             mask_val = -10000.0 if scores.dtype == torch.float16 else -1e9
             scores = scores.masked_fill(~mask_bool, mask_val)
+            valid_counts = mask_bool.sum(dim=1)
+        else:
+            mask_bool = None
+            valid_counts = torch.full((B,), N, dtype=torch.long, device=x.device)
 
-        k_count = max(1, int(round(N * capacity)))
-        topk_indices = torch.topk(scores, k=k_count, dim=1, sorted=False).indices
+        k_counts = torch.ceil(valid_counts.to(dtype=torch.float32) * capacity).to(dtype=torch.long)
+        k_counts = torch.where(valid_counts > 0, k_counts.clamp_min(1), k_counts)
+        k_counts = torch.minimum(k_counts, valid_counts)
+        max_k = int(k_counts.max().item()) if k_counts.numel() else 0
+        if max_k <= 0:
+            self.last_amod_summary = {
+                "schema_version": "adaptive_mixture_of_depths_block_v1",
+                "capacity_target": capacity,
+                "route_temperature": route_temperature,
+                "batch_size": int(B),
+                "token_count": int(N),
+                "valid_counts": [int(v.item()) for v in valid_counts],
+                "selected_counts": [0 for _ in range(B)],
+                "actual_capacity": [0.0 for _ in range(B)],
+                "padding_selected_count": 0,
+                "hard_route": "topk_on_router_logits",
+                "route_jaccard_with_previous": None,
+                "all_dense": False,
+            }
+            self._last_amod_dense_mask = x.new_zeros((B, N), dtype=torch.bool)
+            return x
+
+        topk_indices = torch.topk(scores, k=max_k, dim=1, sorted=False).indices
         topk_indices = torch.sort(topk_indices, dim=1).values
+        selected_slots = (
+            torch.arange(max_k, device=x.device).unsqueeze(0)
+            < k_counts.unsqueeze(1)
+        )
 
         idx_exp = topk_indices.unsqueeze(-1).expand(-1, -1, C)
         selected_x = torch.gather(x, 1, idx_exp)
 
         if temporal_token_mask is not None:
-            selected_mask = torch.gather(temporal_token_mask.to(device=x.device, dtype=torch.bool), 1, topk_indices)
+            selected_mask = torch.gather(mask_bool, 1, topk_indices) & selected_slots
         else:
-            selected_mask = None
+            selected_mask = selected_slots
 
         selected_x = selected_x + self.drop_path(self.attn(self.norm1(selected_x), token_mask=selected_mask))
         selected_x = selected_x + self.drop_path(self.mlp(self.norm2(selected_x)))
 
         out = x.clone()
-        out.scatter_(1, idx_exp, selected_x)
+        dense_route_mask = torch.zeros((B, N), dtype=torch.bool, device=x.device)
+        for batch_idx in range(B):
+            row_k = int(k_counts[batch_idx].item())
+            if row_k <= 0:
+                continue
+            row_indices = topk_indices[batch_idx, :row_k]
+            out[batch_idx, row_indices] = selected_x[batch_idx, :row_k]
+            dense_route_mask[batch_idx, row_indices] = True
 
         if self.use_adapter:
             adapter_out = self.adapter(out, h, w, temporal_token_mask=temporal_token_mask)
             selected_adapter = torch.gather(adapter_out, 1, idx_exp)
             out = x.clone()
-            out.scatter_(1, idx_exp, selected_adapter)
+            for batch_idx in range(B):
+                row_k = int(k_counts[batch_idx].item())
+                if row_k <= 0:
+                    continue
+                row_indices = topk_indices[batch_idx, :row_k]
+                out[batch_idx, row_indices] = selected_adapter[batch_idx, :row_k]
+
+        if mask_bool is None:
+            padding_selected_count = 0
+        else:
+            padding_selected_count = int((dense_route_mask & ~mask_bool).sum().item())
+
+        previous_mask = self._last_amod_dense_mask
+        if previous_mask is not None and previous_mask.shape == dense_route_mask.shape:
+            intersection = (previous_mask & dense_route_mask).sum(dim=1).float()
+            union = (previous_mask | dense_route_mask).sum(dim=1).float().clamp_min(1.0)
+            route_jaccard = [float(v.item()) for v in (intersection / union)]
+        else:
+            route_jaccard = None
+        selected_counts = dense_route_mask.sum(dim=1)
+        capacity_denominator = valid_counts.clamp_min(1).to(dtype=torch.float32)
+        actual_capacity = selected_counts.to(dtype=torch.float32) / capacity_denominator
+        self.last_amod_summary = {
+            "schema_version": "adaptive_mixture_of_depths_block_v1",
+            "capacity_target": capacity,
+            "route_temperature": route_temperature,
+            "batch_size": int(B),
+            "token_count": int(N),
+            "valid_counts": [int(v.item()) for v in valid_counts],
+            "selected_counts": [int(v.item()) for v in selected_counts],
+            "actual_capacity": [float(v.item()) for v in actual_capacity],
+            "padding_selected_count": padding_selected_count,
+            "hard_route": "topk_on_router_logits",
+            "route_jaccard_with_previous": route_jaccard,
+            "all_dense": bool(torch.equal(selected_counts, valid_counts)),
+        }
+        self._last_amod_dense_mask = dense_route_mask.detach()
         return out
 
     def forward(
@@ -983,8 +1121,14 @@ class VisionTransformerAdapter(BaseModule):
         self.latest_tubelet_packed_runtime_summary = None
         self.latest_temporal_padding_mask_summary = None
         self.latest_chronotransport_summary = None
+        self.latest_mixture_of_depths_summary = None
         self.chronotransport_checkpoint_loaded = False
         self.chronotransport_allow_legacy_checkpoint = False
+        self.register_buffer(
+            "_amod_successful_update",
+            torch.zeros((), dtype=torch.long),
+            persistent=True,
+        )
 
         self.patch_embed = PatchEmbed(
             in_channels=in_channels,
@@ -1238,21 +1382,38 @@ class VisionTransformerAdapter(BaseModule):
             summary["legacy_checkpoint_allowed"] = self.chronotransport_allow_legacy_checkpoint
             self.latest_chronotransport_summary = summary
             self.latest_tubelet_packed_runtime_summary = None
+            self.latest_mixture_of_depths_summary = None
         elif packed_enabled:
             if token_mask is not None:
                 raise ValueError("strict temporal padding mask is incompatible with packed runtime routing")
             x = self.tubelet_packed_runtime_route(x, self.blocks, h, w, training=self.training)
             self.latest_tubelet_packed_runtime_summary = self.tubelet_packed_runtime_route.last_summary
             self.latest_chronotransport_summary = None
+            self.latest_mixture_of_depths_summary = None
         elif self.amod_config is not None and self.amod_config.get("enabled", False):
             self.latest_tubelet_packed_runtime_summary = None
             self.latest_chronotransport_summary = None
-            capacity = float(self.amod_config.get("capacity", 0.5))
+            successful_update = int(self._amod_successful_update.detach().item())
+            capacity = mixture_of_depths_capacity_for_successful_update(
+                successful_update,
+                schedule=self.amod_config.get("capacity_schedule_successful_steps", None),
+                default_capacity=float(self.amod_config.get("capacity", 0.5)),
+            )
+            route_temperature = float(self.amod_config.get("route_temperature", 1.0))
             amod_layers = set(self.amod_config.get("amod_layers", [1, 3, 5, 7, 9, 11]))
             boundary_prior_scale = float(self.amod_config.get("boundary_prior_scale", 0.25))
+            dense_companion_period = int(
+                self.amod_config.get("dense_companion_period_successful_steps", 0)
+            )
+            dense_companion_run = bool(
+                dense_companion_period > 0
+                and successful_update > 0
+                and successful_update % dense_companion_period == 0
+            )
             last_score = None
+            amod_summaries = []
             for idx, blk in enumerate(self.blocks):
-                if idx in amod_layers and last_score is not None:
+                if idx in amod_layers and last_score is not None and not dense_companion_run:
                     if self.with_cp and x.requires_grad:
                         x = cp.checkpoint(
                             blk.forward_amod,
@@ -1264,6 +1425,7 @@ class VisionTransformerAdapter(BaseModule):
                             boundary_prior,
                             boundary_prior_scale,
                             token_mask,
+                            route_temperature,
                             use_reentrant=False,
                         )
                     else:
@@ -1276,7 +1438,11 @@ class VisionTransformerAdapter(BaseModule):
                             boundary_prior=boundary_prior,
                             boundary_prior_scale=boundary_prior_scale,
                             temporal_token_mask=token_mask,
+                            route_temperature=route_temperature,
                         )
+                    block_summary = dict(blk.last_amod_summary or {})
+                    block_summary["block_index"] = int(idx)
+                    amod_summaries.append(block_summary)
                 else:
                     if self.with_cp and x.requires_grad:
                         x, last_score = cp.checkpoint(
@@ -1291,9 +1457,28 @@ class VisionTransformerAdapter(BaseModule):
                         x, last_score = blk.forward_dense_with_score(
                             x, h, w, temporal_token_mask=token_mask
                         )
+            self.latest_mixture_of_depths_summary = {
+                "schema_version": "adaptive_mixture_of_depths_v1",
+                "enabled": True,
+                "successful_update_step": successful_update,
+                "capacity": capacity,
+                "capacity_schedule_successful_steps": self.amod_config.get(
+                    "capacity_schedule_successful_steps", None
+                ),
+                "route_temperature": route_temperature,
+                "amod_layers": sorted(int(v) for v in amod_layers),
+                "dense_companion_period_successful_steps": dense_companion_period,
+                "dense_companion_run": dense_companion_run,
+                "amod_forward_count": len(amod_summaries),
+                "padding_selected_count": int(
+                    sum(int(s.get("padding_selected_count", 0)) for s in amod_summaries)
+                ),
+                "block_summaries": amod_summaries,
+            }
         else:
             self.latest_tubelet_packed_runtime_summary = None
             self.latest_chronotransport_summary = None
+            self.latest_mixture_of_depths_summary = None
             for blk in self.blocks:
                 x = blk(x, h, w, temporal_token_mask=token_mask)
 
@@ -1332,6 +1517,30 @@ class VisionTransformerAdapter(BaseModule):
             return self.fc_norm(x.mean(1))
 
         return x[:, 0]
+
+    def after_optimizer_step(self):
+        if self.amod_config is None or not self.amod_config.get("enabled", False):
+            return None
+        before = int(self._amod_successful_update.detach().item())
+        self._amod_successful_update.add_(1)
+        after = int(self._amod_successful_update.detach().item())
+        summary = {
+            "schema_version": "adaptive_mixture_of_depths_successful_update_v1",
+            "updated": True,
+            "before": before,
+            "after": after,
+            "capacity": mixture_of_depths_capacity_for_successful_update(
+                after,
+                schedule=self.amod_config.get("capacity_schedule_successful_steps", None),
+                default_capacity=float(self.amod_config.get("capacity", 0.5)),
+            ),
+        }
+        self.latest_mixture_of_depths_summary = {
+            **(self.latest_mixture_of_depths_summary or {}),
+            "successful_update_step": after,
+            "after_optimizer_step": summary,
+        }
+        return summary
 
     def _freeze_layers(self):
         """Prevent all the parameters not in the adapters"""

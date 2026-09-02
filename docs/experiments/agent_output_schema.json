@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "matrix_id",
+    "integration_base",
+    "branch",
+    "final_commit",
+    "matrix_counts",
+    "tests",
+    "critic",
+    "evaluator",
+    "slurm",
+    "artifacts",
+    "blockers",
+    "claim_boundary"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["DEPLOYED", "IMPLEMENTED_NOT_DEPLOYED", "BLOCKED"]
+    },
+    "matrix_id": {"type": "string"},
+    "integration_base": {"type": "string"},
+    "branch": {"type": "string"},
+    "final_commit": {"type": "string"},
+    "matrix_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["development", "confirmation", "total_train_eval"],
+      "properties": {
+        "development": {"type": "integer"},
+        "confirmation": {"type": "integer"},
+        "total_train_eval": {"type": "integer"}
+      }
+    },
+    "modified_files": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "tests": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "summary"],
+      "properties": {
+        "status": {"type": "string"},
+        "summary": {"type": "string"}
+      }
+    },
+    "critic": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["verdict", "report_path"],
+      "properties": {
+        "verdict": {"type": "string"},
+        "report_path": {"type": "string"}
+      }
+    },
+    "evaluator": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["verdict", "report_path"],
+      "properties": {
+        "verdict": {"type": "string"},
+        "report_path": {"type": "string"}
+      }
+    },
+    "remote_snapshot": {"type": "string"},
+    "run_root": {"type": "string"},
+    "slurm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preflight_job_id",
+        "train_eval_array_job_id",
+        "cost_array_job_id",
+        "bootstrap_array_job_id",
+        "finalizer_job_id",
+        "audit_afterany_job_id",
+        "submission_argv"
+      ],
+      "properties": {
+        "preflight_job_id": {"type": ["string", "null"]},
+        "train_eval_array_job_id": {"type": ["string", "null"]},
+        "cost_array_job_id": {"type": ["string", "null"]},
+        "bootstrap_array_job_id": {"type": ["string", "null"]},
+        "finalizer_job_id": {"type": ["string", "null"]},
+        "audit_afterany_job_id": {"type": ["string", "null"]},
+        "submission_argv": {"type": "string"}
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "blockers": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "claim_boundary": {"type": "string"}
+  }
+}

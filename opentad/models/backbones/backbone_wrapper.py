@@ -223,6 +223,13 @@ class BackboneWrapper(nn.Module):
         features = features.to(torch.float32)
         return features
 
+    def after_optimizer_step(self):
+        backbone = getattr(self.model, "backbone", self.model)
+        hook = getattr(backbone, "after_optimizer_step", None)
+        if hook is None:
+            return None
+        return hook()
+
     def tensor_to_list(self, tensor):
         return [t for t in tensor]
 

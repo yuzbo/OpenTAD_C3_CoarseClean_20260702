@@ -26,6 +26,18 @@ class SingleStageDetector(BaseDetector):
         if rpn_head is not None:
             self.rpn_head = build_head(rpn_head)
 
+    def after_optimizer_step(self):
+        summaries = {}
+        for name in ("backbone", "projection", "neck", "rpn_head"):
+            module = getattr(self, name, None)
+            if module is None:
+                continue
+            hook = getattr(module, "after_optimizer_step", None)
+            if hook is None:
+                continue
+            summaries[name] = hook()
+        return summaries
+
     @property
     def with_backbone(self):
         """bool: whether the detector has backbone"""

@@ -198,6 +198,16 @@ class DucaOnlineFrameSelector(nn.Module):
         target_budget: Optional[float] = None,
         allow_external_budget_override: Optional[bool] = None,
         max_radius: int = 16,
+        acquisition_policy: str = "legacy_center_radius",
+        phase_quota_mode: str = "adaptive",
+        phase_sigmas=(1.5, 3.0),
+        phase_aggregate: str = "median",
+        phase_use_curvature: bool = False,
+        phase_temporal_nms_radius: int = 1,
+        phase_curvature_weight: float = 0.05,
+        legacy_scaffold_budget: int = 128,
+        legacy_burst_budget: int = 256,
+        legacy_burst_radius: int = 2,
         dense_window_size: Optional[int] = None,
         selector_hidden_channels: int = 0,
         actionness_weight: float = 0.05,
@@ -260,6 +270,16 @@ class DucaOnlineFrameSelector(nn.Module):
         self.budget_multiple = int(budget_multiple)
         self.target_budget = float(self.budget if target_budget is None else target_budget)
         self.max_radius = int(max_radius)
+        self.acquisition_policy = str(acquisition_policy)
+        self.phase_quota_mode = str(phase_quota_mode)
+        self.phase_sigmas = tuple(float(value) for value in phase_sigmas)
+        self.phase_aggregate = str(phase_aggregate)
+        self.phase_use_curvature = bool(phase_use_curvature)
+        self.phase_temporal_nms_radius = int(phase_temporal_nms_radius)
+        self.phase_curvature_weight = float(phase_curvature_weight)
+        self.legacy_scaffold_budget = int(legacy_scaffold_budget)
+        self.legacy_burst_budget = int(legacy_burst_budget)
+        self.legacy_burst_radius = int(legacy_burst_radius)
         self.dense_window_size = None if dense_window_size is None else int(dense_window_size)
         self.actionness_weight = float(actionness_weight)
         self.transition_weight = float(transition_weight)
@@ -377,6 +397,16 @@ class DucaOnlineFrameSelector(nn.Module):
             target_budget=self.target_budget,
             allow_external_budget_override=self.allow_external_budget_override,
             max_radius=self.max_radius,
+            acquisition_policy=self.acquisition_policy,
+            phase_quota_mode=self.phase_quota_mode,
+            phase_sigmas=self.phase_sigmas,
+            phase_aggregate=self.phase_aggregate,
+            phase_use_curvature=self.phase_use_curvature,
+            phase_temporal_nms_radius=self.phase_temporal_nms_radius,
+            phase_curvature_weight=self.phase_curvature_weight,
+            legacy_scaffold_budget=self.legacy_scaffold_budget,
+            legacy_burst_budget=self.legacy_burst_budget,
+            legacy_burst_radius=self.legacy_burst_radius,
             hidden_dim=int(selector_hidden_channels),
             actionness_source=actionness_source,
             actionness_weight=self.actionness_weight,
@@ -856,6 +886,9 @@ class DucaOnlineFrameSelector(nn.Module):
             ],
             "dynamic_budget": bool(grid.metadata.get("budget_is_dynamic", False)),
             "budget_policy": str(grid.metadata.get("budget_policy", "fixed_budget")),
+            "acquisition_policy": self.acquisition_policy,
+            "phase_quota_mode": self.phase_quota_mode,
+            "phase_use_curvature": self.phase_use_curvature,
             "budget_unit": grid.budget_unit,
             "coordinate": grid.coordinate,
             self.metadata_keys["source"]: actionness_source_name,
@@ -1227,6 +1260,12 @@ class DucaOnlineFrameSelector(nn.Module):
         for idx, meta in enumerate(out):
             positions = [int(item) for item in positions_cpu[idx].tolist() if int(item) >= 0]
             dense_valid_len = int(valid_lens[idx].item())
+            phase_quota = grid.metadata.get("phase_requested_quota")
+            if isinstance(phase_quota, list) and idx < len(phase_quota):
+                phase_quota = phase_quota[idx]
+            phase_counts = grid.metadata.get("phase_actual_counts")
+            if isinstance(phase_counts, list) and idx < len(phase_counts):
+                phase_counts = phase_counts[idx]
             remap = {
                 "source": SELECTED_AXIS,
                 "target": TRUE_TIME_AXIS,
@@ -1242,6 +1281,11 @@ class DucaOnlineFrameSelector(nn.Module):
             meta["duca_online_effective_budget"] = int(effective_budget[idx].item())
             meta["duca_online_dynamic_budget"] = bool(grid.metadata.get("budget_is_dynamic", False))
             meta["duca_online_budget_policy"] = str(grid.metadata.get("budget_policy", "fixed_budget"))
+            meta["duca_online_acquisition_policy"] = str(grid.metadata.get("decoder", self.acquisition_policy))
+            meta["duca_online_phase_quota_mode"] = grid.metadata.get("phase_quota_mode")
+            meta["duca_online_phase_use_curvature"] = grid.metadata.get("phase_use_curvature")
+            meta["duca_online_phase_requested_quota"] = phase_quota
+            meta["duca_online_phase_actual_counts"] = phase_counts
             meta["duca_online_budget_target"] = float(grid.metadata.get("budget_target", float(grid.budget)))
             meta["duca_online_budget_multiple"] = int(grid.metadata.get("budget_multiple", 1))
             meta["duca_online_selected_count"] = len(positions)

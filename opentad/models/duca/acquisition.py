@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import hashlib
 import os
 import time
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .dynamic_budget import DynamicBudgetDecision, PrefixMarginalUtilityBudgetController
+from .phase_fields import compute_phase_fields, select_exact_uniform_positions, select_phase_positions
 
 
 TensorLikeBudget = Union[int, torch.Tensor]
@@ -932,6 +933,16 @@ class DucaAcquisitionAdapter(nn.Module):
         allow_external_budget_override: Optional[bool] = None,
         budget_controller: Optional[nn.Module] = None,
         max_radius: int = 16,
+        acquisition_policy: str = "legacy_center_radius",
+        phase_quota_mode: str = "adaptive",
+        phase_sigmas: Sequence[float] = (1.5, 3.0),
+        phase_aggregate: str = "median",
+        phase_use_curvature: bool = False,
+        phase_temporal_nms_radius: int = 1,
+        phase_curvature_weight: float = 0.05,
+        legacy_scaffold_budget: int = 128,
+        legacy_burst_budget: int = 256,
+        legacy_burst_radius: int = 2,
         actionness_weight: float = 0.05,
         transition_weight: float = 1.0,
         uncertainty_weight: float = 0.25,
@@ -984,6 +995,30 @@ class DucaAcquisitionAdapter(nn.Module):
                 raise ValueError("target_budget must lie in (0, budget_max]")
         if self.max_radius < 0:
             raise ValueError("max_radius must be non-negative")
+        self.acquisition_policy = str(acquisition_policy)
+        if self.acquisition_policy not in {
+            "legacy_center_radius",
+            "exact_uniform",
+            "legacy_dual_phase",
+            "robust_phase",
+        }:
+            raise ValueError(
+                "acquisition_policy must be legacy_center_radius, exact_uniform, "
+                "legacy_dual_phase, or robust_phase"
+            )
+        if self.dynamic_budget and self.acquisition_policy != "legacy_center_radius":
+            raise ValueError("dynamic_must budget mode is only supported by legacy_center_radius")
+        self.phase_quota_mode = str(phase_quota_mode)
+        if self.phase_quota_mode not in {"fixed", "adaptive"}:
+            raise ValueError("phase_quota_mode must be fixed or adaptive")
+        self.phase_sigmas = tuple(float(value) for value in phase_sigmas)
+        self.phase_aggregate = str(phase_aggregate)
+        self.phase_use_curvature = bool(phase_use_curvature)
+        self.phase_temporal_nms_radius = int(phase_temporal_nms_radius)
+        self.phase_curvature_weight = float(phase_curvature_weight)
+        self.legacy_scaffold_budget = int(legacy_scaffold_budget)
+        self.legacy_burst_budget = int(legacy_burst_budget)
+        self.legacy_burst_radius = int(legacy_burst_radius)
         self.actionness_weight = float(actionness_weight)
         self.transition_weight = float(transition_weight)
         self.uncertainty_weight = float(uncertainty_weight)
@@ -1398,6 +1433,85 @@ class DucaAcquisitionAdapter(nn.Module):
             "provenance": source["provenance"],
         }
 
+    def _decode_acquisition_policy(
+        self,
+        scores: Mapping[str, Any],
+        budgets: torch.Tensor,
+        *,
+        temporal_len: int,
+    ) -> Dict[str, Any]:
+        valid = scores["valid_mask"].to(dtype=torch.bool)
+        if self.acquisition_policy == "legacy_center_radius":
+            return budgeted_center_radius_decode(
+                center_scores=scores["center_scores"],
+                radius=scores["radius"],
+                budget=budgets,
+                valid_mask=valid,
+                max_radius=self.max_radius,
+                output_slots=int(self.budget),
+            )
+        if not torch.equal(budgets, budgets[:1].expand_as(budgets)):
+            raise ValueError(f"{self.acquisition_policy} requires one shared budget per batch")
+        budget = int(budgets[0].item())
+        if budget != int(self.budget):
+            raise ValueError(f"{self.acquisition_policy} requires the configured hard budget")
+        if self.acquisition_policy == "exact_uniform":
+            decoded = select_exact_uniform_positions(valid, total_budget=int(self.budget))
+            decoded["fill_strategy"] = ["exact_uniform"] * int(valid.shape[0])
+            return decoded
+        if self.acquisition_policy == "legacy_dual_phase":
+            selection = dual_phase_orthogonal_budget_positions(
+                h65_priority=scores["transition_score"].float(),
+                valid_mask=valid,
+                total_budget=int(self.budget),
+                scaffold_budget=self.legacy_scaffold_budget,
+                burst_budget=self.legacy_burst_budget,
+                burst_radius=self.legacy_burst_radius,
+            )
+            dense_mask = torch.zeros(
+                (int(valid.shape[0]), int(temporal_len)),
+                device=valid.device,
+                dtype=torch.bool,
+            )
+            for row in range(int(valid.shape[0])):
+                row_positions = selection.selected_positions[row]
+                row_positions = row_positions[row_positions >= 0]
+                dense_mask[row, row_positions] = True
+            return {
+                "selected_positions": selection.selected_positions,
+                "positions": selection.selected_positions,
+                "selected_mask": dense_mask,
+                "detector_input_length": selection.actual_count.to(device=valid.device, dtype=torch.long),
+                "effective_budget": selection.actual_count.to(device=valid.device, dtype=torch.long),
+                "fill_strategy": ["legacy_dual_phase"] * int(valid.shape[0]),
+                "phase_actual_counts": [
+                    {
+                        "scaffold": int(selection.scaffold_mask[row].sum().item()),
+                        "burst": int(selection.burst_mask[row].sum().item()),
+                    }
+                    for row in range(int(valid.shape[0]))
+                ],
+            }
+        if self.acquisition_policy == "robust_phase":
+            fields = compute_phase_fields(
+                logits=scores["actionness_logits"],
+                valid_mask=valid,
+                sigmas=self.phase_sigmas,
+                aggregate=self.phase_aggregate,
+            )
+            decoded = select_phase_positions(
+                fields,
+                total_budget=int(self.budget),
+                quota_mode=self.phase_quota_mode,
+                temporal_nms_radius=self.phase_temporal_nms_radius,
+                use_curvature=self.phase_use_curvature,
+                curvature_weight=self.phase_curvature_weight,
+            )
+            decoded["phase_fields"] = fields
+            decoded["fill_strategy"] = ["robust_phase"] * int(valid.shape[0])
+            return decoded
+        raise RuntimeError(f"unhandled acquisition_policy {self.acquisition_policy}")
+
     def acquire(
         self,
         dense_observations: torch.Tensor,
@@ -1451,17 +1565,23 @@ class DucaAcquisitionAdapter(nn.Module):
                 f"hard_cap={self.budget}"
             )
         decode_start = _sync_profile_clock(dense_observations, enabled=sync_enabled) if profile_enabled else None
-        decoded = budgeted_center_radius_decode(
-            center_scores=scores["center_scores"],
-            radius=scores["radius"],
-            budget=budgets,
-            valid_mask=scores["valid_mask"],
-            max_radius=self.max_radius,
-            output_slots=int(self.budget),
+        decoded = self._decode_acquisition_policy(
+            scores,
+            budgets,
+            temporal_len=int(dense_observations.shape[1]),
         )
         decode_ms = _elapsed_ms(decode_start, dense_observations, enabled=sync_enabled)
         valid_len = scores["valid_mask"].long().sum(dim=1)
         effective_budget = decoded["effective_budget"].to(device=dense_observations.device, dtype=torch.long)
+        selected_centers = decoded.get("selected_centers", decoded["selected_positions"])
+        selected_radius = decoded.get(
+            "selected_radius",
+            torch.zeros_like(decoded["selected_positions"], dtype=torch.long, device=dense_observations.device),
+        )
+        phase_fields = decoded.get("phase_fields")
+        phase_diagnostics = None
+        if phase_fields is not None:
+            phase_diagnostics = dict(getattr(phase_fields, "diagnostics", {}))
         grid = SparseTemporalGrid(
             selected_positions=decoded["selected_positions"],
             selected_mask=decoded["selected_mask"],
@@ -1472,10 +1592,10 @@ class DucaAcquisitionAdapter(nn.Module):
             effective_budget=effective_budget,
             detector_input_length=decoded["detector_input_length"],
             metadata={
-                "selected_centers": decoded["selected_centers"],
-                "selected_radius": decoded["selected_radius"],
+                "selected_centers": selected_centers,
+                "selected_radius": selected_radius,
                 "fill_strategy": decoded["fill_strategy"],
-                "decoder": "budgeted_center_radius_decode",
+                "decoder": self.acquisition_policy,
                 "radius_is_metadata": True,
                 "budget_is_dynamic": bool(self.dynamic_budget),
                 "budget_policy": (
@@ -1487,6 +1607,11 @@ class DucaAcquisitionAdapter(nn.Module):
                 "budget_target": float(self.target_budget),
                 "predicted_budget": budgets.detach().cpu().tolist(),
                 "detector_physical_input_length": int(self.budget),
+                "phase_quota_mode": getattr(self, "phase_quota_mode", "none"),
+                "phase_use_curvature": bool(getattr(self, "phase_use_curvature", False)),
+                "phase_requested_quota": decoded.get("phase_requested_quota"),
+                "phase_actual_counts": decoded.get("phase_actual_counts"),
+                "phase_diagnostics": phase_diagnostics,
             },
         ).validate()
         if torch.any(grid.selected_count > int(self.budget)):
@@ -1528,6 +1653,9 @@ class DucaAcquisitionAdapter(nn.Module):
                 "selected_indices_st": selected_indices,
                 "soft_coverage": soft_coverage,
                 "decode_metadata": grid.metadata,
+                "phase_requested_quota": decoded.get("phase_requested_quota"),
+                "phase_actual_counts": decoded.get("phase_actual_counts"),
+                "phase_diagnostics": grid.metadata.get("phase_diagnostics"),
                 "budget_decision": budget_decision,
                 "dynamic_budget": bool(self.dynamic_budget),
                 "budget_mode": self.budget_mode,
@@ -2490,4 +2618,3 @@ def interpolate_h65_positions_to_detector_grid(
             interpolated = (1.0 - weight) * positions[lower_idx] + weight * positions[upper_idx]
             rows.append(interpolated)
     return torch.stack(rows, dim=0)
-

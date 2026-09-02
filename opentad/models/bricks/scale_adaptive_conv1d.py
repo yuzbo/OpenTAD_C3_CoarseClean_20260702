@@ -105,6 +105,7 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
         else:
             self.offset_net = None
 
+        self.latest_temporal_geometry_summary = None
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
@@ -131,6 +132,8 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
             mask: Optional boolean valid mask [B, T_in].
         """
         B, C, T_in = x.shape
+        if C != self.in_channels:
+            raise ValueError(f"expected {self.in_channels} input channels, got {C}")
 
         # Calculate exact convolution output length
         T_out = int(math.floor((T_in + 2 * self.padding - self.dilation * (self.kernel_size - 1) - 1) / self.stride) + 1)
@@ -157,6 +160,14 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
         ).clamp(0, T_in - 1).long()  # [T_out]
 
         if temporal_positions is not None:
+            if temporal_positions.shape != (B, T_in):
+                raise ValueError("temporal_positions must have shape [B, T_in]")
+            temporal_positions = temporal_positions.to(device=device, dtype=dtype)
+            if not torch.isfinite(temporal_positions).all():
+                raise ValueError("temporal_positions must be finite")
+            timestamp_delta = temporal_positions[:, 1:] - temporal_positions[:, :-1]
+            if bool((timestamp_delta <= 0).any().item()):
+                raise ValueError("temporal_positions must be strictly increasing with no duplicates")
             # Center physical timestamp for each output step: [B, 1, T_out]
             center_tau = torch.gather(temporal_positions, 1, center_input_idx.unsqueeze(0).expand(B, -1)).unsqueeze(1)
             # Target physical timestamp for tap i: tau_target(j, i) = center_tau(j) + tap_i * dilation * ref_delta_t
@@ -168,6 +179,14 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
         else:
             if delta_t is None:
                 delta_t = torch.full((B, T_in), self.ref_delta_t, device=device, dtype=dtype)
+            else:
+                if delta_t.shape != (B, T_in):
+                    raise ValueError("delta_t must have shape [B, T_in]")
+                delta_t = delta_t.to(device=device, dtype=dtype)
+                if not torch.isfinite(delta_t).all():
+                    raise ValueError("delta_t must be finite")
+                if bool((delta_t <= 0).any().item()):
+                    raise ValueError("delta_t must be strictly positive")
 
             # Sample delta_t at output step centers
             delta_t_out = torch.gather(delta_t, 1, center_input_idx.unsqueeze(0).expand(B, -1))  # [B, T_out]
@@ -183,6 +202,30 @@ class ContinuousTimeScaleAdaptiveConv1d(nn.Module):
             total_offset = geom_offset + residual
         else:
             total_offset = geom_offset
+
+        with torch.no_grad():
+            offset_for_summary = total_offset.detach().float()
+            summary = {
+                "schema_version": "continuous_time_scale_adaptive_conv1d_v1",
+                "uses_temporal_positions": temporal_positions is not None,
+                "uses_delta_t": delta_t is not None and temporal_positions is None,
+                "duplicate_timestamps_forbidden": True,
+                "batch_size": int(B),
+                "input_length": int(T_in),
+                "output_length": int(T_out),
+                "kernel_size": int(self.kernel_size),
+                "stride": int(self.stride),
+                "padding": int(self.padding),
+                "dilation": int(self.dilation),
+                "ref_delta_t": float(self.ref_delta_t),
+                "offset_abs_mean": float(offset_for_summary.abs().mean().item()),
+                "offset_abs_max": float(offset_for_summary.abs().max().item()),
+                "finite_offsets": bool(torch.isfinite(offset_for_summary).all().item()),
+            }
+            if mask is not None:
+                mask_bool = mask.to(device=device, dtype=torch.bool)
+                summary["input_valid_counts"] = [int(row.sum().item()) for row in mask_bool]
+            self.latest_temporal_geometry_summary = summary
 
         out = deform_conv1d(
             input=x,

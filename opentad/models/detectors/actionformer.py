@@ -222,6 +222,18 @@ class ActionFormer(SingleStageDetector):
                     module.eval()
         return self
 
+    def after_optimizer_step(self):
+        summaries = dict(super().after_optimizer_step() or {})
+        for name in ("frame_selector", "token_compressor", "pc_ot_mras_reader"):
+            module = getattr(self, name, None)
+            if module is None:
+                continue
+            hook = getattr(module, "after_optimizer_step", None)
+            if hook is None:
+                continue
+            summaries[name] = hook()
+        return summaries
+
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
         boundary_prior = None

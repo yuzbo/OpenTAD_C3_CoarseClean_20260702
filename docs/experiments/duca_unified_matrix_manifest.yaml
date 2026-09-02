@@ -1,0 +1,295 @@
+schema_version: 1
+matrix_id: DUCA-UNIFIED-FULLMATRIX-v001-20260902
+project: OpenTAD_DUCA_H65Pro
+repository: yuzbo/OpenTAD_C3_CoarseClean_20260702
+
+integration_base:
+  branch: codex/duca-total60-plugin-cvpr-20260727
+  revision: 95ca6eb4a7e0ba8259c5afd976cc30d0fea58865
+  role: implementation_inventory_only
+  rule: >-
+    Verify this exact clean revision before editing. It is an integration base, not
+    empirical evidence. Do not infer any result from code presence or branch names.
+
+scientific_references:
+  clean_h65_30plus60:
+    revision: 04c35a3b76897e6c1569eeede41ed3aecaf7f854
+    avg_map_percent: 65.13
+    map_07_percent: 43.31
+    role: read_only_historical_clean_reference
+  historical_h65_diagnostic:
+    avg_map_percent: 65.385724
+    role: read_only_historical_diagnostic_not_strict_s60
+  shared_official_dense_adatad:
+    revision: 01c58b9f2370e914150cf94d392208a4e211c053
+    avg_map_percent: 68.73
+    role: read_only_shared_reference_do_not_retrain
+  pjst_d1_train_revision: c73e8418de31cdcb2a445ff58a1e33ab9ab6a508
+  pjst_d1_eval_revision: 7bd120f0d342bf175c97c365fba7cbd359df055e
+
+primary_scientific_claim: >-
+  Under a strict total budget of 6000 successful detector optimizer updates and a
+  fixed pre-backbone acquisition budget of K=384 from T=768, scale-stabilized
+  semantic onset, offset, action-core, and coverage evidence with bounded adaptive
+  allocation improves official THUMOS14 temporal action detection relative to an
+  otherwise matched semantic-prior legacy allocation, without changing the
+  detector head, detection losses, NMS, split, or evaluator.
+
+claim_boundaries:
+  - The primary paper result is pre-backbone acquisition only and uses Dense VideoMAE-S.
+  - Corrected physical-time propagation is a separately identified representation factor.
+  - Feature Taylor supervision is a teacher refinement, not a claim that Taylor is new to H65.
+  - Mixture-of-Depths is an efficiency/Pareto extension, not the primary accuracy mechanism.
+  - Historical H65 and shared dense AdaTAD values are descriptive anchors, not matched causal controls.
+
+common_contract:
+  dataset: THUMOS14
+  split:
+    train_videos: 200
+    validation_videos: 211
+  input_frames: 768
+  selected_frames: 384
+  selector_output:
+    exact_k: true
+    unique: true
+    strictly_increasing: true
+    original_time_coordinates: true
+  detector_backend: official_derived_AdaTAD_ActionFormer
+  unchanged_surfaces:
+    - ActionFormer classification and regression objectives
+    - official THUMOS14 evaluator
+    - tIoU thresholds [0.3, 0.4, 0.5, 0.6, 0.7]
+    - soft-NMS algorithm and parameters
+    - train and validation identities
+  training:
+    total_epochs: 60
+    successful_optimizer_updates: 6000
+    terminal_epoch_zero_based: 59
+    terminal_state_key: state_dict_ema
+    checkpoint_interval_epochs_max: 5
+    validation_best_checkpoint_forbidden: true
+    extra_THUMOS_supervised_stage_before_update_zero_forbidden: true
+    common_public_pretrain_only_before_update_zero: true
+  seeds:
+    development: 3407
+    confirmation: [4407, 5407, 6407]
+    development_seed_excluded_from_final_seed_statistics: true
+  inference:
+    save_raw_predictions: true
+    load_from_cached_raw_predictions: false
+    map_to_original_time_before_nms: true
+  statistics:
+    video_cluster_bootstrap_draws: 10000
+    bootstrap_shards: 16
+    hierarchical_seed_video_bootstrap: true
+
+phase_field_contract:
+  source_grid: native_scout_temporal_grid
+  inputs:
+    semantic_prior: ASFormer_pre_sigmoid_action_logits
+    motion_prior: legacy_dual_phase_low_resolution_temporal_motion_score
+  cross_prior_rule: identical_smoothing_transition_quota_and_exact_k_path_with_no_feature_leakage_between_priors
+  arithmetic: float32
+  gaussian_scales: [1.5, 3.0]
+  fields:
+    core: sigmoid_of_smoothed_logit
+    onset: relu_of_scale_normalized_first_derivative
+    offset: relu_of_negative_scale_normalized_first_derivative
+    curvature: absolute_scale_normalized_second_derivative_as_weak_local_reranker_only
+  robust_normalization:
+    method: valid_region_quantile_or_MAD
+    statistics_detached: true
+  selection_order: [scaffold, onset, offset, core, global_refill]
+  fixed_quota:
+    scaffold: 128
+    onset: 64
+    offset: 64
+    core: 128
+  adaptive_quota:
+    minima:
+      scaffold: 96
+      onset: 32
+      offset: 32
+      core: 64
+    remaining_budget: 160
+    allocation: deterministic_evidence_mass_with_caps_and_largest_remainder_rounding
+  invariants:
+    - phase-exclusive sequential masking
+    - temporal NMS for onset and offset candidates
+    - exact-K deterministic refill
+    - valid-mask awareness
+    - maximum-gap diagnostic and configured bound
+    - no GT, annotation, teacher prediction, or cached held-out prediction at inference
+
+physical_time_contract:
+  implementation: reuse_ContinuousTimeScaleAdaptiveConv1d
+  timestamp_pyramid_matches_feature_pyramid: true
+  geometry_detached_from_selector_gradient: true
+  branches:
+    local:
+      support: constant_physical_span
+    context:
+      support: scale_covariant_span
+      residual_gate_initialization: zero
+  forbidden:
+    - calling 2_times_2_power_l a constant physical receptive field
+    - multiplying pyramid stride twice
+    - silently repairing duplicate timestamps
+  required_diagnostics:
+    - uniform_grid_standard_conv_parity
+    - timestamp_inverse_roundtrip_error
+    - invalid_or_clamped_tap_ratio_per_level
+    - physical_span_per_level
+
+attribution_contract:
+  baseline_teacher: selected_input_absolute_grad_times_input
+  candidate_teacher: detector_feature_signed_deletion_rank
+  feature_levels: [P0, P1]
+  formula: relu(-(detached_gradient * detached_feature).sum(channel))
+  autograd:
+    create_graph: false
+    retain_graph: true
+    target_detached: true
+  update_period_successful_steps: 4
+  target_ema: true
+  supervision: pairwise_or_listwise_ranking
+  exploration: uniform_companion_or_stratified_exploration
+  required_gate:
+    metric: Spearman_with_real_legal_one_swap_loss_change
+    minimum_improvement_over_baseline_teacher: 0.05
+
+mod_contract:
+  name: Mixture_of_Depths
+  primary_role: efficiency_extension
+  final_capacity: 0.65
+  capacity_schedule_successful_steps:
+    - {start: 0, end: 1500, start_value: 1.0, end_value: 1.0}
+    - {start: 1500, end: 3500, start_value: 1.0, end_value: 0.75, interpolation: cosine}
+    - {start: 3500, end: 5000, start_value: 0.75, end_value: 0.65, interpolation: cosine}
+    - {start: 5000, end: 6000, start_value: 0.65, end_value: 0.65}
+  hard_route: topk_on_router_logits
+  temperature_role: soft_surrogate_optimization_only
+  dense_parity_at_capacity_one: exact
+  per_sample_k_uses_valid_tokens_only: true
+  padding_tokens_selected: false
+  dense_companion_period_successful_steps: 8
+  required_efficiency_gate:
+    max_avg_map_loss_pp: 0.30
+    min_measured_backbone_compute_reduction_fraction: 0.25
+    min_measured_end_to_end_latency_improvement_fraction: 0.10
+
+schedules:
+  default_20_20_20:
+    - {name: uniform_warmup, start_update: 0, end_update: 2000}
+    - {name: transition, start_update: 2000, end_update: 4000}
+    - {name: joint, start_update: 4000, end_update: 6000}
+  alternate_15_20_25:
+    - {name: uniform_warmup, start_update: 0, end_update: 1500}
+    - {name: transition, start_update: 1500, end_update: 3500}
+    - {name: joint, start_update: 3500, end_update: 6000}
+
+arms:
+  - {id: U0, panel: anchors, prior: none, allocation: exact_uniform, curvature: false, quota: none, physical_time: false, attribution: baseline, mod: false, schedule: default_20_20_20}
+  - {id: H0, panel: anchors, prior: semantic, allocation: h65_original_retention_transition, curvature: false, quota: h65_original, physical_time: false, attribution: baseline, mod: false, schedule: default_20_20_20}
+
+  - {id: A00, panel: prior_x_allocation, prior: motion, allocation: legacy_dual_phase, curvature: false, quota: legacy, physical_time: false, attribution: baseline, mod: false, schedule: default_20_20_20}
+  - {id: A10, panel: prior_x_allocation, prior: semantic, allocation: legacy_dual_phase, curvature: false, quota: legacy, physical_time: false, attribution: baseline, mod: false, schedule: default_20_20_20}
+  - {id: A01, panel: prior_x_allocation, prior: motion, allocation: robust_phase, curvature: false, quota: adaptive, physical_time: false, attribution: baseline, mod: false, schedule: default_20_20_20}
+  - {id: A11, panel: prior_x_allocation, prior: semantic, allocation: robust_phase, curvature: false, quota: adaptive, physical_time: false, attribution: baseline, mod: false, schedule: default_20_20_20, role: primary_dense_candidate}
+
+  - {id: B00, panel: curvature_x_quota, prior: semantic, allocation: robust_phase, curvature: false, quota: fixed, physical_time: false, attribution: baseline, mod: false, schedule: default_20_20_20}
+  - {id: B10, panel: curvature_x_quota, prior: semantic, allocation: robust_phase, curvature: true, quota: fixed, physical_time: false, attribution: baseline, mod: false, schedule: default_20_20_20}
+  - {id: B11, panel: curvature_x_quota, prior: semantic, allocation: robust_phase, curvature: true, quota: adaptive, physical_time: false, attribution: baseline, mod: false, schedule: default_20_20_20}
+
+  - {id: C01, panel: phase_x_physical_time, prior: semantic, allocation: legacy_dual_phase, curvature: false, quota: legacy, physical_time: true, attribution: baseline, mod: false, schedule: default_20_20_20}
+  - {id: C11, panel: phase_x_physical_time, prior: semantic, allocation: robust_phase, curvature: false, quota: adaptive, physical_time: true, attribution: baseline, mod: false, schedule: default_20_20_20, role: physical_time_candidate}
+
+  - {id: D1, panel: attribution, prior: semantic, allocation: robust_phase, curvature: false, quota: adaptive, physical_time: false, attribution: signed_feature_taylor, mod: false, schedule: default_20_20_20, role: attribution_candidate}
+
+  - {id: E01, panel: physical_time_x_mod, prior: semantic, allocation: robust_phase, curvature: false, quota: adaptive, physical_time: false, attribution: baseline, mod: true, schedule: default_20_20_20, role: efficiency_candidate}
+  - {id: E11, panel: physical_time_x_mod, prior: semantic, allocation: robust_phase, curvature: false, quota: adaptive, physical_time: true, attribution: baseline, mod: true, schedule: default_20_20_20}
+
+  - {id: F11, panel: attribution_x_mod, prior: semantic, allocation: robust_phase, curvature: false, quota: adaptive, physical_time: false, attribution: signed_feature_taylor, mod: true, schedule: default_20_20_20, role: efficiency_plus_attribution_candidate}
+
+  - {id: G10, panel: schedule_x_selector, prior: semantic, allocation: h65_original_retention_transition, curvature: false, quota: h65_original, physical_time: false, attribution: baseline, mod: false, schedule: alternate_15_20_25}
+  - {id: G11, panel: schedule_x_selector, prior: semantic, allocation: robust_phase, curvature: false, quota: adaptive, physical_time: false, attribution: baseline, mod: false, schedule: alternate_15_20_25}
+
+panel_reuse:
+  curvature_x_quota:
+    adaptive_curvature_off: A11
+  phase_x_physical_time:
+    legacy_time_off: A10
+    phase_time_off: A11
+  physical_time_x_mod:
+    time_off_mod_off: A11
+    time_on_mod_off: C11
+  attribution_x_mod:
+    attribution_off_mod_off: A11
+    attribution_on_mod_off: D1
+    attribution_off_mod_on: E01
+  schedule_x_selector:
+    h65_default: H0
+    phase_default: A11
+
+confirmation_arm_ids: [U0, H0, A10, A11, C11, D1, E01, F11]
+
+primary_contrasts:
+  - {id: phase_effect_under_semantic, candidate: A11, control: A10, primary_metric: avg_mAP}
+  - {id: phase_vs_strict_h65, candidate: A11, control: H0, primary_metric: avg_mAP}
+secondary_contrasts:
+  - {id: semantic_prior_recovery, candidate: A10, control: A00}
+  - {id: phase_effect_under_motion, candidate: A01, control: A00}
+  - {id: curvature_fixed, candidate: B10, control: B00}
+  - {id: curvature_adaptive, candidate: B11, control: A11}
+  - {id: physical_time_on_phase, candidate: C11, control: A11}
+  - {id: physical_time_on_legacy, candidate: C01, control: A10}
+  - {id: feature_taylor, candidate: D1, control: A11}
+  - {id: mod_efficiency, candidate: E01, control: A11}
+  - {id: ct_mod_interaction, candidate: E11, control: E01}
+  - {id: taylor_mod_interaction, candidate: F11, control: E01}
+  - {id: schedule_h65, candidate: G10, control: H0}
+  - {id: schedule_phase, candidate: G11, control: A11}
+
+success_rules:
+  primary_phase_support:
+    mean_delta_avg_map_pp_min: 0.30
+    all_confirmation_seeds_same_positive_direction: true
+    hierarchical_95ci_lower_bound_above_zero: true
+    max_allowed_mean_map_07_drop_pp: 0.10
+  physical_time_support:
+    mean_delta_avg_map_pp_min: 0.20
+    alternative: high_tiou_or_short_duration_improves_with_avg_map_loss_no_worse_than_0.10pp
+  attribution_support:
+    one_swap_spearman_improvement_min: 0.05
+    mean_delta_avg_map_pp_min: 0.20
+  schedule_support:
+    mean_delta_avg_map_pp_min: 0.20
+  historical_thresholds:
+    exceed_65_13: descriptive_only
+    exceed_65_385724: descriptive_only
+    reach_66: strong_descriptive_result_not_a_substitute_for_matched_contrast
+
+cost_benchmark:
+  arm_ids: [U0, A11, C11, E01, F11]
+  seed: 4407
+  repetitions: 3
+  warmup_windows: 50
+  measured_windows_min: 200
+  report:
+    - scout_latency
+    - selector_latency
+    - backbone_latency
+    - detector_latency
+    - total_latency
+    - peak_gpu_memory
+    - measured_backbone_flops_or_kernel_work
+    - end_to_end_throughput
+
+deployment:
+  branch_name: codex/duca-unified-fullmatrix-20260902
+  default_max_concurrent_gpu_tasks: 8
+  train_eval_array_tasks: 41
+  bootstrap_array_tasks: 16
+  cost_array_tasks: 5
+  one_shot_submission: true
+  result_dependent_job_creation_forbidden: true
