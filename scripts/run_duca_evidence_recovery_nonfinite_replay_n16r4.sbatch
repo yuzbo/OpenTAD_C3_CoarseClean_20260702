@@ -69,6 +69,14 @@ for task in "${TASKS[@]}"; do
       resume_args=(--resume "${resume}")
     fi
   fi
+  # max_train_iters is per epoch in this training engine.  Bound the replay
+  # to one diagnostic epoch: epoch 10 for the resumed F checkpoint, epoch 0
+  # for a fresh A6 run.
+  if [[ "${arm}" == "F" && -n "${resume_args[*]}" ]]; then
+    end_epoch=10
+  else
+    end_epoch=1
+  fi
 
   echo "[INFO] diagnostic arm=${arm} config=${cfg} resume=${resume_args[*]:-none} work_dir=${work_dir}"
   # The historical F/A6 run predates deploy-ledger provenance fields. D0
@@ -79,6 +87,7 @@ for task in "${TASKS[@]}"; do
     "${resume_args[@]}" \
     --cfg-options \
       "workflow.max_train_iters=${DIAG_ITERS}" \
+      "workflow.end_epoch=${end_epoch}" \
       workflow.max_nonfinite_loss_retries=0 \
       workflow.max_amp_retries_per_batch=0 \
       workflow.require_finite_train_loss=True \
