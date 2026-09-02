@@ -81,9 +81,10 @@ same ordered contract:
    SHA, work directory, and log paths in `08_SLURM_LEDGER.json` and the failure
    diagnosis receipt.
 2. Classify the cause as code, protocol/invocation, resource/scheduler,
-   numerical, data, or environment. Code/protocol/environment repairs use a
-   separate correction branch and commit; frozen SHAs are immutable and old or
-   dirty checkouts cannot donate results.
+   numerical, data, or environment. Code/protocol repairs use a separate
+   correction branch and commit; the documented zero-update Slurm bootstrap
+   exception may repair the wrapper and reuse the same model SHA. Frozen SHAs
+   are immutable and old or dirty checkouts cannot donate results.
 3. Run the route-specific focused tests and corresponding `PRECHECK_ONLY` or
    admission precheck from a clean checkout with the documented N16R4
    environment. A passing precheck authorizes a launch attempt only; it never
