@@ -134,6 +134,21 @@
       "status": "SUCCEEDED",
       "job_ids": [],
       "result": "CT-DP 1265777/1265778 completed on stale HEAD with epoch_59/mAP log; 1265779/1265780 still running; later BAFDR 1266410-1266414 wrote 6000-update train receipts but evaluator remains unopened"
+    },
+    {
+      "kind": "remote_targeted_artifact_scan_initial",
+      "command": "ssh N16R4 owned/non-owned find, receipt and error scan",
+      "status": "FAILED_PROTOCOL",
+      "reason": "nested shell quoting broke grep -E before artifact/error scan; no experiment command or job state was changed",
+      "job_ids": [],
+      "attempt_id": "local-monitor-20260903-0747"
+    },
+    {
+      "kind": "remote_targeted_artifact_scan_retry",
+      "command": "ssh N16R4 escaped-regex owned/non-owned artifact, receipt and error scan",
+      "status": "SUCCEEDED",
+      "job_ids": ["1266415", "1266399", "1266400"],
+      "result": "BAFDR NOKD 1266415 RUNNING without current errors; stale Evidence array tasks 1266399/1266400 FAILED with NaN quota and non-finite scout_action_loss; A2-A5 have checkpoints but no terminal receipts; owned audit worktrees have no terminal artifacts"
     }
   ],
   "failure_diagnoses": [
@@ -197,6 +212,22 @@
       "classification": "NONOWNED_RUNNING_WITH_TRAIN_RECEIPT",
       "cause": "later-checkout BAFDR 五臂作业仍为 RUNNING，但各自已写 epoch_59.pth/train_receipt.json 并报告 6000 successful updates；metric_opened=false、eval_results 为空。",
       "revalidation": "不采用这些作业；继续监控 Slurm 终态和下游依赖，当前冻结 BAFDR 仍需独立 admission"
+    },
+    {
+      "job_ids": ["1266399", "1266400"],
+      "classification": "CODE_OR_NUMERICAL_FAILURE_NONOWNED",
+      "cause": "dirty stale Evidence checkout 647151fa: FULL task 1 largest_remainder_quota received NaN segment weights; NO_COVERAGE task 2 produced non-finite scout_action_loss; both exited 1.",
+      "log_files": [
+        "/data/run01/sczc063/yuzibo/duca_evidence_recovery_single_seed_8261_647151fa_20260902_092503/slurm_logs/duca_rec_train_1266397_1.err",
+        "/data/run01/sczc063/yuzibo/duca_evidence_recovery_single_seed_8261_647151fa_20260902_092503/slurm_logs/duca_rec_train_1266397_2.err"
+      ],
+      "revalidation": "完整 stderr 已读取；不修补或重提非拥有旧 checkout。冻结 08d425a 仍需独立 C0/CUDA admission。"
+    },
+    {
+      "attempt_ids": ["local-monitor-20260903-0747"],
+      "classification": "MONITOR_PROTOCOL_FAILURE_REPAIRED",
+      "cause": "owned/non-owned artifact scan 的嵌套 grep 引号错误导致 bash syntax error；未修改实验。",
+      "revalidation": "双引号正则重试成功，完整 artifact/receipt/error 扫描完成。"
     }
   ],
   "preexisting_jobs_not_owned_by_this_audit": [

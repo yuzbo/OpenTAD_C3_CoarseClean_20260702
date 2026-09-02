@@ -150,6 +150,29 @@
       "root_cause": "五个 later-checkout 作业仍为 RUNNING，但各自已写 epoch_59.pth/train_receipt.json 并报告 6000 successful updates；metric_opened=false、eval_results 为空，说明训练 receipt 不是完整终态评测。",
       "repair": "不采用这些作业；继续监控其 Slurm 终态和下游依赖，仅在当前冻结 BAFDR SHA、完整 evaluator/aggregation receipt 下重新部署。",
       "result": "训练进度可作非拥有诊断记录，不能产生 BAFDR mAP、成本或筛选结论。"
+    },
+    {
+      "job_ids": ["1266399", "1266400"],
+      "route": "Evidence",
+      "source_checkout": "/data/run01/sczc063/yuzibo/projects/opentad_duca_evidence_recovery @ 647151facd36d4df3f21de6865bcb225c8ba91fc (dirty, non-owned)",
+      "log_files": [
+        "/data/run01/sczc063/yuzibo/duca_evidence_recovery_single_seed_8261_647151fa_20260902_092503/slurm_logs/duca_rec_train_1266397_1.err",
+        "/data/run01/sczc063/yuzibo/duca_evidence_recovery_single_seed_8261_647151fa_20260902_092503/slurm_logs/duca_rec_train_1266397_2.err"
+      ],
+      "classification": "CODE_OR_NUMERICAL_FAILURE_NONOWNED",
+      "root_cause": "Array task 1 (FULL) reached largest_remainder_quota with NaN segment weights and failed converting NaN to integer; array task 2 (NO_COVERAGE) produced non-finite scout_action_loss and the fail-closed validator terminated training.",
+      "repair": "不修改或采用 dirty/non-owned checkout。当前冻结 Evidence SHA 08d425a 已有 finite-weight guard and finite-loss validation; C0 exact parity/CUDA admission must be rerun on the frozen clean SHA when resources allow, not attached to these jobs.",
+      "revalidation": "完整 stderr 已读取；两个 tasks FAILED (exit 1)，无合法 terminal receipt；其余 array tasks 0/7 仍 RUNNING。",
+      "result": "旧 Evidence 作业仅保留为失败诊断证据，不能产生 mAP、成本或恢复结论。"
+    },
+    {
+      "attempt_ids": ["local-monitor-20260903-0747"],
+      "route": "remote status monitoring",
+      "classification": "MONITOR_PROTOCOL_FAILURE_REPAIRED",
+      "root_cause": "受控 SSH 状态扫描命令的嵌套单引号破坏了 grep -E 表达式，bash 在 artifact/error 扫描开始前报告 syntax error；未修改任何作业或实验状态。",
+      "repair": "改用双引号包裹远端正则并重新执行 owned/non-owned artifact、receipt、checkpoint 和 error 扫描。",
+      "revalidation": "扫描成功；supervisor PID 2272497 存活，1266415 已 RUNNING，Evidence array tasks 1266399/1266400 的两条首个错误已保留。",
+      "result": "监控调用错误已修复；不产生科学结果。"
     }
   ],
   "current_resource_blocker": {
