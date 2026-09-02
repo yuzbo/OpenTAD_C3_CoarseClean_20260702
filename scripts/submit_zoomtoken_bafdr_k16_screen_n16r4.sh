@@ -33,5 +33,5 @@ for arm in "${arm_list[@]}"; do
   sbatch --parsable --partition=gpu --gres=gpu:2 --cpus-per-task=8 --time=72:00:00 \
     --job-name="bafdr-${slug}-s${SEED}" \
     --output="${BASE}/slurm_logs/%x_%j.out" --error="${BASE}/slurm_logs/%x_%j.err" \
-    --wrap="source /etc/profile; module load cuda/11.8; module load miniforge3/24.11; cd '${PROJECT_DIR}'; bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh train '${cfg}'"
+    --wrap="bash -lc 'set -euo pipefail; source /etc/profile; module load cuda/11.8; module load miniforge3/24.11; cd \"${PROJECT_DIR}\"; bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh train \"${cfg}\"'"
 done
