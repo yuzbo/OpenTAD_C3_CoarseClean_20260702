@@ -38,6 +38,8 @@ def test_bafdr_generator_cannot_reintroduce_collect_extra_keys():
     text = read(ROOT / "tools" / "bata" / "generate_bafdr_configs.py")
     assert "extra_keys" not in text
     assert 'type="Collect", inputs="bafdr_inputs"' in text
+    assert 'method="sliding_window", window_size=' not in text
+    assert 'method="sliding_window", window_overlap_ratio=' not in text
 
 
 def test_bafdr_configs_bind_world2_global_batch_contract():
