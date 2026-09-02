@@ -20,7 +20,7 @@ train_pipeline = [
 evaluation_pipeline = [
     dict(type="PrepareVideoInfo", format="mp4"),
     dict(type="mmaction.DecordInit", num_threads=4),
-    dict(type="LoadFrames", num_clips=1, method="sliding_window", window_overlap_ratio=0.5),
+    dict(type="LoadFrames", num_clips=1, method="sliding_window"),
     dict(type="mmaction.DecordDecode"),
     dict(type="BAFDRSourceViews", global_size=96, output_key="bafdr_inputs", required_source_height=180, required_source_width=320),
     dict(type="ConvertToTensor", keys=["gt_segments", "gt_labels"]),
