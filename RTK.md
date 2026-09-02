@@ -75,6 +75,15 @@ export HF_HOME="$BASE/hf_cache"
   the one wrapper line and resubmit the exact same model commit; do not create
   a new model revision, new gate, or a performance conclusion.
 
+### Failure handling (mandatory)
+
+- Any submission failure, runtime failure, numerical failure, or protocol/invocation error must first be preserved and diagnosed from the complete Slurm/launcher `stdout` and `stderr` before retrying. Record the job or attempt ID, exact command, checkout path, source SHA, and the relevant log paths.
+- Classify the failure as code, protocol/invocation, resource/scheduler, numerical, data, or environment. A scheduler/resource failure does not justify changing model code; a code or protocol failure requires a separate correction branch/commit. Never rewrite a frozen SHA or attach a corrected run to the old SHA.
+- After a code/protocol/environment repair, run the route's focused tests and its corresponding `PRECHECK_ONLY`/admission precheck from a clean checkout with the documented CUDA/Conda environment. A precheck is evidence of launch readiness only, never a scientific result.
+- Resubmit only after the repaired precheck passes and resources are actually available. Use bounded retries; do not duplicate jobs while Slurm reports an account or association limit. If resources are unavailable, mark the route `BLOCKED_RESOURCE` and retain the failure evidence for the next check.
+- A failed or incomplete run must remain in the ledger, including cancellation, non-finite loss, missing checkpoint, missing terminal receipt, and wrong-checkout cases. `COMPLETED` in Slurm or an epoch message alone is not a valid result. Do not report metrics, mAP, speedup, cost, or bootstrap intervals without the exact-SHA, clean-tree, terminal-checkpoint, evaluator, and aggregation receipts required by the route.
+- The supervisor and heartbeat must surface every unresolved failure and its next action; they may never silently drop, relabel, or adopt a pre-existing job.
+
 需要下载外部资源时使用登录节点代理：
 
 ```bash
