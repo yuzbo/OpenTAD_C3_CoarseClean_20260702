@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-02T19:56:41+00:00",
+  "last_updated_utc": "2026-09-02T21:05:20+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -157,7 +157,7 @@
   ],
   "remote_supervisor": {
     "status": "ACTIVE",
-    "checked_at": "2026-09-02T19:56:01+00:00",
+    "checked_at": "2026-09-02T21:04:50+00:00",
     "dispatcher_status": "BLOCKED",
     "entries": []
   },
@@ -191,7 +191,7 @@
       "job_ids": "1266401-1266420",
       "remote_directory": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7",
       "source_head": "efe69d2ea10accd01d0129dfe99cba4d1d5773cb",
-      "reason": "非当前冻结 BAFDR checkout；1266401/1266402 因 LoadFrames 不支持窗口参数失败，其他作业仍在运行或依赖等待，全部不纳入当前结果"
+      "reason": "非当前冻结 BAFDR checkout；1266401/1266402 因 LoadFrames 不支持窗口参数失败；1266410-1266414 已写 6000-update train receipt 但 metric_opened=false/eval_results 为空，其余作业仍运行或依赖等待，全部不纳入当前结果"
     },
     {
       "job_ids": "1266475,1266479,1266480",
@@ -200,10 +200,16 @@
       "reason": "非当前冻结 BAFDR checkout 的下游 cexec/metrics/summary 依赖作业，全部不纳入当前结果"
     },
     {
-      "job_ids": "1265777-1265780",
+      "job_ids": "1265777-1265778",
       "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902",
       "source_head": "679b71214d05a21cd08ae1f5e5c3879e2df8fb83",
-      "reason": "旧 CT-DP checkout，不纳入当前结果"
+      "reason": "旧 CT-DP checkout；G0/G1 已完成并留下 epoch_59.pth 与 Average-mAP 63.95% 日志，但无当前 exact SHA 或 audit-owned terminal receipt，mAP 不纳入结果"
+    },
+    {
+      "job_ids": "1265779-1265780",
+      "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902",
+      "source_head": "679b71214d05a21cd08ae1f5e5c3879e2df8fb83",
+      "reason": "旧 CT-DP checkout；G2/G3 仍在运行，不能迁移为当前冻结或修正路线结果"
     },
     {
       "job_ids": "1265077_[0-2,3-7]",

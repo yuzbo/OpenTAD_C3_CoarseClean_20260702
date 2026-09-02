@@ -123,6 +123,33 @@
       "repair": "改用直接读取 latest_receipt.json 的 sed/受控 shell 检查，并重新执行 squeue、sacct、日志与终态产物扫描。",
       "revalidation": "监督器 PID 2272497 仍存活；latest_receipt checked_at=2026-09-02T19:54:00Z；状态、队列和终态产物扫描成功。",
       "result": "监控协议错误已修复；不产生科学结果。"
+    },
+    {
+      "attempt_ids": ["local-monitor-20260903-0500"],
+      "route": "remote status monitoring",
+      "classification": "MONITOR_PROTOCOL_FAILURE_REPAIRED",
+      "root_cause": "远端受控 shell 检查中嵌套单引号破坏了 find/grep 命令，导致 bash 在扫描开始前报告 syntax error；未修改任何作业或实验状态。",
+      "repair": "改用双引号包裹远端正则并重新执行 CT-DP 终态文件、日志尾部、BAFDR receipt 和错误模式扫描。",
+      "revalidation": "远端时间 2026-09-02T21:00:17Z；监督器 PID 2272497 存活；针对性扫描完成，结果写入 remote_status_check_20260903_0459.json。",
+      "result": "监控调用错误已修复；不产生科学结果。"
+    },
+    {
+      "job_ids": ["1265777", "1265778"],
+      "route": "CT-DP",
+      "source_checkout": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902 @ 679b71214d05a21cd08ae1f5e5c3879e2df8fb83",
+      "classification": "NONOWNED_COMPLETED_STALE_CHECKOUT",
+      "root_cause": "Slurm 作业完成并留下 legacy G0/G1 epoch_59.pth/log.json，日志打印 Average-mAP 63.95%；但 checkout 不是本审计冻结或修正 SHA，且没有 audit-owned terminal receipt。",
+      "repair": "不迁移、不重标、不从旧日志提取科学结论；保留为非拥有诊断证据，当前精确 CT-DP 修正分支仍需独立 geometry/gradient/batch admission。",
+      "result": "旧 checkout 的 mAP 日志无效，不能写入当前结果账本。"
+    },
+    {
+      "job_ids": ["1266410", "1266411", "1266412", "1266413", "1266414"],
+      "route": "BAFDR",
+      "source_checkout": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7 @ efe69d2ea10accd01d0129dfe99cba4d1d5773cb",
+      "classification": "NONOWNED_RUNNING_WITH_TRAIN_RECEIPT",
+      "root_cause": "五个 later-checkout 作业仍为 RUNNING，但各自已写 epoch_59.pth/train_receipt.json 并报告 6000 successful updates；metric_opened=false、eval_results 为空，说明训练 receipt 不是完整终态评测。",
+      "repair": "不采用这些作业；继续监控其 Slurm 终态和下游依赖，仅在当前冻结 BAFDR SHA、完整 evaluator/aggregation receipt 下重新部署。",
+      "result": "训练进度可作非拥有诊断记录，不能产生 BAFDR mAP、成本或筛选结论。"
     }
   ],
   "current_resource_blocker": {

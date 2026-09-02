@@ -1,0 +1,81 @@
+{
+  "schema_version": "DUCA-REMOTE-STATUS-CHECK-v004",
+  "checked_at_utc": "2026-09-02T20:59:45Z",
+  "remote_host": "N16R4",
+  "supervisor": {
+    "pid": "2272497",
+    "status": "ACTIVE",
+    "latest_receipt_checked_at": "2026-09-02T20:59:45+00:00",
+    "dispatcher_status": "BLOCKED",
+    "blocked_reasons": [
+      "DUCA_UNIFIED: BLOCKED_UNIMPLEMENTED",
+      "stage S60_IMPLEMENTATION: BLOCKED_UNIMPLEMENTED"
+    ],
+    "queue_entries": 0,
+    "formal_results": "NO_VALID_RESULTS"
+  },
+  "current_queue": [
+    {
+      "job_id": "1265779,1265780",
+      "state": "RUNNING",
+      "name": "ctdp-g2-s3407, ctdp-g3-s3407",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902",
+      "classification": "STALE_REMOTE_HEAD"
+    },
+    {
+      "job_id": "1266410-1266414",
+      "state": "RUNNING",
+      "name": "zt-bafdr-train-*",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7",
+      "classification": "NONOWNED_LATER_BAFDR_CHECKOUT",
+      "progress": "D160/G96/U128/U16/LATE each wrote epoch_59.pth and train_receipt.json with 6000 updates; metric_opened=false and eval_results empty"
+    },
+    {
+      "job_id": "1266415",
+      "state": "PENDING",
+      "reason": "AssocGrpGRES",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7",
+      "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"
+    },
+    {
+      "job_id": "1266416,1266420,1266475,1266479,1266480",
+      "state": "PENDING",
+      "reason": "Dependency",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7",
+      "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"
+    },
+    {
+      "job_id": "1266397_[0,2,7]",
+      "state": "RUNNING",
+      "name": "duca_rec_train",
+      "workdir": "/data/home/sczc063",
+      "classification": "NONOWNED"
+    }
+  ],
+  "recent_terminal_observations": [
+    {
+      "job_id": "1265777,1265778",
+      "state": "COMPLETED",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902",
+      "classification": "STALE_REMOTE_HEAD",
+      "artifacts": "epoch_59.pth and log.json; logs print Average-mAP 63.95%",
+      "valid_result": false,
+      "reason": "source HEAD 679b7121 is not the frozen/corrected CT-DP SHA and no audit-owned terminal receipt exists"
+    },
+    {
+      "job_id": "1266410-1266414",
+      "state": "RUNNING_WITH_TRAIN_RECEIPTS",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_efe69d2e_compute",
+      "classification": "NONOWNED_LATER_BAFDR_CHECKOUT",
+      "artifacts": "five epoch_59.pth and train_receipt.json files; each reports total_successful_updates=6000",
+      "valid_result": false,
+      "reason": "source HEAD efe69d2e is not frozen BAFDR SHA; no evaluator/aggregation receipt and metric_opened=false"
+    }
+  ],
+  "terminal_artifact_scan": {
+    "owned_audit_worktrees": "no epoch_59.pth/train_receipt/eval_receipt/prediction_receipt found outside .cvpr-pro-lab",
+    "stale_ctdp_worktree": "legacy G0/G1 epoch_59.pth and mAP log exist; G2/G3 remain running; no current exact SHA or audit-owned terminal receipt",
+    "stale_bafdr_worktree": "five later-checkout epoch_59.pth/train_receipt files exist, but no evaluator or aggregation receipt"
+  },
+  "action": "不取消或采用旧 checkout；保持正式结果账本 NO_VALID_RESULTS，等待 dispatcher gates 和账户资源，并在下一轮复查终态 receipt。"
+}
