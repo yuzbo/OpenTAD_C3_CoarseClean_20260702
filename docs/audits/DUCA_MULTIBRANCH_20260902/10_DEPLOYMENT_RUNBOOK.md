@@ -49,6 +49,28 @@ The observed annotation hashes are recorded in
 `01_ADATAD_REFERENCE_CONTRACT.json`. Train/held-out list hashes and the full
 AdaTAD inheritance/evaluator contract are still required before formal release.
 
+## Supervisors
+
+The remote minute supervisor is `scripts/duca_remote_supervisor.py` with the
+empty, operator-populated `scripts/duca_remote_supervisor_queue.json`. It is
+installed at
+`/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/`
+and runs as a single `nohup` process with `--interval 60`. It writes
+`supervisor_state.json`, `latest_receipt.json`, timestamped receipts, and
+`logs/supervisor.log`; `supervisor.pid` identifies the active process. The
+queue is intentionally empty while the dispatcher is blocked. Adding an entry
+does not bypass the dispatcher, exact-SHA, clean-tree, or route-specific
+launcher checks. Retryable scheduler failures are bounded; code or contract
+failures become `NEEDS_REPAIR`.
+
+The local Codex heartbeat automation
+`monitor-duca-recent-remote-experiments` runs every 30 minutes. It collects the
+remote supervisor receipt, `squeue`/`sacct`, owned logs/checkpoints/receipts,
+and the result ledger. It may perform a minimal correction only after
+preserving the first failure, creating a new correction SHA, running focused
+tests and prechecks, and updating the remote queue. It must never rewrite a
+frozen SHA or adopt pre-existing jobs.
+
 ## Ordered admission plan
 
 1. **Shared identity gate.** Resolve the data lists, annotation, checkpoint,
