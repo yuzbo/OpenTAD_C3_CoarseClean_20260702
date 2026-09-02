@@ -92,6 +92,7 @@ class TaylorAttention(BaseModule):
         self.proj = nn.Linear(embed_dims, embed_dims)
         self.proj_drop = nn.Dropout(drop_rate)
         self.pretrained_qkv_remapped = False
+        self.pretrained_bias_remapped = False
 
     def _load_from_state_dict(
         self,
@@ -131,6 +132,27 @@ class TaylorAttention(BaseModule):
                 state_dict[prefix + "k_proj.bias"] = k_b
                 state_dict[prefix + "v_proj.bias"] = v_b
                 self.pretrained_qkv_remapped = True
+
+        # Official VideoMAE stores Q/V bias separately (K has no bias). Map
+        # those tensors to the split projections and create an explicit zero K
+        # bias so no pretrained bias is silently left random or unexpected.
+        official_q_bias = state_dict.pop(prefix + "q_bias", None)
+        official_v_bias = state_dict.pop(prefix + "v_bias", None)
+        if official_q_bias is not None or official_v_bias is not None:
+            if self.q_proj.bias is None:
+                error_msgs.append(f"{prefix}q_bias/v_bias provided but qkv_bias=False")
+            elif (
+                official_q_bias is None
+                or official_v_bias is None
+                or official_q_bias.shape != (self.embed_dims,)
+                or official_v_bias.shape != (self.embed_dims,)
+            ):
+                error_msgs.append(f"{prefix}q_bias/v_bias have incompatible shapes")
+            else:
+                state_dict[prefix + "q_proj.bias"] = official_q_bias
+                state_dict[prefix + "k_proj.bias"] = torch.zeros_like(official_q_bias)
+                state_dict[prefix + "v_proj.bias"] = official_v_bias
+                self.pretrained_bias_remapped = True
         super()._load_from_state_dict(
             state_dict,
             prefix,
