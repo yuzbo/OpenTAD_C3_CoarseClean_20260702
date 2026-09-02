@@ -7,7 +7,6 @@ from opentad.models.backbones.bafdr_wrapper import BAFDRBackboneWrapper, BAFDRRo
 
 def test_fixed_k16_execution_budget():
     wrapper = object.__new__(BAFDRBackboneWrapper)
-    nn.Module.__init__(wrapper)
     wrapper.k_chunks = 16
     wrapper.chunk_num = 48
     assert wrapper.k_chunks == 16
@@ -16,6 +15,7 @@ def test_fixed_k16_execution_budget():
 
 def test_router_returns_exactly_sixteen_selected_chunks():
     wrapper = object.__new__(BAFDRBackboneWrapper)
+    nn.Module.__init__(wrapper)
     wrapper.k_chunks = 16
     wrapper.uniform_mode = True
     wrapper.router = BAFDRRouterHead(in_channels=8, hidden_channels=4)
