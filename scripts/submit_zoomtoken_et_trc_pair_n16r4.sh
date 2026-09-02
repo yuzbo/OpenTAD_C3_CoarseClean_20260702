@@ -26,5 +26,5 @@ for mode in off on; do
     sbatch --parsable --export=ALL,ETTRC_PRETRAIN="$ETTRC_PRETRAIN" --partition=gpu --gres=gpu:2 --cpus-per-task=8 --time=72:00:00 \
     --job-name="et-trc-${mode}-s${SEED}" \
     --output="${BASE}/slurm_logs/%x_%j.out" --error="${BASE}/slurm_logs/%x_%j.err" \
-      --wrap="bash -lc 'source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source \"${BASE}/conda_envs/opentad/bin/activate\"; export ETTRC_PRETRAIN=\"${ETTRC_PRETRAIN}\"; cd \"${PROJECT_DIR}\"; python tools/train.py \"${cfg}\" --seed \"${SEED}\" --cfg-options model.backbone.backbone.stride_k=${STRIDE_K}'"
+      --wrap="bash -lc 'source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source \"${BASE}/conda_envs/opentad/bin/activate\"; export ETTRC_PRETRAIN=\"${ETTRC_PRETRAIN}\"; cd \"${PROJECT_DIR}\"; torchrun --standalone --nproc_per_node=2 tools/train.py \"${cfg}\" --seed \"${SEED}\" --cfg-options model.backbone.backbone.stride_k=${STRIDE_K}'"
 done
