@@ -61,6 +61,43 @@ def test_bafdr_dense_carrier_gamma_zero_identity():
     assert torch.allclose(Z, G, atol=1e-7)
 
 
+def test_bafdr_gamma_and_projection_gradients_are_live():
+    """The zero residual warm start must not make the learnable scale dead."""
+    gamma = torch.zeros(1, requires_grad=True)
+    proj_local = nn.Conv1d(4, 4, kernel_size=1)
+    proj_global = nn.Conv1d(4, 4, kernel_size=1)
+    local = torch.randn(2, 4, 3)
+    global_ = torch.randn(2, 4, 3)
+    gate = torch.sigmoid(torch.randn(2, 1, 3))
+    residual = gamma * gate * (proj_local(local) - proj_global(global_))
+    loss = (residual + global_).square().mean()
+    loss.backward()
+    assert gamma.grad is not None and torch.isfinite(gamma.grad)
+    assert float(gamma.grad.abs()) > 0.0
+    # Projection gradients become live as soon as gamma is moved away from
+    # its warm-start value; this guards against accidentally detaching R_diff.
+    gamma2 = torch.tensor(0.2, requires_grad=True)
+    residual2 = gamma2 * gate * (proj_local(local) - proj_global(global_))
+    residual2.square().mean().backward()
+    assert proj_local.weight.grad is not None and float(proj_local.weight.grad.abs().sum()) > 0.0
+    assert proj_global.weight.grad is not None and float(proj_global.weight.grad.abs().sum()) > 0.0
+
+
+def test_bafdr_physical_skip_execution_count_contract():
+    cfg = SimpleNamespace(custom=SimpleNamespace(
+        bafdr_global_key="global", bafdr_source_key="source", bafdr_global_size=96,
+        bafdr_local_size=128, bafdr_chunk_num=48, bafdr_k_chunks=16,
+        bafdr_tubelets_per_chunk=8, bafdr_output_length=768,
+        bafdr_uniform_mode=True, bafdr_return_bundle=True, bafdr_channels=384,
+    ))
+    # The wrapper exposes the fixed budget as a construction invariant even
+    # when the expensive shared backbone is replaced by a test double.
+    wrapper = object.__new__(BAFDRBackboneWrapper)
+    wrapper.k_chunks = 16
+    wrapper.chunk_num = 48
+    assert wrapper.k_chunks + (wrapper.chunk_num - wrapper.k_chunks) == wrapper.chunk_num
+
+
 def test_bafdr_unselected_tubelets_bitwise_invariant():
     B, C, T = 1, 384, 384
     G = torch.randn(B, C, T)

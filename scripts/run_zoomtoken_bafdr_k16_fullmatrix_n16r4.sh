@@ -5,6 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT}"
 
+# Slurm batch shells do not guarantee the module function is defined.  Load
+# the site profile before resolving CUDA/Conda so the selected environment is
+# identical between precheck and training.
+source /etc/profile
+
 if [[ -n "${YUZIBO_ROOT:-}" ]]; then
   BASE="${YUZIBO_ROOT}"
 elif [[ -d "/data/run01/sczc063/yuzibo" ]]; then
@@ -21,10 +26,8 @@ PROFILE_DIR="${RUN_ROOT}/profile"
 
 mkdir -p "${MANIFEST_DIR}" "${WORK_DIR_ROOT}" "${PRED_DIR}" "${EVAL_DIR}" "${PROFILE_DIR}"
 
-if command -v module >/dev/null 2>&1; then
-  module load cuda/11.8 || true
-  module load miniforge3/24.11 || true
-fi
+module load cuda/11.8
+module load miniforge3/24.11
 
 CONDA_ENV="${BASE}/conda_envs/opentad/bin/activate"
 if [[ -f "${CONDA_ENV}" ]]; then

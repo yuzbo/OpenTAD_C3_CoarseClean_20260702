@@ -3,7 +3,7 @@
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=8
 #SBATCH --time=00:30:00
 #SBATCH --output=/data/run01/sczc063/yuzibo/slurm_logs/%x_%j.out
 #SBATCH --error=/data/run01/sczc063/yuzibo/slurm_logs/%x_%j.err
@@ -26,10 +26,10 @@ mkdir -p "${LOG_DIR}" "${MANIFEST_DIR}"
 
 cd "${PROJECT_DIR}"
 
-if command -v module >/dev/null 2>&1; then
-  module load cuda/11.8 || true
-  module load miniforge3/24.11 || true
-fi
+source /etc/profile
+
+module load cuda/11.8
+module load miniforge3/24.11
 
 CONDA_ENV="${BASE}/conda_envs/opentad/bin/activate"
 if [[ -f "${CONDA_ENV}" ]]; then
