@@ -1,5 +1,6 @@
 import pytest
 import torch
+from pathlib import Path
 
 
 pytest.importorskip("torch")
@@ -36,3 +37,9 @@ def test_dual_phase_exposes_tubelet_boundary_prior():
     assert out["boundary_prior"].shape == (1, 8)
     assert out["boundary_prior_tubelet"].shape == (1, 4)
     assert metas[0]["boundary_prior_tubelet"].shape == (4,)
+
+
+def test_campaign_propagates_runtime_root_for_pretrained_weights():
+    script = Path(__file__).resolve().parents[1] / "scripts" / "submit_duca_ctdp_revised_campaign_n16r4.sh"
+    text = script.read_text(encoding="utf-8")
+    assert 'YUZIBO_ROOT="${BASE}"' in text

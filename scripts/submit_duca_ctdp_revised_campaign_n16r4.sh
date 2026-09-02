@@ -23,7 +23,7 @@ submit() {
   [[ -n "$dep" ]] && dep_arg=(--dependency="afterok:${dep}")
   sbatch --parsable --partition=gpu --gres=gpu:1 --cpus-per-task=4 --time=7-00:00:00 \
     --job-name="$name" --output="${BASE}/slurm_logs/%x_%j.out" --error="${BASE}/slurm_logs/%x_%j.err" \
-    "${dep_arg[@]}" --wrap="bash -lc 'source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; cd \"${PROJECT_DIR}\"; BASE=\"${BASE}\" REPO_ROOT=\"${PROJECT_DIR}\" PROJECT_DIR=\"${PROJECT_DIR}\" SEED=\"${SEED}\" bash scripts/run_duca_ct_dp_revised_thumos_gpu.sh \"${cfg}\"'"
+    "${dep_arg[@]}" --wrap="bash -lc 'source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; cd \"${PROJECT_DIR}\"; BASE=\"${BASE}\" YUZIBO_ROOT=\"${BASE}\" REPO_ROOT=\"${PROJECT_DIR}\" PROJECT_DIR=\"${PROJECT_DIR}\" SEED=\"${SEED}\" bash scripts/run_duca_ct_dp_revised_thumos_gpu.sh \"${cfg}\"'"
 }
 if [[ "$STAGE" == geometry ]]; then
   arms=(g0 g1 g2 g3)
