@@ -71,6 +71,38 @@ preserving the first failure, creating a new correction SHA, running focused
 tests and prechecks, and updating the remote queue. It must never rewrite a
 frozen SHA or adopt pre-existing jobs.
 
+## Mandatory failure-handling rule
+
+Every failed submission, failed run, and protocol/invocation error follows the
+same ordered contract:
+
+1. Preserve the attempt and read complete launcher/Slurm `stdout` and `stderr`
+   before any retry. Record attempt/job ID, exact command, checkout, source
+   SHA, work directory, and log paths in `08_SLURM_LEDGER.json` and the failure
+   diagnosis receipt.
+2. Classify the cause as code, protocol/invocation, resource/scheduler,
+   numerical, data, or environment. Code/protocol/environment repairs use a
+   separate correction branch and commit; frozen SHAs are immutable and old or
+   dirty checkouts cannot donate results.
+3. Run the route-specific focused tests and corresponding `PRECHECK_ONLY` or
+   admission precheck from a clean checkout with the documented N16R4
+   environment. A passing precheck authorizes a launch attempt only; it never
+   supplies a metric or scientific result.
+4. Resubmit only after the repaired precheck passes and Slurm resources are
+   available. Retries are bounded and use the same corrected SHA. Account,
+   association, or partition limits produce `BLOCKED_RESOURCE`, not duplicate
+   submissions or code changes.
+5. Keep every failure, cancellation, non-finite loss, missing checkpoint,
+   missing terminal receipt, and wrong-checkout completion in the ledger. A
+   Slurm `COMPLETED` state or an epoch/`Training Over` line without terminal
+   receipts is not a result. No mAP, speedup, cost, or bootstrap claim is
+   allowed without the exact-SHA, clean-tree, terminal checkpoint, evaluator,
+   and aggregation receipts.
+
+The supervisor and 30-minute heartbeat must report unresolved failures and the
+next action; silently dropping, relabeling, or adopting a pre-existing job is
+forbidden.
+
 ## Ordered admission plan
 
 1. **Shared identity gate.** Resolve the data lists, annotation, checkpoint,
