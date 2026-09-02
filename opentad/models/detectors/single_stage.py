@@ -259,7 +259,8 @@ class SingleStageDetector(BaseDetector):
 
     def _call_backbone_forward(self, inputs, masks, metas):
         call_kwargs = {}
-        if self._callable_accepts_param(self.backbone.forward, "irregular_selected_positions"):
+        backbone_forward = self.backbone.forward
+        if self._callable_accepts_param(backbone_forward, "irregular_selected_positions"):
             positions, dense_valid_len = self._stack_irregular_positions_from_metas(
                 metas,
                 device=inputs.device,
@@ -267,7 +268,12 @@ class SingleStageDetector(BaseDetector):
             if positions is not None:
                 call_kwargs["irregular_selected_positions"] = positions
                 call_kwargs["irregular_dense_valid_len"] = dense_valid_len
-        return self.backbone(inputs, masks, **call_kwargs)
+        # Backbones in the repository use both ``forward(x)`` and
+        # ``forward(x, masks, ...)`` contracts.  Select the call shape from
+        # the signature so an internal backbone TypeError is never swallowed.
+        if self._callable_accepts_param(backbone_forward, "masks"):
+            return self.backbone(inputs, masks, **call_kwargs)
+        return self.backbone(inputs, **call_kwargs)
 
     def _call_rpn_head_forward_train(self, feat_list, mask_list, metas, gt_segments, gt_labels, **kwargs):
         call_kwargs = dict(kwargs)
