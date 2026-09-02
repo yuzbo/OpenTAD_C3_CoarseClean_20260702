@@ -86,6 +86,16 @@ ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务�
 - 历史文件名中残留的 `gpu0`/`gpu1` 只代表旧协议，不得直接复用；再次运行前必须改成正常 Slurm 映射并重新门禁。
 - 不在 N16R4 登录节点直接训练；正式训练使用 Slurm 或已授权保护分配。
 
+### 失败实验处置与重提规则
+
+- 任何提交失败、作业非零终态、依赖永不满足、运行时异常、缺失或不一致 receipt，或协议字段、数据人口、source identity、评测配置不匹配，均必须登记为失败事件；不得静默忽略、删除日志、覆盖失败 namespace，或把运行中/部分产物写成结果。
+- 发现失败后，先读取对应 `stdout`、`stderr`、watcher 日志、`sacct/squeue` 终态和已生成 receipt，定位可复现的根因并分类为提交/资源、实现、数据/身份、评测或科学协议问题；在根因未明确前不得盲目重提、resume 或复制旧作业。
+- 修复只允许落在新的、可追踪的 Git commit 和新的实验 namespace；保留原失败作业、root、日志和终态 receipt 作为不可变负证据，不得在原 namespace 原地改写。修复范围必须最小，并通过本地 focused checks、`py_compile` 及对应测试。
+- 每次修复后的正式运行都必须先在同一 clean source、配置、资源语义和数据身份上重新执行对应的 `PRECHECK_ONLY=1`/validator。PRECHECK 必须覆盖真实入口 import/registry、对象构造、strict checkpoint load、数据人口/窗口契约和 Slurm GPU 映射；预检失败不得提交正式训练或评测。
+- 只有 PRECHECK 明确通过且 Slurm 资源/依赖允许时，才可在新 namespace 重提；提交时记录 commit、配置、checkpoint、数据/人口、Job ID、依赖、run root 和恢复规则。`AssocMaxSubmitJobLimit`、GPU 配额或依赖排队属于待处理部署状态，不得伪造为成功，也不得通过重复提交规避限制。
+- 重提后的终态必须再次读取日志和 receipt，确认完整 population、完整训练/评测计划及测量产物；任何失败继续按本节处理。若既有冻结规则、scheduler/scientific ordinal 上限或 Pro 裁决明确禁止 replacement/retry，则不得绕过禁令，但必须保留失败证据并记录客观 blocker，交由授权的下一项科学决策处理。
+- 每轮处置完成后更新 `research-wiki/` 对应 experiment/claim/gap 节点和实验总表，明确区分 `FAILED/REPAIRED/PRECHECK_PASS/SUBMITTED/RUNNING/TERMINAL` 与正式科学结果；不得因资源不足、队列等待或自动化轮询暂时无输出而关闭失败事件。
+
 ### 浏览器配置串行与长时 Pro 存活检查（2026-08-28）
 
 - 同一个 iXBrowser profile 在任一时刻只允许一个浏览器操作。Source 上传、Pro 提交、生成等待和结果回取必须共用一个按稳定 profile ID 命名的独占锁；不同标签页不构成隔离。
