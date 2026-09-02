@@ -145,22 +145,34 @@ class DualPhaseFrameSelector(nn.Module):
 
         if self.force_uniform:
             rows = []
+            scaffold_rows = []
+            burst_rows = []
+            actual_counts = []
             for b in range(B):
                 valid_positions = torch.nonzero(masks[b], as_tuple=False).flatten()
-                if valid_positions.numel() < self.total_budget:
-                    raise ValueError("uniform selector requires at least total_budget valid frames")
-                offsets = torch.floor(
-                    torch.arange(self.total_budget, device=inputs.device, dtype=torch.float32)
-                    * (float(valid_positions.numel()) / float(self.total_budget))
-                ).long()
-                rows.append(valid_positions[offsets])
+                count = min(int(valid_positions.numel()), self.total_budget)
+                padded = torch.full(
+                    (self.total_budget,), -1, device=inputs.device, dtype=torch.long
+                )
+                if count:
+                    offsets = torch.floor(
+                        torch.arange(count, device=inputs.device, dtype=torch.float32)
+                        * (float(valid_positions.numel()) / float(count))
+                    ).long()
+                    padded[:count] = valid_positions[offsets]
+                rows.append(padded)
+                scaffold_rows.append(
+                    torch.arange(self.total_budget, device=inputs.device) < count
+                )
+                burst_rows.append(torch.zeros(self.total_budget, device=inputs.device, dtype=torch.bool))
+                actual_counts.append(count)
             selected = torch.stack(rows, dim=0)
             selection = DualPhaseBudgetSelection(
                 selected_positions=selected,
-                scaffold_mask=torch.ones_like(selected, dtype=torch.bool),
-                burst_mask=torch.zeros_like(selected, dtype=torch.bool),
-                actual_count=torch.full((B,), self.total_budget, device=inputs.device, dtype=torch.long),
-                k_scaffold=self.total_budget,
+                scaffold_mask=torch.stack(scaffold_rows, dim=0),
+                burst_mask=torch.stack(burst_rows, dim=0),
+                actual_count=torch.tensor(actual_counts, device=inputs.device, dtype=torch.long),
+                k_scaffold=min(self.total_budget, max(actual_counts, default=0)),
                 k_burst=0,
                 total_k=self.total_budget,
             )
