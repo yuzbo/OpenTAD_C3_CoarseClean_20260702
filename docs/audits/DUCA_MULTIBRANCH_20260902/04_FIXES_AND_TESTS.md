@@ -16,4 +16,8 @@ Commit: `98d559ee414504caaa480294ce4d066276cdebe6`
 
 ## Exact-head static checks
 
-Across the six detached audit worktrees: `git diff --check`, Python compilation, and shell syntax checks passed for applicable files. Focused tests passed only to the extent stated in `00_IDENTITY.json`; skipped CUDA tests are recorded as blockers, not passes. No remote Slurm task was submitted.
+Across the six detached audit worktrees: `git diff --check`, Python compilation, and shell syntax checks passed for applicable files. Focused tests passed only to the extent stated in `00_IDENTITY.json`; skipped CUDA tests are recorded as blockers, not passes. No formal training Slurm task was submitted.
+
+## H65 signature-routing admission fix
+
+The exact-SHA P0 proof exposed an x-only backbone compatibility failure. Local commit `78cde6aa` changes `SingleStageDetector._call_backbone_forward` to inspect the signature and pass `masks` only when accepted. The patch was applied remotely as `7f90a48d` in a separate worktree. Validation could not be scheduled because Slurm returned `AssocMaxSubmitJobLimit`; this fix remains unverified and does not alter the frozen SHA admission.

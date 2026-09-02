@@ -1,0 +1,12 @@
+{
+  "kind": "focused_cuda_test",
+  "job_id": "1266269",
+  "host": "g0024",
+  "source_sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c",
+  "worktree": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/evidence",
+  "visible_devices": "0",
+  "command": "python -m pytest tests/test_duca_evidence_recovery.py tests/test_duca_evidence_recovery_numerics.py tests/test_duca_successful_update_evidence.py -q",
+  "result": "35 passed in 26.28s",
+  "returncode": 0,
+  "scope": "focused Evidence tests; exact historical C0 tensor-by-tensor parity and downstream release remain open"
+}

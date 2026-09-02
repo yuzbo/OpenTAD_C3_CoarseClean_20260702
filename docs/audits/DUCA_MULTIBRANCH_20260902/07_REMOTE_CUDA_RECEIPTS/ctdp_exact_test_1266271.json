@@ -1,0 +1,12 @@
+{
+  "kind": "focused_cuda_test",
+  "job_id": "1266271",
+  "host": "g0024",
+  "source_sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc",
+  "worktree": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/ctdp",
+  "visible_devices": "0",
+  "command": "python -m pytest tests/test_duca_ctdp_coordinate_contract.py tests/test_duca_ctdp_corrected_geometry.py -q",
+  "result": "7 passed in 19.15s",
+  "returncode": 0,
+  "scope": "focused CT-DP tests; finite-difference, full batch/DDP and complete G/M release gates remain open"
+}

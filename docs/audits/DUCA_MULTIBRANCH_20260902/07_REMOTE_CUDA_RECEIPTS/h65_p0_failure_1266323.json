@@ -1,0 +1,12 @@
+{
+  "kind": "focused_cuda_test",
+  "job_id": "1266323",
+  "host": "g0044",
+  "source_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659",
+  "worktree": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/h65_pro",
+  "command": "python -m pytest tests/test_duca_online_p0_contract.py tests/test_duca_h65_60_curriculum_contract.py tests/test_duca_official_optimizer_coverage.py tests/test_duca_checkpoint_resume_roundtrip.py -q",
+  "result": "14 passed, 1 failed",
+  "failure": "test_official_adatad_one_step_cost_backward_reaches_probe_selector_and_budget_controller: _call_backbone_forward passed masks to a proof backbone whose forward accepts only x",
+  "returncode": 1,
+  "scientific_classification": "P0_ADMISSION_FAILURE"
+}

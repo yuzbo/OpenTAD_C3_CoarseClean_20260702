@@ -1,8 +1,18 @@
 {
-  "status": "NOT_SUBMITTED",
+  "status": "ADMISSION_JOBS_ONLY",
   "generated_at": "2026-09-02",
   "remote_host": "N16R4",
   "jobs": [],
+  "admission_jobs": [
+    {"job_id": "1266242", "kind": "generic_cuda_probe", "host": "g0022", "state": "SUCCEEDED", "training": false},
+    {"job_id": "1266268", "kind": "H65 focused CUDA tests", "host": "g0024", "state": "SUCCEEDED", "training": false, "source_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659"},
+    {"job_id": "1266269", "kind": "Evidence focused CUDA tests", "host": "g0024", "state": "SUCCEEDED", "training": false, "source_sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c"},
+    {"job_id": "1266271", "kind": "CT-DP focused CUDA tests", "host": "g0024", "state": "SUCCEEDED", "training": false, "source_sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc"},
+    {"job_id": "1266317", "kind": "BAFDR/ET focused protocol tests", "host": "g0006", "state": "SUCCEEDED", "training": false, "source_sha": "fdeaeb98,59eab0c6"},
+    {"job_id": "1266267", "kind": "H65 test path typo", "host": "g0024", "state": "FAILED", "training": false, "scientific_result": "INVALID_INVOCATION"},
+    {"job_id": "1266322", "kind": "H65 test path typo", "host": "g0044", "state": "FAILED", "training": false, "scientific_result": "INVALID_INVOCATION"},
+    {"job_id": "1266323", "kind": "H65 P0 admission tests", "host": "g0044", "state": "FAILED", "training": false, "source_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659", "scientific_result": "P0_ADMISSION_FAILURE"}
+  ],
   "submission_attempts": [
     {
       "kind": "local_dag_plan",
@@ -11,11 +21,18 @@
       "returncode": 3,
       "reason": "DUCA_UNIFIED and S60_IMPLEMENTATION are BLOCKED_UNIMPLEMENTED",
       "job_ids": []
+    },
+    {
+      "kind": "h65_fix_retry",
+      "command": "srun --partition=gpu --gres=gpu:1 ... pytest tests/test_duca_official_optimizer_coverage.py -q",
+      "status": "BLOCKED_INFRASTRUCTURE",
+      "reason": "AssocMaxSubmitJobLimit",
+      "job_ids": []
     }
   ],
   "blockers": [
-    "No reachable N16R4 SSH/Slurm endpoint is available in this session.",
-    "No valid remote CUDA receipts exist.",
+    "Formal multi-branch DAG submission has not yet been authorized because branch gates are incomplete.",
+    "Focused CUDA receipts exist, but no formal branch admission receipt has yet passed all required scientific gates.",
     "The local Windows Torch DLL failure cannot be promoted to a CUDA pass."
   ],
   "required_dispatch_behavior": {

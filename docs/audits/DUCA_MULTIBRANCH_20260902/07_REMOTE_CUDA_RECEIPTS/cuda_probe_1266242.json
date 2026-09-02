@@ -1,0 +1,13 @@
+{
+  "kind": "generic_cuda_environment_probe",
+  "job_id": "1266242",
+  "host": "g0022",
+  "source_sha": null,
+  "visible_devices": "0",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "torch": "2.0.1",
+  "cuda_runtime": "11.8",
+  "forward_backward": "PASS",
+  "returncode": 0,
+  "scope": "environment only; not a scientific branch admission"
+}

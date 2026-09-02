@@ -1,0 +1,12 @@
+{
+  "kind": "deployment_precheck",
+  "job_id": null,
+  "host": "ln01",
+  "source_sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c",
+  "branch": "codex/duca-evidence-recovery-numerical-correction-20260902",
+  "command": "PRECHECK_ONLY=1 DUCA_EXPECTED_COMMIT=08d425a259fc468dde7c496e77b4c43e953d8d0c bash scripts/submit_duca_evidence_recovery_single_seed_n16r4.sh 8261",
+  "result": "PASS",
+  "checkpoint": "/data/run01/sczc063/yuzibo/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth",
+  "returncode": 0,
+  "scope": "path/SHA/ledger precheck only; no training submitted"
+}

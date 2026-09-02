@@ -1,0 +1,12 @@
+{
+  "kind": "fix_validation_attempt",
+  "job_id": null,
+  "source_parent_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659",
+  "local_fix_commit": "78cde6aa",
+  "remote_patch_commit": "7f90a48de4c349dd83896c6c8df3264278ff6555",
+  "remote_worktree": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/h65_admission_fix",
+  "attempt": "srun --partition=gpu --gres=gpu:1 ... pytest tests/test_duca_official_optimizer_coverage.py -q",
+  "status": "BLOCKED_INFRASTRUCTURE",
+  "reason": "AssocMaxSubmitJobLimit; no test step was allocated",
+  "scientific_result": "UNVERIFIED"
+}

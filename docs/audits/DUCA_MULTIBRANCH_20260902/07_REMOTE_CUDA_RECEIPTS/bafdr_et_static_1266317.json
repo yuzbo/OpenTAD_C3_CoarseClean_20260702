@@ -1,0 +1,18 @@
+{
+  "kind": "focused_protocol_tests",
+  "job_id": "1266317",
+  "host": "g0006",
+  "visible_devices": "0",
+  "bafdr": {
+    "source_sha": "fdeaeb98340bf7070201a02feb8093f50486aeaa",
+    "command": "python -m pytest tests/test_bafdr_k16_static_protocol.py -q",
+    "result": "11 passed in 6.69s"
+  },
+  "et_trc": {
+    "source_sha": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f",
+    "command": "python -m pytest tests/test_et_trc_pretrain_parity.py tests/test_et_trc_pretrain_mapping.py tests/test_et_trc_launcher_contract.py tests/test_et_trc_dense_parity.py -q",
+    "result": "10 passed in 48.62s"
+  },
+  "returncode": 0,
+  "scope": "static/protocol tests; no teacher/pretrain checkpoint coverage or two-GPU DDP admission"
+}

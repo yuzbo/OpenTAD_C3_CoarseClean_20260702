@@ -89,6 +89,6 @@
   "environment_limits": [
     "The supplied Linux bootstrap could not clone GitHub because github.com DNS/network resolution failed.",
     "The local Windows host cannot load torch (WinError 1114/access-violation), so skipped CUDA tests are not admission passes.",
-    "No N16R4 SSH/Slurm job IDs or remote CUDA receipts are available in this session."
+    "N16R4 SSH/Slurm is now reachable; focused admission jobs are recorded separately. Formal matrix job IDs do not yet exist."
   ]
 }

@@ -1,0 +1,12 @@
+{
+  "kind": "focused_cuda_test",
+  "job_id": "1266268",
+  "host": "g0024",
+  "source_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659",
+  "worktree": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/h65_pro",
+  "visible_devices": "0",
+  "command": "python -m pytest tests/test_h65_pro_fullmatrix.py -q",
+  "result": "15 passed in 32.16s",
+  "returncode": 0,
+  "scope": "focused H65 tests only; strict60/6000, parity, cost and formal matrix gates remain open"
+}
