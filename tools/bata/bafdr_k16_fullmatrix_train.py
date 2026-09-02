@@ -748,6 +748,7 @@ def main() -> None:
             device_ids=[local_rank] if device.type == "cuda" else None,
             output_device=local_rank if device.type == "cuda" else None,
             find_unused_parameters=False,
+            static_graph=bool(getattr(cfg.solver, "static_graph", False)),
         )
 
     use_amp = bool(getattr(cfg.solver, "amp", True)) and device.type == "cuda"

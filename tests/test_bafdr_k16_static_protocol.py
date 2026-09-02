@@ -81,6 +81,7 @@ def test_train_driver_is_fail_closed_and_ddp_aware():
     assert "EXPECTED_WORLD_SIZE = 2" in text
     assert "EXPECTED_GLOBAL_BATCH_SIZE = 2" in text
     assert "validate_loader_batch_contract" in text
+    assert "static_graph=bool(getattr(cfg.solver, \"static_graph\", False))" in text
     assert "--prediction-only" in text
     assert "--open-metrics" in text
     assert 'receipt_name="train_receipt.json"' in text
