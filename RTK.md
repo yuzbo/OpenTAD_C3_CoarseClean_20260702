@@ -52,8 +52,10 @@ ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务�
 - Continuous-RoI S2 v2.2 的四文件协议闭合已完成，但 exact-nine 历史 D160/G96/U128 × seeds 3407/3408/3409 的 9 个 `epoch_59.pth` 与 9 个 sidecar 均缺失。fresh exact-Project Pro 只授权一次有限、只读、全有或全无的 exact-byte provenance census；
 - 该唯一 CPU-only scan 已在 clean/pushed commit `058095cc763756dd941f6f113fca90f4fd54123c` 上完成。冻结来源中 checkpoint/sidecar 匹配均为 `0/9`，18 个 artifact 全部 `MISSING_EXACT_BYTES`，原 campaign root 未修改、未重建、未发布 quarantine；终态为 `STOP_CONTINUOUS_ROI_S2_HISTORICAL_REFERENCE_ROUTE_ARTIFACTS_UNRECOVERABLE`；
 - fresh exact-Project conversation `6a961c52-1b5c-83e9-b04c-6b0bda18892f` 已裁决 `PIVOT / KEEP`，接受上述终态并永久关闭历史 exact-nine route；该结论仍只是协议/留存结论，不是 Continuous-RoI、crop sufficiency、准确率、效率或家族级科学负结果；
-- 当前唯一任务为 `ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FRESH-3X3-MATCHED-TRAIN-REFERENCE-AND-COST-FALSIFIER-v001`：从 `10aed28659a08fa703def278fc0f5f1422dcad89` 建立全新身份的 D160/G96/U128 × seeds 4407/4408/4409 完整九单元矩阵，每单元必须完成 60 epochs、80 successful updates/epoch、4,800 successful updates并保留 final EMA/sidecar/config/receipt；official test 保持关闭；
-- 九单元全部 strict-finalize 后，才允许在冻结 fit160/gate40、129 ordered windows、17 Sobol candidates、48 tubelets、shared physical centers、raw no-GT seal 与独立 privileged join 协议下做 reference。只有有效 `S_CR=true && H=true` 才允许一次同物理 GPU 的完整 decode-to-Soft-NMS 成本作业；最终继续门为 `S_CR && H && F`。一个 formal campaign、最多 15 次 scheduler submission、零 replacement、零 second campaign；任何完整终态或客观 blocker 都必须 fresh Pro；
+- 2026-09-01 用户明确要求所有后续正式比较必须使用完整官方训练 population、完整训练计划、完整官方验证/评测 population，以及 Pro 预注册的一次性无泄漏完整 official test；部分训练、development subset、`fit160/gate40`、`129 ordered windows` 或其他抽样 population 不得充当正式模型结果；
+- fresh exact-Project conversation `6a9641aa-a8f8-83ea-a5e7-b64da4daffc2` 已裁决 `REVISE / KEEP`，把唯一主目标冻结为完整 population 上的 `检测性能↔实际执行推理计算量` 二维 Pareto；latency、throughput、peak memory 与 energy 只披露且不得参与 admission，不得建立加权综合分；
+- 旧 `fit160/gate40`、129-window、4,800-update 和三目标联合门的 S2-v3 计划已被废止且没有模型结果。唯一任务是 `ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FULL200-COMPUTE-PARETO-3X3-v001`：D160/G96/U128-A0 × seeds 4407/4408/4409，完整 200-video training、60 epochs/6,000 updates per cell、完整 211-video/792-window 一次性无泄漏评测；完整模型 `C_exec(U128-A0)/C_exec(D160) <= 0.90` 是唯一资源硬门；
+- 任一完整终态或客观 blocker 后立即停止新增实验并返回新的 exact-Project Pro；不得自动引入 S2-v4、learned selector、额外 seed、第二数据集或隐式 latency/memory veto；
 - ChronoTransport 与 PhysTime 是独立并行假设，不得与 BPNS-R1、Continuous-RoI 历史 reference 或 DUCA 证据混用。
 
 固定 384/768 或 50% 输入只是归因、安全门和失败诊断锚点，不是最终动态采集目标。
@@ -84,6 +86,7 @@ ZoomToken 冻结任务连续执行规则：用户已授权的冻结科学任务�
 - ledger 若用于 deployable selection，必须记录 no-GT/no-teacher/no-oracle/no-raw-prediction/no-checkpoint flags。
 - 可比较的正式训练必须覆盖冻结协议指定的完整官方训练 population、完整 epoch/update 计划和全部样本；子集、截断 epoch、缩短 loader 或 smoke/precheck 只能作为工程证据，不能进入模型准确率、泛化或论文主张。
 - 可比较的正式评测必须让所有 arm 覆盖同一个完整官方评测 population，并匹配 annotation、媒体 inventory、loader population/order、evaluator、postprocess 与 NMS。若论文结论要求 official test，则必须在独立冻结且无泄漏的 test-opening 协议下完整运行，不能用 validation 子集或 development replay 冒充。
+- 当前 S2-v3 的旧 `160/40` development split 与 `129 ordered windows` 协议已被用户的完整数据硬约束暂停。它们仍作为历史 Pro 决策保存，但不能授权任何新的 formal campaign；fresh Pro 必须明确 THUMOS14 完整 train/validation/test population、baseline/candidate matchedness、无泄漏模型选择和一次性 test-opening 后才能解除暂停。
 - 训练或评测的完整 population 不能由终态 receipt 证明时，分类为协议 blocker，不从子集外推科学结论。当前四臂只读成本回放不是训练实验：它固定使用完整 THUMOS14 validation population（211 videos / 792 ordered windows）做 matched full-stack measurement，official test 保持未打开，因此只能形成该 population 上的成本证据，不能升级为 official-test 准确率证据。
 - GPU 任务必须使用 Slurm 正常分配的设备；不得固定物理索引或覆盖 Slurm 的 `CUDA_VISIBLE_DEVICES`。单卡任务在进程内使用 `cuda:0`。
 - 历史文件名中残留的 `gpu0`/`gpu1` 只代表旧协议，不得直接复用；再次运行前必须改成正常 Slurm 映射并重新门禁。

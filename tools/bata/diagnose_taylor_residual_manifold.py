@@ -19,6 +19,7 @@ if str(root_dir) not in sys.path:
 
 from opentad.datasets import build_dataloader, build_dataset
 from opentad.models import build_detector
+from opentad.models.backbones.et_trc_videomae import ETTRCVisionTransformerAdapter  # noqa: F401
 from opentad.utils import setup_logger
 
 

@@ -1,96 +1,93 @@
-# ZoomToken Continuous-RoI S2-v3 fresh 3×3 Builder plan
+# ZoomToken Continuous-RoI S2-v3 full-data compute-Pareto Builder plan
 
-## Frozen assignment
+## Authoritative assignment
 
-- Task: `ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FRESH-3X3-MATCHED-TRAIN-REFERENCE-AND-COST-FALSIFIER-v001`
-- Pro decision: `PIVOT`; role contract: `KEEP`
-- Exact Project conversation: `6a961c52-1b5c-83e9-b04c-6b0bda18892f`
-- Execution base: `10aed28659a08fa703def278fc0f5f1422dcad89`
-- Branch: `codex/zoomtoken-continuous-roi-s2-v3-fresh-3x3-v001`
-- Scientific identity: a new D160-V3/G96-V3/U128-V3 × seeds 4407/4408/4409 campaign. It is not recovery, continuation or reconstruction of the permanently closed historical exact-nine route.
+- Pro request: `PRO_CONTINUOUS_ROI_S2_V3_FULL_DATA_SINGLE_AXIS_OBJECTIVE_ADJUDICATION-v002`
+- Exact Project conversation: `6a9641aa-a8f8-83ea-a5e7-b64da4daffc2`
+- Decision: `REVISE`; role contract: `KEEP`
+- Task: `ZOOMTOKEN-CONTINUOUS-ROI-S2-V3-FULL200-COMPUTE-PARETO-3X3-v001`
+- Base: `10aed28659a08fa703def278fc0f5f1422dcad89`
+- Branch: `codex/zoomtoken-continuous-roi-s2-v3-full200-compute-v001`
+- Primary plane: detection performance versus executed inference computation.
+- Latency, throughput, peak memory and energy are disclosure-only diagnostics and have no admission threshold.
 
-## Minimal implementation
+The earlier `fit160/gate40`, 129-window, 4,800-update and joint latency/resource-gate plan is superseded. It produced no candidate commit, formal job or scientific result and must not be revived.
 
-The existing D160/G96/U128 transforms, model, VideoMAE, Adapter, ActionFormer, detector, evaluator, postprocess and NMS remain read-only. The nine new source configs inherit the three frozen family configs and change only the fresh task identity and seed-bound work namespace.
+## Frozen scientific comparison
 
-`tools/bata/run_continuous_roi_s2_v3_fresh_3x3.py` is the task-local control plane. It will:
+The matrix is `D160`, `G96`, and `U128-A0` at paired seeds `4407`, `4408`, and `4409`.
 
-1. validate the new protocol self-hash, exact Git identity, complete 160/40 development split, official-test seal and immutable fresh namespace;
-2. bind the existing successful-update-aware training machinery to the v3 seed set and the nine new source configs inside the same training process, without changing existing training or model source;
-3. submit or execute exactly one named cell at a time, require 60 epochs × 80 successful updates = 4,800 updates, and retain only the epoch-59 final EMA checkpoint plus sidecar, rendered config and completion receipt;
-4. strict-finalize all nine cells before any reference work and publish one immutable training-matrix completion receipt;
-5. enforce the single-campaign submission budget and refuse retry, resume, replacement, second seed set or second campaign.
+- `D160`: complete source frame letterboxed to `160×160`.
+- `G96`: complete source frame letterboxed to `96×96`.
+- `U128-A0`: shared-weight `Global96` plus a source-native fixed-center `128×128` crop. For canonical `180×320`, the crop is `[96,26,224,154]`.
+- U128-A0 has no learned selector, annotation/metric access, trajectory fitting, candidate search or second backbone copy.
+- Builder inspection of base `10aed286` found that the historical Continuous-RoI learned fusion adds 609,449 parameters and is therefore ineligible. The frozen A0 arm instead reuses `NativeCropBackboneWrapper` with its parameter-free `fixed_mean` fusion and one shared VideoMAE object. Static config-surface validation confirms that D160, G96 and U128-A0 retain the same parameter-bearing model and optimizer configuration; N16R4 must still confirm the runtime named-parameter identity/count before PRE_RUN.
 
-The task-local binding bridge must be self-auditing: the rendered config and checkpoint metadata carry both the inherited Continuous-RoI training-contract identity and the fresh v3 protocol/task/cell identity. A new process must reconstruct the same binding byte-for-byte before accepting a checkpoint. No generic unbound `tools/train.py` execution is permitted.
+## Complete-data and schedule contract
 
-## Reference and claim closure
+- Training: every annotation identity in `subset_name="training"`, all 200 videos exactly once per epoch, no drop or duplicate.
+- Evaluation: all 211 validation videos and the complete ordered 792-window loader with `window_size=768` and `overlap_ratio=0.5`.
+- The repository's val/test loaders map to the same physical validation population, so there is one campaign-level metric-bearing opening, not a fabricated independent third split.
+- Training uses a training-only annotation. Held-out inference uses a label-free 211/792 manifest. The final evaluator is the only GT consumer and starts only after 9/9 final checkpoints and 9/9 predictions are sealed.
+- Each cell uses 2 GPUs, global/local batch `2/1`, 60 epochs, 100 successful updates per epoch, and 6,000 successful updates total.
+- The only primary checkpoint is `epoch_59 state_dict_ema` after successful update 6,000. There is no best checkpoint, best seed, early stopping or metric-bearing intermediate validation.
 
-`tools/bata/evaluate_continuous_roi_s2_v3_reference.py` inherits the v2.2 known-answer semantics:
+Before candidate commit, Builder generates immutable SHA256 manifests for the canonical annotation, class map, and all 411 realpath media files. Formal start fails closed on any later mismatch.
 
-- Torch `2.0.1` Sobol, dimension 48, scramble enabled, seed `20260720`, one anchor plus sixteen candidates;
-- twelve knots interpolated to 48 tubelets, common physical centers for fixed-size and variable-size arms;
-- complete frozen fit/gate 160/40 development split and sanitized 129 ordered reference windows;
-- raw execution with no annotation, GT, teacher, preferred ID or raw-prediction shortcut;
-- canonical raw seal before a separate privileged CPU join;
-- paired two-level bootstrap with 20,000 replicates and unchanged `S_CR`, `H`, `F`, boundary, short-action and missing-evidence rules.
+## Computation contract
 
-Three raw-reference submissions correspond to the three fresh seeds. One privileged join/reference finalizer may run only after all three raw receipts and all nine training completions validate. Partial cells, partial windows and intermediate checkpoints are not interpreted.
+`C_exec` begins at the first arm-dependent decoded-RGB crop/resize/normalization operation and ends at pre-NMS raw detections. It includes view construction, patch embedding, every VideoMAE block, Adapter, fusion, detector and candidate-specific control work at actual runtime tensor shapes over the complete 792-window population. FMA counts as 2 FLOPs. Unsupported operators require a frozen explicit cost rule or conservative upper bound; incomplete coverage is a protocol blocker.
 
-## Conditional full-stack cost
+The sole resource gate is aggregate `C_exec(U128-A0) / C_exec(D160) <= 0.90` across all three seeds and all 792 windows. Token count and attention-only FLOPs are not substitutes.
 
-`tools/bata/profile_continuous_roi_s2_v3_cost.py` is admitted only after a valid reference finalizer returns `S_CR=true` and `H=true`. The single cost submission uses all three final EMA seeds on the same physical GPU and the same complete frozen evaluation population for every arm. It measures:
+## Minimal implementation surface
 
-`decode → crop/resize → H2D → full model/detector → postprocess → full-video Soft-NMS`
+Only these task surfaces are allowed:
 
-It reports p50, p95, throughput, peak allocated/reserved memory and gross GPU energy. Exhaustive 17-candidate reference-search cost is separately labeled and cannot be substituted for deployable-policy cost. `F=false` stops efficiency continuation even if crop science survives.
+1. nine configs `configs/adatad/thumos/continuous_roi_s2_v3_{d160,g96,u128_a0}_seed{4407,4408,4409}.py`;
+2. `docs/methods/continuous_roi_s2_v3_full200_compute_protocol.json`;
+3. task-local manifest, training-receipt, label-free inference, one-shot evaluator and compute-profiler tools under `tools/bata/`;
+4. `scripts/run_zoomtoken_continuous_roi_s2_v3_full200_compute_n16r4.sh`;
+5. focused tests;
+6. `opentad/datasets/transforms/native_crop.py` or `opentad/models/backbones/vit_adapter.py` only if the existing A0/U128 path cannot satisfy the frozen semantics.
 
-## Allowed candidate surface
+Do not merge the uncommitted WIP wholesale. Reapply only necessary files to a clean descendant of the exact base. The official evaluator, Soft-NMS, detector loss, class map, annotations and pretrained checkpoint remain unchanged.
 
-Only the following paths may be added on the code branch:
+## Builder verification
 
-1. `docs/methods/continuous_roi_s2_v3_fresh_3x3_protocol.json`
-2. nine files under `configs/adatad/thumos/continuous_roi_s2_v3_fresh/`
-3. `tools/bata/run_continuous_roi_s2_v3_fresh_3x3.py`
-4. `tools/bata/evaluate_continuous_roi_s2_v3_reference.py`
-5. `tools/bata/profile_continuous_roi_s2_v3_cost.py`
-6. `scripts/run_continuous_roi_s2_v3_fresh_3x3_n16r4.sh`
-7. `tests/test_continuous_roi_s2_v3_fresh_3x3.py`
+Focused tests must establish:
 
-No existing model, dataset, transform, VideoMAE, Adapter, ActionFormer, evaluator, NMS, training module or old Continuous-RoI artifact is edited or reused as a fresh result.
+- 200 identities/epoch, 100 successful updates/epoch and 6,000/cell;
+- the exact 211-video/792-window ordered population;
+- identical temporal windows, evaluator, postprocess and NMS across arms;
+- absence of `fit160`, `gate40`, 129-window and sampled-loader formal routes;
+- fixed A0 crop, label-free construction, fixed global/local order and actual shared backbone parameters;
+- D160/G96 closed-path parity with the base;
+- complete recovery state and final-EMA-only selection;
+- full operator coverage and actual-shape logging for `C_exec`;
+- a physical one-shot barrier that refuses to evaluate before 9/9 predictions are sealed;
+- physical separation of diagnostic latency/memory/energy fields from admission state;
+- no live, partial or intermediate performance output.
 
-## Fail-closed verification
+## Review, resources and terminal states
 
-Focused tests and the result-blind pre-run review must prove:
-
-- exact base/candidate identity and clean checkout;
-- exactly the nine frozen family/seed cells and no other cell;
-- full official training population prescribed by the frozen development manifest, 60 complete epochs, 80 successful updates per epoch and 4,800 updates per cell;
-- epoch-59 `state_dict_ema`, optimizer/scheduler closure, sidecar/config/completion identity and strict real-model load;
-- complete matched reference population/order and raw/privileged no-leak boundary;
-- no official-test opening and no validation/test GT in raw selection;
-- atomic receipts and the exact 9+1+3+1+conditional-1 submission budget;
-- objective failure produces a terminal blocker without replacement or scientific extrapolation.
-
-Formal training or evaluation on a subset, short run, truncated loader, smoke population or intermediate checkpoint is engineering-only and cannot satisfy this task.
-
-## Decision and waiting rules
-
-- Acceptance: `S_CR=true && H=true && F=true`, all three seeds complete and every identity/no-leak/population/evidence gate passes.
-- `S_CR=false`: stop this exact S2-v3 representation; no S3.
-- `H=false`: stop variable-size/S3.
-- `F=false`: preserve valid crop science, stop efficiency continuation.
-- Incomplete evidence: `NO_DECISION_INVALID_EVIDENCE`.
-- Formal campaign limit: 9 training + 1 training finalizer + 3 raw reference + 1 privileged join/reference finalizer + at most 1 conditional cost = at most 15 submissions; replacement `0`, second campaign `false`.
-- Once a long job is accepted and no immediate step remains, use the single terminal waiter or a real silent 600-second terminal sleep. During the timer window there is no output, status query, file/browser action or second waiter. Each wake performs one authoritative terminal check only.
+- Critic reviews only exact SHA, mechanism fidelity, parameter fairness, complete data/schedule, leakage barriers, final checkpoint, compute coverage, evaluator identity, preregistered statistics and absence of hidden system gates or wholesale WIP.
+- Result-blind Evaluator checks the clean SHA, nine configs, data manifests, pretrained weight, job graph/resources, one-shot barrier, compute ledger, empty formal namespace and scheduler test-only admission.
+- After both pass, submit one 9-leaf training graph, with at most 3 cells/6 GPUs concurrently, followed by one terminal prediction/evaluation/diagnostic graph on 1 GPU.
+- U128-A0 passes only if all preregistered performance/stability gates and the computation gate pass and G96 does not strictly dominate it.
+- If G96 strictly dominates an otherwise passing U128-A0, return `REVISE_TO_G96_CONTROL_ONLY`.
+- Any U128-A0 hard gate failure returns `STOP_S2_V3_A0_EXACT_ROUTE`.
+- Any incomplete population/schedule, leakage, checkpoint selection, second GT opening or incomplete compute ledger returns `NO_SCIENTIFIC_DECISION_OBJECTIVE_BLOCKER` without partial interpretation.
+- Any complete terminal or objective blocker immediately freezes new experiments and triggers one fresh exact-Project Pro review.
 
 ## Beijing deadlines
 
-- Builder plan and role-rule sync: `2026-09-01 12:00`
-- Clean candidate: `2026-09-02 06:00`
-- Critic: `2026-09-02 09:00`
-- Evaluator: `2026-09-02 12:00`
-- Formal action: `2026-09-02 14:00`
-- Terminal evidence: within four hours of the last authorized terminal and no later than `2026-09-06 12:00`
-- Mandatory fresh post-result Pro: `2026-09-06 16:00`
+- Builder plan and role-rule sync: `2026-09-01 14:00`
+- Clean candidate: `2026-09-02 20:00`
+- Critic: `2026-09-03 08:00`
+- Evaluator: `2026-09-03 14:00`
+- Formal start after admission: `2026-09-03 18:00`
+- Terminal evidence or objective queue blocker: `2026-09-08 23:00`
+- Scientific return: `2026-09-09 02:00`
 
-The role contract is `KEEP`; no role-file revision is made.
+The role contract is `KEEP`; only this task-level single-axis rule is synchronized.

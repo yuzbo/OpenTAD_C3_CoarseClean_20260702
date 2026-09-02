@@ -17,6 +17,7 @@ CONFIG="${1:-configs/adatad/thumos/et_trc_videomae_s_768x1_160_adapter_seed4407.
 [[ -f "${CONFIG}" ]] || { echo "missing config: ${CONFIG}" >&2; exit 1; }
 
 echo "[ET-TRC DIAGNOSTIC] fixed-stride Taylor carryover diagnostic; repo=${ROOT} commit=$(git rev-parse --short HEAD)"
+mkdir -p diagnostics
 if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
   "${PYTHON}" -m py_compile opentad/models/backbones/et_trc_videomae.py opentad/models/backbones/backbone_wrapper.py
   exit 0

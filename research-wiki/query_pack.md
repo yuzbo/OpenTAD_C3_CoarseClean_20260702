@@ -1,6 +1,6 @@
 ---
 type: query_pack
-updated: 2026-08-31
+updated: 2026-09-01
 max_chars: 8000
 ---
 
@@ -1653,6 +1653,22 @@ max_chars: 8000
   opening. The sole resource gate is aggregate complete-operator
   `C_exec(U128-A0)/C_exec(D160) <= 0.90`; incomplete compute coverage is an objective
   blocker, not partial evidence.
+- **ET-TRC/D2S/PA-TAD local audit intake (2026-09-01).** A local code review of branch
+  `codex/zoomtoken-et-trc-taylor-manifold-v001` found the remote branch head at
+  `536c1aa530adc75e02dcd6dd5c4bc58919a820fa`; the user-cited `95ea06f8` is its parent.
+  The implementation contains a real selected-query/full-KV attention path and a
+  bias-free linear `TemporalLowRankJVP`, and the `jacobian_approx` optimizer custom group
+  can match the new module names. It is not yet a complete or claim-ready method:
+  `TaylorAttention` uses split `q_proj/k_proj/v_proj` with trainable K bias rather than
+  the standard VideoMAE `qkv` plus Q/V-only bias layout, so `enable_taylor=False` is not
+  an unconditional pretrained/checkpoint or bitwise numerical-equivalence guarantee;
+  `PyramidAwareAsymmetricProj` applies burst gating before the shared pyramid and never
+  uses `asymmetric_split_level`, so the L0/L1-only and high-level macro-split narrative is
+  not implemented; the generic `eval_one_epoch`/`val_one_epoch` functions still lack
+  exception-safe EMA-weight and module-mode restoration; and the Taylor diagnostic omits
+  Adapter/drop-path semantics while allowing random JVP fallback. This is implementation
+  review evidence only, not Pro authorization, mAP evidence, cost evidence, or a successor
+  to the frozen S2-v3 full-data task.
 
 ## Pointers
 
