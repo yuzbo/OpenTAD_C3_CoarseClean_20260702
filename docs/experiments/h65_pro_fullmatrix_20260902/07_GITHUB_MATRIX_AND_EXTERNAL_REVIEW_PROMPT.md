@@ -7,9 +7,10 @@ Created: 2026-09-02
 - Repository: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702
 - Review branch: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/h65-pro-fullmatrix-strict60-20260902
 - Post-review fix commit: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/b419f2b026a44dd71230768531d35981f79dd456
+- Remote verification commit: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/5db1f32dd0ba5a0eaf2eac719deb5e481f25892c
 - Pull request creation URL: https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/pull/new/codex/h65-pro-fullmatrix-strict60-20260902
 
-The review branch contains this documentation file after the follow-up documentation commit. The post-review fix commit above is the exact local commit that passed structural checks; remote Torch checks and full-matrix `PRECHECK_ONLY=1` must be rerun after push.
+The review branch contains this documentation file after the follow-up documentation commit. The post-review fix commit above contains the code changes; the remote verification commit above passed N16R4 Torch checks and full-matrix `PRECHECK_ONLY=1`.
 
 ## Source Files to Review
 
@@ -87,6 +88,9 @@ https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/codex/h65-pro-full
 
 Post-review fix commit:
 https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/b419f2b026a44dd71230768531d35981f79dd456
+
+Remote verification commit:
+https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/5db1f32dd0ba5a0eaf2eac719deb5e481f25892c
 
 Required reading order:
 1. Read docs/experiments/h65_pro_fullmatrix_20260902/03_EXPERIMENT_MATRIX.csv line by line.
