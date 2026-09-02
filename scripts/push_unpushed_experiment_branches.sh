@@ -34,6 +34,7 @@ for branch in "${BRANCHES[@]}"; do
   if ! git show-ref --verify --quiet "refs/remotes/${REMOTE}/${branch}"; then
     echo "[PUSH] Creating ${REMOTE}/${branch}"
     git push --set-upstream "${REMOTE}" "${branch}:${branch}"
+    echo "[URL] https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/${branch}"
     continue
   fi
 
@@ -47,6 +48,7 @@ for branch in "${BRANCHES[@]}"; do
   else
     echo "[OK] ${branch} already synchronized"
   fi
+  echo "[URL] https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/tree/${branch}"
 done
 
 echo "[DONE] Verified experiment branches are synchronized with ${REMOTE}."
