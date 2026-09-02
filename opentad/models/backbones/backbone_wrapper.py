@@ -25,6 +25,7 @@ class BackboneWrapper(nn.Module):
         # custom settings: pretrained checkpoint, post_processing_pipeline, norm_eval, freeze_backbone
         # 1. load the pretrained model
         pretrain_path = getattr(custom_cfg, "pretrain", None)
+        self.pretrain_report = None
         if pretrain_path is not None:
             if not isinstance(pretrain_path, str) or not os.path.exists(pretrain_path):
                 if bool(getattr(custom_cfg, "pretrain_required", False)):
@@ -33,7 +34,8 @@ class BackboneWrapper(nn.Module):
                     )
                 print(f"Warning: pretrained checkpoint not found, using random initialization: {pretrain_path}")
             else:
-                load_checkpoint(self.model, pretrain_path, map_location="cpu")
+                checkpoint = load_checkpoint(self.model, pretrain_path, map_location="cpu")
+                self._record_taylor_pretrain_report(checkpoint, pretrain_path)
         elif bool(getattr(custom_cfg, "pretrain_required", False)):
             raise FileNotFoundError("pretrain_required=True but custom.pretrain is missing")
         else:
@@ -133,6 +135,78 @@ class BackboneWrapper(nn.Module):
         # make sure detector has the float32 input
         features = features.to(torch.float32)
         return features
+
+    def _record_taylor_pretrain_report(self, checkpoint, pretrain_path):
+        """Record exact load coverage for ET-TRC's split attention modules."""
+        taylor_modules = [
+            module
+            for module in self.model.modules()
+            if hasattr(module, "pretrained_qkv_remapped")
+        ]
+        if not taylor_modules:
+            return
+
+        source = checkpoint.get("state_dict", checkpoint)
+        target = self.model.state_dict()
+        mapped = {}
+        consumed = set()
+        embed_dims = {
+            name: int(module.embed_dims)
+            for name, module in self.model.named_modules()
+            if hasattr(module, "pretrained_qkv_remapped")
+        }
+        for key, value in source.items():
+            if key.endswith(".attn.qkv.weight"):
+                prefix = key[: -len("qkv.weight")]
+                dims = embed_dims.get(prefix[:-1])
+                if dims is not None and getattr(value, "shape", None) is not None:
+                    if int(value.shape[0]) == 3 * dims:
+                        mapped[prefix + "q_proj.weight"] = value[:dims]
+                        mapped[prefix + "k_proj.weight"] = value[dims : 2 * dims]
+                        mapped[prefix + "v_proj.weight"] = value[2 * dims :]
+                        consumed.add(key)
+            elif key.endswith(".attn.q_bias") or key.endswith(".attn.v_bias"):
+                suffix = "q_bias" if key.endswith("q_bias") else "v_bias"
+                prefix = key[: -len(suffix)]
+                dims = embed_dims.get(prefix[:-1])
+                if dims is not None and tuple(getattr(value, "shape", ())) == (dims,):
+                    if key.endswith("q_bias"):
+                        mapped[prefix + "q_proj.bias"] = value
+                        mapped[prefix + "k_proj.bias"] = torch.zeros_like(value)
+                    else:
+                        mapped[prefix + "v_proj.bias"] = value
+                    consumed.add(key)
+            else:
+                mapped[key] = value
+                consumed.add(key)
+
+        loaded = sum(
+            1
+            for key, value in target.items()
+            if key in mapped and tuple(getattr(mapped[key], "shape", ())) == tuple(value.shape)
+        )
+        missing = sum(
+            1
+            for key, value in target.items()
+            if key not in mapped or tuple(getattr(mapped[key], "shape", ())) != tuple(value.shape)
+        )
+        unexpected = sum(1 for key in source if key not in consumed)
+        frozen = sum(1 for parameter in self.model.parameters() if not parameter.requires_grad)
+        trainable = sum(1 for parameter in self.model.parameters() if parameter.requires_grad)
+        self.pretrain_report = {
+            "path": os.path.abspath(os.path.expanduser(str(pretrain_path))),
+            "loaded": int(loaded),
+            "remapped": int(sum(bool(module.pretrained_qkv_remapped) for module in taylor_modules)),
+            "missing": int(missing),
+            "unexpected": int(unexpected),
+            "new_random": int(missing),
+            "frozen": int(frozen),
+            "trainable": int(trainable),
+        }
+        print(
+            "[ET-TRC PRETRAIN] "
+            + " ".join(f"{key}={value}" for key, value in self.pretrain_report.items())
+        )
 
     def tensor_to_list(self, tensor):
         return [t for t in tensor]
