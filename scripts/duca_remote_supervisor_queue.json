@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "description": "Entries are enabled only after the dispatcher reports READY_FOR_REMOTE_GATES. Every launcher must still enforce its own exact SHA and clean-tree contract.",
+    "max_attempts_default": 3,
+    "retryable_failures": ["OUT_OF_MEMORY", "NODE_FAIL", "PREEMPTED", "TIMEOUT"],
+    "non_retryable_action": "NEEDS_REPAIR"
+  },
+  "entries": []
+}
