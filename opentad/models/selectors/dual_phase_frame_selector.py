@@ -31,12 +31,14 @@ class DualPhaseFrameSelector(nn.Module):
         scaffold_budget: int = 128,
         burst_budget: int = 256,
         burst_radius: int = 2,
+        force_uniform: bool = False,
     ):
         super().__init__()
         self.total_budget = int(total_budget)
         self.scaffold_budget = int(scaffold_budget)
         self.burst_budget = int(burst_budget)
         self.burst_radius = int(burst_radius)
+        self.force_uniform = bool(force_uniform)
         assert self.total_budget % 2 == 0, "total_budget must be even for tubelet pairing"
 
     def _compute_priority(self, inputs_5d: torch.Tensor, masks: torch.Tensor) -> torch.Tensor:
@@ -141,14 +143,36 @@ class DualPhaseFrameSelector(nn.Module):
 
         priority = self._compute_priority(inputs_5d, masks)
 
-        selection: DualPhaseBudgetSelection = dual_phase_orthogonal_budget_positions(
-            h65_priority=priority,
-            valid_mask=masks,
-            total_budget=self.total_budget,
-            scaffold_budget=self.scaffold_budget,
-            burst_budget=self.burst_budget,
-            burst_radius=self.burst_radius,
-        )
+        if self.force_uniform:
+            rows = []
+            for b in range(B):
+                valid_positions = torch.nonzero(masks[b], as_tuple=False).flatten()
+                if valid_positions.numel() < self.total_budget:
+                    raise ValueError("uniform selector requires at least total_budget valid frames")
+                offsets = torch.floor(
+                    torch.arange(self.total_budget, device=inputs.device, dtype=torch.float32)
+                    * (float(valid_positions.numel()) / float(self.total_budget))
+                ).long()
+                rows.append(valid_positions[offsets])
+            selected = torch.stack(rows, dim=0)
+            selection = DualPhaseBudgetSelection(
+                selected_positions=selected,
+                scaffold_mask=torch.ones_like(selected, dtype=torch.bool),
+                burst_mask=torch.zeros_like(selected, dtype=torch.bool),
+                actual_count=torch.full((B,), self.total_budget, device=inputs.device, dtype=torch.long),
+                k_scaffold=self.total_budget,
+                k_burst=0,
+                total_k=self.total_budget,
+            )
+        else:
+            selection = dual_phase_orthogonal_budget_positions(
+                h65_priority=priority,
+                valid_mask=masks,
+                total_budget=self.total_budget,
+                scaffold_budget=self.scaffold_budget,
+                burst_budget=self.burst_budget,
+                burst_radius=self.burst_radius,
+            )
 
         selected_positions = selection.selected_positions  # [B, K]
         selected_masks = self._gather_masks(masks, selected_positions)
