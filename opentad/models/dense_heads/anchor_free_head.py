@@ -27,8 +27,11 @@ class AnchorFreeHead(nn.Module):
         filter_similar_gt=True,
         assignment_debug=None,
         physical_grid_actionformer=None,
+        conv_cfg=None,
+        **kwargs,
     ):
         super(AnchorFreeHead, self).__init__()
+        self.conv_cfg = conv_cfg
 
         self.num_classes = num_classes
         self.in_channels = in_channels
