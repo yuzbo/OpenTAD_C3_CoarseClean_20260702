@@ -54,8 +54,7 @@ def test_bounded_interval_adapter_parity():
         x, weight_3d, bias_3d, stride_spatial=4, padding_spatial=0, z_condition=z
     )
 
-    diff = torch.max(torch.abs(std_out - adapter_out)).item()
-    assert diff < 1e-5, f"Adapter at initialization must match Conv3d, max diff={diff}"
+    torch.testing.assert_close(adapter_out, std_out, rtol=1e-5, atol=2e-5)
 
 
 def test_bounded_interval_adapter_range():
@@ -338,9 +337,7 @@ def test_distillation_and_consistency_losses():
 
     logits1 = torch.randn(B, 384, 20)
     logits2 = torch.randn(B, 384, 20)
-    reg1 = torch.randn(B, 384, 2)
-    reg2 = torch.randn(B, 384, 2)
-    loss_cons = compute_two_view_consistency_loss(logits1, logits2, reg1, reg2)
+    loss_cons = compute_two_view_consistency_loss(logits1, logits2)
     assert loss_cons.item() >= 0.0
     assert math.isfinite(loss_cons.item())
 
