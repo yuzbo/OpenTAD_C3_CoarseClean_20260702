@@ -533,6 +533,11 @@ class DucaOnlineFrameSelector(nn.Module):
         density_temperature: float = 0.7,
         density_coverage_floor: float = 0.05,
         density_smoothing_kernel: int = 5,
+        semantic_phase_sigma: float = 2.0,
+        semantic_phase_scaffold_budget: int = 128,
+        semantic_phase_onset_budget: int = 64,
+        semantic_phase_offset_budget: int = 64,
+        semantic_phase_core_budget: int = 128,
         sampling_rate_utility_components: str = "none",
         inference_policy_alpha: float = 1.0,
         training_uniform_companion_fraction: float = 0.0,
@@ -584,6 +589,7 @@ class DucaOnlineFrameSelector(nn.Module):
         detector_contribution_distillation_weight: float = 0.0,
         detector_contribution_components: str = "both",
         detector_contribution_temperature: float = 0.7,
+        detector_contribution_mode: str = "abs_grad_times_input",
         counterfactual_utility_distillation_weight: float = 0.0,
         counterfactual_utility_temperature: float = 1.0,
         counterfactual_max_candidates: int = 4,
@@ -647,6 +653,11 @@ class DucaOnlineFrameSelector(nn.Module):
         self.density_temperature = float(density_temperature)
         self.density_coverage_floor = float(density_coverage_floor)
         self.density_smoothing_kernel = int(density_smoothing_kernel)
+        self.semantic_phase_sigma = float(semantic_phase_sigma)
+        self.semantic_phase_scaffold_budget = int(semantic_phase_scaffold_budget)
+        self.semantic_phase_onset_budget = int(semantic_phase_onset_budget)
+        self.semantic_phase_offset_budget = int(semantic_phase_offset_budget)
+        self.semantic_phase_core_budget = int(semantic_phase_core_budget)
         self.sampling_rate_utility_components = str(
             sampling_rate_utility_components
         ).lower()
@@ -672,9 +683,17 @@ class DucaOnlineFrameSelector(nn.Module):
         self.detector_contribution_temperature = float(
             detector_contribution_temperature
         )
+        self.detector_contribution_mode = str(detector_contribution_mode)
         if self.detector_contribution_components not in {"none", "cls", "reg", "both"}:
             raise ValueError(
                 "detector_contribution_components must be none, cls, reg, or both"
+            )
+        if self.detector_contribution_mode not in {
+            "abs_grad_times_input",
+            "signed_removal_utility",
+        }:
+            raise ValueError(
+                "detector_contribution_mode must be abs_grad_times_input or signed_removal_utility"
             )
         if (
             not math.isfinite(self.detector_contribution_distillation_weight)
@@ -906,6 +925,7 @@ class DucaOnlineFrameSelector(nn.Module):
                 "continuous_density_transport",
                 "continuous_mixture_density_transport",
                 "budget_calibrated_sampling_rate",
+                "semantic_phase_sampling",
             }:
                 raise ValueError("transition_only requires a structured exact-budget acquisition policy")
             if self.acquisition_policy == "global_structured_topk" and self.max_unselected_hole is None:
@@ -933,6 +953,7 @@ class DucaOnlineFrameSelector(nn.Module):
             if self.acquisition_policy not in {
                 "global_structured_topk",
                 "budget_calibrated_sampling_rate",
+                "semantic_phase_sampling",
             }:
                 raise ValueError(
                     "uniform companion training requires a compatible fixed exact-K policy"
@@ -962,6 +983,7 @@ class DucaOnlineFrameSelector(nn.Module):
             "continuous_density_transport",
             "continuous_mixture_density_transport",
             "budget_calibrated_sampling_rate",
+            "semantic_phase_sampling",
         }
         if self.detector_gradient_mode == "density_transport_st" and self.acquisition_policy not in continuous_transport_policies:
             raise ValueError("density_transport_st requires a continuous transport acquisition policy")
@@ -1048,6 +1070,11 @@ class DucaOnlineFrameSelector(nn.Module):
             density_temperature=self.density_temperature,
             density_coverage_floor=self.density_coverage_floor,
             density_smoothing_kernel=self.density_smoothing_kernel,
+            semantic_phase_sigma=self.semantic_phase_sigma,
+            semantic_phase_scaffold_budget=self.semantic_phase_scaffold_budget,
+            semantic_phase_onset_budget=self.semantic_phase_onset_budget,
+            semantic_phase_offset_budget=self.semantic_phase_offset_budget,
+            semantic_phase_core_budget=self.semantic_phase_core_budget,
             sampling_rate_utility_components=self.sampling_rate_utility_components,
             hidden_dim=int(selector_hidden_channels),
             actionness_source=actionness_source,
@@ -1380,6 +1407,7 @@ class DucaOnlineFrameSelector(nn.Module):
     def _selected_detector_contribution(
         selected_inputs: torch.Tensor,
         objective: torch.Tensor,
+        mode: str = "abs_grad_times_input",
     ) -> torch.Tensor:
         """Return detached per-selected-frame first-order detector contribution."""
 
@@ -1408,7 +1436,14 @@ class DucaOnlineFrameSelector(nn.Module):
             index for index in range(selected_inputs.ndim)
             if index not in {0, temporal_dim}
         )
-        return (selected_inputs.detach() * gradient.detach()).abs().mean(dim=reduce_dims)
+        taylor = selected_inputs.detach() * gradient.detach()
+        if mode == "abs_grad_times_input":
+            return taylor.abs().mean(dim=reduce_dims)
+        if mode == "signed_removal_utility":
+            return F.relu(-taylor.mean(dim=reduce_dims))
+        raise ValueError(
+            "detector contribution mode must be abs_grad_times_input or signed_removal_utility"
+        )
 
     @staticmethod
     def _interpolate_selected_contribution(
@@ -1544,6 +1579,7 @@ class DucaOnlineFrameSelector(nn.Module):
             contribution = self._selected_detector_contribution(
                 selected_inputs,
                 sum(terms),
+                mode=self.detector_contribution_mode,
             )
             dense_target = self._interpolate_selected_contribution(
                 contribution,
@@ -1569,6 +1605,7 @@ class DucaOnlineFrameSelector(nn.Module):
             )
             selector_outputs["detector_contribution_distillation_weight"] = float(weight)
             selector_outputs["detector_contribution_train_only"] = True
+            selector_outputs["detector_contribution_mode"] = self.detector_contribution_mode
         return output
 
     def counterfactual_distillation_loss(

@@ -43,8 +43,10 @@ from .phase_fields import (
     select_exact_uniform_positions,
     select_phase_positions,
 )
+from .temporal_contract import DucaTemporalSamplingContract
 
 __all__ = [
+    "DucaTemporalSamplingContract",
     "DucaAcquisitionAdapter",
     "C3CoarseProbeActionnessSource",
     "DucaOnlineSparseDetectorWrapper",
