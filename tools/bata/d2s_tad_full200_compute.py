@@ -82,9 +82,13 @@ def validate_d2s_cell_config(path: str | Path, *, arm: str, seed: int) -> dict[s
         if optimizer_names != ["adapter", "proj_local", "proj_global", "gamma"]:
             raise ValueError("D2S residual parameters are not explicitly optimized")
     else:
-        binding = cfg.continuous_roi_s2_v3_full200_compute
-        if binding.arm != arm or int(binding.seed) != seed:
-            raise ValueError("baseline cell arm or seed binding changed")
+        binding = cfg.continuous_roi_d2s_v3_full200_compute
+        if (
+            binding.protocol != D2S_PROTOCOL_ID
+            or binding.arm != arm
+            or int(binding.seed) != seed
+        ):
+            raise ValueError("D2S baseline protocol, arm, or seed binding changed")
 
     if cfg.dataset.train.subset_name != "training":
         raise ValueError("formal training must use the complete training split")

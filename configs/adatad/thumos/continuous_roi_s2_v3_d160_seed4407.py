@@ -98,4 +98,16 @@ continuous_roi_s2_v3_full200_compute = dict(
     admission_axis="detection_performance_vs_full_model_executed_computation",
 )
 
+# D160 is the shared dense reference in the independent D2S and PA-TAD matrices.
+continuous_roi_d2s_v3_full200_compute = dict(
+    protocol="ZOOMTOKEN-D2S-TAD-FULL200-COMPUTE-PARETO-3X3-v001",
+    arm="D160",
+    seed=seed,
+)
+continuous_roi_patad_v3_full200_compute = dict(
+    protocol="ZOOMTOKEN-PATAD-FULL200-COMPUTE-PARETO-3X3-v001",
+    arm="D160",
+    seed=seed,
+)
+
 work_dir = f"exps/thumos/adatad/continuous_roi_s2_v3_d160_seed{seed}"

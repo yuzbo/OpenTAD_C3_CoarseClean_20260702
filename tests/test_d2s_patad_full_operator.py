@@ -1,6 +1,8 @@
 import json
+from pathlib import Path
 
 import pytest
+from mmengine.config import Config
 
 from tools.bata.continuous_roi_s2_v3_full200_compute_profile import (
     ARMS,
@@ -14,6 +16,13 @@ from tools.bata.continuous_roi_s2_v3_full200_compute_profile import (
 from tools.bata.trace_d2s_patad_full_operator import (
     _sort_comparison_upper_bound,
 )
+from tools.bata.zoomtoken_full200_matrix_spec import (
+    binding_from_config,
+    get_matrix_spec,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 IDENTITY = {
@@ -82,3 +91,20 @@ def test_full_operator_comparison_rejects_tampering_and_missing_arm():
 
 def test_runtime_trace_sort_bound_is_integer_and_shape_aware():
     assert _sort_comparison_upper_bound([2, 16], 3) == 384
+
+
+def test_active_matrix_every_cell_has_an_explicit_training_binding():
+    spec = get_matrix_spec()
+    assert spec.key in {"d2s", "patad"}
+    if spec.key == "d2s":
+        from tools.bata.d2s_tad_full200_compute import config_path
+    else:
+        from tools.bata.patad_full200_compute import config_path
+
+    for arm in spec.arms:
+        for seed in (4407, 4408, 4409):
+            cfg = Config.fromfile(config_path(ROOT, arm, seed))
+            binding = binding_from_config(cfg, spec)
+            assert binding.protocol == spec.protocol_id
+            assert binding.arm == arm
+            assert int(binding.seed) == seed
