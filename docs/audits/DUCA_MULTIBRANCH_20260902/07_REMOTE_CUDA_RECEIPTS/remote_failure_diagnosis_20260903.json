@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-REMOTE-FAILURE-DIAGNOSIS-v001",
-  "checked_at_utc": "2026-09-03T01:36:41Z",
+  "checked_at_utc": "2026-09-03T02:18:40Z",
   "remote_host": "N16R4",
   "policy": "每个失败先读取 stderr/out，区分代码/协议/资源/调用错误；旧 checkout 只归档，不迁移为当前科学结果",
   "diagnoses": [
@@ -191,6 +191,22 @@
       "repair": "缩小到 scontrol 明确给出的 stderr/stdout 路径和已知运行目录，分拆队列、监督器、日志及终态产物检查，并重新执行成功。",
       "revalidation": "远端时间 2026-09-03T01:36:41Z；监督器 PID 2272497 存活；队列、sacct、CT-DP/BAFDR 错误尾部、Evidence C0/A6 日志与 checkpoint 扫描均完成。",
       "result": "监控调用超时已修复；不产生科学结果。"
+    },
+    {
+      "job_ids": ["1266410", "1266411", "1266412", "1266413"],
+      "route": "BAFDR",
+      "source_checkout": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7 @ efe69d2ea10accd01d0129dfe99cba4d1d5773cb",
+      "classification": "NONOWNED_COMPLETED_WITH_TRAIN_RECEIPT",
+      "log_files": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/zt-bafdr-train-D160-efe69d2e_1266410.out",
+        "/data/run01/sczc063/yuzibo/slurm_logs/zt-bafdr-train-G96-efe69d2e_1266411.out",
+        "/data/run01/sczc063/yuzibo/slurm_logs/zt-bafdr-train-U128-ALL48-A0-efe69d2e_1266412.out",
+        "/data/run01/sczc063/yuzibo/slurm_logs/zt-bafdr-train-U16-UNIFORM-A0-efe69d2e_1266413.out"
+      ],
+      "root_cause": "作业正常达到 Slurm COMPLETED 并写入 epoch_59.pth/train_receipt.json、6000 successful updates；receipt 仍为 phase=training，metric_opened=false、eval_results={}，未形成终态官方评测链。",
+      "repair": "不采用或重标 later-checkout 训练；保留 checkpoint/receipt 作为非拥有诊断证据，当前冻结 BAFDR SHA 仍需 screen gate 后再部署正式 21-cell evaluator/aggregation。",
+      "revalidation": "完整 stdout/stderr 与四个 train_receipt.json 已读取；sacct 状态均为 COMPLETED/0:0，未发现 Traceback、ERROR、OOM 或非有限 loss。",
+      "result": "计算完成但科学结果无效；不纳入 mAP、成本、筛选或正式账本。"
     }
   ],
   "current_resource_blocker": {

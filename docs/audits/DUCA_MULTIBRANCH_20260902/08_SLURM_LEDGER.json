@@ -179,6 +179,13 @@
       "status": "SUCCEEDED",
       "job_ids": ["1265779", "1265780", "1266410-1266415", "1266397_0", "1266397_7"],
       "result": "监督器 ACTIVE/BLOCKED；CT-DP G2/G3、BAFDR five arms+NOKD、Evidence C0/A6 仍运行；无新 Traceback/ERROR/nonfinite/OOM；owned worktrees 无合法终态产物"
+    },
+    {
+      "kind": "remote_targeted_status_scan_20260903_1016",
+      "command": "ssh N16R4 latest supervisor receipt; squeue/sacct; bounded CT-DP/BAFDR/Evidence log and terminal receipt scan",
+      "status": "SUCCEEDED",
+      "job_ids": ["1265779", "1265780", "1266410-1266416", "1266397_0", "1266397_7"],
+      "result": "监督器 ACTIVE/BLOCKED；BAFDR 1266410-1266413 COMPLETED with train receipts/checkpoints but metric_opened=false/eval_results empty，1266414-1266416 RUNNING；CT-DP G2/G3 到 epoch45；Evidence C0/A6 到 epoch41/39；无新增错误；owned worktrees 无合法终态产物"
     }
   ],
   "failure_diagnoses": [
