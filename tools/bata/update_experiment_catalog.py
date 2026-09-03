@@ -164,10 +164,11 @@ def route_entries() -> list[dict[str, Any]]:
             "sha": "e553a5a4a1063a755900d3dfa4bf8909bf97d466",
             "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/e553a5a4a1063a755900d3dfa4bf8909bf97d466",
             "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_admission",
-            "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 均 COMPLETED(0:0)。首轮评测 1269230/1269231/1269233 因训练/评测配置哈希序列化口径不一致失败；评测修复分支 codex/h65-pro-eval-binding-repair-20260903@a88388d9 已推送并部署到 /data/run01/sczc063/yuzibo/projects/h65_pro_eval_a88388d9。修复后 PRECHECK 1269269 因账户 AssocGrpGRES 上限排队，D768 评测 1269271 已按 afterok 入队，U384/MNV 由每分钟 watcher 续提",
-            "result_status": "三臂训练终态有效，官方性能评测待资源；尚无最终性能",
-            "final_result": "三个训练审计均绑定 e553a5a4、seed 3407、epoch 59 state_dict_ema、60 epochs、6000 successful/EMA/scheduler updates；U384/MNV selector schedule 也为 6000。评测错误未污染 checkpoint，但在新 evaluator 成功前不得报告最终 mAP",
-            "next_action": "等待 1269269 获得 GPU 并核验 PASS；随后完成 1269271 及 watcher 提交的 U384/MNV 官方 THUMOS14 评测",
+            "supporting_local_directories": ["E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval_repair"],
+            "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 均 COMPLETED(0:0)。跨 clean-checkout 绝对 config 路径误作身份字段导致 1269271/1269283/1269285 失败，修复分支 codex/h65-pro-eval-binding-repair-20260903@ca8337e7 已推送并部署到 /data/run01/sczc063/yuzibo/projects/h65_pro_eval_ca8337e7，PRECHECK 1269293 PASS。1269294 又因评测未恢复训练时 raw data 路径而被 resolved-config hash 正确拒绝；补齐原训练环境后的 D768 评测 1269303 已 COMPLETED(0:0) 并写出 metrics receipt。U384/MNV 由每分钟 watcher PID 4167080 在提交额度释放后续提",
+            "result_status": "三臂训练终态有效；D768 单臂官方终态性能有效，U384/MNV 等待提交额度，路线比较尚未闭合",
+            "final_result": "D768 的 official THUMOS14 validation Avg-mAP=67.58%，mAP@0.3/0.4/0.5/0.6/0.7=82.56/78.12/69.98/60.37/46.88%；metrics 绑定 evaluator ca8337e7、训练 e553a5a4、seed 3407、epoch 59 EMA、6000 updates、211 videos/422000 predictions，receipt 位于 /data/run01/sczc063/yuzibo/experiments/h65_pro_eval_ca8337e7/REF-D768_seed3407/gpu1_id0/eval/REF-D768_seed3407_epoch59_ema_metrics.json。U384/MNV 未完成评测前不得得出稀疏选帧比较结论",
+            "next_action": "watcher 以 ca8337e7 和原始 raw data 环境提交 U384/MNV；收齐三臂 metrics 后进行同协议比较，任何失败继续保留日志并从绑定字段定位",
         },
         {
             "category": "correction_route",
@@ -178,9 +179,9 @@ def route_entries() -> list[dict[str, Any]]:
             "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/c0fae67a1236f2c47e6c2935d217659cd1f8fb9d",
             "local_directory": "E:/DeskTop/TAD/OpenTAD_CTDP_FormalRepair_20260903",
             "deployment_status": "远端 admission 1267221 已通过；G0、G1、G2、G3 正式训练 1267229-1267232 均持续 RUNNING",
-            "result_status": "G0 已进入 epoch 52、G1 epoch 53、G2 epoch 55、G3 epoch 54；尚无终态性能",
-            "final_result": "最新中期验证 G0/G1/G2/G3 的 Avg-mAP 分别为 14.48/14.67/56.24/57.65%，mAP@0.7 为 2.83/3.22/26.35/30.90%；这些是训练中周期验证，只能用于健康监控，不能作为最终比较",
-            "next_action": "等待四臂终态 checkpoint，随后运行同一 evaluator 并做配对比较",
+            "result_status": "G0 已完成 epoch 55、G1 epoch 57、G2 epoch 57、G3 epoch 57；四臂仍在运行，尚无终态性能",
+            "final_result": "最新中期验证 G0/G1/G2/G3 的 Avg-mAP 分别为 14.66/14.89/56.17/57.62%，mAP@0.7 为 2.90/3.22/26.29/30.84%；这些是训练中周期验证，只能用于健康监控，不能作为最终比较",
+            "next_action": "等待四臂 epoch 59 终态 checkpoint；当前启动器不会自动写终态 evaluator receipt，完成后须对 EMA checkpoint 独立运行 tools/test.py 并保存 result_detection.json/evaluation_metrics.json",
         },
         {
             "category": "correction_route",
@@ -203,10 +204,10 @@ def route_entries() -> list[dict[str, Any]]:
             "sha": "539287fa8a035765afd7e79863ce77278bef83f2",
             "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/539287fa8a035765afd7e79863ce77278bef83f2",
             "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_admission",
-            "deployment_status": "真实 CUDA/focused 门禁 1267855 已通过；D160 教师 1267884 与 G96 1268698 均 COMPLETED(0:0)。U16 1269124、LATE 1269129、NOKD 1269137 正在运行。FULL 提交前检查曾因系统旧 Python 执行 f-string 而中止；提交器修复 codex/zoomtoken-bafdr-admission-fix-20260903@5a199a49 已推送、远端 11 tests PASS，539287fa 训练身份的 FULL 每分钟 watcher PID 3911350 正等待提交名额",
-            "result_status": "D160 与 G96 训练终态有效；U16 已到 update 5000，LATE 到 3000，NOKD 到 2000；尚无五臂最终性能",
-            "final_result": "D160 receipt 绑定 539287fa、seed 4407、6000 updates 与 terminal checkpoint；G96 已完成但尚待统一 screen finalizer。FULL 仍使用 539287fa 训练代码与同一 D160 教师，不把提交器 5a199a49 冒充为训练身份；历史 efe69d2e 继续由独立任务评测",
-            "next_action": "等待账户提交槽释放并自动提交 FULL；五臂均完成后运行 screen finalizer，再决定是否开放后续矩阵",
+            "deployment_status": "真实 CUDA/focused 门禁 1267855 已通过；D160 教师 1267884、G96 1268698、U16 1269124 均 COMPLETED(0:0)。LATE 1269129 与 NOKD 1269137 正在运行。FULL 首次作业 1269284 因 teacher 相对 pretrain 未获得 YUZIBO_ROOT 失败；操作修复 codex/zoomtoken-bafdr-admission-fix-20260903@54bd3cf2 已推送并部署到 /data/run01/sczc063/yuzibo/projects/zoomtoken_bafdr_submit_54bd3cf2，PRECHECK 1269296 PASS；保持模型训练身份 539287fa 的 FULL 重试 1269297 正常运行",
+            "result_status": "D160、G96、U16 训练终态有效；LATE 到 update 5000，NOKD 到 update 4000，FULL 已成功构造 D160 teacher 并进入训练；尚无最终性能",
+            "final_result": "D160/G96/U16 receipt 绑定 539287fa、seed 4407、6000 updates 与 terminal checkpoint。FULL 仍使用 539287fa 训练代码与同一 D160 教师，54bd3cf2 只记录启动环境修复；train_receipt 与 epoch_59 仅证明训练完成，必须经过 screen finalizer、prediction seal 和 open-metrics eval_receipt 才能报告 mAP",
+            "next_action": "等待 LATE/NOKD/FULL 6000 updates，运行 screen finalizer；随后按协议完成 21-cell prediction seal、metrics opening 和 summary-strict",
         },
         {
             "category": "correction_route",
@@ -216,10 +217,10 @@ def route_entries() -> list[dict[str, Any]]:
             "sha": "74473c2775caebf0da9d368ce8009d78e2942098",
             "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/74473c2775caebf0da9d368ce8009d78e2942098",
             "local_directory": "E:/DeskTop/TAD/zoomtoken_ettrc_correction_20260902",
-            "deployment_status": "真实 VideoMAE 覆盖与 2-GPU/global-batch=2 admission 已通过；OFF 1267218 与 ON 1267219 正在运行",
-            "result_status": "OFF 已进入 epoch 57，ON 已进入 epoch 56；最新中期验证 OFF Avg-mAP 62.19%、ON 55.09%，仍不是终态性能",
-            "final_result": "最新中期验证 OFF/ON 的 mAP@0.7 分别为 41.33% 与 34.83%；当前作业持续运行且未见 Traceback/OOM/非有限错误，需等待 epoch-59 EMA 才能裁决",
-            "next_action": "等待 OFF/ON epoch-59 EMA 与官方评估，比较定位性能和执行算子计数",
+            "deployment_status": "真实 VideoMAE 覆盖与 2-GPU/global-batch=2 admission 已通过；OFF 1267218 于 01:04、ON 1267219 于 01:10 均 COMPLETED(0:0)，两者均写出 epoch_59.pth",
+            "result_status": "双臂 60 轮训练已完成；日志含终轮 validation 指标，但当前路线没有独立终态 evaluator/receipt，因此仍无可裁决最终性能",
+            "final_result": "终轮日志 OFF Avg-mAP 62.08%、mAP@0.3/0.4/0.5/0.6/0.7=77.06/71.91/65.34/54.51/41.55%；ON 为 54.81%、70.38/64.89/57.49/46.65/34.63%。这些数值是完整 validation telemetry，不是具备独立终态 receipt 的最终 scientific result",
+            "next_action": "验证 epoch_59 EMA/6000 updates，并分别用 OFF/ON config 独立运行 tools/test.py；保存 evaluator 日志、result_detection.json 和 metrics artifact 后再裁决 Taylor/JVP 机制",
         },
         {
             "category": "historical_exact_route",
@@ -242,10 +243,11 @@ def route_entries() -> list[dict[str, Any]]:
             "sha": "77c8d173c95aef153c04fd1355a0e75a63ff22c9",
             "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/77c8d173c95aef153c04fd1355a0e75a63ff22c9",
             "local_directory": "E:/DeskTop/TAD/OpenTAD_Evidence_FormalRepair_20260903",
-            "deployment_status": "actual-ledger admission 1267969 已通过；C0 seed 8261 正式训练 1267979 COMPLETED(0:0)。首轮评测 1268680 因 checkpoint 路径漏写 gpu1_id0 失败；评测修复分支 codex/duca-evidence-eval-path-repair-20260903@7934e0c9 已推送并部署到 /data/run01/sczc063/yuzibo/projects/duca_evidence_eval_7934e0c9。修复后 PRECHECK 1269270 因账户 AssocGrpGRES 上限排队，C0 评测由每分钟 watcher 等待提交名额",
-            "result_status": "C0 训练终态有效，官方性能评测待资源；尚无最终性能",
-            "final_result": "终态审计绑定 77c8d173、seed 8261、epoch 59 state_dict_ema、60 epochs、6000 successful/EMA/scheduler updates、nonfinite=0；评测路径错误未污染 checkpoint，新 evaluator 成功前不得报告 official mAP",
-            "next_action": "等待 1269270 获得 GPU并核验 PASS；随后由 watcher 提交 C0 官方评测，再按结果决定是否释放其余七臂",
+            "supporting_local_directories": ["E:/DeskTop/TAD/_duca_fix_worktrees/evidence_eval_repair"],
+            "deployment_status": "actual-ledger admission 1267969 已通过；C0 seed 8261 正式训练 1267979 COMPLETED(0:0)。1268680 漏掉 gpu1_id0，1269286 把不同 clean-checkout 绝对 config 路径误作同一路径，1269298 未恢复训练时 raw data/三份 ledger 环境，三次评测均 fail-closed 且未污染 checkpoint。最终修复 codex/duca-evidence-eval-path-repair-20260903@d6f1cc28 已推送并部署到 /data/run01/sczc063/yuzibo/projects/duca_evidence_eval_d6f1cc28，远端 focused tests 13 PASS；新 admission 提交被 AssocMaxSubmitJobLimit 阻止，watcher PID 4167080 每分钟重试",
+            "result_status": "C0 训练终态有效；d6f1cc28 admission/官方评测等待账户提交额度；尚无最终性能",
+            "final_result": "终态审计绑定 77c8d173、seed 8261、epoch 59 state_dict_ema、60 epochs、6000 successful/EMA/scheduler updates、nonfinite=0；三次 evaluator 失败均为路径/运行环境绑定错误，不是模型训练失败。d6f1cc28 成功产生 metrics receipt 前不得报告 official mAP",
+            "next_action": "由每分钟 watcher 先提交 d6f1cc28 admission，再以 afterok 提交 C0 官方评测；若失败继续读取完整日志并按绑定字段最小修复",
         },
     ]
 
@@ -263,10 +265,10 @@ def catalog() -> dict[str, Any]:
         "entries": entries,
         "remote_supervisor": remote_receipt(),
         "cluster_observation": {
-            "checked_at_cst": "2026-09-04 00:31:30 CST",
-            "public_gpu_available": 95,
+            "checked_at_cst": "2026-09-04 01:48:30 CST",
+            "public_gpu_available": 92,
             "public_gpu_total": 240,
-            "user_jobs_in_queue": 16,
+            "user_jobs_in_queue": 15,
             "account_constraint": "AssocGrpGRES/AssocMaxSubmitJobLimit；公共 GPU 空闲不等于本账户仍有可用配额",
         },
         "result_policy": "没有 exact SHA、clean-tree、terminal EMA、官方 evaluator 和合法 aggregation receipt，不得报告为最终科学结果",
@@ -282,8 +284,12 @@ def catalog() -> dict[str, Any]:
             {"job_ids": "1267818", "remote_directory": "/data/run01/sczc063/yuzibo/projects/zoomtoken_bafdr_formal_52c940f2", "source_head": "52c940f20d099a53c954c5533a68018294665e8f", "reason": "BAFDR D160 教师提交脚本由 /bin/sh 执行 source/pipefail，启动即失败；539287fa 已改为 bash -lc 并重新运行 CUDA/focused 门禁"},
             {"job_ids": "1268680", "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_evidence_formal_77c8d173", "source_head": "77c8d173c95aef153c04fd1355a0e75a63ff22c9", "reason": "Evidence 训练完成后的首轮评测把 checkpoint 定位到 seed_8261/checkpoint，漏掉训练器自动添加的 gpu1_id0；7934e0c9 修复路径、训练提交身份与独立评测输出命名空间，1269270 正在等待资源复验"},
             {"job_ids": "1269230,1269231,1269233", "remote_directory": "/data/run01/sczc063/yuzibo/projects/h65_pro_admission_e553a5a4", "source_head": "e553a5a4a1063a755900d3dfa4bf8909bf97d466", "reason": "H65 三臂训练已成功，但首轮 evaluator 使用 canonical_jsonable，而训练器对 dataclass 使用 default=str，导致 resolved_config_sha256 口径不一致；a88388d9 统一训练哈希并隔离评测输出，1269269/1269271 已排队"},
+            {"job_ids": "1269271,1269283,1269285", "remote_directory": "/data/run01/sczc063/yuzibo/projects/h65_pro_eval_a88388d9", "source_head": "a88388d9dd4815de7664bae782aca11d4e89b1f4", "reason": "H65 evaluator 在不同 clean checkout 上把绝对 source_config_path 当成必须相同的身份字段；ca8337e7 改为 basename 加严格 source_config_sha256 验证，未放宽配置内容绑定"},
+            {"job_ids": "1269294", "remote_directory": "/data/run01/sczc063/yuzibo/projects/h65_pro_eval_ca8337e7", "source_head": "ca8337e7b293c36b265471fdc12667a985aadae4", "reason": "H65 D768 首次 ca8337e7 评测未恢复训练时 raw Validation/Test 路径，resolved_config_sha256 正确拒绝；1269303 已用原始路径重提"},
             {"job_ids": "1269265,1269266", "remote_directory": "/data/run01/sczc063/yuzibo/projects/h65_pro_eval_120df5a4 和 /data/run01/sczc063/yuzibo/projects/duca_evidence_eval_30fee9f1", "source_head": "120df5a46fa51dee30ba41c70bdcc32ec53b6b60 / 30fee9f1b3c75714c7f907625c3e01f94f5c8af7", "reason": "中间修复 PRECHECK 在等待资源时被最终的独立评测输出命名空间修复 a88388d9/7934e0c9 取代，已主动取消；属于 superseded，不是模型失败"},
             {"job_ids": "无 Slurm job id", "remote_directory": "/data/run01/sczc063/yuzibo/experiments/zoomtoken_bafdr_539287fa_seed4407", "source_head": "539287fa8a035765afd7e79863ce77278bef83f2", "reason": "BAFDR screen 提交器在 FULL 前用系统旧 Python 执行含 f-string 的教师检查，SyntaxError 后退出；5a199a49 已绑定项目 Python 并通过本地/远端 11 tests，FULL 的 539287fa 精确训练由独立每分钟 watcher 续提"},
+            {"job_ids": "1269284", "remote_directory": "/data/run01/sczc063/yuzibo/projects/zoomtoken_bafdr_formal_539287fa", "source_head": "539287fa8a035765afd7e79863ce77278bef83f2", "reason": "BAFDR FULL 构造 D160 teacher 时相对 pretrain 未获得 YUZIBO_ROOT，启动 40 秒后失败；54bd3cf2 只修复 launcher 环境导出，PRECHECK 1269296 PASS，FULL 以原 539287fa 身份重提为 1269297"},
+            {"job_ids": "1269286,1269298", "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_evidence_eval_7934e0c9 和 /data/run01/sczc063/yuzibo/projects/duca_evidence_eval_0e11fba1", "source_head": "7934e0c9ce8d003fdaed99e433bfc6b7edc3b988 / 0e11fba15b1e539b84788417ea6e8c78cdaee893", "reason": "Evidence C0 评测依次暴露跨 checkout source_config_path 绑定错误和未恢复训练时 raw data/三份 ledger 环境；d6f1cc28 已同时保持严格 config hash并恢复完整训练环境"},
             {"job_ids": "1265777-1265778", "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902", "source_head": "679b71214d05a21cd08ae1f5e5c3879e2df8fb83", "reason": "旧 CT-DP checkout；G0/G1 已完成并留下 epoch_59.pth 与 Average-mAP 63.95% 日志，但无当前 exact SHA 或 audit-owned terminal receipt，mAP 不纳入结果"},
             {"job_ids": "1265779-1265780", "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902", "source_head": "679b71214d05a21cd08ae1f5e5c3879e2df8fb83", "reason": "旧 CT-DP checkout；G2/G3 仍在运行，不能迁移为当前冻结或修正路线结果"},
             {"job_ids": "1265077_[0-2,3-7]", "remote_directory": "/data/run01/sczc063/yuzibo/projects/opentad_duca_evidence_recovery", "source_head": "647151facd36d4df3f21de6865bcb225c8ba91fc", "reason": "dirty 且旧 Evidence checkout；失败/完成作业均不纳入当前结果，缺少 exact SHA 与终态 receipt"},
@@ -308,7 +314,9 @@ def md_text(payload: dict[str, Any]) -> str:
         name = f"{entry['name']}（`{entry['internal_id']}`）"
         commit = f"[`{entry['sha'][:8]}`]({entry['github_commit']})"
         result = f"{entry['result_status']}：{entry['final_result']}"
-        lines.append(f"| {name} | `{entry['local_directory']}` | {commit} | {entry['deployment_status']} | {result} | {entry['next_action']} |")
+        local_paths = [entry["local_directory"], *entry.get("supporting_local_directories", [])]
+        local_directory = "<br>".join(f"`{path}`" for path in local_paths)
+        lines.append(f"| {name} | {local_directory} | {commit} | {entry['deployment_status']} | {result} | {entry['next_action']} |")
     lines += [
         "",
         "## 监督器与动态状态",
@@ -328,7 +336,7 @@ def md_text(payload: dict[str, Any]) -> str:
         lines.append(f"| `{item['job_ids']}` | `{item['remote_directory']}` | `{item['source_head'][:8]}` | {item['reason']} |")
     lines += [
         "",
-        f"结果规则：{payload['result_policy']}。当前性能结果账本仍为 `NO_FINAL_PERFORMANCE_RESULTS`；已有终态训练 receipt 只能证明训练合同完成，不得从 admission 或中期验证推导最终 mAP、speedup、bootstrap 或 cost。",
+        f"结果规则：{payload['result_policy']}。当前只有 H65 D768 单臂具有合法终态 evaluator metrics；其余路线或比较矩阵仍为 `NO_FINAL_PERFORMANCE_RESULTS`。终态训练 receipt 只能证明训练合同完成，不得从 admission 或中期验证推导最终 mAP、speedup、bootstrap 或 cost。",
         "",
     ]
     return "\n".join(lines)
