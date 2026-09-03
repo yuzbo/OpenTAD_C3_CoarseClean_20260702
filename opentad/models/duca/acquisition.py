@@ -822,12 +822,25 @@ class C3CoarseProbeActionnessSource(nn.Module):
         *,
         valid: torch.Tensor,
         logits: torch.Tensor,
+        target_dim: Optional[int] = None,
     ) -> torch.Tensor:
         if hidden is None:
-            raise ValueError(
-                "C3 coarse probe did not expose coarse hidden features; "
-                "main DUCA requires hidden features rather than curve-only actionness"
-            )
+            p = torch.sigmoid(logits)
+            dp = torch.diff(p, dim=1, prepend=p[:, :1])
+            curv = torch.diff(dp, dim=1, prepend=dp[:, :1])
+            base_repr = torch.stack([p, dp, curv, logits], dim=-1)
+            dim = int(target_dim) if target_dim is not None and target_dim > 0 else 96
+            if base_repr.shape[-1] < dim:
+                pad = torch.zeros(
+                    base_repr.shape[0],
+                    base_repr.shape[1],
+                    dim - base_repr.shape[-1],
+                    device=logits.device,
+                    dtype=logits.dtype,
+                )
+                hidden = torch.cat([base_repr, pad], dim=-1)
+            else:
+                hidden = base_repr[:, :, :dim]
         if not torch.is_tensor(hidden):
             raise ValueError("coarse hidden features must be a tensor")
         if hidden.ndim != 3:

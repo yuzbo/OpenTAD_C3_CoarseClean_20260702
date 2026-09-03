@@ -2181,7 +2181,7 @@ class C3OfficialActionSegmentationProbe:
                 outputs = self.official_temporal(features[idx : idx + 1], mask[idx : idx + 1, None, :].float())
                 rows.append(outputs[-1, 0, 1, :] - outputs[-1, 0, 0, :])
             logits = torch.stack(rows, dim=0)
-        return logits.masked_fill(~mask, 0.0)
+        return logits.masked_fill(~mask, 0.0), features.transpose(1, 2).contiguous()
 
     def train(self):
         self.module.train()
