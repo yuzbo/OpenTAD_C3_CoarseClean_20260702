@@ -23,6 +23,7 @@ elif [[ -d "/data/run01/sczc063/yuzibo" ]]; then
 else
   BASE="${ROOT}/tmp/bafdr_local"
 fi
+export YUZIBO_ROOT="${BASE}"
 RUN_ROOT="${ZOOMTOKEN_RUN_ROOT:-${BASE}/projects/bafdr_k16_fullmatrix_compute}"
 MANIFEST_DIR="${RUN_ROOT}/manifest"
 WORK_DIR_ROOT="${RUN_ROOT}/work_dirs"

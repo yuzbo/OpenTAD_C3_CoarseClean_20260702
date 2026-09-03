@@ -128,6 +128,7 @@ def test_slurm_scripts_use_world2_arm_batch_dag():
     assert "--open-metrics" in run_text
     assert 'if [[ -n "${PROJECT_DIR:-}" ]]' in run_text
     assert 'SLURM_SUBMIT_DIR' in run_text
+    assert 'export YUZIBO_ROOT="${BASE}"' in run_text
     assert "BAFDR_PRETRAIN" in run_text
     assert "pretrained checkpoint is not readable" in run_text
     assert "#SBATCH --gpus=2" in submit_text
