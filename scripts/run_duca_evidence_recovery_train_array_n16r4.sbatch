@@ -21,6 +21,7 @@ EXPECTED_COMMIT="${DUCA_EVIDENCE_EXPECTED_COMMIT:?DUCA_EVIDENCE_EXPECTED_COMMIT 
 cd "$PROJECT_DIR"
 [[ "$(git rev-parse HEAD)" == "$EXPECTED_COMMIT" ]] || fail "checkout is not the expected commit"
 git diff --quiet && git diff --cached --quiet || fail "tracked source checkout is dirty"
+export DUCA_EXPECTED_COMMIT="$EXPECTED_COMMIT"
 
 module load cuda/11.8
 module load miniforge3/24.11

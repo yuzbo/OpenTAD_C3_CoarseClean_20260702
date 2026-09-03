@@ -1,4 +1,4 @@
-"""A3: NO_ROBUST counterfactual arm (disables support dropout, consistency, and distillation)."""
+"""A3: NO_ROBUST arm (disables the implemented scout action/boundary supervision)."""
 _base_ = ["./duca_evidence_recovery_base.py"]
 
 arm_id = "A3"

@@ -25,6 +25,7 @@ from opentad.utils.training_guard import (
 )
 from tools.bata.duca_p0_training import atomic_write_json, sha256_file
 from tools.bata import duca_cellcf_training
+from tools.bata import duca_evidence_training
 from tools.bata import duca_protected_physical_training
 from tools.bata import duca_selected_axis_training
 from tools.bata.duca_p0_evaluation import (
@@ -67,6 +68,7 @@ def main():
     selected_axis_formal = duca_selected_axis_training.is_formal_protocol(
         formal_protocol
     )
+    evidence_formal = formal_protocol == duca_evidence_training.FORMAL_PROTOCOL
     r5_formal = formal_protocol == duca_selected_axis_training.R5_FORMAL_PROTOCOL
     source_resolved_config_sha256 = _canonical_sha256(cfg.to_dict())
     if cellcf_formal:
@@ -83,6 +85,11 @@ def main():
             args.cfg_options,
             entrypoint="tools/test.py",
         )
+    elif evidence_formal:
+        duca_evidence_training.assert_safe_cfg_options(
+            args.cfg_options,
+            entrypoint="tools/test.py",
+        )
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/test.py")
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
@@ -93,7 +100,7 @@ def main():
     args.local_rank = int(os.environ["LOCAL_RANK"])
     args.world_size = int(os.environ["WORLD_SIZE"])
     args.rank = int(os.environ["RANK"])
-    if cellcf_formal or protected_physical_formal or selected_axis_formal:
+    if cellcf_formal or protected_physical_formal or selected_axis_formal or evidence_formal:
         expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
         observed_commit = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
@@ -143,6 +150,17 @@ def main():
                 f"formal selected-axis evaluation must use seed {expected_seed}, "
                 "terminal epoch-59 EMA, and structured metrics"
             )
+    if evidence_formal:
+        if (
+            args.seed not in duca_evidence_training.FORMAL_SEEDS
+            or args.expected_checkpoint_epoch != 59
+            or args.checkpoint_state_key != "state_dict_ema"
+            or not args.metrics_json
+        ):
+            raise RuntimeError(
+                "formal Evidence-Recovery evaluation requires a frozen seed, "
+                "terminal epoch-59 EMA, and structured metrics"
+            )
     print(f"Distributed init (rank {args.rank}/{args.world_size}, local rank {args.local_rank})")
     dist.init_process_group("nccl", rank=args.rank, world_size=args.world_size)
     torch.cuda.set_device(args.local_rank)
@@ -186,6 +204,7 @@ def main():
     checkpoint_epoch = None
     checkpoint_state_key = None
     selected_axis_terminal_identity = None
+    evidence_terminal_identity = None
     if cfg.inference.load_from_raw_predictions:  # if load with saved predictions, no need to load checkpoint
         logger.info(f"Loading from raw predictions: {cfg.inference.fuse_list}")
     else:  # load checkpoint: args -> config -> best
@@ -247,6 +266,25 @@ def main():
                     ),
                     formal_protocol=formal_protocol,
                     r5_cell=cfg.get("r5_cell", None),
+                )
+            )
+        if evidence_formal:
+            evidence_terminal_identity = (
+                duca_evidence_training.validate_terminal_checkpoint_binding(
+                    checkpoint_path=checkpoint_path,
+                    checkpoint=checkpoint,
+                    git_commit=os.environ["DUCA_EXPECTED_COMMIT"],
+                    arm_id=str(cfg.arm_id),
+                    arm_name=str(cfg.arm_name),
+                    seed=args.seed,
+                    source_config_path=args.config,
+                    source_config_sha256=sha256_file(args.config),
+                    resolved_config_sha256=source_resolved_config_sha256,
+                    checkpoint_epoch=checkpoint_epoch,
+                    checkpoint_state_key=checkpoint_state_key,
+                    evaluation_annotation_path=cfg.evaluation.ground_truth_filename,
+                    evaluation_class_map_path=cfg.dataset.test.class_map,
+                    runtime_pretrain_path=cfg.model.backbone.custom.pretrain,
                 )
             )
         model.load_state_dict(checkpoint[checkpoint_state_key])
@@ -371,6 +409,15 @@ def main():
             )
             if r5_formal:
                 payload["r5_cell"] = _jsonable(cfg.r5_cell)
+        if evidence_formal:
+            payload.update(
+                {
+                    "seed": int(args.seed),
+                    "arm_id": str(cfg.arm_id),
+                    "arm_name": str(cfg.arm_name),
+                    "training_identity": evidence_terminal_identity,
+                }
+            )
         if r0_selected_axis_replay:
             allocation_artifact = os.path.abspath(
                 os.path.expanduser(

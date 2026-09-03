@@ -45,6 +45,7 @@ from opentad.utils.training_guard import (
 from opentad.utils.train_schedule import should_eval_epoch
 from tools.bata import (
     duca_cellcf_training,
+    duca_evidence_training,
     duca_p0_training,
     duca_protected_physical_training,
     duca_selected_axis_training,
@@ -188,6 +189,8 @@ def _build_training_probe_bindings(cfg, args):
 def _select_duca_training(formal_protocol):
     if formal_protocol == "duca_cellcf_v1":
         return duca_cellcf_training
+    if formal_protocol == duca_evidence_training.FORMAL_PROTOCOL:
+        return duca_evidence_training
     if formal_protocol == duca_protected_physical_training.FORMAL_PROTOCOL:
         return duca_protected_physical_training
     if duca_selected_axis_training.is_formal_protocol(formal_protocol):
@@ -248,11 +251,16 @@ def main():
             args.cfg_options,
             entrypoint="tools/train.py",
         )
+    elif duca_training is duca_evidence_training:
+        duca_evidence_training.assert_safe_cfg_options(
+            args.cfg_options,
+            entrypoint="tools/train.py",
+        )
     assert_safe_cfg_options_for_gated_config(cfg, args.cfg_options, entrypoint="tools/train.py")
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
-    if duca_training is duca_cellcf_training:
-        duca_formal_contract = duca_cellcf_training.formal_training_contract(cfg)
+    if duca_training in (duca_cellcf_training, duca_evidence_training):
+        duca_formal_contract = duca_training.formal_training_contract(cfg)
     duca_git_commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=path, text=True, encoding="utf-8"
     ).strip()
@@ -295,7 +303,11 @@ def main():
             else (
                 os.environ.get("DUCA_SELECTED_OPT_VARIANT", "")
                 if duca_training is duca_selected_axis_training
-                else os.environ.get("DUCA_P0_VARIANT", "")
+                else (
+                    str(cfg.arm_id)
+                    if duca_training is duca_evidence_training
+                    else os.environ.get("DUCA_P0_VARIANT", "")
+                )
             )
         )
         runtime_binding_kwargs = dict(
@@ -315,8 +327,16 @@ def main():
             duca_cellcf_training,
             duca_protected_physical_training,
             duca_selected_axis_training,
+            duca_evidence_training,
         ):
             runtime_binding_kwargs["runtime_pretrain_path"] = cfg.model.backbone.custom.pretrain
+        if duca_training is duca_evidence_training:
+            runtime_binding_kwargs["arm_name"] = str(cfg.arm_name)
+            runtime_binding_kwargs["ledger_paths"] = {
+                "train": os.environ.get("DUCA_H65_TRAIN_LEDGER_PATH", ""),
+                "val": os.environ.get("DUCA_H65_VAL_LEDGER_PATH", ""),
+                "test": os.environ.get("DUCA_H65_TEST_LEDGER_PATH", ""),
+            }
         duca_runtime_bindings = _dispatch_duca_runtime_bindings(
             duca_training,
             runtime_binding_kwargs,
