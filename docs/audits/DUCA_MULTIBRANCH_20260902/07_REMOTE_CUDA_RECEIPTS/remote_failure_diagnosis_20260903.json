@@ -207,6 +207,15 @@
       "repair": "不采用或重标 later-checkout 训练；保留 checkpoint/receipt 作为非拥有诊断证据，当前冻结 BAFDR SHA 仍需 screen gate 后再部署正式 21-cell evaluator/aggregation。",
       "revalidation": "完整 stdout/stderr 与四个 train_receipt.json 已读取；sacct 状态均为 COMPLETED/0:0，未发现 Traceback、ERROR、OOM 或非有限 loss。",
       "result": "计算完成但科学结果无效；不纳入 mAP、成本、筛选或正式账本。"
+    },
+    {
+      "attempt_ids": ["coordination-push-20260903-0300", "coordination-push-retry-20260903-0301"],
+      "route": "coordination audit publication",
+      "classification": "SUBMISSION_ENVIRONMENT_FAILURE_UNRESOLVED",
+      "root_cause": "两次 git push 到 GitHub 均因 OpenSSL SSL_ERROR_SYSCALL 失败；本地 commit 39a3aa68 完整保留，未修改实验或冻结 SHA。",
+      "repair": "已按仓库规则保留完整失败输出，并进行一次有界 HTTP/1.1 重试；两次均失败，暂不重复提交。",
+      "revalidation": "本地协调工作树仍包含 commit 39a3aa68；远端发布状态待网络恢复后再验证。",
+      "result": "发布环境阻塞；实验门禁作业已在远端完成，不因发布失败重提或改变实验。"
     }
   ],
   "current_resource_blocker": {
