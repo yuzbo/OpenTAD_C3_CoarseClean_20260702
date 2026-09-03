@@ -433,6 +433,8 @@ def test_h65_pro_eval_binds_immutable_training_identity_separately() -> None:
     assert 'TRAINING_COMMIT="${H65_PRO_TRAINING_COMMIT:-$EXPECTED_COMMIT}"' in eval_source
     assert 'export DUCA_TRAINING_COMMIT="$TRAINING_COMMIT"' in eval_source
     assert "h65_pro_fullmatrix_${TRAINING_COMMIT:0:8}" in eval_source
+    assert "h65_pro_eval_${EXPECTED_COMMIT:0:8}" in eval_source
+    assert 'work_dir="$EVAL_WORK_DIR"' in eval_source
 
 
 def test_h65_pro_slurm_contract_is_fail_closed_and_collision_resistant() -> None:

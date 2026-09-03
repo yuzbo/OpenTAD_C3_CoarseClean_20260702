@@ -89,10 +89,13 @@ WORK_ROOT="${H65_PRO_WORK_ROOT:-$YUZIBO_ROOT/experiments/h65_pro_fullmatrix_${TR
 case "$WORK_ROOT/" in
   "$ROOT/"*) fail "H65_PRO_WORK_ROOT must stay outside the clean source checkout" ;;
 esac
-WORK_DIR="$WORK_ROOT/${EXPERIMENT_ID}_seed${SEED}"
-RUN_WORK_DIR="$WORK_DIR/gpu1_id0"
-CHECKPOINT="${H65_PRO_CHECKPOINT:-$RUN_WORK_DIR/checkpoint/epoch_59.pth}"
-METRICS_JSON="${H65_PRO_METRICS_JSON:-$RUN_WORK_DIR/eval/${EXPERIMENT_ID}_seed${SEED}_epoch59_ema_metrics.json}"
+TRAIN_WORK_DIR="$WORK_ROOT/${EXPERIMENT_ID}_seed${SEED}"
+TRAIN_RUN_DIR="$TRAIN_WORK_DIR/gpu1_id0"
+EVAL_ROOT="${H65_PRO_EVAL_ROOT:-$YUZIBO_ROOT/experiments/h65_pro_eval_${EXPECTED_COMMIT:0:8}}"
+EVAL_WORK_DIR="$EVAL_ROOT/${EXPERIMENT_ID}_seed${SEED}"
+EVAL_RUN_DIR="$EVAL_WORK_DIR/gpu1_id0"
+CHECKPOINT="${H65_PRO_CHECKPOINT:-$TRAIN_RUN_DIR/checkpoint/epoch_59.pth}"
+METRICS_JSON="${H65_PRO_METRICS_JSON:-$EVAL_RUN_DIR/eval/${EXPERIMENT_ID}_seed${SEED}_epoch59_ema_metrics.json}"
 [[ -r "$CHECKPOINT" ]] || fail "terminal checkpoint is not readable: $CHECKPOINT"
 mkdir -p "$(dirname "$METRICS_JSON")"
 
@@ -102,7 +105,7 @@ exec "$PYTHON" tools/test.py "$CONFIG" --seed "$SEED" \
   --checkpoint-state-key state_dict_ema \
   --metrics-json "$METRICS_JSON" \
   --cfg-options \
-  work_dir="$WORK_DIR" \
+  work_dir="$EVAL_WORK_DIR" \
   model.backbone.custom.pretrain="$DUCA_ADATAD_PRETRAIN_PATH" \
   post_processing.save_dict=True \
   inference.load_from_raw_predictions=False
