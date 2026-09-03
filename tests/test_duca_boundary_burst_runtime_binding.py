@@ -514,6 +514,7 @@ def _terminal_checkpoint_case(tmp_path: Path, monkeypatch, *, r5: bool = False):
     _write_json(Path(f"{checkpoint}.metadata.json"), sidecar)
     monkeypatch.setattr(training, "build_runtime_bindings", lambda **_: bindings)
     return {
+        "bindings": bindings,
         "checkpoint": checkpoint,
         "checkpoint_payload": {
             "epoch": 59,
@@ -558,6 +559,79 @@ def test_terminal_checkpoint_binding_validates_complete_training_chain(
 
     assert identity["variant"] == case["variant"]
     assert identity["successful_optimizer_updates"] == 6000
+
+
+def test_terminal_checkpoint_binding_allows_same_config_in_another_checkout(
+    tmp_path: Path, monkeypatch
+) -> None:
+    case = _terminal_checkpoint_case(tmp_path / "training", monkeypatch)
+    evaluation_config = tmp_path / "evaluation" / case["config"].name
+    evaluation_config.parent.mkdir(parents=True)
+    evaluation_config.write_bytes(case["config"].read_bytes())
+    expected_bindings = dict(case["bindings"])
+    expected_bindings["source_config_path"] = str(evaluation_config.resolve())
+    expected_bindings["source_config_sha256"] = training.sha256_file(evaluation_config)
+    monkeypatch.setattr(
+        training, "build_runtime_bindings", lambda **_: expected_bindings
+    )
+
+    identity = training.validate_terminal_checkpoint_binding(
+        checkpoint_path=case["checkpoint"],
+        checkpoint=case["checkpoint_payload"],
+        git_commit=case["commit"],
+        variant=case["variant"],
+        seed=case["seed"],
+        slurm_job_id="8",
+        source_config_path=evaluation_config,
+        source_config_sha256=training.sha256_file(evaluation_config),
+        resolved_config_sha256="b" * 64,
+        checkpoint_epoch=59,
+        checkpoint_state_key="state_dict_ema",
+        evaluation_annotation_path=case["annotation"],
+        evaluation_class_map_path=case["class_map"],
+        evaluation_config={},
+        runtime_pretrain_path=case["pretrain"],
+        frozen_pretrain_path=case["pretrain"],
+        frozen_pretrain_sha256=training.sha256_file(case["pretrain"]),
+    )
+
+    assert identity["variant"] == case["variant"]
+
+
+def test_terminal_checkpoint_binding_rejects_changed_config_in_another_checkout(
+    tmp_path: Path, monkeypatch
+) -> None:
+    case = _terminal_checkpoint_case(tmp_path / "training", monkeypatch)
+    evaluation_config = tmp_path / "evaluation" / case["config"].name
+    evaluation_config.parent.mkdir(parents=True)
+    evaluation_config.write_text("# changed config\n", encoding="utf-8")
+    expected_bindings = dict(case["bindings"])
+    expected_bindings["source_config_path"] = str(evaluation_config.resolve())
+    expected_bindings["source_config_sha256"] = training.sha256_file(evaluation_config)
+    monkeypatch.setattr(
+        training, "build_runtime_bindings", lambda **_: expected_bindings
+    )
+
+    with pytest.raises(RuntimeError, match="source_config_sha256"):
+        training.validate_terminal_checkpoint_binding(
+            checkpoint_path=case["checkpoint"],
+            checkpoint=case["checkpoint_payload"],
+            git_commit=case["commit"],
+            variant=case["variant"],
+            seed=case["seed"],
+            slurm_job_id="8",
+            source_config_path=evaluation_config,
+            source_config_sha256=training.sha256_file(evaluation_config),
+            resolved_config_sha256="b" * 64,
+            checkpoint_epoch=59,
+            checkpoint_state_key="state_dict_ema",
+            evaluation_annotation_path=case["annotation"],
+            evaluation_class_map_path=case["class_map"],
+            evaluation_config={},
+            runtime_pretrain_path=case["pretrain"],
+            frozen_pretrain_path=case["pretrain"],
+            frozen_pretrain_sha256=training.sha256_file(case["pretrain"]),
+        )
 
 
 def test_r5_terminal_checkpoint_binding_returns_r5_evidence_fields(

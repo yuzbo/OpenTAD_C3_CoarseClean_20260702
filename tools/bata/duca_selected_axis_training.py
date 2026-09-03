@@ -1041,8 +1041,14 @@ def validate_terminal_checkpoint_binding(
         formal_protocol=protocol,
         r5_cell=r5_cell,
     )
+    training_config_name = Path(str(audit.get("source_config_path", ""))).name
+    evaluation_config_name = Path(str(expected_bindings["source_config_path"])).name
+    if training_config_name != evaluation_config_name:
+        raise RuntimeError(
+            "selected-axis terminal training binding mismatch: source_config_path"
+        )
     for key, expected in expected_bindings.items():
-        if key == "slurm_job_id":
+        if key in {"slurm_job_id", "source_config_path"}:
             continue
         if audit.get(key) != expected:
             raise RuntimeError(

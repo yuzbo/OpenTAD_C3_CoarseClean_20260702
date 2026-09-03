@@ -414,12 +414,14 @@ def test_vit_adapter_source_contains_topk_mod_identity_bypass_and_successful_upd
     assert "0.5 * (1.0 + math.cos(math.pi * progress))" in text
 
 
-def test_selected_axis_terminal_binding_allows_distinct_afterok_eval_job_id() -> None:
+def test_selected_axis_terminal_binding_allows_distinct_eval_job_and_checkout() -> None:
     text = (ROOT / "tools/bata/duca_selected_axis_training.py").read_text(encoding="utf-8")
     terminal = text[text.index("def validate_terminal_checkpoint_binding") :]
-    slurm_check = terminal.index('if key == "slurm_job_id":')
+    assert 'if key in {"slurm_job_id", "source_config_path"}:' in terminal
+    slurm_check = terminal.index('if key in {"slurm_job_id", "source_config_path"}:')
     next_binding_check = terminal.index("if audit.get(key) != expected:", slurm_check)
     assert "continue" in terminal[slurm_check:next_binding_check]
+    assert "training_config_name != evaluation_config_name" in terminal
 
 
 def test_h65_pro_eval_binds_immutable_training_identity_separately() -> None:
