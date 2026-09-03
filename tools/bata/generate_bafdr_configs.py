@@ -62,18 +62,23 @@ work_dir = f"exps/thumos/adatad/bafdr_k16_u128_all48_a0_seed{s}"
 
     # Pipeline generator helper
     def bafdr_pipeline_str(is_train=True):
+        meta_keys = (
+            '["id", "video_name", "data_path", "fps", "duration", '
+            '"snippet_stride", "window_start_frame", "resize_length", '
+            '"window_size", "offset_frames", "snippet_boundaries", "bafdr_geometry"]'
+        )
         if is_train:
-            return '''[
+            return f'''[
     dict(type="PrepareVideoInfo", format="mp4"),
     dict(type="mmaction.DecordInit", num_threads=4),
     dict(type="LoadFrames", num_clips=1, method="random_trunc", trunc_len=768, trunc_thresh=0.75, crop_ratio=[0.9, 1.0], scale_factor=1),
     dict(type="mmaction.DecordDecode"),
     dict(type="BAFDRSourceViews", global_size=96, output_key="bafdr_inputs", required_source_height=180, required_source_width=320),
     dict(type="ConvertToTensor", keys=["gt_segments", "gt_labels"]),
-    dict(type="Collect", inputs="bafdr_inputs", keys=["masks", "gt_segments", "gt_labels"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries", "window_start_frame", "bafdr_geometry"]),
+    dict(type="Collect", inputs="bafdr_inputs", keys=["masks", "gt_segments", "gt_labels"], meta_keys={meta_keys}),
 ]'''
         else:
-            return '''[
+            return f'''[
     dict(type="PrepareVideoInfo", format="mp4"),
     dict(type="mmaction.DecordInit", num_threads=4),
     # ``window_size`` and overlap belong to the dataset, not the transform.
@@ -82,7 +87,7 @@ work_dir = f"exps/thumos/adatad/bafdr_k16_u128_all48_a0_seed{s}"
     dict(type="LoadFrames", num_clips=1, method="sliding_window"),
     dict(type="mmaction.DecordDecode"),
     dict(type="BAFDRSourceViews", global_size=96, output_key="bafdr_inputs", required_source_height=180, required_source_width=320),
-    dict(type="Collect", inputs="bafdr_inputs", keys=["masks"], meta_keys=["id", "fps", "duration", "video_name", "snippet_boundaries", "window_start_frame", "bafdr_geometry"]),
+    dict(type="Collect", inputs="bafdr_inputs", keys=["masks"], meta_keys={meta_keys}),
 ]'''
 
     bafdr_optimizer_str = '''dict(

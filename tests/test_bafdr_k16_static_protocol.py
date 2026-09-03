@@ -32,6 +32,15 @@ def test_bafdr_configs_use_supported_collect_contract():
             pipeline = cfg.dataset[split].pipeline
             collect = next(step for step in pipeline if step.type == "Collect")
             keys = set(collect["keys"])
+            assert {
+                "video_name",
+                "fps",
+                "duration",
+                "snippet_stride",
+                "window_start_frame",
+                "offset_frames",
+                "bafdr_geometry",
+            }.issubset(set(collect.meta_keys))
             if split == "train":
                 assert {"masks", "gt_segments", "gt_labels"}.issubset(keys)
             else:

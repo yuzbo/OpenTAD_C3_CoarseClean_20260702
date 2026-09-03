@@ -204,7 +204,20 @@ def validate_bafdr_pipeline(cfg: Config, *, config_path: Path, arm: str) -> Dict
                         f"{config_path}: {split} ConvertToTensor requests unavailable labels {sorted(converted)}"
                     )
         meta_keys = set(_get(collect, "meta_keys", []))
-        required_meta = {"id", "fps", "duration", "video_name", "snippet_boundaries", "window_start_frame", "bafdr_geometry"}
+        required_meta = {
+            "id",
+            "video_name",
+            "data_path",
+            "fps",
+            "duration",
+            "snippet_stride",
+            "window_start_frame",
+            "resize_length",
+            "window_size",
+            "offset_frames",
+            "snippet_boundaries",
+            "bafdr_geometry",
+        }
         if not required_meta.issubset(meta_keys):
             raise ValueError(f"{config_path}: {split} Collect.meta_keys missing {sorted(required_meta - meta_keys)}")
 
