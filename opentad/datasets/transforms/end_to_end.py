@@ -748,6 +748,11 @@ class LoadFrames:
         results["num_clips"] = self.num_clips
         results["clip_len"] = frame_num // self.num_clips
         results["masks"] = masks
+        if self.emit_boundary_validity or "gt_boundary_validity" in results:
+            if "gt_segments" in results and results["gt_segments"] is not None:
+                results.setdefault("gt_boundary_validity", np.ones((len(results["gt_segments"]), 2), dtype=np.bool_))
+            else:
+                results.setdefault("gt_boundary_validity", np.empty((0, 2), dtype=np.bool_))
         return results
 
 

@@ -160,7 +160,13 @@ class ConvertToTensor:
 
     def __call__(self, results):
         for key in self.keys:
-            results[key] = to_tensor(results[key])
+            if key == "gt_boundary_validity" and key not in results:
+                if "gt_segments" in results and results["gt_segments"] is not None:
+                    results[key] = torch.ones((len(results["gt_segments"]), 2), dtype=torch.bool)
+                else:
+                    results[key] = torch.empty((0, 2), dtype=torch.bool)
+            elif key in results:
+                results[key] = to_tensor(results[key])
         return results
 
     def __repr__(self):
