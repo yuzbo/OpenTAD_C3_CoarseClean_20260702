@@ -55,3 +55,10 @@ def test_slurm_launchers_start_with_a_real_shebang():
     ):
         payload = (ROOT / "scripts" / name).read_bytes()
         assert payload.startswith(b"#!/bin/bash\n")
+
+
+def test_runtime_witness_places_video_inputs_on_the_model_device():
+    text = (
+        ROOT / "tools" / "bata" / "verify_d2s_patad_pre_run_witness.py"
+    ).read_text(encoding="utf-8")
+    assert text.count('device="cuda:0"') >= 3
