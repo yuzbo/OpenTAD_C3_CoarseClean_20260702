@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-03T08:45:24+00:00",
+  "last_updated_utc": "2026-09-03T08:56:37+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -147,8 +147,8 @@
       "sha": "539287fa8a035765afd7e79863ce77278bef83f2",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/539287fa8a035765afd7e79863ce77278bef83f2",
       "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_admission",
-      "deployment_status": "真实 CUDA/focused 门禁 1267855 已通过；按分钟等待队列名额后启动 D160 教师，再依次提交 G96、U16、LATE、NOKD、FULL",
-      "result_status": "教师尚未成功训练，学生五臂尚未提交，无终态性能",
+      "deployment_status": "真实 CUDA/focused 门禁 1267855 已通过；D160 seed 4407 教师 1267884 正在运行，成功后按分钟提交 G96、U16、LATE、NOKD、FULL",
+      "result_status": "教师正式训练进行中，学生五臂尚未提交，无终态性能",
       "final_result": "保留 1267818 的 /bin/sh wrap 失败；539287fa 已改为 bash -lc 并重跑门禁；efe69d2e checkpoint 由独立任务按旧 SHA 另行评测，不能归入本提交",
       "next_action": "完成同 SHA、同 seed 的 D160 epoch-59 EMA 教师后开放五臂 screen",
       "local_head": "539287fa8a035765afd7e79863ce77278bef83f2",
@@ -170,18 +170,33 @@
       "local_clean_tree": true
     },
     {
+      "category": "historical_exact_route",
+      "name": "BAFDR 历史五臂三种子终态 checkpoint 独立评测",
+      "internal_id": "BAFDR_EFE69D2E_EVAL",
+      "branch": "历史远端 exact-SHA 结果身份",
+      "sha": "efe69d2ea10accd01d0129dfe99cba4d1d5773cb",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/efe69d2ea10accd01d0129dfe99cba4d1d5773cb",
+      "local_directory": "E:/DeskTop/TAD/NO_LOCAL_WORKTREE_FOR_EFE69D2E",
+      "deployment_status": "1266410-1266414 已产生 15 个 epoch-59 checkpoint；独立任务正在运行 prediction eval 1267920，postprocess 1267921 afterok 等待",
+      "result_status": "历史 exact-SHA 评测进行中，尚无可报告终态指标",
+      "final_result": "只按 efe69d2e 的真实训练/teacher/数据/evaluator receipts 报告，绝不迁移为当前 539287fa 结果",
+      "next_action": "等待 792-window prediction seal、C_exec、官方 mAP opening 与 strict completeness receipt",
+      "local_head": null,
+      "local_clean_tree": false
+    },
+    {
       "category": "correction_route",
       "name": "Evidence-Recovery 当前 C0：轻量侦察器不确定性与最大空洞补漏",
       "internal_id": "EVIDENCE_ACTIVE",
       "branch": "codex/duca-evidence-formal-repair-20260903",
-      "sha": "0d1abf6dc0b3b5f13c1f18118e0689af32d84229",
-      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/0d1abf6dc0b3b5f13c1f18118e0689af32d84229",
+      "sha": "77c8d173c95aef153c04fd1355a0e75a63ff22c9",
+      "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/77c8d173c95aef153c04fd1355a0e75a63ff22c9",
       "local_directory": "E:/DeskTop/TAD/OpenTAD_Evidence_FormalRepair_20260903",
-      "deployment_status": "修复后 admission 1267834 为 28 passed 且 CUDA 门禁通过；C0 seed 8261 训练 1267857 正在运行，评估 1267858 等待",
-      "result_status": "C0 正式训练进行中，尚无终态性能",
-      "final_result": "保留 1267747 的 219-vs-100 loader 合同失败；0d1abf6d 改为每 epoch 确定性暴露 100 batch、共 6000 成功更新",
-      "next_action": "先确认 C0 完成首个 100-update epoch，再逐步释放其余七个消融臂",
-      "local_head": "0d1abf6dc0b3b5f13c1f18118e0689af32d84229",
+      "deployment_status": "修复版 admission/C0 每分钟流水线 PID 2400024 正在等待 QOS 提交名额；队列降到限制后自动先跑 actual-ledger admission，再提交 C0 seed 8261 与 afterok 评估",
+      "result_status": "等待重提，尚无终态性能",
+      "final_result": "保留 1267747 的 219-vs-100 loader 合同失败和 1267857 的 legacy ledger policy 字段错配；77c8d173 已修复两者并把真实三份 ledger schema 纳入 admission",
+      "next_action": "等待每分钟提交器取得名额并通过 admission；C0 首个 100-update epoch 成功后再逐步释放其余七臂",
+      "local_head": "77c8d173c95aef153c04fd1355a0e75a63ff22c9",
       "local_clean_tree": true
     }
   ],
@@ -231,7 +246,13 @@
       "job_ids": "1267747,1267748",
       "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_evidence_formal_21d1d229",
       "source_head": "21d1d22975686852d0c1dc31a0f62419252f17d4",
-      "reason": "Evidence C0 首次正式启动因 DataLoader 219 batches 与 100-update 合同实现冲突而失败；0d1abf6d 已修复并用 1267857/1267858 新 namespace 重提"
+      "reason": "Evidence C0 首次正式启动因 DataLoader 219 batches 与 100-update 合同实现冲突而失败；0d1abf6d 修复了更新暴露合同"
+    },
+    {
+      "job_ids": "1267857,1267858",
+      "remote_directory": "/data/run01/sczc063/yuzibo/projects/duca_evidence_formal_0d1abf6d",
+      "source_head": "0d1abf6dc0b3b5f13c1f18118e0689af32d84229",
+      "reason": "Evidence C0 第二次启动读取真实 legacy ledger 时发现 policy_source/config-hash 契约与行 schema 错配；77c8d173 已改为绑定 policy=c3_lowres_probe_delta_p_action 并在 admission 扫描三份 ledger"
     },
     {
       "job_ids": "1267818",
