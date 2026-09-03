@@ -142,6 +142,7 @@ for r in "${ROUTES_TO_RUN[@]}"; do
 #SBATCH --output=${LOG_DIR}/${r}_${job_tag}_%j.out
 #SBATCH --error=${LOG_DIR}/${r}_${job_tag}_%j.err
 
+set -euo pipefail
 source /etc/profile
 module load cuda/11.8
 module load miniforge3/24.11

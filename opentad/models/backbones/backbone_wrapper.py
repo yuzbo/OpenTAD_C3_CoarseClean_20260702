@@ -12,6 +12,51 @@ from mmengine.runner import load_checkpoint
 BACKBONES = MM_BACKBONES
 
 
+def _align_temporal_auxiliary_to_clips(
+    value,
+    *,
+    flattened_batch,
+    clip_len,
+    tubelet_size,
+    name,
+    reduce_frame_values=False,
+):
+    """Align a full-window temporal signal with flattened backbone clips."""
+    if value is None or not torch.is_tensor(value) or value.ndim != 2:
+        return value
+    if clip_len % tubelet_size:
+        raise ValueError(f"{name} alignment requires clip_len divisible by tubelet_size")
+
+    tubelets_per_clip = clip_len // tubelet_size
+    source_batch, source_length = value.shape
+    if source_batch == flattened_batch:
+        if source_length == clip_len and reduce_frame_values:
+            return value.reshape(flattened_batch, tubelets_per_clip, tubelet_size).amax(dim=-1)
+        return value
+    if flattened_batch % source_batch:
+        raise ValueError(
+            f"{name} batch {source_batch} cannot align with flattened backbone batch {flattened_batch}"
+        )
+
+    clips_per_sample = flattened_batch // source_batch
+    expected_tubelets = clips_per_sample * tubelets_per_clip
+    if source_length == expected_tubelets:
+        return value.reshape(flattened_batch, tubelets_per_clip)
+
+    expected_frames = clips_per_sample * clip_len
+    if source_length == expected_frames and reduce_frame_values:
+        return (
+            value.reshape(source_batch, clips_per_sample, tubelets_per_clip, tubelet_size)
+            .amax(dim=-1)
+            .reshape(flattened_batch, tubelets_per_clip)
+        )
+
+    raise ValueError(
+        f"{name} shape {tuple(value.shape)} cannot align with {clips_per_sample} clips/sample, "
+        f"clip_len={clip_len}, and tubelet_size={tubelet_size}"
+    )
+
+
 class BackboneWrapper(nn.Module):
     def __init__(self, cfg):
         super(BackboneWrapper, self).__init__()
@@ -99,10 +144,33 @@ class BackboneWrapper(nn.Module):
         bb_kwargs = dict(kwargs)
         sig = inspect.signature(self.model.backbone.forward)
         params = sig.parameters
+        flattened_batch = int(frames.shape[0])
+        clip_len = int(frames.shape[2])
+        tubelet_size = int(getattr(self.model.backbone, "tubelet_size", 1))
+        if "boundary_prior" in bb_kwargs:
+            bb_kwargs["boundary_prior"] = _align_temporal_auxiliary_to_clips(
+                bb_kwargs["boundary_prior"],
+                flattened_batch=flattened_batch,
+                clip_len=clip_len,
+                tubelet_size=tubelet_size,
+                name="boundary_prior",
+                reduce_frame_values=True,
+            )
+        if "delta_t" in bb_kwargs:
+            bb_kwargs["delta_t"] = _align_temporal_auxiliary_to_clips(
+                bb_kwargs["delta_t"],
+                flattened_batch=flattened_batch,
+                clip_len=clip_len,
+                tubelet_size=tubelet_size,
+                name="delta_t",
+            )
         if "actual_positions" in params:
             bb_kwargs["actual_positions"] = actual_positions
         if "canonical_positions" in params:
             bb_kwargs["canonical_positions"] = canonical_positions
+        checkpoint_kwargs = dict(bb_kwargs)
+        checkpoint_kwargs.pop("actual_positions", None)
+        checkpoint_kwargs.pop("canonical_positions", None)
 
         # go through the video backbone
         if self.freeze_backbone:  # freeze everything even in training
@@ -113,7 +181,7 @@ class BackboneWrapper(nn.Module):
                         self.temporal_checkpointing_chunk_num,
                         self.temporal_checkpointing_chunk_dim,
                         actual_positions, canonical_positions,
-                        **kwargs,
+                        **checkpoint_kwargs,
                     )
                 else:
                     features = self.model.backbone(frames, **bb_kwargs)
@@ -125,7 +193,7 @@ class BackboneWrapper(nn.Module):
                     self.temporal_checkpointing_chunk_num,
                     self.temporal_checkpointing_chunk_dim,
                     actual_positions, canonical_positions,
-                    **kwargs,
+                    **checkpoint_kwargs,
                 )
             else:
                 features = self.model.backbone(frames, **bb_kwargs)

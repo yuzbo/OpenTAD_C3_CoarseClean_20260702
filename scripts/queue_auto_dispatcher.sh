@@ -13,6 +13,15 @@ QOS="${QOS:-normal}"
 SEED="${SEED:-3407}"
 MAX_JOBS_IN_QUEUE="${MAX_JOBS_IN_QUEUE:-14}"
 TIME_LIMIT="${TIME_LIMIT:-18:00:00}"
+QUEUE_FILE="${QUEUE_FILE:-}"
+
+REVISION=$(git -C "$PROJECT_DIR" rev-parse HEAD)
+if [[ -n "$(git -C "$PROJECT_DIR" status --porcelain)" ]]; then
+  echo "Refusing formal dispatch from dirty checkout: $PROJECT_DIR" >&2
+  exit 1
+fi
+STATE_FILE="${STATE_FILE:-${BASE}/guardians/queue_auto_dispatcher_${REVISION:0:12}_${SEED}.state}"
+mkdir -p "$(dirname "$STATE_FILE")"
 
 LOG_DIR="${BASE}/slurm_logs/single_seed_$(date +%Y%m%d)"
 mkdir -p "$LOG_DIR"
@@ -82,7 +91,26 @@ ALL_CONFIGS=(
   "evidence_recovery:configs/adatad/thumos/duca_evidence_recovery_matched_h65_60.py"
 )
 
-echo "Total pending jobs to schedule: ${#ALL_CONFIGS[@]}"
+if [[ -n "$QUEUE_FILE" ]]; then
+  if [[ ! -f "$QUEUE_FILE" ]]; then
+    echo "Queue manifest not found: $QUEUE_FILE" >&2
+    exit 1
+  fi
+  mapfile -t ALL_CONFIGS < <(grep -Ev '^[[:space:]]*(#|$)' "$QUEUE_FILE")
+fi
+
+declare -A SUBMITTED=()
+if [[ -f "$STATE_FILE" ]]; then
+  while IFS=$'\t' read -r item job_id; do
+    if [[ -n "$item" && -n "$job_id" ]]; then
+      SUBMITTED["$item"]="$job_id"
+    fi
+  done < "$STATE_FILE"
+fi
+
+echo "Exact commit: $REVISION"
+echo "Persistent state: $STATE_FILE"
+echo "Total configured jobs to schedule: ${#ALL_CONFIGS[@]}"
 
 INDEX=0
 while [[ $INDEX -lt ${#ALL_CONFIGS[@]} ]]; do
@@ -94,8 +122,17 @@ while [[ $INDEX -lt ${#ALL_CONFIGS[@]} ]]; do
   fi
 
   ITEM="${ALL_CONFIGS[$INDEX]}"
+  if [[ -n "${SUBMITTED[$ITEM]:-}" ]]; then
+    echo "[$(date +'%H:%M:%S')] Already submitted: JobID=${SUBMITTED[$ITEM]} | ${ITEM}"
+    INDEX=$((INDEX + 1))
+    continue
+  fi
   ROUTE="${ITEM%%:*}"
   CFG="${ITEM#*:}"
+  if [[ ! -f "${PROJECT_DIR}/${CFG}" ]]; then
+    echo "Config not found in exact checkout: ${CFG}" >&2
+    exit 1
+  fi
   JOB_TAG="$(basename "$CFG" .py)"
   PORT=$((29000 + RANDOM % 10000))
   SBATCH_SCRIPT=$(mktemp /tmp/sbatch_${JOB_TAG}_XXXXXX.sh)
@@ -112,6 +149,7 @@ while [[ $INDEX -lt ${#ALL_CONFIGS[@]} ]]; do
 #SBATCH --output=${LOG_DIR}/${ROUTE}_${JOB_TAG}_%j.out
 #SBATCH --error=${LOG_DIR}/${ROUTE}_${JOB_TAG}_%j.err
 
+set -euo pipefail
 source /etc/profile
 module load cuda/11.8
 module load miniforge3/24.11
@@ -126,6 +164,8 @@ SBATCH_EOF
   chmod +x "$SBATCH_SCRIPT"
   if JOB_ID=$(sbatch --parsable "$SBATCH_SCRIPT"); then
     echo "[$(date +'%H:%M:%S')] Submitted [${INDEX}/${#ALL_CONFIGS[@]}]: JobID=${JOB_ID} | Route=${ROUTE} | Config=${CFG}"
+    printf '%s\t%s\n' "$ITEM" "$JOB_ID" >> "$STATE_FILE"
+    SUBMITTED["$ITEM"]="$JOB_ID"
     INDEX=$((INDEX + 1))
   else
     echo "[$(date +'%H:%M:%S')] Submission rejected, waiting 60s..."
