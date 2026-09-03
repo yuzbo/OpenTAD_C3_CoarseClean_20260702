@@ -74,7 +74,7 @@ teacher_job="$(sbatch --parsable --partition=gpu --account=sczc063 --qos=normal 
   --gres=gpu:2 --cpus-per-task=8 --time=72:00:00 \
   --job-name=bafdr-d160-s4407 \
   --output="$LOG_DIR/%x_%j.out" --error="$LOG_DIR/%x_%j.err" \
-  --wrap="source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source ${BASE}/conda_envs/opentad/bin/activate; cd \"${PROJECT_DIR}\"; PROJECT_DIR=\"${PROJECT_DIR}\" ZOOMTOKEN_RUN_ROOT=\"${RUN_ROOT}\" BAFDR_REQUIRE_SCREEN_GATE=0 BAFDR_EXPECTED_COMMIT=${EXPECTED_COMMIT} bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh train \"${TEACHER_CONFIG}\"")"
+  --wrap="bash -lc 'source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source ${BASE}/conda_envs/opentad/bin/activate; cd \"${PROJECT_DIR}\"; PROJECT_DIR=\"${PROJECT_DIR}\" ZOOMTOKEN_RUN_ROOT=\"${RUN_ROOT}\" BAFDR_REQUIRE_SCREEN_GATE=0 BAFDR_EXPECTED_COMMIT=${EXPECTED_COMMIT} bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh train \"${TEACHER_CONFIG}\"'")"
 teacher_job="${teacher_job%%;*}"
 printf 'd160_teacher\t%s\t%s\t%s\n' "$teacher_job" "afterok:$gradient_job" "SUBMITTED" >> "$REGISTRY"
 wait_for_terminal_success "$teacher_job" d160_teacher

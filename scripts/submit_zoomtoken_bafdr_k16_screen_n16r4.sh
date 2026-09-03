@@ -76,7 +76,7 @@ PY
   job_id="$(sbatch --parsable --partition=gpu --account=sczc063 --qos=normal --gres=gpu:2 --cpus-per-task=8 --time=72:00:00 \
     --job-name="bafdr-${slug}-s${SEED}" \
     --output="${BASE}/slurm_logs/%x_%j.out" --error="${BASE}/slurm_logs/%x_%j.err" \
-    --wrap="source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source ${BASE}/conda_envs/opentad/bin/activate; cd \"${PROJECT_DIR}\"; BAFDR_REQUIRE_SCREEN_GATE=0 BAFDR_EXPECTED_COMMIT=${EXPECTED_COMMIT} BAFDR_SCREEN_RECEIPT=\"${SCREEN_RECEIPT}\" BAFDR_TEACHER_CHECKPOINT=\"${TEACHER_CHECKPOINT}\" BAFDR_TEACHER_CONFIG=\"${TEACHER_CONFIG}\" BAFDR_TEACHER_CHECKPOINT_SHA256=${TEACHER_CHECKPOINT_SHA256} BAFDR_TEACHER_CONFIG_SHA256=${TEACHER_CONFIG_SHA256} BAFDR_TEACHER_COMMIT=${TEACHER_COMMIT} bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh train \"${cfg}\"")"
+    --wrap="bash -lc 'source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source ${BASE}/conda_envs/opentad/bin/activate; cd \"${PROJECT_DIR}\"; BAFDR_REQUIRE_SCREEN_GATE=0 BAFDR_EXPECTED_COMMIT=${EXPECTED_COMMIT} BAFDR_SCREEN_RECEIPT=\"${SCREEN_RECEIPT}\" BAFDR_TEACHER_CHECKPOINT=\"${TEACHER_CHECKPOINT}\" BAFDR_TEACHER_CONFIG=\"${TEACHER_CONFIG}\" BAFDR_TEACHER_CHECKPOINT_SHA256=${TEACHER_CHECKPOINT_SHA256} BAFDR_TEACHER_CONFIG_SHA256=${TEACHER_CONFIG_SHA256} BAFDR_TEACHER_COMMIT=${TEACHER_COMMIT} bash scripts/run_zoomtoken_bafdr_k16_fullmatrix_n16r4.sh train \"${cfg}\"'")"
   screen_job_ids+=("${job_id}")
   echo "${arm}=${job_id}"
   done
