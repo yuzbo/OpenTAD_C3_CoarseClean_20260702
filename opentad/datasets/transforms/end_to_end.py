@@ -211,6 +211,8 @@ class LoadFrames:
         bata_value_transport_allow_short_valid_ratio_count=False,
         bata_value_transport_source="pc_ot_mras_frontend_hard_positions",
         bata_value_transport_config_hash="",
+        emit_boundary_validity=False,
+        **kwargs,
     ):
         self.num_clips = num_clips
         self.scale_factor = scale_factor  # multiply by the frame number, if backbone has downsampling
@@ -233,6 +235,7 @@ class LoadFrames:
         )
         self.bata_value_transport_source = bata_value_transport_source
         self.bata_value_transport_config_hash = bata_value_transport_config_hash
+        self.emit_boundary_validity = bool(emit_boundary_validity)
         self._bata_value_transport_ledger = None
 
     def random_trunc(self, feats, trunc_len, gt_segments, gt_labels, offset=0, max_num_trials=200):
