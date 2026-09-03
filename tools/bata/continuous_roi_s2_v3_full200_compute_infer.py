@@ -32,6 +32,7 @@ from tools.bata.zoomtoken_full200_matrix_spec import (
     get_matrix_spec,
     validate_matrix_cell,
 )
+from tools.bata.zoomtoken_batch_device import ZoomTokenDeviceLoader
 
 
 MATRIX_SPEC = get_matrix_spec()
@@ -324,6 +325,7 @@ def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
         drop_last=False,
         **cfg.solver.test,
     )
+    device_loader = ZoomTokenDeviceLoader(loader, torch.device("cuda", 0))
     model = build_detector(cfg.model).cuda().eval()
     backbone_module = getattr(model, "backbone", None)
     if hasattr(backbone_module, "fusion"):
@@ -349,7 +351,7 @@ def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
     raw: dict[str, list[dict[str, Any]]] = {
         video_id: [] for video_id in manifest["evaluation"]["video_order"]
     }
-    for dataset_index, data in enumerate(loader):
+    for dataset_index, data in enumerate(device_loader):
         window_ordinal = int(
             manifest["evaluation"]["ordered_windows"][dataset_index]["ordinal"]
         )

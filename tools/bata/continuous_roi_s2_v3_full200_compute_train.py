@@ -32,6 +32,7 @@ from tools.bata.zoomtoken_full200_matrix_spec import (
     get_matrix_spec,
     validate_matrix_cell,
 )
+from tools.bata.zoomtoken_batch_device import ZoomTokenDeviceLoader
 
 
 MATRIX_SPEC = get_matrix_spec()
@@ -505,6 +506,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if len(train_loader) != EXPECTED_UPDATES_PER_EPOCH:
             raise RuntimeError("formal cell does not have exactly 100 rank-local batches")
+        device_train_loader = ZoomTokenDeviceLoader(
+            train_loader, torch.device("cuda", local_rank)
+        )
         model = build_detector(cfg.model).to(local_rank)
         raw_model = model
         trainable_params = [p for p in raw_model.parameters() if p.requires_grad]
@@ -656,7 +660,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise RuntimeError("runtime sampler differs from the frozen epoch order")
             before = successful_updates
             successful_updates += train_one_epoch(
-                train_loader,
+                device_train_loader,
                 model,
                 optimizer,
                 scheduler,

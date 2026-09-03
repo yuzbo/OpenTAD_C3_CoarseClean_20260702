@@ -157,7 +157,7 @@ class ActionFormer(SingleStageDetector):
                 inputs = inputs.detach()
 
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self.backbone(inputs, masks)
         else:
             x = inputs
         if self.with_backbone and hasattr(
@@ -259,7 +259,7 @@ class ActionFormer(SingleStageDetector):
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
 
         if self.with_backbone:
-            x = self.backbone(inputs)
+            x = self.backbone(inputs, masks)
         else:
             x = inputs
 

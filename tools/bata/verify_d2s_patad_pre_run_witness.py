@@ -22,6 +22,7 @@ from tools.bata.zoomtoken_full200_matrix_spec import (
     get_matrix_spec,
     validate_matrix_cell,
 )
+from tools.bata.zoomtoken_batch_device import prepare_zoomtoken_batch
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,10 +58,21 @@ def main() -> int:
     source_view = torch.zeros(
         1, 1, 3, 768, 180, 320, dtype=torch.uint8, device="cuda:0"
     )
-    masks = torch.ones(1, 768, dtype=torch.bool, device="cuda:0")
+    prepared = prepare_zoomtoken_batch(
+        {
+            "inputs": {"global": global_view, "source": source_view},
+            "masks": torch.ones(1, 768, dtype=torch.bool),
+        },
+        torch.device("cuda", 0),
+    )
+    if prepared["inputs"]["source"].device.type != "cpu":
+        raise RuntimeError("runtime witness moved source-native video off CPU")
+    if prepared["inputs"]["global"].device.type != "cuda":
+        raise RuntimeError("runtime witness did not move the global view to CUDA")
+    masks = prepared["masks"]
     with torch.inference_mode(), torch.cuda.amp.autocast(dtype=torch.float16):
         backbone_output = model.backbone(
-            {"global": global_view, "source": source_view}, masks=masks
+            prepared["inputs"], masks=masks
         )
         model._assert_feature_mask_temporal_match(
             backbone_output, masks, "runtime witness"

@@ -10,6 +10,7 @@ from opentad.models.backbones.d2s_videomae_wrapper import (
     D2STemporalZoomBackboneWrapper,
 )
 from opentad.models.detectors.actionformer import ActionFormer
+from tools.bata.zoomtoken_batch_device import prepare_zoomtoken_batch
 
 
 def _bare_wrapper() -> D2STemporalZoomBackboneWrapper:
@@ -67,6 +68,22 @@ def test_token_budget_is_exactly_22016_of_38400():
     )
 
 
+def test_batch_device_move_keeps_only_source_native_video_on_cpu():
+    batch = {
+        "inputs": {
+            "global": torch.zeros(1, 1, 3, 16, 96, 96, dtype=torch.uint8),
+            "source": torch.zeros(1, 1, 3, 16, 180, 320, dtype=torch.uint8),
+        },
+        "masks": torch.ones(1, 16, dtype=torch.bool),
+        "gt_segments": [torch.zeros(1, 2)],
+    }
+    moved = prepare_zoomtoken_batch(batch, torch.device("meta"))
+    assert moved["inputs"]["source"].device.type == "cpu"
+    assert moved["inputs"]["global"].device.type == "meta"
+    assert moved["masks"].device.type == "meta"
+    assert moved["gt_segments"][0].device.type == "meta"
+
+
 def test_actionformer_pads_all_bundle_features_on_one_axis():
     detector = ActionFormer.__new__(ActionFormer)
     nn.Module.__init__(detector)
@@ -82,4 +99,3 @@ def test_actionformer_pads_all_bundle_features_on_one_axis():
     assert padded_masks.shape == (2, 16)
     assert all(value.shape == (2, 4, 16) for value in padded.values())
     assert torch.count_nonzero(padded["residual_features"][..., 12:]) == 0
-

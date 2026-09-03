@@ -75,6 +75,7 @@ if [[ "${PRECHECK_ONLY}" == "1" ]]; then
     opentad/models/detectors/actionformer.py \
     tools/bata/d2s_tad_full200_compute.py \
     tools/bata/verify_d2s_patad_pre_run_witness.py \
+    tools/bata/zoomtoken_batch_device.py \
     tools/bata/zoomtoken_full200_matrix_spec.py
 
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Validating 3x3 D2S matrix and parameter disclosure...\n'
