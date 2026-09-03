@@ -2,12 +2,14 @@
 .vscode
 .idea
 dataset
+pretrained
 /pretrained/
 /logs/
 /exps/
 /trash/
 
 # ignore annotation
+data
 !/data/
 /data/*
 !/data/*.sh

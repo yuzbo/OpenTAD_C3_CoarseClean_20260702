@@ -261,7 +261,7 @@ def main():
         if expected_commit and expected_commit != duca_git_commit:
             raise RuntimeError(f"formal DUCA checkout ({duca_git_commit}) differs from DUCA_EXPECTED_COMMIT ({expected_commit})")
         status = subprocess.check_output(
-            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            ["git", "status", "--porcelain", "--untracked-files=no"],
             cwd=path,
             text=True,
             encoding="utf-8",
