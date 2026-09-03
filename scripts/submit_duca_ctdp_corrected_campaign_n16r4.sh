@@ -7,6 +7,9 @@ BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
 STAGE=""
 SEED=3407
 MAX_CONCURRENT=4
+MAX_JOBS_IN_QUEUE="${CTDP_MAX_JOBS_IN_QUEUE:-14}"
+ACCOUNT="${CTDP_ACCOUNT:-sczc063}"
+QOS="${CTDP_QOS:-normal}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --stage) STAGE="$2"; shift 2 ;;
@@ -17,6 +20,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ "$STAGE" == geometry || "$STAGE" == mechanism ]] || { echo "--stage geometry|mechanism required" >&2; exit 2; }
 [[ "$MAX_CONCURRENT" =~ ^[1-9][0-9]*$ ]] || { echo "--max-concurrent must be positive" >&2; exit 2; }
+[[ "$MAX_JOBS_IN_QUEUE" =~ ^[1-9][0-9]*$ ]] || { echo "CTDP_MAX_JOBS_IN_QUEUE must be positive" >&2; exit 2; }
 cd "$PROJECT_DIR"
 
 EXPECTED_COMMIT="${CTDP_EXPECTED_COMMIT:?CTDP_EXPECTED_COMMIT must be the full 40-character target SHA}"
@@ -25,6 +29,9 @@ EXPECTED_COMMIT="${CTDP_EXPECTED_COMMIT:?CTDP_EXPECTED_COMMIT must be the full 4
   echo "CT-DP checkout HEAD mismatch: expected ${EXPECTED_COMMIT}, got $(git rev-parse HEAD)" >&2; exit 2;
 }
 [[ -z "$(git status --porcelain)" ]] || { echo "CT-DP checkout is not clean" >&2; exit 2; }
+SHORT_COMMIT="${EXPECTED_COMMIT:0:12}"
+RUN_ROOT="${CTDP_RUN_ROOT:-${BASE}/experiments/duca_ctdp_${SHORT_COMMIT}_seed${SEED}}"
+mkdir -p "${RUN_ROOT}"
 
 if [[ "$STAGE" == "mechanism" ]]; then
   GEOMETRY_RECEIPT="${CTDP_GEOMETRY_RECEIPT:?mechanism stage requires CTDP_GEOMETRY_RECEIPT from the passed G2 geometry gate}"
@@ -47,12 +54,12 @@ PY
 fi
 
 submit() {
-  local name="$1" cfg="$2" dep="$3" dep_arg=()
+  local name="$1" cfg="$2" arm="$3" dep="$4" dep_arg=()
   [[ -n "$dep" ]] && dep_arg=(--dependency="afterok:${dep}")
-  sbatch --parsable --partition=gpu --gres=gpu:1 --cpus-per-task=4 --time=7-00:00:00 \
+  sbatch --parsable --account="${ACCOUNT}" --qos="${QOS}" --partition=gpu --gres=gpu:1 --cpus-per-task=4 --time=7-00:00:00 \
     --job-name="$name" --output="${BASE}/slurm_logs/%x_%j.out" --error="${BASE}/slurm_logs/%x_%j.err" \
-    "${dep_arg[@]}" --export=ALL,YUZIBO_ROOT="${BASE}",PROJECT_DIR="${PROJECT_DIR}",REPO_ROOT="${PROJECT_DIR}",SEED="${SEED}",CTDP_STAGE="${STAGE}",CTDP_EXPECTED_COMMIT="${EXPECTED_COMMIT}",CTDP_GEOMETRY_RECEIPT="${CTDP_GEOMETRY_RECEIPT:-}" \
-    --wrap="source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source ${BASE}/conda_envs/opentad/bin/activate; cd ${PROJECT_DIR}; REPO_ROOT=${PROJECT_DIR} YUZIBO_ROOT=${BASE} CTDP_STAGE=${STAGE} CTDP_EXPECTED_COMMIT=${EXPECTED_COMMIT} CTDP_GEOMETRY_RECEIPT=${CTDP_GEOMETRY_RECEIPT:-} bash scripts/run_duca_ct_dp_revised_thumos_gpu.sh configs/adatad/thumos/${cfg}.py"
+    "${dep_arg[@]}" --export=ALL,YUZIBO_ROOT="${BASE}",PROJECT_DIR="${PROJECT_DIR}",REPO_ROOT="${PROJECT_DIR}",SEED="${SEED}",CTDP_STAGE="${STAGE}",CTDP_EXPECTED_COMMIT="${EXPECTED_COMMIT}",CTDP_GEOMETRY_RECEIPT="${CTDP_GEOMETRY_RECEIPT:-}",CTDP_RUN_ROOT="${RUN_ROOT}",CTDP_RUN_NAME="${STAGE}_${arm}_seed${SEED}" \
+    --wrap="bash -lc 'source /etc/profile; set -euo pipefail; module load cuda/11.8; module load miniforge3/24.11; source ${BASE}/conda_envs/opentad/bin/activate; cd ${PROJECT_DIR}; REPO_ROOT=${PROJECT_DIR} YUZIBO_ROOT=${BASE} CTDP_STAGE=${STAGE} CTDP_EXPECTED_COMMIT=${EXPECTED_COMMIT} CTDP_GEOMETRY_RECEIPT=${CTDP_GEOMETRY_RECEIPT:-} CTDP_RUN_ROOT=${RUN_ROOT} CTDP_RUN_NAME=${STAGE}_${arm}_seed${SEED} bash scripts/run_duca_ct_dp_revised_thumos_gpu.sh configs/adatad/thumos/${cfg}.py'"
 }
 
 if [[ "$STAGE" == geometry ]]; then
@@ -61,12 +68,36 @@ else
   # M00 is G2 by definition and is intentionally never resubmitted.
   arms=(m10 m01 m11)
 fi
+required_slots="${#arms[@]}"
+(( MAX_JOBS_IN_QUEUE >= required_slots )) || { echo "CTDP_MAX_JOBS_IN_QUEUE must allow ${required_slots} submissions" >&2; exit 2; }
+REGISTRY="${RUN_ROOT}/${STAGE}_submission_registry.tsv"
+[[ ! -s "${REGISTRY}" ]] || { echo "CT-DP ${STAGE} submission already recorded: ${REGISTRY}" >&2; exit 2; }
+
+while true; do
+  current_jobs="$(squeue -u "$USER" -h | wc -l)"
+  if (( current_jobs <= MAX_JOBS_IN_QUEUE - required_slots )); then
+    break
+  fi
+  echo "CT-DP queue has ${current_jobs}/${MAX_JOBS_IN_QUEUE} jobs; retrying in 60 seconds"
+  sleep 60
+done
+
+printf 'stage\tarm\tseed\tjob_id\tdependency\tconfig\tcommit\twork_dir\n' > "${REGISTRY}"
 jobs=()
 for i in "${!arms[@]}"; do
   arm="${arms[$i]}"
   dep=""
   if (( i >= MAX_CONCURRENT )); then dep="${jobs[$((i-MAX_CONCURRENT))]}"; fi
-  job="$(submit "ctdp-${arm}-s${SEED}" "duca_ctdp_${STAGE}_${arm}" "$dep")"
+  if ! job="$(submit "ctdp-${arm}-s${SEED}" "duca_ctdp_${STAGE}_${arm}" "$arm" "$dep")"; then
+    echo "CT-DP submission failed for ${STAGE}/${arm}; successful earlier rows remain recorded in ${REGISTRY}" >&2
+    exit 1
+  fi
+  job="${job%%;*}"
   jobs+=("$job")
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$STAGE" "$arm" "$SEED" "$job" "${dep:+afterok:${dep}}" \
+    "configs/adatad/thumos/duca_ctdp_${STAGE}_${arm}.py" "$EXPECTED_COMMIT" \
+    "${RUN_ROOT}/${STAGE}_${arm}_seed${SEED}" >> "${REGISTRY}"
   echo "${arm}=${job}"
 done
+echo "Registry: ${REGISTRY}"

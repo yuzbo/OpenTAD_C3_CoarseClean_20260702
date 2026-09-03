@@ -18,6 +18,11 @@ ACTUAL_COMMIT="$(git rev-parse HEAD)"
 [[ "${ACTUAL_COMMIT}" == "${EXPECTED_COMMIT}" ]] || fail "checkout HEAD mismatch: expected ${EXPECTED_COMMIT}, got ${ACTUAL_COMMIT}"
 [[ -z "$(git status --porcelain)" ]] || fail "checkout is not clean"
 [[ -f "${CONFIG}" ]] || fail "config not found: ${CONFIG}"
+CONFIG_NAME="$(basename "${CONFIG}" .py)"
+RUN_ROOT="${CTDP_RUN_ROOT:-${BASE}/experiments/duca_ctdp_${EXPECTED_COMMIT:0:12}}"
+RUN_NAME="${CTDP_RUN_NAME:-${CONFIG_NAME}_seed${SEED}}"
+WORK_DIR="${RUN_ROOT}/${RUN_NAME}"
+[[ ! -e "${WORK_DIR}" ]] || fail "work directory already exists: ${WORK_DIR}"
 
 if [[ "${CTDP_STAGE:-}" == "mechanism" ]]; then
   GEOMETRY_RECEIPT="${CTDP_GEOMETRY_RECEIPT:?mechanism jobs require CTDP_GEOMETRY_RECEIPT}"
@@ -42,7 +47,7 @@ fi
 export HOME="${BASE}/tmp/home"
 export XDG_CACHE_HOME="${BASE}/tmp/xdg_cache"
 export XDG_CONFIG_HOME="${BASE}/tmp/xdg_config"
-mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${REPO_ROOT}/logs" "${BASE}/slurm_logs"
+mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${RUN_ROOT}" "${BASE}/slurm_logs"
 export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
 module load cuda/11.8
@@ -59,7 +64,8 @@ if [[ "${PRECHECK_ONLY:-0}" == "1" ]]; then
   exit 0
 fi
 
-echo "[DUCA_CT_DP_REVISED] repo=${REPO_ROOT} commit=$(git rev-parse --short HEAD) config=${CONFIG} seed=${SEED}"
+echo "[DUCA_CT_DP_REVISED] repo=${REPO_ROOT} commit=$(git rev-parse --short HEAD) config=${CONFIG} seed=${SEED} work_dir=${WORK_DIR}"
 MASTER_PORT="${MASTER_PORT:-$((29500 + RANDOM % 2000))}"
 "${PYTHON}" -m torch.distributed.run --nproc_per_node=1 \
-  --master_port="${MASTER_PORT}" tools/train.py "${CONFIG}" --seed "${SEED}" --id "${EXP_ID}"
+  --master_port="${MASTER_PORT}" tools/train.py "${CONFIG}" --seed "${SEED}" --id "${EXP_ID}" \
+  --cfg-options work_dir="${WORK_DIR}"
