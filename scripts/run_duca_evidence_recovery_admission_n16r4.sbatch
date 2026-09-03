@@ -24,7 +24,11 @@ module load cuda/11.8
 module load miniforge3/24.11
 source /data/run01/sczc063/yuzibo/conda_envs/opentad/bin/activate
 
-python -m pytest -q tests/test_duca_evidence_recovery.py
+python -m py_compile tools/train.py tools/test.py tools/bata/duca_evidence_training.py
+python -m pytest -q \
+  tests/test_duca_evidence_training_contract.py \
+  tests/test_duca_evidence_recovery_matrix.py \
+  tests/test_duca_evidence_recovery.py
 python - <<'PY'
 import torch
 
