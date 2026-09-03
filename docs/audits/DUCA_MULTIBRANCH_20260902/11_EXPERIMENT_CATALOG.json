@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-03T17:49:29+00:00",
+  "last_updated_utc": "2026-09-03T17:50:42+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -198,22 +198,22 @@
       "supporting_local_directories": [
         "E:/DeskTop/TAD/_duca_fix_worktrees/evidence_eval_repair"
       ],
-      "deployment_status": "actual-ledger admission 1267969 已通过；C0 seed 8261 正式训练 1267979 COMPLETED(0:0)。1268680 漏掉 gpu1_id0，1269286 把不同 clean-checkout 绝对 config 路径误作同一路径，1269298 未恢复训练时 raw data/三份 ledger 环境，三次评测均 fail-closed 且未污染 checkpoint。最终修复 codex/duca-evidence-eval-path-repair-20260903@d6f1cc28 已推送并部署到 /data/run01/sczc063/yuzibo/projects/duca_evidence_eval_d6f1cc28，远端 focused tests 13 PASS；新 admission 提交被 AssocMaxSubmitJobLimit 阻止，watcher PID 4167080 每分钟重试",
-      "result_status": "C0 训练终态有效；d6f1cc28 admission/官方评测等待账户提交额度；尚无最终性能",
+      "deployment_status": "actual-ledger admission 1267969 已通过；C0 seed 8261 正式训练 1267979 COMPLETED(0:0)。1268680 漏掉 gpu1_id0，1269286 把不同 clean-checkout 绝对 config 路径误作同一路径，1269298 未恢复训练时 raw data/三份 ledger 环境，三次评测均 fail-closed 且未污染 checkpoint。最终修复 codex/duca-evidence-eval-path-repair-20260903@d6f1cc28 已推送并部署到 /data/run01/sczc063/yuzibo/projects/duca_evidence_eval_d6f1cc28，远端 focused tests 13 PASS；watcher PID 4167080 已提交新 admission 1269322，当前因 AssocGrpGRES 等待 GPU，C0 evaluator 将在后续额度释放时以 afterok 提交",
+      "result_status": "C0 训练终态有效；d6f1cc28 admission 1269322 已入队，官方评测尚待提交；尚无最终性能",
       "final_result": "终态审计绑定 77c8d173、seed 8261、epoch 59 state_dict_ema、60 epochs、6000 successful/EMA/scheduler updates、nonfinite=0；三次 evaluator 失败均为路径/运行环境绑定错误，不是模型训练失败。d6f1cc28 成功产生 metrics receipt 前不得报告 official mAP",
-      "next_action": "由每分钟 watcher 先提交 d6f1cc28 admission，再以 afterok 提交 C0 官方评测；若失败继续读取完整日志并按绑定字段最小修复",
+      "next_action": "等待 1269322 通过 d6f1cc28 admission；每分钟 watcher 随后以 afterok 提交 C0 官方评测，若失败继续读取完整日志并按绑定字段最小修复",
       "local_head": "77c8d173c95aef153c04fd1355a0e75a63ff22c9",
       "local_clean_tree": true
     }
   ],
   "remote_supervisor": {
     "status": "ACTIVE",
-    "checked_at": "2026-09-03T17:49:26+00:00",
+    "checked_at": "2026-09-03T17:50:26+00:00",
     "dispatcher_status": "BLOCKED",
     "entries": []
   },
   "cluster_observation": {
-    "checked_at_cst": "2026-09-04 01:48:30 CST",
+    "checked_at_cst": "2026-09-04 01:50:06 CST",
     "public_gpu_available": 92,
     "public_gpu_total": 240,
     "user_jobs_in_queue": 15,
