@@ -1,0 +1,110 @@
+{
+  "schema_version": "DUCA-REMOTE-STATUS-CHECK-v007",
+  "checked_at_utc": "2026-09-03T02:48:51Z",
+  "remote_host": "N16R4",
+  "resource_snapshot": {
+    "partition": "gpu",
+    "reported_available_gpus": 61,
+    "reported_runnable_slots_1gpu": 61,
+    "reported_runnable_slots_2gpu": 27,
+    "account": "sczc063",
+    "max_submit_jobs": 16,
+    "user_queue_entries_before_gate_submission": 11,
+    "gate_jobs_submitted": 5,
+    "resource_note": "Five gate submissions fit the account limit; further submissions must wait for completion or release of existing jobs."
+  },
+  "supervisor": {
+    "pid": "2272497",
+    "status": "ACTIVE",
+    "latest_receipt_checked_at": "2026-09-03T02:48:20+00:00",
+    "dispatcher_status": "BLOCKED",
+    "blocked_reasons": [
+      "DUCA_UNIFIED: BLOCKED_UNIMPLEMENTED",
+      "stage S60_IMPLEMENTATION: BLOCKED_UNIMPLEMENTED"
+    ],
+    "queue_entries": 0,
+    "formal_results": "NO_VALID_RESULTS"
+  },
+  "single_seed_admission_jobs": [
+    {
+      "job_id": "1266879",
+      "route": "H65-Pro",
+      "source_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659",
+      "state": "COMPLETED",
+      "exit_code": "0:0",
+      "node": "g0056",
+      "scope": "PRECHECK_ONLY MODE=STAGE1_20",
+      "log": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/h65_pro/slurm-1266879.out",
+      "result": "PASS H65-60 STAGE1_20; 7 tests passed; no training"
+    },
+    {
+      "job_id": "1266880",
+      "route": "DUCA Evidence Recovery",
+      "source_sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c",
+      "state": "COMPLETED",
+      "exit_code": "0:0",
+      "node": "g0005",
+      "scope": "real CUDA forward/backward gate",
+      "logs": [
+        "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/evidence/duca_rec_cuda_gate_1266880.out",
+        "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/evidence/duca_rec_cuda_gate_1266880.err"
+      ],
+      "result": "CUDA-GATE Evidence real-shape forward/backward finite; no training"
+    },
+    {
+      "job_id": "1266881",
+      "route": "DUCA CT-DP-BAMoD",
+      "source_sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc",
+      "state": "COMPLETED",
+      "exit_code": "0:0",
+      "node": "g0056",
+      "scope": "real CUDA geometry/gradient gate",
+      "logs": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-cuda-gate_1266881.out",
+        "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-cuda-gate_1266881.err"
+      ],
+      "result": "CT_CUDA_GATE_OK (2, 4, 16); no formal training"
+    },
+    {
+      "job_id": "1266882",
+      "route": "ZoomToken BAFDR",
+      "source_sha": "fdeaeb98340bf7070201a02feb8093f50486aeaa",
+      "state": "COMPLETED",
+      "exit_code": "0:0",
+      "node": "g0006",
+      "scope": "real CUDA gradient gate",
+      "logs": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/bafdr-gradient-gate_1266882.out",
+        "/data/run01/sczc063/yuzibo/slurm_logs/bafdr-gradient-gate_1266882.err"
+      ],
+      "result": "BAFDR_GRADIENT_GATE_OK; Teacher screen and 21-cell matrix remain closed"
+    },
+    {
+      "job_id": "1266883",
+      "route": "ZoomToken ET-TRC",
+      "source_sha": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f",
+      "state": "COMPLETED",
+      "exit_code": "0:0",
+      "node": "g0006",
+      "scope": "real CUDA pretrain/load/finite-update gate",
+      "logs": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/et-trc-cuda-gate_1266883.out",
+        "/data/run01/sczc063/yuzibo/slurm_logs/et-trc-cuda-gate_1266883.err"
+      ],
+      "result": "ET_TRC_CUDA_GATE_OK (1, 12, 8, 10, 10); checkpoint coverage and two-GPU DDP remain open"
+    }
+  ],
+  "unified": {
+    "source_sha": "89b9ea3e8e018b41034917ee14de7f409354a7e9",
+    "state": "BLOCKED_UNIMPLEMENTED",
+    "formal_submission": "NOT_SUBMITTED",
+    "reason": "Taylor P0/P1、H65 retention/transition、真实 cost 未实现"
+  },
+  "existing_nonowned_jobs": {
+    "ctdp": "1265779/1265780 RUNNING on stale 679b7121",
+    "bafdr": "1266414/1266415/1266416 RUNNING on later efe69d2e; 1266420/1266475/1266479/1266480 pending dependency",
+    "evidence": "1266397_0 and 1266397_7 RUNNING on dirty 647151fa; 1266397_1/_2 FAILED and preserved"
+  },
+  "formal_results": "NO_VALID_RESULTS",
+  "action": "五条允许的 single-seed admission gates 已成功部署并完成；不把 gate 当作性能训练，不替换冻结 SHA。待各路线剩余 gate、资源和 Unified 实现完成后，才可提交正式单种子训练。"
+}

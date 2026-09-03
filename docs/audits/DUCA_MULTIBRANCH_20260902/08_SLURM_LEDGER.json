@@ -186,6 +186,76 @@
       "status": "SUCCEEDED",
       "job_ids": ["1265779", "1265780", "1266410-1266416", "1266397_0", "1266397_7"],
       "result": "监督器 ACTIVE/BLOCKED；BAFDR 1266410-1266413 COMPLETED with train receipts/checkpoints but metric_opened=false/eval_results empty，1266414-1266416 RUNNING；CT-DP G2/G3 到 epoch45；Evidence C0/A6 到 epoch41/39；无新增错误；owned worktrees 无合法终态产物"
+    },
+    {
+      "kind": "h65_single_seed_admission_precheck",
+      "command": "sbatch --chdir=/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/h65_pro --export=DUCA_REPO_ROOT=...,PRECHECK_ONLY=1,MODE=STAGE1_20 scripts/run_duca_h65_60_curriculum_n16r4.sbatch",
+      "status": "SUCCEEDED",
+      "job_ids": ["1266879"],
+      "source_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659",
+      "run_root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/h65_pro",
+      "logs": ["/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/h65_pro/slurm-1266879.out"],
+      "result": "PASS H65-60 STAGE1_20; 7 curriculum tests passed; precheck only, no training"
+    },
+    {
+      "kind": "evidence_single_seed_cuda_gate",
+      "command": "sbatch --chdir=/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/evidence --export=DUCA_REPO_ROOT=... scripts/run_duca_evidence_recovery_cuda_gate_n16r4.sbatch",
+      "status": "SUCCEEDED",
+      "job_ids": ["1266880"],
+      "source_sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c",
+      "run_root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/evidence",
+      "logs": [
+        "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/evidence/duca_rec_cuda_gate_1266880.out",
+        "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/evidence/duca_rec_cuda_gate_1266880.err"
+      ],
+      "result": "CUDA-GATE Evidence real-shape forward/backward finite; gate only, no checkpoint/metric"
+    },
+    {
+      "kind": "ctdp_single_seed_cuda_gate",
+      "command": "sbatch --chdir=/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/ctdp --export=PROJECT_DIR=... scripts/run_duca_ctdp_cuda_gate_n16r4.sbatch",
+      "status": "SUCCEEDED",
+      "job_ids": ["1266881"],
+      "source_sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc",
+      "run_root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/ctdp",
+      "logs": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-cuda-gate_1266881.out",
+        "/data/run01/sczc063/yuzibo/slurm_logs/ctdp-cuda-gate_1266881.err"
+      ],
+      "result": "CT_CUDA_GATE_OK (2, 4, 16); gate only, no formal training"
+    },
+    {
+      "kind": "bafdr_single_seed_gradient_gate",
+      "command": "sbatch --chdir=/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/bafdr --export=PROJECT_DIR=... scripts/run_zoomtoken_bafdr_gradient_gate_n16r4.sbatch",
+      "status": "SUCCEEDED",
+      "job_ids": ["1266882"],
+      "source_sha": "fdeaeb98340bf7070201a02feb8093f50486aeaa",
+      "run_root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/bafdr",
+      "logs": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/bafdr-gradient-gate_1266882.out",
+        "/data/run01/sczc063/yuzibo/slurm_logs/bafdr-gradient-gate_1266882.err"
+      ],
+      "result": "BAFDR_GRADIENT_GATE_OK; gate only, Teacher screen and 21-cell matrix remain closed"
+    },
+    {
+      "kind": "et_trc_single_seed_cuda_gate",
+      "command": "sbatch --chdir=/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/et_trc --export=PROJECT_DIR=... scripts/run_zoomtoken_et_trc_cuda_gate_n16r4.sbatch",
+      "status": "SUCCEEDED",
+      "job_ids": ["1266883"],
+      "source_sha": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f",
+      "run_root": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_audit_20260902/et_trc",
+      "logs": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/et-trc-cuda-gate_1266883.out",
+        "/data/run01/sczc063/yuzibo/slurm_logs/et-trc-cuda-gate_1266883.err"
+      ],
+      "result": "ET_TRC_CUDA_GATE_OK (1, 12, 8, 10, 10); checkpoint coverage and two-GPU DDP still open"
+    },
+    {
+      "kind": "unified_single_seed_formal_submission",
+      "command": "python scripts/duca_unified_fullmatrix/submit_all.sh",
+      "status": "BLOCKED_UNIMPLEMENTED",
+      "job_ids": [],
+      "source_sha": "89b9ea3e8e018b41034917ee14de7f409354a7e9",
+      "result": "Taylor P0/P1、H65 retention/transition、真实 cost 未实现；按 fail-closed 规则不提交"
     }
   ],
   "failure_diagnoses": [
