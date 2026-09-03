@@ -8,6 +8,10 @@ def test_et_trc_pair_uses_torchrun_for_local_rank_contract():
     assert "torchrun --standalone --nproc_per_node=2 tools/train.py" in text
     assert "; python tools/train.py" not in text
     assert "source /etc/profile; set -euo pipefail" in text
+    assert "workflow.max_train_iters=1" in text
+    assert '--dependency="afterok:' in text
+    assert "retrying in 60 seconds" in text
+    assert "git branch --show-current" not in text
 
 
 def test_et_trc_configs_bind_global_batch_for_world2():

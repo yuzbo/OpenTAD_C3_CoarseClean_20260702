@@ -18,9 +18,6 @@ cd "${PROJECT_DIR}"
 EXPECTED_COMMIT="${ETTRC_EXPECTED_COMMIT:?ETTRC_EXPECTED_COMMIT must be the full 40-character target SHA}"
 [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "ETTRC_EXPECTED_COMMIT must be a full SHA" >&2; exit 2; }
 [[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || { echo "ET-TRC checkout HEAD mismatch" >&2; exit 2; }
-[[ "$(git branch --show-current)" == "codex/zoomtoken-et-trc-correction-20260902" ]] || {
-  echo "ET-TRC submit requires correction branch, got $(git branch --show-current)" >&2; exit 2;
-}
 [[ -z "$(git status --porcelain)" ]] || { echo "ET-TRC checkout is not clean" >&2; exit 2; }
 
 SHORT_COMMIT="$(git rev-parse --short HEAD)"
