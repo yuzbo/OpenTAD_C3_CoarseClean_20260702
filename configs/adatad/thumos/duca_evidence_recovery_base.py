@@ -213,16 +213,19 @@ workflow = dict(
     logging_interval=50,
     checkpoint_interval=5,
     val_loss_interval=-1,
-    val_eval_interval=10,
-    val_start_epoch=40,
+    val_eval_interval=-1,
+    val_start_epoch=9999,
     end_epoch=total_epochs,
-    max_train_iters=max_updates,
+    formal_successful_update_contract=True,
     expected_train_batches_per_epoch=100,
     expected_successful_optimizer_updates=max_updates,
+    max_nonfinite_loss_retries=50,
+    max_amp_retries_per_batch=20,
+    fail_on_amp_replay_exhaustion=True,
+    require_finite_train_loss=True,
     primary_checkpoint_epoch=59,
     primary_checkpoint_state_key="state_dict_ema",
-    # Stop a run before a non-finite detector loss can corrupt its checkpoint.
-    require_finite_train_loss=True,
+    checkpoint_criterion="terminal_epoch_59_state_dict_ema",
 )
 
 # Post processing setting: ensure save_dict=True so result_path is generated for structured metrics
@@ -290,14 +293,4 @@ model = dict(
         ),
     ),
     projection=dict(max_seq_len=selected_budget),
-)
-
-workflow = dict(
-    logging_interval=50,
-    checkpoint_interval=2,
-    val_loss_interval=-1,
-    val_eval_interval=2,
-    val_start_epoch=40,
-    max_nonfinite_loss_retries=50,
-    max_amp_retries_per_batch=20,
 )
