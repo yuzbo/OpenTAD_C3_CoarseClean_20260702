@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-03T09:17:47+00:00",
+  "last_updated_utc": "2026-09-03T09:51:06+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -103,8 +103,8 @@
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/e553a5a4a1063a755900d3dfa4bf8909bf97d466",
       "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/h65_admission",
       "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 正在运行；原依赖评估 1267710/1267712/1267738 为释放 QOS 槽已取消，watcher PID 2420586 会在训练成功后按分钟重提",
-      "result_status": "正式训练进行中，尚无终态性能",
-      "final_result": "已修复短窗口 padding 后 K=383 与输入 K=384 不一致；本地 32 passed、远端 admission 成功，当前无 epoch-59 EMA 或官方 mAP",
+      "result_status": "正式训练进行中：REF-D768/REF-U384 已进入 epoch 16，REF-MNV3FC384 已进入 epoch 15；尚无终态性能",
+      "final_result": "已修复短窗口 padding 后 K=383 与输入 K=384 不一致；三臂 loss 有限且无 Traceback/OOM/非有限值，当前无 epoch-59 EMA 或官方 mAP",
       "next_action": "持续核验成功更新、有限 loss、终态 EMA；训练成功后自动运行官方 THUMOS14 评估",
       "local_head": "e553a5a4a1063a755900d3dfa4bf8909bf97d466",
       "local_clean_tree": true
@@ -118,8 +118,8 @@
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/c0fae67a1236f2c47e6c2935d217659cd1f8fb9d",
       "local_directory": "E:/DeskTop/TAD/OpenTAD_CTDP_FormalRepair_20260903",
       "deployment_status": "远端 admission 1267221 已通过；G0、G1、G2、G3 正式训练 1267229-1267232 正在运行",
-      "result_status": "四臂正式训练进行中，尚无终态性能",
-      "final_result": "远端 26 项测试与 CUDA 几何/梯度门禁通过；当前训练 loss 有限，尚无 epoch-59 EMA 或官方 mAP",
+      "result_status": "四臂正式训练进行中：G0 epoch 20、G1 epoch 21、G2/G3 epoch 22；尚无终态性能",
+      "final_result": "远端 26 项测试与 CUDA 几何/梯度门禁通过；四臂 loss 有限且错误日志无异常，尚无 epoch-59 EMA 或官方 mAP",
       "next_action": "等待四臂终态 checkpoint，随后运行同一 evaluator 并做配对比较",
       "local_head": "c0fae67a1236f2c47e6c2935d217659cd1f8fb9d",
       "local_clean_tree": true
@@ -147,7 +147,7 @@
       "sha": "539287fa8a035765afd7e79863ce77278bef83f2",
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/539287fa8a035765afd7e79863ce77278bef83f2",
       "local_directory": "E:/DeskTop/TAD/_duca_fix_worktrees/bafdr_admission",
-      "deployment_status": "真实 CUDA/focused 门禁 1267855 已通过；D160 seed 4407 教师 1267884 正在运行，已到 epoch 9/update 1000 并保存 checkpoint；成功后按分钟提交 G96、U16、LATE、NOKD、FULL",
+      "deployment_status": "真实 CUDA/focused 门禁 1267855 已通过；D160 seed 4407 教师 1267884 正在运行，已保存 epoch 19/update 2000 checkpoint；成功后按分钟提交 G96、U16、LATE、NOKD、FULL",
       "result_status": "教师正式训练进行中，学生五臂尚未提交，无终态性能",
       "final_result": "保留 1267818 的 /bin/sh wrap 失败；539287fa 已改为 bash -lc 并重跑门禁；efe69d2e checkpoint 由独立任务按旧 SHA 另行评测，不能归入本提交",
       "next_action": "完成同 SHA、同 seed 的 D160 epoch-59 EMA 教师后开放五臂 screen",
@@ -163,7 +163,7 @@
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/74473c2775caebf0da9d368ce8009d78e2942098",
       "local_directory": "E:/DeskTop/TAD/zoomtoken_ettrc_correction_20260902",
       "deployment_status": "真实 VideoMAE 覆盖与 2-GPU/global-batch=2 admission 已通过；OFF 1267218 与 ON 1267219 正在运行",
-      "result_status": "双臂正式训练进行中，尚无终态性能",
+      "result_status": "双臂正式训练均已完成 epoch 15，尚无终态性能",
       "final_result": "当前训练 loss 有限；ET-TRC 保持 100% dense temporal states，只减少 Transformer 块内完整计算次数",
       "next_action": "等待 OFF/ON epoch-59 EMA 与官方评估，比较定位性能和执行算子计数",
       "local_head": "74473c2775caebf0da9d368ce8009d78e2942098",
@@ -193,8 +193,8 @@
       "github_commit": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702/commit/77c8d173c95aef153c04fd1355a0e75a63ff22c9",
       "local_directory": "E:/DeskTop/TAD/OpenTAD_Evidence_FormalRepair_20260903",
       "deployment_status": "actual-ledger admission 1267969 已通过（29 passed、三份 ledger 扫描、CUDA FP32）；C0 seed 8261 正式训练 1267979 正在运行，流水线 PID 2400024 等待 QOS 槽后提交 afterok 评估",
-      "result_status": "C0 已完成前两个严格 epoch，尚无终态性能",
-      "final_result": "审计在 epoch 1 显示 available 219/exposed 100、successful/EMA/scheduler updates 均为 200、selector schedule 为 0，loss 有限；尚无 epoch-59 EMA 或 official mAP",
+      "result_status": "C0 已完成 epoch 0-6，累计 700 次成功更新，尚无终态性能",
+      "final_result": "最新审计显示 available 219/exposed 100、successful/EMA/scheduler updates 均为 700、selector schedule 为 0、nonfinite=0；尚无 epoch-59 EMA 或 official mAP",
       "next_action": "持续核验 6000 成功更新与终态 EMA；C0 稳定后再逐步释放其余七个消融臂",
       "local_head": "77c8d173c95aef153c04fd1355a0e75a63ff22c9",
       "local_clean_tree": true
