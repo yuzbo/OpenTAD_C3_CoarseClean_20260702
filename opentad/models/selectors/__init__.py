@@ -9,6 +9,7 @@ from .pc_ot_mras_prebackbone_frame_selector import (
 from .pc_ot_mras_reader import PCOTMRASReader, ProcessConditionedOrderedTransportMRASReader
 from .dual_phase_frame_selector import DualPhaseFrameSelector
 from .submodular_coverage_frame_selector import SubmodularCoverageFrameSelector
+from ..duca.evidence_recovery import DucaEvidenceRecoveryFrameSelector
 
 __all__ = [
     "LowCostAcquisitionBrowser",
@@ -22,5 +23,6 @@ __all__ = [
     "ProcessConditionedOrderedTransportMRASReader",
     "DualPhaseFrameSelector",
     "SubmodularCoverageFrameSelector",
+    "DucaEvidenceRecoveryFrameSelector",
 ]
 
