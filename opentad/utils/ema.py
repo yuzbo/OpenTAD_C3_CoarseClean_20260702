@@ -5,8 +5,9 @@ from copy import deepcopy
 class ModelEma(torch.nn.Module):
     def __init__(self, model, decay=0.999, device=None):
         super().__init__()
-        # make a copy of the model for accumulating moving average of weights
-        self.module = deepcopy(model)
+        # make a copy of the unwrapped model for accumulating moving average of weights
+        raw_model = getattr(model, "module", model)
+        self.module = deepcopy(raw_model)
         self.module.eval()
         self.decay = decay
         self.device = device  # perform ema on different device from model if set

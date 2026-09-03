@@ -480,7 +480,7 @@ def main():
     use_ema = getattr(cfg.solver, "ema", False)
     if use_ema:
         logger.info("Using Model EMA...")
-        model_ema = ModelEma(model)
+        model_ema = ModelEma(model.module)
     else:
         model_ema = None
 
