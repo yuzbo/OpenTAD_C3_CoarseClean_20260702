@@ -264,6 +264,11 @@ class SingleStageDetector(BaseDetector):
             positions, dense_valid_len = self._stack_irregular_positions_from_metas(
                 metas,
                 device=inputs.device,
+                expected_k=(
+                    int(inputs.shape[1]) * int(inputs.shape[3])
+                    if inputs.ndim == 6
+                    else int(inputs.shape[2])
+                ),
             )
             if positions is not None:
                 call_kwargs["irregular_selected_positions"] = positions
@@ -384,7 +389,7 @@ class SingleStageDetector(BaseDetector):
         return False
 
     @staticmethod
-    def _stack_irregular_positions_from_metas(metas, device):
+    def _stack_irregular_positions_from_metas(metas, device, expected_k=None):
         if metas is None:
             return None, None
         holders = [metas] if isinstance(metas, Mapping) else metas
@@ -405,9 +410,15 @@ class SingleStageDetector(BaseDetector):
             if count <= 0:
                 return None, None
             row = row[:count]
+            if expected_k is not None and int(row.numel()) > int(expected_k):
+                raise ValueError(
+                    "irregular selected positions exceed the backbone input budget"
+                )
             rows.append(row)
             max_len = max(max_len, int(row.numel()))
             dense_lens.append(float(meta.get("irregular_dense_valid_len", row[-1].item() + 1)))
+        if expected_k is not None:
+            max_len = int(expected_k)
         padded = []
         for row in rows:
             if int(row.numel()) < max_len:

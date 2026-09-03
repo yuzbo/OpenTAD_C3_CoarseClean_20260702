@@ -274,6 +274,26 @@ def test_global_rank_clip_coordinates_supports_mixed_short_and_full_windows() ->
     assert torch.equal(coords["irregular_selected_positions"], positions)
 
 
+def test_backbone_metadata_stack_pads_short_window_to_input_budget() -> None:
+    torch = _require_torch()
+    from opentad.models.detectors.single_stage import SingleStageDetector
+
+    positions, dense_lens = SingleStageDetector._stack_irregular_positions_from_metas(
+        [
+            {
+                "irregular_selected_positions": [0, 2, 4],
+                "irregular_selected_count": 3,
+                "irregular_dense_valid_len": 5,
+            }
+        ],
+        device=torch.device("cpu"),
+        expected_k=4,
+    )
+
+    assert positions.tolist() == [[0, 2, 4, 4]]
+    assert dense_lens.tolist() == [5.0]
+
+
 def test_frozen_mobilenet_feature_change_has_no_uninitialized_output_head() -> None:
     _require_torch()
     from tools.bata.train_lowres_action_probe import C3MobileNetV3ActionProbe
