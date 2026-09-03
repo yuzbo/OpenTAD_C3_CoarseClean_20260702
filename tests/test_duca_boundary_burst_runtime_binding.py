@@ -411,9 +411,17 @@ def test_runtime_binding_preserves_optional_diagnostic_variant_support(
         )
 
 
-def _terminal_checkpoint_case(tmp_path: Path, monkeypatch, *, r5: bool = False):
-    variant = "actionformer_learned_k256_s5801" if r5 else "two_stage_exact_uniform"
-    seed = 5801 if r5 else 3407
+def _terminal_checkpoint_case(
+    tmp_path: Path, monkeypatch, *, r5: bool = False, h65: bool = False
+):
+    if r5 and h65:
+        raise ValueError("test case cannot be both R5 and H65-Pro")
+    if r5:
+        variant, seed = "actionformer_learned_k256_s5801", 5801
+    elif h65:
+        variant, seed = "h65_pro_f16", 5417
+    else:
+        variant, seed = "two_stage_exact_uniform", 3407
     protocol = training.R5_FORMAL_PROTOCOL if r5 else training.FORMAL_PROTOCOL
     commit = "a" * 40
     work_dir = tmp_path / "gpu1_id0"
@@ -459,6 +467,8 @@ def _terminal_checkpoint_case(tmp_path: Path, monkeypatch, *, r5: bool = False):
                 "mechanism_gate_sha256": "e" * 64,
             }
         )
+    elif h65:
+        bindings["h65_pro_fullmatrix"] = True
     else:
         bindings.update(
             {
@@ -559,6 +569,37 @@ def test_terminal_checkpoint_binding_validates_complete_training_chain(
 
     assert identity["variant"] == case["variant"]
     assert identity["successful_optimizer_updates"] == 6000
+
+
+def test_h65_terminal_checkpoint_binding_does_not_require_generic_gate_fields(
+    tmp_path: Path, monkeypatch
+) -> None:
+    case = _terminal_checkpoint_case(tmp_path, monkeypatch, h65=True)
+
+    identity = training.validate_terminal_checkpoint_binding(
+        checkpoint_path=case["checkpoint"],
+        checkpoint=case["checkpoint_payload"],
+        git_commit=case["commit"],
+        variant=case["variant"],
+        seed=case["seed"],
+        slurm_job_id="8",
+        source_config_path=case["config"],
+        source_config_sha256=training.sha256_file(case["config"]),
+        resolved_config_sha256="b" * 64,
+        checkpoint_epoch=59,
+        checkpoint_state_key="state_dict_ema",
+        evaluation_annotation_path=case["annotation"],
+        evaluation_class_map_path=case["class_map"],
+        evaluation_config={},
+        runtime_pretrain_path=case["pretrain"],
+        frozen_pretrain_path=case["pretrain"],
+        frozen_pretrain_sha256=training.sha256_file(case["pretrain"]),
+    )
+
+    assert identity["h65_pro_fullmatrix"] is True
+    assert "h65_pro_dense_reference" not in identity
+    assert "gate_suite_sha256" not in identity
+    assert "full_model_gate_sha256" not in identity
 
 
 def test_terminal_checkpoint_binding_allows_same_config_in_another_checkout(

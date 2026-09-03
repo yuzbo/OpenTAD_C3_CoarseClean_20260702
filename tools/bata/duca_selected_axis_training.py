@@ -1078,8 +1078,10 @@ def validate_terminal_checkpoint_binding(
                 "hard_swap_alignment": audit.get("hard_swap_alignment"),
             }
         )
-    elif dense_reference:
-        identity.update({"h65_pro_dense_reference": True})
+    elif h65_pro_variant:
+        identity.update({"h65_pro_fullmatrix": True})
+        if dense_reference:
+            identity["h65_pro_dense_reference"] = True
     else:
         identity.update(
             {
