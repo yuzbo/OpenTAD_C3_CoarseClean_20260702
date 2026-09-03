@@ -237,6 +237,7 @@ class ActionFormer(SingleStageDetector):
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
         boundary_prior = None
+        tubelet_delta_t = None
         delta_t = None
         temporal_positions = None
         if self.frame_selector is not None:
@@ -343,6 +344,7 @@ class ActionFormer(SingleStageDetector):
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
         self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
         boundary_prior = None
+        tubelet_delta_t = None
         delta_t = None
         temporal_positions = None
         if self.frame_selector is not None:
