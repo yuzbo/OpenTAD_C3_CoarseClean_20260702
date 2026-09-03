@@ -140,3 +140,105 @@ def test_evidence_loader_contract_rejects_too_few_batches():
             train_loader=TooShortLoader(),
             world_size=1,
         )
+
+
+def _terminal_binding_case(tmp_path: Path, monkeypatch, *, changed: bool):
+    training_config = tmp_path / "training" / C0_CONFIG.name
+    evaluation_config = tmp_path / "evaluation" / C0_CONFIG.name
+    pretrain = tmp_path / "pretrain.pth"
+    annotation = tmp_path / "annotation.json"
+    class_map = tmp_path / "class_map.txt"
+    checkpoint = tmp_path / "checkpoint.pth"
+    training_config.parent.mkdir(parents=True)
+    evaluation_config.parent.mkdir(parents=True)
+    training_config.write_text("# config\n", encoding="utf-8")
+    evaluation_config.write_text(
+        "# changed config\n" if changed else "# config\n", encoding="utf-8"
+    )
+    pretrain.write_bytes(b"pretrain")
+    annotation.write_text("{}\n", encoding="utf-8")
+    class_map.write_text("action\n", encoding="utf-8")
+    checkpoint.write_bytes(b"checkpoint")
+    source_sha = duca_evidence_training.sha256_file(training_config)
+    audit = {
+        "formal_protocol": duca_evidence_training.FORMAL_PROTOCOL,
+        "git_commit": "a" * 40,
+        "arm_id": "C0",
+        "arm_name": "MATCHED_H65_60",
+        "seed": 8261,
+        "source_config_path": str(training_config.resolve()),
+        "source_config_sha256": source_sha,
+        "resolved_config_sha256": "b" * 64,
+        "runtime_pretrain_path": str(pretrain.resolve()),
+        "runtime_pretrain_sha256": duca_evidence_training.sha256_file(pretrain),
+        "evaluation_annotation_path": str(annotation.resolve()),
+        "evaluation_annotation_sha256": duca_evidence_training.sha256_file(annotation),
+        "evaluation_class_map_path": str(class_map.resolve()),
+        "evaluation_class_map_sha256": duca_evidence_training.sha256_file(class_map),
+        "update_audit": {
+            "successful_optimizer_updates": 6000,
+            "duca_schedule_updates": 0,
+        },
+        "status": "complete",
+        "last_completed_epoch": 59,
+        "expected_successful_optimizer_updates": 6000,
+        "audit_sha256": "c" * 64,
+        "slurm_job_id": "7",
+    }
+    monkeypatch.setattr(
+        duca_evidence_training, "_validated_checkpoint_audit", lambda _: audit
+    )
+    return evaluation_config, pretrain, annotation, class_map, checkpoint
+
+
+def test_terminal_binding_allows_verified_config_in_another_checkout(
+    tmp_path: Path, monkeypatch
+):
+    config, pretrain, annotation, class_map, checkpoint = _terminal_binding_case(
+        tmp_path, monkeypatch, changed=False
+    )
+
+    identity = duca_evidence_training.validate_terminal_checkpoint_binding(
+        checkpoint_path=checkpoint,
+        checkpoint={"successful_optimizer_updates": 6000},
+        git_commit="a" * 40,
+        arm_id="C0",
+        arm_name="MATCHED_H65_60",
+        seed=8261,
+        source_config_path=config,
+        source_config_sha256=duca_evidence_training.sha256_file(config),
+        resolved_config_sha256="b" * 64,
+        checkpoint_epoch=59,
+        checkpoint_state_key="state_dict_ema",
+        evaluation_annotation_path=annotation,
+        evaluation_class_map_path=class_map,
+        runtime_pretrain_path=pretrain,
+    )
+
+    assert identity["training_slurm_job_id"] == "7"
+
+
+def test_terminal_binding_rejects_changed_config_in_another_checkout(
+    tmp_path: Path, monkeypatch
+):
+    config, pretrain, annotation, class_map, checkpoint = _terminal_binding_case(
+        tmp_path, monkeypatch, changed=True
+    )
+
+    with pytest.raises(RuntimeError, match="source_config_sha256"):
+        duca_evidence_training.validate_terminal_checkpoint_binding(
+            checkpoint_path=checkpoint,
+            checkpoint={"successful_optimizer_updates": 6000},
+            git_commit="a" * 40,
+            arm_id="C0",
+            arm_name="MATCHED_H65_60",
+            seed=8261,
+            source_config_path=config,
+            source_config_sha256=duca_evidence_training.sha256_file(config),
+            resolved_config_sha256="b" * 64,
+            checkpoint_epoch=59,
+            checkpoint_state_key="state_dict_ema",
+            evaluation_annotation_path=annotation,
+            evaluation_class_map_path=class_map,
+            runtime_pretrain_path=pretrain,
+        )

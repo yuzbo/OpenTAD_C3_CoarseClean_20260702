@@ -437,7 +437,15 @@ def validate_terminal_checkpoint_binding(
     }
     if observed_source_sha256 != source_config_sha256:
         raise RuntimeError("Evidence-Recovery evaluation config hash mismatch")
+    training_config_name = Path(str(audit.get("source_config_path", ""))).name
+    evaluation_config_name = Path(source_path).name
+    if training_config_name != evaluation_config_name:
+        raise RuntimeError(
+            "Evidence-Recovery terminal checkpoint binding mismatch: source_config_path"
+        )
     for key, value in expected.items():
+        if key == "source_config_path":
+            continue
         if audit.get(key) != value:
             raise RuntimeError(f"Evidence-Recovery terminal checkpoint binding mismatch: {key}")
     if (
