@@ -27,19 +27,6 @@ class DynamicBudgetDecision:
     budget_multiple: int
     target_budget: float
     policy_name: str = "prefix_marginal_utility_stop"
-    dual_target_unit: str = "detector_valid_temporal_observations"
-
-    @property
-    def hard_requested_k(self) -> torch.Tensor:
-        return self.budget_hard
-
-    @property
-    def st_budget_k(self) -> torch.Tensor:
-        return self.budget_soft
-
-    @property
-    def soft_expected_k(self) -> torch.Tensor:
-        return self.expected_cost
 
     def validate(self, batch_size: Optional[int] = None) -> "DynamicBudgetDecision":
         if self.budget_hard.ndim != 1:
@@ -63,8 +50,6 @@ class DynamicBudgetDecision:
             raise ValueError("budget_hard must align to budget_multiple")
         if not torch.isfinite(self.budget_soft).all():
             raise ValueError("budget_soft must be finite")
-        if self.expected_cost.shape != self.budget_hard.shape or not torch.isfinite(self.expected_cost).all():
-            raise ValueError("expected_cost must be a finite [B] true soft expectation")
         if torch.any(self.budget_soft < float(self.budget_min) - 1e-4):
             raise ValueError("budget_soft below budget_min")
         if torch.any(self.budget_soft > float(self.budget_max) + 1e-4):
@@ -95,7 +80,7 @@ class PrefixMarginalUtilityBudgetController(nn.Module):
         tau: float = 1.0,
         lambda_init: float = 1e-3,
         lambda_max: float = 10.0,
-        dual_lr: float = 1e-2,
+        dual_lr: float = 1e-3,
     ) -> None:
         super().__init__()
         self.hidden_dim = int(hidden_dim)
@@ -212,27 +197,25 @@ class PrefixMarginalUtilityBudgetController(nn.Module):
         rank_ids = torch.arange(self.num_extra_blocks, device=device)
         fused = self.global_proj(global_feat)[:, None, :] + self.block_proj(block_features) + self.rank_embed(rank_ids)
         marginal = F.softplus(self.delta_head(fused).squeeze(-1))
-        cost = self.lambda_dual.to(device=device, dtype=dtype).clamp(0.0, self.lambda_max)
+        cost = self.lambda_dual.to(device=device, dtype=dtype).clamp(0.0, self.lambda_max) * float(self.budget_multiple)
         continue_logits = (marginal - cost) / self.tau
         continue_soft_raw = torch.sigmoid(continue_logits)
         continue_hard_raw = (continue_soft_raw >= 0.5).to(dtype=dtype)
         prefix_soft_raw = torch.cumprod(continue_soft_raw, dim=1)
         prefix_hard = torch.cumprod(continue_hard_raw, dim=1)
-        prefix_st = prefix_hard + prefix_soft_raw - prefix_soft_raw.detach()
-        soft_expected_k = float(self.budget_min) + float(self.budget_multiple) * prefix_soft_raw.sum(dim=1)
-        budget_soft = float(self.budget_min) + float(self.budget_multiple) * prefix_st.sum(dim=1)
+        prefix_soft = prefix_hard + prefix_soft_raw - prefix_soft_raw.detach()
+        budget_soft = float(self.budget_min) + float(self.budget_multiple) * prefix_soft.sum(dim=1)
         budget_hard = self.budget_min + self.budget_multiple * prefix_hard.sum(dim=1).to(dtype=torch.long)
         budget_hard = budget_hard.clamp(min=self.budget_min, max=self.budget_max)
         budget_soft = budget_soft.clamp(min=float(self.budget_min), max=float(self.budget_max))
-        soft_expected_k = soft_expected_k.clamp(min=float(self.budget_min), max=float(self.budget_max))
         decision = DynamicBudgetDecision(
             budget_hard=budget_hard,
             budget_soft=budget_soft,
-            expected_cost=soft_expected_k,
+            expected_cost=budget_soft,
             continue_logits=continue_logits,
             continue_soft=continue_soft_raw,
             continue_hard=continue_hard_raw,
-            prefix_soft=prefix_st,
+            prefix_soft=prefix_soft,
             prefix_hard=prefix_hard,
             marginal_utility=marginal,
             lambda_dual=self.lambda_dual.to(device=device, dtype=dtype),
@@ -246,7 +229,6 @@ class PrefixMarginalUtilityBudgetController(nn.Module):
     @torch.no_grad()
     def update_dual(self, observed_mean_budget: torch.Tensor | float) -> torch.Tensor:
         value = torch.as_tensor(observed_mean_budget, device=self.lambda_dual.device, dtype=self.lambda_dual.dtype)
-        normalized_residual = (value - float(self.target_budget)) / max(float(self.target_budget), 1.0)
-        self.lambda_dual.add_(self.dual_lr * normalized_residual)
+        self.lambda_dual.add_(self.dual_lr * (value - float(self.target_budget)))
         self.lambda_dual.clamp_(0.0, self.lambda_max)
         return self.lambda_dual

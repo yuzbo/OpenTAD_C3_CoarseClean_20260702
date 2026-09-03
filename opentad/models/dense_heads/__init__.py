@@ -1,4 +1,4 @@
-from .prior_generator import AnchorGenerator, PointGenerator
+from .prior_generator import AnchorGenerator, PointGenerator, IrregularPointGenerator, IrregularPointGeneratorV2
 from .anchor_head import AnchorHead
 from .anchor_free_head import AnchorFreeHead
 from .rpn_head import RPNHead
@@ -10,11 +10,15 @@ from .tem_head import TemporalEvaluationHead, GCNextTemporalEvaluationHead, Loca
 from .vsgn_rpn_head import VSGNRPNHead
 from .dyn_head import TDynHead
 from .native_irregular_area_head_p2 import NativeIrregularAreaHeadP2
-from .duca_online_precheck_head import DucaOnlinePrecheckHead
+from .irregular_actionformer_bridge_head import IrregularActionFormerBridgeHead
+from .phystime_head import PhysTimeHead
+from .support_decoupled_physical_query_head import SupportDecoupledPhysicalQueryHead
 
 __all__ = [
     "AnchorGenerator",
     "PointGenerator",
+    "IrregularPointGenerator",
+    "IrregularPointGeneratorV2",
     "AnchorHead",
     "AnchorFreeHead",
     "RPNHead",
@@ -28,5 +32,7 @@ __all__ = [
     "VSGNRPNHead",
     "TDynHead",
     "NativeIrregularAreaHeadP2",
-    "DucaOnlinePrecheckHead",
+    "IrregularActionFormerBridgeHead",
+    "PhysTimeHead",
+    "SupportDecoupledPhysicalQueryHead",
 ]
