@@ -129,7 +129,11 @@ fi
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "formal training requires a clean exact-commit checkout"
 precheck
 
-WORK_ROOT="${H65_PRO_WORK_ROOT:-exps/thumos/adatad/h65_pro_fullmatrix_20260902}"
+WORK_ROOT="${H65_PRO_WORK_ROOT:-$YUZIBO_ROOT/experiments/h65_pro_fullmatrix_${EXPECTED_COMMIT}}"
+[[ "$WORK_ROOT" = /* ]] || fail "H65_PRO_WORK_ROOT must be an absolute path"
+case "$WORK_ROOT/" in
+  "$ROOT/"*) fail "H65_PRO_WORK_ROOT must stay outside the clean source checkout" ;;
+esac
 WORK_DIR="$WORK_ROOT/${EXPERIMENT_ID}_seed${SEED}"
 exec "$PYTHON" tools/train.py "$CONFIG" --seed "$SEED" --cfg-options \
   work_dir="$WORK_DIR" \

@@ -363,6 +363,9 @@ def test_h65_pro_slurm_contract_is_fail_closed_and_collision_resistant() -> None
     assert "wait_for_submission_slots" in submitter
     assert "retrying in 60 seconds" in submitter
     assert "--export=ALL,CUDA_VISIBLE_DEVICES=1" not in submitter
+    assert 'H65_PRO_WORK_ROOT="${H65_PRO_WORK_ROOT:-$YUZIBO_ROOT/experiments/' in submitter
+    assert '[[ ! -s "$REGISTRY" ]]' in submitter
+    assert 'H65_PRO_WORK_ROOT="$H65_PRO_WORK_ROOT"' in submitter
 
     for script in (train, eval_script):
         assert '[[ -n "${H65_PRO_EXPECTED_COMMIT:-}" ]]' in script
@@ -373,6 +376,8 @@ def test_h65_pro_slurm_contract_is_fail_closed_and_collision_resistant() -> None
         assert '[[ -n "${SLURM_JOB_ID:-}" ]]' in script
         assert "torch.cuda.device_count()" in script
         assert "direct H65-Pro launch requires physical GPU1" in script
+        assert 'H65_PRO_WORK_ROOT:-$YUZIBO_ROOT/experiments/' in script
+        assert "must stay outside the clean source checkout" in script
 
 
 def test_h65_pro_hard_one_swap_diagnostic_summarizes_offline_records(tmp_path: Path) -> None:

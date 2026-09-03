@@ -33,6 +33,13 @@ COMMIT="$H65_PRO_EXPECTED_COMMIT"
 [[ "$(git rev-parse HEAD)" == "$COMMIT" ]] || fail "checkout commit differs from H65_PRO_EXPECTED_COMMIT"
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "submission requires a clean exact-commit checkout"
 export H65_PRO_EXPECTED_COMMIT="$COMMIT"
+H65_PRO_WORK_ROOT="${H65_PRO_WORK_ROOT:-$YUZIBO_ROOT/experiments/h65_pro_fullmatrix_${COMMIT}}"
+[[ "$H65_PRO_WORK_ROOT" = /* ]] || fail "H65_PRO_WORK_ROOT must be an absolute path"
+case "$H65_PRO_WORK_ROOT/" in
+  "$ROOT/"*) fail "H65_PRO_WORK_ROOT must stay outside the clean source checkout" ;;
+esac
+mkdir -p "$H65_PRO_WORK_ROOT"
+export H65_PRO_WORK_ROOT
 
 MATRIX="${H65_PRO_MATRIX:-docs/experiments/h65_pro_fullmatrix_20260902/03_EXPERIMENT_MATRIX.csv}"
 TRAIN_SCRIPT="${H65_PRO_TRAIN_SCRIPT:-tools/experiments/run_h65_pro_train.sbatch}"
@@ -92,6 +99,7 @@ SUBMISSION_DIR="${H65_PRO_SUBMISSION_DIR:-$YUZIBO_ROOT/h65_pro_fullmatrix_202609
 LOG_DIR="$SUBMISSION_DIR/logs"
 mkdir -p "$LOG_DIR"
 REGISTRY="$SUBMISSION_DIR/submission_registry.csv"
+[[ ! -s "$REGISTRY" ]] || fail "submission registry already exists: $REGISTRY"
 printf 'experiment_id,category,seed,config,variant,train_job_id,eval_job_id,train_dependency,eval_dependency,status\n' > "$REGISTRY"
 
 count=0
@@ -105,7 +113,7 @@ while IFS=, read -r experiment_id category phase ct mod taylor curriculum frames
     --job-name="$train_job_name" \
     --output="$LOG_DIR/%x-%j.out" \
     --error="$LOG_DIR/%x-%j.err" \
-    --export=ALL,H65_PRO_EXPECTED_COMMIT="$COMMIT" \
+    --export=ALL,H65_PRO_EXPECTED_COMMIT="$COMMIT",H65_PRO_WORK_ROOT="$H65_PRO_WORK_ROOT" \
     "$TRAIN_SCRIPT" "$config" "$seed" "$experiment_id" "$variant")"; then
     fail "train submission failed for $experiment_id seed $seed"
   fi
@@ -116,7 +124,7 @@ while IFS=, read -r experiment_id category phase ct mod taylor curriculum frames
     --dependency=afterok:"$train_dependency" \
     --output="$LOG_DIR/%x-%j.out" \
     --error="$LOG_DIR/%x-%j.err" \
-    --export=ALL,H65_PRO_EXPECTED_COMMIT="$COMMIT" \
+    --export=ALL,H65_PRO_EXPECTED_COMMIT="$COMMIT",H65_PRO_WORK_ROOT="$H65_PRO_WORK_ROOT" \
     "$EVAL_SCRIPT" "$config" "$seed" "$experiment_id" "$variant")"; then
     printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
       "$experiment_id" "$category" "$seed" "$config" "$variant" \
