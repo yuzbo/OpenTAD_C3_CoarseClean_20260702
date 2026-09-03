@@ -41,6 +41,8 @@ LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT:-$YUZIBO_ROOT/projects/c3_lowres_action_prob
 export DUCA_H65_TRAIN_LEDGER_PATH="${DUCA_H65_TRAIN_LEDGER_PATH:-$LEDGER_ROOT/train/value_transport_ledger_delta_p_action_384.jsonl}"
 export DUCA_H65_VAL_LEDGER_PATH="${DUCA_H65_VAL_LEDGER_PATH:-$LEDGER_ROOT/val/value_transport_ledger_delta_p_action_384.jsonl}"
 export DUCA_H65_TEST_LEDGER_PATH="${DUCA_H65_TEST_LEDGER_PATH:-$LEDGER_ROOT/test/value_transport_ledger_delta_p_action_384.jsonl}"
+export DUCA_H65_LEDGER_SOURCE="c3_lowres_probe_delta_p_action"
+export DUCA_H65_LEDGER_CONFIG_HASH=""
 
 for required in \
   "$THUMOS14_ANNOTATION_PATH" "$THUMOS14_CLASS_MAP" \

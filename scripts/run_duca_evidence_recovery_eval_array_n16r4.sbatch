@@ -38,6 +38,8 @@ export THUMOS14_TEST_DATA_PATH="${THUMOS14_TEST_DATA_PATH:-$YUZIBO_ROOT/raw/Test
 export DUCA_VIDEOMAE_PRETRAIN="${DUCA_VIDEOMAE_PRETRAIN:-$YUZIBO_ROOT/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
 LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT:-$YUZIBO_ROOT/projects/c3_lowres_action_probe/ledger_exports/c3_official_asformer_delta_ledgers_20260702_052357_+0800}"
 export DUCA_H65_TEST_LEDGER_PATH="${DUCA_H65_TEST_LEDGER_PATH:-$LEDGER_ROOT/test/value_transport_ledger_delta_p_action_384.jsonl}"
+export DUCA_H65_LEDGER_SOURCE="c3_lowres_probe_delta_p_action"
+export DUCA_H65_LEDGER_CONFIG_HASH=""
 
 for required in \
   "$THUMOS14_ANNOTATION_PATH" "$THUMOS14_CLASS_MAP" "$THUMOS14_TEST_DATA_PATH" \

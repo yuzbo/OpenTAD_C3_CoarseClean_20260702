@@ -50,11 +50,11 @@ duca_h65_test_ledger_path = os.environ.get(
 )
 duca_h65_ledger_source = os.environ.get(
     "DUCA_H65_LEDGER_SOURCE",
-    os.environ.get("C3_ASFORMER_DELTA_LEDGER_SOURCE", "c3_official_asformer_delta_p_action"),
+    "c3_lowres_probe_delta_p_action",
 )
 duca_h65_ledger_config_hash = os.environ.get(
     "DUCA_H65_LEDGER_CONFIG_HASH",
-    os.environ.get("C3_ASFORMER_DELTA_LEDGER_CONFIG_HASH", "c3_official_asformer_delta_ledger_384_over_768_v1"),
+    "",
 )
 
 duca_h65_meta_keys = [

@@ -45,7 +45,13 @@ def test_all_arm_configs_exist_and_load():
         assert cfg.model.frame_selector.window_size == 768
         for split in ("train", "val", "test"):
             pipeline = cfg.dataset[split].pipeline
-            assert any(step.get("type") == "DucaH65PositionsFromLedger" for step in pipeline)
+            ledger_step = next(
+                step
+                for step in pipeline
+                if step.get("type") == "DucaH65PositionsFromLedger"
+            )
+            assert ledger_step.source == "c3_lowres_probe_delta_p_action"
+            assert ledger_step.config_hash == ""
             collect = next(step for step in pipeline if step.get("type") == "Collect")
             meta_keys = set(collect.get("meta_keys", []))
             assert "irregular_selected_positions" in meta_keys
@@ -119,3 +125,18 @@ def test_build_detector_for_full_and_c0():
     model_c0 = build_detector(cfg_c0.model)
     assert model_c0 is not None
     assert model_c0.with_frame_selector
+
+
+def test_legacy_c3_ledger_policy_field_is_accepted_as_source():
+    try:
+        from opentad.datasets.transforms.end_to_end import DucaH65PositionsFromLedger
+    except OSError as exc:
+        pytest.skip(f"torch runtime unavailable in this environment: {exc}")
+
+    assert (
+        DucaH65PositionsFromLedger._row_metadata(
+            {"policy": "c3_lowres_probe_delta_p_action"},
+            "policy_source",
+        )
+        == "c3_lowres_probe_delta_p_action"
+    )

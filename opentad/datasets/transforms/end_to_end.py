@@ -268,7 +268,10 @@ class DucaH65PositionsFromLedger:
     @staticmethod
     def _row_metadata(row, key):
         diagnostics = row.get("diagnostics") if isinstance(row.get("diagnostics"), dict) else {}
-        return row.get(key, diagnostics.get(key))
+        value = row.get(key, diagnostics.get(key))
+        if value is None and key == "policy_source":
+            value = row.get("policy")
+        return value
 
     def _required_count(self, valid_len):
         required = self.require_selected_count
