@@ -435,7 +435,7 @@ class ActionFormer(SingleStageDetector):
 
         # loop over all modules / params
         for mn, m in self.named_modules():
-            for pn, p in m.named_parameters():
+            for pn, p in m.named_parameters(recurse=False):
                 if not p.requires_grad:
                     continue
                 fpn = "%s.%s" % (mn, pn) if mn else pn  # full param name
