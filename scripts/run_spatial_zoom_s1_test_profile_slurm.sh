@@ -1,0 +1,332 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  printf '[SPATIAL_ZOOM_S1_TEST_PROFILE][FAIL] %s\n' "$*" >&2
+  exit 2
+}
+
+has_sidecar_runtime_evidence() {
+  local scratch_dir="$1"
+  local path
+  for path in \
+    "${scratch_dir}/pid.json" \
+    "${scratch_dir}/ready.json" \
+    "${scratch_dir}/power.jsonl" \
+    "${scratch_dir}/result.json"; do
+    [[ -e "${path}" ]] && return 0
+  done
+  return 1
+}
+
+ROOT="${SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT:?set SPATIAL_ZOOM_S1_PROFILE_SOURCE_ROOT}"
+TRAINING_ROOT="${SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT:?set SPATIAL_ZOOM_S1_TRAINING_SOURCE_ROOT}"
+BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
+RUN_ROOT="${SPATIAL_ZOOM_S1_RUN_ROOT:?set SPATIAL_ZOOM_S1_RUN_ROOT}"
+MANIFEST="${SPATIAL_ZOOM_S1_MANIFEST:?set SPATIAL_ZOOM_S1_MANIFEST}"
+ANNOTATION="${SPATIAL_ZOOM_S1_ANNOTATION:?set SPATIAL_ZOOM_S1_ANNOTATION}"
+TEST_OPEN="${SPATIAL_ZOOM_S1_TEST_OPEN:?set SPATIAL_ZOOM_S1_TEST_OPEN}"
+PROFILE_RECOVERY="${SPATIAL_ZOOM_S1_PROFILE_RECOVERY:?set SPATIAL_ZOOM_S1_PROFILE_RECOVERY}"
+POWER_SCRATCH_ROOT="${SPATIAL_ZOOM_S1_POWER_SCRATCH_ROOT:?set SPATIAL_ZOOM_S1_POWER_SCRATCH_ROOT}"
+RESOLUTION="${SPATIAL_ZOOM_S1_RESOLUTION:?set SPATIAL_ZOOM_S1_RESOLUTION}"
+SEED="${SPATIAL_ZOOM_S1_SEED:?set SPATIAL_ZOOM_S1_SEED}"
+PREFLIGHT_ONLY="${SPATIAL_ZOOM_S1_PREFLIGHT_ONLY:-0}"
+MATRIX_DRY_RUN="${SPATIAL_ZOOM_S1_MATRIX_DRY_RUN:-0}"
+MATRIX_STARTED="${SPATIAL_ZOOM_S1_MATRIX_STARTED:-}"
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONNOUSERSITE=1
+
+[[ -n "${SLURM_JOB_ID:-}" ]] || fail "formal S1 test/profile requires a Slurm allocation"
+if [[ "${SPATIAL_ZOOM_S1_SINGLE_GPU_STEP:-0}" != "1" && -z "${SLURM_STEP_GPUS:-}" ]]; then
+  IFS=',' read -r -a JOB_GPU_ARRAY <<< "${SLURM_JOB_GPUS:-}"
+  if [[ "${#JOB_GPU_ARRAY[@]}" -gt 1 ]]; then
+    export SPATIAL_ZOOM_S1_SINGLE_GPU_STEP=1
+    exec srun --exact --ntasks=1 --gpus=1 --cpus-per-task=5 --mem=96000M \
+      bash "${ROOT}/scripts/run_spatial_zoom_s1_test_profile_slurm.sh"
+  fi
+fi
+SCOPED_GPU_ID="${SLURM_STEP_GPUS:-${SLURM_JOB_GPUS:-}}"
+case "${RUN_ROOT}" in
+  /data/run01/sczc063/yuzibo|/data/run01/sczc063/yuzibo/*) ;;
+  *) fail "run root must stay under /data/run01/sczc063/yuzibo" ;;
+esac
+case "${RESOLUTION}" in
+  160|224|256) ;;
+  *) fail "resolution must be one of 160/224/256" ;;
+esac
+case "${SEED}" in
+  3407|3408|3409) ;;
+  *) fail "seed must be one of 3407/3408/3409" ;;
+esac
+case "${PREFLIGHT_ONLY}" in
+  0|1) ;;
+  *) fail "SPATIAL_ZOOM_S1_PREFLIGHT_ONLY must be 0 or 1" ;;
+esac
+case "${MATRIX_DRY_RUN}" in
+  0|1) ;;
+  *) fail "SPATIAL_ZOOM_S1_MATRIX_DRY_RUN must be 0 or 1" ;;
+esac
+[[ "${PREFLIGHT_ONLY}" != "1" || "${MATRIX_DRY_RUN}" != "1" ]] || \
+  fail "matrix dry-run and per-cell preflight-only are mutually exclusive"
+[[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != *,* ]] || \
+  fail "formal S1 test/profile requires exactly one Slurm-visible GPU"
+[[ "${SLURM_GPUS_ON_NODE:-}" == "1" ]] || fail "Slurm allocation must expose one GPU"
+[[ -n "${SCOPED_GPU_ID}" && "${SCOPED_GPU_ID}" != *,* ]] || \
+  fail "Slurm step must identify exactly one allocated physical GPU"
+[[ "${SLURM_CPUS_PER_TASK:-}" == "5" ]] || \
+  fail "formal S1 sidecar profile requires exactly five allocated CPUs"
+command -v taskset >/dev/null 2>&1 || fail "formal S1 sidecar profile requires taskset"
+
+case "${POWER_SCRATCH_ROOT}" in
+  /tmp/*|/var/tmp/*) ;;
+  *) fail "power sidecar scratch must use node-local /tmp or /var/tmp" ;;
+esac
+mkdir -p "${POWER_SCRATCH_ROOT}"
+
+WORK_DIR="${RUN_ROOT}/dense${RESOLUTION}/seed${SEED}"
+BOUND_CONFIG="${RUN_ROOT}/control/dense${RESOLUTION}_seed${SEED}.py"
+SELECTION="${WORK_DIR}/checkpoint_selection.json"
+for path in "${MANIFEST}" "${ANNOTATION}" "${TEST_OPEN}" "${PROFILE_RECOVERY}" "${BOUND_CONFIG}" "${SELECTION}"; do
+  [[ -f "${path}" ]] || fail "required artifact does not exist: ${path}"
+done
+[[ -d "${TRAINING_ROOT}/.git" || -f "${TRAINING_ROOT}/.git" ]] || \
+  fail "training source root is not a Git checkout: ${TRAINING_ROOT}"
+[[ -d "${ROOT}/.git" || -f "${ROOT}/.git" ]] || \
+  fail "profile source root is not a Git checkout: ${ROOT}"
+if command -v module >/dev/null 2>&1; then
+  module load cuda/11.8
+  module load miniforge3/24.11
+fi
+# shellcheck disable=SC1091
+source "${BASE}/conda_envs/opentad/bin/activate"
+
+(
+  cd "${ROOT}"
+  python -c 'from tools.bata.spatial_zoom_s1_training import require_slurm_memory_limit_mb, require_slurm_single_gpu_allocation; require_slurm_single_gpu_allocation(); print(require_slurm_memory_limit_mb(minimum_mb=90000))'
+)
+
+ALLOCATED_CPUS="$(python -c 'import os; print(",".join(map(str, sorted(os.sched_getaffinity(0)))))')"
+IFS=',' read -r -a CPU_ARRAY <<< "${ALLOCATED_CPUS}"
+[[ "${#CPU_ARRAY[@]}" == "5" ]] || fail "Slurm affinity does not expose five CPUs"
+DETECTOR_CPUS="${CPU_ARRAY[0]},${CPU_ARRAY[1]},${CPU_ARRAY[2]},${CPU_ARRAY[3]}"
+SIDECAR_CPU="${CPU_ARRAY[4]}"
+
+TRAINING_COMMIT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["training_code_commit"])' "${PROFILE_RECOVERY}")"
+PROFILE_COMMIT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["profile_code_commit"])' "${PROFILE_RECOVERY}")"
+CAMPAIGN_ROOT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["campaign_root"])' "${PROFILE_RECOVERY}")"
+SIDECAR_GATE="${CAMPAIGN_ROOT}/sidecar_gate.json"
+[[ -f "${SIDECAR_GATE}" ]] || fail "formal matrix requires the passed sidecar Gate"
+[[ "$(git -C "${ROOT}" rev-parse HEAD)" == "${PROFILE_COMMIT}" ]] || \
+  fail "profile source root differs from the certificate-bound commit"
+[[ -z "$(git -C "${ROOT}" status --porcelain --untracked-files=all)" ]] || \
+  fail "profile source root must be clean"
+[[ "$(git -C "${TRAINING_ROOT}" rev-parse HEAD)" == "${TRAINING_COMMIT}" ]] || \
+  fail "training source root differs from the certificate-bound commit"
+[[ -z "$(git -C "${TRAINING_ROOT}" status --porcelain --untracked-files=all)" ]] || \
+  fail "training source root must be clean"
+
+cd "${ROOT}"
+
+CHECKPOINT="$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["selected"]["checkpoint_path"])' "${SELECTION}")"
+[[ -f "${CHECKPOINT}" ]] || fail "selected checkpoint does not exist: ${CHECKPOINT}"
+TEST_EVIDENCE="${WORK_DIR}/gpu1_id0/test_evidence/test.evidence.json"
+PREFLIGHT_EXTRA_ARGS=()
+if [[ "${MATRIX_DRY_RUN}" == "1" ]]; then
+  PREFLIGHT_EXTRA_ARGS+=(--matrix-dry-run)
+else
+  [[ -n "${MATRIX_STARTED}" && -f "${MATRIX_STARTED}" ]] || \
+    fail "formal S1 profile requires the active matrix start receipt"
+  PREFLIGHT_EXTRA_ARGS+=(--matrix-start-receipt "${MATRIX_STARTED}")
+fi
+
+(
+  cd "${TRAINING_ROOT}"
+  PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    taskset -c "${DETECTOR_CPUS}" \
+    python "${ROOT}/tools/bata/preflight_spatial_zoom_s1_profile.py" \
+      --config "${BOUND_CONFIG}" \
+      --seed "${SEED}" \
+      --manifest "${MANIFEST}" \
+      --annotation "${ANNOTATION}" \
+      --checkpoint "${CHECKPOINT}" \
+      --test-open-certificate "${TEST_OPEN}" \
+      --profile-recovery-certificate "${PROFILE_RECOVERY}" \
+      --sidecar-gate-evidence "${SIDECAR_GATE}" \
+      --test-evidence "${TEST_EVIDENCE}" \
+      --allocated-cpus "${ALLOCATED_CPUS}" \
+      --detector-cpus "${DETECTOR_CPUS}" \
+      --sidecar-cpu "${SIDECAR_CPU}" \
+      "${PREFLIGHT_EXTRA_ARGS[@]}"
+)
+
+if [[ "${MATRIX_DRY_RUN}" == "1" ]]; then
+  printf '[SPATIAL_ZOOM_S1_TEST_PROFILE] MATRIX DRY-RUN PASS resolution=%s seed=%s\n' \
+    "${RESOLUTION}" "${SEED}"
+  exit 0
+fi
+
+if [[ "${PREFLIGHT_ONLY}" == "1" ]]; then
+  [[ -f "${TEST_EVIDENCE}" ]] || \
+    fail "preflight-only gate cannot open a previously unopened sealed test"
+  printf '[SPATIAL_ZOOM_S1_TEST_PROFILE] PREFLIGHT PASS resolution=%s seed=%s\n' \
+    "${RESOLUTION}" "${SEED}"
+  exit 0
+fi
+
+if [[ -f "${TEST_EVIDENCE}" ]]; then
+  printf '[SPATIAL_ZOOM_S1_TEST_PROFILE] reuse validated test evidence: %s\n' "${TEST_EVIDENCE}"
+else
+  (
+    cd "${ROOT}"
+    taskset -c "${DETECTOR_CPUS}" \
+    torchrun --nnodes=1 --nproc_per_node=1 \
+      --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:0 \
+      --rdzv_id="s1-test-${SLURM_JOB_ID}-${RESOLUTION}-${SEED}" \
+      "${ROOT}/tools/test.py" "${BOUND_CONFIG}" \
+      --checkpoint "${CHECKPOINT}" \
+      --seed "${SEED}" \
+      --id 0 \
+      --s1-test-open-certificate "${TEST_OPEN}" \
+      --s1-profile-recovery-certificate "${PROFILE_RECOVERY}"
+  )
+  (
+    cd "${ROOT}"
+    python - "${TEST_EVIDENCE}" "${MATRIX_STARTED}" "${PROFILE_RECOVERY}" \
+      "${RESOLUTION}" "${SEED}" <<'PY'
+import sys
+from pathlib import Path
+
+from tools.bata.spatial_zoom_s1_contract import atomic_publish_json
+from tools.bata.spatial_zoom_s1_matrix import (
+    build_test_matrix_binding,
+    canonical_test_matrix_binding_path,
+    validate_test_matrix_binding,
+)
+
+evidence_path = Path(sys.argv[1]).resolve()
+start_path = Path(sys.argv[2]).resolve()
+recovery_path = Path(sys.argv[3]).resolve()
+resolution = int(sys.argv[4])
+seed = int(sys.argv[5])
+binding_path = canonical_test_matrix_binding_path(evidence_path)
+binding = build_test_matrix_binding(
+    test_evidence_path=evidence_path,
+    start_receipt_path=start_path,
+    recovery=recovery_path,
+    resolution=resolution,
+    seed=seed,
+)
+atomic_publish_json(binding_path, binding)
+validate_test_matrix_binding(
+    binding_path,
+    test_evidence_path=evidence_path,
+    start_receipt_path=start_path,
+    recovery=recovery_path,
+    resolution=resolution,
+    seed=seed,
+)
+print(binding_path)
+PY
+  )
+  (
+    cd "${TRAINING_ROOT}"
+    PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      taskset -c "${DETECTOR_CPUS}" \
+      python "${ROOT}/tools/bata/preflight_spatial_zoom_s1_profile.py" \
+        --config "${BOUND_CONFIG}" \
+        --seed "${SEED}" \
+        --manifest "${MANIFEST}" \
+        --annotation "${ANNOTATION}" \
+        --checkpoint "${CHECKPOINT}" \
+        --test-open-certificate "${TEST_OPEN}" \
+        --profile-recovery-certificate "${PROFILE_RECOVERY}" \
+        --sidecar-gate-evidence "${SIDECAR_GATE}" \
+        --test-evidence "${TEST_EVIDENCE}" \
+        --allocated-cpus "${ALLOCATED_CPUS}" \
+        --detector-cpus "${DETECTOR_CPUS}" \
+        --sidecar-cpu "${SIDECAR_CPU}" \
+        --matrix-start-receipt "${MATRIX_STARTED}"
+  )
+fi
+
+[[ -f "${TEST_EVIDENCE}" ]] || fail "sealed test evidence was not produced"
+PROFILE_PREFIX="${CAMPAIGN_ROOT}/dense${RESOLUTION}/seed${SEED}/dense${RESOLUTION}_seed${SEED}"
+PROFILE_SCRATCH_DIR="${POWER_SCRATCH_ROOT}/job${SLURM_JOB_ID}_dense${RESOLUTION}_seed${SEED}_formal"
+POWER_UUID="$(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits -i "${CUDA_VISIBLE_DEVICES}" | tr -d '[:space:]')"
+[[ "${POWER_UUID}" == GPU-* ]] || fail "could not resolve allocated GPU UUID"
+if ! (
+  cd "${TRAINING_ROOT}"
+  PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    taskset -c "${DETECTOR_CPUS}" \
+    torchrun --nnodes=1 --nproc_per_node=1 \
+      --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:0 \
+      --rdzv_id="s1-profile-${SLURM_JOB_ID}-${RESOLUTION}-${SEED}" \
+      "${ROOT}/tools/bata/profile_spatial_zoom_s1.py" \
+      "${BOUND_CONFIG}" \
+      --checkpoint "${CHECKPOINT}" \
+      --manifest "${MANIFEST}" \
+      --annotation "${ANNOTATION}" \
+      --split test \
+      --test-open-certificate "${TEST_OPEN}" \
+      --test-evidence "${TEST_EVIDENCE}" \
+      --profile-recovery-certificate "${PROFILE_RECOVERY}" \
+      --sidecar-gate-evidence "${SIDECAR_GATE}" \
+      --matrix-start-receipt "${MATRIX_STARTED}" \
+      --output-prefix "${PROFILE_PREFIX}" \
+      --device cuda:0 \
+      --seed "${SEED}" \
+      --samples 0 \
+      --warmup-samples 50 \
+      --batch-size 1 \
+      --loader-workers 0 \
+      --amp \
+      --use-ema \
+      --sample-power \
+      --power-gpu-id "${SCOPED_GPU_ID}" \
+      --power-interval-ms 20 \
+      --power-scratch-root "${POWER_SCRATCH_ROOT}" \
+      --allocated-cpus "${ALLOCATED_CPUS}" \
+      --detector-cpus "${DETECTOR_CPUS}" \
+      --sidecar-cpu "${SIDECAR_CPU}"
+); then
+  if has_sidecar_runtime_evidence "${PROFILE_SCRATCH_DIR}"; then
+    if python "${ROOT}/tools/bata/spatial_zoom_s1_power.py" salvage \
+      --scratch-dir "${PROFILE_SCRATCH_DIR}" \
+      --attempt-prefix "${PROFILE_PREFIX}" \
+      --expected-uuid "${POWER_UUID}" \
+      --interval-ms 20 \
+      --sidecar-cpu-id "${SIDECAR_CPU}" \
+      --detector-cpus "${DETECTOR_CPUS}" \
+      --allocated-cpus "${ALLOCATED_CPUS}"; then
+      fail "formal S1 profile failed after sealing its sidecar attempt"
+    fi
+    fail "formal S1 profile failed and sidecar salvage also failed"
+  fi
+  if [[ -e "${PROFILE_PREFIX}.started.json" ]]; then
+    fail "formal S1 profile consumed its namespace before sidecar startup"
+  fi
+  fail "formal S1 profile failed before the sidecar published attempt evidence"
+fi
+
+PROFILE="${PROFILE_PREFIX}.summary.json"
+DESCRIPTOR="${CAMPAIGN_ROOT}/descriptors/dense${RESOLUTION}_seed${SEED}.run.json"
+mkdir -p "$(dirname "${DESCRIPTOR}")"
+(
+  cd "${TRAINING_ROOT}"
+  PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    python "${ROOT}/tools/bata/build_spatial_zoom_s1_run_descriptor.py" \
+      --config "${BOUND_CONFIG}" \
+      --seed "${SEED}" \
+      --manifest "${MANIFEST}" \
+      --annotation "${ANNOTATION}" \
+      --checkpoint "${CHECKPOINT}" \
+      --checkpoint-selection "${SELECTION}" \
+      --test-evidence "${TEST_EVIDENCE}" \
+      --profile "${PROFILE}" \
+      --profile-recovery-certificate "${PROFILE_RECOVERY}" \
+      --matrix-start-receipt "${MATRIX_STARTED}" \
+      --output "${DESCRIPTOR}"
+)
+
+printf '[SPATIAL_ZOOM_S1_TEST_PROFILE] PASS resolution=%s seed=%s descriptor=%s\n' \
+  "${RESOLUTION}" "${SEED}" "${DESCRIPTOR}"

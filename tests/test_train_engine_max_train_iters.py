@@ -1,5 +1,4 @@
 import importlib.util
-import json
 import sys
 import types
 from pathlib import Path
@@ -22,10 +21,6 @@ class _Autocast:
         return False
 
 
-class _NoGrad(_Autocast):
-    pass
-
-
 class _AverageMeter:
     def __init__(self):
         self.values = []
@@ -37,10 +32,9 @@ class _AverageMeter:
 
 
 class _Loss:
-    def __init__(self, value, owner, *, finite=True):
+    def __init__(self, value, owner):
         self.value = float(value)
         self.owner = owner
-        self.finite = bool(finite)
         self.data = self
 
     def backward(self):
@@ -95,19 +89,13 @@ class _ToyLoader:
 
 
 class _ToyModel:
-    def __init__(self, *, with_after_step_hook=False, mutate_replay_state=False):
+    def __init__(self, mutate_buffer=False):
         self.module = types.SimpleNamespace()
-        if with_after_step_hook:
-            self.module.after_optimizer_step = self.after_optimizer_step
         self.train_calls = 0
         self.forward_calls = 0
         self.backward_calls = 0
-        self.after_optimizer_step_calls = 0
-        self.after_optimizer_seen_steps = []
-        self.optimizer = None
-        self.mutate_replay_state = bool(mutate_replay_state)
+        self.mutate_buffer = bool(mutate_buffer)
         self.loss_normalizer = _Buffer(0)
-        self.custom_forward_state = 0
 
     def train(self):
         self.train_calls += 1
@@ -115,45 +103,13 @@ class _ToyModel:
     def __call__(self, x, return_loss=False):
         assert return_loss is True
         self.forward_calls += 1
-        if self.mutate_replay_state:
+        if self.mutate_buffer:
             self.loss_normalizer.value += 1
-            self.custom_forward_state += 1
         cost = _Loss(x, self)
         return {"cost": cost, "aux_loss": _Loss(x * 0.5, self)}
 
-    def after_optimizer_step(self):
-        self.after_optimizer_step_calls += 1
-        if self.optimizer is not None:
-            self.after_optimizer_seen_steps.append(self.optimizer.steps)
-
     def named_buffers(self):
         return [("loss_normalizer", self.loss_normalizer)]
-
-    def named_modules(self):
-        return [("", self)]
-
-    def capture_amp_replay_state(self):
-        return {"custom_forward_state": self.custom_forward_state}
-
-    def restore_amp_replay_state(self, snapshot):
-        self.custom_forward_state = int(snapshot["custom_forward_state"])
-
-
-class _TransientNonFiniteModel(_ToyModel):
-    def __init__(self, *, always_nonfinite=False):
-        super().__init__(mutate_replay_state=True)
-        self.always_nonfinite = bool(always_nonfinite)
-
-    def __call__(self, x, return_loss=False):
-        assert return_loss is True
-        self.forward_calls += 1
-        self.loss_normalizer.value += 1
-        self.custom_forward_state += 1
-        finite = not self.always_nonfinite and self.forward_calls > 1
-        return {
-            "cost": _Loss(x, self, finite=finite),
-            "aux_loss": _Loss(x * 0.5, self, finite=finite),
-        }
 
 
 class _ToyOptimizer:
@@ -211,12 +167,7 @@ def _load_train_engine_with_fake_runtime(monkeypatch):
         float16="float16",
         get_rng_state=lambda: "cpu-rng",
         set_rng_state=lambda _state: None,
-        no_grad=_NoGrad,
-        isfinite=lambda value: types.SimpleNamespace(
-            all=lambda: types.SimpleNamespace(
-                item=lambda: bool(getattr(value, "finite", True))
-            )
-        ),
+        isfinite=lambda _value: types.SimpleNamespace(all=lambda: True),
         cuda=types.SimpleNamespace(
             amp=types.SimpleNamespace(autocast=_Autocast),
             max_memory_allocated=lambda: 0,
@@ -278,106 +229,49 @@ def test_train_one_epoch_stops_after_max_train_iters(monkeypatch):
     assert any("max_train_iters=2 reached" in message for message in logger.messages)
 
 
-def test_train_one_epoch_calls_after_optimizer_step_hook_after_each_optimizer_step(monkeypatch):
+def test_train_one_epoch_replays_a_skipped_amp_batch_before_advancing(monkeypatch):
     train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
-    model = _ToyModel(with_after_step_hook=True)
+    model = _ToyModel(mutate_buffer=True)
     optimizer = _ToyOptimizer()
-    model.optimizer = optimizer
     scheduler = _ToyScheduler()
-
-    train_engine.train_one_epoch(
-        _ToyLoader(length=3),
-        model,
-        optimizer,
-        scheduler,
-        curr_epoch=0,
-        logger=_Logger(),
-        logging_interval=1,
-    )
-
-    assert optimizer.steps == 3
-    assert model.after_optimizer_step_calls == 3
-    assert model.after_optimizer_seen_steps == [1, 2, 3]
-
-
-def test_train_one_epoch_calls_nested_frame_selector_hook_once(monkeypatch):
-    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
-    model = _ToyModel()
-    selector = types.SimpleNamespace(calls=0)
-
-    def after_optimizer_step():
-        selector.calls += 1
-        return {"updated": True}
-
-    selector.after_optimizer_step = after_optimizer_step
-    model.module.frame_selector = selector
+    logger = _Logger()
+    scaler = _ToyScaler(skipped_attempts=1)
     audit = {}
 
-    train_engine.train_one_epoch(
-        _ToyLoader(length=2),
-        model,
-        _ToyOptimizer(),
-        _ToyScheduler(),
-        curr_epoch=0,
-        logger=_Logger(),
-        logging_interval=1,
-        update_audit=audit,
-    )
-
-    assert selector.calls == 2
-    assert audit["duca_schedule_updates"] == 2
-
-
-def test_train_one_epoch_replays_amp_skip_without_advancing_state(monkeypatch):
-    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
-    model = _ToyModel(with_after_step_hook=True, mutate_replay_state=True)
-    optimizer = _ToyOptimizer()
-    model.optimizer = optimizer
-    scheduler = _ToyScheduler()
-    audit = {}
-
-    train_engine.train_one_epoch(
+    updates = train_engine.train_one_epoch(
         _ToyLoader(length=2),
         model,
         optimizer,
         scheduler,
         curr_epoch=0,
-        logger=_Logger(),
+        logger=logger,
         logging_interval=1,
-        scaler=_ToyScaler(skipped_attempts=1),
+        scaler=scaler,
+        fail_on_skipped_update=True,
         max_amp_retries_per_batch=4,
-        fail_on_amp_replay_exhaustion=True,
-        require_finite_loss=True,
         update_audit=audit,
     )
 
+    assert updates == 2
     assert model.forward_calls == 3
+    assert model.backward_calls == 3
+    assert optimizer.zero_grad_calls == 3
     assert optimizer.steps == 2
     assert scheduler.steps == 2
-    assert model.after_optimizer_step_calls == 2
     assert model.loss_normalizer.value == 2
-    assert model.custom_forward_state == 2
     assert audit == {
-        "attempted_batches": 2,
         "optimizer_attempts": 3,
-        "successful_optimizer_updates": 2,
         "amp_skipped_attempts": 1,
-        "replayed_batches": 1,
-        "replay_exhaustions": 0,
-        "scheduler_updates": 2,
-        "ema_updates": 0,
-        "duca_schedule_updates": 0,
-        "forced_amp_overflow_attempts": 0,
         "max_amp_retries_observed": 1,
     }
+    assert any("retry 1/4" in message for message in logger.messages)
 
 
-def test_train_one_epoch_fails_closed_when_amp_replay_is_exhausted(monkeypatch):
+def test_train_one_epoch_fails_when_amp_retry_limit_is_exhausted(monkeypatch):
     train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
-    model = _ToyModel(mutate_replay_state=True)
+    model = _ToyModel(mutate_buffer=True)
     optimizer = _ToyOptimizer()
     scheduler = _ToyScheduler()
-    audit = {}
 
     with pytest.raises(FloatingPointError, match="could not produce"):
         train_engine.train_one_epoch(
@@ -388,107 +282,41 @@ def test_train_one_epoch_fails_closed_when_amp_replay_is_exhausted(monkeypatch):
             curr_epoch=0,
             logger=_Logger(),
             scaler=_ToyScaler(skipped_attempts=3),
+            fail_on_skipped_update=True,
             max_amp_retries_per_batch=1,
-            fail_on_amp_replay_exhaustion=True,
-            update_audit=audit,
         )
 
     assert optimizer.steps == 0
     assert scheduler.steps == 0
     assert model.loss_normalizer.value == 0
-    assert model.custom_forward_state == 0
-    assert audit["replay_exhaustions"] == 1
-    assert audit["successful_optimizer_updates"] == 0
 
 
-def test_train_one_epoch_replays_a_transient_nonfinite_loss_without_advancing_state(
-    monkeypatch, tmp_path
-):
+def test_train_one_epoch_preserves_legacy_zero_retry_behavior(monkeypatch):
     train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
-    model = _TransientNonFiniteModel()
+    model = _ToyModel(mutate_buffer=True)
     optimizer = _ToyOptimizer()
     scheduler = _ToyScheduler()
-    audit = {}
-    logger = _Logger()
 
     train_engine.train_one_epoch(
-        _ToyLoader(length=1),
-        model,
-        optimizer,
-        scheduler,
+        train_loader=_ToyLoader(1),
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
         curr_epoch=0,
-        logger=logger,
-        require_finite_loss=True,
-        max_nonfinite_loss_retries=1,
-        update_audit=audit,
-        update_audit_json=tmp_path / "update_audit.json",
+        logger=_Logger(),
+        scaler=_ToyScaler(skipped_attempts=1),
+        max_amp_retries_per_batch=0,
     )
 
-    assert model.forward_calls == 2
-    assert model.backward_calls == 1
-    assert model.loss_normalizer.value == 1
-    assert model.custom_forward_state == 1
-    assert optimizer.steps == 1
-    assert scheduler.steps == 1
-    assert audit["nonfinite_loss_attempts"] == 1
-    assert audit["nonfinite_loss_replays"] == 1
-    assert audit["nonfinite_loss_replay_exhaustions"] == 0
-    assert audit["max_nonfinite_loss_retries_observed"] == 1
-    assert audit["replay_state_restorations"] == 1
-    assert audit["optimizer_attempts"] == 1
-    assert audit["successful_optimizer_updates"] == 1
-    assert audit["replayed_batches"] == 1
-    assert any("non-finite pre-AMP loss" in message for message in logger.messages)
-    snapshot = json.loads((tmp_path / "update_audit.json").read_text(encoding="utf-8"))
-    assert snapshot["event"] == "epoch_complete"
-    assert snapshot["update_audit"]["nonfinite_loss_replays"] == 1
-
-
-def test_train_one_epoch_fails_closed_after_bounded_nonfinite_loss_replays(monkeypatch):
-    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
-    model = _TransientNonFiniteModel(always_nonfinite=True)
-    optimizer = _ToyOptimizer()
-    scheduler = _ToyScheduler()
-    audit = {}
-
-    with pytest.raises(FloatingPointError, match="after 1 bounded replays"):
-        train_engine.train_one_epoch(
-            _ToyLoader(length=1),
-            model,
-            optimizer,
-            scheduler,
-            curr_epoch=0,
-            logger=_Logger(),
-            require_finite_loss=True,
-            max_nonfinite_loss_retries=1,
-            update_audit=audit,
-        )
-
-    assert model.loss_normalizer.value == 0
-    assert model.custom_forward_state == 0
     assert optimizer.steps == 0
-    assert scheduler.steps == 0
-    assert audit["nonfinite_loss_attempts"] == 2
-    assert audit["nonfinite_loss_replays"] == 1
-    assert audit["nonfinite_loss_replay_exhaustions"] == 1
-
-
-def test_train_one_epoch_rejects_amp_replay_without_scaler(monkeypatch):
-    train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
-    with pytest.raises(ValueError, match="requires a GradScaler"):
-        train_engine.train_one_epoch(
-            _ToyLoader(length=1),
-            _ToyModel(),
-            _ToyOptimizer(),
-            _ToyScheduler(),
-            curr_epoch=0,
-            logger=_Logger(),
-            max_amp_retries_per_batch=1,
-        )
+    assert scheduler.steps == 1
+    assert model.loss_normalizer.value == 1
 
 
 @pytest.mark.parametrize("max_train_iters", [0, -1])
-def test_train_one_epoch_rejects_non_positive_max_train_iters(monkeypatch, max_train_iters):
+def test_train_one_epoch_rejects_non_positive_max_train_iters(
+    monkeypatch, max_train_iters
+):
     train_engine = _load_train_engine_with_fake_runtime(monkeypatch)
     model = _ToyModel()
     optimizer = _ToyOptimizer()

@@ -1,5 +1,9 @@
 # Current DUCA-TAD / C3 Sparse Acquisition Experiment Map And GPT Review Prompt
 
+> **注意 (Note)**：本文件为 2026-07-06 早期实验地图与外部审阅 Prompt 历史记录。  
+> 涵盖 12 大实验体系、全量配置、工具、测试与实测数据的最新全局汇总记录，请参阅：  
+> 👉 [docs/CONSOLIDATED_EXPERIMENTS_RECORD.md](file:///E:/DeskTop/TAD/OpenTAD_C3_CoarseClean_20260702/docs/CONSOLIDATED_EXPERIMENTS_RECORD.md)
+
 Updated: 2026-07-07 +0800
 
 Status: active engineering, deployment, and external-review record

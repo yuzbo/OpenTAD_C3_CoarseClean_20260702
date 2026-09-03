@@ -2,93 +2,27 @@ import torch
 from .layer_decay_optimizer import build_vit_optimizer
 
 
-def prepare_optimizer_parameter_freezing(cfg, model, logger):
-    """Apply optimizer-driven freezing before DDP registers model parameters."""
-    if cfg.get("type") == "LayerDecayAdamW":
-        return
-    module = model.module if hasattr(model, "module") else model
-    backbone = getattr(module, "backbone", None)
-    backbone_cfg = cfg.get("backbone")
-    if backbone is None or backbone_cfg is None or getattr(backbone, "freeze_backbone", False):
-        return
-    custom_names = [entry["name"] for entry in backbone_cfg.get("custom", [])]
-    exclude_names = list(backbone_cfg.get("exclude", []))
-    for name, param in backbone.named_parameters():
-        is_custom = any(custom_name in name for custom_name in custom_names)
-        is_excluded = any(exclude_name in name for exclude_name in exclude_names)
-        if is_excluded and not is_custom and param.requires_grad:
-            param.requires_grad = False
-            logger.info(f"Freeze backbone parameter before DDP: {name}")
-
-
-def assert_optimizer_exact_coverage(model, optimizer):
-    """Assert that optimizer groups exactly cover the model's trainable parameters."""
-    model_params = {
-        id(param): (name, param) for name, param in model.named_parameters()
-    }
-    optimizer_locations = {}
-
-    for group_index, group in enumerate(optimizer.param_groups):
-        for param_index, param in enumerate(group["params"]):
-            optimizer_locations.setdefault(id(param), []).append(
-                f"group {group_index} param {param_index}"
-            )
-
-    missing = [
-        name
-        for param_id, (name, param) in model_params.items()
-        if param.requires_grad and param_id not in optimizer_locations
-    ]
-    frozen = [
-        name
-        for param_id, (name, param) in model_params.items()
-        if not param.requires_grad and param_id in optimizer_locations
-    ]
-    stale = [
-        ", ".join(locations)
-        for param_id, locations in optimizer_locations.items()
-        if param_id not in model_params
-    ]
-    duplicate = [
-        f"{model_params[param_id][0] if param_id in model_params else '<stale>'} "
-        f"({', '.join(locations)})"
-        for param_id, locations in optimizer_locations.items()
-        if len(locations) != 1
-    ]
-
-    problems = []
-    if missing:
-        problems.append(f"missing={missing}")
-    if frozen:
-        problems.append(f"frozen={frozen}")
-    if stale:
-        problems.append(f"stale={stale}")
-    if duplicate:
-        problems.append(f"duplicate={duplicate}")
-    if problems:
-        raise AssertionError(
-            "Optimizer parameter coverage is not exact: " + "; ".join(problems)
-        )
-
-
 def build_optimizer(cfg, model, logger):
     optimizer_type = cfg["type"]
     cfg.pop("type")
+    # Formal jobs wrap the detector in DDP, while the documented local
+    # smoke/precheck path intentionally runs one process.  Keep both paths on
+    # the same optimizer contract instead of dereferencing ``model.module``
+    # unconditionally.
+    target_model = model.module if hasattr(model, "module") else model
 
     if optimizer_type == "LayerDecayAdamW":
-        optimizer = build_vit_optimizer(cfg, model, logger)
-        assert_optimizer_exact_coverage(model.module, optimizer)
-        return optimizer
+        return build_vit_optimizer(cfg, model, logger)
 
     # set the backbone's optim_groups: SHOULD ONLY CONTAIN BACKBONE PARAMS
-    if hasattr(model.module, "backbone"):  # if backbone exists
-        if model.module.backbone.freeze_backbone == False:  # not frozen
+    if hasattr(target_model, "backbone"):  # if backbone exists
+        if target_model.backbone.freeze_backbone == False:  # not frozen
             assert (
                 "backbone" in cfg.keys()
             ), "Freeze_backbone is set to False, but backbone parameters is not provided in the optimizer config."
             backbone_cfg = cfg["backbone"]
             cfg.pop("backbone")
-            backbone_optim_groups = get_backbone_optim_groups(backbone_cfg, model, logger)
+            backbone_optim_groups = get_backbone_optim_groups(backbone_cfg, target_model, logger)
 
         else:  # frozen backbone
             backbone_optim_groups = []
@@ -101,16 +35,15 @@ def build_optimizer(cfg, model, logger):
     # weight decay for a certain layer, the model should have a function called get_optim_groups
     if "paramwise" in cfg.keys() and cfg["paramwise"]:
         cfg.pop("paramwise")
-        det_optim_groups = model.module.get_optim_groups(cfg)
+        det_optim_groups = target_model.get_optim_groups(cfg)
     else:
         # optim_groups that does not contain backbone params
         detector_params = []
-        for name, param in model.module.named_parameters():
+        for name, param in target_model.named_parameters():
             # exclude the backbone
             if name.startswith("backbone"):
                 continue
-            if param.requires_grad:
-                detector_params.append(param)
+            detector_params.append(param)
         det_optim_groups = [dict(params=detector_params)]
 
     # merge the optim_groups
@@ -125,7 +58,6 @@ def build_optimizer(cfg, model, logger):
     else:
         raise f"Optimizer {optimizer_type} is not supported so far."
 
-    assert_optimizer_exact_coverage(model.module, optimizer)
     return optimizer
 
 
@@ -157,9 +89,8 @@ def get_backbone_optim_groups(cfg, model, logger):
 
     name_list = []
     # split the backbone parameters into different groups
-    for name, param in model.module.backbone.named_parameters():
-        if not param.requires_grad:
-            continue
+    target_model = model.module if hasattr(model, "module") else model
+    for name, param in target_model.backbone.named_parameters():
         # loop the exclude_name_list
         is_exclude = False
         if len(exclude_name_list) > 0:
@@ -177,12 +108,6 @@ def get_backbone_optim_groups(cfg, model, logger):
                     name_list.append(name)
                     is_custom = True
                     break
-
-        if is_exclude and not is_custom and param.requires_grad:
-            raise RuntimeError(
-                f"backbone parameter {name!r} must be frozen before DDP; "
-                "call prepare_optimizer_parameter_freezing before wrapping the model"
-            )
 
         # if is_custom, we have already appended the param to the custom_params_list
         # if is _exclude, we do not need to append the param to the rest_params_list

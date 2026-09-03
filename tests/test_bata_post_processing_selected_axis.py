@@ -30,3 +30,27 @@ def test_nonuniform_selected_axis_segments_convert_back_to_dense_seconds() -> No
     expected_dense = torch.tensor([[2.0, 20.0]])
     expected_seconds = (expected_dense * 4.0 + 120.0) / 30.0
     assert torch.allclose(seconds, expected_seconds)
+
+
+def test_strict_fractional_selected_axis_conversion() -> None:
+    coords = torch.tensor([[0.5, 2.5]], dtype=torch.float32)
+    meta = {
+        "irregular_native_axis": False,
+        "irregular_selected_positions": [0.0, 4.0, 10.0],
+        "irregular_selected_valid_len": 12.0,
+    }
+
+    converted = post_utils.selected_axis_to_dense_axis(
+        coords,
+        meta,
+        strict=True,
+    )
+
+    assert torch.allclose(converted, torch.tensor([[2.0, 11.0]]))
+
+
+def test_strict_selected_axis_conversion_rejects_missing_metadata() -> None:
+    coords = torch.tensor([[0.0, 1.0]], dtype=torch.float32)
+
+    with pytest.raises(ValueError, match="strict.*irregular_selected_positions"):
+        post_utils.selected_axis_to_dense_axis(coords, {}, strict=True)

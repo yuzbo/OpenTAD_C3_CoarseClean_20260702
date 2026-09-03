@@ -16,6 +16,7 @@
 - `configs/`：最小 OpenTAD base config 与当前 THUMOS14 C3 路线配置。
 - `tools/bata/`：粗分类训练、模型矩阵、ledger 转换和启动门验证工具。
 - `scripts/`：N16R4 GPU1 粗分类探针、ledger 导出、AdaTAD full-train 启动器。
+- `docs/`：方法规划、审计吸收、规格说明及全量实验记录汇总文档（见 `docs/CONSOLIDATED_EXPERIMENTS_RECORD.md`）。
 - `tests/`：当前 C3 路线的 focused tests。
 
 ## 本地使用

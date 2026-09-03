@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import argparse
-import hashlib
 import importlib.util
 import json
 import math
@@ -1300,7 +1299,6 @@ class C3MobileNetV3ActionProbe:
         variant: str = "small",
         freeze_backbone: bool = False,
         weights_path: str | None = None,
-        preserve_pretrained_classifier: bool = False,
     ) -> None:
         if variant != "small":
             raise ValueError("only MobileNetV3-small is supported for this probe")
@@ -1319,9 +1317,8 @@ class C3MobileNetV3ActionProbe:
             self.backbone = mobilenet_v3_small(weights=weights)
         self.module.backbone = self.backbone if isinstance(self.backbone, nn.Module) else nn.Identity()
         self._external_backbone = None if isinstance(self.backbone, nn.Module) else self.backbone
-        self.preserve_pretrained_classifier = bool(preserve_pretrained_classifier)
         self.output_head = None
-        if hasattr(self.backbone, "classifier") and not self.preserve_pretrained_classifier:
+        if hasattr(self.backbone, "classifier"):
             classifier = getattr(self.backbone, "classifier")
             try:
                 last_layer = classifier[-1]
@@ -1335,17 +1332,14 @@ class C3MobileNetV3ActionProbe:
             self.output_head = nn.LazyLinear(1)
             self.module.output_head = self.output_head
         if freeze_backbone:
-            for param in self.module.parameters():
-                param.requires_grad = False
-            if (
-                not self.preserve_pretrained_classifier
-                and isinstance(self.backbone, nn.Module)
-                and hasattr(self.backbone, "classifier")
-            ):
+            for name, param in self.module.named_parameters():
+                if not name.startswith("output_head"):
+                    param.requires_grad = False
+            if isinstance(self.backbone, nn.Module) and hasattr(self.backbone, "classifier"):
                 for param in self.backbone.classifier.parameters():
                     param.requires_grad = True
 
-    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None, return_hidden: bool = False):
+    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None):
         torch, _F = _import_torch()
         if frames.ndim != 5:
             raise ValueError(f"MobileNetV3 probe expects [B,T,C,H,W], got {tuple(frames.shape)}")
@@ -1358,51 +1352,20 @@ class C3MobileNetV3ActionProbe:
         mean = torch.tensor([0.485, 0.456, 0.406], dtype=flat.dtype, device=flat.device).view(1, 3, 1, 1)
         std = torch.tensor([0.229, 0.224, 0.225], dtype=flat.dtype, device=flat.device).view(1, 3, 1, 1)
         flat = (flat - mean) / std
-        hidden = None
         if self._external_backbone is not None:
             out = self._external_backbone(flat)
         else:
-            if hasattr(self.backbone, "features") and hasattr(self.backbone, "avgpool") and hasattr(self.backbone, "classifier"):
-                feat = self.backbone.features(flat)
-                pooled = self.backbone.avgpool(feat)
-                hidden = torch.flatten(pooled, 1)
-                out = self.backbone.classifier(hidden)
-            else:
-                out = self.backbone(flat)
+            out = self.backbone(flat)
         if isinstance(out, (tuple, list)):
             out = out[0]
         if out.ndim > 2:
             out = out.flatten(1)
-        if hidden is None:
-            hidden = out
         if self.output_head is not None:
             out = self.output_head(out)
-        class_logits = None
-        if self.preserve_pretrained_classifier:
-            class_logits = out.reshape(batch, dense_len, -1)
-            probs = class_logits.float().softmax(dim=-1)
-            entropy = -(probs * probs.clamp_min(torch.finfo(probs.dtype).eps).log()).sum(dim=-1)
-            confidence = 0.5 * probs.amax(dim=-1) + 0.5 * (
-                1.0 - entropy / math.log(float(probs.shape[-1]))
-            )
-            confidence = confidence.clamp(1.0e-6, 1.0 - 1.0e-6)
-            logits = torch.logit(confidence)
-        else:
-            logits = out.reshape(batch, dense_len, -1)[..., 0]
+        logits = out.reshape(batch, dense_len, -1)[..., 0]
         if hasattr(valid, "to"):
             valid = valid.to(device=logits.device).bool()
-        logits = logits.masked_fill(~valid, 0.0)
-        if not return_hidden:
-            return logits
-        hidden = hidden.reshape(batch, dense_len, -1).masked_fill(~valid[:, :, None], 0.0)
-        payload = {
-            "logits": logits,
-            "hidden": hidden,
-            "hidden_kind": "imagenet_mobilenetv3_pooled_hidden",
-        }
-        if class_logits is not None:
-            payload["class_logits"] = class_logits.masked_fill(~valid[:, :, None], 0.0)
-        return payload
+        return logits.masked_fill(~valid, 0.0)
 
     def train(self):
         self.module.train()
@@ -1420,86 +1383,6 @@ class C3MobileNetV3ActionProbe:
         self.module.to(*args, **kwargs)
         if hasattr(self.backbone, "to"):
             self.backbone.to(*args, **kwargs)
-        return self
-
-    def parameters(self):
-        return self.module.parameters()
-
-    def state_dict(self):
-        return self.module.state_dict()
-
-    def load_state_dict(self, state_dict):
-        return self.module.load_state_dict(state_dict)
-
-
-class C3SlowFastFastFrozenProbe:
-    """Kinetics-pretrained SlowFast Fast pathway without Slow-path execution."""
-
-    def __init__(self, *, pretrained: bool = True, weights_path: str | None = None) -> None:
-        torch, _F = _import_torch()
-        nn = getattr(sys.modules.get(__name__), "nn", None)
-        if nn is None:
-            import torch.nn as nn  # type: ignore
-        from pytorchvideo.models import hub
-
-        model = hub.slowfast_r50(pretrained=bool(pretrained and not weights_path))
-        if weights_path:
-            model.load_state_dict(dict(_load_torch_state_dict(weights_path)), strict=True)
-        try:
-            fast_blocks = [block.multipathway_blocks[1] for block in model.blocks[:5]]
-        except Exception as exc:
-            raise RuntimeError(
-                "official PyTorchVideo SlowFast layout does not expose the Fast pathway"
-            ) from exc
-        self.module = nn.Module()
-        self.module.fast_blocks = nn.ModuleList(fast_blocks)
-        for param in self.module.parameters():
-            param.requires_grad = False
-        self.module.eval()
-
-    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None, return_hidden: bool = False):
-        torch, F = _import_torch()
-        if frames.ndim != 5:
-            raise ValueError(f"SlowFast Fast probe expects [B,T,C,H,W], got {tuple(frames.shape)}")
-        batch, dense_len, channels, _height, _width = frames.shape
-        if int(channels) != 3:
-            raise ValueError("SlowFast Fast probe expects RGB inputs")
-        x = frames.float()
-        if bool((x.detach().abs().amax() > 2.0).item()):
-            x = x / 255.0
-        mean = torch.tensor([0.45, 0.45, 0.45], dtype=x.dtype, device=x.device).view(1, 1, 3, 1, 1)
-        std = torch.tensor([0.225, 0.225, 0.225], dtype=x.dtype, device=x.device).view(1, 1, 3, 1, 1)
-        x = ((x - mean) / std).permute(0, 2, 1, 3, 4).contiguous()
-        for block in self.module.fast_blocks:
-            x = block(x)
-        hidden = x.mean(dim=(3, 4))
-        if int(hidden.shape[-1]) != int(dense_len):
-            hidden = F.interpolate(hidden, size=int(dense_len), mode="linear", align_corners=False)
-        hidden = hidden.transpose(1, 2).contiguous()
-        valid = valid.to(device=hidden.device, dtype=torch.bool)
-        hidden = hidden.masked_fill(~valid[:, :, None], 0.0)
-        energy = torch.linalg.vector_norm(hidden.float(), dim=-1)
-        scale = energy.amax(dim=1, keepdim=True).clamp_min(torch.finfo(energy.dtype).eps)
-        score = (energy / scale).clamp(1.0e-6, 1.0 - 1.0e-6)
-        logits = torch.logit(score).masked_fill(~valid, 0.0)
-        if not return_hidden:
-            return logits
-        return {
-            "logits": logits,
-            "hidden": hidden,
-            "hidden_kind": "kinetics_slowfast_r50_fast_pathway_hidden",
-        }
-
-    def train(self):
-        self.module.eval()
-        return self
-
-    def eval(self):
-        self.module.eval()
-        return self
-
-    def to(self, *args, **kwargs):
-        self.module.to(*args, **kwargs)
         return self
 
     def parameters(self):
@@ -1867,7 +1750,7 @@ class C3TemporalTCNActionProbe:
         self.classifier = nn.Conv1d(classifier_in, 1, kernel_size=1)
         self.module.classifier = self.classifier
 
-    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None, return_hidden: bool = False):
+    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None):
         torch, _F = _import_torch()
         if frames.ndim != 5:
             raise ValueError(f"Temporal TCN probe expects [B,T,C,H,W], got {tuple(frames.shape)}")
@@ -1892,11 +1775,7 @@ class C3TemporalTCNActionProbe:
         logits = self.classifier(features).squeeze(1)
         if hasattr(valid, "to"):
             valid = valid.to(device=logits.device).bool()
-        logits = logits.masked_fill(~valid, 0.0)
-        if not return_hidden:
-            return logits
-        hidden = features.transpose(1, 2).contiguous().masked_fill(~valid[:, :, None], 0.0)
-        return {"logits": logits, "hidden": hidden}
+        return logits.masked_fill(~valid, 0.0)
 
     def train(self):
         self.module.train()
@@ -1921,12 +1800,6 @@ class C3TemporalTCNActionProbe:
 
 
 def _official_repos_root() -> Path:
-    configured = os.environ.get("C3_OFFICIAL_ACTION_SEG_REPOS")
-    if configured:
-        root = Path(configured).expanduser().resolve()
-        if not root.is_dir():
-            raise FileNotFoundError(f"C3_OFFICIAL_ACTION_SEG_REPOS is not a directory: {root}")
-        return root
     here = Path(__file__).resolve()
     candidates = []
     for parent in here.parents:
@@ -2072,28 +1945,6 @@ def _load_official_fact_module(repo_root: Path):
                 sys.modules[name] = previous
 
 
-_OFFICIAL_ACTION_SEG_MODULE_CACHE: dict[tuple[str, str], Any] = {}
-
-
-def _load_official_action_seg_module(backend: str, repo_root: Path):
-    key = (str(backend), str(repo_root.resolve()))
-    cached = _OFFICIAL_ACTION_SEG_MODULE_CACHE.get(key)
-    if cached is not None:
-        return cached
-    if backend == "official_ms_tcn2":
-        module = _load_official_mstcn2_module(repo_root)
-    elif backend == "official_asformer":
-        module = _load_official_asformer_module(repo_root)
-    elif backend == "official_fact":
-        module = _load_official_fact_module(repo_root)
-    elif backend == "official_video_mamba_asformer":
-        module = _load_official_video_mamba_asformer_module(repo_root)
-    else:
-        raise ValueError(f"unsupported official action segmentation backend: {backend}")
-    _OFFICIAL_ACTION_SEG_MODULE_CACHE[key] = module
-    return module
-
-
 def official_action_seg_backend_available(backend: str) -> bool:
     if backend not in SUPPORTED_OFFICIAL_ACTION_SEG_BACKENDS:
         return False
@@ -2154,9 +2005,6 @@ class C3OfficialActionSegmentationProbe:
         hidden_dim: int = 96,
         num_layers: int = 2,
         dropout: float = 0.10,
-        spatial_norm: str = "batchnorm",
-        hidden_output_kind: str = "pre_temporal_spatial_stem_hidden",
-        policy_hidden_gradient_scope: str = "none",
     ) -> None:
         if backend not in SUPPORTED_OFFICIAL_ACTION_SEG_BACKENDS:
             raise ValueError(f"unsupported official action segmentation backend: {backend}")
@@ -2169,72 +2017,30 @@ class C3OfficialActionSegmentationProbe:
         self.spatial_size = int(spatial_size)
         self.hidden_dim = int(hidden_dim)
         self.num_layers = int(num_layers)
-        self.spatial_norm = str(spatial_norm).lower()
-        if self.spatial_norm not in {"batchnorm", "groupnorm"}:
-            raise ValueError("spatial_norm must be batchnorm or groupnorm")
-        self.hidden_output_kind = str(hidden_output_kind)
-        self.policy_hidden_gradient_scope = str(policy_hidden_gradient_scope)
-        supported_hidden_kinds = {
-            "pre_temporal_spatial_stem_hidden",
-            "official_asformer_encoder_hidden",
-        }
-        if self.hidden_output_kind not in supported_hidden_kinds:
-            raise ValueError(
-                "hidden_output_kind must be pre_temporal_spatial_stem_hidden or "
-                "official_asformer_encoder_hidden"
-            )
-        if self.hidden_output_kind == "official_asformer_encoder_hidden" and self.backend != "official_asformer":
-            raise ValueError("official_asformer_encoder_hidden requires backend='official_asformer'")
-        if self.policy_hidden_gradient_scope not in {
-            "none",
-            "asformer_last_encoder_layer",
-            "asformer_full_encoder",
-        }:
-            raise ValueError(
-                "policy_hidden_gradient_scope must be none, asformer_last_encoder_layer, "
-                "or asformer_full_encoder"
-            )
-        if self.policy_hidden_gradient_scope != "none" and (
-            self.backend != "official_asformer"
-            or self.hidden_output_kind != "official_asformer_encoder_hidden"
-        ):
-            raise ValueError(
-                "restricted policy hidden requires official ASFormer encoder hidden"
-            )
         repo_root = _official_repos_root()
         self.official_source = {
             "backend": self.backend,
             "repo_root": str(repo_root),
             "repo_path": "",
             "compatibility_shim": None,
-            "source_sha256": None,
         }
 
         temporal_dim = max(16, int(hidden_dim))
-
-        def make_spatial_norm(channels: int):
-            if self.spatial_norm == "batchnorm":
-                return nn.BatchNorm2d(channels)
-            groups = min(8, int(channels))
-            while int(channels) % groups != 0:
-                groups -= 1
-            return nn.GroupNorm(groups, channels)
-
         self.module = nn.Module()
         self.spatial_stem = nn.Sequential(
             nn.Conv2d(3, temporal_dim, kernel_size=3, stride=2, padding=1, bias=False),
-            make_spatial_norm(temporal_dim),
+            nn.BatchNorm2d(temporal_dim),
             nn.SiLU(inplace=True),
             nn.Conv2d(temporal_dim, temporal_dim, kernel_size=3, stride=2, padding=1, bias=False),
-            make_spatial_norm(temporal_dim),
+            nn.BatchNorm2d(temporal_dim),
             nn.SiLU(inplace=True),
             nn.AdaptiveAvgPool2d(1),
         )
         self.module.spatial_stem = self.spatial_stem
 
         if self.backend == "official_ms_tcn2":
-            official = _load_official_action_seg_module(self.backend, repo_root)
-            self.official_module_name = getattr(official, "__name__", self.backend)
+            official = _load_official_mstcn2_module(repo_root)
+            self.official_module = official
             self.official_temporal = official.MS_TCN2(
                 max(1, int(num_layers)),
                 max(1, int(num_layers)),
@@ -2248,9 +2054,9 @@ class C3OfficialActionSegmentationProbe:
                 compatibility_shim="in_memory_fix_for_stray_MS_TCB_token_and_skip_trainer",
             )
         elif self.backend == "official_asformer":
-            official = _load_official_action_seg_module(self.backend, repo_root)
+            official = _load_official_asformer_module(repo_root)
             official.device = torch.device("cpu")
-            self.official_module_name = getattr(official, "__name__", self.backend)
+            self.official_module = official
             self.official_temporal = official.MyTransformer(
                 1,
                 max(1, int(num_layers)),
@@ -2266,15 +2072,15 @@ class C3OfficialActionSegmentationProbe:
                 compatibility_shim="in_memory_drop_unused_eval_import_and_skip_trainer",
             )
         elif self.backend == "official_fact":
-            official = _load_official_action_seg_module(self.backend, repo_root)
-            self.official_module_name = getattr(official, "__name__", self.backend)
+            official = _load_official_fact_module(repo_root)
+            self.official_module = official
             cfg = self._make_fact_cfg(temporal_dim=temporal_dim, dropout=float(dropout))
             self.official_temporal = official.FACT(cfg, temporal_dim, 2)
             self.official_source.update(repo_path=str(repo_root / "CVPR2024-FACT"), compatibility_shim="minimal_cfg_namespace")
         else:
-            official = _load_official_action_seg_module(self.backend, repo_root)
+            official = _load_official_video_mamba_asformer_module(repo_root)
             official.device = torch.device("cpu")
-            self.official_module_name = getattr(official, "__name__", self.backend)
+            self.official_module = official
             self.official_temporal = official.MaTransformer(
                 1,
                 max(1, int(num_layers)),
@@ -2287,25 +2093,6 @@ class C3OfficialActionSegmentationProbe:
             )
             self.official_source.update(repo_path=str(repo_root / "video-mamba-suite"), compatibility_shim=None)
         self.module.official_temporal = self.official_temporal
-        source_paths = {
-            "official_ms_tcn2": repo_root / "MS-TCN2" / "model.py",
-            "official_asformer": repo_root / "ASFormer" / "model.py",
-            "official_fact": repo_root / "CVPR2024-FACT" / "models" / "blocks.py",
-            "official_video_mamba_asformer": repo_root
-            / "video-mamba-suite"
-            / "video-mamba-suite"
-            / "temporal-action-segmentation"
-            / "model.py",
-        }
-        source_path = source_paths[self.backend]
-        if not source_path.is_file():
-            raise FileNotFoundError(f"official action-seg source is missing: {source_path}")
-        source_bytes = source_path.read_bytes()
-        self.official_source["source_file"] = str(source_path)
-        self.official_source["source_sha256"] = hashlib.sha256(source_bytes).hexdigest()
-        self.official_source["source_normalized_lf_sha256"] = hashlib.sha256(
-            source_bytes.replace(b"\r\n", b"\n")
-        ).hexdigest()
 
     def _sync_official_runtime_tensors(self, device: Any) -> None:
         for submodule in self.official_temporal.modules():
@@ -2342,7 +2129,7 @@ class C3OfficialActionSegmentationProbe:
         )
         return cfg
 
-    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None, return_hidden: bool = False):
+    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None):
         torch, _F = _import_torch()
         if frames.ndim != 5:
             raise ValueError(f"Official action-seg probe expects [B,T,C,H,W], got {tuple(frames.shape)}")
@@ -2356,88 +2143,17 @@ class C3OfficialActionSegmentationProbe:
         features = self.spatial_stem(flat).flatten(1).reshape(batch, dense_len, -1).transpose(1, 2)
         mask = valid.to(device=features.device).bool()
         features = features.masked_fill(~mask[:, None, :], 0.0)
-        official_module = _load_official_action_seg_module(self.backend, _official_repos_root())
-        if hasattr(official_module, "device"):
-            official_module.device = torch.device(features.device)
+        if hasattr(self, "official_module") and hasattr(self.official_module, "device"):
+            self.official_module.device = torch.device(features.device)
         self._sync_official_runtime_tensors(features.device)
         if self.backend == "official_ms_tcn2":
             outputs = self.official_temporal(features)
             logits = outputs[-1, :, 1, :] - outputs[-1, :, 0, :]
         elif self.backend == "official_asformer":
             rows = []
-            encoder_hidden_rows = []
-            policy_replay_inputs = []
-            policy_replay_masks = []
-            policy_replay_rng = []
-            hooks = []
-            replay_policy_hidden = bool(
-                self.module.training
-                and self.policy_hidden_gradient_scope
-                in {"asformer_last_encoder_layer", "asformer_full_encoder"}
-            )
-            if return_hidden and self.hidden_output_kind == "official_asformer_encoder_hidden":
-                def capture_encoder_hidden(_module, _inputs, output):
-                    if not isinstance(output, tuple) or len(output) != 2:
-                        raise RuntimeError("official ASFormer encoder must return (logits, hidden)")
-                    encoder_hidden_rows.append(output[1])
-
-                hooks.append(
-                    self.official_temporal.encoder.register_forward_hook(capture_encoder_hidden)
-                )
-                if replay_policy_hidden and self.policy_hidden_gradient_scope == "asformer_last_encoder_layer":
-                    encoder_layers = getattr(self.official_temporal.encoder, "layers", None)
-                    if encoder_layers is None or len(encoder_layers) < 1:
-                        raise RuntimeError(
-                            "official ASFormer encoder exposes no last layer for restricted policy gradient"
-                        )
-
-                    def capture_last_layer_input(_module, inputs):
-                        if len(inputs) != 3:
-                            raise RuntimeError(
-                                "official ASFormer encoder layer must receive feature, cross-feature and mask"
-                            )
-                        policy_replay_inputs.append(inputs[0])
-                        policy_replay_masks.append(inputs[2])
-                        policy_replay_rng.append(
-                            {
-                                "cpu": torch.random.get_rng_state(),
-                                "cuda": (
-                                    torch.cuda.get_rng_state_all()
-                                    if inputs[0].is_cuda
-                                    else None
-                                ),
-                            }
-                        )
-
-                    hooks.append(
-                        encoder_layers[-1].register_forward_pre_hook(capture_last_layer_input)
-                    )
-            try:
-                for idx in range(int(batch)):
-                    if replay_policy_hidden and self.policy_hidden_gradient_scope == "asformer_full_encoder":
-                        # A detached spatial input keeps detector-feedback adaptation
-                        # inside the full official ASFormer encoder. The ordinary
-                        # actionness loss still trains the spatial stem and heads.
-                        policy_replay_inputs.append(features[idx : idx + 1])
-                        policy_replay_masks.append(mask[idx : idx + 1, None, :].float())
-                        policy_replay_rng.append(
-                            {
-                                "cpu": torch.random.get_rng_state(),
-                                "cuda": (
-                                    torch.cuda.get_rng_state_all()
-                                    if features.is_cuda
-                                    else None
-                                ),
-                            }
-                        )
-                    outputs = self.official_temporal(
-                        features[idx : idx + 1],
-                        mask[idx : idx + 1, None, :].float(),
-                    )
-                    rows.append(outputs[-1, 0, 1, :] - outputs[-1, 0, 0, :])
-            finally:
-                for hook in hooks:
-                    hook.remove()
+            for idx in range(int(batch)):
+                outputs = self.official_temporal(features[idx : idx + 1], mask[idx : idx + 1, None, :].float())
+                rows.append(outputs[-1, 0, 1, :] - outputs[-1, 0, 0, :])
             logits = torch.stack(rows, dim=0)
         elif self.backend == "official_fact":
             rows = []
@@ -2453,102 +2169,7 @@ class C3OfficialActionSegmentationProbe:
                 outputs = self.official_temporal(features[idx : idx + 1], mask[idx : idx + 1, None, :].float())
                 rows.append(outputs[-1, 0, 1, :] - outputs[-1, 0, 0, :])
             logits = torch.stack(rows, dim=0)
-        logits = logits.masked_fill(~mask, 0.0)
-        if not return_hidden:
-            return logits
-        if self.backend == "official_asformer" and self.hidden_output_kind == "official_asformer_encoder_hidden":
-            if len(encoder_hidden_rows) != int(batch):
-                raise RuntimeError(
-                    "official ASFormer encoder hidden capture count does not match the batch"
-                )
-            hidden = torch.cat(encoder_hidden_rows, dim=0).transpose(1, 2).contiguous()
-            hidden_kind = "official_asformer_encoder_hidden"
-            policy_hidden = None
-            if replay_policy_hidden:
-                if not (
-                    len(policy_replay_inputs)
-                    == len(policy_replay_masks)
-                    == len(policy_replay_rng)
-                    == int(batch)
-                ):
-                    raise RuntimeError(
-                        "restricted ASFormer policy replay capture count does not match the batch"
-                    )
-                current_cpu_rng = torch.random.get_rng_state()
-                current_cuda_rng = (
-                    torch.cuda.get_rng_state_all()
-                    if features.is_cuda
-                    else None
-                )
-                replay_rows = []
-                try:
-                    if self.policy_hidden_gradient_scope == "asformer_last_encoder_layer":
-                        encoder_layers = self.official_temporal.encoder.layers
-                        for replay_input, replay_mask, rng_state in zip(
-                            policy_replay_inputs,
-                            policy_replay_masks,
-                            policy_replay_rng,
-                        ):
-                            torch.random.set_rng_state(rng_state["cpu"])
-                            if rng_state["cuda"] is not None:
-                                torch.cuda.set_rng_state_all(rng_state["cuda"])
-                            replay_rows.append(
-                                encoder_layers[-1](
-                                    replay_input.detach(),
-                                    None,
-                                    replay_mask,
-                                )
-                            )
-                    else:
-                        def capture_replay_hidden(_module, _inputs, output):
-                            if not isinstance(output, tuple) or len(output) != 2:
-                                raise RuntimeError("official ASFormer encoder must return (logits, hidden)")
-                            replay_rows.append(output[1])
-
-                        replay_hook = self.official_temporal.encoder.register_forward_hook(
-                            capture_replay_hidden
-                        )
-                        try:
-                            for replay_input, replay_mask, rng_state in zip(
-                                policy_replay_inputs,
-                                policy_replay_masks,
-                                policy_replay_rng,
-                            ):
-                                torch.random.set_rng_state(rng_state["cpu"])
-                                if rng_state["cuda"] is not None:
-                                    torch.cuda.set_rng_state_all(rng_state["cuda"])
-                                self.official_temporal(
-                                    replay_input.detach(),
-                                    replay_mask,
-                                )
-                        finally:
-                            replay_hook.remove()
-                finally:
-                    torch.random.set_rng_state(current_cpu_rng)
-                    if current_cuda_rng is not None:
-                        torch.cuda.set_rng_state_all(current_cuda_rng)
-                replay_hidden = torch.cat(replay_rows, dim=0).transpose(1, 2).contiguous()
-                policy_hidden = hidden.detach() + (
-                    replay_hidden - replay_hidden.detach()
-                )
-        else:
-            hidden = features.transpose(1, 2).contiguous()
-            hidden_kind = "pre_temporal_spatial_stem_hidden"
-            policy_hidden = None
-        hidden = hidden.masked_fill(~mask[:, :, None], 0.0)
-        if policy_hidden is not None:
-            policy_hidden = policy_hidden.masked_fill(~mask[:, :, None], 0.0)
-        return {
-            "logits": logits,
-            "hidden": hidden,
-            "policy_hidden": policy_hidden,
-            "policy_hidden_gradient_scope": self.policy_hidden_gradient_scope,
-            "spatial_norm": self.spatial_norm,
-            "hidden_kind": hidden_kind,
-            "official_source_sha256": self.official_source["source_sha256"],
-            "official_source_normalized_lf_sha256": self.official_source["source_normalized_lf_sha256"],
-            "official_source_file": self.official_source["source_file"],
-        }
+        return logits.masked_fill(~mask, 0.0)
 
     def train(self):
         self.module.train()
@@ -2728,7 +2349,7 @@ class C3MatrixZooActionProbe:
         std = torch.tensor([0.229, 0.224, 0.225], dtype=frames.dtype, device=frames.device).view(1, 1, 3, 1, 1)
         return (frames - mean) / std
 
-    def _image_logits(self, frames: Any, valid: Any, return_hidden: bool = False):
+    def _image_logits(self, frames: Any, valid: Any):
         batch, dense_len, channels, height, width = frames.shape
         flat = self._normalize_frames(frames).reshape(batch * dense_len, channels, height, width)
         features = self.backbone(flat)
@@ -2738,10 +2359,7 @@ class C3MatrixZooActionProbe:
             features = features.flatten(1)
         features = features.reshape(batch, dense_len, -1).transpose(1, 2)
         logits = self.temporal_head(features).squeeze(1)
-        if not return_hidden:
-            return logits
-        hidden = features.transpose(1, 2).contiguous()
-        return logits, hidden
+        return logits
 
     def _anchor_positions(self, dense_len: int) -> list[int]:
         if dense_len <= 1:
@@ -2783,30 +2401,20 @@ class C3MatrixZooActionProbe:
             raise RuntimeError("torch.nn.functional is required for video logit interpolation")
         return F.interpolate(anchor_logits.unsqueeze(1), size=int(dense_len), mode="linear", align_corners=False).squeeze(1)
 
-    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None, return_hidden: bool = False):
+    def __call__(self, frames: Any, valid: Any, time_coords: Any | None = None):
         if frames.ndim != 5:
             raise ValueError(f"matrix-zoo probe expects [B,T,C,H,W], got {tuple(frames.shape)}")
         if int(frames.shape[2]) != 3:
             raise ValueError("matrix-zoo probe expects RGB frame tensors with 3 channels")
         if self.mode == "image_backbone_temporal_head":
-            image_out = self._image_logits(frames, valid, return_hidden=return_hidden)
-            if return_hidden:
-                logits, hidden = image_out
-            else:
-                logits = image_out
-                hidden = None
+            logits = self._image_logits(frames, valid)
         elif self.mode == "video_clip_interpolated":
             logits = self._video_logits(frames, valid)
-            hidden = logits.unsqueeze(-1)
         else:
             raise RuntimeError(f"unsupported matrix-zoo mode: {self.mode}")
         if hasattr(valid, "to"):
             valid = valid.to(device=logits.device).bool()
-        logits = logits.masked_fill(~valid, 0.0)
-        if not return_hidden:
-            return logits
-        hidden = hidden.to(device=logits.device, dtype=logits.dtype).masked_fill(~valid[:, :, None], 0.0)
-        return {"logits": logits, "hidden": hidden}
+        return logits.masked_fill(~valid, 0.0)
 
     def train(self):
         self.module.train()
@@ -2892,13 +2500,7 @@ def make_lowres_frame_images(inputs: Any, *, spatial_size: int = 32, normalize: 
 def prepare_probe_inputs(inputs: Any, *, probe_model: str, spatial_size: int):
     if probe_model == "c3-reader":
         return make_lowres_descriptors(inputs, scout_spatial_size=int(spatial_size))
-    if probe_model in {
-        "mobilenetv3",
-        "slowfast-fast",
-        "temporal-tcn",
-        MATRIX_ZOO_PROBE_MODEL,
-        OFFICIAL_ACTION_SEG_PROBE_MODEL,
-    }:
+    if probe_model in {"mobilenetv3", "temporal-tcn", MATRIX_ZOO_PROBE_MODEL, OFFICIAL_ACTION_SEG_PROBE_MODEL}:
         return make_lowres_frame_images(inputs, spatial_size=int(spatial_size))
     raise ValueError(f"unsupported probe_model: {probe_model}")
 

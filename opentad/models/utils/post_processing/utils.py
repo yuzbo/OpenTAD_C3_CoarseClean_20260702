@@ -13,20 +13,16 @@ def boundary_choose(score):
 
 def save_predictions(predictions, metas, folder):
     for idx in range(len(metas)):
-        video_name = metas[idx]["video_name"]
-
-        file_path = os.path.join(folder, f"{video_name}.pkl")
+        file_path = os.path.join(folder, _prediction_filename(metas[idx]))
         prediction = [data[idx] for data in predictions]
         with open(file_path, "wb") as outfile:
             pickle.dump(prediction, outfile, pickle.HIGHEST_PROTOCOL)
 
 
 def load_single_prediction(metas, folder):
-    """Should not be used for sliding window. Since we saved the files with video name, and sliding window will have multiple files with the same name."""
     predictions = []
     for idx in range(len(metas)):
-        video_name = metas[idx]["video_name"]
-        file_path = os.path.join(folder, f"{video_name}.pkl")
+        file_path = os.path.join(folder, _prediction_filename(metas[idx]))
         with open(file_path, "rb") as infile:
             prediction = pickle.load(infile)
         predictions.append(prediction)
@@ -47,6 +43,20 @@ def load_predictions(metas, infer_cfg):
         return predictions
     else:
         return load_single_prediction(metas, infer_cfg.folder)
+
+
+def _prediction_filename(meta):
+    video_name = meta["video_name"]
+    window_start = meta.get("window_start_frame", None)
+    if window_start is None and "snippet_boundaries" in meta:
+        boundaries = meta["snippet_boundaries"]
+        if len(boundaries) > 0:
+            window_start = boundaries[0]
+    if window_start is None:
+        return f"{video_name}.pkl"
+    if isinstance(window_start, torch.Tensor):
+        window_start = window_start.detach().cpu().reshape(-1)[0].item()
+    return f"{video_name}__window_{int(round(float(window_start))):06d}.pkl"
 
 
 def _meta_float_tensor(meta, key, *, dtype, device):
@@ -110,15 +120,11 @@ def convert_to_seconds(segments, meta):
     if meta["fps"] == -1:  # resize setting, like in anet / hacs
         segments = segments / meta["resize_length"] * meta["duration"]
     else:  # sliding window / padding setting, like in thumos / ego4d
-        if "dense_recovery_scale" in meta:
-            segments = segments * float(meta["dense_recovery_scale"])
-        else:
-            segments = _selected_axis_segments_to_dense_axis(segments, meta)
+        segments = _selected_axis_segments_to_dense_axis(segments, meta)
         snippet_stride = meta["snippet_stride"]
         offset_frames = meta["offset_frames"]
         window_start_frame = meta["window_start_frame"] if "window_start_frame" in meta.keys() else 0
         segments = (segments * snippet_stride + window_start_frame + offset_frames) / meta["fps"]
-
 
     # truncate all boundaries within [0, duration]
     if segments.shape[0] > 0:
