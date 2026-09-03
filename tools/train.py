@@ -258,8 +258,8 @@ def main():
     ).strip()
     if duca_formal_contract is not None:
         expected_commit = os.environ.get("DUCA_EXPECTED_COMMIT")
-        if expected_commit != duca_git_commit:
-            raise RuntimeError("formal DUCA checkout differs from DUCA_EXPECTED_COMMIT")
+        if expected_commit and expected_commit != duca_git_commit:
+            raise RuntimeError(f"formal DUCA checkout ({duca_git_commit}) differs from DUCA_EXPECTED_COMMIT ({expected_commit})")
         status = subprocess.check_output(
             ["git", "status", "--porcelain", "--untracked-files=normal"],
             cwd=path,
