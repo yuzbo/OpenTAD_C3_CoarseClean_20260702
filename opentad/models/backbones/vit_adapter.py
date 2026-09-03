@@ -845,6 +845,9 @@ class Block(BaseModule):
     ) -> Tensor:
         """A-MoD execution: Top-K tokens execute MHSA+MLP, unselected tokens execute identity bypass."""
         B, N, C = x.shape
+        capacity = float(capacity)
+        if capacity <= 0.0 or capacity > 1.0:
+            raise ValueError("B-AMoD capacity must lie in (0, 1]")
         scores = route_scores.clone()
         if boundary_prior is not None:
             bp = boundary_prior.to(device=scores.device, dtype=scores.dtype)
@@ -865,6 +868,8 @@ class Block(BaseModule):
         valid_token_counts = None
         if temporal_token_mask is not None:
             mask_bool = temporal_token_mask.to(device=scores.device, dtype=torch.bool)
+            if mask_bool.shape != (B, N):
+                raise ValueError("temporal_token_mask must have shape [B,N]")
             valid_token_counts = mask_bool.sum(dim=1)
             if bool((valid_token_counts == 0).all().item()):
                 return x
@@ -872,29 +877,30 @@ class Block(BaseModule):
             scores = scores.masked_fill(~mask_bool, mask_val)
 
         if valid_token_counts is None:
-            k_count = max(1, int(round(N * capacity)))
-        else:
-            # Batched selected-Q execution has one K for every sample.  Do not
-            # silently shrink long samples to the shortest row: formal batches
-            # must expose the same valid-token contract or fail closed.
-            if not torch.equal(valid_token_counts, valid_token_counts[:1].expand_as(valid_token_counts)):
-                raise ValueError(
-                    "B-AMoD requires equal valid-token counts across the batch"
-                )
-            valid_count = max(1, int(valid_token_counts[0].item()))
-            k_count = min(N, max(1, int(round(valid_count * capacity))))
-        topk_indices = torch.topk(scores, k=k_count, dim=1, sorted=False).indices
-        topk_indices = torch.sort(topk_indices, dim=1).values
+            valid_token_counts = torch.full((B,), N, dtype=torch.long, device=x.device)
+            mask_bool = None
+        k_counts = torch.ceil(valid_token_counts.to(dtype=torch.float32) * capacity).to(dtype=torch.long)
+        k_counts = torch.where(valid_token_counts > 0, k_counts.clamp_min(1), k_counts)
+        k_counts = torch.minimum(k_counts, valid_token_counts)
+        max_k = int(k_counts.max().item())
+        topk_indices = torch.topk(scores, k=max_k, dim=1, sorted=True).indices
+        for batch_idx in range(B):
+            row_k = int(k_counts[batch_idx].item())
+            if row_k:
+                topk_indices[batch_idx, :row_k] = torch.sort(
+                    topk_indices[batch_idx, :row_k]
+                ).values
+        selected_slots = torch.arange(max_k, device=x.device).unsqueeze(0) < k_counts.unsqueeze(1)
 
         idx_exp = topk_indices.unsqueeze(-1).expand(-1, -1, C)
         selected_x = torch.gather(x, 1, idx_exp)
 
-        if temporal_token_mask is not None:
-            selected_mask = torch.gather(temporal_token_mask.to(device=x.device, dtype=torch.bool), 1, topk_indices)
-            if not bool(selected_mask.all().item()):
+        if mask_bool is not None:
+            selected_mask = torch.gather(mask_bool, 1, topk_indices) & selected_slots
+            if not bool((selected_mask == selected_slots).all().item()):
                 raise RuntimeError("B-AMoD selected a padded temporal token")
         else:
-            selected_mask = None
+            selected_mask = selected_slots
 
         # Selected-Q / Full-KV: selected tokens receive context from all
         # tokens, while only the selected outputs are scattered back.
@@ -910,13 +916,21 @@ class Block(BaseModule):
         selected_x = selected_x + self.drop_path(self.mlp(self.norm2(selected_x)))
 
         out = x.clone()
-        out.scatter_(1, idx_exp, selected_x)
+        for batch_idx in range(B):
+            row_k = int(k_counts[batch_idx].item())
+            if row_k:
+                row_indices = topk_indices[batch_idx, :row_k]
+                out[batch_idx, row_indices] = selected_x[batch_idx, :row_k]
 
         if self.use_adapter:
             adapter_out = self.adapter(out, h, w, temporal_token_mask=temporal_token_mask)
             selected_adapter = torch.gather(adapter_out, 1, idx_exp)
             out = x.clone()
-            out.scatter_(1, idx_exp, selected_adapter)
+            for batch_idx in range(B):
+                row_k = int(k_counts[batch_idx].item())
+                if row_k:
+                    row_indices = topk_indices[batch_idx, :row_k]
+                    out[batch_idx, row_indices] = selected_adapter[batch_idx, :row_k]
         return out
 
     def forward(

@@ -235,11 +235,19 @@ class DualPhaseFrameSelector(nn.Module):
             for k in range(1, valid_count):
                 if synced_temporal_positions[b, k] <= synced_temporal_positions[b, k - 1]:
                     synced_temporal_positions[b, k] = synced_temporal_positions[b, k - 1] + 1e-4
+            if 0 < valid_count < self.total_budget:
+                synced_temporal_positions[b, valid_count:] = synced_temporal_positions[b, valid_count - 1]
 
         # 3. Compute physical delta_t per token on detector feature grid for CT-Conv1d
         diff = torch.zeros_like(synced_temporal_positions, dtype=torch.float32)
         diff[:, :-1] = synced_temporal_positions[:, 1:] - synced_temporal_positions[:, :-1]
         diff[:, -1] = diff[:, -2] if self.total_budget > 1 else 1.0
+        for b in range(B):
+            valid_count = int(selected_masks[b].sum().item())
+            if valid_count <= 1:
+                diff[b].fill_(1.0)
+            elif valid_count < self.total_budget:
+                diff[b, valid_count - 1 :] = diff[b, valid_count - 2]
         detector_delta_t = diff.clamp_min(1e-4)
         selected_frame_rank = torch.arange(self.total_budget, device=inputs.device).view(1, -1).expand(B, -1).clone()
         selected_frame_rank = selected_frame_rank.masked_fill(~selected_masks, -1)

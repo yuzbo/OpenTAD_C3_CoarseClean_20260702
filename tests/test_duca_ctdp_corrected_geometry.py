@@ -67,10 +67,11 @@ def test_bamod_selected_queries_use_full_kv_and_never_pad():
     assert not torch.equal(out[:, :4], out_changed[:, :4])
 
 
-def test_bamod_rejects_mixed_valid_token_counts_in_batched_execution():
+def test_bamod_supports_mixed_valid_token_counts_in_batched_execution():
     block = Block(embed_dims=16, num_heads=4, mlp_ratio=2.0, use_adapter=False, temporal_size=4)
     x = torch.randn(2, 8, 16)
     scores = torch.randn(2, 8)
     mask = torch.tensor([[1] * 8, [1] * 6 + [0] * 2], dtype=torch.bool)
-    with pytest.raises(ValueError, match="equal valid-token counts"):
-        block.forward_amod(x, 2, 2, scores, capacity=0.5, temporal_token_mask=mask)
+    out = block.forward_amod(x, 2, 2, scores, capacity=0.5, temporal_token_mask=mask)
+    assert out.shape == x.shape
+    assert torch.equal(out[1, 6:], x[1, 6:])

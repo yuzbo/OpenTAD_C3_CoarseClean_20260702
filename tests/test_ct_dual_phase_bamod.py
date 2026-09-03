@@ -237,6 +237,7 @@ def test_block_amod_exact_identity_bypass():
 
 def test_actionformer_optimizer_parameter_coverage_ct_dp_bamod():
     """Verify that all trainable parameters in ActionFormer are uniquely partitioned into decay/no-decay."""
+    from mmengine.config import ConfigDict
     from opentad.models.detectors.actionformer import ActionFormer
 
     cfg_dict = dict(
@@ -272,7 +273,7 @@ def test_actionformer_optimizer_parameter_coverage_ct_dp_bamod():
                 strides=[1],
                 regression_range=[[-1, 10000]],
             ),
-            loss=dict(
+            loss=ConfigDict(
                 cls_loss=dict(type="FocalLoss"),
                 reg_loss=dict(type="DIOULoss"),
             ),
@@ -315,6 +316,7 @@ class SimpleVideoBackbone(nn.Module):
 
 def test_full_actionformer_end_to_end_ct_dual_phase_bamod_6d_and_backward():
     """Verify end-to-end forward and backward pass of ActionFormer with DualPhaseFrameSelector and CT-Conv on 6D NCTHW input."""
+    from mmengine.config import ConfigDict
     from opentad.models.detectors.actionformer import ActionFormer
 
     cfg_dict = dict(
@@ -351,7 +353,7 @@ def test_full_actionformer_end_to_end_ct_dual_phase_bamod_6d_and_backward():
                 strides=[1],
                 regression_range=[[-1, 10000]],
             ),
-            loss=dict(
+            loss=ConfigDict(
                 cls_loss=dict(type="FocalLoss"),
                 reg_loss=dict(type="DIOULoss"),
             ),
