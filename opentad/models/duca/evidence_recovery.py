@@ -298,6 +298,8 @@ def largest_remainder_quota(
     num_segs = len(segment_weights)
     if num_segs == 0:
         return []
+    if any(not math.isfinite(float(weight)) or float(weight) < 0.0 for weight in segment_weights):
+        raise ValueError("segment_weights must contain only finite, non-negative values")
     if total_budget <= num_segs * min_per_seg:
         base = total_budget // num_segs
         rem = total_budget % num_segs
@@ -364,6 +366,22 @@ class EvidenceRecoverySelector(BaseModule):
             if valid_len <= 0:
                 valid_len = T
             eff_k = min(K, valid_len)
+
+            selection_signals = {
+                "utility": utility,
+                "boundary_prob": boundary_prob,
+                "delta_action": delta_action,
+                "feature_residual": feat_residual,
+                "context_novelty": context_novelty,
+            }
+            for name, signal in selection_signals.items():
+                active_signal = signal[b, :valid_len]
+                if not bool(torch.isfinite(active_signal).all().item()):
+                    nonfinite_count = int((~torch.isfinite(active_signal)).sum().item())
+                    raise FloatingPointError(
+                        "DUCA Evidence Recovery received a non-finite "
+                        f"{name} selection signal ({nonfinite_count} active values)"
+                    )
 
             if not self.use_coverage:
                 # NO_COVERAGE ARM: pure exact semantic Top-K within valid prefix
@@ -524,7 +542,10 @@ class DucaEvidenceRecoveryModule(BaseModule):
             }
 
         # Active semantic acquisition path
-        scout_out = self.scout(lowres_rgb, valid_mask=valid_mask)
+        # The scout drives discrete frame selection and is numerically sensitive to
+        # FP16 overflow. Keep this low-cost path in FP32 while the detector retains AMP.
+        with torch.autocast(device_type=lowres_rgb.device.type, enabled=False):
+            scout_out = self.scout(lowres_rgb.float(), valid_mask=valid_mask)
         sel_out = self.selector.select(
             utility=scout_out["utility"],
             boundary_prob=scout_out["boundary_prob"],

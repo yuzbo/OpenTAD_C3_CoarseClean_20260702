@@ -178,6 +178,22 @@ def test_largest_remainder_quota_exact_sum():
     assert all(q >= 2 for q in quotas)
 
 
+def test_largest_remainder_quota_rejects_nonfinite_weights():
+    with pytest.raises(ValueError, match="finite, non-negative"):
+        largest_remainder_quota([1.0, float("nan")], total_budget=8, min_per_seg=2)
+
+
+def test_semantic_scout_stays_float32_inside_autocast():
+    module = DucaEvidenceRecoveryModule(budget=4, window_size=8).eval()
+    lowres = torch.randn(1, 3, 8, 16, 16)
+
+    with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+        output = module.acquire(lowres)["scout"]
+
+    assert output["hidden"].dtype == torch.float32
+    assert output["utility"].dtype == torch.float32
+
+
 def test_evidence_recovery_selector_exact_k():
     """Verify EvidenceRecoverySelector always returns exact K=384 unique, monotonic indices."""
     selector = EvidenceRecoverySelector(budget=384, window_size=768, use_coverage=True)
@@ -198,6 +214,23 @@ def test_evidence_recovery_selector_exact_k():
         assert len(set(row)) == 384, "All 384 selected positions must be unique"
         assert row == sorted(row), "Selected positions must be strictly monotonically increasing"
         assert all(0 <= p < 768 for p in row)
+
+
+def test_evidence_recovery_selector_rejects_nonfinite_signals():
+    selector = EvidenceRecoverySelector(budget=8, window_size=16, use_coverage=True)
+    utility = torch.rand(1, 16)
+    utility[0, 4] = float("nan")
+    zeros = torch.zeros(1, 16)
+
+    with pytest.raises(FloatingPointError, match="non-finite utility selection signal"):
+        selector.select(
+            utility,
+            zeros,
+            zeros,
+            zeros,
+            zeros,
+            torch.ones(1, 16, dtype=torch.bool),
+        )
 
 
 def test_evidence_recovery_selector_enforces_max_unselected_hole():
