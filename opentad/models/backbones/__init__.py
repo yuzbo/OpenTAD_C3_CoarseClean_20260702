@@ -5,6 +5,8 @@ from .re2tal_slowfast import ResNet3dSlowFast_inv
 from .vit import VisionTransformerCP
 from .vit_adapter import VisionTransformerAdapter
 from .vit_ladder import VisionTransformerLadder
+from .et_trc_videomae import ETTRCVisionTransformerAdapter
+from .bafdr_wrapper import BAFDRVisionTransformerWrapper
 
 __all__ = [
     "BackboneWrapper",
@@ -14,4 +16,6 @@ __all__ = [
     "VisionTransformerCP",
     "VisionTransformerAdapter",
     "VisionTransformerLadder",
+    "ETTRCVisionTransformerAdapter",
+    "BAFDRVisionTransformerWrapper",
 ]

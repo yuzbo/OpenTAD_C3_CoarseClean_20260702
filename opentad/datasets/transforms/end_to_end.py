@@ -1,7 +1,5 @@
 import copy
 import hashlib
-import json
-import math
 import os
 import pickle
 import random
@@ -38,338 +36,6 @@ class PrepareVideoInfo:
             results["data_path"],
             self.prefix + results["video_name"] + "." + self.format,
         )
-        return results
-
-
-@PIPELINES.register_module()
-class DucaExternalActionnessFromJsonl:
-    """Attach deployable external actionness to metas for DUCA online selection."""
-
-    def __init__(
-        self,
-        actionness_jsonl,
-        p_action_key="duca_external_p_action",
-        logits_key="duca_external_actionness_logits",
-        valid_key="duca_external_actionness_valid",
-        provenance_key="duca_external_actionness_provenance",
-        source_key="duca_external_actionness_source",
-        observation_times_key="duca_external_actionness_observation_times",
-        allow_missing=False,
-    ):
-        self.actionness_jsonl = os.path.expandvars(os.path.expanduser(str(actionness_jsonl)))
-        self.p_action_key = str(p_action_key)
-        self.logits_key = str(logits_key)
-        self.valid_key = str(valid_key)
-        self.provenance_key = str(provenance_key)
-        self.source_key = str(source_key)
-        self.observation_times_key = str(observation_times_key)
-        self.allow_missing = bool(allow_missing)
-        self._index = self._load_actionness_jsonl(self.actionness_jsonl)
-
-    @staticmethod
-    def _logit(prob):
-        clipped = min(1.0 - 1e-6, max(1e-6, float(prob)))
-        return math.log(clipped / (1.0 - clipped))
-
-    @staticmethod
-    def _forbidden_true(value):
-        if value is True:
-            return True
-        return isinstance(value, str) and value.strip().lower() in {"1", "true", "yes"}
-
-    @classmethod
-    def _validate_provenance(cls, provenance, *, source_name):
-        if not isinstance(provenance, dict):
-            raise ValueError(f"{source_name}: source_provenance must be an object")
-        for key in ("thumos_trained", "uses_labels", "uses_teacher", "uses_gt", "uses_prediction_cache"):
-            if provenance.get(key) is not False:
-                raise ValueError(f"{source_name}: source_provenance.{key} must be false")
-        if provenance.get("calibration_split") not in (None, "", "none", "train_only"):
-            raise ValueError(f"{source_name}: source_provenance.calibration_split must be none/train_only")
-        for key in ("uses_raw_prediction", "uses_oracle", "uses_cache", "training_only"):
-            if cls._forbidden_true(provenance.get(key, False)):
-                raise ValueError(f"{source_name}: forbidden source_provenance flag {key}=true")
-
-    @classmethod
-    def _load_actionness_jsonl(cls, path):
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"external actionness JSONL missing: {path}")
-        grouped = {}
-        with open(path, "r", encoding="utf-8-sig") as handle:
-            for line_no, line in enumerate(handle, start=1):
-                text = line.strip()
-                if not text:
-                    continue
-                row = json.loads(text)
-                if not isinstance(row, dict):
-                    raise ValueError(f"{path}:{line_no}: row must be an object")
-                video_id = str(row.get("video_id") or row.get("video_name") or "")
-                if not video_id:
-                    raise ValueError(f"{path}:{line_no}: missing video_id")
-                provenance = row.get("source_provenance")
-                cls._validate_provenance(provenance, source_name=f"{path}:{line_no}")
-                if row.get("valid") is not True:
-                    continue
-                grouped.setdefault(video_id, []).append(
-                    {
-                        "time": float(row["original_time"]),
-                        "p_action": float(row["p_action"]),
-                        "logit": float(row.get("logit", cls._logit(float(row["p_action"])))),
-                        "source_name": str(row.get("source_name") or provenance.get("source_name") or "external_actionness"),
-                        "provenance": dict(provenance),
-                    }
-                )
-        if not grouped:
-            raise ValueError(f"external actionness JSONL has no valid rows: {path}")
-        out = {}
-        for video_id, rows in grouped.items():
-            rows = sorted(rows, key=lambda item: item["time"])
-            times = np.asarray([item["time"] for item in rows], dtype=np.float32)
-            if np.unique(times).size != times.size:
-                raise ValueError(f"{path}: duplicate original_time values for video_id={video_id}")
-            provenance = rows[0]["provenance"]
-            source_name = rows[0]["source_name"]
-            for item in rows[1:]:
-                if item["source_name"] != source_name:
-                    raise ValueError(f"{path}: mixed source_name for video_id={video_id}")
-                for key in ("thumos_trained", "uses_labels", "uses_teacher", "uses_gt", "uses_prediction_cache"):
-                    if item["provenance"].get(key) != provenance.get(key):
-                        raise ValueError(f"{path}: mixed provenance field {key} for video_id={video_id}")
-            out[video_id] = {
-                "times": times,
-                "p_action": np.asarray([item["p_action"] for item in rows], dtype=np.float32),
-                "logits": np.asarray([item["logit"] for item in rows], dtype=np.float32),
-                "source_name": source_name,
-                "provenance": provenance,
-            }
-        return out
-
-    @staticmethod
-    def _observation_times(results):
-        if "frame_inds" not in results:
-            raise ValueError("external actionness alignment requires frame_inds")
-        fps = float(results.get("avg_fps", results.get("fps", 0.0)))
-        if fps <= 0.0:
-            raise ValueError("external actionness alignment requires positive avg_fps/fps")
-        frame_inds = results["frame_inds"]
-        if torch.is_tensor(frame_inds):
-            frames = frame_inds.detach().cpu().numpy()
-        else:
-            frames = np.asarray(frame_inds)
-        frames = frames.reshape(-1).astype(np.float32)
-        if frames.size <= 0:
-            raise ValueError("external actionness alignment received empty frame_inds")
-        masks = results.get("masks")
-        if masks is None:
-            obs_len = int(frames.size)
-        elif torch.is_tensor(masks):
-            obs_len = int(masks.numel())
-        else:
-            obs_len = int(np.asarray(masks).size)
-        if obs_len <= 0:
-            raise ValueError("external actionness alignment received empty masks")
-        if frames.size == obs_len:
-            centers = frames
-        elif frames.size % obs_len == 0:
-            centers = frames.reshape(obs_len, frames.size // obs_len).mean(axis=1)
-        else:
-            raise ValueError(
-                f"frame_inds length {frames.size} must equal or be divisible by observation length {obs_len}"
-            )
-        return centers / fps
-
-    @staticmethod
-    def _mask_valid(results, obs_len):
-        masks = results.get("masks")
-        if masks is None:
-            return [True] * int(obs_len)
-        if torch.is_tensor(masks):
-            values = masks.detach().cpu().bool().reshape(-1).tolist()
-        else:
-            values = np.asarray(masks).astype(bool).reshape(-1).tolist()
-        if len(values) != int(obs_len):
-            raise ValueError("external actionness mask length must match observation length")
-        return [bool(item) for item in values]
-
-    def __call__(self, results):
-        video_id = str(results.get("video_name") or results.get("video_id") or "")
-        if not video_id:
-            raise ValueError("external actionness requires video_name/video_id")
-        entry = self._index.get(video_id)
-        if entry is None:
-            if self.allow_missing:
-                return results
-            raise ValueError(f"missing external actionness for video_id={video_id}")
-        observation_times = self._observation_times(results)
-        p_action = np.interp(observation_times, entry["times"], entry["p_action"]).astype(np.float32)
-        logits = np.interp(observation_times, entry["times"], entry["logits"]).astype(np.float32)
-        valid = self._mask_valid(results, len(observation_times))
-        results[self.p_action_key] = [float(item) for item in p_action.tolist()]
-        results[self.logits_key] = [float(item) for item in logits.tolist()]
-        results[self.valid_key] = valid
-        results[self.provenance_key] = dict(entry["provenance"])
-        results[self.source_key] = str(entry["source_name"])
-        results[self.observation_times_key] = [float(item) for item in observation_times.tolist()]
-        results["duca_external_actionness_jsonl"] = self.actionness_jsonl
-        return results
-
-
-@PIPELINES.register_module()
-class DucaH65PositionsFromLedger:
-    """Attach H65/value-transport positions while keeping the dense RGB window unchanged."""
-
-    def __init__(
-        self,
-        ledger_path,
-        target_len=384,
-        dense_len=768,
-        require_deployable=True,
-        require_selected_count=True,
-        allow_short_valid_ratio_count=True,
-        source="c3_official_asformer_delta_p_action",
-        config_hash="c3_official_asformer_delta_ledger_384_over_768_v1",
-        use_expanded_positions=False,
-        allow_missing=False,
-    ):
-        self.ledger_path = os.path.expandvars(os.path.expanduser(str(ledger_path)))
-        self.target_len = int(target_len)
-        self.dense_len = int(dense_len)
-        self.require_deployable = bool(require_deployable)
-        self.require_selected_count = require_selected_count
-        self.allow_short_valid_ratio_count = bool(allow_short_valid_ratio_count)
-        self.source = str(source or "")
-        self.config_hash = str(config_hash or "")
-        self.use_expanded_positions = bool(use_expanded_positions)
-        self.allow_missing = bool(allow_missing)
-        self._ledger = None
-
-    def _value_transport_ledger(self):
-        if not self.ledger_path or self.ledger_path.startswith("REPLACE_WITH_"):
-            if self.allow_missing:
-                return {}
-            raise FileNotFoundError(f"H65/value-transport ledger path is not configured: {self.ledger_path}")
-        if not os.path.isfile(self.ledger_path):
-            if self.allow_missing:
-                return {}
-            raise FileNotFoundError(f"H65/value-transport ledger not found: {self.ledger_path}")
-        if self._ledger is None:
-            self._ledger = load_value_transport_selection_ledger(
-                self.ledger_path,
-                require_deployable=self.require_deployable,
-            )
-        return self._ledger
-
-    @staticmethod
-    def _sample_id(results):
-        if "window_start_frame" not in results:
-            raise ValueError("DucaH65PositionsFromLedger requires window_start_frame in results")
-        return f"{results.get('video_name', 'unknown')}|{int(results['window_start_frame'])}"
-
-    @staticmethod
-    def _row_metadata(row, key):
-        diagnostics = row.get("diagnostics") if isinstance(row.get("diagnostics"), dict) else {}
-        return row.get(key, diagnostics.get(key))
-
-    def _required_count(self, valid_len):
-        required = self.require_selected_count
-        if required is True:
-            required = self.target_len
-        elif required in (False, None):
-            return None
-        else:
-            required = int(required)
-        return paction_budget_contract.expected_selected_count(
-            required,
-            valid_len=int(valid_len),
-            dense_len=int(self.dense_len),
-            allow_short_valid_ratio_count=self.allow_short_valid_ratio_count,
-        )
-
-    def __call__(self, results):
-        if "masks" not in results:
-            raise ValueError("DucaH65PositionsFromLedger must run after LoadFrames so masks are available")
-        if self.allow_missing and "window_start_frame" not in results:
-            return results
-        sample_id = self._sample_id(results)
-        row = self._value_transport_ledger().get(sample_id)
-        if row is None:
-            if self.allow_missing:
-                return results
-            raise KeyError(f"H65/value-transport ledger missing sample_id={sample_id}")
-
-        valid_len = int(torch.as_tensor(results["masks"]).long().sum().item())
-        row_valid_len = row.get("valid_len")
-        if row_valid_len is not None and int(row_valid_len) != valid_len:
-            raise ValueError(
-                f"H65 ledger sample_id={sample_id} valid_len={row_valid_len} "
-                f"does not match runtime valid_len={valid_len}"
-            )
-        row_dense_len = row.get("dense_len")
-        if row_dense_len is not None and int(row_dense_len) != self.dense_len:
-            raise ValueError(
-                f"H65 ledger sample_id={sample_id} dense_len={row_dense_len} "
-                f"does not match configured dense_len={self.dense_len}"
-            )
-        row_target_len = row.get("target_len")
-        if row_target_len is not None and int(row_target_len) != self.target_len:
-            raise ValueError(
-                f"H65 ledger sample_id={sample_id} target_len={row_target_len} "
-                f"does not match configured target_len={self.target_len}"
-            )
-        if self.source:
-            row_source = self._row_metadata(row, "policy_source")
-            if row_source != self.source:
-                raise ValueError(
-                    f"H65 ledger sample_id={sample_id} policy_source={row_source} "
-                    f"does not match configured source={self.source}"
-                )
-        if self.config_hash:
-            row_hash = self._row_metadata(row, "policy_checkpoint_sha256")
-            if row_hash != self.config_hash:
-                raise ValueError(f"H65 ledger sample_id={sample_id} policy_checkpoint_sha256 mismatch")
-
-        positions_key = "expanded_selected_positions" if self.use_expanded_positions else "selected_positions"
-        positions = np.asarray(row[positions_key], dtype=np.int64).reshape(-1)
-        if positions.size <= 0 or positions.size > self.target_len:
-            raise ValueError(
-                f"H65 ledger sample_id={sample_id} selects {positions.size} positions; "
-                f"expected 1..{self.target_len}"
-            )
-        if positions.tolist() != sorted(set(int(item) for item in positions.tolist())):
-            raise ValueError(f"H65 ledger sample_id={sample_id} positions must be strictly increasing")
-        if positions[0] < 0 or positions[-1] >= valid_len:
-            raise ValueError(f"H65 ledger sample_id={sample_id} positions exceed valid dense window")
-
-        expected_count = self._required_count(valid_len)
-        if expected_count is not None and int(positions.size) != int(expected_count):
-            raise ValueError(
-                f"H65 ledger sample_id={sample_id} selects {positions.size} positions; "
-                f"expected={expected_count}"
-            )
-
-        positions_float = positions.astype(np.float32)
-        results["bata_selected_dense_indices"] = positions.astype(np.int64)
-        results["irregular_selected_positions"] = positions_float
-        results["selected_dense_indices"] = positions_float
-        results["selected_valid_len"] = int(positions.size)
-        results["irregular_selected_valid_len"] = int(positions.size)
-        results["irregular_dense_valid_len"] = valid_len
-        results["duca_h65_selection_row"] = {
-            key: value
-            for key, value in dict(row).items()
-            if key
-            in {
-                "sample_id",
-                "selected_count",
-                "valid_len",
-                "dense_len",
-                "target_len",
-                "policy_source",
-                "policy_checkpoint_sha256",
-                "deploy_selection_ledger",
-                "diagnostic_only",
-            }
-        }
         return results
 
 
@@ -545,8 +211,6 @@ class LoadFrames:
         bata_value_transport_allow_short_valid_ratio_count=False,
         bata_value_transport_source="pc_ot_mras_frontend_hard_positions",
         bata_value_transport_config_hash="",
-        bata_value_transport_use_expanded_positions=False,
-        emit_boundary_validity=False,
     ):
         self.num_clips = num_clips
         self.scale_factor = scale_factor  # multiply by the frame number, if backbone has downsampling
@@ -569,33 +233,16 @@ class LoadFrames:
         )
         self.bata_value_transport_source = bata_value_transport_source
         self.bata_value_transport_config_hash = bata_value_transport_config_hash
-        self.bata_value_transport_use_expanded_positions = bool(bata_value_transport_use_expanded_positions)
-        self.emit_boundary_validity = bool(emit_boundary_validity)
         self._bata_value_transport_ledger = None
 
-    def random_trunc(
-        self,
-        feats,
-        trunc_len,
-        gt_segments,
-        gt_labels,
-        offset=0,
-        max_num_trials=200,
-        return_boundary_validity=False,
-    ):
+    def random_trunc(self, feats, trunc_len, gt_segments, gt_labels, offset=0, max_num_trials=200):
         feat_len = feats.shape[0]
         num_segs = gt_segments.shape[0]
-
-        def pack(out_feats, out_segments, out_labels, validity):
-            if return_boundary_validity:
-                return out_feats, out_segments, out_labels, validity
-            return out_feats, out_segments, out_labels
 
         trunc_len = trunc_len
         if feat_len <= trunc_len:
             if self.crop_ratio == None:  # do nothing
-                validity = np.ones((num_segs, 2), dtype=np.bool_)
-                return pack(feats, gt_segments, gt_labels, validity)
+                return feats, gt_segments, gt_labels
             else:  # randomly crop the seq by setting trunc_len to a value in [l, r]
                 trunc_len = random.randint(
                     max(round(self.crop_ratio[0] * feat_len), 1),
@@ -603,8 +250,7 @@ class LoadFrames:
                 )
                 # corner case
                 if feat_len == trunc_len:
-                    validity = np.ones((num_segs, 2), dtype=np.bool_)
-                    return pack(feats, gt_segments, gt_labels, validity)
+                    return feats, gt_segments, gt_labels
 
         # try a few times till a valid truncation with at least one action
         for _ in range(max_num_trials):
@@ -629,28 +275,10 @@ class LoadFrames:
                 break
 
         feats = feats[st:ed]
-        original_segments = gt_segments[seg_idx]
-        boundary_validity = np.stack(
-            (
-                np.isclose(
-                    left[seg_idx],
-                    original_segments[:, 0],
-                    rtol=0.0,
-                    atol=1.0e-6,
-                ),
-                np.isclose(
-                    right[seg_idx],
-                    original_segments[:, 1],
-                    rtol=0.0,
-                    atol=1.0e-6,
-                ),
-            ),
-            axis=1,
-        ).astype(np.bool_)
         gt_segments = np.stack((left[seg_idx], right[seg_idx]), axis=1)  # [N,2] in feature grids
         gt_segments = gt_segments - st  # shift the time stamps due to truncation
         gt_labels = gt_labels[seg_idx]  # [N]
-        return pack(feats, gt_segments, gt_labels, boundary_validity)
+        return feats, gt_segments, gt_labels
 
     def _map_coord_to_selected_axis(self, coord, kept_positions, valid_len):
         if kept_positions.size == 0:
@@ -719,26 +347,6 @@ class LoadFrames:
         positions = [int(np.clip(pos, 0, valid_len - 1)) for pos in positions]
         return np.asarray(sorted(dict.fromkeys(positions)), dtype=np.int64)
 
-    def _canonical_exact_uniform_positions(self, valid_len, target_frame_num):
-        valid_len = int(valid_len)
-        target_frame_num = min(int(target_frame_num), valid_len)
-        if valid_len <= 0 or target_frame_num <= 0:
-            return np.zeros((0,), dtype=np.int64)
-        if target_frame_num == 1:
-            return np.zeros((1,), dtype=np.int64)
-        denominator = target_frame_num - 1
-        positions = []
-        for index in range(target_frame_num):
-            numerator = index * (valid_len - 1)
-            quotient, remainder = divmod(numerator, denominator)
-            if 2 * remainder > denominator or (2 * remainder == denominator and quotient % 2 == 1):
-                quotient += 1
-            positions.append(quotient)
-        result = np.asarray(positions, dtype=np.int64)
-        if np.unique(result).size != target_frame_num:
-            raise RuntimeError("canonical exact-uniform positions must be unique")
-        return result
-
     def _value_transport_ledger(self):
         if self._bata_value_transport_ledger is None:
             self._bata_value_transport_ledger = load_value_transport_selection_ledger(
@@ -799,7 +407,7 @@ class LoadFrames:
             )
         expected_source = str(self.bata_value_transport_source or "")
         row_policy_source = self._value_transport_metadata(row, "policy_source")
-        if expected_source:
+        if expected_source == "learned_paction_gap_loss_policy_checkpoint" or row_policy_source is not None:
             if row_policy_source != expected_source:
                 raise ValueError(
                     f"value-transport ledger sample_id={sample_id} policy_source={row_policy_source} "
@@ -868,23 +476,12 @@ class LoadFrames:
             frame_idxs = np.arange(0, total_frames, frame_stride)
 
             # trunc the frame_idxs
-            truncation = self.random_trunc(
+            frame_idxs, gt_segments, gt_labels = self.random_trunc(
                 frame_idxs,
                 trunc_len=frame_num,
                 gt_segments=results["gt_segments"] * self.scale_factor,  # gt segment should be mapped to frame level
                 gt_labels=results["gt_labels"],
-                return_boundary_validity=self.emit_boundary_validity,
             )
-            if self.emit_boundary_validity:
-                (
-                    frame_idxs,
-                    gt_segments,
-                    gt_labels,
-                    gt_boundary_validity,
-                ) = truncation
-                results["gt_boundary_validity"] = gt_boundary_validity
-            else:
-                frame_idxs, gt_segments, gt_labels = truncation
             results["gt_segments"] = gt_segments / self.scale_factor  # convert back to original scale
             results["gt_labels"] = gt_labels
 
@@ -919,7 +516,7 @@ class LoadFrames:
             else:
                 masks = torch.ones(window_size).bool()
 
-        elif self.method in {"random_fixed_subsample", "exact_uniform_fixed_subsample"}:
+        elif self.method == "random_fixed_subsample":
             assert results["snippet_stride"] >= self.scale_factor, "snippet_stride should be larger than scale_factor"
             assert (
                 results["snippet_stride"] % self.scale_factor == 0
@@ -965,21 +562,20 @@ class LoadFrames:
             if valid_len <= 0:
                 raise RuntimeError("random_fixed_subsample received an empty dense window")
 
-            if self.method == "exact_uniform_fixed_subsample":
-                keep_positions = self._canonical_exact_uniform_positions(valid_len, frame_num)
-                results["fixed_subsample_policy"] = "canonical_round_endpoint_exact_uniform"
-            else:
-                sample_key = (
-                    f"{results.get('video_name', 'unknown')}|random_fixed|"
-                    f"{int(dense_window[0])}|{int(dense_window[-1])}|{valid_len}|{frame_num}"
-                )
-                keep_positions = self._select_random_fixed_positions(valid_len, frame_num, sample_key)
-                results["fixed_subsample_policy"] = "deterministic_sample_key_random"
+            sample_key = (
+                f"{results.get('video_name', 'unknown')}|random_fixed|"
+                f"{int(dense_window[0])}|{int(dense_window[-1])}|{valid_len}|{frame_num}"
+            )
+            keep_positions = self._select_random_fixed_positions(valid_len, frame_num, sample_key)
             if keep_positions.size == 0:
                 keep_positions = np.array([0], dtype=np.int64)
 
             frame_idxs = dense_window[keep_positions]
             self._set_irregular_axis_meta(results, keep_positions, valid_len)
+            results["irregular_sampling_strategy"] = "random_fixed_subsample"
+            results["irregular_sampling_scope"] = "within_accepted_window"
+            results["irregular_window_crop_uses_gt"] = self.method_base == "random_trunc"
+            results["irregular_subsample_uses_gt"] = False
 
             if gt_segments is not None and gt_labels is not None:
                 if self.remap_gt_to_selected_axis:
@@ -1033,17 +629,6 @@ class LoadFrames:
                 frame_num=frame_num,
                 target_len=target_len,
             )
-            if self.bata_value_transport_use_expanded_positions and "expanded_selected_positions" in ledger_row:
-                keep_positions = np.asarray(
-                    [int(item) for item in ledger_row["expanded_selected_positions"]],
-                    dtype=np.int64,
-                )
-                if keep_positions.size == 0:
-                    raise ValueError("expanded_selected_positions must not be empty")
-                if keep_positions.tolist() != sorted(set(int(item) for item in keep_positions.tolist())):
-                    raise ValueError("expanded_selected_positions must be sorted unique")
-                if keep_positions[0] < 0 or keep_positions[-1] >= valid_len:
-                    raise ValueError("expanded_selected_positions exceed valid_len")
             if keep_positions.size > int(frame_num):
                 sample_id = ledger_row.get("sample_id", self._value_transport_sample_id(results))
                 raise ValueError(
@@ -1112,14 +697,6 @@ class LoadFrames:
                     "target_len",
                     "selected_count",
                     "selected_positions_unit",
-                    "selected_positions_are_centers",
-                    "context_radius_unit",
-                    "context_radius_range",
-                    "context_radius_by_position",
-                    "context_radius_float_by_position",
-                    "selected_observations",
-                    "expanded_selected_positions",
-                    "expanded_selected_count",
                     "diagnostics",
                     "diagnostic_only",
                     "training_only",
@@ -1157,6 +734,12 @@ class LoadFrames:
         frame_idxs = np.clip(frame_idxs, 0, total_frames - 1).round()
 
         assert frame_idxs.shape[0] == frame_num, "snippet center number should be equal to snippet number"
+
+        if "selected_dense_indices" in results:
+            selected_count = int(torch.as_tensor(masks, dtype=torch.bool).sum().item())
+            if selected_count <= 0 or selected_count > frame_idxs.shape[0]:
+                raise ValueError("irregular sampling must expose a non-empty valid raw-frame prefix")
+            results["selected_raw_frame_indices"] = frame_idxs[:selected_count].astype(np.int64).tolist()
 
         results["frame_inds"] = frame_idxs.astype(int)
         results["num_clips"] = self.num_clips

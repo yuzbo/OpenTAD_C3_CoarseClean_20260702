@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from ..builder import DETECTORS, build_selector, build_token_compressor
 from .single_stage import SingleStageDetector
 from ..bricks import Scale, AffineDropPath
+from ..utils.native_temporal_geometry import align_native_tubelet_geometry
 
 
 _PC_OT_MRAS_READER_OUTPUTS_META_KEY = "pc_ot_mras_reader_outputs"
@@ -34,6 +35,7 @@ class ActionFormer(SingleStageDetector):
         pc_ot_mras_reader_value_loss=None,
         pc_ot_mras_reader_eval_override=None,
         selector_train_only=False,
+        native_temporal_geometry=None,
     ):
         super().__init__(
             backbone=backbone,
@@ -60,6 +62,8 @@ class ActionFormer(SingleStageDetector):
         if self.pc_ot_mras_reader_value_loss is not None and self.pc_ot_mras_reader is None:
             raise ValueError("pc_ot_mras_reader_value_loss requires pc_ot_mras_reader")
         self.selector_train_only = bool(selector_train_only)
+        self.native_temporal_geometry = self._normalize_native_temporal_geometry(native_temporal_geometry)
+        self._last_native_temporal_geometry_audit = None
         if self.selector_train_only:
             if self.frame_selector is None:
                 raise ValueError("selector_train_only=True requires frame_selector")
@@ -92,43 +96,117 @@ class ActionFormer(SingleStageDetector):
         self.max_div_factor = max_div_factor
 
     def pad_data(self, inputs, masks):
-        if isinstance(inputs, (dict, Mapping)):
-            ref_feat = inputs.get("feats", inputs.get("fused_features", next(iter(inputs.values()))))
-            feat_len = ref_feat.shape[-1]
-            batch_size = ref_feat.shape[0]
-            if feat_len == self.max_seq_len:
-                return inputs, masks
-            elif feat_len < self.max_seq_len:
-                max_len = self.max_seq_len
-            else:
-                stride = self.max_div_factor
-                max_len = (feat_len + (stride - 1)) // stride * stride
+        feat_len = inputs.shape[-1]
+        if feat_len == self.max_seq_len:
+            return inputs, masks
+        elif feat_len < self.max_seq_len:
+            max_len = self.max_seq_len
+        else:  # feat_len > self.max_seq_len
+            max_len = feat_len
+            # pad the input to the next divisible size
+            stride = self.max_div_factor
+            max_len = (max_len + (stride - 1)) // stride * stride
 
-            padding_size = [0, max_len - feat_len]
-            padded_inputs = dict(inputs)
-            for k, v in padded_inputs.items():
-                if isinstance(v, torch.Tensor) and v.ndim >= 3 and v.shape[-1] == feat_len:
-                    padded_inputs[k] = torch.nn.functional.pad(v, padding_size, value=0)
-            pad_masks = torch.zeros((batch_size, max_len), device=masks.device).bool()
-            pad_masks[:, :feat_len] = masks
-            return padded_inputs, pad_masks
-        else:
-            feat_len = inputs.shape[-1]
-            if feat_len == self.max_seq_len:
-                return inputs, masks
-            elif feat_len < self.max_seq_len:
-                max_len = self.max_seq_len
-            else:  # feat_len > self.max_seq_len
-                max_len = feat_len
-                # pad the input to the next divisible size
-                stride = self.max_div_factor
-                max_len = (max_len + (stride - 1)) // stride * stride
+        padding_size = [0, max_len - feat_len]
+        inputs = torch.nn.functional.pad(inputs, padding_size, value=0)
+        pad_masks = torch.zeros((inputs.shape[0], max_len), device=masks.device).bool()
+        pad_masks[:, :feat_len] = masks
+        return inputs, pad_masks
 
-            padding_size = [0, max_len - feat_len]
-            inputs = torch.nn.functional.pad(inputs, padding_size, value=0)
-            pad_masks = torch.zeros((inputs.shape[0], max_len), device=masks.device).bool()
-            pad_masks[:, :feat_len] = masks
-            return inputs, pad_masks
+    @staticmethod
+    def _normalize_native_temporal_geometry(config):
+        if config is None:
+            return None
+        if not isinstance(config, Mapping):
+            raise ValueError("native_temporal_geometry must be a mapping")
+        config = dict(config)
+        enabled = bool(config.pop("enabled", True))
+        if not enabled:
+            return None
+        allowed = {
+            "tubelet_size",
+            "expected_raw_count",
+            "expected_token_count",
+            "expected_transformer_depth",
+            "expected_adapter_indices",
+            "expected_adapter_kernel_size",
+            "expected_adapter_dilation",
+        }
+        unknown = sorted(set(config) - allowed)
+        if unknown:
+            raise ValueError(f"unknown native_temporal_geometry keys: {unknown}")
+        tubelet_size = int(config.get("tubelet_size", 2))
+        if tubelet_size <= 0:
+            raise ValueError("native_temporal_geometry.tubelet_size must be positive")
+        normalized = {"tubelet_size": tubelet_size}
+        for key in (
+            "expected_raw_count",
+            "expected_token_count",
+            "expected_transformer_depth",
+            "expected_adapter_kernel_size",
+            "expected_adapter_dilation",
+        ):
+            value = config.get(key)
+            if value is not None:
+                value = int(value)
+                if value <= 0:
+                    raise ValueError(f"native_temporal_geometry.{key} must be positive")
+            normalized[key] = value
+        adapter_indices = config.get("expected_adapter_indices")
+        if adapter_indices is not None:
+            adapter_indices = tuple(int(value) for value in adapter_indices)
+            if not adapter_indices or len(set(adapter_indices)) != len(adapter_indices):
+                raise ValueError(
+                    "native_temporal_geometry.expected_adapter_indices must be unique and non-empty"
+                )
+        normalized["expected_adapter_indices"] = adapter_indices
+        return normalized
+
+    def _align_native_temporal_geometry(self, features, masks, metas):
+        if self.native_temporal_geometry is None:
+            self._last_native_temporal_geometry_audit = None
+            return features, masks, metas
+        features, masks, metas, audit = align_native_tubelet_geometry(
+            features,
+            masks,
+            metas,
+            **self.native_temporal_geometry,
+        )
+        padding_audit = getattr(self.backbone, "latest_temporal_padding_mask_summary", None)
+        if not isinstance(padding_audit, dict) or padding_audit.get(
+            "strict_isolation_verified"
+        ) is not True:
+            raise RuntimeError(
+                "native temporal geometry requires strict padding isolation inside the video backbone"
+            )
+        audit["backbone_temporal_padding_isolation"] = dict(padding_audit)
+        audit["valid_tokens_depend_on_padding_after_isolation"] = False
+        self._last_native_temporal_geometry_audit = audit
+        return features, masks, metas
+
+    def _update_native_temporal_query_audit(self, feat_list, mask_list):
+        if self._last_native_temporal_geometry_audit is None:
+            return
+        level_lengths = [int(feature.shape[-1]) for feature in feat_list]
+        valid_per_level = [
+            [int(sample_mask.sum().item()) for sample_mask in level_mask]
+            for level_mask in mask_list
+        ]
+        self._last_native_temporal_geometry_audit.update(
+            query_level_lengths=level_lengths,
+            query_tensor_count=sum(level_lengths),
+            query_count=sum(level_lengths),
+            valid_query_counts_per_level=valid_per_level,
+            effective_query_counts_per_sample=[
+                int(sum(level_counts)) for level_counts in zip(*valid_per_level)
+            ],
+            representation_lift="none_native_j_grid",
+        )
+
+    def collect_native_temporal_geometry_audit(self):
+        if self._last_native_temporal_geometry_audit is None:
+            return {}
+        return dict(self._last_native_temporal_geometry_audit)
 
     def train(self, mode=True):
         super().train(mode)
@@ -144,8 +222,23 @@ class ActionFormer(SingleStageDetector):
                     module.eval()
         return self
 
+    def after_optimizer_step(self):
+        summaries = dict(super().after_optimizer_step() or {})
+        for name in ("frame_selector", "token_compressor", "pc_ot_mras_reader"):
+            module = getattr(self, name, None)
+            if module is None:
+                continue
+            hook = getattr(module, "after_optimizer_step", None)
+            if hook is None:
+                continue
+            summaries[name] = hook()
+        return summaries
+
     def forward_train(self, inputs, masks, metas, gt_segments, gt_labels, **kwargs):
         losses = dict()
+        boundary_prior = None
+        delta_t = None
+        temporal_positions = None
         if self.frame_selector is not None:
             selector_outputs = self.frame_selector.forward_train(
                 inputs=inputs,
@@ -158,25 +251,25 @@ class ActionFormer(SingleStageDetector):
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
             gt_segments = selector_outputs["gt_segments"]
-            gt_labels = selector_outputs["gt_labels"]
+            boundary_prior = selector_outputs.get("boundary_prior", None)
+            tubelet_delta_t = selector_outputs.get("tubelet_delta_t", None)
+            delta_t = selector_outputs.get("delta_t", None)
+            temporal_positions = selector_outputs.get("temporal_positions", None)
             losses.update(selector_outputs.get("losses", {}))
             if self.selector_train_only:
                 inputs = inputs.detach()
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks=masks)
-            self._latest_backbone_output = x
+            x = self._call_backbone_forward(
+                inputs,
+                masks=masks,
+                boundary_prior=boundary_prior,
+                delta_t=tubelet_delta_t if tubelet_delta_t is not None else delta_t,
+            )
         else:
             x = inputs
-        if self.with_backbone and hasattr(
-            self.backbone, "consume_training_auxiliary_losses"
-        ):
-            backbone_auxiliary = self.backbone.consume_training_auxiliary_losses(
-                masks=masks,
-                gt_segments=gt_segments,
-                gt_labels=gt_labels,
-            )
-            self._merge_backbone_auxiliary_losses(losses, backbone_auxiliary)
+
+        x, masks, metas = self._align_native_temporal_geometry(x, masks, metas)
 
         self._assert_feature_mask_temporal_match(x, masks, "before token_compressor")
         if self.token_compressor is not None:
@@ -205,7 +298,8 @@ class ActionFormer(SingleStageDetector):
 
         if self.with_projection:
             x, masks = self.projection(x, masks)
-            self._latest_projection_output = x
+
+        self._update_native_temporal_query_audit(x, masks)
 
         metas = self._inject_pc_ot_mras_reader_outputs(x, masks, metas)
         reader_extra_losses = {}
@@ -223,17 +317,11 @@ class ActionFormer(SingleStageDetector):
             metas=metas,
             gt_segments=gt_segments,
             gt_labels=gt_labels,
+            delta_t=delta_t,
+            temporal_positions=temporal_positions,
             **kwargs,
         )
         losses.update(loc_losses)
-        if self.with_backbone and hasattr(
-            self.backbone, "consume_detector_policy_loss"
-        ):
-            policy_auxiliary = self.backbone.consume_detector_policy_loss(
-                detector_losses=loc_losses,
-            )
-            if policy_auxiliary:
-                self._merge_backbone_auxiliary_losses(losses, policy_auxiliary)
         self._merge_pc_ot_mras_extra_losses(
             losses,
             reader_extra_losses,
@@ -254,6 +342,9 @@ class ActionFormer(SingleStageDetector):
 
     def forward_test(self, inputs, masks, metas=None, infer_cfg=None, **kwargs):
         self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
+        boundary_prior = None
+        delta_t = None
+        temporal_positions = None
         if self.frame_selector is not None:
             selector_outputs = self.frame_selector.forward_test(
                 inputs=inputs,
@@ -263,13 +354,23 @@ class ActionFormer(SingleStageDetector):
             inputs = selector_outputs["inputs"]
             masks = selector_outputs["masks"]
             metas = selector_outputs.get("metas", metas)
+            boundary_prior = selector_outputs.get("boundary_prior", None)
+            tubelet_delta_t = selector_outputs.get("tubelet_delta_t", None)
+            delta_t = selector_outputs.get("delta_t", None)
+            temporal_positions = selector_outputs.get("temporal_positions", None)
             self._reject_pc_ot_mras_value_targets_in_forward_test(metas)
 
         if self.with_backbone:
-            x = self.backbone(inputs, masks=masks)
-            self._latest_backbone_output = x
+            x = self._call_backbone_forward(
+                inputs,
+                masks=masks,
+                boundary_prior=boundary_prior,
+                delta_t=tubelet_delta_t if tubelet_delta_t is not None else delta_t,
+            )
         else:
             x = inputs
+
+        x, masks, metas = self._align_native_temporal_geometry(x, masks, metas)
 
         self._assert_feature_mask_temporal_match(x, masks, "before token_compressor")
         if self.token_compressor is not None:
@@ -293,14 +394,22 @@ class ActionFormer(SingleStageDetector):
 
         if self.with_projection:
             x, masks = self.projection(x, masks)
-            self._latest_projection_output = x
+
+        self._update_native_temporal_query_audit(x, masks)
 
         metas = self._inject_pc_ot_mras_reader_outputs(x, masks, metas)
 
         if self.with_neck:
             x, masks, metas = self._call_neck_forward(x, masks, metas=metas)
 
-        rpn_proposals, rpn_scores = self._call_rpn_head_forward_test(x, masks, metas=metas, **kwargs)
+        rpn_proposals, rpn_scores = self._call_rpn_head_forward_test(
+            x,
+            masks,
+            metas=metas,
+            delta_t=delta_t,
+            temporal_positions=temporal_positions,
+            **kwargs,
+        )
         predictions = rpn_proposals, rpn_scores
         return predictions
 
@@ -309,8 +418,20 @@ class ActionFormer(SingleStageDetector):
         # see https://github.com/karpathy/minGPT/blob/master/mingpt/model.py#L134
         decay = set()
         no_decay = set()
-        whitelist_weight_modules = (nn.Linear, nn.Conv1d)
-        blacklist_weight_modules = (nn.LayerNorm, nn.GroupNorm)
+        whitelist_weight_modules = (
+            nn.Linear,
+            nn.Conv1d,
+            nn.Conv2d,
+            nn.Conv3d,
+        )
+        blacklist_weight_modules = (
+            nn.LayerNorm,
+            nn.GroupNorm,
+            nn.BatchNorm1d,
+            nn.BatchNorm2d,
+            nn.BatchNorm3d,
+            nn.Embedding,
+        )
 
         # loop over all modules / params
         for mn, m in self.named_modules():
@@ -331,6 +452,12 @@ class ActionFormer(SingleStageDetector):
                     decay.add(fpn)
                 elif pn.endswith("weight") and isinstance(m, blacklist_weight_modules):
                     # weights of blacklist modules will NOT be weight decayed
+                    no_decay.add(fpn)
+                elif pn.endswith("weight") and p.dim() >= 2:
+                    # weights of custom conv/linear/adaptive modules (e.g. ContinuousTimeScaleAdaptiveConv1d)
+                    decay.add(fpn)
+                elif pn.endswith("weight") and p.dim() < 2:
+                    # 1D weight tensors (e.g. custom norm/scale layers)
                     no_decay.add(fpn)
                 elif pn.endswith("scale") and isinstance(m, (Scale, AffineDropPath)):
                     # corner case of our scale layer
@@ -364,21 +491,6 @@ class ActionFormer(SingleStageDetector):
             {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0, "lr": cfg["lr"]},
         ]
         return optim_groups
-
-    @staticmethod
-    def _merge_backbone_auxiliary_losses(losses, auxiliary):
-        if not isinstance(auxiliary, Mapping) or not auxiliary:
-            raise ValueError("backbone auxiliary losses must be a non-empty mapping")
-        for key, value in auxiliary.items():
-            if key == "cost" or key in losses:
-                raise ValueError(f"invalid backbone auxiliary loss key: {key}")
-            if not key.endswith("_loss"):
-                raise ValueError(f"backbone auxiliary key must end in _loss: {key}")
-            if not torch.is_tensor(value) or value.ndim != 0:
-                raise ValueError(f"backbone auxiliary loss {key} must be scalar")
-            if not bool(torch.isfinite(value).all().item()):
-                raise ValueError(f"backbone auxiliary loss {key} must be finite")
-            losses[key] = value
 
     def _freeze_non_selector_trainable_parameters(self):
         for name, param in self.named_parameters():
@@ -420,6 +532,23 @@ class ActionFormer(SingleStageDetector):
             return feat_out, mask_out, meta_out
         raise ValueError("neck forward must return (features, masks) or (features, masks, metas)")
 
+    def _call_backbone_forward(self, inputs, masks=None, boundary_prior=None, delta_t=None):
+        kwargs = {}
+        sig = inspect.signature(self.backbone.forward)
+        params = sig.parameters
+        if "masks" in params:
+            kwargs["masks"] = masks
+        if "boundary_prior" in params and boundary_prior is not None:
+            kwargs["boundary_prior"] = boundary_prior
+        if "delta_t" in params and delta_t is not None:
+            kwargs["delta_t"] = delta_t
+        elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+            if boundary_prior is not None:
+                kwargs["boundary_prior"] = boundary_prior
+            if delta_t is not None:
+                kwargs["delta_t"] = delta_t
+        return self.backbone(inputs, **kwargs)
+
     @staticmethod
     def _head_accepts_metas(fn):
         return ActionFormer._callable_accepts_metas(fn)
@@ -434,15 +563,10 @@ class ActionFormer(SingleStageDetector):
 
     @staticmethod
     def _assert_feature_mask_temporal_match(features, masks, stage):
-        if isinstance(features, (dict, Mapping)):
-            ref_feat = features.get("feats", features.get("fused_features", next(iter(features.values()))))
-            feat_len = ref_feat.shape[-1]
-        else:
-            feat_len = features.shape[-1]
-        if feat_len != masks.shape[-1]:
+        if features.shape[-1] != masks.shape[-1]:
             raise RuntimeError(
                 f"feature/mask temporal length mismatch {stage}: "
-                f"features={feat_len}, masks={masks.shape[-1]}"
+                f"features={features.shape[-1]}, masks={masks.shape[-1]}"
             )
 
     def _inject_pc_ot_mras_reader_outputs(self, feat_list, mask_list, metas):
