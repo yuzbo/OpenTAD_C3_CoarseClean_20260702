@@ -156,6 +156,7 @@ def test_adapter_accepts_quantized_probability_from_declared_calibration(
         actionness_logits=logits,
         p_action=probability,
         actionness_provenance=provenance,
+        coarse_hidden_features=torch.zeros(1, 4, 16),
     )
 
     assert torch.isfinite(scores["p_action"]).all()
