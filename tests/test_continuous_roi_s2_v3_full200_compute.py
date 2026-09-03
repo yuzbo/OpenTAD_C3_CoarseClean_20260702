@@ -14,19 +14,12 @@ from tools.bata.continuous_roi_s2_v3_full200_compute import (
     validate_parameter_fairness,
 )
 from tools.bata.continuous_roi_s2_v3_full200_compute_profile import (
-    ARMS,
-    CANDIDATE_ARM,
     FullOperatorLedger,
-    LOW_COST_CONTROL_ARM,
-    REFERENCE_ARM,
     batched_matmul_fma2,
     compare_c_exec_receipts,
     convolution_fma2,
     linear_fma2,
     validate_c_exec_comparison,
-)
-from tools.bata.trace_d2s_patad_full_operator import (
-    _sort_comparison_upper_bound,
 )
 
 
@@ -173,11 +166,7 @@ def test_full_operator_ledger_is_integer_complete_and_never_uses_latency():
         "nms_called": False,
         "evaluator_called": False,
     }
-    counts = {
-        REFERENCE_ARM: 1000,
-        LOW_COST_CONTROL_ARM: 800,
-        CANDIDATE_ARM: 900,
-    }
+    counts = {"D160": 1000, "G96": 800, "U128-A0": 900}
     receipts = {}
     for arm, count in counts.items():
         ledger = FullOperatorLedger(arm=arm)
@@ -200,12 +189,6 @@ def test_full_operator_ledger_is_integer_complete_and_never_uses_latency():
     tampered["primary_exact_10u_le_9d"] = False
     with pytest.raises(ValueError, match="self-hash mismatch"):
         validate_c_exec_comparison(tampered)
-
-
-def test_runtime_trace_sort_bound_is_integer_and_shape_aware():
-    assert _sort_comparison_upper_bound([2, 16], 3) == 384
-
-
 def test_full_operator_ledger_fails_closed_on_unknown_or_duplicate_operator():
     ledger = FullOperatorLedger(arm="D160")
     ledger.mark_unsupported("aten.some_new_fused_op")

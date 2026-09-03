@@ -87,7 +87,7 @@ if [[ "${PRECHECK_ONLY}" == "1" ]]; then
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Running test suite...\n'
   python -m pytest tests/test_d2s_tad_architecture.py \
          tests/test_d2s_tad_full200_compute.py \
-         tests/test_continuous_roi_s2_v3_full200_compute.py -v
+         tests/test_d2s_patad_full_operator.py -v
 
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Running checkpoint-load and physical-skip witness...\n'
   python tools/bata/verify_d2s_patad_pre_run_witness.py \
