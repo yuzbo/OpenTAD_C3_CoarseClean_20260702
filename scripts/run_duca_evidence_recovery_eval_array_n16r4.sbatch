@@ -85,9 +85,11 @@ ARM_NAME="${ARM_NAMES[$ARM_IDX]}"
 SEED="${SEEDS[$SEED_IDX]}"
 
 CONFIG_PATH="$PROJECT_DIR/configs/adatad/thumos/${CFG_NAME}"
-WORK_DIR="${RUN_ROOT}/${ARM_NAME}/seed_${SEED}"
-CHECKPOINT="${WORK_DIR}/gpu1_id0/checkpoint/epoch_59.pth"
-EVAL_DIR="${WORK_DIR}/official_eval"
+TRAIN_WORK_DIR="${RUN_ROOT}/${ARM_NAME}/seed_${SEED}"
+CHECKPOINT="${TRAIN_WORK_DIR}/gpu1_id0/checkpoint/epoch_59.pth"
+EVAL_ROOT="${DUCA_EVIDENCE_EVAL_ROOT:-$YUZIBO_ROOT/experiments/duca_evidence_eval_${EXPECTED_COMMIT:0:8}}"
+EVAL_WORK_DIR="${EVAL_ROOT}/${ARM_NAME}/seed_${SEED}"
+EVAL_DIR="${EVAL_WORK_DIR}/gpu1_id0/official_eval"
 
 mkdir -p "${EVAL_DIR}"
 
@@ -106,4 +108,4 @@ torchrun --nproc_per_node=1 --master_port="${MASTER_PORT}" tools/test.py "${CONF
   --checkpoint-state-key state_dict_ema \
   --metrics-json "${EVAL_DIR}/metrics.json" \
   --seed "${SEED}" \
-  --cfg-options seed="${SEED}" work_dir="${WORK_DIR}"
+  --cfg-options seed="${SEED}" work_dir="${EVAL_WORK_DIR}"

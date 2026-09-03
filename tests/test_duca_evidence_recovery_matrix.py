@@ -28,12 +28,14 @@ def test_eval_uses_runtime_workdir_and_preserves_training_identity():
     ).read_text(encoding="utf-8")
     test_source = Path("tools/test.py").read_text(encoding="utf-8")
 
-    assert 'CHECKPOINT="${WORK_DIR}/gpu1_id0/checkpoint/epoch_59.pth"' in eval_source
+    assert 'CHECKPOINT="${TRAIN_WORK_DIR}/gpu1_id0/checkpoint/epoch_59.pth"' in eval_source
     assert (
         'TRAINING_COMMIT="${DUCA_EVIDENCE_TRAINING_COMMIT:-$EXPECTED_COMMIT}"'
         in eval_source
     )
     assert 'export DUCA_TRAINING_COMMIT="$TRAINING_COMMIT"' in eval_source
+    assert "duca_evidence_eval_${EXPECTED_COMMIT:0:8}" in eval_source
+    assert 'work_dir="${EVAL_WORK_DIR}"' in eval_source
     assert "duca_p0_training.canonical_sha256" in test_source
     assert '"DUCA_TRAINING_COMMIT"' in test_source
 
