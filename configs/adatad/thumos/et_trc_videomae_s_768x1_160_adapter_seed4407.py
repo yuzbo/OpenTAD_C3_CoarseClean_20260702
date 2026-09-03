@@ -68,4 +68,20 @@ optimizer = dict(
     ),
 )
 
+workflow = dict(
+    logging_interval=50,
+    checkpoint_interval=2,
+    checkpoint_policy="interval",
+    val_loss_interval=-1,
+    val_eval_interval=2,
+    val_start_epoch=0,
+    end_epoch=60,
+    max_train_iters=None,
+    require_successful_update_hook=False,
+    schedule_and_ema_on_success_only=True,
+    max_amp_retries_per_batch=0,
+    fail_on_skipped_update=True,
+    fail_on_nonfinite_loss=True,
+)
+
 work_dir = "exps/thumos/adatad/et_trc_videomae_s_768x1_160_adapter_seed4407"
