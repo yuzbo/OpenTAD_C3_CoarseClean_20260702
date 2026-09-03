@@ -1997,6 +1997,18 @@ class _AttrNamespace:
 class C3OfficialActionSegmentationProbe:
     """Wrapper around official action-segmentation temporal models for binary frame probing."""
 
+    def __deepcopy__(self, memo):
+        import copy
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            if k == "official_module":
+                setattr(result, k, v)
+            else:
+                setattr(result, k, copy.deepcopy(v, memo))
+        return result
+
     def __init__(
         self,
         *,
