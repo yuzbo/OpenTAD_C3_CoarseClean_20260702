@@ -60,6 +60,7 @@ def validate_patad_cell_config(path: str | Path, *, arm: str, seed: int) -> dict
             or int(custom.local_size) != 128
             or str(custom.source_key) != "source"
             or not bool(custom.return_feature_bundle)
+            or bool(cfg.model.backbone.backbone.with_cp)
         ):
             raise ValueError("PATAD backbone configuration changed")
         proj = cfg.model.projection

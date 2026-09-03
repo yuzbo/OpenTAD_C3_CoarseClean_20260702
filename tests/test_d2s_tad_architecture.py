@@ -46,15 +46,33 @@ def test_physical_skip_executes_only_selected_local_chunks(monkeypatch):
     wrapper.model = SimpleNamespace(data_preprocessor=IdentityPreprocessor())
     seen = {}
 
-    def fake_backbone(frames):
-        seen["shape"] = tuple(frames.shape)
-        return torch.ones(frames.shape[0], 12, 8, 8, 8)
+    def fake_native_ragged(selected_native_tubelets, physical_indices):
+        seen["shape"] = tuple(selected_native_tubelets.shape)
+        seen["physical_indices"] = physical_indices.clone()
+        return torch.ones(
+            selected_native_tubelets.shape[0],
+            selected_native_tubelets.shape[1],
+            12,
+        )
 
-    monkeypatch.setattr(wrapper, "_run_shared_backbone", fake_backbone)
+    monkeypatch.setattr(
+        wrapper,
+        "_run_shared_backbone_native_ragged",
+        fake_native_ragged,
+    )
     source = torch.zeros(1, 1, 3, 768, 180, 320, dtype=torch.uint8)
-    selected = torch.arange(16).reshape(1, 16)
+    selected = torch.arange(0, 32, 2).reshape(1, 16)
     features = wrapper._encode_selected_local_chunks(source, selected)
-    assert seen["shape"] == (16, 3, 16, 128, 128)
+    assert seen["shape"] == (1, 8192, 3, 2, 16, 16)
+    physical_indices = seen["physical_indices"]
+    assert physical_indices.shape == (1, 8192)
+    assert torch.equal(
+        physical_indices[:, 1:],
+        physical_indices[:, 1:].sort(dim=-1).values,
+    )
+    assert physical_indices.unique().numel() == 8192
+    assert physical_indices[0, 511].item() == 511
+    assert physical_indices[0, 512].item() == 1024
     assert features.shape == (1, 12, 128)
 
 

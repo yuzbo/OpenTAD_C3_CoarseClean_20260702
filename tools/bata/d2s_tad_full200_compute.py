@@ -62,6 +62,7 @@ def validate_d2s_cell_config(path: str | Path, *, arm: str, seed: int) -> dict[s
             or int(custom.local_size) != 128
             or str(custom.source_key) != "source"
             or bool(custom.return_feature_bundle)
+            or bool(cfg.model.backbone.backbone.with_cp)
         ):
             raise ValueError("D2S backbone configuration changed")
         for split in ("train", "val", "test"):

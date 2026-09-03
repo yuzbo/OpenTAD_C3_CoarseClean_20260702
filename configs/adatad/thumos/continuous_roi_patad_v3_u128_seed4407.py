@@ -30,6 +30,7 @@ dataset = dict(
 
 model = dict(
     backbone=dict(
+        backbone=dict(with_cp=False),
         custom=dict(
             wrapper_type="d2s_temporal_zoom_shared_videomae",
             global_key="global",

@@ -30,6 +30,7 @@ dataset = dict(
 
 model = dict(
     backbone=dict(
+        backbone=dict(with_cp=False),
         custom=dict(
             wrapper_type="d2s_temporal_zoom_shared_videomae",
             global_key="global",
@@ -73,4 +74,3 @@ continuous_roi_d2s_v3_full200_compute = dict(
     learned_residual_parameters=True,
 )
 work_dir = f"exps/thumos/adatad/continuous_roi_d2s_v3_u128_burst128_seed{seed}"
-

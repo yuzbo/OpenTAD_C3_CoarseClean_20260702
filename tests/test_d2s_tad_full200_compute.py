@@ -35,6 +35,7 @@ def test_d2s_candidate_uses_raw_source_and_declares_added_parameters():
     assert custom.return_feature_bundle is False
     assert custom.burst_chunks == 16
     assert custom.total_chunks == 48
+    assert cfg.model.backbone.backbone.with_cp is False
     for split in ("train", "val", "test"):
         types = [step.type for step in cfg.dataset[split].pipeline]
         assert "ContinuousRoiSourceViews" in types

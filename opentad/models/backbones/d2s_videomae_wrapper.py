@@ -107,6 +107,37 @@ class D2STemporalZoomBackboneWrapper(BackboneWrapper):
             )
         return self.model.backbone(frames)
 
+    def _run_shared_backbone_native_ragged(
+        self,
+        selected_native_tubelets: torch.Tensor,
+        physical_indices: torch.Tensor,
+    ) -> torch.Tensor:
+        if self.use_temporal_checkpointing:
+            raise ValueError(
+                "D2S native-ragged local execution cannot use wrapper temporal checkpointing"
+            )
+        ragged_forward = getattr(self.model.backbone, "forward_native_ragged", None)
+        if not callable(ragged_forward):
+            raise TypeError(
+                "D2S requires a VideoMAE backbone with forward_native_ragged"
+            )
+
+        def _forward() -> torch.Tensor:
+            return ragged_forward(
+                selected_native_tubelets,
+                physical_indices,
+                total_tubelets=self.intermediate_length,
+                source_grid_hw=(
+                    self.local_size // 16,
+                    self.local_size // 16,
+                ),
+            )
+
+        if self.freeze_backbone:
+            with torch.no_grad():
+                return _forward()
+        return _forward()
+
     def _encode_global_view(self, global_view: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         if not torch.is_tensor(global_view):
             raise TypeError("D2S global view must be a torch.Tensor")
@@ -233,13 +264,77 @@ class D2STemporalZoomBackboneWrapper(BackboneWrapper):
         flattened_batches, num_segs = frames.shape[:2]
         if flattened_batches != B * K:
             raise RuntimeError("D2S local pre-processing changed selected chunk count")
-        features = self._run_shared_backbone(frames.flatten(0, 1).contiguous())
-        if isinstance(features, (tuple, list)) or features.ndim != 5:
-            raise RuntimeError("D2S local branch requires one 5D feature tensor")
-        features = features.unflatten(0, sizes=(flattened_batches, num_segs))
-        features = features.mean(dim=(1, 4, 5))  # [B*K, C, 8]
-        L_sel = self._flatten_chunk_features(
-            features, source_batch=B, chunk_count=K
+        if num_segs != 1:
+            raise RuntimeError("D2S selected local branch requires exactly one segment")
+
+        patch_size = 16
+        grid_size = self.local_size // patch_size
+        if self.local_size % patch_size:
+            raise ValueError("D2S local size must be divisible by the patch size")
+        selected_native_tubelets = (
+            frames.reshape(
+                B,
+                K,
+                3,
+                self.tubelets_per_chunk,
+                2,
+                grid_size,
+                patch_size,
+                grid_size,
+                patch_size,
+            )
+            .permute(0, 1, 3, 5, 7, 2, 4, 6, 8)
+            .reshape(
+                B,
+                K * self.tubelets_per_chunk * grid_size * grid_size,
+                3,
+                2,
+                patch_size,
+                patch_size,
+            )
+            .contiguous()
+        )
+        selected_chunks = selected_indices.to(
+            device=selected_native_tubelets.device,
+            dtype=torch.long,
+        )
+        tubelet_indices = (
+            selected_chunks.unsqueeze(-1) * self.tubelets_per_chunk
+            + torch.arange(
+                self.tubelets_per_chunk,
+                device=selected_native_tubelets.device,
+                dtype=torch.long,
+            ).view(1, 1, -1)
+        )
+        physical_indices = (
+            tubelet_indices.unsqueeze(-1) * (grid_size * grid_size)
+            + torch.arange(
+                grid_size * grid_size,
+                device=selected_native_tubelets.device,
+                dtype=torch.long,
+            ).view(1, 1, 1, -1)
+        ).reshape(B, -1)
+        features = self._run_shared_backbone_native_ragged(
+            selected_native_tubelets,
+            physical_indices,
+        )
+        expected_tokens = K * self.tubelets_per_chunk * grid_size * grid_size
+        if features.ndim != 3 or tuple(features.shape[:2]) != (B, expected_tokens):
+            raise RuntimeError(
+                "D2S native-ragged local branch returned invalid token geometry"
+            )
+        L_sel = (
+            features.reshape(
+                B,
+                K,
+                self.tubelets_per_chunk,
+                grid_size * grid_size,
+                features.shape[-1],
+            )
+            .mean(dim=3)
+            .permute(0, 4, 1, 2)
+            .flatten(start_dim=2)
+            .contiguous()
         )
         return L_sel
 
@@ -304,6 +399,8 @@ class D2STemporalZoomBackboneWrapper(BackboneWrapper):
             "local_tokens_per_sample": self.burst_chunks
             * self.tubelets_per_chunk
             * (self.local_size // 16) ** 2,
+            "local_execution_mode": "true_clip_ragged_no_padding",
+            "local_physical_time_axis": self.intermediate_length,
             "uses_gt": False,
             "uses_teacher": False,
             "uses_test_evidence": False,
