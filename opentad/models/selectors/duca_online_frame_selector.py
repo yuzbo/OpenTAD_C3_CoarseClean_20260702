@@ -298,6 +298,11 @@ class DucaOnlineFrameSelector(nn.Module):
         self.require_coarse_hidden_features = bool(require_coarse_hidden_features)
         self.coarse_hidden_dim = None if coarse_hidden_dim is None else int(coarse_hidden_dim)
         self.coarse_hidden_proj_dim = int(coarse_hidden_proj_dim)
+        if self.use_coarse_hidden_features:
+            if self.coarse_hidden_dim is None or self.coarse_hidden_dim <= 0:
+                self.coarse_hidden_dim = self.in_channels
+            if self.coarse_hidden_proj_dim <= 0:
+                self.coarse_hidden_proj_dim = int(selector_hidden_channels)
         self.coarse_hidden_dropout = float(coarse_hidden_dropout)
         self.metadata_keys = dict(_DEFAULT_METADATA_KEYS)
         if metadata_keys:
