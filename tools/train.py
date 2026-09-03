@@ -298,6 +298,14 @@ def main():
                 else os.environ.get("DUCA_P0_VARIANT", "")
             )
         )
+        if not variant and hasattr(duca_training, "VARIANT_CONFIGS"):
+            stem = os.path.splitext(os.path.basename(args.config))[0]
+            if stem in duca_training.VARIANT_CONFIGS:
+                variant = stem
+            elif getattr(cfg, "h65_pro_experiment_id", None):
+                candidate = f"h65_pro_{str(cfg.h65_pro_experiment_id).lower()}"
+                if candidate in duca_training.VARIANT_CONFIGS:
+                    variant = candidate
         runtime_binding_kwargs = dict(
             git_commit=duca_git_commit,
             variant=variant,
