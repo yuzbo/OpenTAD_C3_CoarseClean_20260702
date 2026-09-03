@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-EXPERIMENT-CATALOG-v001",
-  "last_updated_utc": "2026-09-03T19:21:26+00:00",
+  "last_updated_utc": "2026-09-03T19:25:17+00:00",
   "scope": "所有当前 DUCA/ZoomToken 代码实验及其独立修正路线；旧远端作业另列为不纳入结果",
   "repository": "https://github.com/yuzbo/OpenTAD_C3_CoarseClean_20260702",
   "entries": [
@@ -105,10 +105,10 @@
       "supporting_local_directories": [
         "E:/DeskTop/TAD/_duca_fix_worktrees/h65_eval_repair"
       ],
-      "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 均 COMPLETED(0:0)。D768 官方评测 1269303 已完成。U384/MNV 评测 1269323/1269324 因 H65 运行绑定被错误读取 generic gate 字段而失败；修复 codex/h65-pro-eval-binding-repair-20260903@67c8f39f 已推送，远端 21 tests 与 admission 1269353 均 PASS，每分钟 watcher PID 131429 等待账户作业数低于 10 后续提。F01 训练 1269287 在 epoch 20/update 约 2056 因 p_action calibration 一致性异常失败，依赖评测 1269288 已取消；修复 codex/h65-pro-paction-tolerance-repair-20260904@30514803 已推送并通过远端 23 tests，watcher PID 204955 将先跑 admission 再重训。F02/F03/F04 训练 1269291/1269341/1269358 正在运行，对应评测 1269292/1269342/1269359 等待依赖",
-      "result_status": "D768 单臂官方终态性能有效；U384/MNV 训练已完成但评测待重提；F01 失败后待修复准入与重训；F02-F04 正式训练中",
+      "deployment_status": "远端 exact-SHA admission 1267684 已通过；REF-D768、REF-U384、REF-MNV3FC384 正式训练 1267709/1267711/1267737 均 COMPLETED(0:0)。D768 官方评测 1269303 已完成。U384/MNV 评测 1269323/1269324 因 H65 运行绑定被错误读取 generic gate 字段而失败；修复 codex/h65-pro-eval-binding-repair-20260903@67c8f39f 已推送，远端 21 tests 与 admission 1269353 均 PASS；每分钟 watcher PID 131429 已在额度释放后提交 U384 评测 1269360，当前 RUNNING，MNV 后续续提。F01 1269287 与 F02 1269291 均在课程切换附近因 p_action calibration 一致性异常失败，依赖评测 1269288/1269292 已取消；修复 codex/h65-pro-paction-tolerance-repair-20260904@30514803 已推送并通过远端 23 tests，顺序 watcher PID 220362 将分别先跑 F01/F02 admission 再重训。F03/F04/F05 训练 1269341/1269358/1269361 正在运行，对应评测 1269342/1269359/1269362 等待依赖",
+      "result_status": "D768 单臂官方终态性能有效；U384 官方评测运行中、MNV 待续提；F01/F02 同源失败后待修复准入与重训；F03-F05 正式训练中",
       "final_result": "D768 的 official THUMOS14 validation Avg-mAP=67.58%，mAP@0.3/0.4/0.5/0.6/0.7=82.56/78.12/69.98/60.37/46.88%；metrics 绑定 evaluator ca8337e7、训练 e553a5a4、seed 3407、epoch 59 EMA、6000 updates、211 videos/422000 predictions，receipt 位于 /data/run01/sczc063/yuzibo/experiments/h65_pro_eval_ca8337e7/REF-D768_seed3407/gpu1_id0/eval/REF-D768_seed3407_epoch59_ema_metrics.json。其余臂尚无满足同一终态评测合同的最终性能，30514803 只证明修复通过定向测试，尚未证明已跨过原 F01 故障点",
-      "next_action": "三个 watcher 按账户额度自动推进 U384/MNV 评测、F01 admission/重训；持续监控 F02-F04，收齐独立终态 metrics 后再做同协议比较",
+      "next_action": "三个 watcher 按账户额度自动推进 MNV 评测、Evidence C0、F01/F02 admission 与重训；持续监控 U384 评测和 F03-F05，收齐独立终态 metrics 后再做同协议比较",
       "local_head": "30514803d00bde579c9872cbcb77141aba8ecb3e",
       "local_clean_tree": true
     },
@@ -208,12 +208,12 @@
   ],
   "remote_supervisor": {
     "status": "ACTIVE",
-    "checked_at": "2026-09-03T19:21:24+00:00",
+    "checked_at": "2026-09-03T19:24:26+00:00",
     "dispatcher_status": "BLOCKED",
     "entries": []
   },
   "cluster_observation": {
-    "checked_at_cst": "2026-09-04 03:18:42 CST",
+    "checked_at_cst": "2026-09-04 03:24:37 CST",
     "public_gpu_available": 107,
     "public_gpu_total": 240,
     "user_jobs_in_queue": 12,
@@ -336,10 +336,10 @@
       "reason": "依次暴露 test ledger 不覆盖 792 loader 暴露、full-grid train ledger 与 438-window 训练拓扑不符、覆盖检查器未接受归一化 NumPy ndarray；246058f2 修复后 admission 1269357 PASS，失败均保留且未作为结果"
     },
     {
-      "job_ids": "1269287,1269288",
+      "job_ids": "1269287,1269288,1269291,1269292",
       "remote_directory": "/data/run01/sczc063/yuzibo/projects/h65_pro_formal_e553a5a4",
       "source_head": "e553a5a4a1063a755900d3dfa4bf8909bf97d466",
-      "reason": "H65 F01 在 epoch 20/update 约 2056 遇到 p_action calibration 一致性异常并失败，依赖评测 1269288 已取消释放额度。30514803 增加 dtype-aware 有界容差、非有限值专门失败和回归测试，远端 23 tests PASS；仍须重跑 admission 并跨过原故障点后才能确认修复"
+      "reason": "H65 F01 与 F02 均在课程切换附近遇到 p_action calibration 一致性异常并失败，依赖评测 1269288/1269292 已取消释放额度。30514803 增加 dtype-aware 有界容差、非有限值专门失败和回归测试，远端 23 tests PASS；仍须逐臂重跑 admission 并跨过原故障点后才能确认修复"
     },
     {
       "job_ids": "1265777-1265778",
