@@ -13,16 +13,13 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 from tools.bata.continuous_roi_s2_v3_full200_compute import (
-    ARMS,
     EXPECTED_EVALUATION_VIDEOS,
     EXPECTED_EVALUATION_WINDOWS,
-    PROTOCOL_ID,
     SEEDS,
     atomic_publish_json,
     canonical_sha256,
     require_clean_commit,
     sha256_file,
-    validate_cell_config,
 )
 from tools.bata.continuous_roi_s2_v3_full200_compute_eval import (
     build_prediction_bundle_payload,
@@ -31,6 +28,15 @@ from tools.bata.continuous_roi_s2_v3_full200_compute_train import (
     REQUIRED_IDENTITY_HASHES,
     validate_full_data_manifest,
 )
+from tools.bata.zoomtoken_full200_matrix_spec import (
+    get_matrix_spec,
+    validate_matrix_cell,
+)
+
+
+MATRIX_SPEC = get_matrix_spec()
+ARMS = MATRIX_SPEC.arms
+PROTOCOL_ID = MATRIX_SPEC.protocol_id
 
 
 CHECKPOINT_SEAL_SCHEMA = "s2_v3_full200_checkpoint_seal_v1"
@@ -80,6 +86,9 @@ def build_checkpoint_seal(
                 not isinstance(terminal_digest, str)
                 or canonical_sha256(checked_terminal) != terminal_digest
                 or terminal_payload.get("complete") is not True
+                or terminal_payload.get("protocol_id") != PROTOCOL_ID
+                or terminal_payload.get("arm") != arm
+                or int(terminal_payload.get("seed", -1)) != seed
                 or terminal_payload.get("checkpoint_sha256") != sha256_file(checkpoint)
                 or terminal_payload.get("checkpoint_state")
                 != "epoch_59_state_dict_ema_update_6000"
@@ -274,8 +283,8 @@ def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
     from opentad.models.utils.post_processing import build_classifier
     from opentad.utils import set_seed, setup_logger
 
-    if torch.cuda.device_count() != 1:
-        raise RuntimeError("each formal label-free inference cell requires one allocated GPU")
+    if torch.cuda.device_count() < 1:
+        raise RuntimeError("formal label-free inference requires a Slurm-allocated GPU")
     manifest = validate_full_data_manifest(args.manifest)
     manifest_sha = manifest["manifest_sha256"]
     seal = load_checkpoint_seal(
@@ -288,7 +297,9 @@ def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
     if identity_hashes["config_sha256"] != sha256_file(cell["config_path"]):
         raise ValueError("identity hash file does not bind the inference config")
     require_clean_commit(args.expected_commit, Path(__file__).resolve().parents[2])
-    validate_cell_config(cell["config_path"], arm=args.arm, seed=args.seed)
+    validate_matrix_cell(
+        cell["config_path"], arm=args.arm, seed=args.seed, spec=MATRIX_SPEC
+    )
     cfg = Config.fromfile(cell["config_path"])
     cfg.dataset.test.ann_file = manifest["evaluation"]["heldout_inference_annotation"]
     cfg.dataset.test.class_map = manifest["class_map"]["path"]
@@ -298,7 +309,11 @@ def run_label_free_inference(args: argparse.Namespace) -> dict[str, Any]:
     cfg.inference.load_from_raw_predictions = False
     set_seed(args.seed, False, deterministic_warn_only=True)
     args.work_dir.mkdir(parents=True, exist_ok=False)
-    logger = setup_logger("S2V3LabelFreeInfer", save_dir=cfg.work_dir, distributed_rank=0)
+    logger = setup_logger(
+        f"{MATRIX_SPEC.key}LabelFreeInfer",
+        save_dir=cfg.work_dir,
+        distributed_rank=0,
+    )
     dataset = build_dataset(cfg.dataset.test, default_args=dict(logger=logger))
     _validate_dataset_windows(dataset, manifest)
     loader = build_dataloader(

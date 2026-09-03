@@ -11,7 +11,8 @@
 set -euo pipefail
 mkdir -p /data/run01/sczc063/yuzibo/projects/d2s_tad_full200_compute
 
-cd /data/run01/sczc063/yuzibo/projects/zoomtoken_s2_v3_rpl1_2c8f25fe_src
+SOURCE_ROOT="${ZOOMTOKEN_SOURCE_ROOT:?submit with ZOOMTOKEN_SOURCE_ROOT bound to the clean candidate checkout}"
+cd "${SOURCE_ROOT}"
 
 if command -v module >/dev/null 2>&1; then
   module load cuda/11.8 || true

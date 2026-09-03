@@ -1,15 +1,15 @@
 # Copyright (c) OpenTAD. All rights reserved.
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple, Union
+from collections.abc import Mapping
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..bricks import ConvModule, TransformerBlock
 from ..builder import PROJECTIONS
-from .actionformer_proj import Conv1DTransformerProj, get_sinusoid_encoding
+from .actionformer_proj import Conv1DTransformerProj
 
 
 @PROJECTIONS.register_module()
@@ -53,6 +53,8 @@ class PyramidAwareAsymmetricProj(Conv1DTransformerProj):
             input_pdrop=input_pdrop,
         )
         self.asymmetric_split_level = int(asymmetric_split_level)
+        if self.asymmetric_split_level != 2:
+            raise ValueError("PA-TAD v1 is frozen to residual injection at L0/L1 only")
 
         # Lightweight residual injectors for L0 and L1 (in_channels -> out_channels)
         self.q0_inj = nn.Conv1d(in_channels, out_channels, kernel_size=1)
@@ -89,7 +91,7 @@ class PyramidAwareAsymmetricProj(Conv1DTransformerProj):
 
     def forward(
         self,
-        x: Union[torch.Tensor, Dict[str, torch.Tensor]],
+        x: Union[torch.Tensor, Mapping[str, torch.Tensor]],
         mask: torch.Tensor,
         burst_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]:
@@ -102,12 +104,25 @@ class PyramidAwareAsymmetricProj(Conv1DTransformerProj):
             out_feats: (L0, L1, L2, L3, L4, L5)
             out_masks: (M0, M1, M2, M3, M4, M5)
         """
-        if isinstance(x, dict):
-            g_feat = x.get("global_features", x.get("feats"))
-            r_feat = x.get("residual_features", torch.zeros_like(g_feat))
+        if isinstance(x, Mapping):
+            if "global_features" not in x or "residual_features" not in x:
+                raise ValueError(
+                    "PA-TAD feature bundle requires global_features and residual_features"
+                )
+            g_feat = x["global_features"]
+            r_feat = x["residual_features"]
         else:
             g_feat = x
             r_feat = torch.zeros_like(x)
+        if (
+            not torch.is_tensor(g_feat)
+            or not torch.is_tensor(r_feat)
+            or g_feat.ndim != 3
+            or r_feat.shape != g_feat.shape
+        ):
+            raise ValueError("PA-TAD G/R features must be aligned [B,C,T] tensors")
+        if mask.ndim != 2 or mask.shape != (g_feat.shape[0], g_feat.shape[-1]):
+            raise ValueError("PA-TAD mask does not match the G/R temporal axis")
 
         if self.proj is not None:
             g_feat = torch.cat(

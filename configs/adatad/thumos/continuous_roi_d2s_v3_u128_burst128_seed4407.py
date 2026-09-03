@@ -43,13 +43,9 @@ model = dict(
             tubelets_per_chunk=8,
             intermediate_length=384,
             output_length=768,
-            return_feature_bundle=True,
+            return_feature_bundle=False,
         )
-    ),
-    projection=dict(
-        type="PyramidAwareAsymmetricProj",
-        asymmetric_split_level=2,
-    ),
+    )
 )
 
 optimizer = dict(
@@ -63,19 +59,18 @@ optimizer = dict(
     )
 )
 
-continuous_roi_patad_v3_full200_compute = dict(
-    protocol="ZOOMTOKEN-PATAD-FULL200-COMPUTE-PARETO-3X3-v001",
-    arm="PATAD-U128-B128",
+continuous_roi_d2s_v3_full200_compute = dict(
+    protocol="ZOOMTOKEN-D2S-TAD-FULL200-COMPUTE-PARETO-3X3-v001",
+    arm="D2S-U128-B128",
     seed=seed,
     burst_chunks=16,
     total_chunks=48,
-    asymmetric_split_level=2,
     crop_policy="top16_then_source_native_fixed_center",
     canonical_source_hw=[180, 320],
     canonical_crop_xyxy=[96, 26, 224, 154],
     shared_backbone_instances=1,
     learned_selector_parameters=0,
     learned_residual_parameters=True,
-    learned_asymmetric_projection_parameters=True,
 )
-work_dir = f"exps/thumos/adatad/continuous_roi_patad_v3_u128_seed{seed}"
+work_dir = f"exps/thumos/adatad/continuous_roi_d2s_v3_u128_burst128_seed{seed}"
+

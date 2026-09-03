@@ -47,8 +47,14 @@ ZOOMTOKEN_SEEDS="${ZOOMTOKEN_SEEDS:-4407,4408,4409}"
 export PYTHONDONTWRITEBYTECODE=1
 export PYTHONNOUSERSITE=1
 export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
+export ZOOMTOKEN_MATRIX_KIND=d2s
 
 cd "${ROOT}"
+ACTUAL_COMMIT="$(git rev-parse HEAD)"
+[[ "${ACTUAL_COMMIT}" == "${EXPECTED_COMMIT}" ]] || \
+  fail "candidate commit mismatch: ${ACTUAL_COMMIT} != ${EXPECTED_COMMIT}"
+[[ -z "$(git status --porcelain --untracked-files=no)" ]] || \
+  fail "candidate checkout has tracked changes"
 
 # Optional Conda activation if on remote cluster
 if command -v module >/dev/null 2>&1; then
@@ -66,14 +72,23 @@ if [[ "${PRECHECK_ONLY}" == "1" ]]; then
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Running static compilation...\n'
   python -m py_compile \
     opentad/models/backbones/d2s_videomae_wrapper.py \
-    tools/bata/d2s_tad_full200_compute.py
+    opentad/models/detectors/actionformer.py \
+    tools/bata/d2s_tad_full200_compute.py \
+    tools/bata/verify_d2s_patad_pre_run_witness.py \
+    tools/bata/zoomtoken_full200_matrix_spec.py
 
-  printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Validating 3x3 D2S matrix and parameter surface fairness...\n'
+  printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Validating 3x3 D2S matrix and parameter disclosure...\n'
   python tools/bata/d2s_tad_full200_compute.py --root "${ROOT}"
 
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Running test suite...\n'
   python -m pytest tests/test_d2s_tad_architecture.py \
          tests/test_d2s_tad_full200_compute.py -v
+
+  printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Running checkpoint-load and physical-skip witness...\n'
+  python tools/bata/verify_d2s_patad_pre_run_witness.py \
+    configs/adatad/thumos/continuous_roi_d2s_v3_u128_burst128_seed4407.py \
+    --pretrained "${PRETRAINED}" \
+    --matrix-kind d2s
 
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] PASS\n'
   exit 0
@@ -142,7 +157,7 @@ if not pretrained.is_file():
 if not protocol_doc.is_file():
     raise FileNotFoundError(f"protocol document not found: {protocol_doc}")
 
-code_sha256 = sha256_file(protocol_doc)
+code_sha256 = hashlib.sha256(candidate_commit.encode("ascii")).hexdigest()
 assert len(code_sha256) == 64, "protocol document SHA256 must be 64 chars"
 pretrained_sha256 = sha256_file(pretrained)
 assert len(pretrained_sha256) == 64
@@ -194,6 +209,7 @@ for ARM in "${ARMS[@]}"; do
     torchrun --nproc_per_node=2 --master_port="${RANDOM_PORT}" \
       tools/bata/continuous_roi_s2_v3_full200_compute_train.py \
       "${CONFIG}" \
+      --matrix-kind d2s \
       --seed "${SEED}" \
       --expected-commit "${EXPECTED_COMMIT}" \
       --manifest "${MANIFEST}" \

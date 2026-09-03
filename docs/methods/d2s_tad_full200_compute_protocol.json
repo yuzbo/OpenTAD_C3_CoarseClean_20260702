@@ -1,0 +1,91 @@
+{
+  "protocol_id": "ZOOMTOKEN-D2S-TAD-FULL200-COMPUTE-PARETO-3X3-v001",
+  "description": "Dynamic two-speed temporal zoom with a complete G96 carrier and exactly 16 source-native U128 refresh chunks.",
+  "objective": {
+    "primary_axis": "detection_and_boundary_quality_vs_full_operator_C_exec",
+    "compute_definition": "audited_full_operator_C_exec",
+    "required_result_axes": [
+      "complete_population_detection_metrics",
+      "short_action_and_boundary_diagnostics",
+      "audited_full_operator_C_exec"
+    ],
+    "system_metrics_policy": "optional_not_required_for_admission",
+    "claim_boundary": "accuracy_compute_proxy_pareto_only_without_separate_system_measurement",
+    "forbidden_without_system_measurement": [
+      "real_speedup",
+      "throughput_gain",
+      "memory_saving",
+      "energy_saving",
+      "end_to_end_efficiency"
+    ]
+  },
+  "arms": {
+    "D160": {
+      "view": "full_frame_letterbox_160x160",
+      "backbone_patch_tokens_per_window": 38400
+    },
+    "G96": {
+      "view": "full_frame_letterbox_96x96",
+      "backbone_patch_tokens_per_window": 13824
+    },
+    "D2S-U128-B128": {
+      "view": "global96_plus_top16_source_native_center_local128",
+      "global_size": 96,
+      "local_size": 128,
+      "total_chunks": 48,
+      "selected_chunks": 16,
+      "canonical_source_hw": [180, 320],
+      "canonical_crop_xyxy": [96, 26, 224, 154],
+      "backbone_patch_tokens_per_window": 22016,
+      "backbone_patch_token_ratio_over_d160": 0.5733333333333334,
+      "shared_backbone_instances": 1,
+      "learned_selector_parameters": 0,
+      "learned_residual_modules": ["proj_local", "proj_global", "gamma"]
+    }
+  },
+  "parameter_policy": {
+    "d160_g96_trainable_surface_equal": true,
+    "candidate_parameter_parity_claimed": false,
+    "candidate_added_parameters_must_be_reported": true
+  },
+  "seeds": [4407, 4408, 4409],
+  "training": {
+    "split": "training",
+    "identity_count": 200,
+    "identity_coverage_per_epoch": "exactly_once",
+    "epochs": 60,
+    "successful_updates_per_epoch": 100,
+    "successful_updates_per_cell": 6000,
+    "world_size": 2,
+    "local_batch_size": 1,
+    "global_batch_size": 2,
+    "final_checkpoint": "epoch_59_state_dict_ema_update_6000",
+    "intermediate_metric_selection": "forbidden"
+  },
+  "evaluation": {
+    "split": "validation",
+    "video_count": 211,
+    "ordered_window_count": 792,
+    "prediction_phase": "label_free",
+    "prediction_barrier": "seal_all_9_predictions_before_evaluator",
+    "metric_opening_count": 1,
+    "metrics": [
+      "mAP@0.3",
+      "mAP@0.4",
+      "mAP@0.5",
+      "mAP@0.6",
+      "mAP@0.7",
+      "Avg-mAP",
+      "short_q1_recall_at_100_at_0.7",
+      "normalized_start_error",
+      "normalized_end_error"
+    ]
+  },
+  "admission": {
+    "primary_candidate": "D2S-U128-B128",
+    "primary_reference": "D160",
+    "full_operator_c_exec_ratio_max": 0.9,
+    "backbone_token_ratio_is_not_full_operator_c_exec": true
+  }
+}
+

@@ -22,13 +22,20 @@ from tools.bata.continuous_roi_s2_v3_full200_compute import (
     EXPECTED_TRAINING_IDENTITIES,
     EXPECTED_UPDATES_PER_EPOCH,
     EXPECTED_WORLD_SIZE,
-    PROTOCOL_ID,
     atomic_publish_json,
     canonical_sha256,
     require_clean_commit,
     sha256_file,
-    validate_cell_config,
 )
+from tools.bata.zoomtoken_full200_matrix_spec import (
+    binding_from_config,
+    get_matrix_spec,
+    validate_matrix_cell,
+)
+
+
+MATRIX_SPEC = get_matrix_spec()
+PROTOCOL_ID = MATRIX_SPEC.protocol_id
 
 
 CERTIFIED_RECOVERY_UPDATES = tuple(range(0, EXPECTED_TOTAL_UPDATES + 1, 500))
@@ -400,6 +407,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         description="Recovery-safe full-200 task-local 2-GPU training driver"
     )
     parser.add_argument("config", type=Path)
+    parser.add_argument(
+        "--matrix-kind",
+        choices=("s2_v3", "d2s", "patad"),
+        default=MATRIX_SPEC.key,
+    )
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -412,6 +424,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
+    if args.matrix_kind != MATRIX_SPEC.key:
+        raise ValueError(
+            "--matrix-kind must match ZOOMTOKEN_MATRIX_KIND before module import"
+        )
     if "SLURM_JOB_ID" not in os.environ:
         raise RuntimeError("formal training requires a Slurm allocation")
     import torch
@@ -421,7 +437,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from torch.distributed.algorithms.ddp_comm_hooks import default as comm_hooks
     from torch.nn.parallel import DistributedDataParallel
 
-    from opentad.cores import build_optimizer, build_scheduler, train_one_epoch, eval_one_epoch
+    from opentad.cores import build_optimizer, build_scheduler, train_one_epoch
     from opentad.datasets import build_dataloader, build_dataset
     from opentad.models import build_detector
     from opentad.utils import ModelEma, create_folder, save_config, set_seed, setup_logger
@@ -435,9 +451,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     torch.cuda.set_device(local_rank)
     try:
         cfg = Config.fromfile(args.config)
-        binding = cfg.continuous_roi_s2_v3_full200_compute
+        binding = binding_from_config(cfg, MATRIX_SPEC)
         arm = str(binding.arm)
-        validate_cell_config(args.config, arm=arm, seed=args.seed)
+        if arm not in MATRIX_SPEC.arms:
+            raise ValueError("config arm is outside the selected full-200 matrix")
+        validate_matrix_cell(
+            args.config, arm=arm, seed=args.seed, spec=MATRIX_SPEC
+        )
         require_clean_commit(args.expected_commit, Path(__file__).resolve().parents[2])
         manifest = validate_full_data_manifest(args.manifest)
         identity_hashes = _load_identity_hashes(args.identity_hashes)
@@ -449,8 +469,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         cfg.dataset.val.ann_file = manifest["evaluation"]["heldout_inference_annotation"]
         cfg.dataset.val.class_map = manifest["class_map"]["path"]
         cfg.dataset.val.data_path = manifest["media"]["root"]
-        if hasattr(cfg, "evaluation"):
-            cfg.evaluation.ground_truth_filename = manifest["annotation"]["path"]
         cfg.work_dir = str(args.work_dir.resolve())
         set_seed(args.seed, False, deterministic_warn_only=True)
         if args.resume is None and args.work_dir.exists():
@@ -459,10 +477,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             create_folder(cfg.work_dir)
             save_config(str(args.config), cfg.work_dir)
         dist.barrier()
-        logger = setup_logger("S2V3Full200Train", save_dir=cfg.work_dir, distributed_rank=rank)
+        logger = setup_logger(
+            f"{MATRIX_SPEC.key}Full200Train",
+            save_dir=cfg.work_dir,
+            distributed_rank=rank,
+        )
 
         train_dataset = build_dataset(cfg.dataset.train, default_args=dict(logger=logger))
-        val_dataset = build_dataset(cfg.dataset.val, default_args=dict(logger=logger))
         dataset_identities = tuple(str(row[0]) for row in train_dataset.data_list)
         expected_identities = tuple(map(str, manifest["training"]["identity_order"]))
         if (
@@ -481,16 +502,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             drop_last=True,
             generator=dataloader_generator,
             **cfg.solver.train,
-        )
-        val_solver_cfg = dict(copy.deepcopy(cfg.solver.val))
-        val_solver_cfg["batch_size"] = world_size
-        val_loader = build_dataloader(
-            val_dataset,
-            rank=rank,
-            world_size=world_size,
-            shuffle=False,
-            drop_last=False,
-            **val_solver_cfg,
         )
         if len(train_loader) != EXPECTED_UPDATES_PER_EPOCH:
             raise RuntimeError("formal cell does not have exactly 100 rank-local batches")
@@ -674,35 +685,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             if successful_updates % 500 == 0:
                 publish_recovery(epoch + 1)
 
-            eval_interval = int(cfg.workflow.get("val_eval_interval", cfg.workflow.get("eval_interval", 5)))
-            val_start_epoch = int(cfg.workflow.get("val_start_epoch", 1))
-
-            should_eval = False
-            if eval_interval > 0:
-                if (epoch + 1) >= val_start_epoch and (epoch + 1) % eval_interval == 0:
-                    should_eval = True
-            if epoch == EXPECTED_EPOCHS - 1:
-                should_eval = True
-
-            if should_eval:
-                if rank == 0:
-                    logger.info(f"[ONLINE_EVAL] Starting online validation evaluation at epoch {epoch}...")
-                module_modes = {m: m.training for m in model.modules()}
-                try:
-                    eval_one_epoch(
-                        val_loader,
-                        model,
-                        cfg,
-                        logger,
-                        rank,
-                        model_ema=model_ema,
-                        use_amp=bool(cfg.solver.amp),
-                        world_size=world_size,
-                        epoch=epoch,
-                    )
-                finally:
-                    for m, was_training in module_modes.items():
-                        m.train(was_training)
+            # Metric-bearing validation is deliberately deferred until all nine
+            # label-free prediction bundles have been sealed.
 
         if successful_updates != EXPECTED_TOTAL_UPDATES or ema_update_counter != EXPECTED_TOTAL_UPDATES:
             raise RuntimeError("formal training did not complete exactly 6000 successful updates")

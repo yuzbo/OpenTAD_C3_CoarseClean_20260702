@@ -12,17 +12,17 @@ def test_patad_projection_shape_and_forward():
     norm_cfg = dict(type="LN")
 
     patad_proj = PyramidAwareAsymmetricProj(
-        in_channels=384,
-        out_channels=384,
-        arch=(2, 2, 5),
+        in_channels=16,
+        out_channels=16,
+        arch=(1, 1, 5),
         conv_cfg=conv_cfg,
         norm_cfg=norm_cfg,
         attn_cfg=attn_cfg,
-        max_seq_len=768,
+        max_seq_len=64,
         asymmetric_split_level=2,
     )
 
-    B, C, T = 2, 384, 768
+    B, C, T = 1, 16, 64
     g_feat = torch.randn(B, C, T, requires_grad=True)
     r_feat = torch.randn(B, C, T, requires_grad=True)
     mask = torch.ones(B, T, dtype=torch.bool)
@@ -32,7 +32,7 @@ def test_patad_projection_shape_and_forward():
     assert len(feats) == 6, f"Expected 6 pyramid levels (L0-L5), got {len(feats)}"
     assert len(masks) == 6
 
-    expected_lens = [768, 384, 192, 96, 48, 24]
+    expected_lens = [64, 32, 16, 8, 4, 2]
     for i, (f, m, exp_len) in enumerate(zip(feats, masks, expected_lens)):
         assert f.shape == (B, C, exp_len), f"Level {i} shape mismatch: {f.shape} vs {(B, C, exp_len)}"
         assert m.shape == (B, exp_len)
@@ -49,16 +49,16 @@ def test_patad_l2_to_l5_bitwise_invariance():
     attn_cfg = dict(n_head=4, n_mha_win_size=-1, attn_pdrop=0.0)
 
     patad_proj = PyramidAwareAsymmetricProj(
-        in_channels=384,
-        out_channels=384,
-        arch=(2, 2, 5),
+        in_channels=16,
+        out_channels=16,
+        arch=(1, 1, 5),
         conv_cfg=conv_cfg,
         attn_cfg=attn_cfg,
         asymmetric_split_level=2,
     )
     patad_proj.eval()
 
-    B, C, T = 2, 384, 768
+    B, C, T = 1, 16, 64
     g_feat = torch.randn(B, C, T)
     r_feat_1 = torch.randn(B, C, T)
     r_feat_2 = torch.randn(B, C, T) * 100.0  # massively different residual
@@ -75,3 +75,15 @@ def test_patad_l2_to_l5_bitwise_invariance():
     # L2 to L5 MUST be strictly bitwise identical
     for lvl in range(2, 6):
         assert torch.equal(feats_1[lvl], feats_2[lvl]), f"Level L{lvl} must be strictly invariant to residual R"
+
+
+def test_patad_rejects_an_unimplemented_split_level():
+    with pytest.raises(ValueError, match="frozen"):
+        PyramidAwareAsymmetricProj(
+            in_channels=16,
+            out_channels=16,
+            arch=(1, 1, 5),
+            conv_cfg=dict(kernel_size=3, proj_pdrop=0.0),
+            attn_cfg=dict(n_head=4, n_mha_win_size=-1, attn_pdrop=0.0),
+            asymmetric_split_level=3,
+        )

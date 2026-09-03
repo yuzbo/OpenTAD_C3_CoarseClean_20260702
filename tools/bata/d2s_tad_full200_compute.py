@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import sys
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 root_dir = Path(__file__).resolve().parents[2]
 if str(root_dir) not in sys.path:
@@ -61,8 +60,26 @@ def validate_d2s_cell_config(path: str | Path, *, arm: str, seed: int) -> dict[s
             or int(custom.total_chunks) != 48
             or int(custom.global_size) != 96
             or int(custom.local_size) != 128
+            or str(custom.source_key) != "source"
+            or bool(custom.return_feature_bundle)
         ):
             raise ValueError("D2S backbone configuration changed")
+        for split in ("train", "val", "test"):
+            views = [
+                step
+                for step in cfg.dataset[split].pipeline
+                if step.type == "ContinuousRoiSourceViews"
+            ]
+            if len(views) != 1 or int(views[0].global_size) != 96:
+                raise ValueError("D2S must receive global96 plus untouched source uint8")
+            if any(
+                step.type == "NativeCropSourceViews"
+                for step in cfg.dataset[split].pipeline
+            ):
+                raise ValueError("D2S forbids pre-materializing all local crops")
+        optimizer_names = [row.name for row in cfg.optimizer.backbone.custom]
+        if optimizer_names != ["adapter", "proj_local", "proj_global", "gamma"]:
+            raise ValueError("D2S residual parameters are not explicitly optimized")
     else:
         binding = cfg.continuous_roi_s2_v3_full200_compute
         if binding.arm != arm or int(binding.seed) != seed:
@@ -117,24 +134,22 @@ def validate_d2s_matrix(root: str | Path) -> dict[str, Any]:
     }
 
 
-def d2s_parameter_surface(cfg: Config) -> dict[str, Any]:
-    model = copy.deepcopy(cfg.model.to_dict())
-    custom = model["backbone"]["custom"]
-    for key in list(custom):
-        if key == "wrapper_type" or key.startswith("native_crop_") or key.startswith("global_") or key.startswith("local_") or key.startswith("burst_") or key.startswith("total_") or key.startswith("saliency_") or key.startswith("intermediate_") or key.startswith("output_"):
-            custom.pop(key)
-    optimizer = copy.deepcopy(cfg.optimizer.to_dict())
-    return {"model": model, "optimizer": optimizer}
+def validate_d2s_parameter_fairness(root: str | Path) -> dict[str, Any]:
+    """Validate baseline parity and disclose, rather than hide, candidate modules."""
 
-
-def validate_d2s_parameter_fairness(root: str | Path) -> None:
     root = Path(root)
-    reference = Config.fromfile(config_path(root, "D160", 4407))
-    expected = d2s_parameter_surface(reference)
-    for arm in D2S_ARMS:
-        cfg = Config.fromfile(config_path(root, arm, 4407))
-        if d2s_parameter_surface(cfg) != expected:
-            raise ValueError(f"{arm} changed the trainable parameter surface")
+    d160 = Config.fromfile(config_path(root, "D160", 4407))
+    g96 = Config.fromfile(config_path(root, "G96", 4407))
+    if d160.model.to_dict() != g96.model.to_dict() or d160.optimizer.to_dict() != g96.optimizer.to_dict():
+        raise ValueError("D160 and G96 baseline trainable surfaces differ")
+    candidate = Config.fromfile(config_path(root, "D2S-U128-B128", 4407))
+    optimizer_names = [row.name for row in candidate.optimizer.backbone.custom]
+    return {
+        "baseline_parameter_surface": "D160_EQUALS_G96",
+        "candidate_parameter_parity_claimed": False,
+        "candidate_added_trainable_modules": ["proj_local", "proj_global", "gamma"],
+        "candidate_optimizer_groups": optimizer_names,
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -157,13 +172,16 @@ def main() -> int:
                 "--annotation, --class-map, --media-root and --manifest-dir are required together"
             )
         manifest = build_full_data_bundle(
-            args.annotation, args.class_map, args.media_root, args.manifest_dir
+            args.annotation,
+            args.class_map,
+            args.media_root,
+            args.manifest_dir,
+            protocol_id=D2S_PROTOCOL_ID,
         )
         print(json.dumps(manifest, ensure_ascii=False, sort_keys=True))
         return 0
     receipt = validate_d2s_matrix(args.root)
-    validate_d2s_parameter_fairness(args.root)
-    receipt["parameter_fairness"] = "PASS"
+    receipt["parameter_disclosure"] = validate_d2s_parameter_fairness(args.root)
     if args.output is not None:
         atomic_publish_json(args.output, receipt)
     print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))

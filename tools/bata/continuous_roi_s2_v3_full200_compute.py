@@ -177,6 +177,8 @@ def build_full_data_bundle(
     class_map_path: str | Path,
     media_root: str | Path,
     output_dir: str | Path,
+    *,
+    protocol_id: str = PROTOCOL_ID,
 ) -> dict[str, Any]:
     """Seal the complete train/evaluation population before formal execution."""
 
@@ -269,7 +271,7 @@ def build_full_data_bundle(
     atomic_publish_json(heldout_path, heldout_inference)
     manifest: dict[str, Any] = {
         "schema_version": "thumos_full200_heldout211_v1",
-        "protocol_id": PROTOCOL_ID,
+        "protocol_id": str(protocol_id),
         "annotation": {
             "path": annotation_path.as_posix(),
             "sha256": sha256_file(annotation_path),

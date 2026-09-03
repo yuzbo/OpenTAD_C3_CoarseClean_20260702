@@ -1,11 +1,10 @@
 ﻿from __future__ import annotations
 
 import argparse
-import copy
 import json
 import sys
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 root_dir = Path(__file__).resolve().parents[2]
 if str(root_dir) not in sys.path:
@@ -59,11 +58,29 @@ def validate_patad_cell_config(path: str | Path, *, arm: str, seed: int) -> dict
             or int(custom.total_chunks) != 48
             or int(custom.global_size) != 96
             or int(custom.local_size) != 128
+            or str(custom.source_key) != "source"
+            or not bool(custom.return_feature_bundle)
         ):
             raise ValueError("PATAD backbone configuration changed")
         proj = cfg.model.projection
         if proj.type != "PyramidAwareAsymmetricProj" or int(proj.asymmetric_split_level) != 2:
             raise ValueError("PATAD projection configuration changed")
+        for split in ("train", "val", "test"):
+            views = [
+                step
+                for step in cfg.dataset[split].pipeline
+                if step.type == "ContinuousRoiSourceViews"
+            ]
+            if len(views) != 1 or int(views[0].global_size) != 96:
+                raise ValueError("PATAD must receive global96 plus untouched source uint8")
+            if any(
+                step.type == "NativeCropSourceViews"
+                for step in cfg.dataset[split].pipeline
+            ):
+                raise ValueError("PATAD forbids pre-materializing all local crops")
+        optimizer_names = [row.name for row in cfg.optimizer.backbone.custom]
+        if optimizer_names != ["adapter", "proj_local", "proj_global", "gamma"]:
+            raise ValueError("PATAD D2S residual parameters are not explicitly optimized")
     else:
         binding = cfg.continuous_roi_s2_v3_full200_compute
         if binding.arm != arm or int(binding.seed) != seed:
@@ -101,6 +118,10 @@ def validate_patad_cell_config(path: str | Path, *, arm: str, seed: int) -> dict
 
 def validate_patad_matrix(root: str | Path) -> dict[str, Any]:
     root = Path(root)
+    d160 = Config.fromfile(config_path(root, "D160", 4407))
+    g96 = Config.fromfile(config_path(root, "G96", 4407))
+    if d160.model.to_dict() != g96.model.to_dict() or d160.optimizer.to_dict() != g96.optimizer.to_dict():
+        raise ValueError("D160 and G96 baseline trainable surfaces differ")
     cells = [
         validate_patad_cell_config(config_path(root, arm, seed), arm=arm, seed=seed)
         for arm in PATAD_ARMS
@@ -113,7 +134,17 @@ def validate_patad_matrix(root: str | Path) -> dict[str, Any]:
         "successful_updates_per_cell": EXPECTED_TOTAL_UPDATES,
         "evaluation_videos": EXPECTED_EVALUATION_VIDEOS,
         "evaluation_ordered_windows": EXPECTED_EVALUATION_WINDOWS,
-        "parameter_fairness": "PASS",
+        "parameter_disclosure": {
+            "baseline_parameter_surface": "D160_EQUALS_G96",
+            "candidate_parameter_parity_claimed": False,
+            "candidate_added_trainable_modules": [
+                "backbone.proj_local",
+                "backbone.proj_global",
+                "backbone.gamma",
+                "projection.q0_inj",
+                "projection.q1_inj",
+            ],
+        },
         "cell_count": len(cells),
         "cells": cells,
     }
@@ -131,7 +162,13 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.annotation and args.class_map and args.media_root and args.manifest_dir:
-        build_full_data_bundle(args.annotation, args.class_map, args.media_root, args.manifest_dir)
+        build_full_data_bundle(
+            args.annotation,
+            args.class_map,
+            args.media_root,
+            args.manifest_dir,
+            protocol_id=PATAD_PROTOCOL_ID,
+        )
 
     receipt = validate_patad_matrix(args.root)
     if args.output:

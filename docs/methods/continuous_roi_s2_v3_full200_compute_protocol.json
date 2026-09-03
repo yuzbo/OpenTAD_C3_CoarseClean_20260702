@@ -18,6 +18,13 @@
     "compute_boundary_end": "pre_nms_raw_detections",
     "fused_multiply_add_flops": 2,
     "candidate_compute_ratio_max": 0.9,
+    "required_result_axes": [
+      "complete_population_detection_metrics",
+      "short_action_and_boundary_diagnostics",
+      "audited_full_operator_C_exec"
+    ],
+    "system_metrics_policy": "optional_not_required_for_admission",
+    "claim_boundary": "accuracy_compute_proxy_pareto_only_without_separate_system_measurement",
     "diagnostic_only": [
       "latency",
       "throughput",
@@ -26,6 +33,13 @@
       "gross_energy",
       "power",
       "component_timings"
+    ],
+    "forbidden_without_system_measurement": [
+      "real_speedup",
+      "throughput_gain",
+      "memory_saving",
+      "energy_saving",
+      "end_to_end_efficiency"
     ]
   },
   "arms": {

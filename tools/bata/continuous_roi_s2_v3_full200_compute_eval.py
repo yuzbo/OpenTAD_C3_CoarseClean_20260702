@@ -16,14 +16,21 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 from tools.bata.continuous_roi_s2_v3_full200_compute import (
-    ARMS,
-    PROTOCOL_ID,
     SEEDS,
     atomic_publish_json,
     canonical_json_bytes,
     canonical_sha256,
     sha256_file,
 )
+from tools.bata.zoomtoken_full200_matrix_spec import get_matrix_spec
+
+
+MATRIX_SPEC = get_matrix_spec()
+ARMS = MATRIX_SPEC.arms
+PROTOCOL_ID = MATRIX_SPEC.protocol_id
+CANDIDATE_ARM = MATRIX_SPEC.candidate_arm
+REFERENCE_ARM = MATRIX_SPEC.reference_arm
+LOW_COST_CONTROL_ARM = MATRIX_SPEC.low_cost_control_arm
 
 
 BOOTSTRAP_DOMAIN = "ZT_S2V3_HIERARCHICAL_BOOTSTRAP_V1"
@@ -755,36 +762,36 @@ def run_hierarchical_bootstrap(
             }
             primary = {
                 "replicate": replicate,
-                "average_map_difference_pp": arm_metrics["U128-A0"]["average_map_pp"]
-                - arm_metrics["D160"]["average_map_pp"],
-                "map_at_0_7_difference_pp": arm_metrics["U128-A0"]["map_at_0_7_pp"]
-                - arm_metrics["D160"]["map_at_0_7_pp"],
-                "short_q1_recall_difference": arm_metrics["U128-A0"]["short_q1_recall"]
-                - arm_metrics["D160"]["short_q1_recall"],
+                "average_map_difference_pp": arm_metrics[CANDIDATE_ARM]["average_map_pp"]
+                - arm_metrics[REFERENCE_ARM]["average_map_pp"],
+                "map_at_0_7_difference_pp": arm_metrics[CANDIDATE_ARM]["map_at_0_7_pp"]
+                - arm_metrics[REFERENCE_ARM]["map_at_0_7_pp"],
+                "short_q1_recall_difference": arm_metrics[CANDIDATE_ARM]["short_q1_recall"]
+                - arm_metrics[REFERENCE_ARM]["short_q1_recall"],
                 "start_error_ratio": _ratio(
-                    arm_metrics["U128-A0"]["normalized_start_error_median"],
-                    arm_metrics["D160"]["normalized_start_error_median"],
+                    arm_metrics[CANDIDATE_ARM]["normalized_start_error_median"],
+                    arm_metrics[REFERENCE_ARM]["normalized_start_error_median"],
                 ),
                 "end_error_ratio": _ratio(
-                    arm_metrics["U128-A0"]["normalized_end_error_median"],
-                    arm_metrics["D160"]["normalized_end_error_median"],
+                    arm_metrics[CANDIDATE_ARM]["normalized_end_error_median"],
+                    arm_metrics[REFERENCE_ARM]["normalized_end_error_median"],
                 ),
             }
             dominance = {
                 "replicate": replicate,
-                "average_map_difference_pp": arm_metrics["G96"]["average_map_pp"]
-                - arm_metrics["U128-A0"]["average_map_pp"],
-                "map_at_0_7_difference_pp": arm_metrics["G96"]["map_at_0_7_pp"]
-                - arm_metrics["U128-A0"]["map_at_0_7_pp"],
-                "short_q1_recall_difference": arm_metrics["G96"]["short_q1_recall"]
-                - arm_metrics["U128-A0"]["short_q1_recall"],
+                "average_map_difference_pp": arm_metrics[LOW_COST_CONTROL_ARM]["average_map_pp"]
+                - arm_metrics[CANDIDATE_ARM]["average_map_pp"],
+                "map_at_0_7_difference_pp": arm_metrics[LOW_COST_CONTROL_ARM]["map_at_0_7_pp"]
+                - arm_metrics[CANDIDATE_ARM]["map_at_0_7_pp"],
+                "short_q1_recall_difference": arm_metrics[LOW_COST_CONTROL_ARM]["short_q1_recall"]
+                - arm_metrics[CANDIDATE_ARM]["short_q1_recall"],
                 "start_error_ratio": _ratio(
-                    arm_metrics["G96"]["normalized_start_error_median"],
-                    arm_metrics["U128-A0"]["normalized_start_error_median"],
+                    arm_metrics[LOW_COST_CONTROL_ARM]["normalized_start_error_median"],
+                    arm_metrics[CANDIDATE_ARM]["normalized_start_error_median"],
                 ),
                 "end_error_ratio": _ratio(
-                    arm_metrics["G96"]["normalized_end_error_median"],
-                    arm_metrics["U128-A0"]["normalized_end_error_median"],
+                    arm_metrics[LOW_COST_CONTROL_ARM]["normalized_end_error_median"],
+                    arm_metrics[CANDIDATE_ARM]["normalized_end_error_median"],
                 ),
             }
             _write_jsonl_row(handles[1], primary)
@@ -1206,16 +1213,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Check seed floors
         seed_deltas = {}
         for seed in SEEDS:
-            u128_map = bounds_result["point_per_seed"]["U128-A0"][str(seed)]["average_map_pp"]
-            d160_map = bounds_result["point_per_seed"]["D160"][str(seed)]["average_map_pp"]
-            delta = u128_map - d160_map
+            candidate_map = bounds_result["point_per_seed"][CANDIDATE_ARM][str(seed)]["average_map_pp"]
+            reference_map = bounds_result["point_per_seed"][REFERENCE_ARM][str(seed)]["average_map_pp"]
+            delta = candidate_map - reference_map
             seed_deltas[str(seed)] = delta
             gates[f"seed_{seed}_avg_map_delta_ge_neg_3_00"] = delta >= -3.00
         compute_gate = None
         if args.compute_comparison is not None and args.compute_comparison.is_file():
             comp = json.loads(args.compute_comparison.read_text(encoding="utf-8"))
             compute_gate = comp.get("primary_exact_10u_le_9d", False)
-            gates["compute_c_exec_u128_a0_over_d160_le_0_90"] = compute_gate
+            gates["compute_c_exec_candidate_over_d160_le_0_90"] = compute_gate
         g96_dominates = (
             g96_bounds["average_map_difference_lcb_pp"] >= 0.0
             and g96_bounds["map_at_0_7_difference_lcb_pp"] >= 0.0
@@ -1225,9 +1232,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         all_passed = all(gates.values())
         if all_passed:
-            verdict = "REVISE_TO_G96_CONTROL_ONLY" if g96_dominates else "CONTINUE_S2_V3_A0"
+            verdict = (
+                f"REVISE_TO_{LOW_COST_CONTROL_ARM}_CONTROL_ONLY"
+                if g96_dominates
+                else f"CONTINUE_{CANDIDATE_ARM}"
+            )
         else:
-            verdict = "STOP_S2_V3_A0_EXACT_ROUTE"
+            verdict = f"STOP_{CANDIDATE_ARM}_EXACT_ROUTE"
         evaluation_summary = {
             "schema_version": "s2_v3_admission_evaluation_v1",
             "protocol_id": PROTOCOL_ID,

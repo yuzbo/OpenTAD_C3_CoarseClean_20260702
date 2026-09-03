@@ -13,11 +13,18 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 from tools.bata.continuous_roi_s2_v3_full200_compute import (
-    ARMS,
-    PROTOCOL_ID,
     atomic_publish_json,
     canonical_sha256,
 )
+from tools.bata.zoomtoken_full200_matrix_spec import get_matrix_spec
+
+
+MATRIX_SPEC = get_matrix_spec()
+ARMS = MATRIX_SPEC.arms
+PROTOCOL_ID = MATRIX_SPEC.protocol_id
+CANDIDATE_ARM = MATRIX_SPEC.candidate_arm
+REFERENCE_ARM = MATRIX_SPEC.reference_arm
+LOW_COST_CONTROL_ARM = MATRIX_SPEC.low_cost_control_arm
 
 
 LEDGER_SCHEMA = "s2_v3_full_operator_c_exec_v1"
@@ -251,7 +258,7 @@ def compare_c_exec_receipts(
     receipts: Mapping[str, Mapping[str, Any]]
 ) -> dict[str, Any]:
     if set(receipts) != set(ARMS):
-        raise ValueError("compute comparison requires D160, G96 and U128-A0")
+        raise ValueError("compute comparison requires the complete selected 3-arm matrix")
     checked = {arm: validate_c_exec_receipt(receipts[arm]) for arm in ARMS}
     identity_keys = (
         "candidate_commit",
@@ -270,11 +277,14 @@ def compare_c_exec_receipts(
         "schema_version": "s2_v3_c_exec_comparison_v1",
         "protocol_id": PROTOCOL_ID,
         "counts": counts,
-        "primary_exact_10u_le_9d": 10 * counts["U128-A0"] <= 9 * counts["D160"],
-        "g96_not_more_than_u128_a0": counts["G96"] <= counts["U128-A0"],
+        "primary_exact_10u_le_9d": 10 * counts[CANDIDATE_ARM]
+        <= 9 * counts[REFERENCE_ARM],
+        "g96_not_more_than_candidate": counts[LOW_COST_CONTROL_ARM]
+        <= counts[CANDIDATE_ARM],
         "ratio_disclosure": {
-            "u128_a0_over_d160": counts["U128-A0"] / counts["D160"],
-            "g96_over_u128_a0": counts["G96"] / counts["U128-A0"],
+            "candidate_over_d160": counts[CANDIDATE_ARM] / counts[REFERENCE_ARM],
+            "g96_over_candidate": counts[LOW_COST_CONTROL_ARM]
+            / counts[CANDIDATE_ARM],
         },
         "gate_uses_latency_or_memory": False,
     }

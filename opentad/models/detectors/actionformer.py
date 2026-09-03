@@ -92,7 +92,8 @@ class ActionFormer(SingleStageDetector):
         self.max_div_factor = max_div_factor
 
     def pad_data(self, inputs, masks):
-        feat_len = inputs.shape[-1]
+        primary = self._primary_backbone_features(inputs)
+        feat_len = primary.shape[-1]
         if feat_len == self.max_seq_len:
             return inputs, masks
         elif feat_len < self.max_seq_len:
@@ -104,8 +105,21 @@ class ActionFormer(SingleStageDetector):
             max_len = (max_len + (stride - 1)) // stride * stride
 
         padding_size = [0, max_len - feat_len]
-        inputs = torch.nn.functional.pad(inputs, padding_size, value=0)
-        pad_masks = torch.zeros((inputs.shape[0], max_len), device=masks.device).bool()
+        if isinstance(inputs, Mapping):
+            padded = {}
+            for key, value in inputs.items():
+                if torch.is_tensor(value):
+                    if value.ndim != 3 or value.shape[0] != primary.shape[0] or value.shape[-1] != feat_len:
+                        raise ValueError(
+                            f"backbone feature bundle tensor {key!r} must be [B,C,T] on the shared time axis"
+                        )
+                    padded[key] = torch.nn.functional.pad(value, padding_size, value=0)
+                else:
+                    padded[key] = value
+            inputs = padded
+        else:
+            inputs = torch.nn.functional.pad(inputs, padding_size, value=0)
+        pad_masks = torch.zeros((primary.shape[0], max_len), device=masks.device).bool()
         pad_masks[:, :feat_len] = masks
         return inputs, pad_masks
 
@@ -158,6 +172,8 @@ class ActionFormer(SingleStageDetector):
 
         self._assert_feature_mask_temporal_match(x, masks, "before token_compressor")
         if self.token_compressor is not None:
+            if isinstance(x, Mapping):
+                raise TypeError("token_compressor does not support backbone feature bundles")
             compressor_outputs = self.token_compressor.forward_train(
                 features=x,
                 masks=masks,
@@ -249,6 +265,8 @@ class ActionFormer(SingleStageDetector):
 
         self._assert_feature_mask_temporal_match(x, masks, "before token_compressor")
         if self.token_compressor is not None:
+            if isinstance(x, Mapping):
+                raise TypeError("token_compressor does not support backbone feature bundles")
             compressor_outputs = self.token_compressor.forward_test(
                 features=x,
                 masks=masks,
@@ -409,11 +427,31 @@ class ActionFormer(SingleStageDetector):
 
     @staticmethod
     def _assert_feature_mask_temporal_match(features, masks, stage):
-        if features.shape[-1] != masks.shape[-1]:
+        primary = ActionFormer._primary_backbone_features(features)
+        if primary.shape[-1] != masks.shape[-1]:
             raise RuntimeError(
                 f"feature/mask temporal length mismatch {stage}: "
-                f"features={features.shape[-1]}, masks={masks.shape[-1]}"
+                f"features={primary.shape[-1]}, masks={masks.shape[-1]}"
             )
+
+    @staticmethod
+    def _primary_backbone_features(features):
+        if not isinstance(features, Mapping):
+            if not torch.is_tensor(features) or features.ndim != 3:
+                raise TypeError("backbone features must be a [B,C,T] tensor")
+            return features
+        primary = features.get("feats")
+        if not torch.is_tensor(primary) or primary.ndim != 3:
+            raise TypeError("backbone feature bundle requires tensor key 'feats' with shape [B,C,T]")
+        for key in ("global_features", "residual_features"):
+            value = features.get(key)
+            if value is not None and (
+                not torch.is_tensor(value) or value.shape != primary.shape
+            ):
+                raise ValueError(
+                    f"backbone feature bundle key {key!r} must match 'feats'"
+                )
+        return primary
 
     def _inject_pc_ot_mras_reader_outputs(self, feat_list, mask_list, metas):
         if self.pc_ot_mras_reader is None and self.pc_ot_mras_reader_eval_override is None:
