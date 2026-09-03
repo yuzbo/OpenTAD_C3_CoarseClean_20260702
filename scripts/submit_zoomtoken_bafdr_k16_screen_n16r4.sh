@@ -3,6 +3,7 @@ source /etc/profile
 set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BASE="${YUZIBO_ROOT:-/data/run01/sczc063/yuzibo}"
+PYTHON_BIN="${BAFDR_PYTHON:-${BASE}/conda_envs/opentad/bin/python}"
 MAX_JOBS_IN_QUEUE="${BAFDR_MAX_JOBS_IN_QUEUE:-14}"
 SEED=4407
 ARMS="G96,U16-UNIFORM-A0,BAFDR-K16-LATE,BAFDR-K16-NOKD,BAFDR-K16-FULL"
@@ -60,7 +61,8 @@ for arm in "${arm_list[@]}"; do
     [[ "$TEACHER_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]] || { echo "BAFDR-K16-FULL requires BAFDR_TEACHER_COMMIT (full SHA)" >&2; exit 2; }
     TEACHER_CHECKPOINT_SHA256="$(sha256sum "$TEACHER_CHECKPOINT" | awk '{print $1}')"
     TEACHER_CONFIG_SHA256="$(sha256sum "$TEACHER_CONFIG" | awk '{print $1}')"
-    python - "$TEACHER_CHECKPOINT" <<'PY'
+    [[ -x "$PYTHON_BIN" ]] || { echo "BAFDR Python is not executable: $PYTHON_BIN" >&2; exit 2; }
+    "$PYTHON_BIN" - "$TEACHER_CHECKPOINT" <<'PY'
 import sys, torch
 path = sys.argv[1]
 state = torch.load(path, map_location="cpu")

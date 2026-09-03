@@ -155,6 +155,8 @@ def test_raw_prediction_cache_is_window_level_for_sliding_window_eval():
 def test_screen_submission_does_not_prematurely_pass_gate():
     submit = read(ROOT / "scripts" / "submit_zoomtoken_bafdr_k16_screen_n16r4.sh")
     finalizer = read(ROOT / "tools" / "bata" / "finalize_bafdr_screen_gate.py")
+    assert 'PYTHON_BIN="${BAFDR_PYTHON:-${BASE}/conda_envs/opentad/bin/python}"' in submit
+    assert '"$PYTHON_BIN" - "$TEACHER_CHECKPOINT"' in submit
     assert '"status": "SUBMITTED"' in submit
     assert 'promoted["status"] = "PASS"' in finalizer
     assert "total_successful_updates" in finalizer
