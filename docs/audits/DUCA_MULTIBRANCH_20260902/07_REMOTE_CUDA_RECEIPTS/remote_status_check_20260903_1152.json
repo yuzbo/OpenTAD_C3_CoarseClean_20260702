@@ -1,0 +1,44 @@
+{
+  "schema_version": "DUCA-REMOTE-STATUS-CHECK-v007",
+  "checked_at_utc": "2026-09-03T03:52:17Z",
+  "remote_host": "N16R4",
+  "resource_snapshot": {
+    "partition": "gpu",
+    "total_gpus": 240,
+    "available_gpus": 57,
+    "runnable_gpu_slots": {"1": 57, "2": 25, "3": 14, "4": 10, "5": 7, "6": 7, "7": 5, "8": 3},
+    "account_queue_limit": "MaxSubmitJobs=16 (existing queue remains within the account limit)"
+  },
+  "supervisor": {
+    "pid": "2272497",
+    "status": "ACTIVE",
+    "latest_receipt_path": "/data/run01/sczc063/yuzibo/projects/duca_multibranch_supervisor_20260902/latest_receipt.json",
+    "dispatcher_status": "BLOCKED",
+    "blocked_reasons": ["DUCA_UNIFIED: BLOCKED_UNIMPLEMENTED", "stage S60_IMPLEMENTATION: BLOCKED_UNIMPLEMENTED"],
+    "formal_results": "NO_VALID_RESULTS"
+  },
+  "admission_jobs": [
+    {"job_id": "1266879", "route": "H65-Pro", "source_sha": "cfb7041d876f6e38e9ef6ce77cef7cee04b79659", "state": "COMPLETED", "exit_code": "0:0", "result": "STAGE1_20 precheck PASS; 7 tests; no training"},
+    {"job_id": "1266880", "route": "DUCA Evidence Recovery", "source_sha": "08d425a259fc468dde7c496e77b4c43e953d8d0c", "state": "COMPLETED", "exit_code": "0:0", "result": "real-shape CUDA forward/backward finite; gate only"},
+    {"job_id": "1266881", "route": "DUCA CT-DP-BAMoD", "source_sha": "2b7f81808006c6cb09a4d21a7f6fdc8ed3f6babc", "state": "COMPLETED", "exit_code": "0:0", "result": "geometry/gradient CUDA gate OK; gate only"},
+    {"job_id": "1266882", "route": "ZoomToken BAFDR", "source_sha": "fdeaeb98340bf7070201a02feb8093f50486aeaa", "state": "COMPLETED", "exit_code": "0:0", "result": "gradient gate OK; screen/matrix remain closed"},
+    {"job_id": "1266883", "route": "ZoomToken ET-TRC", "source_sha": "59eab0c6aaacf5039d2ae20969a6dd5772bcb80f", "state": "COMPLETED", "exit_code": "0:0", "result": "CUDA finite-update gate OK; checkpoint/DDP remain open"}
+  ],
+  "current_queue": [
+    {"job_id": "1266414", "route": "BAFDR LATE (non-owned later checkout)", "state": "COMPLETED", "source_head": "efe69d2ea10accd01d0129dfe99cba4d1d5773cb", "progress": "6000 updates and epoch_59.pth/train_receipt.json; metric_opened=false, eval_results={}; not a formal result"},
+    {"job_id": "1266415", "route": "BAFDR NOKD (non-owned later checkout)", "state": "RUNNING", "source_head": "efe69d2ea10accd01d0129dfe99cba4d1d5773cb", "progress": "active; no new Traceback/ERROR/nonfinite/OOM in stderr"},
+    {"job_id": "1266416", "route": "BAFDR FULL (non-owned later checkout)", "state": "RUNNING", "source_head": "efe69d2ea10accd01d0129dfe99cba4d1d5773cb", "progress": "active; no new Traceback/ERROR/nonfinite/OOM in stderr"},
+    {"job_id": "1265779,1265780", "route": "DUCA CT-DP G2/G3 (stale checkout)", "state": "RUNNING", "source_head": "679b71214d05a21cd08ae1f5e5c3879e2df8fb83", "progress": "G2 epoch 49, G3 epoch 51; finite losses; legacy logs only"},
+    {"job_id": "1266397_0,1266397_7", "route": "DUCA Evidence C0/A6 (dirty stale checkout)", "state": "RUNNING", "source_head": "647151facd36d4df3f21de6865bcb225c8ba91fc", "progress": "C0 epoch 48, A6 epoch 46; finite current logs; no audit-owned terminal receipt"},
+    {"job_id": "1266420,1266475,1266479,1266480", "route": "BAFDR evaluator/aggregation (non-owned later checkout)", "state": "PENDING", "reason": "Dependency"}
+  ],
+  "recent_failures": [
+    {"job_id": "1266399", "state": "FAILED", "route": "Evidence F/FULL", "classification": "CODE_OR_NUMERICAL_FAILURE_NONOWNED", "cause": "NaN segment weights in largest_remainder_quota"},
+    {"job_id": "1266400", "state": "FAILED", "route": "Evidence A1/NO_COVERAGE", "classification": "NUMERICAL_FAILURE_NONOWNED", "cause": "non-finite scout_action_loss"}
+  ],
+  "terminal_artifact_scan": {
+    "owned_audit_worktrees": "no formal epoch_59/train/eval/prediction terminal receipts",
+    "formal_results": "none; 09_RESULT_LEDGER remains NO_VALID_RESULTS"
+  },
+  "action": "本轮发现非拥有 later-checkout 的 BAFDR LATE 已由 RUNNING 转为 COMPLETED，但仍只有 training receipt，未开放 evaluator/aggregation；五个 exact-SHA admission gate 均以 0:0 完成。正式 dispatcher 继续 BLOCKED，Unified 因机制未实现不提交，所有旧 checkout 作业继续仅作诊断证据。"
+}

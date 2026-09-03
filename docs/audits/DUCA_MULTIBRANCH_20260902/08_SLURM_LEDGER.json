@@ -272,6 +272,13 @@
       "reason": "bounded retry also failed with OpenSSL SSL_ERROR_SYSCALL; no experiment state changed",
       "job_ids": [],
       "attempt_id": "coordination-push-retry-20260903-0301"
+    },
+    {
+      "kind": "remote_status_check_20260903_1152",
+      "command": "ssh N16R4 supervisor/squeue/sacct/resource snapshot plus bounded known-path log and receipt scan",
+      "status": "SUCCEEDED",
+      "job_ids": ["1266414", "1266415", "1266416", "1265779", "1265780", "1266397_0", "1266397_7", "1266879-1266883"],
+      "result": "public gpu: 57 available GPUs, 25 runnable 2-GPU slots; BAFDR LATE 1266414 COMPLETED with 6000-update train receipt but no evaluator; NOKD/FULL, CT-DP G2/G3 and Evidence C0/A6 remain RUNNING; five exact-SHA admission gates remain COMPLETED/0:0; formal results remain NO_VALID_RESULTS"
     }
   ],
   "failure_diagnoses": [
@@ -351,6 +358,12 @@
       "classification": "MONITOR_PROTOCOL_FAILURE_REPAIRED",
       "cause": "owned/non-owned artifact scan 的嵌套 grep 引号错误导致 bash syntax error；未修改实验。",
       "revalidation": "双引号正则重试成功，完整 artifact/receipt/error 扫描完成。"
+    },
+    {
+      "job_ids": ["1266414"],
+      "classification": "NONOWNED_COMPLETED_WITH_TRAIN_RECEIPT",
+      "cause": "later-checkout BAFDR LATE 作业从 RUNNING 转为 COMPLETED/0:0，并写入 epoch_59.pth 与 train_receipt.json（6000 successful updates）；receipt 仍 phase=training、metric_opened=false、eval_results={}。",
+      "revalidation": "完整 stdout/stderr 与 train_receipt 已读取；无 Traceback、ERROR、OOM 或非有限 loss。由于 source_head=efe69d2e 非冻结 SHA 且没有 evaluator/aggregation 终态，不纳入结果账本。"
     }
   ],
   "preexisting_jobs_not_owned_by_this_audit": [

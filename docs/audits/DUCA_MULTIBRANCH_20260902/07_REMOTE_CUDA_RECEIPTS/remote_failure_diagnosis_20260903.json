@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-REMOTE-FAILURE-DIAGNOSIS-v001",
-  "checked_at_utc": "2026-09-03T02:48:51Z",
+  "checked_at_utc": "2026-09-03T03:52:17Z",
   "remote_host": "N16R4",
   "policy": "每个失败先读取 stderr/out，区分代码/协议/资源/调用错误；旧 checkout 只归档，不迁移为当前科学结果",
   "diagnoses": [
@@ -216,6 +216,20 @@
       "repair": "已按仓库规则保留完整失败输出，并进行一次有界 HTTP/1.1 重试；两次均失败，暂不重复提交。",
       "revalidation": "本地协调工作树仍包含 commit 39a3aa68；远端发布状态待网络恢复后再验证。",
       "result": "发布环境阻塞；实验门禁作业已在远端完成，不因发布失败重提或改变实验。"
+    },
+    {
+      "job_ids": ["1266414"],
+      "route": "BAFDR",
+      "source_checkout": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7 @ efe69d2ea10accd01d0129dfe99cba4d1d5773cb",
+      "classification": "NONOWNED_COMPLETED_WITH_TRAIN_RECEIPT",
+      "log_files": [
+        "/data/run01/sczc063/yuzibo/slurm_logs/zt-bafdr-train-BAFDR-K16-LATE-efe69d2e_1266414.out",
+        "/data/run01/sczc063/yuzibo/slurm_logs/zt-bafdr-train-BAFDR-K16-LATE-efe69d2e_1266414.err",
+        "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_efe69d2e_compute/work_dirs/bafdr_k16_late_seed4409/train_receipt.json"
+      ],
+      "root_cause": "作业正常达到 Slurm COMPLETED/0:0，并写入 epoch_59.pth 与 6000-update train_receipt；但 receipt 仍 phase=training、metric_opened=false、eval_results={}，没有官方 evaluator/aggregation 终态。",
+      "repair": "不采用 later-checkout 结果，也不把训练完成重标为科学终态；继续保留为非拥有诊断证据。当前冻结 BAFDR SHA 仍须独立 screen gate 后再提交正式 21-cell 矩阵。",
+      "revalidation": "完整 stdout/stderr 与 receipt 已读取；未发现 Traceback、ERROR、OOM 或非有限 loss。"
     }
   ],
   "current_resource_blocker": {
