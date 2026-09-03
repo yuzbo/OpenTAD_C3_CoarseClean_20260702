@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-REMOTE-FAILURE-DIAGNOSIS-v001",
-  "checked_at_utc": "2026-09-03T03:52:17Z",
+  "checked_at_utc": "2026-09-03T04:44:20Z",
   "remote_host": "N16R4",
   "policy": "每个失败先读取 stderr/out，区分代码/协议/资源/调用错误；旧 checkout 只归档，不迁移为当前科学结果",
   "diagnoses": [
@@ -230,6 +230,38 @@
       "root_cause": "作业正常达到 Slurm COMPLETED/0:0，并写入 epoch_59.pth 与 6000-update train_receipt；但 receipt 仍 phase=training、metric_opened=false、eval_results={}，没有官方 evaluator/aggregation 终态。",
       "repair": "不采用 later-checkout 结果，也不把训练完成重标为科学终态；继续保留为非拥有诊断证据。当前冻结 BAFDR SHA 仍须独立 screen gate 后再提交正式 21-cell 矩阵。",
       "revalidation": "完整 stdout/stderr 与 receipt 已读取；未发现 Traceback、ERROR、OOM 或非有限 loss。"
+    },
+    {
+      "job_ids": ["1266397_0"],
+      "route": "Evidence",
+      "source_checkout": "/data/run01/sczc063/yuzibo/projects/opentad_duca_evidence_recovery @ 647151facd36d4df3f21de6865bcb225c8ba91fc (dirty, non-owned)",
+      "log_files": [
+        "/data/run01/sczc063/yuzibo/duca_evidence_recovery_single_seed_8261_647151fa_20260902_092503/slurm_logs/duca_rec_train_1266397_0.out",
+        "/data/run01/sczc063/yuzibo/duca_evidence_recovery_single_seed_8261_647151fa_20260902_092503/slurm_logs/duca_rec_train_1266397_0.err"
+      ],
+      "classification": "CODE_OR_PROTOCOL_FAILURE_NONOWNED",
+      "root_cause": "旧 Evidence C0 训练到 epoch 49 后进入评测，evidence_recovery._extract_h65_positions 发现 metas[0] 缺少 bata_selected_dense_indices、irregular_selected_positions、selected_dense_indices，抛出 ValueError；torchrun 以 exit code 1 退出。",
+      "repair": "不修改或采用 dirty/non-owned checkout；冻结 Evidence SHA 08d425a 必须在 clean worktree 上重新完成 C0/parity/CUDA admission。",
+      "revalidation": "完整 stdout（1304 行）与 stderr（59 行）已读取；无合法 terminal receipt，旧失败不重提、不纳入结果账本。"
+    },
+    {
+      "job_ids": ["1267014", "1267027"],
+      "route": "H65-Pro/DUCA Unified direct attempt",
+      "source_checkout": "/data/run01/sczc063/yuzibo/projects/duca_unified_single_seed_20260903 @ 139e00aa589ca9dcd945beba8ea6bcbd246ece6c (non-owned)",
+      "source_branch": "codex/duca-unified-single-seed-20260903",
+      "classification": "NONOWNED_WRONG_SHA_FAILED_MISSING_RECEIPT",
+      "log_files": [],
+      "root_cause": "两个 interactive srun 均绕过正式 dispatcher，使用非拥有 HEAD 139e00aa 运行 H65 C0；1267014 使用 master_port=29518，1267027 使用 master_port=29524，均在 33 秒后 FAILED/1:0。",
+      "repair": "不在错误 checkout 上修补或重试；没有 Slurm 持久 stdout/stderr 路径，也没有可信 terminal receipt。正式 Unified dispatcher 仍 BLOCKED_UNIMPLEMENTED，H65 必须回到冻结 SHA 和审计启动器。",
+      "revalidation": "sacct SubmitLine、状态和 worktree HEAD 已核对；仅发现不可信生成 log.json，无 epoch_59.pth/train/eval/terminal receipt。"
+    },
+    {
+      "attempt_ids": ["local-monitor-20260903-1242"],
+      "route": "remote status monitoring",
+      "classification": "MONITOR_PROTOCOL_FAILURE_REPAIRED",
+      "root_cause": "一次远端 projects 递归 grep 扫描超过本地 120 秒监控窗口并被终止；未执行实验命令，作业状态未改变。",
+      "repair": "改用 scontrol 明确路径和有界日志/receipt 扫描重试。",
+      "revalidation": "重试成功，完成本轮队列、资源、失败与终态核对；不产生科学结果。"
     }
   ],
   "current_resource_blocker": {
