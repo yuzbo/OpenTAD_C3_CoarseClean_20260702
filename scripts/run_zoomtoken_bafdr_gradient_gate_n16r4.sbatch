@@ -2,6 +2,8 @@
 # Real CUDA gradient gate for BA-FDR before the seed-4407 screen.
 #SBATCH --job-name=bafdr-gradient-gate
 #SBATCH --partition=gpu
+#SBATCH --account=sczc063
+#SBATCH --qos=normal
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --time=00:30:00
@@ -11,11 +13,20 @@ source /etc/profile
 set -euo pipefail
 BASE="/data/run01/sczc063/yuzibo"
 PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR is required}"
+EXPECTED_COMMIT="${BAFDR_EXPECTED_COMMIT:?BAFDR_EXPECTED_COMMIT is required}"
 cd "${PROJECT_DIR}"
+[[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]] || { echo "BAFDR_EXPECTED_COMMIT must be a full lowercase SHA" >&2; exit 2; }
+[[ "$(git rev-parse HEAD)" == "${EXPECTED_COMMIT}" ]] || { echo "BAFDR checkout HEAD mismatch" >&2; exit 2; }
+[[ -z "$(git status --porcelain)" ]] || { echo "BAFDR checkout is not clean" >&2; exit 2; }
 module load cuda/11.8
 module load miniforge3/24.11
 source "${BASE}/conda_envs/opentad/bin/activate"
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
+python -m pytest -q \
+  tests/test_bafdr_k16_static_protocol.py \
+  tests/test_bafdr_gradient_path.py \
+  tests/test_bafdr_execution_count.py \
+  tests/test_bafdr_router_endpoint.py
 python - <<'PY'
 import torch
 from torch import nn
