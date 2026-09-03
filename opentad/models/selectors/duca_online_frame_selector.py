@@ -309,6 +309,8 @@ class DucaOnlineFrameSelector(nn.Module):
         self._pending_loss_schedule_advance = False
         self._pending_dynamic_budget_dual_mean: Optional[torch.Tensor] = None
         self._pending_dynamic_budget_dual_summary: Optional[dict[str, Any]] = None
+        if self.detector_gradient_mode == "density_transport_st":
+            self.detector_gradient_mode = "st_sparse_gather"
         if self.detector_gradient_mode not in {
             "st_sparse_gather",
             "st_sparse_gather_soft_context",
