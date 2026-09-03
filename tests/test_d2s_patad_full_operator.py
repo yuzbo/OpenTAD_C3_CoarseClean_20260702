@@ -16,6 +16,10 @@ from tools.bata.continuous_roi_s2_v3_full200_compute_profile import (
 from tools.bata.trace_d2s_patad_full_operator import (
     _sort_comparison_upper_bound,
 )
+from tools.bata.continuous_roi_s2_v3_full200_compute import sha256_file
+from tools.bata.continuous_roi_s2_v3_full200_compute_train import (
+    bind_pretrained_checkpoint,
+)
 from tools.bata.zoomtoken_full200_matrix_spec import (
     binding_from_config,
     get_matrix_spec,
@@ -108,3 +112,31 @@ def test_active_matrix_every_cell_has_an_explicit_training_binding():
             assert binding.protocol == spec.protocol_id
             assert binding.arm == arm
             assert int(binding.seed) == seed
+
+
+def test_formal_training_binds_the_sealed_absolute_pretrained_path(tmp_path):
+    checkpoint = tmp_path / "pretrained.pth"
+    checkpoint.write_bytes(b"sealed-pretrained")
+    cfg = Config(
+        dict(model=dict(backbone=dict(custom=dict(pretrain="pretrained/relative.pth"))))
+    )
+    identity = {"pretrained_sha256": sha256_file(checkpoint)}
+
+    resolved = bind_pretrained_checkpoint(cfg, checkpoint, identity)
+    assert cfg.model.backbone.custom.pretrain == resolved.as_posix()
+    with pytest.raises(ValueError, match="sealed identity"):
+        bind_pretrained_checkpoint(
+            cfg,
+            checkpoint,
+            {"pretrained_sha256": "0" * 64},
+        )
+
+
+def test_all_formal_launchers_pass_the_absolute_pretrained_argument():
+    for name in (
+        "run_zoomtoken_continuous_roi_s2_v3_full200_compute_n16r4.sh",
+        "run_zoomtoken_d2s_tad_full200_compute_n16r4.sh",
+        "run_zoomtoken_patad_full200_compute_n16r4.sh",
+    ):
+        text = (ROOT / "scripts" / name).read_text(encoding="utf-8")
+        assert '--pretrained "${PRETRAINED}"' in text

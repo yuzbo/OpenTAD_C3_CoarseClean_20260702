@@ -403,6 +403,20 @@ def _load_identity_hashes(path: str | Path) -> dict[str, str]:
     return {str(key): str(value) for key, value in payload.items()}
 
 
+def bind_pretrained_checkpoint(
+    cfg: Any,
+    checkpoint: str | Path,
+    identity_hashes: Mapping[str, str],
+) -> Path:
+    resolved = Path(checkpoint).resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"pretrained checkpoint not found: {resolved}")
+    if sha256_file(resolved) != identity_hashes["pretrained_sha256"]:
+        raise ValueError("pretrained checkpoint differs from the sealed identity")
+    cfg.model.backbone.custom.pretrain = resolved.as_posix()
+    return resolved
+
+
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Recovery-safe full-200 task-local 2-GPU training driver"
@@ -417,6 +431,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--identity-hashes", type=Path, required=True)
+    parser.add_argument("--pretrained", type=Path, required=True)
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--recovery-dir", type=Path, required=True)
     parser.add_argument("--resume", type=Path)
@@ -462,6 +477,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         require_clean_commit(args.expected_commit, Path(__file__).resolve().parents[2])
         manifest = validate_full_data_manifest(args.manifest)
         identity_hashes = _load_identity_hashes(args.identity_hashes)
+        pretrained_path = bind_pretrained_checkpoint(
+            cfg, args.pretrained, identity_hashes
+        )
         if args.seed != int(binding.seed):
             raise ValueError("CLI seed differs from the frozen config")
         cfg.dataset.train.ann_file = manifest["training"]["training_only_annotation"]
@@ -521,6 +539,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "total_trainable_parameters": total_trainable,
             "backbone_class": backbone_module.__class__.__name__ if backbone_module else None,
             "projection_class": projection_module.__class__.__name__ if projection_module else None,
+            "pretrained_checkpoint": pretrained_path.as_posix(),
+            "pretrained_sha256": identity_hashes["pretrained_sha256"],
         }
         
         if hasattr(backbone_module, "fusion"):
@@ -744,6 +764,7 @@ __all__ = [
     "REQUIRED_PAYLOAD_KEYS",
     "build_epoch_sampler_state",
     "build_recovery_payload",
+    "bind_pretrained_checkpoint",
     "capture_rng_state",
     "validate_epoch_sampler_state",
     "validate_full_data_manifest",

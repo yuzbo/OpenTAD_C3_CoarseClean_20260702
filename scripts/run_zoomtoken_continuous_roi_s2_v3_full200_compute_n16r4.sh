@@ -202,6 +202,7 @@ for ARM in "${ARMS[@]}"; do
       --expected-commit "${EXPECTED_COMMIT}" \
       --manifest "${MANIFEST}" \
       --identity-hashes "${CELL_ID_HASHES}" \
+      --pretrained "${PRETRAINED}" \
       --work-dir "${CELL_WORK_DIR}" \
       --recovery-dir "${CELL_REC_DIR}"
   done
