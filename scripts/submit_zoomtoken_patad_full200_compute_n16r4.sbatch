@@ -1,4 +1,4 @@
-﻿#!/bin/bash
+#!/bin/bash
 #SBATCH --job-name=zt-patad-full
 #SBATCH --partition=gpu
 #SBATCH --nodes=1

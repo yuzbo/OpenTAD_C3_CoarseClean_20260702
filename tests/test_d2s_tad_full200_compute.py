@@ -47,3 +47,11 @@ def test_d2s_candidate_uses_raw_source_and_declares_added_parameters():
         "gamma",
     ]
 
+
+def test_slurm_launchers_start_with_a_real_shebang():
+    for name in (
+        "submit_zoomtoken_d2s_tad_full200_compute_n16r4.sbatch",
+        "submit_zoomtoken_patad_full200_compute_n16r4.sbatch",
+    ):
+        payload = (ROOT / "scripts" / name).read_bytes()
+        assert payload.startswith(b"#!/bin/bash\n")
