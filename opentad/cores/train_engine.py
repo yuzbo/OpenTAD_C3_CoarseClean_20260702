@@ -83,14 +83,23 @@ def train_one_epoch(
             )
             return 0
     if update_audit is not None:
+        update_audit.setdefault("attempted_batches", 0)
         update_audit.setdefault("optimizer_attempts", 0)
         update_audit.setdefault("amp_skipped_attempts", 0)
         update_audit.setdefault("max_amp_retries_observed", 0)
+        update_audit.setdefault("successful_optimizer_updates", 0)
+        update_audit.setdefault("successful_updates", 0)
+        update_audit.setdefault("scheduler_updates", 0)
+        update_audit.setdefault("ema_updates", 0)
+        update_audit.setdefault("duca_schedule_updates", 0)
+        update_audit.setdefault("replay_exhaustions", 0)
     use_amp = False if scaler is None else True
 
     model.train()
     successful_updates = 0
     for iter_idx, data_dict in enumerate(train_loader):
+        if update_audit is not None:
+            update_audit["attempted_batches"] += 1
         if (
             max_successful_updates is not None
             and successful_updates_start + successful_updates >= max_successful_updates
@@ -187,13 +196,21 @@ def train_one_epoch(
         if update_succeeded:
             _call_after_optimizer_step(model)
             successful_updates += 1
+            if update_audit is not None:
+                update_audit["successful_optimizer_updates"] += 1
+                update_audit["successful_updates"] = update_audit["successful_optimizer_updates"]
+                update_audit["duca_schedule_updates"] += 1
 
             # update scheduler
             scheduler.step()
+            if update_audit is not None:
+                update_audit["scheduler_updates"] += 1
 
             # update ema
             if model_ema is not None:
                 model_ema.update(model)
+                if update_audit is not None:
+                    update_audit["ema_updates"] += 1
 
             if (
                 max_successful_updates is not None
@@ -241,6 +258,8 @@ def train_one_epoch(
                 max_train_iters,
             )
             break
+    if collect_training_probe:
+        return {"successful_updates": successful_updates}
     return successful_updates
 
 
