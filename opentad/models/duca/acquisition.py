@@ -2024,8 +2024,29 @@ class DucaAcquisitionAdapter(nn.Module):
                     valid_for_check = _as_valid_mask(actionness_logits, valid_mask)
                     expected = torch.sigmoid((actionness_logits.float() + bias) / temperature)
                     supplied = p_action.to(device=expected.device, dtype=expected.dtype)
-                    if supplied.shape != expected.shape or not torch.allclose(
-                        supplied[valid_for_check], expected[valid_for_check], rtol=1e-5, atol=1e-6
+                    check_atol = 1.0e-6
+                    check_rtol = 1.0e-5
+                    if p_action.is_floating_point():
+                        check_eps = float(torch.finfo(p_action.dtype).eps)
+                        check_atol = max(check_atol, min(5.0e-3, 2.0 * check_eps))
+                        check_rtol = max(check_rtol, min(5.0e-3, 2.0 * check_eps))
+                    if supplied.shape != expected.shape:
+                        raise ValueError(
+                            "p_action does not match the calibration declared by its provenance"
+                        )
+                    supplied_valid = supplied[valid_for_check]
+                    expected_valid = expected[valid_for_check]
+                    if not bool(torch.isfinite(supplied_valid).all().item()) or not bool(
+                        torch.isfinite(expected_valid).all().item()
+                    ):
+                        raise FloatingPointError(
+                            "p_action calibration check received non-finite values"
+                        )
+                    if not torch.allclose(
+                        supplied_valid,
+                        expected_valid,
+                        rtol=check_rtol,
+                        atol=check_atol,
                     ):
                         raise ValueError("p_action does not match the calibration declared by its provenance")
         source = self.actionness_source(

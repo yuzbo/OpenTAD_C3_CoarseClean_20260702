@@ -140,6 +140,44 @@ def test_adapter_rejects_probability_inconsistent_with_declared_calibration() ->
         )
 
 
+@pytest.mark.parametrize("probability_dtype", [torch.float16, torch.bfloat16])
+def test_adapter_accepts_quantized_probability_from_declared_calibration(
+    probability_dtype,
+) -> None:
+    selector = _selector(calibration_temperature=2.0, calibration_bias=0.7)
+    provenance = selector.raw_actionness_source._provenance()
+    logits = torch.tensor([[0.1234, -0.9876, 1.2345, -2.3456]])
+    probability = torch.sigmoid((logits + 0.7) / 2.0).to(probability_dtype)
+    probability[0, -1] = 0.5
+
+    scores = selector.adapter.forward_scores(
+        torch.zeros(1, 4, 3),
+        valid_mask=torch.tensor([[True, True, True, False]]),
+        actionness_logits=logits,
+        p_action=probability,
+        actionness_provenance=provenance,
+    )
+
+    assert torch.isfinite(scores["p_action"]).all()
+
+
+def test_adapter_rejects_nonfinite_calibrated_probability() -> None:
+    selector = _selector()
+    provenance = selector.raw_actionness_source._provenance()
+    logits = torch.zeros(1, 4)
+    probability = torch.full_like(logits, 0.5)
+    probability[0, 1] = float("nan")
+
+    with pytest.raises(FloatingPointError, match="non-finite"):
+        selector.adapter.forward_scores(
+            torch.zeros(1, 4, 3),
+            valid_mask=torch.ones(1, 4, dtype=torch.bool),
+            actionness_logits=logits,
+            p_action=probability,
+            actionness_provenance=provenance,
+        )
+
+
 def test_online_c3_official_asformer_probe_produces_actionness_profile() -> None:
     selector = _selector()
     inputs = torch.randn(1, 3, 8, 16, 16)
