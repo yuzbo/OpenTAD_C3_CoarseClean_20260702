@@ -218,6 +218,108 @@ def build_runtime_bindings(
     }
 
 
+def validate_ledger_coverage(dataset, split_name: str) -> dict[str, int | str]:
+    """Validate one ledger row per unique physical dataset window."""
+
+    transforms = list(getattr(getattr(dataset, "pipeline", None), "transforms", ()))
+    ledger_transform = next(
+        (
+            item
+            for item in transforms
+            if item.__class__.__name__ == "DucaH65PositionsFromLedger"
+        ),
+        None,
+    )
+    if ledger_transform is None:
+        raise RuntimeError(
+            f"formal Evidence {split_name} pipeline has no H65 ledger transform"
+        )
+    if bool(getattr(ledger_transform, "allow_missing", True)):
+        raise RuntimeError(
+            f"formal Evidence {split_name} ledger transform must fail on missing rows"
+        )
+
+    ledger = ledger_transform._value_transport_ledger()
+    exposure_ids = []
+    for item in getattr(dataset, "data_list", ()):
+        if not isinstance(item, (list, tuple)) or len(item) < 4:
+            raise RuntimeError(
+                f"formal Evidence {split_name} data_list contains an invalid window record"
+            )
+        video_name, snippet_centers = str(item[0]), item[3]
+        if len(snippet_centers) <= 0:
+            raise RuntimeError(
+                f"formal Evidence {split_name} has an empty snippet window for {video_name}"
+            )
+        exposure_ids.append(f"{video_name}|{int(snippet_centers[0])}")
+
+    expected_ids = set(exposure_ids)
+    ledger_ids = set(ledger)
+    missing = sorted(expected_ids - ledger_ids)
+    if missing:
+        raise RuntimeError(
+            f"formal Evidence {split_name} ledger is missing {len(missing)} windows; "
+            f"first: {', '.join(missing[:5])}"
+        )
+    extra = sorted(ledger_ids - expected_ids)
+    if extra:
+        raise RuntimeError(
+            f"formal Evidence {split_name} ledger contains {len(extra)} unexpected windows; "
+            f"first: {', '.join(extra[:5])}"
+        )
+
+    expected_target = int(ledger_transform.target_len)
+    expected_dense = int(ledger_transform.dense_len)
+    positions_key = (
+        "expanded_selected_positions"
+        if bool(getattr(ledger_transform, "use_expanded_positions", False))
+        else "selected_positions"
+    )
+    for sample_id in sorted(expected_ids):
+        row = ledger[sample_id]
+        if not isinstance(row, Mapping):
+            raise RuntimeError(
+                f"formal Evidence {split_name} ledger row {sample_id} is not a mapping"
+            )
+        valid_len = int(row.get("valid_len", -1))
+        if (
+            int(row.get("dense_len", expected_dense)) != expected_dense
+            or int(row.get("target_len", expected_target)) != expected_target
+            or valid_len <= 0
+            or valid_len > expected_dense
+        ):
+            raise RuntimeError(
+                f"formal Evidence {split_name} ledger row {sample_id} has invalid dimensions"
+            )
+        positions = row.get(positions_key)
+        if not isinstance(positions, (list, tuple)) or not positions:
+            raise RuntimeError(
+                f"formal Evidence {split_name} ledger row {sample_id} has no positions"
+            )
+        positions = [int(item) for item in positions]
+        required_count = ledger_transform._required_count(valid_len)
+        if (
+            positions != sorted(set(positions))
+            or positions[0] < 0
+            or positions[-1] >= valid_len
+            or len(positions) > expected_target
+            or (
+                required_count is not None
+                and len(positions) != int(required_count)
+            )
+        ):
+            raise RuntimeError(
+                f"formal Evidence {split_name} ledger row {sample_id} violates the selection contract"
+            )
+
+    return {
+        "split": str(split_name),
+        "loader_exposures": len(exposure_ids),
+        "unique_physical_windows": len(expected_ids),
+        "ledger_rows": len(ledger),
+    }
+
+
 def new_update_audit() -> dict[str, int]:
     audit = legacy.new_update_audit()
     audit.update(
@@ -490,6 +592,7 @@ __all__ = [
     "restore_training_state",
     "selector_schedule_step",
     "validate_checkpoint_successful_optimizer_updates",
+    "validate_ledger_coverage",
     "validate_terminal_checkpoint_binding",
     "validate_update_state",
 ]

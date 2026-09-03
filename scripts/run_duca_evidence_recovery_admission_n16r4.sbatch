@@ -30,7 +30,7 @@ export THUMOS14_CLASS_MAP="${THUMOS14_CLASS_MAP:-$YUZIBO_ROOT/thumos14/annotatio
 export THUMOS14_TRAIN_DATA_PATH="${THUMOS14_TRAIN_DATA_PATH:-$YUZIBO_ROOT/raw/Validation Data/validation}"
 export THUMOS14_TEST_DATA_PATH="${THUMOS14_TEST_DATA_PATH:-$YUZIBO_ROOT/raw/Test Data/TH14_test_set_mp4}"
 export DUCA_VIDEOMAE_PRETRAIN="${DUCA_VIDEOMAE_PRETRAIN:-$YUZIBO_ROOT/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
-LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT:-$YUZIBO_ROOT/projects/c3_lowres_action_probe/ledger_exports/c3_official_asformer_delta_ledgers_20260702_052357_+0800}"
+LEDGER_ROOT="${DUCA_H65_LEDGER_ROOT:-$YUZIBO_ROOT/projects/c3_lowres_action_probe/ledger_exports/c3_official_asformer_delta_ledgers_fullgrid_ec0bb6a_20260702_065702_+0800}"
 export DUCA_H65_TRAIN_LEDGER_PATH="${DUCA_H65_TRAIN_LEDGER_PATH:-$LEDGER_ROOT/train/value_transport_ledger_delta_p_action_384.jsonl}"
 export DUCA_H65_VAL_LEDGER_PATH="${DUCA_H65_VAL_LEDGER_PATH:-$LEDGER_ROOT/val/value_transport_ledger_delta_p_action_384.jsonl}"
 export DUCA_H65_TEST_LEDGER_PATH="${DUCA_H65_TEST_LEDGER_PATH:-$LEDGER_ROOT/test/value_transport_ledger_delta_p_action_384.jsonl}"
@@ -63,6 +63,20 @@ for path in sys.argv[1:]:
     if rows == 0:
         raise SystemExit(f"{path}: empty ledger")
     print("DUCA_EVIDENCE_LEDGER_GATE_OK", path, rows)
+PY
+
+python - <<'PY'
+from mmengine.config import Config
+
+from opentad.datasets import build_dataset
+from tools.bata.duca_evidence_training import validate_ledger_coverage
+
+cfg = Config.fromfile(
+    "configs/adatad/thumos/duca_evidence_recovery_matched_h65_60.py"
+)
+for split in ("train", "val", "test"):
+    dataset = build_dataset(cfg.dataset[split])
+    print("DUCA_EVIDENCE_TOPOLOGY_GATE_OK", validate_ledger_coverage(dataset, split))
 PY
 
 python -m py_compile tools/train.py tools/test.py tools/bata/duca_evidence_training.py

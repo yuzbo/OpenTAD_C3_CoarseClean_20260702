@@ -39,6 +39,7 @@ def test_eval_uses_runtime_workdir_and_preserves_training_identity():
     assert "THUMOS14_TRAIN_DATA_PATH" in eval_source
     assert "DUCA_H65_TRAIN_LEDGER_PATH" in eval_source
     assert "DUCA_H65_VAL_LEDGER_PATH" in eval_source
+    assert "c3_official_asformer_delta_ledgers_fullgrid_ec0bb6a" in eval_source
     assert "duca_p0_training.canonical_sha256" in test_source
     assert '"DUCA_TRAINING_COMMIT"' in test_source
 
@@ -75,6 +76,7 @@ def test_all_arm_configs_exist_and_load():
             )
             assert ledger_step.source == "c3_lowres_probe_delta_p_action"
             assert ledger_step.config_hash == ""
+            assert ledger_step.allow_missing is False
             collect = next(step for step in pipeline if step.get("type") == "Collect")
             meta_keys = set(collect.get("meta_keys", []))
             assert "irregular_selected_positions" in meta_keys

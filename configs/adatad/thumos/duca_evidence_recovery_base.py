@@ -89,7 +89,7 @@ def _attach_h65_positions(ledger_path):
         allow_short_valid_ratio_count=True,
         source=duca_h65_ledger_source,
         config_hash=duca_h65_ledger_config_hash,
-        allow_missing=True,
+        allow_missing=False,
     )
 
 

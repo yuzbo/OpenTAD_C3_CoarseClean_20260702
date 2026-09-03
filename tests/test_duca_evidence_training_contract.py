@@ -82,6 +82,73 @@ def test_evidence_cfg_override_allowlist():
         )
 
 
+def _coverage_dataset(*, ledger, exposure_ids, allow_missing=False):
+    class DucaH65PositionsFromLedger:
+        target_len = 4
+        dense_len = 8
+        use_expanded_positions = False
+
+        def __init__(self):
+            self.allow_missing = allow_missing
+
+        def _value_transport_ledger(self):
+            return ledger
+
+        def _required_count(self, _valid_len):
+            return 4
+
+    transform = DucaH65PositionsFromLedger()
+    data_list = [
+        (video, None, None, [start])
+        for video, start in exposure_ids
+    ]
+    return SimpleNamespace(
+        pipeline=SimpleNamespace(transforms=[transform]),
+        data_list=data_list,
+    )
+
+
+def _coverage_row(sample_id):
+    return {
+        "sample_id": sample_id,
+        "valid_len": 8,
+        "dense_len": 8,
+        "target_len": 4,
+        "selected_positions": [0, 2, 4, 6],
+    }
+
+
+def test_evidence_ledger_coverage_uses_unique_physical_windows():
+    sample_id = "video|0"
+    dataset = _coverage_dataset(
+        ledger={sample_id: _coverage_row(sample_id)},
+        exposure_ids=[("video", 0), ("video", 0)],
+    )
+
+    result = duca_evidence_training.validate_ledger_coverage(dataset, "test")
+
+    assert result == {
+        "split": "test",
+        "loader_exposures": 2,
+        "unique_physical_windows": 1,
+        "ledger_rows": 1,
+    }
+
+
+def test_evidence_ledger_coverage_rejects_missing_and_permissive_lookup():
+    missing = _coverage_dataset(ledger={}, exposure_ids=[("video", 0)])
+    with pytest.raises(RuntimeError, match="missing 1 windows"):
+        duca_evidence_training.validate_ledger_coverage(missing, "test")
+
+    permissive = _coverage_dataset(
+        ledger={"video|0": _coverage_row("video|0")},
+        exposure_ids=[("video", 0)],
+        allow_missing=True,
+    )
+    with pytest.raises(RuntimeError, match="must fail on missing rows"):
+        duca_evidence_training.validate_ledger_coverage(permissive, "test")
+
+
 def test_evidence_loader_contract_exposes_exact_epoch_prefix():
     class Dataset:
         def __len__(self):

@@ -186,6 +186,13 @@ def main():
 
     # build dataset
     test_dataset = build_dataset(cfg.dataset.test, default_args=dict(logger=logger))
+    if evidence_formal:
+        logger.info(
+            "Evidence ledger coverage: %s",
+            duca_evidence_training.validate_ledger_coverage(
+                test_dataset, "test"
+            ),
+        )
     test_loader = build_dataloader(
         test_dataset,
         rank=args.rank,

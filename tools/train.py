@@ -357,6 +357,13 @@ def main():
 
     # build dataset
     train_dataset = build_dataset(cfg.dataset.train, default_args=dict(logger=logger))
+    if duca_training is duca_evidence_training:
+        logger.info(
+            "Evidence ledger coverage: %s",
+            duca_evidence_training.validate_ledger_coverage(
+                train_dataset, "train"
+            ),
+        )
     train_loader = build_dataloader(
         train_dataset,
         rank=args.rank,
