@@ -1,6 +1,6 @@
 {
   "schema_version": "DUCA-REMOTE-FAILURE-DIAGNOSIS-v001",
-  "checked_at_utc": "2026-09-02T19:54:03Z",
+  "checked_at_utc": "2026-09-03T01:36:41Z",
   "remote_host": "N16R4",
   "policy": "每个失败先读取 stderr/out，区分代码/协议/资源/调用错误；旧 checkout 只归档，不迁移为当前科学结果",
   "diagnoses": [
@@ -182,6 +182,15 @@
       "repair": "保留失败输出后，以 HTTP/1.1 方式进行一次有界重试。",
       "revalidation": "重试成功，协调分支提交 42f890f2 已推送到 origin/codex/duca-multibranch-audit-20260902。",
       "result": "发布环境错误已修复；不产生科学结果。"
+    },
+    {
+      "attempt_ids": ["local-monitor-20260903-0934"],
+      "route": "remote status monitoring",
+      "classification": "MONITOR_PROTOCOL_FAILURE_REPAIRED",
+      "root_cause": "受控 SSH 汇总命令包含对整个 projects 树的递归 find，超过本地 120 秒监控窗口并被终止；未修改任何作业或实验状态，所需状态数据未完整返回。",
+      "repair": "缩小到 scontrol 明确给出的 stderr/stdout 路径和已知运行目录，分拆队列、监督器、日志及终态产物检查，并重新执行成功。",
+      "revalidation": "远端时间 2026-09-03T01:36:41Z；监督器 PID 2272497 存活；队列、sacct、CT-DP/BAFDR 错误尾部、Evidence C0/A6 日志与 checkpoint 扫描均完成。",
+      "result": "监控调用超时已修复；不产生科学结果。"
     }
   ],
   "current_resource_blocker": {

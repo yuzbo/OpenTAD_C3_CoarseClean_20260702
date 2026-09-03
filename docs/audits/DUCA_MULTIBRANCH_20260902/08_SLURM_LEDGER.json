@@ -164,6 +164,21 @@
       "status": "SUCCEEDED",
       "job_ids": [],
       "result": "commit 42f890f2 pushed successfully"
+    },
+    {
+      "kind": "remote_targeted_status_scan_timeout",
+      "command": "ssh N16R4 supervisor/squeue/sacct plus recursive projects log and artifact scan",
+      "status": "FAILED_PROTOCOL",
+      "reason": "递归 projects 扫描超过本地 120 秒监控窗口并被终止；未执行实验命令，作业状态未改变",
+      "job_ids": [],
+      "attempt_id": "local-monitor-20260903-0934"
+    },
+    {
+      "kind": "remote_targeted_status_scan_timeout_retry",
+      "command": "ssh N16R4 scontrol-known-path logs, supervisor receipt, squeue/sacct and bounded artifact scan",
+      "status": "SUCCEEDED",
+      "job_ids": ["1265779", "1265780", "1266410-1266415", "1266397_0", "1266397_7"],
+      "result": "监督器 ACTIVE/BLOCKED；CT-DP G2/G3、BAFDR five arms+NOKD、Evidence C0/A6 仍运行；无新 Traceback/ERROR/nonfinite/OOM；owned worktrees 无合法终态产物"
     }
   ],
   "failure_diagnoses": [
