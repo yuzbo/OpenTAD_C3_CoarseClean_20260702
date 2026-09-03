@@ -54,10 +54,14 @@ export THUMOS14_CLASS_MAP="${THUMOS14_CLASS_MAP:-$YUZIBO_ROOT/thumos14/annotatio
 export THUMOS14_TRAIN_DATA_PATH="${THUMOS14_TRAIN_DATA_PATH:-$YUZIBO_ROOT/thumos14/train}"
 export THUMOS14_TEST_DATA_PATH="${THUMOS14_TEST_DATA_PATH:-$YUZIBO_ROOT/thumos14/test}"
 ADATAD_PRETRAIN="${ADATAD_PRETRAIN:-$YUZIBO_ROOT/pretrained/vit-small-p16_videomae-k400-pre_16x4x1_kinetics-400_my.pth}"
+MOBILENETV3_WEIGHTS="${DUCA_MOBILENETV3_WEIGHTS_PATH:-$YUZIBO_ROOT/pretrained/mobilenet_v3_small-047dcff4.pth}"
 [[ -r "$CONFIG" ]] || fail "config is not readable: $CONFIG"
 for path in "$THUMOS14_ANNOTATION_PATH" "$THUMOS14_CLASS_MAP" "$THUMOS14_TRAIN_DATA_PATH" "$THUMOS14_TEST_DATA_PATH" "$ADATAD_PRETRAIN"; do
   [[ -r "$path" ]] || fail "canonical path is not readable: $path"
 done
+if [[ "$VARIANT" == "h65_pro_ref_mnv3fc384" ]]; then
+  [[ -r "$MOBILENETV3_WEIGHTS" ]] || fail "MobileNetV3 reference weights are not readable: $MOBILENETV3_WEIGHTS"
+fi
 
 [[ -n "${H65_PRO_EXPECTED_COMMIT:-}" ]] || fail "H65_PRO_EXPECTED_COMMIT is required for H65-Pro training"
 EXPECTED_COMMIT="$H65_PRO_EXPECTED_COMMIT"
@@ -66,6 +70,7 @@ OBSERVED_COMMIT="$(git rev-parse HEAD)"
 export DUCA_EXPECTED_COMMIT="$EXPECTED_COMMIT"
 export DUCA_ADATAD_PRETRAIN_PATH="$(cd "$(dirname "$ADATAD_PRETRAIN")" && pwd -P)/$(basename "$ADATAD_PRETRAIN")"
 export DUCA_ADATAD_PRETRAIN_SHA256="$(sha256sum "$ADATAD_PRETRAIN" | awk '{print tolower($1)}')"
+export DUCA_MOBILENETV3_WEIGHTS_PATH="$MOBILENETV3_WEIGHTS"
 export DUCA_SELECTED_OPT_VARIANT="$VARIANT"
 
 precheck() {

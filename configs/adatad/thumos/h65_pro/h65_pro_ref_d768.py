@@ -1,5 +1,7 @@
 _base_ = ["../e2e_thumos_videomae_s_768x1_160_adapter.py"]
 
+import os
+
 from tools.bata.duca_cellcf_protocol import protocol_for_name
 
 duca_training_protocol = protocol_for_name("official60")
@@ -16,6 +18,25 @@ h65_pro_factor_policy = dict(
     frames=768,
     reference="dense_768_no_acquisition",
 )
+
+yuzibo_root = os.environ.get("YUZIBO_ROOT", os.path.expanduser("~/run/yuzibo"))
+annotation_path = os.environ.get(
+    "THUMOS14_ANNOTATION_PATH",
+    os.path.join(yuzibo_root, "thumos14", "annotations", "thumos_14_anno.json"),
+)
+class_map = os.environ.get(
+    "THUMOS14_CLASS_MAP",
+    os.path.join(yuzibo_root, "thumos14", "annotations", "category_idx.txt"),
+)
+train_data_path = os.environ.get("THUMOS14_TRAIN_DATA_PATH", os.path.join(yuzibo_root, "thumos14", "train"))
+test_data_path = os.environ.get("THUMOS14_TEST_DATA_PATH", os.path.join(yuzibo_root, "thumos14", "test"))
+
+dataset = dict(
+    train=dict(ann_file=annotation_path, class_map=class_map, data_path=train_data_path),
+    val=dict(ann_file=annotation_path, class_map=class_map, data_path=test_data_path),
+    test=dict(ann_file=annotation_path, class_map=class_map, data_path=test_data_path),
+)
+evaluation = dict(ground_truth_filename=annotation_path)
 
 model = dict(
     frame_selector=None,
@@ -40,6 +61,8 @@ workflow = dict(
     val_eval_interval=-1,
     val_eval_interval_anchor_epoch=9999,
     val_start_epoch=9999,
+    intermediate_validation_role="disabled",
+    intermediate_validation_selects_checkpoint=False,
     end_epoch=60,
     formal_successful_update_contract=True,
     expected_train_batches_per_epoch=duca_training_protocol.steps_per_epoch,

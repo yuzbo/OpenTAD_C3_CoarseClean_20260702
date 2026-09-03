@@ -116,6 +116,7 @@ def test_h65_pro_reference_configs_encode_dense_and_mnv3fc_contracts() -> None:
     assert ref_d768.workflow.formal_successful_update_contract is True
     assert ref_d768.workflow.selector_schedule_required is False
     assert ref_d768.workflow.expected_successful_optimizer_updates == 6000
+    assert ref_d768.workflow.intermediate_validation_selects_checkpoint is False
     ref_d768_contract = formal_training_contract(ref_d768)
     assert ref_d768_contract["h65_pro_dense_reference"] is True
     assert ref_d768_contract["selector_schedule_required"] is False
@@ -126,6 +127,20 @@ def test_h65_pro_reference_configs_encode_dense_and_mnv3fc_contracts() -> None:
     selector = ref_mnv.model.frame_selector
     assert selector.parameter_free_selector is True
     assert selector.actionness_source_cfg.train_free_evidence_mode == "frozen_feature_change"
+    assert Path(selector.actionness_source_cfg.mobilenet_weights_path).name == (
+        "mobilenet_v3_small-047dcff4.pth"
+    )
+
+
+def test_every_h65_pro_config_satisfies_its_runtime_training_contract() -> None:
+    from tools.bata.duca_selected_axis_training import formal_training_contract
+
+    for row in _rows():
+        cfg = Config.fromfile(str(ROOT / row["config"]))
+        contract = formal_training_contract(cfg)
+        assert contract is not None, row["experiment_id"]
+        assert contract["expected_successful_optimizer_updates"] == 6000
+        assert cfg.workflow.get("intermediate_validation_selects_checkpoint", False) is False
 
 
 def test_actionformer_uses_meta_aware_backbone_helper_for_train_and_test() -> None:

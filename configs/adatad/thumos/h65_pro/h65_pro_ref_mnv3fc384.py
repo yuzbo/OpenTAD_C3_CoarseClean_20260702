@@ -1,5 +1,7 @@
 _base_ = ["../duca_trainfree_fixed384_official60_base.py"]
 
+import os
+
 from tools.bata.duca_cellcf_protocol import protocol_for_name
 
 duca_training_protocol = protocol_for_name("official60")
@@ -17,7 +19,19 @@ h65_pro_factor_policy = dict(
     reference="frozen_mobilenetv3_feature_change",
 )
 
+mobilenet_weights_path = os.environ.get(
+    "DUCA_MOBILENETV3_WEIGHTS_PATH",
+    os.path.join(
+        os.environ.get("YUZIBO_ROOT", os.path.expanduser("~/run/yuzibo")),
+        "pretrained",
+        "mobilenet_v3_small-047dcff4.pth",
+    ),
+)
+
 model = dict(
+    frame_selector=dict(
+        actionness_source_cfg=dict(mobilenet_weights_path=mobilenet_weights_path),
+    ),
     backbone=dict(backbone=dict(amod_config=dict(_delete_=True, enabled=False))),
     rpn_head=dict(conv_cfg=None),
 )
@@ -28,6 +42,8 @@ workflow = dict(
     val_loss_interval=-1,
     val_eval_interval=-1,
     val_start_epoch=9999,
+    intermediate_validation_role="disabled",
+    intermediate_validation_selects_checkpoint=False,
     end_epoch=60,
     formal_successful_update_contract=True,
     expected_train_batches_per_epoch=duca_training_protocol.steps_per_epoch,
