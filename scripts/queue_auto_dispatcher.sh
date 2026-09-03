@@ -149,8 +149,8 @@ while [[ $INDEX -lt ${#ALL_CONFIGS[@]} ]]; do
 #SBATCH --output=${LOG_DIR}/${ROUTE}_${JOB_TAG}_%j.out
 #SBATCH --error=${LOG_DIR}/${ROUTE}_${JOB_TAG}_%j.err
 
-set -euo pipefail
 source /etc/profile
+set -euo pipefail
 module load cuda/11.8
 module load miniforge3/24.11
 source ${BASE}/conda_envs/opentad/bin/activate

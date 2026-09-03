@@ -12,7 +12,7 @@ def test_generated_sbatch_scripts_propagate_training_failures():
         source = (ROOT / relative_path).read_text(encoding="utf-8")
         assert source.count("set -euo pipefail") >= 2
         generated_body = source[source.index("cat <<SBATCH_EOF") :]
-        assert "\nset -euo pipefail\nsource /etc/profile" in generated_body
+        assert "\nsource /etc/profile\nset -euo pipefail\nmodule load" in generated_body
 
 
 def test_queue_dispatcher_is_exact_checkout_and_restart_safe():

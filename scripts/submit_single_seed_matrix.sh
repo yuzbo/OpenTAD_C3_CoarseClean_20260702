@@ -142,8 +142,8 @@ for r in "${ROUTES_TO_RUN[@]}"; do
 #SBATCH --output=${LOG_DIR}/${r}_${job_tag}_%j.out
 #SBATCH --error=${LOG_DIR}/${r}_${job_tag}_%j.err
 
-set -euo pipefail
 source /etc/profile
+set -euo pipefail
 module load cuda/11.8
 module load miniforge3/24.11
 source ${BASE}/conda_envs/opentad/bin/activate
