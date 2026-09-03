@@ -1,4 +1,5 @@
 import copy
+import inspect
 import torch
 import torch.nn as nn
 from torch.nn.modules.batchnorm import _BatchNorm
@@ -94,6 +95,15 @@ class BackboneWrapper(nn.Module):
             canonical_positions = coords["canonical"].flatten(0, 1)
         frames = frames.flatten(0, 1).contiguous()  # [bs*num_seg, ...]
 
+        # prepare signature-aware backbone kwargs
+        bb_kwargs = dict(kwargs)
+        sig = inspect.signature(self.model.backbone.forward)
+        params = sig.parameters
+        if "actual_positions" in params:
+            bb_kwargs["actual_positions"] = actual_positions
+        if "canonical_positions" in params:
+            bb_kwargs["canonical_positions"] = canonical_positions
+
         # go through the video backbone
         if self.freeze_backbone:  # freeze everything even in training
             with torch.no_grad():
@@ -106,7 +116,7 @@ class BackboneWrapper(nn.Module):
                         **kwargs,
                     )
                 else:
-                    features = self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions, **kwargs)
+                    features = self.model.backbone(frames, **bb_kwargs)
 
         else:  # let the model.train() or model.eval() decide whether to freeze
             if self.use_temporal_checkpointing:
@@ -118,7 +128,7 @@ class BackboneWrapper(nn.Module):
                     **kwargs,
                 )
             else:
-                features = self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions, **kwargs)
+                features = self.model.backbone(frames, **bb_kwargs)
 
 
         # unflatten and pool the features
@@ -182,8 +192,16 @@ class BackboneWrapper(nn.Module):
 
     def temporal_checkpointing(self, frames, chunk_num, chunk_dim, actual_positions=None, canonical_positions=None, **kwargs):
         """Temporal Checkpointing for Video Backbone."""
+        sig = inspect.signature(self.model.backbone.forward)
+        params = sig.parameters
+
         def _inner_forward(frames, actual_positions=None, canonical_positions=None):
-            return self.model.backbone(frames, actual_positions=actual_positions, canonical_positions=canonical_positions, **kwargs)
+            inner_kwargs = dict(kwargs)
+            if "actual_positions" in params:
+                inner_kwargs["actual_positions"] = actual_positions
+            if "canonical_positions" in params:
+                inner_kwargs["canonical_positions"] = canonical_positions
+            return self.model.backbone(frames, **inner_kwargs)
 
         video_feat = []
         for chunk_index, mini_frames in enumerate(torch.chunk(frames, chunk_num, dim=chunk_dim)):
