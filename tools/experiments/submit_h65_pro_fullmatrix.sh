@@ -37,8 +37,11 @@ export H65_PRO_EXPECTED_COMMIT="$COMMIT"
 MATRIX="${H65_PRO_MATRIX:-docs/experiments/h65_pro_fullmatrix_20260902/03_EXPERIMENT_MATRIX.csv}"
 TRAIN_SCRIPT="${H65_PRO_TRAIN_SCRIPT:-tools/experiments/run_h65_pro_train.sbatch}"
 EVAL_SCRIPT="${H65_PRO_EVAL_SCRIPT:-tools/experiments/run_h65_pro_eval.sbatch}"
+MAX_JOBS_IN_QUEUE="${H65_PRO_MAX_JOBS_IN_QUEUE:-14}"
 [[ -r "$MATRIX" ]] || fail "matrix is not readable: $MATRIX"
 [[ -r "$TRAIN_SCRIPT" && -r "$EVAL_SCRIPT" ]] || fail "train/eval sbatch scripts are missing"
+[[ "$MAX_JOBS_IN_QUEUE" =~ ^[1-9][0-9]*$ ]] || fail "H65_PRO_MAX_JOBS_IN_QUEUE must be a positive integer"
+(( MAX_JOBS_IN_QUEUE >= 2 )) || fail "H65_PRO_MAX_JOBS_IN_QUEUE must allow at least two submissions"
 
 "$PYTHON" tools/bata/validate_h65_pro_fullmatrix.py --matrix "$MATRIX"
 "$PYTHON" -m py_compile tools/train.py tools/test.py \
@@ -72,7 +75,18 @@ if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then
 fi
 
 command -v sbatch >/dev/null 2>&1 || fail "sbatch is not available in this environment"
-[[ "${CUDA_VISIBLE_DEVICES:-}" == "1" ]] || fail "H65-Pro GPU1 launcher requires CUDA_VISIBLE_DEVICES=1"
+
+wait_for_submission_slots() {
+  local current
+  while true; do
+    current="$(squeue -u "$USER" -h | wc -l)"
+    if (( current <= MAX_JOBS_IN_QUEUE - 2 )); then
+      return 0
+    fi
+    echo "H65-Pro queue has ${current}/${MAX_JOBS_IN_QUEUE} jobs; retrying in 60 seconds"
+    sleep 60
+  done
+}
 
 SUBMISSION_DIR="${H65_PRO_SUBMISSION_DIR:-$YUZIBO_ROOT/h65_pro_fullmatrix_20260902_submission/$COMMIT}"
 LOG_DIR="$SUBMISSION_DIR/logs"
@@ -84,13 +98,14 @@ count=0
 while IFS=, read -r experiment_id category phase ct mod taylor curriculum frames seed config variant train_command eval_command train_job_id eval_job_id status; do
   [[ "$experiment_id" == "experiment_id" || -z "$experiment_id" ]] && continue
   should_submit "$experiment_id" || continue
+  wait_for_submission_slots
   train_job_name="h65p-tr-${experiment_id}-${seed}"
   eval_job_name="h65p-ev-${experiment_id}-${seed}"
   if ! train_job_id="$(sbatch --parsable \
     --job-name="$train_job_name" \
     --output="$LOG_DIR/%x-%j.out" \
     --error="$LOG_DIR/%x-%j.err" \
-    --export=ALL,CUDA_VISIBLE_DEVICES=1,H65_PRO_EXPECTED_COMMIT="$COMMIT" \
+    --export=ALL,H65_PRO_EXPECTED_COMMIT="$COMMIT" \
     "$TRAIN_SCRIPT" "$config" "$seed" "$experiment_id" "$variant")"; then
     fail "train submission failed for $experiment_id seed $seed"
   fi
@@ -101,7 +116,7 @@ while IFS=, read -r experiment_id category phase ct mod taylor curriculum frames
     --dependency=afterok:"$train_dependency" \
     --output="$LOG_DIR/%x-%j.out" \
     --error="$LOG_DIR/%x-%j.err" \
-    --export=ALL,CUDA_VISIBLE_DEVICES=1,H65_PRO_EXPECTED_COMMIT="$COMMIT" \
+    --export=ALL,H65_PRO_EXPECTED_COMMIT="$COMMIT" \
     "$EVAL_SCRIPT" "$config" "$seed" "$experiment_id" "$variant")"; then
     printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
       "$experiment_id" "$category" "$seed" "$config" "$variant" \

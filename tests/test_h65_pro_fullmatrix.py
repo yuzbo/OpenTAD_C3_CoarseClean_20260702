@@ -360,7 +360,9 @@ def test_h65_pro_slurm_contract_is_fail_closed_and_collision_resistant() -> None
     assert 'COMMIT="${H65_PRO_EXPECTED_COMMIT:-$(git rev-parse HEAD)}"' not in submitter
     assert "EVAL_SUBMIT_FAILED_TRAIN_CANCEL_REQUESTED" in submitter
     assert 'scancel "$train_dependency"' in submitter
-    assert '[[ "${CUDA_VISIBLE_DEVICES:-}" == "1" ]]' in submitter
+    assert "wait_for_submission_slots" in submitter
+    assert "retrying in 60 seconds" in submitter
+    assert "--export=ALL,CUDA_VISIBLE_DEVICES=1" not in submitter
 
     for script in (train, eval_script):
         assert '[[ -n "${H65_PRO_EXPECTED_COMMIT:-}" ]]' in script
@@ -368,7 +370,9 @@ def test_h65_pro_slurm_contract_is_fail_closed_and_collision_resistant() -> None
         assert 'slurm_job_id="${SLURM_JOB_ID:-0}"' in script
         assert "MASTER_PORT=$((30000 + (slurm_job_id % 20000)))" in script
         assert 'export DUCA_SELECTED_OPT_VARIANT="$VARIANT"' in script
-        assert '[[ "${CUDA_VISIBLE_DEVICES:-}" == "1" ]]' in script
+        assert '[[ -n "${SLURM_JOB_ID:-}" ]]' in script
+        assert "torch.cuda.device_count()" in script
+        assert "direct H65-Pro launch requires physical GPU1" in script
 
 
 def test_h65_pro_hard_one_swap_diagnostic_summarizes_offline_records(tmp_path: Path) -> None:

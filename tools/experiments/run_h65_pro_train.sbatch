@@ -120,7 +120,12 @@ if [[ "${PRECHECK_ONLY:-0}" == 1 ]]; then
   exit 0
 fi
 
-[[ "${CUDA_VISIBLE_DEVICES:-}" == "1" ]] || fail "H65-Pro GPU1 launcher requires CUDA_VISIBLE_DEVICES=1"
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+  [[ "$($PYTHON -c 'import torch; print(torch.cuda.device_count())')" == "1" ]] || \
+    fail "H65-Pro Slurm job requires exactly one scheduler-visible GPU"
+else
+  [[ "${CUDA_VISIBLE_DEVICES:-}" == "1" ]] || fail "direct H65-Pro launch requires physical GPU1"
+fi
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || fail "formal training requires a clean exact-commit checkout"
 precheck
 
