@@ -1,0 +1,94 @@
+{
+  "schema_version": "DUCA-REMOTE-STATUS-CHECK-v005",
+  "checked_at_utc": "2026-09-03T00:58:37Z",
+  "remote_host": "N16R4",
+  "supervisor": {
+    "pid": "2272497",
+    "status": "ACTIVE",
+    "latest_receipt_checked_at": "2026-09-03T00:57:47+00:00",
+    "dispatcher_status": "BLOCKED",
+    "blocked_reasons": [
+      "DUCA_UNIFIED: BLOCKED_UNIMPLEMENTED",
+      "stage S60_IMPLEMENTATION: BLOCKED_UNIMPLEMENTED"
+    ],
+    "queue_entries": 0,
+    "formal_results": "NO_VALID_RESULTS"
+  },
+  "current_queue": [
+    {
+      "job_id": "1265779,1265780",
+      "state": "RUNNING",
+      "name": "ctdp-g2-s3407, ctdp-g3-s3407",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/duca_ctdp_revised_20260902",
+      "classification": "STALE_REMOTE_HEAD",
+      "progress": "G2/G3 logs reached local epochs 41/41 with finite cls/reg losses; only deterministic upsample warning in stderr"
+    },
+    {
+      "job_id": "1266410-1266414",
+      "state": "RUNNING",
+      "name": "zt-bafdr-train-D160/G96/U128/U16/LATE",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7",
+      "classification": "NONOWNED_LATER_BAFDR_CHECKOUT",
+      "progress": "ten train receipts/checkpoints for seeds 4407/4408 report 6000 updates; metric_opened=false and eval_results empty"
+    },
+    {
+      "job_id": "1266415",
+      "state": "RUNNING",
+      "name": "zt-bafdr-train-BAFDR-K16-NOKD-efe69d2e",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7",
+      "classification": "NONOWNED_LATER_BAFDR_CHECKOUT",
+      "progress": "still RUNNING; current stderr contains warnings only and no Traceback/ERROR/nonfinite/OOM"
+    },
+    {
+      "job_id": "1266416,1266420,1266475,1266479,1266480",
+      "state": "PENDING",
+      "reason": "Dependency",
+      "workdir": "/data/run01/sczc063/yuzibo/projects/bafdr_k16_fullmatrix_5dba75c7",
+      "classification": "NONOWNED_LATER_BAFDR_CHECKOUT"
+    },
+    {
+      "job_id": "1266397_[0,7]",
+      "state": "RUNNING",
+      "name": "duca_rec_train",
+      "workdir": "/data/home/sczc063",
+      "classification": "DIRTY_STALE_REMOTE_HEAD",
+      "progress": "Evidence old array tasks 0/7 still running; tasks 1/2 remain failed and preserved"
+    }
+  ],
+  "recent_failures": [
+    {
+      "job_id": "1266399",
+      "array_parent": "1266397",
+      "state": "FAILED",
+      "exit_code": "1:0",
+      "arm": "F/FULL",
+      "source_head": "647151facd36d4df3f21de6865bcb225c8ba91fc",
+      "classification": "CODE_OR_NUMERICAL_FAILURE_NONOWNED",
+      "first_error": "ValueError: cannot convert float NaN to integer in largest_remainder_quota",
+      "stderr": "/data/run01/sczc063/yuzibo/duca_evidence_recovery_single_seed_8261_647151fa_20260902_092503/slurm_logs/duca_rec_train_1266397_1.err"
+    },
+    {
+      "job_id": "1266400",
+      "array_parent": "1266397",
+      "state": "FAILED",
+      "exit_code": "1:0",
+      "arm": "A1/NO_COVERAGE",
+      "source_head": "647151facd36d4df3f21de6865bcb225c8ba91fc",
+      "classification": "NUMERICAL_FAILURE_NONOWNED",
+      "first_error": "ValueError: frame_selector loss value for scout_action_loss must be finite and real-valued",
+      "stderr": "/data/run01/sczc063/yuzibo/duca_evidence_recovery_single_seed_8261_647151fa_20260902_092503/slurm_logs/duca_rec_train_1266397_2.err"
+    }
+  ],
+  "terminal_artifact_scan": {
+    "owned_audit_worktrees": "no epoch_59.pth/train_receipt/eval_receipt/prediction_receipt found",
+    "stale_evidence_worktree": "A2-A5 epoch_59.pth exist; failed F/A1 tasks have no valid terminal receipt; tasks 0/7 remain running",
+    "stale_ctdp_worktree": "legacy G0/G1 epoch_59.pth/log.json exist; G2/G3 remain running; no current exact-SHA or audit-owned terminal receipt",
+    "stale_bafdr_worktree": "later-checkout train receipts/checkpoints exist for five arms and two seeds; no evaluator or aggregation receipt"
+  },
+  "error_scan": {
+    "ctdp_g2_g3": "no Traceback/ERROR/nonfinite/OOM in current out/err tails",
+    "bafdr_efe69d2e": "no Traceback/ERROR/nonfinite/OOM in current 1266410-1266415 stderr",
+    "evidence_647151fa": "previous 1266399 NaN quota and 1266400 non-finite scout_action_loss remain the only failures"
+  },
+  "action": "本轮无新的提交或运行失败；继续保留并监控非拥有旧 checkout 失败与运行中作业，不修改、不采用、不重标。正式 dispatcher 仍 BLOCKED，资源受限 admission 不重复提交，正式结果账本保持 NO_VALID_RESULTS。"
+}
