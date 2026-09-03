@@ -52,12 +52,8 @@ def main() -> int:
     model_cfg.backbone.custom.pretrain = str(args.pretrained.resolve())
     model = build_detector(model_cfg).to("cuda:0").eval()
 
-    global_view = torch.zeros(
-        1, 1, 3, 768, 96, 96, dtype=torch.uint8, device="cuda:0"
-    )
-    source_view = torch.zeros(
-        1, 1, 3, 768, 180, 320, dtype=torch.uint8, device="cuda:0"
-    )
+    global_view = torch.zeros(1, 1, 3, 768, 96, 96, dtype=torch.uint8)
+    source_view = torch.zeros(1, 1, 3, 768, 180, 320, dtype=torch.uint8)
     prepared = prepare_zoomtoken_batch(
         {
             "inputs": {"global": global_view, "source": source_view},
