@@ -74,6 +74,9 @@ if [[ "${PRECHECK_ONLY}" == "1" ]]; then
     opentad/models/backbones/d2s_videomae_wrapper.py \
     opentad/models/detectors/actionformer.py \
     tools/bata/d2s_tad_full200_compute.py \
+    tools/bata/continuous_roi_s2_v3_full200_compute_profile.py \
+    tools/bata/continuous_roi_s2_v3_full200_compute_eval.py \
+    tools/bata/trace_d2s_patad_full_operator.py \
     tools/bata/verify_d2s_patad_pre_run_witness.py \
     tools/bata/zoomtoken_batch_device.py \
     tools/bata/zoomtoken_full200_matrix_spec.py
@@ -83,13 +86,42 @@ if [[ "${PRECHECK_ONLY}" == "1" ]]; then
 
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Running test suite...\n'
   python -m pytest tests/test_d2s_tad_architecture.py \
-         tests/test_d2s_tad_full200_compute.py -v
+         tests/test_d2s_tad_full200_compute.py \
+         tests/test_continuous_roi_s2_v3_full200_compute.py -v
 
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Running checkpoint-load and physical-skip witness...\n'
   python tools/bata/verify_d2s_patad_pre_run_witness.py \
     configs/adatad/thumos/continuous_roi_d2s_v3_u128_burst128_seed4407.py \
     --pretrained "${PRETRAINED}" \
     --matrix-kind d2s
+
+  printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] Tracing the complete 3-arm C_exec surface...\n'
+  PRECHECK_PROFILE_DIR="${BASE}/tmp/d2s_c_exec_precheck_${SLURM_JOB_ID}"
+  mkdir -p "${PRECHECK_PROFILE_DIR}"
+  python tools/bata/trace_d2s_patad_full_operator.py profile-arm \
+    --matrix-kind d2s --arm D160 \
+    --config configs/adatad/thumos/continuous_roi_s2_v3_d160_seed4407.py \
+    --pretrained "${PRETRAINED}" --expected-commit "${EXPECTED_COMMIT}" \
+    --protocol-doc docs/methods/d2s_tad_full200_compute_protocol.json \
+    --output "${PRECHECK_PROFILE_DIR}/D160.json"
+  python tools/bata/trace_d2s_patad_full_operator.py profile-arm \
+    --matrix-kind d2s --arm G96 \
+    --config configs/adatad/thumos/continuous_roi_s2_v3_g96_seed4407.py \
+    --pretrained "${PRETRAINED}" --expected-commit "${EXPECTED_COMMIT}" \
+    --protocol-doc docs/methods/d2s_tad_full200_compute_protocol.json \
+    --output "${PRECHECK_PROFILE_DIR}/G96.json"
+  python tools/bata/trace_d2s_patad_full_operator.py profile-arm \
+    --matrix-kind d2s --arm D2S-U128-B128 \
+    --config configs/adatad/thumos/continuous_roi_d2s_v3_u128_burst128_seed4407.py \
+    --pretrained "${PRETRAINED}" --expected-commit "${EXPECTED_COMMIT}" \
+    --protocol-doc docs/methods/d2s_tad_full200_compute_protocol.json \
+    --output "${PRECHECK_PROFILE_DIR}/D2S-U128-B128.json"
+  python tools/bata/trace_d2s_patad_full_operator.py compare \
+    --matrix-kind d2s \
+    --receipts "${PRECHECK_PROFILE_DIR}/D160.json" \
+      "${PRECHECK_PROFILE_DIR}/G96.json" \
+      "${PRECHECK_PROFILE_DIR}/D2S-U128-B128.json" \
+    --output "${PRECHECK_PROFILE_DIR}/comparison.json"
 
   printf '[D2S_TAD_FULL200_COMPUTE][PRECHECK] PASS\n'
   exit 0
@@ -126,6 +158,32 @@ python tools/bata/d2s_tad_full200_compute.py \
   --output "${MATRIX_RECEIPT}"
 
 PROTOCOL_DOC="${ROOT}/docs/methods/d2s_tad_full200_compute_protocol.json"
+
+printf '[D2S_TAD_FULL200_COMPUTE] Tracing full-operator C_exec for all arms...\n'
+CEXEC_COMPARISON="${PROFILE_DIR}/c_exec_comparison.json"
+python tools/bata/trace_d2s_patad_full_operator.py profile-arm \
+  --matrix-kind d2s --arm D160 \
+  --config configs/adatad/thumos/continuous_roi_s2_v3_d160_seed4407.py \
+  --pretrained "${PRETRAINED}" --expected-commit "${EXPECTED_COMMIT}" \
+  --protocol-doc "${PROTOCOL_DOC}" --manifest "${MANIFEST}" \
+  --output "${PROFILE_DIR}/D160.json"
+python tools/bata/trace_d2s_patad_full_operator.py profile-arm \
+  --matrix-kind d2s --arm G96 \
+  --config configs/adatad/thumos/continuous_roi_s2_v3_g96_seed4407.py \
+  --pretrained "${PRETRAINED}" --expected-commit "${EXPECTED_COMMIT}" \
+  --protocol-doc "${PROTOCOL_DOC}" --manifest "${MANIFEST}" \
+  --output "${PROFILE_DIR}/G96.json"
+python tools/bata/trace_d2s_patad_full_operator.py profile-arm \
+  --matrix-kind d2s --arm D2S-U128-B128 \
+  --config configs/adatad/thumos/continuous_roi_d2s_v3_u128_burst128_seed4407.py \
+  --pretrained "${PRETRAINED}" --expected-commit "${EXPECTED_COMMIT}" \
+  --protocol-doc "${PROTOCOL_DOC}" --manifest "${MANIFEST}" \
+  --output "${PROFILE_DIR}/D2S-U128-B128.json"
+python tools/bata/trace_d2s_patad_full_operator.py compare \
+  --matrix-kind d2s \
+  --receipts "${PROFILE_DIR}/D160.json" "${PROFILE_DIR}/G96.json" \
+    "${PROFILE_DIR}/D2S-U128-B128.json" \
+  --output "${CEXEC_COMPARISON}"
 
 python - "${ROOT}" "${MANIFEST}" "${CONTROL_DIR}" "${PRETRAINED}" "${EXPECTED_COMMIT}" "${PROTOCOL_DOC}" "${ZOOMTOKEN_SEEDS}" <<'PYEOF'
 import hashlib, json, sys
@@ -313,6 +371,7 @@ python tools/bata/continuous_roi_s2_v3_full200_compute_eval.py evaluate-matrix \
   --checkpoint-seal "${CHECKPOINT_SEAL}" \
   --manifest "${MANIFEST}" \
   --annotation "${ANNOTATION}" \
+  --compute-comparison "${CEXEC_COMPARISON}" \
   --marker-path "${MARKER_PATH}" \
   --output-dir "${EVAL_DIR}"
 

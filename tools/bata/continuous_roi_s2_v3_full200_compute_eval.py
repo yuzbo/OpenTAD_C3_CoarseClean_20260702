@@ -22,6 +22,9 @@ from tools.bata.continuous_roi_s2_v3_full200_compute import (
     canonical_sha256,
     sha256_file,
 )
+from tools.bata.continuous_roi_s2_v3_full200_compute_profile import (
+    validate_c_exec_comparison,
+)
 from tools.bata.zoomtoken_full200_matrix_spec import get_matrix_spec
 
 
@@ -1218,11 +1221,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             delta = candidate_map - reference_map
             seed_deltas[str(seed)] = delta
             gates[f"seed_{seed}_avg_map_delta_ge_neg_3_00"] = delta >= -3.00
-        compute_gate = None
-        if args.compute_comparison is not None and args.compute_comparison.is_file():
-            comp = json.loads(args.compute_comparison.read_text(encoding="utf-8"))
-            compute_gate = comp.get("primary_exact_10u_le_9d", False)
-            gates["compute_c_exec_candidate_over_d160_le_0_90"] = compute_gate
+        if args.compute_comparison is None or not args.compute_comparison.is_file():
+            raise FileNotFoundError(
+                "formal evaluation requires the complete full-operator C_exec comparison"
+            )
+        comp = validate_c_exec_comparison(
+            json.loads(args.compute_comparison.read_text(encoding="utf-8"))
+        )
+        compute_gate = bool(comp["primary_exact_10u_le_9d"])
+        gates["compute_c_exec_candidate_over_d160_le_0_90"] = compute_gate
         g96_dominates = (
             g96_bounds["average_map_difference_lcb_pp"] >= 0.0
             and g96_bounds["map_at_0_7_difference_lcb_pp"] >= 0.0

@@ -29,22 +29,30 @@ LOW_COST_CONTROL_ARM = MATRIX_SPEC.low_cost_control_arm
 
 LEDGER_SCHEMA = "s2_v3_full_operator_c_exec_v1"
 AUTOMATIC_OPERATOR_ALLOWLIST = {
+    "aten.add",
     "aten.addmm",
     "aten.bmm",
     "aten.convolution",
     "aten.linear",
     "aten.matmul",
     "aten.mm",
+    "aten.mul",
 }
 MANUAL_OPERATOR_ALLOWLIST = {
     "bilinear_grid_sample_upper_bound",
     "bilinear_resize_upper_bound",
+    "convolution_runtime_shape_fma2",
     "detector_proposal_arithmetic_upper_bound",
     "elementwise_upper_bound",
+    "flash_attention_runtime_shape_upper_bound",
+    "gelu_upper_bound",
     "layer_norm_upper_bound",
+    "linear_bias_add_upper_bound",
+    "max_pool_upper_bound",
     "mean_reduction_upper_bound",
     "normalization_upper_bound",
     "softmax_upper_bound",
+    "sort_comparison_upper_bound",
     "temporal_linear_interpolation_upper_bound",
 }
 
@@ -251,6 +259,24 @@ def validate_c_exec_receipt(payload: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("C_exec receipt total must be positive")
     if total != int(checked.get("full_operator_c_exec", -1)):
         raise ValueError("C_exec receipt total differs from its operator ledger")
+    if "full_operator_c_exec_per_window" in checked:
+        window_count = _positive_int(
+            checked["execution_identity"].get("ordered_window_count"),
+            field="ordered_window_count",
+        )
+        if total % window_count:
+            raise ValueError("C_exec population total is not divisible by its window count")
+        per_window = total // window_count
+        if int(checked["full_operator_c_exec_per_window"]) != per_window:
+            raise ValueError("C_exec per-window count differs from the population total")
+        expected_gflops = per_window / 1.0e9
+        if not math.isclose(
+            float(checked.get("full_operator_gflops_per_window", -1.0)),
+            expected_gflops,
+            rel_tol=0.0,
+            abs_tol=1.0e-12,
+        ):
+            raise ValueError("C_exec per-window GFLOPs disclosure is inconsistent")
     return checked
 
 
@@ -292,6 +318,40 @@ def compare_c_exec_receipts(
     return result
 
 
+def validate_c_exec_comparison(payload: Mapping[str, Any]) -> dict[str, Any]:
+    checked = dict(payload)
+    digest = checked.pop("comparison_sha256", None)
+    if not digest or canonical_sha256(checked) != digest:
+        raise ValueError("C_exec comparison self-hash mismatch")
+    checked["comparison_sha256"] = digest
+    if (
+        checked.get("schema_version") != "s2_v3_c_exec_comparison_v1"
+        or checked.get("protocol_id") != PROTOCOL_ID
+        or checked.get("gate_uses_latency_or_memory") is not False
+    ):
+        raise ValueError("C_exec comparison identity is invalid")
+    counts = checked.get("counts")
+    if not isinstance(counts, Mapping) or set(counts) != set(ARMS):
+        raise ValueError("C_exec comparison does not cover the complete matrix")
+    normalized_counts = {
+        arm: _positive_int(counts[arm], field=f"counts[{arm}]") for arm in ARMS
+    }
+    expected_primary = (
+        10 * normalized_counts[CANDIDATE_ARM]
+        <= 9 * normalized_counts[REFERENCE_ARM]
+    )
+    expected_g96 = (
+        normalized_counts[LOW_COST_CONTROL_ARM]
+        <= normalized_counts[CANDIDATE_ARM]
+    )
+    if (
+        checked.get("primary_exact_10u_le_9d") is not expected_primary
+        or checked.get("g96_not_more_than_candidate") is not expected_g96
+    ):
+        raise ValueError("C_exec comparison booleans differ from exact integer counts")
+    return checked
+
+
 def _load_ledger_input(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     ledger = FullOperatorLedger(arm=str(payload["arm"]))
@@ -330,5 +390,6 @@ __all__ = [
     "conservative_elementwise_upper_bound",
     "convolution_fma2",
     "linear_fma2",
+    "validate_c_exec_comparison",
     "validate_c_exec_receipt",
 ]
